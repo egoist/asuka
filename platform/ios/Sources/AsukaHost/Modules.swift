@@ -230,6 +230,12 @@ struct AsukaModuleError: LocalizedError {
             (name, { args, reply in AsukaStore.shared.call(name, args, reply) } as AsukaModuleMethod)
         })
         #endif
+        #if ASUKA_ICLOUD
+        // asuka/sdk/icloud: the key-value store and the app's containers.
+        modules["icloud"] = Dictionary(uniqueKeysWithValues: AsukaICloud.methods.map { name in
+            (name, { args, reply in AsukaICloud.shared.call(name, args, reply) } as AsukaModuleMethod)
+        })
+        #endif
         #if ASUKA_TRACKING
         modules["tracking"] = AsukaTracking.methods()
         #endif

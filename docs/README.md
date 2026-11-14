@@ -109,6 +109,10 @@ browser.
   chosen, connected to, read, written and followed; the app as a
   peripheral, advertising and serving; in the background; on each
   platform.
+- [iCloud](icloud.md): the key-value store that follows the user to each
+  of their devices, and the app's documents in iCloud Drive: listed,
+  read and written, downloaded and evicted, their conflicts resolved, on
+  iOS and macOS.
 - [The desktop](desktop.md): tray icons and the Dock menu, apps in the
   background, global shortcuts, file dialogs and the file manager,
   opening files, one instance, quitting, recent documents, starting at

@@ -51,6 +51,10 @@ var macProfileFeatures = []struct{ ios, mac, what string }{
 	{"com.apple.developer.applesignin", "com.apple.developer.applesignin", "Sign in with Apple (asuka/sdk/appleauth)"},
 	{"com.apple.developer.in-app-payments", "com.apple.developer.in-app-payments", "Apple Pay (asuka/sdk/pay)"},
 	{"com.apple.developer.devicecheck.appattest-environment", "com.apple.developer.devicecheck.appattest-environment", "App Attest (asuka/sdk/integrity)"},
+	{entKVStore, entKVStore, icloudWhat[entKVStore]},
+	{entContainers, entContainers, icloudWhat[entContainers]},
+	{entUbiquity, entUbiquity, icloudWhat[entUbiquity]},
+	{entServices, entServices, icloudWhat[entServices]},
 }
 
 // macProfileNeeds are what the app's packages need a profile for (their
@@ -58,7 +62,7 @@ var macProfileFeatures = []struct{ ios, mac, what string }{
 func macProfileNeeds(cfg *appConfig) []string {
 	var out []string
 	for _, f := range macProfileFeatures {
-		if _, ok := cfg.entitlements[f.ios]; ok {
+		if _, ok := cfg.entitlements[f.ios]; ok && !slices.Contains(out, f.what) {
 			out = append(out, f.what)
 		}
 	}
@@ -338,7 +342,15 @@ func macEntitlements(cfg *appConfig, prof *macProfile, appStore bool) (map[strin
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("the profile %q lacks %s, which the app's packages need: turn the capabilities on for %s at developer.apple.com (Identifiers), then make the profile again",
-			prof.name, strings.Join(missing, ", "), cfg.ID)
+			prof.name, strings.Join(slices.Compact(missing), ", "), cfg.ID)
+	}
+	// iCloud's, as the app uses them (a profile's are wildcards).
+	set, _, err := narrowICloud(prof.entitlements, cfg, prof.team)
+	if err != nil {
+		return nil, fmt.Errorf("the profile %q lacks %s, which asuka/sdk/icloud needs: turn on the iCloud capability for %s at developer.apple.com (Identifiers), with iCloud Documents and its containers, then make the profile again", prof.name, err, cfg.ID)
+	}
+	for k, v := range set {
+		ents[k] = v
 	}
 	// A development profile lets a debugger attach (the notary refuses it).
 	if prof.kind == "development" {

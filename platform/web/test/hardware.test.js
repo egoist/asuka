@@ -256,8 +256,10 @@ test("screen, biometric, tracking and what the web hasn't", async () => {
 
 test("every module the hardware file has, and camera.View's native view", () => {
   const all = hardware(fakeHost);
-  for (const name of ["network", "location", "locationAccess", "locationBackground", "sensors", "speech", "audio", "audioRecord", "nowPlaying", "camera", "scan", "vision", "imageEdit", "biometric", "review", "tracking", "integrity", "ageRange", "appleAuth", "webAuth", "periodic", "background", "widget", "splash", "screen", "transcribe", "photoLibrary", "library", "contacts", "calendar"]) {
+  for (const name of ["network", "location", "locationAccess", "locationBackground", "sensors", "speech", "audio", "audioRecord", "nowPlaying", "camera", "scan", "vision", "imageEdit", "biometric", "review", "tracking", "integrity", "ageRange", "appleAuth", "icloud", "webAuth", "periodic", "background", "widget", "splash", "screen", "transcribe", "photoLibrary", "library", "contacts", "calendar"]) {
     assert.ok(all[name], name);
   }
   assert.equal(typeof natives["asuka.camera"], "function");
+  assert.throws(() => all.icloud.kvGet(), { message: /^not available/ });
+  assert.equal(all.icloud.stop().length, 0);
 });

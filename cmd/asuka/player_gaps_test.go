@@ -91,7 +91,8 @@ func TestRefers(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := refers(f, pushPkg, "Rewrite"); got != want {
+		names := map[string]bool{}
+		if got := refers(f, pushPkg, names) || names["Rewrite"]; got != want {
 			t.Errorf("%s: refers %v, want %v", src, got, want)
 		}
 	}

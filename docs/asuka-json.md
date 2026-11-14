@@ -66,6 +66,7 @@ These apply on every platform the key means something on.
 | `updates` | object | none | A desktop app's signed updates. See [updates](#updates). |
 | `ios` | object | | The iOS build's, and some of the Mac's. See [ios](#ios). |
 | `mac` | object | | The Mac build's profiles. See [mac](#mac). |
+| `icloud` | object | `iCloud.<id>` | The app's iCloud containers and its iCloud Drive folder, for `asuka/sdk/icloud`. See [icloud](#icloud). |
 | `applePay` | object | none | `{"merchantIds": ["merchant.com.example"]}`: the merchant IDs Apple Pay pays with (`asuka/sdk/pay`), in the in-app-payments entitlement of an iOS or Mac app that imports the package. See [Wallet payments](device.md#wallet-payments-asukasdkpay). |
 | `android` | object | | The Android build's. See [android](#android). |
 | `linux` | object | | What a Linux build says of the app. See [linux](#linux). |
@@ -209,6 +210,24 @@ an app that imports it (an app that doesn't gets none of it):
 | `required` | boolean | `false` | Makes the app one for phones with NFC alone: Google Play doesn't offer it to others. |
 
 See [NFC tags](nfc.md#asukajson-and-permissions).
+
+## icloud
+
+The iCloud containers of an app that calls `asuka/sdk/icloud`'s
+documents, and how they show in iCloud Drive (an app that doesn't gets
+none of it):
+
+```json
+"icloud": { "containers": ["iCloud.com.example.journal"], "driveName": "Journal" }
+```
+
+| Key | Type | Default | What it is |
+|---|---|---|---|
+| `containers` | strings | `["iCloud.<id>"]` | The app's iCloud containers, the first its default: the entitlements' `com.apple.developer.icloud-container-identifiers` and `ubiquity-container-identifiers`. Its App ID needs them, with the iCloud capability. |
+| `driveName` | string | the app's `name` | The first container's folder in iCloud Drive (Info.plist's `NSUbiquitousContainers`). |
+| `driveHidden` | boolean | `false` | Leaves the app's documents out of iCloud Drive: they sync, but only the app sees them. |
+
+See [iCloud](icloud.md#asukajson-and-entitlements).
 
 ## i18n
 

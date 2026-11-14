@@ -66,7 +66,7 @@
 - `android.googleServices` は、`asuka/sdk/push` に使う Firebase プロジェクトの `google-services.json` です。`android.mapsKey` は、`asuka/sdk/maps` に使う Google Maps Platform の API キーです。
 - `ios.usage` は保護されたリソースの利用目的の説明文（`NSCameraUsageDescription` など。Mac のものも含みます）を指定し、`ios.infoPlist` は Info.plist にキーを追加します。`ios.backgroundModes` は `UIBackgroundModes` に値を追加します（`"audio"` なら、画面がロックされていても録音・再生できます）。`android.permissions` はパーミッションを追加します。
 
-アプリがインポートしたパッケージは、自分に必要なパーミッションと利用目的の説明文をアプリに追加します。`asuka/sdk/camera` ならカメラ、`asuka/sdk/location` なら位置情報のものです。ただしデフォルトの説明文は汎用的なので、`ios.usage` に自分の言葉で書いてください。パッケージによっては、App ID のケイパビリティも必要です（`asuka/sdk/push` には Push Notifications、`asuka/sdk/appleauth` には Sign in with Apple、`asuka/sdk/integrity` には App Attest、`asuka/sdk/agerange` には Declared Age Range）。developer.apple.com でケイパビリティを有効にしてから、プロファイルを作り直してください。プロファイルに足りないケイパビリティは、`asuka build --platform ios`（と `--platform mac`）が教えてくれます。
+アプリがインポートしたパッケージは、自分に必要なパーミッションと利用目的の説明文をアプリに追加します。`asuka/sdk/camera` ならカメラ、`asuka/sdk/location` なら位置情報のものです。ただしデフォルトの説明文は汎用的なので、`ios.usage` に自分の言葉で書いてください。パッケージによっては、App ID のケイパビリティも必要です（`asuka/sdk/push` には Push Notifications、`asuka/sdk/appleauth` には Sign in with Apple、`asuka/sdk/integrity` には App Attest、`asuka/sdk/agerange` には Declared Age Range、`asuka/sdk/icloud` には iCloud とそのコンテナー）。developer.apple.com でケイパビリティを有効にしてから、プロファイルを作り直してください。プロファイルに足りないケイパビリティは、`asuka build --platform ios`（と `--platform mac`）が教えてくれます。
 
 ## iOS
 
@@ -167,7 +167,7 @@ asuka build --platform mac --sign "Developer ID Application: Your Name (TEAMID)"
 
 `--notarize` は、署名したアプリを Apple の公証サービスに送り、結果を待ちます（たいていは数分です）。却下された場合はサービスのログを表示します。最後にチケットをアプリにステープルするので、オフラインでも開けます。CI では `--notarize env` を指定すると、キーチェーンのプロファイルの代わりに、環境変数の `ASUKA_APPLE_ID`、`ASUKA_APPLE_PASSWORD`（App 用パスワード）、`ASUKA_TEAM_ID` を使います。
 
-プッシュ通知（`asuka/sdk/push`）、Sign in with Apple（`asuka/sdk/appleauth`）、App Attest（`asuka/sdk/integrity`）には、プロビジョニングプロファイルでしか付与されないエンタイトルメントが必要です。developer.apple.com（Profiles）で、それらのケイパビリティを有効にしたアプリの ID に対して macOS の Developer ID プロファイルを作成し、ダウンロードしてください。
+プッシュ通知（`asuka/sdk/push`）、Sign in with Apple（`asuka/sdk/appleauth`）、App Attest（`asuka/sdk/integrity`）、iCloud（`asuka/sdk/icloud`）には、プロビジョニングプロファイルでしか付与されないエンタイトルメントが必要です。developer.apple.com（Profiles）で、それらのケイパビリティを有効にしたアプリの ID に対して macOS の Developer ID プロファイルを作成し、ダウンロードしてください。
 
 ```sh
 asuka build --platform mac --profile Notes.provisionprofile --notarize asuka

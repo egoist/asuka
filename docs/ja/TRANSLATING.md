@@ -122,6 +122,7 @@ OS が日本語で表示する名前は、それぞれの表記に従います�
 | i18n.md | 多言語対応 |
 | data.md | データ |
 | device.md | デバイスとサービス |
+| icloud.md | iCloud |
 | desktop.md | デスクトップ |
 | plugins.md | プラグイン |
 | native.md | ネイティブコード |

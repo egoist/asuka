@@ -52,6 +52,7 @@ iOS 开发需要 Mac；Android 开发需要 Mac、Windows 电脑或 Linux。默�
 
 如果使用了 `--no-hot` 或 `--once`，应用用到了含平台代码的原生包（有 `Package.swift` 或 `android/`，参见 [原生代码](native.md)），或者用到了开发 App 替代不了的功能，Asuka 就会改为构建应用本身：像发布构建一样把 Go 代码打包进去，并使用应用自己的名称和 ID。终端会说明是哪种原因。开发 App 替代不了的功能有：
 
+- **iOS 上的 `asuka/sdk/icloud`**：iCloud 按应用自己的 ID 保存它的值和文档，而开发 App 的 ID 不是应用的 ID。
 - **iOS 上的 `asuka/sdk/purchase`**：App Store 只把应用的商品卖给应用本身。
 - **iOS 上的 `push.Rewrite`**：开发 App 没有用来改写推送的通知服务扩展。
 - **iPhone 上 `asuka.json` 的 `nfc.iso7816` 或 `nfc.felica`**：iOS 只会查找应用自己的 Info.plist 里列出的卡片。

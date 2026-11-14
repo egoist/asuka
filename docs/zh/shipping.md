@@ -66,7 +66,7 @@
 - `android.googleServices` 是 Firebase 项目的 `google-services.json`，供 `asuka/sdk/push` 使用；`android.mapsKey` 是 Google Maps Platform 的 API 密钥，供 `asuka/sdk/maps` 使用。
 - `ios.usage` 提供访问受保护资源时的用途说明（`NSCameraUsageDescription` 等，Mac 也会用到）；`ios.infoPlist` 向 Info.plist 添加任意键；`ios.backgroundModes` 向 `UIBackgroundModes` 追加条目（例如 `"audio"`，用于锁屏时录音和播放）；`android.permissions` 用来添加权限。
 
-应用导入的包会自动带上它们需要的权限和用途说明：`asuka/sdk/camera` 带上相机的，`asuka/sdk/location` 带上定位的。不过默认的说明比较笼统，最好在 `ios.usage` 里写上你自己的。有些包还要求在 App ID 上开启相应的能力（capability）：`asuka/sdk/push` 需要 Push Notifications，`asuka/sdk/appleauth` 需要 Sign in with Apple，`asuka/sdk/integrity` 需要 App Attest，`asuka/sdk/agerange` 需要 Declared Age Range。在 developer.apple.com 上开启之后，重新生成描述文件即可。`asuka build --platform ios`（以及 `--platform mac`）会告诉你描述文件缺了哪些能力。
+应用导入的包会自动带上它们需要的权限和用途说明：`asuka/sdk/camera` 带上相机的，`asuka/sdk/location` 带上定位的。不过默认的说明比较笼统，最好在 `ios.usage` 里写上你自己的。有些包还要求在 App ID 上开启相应的能力（capability）：`asuka/sdk/push` 需要 Push Notifications，`asuka/sdk/appleauth` 需要 Sign in with Apple，`asuka/sdk/integrity` 需要 App Attest，`asuka/sdk/agerange` 需要 Declared Age Range，`asuka/sdk/icloud` 需要 iCloud 及其容器。在 developer.apple.com 上开启之后，重新生成描述文件即可。`asuka build --platform ios`（以及 `--platform mac`）会告诉你描述文件缺了哪些能力。
 
 ## iOS
 
@@ -167,7 +167,7 @@ asuka build --platform mac --sign "Developer ID Application: Your Name (TEAMID)"
 
 `--notarize` 会把签好名的应用发给 Apple 的公证服务并等待结果（通常几分钟）。如果被拒，它会打印公证服务返回的日志；通过后，它会把公证票据装订（staple）到应用上，这样离线时也能打开。在 CI 中，`--notarize env` 会从环境变量中读取 `ASUKA_APPLE_ID`、`ASUKA_APPLE_PASSWORD`（App 专用密码）和 `ASUKA_TEAM_ID`，而不是使用钥匙串中保存的配置。
 
-推送（`asuka/sdk/push`）、通过 Apple 登录（`asuka/sdk/appleauth`）和 App Attest（`asuka/sdk/integrity`）所需的 entitlement 只有描述文件才能授予。在 developer.apple.com 的 Profiles 中，为应用的 ID 创建一个 macOS Developer ID 描述文件（该 ID 需要开启上述能力），然后下载下来：
+推送（`asuka/sdk/push`）、通过 Apple 登录（`asuka/sdk/appleauth`）、App Attest（`asuka/sdk/integrity`）和 iCloud（`asuka/sdk/icloud`）所需的 entitlement 只有描述文件才能授予。在 developer.apple.com 的 Profiles 中，为应用的 ID 创建一个 macOS Developer ID 描述文件（该 ID 需要开启上述能力），然后下载下来：
 
 ```sh
 asuka build --platform mac --profile Notes.provisionprofile --notarize asuka

@@ -344,7 +344,7 @@ Asuka's packages call the host's native modules (`ui.Call`). In a browser:
   pay.google.com); each one's own button. A sheet shows only from a tap.
 - Not on the web, with an error that says so (or the package's own
   "not available"): `asuka/sdk/review`, `asuka/sdk/integrity`, `asuka/sdk/agerange`,
-  `asuka/sdk/appleauth`, `asuka/sdk/periodic`, `asuka/sdk/widget`, `asuka/sdk/liveactivity`, `asuka/sdk/photos` (Denied:
+  `asuka/sdk/appleauth`, `asuka/sdk/icloud`, `asuka/sdk/periodic`, `asuka/sdk/widget`, `asuka/sdk/liveactivity`, `asuka/sdk/photos` (Denied:
   `device.PickPhotos` picks photos), reading contacts and calendars,
   `asuka/sdk/transcribe`'s files, `asuka/sdk/screen`'s `PreventCapture` and
   `OnScreenshot`.

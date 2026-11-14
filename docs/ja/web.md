@@ -101,7 +101,7 @@ Asuka のパッケージは、ホストのネイティブモジュールを呼�
 - `asuka/sdk/screen`：`Lock` に対応します（全画面表示のとき、またはインストールしたアプリでのみ）。バーを隠すと全画面表示になります。
 - `asuka/sdk/library`：`Save` はファイルをダウンロードします。`asuka/sdk/contacts`：`Pick` は、ブラウザーに Contact Picker がある場合（Android の Chrome）に使えます。`Add` は vCard を、`asuka/sdk/calendar` の `Add` は `.ics` ファイルをダウンロードします。
 - `asuka/sdk/tracking` は、ブラウザーが Global Privacy Control か Do Not Track を送っていれば Denied を、そうでなければ Allowed を、プロンプトを出さずに返します。
-- Web では使えず、その旨のエラー（またはパッケージ独自の「not available」）を返すもの：`asuka/sdk/review`、`asuka/sdk/integrity`、`asuka/sdk/agerange`、`asuka/sdk/appleauth`、`asuka/sdk/periodic`、`asuka/sdk/widget`、`asuka/sdk/liveactivity`、`asuka/sdk/photos`（Denied を返します。写真の選択は `device.PickPhotos` でできます）、連絡先とカレンダーの読み取り、`asuka/sdk/transcribe` のファイル、`asuka/sdk/screen` の `PreventCapture` と `OnScreenshot`。
+- Web では使えず、その旨のエラー（またはパッケージ独自の「not available」）を返すもの：`asuka/sdk/review`、`asuka/sdk/integrity`、`asuka/sdk/agerange`、`asuka/sdk/appleauth`、`asuka/sdk/icloud`、`asuka/sdk/periodic`、`asuka/sdk/widget`、`asuka/sdk/liveactivity`、`asuka/sdk/photos`（Denied を返します。写真の選択は `device.PickPhotos` でできます）、連絡先とカレンダーの読み取り、`asuka/sdk/transcribe` のファイル、`asuka/sdk/screen` の `PreventCapture` と `OnScreenshot`。
 
 ## 通知と Web Push
 

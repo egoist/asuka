@@ -61,6 +61,12 @@ var playerGaps = []playerGap{
 		uses: importsGap(purchasePkg),
 	},
 	{
+		// The store's identifier and the containers are the app's ID's.
+		targets: []string{"ios", "ios-device"}, build: true,
+		why:  "iCloud keeps an app's values and documents under its own ID, which the player's isn't",
+		uses: importsGap(icloudPkg),
+	},
+	{
 		// The extension runs the app's Go code (ios_notification.go).
 		targets: []string{"ios", "ios-device"}, build: true,
 		why: "the player has no notification service extension to rewrite pushes in",
@@ -158,12 +164,21 @@ func firstGap(u gapUse) (playerGap, string, bool) {
 // function fn: its Go files, as the go command in dir builds pkg for
 // goos, parsed for a selector of fnPkg's name.
 func calls(dir, pkg, goos, fnPkg, fn string) bool {
+	names, all := called(dir, pkg, goos, fnPkg)
+	return all || names[fn]
+}
+
+// called is what of fnPkg's the packages of pkg's refer to (as calls
+// looks): the names, or all if it can't tell (the build fails, a file
+// doesn't parse, fnPkg is imported with a dot).
+func called(dir, pkg, goos, fnPkg string) (names map[string]bool, all bool) {
 	c := exec.Command("go", "-C", dir, "list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}\t{{join .GoFiles \",\"}}\t{{join .Imports \",\"}}{{end}}", pkg)
 	c.Env = append(c.Environ(), "GOOS="+goos, "GOARCH=arm64", "CGO_ENABLED=1")
 	out, err := c.Output()
 	if err != nil {
-		return true // the build says why; built, it has the rewrite if it calls it
+		return nil, true // the build says why
 	}
+	names = map[string]bool{}
 	fset := token.NewFileSet()
 	for _, l := range strings.Split(string(out), "\n") {
 		f := strings.Split(l, "\t")
@@ -172,20 +187,18 @@ func calls(dir, pkg, goos, fnPkg, fn string) bool {
 		}
 		for _, name := range strings.Split(f[1], ",") {
 			file, err := parser.ParseFile(fset, filepath.Join(f[0], name), nil, parser.SkipObjectResolution)
-			if err != nil {
-				return true
-			}
-			if refers(file, fnPkg, fn) {
-				return true
+			if err != nil || refers(file, fnPkg, names) {
+				return nil, true
 			}
 		}
 	}
-	return false
+	return names, false
 }
 
-// refers reports whether file refers to fnPkg's fn, by the name it
-// imports fnPkg as.
-func refers(file *ast.File, fnPkg, fn string) bool {
+// refers adds the names of fnPkg's that file refers to, by the name it
+// imports fnPkg as, to names; true if it imports it with a dot (its names
+// unqualified: assume all).
+func refers(file *ast.File, fnPkg string, names map[string]bool) bool {
 	local := ""
 	for _, im := range file.Imports {
 		if p, _ := strconv.Unquote(im.Path.Value); p == fnPkg {
@@ -199,16 +212,15 @@ func refers(file *ast.File, fnPkg, fn string) bool {
 	case "", "_":
 		return false
 	case ".":
-		return true // its names unqualified: assume it does
+		return true
 	}
-	found := false
 	ast.Inspect(file, func(n ast.Node) bool {
-		if s, ok := n.(*ast.SelectorExpr); ok && s.Sel.Name == fn {
+		if s, ok := n.(*ast.SelectorExpr); ok {
 			if id, ok := s.X.(*ast.Ident); ok && id.Name == local {
-				found = true
+				names[s.Sel.Name] = true
 			}
 		}
-		return !found
+		return true
 	})
-	return found
+	return false
 }

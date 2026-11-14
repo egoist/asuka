@@ -109,6 +109,7 @@ func loadSwiftNatives(path string) error {
 	swift.loaded = true
 	swift.contexts = map[uint64]native.Context{}
 	loadSwiftPurchase(lib)
+	loadSwiftICloud(lib)
 	boot(purego.NewCallback(swiftEmit), purego.NewCallback(swiftDone), purego.NewCallback(swiftInvoke))
 	native.SetBackend(swiftBackend{})
 	return nil

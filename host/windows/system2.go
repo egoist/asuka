@@ -15,6 +15,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/egoist/asuka/internal/icloudspec"
 	"github.com/egoist/asuka/internal/nfcspec"
 	. "github.com/egoist/asuka/internal/windows"
 )
@@ -39,7 +40,7 @@ import (
 //     advertising ID (Privacy & security, General): allowed while it's
 //     on, denied while it's off.
 //   - integrity: App Attest is Apple's, Play Integrity Android's.
-//   - ageRange, appleAuth: Apple's.
+//   - ageRange, appleAuth, icloud: Apple's.
 //   - review: the Microsoft Store's rating prompt is a Store app's; it
 //     shows nothing (stores never say whether they did).
 //   - push: WNS gives channels to packaged apps only.
@@ -88,6 +89,10 @@ func init() {
 		m["nfc"] = map[string]asyncMethod{}
 		for k, f := range nfcspec.Unavailable("Windows gives apps no NFC for tags (a PC/SC reader's are smart cards)") {
 			m["nfc"][k] = f
+		}
+		m["icloud"] = map[string]asyncMethod{}
+		for k, f := range icloudspec.Unavailable("iCloud is Apple's: a Windows app reaches neither its key-value store nor its containers") {
+			m["icloud"][k] = f
 		}
 		m["ageRange"] = map[string]asyncMethod{"request": failing("not available")}
 		m["appleAuth"] = map[string]asyncMethod{

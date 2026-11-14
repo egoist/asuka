@@ -20,7 +20,7 @@
 //     iCalendar file, which the system offers to add.
 //   - splash: a page has no launch screen: nothing to hold.
 //   - transcribe.check: not on the device.
-//   - The rest fail, saying why: review, integrity, ageRange, appleAuth,
+//   - The rest fail, saying why: review, integrity, ageRange, appleAuth, icloud,
 //     periodic, widget, liveActivity, the photo library, contacts' and calendars'
 //     reading, screenshots. (push is system-push.js's: Web Push.)
 
@@ -30,6 +30,18 @@ import * as fs from "../fs.js";
 const dec = new TextDecoder();
 const notOnWeb = (what, why) => new Error(`asuka: ${what} isn't on the web: ${why}`);
 const fail = (what, why) => () => { throw notOnWeb(what, why); };
+
+// --- icloud ---
+
+/** icloud is asuka/sdk/icloud's module (internal/icloudspec's methods): none here. */
+function icloud() {
+  const m = { stop: () => new Uint8Array(0) };
+  for (const k of ["account", "kvGet", "kvSet", "kvDelete", "kvAll", "kvSync", "container", "files", "watch", "unwatch",
+    "download", "evict", "read", "write", "delete", "move", "moveIn", "moveOut", "versions", "resolve", "link", "next"]) {
+    m[k] = () => { throw new Error("not available: iCloud is Apple's"); };
+  }
+  return m;
+}
 
 // --- biometric ---
 
@@ -331,6 +343,9 @@ export function modules(h) {
       signIn: () => { throw new Error("not available"); },
       state: () => { throw new Error("not available"); },
     },
+    // asuka/sdk/icloud: iCloud is Apple's (CloudKit JS has neither the
+    // key-value store nor the app's containers).
+    icloud: icloud(),
     webAuth: webAuth(),
     periodic: {
       schedule: fail("periodic.schedule", "a browser runs no page's tasks while it's closed"),

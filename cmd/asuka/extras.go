@@ -35,6 +35,9 @@ func (c *appConfig) splashOn() bool { return c != nil && c.Splash.Background != 
 // copy of it that stays until the first frame).
 func (c *appConfig) plistExtras() map[string]any {
 	m := map[string]any{"UILaunchScreen": map[string]any{}}
+	if u := c.ubiquitousContainers(); u != nil {
+		m["NSUbiquitousContainers"] = u
+	}
 	for k, vs := range c.plistArrays {
 		vs = slices.Clone(vs)
 		sort.Strings(vs)
@@ -127,6 +130,9 @@ func (c *appConfig) missingEntitlements(ent string) []string {
 	if err != nil {
 		return nil
 	}
+	for k, v := range icloudWhat {
+		what[k] = v
+	}
 	var missing []string
 	for k := range c.entitlements {
 		if !strings.Contains(string(data), "<key>"+k+"</key>") {
@@ -137,7 +143,7 @@ func (c *appConfig) missingEntitlements(ent string) []string {
 		}
 	}
 	sort.Strings(missing)
-	return missing
+	return slices.Compact(missing)
 }
 
 // writeAssetCatalog writes the asset catalog: the app icon (if icon) and

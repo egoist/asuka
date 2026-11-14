@@ -13,6 +13,7 @@ import (
 	"time"
 
 	. "github.com/egoist/asuka/internal/gtk"
+	"github.com/egoist/asuka/internal/icloudspec"
 	"github.com/egoist/asuka/internal/nfcspec"
 	"github.com/egoist/asuka/native"
 )
@@ -79,6 +80,11 @@ func init() {
 		m["nfc"] = map[string]method{}
 		for k, f := range nfcspec.Unavailable("Linux gives apps no NFC for tags (a PC/SC reader's are smart cards)") {
 			m["nfc"][k] = f
+		}
+		// asuka/sdk/icloud: Apple's.
+		m["icloud"] = map[string]method{}
+		for k, f := range icloudspec.Unavailable("iCloud is Apple's: a Linux app reaches neither its key-value store nor its containers") {
+			m["icloud"][k] = f
 		}
 		notAvailable := func(_ []byte, reply func([]byte, error)) { reply(nil, errors.New("not available")) }
 		m["appleAuth"] = map[string]method{

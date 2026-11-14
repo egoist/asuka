@@ -56,6 +56,7 @@
 | `updates` | 对象 | 无 | 桌面应用的签名更新。见 [updates](#updates)。 |
 | `ios` | 对象 | | iOS 构建的配置，部分也用于 Mac。见 [ios](#ios)。 |
 | `mac` | 对象 | | Mac 构建的描述文件。见 [mac](#mac)。 |
+| `icloud` | 对象 | `iCloud.<id>` | `asuka/sdk/icloud` 所用的 iCloud 容器和应用在 iCloud Drive 中的文件夹。见 [icloud](#icloud)。 |
 | `applePay` | 对象 | 无 | `{"merchantIds": ["merchant.com.example"]}`：Apple Pay 付款所用的商户 ID（`asuka/sdk/pay`），会写进导入了这个包的 iOS 或 Mac 应用的 in-app-payments entitlement。见[钱包支付](device.md#钱包支付asukasdkpay)。 |
 | `android` | 对象 | | Android 构建的配置。见 [android](#android)。 |
 | `linux` | 对象 | | Linux 构建对应用的描述。见 [linux](#linux)。 |
@@ -176,6 +177,22 @@ iOS 和 Android 上的启动屏：一张图片居中显示在纯色背景上，�
 | `required` | 布尔值 | `false` | 让应用只面向带 NFC 的手机：Google Play 不会向其他设备提供它。 |
 
 见 [NFC 标签](nfc.md#asukajson-与权限)。
+
+## icloud
+
+调用了 `asuka/sdk/icloud` 文档功能的应用所用的 iCloud 容器，以及它们在 iCloud Drive 中如何显示。没有调用的应用一概没有这些配置：
+
+```json
+"icloud": { "containers": ["iCloud.com.example.journal"], "driveName": "Journal" }
+```
+
+| 键 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `containers` | 字符串数组 | `["iCloud.<id>"]` | 应用的 iCloud 容器，第一个是默认容器：写入 entitlement 的 `com.apple.developer.icloud-container-identifiers` 和 `ubiquity-container-identifiers`。应用的 App ID 需要开启 iCloud 能力，并加上这些容器。 |
+| `driveName` | 字符串 | 应用的 `name` | 第一个容器在 iCloud Drive 中的文件夹名（Info.plist 的 `NSUbiquitousContainers`）。 |
+| `driveHidden` | 布尔值 | `false` | 不在 iCloud Drive 中显示应用的文档：它们照样同步，但只有应用自己能看到。 |
+
+见 [iCloud](icloud.md#asukajson-与-entitlement)。
 
 ## i18n
 

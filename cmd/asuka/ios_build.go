@@ -697,6 +697,10 @@ func (p *profile) sign(t *iosToolchain, work, bundle, id string, domains []strin
 	if err := pickEnvironments(t, work, ent, p.kind); err != nil {
 		return err
 	}
+	// iCloud's, as the app uses them (a profile's are wildcards).
+	if err := signICloud(t, work, ent, p.team, need, p.name); err != nil {
+		return err
+	}
 	// Universal links: the domains, which the profile must allow (the
 	// Associated Domains capability of the app ID).
 	if len(domains) > 0 {

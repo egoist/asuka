@@ -887,6 +887,7 @@ func TestEveryModuleAnswers(t *testing.T) {
 		"contacts":     "add list pick request",
 		"dialog":       "folder open save",
 		"files":        "pick",
+		"icloud":       "account kvGet kvSet kvDelete kvAll kvSync container files watch unwatch download evict read write delete move moveIn moveOut versions resolve link next stop",
 		"imageEdit":    "edit size videoFrame",
 		"integrity":    "assert attestKey generateKey prepare supported token",
 		"js":           "eval",

@@ -131,6 +131,8 @@ for, Asuka builds the app itself instead, its Go code inside as a release
 build has it, under the app's own name and ID. It says which it was.
 What the player can't stand in for:
 
+- **On iOS, `asuka/sdk/icloud`**: iCloud keeps an app's values and
+  documents under its own ID, which the player's isn't.
 - **On iOS, `asuka/sdk/purchase`**: the App Store sells an app's
   products only to the app.
 - **On iOS, `push.Rewrite`**: the player has no notification service

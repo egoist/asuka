@@ -34,6 +34,7 @@ Asuka 提供了一系列包，让应用用上视图之外的设备能力：相�
 | `asuka/sdk/integrity` | Play Integrity | App Attest 的 entitlement |
 | `asuka/sdk/agerange` | Play Age Signals | Declared Age Range 的 entitlement |
 | `asuka/sdk/purchase` | Play Billing、`com.android.vending.BILLING` | StoreKit 2（仅限调用了它的应用）；不需要 entitlement |
+| `asuka/sdk/icloud` | （无：Android 上没有 iCloud） | 根据应用调用的功能，加上键值存储的 entitlement、iCloud Documents 和应用的容器、`NSUbiquitousContainers`（见 [iCloud](icloud.md)） |
 | `asuka/sdk/maps` | Google 的 Maps SDK | |
 | `asuka/sdk/periodic` | WorkManager | `fetch` 和 `processing` 后台模式；各任务的标识符 |
 | `asuka/sdk/sensors` | `ACTIVITY_RECOGNITION`（计步器） | `NSMotionUsageDescription`（计步器） |
@@ -65,7 +66,7 @@ Asuka 写入的用途说明是通用的（"To take a photo."）。iOS 和 macOS 
 
 ## 在 Mac 上
 
-Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.plist 里有同样的用途说明（定位的那条还会额外写成 `NSLocationUsageDescription`）。它的签名带有 hardened runtime 为这些请求所需的 entitlement（相机、麦克风、定位、通讯录、日历、照片）；缺了它们，Developer ID 构建的应用就拿不到相应的权限。推送的 `aps-environment`、通过 Apple 登录、App Attest 和 Apple Pay 这几项 entitlement 只能由描述文件授予：对于用到它们的应用，`asuka build` 会嵌入一个描述文件（优先取 `asuka.json` 的 `mac.profile`，其次是 `ASUKA_MAC_PROFILE`，最后是本机已安装的最佳匹配项）。没有描述文件时，应用照样能构建，CLI 会告诉你哪些功能将无法使用：在 Mac 上，注册推送和通过 Apple 登录都会失败，App Attest 会报告不受支持。`asuka dev` 使用 ad hoc 签名，不带描述文件，所以开发时也是同样的情况。Mac App Store 构建（`--appstore`）运行在沙盒中，可以访问网络以及用户选择的文件。详见[发布](shipping.md)。
+Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.plist 里有同样的用途说明（定位的那条还会额外写成 `NSLocationUsageDescription`）。它的签名带有 hardened runtime 为这些请求所需的 entitlement（相机、麦克风、定位、通讯录、日历、照片）；缺了它们，Developer ID 构建的应用就拿不到相应的权限。推送的 `aps-environment`、通过 Apple 登录、App Attest、Apple Pay 和 iCloud 这几项 entitlement 只能由描述文件授予：对于用到它们的应用，`asuka build` 会嵌入一个描述文件（优先取 `asuka.json` 的 `mac.profile`，其次是 `ASUKA_MAC_PROFILE`，最后是本机已安装的最佳匹配项）。没有描述文件时，应用照样能构建，CLI 会告诉你哪些功能将无法使用：在 Mac 上，注册推送和通过 Apple 登录都会失败，App Attest 会报告不受支持。`asuka dev` 使用 ad hoc 签名，不带描述文件，所以开发时也是同样的情况。Mac App Store 构建（`--appstore`）运行在沙盒中，可以访问网络以及用户选择的文件。详见[发布](shipping.md)。
 
 这些包在 macOS 上的工作方式与 iOS 相同，用的也是同一套框架（AVFoundation、PhotoKit、Core Location、MapKit、Vision、Speech、UserNotifications、AuthenticationServices），只有下面这些 Mac 与之不同的地方例外：
 
@@ -91,6 +92,7 @@ Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.pli
 | `ui.Haptic` | 触控板的反馈（需要 Force Touch 触控板）：`HapticSelection` 对应“对齐”反馈，其他类型对应“级别变化”反馈 |
 | `asuka/sdk/widget`、`asuka/sdk/liveactivity`、`asuka/sdk/agerange` | Mac 上不支持：`widget.Set` 什么也不做，`liveactivity.Start` 和 `agerange.Request` 以 `ErrNotAvailable` 失败 |
 | `asuka/sdk/purchase` | StoreKit 2，编译进应用的 Swift 库；导入了这个包的应用，构建时会生成这个库（见[应用内购买](purchases.md)） |
+| `asuka/sdk/icloud` | 和 iOS 一样，编译进应用的 Swift 库。需要带 iCloud 的描述文件（见上文）：没有的话返回 `ErrNotAvailable`（见 [iCloud](icloud.md)） |
 | `asuka/sdk/splash` | Mac 应用没有启动屏：`Hold` 和 `Hide` 什么也不做 |
 | `ui.OnShare`、`app.ShareSheet`、快捷操作 | 仅限 iOS 和 Android：Mac 应用不会出现在其他应用的分享菜单里，`asuka.json` 的 `shortcuts` 也不会被添加 |
 
@@ -130,7 +132,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `asuka/sdk/liveactivity` | 这是手机的能力：`Enabled` 为 false，`Start` 以 `ErrNotAvailable` 失败 |
 | `asuka/sdk/purchase` | Microsoft Store，仅限从商店安装的应用；否则 `Available` 为 false，其余调用以 `ErrNotAvailable` 失败（见[应用内购买](purchases.md)） |
 | `asuka/sdk/pay` | Windows 上没有能为应用付款的钱包：`Available` 表示没有钱包，`Pay` 以 `ErrNotAvailable` 失败，`Button` 什么也不显示 |
-| `asuka/sdk/appleauth`、`asuka/sdk/agerange`、`asuka/sdk/transcribe`、`asuka/sdk/sensors` | Windows 上不支持：返回不可用，与在缺少这些功能的设备上一样 |
+| `asuka/sdk/appleauth`、`asuka/sdk/agerange`、`asuka/sdk/icloud`、`asuka/sdk/transcribe`、`asuka/sdk/sensors` | Windows 上不支持：返回不可用，与在缺少这些功能的设备上一样 |
 | `ui.Haptic` | 电脑没有触感反馈：什么也不做 |
 | `asuka/sdk/splash` | Windows 应用没有启动屏：`Hold` 和 `Hide` 什么也不做 |
 | `ui.OnShare`、`app.ShareSheet`、快捷操作 | 仅限 iOS 和 Android |
@@ -165,6 +167,7 @@ Linux 宿主访问桌面服务时，有门户就走门户，此外还用到 GLib
 | `asuka/sdk/contacts`、`asuka/sdk/calendar` | Evolution Data Server 中的通讯录和日历（来自 GNOME 通讯录、GNOME 日历和在线账户）：有它时访问权限为 `Full`；`Pick` 是一个带搜索框的联系人对话框；`Add` 先确认，再保存到默认通讯录或该日程所属的日历。没有它时：通讯录的访问权限为 `Denied`，日历为 `WriteOnly`；`Add` 会在用户的联系人或日历应用中打开一个 vCard 或 iCalendar 文件（`saved` 为 false）；`contacts.Pick` 会失败 |
 | `asuka/sdk/photos` 的照片库、`asuka/sdk/appleauth`、`asuka/sdk/transcribe`、`asuka/sdk/widget`、`asuka/sdk/liveactivity` | Linux 上都没有：照片库的访问权限为 `Denied`；`appleauth.Available` 为 false，它的按钮什么也不显示；`transcribe` 和 `liveactivity.Start` 以 `ErrNotAvailable` 失败；`widget.Set` 什么也不做。`asuka/sdk/splash` 也没有启动屏可以保持 |
 | `asuka/sdk/purchase` | 没有应用商店：`Available` 为 false，其余调用以 `ErrNotAvailable` 失败 |
+| `asuka/sdk/icloud` | 没有 iCloud：`ErrNotAvailable` |
 | `asuka/sdk/biometric`、`asuka/sdk/integrity`、`asuka/sdk/agerange`、`asuka/sdk/push` | Linux 上都没有：返回不可用或不受支持。`asuka/sdk/review` 什么也不做；`asuka/sdk/tracking` 总是返回允许 |
 | `asuka/sdk/pay` | Linux 上没有能为应用付款的钱包：`Available` 表示没有钱包，`Pay` 以 `ErrNotAvailable` 失败，`Button` 什么也不显示 |
 | `asuka/sdk/crash` | Go 的崩溃输出，其中也包括原生代码中的崩溃（GTK 代码里收到的信号、GLib 的 abort），这类崩溃报告为 `Native`；不会读取系统自己的崩溃记录（systemd-coredump、apport） |
@@ -199,7 +202,7 @@ Linux 宿主访问桌面服务时，有门户就走门户，此外还用到 GLib
 | `asuka/sdk/background` | 页面打开期间一直在运行；任务不会带来额外效果，也没有通知 |
 | `asuka/sdk/tracking` | 没有提示框：浏览器发送了 Global Privacy Control 或 Do Not Track 时为 `Denied`，否则为 `Allowed` |
 | `ui.Haptic` | 浏览器支持时（Android 上的 Chrome）使用 `navigator.vibrate` |
-| `asuka/sdk/review`、`asuka/sdk/integrity`、`asuka/sdk/agerange`、`asuka/sdk/appleauth`、`asuka/sdk/periodic`、`asuka/sdk/widget`、`asuka/sdk/liveactivity`、`asuka/sdk/transcribe` | Web 上不支持：返回一个说明这一点的错误，或者该包的 `ErrNotAvailable` |
+| `asuka/sdk/review`、`asuka/sdk/integrity`、`asuka/sdk/agerange`、`asuka/sdk/appleauth`、`asuka/sdk/icloud`、`asuka/sdk/periodic`、`asuka/sdk/widget`、`asuka/sdk/liveactivity`、`asuka/sdk/transcribe` | Web 上不支持：返回一个说明这一点的错误，或者该包的 `ErrNotAvailable` |
 | `asuka/sdk/purchase` | 在 Trusted Web Activity 里通过 Digital Goods API 使用 Google Play；其他情况下没有应用商店（`ErrNotAvailable`） |
 | `asuka/sdk/maps` | 和 Windows 一样，由宿主绘制 OpenStreetMap 的瓦片；页面获得定位权限后，`ShowsUser` 才会生效 |
 | `asuka/sdk/pay` | 浏览器支持 Apple Pay 时（Safari）通过 Payment Request API 使用它，商户验证由应用的服务器完成（`OnValidateMerchant`）；其他浏览器通过 Google 的 Web API（pay.js）使用 Google Pay；两者都使用各自的官方按钮。支付面板只在点击时显示 |
@@ -1508,7 +1511,7 @@ func App() ui.Node {
 
 手机以外的平台：Mac 支持 App Store 的评分提示、跟踪提示和 App Attest（需要描述文件，见[在 Mac 上](#在-mac-上)），但不支持 Declared Age Range。Windows、Linux 和 Web 没有商店的评分提示（`review.Request` 不显示任何内容；在浏览器中 `done` 会收到错误），没有设备认证（`integrity.Supported` 为 false），也无法获取年龄段（`ErrNotAvailable`）。在这些平台上，跟踪也不需要弹出提示：Windows 在“设置”中开启了广告 ID 时返回 `Allowed`；Linux 返回 `Allowed`；浏览器在发送了全局隐私控制（Global Privacy Control）或 Do Not Track 时返回 `Denied`。
 
-应用内购买 `asuka/sdk/purchase` 有单独的一页：[应用内购买](purchases.md)。
+应用内购买 `asuka/sdk/purchase` 有单独的一页：[应用内购买](purchases.md)。iCloud 的键值存储和文档 `asuka/sdk/icloud` 也有：[iCloud](icloud.md)。
 
 ## 运动与传感器：asuka/sdk/sensors
 

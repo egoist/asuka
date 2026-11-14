@@ -123,6 +123,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 音声 | AVAudioPlayer、AVAudioRecorder | `expo-audio` | ✓ `asuka/sdk/audio`（読み込み、再生、一時停止、シーク、音量、ループ）。`asuka/sdk/audio/record`（音声向けまたは音楽向けの音質、一時停止、レベルメーター） |
 | 再生中の情報、ロック画面のコントロール、メディアキー | `MPNowPlayingInfoCenter`、`MPRemoteCommandCenter` | `expo-audio` のロック画面のコントロール、コミュニティ製（`react-native-track-player`） | ✓ `asuka/sdk/nowplaying`（タイトル、アーティスト、アルバム、アートワーク、長さ、システムが進める再生位置、再生、一時停止、次へ、前へ、シーク、スキップ、停止。設定したハンドラーに応じて有効化。`audio.Player` には自動で追従。Android では MediaSession とメディア再生サービス、Mac ではコントロールセンター、Windows ではメディアのフライアウト、Linux では MPRIS、Web では Media Session API） |
 | Sign in with Apple | `SignInWithAppleButton` | `expo-apple-authentication` | ✓ `asuka/sdk/appleauth`（Apple のボタン、認証情報、その状態。iOS と macOS） |
+| iCloud：キーバリューストア、iCloud Drive | `NSUbiquitousKeyValueStore`、ubiquity コンテナー、`NSMetadataQuery` | コミュニティ製（`react-native-cloud-storage`、`expo-icloud-storage`） | ✓ `asuka/sdk/icloud`（アカウントとその変化。JSON で表す値、ほかのデバイスでの変更に追従するシグナル、理由付きの変更通知。iCloud Drive にあるアプリの書類：ダウンロードとアップロードの状態付きの一覧、協調した読み書き、ダウンロード、デバイスからの削除、iCloud への出し入れ、競合の解決、公開リンク。アプリが呼ぶものに応じたエンタイトルメントとコンテナー。iOS と macOS。テスト用の `fake.ICloud`。CloudKit のデータベースは対象外） |
 | Face ID、指紋認証 | LocalAuthentication | `expo-local-authentication` | ✓ `asuka/sdk/biometric`（Windows では Windows Hello。Web では WebAuthn によるプラットフォームの認証器） |
 | ストアのレビュー | `requestReview` | `expo-store-review` | ✓ `asuka/sdk/review`（App Store のプロンプト、Google Play のアプリ内レビュー） |
 | トラッキングの許可 | App Tracking Transparency | `expo-tracking-transparency` | ✓ `asuka/sdk/tracking` |

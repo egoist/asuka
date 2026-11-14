@@ -32,6 +32,7 @@ Asuka のパッケージを使うと、ビューの外にあるデバイスの�
 | `asuka/sdk/review` | Play のアプリ内レビューライブラリ | |
 | `asuka/sdk/integrity` | Play Integrity | App Attest のエンタイトルメント |
 | `asuka/sdk/agerange` | Play Age Signals | Declared Age Range のエンタイトルメント |
+| `asuka/sdk/icloud` | （なし：iCloud はありません） | キーバリューストアのエンタイトルメント、iCloud Documents とアプリのコンテナー、`NSUbiquitousContainers`。アプリが呼ぶものに応じて加わります（[iCloud](icloud.md)） |
 | `asuka/sdk/maps` | Google の Maps SDK | |
 | `asuka/sdk/periodic` | WorkManager | `fetch` と `processing` バックグラウンドモード。タスクの識別子 |
 | `asuka/sdk/sensors` | `ACTIVITY_RECOGNITION`（歩数計） | `NSMotionUsageDescription`（歩数計） |
@@ -61,7 +62,7 @@ Asuka が書き込む利用目的の説明文は汎用的なもの（"To take a 
 
 ## Mac の場合
 
-Mac アプリ（`asuka dev` と `asuka build`）の Info.plist にも同じ利用目的の説明文が入ります（位置情報の説明文は `NSLocationUsageDescription` としても入ります）。アプリの署名には、許可を求める機能（カメラ、マイク、位置情報、連絡先、カレンダー、写真）に対応する Hardened Runtime のエンタイトルメントが含まれます。これがないと、Developer ID で署名したビルドはその機能へのアクセスを拒否されます。プッシュ通知の `aps-environment`、Sign in with Apple、App Attest は、プロビジョニングプロファイルでしか付与されないエンタイトルメントです。これらを使うアプリには、`asuka build` がプロファイルを埋め込みます（`asuka.json` の `mac.profile`、なければ `ASUKA_MAC_PROFILE`、それもなければインストール済みのプロファイルからもっとも合うもの）。プロファイルがなくてもアプリはビルドでき、CLI が何が動かないかを知らせます。その場合 Mac では、プッシュ通知の登録と Sign in with Apple が失敗し、App Attest は非対応と答えます。`asuka dev` はプロファイルなしでアドホック署名するので、同じことが当てはまります。Mac App Store 向けのビルド（`--appstore`）はサンドボックス化され、ネットワークとユーザーが選んだファイルにアクセスできます。[配布](shipping.md)を参照してください。
+Mac アプリ（`asuka dev` と `asuka build`）の Info.plist にも同じ利用目的の説明文が入ります（位置情報の説明文は `NSLocationUsageDescription` としても入ります）。アプリの署名には、許可を求める機能（カメラ、マイク、位置情報、連絡先、カレンダー、写真）に対応する Hardened Runtime のエンタイトルメントが含まれます。これがないと、Developer ID で署名したビルドはその機能へのアクセスを拒否されます。プッシュ通知の `aps-environment`、Sign in with Apple、App Attest、iCloud は、プロビジョニングプロファイルでしか付与されないエンタイトルメントです。これらを使うアプリには、`asuka build` がプロファイルを埋め込みます（`asuka.json` の `mac.profile`、なければ `ASUKA_MAC_PROFILE`、それもなければインストール済みのプロファイルからもっとも合うもの）。プロファイルがなくてもアプリはビルドでき、CLI が何が動かないかを知らせます。その場合 Mac では、プッシュ通知の登録と Sign in with Apple が失敗し、App Attest は非対応と答えます。`asuka dev` はプロファイルなしでアドホック署名するので、同じことが当てはまります。Mac App Store 向けのビルド（`--appstore`）はサンドボックス化され、ネットワークとユーザーが選んだファイルにアクセスできます。[配布](shipping.md)を参照してください。
 
 macOS でも各パッケージは iOS と同じフレームワーク（AVFoundation、PhotoKit、Core Location、MapKit、Vision、Speech、UserNotifications、AuthenticationServices）を通じて、iOS と同じように動きます。Mac で異なる点は次のとおりです。
 
@@ -85,6 +86,7 @@ macOS でも各パッケージは iOS と同じフレームワーク（AVFoundat
 | `asuka/sdk/sensors` | Mac にはモーションセンサーがありません。`Available` は false で、監視しても何も届かず、`StepsBetween` は `ErrNotAvailable` で失敗します |
 | `ui.Haptic` | トラックパッドのフィードバック（感圧タッチトラックパッド）です。`HapticSelection` では整列（alignment）、それ以外ではレベル変更（level change）のフィードバックになります |
 | `asuka/sdk/widget`、`asuka/sdk/liveactivity`、`asuka/sdk/agerange` | Mac にはありません。`widget.Set` は何もせず、`liveactivity.Start` と `agerange.Request` は `ErrNotAvailable` で失敗します |
+| `asuka/sdk/icloud` | iOS と同じで、アプリの Swift ライブラリの中で動きます。iCloud を含むプロビジョニングプロファイルが必要です（上記）。ない場合は `ErrNotAvailable` で失敗します（[iCloud](icloud.md)） |
 | `asuka/sdk/splash` | Mac アプリには起動画面がないので、`Hold` と `Hide` は何もしません |
 | `ui.OnShare`、`app.ShareSheet`、ショートカット | iOS と Android だけです。Mac アプリはほかのアプリの共有メニューに表示されず、`asuka.json` の `shortcuts` も追加されません |
 
@@ -122,7 +124,7 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `asuka/sdk/tracking` | プロンプトは出ません。「設定」で広告 ID がオンなら許可、オフなら拒否です |
 | `asuka/sdk/push`、`asuka/sdk/widget`、`asuka/sdk/review`、`asuka/sdk/integrity` | これらはパッケージ化された（ストアの）アプリか、Apple や Google のものです。`push.Register` は失敗し、`widget.Set` は何もせず、`review.Request` は何も表示せず、`integrity.Supported` は false です |
 | `asuka/sdk/liveactivity` | スマートフォンの機能です。`Enabled` は false で、`Start` は `ErrNotAvailable` で失敗します |
-| `asuka/sdk/appleauth`、`asuka/sdk/agerange`、`asuka/sdk/transcribe`、`asuka/sdk/sensors` | Windows にはありません。その機能を持たないデバイスと同じく、利用できません |
+| `asuka/sdk/appleauth`、`asuka/sdk/agerange`、`asuka/sdk/icloud`、`asuka/sdk/transcribe`、`asuka/sdk/sensors` | Windows にはありません。その機能を持たないデバイスと同じく、利用できません |
 | `ui.Haptic` | PC には触覚フィードバックがないので、何もしません |
 | `asuka/sdk/splash` | Windows アプリには起動画面がないので、`Hold` と `Hide` は何もしません |
 | `ui.OnShare`、`app.ShareSheet`、ショートカット | iOS と Android だけです |
@@ -156,6 +158,7 @@ Linux のホストは、ポータルがあればポータルを通じて、ほ�
 | `asuka/sdk/sensors` | iio-sensor-proxy（2-in-1 PC、タブレット）を使います。照度センサーをルクス単位で、加速度センサーの向きを、上を向いている軸に沿った 1 g として、向きが変わるたびに伝えます。ほかのセンサーはないので、`Available` は false で、`StepsBetween` は `ErrNotAvailable` で失敗します |
 | `asuka/sdk/contacts`、`asuka/sdk/calendar` | Evolution Data Server のアドレス帳とカレンダー（GNOME Contacts、GNOME Calendar、オンラインアカウントのもの）を使います。アドレス帳やカレンダーがあればアクセスは `Full` です。`Pick` は検索欄付きの連絡先のダイアログです。`Add` は確認してから、既定のアドレス帳またはイベントのカレンダーに保存します。Evolution Data Server がない場合、連絡先のアクセスは `Denied`、カレンダーのアクセスは `WriteOnly` です。`Add` は vCard か iCalendar のファイルをユーザーの連絡先アプリやカレンダーアプリで開き（`saved` は false）、`contacts.Pick` は失敗します |
 | `asuka/sdk/photos` のライブラリ、`asuka/sdk/appleauth`、`asuka/sdk/transcribe`、`asuka/sdk/widget`、`asuka/sdk/liveactivity` | Linux にはありません。ライブラリのアクセスは `Denied` です。`appleauth.Available` は false で、そのボタンは何も表示しません。`transcribe` と `liveactivity.Start` は `ErrNotAvailable` で失敗します。`widget.Set` は何もしません。`asuka/sdk/splash` には保持しておく起動画面がありません |
+| `asuka/sdk/icloud` | iCloud はありません。`ErrNotAvailable` で失敗します |
 | `asuka/sdk/biometric`、`asuka/sdk/integrity`、`asuka/sdk/agerange`、`asuka/sdk/push` | Linux にはありません。利用不可、非対応と答えます。`asuka/sdk/review` は何もせず、`asuka/sdk/tracking` は許可と答えます |
 | `asuka/sdk/crash` | Go のクラッシュ出力を使います。ネイティブコードでのクラッシュ（GTK のコードでのシグナル、GLib の abort）もここに含まれ、`Native` として報告されます。システム自身の記録（systemd-coredump、apport）は読みません |
 | `ui.Haptic` | デスクトップには触覚フィードバックがないので、何もしません |
@@ -189,7 +192,7 @@ Linux のホストは、ポータルがあればポータルを通じて、ほ�
 | `asuka/sdk/background` | ページは開いているあいだ動き続けます。タスクを作っても何も変わらず、通知も出ません |
 | `asuka/sdk/tracking` | プロンプトは出ません。ブラウザーが Global Privacy Control か Do Not Track を送っていれば `Denied`、そうでなければ `Allowed` です |
 | `ui.Haptic` | ブラウザーが対応していれば（Android の Chrome）`navigator.vibrate` を使います |
-| `asuka/sdk/review`、`asuka/sdk/integrity`、`asuka/sdk/agerange`、`asuka/sdk/appleauth`、`asuka/sdk/periodic`、`asuka/sdk/widget`、`asuka/sdk/liveactivity`、`asuka/sdk/transcribe` | Web にはありません。その旨を示すエラーか、パッケージの `ErrNotAvailable` を返します |
+| `asuka/sdk/review`、`asuka/sdk/integrity`、`asuka/sdk/agerange`、`asuka/sdk/appleauth`、`asuka/sdk/icloud`、`asuka/sdk/periodic`、`asuka/sdk/widget`、`asuka/sdk/liveactivity`、`asuka/sdk/transcribe` | Web にはありません。その旨を示すエラーか、パッケージの `ErrNotAvailable` を返します |
 | `asuka/sdk/maps` | Windows と同じく、ホストが OpenStreetMap のタイルを描きます。`ShowsUser` は、ページに位置情報の許可があれば表示されます |
 | `asuka/sdk/crash` | Go のクラッシュ（ホストがランタイムの出力を保存します）と、捕捉されなかった JavaScript のエラーを、致命的でない `Exception` のレポートとして扱います |
 | `asuka/sdk/splash` | `Hold` と `Hide` は何もしません |
@@ -1320,6 +1323,8 @@ func App() ui.Node {
 `agerange.Request(13, 18)` は、生年月日を聞かずにユーザーの年齢層を尋ねます。子どもの利用を把握するようアプリに求める法律への対応に使うもので、Apple の Declared Age Range（iOS 26）と Play の Age Signals を使います。プラットフォームが、ユーザーやその保護者に共有するかどうかを尋ねることがあります。`Result` は、`Lower` と `Upper` の年齢（0 は制限なし）を持つ `Shared`、`Declined`、`VerificationRequired`（Play）のいずれかで、`Source` はその年齢をどうやって知ったのかを示します。プラットフォームが答えられない場合は `ErrNotAvailable` になります。
 
 スマートフォン以外では次のとおりです。Mac には App Store の評価プロンプト、トラッキングのプロンプト、App Attest があります（プロビジョニングプロファイルが必要です。[Mac の場合](#mac-の場合)を参照）が、Declared Age Range はありません。Windows、Linux、Web には、ストアのプロンプト（`review.Request` は何も表示せず、ブラウザーでは `done` がエラーを受け取ります）、アテステーション（`integrity.Supported` は false）、年齢層（`ErrNotAvailable`）のいずれもありません。これらのプラットフォームではトラッキングにプロンプトは不要です。Windows では「設定」で広告 ID がオンになっていれば `Allowed`、Linux では `Allowed`、ブラウザーでは Global Privacy Control か Do Not Track を送っていれば `Denied` を返します。
+
+iCloud のキーバリューストアと書類（`asuka/sdk/icloud`）については、専用のページで説明しています。[iCloud](icloud.md) を参照してください。
 
 ## モーションとセンサー: asuka/sdk/sensors
 

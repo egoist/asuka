@@ -55,6 +55,7 @@ web need nothing declared (see each one's section below).
 | `asuka/sdk/integrity` | Play Integrity | the App Attest entitlement |
 | `asuka/sdk/agerange` | Play Age Signals | the Declared Age Range entitlement |
 | `asuka/sdk/purchase` | Play Billing, `com.android.vending.BILLING` | StoreKit 2 (for an app that calls it); no entitlement |
+| `asuka/sdk/icloud` | (none: no iCloud) | the key-value store's entitlement, iCloud Documents and the app's containers, `NSUbiquitousContainers`, as the app calls them ([iCloud](icloud.md)) |
 | `asuka/sdk/maps` | Google's Maps SDK | |
 | `asuka/sdk/periodic` | WorkManager | `fetch` and `processing` background modes; the task identifiers |
 | `asuka/sdk/sensors` | `ACTIVITY_RECOGNITION` (the pedometer) | `NSMotionUsageDescription` (the pedometer) |
@@ -102,7 +103,7 @@ its Info.plist (location's as `NSLocationUsageDescription` too). Its
 signature has the hardened runtime's entitlements for what they ask
 (camera, microphone, location, contacts, calendars, photos), without
 which a Developer ID build is refused them. Push's `aps-environment`,
-Sign in with Apple, App Attest and Apple Pay are entitlements only a provisioning
+Sign in with Apple, App Attest, Apple Pay and iCloud are entitlements only a provisioning
 profile grants: `asuka build` embeds one for an app that uses them
 (`asuka.json`'s `mac.profile`, else `ASUKA_MAC_PROFILE`, else the best
 match installed). Without one, the app builds, the CLI says what won't
@@ -138,6 +139,7 @@ UserNotifications, AuthenticationServices), except where a Mac differs:
 | `ui.Haptic` | The trackpad's feedback (a Force Touch trackpad): an alignment for `HapticSelection`, a level change for the others |
 | `asuka/sdk/widget`, `asuka/sdk/liveactivity`, `asuka/sdk/agerange` | Not on a Mac: `widget.Set` does nothing, `liveactivity.Start` and `agerange.Request` fail with `ErrNotAvailable` |
 | `asuka/sdk/purchase` | StoreKit 2, in the app's Swift library, which the build makes for an app that imports the package ([In-app purchases](purchases.md)) |
+| `asuka/sdk/icloud` | As on iOS, in the app's Swift library. Needs a provisioning profile with iCloud (above): without one, `ErrNotAvailable` ([iCloud](icloud.md)) |
 | `asuka/sdk/splash` | A Mac app has no launch screen: `Hold` and `Hide` do nothing |
 | `ui.OnShare`, `app.ShareSheet`, shortcuts | iOS and Android only: a Mac app isn't offered in other apps' share menus, and `asuka.json`'s `shortcuts` aren't added |
 
@@ -185,7 +187,7 @@ device without it:
 | `asuka/sdk/liveactivity` | A phone's: `Enabled` is false, `Start` fails with `ErrNotAvailable` |
 | `asuka/sdk/purchase` | The Microsoft Store, for an app installed from it; otherwise `Available` is false and the rest fail with `ErrNotAvailable` ([In-app purchases](purchases.md)) |
 | `asuka/sdk/pay` | No wallet pays for a Windows app: `Available` says none, `Pay` fails with `ErrNotAvailable`, `Button` shows nothing |
-| `asuka/sdk/appleauth`, `asuka/sdk/agerange`, `asuka/sdk/transcribe`, `asuka/sdk/sensors` | Not on Windows: unavailable, as on a device without them |
+| `asuka/sdk/appleauth`, `asuka/sdk/agerange`, `asuka/sdk/icloud`, `asuka/sdk/transcribe`, `asuka/sdk/sensors` | Not on Windows: unavailable, as on a device without them |
 | `ui.Haptic` | A PC has no haptics: it does nothing |
 | `asuka/sdk/splash` | A Windows app has no launch screen: `Hold` and `Hide` do nothing |
 | `ui.OnShare`, `app.ShareSheet`, shortcuts | iOS and Android only |
@@ -235,6 +237,7 @@ names what's missing.
 | `asuka/sdk/contacts`, `asuka/sdk/calendar` | Evolution Data Server's address books and calendars (GNOME Contacts', GNOME Calendar's, the online accounts'): access is `Full` when it has one; `Pick` is a dialog of the contacts with a search field; `Add` asks, then saves in the default address book or the event's calendar. Without it: contacts' access is `Denied`, calendars' `WriteOnly`; `Add` opens a vCard or an iCalendar file in the user's contacts or calendar app (`saved` is false); `contacts.Pick` fails |
 | `asuka/sdk/photos`' library, `asuka/sdk/appleauth`, `asuka/sdk/transcribe`, `asuka/sdk/widget`, `asuka/sdk/liveactivity` | None on Linux: the library's access is `Denied`; `appleauth.Available` is false and its button shows nothing; `transcribe` and `liveactivity.Start` fail with `ErrNotAvailable`; `widget.Set` does nothing. `asuka/sdk/splash` has nothing to hold |
 | `asuka/sdk/purchase` | No store: `Available` is false, the rest fail with `ErrNotAvailable` |
+| `asuka/sdk/icloud` | No iCloud: `ErrNotAvailable` |
 | `asuka/sdk/biometric`, `asuka/sdk/integrity`, `asuka/sdk/agerange`, `asuka/sdk/push` | None on Linux: not available, not supported. `asuka/sdk/review` does nothing; `asuka/sdk/tracking` answers allowed |
 | `asuka/sdk/pay` | No wallet pays for a Linux app: `Available` says none, `Pay` fails with `ErrNotAvailable`, `Button` shows nothing |
 | `asuka/sdk/crash` | Go's crash output, which has a crash in native code too (a signal in GTK's code, a GLib abort), reported as `Native`; the system's own record (systemd-coredump, apport) isn't read |
@@ -274,7 +277,7 @@ and its service worker for notifications and Web Push.
 | `asuka/sdk/background` | The page runs while it's open; a task adds nothing, and has no notification |
 | `asuka/sdk/tracking` | No prompt: `Denied` when the browser sends Global Privacy Control or Do Not Track, else `Allowed` |
 | `ui.Haptic` | `navigator.vibrate`, where the browser has it (Chrome on Android) |
-| `asuka/sdk/review`, `asuka/sdk/integrity`, `asuka/sdk/agerange`, `asuka/sdk/appleauth`, `asuka/sdk/periodic`, `asuka/sdk/widget`, `asuka/sdk/liveactivity`, `asuka/sdk/transcribe` | Not on the web: an error that says so, or the package's `ErrNotAvailable` |
+| `asuka/sdk/review`, `asuka/sdk/integrity`, `asuka/sdk/agerange`, `asuka/sdk/appleauth`, `asuka/sdk/icloud`, `asuka/sdk/periodic`, `asuka/sdk/widget`, `asuka/sdk/liveactivity`, `asuka/sdk/transcribe` | Not on the web: an error that says so, or the package's `ErrNotAvailable` |
 | `asuka/sdk/purchase` | Google Play through the Digital Goods API, in a Trusted Web Activity; elsewhere no store (`ErrNotAvailable`) |
 | `asuka/sdk/maps` | OpenStreetMap's tiles, drawn by the host, as on Windows; `ShowsUser` once the page has the location permission |
 | `asuka/sdk/pay` | Apple Pay where the browser has it (Safari), through the Payment Request API, the merchant validated by the app's server (`OnValidateMerchant`); Google Pay elsewhere, through Google's web API (pay.js); each one's own button. A sheet shows only from a tap |
@@ -2425,7 +2428,8 @@ Settings, Linux `Allowed`, a browser `Denied` when it sends Global
 Privacy Control or Do Not Track.
 
 Selling in the app, `asuka/sdk/purchase`, has a page of its own:
-[In-app purchases](purchases.md).
+[In-app purchases](purchases.md). So does iCloud's key-value store and
+documents, `asuka/sdk/icloud`: [iCloud](icloud.md).
 
 ## Motion and sensors: asuka/sdk/sensors
 

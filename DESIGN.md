@@ -1144,6 +1144,21 @@ completed before the Go code observes isn't lost. A root's disposal
 answers the calls still waiting on its host (`ui: the root went`), so a
 package's poll of `next` ends with it.
 
+iCloud (`asuka/sdk/icloud`) is one module, `icloud`, whose JSON
+(`internal/icloudspec`) the iOS host and the Mac speak, the same Swift
+in both (`ICloud.swift`, kept identical in platform/ios and
+platform/macos, as `Purchase.swift` is; `ASUKA_ICLOUD`,
+`featureMacSwift`): NSUbiquitousKeyValueStore, its values converted
+between JSON and property lists; the app's ubiquity containers through
+NSMetadataQuery, NSFileCoordinator and NSFileVersion, the file system's
+work off the main thread. The other hosts answer not available
+(`icloudspec.Unavailable`); `fake.ICloud` in tests. The package's events
+(the account, the store's changes, each scope's files) come through one
+`next`, asked again from its answer on the main thread, so a root's
+disposal ends it. What the app calls, from its source (`useICloud`), says
+which entitlements it gets, which the CLI signs as Xcode does (a
+profile's `*` and `TEAMID.*` as the app's values).
+
 What runs outside the app's process is built from `asuka.json`. iOS's
 widget extension is WidgetKit's, so SwiftUI's (the one place the host
 uses it): one template (platform/ios/Widget) with the app's kinds,

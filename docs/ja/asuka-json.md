@@ -55,6 +55,7 @@
 | `updates` | オブジェクト | なし | デスクトップアプリの署名付きアップデートです。[updates](#updates) を参照してください。 |
 | `ios` | オブジェクト | | iOS のビルドの設定と、Mac のビルドの設定の一部です。[ios](#ios) を参照してください。 |
 | `mac` | オブジェクト | | Mac のビルドのプロファイルです。[mac](#mac) を参照してください。 |
+| `icloud` | オブジェクト | `iCloud.<id>` | `asuka/sdk/icloud` で使う、アプリの iCloud コンテナーと iCloud Drive のフォルダーです。[icloud](#icloud) を参照してください。 |
 | `android` | オブジェクト | | Android のビルドの設定です。[android](#android) を参照してください。 |
 | `linux` | オブジェクト | | Linux のビルドがアプリについて書き出す情報です。[linux](#linux) を参照してください。 |
 | `web` | オブジェクト | | Web のビルドの設定です。[web](#web) を参照してください。 |
@@ -150,6 +151,22 @@ iOS では、ウィジェットは独自の bundle ID（アプリの ID に `.wi
 | `phrases` | 文字列の配列 | `"<title> in ${app}"` | Siri が聞き取るフレーズで、どれにもアプリの名前を表す `${app}` を含めます。iOS だけで使われます。 |
 
 [ショートカット](device.md#ショートカット-sirispotlightランチャー)を参照してください。
+
+## icloud
+
+`asuka/sdk/icloud` の書類の関数を呼ぶアプリの iCloud コンテナーと、それを iCloud Drive にどう表示するかの設定です（呼ばないアプリには何も加わりません）。
+
+```json
+"icloud": { "containers": ["iCloud.com.example.journal"], "driveName": "Journal" }
+```
+
+| キー | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `containers` | 文字列の配列 | `["iCloud.<id>"]` | アプリの iCloud コンテナーで、最初のものがデフォルトになります。エンタイトルメントの `com.apple.developer.icloud-container-identifiers` と `ubiquity-container-identifiers` に入ります。アプリの App ID でも、iCloud ケイパビリティとともにこれらのコンテナーを有効にしておく必要があります。 |
+| `driveName` | 文字列 | アプリの `name` | iCloud Drive での、最初のコンテナーのフォルダーの名前です（Info.plist の `NSUbiquitousContainers`）。 |
+| `driveHidden` | 真偽値 | `false` | アプリの書類を iCloud Drive に表示しません。書類は同期されますが、見えるのはアプリだけです。 |
+
+[iCloud](icloud.md#asukajson-とエンタイトルメント)を参照してください。
 
 ## i18n
 

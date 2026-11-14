@@ -158,7 +158,8 @@ they need: `asuka/sdk/camera` the camera's, `asuka/sdk/location` the location's.
 Write your own in `ios.usage`: the default is generic. Some need a
 capability on the App ID too (Push Notifications for `asuka/sdk/push`, Sign
 in with Apple for `asuka/sdk/appleauth`, App Attest for `asuka/sdk/integrity`,
-Declared Age Range for `asuka/sdk/agerange`): turn it on at
+Declared Age Range for `asuka/sdk/agerange`, iCloud with its containers for
+`asuka/sdk/icloud`): turn it on at
 developer.apple.com, then make the profile again. `asuka build --platform ios` (and
 `--platform mac`) says which a profile lacks.
 
@@ -367,8 +368,9 @@ In CI, `--notarize env` takes `ASUKA_APPLE_ID`, `ASUKA_APPLE_PASSWORD` (an
 app-specific password) and `ASUKA_TEAM_ID` from the environment instead
 of a keychain profile.
 
-Push (`asuka/sdk/push`), Sign in with Apple (`asuka/sdk/appleauth`) and App Attest
-(`asuka/sdk/integrity`) need entitlements only a provisioning profile grants.
+Push (`asuka/sdk/push`), Sign in with Apple (`asuka/sdk/appleauth`), App Attest
+(`asuka/sdk/integrity`) and iCloud (`asuka/sdk/icloud`) need entitlements
+only a provisioning profile grants.
 Make a macOS Developer ID profile for the app's ID at developer.apple.com
 (Profiles), with those capabilities on for the ID, and download it:
 

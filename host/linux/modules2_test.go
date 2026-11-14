@@ -82,6 +82,7 @@ func TestModulesLinuxHas(t *testing.T) {
 		"power":        {"current", "next", "stop", "idle"},
 		"dialog":       {"open", "save", "folder"},
 		"files":        {"pick"},
+		"icloud":       {"account", "kvGet", "kvSet", "kvDelete", "kvAll", "kvSync", "container", "files", "watch", "unwatch", "download", "evict", "read", "write", "delete", "move", "moveIn", "moveOut", "versions", "resolve", "link", "next", "stop"},
 		"imageEdit":    {"edit", "size", "videoFrame"},
 		"integrity":    {"supported", "generateKey", "attestKey", "assert", "prepare", "token"},
 		"js":           {"eval"},

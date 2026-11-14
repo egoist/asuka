@@ -50,6 +50,8 @@ func TestSystemModulesThere(t *testing.T) {
 			"widget":       {"set"},
 			"liveActivity": {"enabled", "start", "update", "end", "running", "next", "stop"},
 			"purchase":     {"available", "products", "buy", "finish", "entitlements", "restore", "status", "manage", "refund", "redeem", "storefront", "next", "stop"},
+			"icloud": {"account", "kvGet", "kvSet", "kvDelete", "kvAll", "kvSync", "container", "files", "watch", "unwatch",
+				"download", "evict", "read", "write", "delete", "move", "moveIn", "moveOut", "versions", "resolve", "link", "next", "stop"},
 			"nfc":          {"state", "nextState", "stopState", "settings", "start", "next", "restart", "alert", "stop", "read", "write", "lock", "status", "transceive", "classic", "nextOpened", "stopOpened"},
 			"splash":       {"hold", "hide"},
 			"screen":       {"lock", "bars", "preventCapture", "screenshot", "stopScreenshots"},
@@ -187,6 +189,13 @@ func TestScreenAndOthers(t *testing.T) {
 		}
 		if _, err, _ := callNow(t, h, "purchase", "products", []byte(`{"items":[{"id":"pro","kind":"nonConsumable"}]}`)); !strings.HasPrefix(errText(err), "not available") {
 			t.Errorf("purchase.products: %v", err)
+		}
+		// Nor iCloud.
+		if _, err, _ := callNow(t, h, "icloud", "account", nil); !strings.HasPrefix(errText(err), "not available") {
+			t.Errorf("icloud.account: %v", err)
+		}
+		if _, err, _ := callNow(t, h, "icloud", "stop", nil); err != nil {
+			t.Errorf("icloud.stop: %v", err)
 		}
 		if b, err, _ := callNow(t, h, "nfc", "state", nil); err != nil || string(b) != `{"supported":false,"enabled":false}` {
 			t.Errorf("nfc.state: %s, %v", b, err)

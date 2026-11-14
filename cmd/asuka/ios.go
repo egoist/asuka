@@ -99,6 +99,8 @@ func loadApp(dir string) (*goApp, error) {
 	}
 	deps, _ := exec.Command("go", "-C", abs, "list", "-deps", ".").Output()
 	cfg.permissionsFor(strings.Fields(string(deps)))
+	cfg.displayName = app.displayName()
+	cfg.useICloud(abs, ".", strings.Fields(string(deps)))
 	warnCatalogsUnused(cfg, strings.Fields(string(deps)))
 	warnDevLang(cfg)
 	warnFrozenMessages(cfg, f[1])
@@ -439,6 +441,10 @@ var iosFeatures = []struct{ flag, symbol string }{
 	{"ASUKA_COMPOSE", "github.com/egoist/asuka/sdk/compose.Mail"},
 	{"ASUKA_COMPOSE", "github.com/egoist/asuka/sdk/compose.Message"},
 	{"ASUKA_COMPOSE", "github.com/egoist/asuka/sdk/compose.Check"},
+	// asuka/sdk/icloud: every call goes through one of these (its
+	// entitlements are from what the app calls: useICloud).
+	{"ASUKA_ICLOUD", "github.com/egoist/asuka/sdk/icloud.call"},
+	{"ASUKA_ICLOUD", "github.com/egoist/asuka/sdk/icloud.post"},
 	// Core Bluetooth: every call of asuka/sdk/bluetooth goes through one of these.
 	{"ASUKA_BLUETOOTH", "github.com/egoist/asuka/sdk/bluetooth.call"},
 	{"ASUKA_BLUETOOTH", "github.com/egoist/asuka/sdk/bluetooth.send"},
@@ -775,7 +781,7 @@ func simulatorEntitlements(work string, cfg *appConfig) ([]string, error) {
 		m["com.apple.security.application-groups"] = []string{g}
 	}
 	for k, v := range cfg.entitlements {
-		m[k] = v
+		m[k] = iCloudTeam(v, firstOf(cfg.IOS.Team, "ASUKASIMULA"))
 	}
 	if cfg.IOS.StoreKit != "" {
 		// storekitd takes a StoreKit configuration only for an app

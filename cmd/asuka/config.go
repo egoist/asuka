@@ -180,6 +180,20 @@ type appConfig struct {
 	ApplePay struct {
 		MerchantIDs []string `json:"merchantIds"`
 	} `json:"applePay"`
+	// ICloud is asuka/sdk/icloud's (icloud.go): Containers are the app's
+	// iCloud containers, the first its default (default iCloud.<id>);
+	// DriveName is the first one's folder in iCloud Drive (default: the
+	// app's name), which DriveHidden leaves out of iCloud Drive.
+	ICloud struct {
+		Containers  []string `json:"containers"`
+		DriveName   string   `json:"driveName"`
+		DriveHidden bool     `json:"driveHidden"`
+	} `json:"icloud"`
+	// icloudKV, icloudDocs: the app's Go code calls asuka/sdk/icloud's
+	// key-value store, its documents (useICloud). displayName is the
+	// app's name (loadApp), its iCloud Drive folder's.
+	icloudKV, icloudDocs bool
+	displayName          string
 	// shareSheet: the app's Go code calls app.ShareSheet (its archive has
 	// it, sheetSymbol): the share target shows the app's sheet.
 	shareSheet bool
@@ -645,6 +659,9 @@ var featurePermissions = []struct {
 var featureMacSwift = map[string][]string{
 	// StoreKit 2 is Swift's alone.
 	"github.com/egoist/asuka/sdk/purchase": {"ASUKA_PURCHASE"},
+	// NSMetadataQuery's and NSFileCoordinator's blocks, the store's
+	// notifications: the iOS host's Swift.
+	icloudPkg: {"ASUKA_ICLOUD"},
 }
 
 // locationSymbols are asuka/sdk/location's functions that need more of

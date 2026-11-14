@@ -61,6 +61,7 @@ Asuka 需要 Go 1.26 或更高版本。应用可运行在 iOS 16、Android 13（
 - [应用内购买](purchases.md)：通过 App Store、Google Play 和 Microsoft Store 销售消耗型、非消耗型商品和订阅，处理交易、恢复购买、在服务器上验证，以及测试。
 - [NFC 标签](nfc.md)：读写标签上的 NDEF 消息、标签的 ID 和原始命令、iOS 的系统面板与 Android 的读卡器模式、Web NFC，以及能打开应用的标签。
 - [蓝牙](bluetooth.md)：低功耗蓝牙设备的扫描或选择、连接、读写和订阅；应用作为外围设备进行广播和提供服务；后台运行；以及各平台上的情况。
+- [iCloud](icloud.md)：跟随用户同步到每台设备的键值存储，以及应用在 iCloud Drive 中的文档：列出、读写、下载和移除本地副本、解决冲突；支持 iOS 和 macOS。
 - [桌面端](desktop.md)：托盘图标和程序坞（Dock）菜单、后台运行的应用、全局快捷键、文件对话框和文件管理器、打开文件、单实例、退出、最近文档、开机启动、更新、显示器、电源，以及应用图标上的进度。
 - [插件](plugins.md)：为各平台预先构建好、随应用一起发布的原生库包，SQLite 就是其中之一。
 - [原生代码](native.md)：原生包——在 Go 里声明带类型的模块和视图，在各平台自己的项目里实现：iOS 和 macOS 用 Swift，Android 用 Kotlin，Web 用 JavaScript，Windows 和 Linux 用 Go。

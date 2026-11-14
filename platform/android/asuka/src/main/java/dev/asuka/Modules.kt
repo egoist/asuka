@@ -230,6 +230,11 @@ private fun AsukaRuntime.registerBuiltinModules() {
         "available" to { _, reply -> reply(Result.success(byteArrayOf(0))) },
         "*" to { _, reply -> reply(Result.failure(Exception("not available"))) },
     )
+    // asuka/sdk/icloud: iCloud is Apple's.
+    modules["icloud"] = mapOf(
+        "stop" to { _, reply -> reply(Result.success(ByteArray(0))) },
+        "*" to { _, reply -> reply(Result.failure(Exception("not available: iCloud is Apple's"))) },
+    )
     // Without its module, a package's calls fail with what's missing.
     for ((m, pkg) in listOf("review" to "review", "integrity" to "integrity", "ageRange" to "agerange")) {
         modules[m] = mapOf("*" to { _, reply -> reply(Result.failure(Exception("asuka/$pkg isn't in this build"))) })
