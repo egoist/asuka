@@ -95,40 +95,44 @@ func (t *placeTable) closure(fr runtime.Frame) string {
 	if f == nil {
 		return ""
 	}
-	// The function it's in: the longest declared one its name starts with.
-	decl := ""
+	var pick, numbered *placeLit
+	n, numberedCount := 0, 0
 	for _, d := range f.funcs {
-		if len(d) > len(decl) && len(fr.Function) > len(d) && strings.HasPrefix(fr.Function, d) &&
-			(fr.Function[len(d)] == '.' || fr.Function[len(d)] == '-') {
-			decl = d
-		}
-	}
-	if decl == "" {
-		return ""
-	}
-	depth, num := closureDepth(fr.Function[len(decl):])
-	if depth == 0 {
-		return ""
-	}
-	var pick *placeLit
-	n := 0
-	for i := range f.lits {
-		l := &f.lits[i]
-		if l.depth != depth || fr.Line < l.start || fr.Line > l.end {
+		// Inlining can put the caller before the declaring function:
+		// main.main.func1.Screen.1. Match Screen's suffix, but only to
+		// Screen's own literals at the frame's source location below.
+		_, local, _ := strings.Cut(d[strings.LastIndexByte(d, '/')+1:], ".")
+		i := strings.LastIndex(fr.Function, "."+local)
+		if i < 0 {
 			continue
 		}
-		n++
-		if n == 1 || l.num == num {
+		end := i + 1 + len(local)
+		depth, num := closureDepth(fr.Function[end:])
+		if depth == 0 {
+			continue
+		}
+		for i := range f.lits {
+			l := &f.lits[i]
+			if l.depth != depth || fr.Line < l.start || fr.Line > l.end || !strings.HasPrefix(l.name, d+">") {
+				continue
+			}
+			n++
 			pick = l
+			// A cloned literal's number belongs to the inlining caller,
+			// so it can't distinguish siblings on the same source line.
+			if fr.Function[:end] == d && l.num == num {
+				numbered = l
+				numberedCount++
+			}
 		}
 	}
-	if n > 1 && pick.num != num {
-		return ""
+	if n == 1 {
+		return pick.name
 	}
-	if pick == nil {
-		return ""
+	if numberedCount == 1 {
+		return numbered.name
 	}
-	return pick.name
+	return ""
 }
 
 // site names what the signal made at fr is for ("" when nothing does),
@@ -157,11 +161,28 @@ func (t *placeTable) site(fr runtime.Frame) (name, reset string) {
 // range-over-func loop's body); a loop's body is -rangeN, not a literal:
 // .func2.func1, .1, -range1.func1, -range1-range1.1, .func1-range1.func1.
 func closureDepth(rest string) (depth, num int) {
+	if rest == "" || rest[0] != '.' && rest[0] != '-' {
+		return 0, 0
+	}
 	for seg := range strings.SplitSeq(rest, ".") {
-		base, _, _ := strings.Cut(seg, "-")
-		if n, ok := number(strings.TrimPrefix(base, "func")); ok {
+		base, ranges, _ := strings.Cut(seg, "-")
+		if base != "" {
+			n, ok := number(strings.TrimPrefix(base, "func"))
+			if !ok {
+				return 0, 0 // a different declaration or a wrapper
+			}
 			depth++
 			num = n
+		}
+		for ranges != "" {
+			var r string
+			r, ranges, _ = strings.Cut(ranges, "-")
+			if !strings.HasPrefix(r, "range") {
+				return 0, 0
+			}
+			if _, ok := number(strings.TrimPrefix(r, "range")); !ok {
+				return 0, 0
+			}
 		}
 	}
 	return depth, num

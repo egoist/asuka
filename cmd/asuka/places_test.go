@@ -67,11 +67,10 @@ func TestKeptStateSurvivesEditsAroundIt(t *testing.T) {
 	if sum, err := os.ReadFile(filepath.Join(repo, "go.sum")); err == nil {
 		os.WriteFile(filepath.Join(dir, "go.sum"), sum, 0o644)
 	}
-	t.Setenv("GOFLAGS", "-mod=mod") // go list's too: the module's requirements are the replaced Asuka's
+	t.Setenv("GOFLAGS", strings.TrimSpace(os.Getenv("GOFLAGS")+" -mod=mod")) // go list's too: the module's requirements are the replaced Asuka's
 	app := &goApp{dir: dir, moduleDir: dir}
 	places := newDevPlaces(app, "", "")
-	state := filepath.Join(dir, "state.json")
-	run := func(top, before string, env ...string) string {
+	run := func(t *testing.T, state, top, before string, env ...string) string {
 		t.Helper()
 		src := strings.Replace(strings.Replace(keepApp, "%s", top, 1), "%s", before, 1)
 		if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o644); err != nil {
@@ -96,21 +95,33 @@ func TestKeptStateSurvivesEditsAroundIt(t *testing.T) {
 		}
 		return strings.TrimSpace(string(out))
 	}
-	if got := run("", "", "SET=1"); got != `7 "hi"` {
-		t.Fatal(got)
-	}
-	// A handler before it, and an int signal before the int it keeps.
-	before := "\t\tonTap := func() {}\n\t\t_ = onTap\n\t\tother := signal.New(5)\n\t\t_ = other\n"
-	if got := run("", before); got != `7 "hi"` {
-		t.Fatalf("after an edit before them: %s", got)
-	}
-	// A closure at the package's level too (numbered under init).
-	if got := run("\nvar hook = func() {}\n", before); got != `7 "hi"` {
-		t.Fatalf("after a package's closure: %s", got)
-	}
-	// A file that says //asuka:reset starts over when edited.
-	if got := run("\n//asuka:reset\n", before); got != `0 ""` {
-		t.Fatalf("a file that resets: %s", got)
+	handler := "\t\tonTap := func() {}\n\t\t_ = onTap\n"
+	other := "\t\tother := signal.New(5)\n\t\t_ = other\n"
+	for _, edit := range []struct{ name, before string }{
+		{"unchanged", ""},
+		{"handler", handler},
+		{"signal", other},
+		{"handler_and_signal", handler + other},
+	} {
+		t.Run(edit.name, func(t *testing.T) {
+			state := filepath.Join(t.TempDir(), "state.json")
+			if got := run(t, state, "", "", "SET=1"); got != `7 "hi"` {
+				t.Fatal(got)
+			}
+			// Adding just a signal can change whether Screen's body is
+			// inlined: main.Screen.func1 becomes main.main.func1.Screen.1.
+			if got := run(t, state, "", edit.before); got != `7 "hi"` {
+				t.Fatalf("after an edit before them: %s", got)
+			}
+			// A closure at the package's level too (numbered under init).
+			if got := run(t, state, "\nvar hook = func() {}\n", edit.before); got != `7 "hi"` {
+				t.Fatalf("after a package's closure: %s", got)
+			}
+			// A file that says //asuka:reset starts over when edited.
+			if got := run(t, state, "\n//asuka:reset\n", edit.before); got != `0 ""` {
+				t.Fatalf("a file that resets: %s", got)
+			}
+		})
 	}
 }
 
