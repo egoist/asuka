@@ -647,8 +647,17 @@ func (h *Host) present(n *node) {
 		h.byView[content] = n
 		n.nav.window = w
 		n.presented = true
-		h.reportScreen(n, size)
-		Send(over.window, "beginSheet:completionHandler:", uintptr(w), 0)
+		// It shows once it's laid out at its size: the core hears of the
+		// size once the batch is applied, and lays it out then. Shown
+		// before, it slid in empty (laid out at its window's size), a
+		// field's focus ring at its corner.
+		h.afterCore(func() {
+			if h.nodes[n.id] != n || n.dying || n.nav.window != w {
+				return
+			}
+			h.reportScreen(n, size)
+			Send(over.window, "beginSheet:completionHandler:", uintptr(w), 0)
+		})
 	case ops.KindWindow:
 		h.openWindow(n)
 	case ops.KindPopover:
