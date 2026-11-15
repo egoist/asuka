@@ -271,6 +271,13 @@ func registerTarget() {
 		Method("appMenuItem:", func(self ID, _ SEL, item ID) { h().appMenuItem(item) }),
 		Method("validateMenuItem:", func(self ID, _ SEL, item ID) bool { return h().validateMenuItem(item) }),
 		Method("boundsChanged:", func(self ID, _ SEL, n ID) { h().scrolled(Send(n, "object")) }),
+		Method("detailResized:", func(self ID, _ SEL, n ID) {
+			if t := h(); t != nil {
+				if s := t.byView[Send(n, "object")]; s != nil {
+					t.layoutScreens(s)
+				}
+			}
+		}),
 		Method("refreshScrolled:", func(self ID, _ SEL, n ID) { h().refreshScrolled(Send(n, "object")) }),
 		Method("refreshScrollEnded:", func(self ID, _ SEL, n ID) { h().refreshScrollEnded(Send(n, "object")) }),
 		Method("liveScrollEnded:", func(self ID, _ SEL, n ID) { h().settlePage(Send(n, "object")) }),

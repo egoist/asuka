@@ -100,6 +100,7 @@ type node struct {
 	pickerLabel    string // a Picker's Label
 	min, max       float64
 	scroll         bool // observes its scroll position
+	observed       bool // a SplitView's detail: observes its frame
 	dying          bool
 	interceptBack  bool // ui.OnBack: going back asks the core (Back)
 	presented      bool
@@ -541,6 +542,9 @@ func (h *Host) release(n *node) {
 			center := Send(Class("NSNotificationCenter"), "defaultCenter")
 			Send(center, "removeObserver:name:object:", uintptr(h.target), 0, uintptr(clip))
 			delete(h.lists, clip) // a list's: gone with its view
+		}
+		if n.observed {
+			Send(Send(Class("NSNotificationCenter"), "defaultCenter"), "removeObserver:name:object:", uintptr(h.target), 0, uintptr(n.view))
 		}
 		Release(n.view)
 		n.view = 0

@@ -313,5 +313,12 @@ func (h *Host) insertSplit(p, c *node, index int) bool {
 	MsgSetRect(c.view, selSetFrame, b)
 	Send(c.view, "setAutoresizingMask:", 18) // width and height follow
 	Send(p.split.detail, "addSubview:", uintptr(c.view))
+	// The content item sizes the Stack after the window's resize is
+	// reported (a full-size content view's split lays out late), so its
+	// screens follow its own frame.
+	Send(c.view, "setPostsFrameChangedNotifications:", 1)
+	Send(Send(Class("NSNotificationCenter"), "defaultCenter"), "addObserver:selector:name:object:", uintptr(h.target),
+		uintptr(Sel("detailResized:")), uintptr(String("NSViewFrameDidChangeNotification")), uintptr(c.view))
+	c.observed = true
 	return true
 }
