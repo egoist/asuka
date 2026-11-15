@@ -783,8 +783,10 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             (nodes[id]?.props?.get(AsukaProp.TextField.ACCESSORY) as? Long)?.let { a ->
                 nodes[a.toInt()]?.accessory?.let { if (focused) it.show(v) else it.hide() }
             }
-            if (focused) emit(id, AsukaEventKind.FOCUS) { AsukaEvents.focus(id) }
-            else emit(id, AsukaEventKind.BLUR) { AsukaEvents.blur(id) }
+            if (focused) {
+                emit(id, AsukaEventKind.FOCUS) { AsukaEvents.focus(id) }
+                v.post { revealFocused() } // the keyboard's already up: another field
+            } else emit(id, AsukaEventKind.BLUR) { AsukaEvents.blur(id) }
         }
     }
 

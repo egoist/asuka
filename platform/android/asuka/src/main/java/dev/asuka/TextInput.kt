@@ -225,3 +225,42 @@ private fun AsukaRuntime.receivePasted(id: Int, c: ContentInfoCompat, hint: Stri
         Handler(Looper.getMainLooper()).post { emit(id, AsukaEventKind.PASTED) { AsukaEvents.pasted(id, bytes) } }
     }
 }
+
+/**
+ * The focused field stays above the keyboard: the Scroll holding it
+ * scrolls it into sight, with a little room, once the keyboard is up and
+ * whatever holds the field has made room for it (a SafeArea's padding).
+ * A field taller than the room left shows its caret's line. Android
+ * scrolls a focused field into sight only as its scroll view shrinks; a
+ * page that scrolls under the keyboard doesn't.
+ */
+fun AsukaRuntime.revealFocused() {
+    val a = activity ?: return
+    val field = a.currentFocus as? EditText ?: return
+    val keyboard = a.keyboardPx
+    if (keyboard <= 0 || !field.isShown) return
+    var p = field.parent
+    while (p != null && p !is androidx.core.widget.NestedScrollView) p = p.parent
+    val scroll = p as? androidx.core.widget.NestedScrollView ?: return
+    val at = IntArray(2).also { field.getLocationInWindow(it) }
+    val box = IntArray(2).also { scroll.getLocationInWindow(it) }
+    val room = Math.round(8 * density)
+    val top = box[1] + room
+    val bottom = minOf(box[1] + scroll.height, a.window.decorView.height - keyboard) - room
+    if (bottom <= top) return
+    // What to show, in the window: the field, or its caret's line.
+    var y0 = at[1]
+    var y1 = at[1] + field.height
+    val layout = field.layout
+    if (y1 - y0 > bottom - top && layout != null) {
+        val line = layout.getLineForOffset(maxOf(field.selectionEnd, 0))
+        y0 = at[1] + field.totalPaddingTop - field.scrollY + layout.getLineTop(line)
+        y1 = at[1] + field.totalPaddingTop - field.scrollY + layout.getLineBottom(line)
+    }
+    val dy = when {
+        y1 > bottom -> y1 - bottom
+        y0 < top -> y0 - top
+        else -> 0
+    }
+    if (dy != 0) scroll.smoothScrollBy(0, dy)
+}

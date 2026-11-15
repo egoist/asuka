@@ -74,6 +74,8 @@ open class AsukaActivity : AppCompatActivity() {
             keyboard = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
             sendEnvironment()
             runtime.insetsChanged()
+            // Once what the keyboard moved is laid out.
+            frame.post { runtime.revealFocused() }
             WindowInsetsCompat.CONSUMED
         }
         // Follow the keyboard frame by frame as it animates.
@@ -83,6 +85,10 @@ open class AsukaActivity : AppCompatActivity() {
                 sendEnvironment()
                 runtime.reportScreens()
                 return insets
+            }
+
+            override fun onEnd(animation: WindowInsetsAnimationCompat) {
+                if (animation.typeMask and WindowInsetsCompat.Type.ime() != 0) frame.post { runtime.revealFocused() }
             }
         })
         frame.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or_, ob ->

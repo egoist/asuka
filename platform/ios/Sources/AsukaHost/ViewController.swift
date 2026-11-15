@@ -160,6 +160,8 @@ public final class AsukaViewController: UIViewController {
         UIView.animate(withDuration: duration, delay: 0, options: UIView.AnimationOptions(rawValue: curve << 16)) {
             self.sendEnvironment()
             AsukaRuntime.shared.reportScreens()
+        } completion: { _ in
+            AsukaRuntime.shared.revealFocused()
         }
     }
 

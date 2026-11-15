@@ -932,6 +932,43 @@ extension AsukaRuntime: UITextFieldDelegate {
         guard let t = textField as? AsukaTextField else { return }
         let id = t.asukaID
         emit(id, .focus) { AsukaEvents.focus(id) }
+        // Once the keyboard's up and whatever holds this has made room for it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in self?.revealFocused() }
+    }
+
+    /// Keeps the focused field above the keyboard: a text area its caret.
+    func revealFocused() {
+        for n in nodes.values where n.view.isFirstResponder {
+            if let t = n.view as? AsukaTextView { t.revealCaret() } else { reveal(n.view, n.view.bounds, animated: true) }
+            return
+        }
+    }
+
+    /// Scrolls the scroll view holding v so rect (in v's coordinates)
+    /// shows, with room around it, above the keyboard: the scroll view's
+    /// own insets leave the keyboard out when it scrolls under it (a page
+    /// in a Scroll, padded by a SafeArea inside).
+    func reveal(_ v: UIView, _ rect: CGRect, animated: Bool, room: CGFloat = 14) {
+        var holder = v.superview
+        while let h = holder, !((h as? UIScrollView)?.isScrollEnabled ?? false) { holder = h.superview }
+        guard let scroll = holder as? UIScrollView, !rect.isNull, !rect.isInfinite, rect.origin.y.isFinite else { return }
+        let r = v.convert(rect, to: scroll)
+        let inset = scroll.adjustedContentInset
+        var top = scroll.bounds.minY + inset.top
+        var bottom = scroll.bounds.maxY - inset.bottom
+        if let c = controller, c.keyboard > 0 {
+            bottom = min(bottom, c.view.convert(CGPoint(x: 0, y: c.view.bounds.maxY - c.keyboard), to: scroll).y)
+        }
+        top += room
+        bottom -= room
+        guard bottom > top else { return }
+        var dy: CGFloat = 0
+        if r.maxY > bottom { dy = r.maxY - bottom }
+        if r.minY - dy < top { dy = r.minY - top } // taller than the room: its top
+        guard dy != 0 else { return }
+        let most = max(-inset.top, scroll.contentSize.height - scroll.bounds.height + inset.bottom)
+        let y = min(max(scroll.contentOffset.y + dy, -inset.top), most)
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: y), animated: animated)
     }
 
     public func textFieldDidChangeSelection(_ textField: UITextField) {

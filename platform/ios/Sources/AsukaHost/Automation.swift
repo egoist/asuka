@@ -21,7 +21,8 @@ import AsukaOps
 /// view's accessibility label, a line each, in creation order) to
 /// tmp/asuka-dump.txt; `back` pops the shown stack's top screen, as its
 /// back button does; `tab <title>` selects the tab with that title, as
-/// tapping it does.
+/// tapping it does; `focused` writes where the focused field and the
+/// keyboard are to tmp/asuka-focused.txt.
 @MainActor enum AsukaAutomation {
     static var token: Int32 = 0
 
@@ -48,6 +49,7 @@ import AsukaOps
             case "dump": dump()
             case "back": back()
             case "tab": tab(arg)
+            case "focused": focused()
             default: break
             }
         }
@@ -98,8 +100,26 @@ import AsukaOps
             }
             if let text, !text.isEmpty { lines.append(text) }
         }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("asuka-dump.txt")
-        // Written whole, then moved: a reader never sees half of it.
+        write(lines, to: "asuka-dump.txt")
+    }
+
+    /// The focused field's top and bottom, the keyboard's top and the
+    /// window's height, in the window's points (the keyboard's top is the
+    /// window's bottom without one): `field <top> <bottom> keyboard <top>
+    /// window <height>`, or `none`.
+    static func focused() {
+        var line = "none"
+        if let v = rt.nodes.values.first(where: { $0.view.isFirstResponder })?.view, let w = v.window, let c = rt.controller {
+            let f = v.convert(v.bounds, to: w)
+            let kb = c.view.convert(CGPoint(x: 0, y: c.view.bounds.maxY - c.keyboard), to: w).y
+            line = String(format: "field %.0f %.0f keyboard %.0f window %.0f", f.minY, f.maxY, kb, w.bounds.height)
+        }
+        write([line], to: "asuka-focused.txt")
+    }
+
+    /// Lines to a file in tmp, written whole, then moved: a reader never sees half of it.
+    static func write(_ lines: [String], to name: String) {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         let tmp = url.appendingPathExtension("part")
         try? (lines.joined(separator: "\n") + "\n").write(to: tmp, atomically: false, encoding: .utf8)
         _ = try? FileManager.default.replaceItemAt(url, withItemAt: tmp)
