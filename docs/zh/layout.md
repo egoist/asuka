@@ -114,6 +114,8 @@ ui.Column(ui.Style{Padding: ui.Symmetric(8, 16), Margin: ui.Edges{Top: 24}},
 )
 ```
 
+在 iOS、Android 和 Web 上，`Button` 的 `Padding` 会像 CSS 那样取代平台自带的内边距：`ui.Style{MinHeight: ui.Pt(48), Padding: ui.Symmetric(10, 20)}` 在这些平台上高 48 点，和同样样式的 `View` 一样。没有设置 `Padding` 的按钮保留平台自带的内边距，只设置了边框也是如此。在桌面平台上，按钮的内边距加在原生按钮外框的外面。
+
 在从右到左书写的语言里，`Row` 从右侧开始排列，`Justify` 和 `Align` 也随之从右侧算起，文字的行首在右边。`Left` 和 `Right` 则和 CSS 一样，说左就是左、说右就是右。如果想把间距放在文字开始或结束的那一侧，请用 `Start` 或 `End`：
 
 ```go

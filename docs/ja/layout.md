@@ -114,6 +114,8 @@ ui.Column(ui.Style{Padding: ui.Symmetric(8, 16), Margin: ui.Edges{Top: 24}},
 )
 ```
 
+iOS、Android、Web では、`Button` の `Padding` は CSS と同じようにプラットフォーム標準の余白に置き換わります。`ui.Style{MinHeight: ui.Pt(48), Padding: ui.Symmetric(10, 20)}` はこれらのプラットフォームで高さ 48 ポイントになり、同じスタイルの `View` と同じです。`Padding` を指定しないボタンはプラットフォーム標準の余白のままで、枠線だけを指定した場合も同じです。デスクトップでは、ボタンの余白はネイティブのボタンの外枠の外側に付きます。
+
 右から左に書く言語では、`Row` は右から並び、`Justify` と `Align` もそれに従います。テキストの行が始まる側も右になります。一方、`Left` と `Right` は CSS と同じく、書かれたとおりの側を指します。テキストが始まる側や終わる側に余白を置きたいときは、`Start` や `End` を使います。
 
 ```go

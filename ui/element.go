@@ -423,6 +423,11 @@ func (e *element) sendInsets() {
 		return
 	}
 	in := e.box.ContentInsets()
+	if p := &e.box.Style.Padding; e.kind == ops.KindButton && p.Top.V == 0 && p.Right.V == 0 && p.Bottom.V == 0 && p.Left.V == 0 {
+		// A button's inset replaces its own padding; a border alone
+		// leaves that padding, as CSS's does, and its title is centered.
+		in = layout.Rect[float32]{}
+	}
 	if c := [4]float32{in.Top, in.Right, in.Bottom, in.Left}; c != e.insets {
 		e.insets = c
 		e.r.batch.SetEdges(e.id, ops.PropContentInset, c[0], c[1], c[2], c[3])

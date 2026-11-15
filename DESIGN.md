@@ -1085,7 +1085,9 @@ alone. A button's replace its own padding, as CSS's do (UIButton's
 configuration insets, Material's insets, minimum size and padding, the
 web button's padding), so it's sent with the style, before the host
 measures, and again with the frame when a percentage resolves
-differently.
+differently. A button whose style sets no padding sends none, a border
+alone included: it keeps its own padding, and its title is centered.
+The desktop hosts keep their bezels' own padding inside the inset.
 
 ### Lifecycle and state
 

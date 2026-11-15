@@ -548,6 +548,7 @@ func TestPaddedButtonGetsItsInsetBeforeItsMeasured(t *testing.T) {
 				return ui.Style{Padding: ui.Symmetric(pad.Get(), 22)}
 			})}),
 			ui.Button(ui.ButtonProps{Title: ui.Val("Plain")}),
+			ui.Button(ui.ButtonProps{Title: ui.Val("Bordered"), Style: ui.Style{BorderWidth: 2}}),
 		)
 	})
 	defer r.Dispose()
@@ -556,6 +557,14 @@ func TestPaddedButtonGetsItsInsetBeforeItsMeasured(t *testing.T) {
 	}
 	if got := seen["Plain"]; got != ([4]float32{}) {
 		t.Fatalf("a button without padding measured with the inset %v", got)
+	}
+	// A border alone keeps the platform's padding, as CSS's does: the
+	// host measures the button whole, and the core adds the border.
+	if got := seen["Bordered"]; got != ([4]float32{}) {
+		t.Fatalf("a bordered button without padding measured with the inset %v", got)
+	}
+	if f := h.One(ops.KindButton, "Bordered").Frame; f[3] != 24 {
+		t.Fatalf("frame %v, want 24 high: its measure and its border", f)
 	}
 	if f := h.One(ops.KindButton, "Padded").Frame; f[3] != 40 {
 		t.Fatalf("frame %v, want 40 high: its content and its padding", f)

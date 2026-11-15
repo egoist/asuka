@@ -156,6 +156,12 @@ ui.Column(ui.Style{Padding: ui.Symmetric(8, 16), Margin: ui.Edges{Top: 24}},
 )
 ```
 
+A `Button`'s `Padding` replaces the platform's own, as CSS's does, on
+iOS, Android and the web: `ui.Style{MinHeight: ui.Pt(48), Padding:
+ui.Symmetric(10, 20)}` is 48 points high there, as the same style on a
+`View` is. A button without `Padding` keeps the platform's, a border too.
+On the desktop, a button's padding is around its native bezel.
+
 In a language written right to left, a `Row` runs from the right, `Justify`
 and `Align` follow it, and the side a line of text starts on is the right.
 `Left` and `Right` stay where they say, as in CSS. To put a space on the side
