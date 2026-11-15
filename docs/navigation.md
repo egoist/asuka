@@ -512,7 +512,12 @@ return ui.Column(nil,
   medium and lets the user drag it up. With none, it's large. When the
   keyboard shows, a sheet that can be large goes large. On a desktop a
   medium-only sheet is half the window's height, and any other most of
-  it; the user resizes a sheet window on a Mac.
+  it; the user resizes a sheet window on a Mac. `ui.DetentFit` makes it
+  as tall as its content instead, as a Mac's sheets are: for a form or a
+  confirmation, whose content has a height of its own. It follows the
+  content as it changes, up to the most a sheet may be, beyond which a
+  `Scroll` in it scrolls; the user doesn't resize it. Only macOS has
+  such a sheet for now; elsewhere it's large.
 - `Grabber` shows the handle at its top (iOS, Android, and the web's
   bottom sheet).
 - `Content` is built when it opens and disposed when it closes, so state

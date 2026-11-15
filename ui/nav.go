@@ -700,7 +700,19 @@ type Detent int
 const (
 	DetentMedium Detent = 1 << iota
 	DetentLarge
+	// DetentFit makes the sheet as tall as its content, at the width the
+	// platform gives a sheet, up to the height it allows (beyond which a
+	// Scroll in it scrolls), following it as it changes: a form's or a
+	// confirmation's, as a Mac's sheets are. The content needs a height
+	// of its own: a Grow with nothing in it to grow from is nothing.
+	// Where the platform has no such sheet (all but macOS for now), it's
+	// DetentLarge.
+	DetentFit
 )
+
+// sheetsFit reports whether the platform's sheets can be as tall as their
+// content (DetentFit).
+func sheetsFit(p PlatformKind) bool { return p == PlatformMacOS }
 
 // SheetProps configures a Sheet.
 type SheetProps struct {
@@ -792,6 +804,7 @@ func showSheet(r *Root, win *WindowHandle, owner *signal.Owner, p SheetProps, ro
 	withRoot(r, func() Node {
 		sheet := newProvider(ops.KindSheet)
 		v.el = sheet
+		sheet.fitSheet = !p.FullScreen && p.Detents&DetentFit != 0 && sheetsFit(r.envV.Platform)
 		sheet.up = win.el()
 		if sheet.up == nil {
 			sheet.up = r.el

@@ -402,6 +402,39 @@ func (h *Host) layoutScreens(n *node) {
 	}
 }
 
+// sheetRoom is the size of a sheet on over: its window's content less a
+// margin, at most 640 wide, or half as tall for a medium sheet. A sheet
+// as tall as its content (DetentFit) is that tall at most.
+func sheetRoom(n *node, over *win) Size {
+	cs := MsgRect(over.content, Sel("bounds")).Size
+	size := Size{Width: min(max(cs.Width-80, 320), 640), Height: max(cs.Height-100, 240)}
+	if n.detents == 1 { // medium only
+		size.Height = max(cs.Height/2, 240)
+	}
+	return size
+}
+
+// fitsContent reports whether n is a sheet as tall as its content
+// (DetentFit), which the core sizes.
+func fitsContent(n *node) bool {
+	return n.kind == ops.KindSheet && n.detents&4 != 0 && !n.nav.full
+}
+
+// fitSheet sizes a sheet as tall as its content to the size the core laid
+// it out at, its top edge kept.
+func (h *Host) fitSheet(n *node, width, height float32) {
+	w := n.nav.window
+	if w == 0 || width <= 0 || height <= 0 {
+		return
+	}
+	f := MsgRect(w, Sel("frame"))
+	top := Point{X: f.Origin.X, Y: f.Origin.Y + f.Size.Height}
+	size := Size{Width: float64(width), Height: float64(height)}
+	MsgSetSize(w, Sel("setContentSize:"), size)
+	MsgPointID(w, Sel("setFrameTopLeftPoint:"), top)
+	MsgSetRect(n.view, selSetFrame, Rect{Size: size})
+}
+
 // layoutNav sizes every host-sized view again (the window resized).
 func (h *Host) layoutNav() {
 	for _, n := range h.nodes {
@@ -415,6 +448,11 @@ func (h *Host) layoutNav() {
 				}
 				b := MsgRect(Send(n.nav.window, "contentView"), Sel("bounds"))
 				MsgSetRect(n.view, selSetFrame, b)
+				if fitsContent(n) {
+					// The room it has, which the core fits it in.
+					h.reportScreen(n, sheetRoom(n, h.onWin(n)))
+					continue
+				}
 				h.reportScreen(n, b.Size)
 			}
 		}
@@ -624,12 +662,14 @@ func (h *Host) present(n *node) {
 			return
 		}
 		over := h.onWin(n)
-		cs := MsgRect(over.content, Sel("bounds")).Size
-		size := Size{Width: min(max(cs.Width-80, 320), 640), Height: max(cs.Height-100, 240)}
-		if n.detents == 1 { // medium only
-			size.Height = max(cs.Height/2, 240)
-		}
+		size := sheetRoom(n, over)
 		style := uint(styleTitled | styleResizable)
+		if fitsContent(n) {
+			// Its height is its content's: the user doesn't resize it. It
+			// opens at its room, which the core fits it in (WindowAction
+			// Fit, fitSheet) before it shows.
+			style = styleTitled
+		}
 		if n.nav.full {
 			// Its size is its window's, so the user doesn't resize it.
 			size, style = coverSize(over.window), styleTitled

@@ -286,7 +286,7 @@ const (
 
 // Sheet props.
 const (
-	// PropSheetDetents: bits: 1 medium, 2 large (0: large).
+	// PropSheetDetents: bits: 1 medium, 2 large, 4 fit: as tall as its content, which the core lays out at the sheet's width and sends with WindowAction Fit (0: large).
 	PropSheetDetents PropID = 64
 	PropSheetGrabber PropID = 65
 	// PropSheetWindow: the window it's declared in: the root's or a Window node's ID. A desktop host presents it on that window, and a key goes on from it to that window's root; a phone's one window takes it and ignores it.

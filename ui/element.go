@@ -114,6 +114,11 @@ type element struct {
 	// lays out at its content's size and tells the host with
 	// WindowAction Fit; fitSent once it has.
 	fitWin, fitSent bool
+	// fitSheet: a sheet as tall as its content (DetentFit), laid out at
+	// the width its environment gives, up to its height (fitRoom, as last
+	// laid out), which the core tells the host with WindowAction Fit.
+	fitSheet bool
+	fitRoom  layout.Size
 	measured        bool       // the host measures its content
 	insets          [4]float32 // a measured view's ContentInset, as last sent
 	laidSize        layout.Size

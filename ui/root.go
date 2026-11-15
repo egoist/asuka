@@ -275,6 +275,10 @@ func (r *Root) layout() {
 			r.layoutFitWindow(e, p)
 			continue
 		}
+		if e.fitSheet {
+			r.layoutFitSheet(e, p)
+			continue
+		}
 		if e.fits {
 			r.layoutFit(e, p)
 			continue
@@ -335,6 +339,33 @@ func (r *Root) layoutFitWindow(e *element, p *layout.Pass) {
 	if mw := e.box.Style.MaxWidth; !mw.IsAuto() && s.W >= mw.V {
 		s = e.box.Layout(layout.Size{W: mw.V, H: layout.MaxContentSpace}, p)
 	}
+	if e.fitSent && s == e.laidSize {
+		return
+	}
+	e.laidSize, e.fitSent = s, true
+	r.batch.CommandArgs(e.id, ops.CmdWindowAction, func(dst []byte) []byte {
+		return ops.AppendWindowAction(dst, ops.WindowActionFit, s.W, s.H)
+	})
+}
+
+// layoutFitSheet lays a sheet as tall as its content (DetentFit) out at
+// the width its environment gives and its content's height there, up to
+// the environment's height (beyond which a Scroll in it scrolls). It sends
+// WindowAction Fit with that size as it changes, in the frames' batch, so
+// the host sizes the sheet as it places the content; the environment
+// stays the room the sheet has, not its size.
+func (r *Root) layoutFitSheet(e *element, p *layout.Pass) {
+	env := e.env.Peek()
+	room := layout.Size{W: env.Width, H: env.Height}
+	if room.W <= 0 || room.H <= 0 || !e.box.Dirty() && e.fitSent && room == e.fitRoom {
+		return
+	}
+	if st := e.box.Style; st.Width != layout.Pt(room.W) || st.Height != layout.Auto || st.MaxHeight != layout.Pt(room.H) {
+		st.Width, st.Height, st.MaxHeight = layout.Pt(room.W), layout.Auto, layout.Pt(room.H)
+		e.box.SetStyle(st)
+	}
+	s := e.box.Layout(layout.Size{W: room.W, H: layout.MaxContentSpace}, p)
+	e.fitRoom = room
 	if e.fitSent && s == e.laidSize {
 		return
 	}

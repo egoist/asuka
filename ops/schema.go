@@ -201,7 +201,7 @@ var Schema = SchemaDef{
 			{Name: "Selected", Type: TInt},
 		}, Doc: "its children are Screens (pages); the user's choice is reported with Selected"},
 		{Name: "Sheet", Props: []PropDef{
-			{Name: "Detents", Type: TInt, Doc: "bits: 1 medium, 2 large (0: large)"},
+			{Name: "Detents", Type: TInt, Doc: "bits: 1 medium, 2 large, 4 fit: as tall as its content, which the core lays out at the sheet's width and sends with WindowAction Fit (0: large)"},
 			{Name: "Grabber", Type: TBool},
 			{Name: "Window", Type: TInt, Doc: "the window it's declared in: the root's or a Window node's ID. A desktop host presents it on that window, and a key goes on from it to that window's root; a phone's one window takes it and ignores it"},
 			{Name: "FullScreen", Type: TBool, Doc: "it covers the whole screen (iOS's full-screen cover, Material's full-screen dialog; a desktop's sheet over all of its window's content, the web's dialog over the viewport), sent before Present: Detents and Grabber don't apply, and no swipe or tap outside dismisses it"},

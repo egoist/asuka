@@ -265,6 +265,10 @@ func (h *Host) nodeWin(n *node) *win {
 func (h *Host) windowAction(n *node, args []byte) {
 	x := h.nodeWin(n)
 	a, px, py, ok := ops.DecodeWindowAction(args)
+	if ok && a == ops.WindowActionFit && fitsContent(n) {
+		h.fitSheet(n, px, py)
+		return
+	}
 	if x == nil || !ok {
 		return
 	}
