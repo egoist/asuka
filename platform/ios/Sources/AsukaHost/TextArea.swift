@@ -202,8 +202,7 @@ extension AsukaRuntime: UITextViewDelegate {
         guard let t = textView as? AsukaTextView else { return }
         let id = t.asukaID
         emit(id, .focus) { AsukaEvents.focus(id) }
-        // Once the keyboard's up and whatever holds this has made room for it.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak t] in t?.revealCaret() }
+        revealOnFocus()
     }
 
     public func textViewDidEndEditing(_ textView: UITextView) {

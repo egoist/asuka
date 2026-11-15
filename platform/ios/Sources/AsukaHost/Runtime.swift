@@ -932,8 +932,15 @@ extension AsukaRuntime: UITextFieldDelegate {
         guard let t = textField as? AsukaTextField else { return }
         let id = t.asukaID
         emit(id, .focus) { AsukaEvents.focus(id) }
-        // Once the keyboard's up and whatever holds this has made room for it.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in self?.revealFocused() }
+        revealOnFocus()
+    }
+
+    /// A field just focused: a keyboard coming up reveals it once it's up
+    /// and whatever holds the field has made room for it (keyboardWillChange's
+    /// completion); one already up stays, so the field shows now.
+    func revealOnFocus() {
+        guard let c = controller, c.keyboard > 0 else { return }
+        DispatchQueue.main.async { [weak self] in self?.revealFocused() }
     }
 
     /// Keeps the focused field above the keyboard: a text area its caret.
