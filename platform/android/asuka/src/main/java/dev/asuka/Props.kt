@@ -8,6 +8,7 @@ import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.TextView
@@ -445,7 +446,9 @@ fun AsukaRuntime.propString(id: Int, prop: Int, v: String) {
     n.props[prop] = v
     val view = n.view
     when (prop) {
-        AsukaProp.A11Y_LABEL -> view.contentDescription = v
+        // A field's is its node's hint (AsukaEditText): told it changed.
+        AsukaProp.A11Y_LABEL -> if (view is AsukaEditText) view.sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+        else view.contentDescription = v
         // A mouse's hover, or a long press when the view has none of its own.
         AsukaProp.TOOLTIP -> view.tooltipText = v.ifEmpty { null }
         AsukaProp.A11Y_HINT -> ViewCompat.setStateDescription(view, v)

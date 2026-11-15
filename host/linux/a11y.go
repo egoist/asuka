@@ -81,10 +81,27 @@ func setA11yString(w Ptr, prop int32, s string) {
 	ValueUnset(&val)
 }
 
-// updateA11y labels a view: its A11yLabel, a text's text.
+// updateA11y labels the native control, or the view for content we draw.
 func (h *Host) updateA11y(n *node) {
 	if n.widget == 0 {
 		return
+	}
+	if n.kind == ops.KindTextField || n.kind == ops.KindToggle {
+		w := n.inner
+		if n.kind == ops.KindTextField {
+			w = n.field.editable
+			if w == 0 {
+				w = n.field.view
+			}
+		}
+		if w != 0 {
+			if n.a11yLabel == "" {
+				AccessibleResetProperty(w, a11yPropLabel)
+			} else {
+				setA11yString(w, a11yPropLabel, n.a11yLabel)
+			}
+		}
+		return // keep the control's native role; the wrapper has no label
 	}
 	label := n.a11yLabel
 	if label == "" && n.kind == ops.KindText {

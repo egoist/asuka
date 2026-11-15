@@ -45,11 +45,12 @@ ui.Row(ui.Style{Gap: 12},
 ```
 
 - `Button` 会读出自己的标题。只有图标的按钮要设置 `Label`：平台自己只能为少数符号命名，Android 更是只有英文名称。
+- `TextField` 和 `Toggle`（包括复选框）也接受 `Label`，例如 `Label: ui.Val("Email")`。直接给控件设置标签：名称与输入内容、勾选状态各自独立，控件仍可编辑或切换。在 Android 上，输入框的标签放在它的无障碍提示（hint）里，TalkBack 会把它当作输入框的名称朗读。
 - `Image` 的 `Label` 用来描述图片；没有它，图片就被视为装饰。[`asuka/sdk/svg`](../../sdk/svg) 里的图标也同样接受 `Label`。
 - `Symbol` 本身没有标签：如果它有实际含义，就把它包进一个带 `Label` 和 `ui.RoleImage` 的 `View`。
 - `Hint` 在 iOS 上是无障碍提示，会在停顿片刻后朗读（用户可以关闭提示）；在 Android 上是状态描述，会和标签一起朗读。在 macOS 上它是视图的帮助信息（`accessibilityHelp`），在 Windows 上是帮助文本，在 Linux 上是无障碍描述，在 Web 上是 `aria-description`。尽量简短，比如“打开这条消息”。
 
-`Label`、`Hint`、`Role` 和 `Decorative` 只在视图创建时设置一次。如果标签需要变化，那它就得是另一个视图：在 `Show` 或 `Dynamic` 的分支里创建它；或者不给可按压视图设置 `Label`，让屏幕阅读器朗读它里面会变化的文本。
+`Label` 和 `Hint` 接受访问器：固定文本用 `ui.Val("...")`，需要随应用语言等状态变化时用 signal 或 `signal.Func`。`Role` 和 `Decorative` 只在视图创建时设置一次。不给可按压视图设置 `Label`，屏幕阅读器就会朗读它里面的文本。
 
 ## 角色
 

@@ -29,7 +29,7 @@ var (
 
 func TestMain(m *testing.M) {
 	os.Setenv("ASUKA_TEST", "1")
-	os.Setenv("GTK_A11Y", "none")
+	os.Setenv("GTK_A11Y", "test")
 	if err := Load(); err != nil {
 		fmt.Println("skipping the Linux host's tests:", err)
 		os.Exit(0)

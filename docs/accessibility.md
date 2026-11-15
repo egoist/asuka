@@ -73,6 +73,11 @@ ui.Row(ui.Style{Gap: 12},
 - A `Button` reads its title. Give an icon-only button a `Label`: the
   platforms name only a few symbols themselves, and Android only in
   English.
+- A `TextField` or `Toggle` (including a checkbox) takes a `Label` too,
+  for example `Label: ui.Val("Email")`. Put it on the control itself:
+  its name stays separate from its text or checked state, and the control
+  remains editable or toggleable. On Android a text field's label is its
+  accessibility hint, which TalkBack reads as the field's name.
 - An `Image`'s `Label` describes it; without one it's decorative. An
   icon from [`asuka/sdk/svg`](../sdk/svg) takes a `Label` the same way.
 - A `Symbol` has no label of its own: wrap it in a `View` with a
@@ -83,10 +88,10 @@ ui.Row(ui.Style{Gap: 12},
   text, on Linux its accessible description, and on the web its
   `aria-description`. Keep it short: "Opens the message".
 
-`Label`, `Hint`, `Role` and `Decorative` are set once, when the view is
-made. A label that must change is a different view: make it in a
-`Show` or `Dynamic` branch, or leave `Label` out of a pressable view so
-its texts, which do change, are read.
+`Label` and `Hint` take accessors: use `ui.Val("...")` for fixed text,
+or a signal or `signal.Func` to follow changes, including the app's
+language. `Role` and `Decorative` are set once, when the view is made.
+Leave `Label` out of a pressable view to have its texts read instead.
 
 ## Roles
 

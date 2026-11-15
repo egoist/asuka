@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.EditText
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.core.view.ContentInfoCompat
@@ -41,6 +42,13 @@ class AsukaEditText(context: Context, private val rt: AsukaRuntime, private val 
     private var ready = false
 
     init { ready = true }
+
+    // Its Label is TalkBack's hint, as TextInputLayout's is: a content
+    // description would be read in place of what's typed. No label: its placeholder.
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        (rt.nodes[id]?.props?.get(AsukaProp.A11Y_LABEL) as? String)?.takeIf { it.isNotEmpty() }?.let { info.hintText = it }
+    }
 
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
         super.onSelectionChanged(selStart, selEnd)

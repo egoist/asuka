@@ -29,7 +29,9 @@ import java.io.File
  *     adb shell run-as <package> cat files/asuka-dump.txt
  *
  * `fits` writes whether each one-line text fits its view, ends in an
- * ellipsis or is cut off to files/asuka-fits.txt.
+ * ellipsis or is cut off to files/asuka-fits.txt; `a11y` writes what
+ * TalkBack is told about each view (its class, hint and content
+ * description) to files/asuka-a11y.txt.
  *
  * Only in a debuggable app.
  */
@@ -58,6 +60,7 @@ object AsukaAutomation {
             "submit" -> field(rt)?.onEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_DONE)
             "dump" -> dump(rt)
             "fits" -> fits(rt)
+            "a11y" -> a11y(rt)
             "rotate" -> {
                 val deg = arg.substringBefore(' ').toFloatOrNull() ?: return
                 shown(rt).firstOrNull { textOf(it) == arg.substringAfter(' ') }?.let { rotate(it, deg) }
@@ -146,6 +149,12 @@ object AsukaAutomation {
         rt.activity?.window?.decorView?.let(::walk)
         write(rt, "asuka-fits.txt", lines)
     }
+
+    /** What TalkBack is told about each view: its class, hint and content description. */
+    private fun a11y(rt: AsukaRuntime) = write(rt, "asuka-a11y.txt", shown(rt).map { v ->
+        val i = v.createAccessibilityNodeInfo()
+        "${i.className}\t${i.hintText ?: ""}\t${i.contentDescription ?: ""}"
+    })
 
     /** Lines to a file in the app's files, written whole, then moved: a reader never sees half of it. */
     private fun write(rt: AsukaRuntime, name: String, lines: List<String>) {

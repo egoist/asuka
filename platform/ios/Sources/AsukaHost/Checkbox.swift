@@ -12,6 +12,8 @@ final class AsukaCheckbox: UIButton {
 
     convenience init(_ onChange: @escaping (Bool) -> Void) {
         self.init(configuration: .plain())
+        // Read as a toggle, checked or not, not as its symbol's name.
+        accessibilityLabel = ""
         // Its circle alone, aligned with what's beside it; touches reach
         // it from 44 points around (point(inside:)).
         configuration?.contentInsets = .zero
@@ -32,8 +34,6 @@ final class AsukaCheckbox: UIButton {
     private func update() {
         configuration?.image = UIImage(systemName: isOn ? "checkmark.circle.fill" : "circle")
         configuration?.baseForegroundColor = isOn ? nil : .tertiaryLabel // the tint when on
-        // Read as a toggle, checked or not, not as its symbol's name.
-        accessibilityLabel = ""
         if #available(iOS 17.0, *) { accessibilityTraits = [.button, .toggleButton] }
         accessibilityValue = isOn ? "1" : "0"
     }

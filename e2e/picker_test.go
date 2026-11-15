@@ -5,7 +5,6 @@ package e2e
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 // A chosen item wider than the picker ends in an ellipsis, as iOS's
@@ -28,14 +27,4 @@ func TestPickerLongItemAndroid(t *testing.T) {
 
 // fits is the automation's fits: each one-line text shown, a tab, and
 // whether it fits, is ellipsized or is cut.
-func (s *androidScreen) fits() []string {
-	s.adb("shell", "run-as", s.pkg, "rm", "-f", "files/asuka-fits.txt")
-	s.command("fits")
-	for range 50 {
-		if out, err := s.adb("exec-out", "run-as", s.pkg, "cat", "files/asuka-fits.txt"); err == nil && strings.HasSuffix(out, "\n") {
-			return strings.Split(strings.TrimSpace(out), "\n")
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return nil
-}
+func (s *androidScreen) fits() []string { return s.read("fits", "asuka-fits.txt") }

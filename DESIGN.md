@@ -841,6 +841,9 @@ views (below) never appear in the accessibility tree.
 - A pressable `View` is one element, a button, read as its contents'
   labels joined (VoiceOver; TalkBack merges a clickable view's text
   itself).
+- `TextField` and `Toggle` (switch or checkbox) take a `Label` accessor,
+  carried by the common `A11yLabel` prop. The name follows its accessor
+  without replacing the control's value or native editing and toggling.
 - `ui.Announce` has the screen reader say what changed where focus
   isn't (a toast, a count of results).
 - A List row's swipe actions are its accessibility actions on Android

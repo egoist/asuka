@@ -318,6 +318,9 @@ func (h *Host) makeToggle(n *node, checkbox bool) {
 		}))
 	}
 	h.setToggle(n)
+	if n.a11yLabel != "" {
+		h.updateA11y(n)
+	}
 }
 
 func (h *Host) setToggle(n *node) {

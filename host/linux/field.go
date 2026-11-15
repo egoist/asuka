@@ -136,6 +136,9 @@ func (h *Host) makeField(n *node) {
 	}
 	h.applyPlaceholder(n)
 	h.applyPurpose(n)
+	if n.a11yLabel != "" {
+		h.updateA11y(n)
+	}
 	if n.disabled {
 		WidgetSetSensitive(n.widget, false)
 	}

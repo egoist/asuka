@@ -53,6 +53,11 @@ func (h *Host) setCommon(n *node, p ops.PropID, v *ops.Value) {
 		h.shapeClip(n)
 	case ops.PropA11yLabel:
 		n.a11yLabel = v.Str
+		if n.ctl != 0 && (n.kind == ops.KindTextField || n.kind == ops.KindToggle) {
+			// These controls keep their native provider, value and role.
+			SetAccessibleName(n.ctl, v.Str)
+			NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, n.ctl, OBJID_CLIENT, CHILDID_SELF)
+		}
 		if n.hwnd != 0 && n.kind == ops.KindView {
 			// The view's window text is its accessible name.
 			SetWindowText(n.hwnd, v.Str)

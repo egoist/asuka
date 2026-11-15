@@ -255,6 +255,7 @@ const textField = {
     }
   },
   common(h, n, p, v) { return false; },
+  label(h, n, v) { n.input.setAttribute("aria-label", v); },
   font(h, n) { text.applyFont(h, n, n.input); },
   color(h, n) { n.input.style.color = h.css(n.color); },
   align(h, n) { n.input.style.textAlign = text.align(n.align); },
@@ -305,7 +306,7 @@ function makeField(h, n, input) {
   const old = n.input;
   input.className = "asuka-field asuka-control";
   if (old) {
-    for (const a of ["placeholder", "autocomplete", "inputmode", "enterkeyhint", "autocapitalize", "autocorrect", "spellcheck"]) {
+    for (const a of ["placeholder", "autocomplete", "inputmode", "enterkeyhint", "autocapitalize", "autocorrect", "spellcheck", "aria-label"]) {
       const v = old.getAttribute(a);
       if (v != null) input.setAttribute(a, v);
     }

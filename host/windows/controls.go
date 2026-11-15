@@ -470,6 +470,7 @@ func (h *Host) makeEdit(n *node) {
 	SendMessage(n.ctl, EM_SETMARGINS, EC_LEFTMARGIN|EC_RIGHTMARGIN, 0)
 	h.byHwnd[n.ctl] = n
 	if old != 0 {
+		ClearAccessibleName(old) // n.ctl already names the replacement
 		h.forgetTree(old)
 		DestroyWindow(old)
 		h.byHwnd[n.ctl] = n
@@ -491,6 +492,9 @@ func (h *Host) makeEdit(n *node) {
 		return h.editMessage(hwnd, m, w, l)
 	})
 	h.setupRichEdit(n)
+	if n.a11yLabel != "" {
+		SetAccessibleName(n.ctl, n.a11yLabel)
+	}
 	h.layoutField(n)
 }
 

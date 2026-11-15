@@ -546,7 +546,10 @@ const (
 type TextFieldProps struct {
 	// Value is the field's text. The widget owns its text: typing writes
 	// Value; writing Value from code replaces the text.
-	Value          *signal.Signal[string]
+	Value *signal.Signal[string]
+	// Label names the field for screen readers, independently of its value
+	// and placeholder. Nil leaves the platform's default name.
+	Label          signal.Accessor[string]
 	Placeholder    signal.Accessor[string]
 	Keyboard       KeyboardType
 	ReturnKey      ReturnKey
@@ -691,6 +694,7 @@ func TextField(p TextFieldProps) Node {
 	if p.ContentType != "" {
 		b.SetString(id, ops.PropTextFieldContentType, p.ContentType)
 	}
+	bind(p.Label, func(v string) { e.r.batch.SetString(id, ops.PropA11yLabel, v) })
 	bind(p.Placeholder, func(v string) { e.r.batch.SetString(id, ops.PropTextFieldPlaceholder, v) })
 	bind(p.Disabled, func(v bool) { e.r.batch.SetBool(id, ops.PropDisabled, v) })
 	h := e.handlers()
@@ -829,7 +833,10 @@ func Blur(n Node) {
 
 // ToggleProps configures a Toggle.
 type ToggleProps struct {
-	Value    *signal.Signal[bool]
+	Value *signal.Signal[bool]
+	// Label names the switch or checkbox for screen readers. Nil leaves
+	// the platform's default name.
+	Label    signal.Accessor[string]
 	Disabled signal.Accessor[bool]
 	// Checkbox makes it a checkbox: an item of a list to tick, an
 	// agreement, a choice among several that aren't exclusive. Android's
@@ -849,6 +856,7 @@ func Toggle(p ToggleProps) Node {
 	}
 	e.measure()
 	e.setStyle(p.Style, false)
+	bind(p.Label, func(v string) { e.r.batch.SetString(e.id, ops.PropA11yLabel, v) })
 	bind(p.Disabled, func(v bool) { e.r.batch.SetBool(e.id, ops.PropDisabled, v) })
 	if p.Value != nil {
 		reported, known := false, false

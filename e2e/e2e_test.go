@@ -389,11 +389,14 @@ func (s *androidScreen) command(cmds string) {
 	s.t.Fatalf("broadcast %q: %v\n%s", cmds, err, out)
 }
 
-func (s *androidScreen) texts() []string {
-	s.adb("shell", "run-as", s.pkg, "rm", "-f", "files/asuka-dump.txt")
-	s.command("dump")
+func (s *androidScreen) texts() []string { return s.read("dump", "asuka-dump.txt") }
+
+// read runs the automation's command, which writes its lines to the file.
+func (s *androidScreen) read(cmd, file string) []string {
+	s.adb("shell", "run-as", s.pkg, "rm", "-f", "files/"+file)
+	s.command(cmd)
 	for range 50 {
-		if out, err := s.adb("exec-out", "run-as", s.pkg, "cat", "files/asuka-dump.txt"); err == nil && strings.HasSuffix(out, "\n") {
+		if out, err := s.adb("exec-out", "run-as", s.pkg, "cat", "files/"+file); err == nil && strings.HasSuffix(out, "\n") {
 			return strings.Split(strings.TrimSpace(out), "\n")
 		}
 		time.Sleep(100 * time.Millisecond)

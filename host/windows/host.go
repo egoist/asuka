@@ -768,7 +768,7 @@ func (h *Host) forgetTree(hwnd uintptr) {
 				n.hwnd = 0
 			}
 			if n.ctl == w {
-				if n.kind == ops.KindPicker {
+				if n.kind == ops.KindPicker || n.kind == ops.KindTextField || n.kind == ops.KindToggle {
 					ClearAccessibleName(w) // as Dynamic Annotation asks
 				}
 				n.ctl = 0

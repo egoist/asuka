@@ -219,7 +219,11 @@ func (h *Host) setCommon(n *node, p ops.PropID, v *ops.Value) {
 		h.updateClip(n)
 	case ops.PropA11yLabel:
 		n.a11yLabel = v.Str
-		Send(n.view, "setAccessibilityLabel:", uintptr(String(v.Str)))
+		target := n.view
+		if n.kind == ops.KindTextField && n.tracking != 0 {
+			target = n.tracking
+		}
+		Send(target, "setAccessibilityLabel:", uintptr(String(v.Str)))
 		if v.Str != "" && n.kind == ops.KindView {
 			Send(n.view, "setAccessibilityElement:", 1)
 		}

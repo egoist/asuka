@@ -34,7 +34,7 @@ export function makeRich(h, n, wire) {
   ed.setAttribute("aria-multiline", "true");
   if (old) {
     ed.style.cssText = old.style.cssText;
-    for (const a of ["inputmode", "enterkeyhint", "autocapitalize", "autocorrect", "spellcheck"]) {
+    for (const a of ["inputmode", "enterkeyhint", "autocapitalize", "autocorrect", "spellcheck", "aria-label"]) {
       const v = old.getAttribute(a);
       if (v != null) ed.setAttribute(a, v);
     }
