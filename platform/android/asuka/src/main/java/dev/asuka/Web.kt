@@ -33,6 +33,17 @@ class AsukaWebView(private val rt: AsukaRuntime, private val asukaID: Int) : Web
     @Volatile private var blockHosts: List<String> = emptyList()
     @Volatile private var blockParts: List<String> = emptyList()
     @Volatile var reportRequests = false
+
+    /**
+     * A WebView whose height wraps its content gives its pages a viewport
+     * 0 tall (100vh is 0). Its container sizes it to its frame whatever
+     * its params say: they say it fills it.
+     */
+    override fun setLayoutParams(params: android.view.ViewGroup.LayoutParams) {
+        if (params is AsukaParams) params.height = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+        super.setLayoutParams(params)
+    }
+
     private var preload: String? = null
     private var title = ""
     private var loading = false
