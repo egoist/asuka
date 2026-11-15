@@ -62,6 +62,11 @@ class AsukaPicker(private val rt: AsukaRuntime, private val asukaID: Int) : Fram
         field = Field(box.context).apply {
             inputType = InputType.TYPE_NULL // chosen, not typed: Material's non-editable dropdown
             isSingleLine = true
+            // An item wider than the field ends in an ellipsis, as iOS's
+            // pop-up button's title does. A field ellipsizes only without
+            // a key listener: one that can't be typed in.
+            keyListener = null
+            ellipsize = android.text.TextUtils.TruncateAt.END
             setOnItemClickListener { _, _, position, _ ->
                 if (position != chosen) {
                     chosen = position

@@ -28,6 +28,9 @@ import java.io.File
  *
  *     adb shell run-as <package> cat files/asuka-dump.txt
  *
+ * `fits` writes whether each one-line text fits its view, ends in an
+ * ellipsis or is cut off to files/asuka-fits.txt.
+ *
  * Only in a debuggable app.
  */
 object AsukaAutomation {
@@ -54,6 +57,7 @@ object AsukaAutomation {
             "type" -> field(rt)?.apply { requestFocus(); setText(arg); setSelection(arg.length) }
             "submit" -> field(rt)?.onEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_DONE)
             "dump" -> dump(rt)
+            "fits" -> fits(rt)
             "rotate" -> {
                 val deg = arg.substringBefore(' ').toFloatOrNull() ?: return
                 shown(rt).firstOrNull { textOf(it) == arg.substringAfter(' ') }?.let { rotate(it, deg) }
@@ -117,12 +121,36 @@ object AsukaAutomation {
         return false
     }
 
-    private fun dump(rt: AsukaRuntime) {
-        val lines = shown(rt).mapNotNull { v -> textOf(v)?.takeIf { it.isNotEmpty() } }
-        val dir = rt.app.filesDir
-        // Written whole, then moved: a reader never sees half of it.
-        val tmp = File(dir, "asuka-dump.txt.part")
+    private fun dump(rt: AsukaRuntime) = write(rt, "asuka-dump.txt", shown(rt).mapNotNull { v -> textOf(v)?.takeIf { it.isNotEmpty() } })
+
+    /**
+     * Whether each one-line text shown in the window (a Picker's field
+     * too) fits its view, ends in an ellipsis, or is cut off: text, a tab,
+     * then fits, ellipsized or cut.
+     */
+    private fun fits(rt: AsukaRuntime) {
+        val lines = mutableListOf<String>()
+        fun walk(v: View) {
+            if (!v.isShown) return
+            if (v is TextView && v.lineCount == 1 && v.text.isNotEmpty()) {
+                val l = v.layout
+                val room = v.width - v.totalPaddingLeft - v.totalPaddingRight
+                lines += v.text.toString() + "\t" + when {
+                    l != null && l.getEllipsisCount(0) > 0 -> "ellipsized"
+                    v.paint.measureText(v.text, 0, v.text.length) <= room + 1 -> "fits"
+                    else -> "cut"
+                }
+            }
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        rt.activity?.window?.decorView?.let(::walk)
+        write(rt, "asuka-fits.txt", lines)
+    }
+
+    /** Lines to a file in the app's files, written whole, then moved: a reader never sees half of it. */
+    private fun write(rt: AsukaRuntime, name: String, lines: List<String>) {
+        val tmp = File(rt.app.filesDir, "$name.part")
         tmp.writeText(lines.joinToString("\n") + "\n")
-        tmp.renameTo(File(dir, "asuka-dump.txt"))
+        tmp.renameTo(File(rt.app.filesDir, name))
     }
 }
