@@ -158,14 +158,24 @@ const button = {
   label(h, n, v) { if (!n.title && v) n.el.title = v; },
   inset(h, n) { padInset(n); },
   measure(h, n, c) {
-    const [w, hh] = h.measureElement(n, n.el, { width: NaN, height: NaN, availW: Infinity, availH: Infinity });
+    let [w, hh] = h.measureElement(n, n.el, { width: NaN, height: NaN, availW: Infinity, availH: Infinity });
+    // Its padding, when the style sets one, is the core's to add: its
+    // title alone.
+    const v = padded(n);
+    if (v) { w = Math.max(w - v[1] - v[3], 0); hh = Math.max(hh - v[0] - v[2], 0); }
     return [fitWidth(c, w, w), hh];
   },
 };
 
-function padInset(n) {
+/** padded is a button's ContentInset when its style gives it padding or a border, which replace its own padding. */
+function padded(n) {
   const v = n.inset;
-  if (v) n.el.style.padding = `${v[0]}px ${v[1]}px ${v[2]}px ${v[3]}px`;
+  return v && (v[0] || v[1] || v[2] || v[3]) ? v : null;
+}
+
+function padInset(n) {
+  const v = padded(n);
+  n.el.style.padding = v ? `${v[0]}px ${v[1]}px ${v[2]}px ${v[3]}px` : "";
 }
 
 // --- TextField ---

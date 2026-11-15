@@ -245,14 +245,18 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
 
 @MainActor extension AsukaRuntime {
     /// ContentInset: the room padding and border take inside the frame;
-    /// texts and fields draw their content inside it.
+    /// texts and fields draw their content inside it. A button's replaces
+    /// its own insets, as CSS's padding does.
     func setContentInset(_ n: AsukaNode, _ i: UIEdgeInsets) {
         switch n.view {
         case let l as AsukaLabel: l.contentInset = i
         case let f as AsukaTextField: f.contentInset_ = i
         case let t as AsukaTextView: t.contentInset_ = i
         case let r as AsukaRichTextView: r.contentInset_ = i
-        default: break // centered content (buttons, symbols) needs none
+        case is UIButton:
+            n.buttonInset = i == .zero ? nil : i
+            fitButton(n)
+        default: break // centered content (symbols) needs none
         }
     }
 
@@ -420,12 +424,22 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         }
     }
 
-    /// A glass button with an icon alone is a circle: as much room
-    /// around the icon on every side.
-    func roundGlass(_ b: UIButton) {
-        guard glassButtons.contains(ObjectIdentifier(b)), var c = b.configuration else { return }
-        let iconOnly = (c.title ?? "").isEmpty && c.image != nil
-        let want = iconOnly ? NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11) : nil
+    /// A button's insets: its style's padding and border, which replace
+    /// the configuration's; without them, a glass button with an icon
+    /// alone is a circle, as much room around the icon on every side.
+    func fitButton(_ n: AsukaNode) {
+        guard let b = n.view as? UIButton, var c = b.configuration else { return }
+        var want: NSDirectionalEdgeInsets?
+        if let i = n.buttonInset {
+            if n.ownInsets == nil { n.ownInsets = c.contentInsets }
+            let rtl = b.effectiveUserInterfaceLayoutDirection == .rightToLeft
+            want = NSDirectionalEdgeInsets(top: i.top, leading: rtl ? i.right : i.left, bottom: i.bottom, trailing: rtl ? i.left : i.right)
+        } else if let own = n.ownInsets {
+            n.ownInsets = nil
+            want = own
+        } else if glassButtons.contains(ObjectIdentifier(b)), (c.title ?? "").isEmpty, c.image != nil {
+            want = NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
+        }
         if let want, c.contentInsets != want {
             c.contentInsets = want
             b.configuration = c
@@ -441,7 +455,7 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             var c = b.configuration ?? .plain()
             c.title = v.string
             b.configuration = c
-            roundGlass(b)
+            fitButton(n)
         case (.button, AsukaProp.Button.variant):
             guard let b = n.view as? UIButton else { return }
             let old = b.configuration
@@ -471,15 +485,16 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             c.image = old?.image
             c.imagePadding = old?.imagePadding ?? 0
             c.preferredSymbolConfigurationForImage = old?.preferredSymbolConfigurationForImage
+            n.ownInsets = nil // the new configuration's are its own
             b.configuration = c
-            roundGlass(b)
+            fitButton(n)
         case (.button, AsukaProp.Button.icon):
             guard let b = n.view as? UIButton else { return }
             var c = b.configuration ?? .plain()
             c.image = v.string.isEmpty ? nil : UIImage(systemName: v.string)
             c.imagePadding = 6
             b.configuration = c
-            roundGlass(b)
+            fitButton(n)
         case (.textField, AsukaProp.TextField.value):
             (n.view as? UITextField)?.text = v.string
             (n.view as? AsukaTextView)?.text = v.string
@@ -657,7 +672,11 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             // next configuration update: apply it before measuring.
             b.updateConfiguration()
             b.layoutIfNeeded()
-            s = b.sizeThatFits(CGSize(width: fit(w, aw, minContent: big), height: fit(h, ah, minContent: big)))
+            // Its inset, when the style sets one, is the core's to add:
+            // its title alone.
+            let i = n.buttonInset ?? .zero
+            s = b.sizeThatFits(CGSize(width: fit(w, aw, minContent: big) + i.left + i.right, height: fit(h, ah, minContent: big) + i.top + i.bottom))
+            s = CGSize(width: max(s.width - i.left - i.right, 0), height: max(s.height - i.top - i.bottom, 0))
         default:
             s = n.view.sizeThatFits(CGSize(width: fit(w, aw, minContent: big), height: fit(h, ah, minContent: big)))
         }

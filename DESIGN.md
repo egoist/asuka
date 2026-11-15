@@ -1081,7 +1081,11 @@ A measured view's padding and border are inside its frame
 (`ContentInset`, sent when it isn't zero): the host draws its content
 inside them (a label's text rect, a field's text rects, a text view's
 container inset, view padding on Android) and measures its content
-alone.
+alone. A button's replace its own padding, as CSS's do (UIButton's
+configuration insets, Material's insets, minimum size and padding, the
+web button's padding), so it's sent with the style, before the host
+measures, and again with the frame when a percentage resolves
+differently.
 
 ### Lifecycle and state
 

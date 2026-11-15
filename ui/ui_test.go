@@ -531,6 +531,46 @@ func TestSnappingNeverShrinksMeasuredContent(t *testing.T) {
 	}
 }
 
+// A button's Padding replaces the platform's own, so the host has to know
+// of it before it measures the button: its ContentInset comes with the
+// style, not after the layout it's measured for.
+func TestPaddedButtonGetsItsInsetBeforeItsMeasured(t *testing.T) {
+	h := fake.New()
+	seen := map[string][4]float32{}
+	h.MeasureFunc = func(v *fake.View, c layout.Constraints) layout.Size {
+		seen[v.String(ops.PropButtonTitle)] = v.Props[ops.PropContentInset].Edges
+		return layout.Size{W: 60, H: 20}
+	}
+	pad := signal.New(float32(10))
+	r := ui.Mount(h, func() ui.Node {
+		return ui.Column(ui.Style{Align: ui.AlignStart},
+			ui.Button(ui.ButtonProps{Title: ui.Val("Padded"), Style: ui.StyleFunc(func() ui.Style {
+				return ui.Style{Padding: ui.Symmetric(pad.Get(), 22)}
+			})}),
+			ui.Button(ui.ButtonProps{Title: ui.Val("Plain")}),
+		)
+	})
+	defer r.Dispose()
+	if got, want := seen["Padded"], [4]float32{10, 22, 10, 22}; got != want {
+		t.Fatalf("measured with the inset %v, want %v", got, want)
+	}
+	if got := seen["Plain"]; got != ([4]float32{}) {
+		t.Fatalf("a button without padding measured with the inset %v", got)
+	}
+	if f := h.One(ops.KindButton, "Padded").Frame; f[3] != 40 {
+		t.Fatalf("frame %v, want 40 high: its content and its padding", f)
+	}
+	pad.Set(4)
+	r.Flush()
+	v := h.One(ops.KindButton, "Padded")
+	if got, want := v.Props[ops.PropContentInset].Edges, [4]float32{4, 22, 4, 22}; got != want {
+		t.Fatalf("the inset %v, want %v", got, want)
+	}
+	if v.Frame[3] != 28 {
+		t.Fatalf("frame %v, want 28 high", v.Frame)
+	}
+}
+
 func TestNilPropsAreZeroValues(t *testing.T) {
 	h, _ := mount(t, func() ui.Node {
 		return ui.Column(ui.Style{},

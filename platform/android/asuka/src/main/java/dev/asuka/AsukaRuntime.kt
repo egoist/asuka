@@ -847,6 +847,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     /** Replaces a button with one of another variant (a style is fixed when a view is made). */
     fun replaceButton(n: AsukaNode, variant: Int) {
         val old = n.view as MaterialButton
+        n.basePadding = null // an icon's room, till its inset is applied again
         val b = makeButton(n.id, variant)
         b.layoutDirection = directionOf(n)
         b.text = old.text
@@ -863,6 +864,8 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         }
         n.view = b
         restyle(n)
+        n.basePadding = null // the new button's own
+        applyContentInset(n)
     }
 
     override fun setBool(id: Int, prop: Int, v: Boolean) = propBool(id, prop, v)

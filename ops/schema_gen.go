@@ -133,7 +133,7 @@ const (
 	PropSwipeActions PropID = 29
 	// PropLayoutDirection: the view lays itself out and aligns its text in this direction, whatever the app's (ui.WithDirection): sent to each view in the subtree, as a platform's view doesn't take it from its parent. Frames are always physical.
 	PropLayoutDirection PropID = 30
-	// PropContentInset: the room a measured view's padding and border take inside its frame, in points (top, right, bottom, left: physical): the host draws its content (a text, a field's text, a button's title, an image) inside it, and measures its content alone, as before. Sent when it changes from none.
+	// PropContentInset: the room a measured view's padding and border take inside its frame, in points (top, right, bottom, left: physical): the host draws its content (a text, a field's text, a button's title, an image) inside it, and measures its content alone; a button's replaces its own padding. Sent when it changes from none, with the style (before the view is measured) and with the frame.
 	PropContentInset PropID = 31
 	// PropLeadingSwipeActions: a List cell's swipe actions from its leading edge (Mail's Unread), encoded as Menu; Action events on the cell carry -1 - the index.
 	PropLeadingSwipeActions PropID = 32

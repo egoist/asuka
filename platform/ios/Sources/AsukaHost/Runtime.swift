@@ -37,6 +37,11 @@ let asukaAssets: URL? = {
     /// Style.CornerRadius as set; the layer's is at most half the view's
     /// shorter side, as CSS and Android clamp it (999: a capsule).
     var cornerRadius: CGFloat = 0
+    /// A button's ContentInset while its style gives it padding or a
+    /// border, which replaces its configuration's insets (fitButton), and
+    /// those insets, to put back when it has none again.
+    var buttonInset: UIEdgeInsets?
+    var ownInsets: NSDirectionalEdgeInsets?
     var list: AsukaList?
     weak var cell: AsukaListCell?
 

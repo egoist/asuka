@@ -394,15 +394,7 @@ func (e *element) emitFrame() {
 		f[2] = max(f[2], ceilPx(e.box.W, s))
 		f[3] = max(f[3], ceilPx(e.box.H, s))
 	}
-	if e.measured {
-		// Its padding and border are inside its frame: the host draws
-		// its content inside them.
-		in := e.box.ContentInsets()
-		if c := [4]float32{in.Top, in.Right, in.Bottom, in.Left}; c != e.insets {
-			e.insets = c
-			e.r.batch.SetEdges(e.id, ops.PropContentInset, c[0], c[1], c[2], c[3])
-		}
-	}
+	e.sendInsets()
 	if f != e.sent {
 		e.sent = f
 		e.r.batch.SetFrame(e.id, f[0], f[1], f[2], f[3])
@@ -421,6 +413,22 @@ func ceilPx(v, scale float32) float32 {
 	return float32(math.Ceil(float64(v*scale)-1e-3)) / scale
 }
 
+// sendInsets tells the host where a measured view's padding and border
+// are inside its frame, when that changed: the host draws its content
+// inside them, and measures its content alone. Sent with the style, so
+// the host has it before it measures (a button's Padding replaces its
+// own), and again with the frame (a percentage, resolved).
+func (e *element) sendInsets() {
+	if !e.measured {
+		return
+	}
+	in := e.box.ContentInsets()
+	if c := [4]float32{in.Top, in.Right, in.Bottom, in.Left}; c != e.insets {
+		e.insets = c
+		e.r.batch.SetEdges(e.id, ops.PropContentInset, c[0], c[1], c[2], c[3])
+	}
+}
+
 // setStyle applies a static or dynamic style. text: the view draws text.
 func (e *element) setStyle(st Styler, text bool) {
 	if st == nil {
@@ -430,6 +438,7 @@ func (e *element) setStyle(st Styler, text bool) {
 	if f == nil {
 		e.style = s
 		e.box.SetStyle(e.layoutStyle(&s))
+		e.sendInsets()
 		e.applyVisual(&s, nil, text)
 		return
 	}
@@ -440,6 +449,7 @@ func (e *element) setStyle(st Styler, text bool) {
 			first = false
 			e.style = s
 			e.box.SetStyle(e.layoutStyle(&s))
+			e.sendInsets()
 			if !e.real && e.flattenable() && s.visual() {
 				e.makeReal()
 			}
@@ -450,6 +460,7 @@ func (e *element) setStyle(st Styler, text bool) {
 		e.style = s
 		if layoutPart(s) != layoutPart(prev) {
 			e.box.SetStyle(e.layoutStyle(&s))
+			e.sendInsets()
 		}
 		if !e.real && s.visual() {
 			e.makeReal()

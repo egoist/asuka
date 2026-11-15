@@ -222,7 +222,7 @@ fun AsukaRuntime.iconPadding(n: AsukaNode, b: MaterialButton) {
         b.minWidth = 0
         b.minimumWidth = 0
         val pad = Math.round(10 * density)
-        b.setPaddingRelative(pad, b.paddingTop, pad, b.paddingBottom)
+        if (n.basePadding == null) b.setPaddingRelative(pad, b.paddingTop, pad, b.paddingBottom) // the style's otherwise
     }
     if (n.props[AsukaProp.A11Y_LABEL] == null) {
         b.contentDescription = if (alone) symbolLabels[n.props[AsukaProp.Button.ICON] as? String ?: ""] else null
@@ -590,7 +590,9 @@ fun AsukaRuntime.propEnum(id: Int, prop: Int, v: Int) {
  * ContentInset: a text, a field or an image draws its content inside its
  * padding and border (the view's padding, on top of its own: a field's
  * background's). Measurements are of the content alone (measureNode).
- * Centered content (a button's title, a symbol) needs none.
+ * A button's replaces its own, as CSS's does: Material's insets, minimum
+ * size and padding go, and it's as big as its title and the inset.
+ * Centered content (a symbol) needs none.
  */
 fun AsukaRuntime.applyContentInset(n: AsukaNode) {
     val ci = n.contentInset ?: return
@@ -601,7 +603,19 @@ fun AsukaRuntime.applyContentInset(n: AsukaNode) {
     val l = Math.round(ci[3] * d)
     when (val v = n.view) {
         is AsukaRichText -> v.setInset(l, t, r)
-        is com.google.android.material.button.MaterialButton -> {}
+        is MaterialButton -> if (l != 0 || t != 0 || r != 0 || b != 0) {
+            n.basePadding = IntArray(4) // its own padding is gone
+            v.insetTop = 0
+            v.insetBottom = 0
+            v.minWidth = 0
+            v.minimumWidth = 0
+            v.minHeight = 0
+            v.minimumHeight = 0
+            v.setPadding(l, t, r, b)
+        } else if (n.basePadding != null) {
+            // A new one has Material's own again.
+            replaceButton(n, n.props[AsukaProp.Button.VARIANT] as? Int ?: AsukaButtonVariant.PLAIN)
+        }
         is TextView, is android.widget.ImageView -> {
             val base = n.basePadding ?: intArrayOf(v.paddingLeft, v.paddingTop, v.paddingRight, v.paddingBottom).also { n.basePadding = it }
             v.setPadding(base[0] + l, base[1] + t, base[2] + r, base[3] + b)
