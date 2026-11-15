@@ -124,25 +124,57 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
 
 @MainActor extension AsukaNode {
     /// The font for the node's text props: a Dynamic Type text style,
-    /// or a system font (or its own family's) scaled like one.
+    /// or a system font (or its own family's) scaled like one, in the
+    /// app's text size (a view outside the window has yet to take a new
+    /// one).
     var font: UIFont {
         let style = uiTextStyle(textStyle)
         let metrics = UIFontMetrics(forTextStyle: style)
+        let size = UITraitCollection(preferredContentSizeCategory: UIApplication.shared.preferredContentSizeCategory)
         if !fontFamily.isEmpty {
             let base = fontSize > 0 ? CGFloat(fontSize)
                 : UIFont.preferredFont(forTextStyle: style, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)).pointSize
             if let f = AsukaFonts.font(fontFamily, size: base, weight: uiWeight(fontWeight)) {
-                return metrics.scaledFont(for: f)
+                return metrics.scaledFont(for: f, compatibleWith: size)
             }
         }
         if fontSize > 0 {
-            return metrics.scaledFont(for: .systemFont(ofSize: CGFloat(fontSize), weight: uiWeight(fontWeight) ?? .regular))
+            return metrics.scaledFont(for: .systemFont(ofSize: CGFloat(fontSize), weight: uiWeight(fontWeight) ?? .regular), compatibleWith: size)
         }
         if let w = uiWeight(fontWeight) {
             let base = UIFont.preferredFont(forTextStyle: style, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large))
-            return metrics.scaledFont(for: .systemFont(ofSize: base.pointSize, weight: w))
+            return metrics.scaledFont(for: .systemFont(ofSize: base.pointSize, weight: w), compatibleWith: size)
         }
-        return .preferredFont(forTextStyle: style)
+        return .preferredFont(forTextStyle: style, compatibleWith: size)
+    }
+
+    /// The text size changed. UIKit gives the views in the window the new
+    /// fonts, but not the others (another tab's, a screen's under a
+    /// stack's top), which the core measures again now. They take theirs
+    /// and hold it until they're in a window: a view that adjusts its font
+    /// would put back the old text size's, which it still has.
+    func followTextSize() {
+        guard view.window == nil else { return }
+        let f = font
+        switch view {
+        case let l as AsukaLabel:
+            l.holdsFont = true
+            l.adjustsFontForContentSizeCategory = false
+            l.font = f
+        case let t as AsukaTextField:
+            t.holdsFont = true
+            t.adjustsFontForContentSizeCategory = false
+            t.font = f
+        case let t as AsukaTextView:
+            t.holdsFont = true
+            t.adjustsFontForContentSizeCategory = false
+            t.placeholderLabel.adjustsFontForContentSizeCategory = false
+            t.font = f
+        case let b as UIButton where b.configuration?.titleTextAttributesTransformer != nil:
+            b.updateConfiguration()
+        default:
+            break
+        }
     }
 
     func applyFont() {
@@ -170,9 +202,11 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         case let b as UIButton:
             var c = b.configuration ?? .plain()
             c.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(font: f, scale: .medium)
-            c.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { a in
+            // The font in the text size of when UIKit asks (it does again
+            // when the text size changes), as a label's follows it.
+            c.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { [weak self] a in
                 var a = a
-                a.font = f
+                a.font = MainActor.assumeIsolated { self?.font } ?? f
                 return a
             }
             b.configuration = c

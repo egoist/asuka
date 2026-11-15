@@ -103,6 +103,17 @@ final class AsukaTextView: UITextView {
         AsukaRuntime.shared.reveal(self, caretRect(for: at), animated: false)
     }
 
+    /// As AsukaLabel's, its placeholder's too.
+    var holdsFont = false
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if holdsFont, window != nil {
+            holdsFont = false
+            adjustsFontForContentSizeCategory = true
+            placeholderLabel.adjustsFontForContentSizeCategory = true
+        }
+    }
+
     private func updateBorder() {
         layer.borderColor = UIColor.systemGray4.resolvedColor(with: traitCollection).cgColor
     }

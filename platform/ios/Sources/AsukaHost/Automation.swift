@@ -22,7 +22,9 @@ import AsukaOps
 /// tmp/asuka-dump.txt; `back` pops the shown stack's top screen, as its
 /// back button does; `tab <title>` selects the tab with that title, as
 /// tapping it does; `focused` writes where the focused field and the
-/// keyboard are to tmp/asuka-focused.txt.
+/// keyboard are to tmp/asuka-focused.txt; `fits` writes, for each label
+/// or button title shown, its text, its font's size and whether its frame
+/// holds its text (`fits` or `cut`) to tmp/asuka-fits.txt.
 @MainActor enum AsukaAutomation {
     static var token: Int32 = 0
 
@@ -50,6 +52,7 @@ import AsukaOps
             case "back": back()
             case "tab": tab(arg)
             case "focused": focused()
+            case "fits": fits()
             default: break
             }
         }
@@ -123,6 +126,21 @@ import AsukaOps
         let tmp = url.appendingPathExtension("part")
         try? (lines.joined(separator: "\n") + "\n").write(to: tmp, atomically: false, encoding: .utf8)
         _ = try? FileManager.default.replaceItemAt(url, withItemAt: tmp)
+    }
+
+    /// Each shown label's or button title's text, font size and whether
+    /// its frame holds its text, a tab-separated line each, in creation
+    /// order.
+    static func fits() {
+        var lines: [String] = []
+        for n in rt.nodes.values.sorted(by: { $0.id < $1.id }) {
+            let shown = (n.view as? UIButton)?.titleLabel ?? n.view
+            guard let l = shown as? UILabel, l.window != nil, !l.isHidden, let text = l.text, !text.isEmpty else { continue }
+            l.superview?.layoutIfNeeded()
+            let need = l.textRect(forBounds: CGRect(x: 0, y: 0, width: l.bounds.width, height: .greatestFiniteMagnitude), limitedToNumberOfLines: l.numberOfLines).height
+            lines.append("\(text)\t\(Int(l.font.pointSize))\t\(need <= l.bounds.height + 0.5 ? "fits" : "cut")")
+        }
+        write(lines, to: "asuka-fits.txt")
     }
 
     static func find(_ text: String) -> AsukaNode? {

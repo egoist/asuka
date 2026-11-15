@@ -214,6 +214,17 @@ final class AsukaLabel: UILabel {
     override func drawText(in rect: CGRect) {
         super.drawText(in: rect.inset(by: contentInset))
     }
+
+    /// It was given a new text size's font outside the window
+    /// (followTextSize): in one, it adjusts it again.
+    var holdsFont = false
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if holdsFont, window != nil {
+            holdsFont = false
+            adjustsFontForContentSizeCategory = true
+        }
+    }
 }
 
 final class AsukaTextField: UITextField {
@@ -226,6 +237,15 @@ final class AsukaTextField: UITextField {
     override func textRect(forBounds bounds: CGRect) -> CGRect { super.textRect(forBounds: bounds.inset(by: contentInset_)) }
     override func editingRect(forBounds bounds: CGRect) -> CGRect { super.editingRect(forBounds: bounds.inset(by: contentInset_)) }
     override func placeholderRect(forBounds bounds: CGRect) -> CGRect { super.placeholderRect(forBounds: bounds.inset(by: contentInset_)) }
+    /// As AsukaLabel's.
+    var holdsFont = false
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if holdsFont, window != nil {
+            holdsFont = false
+            adjustsFontForContentSizeCategory = true
+        }
+    }
     /// TextFieldProps.Plain: no border, the text alone.
     var plain = false {
         didSet { borderStyle = plain ? .none : .roundedRect }

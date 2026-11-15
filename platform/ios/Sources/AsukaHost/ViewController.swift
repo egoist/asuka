@@ -126,6 +126,7 @@ public final class AsukaViewController: UIViewController {
     /// Text size or Reduce Motion changed: the root and the screens report it.
     @objc func contentSizeChanged() {
         DispatchQueue.main.async {
+            for n in AsukaRuntime.shared.nodes.values { n.followTextSize() }
             self.sendEnvironment()
             AsukaRuntime.shared.reportScreens()
         }
