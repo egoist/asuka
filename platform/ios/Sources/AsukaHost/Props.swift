@@ -148,28 +148,29 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         return .preferredFont(forTextStyle: style, compatibleWith: size)
     }
 
-    /// The text size changed. UIKit gives the views in the window the new
-    /// fonts, but not the others (another tab's, a screen's under a
-    /// stack's top), which the core measures again now. They take theirs
-    /// and hold it until they're in a window: a view that adjusts its font
-    /// would put back the old text size's, which it still has.
+    /// The text size changed, and the core measures every screen again
+    /// now. UIKit gives the views in the window their new fonts when it
+    /// next updates their traits, which may be after that, and the others
+    /// (another tab's, a screen's under a stack's top) none. So each takes
+    /// the new size's font now; one outside the window holds it until it's
+    /// in one, since a view that adjusts its font would put back the old
+    /// size's, which it still has.
     func followTextSize() {
-        guard view.window == nil else { return }
-        let f = font
+        let out = view.window == nil
         switch view {
         case let l as AsukaLabel:
-            l.holdsFont = true
-            l.adjustsFontForContentSizeCategory = false
-            l.font = f
+            l.holdsFont = out
+            l.adjustsFontForContentSizeCategory = !out
+            l.font = font
         case let t as AsukaTextField:
-            t.holdsFont = true
-            t.adjustsFontForContentSizeCategory = false
-            t.font = f
+            t.holdsFont = out
+            t.adjustsFontForContentSizeCategory = !out
+            t.font = font
         case let t as AsukaTextView:
-            t.holdsFont = true
-            t.adjustsFontForContentSizeCategory = false
-            t.placeholderLabel.adjustsFontForContentSizeCategory = false
-            t.font = f
+            t.holdsFont = out
+            t.adjustsFontForContentSizeCategory = !out
+            t.placeholderLabel.adjustsFontForContentSizeCategory = !out
+            t.font = font
         case let b as UIButton where b.configuration?.titleTextAttributesTransformer != nil:
             b.updateConfiguration()
         default:

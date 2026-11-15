@@ -120,10 +120,9 @@ public final class AsukaViewController: UIViewController {
         sendEnvironment()
     }
 
-    // Labels pick up the new Dynamic Type size in their own trait
-    // update, after this notification: report it a turn later so the
-    // core measures with the new fonts.
-    /// Text size or Reduce Motion changed: the root and the screens report it.
+    /// Text size or Reduce Motion changed: the root and the screens report
+    /// it, a turn later, once each text has its new font (followTextSize)
+    /// for the core to measure with.
     @objc func contentSizeChanged() {
         DispatchQueue.main.async {
             for n in AsukaRuntime.shared.nodes.values { n.followTextSize() }
@@ -179,7 +178,10 @@ public final class AsukaViewController: UIViewController {
         e.keyboard = Float(keyboard)
         let scale = traitCollection.displayScale
         e.scale = Float(scale > 0 ? scale : UIScreen.main.scale)
-        e.fontScale = Float(UIFontMetrics.default.scaledValue(for: 17) / 17)
+        // The app's text size, as the nodes' fonts take it (AsukaNode.font):
+        // the current traits may not have it yet as it changes.
+        let size = UITraitCollection(preferredContentSizeCategory: UIApplication.shared.preferredContentSizeCategory)
+        e.fontScale = Float(UIFontMetrics.default.scaledValue(for: 17, compatibleWith: size) / 17)
         e.dark = traitCollection.userInterfaceStyle == .dark
         e.reduceMotion = UIAccessibility.isReduceMotionEnabled
         e.screenReader = UIAccessibility.isVoiceOverRunning
