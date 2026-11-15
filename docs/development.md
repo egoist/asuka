@@ -386,20 +386,24 @@ with `go run .` in its directory:
 ```sh
 ASUKA_SNAPSHOT=shot.png go run .                  # the window as a PNG, once it has shown, then quit
 ASUKA_SNAPSHOT=shot.png ASUKA_DUMP=1 go run .      # and its view tree, in shot.png.txt
-ASUKA_SCRIPT="tap:Add;tap:Add" ASUKA_SNAPSHOT=shot.png go run .   # Windows, Linux: steps first
+ASUKA_SCRIPT="tap:Add;tap:Add" ASUKA_SNAPSHOT=shot.png go run .   # steps first
 ```
 
 - `ASUKA_SNAPSHOT` writes the window as a PNG once it has shown (and
   the script has run), and quits; `ASUKA_SNAPSHOT_STAY=1` keeps the app
-  running.
+  running. On macOS it's the window server's image of the window, with
+  its sheets over it, so materials and Liquid Glass show as they do on
+  screen; a file named `*.content.png` is the content alone, without the
+  title bar.
 - `ASUKA_DUMP` writes the view tree beside it: each view's kind, frame
   and what it shows.
-- `ASUKA_SCRIPT` (Windows and Linux) runs steps, separated by `;`,
+- `ASUKA_SCRIPT` runs steps, separated by `;`,
   before the snapshot: `tap:<text>` (the view showing it: a button's
-  title, a text, a tab), `type:<text>` (into the focused field), `back`,
+  title, a text, a tab, a sidebar's row, a segment), `type:<text>` (into the focused field), `back`,
   `key:<shortcut>` (`ctrl+shift+k`), `menu:<item>` (the menu bar's),
   `escape`, `close` (the window in use), `wait:<duration>` (`500ms`)
-  and `snap:<file>`. Each host has a few more: see its `automation.go`.
+  and `snap:<file>`. Each host has a few more: see its `automation.go`
+  (macOS: `script.go`).
 
 ## Common problems
 

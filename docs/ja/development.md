@@ -170,12 +170,12 @@ main.go:14:23: count.Get() is read once, while App builds its views, so the cons
 ```sh
 ASUKA_SNAPSHOT=shot.png go run .                  # ウィンドウが表示されたら PNG に保存して終了
 ASUKA_SNAPSHOT=shot.png ASUKA_DUMP=1 go run .      # あわせてビューツリーを shot.png.txt に書き出す
-ASUKA_SCRIPT="tap:Add;tap:Add" ASUKA_SNAPSHOT=shot.png go run .   # Windows、Linux：先に操作を実行する
+ASUKA_SCRIPT="tap:Add;tap:Add" ASUKA_SNAPSHOT=shot.png go run .   # 先に操作を実行する
 ```
 
-- `ASUKA_SNAPSHOT`：ウィンドウが表示されたら（スクリプトがあればその実行後に）、ウィンドウを PNG に書き出して終了します。`ASUKA_SNAPSHOT_STAY=1` を指定すると、終了せずにアプリを実行し続けます。
+- `ASUKA_SNAPSHOT`：ウィンドウが表示されたら（スクリプトがあればその実行後に）、ウィンドウを PNG に書き出して終了します。`ASUKA_SNAPSHOT_STAY=1` を指定すると、終了せずにアプリを実行し続けます。macOS ではウィンドウサーバーが合成したウィンドウの画像（シートも含む）なので、マテリアルや Liquid Glass も画面どおりに写ります。ファイル名が `*.content.png` なら、タイトルバーを除いたコンテンツだけを書き出します。
 - `ASUKA_DUMP`：その PNG の隣にビューツリーを書き出します。各ビューの種類、フレーム、表示内容が含まれます。
-- `ASUKA_SCRIPT`（Windows と Linux）：スナップショットの前に、`;` で区切った操作を順に実行します。使える操作は、`tap:<text>`（そのテキストを表示しているビュー。ボタンのタイトル、テキスト、タブなど）、`type:<text>`（フォーカスのある入力欄に入力）、`back`、`key:<shortcut>`（`ctrl+shift+k`）、`menu:<item>`（メニューバーの項目）、`escape`、`close`（使用中のウィンドウを閉じる）、`wait:<duration>`（`500ms`）、`snap:<file>` です。ホストごとに追加の操作もいくつかあります。それぞれの `automation.go` を参照してください。
+- `ASUKA_SCRIPT`：スナップショットの前に、`;` で区切った操作を順に実行します。使える操作は、`tap:<text>`（そのテキストを表示しているビュー。ボタンのタイトル、テキスト、タブ、サイドバーの行、セグメントなど）、`type:<text>`（フォーカスのある入力欄に入力）、`back`、`key:<shortcut>`（`ctrl+shift+k`）、`menu:<item>`（メニューバーの項目）、`escape`、`close`（使用中のウィンドウを閉じる）、`wait:<duration>`（`500ms`）、`snap:<file>` です。ホストごとに追加の操作もいくつかあります。それぞれの `automation.go`（macOS では `script.go`）を参照してください。
 
 ## よくある問題
 

@@ -247,8 +247,8 @@ platforms:
   emulator or a phone, or in a browser, and reloads it as you save.
 - On a desktop, `ASUKA_SNAPSHOT=out.png` writes the window to a PNG
   once it has shown, without taking the focus, then quits
-  (`ASUKA_DUMP=1` writes its view tree beside it). On Windows and
-  Linux, `ASUKA_SCRIPT` runs steps first (`tap:Add`, `type:hello`):
+  (`ASUKA_DUMP=1` writes its view tree beside it). `ASUKA_SCRIPT`
+  runs steps first (`tap:Add`, `type:hello`):
   see [Development](development.md#snapshots-and-scripts).
 - On Linux, under Xvfb (`xvfb-run -a dbus-run-session`), that works
   with no display, in CI.

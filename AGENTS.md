@@ -79,7 +79,7 @@ go run ./cmd/asuka dev examples/counter            # macOS (on a Mac, no --platf
 go run ./cmd/asuka build examples/counter          # likewise: a universal .app (--sign "Developer ID Application: ..."; default ad hoc)
 go test ./host/darwin                            # the macOS host, driving real AppKit views (macOS)
 go test ./host/darwin -run Swift               # an app's macos/*.swift, compiled and loaded by the host (Xcode's command line tools)
-(cd examples/counter && ASUKA_SNAPSHOT=/tmp/c.png ASUKA_DUMP=1 go run .)  # macOS: the window as a PNG and its view tree, then quit
+(cd examples/counter && ASUKA_SNAPSHOT=/tmp/c.png ASUKA_DUMP=1 ASUKA_SCRIPT="tap:Add" go run .)  # macOS: steps, then the window as a PNG (the window server's) and its view tree, then quit
 go run ./cmd/asuka dev examples/counter            # Windows (on a PC, no --platform: windows): the app and its Win32 host in one process, rerun on save
 go run ./cmd/asuka build --platform windows examples/counter  # a folder: the .exe (icon, manifest, version) and its assets; from any system
 go test ./host/windows                           # the Windows host, driving real Win32 windows (Windows)

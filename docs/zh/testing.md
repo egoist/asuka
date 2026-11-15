@@ -180,7 +180,7 @@ View 0,0 390x844
 `uitest` 测试的是应用的行为：屏幕上显示什么，用户操作之后会发生什么。至于每个平台怎么把它画出来，那是平台的事；Asuka 自己的测试会检查每个宿主画出的是不是核心发过去的内容（见[开发](development.md#测试)）。要在各平台上看到你的应用：
 
 - `asuka dev --platform ios|android|web` 会在 iOS 模拟器、Android 模拟器、手机或者浏览器中运行应用，并在你保存时重新加载。
-- 在桌面端，`ASUKA_SNAPSHOT=out.png` 会在窗口显示出来之后把它写成一张 PNG，不会抢占焦点，然后退出（`ASUKA_DUMP=1` 会把视图树写在旁边）。在 Windows 和 Linux 上，`ASUKA_SCRIPT` 会先执行一些步骤（`tap:Add`、`type:hello`）：见[开发](development.md#快照与脚本)。
+- 在桌面端，`ASUKA_SNAPSHOT=out.png` 会在窗口显示出来之后把它写成一张 PNG，不会抢占焦点，然后退出（`ASUKA_DUMP=1` 会把视图树写在旁边）。`ASUKA_SCRIPT` 会先执行一些步骤（`tap:Add`、`type:hello`）：见[开发](development.md#快照与脚本)。
 - 在 Linux 上，在 Xvfb 下（`xvfb-run -a dbus-run-session`）不需要显示器也能这样做，CI 里也可以。
 
 一旦测试挂载了应用，就不能并行运行（`t.Parallel`）：和在设备上一样，一个进程里只有一个应用核心。

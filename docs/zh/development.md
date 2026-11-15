@@ -178,12 +178,12 @@ main.go:14:23: count.Get() is read once, while App builds its views, so the cons
 ```sh
 ASUKA_SNAPSHOT=shot.png go run .                  # 窗口显示后把它保存为 PNG，然后退出
 ASUKA_SNAPSHOT=shot.png ASUKA_DUMP=1 go run .      # 同时把视图树写入 shot.png.txt
-ASUKA_SCRIPT="tap:Add;tap:Add" ASUKA_SNAPSHOT=shot.png go run .   # Windows、Linux：先执行这些步骤
+ASUKA_SCRIPT="tap:Add;tap:Add" ASUKA_SNAPSHOT=shot.png go run .   # 先执行这些步骤
 ```
 
-- `ASUKA_SNAPSHOT` 会在窗口显示后（以及脚本执行完后）把窗口保存为 PNG，然后退出；设置 `ASUKA_SNAPSHOT_STAY=1` 可以让应用继续运行。
+- `ASUKA_SNAPSHOT` 会在窗口显示后（以及脚本执行完后）把窗口保存为 PNG，然后退出；设置 `ASUKA_SNAPSHOT_STAY=1` 可以让应用继续运行。在 macOS 上，截图取自窗口服务器合成的窗口图像（连同其上的表单），材质和 Liquid Glass 都和屏幕上一样；文件名为 `*.content.png` 时只保存内容，不含标题栏。
 - `ASUKA_DUMP` 会在截图旁边写出视图树：每个视图的类型、frame（位置和尺寸）以及显示的内容。
-- `ASUKA_SCRIPT`（Windows 和 Linux）会在截图前执行一系列以 `;` 分隔的步骤：`tap:<text>`（点按显示该文字的视图：按钮标题、文本、标签页）、`type:<text>`（在获得焦点的输入框中输入）、`back`、`key:<shortcut>`（如 `ctrl+shift+k`）、`menu:<item>`（菜单栏中的菜单项）、`escape`、`close`（关闭当前窗口）、`wait:<duration>`（如 `500ms`）和 `snap:<file>`。每个宿主还支持另外几个步骤，参见各自的 `automation.go`。
+- `ASUKA_SCRIPT` 会在截图前执行一系列以 `;` 分隔的步骤：`tap:<text>`（点按显示该文字的视图：按钮标题、文本、标签页、侧边栏的行、分段控件的段）、`type:<text>`（在获得焦点的输入框中输入）、`back`、`key:<shortcut>`（如 `ctrl+shift+k`）、`menu:<item>`（菜单栏中的菜单项）、`escape`、`close`（关闭当前窗口）、`wait:<duration>`（如 `500ms`）和 `snap:<file>`。每个宿主还支持另外几个步骤，参见各自的 `automation.go`（macOS 为 `script.go`）。
 
 ## 常见问题
 
