@@ -29,12 +29,19 @@ type placeTable struct {
 }
 
 type placeFile struct {
-	funcs []string // the declared functions' runtime names
+	funcs []placeFunc
 	lits  []placeLit
 	sites []placeSite
 	// reset, when the file says //asuka:reset, is a digest of its
 	// content: its signals start over when it's edited.
 	reset string
+}
+
+// placeFunc is a declared function: its runtime name (main.Screen) and
+// that name past its package, after a dot (.Screen), which an inlined
+// copy's name has after its caller's (main.main.func1.Screen.1).
+type placeFunc struct {
+	name, local string
 }
 
 // placeLit is a function literal: its lines, its depth among the
@@ -73,7 +80,9 @@ func KeepPlaces(table string) {
 		case fields[0] == "R" && len(fields) == 2:
 			f.reset = fields[1]
 		case fields[0] == "D" && len(fields) == 2:
-			f.funcs = append(f.funcs, fields[1])
+			d := fields[1]
+			_, local, _ := strings.Cut(d[strings.LastIndexByte(d, '/')+1:], ".")
+			f.funcs = append(f.funcs, placeFunc{d, "." + local})
 		case fields[0] == "L" && len(fields) == 6:
 			f.lits = append(f.lits, placeLit{atoi(fields[1]), atoi(fields[2]), atoi(fields[3]), atoi(fields[4]), fields[5]})
 		case fields[0] == "S" && len(fields) == 4:
@@ -101,26 +110,26 @@ func (t *placeTable) closure(fr runtime.Frame) string {
 		// Inlining can put the caller before the declaring function:
 		// main.main.func1.Screen.1. Match Screen's suffix, but only to
 		// Screen's own literals at the frame's source location below.
-		_, local, _ := strings.Cut(d[strings.LastIndexByte(d, '/')+1:], ".")
-		i := strings.LastIndex(fr.Function, "."+local)
+		i := strings.LastIndex(fr.Function, d.local)
 		if i < 0 {
 			continue
 		}
-		end := i + 1 + len(local)
+		end := i + len(d.local)
 		depth, num := closureDepth(fr.Function[end:])
 		if depth == 0 {
 			continue
 		}
 		for i := range f.lits {
 			l := &f.lits[i]
-			if l.depth != depth || fr.Line < l.start || fr.Line > l.end || !strings.HasPrefix(l.name, d+">") {
+			if l.depth != depth || fr.Line < l.start || fr.Line > l.end ||
+				len(l.name) <= len(d.name) || l.name[len(d.name)] != '>' || !strings.HasPrefix(l.name, d.name) {
 				continue
 			}
 			n++
 			pick = l
 			// A cloned literal's number belongs to the inlining caller,
 			// so it can't distinguish siblings on the same source line.
-			if fr.Function[:end] == d && l.num == num {
+			if fr.Function[:end] == d.name && l.num == num {
 				numbered = l
 				numberedCount++
 			}

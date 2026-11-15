@@ -22,7 +22,6 @@ func TestClosureDepth(t *testing.T) {
 		{".func1.gowrap1", 0, 0},
 		{".func1-rangeX", 0, 0},
 		{"1", 0, 0}, // the end of another declaration's name
-
 	} {
 		if d, n := closureDepth(c.rest); d != c.depth || n != c.num {
 			t.Errorf("%s: %d, %d; want %d, %d", c.rest, d, n, c.depth, c.num)
