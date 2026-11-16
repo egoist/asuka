@@ -1,0 +1,25 @@
+// std/math: roots, powers, logarithms and trigonometry.
+
+import std/math
+
+test "logarithms and exponents" {
+  expect(math.log(1) == 0)
+  expect(abs(math.log(math.exp(2.5)) - 2.5) < 1e-12)
+  expect(math.log2(1024) == 10)
+  expect(math.log10(1000) == 3)
+  expect(math.exp(0) == 1)
+  print((math.log(1 + 99.0) / math.log(1 + 999.0)).fixed(4))
+}
+
+test "trigonometry" {
+  expect(abs(math.tan(math.pi / 4) - 1) < 1e-12)
+  expect(abs(math.atan(1) - math.pi / 4) < 1e-12)
+  expect(math.atan2(1, 1) == math.atan(1))
+  print(math.sqrt(2).fixed(6))
+}
+
+// Output:
+// 0.6667
+// ok logarithms and exponents
+// 1.414214
+// ok trigonometry

@@ -23,6 +23,18 @@ pub native fn round(x: float) -> float
 pub native fn sin(x: float) -> float
 /// The cosine of x radians.
 pub native fn cos(x: float) -> float
+/// The tangent of x radians.
+pub native fn tan(x: float) -> float
+/// The angle in radians, from -π/2 to π/2, whose tangent is x.
+pub native fn atan(x: float) -> float
+/// e raised to the power x.
+pub native fn exp(x: float) -> float
+/// The natural logarithm of x (-infinity at 0, NaN when x is negative).
+pub native fn log(x: float) -> float
+/// The base-2 logarithm of x.
+pub native fn log2(x: float) -> float
+/// The base-10 logarithm of x.
+pub native fn log10(x: float) -> float
 /// x raised to the power y.
 pub native fn pow(x: float, y: float) -> float
 /// The angle in radians, from -π to π, from the x axis to the point (x, y):

@@ -21,7 +21,7 @@ state units = store.read("units", "metric")
 | パッケージ | 内容 |
 |---|---|
 | [`std/json`](std/json.md) | `json.decode<T>(text)` と `json.encode(value, indent:)`：コンパイラーが `T` について知っていることにもとづく、型付きの JSON |
-| [`std/math`](std/math.md) | `sqrt`、`pow`、`floor`、`ceil`、`round`、`sin`、`cos`、`atan2`、`clamp`、`random`、`randomInt`、`seed`、`pi` |
+| [`std/math`](std/math.md) | `sqrt`、`pow`、`exp`、`log`、`log2`、`log10`、`floor`、`ceil`、`round`、`sin`、`cos`、`tan`、`atan`、`atan2`、`clamp`、`random`、`randomInt`、`seed`、`pi` |
 | [`std/embed`](std/embed.md) | パッケージのファイルをアプリに組み込みます：`embed.text(path)`、`bytes(path)`、`json<T>(path)`（`T` として読み、コンパイル時に検査）、`texts(glob)` と `files(glob)`（`[パス: テキスト]`、`[パス: バイト列]`） |
 | [`std/time`](std/time.md) | `time.now()`、`time.date(2026, 3, 7, hour: 9, zone: .utc)`、`time.unix(s)`、`time.parse(rfc3339)`：`Time` を返します。タイムゾーン（`.local`、`.utc`、`.fixed(seconds:)`）付きの時刻で、壁時計としての `year`、`month`、`day`、`hour`、`minute`、`second`、`nanosecond`、`weekday` を持ちます。メソッドは `format("EEE d MMM, HH:mm")`（Unicode の日付パターン、英語で出力）、`rfc3339()`、`add(d)`、`sub(t)`（`Duration` を返す）、`addDate(years:, months:, days:)`、`isBefore`、`isAfter`、`compare`、`sameDay`、`startOfDay`、`truncate(d)`、`inZone`、`utc`、`local`、`unix`、`unixMilli`、`unixNano` です。ほかに `time.monotonic()`（前にしか進まない `Duration`）、`time.since(t)`、`time.ticks(1s)` と `time.ticker(1s)`（時刻のストリーム） |
 | [`std/url`](std/url.md) | `url.parse(text)`：`URL?` を返します。`scheme`、`user`、`host`、`port`、`path`、`rawQuery`、`fragment` と、`query(name)`、`queryAll(name)`、`text()`、`resolve(ref)`（RFC 3986）を持ちます。ほかに `url.resolve(base, ref)`、`escape`、`unescape`、`pathEscape`、`pathUnescape`、`encodeQuery(map)`（名前順）、`parseQuery(raw)` |

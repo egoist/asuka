@@ -763,7 +763,7 @@ func (c *Checker) makeStd(path string) *Package {
 		add("encode", BJSONEncode, "", nil)
 	case "std/math":
 		p.Name = "math"
-		for _, n := range []string{"sqrt", "floor", "ceil", "round", "sin", "cos"} {
+		for _, n := range []string{"sqrt", "floor", "ceil", "round", "sin", "cos", "tan", "atan", "exp", "log", "log2", "log10"} {
 			add(n, BMath, "math."+n, f1)
 		}
 		add("pow", BMath, "math.pow", f2)

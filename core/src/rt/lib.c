@@ -782,6 +782,12 @@ static ak_val length_points(ak_val *args, uint32_t n) {
 static ak_val m_sin(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_F(sin(A(0).f)); }
 static ak_val m_cos(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_F(cos(A(0).f)); }
 static ak_val m_atan2(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_F(atan2(A(0).f, A(1).f)); }
+static ak_val m_tan(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_F(tan(A(0).f)); }
+static ak_val m_atan(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_F(atan(A(0).f)); }
+static ak_val m_exp(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_F(exp(A(0).f)); }
+static ak_val m_log(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_F(log(A(0).f)); }
+static ak_val m_log2(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_F(log2(A(0).f)); }
+static ak_val m_log10(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_F(log10(A(0).f)); }
 // len.scale is a Length (its unit in bits 32-39, its float32 value in
 // bits 0-31) with its value times f.
 static ak_val len_scale(ak_val *args, uint32_t n) {
@@ -1307,6 +1313,12 @@ const ak_lib_entry ak_lib[] = {
 	{"math.sin", m_sin},
 	{"math.cos", m_cos},
 	{"math.atan2", m_atan2},
+	{"math.tan", m_tan},
+	{"math.atan", m_atan},
+	{"math.exp", m_exp},
+	{"math.log", m_log},
+	{"math.log2", m_log2},
+	{"math.log10", m_log10},
 	{"math.hypot", m_hypot},
 	{"len.scale", len_scale},
 	{"math.absf", m_absf},

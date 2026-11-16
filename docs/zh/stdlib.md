@@ -21,7 +21,7 @@ state units = store.read("units", "metric")
 | 包 | 内容 |
 |---|---|
 | [`std/json`](std/json.md) | `json.decode<T>(text)` 和 `json.encode(value, indent:)`：带类型的 JSON，依据编译器对 `T` 的了解来读写 |
-| [`std/math`](std/math.md) | `sqrt`、`pow`、`floor`、`ceil`、`round`、`sin`、`cos`、`atan2`、`clamp`、`random`、`randomInt`、`seed`、`pi` |
+| [`std/math`](std/math.md) | `sqrt`、`pow`、`exp`、`log`、`log2`、`log10`、`floor`、`ceil`、`round`、`sin`、`cos`、`tan`、`atan`、`atan2`、`clamp`、`random`、`randomInt`、`seed`、`pi` |
 | [`std/embed`](std/embed.md) | 把包里的文件编进应用：`embed.text(path)`、`bytes(path)`、`json<T>(path)`（按 `T` 读取，编译时检查）、`texts(glob)` 和 `files(glob)`（`[路径: 文本]`、`[路径: 字节]`） |
 | [`std/time`](std/time.md) | `time.now()`、`time.date(2026, 3, 7, hour: 9, zone: .utc)`、`time.unix(s)`、`time.parse(rfc3339)`：得到一个 `Time`，即带时区（`.local`、`.utc`、`.fixed(seconds:)`）的时刻，以及它在挂钟上的 `year`、`month`、`day`、`hour`、`minute`、`second`、`nanosecond`、`weekday`。它的方法有：`format("EEE d MMM, HH:mm")`（Unicode 的日期模式，英文输出）、`rfc3339()`、`add(d)`、`sub(t)`（得到 `Duration`）、`addDate(years:, months:, days:)`、`isBefore`、`isAfter`、`compare`、`sameDay`、`startOfDay`、`truncate(d)`、`inZone`、`utc`、`local`、`unix`、`unixMilli`、`unixNano`。另有 `time.monotonic()`（只会向前走的 `Duration`）、`time.since(t)`、`time.ticks(1s)` 和 `time.ticker(1s)`（时刻的流） |
 | [`std/url`](std/url.md) | `url.parse(text)`：得到 `URL?`，含 `scheme`、`user`、`host`、`port`、`path`、`rawQuery`、`fragment`，以及 `query(name)`、`queryAll(name)`、`text()` 和 `resolve(ref)`（RFC 3986）；还有 `url.resolve(base, ref)`、`escape`、`unescape`、`pathEscape`、`pathUnescape`、`encodeQuery(map)`（参数名排序）、`parseQuery(raw)` |

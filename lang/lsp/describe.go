@@ -530,7 +530,8 @@ func builtinSig(b *check.Builtin) (string, string) {
 
 var mathDocs = map[string]string{
 	"sqrt": "The square root.", "floor": "Rounded down.", "ceil": "Rounded up.", "round": "Rounded to the nearest integer.",
-	"sin": "The sine (radians).", "cos": "The cosine (radians).", "pow": "x to the power y.", "atan2": "The angle of (x, y), in radians.",
+	"sin": "The sine (radians).", "cos": "The cosine (radians).", "tan": "The tangent (radians).", "atan": "The arctangent, in radians.",
+	"exp": "e to the power x.", "log": "The natural logarithm.", "log2": "The base-2 logarithm.", "log10": "The base-10 logarithm.", "pow": "x to the power y.", "atan2": "The angle of (x, y), in radians.",
 	"random": "A random float in [0, 1).", "randomInt": "A random int in [lo, hi].", "seed": "Seeds the random numbers, to repeat them.",
 	"clamp": "x kept between lo and hi.", "now": "The time now, in milliseconds since 1970.", "monotonic": "A clock that only goes forward: for measuring durations.",
 }
