@@ -26,6 +26,24 @@ inc()                // n is 2
 State is shared the same way. Only `spawn` copies what it uses (values
 only, as they are when it starts), since it runs on another thread.
 
+A closure is async, and throws, as the function type it's passed as
+says (`async fn(int) -> int`). Where nothing says, as for a closure kept
+in a `let`, its body decides: it's async if it awaits, and it throws if
+an error can leave it. `async` before it says so up front, whether it
+awaits yet or not, so that adding an `await` later changes nothing for
+its callers; such a closure can't be passed where a function that
+can't wait is expected.
+
+```asuka
+let refresh = async () => {
+  await store.reload()
+}
+await refresh()
+```
+
+When a call misses its `await` or its `try` because of what a closure's
+body does, the error says where in the body.
+
 A `fn` may be declared in a function's, a handler's, a closure's or a
 method's body too. It sees what's around it as a closure does, and it
 may call itself and the fns declared next to it in its block (and they

@@ -12,7 +12,10 @@ async fn loadThread(id: string) throws -> Thread {
 ```
 
 - Calling an async function needs `await`. Handlers, tasks and tests
-  may await; a component's body and its `let`s may not.
+  may await; a component's body and its `let`s may not. A closure is
+  async when it's passed as an async function or when its body awaits,
+  and `async () => …` marks it so ([Functions and
+  closures](functions.md)).
 - **The main thread.** Everything runs on it, and `await` lets other work
   run while yours waits; state can change there and only there.
 - `all(a, b)` runs calls at once and waits for every result; `race(a, b)`

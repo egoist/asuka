@@ -1,0 +1,58 @@
+// Closures' async and throws: inferred from where they're passed or from
+// their bodies, or marked async.
+
+async fn reload() -> int {
+  await sleep(1ms)
+  return 1
+}
+
+fn mayFail() throws -> int { return 1 }
+
+fn runSync(f: fn() -> int) -> int { return f() }
+
+async fn runAsync(f: async fn() -> int) -> int { return await f() }
+
+async fn inferred() throws {
+  let refresh = () => {
+    let n = 1
+    await reload()
+  }
+  refresh() // ERROR "^refresh is async: await it \\(await refresh\\(…\\)\\), or start it with spawn; it's async because it awaits at closure_effects.asuka:18:5 \\(if it's meant to be, mark it: let refresh = async \\(\\) => …\\)$"
+  await refresh()
+  let read = (x: int) => try mayFail() + x
+  let n = read(1) // ERROR "^read can throw: call it with try \\(try read\\(…\\)\\), or try\\? for none on an error; it can throw because of the try at closure_effects.asuka:22:26$"
+  let fail = (a: int, b: int) => {
+    throw Error("no")
+  }
+  fail(1, 2) // ERROR "fail can throw: .*; it can throw because of the throw at closure_effects.asuka:25:5$"
+  let both = () => try await mayFailLater()
+  both() // ERROR "both is async: await it .*; it's async because it awaits at closure_effects.asuka:28:24 \\(if it's meant to be, mark it: let both = async \\(\\) => …\\)$"
+}
+
+async fn mayFailLater() throws -> int { return 1 }
+
+fn notAsync() {
+  let refresh = () => await reload()
+  refresh() // ERROR "^refresh is async, and this can't wait: mark notAsync async \\(async fn …\\); it's async because it awaits at closure_effects.asuka:35:23"
+}
+
+async fn marked() {
+  let refresh = async () => {
+    print("no await yet")
+  }
+  refresh() // ERROR "^refresh is async: await it \\(await refresh\\(…\\)\\), or start it with spawn$"
+  await refresh()
+  let r = await runAsync(async () => 2)
+  let s = runSync(async () => 3) // ERROR "^this closure is async, where a fn\\(\\) -> int is expected, which can't wait: remove async \\(and the awaits in it\\)$"
+  let t = runSync(() => 3)
+  let u = await runAsync(() => 4)
+}
+
+fn named() {
+  reload() // ERROR "^reload is async, and this can't wait: mark named async \\(async fn …\\)$"
+}
+
+async fn unmarked() {
+  let plain = () => 1
+  let n: int = plain()
+}

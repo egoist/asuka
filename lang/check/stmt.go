@@ -171,6 +171,11 @@ func (c *Checker) letStmt(d *syntax.LetDecl) {
 	}
 	c.info.Lets[d] = t
 	c.bindIrrefutable(d.Pattern, t, d.Keyword == syntax.VAR)
+	if fx := c.inferredFx[t]; fx != nil && fx.letName == "" {
+		if bp, ok := d.Pattern.(*syntax.BindPat); ok && unparen(d.Value) == syntax.Expr(fx.lambda) {
+			fx.letName = d.Keyword.String() + " " + bp.Name.Name
+		}
+	}
 }
 
 // bindIrrefutable binds a let's or a for's pattern: names, _ and
@@ -1064,7 +1069,7 @@ func (c *Checker) forAwait(s *syntax.ForStmt, fi *ForInfo, view bool) {
 	if c.ctx == nil || !c.ctx.Async {
 		c.errorf(s, "for await waits, and this can't: %s", c.asyncHint())
 	} else {
-		c.ctx.Awaits = true
+		c.ctx.awaited(s.Start)
 	}
 	t := c.expr(s.Seq, nil)
 	if st, ok := t.(*Stream); ok {

@@ -1,4 +1,4 @@
-SourceFile 1:1-51:3
+SourceFile 1:1-61:3
   Imports: [2]
     ImportDecl 1:1-1:16
       Path: [2]
@@ -10,7 +10,7 @@ SourceFile 1:1-51:3
         Ident "sensors" 2:17-2:24
       Names: [1]
         Ident "Accelerometer" 2:26-2:39
-  Decls: [2]
+  Decls: [4]
     ScreenDecl 4:1-42:2 blank
       Name: Ident "Weather" 4:8-4:15
       Params: ParamList 4:15-4:29
@@ -339,3 +339,57 @@ SourceFile 1:1-51:3
                   Args: ArgList 49:64-49:66
           ReturnStmt 50:3-50:11
             Value: Ident "f" 50:10-50:11
+    FuncDecl 53:1-53:40 blank
+      Name: Ident "later" 53:4-53:9
+      Params: ParamList 53:9-53:37
+        List: [1]
+          Param 53:10-53:36
+            Name: Ident "f" 53:10-53:11
+            Type: FuncType 53:13-53:36 async
+              Params: [1]
+                NamedType 53:22-53:28
+                  Path: [1]
+                    Ident "string" 53:22-53:28
+              Result: NamedType 53:33-53:36
+                Path: [1]
+                  Ident "int" 53:33-53:36
+      Body: Block 53:38-53:40
+    FuncDecl 55:1-61:2 blank async
+      Name: Ident "refreshAll" 55:10-55:20
+      Params: ParamList 55:20-55:22
+      Body: Block 55:23-61:2
+        Items: [3]
+          LetDecl 56:3-58:4 Keyword=let
+            Pattern: BindPat 56:7-56:14
+              Name: Ident "refresh" 56:7-56:14
+            Value: LambdaExpr 56:17-58:4 async parens
+              Body: Block 56:29-58:4
+                Items: [1]
+                  ExprStmt 57:5-57:21
+                    X: UnaryExpr 57:5-57:21 Op=await
+                      X: CallExpr 57:11-57:21
+                        Fun: Ident "sleep" 57:11-57:16
+                        Args: ArgList 57:16-57:21
+                          List: [1]
+                            Arg 57:17-57:20
+                              Value: BasicLit 57:17-57:20 Kind=duration Value="1ms"
+          ExprStmt 59:3-59:18
+            X: UnaryExpr 59:3-59:18 Op=await
+              X: CallExpr 59:9-59:18
+                Fun: Ident "refresh" 59:9-59:16
+                Args: ArgList 59:16-59:18
+          ExprStmt 60:3-60:30
+            X: CallExpr 60:3-60:30
+              Fun: Ident "later" 60:3-60:8
+              Args: ArgList 60:8-60:30
+                List: [1]
+                  Arg 60:9-60:29
+                    Value: LambdaExpr 60:9-60:29 async
+                      Params: [1]
+                        Param 60:15-60:16
+                          Name: Ident "s" 60:15-60:16
+                      Body: CallExpr 60:20-60:29
+                        Fun: MemberExpr 60:20-60:27
+                          X: Ident "s" 60:20-60:21
+                          Name: Ident "count" 60:22-60:27
+                        Args: ArgList 60:27-60:29

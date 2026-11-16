@@ -55,7 +55,8 @@ package syntax
 //  7. Lambdas. x => … and _ => … are lambdas; so is a parenthesized list
 //     of names, each maybe with a type, whose ) is followed by =>:
 //     (a, b) => …, (a: int) => …, () => …, found by looking ahead to the
-//     matching parenthesis. Anything else in parentheses is a grouping
+//     matching parenthesis. Either may follow async (async x => …,
+//     async () => …), which marks the lambda async. Anything else in parentheses is a grouping
 //     ((x) without =>) or a tuple ((a, b)). A lambda's body is an
 //     expression, or after => a { always starts a block of statements.
 //  8. Maps and arrays. [:] is an empty map, [] an empty array; after [
@@ -1952,28 +1953,33 @@ func (p *parser) parseExpr() Expr {
 	return x
 }
 
-// lambdaAhead reports whether a lambda starts here (decision 7).
+// lambdaAhead reports whether a lambda starts here (decision 7), maybe
+// after async.
 func (p *parser) lambdaAhead() bool {
-	switch {
-	case isIdentTok(p.tok):
-		return p.peek(1) == FATARROW
-	case p.tok == LPAREN:
-		if p.peek(1) == RPAREN {
-			return p.peek(2) == FATARROW
+	k := 0
+	if p.tok == ASYNC {
+		k = 1
+	}
+	switch t := p.peek(k); {
+	case isIdentTok(t):
+		return p.peek(k+1) == FATARROW
+	case t == LPAREN:
+		if p.peek(k+1) == RPAREN {
+			return p.peek(k+2) == FATARROW
 		}
-		if !isIdentTok(p.peek(1)) {
+		if !isIdentTok(p.peek(k + 1)) {
 			return false
 		}
-		switch p.peek(2) {
+		switch p.peek(k + 2) {
 		case RPAREN:
-			return p.peek(3) == FATARROW
+			return p.peek(k+3) == FATARROW
 		case COMMA, COLON:
 		default:
 			return false
 		}
 		// Find the matching parenthesis.
 		depth := 0
-		for j := p.i; j < len(p.toks); j++ {
+		for j := p.i + k; j < len(p.toks); j++ {
 			switch p.toks[j].tok {
 			case LPAREN, LBRACK, LBRACE, DOTBRACE:
 				depth++
@@ -1993,6 +1999,10 @@ func (p *parser) lambdaAhead() bool {
 func (p *parser) parseLambda() *LambdaExpr {
 	start := p.pos
 	l := &LambdaExpr{}
+	if p.tok == ASYNC {
+		l.Async = p.pos
+		p.next()
+	}
 	if isIdentTok(p.tok) {
 		id := p.ident()
 		l.Params = []*Param{{Span: id.Span, Name: id}}

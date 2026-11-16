@@ -1072,6 +1072,9 @@ func (p *printer) expr1(x Expr) {
 			p.indent--
 		}
 	case *LambdaExpr:
+		if x.Async.IsValid() {
+			p.write("async ")
+		}
 		if !x.Parens && len(x.Params) == 1 && x.Params[0].Type == nil && x.Params[0].Default == nil {
 			p.write(x.Params[0].Name.Name)
 		} else {

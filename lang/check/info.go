@@ -362,8 +362,21 @@ type FuncCtx struct {
 	calls      []*Function
 	inferRes   bool // a lambda whose result is inferred from its body
 	threw      bool // lets an error out
-	globals    []*Global
-	retTypes   []Type
+	// The first await (or for await) and the first thing that lets an
+	// error out (a try, a throw, an untried call): what made an inferred
+	// closure async or throwing, for the errors at its calls.
+	awaitAt  syntax.Pos
+	threwAt  syntax.Node
+	globals  []*Global
+	retTypes []Type
+}
+
+// awaited notes an await (or a for await) at pos in the body.
+func (c *FuncCtx) awaited(pos syntax.Pos) {
+	if !c.Awaits {
+		c.awaitAt = pos
+	}
+	c.Awaits = true
 }
 
 // IsClosure reports whether the lowering makes the body a closure.

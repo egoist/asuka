@@ -1,6 +1,10 @@
 package check
 
 import (
+	"fmt"
+	"path/filepath"
+	"strings"
+
 	"github.com/egoist/asuka/lang/syntax"
 )
 
@@ -758,19 +762,95 @@ func (c *Checker) trailingClosure(e *syntax.CallExpr, params []*Param, args []sy
 // callEffects checks that a call to an async or throwing function is
 // awaited or tried.
 func (c *Checker) callEffects(at syntax.Node, what string, async, throws bool) {
+	c.callEffectsWhy(at, what, async, throws, nil)
+}
+
+// An inferredFx is what made a closure without an expected type async
+// or throwing: the first await in its body (NoPos when it says async),
+// the first thing that lets an error out, and the let that names it.
+type inferredFx struct {
+	lambda  *syntax.LambdaExpr
+	awaitAt syntax.Pos
+	threwAt syntax.Node
+	letName string // "let refresh", when a let names it
+}
+
+// callEffectsWhy is callEffects for a call of a closure whose effects
+// came from its body (fx, or nil): the errors say where.
+func (c *Checker) callEffectsWhy(at syntax.Node, what string, async, throws bool, fx *inferredFx) {
 	if async {
 		if c.inAwait == 0 {
+			why := ""
+			if fx != nil && fx.awaitAt.IsValid() {
+				why = fmt.Sprintf("; it's async because it awaits at %s (if it's meant to be, mark it: %s)", c.where(fx.awaitAt), fx.markedAsync())
+			}
 			if c.ctx != nil && c.ctx.Async {
-				c.errorf(at, "%s is async: await it (await %s(…)), or start it with spawn", what, what)
+				c.errorf(at, "%s is async: await it (await %s(…)), or start it with spawn%s", what, what, why)
 			} else {
-				c.errorf(at, "%s is async, and this can't wait: %s", what, c.asyncHint())
+				c.errorf(at, "%s is async, and this can't wait: %s%s", what, c.asyncHint(), why)
 			}
 		}
 	}
 	if throws && c.inTry == 0 {
-		c.errorf(at, "%s can throw: call it with try (try %s(…)), or try? for none on an error", what, what)
+		why := ""
+		if fx != nil && fx.threwAt != nil {
+			why = fmt.Sprintf("; it can throw because of %s at %s", throwCause(fx.threwAt), c.where(fx.threwAt.Range().Start))
+		}
+		c.errorf(at, "%s can throw: call it with try (try %s(…)), or try? for none on an error%s", what, what, why)
 		c.mayThrow(at)
 	}
+}
+
+// where is pos as its file's name, line and column: app.asuka:4:5.
+func (c *Checker) where(pos syntax.Pos) string {
+	p := c.fset.Position(pos)
+	p.Filename = filepath.Base(p.Filename)
+	return p.String()
+}
+
+// markedAsync is the closure written with async: let refresh = async
+// () => ….
+func (fx *inferredFx) markedAsync() string {
+	var b strings.Builder
+	if fx.letName != "" {
+		b.WriteString(fx.letName + " = ")
+	}
+	b.WriteString("async ")
+	l := fx.lambda
+	if !l.Parens && len(l.Params) == 1 {
+		b.WriteString(l.Params[0].Name.Name)
+	} else {
+		b.WriteString("(")
+		for i, p := range l.Params {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(p.Name.Name)
+			if p.Type != nil {
+				b.WriteString(": …")
+			}
+		}
+		b.WriteString(")")
+	}
+	b.WriteString(" => …")
+	return b.String()
+}
+
+// throwCause names what let an error out of a closure's body.
+func throwCause(n syntax.Node) string {
+	switch n := n.(type) {
+	case *syntax.UnaryExpr:
+		if n.Op == syntax.TRY {
+			return "the try"
+		}
+	case *syntax.ThrowStmt:
+		return "the throw"
+	case *syntax.JumpExpr:
+		return "the throw"
+	case *syntax.ForStmt:
+		return "the for await"
+	}
+	return "the call"
 }
 
 func (c *Checker) closureCall(e *syntax.CallExpr, fun syntax.Expr, t Type) Type {
@@ -802,7 +882,7 @@ func (c *Checker) closureCall(e *syntax.CallExpr, fun syntax.Expr, t Type) Type 
 		c.errorf(e, "%s takes %s, not %d", exprName(fun), plural(len(ft.Params), "argument", "arguments"), len(args))
 	}
 	c.info.Calls[e] = &Call{Kind: CallClosure, Recv: fun, Args: args, Result: ft.Result, RecvType: ft}
-	c.callEffects(e, exprName(fun), ft.Async, ft.Throws)
+	c.callEffectsWhy(e, exprName(fun), ft.Async, ft.Throws, c.inferredFx[ft])
 	if c.ctx != nil {
 		c.ctx.readsState = true // what it does isn't known here
 	}
@@ -1285,8 +1365,14 @@ func (c *Checker) lambda(e *syntax.LambdaExpr, want Type) Type {
 		ft.Params = append(ft.Params, t)
 		ctx.Params = append(ctx.Params, c.declareVar(p.Name, t, false))
 	}
+	marked := e.Async.IsValid()
 	if wf != nil {
-		ctx.Async, ctx.Throws = wf.Async, wf.Throws
+		if marked && !wf.Async {
+			c.errorPos(e.Async, "this closure is async, where a %s is expected, which can't wait: remove async (and the awaits in it)", typeString(wf))
+		}
+		// Marked async where a sync function is expected: an error, and
+		// its body may still await (no second error for each await).
+		ctx.Async, ctx.Throws = wf.Async || marked, wf.Throws
 		ft.Async, ft.Throws = wf.Async, wf.Throws
 	} else {
 		ctx.Async, ctx.Throws = true, true
@@ -1342,8 +1428,17 @@ func (c *Checker) lambda(e *syntax.LambdaExpr, want Type) Type {
 		}
 	}
 	if wf == nil {
-		ft.Async = ctx.Awaits
+		ft.Async = marked || ctx.Awaits
 		ft.Throws = ctx.threw
+		if fx := (&inferredFx{lambda: e, threwAt: ctx.threwAt}); ft.Throws || ft.Async && !marked {
+			if !marked {
+				fx.awaitAt = ctx.awaitAt
+			}
+			if c.inferredFx == nil {
+				c.inferredFx = map[Type]*inferredFx{}
+			}
+			c.inferredFx[ft] = fx
+		}
 	}
 	ctx.Result = ft.Result
 	c.leave(saved)

@@ -90,7 +90,11 @@ func sexpr(n Node) string {
 			}
 			ps = append(ps, s)
 		}
-		return "(=> (" + strings.Join(ps, " ") + ") " + sexpr(x.Body) + ")"
+		arrow := "=>"
+		if x.Async.IsValid() {
+			arrow = "async=>"
+		}
+		return "(" + arrow + " (" + strings.Join(ps, " ") + ") " + sexpr(x.Body) + ")"
 	case *ParenExpr:
 		return "(paren " + sexpr(x.X) + ")"
 	case *TupleExpr:
@@ -259,6 +263,11 @@ func TestParseExpr(t *testing.T) {
 		{"(x)", "(paren x)"},
 		{"key => key", "(=> (key) key)"},
 		{"list.map(t => t.id)", "(call (. list map) (=> (t) (. t id)))"},
+		{"async x => await f(x)", "(async=> (x) (await (call f x)))"},
+		{"async () => await f()", "(async=> () (await (call f)))"},
+		{"async (a, b: int) => { return a }", "(async=> (a b:int) {*syntax.ReturnStmt<return a>})"},
+		{"async (x) => x", "(async=> (x) x)"},
+		{"run(async () => go())", "(call run (async=> () (call go)))"},
 		// if and match as values.
 		{"if a { 1 } else { 2 }", "(if a {1} {2})"},
 		{"if a { 1 } else if b { 2 } else { 3 }", "(if a {1} (if b {2} {3}))"},

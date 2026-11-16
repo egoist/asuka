@@ -49,3 +49,13 @@ async fn fetchForecast(city: string) throws -> Forecast {
   let f: Forecast = try await http.get("/forecast/{city}").json()
   return f
 }
+
+fn later(f: async fn(string) -> int) {}
+
+async fn refreshAll() {
+  let refresh = async () => {
+    await sleep(1ms)
+  }
+  await refresh()
+  later(async s => s.count())
+}

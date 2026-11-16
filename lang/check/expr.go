@@ -1222,7 +1222,7 @@ func (c *Checker) unary(e *syntax.UnaryExpr, want Type) Type {
 		if c.ctx == nil || !c.ctx.Async {
 			c.errorf(e, "await only where code may wait: %s", c.asyncHint())
 		} else {
-			c.ctx.Awaits = true
+			c.ctx.awaited(e.Start)
 		}
 		c.inAwait++
 		t := c.expr(e.X, want)
@@ -1266,6 +1266,9 @@ func (c *Checker) unary(e *syntax.UnaryExpr, want Type) Type {
 func (c *Checker) mayThrow(at syntax.Node) {
 	if c.handled > 0 || c.ctx == nil {
 		return
+	}
+	if !c.ctx.threw {
+		c.ctx.threwAt = at
 	}
 	c.ctx.threw = true
 	if c.ctx.Throws {

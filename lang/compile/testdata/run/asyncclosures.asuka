@@ -1,0 +1,59 @@
+// Closures marked async: async whether or not their bodies await (one
+// that doesn't completes at once), stored in a let, passed where an
+// async fn is expected; and unmarked ones, async from their bodies.
+
+async fn twice(f: async fn(int) -> int, x: int) -> int {
+  let a = await f(x)
+  return await f(a)
+}
+
+async fn later(n: int) -> int {
+  await sleep(1ms)
+  return n
+}
+
+test "marked, no await" {
+  var calls = 0
+  let bump = async () => {
+    calls += 1
+    print("bump {calls}")
+  }
+  await bump()
+  await bump()
+  let double = async (x: int) => x * 2
+  print(await double(21))
+  print(await twice(double, 3))
+  print(await twice(async x => x + 1, 10))
+  print(calls)
+}
+
+test "marked, awaiting" {
+  let slowly = async (x: int) => {
+    let y = await later(x)
+    return y * 10
+  }
+  print(await twice(slowly, 1))
+}
+
+test "unmarked" {
+  let fromBody = (x: int) => await later(x + 1)
+  print(await fromBody(1))
+  print(await twice(x => x - 1, 5))
+  let plain = (x: int) => x * 3
+  print(plain(3))
+}
+
+// Output:
+// bump 1
+// bump 2
+// 42
+// 12
+// 12
+// 2
+// ok marked, no await
+// 100
+// ok marked, awaiting
+// 2
+// 3
+// 9
+// ok unmarked

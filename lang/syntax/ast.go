@@ -814,10 +814,11 @@ type BinaryExpr struct {
 	Y     Expr
 }
 
-// A LambdaExpr is x => body or (a, b: T) => body; the body is an Expr or
-// a *Block.
+// A LambdaExpr is x => body or (a, b: T) => body, maybe after async
+// (async () => …); the body is an Expr or a *Block.
 type LambdaExpr struct {
 	Span
+	Async  Pos // NoPos if not marked async (its async-ness is then inferred)
 	Params []*Param
 	Parens bool // the parameters are in parentheses
 	Body   Node
