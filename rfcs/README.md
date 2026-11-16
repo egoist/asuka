@@ -23,7 +23,7 @@ Each RFC is a file `NNNN-short-name.md` with a header:
 | [0006](0006-over-the-air-updates.md) | Code push on phones | Rejected |
 | [0007](0007-c-core-and-asuka-language.md) | A C core and the Asuka language | Accepted |
 | [0008](0008-no-go-at-run-time-and-c-ffi.md) | No Go at run time, and C from Asuka | Accepted |
-| [0009](0009-styles.md) | Styles as values | Draft |
+| [0009](0009-styles.md) | Composable styles | Draft |
 
 ## Background: hot reload today
 

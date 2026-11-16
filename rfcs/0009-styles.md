@@ -1,4 +1,4 @@
-# 0009: Styles as values
+# 0009: Composable styles
 
 - **Status**: Draft
 - **Created**: 2026-11-17
@@ -8,34 +8,35 @@
 
 ## Summary
 
-A style becomes a value of type `Style`. `style card { … }` declares a
-constant one; `style chip(tint: Color) { … }` declares a style with
-parameters, a function that returns one; any `fn` may return one, and a
-component may take one as a prop. An element applies styles with the
-`style:` prop, which takes one style or a list, with conditional
-entries:
+An element applies styles with the `style:` prop, which takes one style
+or a list, with conditional entries; a style may take parameters, and
+composes others the same way:
 
 ```asuka
-View { style: [card, rowStyle(m), if selected { chip(.accent) }]; opacity: 0.9 }
+style chip(tint: Color) { padding: [4, 10]; radius: 999; color: tint }
+style largeCard { style: card; padding: 24 }
+
+View { style: [card, if selected { chip(.accent) }]; opacity: 0.9 }
 ```
 
-A style composes others the same way (`style big { style: [card,
-chip(.red)]; padding: 24 }`), may `use` what's provided (a theme that
-differs in a part of the app), and a package may give an element kind a
-default style (`style Button { radius: 8 }`).
+A style may `use` what's provided (a theme that differs in a part of
+the app), and a package may give an element kind a default style
+(`style Button { radius: 8 }`).
 
-The compiler resolves what it can see (names, calls of a style with
-parameters, conditional entries) and lowers it as today: prop sets
-inlined in the element, a binding per prop. Only a `Style` known at run
-time (a `fn`'s result, a prop, state) costs more: one layer on the view,
-whose keys the runtime compares when its value changes. Conditional
-entries and the interaction-state variants (`pressed { … }`) become the
-same mechanism: layers laid over the view's own values while something
-holds.
+Every style is known to the compiler: a list's entries are names of
+styles and calls of styles with parameters, never a value computed at
+run time. What changes is the arguments (bindings, as any prop's) and
+the conditions. The compiler inlines a style as it inlines `style card`
+today; a conditional entry becomes a layer on the view, the mechanism
+the interaction-state variants (`pressed { … }`) already use,
+generalized.
+
+Styles as values (a `fn` returning one, a prop or state holding one)
+are left for later; see [Later: styles as values](#later-styles-as-values).
 
 ## Motivation
 
-Today a style is a declaration and nothing else:
+Today:
 
 - **One name at a time.** `style card` applies one style; two take two
   items (`style card; style pinkCard`). The parser reads one name
@@ -49,9 +50,6 @@ Today a style is a declaration and nothing else:
   condition, and each style's values copied into the branches.
 - **No parameters.** A chip in five tints is five styles, or none and
   the props written at each use.
-- **Not a value.** A function can't choose a style (`fn rowStyle(m:
-  Message)`), and a component can't take one from its caller beyond the
-  style props its one element takes.
 - **Themes are one value for the whole app.** A style reads its
   package's `let`s, the app's `state` and `environment()` (its values
   are bindings, evaluated in the declaring package's scope), which
@@ -62,28 +60,26 @@ Today a style is a declaration and nothing else:
   applied by hand on each element.
 
 CSS answers these with classes, selectors and the cascade; React Native
-with style arrays and `StyleSheet.compose`; SwiftUI with view modifiers
-and `ViewModifier`s as values; Compose with `Modifier` chains. The
-common ground is that a style is a value that composes in order, and a
-condition picks whether it applies. Asuka has static types and a
-compiler that sees most styles whole, so it can keep a value's
-flexibility without its run-time cost where the style is known.
+with style arrays; SwiftUI and Compose with modifier chains. The common
+ground is that styles compose in order and a condition picks whether
+one applies. Asuka's compiler sees every style whole, so composition,
+parameters and conditions can cost what a prop set costs.
 
 ## Decisions
 
 | Question | Decision | Why |
 |---|---|---|
-| What a style is | A value of type `Style`: style keys and their values | A function can return it, a component take it, a list hold it. |
-| Declaring one | `style name { props }` (a constant), `style name(params) { props }` (with parameters: a function returning `Style`) | The declaration form stays; parameters are a function's. |
-| Applying | The `style:` prop, one `Style` or a list; it replaces the `style name` item | One form; a prop, so it's a binding like every other. |
-| Order | Later entries win; the block's own props win over the whole list, wherever `style:` is written | CSS's inline style over classes; no rule that depends on where `style:` sits in the block. |
+| Declaring | `style name { props }`; `style name(params) { props }` with parameters | The declaration form stays; parameters are a function's. |
+| Applying | The `style:` prop, one style or a list; it replaces the `style name` item | One form; a prop, so a binding like every other. |
+| Entries | Names (`card`, `theme.card`) and calls of styles with parameters (`chip(.red)`), each possibly conditional | The compiler sees every style: no run-time style value. |
+| Order | Later entries win; the block's own props win over the whole list, wherever `style:` is written | CSS's inline style over classes; no rule that depends on where `style:` sits. |
 | Conditional entries | `if c { s }` (no `else`: nothing), `if … else if … else`, `match`, in a style list only | The condition is said once for every prop of the style. |
 | Composition | `style:` inside a style's body, with the same list | One spelling for using a style anywhere; no spread operator. |
-| Run-time cost | Styles the compiler sees: inlined prop sets and bindings, as today. A conditional entry: a layer. A `Style` known only at run time: a layer whose keys can change | Values in the language, constant folding in the compiler. |
-| Variants | Layers whose condition is an interaction state; `pressed { … }` stays as their short form | One mechanism for "these props, while this holds". |
-| Themes | Tokens are `let`s and `state`; `use` in a style resolves where the style is made | Works with what exists (provide, use); a part of the app can have its own. |
-| Defaults | `style View { … }`, `style Button { … }`: the element kind's default style, for the elements written in the declaring package | CSS's type selectors, without restyling other packages' components. |
-| Unknown keys | A style holds style keys only; one an element doesn't support is ignored where it's applied | As look props are today ("a view ignores `font`"). |
+| Run-time cost | Unconditional entries: inlined sets and bindings, as today. A conditional entry: a layer | Nothing allocated as conditions change. |
+| Variants | Layers whose condition is an interaction state; `pressed { … }` stays as their form | One mechanism for "these props, while this holds". |
+| Themes | Tokens are `let`s and `state`; `use` in a style resolves at the element that applies it | Works with what exists (provide, use); a part of the app can have its own. |
+| Defaults | `style View { … }`, `style Button { … }`: the kind's default style, for the elements written in the declaring package | CSS's type selectors, without restyling other packages' components. |
+| Styles as values | Later | Each form of it (a `fn`'s result, a prop, state) needs a style known only at run time, and its machinery; the compile-time forms cover the cases that motivate this. |
 
 ## The language
 
@@ -103,34 +99,30 @@ style chip(tint: Color, size: float = 13) {
 pub style largeCard { style: card; padding: 24; font: .title3 }
 ```
 
-A style with parameters is a function returning `Style`: it takes
-default and named arguments as a `fn` does, and it's called the same
-way (`chip(.red)`, `chip(.red, size: 15)`). A style without parameters
-is a constant, named without parentheses (`card`).
+A style with parameters takes default and named arguments as a `fn`
+does (`chip(.red)`, `chip(.red, size: 15)`), and appears only where a
+style does: in a `style:` list. It isn't a function that can be called
+elsewhere, and a style isn't a value that can be stored or passed.
 
-A style's body holds style props (`name: value`), `style:` and `use`
-(see [Themes](#themes)). Its values are evaluated in the scope of the
-package that declares it, as today: its `let`s, its `state`, its
-parameters.
-
-An anonymous style is an expression: `Style { padding: 8; radius: 4 }`,
-for a function that builds one inline. (`Style` is today the prelude's
-pseudo-component that lists the style props; it becomes this type.)
+A style's body holds style props (`name: value`), `style:`, `use` (see
+[Themes](#themes)) and variant blocks (see [Variants](#variants)). Its
+values are evaluated in the scope of the package that declares it, as
+today (its `let`s, its `state`), and its parameters.
 
 ### Applying
 
 ```asuka
 View { style: card }
 View { style: [card, chip(.pink)]; background: .accent }   // .accent wins
-Text(m.title) { style: rowStyle(m) }
+Text(m.title) { style: chip(tint) }                          // runs again when tint changes
 ```
 
-`style:` takes a `Style` or a list of them (`[Style]`). Entries apply
-in order, a later one's value of a key over an earlier one's, whole
-values (a `font` replaces the font, not its size). The block's own
-props win over every entry. `style:` is a prop like any other: once per
-block, and a binding, so `style: chip(tint)` runs again when `tint`
-changes.
+`style:` takes a style or a list literal of them. Entries apply in
+order, a later one's value of a key over an earlier one's, whole values
+(a `font` replaces the font, not its size). The block's own props win
+over every entry. `style:` is a prop like any other: once per block,
+written anywhere in it. An argument that reads state is a binding: each
+prop it reaches runs again when the state changes, and only those.
 
 A list entry may be conditional:
 
@@ -147,48 +139,34 @@ View {
 
 An `if` without `else` adds nothing when its condition is false. This
 form is the style list's only: elsewhere an `if` expression still has
-both branches. When a condition changes, the props that entry set go
-back to what the entries below it, and the block, say (and to the
-platform's default where nothing set them): no prop is left as the
-entry left it.
+both branches. A branch holds one entry or a list (`if dark { [card,
+darkCard] }`). When a condition changes, the props that entry set go
+back to what the entries below it say (and to the platform's default
+where nothing set them): no prop is left as the entry left it.
 
-### Values
+Choosing a style by a value is a `match` or an `if` in the list, where
+a `fn` returning a style would be used elsewhere:
 
 ```asuka
-fn rowStyle(m: Message) -> Style {
-  if m.urgent { chip(.red) } else if m.read { card } else { chip(.accent) }
-}
-
-component Badge(text: string) {
-  prop look: Style = Style {}
-  Text(text) { style: [pill, look] }
-}
-
-Badge("3") { look: chip(.green) }
+View { style: [card, match m.priority { .high => chip(.red), .low => chip(.gray), _ => [] }] }
 ```
 
-A `Style` is an immutable value: `chip(tint)` captures `tint` as it is
-when it's called. What changes goes in a binding (`style:`, a prop),
-which runs again; a style's values that read state (`padding: if compact
-{ 8 } else { 16 }`, in a declared style) are bindings in the element
-that applies it, as today.
-
-`Style` values compare by their keys and values (so a binding that makes
-an equal style sends nothing), and aren't otherwise operated on: no
-`+`, no field access. Composition is the list.
+(`[]`, an empty list, is the entry that adds nothing.)
 
 ### Components that take the style
 
 A component that shows one element (check's `TakesStyle`) takes
 `style:` as it takes the style props: its caller's list and props go on
 that element, over the component's own entries and props, as the
-caller's style props do today.
+caller's style props do today. That's how a caller passes a style to a
+component, in place of a prop holding one.
 
 ### Variants
 
 `hovered`, `pressed`, `dragging` and `dragOver` blocks stay, and take
 `style:` like any block (`pressed { style: raised }`). A declared style
-may hold them too, applied by the elements that take variants:
+may hold them too, applied by the elements that take variants (and
+ignored by the others):
 
 ```asuka
 style button {
@@ -213,8 +191,7 @@ pub style card {
 ```
 
 This works today. For tokens that differ in a part of the app, a style
-may `use` a provided value, resolved where the style is made (for an
-entry of an element's `style:`, that element's place in the tree):
+may `use` a provided value:
 
 ```asuka
 pub store Theme {
@@ -233,10 +210,10 @@ app {
 }
 ```
 
-`use` finds what's provided under the current owner (`ui.use`), so a
-style that uses it is made where there is one: in a view, or in code
-that runs under a view's owner (a binding, a handler). Whether a `fn`
-may make one is open question 3.
+A style is applied only in an element's `style:` (or a style's, that
+one applied in an element's), so its `use` resolves at that element's
+place in the tree, under the owner the element is built under
+(`ui.use`), as a `use` in the element's component would.
 
 ### Default styles
 
@@ -247,7 +224,6 @@ declaring package:
 ```asuka
 style View { borderColor: .separator }
 style Button { radius: 8 }
-style Badge { look: … }            // an error: a default holds style props only
 ```
 
 The default is the bottom of the order, under the `style:` list. It
@@ -255,8 +231,9 @@ applies only to the elements written in the package that declares it:
 an app's `style Button` doesn't restyle the buttons inside another
 package's components, which keeps a library's look its own and an app
 that sets no style native. A package declares at most one default per
-kind; it may be `pub`, and a package that wants another's defaults
-says so (`style Button { style: theme.Button }`).
+kind and it holds what any style may; it may be `pub`, and a package
+that wants another's defaults says so (`style Button { style:
+theme.Button }`). A default takes no parameters.
 
 ### The order, in full
 
@@ -273,47 +250,49 @@ For one key of one view, lowest first:
 
 ## Checking
 
-- `style:` takes `Style` or `[Style]`; a list literal's entries may be
-  conditional, as above.
+- `style:` takes a style entry or a list literal of them; an entry is a
+  style's name (`card`, `pkg.card`), a call of a style with parameters,
+  a conditional (`if`, `match`) whose branches are entries, or `[]`.
+  Anything else (a variable, a `fn` call, a field) is an error: "a
+  style list holds styles: a name or a style's call".
+- A style's arguments are checked as a `fn`'s; a style without
+  parameters called (`card()`) or one with required parameters named
+  bare (`chip`) is an error.
 - A style's body: style props (each checked against the style props'
   types, the prelude's `Style`), `style:`, `use`, and variant blocks.
   An element's own props (a Button's `title`) aren't style props, and
   aren't allowed.
 - A style that includes itself, directly or through others (`style a {
-  style: b }`, `style b { style: a }`), is an error naming the cycle;
-  a style with parameters may not call itself either.
-- Every element takes every style prop, so a `Style` fits any element
+  style: b }`, `style b { style: a }`), is an error naming the cycle.
+- Every element takes every style prop, so any style fits any element
   that takes the style; a key its native widget doesn't support is
   ignored there, as a look prop written in its block is today.
 - `style name` (the item) is an error with a fix: `style: name`.
 
 ## Lowering
 
-A style the compiler sees is resolved while lowering the element, as
-`style card` is today (lang/LOWERING.md, "Elements"):
+Everything is resolved while lowering the element, as `style card` is
+today (lang/LOWERING.md, "Elements"):
 
 | Source | Lowered |
 |---|---|
 | `style: card`, `style: [card, chip(.red)]` | each style's sets, inlined, the arguments substituted (`chip`'s `tint` is `.red`): `ui.set` of constants, `ui.bind` of what reads state; a later set of a key replaces an earlier one, and a key the block sets drops every entry's |
-| `if c { s }` in the list | a layer: `l = ui.layer(v, rank)`, its sets `ui.layer_set(l, key, x)` / `ui.layer_bind(l, key, thunk)`, and `ui.layer_bind_on(l, thunk{c})` |
-| `if … else if … else`, `match` | a layer per branch, each on when its branch is taken |
-| `style: s` where `s` is a `Style` known at run time (a `fn`'s result, a prop, state) | `l = ui.layer(v, rank)` and `ui.layer_bind_style(l, thunk{s})`: the layer's keys and values are the style's |
-| `Style { … }` | a constant `Style` when its values are constants; otherwise `ui.style_new` and a set per key, under the binding that makes it |
-| a call of a declared style, as a value (not inlined) | a function returning `ui.style_new` with its sets |
-| `use t: Theme` in a style | CALLB `ui.use(key)` under the owner the style is made under |
-| `style View { … }` | its sets inlined into every `View` written in the package, before the list's (they're overridden by it as any earlier set) |
+| `chip(tint)`, `tint` reactive | the sets that read `tint` are bindings (`ui.bind(v, AK_KEY_COLOR, thunk{tint})`), the others constants |
+| `if c { s }` in the list | a layer: `l = ui.layer(v, rank)`, its sets `ui.layer_set(l, key, x)` / `ui.layer_bind(l, key, thunk)`, and `ui.layer_on(l, thunk{c})` |
+| `if … else if … else`, `match` | a layer per branch, each on while its branch is the one taken |
+| `use t: Theme` in a style | CALLB `ui.use(key)` where the element is built, once per element (two styles using the same key share it) |
+| `style View { … }` | its sets inlined into every `View` written in the package, before the list's (overridden by it as any earlier set) |
 | `pressed { … }` | a layer whose condition is the pressed state (`ui.variant` becomes `ui.layer` with a state) |
+| a variant block in a style | its sets inlined into the element's variant of that state |
 
-Most of an app's styles are names and calls with constant or state
-arguments: they compile to exactly what `style card` compiles to today,
-with no layer and no run-time style value.
+A style without a condition compiles to exactly what `style card`
+compiles to today: no layer.
 
 The ranks order a view's layers: the list's in list order, the
 caller's after the component's, the variants after all. The block's own
 keys never reach a layer: the compiler drops a conditional entry's set
-of a key the block sets; for a layer known at run time, the view keeps
-a bit per style key its block set (as it keeps one per key its caller
-set, `ui.set_outer`), and a layer's value of such a key is skipped.
+of a key the block sets, and the caller's (`ui.set_outer`) keep the bit
+per key they keep today.
 
 ## The core
 
@@ -333,20 +312,14 @@ typedef struct {
 ```
 
 `ak_ix` holds a vector of layers in rank order instead of variants;
-`apply(e, key)` starts from the base and lays the value of each layer
-that's on (a state layer: while the view is in its state) and sets the
-key. A condition's binding toggles `on` and applies the layer's keys;
-a run-time `Style`'s binding replaces the layer's entries and applies
-the union of the old and new keys, so a key the new style doesn't set
-goes back.
+`apply(e, key)` starts from the base, lays the value of each layer
+that's on (a state layer: while the view is in its state), and sets the
+key. A condition's binding toggles `on` and applies the layer's keys.
 
-- Layers are made with the element, so turning one on or off, or a
-  binding running again with an equal value, allocates nothing (the
-  hot-path rule). A run-time `Style` is a value made by the code that
-  makes it, like any struct: a sorted array of `(key, value)`, built
-  once and shared.
+- A view's layers and their entries are made with the element, so a
+  condition changing allocates nothing (the hot-path rule).
 - Layers move from containers to every element that takes the style
-  (variants stay on the containers: only they report states).
+  (state layers stay on the containers: only they report states).
 - `ak_ix_set_base` keeps taking a set of a key a layer sets as the
   base, so the block's bindings, the caller's and the layers' compose
   in any order of their effects running.
@@ -356,10 +329,9 @@ goes back.
   bindings with the view's.
 
 Tests (core/test): a layer on and off returns the key to its base and
-to unset; layers in rank order; a block key over a run-time layer's; a
-run-time style changing from keys `{a, b}` to `{b, c}` resets `a`; no
-allocation toggling a layer or rerunning an equal style
-(`ak_alloc_count`); variants unchanged through the layer path.
+to unset; layers in rank order; a state layer under a conditional one
+of a higher rank; no allocation toggling a layer (`ak_alloc_count`);
+the variants' tests unchanged through the layer path.
 
 ## Migration
 
@@ -374,10 +346,33 @@ The docs (docs/language.md's "Styles", docs/layout.md's "Style" and
 forms; lang/LOWERING.md's "Elements" and "Interaction states and
 variants" the lowering; DESIGN.md the layers.
 
+## Later: styles as values
+
+A `Style` type (a `fn` returning a style, `prop look: Style`, state
+holding one, `Style { … }` as an expression) is left out. Each form
+means a style known only at run time, which needs:
+
+- a run-time representation of a style (its keys and values, made by
+  the code that makes it);
+- a layer whose keys change: when its style changes, the runtime
+  applies the union of the old and new keys, so one the new style
+  doesn't set goes back;
+- a bit per key the block set, so a run-time layer can't override the
+  block's own props (the compiler can't drop those sets for it);
+- answers for `use` in a style made by a `fn` (which owner?) and for
+  variants in a run-time style (who asks the view to report the
+  state?).
+
+This design leaves room for it: the list's order, the layers and the
+ranks are what a run-time style would use, and today's entries (names,
+calls) would be its constant cases, still inlined. Until then, a choice
+of style by a value is a `match` in the list, and a component takes its
+caller's style through `style:`.
+
 ## Alternatives
 
 - **Several names in the item** (`style card, pinkCard`). Cheapest, but
-  it composes only names: no conditions, no parameters, no values.
+  it composes only names: no conditions, no parameters.
 - **A spread in a style's body** (`style big { ...card, padding: 24 }`).
   A second spelling for using a style, borrowed from objects; Asuka has
   no spread elsewhere.
@@ -389,34 +384,23 @@ variants" the lowering; DESIGN.md the layers.
 - **Styles as modifiers** (SwiftUI's, Compose's chains). Order is the
   same idea, but a modifier wraps the view in another; Asuka sets keys
   on one native view and lays it out once.
-- **Only names in the list, no run-time `Style`.** Everything compiles
-  to sets and layers, and every prop is checked against its element,
-  but a function can't choose a style and a component can't take one.
-  The run-time layer is what makes `Style` a value; the compiler keeps
-  the common cases free.
+- **Styles as values now.** See [Later](#later-styles-as-values): the
+  run-time path it needs is most of the core's work in this RFC, for
+  cases a `match` in the list covers.
 
 ## Open questions
 
-1. **Variants in run-time styles.** A `Style` value holding a
-   `pressed { … }` block needs the view to report the state; does the
-   layer ask for it when the style arrives, and stop when it goes?
-2. **The caller's layer and the variants.** The order puts the
+1. **The caller's layer and the variants.** The order puts the
    component's variants over the caller's props (6 over 5). Check how
    `ui.set_outer` and `ak_ix_set_base` compose today, and decide
    whether a caller's prop should instead beat the component's
    `pressed`.
-3. **`use` in a style made in a `fn`.** It resolves under the owner the
-   `fn` runs under; the checker can't see that owner. Allow it and
-   fail at run time when nothing's provided (as `use` without a
-   `provide` does), or require a style with `use` to be made in a view?
-4. **Default styles across packages.** Lexical defaults keep libraries
+2. **Default styles across packages.** Lexical defaults keep libraries
    their own; an app that wants its buttons and a library's to match
-   gives the library a `Style` prop. Is there a case for an app-wide
-   default a library opts into (`style Button` that a package's
-   components read as `default`)?
-5. **Animations.** A layer turning on inside `animate { }` animates its
-   keys as a prop set does; a layer of a run-time style changing
-   keys animates the union. Confirm with motion.md's rules.
+   has the library take its caller's `style:`. Is there a case for an
+   app-wide default a library opts into?
+3. **Animations.** A layer turning on inside `animate { }` animates its
+   keys as a prop set does. Confirm with motion.md's rules.
 
 ## Milestones
 
@@ -427,10 +411,9 @@ variants" the lowering; DESIGN.md the layers.
 2. **Styles with parameters.** Declaration, calls inlined with
    arguments substituted.
 3. **Layers.** `ak_layer` in the core, variants moved onto it (their
-   tests unchanged), conditional entries lowered to layers; every host
+   tests unchanged), conditional entries lowered to layers; the hosts
    unaffected (layers only set keys).
-4. **`Style` values.** The type, `Style { … }`, `fn`s returning it,
-   props and state of it, the run-time layer.
-5. **Themes and defaults.** `use` in a style; default styles per kind.
-6. **Docs.** language.md and layout.md and their translations,
+4. **Themes and defaults.** `use` in a style; variant blocks in a style;
+   default styles per kind.
+5. **Docs.** language.md and layout.md and their translations,
    LOWERING.md, DESIGN.md.
