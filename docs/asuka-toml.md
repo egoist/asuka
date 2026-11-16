@@ -520,7 +520,9 @@ none.
 
 | Key | Type | Default | What it is |
 |---|---|---|---|
-| `path` | path | required | The program's directory, relative to `asuka.toml`. It imports the project's packages relatively (`import ../model`). |
+| `path` | path | `path` or `build` | The program's directory, relative to `asuka.toml`. It imports the project's packages relatively (`import ../model`). |
+| `build` | strings | `path` or `build` | Instead of `path`: the command that builds a program another toolchain makes (a Go or Rust tool the app ships), run in the project's directory for each target. `{out}` is where it writes the executable, `{os}` and `{arch}` the target's, in Go's names (`darwin`, `windows`, `linux`; `arm64`, `amd64`). |
+| `env` | table | none | `build`'s environment, over the CLI's, `{out}`, `{os}` and `{arch}` replaced in its values. |
 
 ```toml
 [bin.notes]
@@ -528,14 +530,22 @@ path = "cli"
 
 [bin.notes-sync]
 path = "sync"
+
+[bin.notes-server]
+build = ["go", "build", "-o", "{out}", "./cmd/server"]
+env = { GOOS = "{os}", GOARCH = "{arch}", CGO_ENABLED = "0" }
 ```
 
 `asuka run --bin notes` and `asuka build --bin notes` run and build one
 (`--bin` left out when there's one), `asuka test` runs each one's tests
 with the app's. A desktop build puts them in the app: the Mac's
 `Contents/Helpers`, Linux's `bin`, beside the Windows `.exe`; phones and
-the web leave them out. An app's program keeps its data where the app
-does. See [An app's programs](programs.md#an-apps-programs).
+the web leave them out, and `asuka dev` builds them once as it starts.
+The app finds one with `command.bundled(name)` (std/command). An
+app's program keeps its data where the app does. `asuka run`, `test`
+and `build --bin` take the Asuka ones; a program `build` makes is its
+toolchain's to run and test. See [An app's
+programs](programs.md#an-apps-programs).
 
 ## The environment
 

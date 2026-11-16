@@ -130,9 +130,19 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 	}
 	data := filepath.Join(work, "data")
 	os.MkdirAll(data, 0o755)
+	// The app's programs ([bin]), built once, where command.bundled finds
+	// them (ASUKA_BIN_DIR), as a release has them beside the app.
+	bins := filepath.Join(work, "bin")
+	var binsBuilt bool
 	var proc *desktopProcess
 	launch := func() error {
 		start := time.Now()
+		if !binsBuilt {
+			if _, err := bundlePrograms(app, t, nil, bins, o.verbose); err != nil {
+				return err
+			}
+			binsBuilt = true
+		}
 		exe, err := buildDesktopPlayer(app, platform, t, work, o.verbose)
 		if err != nil {
 			return err
@@ -143,6 +153,7 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 			"ASUKA_DATA="+data,
 			// Read where they are, so changing one needs no rebuild.
 			"ASUKA_ASSETS="+filepath.Join(app.dir, "assets"),
+			"ASUKA_BIN_DIR="+bins,
 		)
 		if platform != platformMac {
 			env = append(env, "ASUKA_APP_CONFIG="+filepath.Join(filepath.Dir(exe), appconfig.File))
@@ -160,7 +171,7 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 			name, args := exe, []string(nil)
 			if wrap != nil {
 				name, args = wrap[0], append(wrap[1:len(wrap):len(wrap)], "env", "ASUKA_DEV="+fmt.Sprintf("%s:%d", devHost, loop.port()),
-					"ASUKA_DATA="+data, "ASUKA_ASSETS="+filepath.Join(app.dir, "assets"),
+					"ASUKA_DATA="+data, "ASUKA_ASSETS="+filepath.Join(app.dir, "assets"), "ASUKA_BIN_DIR="+bins,
 					"ASUKA_APP_CONFIG="+filepath.Join(filepath.Dir(exe), appconfig.File))
 				args = append(args, exe)
 			}

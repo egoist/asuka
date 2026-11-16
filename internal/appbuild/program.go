@@ -25,11 +25,45 @@ import (
 //
 //	[bin.notes]
 //	path = "cli"
+//
+// or are built by another toolchain, a command the CLI runs for each
+// target (a Go or Rust command-line tool the app ships):
+//
+//	[bin.notes-sync]
+//	build = ["go", "build", "-o", "{out}", "./cmd/sync"]
+//	env = { GOOS = "{os}", GOARCH = "{arch}", CGO_ENABLED = "0" }
 
 // Bin is one of a project's programs.
 type Bin struct {
 	Name string // the executable's
-	Dir  string // its package's directory
+	Dir  string // its package's directory; "" for one Build makes
+	// Build is the command that builds it, for a program another
+	// toolchain builds; Env what it runs with. See Command.
+	Build []string
+	Env   map[string]string
+}
+
+// Built says whether the program is built by a command of its own,
+// not compiled from Asuka.
+func (b Bin) Built() bool { return len(b.Build) > 0 }
+
+// Command is the program's build for t into out: its arguments and the
+// environment over the CLI's, {out}, {os} and {arch} replaced (Go's names
+// for them: darwin, windows, linux; arm64, amd64).
+func (b Bin) Command(t cbuild.Target, out string) (args, env []string) {
+	r := strings.NewReplacer("{out}", out, "{os}", t.OS, "{arch}", t.Arch)
+	for _, a := range b.Build {
+		args = append(args, r.Replace(a))
+	}
+	keys := make([]string, 0, len(b.Env))
+	for k := range b.Env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		env = append(env, k+"="+r.Replace(b.Env[k]))
+	}
+	return args, env
 }
 
 // bins reads a project's [bin] tables.
@@ -39,8 +73,18 @@ func bins(dir string, m *pkgs.Manifest) ([]Bin, error) {
 		if !validBinName(name) {
 			return nil, fmt.Errorf("asuka.toml: [bin.%s]: a program's name is letters, digits, - and _", name)
 		}
+		if len(b.Build) > 0 {
+			if b.Path != "" {
+				return nil, fmt.Errorf("asuka.toml: [bin.%s]: path or build, not both: path is an Asuka program's directory, build the command another toolchain builds one with", name)
+			}
+			out = append(out, Bin{Name: name, Build: b.Build, Env: b.Env})
+			continue
+		}
+		if len(b.Env) > 0 {
+			return nil, fmt.Errorf("asuka.toml: [bin.%s]: env is for build's command", name)
+		}
 		if b.Path == "" {
-			return nil, fmt.Errorf("asuka.toml: [bin.%s] needs path, its package's directory (path = \"cli\")", name)
+			return nil, fmt.Errorf("asuka.toml: [bin.%s] needs path, its package's directory (path = \"cli\"), or build, the command that builds it (build = [\"go\", \"build\", \"-o\", \"{out}\", \".\"])", name)
 		}
 		if filepath.IsAbs(b.Path) {
 			return nil, fmt.Errorf("asuka.toml: [bin.%s]: path is relative to the project", name)
@@ -83,6 +127,9 @@ func binRoot(dir string) string {
 func (p *Project) Bin(name string) (*Project, error) {
 	for _, b := range p.Bins {
 		if b.Name == name {
+			if b.Built() {
+				return nil, fmt.Errorf("[bin.%s] is built by its own command (asuka.toml's build): asuka run, test and build --bin take Asuka programs; asuka build puts it in the app", name)
+			}
 			if _, err := os.Stat(b.Dir); err != nil {
 				return nil, fmt.Errorf("[bin.%s]: %v", name, err)
 			}

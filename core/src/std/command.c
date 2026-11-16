@@ -21,6 +21,9 @@
 //	command.procWait(h) -> Task<int>       its exit code (a signal's: 128 + it); a cancelled wait kills it
 //	command.procKill(h, signal)            15 term, 9 kill, 2 int, 1 hup (Windows: it ends)
 //	command.procRelease(h)                 its pipes closed, its handle let go
+//	command.bundledPath(name) -> string?   the app's program name ([bin]): in
+//	    $ASUKA_BIN_DIR (asuka dev's), the Mac's Contents/Helpers, or beside
+//	    the executable; none when it isn't there
 #if defined(__APPLE__)
 #define _DARWIN_C_SOURCE
 #elif !defined(_WIN32)
@@ -96,6 +99,7 @@ const ak_lib_entry ak_std_command[] = {
 	{"command.procWait", failed_task},
 	{"command.procKill", none_fn},
 	{"command.procRelease", none_fn},
+	{"command.bundledPath", none_fn},
 	{NULL, NULL},
 };
 
@@ -785,6 +789,113 @@ static ak_val release_fn(ak_val *args, uint32_t n) {
 	return (ak_val){0};
 }
 
+// ---- The app's own programs ----
+
+// A desktop app's [bin] programs are in it (docs/programs.md): the Mac's
+// Contents/Helpers, beside the .exe on Windows, in a Linux prefix's bin
+// beside the app's; asuka dev builds them into a directory of its own,
+// $ASUKA_BIN_DIR.
+
+#if defined(_WIN32)
+
+// bundled_at says whether dir\name.exe is a file, and puts its path in
+// out (UTF-8).
+static bool bundled_at(const wchar_t *dir, const ak_str *name, char *out, size_t cap) {
+	if (!dir || !*dir) return false;
+	wchar_t *wn = wide(name->data, name->len);
+	wchar_t path[32768];
+	size_t dl = wcslen(dir);
+	bool sep = dl && (dir[dl - 1] == L'\\' || dir[dl - 1] == L'/');
+	int k = _snwprintf(path, 32768, L"%ls%ls%ls.exe", dir, sep ? L"" : L"\\", wn);
+	ak_free(wn);
+	if (k < 0 || k >= 32768) return false;
+	path[k] = 0;
+	DWORD a = GetFileAttributesW(path);
+	if (a == INVALID_FILE_ATTRIBUTES || (a & FILE_ATTRIBUTE_DIRECTORY)) return false;
+	return WideCharToMultiByte(CP_UTF8, 0, path, -1, out, (int)cap, NULL, NULL) > 0;
+}
+
+static ak_val bundled_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	const ak_str *name = STR(0);
+	if (!name->len || strpbrk(name->data, "/\\:")) return (ak_val){.p = NULL};
+	static char out[32768 * 3];
+	bool found = false;
+	static wchar_t buf[32768];
+	DWORD k = GetEnvironmentVariableW(L"ASUKA_BIN_DIR", buf, 32768);
+	if (k > 0 && k < 32768) found = bundled_at(buf, name, out, sizeof out);
+	if (!found) {
+		DWORD m = GetModuleFileNameW(NULL, buf, 32768);
+		if (m > 0 && m < 32768) {
+			wchar_t *slash = wcsrchr(buf, L'\\');
+			if (slash) *slash = 0;
+			found = bundled_at(buf, name, out, sizeof out);
+		}
+	}
+	return (ak_val){.p = found ? ak_str_c(out) : NULL};
+}
+
+#else
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+#include <limits.h>
+
+// exe_dir puts the directory of the process's executable, links
+// resolved, in out: false when it can't be known.
+static bool exe_dir(char *out) {
+	char buf[PATH_MAX];
+#if defined(__APPLE__)
+	uint32_t size = sizeof buf;
+	if (_NSGetExecutablePath(buf, &size) != 0) return false;
+#else
+	ssize_t k = readlink("/proc/self/exe", buf, sizeof buf - 1);
+	if (k <= 0) return false;
+	buf[k] = 0;
+#endif
+	if (!realpath(buf, out)) snprintf(out, PATH_MAX, "%s", buf);
+	char *slash = strrchr(out, '/');
+	if (!slash) return false;
+	*slash = 0;
+	return true;
+}
+
+// bundled_at says whether dir/name is an executable file, and puts its
+// path, links resolved, in out.
+static bool bundled_at(const char *dir, const char *name, char *out) {
+	if (!dir || !*dir) return false;
+	char path[PATH_MAX];
+	int k = snprintf(path, sizeof path, "%s/%s", dir, name);
+	if (k < 0 || (size_t)k >= sizeof path) return false;
+	struct stat st;
+	if (stat(path, &st) != 0 || !S_ISREG(st.st_mode) || access(path, X_OK) != 0) return false;
+	if (!realpath(path, out)) snprintf(out, PATH_MAX, "%s", path);
+	return true;
+}
+
+static ak_val bundled_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	const ak_str *name = STR(0);
+	if (!name->len || strchr(name->data, '/') || strcmp(name->data, ".") == 0 || strcmp(name->data, "..") == 0)
+		return (ak_val){.p = NULL};
+	char out[PATH_MAX], dir[PATH_MAX];
+	bool found = bundled_at(getenv("ASUKA_BIN_DIR"), name->data, out);
+	if (!found && exe_dir(dir)) {
+		static const char macos[] = "/Contents/MacOS";
+		size_t len = strlen(dir), ml = sizeof macos - 1;
+		if (len >= ml && strcmp(dir + len - ml, macos) == 0) {
+			char helpers[PATH_MAX];
+			snprintf(helpers, sizeof helpers, "%.*s/Contents/Helpers", (int)(len - ml), dir);
+			found = bundled_at(helpers, name->data, out);
+		}
+		if (!found) found = bundled_at(dir, name->data, out);
+	}
+	return (ak_val){.p = found ? ak_str_c(out) : NULL};
+}
+
+#endif
+
 const ak_lib_entry ak_std_command[] = {
 	{"command.procSpawn", spawn_fn},
 	{"command.procFailure", failure_fn},
@@ -796,6 +907,7 @@ const ak_lib_entry ak_std_command[] = {
 	{"command.procWait", wait_fn},
 	{"command.procKill", kill_fn},
 	{"command.procRelease", release_fn},
+	{"command.bundledPath", bundled_fn},
 	{NULL, NULL},
 };
 

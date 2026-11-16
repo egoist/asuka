@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -249,9 +250,12 @@ func bundlePrograms(app *asukaApp, t cbuild.Target, archs []string, dir string, 
 	}
 	var out []string
 	for _, b := range app.proj.Bins {
-		p, err := app.proj.Bin(b.Name)
-		if err != nil {
-			return nil, err
+		var p *appbuild.Project
+		if !b.Built() {
+			var err error
+			if p, err = app.proj.Bin(b.Name); err != nil {
+				return nil, err
+			}
 		}
 		fmt.Printf("asuka: building %s, the app's program\n", b.Name)
 		if len(archs) == 0 {
@@ -269,7 +273,12 @@ func bundlePrograms(app *asukaApp, t cbuild.Target, archs []string, dir string, 
 			if err := os.MkdirAll(d, 0o755); err != nil {
 				return nil, err
 			}
-			exe, err := programExe(p, at, d, app.cfg.Version, verbose)
+			var exe string
+			if b.Built() {
+				exe, err = builtProgram(b, app.proj.Dir, at, d, verbose)
+			} else {
+				exe, err = programExe(p, at, d, app.cfg.Version, verbose)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("[bin.%s]: %w", b.Name, err)
 			}
@@ -292,6 +301,27 @@ func bundlePrograms(app *asukaApp, t cbuild.Target, archs []string, dir string, 
 		out = append(out, dst)
 	}
 	return out, nil
+}
+
+// builtProgram runs a [bin] program's own build (another toolchain's)
+// for t, in the project's directory dir: its executable, in out.
+func builtProgram(b appbuild.Bin, dir string, t cbuild.Target, out string, verbose bool) (string, error) {
+	exe := filepath.Join(out, programExeName(b.Name, t))
+	args, env := b.Command(t, exe)
+	if verbose {
+		fmt.Printf("asuka: %s %s\n", strings.Join(env, " "), strings.Join(args, " "))
+	}
+	c := exec.Command(args[0], args[1:]...)
+	c.Dir = dir
+	c.Env = append(os.Environ(), env...)
+	c.Stdout, c.Stderr = os.Stdout, os.Stderr
+	if err := c.Run(); err != nil {
+		return "", fmt.Errorf("%s: %w", strings.Join(args, " "), err)
+	}
+	if fi, err := os.Stat(exe); err != nil || fi.IsDir() {
+		return "", fmt.Errorf("%s made no %s: build writes the program to {out}", strings.Join(args, " "), filepath.Base(exe))
+	}
+	return exe, nil
 }
 
 // devProgram is asuka dev for a program: it runs main on the VM with

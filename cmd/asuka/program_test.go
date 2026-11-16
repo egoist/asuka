@@ -285,3 +285,67 @@ func TestBundlePrograms(t *testing.T) {
 		}
 	}
 }
+
+// A [bin] another toolchain builds: its command runs for each target in
+// the project's directory, {out}, {os} and {arch} replaced, and what it
+// writes goes in the app as an Asuka program's executable does.
+func TestBundleBuiltPrograms(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the command is sh's")
+	}
+	dir := filepath.Join(t.TempDir(), "proj")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte(`name = "Proj"
+
+[bin.gate]
+build = ["sh", "-c", "printf '%s %s %s' {os} {arch} \"$WHERE\" > {out}"]
+env = { WHERE = "{os}/{arch}" }
+`), 0o644)
+	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte("app { Text(\"hi\") }\n"), 0o644)
+	app, err := loadApp(dir, thisComputer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := app.proj.Bins; len(b) != 1 || !b[0].Built() {
+		t.Fatalf("bins: %+v", b)
+	}
+	if _, err := app.proj.Bin("gate"); err == nil || !strings.Contains(err.Error(), "its own command") {
+		t.Fatalf("Bin(gate): %v", err)
+	}
+	for _, c := range []struct {
+		t    cbuild.Target
+		file string
+		want string
+	}{
+		{cbuild.Target{OS: "linux", Arch: "amd64"}, "gate", "linux amd64 linux/amd64"},
+		{cbuild.Target{OS: "windows", Arch: "arm64"}, "gate.exe", "windows arm64 windows/arm64"},
+	} {
+		out := filepath.Join(t.TempDir(), "bundle")
+		got, err := bundlePrograms(app, c.t, nil, out, false)
+		if err != nil {
+			t.Fatalf("%s: %v", c.t.OS, err)
+		}
+		if len(got) != 1 || got[0] != filepath.Join(out, c.file) {
+			t.Fatalf("%s: %v", c.t.OS, got)
+		}
+		if b, _ := os.ReadFile(got[0]); string(b) != c.want {
+			t.Fatalf("%s: %q, want %q", c.t.OS, b, c.want)
+		}
+	}
+}
+
+// A [bin] is an Asuka program's directory or a command, not both.
+func TestBinPathOrBuild(t *testing.T) {
+	for _, c := range []struct{ toml, err string }{
+		{"[bin.x]\npath = \"cli\"\nbuild = [\"true\"]\n", "not both"},
+		{"[bin.x]\npath = \"cli\"\nenv = { A = \"b\" }\n", "env is for build"},
+		{"[bin.x]\n", "or build"},
+	} {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte(c.toml), 0o644)
+		os.WriteFile(filepath.Join(dir, "app.asuka"), []byte("app { Text(\"hi\") }\n"), 0o644)
+		if _, err := appbuild.Load(dir); err == nil || !strings.Contains(err.Error(), c.err) {
+			t.Fatalf("%q: %v, want %q", c.toml, err, c.err)
+		}
+	}
+}

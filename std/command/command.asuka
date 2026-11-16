@@ -78,6 +78,7 @@ native fn procCloseStdin(h: int)
 native async fn procWait(h: int) -> int
 native fn procKill(h: int, signal: int)
 native fn procRelease(h: int)
+native fn bundledPath(name: string) -> string?
 
 fn mode(s: Stdio) -> int {
   match s {
@@ -194,6 +195,17 @@ fn linesOf(p: Process, fd: int) -> Stream<string> = Stream(send => {
     send(pending.trimSuffix("\r"))
   }
 })
+
+/// The path of the app's own program name, one of its asuka.toml's
+/// [bin] (an Asuka program, or one another toolchain builds), in a
+/// desktop app's build: the Mac's Contents/Helpers, beside the .exe on
+/// Windows, in a Linux prefix's bin. asuka dev builds them too, and an
+/// app run there finds them the same way. none where the app has no such
+/// program (a phone, the web, a test):
+///
+///   let cli = command.bundled("notes-sync") ?? "notes-sync"   // else PATH's
+///   let out = try await command.run(cli, ["status"])
+pub fn bundled(name: string) -> string? = if faked.isSome() { none } else { bundledPath(name) }
 
 /// Starts program with args (looked for on PATH unless it's a path): in
 /// cwd ("": this program's), with env over this program's environment

@@ -38,7 +38,13 @@ func cmdTest(args []string) error {
 		return err
 	}
 	targets := []*appbuild.Project{p}
+	var bins []appbuild.Bin // the Asuka programs: another toolchain tests its own
 	for _, b := range p.Bins {
+		if !b.Built() {
+			bins = append(bins, b)
+		}
+	}
+	for _, b := range bins {
 		bp, err := p.Bin(b.Name)
 		if err != nil {
 			return err
@@ -54,7 +60,7 @@ func cmdTest(args []string) error {
 			}
 			name := "the project"
 			if i > 0 {
-				name = "[bin." + p.Bins[i-1].Name + "]"
+				name = "[bin." + bins[i-1].Name + "]"
 			}
 			fmt.Printf("asuka: %s (%s)\n", name, relToCwd(t.Dir))
 		}
@@ -232,15 +238,17 @@ func programOf(p *appbuild.Project, bin string) (*appbuild.Project, error) {
 	if bin != "" {
 		return p.Bin(bin)
 	}
-	if len(p.Bins) == 0 || isProgram(p) {
+	var names []string // the Asuka programs: one another toolchain builds isn't run here
+	for _, b := range p.Bins {
+		if !b.Built() {
+			names = append(names, b.Name)
+		}
+	}
+	if len(names) == 0 || isProgram(p) {
 		return p, nil
 	}
-	if len(p.Bins) == 1 {
-		return p.Bin(p.Bins[0].Name)
-	}
-	var names []string
-	for _, b := range p.Bins {
-		names = append(names, b.Name)
+	if len(names) == 1 {
+		return p.Bin(names[0])
 	}
 	return nil, fmt.Errorf("which program? --bin %s", strings.Join(names, ", --bin "))
 }

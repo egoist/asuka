@@ -367,6 +367,31 @@ Phones and the web leave `[bin]` out. [examples/notes](../examples/notes)
 is an app with a `notes` command, which lists, adds and checks off the
 app's notes.
 
+A program another toolchain builds goes in the app the same way: a
+server written in Go, a tool in Rust, which the app runs. Its `[bin]`
+names the command that builds it instead of a directory, run for each
+target the app is built for (both of a universal Mac app's, joined
+with `lipo`):
+
+```toml
+[bin.notes-server]
+build = ["go", "build", "-o", "{out}", "./cmd/server"]
+env = { GOOS = "{os}", GOARCH = "{arch}", CGO_ENABLED = "0" }
+```
+
+The app finds its programs with `command.bundled(name)`: the path in
+the build, or none (a phone, the web, a test). `asuka dev` builds them
+as it starts and the app finds them there the same way:
+
+```asuka
+import std/command
+
+async fn startServer() throws -> command.Process {
+  let server = command.bundled("notes-server") ?? "notes-server" // else on PATH
+  return try command.start(server, ["serve"])
+}
+```
+
 ## Testing
 
 A program's test blocks run with `asuka test`, as an app's do. `main`

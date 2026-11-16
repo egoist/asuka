@@ -444,7 +444,9 @@ strip = 1
 
 | 键 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `path` | 路径 | 必填 | 程序所在的目录，相对于 `asuka.toml`。程序用相对路径导入项目里的包（`import ../model`）。 |
+| `path` | 路径 | `path` 或 `build` | 程序所在的目录，相对于 `asuka.toml`。程序用相对路径导入项目里的包（`import ../model`）。 |
+| `build` | 字符串数组 | `path` 或 `build` | 代替 `path`：由其他工具链构建的程序（应用附带的 Go 或 Rust 工具）的构建命令，针对每个目标在项目目录中运行。`{out}` 是它写出可执行文件的位置，`{os}` 和 `{arch}` 是目标的系统和架构，用 Go 的名字（`darwin`、`windows`、`linux`；`arm64`、`amd64`）。 |
+| `env` | 表 | 无 | `build` 的环境变量，覆盖 CLI 的；值中的 `{out}`、`{os}` 和 `{arch}` 会被替换。 |
 
 ```toml
 [bin.notes]
@@ -452,9 +454,13 @@ path = "cli"
 
 [bin.notes-sync]
 path = "sync"
+
+[bin.notes-server]
+build = ["go", "build", "-o", "{out}", "./cmd/server"]
+env = { GOOS = "{os}", GOARCH = "{arch}", CGO_ENABLED = "0" }
 ```
 
-`asuka run --bin notes` 和 `asuka build --bin notes` 分别运行和构建其中一个（只有一个时可以省略 `--bin`），`asuka test` 会把每个程序的测试和应用的测试一起运行。桌面构建会把它们放进应用：Mac 的 `Contents/Helpers`、Linux 的 `bin`、Windows `.exe` 的旁边；手机和 Web 会忽略它们。应用自带的程序把数据保存在应用保存的地方。见[应用自带的程序](programs.md#应用自带的程序)。
+`asuka run --bin notes` 和 `asuka build --bin notes` 分别运行和构建其中一个（只有一个时可以省略 `--bin`），`asuka test` 会把每个程序的测试和应用的测试一起运行。桌面构建会把它们放进应用：Mac 的 `Contents/Helpers`、Linux 的 `bin`、Windows `.exe` 的旁边；手机和 Web 会忽略它们；`asuka dev` 启动时也会构建一次。应用用 `command.bundled(name)`（std/command）找到它们。应用自带的程序把数据保存在应用保存的地方。`asuka run`、`test` 和 `build --bin` 处理 Asuka 程序；由 `build` 构建的程序由它自己的工具链运行和测试。见[应用自带的程序](programs.md#应用自带的程序)。
 
 ## 环境变量
 
