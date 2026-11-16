@@ -148,16 +148,17 @@ fn short(v: float, step: float) -> string {
 fn spoken(v: float) -> string = trimmed(v.fixed(6))
 
 /// What screen readers say: the label, then each series' values.
-fn summary(label: string, series: [Series], labels: [string]) -> string {
+fn summary(label: string, series: [Series], labels: [string], format: (fn(float) -> string)? = none) -> string {
   var parts: [string] = []
   if !label.isEmpty() { parts.push(label) }
   for s in series {
     var vals: [string] = []
     for (i, v) in s.values.enumerated() {
+      let said = if let f = format { f(v) } else { spoken(v) }
       if let l = labels.get(i) {
-        vals.push("{l} {spoken(v)}")
+        vals.push("{l} {said}")
       } else {
-        vals.push(spoken(v))
+        vals.push(said)
       }
     }
     let list = vals.joined(separator: ", ")
@@ -292,6 +293,9 @@ pub component View(series: [Series]) {
   prop high: float? = none
   /// Lines behind the marks at each tick.
   prop grid = true
+  /// A value as the axis and screen readers say it ("$1.20", "40%");
+  /// none: as many digits as the ticks need, thousands as k.
+  prop format: (fn(float) -> string)? = none
 
   let scale = valueScale(series, low, high)
   let count = countOf(series, labels)
@@ -303,7 +307,7 @@ pub component View(series: [Series]) {
   Column {
     height: 200
     role: .image
-    label: summary(label, series, labels)
+    label: summary(label, series, labels, format)
     grid: Grid(columns: [.auto, .fr(1)], rows: [.fr(1), .auto])
     // The value labels: each centered on its tick (zero-high rows,
     // spaced from the plot's top to its bottom, inset as it is).
@@ -319,7 +323,7 @@ pub component View(series: [Series]) {
         Row {
           height: 0
           align: .center
-          Text(short(t, scale.step)) {
+          Text(if let f = format { f(t) } else { short(t, scale.step) }) {
             font: .caption
             color: .secondaryLabel
           }
@@ -365,4 +369,14 @@ fn range(n: int) -> [int] {
     i = i + 1
   }
   return out
+}
+
+test "a chart's own format" {
+  let money = (v: float) => "${v.fixed(2)}"
+  let app = mount(View([Series(name: "Spend", kind: .bar, values: [0.5, 1.5])]) {
+    labels: ["Mon", "Tue"]
+    format: money
+  })
+  app.expect("$0.00", "$1.50", "Spend: Mon $0.50, Tue $1.50")
+  expect(summary("", [Series(name: "Spend", values: [1.5])], ["Tue"], format: money) == "Spend: Tue $1.50")
 }

@@ -43,7 +43,7 @@ state units = store.read("units", "metric")
 | [`std/storage`](std/storage.md) | `storage.Value(key, default)`：一个 store，它的 `value` 保存在设备上（用的是 std/store），会被跟踪，变化时写入；`reset()`；`storage.flush()`、`storage.dirName()` |
 | [`std/lottie`](std/lottie.md) | `lottie.View(source)`（`bind playing`、`bind progress`、`loop`、`speed`、`segment`、`marker`、`fit`、`overrides`；`complete`、`loaded`）：用各平台的播放器播放 Lottie 和 dotLottie；Windows 和 Linux 上暂时没有（[组件](components.md)） |
 | [`std/svg`](std/svg.md) | `svg.Icon(markup)` 在应用编译时解析，`svg.View(icon) { color }` 显示它；`svg.Shape(layers)`：应用自己画的路径，会跟随它的框（[组件](components.md)） |
-| [`std/chart`](std/chart.md) | `chart.View(series) { labels, label, low, high, grid }`；`chart.Series(name:, kind: .bar \| .line \| .area \| .points, values:, smooth:, color:)`：用 Asuka 写成，通过 `svg.Shape` 绘制（[组件](components.md)） |
+| [`std/chart`](std/chart.md) | `chart.View(series) { labels, label, low, high, grid, format }`；`chart.Series(name:, kind: .bar \| .line \| .area \| .points, values:, smooth:, color:)`：用 Asuka 写成，通过 `svg.Shape` 绘制（[组件](components.md)） |
 | [`std/markdown`](std/markdown.md) | `markdown.View(text) { streaming }` 和 `markdown.heal(text)`：把 Markdown 显示为平台自己的富文本，流式输入时边接收边修补（[组件](components.md)） |
 
 ## 平台 SDK：`platform/`

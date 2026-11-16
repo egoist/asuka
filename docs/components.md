@@ -1205,7 +1205,9 @@ component Week(steps: [float], goal: [float]) {
   size.
 - The value axis fits the values, rounded out to whole ticks (and down
   to zero for bars and areas), unless `low` and `high` set it; its
-  labels are as short as the ticks allow (`2.5k`). `grid: false` leaves
+  labels are as short as the ticks allow (`2.5k`), or what `format`
+  makes of each (`format: v => "${v.fixed(2)}"`), which screen readers
+  say too. `grid: false` leaves
   out the lines behind the marks.
 - Colors default to the app's accent, then the system's
   (`chart.palette`).

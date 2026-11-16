@@ -43,7 +43,7 @@ state units = store.read("units", "metric")
 | [`std/storage`](std/storage.md) | `storage.Value(key, default)`：`value` がデバイスに保持されるストア（std/store を使います）。追跡され、変わると書き込まれます。`reset()`、`storage.flush()`、`storage.dirName()` |
 | [`std/lottie`](std/lottie.md) | `lottie.View(source)`（`bind playing`、`bind progress`、`loop`、`speed`、`segment`、`marker`、`fit`、`overrides`。`complete`、`loaded`）：各プラットフォームのプレーヤーによる Lottie と dotLottie。Windows と Linux ではまだありません（[コンポーネント](components.md)） |
 | [`std/svg`](std/svg.md) | アプリのコンパイル時に解析される `svg.Icon(markup)` と、`svg.View(icon) { color }`。`svg.Shape(layers)`：アプリが描くパスで、自分の枠に追従します（[コンポーネント](components.md)） |
-| [`std/chart`](std/chart.md) | `chart.View(series) { labels, label, low, high, grid }`。`chart.Series(name:, kind: .bar \| .line \| .area \| .points, values:, smooth:, color:)`：Asuka で書かれ、`svg.Shape` で描かれます（[コンポーネント](components.md)） |
+| [`std/chart`](std/chart.md) | `chart.View(series) { labels, label, low, high, grid, format }`。`chart.Series(name:, kind: .bar \| .line \| .area \| .points, values:, smooth:, color:)`：Asuka で書かれ、`svg.Shape` で描かれます（[コンポーネント](components.md)） |
 | [`std/markdown`](std/markdown.md) | `markdown.View(text) { streaming }` と `markdown.heal(text)`：Markdown をプラットフォームのスタイル付きテキストとして表示し、ストリーミング中は届くそばから補修します（[コンポーネント](components.md)） |
 
 ## プラットフォーム SDK：`platform/`

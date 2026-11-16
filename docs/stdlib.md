@@ -57,7 +57,7 @@ they do for the platform's own apps.
 | [`std/storage`](std/storage.md) | `storage.Value(key, default)`: a store whose `value` is kept on the device (std/store's), tracked and written as it changes; `reset()`; `storage.flush()`, `storage.dirName()` |
 | [`std/lottie`](std/lottie.md) | `lottie.View(source)` (`bind playing`, `bind progress`, `loop`, `speed`, `segment`, `marker`, `fit`, `overrides`; `complete`, `loaded`): Lottie and dotLottie with each platform's player; nothing yet on Windows and Linux ([Lottie](components.md#lottie-animations)) |
 | [`std/svg`](std/svg.md) | `svg.Icon(markup)`, parsed when the app compiles, and `svg.View(icon) { color }`; `svg.Shape(layers)`: paths the app draws, which follow their box ([SVG icons](components.md#svg-icons)) |
-| [`std/chart`](std/chart.md) | `chart.View(series) { labels, label, low, high, grid }`; `chart.Series(name:, kind: .bar \| .line \| .area \| .points, values:, smooth:, color:)`: in Asuka, drawn with `svg.Shape` ([Charts](components.md#charts)) |
+| [`std/chart`](std/chart.md) | `chart.View(series) { labels, label, low, high, grid, format }`; `chart.Series(name:, kind: .bar \| .line \| .area \| .points, values:, smooth:, color:)`: in Asuka, drawn with `svg.Shape` ([Charts](components.md#charts)) |
 | [`std/markdown`](std/markdown.md) | `markdown.View(text) { streaming }` and `markdown.heal(text)`: Markdown as the platform's styled text, healed while it streams in ([Markdown](components.md#markdown)) |
 
 ## The platform SDK: `platform/`
