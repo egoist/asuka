@@ -757,6 +757,13 @@ type SelfExpr struct {
 	Span
 }
 
+// An AtExpr is a compile-time constant: @platform, the platform the
+// program is compiled for. Name is what follows the @ ("platform").
+type AtExpr struct {
+	Span
+	Name string
+}
+
 // An ImplicitMember is .name: a member of the type that's expected
 // (.gray, .ready).
 type ImplicitMember struct {
@@ -944,6 +951,7 @@ func (*StringLit) exprNode()      {}
 func (*BoolLit) exprNode()        {}
 func (*NoneLit) exprNode()        {}
 func (*SelfExpr) exprNode()       {}
+func (*AtExpr) exprNode()         {}
 func (*ImplicitMember) exprNode() {}
 func (*MemberExpr) exprNode()     {}
 func (*CallExpr) exprNode()       {}

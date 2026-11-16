@@ -156,6 +156,8 @@ func (b *fb) expr(e syntax.Expr, dst int) int {
 			return b.copyTo(b.env(e), dst)
 		}
 		return b.copyTo(b.readVar(b.ctx.Self, e), dst)
+	case *syntax.AtExpr:
+		return b.platformValue(e, dst)
 	case *syntax.ImplicitMember:
 		return b.selection(e, nil, dst)
 	case *syntax.MemberExpr:
@@ -811,6 +813,10 @@ func (b *fb) caseValue(t check.Type, k *check.Case, dst int) int {
 func (b *fb) unary(e *syntax.UnaryExpr, dst int) int {
 	switch e.Op {
 	case syntax.NOT:
+		if f := b.l.fold(e); f.known {
+			b.effects(f)
+			return b.constBool(f.val, dst)
+		}
 		x := b.value(e.X, -1)
 		r := b.out(dst, bc.KBool)
 		b.emit(op("NOT"), r, x)
@@ -871,6 +877,10 @@ func (b *fb) binary(e *syntax.BinaryExpr, dst int) int {
 	if o := b.l.info.Operators[e]; o != nil {
 		return b.operator(e, o, dst)
 	}
+	if f := b.l.fold(e); f.known {
+		b.effects(f)
+		return b.constBool(f.val, dst)
+	}
 	if b.l.info.LengthScales[e] {
 		// The Length's value scaled, its unit kept.
 		l, n := e.X, e.Y
@@ -891,6 +901,15 @@ func (b *fb) binary(e *syntax.BinaryExpr, dst int) int {
 	}
 	switch e.Op {
 	case syntax.LAND, syntax.LOR:
+		// A side @platform decides that doesn't decide the whole: the
+		// whole is the other side (true && x, x || false).
+		if f := b.l.fold(e.X); f.known {
+			b.effects(f)
+			return b.value(e.Y, dst)
+		}
+		if f := b.l.fold(e.Y); f.known && len(f.effects) == 0 {
+			return b.value(e.X, dst)
+		}
 		r := b.out(dst, bc.KBool)
 		end := b.f.NewLabel()
 		b.value(e.X, r)
@@ -1039,6 +1058,23 @@ func (b *fb) valueBlock(bl *syntax.Block, dst int) {
 
 func (b *fb) ifExpr(e *syntax.IfExpr, dst int) int {
 	r := b.out(dst, b.kind(b.l.info.Types[e]))
+	if f := b.l.foldCond(e.Cond); f.known {
+		// Only the branch @platform takes.
+		b.effects(f)
+		if f.val {
+			b.openScope()
+			b.valueBlock(e.Then, r)
+			b.closeScope()
+			return r
+		}
+		switch el := e.Else.(type) {
+		case *syntax.IfExpr:
+			b.value(el, r)
+		case *syntax.Block:
+			b.valueBlock(el, r)
+		}
+		return r
+	}
 	b.openScope()
 	els, end := b.f.NewLabel(), b.f.NewLabel()
 	b.condJump(e.Cond, els)
@@ -1061,7 +1097,7 @@ func (b *fb) matchExpr(e *syntax.MatchExpr, dst int) int {
 	subj := b.value(e.Subject, -1)
 	st := b.rawType(e.Subject)
 	end := b.f.NewLabel()
-	for _, a := range e.Arms {
+	for _, a := range b.l.platformArms(e.Subject, e.Arms) {
 		next := b.f.NewLabel()
 		b.openScope()
 		b.testPattern(a.Pattern, subj, st, next)

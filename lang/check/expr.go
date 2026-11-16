@@ -74,6 +74,8 @@ func (c *Checker) expr1(e syntax.Expr, want Type) Type {
 		}
 		c.useVar(c.ctx.Self, e)
 		return c.ctx.Self.Type
+	case *syntax.AtExpr:
+		return c.atExpr(e)
 	case *syntax.ImplicitMember:
 		return c.implicitMember(e, want)
 	case *syntax.MemberExpr:
@@ -1613,3 +1615,29 @@ func implicitRoot(x syntax.Expr) bool {
 // IsConstNumber reports a number the compiler computes (a literal, and
 // arithmetic on literals): a Length of it is packed when compiling.
 func IsConstNumber(e syntax.Expr) bool { return constNumber(e) }
+
+// atExpr checks a compile-time constant: @platform, the platform the
+// program is compiled for (a Platform). Its value isn't the checker's:
+// every branch is checked whatever it is, and lowering folds it.
+func (c *Checker) atExpr(e *syntax.AtExpr) Type {
+	if e.Name != "platform" {
+		c.errorf(e, "no compile-time constant @%s: there's @platform, the platform the app is compiled for", e.Name)
+		return Invalid
+	}
+	pt := c.prelude.Scope.LookupLocal("Platform").(*TypeName)
+	c.resolveType(pt)
+	return pt.Type
+}
+
+// IsPlatformConst reports whether e is @platform (in parentheses or not).
+func IsPlatformConst(e syntax.Expr) bool {
+	for {
+		p, ok := e.(*syntax.ParenExpr)
+		if !ok {
+			break
+		}
+		e = p.X
+	}
+	a, ok := e.(*syntax.AtExpr)
+	return ok && a.Name == "platform"
+}

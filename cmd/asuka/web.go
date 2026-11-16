@@ -34,6 +34,7 @@ import (
 	"github.com/egoist/asuka/internal/cbuild"
 	"github.com/egoist/asuka/internal/nativegen"
 	"github.com/egoist/asuka/lang/bytecode"
+	"github.com/egoist/asuka/lang/target"
 	webhost "github.com/egoist/asuka/platform/web"
 )
 
@@ -254,7 +255,7 @@ func webVAPIDKey(app *asukaApp) (string, error) {
 }
 
 func devWeb(dir string, o *devOptions, stop <-chan os.Signal) error {
-	app, err := loadApp(dir)
+	app, err := loadApp(dir, platformWeb)
 	if err != nil {
 		return err
 	}
@@ -727,7 +728,7 @@ func buildWeb(app *asukaApp, o *buildOptions) error {
 		return err
 	}
 	// The core with the app compiled in.
-	m, err := app.compile()
+	m, err := app.compile(target.Web)
 	if err != nil {
 		return err
 	}

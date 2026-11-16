@@ -32,11 +32,11 @@ These pages cover the whole language, a topic each. For a first look, read [A to
 
 ## The pages
 
-- [Files, packages and imports](packages.md): files, packages and imports; apps, programs and libraries
+- [Files, packages and imports](packages.md): files, packages and imports; files for one platform; apps, programs and libraries
 - [Values and types](types.md): values and types, operators, built-in methods, value semantics
 - [Declarations](declarations.md): let, var, state and the rest; structs and enums
 - [Functions and closures](functions.md): functions and closures; interfaces and generics
-- [Control flow](control-flow.md): if, match, loops and patterns
+- [Control flow](control-flow.md): if, match, loops and patterns; code for one platform (@platform)
 - [Components](components.md): components: their bodies, handlers, two-way bindings, lists of views, effects and tasks
 - [Stores](stores.md): state shared by the components that use it
 - [Async](async.md): async functions, tasks, streams, spawn; data that loads

@@ -15,6 +15,7 @@ import (
 	"github.com/egoist/asuka/lang/compile"
 	"github.com/egoist/asuka/lang/prelude"
 	"github.com/egoist/asuka/lang/syntax"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // A pkgState is what checking a package found, and the text it read.
@@ -29,6 +30,19 @@ type pkgState struct {
 	srcs  map[string][]byte // the root package's files' text, as checked
 
 	published map[string]bool // the files diagnostics were published for
+
+	// platform is the platform it's checked for. A package whose
+	// program has platforms' files (tray_linux.asuka) is checked for
+	// target.Default and, in others, for each other platform: its
+	// diagnostics are every platform's, and a file of a platform's is
+	// read in a check for that platform (fileAt).
+	platform target.Platform
+	others   []*pkgState
+}
+
+// platformStates are st and its checks for other platforms.
+func (st *pkgState) platformStates() []*pkgState {
+	return append([]*pkgState{st}, st.others...)
 }
 
 // root is the package checked, nil without a result.
@@ -59,15 +73,34 @@ func (s *server) check(dir string) *pkgState {
 		return s.preludeState(dir)
 	}
 	old := s.pkgs[dir]
-	st := &pkgState{dir: dir, gens: map[string]int{dir: s.gens[dir]}, files: map[string]*syntax.SourceFile{}, pkgOf: map[*syntax.SourceFile]*check.Package{}, srcs: map[string][]byte{}}
+	ov := s.overlay()
+	st := s.checkFor(dir, target.Default, ov)
 	if old != nil {
 		st.published = old.published
 	}
-	ov := s.overlay()
+	if st.res != nil && st.res.PlatformFiles {
+		for _, p := range target.All {
+			if p == target.Default {
+				continue
+			}
+			o := s.checkFor(dir, p, ov)
+			for d, g := range o.gens {
+				st.gens[d] = g
+			}
+			st.others = append(st.others, o)
+		}
+	}
+	s.pkgs[dir] = st
+	return st
+}
+
+// checkFor checks the package in dir for platform.
+func (s *server) checkFor(dir string, platform target.Platform, ov map[string][]byte) *pkgState {
+	st := &pkgState{dir: dir, platform: platform, gens: map[string]int{dir: s.gens[dir]}, files: map[string]*syntax.SourceFile{}, pkgOf: map[*syntax.SourceFile]*check.Package{}, srcs: map[string][]byte{}}
 	var res *compile.Result
 	var err error
 	if !s.safely("checking "+dir, func() {
-		res, err = compile.Dir(dir, &compile.Options{Overlay: ov, CheckOnly: true, Resolve: s.resolver(dir)})
+		res, err = compile.Dir(dir, &compile.Options{Platform: platform, Overlay: ov, CheckOnly: true, Resolve: s.resolver(dir)})
 	}) {
 		res, err = nil, errors.New("the checker failed on this package (see the server's log)")
 	}
@@ -93,7 +126,6 @@ func (s *server) check(dir string) *pkgState {
 			}
 		}
 	}
-	s.pkgs[dir] = st
 	return st
 }
 
@@ -119,16 +151,25 @@ func (s *server) publish(st *pkgState) {
 	warnings := map[string][]check.Diagnostic{}
 	var files []string
 	if root := st.root(); root != nil {
-		for _, f := range root.Files {
-			files = append(files, f.File.Name())
-			byFile[f.File.Name()] = nil
+		// Every platform's files, and their diagnostics: once each, and
+		// saying the platforms when not every one's.
+		for _, o := range st.platformStates() {
+			if r := o.root(); r != nil {
+				for _, f := range r.Files {
+					if _, ok := byFile[f.File.Name()]; !ok {
+						files = append(files, f.File.Name())
+						byFile[f.File.Name()] = nil
+					}
+				}
+			}
 		}
-		for _, d := range st.res.Diags {
+		diags, warns := platformDiags(st)
+		for _, d := range diags {
 			if _, ok := byFile[d.Pos.Filename]; ok {
 				byFile[d.Pos.Filename] = append(byFile[d.Pos.Filename], d)
 			}
 		}
-		for _, d := range st.res.Warnings {
+		for _, d := range warns {
 			if _, ok := byFile[d.Pos.Filename]; ok {
 				warnings[d.Pos.Filename] = append(warnings[d.Pos.Filename], d)
 			}
@@ -178,6 +219,55 @@ func (s *server) publish(st *pkgState) {
 		}
 	}
 	st.published = now
+}
+
+// platformDiags are st's diagnostics and warnings and its other
+// platforms' checks' (when it has them), each once, a message saying the
+// platforms it's for when not every one checked.
+func platformDiags(st *pkgState) (diags, warns []check.Diagnostic) {
+	states := st.platformStates()
+	if len(states) == 1 {
+		return st.res.Diags, st.res.Warnings
+	}
+	merge := func(get func(*compile.Result) []check.Diagnostic) []check.Diagnostic {
+		var out []check.Diagnostic
+		var ps [][]target.Platform
+		idx := map[string]int{}
+		checked := 0
+		for _, o := range states {
+			if o.res == nil {
+				continue
+			}
+			checked++
+			for _, d := range get(o.res) {
+				k := d.String()
+				if i, ok := idx[k]; ok {
+					ps[i] = append(ps[i], o.platform)
+					continue
+				}
+				idx[k] = len(out)
+				out = append(out, d)
+				ps = append(ps, []target.Platform{o.platform})
+			}
+		}
+		for i := range out {
+			if len(ps[i]) < checked {
+				sort.Slice(ps[i], func(a, b int) bool { return platformIndex(ps[i][a]) < platformIndex(ps[i][b]) })
+				out[i].Msg += " (for " + target.List(ps[i]) + ")"
+			}
+		}
+		return out
+	}
+	return merge(func(r *compile.Result) []check.Diagnostic { return r.Diags }), merge(func(r *compile.Result) []check.Diagnostic { return r.Warnings })
+}
+
+func platformIndex(p target.Platform) int {
+	for i, q := range target.All {
+		if q == p {
+			return i
+		}
+	}
+	return len(target.All)
 }
 
 // publishNone clears a package's diagnostics.
@@ -255,7 +345,18 @@ func (s *server) fileAt(uri string) (*fileCtx, error) {
 	}
 	f := st.files[name]
 	if f == nil {
-		return nil, errNoFile
+		// A platform's file another platform's check has: the first
+		// platform's of its, this computer's when it's one of them.
+		var found *pkgState
+		for _, o := range st.others {
+			if o.files[name] != nil && o.res != nil && o.res.Program != nil && (found == nil || o.platform == target.Host()) {
+				found = o
+			}
+		}
+		if found == nil {
+			return nil, errNoFile
+		}
+		st, f = found, found.files[name]
 	}
 	src := st.srcs[name]
 	if src == nil {

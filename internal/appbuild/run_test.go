@@ -71,16 +71,16 @@ func TestCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, diags, err := p.Compile()
+	m, diags, err := p.Compile("")
 	if err != nil || m != nil || len(diags) != 1 || !strings.Contains(diags[0], "app.asuka:1:") {
 		t.Fatalf("a mistake: %v %v %v", m, diags, err)
 	}
 	write("app.asuka", "component C { Text(\"hi\") }\napp { C() }\n")
-	if m, diags, err = p.Compile(); err != nil || m == nil || len(diags) != 0 || m.App < 0 || m.Main >= 0 {
+	if m, diags, err = p.Compile(""); err != nil || m == nil || len(diags) != 0 || m.App < 0 || m.Main >= 0 {
 		t.Fatalf("an app: %v %v %v", m, diags, err)
 	}
 	write("app.asuka", "component C { Text(\"hi\") }\napp { C() }\nfn main() { print(\"main\") }\n")
-	if m, diags, err = p.Compile(); m != nil || len(diags) != 1 || !strings.Contains(diags[0], "an app or a program") {
+	if m, diags, err = p.Compile(""); m != nil || len(diags) != 1 || !strings.Contains(diags[0], "an app or a program") {
 		t.Fatalf("an app with main: %v %v %v", m, diags, err)
 	}
 	write("app.asuka", "fn main() { print(\"main\") }\n")
@@ -88,7 +88,7 @@ func TestCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m, _, err = f.Compile(); err != nil || m == nil || m.Main < 0 || m.App >= 0 {
+	if m, _, err = f.Compile(""); err != nil || m == nil || m.Main < 0 || m.App >= 0 {
 		t.Fatalf("one file, a program: %v %v", m, err)
 	}
 }

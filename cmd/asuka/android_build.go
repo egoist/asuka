@@ -11,6 +11,7 @@ import (
 
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // androidABIs are the ABIs a release build carries: phones (arm64), old
@@ -213,7 +214,7 @@ func buildAndroidLibs(app *asukaApp, tc *androidToolchain, work string) (string,
 	cfg := app.cfg
 	jni := filepath.Join(work, "jniLibs")
 	os.RemoveAll(jni)
-	m, err := app.compile()
+	m, err := app.compile(target.Android)
 	if err != nil {
 		return "", err
 	}

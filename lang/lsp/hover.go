@@ -7,6 +7,7 @@ import (
 
 	"github.com/egoist/asuka/lang/check"
 	"github.com/egoist/asuka/lang/syntax"
+	"github.com/egoist/asuka/lang/target"
 )
 
 func (s *server) hover(p *TextDocumentPositionParams) (*Hover, error) {
@@ -41,9 +42,15 @@ func (fc *fileCtx) exprHover(path []syntax.Node) (*Hover, error) {
 		if !ok {
 			continue
 		}
-		switch e.(type) {
+		switch e := e.(type) {
 		case *syntax.Ident, *syntax.LambdaExpr, *syntax.BadExpr:
 			continue
+		case *syntax.AtExpr:
+			if e.Name != "platform" {
+				return nil, nil
+			}
+			rg := fc.rng(e.Span)
+			return &Hover{Contents: markdown("@platform: Platform", platformDoc(fc.st.platform)), Range: &rg}, nil
 		}
 		t := fc.info.Types[e]
 		if t == nil || check.IsInvalid(t) || t == check.Void {
@@ -219,4 +226,12 @@ func typeNameOf(t check.Type) *check.TypeName {
 		}
 	}
 	return nil
+}
+
+// platformDoc is @platform's hover: what it is, and the platform the
+// editor checks the file for (whose files it reads).
+func platformDoc(p target.Platform) string {
+	return "The platform the app is compiled for, a constant: `.iOS`, `.android`, `.macOS`, `.windows`, `.linux` or `.web`. " +
+		"Every branch is checked; one it doesn't take on a platform isn't part of that platform's build.\n\n" +
+		"This file is read here with " + p.Or().Title() + "'s files; its diagnostics are every platform's."
 }

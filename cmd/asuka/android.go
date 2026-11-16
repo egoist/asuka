@@ -367,7 +367,7 @@ func removeStaleSources(src string, files []string) {
 // connects to asuka dev through adb reverse (files/asuka/dev says where)
 // and loads the app's bytecode, again on each save.
 func devAndroid(dir string, o *devOptions, stop <-chan os.Signal) error {
-	app, err := loadApp(dir)
+	app, err := loadApp(dir, platformAndroid)
 	if err != nil {
 		return err
 	}

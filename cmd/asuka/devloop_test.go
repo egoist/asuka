@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // counterDir is an app's directory for the dev loop's tests: its
@@ -59,6 +60,7 @@ func TestDevDesktop(t *testing.T) {
 	needMacBuild(t)
 	useCounter(t, "Count: ")
 	app := projectApp(t, counterDir(t), nil)
+	app.platform = target.MacOS
 	work := t.TempDir()
 	loop, err := newDevLoop(app, "127.0.0.1:0")
 	if err != nil {
@@ -124,6 +126,7 @@ func TestDevWeb(t *testing.T) {
 	}
 	useCounter(t, "Count: ")
 	app := projectApp(t, counterDir(t), nil)
+	app.platform = target.Web
 	s, loop, err := newWebDev(app, t.TempDir())
 	if err != nil {
 		t.Fatal(err)

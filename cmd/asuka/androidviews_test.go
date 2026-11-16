@@ -61,7 +61,7 @@ func TestStdAndroidViews(t *testing.T) {
 	src.WriteString("\napp { Text(\"tests\") }\n")
 	os.WriteFile(filepath.Join(app, "app.asuka"), []byte(src.String()), 0o644)
 	os.WriteFile(filepath.Join(app, "asuka.toml"), []byte("name = \"StdViews\"\nid = \"dev.asuka.stdviews\"\nversion = \"1.0.0\"\nbuild = 1\n"), 0o644)
-	a, err := loadApp(app)
+	a, err := loadApp(app, platformAndroid)
 	if err != nil {
 		t.Fatal(err)
 	}

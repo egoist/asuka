@@ -32,6 +32,8 @@ func sexpr(n Node) string {
 		return "none"
 	case *SelfExpr:
 		return "self"
+	case *AtExpr:
+		return "@" + x.Name
 	case *ImplicitMember:
 		return "." + x.Name.Name
 	case *MemberExpr:
@@ -204,6 +206,10 @@ func TestParseExpr(t *testing.T) {
 		{"~a & -b", "(& (~ a) (- b))"},
 		{"a >> b > c", "(> (>> a b) c)"},
 		{"a > >b", "(> a BAD)"},
+		// Compile-time constants.
+		{"@platform == .linux", "(== @platform .linux)"},
+		{"!(@platform == .web) && x", "(&& (! (paren (== @platform .web))) x)"},
+		{"@ platform", "BAD"},
 		// Unary keywords.
 		{"await f()", "(await (call f))"},
 		{"try await f()", "(try (await (call f)))"},

@@ -57,7 +57,9 @@ alerts.
 
 The app runs as on an iPhone (iOS, 390 × 844 points). `asuka test
 --platform android` (or `mac`, `windows`, `linux`, `web`) says it's
-another platform, for what the app does by platform.
+another platform, for what the app does by platform: the tests are
+compiled for it too, with its packages' files for that platform and
+`@platform` its own.
 
 What isn't the platform's is how text is measured: 8 points a
 character on 20-point lines, whatever the font. Frames come from

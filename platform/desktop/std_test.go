@@ -19,6 +19,7 @@ import (
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/cbuild"
 	"github.com/egoist/asuka/lang/compile"
+	"github.com/egoist/asuka/lang/target"
 	"github.com/egoist/asuka/std"
 )
 
@@ -790,7 +791,7 @@ app { Probe() }
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
 			os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(c.src), 0o644)
-			res, err := compile.Dir(dir, nil)
+			res, err := compile.Dir(dir, &compile.Options{Platform: target.Host()})
 			if err != nil {
 				t.Fatal(err)
 			}

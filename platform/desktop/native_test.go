@@ -12,6 +12,7 @@ import (
 	"github.com/egoist/asuka/internal/cbuild"
 	"github.com/egoist/asuka/internal/nativegen"
 	"github.com/egoist/asuka/lang/compile"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // pantry is nativegen's golden package: its declarations, its generated
@@ -97,7 +98,7 @@ func compileProbe(t *testing.T) *compile.Result {
 		os.WriteFile(filepath.Join(pkg, f), b, 0o644)
 	}
 	os.WriteFile(filepath.Join(app, "app.asuka"), []byte(probe), 0o644)
-	res, err := compile.Dir(app, nil)
+	res, err := compile.Dir(app, &compile.Options{Platform: target.Host()})
 	if err != nil {
 		t.Fatal(err)
 	}

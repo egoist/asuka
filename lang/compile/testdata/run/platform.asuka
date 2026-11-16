@@ -1,0 +1,105 @@
+// @platform: the platform the program is compiled for, a constant. The
+// tests compile for iOS (the default), so only iOS's branches run; the
+// others are checked, and left out of the module (platform_test.go).
+
+let name = if @platform == .iOS { "iOS" } else { "not iOS" }
+let mobile = @platform == .iOS || @platform == .android
+let here: Platform = @platform
+
+fn kind() -> string {
+  return match @platform {
+    .iOS | .android => "phone"
+    .macOS | .windows | .linux => "desktop"
+    .web => "browser"
+  }
+}
+
+fn calls(n: int) -> bool {
+  print("called {n}")
+  return true
+}
+
+test "a constant" {
+  print(name)
+  print(mobile)
+  print(here == .iOS)
+  print(kind())
+  expect(@platform != .linux)
+}
+
+test "if, else if and else" {
+  if @platform == .linux {
+    print("linux")
+  } else if @platform == .iOS {
+    print("ios")
+  } else {
+    print("other")
+  }
+  if !(@platform == .iOS) {
+    print("never")
+  }
+  if (@platform == .android) {
+    print("never")
+  }
+}
+
+test "&& and ||" {
+  if @platform == .iOS && calls(1) {
+    print("both")
+  }
+  if calls(2) && @platform == .linux {
+    print("never")
+  }
+  if @platform == .linux || calls(3) {
+    print("either")
+  }
+  if calls(4) || @platform == .iOS {
+    print("always")
+  }
+}
+
+test "a match's arms" {
+  match @platform {
+    .linux => print("never")
+    .iOS => print("ios arm")
+    _ => print("never")
+  }
+  let n = 3
+  match @platform {
+    .iOS if n > 5 => print("big")
+    .iOS => print("small")
+    _ => print("never")
+  }
+}
+
+test "a chain" {
+  let x: int? = 4
+  if @platform == .iOS, let v = x {
+    print("chain {v}")
+  }
+  if @platform == .web, let v = x {
+    print("never {v}")
+  }
+}
+
+// Output:
+// iOS
+// true
+// true
+// phone
+// ok a constant
+// ios
+// ok if, else if and else
+// called 1
+// both
+// called 2
+// called 3
+// either
+// called 4
+// always
+// ok && and ||
+// ios arm
+// small
+// ok a match's arms
+// chain 4
+// ok a chain

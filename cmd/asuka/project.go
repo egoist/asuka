@@ -15,6 +15,7 @@ import (
 	"github.com/egoist/asuka/internal/appconfig"
 	"github.com/egoist/asuka/internal/filetype"
 	"github.com/egoist/asuka/lang/bytecode"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // asukaApp is an app: its directory of .asuka files, its asuka.toml, its
@@ -26,6 +27,9 @@ type asukaApp struct {
 	bundleID string
 	cfg      *appConfig // asuka.toml
 	proj     *appbuild.Project
+	// platform is the platform it's loaded for (asuka dev's, a build's):
+	// what uses and the config it decides (permissions) are of.
+	platform target.Platform
 	uses     *appbuild.Uses
 	// c is the C the app's extern declarations call, as of the last
 	// compile (nil: none), which a player is built with.
@@ -83,7 +87,10 @@ func (a *asukaApp) used() *appbuild.Uses {
 // (installed from asuka.lock when it has any), and what its sources
 // import and name, from which its permissions and its platforms'
 // features follow.
-func loadApp(dir string) (*asukaApp, error) {
+//
+// platform is the --platform it's for (ios, mac...): its packages' files
+// for that platform are the ones whose uses count.
+func loadApp(dir, platform string) (*asukaApp, error) {
 	proj, err := appbuild.Load(dir)
 	if err != nil {
 		return nil, err
@@ -97,7 +104,7 @@ func loadApp(dir string) (*asukaApp, error) {
 	}
 	// The catalogs: the compiler checks them (and tr's calls of them),
 	// as each compile does.
-	app := &asukaApp{dir: proj.Dir, name: filepath.Base(proj.Dir), bundleID: cfg.ID, cfg: cfg, proj: proj}
+	app := &asukaApp{dir: proj.Dir, name: filepath.Base(proj.Dir), bundleID: cfg.ID, cfg: cfg, proj: proj, platform: langPlatform(platform)}
 	app.refresh()
 	warnDevLang(cfg)
 	warnShareSheet(cfg)
@@ -112,7 +119,7 @@ func (a *asukaApp) refresh() {
 	if a.proj == nil {
 		a.proj = &appbuild.Project{Dir: a.dir}
 	}
-	a.uses = a.proj.Uses()
+	a.uses = a.proj.Uses(a.platform)
 	deps := a.deps()
 	if err := a.cfg.depManifests(a.packageDirs(), a.uses); err != nil {
 		fmt.Fprintln(os.Stderr, "asuka:", err)
@@ -122,26 +129,39 @@ func (a *asukaApp) refresh() {
 	a.cfg.displayName = a.displayName()
 }
 
-// compile compiles the app to its module, printing its diagnostics; an
-// error says it didn't compile. Its test blocks are left out (and the
+// compile compiles the app for platform to its module (its packages'
+// files for platform, @platform's branches), printing its diagnostics;
+// an error says it didn't compile. Its test blocks are left out (and the
 // test builtins with them, which only asuka test's fake host has): this
 // is the module a player loads and a release compiles to C.
-func (a *asukaApp) compile() (*bytecode.Module, error) {
-	m, diags, err := a.proj.Compile()
+func (a *asukaApp) compile(platform target.Platform) (*bytecode.Module, error) {
+	m, _, err := a.compileShown(platform, nil)
+	if m != nil {
+		a.c = m.C
+	}
+	return m, err
+}
+
+// compileShown is compile, printing only the diagnostics shown doesn't
+// have, and returning them all (asuka dev's for each player's platform:
+// what two platforms report alike is said once). It leaves a.c as it is.
+func (a *asukaApp) compileShown(platform target.Platform, shown map[string]bool) (*bytecode.Module, []string, error) {
+	m, diags, err := a.proj.Compile(platform)
 	for _, d := range diags {
-		fmt.Fprintln(os.Stderr, relDiag(a.dir, d))
+		if !shown[d] {
+			fmt.Fprintln(os.Stderr, relDiag(a.dir, d))
+		}
 	}
 	if err != nil {
-		return nil, err
+		return nil, diags, err
 	}
 	if m == nil {
-		return nil, fmt.Errorf("%d %s", len(diags), plural(len(diags), "error", "errors"))
+		return nil, diags, fmt.Errorf("%d %s", len(diags), plural(len(diags), "error", "errors"))
 	}
 	if m.App < 0 {
-		return nil, fmt.Errorf("%s has no app block (app { Root() }) to run", a.dir)
+		return nil, diags, fmt.Errorf("%s has no app block (app { Root() }) to run", a.dir)
 	}
-	a.c = m.C
-	return appbuild.StripTests(m), nil
+	return appbuild.StripTests(m), diags, nil
 }
 
 // relDiag makes a diagnostic's file relative to dir, when it's in it.
@@ -220,7 +240,7 @@ func (a *asukaApp) packageDirs() map[string]string {
 	for id, d := range a.proj.Deps {
 		out[id] = d
 	}
-	for id, d := range a.proj.Std() {
+	for id, d := range a.proj.Std(a.platform) {
 		out[id] = d
 	}
 	return out

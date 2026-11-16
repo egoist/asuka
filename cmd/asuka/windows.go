@@ -16,6 +16,7 @@ import (
 	"github.com/egoist/asuka/internal/appconfig"
 	"github.com/egoist/asuka/internal/cbuild"
 	iupdate "github.com/egoist/asuka/internal/update"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // Windows: the app is one executable, the Windows host in C
@@ -144,7 +145,7 @@ func buildWindows(app *asukaApp, o *buildOptions) error {
 // the std packages': std/sqlite's SQLite) and the resources (a COFF
 // object) linked in.
 func windowsRelease(app *asukaApp, t cbuild.Target, res []byte, exe string, verbose bool) error {
-	m, err := app.compile()
+	m, err := app.compile(target.Windows)
 	if err != nil {
 		return err
 	}

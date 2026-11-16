@@ -94,7 +94,7 @@ func TestStreams(t *testing.T) {
 // (std/<name>).
 func buildStdApp(t *testing.T, w *windows, src, dir string, pkgs ...string) string {
 	t.Helper()
-	res := compile.Files(map[string][]byte{"app.asuka": []byte(src)}, nil)
+	res := compile.Files(map[string][]byte{"app.asuka": []byte(src)}, &compile.Options{Platform: "windows"})
 	if err := res.Err(); err != nil {
 		t.Fatalf("the app doesn't compile:\n%v", err)
 	}

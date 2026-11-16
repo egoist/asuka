@@ -18,6 +18,7 @@ import (
 	"github.com/egoist/asuka/internal/appconfig"
 	"github.com/egoist/asuka/internal/cbuild"
 	iupdate "github.com/egoist/asuka/internal/update"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // macOS: the app's executable is the Swift host (platform/macos, AppKit)
@@ -258,7 +259,7 @@ func buildMac(app *asukaApp, o *buildOptions) error {
 
 	// The host and the core with the app compiled in: a universal
 	// executable. Updates are the Mac App Store's for its builds.
-	m, err := app.compile()
+	m, err := app.compile(target.MacOS)
 	if err != nil {
 		return err
 	}

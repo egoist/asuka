@@ -55,6 +55,10 @@ type Options struct {
 	// Version is the project's (asuka.toml's version): std/flag's
 	// --version.
 	Version string
+	// Platform is the platform the program is compiled for: what
+	// @platform is, which decides the branches it folds (fold.go).
+	// "": target.Default.
+	Platform string
 }
 
 // Lower lowers prog (checked without errors) to a program.

@@ -1051,6 +1051,8 @@ func (p *printer) expr1(x Expr) {
 		p.write("none")
 	case *SelfExpr:
 		p.write("self")
+	case *AtExpr:
+		p.write("@" + x.Name)
 	case *ImplicitMember:
 		p.write("." + x.Name.Name)
 	case *MemberExpr:

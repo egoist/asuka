@@ -65,3 +65,45 @@ for line in lines {
 
 They go likewise in an `if`'s or a `match` arm's branch, and as a
 closure's body: `x => x ?? throw Error("empty")`.
+
+## Code for one platform
+
+`@platform` is the platform the app is built for, a `Platform`:
+`.iOS`, `.android`, `.macOS`, `.windows`, `.linux` or `.web`. It's a
+constant, known as the app compiles: it isn't tracked, and it goes
+wherever a value does, a file's top level and a component's body
+included. A branch it decides that a platform doesn't take is no part
+of that platform's build: not its code, not its strings, not its
+views.
+
+```asuka
+let saveKey = if @platform == .macOS { "⌘S" } else { "Ctrl+S" }
+
+component Toolbar {
+  prop link: string
+
+  Row {
+    if @platform == .iOS || @platform == .android {
+      Button("Share") { on press { share(link) } }
+    }
+    match @platform {
+      .macOS | .windows | .linux => Text("Save with {saveKey}")
+      _ => Text("Saved as you go")
+    }
+  }
+}
+```
+
+That's so of an `if` and its `else if`s, of a `match @platform` (which
+needn't cover `.unknown`: it's never that), of `&&`, `||` and `!` over
+`@platform`'s comparisons, and of an `if` among views, whose other
+branch's views never exist. Every branch is still checked, whichever
+platform the app is built for: a platform's APIs are the same
+declarations on every platform, so a mistake in the Linux branch is an
+error when you build for iOS too. For declarations of a platform's
+own, a file of its own is often clearer: see [Files for one
+platform](packages.md#files-for-one-platform).
+
+`environment().platform` is the platform a view runs on, as the system
+says it (and as a test's `mount(…, platform:)` does): it's tracked, for
+views. What to build for a platform is `@platform`'s.

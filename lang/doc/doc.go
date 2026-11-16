@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/egoist/asuka/lang/syntax"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // Package is a package's documentation.
@@ -59,6 +61,11 @@ type Decl struct {
 	Code    string
 	Doc     string
 	Members []*Decl
+	// Platforms are the platforms whose files declare it (tray_linux.asuka:
+	// Linux), in target.All's order; nil: every platform's. A name each
+	// platform's file declares is one Decl, with the first's code and the
+	// first doc comment.
+	Platforms []target.Platform
 }
 
 // Load reads the package in dir (its .asuka files and asuka.toml), whose
@@ -105,13 +112,53 @@ func FromSources(path string, srcs map[string][]byte) (*Package, error) {
 		if p.Doc == "" {
 			p.Doc = packageComment(f)
 		}
+		ps, _ := target.FileSuffix(n)
 		for _, d := range f.Decls {
-			if dd := decl(d); dd != nil {
-				p.Decls = append(p.Decls, dd)
+			dd := decl(d)
+			if dd == nil {
+				continue
 			}
+			dd.Platforms = ps
+			if old := p.find(dd.Name, dd.Kind); old != nil && (old.Platforms != nil || ps != nil) {
+				// A platform's: one name, on each platform that declares it.
+				old.Platforms = unionPlatforms(old.Platforms, ps)
+				if old.Doc == "" {
+					old.Code, old.Doc, old.Members = dd.Code, dd.Doc, dd.Members
+				}
+				continue
+			}
+			p.Decls = append(p.Decls, dd)
 		}
 	}
 	return p, nil
+}
+
+// find is the package's declaration of name, of kind; nil when none.
+func (p *Package) find(name string, kind Kind) *Decl {
+	for _, d := range p.Decls {
+		if d.Name == name && d.Kind == kind {
+			return d
+		}
+	}
+	return nil
+}
+
+// unionPlatforms is the platforms of a or b (nil: every one), in
+// target.All's order; nil when they're every one.
+func unionPlatforms(a, b []target.Platform) []target.Platform {
+	if a == nil || b == nil {
+		return nil
+	}
+	var out []target.Platform
+	for _, p := range target.All {
+		if slices.Contains(a, p) || slices.Contains(b, p) {
+			out = append(out, p)
+		}
+	}
+	if len(out) == len(target.All) {
+		return nil
+	}
+	return out
 }
 
 // nameOf is the name a package's declarations are qualified by: its

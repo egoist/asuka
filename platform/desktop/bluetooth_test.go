@@ -12,6 +12,7 @@ import (
 
 	"github.com/egoist/asuka/internal/cbuild"
 	"github.com/egoist/asuka/lang/compile"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // platform/bluetooth's Linux C (BlueZ over D-Bus) against a BlueZ of the
@@ -74,7 +75,7 @@ func TestBluetoothLinux(t *testing.T) {
 
 	app := t.TempDir()
 	os.WriteFile(filepath.Join(app, "app.asuka"), []byte(bluetoothProbe), 0o644)
-	res, err := compile.Dir(app, nil)
+	res, err := compile.Dir(app, &compile.Options{Platform: target.Host()})
 	if err != nil {
 		t.Fatal(err)
 	}

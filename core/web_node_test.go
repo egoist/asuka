@@ -15,6 +15,7 @@ import (
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/cbuild"
 	"github.com/egoist/asuka/lang/compile"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // The player's core as WebAssembly (no app compiled in), built once for
@@ -63,7 +64,12 @@ func runWebNode(t *testing.T, src string, opts *compile.Options, extra ...string
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := compile.Files(map[string][]byte{src: b}, opts)
+	o := compile.Options{}
+	if opts != nil {
+		o = *opts
+	}
+	o.Platform = target.Web
+	res := compile.Files(map[string][]byte{src: b}, &o)
 	if err := res.Err(); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +214,7 @@ func TestWebChrome(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			res := compile.Files(map[string][]byte{c.src: b}, nil)
+			res := compile.Files(map[string][]byte{c.src: b}, &compile.Options{Platform: target.Web})
 			if err := res.Err(); err != nil {
 				t.Fatal(err)
 			}

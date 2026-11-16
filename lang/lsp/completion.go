@@ -109,6 +109,14 @@ func (c *completer) run() {
 		return
 	}
 	before := string(src[lineStart:c.start])
+	if c.start > 0 && src[c.start-1] == '@' {
+		// @platform, the compile-time constant.
+		if strings.HasPrefix("platform", c.prefix) {
+			c.add(CompletionItem{Label: "platform", Kind: 21, Detail: "@platform: Platform",
+				Documentation: &MarkupContent{Kind: "markdown", Value: platformDoc(fc.st.platform)}}, prioMember)
+		}
+		return
+	}
 	if c.start > 0 && src[c.start-1] == '.' {
 		dot := c.start - 1
 		if dot > 0 && src[dot-1] == '.' {

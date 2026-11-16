@@ -49,7 +49,7 @@ func target() cbuild.Target { return cbuild.Target{OS: "linux", Arch: runtime.GO
 // app's executable, as asuka build does, at exe.
 func buildApp(t *testing.T, src, exe string) {
 	t.Helper()
-	res := compile.Files(map[string][]byte{"app.asuka": []byte(src)}, nil)
+	res := compile.Files(map[string][]byte{"app.asuka": []byte(src)}, &compile.Options{Platform: "linux"})
 	if err := res.Err(); err != nil {
 		t.Fatalf("the app doesn't compile:\n%v", err)
 	}

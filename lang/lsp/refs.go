@@ -117,12 +117,23 @@ func (s *server) findOccurrences(fc *fileCtx, r *ref) []occurrence {
 		if st == nil || st.root() == nil {
 			continue
 		}
-		for _, f := range st.root().Files {
-			ofc, err := s.fileIn(st, f)
-			if err != nil {
+		// Every platform's files (tray_linux.asuka in Linux's check).
+		scanned := map[string]bool{}
+		for _, o := range st.platformStates() {
+			if o.root() == nil {
 				continue
 			}
-			ofc.occurrences(key, &out)
+			for _, f := range o.root().Files {
+				if scanned[f.File.Name()] {
+					continue
+				}
+				scanned[f.File.Name()] = true
+				ofc, err := s.fileIn(o, f)
+				if err != nil {
+					continue
+				}
+				ofc.occurrences(key, &out)
+			}
 		}
 	}
 	// One file read by two checks (a package and its importer, checked

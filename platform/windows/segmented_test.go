@@ -22,7 +22,7 @@ func TestSegmented(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, diags, err := p.Compile()
+	m, diags, err := p.Compile("windows")
 	if err != nil || m == nil {
 		t.Fatalf("media doesn't compile: %v\n%s", err, strings.Join(diags, "\n"))
 	}

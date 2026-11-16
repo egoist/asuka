@@ -105,6 +105,39 @@ to the new types by field names), and keeps the native views that are
 still there. For release, `asuka build` compiles the app to C and links
 it with the core.
 
+### Platforms
+
+A compile is for one platform (lang/target: ios, android, macos,
+windows, linux, web; compile.Options.Platform, iOS when none is given).
+It decides two things, and nothing else: which of each package's files
+are in it (a file named `*_<platform>.asuka`, or `_desktop`, `_mobile`,
+is only on those platforms), and what `@platform` is, a compile-time
+constant of the prelude's `Platform` that lowering folds (lang/ir's
+fold.go): an `if`, `match`, `&&`, `||` or view `if` it decides lowers
+only the branch it takes. Types never depend on the platform: a
+platform's APIs are the same Asuka declarations everywhere, so the
+checker checks every branch whatever the platform, and only a
+package's file set varies. So compile.DirPlatforms (asuka check) and the
+language server check once when no package has platforms' files (every
+platform's check would be the same), else once for each platform, and
+merge the diagnostics, naming the platforms of one
+not every platform reports. A name declared both in a file every
+platform has and a platform's, or in two files one platform has both
+of, is reported by the loader the same way for every platform's compile
+(at the declaration in the broader file: the suffixes nest), and the
+checker's own report of it is dropped, so a check of all platforms says
+it once.
+
+Every compile says its platform: a release build its target's; `asuka
+dev` the platform of each player connected (a player's hello names it;
+internal/devserver keeps a module per platform and sends a player its
+own only after its hello, and the dev loop compiles again, on a save,
+for every platform with a player connected); `asuka test` `--platform`'s
+(iOS by default, as its fake host); a program this computer's or
+`--target`'s; the web's page the web's. internal/appbuild.Project keeps
+its compiles and what they use (permissions, packages) by platform: a
+platform's files may import what only it needs.
+
 ## signal
 
 core/src/signal ports [alien-signals](https://github.com/stackblitz/alien-signals)

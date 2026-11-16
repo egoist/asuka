@@ -1,0 +1,47 @@
+// @platform: the platform the app is compiled for, a Platform, usable
+// anywhere a value is. Every branch is checked, whichever it is.
+
+let here: Platform = @platform
+let desktop = @platform == .macOS || @platform == .windows || @platform == .linux
+let label = if @platform == .web { "page" } else { "app" }
+
+// A match of @platform needn't cover .unknown: it's never that.
+fn family() -> string = match @platform {
+  .iOS | .android => "mobile"
+  .macOS | .windows | .linux => "desktop"
+  .web => "web"
+}
+
+// Another Platform's must.
+fn familyOf(p: Platform) -> string = match p { // ERROR "match doesn't cover .unknown"
+  .iOS | .android => "mobile"
+  .macOS | .windows | .linux => "desktop"
+  .web => "web"
+}
+
+component Tray {
+  let mobile = @platform == .iOS || @platform == .android
+
+  Column {
+    if @platform == .linux {
+      Text("Linux")
+    }
+    Text(if mobile { "phone" } else { "computer" })
+  }
+}
+
+fn branches() {
+  if @platform == .linux {
+    showTrya() // ERROR "unknown name showTrya"
+  } else if @platform == .web {
+    let n: int = "web" // ERROR "string"
+  }
+}
+
+fn unknownConst() -> bool = @os == .linux // ERROR "no compile-time constant @os: there's @platform"
+
+fn notACase() -> bool = @platform == .linuxx // ERROR "Platform has no case or constant linuxx"
+
+fn assigned() {
+  @platform = .linux // ERROR "can't assign"
+}

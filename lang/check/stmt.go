@@ -928,7 +928,7 @@ func (c *Checker) matchStmt(s *syntax.MatchStmt) {
 		}
 		c.closeScope()
 	}
-	ok, missing := c.exhaustive(t, s.Arms)
+	ok, missing := c.exhaustive(s.Subject, t, s.Arms)
 	mi.Exhaustive = ok
 	if !ok {
 		c.errorf(s, "match doesn't cover %s: add arms for them, or _ => { }", strings.Join(missing, ", "))
@@ -966,7 +966,7 @@ func (c *Checker) matchExpr(e *syntax.MatchExpr, want Type) Type {
 			c.errorf(a, "this arm is a %s, the ones before a %s: make them the same type", typeString(at), typeString(res))
 		}
 	}
-	ok, missing := c.exhaustive(t, e.Arms)
+	ok, missing := c.exhaustive(e.Subject, t, e.Arms)
 	mi.Exhaustive = ok
 	if !ok {
 		c.errorf(e, "match doesn't cover %s: add arms for them, or _ =>", strings.Join(missing, ", "))

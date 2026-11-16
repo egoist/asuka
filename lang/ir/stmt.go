@@ -73,7 +73,7 @@ func (b *fb) stmt(it syntax.Item) {
 		subj := b.value(s.Subject, -1)
 		st := b.rawType(s.Subject)
 		end := b.f.NewLabel()
-		for _, a := range s.Arms {
+		for _, a := range b.l.platformArms(s.Subject, s.Arms) {
 			next := b.f.NewLabel()
 			b.openScope()
 			b.testPattern(a.Pattern, subj, st, next)
@@ -163,6 +163,13 @@ func (b *fb) condJump(c syntax.Expr, els Label) {
 	}
 	lc, ok := c.(*syntax.LetCond)
 	if !ok {
+		if f := b.l.fold(c); f.known {
+			b.effects(f)
+			if !f.val {
+				b.jmp(els)
+			}
+			return
+		}
 		r := b.value(c, -1)
 		b.emitJump(op("JF"), r, els)
 		return
@@ -186,6 +193,23 @@ func (b *fb) condJump(c syntax.Expr, els Label) {
 }
 
 func (b *fb) ifStmt(s *syntax.IfStmt) {
+	if f := b.l.foldCond(s.Cond); f.known {
+		// Only the branch @platform takes.
+		b.effects(f)
+		if f.val {
+			b.openScope()
+			b.block(s.Then)
+			b.closeScope()
+			return
+		}
+		switch el := s.Else.(type) {
+		case *syntax.IfStmt:
+			b.ifStmt(el)
+		case *syntax.Block:
+			b.block(el)
+		}
+		return
+	}
 	els, end := b.f.NewLabel(), b.f.NewLabel()
 	b.openScope()
 	b.condJump(s.Cond, els)

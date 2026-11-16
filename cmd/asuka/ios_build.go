@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/egoist/asuka/lang/bytecode"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // buildIOS makes a release build: an .ipa signed for distribution, or
@@ -80,7 +81,7 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 	var m *bytecode.Module
 	features := []string(nil)
 	if o.dev == nil {
-		if m, err = app.compile(); err != nil {
+		if m, err = app.compile(target.IOS); err != nil {
 			return err
 		}
 		features = usedFeatures(app, cfg)

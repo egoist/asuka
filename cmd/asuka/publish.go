@@ -78,7 +78,7 @@ func cmdPublish(args []string) error {
 		return err
 	}
 	if desktopPlatform(o.platform) {
-		app, err := loadApp(dir)
+		app, err := loadApp(dir, o.platform)
 		if err != nil {
 			return err
 		}
@@ -88,7 +88,7 @@ func cmdPublish(args []string) error {
 	if err != nil {
 		return err
 	}
-	app, err := loadApp(dir)
+	app, err := loadApp(dir, o.platform)
 	if err != nil {
 		return err
 	}

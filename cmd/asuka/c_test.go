@@ -31,7 +31,7 @@ func TestCAppForeign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, diags, err := p.Compile()
+	m, diags, err := p.Compile("")
 	if err != nil || len(diags) > 0 {
 		t.Fatal(err, diags)
 	}
@@ -121,7 +121,7 @@ test "the vendor's library answers" {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, diags, err := p.Compile()
+	m, diags, err := p.Compile("")
 	if err != nil || len(diags) > 0 {
 		t.Fatal(err, diags)
 	}

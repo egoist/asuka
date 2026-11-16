@@ -87,7 +87,7 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 			return errors.New("a Linux app runs only on Linux: run asuka dev there, or set ASUKA_LINUX_RUN to a command that runs a program on a Linux machine with a display that sees this computer's files at the same paths (orb -m ubuntu, limactl shell default). asuka build --platform linux builds a release from here")
 		}
 	}
-	app, err := loadApp(dir)
+	app, err := loadApp(dir, platform)
 	if err != nil {
 		return err
 	}

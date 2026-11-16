@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/egoist/asuka/internal/devserver"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // devLoop is asuka dev's side of an app's players (a host built for
@@ -20,13 +21,24 @@ import (
 // again on each save and sends the new one, which each player loads
 // keeping its state and views. It prints the players' logs, and how each
 // reload went.
+//
+// A module is a platform's (its packages' files for it, @platform's
+// branches): the loop's player's (app.platform), and each other
+// platform's a player connects from (one asuka dev serves an iPhone and
+// an emulator at once), compiled when the first of them says hello and
+// again on each save while one is connected.
 type devLoop struct {
 	app *asukaApp
 	srv *devserver.Server
 	out io.Writer
+	// platform is the loop's player's.
+	platform target.Platform
+	// compiling is held while the loop compiles (a save's, a player's
+	// hello's).
+	compiling sync.Mutex
 
 	mu      sync.Mutex
-	module  []byte // the last module that compiled
+	module  []byte // the last module that compiled, for the loop's player's platform
 	loaded  map[*devserver.Player]bool
 	modules []func(module []byte) // more players (the web's page)
 	failed  []func(msg string)    // told what didn't compile
@@ -58,7 +70,7 @@ type devReload struct {
 // compiles the app once. A module that doesn't compile is printed and
 // waited on: the players get the first that does.
 func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
-	d := &devLoop{app: app, out: os.Stdout, loaded: map[*devserver.Player]bool{}, reloads: make(chan devReload, 16),
+	d := &devLoop{app: app, out: os.Stdout, platform: app.platform.Or(), loaded: map[*devserver.Player]bool{}, reloads: make(chan devReload, 16),
 		firstLoad: make(chan struct{}), playerErr: make(chan string, 1)}
 	srv, err := devserver.Listen(addr, devserver.Events{
 		Hello: func(p *devserver.Player, b []byte) {
@@ -70,6 +82,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 			}
 			fmt.Fprintf(d.out, "asuka: %s connected\n", who)
 		},
+		Need: func(p *devserver.Player, platform target.Platform) { d.compileFor(platform) },
 		Log: func(p *devserver.Player, stderr bool, text []byte) {
 			w := os.Stdout
 			if stderr {
@@ -139,14 +152,31 @@ func (d *devLoop) port() int { return d.srv.Port() }
 func (d *devLoop) close() { d.srv.Close() }
 
 // compile compiles the app and sends the module to the players,
-// reporting whether it compiled. What didn't is printed, and the
-// players keep running what they have.
+// reporting whether it compiled for the loop's player. What didn't is
+// printed, and the players keep running what they have. Players of other
+// platforms get their platform's (compileFor).
 func (d *devLoop) compile() bool {
+	d.compiling.Lock()
+	defer d.compiling.Unlock()
 	start := time.Now()
 	if d.app.proj != nil {
 		d.app.proj.Forget() // a save: compiled, whatever the files' times say
 	}
-	m, err := d.app.compile()
+	m, diags, err := d.app.compileShown(d.platform, nil)
+	if m != nil {
+		d.app.c = m.C
+	}
+	shown := map[string]bool{}
+	for _, x := range diags {
+		shown[x] = true
+	}
+	defer func() {
+		for _, p := range d.srv.Platforms() {
+			if p != d.platform && p != "" {
+				d.compileOther(p, shown)
+			}
+		}
+	}()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "asuka:", err)
 		d.mu.Lock()
@@ -169,7 +199,8 @@ func (d *devLoop) compile() bool {
 	d.mu.Unlock()
 	if stale {
 		// Its ffi.* builtins aren't the players': new ones load it.
-		d.srv.Keep(b)
+		d.srv.Keep(d.platform, b)
+		d.srv.Keep("", b)
 		fmt.Fprintf(d.out, "asuka: compiled in %s; the app's extern declarations changed: building the player again\n", msText(float64(time.Since(start).Microseconds())/1000))
 		return true
 	}
@@ -178,12 +209,40 @@ func (d *devLoop) compile() bool {
 			f()
 		}
 	}
-	d.srv.Send(b)
+	d.srv.Send(d.platform, b)
+	d.srv.Send("", b) // players whose platform asuka doesn't know
 	for _, f := range fs {
 		f(b)
 	}
 	fmt.Fprintf(d.out, "asuka: compiled in %s\n", msText(float64(time.Since(start).Microseconds())/1000))
 	return true
+}
+
+// compileFor compiles the app for a player that said hello from
+// platform, and sends it the module: the loop's player's platform's
+// (and one asuka doesn't know: "") is compile's.
+func (d *devLoop) compileFor(platform target.Platform) {
+	if platform == d.platform || platform == "" {
+		if m := d.current(); m != nil {
+			d.srv.Send(platform, m)
+		}
+		return
+	}
+	d.compiling.Lock()
+	defer d.compiling.Unlock()
+	d.compileOther(platform, nil)
+}
+
+// compileOther compiles the app for platform, another than the loop's
+// player's, and sends its players the module, printing the diagnostics
+// shown doesn't have.
+func (d *devLoop) compileOther(platform target.Platform, shown map[string]bool) {
+	m, _, err := d.app.compileShown(platform, shown)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "asuka: for %s: %v\n", platform.Title(), err)
+		return
+	}
+	d.srv.Send(platform, m.Encode())
 }
 
 // launch builds and launches the player with the app's C as of the last
@@ -200,7 +259,8 @@ func (d *devLoop) launch(p devPlayer) error {
 	m := d.module
 	d.mu.Unlock()
 	if m != nil {
-		d.srv.Keep(m)
+		d.srv.Keep(d.platform, m)
+		d.srv.Keep("", m)
 	}
 	return nil
 }

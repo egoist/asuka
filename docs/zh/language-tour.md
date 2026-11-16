@@ -144,7 +144,7 @@ import std/time
 let today = time.now().format("EEE d MMM")
 ```
 
-`pub` 让声明对其他包可见。标准库（`std/…`）和平台 SDK（`platform/…`）都随命令行工具一起提供：直接 import 就能用。见[文件、包与导入](language/packages.md)以及[标准库与平台 SDK](stdlib.md)。
+`pub` 让声明对其他包可见。标准库（`std/…`）和平台 SDK（`platform/…`）都随命令行工具一起提供：直接 import 就能用。名为 `tray_linux.asuka` 的文件只在 Linux 上属于它所在的包，而 `@platform == .linux` 是一个常量，所以只给某个平台的代码不会出现在其他平台的构建里。见[文件、包与导入](language/packages.md)、[标准库与平台 SDK](stdlib.md)以及[特定平台的代码](language/control-flow.md#特定平台的代码)。
 
 ## 测试
 

@@ -367,7 +367,7 @@ func (c *Checker) viewItem(it syntax.Item, el *ElementCall) {
 			c.leave(saved)
 		}
 		// A view may show nothing for the cases it doesn't match.
-		mi.Exhaustive, _ = c.exhaustive(t, s.Arms)
+		mi.Exhaustive, _ = c.exhaustive(s.Subject, t, s.Arms)
 	case *syntax.ExprStmt:
 		t := c.expr(s.X, View)
 		if !IsInvalid(t) && t != View && !(IsOptional(t) && Unopt(t) == View) {

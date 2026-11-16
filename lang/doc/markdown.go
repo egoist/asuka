@@ -2,6 +2,8 @@ package doc
 
 import (
 	"strings"
+
+	"github.com/egoist/asuka/lang/target"
 )
 
 // sections are the kinds of declarations a page groups, in its order.
@@ -59,6 +61,9 @@ func (d *Decl) markdown(level int) string {
 	var b strings.Builder
 	b.WriteString(strings.Repeat("#", level) + " " + d.Name + "\n\n")
 	b.WriteString("```asuka\n" + d.Code + "\n```\n")
+	if d.Platforms != nil {
+		b.WriteString("\nOnly on " + target.List(d.Platforms) + ".\n")
+	}
 	if d.Doc != "" {
 		b.WriteString("\n" + Text(d.Doc))
 	}

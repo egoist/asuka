@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoist/asuka/lang/target"
 	iosHost "github.com/egoist/asuka/platform/ios"
 )
 
@@ -33,7 +34,7 @@ const embedModule = "AsukaApp"
 func buildIOSFramework(app *asukaApp, o *buildOptions) error {
 	start := time.Now()
 	cfg := app.cfg
-	m, err := app.compile()
+	m, err := app.compile(target.IOS)
 	if err != nil {
 		return err
 	}

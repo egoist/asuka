@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -160,7 +161,7 @@ func TestUpdatesVerifiedByCore(t *testing.T) {
 		  for s in log.installed { print("staged {s}") }
 		}
 		`, quoteAsuka(target), quoteAsuka(app.cfg.Updates.feed(target)), quoteAsuka(key), quoteAsuka(kindText), quoteAsuka(root), quoteAsuka(exe), quoteAsuka(work), serve.String())
-				res := compile.Files(map[string][]byte{"cli_update.asuka": []byte(src)}, nil)
+				res := compile.Files(map[string][]byte{"cli_update.asuka": []byte(src)}, &compile.Options{Platform: osPlatform(runtime.GOOS)})
 				if err := res.Err(); err != nil {
 					t.Fatalf("compile:\n%v\n%s", err, src)
 				}

@@ -1,0 +1,42 @@
+// @platform in views: only the branch it takes is built (the tests
+// compile for iOS), once; the others' views never exist. mount's
+// platform is what environment().platform says, not @platform.
+
+component Badge {
+  state taps = 0
+
+  Column {
+    if @platform == .iOS {
+      Button("Tap") { on press { taps += 1 } }
+      Text("Taps: {taps}")
+    } else if @platform == .android {
+      Text("Android")
+    } else {
+      Text("Elsewhere")
+    }
+    if @platform == .linux {
+      Text("Linux only")
+    }
+    match @platform {
+      .iOS | .android => Text("A phone")
+      _ => Text("A computer")
+    }
+    Text("Runs on {environment().platform}")
+  }
+}
+
+app { Badge() }
+
+test "the branch @platform takes" {
+  let app = mount(Badge())
+  app.expect("Taps: 0", "A phone")
+  app.expectNo("Android", "Elsewhere", "Linux only", "A computer")
+  app.tap("Tap")
+  app.expect("Taps: 1")
+}
+
+test "mount's platform is the run's" {
+  let app = mount(Badge(), platform: .android)
+  app.expect("Runs on android", "A phone", "Taps: 0")
+  app.expectNo("Android")
+}

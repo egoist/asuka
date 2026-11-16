@@ -15,6 +15,7 @@ import (
 
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // asuka new --bin makes a program: its test passes, asuka run runs it
@@ -42,7 +43,7 @@ func TestProgramCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := compileProject(p)
+	m, err := compileProject(p, target.Host())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +239,7 @@ func TestBundlePrograms(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte("name = \"Proj\"\n\n[bin.proj-cli]\npath = \"cli\"\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte("app { Text(\"hi\") }\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "cli", "main.asuka"), []byte("fn main() { print(\"cli\") }\n"), 0o644)
-	app, err := loadApp(dir)
+	app, err := loadApp(dir, thisComputer())
 	if err != nil {
 		t.Fatal(err)
 	}

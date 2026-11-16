@@ -456,6 +456,10 @@
           "match": "\\b(true|false|none)\\b"
         },
         {
+          "name": "constant.language.platform.asuka",
+          "match": "@platform\\b"
+        },
+        {
           "name": "variable.language.self.asuka",
           "match": "\\bself\\b"
         }

@@ -23,6 +23,11 @@
 | `environment()`, `screenEnvironment()` | the size, safe area, text size, platform and the rest (tracked): the screen's or sheet's own, and the whole screen's |
 | `mainWindow()` | the main window's `Ref`: `show()`, `hide()`, `focus()`... from anywhere |
 
+What code the app has on each platform is `@platform`'s, a constant
+known as the app compiles ([Code for one
+platform](control-flow.md#code-for-one-platform)): `environment().platform`
+is the one a view runs on, tracked like the rest of its environment.
+
 `useKeys` and the `on…` registrations are items of a component's body
 (or the app's block). The app's block also handles them as events: `on
 openURL(url) { … }`, `on files(paths) { … }`, `on share(items) { … }`,

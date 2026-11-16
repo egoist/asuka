@@ -520,6 +520,9 @@ func (b *fb) viewItem(it syntax.Item) (int, bool) {
 	case *syntax.ExprStmt:
 		return b.viewExpr(s.X)
 	case *syntax.IfStmt:
+		if f := b.l.foldCond(s.Cond); f.known && len(f.effects) == 0 {
+			return b.knownView(s, f.val), false
+		}
 		return b.showView(s), false
 	case *syntax.ForStmt:
 		return b.forView(s), false
@@ -581,6 +584,32 @@ func (b *fb) builderItems(ctx *check.FuncCtx, items []syntax.Item, extra ...*che
 		v := c.viewsOf(items)
 		c.emit(op("RET"), v)
 	}})
+}
+
+// knownView builds the views of the branch of a view's if that @platform
+// takes (val: its then's), once: the other branch's never exist.
+func (b *fb) knownView(s *syntax.IfStmt, val bool) int {
+	var build int
+	switch e := s.Else.(type) {
+	case nil:
+		if !val {
+			return b.callB(uiFragment, bc.KRef)
+		}
+	case *syntax.Block:
+		if !val {
+			build = b.builderItems(b.l.info.Ctxs[e], e.Items)
+		}
+	case *syntax.IfStmt:
+		if !val {
+			build = b.builderItems(b.l.info.Ctxs[e], []syntax.Item{e})
+		}
+	}
+	if val {
+		build = b.builderItems(b.l.info.Ctxs[s.Then], s.Then.Items)
+	}
+	r := b.temp(bc.KRef)
+	b.emit(op("CALLC"), r, build, 0, 0)
+	return r
 }
 
 func (b *fb) showView(s *syntax.IfStmt) int {
@@ -696,11 +725,28 @@ func (b *fb) forParts(s *syntax.ForStmt) (items, key, row int, keyKind bc.Kind) 
 func (b *fb) matchView(s *syntax.MatchStmt) int {
 	subjCtx := b.l.info.Ctxs[s.Subject]
 	st := b.rawType(s.Subject)
+	arms := b.l.platformArms(s.Subject, s.Arms)
+	if check.IsPlatformConst(s.Subject) && len(arms) <= 1 && (len(arms) == 0 || len(patternVars(arms[0].Pattern, b.l.info)) == 0) {
+		// A match of @platform: the views of the arm it takes, once.
+		if len(arms) == 0 {
+			return b.callB(uiFragment, bc.KRef)
+		}
+		var items []syntax.Item
+		switch body := arms[0].Body.(type) {
+		case *syntax.Block:
+			items = body.Items
+		case syntax.Item:
+			items = []syntax.Item{body}
+		}
+		r := b.temp(bc.KRef)
+		b.emit(op("CALLC"), r, b.builderItems(b.l.info.Ctxs[arms[0]], items), 0, 0)
+		return r
+	}
 	sel := b.makeClosure(closure{name: "selector", ctxs: []*check.FuncCtx{subjCtx}, ret: bc.KInt, throws: true, body: func(c *fb) {
 		c.ctx = subjCtx
 		v := c.value(s.Subject, -1)
 		r := c.temp(bc.KInt)
-		for i, a := range s.Arms {
+		for i, a := range arms {
 			next := c.f.NewLabel()
 			c.testPattern(a.Pattern, v, st, next)
 			c.loadInt(r, int64(i))
@@ -711,14 +757,14 @@ func (b *fb) matchView(s *syntax.MatchStmt) int {
 		c.emit(op("RET"), r)
 	}})
 	ctxs := []*check.FuncCtx{subjCtx}
-	for _, a := range s.Arms {
+	for _, a := range arms {
 		ctxs = append(ctxs, b.l.info.Ctxs[a])
 	}
 	arm := &check.Var{}
 	build := b.makeClosure(closure{name: "arms", ctxs: ctxs, params: []*check.Var{arm}, pkinds: []bc.Kind{bc.KInt}, ret: bc.KRef, throws: true, body: func(c *fb) {
 		c.ctx = subjCtx
 		c.f.Kinds[0] = bc.KInt
-		for i, a := range s.Arms {
+		for i, a := range arms {
 			next := c.f.NewLabel()
 			want := c.konst(int64(i))
 			eq := c.temp(bc.KBool)

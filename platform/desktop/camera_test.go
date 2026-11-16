@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/egoist/asuka/lang/compile"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // platform/camera's Linux C on the test host: a camera of GStreamer's test
@@ -26,7 +27,7 @@ func TestStdLinuxCamera(t *testing.T) {
 	run := func(t *testing.T, src string, env ...string) string {
 		dir := t.TempDir()
 		os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(src), 0o644)
-		res, err := compile.Dir(dir, nil)
+		res, err := compile.Dir(dir, &compile.Options{Platform: target.Host()})
 		if err != nil {
 			t.Fatal(err)
 		}

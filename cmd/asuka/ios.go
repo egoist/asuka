@@ -531,7 +531,7 @@ func pickSimulator(want string) (*simDevice, error) {
 }
 
 func devIOS(dir string, o *devOptions, stop <-chan os.Signal) error {
-	app, err := loadApp(dir)
+	app, err := loadApp(dir, platformIOS)
 	if err != nil {
 		return err
 	}

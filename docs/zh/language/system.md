@@ -23,6 +23,8 @@
 | `environment()`、`screenEnvironment()` | 尺寸、安全区域、文字大小、平台等（会被跟踪）：页面或弹出面板自己的，以及整个屏幕的 |
 | `mainWindow()` | 主窗口的 `Ref`：在任何地方都可以 `show()`、`hide()`、`focus()` …… |
 
+应用在各个平台上包含哪些代码，由 `@platform` 决定，它是编译时就已确定的常量（见[特定平台的代码](control-flow.md#特定平台的代码)）；`environment().platform` 则是视图实际运行的平台，和环境里的其他值一样会被追踪。
+
 `useKeys` 和这些 `on…` 注册写在组件的主体里（或 app 代码块里）。app 代码块还可以把它们当作事件来处理：`on openURL(url) { … }`、`on files(paths) { … }`、`on share(items) { … }`、`on quit(e) { … }`、`on secondInstance(args, dir) { … }`、`on foreground { … }`、`on background { … }`。它的第一个 `Window` 是主窗口（见[导航](../navigation.md#窗口)）。
 
 `std/embed` 在应用编译时读取包里的文件，把它们编进应用，所以每个平台都直接拥有这些文件，运行时不需要加载：

@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/cbuild"
 	"github.com/egoist/asuka/lang/bytecode"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // Programs (docs/programs.md): a package whose fn main is its entry, a
@@ -44,13 +45,13 @@ func projectRoot(p *appbuild.Project) string {
 
 // programApp is the program in p (the project's own package, or one of
 // its [bin]s) as the build sees an app: its directory, the project's
-// asuka.toml (its version), what it uses.
-func programApp(p *appbuild.Project) (*asukaApp, error) {
+// asuka.toml (its version), what it uses on platform.
+func programApp(p *appbuild.Project, platform target.Platform) (*asukaApp, error) {
 	cfg, err := loadConfig(projectRoot(p))
 	if err != nil {
 		return nil, err
 	}
-	app := &asukaApp{dir: p.Dir, name: p.ProgramName(), bundleID: cfg.ID, cfg: cfg, proj: p}
+	app := &asukaApp{dir: p.Dir, name: p.ProgramName(), bundleID: cfg.ID, cfg: cfg, proj: p, platform: platform}
 	app.refresh()
 	return app, nil
 }
@@ -71,14 +72,14 @@ func buildProgram(p *appbuild.Project, t cbuild.Target, dir, version string, ver
 
 // programExe builds the program in p for t into dir.
 func programExe(p *appbuild.Project, t cbuild.Target, dir, version string, verbose bool) (string, error) {
-	app, err := programApp(p)
+	app, err := programApp(p, osPlatform(t.OS))
 	if err != nil {
 		return "", err
 	}
 	if version != "" {
 		app.cfg.Version = strings.TrimPrefix(version, "v")
 	}
-	m, err := compileProject(p)
+	m, err := compileProject(p, osPlatform(t.OS))
 	if err != nil {
 		return "", err
 	}
@@ -316,8 +317,8 @@ func devProgram(dir, bin string, args []string, stop chan os.Signal) error {
 	var run *appbuild.Run
 	start := func() {
 		p.Forget()
-		m, err := compileProject(p)
-		watchEmbeds(w, p.Uses())
+		m, err := compileProject(p, target.Host())
+		watchEmbeds(w, p.Uses(target.Host()))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "asuka:", err)
 			return

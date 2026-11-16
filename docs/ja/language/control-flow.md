@@ -46,3 +46,29 @@ for line in lines {
 ```
 
 `if` の分岐、`match` のアーム、クロージャの本体にも同じように書けます（`x => x ?? throw Error("empty")`）。
+
+## 特定のプラットフォーム向けのコード
+
+`@platform` は、アプリのビルド先のプラットフォームを表す `Platform` 型の値です（`.iOS`、`.android`、`.macOS`、`.windows`、`.linux`、`.web`）。これはコンパイル時に決まる定数で、追跡されません。ファイルのトップレベルやコンポーネントの本体も含め、値を書ける場所ならどこでも使えます。`@platform` で決まる分岐のうち、あるプラットフォームが通らない側は、そのプラットフォームのビルドに含まれません。コードも、文字列も、ビューも含まれません。
+
+```asuka
+let saveKey = if @platform == .macOS { "⌘S" } else { "Ctrl+S" }
+
+component Toolbar {
+  prop link: string
+
+  Row {
+    if @platform == .iOS || @platform == .android {
+      Button("Share") { on press { share(link) } }
+    }
+    match @platform {
+      .macOS | .windows | .linux => Text("Save with {saveKey}")
+      _ => Text("Saved as you go")
+    }
+  }
+}
+```
+
+これは `if` とその `else if`、`match @platform`（`@platform` が `.unknown` になることはないので、`.unknown` を扱う必要はありません）、`@platform` の比較に対する `&&`、`||`、`!`、そしてビューの中の `if` に当てはまります。ビューの中の `if` では、もう一方の分岐のビューは作られることすらありません。ただし、どのプラットフォーム向けにビルドしても、すべての分岐がチェックされます。プラットフォームの API はどのプラットフォームでも同じ宣言なので、Linux 向けの分岐にある誤りは、iOS 向けにビルドするときもエラーになります。あるプラットフォーム専用の宣言は、専用のファイルに分けたほうがわかりやすいことがよくあります。[特定のプラットフォーム向けのファイル](packages.md#特定のプラットフォーム向けのファイル)を参照してください。
+
+`environment().platform` は、ビューが動いているプラットフォームをシステムが伝えるものです（テストでは `mount(…, platform:)` が伝えます）。ビューのために追跡されます。プラットフォームごとにどのコードをビルドするかは `@platform` で決めます。

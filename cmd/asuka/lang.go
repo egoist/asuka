@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/egoist/asuka/lang/compile"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // The commands of the Asuka language's compiler (lang/compile): check,
@@ -17,11 +18,16 @@ import (
 // errReported says the command printed what went wrong already.
 var errReported = errors.New("failed")
 
-// cmdCheck reports a package's diagnostics.
+// cmdCheck reports a package's diagnostics: for every platform's files
+// (a package's tray_linux.asuka is Linux's), or --platform's.
 func cmdCheck(args []string) error {
+	var platform string
 	fs := newFlagSet("check", "[dir]")
-	fs.about = "Checks the Asuka package in dir (default .): its files, and what they import. Prints\n" +
-		"each problem as file:line:col: message."
+	fs.about = "Checks the Asuka package in dir (default .): its files, and what they import, for every\n" +
+		"platform (the files for some platforms only, tray_linux.asuka, with those of each). Prints\n" +
+		"each problem as file:line:col: message, and which platforms it's on when not every one."
+	platformFlag(fs, &platform, []string{platformIOS, platformAndroid, platformMac, platformWindows, platformLinux, platformWeb},
+		"check for this `platform` only: ios, android, mac, windows, linux or web (default: every one)")
 	if err := fs.parse(args); err != nil {
 		return err
 	}
@@ -29,14 +35,40 @@ func cmdCheck(args []string) error {
 	if len(fs.Args()) > 0 {
 		dir = fs.Args()[0]
 	}
-	res, err := compile.Dir(dir, nil)
+	var ps []target.Platform
+	if platform != "" {
+		ps = []target.Platform{langPlatform(platform)}
+	}
+	res, err := compile.DirPlatforms(dir, nil, ps)
 	if err != nil {
 		return err
 	}
-	if printDiags(os.Stderr, res) {
+	if printPlatformDiags(os.Stderr, res) {
 		return errReported
 	}
 	return nil
+}
+
+// printPlatformDiags prints a check's diagnostics for several platforms,
+// paths relative to the working directory; it reports whether there were
+// any.
+func printPlatformDiags(w io.Writer, res *compile.Platforms) bool {
+	wd, _ := os.Getwd()
+	rel := func(d compile.PlatformDiagnostic) compile.PlatformDiagnostic {
+		if r, err := filepath.Rel(wd, d.Pos.Filename); err == nil && !strings.HasPrefix(r, "..") {
+			d.Pos.Filename = r
+		}
+		return d
+	}
+	for _, d := range res.Warnings {
+		d = rel(d)
+		d.Msg = "warning: " + d.Msg
+		fmt.Fprintln(w, d.String())
+	}
+	for _, d := range res.Diags {
+		fmt.Fprintln(w, rel(d).String())
+	}
+	return len(res.Diags) > 0
 }
 
 // runModule runs a compiled module's tests and prints what they print.
@@ -82,23 +114,4 @@ func countTests(res *compile.Result, pattern string) int {
 		}
 	}
 	return n
-}
-
-// printDiags prints a compilation's diagnostics, paths relative to the
-// working directory; it reports whether there were any.
-func printDiags(w io.Writer, res *compile.Result) bool {
-	wd, _ := os.Getwd()
-	for _, d := range res.Warnings {
-		if rel, err := filepath.Rel(wd, d.Pos.Filename); err == nil && !strings.HasPrefix(rel, "..") {
-			d.Pos.Filename = rel
-		}
-		fmt.Fprintf(w, "%s: warning: %s\n", d.Pos, d.Msg)
-	}
-	for _, d := range res.Diags {
-		if rel, err := filepath.Rel(wd, d.Pos.Filename); err == nil && !strings.HasPrefix(rel, "..") {
-			d.Pos.Filename = rel
-		}
-		fmt.Fprintln(w, d.String())
-	}
-	return len(res.Diags) > 0
 }

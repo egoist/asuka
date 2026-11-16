@@ -24,11 +24,13 @@ import (
 	"github.com/egoist/asuka/lang/check"
 	"github.com/egoist/asuka/lang/compile"
 	"github.com/egoist/asuka/lang/syntax"
+	"github.com/egoist/asuka/lang/target"
 	"github.com/egoist/asuka/std"
 )
 
 // Compile compiles the app (or package) in dir, with its dependencies
-// (deps: package ID → directory, from internal/pkgs), to a module, and
+// (deps: package ID → directory, from internal/pkgs), for platform (its
+// files, @platform; "": target.Default), to a module, and
 // says what its program uses (nil: not known: Uses checks it then); its
 // diagnostics are "file:line:col: message". An error with no diagnostics
 // is one that isn't the source's (a file that can't be read). It's
@@ -44,10 +46,10 @@ var DevLang, DevDirection string
 // catalogs' missing translations), "file:line:col: warning: message".
 var Warnings io.Writer = os.Stderr
 
-func compileDir(dir string, deps map[string]string) (*bytecode.Module, *Uses, []string, error) {
+func compileDir(dir string, deps map[string]string, platform target.Platform) (*bytecode.Module, *Uses, []string, error) {
 	// Imports resolve through the project's asuka.lock (compile.Dir's
 	// own), which Load made ready.
-	res, err := compile.Dir(dir, &compile.Options{Lang: DevLang, Direction: DevDirection, Project: binRoot(dir)})
+	res, err := compile.Dir(dir, &compile.Options{Platform: platform, Lang: DevLang, Direction: DevDirection, Project: binRoot(dir)})
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -92,11 +94,32 @@ type Project struct {
 	Root string
 	// Bins are the project's programs ([bin.<name>]), sorted by name.
 	Bins []Bin
-	// uses is what the last compile (or check) found its program uses,
-	// usesStamp the files' stamp they're of; last is the last compile.
+	// platforms are its compiles, by the platform they're for: a
+	// package's files and @platform's branches are a platform's.
+	platforms map[target.Platform]*forPlatform
+}
+
+// forPlatform is a project's compiles for a platform: uses is what the
+// last compile (or check) found its program uses, usesStamp the files'
+// stamp they're of; last is the last compile.
+type forPlatform struct {
 	uses      *Uses
 	usesStamp string
 	last      *compiled
+}
+
+// on is p's compiles for platform.
+func (p *Project) on(platform target.Platform) *forPlatform {
+	platform = platform.Or()
+	if p.platforms == nil {
+		p.platforms = map[target.Platform]*forPlatform{}
+	}
+	f := p.platforms[platform]
+	if f == nil {
+		f = &forPlatform{}
+		p.platforms[platform] = f
+	}
+	return f
 }
 
 // Load reads the project in dir (or the one file dir names): its
@@ -155,26 +178,32 @@ func Load(dir string) (*Project, error) {
 	return p, nil
 }
 
-// Compile compiles the project (Compile), and notes what its program
-// uses (Uses). A project whose files haven't changed since its last
-// compile (stamp) isn't compiled again: loading an app and building it
+// Compile compiles the project for platform (Compile; "":
+// target.Default), and notes what its program uses there (Uses). A
+// project whose files haven't changed since its last compile for the
+// platform (stamp) isn't compiled again: loading an app and building it
 // is one compile.
-func (p *Project) Compile() (*bytecode.Module, []string, error) {
+func (p *Project) Compile(platform target.Platform) (*bytecode.Module, []string, error) {
+	f := p.on(platform)
 	stamp := p.stamp()
-	if l := p.last; l != nil && l.stamp == stamp {
+	if l := f.last; l != nil && l.stamp == stamp {
 		return l.m, l.diags, l.err
 	}
-	m, u, diags, err := p.compile()
+	m, u, diags, err := p.compile(platform.Or())
 	if u != nil {
-		p.uses, p.usesStamp = u, stamp
+		f.uses, f.usesStamp = u, stamp
 	}
-	p.last = &compiled{stamp: stamp, m: m, diags: diags, err: err}
+	f.last = &compiled{stamp: stamp, m: m, diags: diags, err: err}
 	return m, diags, err
 }
 
-// Forget drops the last compile: the next Compile compiles (asuka dev's,
+// Forget drops the last compiles: the next Compile compiles (asuka dev's,
 // for a save, which a file's time may not tell from the last).
-func (p *Project) Forget() { p.last = nil }
+func (p *Project) Forget() {
+	for _, f := range p.platforms {
+		f.last = nil
+	}
+}
 
 // compiled is a project's last compile, and what its files were.
 type compiled struct {
@@ -221,7 +250,7 @@ func (p *Project) stamp() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func (p *Project) compile() (*bytecode.Module, *Uses, []string, error) {
+func (p *Project) compile(platform target.Platform) (*bytecode.Module, *Uses, []string, error) {
 	if p.File != "" {
 		// One file: a directory of its own, so that what's beside it
 		// isn't compiled with it.
@@ -237,7 +266,7 @@ func (p *Project) compile() (*bytecode.Module, *Uses, []string, error) {
 		if err := os.WriteFile(filepath.Join(tmp, filepath.Base(p.File)), b, 0o644); err != nil {
 			return nil, nil, nil, err
 		}
-		m, u, diags, err := Compile(tmp, p.Deps)
+		m, u, diags, err := Compile(tmp, p.Deps, platform)
 		for i, d := range diags {
 			diags[i] = strings.ReplaceAll(d, filepath.Join(tmp, filepath.Base(p.File)), p.File)
 		}
@@ -249,7 +278,7 @@ func (p *Project) compile() (*bytecode.Module, *Uses, []string, error) {
 		}
 		return m, u, diags, err
 	}
-	return Compile(p.Dir, p.Deps)
+	return Compile(p.Dir, p.Deps, platform)
 }
 
 // WatchRoots are the directories whose .asuka files make the app: its
@@ -342,27 +371,30 @@ func (u *Uses) Ref(pkg, member string) bool {
 	return u.Refs[pkg+"."+member]
 }
 
-// Uses is what the project's program uses, as its compile's checker
-// resolved it (a program with errors counts for what it resolved):
-// Compile's, which it compiles if its files changed since. A Compile
-// that doesn't say (a test's) has the program checked alone.
-func (p *Project) Uses() *Uses {
-	p.Compile()
-	if p.uses != nil && p.last != nil && p.usesStamp == p.last.stamp {
-		return p.uses
+// Uses is what the project's program uses on platform, as its compile's
+// checker resolved it (a program with errors counts for what it
+// resolved): Compile's, which it compiles if its files changed since. A
+// Compile that doesn't say (a test's) has the program checked alone.
+// What a program uses may be another on each platform: a package's files
+// for a platform import what they need there.
+func (p *Project) Uses(platform target.Platform) *Uses {
+	p.Compile(platform)
+	f := p.on(platform)
+	if f.uses != nil && f.last != nil && f.usesStamp == f.last.stamp {
+		return f.uses
 	}
-	u := p.check()
-	if p.last != nil {
-		p.usesStamp = p.last.stamp
+	u := p.check(platform)
+	if f.last != nil {
+		f.usesStamp = f.last.stamp
 	}
 	return u
 }
 
 // check checks the project's program alone (nothing more than the
-// checker: no lowering) for what it imports and refers to.
-func (p *Project) check() *Uses {
+// checker: no lowering) for what it imports and refers to on platform.
+func (p *Project) check(platform target.Platform) *Uses {
 	u := &Uses{Imports: map[string]bool{}, Refs: map[string]bool{}}
-	p.uses = u
+	p.on(platform).uses = u
 	dir := p.Dir
 	if p.File != "" {
 		// One file: a directory of its own, as Compile does.
@@ -380,7 +412,7 @@ func (p *Project) check() *Uses {
 		}
 		dir = tmp
 	}
-	res, err := compile.Dir(dir, &compile.Options{CheckOnly: true, NoCatalogs: true})
+	res, err := compile.Dir(dir, &compile.Options{Platform: platform, CheckOnly: true, NoCatalogs: true})
 	if err != nil || res.Program == nil {
 		return u
 	}
@@ -521,13 +553,14 @@ func (u *Uses) ImportList() []string {
 }
 
 // Std are the standard library's and the platform SDK's packages the
-// project imports, with those they import: import path (std/http,
-// platform/network) → directory (std.Package's). The compiler's own
-// (std/json, std/math) aren't directories, and aren't here.
-func (p *Project) Std() map[string]string {
-	u := p.uses
+// project imports on platform, with those they import: import path
+// (std/http, platform/network) → directory (std.Package's). The
+// compiler's own (std/json, std/math) aren't directories, and aren't
+// here.
+func (p *Project) Std(platform target.Platform) map[string]string {
+	u := p.on(platform).uses
 	if u == nil {
-		u = p.Uses()
+		u = p.Uses(platform)
 	}
 	out := map[string]string{}
 	for imp := range u.Imports {

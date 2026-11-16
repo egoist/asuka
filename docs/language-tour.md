@@ -169,9 +169,12 @@ let today = time.now().format("EEE d MMM")
 
 `pub` makes a declaration visible to other packages. The standard
 library (`std/…`) and the platform SDK (`platform/…`) come with the
-CLI: import a package and use it. [Files, packages and
-imports](language/packages.md), [the standard library and the platform
-SDK](stdlib.md)
+CLI: import a package and use it. A file named `tray_linux.asuka` is
+part of its package only on Linux, and `@platform == .linux` is a
+constant, so what's for one platform isn't in the others' builds.
+[Files, packages and imports](language/packages.md), [the standard
+library and the platform SDK](stdlib.md), [code for one
+platform](language/control-flow.md#code-for-one-platform)
 
 ## Tests
 

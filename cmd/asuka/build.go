@@ -102,7 +102,7 @@ func cmdBuild(args []string) error {
 			return errors.New("usage: asuka build --platform ios|android|mac|windows|linux|web [flags] [dir]")
 		}
 	}
-	app, err := loadApp(dir)
+	app, err := loadApp(dir, o.platform)
 	if err != nil {
 		return err
 	}

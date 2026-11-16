@@ -22,6 +22,7 @@ import (
 	"github.com/egoist/asuka/lang/check"
 	"github.com/egoist/asuka/lang/ir"
 	"github.com/egoist/asuka/lang/syntax"
+	"github.com/egoist/asuka/lang/target"
 	"github.com/egoist/asuka/std"
 )
 
@@ -52,12 +53,22 @@ type Options struct {
 	// (asuka.toml's [bin.<name>]: a program in a directory of its own),
 	// whose asuka.lock and catalogs it uses; "": the package's own.
 	Project string
+	// Platform is the platform the program is compiled for ("":
+	// target.Default): what @platform is, and which of each package's
+	// files are part of it (tray_linux.asuka only on Linux).
+	Platform target.Platform
 }
 
 // Result is a compilation's outcome.
 type Result struct {
-	Module *bytecode.Module // nil when there are errors
-	Diags  []check.Diagnostic
+	// Platform is the platform it compiled for.
+	Platform target.Platform
+	// PlatformFiles reports whether a package of the program (the root's,
+	// an import's) has files for some platforms only: compiled for another
+	// platform, the program has other files.
+	PlatformFiles bool
+	Module        *bytecode.Module // nil when there are errors
+	Diags         []check.Diagnostic
 	// Warnings are what's worth saying that doesn't stop the build: the
 	// catalogs' (a translation's missing messages, ...).
 	Warnings []check.Diagnostic
@@ -83,10 +94,14 @@ func (r *Result) Err() error {
 
 // a package to check: its files, parsed, and its imports, resolved.
 type unit struct {
-	path    string // its import path ("" for the root)
-	id      string // a dependency's ID in asuka.lock ("" for the project's own)
-	dir     string
-	files   []*syntax.SourceFile
+	path  string // its import path ("" for the root)
+	id    string // a dependency's ID in asuka.lock ("" for the project's own)
+	dir   string
+	files []*syntax.SourceFile
+	// others are its files for other platforms than the compile's
+	// (tray_linux.asuka compiling for iOS), parsed for their names only:
+	// a name a file every platform has declares, a platform's file can't.
+	others  []*syntax.SourceFile
 	imports map[string]*unit // by the path as written; nil: it failed (reported)
 	std     map[string]bool
 	pkg     *check.Package
@@ -100,6 +115,12 @@ type loader struct {
 	diags []check.Diagnostic
 	// depDirs are the dependencies' directories, by ID.
 	depDirs map[string]string
+	// platformFiles: some package has files for some platforms only.
+	platformFiles bool
+	// twice are the declarations of names declared in two files a
+	// platform has both of (dupNames), which the checker would report
+	// again.
+	twice map[syntax.Position]bool
 }
 
 // Dir compiles the package in dir.
@@ -137,6 +158,9 @@ func Dir(dir string, opts *Options) (*Result, error) {
 		return nil, err
 	}
 	if len(root.files) == 0 {
+		if len(root.others) > 0 {
+			return nil, fmt.Errorf("no .asuka files in %s for %s (its files are other platforms')", dir, opts.Platform.Or().Title())
+		}
 		return nil, fmt.Errorf("no .asuka files in %s", dir)
 	}
 	return l.compile(root), nil
@@ -199,13 +223,25 @@ func (l *loader) loadSources(path, id, dir string, files map[string][]byte) *uni
 		names = append(names, n)
 	}
 	sort.Strings(names)
+	platform := l.opts.Platform.Or()
 	for _, n := range names {
+		if ps, _ := target.FileSuffix(n); ps != nil {
+			l.platformFiles = true
+			if !target.Includes(n, platform) {
+				// Another platform's: its names, not its errors (asuka
+				// check checks it for its own).
+				f, _ := syntax.ParseFile(syntax.NewFileSet(), n, files[n])
+				u.others = append(u.others, f)
+				continue
+			}
+		}
 		f, errs := syntax.ParseFile(l.fset, n, files[n])
 		for _, e := range errs {
 			l.diags = append(l.diags, check.Diagnostic{Pos: e.Pos, End: e.End, Msg: e.Msg})
 		}
 		u.files = append(u.files, f)
 	}
+	l.dupNames(u)
 	for _, f := range u.files {
 		for _, imp := range f.Imports {
 			ip := imp.PathString()
@@ -291,7 +327,7 @@ func retired(ip string) string {
 
 func (l *loader) compile(root *unit) *Result {
 	c := check.NewChecker(l.fset)
-	res := &Result{Fset: l.fset}
+	res := &Result{Fset: l.fset, Platform: l.opts.Platform.Or(), PlatformFiles: l.platformFiles}
 	// The app's catalogs, before any package is checked: tr is theirs.
 	dates := false
 	for _, u := range l.units {
@@ -349,7 +385,7 @@ func (l *loader) compile(root *unit) *Result {
 	visit(root)
 	prog := c.Program(root.pkg)
 	res.Program = prog
-	res.Diags = append(append([]check.Diagnostic{}, l.diags...), prog.Diags...)
+	res.Diags = append(append([]check.Diagnostic{}, l.diags...), l.withoutTwice(prog.Diags)...)
 	res.Warnings = append(res.Warnings, prog.Warnings...)
 	if len(res.Diags) > 0 || l.opts.CheckOnly {
 		return res
@@ -364,7 +400,7 @@ func (l *loader) compile(root *unit) *Result {
 	if l.opts.Project != "" {
 		vdir = l.opts.Project
 	}
-	p, diags := ir.Lower(prog, &ir.Options{Version: projectVersion(vdir), Lang: l.opts.Lang, Direction: l.opts.Direction, Accent: accent, AccentFlags: accentFlags})
+	p, diags := ir.Lower(prog, &ir.Options{Platform: string(l.opts.Platform.Or()), Version: projectVersion(vdir), Lang: l.opts.Lang, Direction: l.opts.Direction, Accent: accent, AccentFlags: accentFlags})
 	res.Diags = append(res.Diags, diags...)
 	if len(res.Diags) > 0 {
 		return res

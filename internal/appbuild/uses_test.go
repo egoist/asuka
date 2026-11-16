@@ -67,7 +67,7 @@ func TestUses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	u := p.Uses()
+	u := p.Uses("")
 	for _, imp := range []string{"platform/icloud", "platform/location", "@test/sync"} {
 		if !u.Import(imp) {
 			t.Errorf("no import %s: %v", imp, u.ImportList())
@@ -92,7 +92,7 @@ func TestUses(t *testing.T) {
 	if !u.Ref("platform/host", "call") {
 		t.Errorf("no platform/host.call in %v", u.Refs)
 	}
-	if std := p.Std(); std["platform/icloud"] == "" || std["platform/host"] == "" {
+	if std := p.Std(""); std["platform/icloud"] == "" || std["platform/host"] == "" {
 		t.Errorf("std %v", std)
 	}
 }

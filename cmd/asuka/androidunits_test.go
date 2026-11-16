@@ -54,7 +54,7 @@ func TestStdAndroidUnits(t *testing.T) {
 	src.WriteString("\napp { Text(\"tests\") }\n")
 	os.WriteFile(filepath.Join(app, "app.asuka"), []byte(src.String()), 0o644)
 	os.WriteFile(filepath.Join(app, "asuka.toml"), []byte("name = \"StdUnits\"\nid = \"dev.asuka.stdunits\"\nversion = \"1.0.0\"\nbuild = 1\n"), 0o644)
-	a, err := loadApp(app)
+	a, err := loadApp(app, platformAndroid)
 	if err != nil {
 		t.Fatal(err)
 	}

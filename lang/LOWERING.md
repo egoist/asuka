@@ -31,7 +31,27 @@ lang/compile  the driver: a package and its imports -> one module
 
 A program is compiled whole: the app's packages, their dependencies and
 the prelude (lang/prelude: types.asuka, enums.asuka, elements.asuka, and
-the built-in functions and methods) into one module.
+the built-in functions and methods) into one module, for one platform
+(lang/target): each package's files for it, and `@platform` its case.
+
+## @platform
+
+`@platform` (syntax.AtExpr) is checked as the prelude's `Platform`, the
+same on every platform, and lowered as the constant case of the
+compile's platform (ir.Options.Platform; KSMALL, an int enum). Lowering
+folds what it decides (lang/ir/fold.go) and lowers only what's taken:
+
+| Source | Lowered |
+|---|---|
+| `@platform == .linux`, `!=`, `!`, and `&&`, `\|\|` of them, `true`, `false` | KSMALL 0 or 1; a side that doesn't decide the whole drops out (`true && x` is `x`); `f() && false` still runs `f()` |
+| `if c { A } else if d { B } else { C }`, as a statement or a value | only the branch taken; a chain's clauses before its first `let` likewise |
+| `match @platform { … }` (statement, value, view) | the arms up to the first that matches without a guard, without those whose case can't; in a view, one arm with no names is built once, without `ui.switch` |
+| `if c { A } else { B }` among views | the taken branch's builder called once (CALLC), without `ui.show`: the other's views never exist |
+
+What's left out is never lowered: its functions, strings, constants and
+builtins aren't in the module. The checker doesn't fold: reachability,
+exhaustiveness (but for `.unknown`, which `@platform` never is) and
+every branch's types are the same on every platform.
 
 ## Types to kinds
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/egoist/asuka/internal/cbuild"
 	"github.com/egoist/asuka/lang/compile"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // platform/location and platform/maps on Linux, their C on the test host (as
@@ -218,7 +219,7 @@ func runPlaces(t *testing.T, exe, src string, env ...string) string {
 	t.Helper()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(src), 0o644)
-	res, err := compile.Dir(dir, nil)
+	res, err := compile.Dir(dir, &compile.Options{Platform: target.Host()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -29,6 +29,45 @@ goes on to the next.
 Comments are `// …` and `/* … */`. A `///` comment documents the
 declaration under it, and editors show it.
 
+## Files for one platform
+
+A file whose name ends in a platform's suffix is part of its package
+only when the app is built for that platform: `_ios`, `_android`,
+`_macos`, `_windows`, `_linux` and `_web`, and `_desktop` (macOS,
+Windows and Linux) and `_mobile` (iOS and Android) for several. The
+platforms' files may each declare the same names, which the package's
+other files use as they would any:
+
+```asuka
+// feedback_mobile.asuka: iOS and Android
+pub fn confirm() { haptic(.success) }
+
+// feedback_desktop.asuka: macOS, Windows and Linux
+pub fn confirm() { announce("Done") }
+
+// feedback_web.asuka
+pub fn confirm() {}
+```
+
+A name is declared once on each platform: in a file every platform has,
+or in a file for each platform that has it. One declared in a file
+every platform has and in a platform's, or in two files a platform has
+both of (`feedback_desktop.asuka` and `feedback_linux.asuka`), is an error,
+whichever platform the app is built for. A file whose name is only the
+suffix (`linux.asuka`) is a file like any other.
+
+Every package goes by its files' names alike: the app's, its
+dependencies', the standard library's. What's built is a platform's:
+`asuka dev` and `asuka build` build for the platform they run the app
+on, `asuka test` for iOS unless `--platform` says another, and a program
+for the computer it runs on (or `--target`'s). `asuka check` checks
+each platform's files, and says which platforms an error is on when
+it's not every one's: a name only some platforms' files declare is an
+error where the others use it. An editor reads a platform's file with
+that platform's files, and the others with iOS's, and shows every
+platform's errors. For code that differs by platform within a file,
+there's [`@platform`](control-flow.md#code-for-one-platform).
+
 ## Apps, programs and libraries
 
 A package is an entry, or a library. One with an `app { }` block is an

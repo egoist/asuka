@@ -68,6 +68,7 @@ go test ./core                      # the C core's tests (ASan/UBSan) and the VM
 go test ./lang/...                  # the compiler: parser, checker, codegen, and Asuka programs run on the VM
 go run ./cmd/asuka test [dir]       # an Asuka package's test blocks, on the fake host
 go run ./cmd/asuka fmt -w [paths]   # format .asuka files
+go run ./cmd/asuka check [dir]      # a package checked for every platform's files (tray_linux.asuka: Linux's); --platform ios: one's
 go run ./cmd/asuka doc std/time     # a package's documentation, as Markdown (lang/doc); --all -o dir: the website's reference pages, /docs/std and /docs/platform
 go test ./lang/doc                  # every std and platform package's pub declarations have their /// comment
 go generate ./lang/bytecode ./lang/prelude  # the VM's opcodes header; the prelude and the UI's element constants

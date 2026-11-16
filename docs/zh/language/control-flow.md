@@ -46,3 +46,29 @@ for line in lines {
 ```
 
 它们同样可以用作 `if` 的分支、`match` 的分支，或者闭包的主体：`x => x ?? throw Error("empty")`。
+
+## 特定平台的代码
+
+`@platform` 是应用构建时所针对的平台，类型是 `Platform`：`.iOS`、`.android`、`.macOS`、`.windows`、`.linux` 或 `.web`。它是一个常量，编译应用时就已确定：它不会被追踪，凡是能写值的地方都能用，包括文件顶层和组件主体。由它决定的分支中，某个平台不会走的那一支不会进入该平台的构建：代码、字符串和视图都不会。
+
+```asuka
+let saveKey = if @platform == .macOS { "⌘S" } else { "Ctrl+S" }
+
+component Toolbar {
+  prop link: string
+
+  Row {
+    if @platform == .iOS || @platform == .android {
+      Button("Share") { on press { share(link) } }
+    }
+    match @platform {
+      .macOS | .windows | .linux => Text("Save with {saveKey}")
+      _ => Text("Saved as you go")
+    }
+  }
+}
+```
+
+这适用于 `if` 及其 `else if`、`match @platform`（它不必覆盖 `.unknown`，因为 `@platform` 不会是这个值）、对 `@platform` 的比较做的 `&&`、`||` 和 `!`，以及视图中的 `if`：另一个分支的视图根本不会被创建。不过无论为哪个平台构建，每个分支都会被检查：平台的 API 在每个平台上都是同样的声明，所以 Linux 分支里的错误，在为 iOS 构建时同样会报出来。如果是某个平台专有的声明，单独放在一个文件里通常更清楚，见[特定平台的文件](packages.md#特定平台的文件)。
+
+`environment().platform` 是视图运行所在的平台，由系统给出（测试里由 `mount(…, platform:)` 给出）。它是被追踪的，供视图使用。要决定为某个平台构建哪些代码，用 `@platform`。

@@ -363,11 +363,15 @@ func defaults(rows [][]*space) [][]*space {
 
 // exhaustive reports whether arms cover every value of t, and what they
 // miss.
-func (c *Checker) exhaustive(t Type, arms []*syntax.MatchArm) (bool, []string) {
+func (c *Checker) exhaustive(subject syntax.Expr, t Type, arms []*syntax.MatchArm) (bool, []string) {
 	if IsInvalid(t) {
 		return true, nil
 	}
 	var rows [][]*space
+	if IsPlatformConst(subject) {
+		// @platform is never .unknown: a match of it needn't say.
+		rows = append(rows, []*space{{ctor: ".unknown"}})
+	}
 	for _, a := range arms {
 		if a.Guard != nil {
 			continue

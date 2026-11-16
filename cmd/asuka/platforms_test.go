@@ -21,6 +21,7 @@ import (
 	"github.com/egoist/asuka/internal/appbuild/apptest"
 	"github.com/egoist/asuka/internal/cbuild"
 	"github.com/egoist/asuka/lang/bytecode"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // useModule makes appbuild.Compile compile any app to the module m makes,
@@ -28,7 +29,7 @@ import (
 func useModule(t *testing.T, m func() *bytecode.Module) {
 	t.Helper()
 	old := appbuild.Compile
-	appbuild.Compile = func(dir string, deps map[string]string) (*bytecode.Module, *appbuild.Uses, []string, error) {
+	appbuild.Compile = func(dir string, deps map[string]string, _ target.Platform) (*bytecode.Module, *appbuild.Uses, []string, error) {
 		return m(), nil, nil, nil
 	}
 	t.Cleanup(func() { appbuild.Compile = old })
@@ -57,7 +58,7 @@ func TestCmdTest(t *testing.T) {
 		t.Errorf("-run nothing: %v", err)
 	}
 	old := appbuild.Compile
-	appbuild.Compile = func(dir string, deps map[string]string) (*bytecode.Module, *appbuild.Uses, []string, error) {
+	appbuild.Compile = func(dir string, deps map[string]string, _ target.Platform) (*bytecode.Module, *appbuild.Uses, []string, error) {
 		return nil, nil, []string{filepath.Join(dir, "app.asuka") + ":1:7: undefined: Txt"}, nil
 	}
 	defer func() { appbuild.Compile = old }()

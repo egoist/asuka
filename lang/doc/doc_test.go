@@ -133,3 +133,27 @@ func TestStdAndPlatformDocumented(t *testing.T) {
 		}
 	}
 }
+
+// A name each platform's file declares is documented once, saying the
+// platforms when not every one has it.
+func TestPlatformFiles(t *testing.T) {
+	p, err := FromSources("std/tray", map[string][]byte{
+		"tray.asuka":         []byte("// Package std/tray shows a tray.\n\n/// Everywhere.\npub fn everywhere() {}\n"),
+		"tray_desktop.asuka": []byte("/// Shows the tray.\npub fn show() {}\n\n/// Desktops only.\npub fn desktopOnly() {}\n"),
+		"tray_mobile.asuka":  []byte("pub fn show() {}\n"),
+		"tray_web.asuka":     []byte("/// Shows the tray.\npub fn show() {}\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := p.Markdown()
+	if strings.Count(got, "### show") != 1 || !strings.Contains(got, "### show\n\n```asuka\nfn show()\n```\n\nShows the tray.\n") {
+		t.Errorf("show:\n%s", got)
+	}
+	if !strings.Contains(got, "### desktopOnly\n\n```asuka\nfn desktopOnly()\n```\n\nOnly on macOS, Windows and Linux.\n") {
+		t.Errorf("desktopOnly:\n%s", got)
+	}
+	if strings.Contains(got, "### everywhere\n\n```asuka\nfn everywhere()\n```\n\nOnly") {
+		t.Errorf("everywhere:\n%s", got)
+	}
+}

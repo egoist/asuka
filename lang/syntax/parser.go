@@ -2419,6 +2419,16 @@ func (p *parser) parsePrimary() Expr {
 	case SELF:
 		p.next()
 		return &SelfExpr{Span: p.span(start)}
+	case AT:
+		// @platform: a compile-time constant, its name right after the @.
+		p.next()
+		if p.pos != p.prevEnd || !isIdentTok(p.tok) && !p.tok.IsKeyword() {
+			p.errorExpected("a compile-time constant's name right after @ (@platform)")
+			return &BadExpr{Span: p.span(start)}
+		}
+		name := p.lit
+		p.next()
+		return &AtExpr{Name: name, Span: p.span(start)}
 	case PERIOD:
 		p.next()
 		return &ImplicitMember{Name: p.ident(), Span: p.span(start)}

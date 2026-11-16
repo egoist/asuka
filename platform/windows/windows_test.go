@@ -226,7 +226,7 @@ func zig(t *testing.T) {
 func buildApp(t *testing.T, w *windows, src, dir string) string {
 	t.Helper()
 	zig(t)
-	res := compile.Files(map[string][]byte{"app.asuka": []byte(src)}, nil)
+	res := compile.Files(map[string][]byte{"app.asuka": []byte(src)}, &compile.Options{Platform: "windows"})
 	if err := res.Err(); err != nil {
 		t.Fatalf("the app doesn't compile:\n%v", err)
 	}
@@ -286,7 +286,7 @@ func buildExample(t *testing.T, w *windows, name, dir string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, diags, err := p.Compile()
+	m, diags, err := p.Compile("windows")
 	if err != nil || m == nil {
 		t.Fatalf("%s doesn't compile: %v\n%s", name, err, strings.Join(diags, "\n"))
 	}

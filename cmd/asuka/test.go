@@ -11,6 +11,7 @@ import (
 
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/lang/bytecode"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // cmdTest is asuka test: an app's or a package's test blocks, compiled
@@ -24,7 +25,7 @@ func cmdTest(args []string) error {
 		"tap, type and expect; and those of its programs (asuka.toml's [bin.<name>])."
 	fs.String(&pattern, "run", 0, "", "run only the tests whose names contain `text`")
 	platformFlag(fs, &platform, []string{platformIOS, platformAndroid, platformMac, platformWindows, platformLinux, platformWeb},
-		"the `platform` the fake host says it is (what the app's platform checks see): ios (the default), android, mac, windows, linux or web")
+		"the `platform` the tests are compiled for (its packages' files for it, @platform) and the fake host says it is: ios (the default), android, mac, windows, linux or web")
 	if err := fs.parse(args); err != nil {
 		return err
 	}
@@ -57,7 +58,7 @@ func cmdTest(args []string) error {
 			}
 			fmt.Printf("asuka: %s (%s)\n", name, relToCwd(t.Dir))
 		}
-		m, err := compileProject(t)
+		m, err := compileProject(t, langPlatform(platform))
 		if err != nil {
 			return err
 		}
@@ -123,10 +124,10 @@ func cwdOr(dir string) string {
 	return dir
 }
 
-// compileProject compiles p, printing its diagnostics relative to the
-// working directory.
-func compileProject(p *appbuild.Project) (*bytecode.Module, error) {
-	m, diags, err := p.Compile()
+// compileProject compiles p for platform, printing its diagnostics
+// relative to the working directory.
+func compileProject(p *appbuild.Project, platform target.Platform) (*bytecode.Module, error) {
+	m, diags, err := p.Compile(platform)
 	base := cwdOr(p.Dir)
 	for _, d := range diags {
 		fmt.Fprintln(os.Stderr, relDiag(base, d))
@@ -172,9 +173,16 @@ func cmdRun(args []string) error {
 			return err
 		}
 	}
-	m, err := compileProject(p)
+	// A program runs here: it's compiled for this computer. What isn't
+	// runs on the fake host, which is an iPhone as asuka test's is.
+	m, err := compileProject(p, target.Host())
 	if err != nil {
 		return err
+	}
+	if m.Main < 0 && target.Host() != target.Default {
+		if m, err = compileProject(p, target.Default); err != nil {
+			return err
+		}
 	}
 	if m.Main >= 0 {
 		var env []string

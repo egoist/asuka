@@ -34,6 +34,7 @@ import (
 
 	"github.com/egoist/asuka/internal/devserver"
 	"github.com/egoist/asuka/lang/compile"
+	"github.com/egoist/asuka/lang/target"
 )
 
 var (
@@ -293,7 +294,7 @@ func RunWith(t testing.TB, src string, o Options) *App {
 	for k, v := range o.Files {
 		files[k] = []byte(Dedent(v))
 	}
-	res := compile.Files(files, nil)
+	res := compile.Files(files, &compile.Options{Platform: target.MacOS})
 	if err := res.Err(); err != nil {
 		t.Fatalf("the app doesn't compile:\n%v", err)
 	}
@@ -314,7 +315,7 @@ func RunWith(t testing.TB, src string, o Options) *App {
 		t.Fatal(err)
 	}
 	a.srv = srv
-	srv.Send(res.Module.Encode())
+	srv.Send(target.MacOS, res.Module.Encode())
 	data := filepath.Join(a.dir, "data")
 	os.MkdirAll(data, 0o755)
 	c := exec.Command(exe)

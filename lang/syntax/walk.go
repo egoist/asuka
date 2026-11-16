@@ -288,7 +288,7 @@ func Walk(v Visitor, n Node) {
 	case *BadItem:
 
 	// Expressions.
-	case *Ident, *BasicLit, *BoolLit, *NoneLit, *SelfExpr, *BadExpr:
+	case *Ident, *BasicLit, *BoolLit, *NoneLit, *SelfExpr, *AtExpr, *BadExpr:
 	case *StringLit:
 		for _, x := range n.Interps {
 			walk(x)

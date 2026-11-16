@@ -316,7 +316,7 @@ func remove(list []string, x string) []string {
 
 // The token types and modifiers of semantic tokens, by index.
 var (
-	tokenTypes     = []string{"namespace", "type", "struct", "enum", "interface", "typeParameter", "parameter", "variable", "property", "enumMember", "event", "function", "method", "class"}
+	tokenTypes     = []string{"namespace", "type", "struct", "enum", "interface", "typeParameter", "parameter", "variable", "property", "enumMember", "event", "function", "method", "class", "macro"}
 	tokenModifiers = []string{"declaration", "readonly", "defaultLibrary", "modification"}
 )
 

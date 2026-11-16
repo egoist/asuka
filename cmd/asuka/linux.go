@@ -17,6 +17,7 @@ import (
 	"github.com/egoist/asuka/internal/appconfig"
 	"github.com/egoist/asuka/internal/cbuild"
 	iupdate "github.com/egoist/asuka/internal/update"
+	"github.com/egoist/asuka/lang/target"
 )
 
 // Linux: the app's executable is the C host (platform/linux: GTK 4 and
@@ -194,7 +195,7 @@ func buildLinux(app *asukaApp, o *buildOptions) error {
 // (platform/linux) with the core, the native packages' C and the app
 // compiled in, one executable.
 func linuxRelease(app *asukaApp, t cbuild.Target, exe string) error {
-	m, err := app.compile()
+	m, err := app.compile(target.Linux)
 	if err != nil {
 		return err
 	}
