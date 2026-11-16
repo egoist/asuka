@@ -394,7 +394,9 @@ static ak_val value(parser *ps, const char *d) {
 	case '[': {
 		const char *ed = d + 1;
 		ak_kind ek = desc_kind(ed);
-		if (!lit(ps, "[")) {
+		// null is an empty array, as Go's encoding/json writes a nil slice.
+		bool null = lit(ps, "null");
+		if (!null && !lit(ps, "[")) {
 			fail(ps, "expected an array%s", "");
 			return (ak_val){0};
 		}
@@ -402,6 +404,7 @@ static ak_val value(parser *ps, const char *d) {
 		if ((*ed == 'S' || *ed == 'E') && ps->t && ps->t->shape) es = ps->t->shape(ps->t->ctx, ed + 1, name_len(ed));
 		ak_arr *a = ak_arr_new(ek, es, 0);
 		if (*ed == 's') a->h.flags = 1;
+		if (null) return (ak_val){.p = a};
 		ws(ps);
 		if (lit(ps, "]")) return (ak_val){.p = a};
 		for (;;) {
@@ -424,11 +427,13 @@ static ak_val value(parser *ps, const char *d) {
 		// A set: an array of its elements (one written twice is one).
 		const char *ed = d + 1;
 		ak_kind ek = desc_kind(ed);
-		if (!lit(ps, "[")) {
+		bool null = lit(ps, "null");  // an empty set
+		if (!null && !lit(ps, "[")) {
 			fail(ps, "expected an array%s", "");
 			return (ak_val){0};
 		}
 		ak_map *s = ak_set_new(ek, *ed == 's');
+		if (null) return (ak_val){.p = s};
 		ws(ps);
 		if (lit(ps, "]")) return (ak_val){.p = s};
 		for (;;) {
@@ -450,11 +455,13 @@ static ak_val value(parser *ps, const char *d) {
 	case '{': {
 		const char *vd = d + 1;
 		ak_kind vk = desc_kind(vd);
-		if (!lit(ps, "{")) {
+		bool null = lit(ps, "null");  // an empty map, as Go writes a nil one
+		if (!null && !lit(ps, "{")) {
 			fail(ps, "expected an object%s", "");
 			return (ak_val){0};
 		}
 		ak_map *m = ak_map_new(AK_K_REF, true, vk, NULL);
+		if (null) return (ak_val){.p = m};
 		ws(ps);
 		if (lit(ps, "}")) return (ak_val){.p = m};
 		for (;;) {

@@ -84,6 +84,28 @@ TEST(maps_enums_numbers) {
 	ak_release(e);
 }
 
+// Go's encoding/json writes a nil slice or map as null: an empty one.
+TEST(null_collections) {
+	const char *src = "null";
+	ak_val v = ak_json_decode(src, strlen(src), "[f", &types);
+	REQUIRE(!ak_error_pending());
+	CHECK_EQ_INT(((ak_arr *)v.p)->len, 0);
+	ak_release(v.p);
+	v = ak_json_decode(src, strlen(src), "{eFilter;", &types);
+	REQUIRE(!ak_error_pending());
+	CHECK_EQ_INT(((ak_map *)v.p)->len, 0);
+	ak_release(v.p);
+	v = ak_json_decode(src, strlen(src), "<s", &types);
+	REQUIRE(!ak_error_pending());
+	CHECK_EQ_INT(((ak_map *)v.p)->len, 0);
+	ak_release(v.p);
+	src = " nul";
+	v = ak_json_decode(src, strlen(src), "[f", &types);
+	void *e = ak_error_take();
+	CHECK(e != NULL);
+	ak_release(e);
+}
+
 TEST(bytes_base64) {
 	ak_bytes *b = ak_bytes_new("hello!?", 7);
 	ak_str *s = ak_json_encode((ak_val){.p = b}, "y", &types, 0);

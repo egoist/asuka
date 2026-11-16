@@ -516,6 +516,9 @@ func (p *jsonCheck) value(t Type) {
 		p.elems(x.Elem)
 		return
 	case *Map:
+		if p.lit("null") { // an empty map, as Go's encoding/json writes a nil one
+			return
+		}
 		if !p.lit("{") {
 			p.fail("expected an object")
 			return
@@ -573,6 +576,9 @@ func (p *jsonCheck) value(t Type) {
 }
 
 func (p *jsonCheck) elems(elem Type) {
+	if p.lit("null") { // none: an empty array or set, as Go writes a nil slice
+		return
+	}
 	if !p.lit("[") {
 		p.fail("expected an array")
 		return
