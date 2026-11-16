@@ -2,11 +2,12 @@
 
 How the compiler turns Asuka (docs/language/, RFC 0007's grammar) into
 bytecode (lang/bytecode) that the VM (core/src/vm) runs. Release builds
-compile that bytecode to C (lang/cgen): each synchronous function
-becomes a C function that calls the same instruction bodies the
-interpreter does (core/src/vm/ops.h), and async functions stay on the
-VM. So the bytecode is the one contract, and both backends mean the
-same thing by it (core/vm_test.go runs every module both ways).
+compile that bytecode to C (lang/cgen): each function becomes a C
+function that calls the same instruction bodies the interpreter does
+(core/src/vm/ops.h); one that may suspend becomes a resumable one
+(below, Functions that suspend, in C). So the bytecode is the one
+contract, and both backends mean the same thing by it (core/vm_test.go
+runs every module both ways).
 
 ## Pipeline
 
@@ -195,6 +196,43 @@ calls a closure) runs in a handler that moves the receiver back first.
   AWAIT follows the CALLB. `await` of a call of an async function is
   that CALL; of a `Task<T>`, AWAIT. `await` of something that doesn't
   wait does nothing.
+
+## Functions that suspend, in C
+
+A release build compiles a function that may suspend (FAsync, or one
+with an AWAIT or a YIELD) as other languages compile coroutines: to a
+resumable C function (core/src/vm/vm_int.h's ak_async_body), on the
+interpreter's frames.
+
+- Its frame is on the coroutine, pushed as the interpreter pushes one
+  (ak_vm_push), and its pc means what the interpreter's does: where the
+  frame resumes. Its body starts with a switch on it: 0, an AWAIT's own
+  pc (the AWAIT runs again, its future settled), or the pc after a
+  YIELD or a call. Its registers are the body's C locals: it moves them
+  out of the frame as it starts (ak_op_enter) and back when it leaves
+  the frame waiting (ak_op_leave).
+- It returns how it left: returned (its result), threw (no handler of
+  its took the error: it reported its line to ak_frame_hook, as a
+  synchronous function does), suspended (an AWAIT whose future is
+  pending, a YIELD), or pushed a frame the run loop is to run.
+- A CALL of a function that may suspend, a CALLC of a VM closure that
+  the interpreter would push, a CALLI of a method not compiled to a
+  plain C function push the callee's frame on the coroutine, as the
+  interpreter does. A compiled callee runs at once, in C (ak_op_acall):
+  calls that don't wait cost a C call and a frame. Past
+  AK_VM_ADEPTH_MAX such calls deep, or for an interpreted callee, the
+  caller leaves its frame waiting on the callee's and the run loop runs
+  it, so async recursion takes no C stack. When the callee suspends,
+  each compiled caller leaves its frame too, to resume after the call.
+- The run loop (core/src/vm/run.c's ak_vm_run) runs a coroutine's top
+  frame: a compiled one's body, else the interpreter, which hands back
+  when the top frame is compiled. When a body returns, it pops the
+  frame and stores the result in the caller's register, which the
+  caller loads as it resumes; when it throws, the error goes to the
+  first caller that takes it: an interpreted one's handler covering the
+  call, or a compiled one, which resumes after the call with the error
+  pending and goes to its handler there. A release build compiles every
+  function, so it never interprets.
 
 ## Errors
 

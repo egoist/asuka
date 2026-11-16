@@ -17,9 +17,23 @@ typedef struct { uint32_t pc, line; } ak_line;
 // returns its result (owned), throwing as builtins do.
 typedef ak_val (*ak_native_body)(ak_val *args, ak_closure *clos);
 
+struct ak_co;
+// A function that may suspend (async, or one that awaits), compiled to C
+// (lang/cgen): it runs the coroutine's top frame, its own, from the
+// frame's pc (0, or where it left), on registers it moves out of the
+// frame as it starts and back in when it leaves the frame waiting. It
+// returns how it left (AK_RUN_*): returned (*out its result, owned),
+// threw (the error pending; no handler of its took it), called a
+// function the run loop runs (its frame pushed above), or suspended. A
+// frame it returned or threw from is left for the caller to pop, its
+// registers released.
+typedef int (*ak_async_body)(struct ak_co *co, ak_val *out);
+enum { AK_RUN_RET, AK_RUN_THROW, AK_RUN_PUSHED, AK_RUN_SUSPEND };
+
 struct ak_func {
 	ak_module *mod;
 	ak_native_body native;  // set when the function was compiled to C
+	ak_async_body resume;   // likewise, for one that may suspend
 	ak_str *name;
 	ak_str *file;
 	uint16_t nparams;
@@ -126,13 +140,51 @@ struct ak_task {
 extern AK_TLS ak_co *ak_vm_cur;  // the coroutine running now (NULL: the main one)
 extern AK_TLS ak_co ak_vm_main;
 
-// The interpreter: runs co from its top frame until a boundary frame
-// returns (its result in *out) or the coroutine suspends (true).
+// ak_vm_run runs co from its top frame until a boundary frame returns
+// (its result in *out; an error pending if it threw) or the coroutine
+// suspends (true): the run loop (run.c). Frames of functions compiled to
+// C run their bodies; interpreted frames run on the interpreter.
 bool ak_vm_run(ak_co *co, ak_val *out);
+// ak_vm_interp interprets co from its top frame, an interpreted
+// function's, until a boundary frame returns (AK_RUN_RET, as
+// ak_vm_run's), the coroutine suspends (AK_RUN_SUSPEND), or the top frame
+// is a compiled function's (AK_RUN_PUSHED: called, returned to with its
+// result stored, or unwound to with the error pending), which ak_vm_run
+// runs.
+int ak_vm_interp(ak_co *co, ak_val *out);
+// ak_vm_pop pops the top frame, releasing its registers (but the one at
+// keep, moved out: -1 for none) and its closure.
+void ak_vm_pop(ak_co *co, int keep);
+// ak_vm_find_handler is the target of f's innermost handler covering
+// pc, or -1.
+int64_t ak_vm_find_handler(const ak_func *f, uint32_t pc);
 // ak_vm_push pushes a frame calling f with args; false (an error thrown)
 // on stack overflow.
 bool ak_vm_push(ak_co *co, const ak_func *f, ak_closure *clos, ak_val *args, uint32_t nargs, uint16_t dst, bool boundary, uint32_t callpc);
 ak_val ak_vm_closure_invoke(ak_closure *c, ak_val *args, uint32_t nargs);
+
+// ak_vm_pop_frame pops the top frame of a function compiled to C, whose
+// registers its body released or moved out: it releases its closure.
+static inline void ak_vm_pop_frame(ak_co *co) {
+	ak_frame *fr = &co->frames[co->nframes - 1];
+	ak_closure *c = fr->clos;
+	co->top = fr->base;
+	co->nframes--;
+	if (c) ak_release(c);
+}
+// ak_vm_await is what AWAIT does before it takes f's result, for the
+// coroutine's top frame: -1 when it threw (the task was cancelled), 1
+// when f is pending and the coroutine suspends (the task resumes once f
+// settles: AWAIT runs again), 0 when f is settled.
+int ak_vm_await(ak_co *co, ak_future *f);
+// ak_vm_yield queues the coroutine's task to resume (YIELD), as it
+// suspends.
+void ak_vm_yield(ak_co *co);
+// How deep compiled async functions call each other directly, in C: past
+// a bound, a call goes through the run loop instead, so that async
+// recursion takes no C stack.
+extern AK_TLS uint32_t ak_vm_adepth;
+#define AK_VM_ADEPTH_MAX 64
 // ak_vm_task_start starts f as a task and returns its future (owned).
 ak_future *ak_vm_task_start(const ak_func *f, ak_closure *clos, ak_val *args, uint32_t nargs);
 void ak_vm_task_resume(void *task);

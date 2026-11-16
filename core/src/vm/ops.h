@@ -242,4 +242,49 @@ static inline void ak_op_exit(ak_val *R, const uint8_t *kinds, uint16_t n, int k
 		if (kinds[i] == AK_K_REF && (int)i != keep) ak_release(R[i].p);
 }
 
+// ---- Functions that may suspend, compiled to C (ak_async_body) ----
+//
+// Such a function's frame is on the coroutine, as the interpreter's is,
+// and its pc means what the interpreter's does: where it resumes. While
+// its body runs, its registers are the body's C locals; when it leaves
+// the frame waiting (it suspends, or a call it made goes on in the run
+// loop), they go back into the frame.
+
+// ak_op_enter moves frame fi's registers into R, the body's, leaving the
+// frame's empty: nothing else releases them while the body runs.
+static inline void ak_op_enter(ak_co *co, uint32_t fi, ak_val *R, uint16_t n) {
+	ak_val *S = co->regs + co->frames[fi].base;
+	memcpy(R, S, sizeof(ak_val) * n);
+	memset(S, 0, sizeof(ak_val) * n);
+}
+
+// ak_op_leave moves R back into frame fi, which resumes at pc.
+static inline void ak_op_leave(ak_co *co, uint32_t fi, const ak_val *R, uint16_t n, uint32_t pc) {
+	memcpy(co->regs + co->frames[fi].base, R, sizeof(ak_val) * n);
+	co->frames[fi].pc = pc;
+}
+
+// ak_op_pushes reports whether calling closure c from a compiled async
+// function pushes a frame on its coroutine (as the interpreter's CALLC
+// does) rather than calling it from C.
+static inline bool ak_op_pushes(const ak_co *co, const ak_closure *c) {
+	if (c->invoke != ak_vm_closure_invoke) return false;
+	const ak_func *g = c->fn;
+	return !g->native && !((g->flags & AK_F_ASYNC) && co->task == NULL);
+}
+
+// ak_op_acall runs the frame a compiled async function just pushed: its
+// body, directly, when it's compiled too and the direct calls aren't
+// deep (popping its frame when it returned or threw); else it's left to
+// the run loop (AK_RUN_PUSHED), as is the rest of a call that suspended.
+static inline int ak_op_acall(ak_co *co, ak_val *v) {
+	const ak_func *g = co->frames[co->nframes - 1].fn;
+	if (!g->resume || ak_vm_adepth >= AK_VM_ADEPTH_MAX) return AK_RUN_PUSHED;
+	ak_vm_adepth++;
+	int s = g->resume(co, v);
+	ak_vm_adepth--;
+	if (s == AK_RUN_RET || s == AK_RUN_THROW) ak_vm_pop_frame(co);
+	return s;
+}
+
 #endif

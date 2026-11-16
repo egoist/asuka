@@ -14,7 +14,59 @@ import (
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/appbuild/apptest"
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/lang/bytecode"
+	"github.com/egoist/asuka/lang/compile"
 )
+
+// asyncApp is an app with async code, which a release compiles to
+// resumable C (lang/cgen): calls that wait and don't, a throw past an
+// await, tasks, a stream read with for await, a handler that awaits.
+const asyncApp = `
+enum Oops: Error { odd }
+
+async fn step(x: int) throws -> int {
+  await sleep(1ms)
+  if x == 7 { throw Oops.odd }
+  return x + 1
+}
+
+async fn inc(x: int) -> int {
+  return x + 1
+}
+
+fn numbers(n: int) -> Stream<int> = Stream(send => {
+  for i in 0..<n {
+    send(await inc(i))
+  }
+})
+
+async fn work(n: int) throws -> int {
+  var acc = 0
+  for i in 0..<n {
+    acc = try await step(await inc(acc))
+  }
+  let (a, b) = try await all(step(1), step(2))
+  for await x in numbers(n) {
+    acc += x
+  }
+  return acc + a + b
+}
+
+component Work {
+  state total = 0
+
+  Column {
+    Text("Total: {total}")
+    Button("Run") {
+      on press {
+        total = (try? await work(3)) ?? -1
+      }
+    }
+  }
+}
+
+app { Work() }
+`
 
 // The core builds for every target, with the app compiled in (a
 // release) and without (a dev player), as each platform takes it: a
@@ -25,6 +77,10 @@ func TestLibEveryTarget(t *testing.T) {
 		t.Skip("builds the core for every target (not -short)")
 	}
 	m := appbuild.StripTests(apptest.Counter("Count: "))
+	res := compile.Files(map[string][]byte{"app.asuka": []byte(asyncApp)}, nil)
+	if err := res.Err(); err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range []struct {
 		t    cbuild.Target
 		kind cbuild.LibKind
@@ -47,11 +103,9 @@ func TestLibEveryTarget(t *testing.T) {
 			if _, err := cbuild.ForTarget(c.t); err != nil {
 				t.Skip(err)
 			}
-			for _, release := range []bool{true, false} {
-				mod := m
-				if !release {
-					mod = nil
-				}
+			// Releases (the counter's, the async app's) and a dev player.
+			for _, mod := range []*bytecode.Module{m, res.Module, nil} {
+				release := mod != nil
 				out := filepath.Join(t.TempDir(), c.name)
 				if err := appbuild.Lib(c.t, c.kind, mod, out); err != nil {
 					t.Fatal(err)

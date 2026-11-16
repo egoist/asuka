@@ -1,0 +1,67 @@
+// The async workloads BenchmarkAsync times (async_bench_test.go): which
+// one is the first argument, its size the second.
+
+import std/os
+
+async fn step(x: int) -> int {
+  return (x * 31 + 7) % 1000003
+}
+
+// Async calls that don't wait: an async function's helpers.
+async fn calls(n: int) -> int {
+  var acc = 0
+  for i in 0..<n {
+    acc = await step(acc + i)
+  }
+  return acc
+}
+
+// Work in an async function: a loop of arithmetic and strings.
+async fn compute(n: int) -> int {
+  var total = 0
+  var chars = 0
+  for i in 0..<n {
+    total = (total + i * i) % 1000000007
+    if i % 64 == 0 {
+      chars += "item {i}: {total}".count()
+    }
+  }
+  return total + chars
+}
+
+fn numbers(n: int) -> Stream<int> = Stream(send => {
+  for i in 0..<n {
+    send(i)
+    await step(i)
+  }
+})
+
+// A stream read with for await: each value a suspension and a resume.
+async fn stream(n: int) throws -> int {
+  var sum = 0
+  for await x in numbers(n) {
+    sum = (sum + await step(x)) % 1000000007
+  }
+  return sum
+}
+
+// Tasks: all of two calls, over and over.
+async fn tasks(n: int) -> int {
+  var sum = 0
+  for i in 0..<n {
+    let (a, b) = await all(step(i), step(i + 1))
+    sum = (sum + a + b) % 1000000007
+  }
+  return sum
+}
+
+async fn main() throws {
+  let args = os.args()
+  let which = args.first() ?? "calls"
+  var n = 1000
+  if args.count() > 1 { n = args[1].toInt() ?? n }
+  if which == "calls" { print(await calls(n)) }
+  if which == "compute" { print(await compute(n)) }
+  if which == "stream" { print(try await stream(n)) }
+  if which == "tasks" { print(await tasks(n)) }
+}

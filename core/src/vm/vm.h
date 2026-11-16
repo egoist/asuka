@@ -61,9 +61,12 @@ bool ak_closure_async(const ak_closure *c);
 // type's and case's name), a runtime error's message. Owned.
 ak_str *ak_vm_error_text(void *err);
 
+struct ak_co;
 // ak_module_attach gives a module's functions their bodies compiled to
-// C (lang/cgen): bodies[i] is function i's, or NULL to interpret it.
-void ak_module_attach(ak_module *m, ak_val (*const *bodies)(ak_val *args, ak_closure *clos), uint32_t n);
+// C (lang/cgen): bodies[i] is function i's, a synchronous one's, and
+// resumes[i] one's that may suspend (ak_async_body, vm_int.h), or both
+// NULL to interpret it.
+void ak_module_attach(ak_module *m, ak_val (*const *bodies)(ak_val *args, ak_closure *clos), int (*const *resumes)(struct ak_co *co, ak_val *out), uint32_t n);
 
 // ak_app_loader loads the app compiled into this build (lang/cgen's C
 // sets it as it starts); NULL when none is (a development build, which

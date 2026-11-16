@@ -7,6 +7,7 @@
 // spawn's workers.
 AK_TLS ak_co ak_vm_main;
 AK_TLS ak_co *ak_vm_cur;
+AK_TLS uint32_t ak_vm_adepth;
 
 static inline ak_co *cur_co(void) {
 	if (!ak_vm_cur) ak_vm_cur = &ak_vm_main;
@@ -49,9 +50,7 @@ bool ak_vm_push(ak_co *co, const ak_func *f, ak_closure *clos, ak_val *args, uin
 	return true;
 }
 
-// pop releases the top frame's registers (but the one at keep, moved
-// out) and its closure.
-static void pop(ak_co *co, int keep) {
+void ak_vm_pop(ak_co *co, int keep) {
 	ak_frame *fr = &co->frames[co->nframes - 1];
 	ak_val *R = co->regs + fr->base;
 	const ak_func *f = fr->fn;
@@ -63,7 +62,7 @@ static void pop(ak_co *co, int keep) {
 	if (c) ak_release(c);
 }
 
-static int64_t find_handler(const ak_func *f, uint32_t pc) {
+int64_t ak_vm_find_handler(const ak_func *f, uint32_t pc) {
 	// The innermost handler is the one listed first (the compiler emits
 	// inner ranges before outer ones).
 	for (uint32_t i = 0; i < f->nhandlers; i++)
@@ -83,6 +82,9 @@ void ak_vm_traceback(char *buf, size_t cap) {
 	ak_co *co = cur_co();
 	for (uint32_t i = co->nframes; i-- > 0 && n < cap;) {
 		ak_frame *fr = &co->frames[i];
+		// A function compiled to C tells its line as an error leaves it
+		// (ak_frame_hook): its frame's pc is where it last left.
+		if (fr->fn->resume) continue;
 		int w = snprintf(buf + n, cap - n, "%s (%s:%u)\n", fr->fn->name->data, fr->fn->file->data, line_of(fr->fn, fr->pc ? fr->pc - 1 : 0));
 		if (w < 0) break;
 		n += (size_t)w;
@@ -112,9 +114,7 @@ static inline uint32_t off32(const uint16_t *c) { return (uint32_t)c[0] | (uint3
 
 #define store(f, R, a, v) ak_op_store((f)->kinds, R, a, v)
 
-bool ak_vm_run(ak_co *co, ak_val *out) {
-	ak_co *prev = cur_co();
-	ak_vm_cur = co;
+int ak_vm_interp(ak_co *co, ak_val *out) {
 	ak_frame *fr;
 	const ak_func *F;
 	const uint16_t *code;
@@ -248,6 +248,7 @@ bool ak_vm_run(ak_co *co, ak_val *out) {
 			}
 			if (!ak_vm_push(co, g, NULL, R + a[2], a[3], a[0], false, ipc)) goto unwind;
 			LOAD();
+			if (F->resume) return AK_RUN_PUSHED;
 			break;
 		}
 		case AK_OP_CALLC: {
@@ -258,6 +259,7 @@ bool ak_vm_run(ak_co *co, ak_val *out) {
 				// A VM closure: call it in this loop.
 				if (!ak_vm_push(co, c->fn, c, R + a[2], a[3], a[0], false, ipc)) goto unwind;
 				LOAD();
+				if (F->resume) return AK_RUN_PUSHED;
 			} else {
 				ak_val v = c->invoke(c, R + a[2], a[3]);
 				RELOAD();
@@ -290,6 +292,7 @@ bool ak_vm_run(ak_co *co, ak_val *out) {
 			}
 			if (!ak_vm_push(co, g, NULL, R + a[2], a[3], a[0], false, ipc)) goto unwind;
 			LOAD();
+			if (F->resume) return AK_RUN_PUSHED;
 			break;
 		}
 		case AK_OP_RET:
@@ -303,15 +306,15 @@ bool ak_vm_run(ak_co *co, ak_val *out) {
 			ak_kind k = op == AK_OP_RET ? (ak_kind)F->kinds[a[0]] : AK_K_VOID;
 			bool boundary = fr->boundary;
 			uint16_t dst = fr->dst;
-			pop(co, keep);
+			ak_vm_pop(co, keep);
 			if (boundary || co->nframes == 0) {
 				*out = v;
-				ak_vm_cur = prev;
-				return false;
+				return AK_RUN_RET;
 			}
 			LOAD();
 			if (dst == 0xFFFF) ak_release_val(v, k);
 			else store(F, R, dst, v);
+			if (F->resume) return AK_RUN_PUSHED;
 			break;
 		}
 		case AK_OP_THROW: {
@@ -467,35 +470,22 @@ bool ak_vm_run(ak_co *co, ak_val *out) {
 		}
 		case AK_OP_AWAIT: {
 			ak_future *f = R[a[1]].p;
-			ak_task *t = co->task;
-			if (t && t->cancelled) {
-				ak_throw_cancel();
-				goto unwind;
-			}
-			if (f->state == AK_FUT_PENDING) {
-				if (!t) ak_panic("vm: await outside an async context, in %s", F->name->data);
-				for (uint32_t i = co->nframes; i-- > 1;)
-					if (co->frames[i].boundary) ak_panic("vm: await in a synchronous call from C, in %s", F->name->data);
+			int w = ak_vm_await(co, f);
+			if (w < 0) goto unwind;
+			if (w > 0) {
 				// Suspend; AWAIT runs again when resumed, with f done.
 				fr->pc = ipc;
-				t->awaiting = ak_retain(f);
-				ak_future_wait(f, ak_vm_task_resume, t);
-				ak_vm_cur = prev;
-				return true;
+				return AK_RUN_SUSPEND;
 			}
 			ak_val v = ak_future_take(f);
 			CHECK_ERR();
 			store(F, R, a[0], v);
 			break;
 		}
-		case AK_OP_YIELD: {
-			ak_task *t = co->task;
-			if (!t) ak_panic("vm: yield outside a task");
+		case AK_OP_YIELD:
+			ak_vm_yield(co);
 			fr->pc = pc;
-			ak_ready(ak_vm_task_resume, t);
-			ak_vm_cur = prev;
-			return true;
-		}
+			return AK_RUN_SUSPEND;
 		default:
 			ak_panic("vm: bad opcode %u in %s at %u", op, F->name->data, ipc);
 		}
@@ -505,7 +495,7 @@ bool ak_vm_run(ak_co *co, ak_val *out) {
 		// An error is pending: find a handler, in this frame, then its
 		// callers'.
 		{
-			int64_t h = find_handler(F, ipc);
+			int64_t h = ak_vm_find_handler(F, ipc);
 			if (h >= 0) {
 				pc = (uint32_t)h;
 				continue;
@@ -515,22 +505,46 @@ bool ak_vm_run(ak_co *co, ak_val *out) {
 		for (;;) {
 			bool boundary = fr->boundary;
 			uint32_t callpc = fr->callpc;
-			pop(co, -1);
+			ak_vm_pop(co, -1);
 			if (boundary || co->nframes == 0) {
 				*out = (ak_val){0};
-				ak_vm_cur = prev;
-				return false;
+				return AK_RUN_RET;
 			}
 			LOAD();
+			// A function compiled to C finds its handler as it resumes,
+			// the error pending: the run loop resumes it.
+			if (F->resume) return AK_RUN_PUSHED;
 			// The call didn't return: its destination keeps what it had.
 			ipc = callpc;
-			int64_t h = find_handler(F, ipc);
+			int64_t h = ak_vm_find_handler(F, ipc);
 			if (h >= 0) {
 				pc = (uint32_t)h;
 				break;
 			}
 		}
 	}
+}
+
+int ak_vm_await(ak_co *co, ak_future *f) {
+	ak_task *t = co->task;
+	if (t && t->cancelled) {
+		ak_throw_cancel();
+		return -1;
+	}
+	if (f->state != AK_FUT_PENDING) return 0;
+	const ak_func *F = co->frames[co->nframes - 1].fn;
+	if (!t) ak_panic("vm: await outside an async context, in %s", F->name->data);
+	for (uint32_t i = co->nframes; i-- > 1;)
+		if (co->frames[i].boundary) ak_panic("vm: await in a synchronous call from C, in %s", F->name->data);
+	t->awaiting = ak_retain(f);
+	ak_future_wait(f, ak_vm_task_resume, t);
+	return 1;
+}
+
+void ak_vm_yield(ak_co *co) {
+	ak_task *t = co->task;
+	if (!t) ak_panic("vm: yield outside a task");
+	ak_ready(ak_vm_task_resume, t);
 }
 
 // ---- Calls from C ----
