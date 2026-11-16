@@ -266,7 +266,7 @@ type ElementCall struct {
 	Comp     *TypeName
 	Type     *Named
 	Args     []syntax.Expr // per header parameter; nil: its default
-	Props    []*PropArg    // the block's props (styles expanded), later ones override earlier
+	Props    []*PropArg    // the block's props, later ones override earlier
 	Handlers []*HandlerArg
 	Binds    []*BindArg
 	Slots    []*SlotArg
@@ -274,12 +274,18 @@ type ElementCall struct {
 	Variants []*VariantArg // a container's: pressed { … }
 	Ref      syntax.Expr   // ref: r, a Ref the element's view goes in
 	As       *Var          // Element as name: a Ref local of the enclosing view
+	// Style is what its style: applies, its kind's default style first;
+	// the block's props are over it.
+	Style     []*StyleEntry
+	StyleNode *syntax.PropSet
 }
 
-// VariantArg is a container's variant: a state's block of style props.
+// VariantArg is a container's variant: a state's block of style props,
+// over its style: list's.
 type VariantArg struct {
 	State string // prelude.Variants' name
 	Props []*PropArg
+	Style []*StyleEntry
 	Item  *syntax.SlotItem
 }
 
@@ -330,6 +336,7 @@ const (
 	CtxSpawn                        // spawn { }
 	CtxApp                          // app { }
 	CtxLocalFn                      // a fn declared in a block (LocalFn)
+	CtxStyle                        // a style's body: its parameters' and uses' (applied where it's used, never a function)
 )
 
 // A FuncCtx is a function body being checked: a declared function, or a
@@ -369,7 +376,7 @@ type FuncCtx struct {
 // IsClosure reports whether the lowering makes the body a closure.
 func (c *FuncCtx) IsClosure() bool {
 	switch c.Kind {
-	case CtxFunc, CtxMethod, CtxComponent, CtxStore, CtxGlobal, CtxTest, CtxApp:
+	case CtxFunc, CtxMethod, CtxComponent, CtxStore, CtxGlobal, CtxTest, CtxApp, CtxStyle:
 		return false
 	}
 	return true

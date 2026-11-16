@@ -1,0 +1,18 @@
+// The form style: replaced, rewritten.
+component Card {
+  Column {
+    style: card
+    gap: 8
+    Text("a") {
+      style: title
+      color: #f00
+    }
+    Text("b") { style: [card, theme.title] }
+    View {
+      style: card
+      // pink, after
+      style: pink
+      pressed { style: raised }
+    }
+  }
+}

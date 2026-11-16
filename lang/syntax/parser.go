@@ -162,6 +162,9 @@ type parser struct {
 
 	prevEnd Pos // the end of the last token consumed, newlines aside
 	exprLev int // < 0: in a control clause's head, where { starts the body
+	// styleValue > 0: in a style: prop's value, where an if may have no
+	// else (an entry that adds nothing when it's false).
+	styleValue int
 
 	comments []*Comment
 	ci       int // the next comment not yet attached
@@ -1348,6 +1351,9 @@ func (p *parser) parseExternType(start, ext Pos) *ExternTypeDecl {
 func (p *parser) parseStyleDecl(start Pos) *StyleDecl {
 	p.expect(STYLE)
 	d := &StyleDecl{Name: p.ident()}
+	if p.tok == LPAREN {
+		d.Params = p.parseParams(false)
+	}
 	d.Body = p.parseBlock()
 	d.Span = p.span(start)
 	return d
@@ -1538,7 +1544,7 @@ func (p *parser) itemAfterPub(start Pos) Item {
 		}
 	case STYLE:
 		if isIdentTok(next) {
-			if p.peek(2) == LBRACE {
+			if p.peek(2) == LBRACE || p.peek(2) == LPAREN {
 				return p.parseStyleDecl(start)
 			}
 			p.next()
@@ -1665,7 +1671,15 @@ func (p *parser) parsePropSet() *PropSet {
 	start := p.pos
 	d := &PropSet{Name: p.name()}
 	p.expect(COLON)
-	d.Value = p.parseExpr()
+	if d.Name.Name == "style" {
+		// A style list's entries may be ifs without an else (the
+		// checker allows them there only).
+		p.styleValue++
+		d.Value = p.parseExpr()
+		p.styleValue--
+	} else {
+		d.Value = p.parseExpr()
+	}
 	d.Span = p.span(start)
 	return d
 }
@@ -2463,7 +2477,7 @@ func (p *parser) parseIfExpr() *IfExpr {
 		} else {
 			x.Else = p.parseBlock()
 		}
-	} else {
+	} else if p.styleValue == 0 {
 		p.error(p.pos, "an if used as a value needs an else")
 	}
 	x.Span = p.span(start)

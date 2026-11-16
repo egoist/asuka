@@ -34,8 +34,9 @@ Button("Follow") { shrink: 0 }
 View { height: 1; background: .separator }
 ```
 
-A `style` declares props to reuse; `style name` in a block applies
-them, and the props after it win:
+A `style` declares props to reuse, and `style:` applies one or a list
+of them. A later entry wins a prop both set, and the block's own props
+win over the list:
 
 ```asuka
 style card {
@@ -43,8 +44,22 @@ style card {
   background: .secondaryBackground
 }
 
-View { style card; background: .accent }
+style chip(tint: Color) {
+  padding: [4, 10]; radius: 999
+  background: tint.opacity(0.15); color: tint
+}
+
+View { style: card; background: .accent }
+Text("New") { style: chip(.green) }
+Row { style: [card, if selected { chip(.accent) }] }
 ```
+
+A style takes parameters as a function does, applies other styles with
+its own `style:`, and an `if` or a `match` in a list applies a style
+while it holds, putting each prop back when it stops. A style named
+after an element (`style Button { radius: 8 }`) is the default of every
+one in the package. For the whole syntax, and themes a part of the app
+changes, see [Styles](language/styles.md).
 
 Look props apply where the native widget supports them: a button takes
 `color` as its tint, a view ignores `font`.

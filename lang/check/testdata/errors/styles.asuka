@@ -1,0 +1,84 @@
+// Styles: what a style holds, what a style list holds, and where.
+
+style card { padding: 16 }
+
+style chip(tint: Color) { background: tint }
+
+style loopA { style: loopB } // ERROR "style loopA applies itself \(loopA → loopB → loopA\)"
+
+style loopB { style: loopA } // ERROR "style loopB applies itself"
+
+style bad {
+  title: "x" // ERROR "a style holds style props, and title isn't one"
+  colour: .red // ERROR "colour isn't one \(did you mean color\?\)"
+  style card // ERROR "write style: card"
+  on press {} // ERROR "a style holds style props"
+  toolbar { } // ERROR "a style holds style props \(name: value\), style: …, use and variants"
+  use n: int // ERROR "use takes a store's type"
+  pressed {
+    use m: int // ERROR "use goes in the style's body, not in pressed"
+    hovered { opacity: 0.5 } // ERROR "hovered \{ … \} in pressed \{ … \}"
+    style: [if true { card }] // ERROR "the style: of pressed \{ … \} takes no conditions"
+  }
+}
+
+style twice {
+  style: card
+  style: card // ERROR "style: is set twice"
+}
+
+style withVariant {
+  pressed { opacity: 0.5 }
+}
+
+/// Text's default style, here.
+style Text(size: float) { padding: size } // ERROR "a default takes no parameters"
+
+/// A default for a component that doesn't take the style.
+style Pair { padding: 2 } // ERROR "Pair doesn't take the style props"
+
+component Pair {
+  Text("a")
+  Text("b")
+}
+
+component Probe {
+  prop style = 1 // ERROR "style is the style list every element takes"
+  state on = false
+  state k = 0
+  let maybe: int? = none
+  Column {
+    View { style: nope } // ERROR "unknown style nope"
+    View { style: crd } // ERROR "unknown style crd \(did you mean card\?\)"
+    View { style: chip } // ERROR "style chip takes arguments: chip\(…\)"
+    View { style: card(1) } // ERROR "style card takes no arguments"
+    View { style: chip(1) } // ERROR "a int, not a Color|isn't a Color|Color"
+    View { style: chip(tint: .red, size: 2) } // ERROR "style chip has no parameter size"
+    View { style: [card, on] } // ERROR "on isn't a style: a style list holds styles \(for one while on holds, if on \{ card \}\)"
+    View { style: [card, k + 1] } // ERROR "a style list holds styles: a style's name"
+    View { style: if let x = maybe { card } } // ERROR "a style list's if takes a bool"
+    View { style: match k { 1 => card, _ => [] } }
+    View { style: if on { card; card } } // ERROR "a branch of a style list holds the styles it applies"
+    View { style: card; style: card } // ERROR "style: is set twice"
+    View { style card } // ERROR "write style: card: an element applies styles with the style: prop"
+    View { pressed { style: withVariant } } // ERROR "style withVariant holds variants"
+    Pair() { style: card } // ERROR "Pair doesn't take the style props: a component takes them when its body is one element"
+    Text("x") { style: [if on { card } else if k > 1 { chip(.red) }] }
+  }
+}
+
+enum Tint { plain, tinted(Color) }
+
+component Matches {
+  state t = Tint.plain
+  View {
+    style: match t {
+      .tinted(c) => chip(c) // ERROR "a style list's match binds no names"
+      _ => []
+    }
+  }
+}
+
+app { Probe() }
+
+let x = if true { 1 } // ERROR "an if used as a value needs an else"

@@ -26,18 +26,30 @@
 
 // ---- A view's interaction state (ak_view's ix) ----
 
+// A style layer (ak_ui_layer): style values laid over a view's own
+// while it's on. Of the layers on that set a key, the last in order
+// wins: by tier, then (state layers) by state, then as they were made.
 typedef struct {
-	uint8_t state;  // AK_STATE_*
+	uint8_t tier;   // AK_LAYER_*
+	uint8_t state;  // an AK_STATE_ bit: on only while the view is in it; 0: none
+	bool on;        // its condition's (true without one)
+	bool block;     // the block's variant of its state (ak_ui_variant's)
+} ak_layer;
+
+// A layer's value of a key.
+typedef struct {
+	uint16_t layer;
 	uint16_t key;
 	ak_val v;
-} ak_variant;
+} ak_layer_ent;
 
 typedef struct ak_ix {
 	uint8_t state;    // the states it's in (AK_STATE_*)
 	uint8_t listens;  // the states its view reports
 	ak_node sig[AK_STATE__COUNT];  // per state, for ui.state's readers
-	AK_VEC(ak_variant) variants;
-	AK_VEC(ak_style_ent) base;     // the style's own values of the keys variants set
+	AK_VEC(ak_layer) layers;       // by id, as they were made
+	AK_VEC(ak_layer_ent) lents;    // their values, a key once per layer
+	AK_VEC(ak_style_ent) base;     // the style's own values of the keys layers set
 	bool hooked;      // leaves its states when its owner is disposed
 	// Keys: the keys style key's entries in the Keys prop's order.
 	uint32_t *key_order;
@@ -61,8 +73,8 @@ void ak_ix_free(ak_view *e);
 ak_event_kind ak_ix_ev_ops(uint16_t ev);
 // ak_ix_on hears of a handler set (an adjust makes the view adjustable).
 void ak_ix_on(ak_view *v, uint16_t ev);
-// ak_ix_set_base takes a style key set on a view whose variants set it:
-// true when it did (the value laid on is what variants say).
+// ak_ix_set_base takes a style key set on a view whose layers set it:
+// true when it did (the value laid on is what the layers say).
 bool ak_ix_set_base(ak_view *v, uint16_t key, ak_val value);
 // ak_ix_event handles the events every view may have: interaction
 // states, gestures, keys, screen readers' actions, drags and drops.

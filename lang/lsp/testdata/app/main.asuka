@@ -1,6 +1,9 @@
 import ./model
 import ./model.{Todo}
 
+/// A tag's look.
+style tag(tint: Color) { color: tint }
+
 /// A row showing one todo.
 component TodoRow(todo: Todo) {
   /// The toggle was switched.
@@ -32,7 +35,7 @@ component TodoApp {
         }
       }
     }
-    Text("{remaining} left")
+    Text("{remaining} left") { style: tag(.red) }
   }
 }
 

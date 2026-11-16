@@ -143,6 +143,9 @@ func Walk(v Visitor, n Node) {
 		walk(n.Type)
 	case *StyleDecl:
 		walk(n.Name)
+		if n.Params != nil {
+			walk(n.Params)
+		}
 		walk(n.Body)
 	case *StateDecl:
 		walk(n.Name)

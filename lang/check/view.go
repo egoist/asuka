@@ -56,6 +56,9 @@ func (c *Checker) componentMembers(t *TypeName, params *syntax.ParamList, body *
 				c.errorf(d, "a store has no props: give it parameters, store %s(name: T)", t.name)
 				continue
 			}
+			if d.Name.Name == "style" {
+				c.errorf(d.Name, "style is the style list every element takes (style: card): name the prop otherwise")
+			}
 			m := &Member{Kind: PropMember, Default: d.Default, Decl: d, Pub: true}
 			if d.Type != nil {
 				m.Type = c.typeExpr(d.Type)
@@ -475,6 +478,7 @@ func (c *Checker) componentCall(e *syntax.CallExpr, tn *TypeName) Type {
 	if e.Block != nil {
 		c.elementBlock(e.Block.Items, ec)
 	}
+	c.defaultStyle(ec)
 	for _, h := range e.Handlers {
 		c.onHandler(h, ec)
 	}
@@ -551,13 +555,17 @@ func (c *Checker) elementBlock(items []syntax.Item, ec *ElementCall) {
 	for _, it := range items {
 		switch s := it.(type) {
 		case *syntax.PropSet:
+			if s.Name.Name == "style" {
+				c.styleProp(s, ec)
+				continue
+			}
 			c.propSet(s.Name, s.Value, ec, false)
 		case *syntax.OnHandler:
 			c.onHandler(s, ec)
 		case *syntax.BindItem:
 			c.bindItem(s, ec)
 		case *syntax.StyleUse:
-			c.styleUse(s, ec)
+			c.errorf(s, "write style: %s: an element applies styles with the style: prop (asuka fmt rewrites it)", styleName(s.Name))
 		case *syntax.SlotItem:
 			if isVariant(s.Name.Name) && comp.Members[s.Name.Name] == nil {
 				c.variantItem(s, ec)
@@ -687,26 +695,27 @@ func (c *Checker) variantItem(s *syntax.SlotItem, ec *ElementCall) {
 		c.propValue(value, m, name.Name)
 		va.Props = append(va.Props, &PropArg{Member: m, Value: value})
 	}
+	var styleSet *syntax.PropSet
 	for _, it := range s.Body.Items {
 		switch x := it.(type) {
 		case *syntax.PropSet:
-			set(x.Name, x.Value)
-		case *syntax.StyleUse:
-			d, scope := c.styleOf(x.Name)
-			if d == nil {
+			if x.Name.Name == "style" {
+				// The variant's styles, under its own props.
+				if styleSet != nil {
+					c.errorf(x.Name, "style: is set twice: put the styles in one list, style: [a, b]")
+				}
+				styleSet = x
+				entries := c.styleList(x.Value, nil)
+				c.variantEntries(entries, s.Name.Name)
+				va.Style = append(va.Style, entries...)
 				continue
 			}
-			savedScope := c.scope
-			c.scope = scope
-			for _, it := range d.Body.Items {
-				if ps, ok := it.(*syntax.PropSet); ok {
-					set(ps.Name, ps.Value)
-				}
-			}
-			c.scope = savedScope
+			set(x.Name, x.Value)
+		case *syntax.StyleUse:
+			c.errorf(x, "write style: %s: a variant applies styles with style: (asuka fmt rewrites it)", styleName(x.Name))
 		case *syntax.BadItem:
 		default:
-			c.errorf(it, "a variant holds style props only (name: value, style name), not %s", itemName(it))
+			c.errorf(it, "a variant holds style props only (name: value, style: …), not %s", itemName(it))
 		}
 	}
 	ec.Variants = append(ec.Variants, va)
@@ -771,7 +780,7 @@ func (c *Checker) propSet(name *syntax.Ident, value syntax.Expr, ec *ElementCall
 func (c *Checker) propSuggest(comp *Component, name string) string {
 	best, bestD := "", 3
 	try := func(n string) {
-		if d := editDistance(name, n); d < bestD && d < len(name) {
+		if d := editDistance(name, n); d < len(name) && (d < bestD || d == bestD && n < best) {
 			best, bestD = n, d
 		}
 	}
@@ -946,65 +955,11 @@ func (c *Checker) bindItem(b *syntax.BindItem, ec *ElementCall) {
 	ec.Binds = append(ec.Binds, &BindArg{Prop: m, Event: ev, Target: b.Target, Item: b})
 }
 
-// styleOf finds the style name names (style card, or style pkg.card: a
-// pub style of a package the file imports) and the scope of the file
-// that declares it, which its values are checked in; nil after an error.
-func (c *Checker) styleOf(name syntax.Expr) (*syntax.StyleDecl, *Scope) {
-	switch n := name.(type) {
-	case *syntax.Ident:
-		d := c.styles[n.Name]
-		if d == nil {
-			c.errorf(n, "unknown style %s", n.Name)
-			return nil, nil
-		}
-		return d, c.declScope(d)
-	case *syntax.MemberExpr:
-		id, ok := n.X.(*syntax.Ident)
-		pn, _ := c.lookup(idName(id, ok)).(*PkgName)
-		if !ok || pn == nil {
-			c.errorf(n.X, "a style is named style name, or style pkg.name for another package's")
-			return nil, nil
-		}
-		c.info.Uses[id] = pn
-		d := pn.Pkg.styles[n.Name.Name]
-		if d == nil {
-			c.errorf(n.Name, "%s has no style %s", pn.Pkg.Path, n.Name.Name)
-			return nil, nil
-		}
-		if !d.Pub.IsValid() {
-			c.errorf(n.Name, "style %s isn't pub in %s", n.Name.Name, pn.Pkg.Path)
-			return nil, nil
-		}
-		return d, pn.Pkg.styleScope[d]
-	}
-	c.errorf(name, "a style is named style name, or style pkg.name for another package's")
-	return nil, nil
-}
-
 func idName(id *syntax.Ident, ok bool) string {
 	if !ok || id == nil {
 		return ""
 	}
 	return id.Name
-}
-
-// styleUse expands style name: its props, set where it's applied.
-func (c *Checker) styleUse(s *syntax.StyleUse, ec *ElementCall) {
-	d, scope := c.styleOf(s.Name)
-	if d == nil {
-		return
-	}
-	savedScope := c.scope
-	c.scope = scope
-	for _, it := range d.Body.Items {
-		ps, ok := it.(*syntax.PropSet)
-		if !ok {
-			c.errorf(it, "a style holds props: name: value")
-			continue
-		}
-		c.propSet(ps.Name, ps.Value, ec, true)
-	}
-	c.scope = savedScope
 }
 
 // slotItem checks name { … }: views for a slot.

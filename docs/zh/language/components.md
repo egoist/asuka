@@ -30,7 +30,7 @@ component MessageRow(message: Message) {
 - prop：`name: value`
 - 处理函数：`on name { … }`
 - 双向绑定：`bind name: target`
-- 样式：`style name`
+- 样式：`style: card`，或一个列表 `style: [card, pink]`
 - 子元素
 
 ```asuka

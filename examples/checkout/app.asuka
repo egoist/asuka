@@ -165,7 +165,7 @@ component Checkout {
           // Apple's guidelines: Set Up Apple Pay where the user has no card
           // yet (its sheet adds one too).
           type: if w.wallet == .applePay && !w.hasCard { .setUp } else { .buy }
-          style: .automatic
+          variant: .automatic
           // What screen readers say of it (and tests tap it by).
           label: payLabel(w)
           on press {

@@ -25,7 +25,7 @@ Button("Follow") { shrink: 0 }
 View { height: 1; background: .separator }
 ```
 
-`style` は再利用するプロパティをまとめて宣言します。ブロックの中に `style name` と書くとそれが適用され、その後に書いたプロパティが優先されます。
+`style` は再利用するプロパティをまとめて宣言し、`style:` で 1 つのスタイルかスタイルのリストを適用します。同じプロパティを設定する項目が 2 つあれば後のものが優先され、ブロック自身のプロパティはリストより優先されます。
 
 ```asuka
 style card {
@@ -33,8 +33,17 @@ style card {
   background: .secondaryBackground
 }
 
-View { style card; background: .accent }
+style chip(tint: Color) {
+  padding: [4, 10]; radius: 999
+  background: tint.opacity(0.15); color: tint
+}
+
+View { style: card; background: .accent }
+Text("New") { style: chip(.green) }
+Row { style: [card, if selected { chip(.accent) }] }
 ```
+
+スタイルは関数と同じようにパラメーターを取り、自身の `style:` でほかのスタイルを適用できます。リストの中の `if` や `match` は、条件が成り立つ間だけスタイルを適用し、成り立たなくなると各プロパティを元に戻します。要素の名前を付けたスタイル（`style Button { radius: 8 }`）は、パッケージ内のその種類のすべての要素のデフォルトになります。構文の全体と、アプリの一部だけで変えられるテーマについては[スタイル](language/styles.md)を参照してください。
 
 見た目のプロパティは、ネイティブのウィジェットが対応している場合にだけ反映されます。たとえばボタンは `color` をティントカラーとして使い、ビューは `font` を無視します。
 

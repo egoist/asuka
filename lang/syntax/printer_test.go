@@ -67,7 +67,14 @@ func TestFormatGolden(t *testing.T) {
 				t.Errorf("%s: comment %q lost", name, c.Text)
 			}
 		}
-		// The trees match, comments aside.
+		// The trees match, comments aside (and the form style: replaced
+		// rewritten, as the printer does).
+		Inspect(f, func(n Node) bool {
+			if b, ok := n.(*Block); ok {
+				b.Items = styleUses(b.Items)
+			}
+			return n != nil
+		})
 		g, _ := ParseFile(NewFileSet(), name, out)
 		if a, b := shape(f), shape(g); a != b {
 			t.Errorf("%s: formatting changed the tree:\n%s", name, firstDiff(b, a))

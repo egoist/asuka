@@ -1,6 +1,6 @@
 // platform/appleauth on iOS and macOS: AuthenticationServices' Apple ID
 // provider and its controller (the system's sheet), and
-// ASAuthorizationAppleIDButton, made again when its type or style
+// ASAuthorizationAppleIDButton, made again when its type or variant
 // changes (they're fixed at init).
 import Foundation
 import AuthenticationServices
@@ -97,22 +97,22 @@ final class AppleIDProvider: Provider {
 }
 
 /// The button: Apple's, in a box that holds it (it's made again as its
-/// type, its style or, for automatic, the appearance changes).
+/// type, its variant or, for automatic, the appearance changes).
 @MainActor final class AppleSignInButton: SignInButton {
     let events: SignInButtonEvents
     let box = Box()
     var view: AsukaPlatformView { box }
-    private var type = ButtonType.signIn, style = ButtonStyle.automatic
+    private var type = ButtonType.signIn, variant = ButtonVariant.automatic
     private var radius: Double = -1
 
     init(_ events: SignInButtonEvents) {
         self.events = events
-        box.appearanceChanged = { [weak self] in if self?.style == .automatic { self?.make() } }
+        box.appearanceChanged = { [weak self] in if self?.variant == .automatic { self?.make() } }
         make()
     }
 
     func setType(_ value: ButtonType) { type = value; make() }
-    func setStyle(_ value: ButtonStyle) { style = value; make() }
+    func setVariant(_ value: ButtonVariant) { variant = value; make() }
     func setCornerRadius(_ value: Double) {
         radius = value
         if radius >= 0 { box.button?.cornerRadius = radius }
@@ -122,7 +122,7 @@ final class AppleIDProvider: Provider {
         let t: ASAuthorizationAppleIDButton.ButtonType = type == .continueWithApple ? .continue : type == .signUp ? .signUp : .signIn
         // Automatic: white in dark mode, black in light.
         let s: ASAuthorizationAppleIDButton.Style
-        switch style {
+        switch variant {
         case .white: s = .white
         case .whiteOutline: s = .whiteOutline
         case .black: s = .black

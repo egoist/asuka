@@ -27,7 +27,7 @@ type Checker struct {
 	// While checking a package.
 	pkg        *Package
 	fileScopes map[syntax.Node]*Scope // a declaration's file's scope
-	styles     map[string]*syntax.StyleDecl
+	styles     map[string]*StyleDef
 
 	// While checking a body.
 	ctx     *FuncCtx
@@ -274,7 +274,7 @@ func (c *Checker) checkFiles(p *Package, files []*syntax.SourceFile, imports map
 	saved := c.pkg
 	c.pkg = p
 	c.fileScopes = map[syntax.Node]*Scope{}
-	c.styles = map[string]*syntax.StyleDecl{}
+	c.styles = map[string]*StyleDef{}
 	p.Files = files
 	if !p.Prelude {
 		c.pkgs = append(c.pkgs, p)
@@ -309,6 +309,7 @@ func (c *Checker) checkFiles(p *Package, files []*syntax.SourceFile, imports map
 	for _, g := range p.Globals {
 		c.globalType(g)
 	}
+	c.checkStyles(p)
 	for _, t := range p.Types {
 		c.typeBodies(t)
 	}
@@ -516,15 +517,7 @@ func (c *Checker) collect(p *Package, d syntax.Decl) {
 		p.Globals = append(p.Globals, g)
 		declare(bp.Name, g)
 	case *syntax.StyleDecl:
-		if _, ok := c.styles[d.Name.Name]; ok {
-			c.errorf(d.Name, "style %s is declared twice", d.Name.Name)
-		}
-		c.styles[d.Name.Name] = d
-		if p.styles == nil {
-			p.styles, p.styleScope = map[string]*syntax.StyleDecl{}, map[*syntax.StyleDecl]*Scope{}
-		}
-		p.styles[d.Name.Name] = d
-		p.styleScope[d] = c.declScope(d)
+		c.collectStyle(p, d)
 	case *syntax.AppDecl:
 		if p.App != nil {
 			c.errorf(d, "a package has one app")
@@ -809,24 +802,26 @@ func joinPath(p []*syntax.Ident) string {
 func (c *Checker) suggest(name string) string {
 	best, bestD := "", 3
 	seen := map[string]bool{}
-	for s := c.scope; s != nil; s = s.parent {
+	// A nearer scope's name wins a tie; in one scope, the first in
+	// order does (its names are a map's: the same suggestion each run).
+	try := func(s *Scope) {
+		bestHere := ""
 		for n := range s.names {
 			if seen[n] {
 				continue
 			}
 			seen[n] = true
-			if d := editDistance(name, n); d < bestD && d < len(name) {
-				best, bestD = n, d
+			if d := editDistance(name, n); d < len(name) && (d < bestD || d == bestD && bestHere != "" && n < bestHere) {
+				best, bestD, bestHere = n, d, n
 			}
 		}
 	}
+	for s := c.scope; s != nil; s = s.parent {
+		try(s)
+	}
 	if c.scope == nil {
 		for s := c.pkg.Scope; s != nil; s = s.parent {
-			for n := range s.names {
-				if d := editDistance(name, n); d < bestD && d < len(name) {
-					best, bestD = n, d
-				}
-			}
+			try(s)
 		}
 	}
 	if best != "" {

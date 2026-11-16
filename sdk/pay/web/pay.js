@@ -14,7 +14,7 @@
 //     callbacks as on Android.
 //   - The button: Safari's own Apple Pay button (the CSS
 //     -apple-pay-button), or the one Google's API draws.
-import { Wallet, ItemKind, Network, CardKind, ContactField, Field, AskKind, ButtonType, ButtonStyle, Interval, PayError } from "./pay.asuka.js";
+import { Wallet, ItemKind, Network, CardKind, ContactField, Field, AskKind, ButtonType, ButtonVariant, Interval, PayError } from "./pay.asuka.js";
 
 const appleMethod = "https://apple.com/apple-pay";
 const googleScript = "https://pay.google.com/gp/p/js/pay.js";
@@ -387,7 +387,7 @@ const googleTypes = { plain: "plain", buy: "buy", checkout: "checkout", book: "b
 export function makePayButton(events) {
   const el = document.createElement("div");
   el.style.display = "flex";
-  let type = ButtonType.buy, style = ButtonStyle.automatic, radius = -1, networks = [];
+  let type = ButtonType.buy, variant = ButtonVariant.automatic, radius = -1, networks = [];
   let queued = false;
   const make = () => {
     queued = false;
@@ -397,7 +397,7 @@ export function makePayButton(events) {
     if (hasApplePay()) {
       const b = document.createElement("button");
       b.type = "button";
-      const s = { black: "black", white: "white", whiteOutline: "white-outline" }[name(ButtonStyle, style)] ?? (dark ? "white" : "black");
+      const s = { black: "black", white: "white", whiteOutline: "white-outline" }[name(ButtonVariant, variant)] ?? (dark ? "white" : "black");
       b.style.cssText = `-webkit-appearance: -apple-pay-button; -apple-pay-button-type: ${appleTypes[t] ?? "buy"}; -apple-pay-button-style: ${s}; width: 100%; height: 100%; border: 0;`;
       if (radius >= 0) b.style.borderRadius = `${radius}px`;
       b.onclick = () => events.press();
@@ -406,7 +406,7 @@ export function makePayButton(events) {
     }
     loadGoogle().then((api) => {
       const c = new api.PaymentsClient({ environment: "TEST" });
-      const theme = style === ButtonStyle.black ? "black" : style === ButtonStyle.white || style === ButtonStyle.whiteOutline ? "white" : dark ? "white" : "black";
+      const theme = variant === ButtonVariant.black ? "black" : variant === ButtonVariant.white || variant === ButtonVariant.whiteOutline ? "white" : dark ? "white" : "black";
       const b = c.createButton({ buttonType: googleTypes[t] ?? "pay", buttonColor: theme, buttonSizeMode: "fill", buttonRadius: radius >= 0 ? radius : undefined,
         allowedPaymentMethods: googleReady({ networks, cards: [], cardCountries: [], billing: [], google: {} }).allowedPaymentMethods, onClick: () => events.press() });
       el.replaceChildren(b);
@@ -422,7 +422,7 @@ export function makePayButton(events) {
   return {
     el,
     setType(v) { type = v; remake(); },
-    setStyle(v) { style = v; remake(); },
+    setVariant(v) { variant = v; remake(); },
     setCornerRadius(v) { radius = v; remake(); },
     setNetworks(v) { networks = v; remake(); },
     measure: (c) => [Math.max(Math.min(c?.width || 300, 600), 140), hasApplePay() ? 44 : 48],

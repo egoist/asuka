@@ -251,7 +251,7 @@ component Dates {
       inline: true
       min: now
     }
-    Text(when.format("EEE MMM d, HH:mm")) { style caption }
+    Text(when.format("EEE MMM d, HH:mm")) { style: caption }
   }
 }
 

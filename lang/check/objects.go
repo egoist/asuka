@@ -45,10 +45,12 @@ type Package struct {
 	Imports []*Package
 
 	fileScopes map[*syntax.SourceFile]*Scope
-	// styles are its style declarations, and the scope of each's file:
-	// another package uses a pub one as style pkg.name.
-	styles     map[string]*syntax.StyleDecl
-	styleScope map[*syntax.StyleDecl]*Scope
+	// Styles are its styles, by name: another package applies a pub one
+	// as pkg.name.
+	Styles     map[string]*StyleDef
+	styleOrder []*StyleDef
+	// defaults are its default styles, by the element or component.
+	defaults map[*TypeName]*StyleDef
 }
 
 // FileScope is the scope of f's imports (inside the package's), nil for
@@ -134,6 +136,9 @@ const (
 	ViewMemo                  // a match payload or if let in a view: a memo
 	SelfVar                   // a method's receiver
 	LocalFnVar                // a fn declared in a block (Var.Fn)
+	// StyleLocal is a style's parameter or use: each application of the
+	// style gives it a register, or a memo (lang/ir/style.go).
+	StyleLocal
 )
 
 // A Var is a local: a parameter, let, var, or a pattern's binding.

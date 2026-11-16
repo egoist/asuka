@@ -386,7 +386,7 @@ core/src/ui/elements_gen.h:
 | `color: active ? .accent : .label` | `ui.bind(v, AK_KEY_COLOR, thunk)` |
 | `on press { … }` | `ui.on(v, AK_EV_BUTTON_PRESS, closure)` (async when it awaits) |
 | `bind text: q` | `ui.bind(v, AK_KEY_TEXT_FIELD_TEXT, thunk{CGET q})` and `ui.on(v, AK_EV_TEXT_FIELD_CHANGE, closure(t){CSET q t})` |
-| `style card` | the style's prop sets, inlined here; a later set of the same key wins (the compiler keeps only the last) |
+| `style: [card, chip(.red), if on { pink }]` | see "Styles" |
 | children | each built, then `ui.add(v, child)` |
 | children of a `LazyChildren` element (`Tab`, `Sheet`, `Destination`, `Window`, `Boundary`, `MenuBar`) | `ui.lazy(v, builder)`, last: one builder of them all (its own FuncCtx, the checker's `CtxBuilder` at the first child), which the runtime builds when they show, under an owner of its own (a `Route`, whose builder would take its `Params`, still adds its children in place) |
 | the app block's first `Window` | `ui.main_window(v)` right after its `ui.new`, before its keys: the main window, its keys the root's options, its children the root's content |
@@ -415,6 +415,56 @@ returns, after it returns: `ui.set_outer(v, key, x)`, or
 `ui.bind_outer(v, key, thunk)` when x reads what changes. The view keeps
 a bit per style key its caller set; the component's own sets of that key
 (its bindings running again) don't apply after.
+
+## Styles
+
+A style's body is checked once, where it's declared (check/styles.go),
+in a context of its own (`CtxStyle`) whose locals are its parameters and
+its `use`s (`StyleLocal`): its props' values are bindings of that
+context, capturing them. An element's `style:` list (and the package's
+default style for its kind, first) is resolved where the element is
+written (`ElementCall.Style`) and lowered where it's built (ir/style.go):
+
+1. **Applications.** Each style applied (`card`, `chip(tint)`) is an
+   application: each parameter's argument (or its default) is evaluated
+   once into a local, a value when it reads nothing reactive, else a
+   memo (MEMO of its thunk) the props read with MREAD; each `use` is a
+   `ui.use(key)`. The application's locals are the registers the style's
+   values capture.
+2. **Flattening.** The list becomes the props it sets, in order, each
+   with its application and the conditions it's under: an entry inside
+   an `if`'s branch or a `match`'s arm is under "this branch is taken";
+   a style's variant block (on an element that takes variants) is under
+   its state.
+3. **Props under no condition** are set as the block's: the last of a
+   key, `ui.set` or `ui.bind` (`ui.set_outer`/`ui.bind_outer` for a
+   component's caller's), and none of a key the block sets.
+4. **Layers.** Each run of props under the same conditions is a layer:
+   `l = ui.layer(v, tier, state)`, `ui.layer_set(v, l, key, x)` or
+   `ui.layer_bind(v, l, key, thunk)`, and `ui.layer_when(v, l, cond)`,
+   cond a closure that's true while every condition's branch is taken
+   (an `if`'s earlier conditions false and its own true; a `match`'s
+   earlier arms not matching and its own matching). A layer leaves out a
+   key the block sets, or a later prop under no condition sets.
+
+| Source | Lowered |
+|---|---|
+| `style: [card, pink]` | card's and pink's sets, a later one of a key replacing an earlier: `ui.set(v, AK_KEY_BACKGROUND, pink's)` |
+| `style: chip(tint)` (tint state) | `m = MEMO(thunk{tint})`; `ui.bind(v, AK_KEY_BACKGROUND, thunk{MREAD m})` |
+| `style: [card, if on { pink }]` | card's sets; `l = ui.layer(v, AK_LAYER_OWN, 0)`, `ui.layer_when(v, l, closure{on})`, `ui.layer_set(v, l, AK_KEY_BACKGROUND, …)` |
+| `style: match k { 1 => a, _ => b }` | a layer per arm, its condition "k matches this arm and no earlier one" |
+| `style: button` (holding `pressed { opacity: 0.7 }`) on a View | `l = ui.layer(v, AK_LAYER_STATE, AK_STATE_PRESSED)`, `ui.layer_set(v, l, AK_KEY_OPACITY, 0.7)` |
+| `pressed { style: raised; opacity: 0.6 }` | raised's sets as `ui.variant` (the block's variant of the state), under the block's |
+| a component's caller's `style:` | as above, on the view the component returns: `ui.set_outer`, layers of tier `AK_LAYER_OUTER` |
+
+The runtime (core/src/ui/interaction.c) keeps a view's layers and lays,
+for each key a layer sets, the last of the layers that are on over the
+view's own value: by tier (own, then the caller's, then the states'),
+then a state layer by its state, then as they were made. A key a
+component's caller set takes nothing from the component's own layers.
+A layer going off puts each key back; turning one on or off allocates
+nothing. The variants are layers too: `ui.variant` sets the block's
+layer of a state, made the first time, after the style's.
 
 ## Control flow in views
 
@@ -450,7 +500,7 @@ with the state:
 |---|---|
 | `pressed { opacity: 0.6 }` | `ui.variant(v, AK_STATE_PRESSED, AK_KEY_OPACITY, 0.6)` |
 | `hovered { color: c }` (c reactive) | `ui.variant_bind(v, AK_STATE_HOVERED, AK_KEY_COLOR, thunk)` |
-| `style card` inside a variant | the style's sets, inlined into the variant |
+| `style: card` inside a variant | the style's sets, into the variant, under its own |
 | `View as card { … }` then `card.hovered` | `card` is a Ref (see "Refs"); the read is CGET of it, then `ui.state(view, AK_STATE_HOVERED)`, a tracked bool (false while it holds none) |
 | `on pressedChange(p) { … }` | `ui.on(v, AK_EV_VIEW_PRESSED_CHANGE, closure)`, as any event |
 
@@ -461,7 +511,8 @@ variant's name is a slot that doesn't exist, and says so.
 
 The runtime lays the variants of the states the view is in over its own
 values, in the states' order (a later one wins), whole values (a `font`
-in a variant replaces the font). A view reports a state from the first
+in a variant replaces the font): they're layers of the state tier (see
+"Styles"). A view reports a state from the first
 variant, read or handler that asks for it, and leaves each state it's in
 when its owner is disposed. `ref` names any element, so `card.hovered`
 works on any view the host reports states for.

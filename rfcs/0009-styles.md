@@ -1,6 +1,6 @@
 # 0009: Composable styles
 
-- **Status**: Draft
+- **Status**: Built
 - **Created**: 2026-11-17
 - **Related**: 0007 (the C core and the Asuka language), docs/language.md
   ("Styles"), docs/layout.md, lang/LOWERING.md ("Elements", "Interaction
@@ -278,21 +278,25 @@ today (lang/LOWERING.md, "Elements"):
 |---|---|
 | `style: card`, `style: [card, chip(.red)]` | each style's sets, inlined, the arguments substituted (`chip`'s `tint` is `.red`): `ui.set` of constants, `ui.bind` of what reads state; a later set of a key replaces an earlier one, and a key the block sets drops every entry's |
 | `chip(tint)`, `tint` reactive | the sets that read `tint` are bindings (`ui.bind(v, AK_KEY_COLOR, thunk{tint})`), the others constants |
-| `if c { s }` in the list | a layer: `l = ui.layer(v, rank)`, its sets `ui.layer_set(l, key, x)` / `ui.layer_bind(l, key, thunk)`, and `ui.layer_on(l, thunk{c})` |
+| `if c { s }` in the list | a layer: `l = ui.layer(v, AK_LAYER_OWN, 0)`, its sets `ui.layer_set(v, l, key, x)` / `ui.layer_bind(v, l, key, thunk)`, and `ui.layer_when(v, l, closure{c})` |
 | `if … else if … else`, `match` | a layer per branch, each on while its branch is the one taken |
-| `use t: Theme` in a style | CALLB `ui.use(key)` where the element is built, once per element (two styles using the same key share it) |
+| `use t: Theme` in a style | CALLB `ui.use(key)` where the element is built, once per application |
 | `style View { … }` | its sets inlined into every `View` written in the package, before the list's (overridden by it as any earlier set) |
-| `pressed { … }` | a layer whose condition is the pressed state (`ui.variant` becomes `ui.layer` with a state) |
-| a variant block in a style | its sets inlined into the element's variant of that state |
+| `pressed { … }` | the block's layer of the pressed state (`ui.variant` makes it the first time) |
+| a variant block in a style | a layer of the state tier, `ui.layer(v, AK_LAYER_STATE, AK_STATE_PRESSED)`, under the conditions the style is |
 
 A style without a condition compiles to exactly what `style card`
-compiles to today: no layer.
+compiled to: no layer.
 
-The ranks order a view's layers: the list's in list order, the
-caller's after the component's, the variants after all. The block's own
-keys never reach a layer: the compiler drops a conditional entry's set
-of a key the block sets, and the caller's (`ui.set_outer`) keep the bit
-per key they keep today.
+A view's layers are ordered by tier (the own, `AK_LAYER_OWN`; the
+caller's, `AK_LAYER_OUTER`; the states', `AK_LAYER_STATE`), then a
+state layer by its state, then as they were made: the list's in list
+order, a component's before its caller's (its function runs first),
+the block's variant of a state after the style's. The block's own keys
+never reach a layer: the compiler drops a conditional entry's set of a
+key the block sets, or a later unconditional entry sets, and a key a
+component's caller sets (`ui.set_outer`, the bit per key it kept)
+takes nothing from the component's own layers.
 
 ## The core
 
@@ -304,17 +308,19 @@ view is in. A layer generalizes the variant:
 
 ```c
 typedef struct {
-	uint16_t rank;     // its place among the view's layers
-	uint8_t state;     // AK_STATE_* for a variant; 0: on while `on`
-	bool on;
-	AK_VEC(ak_style_ent) ents;
+	uint8_t tier;   // AK_LAYER_OWN, AK_LAYER_OUTER, AK_LAYER_STATE
+	uint8_t state;  // an AK_STATE_ bit: on only while the view is in it
+	bool on;        // its condition's (true without one)
+	bool block;     // the block's variant of its state
 } ak_layer;
 ```
 
-`ak_ix` holds a vector of layers in rank order instead of variants;
-`apply(e, key)` starts from the base, lays the value of each layer
-that's on (a state layer: while the view is in its state), and sets the
-key. A condition's binding toggles `on` and applies the layer's keys.
+`ak_ix` holds the view's layers (by id, as they were made) and their
+values (`(layer, key, value)`) instead of variants; `apply(e, key)`
+starts from the base, lays over it the value of the last layer that's
+on and sets the key, and sets it on the view. A condition's binding
+(`ui.layer_when`)
+toggles `on` and applies the layer's keys.
 
 - A view's layers and their entries are made with the element, so a
   condition changing allocates nothing (the hot-path rule).
@@ -328,10 +334,14 @@ key. A condition's binding toggles `on` and applies the layer's keys.
 - A layer belongs to the view's owner: disposing it drops the layer's
   bindings with the view's.
 
-Tests (core/test): a layer on and off returns the key to its base and
-to unset; layers in rank order; a state layer under a conditional one
-of a higher rank; no allocation toggling a layer (`ak_alloc_count`);
-the variants' tests unchanged through the layer path.
+Tests (core/test/interaction_test.c): a layer on and off returns the
+key to its base and to unset, on a Text; the later of two layers wins;
+the tiers' order (the caller's base over the own layer, its layer over
+it, a variant over all); a state layer with a condition; no allocation
+toggling layers (`ak_alloc_count`); the variants' tests unchanged
+through the layer path. The language's: lang/compile/testdata/ui/
+styles.asuka (on the VM and compiled to C) and lang/check/testdata/
+errors/styles.asuka.
 
 ## Migration
 
@@ -388,19 +398,34 @@ caller's style through `style:`.
   run-time path it needs is most of the core's work in this RFC, for
   cases a `match` in the list covers.
 
-## Open questions
+## Resolved while building
 
-1. **The caller's layer and the variants.** The order puts the
-   component's variants over the caller's props (6 over 5). Check how
-   `ui.set_outer` and `ak_ix_set_base` compose today, and decide
-   whether a caller's prop should instead beat the component's
-   `pressed`.
-2. **Default styles across packages.** Lexical defaults keep libraries
-   their own; an app that wants its buttons and a library's to match
-   has the library take its caller's `style:`. Is there a case for an
-   app-wide default a library opts into?
-3. **Animations.** A layer turning on inside `animate { }` animates its
-   keys as a prop set does. Confirm with motion.md's rules.
+1. **The caller's layer and the variants.** A component's variants stay
+   over its caller's props (6 over 5), as `ui.set_outer` and
+   `ak_ix_set_base` already composed: a caller's `background` replaces
+   the component's base, and the component's `pressed` still darkens
+   it, so its feedback survives restyling. A caller's own variants
+   (from a style it applies, on a component whose one element is a
+   container) are state layers made after the component's, so they win
+   the states they set.
+2. **Default styles across packages.** Lexical only: an app's `style
+   Button` restyles the Buttons it writes, never a library's
+   internals. A library that wants to match takes its caller's
+   `style:`. An opt-in app-wide default would make a library's look
+   depend on who imports it; it's not needed for the cases here.
+3. **Animations.** A layer's condition is a binding like any other, so
+   a change made inside `animate { }` sends its keys in that flush, and
+   they animate as a prop set's do.
+4. **`style` as a prop name.** `style:` is every element's, so a
+   component can't declare `prop style`. The two native components that
+   had one (platform/pay's `PayButton`, platform/appleauth's
+   `SignInButton`) take `variant` (`ButtonVariant`) instead, as
+   `Button` does.
+5. **A match in a style list** binds no names (an arm's payload can't
+   reach the styles), and needn't cover every case.
+6. **The old item.** `style name` is an error naming the fix, and
+   `asuka fmt` rewrites it (`style a; style b` becomes `style: [a,
+   b]`).
 
 ## Milestones
 

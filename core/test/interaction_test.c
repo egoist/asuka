@@ -128,6 +128,224 @@ TEST(bound_variants) {
 	ak_release(tint);
 }
 
+// ---- Layers: a style: list's conditional entries, the caller's ----
+
+static void *flag_a, *flag_b, *flag_c;
+
+static void *cell_bool(bool v) { return ak_vm_cell_new((ak_val){.i = v}, AK_K_BOOL, NULL).p; }
+static void write_b(void *cell, bool v) { ak_vm_cell_set(cell, (ak_val){.i = v}); }
+
+static ak_val read_a(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	return ak_vm_cell_get(flag_a, true);
+}
+
+static ak_val read_b(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	return ak_vm_cell_get(flag_b, true);
+}
+
+static ak_val read_c(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	return ak_vm_cell_get(flag_c, true);
+}
+
+static void when(ak_view *v, uint16_t layer, ak_invoke_fn f) {
+	ak_closure *t = fn(f, NULL);
+	ak_ui_layer_when(v, layer, t);
+	ak_release(t);
+}
+
+static ak_view *layered;
+
+static ak_val layers_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	// A Text: layers are any element's, not only a container's.
+	ak_view *t = text("x");
+	set_i(t, AK_KEY_BACKGROUND, (int64_t)sem(AK_SEMANTIC_COLOR_SECONDARY_BACKGROUND));
+	uint16_t la = ak_ui_layer(t, AK_LAYER_OWN, 0);
+	when(t, la, read_a);
+	ak_ui_layer_set(t, la, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_RED)});
+	ak_ui_layer_set(t, la, AK_KEY_OPACITY, (ak_val){.f = 0.5});
+	uint16_t lb = ak_ui_layer(t, AK_LAYER_OWN, 0);
+	when(t, lb, read_b);
+	ak_ui_layer_set(t, lb, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_BLUE)});
+	add(col, t);
+	layered = t;
+	return (ak_val){.p = col};
+}
+
+// A layer's keys are laid over the view's own while its condition holds,
+// and go back (to the own value, or unset) when it stops; of two on, the
+// one made later wins a key both set.
+TEST(style_layers) {
+	flag_a = cell_bool(false), flag_b = cell_bool(false);
+	ak_uitest *a = mount(layers_app, NULL);
+	ak_fake_view *v = nth(a, AK_KIND_TEXT, 0);
+	REQUIRE(v);
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_SECONDARY_BACKGROUND));
+	CHECK_EQ_F(ak_fake_float(v, AK_PROP_OPACITY), 0);  // never sent: a layer that's off sends nothing
+	write_b(flag_a, true);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_RED));
+	CHECK_EQ_F(ak_fake_float(v, AK_PROP_OPACITY), 0.5);
+	write_b(flag_b, true);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_BLUE));
+	CHECK_EQ_F(ak_fake_float(v, AK_PROP_OPACITY), 0.5);
+	write_b(flag_a, false);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_BLUE));
+	CHECK_EQ_F(ak_fake_float(v, AK_PROP_OPACITY), 1);
+	write_b(flag_b, false);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_SECONDARY_BACKGROUND));
+	// The own value changing under a layer that's on.
+	write_b(flag_a, true);
+	ak_ui_flush();
+	set_i(layered, AK_KEY_BACKGROUND, (int64_t)sem(AK_SEMANTIC_COLOR_GREEN));
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_RED));
+	write_b(flag_a, false);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_GREEN));
+	done(a);
+	ak_release(flag_a), ak_release(flag_b);
+}
+
+static ak_val tiers_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	ak_view *v = ak_ui_new(AK_EL_VIEW);
+	set(v, AK_KEY_PADDING, edges4(4, 4, 4, 4));
+	// The component's own: a layer on while a holds, and pressed.
+	uint16_t own = ak_ui_layer(v, AK_LAYER_OWN, 0);
+	when(v, own, read_a);
+	ak_ui_layer_set(v, own, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_RED)});
+	ak_ui_layer_set(v, own, AK_KEY_OPACITY, (ak_val){.f = 0.5});
+	ak_ui_variant(v, AK_STATE_PRESSED, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_SEPARATOR)});
+	// Its caller's: the background, and a layer on while c holds.
+	ak_ui_set_outer(v, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_GREEN)});
+	uint16_t outer = ak_ui_layer(v, AK_LAYER_OUTER, 0);
+	when(v, outer, read_c);
+	ak_ui_layer_set(v, outer, AK_KEY_BORDER_COLOR, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_ACCENT)});
+	ak_ui_layer_set(v, outer, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_BLUE)});
+	add(col, v);
+	return (ak_val){.p = col};
+}
+
+// The order of the tiers: the caller's background is over the
+// component's own layer (whose other keys still apply), the caller's
+// layer over the caller's own values, and a variant over every layer.
+TEST(style_layer_tiers) {
+	flag_a = cell_bool(true), flag_c = cell_bool(false);
+	ak_uitest *a = mount(tiers_app, NULL);
+	ak_fake_view *v = nth(a, AK_KIND_VIEW, 1);
+	REQUIRE(v);
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_GREEN));
+	CHECK_EQ_F(ak_fake_float(v, AK_PROP_OPACITY), 0.5);
+	write_b(flag_c, true);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_BLUE) && border(v) == sem(AK_SEMANTIC_COLOR_ACCENT));
+	set_state(a, v, AK_EVENT_PRESSED, true);
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_SEPARATOR));
+	set_state(a, v, AK_EVENT_PRESSED, false);
+	write_b(flag_c, false);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_GREEN) && border(v) == 0);
+	write_b(flag_a, false);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_GREEN));
+	CHECK_EQ_F(ak_fake_float(v, AK_PROP_OPACITY), 1);
+	done(a);
+	ak_release(flag_a), ak_release(flag_c);
+}
+
+static ak_val cond_variant_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	ak_view *v = ak_ui_new(AK_EL_VIEW);
+	set(v, AK_KEY_PADDING, edges4(4, 4, 4, 4));
+	// A style's pressed { … } in a conditional entry, then the block's.
+	uint16_t l = ak_ui_layer(v, AK_LAYER_STATE, AK_STATE_PRESSED);
+	when(v, l, read_a);
+	ak_ui_layer_set(v, l, AK_KEY_OPACITY, (ak_val){.f = 0.25});
+	ak_ui_layer_set(v, l, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_RED)});
+	ak_ui_variant(v, AK_STATE_PRESSED, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_SEPARATOR)});
+	add(col, v);
+	return (ak_val){.p = col};
+}
+
+// A state's layer with a condition: on while both hold; the block's
+// variant of the state is over the style's.
+TEST(conditional_variants) {
+	flag_a = cell_bool(false);
+	ak_uitest *a = mount(cond_variant_app, NULL);
+	ak_fake_view *v = nth(a, AK_KIND_VIEW, 1);
+	REQUIRE(v);
+	CHECK(ak_fake_listens(v, AK_EVENT_PRESSED));
+	set_state(a, v, AK_EVENT_PRESSED, true);
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_SEPARATOR));
+	CHECK_EQ_F(ak_fake_float(v, AK_PROP_OPACITY), 0);  // unset: its layer is off
+	write_b(flag_a, true);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_SEPARATOR));
+	CHECK_EQ_F(ak_fake_float(v, AK_PROP_OPACITY), 0.25);
+	set_state(a, v, AK_EVENT_PRESSED, false);
+	CHECK(bg(v) == 0);
+	CHECK_EQ_F(ak_fake_float(v, AK_PROP_OPACITY), 1);
+	done(a);
+	ak_release(flag_a);
+}
+
+// Turning layers on and off allocates nothing (the fake host's copies
+// of what it's sent aside).
+static ak_fake *layer_host;
+
+static void layer_apply(void *ctx, const uint8_t *buf, size_t len) {
+	AK_UNUSED(ctx);
+	uint64_t n = ak_alloc_count;
+	ak_fake_apply(layer_host, buf, len);
+	ak_alloc_count = n;
+}
+
+static void layer_measure(void *ctx, uint32_t id, float w, float h, float aw, float ah, float *ow, float *oh) {
+	AK_UNUSED(ctx);
+	uint64_t n = ak_alloc_count;
+	ak_fake_measure(layer_host, id, w, h, aw, ah, ow, oh);
+	ak_alloc_count = n;
+}
+
+TEST(toggling_layers_allocates_nothing) {
+	setup();
+	flag_a = cell_bool(false), flag_b = cell_bool(false);
+	layer_host = ak_fake_new();
+	ak_ui_init(&(ak_host){NULL, layer_apply, layer_measure});
+	ak_ui_set_environment(&layer_host->env);
+	ak_closure *c = fn(layers_app, NULL);
+	ak_ui_mount(c);
+	ak_release(c);
+	for (int i = 1; i <= 4; i++) {
+		ak_fake_reset(layer_host);
+		write_b(flag_a, i % 2), write_b(flag_b, i % 3 == 0);
+		ak_ui_flush();
+	}
+	uint64_t allocs = 0;
+	for (int i = 0; i < 200; i++) {
+		ak_fake_reset(layer_host);
+		uint64_t before = ak_alloc_count;
+		write_b(flag_a, i % 2), write_b(flag_b, i % 3 == 0);
+		ak_ui_flush();
+		allocs += ak_alloc_count - before;
+	}
+	if (allocs != 0) T_FAIL("%llu allocations in 200 updates", (unsigned long long)allocs);
+	CHECK(ak_fake_count(layer_host, AK_OP_SET_PROP) > 0);  // the work was done
+	ak_ui_unmount();
+	ak_fake_free(layer_host);
+	ak_release(flag_a), ak_release(flag_b);
+}
+
 // ---- A view's states as values (TestInteractionGroupAndPeer) ----
 
 static ak_view *card;

@@ -94,7 +94,7 @@ component Motion {
         }
       }
       Text("Drag the dot; it springs back.") {
-        style caption
+        style: caption
         grow: 1
       }
     }
@@ -255,7 +255,7 @@ component Turner {
         if g.state == .ended || g.state == .cancelled { baseScale = scale }
       }
     }
-    Text("Turned {angle.fixed(0)}°, at {scale.fixed(1)}×") { style caption }
+    Text("Turned {angle.fixed(0)}°, at {scale.fixed(1)}×") { style: caption }
   }
 }
 

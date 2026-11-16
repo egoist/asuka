@@ -8,6 +8,12 @@
 //	ui.variant              v: View, state: int (AK_STATE_*), key: int
 //	                        (a style key), value: the key's kind            -
 //	ui.variant_bind         v, state, key, thunk: fn() -> the key's kind     -
+//	ui.layer                v: View, tier: int (AK_LAYER_*), state: int
+//	                        (AK_STATE_*, 0: none)                          int (the layer)
+//	ui.layer_set            v: View, layer: int, key: int (a style key),
+//	                        value: the key's kind                          -
+//	ui.layer_bind           v, layer, key, thunk: fn() -> the key's kind   -
+//	ui.layer_when           v: View, layer: int, cond: fn() -> bool        -
 //	ui.state                v: View, state: int                            bool (tracked)
 //	ui.use_keys             keys: [Shortcut]                               -
 //	ui.animate              anim: Animation?, body: fn()                   -
@@ -93,6 +99,25 @@ static ak_val b_variant(ak_val *a, uint32_t n) {
 
 static ak_val b_variant_bind(ak_val *a, uint32_t n) {
 	ak_ui_variant_bind(view_arg(a, n, 0, "ui.variant_bind"), (uint8_t)a[1].i, (uint16_t)a[2].i, a[3].p);
+	return none();
+}
+
+static ak_val b_layer(ak_val *a, uint32_t n) {
+	return (ak_val){.i = ak_ui_layer(view_arg(a, n, 0, "ui.layer"), (uint8_t)a[1].i, (uint8_t)a[2].i)};
+}
+
+static ak_val b_layer_set(ak_val *a, uint32_t n) {
+	ak_ui_layer_set(view_arg(a, n, 0, "ui.layer_set"), (uint16_t)a[1].i, (uint16_t)a[2].i, a[3]);
+	return none();
+}
+
+static ak_val b_layer_bind(ak_val *a, uint32_t n) {
+	ak_ui_layer_bind(view_arg(a, n, 0, "ui.layer_bind"), (uint16_t)a[1].i, (uint16_t)a[2].i, a[3].p);
+	return none();
+}
+
+static ak_val b_layer_when(ak_val *a, uint32_t n) {
+	ak_ui_layer_when(view_arg(a, n, 0, "ui.layer_when"), (uint16_t)a[1].i, a[2].p);
 	return none();
 }
 
@@ -436,7 +461,8 @@ void ak_ui_ext_builtins_init(void) {
 		const char *name;
 		ak_builtin_fn fn;
 	} t[] = {
-		{"ui.variant", b_variant}, {"ui.variant_bind", b_variant_bind}, {"ui.state", b_state}, {"ui.use_keys", b_use_keys},
+		{"ui.variant", b_variant}, {"ui.variant_bind", b_variant_bind}, {"ui.layer", b_layer}, {"ui.layer_set", b_layer_set},
+		{"ui.layer_bind", b_layer_bind}, {"ui.layer_when", b_layer_when}, {"ui.state", b_state}, {"ui.use_keys", b_use_keys},
 		{"ui.animate", b_animate}, {"ui.animate_wait", b_animate_wait}, {"ui.animating", b_animating}, {"ui.on_frame", b_on_frame}, {"ui.frames", b_frames}, {"ui.play", b_play},
 		{"ui.pause", b_pause}, {"ui.seek", b_seek}, {"ui.web_eval", b_web_eval}, {"ui.web_navigate", b_web_navigate},
 		{"ui.web_eval_result", b_web_eval_result}, {"ui.web_cookies", b_web_cookies}, {"ui.insert_text", b_insert_text},

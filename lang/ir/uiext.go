@@ -82,6 +82,7 @@ func (b *fb) refView(cell int) int {
 // with the state.
 func (b *fb) variants(v int, ec *check.ElementCall) {
 	for _, va := range ec.Variants {
+		b.variantStyle(v, va, prelude.StateID(va.State))
 		state := b.konst(int64(prelude.StateID(va.State)))
 		last := map[*check.Member]int{}
 		for i, p := range va.Props {
@@ -413,6 +414,8 @@ func (b *fb) nativeView(ec *check.ElementCall) int {
 			style = append(style, p)
 		}
 	}
+	// Its style: list, under the block's style props.
+	b.applyStyle(ec.Style, styleTarget{v: v, block: blockKeys("", style, true)})
 	// The style, a later set of a key winning.
 	last := map[*check.Member]int{}
 	for i, p := range style {

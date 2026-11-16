@@ -396,9 +396,23 @@ sheets as its owner goes.
 
 Every element takes the style props, which are keys like any other
 (lang/prelude/elements.go): a constant is set once, a value that reads
-state is a binding that sends only that prop as it changes. A `style
-name { … }` declaration is a set of them, inlined where it's used; a
-later prop of the same key wins.
+state is a binding that sends only that prop as it changes. A `style`
+declaration is a set of them (with parameters, `style chip(tint:
+Color)`, it's a function of them), applied with the `style:` prop: one
+style or a list, a later entry winning a key, the block's own props
+over the list (rfcs/0009). Every style is known to the compiler (a list
+holds names and calls of styles, never a value made at run time), so
+it's inlined where it's applied: its arguments evaluated once per
+element (a memo when they read state), its props set as the block's
+are. An entry under an `if` or a `match` is a **layer** of the view
+(core/src/ui/interaction.c): its props are laid over the view's own
+values while its condition holds, and each key goes back when it stops;
+turning a layer on or off allocates nothing. The variants are layers
+of the same kind, on while the view is in their state. A style may
+`use` a provided store (a theme a part of the app replaces), found
+where it's applied, and a style named after an element is that kind's
+default in its package, under the list: a package's defaults never
+restyle another package's components.
 
 Layout props map to CSS flexbox with React Native's defaults (column
 direction, border-box): `width`, `height`, `minWidth`, `maxWidth`, ...
@@ -607,7 +621,12 @@ layers, each built on the one below:
   style:
   - A variant sets only the props it names (a `font`'s fields one by
     one), and its values are bindings like any prop's.
-  - Variants apply in the order hovered, pressed, dragging, dragOver.
+  - Variants apply in the order hovered, pressed, dragging, dragOver,
+    over every other layer: a style's variants (a style may hold them),
+    then the block's own.
+  - A component's variants are over its caller's props: a caller's
+    `background` replaces the component's, and the component's
+    `pressed` still darkens it.
   - A container with variants always makes a view of its own (it isn't
     flattened).
   - Other elements take no variants (the checker says so).
@@ -1420,7 +1439,8 @@ its line and column.
 
 **The accent color** (`accent = "#7c3aed"`) is the one color an app's
 brand sets on native controls; the controls are the platform's, so
-Asuka has no theme of its own over them (a style changes one view). It
+Asuka has no theme of its own over them (a style changes the views it's
+applied to; a package's default styles, its own elements). It
 travels with the app's code, not the shell: the compiler builds it into
 the module's init, and each root, as it mounts, sends the `Accent`
 command before any view is made. That way the dev player, which runs

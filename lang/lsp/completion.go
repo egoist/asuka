@@ -81,7 +81,7 @@ var (
 	importLine = regexp.MustCompile(`^\s*import\s+([\w@./-]*)$`)
 	onLine     = regexp.MustCompile(`(^|[;{])\s*on\s+$`)
 	bindLine   = regexp.MustCompile(`(^|[;{])\s*bind\s+$`)
-	styleLine  = regexp.MustCompile(`(^|[;{])\s*style\s+$`)
+	styleLine  = regexp.MustCompile(`(^|[;{])\s*style\s*:\s*(\[([^\]]*,)?\s*)?$`) // style: …, style: [a, …
 	emitLine   = regexp.MustCompile(`(^|[;{])\s*emit\s+$`)
 	propLine   = regexp.MustCompile(`(^|[;{])\s*([A-Za-z_]\w*)\s*:\s*$`)
 )
@@ -931,7 +931,8 @@ func (c *completer) emits(path []syntax.Node) {
 	}
 }
 
-// styles completes style name.
+// styles completes an entry of a style: list: the package's styles (a
+// style with parameters, as its call).
 func (c *completer) styles() {
 	if c.fc.pkg == nil {
 		return
@@ -939,7 +940,11 @@ func (c *completer) styles() {
 	for _, f := range c.fc.pkg.Files {
 		for _, d := range f.Decls {
 			if s, ok := d.(*syntax.StyleDecl); ok {
-				c.add(CompletionItem{Label: s.Name.Name, Kind: kindValue, Detail: "style", Documentation: c.doc(docOf(s))}, prioMember)
+				item := CompletionItem{Label: s.Name.Name, Kind: kindValue, Detail: "style", Documentation: c.doc(docOf(s))}
+				if s.Params != nil {
+					item.Kind, item.InsertText, item.InsertTextFormat = kindFunction, s.Name.Name+"($0)", 2
+				}
+				c.add(item, prioMember)
 			}
 		}
 	}

@@ -2075,7 +2075,7 @@ component SignIn {
   Column {
     appleauth.SignInButton {
       type: .continueWithApple
-      style: .automatic   // black in light mode, white in dark
+      variant: .automatic   // black in light mode, white in dark
       height: 44
       on press {
         do {
@@ -2150,7 +2150,7 @@ component Checkout {
     if wallet.value?.canPay ?? false {
       pay.PayButton {
         type: .buy
-        style: .automatic   // black in light mode, white in dark
+        variant: .automatic   // black in light mode, white in dark
         height: 48
         on press {
           do {
@@ -2178,7 +2178,7 @@ wallet's own (`PKPaymentButton`, Google's `PayButton`, Safari's and
 Google's on the web), whose brand guidelines ask that apps don't draw
 their own: its words (its `type`: `.buy`, `.checkout`, `.book`,
 `.donate`, `.order`, `.subscribe`, `.plain`, and Apple's others) and logo
-are in the user's language, and its `style` is `.black` on light
+are in the user's language, and its `variant` is `.black` on light
 backgrounds, `.white` on dark ones, `.whiteOutline` on white, or
 `.automatic`. Its height is the wallet's (44 points on iOS, 30 on the
 Mac, Google's 48); give it the width. Where Apple Pay has no card yet,

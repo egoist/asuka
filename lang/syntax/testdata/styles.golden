@@ -1,5 +1,5 @@
-SourceFile 1:1-40:3
-  Decls: [4]
+SourceFile 1:1-63:3
+  Decls: [7]
     StyleDecl 1:1-6:2
       Name: Ident "card" 1:7-1:11
       Body: Block 1:12-6:2
@@ -43,104 +43,238 @@ SourceFile 1:1-40:3
           PropSet 11:3-11:14
             Name: Ident "color" 11:3-11:8
             Value: BasicLit 11:10-11:14 Kind=color Value="#333"
-    ComponentDecl 14:1-27:2 blank
-      Name: Ident "Card" 14:11-14:15
-      Params: ParamList 14:15-14:32
-        List: [1]
-          Param 14:16-14:31
-            Name: Ident "heading" 14:16-14:23
-            Type: NamedType 14:25-14:31
+    StyleDecl 14:1-19:2 blank
+      Name: Ident "chip" 14:7-14:11
+      Params: ParamList 14:11-14:42
+        List: [2]
+          Param 14:12-14:23
+            Name: Ident "tint" 14:12-14:16
+            Type: NamedType 14:18-14:23
               Path: [1]
-                Ident "string" 14:25-14:31
-      Body: Block 14:33-27:2
-        Items: [2]
-          PropDecl 15:3-15:22
-            Name: Ident "children" 15:8-15:16
-            Type: NamedType 15:18-15:22
+                Ident "Color" 14:18-14:23
+          Param 14:25-14:41
+            Name: Ident "size" 14:25-14:29
+            Type: NamedType 14:31-14:36
               Path: [1]
-                Ident "View" 15:18-15:22
-          ExprStmt 17:3-26:4 blank
-            X: CallExpr 17:3-26:4
-              Fun: Ident "Column" 17:3-17:9
-              Block: Block 17:10-26:4
-                Items: [5]
-                  StyleUse 18:5-18:15
-                    Name: Ident "card" 18:11-18:15
-                  PropSet 19:5-19:11
-                    Name: Ident "gap" 19:5-19:8
-                    Value: BasicLit 19:10-19:11 Kind=integer Value="8"
-                  PropSet 20:5-20:16
-                    Name: Ident "width" 20:5-20:10
-                    Value: BasicLit 20:12-20:16 Kind=length Value="100%"
-                  ExprStmt 21:5-24:6
-                    X: CallExpr 21:5-24:6
-                      Fun: Ident "Text" 21:5-21:9
-                      Args: ArgList 21:9-21:18
-                        List: [1]
-                          Arg 21:10-21:17
-                            Value: Ident "heading" 21:10-21:17
-                      Block: Block 21:19-24:6
-                        Items: [2]
-                          StyleUse 22:7-22:18
-                            Name: Ident "title" 22:13-22:18
-                          PropSet 23:7-23:21
-                            Name: Ident "color" 23:7-23:12
-                            Value: BasicLit 23:14-23:21 Kind=color Value="#ff3b30"
-                  ExprStmt 25:5-25:13
-                    X: Ident "children" 25:5-25:13
-    ComponentDecl 29:1-40:2 blank
-      Name: Ident "Dashboard" 29:11-29:20
-      Body: Block 29:21-40:2
+                Ident "float" 14:31-14:36
+            Default: BasicLit 14:39-14:41 Kind=integer Value="13"
+      Body: Block 14:43-19:2
+        Items: [4]
+          PropSet 15:3-15:19
+            Name: Ident "padding" 15:3-15:10
+            Value: ArrayExpr 15:12-15:19
+              Elems: [2]
+                BasicLit 15:13-15:14 Kind=integer Value="4"
+                BasicLit 15:16-15:18 Kind=integer Value="10"
+          PropSet 16:3-16:14
+            Name: Ident "radius" 16:3-16:9
+            Value: BasicLit 16:11-16:14 Kind=integer Value="999"
+          PropSet 17:3-17:14
+            Name: Ident "color" 17:3-17:8
+            Value: Ident "tint" 17:10-17:14
+          SlotItem 18:3-18:27
+            Name: Ident "pressed" 18:3-18:10
+            Body: Block 18:11-18:27
+              Items: [1]
+                PropSet 18:13-18:25
+                  Name: Ident "opacity" 18:13-18:20
+                  Value: BasicLit 18:22-18:25 Kind=float Value="0.7"
+    StyleDecl 21:1-25:2 blank pub
+      Name: Ident "largeCard" 21:11-21:20
+      Body: Block 21:21-25:2
+        Items: [3]
+          UseDecl 22:3-22:15
+            Name: Ident "t" 22:7-22:8
+            Type: NamedType 22:10-22:15
+              Path: [1]
+                Ident "Theme" 22:10-22:15
+          PropSet 23:3-23:28
+            Name: Ident "style" 23:3-23:8
+            Value: ArrayExpr 23:10-23:28
+              Elems: [2]
+                Ident "card" 23:11-23:15
+                CallExpr 23:17-23:27
+                  Fun: Ident "chip" 23:17-23:21
+                  Args: ArgList 23:21-23:27
+                    List: [1]
+                      Arg 23:22-23:26
+                        Value: ImplicitMember 23:22-23:26
+                          Name: Ident "red" 23:23-23:26
+          PropSet 24:3-24:21
+            Name: Ident "padding" 24:3-24:10
+            Value: MemberExpr 24:12-24:21
+              X: Ident "t" 24:12-24:13
+              Name: Ident "padding" 24:14-24:21
+    StyleDecl 27:1-27:39 blank
+      Name: Ident "View" 27:7-27:11
+      Body: Block 27:12-27:39
         Items: [1]
-          ExprStmt 30:3-39:4
-            X: CallExpr 30:3-39:4
-              Fun: Ident "Grid" 30:3-30:7
-              Block: Block 30:8-39:4
+          PropSet 27:14-27:37
+            Name: Ident "borderColor" 27:14-27:25
+            Value: ImplicitMember 27:27-27:37
+              Name: Ident "separator" 27:28-27:37
+    ComponentDecl 29:1-42:2 blank
+      Name: Ident "Card" 29:11-29:15
+      Params: ParamList 29:15-29:32
+        List: [1]
+          Param 29:16-29:31
+            Name: Ident "heading" 29:16-29:23
+            Type: NamedType 29:25-29:31
+              Path: [1]
+                Ident "string" 29:25-29:31
+      Body: Block 29:33-42:2
+        Items: [2]
+          PropDecl 30:3-30:22
+            Name: Ident "children" 30:8-30:16
+            Type: NamedType 30:18-30:22
+              Path: [1]
+                Ident "View" 30:18-30:22
+          ExprStmt 32:3-41:4 blank
+            X: CallExpr 32:3-41:4
+              Fun: Ident "Column" 32:3-32:9
+              Block: Block 32:10-41:4
+                Items: [5]
+                  PropSet 33:5-33:49
+                    Name: Ident "style" 33:5-33:10
+                    Value: ArrayExpr 33:12-33:49
+                      Elems: [2]
+                        Ident "card" 33:13-33:17
+                        IfExpr 33:19-33:48
+                          Cond: Ident "selected" 33:22-33:30
+                          Then: Block 33:31-33:48
+                            Items: [1]
+                              ExprStmt 33:33-33:46
+                                X: CallExpr 33:33-33:46
+                                  Fun: Ident "chip" 33:33-33:37
+                                  Args: ArgList 33:37-33:46
+                                    List: [1]
+                                      Arg 33:38-33:45
+                                        Value: ImplicitMember 33:38-33:45
+                                          Name: Ident "accent" 33:39-33:45
+                  PropSet 34:5-34:11
+                    Name: Ident "gap" 34:5-34:8
+                    Value: BasicLit 34:10-34:11 Kind=integer Value="8"
+                  PropSet 35:5-35:16
+                    Name: Ident "width" 35:5-35:10
+                    Value: BasicLit 35:12-35:16 Kind=length Value="100%"
+                  ExprStmt 36:5-39:6
+                    X: CallExpr 36:5-39:6
+                      Fun: Ident "Text" 36:5-36:9
+                      Args: ArgList 36:9-36:18
+                        List: [1]
+                          Arg 36:10-36:17
+                            Value: Ident "heading" 36:10-36:17
+                      Block: Block 36:19-39:6
+                        Items: [2]
+                          PropSet 37:7-37:19
+                            Name: Ident "style" 37:7-37:12
+                            Value: Ident "title" 37:14-37:19
+                          PropSet 38:7-38:21
+                            Name: Ident "color" 38:7-38:12
+                            Value: BasicLit 38:14-38:21 Kind=color Value="#ff3b30"
+                  ExprStmt 40:5-40:13
+                    X: Ident "children" 40:5-40:13
+    ComponentDecl 44:1-63:2 blank
+      Name: Ident "Dashboard" 44:11-44:20
+      Body: Block 44:21-63:2
+        Items: [1]
+          ExprStmt 45:3-62:4
+            X: CallExpr 45:3-62:4
+              Fun: Ident "Grid" 45:3-45:7
+              Block: Block 45:8-62:4
                 Items: [4]
-                  PropSet 31:5-31:29
-                    Name: Ident "columns" 31:5-31:12
-                    Value: ArrayExpr 31:14-31:29
+                  PropSet 46:5-46:29
+                    Name: Ident "columns" 46:5-46:12
+                    Value: ArrayExpr 46:14-46:29
                       Elems: [3]
-                        BasicLit 31:15-31:18 Kind=length Value="1fr"
-                        BasicLit 31:20-31:23 Kind=length Value="1fr"
-                        BasicLit 31:25-31:28 Kind=length Value="2fr"
-                  PropSet 32:5-32:12
-                    Name: Ident "gap" 32:5-32:8
-                    Value: BasicLit 32:10-32:12 Kind=integer Value="12"
-                  ExprStmt 33:5-35:6
-                    X: CallExpr 33:5-35:6
-                      Fun: Ident "Card" 33:5-33:9
-                      Args: ArgList 33:9-33:18
+                        BasicLit 46:15-46:18 Kind=length Value="1fr"
+                        BasicLit 46:20-46:23 Kind=length Value="1fr"
+                        BasicLit 46:25-46:28 Kind=length Value="2fr"
+                  PropSet 47:5-47:12
+                    Name: Ident "gap" 47:5-47:8
+                    Value: BasicLit 47:10-47:12 Kind=integer Value="12"
+                  ExprStmt 48:5-58:6
+                    X: CallExpr 48:5-58:6
+                      Fun: Ident "Card" 48:5-48:9
+                      Args: ArgList 48:9-48:18
                         List: [1]
-                          Arg 33:10-33:17
-                            Value: StringLit 33:10-33:17 Segments=["Today"]
-                      Block: Block 33:19-35:6
+                          Arg 48:10-48:17
+                            Value: StringLit 48:10-48:17 Segments=["Today"]
+                      Block: Block 48:19-58:6
                         Items: [1]
-                          ExprStmt 34:7-34:20
-                            X: CallExpr 34:7-34:20
-                              Fun: Ident "Text" 34:7-34:11
-                              Args: ArgList 34:11-34:20
+                          ExprStmt 49:7-57:8
+                            X: CallExpr 49:7-57:8
+                              Fun: Ident "Text" 49:7-49:11
+                              Args: ArgList 49:11-49:20
                                 List: [1]
-                                  Arg 34:12-34:19
-                                    Value: StringLit 34:12-34:19 Segments=["Sunny"]
-                  ExprStmt 36:5-38:6
-                    X: CallExpr 36:5-38:6
-                      Fun: Ident "Card" 36:5-36:9
-                      Args: ArgList 36:9-36:17
-                        List: [1]
-                          Arg 36:10-36:16
-                            Value: StringLit 36:10-36:16 Segments=["Week"]
-                      Block: Block 36:18-38:6
-                        Items: [1]
-                          ExprStmt 37:7-37:36
-                            X: CallExpr 37:7-37:36
-                              Fun: Ident "Text" 37:7-37:11
-                              Args: ArgList 37:11-37:19
-                                List: [1]
-                                  Arg 37:12-37:18
-                                    Value: StringLit 37:12-37:18 Segments=["Rain"]
-                              Block: Block 37:20-37:36
+                                  Arg 49:12-49:19
+                                    Value: StringLit 49:12-49:19 Segments=["Sunny"]
+                              Block: Block 49:21-57:8
                                 Items: [1]
-                                  PropSet 37:22-37:34
-                                    Name: Ident "opacity" 37:22-37:29
-                                    Value: BasicLit 37:31-37:34 Kind=float Value="0.6"
+                                  PropSet 50:9-56:10
+                                    Name: Ident "style" 50:9-50:14
+                                    Value: ArrayExpr 50:16-56:10
+                                      Elems: [2]
+                                        IfExpr 51:11-51:72
+                                          Cond: Ident "urgent" 51:14-51:20
+                                          Then: Block 51:21-51:35
+                                            Items: [1]
+                                              ExprStmt 51:23-51:33
+                                                X: CallExpr 51:23-51:33
+                                                  Fun: Ident "chip" 51:23-51:27
+                                                  Args: ArgList 51:27-51:33
+                                                    List: [1]
+                                                      Arg 51:28-51:32
+                                                        Value: ImplicitMember 51:28-51:32
+                                                          Name: Ident "red" 51:29-51:32
+                                          Else: IfExpr 51:41-51:72
+                                            Cond: Ident "read" 51:44-51:48
+                                            Then: Block 51:49-51:58
+                                              Items: [1]
+                                                ExprStmt 51:51-51:56
+                                                  X: Ident "title" 51:51-51:56
+                                            Else: Block 51:64-51:72
+                                              Items: [1]
+                                                ExprStmt 51:66-51:70
+                                                  X: Ident "card" 51:66-51:70
+                                        MatchExpr 52:11-55:12
+                                          Subject: Ident "kind" 52:17-52:21
+                                          Arms: [2]
+                                            MatchArm 53:13-53:43
+                                              Pattern: CasePat 53:13-53:18 implicit
+                                                Path: [1]
+                                                  Ident "note" 53:14-53:18
+                                              Body: CallExpr 53:22-53:43
+                                                Fun: Ident "chip" 53:22-53:26
+                                                Args: ArgList 53:26-53:43
+                                                  List: [2]
+                                                    Arg 53:27-53:32
+                                                      Value: ImplicitMember 53:27-53:32
+                                                        Name: Ident "blue" 53:28-53:32
+                                                    Arg 53:34-53:42
+                                                      Label: Ident "size" 53:34-53:38
+                                                      Value: BasicLit 53:40-53:42 Kind=integer Value="15"
+                                            MatchArm 54:13-54:20
+                                              Pattern: WildcardPat 54:13-54:14
+                                              Body: ArrayExpr 54:18-54:20
+                  ExprStmt 59:5-61:6
+                    X: CallExpr 59:5-61:6
+                      Fun: Ident "Card" 59:5-59:9
+                      Args: ArgList 59:9-59:17
+                        List: [1]
+                          Arg 59:10-59:16
+                            Value: StringLit 59:10-59:16 Segments=["Week"]
+                      Block: Block 59:18-61:6
+                        Items: [1]
+                          ExprStmt 60:7-60:36
+                            X: CallExpr 60:7-60:36
+                              Fun: Ident "Text" 60:7-60:11
+                              Args: ArgList 60:11-60:19
+                                List: [1]
+                                  Arg 60:12-60:18
+                                    Value: StringLit 60:12-60:18 Segments=["Rain"]
+                              Block: Block 60:20-60:36
+                                Items: [1]
+                                  PropSet 60:22-60:34
+                                    Name: Ident "opacity" 60:22-60:29
+                                    Value: BasicLit 60:31-60:34 Kind=float Value="0.6"

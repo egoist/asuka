@@ -221,12 +221,19 @@ pub style card {
 }
 
 style secret { opacity: 0.5 }
+
+pub style tinted(tint: Color, on: bool) {
+  style: [card, if on { glow(tint) }]
+}
+
+style glow(tint: Color) { borderColor: tint; border: 2 }
 `)}
 	res := Files(map[string][]byte{"a.asuka": []byte(`import ./theme
 
 component Card {
+  state lit = true
   View {
-    style theme.card
+    style: [theme.card, theme.tinted(#00ff00, on: lit)]
     radius: 4
     Text("in a card")
   }
@@ -247,8 +254,11 @@ test "a package's style" {
 	if err != nil || !strings.Contains(out, "ok a package's style") {
 		t.Fatalf("got (%v):\n%s", err, out)
 	}
-	// The padding is the layout's: the text sits inside it.
-	for _, want := range []string{"SetFrame 3 12,12 ", "CornerRadius=4"} {
+	// The padding is the layout's: the text sits inside it (and the
+	// border's 2). A style with parameters from the package, whose own
+	// condition applies another of its styles (not pub) with its
+	// argument.
+	for _, want := range []string{"SetFrame 3 14,14 ", "CornerRadius=4", "BorderColor=#200ff00ff", "BorderWidth=2"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the ops lack %q:\n%s", want, out)
 		}
@@ -257,7 +267,7 @@ test "a package's style" {
 		t.Errorf("the style's radius won over the view's own:\n%s", out)
 	}
 
-	res = Files(map[string][]byte{"a.asuka": []byte("import ./theme\n\ncomponent C { View { style theme.secret } }\n\napp { C() }\n")},
+	res = Files(map[string][]byte{"a.asuka": []byte("import ./theme\n\ncomponent C { View { style: theme.secret } }\n\napp { C() }\n")},
 		&Options{Packages: map[string]map[string][]byte{"./theme": theme}})
 	if got := res.Err(); got == nil || !strings.Contains(got.Error(), "style secret isn't pub in ./theme") {
 		t.Errorf("a style that isn't pub: %v", got)

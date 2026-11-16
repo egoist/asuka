@@ -345,7 +345,7 @@ func (b *fb) readVar(v *check.Var, n syntax.Node) int {
 		t := b.temp(b.kind(v.Type))
 		b.emit(op("AGET"), t, r)
 		return t
-	case v.Kind == check.ViewMemo:
+	case v.Kind == check.ViewMemo, v.Kind == check.StyleLocal && b.l.styleMemo[v]:
 		t := b.temp(b.kind(v.Type))
 		b.emit(op("MREAD"), t, r)
 		return t

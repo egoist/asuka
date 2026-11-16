@@ -392,7 +392,8 @@ pub struct Request {
 /// available() says the wallet can pay; elsewhere it's nothing.
 pub native component PayButton() {
   prop type: ButtonType = .buy
-  prop style: ButtonStyle = .automatic
+  /// Its colors.
+  prop variant: ButtonVariant = .automatic
   /// Rounds it (negative: the wallet's own).
   prop cornerRadius: float = -1
   /// What Google Pay's button shows a card of the user's for.
@@ -424,7 +425,7 @@ pub enum ButtonType {
 }
 
 /// The button's colors.
-pub enum ButtonStyle {
+pub enum ButtonVariant {
   /// Black in light mode, white in dark.
   automatic
   black

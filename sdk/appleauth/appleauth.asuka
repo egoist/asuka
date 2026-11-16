@@ -63,7 +63,7 @@ pub enum ButtonType {
 }
 
 /// The button's colors.
-pub enum ButtonStyle {
+pub enum ButtonVariant {
   /// On light backgrounds.
   black
   /// On dark ones.
@@ -102,7 +102,8 @@ native interface Provider {
 /// says. Its press calls signIn.
 pub native component SignInButton() {
   prop type: ButtonType = .signIn
-  prop style: ButtonStyle = .automatic
+  /// Its colors.
+  prop variant: ButtonVariant = .automatic
   /// Rounds it (negative: the system's).
   prop cornerRadius: float = -1
   event press

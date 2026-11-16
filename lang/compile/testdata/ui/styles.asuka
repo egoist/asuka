@@ -1,0 +1,227 @@
+// Styles (rfcs/0009): style: lists, composition, parameters,
+// conditional entries, variants in a style, use in a style, default
+// styles, and a component's caller's styles.
+
+style card {
+  padding: 16
+  radius: 12
+  background: #111111
+}
+
+style pink { background: #ff00ff }
+
+style big {
+  style: card
+  padding: 24
+}
+
+style chip(tint: Color, size: float = 13) {
+  background: tint
+  font: Font(size: size)
+}
+
+style ringed {
+  border: 3
+  borderColor: #00ff00
+}
+
+style press {
+  pressed { opacity: 0.25 }
+}
+
+// A style's own condition, on its parameter.
+style toggled(hot: bool) {
+  style: [card, if hot { pink }]
+}
+
+component Probe {
+  state on = false
+  state tint = #0000ff
+  state kind = 0
+  Column {
+    Text("list") { style: [card, pink]; label: "list" }
+    Text("block wins") { background: #222222; style: card; label: "block" }
+    Text("composed") { style: big; label: "big" }
+    Text("chip") { style: chip(tint, size: 20); label: "chip" }
+    Text("cond") { style: [card, if on { [pink, ringed] }]; label: "cond" }
+    Text("later") { style: [if on { pink }, card]; label: "later" }
+    Text("chain") {
+      style: if kind == 1 { pink } else if kind == 2 { chip(#333333) } else { card }
+      label: "chain"
+    }
+    Text("match") {
+      style: match kind {
+        1 => ringed
+        2 => [pink, ringed]
+        _ => []
+      }
+      label: "match"
+    }
+    View {
+      style: press
+      label: "press"
+      on press {}
+      Text("press me")
+    }
+    Text("nested") { style: [if on { toggled(kind > 0) }]; label: "nested" }
+    Button("toggle") { on press { on = !on } }
+    Button("tint") { on press { tint = #ff0000 } }
+    Button("kind") { on press { kind += 1 } }
+  }
+}
+
+// The id of the view labeled label, as the ops name it.
+fn idOf(ops: string, label: string) -> string {
+  for line in ops.lines() {
+    if line.hasSuffix(" A11yLabel=\"{label}\"") {
+      return line.split(" ")[1]
+    }
+  }
+  return "?"
+}
+
+test "a list's order, the block over it, composition, arguments" {
+  let app = mount(Probe())
+  app.expect("list")
+  let ops = app.ops()
+  // A later entry over an earlier one; the block over the list.
+  expect(ops.contains("SetProp 2 Background=#2ff00ffff"), ops)
+  expect(!ops.contains("SetProp 2 Background=#2111111ff"), ops)
+  expect(ops.contains("SetProp 3 Background=#2222222ff") && !ops.contains("SetProp 3 Background=#2111111ff"), ops)
+  // A style's own props over the style it applies.
+  expect(ops.contains("SetProp 4 ContentInset=[24 24 24 24]") && !ops.contains("SetProp 4 ContentInset=[16 16 16 16]"), ops)
+  // Arguments: a state's, and a constant.
+  expect(ops.contains("SetProp 5 Background=#20000ffff") && ops.contains("SetProp 5 FontSize=20"), ops)
+  // Nothing of a condition that's false, nor of a match's empty arm.
+  expect(!ops.contains("SetProp 6 Border") && !ops.contains("SetProp 9 Background"), ops)
+  // A style's variant has the view report its state.
+  expect(ops.contains("Listen 10 Pressed"), ops)
+  // An argument that reads state: only what reads it changes.
+  app.tap("tint")
+  let tinted = app.ops()
+  expect(tinted.contains("SetProp 5 Background=#2ff0000ff"), tinted)
+  expect(!tinted.contains("SetProp 5 FontSize"), tinted)
+}
+
+test "conditional entries are laid on and taken back" {
+  let app = mount(Probe())
+  app.expect("cond")
+  let made = app.ops()
+  let cond = idOf(made, "cond")
+  let later = idOf(made, "later")
+  app.tap("toggle")
+  let on = app.ops()
+  expect(on.contains("SetProp {cond} Background=#2ff00ffff") && on.contains("SetProp {cond} BorderWidth=3"), on)
+  // A later entry under no condition is over a conditional one.
+  expect(!on.contains("SetProp {later} "), on)
+  app.tap("toggle")
+  let off = app.ops()
+  expect(off.contains("SetProp {cond} Background=#2111111ff"), off)
+  expect(off.contains("SetProp {cond} BorderWidth=0"), off)
+}
+
+test "an if chain and a match choose their branch" {
+  let app = mount(Probe())
+  app.expect("chain")
+  let made = app.ops()
+  let chain = idOf(made, "chain")
+  let m = idOf(made, "match")
+  app.tap("kind")
+  let one = app.ops()
+  expect(one.contains("SetProp {chain} Background=#2ff00ffff"), one)
+  expect(one.contains("SetProp {chain} ContentInset=[0 0 0 0]"), one) // card's, taken back
+  expect(one.contains("SetProp {m} BorderWidth=3"), one)
+  app.tap("kind")
+  let two = app.ops()
+  expect(two.contains("SetProp {chain} Background=#2333333ff") && two.contains("SetProp {chain} FontSize=13"), two)
+  expect(two.contains("SetProp {m} Background=#2ff00ffff"), two)
+  app.tap("kind")
+  let three = app.ops()
+  expect(three.contains("SetProp {chain} Background=#2111111ff"), three)
+  expect(three.contains("SetProp {m} BorderWidth=0"), three)
+}
+
+test "a style's variant" {
+  let app = mount(Probe())
+  app.expect("press me")
+  let v = idOf(app.ops(), "press")
+  app.press("press me")
+  let down = app.ops()
+  expect(down.contains("SetProp {v} Opacity=0.25"), down)
+  app.press("press me", down: false)
+  expect(app.ops().contains("SetProp {v} Opacity=1"))
+}
+
+test "conditions inside conditions, on a style's parameter" {
+  let app = mount(Probe())
+  app.expect("nested")
+  let made = app.ops()
+  let v = idOf(made, "nested")
+  expect(!made.contains("SetProp {v} Background"), made)
+  app.tap("toggle")
+  let on = app.ops()
+  expect(on.contains("SetProp {v} Background=#2111111ff") && on.contains("SetProp {v} ContentInset=[16 16 16 16]"), on)
+  app.tap("kind")
+  let hot = app.ops()
+  expect(hot.contains("SetProp {v} Background=#2ff00ffff"), hot)
+  expect(!hot.contains("SetProp {v} ContentInset"), hot) // only what the condition changes
+  app.tap("toggle")
+  let off = app.ops()
+  expect(off.contains("SetProp {v} ContentInset=[0 0 0 0]") && off.contains("SetProp {v} Background=#0"), off)
+}
+
+// use in a style, a default style, a caller's conditional entries.
+
+pub store Theme(r: float = 8) {
+  pub state radius = r
+}
+
+style themed {
+  use t: Theme
+  radius: t.radius
+}
+
+/// The package's Badges are on a dark background.
+style Badge { background: #010101 }
+
+component Badge(text: string) {
+  Text(text) { style: themed; label: text }
+}
+
+component Dense {
+  provide Theme(r: 2)
+  Badge("dense")
+}
+
+component Themes {
+  provide Theme()
+  state hot = false
+  Column {
+    Badge("plain")
+    Badge("hot") { style: [if hot { pink }]; padding: 5 }
+    Dense()
+    Button("heat") { on press { hot = !hot } }
+  }
+}
+
+test "use, a default style and the caller's conditions" {
+  let app = mount(Themes())
+  app.expect("plain")
+  let ops = app.ops()
+  let plain = idOf(ops, "plain")
+  let hot = idOf(ops, "hot")
+  let dense = idOf(ops, "dense")
+  // The theme provided above, and a part's own.
+  expect(ops.contains("SetProp {plain} CornerRadius=8") && ops.contains("SetProp {dense} CornerRadius=2"), ops)
+  // The package's default style for Badge, as its caller's.
+  expect(ops.contains("SetProp {plain} Background=#2010101ff") && ops.contains("SetProp {dense} Background=#2010101ff"), ops)
+  expect(ops.contains("SetProp {hot} ContentInset=[5 5 5 5]"), ops)
+  app.tap("heat")
+  let heated = app.ops()
+  expect(heated.contains("SetProp {hot} Background=#2ff00ffff"), heated)
+  app.tap("heat")
+  let cold = app.ops()
+  expect(cold.contains("SetProp {hot} Background=#2010101ff"), cold)
+}
+
+app { Probe() }

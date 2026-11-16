@@ -4,7 +4,7 @@ component Account {
   state status = ""
   Column {
     appleauth.SignInButton {
-      style: .black
+      variant: .black
       height: 44
       on press {
         do {

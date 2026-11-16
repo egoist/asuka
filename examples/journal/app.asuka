@@ -118,7 +118,7 @@ component Journal {
     gap: 12
     Text("Journal") { font: .largeTitle.bold() }
     if !account.available {
-      Text("Sign in to iCloud, with iCloud Drive on, to keep your journal on all your devices.") { style hint }
+      Text("Sign in to iCloud, with iCloud Drive on, to keep your journal on all your devices.") { style: hint }
     }
     Row {
       gap: 8
@@ -150,7 +150,7 @@ component Journal {
           Button(f.name.trimSuffix(".txt")) {
             on press { await read(f.path) }
           }
-          Text(statusOf(f)) { style hint }
+          Text(statusOf(f)) { style: hint }
         }
       }
     }
@@ -185,7 +185,7 @@ component Journal {
           align: .center
           Text(status) {
             grow: 1
-            style hint
+            style: hint
           }
           Button("Save") {
             variant: .filled

@@ -14,7 +14,7 @@ component Bad {
     dragging { colour: .red } // ERROR "a variant holds style props, and colour isn't one \(did you mean color\?\)"
     dragOver { keys: [] } // ERROR "keys don't change with a state"
     pressed { on press { } } // ERROR "a variant holds style props only"
-    hovered { style tall }
+    hovered { style: tall }
     Text("x") { pressed { opacity: 0.5 } } // ERROR "Text takes no variants"
     Card() { pressed { opacity: 0.5 } } // ERROR "Card takes no variants"
     Card() as c // ERROR "as names an element's view, and Card is a component"

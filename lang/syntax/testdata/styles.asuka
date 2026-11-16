@@ -11,15 +11,30 @@ style title {
   color: #333
 }
 
+style chip(tint: Color, size: float = 13) {
+  padding: [4, 10]
+  radius: 999
+  color: tint
+  pressed { opacity: 0.7 }
+}
+
+pub style largeCard {
+  use t: Theme
+  style: [card, chip(.red)]
+  padding: t.padding
+}
+
+style View { borderColor: .separator }
+
 component Card(heading: string) {
   prop children: View
 
   Column {
-    style card
+    style: [card, if selected { chip(.accent) }]
     gap: 8
     width: 100%
     Text(heading) {
-      style title
+      style: title
       color: #ff3b30
     }
     children
@@ -31,7 +46,15 @@ component Dashboard {
     columns: [1fr, 1fr, 2fr]
     gap: 12
     Card("Today") {
-      Text("Sunny")
+      Text("Sunny") {
+        style: [
+          if urgent { chip(.red) } else if read { title } else { card },
+          match kind {
+            .note => chip(.blue, size: 15)
+            _ => []
+          },
+        ]
+      }
     }
     Card("Week") {
       Text("Rain") { opacity: 0.6 }

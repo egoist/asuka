@@ -1424,7 +1424,7 @@ component SignIn {
   Column {
     appleauth.SignInButton {
       type: .continueWithApple
-      style: .automatic   // ライトモードでは黒、ダークモードでは白
+      variant: .automatic   // ライトモードでは黒、ダークモードでは白
       height: 44
       on press {
         do {
@@ -1481,7 +1481,7 @@ component Checkout {
     if wallet.value?.canPay ?? false {
       pay.PayButton {
         type: .buy
-        style: .automatic   // ライトモードでは黒、ダークモードでは白
+        variant: .automatic   // ライトモードでは黒、ダークモードでは白
         height: 48
         on press {
           do {
@@ -1502,7 +1502,7 @@ component Checkout {
 async fn charge(token: string) throws {}
 ```
 
-`pay.available(request)` は、リクエストで受け付けるカードについて、ウォレットに何ができるかを返します。`wallet`、`canPay`（ボタンを表示してよいか）、`hasCard`（ウォレットが受け付けるカードをユーザーが持っているか）です。`PayButton` は `canPay` が真のときだけ表示してください。これはウォレット純正のボタン（`PKPaymentButton`、Google の `PayButton`、Web では Safari と Google のボタン）で、各ブランドのガイドラインは、アプリが独自のボタンを描かないよう求めています。文言（`type`：`.buy`、`.checkout`、`.book`、`.donate`、`.order`、`.subscribe`、`.plain`、そのほかの Apple の種類）とロゴはユーザーの言語で表示されます。`style` は、明るい背景では `.black`、暗い背景では `.white`、白い背景では `.whiteOutline`、または `.automatic` です。高さはウォレットが決めます（iOS では 44 ポイント、Mac では 30、Google は 48）。幅はアプリが指定してください。Apple Pay にまだカードがない場合、Apple のガイドラインでは `.setUp` ボタンを表示します。このボタンは `pay.setUp()` を呼んでカードを追加します（購入ボタンでもかまいません。そのシートでもカードを追加できます）。Google Pay では、シートそのものがカードを追加します。
+`pay.available(request)` は、リクエストで受け付けるカードについて、ウォレットに何ができるかを返します。`wallet`、`canPay`（ボタンを表示してよいか）、`hasCard`（ウォレットが受け付けるカードをユーザーが持っているか）です。`PayButton` は `canPay` が真のときだけ表示してください。これはウォレット純正のボタン（`PKPaymentButton`、Google の `PayButton`、Web では Safari と Google のボタン）で、各ブランドのガイドラインは、アプリが独自のボタンを描かないよう求めています。文言（`type`：`.buy`、`.checkout`、`.book`、`.donate`、`.order`、`.subscribe`、`.plain`、そのほかの Apple の種類）とロゴはユーザーの言語で表示されます。`variant` は、明るい背景では `.black`、暗い背景では `.white`、白い背景では `.whiteOutline`、または `.automatic` です。高さはウォレットが決めます（iOS では 44 ポイント、Mac では 30、Google は 48）。幅はアプリが指定してください。Apple Pay にまだカードがない場合、Apple のガイドラインでは `.setUp` ボタンを表示します。このボタンは `pay.setUp()` を呼んでカードを追加します（購入ボタンでもかまいません。そのシートでもカードを追加できます）。Google Pay では、シートそのものがカードを追加します。
 
 `pay.pay(request)` はシートを表示し、シートが閉じると `Payment` を返します。ユーザーがキャンセルしたときは `PayError.canceled` を投げます（ほかのシートが表示されているあいだは `.busy`）。金額は、通貨の主単位で表した 10 進数の文字列です（`"12.75"`。Google Pay では小数点以下 2 桁まで。割引は負の値にします）。`total` のラベルは、カードの利用明細に表示されるとおりの事業者名です（Apple Pay のシートでは「Pay Asuka Tea」）。`items` はその上に並ぶ明細行で、その `kind` は Google Pay のシートで使われます。リクエストではほかに、受け付けるカード（`networks`、`cards`、`cardCountries`）、配送先と請求先の連絡先として求める項目（`.name`、`.email`、`.phone`、`.address`）、`shippingType` と `shippingMethods`（最初のものが選ばれた状態になります）、Google Pay の配送先の国（`shippingCountries`）、Apple Pay のクーポンコード（`coupons`）を指定します。`recurring` を指定すると、定期的な請求と無料トライアルを持つサブスクリプションの支払いになります。`deferred` はあとで請求する支払い（ホテルなど）、`automaticReload` は残高のチャージです。ウォレットはこれから発生する請求を表示し、そのトークンはそれらの請求のためのマーチャントトークンになります。
 

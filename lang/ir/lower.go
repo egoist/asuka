@@ -36,6 +36,9 @@ type Lowerer struct {
 	pendingExtern  []pendingExtern
 	stringsFn      *fb
 	catalog        int // the app's catalog's global, or -1
+	// styleMemo: a style's local (check.StyleLocal) whose register, in
+	// the application being lowered, holds a memo (style.go).
+	styleMemo map[*check.Var]bool
 }
 
 // Options say how to lower.

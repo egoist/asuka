@@ -394,7 +394,48 @@ func (p *printer) block(b *Block) {
 		p.write("{}")
 		return
 	}
-	p.body(b.Lbrace, b.Comment, itemNodes(b.Items), b.Dangling, b.Rbrace, len(b.Items) == 1, "")
+	items := styleUses(b.Items)
+	p.body(b.Lbrace, b.Comment, itemNodes(items), b.Dangling, b.Rbrace, len(items) == 1, "")
+}
+
+// styleUses rewrites the form style: replaced, style name, as style:
+// name, and a run of them as one list (style a; style b is style: [a,
+// b]). A use with comments of its own starts another run.
+func styleUses(items []Item) []Item {
+	has := false
+	for _, it := range items {
+		if _, ok := it.(*StyleUse); ok {
+			has = true
+		}
+	}
+	if !has {
+		return items
+	}
+	var out []Item
+	for i := 0; i < len(items); i++ {
+		u, ok := items[i].(*StyleUse)
+		if !ok {
+			out = append(out, items[i])
+			continue
+		}
+		run := []Expr{u.Name}
+		j := i + 1
+		for ; j < len(items); j++ {
+			v, ok := items[j].(*StyleUse)
+			if !ok || v.Trivia.HasComments() {
+				break
+			}
+			run = append(run, v.Name)
+		}
+		var value Expr = u.Name
+		end := items[j-1].(*StyleUse).End
+		if len(run) > 1 {
+			value = &ArrayExpr{Span: Span{run[0].Range().Start, run[len(run)-1].Range().End}, Elems: run}
+		}
+		out = append(out, &PropSet{Span: Span{u.Start, end}, Trivia: u.Trivia, Name: &Ident{Span: Span{u.Start, u.Start + 5}, Name: "style"}, Value: value})
+		i = j - 1
+	}
+	return out
 }
 
 func itemNodes(items []Item) []Node {
@@ -655,7 +696,11 @@ func (p *printer) node(n Node) {
 		p.typ(n.Type)
 	case *StyleDecl:
 		p.pub(n.Pub)
-		p.write("style " + n.Name.Name + " ")
+		p.write("style " + n.Name.Name)
+		if n.Params != nil {
+			p.params(n.Params)
+		}
+		p.write(" ")
 		p.block(n.Body)
 	case *StateDecl:
 		p.pub(n.Pub)
@@ -758,7 +803,7 @@ func (p *printer) node(n Node) {
 		p.write("bind " + n.Name.Name + ": ")
 		p.expr(n.Target)
 	case *StyleUse:
-		p.write("style ")
+		p.write("style: ")
 		p.expr(n.Name)
 	case *SlotItem:
 		p.write(n.Name.Name + " ")

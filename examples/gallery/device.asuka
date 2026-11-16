@@ -16,7 +16,7 @@ component Services {
   state copied = false
 
   Section("Services") {
-    Text("The segment in Controls is kept: relaunch to see it.") { style caption }
+    Text("The segment in Controls is kept: relaunch to see it.") { style: caption }
     Row {
       gap: 12
       Button(if copied { "Copied" } else { "Copy link" }) {
@@ -117,7 +117,7 @@ component Documents {
         }
       }
     }
-    Text(status) { style caption }
+    Text(status) { style: caption }
   }
 }
 
@@ -221,8 +221,8 @@ component PlatformSection {
         on press { await remind() }
       }
     }
-    Text(secret) { style caption }
-    Text(where) { style caption }
+    Text(secret) { style: caption }
+    Text(where) { style: caption }
     Row {
       gap: 8
       for p in photos key p {
@@ -257,7 +257,7 @@ component Crashes {
   }
 
   Section("Crash reports") {
-    Text("Crash the app, open it again: the crash is here, with what the app was doing.") { style caption }
+    Text("Crash the app, open it again: the crash is here, with what the app was doing.") { style: caption }
     Row {
       gap: 12
       wrap: true
@@ -307,7 +307,7 @@ component Crashes {
               lines: 2
             }
             Text(describe(r)) {
-              style caption
+              style: caption
               lines: 2
             }
           }
@@ -387,7 +387,7 @@ component CameraScreen {
         }
         Text(status) {
           grow: 1
-          style caption
+          style: caption
         }
         Button(if recording { "Stop" } else { "Record" }) {
           icon: "video"

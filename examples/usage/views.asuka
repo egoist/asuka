@@ -26,7 +26,7 @@ component Badge(service: string, size: float) {
     justify: .center
     Shape((w, h) => if ios { Path().roundedRect(0, 0, w, h, radius: size * 0.225) } else { cookie(w, h) }) {
       fill: claudeCream
-      style fill
+      style: fill
     }
     svg.View(iconClaude) {
       color: claude
@@ -203,12 +203,12 @@ component UsageChart(w: Window) {
       on layout(f) { size = f }
       // The limit, and nothing used.
       Shape((width, _) => Path().move(pad, pad).line(width - pad, pad)) {
-        style fill
+        style: fill
         stroke: Color.secondaryLabel.opacity(0.5)
         dash: [2, 4]
       }
       Shape((width, height) => Path().move(pad, height - pad).line(width - pad, height - pad)) {
-        style fill
+        style: fill
         stroke: .separator
       }
       Shape((width, height) => {
@@ -217,11 +217,11 @@ component UsageChart(w: Window) {
         let (firstX, _) = pts[0]
         return polyline(pts).line(lastX, height - pad).line(firstX, height - pad).close()
       }) {
-        style fill
+        style: fill
         fill: Color.accent.opacity(0.15)
       }
       Shape((width, height) => polyline(points(w, clock, width, height))) {
-        style fill
+        style: fill
         stroke: .accent
         lineWidth: 3
         lineCap: .round
@@ -234,19 +234,19 @@ component UsageChart(w: Window) {
           let (x1, y1) = forecastEnd(w, clock, width, height)
           return Path().move(x0, y0).line(x1, y1)
         }) {
-          style fill
+          style: fill
           stroke: paceColor(pace)
           lineWidth: 3
           lineCap: .round
           dash: [7, 7]
         }
         Shape((width, height) => dot(forecastEnd(w, clock, width, height), 5)) {
-          style fill
+          style: fill
           fill: paceColor(pace)
         }
       }
       Shape((width, height) => dot(points(w, clock, width, height).last()!, 8)) {
-        style fill
+        style: fill
         fill: .accent
         stroke: .secondaryGroupedBackground
         lineWidth: 3

@@ -145,8 +145,9 @@ void ak_ix_free(ak_view *e) {
 	if (!ix) return;
 	ak_rootkeys_free(ix->wkeys);
 	for (int i = 0; i < AK_STATE__COUNT; i++) ak_signal_drop(&ix->sig[i]);
-	for (uint32_t i = 0; i < ix->variants.len; i++) ak_release_val(ix->variants.data[i].v, (ak_kind)ak_key_kinds[ix->variants.data[i].key]);
-	ak_vec_free(&ix->variants);
+	for (uint32_t i = 0; i < ix->lents.len; i++) ak_release_val(ix->lents.data[i].v, (ak_kind)ak_key_kinds[ix->lents.data[i].key]);
+	ak_vec_free(&ix->lents);
+	ak_vec_free(&ix->layers);
 	for (uint32_t i = 0; i < ix->base.len; i++) ak_release_val(ix->base.data[i].v, (ak_kind)ak_key_kinds[ix->base.data[i].key]);
 	ak_vec_free(&ix->base);
 	ak_free(ix->key_order);
@@ -162,16 +163,28 @@ static int state_index(uint8_t bit) {
 	return i;
 }
 
-static ak_variant *find_variant(ak_ix *ix, uint8_t state, uint16_t key) {
-	for (uint32_t i = 0; i < ix->variants.len; i++)
-		if (ix->variants.data[i].state == state && ix->variants.data[i].key == key) return &ix->variants.data[i];
+static ak_layer_ent *find_ent(ak_ix *ix, uint16_t layer, uint16_t key) {
+	for (uint32_t i = 0; i < ix->lents.len; i++)
+		if (ix->lents.data[i].layer == layer && ix->lents.data[i].key == key) return &ix->lents.data[i];
 	return NULL;
 }
 
-static bool has_variants(const ak_ix *ix, uint16_t key) {
-	for (uint32_t i = 0; ix && i < ix->variants.len; i++)
-		if (ix->variants.data[i].key == key) return true;
+static bool has_layers(const ak_ix *ix, uint16_t key) {
+	for (uint32_t i = 0; ix && i < ix->lents.len; i++)
+		if (ix->lents.data[i].key == key) return true;
 	return false;
+}
+
+// on reports whether a layer is laid on: its condition holds, and the
+// view is in its state.
+static bool layer_on(const ak_ix *ix, const ak_layer *l) { return l->on && (!l->state || (ix->state & l->state)); }
+
+// later reports whether layer a is after layer b in the order.
+static bool later(const ak_ix *ix, uint16_t a, uint16_t b) {
+	const ak_layer *la = &ix->layers.data[a], *lb = &ix->layers.data[b];
+	if (la->tier != lb->tier) return la->tier > lb->tier;
+	if (la->state != lb->state) return la->state > lb->state;  // bits in the states' order
+	return a > b;
 }
 
 static ak_style_ent *find_base(ak_ix *ix, uint16_t key) {
@@ -183,34 +196,48 @@ static ak_style_ent *find_base(ak_ix *ix, uint16_t key) {
 // key_unset is what a key is when it's not set (its prelude default).
 static ak_val key_unset(uint16_t key) { return key == AK_KEY_OPACITY ? (ak_val){.f = 1} : (ak_val){0}; }
 
-// apply lays key's value on e: its style's own, with the variants of the
-// states e is in over it, in order (a later state's wins).
+// apply lays key's value on e: its style's own, with the last of the
+// layers on that set it over it. A key its component's caller set takes
+// no value from e's own layers: the caller's is over them.
 static void apply(ak_view *e, uint16_t key) {
 	ak_ix *ix = e->ix;
 	ak_style_ent *b = find_base(ix, key);
 	ak_val v = b ? b->v : key_unset(key);
-	for (uint8_t bit = 1; bit < (1 << AK_STATE__COUNT); bit <<= 1) {
-		if (!(ix->state & bit)) continue;
-		ak_variant *var = find_variant(ix, bit, key);
-		if (var) v = var->v;
+	bool outer = (e->outer >> key) & 1;
+	const ak_layer_ent *best = NULL;
+	for (uint32_t i = 0; i < ix->lents.len; i++) {
+		const ak_layer_ent *ent = &ix->lents.data[i];
+		if (ent->key != key) continue;
+		const ak_layer *l = &ix->layers.data[ent->layer];
+		if (!layer_on(ix, l) || (outer && l->tier == AK_LAYER_OWN)) continue;
+		if (!best || later(ix, ent->layer, best->layer)) best = ent;
 	}
+	if (best) v = best->v;
 	ak_view *t = e->cls->style_target ? e->cls->style_target(e, key) : e;
 	if (t) ak_style_set(t, key, v);
 }
 
-static void apply_all(ak_view *e) {
+// apply_layer applies each key layer sets (a key once: a layer holds a
+// key once), or every layer's when layer is -1.
+static void apply_layer(ak_view *e, int layer) {
 	ak_ix *ix = e->ix;
-	for (uint32_t i = 0; i < ix->variants.len; i++) {
-		uint16_t key = ix->variants.data[i].key;
+	for (uint32_t i = 0; i < ix->lents.len; i++) {
+		const ak_layer_ent *ent = &ix->lents.data[i];
+		if (layer >= 0) {
+			if (ent->layer == layer) apply(e, ent->key);
+			continue;
+		}
 		bool seen = false;
-		for (uint32_t j = 0; j < i; j++) seen |= ix->variants.data[j].key == key;
-		if (!seen) apply(e, key);
+		for (uint32_t j = 0; j < i && !seen; j++) seen = ix->lents.data[j].key == ent->key;
+		if (!seen) apply(e, ent->key);
 	}
 }
 
+static void apply_all(ak_view *e) { apply_layer(e, -1); }
+
 bool ak_ix_set_base(ak_view *v, uint16_t key, ak_val value) {
 	ak_ix *ix = v->ix;
-	if (!has_variants(ix, key)) return false;
+	if (!has_layers(ix, key)) return false;
 	ak_kind k = (ak_kind)ak_key_kinds[key];
 	ak_style_ent *b = find_base(ix, key);
 	ak_retain_val(value, k);
@@ -281,51 +308,79 @@ static void set_state(ak_view *e, uint8_t bit, bool on, uint16_t handler) {
 	}
 }
 
-// ---- Variants and states, to compiled code ----
+// ---- Layers, variants and states, to compiled code ----
 
-static void check_variant(const ak_view *v, uint8_t state, uint16_t key) {
-	if (!v->el || !ak_el_variants[v->el]) ak_panic("ui: %s takes no variants", v->el ? ak_el_names[v->el] : v->cls->name);
+static void check_state(uint8_t state) {
 	if (!state || (state & (state - 1)) || state >= (1 << AK_STATE__COUNT)) ak_panic("ui: no state %u", state);
-	if (key == 0 || key >= AK_KEY__STYLE_END) ak_panic("ui: a variant sets style keys only, not %u", key);
 }
 
-void ak_ui_variant(ak_view *v, uint8_t state, uint16_t key, ak_val value) {
-	check_variant(v, state, key);
-	if (v->dead) return;
+static void check_style_key(uint16_t key) {
+	if (key == 0 || key >= AK_KEY__STYLE_END) ak_panic("ui: a layer sets style keys only, not %u", key);
+}
+
+static ak_layer *layer_of(ak_view *v, uint16_t layer) {
+	ak_ix *ix = v->ix;
+	if (!ix || layer >= ix->layers.len) ak_panic("ui: %s has no layer %u", v->el ? ak_el_names[v->el] : v->cls->name, layer);
+	return &ix->layers.data[layer];
+}
+
+static uint16_t new_layer(ak_view *v, uint8_t tier, uint8_t state, bool block) {
+	if (tier > AK_LAYER_STATE) ak_panic("ui: no layer tier %u", tier);
+	if (v->frag) ak_panic("ui: a fragment takes no style");
+	if ((tier == AK_LAYER_STATE) != (state != 0)) ak_panic("ui: a state's layer, and only one, has a state");
+	if (state) {
+		check_state(state);
+		if (!v->el || !ak_el_variants[v->el]) ak_panic("ui: %s takes no variants", v->el ? ak_el_names[v->el] : v->cls->name);
+	}
 	ak_ix *ix = ak_ix_of(v);
+	if (ix->layers.len >= UINT16_MAX) ak_panic("ui: too many layers on a view");
+	ak_vec_push(&ix->layers, ((ak_layer){.tier = tier, .state = state, .on = true, .block = block}));
+	if (state && !v->dead) {
+		if (!v->real && (v->cls->flags & AK_ELF_FLATTEN)) ak_view_make_real(v);  // to report the state
+		listen_state(v, state);
+		hook(v);
+	}
+	return (uint16_t)(ix->layers.len - 1);
+}
+
+uint16_t ak_ui_layer(ak_view *v, uint8_t tier, uint8_t state) { return new_layer(v, tier, state, false); }
+
+void ak_ui_layer_set(ak_view *v, uint16_t layer, uint16_t key, ak_val value) {
+	check_style_key(key);
+	layer_of(v, layer);
+	if (v->dead) return;
+	ak_ix *ix = v->ix;
 	ak_kind k = (ak_kind)ak_key_kinds[key];
-	if (!has_variants(ix, key)) {
+	if (!has_layers(ix, key)) {
 		// The style's own value so far is its base from now on.
 		const ak_val *cur = ak_style_get(v, key);
 		ak_val b = cur ? *cur : key_unset(key);
 		ak_retain_val(b, k);
 		ak_vec_push(&ix->base, ((ak_style_ent){key, b}));
 	}
-	ak_variant *var = find_variant(ix, state, key);
-	if (var && ak_val_eq(var->v, value, k)) return;
+	ak_layer_ent *ent = find_ent(ix, layer, key);
+	if (ent && ak_val_eq(ent->v, value, k)) return;
 	ak_retain_val(value, k);
-	if (var) {
-		ak_release_val(var->v, k);
-		var->v = value;
+	if (ent) {
+		ak_release_val(ent->v, k);
+		ent->v = value;
 	} else {
-		ak_vec_push(&ix->variants, ((ak_variant){state, key, value}));
+		ak_vec_push(&ix->lents, ((ak_layer_ent){layer, key, value}));
 	}
-	if (!v->real && (v->cls->flags & AK_ELF_FLATTEN)) ak_view_make_real(v);  // to report the state
-	listen_state(v, state);
-	hook(v);
 	apply(v, key);
 }
 
+// A layer's binding: a key's value (key set), or whether it's on.
 typedef struct {
 	ak_view *v;
 	ak_closure *thunk;
-	uint8_t state;
-	uint16_t key;
+	uint16_t layer;
+	uint16_t key;  // 0: the condition
 	ak_comp_info info;
-} vbinding;
+} lbinding;
 
-static void vbinding_run(void *ctx) {
-	vbinding *b = ctx;
+static void lbinding_run(void *ctx) {
+	lbinding *b = ctx;
 	ak_val v = ak_call(b->thunk, NULL, 0);
 	if (ak_error_pending()) {
 		void *err = ak_error_take();
@@ -333,26 +388,68 @@ static void vbinding_run(void *ctx) {
 		else ak_raise(err);
 		return;
 	}
-	ak_ui_variant(b->v, b->state, b->key, v);
-	ak_release_val(v, (ak_kind)ak_key_kinds[b->key]);
+	if (b->key) {
+		ak_ui_layer_set(b->v, b->layer, b->key, v);
+		ak_release_val(v, (ak_kind)ak_key_kinds[b->key]);
+		return;
+	}
+	ak_layer *l = layer_of(b->v, b->layer);
+	if (l->on == (v.i != 0)) return;
+	l->on = v.i != 0;
+	if (!b->v->dead) apply_layer(b->v, b->layer);
 }
 
-static void vbinding_drop(void *ctx) {
-	vbinding *b = ctx;
+static void lbinding_drop(void *ctx) {
+	lbinding *b = ctx;
 	ak_release(b->v);
 	ak_release(b->thunk);
 	ak_free(b);
 }
 
-void ak_ui_variant_bind(ak_view *v, uint8_t state, uint16_t key, ak_closure *thunk) {
-	check_variant(v, state, key);
-	vbinding *b = ak_alloc(sizeof *b);
+static void layer_binding(ak_view *v, uint16_t layer, uint16_t key, ak_closure *thunk) {
+	lbinding *b = ak_alloc(sizeof *b);
 	b->v = ak_retain(v);
 	b->thunk = ak_retain(thunk);
-	b->state = state;
+	b->layer = layer;
 	b->key = key;
-	b->info = (ak_comp_info){.drop = vbinding_drop, .label = ak_key_names[key]};
-	ak_effect_new(vbinding_run, b, AK_EFFECT_RENDER, &b->info);
+	b->info = (ak_comp_info){.drop = lbinding_drop, .label = key ? ak_key_names[key] : "style condition"};
+	ak_effect_new(lbinding_run, b, AK_EFFECT_RENDER, &b->info);
+}
+
+void ak_ui_layer_bind(ak_view *v, uint16_t layer, uint16_t key, ak_closure *thunk) {
+	check_style_key(key);
+	layer_of(v, layer);
+	layer_binding(v, layer, key, thunk);
+}
+
+void ak_ui_layer_when(ak_view *v, uint16_t layer, ak_closure *cond) {
+	ak_layer *l = layer_of(v, layer);
+	if (l->on) {
+		// Off until its condition says otherwise.
+		l->on = false;
+		if (!v->dead) apply_layer(v, layer);
+	}
+	layer_binding(v, layer, 0, cond);
+}
+
+// block_layer is v's block's variant of state, made the first time:
+// after the variants its style's layers made, so it's over them.
+static uint16_t block_layer(ak_view *v, uint8_t state) {
+	check_state(state);
+	ak_ix *ix = ak_ix_of(v);
+	for (uint32_t i = 0; i < ix->layers.len; i++)
+		if (ix->layers.data[i].block && ix->layers.data[i].state == state) return (uint16_t)i;
+	return new_layer(v, AK_LAYER_STATE, state, true);
+}
+
+void ak_ui_variant(ak_view *v, uint8_t state, uint16_t key, ak_val value) {
+	check_style_key(key);
+	ak_ui_layer_set(v, block_layer(v, state), key, value);
+}
+
+void ak_ui_variant_bind(ak_view *v, uint8_t state, uint16_t key, ak_closure *thunk) {
+	check_style_key(key);
+	layer_binding(v, block_layer(v, state), key, thunk);
 }
 
 bool ak_ui_view_state(ak_view *v, uint8_t state) {

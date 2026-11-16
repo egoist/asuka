@@ -146,7 +146,7 @@ screen Services {
 
       Heading("Accounts")
       appleauth.SignInButton {
-        style: .automatic
+        variant: .automatic
         on press {
           await run(() => "Signed in: {(try await appleauth.signIn(scopes: [.fullName, .email])).user}")
         }

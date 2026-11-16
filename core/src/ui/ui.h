@@ -315,9 +315,25 @@ extern const ak_shape ak_ui_shape_params;
 
 // ---- Interaction, media, graphics, languages (ui_ext.h's parts) ----
 
+// Layers: style values laid over v's own while they're on, each key
+// going back to what's under it when the layer goes off. A layer is of
+// a tier: AK_LAYER_OWN, its style: list's conditional entries; then
+// AK_LAYER_OUTER, its component's caller's, over the own (and over the
+// own layers for each key the caller sets, ak_ui_set_outer); then
+// AK_LAYER_STATE, the variants, on only while v is in their state (an
+// AK_STATE_ bit; v a container). Of the layers on that set a key, the
+// last wins: by tier, then (variants) in the states' order, then as they
+// were made. ak_ui_layer makes one, on, and returns its id;
+// ak_ui_layer_when has it on only while cond (a bool binding) holds.
+// Turning a layer on or off allocates nothing.
+enum { AK_LAYER_OWN, AK_LAYER_OUTER, AK_LAYER_STATE };
+uint16_t ak_ui_layer(ak_view *v, uint8_t tier, uint8_t state);
+void ak_ui_layer_set(ak_view *v, uint16_t layer, uint16_t key, ak_val value);  // borrows value
+void ak_ui_layer_bind(ak_view *v, uint16_t layer, uint16_t key, ak_closure *thunk);
+void ak_ui_layer_when(ak_view *v, uint16_t layer, ak_closure *cond);
 // Variants: a block of style keys laid over v's style while it's in an
-// interaction state (AK_STATE_*: pressed { opacity: 0.6 }), in the
-// order of the states (a later one wins). ak_ui_state reads a state (a
+// interaction state (AK_STATE_*: pressed { opacity: 0.6 }): the block's
+// layer of the state, made the first time. ak_ui_state reads a state (a
 // group's or a peer's style follows it: card.hovered); v reports a state
 // once a variant, a read or a handler asks for it.
 void ak_ui_variant(ak_view *v, uint8_t state, uint16_t key, ak_val value);

@@ -25,7 +25,7 @@ Button("Follow") { shrink: 0 }
 View { height: 1; background: .separator }
 ```
 
-`style` 声明一组可以复用的属性；在块里写 `style name` 就会应用它们，写在它后面的属性优先：
+`style` 声明一组可以复用的属性，`style:` 应用一个样式或一个样式列表。两个条目设置了同一个属性时，后面的优先；块里自己写的属性又优先于整个列表：
 
 ```asuka
 style card {
@@ -33,8 +33,17 @@ style card {
   background: .secondaryBackground
 }
 
-View { style card; background: .accent }
+style chip(tint: Color) {
+  padding: [4, 10]; radius: 999
+  background: tint.opacity(0.15); color: tint
+}
+
+View { style: card; background: .accent }
+Text("New") { style: chip(.green) }
+Row { style: [card, if selected { chip(.accent) }] }
 ```
+
+样式可以像函数一样接收参数，用自己的 `style:` 应用别的样式；列表里的 `if` 或 `match` 在条件成立时应用某个样式，条件不再成立时把每个属性恢复原样。以元素命名的样式（`style Button { radius: 8 }`）是本包里每个该类元素的默认样式。完整的语法，以及应用中某一部分可以单独修改的主题，见[样式](language/styles.md)。
 
 视觉属性只在原生控件支持的地方生效：按钮会把 `color` 当作着色（tint），而视图会忽略 `font`。
 

@@ -189,7 +189,7 @@ screen Editor {
           material: .bar
           Text("{text.count()} characters") {
             grow: 1
-            style caption
+            style: caption
           }
           Button("Done") {
             on press { focused = false }

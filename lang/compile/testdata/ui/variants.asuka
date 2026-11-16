@@ -11,7 +11,7 @@ component Card {
   View as card {
     padding: 16; radius: 12; background: .secondaryBackground
     hovered { borderColor: .accent; border: 1 }
-    pressed { opacity: 0.6; style raised; background: if taps > 0 { .red } else { .blue } }
+    pressed { opacity: 0.6; style: raised; background: if taps > 0 { .red } else { .blue } }
     on press { taps += 1 }
     Text(if card.pressed { "Down" } else { "Up" })
     Text("Taps: {taps}")

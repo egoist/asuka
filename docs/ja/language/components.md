@@ -30,7 +30,7 @@ component MessageRow(message: Message) {
 - プロパティ：`name: value`
 - ハンドラー：`on name { … }`
 - 双方向バインディング：`bind name: target`
-- スタイル：`style name`
+- スタイル：`style: card`、またはリストで `style: [card, pink]`
 - 子
 
 ```asuka

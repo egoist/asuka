@@ -411,7 +411,7 @@ internal object GPay {
 /** Google's PayButton, made again when its props change (its options are fixed once initialized), and for automatic, as the app goes dark or light. */
 class AndroidPayButton(private val events: PayButtonEvents) : PayButton {
     private var type = ButtonType.BUY
-    private var style = ButtonStyle.AUTOMATIC
+    private var variant = ButtonVariant.AUTOMATIC
     private var radius = -1.0
     private var networks: List<Network> = emptyList()
     private var madeDark = false
@@ -427,7 +427,7 @@ class AndroidPayButton(private val events: PayButtonEvents) : PayButton {
 
         override fun onConfigurationChanged(c: Configuration?) {
             super.onConfigurationChanged(c)
-            if (style == ButtonStyle.AUTOMATIC && dark() != madeDark) post { make() }
+            if (variant == ButtonVariant.AUTOMATIC && dark() != madeDark) post { make() }
         }
     }
 
@@ -440,7 +440,7 @@ class AndroidPayButton(private val events: PayButtonEvents) : PayButton {
     private fun dark(): Boolean = box.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
 
     override fun setType(value: ButtonType) { type = value; remake() }
-    override fun setStyle(value: ButtonStyle) { style = value; remake() }
+    override fun setVariant(value: ButtonVariant) { variant = value; remake() }
     override fun setCornerRadius(value: Double) { radius = value; remake() }
     override fun setNetworks(value: List<Network>) { networks = value; remake() }
 
@@ -464,9 +464,9 @@ class AndroidPayButton(private val events: PayButtonEvents) : PayButton {
 
     private fun make() {
         madeDark = dark()
-        val theme = when (style) {
-            ButtonStyle.BLACK -> ButtonConstants.ButtonTheme.DARK
-            ButtonStyle.WHITE, ButtonStyle.WHITE_OUTLINE -> ButtonConstants.ButtonTheme.LIGHT
+        val theme = when (variant) {
+            ButtonVariant.BLACK -> ButtonConstants.ButtonTheme.DARK
+            ButtonVariant.WHITE, ButtonVariant.WHITE_OUTLINE -> ButtonConstants.ButtonTheme.LIGHT
             else -> if (madeDark) ButtonConstants.ButtonTheme.LIGHT else ButtonConstants.ButtonTheme.DARK
         }
         val methods = GPay.ready(Sheet(networks = networks)).getJSONArray("allowedPaymentMethods").toString()

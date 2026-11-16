@@ -2,7 +2,7 @@
 // PKPaymentAuthorizationController. Its delegate's callbacks are asked
 // of the app (asked), each completed when the app answers (answer); a
 // callback the app has no handler for keeps the sheet as it is. The
-// button is PKPaymentButton, made again when its type or style changes
+// button is PKPaymentButton, made again when its type or variant changes
 // (they're fixed at init).
 import Foundation
 import PassKit
@@ -429,7 +429,7 @@ enum Requests {
     let events: PayButtonEvents
     let box = ButtonBox()
     var view: AsukaPlatformView { box }
-    private var type = ButtonType.buy, style = ButtonStyle.automatic
+    private var type = ButtonType.buy, variant = ButtonVariant.automatic
     private var radius: Double = -1
 
     init(_ events: PayButtonEvents) {
@@ -438,7 +438,7 @@ enum Requests {
     }
 
     func setType(_ value: ButtonType) { type = value; make() }
-    func setStyle(_ value: ButtonStyle) { style = value; make() }
+    func setVariant(_ value: ButtonVariant) { variant = value; make() }
     func setCornerRadius(_ value: Double) {
         radius = value
         if radius >= 0 { box.button?.cornerRadius = radius }
@@ -468,7 +468,7 @@ enum Requests {
         }
         // Automatic follows the appearance; the rest are fixed.
         let s: PKPaymentButtonStyle
-        switch style {
+        switch variant {
         case .black: s = .black
         case .white: s = .white
         case .whiteOutline: s = .whiteOutline

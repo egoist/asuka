@@ -60,7 +60,7 @@ component Symbols {
         ]
       }
     }
-    Text("Sorted by {sortBy}") { style caption }
+    Text("Sorted by {sortBy}") { style: caption }
   }
 }
 
@@ -112,7 +112,7 @@ component TextInput {
         }
       }
     }
-    Text(if sent.isEmpty() { "Grows to five lines, then scrolls." } else { "Sent: {sent}" }) { style caption }
+    Text(if sent.isEmpty() { "Grows to five lines, then scrolls." } else { "Sent: {sent}" }) { style: caption }
   }
 }
 
@@ -290,7 +290,7 @@ component VideoSection {
           player.play()
         }
       }
-      Text("Played through {ends} times") { style caption }
+      Text("Played through {ends} times") { style: caption }
     }
   }
 }

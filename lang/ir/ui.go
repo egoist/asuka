@@ -861,6 +861,9 @@ func (b *fb) builtinElement(ec *check.ElementCall) int {
 			b.setProp(v, name, m, a)
 		}
 	}
+	// Its style: list, under the block's props.
+	el0 := ec.Comp.Comp.Element
+	b.applyStyle(ec.Style, styleTarget{v: v, variants: el0 != nil && el0.Variants, block: blockKeys(name, ec.Props, false)})
 	// A prop set twice: the last one wins.
 	last := map[*check.Member]int{}
 	for i, p := range ec.Props {
@@ -1157,6 +1160,14 @@ func (b *fb) componentCall(ec *check.ElementCall) int {
 // component sets of them: ui.set_outer, or ui.bind_outer when the value
 // reads what changes. The last of a prop set twice wins.
 func (b *fb) outerStyle(v int, ec *check.ElementCall) {
+	// The caller's style: list, under the caller's style props.
+	var props []*check.PropArg
+	for _, p := range ec.Props {
+		if p.Member.Owner != ec.Comp {
+			props = append(props, p)
+		}
+	}
+	b.applyStyle(ec.Style, styleTarget{v: v, outer: true, variants: b.l.prog.StyleTakesVariants(ec.Comp), block: blockKeys("", props, true)})
 	last := map[*check.Member]int{}
 	for i, p := range ec.Props {
 		if p.Member.Owner != ec.Comp {

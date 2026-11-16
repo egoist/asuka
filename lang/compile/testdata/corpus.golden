@@ -15,12 +15,17 @@ todo.asuka:52:28: [Todo] has no method removeAll (did you mean removeAt?)
 == styles
 styles.asuka:4:15: secondarySystemBackground isn't a semantic color (they're label, secondaryLabel, tertiaryLabel, background, secondaryBackground, groupedBackground, separator, accent, red, orange, yellow, green, blue, purple, pink, gray, clear, secondaryGroupedBackground, onAccent)
 styles.asuka:5:24: Shadow has no parameter blur
-styles.asuka:9:3: Text has no prop fontSize
-styles.asuka:10:3: Text has no prop weight (did you mean height?)
+styles.asuka:9:3: a style holds style props, and fontSize isn't one
+styles.asuka:10:3: a style holds style props, and weight isn't one (did you mean height?)
 styles.asuka:10:11: can't tell what .semibold is here: write its type, Type.semibold
-styles.asuka:31:15: 1fr is a grid track's share: write it .fr(1)
-styles.asuka:31:20: 1fr is a grid track's share: write it .fr(1)
-styles.asuka:31:25: 2fr is a grid track's share: write it .fr(2)
+styles.asuka:22:10: unknown type Theme
+styles.asuka:33:22: unknown name selected
+styles.asuka:46:15: 1fr is a grid track's share: write it .fr(1)
+styles.asuka:46:20: 1fr is a grid track's share: write it .fr(1)
+styles.asuka:46:25: 2fr is a grid track's share: write it .fr(2)
+styles.asuka:51:14: unknown name urgent
+styles.asuka:51:44: unknown name read (did you mean Ref?)
+styles.asuka:52:17: unknown name kind (did you mean int?)
 == model, mailbox
 mailbox.asuka:15:48: count is a method of [Message]: call it, count()
 mailbox.asuka:30:26: [Message] has no method firstIndex

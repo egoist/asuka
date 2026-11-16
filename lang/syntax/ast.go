@@ -354,13 +354,15 @@ type TypeAliasDecl struct {
 	Type       Type
 }
 
-// A StyleDecl is style name { prop sets }: a reusable set of props.
+// A StyleDecl is style name { … }, or style name(params) { … }: style
+// props, style: and use, and variants, applied with style:.
 type StyleDecl struct {
 	Span
 	Trivia
-	Pub  Pos
-	Name *Ident
-	Body *Block
+	Pub    Pos
+	Name   *Ident
+	Params *ParamList // nil without parentheses
+	Body   *Block
 }
 
 // A StateDecl is state name: Type = value: a signal. It's a declaration

@@ -1424,7 +1424,7 @@ component SignIn {
   Column {
     appleauth.SignInButton {
       type: .continueWithApple
-      style: .automatic   // 浅色模式下为黑色，深色模式下为白色
+      variant: .automatic   // 浅色模式下为黑色，深色模式下为白色
       height: 44
       on press {
         do {
@@ -1481,7 +1481,7 @@ component Checkout {
     if wallet.value?.canPay ?? false {
       pay.PayButton {
         type: .buy
-        style: .automatic   // 浅色模式下为黑色，深色模式下为白色
+        variant: .automatic   // 浅色模式下为黑色，深色模式下为白色
         height: 48
         on press {
           do {
@@ -1502,7 +1502,7 @@ component Checkout {
 async fn charge(token: string) throws {}
 ```
 
-`pay.available(request)` 告诉你钱包对这个请求所接受的卡能做什么：`wallet` 是哪个钱包，`canPay` 表示能付款（这时才显示按钮），`hasCard` 表示用户有一张它接受的卡。只在 `canPay` 成立时显示 `PayButton`。它就是钱包自己的按钮（`PKPaymentButton`、Google 的 `PayButton`，以及 Web 上 Safari 和 Google 提供的按钮），两家的品牌规范都要求应用不要自己画：按钮上的文字（由 `type` 决定：`.buy`、`.checkout`、`.book`、`.donate`、`.order`、`.subscribe`、`.plain`，以及 Apple 独有的其他几种）和标志都使用用户的语言；`style` 在浅色背景上用 `.black`，在深色背景上用 `.white`，在白色背景上用 `.whiteOutline`，也可以用 `.automatic`。按钮的高度由钱包决定（iOS 上 44 点，Mac 上 30 点，Google 的是 48），宽度由你给定。Apple Pay 里还没有卡时，Apple 的规范是显示 `.setUp` 按钮，点击后调用 `pay.setUp()` 添加一张卡（也可以照常显示购买按钮，它的面板同样能添加卡）；Google Pay 的面板会自己引导用户添加卡。
+`pay.available(request)` 告诉你钱包对这个请求所接受的卡能做什么：`wallet` 是哪个钱包，`canPay` 表示能付款（这时才显示按钮），`hasCard` 表示用户有一张它接受的卡。只在 `canPay` 成立时显示 `PayButton`。它就是钱包自己的按钮（`PKPaymentButton`、Google 的 `PayButton`，以及 Web 上 Safari 和 Google 提供的按钮），两家的品牌规范都要求应用不要自己画：按钮上的文字（由 `type` 决定：`.buy`、`.checkout`、`.book`、`.donate`、`.order`、`.subscribe`、`.plain`，以及 Apple 独有的其他几种）和标志都使用用户的语言；`variant` 在浅色背景上用 `.black`，在深色背景上用 `.white`，在白色背景上用 `.whiteOutline`，也可以用 `.automatic`。按钮的高度由钱包决定（iOS 上 44 点，Mac 上 30 点，Google 的是 48），宽度由你给定。Apple Pay 里还没有卡时，Apple 的规范是显示 `.setUp` 按钮，点击后调用 `pay.setUp()` 添加一张卡（也可以照常显示购买按钮，它的面板同样能添加卡）；Google Pay 的面板会自己引导用户添加卡。
 
 `pay.pay(request)` 显示支付面板，面板关闭后返回 `Payment`；用户取消时抛出 `PayError.canceled`（已有另一个面板正在显示时抛出 `.busy`）。金额是以货币主单位表示的十进制字符串（`"12.75"`；Google Pay 最多两位小数；折扣用负数）。`total` 的标签是商家名称，和用户账单上显示的一致（Apple Pay 的面板上写作“Pay Asuka Tea”）；`items` 是总额上方的各行明细，其中的 `kind` 供 Google Pay 的面板使用。请求里还可以指定接受哪些卡（`networks`、`cards`、`cardCountries`），收货和账单联系信息里要用户提供哪些（`.name`、`.email`、`.phone`、`.address`），`shippingType` 和 `shippingMethods`（默认选中第一项），Google Pay 可以配送到哪些国家（`shippingCountries`），以及 Apple Pay 的优惠码（`coupons`）。设置 `recurring` 表示这是一笔订阅付款，包括常规扣款和试用期；`deferred` 表示稍后扣款（比如酒店）；`automaticReload` 表示储值余额的自动充值。钱包会把今后的扣款显示给用户，给出的令牌是用于这些扣款的商户令牌（merchant token）。
 

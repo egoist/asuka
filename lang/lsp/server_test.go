@@ -88,6 +88,7 @@ func TestHover(t *testing.T) {
 		{"color|: .secondaryLabel", []string{"prop color: Color", "text color"}},
 		{"color: .second|aryLabel", []string{"Color.secondaryLabel"}},
 		{"gap|: 8", []string{"prop gap: float", "style prop"}},
+		{"style: ta|g(.red)", []string{"style tag", "A tag's look."}},
 		{"on chan|ge(on)", []string{"event change(on: bool)"}},
 		{"emit tog|gle(on)", []string{"event toggle(on: bool)", "The toggle was switched."}},
 		{"todos.cou|nt(where:", []string{"fn [model.Todo].count(where: fn(model.Todo) -> bool) -> int", "The number of elements the predicate is true of."}},
@@ -164,6 +165,8 @@ func TestCompletion(t *testing.T) {
 		dontWant []string
 	}{
 		{"fields and methods", "Text(todo.title)", "Text(todo.|)", []string{"id", "title", "done", "label"}, []string{"push"}},
+		{"style list", "style: tag(.red)", "style: [tag(.red), |]", []string{"tag"}, []string{"Column"}},
+		{"style", "style: tag(.red)", "style: |", []string{"tag"}, nil},
 		{"field prefix", "Text(todo.title)", "Text(todo.ti|)", []string{"title"}, nil},
 		{"array methods", "todos.push(", "todos.|push(", []string{"push", "count", "filter", "map", "isEmpty"}, []string{"title"}},
 		{"package members", "if model.matches(todo, filter)", "if model.|matches(todo, filter)", []string{"matches", "Todo", "Filter"}, nil},

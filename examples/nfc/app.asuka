@@ -128,7 +128,7 @@ component Tags {
       "NFC is off."
     } else {
       "NFC is on."
-    }) { style secondary }
+    }) { style: secondary }
     if nfcState.supported && !nfcState.enabled {
       Button("Turn NFC On") {
         on press { try? await nfc.openSettings() }
@@ -142,7 +142,7 @@ component Tags {
       Column {
         gap: 4
         Text(link) { font: .headline }
-        Text(about) { style secondary }
+        Text(about) { style: secondary }
       }
     }
     Text("Link to write") { font: .subheadline }
@@ -158,7 +158,7 @@ component Tags {
       variant: .tinted
       on press { await writeTag() }
     }
-    Text(status) { style secondary }
+    Text(status) { style: secondary }
   }
 }
 

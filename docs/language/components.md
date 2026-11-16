@@ -32,7 +32,7 @@ go in the parentheses. Everything else goes in the block:
 - props: `name: value`
 - handlers: `on name { … }`
 - two-way bindings: `bind name: target`
-- styles: `style name`
+- styles: `style: card`, or a list, `style: [card, pink]`
 - children
 
 ```asuka

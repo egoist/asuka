@@ -109,6 +109,8 @@ func (fc *fileCtx) objRef(o check.Object) *ref {
 	}
 	r := &ref{name: o.Name(), obj: o, decl: o.Pos()}
 	switch o := o.(type) {
+	case *check.StyleDef:
+		return &ref{name: o.Name(), style: o.Decl, decl: o.Pos()}
 	case *check.PkgName:
 		r.pkg = o.Pkg
 	case *check.Member:
