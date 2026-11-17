@@ -155,7 +155,12 @@ final class AsukaTestDraggingInfo: NSObject, NSDraggingInfo {
                 let ts = base + (p.count > 4 ? Double(p[4]) ?? 0 : 0)
                 guard let e = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ts, windowNumber: w.windowNumber,
                                                  context: nil, eventNumber: 0, clickCount: 1, pressure: 1) else { return "no event" }
+                // What the pointer's monitor sees of a press (Focus.swift):
+                // the window's sendEvent skips the application's monitors.
+                if type != .leftMouseDragged && pointerEvent(e) { continue }
+                focusState.testEvent = e
                 w.sendEvent(e)
+                focusState.testEvent = nil
             }
         case "wheel":
             // A trackpad's scroll over a view, as the window server sends

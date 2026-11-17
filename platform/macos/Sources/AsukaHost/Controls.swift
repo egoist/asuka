@@ -338,6 +338,8 @@ import AsukaOps
             }
         case .image, .symbol:
             setImageProp(n, p, v)
+        case .overlay:
+            setOverlayProp(n, p, v) // Overlay.swift
         case .list:
             switch p {
             case AsukaProp.List.refreshable: setRefreshable(n, v.bool)

@@ -180,6 +180,9 @@ final class AsukaSheetWindow: NSWindow {
             break
         case .snackbar:
             n.snack = AsukaSnack()
+        case .overlay:
+            makeOverlay(n) // Overlay.swift
+            return true
         default:
             return false
         }
@@ -515,6 +518,7 @@ final class AsukaSheetWindow: NSWindow {
             }
         }
         placeSnacks()
+        syncOverlays()
     }
 
     /// Sends a screen's or sheet's environment if it changed.
@@ -915,7 +919,7 @@ final class AsukaSheetWindow: NSWindow {
 
     /// Its matched key is matchOut's to let go of (Transitions.swift): it's
     /// asked after this.
-    func navDestroyed(_ n: AsukaNode) {}
+    func navDestroyed(_ n: AsukaNode) { overlayDestroyed(n) }
 
     func navPlaced(_ n: AsukaNode) {}
 
@@ -927,13 +931,17 @@ final class AsukaSheetWindow: NSWindow {
         }
     }
 
-    func navBatchApplied(_ frames: Bool) { matchBatchApplied(frames) }
+    func navBatchApplied(_ frames: Bool) {
+        matchBatchApplied(frames)
+        syncOverlays() // Overlay.swift: in place, on top, their anchors reported
+    }
 
     /// What navigation adds to a node's JSON: a stack's top screen, a
     /// tab's label and what VoiceOver hears of it, a sheet's window, an
     /// alert's buttons and fields, a Window's window, a popover's, a
     /// snackbar's, a split view's rows.
     func navJSON(_ n: AsukaNode, _ d: inout [String: Any]) {
+        overlayJSON(n, &d)
         guard let nav = n.nav else {
             if n.split != nil { splitJSON(n, &d) }
             return
@@ -1080,7 +1088,7 @@ final class AsukaSheetWindow: NSWindow {
         nodes.values.filter { n in
             guard n.parent == nil, n !== root, !n.dying else { return false }
             switch n.kind {
-            case .sheet, .alert, .popover, .snackbar: return true
+            case .sheet, .alert, .popover, .snackbar, .overlay: return true
             default: return false
             }
         }.sorted { $0.id < $1.id }

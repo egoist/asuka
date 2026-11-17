@@ -24,7 +24,7 @@ func shellHotkeys(t *testing.T, tr *Tree) []int {
 // shortcuts (⌘Tab), fail.
 func TestShellHotkeyModule(t *testing.T) {
 	a := Run(t, sysCallSrc+`
-		fn reg(id: int, mods: int, key: string) -> bytes = platform.u32(id).concat(platform.u8(mods)).concat(platform.str(key)).concat("a test's".bytes())
+		fn reg(id: int, mods: int, key: string) -> bytes = host.u32(id).concat(host.u8(mods)).concat(host.str(key)).concat("a test's".bytes())
 		state step = 0
 		app {
 		  Column {
@@ -32,7 +32,7 @@ func TestShellHotkeyModule(t *testing.T) {
 		    // F19 with every modifier: no app or system has it.
 		    Sys("hotkey", "register", reg(7001, 15, "f19")) { label: "register" }
 		    if step >= 1 { Sys("hotkey", "next", bytes()) { label: "next" } }
-		    if step >= 2 { Sys("hotkey", "unregister", platform.u32(7001)) { label: "unregister" } }
+		    if step >= 2 { Sys("hotkey", "unregister", host.u32(7001)) { label: "unregister" } }
 		    if step >= 3 { Sys("hotkey", "next", bytes()) { label: "next2" } }
 		    if step >= 4 { Sys("hotkey", "stop", bytes()) { label: "stop" } }
 		    if step >= 5 {

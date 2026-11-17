@@ -126,6 +126,9 @@ import AsukaOps
     var native: AsukaNativeHolder? // Native.swift
     var interaction: AsukaInteraction? // Interaction.swift: hover, press, drag and drop, gestures
     var window: AsukaWin? // Windows.swift: a Window's window
+    var focus: AsukaFocusProps? // Focus.swift: the keyboard's focus (Focusable, NoFocusOnPress, NoFocusRing, FocusTrap)
+    var a11y: AsukaA11y? // A11y.swift: screen readers' roles, states and relations
+    var overlay: AsukaOverlay? // Overlay.swift: an Overlay's layer
 
     init(id: UInt32, kind: AsukaKind?, view: NSView?) {
         self.id = id

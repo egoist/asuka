@@ -137,6 +137,14 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             if case .bytes(let b) = v { n.keys = AsukaKeys.decode(b) } else { n.keys = [] }
             keysChanged(n)
             return
+        case AsukaProp.focusable, AsukaProp.noFocusOnPress, AsukaProp.noFocusRing, AsukaProp.focusTrap:
+            setFocusProp(n, p, v)
+            return
+        case AsukaProp.a11yRole, AsukaProp.a11yHint, AsukaProp.a11yChecked, AsukaProp.a11yExpanded, AsukaProp.a11ySelected,
+             AsukaProp.a11yValue, AsukaProp.a11yRange, AsukaProp.a11yModal, AsukaProp.a11yControls, AsukaProp.a11yLabelledBy,
+             AsukaProp.a11yDescribedBy:
+            setA11yProp(n, p, v) // A11y.swift
+            return
         default:
             break
         }
@@ -179,13 +187,6 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             let target: NSView = n.textView ?? view
             target.setAccessibilityLabel(v.string.isEmpty ? nil : v.string)
             if !v.string.isEmpty && n.kind == .view { view.setAccessibilityElement(true) }
-        case AsukaProp.a11yHint:
-            view.setAccessibilityHelp(v.string.isEmpty ? nil : v.string)
-        case AsukaProp.a11yRole:
-            if let r = a11yRole(AsukaRole(rawValue: v.enumValue)) {
-                view.setAccessibilityRole(r)
-                view.setAccessibilityElement(true)
-            }
         case AsukaProp.a11yHidden:
             view.setAccessibilityElement(!v.bool)
             if v.bool { hideA11y(view) }
@@ -193,7 +194,7 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             setA11yActions(n, asukaStrings(v.data))
         case AsukaProp.a11yAdjustable:
             n.adjustable = v.bool
-            if n.adjustable {
+            if n.adjustable && (n.a11y?.role ?? .none) == .none {
                 view.setAccessibilityElement(true)
                 view.setAccessibilityRole(.incrementor)
             }
@@ -220,6 +221,7 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             applyLineLimit(n)
         case AsukaProp.disabled:
             if let c = view as? NSControl { c.isEnabled = !v.bool }
+            if v.bool || n.focus != nil { focusProps(n).disabled = v.bool } // it takes no focus (Focus.swift)
             if n.textView != nil { n.textView?.isEditable = !v.bool }
             if n.web != nil || n.kind == .view { view.alphaValue = v.bool ? 0.5 : n.opacity }
         case AsukaProp.menu:
@@ -257,18 +259,6 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             setMatch(n, v.string)
         default:
             break
-        }
-    }
-
-    func a11yRole(_ r: AsukaRole?) -> NSAccessibility.Role? {
-        switch r {
-        case .button: return .button
-        case .header: return NSAccessibility.Role(rawValue: "AXHeading")
-        case .image: return .image
-        case .link: return .link
-        case .text: return .staticText
-        case .search: return .textField
-        default: return nil
         }
     }
 

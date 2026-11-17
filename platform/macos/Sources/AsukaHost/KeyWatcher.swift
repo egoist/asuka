@@ -90,6 +90,7 @@ let asukaKeyCodeNames: [UInt16: String] = [
         guard var n = keyStart(w, fr) else { return false }
         let (name, mods) = asukaKeyOf(ev)
         guard !name.isEmpty else { return false }
+        focusState.lastKey = true // focus that comes now is visible (Focus.swift)
         // A cycle can't be (the core's tree has none), but a node is never
         // asked twice.
         var seen = Set<ObjectIdentifier>()
@@ -104,7 +105,8 @@ let asukaKeyCodeNames: [UInt16: String] = [
             guard let next = keyOut(n) else { break }
             n = next
         }
-        return false
+        // Tab, Enter and Space on a focused view, its typeahead (Focus.swift).
+        return keyDefault(ev, w, fr, name, mods)
     }
 
     /// Where a key goes on from n, not taking it: n's parent; for a node the

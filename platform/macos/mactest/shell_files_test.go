@@ -217,7 +217,7 @@ func TestShellLoginItem(t *testing.T) {
 		  Column {
 		    Sys("login", "enabled", bytes()) { label: "enabled" }
 		    Sys("login", "openedAtLogin", bytes()) { label: "atLogin" }
-		    Sys("login", "set", platform.u8(0)) { label: "off" }
+		    Sys("login", "set", host.u8(0)) { label: "off" }
 		  }
 		}
 	`)

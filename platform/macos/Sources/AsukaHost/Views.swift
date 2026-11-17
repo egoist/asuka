@@ -37,6 +37,21 @@ class AsukaView: NSView, NSDraggingSource {
     override func accessibilityPerformIncrement() -> Bool { rt.adjust(self, 1) }
     override func accessibilityPerformDecrement() -> Bool { rt.adjust(self, -1) }
 
+    /// While a modal view shows in its window, only what leads to it
+    /// (A11y.swift).
+    override func accessibilityChildren() -> [Any]? { rt.a11yChildren(self, super.accessibilityChildren()) }
+
+    // The keyboard's focus (Focus.swift): a Focusable, pressable or
+    // adjustable view takes it, and draws AppKit's ring, rounded as it
+    // is, while it has it from the keyboard.
+    override var acceptsFirstResponder: Bool { rt.acceptsFocus(self) }
+    override var canBecomeKeyView: Bool { rt.isKeyView(self) }
+    override var focusRingMaskBounds: NSRect { rt.showsRing(self) ? bounds : .zero }
+    override func drawFocusRingMask() {
+        let r = asukaNode?.cornerOf ?? 0
+        NSBezierPath(roundedRect: bounds, xRadius: r, yRadius: r).fill()
+    }
+
     /// Its context menu: its Menu (LongPress: a secondary click), or a
     /// row's swipe actions.
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -79,6 +94,7 @@ class AsukaView: NSView, NSDraggingSource {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        rt.watchFocus(window) // its window's first responder (Focus.swift)
         guard let n = asukaNode else { return }
         if window == nil {
             rt.viewLeft(n)

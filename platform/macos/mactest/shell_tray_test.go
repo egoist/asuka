@@ -225,13 +225,13 @@ func TestShellDockModule(t *testing.T) {
 		app {
 		  Column {
 		    Button("Next") { on press { step += 1 } }
-		    if step == 1 { Sys("dock", "progress", platform.u8(1).concat(platform.f64(0.5))) { label: "half" } }
-		    if step == 2 { Sys("dock", "progress", platform.u8(2).concat(platform.f64(0))) { label: "sliding" } }
-		    if step == 3 { Sys("dock", "progress", platform.u8(4).concat(platform.f64(0.3))) { label: "error" } }
-		    if step == 4 { Sys("dock", "progress", platform.u8(0).concat(platform.f64(0))) { label: "none" } }
+		    if step == 1 { Sys("dock", "progress", host.u8(1).concat(host.f64(0.5))) { label: "half" } }
+		    if step == 2 { Sys("dock", "progress", host.u8(2).concat(host.f64(0))) { label: "sliding" } }
+		    if step == 3 { Sys("dock", "progress", host.u8(4).concat(host.f64(0.3))) { label: "error" } }
+		    if step == 4 { Sys("dock", "progress", host.u8(0).concat(host.f64(0))) { label: "none" } }
 		    if step == 5 {
-		      Sys("dock", "attention", platform.u8(0)) { label: "attention" }
-		      Sys("dock", "cancelAttention", platform.u32(0)) { label: "cancel" }
+		      Sys("dock", "attention", host.u8(0)) { label: "attention" }
+		      Sys("dock", "cancelAttention", host.u32(0)) { label: "cancel" }
 		    }
 		  }
 		}

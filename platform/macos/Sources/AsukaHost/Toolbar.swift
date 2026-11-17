@@ -233,6 +233,7 @@ private let actionPrefix = "asuka.action."
     /// Pops the innermost shown stack's top screen in w, as its back
     /// button.
     func back(_ w: AsukaWin) {
+        if overlayBack(w) { return } // an overlay over w takes it first (Overlay.swift)
         guard let stack = activeStack(w.root), let top = topScreen(stack), liveScreens(stack) >= 2 else { return }
         if top.interceptBack {
             emit(top, .back) { AsukaEvents.back($0) }

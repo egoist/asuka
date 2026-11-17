@@ -15,6 +15,9 @@
 //     instance, crash records, the updater's module, routes) and its
 //     modules (dock, hotkey, login, recent, apps, dialogs, clipboard, ...)
 //   - modules1, modules2: the packages' modules (camera, location, ...)
+//   - focus: the keyboard's focus (Focusable, Tab, FocusTrap, KeyText) and
+//     screen readers' roles, states and relations (Focus.swift, A11y.swift).
+//     Overlays (Overlay.swift) are navigation's.
 import AppKit
 #if canImport(AsukaOps)
 import AsukaOps
@@ -28,6 +31,7 @@ import AsukaOps
         listDestroyed(n)
         textDestroyed(n)
         visualDestroyed(n)
+        focusDestroyed(n)
     }
 
     /// n's view goes: what its parts hold.
@@ -64,6 +68,7 @@ import AsukaOps
     func batchApplied(_ frames: Bool) {
         navBatchApplied(frames)
         listBatchApplied(frames)
+        a11yBatchApplied()
     }
 
     /// What the parts add to a node's JSON for the automation's tree.
@@ -72,10 +77,12 @@ import AsukaOps
         listJSON(n, &d)
         textJSON(n, &d)
         visualJSON(n, &d)
+        focusJSON(n, &d)
     }
 
     func windowPartJSON(_ w: AsukaWin, _ d: inout [String: Any]) {
         navWindowJSON(w, &d)
+        focusWindowJSON(w, &d)
     }
 
     /// The host's modules, registered the first time one is called.

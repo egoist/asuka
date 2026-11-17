@@ -444,7 +444,7 @@ import AsukaOps
             c.setHeight(r.height)
             return
         }
-        guard let v = n.view, !(n.nav?.sizedByHost(n) ?? false) else { return }
+        guard let v = n.view, !(n.nav?.sizedByHost(n) ?? false), n.kind != .overlay else { return } // an overlay's size is its root's
         if let p = n.parent, p.rich != nil {
             // An inline component: its size is the core's, its place the text's.
             n.frame.size = r.size

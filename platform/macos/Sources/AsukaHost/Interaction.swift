@@ -87,9 +87,10 @@ let asukaDragDistance: CGFloat = 3
         }
         switch e {
         case .press:
-            // Pressed and released on the view (mouseDown, mouseUp).
+            // Pressed and released on the view (mouseDown, mouseUp); a button
+            // to VoiceOver, unless its role says otherwise (A11y.swift).
             v.setAccessibilityElement(true)
-            v.setAccessibilityRole(.button)
+            if (n.a11y?.role ?? .none) == .none { v.setAccessibilityRole(.button) }
         case .longPress:
             guard x.gestures.insert(e.rawValue).inserted else { return }
             let g = NSPressGestureRecognizer(target: visual, action: #selector(AsukaVisual.longPressed(_:)))
@@ -128,6 +129,7 @@ let asukaDragDistance: CGFloat = 3
         cancelPress()
         visual.mouse = AsukaMouseState()
         if e.modifierFlags.contains(.control) { return false } // a secondary click: the context menu
+        pressFocus(v) // the Focusable view it's on takes the focus (Focus.swift)
         if visual.listSelectClick?(v) == true { return true } // a row of a selecting list: selected or deselected
         var target: AsukaNode?, source: AsukaNode?
         var at: NSView? = v
@@ -141,7 +143,12 @@ let asukaDragDistance: CGFloat = 3
         visual.mouse = AsukaMouseState(active: true, target: target, inside: false, source: source, down: e.locationInWindow)
         if let t = target {
             visual.mouse.inside = true
-            emit(t, .pressed) { AsukaEvents.pressed($0, true) }
+            if t.listening(.pressPoint), let tv = t.view {
+                // Where it began, from its top left.
+                let p = tv.convert(e.locationInWindow, from: nil)
+                emit(t, .pressPoint) { AsukaEvents.pressPoint($0, x: Double(p.x), y: Double(p.y)) }
+            }
+            if live(t) { emit(t, .pressed) { AsukaEvents.pressed($0, true) } }
         }
         return true
     }
@@ -235,6 +242,7 @@ let asukaDragDistance: CGFloat = 3
     /// Reports n hovered, or not, if that changed.
     func setHover(_ n: AsukaNode, _ on: Bool) {
         guard let x = n.interaction, x.hovered != on, n.listening(.hover) || x.hovered else { return }
+        if on, let v = n.view, behindModal(v) { return } // a Modal overlay takes the pointer (Overlay.swift)
         x.hovered = on
         if live(n) { emit(n, .hover) { AsukaEvents.hover($0, on) } }
     }

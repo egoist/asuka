@@ -15,7 +15,7 @@ func TestPushModule(t *testing.T) {
 		  state s = "waiting"
 		  task {
 		    do {
-		      let b = try await platform.call("push", method, bytes())
+		      let b = try await host.call("push", method, bytes())
 		      s = "came {b.string()}"
 		    } catch e {
 		      s = "err {e.message}"
@@ -30,8 +30,8 @@ func TestPushModule(t *testing.T) {
 		    Call("rewritten", "push", "rewritten", "\{}".bytes())
 		    Waits("nextReceived")
 		    Waits("nextOpened")
-		    Button("Stop received") { on press { platform.send("push", "stop", "nextReceived".bytes()) } }
-		    Button("Stop opened") { on press { platform.send("push", "stop", "nextOpened".bytes()) } }
+		    Button("Stop received") { on press { host.send("push", "stop", "nextReceived".bytes()) } }
+		    Button("Stop opened") { on press { host.send("push", "stop", "nextOpened".bytes()) } }
 		  }
 		}
 		app { App() }

@@ -14,10 +14,9 @@ import AsukaOps
         guard let n = nodes[id], let c = AsukaCommand(rawValue: command) else { return }
         switch c {
         case .focus:
-            guard let v = n.textView ?? n.view else { return }
-            v.window?.makeFirstResponder(v)
+            focusCommand(n) // Focus.swift
         case .blur:
-            if let w = (n.textView ?? n.view)?.window { w.makeFirstResponder(nil) }
+            blurCommand(n)
         case .listUpdate:
             listUpdate(n, args)
         case .insertText:
@@ -27,7 +26,7 @@ import AsukaOps
         case .setLink:
             setFieldLink(n, String(decoding: args, as: UTF8.self))
         case .present:
-            present(n)
+            if n.kind == .overlay { presentOverlay(n) } else { present(n) }
         case .haptic:
             // The trackpad's feedback: alignment for a selection, a level
             // change for the rest.
