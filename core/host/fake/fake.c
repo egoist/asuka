@@ -25,6 +25,8 @@ AK_PRINTF(2, 3) static void fail(ak_fake *f, const char *fmt, ...) {
 
 static void location(ak_fake *f, ak_fake_view *v, ak_span args);
 static bool listening(ak_fake *f, const ak_fake_view *v, ak_event_kind e);
+static void focus_to(ak_fake *f, ak_fake_view *v, bool keyboard, bool posted);
+static void report_anchors(ak_fake *f);
 
 static const char *kind_str(ak_view_kind k, char buf[16]) {
 	if (k == AK_FAKE_KIND_CELL) return "Cell";
@@ -570,6 +572,7 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 		if (v->parent) remove_child(v->parent, v);
 		for (uint32_t i = 0; i < v->children.len; i++) v->children.data[i]->parent = NULL;
 		ak_fake_desk_destroyed(f, v->id);
+		if (f->focus == v->id) f->focus = 0;  // its focus goes with it, unreported
 		slots_delete(f, v->id);
 		free_view(v);
 		return;
@@ -607,6 +610,7 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 			{ fail(f, "SetProp: a sheet's FullScreen after its Present: a host presents it as it was"); return; }
 		set_prop(v, op->prop, &op->value);
 		if (v->kind == AK_KIND_NATIVE && op->prop == AK_PROP_NATIVE_PROP) set_native(v, op->value.s);
+		if (v->kind == AK_KIND_OVERLAY && op->prop == AK_PROP_OVERLAY_ANCHOR) v->anchor_known = false;  // reported again
 		return;
 	}
 	case AK_OP_SET_FRAME: {
@@ -637,9 +641,21 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 		case AK_CMD_LOCATION: location(f, v, op->value.s); return;
 		case AK_CMD_LIST_UPDATE: list_update(f, v, op->value.s); break;
 		case AK_CMD_PRESENT:
-			if (v->kind != AK_KIND_SHEET && v->kind != AK_KIND_POPOVER && v->kind != AK_KIND_ALERT && v->kind != AK_KIND_WINDOW && v->kind != AK_KIND_SNACKBAR)
+			if (v->kind != AK_KIND_SHEET && v->kind != AK_KIND_POPOVER && v->kind != AK_KIND_ALERT && v->kind != AK_KIND_WINDOW && v->kind != AK_KIND_SNACKBAR &&
+			    v->kind != AK_KIND_OVERLAY)
 				{ fail(f, "Present on a %s", kind_str(v->kind, kb)); return; }
+			if (v->kind == AK_KIND_OVERLAY && !v->presented) {
+				// Its root's size and insets: the root's, as a host's layer over it.
+				ak_fake_post_event(f, &(ak_event){.id = v->id, .kind = AK_EVENT_ENVIRONMENT, .env = f->env});
+			}
 			v->presented = true;
+			v->present_seq = ++f->present_seq;
+			break;
+		case AK_CMD_FOCUS:
+			if (ak_fake_takes_focus(v)) focus_to(f, v, f->keyboard, true);
+			break;
+		case AK_CMD_BLUR:
+			if (f->focus == v->id) focus_to(f, NULL, false, true);
 			break;
 		}
 		window_command(f, v, op->cmd, op->value.s);
@@ -787,6 +803,7 @@ void ak_fake_apply(ak_fake *f, const uint8_t *buf, size_t len) {
 		apply_op(f, &op);
 	}
 	if (br.err != AK_OK) fail(f, "a bad batch: %s", ak_err_string(br.err));
+	report_anchors(f);
 }
 
 // Measuring.
@@ -1034,7 +1051,18 @@ static bool presented_pred(const ak_fake_view *v, const void *arg) {
 	return v->presented;
 }
 
-void ak_fake_presented(const ak_fake *f, ak_fake_view_vec *out) { collect(f, presented_pred, NULL, out); }
+static int by_present(const void *a, const void *b) {
+	uint32_t x = (*(ak_fake_view *const *)a)->present_seq, y = (*(ak_fake_view *const *)b)->present_seq;
+	return x < y ? -1 : x > y;
+}
+
+// ak_fake_presented is what's presented, in the order it last was: what
+// came last is over the rest.
+void ak_fake_presented(const ak_fake *f, ak_fake_view_vec *out) {
+	uint32_t start = out->len;
+	collect(f, presented_pred, NULL, out);
+	qsort(out->data + start, out->len - start, sizeof(ak_fake_view *), by_present);
+}
 
 ak_fake_view *ak_fake_snackbar(const ak_fake *f) {
 	ak_fake_view *top = NULL;
@@ -1068,6 +1096,12 @@ ak_fake_view *ak_fake_key_out(const ak_fake *f, const ak_fake_view *v) {
 		if (l) return l;
 	}
 	switch (v->kind) {
+	case AK_KIND_OVERLAY: {
+		// On to the root it's over (a sheet's: on from there).
+		ak_fake_view *r = ak_fake_view_of(f, (ak_id)ak_fake_int(v, AK_PROP_OVERLAY_ROOT));
+		if (r && r != v) return r;
+		return ak_fake_root(f) != v ? ak_fake_root(f) : NULL;
+	}
 	case AK_KIND_SHEET: {
 		ak_fake_view *w = ak_fake_presented_on(f, v);
 		if (w && w != v) return w;
@@ -1348,7 +1382,9 @@ void ak_fake_time_out(ak_fake *f, ak_fake_view *snackbar) {
 }
 
 bool ak_fake_key(ak_fake *f, ak_fake_view *focused, const char *name, uint8_t mods) {
-	if (!focused) focused = ak_fake_key_window(f);
+	f->keyboard = true;
+	ak_fake_view *had = focused ? focused : ak_fake_focused(f);
+	if (!focused) focused = had ? had : ak_fake_key_window(f);
 	ak_key_vec keys = {0};
 	for (ak_fake_view *v = focused; v; v = ak_fake_key_out(f, v)) {
 		const ak_value *b = ak_fake_prop_of(v, AK_PROP_KEYS);
@@ -1363,7 +1399,153 @@ bool ak_fake_key(ak_fake *f, ak_fake_view *focused, const char *name, uint8_t mo
 		}
 	}
 	ak_vec_free(&keys);
+	// What the platform does with a key no view took (not the app's keys
+	// taking it: false).
+	ak_span k = ak_cstr(name);
+	if (ak_span_eq(k, ak_cstr("tab")) && !(mods & ~2)) {
+		ak_fake_tab(f, (mods & 2) != 0);
+		return false;
+	}
+	if (!had || mods) return false;
+	if ((ak_span_eq(k, ak_cstr("enter")) || ak_span_eq(k, ak_cstr("space"))) && had->kind != AK_KIND_TEXT_FIELD && listening(f, had, AK_EVENT_PRESS)) {
+		emit(f, had, AK_EVENT_PRESS);
+		return false;
+	}
+	ak_span text = ak_span_eq(k, ak_cstr("space")) ? ak_cstr(" ") : k;
+	if (runes(text) == 1 && listening(f, had, AK_EVENT_KEY_TEXT)) ak_fake_dispatch(f, &(ak_event){.id = had->id, .kind = AK_EVENT_KEY_TEXT, .s = text});
 	return false;
+}
+
+// ---- The keyboard's focus ----
+
+bool ak_fake_takes_focus(const ak_fake_view *v) {
+	if (!v || ak_fake_bool(v, AK_PROP_DISABLED) || ak_fake_bool(v, AK_PROP_HIDDEN)) return false;
+	switch (v->kind) {
+	case AK_KIND_TEXT_FIELD:
+	case AK_KIND_BUTTON:
+	case AK_KIND_TOGGLE:
+	case AK_KIND_SLIDER:
+	case AK_KIND_STEPPER:
+	case AK_KIND_SEGMENTED:
+	case AK_KIND_PICKER:
+	case AK_KIND_WHEEL:
+	case AK_KIND_COLOR_PICKER:
+	case AK_KIND_DATE_PICKER:
+		return true;
+	}
+	return ak_fake_bool(v, AK_PROP_FOCUSABLE) || ak_fake_listens(v, AK_EVENT_PRESS) || ak_fake_bool(v, AK_PROP_A11Y_ADJUSTABLE);
+}
+
+ak_fake_view *ak_fake_focused(const ak_fake *f) { return f->focus ? ak_fake_view_of(f, f->focus) : NULL; }
+
+// focus_send sends e now, or posted (while a batch is applied).
+static void focus_send(ak_fake *f, const ak_event *e, bool posted) {
+	if (posted) ak_fake_post_event(f, e);
+	else ak_fake_dispatch(f, e);
+}
+
+static void focus_to(ak_fake *f, ak_fake_view *v, bool keyboard, bool posted) {
+	ak_fake_view *was = ak_fake_focused(f);
+	if (was == v) return;
+	f->focus = v ? v->id : 0;
+	if (was) {
+		if (was->kind == AK_KIND_TEXT_FIELD) {
+			if (ak_fake_listens(was, AK_EVENT_BLUR)) focus_send(f, &(ak_event){.id = was->id, .kind = AK_EVENT_BLUR}, posted);
+		} else {
+			focus_send(f, &(ak_event){.id = was->id, .kind = AK_EVENT_FOCUS_CHANGE, .i = 0}, posted);
+		}
+	}
+	if (v) {
+		if (v->kind == AK_KIND_TEXT_FIELD) {
+			if (ak_fake_listens(v, AK_EVENT_FOCUS)) focus_send(f, &(ak_event){.id = v->id, .kind = AK_EVENT_FOCUS}, posted);
+		} else {
+			focus_send(f, &(ak_event){.id = v->id, .kind = AK_EVENT_FOCUS_CHANGE, .i = keyboard ? 2 : 1}, posted);
+		}
+	}
+}
+
+void ak_fake_focus(ak_fake *f, ak_fake_view *v, bool keyboard) {
+	f->keyboard = keyboard;
+	focus_to(f, v, keyboard, false);
+}
+
+// tab_order adds the views under v that take the focus, in the tree's
+// order (what shows: not hidden; a stack's top screen).
+static void tab_order(ak_fake_view *v, ak_fake_view_vec *out) {
+	if (ak_fake_bool(v, AK_PROP_HIDDEN)) return;
+	if (ak_fake_takes_focus(v)) ak_vec_push(out, v);
+	if (v->kind == AK_KIND_STACK) {
+		if (v->children.len) tab_order(v->children.data[v->children.len - 1], out);
+		return;
+	}
+	for (uint32_t i = 0; i < v->children.len; i++) tab_order(v->children.data[i], out);
+}
+
+void ak_fake_tab(ak_fake *f, bool backward) {
+	ak_fake_view *cur = ak_fake_focused(f);
+	// Within the focus trap the focus is in (the innermost), else the
+	// root and what's presented over it.
+	ak_fake_view *trap = NULL;
+	for (ak_fake_view *v = cur; v && !trap; v = v->parent)
+		if (ak_fake_bool(v, AK_PROP_FOCUS_TRAP)) trap = v;
+	ak_fake_view_vec order = {0};
+	if (trap) {
+		tab_order(trap, &order);
+	} else {
+		ak_fake_view *r = ak_fake_root(f);
+		if (r) tab_order(r, &order);
+		ak_fake_view_vec ps = {0};
+		ak_fake_presented(f, &ps);
+		for (uint32_t i = 0; i < ps.len; i++) tab_order(ps.data[i], &order);
+		ak_vec_free(&ps);
+	}
+	if (order.len) {
+		int64_t at = -1;
+		for (uint32_t i = 0; i < order.len; i++)
+			if (order.data[i] == cur) at = i;
+		int64_t n = order.len;
+		int64_t next = at < 0 ? (backward ? n - 1 : 0) : ((at + (backward ? -1 : 1)) % n + n) % n;
+		ak_fake_focus(f, order.data[next], true);
+	}
+	ak_vec_free(&order);
+}
+
+void ak_fake_abs_frame(const ak_fake *f, const ak_fake_view *v, float out[4]) {
+	AK_UNUSED(f);
+	out[0] = out[1] = 0;
+	out[2] = v->frame[2], out[3] = v->frame[3];
+	for (const ak_fake_view *x = v; x; x = x->parent) {
+		if (!x->parent) break;  // a root's own frame is where it is, not in it
+		out[0] += x->frame[0], out[1] += x->frame[1];
+	}
+}
+
+// report_anchors reports where each shown Overlay's anchor is, when
+// that changed, as a host does after it lays its views out.
+static void report_anchors(ak_fake *f) {
+	for (uint32_t i = 0; i < f->slots_cap; i++) {
+		ak_fake_view *o = f->slots[i];
+		if (!o || o->kind != AK_KIND_OVERLAY || !o->presented || !ak_fake_listens(o, AK_EVENT_ANCHOR_FRAME)) continue;
+		ak_fake_view *a = ak_fake_view_of(f, (ak_id)ak_fake_int(o, AK_PROP_OVERLAY_ANCHOR));
+		if (!a) continue;
+		float fr[5];
+		ak_fake_abs_frame(f, a, fr);
+		bool vis = true;
+		for (ak_fake_view *x = a; x; x = x->parent)
+			if (ak_fake_bool(x, AK_PROP_HIDDEN)) vis = false;
+		fr[4] = vis ? 1 : 0;
+		if (o->anchor_known && memcmp(fr, o->anchor_sent, sizeof fr) == 0) continue;
+		o->anchor_known = true;
+		memcpy(o->anchor_sent, fr, sizeof fr);
+		uint8_t b[17];
+		memcpy(b, fr, 16);
+		b[16] = vis ? 1 : 0;
+		ak_fake_post_event(f, &(ak_event){.id = o->id, .kind = AK_EVENT_ANCHOR_FRAME, .s = {(const char *)b, 17}});
+	}
+}
+
+void ak_fake_outside_press(ak_fake *f, ak_fake_view *overlay, double x, double y) {
+	if (listening(f, overlay, AK_EVENT_OUTSIDE_PRESS)) ak_fake_dispatch(f, &(ak_event){.id = overlay->id, .kind = AK_EVENT_OUTSIDE_PRESS, .x = x, .y = y});
 }
 
 void ak_fake_set_environment(ak_fake *f, const ak_environment *e) {

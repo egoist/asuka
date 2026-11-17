@@ -97,8 +97,9 @@ void ak_view_make_view(ak_view *e) {
 	ak_batch_create(e->r->batch, e->id, e->kind);
 	if (e->dir != AK_LAYOUT_DIRECTION_INHERIT) ak_batch_set_enum(e->r->batch, e->id, AK_PROP_LAYOUT_DIRECTION, e->dir);
 	// What it listens for, if it got handlers before it had a view.
-	for (ak_event_kind k = 1; k < AK_EVENT_COUNT && k < 64; k++)
-		if (e->listens & (UINT64_C(1) << k)) ak_batch_listen(e->r->batch, e->id, k);
+	for (ak_event_kind k = 1; k < AK_EVENT_COUNT; k++)
+		if (ak_view_listening(e, k)) ak_batch_listen(e->r->batch, e->id, k);
+	ak_focus_view_made(e);
 }
 
 static void view_drop(ak_opaque *o) {
@@ -299,6 +300,7 @@ void ak_view_remove(ak_view *e, ak_view *k, bool destroy) {
 // ak_view_destroy destroys the views of e's subtree.
 void ak_view_destroy(ak_view *e) {
 	if (e->dead) return;
+	if (e->real) ak_focus_destroyed(e);
 	e->dead = true;
 	if (e->real && !e->cell) {
 		ak_batch_destroy(e->r->batch, e->id);
@@ -356,9 +358,11 @@ void ak_view_emit_frame(ak_view *e) {
 		memcpy(e->sent, f, sizeof f);
 		ak_batch_set_frame(e->r->batch, e->id, f[0], f[1], f[2], f[3]);
 		if (e->autofocus) {
-			// In its window and laid out: it can take the keyboard.
+			// In its window and laid out: it can take the keyboard. A
+			// container gives it to the first view in it that takes it.
 			e->autofocus = false;
-			ak_batch_command(e->r->batch, e->id, AK_CMD_FOCUS, NULL, 0);
+			if (e->el >= AK_EL_VIEW && e->el <= AK_EL_SAFE_AREA) ak_focus_autofocus(e);
+			else ak_batch_command(e->r->batch, e->id, AK_CMD_FOCUS, NULL, 0);
 		}
 		if (!e->layout_q && ((e->cls->flags & AK_ELF_SIZED) || ak_view_handler(e, AK_EV_VIEW_LAYOUT) || ak_view_handler(e, AK_EV_ROW_LAYOUT) ||
 		                     ak_view_handler(e, AK_EV_COLUMN_LAYOUT) || ak_view_handler(e, AK_EV_SAFE_AREA_LAYOUT))) {
@@ -519,10 +523,11 @@ bool ak_view_rtl(const ak_view *e) {
 
 // ---- Events ----
 
+_Static_assert(AK_EVENT_COUNT <= 128, "a view's listens holds 128 events");
+
 void ak_view_listen(ak_view *e, ak_event_kind ev) {
-	uint64_t bit = UINT64_C(1) << ev;
-	if (e->listens & bit) return;
-	e->listens |= bit;
+	if (ak_view_listening(e, ev)) return;
+	e->listens[ev / 64] |= UINT64_C(1) << (ev % 64);
 	if (e->real) ak_batch_listen(e->r->batch, e->id, ev);
 }
 

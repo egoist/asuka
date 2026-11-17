@@ -295,6 +295,7 @@ void ak_root_layout_provs(ak_ui_root *r, ak_lpass *lp) {
 		}
 	}
 	r->provs.len = live;
+	ak_overlays_layout_hook(r, lp);  // after the roots their anchors are in
 }
 
 // ---- Syncing at the flush ----
@@ -1334,7 +1335,8 @@ static const ak_el_class cls_pages = {.name = "PageControl", .kind = AK_KIND_PAG
 
 // ---- Classes, events ----
 
-extern const ak_el_class ak_class_sheet, ak_class_alert, ak_class_popover, ak_class_menu, ak_class_window, ak_class_router, ak_class_route, ak_class_boundary;
+extern const ak_el_class ak_class_sheet, ak_class_alert, ak_class_popover, ak_class_menu, ak_class_window, ak_class_router, ak_class_route, ak_class_boundary,
+    ak_class_overlay;
 
 const ak_el_class *ak_nav_class_of(uint16_t el) {
 	switch (el) {
@@ -1354,6 +1356,7 @@ const ak_el_class *ak_nav_class_of(uint16_t el) {
 	case AK_EL_ROUTER: return &ak_class_router;
 	case AK_EL_ROUTE: return &ak_class_route;
 	case AK_EL_BOUNDARY: return &ak_class_boundary;
+	case AK_EL_OVERLAY: return &ak_class_overlay;
 	}
 	return NULL;
 }

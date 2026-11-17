@@ -1,0 +1,175 @@
+// Overlay: its children over the window next to an anchor, placed by the
+// core, closed by a press outside, Escape or Back, or as the focus leaves.
+
+component Picker {
+  state open = false
+  state side = "?"
+  state reason = "none"
+  state picked = "nothing"
+  let trigger = Ref()
+
+  Column {
+    padding: 20
+    View {
+      ref: trigger
+      on press { open = !open }
+      Text("Choose")
+    }
+    Text("Picked {picked}")
+    Text("Side {side}")
+    Text("Closed by {reason}")
+    Button("Elsewhere") { on press { picked = "elsewhere" } }
+    Overlay {
+      bind open: open
+      anchor: trigger
+      offset: 4
+      matchWidth: true
+      on place(p) { side = "{p.side}" }
+      on dismiss(r) { reason = "{r}" }
+      Column {
+        Button("Apple") { on press { picked = "apple"; open = false } }
+        Button("Pear") { on press { picked = "pear"; open = false } }
+      }
+    }
+  }
+}
+
+component Low {
+  state open = false
+  state side = "?"
+  let trigger = Ref()
+
+  Column {
+    height: 100%
+    Text("Side {side}")
+    View { grow: 1 }
+    View as t {
+      ref: trigger
+      on press { open = true }
+      Text("Open low")
+    }
+    Overlay {
+      bind open: open
+      anchor: trigger
+      on place(p) { side = "{p.side}" }
+      Column {
+        for i in 0..<20 key i { Text("Row {i}") }
+      }
+    }
+  }
+}
+
+component Dialog {
+  state open = false
+  state reason = "none"
+
+  Column {
+    Button("Show") { on press { open = true } }
+    Text("Reason {reason}")
+    Button("Behind") { on press { reason = "pressed behind" } }
+    Overlay {
+      bind open: open
+      side: .center
+      modal: true
+      on dismiss(r) { reason = "{r}" }
+      backdrop { View { background: #00000066 } }
+      Column {
+        padding: 16
+        Text("Are you sure?")
+        Button("Close") { on press { open = false } }
+      }
+    }
+  }
+}
+
+component Kept {
+  state open = true
+
+  Column {
+    Text("Kept open")
+    Overlay {
+      open: open
+      side: .center
+      dismissOn: []
+      Text("Stays")
+    }
+  }
+}
+
+app { Picker() }
+
+test "an overlay shows next to its anchor, under it" {
+  let app = mount(Picker())
+  app.expectNo("Apple")
+  app.tap("Choose")
+  app.expect("Apple", "Pear", "Side bottom")
+  let (_, ty, _, th) = app.frameOf("Choose")
+  let (_, ay, _, _) = app.frameOf("Apple")
+  expect(ay >= ty + th + 4, "Apple at {ay}, Choose at {ty} + {th}")
+  app.tap("Apple")
+  app.expect("Picked apple")
+  app.expectNo("Apple")
+}
+
+test "a press outside closes it, and reaches what it lands on" {
+  let app = mount(Picker())
+  app.tap("Choose")
+  app.dismiss()
+  app.expect("Closed by outsidePress")
+  app.expectNo("Apple")
+  app.tap("Choose")
+  app.tap("Elsewhere")
+  app.expect("Picked elsewhere", "Closed by outsidePress")
+  app.expectNo("Apple")
+}
+
+test "its anchor's press isn't outside it" {
+  let app = mount(Picker())
+  app.tap("Choose")
+  app.tap("Choose")
+  app.expectNo("Apple")
+  app.expect("Closed by none")
+}
+
+test "Escape and Back close it" {
+  let app = mount(Picker())
+  app.tap("Choose")
+  app.pressKey("escape")
+  app.expect("Closed by escape")
+  app.expectNo("Apple")
+  app.tap("Choose")
+  app.back()
+  app.expect("Closed by back")
+  app.expectNo("Apple")
+}
+
+test "it flips to where there's room" {
+  let app = mount(Low())
+  app.tap("Open low")
+  app.expect("Side top", "Row 0")
+  let (_, ty, _, _) = app.frameOf("Open low")
+  let (_, ry, _, _) = app.frameOf("Row 0")
+  expect(ry < ty, "Row 0 at {ry}, the anchor at {ty}")
+}
+
+test "a modal one covers the window with its backdrop" {
+  let app = mount(Dialog())
+  app.tap("Show")
+  app.expect("Are you sure?")
+  let (x, _, w, _) = app.frameOf("Are you sure?")
+  expect(x > 0 && x + w < 390, "centered: {x} {w}")
+  app.dismiss()
+  app.expect("Reason outsidePress")
+  app.expectNo("Are you sure?")
+  app.tap("Show")
+  app.tap("Close")
+  app.expectNo("Are you sure?")
+}
+
+test "what dismissOn leaves out doesn't close it" {
+  let app = mount(Kept())
+  app.expect("Stays")
+  app.pressKey("escape")
+  app.dismiss()
+  app.expect("Stays")
+}

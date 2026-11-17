@@ -132,7 +132,7 @@ struct ak_view {
 	float extra_pad[4];      // a SafeArea's insets
 	AK_VEC(ak_style_ent) style;
 	AK_VEC(ak_handler_ent) handlers;
-	uint64_t listens;  // the ops events it listens for, a bit each
+	uint64_t listens[2];  // the ops events it listens for, a bit each (AK_EVENT_COUNT <= 128)
 	uint64_t outer;    // the style keys its component's caller set, a bit each (ak_ui_set_outer)
 	ak_owner *owner;   // retained: the owner it was made under
 	ak_str *text, *text2;  // what the measure cache keys it by (Text's text; Button's title and icon)
@@ -266,6 +266,8 @@ void ak_view_inherit_dir(ak_view *p, ak_view *k);
 uint8_t ak_view_ldir(const ak_view *e);  // its box's direction
 bool ak_view_rtl(const ak_view *e);
 void ak_view_listen(ak_view *e, ak_event_kind ev);
+// ak_view_listening reports whether e listens for ev.
+static inline bool ak_view_listening(const ak_view *e, ak_event_kind ev) { return (e->listens[ev / 64] >> (ev % 64)) & 1; }
 ak_closure *ak_view_handler(const ak_view *e, uint16_t ev);
 // ak_view_call calls e's handler for ev, if any, with args, under e's
 // owner: an error it throws goes to the owner's catcher.
@@ -376,6 +378,9 @@ void ak_prov_attach(ak_view *v, ak_prov *p);
 // the root's), read: a render effect that calls it follows it.
 const ak_environment *ak_view_env(ak_view *e);
 void ak_root_layout_provs(ak_ui_root *r, ak_lpass *p);
+// ak_overlays_layout_hook lays out the open Overlays (floating.c's
+// ak_overlays_layout), after the providers.
+void ak_overlays_layout_hook(ak_ui_root *r, ak_lpass *p);
 // ak_prov_report sets a provider's environment, reported by the host.
 bool ak_prov_report(ak_id id, const ak_environment *env);
 // ak_only_kid is v made to fill its parent, as the one child of a kind

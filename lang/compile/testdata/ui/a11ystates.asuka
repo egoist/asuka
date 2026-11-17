@@ -1,0 +1,58 @@
+// Screen readers' roles and states: checked, expanded, selected, a
+// value and its range, modal, and the views that label, describe or are
+// controlled by another (their Refs' views, sent once they have one).
+
+component Box {
+  state on = false
+  state open = false
+  let label = Ref()
+  let list = Ref()
+
+  Column {
+    Text("Agree") { ref: label }
+    View {
+      role: .checkbox
+      a11yChecked: if on { .checked } else { .unchecked }
+      a11yLabelledBy: label
+      on press { on = !on }
+      Text("Box")
+    }
+    View {
+      role: .comboBox
+      a11yExpanded: if open { .expanded } else { .collapsed }
+      a11yControls: list
+      on press { open = !open }
+      Text("Combo")
+    }
+    if open {
+      View { ref: list; role: .listbox; a11yModal: true; Text("Items") }
+    }
+    View {
+      role: .slider
+      a11yValue: "40%"
+      a11yRange: ValueRange(min: 0, max: 100, now: 40)
+      a11ySelected: true
+      Text("Volume")
+    }
+  }
+}
+
+app { Box() }
+
+// The wire's enums, by value: Role's Checkbox 7, ComboBox 25;
+// A11yChecked's Unchecked 1, Checked 2; A11yExpanded's Collapsed 1,
+// Expanded 2.
+test "the states go to the host" {
+  let app = mount(Box())
+  let ops = app.ops()
+  expect(ops.contains("A11yRole=7") && ops.contains("A11yChecked=1"), ops)
+  expect(ops.contains("A11yExpanded=1") && ops.contains("A11yRole=25"), ops)
+  expect(ops.contains("A11yValue=\"40%\"") && ops.contains("A11yRange=") && ops.contains("A11ySelected=true"), ops)
+  expect(ops.contains("A11yLabelledBy="), ops)
+  expect(!ops.contains("A11yControls="), "no list yet: {ops}")
+  app.tap("Box")
+  expect(app.ops().contains("A11yChecked=2"), app.ops())
+  app.tap("Combo")
+  let more = app.ops()
+  expect(more.contains("A11yExpanded=2") && more.contains("A11yControls=") && more.contains("A11yModal=true"), more)
+}

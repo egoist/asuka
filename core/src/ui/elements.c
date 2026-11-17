@@ -439,10 +439,10 @@ static void field_finalize(ak_view *e) {
 	// bound text, its height (a multiline field's is its text's).
 	if (ak_view_handler(e, AK_EV_TEXT_FIELD_CHANGE) || key_set(e, AK_KEY_TEXT_FIELD_TEXT) || f->multiline) ak_view_listen(e, AK_EVENT_TEXT_CHANGED);
 	if (key_set(e, AK_KEY_TEXT_FIELD_SELECTION)) ak_view_listen(e, AK_EVENT_SELECTION_CHANGED);
-	if (key_set(e, AK_KEY_TEXT_FIELD_FOCUSED) || ak_view_handler(e, AK_EV_TEXT_FIELD_FOCUS_CHANGE)) {
-		ak_view_listen(e, AK_EVENT_FOCUS);
-		ak_view_listen(e, AK_EVENT_BLUR);
-	}
+	// Its focus, which the core follows (focus.c): the focused state of
+	// the views around it, an overlay that closes as the focus leaves.
+	ak_view_listen(e, AK_EVENT_FOCUS);
+	ak_view_listen(e, AK_EVENT_BLUR);
 	const ak_val *af = ak_style_get(e, AK_KEY_TEXT_FIELD_AUTOFOCUS);
 	if (af && af->i) e->autofocus = true;  // with its first frame
 	ak_field_finalize_ext(e);
@@ -469,6 +469,7 @@ static void field_event(ak_view *e, const ak_event *ev) {
 	case AK_EVENT_BLUR: {
 		bool on = ev->kind == AK_EVENT_FOCUS;
 		f->focused = on;
+		ak_focus_report(e, on ? 2 : 0);
 		call0(e, on ? AK_EV_TEXT_FIELD_FOCUS : AK_EV_TEXT_FIELD_BLUR);
 		ak_val arg = {.i = on};
 		ak_view_call(e, AK_EV_TEXT_FIELD_FOCUS_CHANGE, &arg, 1);

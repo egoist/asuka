@@ -76,9 +76,11 @@ const (
 	KindProgressRing Kind = 37
 	// KindSnackbar: a brief message at the bottom of the window, with an optional action (Material's Snackbar; AdwToast): Present shows it, Destroy dismisses it, animated. Its action reports Action; timing out or the user's swipe reports Dismissed. The core destroys it after either.
 	KindSnackbar Kind = 38
+	// KindOverlay: a layer over a layout root (std/base's popups: a select's list, a menu, a dialog, a tooltip), laid out by the core at the root's size, its children placed by the core next to an anchor view: shown while it exists (made: added on top of the root's other overlays; Destroy: removed), never in its parent's view. Reports OutsidePress.
+	KindOverlay Kind = 39
 )
 
-var kindNames = [...]string{"", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar"}
+var kindNames = [...]string{"", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay"}
 
 func (k Kind) String() string {
 	if int(k) < len(kindNames) && k > 0 {
@@ -147,6 +149,32 @@ const (
 	PropTooltip PropID = 36
 	// PropKeys: keys the view takes while the keyboard's focus is in it (it, or a view inside it: a text field) (ops.Keys, ops.AppendKeys): u32 count, per key a u32-length key (a lower case character, or enter, escape, tab, space, delete, backspace, up, down, left, right, home, end, pageup, pagedown, f1-f12) and u8 modifiers (1 primary: ⌘ on macOS, Ctrl elsewhere; 2 shift; 4 alt, a Mac's option; 8 control). A key going down (and each repeat) goes first to the nearest view, from the focused one out through its ancestors, with a key that matches it (the key and exactly its modifiers; a character as the key types it without modifiers, lower case): the focused control and the menus don't get it, and the host sends Key to that view with the key's index. Not while an input method composes text. Empty: none.
 	PropKeys PropID = 37
+	// PropFocusable: the view takes the keyboard's focus: a Tab stop in the views' order where a keyboard moves focus (desktops, the web, a hardware keyboard on a phone or tablet), focused by a press with a mouse or trackpad unless NoFocusOnPress. Reports FocusChange.
+	PropFocusable PropID = 38
+	// PropNoFocusOnPress: a press with a pointer doesn't move the keyboard's focus to the view (a toolbar's button, a menu's trigger that keeps focus where it was).
+	PropNoFocusOnPress PropID = 39
+	// PropNoFocusRing: the host draws no focus indicator of its own around the view (the app draws one in its focusVisible style): no CSS outline, no Fluent focus rect, no UIFocusEffect, no defaultFocusHighlight.
+	PropNoFocusRing PropID = 40
+	// PropFocusTrap: while the keyboard's focus is in the view, Tab and Shift+Tab (and a hardware keyboard's focus movement on a phone) cycle among the focusable views inside it, never leaving it.
+	PropFocusTrap PropID = 41
+	// PropA11yChecked: a checkbox's, switch's, radio's or checkable menu item's state, for screen readers: UIKit's toggle trait and value, Android's checkable and checked (stateDescription for Mixed), NSAccessibilityValue, UIA's Toggle pattern, GTK_ACCESSIBLE_STATE_CHECKED, aria-checked.
+	PropA11yChecked PropID = 42
+	// PropA11yExpanded: whether what the view controls is shown (a disclosure's, a menu's trigger, a combobox): accessibilityExpandedStatus (iOS 18; else the value says it), AccessibilityNodeInfo's expanded state (its actions expand and collapse before API 36), AXExpanded, UIA's ExpandCollapse pattern, GTK_ACCESSIBLE_STATE_EXPANDED, aria-expanded.
+	PropA11yExpanded PropID = 43
+	// PropA11ySelected: selected among its group, for screen readers (a tab, an option, a radio's group's choice): UIKit's selected trait, isSelected, AXSelected, UIA's SelectionItem, GTK_ACCESSIBLE_STATE_SELECTED, aria-selected.
+	PropA11ySelected PropID = 44
+	// PropA11yValue: what a screen reader reads as the view's value (a slider's "40%", a select's choice): accessibilityValue, stateDescription, NSAccessibilityValue (AXValueDescription), UIA's Value, GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT, aria-valuetext.
+	PropA11yValue PropID = 45
+	// PropA11yRange: a slider's, progress bar's, meter's or spin button's range for screen readers (ops.AppendRange): f64 min, f64 max, f64 now; empty: none. AccessibilityNodeInfo.RangeInfo, AXMinValue/AXMaxValue/AXValue, UIA's RangeValue, GTK_ACCESSIBLE_PROPERTY_VALUE_MIN/MAX/NOW, aria-valuemin/max/now.
+	PropA11yRange PropID = 46
+	// PropA11yModal: screen readers stay inside the view, the rest of its window hidden from them while it shows (a dialog): accessibilityViewIsModal, the rest importantForAccessibility noHideDescendants, AXModal, the rest's UIA elements off the control view, GTK_ACCESSIBLE_PROPERTY_MODAL with the rest hidden, aria-modal with the rest inert.
+	PropA11yModal PropID = 47
+	// PropA11yControls: the view (a node ID; 0: none) this one controls (a combobox's listbox, a tab's panel): UIA's ControllerFor, GTK_ACCESSIBLE_RELATION_CONTROLS, aria-controls; Android's and Apple's platforms have no such relation and ignore it.
+	PropA11yControls PropID = 48
+	// PropA11yLabelledBy: the view (a node ID; 0: none) whose text labels this one (a field's label): accessibilityLabel taken from its text where the platform has no relation (iOS), setLabeledBy, AXTitleUIElement, UIA's LabeledBy, GTK_ACCESSIBLE_RELATION_LABELLED_BY, aria-labelledby.
+	PropA11yLabelledBy PropID = 49
+	// PropA11yDescribedBy: the view (a node ID; 0: none) whose text describes this one (a field's description or error): accessibilityHint from its text where the platform has no relation, AXHelp's text, UIA's DescribedBy, GTK_ACCESSIBLE_RELATION_DESCRIBED_BY, aria-describedby.
+	PropA11yDescribedBy PropID = 50
 )
 
 // View props.
@@ -540,9 +568,19 @@ const (
 	PropSnackbarWindow PropID = 67
 )
 
-var commonProps = [...]propInfo{{}, {"Background", TColor}, {"CornerRadius", TFloat}, {"BorderWidth", TFloat}, {"BorderColor", TColor}, {"Opacity", TFloat}, {"Hidden", TBool}, {"Clip", TBool}, {"A11yLabel", TString}, {"A11yHint", TString}, {"A11yRole", TEnum}, {"A11yActions", TBytes}, {"A11yAdjustable", TBool}, {"A11yHidden", TBool}, {"Color", TColor}, {"TextStyle", TEnum}, {"FontSize", TFloat}, {"FontWeight", TEnum}, {"TextAlign", TEnum}, {"LineLimit", TInt}, {"Disabled", TBool}, {"Menu", TBytes}, {"MenuTrigger", TEnum}, {"Transform", TBytes}, {"Shadow", TBytes}, {"Gradient", TBytes}, {"Transition", TBytes}, {"Material", TEnum}, {"FontFamily", TString}, {"SwipeActions", TBytes}, {"LayoutDirection", TEnum}, {"ContentInset", TEdges}, {"LeadingSwipeActions", TBytes}, {"Selected", TBool}, {"Match", TString}, {"InterceptBack", TBool}, {"Tooltip", TString}, {"Keys", TBytes}}
+// Overlay props.
+const (
+	// PropOverlayRoot: the layout root whose layer it's in (a node ID): the root (the main window), a Window's, a Sheet's or a Popover's view. The host puts the overlay's view over everything else in that root's view (a presented sheet's own view controller, a Dialog's window), its frame in that root's coordinates.
+	PropOverlayRoot PropID = 64
+	// PropOverlayAnchor: the view it's placed next to (a node ID; 0: none, placed in the root): the host reports where that view is, in the root's coordinates, with AnchorFrame, when the overlay is made and whenever it changes (layout, a scroll of a view around it, a resize).
+	PropOverlayAnchor PropID = 65
+	// PropOverlayModal: presses anywhere in the root reach only the overlay's views (its own view takes those that land on no child: OutsidePress), and screen readers see only it. Without Modal the overlay's own view takes no presses: they go through to what's under it, and one that lands outside its children is also reported as OutsidePress.
+	PropOverlayModal PropID = 66
+)
 
-var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TInt}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}}
+var commonProps = [...]propInfo{{}, {"Background", TColor}, {"CornerRadius", TFloat}, {"BorderWidth", TFloat}, {"BorderColor", TColor}, {"Opacity", TFloat}, {"Hidden", TBool}, {"Clip", TBool}, {"A11yLabel", TString}, {"A11yHint", TString}, {"A11yRole", TEnum}, {"A11yActions", TBytes}, {"A11yAdjustable", TBool}, {"A11yHidden", TBool}, {"Color", TColor}, {"TextStyle", TEnum}, {"FontSize", TFloat}, {"FontWeight", TEnum}, {"TextAlign", TEnum}, {"LineLimit", TInt}, {"Disabled", TBool}, {"Menu", TBytes}, {"MenuTrigger", TEnum}, {"Transform", TBytes}, {"Shadow", TBytes}, {"Gradient", TBytes}, {"Transition", TBytes}, {"Material", TEnum}, {"FontFamily", TString}, {"SwipeActions", TBytes}, {"LayoutDirection", TEnum}, {"ContentInset", TEdges}, {"LeadingSwipeActions", TBytes}, {"Selected", TBool}, {"Match", TString}, {"InterceptBack", TBool}, {"Tooltip", TString}, {"Keys", TBytes}, {"Focusable", TBool}, {"NoFocusOnPress", TBool}, {"NoFocusRing", TBool}, {"FocusTrap", TBool}, {"A11yChecked", TEnum}, {"A11yExpanded", TEnum}, {"A11ySelected", TBool}, {"A11yValue", TString}, {"A11yRange", TBytes}, {"A11yModal", TBool}, {"A11yControls", TInt}, {"A11yLabelledBy", TInt}, {"A11yDescribedBy", TInt}}
+
+var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TInt}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}, {{"Root", TInt}, {"Anchor", TInt}, {"Modal", TBool}}}
 
 // Events.
 const (
@@ -654,11 +692,21 @@ const (
 	EventAnimated EventKind = 59
 	// EventSecondInstance: the app was started again while it runs (desktop: an app runs once), to the root: u32 count, then that launch's arguments (u32-length strings), then its working directory (a u32-length string). The host has brought the app to the front, and reports the files and URLs among the arguments as it does a launch's too.
 	EventSecondInstance EventKind = 60
+	// EventFocusChange: a Focusable view took the keyboard's focus or lost it: 0 lost it, 1 took it from a pointer's press or the app (focus()), 2 took it from the keyboard (Tab, an arrow key, focus() right after a key: CSS's :focus-visible heuristics, what the host's own controls show a focus ring for).
+	EventFocusChange EventKind = 61
+	// EventKeyText: text typed while a Focusable view has the keyboard's focus that no key of its Keys (or a view's around it) took, and that isn't Enter or Space pressing it: a listbox's or menu's typeahead. Listened for.
+	EventKeyText EventKind = 62
+	// EventOutsidePress: a press began (a finger, a pen, a mouse's button) in the Overlay's root but outside every view of the overlay: where, in the root's coordinates. To the Overlay.
+	EventOutsidePress EventKind = 63
+	// EventAnchorFrame: where an Overlay's Anchor is, in the Overlay's root's coordinates (ops.AppendAnchorFrame): f32 x, y, width, height, then u8 1 while any of it is visible (not scrolled or clipped out of view by a view around it, not hidden, in the window), 0 otherwise. To the Overlay: once it's made, and again each time it changes.
+	EventAnchorFrame EventKind = 64
+	// EventPressPoint: where a press began on the view, in points from its top left: sent just before Pressed (true), when listened for (a slider's track jumps to it).
+	EventPressPoint EventKind = 65
 )
 
-var eventNames = [...]string{"", "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance"}
+var eventNames = [...]string{"", "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint"}
 
-var eventPayloads = [...]Payload{0, PNone, PNone, PString, PNone, PNone, PNone, PBool, PFloat, PPoint, PEnvironment, PInt, PInt, PInt, PInt, PNone, PNone, PGesture, PGesture, PGesture, PInt, PPoint, PString, PBytes, PString, PInt, PInt, PNone, PString, PString, PString, PString, PFloat, PBytes, PInt, PBytes, PString, PBytes, PString, PBytes, PBool, PBool, PGesture, PBytes, PBytes, PBytes, PBytes, PBytes, PBool, PNone, PPoint, PInt, PNone, PInt, PBytes, PNone, PInt, PBytes, PBytes, PNone, PBytes}
+var eventPayloads = [...]Payload{0, PNone, PNone, PString, PNone, PNone, PNone, PBool, PFloat, PPoint, PEnvironment, PInt, PInt, PInt, PInt, PNone, PNone, PGesture, PGesture, PGesture, PInt, PPoint, PString, PBytes, PString, PInt, PInt, PNone, PString, PString, PString, PString, PFloat, PBytes, PInt, PBytes, PString, PBytes, PString, PBytes, PBool, PBool, PGesture, PBytes, PBytes, PBytes, PBytes, PBytes, PBool, PNone, PPoint, PInt, PNone, PInt, PBytes, PNone, PInt, PBytes, PBytes, PNone, PBytes, PInt, PString, PPoint, PBytes, PPoint}
 
 func (e EventKind) String() string {
 	if int(e) < len(eventNames) && e > 0 {
@@ -769,6 +817,69 @@ const (
 	RoleLink
 	RoleText
 	RoleSearch
+	RoleCheckbox
+	RoleRadio
+	RoleRadioGroup
+	RoleSwitch
+	RoleTab
+	RoleTabList
+	RoleTabPanel
+	RoleSlider
+	RoleSpinButton
+	RoleProgressBar
+	RoleMeter
+	RoleMenu
+	RoleMenuBar
+	RoleMenuItem
+	RoleMenuItemCheckbox
+	RoleMenuItemRadio
+	RoleListbox
+	RoleOption
+	RoleComboBox
+	RoleDialog
+	RoleAlertDialog
+	RoleTooltip
+	RoleGroup
+	RoleSeparator
+	RoleToolbar
+	RoleStatus
+)
+
+type A11yChecked int32
+
+const (
+	A11yCheckedNone A11yChecked = iota
+	A11yCheckedUnchecked
+	A11yCheckedChecked
+	A11yCheckedMixed
+)
+
+type A11yExpanded int32
+
+const (
+	A11yExpandedNone A11yExpanded = iota
+	A11yExpandedCollapsed
+	A11yExpandedExpanded
+)
+
+type Side int32
+
+const (
+	SideBottom Side = iota
+	SideTop
+	SideStart
+	SideEnd
+	SideCenter
+)
+
+type DismissReason int32
+
+const (
+	DismissReasonOutsidePress DismissReason = iota
+	DismissReasonEscape
+	DismissReasonBack
+	DismissReasonFocusOut
+	DismissReasonAnchorHidden
 )
 
 type TextStyle int32

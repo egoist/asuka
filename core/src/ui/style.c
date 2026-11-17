@@ -305,12 +305,23 @@ static bool makes_real(uint16_t key, ak_val v) {
 	case AK_KEY_HIDDEN:
 	case AK_KEY_CLIP:
 	case AK_KEY_A11Y_HIDDEN:
+	case AK_KEY_A11Y_CHECKED:
+	case AK_KEY_A11Y_EXPANDED:
+	case AK_KEY_A11Y_SELECTED:
+	case AK_KEY_A11Y_MODAL:
 		return v.i != 0;
+	case AK_KEY_A11Y_RANGE:
+	case AK_KEY_A11Y_CONTROLS:
+	case AK_KEY_A11Y_LABELLED_BY:
+	case AK_KEY_A11Y_DESCRIBED_BY:
+		return v.p != NULL;
+	case AK_KEY_A11Y_VALUE:
 	case AK_KEY_TRANSFORM:
 	case AK_KEY_SHADOW:
 	case AK_KEY_GRADIENT:
 	case AK_KEY_TRANSITION:
 		return v.p != NULL;
+		return v.p && ((ak_str *)v.p)->len > 0;
 	case AK_KEY_SHARED:
 	case AK_KEY_LABEL:
 	case AK_KEY_HINT:
@@ -321,6 +332,11 @@ static bool makes_real(uint16_t key, ak_val v) {
 }
 
 static void put_f32(uint8_t *p, float f) { memcpy(p, &f, 4); }
+static uint64_t ak_f64_bits(double d) {
+	uint64_t u;
+	memcpy(&u, &d, sizeof u);
+	return u;
+}
 static void put_u64(uint8_t *p, uint64_t v) {
 	for (int i = 0; i < 8; i++) p[i] = (uint8_t)(v >> (8 * i));
 }
@@ -426,6 +442,23 @@ static void send(ak_view *e, uint16_t key, const ak_val *v, const ak_val *prev) 
 	case AK_KEY_HINT: send_string(e, AK_PROP_A11Y_HINT, v); break;
 	case AK_KEY_ROLE: ak_batch_set_enum(b, id, AK_PROP_A11Y_ROLE, (int32_t)x.i); break;
 	case AK_KEY_A11Y_HIDDEN: ak_batch_set_bool(b, id, AK_PROP_A11Y_HIDDEN, x.i != 0); break;
+	case AK_KEY_A11Y_CHECKED: ak_batch_set_enum(b, id, AK_PROP_A11Y_CHECKED, (int32_t)x.i); break;
+	case AK_KEY_A11Y_EXPANDED: ak_batch_set_enum(b, id, AK_PROP_A11Y_EXPANDED, (int32_t)x.i); break;
+	case AK_KEY_A11Y_SELECTED: ak_batch_set_bool(b, id, AK_PROP_A11Y_SELECTED, x.i != 0); break;
+	case AK_KEY_A11Y_MODAL: ak_batch_set_bool(b, id, AK_PROP_A11Y_MODAL, x.i != 0); break;
+	case AK_KEY_A11Y_VALUE: send_string(e, AK_PROP_A11Y_VALUE, v); break;
+	case AK_KEY_A11Y_RANGE: {
+		// f64 min, max, now; empty: none.
+		const ak_struct *rg = x.p;
+		uint8_t buf[24];
+		if (rg)
+			for (int i = 0; i < 3; i++) put_u64(buf + 8 * i, ak_f64_bits(rg->f[i].f));
+		ak_batch_set_bytes(b, id, AK_PROP_A11Y_RANGE, buf, rg ? sizeof buf : 0);
+		break;
+	}
+	case AK_KEY_A11Y_CONTROLS:
+	case AK_KEY_A11Y_LABELLED_BY:
+	case AK_KEY_A11Y_DESCRIBED_BY: ak_focus_rel_set(e, key); break;
 	case AK_KEY_TOOLTIP: send_string(e, AK_PROP_TOOLTIP, v); break;
 	case AK_KEY_DISABLED: ak_batch_set_bool(b, id, AK_PROP_DISABLED, x.i != 0); break;
 	default:

@@ -491,9 +491,11 @@ void ak_root_flush(ak_ui_root *r) {
 		ak_release(e);
 	}
 	r->kids_q.len = 0;
+	ak_overlays_sync(r);
 	ak_anim_before_apply(r);
 	ak_root_apply(r);
 	root_layout(r);
+	ak_focus_rels_flush(r);  // a relation's Ref may hold a view made since
 	bool frames = r->frame_q.len > 0;
 	if (frames) ak_anim_frames(r, true);
 	for (uint32_t i = 0; i < r->frame_q.len; i++) {
@@ -505,6 +507,15 @@ void ak_root_flush(ak_ui_root *r) {
 	if (frames) ak_anim_frames(r, false);
 	ak_anim_flushed(r);
 	ak_root_apply(r);
+	if (r->laying < 3 && ak_overlays_report_due(r)) {
+		// An overlay's place handler, as a layout handler: then what it wrote.
+		r->laying++;
+		ak_batch_begin();
+		ak_overlays_report(r);
+		ak_batch_end();
+		ak_root_flush(r);
+		r->laying--;
+	}
 	report_layouts(r);
 	ak_release(r->el);
 }

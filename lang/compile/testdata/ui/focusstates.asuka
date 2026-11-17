@@ -1,0 +1,168 @@
+// The keyboard's focus on views: focusable containers, the focused and
+// focusVisible variants and reads, focusChange, a focus trap, autofocus
+// and restoreFocus, typeahead (keyText), a press's point.
+
+component Fields {
+  state log = ""
+  state typed = ""
+  state at = ""
+
+  Column {
+    View as a {
+      focusable: true
+      on focusChange(f) { log = "{log} a:{f}" }
+      on keyText(t) { typed = typed + t }
+      focused { background: .red }
+      Text(if a.focusVisible { "A visible" } else if a.focused { "A focused" } else { "A idle" })
+    }
+    View as b {
+      focusable: true
+      focusVisible { border: 2; borderColor: .accent }
+      Text(if b.focused { "B focused" } else { "B idle" })
+    }
+    View as group {
+      padding: 8
+      View { focusable: true; Text("Inner") }
+      Text(if group.focused { "Group within" } else { "Group out" })
+    }
+    View {
+      on pressStart(x, y) { at = "{x},{y}" }
+      on press { }
+      Text("Point")
+    }
+    Text("Log:{log}")
+    Text("Typed:{typed}")
+    Text("At:{at}")
+  }
+}
+
+component Trapped {
+  Column {
+    View { focusable: true; Text("Before") }
+    View {
+      trapFocus: true
+      View { focusable: true; Text("One") }
+      View { focusable: true; Text("Two") }
+    }
+    View { focusable: true; Text("After") }
+  }
+}
+
+component Menu {
+  state open = false
+  state reason = ""
+  let trigger = Ref()
+
+  Column {
+    View {
+      ref: trigger
+      focusable: true
+      on press { open = true }
+      Text("Open")
+    }
+    View { focusable: true; Text("Next") }
+    Text("Closed by {reason}")
+    Overlay {
+      bind open: open
+      anchor: trigger
+      on dismiss(r) { reason = "{r}" }
+      View {
+        autofocus: true
+        restoreFocus: true
+        View { focusable: true; Text("First") }
+        View { focusable: true; Text("Second") }
+      }
+    }
+  }
+}
+
+app { Fields() }
+
+test "Tab moves the focus, which shows" {
+  let app = mount(Fields(), platform: .macOS)
+  app.expect("A idle", "B idle", "Group out")
+  expect(app.focused() == "", app.focused())
+  app.tab()
+  app.expect("A visible")
+  expect(app.focused() == "A visible", app.focused())
+  expect(app.ops().contains("Background"), "the focused variant")
+  app.tab()
+  app.expect("A idle", "B focused")
+  app.tab()
+  app.expect("B idle", "Group within")
+  app.tab(backward: true)
+  app.expect("B focused", "Group out")
+  app.expect("Log: a:true a:false")
+}
+
+test "a press focuses, not visibly" {
+  let app = mount(Fields(), platform: .macOS)
+  app.tap("A idle")
+  app.expect("A focused")
+}
+
+test "a phone's tap doesn't move the focus" {
+  let app = mount(Fields(), platform: .iOS)
+  app.tap("A idle")
+  app.expect("A idle")
+}
+
+test "styling focusVisible hides the platform's ring" {
+  let app = mount(Fields(), platform: .macOS)
+  expect(app.ops().contains("NoFocusRing=true"), app.ops())
+}
+
+test "typing goes to the focused view's keyText" {
+  let app = mount(Fields(), platform: .macOS)
+  app.tab()
+  app.pressKey("b")
+  app.pressKey("a")
+  app.expect("Typed:ba")
+}
+
+test "a press reports where it began" {
+  let app = mount(Fields(), platform: .macOS)
+  app.tap("Point")
+  app.expect("At:195,10")
+}
+
+test "a focus trap keeps Tab inside it" {
+  let app = mount(Trapped(), platform: .macOS)
+  app.tab()
+  expect(app.focused() == "Before", app.focused())
+  app.tab()
+  expect(app.focused() == "One", app.focused())
+  app.tab()
+  expect(app.focused() == "Two", app.focused())
+  app.tab()
+  expect(app.focused() == "One", app.focused())
+  app.tab(backward: true)
+  expect(app.focused() == "Two", app.focused())
+}
+
+test "an overlay takes the focus, and gives it back" {
+  let app = mount(Menu(), platform: .macOS)
+  app.tab()
+  expect(app.focused() == "Open", app.focused())
+  app.pressKey("space")
+  app.expect("First")
+  expect(app.focused() == "First", app.focused())
+  app.pressKey("escape")
+  app.expectNo("First")
+  expect(app.focused() == "Open", app.focused())
+}
+
+test "the focus leaving an overlay closes it" {
+  let app = mount(Menu(), platform: .macOS)
+  app.tap("Open")
+  expect(app.focused() == "First", app.focused())
+  app.tab()
+  expect(app.focused() == "Second", app.focused())
+  app.tab()
+  expect(app.focused() == "Open", app.focused())
+  app.expect("First")  // its anchor isn't outside it
+  app.tab()
+  expect(app.focused() == "Next", app.focused())
+  app.expectNo("First")
+  app.expect("Closed by focusOut")
+}

@@ -78,6 +78,24 @@ native component Style {
   prop role: Role
   /// hidden from screen readers, with what's in it
   prop a11yHidden: bool
+  /// a checkbox's, switch's, radio's or checkable menu item's state, for screen readers: .unchecked, .checked, .mixed (.off: not checkable; read as unchecked with a checkable role)
+  prop a11yChecked: Checked
+  /// whether what it controls shows (a disclosure, a menu's trigger, a combobox): .collapsed or .expanded (.off: it expands nothing)
+  prop a11yExpanded: Expanded
+  /// selected among its group, for screen readers: a tab, an option, a radio group's choice
+  prop a11ySelected: bool
+  /// what screen readers read as its value: a slider's "40%", a select's choice
+  prop a11yValue: string
+  /// a slider's, progress bar's, meter's or spin button's range, for screen readers
+  prop a11yRange: ValueRange?
+  /// screen readers stay inside it while it shows, the rest of its window hidden from them: a dialog
+  prop a11yModal: bool
+  /// the view this one controls: a combobox's listbox, a tab's panel (Windows, Linux and the web have the relation)
+  prop a11yControls: Ref?
+  /// the view whose text labels this one: a field's label
+  prop a11yLabelledBy: Ref?
+  /// the view whose text describes this one: a field's description or error
+  prop a11yDescribedBy: Ref?
   prop tooltip: string
   prop disabled: bool
   /// lays it and what's in it out this way, whatever the app's language: what reads one way everywhere (a phone number, a player's controls)
@@ -90,7 +108,7 @@ native component Style {
 
 /// a container: a column by default. Without a look (background, border...), events or an accessibility prop it makes no native view: its children go in the nearest one around it
 ///
-/// Takes the style's variants: hovered, pressed, dragging, dragOver { … }.
+/// Takes the style's variants: hovered, pressed, dragging, dragOver, focused, focusVisible { … }.
 native component View() {
   prop children: View? = none
   /// makes it draggable, within the app and to other apps: a long press then a move lifts it on a touch screen, a move with the button down with a mouse. [] (the default): not draggable
@@ -105,6 +123,18 @@ native component View() {
   prop selected: bool
   /// goes to this route when it's pressed, after press (the Router around it navigates there): an href, or a routed screen's call; with role: .link, screen readers call it a link
   prop href: string
+  /// takes the keyboard's focus: a Tab stop in the views' order where a keyboard moves focus (desktops, the web, a hardware keyboard on a phone or tablet), focused by a press with a mouse. A pressable or adjustable view is one already
+  prop focusable: bool
+  /// a press with a pointer leaves the keyboard's focus where it was (a toolbar's button, a menu's trigger)
+  prop pressKeepsFocus: bool
+  /// the platform draws no focus ring around it: the app draws its own (a view that styles focusVisible { } hides it already)
+  prop hideFocusRing: bool
+  /// while the keyboard's focus is in it, Tab and Shift+Tab cycle among the focusable views inside it: a dialog's
+  prop trapFocus: bool
+  /// when it goes, the keyboard's focus goes back to the view that had it when it came, if that view still shows
+  prop restoreFocus: bool
+  /// once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)
+  prop autofocus: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -135,11 +165,17 @@ native component View() {
   event select(selected: bool)
   /// the user started selecting at its List's row while the list isn't selecting (a two-finger pan on iOS, a long press on Android)
   event selectBegin
+  /// it took the keyboard's focus, or lost it (a focusable view's)
+  event focusChange(focused: bool)
+  /// text typed while it has the keyboard's focus that its keys (and its containers') didn't take: a listbox's typeahead
+  event keyText(text: string)
+  /// a press began on it: where, in points from its top left (before pressedChange(true)): a slider's track jumps there
+  event pressStart(x: float, y: float)
 }
 
 /// a container whose children stack on a row
 ///
-/// Takes the style's variants: hovered, pressed, dragging, dragOver { … }.
+/// Takes the style's variants: hovered, pressed, dragging, dragOver, focused, focusVisible { … }.
 native component Row() {
   prop children: View? = none
   /// makes it draggable, within the app and to other apps: a long press then a move lifts it on a touch screen, a move with the button down with a mouse. [] (the default): not draggable
@@ -154,6 +190,18 @@ native component Row() {
   prop selected: bool
   /// goes to this route when it's pressed, after press (the Router around it navigates there): an href, or a routed screen's call; with role: .link, screen readers call it a link
   prop href: string
+  /// takes the keyboard's focus: a Tab stop in the views' order where a keyboard moves focus (desktops, the web, a hardware keyboard on a phone or tablet), focused by a press with a mouse. A pressable or adjustable view is one already
+  prop focusable: bool
+  /// a press with a pointer leaves the keyboard's focus where it was (a toolbar's button, a menu's trigger)
+  prop pressKeepsFocus: bool
+  /// the platform draws no focus ring around it: the app draws its own (a view that styles focusVisible { } hides it already)
+  prop hideFocusRing: bool
+  /// while the keyboard's focus is in it, Tab and Shift+Tab cycle among the focusable views inside it: a dialog's
+  prop trapFocus: bool
+  /// when it goes, the keyboard's focus goes back to the view that had it when it came, if that view still shows
+  prop restoreFocus: bool
+  /// once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)
+  prop autofocus: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -184,11 +232,17 @@ native component Row() {
   event select(selected: bool)
   /// the user started selecting at its List's row while the list isn't selecting (a two-finger pan on iOS, a long press on Android)
   event selectBegin
+  /// it took the keyboard's focus, or lost it (a focusable view's)
+  event focusChange(focused: bool)
+  /// text typed while it has the keyboard's focus that its keys (and its containers') didn't take: a listbox's typeahead
+  event keyText(text: string)
+  /// a press began on it: where, in points from its top left (before pressedChange(true)): a slider's track jumps there
+  event pressStart(x: float, y: float)
 }
 
 /// a container whose children stack on a column
 ///
-/// Takes the style's variants: hovered, pressed, dragging, dragOver { … }.
+/// Takes the style's variants: hovered, pressed, dragging, dragOver, focused, focusVisible { … }.
 native component Column() {
   prop children: View? = none
   /// makes it draggable, within the app and to other apps: a long press then a move lifts it on a touch screen, a move with the button down with a mouse. [] (the default): not draggable
@@ -203,6 +257,18 @@ native component Column() {
   prop selected: bool
   /// goes to this route when it's pressed, after press (the Router around it navigates there): an href, or a routed screen's call; with role: .link, screen readers call it a link
   prop href: string
+  /// takes the keyboard's focus: a Tab stop in the views' order where a keyboard moves focus (desktops, the web, a hardware keyboard on a phone or tablet), focused by a press with a mouse. A pressable or adjustable view is one already
+  prop focusable: bool
+  /// a press with a pointer leaves the keyboard's focus where it was (a toolbar's button, a menu's trigger)
+  prop pressKeepsFocus: bool
+  /// the platform draws no focus ring around it: the app draws its own (a view that styles focusVisible { } hides it already)
+  prop hideFocusRing: bool
+  /// while the keyboard's focus is in it, Tab and Shift+Tab cycle among the focusable views inside it: a dialog's
+  prop trapFocus: bool
+  /// when it goes, the keyboard's focus goes back to the view that had it when it came, if that view still shows
+  prop restoreFocus: bool
+  /// once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)
+  prop autofocus: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -233,11 +299,17 @@ native component Column() {
   event select(selected: bool)
   /// the user started selecting at its List's row while the list isn't selecting (a two-finger pan on iOS, a long press on Android)
   event selectBegin
+  /// it took the keyboard's focus, or lost it (a focusable view's)
+  event focusChange(focused: bool)
+  /// text typed while it has the keyboard's focus that its keys (and its containers') didn't take: a listbox's typeahead
+  event keyText(text: string)
+  /// a press began on it: where, in points from its top left (before pressedChange(true)): a slider's track jumps there
+  event pressStart(x: float, y: float)
 }
 
 /// a column that keeps its children out of the system's bars, notches and the keyboard: padded by the safe area's insets, over its own padding
 ///
-/// Takes the style's variants: hovered, pressed, dragging, dragOver { … }.
+/// Takes the style's variants: hovered, pressed, dragging, dragOver, focused, focusVisible { … }.
 native component SafeArea() {
   prop children: View? = none
   /// makes it draggable, within the app and to other apps: a long press then a move lifts it on a touch screen, a move with the button down with a mouse. [] (the default): not draggable
@@ -252,6 +324,18 @@ native component SafeArea() {
   prop selected: bool
   /// goes to this route when it's pressed, after press (the Router around it navigates there): an href, or a routed screen's call; with role: .link, screen readers call it a link
   prop href: string
+  /// takes the keyboard's focus: a Tab stop in the views' order where a keyboard moves focus (desktops, the web, a hardware keyboard on a phone or tablet), focused by a press with a mouse. A pressable or adjustable view is one already
+  prop focusable: bool
+  /// a press with a pointer leaves the keyboard's focus where it was (a toolbar's button, a menu's trigger)
+  prop pressKeepsFocus: bool
+  /// the platform draws no focus ring around it: the app draws its own (a view that styles focusVisible { } hides it already)
+  prop hideFocusRing: bool
+  /// while the keyboard's focus is in it, Tab and Shift+Tab cycle among the focusable views inside it: a dialog's
+  prop trapFocus: bool
+  /// when it goes, the keyboard's focus goes back to the view that had it when it came, if that view still shows
+  prop restoreFocus: bool
+  /// once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)
+  prop autofocus: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -282,6 +366,12 @@ native component SafeArea() {
   event select(selected: bool)
   /// the user started selecting at its List's row while the list isn't selecting (a two-finger pan on iOS, a long press on Android)
   event selectBegin
+  /// it took the keyboard's focus, or lost it (a focusable view's)
+  event focusChange(focused: bool)
+  /// text typed while it has the keyboard's focus that its keys (and its containers') didn't take: a listbox's typeahead
+  event keyText(text: string)
+  /// a press began on it: where, in points from its top left (before pressedChange(true)): a slider's track jumps there
+  event pressStart(x: float, y: float)
 }
 
 /// a text: it wraps, unless lines limits it
@@ -689,6 +779,40 @@ native component Popover() {
   event dismiss
   /// what the popover shows: built as it opens, disposed as it closes
   prop content: View? = none
+}
+
+/// its children over the window, placed next to an anchor while open: a select's list, a menu, a tooltip, a dialog. Not the platform's popover: what shows is only what it holds, styled by the app (std/base's popups are made of it)
+native component Overlay() {
+  prop children: View? = none
+  /// shows its children while true: built as it opens, disposed as it closes (a change in animate { } plays their transition)
+  prop open: bool
+  /// the view it's placed next to: none, in its window (a dialog, a drawer, a toast)
+  prop anchor: Ref?
+  /// the anchor's side it goes on (.bottom, .top, .start, .end), or .center: over it. Without an anchor, the window's
+  prop side: Side
+  /// where on that side: .start, .center (or .auto), .end; .stretch: as long as the anchor on that side
+  prop align: Align
+  /// the gap between it and the anchor
+  prop offset: float
+  /// moves it along the side, from where align puts it
+  prop alignOffset: float
+  /// goes to the opposite side when it doesn't fit on its own and fits better there
+  prop flip: bool = true
+  /// the least distance it keeps from the window's edges (inside the safe area): it's moved along its side, and made no bigger than the room left
+  prop edgeGap: float = 8
+  /// at least as wide as the anchor (a select's list)
+  prop matchWidth: bool
+  /// presses reach only it while it's open (a backdrop's elsewhere), and screen readers see only it
+  prop modal: bool
+  /// what closes it: a press outside it (not on the anchor), Escape, Back (Android's, the web's Escape), the keyboard's focus leaving it and its anchor, the anchor scrolled or hidden out of view. Each writes open false and reports dismiss
+  prop dismissOn: [DismissReason] = [.outsidePress, .escape, .back, .focusOut, .anchorHidden]
+  event change(open: bool)
+  /// the user dismissed it
+  event dismiss(reason: DismissReason)
+  /// where it went, once it's placed and each time that changes: the side after flipping (an arrow's side, a transition's direction), where the anchor's middle is along that side, the room it has
+  event place(placed: Placed)
+  /// what covers its window behind it while it's open (a dialog's dimming): as big as the window, built and disposed with the children
+  prop backdrop: View? = none
 }
 
 /// shows a menu of actions when its children are tapped (UIMenu, PopupMenu). In a MenuBar, one of its menus: its children are MenuItems

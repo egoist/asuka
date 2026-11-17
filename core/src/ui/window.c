@@ -20,9 +20,8 @@ static void send_str(ak_view *e, ak_prop p, ak_val v) {
 }
 
 static void unlisten(ak_view *e, ak_event_kind ev) {
-	uint64_t bit = UINT64_C(1) << ev;
-	if (!(e->listens & bit)) return;
-	e->listens &= ~bit;
+	if (!ak_view_listening(e, ev)) return;
+	e->listens[ev / 64] &= ~(UINT64_C(1) << (ev % 64));
 	if (e->real && !e->dead) ak_batch_unlisten(e->r->batch, e->id, ev);
 }
 
@@ -344,7 +343,12 @@ ak_val ak_ui_window_state(ak_view *w) {
 
 // ak_ui_window_flag is one of w's window's state bits
 // (AK_WINDOW_STATE_*), read.
-bool ak_ui_window_flag(ak_view *w, int64_t bit) { return state_bit(followed(target(w)), (uint8_t)bit); }
+bool ak_ui_window_flag(ak_view *w, int64_t bit) {
+	// A view's focused (not a window's, the root's or a Window's view):
+	// the keyboard's focus is in it.
+	if (bit == 2 && w && w->el != AK_EL_WINDOW && w != w->r->el && w->cls != &cls_win_view) return ak_ui_view_state(w, AK_STATE_FOCUSED);
+	return state_bit(followed(target(w)), (uint8_t)bit);
+}
 
 static const uint8_t pair_kinds[] = {AK_K_FLOAT, AK_K_FLOAT};
 static const ak_shape pair_shape = {"(float,float)", 2, pair_kinds, no_shapes, NULL, 0, NULL, false, NULL};

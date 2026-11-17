@@ -79,7 +79,10 @@ ak_event_kind ak_ix_ev_ops(uint16_t ev) {
 	case AK_EV_VIEW_ROTATE: return AK_EVENT_ROTATE;
 	case AK_EV_VIEW_SWIPE: return AK_EVENT_SWIPE;
 	case AK_EV_VIEW_ADJUST: return AK_EVENT_ADJUST;
-	// A drag's and a drop's come with dragItems and dropTypes.
+	case AK_EV_VIEW_KEY_TEXT: return AK_EVENT_KEY_TEXT;
+	case AK_EV_VIEW_PRESS_START: return AK_EVENT_PRESS_POINT;
+	// A drag's and a drop's come with dragItems and dropTypes; FocusChange
+	// comes without asking.
 	}
 	switch (ev) {
 	case AK_EV_TEXT_FIELD_RICH_CHANGE: return AK_EVENT_RICH_CHANGED;
@@ -144,6 +147,7 @@ void ak_ix_free(ak_view *e) {
 	ak_ix *ix = e->ix;
 	if (!ix) return;
 	ak_rootkeys_free(ix->wkeys);
+	ak_release(ix->restore);
 	for (int i = 0; i < AK_STATE__COUNT; i++) ak_signal_drop(&ix->sig[i]);
 	for (uint32_t i = 0; i < ix->lents.len; i++) ak_release_val(ix->lents.data[i].v, (ak_kind)ak_key_kinds[ix->lents.data[i].key]);
 	ak_vec_free(&ix->lents);
@@ -256,6 +260,13 @@ bool ak_ix_set_base(ak_view *v, uint16_t key, ak_val value) {
 static void listen_state(ak_view *e, uint8_t bit) {
 	ak_ix *ix = ak_ix_of(e);
 	if (e->dead || (ix->listens & bit)) return;
+	if (bit == AK_STATE_FOCUSED || bit == AK_STATE_FOCUS_VISIBLE) {
+		// The core follows the focus (focus.c): no event to ask for; start
+		// from where it is.
+		ix->listens |= bit;
+		if (ak_focus_state_now(e, bit)) ix->state |= bit;
+		return;
+	}
 	if (!e->real && (e->cls->flags & AK_ELF_FLATTEN)) ak_view_make_real(e);
 	if (!e->real) return;
 	if (bit == AK_STATE_PRESSED) ak_view_listen(e, AK_EVENT_PRESSED);
@@ -276,6 +287,8 @@ static void leave(void *ctx) {
 		if (ix->state & AK_STATE_HOVERED) set_state(e, AK_STATE_HOVERED, false, ak_ext_ev(e, AK_EV_VIEW_HOVER_CHANGE));
 		if (ix->state & AK_STATE_DRAG_OVER) set_state(e, AK_STATE_DRAG_OVER, false, ak_ext_ev(e, AK_EV_VIEW_DROP_OVER));
 		if (ix->state & AK_STATE_DRAGGING) set_state(e, AK_STATE_DRAGGING, false, 0);  // dragPhase hears only the platform's end
+		if (ix->state & AK_STATE_FOCUSED) set_state(e, AK_STATE_FOCUSED, false, 0);
+		if (ix->state & AK_STATE_FOCUS_VISIBLE) set_state(e, AK_STATE_FOCUS_VISIBLE, false, 0);
 	}
 	ak_release(e);
 }
@@ -306,6 +319,22 @@ static void set_state(ak_view *e, uint8_t bit, bool on, uint16_t handler) {
 		ak_val arg = {.i = on};
 		ak_view_call(e, handler, &arg, 1);
 	}
+}
+
+void ak_ix_set_state(ak_view *e, uint8_t bit, bool on) {
+	if (!e->ix || !(e->ix->listens & bit)) {
+		// Nothing asked for it: a later ask starts from the focus (listen_state).
+		if (e->ix && ((e->ix->state & bit) != 0) != on) e->ix->state ^= bit;
+		return;
+	}
+	set_state(e, bit, on, 0);
+}
+
+bool ak_ix_styles_state(const ak_view *e, uint8_t bit) {
+	const ak_ix *ix = e->ix;
+	for (uint32_t i = 0; ix && i < ix->layers.len; i++)
+		if (ix->layers.data[i].state == bit) return true;
+	return false;
 }
 
 // ---- Layers, variants and states, to compiled code ----
@@ -339,6 +368,7 @@ static uint16_t new_layer(ak_view *v, uint8_t tier, uint8_t state, bool block) {
 		if (!v->real && (v->cls->flags & AK_ELF_FLATTEN)) ak_view_make_real(v);  // to report the state
 		listen_state(v, state);
 		hook(v);
+		if (state == AK_STATE_FOCUS_VISIBLE) ak_focus_ring_styled(v);  // the app draws its ring
 	}
 	return (uint16_t)(ix->layers.len - 1);
 }
@@ -659,7 +689,7 @@ static void set_drop_types(ak_view *e, const ak_arr *a) {
 }
 
 void ak_ix_container_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
-	AK_UNUSED(prev);
+	if (ak_focus_container_set(e, key, v, prev)) return;
 	if (key == ak_ext_key(e, AK_KEY_VIEW_DRAG_ITEMS)) set_drag_items(e, v.p);
 	else if (key == ak_ext_key(e, AK_KEY_VIEW_DROP_TYPES)) set_drop_types(e, v.p);
 	else if (key == ak_ext_key(e, AK_KEY_VIEW_SWIPE_ACTIONS) || key == ak_ext_key(e, AK_KEY_VIEW_LEADING_SWIPE_ACTIONS) || key == ak_ext_key(e, AK_KEY_VIEW_SELECTED))
@@ -832,6 +862,21 @@ bool ak_ix_event(ak_view *e, const ak_event *ev) {
 		return true;
 	}
 	case AK_EVENT_A11Y_ACTION: run_action(e, ev->i); return true;
+	case AK_EVENT_FOCUS_CHANGE: ak_focus_report(e, (int)ev->i); return true;
+	case AK_EVENT_KEY_TEXT: {
+		uint16_t h = ak_ext_ev(e, AK_EV_VIEW_KEY_TEXT);
+		if (!h || !ak_view_handler(e, h)) return true;
+		ak_str *s = ak_str_new(ev->s.p, ev->s.len);
+		ak_val arg = {.p = s};
+		ak_view_call(e, h, &arg, 1);
+		ak_release(s);
+		return true;
+	}
+	case AK_EVENT_PRESS_POINT: {
+		ak_val args[2] = {{.f = ev->x}, {.f = ev->y}};
+		ak_view_call(e, ak_ext_ev(e, AK_EV_VIEW_PRESS_START), args, 2);
+		return true;
+	}
 	case AK_EVENT_KEY: return ak_keys_event(e, ev->i);
 	case AK_EVENT_DRAG_OVER: {
 		if (!container_arr(e, AK_KEY_VIEW_DROP_TYPES)) return true;

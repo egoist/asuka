@@ -130,7 +130,7 @@ func enums() []byte {
 // cases are Color's.
 var skipEnum = map[string]bool{"PathOp": true, "CanvasOp": true, "WindowAction": true, "LocationAction": true, "SemanticColor": true}
 
-var renameEnum = map[string]string{"Placement": "PopoverPlacement"}
+var renameEnum = map[string]string{"Placement": "PopoverPlacement", "A11yChecked": "Checked", "A11yExpanded": "Expanded"}
 
 func lowerCamel(s string) string {
 	switch s {

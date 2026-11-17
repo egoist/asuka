@@ -8,6 +8,61 @@ enum Role {
   link
   text
   search
+  checkbox
+  radio
+  radioGroup
+  switch
+  tab
+  tabList
+  tabPanel
+  slider
+  spinButton
+  progressBar
+  meter
+  menu
+  menuBar
+  menuItem
+  menuItemCheckbox
+  menuItemRadio
+  listbox
+  option
+  comboBox
+  dialog
+  alertDialog
+  tooltip
+  group
+  separator
+  toolbar
+  status
+}
+
+enum Checked {
+  off
+  unchecked
+  checked
+  mixed
+}
+
+enum Expanded {
+  off
+  collapsed
+  expanded
+}
+
+enum Side {
+  bottom
+  top
+  start
+  end
+  center
+}
+
+enum DismissReason {
+  outsidePress
+  escape
+  back
+  focusOut
+  anchorHidden
 }
 
 enum TextStyle {

@@ -51,6 +51,10 @@ typedef struct ak_ix {
 	AK_VEC(ak_layer_ent) lents;    // their values, a key once per layer
 	AK_VEC(ak_style_ent) base;     // the style's own values of the keys layers set
 	bool hooked;      // leaves its states when its owner is disposed
+	// restoreFocus: the view that had the focus when it came (retained).
+	ak_view *restore;
+	// a11yControls, a11yLabelledBy, a11yDescribedBy as last sent (focus.c).
+	ak_id rel_sent[3];
 	// Keys: the keys style key's entries in the Keys prop's order.
 	uint32_t *key_order;
 	uint32_t nkeys;
@@ -67,6 +71,87 @@ typedef struct ak_ix {
 // ak_ix_of is e's interaction state, made the first time.
 ak_ix *ak_ix_of(ak_view *e);
 void ak_ix_free(ak_view *e);
+
+// ak_ix_set_state sets a state the core works out itself (focused,
+// focusVisible), for what follows it; ak_ix_styles_state reports whether
+// e has a variant of state.
+void ak_ix_set_state(ak_view *e, uint8_t bit, bool on);
+bool ak_ix_styles_state(const ak_view *e, uint8_t bit);
+
+// ---- The keyboard's focus (focus.c) ----
+
+// ak_focus_report hears a view take the focus (how 1: a pointer or the
+// app; 2: the keyboard) or lose it (0).
+void ak_focus_report(ak_view *e, int how);
+// ak_focus_current is the view with the focus in r (NULL: none known).
+ak_view *ak_focus_current(ak_ui_root *r);
+// ak_focus_state_now is a focus state of e, from where the focus is.
+bool ak_focus_state_now(ak_view *e, uint8_t bit);
+void ak_focus_forget(ak_ui_root *r);
+// ak_focus_destroyed hears e's view go: if it had the focus, the views
+// around it no longer have it.
+void ak_focus_destroyed(ak_view *e);
+// ak_focus_container_set applies a container's focus keys: false when
+// key isn't one.
+bool ak_focus_container_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev);
+// ak_focus_ring_styled hears that e styles focusVisible: the host's ring
+// goes; ak_focus_view_made sends that as e gets its view.
+void ak_focus_ring_styled(ak_view *e);
+void ak_focus_view_made(ak_view *e);
+// ak_focus_autofocus gives the focus to e, or the first view in it that
+// takes it.
+void ak_focus_autofocus(ak_view *e);
+// The accessibility keys that name views: ak_focus_rel_set sends one,
+// and ak_focus_rels_flush sends again what changed (a Ref's view came).
+bool ak_focus_rel_key(uint16_t key);
+void ak_focus_rel_set(ak_view *e, uint16_t key);
+void ak_focus_rels_flush(ak_ui_root *r);
+
+// ---- Overlays (floating.c) ----
+
+// ak_place is where an overlay of size w by h goes next to anchor, in
+// bounds (its root's, inside the safe area and above the keyboard), all
+// in the root's coordinates (place.c): its side flipped to the opposite
+// when it doesn't fit and there's more room there, moved along its side
+// to stay gap from the bounds' edges, and the room it has on that side.
+typedef struct {
+	float x, y, w, h;
+} ak_place_rect;
+
+// An Align's cases (types.asuka's), as an overlay's align takes them.
+enum { AK_PLACE_ALIGN_AUTO, AK_PLACE_ALIGN_START, AK_PLACE_ALIGN_CENTER, AK_PLACE_ALIGN_END, AK_PLACE_ALIGN_STRETCH, AK_PLACE_ALIGN_BASELINE };
+
+typedef struct {
+	int side;   // AK_SIDE_*
+	int align;  // AK_PLACE_ALIGN_*
+	float offset, align_offset, gap;
+	bool flip;
+	bool rtl;         // start is the right
+	bool has_anchor;  // without: placed in the bounds, against side's edge (or centered)
+} ak_place_opts;
+
+typedef struct {
+	float x, y;
+	int side;               // AK_SIDE_*, after flipping
+	float arrow;            // the anchor's middle, along the side, from the overlay's start
+	float avail_w, avail_h;  // the room it has
+} ak_place_result;
+
+ak_place_result ak_place(ak_place_rect anchor, float w, float h, ak_place_rect bounds, const ak_place_opts *o);
+
+
+// ak_overlay_focus_moved hears the focus move to f (NULL: nowhere): an
+// overlay that closes when it leaves does.
+void ak_overlay_focus_moved(ak_ui_root *r, ak_view *f);
+// ak_overlays_layout lays out and places the open overlays (after the
+// providers); ak_overlays_sync sends their anchors again (the flush's
+// start); ak_overlays_report calls their place handlers (after the
+// frames), true when it called one.
+void ak_overlays_layout(ak_ui_root *r, ak_lpass *p);
+void ak_overlays_sync(ak_ui_root *r);
+bool ak_overlays_report(ak_ui_root *r);
+bool ak_overlays_report_due(ak_ui_root *r);
+extern const ak_shape ak_ui_shape_placed;
 
 // Hooks.
 // ak_ix_ev_ops is the ops event an extension's AK_EV_ is reported by.
@@ -118,6 +203,13 @@ typedef struct ak_rext {
 	AK_VEC(struct ak_rich *) inlines;
 	ak_buf scratch;
 	struct ak_rootkeys *keys;  // ui.use_keys's (keys.c)
+	// The keyboard's focus (focus.c): the view that has it, whether it
+	// shows; the views with relation keys. By ID: a view holds its root.
+	ak_id focus;
+	bool focus_visible;
+	AK_VEC(ak_id) rels;
+	// The Overlays' layers (floating.c), oldest first, by ID.
+	AK_VEC(ak_id) overlays;
 } ak_rext;
 
 ak_rext *ak_rext_of(ak_ui_root *r);

@@ -41,6 +41,7 @@ public enum AsukaKind: UInt16 {
     case picker = 36
     case progressRing = 37
     case snackbar = 38
+    case overlay = 39
 
     public var name: String {
         switch self {
@@ -82,6 +83,7 @@ public enum AsukaKind: UInt16 {
         case .picker: return "Picker"
         case .progressRing: return "ProgressRing"
         case .snackbar: return "Snackbar"
+        case .overlay: return "Overlay"
         }
     }
 }
@@ -126,6 +128,19 @@ public enum AsukaProp {
     public static let interceptBack: UInt16 = 35
     public static let tooltip: UInt16 = 36
     public static let keys: UInt16 = 37
+    public static let focusable: UInt16 = 38
+    public static let noFocusOnPress: UInt16 = 39
+    public static let noFocusRing: UInt16 = 40
+    public static let focusTrap: UInt16 = 41
+    public static let a11yChecked: UInt16 = 42
+    public static let a11yExpanded: UInt16 = 43
+    public static let a11ySelected: UInt16 = 44
+    public static let a11yValue: UInt16 = 45
+    public static let a11yRange: UInt16 = 46
+    public static let a11yModal: UInt16 = 47
+    public static let a11yControls: UInt16 = 48
+    public static let a11yLabelledBy: UInt16 = 49
+    public static let a11yDescribedBy: UInt16 = 50
 
     public enum View {
         public static let dropAccept: UInt16 = 64
@@ -381,6 +396,12 @@ public enum AsukaProp {
         public static let duration: UInt16 = 66
         public static let window: UInt16 = 67
     }
+
+    public enum Overlay {
+        public static let root: UInt16 = 64
+        public static let anchor: UInt16 = 65
+        public static let modal: UInt16 = 66
+    }
 }
 
 public enum AsukaEventKind: UInt16 {
@@ -444,6 +465,11 @@ public enum AsukaEventKind: UInt16 {
     case location = 58
     case animated = 59
     case secondInstance = 60
+    case focusChange = 61
+    case keyText = 62
+    case outsidePress = 63
+    case anchorFrame = 64
+    case pressPoint = 65
 }
 
 public enum AsukaCommand: UInt16 {
@@ -494,6 +520,61 @@ public enum AsukaRole: Int32 {
     case link = 4
     case text = 5
     case search = 6
+    case checkbox = 7
+    case radio = 8
+    case radioGroup = 9
+    case `switch` = 10
+    case tab = 11
+    case tabList = 12
+    case tabPanel = 13
+    case slider = 14
+    case spinButton = 15
+    case progressBar = 16
+    case meter = 17
+    case menu = 18
+    case menuBar = 19
+    case menuItem = 20
+    case menuItemCheckbox = 21
+    case menuItemRadio = 22
+    case listbox = 23
+    case option = 24
+    case comboBox = 25
+    case dialog = 26
+    case alertDialog = 27
+    case tooltip = 28
+    case group = 29
+    case separator = 30
+    case toolbar = 31
+    case status = 32
+}
+
+public enum AsukaA11yChecked: Int32 {
+    case none = 0
+    case unchecked = 1
+    case checked = 2
+    case mixed = 3
+}
+
+public enum AsukaA11yExpanded: Int32 {
+    case none = 0
+    case collapsed = 1
+    case expanded = 2
+}
+
+public enum AsukaSide: Int32 {
+    case bottom = 0
+    case top = 1
+    case start = 2
+    case end = 3
+    case center = 4
+}
+
+public enum AsukaDismissReason: Int32 {
+    case outsidePress = 0
+    case escape = 1
+    case back = 2
+    case focusOut = 3
+    case anchorHidden = 4
 }
 
 public enum AsukaTextStyle: Int32 {
@@ -1139,5 +1220,20 @@ public enum AsukaEvents {
     }
     public static func secondInstance(_ id: UInt32, _ v: [UInt8]) -> [UInt8] {
         var w = AsukaWriter(); w.header(id, 60); w.u32(UInt32(v.count)); w.bytes.append(contentsOf: v); return w.bytes
+    }
+    public static func focusChange(_ id: UInt32, _ v: Int64) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 61); w.u64(UInt64(bitPattern: v)); return w.bytes
+    }
+    public static func keyText(_ id: UInt32, _ v: String) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 62); w.string(v); return w.bytes
+    }
+    public static func outsidePress(_ id: UInt32, x: Double, y: Double) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 63); w.f64(x); w.f64(y); return w.bytes
+    }
+    public static func anchorFrame(_ id: UInt32, _ v: [UInt8]) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 64); w.u32(UInt32(v.count)); w.bytes.append(contentsOf: v); return w.bytes
+    }
+    public static func pressPoint(_ id: UInt32, x: Double, y: Double) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 65); w.f64(x); w.f64(y); return w.bytes
     }
 }

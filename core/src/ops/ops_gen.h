@@ -116,7 +116,9 @@ enum {
 	AK_KIND_PROGRESS_RING = 37,
 	// a brief message at the bottom of the window, with an optional action (Material's Snackbar; AdwToast): Present shows it, Destroy dismisses it, animated. Its action reports Action; timing out or the user's swipe reports Dismissed. The core destroys it after either
 	AK_KIND_SNACKBAR = 38,
-	AK_KIND_COUNT = 39,
+	// a layer over a layout root (std/base's popups: a select's list, a menu, a dialog, a tooltip), laid out by the core at the root's size, its children placed by the core next to an anchor view: shown while it exists (made: added on top of the root's other overlays; Destroy: removed), never in its parent's view. Reports OutsidePress
+	AK_KIND_OVERLAY = 39,
+	AK_KIND_COUNT = 40,
 };
 
 // Props every kind has.
@@ -179,7 +181,33 @@ enum {
 	AK_PROP_TOOLTIP = 36,
 	// keys the view takes while the keyboard's focus is in it (it, or a view inside it: a text field) (ops.Keys, ops.AppendKeys): u32 count, per key a u32-length key (a lower case character, or enter, escape, tab, space, delete, backspace, up, down, left, right, home, end, pageup, pagedown, f1-f12) and u8 modifiers (1 primary: ⌘ on macOS, Ctrl elsewhere; 2 shift; 4 alt, a Mac's option; 8 control). A key going down (and each repeat) goes first to the nearest view, from the focused one out through its ancestors, with a key that matches it (the key and exactly its modifiers; a character as the key types it without modifiers, lower case): the focused control and the menus don't get it, and the host sends Key to that view with the key's index. Not while an input method composes text. Empty: none
 	AK_PROP_KEYS = 37,
-	AK_COMMON_PROP_COUNT = 38,
+	// the view takes the keyboard's focus: a Tab stop in the views' order where a keyboard moves focus (desktops, the web, a hardware keyboard on a phone or tablet), focused by a press with a mouse or trackpad unless NoFocusOnPress. Reports FocusChange
+	AK_PROP_FOCUSABLE = 38,
+	// a press with a pointer doesn't move the keyboard's focus to the view (a toolbar's button, a menu's trigger that keeps focus where it was)
+	AK_PROP_NO_FOCUS_ON_PRESS = 39,
+	// the host draws no focus indicator of its own around the view (the app draws one in its focusVisible style): no CSS outline, no Fluent focus rect, no UIFocusEffect, no defaultFocusHighlight
+	AK_PROP_NO_FOCUS_RING = 40,
+	// while the keyboard's focus is in the view, Tab and Shift+Tab (and a hardware keyboard's focus movement on a phone) cycle among the focusable views inside it, never leaving it
+	AK_PROP_FOCUS_TRAP = 41,
+	// a checkbox's, switch's, radio's or checkable menu item's state, for screen readers: UIKit's toggle trait and value, Android's checkable and checked (stateDescription for Mixed), NSAccessibilityValue, UIA's Toggle pattern, GTK_ACCESSIBLE_STATE_CHECKED, aria-checked
+	AK_PROP_A11Y_CHECKED = 42,
+	// whether what the view controls is shown (a disclosure's, a menu's trigger, a combobox): accessibilityExpandedStatus (iOS 18; else the value says it), AccessibilityNodeInfo's expanded state (its actions expand and collapse before API 36), AXExpanded, UIA's ExpandCollapse pattern, GTK_ACCESSIBLE_STATE_EXPANDED, aria-expanded
+	AK_PROP_A11Y_EXPANDED = 43,
+	// selected among its group, for screen readers (a tab, an option, a radio's group's choice): UIKit's selected trait, isSelected, AXSelected, UIA's SelectionItem, GTK_ACCESSIBLE_STATE_SELECTED, aria-selected
+	AK_PROP_A11Y_SELECTED = 44,
+	// what a screen reader reads as the view's value (a slider's "40%", a select's choice): accessibilityValue, stateDescription, NSAccessibilityValue (AXValueDescription), UIA's Value, GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT, aria-valuetext
+	AK_PROP_A11Y_VALUE = 45,
+	// a slider's, progress bar's, meter's or spin button's range for screen readers (ops.AppendRange): f64 min, f64 max, f64 now; empty: none. AccessibilityNodeInfo.RangeInfo, AXMinValue/AXMaxValue/AXValue, UIA's RangeValue, GTK_ACCESSIBLE_PROPERTY_VALUE_MIN/MAX/NOW, aria-valuemin/max/now
+	AK_PROP_A11Y_RANGE = 46,
+	// screen readers stay inside the view, the rest of its window hidden from them while it shows (a dialog): accessibilityViewIsModal, the rest importantForAccessibility noHideDescendants, AXModal, the rest's UIA elements off the control view, GTK_ACCESSIBLE_PROPERTY_MODAL with the rest hidden, aria-modal with the rest inert
+	AK_PROP_A11Y_MODAL = 47,
+	// the view (a node ID; 0: none) this one controls (a combobox's listbox, a tab's panel): UIA's ControllerFor, GTK_ACCESSIBLE_RELATION_CONTROLS, aria-controls; Android's and Apple's platforms have no such relation and ignore it
+	AK_PROP_A11Y_CONTROLS = 48,
+	// the view (a node ID; 0: none) whose text labels this one (a field's label): accessibilityLabel taken from its text where the platform has no relation (iOS), setLabeledBy, AXTitleUIElement, UIA's LabeledBy, GTK_ACCESSIBLE_RELATION_LABELLED_BY, aria-labelledby
+	AK_PROP_A11Y_LABELLED_BY = 49,
+	// the view (a node ID; 0: none) whose text describes this one (a field's description or error): accessibilityHint from its text where the platform has no relation, AXHelp's text, UIA's DescribedBy, GTK_ACCESSIBLE_RELATION_DESCRIBED_BY, aria-describedby
+	AK_PROP_A11Y_DESCRIBED_BY = 50,
+	AK_COMMON_PROP_COUNT = 51,
 	AK_FIRST_KIND_PROP = 64,
 };
 
@@ -574,6 +602,16 @@ enum {
 	AK_PROP_SNACKBAR_WINDOW = 67,
 };
 
+// Overlay props.
+enum {
+	// the layout root whose layer it's in (a node ID): the root (the main window), a Window's, a Sheet's or a Popover's view. The host puts the overlay's view over everything else in that root's view (a presented sheet's own view controller, a Dialog's window), its frame in that root's coordinates
+	AK_PROP_OVERLAY_ROOT = 64,
+	// the view it's placed next to (a node ID; 0: none, placed in the root): the host reports where that view is, in the root's coordinates, with AnchorFrame, when the overlay is made and whenever it changes (layout, a scroll of a view around it, a resize)
+	AK_PROP_OVERLAY_ANCHOR = 65,
+	// presses anywhere in the root reach only the overlay's views (its own view takes those that land on no child: OutsidePress), and screen readers see only it. Without Modal the overlay's own view takes no presses: they go through to what's under it, and one that lands outside its children is also reported as OutsidePress
+	AK_PROP_OVERLAY_MODAL = 66,
+};
+
 // Events.
 enum {
 	AK_EVENT_PRESS = 1,
@@ -684,7 +722,17 @@ enum {
 	AK_EVENT_ANIMATED = 59,
 	// the app was started again while it runs (desktop: an app runs once), to the root: u32 count, then that launch's arguments (u32-length strings), then its working directory (a u32-length string). The host has brought the app to the front, and reports the files and URLs among the arguments as it does a launch's too
 	AK_EVENT_SECOND_INSTANCE = 60,
-	AK_EVENT_COUNT = 61,
+	// a Focusable view took the keyboard's focus or lost it: 0 lost it, 1 took it from a pointer's press or the app (focus()), 2 took it from the keyboard (Tab, an arrow key, focus() right after a key: CSS's :focus-visible heuristics, what the host's own controls show a focus ring for)
+	AK_EVENT_FOCUS_CHANGE = 61,
+	// text typed while a Focusable view has the keyboard's focus that no key of its Keys (or a view's around it) took, and that isn't Enter or Space pressing it: a listbox's or menu's typeahead. Listened for
+	AK_EVENT_KEY_TEXT = 62,
+	// a press began (a finger, a pen, a mouse's button) in the Overlay's root but outside every view of the overlay: where, in the root's coordinates. To the Overlay
+	AK_EVENT_OUTSIDE_PRESS = 63,
+	// where an Overlay's Anchor is, in the Overlay's root's coordinates (ops.AppendAnchorFrame): f32 x, y, width, height, then u8 1 while any of it is visible (not scrolled or clipped out of view by a view around it, not hidden, in the window), 0 otherwise. To the Overlay: once it's made, and again each time it changes
+	AK_EVENT_ANCHOR_FRAME = 64,
+	// where a press began on the view, in points from its top left: sent just before Pressed (true), when listened for (a slider's track jumps to it)
+	AK_EVENT_PRESS_POINT = 65,
+	AK_EVENT_COUNT = 66,
 };
 
 // Commands.
@@ -766,41 +814,45 @@ enum {
 // Enums, by their index in ak_enums.
 enum {
 	AK_ENUM_ROLE = 0,
-	AK_ENUM_TEXT_STYLE = 1,
-	AK_ENUM_FONT_WEIGHT = 2,
-	AK_ENUM_TEXT_ALIGN = 3,
-	AK_ENUM_LAYOUT_DIRECTION = 4,
-	AK_ENUM_BUTTON_VARIANT = 5,
-	AK_ENUM_KEYBOARD = 6,
-	AK_ENUM_RETURN_KEY = 7,
-	AK_ENUM_AUTOCAPITALIZE = 8,
-	AK_ENUM_AUTOCORRECT = 9,
-	AK_ENUM_LIFECYCLE = 10,
-	AK_ENUM_ALERT_STYLE = 11,
-	AK_ENUM_ALERT_BUTTON_ROLE = 12,
-	AK_ENUM_MENU_TRIGGER = 13,
-	AK_ENUM_HAPTIC = 14,
-	AK_ENUM_IMAGE_MODE = 15,
-	AK_ENUM_LIST_APPEARANCE = 16,
-	AK_ENUM_DATE_MODE = 17,
-	AK_ENUM_MATERIAL = 18,
-	AK_ENUM_GESTURE_STATE = 19,
-	AK_ENUM_PATH_OP = 20,
-	AK_ENUM_LINE_CAP = 21,
-	AK_ENUM_LINE_JOIN = 22,
-	AK_ENUM_CANVAS_OP = 23,
-	AK_ENUM_ANIMATION_CURVE = 24,
-	AK_ENUM_COLOR_SCHEME = 25,
-	AK_ENUM_SEMANTIC_COLOR = 26,
-	AK_ENUM_SHARE_KIND = 27,
-	AK_ENUM_DRAG_PHASE = 28,
-	AK_ENUM_SCROLL_ANCHOR = 29,
-	AK_ENUM_WINDOW_ACTION = 30,
-	AK_ENUM_PLACEMENT = 31,
-	AK_ENUM_TITLE_BAR = 32,
-	AK_ENUM_SNACKBAR_DURATION = 33,
-	AK_ENUM_LOCATION_ACTION = 34,
-	AK_ENUM_COUNT = 35,
+	AK_ENUM_A11Y_CHECKED = 1,
+	AK_ENUM_A11Y_EXPANDED = 2,
+	AK_ENUM_SIDE = 3,
+	AK_ENUM_DISMISS_REASON = 4,
+	AK_ENUM_TEXT_STYLE = 5,
+	AK_ENUM_FONT_WEIGHT = 6,
+	AK_ENUM_TEXT_ALIGN = 7,
+	AK_ENUM_LAYOUT_DIRECTION = 8,
+	AK_ENUM_BUTTON_VARIANT = 9,
+	AK_ENUM_KEYBOARD = 10,
+	AK_ENUM_RETURN_KEY = 11,
+	AK_ENUM_AUTOCAPITALIZE = 12,
+	AK_ENUM_AUTOCORRECT = 13,
+	AK_ENUM_LIFECYCLE = 14,
+	AK_ENUM_ALERT_STYLE = 15,
+	AK_ENUM_ALERT_BUTTON_ROLE = 16,
+	AK_ENUM_MENU_TRIGGER = 17,
+	AK_ENUM_HAPTIC = 18,
+	AK_ENUM_IMAGE_MODE = 19,
+	AK_ENUM_LIST_APPEARANCE = 20,
+	AK_ENUM_DATE_MODE = 21,
+	AK_ENUM_MATERIAL = 22,
+	AK_ENUM_GESTURE_STATE = 23,
+	AK_ENUM_PATH_OP = 24,
+	AK_ENUM_LINE_CAP = 25,
+	AK_ENUM_LINE_JOIN = 26,
+	AK_ENUM_CANVAS_OP = 27,
+	AK_ENUM_ANIMATION_CURVE = 28,
+	AK_ENUM_COLOR_SCHEME = 29,
+	AK_ENUM_SEMANTIC_COLOR = 30,
+	AK_ENUM_SHARE_KIND = 31,
+	AK_ENUM_DRAG_PHASE = 32,
+	AK_ENUM_SCROLL_ANCHOR = 33,
+	AK_ENUM_WINDOW_ACTION = 34,
+	AK_ENUM_PLACEMENT = 35,
+	AK_ENUM_TITLE_BAR = 36,
+	AK_ENUM_SNACKBAR_DURATION = 37,
+	AK_ENUM_LOCATION_ACTION = 38,
+	AK_ENUM_COUNT = 39,
 };
 
 // Role.
@@ -812,7 +864,70 @@ enum {
 	AK_ROLE_LINK = 4,
 	AK_ROLE_TEXT = 5,
 	AK_ROLE_SEARCH = 6,
-	AK_ROLE_COUNT = 7,
+	AK_ROLE_CHECKBOX = 7,
+	AK_ROLE_RADIO = 8,
+	AK_ROLE_RADIO_GROUP = 9,
+	AK_ROLE_SWITCH = 10,
+	AK_ROLE_TAB = 11,
+	AK_ROLE_TAB_LIST = 12,
+	AK_ROLE_TAB_PANEL = 13,
+	AK_ROLE_SLIDER = 14,
+	AK_ROLE_SPIN_BUTTON = 15,
+	AK_ROLE_PROGRESS_BAR = 16,
+	AK_ROLE_METER = 17,
+	AK_ROLE_MENU = 18,
+	AK_ROLE_MENU_BAR = 19,
+	AK_ROLE_MENU_ITEM = 20,
+	AK_ROLE_MENU_ITEM_CHECKBOX = 21,
+	AK_ROLE_MENU_ITEM_RADIO = 22,
+	AK_ROLE_LISTBOX = 23,
+	AK_ROLE_OPTION = 24,
+	AK_ROLE_COMBO_BOX = 25,
+	AK_ROLE_DIALOG = 26,
+	AK_ROLE_ALERT_DIALOG = 27,
+	AK_ROLE_TOOLTIP = 28,
+	AK_ROLE_GROUP = 29,
+	AK_ROLE_SEPARATOR = 30,
+	AK_ROLE_TOOLBAR = 31,
+	AK_ROLE_STATUS = 32,
+	AK_ROLE_COUNT = 33,
+};
+
+// A11yChecked.
+enum {
+	AK_A11Y_CHECKED_NONE = 0,
+	AK_A11Y_CHECKED_UNCHECKED = 1,
+	AK_A11Y_CHECKED_CHECKED = 2,
+	AK_A11Y_CHECKED_MIXED = 3,
+	AK_A11Y_CHECKED_COUNT = 4,
+};
+
+// A11yExpanded.
+enum {
+	AK_A11Y_EXPANDED_NONE = 0,
+	AK_A11Y_EXPANDED_COLLAPSED = 1,
+	AK_A11Y_EXPANDED_EXPANDED = 2,
+	AK_A11Y_EXPANDED_COUNT = 3,
+};
+
+// Side.
+enum {
+	AK_SIDE_BOTTOM = 0,
+	AK_SIDE_TOP = 1,
+	AK_SIDE_START = 2,
+	AK_SIDE_END = 3,
+	AK_SIDE_CENTER = 4,
+	AK_SIDE_COUNT = 5,
+};
+
+// DismissReason.
+enum {
+	AK_DISMISS_REASON_OUTSIDE_PRESS = 0,
+	AK_DISMISS_REASON_ESCAPE = 1,
+	AK_DISMISS_REASON_BACK = 2,
+	AK_DISMISS_REASON_FOCUS_OUT = 3,
+	AK_DISMISS_REASON_ANCHOR_HIDDEN = 4,
+	AK_DISMISS_REASON_COUNT = 5,
 };
 
 // TextStyle.

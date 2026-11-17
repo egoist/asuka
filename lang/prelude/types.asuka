@@ -224,6 +224,27 @@ struct TextRange {
   end: int = 0
 }
 
+/// A slider's, progress bar's, meter's or spin button's range, for
+/// screen readers: where it is (now) between min and max.
+struct ValueRange {
+  min: float = 0
+  max: float = 1
+  now: float = 0
+}
+
+/// Where an Overlay went: the side of its anchor it's on after flipping
+/// (.center over it, or in the window without an anchor), where the
+/// anchor's middle is along that side from its own start (an arrow's
+/// place), and the room it has there (its largest width and height).
+struct Placed {
+  side: Side = .bottom
+  arrow: float = 0
+  width: float = 0
+  height: float = 0
+  availableWidth: float = 0
+  availableHeight: float = 0
+}
+
 /// A view's place in its parent and its size, in points.
 struct Frame {
   x: float = 0

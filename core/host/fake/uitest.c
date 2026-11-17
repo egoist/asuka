@@ -232,8 +232,11 @@ static void walk(ak_uitest *a, ak_fake_view *v, walk_fn f, void *ctx) {
 }
 
 // modal reports whether a presented view takes every touch until it
-// goes.
-static bool modal(const ak_fake_view *v) { return v->kind == AK_KIND_SHEET || v->kind == AK_KIND_ALERT || v->kind == AK_KIND_POPOVER; }
+// goes: a sheet, an alert, a popover, a modal overlay with what's in it.
+static bool modal(const ak_fake_view *v) {
+	if (v->kind == AK_KIND_OVERLAY) return v->children.len && ak_fake_bool(v, AK_PROP_OVERLAY_MODAL) && !ak_fake_bool(v, AK_PROP_HIDDEN);
+	return v->kind == AK_KIND_SHEET || v->kind == AK_KIND_ALERT || v->kind == AK_KIND_POPOVER;
+}
 
 // layers are the root and the views presented over it (sheets, alerts,
 // popovers, windows, a snackbar), bottom to top.
@@ -1163,6 +1166,7 @@ static bool has_menu(const ak_fake_view *v, int64_t trigger) {
 // that takes it, a list's row; NULL if none does.
 static ak_fake_view *pressable(ak_fake_view *v, bool long_press) {
 	ak_fake_view *idle = NULL;  // a button that does nothing, unless a menu around it opens
+	ak_fake_view *focusable = NULL;  // a view a press only focuses (on a desktop)
 	for (ak_fake_view *p = v; p; p = p->parent) {
 		if (long_press) {
 			if (ak_fake_listens(p, AK_EVENT_LONG_PRESS) || has_menu(p, AK_MENU_TRIGGER_LONG_PRESS)) return p;
@@ -1173,8 +1177,9 @@ static ak_fake_view *pressable(ak_fake_view *v, bool long_press) {
 		if (p->kind == AK_KIND_NATIVE && ak_fake_listens(p, AK_EVENT_NATIVE)) return p;
 		if (p->kind == AK_KIND_BUTTON && !idle) idle = p;
 		if (p->kind == AK_FAKE_KIND_CELL && ak_fake_listens(p, AK_EVENT_ROW_SELECTED)) return p;
+		if (!focusable && ak_fake_bool(p, AK_PROP_FOCUSABLE)) focusable = p;
 	}
-	return idle;
+	return idle ? idle : focusable;
 }
 
 static bool check_fails(ak_uitest *a, ak_buf *err) {
@@ -1247,11 +1252,32 @@ static bool one(ak_uitest *a, ak_span text, target_ok ok, target *out, ak_buf *e
 // focus gives the field the keyboard, as a tap does: the field focused
 // before blurs, and each hears it if it listens.
 static void focus(ak_uitest *a, ak_fake_view *p) {
-	ak_fake_view *was = a->focused;
-	if (was == p) return;
-	if (was && ak_fake_view_of(a->f, a->focused_id) == was && ak_fake_listens(was, AK_EVENT_BLUR)) ak_fake_dispatch(a->f, &(ak_event){.id = was->id, .kind = AK_EVENT_BLUR});
 	a->focused = p, a->focused_id = p->id;
-	if (ak_fake_listens(p, AK_EVENT_FOCUS)) ak_fake_dispatch(a->f, &(ak_event){.id = p->id, .kind = AK_EVENT_FOCUS});
+	ak_fake_focus(a->f, p, false);
+}
+
+// desktop reports whether the app runs where a pointer's press moves the
+// keyboard's focus (a Mac, a PC, a browser), not a phone's touch.
+static bool desktop(const ak_uitest *a) {
+	uint8_t p = a->f->env.platform;
+	return p == AK_PLATFORM_MACOS || p == AK_PLATFORM_WINDOWS || p == AK_PLATFORM_LINUX || p == AK_PLATFORM_WEB;
+}
+
+// outside_presses reports a press on v to the shown Overlays it isn't
+// in (the top first), as hosts do: OutsidePress at its middle.
+static void outside_presses(ak_uitest *a, ak_fake_view *v) {
+	ak_fake_view_vec ps = {0};
+	ak_fake_presented(a->f, &ps);
+	float fr[4];
+	ak_fake_abs_frame(a->f, v, fr);
+	for (uint32_t i = ps.len; i-- > 0;) {
+		ak_fake_view *o = ps.data[i];
+		if (o->kind != AK_KIND_OVERLAY || hidden(o) || !o->children.len) continue;
+		bool in = false;
+		for (ak_fake_view *x = v; x && !in; x = x->parent) in = x == o;
+		if (!in) ak_fake_outside_press(a->f, o, fr[0] + fr[2] / 2, fr[1] + fr[3] / 2);
+	}
+	ak_vec_free(&ps);
 }
 
 static void open_menu(ak_uitest *a, ak_fake_view *v, ak_prop p, int64_t base, int64_t sub) {
@@ -1262,6 +1288,8 @@ static bool press(ak_uitest *a, ak_fake_view *v, ak_span text, bool long_press, 
 	ak_fake_view *p = pressable(v, long_press);
 	if (!p) return failure(a, err, long_press ? "nothing at \"%.*s\" takes a long press" : "nothing at \"%.*s\" takes a tap", text);
 	if (disabled_view(p)) return failure(a, err, "\"%.*s\" is disabled", text);
+	outside_presses(a, p);
+	if (!long_press && desktop(a) && p->kind != AK_KIND_TEXT_FIELD && ak_fake_takes_focus(p) && !ak_fake_bool(p, AK_PROP_NO_FOCUS_ON_PRESS)) ak_fake_focus(a->f, p, false);
 	if (long_press) {
 		if (ak_fake_listens(p, AK_EVENT_LONG_PRESS)) ak_fake_long_press(a->f, p);
 		else open_menu(a, p, AK_PROP_MENU, 0, -1);
@@ -1280,6 +1308,10 @@ static bool press(ak_uitest *a, ak_fake_view *v, ak_span text, bool long_press, 
 		if (list && ak_fake_bool(list, AK_PROP_LIST_SELECTING)) on = !ak_fake_bool(p, AK_PROP_SELECTED);  // a selecting list's tap toggles the row
 		ak_fake_select_row(a->f, p, on);
 	} else if (ak_fake_listens(p, AK_EVENT_PRESS)) {
+		if (ak_fake_listens(p, AK_EVENT_PRESS_POINT)) {
+			// Where it began: the view's middle.
+			ak_fake_dispatch(a->f, &(ak_event){.id = p->id, .kind = AK_EVENT_PRESS_POINT, .x = p->frame[2] / 2, .y = p->frame[3] / 2});
+		}
 		ak_fake_tap(a->f, p);
 	} else if (p->kind == AK_KIND_NATIVE) {
 		// A native package's view (a pay button): its Press event.
@@ -1672,7 +1704,15 @@ bool ak_uitest_back(ak_uitest *a, ak_buf *err) {
 	touchable(a, &ls);
 	ak_fake_view *top = ls.len ? ls.data[0] : NULL;
 	ak_vec_free(&ls);
-	if (stack) ak_fake_back(a->f, stack);
+	// An overlay that takes going back, on top, first.
+	ak_fake_view_vec ps = {0};
+	ak_fake_presented(a->f, &ps);
+	ak_fake_view *ov = NULL;
+	for (uint32_t i = ps.len; i-- > 0 && !ov;)
+		if (ps.data[i]->kind == AK_KIND_OVERLAY && ps.data[i]->children.len && ak_fake_bool(ps.data[i], AK_PROP_INTERCEPT_BACK)) ov = ps.data[i];
+	ak_vec_free(&ps);
+	if (ov) ak_fake_dismiss(a->f, ov);
+	else if (stack) ak_fake_back(a->f, stack);
 	else if (top && modal(top)) ak_fake_dismiss(a->f, top);
 	else if (!(a->f->env.platform == AK_PLATFORM_ANDROID && ak_fake_back_from_root(a->f)))
 		return failure(a, err, "nothing to go back from%.*s", sp(""));
@@ -1691,6 +1731,17 @@ bool ak_uitest_dismiss(ak_uitest *a, ak_buf *err) {
 	touchable(a, &ls);
 	ak_fake_view *top = ls.len ? ls.data[0] : NULL;
 	ak_vec_free(&ls);
+	// An overlay on top (modal or not): a press outside it.
+	ak_fake_view_vec ps = {0};
+	ak_fake_presented(a->f, &ps);
+	ak_fake_view *ov = NULL;
+	for (uint32_t i = ps.len; i-- > 0 && !ov;)
+		if (ps.data[i]->kind == AK_KIND_OVERLAY && ps.data[i]->children.len && !hidden(ps.data[i])) ov = ps.data[i];
+	ak_vec_free(&ps);
+	if (ov && (!top || top == ov || !modal(top) || ov->present_seq > top->present_seq)) {
+		ak_fake_outside_press(a->f, ov, -1, -1);
+		return settled(a, err);
+	}
 	if (!top || !modal(top)) return failure(a, err, "nothing to dismiss%.*s", sp(""));
 	ak_fake_dismiss(a->f, top);
 	return settled(a, err);
@@ -2460,6 +2511,38 @@ static ak_val t_press_key(ak_val *a, uint32_t n) {
 	return (ak_val){.i = took};
 }
 
+// first_text_fn keeps the first text it hears.
+static void first_text_fn(ak_span s, void *ctx) {
+	ak_buf *b = ctx;
+	if (!b->len) ak_buf_put(b, s.p, s.len);
+}
+
+// focused_text is what the view with the keyboard's focus shows: its own
+// text, else the first of the views in it ("": nothing has the focus).
+static void focused_text(const ak_fake_view *v, ak_buf *out) {
+	if (!v || out->len) return;
+	shows(v, first_text_fn, out);
+	for (uint32_t i = 0; i < v->children.len && !out->len; i++) focused_text(v->children.data[i], out);
+}
+
+static ak_val t_focused(ak_val *a, uint32_t n) {
+	ak_uitest *app = app_arg(a, n, "test.focused");
+	ak_uitest_settle(app);
+	ak_buf b = {0};
+	focused_text(ak_fake_focused(app->f), &b);
+	ak_str *s = ak_str_new((const char *)b.data, (uint32_t)b.len);
+	ak_buf_free(&b);
+	return (ak_val){.p = s};
+}
+
+static ak_val t_tab(ak_val *a, uint32_t n) {
+	ak_uitest *app = app_arg(a, n, "test.tab");
+	ak_uitest_settle(app);
+	ak_fake_tab(app->f, n > 1 && a[1].i);
+	ak_uitest_settle(app);
+	return (ak_val){0};
+}
+
 static ak_val t_menu_bar(ak_val *a, uint32_t n) {
 	ak_uitest *app = app_arg(a, n, "test.menu_bar");
 	ak_uitest_settle(app);
@@ -2578,6 +2661,8 @@ void ak_uitest_builtins_init(void) {
 	ak_builtin_register("test.set_window_state", t_set_window_state);
 	ak_builtin_register("test.focus_window", t_focus_window);
 	ak_builtin_register("test.press_key", t_press_key);
+	ak_builtin_register("test.focused", t_focused);
+	ak_builtin_register("test.tab", t_tab);
 	ak_builtin_register("test.menu_bar", t_menu_bar);
 	ak_builtin_register("test.choose_menu_item", t_choose_menu_item);
 	ak_builtin_register("test.trays", t_trays);

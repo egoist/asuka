@@ -46,6 +46,7 @@ object AsukaKind {
     const val PICKER = 36
     const val PROGRESS_RING = 37
     const val SNACKBAR = 38
+    const val OVERLAY = 39
 
     fun name(kind: Int): String = when (kind) {
         1 -> "View"
@@ -86,6 +87,7 @@ object AsukaKind {
         36 -> "Picker"
         37 -> "ProgressRing"
         38 -> "Snackbar"
+        39 -> "Overlay"
         else -> "Kind($kind)"
     }
 }
@@ -129,6 +131,19 @@ object AsukaProp {
     const val INTERCEPT_BACK = 35
     const val TOOLTIP = 36
     const val KEYS = 37
+    const val FOCUSABLE = 38
+    const val NO_FOCUS_ON_PRESS = 39
+    const val NO_FOCUS_RING = 40
+    const val FOCUS_TRAP = 41
+    const val A11Y_CHECKED = 42
+    const val A11Y_EXPANDED = 43
+    const val A11Y_SELECTED = 44
+    const val A11Y_VALUE = 45
+    const val A11Y_RANGE = 46
+    const val A11Y_MODAL = 47
+    const val A11Y_CONTROLS = 48
+    const val A11Y_LABELLED_BY = 49
+    const val A11Y_DESCRIBED_BY = 50
 
     object View {
         const val DROP_ACCEPT = 64
@@ -384,6 +399,12 @@ object AsukaProp {
         const val DURATION = 66
         const val WINDOW = 67
     }
+
+    object Overlay {
+        const val ROOT = 64
+        const val ANCHOR = 65
+        const val MODAL = 66
+    }
 }
 
 object AsukaEventKind {
@@ -447,6 +468,11 @@ object AsukaEventKind {
     const val LOCATION = 58
     const val ANIMATED = 59
     const val SECOND_INSTANCE = 60
+    const val FOCUS_CHANGE = 61
+    const val KEY_TEXT = 62
+    const val OUTSIDE_PRESS = 63
+    const val ANCHOR_FRAME = 64
+    const val PRESS_POINT = 65
 }
 
 object AsukaCommand {
@@ -497,6 +523,61 @@ object AsukaRole {
     const val LINK = 4
     const val TEXT = 5
     const val SEARCH = 6
+    const val CHECKBOX = 7
+    const val RADIO = 8
+    const val RADIO_GROUP = 9
+    const val SWITCH = 10
+    const val TAB = 11
+    const val TAB_LIST = 12
+    const val TAB_PANEL = 13
+    const val SLIDER = 14
+    const val SPIN_BUTTON = 15
+    const val PROGRESS_BAR = 16
+    const val METER = 17
+    const val MENU = 18
+    const val MENU_BAR = 19
+    const val MENU_ITEM = 20
+    const val MENU_ITEM_CHECKBOX = 21
+    const val MENU_ITEM_RADIO = 22
+    const val LISTBOX = 23
+    const val OPTION = 24
+    const val COMBO_BOX = 25
+    const val DIALOG = 26
+    const val ALERT_DIALOG = 27
+    const val TOOLTIP = 28
+    const val GROUP = 29
+    const val SEPARATOR = 30
+    const val TOOLBAR = 31
+    const val STATUS = 32
+}
+
+object AsukaA11yChecked {
+    const val NONE = 0
+    const val UNCHECKED = 1
+    const val CHECKED = 2
+    const val MIXED = 3
+}
+
+object AsukaA11yExpanded {
+    const val NONE = 0
+    const val COLLAPSED = 1
+    const val EXPANDED = 2
+}
+
+object AsukaSide {
+    const val BOTTOM = 0
+    const val TOP = 1
+    const val START = 2
+    const val END = 3
+    const val CENTER = 4
+}
+
+object AsukaDismissReason {
+    const val OUTSIDE_PRESS = 0
+    const val ESCAPE = 1
+    const val BACK = 2
+    const val FOCUS_OUT = 3
+    const val ANCHOR_HIDDEN = 4
 }
 
 object AsukaTextStyle {
@@ -1006,4 +1087,9 @@ object AsukaEvents {
     fun location(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 58); u32(v.size); raw(v) }.bytes()
     fun animated(id: Int): ByteArray = AsukaWriter().apply { header(id, 59) }.bytes()
     fun secondInstance(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 60); u32(v.size); raw(v) }.bytes()
+    fun focusChange(id: Int, v: Long): ByteArray = AsukaWriter().apply { header(id, 61); u64(v) }.bytes()
+    fun keyText(id: Int, v: String): ByteArray = AsukaWriter().apply { header(id, 62); string(v) }.bytes()
+    fun outsidePress(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 63); f64(x); f64(y) }.bytes()
+    fun anchorFrame(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 64); u32(v.size); raw(v) }.bytes()
+    fun pressPoint(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 65); f64(x); f64(y) }.bytes()
 }

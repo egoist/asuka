@@ -41,6 +41,8 @@ void ak_rext_free(ak_ui_root *r) {
 	ak_rich_inlines_free(x);
 	ak_buf_free(&x->scratch);
 	ak_rootkeys_free(x->keys);
+	ak_focus_forget(r);
+	ak_vec_free(&x->overlays);
 	ak_free(x);
 	r->ext = NULL;
 }

@@ -40,10 +40,11 @@ export const Kind = Object.freeze({
   Picker: 36,
   ProgressRing: 37,
   Snackbar: 38,
+  Overlay: 39,
 });
 
 /** Kind names, by kind. */
-export const kindNames = ["", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar"];
+export const kindNames = ["", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay"];
 
 /** Props every kind has. */
 export const Prop = Object.freeze({
@@ -84,6 +85,19 @@ export const Prop = Object.freeze({
   InterceptBack: 35,
   Tooltip: 36,
   Keys: 37,
+  Focusable: 38,
+  NoFocusOnPress: 39,
+  NoFocusRing: 40,
+  FocusTrap: 41,
+  A11yChecked: 42,
+  A11yExpanded: 43,
+  A11ySelected: 44,
+  A11yValue: 45,
+  A11yRange: 46,
+  A11yModal: 47,
+  A11yControls: 48,
+  A11yLabelledBy: 49,
+  A11yDescribedBy: 50,
 });
 
 /** Each kind's own props, from 64. */
@@ -125,6 +139,7 @@ export const KindProp = Object.freeze({
   Picker: Object.freeze({ Items: 64, Selected: 65, Label: 66 }),
   ProgressRing: Object.freeze({ Value: 64, Indeterminate: 65 }),
   Snackbar: Object.freeze({ Message: 64, Action: 65, Duration: 66, Window: 67 }),
+  Overlay: Object.freeze({ Root: 64, Anchor: 65, Modal: 66 }),
 });
 
 /** Events hosts send. */
@@ -189,6 +204,11 @@ export const Event = Object.freeze({
   Location: 58,
   Animated: 59,
   SecondInstance: 60,
+  FocusChange: 61,
+  KeyText: 62,
+  OutsidePress: 63,
+  AnchorFrame: 64,
+  PressPoint: 65,
 });
 
 /** Commands the core sends. */
@@ -232,7 +252,11 @@ export const Command = Object.freeze({
   Quit: 37,
 });
 
-export const Role = Object.freeze({ None: 0, Button: 1, Header: 2, Image: 3, Link: 4, Text: 5, Search: 6 });
+export const Role = Object.freeze({ None: 0, Button: 1, Header: 2, Image: 3, Link: 4, Text: 5, Search: 6, Checkbox: 7, Radio: 8, RadioGroup: 9, Switch: 10, Tab: 11, TabList: 12, TabPanel: 13, Slider: 14, SpinButton: 15, ProgressBar: 16, Meter: 17, Menu: 18, MenuBar: 19, MenuItem: 20, MenuItemCheckbox: 21, MenuItemRadio: 22, Listbox: 23, Option: 24, ComboBox: 25, Dialog: 26, AlertDialog: 27, Tooltip: 28, Group: 29, Separator: 30, Toolbar: 31, Status: 32 });
+export const A11yChecked = Object.freeze({ None: 0, Unchecked: 1, Checked: 2, Mixed: 3 });
+export const A11yExpanded = Object.freeze({ None: 0, Collapsed: 1, Expanded: 2 });
+export const Side = Object.freeze({ Bottom: 0, Top: 1, Start: 2, End: 3, Center: 4 });
+export const DismissReason = Object.freeze({ OutsidePress: 0, Escape: 1, Back: 2, FocusOut: 3, AnchorHidden: 4 });
 export const TextStyle = Object.freeze({ Default: 0, LargeTitle: 1, Title: 2, Title2: 3, Title3: 4, Headline: 5, Subheadline: 6, Body: 7, Callout: 8, Footnote: 9, Caption: 10, Caption2: 11 });
 export const FontWeight = Object.freeze({ Default: 0, Ultralight: 1, Thin: 2, Light: 3, Regular: 4, Medium: 5, Semibold: 6, Bold: 7, Heavy: 8, Black: 9 });
 export const TextAlign = Object.freeze({ Start: 0, Center: 1, End: 2, Justify: 3 });
@@ -462,4 +486,9 @@ export const Events = Object.freeze({
   location: (id, v) => new Writer().header(id, 58).bytes(v).done(),
   animated: (id) => new Writer().header(id, 59).done(),
   secondInstance: (id, v) => new Writer().header(id, 60).bytes(v).done(),
+  focusChange: (id, v) => new Writer().header(id, 61).i64(v).done(),
+  keyText: (id, v) => new Writer().header(id, 62).string(v).done(),
+  outsidePress: (id, x, y) => new Writer().header(id, 63).f64(x).f64(y).done(),
+  anchorFrame: (id, v) => new Writer().header(id, 64).bytes(v).done(),
+  pressPoint: (id, x, y) => new Writer().header(id, 65).f64(x).f64(y).done(),
 });

@@ -80,6 +80,12 @@ struct ak_fake_view {
 	AK_VEC(ak_fake_native) native;
 	// The List a cell is bound into (ak_fake_bind): keys go on there.
 	ak_id list;
+	// The order it was presented in (the last Present's), over the others.
+	uint32_t present_seq;
+	// An Overlay's anchor as last reported (AnchorFrame): x, y, w, h,
+	// visible.
+	float anchor_sent[5];
+	bool anchor_known;
 };
 
 // Where the fake host sends what a host sends the core. Set event for
@@ -160,6 +166,11 @@ struct ak_fake {
 	int32_t pop_from;
 	struct ak_fake_desk *desk;  // desktop.c's
 	struct ak_fake_update *update;  // update.c's
+	// The keyboard's focus: the view that has it (0: none), whether the
+	// last input was a key (focus that comes then is visible).
+	ak_id focus;
+	bool keyboard;
+	uint32_t present_seq;
 };
 
 ak_fake *ak_fake_new(void);
@@ -286,10 +297,30 @@ void ak_fake_type_in_alert(ak_fake *f, ak_fake_view *alert, uint32_t field, cons
 bool ak_fake_return_in_alert(ak_fake *f, ak_fake_view *alert);
 void ak_fake_press_snackbar_action(ak_fake *f, ak_fake_view *v);
 void ak_fake_time_out(ak_fake *f, ak_fake_view *snackbar);
-// ak_fake_key presses a key while focused (or NULL: nothing) has the
-// keyboard's focus: the nearest view out from it whose Keys has the key
-// gets Key. False if none took it.
+// ak_fake_key presses a key while focused (NULL: the view with the
+// keyboard's focus, else nothing) has the keyboard's focus: the nearest
+// view out from it whose Keys has the key gets Key. Not taken, a key
+// does what a desktop's does: Tab and Shift+Tab move the focus (in the
+// focus trap it's in), Enter and Space press a focused pressable view,
+// and a character goes to the focused view as KeyText. True when a
+// view's keys (or the window's) took it.
 bool ak_fake_key(ak_fake *f, ak_fake_view *focused, const char *name, uint8_t mods);
+// The keyboard's focus, as a desktop's: ak_fake_focus gives it to v
+// (NULL: nowhere), from the keyboard or not, reporting it (FocusChange,
+// a field's Focus and Blur); ak_fake_focused is the view with it.
+// ak_fake_takes_focus reports whether a view can have it: a focusable,
+// pressable or adjustable view, a field, a control, not disabled.
+void ak_fake_focus(ak_fake *f, ak_fake_view *v, bool keyboard);
+ak_fake_view *ak_fake_focused(const ak_fake *f);
+bool ak_fake_takes_focus(const ak_fake_view *v);
+// ak_fake_tab moves the focus as Tab does (Shift+Tab: backward).
+void ak_fake_tab(ak_fake *f, bool backward);
+// ak_fake_abs_frame is v's frame in its layout root's coordinates (the
+// root's, a presented view's).
+void ak_fake_abs_frame(const ak_fake *f, const ak_fake_view *v, float out[4]);
+// ak_fake_outside_press reports a press at x, y (in its root) outside an
+// Overlay: OutsidePress, if it listens.
+void ak_fake_outside_press(ak_fake *f, ak_fake_view *overlay, double x, double y);
 // ak_fake_set_environment changes the environment and reports it for the
 // root.
 void ak_fake_set_environment(ak_fake *f, const ak_environment *e);

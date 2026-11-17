@@ -4,11 +4,11 @@
 
 #include <stddef.h>
 
-const char *const ak_kind_names[AK_KIND_COUNT] = {NULL, "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar"};
+const char *const ak_kind_names[AK_KIND_COUNT] = {NULL, "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay"};
 
-const char *const ak_event_names[AK_EVENT_COUNT] = {NULL, "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance"};
+const char *const ak_event_names[AK_EVENT_COUNT] = {NULL, "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint"};
 
-const uint8_t ak_event_payloads[AK_EVENT_COUNT] = {0, AK_P_NONE, AK_P_NONE, AK_P_STRING, AK_P_NONE, AK_P_NONE, AK_P_NONE, AK_P_BOOL, AK_P_FLOAT, AK_P_POINT, AK_P_ENVIRONMENT, AK_P_INT, AK_P_INT, AK_P_INT, AK_P_INT, AK_P_NONE, AK_P_NONE, AK_P_GESTURE, AK_P_GESTURE, AK_P_GESTURE, AK_P_INT, AK_P_POINT, AK_P_STRING, AK_P_BYTES, AK_P_STRING, AK_P_INT, AK_P_INT, AK_P_NONE, AK_P_STRING, AK_P_STRING, AK_P_STRING, AK_P_STRING, AK_P_FLOAT, AK_P_BYTES, AK_P_INT, AK_P_BYTES, AK_P_STRING, AK_P_BYTES, AK_P_STRING, AK_P_BYTES, AK_P_BOOL, AK_P_BOOL, AK_P_GESTURE, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BOOL, AK_P_NONE, AK_P_POINT, AK_P_INT, AK_P_NONE, AK_P_INT, AK_P_BYTES, AK_P_NONE, AK_P_INT, AK_P_BYTES, AK_P_BYTES, AK_P_NONE, AK_P_BYTES};
+const uint8_t ak_event_payloads[AK_EVENT_COUNT] = {0, AK_P_NONE, AK_P_NONE, AK_P_STRING, AK_P_NONE, AK_P_NONE, AK_P_NONE, AK_P_BOOL, AK_P_FLOAT, AK_P_POINT, AK_P_ENVIRONMENT, AK_P_INT, AK_P_INT, AK_P_INT, AK_P_INT, AK_P_NONE, AK_P_NONE, AK_P_GESTURE, AK_P_GESTURE, AK_P_GESTURE, AK_P_INT, AK_P_POINT, AK_P_STRING, AK_P_BYTES, AK_P_STRING, AK_P_INT, AK_P_INT, AK_P_NONE, AK_P_STRING, AK_P_STRING, AK_P_STRING, AK_P_STRING, AK_P_FLOAT, AK_P_BYTES, AK_P_INT, AK_P_BYTES, AK_P_STRING, AK_P_BYTES, AK_P_STRING, AK_P_BYTES, AK_P_BOOL, AK_P_BOOL, AK_P_GESTURE, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BOOL, AK_P_NONE, AK_P_POINT, AK_P_INT, AK_P_NONE, AK_P_INT, AK_P_BYTES, AK_P_NONE, AK_P_INT, AK_P_BYTES, AK_P_BYTES, AK_P_NONE, AK_P_BYTES, AK_P_INT, AK_P_STRING, AK_P_POINT, AK_P_BYTES, AK_P_POINT};
 
 const char *const ak_cmd_names[AK_CMD_COUNT] = {NULL, "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit"};
 
@@ -28,22 +28,22 @@ const ak_prop_info ak_common_props[AK_COMMON_PROP_COUNT] = {
 	{"A11yAdjustable", AK_T_BOOL, -1},
 	{"A11yHidden", AK_T_BOOL, -1},
 	{"Color", AK_T_COLOR, -1},
-	{"TextStyle", AK_T_ENUM, 1},
+	{"TextStyle", AK_T_ENUM, 5},
 	{"FontSize", AK_T_FLOAT, -1},
-	{"FontWeight", AK_T_ENUM, 2},
-	{"TextAlign", AK_T_ENUM, 3},
+	{"FontWeight", AK_T_ENUM, 6},
+	{"TextAlign", AK_T_ENUM, 7},
 	{"LineLimit", AK_T_INT, -1},
 	{"Disabled", AK_T_BOOL, -1},
 	{"Menu", AK_T_BYTES, -1},
-	{"MenuTrigger", AK_T_ENUM, 13},
+	{"MenuTrigger", AK_T_ENUM, 17},
 	{"Transform", AK_T_BYTES, -1},
 	{"Shadow", AK_T_BYTES, -1},
 	{"Gradient", AK_T_BYTES, -1},
 	{"Transition", AK_T_BYTES, -1},
-	{"Material", AK_T_ENUM, 18},
+	{"Material", AK_T_ENUM, 22},
 	{"FontFamily", AK_T_STRING, -1},
 	{"SwipeActions", AK_T_BYTES, -1},
-	{"LayoutDirection", AK_T_ENUM, 4},
+	{"LayoutDirection", AK_T_ENUM, 8},
 	{"ContentInset", AK_T_EDGES, -1},
 	{"LeadingSwipeActions", AK_T_BYTES, -1},
 	{"Selected", AK_T_BOOL, -1},
@@ -51,6 +51,19 @@ const ak_prop_info ak_common_props[AK_COMMON_PROP_COUNT] = {
 	{"InterceptBack", AK_T_BOOL, -1},
 	{"Tooltip", AK_T_STRING, -1},
 	{"Keys", AK_T_BYTES, -1},
+	{"Focusable", AK_T_BOOL, -1},
+	{"NoFocusOnPress", AK_T_BOOL, -1},
+	{"NoFocusRing", AK_T_BOOL, -1},
+	{"FocusTrap", AK_T_BOOL, -1},
+	{"A11yChecked", AK_T_ENUM, 1},
+	{"A11yExpanded", AK_T_ENUM, 2},
+	{"A11ySelected", AK_T_BOOL, -1},
+	{"A11yValue", AK_T_STRING, -1},
+	{"A11yRange", AK_T_BYTES, -1},
+	{"A11yModal", AK_T_BOOL, -1},
+	{"A11yControls", AK_T_INT, -1},
+	{"A11yLabelledBy", AK_T_INT, -1},
+	{"A11yDescribedBy", AK_T_INT, -1},
 };
 
 static const ak_prop_info props_View[] = {
@@ -64,18 +77,18 @@ static const ak_prop_info props_Text[] = {
 
 static const ak_prop_info props_Button[] = {
 	{"Title", AK_T_STRING, -1},
-	{"Variant", AK_T_ENUM, 5},
+	{"Variant", AK_T_ENUM, 9},
 	{"Icon", AK_T_STRING, -1},
 };
 
 static const ak_prop_info props_TextField[] = {
 	{"Value", AK_T_STRING, -1},
 	{"Placeholder", AK_T_STRING, -1},
-	{"Keyboard", AK_T_ENUM, 6},
-	{"ReturnKey", AK_T_ENUM, 7},
+	{"Keyboard", AK_T_ENUM, 10},
+	{"ReturnKey", AK_T_ENUM, 11},
 	{"Secure", AK_T_BOOL, -1},
-	{"Autocapitalize", AK_T_ENUM, 8},
-	{"Autocorrect", AK_T_ENUM, 9},
+	{"Autocapitalize", AK_T_ENUM, 12},
+	{"Autocorrect", AK_T_ENUM, 13},
 	{"ContentType", AK_T_STRING, -1},
 	{"Multiline", AK_T_BOOL, -1},
 	{"Plain", AK_T_BOOL, -1},
@@ -108,9 +121,9 @@ static const ak_prop_info props_List[] = {
 	{"Refreshing", AK_T_BOOL, -1},
 	{"Columns", AK_T_INT, -1},
 	{"Gap", AK_T_FLOAT, -1},
-	{"Appearance", AK_T_ENUM, 16},
+	{"Appearance", AK_T_ENUM, 20},
 	{"Inset", AK_T_FLOAT, -1},
-	{"Anchor", AK_T_ENUM, 29},
+	{"Anchor", AK_T_ENUM, 33},
 	{"Selecting", AK_T_BOOL, -1},
 };
 
@@ -155,17 +168,17 @@ static const ak_prop_info props_Alert[] = {
 	{"Title", AK_T_STRING, -1},
 	{"Message", AK_T_STRING, -1},
 	{"Buttons", AK_T_BYTES, -1},
-	{"Style", AK_T_ENUM, 11},
+	{"Style", AK_T_ENUM, 15},
 	{"Window", AK_T_INT, -1},
 	{"Fields", AK_T_BYTES, -1},
 };
 
 static const ak_prop_info props_Image[] = {
 	{"Source", AK_T_STRING, -1},
-	{"Mode", AK_T_ENUM, 15},
+	{"Mode", AK_T_ENUM, 19},
 	{"Placeholder", AK_T_STRING, -1},
 	{"PlaceholderImage", AK_T_BYTES, -1},
-	{"PlaceholderMode", AK_T_ENUM, 15},
+	{"PlaceholderMode", AK_T_ENUM, 19},
 	{"Transition", AK_T_FLOAT, -1},
 	{"Paused", AK_T_BOOL, -1},
 };
@@ -217,8 +230,8 @@ static const ak_prop_info props_Shape[] = {
 	{"Fill", AK_T_COLOR, -1},
 	{"Stroke", AK_T_COLOR, -1},
 	{"LineWidth", AK_T_FLOAT, -1},
-	{"LineCap", AK_T_ENUM, 21},
-	{"LineJoin", AK_T_ENUM, 22},
+	{"LineCap", AK_T_ENUM, 25},
+	{"LineJoin", AK_T_ENUM, 26},
 	{"TrimStart", AK_T_FLOAT, -1},
 	{"TrimEnd", AK_T_FLOAT, -1},
 	{"Dash", AK_T_BYTES, -1},
@@ -226,7 +239,7 @@ static const ak_prop_info props_Shape[] = {
 
 static const ak_prop_info props_Video[] = {
 	{"Source", AK_T_STRING, -1},
-	{"Mode", AK_T_ENUM, 15},
+	{"Mode", AK_T_ENUM, 19},
 	{"HideControls", AK_T_BOOL, -1},
 	{"AutoPlay", AK_T_BOOL, -1},
 	{"Loop", AK_T_BOOL, -1},
@@ -244,7 +257,7 @@ static const ak_prop_info props_WebView[] = {
 
 static const ak_prop_info props_DatePicker[] = {
 	{"Value", AK_T_INT, -1},
-	{"Mode", AK_T_ENUM, 17},
+	{"Mode", AK_T_ENUM, 21},
 	{"Min", AK_T_INT, -1},
 	{"Max", AK_T_INT, -1},
 	{"Inline", AK_T_BOOL, -1},
@@ -304,8 +317,14 @@ static const ak_prop_info props_ProgressRing[] = {
 static const ak_prop_info props_Snackbar[] = {
 	{"Message", AK_T_STRING, -1},
 	{"Action", AK_T_STRING, -1},
-	{"Duration", AK_T_ENUM, 33},
+	{"Duration", AK_T_ENUM, 37},
 	{"Window", AK_T_INT, -1},
+};
+
+static const ak_prop_info props_Overlay[] = {
+	{"Root", AK_T_INT, -1},
+	{"Anchor", AK_T_INT, -1},
+	{"Modal", AK_T_BOOL, -1},
 };
 
 const ak_prop_info *const ak_kind_props[AK_KIND_COUNT] = {
@@ -348,11 +367,16 @@ const ak_prop_info *const ak_kind_props[AK_KIND_COUNT] = {
 	props_Picker,
 	props_ProgressRing,
 	props_Snackbar,
+	props_Overlay,
 };
 
-const uint8_t ak_kind_prop_counts[AK_KIND_COUNT] = {0, 2, 1, 3, 14, 2, 3, 4, 8, 1, 1, 14, 1, 5, 6, 7, 2, 2, 0, 1, 2, 2, 4, 3, 2, 9, 6, 6, 5, 2, 3, 2, 1, 3, 3, 5, 3, 2, 4};
+const uint8_t ak_kind_prop_counts[AK_KIND_COUNT] = {0, 2, 1, 3, 14, 2, 3, 4, 8, 1, 1, 14, 1, 5, 6, 7, 2, 2, 0, 1, 2, 2, 4, 3, 2, 9, 6, 6, 5, 2, 3, 2, 1, 3, 3, 5, 3, 2, 4, 3};
 
-static const char *const enum_Role[] = {"None", "Button", "Header", "Image", "Link", "Text", "Search"};
+static const char *const enum_Role[] = {"None", "Button", "Header", "Image", "Link", "Text", "Search", "Checkbox", "Radio", "RadioGroup", "Switch", "Tab", "TabList", "TabPanel", "Slider", "SpinButton", "ProgressBar", "Meter", "Menu", "MenuBar", "MenuItem", "MenuItemCheckbox", "MenuItemRadio", "Listbox", "Option", "ComboBox", "Dialog", "AlertDialog", "Tooltip", "Group", "Separator", "Toolbar", "Status"};
+static const char *const enum_A11yChecked[] = {"None", "Unchecked", "Checked", "Mixed"};
+static const char *const enum_A11yExpanded[] = {"None", "Collapsed", "Expanded"};
+static const char *const enum_Side[] = {"Bottom", "Top", "Start", "End", "Center"};
+static const char *const enum_DismissReason[] = {"OutsidePress", "Escape", "Back", "FocusOut", "AnchorHidden"};
 static const char *const enum_TextStyle[] = {"Default", "LargeTitle", "Title", "Title2", "Title3", "Headline", "Subheadline", "Body", "Callout", "Footnote", "Caption", "Caption2"};
 static const char *const enum_FontWeight[] = {"Default", "Ultralight", "Thin", "Light", "Regular", "Medium", "Semibold", "Bold", "Heavy", "Black"};
 static const char *const enum_TextAlign[] = {"Start", "Center", "End", "Justify"};
@@ -389,7 +413,11 @@ static const char *const enum_SnackbarDuration[] = {"Short", "Long", "Indefinite
 static const char *const enum_LocationAction[] = {"Replace", "Push", "Back", "Forward"};
 
 const ak_enum_info ak_enums[AK_ENUM_COUNT] = {
-	{"Role", enum_Role, 7},
+	{"Role", enum_Role, 33},
+	{"A11yChecked", enum_A11yChecked, 4},
+	{"A11yExpanded", enum_A11yExpanded, 3},
+	{"Side", enum_Side, 5},
+	{"DismissReason", enum_DismissReason, 5},
 	{"TextStyle", enum_TextStyle, 12},
 	{"FontWeight", enum_FontWeight, 10},
 	{"TextAlign", enum_TextAlign, 4},

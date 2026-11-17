@@ -146,6 +146,15 @@ var Style = []Key{
 	{Name: "hint", Type: "string"},
 	{Name: "role", Type: "Role"},
 	{Name: "a11yHidden", Type: "bool", Doc: "hidden from screen readers, with what's in it"},
+	{Name: "a11yChecked", Type: "Checked", Doc: "a checkbox's, switch's, radio's or checkable menu item's state, for screen readers: .unchecked, .checked, .mixed (.off: not checkable; read as unchecked with a checkable role)"},
+	{Name: "a11yExpanded", Type: "Expanded", Doc: "whether what it controls shows (a disclosure, a menu's trigger, a combobox): .collapsed or .expanded (.off: it expands nothing)"},
+	{Name: "a11ySelected", Type: "bool", Doc: "selected among its group, for screen readers: a tab, an option, a radio group's choice"},
+	{Name: "a11yValue", Type: "string", Doc: "what screen readers read as its value: a slider's \"40%\", a select's choice"},
+	{Name: "a11yRange", Type: "ValueRange?", Doc: "a slider's, progress bar's, meter's or spin button's range, for screen readers"},
+	{Name: "a11yModal", Type: "bool", Doc: "screen readers stay inside it while it shows, the rest of its window hidden from them: a dialog"},
+	{Name: "a11yControls", Type: "Ref?", Doc: "the view this one controls: a combobox's listbox, a tab's panel (Windows, Linux and the web have the relation)"},
+	{Name: "a11yLabelledBy", Type: "Ref?", Doc: "the view whose text labels this one: a field's label"},
+	{Name: "a11yDescribedBy", Type: "Ref?", Doc: "the view whose text describes this one: a field's description or error"},
 	{Name: "tooltip", Type: "string"},
 	{Name: "disabled", Type: "bool"},
 	// Direction.
@@ -160,7 +169,7 @@ var Style = []Key{
 // style keys named after the state, in the block of an element whose
 // Variants is set. The element reports a state once a variant (or
 // ui.state) asks for it.
-var Variants = []string{"hovered", "pressed", "dragging", "dragOver"}
+var Variants = []string{"hovered", "pressed", "dragging", "dragOver", "focused", "focusVisible"}
 
 // containerKeys are what View, Row, Column and SafeArea take besides the
 // style: drags and drops.
@@ -171,6 +180,12 @@ var containerKeys = []Key{
 	{Name: "leadingSwipeActions", Type: "[Action]", Doc: "a List's row's actions revealed from its leading edge (Mail's Unread)"},
 	{Name: "selected", Type: "bool", Doc: "a List's row is selected: in a selecting list, its selection control is checked (what on select doesn't take back goes back as it was)"},
 	{Name: "href", Type: "string", Doc: "goes to this route when it's pressed, after press (the Router around it navigates there): an href, or a routed screen's call; with role: .link, screen readers call it a link"},
+	{Name: "focusable", Type: "bool", Doc: "takes the keyboard's focus: a Tab stop in the views' order where a keyboard moves focus (desktops, the web, a hardware keyboard on a phone or tablet), focused by a press with a mouse. A pressable or adjustable view is one already"},
+	{Name: "pressKeepsFocus", Type: "bool", Doc: "a press with a pointer leaves the keyboard's focus where it was (a toolbar's button, a menu's trigger)"},
+	{Name: "hideFocusRing", Type: "bool", Doc: "the platform draws no focus ring around it: the app draws its own (a view that styles focusVisible { } hides it already)"},
+	{Name: "trapFocus", Type: "bool", Doc: "while the keyboard's focus is in it, Tab and Shift+Tab cycle among the focusable views inside it: a dialog's"},
+	{Name: "restoreFocus", Type: "bool", Doc: "when it goes, the keyboard's focus goes back to the view that had it when it came, if that view still shows"},
+	{Name: "autofocus", Type: "bool", Doc: "once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)"},
 }
 
 // containerEvents are what View, Row, Column and SafeArea report: a
@@ -192,6 +207,9 @@ var containerEvents = []Event{
 	{Name: "drop", Params: []Param{{"drop", "Drop"}}, Doc: "what's dropped on it: the items it takes"},
 	{Name: "select", Params: []Param{{"selected", "bool"}}, Doc: "the user selected its List's row, or deselected it"},
 	{Name: "selectBegin", Doc: "the user started selecting at its List's row while the list isn't selecting (a two-finger pan on iOS, a long press on Android)"},
+	{Name: "focusChange", Params: []Param{{"focused", "bool"}}, Doc: "it took the keyboard's focus, or lost it (a focusable view's)"},
+	{Name: "keyText", Params: []Param{{"text", "string"}}, Doc: "text typed while it has the keyboard's focus that its keys (and its containers') didn't take: a listbox's typeahead"},
+	{Name: "pressStart", Params: []Param{{"x", "float"}, {"y", "float"}}, Doc: "a press began on it: where, in points from its top left (before pressedChange(true)): a slider's track jumps there"},
 }
 
 // Elements are the built-in elements. core/src/ui implements each.
@@ -442,6 +460,25 @@ var Elements = []Element{
 	}, Slots: []Slot{
 		{Name: "content", Lazy: true, Doc: "what the popover shows: built as it opens, disposed as it closes"},
 	}, Doc: "content in a bubble pointing at its children while open (UIPopoverPresentationController, a PopupWindow, NSPopover)"},
+	{Name: "Overlay", Children: true, LazyChildren: true, Keys: []Key{
+		{Name: "open", Type: "bool", Bind: true, Event: "change", Doc: "shows its children while true: built as it opens, disposed as it closes (a change in animate { } plays their transition)"},
+		{Name: "anchor", Type: "Ref?", Doc: "the view it's placed next to: none, in its window (a dialog, a drawer, a toast)"},
+		{Name: "side", Type: "Side", Doc: "the anchor's side it goes on (.bottom, .top, .start, .end), or .center: over it. Without an anchor, the window's"},
+		{Name: "align", Type: "Align", Doc: "where on that side: .start, .center (or .auto), .end; .stretch: as long as the anchor on that side"},
+		{Name: "offset", Type: "float", Doc: "the gap between it and the anchor"},
+		{Name: "alignOffset", Type: "float", Doc: "moves it along the side, from where align puts it"},
+		{Name: "flip", Type: "bool", Default: "true", Doc: "goes to the opposite side when it doesn't fit on its own and fits better there"},
+		{Name: "edgeGap", Type: "float", Default: "8", Doc: "the least distance it keeps from the window's edges (inside the safe area): it's moved along its side, and made no bigger than the room left"},
+		{Name: "matchWidth", Type: "bool", Doc: "at least as wide as the anchor (a select's list)"},
+		{Name: "modal", Type: "bool", Doc: "presses reach only it while it's open (a backdrop's elsewhere), and screen readers see only it"},
+		{Name: "dismissOn", Type: "[DismissReason]", Default: "[.outsidePress, .escape, .back, .focusOut, .anchorHidden]", Doc: "what closes it: a press outside it (not on the anchor), Escape, Back (Android's, the web's Escape), the keyboard's focus leaving it and its anchor, the anchor scrolled or hidden out of view. Each writes open false and reports dismiss"},
+	}, Events: []Event{
+		{Name: "change", Params: []Param{{"open", "bool"}}},
+		{Name: "dismiss", Params: []Param{{"reason", "DismissReason"}}, Doc: "the user dismissed it"},
+		{Name: "place", Params: []Param{{"placed", "Placed"}}, Doc: "where it went, once it's placed and each time that changes: the side after flipping (an arrow's side, a transition's direction), where the anchor's middle is along that side, the room it has"},
+	}, Slots: []Slot{
+		{Name: "backdrop", Lazy: true, Doc: "what covers its window behind it while it's open (a dialog's dimming): as big as the window, built and disposed with the children"},
+	}, Doc: "its children over the window, placed next to an anchor while open: a select's list, a menu, a tooltip, a dialog. Not the platform's popover: what shows is only what it holds, styled by the app (std/base's popups are made of it)"},
 	{Name: "Menu", Children: true, Keys: []Key{
 		{Name: "title", Type: "string", Positional: true, Default: "\"\"", Doc: "in a MenuBar, the menu's title (File, Edit)"},
 		{Name: "actions", Type: "[Action]", Doc: "the menu's actions"},
