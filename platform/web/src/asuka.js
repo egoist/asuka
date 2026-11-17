@@ -139,23 +139,27 @@ function devClient(url) {
   addEventListener("error", (e) => log(2, `page: ${e.message} (${e.filename}:${e.lineno})\n${e.error?.stack || ""}\n`));
   addEventListener("unhandledrejection", (e) => log(2, `page: ${e.reason?.stack || e.reason}\n`));
   let host = null, core = null;
-  const report = (r, first) => fetch(base + "reloaded", { method: "POST", body: JSON.stringify({ First: first, Kept: r.kept, Micros: r.micros }) }).catch(() => {});
+  const report = (r, first, restarted) => fetch(base + "reloaded", { method: "POST", body: JSON.stringify({ First: first, Restarted: restarted, Kept: r.kept, Micros: r.micros }) }).catch(() => {});
   const events = new EventSource(base + "events");
-  // A new build of the app's module: loaded in place, its state and views kept.
+  // A new build of the app's module: loaded in place, its state and views kept. A
+  // restart's: loaded keeping none of its state.
   let loading = Promise.resolve();
-  events.addEventListener("module", (e) => {
+  const load = (stamp, restart) => {
     if (!core?.reload) return;
     loading = loading.then(async () => {
       try {
-        const res = await fetch(base + "app.akb?" + e.data);
+        const res = await fetch(base + "app.akb?" + stamp);
         if (!res.ok) throw new Error(await res.text());
-        report(await core.reload(new Uint8Array(await res.arrayBuffer())), false);
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        report(await (restart ? core.restart(bytes) : core.reload(bytes)), false, restart);
       } catch (err) {
         log(2, `page: the new module didn't load: ${err?.message || err}\n`);
       }
       send();
     });
-  });
+  };
+  events.addEventListener("module", (e) => load(e.data, false));
+  events.addEventListener("restart", (e) => load(e.data, true));
   events.addEventListener("reload", () => {
     host?.saveState();
     send();

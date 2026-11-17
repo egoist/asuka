@@ -1624,9 +1624,17 @@ new module, which each player loads in place:
   start from it, converted to the new types by name. A value that can't
   be converted (a field added whose type has no zero value, a type
   that's now another kind) starts from its initial value, as does a
-  cell whose component moved. The views that are still there are kept,
-  so a reload changes only what the edit changed. The player
+  cell whose component moved, and one whose initializer was edited:
+  the key ends with a hash of the initializer as the formatter prints
+  it (as Fast Refresh's hook signature has useState's argument), so a
+  change of layout keeps the value. The views that are still there are
+  kept, so a reload changes only what the edit changed. The player
   reports how many cells it kept and how long the load took.
+- **Restarting**: `r` in asuka dev's terminal sends every player the
+  last module that compiled as a restart (dev.h's frame 7; the web's
+  page, an event), which it loads keeping no state
+  (`asuka_dev_restart`): the app starts over without the player
+  launching again.
 - **Noticing a change**: the system says when a file under the app's
   directory changes (`internal/fswatch`: FSEvents, inotify,
   ReadDirectoryChangesW; 25 ms for a burst to end); where the system
@@ -1730,7 +1738,11 @@ is used only when its sources are the CLI's own (not a checkout's, not
 (`cbuild.LinuxGlibc`, 2.28), and they need nothing of Zig's runtime.
 (Windows' are MinGW's, which a compiler for MSVC's runtime can't link.)
 A CLI run from a checkout has an empty manifest and builds the same
-units into the cache.
+units into the cache. A release publishes `@egoist/asuka`, the
+launcher, last: after the prebuilt and platform packages, once the
+registry serves each of their tarballs, fetched and checked as the CLI
+fetches them (npm accepts a package before it serves it, a new
+package's tarball for minutes after).
 
 **Swift: modules with library evolution.** The host's Swift (the module
 `Asuka`, with its compilation conditions) and each native package's

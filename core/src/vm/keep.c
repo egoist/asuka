@@ -466,9 +466,20 @@ void ak_keep_start(void) {
 
 void ak_keep_save(void) {
 	nsaved = 0;
+	uint32_t n = 0;
 	for (uint32_t i = 0; i < entries.len; i++) {
 		entry *e = &entries.data[i];
-		if (!e->cell) continue;
+		if (!e->cell) {
+			// No live cell: what it saved at an earlier reload and no cell
+			// took since goes (a state whose initializer was edited, then
+			// edited back, starts from it, not from a value two reloads
+			// old), and so does the entry.
+			ak_release(e->key);
+			ak_buf_free(&e->saved);
+			continue;
+		}
+		entries.data[n++] = *e;
+		e = &entries.data[n - 1];
 		ak_buf_reset(&e->saved);
 		ak_kind k = ak_vm_cell_kind(e->cell);
 		ak_val v = ak_vm_cell_get(e->cell, false);
@@ -477,6 +488,17 @@ void ak_keep_save(void) {
 		e->kind = (uint8_t)k;
 		e->cell = NULL;
 		if (e->has) nsaved++;
+	}
+	entries.len = n;
+}
+
+void ak_keep_discard(void) {
+	nsaved = 0;
+	for (uint32_t i = 0; i < entries.len; i++) {
+		entry *e = &entries.data[i];
+		ak_buf_reset(&e->saved);
+		e->has = false;
+		e->cell = NULL;
 	}
 }
 

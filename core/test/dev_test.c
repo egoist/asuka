@@ -11,10 +11,12 @@
 
 static uint8_t got[64];
 static size_t got_len;
+static bool got_fresh;
 
-static void reload(const uint8_t *p, size_t n) {
+static void reload(const uint8_t *p, size_t n, bool fresh) {
 	memcpy(got, p, n < sizeof got ? n : sizeof got);
 	got_len = n;
+	got_fresh = fresh;
 }
 
 static bool read_frame(int fd, uint8_t *kind, uint8_t *buf, size_t cap, size_t *n) {
@@ -53,8 +55,8 @@ static void expect_hello(int c) {
 	CHECK(n == 19 && memcmp(buf, "{\"platform\":\"test\"}", 19) == 0);
 }
 
-static void send_module(int c, const char *five) {
-	uint8_t frame[10] = {6, 0, 0, 0, AK_DEV_MODULE};
+static void send_frame(int c, uint8_t kind, const char *five) {
+	uint8_t frame[10] = {6, 0, 0, 0, kind};
 	memcpy(frame + 5, five, 5);
 	send(c, frame, sizeof frame, 0);
 	got_len = 0;
@@ -66,7 +68,10 @@ static void send_module(int c, const char *five) {
 	}
 	CHECK_EQ_INT(got_len, 5);
 	CHECK(memcmp(got, five, 5) == 0);
+	CHECK(got_fresh == (kind == AK_DEV_RESTART));
 }
+
+static void send_module(int c, const char *five) { send_frame(c, AK_DEV_MODULE, five); }
 
 static int free_port(void) {
 	int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -100,6 +105,8 @@ TEST(the_session) {
 	size_t n;
 	REQUIRE(read_frame(c, &kind, buf, sizeof buf, &n));
 	CHECK_EQ_INT(kind, AK_DEV_RELOADED);
+	// A restart: the module, loaded keeping no state.
+	send_frame(c, AK_DEV_RESTART, "AKBC!");
 
 	// The CLI restarts: the player comes back.
 	close(c);

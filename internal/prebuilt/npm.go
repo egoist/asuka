@@ -87,6 +87,15 @@ func Fetch(p Package) (string, error) {
 	return dir, nil
 }
 
+// Check fetches p's tarball as Fetch does (the registry's version
+// document, then its tarball, checked against p.Integrity), keeping
+// nothing: a release waits for it to pass before it publishes the CLI
+// that pins p, since a registry accepts a package before it serves it.
+func Check(p Package) error {
+	_, err := LoadConfig().download(p)
+	return err
+}
+
 // ErrIntegrity is a download that isn't the package the CLI pins.
 var ErrIntegrity = errors.New("the package isn't the one this asuka was released with (its integrity differs)")
 

@@ -6,9 +6,12 @@
 // Frames both ways: u32 length (of what follows, little-endian), u8
 // kind, payload.
 //   CLI → player:  1 module (bytecode)    2 ping
+//                  7 restart (bytecode: loaded keeping none of the
+//                    app's state, which all starts again)
 //   player → CLI:  3 log (u8 fd: 1 out, 2 err; then the text)
 //                  4 hello (JSON: the platform, the device)
-//                  5 reloaded (u32 state cells kept, u32 microseconds)
+//                  5 reloaded (u32 state cells kept, u32 microseconds,
+//                    u8 flags: AK_DEV_RESTARTED for a restart's)
 //                  6 error (text: a module that didn't load, an uncaught error)
 #ifndef AK_DEV_H
 #define AK_DEV_H
@@ -22,11 +25,16 @@ enum {
 	AK_DEV_HELLO = 4,
 	AK_DEV_RELOADED = 5,
 	AK_DEV_ERROR = 6,
+	AK_DEV_RESTART = 7,
 };
 
+// A reloaded frame's flags.
+enum { AK_DEV_RESTARTED = 1 };
+
 // ak_dev_set_reload sets what a module that arrives is given to, on the
-// main thread (the ABI's reload: keep state, swap the module, mount).
-void ak_dev_set_reload(void (*reload)(const uint8_t *module, size_t len));
+// main thread (the ABI's reload: keep state, swap the module, mount);
+// fresh for a restart's, which keeps no state.
+void ak_dev_set_reload(void (*reload)(const uint8_t *module, size_t len, bool fresh));
 
 // ak_dev_connect connects to the CLI at one of hosts (comma-separated:
 // tried in turn) on port, on a thread of its own that reads its frames,

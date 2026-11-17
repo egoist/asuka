@@ -139,6 +139,12 @@ func (t *prebuiltTarget) buildC(out string, c *prebuiltContents) error {
 				return err
 			}
 			c.Compiler = tc.CompilerKind()
+			// A build for Apple's platforms links with Xcode's clang (it has
+			// Xcode for the Swift), which uses only Xcode's libraries:
+			// Zig's (ASUKA_CC=zig) would ship and never be used.
+			if (tg.OS == "darwin" || strings.HasPrefix(tg.OS, "ios")) && c.Compiler != "apple" {
+				return fmt.Errorf("asuka prebuilt: %s's libraries are built with Xcode's clang, not %s's (unset ASUKA_CC and CC)", tg, c.Compiler)
+			}
 			units, err := appbuild.Units(tg)
 			if err != nil {
 				return err

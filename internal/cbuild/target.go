@@ -353,7 +353,7 @@ func exportFlags() []string {
 	for _, name := range []string{
 		"asuka_start", "asuka_load", "asuka_event", "asuka_list_count", "asuka_list_bind", "asuka_list_unbind",
 		"asuka_run_posted", "asuka_attach", "asuka_timer_fire", "asuka_native_done", "asuka_native_invoke", "asuka_alloc", "asuka_free",
-		"asuka_run", "asuka_dev_reload", "asuka_free_string", "asuka_web_start", "asuka_io", "asuka_set_app_dir", "asuka_set_start",
+		"asuka_run", "asuka_dev_reload", "asuka_dev_restart", "asuka_free_string", "asuka_web_start", "asuka_io", "asuka_set_app_dir", "asuka_set_start",
 		// spawn on the page's workers (core/src/abi/web.c)
 		"asuka_web_workers", "asuka_spawn_done", "asuka_worker_start", "asuka_worker_call", "asuka_worker_answered",
 		// std/sqlite's answers from the page's SQLite worker (core/src/sqlite/sqlite.c)

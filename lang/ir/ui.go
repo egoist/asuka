@@ -222,7 +222,7 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 			}
 			init = b.valueReg(init, k)
 			r := b.local(bc.KRef)
-			b.emit(op("CELLK"), r, init, int(k), b.l.str(t.Name()+"."+m.Name()))
+			b.emit(op("CELLK"), r, init, int(k), b.l.str(t.Name()+"."+m.Name()+initKey(m.Default)))
 			b.memberRegs[m] = r
 		case check.LetMember:
 			switch {

@@ -97,6 +97,10 @@ ASUKA_API int asuka_dev_listen(int port, const char *hello, char **err);
 // cells kept (0 for the first), or -1 with a message in *err. *micros, if
 // not NULL, is how long the load took.
 ASUKA_API int asuka_dev_reload(const uint8_t *module, size_t len, uint32_t *micros, char **err);
+// Loads a module as asuka dev's restarts do: like asuka_dev_reload, but
+// keeping none of the app's state, which all starts again from its
+// initial values. 0, or -1 with a message in *err.
+ASUKA_API int asuka_dev_restart(const uint8_t *module, size_t len, uint32_t *micros, char **err);
 // Memory for bytes a host passes in (the web's JavaScript), and for what
 // the core hands out (asuka_native_invoke's answer): asuka_free frees it.
 ASUKA_API void *asuka_alloc(size_t n);

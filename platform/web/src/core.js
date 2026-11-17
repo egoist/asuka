@@ -97,11 +97,12 @@ export async function startCore(host, options = {}) {
     new Uint8Array(memory().buffer, p, bytes.length).set(bytes);
     try { return f(p, bytes.length); } finally { e.asuka_free(p); }
   };
-  // asuka dev's loads: the state cells kept (0 for the first) and the microseconds taken.
-  const devLoad = (bytes) => {
+  // asuka dev's loads: the state cells kept (0 for the first, and a restart's, which keeps
+  // none) and the microseconds taken.
+  const devLoad = (bytes, restart) => {
     const micros = e.asuka_alloc(4);
     try {
-      const kept = withBytes(bytes, (p, n) => e.asuka_dev_reload(p, n, micros, 0));
+      const kept = withBytes(bytes, (p, n) => (restart ? e.asuka_dev_restart : e.asuka_dev_reload)(p, n, micros, 0));
       if (kept < 0) throw new Error("asuka: the app's module didn't load (see the console)");
       return { kept, micros: new DataView(memory().buffer).getUint32(micros, true) };
     } finally {
@@ -112,7 +113,14 @@ export async function startCore(host, options = {}) {
     /** reload loads asuka dev's next module, keeping the app's state and views: { kept, micros }. */
     reload: (bytes) => new Promise((ok, fail) => host.call(() => {
       try {
-        ok(devLoad(bytes));
+        ok(devLoad(bytes, false));
+        pool?.reload(bytes);
+      } catch (err) { fail(err); }
+    })),
+    /** restart loads asuka dev's module keeping none of the app's state: { kept: 0, micros }. */
+    restart: (bytes) => new Promise((ok, fail) => host.call(() => {
+      try {
+        ok(devLoad(bytes, true));
         pool?.reload(bytes);
       } catch (err) { fail(err); }
     })),

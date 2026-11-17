@@ -10,7 +10,7 @@
 
 #if defined(__wasm__)
 
-void ak_dev_set_reload(void (*reload)(const uint8_t *, size_t)) { AK_UNUSED(reload); }
+void ak_dev_set_reload(void (*reload)(const uint8_t *, size_t, bool)) { AK_UNUSED(reload); }
 bool ak_dev_connect(const char *host, int port, const char *hello, bool capture, char *err, size_t errcap) {
 	AK_UNUSED(host);
 	AK_UNUSED(port);
@@ -71,7 +71,7 @@ typedef int sock_t;
 #define MSG_NOSIGNAL_FLAG 0
 #endif
 
-static void (*reload_fn)(const uint8_t *, size_t);
+static void (*reload_fn)(const uint8_t *, size_t, bool);
 
 // The session: the one connection to the CLI, which a newer one replaces
 // (one the CLI made through the cable takes over from the player's own).
@@ -85,7 +85,7 @@ static uint32_t gen;
 static char *hello_json;
 static ak_mutex send_mu = AK_MUTEX_INIT;  // writes to sock
 
-void ak_dev_set_reload(void (*reload)(const uint8_t *, size_t)) { reload_fn = reload; }
+void ak_dev_set_reload(void (*reload)(const uint8_t *, size_t, bool)) { reload_fn = reload; }
 
 bool ak_dev_connected(void) {
 	ak_mutex_lock(&mu);
@@ -141,11 +141,12 @@ void ak_dev_send(uint8_t kind, const void *p, size_t len) {
 typedef struct {
 	uint8_t *p;
 	size_t len;
+	bool fresh;  // a restart's
 } module_t;
 
 static void deliver(void *ctx) {
 	module_t *m = ctx;
-	if (reload_fn) reload_fn(m->p, m->len);
+	if (reload_fn) reload_fn(m->p, m->len, m->fresh);
 	ak_free(m->p);
 	ak_free(m);
 }
@@ -178,10 +179,11 @@ static void session(sock_t s) {
 			ak_free(p);
 			break;
 		}
-		if (h[4] == AK_DEV_MODULE) {
+		if (h[4] == AK_DEV_MODULE || h[4] == AK_DEV_RESTART) {
 			module_t *m = ak_alloc(sizeof *m);
 			m->p = p;
 			m->len = n - 1;
+			m->fresh = h[4] == AK_DEV_RESTART;
 			ak_post(deliver, m);
 		} else {
 			ak_free(p);

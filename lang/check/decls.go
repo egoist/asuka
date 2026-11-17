@@ -185,7 +185,7 @@ func (c *Checker) conforms(t *TypeName, list []syntax.Type) {
 		ty := c.typeExpr(ct)
 		if n, ok := ty.(*Named); ok && n.Obj.Kind == InterfaceType {
 			if n.Obj.Native {
-				c.errorf(ct, "%s is a native interface: its platforms' code implements it (docs/native.md)", n.Obj.name)
+				c.errorf(ct, "%s is a native interface: its platforms' code implements it (https://asuka.egoist.dev/docs/native)", n.Obj.name)
 				continue
 			}
 			t.Conforms = append(t.Conforms, n.Obj)
@@ -446,7 +446,7 @@ func (c *Checker) funcBody(f *Function) {
 		case d.Body != nil || d.Value != nil:
 			c.errorf(d.Name, "a native fn has no body: the runtime implements it")
 		case f.Pkg == nil || !StdPath(f.Pkg.Path):
-			c.errorf(d.Name, "native fn is the standard library's (its runtime implements it); a package's platform code is a native interface (docs/native.md)")
+			c.errorf(d.Name, "native fn is the standard library's (its runtime implements it); a package's platform code is a native interface (https://asuka.egoist.dev/docs/native)")
 		case len(f.TypeParams) > 0 && f.Recv != nil:
 			c.errorf(d.Name, "a method's native fn isn't generic")
 		}

@@ -1,7 +1,8 @@
 // Package devserver is asuka dev's side of a player's connection
 // (core/src/abi/dev.h): players connect and say hello (their platform),
 // get the app's latest bytecode for their platform and again on every
-// build, and send back their logs and how each reload went.
+// build (or to restart with, keeping no state), and send back their logs
+// and how each reload went.
 package devserver
 
 import (
@@ -24,7 +25,11 @@ const (
 	KindHello    = 4
 	KindReloaded = 5
 	KindError    = 6
+	KindRestart  = 7
 )
+
+// A reloaded frame's flags.
+const flagRestarted = 1
 
 // Events are what players report.
 type Events struct {
@@ -32,9 +37,11 @@ type Events struct {
 	// Need is told that a player said hello from a platform there's no
 	// module for (Send and Keep's): one compiled for it, sent with Send,
 	// goes to it.
-	Need     func(p *Player, platform target.Platform)
-	Log      func(p *Player, stderr bool, text []byte)
-	Reloaded func(p *Player, kept uint32, micros uint32)
+	Need func(p *Player, platform target.Platform)
+	Log  func(p *Player, stderr bool, text []byte)
+	// Reloaded is told of a module a player loaded: the states it kept,
+	// how long it took, and whether it was a restart's (Restart).
+	Reloaded func(p *Player, kept uint32, micros uint32, restarted bool)
 	Error    func(p *Player, text []byte)
 	Gone     func(p *Player, err error)
 }
@@ -134,6 +141,18 @@ func (s *Server) Send(platform target.Platform, module []byte) {
 	}
 }
 
+// Restart sends every player its platform's module to restart with: it
+// loads it keeping none of the app's state, which all starts again.
+func (s *Server) Restart() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for p := range s.ps {
+		if m := s.modules[p.Platform]; p.hello && m != nil {
+			p.send(KindRestart, m)
+		}
+	}
+}
+
 func (s *Server) accept() {
 	for {
 		c, err := s.ln.Accept()
@@ -227,7 +246,7 @@ func (p *Player) read(s *Server) error {
 			}
 		case KindReloaded:
 			if ev.Reloaded != nil && len(b) >= 8 {
-				ev.Reloaded(p, binary.LittleEndian.Uint32(b), binary.LittleEndian.Uint32(b[4:]))
+				ev.Reloaded(p, binary.LittleEndian.Uint32(b), binary.LittleEndian.Uint32(b[4:]), len(b) > 8 && b[8]&flagRestarted != 0)
 			}
 		case KindError:
 			if ev.Error != nil {

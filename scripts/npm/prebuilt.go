@@ -18,17 +18,14 @@ import (
 // tarball's integrity, into manifest (internal/prebuilt/manifest.json)
 // and out.
 // It returns the tarballs.
-func packPrebuilt(dir, out, version, manifest string) ([]string, error) {
+func packPrebuilt(dir, out, version, manifest string) ([]tarball, error) {
 	es, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 	m := prebuilt.Manifest{Version: version, Packages: map[string]prebuilt.Package{}, Archives: map[string]prebuilt.File{}}
 	tdir, _ := filepath.Abs(filepath.Join(out, "tarballs"))
-	if err := os.MkdirAll(tdir, 0o755); err != nil {
-		return nil, err
-	}
-	var tarballs []string
+	var tarballs []tarball
 	for _, e := range es {
 		if !e.IsDir() {
 			continue
@@ -70,27 +67,13 @@ func packPrebuilt(dir, out, version, manifest string) ([]string, error) {
 			"repository":  "github:egoist/asuka",
 			"files":       files,
 		})
-		cmd := exec.Command("npm", "pack", "--pack-destination", tdir, "--json")
-		cmd.Dir = src
-		cmd.Stderr = os.Stderr
-		res, err := cmd.Output()
-		if err != nil {
-			return nil, fmt.Errorf("npm pack %s: %v", src, err)
-		}
-		var packed []struct {
-			Filename string `json:"filename"`
-		}
-		if err := json.Unmarshal(res, &packed); err != nil || len(packed) != 1 {
-			return nil, fmt.Errorf("npm pack %s: %s", src, res)
-		}
-		tgz := filepath.Join(tdir, filepath.Base(packed[0].Filename))
-		data, err := os.ReadFile(tgz)
+		tgz, integrity, err := pack(src, tdir)
 		if err != nil {
 			return nil, err
 		}
 		// What npm publish uploads is this file: the integrity the
 		// registry will say, which the CLI pins.
-		m.Packages[c.Name] = prebuilt.Package{Name: name, Version: version, Integrity: prebuilt.Integrity(data), Compiler: c.Compiler, Swift: c.Swift}
+		m.Packages[c.Name] = prebuilt.Package{Name: name, Version: version, Integrity: integrity, Compiler: c.Compiler, Swift: c.Swift}
 		for k, f := range c.Files {
 			f.Package = c.Name
 			m.Archives[k] = f
@@ -98,10 +81,10 @@ func packPrebuilt(dir, out, version, manifest string) ([]string, error) {
 		if c.Maven != "" {
 			m.Maven = &prebuilt.File{Package: c.Name, Path: c.Maven}
 		}
-		tarballs = append(tarballs, tgz)
+		tarballs = append(tarballs, tarball{tgz, m.Packages[c.Name]})
 		fmt.Println("packed", name, "→", tgz)
 	}
-	sort.Strings(tarballs)
+	sort.Slice(tarballs, func(i, j int) bool { return tarballs[i].path < tarballs[j].path })
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return nil, err
@@ -115,6 +98,41 @@ func packPrebuilt(dir, out, version, manifest string) ([]string, error) {
 	}
 	fmt.Printf("the manifest: %d packages, %d libraries (%s)\n", len(m.Packages), len(m.Archives), strings.Join(sortedKeys(m.Packages), ", "))
 	return tarballs, nil
+}
+
+// tarball is a package packed for npm publish: its file, and its name,
+// version and integrity, which the registry serves it with.
+type tarball struct {
+	path string
+	pkg  prebuilt.Package
+}
+
+// pack packs the npm package in src into dir (npm pack), returning the
+// tarball and its integrity: what npm publish uploads, so what the
+// registry will serve.
+func pack(src, dir string) (tgz, integrity string, err error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", "", err
+	}
+	cmd := exec.Command("npm", "pack", "--pack-destination", dir, "--json")
+	cmd.Dir = src
+	cmd.Stderr = os.Stderr
+	res, err := cmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("npm pack %s: %v", src, err)
+	}
+	var packed []struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.Unmarshal(res, &packed); err != nil || len(packed) != 1 {
+		return "", "", fmt.Errorf("npm pack %s: %s", src, res)
+	}
+	tgz = filepath.Join(dir, filepath.Base(packed[0].Filename))
+	data, err := os.ReadFile(tgz)
+	if err != nil {
+		return "", "", err
+	}
+	return tgz, prebuilt.Integrity(data), nil
 }
 
 func sortedKeys[V any](m map[string]V) []string {

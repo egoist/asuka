@@ -45,7 +45,7 @@ func cmdAdd(args []string) error {
 func addSpec(c *pkgs.Client, a string) (key, spec string, err error) {
 	if pkgs.CheckName(a) != nil {
 		// key=spec's key, name@range's name: what it'd be imported as.
-		return "", "", fmt.Errorf("%s: the standard library (std/) and the platform SDK (platform/) come with the asuka CLI: import it, nothing to add (docs/stdlib.md)", a)
+		return "", "", fmt.Errorf("%s: the standard library (std/) and the platform SDK (platform/) come with the asuka CLI: import it, nothing to add (https://asuka.egoist.dev/docs/stdlib)", a)
 	}
 	if k, s, ok := strings.Cut(a, "="); ok {
 		return k, s, nil

@@ -333,7 +333,8 @@ the indentation of its closing quotes' line from every line.
 ## Module state and constants
 
 - `state` at the top of a file is a module global holding a cell, made
-  in the module's init function (CELLK keyed `package.name`).
+  in the module's init function (CELLK keyed `package.name#hash`: see
+  Hot reload).
 - A top-level `let` that reads state is a memo global, made in init; one
   that doesn't is a constant.
 - Constants of reference kind (string literals aside, which are already
@@ -402,8 +403,8 @@ its env. In a store's fns,
 
 The function's body, in order:
 
-1. `state x = e`: CELLK with the key `Component.x` (the runtime adds the
-   instance's path: its place in the tree, the row's key).
+1. `state x = e`: CELLK with the key `Component.x#hash` (the runtime
+   adds the instance's path: its place in the tree, the row's key).
 2. `let y = e`: MEMO of a thunk (or a constant when it reads nothing).
 3. `use x: T`: CALLB `ui.use(key)`, the key being T's type name.
    `provide e`: CALLB `ui.provide(key, value)`, on the component's owner,
@@ -945,7 +946,11 @@ the last run kept. On a reload, the runtime keeps every keyed cell's
 value (converted to the new module's types by field and case names; a
 value whose type changed in a way that can't be converted starts
 again), disposes the old app, frees the old module once nothing of it
-is left, and mounts the new one.
+is left, and mounts the new one. A key ends with `#` and a hash of the
+state's initializer as the formatter prints it (ir's initKey), so a
+state whose initializer was edited starts from the new one, and one
+only laid out differently keeps its value. A restart
+(`asuka_dev_restart`) keeps none.
 
 ## JSON
 

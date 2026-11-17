@@ -406,7 +406,7 @@ func importHint(imp *syntax.ImportDecl) string {
 	if imp.Relative {
 		return "a package beside this one is a directory of .asuka files"
 	}
-	return "the standard library is std/<name> and the platform SDK platform/<name> (docs/stdlib.md); a dependency is added with asuka add"
+	return "the standard library is std/<name> and the platform SDK platform/<name> (https://asuka.egoist.dev/docs/stdlib); a dependency is added with asuka add"
 }
 
 func contains[T comparable](s []T, x T) bool {

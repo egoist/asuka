@@ -247,7 +247,7 @@ func (c *CConfig) Check() error {
 				return fmt.Errorf("[c.prebuilt] %s: %v", k, err)
 			}
 			if !staticLib(p) {
-				return fmt.Errorf("[c.prebuilt] %s: %q isn't a static library (.a, or .lib on Windows): a dynamic one ships in a native package's Swift package or Gradle module (docs/c.md, Prebuilt libraries)", k, p)
+				return fmt.Errorf("[c.prebuilt] %s: %q isn't a static library (.a, or .lib on Windows): a dynamic one ships in a native package's Swift package or Gradle module (https://asuka.egoist.dev/docs/c#prebuilt-libraries)", k, p)
 			}
 		}
 	}

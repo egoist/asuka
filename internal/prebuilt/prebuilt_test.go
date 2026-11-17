@@ -46,6 +46,9 @@ type registry struct {
 	token      string
 	versionDoc bool // serves /<name>/<version>; else only /<name>
 	requests   atomic.Int32
+	// unserved: the version listed, its tarball not served yet (404), as
+	// npm's registry does for a while after a publish.
+	unserved atomic.Bool
 }
 
 func newRegistry(t *testing.T, tgz []byte) *registry {
@@ -67,6 +70,10 @@ func newRegistry(t *testing.T, tgz []byte) *registry {
 		case "/" + pkgName:
 			json.NewEncoder(w).Encode(map[string]any{"versions": map[string]any{"1.0.0": dist}})
 		case "/tarballs/x.tgz":
+			if r.unserved.Load() {
+				http.NotFound(w, req)
+				return
+			}
 			w.Write(r.tgz)
 		default:
 			http.NotFound(w, req)
@@ -137,6 +144,33 @@ func TestFetchFromRegistry(t *testing.T) {
 	// What the manifest has no library for isn't fetched.
 	if _, ok, err := Archive("test-arm64", "dev", "core"); ok || err != nil {
 		t.Fatalf("a library the manifest hasn't: %v, %v", ok, err)
+	}
+}
+
+func TestCheck(t *testing.T) {
+	// A release publishes the CLI only once its packages are served: a
+	// version the registry lists, its tarball not served yet, isn't.
+	tgz := tarball(t, map[string]string{"lib/release/libcore.a": lib})
+	reg := newRegistry(t, tgz)
+	setup(t, Integrity(tgz), libSHA())
+	t.Setenv("NPM_CONFIG_REGISTRY", reg.URL)
+	p := Package{Name: pkgName, Version: "1.0.0", Integrity: Integrity(tgz)}
+	reg.unserved.Store(true)
+	if err := Check(p); err == nil || !strings.Contains(err.Error(), "404") {
+		t.Fatalf("Check before the tarball is served = %v, want a 404", err)
+	}
+	reg.unserved.Store(false)
+	if err := Check(p); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	other := p
+	other.Integrity = Integrity([]byte("another tarball"))
+	if err := Check(other); !errors.Is(err, ErrIntegrity) {
+		t.Fatalf("Check of another integrity = %v, want ErrIntegrity", err)
+	}
+	// It keeps nothing: a build still fetches it.
+	if _, err := os.Stat(Dir(p)); err == nil {
+		t.Fatal("Check left the package in the cache")
 	}
 }
 

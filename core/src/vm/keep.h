@@ -26,11 +26,15 @@ bool ak_keep_decode(ak_reader *r, ak_kind k, ak_keep_shape_fn find, void *ctx, a
 //
 // ak_keep_start turns keeping on: cells made with keys from now on are
 // remembered. ak_keep_save saves every remembered cell's value (before
-// the old app goes). ak_keep_use sets the module the next cells' values
+// the old app goes), and drops what an earlier save kept that no cell
+// took since. ak_keep_use sets the module the next cells' values
 // are converted for (after the new one loads). ak_keep_stop turns it off
-// and forgets everything.
+// and forgets everything. ak_keep_discard, in ak_keep_save's place,
+// forgets every value saved and saves none (a restart: every cell of the
+// next app starts from its initial value).
 void ak_keep_start(void);
 void ak_keep_save(void);
+void ak_keep_discard(void);
 void ak_keep_use(ak_keep_shape_fn find, void *ctx);
 void ak_keep_stop(void);
 // How many values ak_keep_save saved, and how many cells found theirs

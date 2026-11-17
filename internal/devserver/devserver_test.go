@@ -20,11 +20,15 @@ func frame(kind byte, b []byte) []byte {
 func TestPlayer(t *testing.T) {
 	hello := make(chan string, 1)
 	logs := make(chan string, 4)
-	reloaded := make(chan uint32, 1)
+	type report struct {
+		kept      uint32
+		restarted bool
+	}
+	reloaded := make(chan report, 1)
 	s, err := Listen("127.0.0.1:0", Events{
 		Hello:    func(p *Player, b []byte) { hello <- string(b) },
 		Log:      func(p *Player, stderr bool, b []byte) { logs <- strconv.FormatBool(stderr) + ":" + string(b) },
-		Reloaded: func(p *Player, kept, us uint32) { reloaded <- kept },
+		Reloaded: func(p *Player, kept, us uint32, restarted bool) { reloaded <- report{kept, restarted} },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -50,8 +54,17 @@ func TestPlayer(t *testing.T) {
 		t.Fatal(l)
 	}
 	c.Write(frame(KindReloaded, []byte{3, 0, 0, 0, 9, 0, 0, 0}))
-	if k := <-reloaded; k != 3 {
-		t.Fatal(k)
+	if r := <-reloaded; r != (report{3, false}) {
+		t.Fatal(r)
+	}
+	// A restart: the latest build again, to load keeping no state.
+	s.Restart()
+	if k, b := read(c); k != KindRestart || b != "v2" {
+		t.Fatalf("%d %q", k, b)
+	}
+	c.Write(frame(KindReloaded, []byte{0, 0, 0, 0, 9, 0, 0, 0, 1}))
+	if r := <-reloaded; r != (report{0, true}) {
+		t.Fatal(r)
 	}
 }
 

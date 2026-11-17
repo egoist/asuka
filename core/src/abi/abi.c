@@ -176,10 +176,11 @@ static bool keeping;  // the dev loop keeps state across loads
 
 static const ak_shape *shape_named(void *ctx, const char *name) { return ak_module_shape_named(ctx, name); }
 
-// run_module makes m (owned) the running app: the old one goes (its
-// state saved first when the dev loop keeps it), m's init runs and, when
+// start_module makes m (owned) the running app: the old one goes (its
+// state saved first when the dev loop keeps it, unless fresh: a
+// restart's, whose state all starts again), m's init runs and, when
 // mount, its app mounts.
-static int start_module(ak_module *m, bool mount, char **err) {
+static int start_module(ak_module *m, bool mount, bool fresh, char **err) {
 	char msg[512];
 	int32_t app = ak_module_app(m);
 	if (mount && app < 0) {
@@ -188,7 +189,12 @@ static int start_module(ak_module *m, bool mount, char **err) {
 		return -1;
 	}
 	// The old app goes first: its state (saved, in development), its views.
-	if (keeping) ak_keep_save();
+	if (keeping) {
+		if (fresh)
+			ak_keep_discard();
+		else
+			ak_keep_save();
+	}
 	ak_ui_unmount();
 	if (module_owner) ak_owner_dispose(module_owner);
 	module_owner = NULL;
@@ -213,7 +219,7 @@ static int start_module(ak_module *m, bool mount, char **err) {
 	return 0;
 }
 
-static int run_module(ak_module *m, char **err) { return start_module(m, true, err); }
+static int run_module(ak_module *m, char **err) { return start_module(m, true, false, err); }
 
 // ak_abi_init_only makes m (owned; NULL: the app compiled into the
 // build) the module that runs, without its app: its init runs and nothing
@@ -228,7 +234,7 @@ int ak_abi_init_only(ak_module *m, char **err) {
 		m = ak_app_loader();
 		ak_module_retain(m);
 	}
-	return start_module(m, false, err);
+	return start_module(m, false, false, err);
 }
 
 // ak_abi_module is the module that runs (NULL: none).
@@ -243,7 +249,9 @@ void asuka_unload(void) {
 	module = NULL;
 }
 
-int asuka_load(const uint8_t *p, size_t n, char **err) {
+// load_module loads a module's bytes and runs its app (fresh: none of
+// the old app's state kept).
+static int load_module(const uint8_t *p, size_t n, bool fresh, char **err) {
 	if (err) *err = NULL;
 	if (!started) {
 		fail(err, "asuka: asuka_load before asuka_start");
@@ -255,8 +263,10 @@ int asuka_load(const uint8_t *p, size_t n, char **err) {
 		fail(err, msg);
 		return -1;
 	}
-	return run_module(m, err);
+	return start_module(m, true, fresh, err);
 }
+
+int asuka_load(const uint8_t *p, size_t n, char **err) { return load_module(p, n, false, err); }
 
 // The app compiled into this build (lang/cgen), named by core/link's
 // ak_link_app, so that a static library's linker keeps its object (which
@@ -286,17 +296,17 @@ static bool dev_player;  // asuka dev runs the app here (ak_dev_player)
 
 bool ak_dev_player(void) { return dev_player; }
 
-static void reload(const uint8_t *p, size_t n) {
+static void reload(const uint8_t *p, size_t n, bool fresh) {
 	int64_t t0 = ak_now_ns();
 	char *err = NULL;
-	if (asuka_load(p, n, &err) != 0) {
+	if (load_module(p, n, fresh, &err) != 0) {
 		ak_dev_send(AK_DEV_ERROR, err, strlen(err));
 		fprintf(stderr, "%s\n", err);
 		free(err);
 		return;
 	}
 	uint32_t kept = ak_keep_restored(), us = (uint32_t)((ak_now_ns() - t0) / 1000);
-	uint8_t b[8] = {(uint8_t)kept, (uint8_t)(kept >> 8), (uint8_t)(kept >> 16), (uint8_t)(kept >> 24), (uint8_t)us, (uint8_t)(us >> 8), (uint8_t)(us >> 16), (uint8_t)(us >> 24)};
+	uint8_t b[9] = {(uint8_t)kept, (uint8_t)(kept >> 8), (uint8_t)(kept >> 16), (uint8_t)(kept >> 24), (uint8_t)us, (uint8_t)(us >> 8), (uint8_t)(us >> 16), (uint8_t)(us >> 24), fresh ? AK_DEV_RESTARTED : 0};
 	ak_dev_send(AK_DEV_RELOADED, b, sizeof b);
 }
 
@@ -307,15 +317,19 @@ static void keep_states(void) {
 	ak_keep_qualify = ak_ui_path_key;
 }
 
-int asuka_dev_reload(const uint8_t *p, size_t n, uint32_t *micros, char **err) {
+static int dev_load(const uint8_t *p, size_t n, bool fresh, uint32_t *micros, char **err) {
 	if (err) *err = NULL;
 	dev_player = true;
 	keep_states();
 	int64_t t0 = ak_now_ns();
-	if (asuka_load(p, n, err) != 0) return -1;
+	if (load_module(p, n, fresh, err) != 0) return -1;
 	if (micros) *micros = (uint32_t)((ak_now_ns() - t0) / 1000);
 	return (int)ak_keep_restored();
 }
+
+int asuka_dev_reload(const uint8_t *p, size_t n, uint32_t *micros, char **err) { return dev_load(p, n, false, micros, err); }
+
+int asuka_dev_restart(const uint8_t *p, size_t n, uint32_t *micros, char **err) { return dev_load(p, n, true, micros, err) < 0 ? -1 : 0; }
 
 int asuka_dev_connect(const char *host_name, int port, const char *hello, char **err) {
 	if (err) *err = NULL;

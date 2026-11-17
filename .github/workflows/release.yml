@@ -58,7 +58,8 @@ jobs:
         run: go run ./cmd/asuka prebuilt build --target ${{ matrix.target }} --version "${GITHUB_REF_NAME#v}" --out "dist/prebuilt/${{ matrix.target }}"
         env:
           ASUKA_CACHE: ${{ runner.temp }}/asuka-cache
-          ASUKA_CC: ${{ runner.os == 'macOS' && '' || 'zig' }}
+          # Not `macOS && '' || 'zig'`: '' is falsy, so that's always zig.
+          ASUKA_CC: ${{ runner.os != 'macOS' && 'zig' || '' }}
       - uses: actions/upload-artifact@v4
         with:
           name: prebuilt-${{ matrix.target }}
@@ -79,7 +80,12 @@ jobs:
           path: dist/prebuilt
       # The prebuilt packages packed, their manifest (each tarball's
       # integrity) embedded in the CLI, which is built for each platform;
-      # then all of them published, once everything is built.
+      # then, once everything is built, the prebuilt and platform packages
+      # published, and the launcher (@egoist/asuka) last, once the
+      # registry serves each of them (fetched and checked as the CLI
+      # does): npm accepts a package minutes before it serves a new one's
+      # tarball, and a launcher out first installs a CLI whose builds
+      # can't fetch their libraries.
       - name: npm
         run: go run ./scripts/npm -version "${GITHUB_REF_NAME#v}" -prebuilt dist/prebuilt -out dist/npm -publish
         env:

@@ -322,7 +322,7 @@ func retired(ip string) string {
 			return ip + " is " + p + " now"
 		}
 	}
-	return "no package " + ip + ": the asuka/ prefix is retired; the standard library is std/<name>, the platform SDK platform/<name> (docs/stdlib.md)"
+	return "no package " + ip + ": the asuka/ prefix is retired; the standard library is std/<name>, the platform SDK platform/<name> (https://asuka.egoist.dev/docs/stdlib)"
 }
 
 func (l *loader) compile(root *unit) *Result {

@@ -1,5 +1,6 @@
 #include "t.h"
 #include "vm/keep.h"
+#include "vm/vm_int.h"
 
 // Old and new versions of a Todo: the new one gained a field (an int,
 // which starts at 0) and lost one, and moved its fields around.
@@ -114,6 +115,71 @@ TEST(maps_and_boxes) {
 	ak_release(out.p);
 	ak_release(m);
 	ak_buf_free(&b);
+}
+
+// A cell made with a key: kept by a reload (save), started again by a
+// restart (discard).
+static int64_t cell_int(ak_val c) { return ak_vm_cell_get(c.p, false).i; }
+
+TEST(reload_keeps_restart_discards) {
+	ak_keep_start();
+	ak_keep_use(find, NULL);
+	ak_str *key = ak_str_c("Counter.count");
+	ak_val c = ak_vm_cell_new((ak_val){.i = 0}, AK_K_INT, key);
+	ak_vm_cell_set(c.p, (ak_val){.i = 5});
+
+	// A reload: the new cell starts from the old one's value.
+	ak_keep_save();
+	CHECK_EQ_INT(ak_keep_saved(), 1);
+	ak_release(c.p);
+	ak_keep_use(find, NULL);
+	c = ak_vm_cell_new((ak_val){.i = 10}, AK_K_INT, key);
+	CHECK_EQ_INT(cell_int(c), 5);
+	CHECK_EQ_INT(ak_keep_restored(), 1);
+
+	// A restart: it starts from its initial value.
+	ak_keep_discard();
+	CHECK_EQ_INT(ak_keep_saved(), 0);
+	ak_release(c.p);
+	ak_keep_use(find, NULL);
+	c = ak_vm_cell_new((ak_val){.i = 10}, AK_K_INT, key);
+	CHECK_EQ_INT(cell_int(c), 10);
+	CHECK_EQ_INT(ak_keep_restored(), 0);
+
+	ak_release(c.p);
+	ak_release(key);
+	ak_keep_stop();
+}
+
+// A value no cell took at a reload (its state's initializer was edited:
+// another key) isn't there for the next: an initializer edited, then
+// edited back, starts from it.
+TEST(reload_drops_what_no_cell_took) {
+	ak_keep_start();
+	ak_keep_use(find, NULL);
+	ak_str *k0 = ak_str_c("Counter.count#0"), *k10 = ak_str_c("Counter.count#10");
+	ak_val c = ak_vm_cell_new((ak_val){.i = 0}, AK_K_INT, k0);
+	ak_vm_cell_set(c.p, (ak_val){.i = 3});
+
+	// = 10: a new key, the new initial value.
+	ak_keep_save();
+	ak_release(c.p);
+	ak_keep_use(find, NULL);
+	c = ak_vm_cell_new((ak_val){.i = 10}, AK_K_INT, k10);
+	CHECK_EQ_INT(cell_int(c), 10);
+
+	// Back to = 0: from 0, not the 3 saved two reloads ago.
+	ak_keep_save();
+	ak_release(c.p);
+	ak_keep_use(find, NULL);
+	c = ak_vm_cell_new((ak_val){.i = 0}, AK_K_INT, k0);
+	CHECK_EQ_INT(cell_int(c), 0);
+	CHECK_EQ_INT(ak_keep_restored(), 0);
+
+	ak_release(c.p);
+	ak_release(k0);
+	ak_release(k10);
+	ak_keep_stop();
 }
 
 T_MAIN()

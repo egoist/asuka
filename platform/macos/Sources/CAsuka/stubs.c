@@ -20,6 +20,7 @@ WEAK int asuka_has_app(void) { return 0; }
 WEAK int asuka_dev_connect(const char *host, int port, const char *hello, char **err) { (void)host; (void)port; (void)hello; (void)err; return -1; }
 WEAK int asuka_dev_listen(int port, const char *hello, char **err) { (void)port; (void)hello; (void)err; return -1; }
 WEAK int asuka_dev_reload(const uint8_t *module, size_t len, uint32_t *micros, char **err) { (void)module; (void)len; (void)micros; (void)err; return -1; }
+WEAK int asuka_dev_restart(const uint8_t *module, size_t len, uint32_t *micros, char **err) { (void)module; (void)len; (void)micros; (void)err; return -1; }
 WEAK void *asuka_alloc(size_t n) { return malloc(n); }
 WEAK void asuka_free(void *p) { free(p); }
 WEAK void asuka_free_string(char *s) { free(s); }

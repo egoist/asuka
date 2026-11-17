@@ -1,7 +1,9 @@
 package ir
 
 import (
+	"bytes"
 	"fmt"
+	"hash/fnv"
 	"strings"
 
 	bc "github.com/egoist/asuka/lang/bytecode"
@@ -711,7 +713,23 @@ func (l *Lowerer) stateKey(g *check.Global) string {
 	if p == "" {
 		p = "main"
 	}
-	return p + "." + g.Name()
+	return p + "." + g.Name() + initKey(g.Value)
+}
+
+// initKey is what a state's key (CELLK's) says of its initial value: a
+// hash of its expression as the formatter prints it ("#1a2b3c4d"), so
+// that a reload starts a state whose initializer was edited again from
+// the new one (React Fast Refresh does likewise for useState's), and
+// keeps one whose initializer was only laid out differently.
+func initKey(e syntax.Expr) string {
+	if e == nil {
+		return ""
+	}
+	var b bytes.Buffer
+	syntax.Fprint(&b, nil, e)
+	h := fnv.New32a()
+	h.Write(b.Bytes())
+	return fmt.Sprintf("#%08x", h.Sum32())
 }
 
 // ---------------------------------------------------------------------

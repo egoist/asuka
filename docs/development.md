@@ -127,16 +127,23 @@ the change.
 
 What isn't kept:
 
+- A state whose initial value you edited starts from the new one
+  (`state count = 0` changed to `state count = 10`); the other states
+  keep theirs. Laying the initial value out differently (spaces, line
+  breaks) doesn't count as an edit.
 - A state renamed, or moved to another component, starts over; so does
   one whose component moved to another place in the view tree.
 - `let` values aren't kept: they're computed again from what they read.
 - Tasks and effects start again in the new module (a `task` running
   when you save is cancelled, and the new one runs).
 
-Stopping `asuka dev` and running it again starts the app from nothing.
-Files the app writes (SQLite databases, files) are kept: they're in the
-app's data directory, on the device or, on the desktop, in Asuka's
-cache.
+To start the app over, press **r** in the terminal `asuka dev` runs in:
+every player loads the app again with none of its state, every `state`
+from its initial value, as when it launches, without the player
+launching again (`asuka: restarted in 2.0 ms`). Stopping `asuka dev`
+and running it again starts the app from nothing too. Either way, files
+the app writes (SQLite databases, files) are kept: they're in the app's
+data directory, on the device or, on the desktop, in Asuka's cache.
 
 ## Reloading
 

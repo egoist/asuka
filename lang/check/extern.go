@@ -273,7 +273,7 @@ func (c *Checker) cOf(at syntax.Node, t Type, place cPlace, what string) (Type, 
 			return Invalid, nil
 		}
 	}
-	c.errorf(at, "%s can't cross to C: a %s isn't a C type (an extern declaration takes Int8…Int64, UInt8…UInt64, int, Float32, float, bool, CString, bytes, Pointer, an extern type or struct, or a function; docs/c.md)", what, typeString(t))
+	c.errorf(at, "%s can't cross to C: a %s isn't a C type (an extern declaration takes Int8…Int64, UInt8…UInt64, int, Float32, float, bool, CString, bytes, Pointer, an extern type or struct, or a function; https://asuka.egoist.dev/docs/c)", what, typeString(t))
 	return Invalid, nil
 }
 

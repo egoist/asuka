@@ -37,13 +37,14 @@ type devLoop struct {
 	// hello's).
 	compiling sync.Mutex
 
-	mu      sync.Mutex
-	module  []byte // the last module that compiled, for the loop's player's platform
-	loaded  map[*devserver.Player]bool
-	modules []func(module []byte) // more players (the web's page)
-	failed  []func(msg string)    // told what didn't compile
-	fixed   []func()              // told when it compiles again
-	broken  bool
+	mu       sync.Mutex
+	module   []byte // the last module that compiled, for the loop's player's platform
+	loaded   map[*devserver.Player]bool
+	modules  []func(module []byte) // more players (the web's page)
+	restarts []func()              // told to restart (the web's page)
+	failed   []func(msg string)    // told what didn't compile
+	fixed    []func()              // told when it compiles again
+	broken   bool
 	// The C the players were built with (cKey), once launched: a module
 	// that calls other C (its extern declarations changed) waits for
 	// players built with it (stale).
@@ -61,9 +62,9 @@ type devLoop struct {
 
 // devReload is a player's report of a module it loaded.
 type devReload struct {
-	first  bool
-	kept   uint32
-	micros uint32
+	first, restarted bool
+	kept             uint32
+	micros           uint32
 }
 
 // newDevLoop listens for players on addr (":0": a free port) and
@@ -90,7 +91,9 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 			}
 			w.Write(text)
 		},
-		Reloaded: func(p *devserver.Player, kept, micros uint32) { d.report(p, false, kept, micros) },
+		Reloaded: func(p *devserver.Player, kept, micros uint32, restarted bool) {
+			d.report(p, false, restarted, kept, micros)
+		},
 		Error: func(p *devserver.Player, text []byte) {
 			msg := strings.TrimSpace(string(text))
 			fmt.Fprintf(os.Stderr, "asuka: the player: %s\n", msg)
@@ -113,10 +116,10 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	return d, nil
 }
 
-// report prints a player's report: the first load, or a reload with the
-// state it kept. A player of the dev server's says which by its
-// connection; another (a page) says first itself.
-func (d *devLoop) report(p *devserver.Player, first bool, kept, micros uint32) {
+// report prints a player's report: the first load, a reload with the
+// state it kept, or a restart. A player of the dev server's says which
+// by its connection; another (a page) says first itself.
+func (d *devLoop) report(p *devserver.Player, first, restarted bool, kept, micros uint32) {
 	d.mu.Lock()
 	if p != nil {
 		first = !d.loaded[p]
@@ -124,16 +127,19 @@ func (d *devLoop) report(p *devserver.Player, first bool, kept, micros uint32) {
 	}
 	d.mu.Unlock()
 	ms := float64(micros) / 1000
-	if first {
+	switch {
+	case first:
 		fmt.Fprintf(d.out, "asuka: running (loaded in %s)\n", msText(ms))
-	} else {
+	case restarted:
+		fmt.Fprintf(d.out, "asuka: restarted in %s, every state from its initial value\n", msText(ms))
+	default:
 		fmt.Fprintf(d.out, "asuka: reloaded in %s, %d %s kept\n", msText(ms), kept, plural(int(kept), "state", "states"))
 	}
 	if first {
 		d.firstLoadOnce.Do(func() { close(d.firstLoad) })
 	}
 	select {
-	case d.reloads <- devReload{first: first, kept: kept, micros: micros}:
+	case d.reloads <- devReload{first: first, restarted: restarted, kept: kept, micros: micros}:
 	default:
 	}
 }
@@ -216,6 +222,26 @@ func (d *devLoop) compile() bool {
 	}
 	fmt.Fprintf(d.out, "asuka: compiled in %s\n", msText(float64(time.Since(start).Microseconds())/1000))
 	return true
+}
+
+// restart has every player load the app's last module that compiled
+// again, keeping none of its state: the app starts over, as it does when
+// it launches, without its player launching again.
+func (d *devLoop) restart() {
+	d.mu.Lock()
+	m, broken, rs := d.module, d.broken, d.restarts
+	d.mu.Unlock()
+	if m == nil {
+		fmt.Fprintln(d.out, "asuka: nothing to restart: the app hasn't compiled")
+		return
+	}
+	if broken {
+		fmt.Fprintln(d.out, "asuka: restarting the last version that compiled")
+	}
+	d.srv.Restart()
+	for _, f := range rs {
+		f()
+	}
 }
 
 // compileFor compiles the app for a player that said hello from
@@ -317,11 +343,21 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 			return nil
 		}
 	}
-	fmt.Fprintln(d.out, "asuka: watching for changes (Ctrl-C to stop)")
+	keys, restore := devKeys()
+	defer restore()
+	if keys != nil {
+		fmt.Fprintln(d.out, "asuka: watching for changes (r: restart, Ctrl-C: stop)")
+	} else {
+		fmt.Fprintln(d.out, "asuka: watching for changes (Ctrl-C to stop)")
+	}
 	w := newWatcher(d.app.proj.WatchRoots()...)
 	watchEmbeds(w, d.app.used())
 	for {
 		select {
+		case k := <-keys:
+			if k == 'r' || k == 'R' {
+				d.restart()
+			}
 		case <-stop:
 			if p.stop != nil {
 				p.stop()
