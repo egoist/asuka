@@ -607,6 +607,7 @@ export class Navigation {
     n.frame = [0, top, w, h - top];
     n.placed = true;
     this.report(n, w, h - top, n.el, n.kind === Kind.Window ? n.win.safeTop : 0);
+    this.h.overlays?.changed();
     if (n.kind === Kind.Window) {
       this.h.windows.report(n);
       // Its sheets and alerts go with it.
@@ -864,6 +865,7 @@ export class Navigation {
     n.frame = [0, 0, w, h];
     n.placed = true;
     this.report(n, w, h, p);
+    this.h.overlays?.changed();
   }
 
   presentWindow(n) {

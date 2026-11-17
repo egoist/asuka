@@ -24,6 +24,9 @@ import { Motion } from "./motion.js";
 import * as color from "./color.js";
 import * as text from "./text.js";
 import { redrawCanvases } from "./draw.js";
+import { Focus } from "./focus.js";
+import { Overlays } from "./overlay.js";
+import * as a11y from "./a11y.js";
 
 const NaN32 = NaN;
 const HostIDBit = 0x80000000;
@@ -58,6 +61,8 @@ export class Node {
     this.transition = null;
     this.interceptBack = false;
     this.dir = 0; // its LayoutDirection prop
+    this.hiddenInert = false; // Hidden
+    this.modalInert = false; // under a modal overlay
     this.dying = false;
   }
   listening(e) { return this.listens.has(e); }
@@ -101,6 +106,8 @@ export class Host {
     this.keys = new Keys(this);
     this.menus = new Menus(this);
     this.motion = new Motion(this);
+    this.focus = new Focus(this);
+    this.overlays = new Overlays(this);
     this.measurer = document.createElement("div");
     this.measurer.className = "asuka-measurer";
     container.appendChild(this.measurer);
@@ -262,6 +269,8 @@ export class Host {
     this.motion.batchBegin();
     decode(bytes, this);
     this.motion.batchEnd();
+    this.focus.batched();
+    this.overlays.batched();
   }
 
   create(id, kind) {
@@ -298,6 +307,7 @@ export class Host {
     this.nodes.delete(id);
     n.dying = true;
     this.interaction.forget(n);
+    this.focus.forget(n);
     if (n.impl.destroy && n.impl.destroy(this, n)) return;
     for (const c of n.children) c.parent = null;
     const p = n.parent;
@@ -458,7 +468,9 @@ export class Host {
         break;
       case Prop.Hidden:
         el.classList.toggle("asuka-hidden", !!v);
-        if (v) el.setAttribute("inert", ""); else el.removeAttribute("inert");
+        n.hiddenInert = !!v;
+        this.applyInert(n);
+        if (n.kind === Kind.Overlay) this.overlays.updateModal();
         break;
       case Prop.Clip:
         el.classList.toggle("asuka-clip", !!v);
@@ -471,7 +483,46 @@ export class Host {
         if (v) el.setAttribute("aria-description", v); else el.removeAttribute("aria-description");
         break;
       case Prop.A11yRole:
-        setRole(el, v);
+        a11y.setRole(n, el, v);
+        break;
+      case Prop.A11yChecked:
+        a11y.setChecked(n, el, v);
+        break;
+      case Prop.A11yExpanded:
+        a11y.setExpanded(el, v);
+        break;
+      case Prop.A11ySelected:
+        a11y.setSelected(n, el, v);
+        break;
+      case Prop.A11yValue:
+        a11y.setValue(el, v);
+        break;
+      case Prop.A11yRange:
+        a11y.setRange(el, v);
+        break;
+      case Prop.A11yModal:
+        a11y.setModal(el, v);
+        break;
+      case Prop.A11yControls:
+        a11y.setRelation(this.nodes, el, a11y.relations.controls, v);
+        break;
+      case Prop.A11yLabelledBy:
+        a11y.setRelation(this.nodes, el, a11y.relations.labelledBy, v);
+        break;
+      case Prop.A11yDescribedBy:
+        a11y.setRelation(this.nodes, el, a11y.relations.describedBy, v);
+        break;
+      case Prop.Focusable:
+        this.focus.setFocusable(n, v);
+        break;
+      case Prop.NoFocusOnPress:
+        n.noFocusOnPress = !!v;
+        break;
+      case Prop.NoFocusRing:
+        this.focus.setNoRing(n, v);
+        break;
+      case Prop.FocusTrap:
+        n.trap = !!v;
         break;
       case Prop.A11yHidden:
         if (v) el.setAttribute("aria-hidden", "true"); else el.removeAttribute("aria-hidden");
@@ -569,6 +620,19 @@ export class Host {
         if (v) el.title = v; else el.removeAttribute("title");
         break;
     }
+  }
+
+  /** applyInert makes n's element inert while it's hidden or under a modal overlay. */
+  applyInert(n) {
+    if (!n.el) return;
+    if (n.hiddenInert || n.modalInert) n.el.setAttribute("inert", "");
+    else n.el.removeAttribute("inert");
+  }
+
+  /** setModalInert: n (a root, an overlay) is under a modal overlay, or no longer. */
+  setModalInert(n, on) {
+    n.modalInert = on;
+    this.applyInert(n);
   }
 
   // --- Visual props ---
@@ -798,10 +862,10 @@ export class Host {
         if (n.el) { if (!n.el.hasAttribute("tabindex")) n.el.tabIndex = -1; n.el.focus({ preventScroll: true }); }
         break;
       case Command.Focus:
-        (n.focusEl || n.el)?.focus({ preventScroll: true });
+        this.focus.focus(n, n.focusEl || n.el);
         break;
       case Command.Blur:
-        (n.focusEl || n.el)?.blur();
+        this.focus.blur(n, n.focusEl || n.el);
         break;
       case Command.Present:
         this.nav.present(n);
@@ -915,27 +979,19 @@ export class Host {
     const key = JSON.stringify(e);
     if (!force && key === this.envSent) {
       this.nav.layout();
+      this.overlays.layout();
       return;
     }
     this.envSent = key;
     this.dispatch(Events.environment(this.root.id, e));
     this.nav.layout();
+    this.overlays.layout();
   }
 }
 
 function kindName(k) {
   for (const [name, v] of Object.entries(Kind)) if (v === k) return name;
   return "Kind(" + k + ")";
-}
-
-const roles = [null, "button", "heading", "img", "link", null, "searchbox"];
-
-function setRole(el, r) {
-  const role = roles[r];
-  if (role) el.setAttribute("role", role);
-  else if (el.dataset.ownRole === undefined) el.removeAttribute("role");
-  if (r === 2) el.setAttribute("aria-level", "2");
-  if (r === 1 && !el.hasAttribute("tabindex")) el.tabIndex = 0;
 }
 
 export function readFloats(b, count) {

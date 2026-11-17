@@ -1,0 +1,152 @@
+// OverlayWeb is a web e2e's app (e2e/overlay_web_test.go): RFC 0010's
+// host contract in a browser. An overlay anchored to a view in a scroll
+// view (placed next to it, following it as it scrolls, closed by a press
+// outside it or Escape), a modal one (what's under it takes no press: a
+// press on its layer, outside its content, closes it), a
+// focus trap, typeahead (keyText), where a press began (pressStart), and
+// screen readers' states, each on a line the test reads; and an overlay
+// over a sheet.
+
+component Overlays {
+  state open = false
+  state reason = "none"
+  state picked = "nothing"
+  state modalOpen = false
+  state modalReason = "none"
+  state behind = 0
+  state log = ""
+  state typed = ""
+  state at = ""
+  state on = false
+  state sheetOpen = false
+  state sheetMenu = false
+  let trigger = Ref()
+  let label = Ref()
+  let sheetTrigger = Ref()
+
+  Column {
+    padding: 12
+    gap: 6
+    Text("status: ready")
+    Button("Behind") { on press { behind += 1 } }
+    Text("picked: {picked}")
+    Text("closed: {reason}")
+    Text("modal closed: {modalReason}")
+    Text("behind: {behind}")
+    Text("focus:{log}")
+    Text("typed: {typed}")
+    Text("at: {at}")
+    Scroll {
+      height: 120
+      Column {
+        View { height: 40 }
+        View {
+          ref: trigger
+          focusable: true
+          on press { open = !open }
+          Text("Choose")
+        }
+        View { height: 400 }
+      }
+    }
+    Button("Elsewhere") { on press { picked = "elsewhere" } }
+    Button("Show dialog") { on press { modalOpen = true } }
+    View as a {
+      focusable: true
+      hideFocusRing: true
+      on focusChange(f) { log = "{log} {f}" }
+      on keyText(t) { typed = typed + t }
+      on pressStart(x, y) { at = "{x},{y}" }
+      on press {}
+      Text("Typeahead")
+      Text(if a.focusVisible { "A visible" } else if a.focused { "A focused" } else { "A idle" })
+    }
+    View {
+      trapFocus: true
+      View {
+        focusable: true
+        Text("One")
+      }
+      View {
+        focusable: true
+        Text("Two")
+      }
+    }
+    Text("Agree") { ref: label }
+    View {
+      role: .checkbox
+      a11yChecked: if on { .checked } else { .unchecked }
+      a11yLabelledBy: label
+      a11yExpanded: .collapsed
+      a11yValue: "40%"
+      a11yRange: ValueRange(min: 0, max: 100, now: 40)
+      on press { on = !on }
+      Text("Box")
+    }
+    Overlay {
+      bind open: open
+      anchor: trigger
+      offset: 4
+      on dismiss(r) { reason = "{r}" }
+      Column {
+        background: .secondaryBackground
+        Button("Apple") { on press {
+          picked = "apple"
+          open = false
+        } }
+        Button("Pear") { on press {
+          picked = "pear"
+          open = false
+        } }
+      }
+    }
+    Button("Open sheet") { on press { sheetOpen = true } }
+    Sheet {
+      bind open: sheetOpen
+      Column {
+        padding: 12
+        gap: 6
+        View {
+          ref: sheetTrigger
+          on press { sheetMenu = !sheetMenu }
+          Text("In sheet")
+        }
+        Button("Close sheet") { on press { sheetOpen = false } }
+        Overlay {
+          bind open: sheetMenu
+          anchor: sheetTrigger
+          Column {
+            background: .secondaryBackground
+            Button("Plum") { on press {
+              picked = "plum"
+              sheetMenu = false
+            } }
+          }
+        }
+      }
+    }
+    Overlay {
+      bind open: modalOpen
+      side: .center
+      modal: true
+      on dismiss(r) { modalReason = "{r}" }
+      Column {
+        padding: 16
+        background: .background
+        a11yModal: true
+        Text("Are you sure?")
+        Button("Close") { on press { modalOpen = false } }
+      }
+    }
+  }
+}
+
+app { Overlays() }
+
+test "it runs on the fake host" {
+  let app = mount(Overlays())
+  app.tap("Choose")
+  app.expect("Apple")
+  app.tap("Apple")
+  app.expect("picked: apple")
+}

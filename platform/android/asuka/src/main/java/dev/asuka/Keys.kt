@@ -161,6 +161,11 @@ fun keyOut(n: AsukaNode, nodes: Map<Int, AsukaNode>, rootID: Int): AsukaNode? {
     n.parent?.let { return it }
     if (n.cellOf != 0) return nodes[n.cellOf]
     if (n.kind == AsukaKind.SHEET || n.kind == AsukaKind.POPOVER) return nodes[rootID]?.takeIf { it !== n }
+    // An overlay: on to the root it's over (a sheet's goes on from there).
+    if (n.kind == AsukaKind.OVERLAY) {
+        val r = (n.props[AsukaProp.Overlay.ROOT] as? Long)?.toInt() ?: 0
+        return (nodes[r] ?: nodes[rootID])?.takeIf { it !== n }
+    }
     return null
 }
 

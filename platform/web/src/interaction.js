@@ -129,6 +129,7 @@ export class Interaction {
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) this.twoFingers(e);
     if (!e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+    this.pressPoint(e);
     const n = this.pressTarget(e.target);
     const g = this.gestureTarget(e.target, [Event.Pan, Event.Swipe]);
     this.gesture = g ? { n: g, kind: "pan", x0: e.clientX, y0: e.clientY, t0: e.timeStamp, began: false, samples: [[e.timeStamp, e.clientX, e.clientY]], id: e.pointerId } : this.gesture;
@@ -142,6 +143,14 @@ export class Interaction {
     if (n.listening(Event.LongPress) || (n.menu && n.menuTrigger === 1)) {
       p.long = setTimeout(() => this.longPress(p), longPressMs);
     }
+  }
+
+  /** pressPoint tells the innermost view listening for it where a press began on it, in points from its top left: before its Pressed and Press. */
+  pressPoint(e) {
+    const n = this.gestureTarget(e.target, [Event.PressPoint]);
+    if (!n) return;
+    const r = n.el.getBoundingClientRect();
+    this.h.dispatch(Events.pressPoint(n.id, e.clientX - r.left, e.clientY - r.top));
   }
 
   showPressed(p, on) {

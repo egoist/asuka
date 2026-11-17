@@ -67,14 +67,35 @@ class AsukaScreen(context: Context, val nodeID: Int, private val rt: AsukaRuntim
         bottom.measure(measuredWidth, measuredHeight)
     }
 
+    /** Its window's focus changes, when its window isn't the activity's (a sheet's, a popover's): FocusChange (Focus.kt). */
+    private var focusWatch: Pair<android.view.ViewTreeObserver, android.view.ViewTreeObserver.OnGlobalFocusChangeListener>? = null
+
+    /** Whether it's in a window of its own (a sheet's dialog, a popover's popup), not the activity's. */
+    private val ownWindow: Boolean get() = rootView !== rt.activity?.window?.decorView && rt.nodes[nodeID]?.kind.let { it == AsukaKind.SHEET || it == AsukaKind.POPOVER }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         bottom.attached()
+        if (ownWindow && focusWatch == null) {
+            val l = android.view.ViewTreeObserver.OnGlobalFocusChangeListener { old, new -> rt.focusMoved(old, new) }
+            viewTreeObserver.addOnGlobalFocusChangeListener(l)
+            focusWatch = viewTreeObserver to l
+        }
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         bottom.detached()
+        focusWatch?.let { (o, l) -> if (o.isAlive) o.removeOnGlobalFocusChangeListener(l) }
+        focusWatch = null
+    }
+
+    private val touchGate = AsukaTouchGate()
+
+    /** A press in a sheet's or popover's window: the overlays over it hear of it first if it's outside them (Overlay.kt). */
+    override fun dispatchTouchEvent(e: android.view.MotionEvent): Boolean {
+        if (ownWindow && touchGate.holds(e, rt.outsidePresses(e) { it.parent === this })) return true
+        return super.dispatchTouchEvent(e)
     }
     private var searchView: androidx.appcompat.widget.SearchView? = null
 
@@ -134,8 +155,10 @@ class AsukaScreen(context: Context, val nodeID: Int, private val rt: AsukaRuntim
      * focused (Keys.kt).
      */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (rootView !== rt.activity?.window?.decorView && rt.routeKey(event, findFocus(), rt.nodes[nodeID])) return true
-        return super.dispatchKeyEvent(event)
+        val own = rootView !== rt.activity?.window?.decorView
+        if (own && rt.routeKey(event, findFocus(), rt.nodes[nodeID])) return true
+        if (super.dispatchKeyEvent(event)) return true
+        return own && rt.keyText(event, findFocus())
     }
 
     // With nothing focused in its window, a key passes no view: it comes
@@ -753,6 +776,7 @@ fun AsukaRuntime.insetsChanged() {
         when (val v = n.view) {
             is AsukaStack, is AsukaTabs -> v.requestLayout()
             is AsukaScreen -> v.report()
+            is AsukaOverlay -> v.report()
         }
     }
     AsukaSnackbar.current?.place()
@@ -760,7 +784,10 @@ fun AsukaRuntime.insetsChanged() {
 
 /** The keyboard moved: screens report again, and a snackbar stays above it. */
 fun AsukaRuntime.reportScreens() {
-    for (n in ArrayList(nodes.values)) (n.view as? AsukaScreen)?.report()
+    for (n in ArrayList(nodes.values)) {
+        (n.view as? AsukaScreen)?.report()
+        (n.view as? AsukaOverlay)?.report()
+    }
     AsukaSnackbar.current?.place()
 }
 
@@ -912,6 +939,7 @@ fun AsukaRuntime.destroyNav(n: AsukaNode): Boolean {
 
 fun AsukaRuntime.setNavProp(n: AsukaNode, prop: Int, v: Any): Boolean {
     when (n.kind) {
+        AsukaKind.OVERLAY -> return setOverlayProp(n, prop, v)
         AsukaKind.SCREEN -> {
             val s = n.view as AsukaScreen
             when (prop) {
@@ -1218,6 +1246,7 @@ fun AsukaRuntime.directDialog(d: android.app.Dialog) {
 }
 
 fun AsukaRuntime.present(n: AsukaNode) {
+    if (n.kind == AsukaKind.OVERLAY) return presentOverlay(n)
     val act = activity ?: return
     when (n.kind) {
         AsukaKind.SHEET -> if (n.fullScreen) presentFullScreen(act, n) else presentSheet(act, n)

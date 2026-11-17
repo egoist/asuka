@@ -124,6 +124,28 @@
   outline: 2px solid var(--asuka-accent);
   outline-offset: 2px;
 }
+/* NoFocusRing: the app draws its own (a border it sets stays: it's inline). */
+:is(.asuka-view, .asuka-control).asuka-no-ring.asuka-no-ring:focus-visible { outline: none; }
+.asuka-field.asuka-no-ring:focus, .asuka-no-ring .asuka-field:focus { box-shadow: none; }
+
+/* An Overlay: a layer over its root (placed by the host: left, top, width,
+   height), in the top layer, a manual popover. Presses go through it but
+   to its views, unless it's modal. */
+.asuka-view.asuka-overlay {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2147482000; /* without popovers: over the page */
+}
+/* Of no weight: a disabled or leaving view in it still takes none. */
+:where(.asuka-overlay) > * { pointer-events: auto; }
+.asuka-view.asuka-overlay.asuka-overlay-modal { pointer-events: auto; }
 
 [data-material] { -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }
 [data-material="1"] { -webkit-backdrop-filter: blur(8px) saturate(160%); backdrop-filter: blur(8px) saturate(160%); }

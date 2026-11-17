@@ -31,7 +31,11 @@ import java.io.File
  * `fits` writes whether each one-line text fits its view, ends in an
  * ellipsis or is cut off to files/asuka-fits.txt; `a11y` writes what
  * TalkBack is told about each view (its class, hint and content
- * description) to files/asuka-a11y.txt.
+ * description) to files/asuka-a11y.txt; `states` writes, for each view
+ * that has a role, a state or the focus, its text and what TalkBack is
+ * told of its states, and whether it has the keyboard's focus, to
+ * files/asuka-states.txt (RFC 0010: a line each, `name=value` fields
+ * after a tab; hidden=true: a modal hides it from TalkBack).
  *
  * Only in a debuggable app.
  */
@@ -61,6 +65,7 @@ object AsukaAutomation {
             "dump" -> dump(rt)
             "fits" -> fits(rt)
             "a11y" -> a11y(rt)
+            "states" -> states(rt)
             "rotate" -> {
                 val deg = arg.substringBefore(' ').toFloatOrNull() ?: return
                 shown(rt).firstOrNull { textOf(it) == arg.substringAfter(' ') }?.let { rotate(it, deg) }
@@ -155,6 +160,49 @@ object AsukaAutomation {
         val i = v.createAccessibilityNodeInfo()
         "${i.className}\t${i.hintText ?: ""}\t${i.contentDescription ?: ""}"
     })
+
+    /**
+     * The states TalkBack is told of (RFC 0010's: checkable and checked,
+     * selected, expanded, a value, a range, labelled by, a dialog's title)
+     * and the focus, for the views that have one: its text or content
+     * description, a tab, then name=value fields.
+     */
+    private fun states(rt: AsukaRuntime) = write(rt, "asuka-states.txt", rt.nodes.values.sortedBy { it.id }.filter { it.view.isShown }.mapNotNull { n ->
+        val v = n.view
+        val i = androidx.core.view.accessibility.AccessibilityNodeInfoCompat.wrap(v.createAccessibilityNodeInfo())
+        val f = ArrayList<String>()
+        f += "class=${i.className}"
+        if (i.isCheckable) f += "checked=" + (if (android.os.Build.VERSION.SDK_INT >= 36) when (i.unwrap().checked) {
+            android.view.accessibility.AccessibilityNodeInfo.CHECKED_STATE_TRUE -> "true"
+            android.view.accessibility.AccessibilityNodeInfo.CHECKED_STATE_PARTIAL -> "mixed"
+            else -> "false"
+        } else i.isChecked.toString())
+        if (i.isSelected) f += "selected=true"
+        if (i.actionList.any { it.id == android.view.accessibility.AccessibilityNodeInfo.ACTION_EXPAND }) f += "expanded=false"
+        if (i.actionList.any { it.id == android.view.accessibility.AccessibilityNodeInfo.ACTION_COLLAPSE }) f += "expanded=true"
+        i.stateDescription?.let { f += "value=$it" }
+        i.rangeInfo?.let { f += "range=${it.min},${it.max},${it.current}" }
+        // The relation itself is read only by a screen reader (a sealed node): the view it names.
+        (n.props[AsukaProp.A11Y_LABELLED_BY] as? Long)?.let { rt.nodes[it.toInt()]?.view }?.let { f += "labelledBy=" + (a11yTextOf(it) ?: "") }
+        i.hintText?.let { f += "hint=$it" }
+        i.paneTitle?.let { f += "pane=$it" }
+        if (i.isHeading) f += "heading=true"
+        if (v.isFocused) f += "focused=" + (if (v.isInTouchMode) "touch" else "keyboard")
+        if (hiddenFromScreenReaders(v)) f += "hidden=true"
+        if (!v.defaultFocusHighlightEnabled || (v as? AsukaContainer)?.noFocusRing == true) f += "focusRing=none"
+        if (f.size == 1) null // its class alone: nothing of RFC 0010's
+        else (textOf(v) ?: a11yTextOf(v)?.toString() ?: "") + "\t" + f.joinToString(" ")
+    })
+
+    /** Whether a view around v hides it from TalkBack (importantForAccessibility noHideDescendants: a modal's). */
+    private fun hiddenFromScreenReaders(v: View): Boolean {
+        var x: Any? = v
+        while (x is View) {
+            if (x.importantForAccessibility == View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS) return true
+            x = x.parent
+        }
+        return false
+    }
 
     /** Lines to a file in the app's files, written whole, then moved: a reader never sees half of it. */
     private fun write(rt: AsukaRuntime, name: String, lines: List<String>) {

@@ -337,27 +337,6 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         case AsukaProp.gradient:
             guard case .bytes(let b) = v else { return }
             n.setGradient(b)
-        case AsukaProp.a11yLabel:
-            view.isAccessibilityElement = true
-            view.accessibilityLabel = v.string
-        case AsukaProp.a11yHint:
-            view.isAccessibilityElement = true
-            view.accessibilityHint = v.string
-        case AsukaProp.a11yRole:
-            if let r = view as? AsukaRichTextView { // its own elements: the text, its links
-                r.heading = AsukaRole(rawValue: v.enumValue) == .header
-                return
-            }
-            view.isAccessibilityElement = true
-            switch AsukaRole(rawValue: v.enumValue) {
-            case .button: view.accessibilityTraits.insert(.button)
-            case .header: view.accessibilityTraits.insert(.header)
-            case .image: view.accessibilityTraits.insert(.image)
-            case .link: view.accessibilityTraits.insert(.link)
-            case .text: view.accessibilityTraits.insert(.staticText)
-            case .search: view.accessibilityTraits.insert(.searchField)
-            default: break
-            }
         case AsukaProp.color:
             n.color = v.color
             n.applyColor()
@@ -397,6 +376,7 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         case AsukaProp.disabled:
             (view as? UIControl)?.isEnabled = !v.bool
             (view as? AsukaTextView)?.isEditable = !v.bool
+            (view as? AsukaContainerView)?.disabled = v.bool
         case AsukaProp.menu:
             if case .bytes(let b) = v { n.actions = decodeActions(b) }
             installMenu(n)
@@ -419,8 +399,16 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         case AsukaProp.menuTrigger:
             n.menuTrigger = v.enumValue
             installMenu(n)
+        case AsukaProp.focusable:
+            (view as? AsukaContainerView)?.focusable = v.bool
+        case AsukaProp.noFocusOnPress:
+            break // a tap never moves the keyboard's focus on iOS
+        case AsukaProp.noFocusRing:
+            setNoFocusRing(n, v.bool)
+        case AsukaProp.focusTrap:
+            setFocusTrap(n, v.bool)
         default:
-            break
+            _ = setA11y(n, prop, v)
         }
     }
 
@@ -561,6 +549,8 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             setAccessory(n, UInt32(truncatingIfNeeded: v.int))
         case (.split, _):
             setSplitProp(n, prop, v)
+        case (.overlay, _):
+            setOverlayProp(n, prop, v)
         case (.shader, _):
             setShaderProp(n, prop, v)
         case (.canvas, AsukaProp.Canvas.commands):

@@ -70,10 +70,28 @@ public final class AsukaViewController: UIViewController {
 
     @objc func asukaKey(_ c: UIKeyCommand) { AsukaRuntime.shared.keyCommand(c) }
 
+    /// Tab and Shift-Tab in a FocusTrap (Focus.swift).
+    @objc func asukaTab(_ c: UIKeyCommand) {
+        AsukaRuntime.shared.tabInTrap(backward: (c.propertyList as? Int) == 1)
+    }
+
+    // The keyboard's focus (Focus.swift): what UIKit's focus system moves,
+    // and keys the focused view takes that no Keys did.
+    public override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        AsukaRuntime.shared.focusSystemMoved(context)
+    }
+
+    public override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if AsukaRuntime.shared.focusedKey(presses) { return }
+        super.pressesBegan(presses, with: event)
+    }
+
     func mount(_ v: UIView) {
         root?.removeFromSuperview()
         root = v
         view.addSubview(v)
+        AsukaRuntime.shared.raiseOverlays(in: view) // the overlays over it
     }
 
     public override func viewWillAppear(_ animated: Bool) {
@@ -82,6 +100,12 @@ public final class AsukaViewController: UIViewController {
         if let c = AsukaRuntime.shared.accent { view.window?.tintColor = c }
         if AsukaRuntime.shared.colorScheme != .unspecified { view.window?.overrideUserInterfaceStyle = AsukaRuntime.shared.colorScheme }
         if let w = view.window { AsukaRuntime.shared.setWindowDirection(w) }
+    }
+
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Outside presses for the overlays, and that the last input was a touch.
+        if let w = view.window { AsukaRuntime.shared.observeTouches(in: w) }
     }
 
     public override func viewDidLayoutSubviews() {

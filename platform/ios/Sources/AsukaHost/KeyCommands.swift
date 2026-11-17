@@ -101,22 +101,25 @@ extension AsukaRuntime {
     /// The key commands of the Keys of the views the keyboard's focus is
     /// in: the first responder's node's, then on out (AsukaKeys.way: its
     /// parents; a list cell's List; a sheet's or a popover's node, the
-    /// root). With nothing of the app's focused, the presented sheet's or
+    /// root). With no first responder of the app's, the view with the
+    /// keyboard's focus (Focus.swift), else the presented sheet's or
     /// popover's node on top, else the root. Of two with the same key,
-    /// the nearer's. UIKit asks as a key goes down, so they follow the
-    /// focus and the props as they are then.
+    /// the nearer's; then, in a FocusTrap, its Tab and Shift-Tab. UIKit
+    /// asks as a key goes down, so they follow the focus and the props as
+    /// they are then.
     func keyCommands() -> [UIKeyCommand] {
-        guard !keyed.isEmpty else { return [] }
+        let trap = trapCommands()
+        guard !keyed.isEmpty else { return trap }
         asukaFirstResponder = nil
         UIApplication.shared.sendAction(#selector(UIResponder.asukaFindFirstResponder(_:)), to: nil, from: nil, for: nil)
         let first = asukaFirstResponder
         asukaFirstResponder = nil
         if let t = first as? UITextInput, t.markedTextRange != nil { return [] } // an input method composing
-        let start = first.flatMap(node(of:)) ?? topController.flatMap(node(of:)).flatMap {
+        let start = first.flatMap(node(of:)) ?? focusedNode ?? topController.flatMap(node(of:)).flatMap {
             $0.kind == .sheet || $0.kind == .popover ? $0 : nil
         }
         let way = AsukaKeys.way(from: start, root: nodes[rootID], parent: { $0.parent },
-                                list: { [self] n in n.cell?.list.flatMap { nodes[$0.id] } }, kind: { $0.kind })
+                                list: { [self] n in keysOut(n) }, kind: { $0.kind })
         var out: [UIKeyCommand] = []
         var seen = Set<String>()
         for m in way {
@@ -124,7 +127,16 @@ extension AsukaRuntime {
                 out.append(c)
             }
         }
+        for c in trap where seen.insert("\(c.modifierFlags.rawValue) \(c.input ?? "")").inserted { out.append(c) }
         return out
+    }
+
+    /// Where keys go on to from a node with no parent: a list cell's
+    /// List; an Overlay's root (a sheet's goes on to the root from there).
+    func keysOut(_ n: AsukaNode) -> AsukaNode? {
+        if let l = n.cell?.list { return nodes[l.id] }
+        if let o = n.overlay { return nodes[o.rootID] ?? nodes[rootID] }
+        return nil
     }
 
     /// The node of the nearest responder from r out (its views'
@@ -143,6 +155,7 @@ extension AsukaRuntime {
 
     /// A key command of a node's Keys ran: Key, with the key's index.
     func keyCommand(_ c: UIKeyCommand) {
+        noteKey()
         guard let p = c.propertyList as? [Int], p.count == 2 else { return }
         let id = UInt32(truncatingIfNeeded: p[0])
         let i = Int64(p[1])

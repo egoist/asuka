@@ -12,9 +12,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.TextView
-import androidx.core.view.AccessibilityDelegateCompat
 import androidx.core.view.ViewCompat
-import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.widget.TextViewCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
@@ -323,17 +321,27 @@ fun AsukaRuntime.propBool(id: Int, prop: Int, v: Boolean) {
     n.props[prop] = v
     val view = n.view
     when (prop) {
-        AsukaProp.HIDDEN -> view.visibility = if (v) View.INVISIBLE else View.VISIBLE
+        AsukaProp.HIDDEN -> {
+            view.visibility = if (v) View.INVISIBLE else View.VISIBLE
+            if (n.kind == AsukaKind.OVERLAY || n.props[AsukaProp.A11Y_MODAL] == true) refreshModals()
+        }
         AsukaProp.CLIP -> { view.clipToOutline = v; (view as? android.view.ViewGroup)?.clipChildren = v }
         AsukaProp.DISABLED -> view.isEnabled = !v
         AsukaProp.SELECTED -> (view as? AsukaCell)?.row?.setChosen(v)
-        AsukaProp.A11Y_ADJUSTABLE -> if (v) setAdjustable(n)
+        AsukaProp.A11Y_ADJUSTABLE -> {
+            if (v) view.isFocusable = true
+            installA11y(n)
+        }
         AsukaProp.INTERCEPT_BACK -> {
             if (n.kind == AsukaKind.SHEET) sheetIntercepts(n)
+            if (n.kind == AsukaKind.OVERLAY) overlayBack(n)
             updateBack()
         }
-        AsukaProp.A11Y_HIDDEN -> view.importantForAccessibility =
-            if (v) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        AsukaProp.A11Y_HIDDEN -> modalRestore(view,
+            if (v) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO)
+        AsukaProp.FOCUSABLE, AsukaProp.NO_FOCUS_ON_PRESS, AsukaProp.NO_FOCUS_RING, AsukaProp.FOCUS_TRAP -> setFocusProp(n, prop, v)
+        AsukaProp.A11Y_SELECTED -> { installA11y(n); a11yChanged(n) }
+        AsukaProp.A11Y_MODAL -> refreshModals()
         else -> if (!setNavProp(n, prop, v)) when (n.kind) {
             AsukaKind.VIDEO -> (view as AsukaVideo).player?.let {
                 when (prop) {
@@ -384,6 +392,11 @@ fun AsukaRuntime.propInt(id: Int, prop: Int, v: Long) {
     if (n.kind == AsukaKind.PICKER && setPickerProp(n, prop, v)) return
     n.props[prop] = v
     if (setNavProp(n, prop, v)) return
+    if (prop == AsukaProp.A11Y_CONTROLS || prop == AsukaProp.A11Y_LABELLED_BY || prop == AsukaProp.A11Y_DESCRIBED_BY) {
+        installA11y(n)
+        a11yChanged(n)
+        return
+    }
     if (n.kind == AsukaKind.SEGMENTED && prop == AsukaProp.Segmented.SELECTED) (n.view as AsukaSegmented).select(v.toInt())
     if (n.kind == AsukaKind.DATE_PICKER) (n.view as AsukaDatePicker).let {
         when (prop) {
@@ -459,6 +472,7 @@ fun AsukaRuntime.propString(id: Int, prop: Int, v: String) {
         // A mouse's hover, or a long press when the view has none of its own.
         AsukaProp.TOOLTIP -> view.tooltipText = v.ifEmpty { null }
         AsukaProp.A11Y_HINT -> ViewCompat.setStateDescription(view, v)
+        AsukaProp.A11Y_VALUE -> { installA11y(n); a11yChanged(n) }
         AsukaProp.FONT_FAMILY -> {
             n.fontFamily = v
             if ("://" in v && AsukaFonts.loaded == null) AsukaFonts.loaded = { url ->
@@ -544,17 +558,8 @@ fun AsukaRuntime.propEnum(id: Int, prop: Int, v: Int) {
                 else -> View.TEXT_ALIGNMENT_VIEW_START
             }
         }
-        AsukaProp.A11Y_ROLE -> if (view is AsukaRichText) view.heading = v == AsukaRole.HEADER
-        else ViewCompat.setAccessibilityDelegate(view, object : AccessibilityDelegateCompat() {
-            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
-                super.onInitializeAccessibilityNodeInfo(host, info)
-                when (v) {
-                    AsukaRole.BUTTON, AsukaRole.LINK -> info.className = "android.widget.Button"
-                    AsukaRole.HEADER -> info.isHeading = true
-                    AsukaRole.IMAGE -> info.className = "android.widget.ImageView"
-                }
-            }
-        })
+        AsukaProp.A11Y_ROLE -> setA11yRole(n, v)
+        AsukaProp.A11Y_CHECKED, AsukaProp.A11Y_EXPANDED -> { installA11y(n); a11yChanged(n) }
         else -> if (!setNavProp(n, prop, v)) when (n.kind) {
             AsukaKind.VIDEO -> if (prop == AsukaProp.Video.MODE) (view as AsukaVideo).player?.setFill(v == AsukaImageMode.FILL)
             AsukaKind.BUTTON -> if (prop == AsukaProp.Button.VARIANT) replaceButton(n, v)
@@ -723,30 +728,6 @@ fun AsukaRuntime.setA11yActions(n: AsukaNode, b: java.nio.ByteBuffer) {
             true
         })
     }
-}
-
-/** OnAdjust: a seek bar to TalkBack, whose swipe up and down (and the volume keys) step it. */
-fun AsukaRuntime.setAdjustable(n: AsukaNode) {
-    val id = n.id
-    ViewCompat.setAccessibilityDelegate(n.view, object : AccessibilityDelegateCompat() {
-        override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
-            super.onInitializeAccessibilityNodeInfo(host, info)
-            info.className = "android.widget.SeekBar"
-            info.addAction(AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_SCROLL_FORWARD)
-            info.addAction(AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_SCROLL_BACKWARD)
-        }
-
-        override fun performAccessibilityAction(host: View, action: Int, args: android.os.Bundle?): Boolean {
-            val by = when (action) {
-                android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD -> 1L
-                android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD -> -1L
-                else -> return super.performAccessibilityAction(host, action, args)
-            }
-            emit(id, AsukaEventKind.ADJUST) { AsukaEvents.adjust(id, by) }
-            return true
-        }
-    })
-    n.view.isFocusable = true
 }
 
 /** A TextField's ContentType (ui.Content...) as Android's autofill hints name it; another an autofill hint itself. */

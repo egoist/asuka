@@ -88,6 +88,17 @@ let asukaAssets: URL? = {
     var direction = AsukaLayoutDirection.inherit
     /// Its Keys prop's keys, as key commands (KeyCommands.swift).
     var keyCommands: [UIKeyCommand] = []
+    /// NoFocusRing, and the view's focus effect before it was set.
+    var noFocusRing = false
+    var ownFocusEffect: UIFocusEffect??
+    /// Its accessibility props of RFC 0010 (A11y.swift).
+    var a11y = AsukaA11yState()
+    /// An Overlay's layer (Overlay.swift).
+    var overlay: AsukaOverlay?
+
+    /// Whether its container holds an Overlay's view, which stays over
+    /// the children inserted after it (a sheet's content).
+    var hostsOverlays = false
 
     /// Whether an ancestor is being popped or dismissed.
     var underDying: Bool {
@@ -119,6 +130,7 @@ let asukaAssets: URL? = {
             c.addSubview(child.view)
         }
         if let o = menuOverlay { o.superview?.bringSubviewToFront(o) }
+        if hostsOverlays { AsukaRuntime.shared.raiseOverlays(in: c) }
     }
 
     func remove(_ child: AsukaNode) {
@@ -145,6 +157,39 @@ final class AsukaContainerView: UIView {
         isAccessibilityElement = false
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    // The keyboard's focus (Focus.swift).
+
+    /// Focusable: it takes the keyboard's focus, as it does while it
+    /// presses or adjusts, unless it's disabled.
+    var focusable = false
+    var disabled = false
+    /// FocusTrap: the focus system's moves never leave it.
+    var focusTrap = false
+    /// Being blurred: it can't keep the focus.
+    var refusesFocus = false
+
+    var takesFocus: Bool { (focusable || pressable || adjustable) && !disabled && !isHidden }
+
+    override var canBecomeFocused: Bool { takesFocus && !refusesFocus }
+
+    override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+        if focusTrap, let from = context.previouslyFocusedView, from.isDescendant(of: self) {
+            guard let to = context.nextFocusedView, to.isDescendant(of: self) else { return false }
+        }
+        return super.shouldUpdateFocus(in: context)
+    }
+
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        AsukaRuntime.shared.focusSystemMoved(context)
+    }
+
+    /// Return, Space and typed text, while it has the focus.
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if AsukaRuntime.shared.focusedKey(presses) { return }
+        super.pressesBegan(presses, with: event)
+    }
 
     /// Leaving the window, or hidden: no longer pressed or hovered.
     override func didMoveToWindow() {
@@ -307,6 +352,21 @@ final class AsukaTextField: UITextField {
     public static let shared = AsukaRuntime()
 
     var nodes: [UInt32: AsukaNode] = [:]
+    /// The keyboard's focus (Focus.swift): the view that has it as last
+    /// reported (not a field), whether the last input was a key, how a
+    /// focus update under way came (the Focus command's), the update last
+    /// seen, and presses a view took.
+    var focusedID: UInt32 = 0
+    var keyboardModality = false
+    var programmaticFocus: Int64?
+    var lastFocusUpdate: ObjectIdentifier?
+    var handledPresses = Set<ObjectIdentifier>()
+    /// The Overlays, in the order they were made (Overlay.swift).
+    var overlays: [AsukaNode] = []
+    var presentCount = 0
+    var anchorsDue = false
+    /// The nodes that name others for screen readers (A11y.swift).
+    var related = Set<UInt32>()
     /// The nodes with Keys.
     var keyed = Set<UInt32>()
     /// Buttons with a glass variant (roundGlass).
@@ -549,6 +609,8 @@ final class AsukaTextField: UITextField {
         asukaDecode(buf, self)
         runEnters()
         runMatches()
+        if !related.isEmpty { refreshRelations() }
+        if !overlays.isEmpty { reportAnchors() }
     }
 
     public func create(_ id: UInt32, kind raw: UInt16) {
@@ -693,6 +755,8 @@ final class AsukaTextField: UITextField {
             let r = AsukaRichTextView()
             r.onLink = { [weak self] url in self?.emit(id, .link) { AsukaEvents.link(id, url) } }
             view = r
+        case .overlay:
+            view = AsukaOverlayView()
         default:
             fatalError("asuka: the iOS host can't show \(kind.name) yet")
         }
@@ -704,12 +768,17 @@ final class AsukaTextField: UITextField {
         (view as? AsukaScrollView)?.node = node
         (view as? AsukaSelectionArea)?.node = node
         nodes[id] = node
+        if kind == .overlay { makeOverlay(node) }
         adoptDirection(node)
     }
 
     public func destroy(_ id: UInt32) {
         guard let n = nodes.removeValue(forKey: id) else { return }
         keyed.remove(id)
+        related.remove(id)
+        if focusedID == id { focusedID = 0 } // its focus goes with it, unreported
+        if n.overlay != nil { destroyOverlay(n) }
+        if n.a11y.modal { setA11yModal(n, false) }
         if let s = n.view as? AsukaSnackbarView {
             s.dismiss()
             return
@@ -798,6 +867,7 @@ final class AsukaTextField: UITextField {
     public func listen(_ id: UInt32, event: UInt16) {
         guard let n = nodes[id] else { return }
         n.listens.insert(event)
+        if event == AsukaEventKind.anchorFrame.rawValue, n.overlay != nil { scheduleAnchors() }
         if event == AsukaEventKind.scrolled.rawValue || event == AsukaEventKind.paged.rawValue, let s = n.view as? UIScrollView, n.scrolls == nil {
             n.scrolls = AsukaScrollReporter(id, self)
             if n.list == nil { s.delegate = n.scrolls } // a list's own delegate forwards it
@@ -845,11 +915,11 @@ final class AsukaTextField: UITextField {
         case .setLink:
             setLink(n, String(decoding: args, as: UTF8.self))
         case .focus:
-            n.view.becomeFirstResponder()
+            focus(n)
         case .blur:
-            n.view.resignFirstResponder()
+            blur(n)
         case .present:
-            present(n)
+            if n.kind == .overlay { presentOverlay(n) } else { present(n) }
         case .haptic:
             if args.count > 0 { haptic(Int32(args[0])) }
         case .animateBegin:
@@ -1004,6 +1074,7 @@ extension AsukaRuntime: UITextFieldDelegate {
     public func textFieldDidBeginEditing(_ textField: UITextField) {
         guard let t = textField as? AsukaTextField else { return }
         let id = t.asukaID
+        focusMoved(to: id, how: 1) // the field's own Focus, not the view's that had it
         emit(id, .focus) { AsukaEvents.focus(id) }
         revealOnFocus()
     }

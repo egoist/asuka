@@ -264,6 +264,8 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     private var draining = false
     /** Every Stack, to find the one back pops. */
     val stacks = LinkedHashSet<AsukaNode>()
+    /** Every Overlay, in the order they were presented: the last is on top (Overlay.kt). */
+    val overlays = ArrayList<AsukaNode>()
     /** Back pops the active stack's top screen, following the predictive back gesture. */
     val back = makeBackCallback()
     val nativeFactories = HashMap<String, (AsukaNativeContext) -> AsukaNativeView>()
@@ -612,6 +614,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             old is android.widget.CompoundButton && cur is android.widget.CompoundButton -> cur.isChecked = old.isChecked
             old is Slider && cur is Slider -> { cur.valueFrom = old.valueFrom; cur.valueTo = old.valueTo; cur.value = old.value }
         }
+        if (hasA11yProps(n)) installA11y(n) // a range isn't replayed
         settingProp = false
         val now = n.view // replaying a button's variant replaced it again
         restyle(n)
@@ -715,6 +718,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             AsukaKind.NATIVE -> AsukaNativeHost(ctx)
             AsukaKind.RICH_TEXT -> AsukaRichText(this, id)
             AsukaKind.SELECTABLE -> AsukaSelectionArea(this)
+            AsukaKind.OVERLAY -> AsukaOverlay(ctx, this, id)
             else -> error("asuka: the Android host can't show ${AsukaKind.name(kind)} ($kind) yet")
         }.also { if (rtl) it.layoutDirection = View.LAYOUT_DIRECTION_RTL }
     }
@@ -838,7 +842,14 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     private fun carryViewProps(old: View, v: View) {
         v.contentDescription = old.contentDescription
         androidx.core.view.ViewCompat.setStateDescription(v, androidx.core.view.ViewCompat.getStateDescription(old))
-        old.accessibilityDelegate?.let { v.accessibilityDelegate = it }
+        when (val d = old.accessibilityDelegate) {
+            // Its node's, over the new view's own.
+            is AsukaA11yDelegate -> v.accessibilityDelegate = AsukaA11yDelegate(this, d.id, v.accessibilityDelegate)
+            null -> {}
+            else -> v.accessibilityDelegate = d
+        }
+        v.accessibilityLiveRegion = old.accessibilityLiveRegion
+        v.defaultFocusHighlightEnabled = old.defaultFocusHighlightEnabled
         v.tooltipText = old.tooltipText
         v.importantForAccessibility = old.importantForAccessibility
         v.visibility = old.visibility
@@ -956,6 +967,13 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             setA11yActions(n, v)
             return
         }
+        if (prop == AsukaProp.A11Y_RANGE) {
+            val r = decodeA11yRange(v)
+            if (r != null) n.props[prop] = r else n.props.remove(prop)
+            installA11y(n)
+            a11yChanged(n)
+            return
+        }
         if (prop == AsukaProp.SWIPE_ACTIONS) {
             n.swipeActions = decodeActions(v)
             swipeAccessibility(n)
@@ -980,6 +998,8 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         keyed.remove(id)
         (n.view as? AsukaVideo)?.release()
         stacks.remove(n)
+        if (n.kind == AsukaKind.OVERLAY) { destroyOverlay(n); return }
+        if (n.props[AsukaProp.A11Y_MODAL] == true) n.view.post { refreshModals() } // once its view is gone
         if (n.underDying) return // its views leave with the animating screen or sheet
         if (n.kind == AsukaKind.SNACKBAR) { (n.view as AsukaSnackbar).dismiss(); return }
         if ((n.kind == AsukaKind.SCREEN || n.kind == AsukaKind.SHEET || n.kind == AsukaKind.POPOVER || n.kind == AsukaKind.ALERT) && destroyNav(n)) return
@@ -1023,6 +1043,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         val f = n.frame ?: FloatArray(4).also { n.frame = it }
         f[0] = x; f[1] = y; f[2] = width; f[3] = height
         if (n.parent?.view is AsukaSplit) return // a SplitView's detail: it fills what the drawer leaves
+        if (n.kind == AsukaKind.OVERLAY) return // its root's size, where its root is: the host's
         // A Scroll, or a row of its content, moved: what it takes out is redone.
         if (n.kind == AsukaKind.SCROLL) pendingCulls.add(n)
         n.parent?.parent?.let { if (it.kind == AsukaKind.SCROLL) pendingCulls.add(it) }
@@ -1080,27 +1101,22 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         n.setListening(event, true)
         if (event == AsukaEventKind.PRESS || event == AsukaEventKind.LONG_PRESS || event == AsukaEventKind.PRESSED || event == AsukaEventKind.HOVER) wirePresses(n)
         if (n.kind == AsukaKind.VIEW && (event == AsukaEventKind.PAN || event == AsukaEventKind.PINCH || event == AsukaEventKind.SWIPE || event == AsukaEventKind.ROTATE)) listenGesture(n, event)
+        if (event == AsukaEventKind.PRESS_POINT) wirePressPoint(n)
+        if (event == AsukaEventKind.ANCHOR_FRAME) (n.view as? AsukaOverlay)?.let { o -> o.post { reportAnchor(n) } }
     }
 
     override fun unlisten(id: Int, event: Int) {
         val n = nodes[id] ?: return
         n.setListening(event, false)
         if (event == AsukaEventKind.PRESSED || event == AsukaEventKind.HOVER) wirePresses(n)
+        if (event == AsukaEventKind.PRESS_POINT) wirePressPoint(n)
     }
 
     override fun command(id: Int, command: Int, args: ByteBuffer) {
         val n = nodes[id] ?: return
         when (command) {
-            AsukaCommand.FOCUS -> {
-                n.view.requestFocus()
-                val imm = app.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
-                imm?.showSoftInput(n.view, 0)
-            }
-            AsukaCommand.BLUR -> {
-                n.view.clearFocus()
-                val imm = app.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
-                imm?.hideSoftInputFromWindow(n.view.windowToken, 0)
-            }
+            AsukaCommand.FOCUS -> focusNode(n)
+            AsukaCommand.BLUR -> blurNode(n)
             AsukaCommand.LIST_UPDATE -> {
                 val count = args.int
                 val ids = LongArray(count) { args.long }

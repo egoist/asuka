@@ -21,6 +21,7 @@ class AsukaPopover(private val rt: AsukaRuntime, private val n: AsukaNode) {
     private var popup: PopupWindow? = null
     private var closing = false // the core closes it
     private var wanted = false // presented, and shown once the core sizes it
+    private var touchedOutside = false // what dismisses it now is a touch outside, not back
 
     private fun px(v: Float) = Math.round(v * rt.density)
 
@@ -51,6 +52,13 @@ class AsukaPopover(private val rt: AsukaRuntime, private val n: AsukaNode) {
             // Android's back and a tap outside dismiss it themselves: while
             // ui.OnBack in it intercepts, they ask the core (Back) instead.
             override fun dismiss() {
+                val outside = touchedOutside
+                touchedOutside = false
+                // Back goes first to an overlay over it that takes it (InterceptBack).
+                if (!closing && !n.dying && !outside) rt.interceptingOverlay(n.id)?.let { o ->
+                    rt.emit(o.id, AsukaEventKind.BACK) { AsukaEvents.back(o.id) }
+                    return
+                }
                 if (!closing && !n.dying && n.intercepts) {
                     rt.emit(n.id, AsukaEventKind.BACK) { AsukaEvents.back(n.id) }
                     return
@@ -67,6 +75,10 @@ class AsukaPopover(private val rt: AsukaRuntime, private val n: AsukaNode) {
             }
         }
         p.isOutsideTouchable = true
+        p.setTouchInterceptor { _, e ->
+            if (e.action == android.view.MotionEvent.ACTION_OUTSIDE) touchedOutside = true
+            false
+        }
         p.setOnDismissListener {
             popup = null
             if (!n.dying) {

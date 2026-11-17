@@ -212,6 +212,7 @@ extension AsukaRuntime: UITextViewDelegate {
     public func textViewDidBeginEditing(_ textView: UITextView) {
         guard let t = textView as? AsukaTextView else { return }
         let id = t.asukaID
+        focusMoved(to: id, how: 1) // the field's own Focus, not the view's that had it
         emit(id, .focus) { AsukaEvents.focus(id) }
         revealOnFocus()
     }

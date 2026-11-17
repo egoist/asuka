@@ -27,6 +27,10 @@ import AsukaOps
 final class AsukaPressRecognizer: UIGestureRecognizer {
     /// Reports Pressed's changes.
     var onPressed: ((Bool) -> Void)?
+    /// Reports where the press began (PressPoint), just before the first
+    /// of Pressed true and Press.
+    var onPoint: ((CGPoint) -> Void)?
+    var start: CGPoint?
     /// The pressed state as reported.
     private(set) var pressed = false
     private weak var touch: UITouch?
@@ -61,6 +65,7 @@ final class AsukaPressRecognizer: UIGestureRecognizer {
         if pressesDescendant(t, v) { state = .failed; return }
         endUnpress()
         touch = t
+        start = t.location(in: v)
         inside = true
         Self.tracking.add(self)
         if inScroll(v) {
@@ -110,6 +115,7 @@ final class AsukaPressRecognizer: UIGestureRecognizer {
         delay?.cancel()
         delay = nil
         touch = nil
+        start = nil
         shown = false
         inside = false
         Self.tracking.remove(self)
@@ -151,8 +157,16 @@ final class AsukaPressRecognizer: UIGestureRecognizer {
 
     private func set(_ on: Bool) {
         guard pressed != on else { return }
+        if on { sendPoint() }
         pressed = on
         onPressed?(on)
+    }
+
+    /// Reports where the press began, once a press.
+    func sendPoint() {
+        guard let p = start else { return }
+        start = nil
+        onPoint?(p)
     }
 
     /// Whether the touch landed on a descendant of v that presses itself:
@@ -470,11 +484,15 @@ enum AsukaInteraction {
         g.onPressed = { [weak self] on in
             self?.emit(id, .pressed) { AsukaEvents.pressed(id, on) }
         }
+        g.onPoint = { [weak self] p in
+            self?.emit(id, .pressPoint) { AsukaEvents.pressPoint(id, x: Double(p.x), y: Double(p.y)) }
+        }
         n.view.addGestureRecognizer(g)
     }
 
     @objc func pressRecognized(_ g: AsukaPressRecognizer) {
         guard let id = nodeID(of: g.view) else { return }
+        g.sendPoint()
         emit(id, .press) { AsukaEvents.press(id) }
     }
 

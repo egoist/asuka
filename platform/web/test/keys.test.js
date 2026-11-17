@@ -250,7 +250,7 @@ test("a Window panel's keys end at its Window node, its UseKeys'", () => {
   assert.equal(press(input, "Escape", "Escape").took, false);
 });
 
-test("a sheet's and a popover's node goes on to the window it covers; an alert's and a popup menu's keys are their own", () => {
+test("a sheet's, a popover's and an overlay's node goes on to the window it covers; an alert's and a popup menu's keys are their own", () => {
   const { h, node, sent, press, container } = page();
   h.root.keys = K("enter", "f2");
   const screen = node(h.root);
@@ -292,6 +292,25 @@ test("a sheet's and a popover's node goes on to the window it covers; an alert's
   press(element(inPop.el), "F2", "F2");
   assert.deepEqual(sent.pop(), { id: h.root.id, kind: Event.Key, index: 1 });
   sheet.keys = null;
+
+  // An overlay: on to the root it's over (its Root), the main window's
+  // Escape (the core's, while it's open) or a sheet's then its window's.
+  const ov = node(null, Kind.Overlay, null, element(container));
+  ov.ov = { root: h.root.id };
+  const inOv = node(ov);
+  press(element(inOv.el), "Enter", "Enter");
+  assert.deepEqual(sent.pop(), { id: h.root.id, kind: Event.Key, index: 0 });
+  ov.ov.root = sheet.id;
+  sheet.keys = K("f3");
+  press(element(inOv.el), "F3", "F3");
+  assert.deepEqual(sent.pop(), { id: sheet.id, kind: Event.Key, index: 0 });
+  press(element(inOv.el), "F2", "F2");
+  assert.deepEqual(sent.pop(), { id: h.root.id, kind: Event.Key, index: 1 });
+  sheet.keys = null;
+  // Its root gone: the main window's.
+  ov.ov.root = 9999;
+  press(element(inOv.el), "Enter", "Enter");
+  assert.deepEqual(sent.pop(), { id: h.root.id, kind: Event.Key, index: 0 });
 
   // A sheet declared in a Window's content (its Window prop): that
   // Window's keys, never the main window's, wherever the keyboard was.

@@ -69,6 +69,8 @@ open class AsukaActivity : AppCompatActivity() {
         AsukaSplash.install(frame) // asuka.json's splash, until the first frame
         setContentView(content(frame))
         onBackPressedDispatcher.addCallback(this, runtime.back)
+        // The keyboard's focus moving in the window: FocusChange (Focus.kt).
+        frame.viewTreeObserver.addOnGlobalFocusChangeListener { old, new -> if (runtime.activity === this) runtime.focusMoved(old, new) }
 
         ViewCompat.setOnApplyWindowInsetsListener(frame) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
@@ -120,8 +122,23 @@ open class AsukaActivity : AppCompatActivity() {
      * node and its ancestors' take it first (Keys.kt).
      */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (::runtime.isInitialized && runtime.activity === this && runtime.routeKey(event, currentFocus, runtime.nodes[runtime.rootID])) return true
-        return super.dispatchKeyEvent(event)
+        val ours = ::runtime.isInitialized && runtime.activity === this
+        if (ours && runtime.routeKey(event, currentFocus, runtime.nodes[runtime.rootID])) return true
+        if (super.dispatchKeyEvent(event)) return true
+        // Text typed that nothing took: the focused view's KeyText (a listbox's typeahead).
+        return ours && runtime.keyText(event, currentFocus)
+    }
+
+    private val touchGate = AsukaTouchGate()
+
+    /** A press beginning: the overlays over the root hear of it first if it's outside them (Overlay.kt). */
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (::runtime.isInitialized && runtime.activity === this) {
+            val decor = window.decorView
+            val modal = runtime.outsidePresses(ev) { it.rootView === decor }
+            if (touchGate.holds(ev, modal)) return true
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     /** The Activity's theme, for what it makes in another language. */
@@ -186,6 +203,7 @@ open class AsukaActivity : AppCompatActivity() {
     fun mount(root: View) {
         (root.parent as? ViewGroup)?.removeView(root)
         frame.addView(root, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        runtime.mountOverlays() // over it, in this frame
     }
 
     fun sendEnvironment(force: Boolean = false) {

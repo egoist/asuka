@@ -114,6 +114,8 @@ class AsukaNode(val id: Int, val kind: Int, var view: View) {
     var dropAccept: List<String> = emptyList()
     /** DragItems: what dragging it carries. */
     var dragItems: List<AsukaDragItem> = emptyList()
+    /** Focused by the Focus command in touch mode: focusable in touch mode until it loses the focus. */
+    var touchFocused = false
 
     /** Where children's views go. */
     val container: ViewGroup? get() = view as? ViewGroup
@@ -215,6 +217,75 @@ open class AsukaContainer(context: Context) : ViewGroup(context) {
     /** Its pans, pinches and rotations, which take a touch from a child that's pressable, as iOS's recognizers do. */
     var gestures: AsukaGestures? = null
 
+    /** NoFocusRing: its drawables (a ripple's focused layer) show no focus; the app draws its own. */
+    var noFocusRing = false
+    /** FocusTrap: the focus moving out of it from inside (Tab, Shift+Tab, the arrows) stays in it. */
+    var focusTrap = false
+    /** Reports where a press begins on it (PressPoint), in px from its top left. */
+    var onPressPoint: ((Float, Float) -> Unit)? = null
+    /** Overlays over it (a sheet's or popover's screen's): drawn, and touched, over its other children. */
+    private var overlayCount = 0
+
+    override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) onPressPoint?.invoke(e.x, e.y)
+        return super.dispatchTouchEvent(e)
+    }
+
+    override fun onCreateDrawableState(extraSpace: Int): IntArray {
+        val s = super.onCreateDrawableState(extraSpace)
+        if (!noFocusRing) return s
+        if (android.R.attr.state_focused !in s) return s
+        // A copy: the view's state sets are shared (StateSet).
+        val out = IntArray(s.size)
+        var j = 0
+        for (x in s) if (x != android.R.attr.state_focused) out[j++] = x
+        return out
+    }
+
+    override fun focusSearch(focused: View?, direction: Int): View? {
+        val next = super.focusSearch(focused, direction)
+        if (!focusTrap || focused == null || !holds(focused)) return next
+        if (next != null && holds(next)) return next
+        // Tab and Shift+Tab wrap around inside it; an arrow at its edge stays.
+        return android.view.FocusFinder.getInstance().findNextFocus(this, focused, direction) ?: focused
+    }
+
+    /** Whether v is this view or inside it. */
+    private fun holds(v: View): Boolean {
+        var x: Any? = v
+        while (x is View) {
+            if (x === this) return true
+            x = x.parent
+        }
+        return false
+    }
+
+    override fun onViewAdded(child: View?) {
+        super.onViewAdded(child)
+        if (child is AsukaOverlay) overlayCount++
+        isChildrenDrawingOrderEnabled = overlayCount > 0
+    }
+
+    override fun onViewRemoved(child: View?) {
+        super.onViewRemoved(child)
+        if (child is AsukaOverlay) overlayCount--
+        isChildrenDrawingOrderEnabled = overlayCount > 0
+    }
+
+    /** Its children in order, then its overlays in theirs (the touch order is the drawing order, backwards). */
+    override fun getChildDrawingOrder(childCount: Int, drawingPosition: Int): Int {
+        if (overlayCount <= 0) return drawingPosition
+        val others = childCount - overlayCount
+        var seen = 0
+        val overlays = drawingPosition >= others
+        val want = if (overlays) drawingPosition - others else drawingPosition
+        for (i in 0 until childCount) {
+            if ((getChildAt(i) is AsukaOverlay) != overlays) continue
+            if (seen++ == want) return i
+        }
+        return drawingPosition
+    }
+
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean =
         gestures?.intercept(this, e) ?: super.onInterceptTouchEvent(e)
 
@@ -313,6 +384,10 @@ open class AsukaContainer(context: Context) : ViewGroup(context) {
     protected fun measureChildren() {
         for (i in 0 until childCount) {
             val c = getChildAt(i)
+            if (c is AsukaOverlay) { // as big as this view, its root
+                c.measure(MeasureSpec.makeMeasureSpec(measuredWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(measuredHeight, MeasureSpec.EXACTLY))
+                continue
+            }
             val lp = c.layoutParams as? AsukaParams ?: continue
             if (!lp.framed) continue
             c.measure(MeasureSpec.makeMeasureSpec(lp.w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(lp.h, MeasureSpec.EXACTLY))
@@ -322,6 +397,7 @@ open class AsukaContainer(context: Context) : ViewGroup(context) {
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         for (i in 0 until childCount) {
             val c = getChildAt(i)
+            if (c is AsukaOverlay) { c.layout(0, 0, r - l, b - t); continue }
             val lp = c.layoutParams as? AsukaParams ?: continue
             if (!lp.framed) continue
             c.layout(lp.x, lp.y, lp.x + lp.w, lp.y + lp.h)

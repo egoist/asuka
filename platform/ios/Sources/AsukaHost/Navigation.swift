@@ -74,6 +74,17 @@ class AsukaScreenController: UIViewController {
         AsukaRuntime.shared.adoptControllers(in: self)
     }
 
+    // The keyboard's focus (Focus.swift), as the root controller's.
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        AsukaRuntime.shared.focusSystemMoved(context)
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if AsukaRuntime.shared.focusedKey(presses) { return }
+        super.pressesBegan(presses, with: event)
+    }
+
     func report(force: Bool = false) {
         let rt = AsukaRuntime.shared
         guard view.bounds.width > 0, rt.nodes[nodeID] != nil else { return }
@@ -358,6 +369,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         for n in nodes.values {
             (n.vc as? AsukaScreenController)?.report()
         }
+        reportOverlays()
     }
 
     /// The controller whose view holds node's view: the nearest screen or

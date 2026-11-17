@@ -8,6 +8,7 @@ import * as text from "./text.js";
 import { decodeStrings, decodeActions } from "./host.js";
 import { decodeDragItems, appendItems, shareKind, matchMIME } from "./interaction.js";
 import { navKinds } from "./nav.js";
+import { overlayKind } from "./overlay.js";
 import { listKind, scrollKind } from "./list.js";
 import { mediaKinds, symbolSVG } from "./media.js";
 import { richKinds } from "./rich.js";
@@ -278,8 +279,8 @@ const textField = {
   command(h, n, cmd, args) {
     const el = n.input;
     switch (cmd) {
-      case Command.Focus: el.focus({ preventScroll: true }); return true;
-      case Command.Blur: el.blur(); return true;
+      case Command.Focus: h.focus.focus(n, el); return true; // once it can (in an overlay not shown yet)
+      case Command.Blur: h.focus.blur(n, el); return true;
       case Command.Format:
         if (n.richField) rich.formatField(h, n, args);
         return true;
@@ -940,6 +941,7 @@ export const kinds = {
   [Kind.List]: listKind,
   [Kind.Scroll]: scrollKind,
   [Kind.Shader]: shaderKind,
+  [Kind.Overlay]: overlayKind,
   ...navKinds,
   ...mediaKinds,
   ...richKinds,

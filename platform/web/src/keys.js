@@ -10,8 +10,8 @@
 // Key with the key's index. From a node the core leaves without a
 // parent, a key goes on where it shows (up): a list's cell to its list, a
 // sheet's node to the window it's declared in (its Window prop: a Window
-// node, or the root) and a popover's to the root of what its anchor is in (a window's,
-// or a sheet's node). A Window node is an end (a Window's keys are its
+// node, or the root), a popover's to the root of what its anchor is in (a window's,
+// or a sheet's node) and an overlay's to the root it's over (its Root). A Window node is an end (a Window's keys are its
 // own, its UseKeys'), and the root; with nothing focused, a key starts at
 // the root, or at the node of the panel or dialog that has the keyboard.
 
@@ -214,8 +214,9 @@ export class Keys {
    * leaves without one, where it shows: a list's cell its list, a
    * sheet's node the window it's declared in (its Window prop: a Window
    * node, the root), a popover's the root of what its anchor is in (a
-   * Window's, a sheet's node, the root). Null at the root and a Window
-   * node: ends.
+   * Window's, a sheet's node, the root), an overlay's the root it's over
+   * (its Root: the root, a sheet's, a Window's, a popover's node). Null at
+   * the root and a Window node: ends.
    */
   up(n) {
     if (n.parent) return n.parent;
@@ -227,6 +228,11 @@ export class Keys {
     if (n.kind === Kind.Sheet) {
       const o = this.h.nodes?.get(n.winID);
       return o && o !== n && !o.dying && (o === root || o.kind === Kind.Window) ? o : root;
+    }
+    if (n.kind === Kind.Overlay) {
+      const r = this.h.nodes?.get(n.ov?.root);
+      if (r && r !== n && !r.dying) return r;
+      return root !== n ? root : null;
     }
     if (n.kind === Kind.Popover) {
       let a = this.h.nodes?.get(n.pop?.anchor);
