@@ -367,6 +367,8 @@ Phones and the web leave `[bin]` out. [examples/notes](../examples/notes)
 is an app with a `notes` command, which lists, adds and checks off the
 app's notes.
 
+### Programs another toolchain builds
+
 A program another toolchain builds goes in the app the same way: a
 server written in Go, a tool in Rust, which the app runs. Its `[bin]`
 names the command that builds it instead of a directory, run for each
@@ -388,8 +390,47 @@ build = ["cargo", "build", "--release", "--manifest-path", "index/Cargo.toml", "
 output = "index/target/{target}/release/notes-index{exe}"
 ```
 
-The Rust targets come from `rustup target add`; a Linux or Windows
-build from a Mac needs a linker for them too, as any cross build does.
+`{target}` is the system's own triple when the app is built on that
+system (`x86_64-pc-windows-msvc` on Windows), and when it's cross-built,
+one that builds without the other system's SDK (`x86_64-pc-windows-gnu`,
+MinGW; `x86_64-unknown-linux-musl`, static). The Rust targets come from
+`rustup target add`, and a cross build needs a linker for them too.
+
+When the placeholders aren't the arguments you want, `build` can run a
+script of your own, which decides them as it runs: the target is in its
+environment (`ASUKA_OS`, `ASUKA_ARCH`, `ASUKA_EXE`, `ASUKA_TARGET`,
+`ASUKA_GOOS`, `ASUKA_GOARCH`), and it writes the program to `ASUKA_OUT`.
+This one builds a static Linux program everywhere, and turns on a
+feature for the Mac:
+
+```toml
+[bin.notes-index]
+build = ["sh", "index/build.sh"]
+```
+
+```sh
+#!/bin/sh
+# index/build.sh: run in the project's directory, once per target.
+set -e
+target=$ASUKA_TARGET
+features=
+case $ASUKA_OS in
+  linux)
+    case $ASUKA_ARCH in
+      x64) target=x86_64-unknown-linux-musl ;;
+      arm64) target=aarch64-unknown-linux-musl ;;
+    esac ;;
+  macos) features="--features metal" ;;
+esac
+cargo build --release --manifest-path index/Cargo.toml --target "$target" $features
+cp "index/target/$target/release/notes-index$ASUKA_EXE" "$ASUKA_OUT"
+```
+
+The script runs where the app is built, not where it runs: a Windows
+build from a Mac runs it with the Mac's `sh`. To build on Windows, name
+something Windows runs: `["pwsh", "-File", "index/build.ps1"]` (where
+`$env:ASUKA_OUT` is the output), or a program in any language,
+`["go", "run", "./tools/build-index"]`.
 
 The app finds its programs with `command.bundled(name)`: the path in
 the build, or none (a phone, the web, a test). `asuka dev` builds them

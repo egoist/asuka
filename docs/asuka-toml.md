@@ -532,8 +532,18 @@ The target in `build`, `env` and `output`, in each toolchain's names:
 | `{os}` | `macos` | `linux` | `windows` |
 | `{arch}` | `arm64`, `x64` | `arm64`, `x64` | `arm64`, `x64` |
 | `{exe}` | | | `.exe` |
-| `{target}`, Rust's and clang's triple | `aarch64-apple-darwin`, `x86_64-apple-darwin` | `aarch64-unknown-linux-musl`, `x86_64-unknown-linux-musl` (static, as Asuka's own programs are) | `aarch64-pc-windows-gnullvm`, `x86_64-pc-windows-gnu` (MinGW, as Asuka's Windows builds are) |
+| `{target}`, Rust's and clang's triple, built there | `aarch64-apple-darwin`, `x86_64-apple-darwin` | `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu` | `aarch64-pc-windows-msvc`, `x86_64-pc-windows-msvc` |
+| `{target}`, cross-built from another system | | `aarch64-unknown-linux-musl`, `x86_64-unknown-linux-musl` (static) | `aarch64-pc-windows-gnullvm`, `x86_64-pc-windows-gnu` (MinGW: no Windows SDK needed) |
 | `{goos}`, `{goarch}`, Go's | `darwin`; `arm64`, `amd64` | `linux`; `arm64`, `amd64` | `windows`; `arm64`, `amd64` |
+
+`{target}` is the triple Asuka's own toolchain picks: the system's own
+on that system (MSVC's on Windows, as rustup installs by default there),
+and Zig's when it cross-builds. The command's environment has them all
+too, for a script: `ASUKA_OUT`, `ASUKA_OS`, `ASUKA_ARCH`, `ASUKA_EXE`,
+`ASUKA_TARGET`, `ASUKA_GOOS` and `ASUKA_GOARCH`. A build that wants
+other names or flags (musl on Linux too, a feature on one system) runs
+a script that picks them; see [Programs another toolchain
+builds](programs.md#programs-another-toolchain-builds).
 
 ```toml
 [bin.notes]

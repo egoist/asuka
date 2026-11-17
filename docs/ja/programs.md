@@ -275,6 +275,60 @@ path = "cli"
 
 スマートフォンと Web は `[bin]` を無視します。[examples/notes](../../examples/notes) は `notes` コマンドを付属させたアプリで、このコマンドでアプリのメモの一覧表示、追加、完了ができます。
 
+### ほかのツールチェーンがビルドするプログラム
+
+ほかのツールチェーンがビルドするプログラム（Go で書いたサーバー、Rust で書いたツールなど、アプリが起動するもの）も同じようにアプリに入ります。その `[bin]` にはディレクトリの代わりにビルドするコマンドを書き、アプリをビルドするターゲットごとに実行されます（ユニバーサルな Mac アプリの 2 つのアーキテクチャは `lipo` でまとめます）。プレースホルダーはツールチェーンごとの名前でターゲットを表します。Go には `{goos}` と `{goarch}`、Rust にはトリプルの `{target}`。`{os}` と `{arch}` は Asuka の名前（`macos`、`x64`）で、自分のスクリプト向けです。`{out}` に書き出せないビルド（cargo など）は、`output` でプログラムを置く場所を指定します（一覧は [asuka.toml](asuka-toml.md#bin) にあります）。
+
+```toml
+[bin.notes-server]
+build = ["go", "build", "-o", "{out}", "./cmd/server"]
+env = { GOOS = "{goos}", GOARCH = "{goarch}", CGO_ENABLED = "0" }
+
+[bin.notes-index]
+build = ["cargo", "build", "--release", "--manifest-path", "index/Cargo.toml", "--target", "{target}"]
+output = "index/target/{target}/release/notes-index{exe}"
+```
+
+そのシステム上でビルドするとき、`{target}` はそのシステムのトリプル（Windows では `x86_64-pc-windows-msvc`）です。クロスビルドでは、相手のシステムの SDK なしでビルドできるトリプル（`x86_64-pc-windows-gnu`、MinGW。`x86_64-unknown-linux-musl`、静的リンク）になります。Rust のターゲットは `rustup target add` で入れ、クロスビルドにはそのリンカーも必要です。
+
+プレースホルダーが望む引数にならないときは、`build` で自分のスクリプトを実行し、実行時に引数を決めさせられます。ターゲットは環境変数（`ASUKA_OS`、`ASUKA_ARCH`、`ASUKA_EXE`、`ASUKA_TARGET`、`ASUKA_GOOS`、`ASUKA_GOARCH`）にあり、プログラムは `ASUKA_OUT` に書き出します。次のスクリプトは、どこでも静的リンクの Linux プログラムをビルドし、Mac では feature を有効にします。
+
+```toml
+[bin.notes-index]
+build = ["sh", "index/build.sh"]
+```
+
+```sh
+#!/bin/sh
+# index/build.sh: プロジェクトのディレクトリで、ターゲットごとに 1 回実行されます。
+set -e
+target=$ASUKA_TARGET
+features=
+case $ASUKA_OS in
+  linux)
+    case $ASUKA_ARCH in
+      x64) target=x86_64-unknown-linux-musl ;;
+      arm64) target=aarch64-unknown-linux-musl ;;
+    esac ;;
+  macos) features="--features metal" ;;
+esac
+cargo build --release --manifest-path index/Cargo.toml --target "$target" $features
+cp "index/target/$target/release/notes-index$ASUKA_EXE" "$ASUKA_OUT"
+```
+
+スクリプトはアプリを実行するマシンではなく、ビルドするマシンで動きます。Mac から Windows 版をビルドするときは Mac の `sh` で実行されます。Windows でビルドするなら、Windows が実行できるものを指定します。`["pwsh", "-File", "index/build.ps1"]`（出力先は `$env:ASUKA_OUT`）や、任意の言語のプログラム `["go", "run", "./tools/build-index"]` などです。
+
+アプリは `command.bundled(name)` で自分のプログラムを見つけます。ビルドの中のパスで、ない場合（スマートフォン、Web、テスト）は none です。`asuka dev` は起動時にビルドし、アプリは同じ方法で見つけます。
+
+```asuka
+import std/command
+
+async fn startServer() throws -> command.Process {
+  let server = command.bundled("notes-server") ?? "notes-server" // なければ PATH から
+  return try command.start(server, ["serve"])
+}
+```
+
 ## テスト
 
 プログラムのテストブロックは、アプリと同じく `asuka test` で実行します。`main` は関数なので、テストでは `os.fake` を使って本物のプロセスと同じように実行します。`os.fake` は引数、環境変数、stdin を与え、書き出された内容を保存します。

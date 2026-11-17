@@ -458,8 +458,11 @@ strip = 1
 | `{os}` | `macos` | `linux` | `windows` |
 | `{arch}` | `arm64`、`x64` | `arm64`、`x64` | `arm64`、`x64` |
 | `{exe}` | | | `.exe` |
-| `{target}`（Rust と clang のターゲットトリプル） | `aarch64-apple-darwin`、`x86_64-apple-darwin` | `aarch64-unknown-linux-musl`、`x86_64-unknown-linux-musl`（Asuka 自身のプログラムと同じく静的リンク） | `aarch64-pc-windows-gnullvm`、`x86_64-pc-windows-gnu`（Asuka の Windows ビルドと同じく MinGW） |
+| `{target}`（Rust と clang のターゲットトリプル、そのシステム上でビルド） | `aarch64-apple-darwin`、`x86_64-apple-darwin` | `aarch64-unknown-linux-gnu`、`x86_64-unknown-linux-gnu` | `aarch64-pc-windows-msvc`、`x86_64-pc-windows-msvc` |
+| `{target}`（ほかのシステムからクロスビルド） | | `aarch64-unknown-linux-musl`、`x86_64-unknown-linux-musl`（静的リンク） | `aarch64-pc-windows-gnullvm`、`x86_64-pc-windows-gnu`（MinGW：Windows SDK は不要） |
 | `{goos}`、`{goarch}`（Go の名前） | `darwin`；`arm64`、`amd64` | `linux`；`arm64`、`amd64` | `windows`；`arm64`、`amd64` |
+
+`{target}` は Asuka 自身のツールチェーンが選ぶトリプルと同じです。そのシステム上でビルドするときはそのシステムのもの（Windows では MSVC のもので、rustup がそこで標準でインストールするもの）、クロスビルドでは Zig のものになります。コマンドの環境変数にも同じ値が入るので、スクリプトから使えます：`ASUKA_OUT`、`ASUKA_OS`、`ASUKA_ARCH`、`ASUKA_EXE`、`ASUKA_TARGET`、`ASUKA_GOOS`、`ASUKA_GOARCH`。別の名前やフラグが必要なビルド（Linux でも musl を使う、あるシステムだけで feature を有効にするなど）は、`build` でスクリプトを実行し、実行時にスクリプトに決めさせます。[ほかのツールチェーンがビルドするプログラム](programs.md#ほかのツールチェーンがビルドするプログラム)を参照してください。
 
 ```toml
 [bin.notes]

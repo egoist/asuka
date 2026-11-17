@@ -275,6 +275,60 @@ path = "cli"
 
 手机和 Web 会忽略 `[bin]`。[examples/notes](../../examples/notes) 就是一个自带 `notes` 命令的应用，这个命令可以列出、添加和勾选应用里的笔记。
 
+### 由其他工具链构建的程序
+
+由其他工具链构建的程序（用 Go 写的服务、用 Rust 写的工具，由应用启动）也以同样的方式放进应用。它的 `[bin]` 写的不是目录，而是构建它的命令，应用为哪些目标构建，这个命令就针对每个目标运行一次（通用 Mac 应用的两个架构会用 `lipo` 合并）。占位符用各个工具链自己的名字表示目标：Go 用 `{goos}` 和 `{goarch}`，Rust 用目标三元组 `{target}`；`{os}` 和 `{arch}` 是 Asuka 自己的名字（`macos`、`x64`），供你自己的脚本使用。不能写到 `{out}` 的构建（比如 cargo）用 `output` 说明程序留在哪里（完整列表见 [asuka.toml](asuka-toml.md#bin)）：
+
+```toml
+[bin.notes-server]
+build = ["go", "build", "-o", "{out}", "./cmd/server"]
+env = { GOOS = "{goos}", GOARCH = "{goarch}", CGO_ENABLED = "0" }
+
+[bin.notes-index]
+build = ["cargo", "build", "--release", "--manifest-path", "index/Cargo.toml", "--target", "{target}"]
+output = "index/target/{target}/release/notes-index{exe}"
+```
+
+在目标系统上构建时，`{target}` 是该系统自己的三元组（Windows 上是 `x86_64-pc-windows-msvc`）；交叉构建时，是不需要那个系统的 SDK 就能构建的三元组（`x86_64-pc-windows-gnu`，即 MinGW；`x86_64-unknown-linux-musl`，静态链接）。Rust 的目标用 `rustup target add` 安装，交叉构建还需要对应的链接器。
+
+如果占位符给出的参数不是你想要的，`build` 可以运行你自己的脚本，由脚本在运行时决定参数：目标在它的环境变量里（`ASUKA_OS`、`ASUKA_ARCH`、`ASUKA_EXE`、`ASUKA_TARGET`、`ASUKA_GOOS`、`ASUKA_GOARCH`），程序写到 `ASUKA_OUT`。下面这个脚本在任何地方都构建静态链接的 Linux 程序，并为 Mac 开启一个 feature：
+
+```toml
+[bin.notes-index]
+build = ["sh", "index/build.sh"]
+```
+
+```sh
+#!/bin/sh
+# index/build.sh: 在项目目录中运行，每个目标一次。
+set -e
+target=$ASUKA_TARGET
+features=
+case $ASUKA_OS in
+  linux)
+    case $ASUKA_ARCH in
+      x64) target=x86_64-unknown-linux-musl ;;
+      arm64) target=aarch64-unknown-linux-musl ;;
+    esac ;;
+  macos) features="--features metal" ;;
+esac
+cargo build --release --manifest-path index/Cargo.toml --target "$target" $features
+cp "index/target/$target/release/notes-index$ASUKA_EXE" "$ASUKA_OUT"
+```
+
+脚本在构建应用的机器上运行，而不是在应用运行的机器上：在 Mac 上构建 Windows 版时，用的是 Mac 的 `sh`。要在 Windows 上构建，就写 Windows 能运行的东西：`["pwsh", "-File", "index/build.ps1"]`（输出路径是 `$env:ASUKA_OUT`），或者任何语言写的程序，比如 `["go", "run", "./tools/build-index"]`。
+
+应用用 `command.bundled(name)` 找到自己的程序：构建里的路径，没有时（手机、Web、测试）为 none。`asuka dev` 启动时会构建它们，应用也用同样的方式找到：
+
+```asuka
+import std/command
+
+async fn startServer() throws -> command.Process {
+  let server = command.bundled("notes-server") ?? "notes-server" // 否则用 PATH 上的
+  return try command.start(server, ["serve"])
+}
+```
+
 ## 测试
 
 和应用一样，程序的测试块用 `asuka test` 运行。`main` 是一个函数：测试里用 `os.fake` 像真正的进程那样运行它，`os.fake` 提供参数、环境变量和 stdin，并保存它写出的内容：

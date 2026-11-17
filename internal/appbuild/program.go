@@ -56,11 +56,19 @@ type Bin struct {
 func (b Bin) Built() bool { return len(b.Build) > 0 }
 
 // Command is the program's build for t into out: its arguments and the
-// environment over the CLI's, with BuildVars' placeholders replaced.
+// environment over the CLI's. BuildVars' placeholders are replaced in
+// the arguments and Env's values, and are in the environment too, for a
+// script: ASUKA_OUT, ASUKA_OS, ASUKA_ARCH, ASUKA_EXE, ASUKA_TARGET,
+// ASUKA_GOOS, ASUKA_GOARCH (Env's own over them).
 func (b Bin) Command(t cbuild.Target, out string) (args, env []string) {
-	r := buildVars(t, out)
+	vars := BuildVars(t, cbuild.Host())
+	vars["{out}"] = out
+	r := replacer(vars)
 	for _, a := range b.Build {
 		args = append(args, r.Replace(a))
+	}
+	for _, k := range []string{"{out}", "{os}", "{arch}", "{exe}", "{target}", "{goos}", "{goarch}"} {
+		env = append(env, "ASUKA_"+strings.ToUpper(strings.Trim(k, "{}"))+"="+vars[k])
 	}
 	keys := make([]string, 0, len(b.Env))
 	for k := range b.Env {
@@ -79,24 +87,28 @@ func (b Bin) BuiltAt(t cbuild.Target, dir, out string) string {
 	if b.Output == "" {
 		return out
 	}
-	return filepath.Join(dir, filepath.FromSlash(buildVars(t, out).Replace(b.Output)))
+	vars := BuildVars(t, cbuild.Host())
+	vars["{out}"] = out
+	return filepath.Join(dir, filepath.FromSlash(replacer(vars).Replace(b.Output)))
 }
 
 // BuildVars are the placeholders in a [bin]'s build, env and output, for
-// a target: each toolchain's names for it, none of them Asuka's
-// internal ones.
+// target t built on host: each toolchain's names for it, none of them
+// Asuka's internal ones ({out} besides, where the build writes the
+// program).
 //
-//	{out}     where the build writes the program
 //	{os}      macos, windows, linux ([c.prebuilt]'s names)
 //	{arch}    arm64, x64
 //	{exe}     .exe on Windows, else nothing
-//	{target}  Rust's and clang's triple: aarch64-apple-darwin,
-//	          x86_64-unknown-linux-musl (static, as Asuka's own programs
-//	          are), x86_64-pc-windows-gnu (MinGW, as Asuka's Windows
-//	          builds are)
+//	{target}  Rust's and clang's triple, the one Asuka's own toolchain
+//	          for t would pick: on its own system, the system's
+//	          (aarch64-apple-darwin, x86_64-pc-windows-msvc,
+//	          x86_64-unknown-linux-gnu); cross-built, as Zig cross-builds
+//	          (x86_64-pc-windows-gnu, MinGW, needing no Windows SDK;
+//	          x86_64-unknown-linux-musl, static)
 //	{goos}    Go's: darwin, windows, linux
 //	{goarch}  Go's: arm64, amd64
-func BuildVars(t cbuild.Target) map[string]string {
+func BuildVars(t, host cbuild.Target) map[string]string {
 	name, arch, exe := t.OS, t.Arch, ""
 	if name == "darwin" {
 		name = "macos"
@@ -105,25 +117,33 @@ func BuildVars(t cbuild.Target) map[string]string {
 		arch = "x64"
 	}
 	cpu := map[string]string{"arm64": "aarch64", "amd64": "x86_64", "386": "i686", "arm": "armv7"}[t.Arch]
+	native := t.OS == host.OS
 	var triple string
 	switch t.OS {
 	case "darwin":
 		triple = cpu + "-apple-darwin"
 	case "linux":
-		triple = cpu + "-unknown-linux-musl"
+		triple = cpu + "-unknown-linux-gnu"
+		if !native {
+			triple = cpu + "-unknown-linux-musl"
+		}
 	case "windows":
 		exe = ".exe"
-		triple = cpu + "-pc-windows-gnu"
-		if t.Arch == "arm64" {
+		switch {
+		case native:
+			triple = cpu + "-pc-windows-msvc"
+		case t.Arch == "arm64":
 			triple = "aarch64-pc-windows-gnullvm" // Rust's MinGW on arm64
+		default:
+			triple = cpu + "-pc-windows-gnu"
 		}
 	}
 	return map[string]string{"{os}": name, "{arch}": arch, "{exe}": exe, "{target}": triple, "{goos}": t.OS, "{goarch}": t.Arch}
 }
 
-func buildVars(t cbuild.Target, out string) *strings.Replacer {
-	pairs := []string{"{out}", out}
-	for k, v := range BuildVars(t) {
+func replacer(vars map[string]string) *strings.Replacer {
+	pairs := make([]string, 0, 2*len(vars))
+	for k, v := range vars {
 		pairs = append(pairs, k, v)
 	}
 	return strings.NewReplacer(pairs...)

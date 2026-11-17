@@ -456,8 +456,11 @@ strip = 1
 | `{os}` | `macos` | `linux` | `windows` |
 | `{arch}` | `arm64`、`x64` | `arm64`、`x64` | `arm64`、`x64` |
 | `{exe}` | | | `.exe` |
-| `{target}`，Rust 和 clang 的目标三元组 | `aarch64-apple-darwin`、`x86_64-apple-darwin` | `aarch64-unknown-linux-musl`、`x86_64-unknown-linux-musl`（静态链接，和 Asuka 自己的程序一样） | `aarch64-pc-windows-gnullvm`、`x86_64-pc-windows-gnu`（MinGW，和 Asuka 的 Windows 构建一样） |
+| `{target}`，Rust 和 clang 的目标三元组，在该系统上构建 | `aarch64-apple-darwin`、`x86_64-apple-darwin` | `aarch64-unknown-linux-gnu`、`x86_64-unknown-linux-gnu` | `aarch64-pc-windows-msvc`、`x86_64-pc-windows-msvc` |
+| `{target}`，从其他系统交叉构建 | | `aarch64-unknown-linux-musl`、`x86_64-unknown-linux-musl`（静态链接） | `aarch64-pc-windows-gnullvm`、`x86_64-pc-windows-gnu`（MinGW：不需要 Windows SDK） |
 | `{goos}`、`{goarch}`，Go 的 | `darwin`；`arm64`、`amd64` | `linux`；`arm64`、`amd64` | `windows`；`arm64`、`amd64` |
+
+`{target}` 和 Asuka 自己的工具链选的三元组一致：在目标系统上构建时用该系统自己的（Windows 上是 MSVC 的，也就是 rustup 在那里默认安装的），交叉构建时用 Zig 的。命令的环境变量里也有这些值，方便脚本使用：`ASUKA_OUT`、`ASUKA_OS`、`ASUKA_ARCH`、`ASUKA_EXE`、`ASUKA_TARGET`、`ASUKA_GOOS` 和 `ASUKA_GOARCH`。如果构建需要别的名字或参数（比如 Linux 上也用 musl，或只在某个系统上开启一个 feature），可以让 `build` 运行一个脚本，由脚本在运行时决定，见[由其他工具链构建的程序](programs.md#由其他工具链构建的程序)。
 
 ```toml
 [bin.notes]
