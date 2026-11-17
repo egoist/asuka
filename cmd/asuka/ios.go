@@ -455,6 +455,19 @@ type simDevice struct {
 	runtime     string
 }
 
+// XCode 27 does not ship Simulator anymore, so open DeviceHub instead
+func showSimulator(udid string) {
+	if exec.Command("open", "-a", "Simulator").Run() == nil {
+		return
+	}
+
+	if exec.Command("open", "devices://device/open?id="+udid).Run() == nil {
+		return
+	}
+
+	exec.Command("open", "-a", "DeviceHub").Run()
+}
+
 // pickSimulator returns the device named want, or the booted iPhone, or
 // the newest available iPhone, booting it if needed.
 func pickSimulator(want string) (*simDevice, error) {
@@ -527,7 +540,7 @@ func pickSimulator(want string) (*simDevice, error) {
 			}
 		}
 		exec.Command("xcrun", "simctl", "bootstatus", pick.UDID, "-b").Run()
-		exec.Command("open", "-a", "Simulator").Run() // shows it, when installed
+		showSimulator(pick.UDID) // shows it, when installed
 	}
 	return pick, nil
 }
