@@ -164,6 +164,16 @@ struct node {
 	ak_buf keys_buf;
 	GtkWidget *aux;  // a second widget of an area's (a list cell's row…)
 	ak_id list_owner;  // a cell: the List it's bound into
+
+	// The keyboard's focus (focus.c): the props as set, and the key
+	// controller that sends KeyText.
+	bool focusable, no_focus_on_press, no_focus_ring, focus_trap;
+	GtkEventController *key_text;
+	// Screen readers (a11y.c): A11yRole and A11yHidden as the app set
+	// them; how many modal views over it hide it from screen readers.
+	int32_t role;
+	bool a11y_hidden;
+	uint16_t modal_hidden;
 };
 
 static inline bool listening(const node *n, ak_event_kind e) {
@@ -234,6 +244,7 @@ struct win {
 	bool reported;
 	desk_t desk;
 	GtkEventController *keys;  // its key controller (keys.c)
+	ak_id focused;  // the node the keyboard's focus was last in (focus.c)
 };
 
 // The palette: libadwaita's colors for the current style.
@@ -326,6 +337,10 @@ typedef struct {
 	bool dev;  // under asuka dev: a player
 	bool automating;
 	GSimpleActionGroup *menu_group;  // the popped up menu's actions
+	// The last input was a key (not a pointer's press): focus that comes
+	// now is visible (focus.c).
+	bool key_input;
+	bool focus_moving;  // a focus trap is moving the focus: no FocusChange yet
 } host;
 
 extern host H;
@@ -526,6 +541,30 @@ void lx_set_drag_items(node *n, ak_span b);
 void lx_set_drop_accept(node *n, ak_span b);
 bool lx_draggable(node *n);
 void lx_set_selected_state(node *n, bool on);
+
+// focus.c: the keyboard's focus on any view (RFC 0010)
+void lx_set_focus_prop(node *n, ak_prop p, const ak_value *v);
+void lx_update_focusable(node *n);
+void lx_watch_focus(win *w);
+void lx_focus_report(win *w);
+void lx_focus_command(node *n, bool focus);
+void lx_listen_key_text(node *n);
+gboolean lx_trap_focus(GtkWidget *w, GtkDirectionType d);
+GtkWidget *lx_control_of(node *n);
+
+// overlay.c: Overlay, a layer over a layout root (RFC 0010)
+bool lx_overlay_modal(node *n);
+void lx_overlay_env(node *n, ak_environment *env);
+void lx_overlays_outside_press(GtkWidget *window, GdkSurface *surface, double x, double y);
+bool lx_overlay_back(void);
+GtkWidget *lx_overlay_root_widget(node *n);
+void lx_overlays_check(void);
+
+// a11y.c: screen readers' states (RFC 0010)
+void lx_a11y_dump(node *n, ak_buf *b);
+void lx_modal_refresh(void);
+void lx_modal_changed(void);
+void lx_modal_watch(node *n);
 
 // menus.c
 void lx_menu_changed(node *n);

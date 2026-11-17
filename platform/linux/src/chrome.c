@@ -246,6 +246,7 @@ static void on_bar_button(GtkButton *b, gpointer data) {
 
 static void on_back(GtkButton *b, gpointer data) {
 	(void)b;
+	if (lx_overlay_back()) return;  // the top overlay that takes it, first
 	node *stack = node_get((ak_id)(uintptr_t)data);
 	if (stack) lx_go_back(stack);
 }
@@ -376,11 +377,15 @@ void lx_forget_chrome(node *n) {
 	}
 }
 
-void lx_batch_applied(void) { lx_update_chrome(); }
+void lx_batch_applied(void) {
+	lx_update_chrome();
+	lx_modal_refresh();
+}
 
 // lx_go_back_front goes back in the innermost stack on screen in the
 // window in use (automation's back).
 bool lx_go_back_front(void) {
+	if (lx_overlay_back()) return true;  // the top overlay that takes it, first
 	win *w = H.active_win ? H.active_win : H.main;
 	found f = {0};
 	find(w->root, &f);

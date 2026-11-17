@@ -1,0 +1,50 @@
+// Screen readers' roles and states (TestA11yStates): checked, expanded,
+// selected, a value and its range, modal, and the views that label or
+// are controlled by another, read back from GTK's accessibles.
+
+app { Box() }
+
+component Box {
+  state on = false
+  state open = false
+  let label = Ref()
+  let list = Ref()
+  let hint = Ref()
+
+  Column {
+    padding: 16
+    gap: 8
+    Text("Agree") { ref: label }
+    View {
+      role: .checkbox
+      a11yChecked: if on { .checked } else { .unchecked }
+      a11yLabelledBy: label
+      on press { on = !on }
+      Text("Box")
+    }
+    View {
+      role: .comboBox
+      a11yExpanded: if open { .expanded } else { .collapsed }
+      a11yControls: list
+      on press { open = !open }
+      Text("Combo")
+    }
+    if open {
+      View { ref: list; role: .listbox; a11yModal: true; Text("Items") }
+    }
+    Text("On {on}")
+    View {
+      role: .slider
+      a11yValue: "40%"
+      a11yRange: ValueRange(min: 0, max: 100, now: 40)
+      a11yDescribedBy: hint
+      Text("Volume")
+    }
+    Text("Loudness, in percent") { ref: hint }
+    View {
+      role: .tab
+      a11ySelected: true
+      Text("Tab one")
+    }
+  }
+}

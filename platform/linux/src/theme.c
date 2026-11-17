@@ -160,6 +160,7 @@ static const char host_css[] =
 	"button.asuka-plain { color: @accent_color; }\n"
 	"entry.asuka-plain, text.asuka-plain { background: none; box-shadow: none; outline: none; padding: 0; min-height: 0; }\n"
 	"asuka-view.asuka-focus-ring:focus-visible { outline: 2px solid alpha(@accent_color, 0.5); outline-offset: -2px; }\n"
+	".asuka-no-focus-ring:focus-visible, .asuka-no-focus-ring :focus-visible { outline: none; }\n"
 	"scrolledwindow.asuka-field { background-color: alpha(currentColor, 0.1); border-radius: 6px; outline: 0 solid transparent; outline-offset: 2px; transition: outline-color 200ms ease-out, outline-width 200ms ease-out, outline-offset 200ms ease-out; }\n"
 	"scrolledwindow.asuka-field:focus-within { outline-color: alpha(@accent_color, 0.5); outline-width: 2px; outline-offset: -2px; }\n"
 	"scrolledwindow.asuka-field:disabled { filter: opacity(0.5); }\n"

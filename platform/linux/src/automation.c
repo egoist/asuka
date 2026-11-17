@@ -1,7 +1,11 @@
 // automation.c: debug automation, as on macOS and Windows: ASUKA_SCRIPT
 // runs steps (tap:<text>, type:<text>, submit, back, escape, scroll:<y>,
 // resize:<w>,<h>, key:<shortcut>, menu:<item title>, tab:<title>, close,
-// wait:<d>, waitfor:<file>, snap:<file>), then ASUKA_SNAPSHOT=file.png
+// wait:<d>, waitfor:<file>, snap:<file>; on X11, real input through the X
+// server's XTest, as a user's: click:<text> (a press of the mouse's
+// button on the view showing text), clickat:<x>,<y> (in the main
+// window's root), press:<keys> (shift+tab, b, space)), then
+// ASUKA_SNAPSHOT=file.png
 // writes the window as a PNG (ASUKA_DUMP=1: its view tree beside it) and
 // quits. ASUKA_COMMANDS=dir drives the app from outside while it runs, as
 // the phones' debug hosts do (the e2e tests): commands written to
@@ -278,6 +282,78 @@ static void pick_item(node *n, void *data) {
 
 static void write_dump(const char *path);
 
+// ---- Real input (X11's XTest) ----
+
+bool lx_is_x11(GdkDisplay *d);
+
+static void *x_display(void) {
+	GdkDisplay *d = gdk_display_get_default();
+	if (!lx_is_x11(d) || !lx_lib_load(ASUKA_LIB_XTST) || !XTestFakeButtonEvent || !XTestFakeMotionEvent || !XTestFakeKeyEvent) return NULL;
+	return gdk_x11_display_get_xdisplay(d);
+}
+
+// screen_point is where x, y of w is on the X screen.
+static bool screen_point(GtkWidget *w, double x, double y, int *sx, int *sy) {
+	GtkNative *nat = gtk_widget_get_native(w);
+	void *dpy = x_display();
+	if (!nat || !dpy) return false;
+	graphene_point_t p = {(float)x, (float)y}, q;
+	if (!gtk_widget_compute_point(w, (GtkWidget *)nat, &p, &q)) return false;
+	double tx = 0, ty = 0;
+	gtk_native_get_surface_transform(nat, &tx, &ty);
+	GdkSurface *s = gtk_native_get_surface(nat);
+	int scale = gdk_surface_get_scale_factor(s);
+	unsigned long child;
+	return XTranslateCoordinates(dpy, gdk_x11_surface_get_xid(s), gdk_x11_display_get_xrootwindow(gdk_display_get_default()),
+		(int)((q.x + tx) * scale), (int)((q.y + ty) * scale), sx, sy, &child) != 0;
+}
+
+// real_click presses and lets go of the mouse's primary button at x, y of
+// w, through the X server.
+static bool real_click(GtkWidget *w, double x, double y) {
+	void *dpy = x_display();
+	int sx, sy;
+	if (!dpy || !screen_point(w, x, y, &sx, &sy)) return false;
+	XTestFakeMotionEvent(dpy, -1, sx, sy, 0);
+	XTestFakeButtonEvent(dpy, 1, 1, 30);
+	XTestFakeButtonEvent(dpy, 1, 0, 30);
+	XFlush(dpy);
+	return true;
+}
+
+// real_keys types a key with its modifiers (shift+tab, ctrl+k, b) through
+// the X server, to the window the pointer is put over.
+static bool real_keys(const char *spec) {
+	void *dpy = x_display();
+	if (!dpy || !H.main) return false;
+	static const char *const names[][2] = {{"enter", "Return"}, {"escape", "Escape"}, {"esc", "Escape"}, {"tab", "Tab"}, {"space", "space"},
+		{"delete", "Delete"}, {"backspace", "BackSpace"}, {"left", "Left"}, {"right", "Right"}, {"up", "Up"}, {"down", "Down"},
+		{"home", "Home"}, {"end", "End"}, {"pageup", "Prior"}, {"pagedown", "Next"}, {"ctrl", "Control_L"}, {"shift", "Shift_L"}, {"alt", "Alt_L"}};
+	unsigned int codes[8];
+	int n = 0;
+	char *copy = strdup(spec);
+	for (char *part = strtok(copy, "+"); part && n < 8; part = strtok(NULL, "+")) {
+		const char *name = part;
+		for (size_t i = 0; i < AK_LEN(names); i++)
+			if (!strcasecmp(part, names[i][0])) name = names[i][1];
+		unsigned long sym = XStringToKeysym(name);
+		unsigned int code = sym ? XKeysymToKeycode(dpy, sym) : 0;
+		if (!code) {
+			free(copy);
+			return false;
+		}
+		codes[n++] = code;
+	}
+	free(copy);
+	// The keys go where X's focus is: the window under the pointer.
+	int sx, sy;
+	if (H.main->root && screen_point(H.main->content, 1, 1, &sx, &sy)) XTestFakeMotionEvent(dpy, -1, sx, sy, 0);
+	for (int i = 0; i < n; i++) XTestFakeKeyEvent(dpy, codes[i], 1, 20);
+	for (int i = n; i-- > 0;) XTestFakeKeyEvent(dpy, codes[i], 0, 20);
+	XFlush(dpy);
+	return true;
+}
+
 static bool step(const char *s, char *err, size_t errn) {
 	const char *colon = strchr(s, ':');
 	char verb[32];
@@ -300,6 +376,26 @@ static bool step(const char *s, char *err, size_t errn) {
 		lx_each_node(pick_item, &pc);
 		if (pc.done) return true;
 		snprintf(err, errn, "nothing shows \"%s\"", arg);
+		return false;
+	}
+	if (!strcmp(verb, "click")) {
+		node *n = find_text_node(arg);
+		float w, h;
+		if (n) lx_size(n, n->widget, &w, &h);
+		if (n && real_click(n->widget, w / 2, h / 2)) return true;
+		snprintf(err, errn, n ? "no X11 XTest to click with" : "nothing shows \"%s\"", arg);
+		return false;
+	}
+	if (!strcmp(verb, "clickat")) {
+		double x = 0, y = 0;
+		sscanf(arg, "%lf,%lf", &x, &y);
+		if (H.main && H.main->root && H.main->root->widget && real_click(H.main->root->widget, x, y)) return true;
+		snprintf(err, errn, "no X11 XTest to click with");
+		return false;
+	}
+	if (!strcmp(verb, "press")) {
+		if (real_keys(arg)) return true;
+		snprintf(err, errn, "%s: no X11 XTest, or a key it hasn't", arg);
 		return false;
 	}
 	if (!strcmp(verb, "key")) {
@@ -426,6 +522,23 @@ void lx_dump_node(node *n, int depth, ak_buf *b) {
 	if (n->hidden) ak_buf_put(b, " hidden", 7);
 	if (n->widget && !gtk_widget_get_mapped(n->widget)) ak_buf_put(b, " unmapped", 9);
 	if (n->rtl) ak_buf_put(b, " rtl", 4);
+	// The keyboard's focus, as GTK has it.
+	if (n->focusable) ak_buf_put(b, " focusable", 10);
+	if (n->focus_trap) ak_buf_put(b, " trap", 5);
+	if (n->widget && gtk_widget_has_css_class) {
+		GtkWidget *c = lx_control_of(n);
+		if (c && gtk_widget_has_css_class(c, "asuka-no-focus-ring")) ak_buf_put(b, " noring", 7);
+	}
+	win *w = n->widget ? lx_win_of(n) : NULL;
+	if (w && w->window) {
+		GtkWidget *f = gtk_window_get_focus(w->window);
+		while (f && !lx_view_node(f)) f = gtk_widget_get_parent(f);
+		if (f && lx_view_node(f) == n) {
+			ak_buf_put(b, " focused", 8);
+			if (gtk_window_get_focus_visible && gtk_window_get_focus_visible(w->window)) ak_buf_put(b, "-visible", 8);
+		}
+	}
+	lx_a11y_dump(n, b);
 	if (!str_empty(n->text)) {
 		ak_buf_u8(b, ' ');
 		quote(b, n->text);

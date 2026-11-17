@@ -107,7 +107,7 @@ void lx_create(ak_id id, ak_view_kind kind) {
 		if (!lx_create_nav(n)) lx_create_more(n);
 	}
 	lx_add_node(n);
-	if (n->widget && !n->inner && n->kind != AK_KIND_VIEW) gtk_widget_set_can_target(n->widget, 1);
+	if (n->widget && !n->inner && n->kind != AK_KIND_VIEW && n->kind != AK_KIND_OVERLAY) gtk_widget_set_can_target(n->widget, 1);
 }
 
 // lx_set_inner makes c the control in n's view.
@@ -310,6 +310,23 @@ void lx_set_common(node *n, ak_prop p, const ak_value *v) {
 		break;
 	case AK_PROP_A11Y_ADJUSTABLE:
 		lx_set_adjustable(n, v->i != 0);
+		break;
+	case AK_PROP_FOCUSABLE:
+	case AK_PROP_NO_FOCUS_ON_PRESS:
+	case AK_PROP_NO_FOCUS_RING:
+	case AK_PROP_FOCUS_TRAP:
+		lx_set_focus_prop(n, p, v);
+		break;
+	case AK_PROP_A11Y_CHECKED:
+	case AK_PROP_A11Y_EXPANDED:
+	case AK_PROP_A11Y_SELECTED:
+	case AK_PROP_A11Y_VALUE:
+	case AK_PROP_A11Y_RANGE:
+	case AK_PROP_A11Y_MODAL:
+	case AK_PROP_A11Y_CONTROLS:
+	case AK_PROP_A11Y_LABELLED_BY:
+	case AK_PROP_A11Y_DESCRIBED_BY:
+		lx_set_a11y(n, p, v);
 		break;
 	default:
 		lx_set_common_more(n, p, v);

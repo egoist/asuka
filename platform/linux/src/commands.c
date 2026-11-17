@@ -14,21 +14,17 @@ void lx_command(node *n, ak_cmd c, ak_span args) {
 	ak_reader r = {(const uint8_t *)args.p, args.len, 0, false};
 	switch (c) {
 	case AK_CMD_FOCUS:
-		if (n->kind == AK_KIND_TEXT_FIELD)
-			lx_focus_field(n);
-		else if (n->widget)
-			gtk_widget_grab_focus(n->widget);
+	case AK_CMD_BLUR:
+		lx_focus_command(n, c == AK_CMD_FOCUS);
 		return;
-	case AK_CMD_BLUR: {
-		win *w = lx_win_of(n);
-		if (w) gtk_window_set_focus(w->window, NULL);
-		return;
-	}
 	case AK_CMD_INSERT_TEXT:
 		if (n->kind == AK_KIND_TEXT_FIELD) lx_insert_text(n, args);
 		return;
 	case AK_CMD_PRESENT:
-		lx_present(n);
+		if (n->kind == AK_KIND_OVERLAY)
+			lx_command_more(n, c, args);  // over its root's others (overlay.c)
+		else
+			lx_present(n);
 		return;
 	case AK_CMD_HAPTIC:
 		return;  // desktops have no haptics

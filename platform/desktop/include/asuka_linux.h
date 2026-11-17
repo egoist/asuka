@@ -825,6 +825,7 @@ typedef enum { GTK_JUSTIFY_LEFT, GTK_JUSTIFY_RIGHT, GTK_JUSTIFY_CENTER, GTK_JUST
 typedef enum { GTK_TEXT_DIR_NONE, GTK_TEXT_DIR_LTR, GTK_TEXT_DIR_RTL } GtkTextDirection;
 typedef enum { GTK_CONTENT_FIT_FILL, GTK_CONTENT_FIT_CONTAIN, GTK_CONTENT_FIT_COVER, GTK_CONTENT_FIT_SCALE_DOWN } GtkContentFit;
 typedef enum { GTK_PHASE_NONE, GTK_PHASE_CAPTURE, GTK_PHASE_BUBBLE, GTK_PHASE_TARGET } GtkPropagationPhase;
+typedef enum { GTK_LIMIT_NONE, GTK_LIMIT_SAME_NATIVE } GtkPropagationLimit;
 typedef enum { GTK_EVENT_SEQUENCE_NONE, GTK_EVENT_SEQUENCE_CLAIMED, GTK_EVENT_SEQUENCE_DENIED } GtkEventSequenceState;
 typedef enum {
 	GTK_EVENT_CONTROLLER_SCROLL_NONE = 0,
@@ -1058,6 +1059,7 @@ enum {
 	ASUKA_LIB_PIXBUF,   // gdk-pixbuf
 	ASUKA_LIB_SHUMATE,  // libshumate: maps
 	ASUKA_LIB_GEOCODE,  // geocode-glib: place names
+	ASUKA_LIB_XTST,     // libXtst: the host's automation's real input (X11)
 	ASUKA_LIB_COUNT,
 };
 

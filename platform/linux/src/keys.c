@@ -158,6 +158,7 @@ static gboolean on_key(GtkEventControllerKey *k, guint keyval, guint keycode, Gd
 	key_route *kr = data;
 	win *w = kr->w;
 	node *start;
+	H.key_input = true;  // focus that comes now is visible (focus.c)
 	if (w) {
 		start = w->root;
 	} else {

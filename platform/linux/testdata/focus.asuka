@@ -1,0 +1,54 @@
+// The keyboard's focus on views (TestFocus): a press focuses a focusable
+// view, Tab and Shift+Tab move the focus (visibly), a focus trap keeps it
+// in, typing goes to the focused view (keyText), a press says where it
+// began (pressStart), a view that keeps the focus where it was isn't
+// focused by a press (pressKeepsFocus), and a view that draws its own
+// ring has none of GTK's.
+
+app { Focus() }
+
+component Focus {
+  state log = ""
+  state typed = ""
+  state at = ""
+
+  Column {
+    padding: 16
+    gap: 8
+    View as a {
+      focusable: true
+      padding: 4
+      on focusChange(f) { log = "{log} a:{f}" }
+      on keyText(t) { typed = typed + t }
+      Text(if a.focusVisible { "A visible" } else if a.focused { "A focused" } else { "A idle" })
+    }
+    View as b {
+      focusable: true
+      padding: 4
+      hideFocusRing: true
+      Text(if b.focusVisible { "B visible" } else if b.focused { "B focused" } else { "B idle" })
+    }
+    View {
+      trapFocus: true
+      gap: 8
+      View as one { focusable: true; padding: 4; Text(if one.focused { "One focused" } else { "One idle" }) }
+      View as two { focusable: true; padding: 4; Text(if two.focused { "Two focused" } else { "Two idle" }) }
+    }
+    View as after { focusable: true; padding: 4; Text(if after.focused { "After focused" } else { "After idle" }) }
+    View {
+      padding: 4
+      on pressStart(x, y) { at = "{x},{y}" }
+      on press { }
+      Text("Point")
+    }
+    View as keep {
+      focusable: true
+      pressKeepsFocus: true
+      padding: 4
+      Text(if keep.focused { "Keep focused" } else { "Keep idle" })
+    }
+    Text("Log:{log}")
+    Text("Typed:{typed}")
+    Text("At:{at}")
+  }
+}

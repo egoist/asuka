@@ -42,6 +42,10 @@ static events *ev_of(node *n) {
 }
 
 void lx_release_events(node *n) {
+	if (n->key_text) {
+		g_signal_handlers_disconnect_matched(n->key_text, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, n);
+		n->key_text = NULL;
+	}
 	events *e = n->events;
 	if (!e) return;
 	gpointer ctrls[] = {e->click, e->lng, e->drag, e->swipe, e->zoom, e->rotate, e->secondary, e->motion, e->key, e->wheel};
@@ -75,8 +79,7 @@ void lx_press(node *n) {
 static void on_pressed(GtkGestureClick *g, int count, double x, double y, node *n) {
 	(void)g;
 	(void)count;
-	(void)x;
-	(void)y;
+	lx_emit(n, (ak_event){.kind = AK_EVENT_PRESS_POINT, .x = x, .y = y});  // where, first
 	ev_of(n)->pressed_on = true;
 	lx_emit(n, (ak_event){.kind = AK_EVENT_PRESSED, .b = true});
 }
@@ -137,18 +140,16 @@ static gboolean on_press_key(GtkEventControllerKey *k, guint keyval, guint keyco
 }
 
 // lx_make_pressable lets the keyboard reach and press a view that
-// presses: Tab focuses it (a focus ring shows), Enter and Space press it,
-// as a button.
+// presses: Tab focuses it (a focus ring shows), and a press does unless
+// NoFocusOnPress; Enter and Space press it, as a button.
 void lx_make_pressable(node *n) {
 	events *e = ev_of(n);
 	if (e->key) return;
-	gtk_widget_set_focusable(n->widget, 1);
-	gtk_widget_set_focus_on_click(n->widget, 0);
-	gtk_widget_add_css_class(n->widget, "asuka-focus-ring");
 	GtkEventController *k = gtk_event_controller_key_new();
 	e->key = k;
 	lx_connect(n, k, "key-pressed", G_CALLBACK(on_press_key));
 	gtk_widget_add_controller(n->widget, k);
+	lx_update_focusable(n);  // a Tab stop, focused by a press (focus.c)
 	lx_update_a11y(n);
 }
 
@@ -457,6 +458,12 @@ void lx_listen(node *n, ak_event_kind e) {
 		if (n->kind == AK_KIND_BUTTON) return;  // clicked
 		lx_listen_click(n);
 		if (e == AK_EVENT_PRESS) lx_make_pressable(n);
+		return;
+	case AK_EVENT_PRESS_POINT:
+		if (n->kind != AK_KIND_BUTTON) lx_listen_click(n);
+		return;
+	case AK_EVENT_KEY_TEXT:
+		lx_listen_key_text(n);
 		return;
 	case AK_EVENT_LONG_PRESS:
 		lx_listen_long_press(n);

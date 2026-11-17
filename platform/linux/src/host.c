@@ -503,6 +503,14 @@ void lx_insert(node *p, node *c, uint32_t index) {
 			break;
 		}
 	}
+	if (!next) {
+		// Last of p's own, under the overlays over p (overlay.c).
+		for (GtkWidget *x = gtk_widget_get_last_child(p->widget); x; x = gtk_widget_get_prev_sibling(x)) {
+			node *o = lx_view_node(x);
+			if (!o || o->kind != AK_KIND_OVERLAY || o->parent) break;
+			next = x;
+		}
+	}
 	gtk_widget_insert_before(c->widget, p->widget, next);
 	gtk_widget_queue_allocate(p->widget);
 }

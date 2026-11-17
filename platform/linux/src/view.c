@@ -9,7 +9,9 @@
 // a canvas), its children (clipped to its rounded shape when it clips)
 // and its border over them, as a layer does; measure asks for nothing
 // (the core lays out), but a scroll's content asks for its frame, which
-// the viewport scrolls.
+// the viewport scrolls; focus keeps the focus in a focus trap (focus.c);
+// contains takes no presses for an Overlay that isn't modal (its children
+// do: overlay.c).
 #include "host.h"
 
 #include <math.h>
@@ -23,19 +25,25 @@ enum {
 	OFF_OBJECT_DISPOSE = 40,
 	OFF_WIDGET_SIZE_ALLOCATE = 200,
 	OFF_WIDGET_MEASURE = 232,
+	OFF_WIDGET_FOCUS = 256,
 	OFF_WIDGET_SNAPSHOT = 320,
+	OFF_WIDGET_CONTAINS = 328,
 };
 #else
 enum {
 	OFF_OBJECT_DISPOSE = 20,
 	OFF_WIDGET_SIZE_ALLOCATE = 100,
 	OFF_WIDGET_MEASURE = 116,
+	OFF_WIDGET_FOCUS = 128,
 	OFF_WIDGET_SNAPSHOT = 160,
+	OFF_WIDGET_CONTAINS = 164,
 };
 #endif
 
 static size_t node_offset;  // where an AsukaView keeps its node
 static void (*parent_dispose)(GObject *o);
+static gboolean (*parent_focus)(GtkWidget *w, GtkDirectionType d);
+static gboolean (*parent_contains)(GtkWidget *w, double x, double y);
 
 #define SET_VFUNC(class, off, fn) (*(void **)((char *)(class) + (off)) = (void *)(fn))
 #define GET_VFUNC(class, off) (*(void **)((char *)(class) + (off)))
@@ -82,10 +90,28 @@ static void view_dispose(GObject *o) {
 	parent_dispose(o);
 }
 
+// focus: GTK's, but a focus trap keeps it in (lx_trap_focus).
+static gboolean view_focus(GtkWidget *w, GtkDirectionType d) {
+	if (parent_focus(w, d)) return 1;
+	return lx_trap_focus(w, d);
+}
+
+// contains: an Overlay that isn't modal takes no presses itself (GTK
+// picks its children first, then what's under it).
+static gboolean view_contains(GtkWidget *w, double x, double y) {
+	node *n = lx_view_node(w);
+	if (n && n->kind == AK_KIND_OVERLAY && !lx_overlay_modal(n)) return 0;
+	return parent_contains(w, x, y);
+}
+
 static void class_init(gpointer class, gpointer data) {
 	(void)data;
 	gpointer parent = g_type_class_peek_parent(class);
 	parent_dispose = GET_VFUNC(parent, OFF_OBJECT_DISPOSE);
+	parent_focus = GET_VFUNC(parent, OFF_WIDGET_FOCUS);
+	parent_contains = GET_VFUNC(parent, OFF_WIDGET_CONTAINS);
+	SET_VFUNC(class, OFF_WIDGET_FOCUS, view_focus);
+	SET_VFUNC(class, OFF_WIDGET_CONTAINS, view_contains);
 	SET_VFUNC(class, OFF_OBJECT_DISPOSE, view_dispose);
 	SET_VFUNC(class, OFF_WIDGET_SNAPSHOT, view_snapshot);
 	SET_VFUNC(class, OFF_WIDGET_SIZE_ALLOCATE, view_allocate);
@@ -116,6 +142,7 @@ bool lx_is_layout_root(const node *n) {
 	case AK_KIND_SHEET:
 	case AK_KIND_WINDOW:
 	case AK_KIND_POPOVER:
+	case AK_KIND_OVERLAY:
 		return true;
 	}
 	return false;
@@ -165,6 +192,11 @@ void lx_allocate_view(GtkWidget *w, int width, int height) {
 		// A node's view; or one going out (a transition, a match: no
 		// parent any more), at the frame it goes with.
 		node *cn = lx_view_node(c);
+		if (cn && cn->kind == AK_KIND_OVERLAY && !cn->parent) {
+			// An overlay over this root: its whole area (overlay.c).
+			lx_allocate(c, width, height, 0, 0, NULL);
+			continue;
+		}
 		if (cn && cn->parent == n && lx_is_layout_root(cn) && !cn->placed) {
 			// A root the host sizes, in another view (a screen's own Screen in
 			// the stack's): it fills it.

@@ -67,6 +67,10 @@ void lx_root_allocated(node *n, int width, int height) {
 // lx_root_env is a host-sized root's environment: its window's, at its
 // size.
 void lx_root_env(node *n, ak_environment *env) {
+	if (n->kind == AK_KIND_OVERLAY) {
+		lx_overlay_env(n, env);  // its root's, at its size
+		return;
+	}
 	*env = H.env;
 	win *w = lx_win_of(n);
 	if (w && w != H.main) lx_win_env(w, env);

@@ -47,6 +47,7 @@ static const lib_names sonames[ASUKA_LIB_COUNT] = {
 	[ASUKA_LIB_PIXBUF] = {{"libgdk_pixbuf-2.0.so.0", "libgdk_pixbuf-2.0.so"}},
 	[ASUKA_LIB_SHUMATE] = {{"libshumate-1.0.so.1", "libshumate-1.0.so"}},
 	[ASUKA_LIB_GEOCODE] = {{"libgeocode-glib-2.so.0", "libgeocode-glib.so.0", "libgeocode-glib-2.so"}},
+	[ASUKA_LIB_XTST] = {{"libXtst.so.6", "libXtst.so"}},
 };
 
 static void *handles[ASUKA_LIB_COUNT];

@@ -1,0 +1,63 @@
+// Overlays (TestOverlayLayer): one placed under its anchor, which follows
+// the anchor as the view around it scrolls; a press outside closes it and
+// still reaches what it lands on; a modal one takes every press, the rest
+// of the window hidden from screen readers; Escape; the last presented
+// on top.
+
+app {
+  Scroll { Layer() }
+}
+
+component Layer {
+  state open = false
+  state dialog = false
+  state reason = "none"
+  state dreason = "none"
+  state picked = "nothing"
+  state behind = 0
+  let trigger = Ref()
+
+  Column {
+    padding: 20
+    gap: 8
+    Text("Closed by {reason}")
+    Text("Dialog closed by {dreason}")
+    Text("Picked {picked}")
+    Text("Behind {behind}")
+    Button("Elsewhere") { on press { picked = "elsewhere" } }
+    Button("Show dialog") { on press { dialog = true } }
+    Button("Behind") { on press { behind += 1 } }
+    View {
+      ref: trigger
+      padding: 8
+      on press { open = !open }
+      Text("Choose")
+    }
+    View { height: 1500 }
+    Overlay {
+      bind open: open
+      anchor: trigger
+      offset: 4
+      on dismiss(r) { reason = "{r}" }
+      Column {
+        background: #ffffff
+        Button("Apple") { on press { picked = "apple"; open = false } }
+        Button("Pear") { on press { picked = "pear"; open = false } }
+      }
+    }
+    Overlay {
+      bind open: dialog
+      side: .center
+      modal: true
+      on dismiss(r) { dreason = "{r}" }
+      View {
+        role: .dialog
+        a11yModal: true
+        padding: 16
+        background: #ffffff
+        Text("Are you sure?")
+        Button("Close") { on press { dialog = false } }
+      }
+    }
+  }
+}

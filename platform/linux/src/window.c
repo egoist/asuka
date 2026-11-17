@@ -77,6 +77,7 @@ win *lx_new_win(GtkWindow *window) {
 		adw_window_set_content((AdwWindow *)window, (GtkWidget *)w->toolbar);
 	ak_vec_push(&H.wins, w);
 	lx_route_keys(w);
+	lx_watch_focus(w);
 	lx_watch_window(w);
 	g_signal_connect(window, "notify::is-active", G_CALLBACK(on_active), w);
 	lx_watch_window_state(w);
