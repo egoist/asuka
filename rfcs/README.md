@@ -25,6 +25,7 @@ Each RFC is a file `NNNN-short-name.md` with a header:
 | [0008](0008-no-go-at-run-time-and-c-ffi.md) | No Go at run time, and C from Asuka | Accepted |
 | [0009](0009-styles.md) | Composable styles | Built |
 | [0010](0010-headless-components.md) | Headless components | Built |
+| [0011](0011-everyday-language.md) | The everyday language: `mut fn`, type tests, extensions, iteration, workers | Draft |
 
 ## Background: hot reload today
 
