@@ -29,6 +29,7 @@ Each RFC is a file `NNNN-short-name.md` with a header:
 | [0012](0012-reactivity-said-and-checked.md) | What the UI follows, said and checked: following states, `peek`, effects' dependencies, keys | Draft |
 | [0013](0013-per-path-tracking.md) | Per-path tracking: reads follow their path, writes notify theirs | Draft |
 | [0014](0014-loads-hold-what-they-show.md) | Loads hold what they show: `.pending` only before the first answer, `loading` | Draft |
+| [0015](0015-diagnostics-with-codes.md) | Diagnostics with codes, for people and agents: one table, `asuka explain`, run-time detectors, `AGENTS.md` | Draft |
 
 ## Background: hot reload today
 
