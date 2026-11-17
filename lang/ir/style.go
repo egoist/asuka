@@ -17,10 +17,13 @@ import (
 // layers of their state.
 
 const (
-	uiLayer     = "ui.layer"      // (view, tier int, state int) -> int: the layer
-	uiLayerSet  = "ui.layer_set"  // (view, layer int, key int, value) -> void
-	uiLayerBind = "ui.layer_bind" // (view, layer, key, thunk) -> void
-	uiLayerWhen = "ui.layer_when" // (view, layer, cond closure -> bool) -> void
+	uiLayer          = "ui.layer"           // (view, tier int, state int) -> int: the layer
+	uiLayerSet       = "ui.layer_set"       // (view, layer int, key int, value) -> void
+	uiLayerBind      = "ui.layer_bind"      // (view, layer, key, thunk) -> void
+	uiLayerWhen      = "ui.layer_when"      // (view, layer, cond closure -> bool) -> void
+	uiLayerVariant   = "ui.layer_variant"   // (view, layer, id int) -> void: on while the declared variant holds
+	uiVariantDeclare = "ui.variant_declare" // (view, id int, cond closure -> bool) -> void
+	uiVariantRead    = "ui.variant_read"    // (view, id int) -> bool, tracked
 )
 
 // The layer tiers (core/src/ui/ui.h's AK_LAYER_*).
@@ -28,7 +31,22 @@ const (
 	layerOwn = iota
 	layerOuter
 	layerState
+	layerVariant
 )
+
+// variantID is a declared variant's id, the program's: what its
+// component declares on the view it shows, and its callers' layers name.
+func (l *Lowerer) variantID(d *check.VariantDef) int64 {
+	if l.variantIDs == nil {
+		l.variantIDs = map[*check.VariantDef]int64{}
+	}
+	id, ok := l.variantIDs[d]
+	if !ok {
+		id = int64(len(l.variantIDs) + 1)
+		l.variantIDs[d] = id
+	}
+	return id
+}
 
 // A styleEnv is an application of a style: the registers of its
 // parameters and uses, and which hold memos.
@@ -51,7 +69,8 @@ type stylePiece struct {
 	value  syntax.Expr
 	env    *styleEnv
 	guards []styleGuard
-	state  string // a variant's state; "" for none
+	state  string             // an interaction state's variant; "" for none
+	decl   *check.VariantDef // a declared variant's; nil for none
 }
 
 // A styleTarget is where a list's props go.
@@ -60,6 +79,31 @@ type styleTarget struct {
 	outer    bool         // a component's caller's: over the component's own
 	variants bool         // the view takes variants
 	block    map[int]bool // the keys the block sets, over the list's
+	// comp is the component whose caller's list it is (outer): a style's
+	// block named after a variant it declares is laid on while that holds.
+	comp *check.TypeName
+	// declared: the layers of declared variants, kept for the caller to
+	// make in their components' order (outerStyle); nil: made at once.
+	declared *[][]stylePiece
+}
+
+// A flatCtx is what flattening a list keeps from its target.
+type flatCtx struct {
+	variants bool            // interaction states' blocks apply
+	comp     *check.TypeName // declared variants' blocks resolve against it
+}
+
+// findVariant is the variant a style of package from names on comp's
+// view: one its components declare, pub unless from is theirs.
+func (b *fb) findVariant(comp *check.TypeName, name string, from *check.Package) *check.VariantDef {
+	if comp == nil {
+		return nil
+	}
+	d := b.l.prog.FindVariant(comp, name)
+	if d == nil || !d.Pub && d.Owner.Pkg != from {
+		return nil
+	}
+	return d
 }
 
 // bindEnv makes an application's locals the registers its code reads.
@@ -139,13 +183,14 @@ func (b *fb) styleApply(d *check.StyleDef, args []syntax.Expr, outer *styleEnv) 
 	return env
 }
 
-// styleFlatten adds the props a list sets to out, in order.
-func (b *fb) styleFlatten(entries []*check.StyleEntry, env *styleEnv, guards []styleGuard, state string, variants bool, out *[]stylePiece) {
+// styleFlatten adds the props a list sets to out, in order. state and
+// decl are the variant the list is in (a variant's style:), if any.
+func (b *fb) styleFlatten(entries []*check.StyleEntry, env *styleEnv, guards []styleGuard, state string, decl *check.VariantDef, fc flatCtx, out *[]stylePiece) {
 	for _, e := range entries {
 		if e.Cond != nil {
 			for i, br := range e.Cond.Branches {
 				g := append(append([]styleGuard(nil), guards...), styleGuard{e.Cond, i, env})
-				b.styleFlatten(br, env, g, state, variants, out)
+				b.styleFlatten(br, env, g, state, decl, fc, out)
 			}
 			continue
 		}
@@ -154,28 +199,40 @@ func (b *fb) styleFlatten(entries []*check.StyleEntry, env *styleEnv, guards []s
 			continue
 		}
 		app := b.styleApply(d, e.Args, env)
-		b.styleItems(d.Items, app, guards, state, variants, out)
+		b.styleItems(d.Items, d.Pkg, app, guards, state, decl, fc, out)
 	}
 }
 
-func (b *fb) styleItems(items []*check.StyleItem, env *styleEnv, guards []styleGuard, state string, variants bool, out *[]stylePiece) {
+// styleItems adds a style's items (of package from) to out.
+func (b *fb) styleItems(items []*check.StyleItem, from *check.Package, env *styleEnv, guards []styleGuard, state string, decl *check.VariantDef, fc flatCtx, out *[]stylePiece) {
 	for _, it := range items {
 		switch {
 		case it.Prop != nil:
 			name := it.Prop.Member.Name()
-			*out = append(*out, stylePiece{member: it.Prop.Member, key: prelude.KeyID("", name), value: it.Prop.Value, env: env, guards: guards, state: state})
+			*out = append(*out, stylePiece{member: it.Prop.Member, key: prelude.KeyID("", name), value: it.Prop.Value, env: env, guards: guards, state: state, decl: decl})
 		case it.Style != nil:
-			b.styleFlatten(it.Style, env, guards, state, variants, out)
+			b.styleFlatten(it.Style, env, guards, state, decl, fc, out)
 		case it.Variant != nil:
-			if state == "" && variants {
-				b.styleItems(it.Variant.Items, env, guards, it.Variant.State, variants, out)
+			if state != "" || decl != nil {
+				continue // a variant's style holds no variants (the checker's)
+			}
+			name := it.Variant.State
+			if prelude.StateID(name) != 0 {
+				if fc.variants {
+					b.styleItems(it.Variant.Items, from, env, guards, name, nil, fc, out)
+				}
+			} else if d := b.findVariant(fc.comp, name, from); d != nil {
+				// A variant the component declares; elsewhere nothing.
+				b.styleItems(it.Variant.Items, from, env, guards, "", d, fc, out)
 			}
 		}
 	}
 }
 
+func plainPiece(p stylePiece) bool { return p.state == "" && p.decl == nil && len(p.guards) == 0 }
+
 func sameLayer(a, b stylePiece) bool {
-	if a.state != b.state || len(a.guards) != len(b.guards) {
+	if a.state != b.state || a.decl != b.decl || len(a.guards) != len(b.guards) {
 		return false
 	}
 	for i := range a.guards {
@@ -192,27 +249,33 @@ func (b *fb) applyStyle(entries []*check.StyleEntry, t styleTarget) {
 		return
 	}
 	var pieces []stylePiece
-	b.styleFlatten(entries, nil, nil, "", t.variants, &pieces)
-	plain := func(p stylePiece) bool { return p.state == "" && len(p.guards) == 0 }
+	b.styleFlatten(entries, nil, nil, "", nil, flatCtx{variants: t.variants, comp: t.comp}, &pieces)
+	b.applyPieces(pieces, t)
+}
+
+// applyPieces sets a flattened list's props: those under no condition as
+// the block's are, the rest as layers.
+func (b *fb) applyPieces(pieces []stylePiece, t styleTarget) {
 	// The props under no condition: the last of each key, under the
 	// block's.
 	lastPlain := map[int]int{}
 	for i, p := range pieces {
-		if plain(p) {
+		if plainPiece(p) {
 			lastPlain[p.key] = i
 		}
 	}
 	for i, p := range pieces {
-		if plain(p) && !t.block[p.key] && lastPlain[p.key] == i {
+		if plainPiece(p) && !t.block[p.key] && lastPlain[p.key] == i {
 			b.styleSet(t, p)
 		}
 	}
 	// The layers: each run of props under the same conditions (and
-	// state), in order. A prop the block sets, or a later one under no
-	// condition, is over a condition's: the layer leaves it out.
+	// variant), in order. A prop the block sets, or a later one under no
+	// condition, is over a condition's: the layer leaves it out. A
+	// variant's are over them.
 	for i := 0; i < len(pieces); {
 		p := pieces[i]
-		if plain(p) {
+		if plainPiece(p) {
 			i++
 			continue
 		}
@@ -223,7 +286,7 @@ func (b *fb) applyStyle(entries []*check.StyleEntry, t styleTarget) {
 		var keep []stylePiece
 		for k := i; k < j; k++ {
 			q := pieces[k]
-			if q.state == "" {
+			if q.state == "" && q.decl == nil {
 				if t.block[q.key] {
 					continue
 				}
@@ -241,7 +304,11 @@ func (b *fb) applyStyle(entries []*check.StyleEntry, t styleTarget) {
 				keep = append(keep, q)
 			}
 		}
-		if len(keep) > 0 {
+		switch {
+		case len(keep) == 0:
+		case keep[0].decl != nil && t.declared != nil:
+			*t.declared = append(*t.declared, keep) // made in their components' order
+		default:
 			b.styleLayer(t, keep)
 		}
 		i = j
@@ -288,13 +355,22 @@ func (b *fb) styleLayer(t styleTarget, pieces []stylePiece) {
 	if p.state != "" {
 		tier, state = layerState, prelude.StateID(p.state)
 	}
+	if p.decl != nil {
+		tier = layerVariant
+	}
 	id := b.local(bc.KInt)
 	mark := b.mark()
 	b.callBTo(uiLayer, id, t.v, b.konst(int64(tier)), b.konst(int64(state)))
 	b.release(mark)
-	if len(p.guards) > 0 {
+	switch {
+	case p.decl != nil && len(p.guards) == 0:
+		// On while the variant holds: its component's condition.
 		mark := b.mark()
-		b.callBTo(uiLayerWhen, bc.None, t.v, id, b.styleCond(p.guards))
+		b.callBTo(uiLayerVariant, bc.None, t.v, id, b.konst(b.l.variantID(p.decl)))
+		b.release(mark)
+	case len(p.guards) > 0:
+		mark := b.mark()
+		b.callBTo(uiLayerWhen, bc.None, t.v, id, b.styleCond(p.guards, t.v, p.decl))
 		b.release(mark)
 	}
 	for _, q := range pieces {
@@ -317,18 +393,28 @@ func (b *fb) styleLayer(t styleTarget, pieces []stylePiece) {
 }
 
 // styleCond is a closure that reports whether every guard's branch is
-// the one its condition takes.
-func (b *fb) styleCond(guards []styleGuard) int {
+// the one its condition takes, and (decl set) the declared variant of
+// view v holds.
+func (b *fb) styleCond(guards []styleGuard, v int, decl *check.VariantDef) int {
 	var ctxs []*check.FuncCtx
 	for _, g := range guards {
 		b.bindEnv(g.env)
 		ctxs = append(ctxs, b.l.info.Ctxs[g.cond.Node])
 	}
-	return b.makeClosure(closure{name: "style condition", ctxs: ctxs, ret: bc.KBool, throws: true, body: func(c *fb) {
+	var extra []extraCap
+	vv := &check.Var{Type: check.View}
+	if decl != nil {
+		extra = append(extra, extraCap{vv, v})
+	}
+	return b.makeClosure(closure{name: "style condition", ctxs: ctxs, extra: extra, ret: bc.KBool, throws: true, body: func(c *fb) {
 		fail := c.f.NewLabel()
 		for _, g := range guards {
 			c.at(g.cond.Node)
 			c.styleTaken(g.cond, g.branch, fail)
+		}
+		if decl != nil {
+			on := c.callB(uiVariantRead, bc.KBool, c.vars[vv], c.konst(b.l.variantID(decl)))
+			c.emitJump(op("JF"), on, fail)
 		}
 		yes := c.temp(bc.KBool)
 		c.emit(op("KSMALL"), yes, 1)
@@ -397,7 +483,7 @@ func blockKeys(el string, props []*check.PropArg, outer bool) map[int]bool {
 // its state, under the variant's own props.
 func (b *fb) variantStyle(v int, va *check.VariantArg, state int) {
 	var pieces []stylePiece
-	b.styleFlatten(va.Style, nil, nil, "", false, &pieces)
+	b.styleFlatten(va.Style, nil, nil, "", nil, flatCtx{}, &pieces)
 	own := map[int]bool{}
 	for _, p := range va.Props {
 		own[prelude.KeyID("", p.Member.Name())] = true

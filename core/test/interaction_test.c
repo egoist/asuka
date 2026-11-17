@@ -346,6 +346,145 @@ TEST(toggling_layers_allocates_nothing) {
 	ak_release(flag_a), ak_release(flag_b);
 }
 
+// ---- Declared variants (variant checked = …) ----
+
+static ak_view *declared;
+
+static ak_val declared_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	ak_view *v = ak_ui_new(AK_EL_VIEW);
+	set(v, AK_KEY_PADDING, edges4(4, 4, 4, 4));
+	// The component's: its own background, its pressed { … }, and its
+	// variants a (checked) and b (disabled), in that order.
+	set_i(v, AK_KEY_BACKGROUND, (int64_t)sem(AK_SEMANTIC_COLOR_SECONDARY_BACKGROUND));
+	ak_ui_variant(v, AK_STATE_PRESSED, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_SEPARATOR)});
+	ak_closure *ca = fn(read_a, NULL), *cb = fn(read_b, NULL);
+	ak_ui_variant_declare(v, 7, ca);
+	ak_ui_variant_declare(v, 8, cb);
+	ak_release(ca), ak_release(cb);
+	// Its caller's: a background, then checked { … } and disabled { … }.
+	ak_ui_set_outer(v, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_GREEN)});
+	uint16_t lc = ak_ui_layer(v, AK_LAYER_VARIANT, 0);
+	ak_ui_layer_variant(v, lc, 7);
+	ak_ui_layer_set(v, lc, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_BLUE)});
+	ak_ui_layer_set(v, lc, AK_KEY_BORDER_COLOR, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_ACCENT)});
+	uint16_t ld = ak_ui_layer(v, AK_LAYER_VARIANT, 0);
+	ak_ui_layer_variant(v, ld, 8);
+	ak_ui_layer_set(v, ld, AK_KEY_BACKGROUND, (ak_val){.i = (int64_t)sem(AK_SEMANTIC_COLOR_RED)});
+	add(col, v);
+	declared = v;
+	return (ak_val){.p = col};
+}
+
+// A caller's block of a variant its component declares is laid over the
+// view while the variant holds: over the interaction states, the
+// caller's own values and the component's; of two that hold, the one
+// declared later wins.
+TEST(declared_variants) {
+	flag_a = cell_bool(false), flag_b = cell_bool(false);
+	ak_uitest *a = mount(declared_app, NULL);
+	ak_fake_view *v = nth(a, AK_KIND_VIEW, 1);
+	REQUIRE(v);
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_GREEN) && border(v) == 0);
+	CHECK(!ak_ui_variant_read(declared, 7));
+	CHECK(!ak_ui_variant_read(declared, 99));  // a variant it doesn't have
+	write_b(flag_a, true);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_BLUE) && border(v) == sem(AK_SEMANTIC_COLOR_ACCENT));
+	CHECK(ak_ui_variant_read(declared, 7));
+	set_state(a, v, AK_EVENT_PRESSED, true);
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_BLUE));  // the variant is over pressed
+	write_b(flag_b, true);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_RED) && border(v) == sem(AK_SEMANTIC_COLOR_ACCENT));
+	write_b(flag_a, false), write_b(flag_b, false);
+	ak_ui_flush();
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_SEPARATOR) && border(v) == 0);  // pressed, under them
+	set_state(a, v, AK_EVENT_PRESSED, false);
+	CHECK(bg(v) == sem(AK_SEMANTIC_COLOR_GREEN));
+	done(a);
+	ak_release(flag_a), ak_release(flag_b);
+}
+
+TEST(toggling_declared_variants_allocates_nothing) {
+	setup();
+	flag_a = cell_bool(false), flag_b = cell_bool(false);
+	layer_host = ak_fake_new();
+	ak_ui_init(&(ak_host){NULL, layer_apply, layer_measure});
+	ak_ui_set_environment(&layer_host->env);
+	ak_closure *c = fn(declared_app, NULL);
+	ak_ui_mount(c);
+	ak_release(c);
+	for (int i = 1; i <= 4; i++) {
+		ak_fake_reset(layer_host);
+		write_b(flag_a, i % 2), write_b(flag_b, i % 3 == 0);
+		ak_ui_flush();
+	}
+	uint64_t allocs = 0;
+	for (int i = 0; i < 200; i++) {
+		ak_fake_reset(layer_host);
+		uint64_t before = ak_alloc_count;
+		write_b(flag_a, i % 2), write_b(flag_b, i % 3 == 0);
+		ak_ui_flush();
+		allocs += ak_alloc_count - before;
+	}
+	if (allocs != 0) T_FAIL("%llu allocations in 200 updates", (unsigned long long)allocs);
+	CHECK(ak_fake_count(layer_host, AK_OP_SET_PROP) > 0);
+	ak_ui_unmount();
+	ak_fake_free(layer_host);
+	ak_release(flag_a), ak_release(flag_b);
+}
+
+// ---- Models: a prop its component assigns ----
+
+// Unbound, a model is the component's own value, which an assignment
+// sets and the caller's value replaces each time it changes; bound, it's
+// the caller's.
+ak_val ak_vm_acc_value(ak_val v, ak_kind k);
+
+typedef struct {
+	void *inner;
+	ak_val m, b;
+} models_ctx;
+
+static void make_models(void *ctx) {
+	models_ctx *x = ctx;
+	x->m = ak_vm_model_new(x->inner, false);
+	x->b = ak_vm_model_new(x->inner, true);
+}
+
+TEST(models) {
+	setup();
+	ak_val src = ak_vm_cell_new((ak_val){.i = 1}, AK_K_INT, NULL);
+	ak_val inner = ak_vm_acc_cell(src.p);
+	// Made as a component makes them: under its owner, which owns the
+	// effect that follows the caller's value.
+	ak_owner *o = ak_root_new();
+	models_ctx x = {inner.p, {0}, {0}};
+	ak_with_owner(o, make_models, &x);
+	ak_val m = x.m, b = x.b;
+	CHECK(!ak_vm_model_bound(m.p) && ak_vm_model_bound(b.p));
+	CHECK_EQ_INT(ak_vm_acc_get(m.p).i, 1);
+	ak_vm_model_set(m.p, (ak_val){.i = 5});
+	CHECK_EQ_INT(ak_vm_acc_get(m.p).i, 5);  // its own
+	CHECK_EQ_INT(ak_vm_acc_get(b.p).i, 1);  // the caller's
+	ak_vm_cell_set(src.p, (ak_val){.i = 2});
+	CHECK_EQ_INT(ak_vm_acc_get(m.p).i, 2);  // the caller's changed: it wins
+	CHECK_EQ_INT(ak_vm_acc_get(b.p).i, 2);
+	// A constant's model has no effect to follow it, and keeps its own.
+	ak_val k = ak_vm_acc_value((ak_val){.i = 3}, AK_K_INT);
+	ak_val mk = ak_vm_model_new(k.p, false);
+	ak_vm_model_set(mk.p, (ak_val){.i = 4});
+	CHECK_EQ_INT(ak_vm_acc_get(mk.p).i, 4);
+	ak_release(mk.p), ak_release(k.p);
+	// Disposed (its component gone), it no longer follows.
+	ak_owner_dispose(o);
+	ak_vm_cell_set(src.p, (ak_val){.i = 9});
+	CHECK_EQ_INT(ak_vm_acc_get(m.p).i, 2);
+	ak_release(m.p), ak_release(b.p), ak_release(inner.p), ak_release(src.p);
+}
+
 // ---- A view's states as values (TestInteractionGroupAndPeer) ----
 
 static ak_view *card;

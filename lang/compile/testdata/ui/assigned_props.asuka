@@ -1,0 +1,85 @@
+// Props a component assigns (rfcs/0010): written by its handlers, fns
+// and an element's bind, through components that pass them on.
+
+/// A field whose text is its caller's when bound, its own otherwise.
+component Field(name: string) {
+  prop text = ""
+  event textChange(text: string)
+
+  Column {
+    TextField {
+      bind text: text
+      placeholder: name
+    }
+    Text("{name} has {text}")
+  }
+}
+
+/// A disclosure: open is the caller's when bound.
+component Disclosure(title: string) {
+  prop open = false
+  event openChange(open: bool)
+
+  fn toggle() { open = !open }
+
+  Column {
+    Button(title) { on press { toggle() } }
+    if open { Text("{title} shows") }
+  }
+}
+
+/// Passes its own open on: bound to the inner one, which assigns it.
+component Outer {
+  prop open = false
+  event openChange(open: bool)
+
+  Column {
+    Disclosure("inner") { bind open: open }
+    Text(if open { "outer sees open" } else { "outer sees closed" })
+  }
+}
+
+component Page {
+  state name = "Ada"
+  state shown = false
+  Column {
+    Field("bound") { bind text: name }
+    Text("name: {name}")
+    Field("own")
+    Disclosure("lone")
+    Outer() { bind open: shown }
+    Text("shown: {shown}")
+  }
+}
+
+app { Page() }
+
+test "an element's bind writes an assigned prop" {
+  let app = mount(Page())
+  app.expect("bound has Ada")
+  app.type("Grace", into: "bound")
+  app.expect("name: Grace")
+  app.expect("bound has Grace")
+  app.type("hi", into: "own")
+  app.expect("own has hi")
+}
+
+test "a fn assigns it" {
+  let app = mount(Page())
+  app.tap("lone")
+  app.expect("lone shows")
+  app.tap("lone")
+  app.expectNo("lone shows")
+}
+
+test "through a component that passes it on, to the caller's state" {
+  let app = mount(Page())
+  app.expect("shown: false")
+  app.tap("inner")
+  app.expect("inner shows")
+  app.expect("outer sees open")
+  app.expect("shown: true")
+  app.tap("inner")
+  app.expect("shown: false")
+  app.expect("outer sees closed")
+}

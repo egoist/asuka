@@ -638,6 +638,8 @@ func describeNode(n Node) string {
 		return "prop"
 	case *EventDecl:
 		return "event"
+	case *VariantDecl:
+		return "variant"
 	case *UseDecl:
 		return "use"
 	case *ProvideDecl:
@@ -913,6 +915,8 @@ func setPub(n Node, pub Pos) bool {
 		n.Pub = pub
 	case *EventDecl:
 		n.Pub = pub
+	case *VariantDecl:
+		n.Pub = pub
 	case *Field:
 		n.Pub = pub
 	default:
@@ -958,6 +962,8 @@ func setSpan(n Node, s Span) {
 	case *PropDecl:
 		n.Span = s
 	case *EventDecl:
+		n.Span = s
+	case *VariantDecl:
 		n.Span = s
 	case *Field:
 		n.Span = s
@@ -1675,6 +1681,16 @@ func (p *parser) itemAfterPub(start Pos) Item {
 			return &BadItem{Span: p.span(start)}
 		}
 	case IDENT:
+		// variant name = condition: contextual, since variant is also a
+		// name (a Button's variant: prop).
+		if p.lit == "variant" && isIdentTok(next) && p.peek(2) == ASSIGN {
+			p.next()
+			d := &VariantDecl{Name: p.ident()}
+			p.expect(ASSIGN)
+			d.Value = p.parseExpr()
+			d.Span = p.span(start)
+			return d
+		}
 		if next == LBRACE && isLower(p.lit) {
 			d := &SlotItem{Name: p.ident()}
 			d.Body = p.parseBlock()

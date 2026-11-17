@@ -78,6 +78,11 @@ func (b *fb) routedRoute(tn *check.TypeName) int {
 			c.emit(op("KNONE"), r)
 			vals = append(vals, r)
 		}
+		for range assignedProps(comp) {
+			r := c.temp(bc.KRef)
+			c.emit(op("KNONE"), r) // not bound
+			vals = append(vals, r)
+		}
 		view := c.invoke(idx, vals, bc.KRef, -1, false)
 		c.emit(op("RET"), view)
 	}})

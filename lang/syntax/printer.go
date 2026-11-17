@@ -777,6 +777,10 @@ func (p *printer) node(n Node) {
 		p.pub(n.Pub)
 		p.write("event " + n.Name.Name)
 		p.params(n.Params)
+	case *VariantDecl:
+		p.pub(n.Pub)
+		p.write("variant " + n.Name.Name + " = ")
+		p.expr(n.Value)
 	case *UseDecl:
 		p.write("use " + n.Name.Name + ": ")
 		p.typ(n.Type)

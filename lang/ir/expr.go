@@ -741,6 +741,20 @@ func (b *fb) member(e syntax.Expr, sel *check.Selection, x int, recv check.Type,
 	switch sel.Kind {
 	case check.SelBuiltinField:
 		return b.builtinField(sel, x, b.rawType(e), dst)
+	case check.SelVariant:
+		// Component as c, then c.checked: the variant on the view the Ref
+		// holds (false while it holds none), tracked.
+		d := sel.Obj.(*check.VariantDef)
+		r := b.out(dst, bc.KBool)
+		view := b.refView(x)
+		none, end := b.f.NewLabel(), b.f.NewLabel()
+		b.emitJump(op("JNONE"), view, none)
+		b.callBTo(uiVariantRead, r, view, b.konst(b.l.variantID(d)))
+		b.jmp(end)
+		b.f.Place(none)
+		b.emit(op("KSMALL"), r, 0)
+		b.f.Place(end)
+		return r
 	case check.SelField:
 		return b.getField(x, recv.(*check.Named), sel.Field, dst)
 	case check.SelStoreMember:

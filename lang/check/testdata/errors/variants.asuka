@@ -1,0 +1,75 @@
+// Variants a component declares, and props a component assigns
+// (rfcs/0010).
+
+pub component Check {
+  prop checked = false
+  event checkedChange(checked: bool)
+  prop count = 0
+  prop items: [int] = []
+  event itemsChange(items: [int])
+  prop label = ""
+  event labelChange(label: int)
+  prop footer: View? = none
+
+  pub variant checked = checked
+  variant big = count > 3
+  variant pressed = true // ERROR "pressed is an interaction state"
+  variant big = false // ERROR "variant big is declared twice in Check"
+  variant counted = count // ERROR "variant counted"
+  variant footer = true // ERROR "variant footer has the name of Check's slot footer"
+  variant on = true // ERROR "on is a keyword, so on \{ … \} can't name the variant in a block"
+
+  View {
+    on press {
+      checked = !checked
+      count += 1 // ERROR "declare event countChange\(count: int\) to assign it"
+      items.push(1) // ERROR "a prop changes as a whole, which itemsChange reports"
+      items = items + [1]
+      label = "x" // ERROR "declare event labelChange\(label: string\)"
+    }
+    Text("x")
+  }
+}
+
+component Two(title: string) {
+  variant shown = true // ERROR "a component with variants shows one element"
+  Text(title)
+  Text(title)
+}
+
+component Param(on: bool) {
+  event onChange(on: bool)
+  View {
+    on press { on = !on } // ERROR "can't assign to on: it's the caller's \(a parameter\)"
+  }
+}
+
+store Counter {
+  variant some = true // ERROR "a store has no variants"
+}
+
+style ticked {
+  checked { opacity: 0.5 }
+  big { opacity: 0.25 }
+  chekced { opacity: 0.5 } // ERROR "no component this package sees declares variant chekced"
+}
+
+component Uses {
+  state on = false
+  Column {
+    Check() {
+      checked { background: .accent }
+      pressed { opacity: 0.5 }
+      hovered { opacity: 0.9 }
+      chekced { opacity: 0.5 } // ERROR "Check has no slot or variant chekced \(a slot is a prop of type View; its variants: hovered, pressed, .*checked, big"
+      bind checked: on
+      style: ticked
+    }
+    Check() as c
+    Text(if c.checked { "on" } else { "off" })
+    Text(if c.big { "big" } else { "small" })
+    Text(if c.fresh { "a" } else { "b" }) // ERROR "Ref has no fresh"
+    Two("a") as t // ERROR "as names an element's view, and Two shows more than one"
+    Text("t") { checked { opacity: 0.5 } } // ERROR "Text has no slot checked"
+  }
+}

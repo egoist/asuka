@@ -169,7 +169,7 @@ ak_val ak_vm_memo_get(void *p) {
 
 // ---- Accessors ----
 
-enum { ACC_VALUE, ACC_FUNC, ACC_CELL, ACC_MEMO };
+enum { ACC_VALUE, ACC_FUNC, ACC_CELL, ACC_MEMO, ACC_MODEL };
 
 typedef struct {
 	ak_opaque h;
@@ -201,6 +201,8 @@ ak_val ak_vm_acc_cell(void *p) {
 	return (ak_val){.p = acc_new(ACC_CELL, (ak_kind)((cell *)p)->kind, (ak_val){.p = ak_retain(p)})};
 }
 
+static ak_val model_get(void *m);
+
 ak_val ak_vm_acc_get(void *p) {
 	acc *a = p;
 	switch (a->mode) {
@@ -211,9 +213,110 @@ ak_val ak_vm_acc_get(void *p) {
 		return ak_call(a->v.p, NULL, 0);
 	case ACC_CELL:
 		return ak_vm_cell_get(a->v.p, true);
+	case ACC_MODEL:
+		return model_get(a->v.p);
 	default:
 		return ak_vm_memo_get(a->v.p);
 	}
+}
+
+// ---- Models: a prop its component assigns ----
+//
+// A prop with its change event (open, openChange) that its component
+// assigns is read through a model, an accessor of the component's: bound
+// by the caller (bind open: s), it reads the caller's accessor, and the
+// component's assignment emits openChange, whose bind writes s; unbound,
+// it reads a value of its own, which an assignment sets and which takes
+// the caller's value each time that changes (a render effect, when the
+// caller's isn't a constant).
+
+typedef struct {
+	ak_opaque h;
+	ak_node node;  // the own value's readers
+	ak_val v;      // the own value (unbound)
+	acc *inner;    // the caller's accessor
+	uint8_t kind;
+	bool bound;
+} model;
+
+static void model_drop(ak_opaque *o) {
+	model *m = (model *)o;
+	ak_signal_drop(&m->node);
+	ak_release_val(m->v, (ak_kind)m->kind);
+	ak_release(m->inner);
+}
+
+static ak_val model_get(void *p) {
+	model *m = p;
+	if (m->bound) return ak_vm_acc_get(m->inner);
+	ak_signal_read(&m->node);
+	ak_retain_val(m->v, (ak_kind)m->kind);
+	return m->v;
+}
+
+// model_store takes v as the own value.
+static void model_store(model *m, ak_val v) {
+	if (ak_val_eq(m->v, v, (ak_kind)m->kind)) {
+		ak_release_val(v, (ak_kind)m->kind);
+		return;
+	}
+	ak_val old = m->v;
+	m->v = v;
+	ak_release_val(old, (ak_kind)m->kind);
+	ak_signal_write(&m->node);
+}
+
+// The caller's value, each time it changes, replaces the own.
+static void model_follow(void *ctx) {
+	model *m = ctx;
+	ak_val v = ak_vm_acc_get(m->inner);
+	if (ak_error_pending()) {
+		raise_pending();
+		return;
+	}
+	model_store(m, v);
+}
+
+static void model_follow_drop(void *ctx) { ak_release(ctx); }
+
+static const ak_comp_info model_follow_info = {.drop = model_follow_drop, .label = "a prop's caller's value"};
+
+ak_val ak_vm_model_new(void *inner, bool bound) {
+	acc *in = inner;
+	if (!in || ((ak_obj *)in)->tag != AK_TAG_ACC) ak_panic("ui.model: a prop's accessor, not %p", inner);
+	model *m = ak_opaque_new(AK_TAG_OPAQUE, sizeof(model), model_drop);
+	ak_signal_born(&m->node);
+	m->kind = in->kind;
+	m->inner = ak_retain(in);
+	m->bound = bound;
+	if (!bound) {
+		// The caller's value now, untracked: what builds the component
+		// doesn't follow it.
+		void *tok = ak_untrack_begin();
+		m->v = ak_vm_acc_get(in);
+		ak_untrack_end(tok);
+		if (ak_error_pending()) {
+			ak_release(m);
+			return (ak_val){0};
+		}
+		if (in->mode != ACC_VALUE) ak_effect_new(model_follow, ak_retain(m), AK_EFFECT_RENDER, &model_follow_info);
+	}
+	return (ak_val){.p = acc_new(ACC_MODEL, (ak_kind)m->kind, (ak_val){.p = m})};
+}
+
+static model *model_of(void *p, const char *what) {
+	acc *a = p;
+	if (!a || ((ak_obj *)a)->tag != AK_TAG_ACC || a->mode != ACC_MODEL) ak_panic("%s: a model, not %p", what, p);
+	return a->v.p;
+}
+
+bool ak_vm_model_bound(void *p) { return model_of(p, "ui.model_bound")->bound; }
+
+void ak_vm_model_set(void *p, ak_val v) {
+	model *m = model_of(p, "ui.model_set");
+	if (m->bound) ak_panic("ui.model_set: a bound prop's value is its caller's");
+	ak_retain_val(v, (ak_kind)m->kind);
+	model_store(m, v);
 }
 
 // ---- Untracked calls, effects, cleanups, batches ----

@@ -1,5 +1,5 @@
-SourceFile 1:1-63:3
-  Decls: [7]
+SourceFile 1:1-82:3
+  Decls: [9]
     StyleDecl 1:1-6:2
       Name: Ident "card" 1:7-1:11
       Body: Block 1:12-6:2
@@ -278,3 +278,62 @@ SourceFile 1:1-63:3
                                   PropSet 60:22-60:34
                                     Name: Ident "opacity" 60:22-60:29
                                     Value: BasicLit 60:31-60:34 Kind=float Value="0.6"
+    ComponentDecl 65:1-75:2 blank pub
+      Name: Ident "Checkbox" 65:15-65:23
+      Body: Block 65:24-75:2
+        Items: [5]
+          PropDecl 66:3-66:23
+            Name: Ident "checked" 66:8-66:15
+            Default: BoolLit 66:18-66:23 Value=false
+          EventDecl 67:3-67:37
+            Name: Ident "checkedChange" 67:9-67:22
+            Params: ParamList 67:22-67:37
+              List: [1]
+                Param 67:23-67:36
+                  Name: Ident "checked" 67:23-67:30
+                  Type: NamedType 67:32-67:36
+                    Path: [1]
+                      Ident "bool" 67:32-67:36
+          VariantDecl 68:3-68:32 pub
+            Name: Ident "checked" 68:15-68:22
+            Value: Ident "checked" 68:25-68:32
+          VariantDecl 69:3-69:30
+            Name: Ident "disabled" 69:11-69:19
+            Value: UnaryExpr 69:22-69:30 Op=!
+              X: Ident "enabled" 69:23-69:30
+          ExprStmt 71:3-74:4 blank
+            X: CallExpr 71:3-74:4
+              Fun: Ident "View" 71:3-71:7
+              Block: Block 71:8-74:4
+                Items: [2]
+                  PropSet 72:5-72:15
+                    Name: Ident "variant" 72:5-72:12
+                    Value: BasicLit 72:14-72:15 Kind=integer Value="1"
+                  OnHandler 73:5-73:36
+                    Name: Ident "press" 73:8-73:13
+                    Body: Block 73:14-73:36
+                      Items: [1]
+                        AssignStmt 73:16-73:34 Op==
+                          Target: Ident "checked" 73:16-73:23
+                          Value: UnaryExpr 73:26-73:34 Op=!
+                            X: Ident "checked" 73:27-73:34
+    ComponentDecl 77:1-82:2 blank
+      Name: Ident "Agree" 77:11-77:16
+      Body: Block 77:17-82:2
+        Items: [1]
+          ExprStmt 78:3-81:4
+            X: CallExpr 78:3-81:4
+              Fun: Ident "Checkbox" 78:3-78:11
+              Block: Block 78:12-81:4
+                Items: [2]
+                  SlotItem 79:5-79:36
+                    Name: Ident "checked" 79:5-79:12
+                    Body: Block 79:13-79:36
+                      Items: [1]
+                        PropSet 79:15-79:34
+                          Name: Ident "background" 79:15-79:25
+                          Value: ImplicitMember 79:27-79:34
+                            Name: Ident "accent" 79:28-79:34
+                  PropSet 80:5-80:15
+                    Name: Ident "style" 80:5-80:10
+                    Value: Ident "box" 80:12-80:15

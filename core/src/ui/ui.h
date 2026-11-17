@@ -325,12 +325,23 @@ extern const ak_shape ak_ui_shape_params;
 // last wins: by tier, then (variants) in the states' order, then as they
 // were made. ak_ui_layer makes one, on, and returns its id;
 // ak_ui_layer_when has it on only while cond (a bool binding) holds.
-// Turning a layer on or off allocates nothing.
-enum { AK_LAYER_OWN, AK_LAYER_OUTER, AK_LAYER_STATE };
+// Turning a layer on or off allocates nothing. Over them all,
+// AK_LAYER_VARIANT: the caller's blocks of the variants a component
+// declares (variant checked = …), as they were made (the component's
+// declaration order), each on while its variant holds.
+enum { AK_LAYER_OWN, AK_LAYER_OUTER, AK_LAYER_STATE, AK_LAYER_VARIANT };
 uint16_t ak_ui_layer(ak_view *v, uint8_t tier, uint8_t state);
 void ak_ui_layer_set(ak_view *v, uint16_t layer, uint16_t key, ak_val value);  // borrows value
 void ak_ui_layer_bind(ak_view *v, uint16_t layer, uint16_t key, ak_closure *thunk);
 void ak_ui_layer_when(ak_view *v, uint16_t layer, ak_closure *cond);
+// Declared variants: ak_ui_variant_declare gives v (the view a component
+// shows) the component's variant id, whose condition is cond (a bool
+// binding of the component's); ak_ui_layer_variant has a layer on only
+// while variant id of v holds (a panic when v has none); ak_ui_variant_read
+// reads it, tracked (false when v has none: name.checked).
+void ak_ui_variant_declare(ak_view *v, int64_t id, ak_closure *cond);
+void ak_ui_layer_variant(ak_view *v, uint16_t layer, int64_t id);
+bool ak_ui_variant_read(ak_view *v, int64_t id);
 // Variants: a block of style keys laid over v's style while it's in an
 // interaction state (AK_STATE_*: pressed { opacity: 0.6 }): the block's
 // layer of the state, made the first time. ak_ui_state reads a state (a

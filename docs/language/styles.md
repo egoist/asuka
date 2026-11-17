@@ -130,6 +130,23 @@ style button {
 }
 ```
 
+A component may declare variants of its own (`variant checked =
+checked`, see [Components](components.md#variants-a-component-declares)),
+and a style may hold their blocks as it holds the interaction states':
+on an element whose component declares the variant, the block is laid
+on while it holds, over the states'; on any other element it does
+nothing. A misspelled name is an error: a style names only the variants
+of its own package's components and other packages' `pub` ones.
+
+```asuka
+// For a component that declares variant selected (a listbox's option).
+style option {
+  padding: [6, 10]; radius: 6
+  pressed { opacity: 0.8 }
+  selected { background: .accent; color: .onAccent }
+}
+```
+
 A component's variants are over its caller's props: a caller's
 `background` replaces the component's, and its `pressed` still darkens
 it. Other views follow a
@@ -144,7 +161,8 @@ pressedChange(p)`, `on hoverChange(h)`.
 Some things are done to a view rather than set on it: play a video,
 run script in a page, put text in a field, scroll a list. A `Ref` is a
 view's handle: `ref: r` on any element puts its view in `r`, and
-`Element as name` declares one for the rest of the block it's in.
+`Element as name` declares one for the rest of the block it's in (on a
+component that shows one element, that element's view).
 
 ```asuka
 component Player {
@@ -167,6 +185,7 @@ are tracked, so a binding that reads one follows it:
 | On | Ref's members |
 |---|---|
 | any view | `hovered`, `pressed`, `dragging`, `dragOver` (bools, tracked); `focus()`, `blur()` |
+| a component's (`Checkbox as box`) | its variants: `box.checked` (bools, tracked) |
 | `Scroll`, `List` | `scrollTo(x, y, animated: true)` |
 | `Video` | `play()`, `pause()`, `seek(seconds)` |
 | `WebView` | `try await eval(script)` (its value, as JSON), `run(script)` (without waiting), `goBack()`, `goForward()`, `reload()`, `stopLoading()` |

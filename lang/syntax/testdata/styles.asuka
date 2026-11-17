@@ -61,3 +61,22 @@ component Dashboard {
     }
   }
 }
+
+pub component Checkbox {
+  prop checked = false
+  event checkedChange(checked: bool)
+  pub variant checked = checked
+  variant disabled = !enabled
+
+  View {
+    variant: 1
+    on press { checked = !checked }
+  }
+}
+
+component Agree {
+  Checkbox {
+    checked { background: .accent }
+    style: box
+  }
+}

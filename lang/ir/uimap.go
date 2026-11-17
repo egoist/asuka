@@ -28,6 +28,10 @@ const (
 	uiSwitch     = "ui.switch"      // (selector thunk -> int, build closure (int) -> view) -> view: a match in a view, by arm
 	uiDynamic    = "ui.dynamic"     // (build closure -> view) -> view
 
+	uiModel      = "ui.model"       // (accessor, bound ref?) -> accessor: a prop its component assigns
+	uiModelBound = "ui.model_bound" // (model) -> bool: its caller binds it
+	uiModelSet   = "ui.model_set"   // (model, value) -> void: an unbound one's own value
+
 	uiTask    = "ui.task"    // (closure) -> void: starts it as a task when the component mounts; cancelled when it goes
 	uiUse     = "ui.use"     // (key string) -> the value provided under key (a store), or an error
 	uiProvide = "ui.provide" // (key string, value) -> void: on the current owner, for the components below

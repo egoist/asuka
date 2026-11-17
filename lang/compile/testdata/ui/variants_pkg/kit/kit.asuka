@@ -1,0 +1,28 @@
+// A package's component, with a pub variant its callers style and one
+// that's its own.
+
+pub component Switch(title: string) {
+  prop on = false
+  event onChange(on: bool)
+  state taps = 0
+
+  pub variant lit = on
+  variant busy = taps > 1
+
+  View {
+    label: title
+    padding: 2
+    on press {
+      on = !on
+      taps += 1
+    }
+    Text(title)
+  }
+}
+
+/// The package's own look: its private variant styled where it's known.
+pub component Fancy(title: string) {
+  Switch(title) {
+    busy { opacity: 0.5 }
+  }
+}

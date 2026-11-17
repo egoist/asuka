@@ -16,8 +16,8 @@ component Bad {
     pressed { on press { } } // ERROR "a variant holds style props only"
     hovered { style: tall }
     Text("x") { pressed { opacity: 0.5 } } // ERROR "Text takes no variants"
-    Card() { pressed { opacity: 0.5 } } // ERROR "Card takes no variants"
-    Card() as c // ERROR "as names an element's view, and Card is a component"
+    Card() { pressed { opacity: 0.5 } } // ERROR "Card has no variant pressed \(its variants: none\)"
+    Card() as c // the view of the one element it shows
     Card() { ref: r } // ERROR "ref names an element's view, and Card is a component"
     Text("y") { ref: 3 } // ERROR "ref is a int, not a Ref"
     View as v { Text(if v.hovered { "a" } else { "b" }) }

@@ -39,6 +39,8 @@ type Lowerer struct {
 	// styleMemo: a style's local (check.StyleLocal) whose register, in
 	// the application being lowered, holds a memo (style.go).
 	styleMemo map[*check.Var]bool
+	// variantIDs are the declared variants' ids (style.go's variantID).
+	variantIDs map[*check.VariantDef]int64
 }
 
 // Options say how to lower.

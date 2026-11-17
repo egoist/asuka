@@ -349,6 +349,17 @@
           }
         },
         {
+          "match": "\\b(variant)\\s+([A-Za-z_][A-Za-z0-9_]*)(?=\\s*=)",
+          "captures": {
+            "1": {
+              "name": "storage.type.asuka"
+            },
+            "2": {
+              "name": "variable.other.declaration.asuka"
+            }
+          }
+        },
+        {
           "match": "\\b(state|let|var|prop|use)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
