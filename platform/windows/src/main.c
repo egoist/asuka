@@ -204,7 +204,7 @@ bool wh_pre_translate(MSG *m) {
 		// shortcuts wait, and its fields keep Ctrl+C and the like.
 		return wh_key_message(m) || IsDialogMessageW(w, m);
 	}
-	return wh_accelerate(w, m) || wh_key_message(m) || IsDialogMessageW(w, m);
+	return wh_accelerate(w, m) || wh_key_message(m) || wh_tab_key(m) || IsDialogMessageW(w, m);
 }
 
 static void loop(void) {
@@ -215,9 +215,14 @@ static void loop(void) {
 			wh_pointer_moved(m.hwnd, m.pt, true);
 		}
 		else if (m.message == WM_MOUSELEAVE) wh_mouse_left(m.hwnd);
+		wh_input_seen(&m);
+		bool press = wh_is_press_message(m.message);
+		if (press) wh_overlay_pointer_down(m.hwnd, m.pt);  // an overlay hears of a press outside it before its target does
 		if (wh_pre_translate(&m)) continue;
 		TranslateMessage(&m);
+		if (press) wh_pressing(true);
 		DispatchMessageW(&m);
+		if (press) wh_pressing(false);
 	}
 }
 
@@ -262,6 +267,7 @@ int wh_main(int argc, wchar_t **argv) {
 	free(rp);
 	wh_read_saved_locale();
 	new_host();
+	wh_focus_start();  // the views' focus, reported from the first batch's on
 	char *stop = dsk_getenv("ASUKA_STOP");
 	if (stop && !strcmp(stop, "stdin")) CloseHandle(CreateThread(NULL, 0, stdin_stop, NULL, 0, NULL));
 	free(stop);

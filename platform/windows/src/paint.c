@@ -382,7 +382,8 @@ void wh_paint_own(node *n, HWND hwnd, HDC dc, RECT r) {
 		if (n->search_of) wh_paint_search_icon(n, dc, r);
 		break;
 	}
-	if (n->focused && (wh_pressable(n) || n->kind == AK_KIND_SEGMENTED) && wh_keyboard_cues(hwnd)) {
+	bool takes = wh_pressable(n) || n->focusable || n->adjustable || n->na11y_actions || n->kind == AK_KIND_SEGMENTED;
+	if (n->focused && takes && !n->no_focus_ring && wh_keyboard_cues(hwnd)) {
 		gfx g2 = g_new(dc);
 		wh_focus_ring(n, g2, w, ht, radius);
 		g_close(g2);

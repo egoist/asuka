@@ -44,7 +44,7 @@ LRESULT wh_draw_button(node *n, NMCUSTOMDRAW *cd) {
 	float w = (float)(r.right - r.left), ht = (float)(r.bottom - r.top);
 	bool hot = cd->uItemState & CDIS_HOT, pressed = cd->uItemState & CDIS_SELECTED;
 	bool disabled = (cd->uItemState & CDIS_DISABLED) || n->disabled;
-	bool focus = (cd->uItemState & CDIS_FOCUS) && (cd->uItemState & CDIS_SHOWKEYBOARDCUES);
+	bool focus = (cd->uItemState & CDIS_FOCUS) && (cd->uItemState & CDIS_SHOWKEYBOARDCUES) && !n->no_focus_ring;
 	const palette *p = &H.theme;
 	float radius = 4 * k;
 	if (n->corner_radius > 0 && n->kind == AK_KIND_BUTTON) radius = wh_minf(n->corner_radius * k, wh_minf(w / 2, ht / 2));
@@ -191,7 +191,7 @@ LRESULT wh_draw_toggle(node *n, NMCUSTOMDRAW *cd) {
 	const palette *p = &H.theme;
 	bool hot = cd->uItemState & CDIS_HOT, pressed = cd->uItemState & CDIS_SELECTED;
 	bool disabled = (cd->uItemState & CDIS_DISABLED) || n->disabled;
-	bool focus = (cd->uItemState & CDIS_FOCUS) && (cd->uItemState & CDIS_SHOWKEYBOARDCUES);
+	bool focus = (cd->uItemState & CDIS_FOCUS) && (cd->uItemState & CDIS_SHOWKEYBOARDCUES) && !n->no_focus_ring;
 	bool on = SendMessageW(cd->hdr.hwndFrom, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	if (n->checkbox) {
 		draw_checkbox(n, g, r, on, hot, pressed, disabled);
@@ -266,7 +266,7 @@ LRESULT wh_draw_slider(node *n, NMCUSTOMDRAW *cd) {
 		if (cd->uItemState & CDIS_SELECTED) inner = 8 * k;
 		else if (cd->uItemState & CDIS_HOT) inner = 12 * k;
 		g_fill_ellipse(g, rgba_argb(accent), cx - inner / 2, cy - inner / 2, inner, inner);
-		if ((cd->uItemState & CDIS_FOCUS) && wh_keyboard_cues(ctl))
+		if ((cd->uItemState & CDIS_FOCUS) && wh_keyboard_cues(ctl) && !n->no_focus_ring)
 			g_draw_arc(g, rgba_argb(p->label), 2 * k, 0, cx - d / 2 - 2 * k, cy - d / 2 - 2 * k, d + 4 * k, d + 4 * k, 0, 360);
 		g_close(g);
 	}
@@ -638,7 +638,8 @@ void wh_paint_field(node *n, gfx g, float w, float ht) {
 	if (n->plain) return;  // the text alone, on what's behind it
 	float k = wh_scale_of(n);
 	const palette *p = &H.theme;
-	rgba bg = n->focused ? p->field_focus_bg : p->field_bg;
+	bool ring = n->focused && !n->no_focus_ring;  // the app draws its own focus with NoFocusRing
+	rgba bg = ring ? p->field_focus_bg : p->field_bg;
 	float r = n->corner_radius > 0 ? n->corner_radius * k : 4 * k;
 	g_fill_round_rect(g, rgba_argb(bg), 0, 0, w, ht, r);
 	g_stroke_round_rect(g, rgba_argb(p->control_stroke), wh_maxf(k, 1), 0, 0, w, ht, r);
@@ -647,7 +648,7 @@ void wh_paint_field(node *n, gfx g, float w, float ht) {
 	g_clip_path(g, path);
 	rgba edge = rgba_alpha(p->secondary, 0.7f);
 	float line = wh_maxf(k, 1);
-	if (n->focused) edge = p->accent, line = 2 * k;
+	if (ring) edge = p->accent, line = 2 * k;
 	g_fill_rect(g, rgba_argb(edge), 0, ht - line, w, line);
 	g_reset_clip(g);
 	GdipDeletePath(path);

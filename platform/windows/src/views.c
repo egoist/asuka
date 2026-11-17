@@ -135,6 +135,9 @@ void wh_create(uint32_t id, uint16_t kind) {
 	case AK_KIND_NATIVE:
 		n->hwnd = wh_make_view(0);  // the app's window goes in it (native.c)
 		break;
+	case AK_KIND_OVERLAY:
+		wh_make_overlay(n);  // over its root, once it's set (overlay.c)
+		break;
 	default:
 		wh_fail("can't show %s yet", ak_kind_name(kind));
 	}
@@ -215,6 +218,9 @@ static void set_items(node *n, const ak_value *v) {
 
 void wh_set_own(node *n, uint16_t p, const ak_value *v) {
 	switch (n->kind) {
+	case AK_KIND_OVERLAY:
+		wh_set_overlay_prop(n, p, v);
+		break;
 	case AK_KIND_VIEW:
 		if (p == AK_PROP_VIEW_DROP_ACCEPT) {
 			wh_free_cstrings(n->drop_accept, n->ndrop_accept);
@@ -545,7 +551,57 @@ void wh_set_common(node *n, uint16_t p, const ak_value *v) {
 	case AK_PROP_KEYS:
 		wh_set_keys(n, (const uint8_t *)v->s.p, v->s.len);
 		break;
+	case AK_PROP_FOCUSABLE:
+		n->focusable = v->i != 0, n->focusable_set = true;
+		wh_update_tab_stop(n);
+		break;
+	case AK_PROP_NO_FOCUS_ON_PRESS:
+		n->no_focus_on_press = v->i != 0;
+		break;
+	case AK_PROP_NO_FOCUS_RING:
+		n->no_focus_ring = v->i != 0;
+		wh_redraw(n);
+		if (n->ctl) wh_redraw_control(n);
+		break;
+	case AK_PROP_FOCUS_TRAP:
+		n->focus_trap = v->i != 0;
+		break;
+	case AK_PROP_A11Y_CHECKED: case AK_PROP_A11Y_EXPANDED: case AK_PROP_A11Y_SELECTED: case AK_PROP_A11Y_VALUE:
+	case AK_PROP_A11Y_RANGE: case AK_PROP_A11Y_MODAL: case AK_PROP_A11Y_CONTROLS: case AK_PROP_A11Y_LABELLED_BY:
+	case AK_PROP_A11Y_DESCRIBED_BY:
+		wh_set_a11y(n, p, v);
+		break;
 	}
+}
+
+// wh_update_tab_stop makes a view of the host's drawing a tab stop while
+// it takes the keyboard's focus: Focusable, pressable, adjustable, with
+// actions. A control's own tab stop follows Focusable, where it's set.
+void wh_update_tab_stop(node *n) {
+	if (!n->hwnd) return;
+	if (n->ctl) {
+		if (!n->focusable_set || n->kind == AK_KIND_STEPPER || n->kind == AK_KIND_DATE_PICKER) return;
+		LONG_PTR st = GetWindowLongPtrW(n->ctl, GWL_STYLE);
+		SetWindowLongPtrW(n->ctl, GWL_STYLE, n->focusable ? st | WS_TABSTOP : st & ~(LONG_PTR)WS_TABSTOP);
+		return;
+	}
+	switch (n->kind) {
+	case AK_KIND_SEGMENTED: case AK_KIND_PAGE_CONTROL: case AK_KIND_LIST: case AK_KIND_OVERLAY:
+		return;  // their own
+	}
+	if (n->nav || n->kind == AK_KIND_SPLIT) return;
+	bool stop = n->focusable || (n->kind == AK_KIND_VIEW && (node_listening(n, AK_EVENT_PRESS) || n->na11y_actions)) || n->adjustable;
+	if (n->focusable_set && !n->focusable) stop = false;  // focusable: false
+	LONG_PTR st = GetWindowLongPtrW(n->hwnd, GWL_STYLE);
+	SetWindowLongPtrW(n->hwnd, GWL_STYLE, stop ? st | WS_TABSTOP : st & ~(LONG_PTR)WS_TABSTOP);
+}
+
+// wh_takes_focus reports whether a view takes the keyboard's focus: a tab
+// stop (its window, or its control).
+bool wh_takes_focus(const node *n) {
+	if (!n->hwnd || n->disabled) return false;
+	if (GetWindowLongPtrW(n->hwnd, GWL_STYLE) & WS_TABSTOP) return true;
+	return n->ctl && (GetWindowLongPtrW(n->ctl, GWL_STYLE) & WS_TABSTOP);
 }
 
 // wh_apply_hidden shows or hides n's window: Hidden, or no opacity.
@@ -569,6 +625,7 @@ void wh_apply_hidden(node *n) {
 		ShowWindow(n->hwnd, SW_SHOWNA);
 	}
 	if (n->pict) wh_place_picture(n);
+	wh_overlays_dirty();  // an anchor hidden, an overlay's child
 }
 
 // wh_apply_font sets the font of what draws its own text from n's text
@@ -637,6 +694,7 @@ void wh_direction_changed(node *n) {
 // ---- Controls' notifications ----
 
 void wh_control_command(node *n, HWND ctl, UINT code) {
+	wh_focus_flush();  // a control's click focused it first
 	switch (n->kind) {
 	case AK_KIND_BUTTON:
 		if (code == BN_CLICKED) {
@@ -754,7 +812,7 @@ void wh_listen(node *n, int e) {
 	}
 	if (e == AK_EVENT_PRESS && n->kind == AK_KIND_VIEW) {
 		// A pressable view is a tab stop that Enter and Space press.
-		SetWindowLongPtrW(n->hwnd, GWL_STYLE, GetWindowLongPtrW(n->hwnd, GWL_STYLE) | WS_TABSTOP);
+		wh_update_tab_stop(n);
 	} else if (e == AK_EVENT_PINCH || e == AK_EVENT_ROTATE) {
 		wh_allow_gestures(n);  // a touch screen's zoom and rotate (rotate is off by default)
 	}
@@ -773,8 +831,10 @@ bool wh_draws_states(const node *n) { return node_listening(n, AK_EVENT_PRESSED)
 // wh_interactive: the view takes the mouse; the others let it through to
 // what's under them (a text in a pressable row).
 bool wh_interactive(const node *n) {
+	if (n->kind == AK_KIND_OVERLAY) return wh_overlay_modal(n);  // presses go through it, but for its children's
 	if (wh_tracks_press(n) || wh_draggable(n) || node_listening(n, AK_EVENT_PAN) || node_listening(n, AK_EVENT_PINCH) ||
-		node_listening(n, AK_EVENT_ROTATE) || node_listening(n, AK_EVENT_SWIPE))
+		node_listening(n, AK_EVENT_ROTATE) || node_listening(n, AK_EVENT_SWIPE) || node_listening(n, AK_EVENT_PRESS_POINT) ||
+		(n->focusable && !n->ctl))
 		return true;
 	switch (n->kind) {
 	case AK_KIND_SCROLL: case AK_KIND_LIST: case AK_KIND_SEGMENTED: case AK_KIND_TEXT_FIELD: case KIND_HEADER:
@@ -810,6 +870,7 @@ void wh_end_press(node *n, HWND hwnd, bool fire) {
 }
 
 void wh_press(node *n, HWND hwnd) {
+	wh_focus_flush();  // the focus the press moved, reported before it
 	if (n->menu.n && n->menu_trigger == AK_MENU_TRIGGER_TAP && !node_listening(n, AK_EVENT_PRESS)) {
 		wh_pop_up(n, hwnd, false);
 		return;
@@ -873,6 +934,13 @@ static void mouse_down(node *n, HWND hwnd, LPARAM lp) {
 	if (n->kind == AK_KIND_PAGE_CONTROL) {
 		wh_select_pip(n, wh_pip_at(n, GET_X_LPARAM(lp)));
 		return;
+	}
+	// A press focuses a view that takes the focus (a desktop's), unless
+	// NoFocusOnPress; it reports where it began first.
+	if (!n->disabled && !n->no_focus_on_press && wh_takes_focus(n) && !n->ctl && GetFocus() != hwnd) SetFocus(hwnd);
+	if (!n->disabled && node_listening(n, AK_EVENT_PRESS_POINT)) {
+		ak_event e = {.kind = AK_EVENT_PRESS_POINT, .x = wh_pt(n, GET_X_LPARAM(lp)), .y = wh_pt(n, GET_Y_LPARAM(lp))};
+		wh_emit(n, &e);
 	}
 	if (!wh_tracks_press(n) && !wh_draggable(n) && !node_listening(n, AK_EVENT_PAN) && !node_listening(n, AK_EVENT_SWIPE)) return;
 	if (n->disabled) return;
@@ -989,6 +1057,28 @@ static bool key(node *n, HWND hwnd, WPARAM vk) {
 	return false;
 }
 
+// key_text reports a character typed in n (the focus's) as KeyText, when
+// it listens: a listbox's typeahead. A surrogate pair goes as one.
+static bool key_text(node *n, WPARAM wp) {
+	if (!node_listening(n, AK_EVENT_KEY_TEXT)) return false;
+	wchar_t c = (wchar_t)wp;
+	if (c >= 0xD800 && c <= 0xDBFF) {
+		n->key_surrogate = c;
+		return true;
+	}
+	if (c < 0x20 || c == 0x7F) return false;
+	wchar_t s[2];
+	int len = 0;
+	if (c >= 0xDC00 && c <= 0xDFFF) {
+		if (!n->key_surrogate) return true;
+		s[len++] = n->key_surrogate;
+	}
+	n->key_surrogate = 0;
+	s[len++] = c;
+	wh_emit_wstr(n, AK_EVENT_KEY_TEXT, s, len);
+	return true;
+}
+
 // wh_view_message handles the messages of a view of the host's class.
 LRESULT wh_view_message(node *n, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *handled) {
 	*handled = true;
@@ -1023,6 +1113,7 @@ LRESULT wh_view_message(node *n, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *
 	case WM_SIZE:
 		if ((n->nav && wh_nav_sized_by_host(n)) || n == H.root) wh_fill_screens(n);
 		if (n->clip) wh_shape_clip(n);
+		wh_overlays_follow(n);  // the overlays over it, if it's a root
 		if (n->kind == AK_KIND_STEPPER) wh_layout_stepper(n);
 		else if (n->ctl) wh_layout_field(n);
 		break;
@@ -1116,6 +1207,7 @@ LRESULT wh_view_message(node *n, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *
 	case WM_SETFOCUS:
 		n->focused = true;
 		InvalidateRect(hwnd, NULL, FALSE);
+		wh_focus_flush();
 		break;
 	case WM_KILLFOCUS:
 		n->focused = false;
@@ -1135,6 +1227,7 @@ LRESULT wh_view_message(node *n, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *
 				code |= DLGC_WANTALLKEYS;
 			if (msg->message == WM_CHAR && msg->wParam == ' ' && wh_pressable(n)) code |= DLGC_WANTCHARS;  // Space's character: the press's
 		}
+		if (node_listening(n, AK_EVENT_KEY_TEXT)) code |= DLGC_WANTCHARS;  // typeahead
 		return code;
 	}
 	case WM_KEYDOWN:
@@ -1149,6 +1242,7 @@ LRESULT wh_view_message(node *n, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *
 		break;
 	case WM_CHAR:
 		if (wp == ' ' && wh_pressable(n)) return 0;
+		if (key_text(n, wp)) return 0;
 		break;
 	case WM_UPDATEUISTATE:
 		InvalidateRect(hwnd, NULL, FALSE);

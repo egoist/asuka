@@ -43,9 +43,18 @@ static uint32_t nchain, capchain;
 
 void wh_hover_views(int delta) { hover_views += delta; }
 
+// in_region reports whether pt (on the screen) is in a window's region,
+// if it has one (an overlay's: its children's rectangles).
+static bool in_region(HWND w, RECT r, POINT pt) {
+	HRGN rg = CreateRectRgn(0, 0, 0, 0);
+	bool in = GetWindowRgn(w, rg) == ERROR || PtInRegion(rg, pt.x - r.left, pt.y - r.top);
+	DeleteObject(rg);
+	return in;
+}
+
 // window_at is the deepest visible window at pt (on the screen) in top,
-// found by the windows' rectangles, not by hit-testing: views that let
-// the mouse through count.
+// found by the windows' rectangles (and regions), not by hit-testing:
+// views that let the mouse through count.
 static HWND window_at(HWND top, POINT pt) {
 	HWND w = top;
 	for (;;) {
@@ -54,7 +63,7 @@ static HWND window_at(HWND top, POINT pt) {
 			if (!(GetWindowLongPtrW(c, GWL_STYLE) & WS_VISIBLE)) continue;
 			RECT r;
 			GetWindowRect(c, &r);
-			if (pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom) {
+			if (pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom && in_region(c, r, pt)) {
 				next = c;
 				break;
 			}

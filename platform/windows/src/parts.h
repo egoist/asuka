@@ -82,6 +82,34 @@ void wh_mouse_left(HWND hwnd);
 // steps (automation.c); false: not one of them.
 bool wh_interaction_step(const char *verb, const wchar_t *arg);
 
+// ---- overlay.c: Overlay (RFC 0010) ----
+void wh_make_overlay(node *n);
+void wh_overlay_gone(node *n);
+void wh_set_overlay_prop(node *n, uint16_t p, const ak_value *v);
+void wh_present_overlay(node *n);
+bool wh_overlay_modal(const node *n);
+node *wh_overlay_root(const node *n);
+uint32_t wh_overlay_seq(const node *n);
+void wh_overlays_dirty(void);
+void wh_overlays_follow(node *r);
+void wh_overlays_environment(void);
+void wh_overlay_pointer_down(HWND target, POINT screen);
+bool wh_overlay_back(node *root);
+node *wh_modal_overlay(HWND top);
+HWND wh_hit(HWND top, POINT screen);
+void wh_overlays_dump(ak_buf *b, void (*walk)(ak_buf *, node *, int));
+
+// ---- focus.c: the keyboard's focus, Tab (RFC 0010) ----
+void wh_focus_start(void);
+void wh_input_seen(const MSG *m);
+bool wh_is_press_message(UINT m);
+void wh_pressing(bool on);
+void wh_key_pressed(void);
+node *wh_focused_node(void);
+void wh_focus_forget(node *n);
+void wh_focus_flush(void);
+bool wh_tab_key(MSG *m);
+
 // ---- keys.c ----
 void wh_set_keys(node *n, const uint8_t *b, size_t len);
 bool wh_route_key(MSG *m);
@@ -101,6 +129,8 @@ void wh_drop_provider(node *n, HWND hwnd);
 void wh_set_accessible_name(HWND hwnd, const wchar_t *name);
 void wh_clear_accessible_name(HWND hwnd);
 void wh_uia_range_changed(node *n, double old, double now);
+void wh_a11y_modal_changed(node *n);
+void wh_a11y_forget(node *n);
 void wh_announce(const char *s, size_t len);
 void wh_set_tooltip(node *n, const wchar_t *tip);
 void wh_tooltip_on(HWND hwnd, const wchar_t *tip);  // any window's tooltip (a snackbar's close button)

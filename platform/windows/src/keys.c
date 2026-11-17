@@ -194,6 +194,11 @@ static node *key_parent(node *n) {
 		if (r && r != n) return r;
 		return H.root;
 	}
+	if (n->kind == AK_KIND_OVERLAY) {
+		// On to the root it's over (a sheet's: on from there).
+		node *r = wh_overlay_root(n);
+		return r && r != n ? r : H.root;
+	}
 	if (n->kind == AK_KIND_WINDOW || !n->hwnd) return NULL;
 	// A list's cell (in its row, in the list), a view the host made.
 	HWND top = GetAncestor(n->hwnd, GA_ROOT);

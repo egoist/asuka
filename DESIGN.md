@@ -2302,7 +2302,12 @@ How the Windows host maps Asuka (`platform/windows`):
   registered for every window class of the host's, routes by window to
   its node (a map from `HWND`); controls are subclassed
   (`SetWindowSubclass`) with one procedure that finds the handler in the
-  subclass's data. `IsDialogMessage` gives Tab and arrow key navigation.
+  subclass's data. Tab is the host's (focus.c): the views' tree order,
+round inside the innermost `FocusTrap` or a modal overlay (alerts keep
+`IsDialogMessage`), each view's focus reported as `FocusChange`; an
+`Overlay` (overlay.c) is a child window over its root, its region its
+children's when it isn't modal, so presses elsewhere go through, with
+outside presses taken from the message loop before their target.
   Calls into the core are counted: a control that would run a modal loop
   (a menu, a task dialog, the color dialog), or work that would enter
   the core again, waits until the core has returned, and so do the

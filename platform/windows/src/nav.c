@@ -337,6 +337,7 @@ void wh_layout_nav(void) {
 		}
 	}
 	wh_place_snacks();
+	wh_overlays_environment();
 }
 
 static void set_window_text(node *n);
@@ -643,6 +644,7 @@ static void walk_active(node *n, node *root, node **found) {
 // wh_back pops the innermost shown stack that can pop in a window
 // (Alt+Left): under root, the root or a sheet or Window.
 void wh_back(node *root) {
+	if (root && wh_overlay_back(root)) return;  // the topmost overlay that takes it, first
 	node *s = NULL;
 	if (root) walk_active(root, root, &s);
 	if (s) pop_stack(s);
@@ -1310,6 +1312,9 @@ void wh_present(node *n) {
 		break;
 	case AK_KIND_SNACKBAR:
 		wh_after_core(present_snack_later, id);  // its window, opened in the same batch, shows once it's applied
+		break;
+	case AK_KIND_OVERLAY:
+		wh_present_overlay(n);
 		break;
 	}
 }

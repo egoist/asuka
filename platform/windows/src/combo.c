@@ -331,7 +331,7 @@ static void paint_combo(node *n, HWND ctl, HDC dc) {
 		.hot = n->combo_hot,
 		.pressed = SendMessageW(ctl, CB_GETDROPPEDSTATE, 0, 0) != 0,
 		.disabled = n->disabled || !IsWindowEnabled(ctl),
-		.focus = GetFocus() == ctl && wh_keyboard_cues(ctl),
+		.focus = GetFocus() == ctl && wh_keyboard_cues(ctl) && !n->no_focus_ring,
 	};
 	combo_look lk = look(n, st);
 	float radius = wh_minf(4 * k, wh_minf(w / 2, ht / 2));

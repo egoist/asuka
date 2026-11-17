@@ -1,0 +1,73 @@
+// The Windows host's screen reader states app (TestHeadlessAccessibility):
+// RFC 0010's roles, states and relations as UI Automation reads them; a
+// modal view (shown once the checkbox is ticked) hides the rest.
+
+app {
+  Box()
+}
+
+component Box {
+  state on = false
+  state open = false
+  let label = Ref()
+  let help = Ref()
+  let list = Ref()
+
+  Column {
+    padding: 16
+    gap: 8
+    Text("Agree") { ref: label }
+    View {
+      role: .checkbox
+      a11yChecked: if on { .checked } else { .unchecked }
+      a11yLabelledBy: label
+      a11yDescribedBy: help
+      on press { on = !on }
+      Text("Tick")
+    }
+    Text("Must be checked") { ref: help }
+    View {
+      role: .comboBox
+      a11yExpanded: if open { .expanded } else { .collapsed }
+      a11yControls: list
+      label: "Combo"
+      on press { open = !open }
+      Text("Choose")
+    }
+    if open {
+      View {
+        ref: list
+        role: .listbox
+        label: "Items"
+        Text("Item one")
+      }
+    }
+    if on {
+      View {
+        role: .alertDialog
+        label: "Done"
+        a11yModal: true
+        Text("Thanks")
+      }
+    }
+    View {
+      role: .slider
+      label: "Volume"
+      a11yValue: "40%"
+      a11yRange: ValueRange(min: 0, max: 100, now: 40)
+      Text("Loud")
+    }
+    View {
+      role: .tab
+      label: "Mail"
+      a11ySelected: true
+      on press { }
+      Text("Mail")
+    }
+    View {
+      role: .dialog
+      label: "Settings"
+      Text("Inside")
+    }
+  }
+}

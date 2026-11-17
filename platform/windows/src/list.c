@@ -622,6 +622,7 @@ void wh_list_scroll(node *n, float y) {
 	l->offset = y;
 	tile(l);
 	wh_show_bars(n);
+	wh_overlays_dirty();  // an anchor in a row moved
 	ak_event e = {.kind = AK_EVENT_SCROLLED, .x = 0, .y = l->offset};
 	wh_emit(n, &e);
 }

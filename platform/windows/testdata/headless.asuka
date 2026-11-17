@@ -1,0 +1,149 @@
+// The Windows host's test app for RFC 0010 (TestHeadless): the keyboard's
+// focus on views (Tab, a focus trap, FocusChange, typeahead, a press's
+// point, the focus ring), and Overlays (placed over the root next to their
+// anchors, the anchor followed as it scrolls, presses outside them, modal
+// or not).
+
+app {
+  Headless()
+}
+
+component Headless {
+  state log = ""
+  state typed = ""
+  state at = ""
+  state open = false
+  state reason = "none"
+  state picked = "nothing"
+  state tip = false
+  state dialog = false
+  state why = "none"
+  let trigger = Ref()
+  let deep = Ref()
+
+  Column {
+    padding: 16
+    gap: 8
+    Row {
+      gap: 8
+      View as ringed {
+        focusable: true
+        width: 120
+        height: 32
+        background: #ffcc00
+        on focusChange(f) { log = "{log} r:{f}" }
+        Text(if ringed.focusVisible { "Ringed visible" } else if ringed.focused { "Ringed focused" } else { "Ringed" })
+      }
+      View as plain {
+        focusable: true
+        hideFocusRing: true
+        width: 120
+        height: 32
+        background: #ffcc00
+        on keyText(t) { typed = typed + t }
+        Text(if plain.focused { "Plain focused" } else { "Plain" })
+      }
+    }
+    View {
+      trapFocus: true
+      gap: 4
+      View as one {
+        focusable: true
+        Text(if one.focused { "One*" } else { "One" })
+      }
+      View as two {
+        focusable: true
+        Text(if two.focused { "Two*" } else { "Two" })
+      }
+    }
+    View {
+      on pressStart(x, y) { at = "{x},{y}" }
+      on press { }
+      width: 100
+      height: 20
+      Text("Point")
+    }
+    Text("Log:{log}")
+    Text("Typed:{typed}")
+    Text("At:{at}")
+    Row {
+      View {
+        ref: trigger
+        on press { open = !open }
+        Text("Choose")
+      }
+      View { grow: 1 }
+      View {
+        on press { picked = "elsewhere" }
+        Text("Elsewhere")
+      }
+    }
+    Text("Picked {picked}")
+    Text("Closed by {reason}")
+    Scroll {
+      height: 100
+      Column {
+        View { height: 60 }
+        View {
+          ref: deep
+          on press { tip = true }
+          Text("Deep")
+        }
+        View { height: 400 }
+      }
+    }
+    Row {
+      View {
+        on press { dialog = true }
+        Text("Show")
+      }
+      View { grow: 1 }
+      View {
+        on press { why = "pressed behind" }
+        Text("Behind")
+      }
+    }
+    Text("Why {why}")
+    Overlay {
+      bind open: open
+      anchor: trigger
+      offset: 4
+      on dismiss(r) { reason = "{r}" }
+      Column {
+        background: #ffffff
+        View {
+          on press { picked = "apple"; open = false }
+          Text("Apple")
+        }
+        View {
+          on press { picked = "pear"; open = false }
+          Text("Pear")
+        }
+      }
+    }
+    Overlay {
+      bind open: tip
+      anchor: deep
+      dismissOn: []
+      Column {
+        background: #ffffff
+        Text("Tip")
+      }
+    }
+    Overlay {
+      bind open: dialog
+      side: .center
+      modal: true
+      on dismiss(r) { why = "{r}" }
+      Column {
+        padding: 16
+        background: #ffffff
+        Text("Sure?")
+        View {
+          on press { dialog = false }
+          Text("Close")
+        }
+      }
+    }
+  }
+}

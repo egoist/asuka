@@ -63,6 +63,7 @@ static void node_free(node *n) {
 	free(n->canvas);
 	wstr_free(&n->a11y_label);
 	wstr_free(&n->a11y_hint);
+	wstr_free(&n->a11y_value);
 	wh_free_strings(n->a11y_actions, n->na11y_actions);
 	if (n->clip_rgn) DeleteObject(n->clip_rgn);
 	wh_field_free(n);
@@ -286,6 +287,7 @@ void wh_apply(const uint8_t *buf, size_t len) {
 	if (br.err != AK_OK) wh_log("a batch the host can't read: %s", ak_err_string(br.err));
 	wh_match_batch_done();
 	wh_refresh_hover();
+	wh_overlays_dirty();  // where the overlays' anchors are now
 	H.depth--;
 }
 
@@ -297,6 +299,9 @@ void wh_destroy(uint32_t id) {
 	wh_map_del(&H.nodes, id);
 	wh_destroy_native(n);
 	wh_forget_interaction(n);
+	wh_focus_forget(n);
+	wh_a11y_forget(n);
+	if (n->kind == AK_KIND_OVERLAY) wh_overlay_gone(n);
 	if (wh_destroy_nav(n)) return;
 	if (n->tooltip.n) wh_set_tooltip(n, NULL);
 	// Going out to its match or with a transition, or inside a view that
@@ -459,6 +464,7 @@ void wh_remove(node *p, node *c) {
 	c->parent = NULL;
 	if (wh_remove_nav(p, c)) return;
 	if (c->hwnd) SetParent(c->hwnd, H.park);  // parked: it may be inserted again (a moved view)
+	if (p->kind == AK_KIND_OVERLAY) wh_overlays_dirty();  // its region
 }
 
 void wh_set_root(node *n) {
@@ -485,7 +491,7 @@ void wh_set_frame(node *n, const float f[4]) {
 		wh_cell_set_height(n, f[3]);
 		return;
 	}
-	if (n->nav && wh_nav_sized_by_host(n)) return;
+	if ((n->nav && wh_nav_sized_by_host(n)) || n->kind == AK_KIND_OVERLAY) return;  // the host sizes it
 	if (n->parent && n->parent->rich) {
 		// An inline component: its size is the core's, its place the text's.
 		n->frame[2] = f[2], n->frame[3] = f[3];
@@ -503,7 +509,7 @@ void wh_set_frame(node *n, const float f[4]) {
 // wh_place_frame moves n's window to its frame, in pixels, offset by its
 // scroll view's position.
 void wh_place_frame(node *n) {
-	if (!n->hwnd || n == H.root) return;
+	if (!n->hwnd || n == H.root || n->kind == AK_KIND_OVERLAY) return;
 	if (n->parent && n->parent->pane_node) {
 		wh_layout_split(n->parent);  // a SplitView's detail: beside its pane
 		return;
@@ -534,6 +540,7 @@ void wh_place_at(node *n, const float f[4]) {
 	if (shadow) wh_invalidate_shadow(n);
 	if (n->pict) wh_place_picture(n);
 	wh_resized(n);
+	wh_overlays_dirty();  // an overlay's child (its region), an anchor
 }
 
 // wh_resized lays out what's inside a view that changed size: a field's

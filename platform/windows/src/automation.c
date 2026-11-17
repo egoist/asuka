@@ -160,6 +160,7 @@ static void walk(ak_buf *b, node *n, int depth) {
 		ak_buf_printf(b, " [%.0f,%.0f %.0fx%.0f]", wh_pt(n, r.left), wh_pt(n, r.top), wh_pt(n, r.right - r.left), wh_pt(n, r.bottom - r.top));
 		if (!IsWindowVisible(n->hwnd)) ak_buf_put(b, " hidden", 7);
 		if (p == H.park) ak_buf_put(b, " parked", 7);
+		if (n == wh_focused_node()) ak_buf_put(b, " focused", 8);
 	}
 	if (n->text.n) {
 		ak_buf_u8(b, ' ');
@@ -222,6 +223,7 @@ char *wh_dump(size_t *len) {
 		ak_buf_put(&b, "sheet:\n", 7);
 		walk(&b, H.sheets[i], 1);
 	}
+	wh_overlays_dump(&b, walk);
 	for (uint32_t i = 0; i < H.nwins; i++) {
 		wchar_t t[256] = {0};
 		GetWindowTextW(wh_nav_window(H.wins[i]), t, 256);
@@ -328,6 +330,21 @@ static HWND typing_target(void) {
 	return tapped && IsWindow(tapped) ? tapped : NULL;
 }
 
+// click sends a click's messages to hwnd at lp (its client's), as the
+// message loop dispatches them: the overlays hear of the press first.
+static void click(HWND hwnd, LPARAM lp) {
+	POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+	ClientToScreen(hwnd, &p);
+	MSG m = {hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lp, 0, p};
+	wh_input_seen(&m);
+	wh_overlay_pointer_down(hwnd, p);
+	if (!IsWindow(hwnd)) return;
+	wh_pressing(true);
+	SendMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lp);
+	wh_pressing(false);
+	if (IsWindow(hwnd)) SendMessageW(hwnd, WM_LBUTTONUP, 0, lp);
+}
+
 // tap clicks what shows text: the mouse's messages, at its center, to the
 // window under it that takes them.
 static bool tap(const wchar_t *t) {
@@ -340,14 +357,37 @@ static bool tap(const wchar_t *t) {
 		return true;
 	}
 	if (found->kind == AK_KIND_BUTTON || found->kind == AK_KIND_TOGGLE) {
+		RECT r;
+		GetWindowRect(found->ctl, &r);
+		wh_overlay_pointer_down(found->ctl, (POINT){(r.left + r.right) / 2, (r.top + r.bottom) / 2});
+		if (!IsWindow(found->ctl)) return true;
+		wh_pressing(true);
 		SendMessageW(found->ctl, BM_CLICK, 0, 0);
+		wh_pressing(false);
 		return true;
 	}
 	node *target = interactive_up(found);
 	if (!target) return false;
 	LPARAM lp = center_in(found, target);
-	SendMessageW(target->hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lp);
-	SendMessageW(target->hwnd, WM_LBUTTONUP, 0, lp);
+	click(target->hwnd, lp);
+	return true;
+}
+
+// tap_at clicks at x, y (points) in the window in use's root, on the
+// window there as Windows hit-tests it (through what lets the mouse
+// through, onto a modal overlay), as the message loop gets a click.
+static bool tap_at(const char *arg) {
+	float x = 0, y = 0;
+	if (sscanf(arg, "%f,%f", &x, &y) != 2) return false;
+	HWND top = wh_window_in_use();
+	node *r = wh_root_of(top);
+	if (!r || !r->hwnd) return false;
+	POINT p = {wh_px(r, x), wh_px(r, y)};
+	ClientToScreen(r->hwnd, &p);
+	HWND w = wh_hit(top, p);
+	POINT c = p;
+	ScreenToClient(w, &c);
+	click(w, MAKELPARAM(c.x, c.y));
 	return true;
 }
 
@@ -387,6 +427,7 @@ static void press_keys(const char *spec) {
 	if (a.fVirt & FSHIFT) st[VK_SHIFT] = 0x80;
 	if (a.fVirt & FALT) st[VK_MENU] = 0x80;
 	SetKeyboardState(st);
+	wh_key_pressed();
 	HWND target = typing_target();  // the focus, or the field tapped last
 	if (!target || !wh_key_window(target)) target = wh_window_in_use();
 	MSG m = {target, (a.fVirt & FALT) ? WM_SYSKEYDOWN : WM_KEYDOWN, a.key, 0, 0, {0, 0}};
@@ -431,6 +472,33 @@ static void step(const char *verb, const char *arg) {
 		held_hwnd = NULL;
 	} else if (!strcmp(verb, "tap")) {
 		if (!tap(warg)) wh_log("automation: nothing shows \"%s\"", arg);
+	} else if (!strcmp(verb, "click")) {
+		// A click at the middle of what shows text, on the window Windows
+		// hit-tests there (an overlay over it, modal, takes it).
+		node *n = showing(warg);
+		if (!n) wh_log("automation: nothing shows \"%s\"", arg);
+		else {
+			RECT r;
+			GetWindowRect(n->hwnd, &r);
+			POINT p = {(r.left + r.right) / 2, (r.top + r.bottom) / 2};
+			HWND w = wh_hit(GetAncestor(n->hwnd, GA_ROOT), p);
+			POINT c = p;
+			ScreenToClient(w, &c);
+			click(w, MAKELPARAM(c.x, c.y));
+		}
+	} else if (!strcmp(verb, "tapat")) {
+		if (!tap_at(arg)) wh_log("automation: no point \"%s\"", arg);
+	} else if (!strcmp(verb, "focus")) {
+		// The keyboard's focus to what shows text, as the app's Focus does.
+		node *n = showing(warg);
+		if (!n) wh_log("automation: nothing shows \"%s\"", arg);
+		else {
+			for (node *x = n; x; x = x->parent)
+				if (wh_takes_focus(x)) {
+					SetFocus(x->ctl ? x->ctl : x->hwnd);
+					break;
+				}
+		}
 	} else if (!strcmp(verb, "type")) {
 		HWND f = typing_target();
 		if (f)

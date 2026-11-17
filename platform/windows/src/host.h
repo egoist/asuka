@@ -319,6 +319,15 @@ struct node {
 	wstr a11y_label, a11y_hint;
 	int32_t a11y_role;
 	bool a11y_hidden, adjustable;
+	// RFC 0010's: the keyboard's focus (Focusable set at all: a control's
+	// tab stop follows it), screen readers' states and relations.
+	bool focusable, focusable_set, no_focus_on_press, no_focus_ring, focus_trap;
+	int32_t a11y_checked, a11y_expanded;  // AK_A11Y_CHECKED_*, AK_A11Y_EXPANDED_*
+	bool a11y_selected, a11y_modal, has_range;
+	wstr a11y_value;
+	double range[3];  // A11yRange: min, max, now
+	uint32_t a11y_controls, a11y_labelled_by, a11y_described_by;
+	uint16_t key_surrogate;  // a WM_CHAR's high surrogate, waiting for its low (KeyText)
 	wchar_t **a11y_actions;
 	uint32_t na11y_actions;
 	wh_uia *uia;
@@ -537,6 +546,8 @@ void wh_redraw_control(node *n);
 void wh_apply_hidden(node *n);
 void wh_apply_font(node *n);
 bool wh_pressable(const node *n);
+void wh_update_tab_stop(node *n);
+bool wh_takes_focus(const node *n);
 bool wh_interactive(const node *n);
 bool wh_tracks_press(const node *n);
 bool wh_draggable(const node *n);
