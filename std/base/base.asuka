@@ -1,0 +1,162 @@
+// Package std/base is components with behavior and no look: a select, a
+// menu, a dialog, a checkbox, tabs, a slider... Each handles its state,
+// the keyboard and its focus, screen readers, and its placement over the
+// window; what it shows is only what the app styles, the same on every
+// platform. They're written in Asuka from View, Text, Overlay and the
+// style props, as Base UI's are from the DOM.
+//
+// A component is parts: a root that holds the state (Select), and parts
+// the app arranges and styles inside it (SelectTrigger, SelectValue,
+// SelectPopup, SelectItem). Each part shows one element, so it takes the
+// app's style: and the style props, and its states are variants the app
+// styles (checked { … }, open { … }, highlighted { … }) and reads through
+// a ref (Checkbox() as c, then c.checked). A root's value is the caller's
+// when it's bound (bind value: fruit), its own otherwise.
+//
+//   base.Select {
+//     bind value: fruit
+//     base.SelectTrigger {
+//       style: field
+//       base.SelectValue { placeholder: "Pick a fruit" }
+//     }
+//     popup {
+//       base.SelectPopup {
+//         style: menu
+//         for f in fruits key f {
+//           base.SelectItem(f) {
+//             highlighted { background: .accent.opacity(0.12) }
+//             Text(f)
+//           }
+//         }
+//       }
+//     }
+//   }
+//
+// A popup's parts go in its root's popup slot, which the root shows in
+// an Overlay next to its trigger.
+
+import std/i18n
+
+/// A layout's axis, for what moves with arrow keys: up and down
+/// (.vertical) or left and right (.horizontal, reversed in a
+/// right-to-left language).
+pub enum Orientation {
+  vertical
+  horizontal
+}
+
+/// An item of a list a component moves through with the keyboard: a
+/// menu's, a select's, a listbox's, tabs', a radio group's.
+struct Item {
+  value: string
+  label: string
+  ref: Ref
+  disabled: bool = false
+}
+
+/// The items of a list, in the order they came, and the one the keyboard
+/// is on (active): arrow keys and typeahead move the focus through them.
+store Items {
+  pub state all: [Item] = []
+  pub state active = ""
+  state typed = ""
+
+  /// Adds item, or updates the one with its value where it is.
+  pub fn put(item: Item) {
+    if let i = all.index(x => x.value == item.value) {
+      all[i] = item
+    } else {
+      all.push(item)
+    }
+  }
+
+  pub fn remove(value: string) {
+    all.removeWhere(x => x.value == value)
+    if active == value { active = "" }
+  }
+
+  pub fn find(value: string) -> Item? = all.find(x => x.value == value)
+
+  pub fn label(value: string) -> string {
+    if let i = find(value) { return i.label }
+    return value
+  }
+
+  /// The enabled item by steps from from (the active one: ""), wrapping
+  /// around when loop; none when there's none.
+  pub fn step(from: string, by: int, loop: bool = true) -> Item? {
+    let n = all.count()
+    if n == 0 { return none }
+    var i = all.index(x => x.value == from) ?? (if by > 0 { -1 } else { n })
+    for _ in 0..<n {
+      i += by
+      if i < 0 || i >= n {
+        if !loop { return none }
+        i = (i + n) % n
+      }
+      if !all[i].disabled { return all[i] }
+    }
+    return none
+  }
+
+  pub fn firstEnabled() -> Item? = all.find(x => !x.disabled)
+
+  pub fn lastEnabled() -> Item? = all.reversed().find(x => !x.disabled)
+
+  /// Moves the focus to the item by steps from the active one.
+  pub fn move(by: int, loop: bool = true) {
+    if let it = step(from: active, by: by, loop: loop) { it.ref.focus() }
+  }
+
+  pub fn home() {
+    if let it = firstEnabled() { it.ref.focus() }
+  }
+
+  pub fn end() {
+    if let it = lastEnabled() { it.ref.focus() }
+  }
+
+  /// Typeahead: text typed while an item has the focus goes to the next
+  /// item whose label starts with what's been typed lately (a key held
+  /// down, the same letter again, cycles through those that start with
+  /// it).
+  pub fn type(text: string) {
+    let t = (typed + text).lower()
+    typed = t
+    let cs = t.chars()
+    let same = cs.count() > 1 && cs.all(c => c == cs[0])
+    let prefix = if same { cs[0] } else { t }
+    let n = all.count()
+    if n == 0 { return }
+    let start = all.index(x => x.value == active) ?? -1
+    let skip = if cs.count() == 1 || same { 1 } else { 0 }
+    for k in 0..<n {
+      let it = all[(start + skip + k + n) % n]
+      if !it.disabled && it.label.lower().hasPrefix(prefix) {
+        it.ref.focus()
+        return
+      }
+    }
+  }
+
+  task(typed) {
+    if typed != "" {
+      await sleep(700ms)
+      typed = ""
+    }
+  }
+}
+
+/// The keys that move through items: up and down, or left and right
+/// (swapped right to left), with Home and End.
+fn arrowKeys(items: Items, orientation: Orientation, loop: bool = true) -> [Shortcut] {
+  let rtl = i18n.isRTL()
+  let back = if orientation == .vertical { "up" } else if rtl { "right" } else { "left" }
+  let next = if orientation == .vertical { "down" } else if rtl { "left" } else { "right" }
+  return [
+    Shortcut(key: next, run: () => items.move(1, loop: loop)),
+    Shortcut(key: back, run: () => items.move(-1, loop: loop)),
+    Shortcut(key: "home", run: () => items.home()),
+    Shortcut(key: "end", run: () => items.end()),
+  ]
+}

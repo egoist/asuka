@@ -293,6 +293,7 @@ var Methods = []*Method{
 	{Recv: "ref", Name: "pressed", Sig: "() -> bool", Builtin: "ui.state", Field: true, Consts: []int64{2}, Doc: "a finger or the mouse's button is down on it (tracked)"},
 	{Recv: "ref", Name: "dragging", Sig: "() -> bool", Builtin: "ui.state", Field: true, Consts: []int64{4}, Doc: "it's being dragged (tracked)"},
 	{Recv: "ref", Name: "dragOver", Sig: "() -> bool", Builtin: "ui.state", Field: true, Consts: []int64{8}, Doc: "a drag it takes is over it (tracked)"},
+	{Recv: "ref", Name: "id", Sig: "() -> int", Builtin: "ui.view_id", Field: true, Doc: "the view's identity: the same while it shows, no other view's while it does (0: no view yet)"},
 	{Recv: "ref", Name: "focusVisible", Sig: "() -> bool", Builtin: "ui.state", Field: true, Consts: []int64{32}, Doc: "the keyboard's focus is in the view and shows: it came from the keyboard, or it's in a field (tracked)"},
 	{Recv: "ref", Name: "focus", Sig: "()", Builtin: "ui.focus", Doc: "gives the view the keyboard's focus: a field, a control, a focusable or pressable view; a window comes to the front"},
 	{Recv: "ref", Name: "blur", Sig: "()", Builtin: "ui.blur"},

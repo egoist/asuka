@@ -1,0 +1,685 @@
+// Popups next to a trigger, and over the window: Popover, Tooltip,
+// PreviewCard, Dialog, AlertDialog, and the Arrow that points from a
+// popup at its trigger.
+
+/// Where a popup was placed: the side of its trigger it's on, and the
+/// room it has. Every popup's root provides one; its parts read it.
+pub store Placement {
+  /// The last place its Overlay reported.
+  pub state placed = Placed()
+}
+
+/// The arrow of a popup, pointing at its trigger: a size by size view (the
+/// app draws it: a rotated square, a triangle Shape) placed on the
+/// popup's edge that faces the trigger, across from the trigger's middle.
+/// Put it in the popup's part (PopoverPopup, TooltipPopup...).
+pub component Arrow {
+  /// Its width and height.
+  prop size: float = 10
+  prop children: View? = none
+  use p: Placement
+
+  /// While the popup is above its trigger (the arrow on its bottom edge).
+  pub variant sideTop = p.placed.side == .top
+  /// While it's below (the arrow on its top edge).
+  pub variant sideBottom = p.placed.side == .bottom
+  /// While it's on the trigger's start side.
+  pub variant sideStart = p.placed.side == .start
+  /// While it's on the trigger's end side.
+  pub variant sideEnd = p.placed.side == .end
+
+  View {
+    absolute: true
+    width: size
+    height: size
+    a11yHidden: true
+    left: if across() { pos(p.placed.arrow - size / 2) } else { auto() }
+    top: topEdge()
+    bottom: if p.placed.side == .top { pos(-size / 2) } else { auto() }
+    start: if p.placed.side == .end { pos(-size / 2) } else { auto() }
+    end: if p.placed.side == .start { pos(-size / 2) } else { auto() }
+    children
+  }
+
+  fn pos(v: float) -> Length {
+    let l: Length = v
+    return l
+  }
+  fn auto() -> Length {
+    let l: Length = .auto
+    return l
+  }
+  fn topEdge() -> Length {
+    if p.placed.side == .bottom { return pos(-size / 2) }
+    if !across() { return pos(p.placed.arrow - size / 2) }
+    return auto()
+  }
+
+  fn across() -> bool = p.placed.side == .top || p.placed.side == .bottom
+}
+
+// ---- Popover ----
+
+store PopoverContext(open: bool, modal: bool, setOpen: fn(bool), hover: fn(bool)) {
+  pub let trigger = Ref()
+  pub let title = Ref()
+  pub let description = Ref()
+}
+
+/// Content in a popup next to its trigger, opened by pressing it: a
+/// filter's options, a share sheet, a color well's palette. Its popup
+/// part goes in the popup slot. Pressing outside it, Escape, Back or the
+/// focus leaving closes it; open, the focus goes into it, and back to the
+/// trigger when it closes.
+pub component Popover {
+  prop open = false
+  /// It opened or closed.
+  event openChange(open: bool)
+  /// Takes every press while open (its backdrop's elsewhere), keeps the
+  /// focus inside it, and hides the rest from screen readers.
+  prop modal = false
+  /// The side of the trigger it opens on (it flips when there's no room).
+  prop side: Side = .bottom
+  /// Where along that side: .start, .center, .end.
+  prop align: Align = .center
+  /// The gap between it and its trigger.
+  prop sideOffset: float = 4
+  /// Moves it along the side.
+  prop alignOffset: float = 0
+  /// The least distance it keeps from the window's edges.
+  prop edgeGap: float = 8
+  /// Opens when a pointer rests on its trigger too.
+  prop openOnHover = false
+  /// How long the pointer rests first, with openOnHover.
+  prop delay: Duration = 300ms
+  prop children: View
+  /// Its PopoverPopup.
+  prop popup: View? = none
+  /// What covers the window behind it while it's open (a modal one's
+  /// dimming).
+  prop backdrop: View? = none
+
+  state hovering = false
+  let ctx = PopoverContext(open: open, modal: modal, setOpen: o => { open = o }, hover: h => { hovering = h })
+  let placement = Placement()
+  provide ctx
+  provide placement
+
+  /// While open.
+  pub variant open = open
+
+  task(hovering) {
+    if openOnHover && hovering && !open {
+      await sleep(delay)
+      open = true
+    }
+  }
+
+  View {
+    children
+    Overlay {
+      open: open
+      on change(o) { open = o }
+      anchor: ctx.trigger
+      side: side
+      align: align
+      offset: sideOffset
+      alignOffset: alignOffset
+      edgeGap: edgeGap
+      modal: modal
+      on place(p) { placement.placed = p }
+      backdrop { backdrop }
+      popup
+    }
+  }
+}
+
+/// What opens a Popover when pressed. Screen readers hear that it opens a
+/// popup, and whether it's open.
+pub component PopoverTrigger {
+  prop disabled = false
+  prop children: View
+  use c: PopoverContext
+
+  /// While its popover is open.
+  pub variant open = c.open
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    ref: c.trigger
+    role: .button
+    a11yExpanded: if c.open { .expanded } else { .collapsed }
+    focusable: !disabled
+    disabled: disabled
+    on press { if !disabled { c.setOpen(!c.open) } }
+    on hoverChange(h) { if !disabled { c.hover(h) } }
+    children
+  }
+}
+
+/// A Popover's popup: what shows next to its trigger. Screen readers call
+/// it a dialog, named by its PopoverTitle.
+pub component PopoverPopup {
+  prop children: View
+  use c: PopoverContext
+  use p: Placement
+
+  /// While open (always, while it shows: for a transition's styles).
+  pub variant open = c.open
+  /// While above its trigger.
+  pub variant sideTop = p.placed.side == .top
+  /// While below it.
+  pub variant sideBottom = p.placed.side == .bottom
+  /// While on its start side.
+  pub variant sideStart = p.placed.side == .start
+  /// While on its end side.
+  pub variant sideEnd = p.placed.side == .end
+
+  View {
+    role: .dialog
+    a11yModal: c.modal
+    a11yLabelledBy: c.title
+    a11yDescribedBy: c.description
+    focusable: true
+    hideFocusRing: true
+    autofocus: true
+    restoreFocus: true
+    trapFocus: c.modal
+    children
+  }
+}
+
+/// A Popover's title: what screen readers call the popup.
+pub component PopoverTitle(text: string) {
+  use c: PopoverContext
+  Text(text) { ref: c.title; role: .header }
+}
+
+/// A Popover's description: what screen readers read after its title.
+pub component PopoverDescription(text: string) {
+  use c: PopoverContext
+  Text(text) { ref: c.description }
+}
+
+/// Closes its Popover when pressed.
+pub component PopoverClose {
+  prop children: View
+  use c: PopoverContext
+  View {
+    role: .button
+    focusable: true
+    on press { c.setOpen(false) }
+    children
+  }
+}
+
+// ---- Tooltip ----
+
+store TooltipContext(open: bool, setOpen: fn(bool), want: fn(bool, bool)) {
+  pub let trigger = Ref()
+  pub let popup = Ref()
+}
+
+/// A short text about its trigger, shown while a pointer rests on it (after
+/// delay), while it has the keyboard's focus, or after a long press on a
+/// touch screen. Screen readers read it as the trigger's description.
+pub component Tooltip {
+  prop open = false
+  /// It showed or hid.
+  event openChange(open: bool)
+  /// How long a pointer rests on the trigger before it shows.
+  prop delay: Duration = 600ms
+  /// How long it stays after the pointer leaves.
+  prop closeDelay: Duration = 0ms
+  prop side: Side = .top
+  prop align: Align = .center
+  prop sideOffset: float = 6
+  prop disabled = false
+  prop children: View
+  /// Its TooltipPopup.
+  prop popup: View? = none
+
+  state wanted = false
+  state now = false
+  let ctx = TooltipContext(open: open, setOpen: o => { open = o }, want: (w, at) => {
+    wanted = w
+    now = at
+  })
+  let placement = Placement()
+  provide ctx
+  provide placement
+
+  /// While it shows.
+  pub variant open = open
+
+  task(wanted, now) {
+    if disabled { return }
+    if wanted {
+      if !now { await sleep(delay) }
+      open = true
+    } else {
+      if !now { await sleep(closeDelay) }
+      open = false
+    }
+  }
+
+  View {
+    children
+    Overlay {
+      open: open
+      on change(o) {
+        open = o
+        wanted = o
+      }
+      anchor: ctx.trigger
+      side: side
+      align: align
+      offset: sideOffset
+      dismissOn: [.escape, .outsidePress, .anchorHidden]
+      on place(p) { placement.placed = p }
+      popup
+    }
+  }
+}
+
+/// What a Tooltip is about: a pointer resting on it, the keyboard's focus
+/// in it, or a long press shows the tooltip; pressing it hides it.
+pub component TooltipTrigger {
+  prop children: View
+  use c: TooltipContext
+
+  /// While its tooltip shows.
+  pub variant open = c.open
+
+  View as me {
+    ref: c.trigger
+    a11yDescribedBy: c.popup
+    on hoverChange(h) { c.want(h, false) }
+    on focusChange(f) { c.want(f && me.focusVisible, true) }
+    on longPress { c.want(true, true) }
+    on press { c.want(false, true) }
+    children
+  }
+}
+
+/// A Tooltip's popup: the text that shows. Screen readers call it a
+/// tooltip.
+pub component TooltipPopup {
+  prop children: View
+  use c: TooltipContext
+  use p: Placement
+
+  /// While it shows.
+  pub variant open = c.open
+  /// While above its trigger.
+  pub variant sideTop = p.placed.side == .top
+  /// While below it.
+  pub variant sideBottom = p.placed.side == .bottom
+  /// While on its start side.
+  pub variant sideStart = p.placed.side == .start
+  /// While on its end side.
+  pub variant sideEnd = p.placed.side == .end
+
+  View {
+    ref: c.popup
+    role: .tooltip
+    children
+  }
+}
+
+// ---- PreviewCard ----
+
+store PreviewCardContext(open: bool, setOpen: fn(bool), hover: fn(int, bool)) {
+  pub let trigger = Ref()
+}
+
+/// A card that shows what a link leads to while a pointer rests on it (a
+/// profile, a page's preview), and stays while the pointer is over the
+/// card. A long press shows it on a touch screen.
+pub component PreviewCard {
+  prop open = false
+  /// It showed or hid.
+  event openChange(open: bool)
+  prop delay: Duration = 600ms
+  prop closeDelay: Duration = 300ms
+  prop side: Side = .bottom
+  prop align: Align = .center
+  prop sideOffset: float = 8
+  prop children: View
+  /// Its PreviewCardPopup.
+  prop popup: View? = none
+
+  state onTrigger = false
+  state onCard = false
+  let ctx = PreviewCardContext(open: open, setOpen: o => { open = o }, hover: (part, h) => {
+    if part == 0 { onTrigger = h } else { onCard = h }
+  })
+  let placement = Placement()
+  provide ctx
+  provide placement
+
+  /// While it shows.
+  pub variant open = open
+
+  task(onTrigger, onCard) {
+    if onTrigger || onCard {
+      if !open {
+        await sleep(delay)
+        open = true
+      }
+    } else if open {
+      await sleep(closeDelay)
+      open = false
+    }
+  }
+
+  View {
+    children
+    Overlay {
+      open: open
+      on change(o) { open = o }
+      anchor: ctx.trigger
+      side: side
+      align: align
+      offset: sideOffset
+      on place(p) { placement.placed = p }
+      popup
+    }
+  }
+}
+
+/// A PreviewCard's link: a pointer resting on it shows the card.
+pub component PreviewCardTrigger {
+  prop children: View
+  use c: PreviewCardContext
+
+  /// While its card shows.
+  pub variant open = c.open
+
+  View {
+    ref: c.trigger
+    on hoverChange(h) { c.hover(0, h) }
+    on longPress { c.setOpen(true) }
+    children
+  }
+}
+
+/// A PreviewCard's card.
+pub component PreviewCardPopup {
+  prop children: View
+  use c: PreviewCardContext
+  use p: Placement
+
+  /// While it shows.
+  pub variant open = c.open
+  /// While above its trigger.
+  pub variant sideTop = p.placed.side == .top
+  /// While below it.
+  pub variant sideBottom = p.placed.side == .bottom
+
+  View {
+    role: .group
+    on hoverChange(h) { c.hover(1, h) }
+    children
+  }
+}
+
+// ---- Dialog ----
+
+store DialogContext(open: bool, alert: bool, setOpen: fn(bool)) {
+  pub let trigger = Ref()
+  pub let title = Ref()
+  pub let description = Ref()
+}
+
+/// A window over the app's, until it's closed: it takes every press
+/// (pressing its backdrop closes it, unless dismissible is false), keeps
+/// the keyboard's focus inside it, hides the rest from screen readers, and
+/// gives the focus back to its trigger when it closes. Escape and Back
+/// close it. side places it: .center (a dialog), .bottom or another edge
+/// (a drawer, a sheet of your own).
+pub component Dialog {
+  prop open = false
+  /// It opened or closed.
+  event openChange(open: bool)
+  /// A press on the backdrop closes it.
+  prop dismissible = true
+  /// Where in the window: .center, or against an edge.
+  prop side: Side = .center
+  /// Its distance from that edge.
+  prop offset: float = 0
+  /// The least distance it keeps from the window's edges.
+  prop edgeGap: float = 0
+  prop children: View
+  /// Its DialogPopup.
+  prop popup: View? = none
+  /// What covers the window behind it: its dimming.
+  prop backdrop: View? = none
+
+  let ctx = DialogContext(open: open, alert: false, setOpen: o => { open = o })
+  provide ctx
+
+  /// While open.
+  pub variant open = open
+
+  View {
+    children
+    Overlay {
+      open: open
+      on change(o) { open = o }
+      side: side
+      offset: offset
+      edgeGap: edgeGap
+      modal: true
+      dismissOn: if dismissible { [.outsidePress, .escape, .back] } else { [.escape, .back] }
+      backdrop { backdrop }
+      popup
+    }
+  }
+}
+
+/// A Dialog that asks for an answer before going on: pressing outside it
+/// doesn't close it; screen readers announce it as an alert.
+pub component AlertDialog {
+  prop open = false
+  /// It opened or closed.
+  event openChange(open: bool)
+  prop side: Side = .center
+  prop children: View
+  /// Its DialogPopup.
+  prop popup: View? = none
+  /// What covers the window behind it.
+  prop backdrop: View? = none
+
+  let ctx = DialogContext(open: open, alert: true, setOpen: o => { open = o })
+  provide ctx
+
+  /// While open.
+  pub variant open = open
+
+  View {
+    children
+    Overlay {
+      open: open
+      on change(o) { open = o }
+      side: side
+      modal: true
+      dismissOn: [.escape, .back]
+      backdrop { backdrop }
+      popup
+    }
+  }
+}
+
+/// What opens a Dialog (or an AlertDialog) when pressed.
+pub component DialogTrigger {
+  prop disabled = false
+  prop children: View
+  use c: DialogContext
+
+  /// While its dialog is open.
+  pub variant open = c.open
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    ref: c.trigger
+    role: .button
+    focusable: !disabled
+    disabled: disabled
+    on press { if !disabled { c.setOpen(true) } }
+    children
+  }
+}
+
+/// A Dialog's window: screen readers call it a dialog (an alert dialog)
+/// named by its DialogTitle, and stay in it; the focus goes to its first
+/// focusable view, and Tab stays in it.
+pub component DialogPopup {
+  prop children: View
+  use c: DialogContext
+
+  /// While open.
+  pub variant open = c.open
+
+  View {
+    role: if c.alert { .alertDialog } else { .dialog }
+    a11yModal: true
+    a11yLabelledBy: c.title
+    a11yDescribedBy: c.description
+    trapFocus: true
+    autofocus: true
+    restoreFocus: true
+    children
+  }
+}
+
+/// A Dialog's title: what screen readers call it.
+pub component DialogTitle(text: string) {
+  use c: DialogContext
+  Text(text) { ref: c.title; role: .header }
+}
+
+/// A Dialog's description: what screen readers read after its title.
+pub component DialogDescription(text: string) {
+  use c: DialogContext
+  Text(text) { ref: c.description }
+}
+
+/// Closes its Dialog when pressed.
+pub component DialogClose {
+  prop disabled = false
+  prop children: View
+  use c: DialogContext
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    role: .button
+    focusable: !disabled
+    disabled: disabled
+    on press { if !disabled { c.setOpen(false) } }
+    children
+  }
+}
+
+// ---- Tests ----
+
+component PopupsDemo {
+  state saved = 0
+  state deleted = false
+
+  Column {
+    Popover {
+      PopoverTrigger { Text("Filters") }
+      popup {
+        PopoverPopup {
+          Arrow { View { background: .red } }
+          PopoverTitle("Filter by")
+          PopoverClose { Text("Done") }
+        }
+      }
+    }
+    Tooltip {
+      delay: 500ms
+      TooltipTrigger { Text("Info") }
+      popup { TooltipPopup { Text("More about this") } }
+    }
+    Dialog {
+      DialogTrigger { Text("Edit") }
+      backdrop { View { background: #00000066 } }
+      popup {
+        DialogPopup {
+          DialogTitle("Edit profile")
+          DialogDescription("Change your name")
+          DialogClose { Text("Save") }
+        }
+      }
+    }
+    AlertDialog {
+      DialogTrigger { Text("Delete") }
+      popup {
+        DialogPopup {
+          DialogTitle("Delete it?")
+          DialogClose { Text("Cancel") }
+          View {
+            role: .button
+            on press { deleted = true }
+            Text("Yes, delete")
+          }
+        }
+      }
+    }
+    Text("deleted {deleted}")
+  }
+}
+
+test "a popover opens next to its trigger, and closes" {
+  let app = mount(PopupsDemo(), platform: .macOS)
+  app.expectNo("Filter by")
+  app.tap("Filters")
+  app.expect("Filter by", "Done")
+  let (_, ty, _, th) = app.frameOf("Filters")
+  let (_, py, _, _) = app.frameOf("Filter by")
+  expect(py > ty + th, "below its trigger: {py} {ty} {th}")
+  app.tap("Done")
+  app.expectNo("Filter by")
+  app.tap("Filters")
+  app.pressKey("escape")
+  app.expectNo("Filter by")
+  expect(app.focused() == "Filters", "the focus back on the trigger: {app.focused()}")
+}
+
+test "a tooltip shows after its delay, and goes with the pointer" {
+  let app = mount(PopupsDemo(), platform: .macOS)
+  app.hover("Info")
+  app.expectNo("More about this")
+  await app.waitFor("More about this")
+  app.hover("Info", over: false)
+  await app.waitGone("More about this")
+}
+
+test "a dialog keeps the focus in it, and its backdrop closes it" {
+  let app = mount(PopupsDemo(), platform: .macOS)
+  app.tap("Edit")
+  app.expect("Edit profile", "Change your name")
+  expect(app.focused() == "Save", "its first focusable: {app.focused()}")
+  app.tab()
+  expect(app.focused() == "Save", "Tab stays in it: {app.focused()}")
+  app.dismiss()
+  app.expectNo("Edit profile")
+}
+
+test "an alert dialog doesn't close from outside" {
+  let app = mount(PopupsDemo(), platform: .macOS)
+  app.tap("Delete")
+  app.expect("Delete it?")
+  app.dismiss()
+  app.expect("Delete it?")
+  app.tap("Yes, delete")
+  app.expect("deleted true")
+  app.tap("Cancel")
+  app.expectNo("Delete it?")
+}

@@ -1,0 +1,537 @@
+// Buttons and choices: Button, Toggle, ToggleGroup, Checkbox,
+// CheckboxGroup, Switch, RadioGroup.
+
+// ---- Button ----
+
+/// A button: it reports press when tapped, clicked, or pressed with Enter
+/// or Space while it has the keyboard's focus; screen readers call it a
+/// button. Disabled, it reports nothing and leaves the Tab order.
+pub component Button {
+  /// Takes no press, nor the focus.
+  prop disabled = false
+  /// Stays in the Tab order while disabled (a screen reader still finds
+  /// it, a toolbar's buttons keep their places).
+  prop focusableWhenDisabled = false
+  prop children: View
+  /// Pressed: tapped, clicked, or Enter or Space with the focus.
+  event press
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    role: .button
+    focusable: !disabled || focusableWhenDisabled
+    disabled: disabled
+    on press { if !disabled { emit press } }
+    children
+  }
+}
+
+// ---- Toggle ----
+
+/// A button that's on or off: a bold button, a mute. Pressing it flips
+/// toggled; screen readers call it a toggle button and say whether it's
+/// on.
+pub component Toggle {
+  /// On.
+  prop toggled = false
+  /// It flipped.
+  event toggledChange(toggled: bool)
+  prop disabled = false
+  /// In a ToggleGroup: its value there.
+  prop value = ""
+  prop children: View
+  use group: ToggleGroupContext?
+  let me = Ref()
+
+  /// While on.
+  pub variant toggled = on()
+  /// While disabled (or its group is).
+  pub variant disabled = off()
+
+  fn on() -> bool {
+    if let g = group { return g.value.contains(value) }
+    return toggled
+  }
+
+  fn off() -> bool {
+    if let g = group { return disabled || g.disabled }
+    return disabled
+  }
+
+  // In a group: one of its items while it shows, kept up to date.
+  task(off()) {
+    if let g = group { g.items.put(Item(value: value, label: value, ref: me, disabled: off())) }
+  }
+  task {
+    defer { if let g = group { g.items.remove(value) } }
+    await never()
+  }
+
+  View {
+    ref: me
+    role: .button
+    a11yChecked: if on() { .checked } else { .unchecked }
+    focusable: !off() && isTabStop()
+    disabled: off()
+    keys: if let g = group { arrowKeys(g.items, g.orientation, loop: g.loop) } else { [] }
+    on focusChange(f) { if f { if let g = group { g.items.active = value } } }
+    on press {
+      if off() { return }
+      if let g = group {
+        g.flip(value)
+      } else {
+        toggled = !toggled
+      }
+    }
+    children
+  }
+
+  // In a group, one Tab stop: the first on, else the first enabled.
+  fn isTabStop() -> bool {
+    if let g = group {
+      if g.items.active != "" { return g.items.active == value }
+      if let firstOn = g.items.all.find(x => g.value.contains(x.value) && !x.disabled) { return firstOn.value == value }
+      if let first = g.items.firstEnabled() { return first.value == value }
+    }
+    return true
+  }
+}
+
+store ToggleGroupContext(value: [string], disabled: bool, multiple: bool, orientation: Orientation, loop: bool, set: fn([string])) {
+  pub let items = Items()
+
+  pub fn flip(v: string) {
+    if value.contains(v) {
+      set(value.filter(x => x != v))
+    } else if multiple {
+      set(value + [v])
+    } else {
+      set([v])
+    }
+  }
+}
+
+/// Toggles of which one (or, multiple, any) is on: a text's alignment,
+/// its styles. Its value is the values of the Toggles that are on; arrow
+/// keys move between them, and the group is one Tab stop.
+pub component ToggleGroup {
+  /// The values of the Toggles that are on.
+  prop value: [string] = []
+  /// Toggles were turned on or off.
+  event valueChange(value: [string])
+  /// More than one may be on (else turning one on turns the others off).
+  prop multiple = false
+  prop disabled = false
+  prop orientation: Orientation = .horizontal
+  /// The arrow keys go round from the last to the first.
+  prop loop = true
+  prop children: View
+
+  provide ToggleGroupContext(value: value, disabled: disabled, multiple: multiple, orientation: orientation, loop: loop, set: v => { value = v })
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    role: .toolbar
+    direction: if orientation == .horizontal { .row } else { .column }
+    children
+  }
+}
+
+// ---- Checkbox ----
+
+store CheckboxContext(checked: bool, indeterminate: bool, disabled: bool) {}
+
+/// A checkbox: pressing it (Space with the focus) checks or unchecks it;
+/// indeterminate shows neither (a parent of some checked boxes). Screen
+/// readers call it a checkbox and say its state. In a CheckboxGroup, its
+/// value is in the group's when checked.
+pub component Checkbox {
+  prop checked = false
+  /// It was checked or unchecked.
+  event checkedChange(checked: bool)
+  /// Neither checked nor unchecked: mixed (pressing it checks it).
+  prop indeterminate = false
+  prop disabled = false
+  /// Shown, can't be changed.
+  prop readOnly = false
+  /// In a CheckboxGroup: its value there.
+  prop value = ""
+  /// A group's parent: checked when all of the group's are, mixed when
+  /// some are; pressing it checks or unchecks all of them.
+  prop parent = false
+  prop children: View
+  use group: CheckboxGroupContext?
+
+  provide CheckboxContext(checked: isChecked(), indeterminate: isMixed(), disabled: isDisabled())
+
+  /// While checked.
+  pub variant checked = isChecked()
+  /// While neither (indeterminate, or a parent with some checked).
+  pub variant indeterminate = isMixed()
+  /// While disabled.
+  pub variant disabled = isDisabled()
+  /// While read-only.
+  pub variant readOnly = readOnly
+
+  fn isChecked() -> bool {
+    if let g = group {
+      if parent { return g.all.count() > 0 && g.all.all(v => g.value.contains(v)) }
+      return g.value.contains(value)
+    }
+    return checked && !indeterminate
+  }
+
+  fn isMixed() -> bool {
+    if let g = group {
+      if parent { return !isChecked() && g.all.any(v => g.value.contains(v)) }
+      return false
+    }
+    return indeterminate
+  }
+
+  fn isDisabled() -> bool {
+    if let g = group { return disabled || g.disabled }
+    return disabled
+  }
+
+  fn toggle() {
+    if isDisabled() || readOnly { return }
+    if let g = group {
+      if parent {
+        g.set(if isChecked() { [] } else { g.all })
+      } else if g.value.contains(value) {
+        g.set(g.value.filter(v => v != value))
+      } else {
+        g.set(g.value + [value])
+      }
+      return
+    }
+    // An indeterminate box checks (its caller clears indeterminate).
+    checked = indeterminate || !checked
+  }
+
+  View {
+    role: .checkbox
+    a11yChecked: if isMixed() { .mixed } else if isChecked() { .checked } else { .unchecked }
+    focusable: !isDisabled()
+    disabled: isDisabled()
+    on press { toggle() }
+    children
+  }
+}
+
+/// What shows a Checkbox's check: its children, only while the box is
+/// checked or indeterminate (keepMounted: always, styled by its variants).
+pub component CheckboxIndicator {
+  /// Shown unchecked too (to animate it, or style it by its variants).
+  prop keepMounted = false
+  prop children: View
+  use c: CheckboxContext
+
+  /// While its box is checked.
+  pub variant checked = c.checked
+  /// While its box is indeterminate.
+  pub variant indeterminate = c.indeterminate
+  /// While its box is disabled.
+  pub variant disabled = c.disabled
+
+  View {
+    a11yHidden: true
+    if keepMounted || c.checked || c.indeterminate { children }
+  }
+}
+
+store CheckboxGroupContext(value: [string], all: [string], disabled: bool, set: fn([string])) {}
+
+/// Checkboxes whose values make one value: the values of those checked.
+/// A Checkbox with parent checks or unchecks them all.
+pub component CheckboxGroup {
+  /// The values of the checked boxes.
+  prop value: [string] = []
+  /// Boxes were checked or unchecked.
+  event valueChange(value: [string])
+  /// Every box's value: what a parent box checks.
+  prop allValues: [string] = []
+  prop disabled = false
+  prop children: View
+
+  provide CheckboxGroupContext(value: value, all: allValues, disabled: disabled, set: v => { value = v })
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    role: .group
+    children
+  }
+}
+
+// ---- Switch ----
+
+store SwitchContext(checked: bool, disabled: bool) {}
+
+/// A switch: on or off, flipped by pressing it (Space with the focus).
+/// Screen readers call it a switch and say whether it's on.
+pub component Switch {
+  prop checked = false
+  /// It was turned on or off.
+  event checkedChange(checked: bool)
+  prop disabled = false
+  prop readOnly = false
+  prop children: View
+
+  provide SwitchContext(checked: checked, disabled: disabled)
+
+  /// While on.
+  pub variant checked = checked
+  /// While disabled.
+  pub variant disabled = disabled
+  /// While read-only.
+  pub variant readOnly = readOnly
+
+  View {
+    role: .switch
+    a11yChecked: if checked { .checked } else { .unchecked }
+    focusable: !disabled
+    disabled: disabled
+    on press { if !disabled && !readOnly { checked = !checked } }
+    children
+  }
+}
+
+/// A Switch's thumb: what slides (styled by its variants: checked { … }).
+pub component SwitchThumb {
+  prop children: View? = none
+  use s: SwitchContext
+
+  /// While its switch is on.
+  pub variant checked = s.checked
+  /// While its switch is disabled.
+  pub variant disabled = s.disabled
+
+  View {
+    a11yHidden: true
+    children
+  }
+}
+
+// ---- Radio ----
+
+store RadioGroupContext(value: string, disabled: bool, orientation: Orientation, loop: bool, set: fn(string)) {
+  pub let items = Items()
+}
+
+/// Radios of which one is chosen: its value is the chosen one's. Arrow
+/// keys choose the next and previous; the group is one Tab stop.
+pub component RadioGroup {
+  /// The chosen radio's value ("": none).
+  prop value = ""
+  /// Another radio was chosen.
+  event valueChange(value: string)
+  prop disabled = false
+  prop orientation: Orientation = .vertical
+  /// The arrow keys go round from the last to the first.
+  prop loop = true
+  prop children: View
+
+  provide RadioGroupContext(value: value, disabled: disabled, orientation: orientation, loop: loop, set: v => { value = v })
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    role: .radioGroup
+    children
+  }
+}
+
+store RadioContext(checked: bool, disabled: bool) {}
+
+/// A radio of a RadioGroup: pressing it (or an arrow key to it) chooses
+/// its value. Screen readers call it a radio button and say whether it's
+/// chosen.
+pub component Radio(value: string) {
+  prop disabled = false
+  /// What typeahead and screen readers know it by ("": its value).
+  prop label = ""
+  prop children: View
+  use g: RadioGroupContext
+  let me = Ref()
+
+  provide RadioContext(checked: g.value == value, disabled: isDisabled())
+
+  /// While chosen.
+  pub variant checked = g.value == value
+  /// While disabled (or its group is).
+  pub variant disabled = isDisabled()
+
+  fn isDisabled() -> bool = disabled || g.disabled
+
+  // The group's one Tab stop: the chosen one, else the first enabled.
+  fn isTabStop() -> bool {
+    if g.value != "" {
+      if let _ = g.items.find(g.value) { return g.value == value }
+    }
+    if let first = g.items.firstEnabled() { return first.value == value }
+    return true
+  }
+
+  task(label, isDisabled()) { g.items.put(Item(value: value, label: if label == "" { value } else { label }, ref: me, disabled: isDisabled())) }
+  task {
+    defer { g.items.remove(value) }
+    await never()
+  }
+
+  View {
+    ref: me
+    role: .radio
+    a11yChecked: if g.value == value { .checked } else { .unchecked }
+    focusable: !isDisabled() && isTabStop()
+    disabled: isDisabled()
+    keys: arrowKeys(g.items, g.orientation, loop: g.loop)
+    on focusChange(f) {
+      if f {
+        g.items.active = value
+        // An arrow key to it chooses it, as a radio group's do.
+        if !isDisabled() && g.value != value { g.set(value) }
+      }
+    }
+    on press { if !isDisabled() { g.set(value) } }
+    children
+  }
+}
+
+/// What shows that a Radio is chosen: its children, only while it is
+/// (keepMounted: always).
+pub component RadioIndicator {
+  prop keepMounted = false
+  prop children: View
+  use r: RadioContext
+
+  /// While its radio is chosen.
+  pub variant checked = r.checked
+  /// While its radio is disabled.
+  pub variant disabled = r.disabled
+
+  View {
+    a11yHidden: true
+    if keepMounted || r.checked { children }
+  }
+}
+
+// ---- Tests ----
+
+component ControlsDemo {
+  state taps = 0
+  state bold = false
+  state align: [string] = ["left"]
+  state agree = false
+  state picked: [string] = ["a"]
+  state wifi = true
+  state size = "m"
+
+  Column {
+    Button { on press { taps += 1 }; Text("Tap {taps}") }
+    Button { disabled: true; on press { taps += 100 }; Text("Off") }
+    Toggle { bind toggled: bold; Text(if bold { "Bold on" } else { "Bold off" }) }
+    ToggleGroup {
+      bind value: align
+      Toggle { value: "left"; Text("Left") }
+      Toggle { value: "center"; Text("Center") }
+      Toggle { value: "right"; Text("Right") }
+    }
+    Text("Align {align}")
+    Checkbox as box {
+      bind checked: agree
+      CheckboxIndicator { Text("✓") }
+      Text("Agree")
+    }
+    Text(if box.checked { "box checked" } else { "box unchecked" })
+    CheckboxGroup {
+      bind value: picked
+      allValues: ["a", "b"]
+      Checkbox { parent: true; Text("All") }
+      Checkbox { value: "a"; Text("A") }
+      Checkbox { value: "b"; Text("B") }
+    }
+    Text("Picked {picked}")
+    Switch { bind checked: wifi; SwitchThumb(); Text("Wi-Fi") }
+    Text("wifi {wifi}")
+    RadioGroup {
+      bind value: size
+      Radio("s") { Text("Small"); RadioIndicator { Text("•s") } }
+      Radio("m") { Text("Medium"); RadioIndicator { Text("•m") } }
+      Radio("l") { disabled: true; Text("Large") }
+    }
+    Text("Size {size}")
+  }
+}
+
+test "a button presses, a disabled one doesn't" {
+  let app = mount(ControlsDemo())
+  app.tap("Tap 0")
+  app.expect("Tap 1")
+  expect(app.disabled("Off"))
+}
+
+test "a toggle and a toggle group" {
+  let app = mount(ControlsDemo())
+  app.tap("Bold off")
+  app.expect("Bold on")
+  app.tap("Center")
+  app.expect("Align [\"center\"]")
+  app.tap("Center")
+  app.expect("Align []")
+}
+
+test "a checkbox checks, and shows its indicator" {
+  let app = mount(ControlsDemo())
+  app.expect("box unchecked")
+  app.expectNo("✓")
+  app.tap("Agree")
+  app.expect("box checked", "✓")
+  app.tap("Agree")
+  app.expect("box unchecked")
+}
+
+test "a checkbox group and its parent" {
+  let app = mount(ControlsDemo())
+  app.tap("B")
+  app.expect("Picked [\"a\",\"b\"]")
+  app.tap("All")
+  app.expect("Picked []")
+  app.tap("All")
+  app.expect("Picked [\"a\",\"b\"]")
+}
+
+test "a switch" {
+  let app = mount(ControlsDemo())
+  app.tap("Wi-Fi")
+  app.expect("wifi false")
+}
+
+// tabTo presses Tab until what shows text has the focus.
+fn tabTo(app: TestApp, text: string) {
+  for _ in 0..<40 {
+    if app.focused() == text { return }
+    app.tab()
+  }
+  expect(false, "Tab never reached {text}: {app.focused()}")
+}
+
+test "a radio group chooses one; arrow keys move and choose" {
+  let app = mount(ControlsDemo(), platform: .macOS)
+  app.expect("Size m", "•m")
+  app.tap("Small")
+  app.expect("Size s", "•s")
+  app.expectNo("•m")
+  tabTo(app, "Small")
+  app.pressKey("down")
+  app.expect("Size m")
+  app.pressKey("down")
+  app.expect("Size s") // Large is disabled: round to Small
+}

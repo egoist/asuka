@@ -1,0 +1,604 @@
+// Choosing from a list: Select (a trigger and a popup of options),
+// Listbox (the options in place) and Combobox (a field that filters
+// them).
+
+// ---- Select ----
+
+store SelectContext(value: string, open: bool, disabled: bool, pick: fn(string), setOpen: fn(bool)) {
+  pub let items = Items()
+  pub let trigger = Ref()
+  pub state labels: [string: string] = [:]
+
+  /// What shows for a value: its item's label (remembered once it's been
+  /// shown), else the value.
+  pub fn label(v: string) -> string = labels[v] ?? v
+}
+
+/// A choice of one value from options in a popup over the window: a
+/// SelectTrigger (showing a SelectValue), and SelectItems in a
+/// SelectPopup in its popup slot. Pressing the trigger, or Down, Up,
+/// Enter or Space with the focus on it, opens it with the chosen item
+/// focused; arrow keys, Home, End and typing move through the items, and
+/// Enter, Space or a press chooses one and closes it.
+pub component Select {
+  /// The chosen item's value ("": none).
+  prop value = ""
+  /// Another item was chosen.
+  event valueChange(value: string)
+  prop open = false
+  /// It opened or closed.
+  event openChange(open: bool)
+  prop disabled = false
+  /// What SelectValue shows for each value, before its items have shown
+  /// (they tell it their labels as they do).
+  prop labels: [string: string] = [:]
+  /// The side of the trigger it opens on.
+  prop side: Side = .bottom
+  prop align: Align = .start
+  prop sideOffset: float = 4
+  prop edgeGap: float = 8
+  prop children: View
+  /// Its SelectPopup.
+  prop popup: View? = none
+
+  let ctx = SelectContext(value: value, open: open, disabled: disabled, pick: v => {
+    value = v
+    open = false
+  }, setOpen: o => { if !disabled || !o { open = o } })
+  let placement = Placement()
+  provide ctx
+  provide placement
+
+  effect {
+    for (k, v) in labels { ctx.labels[k] = v }
+  }
+
+  /// While open.
+  pub variant open = open
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    children
+    Overlay {
+      open: open
+      on change(o) { open = o }
+      anchor: ctx.trigger
+      side: side
+      align: align
+      offset: sideOffset
+      edgeGap: edgeGap
+      matchWidth: true
+      on place(p) { placement.placed = p }
+      popup
+    }
+  }
+}
+
+/// What opens a Select, showing its value. Screen readers call it a combo
+/// box and read the chosen item.
+pub component SelectTrigger {
+  prop children: View
+  use c: SelectContext
+
+  /// While its select is open.
+  pub variant open = c.open
+  /// While its select is disabled.
+  pub variant disabled = c.disabled
+  /// While nothing is chosen.
+  pub variant placeholder = c.value == ""
+
+  View {
+    ref: c.trigger
+    role: .comboBox
+    a11yExpanded: if c.open { .expanded } else { .collapsed }
+    a11yValue: c.label(c.value)
+    focusable: !c.disabled
+    disabled: c.disabled
+    keys: [
+      Shortcut(key: "down", run: () => c.setOpen(true)),
+      Shortcut(key: "up", run: () => c.setOpen(true)),
+    ]
+    on press { c.setOpen(!c.open) }
+    children
+  }
+}
+
+/// The chosen item's label, or placeholder when none is chosen.
+pub component SelectValue {
+  /// What shows while nothing is chosen.
+  prop placeholder = ""
+  use c: SelectContext
+
+  /// While nothing is chosen (the placeholder shows).
+  pub variant placeholder = c.value == ""
+
+  Text(if c.value == "" { placeholder } else { c.label(c.value) })
+}
+
+/// A Select's popup: its items. Screen readers call it a list box.
+pub component SelectPopup {
+  prop children: View
+  use c: SelectContext
+  use p: Placement
+
+  /// While open.
+  pub variant open = c.open
+  /// While above its trigger.
+  pub variant sideTop = p.placed.side == .top
+  /// While below it.
+  pub variant sideBottom = p.placed.side == .bottom
+
+  View {
+    role: .listbox
+    autofocus: true
+    restoreFocus: true
+    keys: arrowKeys(c.items, .vertical, loop: false)
+    children
+  }
+}
+
+/// An option of a Select: pressing it (or Enter or Space with the focus)
+/// chooses its value and closes the select. label is what SelectValue
+/// shows and typing matches ("": its value).
+pub component SelectItem(value: string) {
+  prop label = ""
+  prop disabled = false
+  prop children: View
+  use c: SelectContext
+  let me = Ref()
+
+  /// While it's the chosen one.
+  pub variant selected = c.value == value
+  /// While the keyboard (or a pointer) is on it.
+  pub variant highlighted = c.items.active == value
+  /// While disabled.
+  pub variant disabled = disabled
+
+  fn text() -> string = if label == "" { value } else { label }
+
+  task(label, disabled) {
+    c.items.put(Item(value: value, label: text(), ref: me, disabled: disabled))
+    c.labels[value] = text()
+  }
+  task {
+    defer { c.items.remove(value) }
+    await never()
+  }
+
+  View {
+    ref: me
+    role: .option
+    a11ySelected: c.value == value
+    focusable: !disabled
+    autofocus: c.value == value
+    disabled: disabled
+    on focusChange(f) { if f { c.items.active = value } else if c.items.active == value { c.items.active = "" } }
+    on hoverChange(h) { if h && !disabled { me.focus() } }
+    on keyText(t) { c.items.type(t) }
+    on press { if !disabled { c.pick(value) } }
+    children
+  }
+}
+
+/// What shows that a SelectItem is the chosen one: its children, only
+/// while it is.
+pub component SelectItemIndicator(value: string) {
+  prop children: View
+  use c: SelectContext
+
+  View {
+    a11yHidden: true
+    if c.value == value { children }
+  }
+}
+
+/// Items of a select (or a menu, a listbox) under a label: screen readers
+/// read them as a group named by its GroupLabel.
+pub component Group {
+  prop children: View
+  let name = Ref()
+  provide GroupContext(name: name)
+
+  View {
+    role: .group
+    a11yLabelledBy: name
+    children
+  }
+}
+
+store GroupContext(name: Ref) {}
+
+/// A Group's label.
+pub component GroupLabel(text: string) {
+  use g: GroupContext
+  Text(text) { ref: g.name; role: .header }
+}
+
+/// A line between items, or groups of them.
+pub component Separator {
+  prop orientation: Orientation = .horizontal
+  prop children: View? = none
+  View {
+    role: .separator
+    children
+  }
+}
+
+// ---- Listbox ----
+
+store ListboxContext(value: [string], multiple: bool, disabled: bool, toggle: fn(string)) {
+  pub let items = Items()
+}
+
+/// Options in place, choosing one (or, multiple, any): a list of
+/// accounts, a sidebar's filters. Arrow keys, Home, End and typing move
+/// through them; Enter, Space or a press chooses one. It's one Tab stop.
+pub component Listbox {
+  /// The chosen items' values.
+  prop value: [string] = []
+  /// The choice changed.
+  event valueChange(value: [string])
+  /// More than one may be chosen: pressing one adds or removes it.
+  prop multiple = false
+  prop disabled = false
+  prop orientation: Orientation = .vertical
+  prop children: View
+
+  let ctx = ListboxContext(value: value, multiple: multiple, disabled: disabled, toggle: v => {
+    if multiple {
+      value = if value.contains(v) { value.filter(x => x != v) } else { value + [v] }
+    } else {
+      value = [v]
+    }
+  })
+  provide ctx
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    role: .listbox
+    keys: arrowKeys(ctx.items, orientation, loop: false)
+    direction: if orientation == .horizontal { .row } else { .column }
+    children
+  }
+}
+
+/// An option of a Listbox.
+pub component ListboxItem(value: string) {
+  prop label = ""
+  prop disabled = false
+  prop children: View
+  use c: ListboxContext
+  let me = Ref()
+
+  /// While chosen.
+  pub variant selected = c.value.contains(value)
+  /// While the keyboard is on it.
+  pub variant highlighted = c.items.active == value
+  /// While disabled.
+  pub variant disabled = disabled || c.disabled
+
+  fn off() -> bool = disabled || c.disabled
+
+  // The list's one Tab stop: the item the keyboard was on, else the first
+  // chosen, else the first.
+  fn isTabStop() -> bool {
+    if c.items.active != "" { return c.items.active == value }
+    if let it = c.items.all.find(x => c.value.contains(x.value) && !x.disabled) { return it.value == value }
+    if let first = c.items.firstEnabled() { return first.value == value }
+    return true
+  }
+
+  task(label, off()) { c.items.put(Item(value: value, label: if label == "" { value } else { label }, ref: me, disabled: off())) }
+  task {
+    defer { c.items.remove(value) }
+    await never()
+  }
+
+  View {
+    ref: me
+    role: .option
+    a11ySelected: c.value.contains(value)
+    focusable: !off() && isTabStop()
+    disabled: off()
+    on focusChange(f) { if f { c.items.active = value } }
+    on keyText(t) { c.items.type(t) }
+    on press { if !off() { c.toggle(value) } }
+    children
+  }
+}
+
+// ---- Combobox ----
+
+store ComboboxContext(value: string, query: string, open: bool, disabled: bool, choose: fn(string, string), setQuery: fn(string), setOpen: fn(bool)) {
+  pub let items = Items()
+  pub let input = Ref()
+  pub let list = Ref()
+  pub state shown = 0
+
+  /// Whether text matches what's typed: its start, or a word's, ignoring
+  /// case.
+  pub fn matches(text: string) -> bool {
+    let q = query.trim().lower()
+    if q == "" { return true }
+    let t = text.lower()
+    return t.hasPrefix(q) || t.contains(" " + q)
+  }
+
+  /// Chooses v: its label fills the field.
+  pub fn pick(v: string) { choose(v, items.label(v)) }
+
+  /// Moves the highlight (the input keeps the focus).
+  pub fn highlight(by: int) {
+    if !open {
+      setOpen(true)
+      return
+    }
+    if let it = items.step(from: items.active, by: by, loop: true) { items.active = it.value }
+  }
+}
+
+/// A text field with options that match what's typed: typing filters
+/// them and opens its popup; Down and Up move the highlight while the
+/// field keeps the focus, Enter chooses the highlighted one (its label
+/// fills the field), Escape closes it. Items hide themselves when they
+/// don't match the query; ComboboxEmpty shows when none does.
+pub component Combobox {
+  /// The chosen item's value.
+  prop value = ""
+  /// An item was chosen.
+  event valueChange(value: string)
+  /// What's typed.
+  prop query = ""
+  /// The text changed.
+  event queryChange(query: string)
+  prop open = false
+  /// It opened or closed.
+  event openChange(open: bool)
+  prop disabled = false
+  prop children: View
+  /// Its ComboboxPopup.
+  prop popup: View? = none
+
+  let ctx = ComboboxContext(value: value, query: query, open: open, disabled: disabled, choose: (v, l) => {
+    value = v
+    query = l
+    open = false
+  }, setQuery: q => {
+    query = q
+    open = true
+  }, setOpen: o => { if !disabled || !o { open = o } })
+  let placement = Placement()
+  provide ctx
+  provide placement
+
+  /// While open.
+  pub variant open = open
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    children
+    Overlay {
+      open: open
+      on change(o) { open = o }
+      anchor: ctx.input
+      side: .bottom
+      align: .start
+      offset: 4
+      matchWidth: true
+      dismissOn: [.outsidePress, .escape, .back, .anchorHidden]
+      on place(p) { placement.placed = p }
+      popup
+    }
+  }
+}
+
+/// A Combobox's text field: a TextField with none of the platform's
+/// border (plain), in a view the app styles. Screen readers call it a
+/// combo box.
+pub component ComboboxInput {
+  prop placeholder = ""
+  use c: ComboboxContext
+
+  /// While its popup is open.
+  pub variant open = c.open
+  /// While disabled.
+  pub variant disabled = c.disabled
+
+  View {
+    ref: c.input
+    role: .comboBox
+    a11yExpanded: if c.open { .expanded } else { .collapsed }
+    a11yControls: c.list
+    TextField {
+      text: c.query
+      on change(t) { c.setQuery(t) }
+      placeholder: placeholder
+      plain: true
+      disabled: c.disabled
+      keys: [
+        Shortcut(key: "down", run: () => c.highlight(1)),
+        Shortcut(key: "up", run: () => c.highlight(-1)),
+        Shortcut(key: "enter", run: () => {
+          if c.open && c.items.active != "" { c.pick(c.items.active) }
+        }),
+      ]
+    }
+  }
+}
+
+/// A Combobox's popup: the items that match.
+pub component ComboboxPopup {
+  prop children: View
+  use c: ComboboxContext
+
+  /// While open.
+  pub variant open = c.open
+
+  View {
+    ref: c.list
+    role: .listbox
+    children
+  }
+}
+
+/// An option of a Combobox: shown while its label matches what's typed.
+pub component ComboboxItem(value: string) {
+  prop label = ""
+  prop disabled = false
+  prop children: View
+  use c: ComboboxContext
+  let me = Ref()
+
+  /// While it's the chosen one.
+  pub variant selected = c.value == value
+  /// While the highlight is on it.
+  pub variant highlighted = c.items.active == value
+  /// While disabled.
+  pub variant disabled = disabled
+
+  fn text() -> string = if label == "" { value } else { label }
+
+  task(label, disabled, c.matches(text())) {
+    if c.matches(text()) {
+      c.items.put(Item(value: value, label: text(), ref: me, disabled: disabled))
+    } else {
+      c.items.remove(value)
+    }
+  }
+  task {
+    defer { c.items.remove(value) }
+    await never()
+  }
+
+  View {
+    ref: me
+    role: .option
+    hidden: !c.matches(text())
+    a11ySelected: c.value == value
+    disabled: disabled
+    on hoverChange(h) { if h && !disabled { c.items.active = value } }
+    on press { if !disabled { c.pick(value) } }
+    children
+  }
+}
+
+/// What a Combobox's popup shows when no item matches.
+pub component ComboboxEmpty {
+  prop children: View
+  use c: ComboboxContext
+
+  View {
+    role: .status
+    if c.items.all.isEmpty() { children }
+  }
+}
+
+// ---- Tests ----
+
+component SelectDemo {
+  state fruit = ""
+  state accounts: [string] = []
+  state city = ""
+  state q = ""
+
+  Column {
+    Select {
+      bind value: fruit
+      labels: ["pear": "Pear"]
+      SelectTrigger { SelectValue { placeholder: "Pick a fruit" } }
+      popup {
+        SelectPopup {
+          SelectItem("apple") { label: "Apple"; Text("Apple") }
+          SelectItem("banana") { label: "Banana"; Text("Banana") }
+          SelectItem("cherry") { label: "Cherry"; disabled: true; Text("Cherry") }
+          SelectItem("pear") { label: "Pear"; Text("Pear") }
+        }
+      }
+    }
+    Text("fruit {fruit}")
+    Listbox {
+      bind value: accounts
+      multiple: true
+      ListboxItem("home") { Text("Home") }
+      ListboxItem("work") { Text("Work") }
+    }
+    Text("accounts {accounts}")
+    Combobox {
+      bind value: city
+      bind query: q
+      ComboboxInput { placeholder: "City" }
+      popup {
+        ComboboxPopup {
+          ComboboxItem("par") { label: "Paris"; Text("Paris") }
+          ComboboxItem("ber") { label: "Berlin"; Text("Berlin") }
+          ComboboxItem("bar") { label: "Barcelona"; Text("Barcelona") }
+          ComboboxEmpty { Text("No city") }
+        }
+      }
+    }
+    Text("city {city}")
+  }
+}
+
+test "a select shows its placeholder, opens, and chooses" {
+  let app = mount(SelectDemo())
+  app.expect("Pick a fruit")
+  app.expectNo("Apple")
+  app.tap("Pick a fruit")
+  app.expect("Apple", "Banana", "Pear")
+  app.tap("Banana")
+  app.expect("fruit banana")
+  app.expectNo("Apple")
+  app.tap("Banana")
+  app.tap("Pear")
+  app.expect("fruit pear")
+}
+
+test "a select by the keyboard" {
+  let app = mount(SelectDemo(), platform: .macOS)
+  app.tab()
+  expect(app.focused() == "Pick a fruit", app.focused())
+  app.pressKey("down")
+  app.expect("Apple")
+  expect(app.focused() == "Apple", "no value: the first item {app.focused()}")
+  app.pressKey("down")
+  expect(app.focused() == "Banana", app.focused())
+  app.pressKey("down")
+  expect(app.focused() == "Pear", "skips the disabled one: {app.focused()}")
+  app.pressKey("home")
+  expect(app.focused() == "Apple", app.focused())
+  app.pressKey("p")
+  expect(app.focused() == "Pear", "typeahead: {app.focused()}")
+  app.pressKey("enter")
+  app.expect("fruit pear")
+  app.expectNo("Apple")
+  expect(app.focused() == "Pear", "back on the trigger: {app.focused()}")
+  app.pressKey("up")
+  expect(app.focused() == "Pear", "opened on its value: {app.focused()}")
+  app.pressKey("escape")
+  app.expect("fruit pear")
+}
+
+test "a listbox chooses several" {
+  let app = mount(SelectDemo())
+  app.tap("Home")
+  app.tap("Work")
+  app.expect("accounts [\"home\",\"work\"]")
+  app.tap("Home")
+  app.expect("accounts [\"work\"]")
+}
+
+test "a combobox filters as it's typed in, and chooses" {
+  let app = mount(SelectDemo(), platform: .macOS)
+  app.type("ba", into: "City")
+  app.expect("Barcelona")
+  app.expectNo("Paris", "Berlin")
+  app.tap("Barcelona")
+  app.expect("city bar")
+  app.type("x", into: "City")
+  app.expect("No city")
+}

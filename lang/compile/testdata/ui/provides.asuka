@@ -1,0 +1,47 @@
+// What a component provides is its own views': siblings that provide
+// the same store don't see each other's. use of an optional store is
+// none when nothing above provides one. A slot that may be none, alone
+// in an element's lazy children, is built once.
+
+store Theme(name: string) {}
+
+component Themed(name: string) {
+  prop children: View
+  provide Theme(name: name)
+  Column { children }
+}
+
+component Says {
+  use t: Theme?
+  Text(if let t = t { "theme {t.name}" } else { "no theme" })
+}
+
+component Later {
+  prop popup: View? = none
+  state open = true
+  Column { Overlay { open: open; popup } }
+}
+
+component Page {
+  Column {
+    Says()
+    Themed("light") { Says() }
+    Themed("dark") { Says() }
+    Says()
+    Later { popup { Text("Once") } }
+  }
+}
+
+app { Page() }
+
+test "siblings' provides are their own" {
+  let app = mount(Page())
+  app.expect("theme light", "theme dark")
+  expect(app.texts().filter(t => t == "no theme").count() == 2, "{app.texts()}")
+}
+
+test "an optional slot is built once" {
+  let app = mount(Page())
+  let ops = app.ops()
+  expect(ops.split("Text=\"Once\"").count() == 2, ops)
+}

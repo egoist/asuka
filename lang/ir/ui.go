@@ -237,7 +237,7 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 			}
 		case check.UseMember:
 			r := b.local(bc.KRef)
-			key := b.kstr(b.l.typeKey(b.typ(m.Type)))
+			key := b.kstr(b.l.typeKey(check.Unopt(b.typ(m.Type))))
 			b.callBTo(uiUse, r, key)
 			b.memberRegs[m] = r
 		}
@@ -528,9 +528,18 @@ func (b *fb) lowerApp(d *syntax.AppDecl) {
 // viewsOf builds view items: one view, or a fragment of them.
 func (b *fb) viewsOf(items []syntax.Item) int {
 	if len(items) == 1 {
-		if v, opt := b.viewItem(items[0]); !opt {
+		v, opt := b.viewItem(items[0])
+		if !opt || v < 0 {
 			return v
 		}
+		// A view that may be none (an optional slot): in a fragment, built
+		// once.
+		frag := b.callB(uiFragment, bc.KRef)
+		skip := b.f.NewLabel()
+		b.emitJump(op("JNONE"), v, skip)
+		b.callBTo(uiAdd, bc.None, frag, v)
+		b.f.Place(skip)
+		return frag
 	}
 	frag := b.callB(uiFragment, bc.KRef)
 	for _, it := range items {
@@ -1246,7 +1255,17 @@ func (b *fb) componentCall(ec *check.ElementCall) int {
 			vals = append(vals, none())
 		}
 	}
+	// A component that provides builds under an owner of its own, so what
+	// it provides is its views', not its later siblings' (which share the
+	// caller's owner).
+	scope := -1
+	if len(comp.Provides) > 0 {
+		scope = b.callB(uiScopeBegin, bc.KInt)
+	}
 	v := b.invoke(idx, vals, bc.KRef, -1, false)
+	if scope >= 0 {
+		b.callBTo(uiScopeEnd, bc.None, scope)
+	}
 	b.outerStyle(v, ec)
 	if ec.As != nil {
 		// Component as name: the view of the one element it shows.

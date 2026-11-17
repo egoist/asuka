@@ -1,0 +1,638 @@
+// Menus of actions: Menu (opened by a trigger), its items, checkable and
+// radio items, submenus, ContextMenu (opened by a long press or a right
+// click) and Menubar (menus in a row).
+
+import std/i18n
+
+fn isSub(parent: MenuContext?) -> bool {
+  if let _ = parent { return true }
+  return false
+}
+
+store MenuContext(open: bool, setOpen: fn(bool), parent: MenuContext?, sub: bool, bar: MenubarContext?) {
+  pub let items = Items()
+  pub let trigger = Ref()
+
+  /// Closes it and the menus it's in: an item was chosen.
+  pub fn closeAll() {
+    setOpen(false)
+    if let p = parent { p.closeAll() }
+  }
+}
+
+/// A menu of actions in a popup next to its trigger: MenuTrigger, and
+/// MenuItems in a MenuPopup in its popup slot. Pressing the trigger, or
+/// Down, Enter or Space with the focus on it, opens it with its first item
+/// focused; arrow keys, Home, End and typing move through the items;
+/// Enter, Space or a press chooses one, which closes it (and the menus
+/// it's in); Escape, a press outside or the focus leaving close it. In
+/// another menu's popup, with a MenuSubmenuTrigger, it's a submenu: it
+/// opens to the side, with Right (Left right to left), a press, or a
+/// pointer resting on its trigger, and Left closes it.
+pub component Menu {
+  prop open = false
+  /// It opened or closed.
+  event openChange(open: bool)
+  prop side: Side = .bottom
+  prop align: Align = .start
+  prop sideOffset: float = 4
+  prop alignOffset: float = 0
+  prop edgeGap: float = 8
+  /// Opens when a pointer rests on its trigger (a submenu's always does).
+  prop openOnHover = false
+  prop delay: Duration = 100ms
+  prop children: View
+  /// Its MenuPopup.
+  prop popup: View? = none
+  use parent: MenuContext?
+  use bar: MenubarContext?
+
+  state hovering = false
+  let ctx = MenuContext(open: open, setOpen: o => { open = o }, parent: parent, sub: isSub(parent), bar: if isSub(parent) { none } else { bar })
+  let placement = Placement()
+  provide ctx
+  provide placement
+  provide MenuHover(set: h => { hovering = h })
+
+  /// While open.
+  pub variant open = open
+
+  // In a menubar: one of its menus while it shows.
+  task {
+    if let b = ctx.bar { b.add(ctx) }
+    defer { if let b = ctx.bar { b.remove(ctx) } }
+    await never()
+  }
+
+  task(hovering) {
+    if hovering && !open && (openOnHover || isSub(parent)) {
+      await sleep(delay)
+      open = true
+    }
+  }
+
+  View {
+    children
+    Overlay {
+      open: open
+      on change(o) { open = o }
+      anchor: ctx.trigger
+      side: if isSub(parent) { .end } else { side }
+      align: if isSub(parent) { .start } else { align }
+      offset: if isSub(parent) { 0 } else { sideOffset }
+      alignOffset: alignOffset
+      edgeGap: edgeGap
+      // In a menubar, the focus moving to another of its menus is the bar's
+      // to follow (it opens that one): not leaving.
+      dismissOn: if inBar() { [.outsidePress, .escape, .back, .anchorHidden] } else { [.outsidePress, .escape, .back, .focusOut, .anchorHidden] }
+      on place(p) { placement.placed = p }
+      popup
+    }
+  }
+
+  fn inBar() -> bool {
+    if let _ = ctx.bar { return true }
+    return false
+  }
+}
+
+store MenuHover(set: fn(bool)) {}
+
+/// What opens a Menu when pressed (Down, Enter or Space with the focus on
+/// it too). Screen readers hear that it opens a menu, and whether it's
+/// open.
+pub component MenuTrigger {
+  prop disabled = false
+  prop children: View
+  use c: MenuContext
+  use hover: MenuHover
+
+  /// While its menu is open.
+  pub variant open = c.open
+  /// While disabled.
+  pub variant disabled = disabled
+
+  fn openFromKeys() { if !disabled { c.setOpen(true) } }
+
+  fn id() -> string = "#{c.trigger.id}"
+
+  // In a menubar: one of the items its arrows move through.
+  task(disabled) {
+    if let b = c.bar { b.items.put(Item(value: id(), label: "", ref: c.trigger, disabled: disabled)) }
+  }
+  task {
+    let mine = id()
+    defer { if let b = c.bar { b.items.remove(mine) } }
+    await never()
+  }
+
+  // A menubar's one Tab stop: the trigger the keyboard was on, else the
+  // first.
+  fn isTabStop() -> bool {
+    if let b = c.bar {
+      if b.items.active != "" { return b.items.active == id() }
+      if let first = b.items.firstEnabled() { return first.value == id() }
+    }
+    return true
+  }
+
+  View as me {
+    ref: c.trigger
+    role: .button
+    a11yExpanded: if c.open { .expanded } else { .collapsed }
+    focusable: !disabled && isTabStop()
+    disabled: disabled
+    keys: menubarKeys(c, [Shortcut(key: "down", run: () => openFromKeys())])
+    on press { if !disabled { c.setOpen(!c.open) } }
+    on hoverChange(h) {
+      if disabled { return }
+      hover.set(h)
+      // In a menubar with a menu open, a pointer moving onto another
+      // menu's trigger opens that one.
+      if h { if let b = c.bar { b.hovered(c) } }
+    }
+    on focusChange(f) {
+      if f {
+        if let b = c.bar {
+          b.items.active = id()
+          // An arrow key to it (not the focus given back as a menu closed).
+          if me.focusVisible { b.focused(c) }
+        }
+      }
+    }
+    children
+  }
+}
+
+/// A Menu's popup: its items. Screen readers call it a menu.
+pub component MenuPopup {
+  prop children: View
+  use c: MenuContext
+  use p: Placement
+
+  /// While open.
+  pub variant open = c.open
+  /// While above its trigger.
+  pub variant sideTop = p.placed.side == .top
+  /// While below it.
+  pub variant sideBottom = p.placed.side == .bottom
+  /// While on its start side (a submenu that flipped).
+  pub variant sideStart = p.placed.side == .start
+  /// While on its end side (a submenu).
+  pub variant sideEnd = p.placed.side == .end
+
+  fn closeSub() {
+    if c.sub {
+      c.setOpen(false)
+      c.trigger.focus()
+    }
+  }
+
+  View {
+    role: .menu
+    autofocus: true
+    restoreFocus: true
+    keys: arrowKeys(c.items, .vertical) + [Shortcut(key: if i18n.isRTL() { "right" } else { "left" }, run: () => closeSub())]
+    children
+  }
+}
+
+/// An action of a Menu: pressing it (Enter or Space with the focus on it)
+/// reports select and closes the menu, and the menus it's in, unless
+/// closeOnSelect is false. label is what typing matches ("": none).
+pub component MenuItem {
+  prop label = ""
+  prop disabled = false
+  /// Closes its menu when chosen.
+  prop closeOnSelect = true
+  prop children: View
+  /// It was chosen.
+  event select
+  use c: MenuContext
+  let me = Ref()
+
+  // Its key among its menu's items: its view's identity.
+  fn id() -> string = "#{me.id}"
+
+  /// While the keyboard (or a pointer) is on it.
+  pub variant highlighted = c.items.active == id()
+  /// While disabled.
+  pub variant disabled = disabled
+
+  task(label, disabled) { c.items.put(Item(value: id(), label: label, ref: me, disabled: disabled)) }
+  task {
+    let mine = id()
+    defer { c.items.remove(mine) }
+    await never()
+  }
+
+  View {
+    ref: me
+    role: .menuItem
+    focusable: !disabled
+    disabled: disabled
+    on focusChange(f) { if f { c.items.active = id() } else if c.items.active == id() { c.items.active = "" } }
+    on hoverChange(h) { if h && !disabled { me.focus() } }
+    on keyText(t) { c.items.type(t) }
+    on press {
+      if disabled { return }
+      emit select
+      if closeOnSelect { c.closeAll() }
+    }
+    children
+  }
+}
+
+/// A Menu item that's checked or not: pressing it flips checked (it
+/// stays open unless closeOnSelect). Screen readers call it a checkable
+/// menu item.
+pub component MenuCheckboxItem {
+  prop checked = false
+  /// It was checked or unchecked.
+  event checkedChange(checked: bool)
+  prop label = ""
+  prop disabled = false
+  prop closeOnSelect = false
+  prop children: View
+  use c: MenuContext
+  let me = Ref()
+
+  // Its key among its menu's items: its view's identity.
+  fn id() -> string = "#{me.id}"
+
+  provide ItemCheck(checked: checked)
+
+  /// While checked.
+  pub variant checked = checked
+  /// While the keyboard is on it.
+  pub variant highlighted = c.items.active == id()
+  /// While disabled.
+  pub variant disabled = disabled
+
+  task(label, disabled) { c.items.put(Item(value: id(), label: label, ref: me, disabled: disabled)) }
+  task {
+    let mine = id()
+    defer { c.items.remove(mine) }
+    await never()
+  }
+
+  View {
+    ref: me
+    role: .menuItemCheckbox
+    a11yChecked: if checked { .checked } else { .unchecked }
+    focusable: !disabled
+    disabled: disabled
+    on focusChange(f) { if f { c.items.active = id() } }
+    on hoverChange(h) { if h && !disabled { me.focus() } }
+    on keyText(t) { c.items.type(t) }
+    on press {
+      if disabled { return }
+      checked = !checked
+      if closeOnSelect { c.closeAll() }
+    }
+    children
+  }
+}
+
+store ItemCheck(checked: bool) {}
+
+/// What shows that a checkable menu item (MenuCheckboxItem,
+/// MenuRadioItem) is checked: its children, only while it is.
+pub component MenuItemIndicator {
+  prop children: View
+  use i: ItemCheck
+
+  /// While its item is checked.
+  pub variant checked = i.checked
+
+  View {
+    a11yHidden: true
+    if i.checked { children }
+  }
+}
+
+store MenuRadioContext(value: string, set: fn(string)) {}
+
+/// Menu items of which one is chosen (a sort order): MenuRadioItems.
+pub component MenuRadioGroup {
+  /// The chosen item's value.
+  prop value = ""
+  /// Another was chosen.
+  event valueChange(value: string)
+  prop children: View
+
+  provide MenuRadioContext(value: value, set: v => { value = v })
+
+  View {
+    role: .group
+    children
+  }
+}
+
+/// A Menu item of a MenuRadioGroup: pressing it chooses its value.
+pub component MenuRadioItem(value: string) {
+  prop label = ""
+  prop disabled = false
+  prop closeOnSelect = false
+  prop children: View
+  use c: MenuContext
+  use g: MenuRadioContext
+  let me = Ref()
+
+  // Its key among its menu's items: its view's identity.
+  fn id() -> string = "#{me.id}"
+
+  provide ItemCheck(checked: g.value == value)
+
+  /// While chosen.
+  pub variant checked = g.value == value
+  /// While the keyboard is on it.
+  pub variant highlighted = c.items.active == id()
+  /// While disabled.
+  pub variant disabled = disabled
+
+  task(label, disabled) { c.items.put(Item(value: id(), label: label, ref: me, disabled: disabled)) }
+  task {
+    let mine = id()
+    defer { c.items.remove(mine) }
+    await never()
+  }
+
+  View {
+    ref: me
+    role: .menuItemRadio
+    a11yChecked: if g.value == value { .checked } else { .unchecked }
+    focusable: !disabled
+    disabled: disabled
+    on focusChange(f) { if f { c.items.active = id() } }
+    on hoverChange(h) { if h && !disabled { me.focus() } }
+    on keyText(t) { c.items.type(t) }
+    on press {
+      if disabled { return }
+      g.set(value)
+      if closeOnSelect { c.closeAll() }
+    }
+    children
+  }
+}
+
+/// The item of a menu that opens a submenu: put a Menu in the menu's
+/// popup, with this as its trigger. Right (Left right to left), Enter,
+/// Space, a press or a pointer resting on it opens the submenu.
+pub component MenuSubmenuTrigger {
+  prop label = ""
+  prop disabled = false
+  prop children: View
+  use c: MenuContext
+  use hover: MenuHover
+
+  fn id() -> string = "#{c.trigger.id}"
+
+  /// While its submenu is open.
+  pub variant open = c.open
+  /// While the keyboard is on it.
+  pub variant highlighted = parentActive() == id()
+  /// While disabled.
+  pub variant disabled = disabled
+
+  fn parentActive() -> string {
+    if let p = c.parent { return p.items.active }
+    return ""
+  }
+
+  task(label, disabled) {
+    if let p = c.parent { p.items.put(Item(value: id(), label: label, ref: c.trigger, disabled: disabled)) }
+  }
+  task {
+    let mine = id()
+    defer { if let p = c.parent { p.items.remove(mine) } }
+    await never()
+  }
+
+  View {
+    ref: c.trigger
+    role: .menuItem
+    a11yExpanded: if c.open { .expanded } else { .collapsed }
+    focusable: !disabled
+    disabled: disabled
+    keys: [Shortcut(key: if i18n.isRTL() { "left" } else { "right" }, run: () => { if !disabled { c.setOpen(true) } })]
+    on focusChange(f) { if f { if let p = c.parent { p.items.active = id() } } }
+    on hoverChange(h) {
+      if disabled { return }
+      hover.set(h)
+      if h { c.trigger.focus() }
+    }
+    on keyText(t) { if let p = c.parent { p.items.type(t) } }
+    on press { if !disabled { c.setOpen(true) } }
+    children
+  }
+}
+
+// ---- ContextMenu ----
+
+/// A Menu opened by a long press on its trigger area (a right click on a
+/// desktop, Shift+F10 or the Menu key with the focus in it), next to it.
+/// Its MenuItems go in a MenuPopup in its popup slot.
+pub component ContextMenu {
+  prop open = false
+  /// It opened or closed.
+  event openChange(open: bool)
+  prop children: View
+  /// Its MenuPopup.
+  prop popup: View? = none
+
+  let ctx = MenuContext(open: open, setOpen: o => { open = o }, parent: none, sub: false, bar: none)
+  let placement = Placement()
+  provide ctx
+  provide placement
+  provide MenuHover(set: h => {})
+
+  /// While open.
+  pub variant open = open
+
+  View {
+    ref: ctx.trigger
+    actions: [A11yAction(name: "Show menu", run: () => { open = true })]
+    keys: [Shortcut(key: "f10", shift: true, run: () => { open = true })]
+    on longPress { open = true }
+    children
+    Overlay {
+      open: open
+      on change(o) { open = o }
+      anchor: ctx.trigger
+      side: .bottom
+      align: .start
+      on place(p) { placement.placed = p }
+      popup
+    }
+  }
+}
+
+// ---- Menubar ----
+
+store MenubarContext(orientation: Orientation, loop: bool) {
+  pub let items = Items()
+  state menus: [MenuContext] = []
+
+  /// A pointer came onto menu's trigger: with another menu open, it opens
+  /// instead.
+  pub fn hovered(menu: MenuContext) {
+    if menu.open { return }
+    var other = false
+    for m in menus {
+      if m.open {
+        other = true
+        m.setOpen(false)
+      }
+    }
+    if other { menu.setOpen(true) }
+  }
+
+  /// The focus came to menu's trigger (an arrow key): with another menu
+  /// open, it opens instead.
+  pub fn focused(menu: MenuContext) {
+    hovered(menu)
+  }
+
+  pub fn add(menu: MenuContext) { menus.push(menu) }
+
+  pub fn remove(menu: MenuContext) { menus.removeWhere(m => m.trigger.id == menu.trigger.id) }
+}
+
+/// Menus in a row, as an app's menu bar: Left and Right (or Up and Down,
+/// vertical) move between their triggers, and with one open, moving onto
+/// another opens it. It's one Tab stop.
+pub component Menubar {
+  prop orientation: Orientation = .horizontal
+  /// The arrow keys go round from the last menu to the first.
+  prop loop = true
+  prop children: View
+
+  let ctx = MenubarContext(orientation: orientation, loop: loop)
+  provide ctx
+
+  View {
+    role: .menuBar
+    direction: if orientation == .horizontal { .row } else { .column }
+    children
+  }
+}
+
+// menubarKeys are a menu trigger's keys: in a menubar, the arrows along
+// it too.
+fn menubarKeys(c: MenuContext, own: [Shortcut]) -> [Shortcut] {
+  if let b = c.bar {
+    return own + arrowKeys(b.items, b.orientation, loop: b.loop)
+  }
+  return own
+}
+
+// ---- Tests ----
+
+component MenuDemo {
+  state did = "nothing"
+  state wrap = false
+  state sort = "name"
+
+  Column {
+    Menu {
+      MenuTrigger { Text("Actions") }
+      popup {
+        MenuPopup {
+          MenuItem { label: "Copy"; on select { did = "copy" }; Text("Copy") }
+          MenuItem { label: "Cut"; disabled: true; on select { did = "cut" }; Text("Cut") }
+          MenuItem { label: "Paste"; on select { did = "paste" }; Text("Paste") }
+          Separator()
+          MenuCheckboxItem { label: "Wrap"; bind checked: wrap; MenuItemIndicator { Text("✓") }; Text("Wrap") }
+          MenuRadioGroup {
+            bind value: sort
+            MenuRadioItem("name") { label: "By name"; MenuItemIndicator { Text("•") }; Text("By name") }
+            MenuRadioItem("date") { label: "By date"; Text("By date") }
+          }
+          Menu {
+            MenuSubmenuTrigger { label: "Share"; Text("Share") }
+            popup {
+              MenuPopup {
+                MenuItem { label: "Mail"; on select { did = "mail" }; Text("Mail") }
+              }
+            }
+          }
+        }
+      }
+    }
+    Text("did {did}")
+    Text("wrap {wrap} sort {sort}")
+    ContextMenu {
+      Text("Hold me")
+      popup { MenuPopup { MenuItem { label: "Delete"; on select { did = "delete" }; Text("Delete") } } }
+    }
+    Menubar {
+      Menu {
+        MenuTrigger { Text("File") }
+        popup { MenuPopup { MenuItem { label: "New"; on select { did = "new" }; Text("New") } } }
+      }
+      Menu {
+        MenuTrigger { Text("Edit") }
+        popup { MenuPopup { MenuItem { label: "Undo"; on select { did = "undo" }; Text("Undo") } } }
+      }
+    }
+  }
+}
+
+test "a menu opens, chooses, and closes" {
+  let app = mount(MenuDemo())
+  app.expectNo("Copy")
+  app.tap("Actions")
+  app.expect("Copy", "Paste")
+  app.tap("Paste")
+  app.expect("did paste")
+  app.expectNo("Copy")
+}
+
+test "checkable items stay open and flip" {
+  let app = mount(MenuDemo())
+  app.tap("Actions")
+  app.tap("Wrap")
+  app.expect("wrap true sort name", "✓", "Copy")
+  app.tap("By date")
+  app.expect("wrap true sort date")
+}
+
+test "a menu by the keyboard, with typeahead and a submenu" {
+  let app = mount(MenuDemo(), platform: .macOS)
+  app.tab()
+  expect(app.focused() == "Actions", app.focused())
+  app.pressKey("down")
+  expect(app.focused() == "Copy", app.focused())
+  app.pressKey("down")
+  expect(app.focused() == "Paste", "the disabled Cut is skipped: {app.focused()}")
+  app.pressKey("s")
+  expect(app.focused() == "Share", "typeahead: {app.focused()}")
+  app.pressKey("right")
+  app.expect("Mail")
+  expect(app.focused() == "Mail", app.focused())
+  app.pressKey("left")
+  app.expectNo("Mail")
+  expect(app.focused() == "Share", app.focused())
+  app.pressKey("right")
+  app.pressKey("enter")
+  app.expect("did mail")
+  app.expectNo("Copy", "Mail")
+  expect(app.focused() == "Actions", "back on the trigger: {app.focused()}")
+}
+
+test "a context menu opens on a long press" {
+  let app = mount(MenuDemo())
+  app.longPress("Hold me")
+  app.tap("Delete")
+  app.expect("did delete")
+}
+
+test "a menubar moves between its menus" {
+  let app = mount(MenuDemo(), platform: .macOS)
+  app.tap("File")
+  app.expect("New")
+  app.hover("Edit")
+  app.expect("Undo")
+  app.expectNo("New")
+}

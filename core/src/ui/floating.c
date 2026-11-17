@@ -390,17 +390,23 @@ static void ov_open(ov *o) {
 	}
 	ak_owner_set_context(o->owner, ak_env_key, l->prov);
 	// The backdrop, under the content.
+	// The backdrop, under the content: none when its builder shows nothing
+	// (a component passing on a backdrop it wasn't given), which leaves a
+	// non-modal overlay passing presses through.
 	const ak_val *bd = key_of(e, AK_KEY_OVERLAY_BACKDROP);
-	if (bd && bd->p && ((ak_obj *)bd->p)->tag == AK_TAG_CLOSURE) {
+	ak_view *bv = bd && bd->p && ((ak_obj *)bd->p)->tag == AK_TAG_CLOSURE ? ak_build_under(r, o->owner, bd->p, NULL, 0) : NULL;
+	if (bv && bv->frag && bv->kids.len == 0) {
+		ak_view_destroy(bv);
+		ak_release(bv);
+		bv = NULL;
+	}
+	if (bv) {
 		ak_view *b = ak_view_new(r, &cls_backdrop, 0, true);
 		b->impl = o;
 		b->finalized = true;
 		ak_view_listen(b, AK_EVENT_PRESS);
-		ak_view *v = ak_build_under(r, o->owner, bd->p, NULL, 0);
-		if (v) {
-			ak_view_append(b, v);
-			ak_release(v);
-		}
+		ak_view_append(b, bv);
+		ak_release(bv);
 		ak_view_append(l, b);
 		o->backdrop = b;
 	}

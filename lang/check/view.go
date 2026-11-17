@@ -105,10 +105,11 @@ func (c *Checker) componentMembers(t *TypeName, params *syntax.ParamList, body *
 			}
 			add(bp.Name, m)
 		case *syntax.UseDecl:
+			// use s: Store? is none when nothing above provides one.
 			m := &Member{Kind: UseMember, Type: c.typeExpr(d.Type), Decl: d}
-			if n, ok := m.Type.(*Named); !ok || n.Obj.Kind != StoreType {
+			if n, ok := Unopt(m.Type).(*Named); !ok || n.Obj.Kind != StoreType {
 				if !IsInvalid(m.Type) {
-					c.errorf(d.Type, "use takes a store's type, provided by a component above: %s isn't one", typeString(m.Type))
+					c.errorf(d.Type, "use takes a store's type (or an optional one, none when nothing provides it), provided by a component above: %s isn't one", typeString(m.Type))
 				}
 			}
 			add(d.Name, m)

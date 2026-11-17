@@ -236,9 +236,9 @@ func (c *Checker) styleItems(items []syntax.Item, d *StyleDef, state string) []*
 			out = append(out, &StyleItem{Prop: &PropArg{Member: m, Value: s.Value, Style: true}})
 		case *syntax.UseDecl:
 			t := c.typeExpr(s.Type)
-			if n, ok := t.(*Named); !ok || n.Obj.Kind != StoreType {
+			if n, ok := Unopt(t).(*Named); !ok || n.Obj.Kind != StoreType {
 				if !IsInvalid(t) {
-					c.errorf(s.Type, "use takes a store's type, provided by a component above: %s isn't one", typeString(t))
+					c.errorf(s.Type, "use takes a store's type (or an optional one, none when nothing provides it), provided by a component above: %s isn't one", typeString(t))
 				}
 			}
 			if state != "" {

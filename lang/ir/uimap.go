@@ -32,9 +32,11 @@ const (
 	uiModelBound = "ui.model_bound" // (model) -> bool: its caller binds it
 	uiModelSet   = "ui.model_set"   // (model, value) -> void: an unbound one's own value
 
-	uiTask    = "ui.task"    // (closure) -> void: starts it as a task when the component mounts; cancelled when it goes
-	uiUse     = "ui.use"     // (key string) -> the value provided under key (a store), or an error
-	uiProvide = "ui.provide" // (key string, value) -> void: on the current owner, for the components below
+	uiTask       = "ui.task"        // (closure) -> void: starts it as a task when the component mounts; cancelled when it goes
+	uiUse        = "ui.use"         // (key string) -> the value provided under key (a store), or an error
+	uiScopeBegin = "ui.scope_begin" // () -> int: an owner of its own for a component that provides, the one it replaced
+	uiScopeEnd   = "ui.scope_end"   // (int) -> void: back to the owner scope_begin replaced
+	uiProvide    = "ui.provide"     // (key string, value) -> void: on the current owner, for the components below
 
 	uiLoad       = "ui.load"    // (thunk -> future) -> loader: re-runs the thunk when what it read changes, cancelling the last task
 	uiLoadState  = "load.state" // (loader) -> int: 0 pending, 1 ready, 2 failed (tracked)

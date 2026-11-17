@@ -69,7 +69,7 @@ type stylePiece struct {
 	value  syntax.Expr
 	env    *styleEnv
 	guards []styleGuard
-	state  string             // an interaction state's variant; "" for none
+	state  string            // an interaction state's variant; "" for none
 	decl   *check.VariantDef // a declared variant's; nil for none
 }
 
@@ -175,7 +175,7 @@ func (b *fb) styleApply(d *check.StyleDef, args []syntax.Expr, outer *styleEnv) 
 		if v := it.Use; v != nil {
 			mark := b.mark()
 			r := b.local(bc.KRef)
-			b.callBTo(uiUse, r, b.kstr(b.l.typeKey(b.typ(v.Type))))
+			b.callBTo(uiUse, r, b.kstr(b.l.typeKey(check.Unopt(b.typ(v.Type)))))
 			env.vars[v] = r
 			b.release(mark)
 		}

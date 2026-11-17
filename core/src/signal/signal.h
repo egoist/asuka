@@ -168,6 +168,14 @@ void ak_with_owner(ak_owner *o, void (*fn)(void *ctx), void *ctx);
 // computation still tracking what fn reads: what an effect builds under
 // an owner of its own, that it disposes itself (the UI's Dynamic).
 void ak_with_owner_tracked(ak_owner *o, void (*fn)(void *ctx), void *ctx);
+// ak_owner_enter makes an owner under the current one (disposed with it)
+// the current owner, the running computation still tracking, and returns
+// the one it replaced, for ak_owner_leave: what a component that
+// provides builds under, so its contexts are its own views', not its
+// siblings'. A caller that unwinds past the leave (an error) is inside an
+// ak_with_owner, which restores the owner as it returns.
+ak_owner *ak_owner_enter(void);
+void ak_owner_leave(ak_owner *prev);
 // ak_on_cleanup registers fn to run when the current owner is disposed,
 // or before the current computation re-runs. With no owner it does
 // nothing.

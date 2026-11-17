@@ -27,6 +27,8 @@
 //	ui.dynamic     build: fn() -> View?                               View
 //	ui.lazy_for    list: View, items, key, row, keyKind (as ui.for)   -
 //	ui.use         key: string (the type's name)                      ref?
+//	ui.scope_begin -                                                  int (the owner it replaced)
+//	ui.scope_end   prev: int (scope_begin's)                          -
 //	ui.provide     key: string, value: ref                            -
 //	ui.task        body: async fn()                                   -
 //	ui.load        thunk: fn() -> Task<T>                             Loader
@@ -167,6 +169,19 @@ static ak_val b_lazy_for(ak_val *a, uint32_t n) {
 static ak_val b_use(ak_val *a, uint32_t n) {
 	AK_UNUSED(n);
 	return ak_ui_use(a[0].p);
+}
+
+// A component that provides runs under an owner of its own: its
+// contexts are for its views, not its siblings'.
+static ak_val b_scope_begin(ak_val *a, uint32_t n) {
+	AK_UNUSED(a), AK_UNUSED(n);
+	return (ak_val){.i = (int64_t)(intptr_t)ak_owner_enter()};
+}
+
+static ak_val b_scope_end(ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	ak_owner_leave((ak_owner *)(intptr_t)a[0].i);
+	return none();
 }
 
 static ak_val b_provide(ak_val *a, uint32_t n) {
@@ -447,7 +462,7 @@ void ak_ui_builtins_init(void) {
 		{"ui.switch", b_switch},
 		{"ui.dynamic", b_dynamic},
 		{"ui.lazy_for", b_lazy_for},
-		{"ui.use", b_use},
+		{"ui.use", b_use}, {"ui.scope_begin", b_scope_begin}, {"ui.scope_end", b_scope_end},
 		{"ui.provide", b_provide},
 		{"ui.task", b_task},
 		{"ui.load", b_load},
