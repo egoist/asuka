@@ -521,8 +521,19 @@ none.
 | Key | Type | Default | What it is |
 |---|---|---|---|
 | `path` | path | `path` or `build` | The program's directory, relative to `asuka.toml`. It imports the project's packages relatively (`import ../model`). |
-| `build` | strings | `path` or `build` | Instead of `path`: the command that builds a program another toolchain makes (a Go or Rust tool the app ships), run in the project's directory for each target. `{out}` is where it writes the executable, `{os}` and `{arch}` the target's, in Go's names (`darwin`, `windows`, `linux`; `arm64`, `amd64`). |
-| `env` | table | none | `build`'s environment, over the CLI's, `{out}`, `{os}` and `{arch}` replaced in its values. |
+| `build` | strings | `path` or `build` | Instead of `path`: the command that builds a program another toolchain makes (a Go or Rust tool the app ships), run in the project's directory for each target. `{out}` is where it writes the executable; the target's are below. |
+| `env` | table | none | `build`'s environment, over the CLI's, with the same placeholders replaced in its values. |
+| `output` | path | `{out}` | Where `build` leaves the executable, relative to `asuka.toml`, for a toolchain that picks its own place (cargo's `target/<triple>/release`): the CLI takes it from there. |
+
+The target in `build`, `env` and `output`, in each toolchain's names:
+
+| Placeholder | Mac (Apple silicon, Intel) | Linux | Windows |
+|---|---|---|---|
+| `{os}` | `macos` | `linux` | `windows` |
+| `{arch}` | `arm64`, `x64` | `arm64`, `x64` | `arm64`, `x64` |
+| `{exe}` | | | `.exe` |
+| `{target}`, Rust's and clang's triple | `aarch64-apple-darwin`, `x86_64-apple-darwin` | `aarch64-unknown-linux-musl`, `x86_64-unknown-linux-musl` (static, as Asuka's own programs are) | `aarch64-pc-windows-gnullvm`, `x86_64-pc-windows-gnu` (MinGW, as Asuka's Windows builds are) |
+| `{goos}`, `{goarch}`, Go's | `darwin`; `arm64`, `amd64` | `linux`; `arm64`, `amd64` | `windows`; `arm64`, `amd64` |
 
 ```toml
 [bin.notes]
@@ -533,7 +544,11 @@ path = "sync"
 
 [bin.notes-server]
 build = ["go", "build", "-o", "{out}", "./cmd/server"]
-env = { GOOS = "{os}", GOARCH = "{arch}", CGO_ENABLED = "0" }
+env = { GOOS = "{goos}", GOARCH = "{goarch}", CGO_ENABLED = "0" }
+
+[bin.notes-index]
+build = ["cargo", "build", "--release", "--manifest-path", "index/Cargo.toml", "--target", "{target}"]
+output = "index/target/{target}/release/notes-index{exe}"
 ```
 
 `asuka run --bin notes` and `asuka build --bin notes` run and build one

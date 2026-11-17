@@ -31,7 +31,11 @@ import (
 //
 //	[bin.notes-sync]
 //	build = ["go", "build", "-o", "{out}", "./cmd/sync"]
-//	env = { GOOS = "{os}", GOARCH = "{arch}", CGO_ENABLED = "0" }
+//	env = { GOOS = "{goos}", GOARCH = "{goarch}", CGO_ENABLED = "0" }
+//
+//	[bin.notes-index]
+//	build = ["cargo", "build", "--release", "--target", "{target}"]
+//	output = "target/{target}/release/notes-index{exe}"
 
 // Bin is one of a project's programs.
 type Bin struct {
@@ -41,6 +45,10 @@ type Bin struct {
 	// toolchain builds; Env what it runs with. See Command.
 	Build []string
 	Env   map[string]string
+	// Output is where Build leaves the program, relative to the
+	// project, for a toolchain that picks its own place (cargo's
+	// target/); "": Build writes it to {out}.
+	Output string
 }
 
 // Built says whether the program is built by a command of its own,
@@ -48,10 +56,9 @@ type Bin struct {
 func (b Bin) Built() bool { return len(b.Build) > 0 }
 
 // Command is the program's build for t into out: its arguments and the
-// environment over the CLI's, {out}, {os} and {arch} replaced (Go's names
-// for them: darwin, windows, linux; arm64, amd64).
+// environment over the CLI's, with BuildVars' placeholders replaced.
 func (b Bin) Command(t cbuild.Target, out string) (args, env []string) {
-	r := strings.NewReplacer("{out}", out, "{os}", t.OS, "{arch}", t.Arch)
+	r := buildVars(t, out)
 	for _, a := range b.Build {
 		args = append(args, r.Replace(a))
 	}
@@ -66,6 +73,62 @@ func (b Bin) Command(t cbuild.Target, out string) (args, env []string) {
 	return args, env
 }
 
+// BuiltAt is where the build for t leaves the program: out, or Output
+// (its placeholders replaced) in the project's directory dir.
+func (b Bin) BuiltAt(t cbuild.Target, dir, out string) string {
+	if b.Output == "" {
+		return out
+	}
+	return filepath.Join(dir, filepath.FromSlash(buildVars(t, out).Replace(b.Output)))
+}
+
+// BuildVars are the placeholders in a [bin]'s build, env and output, for
+// a target: each toolchain's names for it, none of them Asuka's
+// internal ones.
+//
+//	{out}     where the build writes the program
+//	{os}      macos, windows, linux ([c.prebuilt]'s names)
+//	{arch}    arm64, x64
+//	{exe}     .exe on Windows, else nothing
+//	{target}  Rust's and clang's triple: aarch64-apple-darwin,
+//	          x86_64-unknown-linux-musl (static, as Asuka's own programs
+//	          are), x86_64-pc-windows-gnu (MinGW, as Asuka's Windows
+//	          builds are)
+//	{goos}    Go's: darwin, windows, linux
+//	{goarch}  Go's: arm64, amd64
+func BuildVars(t cbuild.Target) map[string]string {
+	name, arch, exe := t.OS, t.Arch, ""
+	if name == "darwin" {
+		name = "macos"
+	}
+	if arch == "amd64" {
+		arch = "x64"
+	}
+	cpu := map[string]string{"arm64": "aarch64", "amd64": "x86_64", "386": "i686", "arm": "armv7"}[t.Arch]
+	var triple string
+	switch t.OS {
+	case "darwin":
+		triple = cpu + "-apple-darwin"
+	case "linux":
+		triple = cpu + "-unknown-linux-musl"
+	case "windows":
+		exe = ".exe"
+		triple = cpu + "-pc-windows-gnu"
+		if t.Arch == "arm64" {
+			triple = "aarch64-pc-windows-gnullvm" // Rust's MinGW on arm64
+		}
+	}
+	return map[string]string{"{os}": name, "{arch}": arch, "{exe}": exe, "{target}": triple, "{goos}": t.OS, "{goarch}": t.Arch}
+}
+
+func buildVars(t cbuild.Target, out string) *strings.Replacer {
+	pairs := []string{"{out}", out}
+	for k, v := range BuildVars(t) {
+		pairs = append(pairs, k, v)
+	}
+	return strings.NewReplacer(pairs...)
+}
+
 // bins reads a project's [bin] tables.
 func bins(dir string, m *pkgs.Manifest) ([]Bin, error) {
 	var out []Bin
@@ -77,11 +140,17 @@ func bins(dir string, m *pkgs.Manifest) ([]Bin, error) {
 			if b.Path != "" {
 				return nil, fmt.Errorf("asuka.toml: [bin.%s]: path or build, not both: path is an Asuka program's directory, build the command another toolchain builds one with", name)
 			}
-			out = append(out, Bin{Name: name, Build: b.Build, Env: b.Env})
+			if b.Output != "" && filepath.IsAbs(filepath.FromSlash(b.Output)) {
+				return nil, fmt.Errorf("asuka.toml: [bin.%s]: output is relative to the project", name)
+			}
+			out = append(out, Bin{Name: name, Build: b.Build, Env: b.Env, Output: b.Output})
 			continue
 		}
 		if len(b.Env) > 0 {
 			return nil, fmt.Errorf("asuka.toml: [bin.%s]: env is for build's command", name)
+		}
+		if b.Output != "" {
+			return nil, fmt.Errorf("asuka.toml: [bin.%s]: output is where build's command leaves the program", name)
 		}
 		if b.Path == "" {
 			return nil, fmt.Errorf("asuka.toml: [bin.%s] needs path, its package's directory (path = \"cli\"), or build, the command that builds it (build = [\"go\", \"build\", \"-o\", \"{out}\", \".\"])", name)

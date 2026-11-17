@@ -40,10 +40,14 @@ type BinTarget struct {
 	// Path is its package's directory, relative to the project's.
 	Path string `json:"path"`
 	// Build is the command that builds it, run in the project's directory,
-	// with {out}, {os} and {arch} in its arguments and Env's values.
+	// with placeholders for the target ({out}, {os}, {arch}, {target}...:
+	// appbuild.BuildVars) in its arguments, Env's values and Output.
 	Build []string `json:"build"`
 	// Env is what Build runs with over the CLI's environment.
 	Env map[string]string `json:"env"`
+	// Output is where Build leaves the program, relative to the project,
+	// when it can't write it to {out} (cargo's target/<triple>/release).
+	Output string `json:"output"`
 }
 
 // ReadManifest reads dir's asuka.toml (an empty manifest when there's

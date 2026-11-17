@@ -371,13 +371,25 @@ A program another toolchain builds goes in the app the same way: a
 server written in Go, a tool in Rust, which the app runs. Its `[bin]`
 names the command that builds it instead of a directory, run for each
 target the app is built for (both of a universal Mac app's, joined
-with `lipo`):
+with `lipo`). Placeholders name the target in each toolchain's own
+words: `{goos}` and `{goarch}` for Go, `{target}`, the triple, for
+Rust; `{os}` and `{arch}` are Asuka's (`macos`, `x64`), for a script of
+your own. A build that can't write to `{out}`, as cargo can't, says
+where it leaves the program with `output` ([asuka.toml](asuka-toml.md#bin)
+lists them all):
 
 ```toml
 [bin.notes-server]
 build = ["go", "build", "-o", "{out}", "./cmd/server"]
-env = { GOOS = "{os}", GOARCH = "{arch}", CGO_ENABLED = "0" }
+env = { GOOS = "{goos}", GOARCH = "{goarch}", CGO_ENABLED = "0" }
+
+[bin.notes-index]
+build = ["cargo", "build", "--release", "--manifest-path", "index/Cargo.toml", "--target", "{target}"]
+output = "index/target/{target}/release/notes-index{exe}"
 ```
+
+The Rust targets come from `rustup target add`; a Linux or Windows
+build from a Mac needs a linker for them too, as any cross build does.
 
 The app finds its programs with `command.bundled(name)`: the path in
 the build, or none (a phone, the web, a test). `asuka dev` builds them

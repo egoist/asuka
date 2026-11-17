@@ -447,8 +447,19 @@ strip = 1
 | キー | 型 | デフォルト | 内容 |
 |---|---|---|---|
 | `path` | パス | `path` か `build` | プログラムのディレクトリ。`asuka.toml` からの相対パスです。プログラムはプロジェクトのパッケージを相対パスでインポートします（`import ../model`）。 |
-| `build` | 文字列の配列 | `path` か `build` | `path` の代わりに、ほかのツールチェーンが作るプログラム（アプリに同梱する Go や Rust のツール）のビルドコマンド。ターゲットごとにプロジェクトのディレクトリで実行されます。`{out}` は実行ファイルの書き出し先、`{os}` と `{arch}` はターゲットのもので、Go の名前です（`darwin`、`windows`、`linux`；`arm64`、`amd64`）。 |
-| `env` | テーブル | なし | `build` の環境変数。CLI の環境に上書きされ、値の `{out}`、`{os}`、`{arch}` は置き換えられます。 |
+| `build` | 文字列の配列 | `path` か `build` | `path` の代わりに、ほかのツールチェーンが作るプログラム（アプリに同梱する Go や Rust のツール）のビルドコマンド。ターゲットごとにプロジェクトのディレクトリで実行されます。`{out}` は実行ファイルの書き出し先です。ターゲットのプレースホルダーは下の表のとおりです。 |
+| `env` | テーブル | なし | `build` の環境変数。CLI の環境に上書きされ、値の中の同じプレースホルダーが置き換えられます。 |
+| `output` | パス | `{out}` | `build` が実行ファイルを置く場所。`asuka.toml` からの相対パスです。出力先を自分で決めるツールチェーン（cargo の `target/<triple>/release`）のためのもので、CLI はそこから取り出します。 |
+
+`build`、`env`、`output` の中のターゲットは、ツールチェーンごとの名前で書きます。
+
+| プレースホルダー | Mac（Apple シリコン、Intel） | Linux | Windows |
+|---|---|---|---|
+| `{os}` | `macos` | `linux` | `windows` |
+| `{arch}` | `arm64`、`x64` | `arm64`、`x64` | `arm64`、`x64` |
+| `{exe}` | | | `.exe` |
+| `{target}`（Rust と clang のターゲットトリプル） | `aarch64-apple-darwin`、`x86_64-apple-darwin` | `aarch64-unknown-linux-musl`、`x86_64-unknown-linux-musl`（Asuka 自身のプログラムと同じく静的リンク） | `aarch64-pc-windows-gnullvm`、`x86_64-pc-windows-gnu`（Asuka の Windows ビルドと同じく MinGW） |
+| `{goos}`、`{goarch}`（Go の名前） | `darwin`；`arm64`、`amd64` | `linux`；`arm64`、`amd64` | `windows`；`arm64`、`amd64` |
 
 ```toml
 [bin.notes]
@@ -459,7 +470,11 @@ path = "sync"
 
 [bin.notes-server]
 build = ["go", "build", "-o", "{out}", "./cmd/server"]
-env = { GOOS = "{os}", GOARCH = "{arch}", CGO_ENABLED = "0" }
+env = { GOOS = "{goos}", GOARCH = "{goarch}", CGO_ENABLED = "0" }
+
+[bin.notes-index]
+build = ["cargo", "build", "--release", "--manifest-path", "index/Cargo.toml", "--target", "{target}"]
+output = "index/target/{target}/release/notes-index{exe}"
 ```
 
 `asuka run --bin notes` と `asuka build --bin notes` で 1 つを実行・ビルドします（1 つだけなら `--bin` は省略できます）。`asuka test` はアプリのテストと一緒に各プログラムのテストも実行します。デスクトップのビルドはプログラムをアプリに入れます。Mac では `Contents/Helpers`、Linux では `bin`、Windows では `.exe` の隣です。スマートフォンと Web は無視し、`asuka dev` は起動時に一度ビルドします。アプリは `command.bundled(name)`（std/command）でそれを見つけます。`asuka run`、`test`、`build --bin` は Asuka のプログラムを扱い、`build` で作るプログラムはそのツールチェーンで実行・テストします。アプリに付属するプログラムは、データをアプリと同じ場所に保存します。[アプリに付属するプログラム](programs.md#アプリに付属するプログラム)を参照してください。

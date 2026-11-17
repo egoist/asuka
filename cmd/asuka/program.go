@@ -318,8 +318,17 @@ func builtProgram(b appbuild.Bin, dir string, t cbuild.Target, out string, verbo
 	if err := c.Run(); err != nil {
 		return "", fmt.Errorf("%s: %w", strings.Join(args, " "), err)
 	}
-	if fi, err := os.Stat(exe); err != nil || fi.IsDir() {
-		return "", fmt.Errorf("%s made no %s: build writes the program to {out}", strings.Join(args, " "), filepath.Base(exe))
+	made := b.BuiltAt(t, dir, exe)
+	if fi, err := os.Stat(made); err != nil || fi.IsDir() {
+		if b.Output == "" {
+			return "", fmt.Errorf("%s made no %s: build writes the program to {out}, or output says where it leaves it", strings.Join(args, " "), filepath.Base(exe))
+		}
+		return "", fmt.Errorf("%s made no %s (output)", strings.Join(args, " "), made)
+	}
+	if made != exe {
+		if err := copyFile(made, exe); err != nil {
+			return "", err
+		}
 	}
 	return exe, nil
 }

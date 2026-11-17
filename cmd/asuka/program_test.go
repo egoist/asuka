@@ -298,38 +298,46 @@ func TestBundleBuiltPrograms(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte(`name = "Proj"
 
 [bin.gate]
-build = ["sh", "-c", "printf '%s %s %s' {os} {arch} \"$WHERE\" > {out}"]
-env = { WHERE = "{os}/{arch}" }
+build = ["sh", "-c", "printf '%s %s %s %s' {os} {arch} {target} \"$WHERE\" > {out}"]
+env = { WHERE = "{goos}/{goarch}" }
+
+# cargo's way: it leaves the program where it likes, and output says where.
+[bin.index]
+build = ["sh", "-c", "mkdir -p target/{target}/release && printf {target} > target/{target}/release/index{exe}"]
+output = "target/{target}/release/index{exe}"
 `), 0o644)
 	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte("app { Text(\"hi\") }\n"), 0o644)
 	app, err := loadApp(dir, thisComputer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b := app.proj.Bins; len(b) != 1 || !b[0].Built() {
+	if b := app.proj.Bins; len(b) != 2 || !b[0].Built() || !b[1].Built() {
 		t.Fatalf("bins: %+v", b)
 	}
 	if _, err := app.proj.Bin("gate"); err == nil || !strings.Contains(err.Error(), "its own command") {
 		t.Fatalf("Bin(gate): %v", err)
 	}
 	for _, c := range []struct {
-		t    cbuild.Target
-		file string
-		want string
+		t           cbuild.Target
+		gate, index string // the files
+		want, built string // what's in them
 	}{
-		{cbuild.Target{OS: "linux", Arch: "amd64"}, "gate", "linux amd64 linux/amd64"},
-		{cbuild.Target{OS: "windows", Arch: "arm64"}, "gate.exe", "windows arm64 windows/arm64"},
+		{cbuild.Target{OS: "linux", Arch: "amd64"}, "gate", "index", "linux x64 x86_64-unknown-linux-musl linux/amd64", "x86_64-unknown-linux-musl"},
+		{cbuild.Target{OS: "windows", Arch: "arm64"}, "gate.exe", "index.exe", "windows arm64 aarch64-pc-windows-gnullvm windows/arm64", "aarch64-pc-windows-gnullvm"},
 	} {
 		out := filepath.Join(t.TempDir(), "bundle")
 		got, err := bundlePrograms(app, c.t, nil, out, false)
 		if err != nil {
 			t.Fatalf("%s: %v", c.t.OS, err)
 		}
-		if len(got) != 1 || got[0] != filepath.Join(out, c.file) {
+		if len(got) != 2 || got[0] != filepath.Join(out, c.gate) || got[1] != filepath.Join(out, c.index) {
 			t.Fatalf("%s: %v", c.t.OS, got)
 		}
 		if b, _ := os.ReadFile(got[0]); string(b) != c.want {
 			t.Fatalf("%s: %q, want %q", c.t.OS, b, c.want)
+		}
+		if b, _ := os.ReadFile(got[1]); string(b) != c.built {
+			t.Fatalf("%s: %q, want %q", c.t.OS, b, c.built)
 		}
 	}
 }
@@ -340,6 +348,8 @@ func TestBinPathOrBuild(t *testing.T) {
 		{"[bin.x]\npath = \"cli\"\nbuild = [\"true\"]\n", "not both"},
 		{"[bin.x]\npath = \"cli\"\nenv = { A = \"b\" }\n", "env is for build"},
 		{"[bin.x]\n", "or build"},
+		{"[bin.x]\npath = \"cli\"\noutput = \"x\"\n", "output is where build"},
+		{"[bin.x]\nbuild = [\"true\"]\noutput = \"/x\"\n", "output is relative"},
 	} {
 		dir := t.TempDir()
 		os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte(c.toml), 0o644)
