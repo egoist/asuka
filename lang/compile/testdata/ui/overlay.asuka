@@ -158,12 +158,23 @@ test "it flips to where there's room" {
   expect(ry < ty, "Row 0 at {ry}, the anchor at {ty}")
 }
 
+// fills reports whether the view with the backdrop's color is as big as
+// the window.
+fn fills(ops: string) -> bool {
+  var id = ""
+  for line in ops.lines() {
+    if line.hasSuffix("00000066") && line.contains("Background=") { id = line.split(" ")[1] }
+  }
+  return id != "" && ops.contains("SetFrame {id} 0,0 390x844")
+}
+
 test "a modal one covers the window with its backdrop" {
   let app = mount(Dialog())
   app.tap("Show")
   app.expect("Are you sure?")
   let (x, _, w, _) = app.frameOf("Are you sure?")
   expect(x > 0 && x + w < 390, "centered: {x} {w}")
+  expect(fills(app.ops()), "the backdrop fills the window")
   app.dismiss()
   app.expect("Reason outsidePress")
   app.expectNo("Are you sure?")

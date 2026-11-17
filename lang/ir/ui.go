@@ -605,6 +605,20 @@ func (b *fb) viewExpr(x syntax.Expr) (int, bool) {
 	return b.value(x, -1), check.IsOptional(t)
 }
 
+// lazySlot reports whether an element's slot is built when it shows
+// (lang/prelude's Slot.Lazy): passed as a builder, not views.
+func lazySlot(el *prelude.Element, name string) bool {
+	if el == nil {
+		return false
+	}
+	for _, s := range el.Slots {
+		if s.Name == name {
+			return s.Lazy
+		}
+	}
+	return false
+}
+
 // builder is a closure building the view x, where it's placed.
 func (b *fb) builder(x syntax.Expr) int {
 	ctx := b.l.info.Ctxs[x]
@@ -985,6 +999,13 @@ func (b *fb) builtinElement(ec *check.ElementCall) int {
 	}
 	for _, s := range ec.Slots {
 		key := prelude.KeyID(name, s.Prop.Name())
+		if lazySlot(el0, s.Prop.Name()) {
+			// Built when it shows (a Popover's content, an Overlay's
+			// backdrop), under the owner the element gives it.
+			build := b.builderItems(b.l.info.Ctxs[s.Block], s.Block.Items)
+			b.callBTo(uiSlot, bc.None, v, b.konst(int64(key)), build)
+			continue
+		}
 		view := b.viewsOf(s.Block.Items)
 		b.callBTo(uiSlot, bc.None, v, b.konst(int64(key)), view)
 	}

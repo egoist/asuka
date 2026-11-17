@@ -401,9 +401,11 @@ static void ov_open(ov *o) {
 		bv = NULL;
 	}
 	if (bv) {
+		bv = ak_only_kid(r, bv);  // it fills the backdrop (a dimming View with no size of its own)
 		ak_view *b = ak_view_new(r, &cls_backdrop, 0, true);
 		b->impl = o;
 		b->finalized = true;
+		ak_style_relayout(b);  // backdrop_adjust: it fills the layer
 		ak_view_listen(b, AK_EVENT_PRESS);
 		ak_view_append(b, bv);
 		ak_release(bv);
