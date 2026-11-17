@@ -1,6 +1,7 @@
 # 0010: Headless components
 
-- **Status**: Draft
+- **Status**: Built: the language, the core, the fake host and std/base;
+  each host by the contract in [0010-host-contract.md](0010-host-contract.md)
 - **Created**: 2026-11-17
 - **Related**: 0009 (composable styles), docs/accessibility.md,
   docs/components.md, core/src/ui/overlay.c, core/src/ui/interaction.c
@@ -50,6 +51,52 @@ platform's widget. Focus and the keyboard on any view, roles and states
 for screen readers, a layer over the window that content can be placed
 in next to a view, and states a component declares that its caller
 styles. Each is useful without `std/base`, and each is in every host.
+
+## As built
+
+What changed from the design below as it was built (the sections below
+keep the reasoning; DESIGN.md has the result):
+
+- **No FocusScope element.** Trapping, restoring and autofocus are a
+  container's keys: `trapFocus` (a wire prop each host's focus system
+  follows), `restoreFocus` and `autofocus` (the core's: it knows the
+  tree and the focused view). Containers also take `focusable`,
+  `pressKeepsFocus` and `hideFocusRing`; `ref.focused` and
+  `ref.focusVisible` read the states (a Window's `focused` is still the
+  window's).
+- **The host reports the anchor.** An overlay's anchor can be in a
+  List's cell or under a scroll the core doesn't follow, so the host
+  reports where it is (`AnchorFrame`), when the overlay is made and as
+  it moves; the core places the content (`ak_place`, place.c) and keeps
+  the layer hidden until the first report. Overlay's keys are `side`
+  and `align` (an `Align`, `.stretch` as long as the anchor) instead of
+  one `Placement`; `edgeGap` is the collision padding; `dismissOn` is a
+  `[DismissReason]`; `backdrop { }` is a slot.
+- **Accessibility keys** are `a11yChecked: Checked` (`.unchecked`,
+  `.checked`, `.mixed`; `.off` not checkable), `a11yExpanded: Expanded`
+  (`.collapsed`, `.expanded`; `.off`), `a11ySelected`, `a11yValue`,
+  `a11yRange: ValueRange?`, `a11yModal`, and the relations
+  `a11yControls`, `a11yLabelledBy`, `a11yDescribedBy`, which take a
+  `Ref`.
+- **A press's point** is an event of its own, `pressStart(x, y)`,
+  rather than parameters added to `pressedChange`.
+- **Popups' parts go in the root's `popup` slot**, which the root shows
+  in its Overlay: a part can't be both the caller's styled element and
+  inside an element the root owns. Every popup root provides a
+  `Placement` its parts read (the side variants, `Arrow`).
+- **Variants and assigned props** are as the language section says; a
+  variant can't be named after a keyword, `as` works on any component
+  that shows one element, and a bound prop's component learns it's
+  bound from a hidden argument (lang/LOWERING.md).
+- **What the components needed of the language**, fixed or added on the
+  way: what a component provides is its own views' (siblings that
+  provided the same store saw the last one's); `use x: Store?` is none
+  when nothing provides one; `ref.id`; a slot that defaults to none is
+  none; an optional slot alone in an element's lazy children was built
+  twice. `asuka doc` lists a component's props, events and pub variants.
+- **Tests** drive the keyboard on the fake host: `app.tab()`,
+  `app.focused()`, and `app.pressKey` from the focused view, with a
+  desktop's Tab, Enter, Space and typeahead.
 
 ## Motivation
 

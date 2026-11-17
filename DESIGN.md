@@ -885,6 +885,60 @@ accessibility tree.
   moving, as UIKit's do (Android's animator scale already makes every
   animation instant).
 - Text follows Dynamic Type and Android's font scale, custom fonts too.
+- A control built from views says what native ones say (rfcs/0010):
+  `role` has the ARIA roles a control needs (checkbox, radio, switch,
+  tab, slider, menu item, option, combo box, dialog...), and the
+  `a11yChecked`, `a11yExpanded`, `a11ySelected`, `a11yValue`,
+  `a11yRange` and `a11yModal` style keys their states. `a11yControls`,
+  `a11yLabelledBy` and `a11yDescribedBy` take a `Ref`: the core sends the
+  view's ID once the Ref holds a view with one, and again as that changes
+  (focus.c keeps the views that have them, by ID, and checks them at each
+  flush).
+
+### Focus
+
+The core follows the keyboard's focus (core/src/ui/focus.c): hosts
+report `FocusChange` for every view that takes it or loses it (a field's
+`Focus` and `Blur`), with whether it came from the keyboard, and the
+core keeps the focused view per root, by ID. Two interaction states
+follow it, `focused` (the view or one inside it: CSS's `:focus-within`)
+and `focusVisible` (that, from the keyboard or in a field), set on the
+focused view's chain of views that have states, without allocating; a
+view that asks later starts from where the focus is. A container's
+`focusable`, `pressKeepsFocus`, `hideFocusRing` and `trapFocus` are wire
+props each host's focus system follows (UIKit's focus engine, Android's
+focus search, AppKit's key view loop, Win32's Tab handling, GTK's, the
+DOM's); `autofocus` and `restoreFocus` are the core's: it knows the tree
+and the focused view, and sends `Focus` to the first view that takes it,
+or back to the one that had it when the view goes. A view that styles
+`focusVisible` sends `NoFocusRing`: the app draws its own.
+
+### Overlay
+
+`Overlay` (core/src/ui/floating.c) shows its children over a layout
+root, next to an anchor. Open, its layer is a host-sized provider of no
+parent (an `Overlay` view) over the root its anchor is in (the main
+window, a Window, a sheet, a popover; an overlay's own anchor in
+another's is over that one's root), with the core's two views in it: a
+backdrop filling it, and the content, absolutely placed. The host
+reports where the anchor is in the root (`AnchorFrame`), when it's made
+and whenever that changes (a layout, a scroll around it, a resize), and
+the core places the content with `ak_place` (place.c: Floating UI's
+offset, flip, shift and size in one pure function, mirrored right to
+left), relaying out once for the room it has on the side it ended on;
+the layer stays hidden until the first report, so it never shows in the
+wrong place. A press outside its views comes as `OutsidePress` (one on
+its anchor, or in an overlay opened from it, isn't outside), Escape as
+one of the root's keys, Back through the back stack, the focus leaving
+through focus.c, the anchor going out of view as `AnchorFrame`'s
+visible bit: each reports `change(false)` and `dismiss(reason)`, and the
+element closes when `open` goes false. Its layer stays, empty and
+passing presses through, until the element goes, so content leaving in
+`animate { }` plays its transition.
+
+`std/base` is Asuka on these: components with no look of their own,
+whose parts take the app's styles and expose their states as declared
+variants (rfcs/0010).
 
 ## Flush
 

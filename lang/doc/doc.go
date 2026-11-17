@@ -340,7 +340,7 @@ func decl(d syntax.Decl) *Decl {
 		}
 		c := *x
 		c.Pub, c.Trivia, c.Body = syntax.NoPos, syntax.Trivia{}, nil
-		return &Decl{Kind: Component, Name: x.Name.Name, Code: trimBody(print(&c)), Doc: x.Doc()}
+		return &Decl{Kind: Component, Name: x.Name.Name, Code: componentCode(trimBody(print(&c)), x), Doc: x.Doc()}
 	case *syntax.ShaderDecl:
 		if !x.Pub.IsValid() {
 			return nil
@@ -407,6 +407,53 @@ func decl(d syntax.Decl) *Decl {
 		return &Decl{Kind: Style, Name: x.Name.Name, Code: print(&c), Doc: x.Doc()}
 	}
 	return nil
+}
+
+// componentCode is a component's header with what its caller gives and
+// gets: its props (slots among them) and events, and the variants it
+// declares pub (their names: a caller styles them, name { … }), each
+// with its /// comment.
+func componentCode(header string, x *syntax.ComponentDecl) string {
+	if x.Body == nil {
+		return header
+	}
+	var b strings.Builder
+	n := 0
+	line := func(doc, code string) {
+		if n == 0 {
+			b.WriteString(header + " {\n")
+		} else if doc != "" {
+			b.WriteString("\n")
+		}
+		n++
+		for _, l := range strings.Split(doc, "\n") {
+			if doc != "" {
+				b.WriteString("  /// " + l + "\n")
+			}
+		}
+		b.WriteString("  " + code + "\n")
+	}
+	for _, it := range x.Body.Items {
+		switch m := it.(type) {
+		case *syntax.PropDecl:
+			c := *m
+			c.Pub, c.Trivia = syntax.NoPos, syntax.Trivia{}
+			line(m.Doc(), print(&c))
+		case *syntax.EventDecl:
+			c := *m
+			c.Pub, c.Trivia = syntax.NoPos, syntax.Trivia{}
+			line(m.Doc(), print(&c))
+		case *syntax.VariantDecl:
+			if m.Pub.IsValid() {
+				line(m.Doc(), "variant "+m.Name.Name)
+			}
+		}
+	}
+	if n == 0 {
+		return header
+	}
+	b.WriteString("}")
+	return b.String()
 }
 
 // method is a type's method: its name is Type.name.

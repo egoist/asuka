@@ -1,0 +1,5 @@
+name = "Base"
+id = "dev.asuka.base"
+version = "1.0.0"
+build = 1
+icon = "icon.png"

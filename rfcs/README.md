@@ -24,7 +24,7 @@ Each RFC is a file `NNNN-short-name.md` with a header:
 | [0007](0007-c-core-and-asuka-language.md) | A C core and the Asuka language | Accepted |
 | [0008](0008-no-go-at-run-time-and-c-ffi.md) | No Go at run time, and C from Asuka | Accepted |
 | [0009](0009-styles.md) | Composable styles | Built |
-| [0010](0010-headless-components.md) | Headless components | Draft |
+| [0010](0010-headless-components.md) | Headless components | Built |
 
 ## Background: hot reload today
 

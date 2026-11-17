@@ -1,0 +1,355 @@
+// std/base's components, styled by the app: the same settings screen in
+// two looks (a theme the toolbar switches), the same on every platform.
+
+import std/base
+
+/// A look: the colors, corners and spacing every style reads.
+store Theme(dark: bool) {
+  pub let ink: Color = if dark { #f2f2f7 } else { #1c1c1e }
+  pub let paper: Color = if dark { #101014 } else { #ffffff }
+  pub let raised: Color = if dark { #1d1d24 } else { #f2f2f7 }
+  pub let line: Color = if dark { #3a3a44 } else { #d1d1d6 }
+  pub let accent: Color = if dark { #8b5cf6 } else { #0a84ff }
+  pub let corner: float = if dark { 14 } else { 6 }
+}
+
+style surface {
+  use t: Theme
+  padding: 16
+  gap: 12
+  radius: t.corner
+  background: t.raised
+}
+
+style field {
+  use t: Theme
+  direction: .row
+  align: .center
+  gap: 8
+  padding: [8, 12]
+  radius: t.corner
+  border: 1
+  borderColor: t.line
+  background: t.paper
+  focusVisible {
+    border: 2
+    borderColor: t.accent
+  }
+}
+
+style popup {
+  use t: Theme
+  padding: 4
+  radius: t.corner
+  background: t.paper
+  border: 1
+  borderColor: t.line
+  shadow: Shadow(radius: 16, y: 6)
+}
+
+style option {
+  use t: Theme
+  padding: [6, 10]
+  radius: t.corner - 2
+  highlighted { background: t.accent.opacity(0.15) }
+}
+
+style box {
+  use t: Theme
+  width: 22
+  height: 22
+  radius: 6
+  border: 2
+  borderColor: t.line
+  align: .center
+  justify: .center
+  checked {
+    background: t.accent
+    borderColor: t.accent
+  }
+  focusVisible { borderColor: t.accent }
+}
+
+style track {
+  use t: Theme
+  width: 46
+  height: 28
+  radius: 14
+  padding: 3
+  background: t.line
+  checked { background: t.accent }
+}
+
+style thumb {
+  use t: Theme
+  width: 22
+  height: 22
+  radius: 11
+  background: #ffffff
+  checked { margin: Edges(start: 18) }
+}
+
+style pill {
+  use t: Theme
+  padding: [8, 14]
+  radius: 999
+  background: t.accent
+  pressed { opacity: 0.7 }
+  focusVisible {
+    border: 2
+    borderColor: t.ink
+  }
+}
+
+component Settings {
+  use t: Theme
+  use toasts: base.Toasts
+  state name = "Ada"
+  state units = "metric"
+  state sync = true
+  state beta = false
+  state volume = 60.0
+  state tab = "general"
+  state resetOpen = false
+
+  Column {
+    gap: 16
+    padding: 20
+    background: t.paper
+    grow: 1
+
+    base.Tabs {
+      bind value: tab
+      base.TabsList {
+        gap: 4
+        base.Tab("general") {
+          style: option
+          selected { background: t.accent.opacity(0.2) }
+          Text("General") { color: t.ink }
+        }
+        base.Tab("sound") {
+          style: option
+          selected { background: t.accent.opacity(0.2) }
+          Text("Sound") { color: t.ink }
+        }
+      }
+
+      base.TabsPanel("general") {
+        Column {
+          style: surface
+          base.Field {
+            name: "name"
+            validate: v => if v.trim() == "" { "A name, please" } else { "" }
+            base.FieldLabel("Name")
+            base.Input {
+              style: field
+              bind value: name
+              placeholder: "Your name"
+            }
+            base.FieldError()
+          }
+          base.Select {
+            bind value: units
+            labels: ["metric": "Metric", "imperial": "Imperial"]
+            base.SelectTrigger {
+              style: field
+              base.SelectValue {
+                color: t.ink
+                grow: 1
+              }
+              Symbol("chevron.down") { color: t.ink }
+            }
+            popup {
+              base.SelectPopup {
+                style: popup
+                base.SelectItem("metric") {
+                  style: option
+                  label: "Metric"
+                  Text("Metric") { color: t.ink }
+                }
+                base.SelectItem("imperial") {
+                  style: option
+                  label: "Imperial"
+                  Text("Imperial") { color: t.ink }
+                }
+              }
+            }
+          }
+          Row {
+            gap: 10
+            align: .center
+            base.Switch {
+              style: track
+              bind checked: sync
+              base.SwitchThumb { style: thumb }
+            }
+            Text("Sync") { color: t.ink }
+          }
+          Row {
+            gap: 10
+            align: .center
+            base.Checkbox {
+              style: box
+              bind checked: beta
+              base.CheckboxIndicator { Symbol("checkmark") { color: #ffffff } }
+            }
+            base.Tooltip {
+              base.TooltipTrigger { Text("Beta features") { color: t.ink } }
+              popup { base.TooltipPopup {
+                style: popup
+                Text("Try what's next") { color: t.ink }
+              } }
+            }
+          }
+        }
+      }
+
+      base.TabsPanel("sound") {
+        Column {
+          style: surface
+          Text("Volume {int(volume)}") { color: t.ink }
+          base.Slider {
+            bind value: volume
+            base.SliderTrack {
+              height: 6
+              radius: 3
+              background: t.line
+              base.SliderRange {
+                radius: 3
+                background: t.accent
+              }
+              base.SliderThumb {
+                label: "Volume"
+                width: 20
+                height: 20
+                radius: 10
+                background: t.accent
+              }
+            }
+          }
+        }
+      }
+    }
+
+    Row {
+      gap: 12
+      base.Button {
+        style: pill
+        on press { toasts.add("Saved", description: "{name}, {units}") }
+        Text("Save") { color: #ffffff }
+      }
+      base.Dialog {
+        bind open: resetOpen
+        base.DialogTrigger {
+          style: pill
+          Text("Reset…") { color: #ffffff }
+        }
+        backdrop { View { background: #00000066 } }
+        popup {
+          base.DialogPopup {
+            style: [popup, surface]
+            width: 300
+            base.DialogTitle("Reset settings?") {
+              color: t.ink
+              font: .headline
+            }
+            base.DialogDescription("Your name and choices go back to the defaults.") { color: t.ink }
+            Row {
+              gap: 8
+              base.DialogClose {
+                style: option
+                Text("Cancel") { color: t.ink }
+              }
+              base.Button {
+                style: pill
+                on press {
+                  name = "Ada"
+                  units = "metric"
+                  sync = true
+                  beta = false
+                  resetOpen = false
+                }
+                Text("Reset") { color: #ffffff }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    base.ToastViewport {
+      for toast in toasts.all key toast.id {
+        base.ToastRoot(toast) {
+          style: popup
+          padding: 12
+          base.ToastTitle() {
+            color: t.ink
+            font: .headline
+          }
+          base.ToastDescription() { color: t.ink }
+        }
+      }
+    }
+  }
+}
+
+/// The app in a look: dark switches it.
+component Themed {
+  prop dark = false
+  provide Theme(dark: dark)
+  provide base.Toasts()
+  Settings()
+}
+
+state dark = false
+
+app {
+  Column {
+    grow: 1
+    Row {
+      padding: 12
+      justify: .end
+      Button(if dark { "Light" } else { "Dark" }) { on press { dark = !dark } }
+    }
+    Themed() {
+      dark: dark
+      grow: 1
+    }
+  }
+}
+
+test "the settings take a name, units and a reset" {
+  let app = mount(Themed())
+  app.expect("Metric")
+  app.tap("Metric")
+  app.tap("Imperial")
+  app.expect("Imperial")
+  app.type("", into: "Your name")
+  app.tap("Save")
+  app.expect("Saved")
+  app.tap("Reset…")
+  app.expect("Reset settings?")
+  app.tap("Reset")
+  app.expectNo("Reset settings?")
+  app.expect("Metric")
+}
+
+test "the sound tab's slider" {
+  let app = mount(Themed(), platform: .macOS)
+  app.tap("Sound")
+  app.expect("Volume 60")
+  app.tab()
+  for _ in 0..<10 {
+    if app.focused() == "Volume" { break }
+    app.tab()
+  }
+  app.pressKey("right")
+  app.expect("Volume 61")
+}
+
+test "both looks" {
+  let light = mount(Themed())
+  light.expect("General")
+  let dark = mount(Themed() { dark: true })
+  dark.expect("General")
+}
