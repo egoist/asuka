@@ -1,0 +1,465 @@
+// Values on a scale: Slider, NumberField, Progress, Meter.
+
+import std/i18n
+
+fn clamp(v: float, lo: float, hi: float) -> float = max(lo, min(hi, v))
+
+// snap rounds v to the nearest step from lo, kept in [lo, hi].
+fn snap(v: float, lo: float, hi: float, step: float) -> float {
+  if step <= 0 { return clamp(v, lo, hi) }
+  let n = ((v - lo) / step).rounded()
+  return clamp(lo + n * step, lo, hi)
+}
+
+fn fraction(v: float, lo: float, hi: float) -> float {
+  if hi <= lo { return 0 }
+  return clamp((v - lo) / (hi - lo), 0, 1)
+}
+
+// percentText is v's place in [lo, hi] as a percent, for screen readers.
+fn percentText(v: float, lo: float, hi: float) -> string = i18n.formatPercent(fraction(v, lo, hi))
+
+// ---- Slider ----
+
+store SliderContext(value: float, min: float, max: float, step: float, largeStep: float, disabled: bool, orientation: Orientation, set: fn(float), commit: fn(float)) {
+  pub state track = Frame()
+  pub state thumb = Frame()
+  pub state dragging = false
+
+  pub fn at() -> float = fraction(value, min, max)
+
+  /// The value at a point of the track, from its top left.
+  pub fn valueAt(x: float, y: float) -> float {
+    var f = 0.0
+    if orientation == .horizontal {
+      f = if track.width > 0 { x / track.width } else { 0 }
+      if i18n.isRTL() { f = 1 - f }
+    } else {
+      f = if track.height > 0 { 1 - y / track.height } else { 0 }
+    }
+    return snap(min + clamp(f, 0, 1) * (max - min), min, max, step)
+  }
+
+  pub fn change(v: float) {
+    if disabled { return }
+    let s = snap(v, min, max, step)
+    if s != value { set(s) }
+  }
+}
+
+/// A value from min to max picked by dragging its thumb along its track,
+/// pressing the track, or the keyboard: arrow keys step it, Page Up and
+/// Page Down by largeStep, Home and End to the ends. Screen readers call
+/// its thumb a slider and say its value.
+pub component Slider {
+  prop value = 0.0
+  /// It changed (as it's dragged).
+  event valueChange(value: float)
+  /// The user let go of it: its value then.
+  event valueCommit(value: float)
+  prop min = 0.0
+  prop max = 100.0
+  /// The values it takes: multiples of step from min.
+  prop step = 1.0
+  /// What Page Up and Page Down move it by.
+  prop largeStep = 10.0
+  prop disabled = false
+  prop orientation: Orientation = .horizontal
+  prop children: View
+
+  provide SliderContext(value: value, min: min, max: max, step: step, largeStep: largeStep, disabled: disabled, orientation: orientation, set: v => { value = v }, commit: v => { emit valueCommit(v) })
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    role: .group
+    children
+  }
+}
+
+/// A Slider's track: pressing it moves the thumb there, dragging along it
+/// drags the thumb. Lay its SliderRange and SliderThumb inside it.
+pub component SliderTrack {
+  prop children: View
+  use s: SliderContext
+
+  /// While the thumb's dragged.
+  pub variant sliding = s.dragging
+  /// While disabled.
+  pub variant disabled = s.disabled
+
+  View {
+    on layout(f) { s.track = f }
+    on pressStart(x, y) { s.change(s.valueAt(x, y)) }
+    on pressedChange(p) { if !p && !s.dragging { s.commit(s.value) } }
+    on pan(g) {
+      if s.disabled { return }
+      s.dragging = g.state == .began || g.state == .changed
+      s.change(s.valueAt(g.x, g.y))
+      if g.state == .ended || g.state == .cancelled { s.commit(s.value) }
+    }
+    children
+  }
+}
+
+/// The part of a Slider's track from its start to its thumb.
+pub component SliderRange {
+  prop children: View? = none
+  use s: SliderContext
+
+  View {
+    absolute: true
+    a11yHidden: true
+    start: if s.orientation == .horizontal { 0 } else { .auto }
+    end: if s.orientation == .horizontal { (1 - s.at()) * 100 * 1% } else { .auto }
+    top: if s.orientation == .horizontal { 0 } else { (1 - s.at()) * 100 * 1% }
+    bottom: 0
+    children
+  }
+}
+
+/// A Slider's thumb: centered on the value's place along the track. It
+/// takes the keyboard's focus.
+pub component SliderThumb {
+  prop label = ""
+  prop children: View? = none
+  use s: SliderContext
+
+  /// While it's dragged.
+  pub variant sliding = s.dragging
+  /// While disabled.
+  pub variant disabled = s.disabled
+
+  fn by(n: float) { s.change(s.value + n) }
+
+  View {
+    absolute: true
+    role: .slider
+    label: label
+    a11yValue: percentText(s.value, s.min, s.max)
+    a11yRange: ValueRange(min: s.min, max: s.max, now: s.value)
+    focusable: !s.disabled
+    disabled: s.disabled
+    start: if s.orientation == .horizontal { s.at() * s.track.width - s.thumb.width / 2 } else { (s.track.width - s.thumb.width) / 2 }
+    top: if s.orientation == .horizontal { (s.track.height - s.thumb.height) / 2 } else { (1 - s.at()) * s.track.height - s.thumb.height / 2 }
+    on layout(f) { s.thumb = f }
+    on adjust(n) { by(float(n) * s.step) }
+    on pan(g) {
+      if s.disabled { return }
+      s.dragging = g.state == .began || g.state == .changed
+      s.change(s.valueAt(s.thumb.x + g.x, s.thumb.y + g.y))
+      if g.state == .ended || g.state == .cancelled { s.commit(s.value) }
+    }
+    keys: [
+      Shortcut(key: "right", run: () => by(if i18n.isRTL() { -s.step } else { s.step })),
+      Shortcut(key: "left", run: () => by(if i18n.isRTL() { s.step } else { -s.step })),
+      Shortcut(key: "up", run: () => by(s.step)),
+      Shortcut(key: "down", run: () => by(-s.step)),
+      Shortcut(key: "pageup", run: () => by(s.largeStep)),
+      Shortcut(key: "pagedown", run: () => by(-s.largeStep)),
+      Shortcut(key: "home", run: () => s.change(s.min)),
+      Shortcut(key: "end", run: () => s.change(s.max)),
+    ]
+    children
+  }
+}
+
+// ---- NumberField ----
+
+store NumberFieldContext(value: float?, min: float, max: float, step: float, largeStep: float, disabled: bool, set: fn(float?)) {
+  pub fn by(n: float) {
+    if disabled { return }
+    let v = value ?? (if n > 0 { min } else { max })
+    let next = snap(v + n, min, max, step)
+    set(next)
+  }
+
+  pub fn text() -> string {
+    if let v = value { return i18n.formatNumber(v, grouping: false) }
+    return ""
+  }
+
+  pub fn parse(t: string) {
+    let s = t.trim().replace(",", ".")
+    if s == "" {
+      set(none)
+    } else if let v = s.toFloat() {
+      set(clamp(v, min, max))
+    }
+  }
+}
+
+/// A number typed in a field, or stepped by its increment and decrement
+/// buttons or Up and Down (Page Up and Page Down by largeStep). Screen
+/// readers call its input a spin button.
+pub component NumberField {
+  /// The number (none: empty).
+  prop value: float? = none
+  /// It changed.
+  event valueChange(value: float?)
+  prop min = -1.0e15
+  prop max = 1.0e15
+  prop step = 1.0
+  prop largeStep = 10.0
+  prop disabled = false
+  prop children: View
+
+  provide NumberFieldContext(value: value, min: min, max: max, step: step, largeStep: largeStep, disabled: disabled, set: v => { value = v })
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    role: .group
+    children
+  }
+}
+
+/// A NumberField's text field: a TextField with none of the platform's
+/// border (plain), in a view the app styles.
+pub component NumberFieldInput {
+  prop placeholder = ""
+  use n: NumberFieldContext
+
+  /// While disabled.
+  pub variant disabled = n.disabled
+
+  View {
+    role: .spinButton
+    a11yValue: n.text()
+    a11yRange: ValueRange(min: n.min, max: n.max, now: n.value ?? n.min)
+    TextField {
+      text: n.text()
+      on change(t) { n.parse(t) }
+      placeholder: placeholder
+      keyboard: .decimal
+      plain: true
+      disabled: n.disabled
+      keys: [
+        Shortcut(key: "up", run: () => n.by(n.step)),
+        Shortcut(key: "down", run: () => n.by(-n.step)),
+        Shortcut(key: "pageup", run: () => n.by(n.largeStep)),
+        Shortcut(key: "pagedown", run: () => n.by(-n.largeStep)),
+      ]
+    }
+  }
+}
+
+/// A NumberField's button that adds a step (held: again and again).
+pub component NumberFieldIncrement {
+  prop children: View
+  use n: NumberFieldContext
+
+  /// While disabled (or at max).
+  pub variant disabled = n.disabled || (n.value ?? n.min) >= n.max
+
+  StepButton(by: n.step, name: "Increment") { children }
+}
+
+/// A NumberField's button that takes a step away (held: again and again).
+pub component NumberFieldDecrement {
+  prop children: View
+  use n: NumberFieldContext
+
+  /// While disabled (or at min).
+  pub variant disabled = n.disabled || (n.value ?? n.max) <= n.min
+
+  StepButton(by: -n.step, name: "Decrement") { children }
+}
+
+component StepButton(by: float, name: string) {
+  prop children: View
+  use n: NumberFieldContext
+  state held = false
+
+  task(held) {
+    if !held { return }
+    await sleep(400ms)
+    while held {
+      n.by(by)
+      await sleep(60ms)
+    }
+  }
+
+  View {
+    role: .button
+    label: name
+    pressKeepsFocus: true
+    disabled: n.disabled
+    on press { n.by(by) }
+    on pressedChange(p) { held = p }
+    children
+  }
+}
+
+// ---- Progress and Meter ----
+
+store ProgressContext(value: float?, min: float, max: float) {
+  pub fn at() -> float {
+    if let v = value { return fraction(v, min, max) }
+    return 0
+  }
+}
+
+/// How far a task has come: value from min to max, or none while that's
+/// not known (indeterminate). Screen readers call it a progress bar and
+/// say its percent.
+pub component Progress {
+  prop value: float? = 0.0
+  prop min = 0.0
+  prop max = 100.0
+  /// What screen readers read for its value ("": the percent).
+  prop valueText = ""
+  prop children: View
+
+  provide ProgressContext(value: value, min: min, max: max)
+
+  /// While its value isn't known.
+  pub variant indeterminate = isNone(value)
+  /// While it's at max.
+  pub variant complete = (value ?? min) >= max
+
+  View {
+    role: .progressBar
+    a11yValue: if valueText != "" { valueText } else if let v = value { percentText(v, min, max) } else { "" }
+    a11yRange: if let v = value { ValueRange(min: min, max: max, now: v) } else { none }
+    children
+  }
+}
+
+fn isNone(v: float?) -> bool {
+  if let _ = v { return false }
+  return true
+}
+
+/// A Progress's (or Meter's) track: where its indicator fills.
+pub component ProgressTrack {
+  prop children: View
+  View { children }
+}
+
+/// The filled part of a Progress's track: as long as its value is far.
+pub component ProgressIndicator {
+  prop children: View? = none
+  use p: ProgressContext
+
+  /// While its value isn't known (animate it as a moving bar).
+  pub variant indeterminate = isNone(p.value)
+
+  View {
+    a11yHidden: true
+    width: p.at() * 100 * 1%
+    height: 100%
+    children
+  }
+}
+
+/// A Progress's value as text: the percent.
+pub component ProgressValue {
+  use p: ProgressContext
+  Text(if let v = p.value { percentText(v, p.min, p.max) } else { "" }) { a11yHidden: true }
+}
+
+/// A measurement in a known range (a disk's use, a password's
+/// strength): value from min to max. Screen readers call it a meter.
+/// Its track and indicator are ProgressTrack and ProgressIndicator.
+pub component Meter {
+  prop value = 0.0
+  prop min = 0.0
+  prop max = 100.0
+  prop valueText = ""
+  prop children: View
+
+  provide ProgressContext(value: value, min: min, max: max)
+
+  View {
+    role: .meter
+    a11yValue: if valueText != "" { valueText } else { percentText(value, min, max) }
+    a11yRange: ValueRange(min: min, max: max, now: value)
+    children
+  }
+}
+
+// ---- Tests ----
+
+component ValuesDemo {
+  state volume = 40.0
+  state committed = 0.0
+  state qty: float? = 2.0
+
+  Column {
+    Slider {
+      bind value: volume
+      on valueCommit(v) { committed = v }
+      SliderTrack {
+        width: 200
+        height: 20
+        SliderRange()
+        SliderThumb {
+          label: "Volume"
+          width: 20
+          height: 20
+        }
+      }
+    }
+    Text("volume {volume}")
+    Text("committed {committed}")
+    NumberField {
+      bind value: qty
+      min: 0
+      max: 5
+      NumberFieldDecrement { Text("−") }
+      NumberFieldInput { placeholder: "Quantity" }
+      NumberFieldIncrement { Text("+") }
+    }
+    Text("qty {qty}")
+    Progress {
+      value: 30
+      ProgressTrack {
+        width: 100
+        height: 4
+        ProgressIndicator()
+      }
+      ProgressValue()
+    }
+  }
+}
+
+test "a slider steps by the keyboard, and jumps where its track's pressed" {
+  let app = mount(ValuesDemo(), platform: .macOS)
+  app.tab()
+  app.pressKey("right")
+  app.expect("volume 41")
+  app.pressKey("pageup")
+  app.expect("volume 51")
+  app.pressKey("end")
+  app.expect("volume 100")
+  app.pressKey("home")
+  app.expect("volume 0")
+  let ops = app.ops()
+  expect(ops.contains("A11yRole=14") && ops.contains("A11yRange="), ops)
+  app.tap("Volume")
+  app.expect("volume 50")
+}
+
+test "a number field steps and clamps" {
+  let app = mount(ValuesDemo())
+  app.tap("+")
+  app.expect("qty 3")
+  app.tap("+")
+  app.tap("+")
+  app.tap("+")
+  app.expect("qty 5")
+  app.tap("−")
+  app.expect("qty 4")
+  app.type("1.5", into: "Quantity")
+  app.expect("qty 1.5")
+  app.type("", into: "Quantity")
+  app.expect("qty none")
+}
+
+test "a progress bar says its percent" {
+  let app = mount(ValuesDemo())
+  app.expect("30%")
+}

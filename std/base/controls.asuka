@@ -435,14 +435,33 @@ component ControlsDemo {
   state size = "m"
 
   Column {
-    Button { on press { taps += 1 }; Text("Tap {taps}") }
-    Button { disabled: true; on press { taps += 100 }; Text("Off") }
-    Toggle { bind toggled: bold; Text(if bold { "Bold on" } else { "Bold off" }) }
+    Button {
+      on press { taps += 1 }
+      Text("Tap {taps}")
+    }
+    Button {
+      disabled: true
+      on press { taps += 100 }
+      Text("Off")
+    }
+    Toggle {
+      bind toggled: bold
+      Text(if bold { "Bold on" } else { "Bold off" })
+    }
     ToggleGroup {
       bind value: align
-      Toggle { value: "left"; Text("Left") }
-      Toggle { value: "center"; Text("Center") }
-      Toggle { value: "right"; Text("Right") }
+      Toggle {
+        value: "left"
+        Text("Left")
+      }
+      Toggle {
+        value: "center"
+        Text("Center")
+      }
+      Toggle {
+        value: "right"
+        Text("Right")
+      }
     }
     Text("Align {align}")
     Checkbox as box {
@@ -454,18 +473,40 @@ component ControlsDemo {
     CheckboxGroup {
       bind value: picked
       allValues: ["a", "b"]
-      Checkbox { parent: true; Text("All") }
-      Checkbox { value: "a"; Text("A") }
-      Checkbox { value: "b"; Text("B") }
+      Checkbox {
+        parent: true
+        Text("All")
+      }
+      Checkbox {
+        value: "a"
+        Text("A")
+      }
+      Checkbox {
+        value: "b"
+        Text("B")
+      }
     }
     Text("Picked {picked}")
-    Switch { bind checked: wifi; SwitchThumb(); Text("Wi-Fi") }
+    Switch {
+      bind checked: wifi
+      SwitchThumb()
+      Text("Wi-Fi")
+    }
     Text("wifi {wifi}")
     RadioGroup {
       bind value: size
-      Radio("s") { Text("Small"); RadioIndicator { Text("•s") } }
-      Radio("m") { Text("Medium"); RadioIndicator { Text("•m") } }
-      Radio("l") { disabled: true; Text("Large") }
+      Radio("s") {
+        Text("Small")
+        RadioIndicator { Text("•s") }
+      }
+      Radio("m") {
+        Text("Medium")
+        RadioIndicator { Text("•m") }
+      }
+      Radio("l") {
+        disabled: true
+        Text("Large")
+      }
     }
     Text("Size {size}")
   }

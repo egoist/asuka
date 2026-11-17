@@ -1,0 +1,406 @@
+// Avatar, Toolbar, ScrollArea and toasts.
+
+// ---- Avatar ----
+
+store AvatarContext {
+  pub state loaded = false
+  pub state failed = false
+}
+
+/// A person's picture, with a fallback (their initials) shown until it
+/// loads, or when it can't.
+pub component Avatar {
+  prop children: View
+
+  let ctx = AvatarContext()
+  provide ctx
+
+  /// Once its image loaded.
+  pub variant loaded = ctx.loaded
+
+  View {
+    role: .image
+    clip: true
+    children
+  }
+}
+
+/// An Avatar's image: shown once it loads.
+pub component AvatarImage(source: string) {
+  use a: AvatarContext
+
+  Image(source) {
+    hidden: !a.loaded
+    a11yHidden: true
+    on loaded(w, h) {
+      a.loaded = true
+      a.failed = false
+    }
+    on error(m) {
+      a.loaded = false
+      a.failed = true
+    }
+  }
+}
+
+/// What an Avatar shows until its image loads (and if it fails): its
+/// children, after delay (so a fast image doesn't flash it).
+pub component AvatarFallback {
+  prop delay: Duration = 0ms
+  prop children: View
+  use a: AvatarContext
+  state waited = false
+
+  task {
+    if delay > 0ms { await sleep(delay) }
+    waited = true
+  }
+
+  View {
+    if waited && !a.loaded { children }
+  }
+}
+
+// ---- Toolbar ----
+
+store ToolbarContext(orientation: Orientation, loop: bool) {
+  pub let items = Items()
+}
+
+/// Controls in a row (or a column), as one Tab stop: Left and Right (Up
+/// and Down, vertical) move between its ToolbarButtons, Home and End to
+/// the first and last.
+pub component Toolbar {
+  prop orientation: Orientation = .horizontal
+  prop loop = true
+  prop children: View
+
+  provide ToolbarContext(orientation: orientation, loop: loop)
+
+  View {
+    role: .toolbar
+    direction: if orientation == .horizontal { .row } else { .column }
+    children
+  }
+}
+
+/// A button of a Toolbar.
+pub component ToolbarButton {
+  prop label = ""
+  prop disabled = false
+  /// Stays in the toolbar's arrow keys' order while disabled.
+  prop focusableWhenDisabled = true
+  prop children: View
+  /// Pressed.
+  event press
+  use t: ToolbarContext
+  let me = Ref()
+
+  fn id() -> string = "#{me.id}"
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  task(label, disabled) { t.items.put(Item(value: id(), label: label, ref: me, disabled: disabled && !focusableWhenDisabled)) }
+  task {
+    let mine = id()
+    defer { t.items.remove(mine) }
+    await never()
+  }
+
+  // The toolbar's one Tab stop: the button the keyboard was on, else the
+  // first.
+  fn isTabStop() -> bool {
+    if t.items.active != "" { return t.items.active == id() }
+    if let first = t.items.firstEnabled() { return first.value == id() }
+    return true
+  }
+
+  View {
+    ref: me
+    role: .button
+    label: label
+    focusable: (!disabled || focusableWhenDisabled) && isTabStop()
+    disabled: disabled
+    keys: arrowKeys(t.items, t.orientation, loop: t.loop)
+    on focusChange(f) { if f { t.items.active = id() } }
+    on press { if !disabled { emit press } }
+    children
+  }
+}
+
+/// A line between a Toolbar's groups of buttons.
+pub component ToolbarSeparator {
+  prop children: View? = none
+  View {
+    role: .separator
+    children
+  }
+}
+
+// ---- ScrollArea ----
+
+store ScrollAreaContext(horizontal: bool) {
+  pub state offset = 0.0
+  pub state viewport = 0.0
+  pub state content = 0.0
+
+  pub fn overflowStart() -> bool = offset > 0.5
+  pub fn overflowEnd() -> bool = offset + viewport < content - 0.5
+}
+
+/// A scroll view whose parts know where it's scrolled to: its
+/// ScrollAreaEdges show while there's more to scroll that way (a fade, a
+/// shadow), and its variants say whether it scrolls at all. The scroll
+/// bars are the platform's.
+pub component ScrollArea {
+  prop horizontal = false
+  prop children: View
+
+  let ctx = ScrollAreaContext(horizontal: horizontal)
+  provide ctx
+
+  /// While its content is bigger than it is.
+  pub variant scrollable = ctx.content > ctx.viewport + 0.5
+  /// While there's more to scroll back to.
+  pub variant overflowStart = ctx.overflowStart()
+  /// While there's more to scroll on to.
+  pub variant overflowEnd = ctx.overflowEnd()
+
+  View {
+    on layout(f) { ctx.viewport = if horizontal { f.width } else { f.height } }
+    Scroll {
+      grow: 1
+      horizontal: horizontal
+      on scroll(x, y) { ctx.offset = if horizontal { x } else { y } }
+      View {
+        on layout(f) { ctx.content = if horizontal { f.width } else { f.height } }
+        children
+      }
+    }
+  }
+}
+
+/// What shows over a ScrollArea's edge while there's more to scroll that
+/// way: .start (the top, or the leading edge) or .end.
+pub component ScrollAreaEdge(at: Side) {
+  prop children: View? = none
+  use s: ScrollAreaContext
+
+  fn shows() -> bool = if at == .start || at == .top { s.overflowStart() } else { s.overflowEnd() }
+
+  /// While it shows (style it, fade it in).
+  pub variant visible = shows()
+
+  View {
+    absolute: true
+    a11yHidden: true
+    hidden: !shows()
+    children
+  }
+}
+
+// ---- Toasts ----
+
+/// A toast: a short message that shows for a while over the app.
+pub struct Toast {
+  id: int = 0
+  title: string = ""
+  description: string = ""
+  /// The app's kind of it (an error's, a success's), for its style.
+  kind: string = ""
+  /// How long it shows (0ms: until it's closed).
+  timeout: Duration = 5s
+  /// What its action button says ("": none).
+  action: string = ""
+}
+
+/// The toasts showing: provide one where the app starts, add to it from
+/// anywhere below (use toasts: Toasts; toasts.add(...)), and show them in
+/// a ToastViewport.
+pub store Toasts {
+  /// The toasts showing, oldest first.
+  pub state all: [Toast] = []
+  state next = 0
+  /// What its action's press reports: its toast's id.
+  pub state acted = -1
+
+  /// Shows a toast; screen readers say it. Its id closes it.
+  pub fn add(title: string, description: string = "", kind: string = "", timeout: Duration = 5s, action: string = "") -> int {
+    next += 1
+    all.push(Toast(id: next, title: title, description: description, kind: kind, timeout: timeout, action: action))
+    announce(if description == "" { title } else { "{title}. {description}" })
+    return next
+  }
+
+  /// Closes the toast with this id.
+  pub fn close(id: int) { all.removeWhere(t => t.id == id) }
+}
+
+/// Where toasts show: over the window's edge (side .bottom or .top), the
+/// newest nearest it. Put a ToastRoot for each toast in it.
+pub component ToastViewport {
+  prop side: Side = .bottom
+  prop children: View
+  use toasts: Toasts
+
+  View {
+    Overlay {
+      open: !toasts.all.isEmpty()
+      side: side
+      align: .center
+      offset: 16
+      dismissOn: []
+      View {
+        role: .status
+        gap: 8
+        children
+      }
+    }
+  }
+}
+
+store ToastContext(toast: Toast) {}
+
+/// A toast in a ToastViewport: it closes itself after its timeout (not
+/// while a pointer is over it), and with a swipe. Its parts:
+/// ToastTitle, ToastDescription, ToastAction, ToastClose.
+pub component ToastRoot(toast: Toast) {
+  prop children: View
+  use toasts: Toasts
+  state paused = false
+  state dragged = 0.0
+
+  provide ToastContext(toast: toast)
+
+  /// While a pointer is over it (it doesn't time out).
+  pub variant paused = paused
+
+  task(paused) {
+    if paused || toast.timeout <= 0ms { return }
+    await sleep(toast.timeout)
+    toasts.close(toast.id)
+  }
+
+  View {
+    role: .status
+    transform: Transform(x: dragged)
+    on hoverChange(h) { paused = h }
+    on pan(g) {
+      dragged = g.translationX
+      if g.state == .ended || g.state == .cancelled {
+        if abs(g.translationX) > 80 || abs(g.velocityX) > 500 {
+          toasts.close(toast.id)
+        } else {
+          dragged = 0
+        }
+      }
+    }
+    children
+  }
+}
+
+/// A toast's title.
+pub component ToastTitle {
+  use t: ToastContext
+  Text(t.toast.title)
+}
+
+/// A toast's description.
+pub component ToastDescription {
+  use t: ToastContext
+  Text(t.toast.description)
+}
+
+/// A toast's action button: pressing it reports its toast's id to
+/// Toasts.acted and closes the toast.
+pub component ToastAction {
+  prop children: View
+  use t: ToastContext
+  use toasts: Toasts
+
+  View {
+    role: .button
+    on press {
+      toasts.acted = t.toast.id
+      toasts.close(t.toast.id)
+    }
+    children
+  }
+}
+
+/// Closes its toast when pressed.
+pub component ToastClose {
+  prop children: View
+  use t: ToastContext
+  use toasts: Toasts
+
+  View {
+    role: .button
+    label: "Close"
+    on press { toasts.close(t.toast.id) }
+    children
+  }
+}
+
+// ---- Tests ----
+
+component MiscDemo {
+  use toasts: Toasts
+  state did = ""
+
+  Column {
+    Toolbar {
+      ToolbarButton {
+        label: "Bold"
+        on press { did = "bold" }
+        Text("B")
+      }
+      ToolbarButton {
+        label: "Italic"
+        on press { did = "italic" }
+        Text("I")
+      }
+    }
+    Text("did {did}")
+    Button {
+      on press { toasts.add("Saved", timeout: 1s) }
+      Text("Save")
+    }
+    ToastViewport {
+      for t in toasts.all key t.id {
+        ToastRoot(t) {
+          ToastTitle()
+          ToastClose { Text("×") }
+        }
+      }
+    }
+  }
+}
+
+component MiscApp {
+  provide Toasts()
+  MiscDemo()
+}
+
+test "a toolbar is one Tab stop, its arrows move" {
+  let app = mount(MiscApp(), platform: .macOS)
+  app.tab()
+  expect(app.focused() == "Bold", app.focused())
+  app.pressKey("right")
+  expect(app.focused() == "Italic", app.focused())
+  app.pressKey("space")
+  app.expect("did italic")
+  app.tab()
+  expect(app.focused() == "Save", "the next Tab leaves the toolbar: {app.focused()}")
+}
+
+test "toasts show, and go after their timeout" {
+  let app = mount(MiscApp())
+  app.tap("Save")
+  app.expect("Saved")
+  await app.waitGone("Saved")
+  app.tap("Save")
+  app.tap("×")
+  app.expectNo("Saved")
+}

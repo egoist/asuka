@@ -17,17 +17,23 @@ component Fields {
     }
     View as b {
       focusable: true
-      focusVisible { border: 2; borderColor: .accent }
+      focusVisible {
+        border: 2
+        borderColor: .accent
+      }
       Text(if b.focused { "B focused" } else { "B idle" })
     }
     View as group {
       padding: 8
-      View { focusable: true; Text("Inner") }
+      View {
+        focusable: true
+        Text("Inner")
+      }
       Text(if group.focused { "Group within" } else { "Group out" })
     }
     View {
       on pressStart(x, y) { at = "{x},{y}" }
-      on press { }
+      on press {}
       Text("Point")
     }
     Text("Log:{log}")
@@ -38,13 +44,25 @@ component Fields {
 
 component Trapped {
   Column {
-    View { focusable: true; Text("Before") }
+    View {
+      focusable: true
+      Text("Before")
+    }
     View {
       trapFocus: true
-      View { focusable: true; Text("One") }
-      View { focusable: true; Text("Two") }
+      View {
+        focusable: true
+        Text("One")
+      }
+      View {
+        focusable: true
+        Text("Two")
+      }
     }
-    View { focusable: true; Text("After") }
+    View {
+      focusable: true
+      Text("After")
+    }
   }
 }
 
@@ -60,7 +78,10 @@ component Menu {
       on press { open = true }
       Text("Open")
     }
-    View { focusable: true; Text("Next") }
+    View {
+      focusable: true
+      Text("Next")
+    }
     Text("Closed by {reason}")
     Overlay {
       bind open: open
@@ -69,8 +90,14 @@ component Menu {
       View {
         autofocus: true
         restoreFocus: true
-        View { focusable: true; Text("First") }
-        View { focusable: true; Text("Second") }
+        View {
+          focusable: true
+          Text("First")
+        }
+        View {
+          focusable: true
+          Text("Second")
+        }
       }
     }
   }
@@ -160,7 +187,7 @@ test "the focus leaving an overlay closes it" {
   expect(app.focused() == "Second", app.focused())
   app.tab()
   expect(app.focused() == "Open", app.focused())
-  app.expect("First")  // its anchor isn't outside it
+  app.expect("First") // its anchor isn't outside it
   app.tab()
   expect(app.focused() == "Next", app.focused())
   app.expectNo("First")

@@ -19,7 +19,10 @@ component Says {
 component Later {
   prop popup: View? = none
   state open = true
-  Column { Overlay { open: open; popup } }
+  Column { Overlay {
+    open: open
+    popup
+  } }
 }
 
 component Page {
@@ -44,4 +47,23 @@ test "an optional slot is built once" {
   let app = mount(Page())
   let ops = app.ops()
   expect(ops.split("Text=\"Once\"").count() == 2, ops)
+}
+
+component Maybe {
+  prop extra: View? = none
+  Column {
+    if let _ = extra { Text("has extra") } else { Text("no extra") }
+  }
+}
+
+component Extras {
+  Column {
+    Maybe()
+    Maybe { extra { Text("x") } }
+  }
+}
+
+test "a slot that defaults to none is none" {
+  let app = mount(Extras())
+  app.expect("no extra", "has extra")
 }

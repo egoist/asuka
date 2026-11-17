@@ -1,0 +1,364 @@
+// Forms: Field (a label, a control, a description and an error, tied
+// together for screen readers, validated), Input, Fieldset and Form.
+
+/// What a Form submits: each Field's value, by its name.
+pub struct FormValues {
+  values: [string: string] = [:]
+}
+
+store FormContext(errors: [string: string], clear: fn(string), submitted: fn([string: string])) {
+  pub state values: [string: string] = [:]
+  // Each field's check, by name: its error ("": none) for a value.
+  pub state checks: [string: fn(string) -> string] = [:]
+  pub state shown: [string: string] = [:]
+  pub state attempted = false
+
+  /// Validates every field: each one's error shows; true when none has one.
+  pub fn validate() -> bool {
+    attempted = true
+    var ok = true
+    for (name, check) in checks {
+      let e = check(values[name] ?? "")
+      shown[name] = e
+      if e != "" || (errors[name] ?? "") != "" { ok = false }
+    }
+    return ok
+  }
+
+  pub fn submit() {
+    if validate() { submitted(values) }
+  }
+}
+
+/// Fields submitted together: FormSubmit (or Enter in a field) validates
+/// every Field in it, shows their errors, and reports submit with their
+/// values when none has one. errors are the app's (a server's answer),
+/// by field name, shown under those fields until their values change.
+pub component Form {
+  /// Errors by field name, from the app.
+  prop errors: [string: string] = [:]
+  /// A field with an error from errors changed: the app may drop it.
+  event clearError(name: string)
+  /// Every field was valid: their values, by name.
+  event submit(values: [string: string])
+  prop children: View
+
+  provide FormContext(errors: errors, clear: n => { emit clearError(n) }, submitted: v => { emit submit(v) })
+
+  View {
+    role: .group
+    children
+  }
+}
+
+/// Validates its Form and submits it when pressed.
+pub component FormSubmit {
+  prop disabled = false
+  prop children: View
+  use f: FormContext
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    role: .button
+    focusable: !disabled
+    disabled: disabled
+    on press { if !disabled { f.submit() } }
+    children
+  }
+}
+
+store FieldContext(name: string, invalidByApp: bool, disabled: bool, check: fn(string) -> string, form: FormContext?) {
+  pub let label = Ref()
+  pub let description = Ref()
+  pub let error = Ref()
+  pub let control = Ref()
+  pub state value = ""
+  pub state touched = false
+  pub state dirty = false
+  pub state checked = ""
+
+  /// The error that shows: the app's (invalid, or its Form's errors),
+  /// else the check's once the field was left or its form submitted.
+  pub fn message() -> string {
+    if let f = form {
+      if let e = f.errors[name] { if e != "" { return e } }
+      if let e = f.shown[name] { if e != "" { return e } }
+    }
+    return checked
+  }
+
+  pub fn invalid() -> bool = invalidByApp || message() != ""
+
+  pub fn changed(v: string) {
+    value = v
+    dirty = true
+    if let f = form {
+      f.values[name] = v
+      if (f.errors[name] ?? "") != "" { f.clear(name) }
+      if f.attempted { f.shown[name] = check(v) }
+    }
+    // Once its error shows, it follows the value as it changes.
+    if checked != "" || touched { checked = check(v) }
+  }
+
+  pub fn left() {
+    touched = true
+    checked = check(value)
+  }
+}
+
+/// A form's field: its FieldLabel, its control (an Input, a Checkbox...),
+/// its FieldDescription and its FieldError, tied together for screen
+/// readers. validate checks its value as the user leaves it (and again as
+/// it changes once its error shows, and when its Form submits); invalid
+/// says it's wrong whatever validate says.
+pub component Field {
+  /// Its value's name in its Form.
+  prop name = ""
+  /// The app says it's wrong.
+  prop invalid = false
+  prop disabled = false
+  /// Its error for a value ("": none).
+  prop validate: fn(string) -> string = v => ""
+  prop children: View
+  use form: FormContext?
+
+  let ctx = FieldContext(name: name, invalidByApp: invalid, disabled: disabled, check: validate, form: form)
+  provide ctx
+
+  task {
+    if let f = form { f.checks[name] = validate }
+    defer { if let f = form { f.checks.remove(name) } }
+    await never()
+  }
+
+  /// While wrong (the app says so, or its check).
+  pub variant invalid = ctx.invalid()
+  /// While its error doesn't show and it's been checked.
+  pub variant valid = ctx.touched && !ctx.invalid()
+  /// While disabled.
+  pub variant disabled = disabled
+  /// Once the user left it.
+  pub variant touched = ctx.touched
+  /// Once its value changed.
+  pub variant dirty = ctx.dirty
+  /// While its value isn't empty.
+  pub variant filled = ctx.value != ""
+
+  View {
+    role: .group
+    children
+  }
+}
+
+/// A Field's label: screen readers name its control by it; pressing it
+/// focuses the control.
+pub component FieldLabel(text: string) {
+  use f: FieldContext
+
+  /// While its field is wrong.
+  pub variant invalid = f.invalid()
+  /// While its field is disabled.
+  pub variant disabled = f.disabled
+
+  View {
+    on press { f.control.focus() }
+    a11yHidden: true
+    Text(text) { ref: f.label }
+  }
+}
+
+/// A Field's description: screen readers read it after its control.
+pub component FieldDescription(text: string) {
+  use f: FieldContext
+  Text(text) { ref: f.description }
+}
+
+/// A Field's error: its children (or the error's text) while the field is
+/// wrong. Screen readers read it after the control, and say it as it
+/// shows.
+pub component FieldError {
+  prop children: View? = none
+  use f: FieldContext
+
+  /// While it shows.
+  pub variant invalid = f.invalid()
+
+  View {
+    ref: f.error
+    role: .status
+    if f.invalid() {
+      if let _ = children { children } else { Text(f.message()) }
+    }
+  }
+}
+
+/// A text field with none of the platform's look (plain), in a view the
+/// app styles (focused { … } for its focus). In a Field, its label names
+/// it, its description and error describe it, and it tells the field its
+/// value; Enter in it submits its Form.
+pub component Input {
+  prop value = ""
+  /// The text changed.
+  event valueChange(value: string)
+  prop placeholder = ""
+  /// A password's: its characters hidden.
+  prop secure = false
+  prop keyboard: Keyboard = .default
+  prop contentType = ""
+  prop disabled = false
+  /// Enter was pressed in it.
+  event submit
+  use field: FieldContext?
+  use form: FormContext?
+
+  fn off() -> bool {
+    if let f = field { return disabled || f.disabled }
+    return disabled
+  }
+
+  fn invalid() -> bool {
+    if let f = field { return f.invalid() }
+    return false
+  }
+
+  /// While disabled.
+  pub variant disabled = off()
+  /// While its field is wrong.
+  pub variant invalid = invalid()
+  /// While it isn't empty.
+  pub variant filled = value != ""
+
+  View {
+    TextField {
+      ref: refOf()
+      text: value
+      on change(t) {
+        value = t
+        if let f = field { f.changed(t) }
+      }
+      on blur { if let f = field { f.left() } }
+      on submit {
+        emit submit
+        if let f = form { f.submit() }
+      }
+      placeholder: placeholder
+      secure: secure
+      keyboard: keyboard
+      contentType: contentType
+      plain: true
+      disabled: off()
+      a11yLabelledBy: labelOf()
+      a11yDescribedBy: describedBy()
+    }
+  }
+
+  let own = Ref()
+  fn refOf() -> Ref {
+    if let f = field { return f.control }
+    return own
+  }
+  fn labelOf() -> Ref? {
+    if let f = field { return f.label }
+    return none
+  }
+  fn describedBy() -> Ref? {
+    if let f = field { return if f.invalid() { f.error } else { f.description } }
+    return none
+  }
+}
+
+store FieldsetContext(disabled: bool) {
+  pub let legend = Ref()
+}
+
+/// Fields that belong together, named by a FieldsetLegend: screen readers
+/// read them as a group.
+pub component Fieldset {
+  prop disabled = false
+  prop children: View
+
+  let ctx = FieldsetContext(disabled: disabled)
+  provide ctx
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    role: .group
+    a11yLabelledBy: ctx.legend
+    disabled: disabled
+    children
+  }
+}
+
+/// A Fieldset's name.
+pub component FieldsetLegend(text: string) {
+  use f: FieldsetContext
+  Text(text) {
+    ref: f.legend
+    role: .header
+  }
+}
+
+// ---- Tests ----
+
+component SignUp {
+  state sent: [string: string] = [:]
+  state taken: [string: string] = [:]
+
+  Form {
+    errors: taken
+    on clearError(n) { taken.remove(n) }
+    on submit(v) {
+      sent = v
+      if v["user"] == "ada" { taken = ["user": "Taken"] }
+    }
+    Field {
+      name: "user"
+      validate: v => if v.count() < 3 { "Too short" } else { "" }
+      FieldLabel("Username")
+      Input { placeholder: "you" }
+      FieldDescription("Three letters or more")
+      FieldError()
+    }
+    Field {
+      name: "mail"
+      validate: v => if !v.contains("@") { "Not an address" } else { "" }
+      FieldLabel("Email")
+      Input { placeholder: "you@example.com" }
+      FieldError()
+    }
+    FormSubmit { Text("Sign up") }
+    Text("sent {sent}")
+  }
+}
+
+test "a form validates its fields as it submits" {
+  let app = mount(SignUp())
+  app.tap("Sign up")
+  app.expect("Too short", "Not an address", "sent \{}")
+  app.type("grace", into: "you")
+  app.expectNo("Too short")
+  app.type("g@x.org", into: "you@example.com")
+  app.tap("Sign up")
+  app.expect("sent \{\"user\":\"grace\",\"mail\":\"g@x.org\"}")
+}
+
+test "the app's errors show until the field changes" {
+  let app = mount(SignUp())
+  app.type("ada", into: "you")
+  app.type("a@b.c", into: "you@example.com")
+  app.tap("Sign up")
+  app.expect("Taken")
+  app.type("adam", into: "you")
+  app.expectNo("Taken")
+}
+
+test "a field's label and description name its input" {
+  let app = mount(SignUp())
+  let ops = app.ops()
+  expect(ops.contains("A11yLabelledBy=") && ops.contains("A11yDescribedBy="), ops)
+}

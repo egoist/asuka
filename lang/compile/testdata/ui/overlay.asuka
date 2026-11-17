@@ -27,8 +27,14 @@ component Picker {
       on place(p) { side = "{p.side}" }
       on dismiss(r) { reason = "{r}" }
       Column {
-        Button("Apple") { on press { picked = "apple"; open = false } }
-        Button("Pear") { on press { picked = "pear"; open = false } }
+        Button("Apple") { on press {
+          picked = "apple"
+          open = false
+        } }
+        Button("Pear") { on press {
+          picked = "pear"
+          open = false
+        } }
       }
     }
   }

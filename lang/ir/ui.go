@@ -200,6 +200,11 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 			if m.Default == nil {
 				break
 			}
+			if _, none := unparen(m.Default).(*syntax.NoneLit); none && m.IsSlot() {
+				// A slot that defaults to none stays none (if let sees it),
+				// not a builder of nothing.
+				break
+			}
 			r := b.memberRegs[m]
 			skip := b.f.NewLabel()
 			b.emitJump(op("JSOME"), r, skip)

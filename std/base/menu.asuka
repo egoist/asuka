@@ -539,21 +539,53 @@ component MenuDemo {
       MenuTrigger { Text("Actions") }
       popup {
         MenuPopup {
-          MenuItem { label: "Copy"; on select { did = "copy" }; Text("Copy") }
-          MenuItem { label: "Cut"; disabled: true; on select { did = "cut" }; Text("Cut") }
-          MenuItem { label: "Paste"; on select { did = "paste" }; Text("Paste") }
+          MenuItem {
+            label: "Copy"
+            on select { did = "copy" }
+            Text("Copy")
+          }
+          MenuItem {
+            label: "Cut"
+            disabled: true
+            on select { did = "cut" }
+            Text("Cut")
+          }
+          MenuItem {
+            label: "Paste"
+            on select { did = "paste" }
+            Text("Paste")
+          }
           Separator()
-          MenuCheckboxItem { label: "Wrap"; bind checked: wrap; MenuItemIndicator { Text("✓") }; Text("Wrap") }
+          MenuCheckboxItem {
+            label: "Wrap"
+            bind checked: wrap
+            MenuItemIndicator { Text("✓") }
+            Text("Wrap")
+          }
           MenuRadioGroup {
             bind value: sort
-            MenuRadioItem("name") { label: "By name"; MenuItemIndicator { Text("•") }; Text("By name") }
-            MenuRadioItem("date") { label: "By date"; Text("By date") }
+            MenuRadioItem("name") {
+              label: "By name"
+              MenuItemIndicator { Text("•") }
+              Text("By name")
+            }
+            MenuRadioItem("date") {
+              label: "By date"
+              Text("By date")
+            }
           }
           Menu {
-            MenuSubmenuTrigger { label: "Share"; Text("Share") }
+            MenuSubmenuTrigger {
+              label: "Share"
+              Text("Share")
+            }
             popup {
               MenuPopup {
-                MenuItem { label: "Mail"; on select { did = "mail" }; Text("Mail") }
+                MenuItem {
+                  label: "Mail"
+                  on select { did = "mail" }
+                  Text("Mail")
+                }
               }
             }
           }
@@ -564,16 +596,28 @@ component MenuDemo {
     Text("wrap {wrap} sort {sort}")
     ContextMenu {
       Text("Hold me")
-      popup { MenuPopup { MenuItem { label: "Delete"; on select { did = "delete" }; Text("Delete") } } }
+      popup { MenuPopup { MenuItem {
+        label: "Delete"
+        on select { did = "delete" }
+        Text("Delete")
+      } } }
     }
     Menubar {
       Menu {
         MenuTrigger { Text("File") }
-        popup { MenuPopup { MenuItem { label: "New"; on select { did = "new" }; Text("New") } } }
+        popup { MenuPopup { MenuItem {
+          label: "New"
+          on select { did = "new" }
+          Text("New")
+        } } }
       }
       Menu {
         MenuTrigger { Text("Edit") }
-        popup { MenuPopup { MenuItem { label: "Undo"; on select { did = "undo" }; Text("Undo") } } }
+        popup { MenuPopup { MenuItem {
+          label: "Undo"
+          on select { did = "undo" }
+          Text("Undo")
+        } } }
       }
     }
   }

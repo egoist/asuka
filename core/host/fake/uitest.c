@@ -1172,7 +1172,7 @@ static ak_fake_view *pressable(ak_fake_view *v, bool long_press) {
 			if (ak_fake_listens(p, AK_EVENT_LONG_PRESS) || has_menu(p, AK_MENU_TRIGGER_LONG_PRESS)) return p;
 			continue;
 		}
-		if (ak_fake_listens(p, AK_EVENT_PRESS) || has_menu(p, AK_MENU_TRIGGER_TAP)) return p;
+		if (ak_fake_listens(p, AK_EVENT_PRESS) || ak_fake_listens(p, AK_EVENT_PRESS_POINT) || has_menu(p, AK_MENU_TRIGGER_TAP)) return p;
 		if (p->kind == AK_KIND_TOGGLE || p->kind == AK_KIND_TEXT_FIELD) return p;
 		if (p->kind == AK_KIND_NATIVE && ak_fake_listens(p, AK_EVENT_NATIVE)) return p;
 		if (p->kind == AK_KIND_BUTTON && !idle) idle = p;
@@ -1307,12 +1307,12 @@ static bool press(ak_uitest *a, ak_fake_view *v, ak_span text, bool long_press, 
 		bool on = true;
 		if (list && ak_fake_bool(list, AK_PROP_LIST_SELECTING)) on = !ak_fake_bool(p, AK_PROP_SELECTED);  // a selecting list's tap toggles the row
 		ak_fake_select_row(a->f, p, on);
-	} else if (ak_fake_listens(p, AK_EVENT_PRESS)) {
+	} else if (ak_fake_listens(p, AK_EVENT_PRESS) || ak_fake_listens(p, AK_EVENT_PRESS_POINT)) {
 		if (ak_fake_listens(p, AK_EVENT_PRESS_POINT)) {
 			// Where it began: the view's middle.
 			ak_fake_dispatch(a->f, &(ak_event){.id = p->id, .kind = AK_EVENT_PRESS_POINT, .x = p->frame[2] / 2, .y = p->frame[3] / 2});
 		}
-		ak_fake_tap(a->f, p);
+		if (ak_fake_listens(p, AK_EVENT_PRESS)) ak_fake_tap(a->f, p);
 	} else if (p->kind == AK_KIND_NATIVE) {
 		// A native package's view (a pay button): its Press event.
 		ak_fake_emit_native(a->f, p, "Press", NULL, 0);

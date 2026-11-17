@@ -1,0 +1,410 @@
+// Showing and hiding content in place: Collapsible, Accordion, Tabs.
+
+import std/i18n
+
+// ---- Collapsible ----
+
+store CollapsibleContext(open: bool, disabled: bool, setOpen: fn(bool)) {
+  pub let panel = Ref()
+}
+
+/// Content its trigger shows and hides: a section's details, an
+/// advanced settings group.
+pub component Collapsible {
+  prop open = false
+  /// It opened or closed.
+  event openChange(open: bool)
+  prop disabled = false
+  prop children: View
+
+  provide CollapsibleContext(open: open, disabled: disabled, setOpen: o => { if !disabled { open = o } })
+
+  /// While open.
+  pub variant open = open
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View { children }
+}
+
+/// What shows and hides a Collapsible's panel when pressed. Screen
+/// readers hear whether it's expanded.
+pub component CollapsibleTrigger {
+  prop children: View
+  use c: CollapsibleContext
+
+  /// While its panel shows.
+  pub variant open = c.open
+  /// While disabled.
+  pub variant disabled = c.disabled
+
+  View {
+    role: .button
+    a11yExpanded: if c.open { .expanded } else { .collapsed }
+    a11yControls: c.panel
+    focusable: !c.disabled
+    disabled: c.disabled
+    on press { c.setOpen(!c.open) }
+    children
+  }
+}
+
+/// A Collapsible's content: its children while it's open (keepMounted:
+/// always, hidden while closed).
+pub component CollapsiblePanel {
+  prop keepMounted = false
+  prop children: View
+  use c: CollapsibleContext
+
+  /// While it shows.
+  pub variant open = c.open
+
+  View {
+    ref: c.panel
+    hidden: keepMounted && !c.open
+    if keepMounted || c.open { children }
+  }
+}
+
+// ---- Accordion ----
+
+store AccordionContext(value: [string], multiple: bool, disabled: bool, orientation: Orientation, toggle: fn(string)) {
+  pub let items = Items()
+}
+
+/// Sections whose headers open and close them, one at a time (or,
+/// multiple, any): a FAQ, settings' groups. Up and Down (or Left and
+/// Right, horizontal) move between the headers' triggers, Home and End to
+/// the first and last.
+pub component Accordion {
+  /// The values of the open items.
+  prop value: [string] = []
+  /// Items opened or closed.
+  event valueChange(value: [string])
+  /// More than one may be open.
+  prop multiple = false
+  prop disabled = false
+  prop orientation: Orientation = .vertical
+  prop children: View
+
+  provide AccordionContext(value: value, multiple: multiple, disabled: disabled, orientation: orientation, toggle: v => {
+    if value.contains(v) {
+      value = value.filter(x => x != v)
+    } else if multiple {
+      value = value + [v]
+    } else {
+      value = [v]
+    }
+  })
+
+  /// While disabled.
+  pub variant disabled = disabled
+
+  View {
+    direction: if orientation == .horizontal { .row } else { .column }
+    children
+  }
+}
+
+store AccordionItemContext(value: string, open: bool, disabled: bool) {
+  pub let trigger = Ref()
+  pub let panel = Ref()
+}
+
+/// A section of an Accordion: an AccordionTrigger (in an AccordionHeader)
+/// and an AccordionPanel.
+pub component AccordionItem(value: string) {
+  prop disabled = false
+  prop children: View
+  use a: AccordionContext
+
+  provide AccordionItemContext(value: value, open: a.value.contains(value), disabled: disabled || a.disabled)
+
+  /// While open.
+  pub variant open = a.value.contains(value)
+  /// While disabled.
+  pub variant disabled = disabled || a.disabled
+
+  View { children }
+}
+
+/// An AccordionItem's heading: screen readers list it among the headings.
+pub component AccordionHeader {
+  prop children: View
+  use i: AccordionItemContext
+
+  /// While its item is open.
+  pub variant open = i.open
+
+  View {
+    role: .header
+    children
+  }
+}
+
+/// What opens and closes an AccordionItem when pressed.
+pub component AccordionTrigger {
+  prop label = ""
+  prop children: View
+  use a: AccordionContext
+  use i: AccordionItemContext
+
+  /// While its item is open.
+  pub variant open = i.open
+  /// While disabled.
+  pub variant disabled = i.disabled
+
+  task(label, i.disabled) { a.items.put(Item(value: i.value, label: label, ref: i.trigger, disabled: i.disabled)) }
+  task {
+    defer { a.items.remove(i.value) }
+    await never()
+  }
+
+  View {
+    ref: i.trigger
+    role: .button
+    a11yExpanded: if i.open { .expanded } else { .collapsed }
+    a11yControls: i.panel
+    focusable: !i.disabled
+    disabled: i.disabled
+    keys: arrowKeys(a.items, a.orientation, loop: true)
+    on focusChange(f) { if f { a.items.active = i.value } }
+    on press { if !i.disabled { a.toggle(i.value) } }
+    children
+  }
+}
+
+/// An AccordionItem's content: shown while it's open (keepMounted: always,
+/// hidden while closed). Screen readers read it as a region named by its
+/// trigger.
+pub component AccordionPanel {
+  prop keepMounted = false
+  prop children: View
+  use i: AccordionItemContext
+
+  /// While it shows.
+  pub variant open = i.open
+
+  View {
+    ref: i.panel
+    role: .group
+    a11yLabelledBy: i.trigger
+    hidden: keepMounted && !i.open
+    if keepMounted || i.open { children }
+  }
+}
+
+// ---- Tabs ----
+
+store TabsContext(value: string, orientation: Orientation, activateOnFocus: bool, set: fn(string)) {
+  pub let items = Items()
+  pub state frames: [string: Frame] = [:]
+  pub let list = Ref()
+
+  /// The tab's and its panel's names, for screen readers' relations.
+  pub fn tabOf(v: string) -> Ref? {
+    if let it = items.find(v) { return it.ref }
+    return none
+  }
+}
+
+/// Panels of which one shows, chosen by its tab: TabsList with Tabs, and
+/// TabsPanels. Left and Right (Up and Down, vertical) move between the
+/// tabs, and choose one as they do (activateOnFocus: false waits for
+/// Enter or Space); Home and End go to the first and last. The list is
+/// one Tab stop.
+pub component Tabs {
+  /// The chosen tab's value.
+  prop value = ""
+  /// Another tab was chosen.
+  event valueChange(value: string)
+  prop orientation: Orientation = .horizontal
+  /// An arrow key to a tab chooses it.
+  prop activateOnFocus = true
+  prop children: View
+
+  let ctx = TabsContext(value: value, orientation: orientation, activateOnFocus: activateOnFocus, set: v => { value = v })
+  provide ctx
+
+  // No value: the first enabled tab's.
+  task(ctx.items.all.count()) {
+    if value == "" {
+      if let first = ctx.items.firstEnabled() { value = first.value }
+    }
+  }
+
+  View {
+    direction: if orientation == .horizontal { .column } else { .row }
+    children
+  }
+}
+
+/// A Tabs' tabs. Screen readers call it a tab list.
+pub component TabsList {
+  /// The arrow keys go round from the last tab to the first.
+  prop loop = true
+  prop children: View
+  use t: TabsContext
+
+  View {
+    ref: t.list
+    role: .tabList
+    direction: if t.orientation == .horizontal { .row } else { .column }
+    keys: arrowKeys(t.items, t.orientation, loop: loop)
+    children
+  }
+}
+
+/// A tab: pressing it shows its TabsPanel. Screen readers call it a tab,
+/// and say whether it's chosen.
+pub component Tab(value: string) {
+  prop label = ""
+  prop disabled = false
+  prop children: View
+  use t: TabsContext
+  let me = Ref()
+
+  /// While chosen.
+  pub variant selected = t.value == value
+  /// While disabled.
+  pub variant disabled = disabled
+
+  task(label, disabled) { t.items.put(Item(value: value, label: if label == "" { value } else { label }, ref: me, disabled: disabled)) }
+  task {
+    defer { t.items.remove(value) }
+    await never()
+  }
+
+  View {
+    ref: me
+    role: .tab
+    a11ySelected: t.value == value
+    focusable: !disabled && t.value == value
+    disabled: disabled
+    on focusChange(f) {
+      if f {
+        t.items.active = value
+        if t.activateOnFocus && !disabled { t.set(value) }
+      }
+    }
+    on keyText(k) { t.items.type(k) }
+    on press { if !disabled { t.set(value) } }
+    on layout(f) { t.frames[value] = f }
+    children
+  }
+}
+
+/// What marks the chosen tab (an underline, a pill): placed and sized as
+/// the chosen Tab is, in the TabsList, so a transition moves it. Put it in
+/// the TabsList.
+pub component TabsIndicator {
+  prop children: View? = none
+  use t: TabsContext
+
+  View {
+    absolute: true
+    a11yHidden: true
+    left: frame().x
+    top: frame().y
+    width: frame().width
+    height: frame().height
+    children
+  }
+
+  fn frame() -> Frame = t.frames[t.value] ?? Frame()
+}
+
+/// A tab's content: shown while its tab is chosen (keepMounted: always,
+/// hidden while not). Screen readers read it as a tab panel named by its
+/// tab.
+pub component TabsPanel(value: string) {
+  prop keepMounted = false
+  prop children: View
+  use t: TabsContext
+
+  /// While its tab is chosen.
+  pub variant selected = t.value == value
+
+  View {
+    role: .tabPanel
+    a11yLabelledBy: t.tabOf(value)
+    hidden: keepMounted && t.value != value
+    if keepMounted || t.value == value { children }
+  }
+}
+
+// ---- Tests ----
+
+component DisclosureDemo {
+  state faq: [string] = []
+  state tab = ""
+
+  Column {
+    Collapsible {
+      CollapsibleTrigger { Text("Details") }
+      CollapsiblePanel { Text("Hidden details") }
+    }
+    Accordion {
+      bind value: faq
+      AccordionItem("ship") {
+        AccordionHeader { AccordionTrigger { Text("Shipping") } }
+        AccordionPanel { Text("Ships in 2 days") }
+      }
+      AccordionItem("pay") {
+        AccordionHeader { AccordionTrigger { Text("Payment") } }
+        AccordionPanel { Text("Cards and cash") }
+      }
+    }
+    Text("faq {faq}")
+    Tabs {
+      bind value: tab
+      TabsList {
+        Tab("inbox") { Text("Inbox") }
+        Tab("sent") { Text("Sent") }
+        Tab("spam") {
+          disabled: true
+          Text("Spam")
+        }
+        Tab("archive") { Text("Archive") }
+        TabsIndicator()
+      }
+      TabsPanel("inbox") { Text("Inbox panel") }
+      TabsPanel("sent") { Text("Sent panel") }
+      TabsPanel("archive") { Text("Archive panel") }
+    }
+    Text("tab {tab}")
+  }
+}
+
+test "a collapsible shows and hides" {
+  let app = mount(DisclosureDemo())
+  app.expectNo("Hidden details")
+  app.tap("Details")
+  app.expect("Hidden details")
+  app.tap("Details")
+  app.expectNo("Hidden details")
+}
+
+test "an accordion opens one item at a time" {
+  let app = mount(DisclosureDemo())
+  app.tap("Shipping")
+  app.expect("Ships in 2 days", "faq [\"ship\"]")
+  app.tap("Payment")
+  app.expect("Cards and cash", "faq [\"pay\"]")
+  app.expectNo("Ships in 2 days")
+}
+
+test "tabs choose a panel, by press and by arrow keys" {
+  let app = mount(DisclosureDemo(), platform: .macOS)
+  app.expect("Inbox panel", "tab inbox")
+  app.tap("Sent")
+  app.expect("Sent panel")
+  app.expectNo("Inbox panel")
+  expect(app.focused() == "Sent", app.focused())
+  app.pressKey("right")
+  app.expect("Archive panel", "tab archive")
+  app.pressKey("right")
+  app.expect("Inbox panel")
+  app.pressKey("end")
+  app.expect("Archive panel")
+}

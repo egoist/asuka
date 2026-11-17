@@ -193,7 +193,10 @@ pub component PopoverPopup {
 /// A Popover's title: what screen readers call the popup.
 pub component PopoverTitle(text: string) {
   use c: PopoverContext
-  Text(text) { ref: c.title; role: .header }
+  Text(text) {
+    ref: c.title
+    role: .header
+  }
 }
 
 /// A Popover's description: what screen readers read after its title.
@@ -558,7 +561,10 @@ pub component DialogPopup {
 /// A Dialog's title: what screen readers call it.
 pub component DialogTitle(text: string) {
   use c: DialogContext
-  Text(text) { ref: c.title; role: .header }
+  Text(text) {
+    ref: c.title
+    role: .header
+  }
 }
 
 /// A Dialog's description: what screen readers read after its title.

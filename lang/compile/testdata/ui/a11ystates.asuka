@@ -25,7 +25,12 @@ component Box {
       Text("Combo")
     }
     if open {
-      View { ref: list; role: .listbox; a11yModal: true; Text("Items") }
+      View {
+        ref: list
+        role: .listbox
+        a11yModal: true
+        Text("Items")
+      }
     }
     View {
       role: .slider

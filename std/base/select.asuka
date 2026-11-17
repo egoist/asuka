@@ -212,7 +212,10 @@ store GroupContext(name: Ref) {}
 /// A Group's label.
 pub component GroupLabel(text: string) {
   use g: GroupContext
-  Text(text) { ref: g.name; role: .header }
+  Text(text) {
+    ref: g.name
+    role: .header
+  }
 }
 
 /// A line between items, or groups of them.
@@ -512,10 +515,23 @@ component SelectDemo {
       SelectTrigger { SelectValue { placeholder: "Pick a fruit" } }
       popup {
         SelectPopup {
-          SelectItem("apple") { label: "Apple"; Text("Apple") }
-          SelectItem("banana") { label: "Banana"; Text("Banana") }
-          SelectItem("cherry") { label: "Cherry"; disabled: true; Text("Cherry") }
-          SelectItem("pear") { label: "Pear"; Text("Pear") }
+          SelectItem("apple") {
+            label: "Apple"
+            Text("Apple")
+          }
+          SelectItem("banana") {
+            label: "Banana"
+            Text("Banana")
+          }
+          SelectItem("cherry") {
+            label: "Cherry"
+            disabled: true
+            Text("Cherry")
+          }
+          SelectItem("pear") {
+            label: "Pear"
+            Text("Pear")
+          }
         }
       }
     }
@@ -533,9 +549,18 @@ component SelectDemo {
       ComboboxInput { placeholder: "City" }
       popup {
         ComboboxPopup {
-          ComboboxItem("par") { label: "Paris"; Text("Paris") }
-          ComboboxItem("ber") { label: "Berlin"; Text("Berlin") }
-          ComboboxItem("bar") { label: "Barcelona"; Text("Barcelona") }
+          ComboboxItem("par") {
+            label: "Paris"
+            Text("Paris")
+          }
+          ComboboxItem("ber") {
+            label: "Berlin"
+            Text("Berlin")
+          }
+          ComboboxItem("bar") {
+            label: "Barcelona"
+            Text("Barcelona")
+          }
           ComboboxEmpty { Text("No city") }
         }
       }
