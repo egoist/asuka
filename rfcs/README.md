@@ -27,6 +27,7 @@ Each RFC is a file `NNNN-short-name.md` with a header:
 | [0010](0010-headless-components.md) | Headless components | Built |
 | [0011](0011-everyday-language.md) | The everyday language: `mut fn`, type tests, extensions, iteration, workers | Draft |
 | [0012](0012-reactivity-said-and-checked.md) | What the UI follows, said and checked: following states, `peek`, effects' dependencies, keys | Draft |
+| [0013](0013-per-path-tracking.md) | Per-path tracking: reads follow their path, writes notify theirs | Draft |
 
 ## Background: hot reload today
 

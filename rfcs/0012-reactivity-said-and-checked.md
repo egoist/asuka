@@ -497,10 +497,8 @@ testdata):
 
 ## Not in this RFC
 
-- **Per-path tracking.** ReactiveScript's stores notify `(object, key)`;
-  Asuka's `todos[i].done = true` notifies every reader of `todos`
-  (`CPUT`), and keyed rows compare their items. Worth measuring on
-  `examples/list10k` before designing.
+- **Per-path tracking.** A read following its path, not the whole
+  state: [0013](0013-per-path-tracking.md).
 - **Selection in O(1).** `if row.id == selected` in each of 10,000 rows
   runs 10,000 bindings when `selected` changes (Solid's
   `createSelector`). Also to measure first.
