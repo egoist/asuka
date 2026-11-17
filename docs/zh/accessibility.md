@@ -83,6 +83,59 @@ fn send() {}
 
 Windows 一列是 UI Automation 的控件类型，Linux 一列是 GTK 的无障碍角色，Web 一列是 ARIA 角色。可按压的 `View` 本来就是按钮。在 iOS 和 macOS 上，设置了 `role` 的视图会成为一个独立的元素，所以也要给它加上 `label`，否则屏幕阅读器只会读出它的角色。
 
+用视图搭建的控件（见[自定义外观](components.md#自定义外观)）应设置与它本身相符的角色，各平台会把它当作自己的同类控件来朗读：复选框在 UIKit 上是切换按钮，在 Android 上是 `CheckBox`，在 macOS 上是 `AXCheckBox`，在 UI Automation 中是 CheckBox，在 GTK 和 ARIA 中是 `checkbox`。
+
+| 角色 | 含义 |
+| --- | --- |
+| `.checkbox`、`.switch` | 开或关；状态由 `a11yChecked` 给出 |
+| `.radio`、`.radioGroup` | 一组选项中的一个，以及这一组 |
+| `.tab`、`.tabList`、`.tabPanel` | 一个标签页、一排标签页，以及标签页显示的内容 |
+| `.slider`、`.spinButton` | 某个范围内的值（`a11yRange`、`a11yValue`），用 `on adjust` 或方向键调节 |
+| `.progressBar`、`.meter` | 任务进行到哪一步；某个范围内的测量值 |
+| `.menu`、`.menuBar`、`.menuItem`、`.menuItemCheckbox`、`.menuItemRadio` | 菜单、菜单栏，以及它们的菜单项 |
+| `.listbox`、`.option`、`.comboBox` | 选项列表、一个选项，以及打开选项列表的输入框或按钮 |
+| `.dialog`、`.alertDialog` | 显示在应用窗口之上的窗口；警告对话框要求用户作出回答 |
+| `.tooltip`、`.status` | 简短的说明；不移动焦点就会朗读的消息 |
+| `.group`、`.toolbar`、`.separator` | 属于一组的视图、工具栏、分组之间的分隔线 |
+
+## 状态
+
+自己实现的控件用和平台控件相同的方式说明自己的状态：
+
+| 属性 | 含义 |
+| --- | --- |
+| `a11yChecked: .checked` | 复选框、开关、单选按钮或可勾选菜单项的状态：`.unchecked`、`.checked`、`.mixed`（介于两者之间：部分子项被勾选的父复选框）。默认值 `.off` 表示它不可勾选 |
+| `a11yExpanded: .expanded` | 它打开的内容是否正在显示：`.collapsed`、`.expanded`（展开控件、菜单按钮、组合框）。`.off` 表示它不打开任何东西 |
+| `a11ySelected: true` | 在所在的组里被选中的那一个：标签页、选项 |
+| `a11yValue: "40%"` | 用文字表达、作为它的值朗读的内容 |
+| `a11yRange: ValueRange(min: 0, max: 100, now: 40)` | 滑块、进度条或测量条的范围 |
+| `a11yModal: true` | 屏幕阅读器停留在它里面，窗口的其余部分对屏幕阅读器隐藏：对话框 |
+| `a11yControls: list` | 它控制的视图（一个 `Ref`）：组合框的列表、标签页的面板 |
+| `a11yLabelledBy: title` | 用文本为它命名的视图：输入框的标签、对话框的标题 |
+| `a11yDescribedBy: hint` | 用文本描述它的视图：输入框的说明或错误信息 |
+
+```asuka
+component Disclosure(title: string) {
+  state open = false
+  let panel = Ref()
+
+  Column {
+    View {
+      role: .button
+      a11yExpanded: if open { .expanded } else { .collapsed }
+      a11yControls: panel
+      on press { open = !open }
+      Text(title)
+    }
+    if open {
+      View { ref: panel; Text("Details") }
+    }
+  }
+}
+```
+
+这些关联关系会传给支持它们的平台：Windows（UI Automation 的 ControllerFor、LabeledBy、DescribedBy）、Linux 和 Web。在 iOS 和 Android 上，由另一个视图命名的视图会把那个视图的文本当作自己的标签朗读，被描述的视图则把描述当作提示朗读；macOS 通过标题元素（title element）为视图命名。`std/base` 的组件会自己设置好这些属性。
+
 ## 分组
 
 屏幕阅读器是逐个元素移动的。一行里有三段文本，就要停三次；而很多时候，这一行应该只停一次。有两种办法：
@@ -346,14 +399,54 @@ component Adaptive {
 
 ## 键盘
 
-在 Windows、Linux 和 Web 上，Asuka 的视图会像平台原生控件一样响应键盘：
+在桌面端、在 Web 上，以及在接了实体键盘的 iPad、iPhone 或 Android 设备上，Asuka 的视图都会像平台原生控件一样响应键盘：
 
 - **Tab** 在控件和可按压视图之间移动，顺序与视图的顺序一致；Shift+Tab 反向移动。
 - **Enter** 和**空格键**会像按钮一样按下获得焦点的可按压视图。
-- 获得焦点的视图会显示焦点环：Windows 上是 Fluent 风格的，Linux 上是强调色的轮廓，Web 上是浏览器自己的。
-- 带 `actions` 或 `on adjust(by)` 的视图是一个 Tab 停靠点：按 Shift+F10 或菜单键可以打开它的上下文菜单（Windows、Linux），按方向键可以调节它。
+- 获得焦点的视图会显示平台自己的焦点环：AppKit 的焦点环，Windows 上 Fluent 风格的焦点环，Linux 上强调色的轮廓，Web 上浏览器自己的焦点环，UIKit 的焦点效果，Android 的焦点高亮。
+- 带 `actions` 或 `on adjust` 的视图是一个 Tab 停靠点：按 Shift+F10 或菜单键可以打开它的上下文菜单（Windows、Linux），按方向键可以调节它。
 
-`Ref` 的 `focus()` 和 `blur()` 用来把键盘焦点移到某个输入框上或从上面移开（见[组件](components.md)）。
+在桌面端和 Web 上，用指针按下视图也会移动焦点；在触摸屏上轻点则不会。
+
+### 能获得焦点的视图
+
+`focusable: true` 让任何容器都成为 Tab 停靠点，点击它也会让它获得焦点；`on focusChange(focused)` 会在焦点到来和离开时收到通知。`pressKeepsFocus: true` 让指针按下这个视图时焦点留在原处（工具栏按钮、菜单的触发按钮）。
+
+就像 `pressed` 跟随按压一样，有两个交互状态跟随焦点，可以用在样式里，也可以读取：
+
+- `focused`：焦点在这个视图里（它自己，或它里面的某个视图：相当于 CSS 的 `:focus-within`），所以输入框里的文本框获得焦点时，外面的框也能改变样式；
+- `focusVisible`：同上，但只在焦点来自键盘或位于输入框中时成立：这正是焦点环该出现的时候（相当于 CSS 的 `:focus-visible`）。
+
+```asuka
+component Card(title: string) {
+  state opened = false
+
+  View as card {
+    focusable: true
+    padding: 12
+    radius: 8
+    focusVisible { border: 2; borderColor: .accent }
+    on press { opened = true }
+    Text(if card.focused { "{title}, focused" } else { title })
+  }
+}
+```
+
+为 `focusVisible` 设置了样式的视图会画出自己的焦点环，平台的焦点环就不再显示。`hideFocusRing: true` 则直接去掉焦点环，不画替代的。
+
+`Ref` 的 `focus()` 和 `blur()` 用来把键盘焦点移到某个视图上（输入框、控件、可获得焦点或可按压的视图）或从上面移开；随按键而来的焦点是可见的。
+
+### 把焦点留在窗口的一部分里
+
+- `trapFocus: true`：焦点在这个视图里时，Tab 和 Shift+Tab 只在它里面的视图之间循环（对话框就是这样）。
+- `autofocus: true`：视图布局完成后，如果它能获得焦点，焦点就移到它上面；否则移到它里面第一个能获得焦点的视图上。
+- `restoreFocus: true`：视图消失时，焦点回到它出现时持有焦点的那个视图上，除非用户已经把焦点移到了别处。
+
+`std/base` 的对话框、菜单和弹出框这三点都会做到。
+
+### 向视图输入文字
+
+`on keyText(text)` 会在视图获得焦点、且没有被 `keys` 处理掉时收到输入的文字：比如列表的输入即跳转（typeahead），跳到以所输入文字开头的那一项。
 
 ## 用屏幕阅读器测试
 

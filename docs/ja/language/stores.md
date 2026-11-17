@@ -31,6 +31,22 @@ screen Inbox {
 }
 ```
 
+コンポーネントが提供するものは、そのコンポーネントが表示するビューのためのものです。それぞれ `Theme` を提供する二つのコンポーネントを並べると、どちらも自分のものだけが見え、相手のものは見えません。
+
+オプショナル型で `use` すると、上のどこにも提供されていないときは none になります。単独でもグループの中でも動くコンポーネントに使います（チェックボックスグループの中にあってもなくてもよいチェックボックスなど）。
+
+```asuka
+store Group {
+  pub state chosen: [string] = []
+}
+
+component Choice(value: string) {
+  use group: Group?
+
+  Text(if let g = group { if g.chosen.contains(value) { "✓ {value}" } else { value } } else { value })
+}
+```
+
 ファイルの最上位に書いた `state` はアプリのもので、アプリ全体で一つだけです。
 
 ストアは構造体と同じように型パラメータを取れます。型は引数か、期待される型から推論されます。

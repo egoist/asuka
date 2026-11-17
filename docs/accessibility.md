@@ -127,6 +127,68 @@ roles, the web's ARIA roles. A pressable `View` is a button already. A
 view with a `role` is an element of its own on iOS and macOS, so give it
 a `label` too, or it's read as nothing but its role.
 
+A control you build from views (see [Your own look](components.md#your-own-look))
+takes the role of what it is, and each platform reads it as its own
+control of that kind: a checkbox as UIKit's toggle button, Android's
+`CheckBox`, `AXCheckBox`, UI Automation's CheckBox, GTK's and ARIA's
+`checkbox`.
+
+| Role | What it is |
+| --- | --- |
+| `.checkbox`, `.switch` | on or off; its state is `a11yChecked` |
+| `.radio`, `.radioGroup` | one of a group's choices, and the group |
+| `.tab`, `.tabList`, `.tabPanel` | a tab, the row of them, and what one shows |
+| `.slider`, `.spinButton` | a value in a range (`a11yRange`, `a11yValue`), stepped by `on adjust` or the arrow keys |
+| `.progressBar`, `.meter` | how far a task has come, a measurement in a range |
+| `.menu`, `.menuBar`, `.menuItem`, `.menuItemCheckbox`, `.menuItemRadio` | a menu, a menu bar, and their items |
+| `.listbox`, `.option`, `.comboBox` | a list of options, an option, a field or button that opens one |
+| `.dialog`, `.alertDialog` | a window over the app's; an alert asks for an answer |
+| `.tooltip`, `.status` | a short description; a message read without moving the focus |
+| `.group`, `.toolbar`, `.separator` | views that belong together, a toolbar, a line between groups |
+
+## States
+
+A control of your own says its state as the platform's say theirs:
+
+| Prop | What it says |
+| --- | --- |
+| `a11yChecked: .checked` | a checkbox's, switch's, radio's or checkable menu item's state: `.unchecked`, `.checked`, `.mixed` (neither: a parent of some checked boxes). `.off`, the default: it's not checkable |
+| `a11yExpanded: .expanded` | whether what it opens shows: `.collapsed`, `.expanded` (a disclosure, a menu's button, a combo box). `.off`: it opens nothing |
+| `a11ySelected: true` | the one chosen among its group: a tab, an option |
+| `a11yValue: "40%"` | what's read as its value, in words |
+| `a11yRange: ValueRange(min: 0, max: 100, now: 40)` | a slider's, progress bar's or meter's range |
+| `a11yModal: true` | screen readers stay in it, the rest of its window hidden from them: a dialog |
+| `a11yControls: list` | the view (a `Ref`) it controls: a combo box's list, a tab's panel |
+| `a11yLabelledBy: title` | the view whose text names it: a field's label, a dialog's title |
+| `a11yDescribedBy: hint` | the view whose text describes it: a field's description or error |
+
+```asuka
+component Disclosure(title: string) {
+  state open = false
+  let panel = Ref()
+
+  Column {
+    View {
+      role: .button
+      a11yExpanded: if open { .expanded } else { .collapsed }
+      a11yControls: panel
+      on press { open = !open }
+      Text(title)
+    }
+    if open {
+      View { ref: panel; Text("Details") }
+    }
+  }
+}
+```
+
+The relations go to the platforms that have them: Windows (UI
+Automation's ControllerFor, LabeledBy, DescribedBy), Linux and the web.
+On iOS and Android a view labelled by another reads that one's text as
+its label, and a described one its description as its hint; macOS
+names a view by its title element. `std/base`'s components set all of
+these themselves.
+
 ## Grouping
 
 A screen reader moves through elements one by one. A row of three texts
@@ -462,20 +524,77 @@ animations end at once. See [Motion](motion.md) for what's left to you.
 
 ## The keyboard
 
-On Windows, Linux and the web, Asuka's views take the keyboard as the
-platform's own controls do:
+Asuka's views take the keyboard as the platform's own controls do, on a
+desktop, on the web, and with a hardware keyboard on an iPad, an iPhone
+or an Android device:
 
 - **Tab** moves between the controls and the pressable views, in the
   views' order; Shift+Tab goes back.
 - **Enter** and **Space** press a focused pressable view, as a button.
-- A focused view shows a focus ring: Fluent's on Windows, an outline in
-  the accent on Linux, the browser's on the web.
+- A focused view shows the platform's focus ring: AppKit's, Fluent's on
+  Windows, an outline in the accent on Linux, the browser's on the web,
+  UIKit's focus effect, Android's focus highlight.
 - A view with `actions` or `on adjust` is a tab stop: its context menu
   opens with Shift+F10 or the Menu key (Windows, Linux), and the arrow
   keys step it.
 
-A `Ref`'s `focus()` and `blur()` move the keyboard's focus to a field
-and away (see [Components](components.md)).
+A pointer's press moves the focus on a desktop and the web, not a tap
+on a touch screen.
+
+### Views that take the focus
+
+`focusable: true` makes any container a tab stop, focused by a click
+too; `on focusChange(focused)` hears it come and go. `pressKeepsFocus:
+true` leaves the focus where it was when a pointer presses the view (a
+toolbar's button, a menu's trigger).
+
+Two interaction states follow the focus, as `pressed` follows a press,
+for styles and reads:
+
+- `focused`: the focus is in the view (it, or a view inside it: CSS's
+  `:focus-within`), so a field's frame styles itself while the field in
+  it has the focus;
+- `focusVisible`: the same, while the focus came from the keyboard or is
+  in a field: what a focus ring is for (CSS's `:focus-visible`).
+
+```asuka
+component Card(title: string) {
+  state opened = false
+
+  View as card {
+    focusable: true
+    padding: 12
+    radius: 8
+    focusVisible { border: 2; borderColor: .accent }
+    on press { opened = true }
+    Text(if card.focused { "{title}, focused" } else { title })
+  }
+}
+```
+
+A view that styles `focusVisible` draws its own ring: the platform's
+goes. `hideFocusRing: true` takes it away without one.
+
+A `Ref`'s `focus()` and `blur()` move the keyboard's focus to a view
+(a field, a control, a focusable or pressable view) and away; focus
+that follows a key is visible.
+
+### Keeping the focus in a part of the window
+
+- `trapFocus: true`: while the focus is in the view, Tab and Shift+Tab
+  go round among the views inside it (a dialog's).
+- `autofocus: true`: once the view is laid out, the focus goes to it if
+  it takes the focus, else to the first view inside it that does.
+- `restoreFocus: true`: when the view goes, the focus goes back to the
+  view that had it when it came, unless the user moved it elsewhere.
+
+`std/base`'s dialogs, menus and popovers do all three.
+
+### Typing to a view
+
+`on keyText(text)` hears what's typed while the view has the focus and
+no `keys` took it: a list's typeahead, which moves to the item that
+starts with what's typed.
 
 ## Testing with a screen reader
 

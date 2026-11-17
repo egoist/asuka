@@ -31,6 +31,22 @@ screen Inbox {
 }
 ```
 
+组件提供的东西只属于它显示的视图：两个并排的组件各自提供一个 `Theme`，它们看到的都是自己的那个，而不是对方的。
+
+用可选类型 `use` 时，如果上面没有谁提供，取到的就是 none。这适合既能单独使用、也能放在一组里使用的组件，比如复选框，可以放在复选框组里，也可以不放。
+
+```asuka
+store Group {
+  pub state chosen: [string] = []
+}
+
+component Choice(value: string) {
+  use group: Group?
+
+  Text(if let g = group { if g.chosen.contains(value) { "✓ {value}" } else { value } } else { value })
+}
+```
+
 写在文件顶层的 `state` 属于整个应用：全应用只有一份。
 
 store 和结构体一样可以带类型参数，由参数或期望的类型推断出来：

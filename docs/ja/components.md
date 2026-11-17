@@ -1333,6 +1333,122 @@ component Tags(tags: [string]) {
 
 項目が多い、または上限がない場合（フィード、受信トレイ、検索結果、写真など）や、スワイプアクション、区切り線、末尾での追加読み込み、グリッドが必要な場合は `List` を使ってください。`List` はそれ自体がスクロールするので、`Scroll` の中には入れないでください。
 
+## 独自の見た目
+
+ここまでの要素は、どれも各プラットフォーム純正のコントロールです。スタイルを付けなければ、アプリはどこでもネイティブな見た目になります。たとえば `Picker` は、iOS ではメニュー、Windows ではドロップダウンです。一方で、アプリに独自のデザインがある場合（ブランドの色、形、動きをすべてのコントロールに、スマートフォンでもブラウザーでも同じように使いたい）や、プラットフォームにないコントロール（コンボボックス、トグルグループ、範囲スライダー）が必要な場合は、`std/base` が見た目を持たず振る舞いだけを持つコンポーネントを提供します。セレクト、メニュー、ダイアログ、チェックボックス、タブ、スライダーなどです。それぞれが状態、キーボードとフォーカス、スクリーンリーダー、そしてウィンドウの上での位置を扱い、表示されるのはアプリがスタイルを付けたものだけです。
+
+```asuka
+import std/base
+
+style field {
+  padding: [8, 12]
+  radius: 8
+  border: 1
+  borderColor: .separator
+  focusVisible { borderColor: .accent; border: 2 }
+}
+
+style menu {
+  padding: 4
+  radius: 10
+  background: .background
+  shadow: Shadow(radius: 12, y: 4)
+}
+
+style option {
+  padding: [6, 10]
+  radius: 6
+}
+
+component FruitPicker {
+  state fruit = ""
+
+  base.Select {
+    bind value: fruit
+    base.SelectTrigger {
+      style: field
+      base.SelectValue { placeholder: "Pick a fruit" }
+    }
+    popup {
+      base.SelectPopup {
+        style: menu
+        for f in ["Apple", "Banana", "Cherry"] key f {
+          base.SelectItem(f) {
+            style: option
+            highlighted { background: .accent.opacity(0.15) }
+            selected { font: .headline }
+            Text(f)
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+コンポーネントは部品の組み合わせです。状態を持つルート（`Select`）と、アプリがその中に並べてスタイルを付ける部品（`SelectTrigger`、`SelectValue`、`SelectPopup`、`SelectItem`）があります。どの部品も `style:` とスタイルのプロパティを受け取り、部品の状態は `pressed { … }` と同じく、アプリがスタイルを付けるバリアントになります。`checked { … }`、`open { … }`、`highlighted { … }`、`selected { … }`、`disabled { … }` です。ルートの値は、バインドされていれば（`bind value: fruit`）呼び出し側のもの、そうでなければルート自身のものです。ポップアップの部品はルートの `popup` スロットに入れ、トリガーの隣に表示されます。`backdrop` はダイアログの後ろのウィンドウを暗くします。
+
+| 分類 | コンポーネント |
+|---|---|
+| アクション | `Button`、`Toggle`、`ToggleGroup`、`Toolbar` |
+| 選択 | `Checkbox`（`CheckboxGroup`）、`Switch`、`RadioGroup` と `Radio`、`Select`、`Listbox`、`Combobox` |
+| 値 | `Slider`、`NumberField`、`Progress`、`Meter` |
+| フォーム | `Field`（ラベル、説明、エラー）、`Input`、`Fieldset`、`Form` |
+| 開閉 | `Collapsible`、`Accordion`、`Tabs` |
+| ポップアップ | `Dialog`、`AlertDialog`、`Popover`、`Tooltip`、`PreviewCard`、`Menu`、`ContextMenu`、`Menubar` |
+| その他 | `Avatar`、`ScrollArea`、`Separator`、トースト（`Toasts`、`ToastViewport`） |
+
+キー操作は、同じ種類のコントロールに対する各プラットフォームの慣習に従います。矢印キーでメニュー、セレクト、ラジオグループの項目を移動し、文字を入力するとその項目へ移ります。Escape でポップアップが閉じ、Android の「戻る」でも閉じます。ポップアップが開くとフォーカスはその中へ移り、閉じるとトリガーに戻ります。すべての部品とそのプロパティ、バリアントは `asuka doc std/base` で確認できます。
+
+プラットフォームのコントロールがロール以上のことをしてくれる場合は、そちらを優先してください。iOS の日付ピッカーのホイール、フィールドの自動入力、共有シートなどです。両者は一つの画面の中で混在できます。
+
+### Overlay
+
+`std/base` のポップアップは `Overlay` でできています。`Overlay` は、`open` のあいだ子をウィンドウの上、アンカーの隣に表示します。
+
+```asuka
+component Hint {
+  state open = false
+  let anchor = Ref()
+
+  Column {
+    View {
+      ref: anchor
+      on press { open = !open }
+      Text("What's this?")
+    }
+    Overlay {
+      bind open: open
+      anchor: anchor
+      side: .bottom
+      align: .start
+      offset: 4
+      on dismiss(reason) { print("closed by {reason}") }
+      Text("Overlays are placed next to their anchor") {
+        padding: 8
+        background: .secondaryBackground
+      }
+    }
+  }
+}
+```
+
+| キー | 働き |
+|---|---|
+| `open` | true のあいだ子を表示する。開くときに組み立て、閉じるときに破棄する（`animate { }` の中ではトランジションが再生される） |
+| `anchor` | 隣に表示する対象のビュー（`Ref`）。指定しなければウィンドウの中に表示する（ダイアログ、ドロワー、トースト） |
+| `side`、`align` | アンカーのどの側に置くか（`.bottom`、`.top`、`.start`、`.end`、またはアンカーに重ねる `.center`）と、その辺に沿った位置（`.start`、`.center`、`.end`。`.stretch` はアンカーと同じ長さ） |
+| `offset`、`alignOffset` | アンカーとの間隔と、辺に沿った移動量 |
+| `flip` | 収まらないときに反対側へ移す（デフォルトは true） |
+| `edgeGap` | ウィンドウの端とセーフエリアから空ける最小の距離（デフォルトは 8）。はみ出さないよう辺に沿って移動し、残りの領域より大きくはならない |
+| `matchWidth` | 少なくともアンカーと同じ幅にする |
+| `modal` | 押す操作はこのオーバーレイにだけ届き、スクリーンリーダーにもこのオーバーレイだけが見える |
+| `dismissOn` | 何で閉じるか：`.outsidePress`（アンカーを押した場合は除く）、`.escape`、`.back`、`.focusOut`、`.anchorHidden`（スクロールで見えなくなった）。デフォルトはすべて |
+| `backdrop { … }` | 開いているあいだ、後ろのウィンドウを覆うもの |
+| `on place(placed)` | 最終的に置かれた側、その辺に沿ったアンカーの中心の位置（矢印を置く場所）、使える領域 |
+
+オーバーレイはアンカーの移動（スクロール、リサイズ、キーボードの表示）に追従し、領域が足りなくなると反対側へ移ります。この動作はすべてのプラットフォームで同じです。オーバーレイはアンカーと同じウィンドウに置かれ、アンカーがシートの中にあればシートの上に表示されます。
+
 ## 独自のビュー
 
 Asuka が対応していないウィジェットがプラットフォームにある場合は、自分で `native component` を書けます。iOS と macOS では Swift、Android では Kotlin、Windows と Linux では C、Web では JavaScript で書きます。[ネイティブコード](native.md) を参照してください。

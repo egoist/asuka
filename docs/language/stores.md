@@ -34,6 +34,26 @@ screen Inbox {
 }
 ```
 
+What a component provides is for the views it shows: two components
+side by side that each provide a `Theme` see their own, not each
+other's.
+
+`use` with an optional type is none when nothing above provides one: a
+component that works alone and in a group (a checkbox, in a checkbox
+group or not).
+
+```asuka
+store Group {
+  pub state chosen: [string] = []
+}
+
+component Choice(value: string) {
+  use group: Group?
+
+  Text(if let g = group { if g.chosen.contains(value) { "✓ {value}" } else { value } } else { value })
+}
+```
+
 `state` at the top of a file is the app's: one for the whole app.
 
 A store takes type parameters as a struct does, inferred from its

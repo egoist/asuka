@@ -83,6 +83,59 @@ fn send() {}
 
 Windows の列は UI Automation のコントロールタイプ、Linux の列は GTK のアクセシブルロール、Web の列は ARIA のロールです。押せる `View` はもともとボタンです。iOS と macOS では、`role` を持つビューはそれ自体が一つの要素になります。そのため `label` も付けてください。付けないと、ロールだけが読み上げられます。
 
+ビューを組み合わせて作ったコントロール（[独自の見た目](components.md#独自の見た目)を参照）には、それが何であるかに合ったロールを付けます。各プラットフォームは、それを自分の同じ種類のコントロールとして読み上げます。たとえばチェックボックスは、UIKit ではトグルボタン、Android では `CheckBox`、macOS では `AXCheckBox`、UI Automation では CheckBox、GTK と ARIA では `checkbox` になります。
+
+| ロール | 意味 |
+| --- | --- |
+| `.checkbox`、`.switch` | オンかオフ。状態は `a11yChecked` で示す |
+| `.radio`、`.radioGroup` | グループの選択肢の一つと、そのグループ |
+| `.tab`、`.tabList`、`.tabPanel` | タブ、タブの並び、タブが表示する内容 |
+| `.slider`、`.spinButton` | 範囲の中の値（`a11yRange`、`a11yValue`）。`on adjust` か矢印キーで増減する |
+| `.progressBar`、`.meter` | タスクの進み具合、範囲の中の測定値 |
+| `.menu`、`.menuBar`、`.menuItem`、`.menuItemCheckbox`、`.menuItemRadio` | メニュー、メニューバー、それらの項目 |
+| `.listbox`、`.option`、`.comboBox` | 選択肢のリスト、選択肢、それを開くフィールドやボタン |
+| `.dialog`、`.alertDialog` | アプリのウィンドウの上に出るウィンドウ。アラートは応答を求める |
+| `.tooltip`、`.status` | 短い説明。フォーカスを動かさずに読み上げられるメッセージ |
+| `.group`、`.toolbar`、`.separator` | ひとまとまりのビュー、ツールバー、グループ間の区切り線 |
+
+## 状態
+
+独自のコントロールも、プラットフォームのコントロールと同じ方法で自分の状態を伝えます。
+
+| プロパティ | 伝える内容 |
+| --- | --- |
+| `a11yChecked: .checked` | チェックボックス、スイッチ、ラジオボタン、チェックできるメニュー項目の状態：`.unchecked`、`.checked`、`.mixed`（どちらでもない：一部の子がチェックされた親のチェックボックス）。デフォルトの `.off` はチェックできないことを表す |
+| `a11yExpanded: .expanded` | それが開く内容が表示されているかどうか：`.collapsed`、`.expanded`（開閉するビュー、メニューのボタン、コンボボックス）。`.off` は何も開かないことを表す |
+| `a11ySelected: true` | グループの中で選ばれているもの：タブ、選択肢 |
+| `a11yValue: "40%"` | 値として読み上げられる言葉 |
+| `a11yRange: ValueRange(min: 0, max: 100, now: 40)` | スライダー、プログレスバー、メーターの範囲 |
+| `a11yModal: true` | スクリーンリーダーがその中にとどまり、ウィンドウのほかの部分はスクリーンリーダーから隠れる：ダイアログ |
+| `a11yControls: list` | それが操作するビュー（`Ref`）：コンボボックスのリスト、タブのパネル |
+| `a11yLabelledBy: title` | テキストでそれに名前を付けるビュー：フィールドのラベル、ダイアログのタイトル |
+| `a11yDescribedBy: hint` | テキストでそれを説明するビュー：フィールドの説明やエラー |
+
+```asuka
+component Disclosure(title: string) {
+  state open = false
+  let panel = Ref()
+
+  Column {
+    View {
+      role: .button
+      a11yExpanded: if open { .expanded } else { .collapsed }
+      a11yControls: panel
+      on press { open = !open }
+      Text(title)
+    }
+    if open {
+      View { ref: panel; Text("Details") }
+    }
+  }
+}
+```
+
+これらの関係は、それを扱えるプラットフォームに伝わります。Windows（UI Automation の ControllerFor、LabeledBy、DescribedBy）、Linux、Web です。iOS と Android では、別のビューでラベル付けされたビューはそのビューのテキストをラベルとして読み上げ、説明が付いたビューはその説明をヒントとして読み上げます。macOS ではタイトル要素（title element）でビューに名前を付けます。`std/base` のコンポーネントは、これらをすべて自分で設定します。
+
 ## グループ化
 
 スクリーンリーダーは要素を一つずつたどります。テキストが三つ並んだ行は三回止まることになりますが、一回で済ませたいことがよくあります。方法は二つあります。
@@ -346,14 +399,54 @@ component Adaptive {
 
 ## キーボード
 
-Windows、Linux、Web では、Asuka のビューはプラットフォーム純正のコントロールと同じようにキーボードで操作できます。
+デスクトップ、Web、そしてハードウェアキーボードをつないだ iPad、iPhone、Android デバイスでは、Asuka のビューはプラットフォーム純正のコントロールと同じようにキーボードで操作できます。
 
 - **Tab** で、コントロールと押せるビューのあいだをビューの順に移動します。Shift+Tab で戻ります。
 - **Enter** と **Space** で、フォーカスのある押せるビューをボタンと同じように押せます。
-- フォーカスのあるビューにはフォーカスリングが表示されます。Windows では Fluent のもの、Linux ではアクセントカラーの輪郭線、Web ではブラウザーのものです。
-- `actions` か `on adjust(by)` を持つビューはタブストップになります。コンテキストメニューは Shift+F10 かアプリケーションキーで開き（Windows、Linux）、矢印キーで値を変えます。
+- フォーカスのあるビューには、プラットフォームのフォーカスリングが表示されます。AppKit のもの、Windows では Fluent のもの、Linux ではアクセントカラーの輪郭線、Web ではブラウザーのもの、UIKit のフォーカスエフェクト、Android のフォーカスハイライトです。
+- `actions` か `on adjust` を持つビューはタブストップになります。コンテキストメニューは Shift+F10 かアプリケーションキーで開き（Windows、Linux）、矢印キーで値を変えます。
 
-`Ref` の `focus()` と `blur()` は、キーボードのフォーカスをフィールドに移したり、外したりします（[コンポーネント](components.md)を参照）。
+デスクトップと Web では、ポインターで押すとフォーカスも移ります。タッチスクリーンでのタップでは移りません。
+
+### フォーカスを受け取るビュー
+
+`focusable: true` を付けると、どのコンテナーもタブストップになり、クリックでもフォーカスを受け取ります。フォーカスが来たときと離れたときは `on focusChange(focused)` で受け取れます。`pressKeepsFocus: true` を付けたビューは、ポインターで押してもフォーカスを元の場所に残します（ツールバーのボタンやメニューを開くボタン）。
+
+`pressed` が押下に従うのと同じように、二つのインタラクション状態がフォーカスに従います。スタイルにも使え、値として読むこともできます。
+
+- `focused`：フォーカスがそのビューの中にある（ビュー自身か、その中のビュー。CSS の `:focus-within` にあたる）。そのため、中のテキストフィールドにフォーカスがあるあいだ、フィールドを囲む枠のスタイルを変えられます。
+- `focusVisible`：同じく、ただしフォーカスがキーボードから来たか、フィールドにあるときだけ。フォーカスリングを出すべき場面です（CSS の `:focus-visible` にあたる）。
+
+```asuka
+component Card(title: string) {
+  state opened = false
+
+  View as card {
+    focusable: true
+    padding: 12
+    radius: 8
+    focusVisible { border: 2; borderColor: .accent }
+    on press { opened = true }
+    Text(if card.focused { "{title}, focused" } else { title })
+  }
+}
+```
+
+`focusVisible` にスタイルを付けたビューは自分でリングを描き、プラットフォームのリングは消えます。`hideFocusRing: true` は、代わりのリングなしでリングを消します。
+
+`Ref` の `focus()` と `blur()` は、キーボードのフォーカスをビュー（フィールド、コントロール、フォーカスを受け取るビューや押せるビュー）に移したり、外したりします。キー操作に続いて移ったフォーカスは表示されます。
+
+### ウィンドウの一部にフォーカスを閉じ込める
+
+- `trapFocus: true`：フォーカスがそのビューの中にあるあいだ、Tab と Shift+Tab はその中のビューだけを巡回します（ダイアログのように）。
+- `autofocus: true`：ビューがレイアウトされたら、ビュー自身がフォーカスを受け取れるならそこへ、そうでなければその中で最初にフォーカスを受け取れるビューへフォーカスを移します。
+- `restoreFocus: true`：ビューが消えるとき、そのビューが現れたときにフォーカスを持っていたビューへフォーカスを戻します。ただし、ユーザーがフォーカスを別の場所へ移していた場合は戻しません。
+
+`std/base` のダイアログ、メニュー、ポップオーバーは、この三つをすべて行います。
+
+### ビューへの入力
+
+`on keyText(text)` は、ビューにフォーカスがあり、どの `keys` も受け取らなかったときに入力された文字を受け取ります。リストのタイプアヘッド（入力した文字で始まる項目へ移動する機能）に使います。
 
 ## スクリーンリーダーでのテスト
 

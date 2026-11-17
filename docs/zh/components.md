@@ -1333,6 +1333,122 @@ component Tags(tags: [string]) {
 
 如果数据项很多或者数量没有上限（信息流、收件箱、搜索结果、照片），或者你需要滑动操作、分隔线、滚到末尾加载更多、网格布局，就用 `List`。`List` 自己就能滚动，不要把它放进 `Scroll`。
 
+## 自定义外观
+
+上面这些元素都是各平台自己的控件：不设置样式的应用在哪里看起来都是原生的，`Picker` 在 iOS 上是一个菜单，在 Windows 上是一个下拉列表。如果应用有自己的设计（每个控件都用品牌的配色、形状和动效，在手机上和浏览器里都一样），或者需要平台没有的控件（组合框、切换按钮组、范围滑块），`std/base` 提供的是只有行为、没有外观的组件：选择框、菜单、对话框、复选框、标签页、滑块等等。每个组件都会处理好自己的状态、键盘与焦点、屏幕阅读器，以及它浮在窗口上的位置；至于显示成什么样，完全取决于应用设置的样式。
+
+```asuka
+import std/base
+
+style field {
+  padding: [8, 12]
+  radius: 8
+  border: 1
+  borderColor: .separator
+  focusVisible { borderColor: .accent; border: 2 }
+}
+
+style menu {
+  padding: 4
+  radius: 10
+  background: .background
+  shadow: Shadow(radius: 12, y: 4)
+}
+
+style option {
+  padding: [6, 10]
+  radius: 6
+}
+
+component FruitPicker {
+  state fruit = ""
+
+  base.Select {
+    bind value: fruit
+    base.SelectTrigger {
+      style: field
+      base.SelectValue { placeholder: "Pick a fruit" }
+    }
+    popup {
+      base.SelectPopup {
+        style: menu
+        for f in ["Apple", "Banana", "Cherry"] key f {
+          base.SelectItem(f) {
+            style: option
+            highlighted { background: .accent.opacity(0.15) }
+            selected { font: .headline }
+            Text(f)
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+一个组件由若干部件组成：一个持有状态的根（`Select`），以及由应用在根里排布、设置样式的部件（`SelectTrigger`、`SelectValue`、`SelectPopup`、`SelectItem`）。每个部件都接受 `style:` 和各种样式属性，它的状态是可以设置样式的变体，就像 `pressed { … }` 一样：`checked { … }`、`open { … }`、`highlighted { … }`、`selected { … }`、`disabled { … }`。根的值在绑定时（`bind value: fruit`）归调用方所有，否则归根自己所有。弹出层的部件放在根的 `popup` 插槽里，它们会显示在触发按钮旁边；`backdrop` 会把对话框后面的窗口调暗。
+
+| 分类 | 组件 |
+|---|---|
+| 操作 | `Button`、`Toggle`、`ToggleGroup`、`Toolbar` |
+| 选择 | `Checkbox`（`CheckboxGroup`）、`Switch`、`RadioGroup` 和 `Radio`、`Select`、`Listbox`、`Combobox` |
+| 数值 | `Slider`、`NumberField`、`Progress`、`Meter` |
+| 表单 | `Field`（它的标签、说明和错误信息）、`Input`、`Fieldset`、`Form` |
+| 展开与收起 | `Collapsible`、`Accordion`、`Tabs` |
+| 弹出层 | `Dialog`、`AlertDialog`、`Popover`、`Tooltip`、`PreviewCard`、`Menu`、`ContextMenu`、`Menubar` |
+| 其他 | `Avatar`、`ScrollArea`、`Separator`、toast（`Toasts`、`ToastViewport`） |
+
+它们的按键遵循各平台对同类控件的惯例：方向键在菜单、选择框或单选按钮组的选项之间移动，输入文字可以跳到对应的选项；Escape 会关闭弹出层，Android 上的返回键也一样；弹出层打开时焦点移进去，关闭时焦点回到触发按钮。`asuka doc std/base` 会列出每个部件以及它的属性和变体。
+
+如果平台控件的作用不只是它的角色，就优先用平台控件：比如 iOS 日期选择器的滚轮、输入框的自动填充、分享面板。两者可以在同一个页面上混用。
+
+### Overlay
+
+`std/base` 的弹出层都由 `Overlay` 构成。`open` 为真时，它会把子视图显示在窗口之上、锚点旁边：
+
+```asuka
+component Hint {
+  state open = false
+  let anchor = Ref()
+
+  Column {
+    View {
+      ref: anchor
+      on press { open = !open }
+      Text("What's this?")
+    }
+    Overlay {
+      bind open: open
+      anchor: anchor
+      side: .bottom
+      align: .start
+      offset: 4
+      on dismiss(reason) { print("closed by {reason}") }
+      Text("Overlays are placed next to their anchor") {
+        padding: 8
+        background: .secondaryBackground
+      }
+    }
+  }
+}
+```
+
+| 键 | 作用 |
+|---|---|
+| `open` | 为真时显示子视图：打开时构建，关闭时销毁（在 `animate { }` 里会播放它们的过渡） |
+| `anchor` | 它所靠近的视图（一个 `Ref`）；不设置时显示在窗口中（对话框、抽屉、toast） |
+| `side`、`align` | 位于锚点的哪一侧（`.bottom`、`.top`、`.start`、`.end`，或 `.center` 覆盖在锚点上），以及沿这一侧的对齐方式（`.start`、`.center`、`.end`；`.stretch`：与锚点等长） |
+| `offset`、`alignOffset` | 与锚点之间的间距，以及沿这一侧的偏移 |
+| `flip` | 放不下时换到另一侧（默认为 true） |
+| `edgeGap` | 与窗口边缘和安全区域之间的最小距离（默认为 8）；为了留在窗口内，它会沿所在的一侧移动，尺寸也不会超过剩余的空间 |
+| `matchWidth` | 至少和锚点一样宽 |
+| `modal` | 只有它能收到按压，屏幕阅读器也只能看到它 |
+| `dismissOn` | 什么会关闭它：`.outsidePress`（不包括按在锚点上）、`.escape`、`.back`、`.focusOut`、`.anchorHidden`（锚点滚出视野）；默认全部启用 |
+| `backdrop { … }` | 它打开时覆盖在后面窗口上的内容 |
+| `on place(placed)` | 它最终所在的一侧、锚点中点沿这一侧的位置（箭头该放的地方），以及它可用的空间 |
+
+锚点移动时（滚动、窗口大小变化、键盘弹出），浮层会跟着移动，空间不够时会翻到另一侧，在所有平台上都一样。它位于锚点所在的窗口中；锚点在弹出面板（sheet）里时，它显示在面板之上。
+
 ## 自定义视图
 
 如果某个平台有 Asuka 没有提供的控件，你可以自己实现一个 `native component`：iOS 和 macOS 上用 Swift，Android 上用 Kotlin，Windows 和 Linux 上用 C，Web 上用 JavaScript。参见[原生代码](native.md)。
