@@ -60,6 +60,43 @@ component Card(title: string) {
 Card("Plan") { padding: 8; width: 240 }   // padding 为 8，radius 为 12
 ```
 
+## 组件声明的变体
+
+只显示一个元素的组件，可以给自己的状态起名字，交给调用方去设置样式：`variant name = condition`，一个像 `let` 一样随时保持最新的 bool。调用方在代码块里写 `name { … }`，条件成立时，里面的样式属性就叠加到那个元素上，就像 `View` 被按下时叠加 `pressed { … }` 一样：
+
+```asuka
+pub component Checkbox {
+  prop checked = false
+  event checkedChange(checked: bool)
+  prop disabled = false
+  prop children: View
+
+  pub variant checked = checked
+  pub variant disabled = disabled
+
+  View {
+    role: .button
+    on press { if !disabled { checked = !checked } }
+    children
+  }
+}
+
+Checkbox {
+  bind checked: agree
+  padding: 4; radius: 4; border: 1
+  checked { background: .accent; borderColor: .accent }
+  disabled { opacity: 0.4 }
+  Text("I agree")
+}
+```
+
+- 变体的名字自成一个命名空间：可以和某个 prop 或 state 同名，比如这里的 `checked`。但不能用交互状态的名字（`pressed`），也不能用关键字。
+- 变体叠加在元素上所有其他样式之上：元素自己的样式、调用方的样式，以及交互状态。两个变体同时成立时，后声明的胜出（这里 `disabled` 压过 `checked`）。
+- `pub variant` 可以由其他包的调用方设置样式；没有 `pub` 的变体只属于声明它的包。
+- 样式里也可以写变体的代码块（`style box { checked { … } }`）：应用到一个声明了这个变体的组件所显示的元素上时，代码块随变体生效；用在其他地方则什么都不做。
+- 当组件显示的元素是容器时，调用方在组件的代码块里也可以写交互状态（`pressed { … }`、`hovered { … }`）。
+- `Checkbox as box` 给它显示的那个元素的视图起名字：`box.checked` 会读取这个变体，并被追踪，就像 `card.hovered` 读取交互状态一样。
+
 ## 组件的主体是声明
 
 组件的主体**不是**运行一次就被抛到脑后的代码。主体里的每一行都声明了一件始终成立的事：
@@ -121,6 +158,29 @@ component Review {
   Rating { bind value: stars }
 }
 ```
+
+组件也可以给这样的 prop 赋值，就像它是自己的 state 一样：在处理函数、fn、effect 和 task 里赋值都行（通过元素的 `bind` 写入也算）。赋值的效果取决于调用方：
+
+- 调用方绑定了它（`bind open: shown`）：赋值会发出 `openChange`，由它写入调用方的状态，prop 继续读这个状态。如果调用方不写入，prop 就保持原样。
+- 调用方没有绑定（传了一个值，或者什么都没传）：赋的值从此归组件自己所有；如果调用方处理了 `openChange`，仍然会收到通知。调用方传入的值一旦变化，就会替换掉组件自己的值。
+
+```asuka
+component Disclosure(title: string) {
+  prop open = false
+  event openChange(open: bool)
+  prop children: View
+
+  Column {
+    Button(title) { on press { open = !open } }
+    if open { children }
+  }
+}
+
+Disclosure("Details") { Text("…") }                  // 组件自己的
+Disclosure("Details") { bind open: shown; Text("…") } // 调用方的
+```
+
+prop 只能整体改变：写 `open = …` 或 `items = items + [x]`，不能写 `items.push(x)`。没有对应 change 事件的 prop 不能赋值。
 
 ## 视图列表
 

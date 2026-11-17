@@ -1,6 +1,8 @@
 package check
 
 import (
+	"strings"
+
 	"github.com/egoist/asuka/lang/prelude"
 	"github.com/egoist/asuka/lang/syntax"
 )
@@ -122,6 +124,27 @@ func (c *Checker) componentMembers(t *TypeName, params *syntax.ParamList, body *
 			m.Type = f.Sig.Type()
 		case *syntax.ProvideDecl:
 			comp.Provides = append(comp.Provides, d)
+		case *syntax.VariantDecl:
+			switch {
+			case comp.Store:
+				c.errorf(d, "a store has no variants: a component declares them, for its caller's styles")
+				continue
+			case comp.Screen:
+				c.errorf(d, "a screen has no variants: a component declares them, for its caller's styles")
+				continue
+			case isVariant(d.Name.Name):
+				c.errorf(d.Name, "%s is an interaction state, which every view that takes variants has: name the variant otherwise", d.Name.Name)
+				continue
+			case syntax.Lookup(d.Name.Name).IsKeyword():
+				c.errorf(d.Name, "%s is a keyword, so %s { … } can't name the variant in a block: name it otherwise", d.Name.Name, d.Name.Name)
+				continue
+			case comp.Variant(d.Name.Name) != nil:
+				c.errorf(d.Name, "variant %s is declared twice in %s", d.Name.Name, t.name)
+				continue
+			}
+			v := &VariantDef{object: object{d.Name.Name, d.Name.Start}, Pub: d.Pub.IsValid(), Value: d.Value, Decl: d, Owner: t, Index: len(comp.Variants)}
+			c.info.Defs[d.Name] = v
+			comp.Variants = append(comp.Variants, v)
 		}
 	}
 	// A native component's (an element's) View prop: its children.
@@ -188,6 +211,27 @@ func (c *Checker) memberValue(m *Member) {
 	}
 }
 
+// variantDecls checks a component's variants: each a bool binding of its
+// body's, on the one element it shows, whose name no slot has.
+func (c *Checker) variantDecls(t *TypeName) {
+	comp := t.Comp
+	if len(comp.Variants) == 0 {
+		return
+	}
+	for _, v := range comp.Variants {
+		if m := comp.Members[v.name]; m != nil && m.IsSlot() {
+			c.errorf(v.Decl.Name, "variant %s has the name of %s's slot %s: %s { … } in a caller's block would be either; name one otherwise", v.name, t.name, v.name, v.name)
+		}
+		saved := c.ctx
+		c.enter(CtxBinding, v.Value, "variant "+v.name)
+		c.assign(v.Value, Bool, "variant "+v.name)
+		c.leave(saved)
+	}
+	if !c.TakesStyle(t) {
+		c.errorf(comp.Variants[0].Decl, "a component with variants shows one element: its caller's %s { … } goes on that element (%s's views are more than one call, or one that takes no style)", comp.Variants[0].name, t.name)
+	}
+}
+
 // componentBody checks a component's, a screen's or a store's body:
 // its members' values, then its effects, tasks and views.
 func (c *Checker) componentBody(t *TypeName) {
@@ -209,6 +253,7 @@ func (c *Checker) componentBody(t *TypeName) {
 	savedScope, savedCtx := c.scope, c.ctx
 	c.scope, c.ctx = comp.Ctx.scope, comp.Ctx
 	defer func() { c.scope, c.ctx = savedScope, savedCtx }()
+	c.variantDecls(t)
 	for _, it := range comp.Body.Items {
 		switch d := it.(type) {
 		case *syntax.ProvideDecl:
@@ -232,7 +277,7 @@ func (c *Checker) componentBody(t *TypeName) {
 		for _, it := range comp.Body.Items {
 			switch it.(type) {
 			case *syntax.PropDecl, *syntax.EventDecl, *syntax.StateDecl, *syntax.LetDecl, *syntax.UseDecl,
-				*syntax.FuncDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
+				*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
 			default:
 				c.errorf(it, "a store has no views or statements: it's state, lets, fns, tasks and effects")
 			}
@@ -243,7 +288,7 @@ func (c *Checker) componentBody(t *TypeName) {
 	for _, it := range comp.Body.Items {
 		switch it.(type) {
 		case *syntax.PropDecl, *syntax.EventDecl, *syntax.StateDecl, *syntax.LetDecl, *syntax.UseDecl,
-			*syntax.FuncDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
+			*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
 		default:
 			views = append(views, it)
 		}
@@ -378,7 +423,7 @@ func (c *Checker) viewItem(it syntax.Item, el *ElementCall) {
 	case *syntax.LetDecl, *syntax.AssignStmt, *syntax.WhileStmt, *syntax.DoStmt, *syntax.ReturnStmt,
 		*syntax.ThrowStmt, *syntax.BranchStmt, *syntax.DeferStmt, *syntax.EmitStmt:
 		c.errorf(it, "%s in a view: a component's body is declarations; put statements in a handler (on press { … }), a fn, a task or an effect", stmtName(it))
-	case *syntax.StateDecl, *syntax.PropDecl, *syntax.EventDecl, *syntax.UseDecl, *syntax.ProvideDecl,
+	case *syntax.StateDecl, *syntax.PropDecl, *syntax.EventDecl, *syntax.VariantDecl, *syntax.UseDecl, *syntax.ProvideDecl,
 		*syntax.TaskDecl, *syntax.EffectDecl, *syntax.FuncDecl:
 		c.errorf(it, "%s belongs in a component's body, not in an element's block", itemName(it))
 	case *syntax.StyleDecl:
@@ -469,10 +514,16 @@ func (c *Checker) componentCall(e *syntax.CallExpr, tn *TypeName) Type {
 		}
 	}
 	if e.As != nil {
-		if !comp.Native {
-			c.errorf(e.As, "as names an element's view, and %s is a component: name an element inside it", tn.name)
-		} else {
+		switch {
+		case comp.Native:
 			ec.As = c.declareVar(e.As, Ref, false)
+		case c.TakesStyle(tn):
+			// The view of the one element it shows; its variants read
+			// through it (name.checked).
+			ec.As = c.declareVar(e.As, Ref, false)
+			ec.As.RefComp = tn
+		default:
+			c.errorf(e.As, "as names an element's view, and %s shows more than one: name an element inside it", tn.name)
 		}
 	}
 	if e.Block != nil {
@@ -567,7 +618,7 @@ func (c *Checker) elementBlock(items []syntax.Item, ec *ElementCall) {
 		case *syntax.StyleUse:
 			c.errorf(s, "write style: %s: an element applies styles with the style: prop (asuka fmt rewrites it)", styleName(s.Name))
 		case *syntax.SlotItem:
-			if isVariant(s.Name.Name) && comp.Members[s.Name.Name] == nil {
+			if m := comp.Members[s.Name.Name]; m == nil && isVariant(s.Name.Name) || (m == nil || !m.IsSlot()) && c.FindVariant(ec.Comp, s.Name.Name) != nil {
 				c.variantItem(s, ec)
 			} else {
 				c.slotItem(s, ec)
@@ -668,15 +719,81 @@ func isVariant(name string) bool {
 	return false
 }
 
-// variantItem checks a variant: a block of style props a container lays
-// over its style while it's in the state.
+// FindVariant is the variant name a component declares: t's own, else
+// the one of the component its one element is (whose element is t's),
+// nil when none does.
+func (p *Program) FindVariant(t *TypeName, name string) *VariantDef {
+	return p.checker.FindVariant(t, name)
+}
+
+func (c *Checker) FindVariant(t *TypeName, name string) *VariantDef {
+	for i := 0; t != nil && i < 64; i++ {
+		comp := t.Comp
+		if comp == nil || comp.Native || comp.Store {
+			return nil
+		}
+		if v := comp.Variant(name); v != nil {
+			return v
+		}
+		if !c.TakesStyle(t) {
+			return nil
+		}
+		t = c.rootComponent(t)
+	}
+	return nil
+}
+
+// variantNames lists the variants t's caller may style, for a message.
+func (c *Checker) variantNames(t *TypeName) string {
+	var names []string
+	seen := map[string]bool{}
+	if c.styleTakesVariants(t) {
+		names = append(names, prelude.Variants...)
+	}
+	for i := 0; t != nil && i < 64; i++ {
+		comp := t.Comp
+		if comp == nil || comp.Native || comp.Store {
+			break
+		}
+		for _, v := range comp.Variants {
+			if !seen[v.name] && (v.Pub || v.Owner.Pkg == c.pkg) {
+				seen[v.name] = true
+				names = append(names, v.name)
+			}
+		}
+		if !c.TakesStyle(t) {
+			break
+		}
+		t = c.rootComponent(t)
+	}
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ", ")
+}
+
+// variantItem checks a variant: a block of style props laid over the
+// view while it's in an interaction state (a container's, or the one
+// element of a component's), or while a variant its component declares
+// holds.
 func (c *Checker) variantItem(s *syntax.SlotItem, ec *ElementCall) {
 	comp := ec.Comp.Comp
-	if comp.Element == nil || !comp.Element.Variants {
+	va := &VariantArg{State: s.Name.Name, Item: s}
+	switch d := c.FindVariant(ec.Comp, s.Name.Name); {
+	case d != nil:
+		if !d.Pub && d.Owner.Pkg != c.pkg {
+			c.errorf(s.Name, "%s's variant %s isn't pub: its package styles it, or declares it pub variant %s", d.Owner.name, d.name, d.name)
+			return
+		}
+		va.Decl = d
+		c.info.Uses[s.Name] = d // its declaration, for an editor
+	case comp.Native && (comp.Element == nil || !comp.Element.Variants):
 		c.errorf(s.Name, "%s takes no variants: %s { … } goes in a View, a Row, a Column or a SafeArea", ec.Comp.name, s.Name.Name)
 		return
+	case !comp.Native && !c.styleTakesVariants(ec.Comp):
+		c.errorf(s.Name, "%s has no variant %s (its variants: %s)", ec.Comp.name, s.Name.Name, c.variantNames(ec.Comp))
+		return
 	}
-	va := &VariantArg{State: s.Name.Name, Item: s}
 	set := func(name *syntax.Ident, value syntax.Expr) {
 		m := c.styleMember(name.Name)
 		switch {
@@ -967,6 +1084,10 @@ func (c *Checker) slotItem(s *syntax.SlotItem, ec *ElementCall) {
 	comp := ec.Comp.Comp
 	m := comp.Members[s.Name.Name]
 	if m == nil || !m.IsSlot() {
+		if !comp.Native && m == nil && c.variantNames(ec.Comp) != "none" {
+			c.errorf(s.Name, "%s has no slot or variant %s (a slot is a prop of type View; its variants: %s)", ec.Comp.name, s.Name.Name, c.variantNames(ec.Comp))
+			return
+		}
 		c.errorf(s.Name, "%s has no slot %s (a slot is a prop of type View)", ec.Comp.name, s.Name.Name)
 		return
 	}
@@ -1012,7 +1133,7 @@ func (c *Checker) rootComponent(t *TypeName) *TypeName {
 	for _, it := range comp.Body.Items {
 		switch it := it.(type) {
 		case *syntax.PropDecl, *syntax.EventDecl, *syntax.StateDecl, *syntax.LetDecl, *syntax.UseDecl,
-			*syntax.FuncDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
+			*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
 		case *syntax.ExprStmt:
 			if call != nil {
 				return nil

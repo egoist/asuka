@@ -60,6 +60,43 @@ component Card(title: string) {
 Card("Plan") { padding: 8; width: 240 }   // padding は 8、radius は 12
 ```
 
+## コンポーネントが宣言するバリアント
+
+要素を一つだけ表示するコンポーネントは、自分の状態に名前を付けて、呼び出し側がスタイルを当てられるようにできます。`variant name = condition` と書くと、`let` と同じように常に最新に保たれる bool になります。呼び出し側はブロックに `name { … }` と書き、条件が成り立つあいだ、そのスタイルプロパティがその要素に重ねられます。`View` が押されているあいだ `pressed { … }` が重ねられるのと同じです。
+
+```asuka
+pub component Checkbox {
+  prop checked = false
+  event checkedChange(checked: bool)
+  prop disabled = false
+  prop children: View
+
+  pub variant checked = checked
+  pub variant disabled = disabled
+
+  View {
+    role: .button
+    on press { if !disabled { checked = !checked } }
+    children
+  }
+}
+
+Checkbox {
+  bind checked: agree
+  padding: 4; radius: 4; border: 1
+  checked { background: .accent; borderColor: .accent }
+  disabled { opacity: 0.4 }
+  Text("I agree")
+}
+```
+
+- バリアントの名前は独自の名前空間にあります。ここの `checked` のように、プロパティや状態と同じ名前にできます。ただしインタラクションの状態の名前（`pressed`）やキーワードは使えません。
+- バリアントは、その要素のほかのすべてのスタイルより優先されます。要素自身のスタイル、呼び出し側のスタイル、インタラクションの状態のどれよりも上です。二つが同時に成り立つときは、あとで宣言したほうが勝ちます（ここでは `disabled` が `checked` に勝ちます）。
+- `pub variant` はほかのパッケージの呼び出し側もスタイルを当てられます。`pub` でないバリアントは、宣言したパッケージの中だけのものです。
+- スタイルにもバリアントのブロックを書けます（`style box { checked { … } }`）。そのバリアントを宣言しているコンポーネントの要素に適用すると、ブロックはバリアントに追従します。それ以外の場所では何もしません。
+- コンポーネントが表示する要素がコンテナなら、呼び出し側はコンポーネントのブロックにインタラクションの状態（`pressed { … }`、`hovered { … }`）も書けます。
+- `Checkbox as box` は、表示している要素のビューに名前を付けます。`box.checked` でバリアントを読め、`card.hovered` で状態を読むのと同じく追跡されます。
+
 ## コンポーネントの本体は宣言
 
 コンポーネントの本体は、一度実行したら忘れられるコードでは**ありません**。一行一行が、ずっと成り立ち続けることを宣言しています。
@@ -121,6 +158,29 @@ component Review {
   Rating { bind value: stars }
 }
 ```
+
+コンポーネントは、こうしたプロパティに自分の状態のように代入することもできます。ハンドラー、fn、エフェクト、タスクの中で代入でき、要素の `bind` を通した書き込みも代入にあたります。代入の結果は呼び出し側によって変わります。
+
+- バインドされている場合（`bind open: shown`）：代入すると `openChange` が発行され、それが呼び出し側の状態に書き込みます。プロパティはその状態を読み続けます。呼び出し側が書き込まなければ、プロパティは元のままです。
+- バインドされていない場合（値を渡したか、何も渡していない）：代入した値はそれ以降コンポーネント自身のものになり、`openChange` を処理する呼び出し側には変更が通知されます。呼び出し側の値が変わると、それがコンポーネントの値を置き換えます。
+
+```asuka
+component Disclosure(title: string) {
+  prop open = false
+  event openChange(open: bool)
+  prop children: View
+
+  Column {
+    Button(title) { on press { open = !open } }
+    if open { children }
+  }
+}
+
+Disclosure("Details") { Text("…") }                  // コンポーネント自身のもの
+Disclosure("Details") { bind open: shown; Text("…") } // 呼び出し側のもの
+```
+
+プロパティは丸ごと変わります。`open = …` や `items = items + [x]` とは書けますが、`items.push(x)` とは書けません。対応する change イベントのないプロパティには代入できません。
 
 ## ビューのリスト
 

@@ -117,6 +117,8 @@ func itemName(it syntax.Item) string {
 		return "prop"
 	case *syntax.EventDecl:
 		return "event"
+	case *syntax.VariantDecl:
+		return "variant"
 	case *syntax.StateDecl:
 		return "state"
 	case *syntax.UseDecl:
@@ -269,7 +271,14 @@ func (c *Checker) lvalue(x syntax.Expr, what string) Type {
 			return t
 		}
 	}
+	// A prop its component assigns: only its whole value, by = (or bind).
+	saved := c.lvalueWhole
+	c.lvalueWhole = nil
+	if what == "assign to" || what == "bind" {
+		c.lvalueWhole = unparen(x)
+	}
 	c.checkLvalue(x, what)
+	c.lvalueWhole = saved
 	return t
 }
 
@@ -307,8 +316,19 @@ func (c *Checker) checkLvalue(x syntax.Expr, what string) {
 		case *Member:
 			switch o.Kind {
 			case StateMember:
-			case PropMember, ParamMember:
-				c.errorf(x, "can't %s %s: it's the caller's (a prop); keep state of your own, or emit an event", what, x.Name)
+			case PropMember:
+				switch {
+				case o.ChangeEvent() == nil:
+					c.errorf(x, "can't %s %s: it's the caller's (a prop); declare event %sChange(%s: %s) to assign it (a caller that binds it gets the change), or keep state of your own", what, x.Name, x.Name, x.Name, typeString(o.Type))
+				case c.lvalueWhole != syntax.Expr(x):
+					c.errorf(x, "can't %s %s: a prop changes as a whole, which %sChange reports; assign it a new value (%s = …)", what, x.Name, x.Name, x.Name)
+				case o.IsSlot():
+					c.errorf(x, "can't %s %s: it's a slot, the caller's views", what, x.Name)
+				default:
+					o.Assigned = true
+				}
+			case ParamMember:
+				c.errorf(x, "can't %s %s: it's the caller's (a parameter); keep state of your own, or emit an event", what, x.Name)
 			case LetMember:
 				c.errorf(x, "can't %s %s: it's derived (a let); change what it reads", what, x.Name)
 			default:

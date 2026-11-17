@@ -447,6 +447,18 @@ where it's applied, and a style named after an element is that kind's
 default in its package, under the list: a package's defaults never
 restyle another package's components.
 
+A component that shows one element may declare **variants** of its own
+(`variant checked = checked`, rfcs/0010): it registers each condition on
+that element's view (`ui.variant_declare`), and its caller's `checked {
+… }` (in its block, or a style's) is a layer of the variant tier, over
+every other, on while the condition holds; `Checkbox as box` reads it
+(`box.checked`). A prop the component assigns (one with its change
+event) is read through a **model** (vm/react.c): bound by the caller,
+the caller's state, which the assignment's change event writes;
+unbound, the component's own value, replaced each time the caller's
+changes. Together they let a component of views be a control its
+caller styles whole (rfcs/0010's headless components).
+
 Layout props map to CSS flexbox with React Native's defaults (column
 direction, border-box): `width`, `height`, `minWidth`, `maxWidth`, ...
 (points, `pct(50)`, `.auto`), `grow`, `shrink`, `basis`, `direction`,

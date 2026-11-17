@@ -594,6 +594,7 @@ const (
 	lvCell
 	lvField
 	lvIndex
+	lvModel // a prop its component assigns: set whole only (the checker's)
 )
 
 // prepare computes an lvalue's indexes and store values, before any
@@ -610,6 +611,10 @@ func (b *fb) prepare(x syntax.Expr) *lvalue {
 			}
 			return &lvalue{x: x, kind: lvVar, v: o}
 		case *check.Member:
+			if o.Kind == check.PropMember {
+				// A prop its component assigns: its model.
+				return &lvalue{x: x, kind: lvModel, cell: b.memberRef(o, x), m: o}
+			}
 			return &lvalue{x: x, kind: lvCell, cell: b.memberRef(o, x), m: o}
 		case *check.Global:
 			return &lvalue{x: x, kind: lvCell, cell: b.globalCell(o), g: o}
@@ -699,6 +704,20 @@ func (b *fb) set(lv *lvalue, val int) {
 		b.writeVar(lv.v, val, lv.x)
 	case lvCell:
 		b.emit(op("CSET"), lv.cell, val)
+	case lvModel:
+		// Bound, the change goes to the caller (its bind writes its state,
+		// which the prop reads); unbound, the value is the component's own,
+		// and the change is reported to a caller that handles it.
+		ev := lv.m.ChangeEvent()
+		isBound := b.callB(uiModelBound, bc.KBool, lv.cell)
+		unbound, end := b.f.NewLabel(), b.f.NewLabel()
+		b.emitJump(op("JF"), isBound, unbound)
+		b.callEvent(ev, lv.x, func() []int { return []int{val} })
+		b.jmp(end)
+		b.f.Place(unbound)
+		b.callBTo(uiModelSet, bc.None, lv.cell, val)
+		b.callEvent(ev, lv.x, func() []int { return []int{val} })
+		b.f.Place(end)
 	case lvField:
 		if lv.named != nil && lv.named.Obj.IsError {
 			b.l.errorf(lv.x, "an error's fields can't be changed: make a new one")
@@ -949,17 +968,27 @@ func (b *fb) emitStmt(s *syntax.EmitStmt) {
 	if m == nil {
 		return
 	}
-	h := b.memberRef(m, s)
+	b.callEvent(m, s, func() []int {
+		var vals []int
+		if s.Args != nil {
+			for _, a := range s.Args.List {
+				vals = append(vals, b.value(a.Value, -1))
+			}
+		}
+		return vals
+	})
+}
+
+// callEvent calls event m's handler with the values args makes, when the
+// caller gave it one (else args isn't evaluated).
+func (b *fb) callEvent(m *check.Member, n syntax.Node, args func() []int) {
+	h := b.memberRef(m, n)
 	skip := b.f.NewLabel()
 	b.emitJump(op("JNONE"), h, skip)
-	var vals []int
+	vals := args()
 	var ks []bc.Kind
-	if s.Args != nil {
-		for i, a := range s.Args.List {
-			v := b.value(a.Value, -1)
-			vals = append(vals, v)
-			ks = append(ks, b.kind(m.Params[i].Type))
-		}
+	for i := range vals {
+		ks = append(ks, b.kind(m.Params[i].Type))
 	}
 	blk := b.regs(ks)
 	for i, v := range vals {

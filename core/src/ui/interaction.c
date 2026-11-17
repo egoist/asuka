@@ -150,6 +150,8 @@ void ak_ix_free(ak_view *e) {
 	ak_vec_free(&ix->layers);
 	for (uint32_t i = 0; i < ix->base.len; i++) ak_release_val(ix->base.data[i].v, (ak_kind)ak_key_kinds[ix->base.data[i].key]);
 	ak_vec_free(&ix->base);
+	for (uint32_t i = 0; i < ix->vdecls.len; i++) ak_release(ix->vdecls.data[i].cond);
+	ak_vec_free(&ix->vdecls);
 	ak_free(ix->key_order);
 	ak_buf_free(&ix->drag_sent);
 	ak_buf_free(&ix->actions_sent);
@@ -325,7 +327,7 @@ static ak_layer *layer_of(ak_view *v, uint16_t layer) {
 }
 
 static uint16_t new_layer(ak_view *v, uint8_t tier, uint8_t state, bool block) {
-	if (tier > AK_LAYER_STATE) ak_panic("ui: no layer tier %u", tier);
+	if (tier > AK_LAYER_VARIANT) ak_panic("ui: no layer tier %u", tier);
 	if (v->frag) ak_panic("ui: a fragment takes no style");
 	if ((tier == AK_LAYER_STATE) != (state != 0)) ak_panic("ui: a state's layer, and only one, has a state");
 	if (state) {
@@ -450,6 +452,45 @@ void ak_ui_variant(ak_view *v, uint8_t state, uint16_t key, ak_val value) {
 void ak_ui_variant_bind(ak_view *v, uint8_t state, uint16_t key, ak_closure *thunk) {
 	check_style_key(key);
 	layer_binding(v, block_layer(v, state), key, thunk);
+}
+
+// ---- Declared variants ----
+
+static ak_vdecl *find_vdecl(ak_view *v, int64_t id) {
+	ak_ix *ix = v->ix;
+	for (uint32_t i = 0; ix && i < ix->vdecls.len; i++)
+		if (ix->vdecls.data[i].id == id) return &ix->vdecls.data[i];
+	return NULL;
+}
+
+void ak_ui_variant_declare(ak_view *v, int64_t id, ak_closure *cond) {
+	if (!cond) ak_panic("ui.variant_declare: variant %lld has no condition", (long long)id);
+	if (v->frag) ak_panic("ui: a fragment takes no style, nor variants");
+	ak_vdecl *d = find_vdecl(v, id);
+	if (d) {
+		// The same component's again (its view reused): the last wins.
+		ak_closure *old = d->cond;
+		d->cond = ak_retain(cond);
+		ak_release(old);
+		return;
+	}
+	ak_vec_push(&ak_ix_of(v)->vdecls, ((ak_vdecl){id, ak_retain(cond)}));
+}
+
+void ak_ui_layer_variant(ak_view *v, uint16_t layer, int64_t id) {
+	ak_vdecl *d = find_vdecl(v, id);
+	if (!d) ak_panic("ui: %s declares no variant %lld: its component declares it on the view it shows, before its caller's layers", v->el ? ak_el_names[v->el] : v->cls->name, (long long)id);
+	if (layer_of(v, layer)->tier != AK_LAYER_VARIANT) ak_panic("ui: a declared variant's layer is of the variant tier");
+	ak_ui_layer_when(v, layer, d->cond);
+}
+
+bool ak_ui_variant_read(ak_view *v, int64_t id) {
+	ak_vdecl *d = find_vdecl(v, id);
+	if (!d) return false;
+	ak_closure *cond = ak_retain(d->cond);
+	ak_val r = ak_call(cond, NULL, 0);
+	ak_release(cond);
+	return !ak_error_pending() && r.i != 0;
 }
 
 bool ak_ui_view_state(ak_view *v, uint8_t state) {

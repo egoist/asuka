@@ -484,6 +484,18 @@ type EventDecl struct {
 	Params *ParamList // nil without parentheses
 }
 
+// A VariantDecl is variant name = condition: a state of a component's
+// that its caller styles (name { … } in its block, or in a style) while
+// the condition holds. variant is a contextual keyword: it's an item only
+// followed by a name and =.
+type VariantDecl struct {
+	Span
+	Trivia
+	Pub   Pos
+	Name  *Ident
+	Value Expr
+}
+
 // A UseDecl is use name: Type: a value provided by an enclosing
 // component.
 type UseDecl struct {
@@ -687,6 +699,7 @@ type BadItem struct {
 
 func (*PropDecl) itemNode()    {}
 func (*EventDecl) itemNode()   {}
+func (*VariantDecl) itemNode() {}
 func (*StateDecl) itemNode()   {}
 func (*LetDecl) itemNode()     {}
 func (*UseDecl) itemNode()     {}

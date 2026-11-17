@@ -503,5 +503,11 @@ void ak_vm_cell_set(void *cell, ak_val v);  // takes v
 ak_val ak_vm_acc_cell(void *cell_or_memo);
 ak_val ak_vm_acc_get(void *acc);
 void ak_vm_effect(ak_closure *c, bool render);
+// A model: the accessor of a prop its component assigns (react.c's
+// "Models"). ak_vm_model_new makes one over the caller's accessor (NULL
+// and an error pending when reading it threw); model_set borrows v.
+ak_val ak_vm_model_new(void *inner, bool bound);
+bool ak_vm_model_bound(void *model);
+void ak_vm_model_set(void *model, ak_val v);
 
 #endif

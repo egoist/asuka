@@ -1082,6 +1082,18 @@ func (c *Checker) valueMember(e *syntax.MemberExpr, t Type, name string) Type {
 		c.errorf(e.Name, "%s has no %s%s", typeString(t), name, c.memberSuggest(t, name))
 		return Invalid
 	}
+	if id, ok := unparen(e.X).(*syntax.Ident); ok && t == Ref {
+		if v, ok := c.info.Uses[id].(*Var); ok && v.RefComp != nil {
+			if d := c.FindVariant(v.RefComp, name); d != nil && (d.Pub || d.Owner.Pkg == c.pkg) {
+				// Component as name, then name.checked: its variant, tracked.
+				c.info.Selections[e] = &Selection{Kind: SelVariant, Recv: t, Name: name, Obj: d}
+				if c.ctx != nil {
+					c.ctx.readsState = true
+				}
+				return Bool
+			}
+		}
+	}
 	if m := lookupField(t, name); m != nil {
 		_, res := c.methodSig(m)
 		c.info.Selections[e] = &Selection{Kind: SelBuiltinField, Recv: t, Name: name, Method: m}

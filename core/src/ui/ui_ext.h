@@ -30,7 +30,7 @@
 // while it's on. Of the layers on that set a key, the last in order
 // wins: by tier, then (state layers) by state, then as they were made.
 typedef struct {
-	uint8_t tier;   // AK_LAYER_*
+	uint8_t tier;   // AK_LAYER_* (ui.h)
 	uint8_t state;  // an AK_STATE_ bit: on only while the view is in it; 0: none
 	bool on;        // its condition's (true without one)
 	bool block;     // the block's variant of its state (ak_ui_variant's)
@@ -43,6 +43,13 @@ typedef struct {
 	ak_val v;
 } ak_layer_ent;
 
+// A variant the component that shows the view declares: its id (the
+// lowering's) and its condition (retained).
+typedef struct {
+	int64_t id;
+	ak_closure *cond;
+} ak_vdecl;
+
 typedef struct ak_ix {
 	uint8_t state;    // the states it's in (AK_STATE_*)
 	uint8_t listens;  // the states its view reports
@@ -50,6 +57,7 @@ typedef struct ak_ix {
 	AK_VEC(ak_layer) layers;       // by id, as they were made
 	AK_VEC(ak_layer_ent) lents;    // their values, a key once per layer
 	AK_VEC(ak_style_ent) base;     // the style's own values of the keys layers set
+	AK_VEC(ak_vdecl) vdecls;       // the variants its components declare
 	bool hooked;      // leaves its states when its owner is disposed
 	// Keys: the keys style key's entries in the Keys prop's order.
 	uint32_t *key_order;

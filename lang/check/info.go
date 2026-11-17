@@ -195,6 +195,7 @@ const (
 	SelLoading                          // a Loading's value, pending, error
 	SelTupleElem                        // a tuple's element (t.0 isn't parsed; unused)
 	SelBuiltinField                     // a built-in type's property: g.width, card.hovered (Method)
+	SelVariant                          // Component as c, then c.checked: its variant (Obj a *VariantDef)
 )
 
 // A Selection is what a member expression or an implicit member is.
@@ -283,7 +284,8 @@ type ElementCall struct {
 // VariantArg is a container's variant: a state's block of style props,
 // over its style: list's.
 type VariantArg struct {
-	State string // prelude.Variants' name
+	State string      // prelude.Variants' name, or the declared variant's
+	Decl  *VariantDef // a variant the component declares; nil: an interaction state
 	Props []*PropArg
 	Style []*StyleEntry
 	Item  *syntax.SlotItem

@@ -273,3 +273,38 @@ test "a package's style" {
 		t.Errorf("a style that isn't pub: %v", got)
 	}
 }
+
+// A package's variant that isn't pub is its own: another package's block
+// of it is an error, and a style names only pub ones.
+func TestPrivateVariants(t *testing.T) {
+	kit := map[string][]byte{"kit.asuka": []byte(`pub component Box {
+  state n = 0
+  variant busy = n > 0
+  pub variant shown = true
+  View { on press { n += 1 } }
+}
+`)}
+	res := Files(map[string][]byte{"a.asuka": []byte(`import ./kit
+
+style s { busy { opacity: 0.5 } }
+
+app {
+  kit.Box() {
+    busy { opacity: 0.5 }
+    shown { opacity: 0.25 }
+  }
+}
+`)}, &Options{Packages: map[string]map[string][]byte{"./kit": kit}})
+	got := res.Err()
+	if got == nil {
+		t.Fatal("no error")
+	}
+	for _, want := range []string{"no component this package sees declares variant busy", "Box's variant busy isn't pub"} {
+		if !strings.Contains(got.Error(), want) {
+			t.Errorf("want %q in:\n%v", want, got)
+		}
+	}
+	if strings.Contains(got.Error(), "shown") {
+		t.Errorf("a pub variant is the caller's to style:\n%v", got)
+	}
+}

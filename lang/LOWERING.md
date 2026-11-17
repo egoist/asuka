@@ -429,6 +429,23 @@ A store's constructor is the same function without the views: it
 returns its env. Its `task { }` is TASK (a store has no mount), owned by
 the owner that made the store, so disposing that owner cancels it.
 
+A prop the component assigns (check's `Member.Assigned`: it has
+`event <prop>Change(x: T)`, rfcs/0010) is read through a **model**
+(vm/react.c's "Models"), an accessor of the component's: right after
+its default, `ui.model(acc, bound)` wraps the caller's accessor, and the
+model is the member's register (and its env field) from then on, so
+every read, and every child it's passed to, goes through it. The
+component's function takes, after its events, one more argument per
+such prop: whether the caller binds it (a string when it does, none
+when not; a routed screen's are none).
+
+| Source | Lowered |
+|---|---|
+| `open = x` (or an element's `bind` of `open`) | `ui.model_bound(m)`; bound: `openChange(x)`'s handler called (the caller's bind writes its state, which the model reads); not: `ui.model_set(m, x)`, then the handler, if any |
+| reading `open` | AGET of the model: bound, the caller's accessor; not, its own value (tracked), which a render effect sets each time the caller's accessor changes (none when it's a constant) |
+
+Assigning one allocates nothing beyond a state's write.
+
 ## Elements
 
 A built-in element (lang/prelude/elements.go) lowers to the UI runtime's
@@ -574,6 +591,29 @@ in a variant replaces the font): they're layers of the state tier (see
 variant, read or handler that asks for it, and leaves each state it's in
 when its owner is disposed. `ref` names any element, so `card.hovered`
 works on any view the host reports states for.
+
+**Variants a component declares** (`variant checked = checked`,
+rfcs/0010) have a program-wide id each (the lowerer's, from 1). The
+component's function, once its one element's view `v` is built,
+declares each on it: `ui.variant_declare(v, id, thunk{checked})`. Its
+caller's blocks of them, and a style's applied to it (a name resolved
+against the component, then the component its element is, outward
+in), are layers of the variant tier, made after every other layer of
+the caller's:
+
+| Source | Lowered |
+|---|---|
+| `Checkbox { checked { background: c } }` | `l = ui.layer(v, AK_LAYER_VARIANT, 0)`, `ui.layer_variant(v, l, id)` (on while the declared condition holds), `ui.layer_set`/`ui.layer_bind` of its props (its `style:` first) |
+| a style's `checked { … }` under a condition (`if hot { s }`) | the layer's condition is a closure of the condition and `ui.variant_read(v, id)`, through `ui.layer_when` |
+| `pressed { … }` in a component's block (its element a container) | a layer of the state tier, made after the component's own |
+| `Checkbox as box`, then `box.checked` | `box` is the Ref of the view the component returns (set after it returns); the read is CGET of it, then `ui.variant_read(view, id)`, tracked (false while it holds none) |
+
+The variant tier's layers are made in their components' order: an
+inner component's (the one the outer shows) first, then each
+component's in its declaration order, a style's before the block's of
+the same variant; the core lays the last one on over the others. A
+style's block of a variant the component doesn't declare (or one that
+isn't `pub`, from another package) makes nothing.
 
 ## Refs
 

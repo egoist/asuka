@@ -144,6 +144,8 @@ func TestFormatCases(t *testing.T) {
 		// Items, one per line.
 		{"component C { prop a = 1; event e; Text(\"x\") }", "component C {\n  prop a = 1\n  event e\n  Text(\"x\")\n}\n"},
 		{"component C { Text(\"x\") }", "component C { Text(\"x\") }\n"},
+		{"component C { prop on=false; pub  variant  on=on&&!x; View { variant: 1 } }", "component C {\n  prop on = false\n  pub variant on = on && !x\n  View { variant: 1 }\n}\n"},
+		{"component C { variant(1) }", "component C { variant(1) }\n"},
 		{"component C {\n}", "component C {}\n"},
 		{"component C {\n\n\n  state a = 1\n\n\n\n  state b = 2\n\n}", "component C {\n  state a = 1\n\n  state b = 2\n}\n"},
 		{"fn f() {\n  if a { b() }\n  else { c() }\n}", "fn f() {\n  if a { b() } else { c() }\n}\n"},

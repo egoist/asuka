@@ -248,8 +248,8 @@ func (c *Checker) styleItems(items []syntax.Item, d *StyleDef, state string) []*
 			v.Kind = StyleLocal
 			out = append(out, &StyleItem{Use: v})
 		case *syntax.SlotItem:
-			if !isVariant(s.Name.Name) {
-				c.errorf(s.Name, "a style holds style props (name: value), style: …, use and variants (pressed { … }); %s { … } isn't one", s.Name.Name)
+			if !isVariant(s.Name.Name) && !c.variantDeclared(s.Name.Name) {
+				c.errorf(s.Name, "a style holds style props (name: value), style: …, use and variants (pressed { … }, or a variant a component declares); no component this package sees declares variant %s", s.Name.Name)
 				continue
 			}
 			if state != "" {
@@ -626,6 +626,15 @@ func (c *Checker) defaultStyle(ec *ElementCall) {
 // element is one.
 func (p *Program) StyleTakesVariants(t *TypeName) bool { return p.checker.styleTakesVariants(t) }
 
+// RootComponent is the component (or element) t's body shows when its
+// views are that one call, nil otherwise.
+func (p *Program) RootComponent(t *TypeName) *TypeName {
+	if t == nil || t.Comp == nil || t.Comp.Native {
+		return nil
+	}
+	return p.checker.rootComponent(t)
+}
+
 func (c *Checker) styleTakesVariants(t *TypeName) bool {
 	for i := 0; t != nil && i < 64; i++ {
 		comp := t.Comp
@@ -639,6 +648,27 @@ func (c *Checker) styleTakesVariants(t *TypeName) bool {
 			return false
 		}
 		t = c.rootComponent(t)
+	}
+	return false
+}
+
+// variantDeclared reports whether a component this package sees declares
+// variant name: one of its own components (any), or another package's
+// (a pub one), so a style's name { … } names one.
+func (c *Checker) variantDeclared(name string) bool {
+	pkgs := append([]*Package{c.pkg}, c.pkgs...)
+	for _, p := range pkgs {
+		if p == nil {
+			continue
+		}
+		for _, t := range p.Types {
+			if t.Comp == nil {
+				continue
+			}
+			if v := t.Comp.Variant(name); v != nil && (v.Pub || p == c.pkg) {
+				return true
+			}
+		}
 	}
 	return false
 }

@@ -2,6 +2,7 @@ package ir
 
 import (
 	"fmt"
+	"sort"
 
 	bc "github.com/egoist/asuka/lang/bytecode"
 	"github.com/egoist/asuka/lang/check"
@@ -153,7 +154,7 @@ func (l *Lowerer) compFunc(t *check.TypeName, typ check.Type) int {
 		return i
 	}
 	c := t.Comp
-	np := len(c.Params) + len(c.Props) + len(c.Events)
+	np := len(c.Params) + len(c.Props) + len(c.Events) + len(assignedProps(c))
 	b := l.newFunc(name, l.fileOf(t.Decl), np, bc.KRef)
 	if len(t.TypeParams) > 0 && n != nil {
 		b.subst = n.Subst()
@@ -173,6 +174,12 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 		for _, m := range list {
 			b.memberRegs[m] = b.newReg(bc.KRef)
 		}
+	}
+	// After the events: per prop it assigns, whether its caller binds it
+	// (none: not).
+	bound := map[*check.Member]int{}
+	for _, m := range assignedProps(comp) {
+		bound[m] = b.newReg(bc.KRef)
 	}
 	b.openScope()
 	// The env's box: closures made before the env is whole capture it.
@@ -234,6 +241,13 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 			b.callBTo(uiUse, r, key)
 			b.memberRegs[m] = r
 		}
+		if m.Kind == check.PropMember && m.Assigned {
+			// A prop it assigns: read through a model of the caller's
+			// accessor (react.c's "Models").
+			r := b.local(bc.KRef)
+			b.callBTo(uiModel, r, b.memberRegs[m], bound[m])
+			b.memberRegs[m] = r
+		}
 		b.release(mark)
 	}
 	b.envReg = b.publishEnv(t, true)
@@ -268,7 +282,7 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 	for _, it := range comp.Body.Items {
 		switch it.(type) {
 		case *syntax.PropDecl, *syntax.EventDecl, *syntax.StateDecl, *syntax.LetDecl, *syntax.UseDecl,
-			*syntax.FuncDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
+			*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
 		default:
 			views = append(views, it)
 		}
@@ -280,10 +294,31 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 	} else {
 		v = b.viewsOf(views)
 	}
+	// Its variants, on the view it shows: its callers' blocks of them
+	// follow their conditions.
+	for _, d := range comp.Variants {
+		mark := b.mark()
+		b.at(d.Decl)
+		cond := b.thunk(b.l.info.Ctxs[d.Value], d.Value, check.Bool)
+		b.callBTo(uiVariantDeclare, bc.None, v, b.konst(b.l.variantID(d)), cond)
+		b.release(mark)
+	}
 	r := b.newReg(bc.KRef)
 	b.move(r, v)
 	b.emit(op("RET"), r)
 	b.closeScopeNoClear()
+}
+
+// assignedProps are the props a component assigns (check's Assigned):
+// its function takes, after its events, whether its caller binds each.
+func assignedProps(comp *check.Component) []*check.Member {
+	var out []*check.Member
+	for _, m := range comp.Props {
+		if m.Assigned {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // closeScopeNoClear ends a scope whose code returned already.
@@ -1196,8 +1231,27 @@ func (b *fb) componentCall(ec *check.ElementCall) int {
 			vals = append(vals, none())
 		}
 	}
+	// Whether it binds each prop the component assigns (anything but none:
+	// it does).
+	for _, m := range assignedProps(comp) {
+		bound := false
+		for _, x := range ec.Binds {
+			if x.Prop == m {
+				bound = true
+			}
+		}
+		if bound {
+			vals = append(vals, b.kstr("bound"))
+		} else {
+			vals = append(vals, none())
+		}
+	}
 	v := b.invoke(idx, vals, bc.KRef, -1, false)
 	b.outerStyle(v, ec)
+	if ec.As != nil {
+		// Component as name: the view of the one element it shows.
+		b.elementRef(ec, v)
+	}
 	return v
 }
 
@@ -1213,7 +1267,43 @@ func (b *fb) outerStyle(v int, ec *check.ElementCall) {
 			props = append(props, p)
 		}
 	}
-	b.applyStyle(ec.Style, styleTarget{v: v, outer: true, variants: b.l.prog.StyleTakesVariants(ec.Comp), block: blockKeys("", props, true)})
+	var declared [][]stylePiece
+	t := styleTarget{v: v, outer: true, variants: b.l.prog.StyleTakesVariants(ec.Comp), block: blockKeys("", props, true), comp: ec.Comp, declared: &declared}
+	b.applyStyle(ec.Style, t)
+	// The block's variants: an interaction state's (laid on after the
+	// component's own of the state, so over them), and the component's
+	// declared ones, each its style: then its props.
+	for _, va := range ec.Variants {
+		var pieces []stylePiece
+		state := ""
+		if va.Decl == nil {
+			state = va.State
+		}
+		b.styleFlatten(va.Style, nil, nil, state, va.Decl, flatCtx{}, &pieces)
+		for _, p := range va.Props {
+			pieces = append(pieces, stylePiece{member: p.Member, key: prelude.KeyID("", p.Member.Name()), value: p.Value, state: state, decl: va.Decl})
+		}
+		b.applyPieces(pieces, t)
+	}
+	// The declared variants' layers, in their components' order: an inner
+	// component's first, then each's in declaration order (a style's
+	// before the block's of the same variant).
+	depth := map[*check.TypeName]int{}
+	for i, c := 0, ec.Comp; c != nil && i < 64; i++ {
+		depth[c] = i
+		c = b.l.prog.RootComponent(c)
+	}
+	sort.SliceStable(declared, func(i, j int) bool {
+		di, dj := declared[i][0].decl, declared[j][0].decl
+		if depth[di.Owner] != depth[dj.Owner] {
+			return depth[di.Owner] > depth[dj.Owner]
+		}
+		return di.Index < dj.Index
+	})
+	t.declared = nil
+	for _, run := range declared {
+		b.styleLayer(t, run)
+	}
 	last := map[*check.Member]int{}
 	for i, p := range ec.Props {
 		if p.Member.Owner != ec.Comp {

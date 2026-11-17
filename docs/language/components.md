@@ -71,6 +71,57 @@ component Card(title: string) {
 Card("Plan") { padding: 8; width: 240 }   // padding 8, radius 12
 ```
 
+## Variants a component declares
+
+A component that shows one element can name its states for its caller
+to style: `variant name = condition`, a bool that's kept up to date like
+a `let`. Its caller writes `name { … }` in its block, style props laid
+over that element while the condition holds, as `pressed { … }` is laid
+over a `View` while it's pressed:
+
+```asuka
+pub component Checkbox {
+  prop checked = false
+  event checkedChange(checked: bool)
+  prop disabled = false
+  prop children: View
+
+  pub variant checked = checked
+  pub variant disabled = disabled
+
+  View {
+    role: .button
+    on press { if !disabled { checked = !checked } }
+    children
+  }
+}
+
+Checkbox {
+  bind checked: agree
+  padding: 4; radius: 4; border: 1
+  checked { background: .accent; borderColor: .accent }
+  disabled { opacity: 0.4 }
+  Text("I agree")
+}
+```
+
+- A variant's name is its own: it may be a prop's or a state's, as
+  `checked` is here. It can't be an interaction state's (`pressed`) or
+  a keyword's.
+- The variants are laid over everything else on the element: its own
+  style, its caller's, and the interaction states. Of two that hold, the
+  one declared later wins (`disabled` over `checked` here).
+- A `pub variant` is for another package's callers to style; one that
+  isn't stays its own package's.
+- A style may hold a variant's block too (`style box { checked { … }
+  }`): applied to an element whose component declares the variant, the
+  block follows it; anywhere else it does nothing.
+- The caller's block of a component takes the interaction states
+  (`pressed { … }`, `hovered { … }`) when the element it shows is a
+  container.
+- `Checkbox as box` names the view of the element it shows: `box.checked`
+  reads the variant, tracked, as `card.hovered` reads a state.
+
 ## A component's body is declarations
 
 A component's body is **not** code that runs once and is forgotten.
@@ -152,6 +203,37 @@ component Review {
   Rating { bind value: stars }
 }
 ```
+
+A component may also assign such a prop, as if it were its own state,
+in its handlers, fns, effects and tasks (and through an element's
+`bind`). What the assignment does depends on its caller:
+
+- Bound (`bind open: shown`): the assignment emits `openChange`, which
+  writes the caller's state; the prop goes on reading that state. A
+  caller that doesn't write it keeps the prop as it was.
+- Not bound (a value, or nothing): the value is the component's own
+  from then on, and `openChange` is still reported to a caller that
+  handles it. When the caller's value changes, it replaces the
+  component's.
+
+```asuka
+component Disclosure(title: string) {
+  prop open = false
+  event openChange(open: bool)
+  prop children: View
+
+  Column {
+    Button(title) { on press { open = !open } }
+    if open { children }
+  }
+}
+
+Disclosure("Details") { Text("…") }                  // its own
+Disclosure("Details") { bind open: shown; Text("…") } // the caller's
+```
+
+A prop changes whole: `open = …`, or `items = items + [x]`, not
+`items.push(x)`. A prop without its change event can't be assigned.
 
 ## Lists of views
 

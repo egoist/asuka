@@ -97,11 +97,22 @@ style button {
 }
 ```
 
+组件还可以声明自己的变体（`variant checked = checked`，见[组件](components.md#组件声明的变体)），样式里可以像写交互状态那样写它们的代码块：应用到一个组件声明了该变体的元素上时，代码块在变体成立期间叠加上去，位于交互状态之上；用在其他元素上则什么都不做。名字拼错会报错：样式只能写本包组件的变体，以及其他包里 `pub` 的变体。
+
+```asuka
+// 用于声明了 selected 变体的组件（例如列表框的选项）。
+style option {
+  padding: [6, 10]; radius: 6
+  pressed { opacity: 0.8 }
+  selected { background: .accent; color: .onAccent }
+}
+```
+
 组件的变体位于调用方的 prop 之上：调用方设置的 `background` 会替换组件自己的，而组件的 `pressed` 依然会让它变暗。其他视图可以通过名字跟随一个视图的状态（见[给视图命名](#给视图命名)）：写成 `View as card { … }`，然后在任意绑定里读 `card.hovered`（或 `card.pressed`、`card.dragging`、`card.dragOver`），子视图可以这样做（整组悬停），兄弟视图也可以。与样式无关的反应则交给处理器：`on pressedChange(p)`、`on hoverChange(h)`。
 
 ## 给视图命名
 
-有些事不是给视图设置一个值，而是要对视图做点什么：播放视频、在网页里运行脚本、往输入框里插入文本、滚动列表。`Ref` 就是视图的句柄：在任意元素上写 `ref: r`，它的视图就放进 `r`；写成 `Element as name`，则会为所在代码块的剩余部分声明一个这样的句柄。
+有些事不是给视图设置一个值，而是要对视图做点什么：播放视频、在网页里运行脚本、往输入框里插入文本、滚动列表。`Ref` 就是视图的句柄：在任意元素上写 `ref: r`，它的视图就放进 `r`；写成 `Element as name`，则会为所在代码块的剩余部分声明一个这样的句柄（写在只显示一个元素的组件上时，指的是那个元素的视图）。
 
 ```asuka
 component Player {
@@ -122,6 +133,7 @@ component Player {
 | 适用于 | Ref 的成员 |
 |---|---|
 | 任意视图 | `hovered`、`pressed`、`dragging`、`dragOver`（bool，会被追踪）；`focus()`、`blur()` |
+| 组件的（`Checkbox as box`） | 它的变体：`box.checked`（bool，会被追踪） |
 | `Scroll`、`List` | `scrollTo(x, y, animated: true)` |
 | `Video` | `play()`、`pause()`、`seek(seconds)` |
 | `WebView` | `try await eval(script)`（脚本的值，以 JSON 表示）、`run(script)`（不等待结果）、`goBack()`、`goForward()`、`reload()`、`stopLoading()` |

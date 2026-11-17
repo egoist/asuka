@@ -26,6 +26,9 @@ styles.asuka:46:25: 2fr is a grid track's share: write it .fr(2)
 styles.asuka:51:14: unknown name urgent
 styles.asuka:51:44: unknown name read (did you mean Ref?)
 styles.asuka:52:17: unknown name kind (did you mean int?)
+styles.asuka:69:23: unknown name enabled
+styles.asuka:72:5: View has no prop variant
+styles.asuka:80:12: unknown style box
 == model, mailbox
 mailbox.asuka:15:48: count is a method of [Message]: call it, count()
 mailbox.asuka:30:26: [Message] has no method firstIndex

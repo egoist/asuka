@@ -1,0 +1,51 @@
+// Another package's component: its pub variant styled from here, in a
+// block and in a style; its private one only by its own package.
+
+import ./kit
+
+style glow {
+  lit { background: #ffff00 }
+}
+
+component Page {
+  Column {
+    kit.Switch("a") {
+      lit { border: 2 }
+    }
+    kit.Switch("b") { style: glow }
+    kit.Fancy("c") as c
+    Text(if c.lit { "c is on" } else { "c is off" })
+  }
+}
+
+app { Page() }
+
+fn idOf(ops: string, label: string) -> string {
+  for line in ops.lines() {
+    if line.hasSuffix(" A11yLabel=\"{label}\"") {
+      return line.split(" ")[1]
+    }
+  }
+  return "?"
+}
+
+test "a pub variant, styled from another package" {
+  let app = mount(Page())
+  app.expect("a")
+  let made = app.ops()
+  let a = idOf(made, "a")
+  let b = idOf(made, "b")
+  let c = idOf(made, "c")
+  app.tap("a")
+  expect(app.ops().contains("SetProp {a} BorderWidth=2"))
+  app.tap("b")
+  expect(app.ops().contains("SetProp {b} Background=#2ffff00ff"))
+  // Fancy shows a Switch: its variants read through the ref, and its own
+  // package's block of the private one.
+  app.tap("c")
+  app.expect("c is on")
+  app.tap("c")
+  app.expect("c is off")
+  let busy = app.ops()
+  expect(busy.contains("SetProp {c} Opacity=0.5"), busy)
+}

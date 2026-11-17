@@ -127,7 +127,7 @@ func (c *Checker) reactive(e syntax.Expr) bool {
 		case *syntax.MemberExpr:
 			if sel := c.info.Selections[n]; sel != nil {
 				switch sel.Kind {
-				case SelStoreMember, SelLoading:
+				case SelStoreMember, SelLoading, SelVariant:
 					found = true
 				case SelBuiltinField:
 					if sel.Method.Recv == "ref" {

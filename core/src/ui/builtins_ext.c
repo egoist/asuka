@@ -15,6 +15,15 @@
 //	ui.layer_bind           v, layer, key, thunk: fn() -> the key's kind   -
 //	ui.layer_when           v: View, layer: int, cond: fn() -> bool        -
 //	ui.state                v: View, state: int                            bool (tracked)
+//	ui.variant_declare      v: View, id: int (a variant's, the lowering's),
+//	                        cond: fn() -> bool                             -
+//	ui.layer_variant        v: View, layer: int (AK_LAYER_VARIANT's),
+//	                        id: int                                        - (on while variant id holds)
+//	ui.variant_read         v: View, id: int                               bool (tracked; false: v has none)
+//	ui.model                acc: a prop's accessor, bound: ? (none: the
+//	                        caller didn't bind the prop)                   the prop's accessor (a model)
+//	ui.model_bound          model                                          bool
+//	ui.model_set            model, value: the prop's kind                  - (unbound only)
 //	ui.use_keys             keys: [Shortcut]                               -
 //	ui.animate              anim: Animation?, body: fn()                   -
 //	ui.animate_wait         anim: Animation?, body: fn()                   Task<void> (settles once
@@ -122,6 +131,34 @@ static ak_val b_layer_when(ak_val *a, uint32_t n) {
 }
 
 static ak_val b_state(ak_val *a, uint32_t n) { return (ak_val){.i = ak_ui_view_state(view_arg(a, n, 0, "ui.state"), (uint8_t)a[1].i)}; }
+
+static ak_val b_variant_declare(ak_val *a, uint32_t n) {
+	ak_ui_variant_declare(view_arg(a, n, 0, "ui.variant_declare"), a[1].i, a[2].p);
+	return none();
+}
+
+static ak_val b_layer_variant(ak_val *a, uint32_t n) {
+	ak_ui_layer_variant(view_arg(a, n, 0, "ui.layer_variant"), (uint16_t)a[1].i, a[2].i);
+	return none();
+}
+
+static ak_val b_variant_read(ak_val *a, uint32_t n) { return (ak_val){.i = ak_ui_variant_read(view_arg(a, n, 0, "ui.variant_read"), a[1].i)}; }
+
+static ak_val b_model(ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	return ak_vm_model_new(a[0].p, a[1].p != NULL);
+}
+
+static ak_val b_model_bound(ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	return (ak_val){.i = ak_vm_model_bound(a[0].p)};
+}
+
+static ak_val b_model_set(ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	ak_vm_model_set(a[0].p, a[1]);
+	return none();
+}
 
 static ak_val b_use_keys(ak_val *a, uint32_t n) {
 	AK_UNUSED(n);
@@ -463,6 +500,8 @@ void ak_ui_ext_builtins_init(void) {
 	} t[] = {
 		{"ui.variant", b_variant}, {"ui.variant_bind", b_variant_bind}, {"ui.layer", b_layer}, {"ui.layer_set", b_layer_set},
 		{"ui.layer_bind", b_layer_bind}, {"ui.layer_when", b_layer_when}, {"ui.state", b_state}, {"ui.use_keys", b_use_keys},
+		{"ui.variant_declare", b_variant_declare}, {"ui.layer_variant", b_layer_variant}, {"ui.variant_read", b_variant_read},
+		{"ui.model", b_model}, {"ui.model_bound", b_model_bound}, {"ui.model_set", b_model_set},
 		{"ui.animate", b_animate}, {"ui.animate_wait", b_animate_wait}, {"ui.animating", b_animating}, {"ui.on_frame", b_on_frame}, {"ui.frames", b_frames}, {"ui.play", b_play},
 		{"ui.pause", b_pause}, {"ui.seek", b_seek}, {"ui.web_eval", b_web_eval}, {"ui.web_navigate", b_web_navigate},
 		{"ui.web_eval_result", b_web_eval_result}, {"ui.web_cookies", b_web_cookies}, {"ui.insert_text", b_insert_text},

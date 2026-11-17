@@ -163,6 +163,9 @@ type Var struct {
 
 	// Fn is a local fn's (Kind LocalFnVar).
 	Fn *LocalFn
+	// RefComp: the Ref of Component as name, the component: its
+	// variants read as name.checked.
+	RefComp *TypeName
 }
 
 // A LocalFn is a fn declared in a block of statements. The fns declared
@@ -387,7 +390,32 @@ type Component struct {
 	Body                  *syntax.Block
 	Ctx                   *FuncCtx // the body's
 	Provides              []*syntax.ProvideDecl
-	styled                int8 // TakesStyle: 0 not known yet, 1 it does, -1 it doesn't
+	// Variants are its variant declarations, in order: states its caller
+	// styles (name { … }). Their names are a namespace of their own.
+	Variants []*VariantDef
+	styled   int8 // TakesStyle: 0 not known yet, 1 it does, -1 it doesn't
+}
+
+// A VariantDef is a component's variant name = condition: while the
+// condition holds, the caller's name { … } (in its block, or a style's)
+// is laid over the element the component shows.
+type VariantDef struct {
+	object
+	Pub   bool // its caller in another package may style it
+	Value syntax.Expr
+	Decl  *syntax.VariantDecl
+	Owner *TypeName
+	Index int // its place among Owner's variants
+}
+
+// Variant is the variant name the component declares, nil when none.
+func (comp *Component) Variant(name string) *VariantDef {
+	for _, v := range comp.Variants {
+		if v.name == name {
+			return v
+		}
+	}
+	return nil
 }
 
 // MemberKind is what a component's or store's member is.
@@ -418,6 +446,24 @@ type Member struct {
 	// value computed once).
 	Memo bool
 	Pub  bool
+	// Assigned: a prop its component assigns (open = …). It has its
+	// change event (openChange): bound by the caller, an assignment
+	// emits it; unbound, the value is the component's own until the
+	// caller's changes.
+	Assigned bool
+}
+
+// ChangeEvent is the event a prop's assignments emit: <name>Change, with
+// one parameter of the prop's type; nil when its component has none.
+func (m *Member) ChangeEvent() *Member {
+	if m.Kind != PropMember || m.Owner == nil || m.Owner.Comp == nil {
+		return nil
+	}
+	e := m.Owner.Comp.Members[m.name+"Change"]
+	if e == nil || e.Kind != EventMember || len(e.Params) != 1 || m.Type == nil || !Identical(e.Params[0].Type, m.Type) {
+		return nil
+	}
+	return e
 }
 
 // IsSlot reports whether the member is a prop that takes views.

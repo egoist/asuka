@@ -199,6 +199,9 @@ func Walk(v Visitor, n Node) {
 		if n.Params != nil {
 			walk(n.Params)
 		}
+	case *VariantDecl:
+		walk(n.Name)
+		walk(n.Value)
 	case *UseDecl:
 		walk(n.Name)
 		walk(n.Type)

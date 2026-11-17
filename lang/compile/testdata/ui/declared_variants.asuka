@@ -1,0 +1,179 @@
+// Variants a component declares (rfcs/0010): its caller's blocks of
+// them and a style's, laid over the element it shows while they hold;
+// reading them through a ref; and props a component assigns, bound or
+// its own.
+
+/// A checkbox of views: its checked state is the caller's when bound,
+/// its own otherwise.
+pub component Check(title: string) {
+  prop checked = false
+  event checkedChange(checked: bool)
+  prop disabled = false
+  state said = ""
+
+  pub variant checked = checked
+  pub variant disabled = disabled
+
+  View {
+    padding: 4
+    background: #111111
+    label: title
+    on press {
+      if !disabled {
+        checked = !checked
+        said = "{title}: {checked}" // reads what it just assigned
+      }
+    }
+    Text(title)
+    Text(said)
+  }
+}
+
+style framed {
+  border: 1
+  checked { border: 3 }
+}
+
+component Page {
+  state agree = false
+  state forced = false
+  state changes = 0
+  state off = false
+  Column {
+    // Its own: tapping changes it, and nothing else.
+    Check("own") {
+      checked { background: #00ff00 }
+      pressed { opacity: 0.5 }
+    }
+    // Bound: the caller's state, which the tap writes.
+    Check("bound") {
+      bind checked: agree
+      checked { background: #0000ff }
+    }
+    Text("agree: {agree}")
+    // Unbound with a value that changes, and a handler of the change.
+    Check("followed") {
+      checked: forced
+      on checkedChange(v) { changes += 1 }
+    }
+    Text("changes: {changes}")
+    // A style's block of the variant; the later variant over the earlier.
+    Check("styled") {
+      style: framed
+      disabled: off
+      checked { background: #00ff00 }
+      disabled { background: #333333 }
+    }
+    // Read through a ref.
+    Check("read") as box
+    Text(if box.checked { "read is on" } else { "read is off" })
+    // A style's variant on an element that doesn't declare it: nothing.
+    Text("plain") {
+      style: framed
+      label: "plain"
+    }
+    Button("force") { on press { forced = !forced } }
+    Button("disable") { on press { off = !off } }
+  }
+}
+
+app { Page() }
+
+// The id of the view labeled label, as the ops name it.
+fn idOf(ops: string, label: string) -> string {
+  for line in ops.lines() {
+    if line.hasSuffix(" A11yLabel=\"{label}\"") {
+      return line.split(" ")[1]
+    }
+  }
+  return "?"
+}
+
+test "its own value: a tap changes it, and its caller's block follows it" {
+  let app = mount(Page())
+  app.expect("own")
+  let own = idOf(app.ops(), "own")
+  app.tap("own")
+  app.expect("own: true")
+  let on = app.ops()
+  expect(on.contains("SetProp {own} Background=#200ff00ff"), on)
+  app.tap("own")
+  app.expect("own: false")
+  expect(app.ops().contains("SetProp {own} Background=#2111111ff"))
+}
+
+test "an interaction state's block on a component" {
+  let app = mount(Page())
+  app.expect("own")
+  let own = idOf(app.ops(), "own")
+  app.press("own")
+  let down = app.ops()
+  expect(down.contains("SetProp {own} Opacity=0.5"), down)
+  app.press("own", down: false)
+  expect(app.ops().contains("SetProp {own} Opacity=1"))
+}
+
+test "bound: the tap writes the caller's state, which the prop reads" {
+  let app = mount(Page())
+  app.expect("agree: false")
+  let bound = idOf(app.ops(), "bound")
+  app.tap("bound")
+  app.expect("agree: true")
+  app.expect("bound: true")
+  let on = app.ops()
+  expect(on.contains("SetProp {bound} Background=#20000ffff"), on)
+  app.tap("bound")
+  app.expect("agree: false")
+  app.expect("bound: false")
+}
+
+test "unbound: its own until the caller's value changes, and its handler hears each" {
+  let app = mount(Page())
+  app.expect("changes: 0")
+  app.tap("followed")
+  app.expect("followed: true")
+  app.expect("changes: 1")
+  app.tap("followed")
+  app.expect("followed: false")
+  app.expect("changes: 2")
+  app.tap("followed")
+  app.expect("followed: true")
+  // The caller's value changes (false to true): it wins.
+  app.tap("force")
+  await app.idle()
+  app.tap("followed")
+  app.expect("followed: false")
+  app.tap("force") // to false: its own was false already
+  await app.idle()
+  app.tap("followed")
+  app.expect("followed: true")
+  app.expect("changes: 5")
+}
+
+test "a style's block, and the later variant over the earlier" {
+  let app = mount(Page())
+  app.expect("styled")
+  let made = app.ops()
+  let styled = idOf(made, "styled")
+  let plain = idOf(made, "plain")
+  expect(made.contains("SetProp {styled} BorderWidth=1"), made)
+  expect(made.contains("SetProp {plain} BorderWidth=1"), made)
+  app.tap("styled")
+  let on = app.ops()
+  expect(on.contains("SetProp {styled} BorderWidth=3") && on.contains("SetProp {styled} Background=#200ff00ff"), on)
+  app.tap("disable")
+  let off = app.ops()
+  expect(off.contains("SetProp {styled} Background=#2333333ff"), off)
+  app.tap("disable")
+  let back = app.ops()
+  expect(back.contains("SetProp {styled} Background=#200ff00ff"), back)
+}
+
+test "a ref reads the variant" {
+  let app = mount(Page())
+  app.expect("read is off")
+  app.tap("read")
+  app.expect("read is on")
+  app.tap("read")
+  app.expect("read is off")
+}

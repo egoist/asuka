@@ -203,6 +203,8 @@ func (sb *symbolBuilder) block(b *syntax.Block) []DocumentSymbol {
 			out = append(out, sb.sym(d.Name.Name, symProperty, "prop", d, d.Name))
 		case *syntax.EventDecl:
 			out = append(out, sb.sym(d.Name.Name, symEvent, "event", d, d.Name))
+		case *syntax.VariantDecl:
+			out = append(out, sb.sym(d.Name.Name, symProperty, "variant", d, d.Name))
 		case *syntax.StateDecl:
 			out = append(out, sb.sym(d.Name.Name, symVariable, "state", d, d.Name))
 		case *syntax.LetDecl:

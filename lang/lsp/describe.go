@@ -616,6 +616,12 @@ func (fc *fileCtx) describe(r *ref) (code, doc string) {
 		return code, doc
 	case *check.Builtin:
 		return builtinSig(o)
+	case *check.VariantDef:
+		code = "variant " + o.Name() + " = " + exprString(o.Value)
+		if o.Pub {
+			code = "pub " + code
+		}
+		return code, joinDoc(docOf(o.Decl), "Variant of `"+o.Owner.Name()+"`: its caller's `"+o.Name()+" { … }` is laid on while it holds.")
 	}
 	if r.decl.IsValid() {
 		return r.name, ""
