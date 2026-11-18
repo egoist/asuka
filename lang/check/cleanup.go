@@ -22,16 +22,12 @@ func (c *Checker) cleanupStmt(s *syntax.CleanupStmt, body bool) {
 		}
 	}
 	saved := c.ctx
-	savedTry, savedAwait, savedHandled, savedLoops, savedView, savedInDefer := c.inTry, c.inAwait, c.handled, c.loops, c.view, c.inDefer
-	c.inTry, c.inAwait, c.handled, c.loops, c.view, c.inDefer = 0, 0, 0, 0, false, 0
-	savedPartial := c.partial
-	c.partial = nil
+	where := c.enterBody()
 	ctx := c.enter(CtxCleanup, s, "cleanup")
 	ctx.Result = Void
 	c.stmts(s.Body.Items)
 	c.leave(saved)
-	c.inTry, c.inAwait, c.handled, c.loops, c.view, c.inDefer = savedTry, savedAwait, savedHandled, savedLoops, savedView, savedInDefer
-	c.partial = savedPartial
+	c.leaveBody(where)
 	if !body && parent != nil && parent.Kind == CtxEffect {
 		parent.cleanups = append(parent.cleanups, ctx)
 	}
@@ -70,16 +66,12 @@ func (c *Checker) cleanupMisplaced() string {
 // next run, that has changed, so the cleanup reads the new value, not
 // its run's.
 func (c *Checker) checkCleanupReads() {
-	for _, e := range c.effects {
+	for i := range c.effects {
+		e := &c.effects[i]
 		if len(e.body.cleanups) == 0 {
 			continue
 		}
-		var follows stateSet
-		if len(e.deps) > 0 {
-			follows = c.readSet(e.deps...)
-		} else {
-			follows = c.readSet(e.body)
-		}
+		follows := c.followSet(e)
 		for _, cl := range e.body.cleanups {
 			reads := c.readSet(cl)
 			var hit Object

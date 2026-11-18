@@ -97,10 +97,9 @@ screen Messages {
 
   title: "Climbing"
   // While it shows.
-  task {
+  effect() {
     chatOnScreen = climb.id
-    defer { chatOnScreen = "" }
-    await never()
+    cleanup { chatOnScreen = "" }
   }
 
   async fn run(work: async fn() throws -> string) {

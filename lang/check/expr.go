@@ -393,7 +393,7 @@ func (c *Checker) noteCall(f *Function, at syntax.Node) {
 		r.calls = append(r.calls, f)
 	}
 	if c.ctx != nil {
-		u := callUse{f, at}
+		u := callUse{f: f, at: at}
 		if c.ctx.peeks == 0 {
 			c.ctx.readCalls = append(c.ctx.readCalls, u)
 		}

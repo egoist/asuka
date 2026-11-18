@@ -102,7 +102,7 @@ pub component ToolbarButton {
   pub variant disabled = disabled
 
   task(label, disabled) { t.items.put(Item(value: id(), label: label, ref: me, disabled: disabled && !focusableWhenDisabled)) }
-  effect {
+  effect() {
     let mine = id()
     cleanup { t.items.remove(mine) }
   }

@@ -40,10 +40,13 @@ model.asuka:94:27: count is a method of [int]: call it, count()
 == concurrency
 concurrency.asuka:9:40: Accelerometer has no case updates
 concurrency.asuka:10:16: [float] has no method append
-concurrency.asuka:21:13: post can throw: call it with try (try post(…)), or try? for none on an error; and this closure doesn't throw where it's passed: catch the error (try … catch { }, do { } catch { }, try?)
-concurrency.asuka:31:10: Button has no event tap (its events: press)
-concurrency.asuka:35:39: Text has no prop fontSize
-concurrency.asuka:40:5: a view here does nothing: views go in a component's body
+concurrency.asuka:15:14: unknown name watch (did you mean Path?)
+concurrency.asuka:16:15: unknown name unwatch
+concurrency.asuka:18:13: unknown name cleanup
+concurrency.asuka:27:13: post can throw: call it with try (try post(…)), or try? for none on an error; and this closure doesn't throw where it's passed: catch the error (try … catch { }, do { } catch { }, try?)
+concurrency.asuka:37:10: Button has no event tap (its events: press)
+concurrency.asuka:41:39: Text has no prop fontSize
+concurrency.asuka:46:5: a view here does nothing: views go in a component's body
 == app
 == inbox
 inbox.asuka:17:10: Button has no event tap (its events: press)

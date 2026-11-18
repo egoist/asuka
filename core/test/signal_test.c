@@ -324,6 +324,34 @@ TEST(dispose_stops_effects) {
 	CHECK(!dse.a.n.subs);      // no subscribers after dispose
 }
 
+// ---- A cleanup that writes what its effect follows, as the effect goes,
+// doesn't run it again: disposing stops it following first (rfcs/0016).
+
+static struct {
+	isig a;
+	int runs, cleanups;
+} cwf;
+
+static void cwf_cleanup(void *ctx) {
+	cwf.cleanups++;
+	set(&cwf.a, cwf.a.v + 1);
+}
+static void cwf_effect(void *ctx) {
+	get(&cwf.a);
+	cwf.runs++;
+	ak_on_cleanup(cwf_cleanup, NULL);
+}
+static void cwf_build(void *ctx, ak_owner *root) { EFFECT(cwf_effect, NULL); }
+
+TEST(dispose_cleanup_writing_what_its_effect_follows_runs_it_no_more) {
+	ak_owner *r = ak_root(cwf_build, NULL);
+	CHECK_EQ_INT(cwf.runs, 1);
+	ak_owner_dispose(r);
+	CHECK_EQ_INT(cwf.cleanups, 1);
+	CHECK_EQ_INT(cwf.runs, 1);
+	CHECK(!cwf.a.n.subs);
+}
+
 // ---- TestNestedEffectsAreDisposedOnRerun
 
 static struct {

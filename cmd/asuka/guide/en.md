@@ -1559,7 +1559,8 @@ An effect runs at once and again whenever what it read changes, through
 the functions it calls. What it read is as much as the code says:
 `effect { log(user.name) }` runs again when the name changes, not the
 avatar. `effect(a, b)` runs again when `a` or `b`
-changes, and its body follows nothing it reads. A task is async
+changes, and its body follows nothing it reads; `effect() { }` follows
+nothing at all, and runs once, as the component is built. A task is async
 ([Async](https://asuka.egoist.dev/docs/language/async#async)): it starts when the component appears, restarts
 when what's in its parentheses changes (cancelling the last run), and
 is cancelled when the component goes. What's in the parentheses of an
@@ -1580,20 +1581,23 @@ it follows: it restarts by cancelling, and ends.
 ##### Cleanups
 
 ```asuka
-effect {
+effect() {
   let id = bus.listen("refresh", e => reload())
-  cleanup { bus.unlisten(id) }          // before the next run, and as it goes
+  cleanup { bus.unlisten(id) }          // once: as the component goes
 }
 effect(roomId) {
   let room = roomId
   chat.join(room)
-  cleanup { chat.leave(room) }          // the room this run joined
+  cleanup { chat.leave(room) }          // before the next run, and as it goes
 }
-cleanup { tabs.remove(value) }          // as the component goes
+cleanup { drafts.save(draft) }          // as the component goes
 ```
 
 `cleanup { … }` in an effect's body runs before the effect's next run
-and when the effect goes: what the run set up, it undoes. It may be
+and when the effect goes: what the run set up, it undoes. What's set up
+once, while the component shows, is an `effect() { }`'s: what it calls
+may read and write what it registers with (a list of listeners) without
+the effect following it. It may be
 under an `if` (it undoes only what that branch did) or in a loop (once
 for each time it was reached), and several run last first. In a
 component's, a store's or the `app`'s body, beside its effects and
@@ -2433,7 +2437,7 @@ action:)`, `refresh`, `scrollTo`, `back`, `dismiss`, `pickDate`,
 - embed-file: `embed` of a file the package doesn't have. Fix the path, or add the file to the package.
 - extension-conflict: an extension that adds a name the type already has, or another extension adds. Name the method otherwise, or keep one of the extensions.
 - fn-body: a function without its body, or with one it can't have. Write the body (`{ … }` or `= expression`), or drop it from a native or extern declaration.
-- follows-nothing: `state x()` or `effect()` with nothing to follow. Name what to follow, or write `state x = peek(…)`, `effect { … }`, `task { }`.
+- follows-nothing: `state x()` with nothing to follow. Name what to follow, `state x(a) = …`, or write `state x = peek(…)`.
 - import-cycle: packages that import each other. Move what both need into a third package they both import.
 - int-overflow: an integer literal that doesn't fit in 64 bits. Use a smaller number, a `float`, or a `std/decimal` value for exact large numbers.
 - interface-not-satisfied: a type that declares an interface it doesn't implement. Add the missing methods (the message lists them), with the interface's signatures.

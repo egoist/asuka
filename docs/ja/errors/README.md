@@ -20,7 +20,7 @@ Asuka が報告するエラーと警告には、すべてコードがありま�
 - [embed-file](embed-file.md): パッケージにないファイルの `embed`。
 - [extension-conflict](extension-conflict.md): 型がすでに持つ名前、またはほかの拡張も追加する名前を追加する拡張。
 - [fn-body](fn-body.md): 本体のない関数、または持てない本体を持つ関数。
-- [follows-nothing](follows-nothing.md): 追従するもののない `state x()` や `effect()`。
+- [follows-nothing](follows-nothing.md): 追従するもののない `state x()`。
 - [import-cycle](import-cycle.md): 互いにインポートし合うパッケージ。
 - [int-overflow](int-overflow.md): 64 ビットに収まらない整数リテラル。
 - [interface-not-satisfied](interface-not-satisfied.md): 宣言した interface を実装していない型。

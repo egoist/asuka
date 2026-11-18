@@ -153,12 +153,14 @@ nothing for the apply half to leave behind.
 | Awaiting | A cleanup can't await | It runs at once, as the owner goes. Async teardown is a task's `defer`. |
 | Writing state | Allowed, as a task's `defer` writes today (lang/compile/testdata/ui/taskdefers.asuka). In an effect's cleanup, a write of what the effect follows is the effect's (`effect-writes-what-it-follows`). | A cleanup runs at the start of the effect's run, so a write it makes of what the effect follows dirties the effect while it runs, a pass late. |
 | Reading state | Untracked | `ak_sig_owner_clean` runs cleanups with no active computation. What a cleanup reads is never what its effect follows. |
+| Once, while shown | `effect() { … }`: empty parentheses follow nothing, so it runs once as the component is built, and its cleanups as it goes | React's `useEffect(fn, [])`, Solid 2.0's `onSettled`. A registration usually calls something that reads and writes what it registers with (a list of listeners, the next id). `effect { }` would follow that, and the check above rejects it; `peek` around each call would be the only way out. `effect()` was an error (`follows-nothing`, "an effect that runs once is effect { … } reading nothing, or a task { }"); with cleanups it says something neither of those can. |
+| A slot named `cleanup` | In a call's block (an element's, a component's), `cleanup { … }` is still a slot or a variant of that name | Programs that fill one keep working, and a call's block holds no statements. A cleanup written there where no such slot exists is told what a cleanup is. |
 
 ## The language
 
 ```asuka
-// a listener for as long as the component is shown
-effect {
+// a listener for as long as the component is shown: once
+effect() {
   let id = bus.listen("refresh", e => reload())
   cleanup { bus.unlisten(id) }
 }
@@ -274,11 +276,18 @@ locals are captured.
   `let`. Its page in lang/diag has the summary, the why, the fix, the
   wrong and right programs above, and its zh and ja text.
 
-`cleanup` becomes a soft keyword: a statement starting `cleanup {`, in
-the places above. Elsewhere it's a name. `cleanup { }` can currently
-parse as a call of a function named `cleanup` with a trailing block (a
-`SlotItem`). No program in the repo has one, and after this change that
-call is written `cleanup() { }`.
+`cleanup` becomes a soft keyword: an item starting `cleanup {`, except
+directly in a call's block, where it stays a slot or a variant of that
+name (a component with `prop cleanup: View`, filled as `Card { cleanup
+{ … } }`). Elsewhere it's a name. A statement `cleanup { }` that called a
+function named `cleanup` with a trailing block is written `cleanup() {
+}` now; no program in the repo had one.
+
+- **A store made where its cleanups run**: an effect that makes a store
+  (`let s = Session()`) disposes it before its next run, which runs the
+  store's body cleanups. What they write, the effect writes: the call
+  records the store's body as reached (a `callUse` of its context),
+  which `effect-writes-what-it-follows` walks as it walks a call.
 
 ## Lowering and the core
 
@@ -314,7 +323,17 @@ call is written `cleanup() { }`.
   checker leaves nothing else to throw.
 
 There's no new opcode and nothing new in the wire. The core changes in
-one place, a fix the cleanups' tests found (below).
+two places:
+
+- **An owner stops following before its cleanups run.** `owner_dispose`
+  ran an effect's cleanups, then marked it disposed and unlinked what it
+  read. A cleanup that wrote what its effect followed (through a closure
+  the checker can't see into) ran the dying effect again, which
+  registered a cleanup under its disposed owner, which ran at once, and
+  so on to the effect-loop panic. The computation is marked disposed and
+  unlinked first now; a signal test (core/test/signal_test.c) disposes an
+  effect whose cleanup writes what it read.
+- A fix the cleanups' tests found, below.
 
 **Found along the way.** Two bugs that already existed, both fixed here:
 
@@ -331,11 +350,12 @@ one place, a fix the cleanups' tests found (below).
   reference now (ir/fb.go's `makeClosure`).
 
 **Allocation.** A cleanup is one closure per registration, the same
-cost as any closure the run makes, and one slot in its owner's cleanups.
-An owner's vector keeps its capacity across runs (`ak_vec_pop`), so a
-re-running effect allocates only the closure. A C test counts it
-(core/test/ui_test.c): an effect registering a cleanup, run 1,000 times,
-allocates nothing for it. That's against the hold it replaces, which
+cost as any closure the run makes (its captures are the run's locals),
+and one slot in its owner's cleanups. An owner's vector keeps its
+capacity across runs (`ak_vec_pop`), so the core allocates nothing to
+register and run it. A C test counts that (core/test/ui_test.c): an
+effect registering a cleanup, run 1,000 times, allocates nothing in the
+core. That's against the hold it replaces, which
 allocates at mount a task, an effect, an owner, a coroutine with its
 frame and a future, and holds them all.
 
@@ -356,10 +376,11 @@ No source has to change. What moved to cleanups:
 - **std/base**: its 15 holds. The ones that remove an item by a prop
   (controls, disclosure, select) became a body `cleanup`, which reads
   the prop as the component goes, as the `defer` did. The ones that
-  capture `let mine = id()` (menu, misc) became `effect { let mine =
+  capture `let mine = id()` (menu, misc) became `effect() { let mine =
   id(); cleanup { … } }`: `id()` reads a `Ref`, which its own cleanup
   clears as the component goes, so it has to be captured while the
-  component shows. fields' registration and menu's menubar entry became
+  component shows, and once, as the task did (an `effect { }` would
+  follow the `Ref`, which the task that registers the item doesn't). fields' registration and menu's menubar entry became
   one `effect` each, its `cleanup` beside what it undoes: they now
   follow what they register (a field's name and its check), where the
   task registered once. A new test removes a listbox's item while it
@@ -370,10 +391,13 @@ No source has to change. What moved to cleanups:
   new icon's entry and left the last one's, so `tray.anchor(oldId)`
   still found an icon. The cleanup captures the run's id. A test renames
   an icon and checks both anchors. The Dock menu's hold reads and writes
-  `lastNumber` as it registers, which an `effect` would follow, so it
-  stays a task.
-- **docs/device.md**: `notify.present`'s example, an effect with its
-  cleanup.
+  `lastNumber` as it registers, which `effect { }` would follow: it's
+  an `effect() { }`.
+- **examples/services**: the chat screen's "while it shows" hold, an
+  `effect()` with its cleanup.
+- **docs/device.md**: `notify.present`'s example, `effect(id)` with its
+  cleanup (`present` reads and writes the package's state, which
+  `effect { }` would follow).
 - The holds that await something before they hold (hotkey's
   registration, update's window) and every `Stream(send => …)` stay as
   they are, and docs/language/async.md says that's what `await never()`
@@ -419,8 +443,8 @@ No source has to change. What moved to cleanups:
 - **Cleanups in a view's branches** (`if open { cleanup { … } … }`).
   Views stay views; the component inside the branch has a body for it.
 - **`onSettled`** (Solid 2.0's setup after the first render, which also
-  returns a cleanup). Asuka's user effects already run once the
-  component is built and its batch ends.
+  returns a cleanup) is `effect() { }` with its `cleanup`: user effects
+  already run once the component is built and its batch ends.
 - **Cleanups for native objects** that a package hands out. A native
   interface's object is released by the runtime when nothing holds it;
   what it registers with the platform is the package's to undo, which

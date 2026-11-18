@@ -20,7 +20,7 @@ Asuka 报告的每个错误和警告都有一个代码：一个稳定的名称�
 - [embed-file](embed-file.md): `embed` 的文件不在包里。
 - [extension-conflict](extension-conflict.md): 扩展添加了类型已有的名称，或者另一个扩展也添加了同样的名称。
 - [fn-body](fn-body.md): 函数缺少函数体，或者有了不该有的函数体。
-- [follows-nothing](follows-nothing.md): `state x()` 或 `effect()` 没有可跟随的东西。
+- [follows-nothing](follows-nothing.md): `state x()` 没有可跟随的东西。
 - [import-cycle](import-cycle.md): 相互导入的包。
 - [int-overflow](int-overflow.md): 超出 64 位范围的整数字面量。
 - [interface-not-satisfied](interface-not-satisfied.md): 类型声明了某个 interface，却没有实现它。

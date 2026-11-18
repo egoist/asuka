@@ -95,13 +95,15 @@ static void owner_dispose(ak_owner *o) {
 	o->disposed = true;
 	ak_owner_retain(o);
 	detach(o);
-	ak_sig_owner_clean(o);
+	// A computation stops following first: what its cleanups write (one
+	// that undoes what an effect's run set up) mustn't run it again as
+	// it goes.
 	if (o->comp) {
-		ak_comp *c = o->comp;
-		c->node.flags |= AK_F_DISPOSED;
-		ak_sig_unlink_all_deps(c);
-		ak_sig_unlink_all_subs(&c->node);
+		o->comp->node.flags |= AK_F_DISPOSED;
+		ak_sig_unlink_all_deps(o->comp);
 	}
+	ak_sig_owner_clean(o);
+	if (o->comp) ak_sig_unlink_all_subs(&o->comp->node);
 	ak_owner_release(o); // the parent's or the creator's hold
 	ak_owner_release(o);
 }

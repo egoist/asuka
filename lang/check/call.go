@@ -1752,6 +1752,12 @@ func (c *Checker) caseCall(e *syntax.CallExpr, tn *TypeName, k *Case, want Type)
 }
 
 func (c *Checker) storeCall(e *syntax.CallExpr, tn *TypeName, want Type) Type {
+	if c.ctx != nil && tn.Comp != nil && tn.Comp.Ctx != nil {
+		// What its body's cleanups write is written where it's made, when
+		// that owner goes: an effect making one writes it before its next
+		// run (rfcs/0016).
+		c.ctx.writeCalls = append(c.ctx.writeCalls, callUse{at: e, ctx: tn.Comp.Ctx})
+	}
 	if e.Block != nil {
 		c.errorf(e.Block, diag.UnexpectedBlock, "%s is a store: its parameters go in parentheses", tn.name)
 	}

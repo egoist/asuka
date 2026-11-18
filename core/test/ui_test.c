@@ -1124,7 +1124,9 @@ TEST(steady_state_flush_allocates_nothing) {
 
 // An effect that registers a cleanup each run (cleanup { } in its body,
 // rfcs/0016): the cleanup runs before the effect's next run and as its
-// owner goes, and registering it allocates nothing in the steady state.
+// owner goes, and the core allocates nothing to register and run it in
+// the steady state. (The closure is the program's: what cleanup { }
+// lowers to makes one per run, as any closure an effect's body makes.)
 static void *cl_cell;
 static ak_closure *cl_undo;
 static int cl_runs, cl_undone;

@@ -20,7 +20,7 @@ Every error and warning Asuka reports has a code: a stable name, said in the ter
 - [embed-file](embed-file.md): `embed` of a file the package doesn't have.
 - [extension-conflict](extension-conflict.md): An extension that adds a name the type already has, or another extension adds.
 - [fn-body](fn-body.md): A function without its body, or with one it can't have.
-- [follows-nothing](follows-nothing.md): `state x()` or `effect()` with nothing to follow.
+- [follows-nothing](follows-nothing.md): `state x()` with nothing to follow.
 - [import-cycle](import-cycle.md): Packages that import each other.
 - [int-overflow](int-overflow.md): An integer literal that doesn't fit in 64 bits.
 - [interface-not-satisfied](interface-not-satisfied.md): A type that declares an interface it doesn't implement.

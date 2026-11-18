@@ -1261,7 +1261,7 @@ come and go.
 import platform/notify
 
 component Chat(id: string) {
-  effect {
+  effect(id) {
     notify.present(n => if n.thread == id { .hide } else { .banner })   // the chat is on screen
     cleanup { notify.stopPresenting() }
   }

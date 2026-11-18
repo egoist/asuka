@@ -166,6 +166,7 @@ values in parentheses, when they change, and only then:
 ```asuka
 effect { storage.set("draft", draft) }
 effect(selected) { analytics.log("selected", selected) }
+effect() { analytics.log("opened") }   // once, as the component is built
 ```
 
 An effect can't write state it follows (it would run again after its
@@ -283,14 +284,19 @@ Owners are disposed when:
 and one in an effect's body runs then too, as well as before each of the
 effect's next runs. A store's and the app's body take one as well.
 Cleanups run last registered first, after what their owner made has
-stopped: the effects' cleanups first, then the body's. That's where to
-undo what a component registered:
+stopped: the effects' cleanups first, then the body's. An effect's
+cleanup undoes what its run registered, and a body's says the component
+went:
 
 ```asuka
 component Tab(value: string) {
   use tabs: TabsContext
-  effect { tabs.add(value) }
-  cleanup { tabs.remove(value) }
+  effect(value) {
+    let v = value
+    tabs.add(v)
+    cleanup { tabs.remove(v) }
+  }
+  cleanup { tabs.closed(value) }
   Text(value)
 }
 ```

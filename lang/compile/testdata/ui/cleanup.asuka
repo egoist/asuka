@@ -129,6 +129,36 @@ test "a listener held while followed, undone when it isn't and when the componen
   expect(bus.listeners.count() == 0)
 }
 
+// effect() follows nothing: it runs once, as its component is built, and
+// its cleanups as it goes; what it calls may read and write what it
+// registers with (bus.listen reads and writes bus.last).
+component Once {
+  effect() {
+    let id = bus.listen()
+    cleanup { bus.unlisten(id) }
+  }
+  Text("{bus.listeners.count()} once")
+}
+
+component OnceHolder {
+  Column {
+    Button("Another") { on press { let _ = bus.listen() } }
+    Button("Hide") { on press { shown = false } }
+    if shown { Once() }
+  }
+}
+
+test "effect() runs once, and its cleanup as the component goes" {
+  bus.listeners = []
+  shown = true
+  let app = mount(OnceHolder())
+  app.expect("1 once")
+  app.tap("Another")
+  app.expect("2 once")
+  app.tap("Hide")
+  expect(bus.listeners.count() == 1)
+}
+
 // Rows, match arms and sheets dispose theirs.
 state items = [1, 2, 3]
 

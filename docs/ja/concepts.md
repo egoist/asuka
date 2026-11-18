@@ -123,6 +123,7 @@ component Score {
 ```asuka
 effect { storage.set("draft", draft) }
 effect(selected) { analytics.log("selected", selected) }
+effect() { analytics.log("opened") }   // コンポーネントが作られるときに 1 回だけ
 ```
 
 エフェクトは自分が追従している状態には書き込めません（書き込むと、自分の書き込みのあとにもう一度実行されてしまいます）。コンパイラーはこれをエラーにし、代わりの書き方を示します。
@@ -206,13 +207,17 @@ Boundary {
 - 画面がポップされたとき（戻るボタン、スワイプ、`pop()`）：その画面のオーナー
 - シートが閉じたとき：シートの中身のオーナー
 
-コンポーネントの本体に書いた `cleanup { … }` は、そのオーナーが破棄されるときに実行されます。エフェクトの本体に書いたものもそのときに実行され、さらにエフェクトが次に実行されるたびに、その前にも実行されます。ストアと app の本体にも書けます。cleanup は登録されたのと逆の順番で、オーナーが作ったものが止まったあとに実行されます。先にエフェクトの cleanup、次に本体の cleanup です。コンポーネントが登録したものは、ここで取り消します。
+コンポーネントの本体に書いた `cleanup { … }` は、そのオーナーが破棄されるときに実行されます。エフェクトの本体に書いたものもそのときに実行され、さらにエフェクトが次に実行されるたびに、その前にも実行されます。ストアと app の本体にも書けます。cleanup は登録されたのと逆の順番で、オーナーが作ったものが止まったあとに実行されます。先にエフェクトの cleanup、次に本体の cleanup です。エフェクトの cleanup はその実行で登録したものを取り消し、本体の cleanup はコンポーネントがなくなったことを伝えます。
 
 ```asuka
 component Tab(value: string) {
   use tabs: TabsContext
-  effect { tabs.add(value) }
-  cleanup { tabs.remove(value) }
+  effect(value) {
+    let v = value
+    tabs.add(v)
+    cleanup { tabs.remove(v) }
+  }
+  cleanup { tabs.closed(value) }
   Text(value)
 }
 ```

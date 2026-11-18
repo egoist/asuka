@@ -371,9 +371,9 @@ func (c *Checker) effectDecl(d *syntax.EffectDecl, name string) {
 		for _, x := range d.Deps {
 			ec.deps = append(ec.deps, c.info.Ctxs[x])
 		}
-		if len(d.Deps) == 0 {
-			c.errorf(d, diag.FollowsNothing, "effect() follows nothing: an effect that runs once is effect { … } reading nothing, or a task { }")
-		}
+		// effect() { … } follows nothing: it runs once, as its component
+		// is built, and its cleanups as it goes (rfcs/0016).
+		ec.untracked = true
 		ctx = c.enter(CtxEffect, d.Body, name)
 		ctx.Untracked = true
 	} else {
@@ -1184,6 +1184,11 @@ func (c *Checker) slotItem(s *syntax.SlotItem, ec *ElementCall) {
 	comp := ec.Comp.Comp
 	m := comp.Members[s.Name.Name]
 	if m == nil || !m.IsSlot() {
+		if m == nil && s.Name.Name == "cleanup" {
+			// In a call's block, cleanup { } names a slot (rfcs/0016).
+			c.errorf(s.Name, diag.StatementInView, "%s has no slot cleanup, and a cleanup in a view isn't one: it goes in a component's body (it runs when the component goes), or in an effect's", ec.Comp.name)
+			return
+		}
 		if !comp.Native && m == nil && c.variantNames(ec.Comp) != "none" {
 			c.errorf(s.Name, diag.UnknownProp, "%s has no slot or variant %s (a slot is a prop of type View; its variants: %s)", ec.Comp.name, s.Name.Name, c.variantNames(ec.Comp))
 			return

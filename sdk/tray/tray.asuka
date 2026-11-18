@@ -290,17 +290,16 @@ pub component DockMenu {
   state number = 0
   state seen = 0
 
-  task {
+  effect() {
     lastNumber += 1
     let mine = lastNumber
     docks.push(mine)
     seen = (happened[0] ?? []).count()
     number = mine
-    defer {
+    cleanup {
       let _ = docks.removeWhere(d => d == mine)
       if docks.isEmpty() { sendDock(encodeMenu([])) }
     }
-    await never()
   }
 
   // Its items, when it's the last shown, again as they change.

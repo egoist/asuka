@@ -133,3 +133,46 @@ component Reads {
   cleanup { print("{room} {n}") }
   Text(room)
 }
+
+// A store made in an effect: its body's cleanups run before the effect's
+// next run, so what they write, the effect writes.
+state live = 0
+
+component MakesSession {
+  effect { // ERROR "^this effect writes live"
+    print("run {live}")
+    let s = Session()
+  }
+  effect(live) { // ERROR "^this effect writes live"
+    let s = Session()
+  }
+  state other = 0
+  effect(other) {
+    let s = Session()
+  }
+  Text("x")
+}
+
+store Session {
+  cleanup { live -= 1 }
+}
+
+// In an element's block, cleanup { } fills a slot or a variant of that
+// name, as it did before cleanup was a statement.
+component Card {
+  prop cleanup: View? = none
+  Column {
+    if let c = cleanup { c }
+  }
+}
+
+component UsesCard {
+  Column {
+    Card {
+      cleanup { Text("swept") }
+    }
+    Row {
+      cleanup { Text("no") } // ERROR "^Row has no slot cleanup, and a cleanup in a view isn't one"
+    }
+  }
+}

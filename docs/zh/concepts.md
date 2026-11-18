@@ -123,6 +123,7 @@ component Score {
 ```asuka
 effect { storage.set("draft", draft) }
 effect(selected) { analytics.log("selected", selected) }
+effect() { analytics.log("opened") }   // 只在组件建立时运行一次
 ```
 
 effect 不能写入它跟随的状态（否则它会在自己写入之后再运行一次）：编译器会报错，并给出替代的写法。
@@ -206,13 +207,17 @@ Boundary {
 - 页面被弹出时（返回按钮、滑动手势、`pop()`）：该页面的 owner；
 - 弹出面板关闭时：其内容的 owner。
 
-组件主体里的 `cleanup { … }` 会在它的 owner 被销毁时运行；effect 主体里的 cleanup 也会在这时运行，此外还会在 effect 每次再次运行之前运行。store 和 app 的主体里也可以写 cleanup。多个 cleanup 按注册的相反顺序运行，并且在它们的 owner 创建的东西都停下之后才运行：先是 effect 的 cleanup，再是主体的。组件注册过的东西，就在这里撤销：
+组件主体里的 `cleanup { … }` 会在它的 owner 被销毁时运行；effect 主体里的 cleanup 也会在这时运行，此外还会在 effect 每次再次运行之前运行。store 和 app 的主体里也可以写 cleanup。多个 cleanup 按注册的相反顺序运行，并且在它们的 owner 创建的东西都停下之后才运行：先是 effect 的 cleanup，再是主体的。effect 的 cleanup 撤销这次运行注册的东西，主体的 cleanup 则告诉别人组件已经消失：
 
 ```asuka
 component Tab(value: string) {
   use tabs: TabsContext
-  effect { tabs.add(value) }
-  cleanup { tabs.remove(value) }
+  effect(value) {
+    let v = value
+    tabs.add(v)
+    cleanup { tabs.remove(v) }
+  }
+  cleanup { tabs.closed(value) }
   Text(value)
 }
 ```

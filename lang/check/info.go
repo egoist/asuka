@@ -440,10 +440,10 @@ type FuncCtx struct {
 	stateReads, stateWrites []stateUse
 	// cleanups: the cleanup { }s an effect's body registers, whose reads
 	// are checked against what the effect follows.
-	cleanups []*FuncCtx
-	readCalls, writeCalls   []callUse
-	inferRes                bool // a lambda whose result is inferred from its body
-	threw                   bool // lets an error out
+	cleanups              []*FuncCtx
+	readCalls, writeCalls []callUse
+	inferRes              bool // a lambda whose result is inferred from its body
+	threw                 bool // lets an error out
 	// The first await (or for await) and the first thing that lets an
 	// error out (a try, a throw, an untried call): what made an inferred
 	// closure async or throwing, for the errors at its calls.

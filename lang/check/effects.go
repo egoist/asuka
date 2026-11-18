@@ -27,10 +27,22 @@ type stateUse struct {
 	at  syntax.Node
 }
 
-// A callUse is a call of a function at a node of the body.
+// A callUse is a call of a function at a node of the body; or, with ctx
+// and no f, what runs because of it there: a store made, whose body's
+// cleanups run when the owner it's made under goes (an effect's next
+// run, for one made in an effect).
 type callUse struct {
-	f  *Function
-	at syntax.Node
+	f   *Function
+	at  syntax.Node
+	ctx *FuncCtx
+}
+
+// body is the context a callUse reaches.
+func (u callUse) body() *FuncCtx {
+	if u.f != nil {
+		return u.f.Ctx
+	}
+	return u.ctx
 }
 
 // An effectCheck is an effect whose writes are checked once every body
@@ -39,6 +51,23 @@ type effectCheck struct {
 	decl *syntax.EffectDecl
 	body *FuncCtx
 	deps []*FuncCtx
+	// untracked: effect(…) { }, whose body follows nothing (effect() { }
+	// follows nothing at all).
+	untracked bool
+	follows   stateSet // what it follows, once computed (followSet)
+}
+
+// followSet is what e follows: its dependencies' reads, or its body's
+// when it has none (effect { }).
+func (c *Checker) followSet(e *effectCheck) stateSet {
+	if e.follows == nil {
+		if e.untracked {
+			e.follows = c.readSet(e.deps...)
+		} else {
+			e.follows = c.readSet(e.body)
+		}
+	}
+	return e.follows
 }
 
 // noteRead records a read of state (a member or a global) in the
@@ -196,8 +225,8 @@ func (c *Checker) readSet(xs ...*FuncCtx) stateSet {
 			if where == nil {
 				where = call.at
 			}
-			if call.f.Ctx != nil {
-				walk(call.f.Ctx, where)
+			if b := call.body(); b != nil {
+				walk(b, where)
 			}
 		}
 	}
@@ -231,8 +260,8 @@ func (c *Checker) writeSet(x *FuncCtx) stateSet {
 			if where == nil {
 				where = call.at
 			}
-			if call.f.Ctx != nil {
-				walk(call.f.Ctx, where)
+			if b := call.body(); b != nil {
+				walk(b, where)
 			}
 		}
 	}
@@ -242,13 +271,9 @@ func (c *Checker) writeSet(x *FuncCtx) stateSet {
 
 // checkEffectWrites reports each effect that writes a state it follows.
 func (c *Checker) checkEffectWrites() {
-	for _, e := range c.effects {
-		var reads stateSet
-		if len(e.deps) > 0 {
-			reads = c.readSet(e.deps...)
-		} else {
-			reads = c.readSet(e.body)
-		}
+	for i := range c.effects {
+		e := &c.effects[i]
+		reads := c.followSet(e)
 		writes := c.writeSet(e.body)
 		var cycle []Object
 		for obj := range writes {
@@ -270,7 +295,7 @@ func (c *Checker) checkEffectWrites() {
 		name := obj.Name()
 		// What else it reads itself, which a form that follows names.
 		direct := e.body.stateReads
-		if len(e.deps) > 0 {
+		if e.untracked {
 			direct = nil
 		}
 		var others []string
@@ -281,7 +306,7 @@ func (c *Checker) checkEffectWrites() {
 		}
 		line := func(n syntax.Node) int { return c.fset.Position(n.Range().Start).Line }
 		what := "it reads"
-		if len(e.deps) > 0 {
+		if e.untracked {
 			what = "its dependencies read"
 		}
 		msg := fmt.Sprintf("this effect writes %s (at %d), which %s at %d: it would run again after its own write, a pass late", name, line(writes[obj]), what, line(reads[obj]))

@@ -883,7 +883,7 @@ app { Chats() }
 import platform/notify
 
 component Chat(id: string) {
-  effect {
+  effect(id) {
     notify.present(n => if n.thread == id { .hide } else { .banner })   // 这个聊天正显示在屏幕上
     cleanup { notify.stopPresenting() }
   }

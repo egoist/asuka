@@ -4,7 +4,7 @@ component Deps {
   state n = 0
   state f: fn() -> int = () => 1
 
-  effect() { print("never") } // ERROR "effect\(\) follows nothing"
+  effect() { print("once {n}") } // follows nothing: runs once (rfcs/0016)
   effect(f) { print("f") } // a closure: compared by which it is
   effect(n) { print("{n}") }
 

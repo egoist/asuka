@@ -1,16 +1,16 @@
 # follows-nothing
 
-`state x()` or `effect()` with nothing to follow.
+`state x()` with nothing to follow.
 
 An error the compiler reports: the program doesn't build until it's fixed.
 
 ## Why
 
-The parentheses of `state x(a, b)` and `effect(a, b)` say what to follow. Empty, they'd follow nothing, which is what a value read once (`peek`) or an effect that reads nothing already says.
+The parentheses of `state x(a, b)` say what the state follows. Empty, it would follow nothing, which is what a value read once (`peek`) already says.
 
 ## How to fix
 
-Name what to follow, or write `state x = peek(…)`, `effect { … }`, `task { }`.
+Name what to follow, `state x(a) = …`, or write `state x = peek(…)`.
 
 ## Wrong
 

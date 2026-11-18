@@ -847,11 +847,10 @@ view to name.`,
 
 	FollowsNothing = def(Code{
 		Name:    "follows-nothing",
-		Summary: "`state x()` or `effect()` with nothing to follow",
-		Why: `The parentheses of ` + "`state x(a, b)`" + ` and ` + "`effect(a, b)`" + ` say what to follow.
-Empty, they'd follow nothing, which is what a value read once (` + "`peek`" + `) or
-an effect that reads nothing already says.`,
-		Fix:   "Name what to follow, or write `state x = peek(…)`, `effect { … }`, `task { }`.",
+		Summary: "`state x()` with nothing to follow",
+		Why: `The parentheses of ` + "`state x(a, b)`" + ` say what the state follows. Empty, it
+would follow nothing, which is what a value read once (` + "`peek`" + `) already says.`,
+		Fix:   "Name what to follow, `state x(a) = …`, or write `state x = peek(…)`.",
 		Wrong: "component Counter {\n  state n() = 0\n  Text(\"{n}\")\n}\n",
 		Right: "component Counter {\n  state n = 0\n  Text(\"{n}\")\n}\n",
 	})

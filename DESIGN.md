@@ -150,7 +150,10 @@ Rules:
 
 - Every effect and memo belongs to the owner that was current when it
   was made. Disposing an owner disposes its children, runs their
-  cleanups and unsubscribes them. Disposal is explicit and tested.
+  cleanups and unsubscribes them; a computation stops following what it
+  read before its cleanups run, so what they write doesn't run it again.
+  An effect's own cleanups (`cleanup { }`, rfcs/0016) also run before
+  each of its next runs. Disposal is explicit and tested.
 - Writes during an event handler are batched until the handler returns
   (or awaits). Writes are legal only on the main thread; worker threads
   only compute values (`spawn`).

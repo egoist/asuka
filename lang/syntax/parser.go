@@ -191,6 +191,10 @@ type parser struct {
 	// styleValue > 0: in a style: prop's value, where an if may have no
 	// else (an entry that adds nothing when it's false).
 	styleValue int
+	// wantCall: the next block is a call's trailing block; inCall: the
+	// items being parsed are one's, where cleanup { … } is a slot named
+	// cleanup (or a variant's block), not a cleanup (rfcs/0016).
+	wantCall, inCall bool
 	// letPat: parsing a let's pattern, whose name: is the let's type,
 	// not a type test's (TypedPat).
 	letPat bool
@@ -1602,6 +1606,8 @@ func (p *parser) parseValueBlock(value bool) *Block {
 func (p *parser) parseBlock() *Block {
 	value := p.wantValue
 	p.wantValue = false
+	call := p.wantCall
+	p.wantCall = false
 	p.braceOnNextLine()
 	b := &Block{Lbrace: p.pos}
 	if p.tok != LBRACE {
@@ -1624,9 +1630,9 @@ func (p *parser) parseBlock() *Block {
 			p.ci++
 		}
 	}
-	lev, arm, vb, dl := p.exprLev, p.armLev, p.valueBlock, p.dotLine
-	p.exprLev, p.armLev, p.valueBlock = 0, 0, value
-	defer func() { p.armLev, p.valueBlock, p.dotLine = arm, vb, dl }()
+	lev, arm, vb, dl, ic := p.exprLev, p.armLev, p.valueBlock, p.dotLine, p.inCall
+	p.exprLev, p.armLev, p.valueBlock, p.inCall = 0, 0, value, call
+	defer func() { p.armLev, p.valueBlock, p.dotLine, p.inCall = arm, vb, dl, ic }()
 	p.skipTerminators()
 	for p.tok != RBRACE && p.tok != EOF {
 		if p.declAhead() {
@@ -1869,8 +1875,9 @@ func (p *parser) itemAfterPub(start Pos) Item {
 			d.Span = p.span(start)
 			return d
 		}
-		// cleanup { … }: contextual, as variant is (rfcs/0016).
-		if p.lit == "cleanup" && next == LBRACE {
+		// cleanup { … }: contextual, as variant is (rfcs/0016); in a
+		// call's block, a slot or a variant of that name, as before.
+		if p.lit == "cleanup" && next == LBRACE && !p.inCall {
 			p.next()
 			d := &CleanupStmt{Body: p.parseBlock()}
 			d.Span = p.span(start)
@@ -2744,6 +2751,7 @@ func (p *parser) trailingBlock(c *CallExpr) {
 	if p.tok != LBRACE || p.exprLev < 0 {
 		return
 	}
+	p.wantCall = true
 	c.Block = p.parseBlock()
 	for p.tok == ON && (p.peek(1) == IDENT || p.peek(1).IsKeyword()) {
 		c.Handlers = append(c.Handlers, p.parseOn())
