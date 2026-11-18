@@ -706,20 +706,26 @@ void ak_ui_task(ak_closure *c) {
 
 // ---- Loaders ----
 //
-// let x = load f(…) is a loader: an effect calls the thunk, tracked, so
-// it runs again when what the arguments read changes. A user effect:
-// it first runs once the component is built (the thunk reads the
-// component's values, set after the load is made). The thunk starts
-// the call as a task under the effect's owner; the next run disposes that
-// owner first, which cancels the last task.
+// let x = load f(…) is a loader of one call; let x = load (f(…), g(…))
+// one of several (RFC 0017's groups), each a slot. A slot is an effect
+// that calls its thunk, tracked, so it runs again when what its call's
+// arguments read changes, and only then: each call keeps its own
+// dependencies. A user effect: it first runs once the component is built
+// (the thunk reads the component's values, set after the load is made).
+// The thunk starts the call as a task under the effect's owner; the next
+// run disposes that owner first, which cancels the last task.
 //
 // The loader holds what it shows (RFC 0014): it's pending only before
 // its first answer; a run after that keeps the case it's in (ready with
 // the last value, or failed) until it answers, and an answer equal to
-// the last changes nothing. What it shows is in two signals and a cell:
-// node (the state and the error: what a match follows), written only
-// when an answer changes them; busy (running: whether a run is in
-// flight, what .loading follows), written as a run starts and ends; and
+// the last changes nothing. A slot's answer is held until no slot is
+// running; then the loader lands them all in one batch (a group's value
+// the tuple combine makes of its slots' answers): it's ready once every
+// slot answered once, failed while one's last run failed (the first in
+// source order), and its value is kept through a failure. What it shows
+// is in two signals and a cell: node (the state and the error: what a
+// match follows), written only when they change; busy (whether a slot
+// runs, what .loading follows), written as that starts and ends; and
 // shown, a cell of the shown value (what .value and a .ready arm's
 // payload read, by their paths: rfcs/0013), made with the first answer.
 //
@@ -728,9 +734,9 @@ void ak_ui_task(ak_closure *c) {
 // they were made, its result kept (out) so that one that goes re-applies
 // only those above it. Shown is written once per change, with the cell's
 // compare: what reads the paths a layer changed runs again, nothing
-// else. A layer goes at the first of: the answer (or failure) of a run
-// that was in flight when it was made or started after (wait: that
-// run's number), in the flush that shows it; a throw out of the task
+// else. A layer goes at the first of: the answer (or failure) that lands
+// a run that was in flight when it was made or started after (wait: that
+// run's number), in the batch that shows it; a throw out of the task
 // that made it (its owner's cleanup sees the task's future failed); the
 // end of that task with no run in flight or due (optimistic-unconfirmed).
 // No layers: one test of an empty stack.
@@ -747,41 +753,59 @@ typedef struct {
 
 typedef struct {
 	reload_wait *w;
-	uint32_t run;  // the run whose answer (or failure) it waits for
+	uint32_t run;  // the run whose landing it waits for
 } loader_wait;
+
+struct ak_loader;
+
+// A slot: one call of a load, with its own effect, run and answer.
+typedef struct ak_lslot {
+	struct ak_loader *l;  // borrowed: the loader holds its slots
+	ak_node again;        // written by reload, read by each run
+	ak_effect *eff;       // borrowed: NULL once disposed
+	ak_closure *thunk;
+	ak_future *fut;       // its run's task, while it's in flight
+	bool running;
+	bool has;             // answered once: value is its latest answer
+	bool fresh;           // its answer changed since the loader last landed
+	bool held;            // answered, and held for a sibling still running (long-hold)
+	uint8_t kind;
+	ak_val value;
+	void *error;          // its last run failed with it (NULL: answered)
+	// reload f(…): a slot whose thunk said its key (the function its call
+	// calls) is in that key's list in the registry, with its arguments'
+	// latest values, which reload compares.
+	int64_t key;          // 0: not registered
+	uint32_t nargs;
+	ak_val *args;         // retained, each of its kind
+	uint8_t *kinds;
+	struct ak_lslot *rnext, *rprev;
+	ak_comp_info info;
+} ak_lslot;
 
 typedef struct ak_loader {
 	ak_opaque h;
 	ak_node node;    // state and error
-	ak_node busy;    // running
-	ak_node again;   // written by reload, read by each run
+	ak_node busy;    // a slot is running
 	uint8_t state;   // AK_LOAD_*
 	uint8_t kind;    // the value's kind, once one came
-	bool running;    // a run is in flight: fut is its task
-	uint32_t runs;   // the runs started: the number of the one in flight
+	bool running;    // a slot is running
+	uint32_t runs;   // the runs its slots started: the number of the last
+	uint32_t live;   // its slots not yet disposed
 	ak_val value;    // the latest answer (kept while it runs again, and once it fails)
 	void *shown;     // the cell of what it shows: value, layered (NULL before the first answer)
 	void *error;     // when failed
-	ak_future *fut;  // the run's task, while it's in flight
-	ak_effect *eff;  // borrowed: NULL once disposed
-	ak_closure *thunk;
+	ak_closure *combine;  // a group's: its slots' answers -> the tuple; NULL for one call
 	AK_VEC(ak_layer *) layers;  // optimistic changes, oldest first: each retained
-	// reload f(…) (RFC 0017): a loader whose thunk said its key (the
-	// function its operand calls) is in that key's list in the registry,
-	// with its arguments' latest values, which reload compares; waits
-	// are the reloads waiting for its answer.
-	int64_t key;      // 0: not registered
-	uint32_t nargs;
-	ak_val *args;     // retained, each of its kind
-	uint8_t *kinds;
-	struct ak_loader *rnext, *rprev;
-	AK_VEC(loader_wait) waits;
+	AK_VEC(loader_wait) waits;  // the reloads waiting for it to land
 	// Diagnostics (ak_diag_enabled): the load whose answer made the
 	// content this one is in, until its first run says what it read
 	// (load-waterfall); the timer of a hold, while it runs holding the
-	// last answer (long-hold).
+	// last answer or a slot's answer for a sibling (long-hold).
 	struct ak_loader *cause;
 	uint64_t hold;
+	uint32_t nslots;
+	ak_lslot slots[];
 } ak_loader;
 
 // A layer: x.optimistic(f). Held by its loader's stack and by the task
@@ -789,7 +813,7 @@ typedef struct ak_loader {
 // synchronous code; freed when both let go.
 struct ak_layer {
 	uint32_t rc;
-	uint32_t wait;      // the run whose answer (or failure) takes it out
+	uint32_t wait;      // the run whose landing takes it out
 	ak_loader *l;       // borrowed: NULL once it went
 	ak_closure *f;      // T -> T; NULL once it went
 	ak_val out;         // what it shows: f of what's under it (the loader's kind)
@@ -802,20 +826,21 @@ struct ak_layer {
 
 // The load whose answer is being written, while what it shows is made.
 static ak_loader *answering;
-// The load whose thunk is running: what load.key records into.
-static ak_loader *keying;
+// The slot whose thunk is running: what load.key records into.
+static ak_lslot *keying;
 
 enum { AK_LOAD_PENDING, AK_LOAD_READY, AK_LOAD_FAILED };
 
 typedef struct {
-	ak_loader *l;   // retained
+	ak_lslot *s;    // its loader retained
 	ak_future *f;   // retained
-	uint32_t run;   // its number
 } loader_ticket;
 
 static void hold_end(ak_loader *l);
 static void loader_describe(void *ctx, char *buf, size_t n);
 static const void *loader_site(void *ctx);
+static void registry_remove(ak_lslot *s);
+static void waits_settle(ak_loader *l, uint32_t run, bool all);
 
 static void layer_release(ak_layer *y) {
 	if (--y->rc) return;
@@ -841,32 +866,39 @@ static void layers_clear(ak_loader *l) {
 	l->layers.len = 0;
 }
 
-static void registry_remove(ak_loader *l);
-static void waits_settle(ak_loader *l, uint32_t run, bool all);
+static void slot_free(ak_lslot *s) {
+	registry_remove(s);
+	ak_signal_drop(&s->again);
+	ak_release_val(s->value, (ak_kind)s->kind);
+	if (s->error) ak_release(s->error);
+	if (s->fut) ak_release(s->fut);
+	if (s->thunk) ak_release(s->thunk);
+	for (uint32_t i = 0; i < s->nargs; i++) ak_release_val(s->args[i], (ak_kind)s->kinds[i]);
+	ak_free(s->args);
+	ak_free(s->kinds);
+}
 
 static void loader_drop(ak_opaque *o) {
 	ak_loader *l = (ak_loader *)o;
 	hold_end(l);
 	layers_clear(l);
 	ak_vec_free(&l->layers);
-	registry_remove(l);
 	waits_settle(l, 0, true);
 	ak_vec_free(&l->waits);
-	for (uint32_t i = 0; i < l->nargs; i++) ak_release_val(l->args[i], (ak_kind)l->kinds[i]);
-	ak_free(l->args);
-	ak_free(l->kinds);
+	for (uint32_t i = 0; i < l->nslots; i++) slot_free(&l->slots[i]);
 	if (l->cause) ak_release(l->cause);
 	ak_signal_drop(&l->node);
 	ak_signal_drop(&l->busy);
-	ak_signal_drop(&l->again);
 	ak_release_val(l->value, (ak_kind)l->kind);
 	if (l->shown) ak_release(l->shown);
 	if (l->error) ak_release(l->error);
-	if (l->fut) ak_release(l->fut);
-	if (l->thunk) ak_release(l->thunk);
+	if (l->combine) ak_release(l->combine);
 }
 
-static void loader_running(ak_loader *l, bool on) {
+// loader_busy writes busy when whether a slot runs changed.
+static void loader_busy(ak_loader *l) {
+	bool on = false;
+	for (uint32_t i = 0; i < l->nslots && !on; i++) on = l->slots[i].running;
 	if (l->running == on) return;
 	l->running = on;
 	ak_signal_write(&l->busy);
@@ -874,12 +906,11 @@ static void loader_running(ak_loader *l, bool on) {
 
 // layer_apply runs y's f on v (borrowed), untracked: its value in *out
 // (owned), false when it threw (the error pending).
-static bool layer_apply(ak_layer *y, ak_val v, ak_kind k, ak_val *out) {
+static bool layer_apply(ak_layer *y, ak_val v, ak_val *out) {
 	void *tok = ak_untrack_begin();
 	ak_val r = ak_call(y->f, &v, 1);
 	ak_untrack_end(tok);
 	if (ak_error_pending()) return false;
-	AK_UNUSED(k);
 	*out = r;
 	return true;
 }
@@ -895,7 +926,7 @@ static void loader_show(ak_loader *l, uint32_t from) {
 	for (uint32_t i = from; i < l->layers.len; i++) {
 		ak_layer *y = l->layers.data[i];
 		ak_val nv;
-		if (!layer_apply(y, v, k, &nv)) {
+		if (!layer_apply(y, v, &nv)) {
 			ak_release(ak_error_take());
 			layer_off(y, k);
 			layer_release(y);
@@ -912,8 +943,8 @@ static void loader_show(ak_loader *l, uint32_t from) {
 	else ak_vm_cell_set(l->shown, v);
 }
 
-// layers_settle takes out the layers a run's answer (or failure)
-// confirms: those waiting for it or an earlier one. Whether any went.
+// layers_settle takes out the layers a landing confirms: those waiting
+// for its run or an earlier one. Whether any went.
 static bool layers_settle(ak_loader *l, uint32_t run) {
 	if (AK_LIKELY(!l->layers.len)) return false;
 	uint32_t j = 0;
@@ -932,65 +963,89 @@ static bool layers_settle(ak_loader *l, uint32_t run) {
 	return gone;
 }
 
-// loader_answer takes the run's value (borrowed): node is written only
-// when the state changes, shown only when what it shows does.
-static void loader_answer(ak_loader *l, ak_val v, ak_kind k, bool relayer) {
-	if (l->state == AK_LOAD_READY && l->kind == k && ak_val_eq(l->value, v, k)) {
+// loader_value takes v (owned, of kind k) as the loader's answer: shown
+// again when it changed or the layers did (relayer).
+static void loader_value(ak_loader *l, ak_val v, ak_kind k, bool relayer) {
+	if (l->state != AK_LOAD_PENDING && l->kind == k && ak_val_eq(l->value, v, k)) {
+		ak_release_val(v, k);
 		if (relayer) loader_show(l, 0);
 		return;
 	}
-	ak_retain_val(v, k);
 	ak_release_val(l->value, (ak_kind)l->kind);
 	l->kind = (uint8_t)k;
 	l->value = v;
-	bool was = l->state == AK_LOAD_READY;
-	if (l->error) ak_release(l->error), l->error = NULL;
-	l->state = AK_LOAD_READY;
-	if (!was) ak_signal_write(&l->node);
 	loader_show(l, 0);
 }
 
-// loader_fail takes err: the error is news, unless it's the one shown.
-static void loader_fail(ak_loader *l, void *err) {
-	if (l->state == AK_LOAD_FAILED && l->error && ak_val_eq((ak_val){.p = l->error}, (ak_val){.p = err}, AK_K_REF)) {
-		ak_release(err);
-		return;
-	}
+// loader_state sets the state and the error (err borrowed): node is
+// written only when they change (an error equal to the one shown isn't
+// news).
+static void loader_state(ak_loader *l, uint8_t state, void *err) {
+	if (state == l->state && (state != AK_LOAD_FAILED || (l->error && err && ak_val_eq((ak_val){.p = l->error}, (ak_val){.p = err}, AK_K_REF)))) return;
 	if (l->error) ak_release(l->error);
-	l->error = err;
-	l->state = AK_LOAD_FAILED;
+	l->error = err ? ak_retain(err) : NULL;
+	l->state = state;
 	ak_signal_write(&l->node);
 }
 
-// loader_settle shows run's answer: its value, or its error, with the
-// layers it confirms gone, in one batch.
-static void loader_settle(ak_loader *l, ak_future *f, uint32_t run) {
+// loader_land shows what the slots answered, once none is running: in
+// one batch, with the layers it confirms gone and the reloads waiting
+// for it told.
+static void loader_land(ak_loader *l) {
 	ak_batch_begin();
-	loader_running(l, false);
-	bool gone = layers_settle(l, run);
-	if (f->state == AK_FUT_DONE) {
-		loader_answer(l, f->result, (ak_kind)f->kind, gone);
-	} else {
-		if (!ak_is_cancel(f->error)) loader_fail(l, ak_retain(f->error));
-		if (gone) loader_show(l, 0);
+	loader_busy(l);
+	hold_end(l);
+	bool gone = layers_settle(l, l->runs);
+	bool all = true, changed = false;
+	void *err = NULL;
+	for (uint32_t i = 0; i < l->nslots; i++) {
+		ak_lslot *s = &l->slots[i];
+		all = all && s->has;
+		if (!err && s->error) err = s->error;
+		changed = changed || s->fresh;
+		s->fresh = s->held = false;
 	}
+	if (all && (changed || l->state == AK_LOAD_PENDING)) {
+		if (!l->combine) {
+			ak_lslot *s = &l->slots[0];
+			ak_retain_val(s->value, (ak_kind)s->kind);
+			loader_value(l, s->value, (ak_kind)s->kind, gone);
+		} else {
+			ak_val args[16], *a = l->nslots <= 16 ? args : ak_alloc(sizeof(ak_val) * l->nslots);
+			for (uint32_t i = 0; i < l->nslots; i++) a[i] = l->slots[i].value;
+			void *tok = ak_untrack_begin();
+			ak_val t = ak_call(l->combine, a, l->nslots);
+			ak_untrack_end(tok);
+			if (a != args) ak_free(a);
+			if (ak_error_pending()) ak_raise(ak_error_take());
+			else loader_value(l, t, (ak_kind)l->kind, gone);
+		}
+	} else if (gone) {
+		loader_show(l, 0);
+	}
+	if (err) loader_state(l, AK_LOAD_FAILED, err);
+	else if (all) loader_state(l, AK_LOAD_READY, NULL);
 	ak_batch_end();
-	waits_settle(l, run, false);
-}
-
-// loader_read_by reports whether c reads what l says: its state, or
-// what it shows (whole or a path in it).
-static bool loader_read_by(ak_loader *l, ak_effect *c) {
-	return ak_comp_reads(c, &l->node) || (l->shown && ak_vm_cell_read_by(l->shown, c));
+	waits_settle(l, l->runs, false);
 }
 
 // waterfall checks a load's first run, made in what another's answer
 // showed (l->cause): its arguments, read now, don't read that answer, so
 // it could have started beside it (load-waterfall).
+static bool loader_read_by(ak_loader *l, ak_effect *c) {
+	return ak_comp_reads(c, &l->node) || (l->shown && ak_vm_cell_read_by(l->shown, c));
+}
+
+static bool loader_read_by_slots(ak_loader *cause, ak_loader *l) {
+	for (uint32_t i = 0; i < l->nslots; i++)
+		if (l->slots[i].eff && loader_read_by(cause, l->slots[i].eff)) return true;
+	return false;
+}
+
 static void waterfall(ak_loader *l) {
 	ak_loader *cause = l->cause;
 	l->cause = NULL;
-	if (l->eff && cause->eff && !loader_read_by(cause, l->eff) && ak_diag_first(loader_site(l), "load-waterfall")) {
+	if (l->live && cause->live && !loader_read_by_slots(cause, l) && ak_diag_first(loader_site(l), "load-waterfall")) {
 		char mine[512], theirs[512], msg[1536];
 		loader_describe(l, mine, sizeof mine);
 		loader_describe(cause, theirs, sizeof theirs);
@@ -1012,24 +1067,52 @@ static void load_name(const char *desc, char *name, size_t n) {
 	snprintf(name, n, "%.*s", (int)k, of);
 }
 
-// hold_fire: a run has held the last answer for AK_LONG_HOLD_NS. Nothing
-// reading .loading (busy), nothing says so (long-hold).
+// slot_call is the call a group's slot is of, as its thunk's name says
+// it ("load of page (api.user)": api.user), or "a call".
+static void slot_call(const ak_lslot *s, char *call, size_t n) {
+	char d[512];
+	snprintf(call, n, "a call");
+	if (!s->thunk) return;
+	ak_vm_where(s->thunk, NULL, d, sizeof d);
+	const char *open = strchr(d, '('), *close = open ? strchr(open, ')') : NULL;
+	if (open && close) snprintf(call, n, "%.*s", (int)(close - open - 1), open + 1);
+}
+
+// hold_fire: a run has held the last answer, or a slot's answer for a
+// sibling, for AK_LONG_HOLD_NS. Nothing reading .loading (busy), nothing
+// says so (long-hold).
 static void hold_fire(void *ctx) {
 	ak_loader *l = ctx;
 	l->hold = 0;
-	if (!l->running || !l->eff || ak_signal_watched(&l->busy) || !ak_diag_first(loader_site(l), "long-hold")) return;
+	if (!l->running || !l->live || ak_signal_watched(&l->busy) || !ak_diag_first(loader_site(l), "long-hold")) return;
 	char me[512], msg[1536], name[64];
 	loader_describe(l, me, sizeof me);
 	load_name(me, name, sizeof name);
-	snprintf(msg, sizeof msg, "%s has shown its last answer for %lld s while loading the next, with nothing saying so: read %s.loading (dim it, show a ring), or show a spinner in its place", me, AK_LONG_HOLD_NS / 1000000000LL, name);
+	const ak_lslot *held = NULL, *slow = NULL;
+	for (uint32_t i = 0; i < l->nslots; i++) {
+		const ak_lslot *s = &l->slots[i];
+		if (!held && s->held) held = s;
+		if (!slow && s->running) slow = s;
+	}
+	if (l->combine && held && slow) {
+		char hc[128], sc[128];
+		slot_call(held, hc, sizeof hc);
+		slot_call(slow, sc, sizeof sc);
+		snprintf(msg, sizeof msg, "%s has held %s's answer for %lld s, waiting for %s's, with nothing saying so: read %s.loading (dim it, show a ring), or load %s on its own if it needn't land with it", me, hc, AK_LONG_HOLD_NS / 1000000000LL, sc, name, sc);
+	} else {
+		snprintf(msg, sizeof msg, "%s has shown its last answer for %lld s while loading the next, with nothing saying so: read %s.loading (dim it, show a ring), or show a spinner in its place", me, AK_LONG_HOLD_NS / 1000000000LL, name);
+	}
 	const char *where[1] = {me};
 	ak_diag("long-hold", msg, where, 1);
 }
 
-// hold_start times a run that holds the last answer; hold_end stops it
-// (the run answered, or the load went). The timer holds no reference:
-// the load stops it as it goes.
-static void hold_start(ak_loader *l) { l->hold = ak_after(AK_LONG_HOLD_NS, hold_fire, l); }
+// hold_start times a run that holds what the load shows (its last
+// answer, or a slot's for a sibling); hold_end stops it (the load
+// landed, or went). The timer holds no reference: the load stops it as
+// it goes.
+static void hold_start(ak_loader *l) {
+	if (!l->hold) l->hold = ak_after(AK_LONG_HOLD_NS, hold_fire, l);
+}
 
 static void hold_end(ak_loader *l) {
 	if (!l->hold) return;
@@ -1037,98 +1120,169 @@ static void hold_end(ak_loader *l) {
 	l->hold = 0;
 }
 
-static void loader_done(void *ctx) {
+// slot_settle takes a slot's run's end: its answer, its error, or
+// nothing for a cancellation; the loader lands once no slot runs.
+static void slot_settle(ak_lslot *s, ak_future *f, void *err) {
+	ak_loader *l = s->l;
+	s->running = false;
+	if (f && f->state == AK_FUT_DONE) {
+		ak_kind k = (ak_kind)f->kind;
+		if (!s->has || s->kind != k || !ak_val_eq(s->value, f->result, k)) {
+			ak_retain_val(f->result, k);
+			ak_release_val(s->value, (ak_kind)s->kind);
+			s->value = f->result;
+			s->kind = (uint8_t)k;
+			s->fresh = true;
+		}
+		s->has = true;
+		if (s->error) ak_release(s->error), s->error = NULL;
+		s->held = true;
+	} else {
+		void *e = err ? err : (f ? f->error : NULL);
+		if (e && !ak_is_cancel(e)) {
+			if (s->error) ak_release(s->error);
+			s->error = ak_retain(e);
+		}
+	}
+	for (uint32_t i = 0; i < l->nslots; i++) {
+		if (l->slots[i].running) {
+			// Held for a sibling; while pending, the load says it's loading.
+			if (AK_UNLIKELY(ak_diag_enabled) && l->state != AK_LOAD_PENDING) hold_start(l);
+			return;
+		}
+	}
+	ak_loader *prev = answering;
+	// What the answer shows is made in this batch: a load made there
+	// waited for this one (load-waterfall).
+	if (AK_UNLIKELY(ak_diag_enabled)) answering = l;
+	loader_land(l);
+	answering = prev;
+}
+
+static void slot_done(void *ctx) {
 	loader_ticket *t = ctx;
-	ak_loader *l = t->l;
+	ak_lslot *s = t->s;
+	ak_loader *l = s->l;
 	ak_future *f = t->f;
-	if (l->fut == f) {  // else a later run replaced it, or it went
-		ak_release(l->fut);
-		l->fut = NULL;
-		hold_end(l);
-		// What the answer shows is made in this batch: a load made
-		// there waited for this one (load-waterfall).
-		ak_loader *prev = answering;
-		if (AK_UNLIKELY(ak_diag_enabled)) answering = l;
-		loader_settle(l, f, t->run);
-		answering = prev;
+	if (s->fut == f) {  // else a later run replaced it, or it went
+		ak_release(s->fut);
+		s->fut = NULL;
+		slot_settle(s, f, NULL);
 	}
 	ak_release(f);
 	ak_release(l);
 	ak_free(t);
 }
 
-static void loader_run_fn(void *ctx) {
-	ak_loader *l = ctx;
-	if (l->fut) ak_release(l->fut), l->fut = NULL;  // cancelled with the owner
-	ak_signal_read(&l->again);
-	uint32_t run = ++l->runs;
-	ak_loader *was = keying;
-	keying = l;
-	ak_val v = ak_call(l->thunk, NULL, 0);
+static void slot_run_fn(void *ctx) {
+	ak_lslot *s = ctx;
+	ak_loader *l = s->l;
+	if (s->fut) ak_release(s->fut), s->fut = NULL;  // cancelled with the owner
+	ak_signal_read(&s->again);
+	l->runs++;
+	ak_lslot *was = keying;
+	keying = s;
+	ak_val v = ak_call(s->thunk, NULL, 0);
 	keying = was;
-	if (AK_UNLIKELY(l->cause)) waterfall(l);
+	if (AK_UNLIKELY(l->cause) && s == &l->slots[l->nslots - 1]) waterfall(l);
 	if (ak_error_pending()) {
 		void *err = ak_error_take();
-		loader_running(l, false);
-		bool gone = layers_settle(l, run);
-		if (ak_is_cancel(err)) ak_release(err);
-		else loader_fail(l, err);
-		if (gone) loader_show(l, 0);
-		waits_settle(l, run, false);
+		slot_settle(s, NULL, err);
+		ak_release(err);
 		return;
 	}
 	ak_future *f = v.p;
-	l->fut = ak_retain(f);
-	loader_running(l, true);
-	if (AK_UNLIKELY(ak_diag_enabled) && l->state != AK_LOAD_PENDING && !l->hold) hold_start(l);
+	s->fut = ak_retain(f);
+	s->running = true;
+	loader_busy(l);
+	if (AK_UNLIKELY(ak_diag_enabled) && l->state != AK_LOAD_PENDING) hold_start(l);
 	loader_ticket *t = ak_alloc(sizeof *t);
-	t->l = ak_retain(l);
+	t->s = s;
+	ak_retain(l);
 	t->f = f;  // the call's reference
-	t->run = run;
-	ak_future_wait(f, loader_done, t);
+	ak_future_wait(f, slot_done, t);
 }
 
-static void loader_effect_drop(void *ctx) {
-	ak_loader *l = ctx;
-	l->eff = NULL;
-	hold_end(l);
-	if (l->fut) ak_release(l->fut), l->fut = NULL;
-	// No run is in flight once its owner went: none will answer, and no
-	// layer will be confirmed.
-	loader_running(l, false);
-	layers_clear(l);
-	// reload reaches it no more; what waits for it counts it answered.
-	registry_remove(l);
-	waits_settle(l, 0, true);
+static void slot_effect_drop(void *ctx) {
+	ak_lslot *s = ctx;
+	ak_loader *l = s->l;
+	s->eff = NULL;
+	if (s->fut) ak_release(s->fut), s->fut = NULL;
+	s->running = false;
+	// reload reaches it no more.
+	registry_remove(s);
 	// It never runs again: its thunk goes now, not with the loader, which
 	// what the thunk holds may hold.
-	ak_release(l->thunk);
-	l->thunk = NULL;
+	ak_release(s->thunk);
+	s->thunk = NULL;
+	if (--l->live == 0) {
+		hold_end(l);
+		// No run is in flight once its owner went: none will answer, no
+		// layer will be confirmed, and what waits for it counts it
+		// answered.
+		loader_busy(l);
+		layers_clear(l);
+		waits_settle(l, 0, true);
+	}
 	ak_release(l);
 }
 
 // loader_describe names a load as its source says it: "Profile's load of
-// user at profile.asuka:8".
+// user at profile.asuka:8" (a group's, by its first call's thunk).
 static void loader_describe(void *ctx, char *buf, size_t n) {
 	ak_loader *l = ctx;
-	if (l->thunk) ak_vm_where(l->thunk, NULL, buf, n);
-	else snprintf(buf, n, "a load whose owner went");
+	ak_closure *t = l->slots[0].thunk;
+	if (t && l->combine) {
+		char d[512];
+		ak_vm_where(t, NULL, d, sizeof d);
+		// Profile's load of page (api.user) at …: the group's, not its call's.
+		const char *open = strstr(d, " ("), *close = open ? strchr(open, ')') : NULL;
+		if (open && close) snprintf(buf, n, "%.*s%s", (int)(open - d), d, close + 1);
+		else snprintf(buf, n, "%s", d);
+	} else if (t) {
+		ak_vm_where(t, NULL, buf, n);
+	} else {
+		snprintf(buf, n, "a load whose owner went");
+	}
 }
 
 static const void *loader_site(void *ctx) {
 	ak_loader *l = ctx;
-	return l->thunk ? ak_vm_where_site(l->thunk) : (const void *)l;
+	return l->slots[0].thunk ? ak_vm_where_site(l->slots[0].thunk) : (const void *)l;
 }
 
-static const ak_comp_info loader_info = {.drop = loader_effect_drop, .label = "load", .describe = loader_describe, .site = loader_site};
+static void slot_describe(void *ctx, char *buf, size_t n) { loader_describe(((ak_lslot *)ctx)->l, buf, n); }
 
-ak_val ak_ui_load(ak_closure *thunk) {
-	ak_loader *l = ak_opaque_new(AK_TAG_OPAQUE, sizeof *l, loader_drop);
-	l->thunk = ak_retain(thunk);
+static const void *slot_site(void *ctx) { return loader_site(((ak_lslot *)ctx)->l); }
+
+static ak_loader *loader_new(ak_closure *combine, ak_kind k, ak_closure *const *thunks, uint32_t n) {
+	ak_loader *l = ak_opaque_new(AK_TAG_OPAQUE, sizeof *l + sizeof(ak_lslot) * n, loader_drop);
 	l->state = AK_LOAD_PENDING;
+	l->nslots = n;
+	l->live = n;
+	if (combine) {
+		l->combine = ak_retain(combine);
+		l->kind = (uint8_t)k;
+	}
 	if (AK_UNLIKELY(ak_diag_enabled) && answering && answering != l) l->cause = ak_retain(answering);
-	l->eff = ak_effect_new(loader_run_fn, ak_retain(l), AK_EFFECT_USER, &loader_info);
-	return (ak_val){.p = l};
+	for (uint32_t i = 0; i < n; i++) {
+		ak_lslot *s = &l->slots[i];
+		s->l = l;
+		s->thunk = ak_retain(thunks[i]);
+		s->info = (ak_comp_info){.drop = slot_effect_drop, .label = "load", .describe = slot_describe, .site = slot_site};
+	}
+	for (uint32_t i = 0; i < n; i++) {
+		ak_retain(l);  // the slot's effect's
+		l->slots[i].eff = ak_effect_new(slot_run_fn, &l->slots[i], AK_EFFECT_USER, &l->slots[i].info);
+	}
+	return l;
+}
+
+ak_val ak_ui_load(ak_closure *thunk) { return (ak_val){.p = loader_new(NULL, AK_K_VOID, &thunk, 1)}; }
+
+ak_val ak_ui_load_group(ak_closure *combine, ak_kind k, ak_closure *const *thunks, uint32_t n) {
+	if (!n) ak_panic("ui.load_group: no calls");
+	return (ak_val){.p = loader_new(combine, k, thunks, n)};
 }
 
 static ak_loader *loader_arg(ak_val v, const char *name) {
@@ -1143,8 +1297,8 @@ int64_t ak_ui_load_state(ak_val v) {
 	return l->state;
 }
 
-// Whether a run is in flight: busy alone, so what reads it doesn't
-// follow the value, nor a match it.
+// Whether a slot runs: busy alone, so what reads it doesn't follow the
+// value, nor a match it.
 bool ak_ui_load_loading(ak_val v) {
 	ak_loader *l = loader_arg(v, "load.loading");
 	ak_signal_read(&l->busy);
@@ -1178,9 +1332,23 @@ ak_val ak_ui_load_error(ak_val v) {
 	return (ak_val){.p = l->error ? ak_retain(l->error) : NULL};
 }
 
+// x.reload() runs every call of the load again.
 void ak_ui_load_reload(ak_val v) {
 	ak_loader *l = loader_arg(v, "load.reload");
-	if (l->eff) ak_signal_write(&l->again);
+	ak_batch_begin();
+	for (uint32_t i = 0; i < l->nslots; i++)
+		if (l->slots[i].eff) ak_signal_write(&l->slots[i].again);
+	ak_batch_end();
+}
+
+// due reports whether a slot of l runs, or will (what it read changed,
+// or a reload asked it).
+static bool due(const ak_loader *l) {
+	for (uint32_t i = 0; i < l->nslots; i++) {
+		const ak_lslot *s = &l->slots[i];
+		if (s->running || (s->eff && ak_effect_stale(s->eff))) return true;
+	}
+	return false;
 }
 
 // ---- Optimistic changes (RFC 0017) ----
@@ -1198,8 +1366,7 @@ static void layer_where(const ak_layer *y, char *buf, size_t n) {
 static void layer_end(ak_layer *y, bool failed) {
 	ak_loader *l = y->l;
 	if (!l) return;
-	bool due = l->running || (l->eff && ak_effect_stale(l->eff));
-	if (!failed && due) return;
+	if (!failed && due(l)) return;
 	if (!failed && AK_UNLIKELY(ak_diag_enabled) && ak_diag_first(ak_vm_where_site(y->f), "optimistic-unconfirmed")) {
 		char where[512], load[512], msg[1536], name[64];
 		layer_where(y, where, sizeof where);
@@ -1243,7 +1410,7 @@ void ak_ui_load_optimistic(ak_val v, ak_closure *f) {
 
 void ak_ui_load_optimistic_in(ak_val v, ak_closure *f, ak_future *task, ak_owner *owner) {
 	ak_loader *l = loader_arg(v, "load.optimistic");
-	if (!l->eff) return;  // gone: it shows nothing again
+	if (!l->live) return;  // gone: it shows nothing again
 	if (l->state != AK_LOAD_READY) {
 		if (AK_UNLIKELY(ak_diag_enabled) && ak_diag_first(ak_vm_where_site(f), "optimistic-not-ready")) {
 			char where[512], load[512], msg[1536], name[64];
@@ -1260,10 +1427,11 @@ void ak_ui_load_optimistic_in(ak_val v, ak_closure *f, ak_future *task, ak_owner
 	ak_layer *y = ak_alloc(sizeof *y);
 	y->rc = 1;
 	y->f = ak_retain(f);
-	// A run in flight confirms it; else the next one started.
+	y->task = NULL;
+	// A run in flight confirms it as it lands; else the next one started.
 	y->wait = l->running ? l->runs : l->runs + 1;
 	ak_val under = l->layers.len ? l->layers.data[l->layers.len - 1]->out : l->value;
-	if (!layer_apply(y, under, k, &y->out)) {
+	if (!layer_apply(y, under, &y->out)) {
 		ak_release(y->f);
 		ak_free(y);
 		return;  // its error is the caller's
@@ -1286,55 +1454,56 @@ uint32_t ak_ui_load_layers(ak_val v) { return loader_arg(v, "load.layers")->laye
 
 // ---- reload f(…) (RFC 0017) ----
 //
-// The registry: every live loader whose thunk said its key (load.key: a
+// The registry: every live slot whose thunk said its key (load.key: a
 // named function's, the lowering's number for it), in a hash of lists by
-// key, intrusive (rnext, rprev), so a loader's entry is made with it and
+// key, intrusive (rnext, rprev), so a slot's entry is made with it and
 // costs no allocation after its first run. It's the app's: any root's,
-// any window's loads are in it.
+// any window's loads are in it. A group is reached through each of its
+// calls, and runs those only.
 
 static struct {
-	ak_loader **heads;  // by key, chained through rnext
+	ak_lslot **heads;  // by key, chained through rnext
 	uint32_t cap, n;
 } registry;
 
 static uint32_t registry_slot(int64_t key, uint32_t cap) { return (uint32_t)ak_val_hash((ak_val){.i = key}, AK_K_INT) & (cap - 1); }
 
-static void registry_link(ak_loader *l) {
-	ak_loader **h = &registry.heads[registry_slot(l->key, registry.cap)];
-	l->rprev = NULL;
-	l->rnext = *h;
-	if (*h) (*h)->rprev = l;
-	*h = l;
+static void registry_link(ak_lslot *s) {
+	ak_lslot **h = &registry.heads[registry_slot(s->key, registry.cap)];
+	s->rprev = NULL;
+	s->rnext = *h;
+	if (*h) (*h)->rprev = s;
+	*h = s;
 }
 
-static void registry_add(ak_loader *l, int64_t key) {
+static void registry_add(ak_lslot *s, int64_t key) {
 	if (registry.n + 1 > registry.cap) {
 		uint32_t cap = registry.cap ? registry.cap * 2 : 16;
-		ak_loader **old = registry.heads;
+		ak_lslot **old = registry.heads;
 		uint32_t ocap = registry.cap;
-		registry.heads = ak_alloc(sizeof(ak_loader *) * cap);
-		memset(registry.heads, 0, sizeof(ak_loader *) * cap);
+		registry.heads = ak_alloc(sizeof(ak_lslot *) * cap);
+		memset(registry.heads, 0, sizeof(ak_lslot *) * cap);
 		registry.cap = cap;
 		for (uint32_t i = 0; i < ocap; i++) {
-			for (ak_loader *x = old[i], *next; x; x = next) {
+			for (ak_lslot *x = old[i], *next; x; x = next) {
 				next = x->rnext;
 				registry_link(x);
 			}
 		}
 		ak_free(old);
 	}
-	l->key = key;
-	registry_link(l);
+	s->key = key;
+	registry_link(s);
 	registry.n++;
 }
 
-static void registry_remove(ak_loader *l) {
-	if (!l->key) return;
-	if (l->rprev) l->rprev->rnext = l->rnext;
-	else registry.heads[registry_slot(l->key, registry.cap)] = l->rnext;
-	if (l->rnext) l->rnext->rprev = l->rprev;
-	l->rnext = l->rprev = NULL;
-	l->key = 0;
+static void registry_remove(ak_lslot *s) {
+	if (!s->key) return;
+	if (s->rprev) s->rprev->rnext = s->rnext;
+	else registry.heads[registry_slot(s->key, registry.cap)] = s->rnext;
+	if (s->rnext) s->rnext->rprev = s->rprev;
+	s->rnext = s->rprev = NULL;
+	s->key = 0;
 	if (--registry.n == 0) {
 		ak_free(registry.heads);
 		registry.heads = NULL;
@@ -1355,7 +1524,7 @@ static void wait_done(reload_wait *w) {
 }
 
 // waits_settle tells the reloads waiting for run (or an earlier one;
-// all: every one) that it answered.
+// all: every one) that it landed.
 static void waits_settle(ak_loader *l, uint32_t run, bool all) {
 	if (AK_LIKELY(!l->waits.len)) return;
 	uint32_t j = 0;
@@ -1370,31 +1539,31 @@ static void waits_settle(ak_loader *l, uint32_t run, bool all) {
 static ak_kind kind_at(const ak_str *kinds, uint32_t i) { return (ak_kind)(kinds && i < kinds->len ? kinds->data[i] - '0' : AK_K_REF); }
 
 void ak_ui_load_key(int64_t key, const ak_str *kinds, const ak_val *args, uint32_t n) {
-	ak_loader *l = keying;
-	if (!l || !l->eff) return;
-	if (!l->key) registry_add(l, key);
-	if (l->nargs != n) {
-		for (uint32_t i = 0; i < l->nargs; i++) ak_release_val(l->args[i], (ak_kind)l->kinds[i]);
-		ak_free(l->args);
-		ak_free(l->kinds);
-		l->args = n ? ak_alloc(sizeof(ak_val) * n) : NULL;
-		l->kinds = n ? ak_alloc(n) : NULL;
-		for (uint32_t i = 0; i < n; i++) l->args[i] = (ak_val){0}, l->kinds[i] = (uint8_t)kind_at(kinds, i);
-		l->nargs = n;
+	ak_lslot *s = keying;
+	if (!s || !s->eff) return;
+	if (!s->key) registry_add(s, key);
+	if (s->nargs != n) {
+		for (uint32_t i = 0; i < s->nargs; i++) ak_release_val(s->args[i], (ak_kind)s->kinds[i]);
+		ak_free(s->args);
+		ak_free(s->kinds);
+		s->args = n ? ak_alloc(sizeof(ak_val) * n) : NULL;
+		s->kinds = n ? ak_alloc(n) : NULL;
+		for (uint32_t i = 0; i < n; i++) s->args[i] = (ak_val){0}, s->kinds[i] = (uint8_t)kind_at(kinds, i);
+		s->nargs = n;
 	}
 	for (uint32_t i = 0; i < n; i++) {
-		ak_kind k = (ak_kind)l->kinds[i];
+		ak_kind k = (ak_kind)s->kinds[i];
 		ak_retain_val(args[i], k);
-		ak_release_val(l->args[i], k);
-		l->args[i] = args[i];
+		ak_release_val(s->args[i], k);
+		s->args[i] = args[i];
 	}
 }
 
-// loader_matches reports whether l's arguments equal args.
-static bool loader_matches(const ak_loader *l, const ak_str *kinds, const ak_val *args, uint32_t n) {
-	if (l->nargs != n) return false;
+// slot_matches reports whether s's arguments equal args.
+static bool slot_matches(const ak_lslot *s, const ak_str *kinds, const ak_val *args, uint32_t n) {
+	if (s->nargs != n) return false;
 	for (uint32_t i = 0; i < n; i++) {
-		if (l->kinds[i] != (uint8_t)kind_at(kinds, i) || !ak_val_eq(l->args[i], args[i], (ak_kind)l->kinds[i])) return false;
+		if (s->kinds[i] != (uint8_t)kind_at(kinds, i) || !ak_val_eq(s->args[i], args[i], (ak_kind)s->kinds[i])) return false;
 	}
 	return true;
 }
@@ -1407,12 +1576,19 @@ ak_val ak_ui_load_reload_all(int64_t key, bool given, const ak_str *kinds, const
 	w->f = ak_retain(f);
 	ak_batch_begin();  // they run once all are reached: nothing goes meanwhile
 	if (registry.cap) {
-		for (ak_loader *l = registry.heads[registry_slot(key, registry.cap)]; l; l = l->rnext) {
-			if (l->key != key || !l->eff || (given && !loader_matches(l, kinds, args, n))) continue;
-			w->rc++;
-			w->left++;
-			ak_vec_push(&l->waits, ((loader_wait){w, l->runs + 1}));
-			ak_signal_write(&l->again);
+		for (ak_lslot *s = registry.heads[registry_slot(key, registry.cap)]; s; s = s->rnext) {
+			if (s->key != key || !s->eff || (given && !slot_matches(s, kinds, args, n))) continue;
+			ak_loader *l = s->l;
+			// Once per loader: its landing answers it, whichever of its
+			// calls were reached.
+			bool waiting = false;
+			for (uint32_t i = 0; i < l->waits.len && !waiting; i++) waiting = l->waits.data[i].w == w;
+			if (!waiting) {
+				w->rc++;
+				w->left++;
+				ak_vec_push(&l->waits, ((loader_wait){w, l->runs + 1}));
+			}
+			ak_signal_write(&s->again);
 		}
 	}
 	ak_batch_end();

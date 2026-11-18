@@ -776,4 +776,276 @@ TEST(a_registered_load_allocates_its_entry_once) {
 	keyed_free(&k);
 }
 
+// ---- Grouped loads (RFC 0017) ----
+
+// A group of two calls: each its own cell (what its arguments read), its
+// own runs; combine makes their answers one value, a * 100 + b.
+static void *gid[2];
+static ak_future *gruns[2][16];
+static int ngruns[2];
+static int combines;
+
+static ak_val group_thunk(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(a), AK_UNUSED(n);
+	int i = (int)(intptr_t)c->fn;
+	ak_val arg = ak_vm_cell_get(gid[i], true);
+	ak_str *kinds = ak_str_c("1");
+	ak_ui_load_key(20 + i, kinds, &arg, 1);  // keys 20 and 21: two functions
+	ak_release(kinds);
+	ak_future *f = ak_future_new(AK_K_INT);
+	gruns[i][ngruns[i]++] = ak_retain(f);
+	return (ak_val){.p = f};
+}
+
+static ak_val combine2(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(n);
+	combines++;
+	return (ak_val){.i = a[0].i * 100 + a[1].i};
+}
+
+static bool group_busy = true;  // a binding reads .loading
+
+static ak_val group_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_closure *t[2] = {fn(group_thunk, (void *)(intptr_t)0), fn(group_thunk, (void *)(intptr_t)1)};
+	ak_closure *comb = fn(combine2, NULL);
+	loader = ak_ui_load_group(comb, AK_K_INT, t, 2);
+	ak_release(t[0]), ak_release(t[1]), ak_release(comb);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	ak_closure *sel = fn(state_of, NULL), *build = fn(case_view, NULL);
+	add(col, ak_ui_switch(sel, build));
+	ak_release(sel), ak_release(build);
+	if (group_busy) {
+		ak_view *busy = ak_ui_new(AK_EL_TEXT);
+		bind(busy, AK_KEY_TEXT_TEXT, busy_text, NULL);
+		add(col, busy);
+	}
+	ak_view *val = ak_ui_new(AK_EL_TEXT);
+	bind(val, AK_KEY_TEXT_TEXT, value_text, NULL);
+	add(col, val);
+	return (ak_val){.p = col};
+}
+
+static ak_uitest *group_start(void) {
+	state_reads = busy_reads = value_reads = builds = combines = 0;
+	ngruns[0] = ngruns[1] = 0;
+	gid[0] = cell_int(1);
+	gid[1] = cell_int(2);
+	ak_uitest *a = mount(group_app, NULL);
+	ak_uitest_settle(a);
+	return a;
+}
+
+static void ganswer(ak_uitest *a, int slot, int64_t v) {
+	ak_future_resolve(gruns[slot][ngruns[slot] - 1], (ak_val){.i = v});
+	settle(a);
+}
+
+static void group_finish(ak_uitest *a) {
+	done(a);
+	ak_release(loader.p);
+	for (int i = 0; i < 2; i++) {
+		for (int j = 0; j < ngruns[i]; j++) ak_release(gruns[i][j]);
+		ak_release(gid[i]);
+	}
+}
+
+// Pending until both answered, then both shown in one write; a slow call
+// holds the other's answer, which is shown with its own.
+TEST(a_group_lands_together) {
+	ak_uitest *a = group_start();
+	REQUIRE(ngruns[0] == 1 && ngruns[1] == 1);
+	check_text(root(a), "pending|busy|value -1");
+	ganswer(a, 0, 1);
+	check_text(root(a), "pending|busy|value -1");
+	int values = value_reads, states = state_reads;
+	ganswer(a, 1, 2);
+	check_text(root(a), "ready|idle|value 102");
+	CHECK_EQ_INT(value_reads, values + 1);
+	CHECK_EQ_INT(state_reads, states + 1);
+	// Both again: the first answer is held for the second.
+	ak_ui_load_reload(loader);
+	settle(a);
+	REQUIRE(ngruns[0] == 2 && ngruns[1] == 2);
+	check_text(root(a), "ready|busy|value 102");
+	values = value_reads;
+	ganswer(a, 0, 3);
+	check_text(root(a), "ready|busy|value 102");
+	CHECK_EQ_INT(value_reads, values);
+	ganswer(a, 1, 4);
+	check_text(root(a), "ready|idle|value 304");
+	CHECK_EQ_INT(value_reads, values + 1);
+	CHECK_EQ_INT(builds, 2);
+	group_finish(a);
+}
+
+// A change of what one call reads runs that call alone: the other's
+// answer stays, and what the group shows changes in one write.
+TEST(a_group_runs_in_part) {
+	ak_uitest *a = group_start();
+	ganswer(a, 0, 1);
+	ganswer(a, 1, 2);
+	int values = value_reads, c0 = combines;
+	write_i(gid[1], 5);
+	settle(a);
+	CHECK_EQ_INT(ngruns[0], 1);
+	CHECK_EQ_INT(ngruns[1], 2);
+	check_text(root(a), "ready|busy|value 102");
+	ganswer(a, 1, 5);
+	check_text(root(a), "ready|idle|value 105");
+	CHECK_EQ_INT(value_reads, values + 1);
+	CHECK_EQ_INT(combines, c0 + 1);
+	// An answer equal to the last makes nothing: no tuple, no write.
+	write_i(gid[1], 6);
+	settle(a);
+	ganswer(a, 1, 5);
+	CHECK_EQ_INT(combines, c0 + 1);
+	CHECK_EQ_INT(value_reads, values + 1);
+	group_finish(a);
+}
+
+// One call failing fails the group, the first in source order, its
+// value kept; once it answers, it's ready again.
+TEST(a_group_fails_with_its_first_error) {
+	ak_uitest *a = group_start();
+	ganswer(a, 0, 1);
+	ganswer(a, 1, 2);
+	ak_ui_load_reload(loader);
+	settle(a);
+	ak_future_reject(gruns[1][1], error_of("posts"));
+	settle(a);
+	ak_future_reject(gruns[0][1], error_of("user"));
+	settle(a);
+	check_text(root(a), "failed|idle|value 102");
+	ak_val e = ak_ui_load_error(loader);
+	CHECK_EQ_STR(ak_error_message(e.p)->data, "user");
+	ak_release(e.p);
+	// Only the first call again: the second's failure still stands.
+	write_i(gid[0], 7);
+	settle(a);
+	ganswer(a, 0, 7);
+	check_text(root(a), "failed|idle|value 702");
+	e = ak_ui_load_error(loader);
+	CHECK_EQ_STR(ak_error_message(e.p)->data, "posts");
+	ak_release(e.p);
+	write_i(gid[1], 8);
+	settle(a);
+	ganswer(a, 1, 8);
+	check_text(root(a), "ready|idle|value 708");
+	group_finish(a);
+}
+
+// A group that fails before every call answered once is failed, with no
+// value; it's pending no more.
+TEST(a_group_fails_before_its_first_answer) {
+	ak_uitest *a = group_start();
+	ganswer(a, 0, 1);
+	ak_future_reject(gruns[1][0], error_of("posts"));
+	settle(a);
+	check_text(root(a), "failed|idle|value -1");
+	ak_ui_load_reload(loader);
+	settle(a);
+	ganswer(a, 0, 1);
+	ganswer(a, 1, 2);
+	check_text(root(a), "ready|idle|value 102");
+	group_finish(a);
+}
+
+// reload of one call's function runs that call only; its future answers
+// as the group lands.
+TEST(reload_reaches_a_group_by_one_call) {
+	ak_uitest *a = group_start();
+	ganswer(a, 0, 1);
+	ganswer(a, 1, 2);
+	ak_str *kinds = ak_str_c("1");
+	ak_val arg = {.i = 2};
+	ak_val f = ak_ui_load_reload_all(21, true, kinds, &arg, 1);
+	settle(a);
+	CHECK_EQ_INT(ngruns[0], 1);
+	CHECK_EQ_INT(ngruns[1], 2);
+	CHECK_EQ_INT(fut_state(f), AK_FUT_PENDING);
+	ganswer(a, 1, 9);
+	check_text(root(a), "ready|idle|value 109");
+	CHECK_EQ_INT(fut_state(f), AK_FUT_DONE);
+	ak_release(f.p);
+	// Both of its calls' functions: one wait, both run.
+	f = ak_ui_load_reload_all(20, false, kinds, NULL, 0);
+	ak_val g = ak_ui_load_reload_all(21, false, kinds, NULL, 0);
+	settle(a);
+	CHECK_EQ_INT(ngruns[0], 2);
+	CHECK_EQ_INT(ngruns[1], 3);
+	ganswer(a, 0, 1);
+	CHECK_EQ_INT(fut_state(f), AK_FUT_PENDING);
+	ganswer(a, 1, 9);
+	CHECK_EQ_INT(fut_state(f), AK_FUT_DONE);
+	CHECK_EQ_INT(fut_state(g), AK_FUT_DONE);
+	ak_release(f.p), ak_release(g.p);
+	ak_release(kinds);
+	group_finish(a);
+}
+
+// A call that answered and waits for a slow sibling for more than 2 s,
+// with nothing reading .loading, is said (long-hold), naming the wait;
+// read, it isn't.
+TEST(a_group_holding_an_answer_says_so) {
+	listen();
+	ak_sched_manual_clock(true);
+	for (int watched = 0; watched < 2; watched++) {
+		ak_diag_reset();
+		said.n = 0;
+		group_busy = watched;
+		ak_uitest *a = group_start();
+		ganswer(a, 0, 1);
+		ganswer(a, 1, 2);
+		write_i(gid[0], 3);
+		write_i(gid[1], 4);
+		settle(a);
+		ganswer(a, 0, 3);
+		ak_sched_advance(1000000000LL);
+		ak_sched_run();
+		CHECK_EQ_INT(said.n, 0);
+		ak_sched_advance(1500000000LL);
+		ak_sched_run();
+		CHECK_EQ_INT(said.n, watched ? 0 : 1);
+		if (!watched) {
+			CHECK_EQ_STR(said.code, "long-hold");
+			CHECK(strstr(said.msg, "has held a call's answer for 2 s, waiting for a call's") != NULL);
+		}
+		ganswer(a, 1, 4);
+		group_finish(a);
+	}
+	group_busy = true;
+	ak_sched_manual_clock(false);
+	unlisten();
+}
+
+// A group's runs, steady, allocate their tickets and futures, the
+// combined value's only when an answer changed (an int here: none).
+TEST(a_group_allocates_its_runs) {
+	ak_uitest *a = group_start();
+	ganswer(a, 0, 1);
+	ganswer(a, 1, 2);
+	int64_t v = 3;
+	for (int i = 0; i < 6; i++) {  // warm: the vectors the runs use grow
+		ak_ui_load_reload(loader);
+		settle(a);
+		ganswer(a, 0, v);
+		ganswer(a, 1, v++);
+	}
+	uint64_t before = ak_alloc_count;
+	ak_ui_load_reload(loader);
+	settle(a);
+	ganswer(a, 0, v);
+	ganswer(a, 1, v++);
+	uint64_t per = ak_alloc_count - before;
+	for (int i = 0; i < 2; i++) {
+		ak_ui_load_reload(loader);
+		settle(a);
+		ganswer(a, 0, v);
+		ganswer(a, 1, v++);
+	}
+	CHECK_EQ_INT(ak_alloc_count - before, 3 * per);
+	group_finish(a);
+}
+
 T_MAIN();

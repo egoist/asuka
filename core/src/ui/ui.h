@@ -223,6 +223,13 @@ void ak_ui_task(ak_closure *c);
 // state. What it shows (the value) is a cell of its own, written only
 // when it changes, compared path by path (rfcs/0013).
 ak_val ak_ui_load(ak_closure *thunk);  // owned
+// ak_ui_load_group makes a loader of several calls (let x = load (f(…),
+// g(…)), RFC 0017): thunks[i] starts call i, each run only when what it
+// read changes (or a reload of it, or of the load); answers are held
+// until no call is running, then shown together: combine(answers…), a
+// value of kind k. Ready once each answered once; failed while one's last
+// run failed (the first), its value kept.
+ak_val ak_ui_load_group(ak_closure *combine, ak_kind k, ak_closure *const *thunks, uint32_t n);  // owned
 int64_t ak_ui_load_state(ak_val loader);
 bool ak_ui_load_loading(ak_val loader);
 ak_val ak_ui_load_value(ak_val loader);  // owned
