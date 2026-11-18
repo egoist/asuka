@@ -1,0 +1,200 @@
+test "a zone by name, in any case, older names kept" {
+  let ny = try zone("America/New_York")
+  expect(ny == .named(name: "America/New_York"))
+  expect(ny.name() == "America/New_York")
+  expect(try zone("america/NEW_york") == ny)
+  expect(try zone("Asia/Calcutta") == .named(name: "Asia/Calcutta"))
+  expect(date(2026, 1, 1, zone: try zone("Asia/Calcutta")).offset == 5 * 3600 + 1800)
+  expect(try zone("utc") == .named(name: "UTC"))
+  expect(try? zone("Mars/Olympus_Mons") == none)
+  expect(try? zone("") == none)
+  let e = try zone("Europe/Pariss").name() catch e { e.message }
+  expect(e == "time: no time zone is named Europe/Pariss in the tz database (2026f): an IANA name, like America/New_York")
+  expect(tzdataVersion() == "2026f")
+}
+
+test "the local zone's name" {
+  expect(Zone.local.name() == "UTC")
+  expect(Zone.utc.name() == "UTC")
+  expect(Zone.fixed(seconds: 3600).name() == none)
+  // One made by hand that the database lacks is UTC.
+  expect(unix(0, zone: .named(name: "Nowhere")).offset == 0)
+}
+
+test "the places' zones" {
+  let names = zones()
+  expect(names.contains("America/New_York"))
+  expect(names.contains("Europe/Amsterdam"))
+  expect(names.contains("UTC"))
+  expect(!names.contains("US/Eastern"))
+  expect(!names.contains("Asia/Calcutta"))
+  expect(names == names.sorted())
+  expect(names.count() > 300)
+  expect(names.all(n => (try? zone(n)) != none))
+}
+
+test "9:00 in New York, converted" {
+  let ny = try zone("America/New_York")
+  let paris = try zone("Europe/Paris")
+  let tokyo = try zone("Asia/Tokyo")
+  // New York is on summer time from March 8, Paris only from March 29:
+  // five hours apart, not six, in between.
+  let m = date(2026, 3, 9, hour: 9, zone: ny)
+  expect(m.rfc3339() == "2026-03-09T09:00:00-04:00")
+  expect(m.inZone(paris).format("HH:mm zzz") == "14:00 CET")
+  expect(date(2026, 3, 30, hour: 9, zone: ny).inZone(paris).format("HH:mm zzz") == "15:00 CEST")
+  expect(date(2026, 1, 9, hour: 9, zone: ny).inZone(paris).format("HH:mm") == "15:00")
+  expect(m.inZone(tokyo).format("EEE HH:mm z") == "Mon 22:00 JST")
+  expect(m.utc().rfc3339() == "2026-03-09T13:00:00Z")
+  expect(m.inZone(paris).instant == m.instant)
+  expect(m.inZone(paris).inZone(ny) == m)
+}
+
+test "daylight saving time, both ways" {
+  let ny = try zone("America/New_York")
+  expect(date(2026, 3, 8, hour: 1, minute: 59, second: 59, zone: ny).rfc3339() == "2026-03-08T01:59:59-05:00")
+  expect(date(2026, 3, 8, hour: 3, zone: ny).rfc3339() == "2026-03-08T03:00:00-04:00")
+  let change = date(2026, 3, 8, hour: 7, zone: .utc)
+  expect(change.inZone(ny).format("HH:mm zzz") == "03:00 EDT")
+  expect(change.add(-1s).inZone(ny).format("HH:mm:ss zzz") == "01:59:59 EST")
+  // Back: 1:00 to 1:59 twice.
+  let back = date(2026, 11, 1, hour: 6, zone: .utc)
+  expect(back.add(-1s).inZone(ny).format("HH:mm:ss zzz") == "01:59:59 EDT")
+  expect(back.inZone(ny).format("HH:mm:ss zzz") == "01:00:00 EST")
+  // The southern hemisphere's summer is across the new year.
+  let sydney = try zone("Australia/Sydney")
+  expect(date(2026, 1, 15, zone: sydney).format("XXX zzz") == "+11:00 AEDT")
+  expect(date(2026, 7, 15, zone: sydney).format("XXX zzz") == "+10:00 AEST")
+  // Half an hour of daylight saving.
+  let howe = try zone("Australia/Lord_Howe")
+  expect(date(2026, 1, 15, zone: howe).offset == 11 * 3600)
+  expect(date(2026, 7, 15, zone: howe).offset == 10 * 3600 + 1800)
+  // A zone's rules change: São Paulo stopped daylight saving in 2019.
+  let sp = try zone("America/Sao_Paulo")
+  expect(date(2018, 12, 1, zone: sp).offset == -2 * 3600)
+  expect(date(2026, 12, 1, zone: sp).offset == -3 * 3600)
+}
+
+test "skipped and repeated wall times" {
+  let ny = try zone("America/New_York")
+  // 2:30 never happens on March 8: as far past 3:00 as it was past 2:00.
+  expect(date(2026, 3, 8, hour: 2, minute: 30, zone: ny).rfc3339() == "2026-03-08T03:30:00-04:00")
+  // 1:30 happens twice on November 1: the first.
+  let first = date(2026, 11, 1, hour: 1, minute: 30, zone: ny)
+  expect(first.rfc3339() == "2026-11-01T01:30:00-04:00")
+  expect(first.add(1h).rfc3339() == "2026-11-01T01:30:00-05:00")
+  // Sydney's clocks go back on April 5: 2:30 twice, the first.
+  let sydney = try zone("Australia/Sydney")
+  expect(date(2026, 4, 5, hour: 2, minute: 30, zone: sydney).rfc3339() == "2026-04-05T02:30:00+11:00")
+  // Havana's go forward at midnight: the day starts at 1:00.
+  let havana = try zone("America/Havana")
+  expect(date(2026, 3, 8, hour: 12, zone: havana).startOfDay().rfc3339() == "2026-03-08T01:00:00-04:00")
+  // Samoa skipped December 30, 2011, a whole day.
+  let apia = try zone("Pacific/Apia")
+  expect(date(2011, 12, 30, hour: 12, zone: apia).rfc3339() == "2011-12-31T12:00:00+14:00")
+  expect(date(2011, 12, 29, hour: 12, zone: apia).addDate(days: 1).format("yyyy-MM-dd HH:mm XXX") == "2011-12-31T12:00 +14:00".replace("T", " "))
+}
+
+test "calendar arithmetic across daylight saving" {
+  let ny = try zone("America/New_York")
+  let noon = date(2026, 3, 7, hour: 12, zone: ny)
+  let next = noon.addDate(days: 1)
+  expect(next.rfc3339() == "2026-03-08T12:00:00-04:00")
+  expect(next.sub(noon) == 23h)
+  expect(noon.add(24h).format("HH:mm") == "13:00")
+  expect(noon.addDate(months: 8).rfc3339() == "2026-11-07T12:00:00-05:00")
+  expect(date(2026, 11, 1, hour: 12, zone: ny).sub(date(2026, 10, 31, hour: 12, zone: ny)) == 25h)
+  expect(next.sameDay(date(2026, 3, 8, hour: 23, minute: 59, zone: ny)))
+  expect(next.startOfDay().rfc3339() == "2026-03-08T00:00:00-05:00")
+  expect(next.truncate(1h).format("HH:mm") == "12:00")
+}
+
+test "far past and future" {
+  let ny = try zone("America/New_York")
+  // Before 1883's standard time, local mean time: 4:56:02 behind.
+  let old = date(1800, 1, 1, zone: ny)
+  expect(old.offset == -(4 * 3600 + 56 * 60 + 2))
+  expect(old.format("yyyy-MM-dd HH:mm:ss zzz") == "1800-01-01 00:00:00 LMT")
+  expect(old.utc().format("HH:mm:ss") == "04:56:02")
+  // After the database's last transition, its rule: still summer
+  expect(date(2200, 7, 1, zone: ny).format("XXX zzz") == "-04:00 EDT")
+  expect(date(2261, 12, 31, zone: ny).format("XXX zzz") == "-05:00 EST")
+  expect(date(1700, 6, 1, zone: try zone("Europe/London")).offset == -75)
+  let kolkata = try zone("Asia/Kolkata")
+  expect(date(2250, 1, 1, zone: kolkata).format("XXX z") == "+05:30 IST")
+}
+
+test "zones in formats" {
+  let ny = try zone("America/New_York")
+  let t = date(2026, 7, 4, hour: 9, minute: 5, zone: ny)
+  expect(t.format("z zzz zzzz O OOOO") == "EDT EDT GMT-04:00 GMT-4 GMT-04:00")
+  expect(t.format("VV / VVV") == "America/New_York / New York")
+  expect(t.utc().format("z VV") == "UTC UTC")
+  expect(t.inZone(.fixed(seconds: 19800)).format("z VV O") == "GMT+5:30 +05:30 GMT+5:30")
+  // Where the database has no abbreviation that's a name, GMT's form.
+  expect(t.inZone(try zone("Asia/Dubai")).format("z") == "GMT+4")
+  expect(t.inZone(try zone("Asia/Kathmandu")).format("XXX zzzz") == "+05:45 GMT+05:45")
+  expect(t.local().format("z VV") == "UTC UTC")
+}
+
+test "parsing a time with its zone" {
+  let t = try parse("2026-03-07T15:04:05+01:00[Europe/Paris]")
+  expect(t.zone == .named(name: "Europe/Paris"))
+  expect(t.format("HH:mm zzz") == "15:04 CET")
+  let s = t.format("yyyy-MM-dd'T'HH:mm:ssXXX'['VV']'")
+  expect(s == "2026-03-07T15:04:05+01:00[Europe/Paris]")
+  expect(try parse(s) == t)
+  expect(try parse("2026-07-07T15:04:05+02:00[!europe/paris]").zone == .named(name: "Europe/Paris"))
+  expect(try parse("2026-07-07T15:04:05+02:00[+02:00]").zone == .fixed(seconds: 7200))
+  expect(try parse("2026-07-07T15:04:05Z[u-ca=gregory]").zone == .utc)
+  let bad = ["2026-03-07T15:04:05+02:00[Europe/Paris]", "2026-03-07T15:04:05+01:00[Mars/Base]", "2026-03-07T15:04:05Z[!u-ca=hebrew]", "2026-03-07T15:04:05Z[UTC", "2026-03-07T15:04:05Z[+01:00]", "2026-03-07T15:04:05Z[u-ca=x][UTC]"]
+  var why: [string] = []
+  for b in bad {
+    why.push(try parse(b).rfc3339() catch e { e.message })
+  }
+  expect(why[0] == "time: 2026-03-07T15:04:05+02:00[Europe/Paris]'s offset isn't Europe/Paris's then (+01:00)")
+  expect(why[1] == "time: 2026-03-07T15:04:05+01:00[Mars/Base] names a time zone the tz database (2026f) doesn't have: Mars/Base")
+  expect(why[2] == "time: 2026-03-07T15:04:05Z[!u-ca=hebrew] has a critical annotation it doesn't know ([!u-ca=hebrew])")
+  expect(why[3] == "time: 2026-03-07T15:04:05Z[UTC has text after its time that isn't an annotation ([Europe/Paris])")
+  expect(why[4] == "time: 2026-03-07T15:04:05Z[+01:00]'s annotation +01:00 isn't its offset")
+  expect(why[5] == "time: 2026-03-07T15:04:05Z[u-ca=x][UTC] has a time zone annotation that isn't its first")
+}
+
+test "durations from text" {
+  expect(try parseDuration("1h30m") == 90min)
+  expect(try parseDuration("250ms") == 250ms)
+  expect(try parseDuration("2.5s") == 2500ms)
+  expect(try parseDuration("-1m30s") == -90s)
+  expect(try parseDuration("+1.5h") == 90min)
+  expect(try parseDuration(".5s") == 500ms)
+  expect(try parseDuration("1.s") == 1s)
+  expect(try parseDuration("1h0m0.5s") == 1h + 500ms)
+  expect(try parseDuration("2min") == 2min)
+  expect(try parseDuration("3us") == 3us)
+  expect(try parseDuration("3µs") == 3us)
+  expect(try parseDuration("3μs") == 3us)
+  expect(try parseDuration("10ns") == 10ns)
+  expect(try parseDuration("0") == 0ns)
+  expect(try parseDuration("-0") == 0ns)
+  expect(try parseDuration("0.000000001s") == 1ns)
+  expect(try parseDuration("1.0000000019s") == 1s + 1ns)
+  expect(try parseDuration("9223372036854775807ns").nanoseconds() == 9223372036854775807)
+  expect(try parseDuration("-9223372036854775808ns").nanoseconds() == -9223372036854775807 - 1)
+  expect(try parseDuration("2562047h47m16.854775807s").nanoseconds() == 9223372036854775807)
+  let bad = ["", "1", "1x", "h", "1h-1m", "1..5s", ".s", "-", "9223372036854775808ns", "2562048h", "1 h"]
+  var why: [string] = []
+  for b in bad {
+    why.push(try "{parseDuration(b)}" catch e { e.message })
+  }
+  expect(why[0] == "time:  isn't a duration (1h30m, 250ms, 2.5s, -1m)")
+  expect(why[1] == "time: 1 isn't a duration: it has no unit (1h, 30m, 2.5s, 250ms)")
+  expect(why[2] == "time: 1x isn't a duration: its unit x isn't one of h, m (or min), s, ms, us (or µs) and ns")
+  expect(why[3] == "time: h isn't a duration (1h30m, 250ms, 2.5s, -1m)")
+  expect(why[4] == "time: 1h-1m isn't a duration: its unit h- isn't one of h, m (or min), s, ms, us (or µs) and ns")
+  expect(why[5] == "time: 1..5s isn't a duration: it has no unit (1h, 30m, 2.5s, 250ms)")
+  expect(why[6] == "time: .s isn't a duration (1h30m, 250ms, 2.5s, -1m)")
+  expect(why[7] == "time: - isn't a duration (1h30m, 250ms, 2.5s, -1m)")
+  expect(why[8] == "time: 9223372036854775808ns isn't a duration: it's longer than a Duration holds (about 292 years)")
+  expect(why[9] == why[8].replace("9223372036854775808ns", "2562048h"))
+  expect(why[10] == "time: 1 h isn't a duration: its unit  h isn't one of h, m (or min), s, ms, us (or µs) and ns")
+}

@@ -11,6 +11,7 @@ import { wasi } from "./wasi.js";
 import { Pool } from "./spawn.js";
 import { Workers } from "./workers.js";
 import { stackRoom } from "./stack.js";
+import { zoneName } from "./zone.js";
 
 /**
  * startCore loads the core into the page and connects it to host. Options: wasm (the
@@ -57,6 +58,9 @@ export async function startCore(host, options = {}) {
       // The zone's offset from UTC at a time (Unix seconds), in seconds east:
       // dates, and std/time's local zone.
       zone_offset: (s) => -new Date(s * 1000).getTimezoneOffset() * 60,
+      // The zone's IANA name (std/time's Zone.local.name()), written at p:
+      // its length; 0 when there's none or it doesn't fit cap bytes.
+      zone_name: (p, cap) => zoneName(memory(), p, cap),
       // Whether the engine's stack has room for the core to go deeper (stack.js).
       stack_room: stackRoom(),
       // spawn's jobs (core/src/abi/web.c): its bytes copied out, for a worker.

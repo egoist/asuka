@@ -1,0 +1,130 @@
+// std/time's named zones (the tz database the core carries): converting,
+// daylight saving both ways, wall times skipped and repeated, far dates,
+// formats, RFC 9557's annotations; and durations read from text.
+
+import std/time
+
+test "converting between zones" {
+  let ny = try time.zone("America/New_York")
+  let meeting = time.date(2026, 3, 9, hour: 9, zone: ny)
+  print(meeting.rfc3339())
+  for name in ["Europe/Paris", "Asia/Tokyo", "Australia/Sydney", "Asia/Kolkata", "UTC"] {
+    let t = meeting.inZone(try time.zone(name))
+    print("{name}: {t.format("EEE HH:mm zzz XXX")}")
+  }
+  print(meeting.inZone(.fixed(seconds: 3600)).format("HH:mm z VV"))
+  print(time.Zone.local.name() ?? "none")
+  print(try time.zone("asia/calcutta"))
+  print(time.tzdataVersion())
+}
+
+test "daylight saving time" {
+  let ny = try time.zone("America/New_York")
+  let spring = time.date(2026, 3, 8, hour: 7, zone: .utc)
+  print(spring.add(-1s).inZone(ny).format("yyyy-MM-dd HH:mm:ss zzz"))
+  print(spring.inZone(ny).format("yyyy-MM-dd HH:mm:ss zzz"))
+  print(time.date(2026, 3, 8, hour: 2, minute: 30, zone: ny).rfc3339())
+  let twice = time.date(2026, 11, 1, hour: 1, minute: 30, zone: ny)
+  print(twice.rfc3339())
+  print(twice.add(1h).rfc3339())
+  let noon = time.date(2026, 3, 7, hour: 12, zone: ny)
+  print(noon.addDate(days: 1).sub(noon))
+  print(noon.addDate(days: 1).rfc3339())
+  let sydney = try time.zone("Australia/Sydney")
+  print(time.date(2026, 1, 15, zone: sydney).format("XXX zzz"))
+  print(time.date(2026, 7, 15, zone: sydney).format("XXX zzz"))
+  print(time.date(2011, 12, 30, hour: 12, zone: try time.zone("Pacific/Apia")).rfc3339())
+}
+
+test "far past and future" {
+  let ny = try time.zone("America/New_York")
+  let old = time.date(1800, 1, 1, zone: ny)
+  print("{old.offset} {old.format("zzz")} {old.utc().rfc3339()}")
+  print(time.date(2200, 7, 1, zone: ny).format("yyyy XXX zzz"))
+  print(time.date(2261, 12, 31, zone: try time.zone("Europe/Dublin")).format("yyyy XXX zzz"))
+}
+
+test "unknown names" {
+  print(try? time.zone("Mars/Olympus_Mons") == none)
+  do {
+    let z = try time.zone("Europe/Pariss")
+    print(z)
+  } catch e {
+    print(e.message)
+  }
+  print(time.zones().count() > 300)
+  print(time.zones().prefix(3))
+}
+
+test "parsing with a zone" {
+  let t = try time.parse("2026-07-14T21:00:00+02:00[Europe/Paris]")
+  print(t.zone)
+  print(t.format("yyyy-MM-dd'T'HH:mm:ssXXX'['VV']'"))
+  for bad in ["2026-07-14T21:00:00+01:00[Europe/Paris]", "2026-07-14T21:00:00Z[!u-ca=hebrew]"] {
+    do {
+      let x = try time.parse(bad)
+      print(x.rfc3339())
+    } catch e {
+      print(e.message)
+    }
+  }
+}
+
+test "durations from text" {
+  for s in ["1h30m", "250ms", "2.5s", "-1m30s", "2min", "0", "1x", "1", "9223372036854775808ns"] {
+    do {
+      let d = try time.parseDuration(s)
+      print("{s}: {d.nanoseconds()}")
+    } catch e {
+      print(e.message)
+    }
+  }
+}
+
+// Output:
+// 2026-03-09T09:00:00-04:00
+// Europe/Paris: Mon 14:00 CET +01:00
+// Asia/Tokyo: Mon 22:00 JST +09:00
+// Australia/Sydney: Tue 00:00 AEDT +11:00
+// Asia/Kolkata: Mon 18:30 IST +05:30
+// UTC: Mon 13:00 UTC Z
+// 14:00 GMT+1 +01:00
+// UTC
+// {"named":["Asia/Calcutta"]}
+// 2026f
+// ok converting between zones
+// 2026-03-08 01:59:59 EST
+// 2026-03-08 03:00:00 EDT
+// 2026-03-08T03:30:00-04:00
+// 2026-11-01T01:30:00-04:00
+// 2026-11-01T01:30:00-05:00
+// 82800000ms
+// 2026-03-08T12:00:00-04:00
+// +11:00 AEDT
+// +10:00 AEST
+// 2011-12-31T12:00:00+14:00
+// ok daylight saving time
+// -17762 LMT 1800-01-01T04:56:02Z
+// 2200 -04:00 EDT
+// 2261 Z GMT
+// ok far past and future
+// true
+// time: no time zone is named Europe/Pariss in the tz database (2026f): an IANA name, like America/New_York
+// true
+// ["Africa/Abidjan","Africa/Accra","Africa/Addis_Ababa"]
+// ok unknown names
+// {"named":["Europe/Paris"]}
+// 2026-07-14T21:00:00+02:00[Europe/Paris]
+// time: 2026-07-14T21:00:00+01:00[Europe/Paris]'s offset isn't Europe/Paris's then (+02:00)
+// time: 2026-07-14T21:00:00Z[!u-ca=hebrew] has a critical annotation it doesn't know ([!u-ca=hebrew])
+// ok parsing with a zone
+// 1h30m: 5400000000000
+// 250ms: 250000000
+// 2.5s: 2500000000
+// -1m30s: -90000000000
+// 2min: 120000000000
+// 0: 0
+// time: 1x isn't a duration: its unit x isn't one of h, m (or min), s, ms, us (or µs) and ns
+// time: 1 isn't a duration: it has no unit (1h, 30m, 2.5s, 250ms)
+// time: 9223372036854775808ns isn't a duration: it's longer than a Duration holds (about 292 years)
+// ok durations from text

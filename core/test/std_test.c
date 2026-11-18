@@ -120,7 +120,7 @@ TEST(time_parse) {
 	}
 	ak_val r = call("time.parseRFC3339", (ak_val[]){S("1970-01-01T01:00:00.5+01:00")}, 1, 1);
 	ak_arr *a = r.p;
-	REQUIRE(a && a->len == 2);
+	REQUIRE(a && a->len == 4);  // and where its zone annotation is: none
 	CHECK_EQ_INT(a->data[0].i, 500000000);
 	CHECK_EQ_INT(a->data[1].i, 3600);
 	ak_release(a);
