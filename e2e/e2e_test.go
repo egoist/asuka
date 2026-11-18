@@ -533,6 +533,25 @@ func (s *androidScreen) crashLog() string {
 	if out, _ := s.adb("logcat", "-d", "-t", "400", "*:W"); strings.TrimSpace(out) != "" {
 		b.WriteString("\nthe last warnings and errors:\n" + lastLines(out, 120))
 	}
+	// What the system and the app said of the app at any level: its
+	// process started and died, its activity finished, the host's own
+	// lines (asuka), and whatever its process logged.
+	if out, _ := s.adb("logcat", "-d", "-t", "4000"); strings.TrimSpace(out) != "" {
+		pids := map[string]bool{}
+		for _, m := range regexp.MustCompile(`Start proc (\d+):`+regexp.QuoteMeta(s.pkg)).FindAllStringSubmatch(out, -1) {
+			pids[m[1]] = true
+		}
+		var kept []string
+		for _, l := range strings.Split(out, "\n") {
+			f := strings.Fields(l)
+			own := len(f) > 2 && pids[f[2]]
+			if own || strings.Contains(l, s.pkg) || strings.Contains(l, " asuka") || strings.Contains(l, " Asuka") ||
+				strings.Contains(l, "ActivityTaskManager") || strings.Contains(l, "ActivityManager") {
+				kept = append(kept, l)
+			}
+		}
+		b.WriteString("\nthe app's lines and the system's of it:\n" + lastLines(strings.Join(kept, "\n"), 200))
+	}
 	return b.String()
 }
 
