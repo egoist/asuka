@@ -597,4 +597,183 @@ TEST(an_answer_without_layers_allocates_nothing_more) {
 	finish(a);
 }
 
+// ---- reload f(…) (RFC 0017) ----
+
+// A keyed load: its thunk says its key and its argument (id's value), as
+// a load of a named function's call does (load.key).
+typedef struct {
+	int64_t key;
+	void *id;              // an int cell
+	ak_val loader;
+	ak_future *runs[8];
+	int nruns;
+} keyed;
+
+static ak_val keyed_thunk(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(a), AK_UNUSED(n);
+	keyed *k = (keyed *)c->fn;
+	ak_val arg = ak_vm_cell_get(k->id, true);
+	ak_str *kinds = ak_str_c("1");
+	ak_ui_load_key(k->key, kinds, &arg, 1);
+	ak_release(kinds);
+	ak_future *f = ak_future_new(AK_K_INT);
+	k->runs[k->nruns++] = ak_retain(f);
+	return (ak_val){.p = f};
+}
+
+static void keyed_make(void *ctx, ak_owner *root) {
+	AK_UNUSED(root);
+	keyed **ks = ctx;
+	for (keyed **k = ks; *k; k++) {
+		ak_closure *t = fn(keyed_thunk, *k);
+		(*k)->loader = ak_ui_load(t);
+		ak_release(t);
+	}
+}
+
+static void keyed_init(keyed *k, int64_t key, int64_t id) {
+	memset(k, 0, sizeof *k);
+	k->key = key;
+	k->id = cell_int(id);
+}
+
+static void keyed_free(keyed *k) {
+	ak_release(k->loader.p);
+	for (int i = 0; i < k->nruns; i++) ak_release(k->runs[i]);
+	ak_release(k->id);
+}
+
+static void run_all(void) {
+	ak_ui_flush();
+	ak_sched_run();
+	ak_ui_flush();
+}
+
+static ak_val reload_of(int64_t key, const int64_t *arg) {
+	ak_str *kinds = ak_str_c(arg ? "1" : "");
+	ak_val a = {.i = arg ? *arg : 0};
+	ak_val f = ak_ui_load_reload_all(key, arg != NULL, kinds, &a, arg ? 1 : 0);
+	ak_release(kinds);
+	return f;
+}
+
+static int fut_state(ak_val f) { return ((ak_future *)f.p)->state; }
+
+// reload reaches the loads of its key in every root, those with equal
+// arguments when it gives them; its future answers once each has (a
+// load that goes meanwhile counts), and a reload that reaches none
+// answers at once.
+TEST(reload_reaches_every_root) {
+	setup();
+	keyed a1, a2, b1, b2;
+	keyed_init(&a1, 7, 1), keyed_init(&a2, 7, 2), keyed_init(&b1, 7, 1), keyed_init(&b2, 8, 1);
+	keyed *in_a[] = {&a1, &a2, NULL}, *in_b[] = {&b1, &b2, NULL};
+	uint32_t before = ak_ui_load_registered();
+	ak_owner *ra = ak_root(keyed_make, in_a), *rb = ak_root(keyed_make, in_b);
+	run_all();
+	REQUIRE(a1.nruns == 1 && a2.nruns == 1 && b1.nruns == 1 && b2.nruns == 1);
+	CHECK_EQ_INT(ak_ui_load_registered(), before + 4);
+	for (keyed **k = (keyed *[]){&a1, &a2, &b1, &b2, NULL}; *k; k++) ak_future_resolve((*k)->runs[0], (ak_val){.i = 1});
+	run_all();
+
+	// Equal arguments: a1 and b1, not a2 (2), not b2 (another key).
+	int64_t one = 1;
+	ak_val f = reload_of(7, &one);
+	run_all();
+	CHECK_EQ_INT(a1.nruns, 2);
+	CHECK_EQ_INT(b1.nruns, 2);
+	CHECK_EQ_INT(a2.nruns, 1);
+	CHECK_EQ_INT(b2.nruns, 1);
+	CHECK(ak_ui_load_loading(a1.loader) && ak_ui_load_loading(b1.loader));
+	CHECK_EQ_INT(fut_state(f), AK_FUT_PENDING);
+	ak_future_resolve(a1.runs[1], (ak_val){.i = 2});
+	run_all();
+	CHECK_EQ_INT(fut_state(f), AK_FUT_PENDING);
+	// b1's root goes: what waited for it counts it answered.
+	ak_owner_dispose(rb);
+	run_all();
+	CHECK_EQ_INT(fut_state(f), AK_FUT_DONE);
+	CHECK_EQ_INT(ak_ui_load_registered(), before + 2);
+	ak_release(f.p);
+
+	// No arguments: every load of the key, whatever its arguments.
+	f = reload_of(7, NULL);
+	run_all();
+	CHECK_EQ_INT(a1.nruns, 3);
+	CHECK_EQ_INT(a2.nruns, 2);
+	ak_future_resolve(a2.runs[1], (ak_val){.i = 3});
+	ak_future_reject(a1.runs[2], error_of("offline"));  // a failure is an answer
+	run_all();
+	CHECK_EQ_INT(fut_state(f), AK_FUT_DONE);
+	CHECK_EQ_INT(ak_ui_load_state(a1.loader), 2);
+	ak_release(f.p);
+
+	// An argument that changed is what's compared: a2 is 5 now.
+	write_i(a2.id, 5);
+	run_all();
+	ak_future_resolve(a2.runs[2], (ak_val){.i = 5});
+	int64_t two = 2, five = 5;
+	f = reload_of(7, &two);
+	CHECK_EQ_INT(fut_state(f), AK_FUT_DONE);  // none has 2
+	ak_release(f.p);
+	f = reload_of(7, &five);
+	run_all();
+	CHECK_EQ_INT(a2.nruns, 4);
+	// A later run, started before it answers, answers it too.
+	write_i(a2.id, 6);
+	run_all();
+	CHECK_EQ_INT(a2.nruns, 5);
+	ak_future_resolve(a2.runs[4], (ak_val){.i = 6});
+	run_all();
+	CHECK_EQ_INT(fut_state(f), AK_FUT_DONE);
+	ak_release(f.p);
+
+	// A key no load has answers at once.
+	f = reload_of(9, NULL);
+	CHECK_EQ_INT(fut_state(f), AK_FUT_DONE);
+	ak_release(f.p);
+
+	ak_owner_dispose(ra);
+	CHECK_EQ_INT(ak_ui_load_registered(), before);
+	ak_sched_run();
+	for (keyed **k = (keyed *[]){&a1, &a2, &b1, &b2, NULL}; *k; k++) keyed_free(*k);
+}
+
+// A registered load's runs allocate no more than an unregistered one's:
+// its entry and its arguments' array are made with its first run.
+TEST(a_registered_load_allocates_its_entry_once) {
+	setup();
+	keyed k;
+	keyed_init(&k, 11, 1);
+	keyed *ks[] = {&k, NULL};
+	ak_owner *r = ak_root(keyed_make, ks);
+	run_all();
+	int64_t v = 1;
+	ak_future_resolve(k.runs[0], (ak_val){.i = v++});
+	for (int i = 0; i < 2; i++) {  // warm
+		ak_ui_load_reload(k.loader);
+		run_all();
+		ak_future_resolve(k.runs[k.nruns - 1], (ak_val){.i = v++});
+		run_all();
+	}
+	uint64_t before = ak_alloc_count;
+	ak_ui_load_reload(k.loader);
+	run_all();
+	ak_future_resolve(k.runs[k.nruns - 1], (ak_val){.i = v++});
+	run_all();
+	uint64_t per_run = ak_alloc_count - before;
+	for (int i = 0; i < 2; i++) {
+		ak_ui_load_reload(k.loader);
+		run_all();
+		ak_future_resolve(k.runs[k.nruns - 1], (ak_val){.i = v++});
+		run_all();
+	}
+	CHECK_EQ_INT(ak_alloc_count - before, 3 * per_run);
+	// The future, the test's reference, the ticket, the future's waiter.
+	CHECK(per_run <= 4);
+	ak_owner_dispose(r);
+	ak_sched_run();
+	keyed_free(&k);
+}
+
 T_MAIN();

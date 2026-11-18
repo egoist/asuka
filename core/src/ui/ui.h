@@ -238,6 +238,16 @@ ak_val ak_ui_load_shown(ak_val loader);  // owned
 // (optimistic-not-ready). f's throw is the caller's: no layer is made.
 void ak_ui_load_optimistic(ak_val loader, ak_closure *f);
 uint32_t ak_ui_load_layers(ak_val loader);  // tests
+// ak_ui_load_key, called by a loader's thunk (load.key), says the key of
+// the function its operand calls and its arguments (borrowed; kinds a
+// digit each, ak_kind's): the loader is in that key's list for reload.
+void ak_ui_load_key(int64_t key, const ak_str *kinds, const ak_val *args, uint32_t n);
+// ak_ui_load_reload_all runs again, as ak_ui_load_reload, every live
+// loader of key (with arguments equal to args when given), and returns a
+// future (owned, void) that resolves once each has answered or failed,
+// or gone (RFC 0017's reload f(…)).
+ak_val ak_ui_load_reload_all(int64_t key, bool given, const ak_str *kinds, const ak_val *args, uint32_t n);
+uint32_t ak_ui_load_registered(void);  // tests: the registry's loaders
 
 // Instance paths. A state cell kept across reloads (CELLK) is found by
 // its key (Component.x) and the place of the component instance that

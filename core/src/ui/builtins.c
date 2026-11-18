@@ -43,6 +43,8 @@
 //	load.reload    l: Loader                                          -
 //	load.shown     l: Loader                    an accessor of what it shows (a .ready arm's payload)
 //	load.optimistic l: Loader, f: fn(T) -> T                          - (RFC 0017)
+//	load.key       key: int, kinds: string, args…                     - (the running loader's thunk's)
+//	load.reload_all key: int, given: bool, kinds: string, args…       Task<void>
 //	ui.enter       name: string (the component's)                     -
 //	ui.leave       -                                                  -
 //	ui.focus       v: View                                            -
@@ -254,6 +256,15 @@ static ak_val b_load_optimistic(ak_val *a, uint32_t n) {
 	AK_UNUSED(n);
 	ak_ui_load_optimistic(a[0], a[1].p);
 	return none();
+}
+
+static ak_val b_load_key(ak_val *a, uint32_t n) {
+	ak_ui_load_key(a[0].i, a[1].p, a + 2, n - 2);
+	return none();
+}
+
+static ak_val b_load_reload_all(ak_val *a, uint32_t n) {
+	return ak_ui_load_reload_all(a[0].i, a[1].i != 0, a[2].p, a + 3, n - 3);
 }
 
 static ak_val b_enter(ak_val *a, uint32_t n) {
@@ -509,6 +520,8 @@ void ak_ui_builtins_init(void) {
 		{"load.reload", b_load_reload},
 		{"load.shown", b_load_shown},
 		{"load.optimistic", b_load_optimistic},
+		{"load.key", b_load_key},
+		{"load.reload_all", b_load_reload_all},
 		{"ui.enter", b_enter},
 		{"ui.leave", b_leave},
 		{"ui.focus", b_focus},
