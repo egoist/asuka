@@ -349,6 +349,60 @@ async fn main() throws {
 }
 ```
 
+## 設定ファイルとデータ：TOML と CSV
+
+`std/toml` は、`std/json` が JSON を読むのと同じように設定ファイルを構造体に読み込みます。`toml.decode<Config>(text)` はフィールド名で値を読み（`min-qty` や `min_qty` と書かれたキーも `minQty` に入ります）、ファイルにないオプショナルは `none` になります。`toml.encode(config)` で書き戻し、`toml.parse(text)` はどんなドキュメントも `json.Value` として読みます。ファイルにないフィールドは JSON と同じく空の値（0、`""`、none）になり、構造体のデフォルト値にはなりません。省略されうる設定はオプショナルにするか、デフォルト値で構造体を作っておき、ファイルがあるときだけ読み込みます。間違いがあれば場所を示します：`toml: 2:11: min-qty: expected an integer, not a string`。
+
+`std/csv` は行を読みます。`csv.parse(text)` は `[[string]]` として、`csv.decode<T>(text)` はヘッダー行にもとづいて構造体として読み（セルはフィールドの型で読まれます：int、float、bool、列挙型のケース。オプショナルの空のセルは `none`）、`csv.encode(rows)` はヘッダーとともに書き戻します。メモリーに収まらないほど大きいファイルは、行のストリームから 1 行ずつ読めます：`csv.stream<T>(os.lines())`。次の例は、パイプで渡された売上データを `~/.config/sales/config.toml` の設定に従って集計します。
+
+```toml
+currency = "USD"
+min-qty = 2
+```
+
+```
+item,qty,price
+"Tea, green",2,3.5
+Cake,1,4.25
+```
+
+```asuka check
+import std/csv
+import std/fs
+import std/os
+import std/toml
+
+/// パイプで渡された CSV の売上を集計します。
+struct Config {
+  currency: string = "EUR"
+  /// 個数がこれより少ない行は数えません。
+  minQty: int? = none
+}
+
+struct Sale {
+  item: string
+  qty: int
+  price: float
+}
+
+async fn main() throws {
+  let path = fs.join([fs.home(), ".config", "sales", "config.toml"])
+  var config = Config()
+  if fs.exists(path) {
+    config = try toml.decode<Config>(try await spawn { try fs.readText(path) })
+  }
+  var total = 0.0
+  for await sale in csv.stream<Sale>(os.lines()) {
+    if sale.qty >= (config.minQty ?? 1) {
+      total += sale.price * float(sale.qty)
+    }
+  }
+  print("{total} {config.currency}")
+}
+```
+
+`separator: "\t"` でタブ区切りのデータを読めます。`comment: "#"` はその文字で始まる行を飛ばし、`flexible: true` は行ごとにフィールド数が違ってもよいことにします。
+
 ## 実行
 
 `asuka run` はプログラムの `main` をすぐに実行するので、ビルドを待つ必要がありません。`--` の後ろの引数はプログラムに渡され、プログラムの終了コードでそのまま終了します。

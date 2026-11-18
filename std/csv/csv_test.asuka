@@ -1,0 +1,121 @@
+import std/os
+
+enum Size { small, large }
+
+struct Sale {
+  item: string
+  qty: int
+  price: float
+  paid: bool
+  size: Size
+  note: string?
+  discount: int?
+}
+
+let sales = "item,qty,price,paid,size,note,discount\r\nTea,2,3.5,yes,small,,\r\n\"Cake, chocolate\",1,4.25,false,large,\"said \"\"hi\"\"\",10\r\n"
+
+test "rows as they're written" {
+  let rows = try parse("a,b,c\n1,\"two\nlines\",3\n\n\"x\"\"y\",,\"\"\n")
+  expect(rows == [["a", "b", "c"], ["1", "two\nlines", "3"], ["x\"y", "", ""]])
+  expect(try parse("") == [])
+  expect(try parse("\u{feff}a;b\r\nc;d", separator: ";") == [["a", "b"], ["c", "d"]])
+  expect(try parse("a\tb\n# note\nc\td\n", separator: "\t", comment: "#") == [["a", "b"], ["c", "d"]])
+  expect(try parse("a,  b,   \"c\"", trimLeadingSpace: true) == [["a", "b", "c"]])
+  expect(try parse("a\"b,c\"d\"e", lazyQuotes: true) == [["a\"b", "c\"d\"e"]])
+  expect(try parse("a,b\nc\n", flexible: true) == [["a", "b"], ["c"]])
+  // CRLF inside a quoted field reads as \n, as Go's does.
+  expect(try parse("\"a\r\nb\"\r\n") == [["a\nb"]])
+}
+
+test "mistakes say where" {
+  for (text, want) in [
+    ("a,b\nc\n", "csv: 2:1: a row of 1 fields, not 2 as the first"),
+    ("a,b\"c\n", "csv: 1:4: a bare \" in a field that isn't quoted (quote the field, and double the quote: \"a\"\"b\")"),
+    ("x\n\"a\"b\n", "csv: 2:3: a \" in a quoted field must be doubled (\"a\"\"b\")"),
+    ("x,y\n1,\"open\n", "csv: 2:3: a quoted field that doesn't end"),
+  ] {
+    do {
+      let _ = try parse(text)
+      expect(false)
+    } catch e {
+      expect(e.message == want)
+    }
+  }
+  do {
+    let _ = try parse("a", separator: "\"")
+    expect(false)
+  } catch e {
+    expect(e.message.hasPrefix("csv: a separator is one character"))
+  }
+}
+
+test "structs by the header" {
+  let xs = try decode<Sale>(sales)
+  expect(xs.count() == 2)
+  expect(xs[0] == Sale(item: "Tea", qty: 2, price: 3.5, paid: true, size: .small, note: none, discount: none))
+  expect(xs[1].item == "Cake, chocolate")
+  expect(xs[1].note == "said \"hi\"")
+  expect(xs[1].discount == 10)
+  // Columns in any order, named loosely; others ignored.
+  let ys = try decode<Sale>("Size,Item,QTY,Price,Paid,Extra\nlarge,Pie, 3 ,1e1,1,x\n")
+  expect(ys[0].item == "Pie" && ys[0].qty == 3 && ys[0].price == 10.0 && ys[0].paid && ys[0].size == .large && ys[0].discount == none)
+  // Typed arrays.
+  expect(try decode<[int]>("1,2\n3,4\n") == [[1, 2], [3, 4]])
+}
+
+test "cells that don't fit" {
+  for (text, want) in [
+    ("item,qty,price,paid,size\nTea,two,1,true,small\n", "csv: 2:5: qty: \"two\" isn't an integer"),
+    ("item,qty,price,paid,size\nTea,2,1,maybe,small\n", "csv: 2:9: paid: \"maybe\" isn't true or false"),
+    ("item,qty,price,paid,size\nTea,2,1,true,huge\n", "csv: 2:14: size: \"huge\" isn't a case of Size"),
+    ("item,qty,price,paid\nTea,2,1,true\n", "csv: 1:1: no column size in the header for Sale's field (make the field optional for a column that may be missing)"),
+  ] {
+    do {
+      let _ = try decode<Sale>(text)
+      expect(false)
+    } catch e {
+      expect(e.message == want)
+    }
+  }
+}
+
+test "written" {
+  let xs = try decode<Sale>(sales)
+  let out = try encode(xs)
+  expect(out == "item,qty,price,paid,size,note,discount\nTea,2,3.5,true,small,,\n\"Cake, chocolate\",1,4.25,false,large,\"said \"\"hi\"\"\",10\n")
+  expect(try decode<Sale>(out) == xs)
+  expect(try encode(xs, header: false, crlf: true) == "Tea,2,3.5,true,small,,\r\n\"Cake, chocolate\",1,4.25,false,large,\"said \"\"hi\"\"\",10\r\n")
+  expect(try encode([["a", " b", "c\nd", ""], ["\\."]], separator: "\t") == "a\t\" b\"\t\"c\nd\"\t\n\"\\.\"\n")
+  expect(try encode([[1.5, 2.0]]) == "1.5,2\n")
+}
+
+test "a row at a time" {
+  let o = os.fake(stdin: sales)
+  var got: [Sale] = []
+  for await s in stream<Sale>(os.lines()) {
+    got.push(s)
+  }
+  expect(got == (try decode<Sale>(sales)))
+  var rows: [[string]] = []
+  let lines = Stream<string>(send => {
+    for l in ["a,b", "\"multi", "line\",x", "", "c,d"] {
+      send(l)
+    }
+  })
+  for await r in stream<[string]>(lines) {
+    rows.push(r)
+  }
+  expect(rows == [["a", "b"], ["multi\nline", "x"], ["c", "d"]])
+  let bad = Stream<string>(send => {
+    for l in ["a,b", "c,d,e"] {
+      send(l)
+    }
+  })
+  do {
+    for await _ in stream<[string]>(bad) {}
+    expect(false)
+  } catch e {
+    expect(e.message == "csv: 2:1: a row of 3 fields, not 2 as the first")
+  }
+  expect(o.stdout() == "")
+}

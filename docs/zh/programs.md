@@ -349,6 +349,60 @@ async fn main() throws {
 }
 ```
 
+## 配置文件和数据：TOML 与 CSV
+
+`std/toml` 读取配置文件的方式和 `std/json` 读取 JSON 一样：`toml.decode<Config>(text)` 按字段名把配置读进结构体（写成 `min-qty` 或 `min_qty` 的键都会读进 `minQty`），文件里没有的可选字段为 `none`；`toml.encode(config)` 把它写回去，`toml.parse(text)` 则把任意文档读成 `json.Value`。和 JSON 一样，文件里没写的字段取空值（0、`""`、none），而不是结构体里的默认值：可能缺省的设置就声明为可选类型，或者先用默认值创建结构体，只在文件存在时才去读它。出错时会指出位置：`toml: 2:11: min-qty: expected an integer, not a string`。
+
+`std/csv` 按行读取：`csv.parse(text)` 得到 `[[string]]`，`csv.decode<T>(text)` 按表头一行把每行读进结构体（单元格按字段的类型读取：int、float、bool、枚举的 case；可选字段遇到空单元格为 `none`），`csv.encode(rows)` 再连同表头一起写回去。文件太大、不便整个读进内存时，可以从它各行组成的流里一次读一行：`csv.stream<T>(os.lines())`。下面的例子读取从管道传进来的销售数据，并按 `~/.config/sales/config.toml` 的设置汇总：
+
+```toml
+currency = "USD"
+min-qty = 2
+```
+
+```
+item,qty,price
+"Tea, green",2,3.5
+Cake,1,4.25
+```
+
+```asuka check
+import std/csv
+import std/fs
+import std/os
+import std/toml
+
+/// 汇总从管道传进来的 CSV 销售数据。
+struct Config {
+  currency: string = "EUR"
+  /// 件数少于它的行不计入。
+  minQty: int? = none
+}
+
+struct Sale {
+  item: string
+  qty: int
+  price: float
+}
+
+async fn main() throws {
+  let path = fs.join([fs.home(), ".config", "sales", "config.toml"])
+  var config = Config()
+  if fs.exists(path) {
+    config = try toml.decode<Config>(try await spawn { try fs.readText(path) })
+  }
+  var total = 0.0
+  for await sale in csv.stream<Sale>(os.lines()) {
+    if sale.qty >= (config.minQty ?? 1) {
+      total += sale.price * float(sale.qty)
+    }
+  }
+  print("{total} {config.currency}")
+}
+```
+
+`separator: "\t"` 读取用制表符分隔的数据；`comment: "#"` 跳过以它开头的行；`flexible: true` 允许各行的字段数不同。
+
 ## 运行
 
 `asuka run` 直接运行程序的 `main`，不需要等待构建：`--` 之后的参数都交给程序，退出时带上程序的退出码。

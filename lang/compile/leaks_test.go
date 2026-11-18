@@ -16,7 +16,7 @@ import (
 // reference cycle the checker warns of).
 func TestLeaks(t *testing.T) {
 	files, _ := filepath.Glob("testdata/leaks/*.asuka")
-	files = append(files, "testdata/run/localfns.asuka", "testdata/run/closures.asuka", "testdata/run/exits.asuka", "testdata/run/deepvalues.asuka", "testdata/run/iterate.asuka", "testdata/run/extend.asuka", "testdata/run/paths.asuka", "testdata/run/pathfor.asuka", "testdata/run/pathmethods.asuka", "testdata/run/pathinbox.asuka", "testdata/run/optimistic.asuka", "testdata/run/groups.asuka", "testdata/run/collections.asuka", "testdata/run/alleach.asuka", "testdata/run/jsonvalue.asuka")
+	files = append(files, "testdata/run/localfns.asuka", "testdata/run/closures.asuka", "testdata/run/exits.asuka", "testdata/run/deepvalues.asuka", "testdata/run/iterate.asuka", "testdata/run/extend.asuka", "testdata/run/paths.asuka", "testdata/run/pathfor.asuka", "testdata/run/pathmethods.asuka", "testdata/run/pathinbox.asuka", "testdata/run/optimistic.asuka", "testdata/run/groups.asuka", "testdata/run/collections.asuka", "testdata/run/alleach.asuka", "testdata/run/jsonvalue.asuka", "testdata/run/toml.asuka", "testdata/run/csv.asuka")
 	runner := testRunner(t)
 	for _, path := range files {
 		path := path

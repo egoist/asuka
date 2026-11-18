@@ -1,0 +1,134 @@
+// std/toml: TOML 1.0 read into typed values and written back, on the VM
+// and compiled to C (core/src/std/toml.c; the TOML test suite's cases
+// are core/test/toml_test.c's).
+
+import std/json
+import std/toml
+
+enum Mode { fast, safe }
+
+struct Dep {
+  version: string
+  features: [string]
+  optional: bool
+}
+
+struct Manifest {
+  name: string
+  edition: int
+  mode: Mode
+  released: string
+  ratio: float?
+  deps: [string: Dep]
+  authors: [string]
+  extra: json.Value
+}
+
+let text = r"""
+  name = "demo"
+  edition = 2024
+  mode = "safe"
+  released = 2026-11-19t08:30:00.5z
+  authors = [
+    "Ann",  # trailing comma and comments
+    "Bo",
+  ]
+
+  [deps.serde]
+  version = "1.0"
+  features = ["derive"]
+
+  [deps.tokio]
+  version = "1"
+  optional = true
+
+  [extra]
+  points = [[1, 2], [3.5]]
+  when = 07:30:00
+  """
+
+test "decode" {
+  let m: Manifest = try toml.decode(text)
+  print("{m.name} {m.edition} {m.mode} {m.released} {m.ratio}")
+  for (name, d) in m.deps {
+    print("{name}: {d.version} {d.features} {d.optional}")
+  }
+  print(m.authors)
+  print(m.extra)
+}
+
+test "encode" {
+  let m = try toml.decode<Manifest>(text)
+  print(try toml.encode(m))
+  let again: Manifest = try toml.decode(try toml.encode(m))
+  print(again == m)
+}
+
+test "parse" {
+  let v = try toml.parse("a.b.c = 1\n[x]\ny = [true, 1.0, 'lit', 1979-05-27]\n[[t]]\n[[t]]\nk = 0x10")
+  print(v)
+}
+
+test "errors" {
+  for src in ["a = ", "a = 1\na = 2", "[a]\nb = 1\n[a]", "x = 1979-13-01", "s = \"\\x41\"", "k = 1_", "t = [1, 2", "[[a]]\n[a]", "k = -0x10"] {
+    do {
+      let _ = try toml.parse(src)
+    } catch e {
+      print(e.message)
+    }
+  }
+  do {
+    let _ = try toml.decode<Manifest>("name = \"x\"\nedition = \"2024\"")
+  } catch e {
+    print(e.message)
+  }
+  do {
+    let _ = try toml.decode<Manifest>("mode = \"slow\"")
+  } catch e {
+    print(e.message)
+  }
+}
+
+// Output:
+// demo 2024 safe 2026-11-19T08:30:00.5Z none
+// serde: 1.0 ["derive"] false
+// tokio: 1 [] true
+// ["Ann","Bo"]
+// {"points":[[1,2],[3.5]],"when":"07:30:00"}
+// ok decode
+// name = "demo"
+// edition = 2024
+// mode = "safe"
+// released = "2026-11-19T08:30:00.5Z"
+// authors = ["Ann", "Bo"]
+//
+// [deps.serde]
+// version = "1.0"
+// features = ["derive"]
+// optional = false
+//
+// [deps.tokio]
+// version = "1"
+// features = []
+// optional = true
+//
+// [extra]
+// points = [[1, 2], [3.5]]
+// when = "07:30:00"
+//
+// true
+// ok encode
+// {"a":{"b":{"c":1}},"x":{"y":[true,1,"lit","1979-05-27"]},"t":[{},{"k":16}]}
+// ok parse
+// toml: 1:5: expected a value
+// toml: 2:1: a key defined twice: 'a'
+// toml: 3:1: a table defined twice: [a]
+// toml: 1:5: a date out of range: 1979-13-01
+// toml: 1:6: a bad escape: \x
+// toml: 1:6: an underscore in a number must be between digits
+// toml: 1:5: an array that doesn't end
+// toml: 2:2: 'a' is an array, not a table
+// toml: 1:5: a hexadecimal, octal or binary integer has no sign
+// toml: 2:11: edition: expected an integer, not a string
+// toml: 1:8: mode: not a case: slow
+// ok errors
