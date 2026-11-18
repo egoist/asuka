@@ -1,5 +1,6 @@
 #!/bin/sh
-# Installs the asuka CLI on macOS and Linux from its GitHub release:
+# Installs the asuka CLI on macOS and Linux from its GitHub release, and
+# the libraries it carries prebuilt for this computer:
 #
 #	curl -fsSL https://asuka.egoist.dev/install.sh | sh
 #
@@ -70,6 +71,10 @@ esac
 mkdir -p "$dir"
 install -m 0755 "$exe" "$dir/asuka"
 echo "asuka: installed $dir/asuka ($("$dir/asuka" version))"
+# This computer's prebuilt libraries (its own apps'), checked against the
+# checksums the CLI carries, so the first build doesn't wait for them;
+# if that fails, the first build fetches them.
+"$dir/asuka" prebuilt fetch || echo "asuka: the prebuilt libraries weren't fetched; the first build fetches them" >&2
 case ":$PATH:" in
 *":$dir:"*) ;;
 *) echo "asuka: add $dir to your PATH" ;;

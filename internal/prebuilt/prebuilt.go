@@ -153,6 +153,41 @@ func SwiftModule(target, config, module string) (dir, swift string, ok bool, err
 	return p, m.Packages[f.Package].Swift, true, nil
 }
 
+// Released is whether the CLI carries prebuilt packages: a release's
+// does, one built from a checkout doesn't.
+func Released() bool {
+	m, err := Current()
+	return err == nil && len(m.Packages) > 0
+}
+
+// HostTarget is the package of what this computer builds for itself
+// (goos and goarch: runtime's, darwin and arm64): its desktop apps'
+// libraries, darwin-arm64, linux-x64, windows-arm64.
+func HostTarget(goos, goarch string) string {
+	if goarch == "amd64" {
+		goarch = "x64"
+	}
+	return goos + "-" + goarch
+}
+
+// FetchTarget makes sure target's package (darwin-arm64, ios-arm64:
+// asuka prebuilt targets) is in the cache, as a build would the first
+// time it needs one of its libraries, and returns its directory and
+// package; ok is false when the CLI has none for it (a CLI built from a
+// checkout has none at all).
+func FetchTarget(target string) (dir string, pkg Package, ok bool, err error) {
+	m, err := Current()
+	if err != nil {
+		return "", Package{}, false, err
+	}
+	pkg, ok = m.Packages[target]
+	if !ok {
+		return "", Package{}, false, nil
+	}
+	dir, err = Fetch(pkg)
+	return dir, pkg, err == nil, err
+}
+
 // MavenRepo is the local Maven repository of the Android host's and the
 // std and sdk packages' AARs, fetched first if it isn't there; ok is
 // false when the CLI has none.

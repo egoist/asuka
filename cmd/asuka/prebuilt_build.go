@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -23,15 +24,18 @@ import (
 	"github.com/egoist/asuka/std"
 )
 
-// asuka prebuilt (not in the usage: the release's, scripts/release's)
-// builds what a release carries prebuilt for one of its archives
-// (internal/prebuilt): the C units' static libraries for its targets and
-// both configurations, the Swift modules (the host's variants and the std
-// and sdk packages', with library evolution: an XCFramework each, of the
-// package's slice), or the Android AARs, and prebuilt.json, what's in it:
+// asuka prebuilt (not in the usage: the release's, scripts/release's,
+// and the install scripts') builds what a release carries prebuilt for
+// one of its archives (internal/prebuilt): the C units' static libraries
+// for its targets and both configurations, the Swift modules (the host's
+// variants and the std and sdk packages', with library evolution: an
+// XCFramework each, of the package's slice), or the Android AARs, and
+// prebuilt.json, what's in it; or fetches archives into the cache ahead
+// of a build (scripts/install.sh and install.ps1, asuka upgrade):
 //
 //	asuka prebuilt targets                       the archives' targets
 //	asuka prebuilt build --target name --version v --out dir
+//	asuka prebuilt fetch [target...]             this computer's, or the targets'
 
 // prebuiltTarget is one archive's contents.
 type prebuiltTarget struct {
@@ -77,8 +81,11 @@ func cmdPrebuilt(args []string) error {
 		}
 		return nil
 	}
+	if len(args) > 0 && args[0] == "fetch" {
+		return prebuiltFetch(args[1:])
+	}
 	if len(args) == 0 || args[0] != "build" {
-		return fmt.Errorf("usage: asuka prebuilt targets | build --target name --version v --out dir")
+		return fmt.Errorf("usage: asuka prebuilt targets | build --target name --version v --out dir | fetch [target...]")
 	}
 	var name, version, out string
 	for i := 1; i+1 < len(args); i += 2 {
@@ -121,6 +128,36 @@ func cmdPrebuilt(args []string) error {
 	}
 	b, _ := json.MarshalIndent(c, "", "  ")
 	return os.WriteFile(filepath.Join(out, "prebuilt.json"), append(b, '\n'), 0o644)
+}
+
+// prebuiltFetch is asuka prebuilt fetch: the packages of the targets
+// named, or with none this computer's own (its desktop apps', which the
+// install scripts fetch so the first build doesn't wait for them), put in
+// the cache now, as the first build that needs one would.
+func prebuiltFetch(targets []string) error {
+	host := len(targets) == 0
+	if host {
+		targets = []string{prebuilt.HostTarget(runtime.GOOS, runtime.GOARCH)}
+	}
+	for _, t := range targets {
+		_, pkg, ok, err := prebuilt.FetchTarget(t)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			if !prebuilt.Released() {
+				fmt.Fprintf(os.Stderr, "asuka: this asuka is built from source: it has no prebuilt libraries (builds compile them into the cache)\n")
+				return nil
+			}
+			if host {
+				fmt.Fprintf(os.Stderr, "asuka: this release has no prebuilt libraries for %s\n", t)
+				return nil
+			}
+			return fmt.Errorf("asuka prebuilt fetch: no prebuilt libraries for %q (asuka prebuilt targets)", t)
+		}
+		fmt.Fprintf(os.Stderr, "asuka: %s's prebuilt libraries are in the cache (%s)\n", t, pkg.Asset)
+	}
+	return nil
 }
 
 // buildC builds every unit for t's targets, both configurations, into

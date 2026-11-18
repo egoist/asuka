@@ -37,9 +37,9 @@ curl -fsSL https://asuka.egoist.dev/install.sh | sh
 irm https://asuka.egoist.dev/install.ps1 | iex
 ```
 
-安装脚本会从 GitHub release 下载命令行工具，用 release 中的校验和核对无误后，安装到 `~/.asuka/bin`（Windows 上是 `%LOCALAPPDATA%\Programs\asuka\bin`，脚本会把它加入你的 PATH）。设置 `ASUKA_VERSION=0.3.0` 可以安装指定版本而不是最新版，设置 `ASUKA_INSTALL` 可以换一个安装目录。
+安装脚本会从 GitHub release 下载命令行工具，用 release 中的校验和核对无误后，安装到 `~/.asuka/bin`（Windows 上是 `%LOCALAPPDATA%\Programs\asuka\bin`，脚本会把它加入你的 PATH），然后下载 Asuka 为你这台电脑上的应用预先构建好的库，这样第一次构建就不用再等它们下载。设置 `ASUKA_VERSION=0.3.0` 可以安装指定版本而不是最新版，设置 `ASUKA_INSTALL` 可以换一个安装目录。
 
-`asuka upgrade` 把命令行工具更新到最新的 release（`asuka upgrade 0.3.0` 则更新到这个版本）。asuka 每天会在后台检查一次有没有更新的 release，如果有，就在命令结束时提示你；这个检查从不让命令等待。设置 `ASUKA_NO_UPDATE_CHECK=1` 可以关掉它，在 CI 中它也不会运行。
+`asuka upgrade` 把命令行工具更新到最新的 release（`asuka upgrade 0.3.0` 则更新到这个版本），预先构建好的库也会一并更新。asuka 每天会在后台检查一次有没有更新的 release，如果有，就在命令结束时提示你；这个检查从不让命令等待。设置 `ASUKA_NO_UPDATE_CHECK=1` 可以关掉它，在 CI 中它也不会运行。
 
 ## 创建应用
 

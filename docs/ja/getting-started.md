@@ -37,9 +37,9 @@ Windows では、PowerShell で：
 irm https://asuka.egoist.dev/install.ps1 | iex
 ```
 
-このスクリプトは CLI を GitHub のリリースからダウンロードし、リリースのチェックサムと照合したうえで `~/.asuka/bin` にインストールします（Windows では `%LOCALAPPDATA%\Programs\asuka\bin` にインストールし、PATH に追加します）。`ASUKA_VERSION=0.3.0` を指定すると最新版ではなくそのバージョンを、`ASUKA_INSTALL` を指定すると別のディレクトリにインストールします。
+このスクリプトは CLI を GitHub のリリースからダウンロードし、リリースのチェックサムと照合したうえで `~/.asuka/bin` にインストールします（Windows では `%LOCALAPPDATA%\Programs\asuka\bin` にインストールし、PATH に追加します）。続けて、このコンピューター向けのアプリ用にビルド済みの Asuka のライブラリもダウンロードするので、最初のビルドでそれを待つことはありません。`ASUKA_VERSION=0.3.0` を指定すると最新版ではなくそのバージョンを、`ASUKA_INSTALL` を指定すると別のディレクトリにインストールします。
 
-`asuka upgrade` は CLI を最新のリリースに更新します（`asuka upgrade 0.3.0` ならそのバージョンに）。また asuka は 1 日に 1 回、新しいリリースが出ていないかをバックグラウンドで確認し、出ていればコマンドの終わりにそれを知らせます。この確認のためにコマンドが待たされることはありません。`ASUKA_NO_UPDATE_CHECK=1` で無効にでき、CI では動きません。
+`asuka upgrade` は CLI を最新のリリースに更新します（`asuka upgrade 0.3.0` ならそのバージョンに）。ビルド済みのライブラリも合わせて更新されます。また asuka は 1 日に 1 回、新しいリリースが出ていないかをバックグラウンドで確認し、出ていればコマンドの終わりにそれを知らせます。この確認のためにコマンドが待たされることはありません。`ASUKA_NO_UPDATE_CHECK=1` で無効にでき、CI では動きません。
 
 ## アプリの作成
 

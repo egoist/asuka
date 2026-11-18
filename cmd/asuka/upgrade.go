@@ -78,6 +78,15 @@ func cmdUpgrade(args []string) error {
 		return err
 	}
 	fmt.Printf("asuka: %s is now %s (was %s)\n", exe, target, version)
+	// The new release's libraries for this computer, as the install
+	// scripts fetch them: its builds would otherwise wait for them first.
+	// A failure isn't the upgrade's: a build fetches them when it needs one.
+	fetch := exec.CommandContext(ctx, exe, "prebuilt", "fetch")
+	fetch.Env = append(os.Environ(), "ASUKA_NO_UPDATE_CHECK=1")
+	fetch.Stdout, fetch.Stderr = os.Stdout, os.Stderr
+	if err := fetch.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "asuka: the prebuilt libraries weren't fetched; the first build fetches them")
+	}
 	return nil
 }
 

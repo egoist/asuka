@@ -1,4 +1,5 @@
-# Installs the asuka CLI on Windows from its GitHub release:
+# Installs the asuka CLI on Windows from its GitHub release, and the
+# libraries it carries prebuilt for this computer:
 #
 #	irm https://asuka.egoist.dev/install.ps1 | iex
 #
@@ -82,6 +83,11 @@ function Install-Asuka {
 		Move-Item -Force $exe $dest
 		Remove-Item -Force -ErrorAction SilentlyContinue $old
 		Write-Host "asuka: installed $dest ($(& $dest version))"
+		# This computer's prebuilt libraries (its own apps'), checked
+		# against the checksums the CLI carries, so the first build doesn't
+		# wait for them; if that fails, the first build fetches them.
+		& $dest prebuilt fetch
+		if ($LASTEXITCODE -ne 0) { Write-Host "asuka: the prebuilt libraries weren't fetched; the first build fetches them" }
 	} finally {
 		Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tmp
 	}

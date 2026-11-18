@@ -154,7 +154,7 @@ ASUKA_SCRIPT="tap:Add;tap:Add" ASUKA_SNAPSHOT=shot.png asuka dev    # 先执行�
 
 ## 构建缓存
 
-构建时编译和下载的内容都保存在 Asuka 的缓存中，由这台电脑上的所有应用共享：构建第二个应用，或者小改动之后再构建时，只会编译新的部分。某个平台的第一次构建会下载 Asuka 为该平台预先构建好的库，只下载一次，来源是命令行工具对应的 GitHub release，下载后会用命令行工具自带的校验和核对；代理设置（`HTTPS_PROXY`、`NO_PROXY`）同样生效。要使用镜像，把 `ASUKA_PREBUILT_URL` 设为存放 release 中 `asuka-prebuilt-*.tar.gz` 文件的位置：可以是一个 URL，其中的 `{version}` 会替换成命令行工具的版本（如果设置了 `ASUKA_PREBUILT_TOKEN`，会作为 bearer token 发送给它）；在不联网的电脑上，也可以是你把这些文件复制进去的目录。其中的 Swift 库只能配合构建它们的 Xcode 或更新版本使用；如果你的 Xcode 更旧，它们会改为在你的电脑上编译一次。
+构建时编译和下载的内容都保存在 Asuka 的缓存中，由这台电脑上的所有应用共享：构建第二个应用，或者小改动之后再构建时，只会编译新的部分。某个平台的第一次构建会下载 Asuka 为该平台预先构建好的库，只下载一次，来源是命令行工具对应的 GitHub release，下载后会用命令行工具自带的校验和核对（你这台电脑自己的那份，安装脚本和 `asuka upgrade` 会提前下载好）；代理设置（`HTTPS_PROXY`、`NO_PROXY`）同样生效。要使用镜像，把 `ASUKA_PREBUILT_URL` 设为存放 release 中 `asuka-prebuilt-*.tar.gz` 文件的位置：可以是一个 URL，其中的 `{version}` 会替换成命令行工具的版本（如果设置了 `ASUKA_PREBUILT_TOKEN`，会作为 bearer token 发送给它）；在不联网的电脑上，也可以是你把这些文件复制进去的目录。其中的 Swift 库只能配合构建它们的 Xcode 或更新版本使用；如果你的 Xcode 更旧，它们会改为在你的电脑上编译一次。
 
 - `asuka cache stats` 显示缓存的位置、大小，以及构建时在其中命中所需内容的次数。
 - `asuka cache clean` 清空缓存；之后的构建会重新编译所有内容。

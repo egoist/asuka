@@ -282,3 +282,53 @@ func TestUnpackRefusesEscapes(t *testing.T) {
 		t.Fatal("an archive's file outside it was written")
 	}
 }
+
+func TestHostTarget(t *testing.T) {
+	for _, c := range []struct{ goos, goarch, want string }{
+		{"darwin", "arm64", "darwin-arm64"},
+		{"linux", "amd64", "linux-x64"},
+		{"linux", "arm64", "linux-arm64"},
+		{"windows", "amd64", "windows-x64"},
+		{"windows", "arm64", "windows-arm64"},
+	} {
+		if got := HostTarget(c.goos, c.goarch); got != c.want {
+			t.Errorf("HostTarget(%s, %s) = %s, want %s", c.goos, c.goarch, got, c.want)
+		}
+	}
+}
+
+func TestFetchTarget(t *testing.T) {
+	data := archive(t, map[string]string{"lib/release/libcore.a": lib, "prebuilt.json": "{}"})
+	rel := newRelease(t, data)
+	setup(t, sum(data), sum([]byte(lib)))
+	t.Setenv("ASUKA_PREBUILT_URL", rel.URL+"/download/v{version}")
+
+	dir, pkg, ok, err := FetchTarget("test-arm64")
+	if err != nil || !ok || pkg.Asset != asset {
+		t.Fatalf("FetchTarget: %v, %v, %+v", ok, err, pkg)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "lib", "release", "libcore.a")); string(b) != lib {
+		t.Fatalf("the library is %q", b)
+	}
+	n := rel.requests.Load()
+	// A build then finds it in the cache.
+	if _, ok, err := Archive("test-arm64", "release", "core"); err != nil || !ok {
+		t.Fatalf("Archive: %v, %v", ok, err)
+	}
+	if rel.requests.Load() != n {
+		t.Fatal("the build went to the release")
+	}
+	if _, _, ok, err := FetchTarget("linux-x64"); ok || err != nil {
+		t.Fatalf("a target the manifest hasn't: %v, %v", ok, err)
+	}
+}
+
+func TestFetchTargetDamaged(t *testing.T) {
+	data := archive(t, map[string]string{"lib/release/libcore.a": lib})
+	rel := newRelease(t, data)
+	setup(t, sum([]byte("another archive")), sum([]byte(lib)))
+	t.Setenv("ASUKA_PREBUILT_URL", rel.URL+"/download/v{version}")
+	if _, _, ok, err := FetchTarget("test-arm64"); ok || !errors.Is(err, ErrChecksum) {
+		t.Fatalf("FetchTarget of an archive that isn't the pinned one: %v, %v", ok, err)
+	}
+}

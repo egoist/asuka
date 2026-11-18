@@ -60,12 +60,14 @@ irm https://asuka.egoist.dev/install.ps1 | iex
 
 The script downloads the CLI from its GitHub release, checks it against
 the release's checksums, and installs it in `~/.asuka/bin` (on Windows,
-`%LOCALAPPDATA%\Programs\asuka\bin`, which it adds to your PATH).
+`%LOCALAPPDATA%\Programs\asuka\bin`, which it adds to your PATH),
+then downloads Asuka's prebuilt libraries for your computer's own apps,
+so your first build doesn't wait for them.
 `ASUKA_VERSION=0.3.0` installs that version instead of the latest, and
 `ASUKA_INSTALL` another directory.
 
 `asuka upgrade` updates the CLI to the latest release (`asuka upgrade
-0.3.0`: to that one). Once a day, asuka looks in the background for a
+0.3.0`: to that one), and its prebuilt libraries with it. Once a day, asuka looks in the background for a
 newer release and, if there is one, says so when a command ends; it
 never makes a command wait. `ASUKA_NO_UPDATE_CHECK=1` turns that off,
 and it's off in CI.
