@@ -232,3 +232,49 @@ app {
 - 每一个都像 `x.reload()` 那样运行：保持它显示的内容，在得到结果之前 `.loading` 为 true。
 - `await reload …` 会一直等到它触及的每一个 load 都得到结果或者失败（期间消失的 load 也算）：失败由各个 load 自己显示，只有在等待被取消时它才会抛出错误。不写 `await` 时，这些 load 照样运行，代码继续往下走。
 - 调用就是键：一个函数或 store 方法的 load。闭包调用的 load，或者某个值的方法的 load，用它自己的 `x.reload()`。
+
+### 一起到达的 load
+
+个人资料和它的帖子并排加载时，`id` 一变，它们的结果会一个接一个地换上：有那么一刻，新的人显示在上一个人的帖子上面。`load (a(…), b(…))` 是由几个调用组成的一个 load，它们的结果会一起显示：
+
+```asuka check
+struct User {
+  name: string
+}
+
+async fn fetchUser(id: string) -> User {
+  await sleep(100ms)
+  return User(name: "Ana")
+}
+
+async fn fetchPosts(id: string, page: int) -> [string] {
+  await sleep(300ms)
+  return ["Hello"]
+}
+
+screen Profile(id: string) {
+  state n = 1
+  let page = load (fetchUser(id), fetchPosts(id, page: n))   // 一起显示
+
+  Column {
+    match page {
+      .pending => ProgressRing()
+      .failed(e) => Text(e.message)
+      .ready((u, posts)) => Column {
+        Text(u.name) { font: .title }
+        for p in posts key p { Text(p) }
+      }
+    }
+    Button("More") {
+      disabled: page.loading
+      on press { n += 1 }
+    }
+  }
+}
+```
+
+- 它是一个 `Loading<(A, B, …)>`，和别的 load 一样匹配：`.ready((u, posts))`。
+- 每个调用保留各自的依赖：上面的 `n` 只会让 `fetchPosts` 重新运行，用户资料保持不变。`id` 变化时两个都会运行，新的用户资料会一直留着，等新的帖子到来。
+- 在每个调用都得到过一次结果之前是 `.pending`；有一个失败时是 `.failed(e)`，取源码顺序里的第一个，`.value` 保留上一个完整的元组；任何一个调用在运行时 `.loading` 都为 true。
+- `page.reload()` 会让每个调用都运行；`reload fetchPosts(id, page: n)` 只运行那一个；`page.optimistic(p => (p.0, p.1 + [draft]))` 改动的是整个元组。
+- 每个元素都是一个调用：一个值没有什么可等待的（[group-not-calls](../errors/group-not-calls.md)）。

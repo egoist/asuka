@@ -327,3 +327,59 @@ app {
   Without `await`, the loads run and the code goes on.
 - The call is the key: a load of a function or a store's method. One
   of a closure's call, or of a value's method, has its `x.reload()`.
+
+### Loads that land together
+
+A profile and its posts, loaded side by side, swap in their answers one
+at a time when `id` changes: for a moment the new person shows over the
+last one's posts. `load (a(…), b(…))` is one load of several calls,
+whose answers are shown together:
+
+```asuka check
+struct User {
+  name: string
+}
+
+async fn fetchUser(id: string) -> User {
+  await sleep(100ms)
+  return User(name: "Ana")
+}
+
+async fn fetchPosts(id: string, page: int) -> [string] {
+  await sleep(300ms)
+  return ["Hello"]
+}
+
+screen Profile(id: string) {
+  state n = 1
+  let page = load (fetchUser(id), fetchPosts(id, page: n))   // shown together
+
+  Column {
+    match page {
+      .pending => ProgressRing()
+      .failed(e) => Text(e.message)
+      .ready((u, posts)) => Column {
+        Text(u.name) { font: .title }
+        for p in posts key p { Text(p) }
+      }
+    }
+    Button("More") {
+      disabled: page.loading
+      on press { n += 1 }
+    }
+  }
+}
+```
+
+- It's a `Loading<(A, B, …)>`, matched as any other: `.ready((u, posts))`.
+- Each call keeps its own dependencies: `n` above runs `fetchPosts`
+  alone, and the user stays. A change of `id` runs both, and the new
+  user is held until the new posts land.
+- `.pending` until every call answered once; `.failed(e)` when one
+  failed, the first in source order, `.value` keeping the last whole
+  tuple; `.loading` while any call runs.
+- `page.reload()` runs every call; `reload fetchPosts(id, page: n)` runs
+  that one; `page.optimistic(p => (p.0, p.1 + [draft]))` changes the
+  tuple.
+- Each element is a call: a value has nothing to wait for
+  ([group-not-calls](../errors/group-not-calls.md)).

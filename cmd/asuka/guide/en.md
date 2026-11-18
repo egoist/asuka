@@ -194,6 +194,13 @@ goes. A function that can fail says `throws`, and its callers `try` it
 (`try?` for none on an error). [Async](https://asuka.egoist.dev/docs/language/async),
 [Errors](https://asuka.egoist.dev/docs/language/errors)
 
+What a component shows from such a call is a `load`: `let n = load
+fetchCount(online: true)` is `.pending`, `.ready(count)` or
+`.failed(e)`, and keeps what it shows while it asks again.
+`n.optimistic(f)` shows a change at once, `reload fetchCount` asks every
+load of it again, wherever it is, and `load (a(), b())` lands several
+calls together. [Data that loads](https://asuka.egoist.dev/docs/language/async#data-that-loads)
+
 #### Packages
 
 ```asuka
@@ -2019,6 +2026,62 @@ app {
 - The call is the key: a load of a function or a store's method. One
   of a closure's call, or of a value's method, has its `x.reload()`.
 
+##### Loads that land together
+
+A profile and its posts, loaded side by side, swap in their answers one
+at a time when `id` changes: for a moment the new person shows over the
+last one's posts. `load (a(…), b(…))` is one load of several calls,
+whose answers are shown together:
+
+```asuka
+struct User {
+  name: string
+}
+
+async fn fetchUser(id: string) -> User {
+  await sleep(100ms)
+  return User(name: "Ana")
+}
+
+async fn fetchPosts(id: string, page: int) -> [string] {
+  await sleep(300ms)
+  return ["Hello"]
+}
+
+screen Profile(id: string) {
+  state n = 1
+  let page = load (fetchUser(id), fetchPosts(id, page: n))   // shown together
+
+  Column {
+    match page {
+      .pending => ProgressRing()
+      .failed(e) => Text(e.message)
+      .ready((u, posts)) => Column {
+        Text(u.name) { font: .title }
+        for p in posts key p { Text(p) }
+      }
+    }
+    Button("More") {
+      disabled: page.loading
+      on press { n += 1 }
+    }
+  }
+}
+```
+
+- It's a `Loading<(A, B, …)>`, matched as any other: `.ready((u, posts))`.
+- Each call keeps its own dependencies: `n` above runs `fetchPosts`
+  alone, and the user stays. A change of `id` runs both, and the new
+  user is held until the new posts land.
+- `.pending` until every call answered once; `.failed(e)` when one
+  failed, the first in source order, `.value` keeping the last whole
+  tuple; `.loading` while any call runs.
+- `page.reload()` runs every call; `reload fetchPosts(id, page: n)` runs
+  that one; `page.optimistic(p => (p.0, p.1 + [draft]))` changes the
+  tuple.
+- Each element is a call: a value has nothing to wait for
+  ([group-not-calls](https://asuka.egoist.dev/docs/errors/group-not-calls)).
+
 ### Errors
 
 A function that can fail says `throws`, and calling it needs `try`:
@@ -2588,6 +2651,7 @@ action:)`, `refresh`, `scrollTo`, `back`, `dismiss`, `pickDate`,
 - extension-conflict: an extension that adds a name the type already has, or another extension adds. Name the method otherwise, or keep one of the extensions.
 - fn-body: a function without its body, or with one it can't have. Write the body (`{ … }` or `= expression`), or drop it from a native or extern declaration.
 - follows-nothing: `state x()` with nothing to follow. Name what to follow, `state x(a) = …`, or write `state x = peek(…)`.
+- group-not-calls: `load (…)` of what isn't each a call. Group the calls only (`load (api.user(id), api.posts(id))`), and pass the values to them, or beside the load.
 - import-cycle: packages that import each other. Move what both need into a third package they both import.
 - int-overflow: an integer literal that doesn't fit in 64 bits. Use a smaller number, a `float`, or a `std/decimal` value for exact large numbers.
 - interface-not-satisfied: a type that declares an interface it doesn't implement. Add the missing methods (the message lists them), with the interface's signatures.

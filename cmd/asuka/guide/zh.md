@@ -166,6 +166,8 @@ component Badge {
 
 `async` 的工作不会卡住界面，`task { }` 属于启动它的组件：组件消失时它就被取消。可能失败的函数要写 `throws`，调用它时要用 `try`（出错时想得到 none 就用 `try?`）。见[异步](https://asuka.egoist.dev/zh/docs/language/async)和[错误](https://asuka.egoist.dev/zh/docs/language/errors)。
 
+组件显示这种调用的结果时用 `load`：`let n = load fetchCount(online: true)` 的值是 `.pending`、`.ready(count)` 或 `.failed(e)`，再次请求时会保留它显示的内容。`n.optimistic(f)` 立刻显示一个改动，`reload fetchCount` 让它的每一个 load 再请求一次，不管它们在哪里，而 `load (a(), b())` 让几个调用的结果一起到达。见[需要加载的数据](https://asuka.egoist.dev/zh/docs/language/async#需要加载的数据)。
+
 #### 包
 
 ```asuka
@@ -1459,6 +1461,52 @@ app {
 - `await reload …` 会一直等到它触及的每一个 load 都得到结果或者失败（期间消失的 load 也算）：失败由各个 load 自己显示，只有在等待被取消时它才会抛出错误。不写 `await` 时，这些 load 照样运行，代码继续往下走。
 - 调用就是键：一个函数或 store 方法的 load。闭包调用的 load，或者某个值的方法的 load，用它自己的 `x.reload()`。
 
+##### 一起到达的 load
+
+个人资料和它的帖子并排加载时，`id` 一变，它们的结果会一个接一个地换上：有那么一刻，新的人显示在上一个人的帖子上面。`load (a(…), b(…))` 是由几个调用组成的一个 load，它们的结果会一起显示：
+
+```asuka
+struct User {
+  name: string
+}
+
+async fn fetchUser(id: string) -> User {
+  await sleep(100ms)
+  return User(name: "Ana")
+}
+
+async fn fetchPosts(id: string, page: int) -> [string] {
+  await sleep(300ms)
+  return ["Hello"]
+}
+
+screen Profile(id: string) {
+  state n = 1
+  let page = load (fetchUser(id), fetchPosts(id, page: n))   // 一起显示
+
+  Column {
+    match page {
+      .pending => ProgressRing()
+      .failed(e) => Text(e.message)
+      .ready((u, posts)) => Column {
+        Text(u.name) { font: .title }
+        for p in posts key p { Text(p) }
+      }
+    }
+    Button("More") {
+      disabled: page.loading
+      on press { n += 1 }
+    }
+  }
+}
+```
+
+- 它是一个 `Loading<(A, B, …)>`，和别的 load 一样匹配：`.ready((u, posts))`。
+- 每个调用保留各自的依赖：上面的 `n` 只会让 `fetchPosts` 重新运行，用户资料保持不变。`id` 变化时两个都会运行，新的用户资料会一直留着，等新的帖子到来。
+- 在每个调用都得到过一次结果之前是 `.pending`；有一个失败时是 `.failed(e)`，取源码顺序里的第一个，`.value` 保留上一个完整的元组；任何一个调用在运行时 `.loading` 都为 true。
+- `page.reload()` 会让每个调用都运行；`reload fetchPosts(id, page: n)` 只运行那一个；`page.optimistic(p => (p.0, p.1 + [draft]))` 改动的是整个元组。
+- 每个元素都是一个调用：一个值没有什么可等待的（[group-not-calls](https://asuka.egoist.dev/zh/docs/errors/group-not-calls)）。
+
 ### 错误
 
 可能失败的函数要标注 `throws`，调用它时需要 `try`：
@@ -1869,6 +1917,7 @@ test "archiving removes the row" {
 - extension-conflict: 扩展添加了类型已有的名称，或者另一个扩展也添加了同样的名称. 给方法换个名字，或者只保留其中一个扩展。
 - fn-body: 函数缺少函数体，或者有了不该有的函数体. 写出函数体（`{ … }` 或 `= 表达式`），或者从 native、extern 声明里去掉它。
 - follows-nothing: `state x()` 没有可跟随的东西. 写出要跟随的东西（`state x(a) = …`），或者写成 `state x = peek(…)`。
+- group-not-calls: `load (…)` 里的元素不都是调用. 只把调用放进组里（`load (api.user(id), api.posts(id))`），把值传给这些调用，或者放在 load 旁边。
 - import-cycle: 相互导入的包. 把两者都需要的部分移到第三个包里，让它们都导入它。
 - int-overflow: 超出 64 位范围的整数字面量. 换一个更小的数，或者使用 `float`；需要精确的大数时用 `std/decimal`。
 - interface-not-satisfied: 类型声明了某个 interface，却没有实现它. 按 interface 的签名补上缺少的方法（消息里列出了它们）。

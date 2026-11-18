@@ -21,6 +21,7 @@ Every error and warning Asuka reports has a code: a stable name, said in the ter
 - [extension-conflict](extension-conflict.md): An extension that adds a name the type already has, or another extension adds.
 - [fn-body](fn-body.md): A function without its body, or with one it can't have.
 - [follows-nothing](follows-nothing.md): `state x()` with nothing to follow.
+- [group-not-calls](group-not-calls.md): `load (…)` of what isn't each a call.
 - [import-cycle](import-cycle.md): Packages that import each other.
 - [int-overflow](int-overflow.md): An integer literal that doesn't fit in 64 bits.
 - [interface-not-satisfied](interface-not-satisfied.md): A type that declares an interface it doesn't implement.

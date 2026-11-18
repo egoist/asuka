@@ -180,6 +180,13 @@ goes. A function that can fail says `throws`, and its callers `try` it
 (`try?` for none on an error). [Async](language/async.md),
 [Errors](language/errors.md)
 
+What a component shows from such a call is a `load`: `let n = load
+fetchCount(online: true)` is `.pending`, `.ready(count)` or
+`.failed(e)`, and keeps what it shows while it asks again.
+`n.optimistic(f)` shows a change at once, `reload fetchCount` asks every
+load of it again, wherever it is, and `load (a(), b())` lands several
+calls together. [Data that loads](language/async.md#data-that-loads)
+
 ## Packages
 
 ```asuka check

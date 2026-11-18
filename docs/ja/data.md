@@ -294,7 +294,7 @@ component LatestRelease {
 }
 ```
 
-load が表示するものを変える保存は、それらを呼び出しで指定します。`await reload latest()` は、どの画面でも `latest()` のすべての load にもう一度求めさせ、その答えを待ちます。`x.optimistic(f)` は、サーバーが確認する前に変更を表示します（[すぐに表示する変更](language/async.md#すぐに表示する変更)、[変更が触れたものを読み込み直す](language/async.md#変更が触れたものを読み込み直す)）。
+load が表示するものを変える保存は、それらを呼び出しで指定します。`await reload latest()` は、どの画面でも `latest()` のすべての load にもう一度求めさせ、その答えを待ちます。`x.optimistic(f)` は、サーバーが確認する前に変更を表示し、`load (a(), b())` は複数の答えをまとめて表示します（[すぐに表示する変更](language/async.md#すぐに表示する変更)、[変更が触れたものを読み込み直す](language/async.md#変更が触れたものを読み込み直す)、[いっしょに届く load](language/async.md#いっしょに届く-load)）。
 
 ブラウザーでは、別のオリジンへのリクエストにはそのオリジンの CORS ヘッダーが必要です。
 

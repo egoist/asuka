@@ -294,7 +294,7 @@ component LatestRelease {
 }
 ```
 
-改动了 load 所显示内容的保存操作，用调用来指明它们：`await reload latest()` 会让任何页面上 `latest()` 的每一个 load 再请求一次，并等它们的结果；`x.optimistic(f)` 会在服务器确认之前就显示改动（[立刻显示的改动](language/async.md#立刻显示的改动)、[重新加载改动影响到的数据](language/async.md#重新加载改动影响到的数据)）。
+改动了 load 所显示内容的保存操作，用调用来指明它们：`await reload latest()` 会让任何页面上 `latest()` 的每一个 load 再请求一次，并等它们的结果；`x.optimistic(f)` 会在服务器确认之前就显示改动，`load (a(), b())` 会把几个结果一起显示（[立刻显示的改动](language/async.md#立刻显示的改动)、[重新加载改动影响到的数据](language/async.md#重新加载改动影响到的数据)、[一起到达的 load](language/async.md#一起到达的-load)）。
 
 在浏览器里，向其他源发请求需要那个源返回 CORS 头。
 

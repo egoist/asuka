@@ -232,3 +232,49 @@ app {
 - それぞれ `x.reload()` と同じように実行されます。表示しているものを保ち、答えが届くまで `.loading` は true です。
 - `await reload …` は、届いたすべての load が答えるか失敗するまで待ちます（そのあいだに消えた load も数えます）。失敗はそれぞれの load が表示するもので、throw するのは待つことがキャンセルされたときだけです。`await` がなければ、load は実行され、コードは先に進みます。
 - 呼び出しがキーです。関数か store のメソッドの load です。クロージャーの呼び出しや値のメソッドの load には、`x.reload()` があります。
+
+### いっしょに届く load
+
+プロフィールとその投稿を並べて読み込むと、`id` が変わったときに答えが 1 つずつ入れ替わります。一瞬、新しい人が前の人の投稿の上に表示されます。`load (a(…), b(…))` は複数の呼び出しからなる 1 つの load で、答えはまとめて表示されます。
+
+```asuka check
+struct User {
+  name: string
+}
+
+async fn fetchUser(id: string) -> User {
+  await sleep(100ms)
+  return User(name: "Ana")
+}
+
+async fn fetchPosts(id: string, page: int) -> [string] {
+  await sleep(300ms)
+  return ["Hello"]
+}
+
+screen Profile(id: string) {
+  state n = 1
+  let page = load (fetchUser(id), fetchPosts(id, page: n))   // まとめて表示
+
+  Column {
+    match page {
+      .pending => ProgressRing()
+      .failed(e) => Text(e.message)
+      .ready((u, posts)) => Column {
+        Text(u.name) { font: .title }
+        for p in posts key p { Text(p) }
+      }
+    }
+    Button("More") {
+      disabled: page.loading
+      on press { n += 1 }
+    }
+  }
+}
+```
+
+- これは `Loading<(A, B, …)>` で、ほかと同じように match します：`.ready((u, posts))`。
+- 呼び出しはそれぞれ自分の依存関係を持ちます。上の `n` で実行されるのは `fetchPosts` だけで、ユーザーはそのままです。`id` が変わると両方が実行され、新しいユーザーは新しい投稿が届くまで保たれます。
+- すべての呼び出しが一度答えるまでは `.pending`、1 つが失敗したら `.failed(e)`（ソースの順で最初のもの）で、`.value` は最後のそろったタプルを保ちます。どれかの呼び出しが実行中なら `.loading` は true です。
+- `page.reload()` はすべての呼び出しを、`reload fetchPosts(id, page: n)` はその 1 つを実行します。`page.optimistic(p => (p.0, p.1 + [draft]))` はタプルを変えます。
+- 要素はそれぞれ呼び出しです。値には待つものがありません（[group-not-calls](../errors/group-not-calls.md)）。

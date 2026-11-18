@@ -79,9 +79,11 @@ routed screen's pattern), `static` (a type's function: `static fn`) and
 they're names.
 
 `load` followed by a call is the [load](async.md#data-that-loads)
-keyword's (`load api.user(id)`, or `load (api.user(id))`); followed by
-parentheses that hold anything else (`load()`, `load(id)`), it calls a
-function named `load`. `reload` followed by a name is the
+keyword's (`load api.user(id)`, or `load (api.user(id))`), and so are
+parentheses that hold several elements, one a call at least (`load
+(api.user(id), api.posts(id))`, [a group](async.md#loads-that-land-together));
+followed by parentheses that hold anything else (`load()`, `load(id)`),
+it calls a function named `load`. `reload` followed by a name is the
 [reload](async.md#reloading-what-a-change-touched) keyword's (`reload
 api.notes(id)`, `reload api.notes`); followed by `(`, it calls a
 function named `reload`.

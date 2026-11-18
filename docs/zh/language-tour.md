@@ -152,6 +152,8 @@ component Badge {
 
 `async` 的工作不会卡住界面，`task { }` 属于启动它的组件：组件消失时它就被取消。可能失败的函数要写 `throws`，调用它时要用 `try`（出错时想得到 none 就用 `try?`）。见[异步](language/async.md)和[错误](language/errors.md)。
 
+组件显示这种调用的结果时用 `load`：`let n = load fetchCount(online: true)` 的值是 `.pending`、`.ready(count)` 或 `.failed(e)`，再次请求时会保留它显示的内容。`n.optimistic(f)` 立刻显示一个改动，`reload fetchCount` 让它的每一个 load 再请求一次，不管它们在哪里，而 `load (a(), b())` 让几个调用的结果一起到达。见[需要加载的数据](language/async.md#需要加载的数据)。
+
 ## 包
 
 ```asuka check

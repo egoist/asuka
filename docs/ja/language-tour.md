@@ -152,6 +152,8 @@ component Badge {
 
 `async` の処理は画面を止めずに進み、`task { }` はそれを始めたコンポーネントのものです。コンポーネントがなくなるとキャンセルされます。失敗しうる関数は `throws` と書き、呼び出す側は `try` を付けます（エラーのときに none でよければ `try?`）。[非同期処理](language/async.md)と[エラー](language/errors.md)を参照してください。
 
+コンポーネントがこうした呼び出しの結果を表示するときは `load` を使います。`let n = load fetchCount(online: true)` は `.pending`、`.ready(count)`、`.failed(e)` のいずれかで、もう一度求めるあいだも表示しているものを保ちます。`n.optimistic(f)` は変更をすぐに表示し、`reload fetchCount` はどこにあってもその load すべてにもう一度求めさせ、`load (a(), b())` は複数の呼び出しの答えをまとめて届けます。[読み込むデータ](language/async.md#読み込むデータ)を参照してください。
+
 ## パッケージ
 
 ```asuka check

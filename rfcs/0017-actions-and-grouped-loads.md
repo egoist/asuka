@@ -1,6 +1,6 @@
 # 0017: Changes the screen shows at once, and loads that land together
 
-- **Status**: Draft
+- **Status**: Built
 - **Created**: 2026-11-18
 - **Related**: 0014 (loads hold what they show: `.pending` only before
   the first answer, `loading`), 0012 (what the UI follows: dependencies
@@ -373,8 +373,13 @@ Run-time diagnostics, in development builds (0015's detectors):
 ## Migration
 
 None: everything here is new syntax or a new method. `reload` becomes
-a keyword ("rename it: reload is a keyword since 0.N"); no `.asuka`
-file in the repository uses it as a name. `x.reload()` keeps working.
+a keyword ("rename it: reload is a keyword since 0.2.9"). The
+repository does name things `reload` (sdk/update's `Page.reload()`,
+sdk/pay's `PayButtonLabel.reload`, sdk/document's and examples/files'
+`fn reload()`), so, as `load` does, `reload` followed by `(` calls a
+function named `reload`, declarations may still be named so, and a
+member is after `.`: only a name where any keyword is refused (`let
+reload`, a parameter) says to rename it. `x.reload()` keeps working.
 
 Docs: docs/language/async.md ("Data that loads": changes shown at once,
 reloading what a change touched, loads that land together),
@@ -419,6 +424,12 @@ docs/data.md, the tour, with zh and ja; the codes' pages (0015).
   says it (its owner), so the layer's lifetime needs no wrapper.
 
 ## Open questions
+
+As built: 1 stays open (no new closure form); 2 is decided as proposed,
+by the function (every instance's loads); 3 isn't proposed. A view's
+`match` over a load's `let` binds `.ready`'s names to accessors of what
+the load shows (a cell of its own), so the per-path rule above holds
+for the rows under it.
 
 1. **A `mut fn` form.** `todos.optimistic(ts => ts.map(…))` is long for
    one field. With RFC 0011's places, a closure that changes its

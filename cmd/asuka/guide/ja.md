@@ -166,6 +166,8 @@ component Badge {
 
 `async` の処理は画面を止めずに進み、`task { }` はそれを始めたコンポーネントのものです。コンポーネントがなくなるとキャンセルされます。失敗しうる関数は `throws` と書き、呼び出す側は `try` を付けます（エラーのときに none でよければ `try?`）。[非同期処理](https://asuka.egoist.dev/ja/docs/language/async)と[エラー](https://asuka.egoist.dev/ja/docs/language/errors)を参照してください。
 
+コンポーネントがこうした呼び出しの結果を表示するときは `load` を使います。`let n = load fetchCount(online: true)` は `.pending`、`.ready(count)`、`.failed(e)` のいずれかで、もう一度求めるあいだも表示しているものを保ちます。`n.optimistic(f)` は変更をすぐに表示し、`reload fetchCount` はどこにあってもその load すべてにもう一度求めさせ、`load (a(), b())` は複数の呼び出しの答えをまとめて届けます。[読み込むデータ](https://asuka.egoist.dev/ja/docs/language/async#読み込むデータ)を参照してください。
+
 #### パッケージ
 
 ```asuka
@@ -1459,6 +1461,52 @@ app {
 - `await reload …` は、届いたすべての load が答えるか失敗するまで待ちます（そのあいだに消えた load も数えます）。失敗はそれぞれの load が表示するもので、throw するのは待つことがキャンセルされたときだけです。`await` がなければ、load は実行され、コードは先に進みます。
 - 呼び出しがキーです。関数か store のメソッドの load です。クロージャーの呼び出しや値のメソッドの load には、`x.reload()` があります。
 
+##### いっしょに届く load
+
+プロフィールとその投稿を並べて読み込むと、`id` が変わったときに答えが 1 つずつ入れ替わります。一瞬、新しい人が前の人の投稿の上に表示されます。`load (a(…), b(…))` は複数の呼び出しからなる 1 つの load で、答えはまとめて表示されます。
+
+```asuka
+struct User {
+  name: string
+}
+
+async fn fetchUser(id: string) -> User {
+  await sleep(100ms)
+  return User(name: "Ana")
+}
+
+async fn fetchPosts(id: string, page: int) -> [string] {
+  await sleep(300ms)
+  return ["Hello"]
+}
+
+screen Profile(id: string) {
+  state n = 1
+  let page = load (fetchUser(id), fetchPosts(id, page: n))   // まとめて表示
+
+  Column {
+    match page {
+      .pending => ProgressRing()
+      .failed(e) => Text(e.message)
+      .ready((u, posts)) => Column {
+        Text(u.name) { font: .title }
+        for p in posts key p { Text(p) }
+      }
+    }
+    Button("More") {
+      disabled: page.loading
+      on press { n += 1 }
+    }
+  }
+}
+```
+
+- これは `Loading<(A, B, …)>` で、ほかと同じように match します：`.ready((u, posts))`。
+- 呼び出しはそれぞれ自分の依存関係を持ちます。上の `n` で実行されるのは `fetchPosts` だけで、ユーザーはそのままです。`id` が変わると両方が実行され、新しいユーザーは新しい投稿が届くまで保たれます。
+- すべての呼び出しが一度答えるまでは `.pending`、1 つが失敗したら `.failed(e)`（ソースの順で最初のもの）で、`.value` は最後のそろったタプルを保ちます。どれかの呼び出しが実行中なら `.loading` は true です。
+- `page.reload()` はすべての呼び出しを、`reload fetchPosts(id, page: n)` はその 1 つを実行します。`page.optimistic(p => (p.0, p.1 + [draft]))` はタプルを変えます。
+- 要素はそれぞれ呼び出しです。値には待つものがありません（[group-not-calls](https://asuka.egoist.dev/ja/docs/errors/group-not-calls)）。
+
 ### エラー
 
 失敗する可能性のある関数には `throws` を付け、呼び出すときには `try` が必要です。
@@ -1869,6 +1917,7 @@ test "archiving removes the row" {
 - extension-conflict: 型がすでに持つ名前、またはほかの拡張も追加する名前を追加する拡張. メソッドの名前を変えるか、拡張を 1 つだけ残します。
 - fn-body: 本体のない関数、または持てない本体を持つ関数. 本体（`{ … }` か `= 式`）を書くか、native や extern の宣言から外します。
 - follows-nothing: 追従するもののない `state x()`. 追従するものを書く（`state x(a) = …`）か、`state x = peek(…)` と書きます。
+- group-not-calls: `load (…)` の要素が、どれも呼び出しというわけではない. 呼び出しだけをまとめ（`load (api.user(id), api.posts(id))`）、値はそれらの呼び出しに渡すか、load の横に置きます。
 - import-cycle: 互いにインポートし合うパッケージ. 両方が必要とするものを 3 つ目のパッケージに移し、両方からそれをインポートします。
 - int-overflow: 64 ビットに収まらない整数リテラル. 小さい数にするか、`float` を使います。
 - interface-not-satisfied: 宣言した interface を実装していない型. 足りないメソッド（メッセージに一覧があります）を interface のシグネチャーで追加します。
