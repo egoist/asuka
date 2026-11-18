@@ -527,6 +527,9 @@ func (c *Checker) load(e *syntax.UnaryExpr) Type {
 	if c.ctx == nil || c.ctx.Kind != CtxBinding || !c.loadOK {
 		c.errorf(e, diag.LoadOutsideComponent, "load is a component's or a store's: let x = load f(…)")
 	}
+	if group, ok := e.X.(*syntax.TupleExpr); ok {
+		return c.loadGroup(group)
+	}
 	call, ok := unparen(e.X).(*syntax.CallExpr)
 	if !ok {
 		c.errorf(e.X, diag.NotAsyncCall, "load takes an async call: load f(…)")
@@ -546,6 +549,55 @@ func (c *Checker) load(e *syntax.UnaryExpr) Type {
 		return Invalid
 	}
 	return &Named{Obj: loadingT, Args: []Type{t}}
+}
+
+// loadGroup checks load (c₁, c₂, …) (rfcs/0017): each element an async
+// call, the load's a Loading of the tuple of their results.
+func (c *Checker) loadGroup(g *syntax.TupleExpr) Type {
+	var elems []Type
+	bad := false
+	for _, x := range g.Elems {
+		call, ok := unparen(x).(*syntax.CallExpr)
+		if !ok {
+			c.errorf(x, diag.GroupNotCalls, "load (a(), b()) groups calls: load (%s) has %s", groupText(g), exprName(x))
+			c.expr(x, nil)
+			bad = true
+			continue
+		}
+		c.inAwait++
+		c.inTry++
+		t := c.expr(call, nil)
+		c.inTry--
+		c.inAwait--
+		if ci := c.info.Calls[call]; ci != nil && !c.isAsyncCall(ci) {
+			c.errorf(call, diag.NotAsyncCall, "load takes async calls, and %s isn't one", exprName(call.Fun))
+		}
+		c.noteLoad(call)
+		if IsInvalid(t) {
+			bad = true
+		}
+		elems = append(elems, t)
+	}
+	if bad {
+		return Invalid
+	}
+	tt := &Tuple{Elems: elems}
+	c.record(g, tt)
+	return &Named{Obj: loadingT, Args: []Type{tt}}
+}
+
+// groupText spells a group's elements for its error: calls by their
+// function's name (api.user(…)), the rest as written.
+func groupText(g *syntax.TupleExpr) string {
+	var parts []string
+	for _, x := range g.Elems {
+		if call, ok := unparen(x).(*syntax.CallExpr); ok {
+			parts = append(parts, exprName(call.Fun)+"(…)")
+		} else {
+			parts = append(parts, exprName(x))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // jsonable says why t can't be JSON ("" when it can). A type parameter

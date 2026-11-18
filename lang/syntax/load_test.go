@@ -18,6 +18,10 @@ func TestParseLoadParen(t *testing.T) {
 		{"load ((f()))", "(load (paren (paren (call f))))"},
 		{"load (f())(x)", "(load (call (paren (call f)) x))"},
 		{"load f(x)", "(load (call f x))"},
+		{"load (a(), b(x))", "(load (tuple (call a) (call b x)))"},
+		{"load (api.user(id), x)", "(load (tuple (call (. api user) id) x))"},
+		{"load(a, b)", "(call load a b)"},
+		{"load(a: f(), b())", "(call load a:(call f) (call b))"},
 	}
 	for _, tt := range tests {
 		x, errs := ParseExpr(tt.src)
@@ -29,7 +33,7 @@ func TestParseLoadParen(t *testing.T) {
 			t.Errorf("%q:\n got %s\nwant %s", tt.src, got, tt.want)
 		}
 	}
-	src := "component C {\n  task(id) { await load() }\n  let u = load (api.user(id))\n}\n"
+	src := "component C {\n  task(id) { await load() }\n  let u = load (api.user(id))\n  let page = load (api.user(id), api.posts(id, page: n))\n}\n"
 	if out, err := Format("x.asuka", []byte(src)); err != nil || string(out) != src {
 		t.Errorf("formats as %q, %v", out, err)
 	}

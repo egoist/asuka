@@ -1,0 +1,74 @@
+// A grouped load's calls run each on its own dependencies, and what the
+// group shows is read by its paths (rfcs/0013, 0017): a new page of
+// posts runs the posts' call and the posts' bindings, not the user's
+// call nor its name's binding. Each call and binding prints as it runs.
+
+struct User {
+  id: string
+  name: string
+}
+
+async fn fetchUser(id: string) -> User {
+  print("call user {id}")
+  await sleep(10ms)
+  return User(id: id, name: "user {id}")
+}
+
+async fn fetchPosts(id: string, page: int) -> [string] {
+  print("call posts {id} {page}")
+  await sleep(20ms)
+  return ["{id} post {page}"]
+}
+
+fn show(tag: string, s: string) -> string {
+  print(tag)
+  return s
+}
+
+component Profile {
+  state id = "a"
+  state n = 1
+  let page = load (fetchUser(id), fetchPosts(id, page: n))
+
+  Column {
+    match page {
+      .pending => Text(show("pending", "…"))
+      .failed(e) => Text("failed")
+      .ready((u, posts)) => Column {
+        Text(show("name", u.name))
+        for p in posts key p { Text(show("post", p)) }
+      }
+    }
+    Button("Next page") { on press { n += 1 } }
+    Button("Next person") { on press { id = "b" } }
+  }
+}
+
+test "a page runs the posts, a person both, each shown together" {
+  let app = mount(Profile())
+  await app.idle()
+  print("-- page")
+  app.tap("Next page")
+  await app.idle()
+  app.expect("user a", "a post 2")
+  print("-- person")
+  app.tap("Next person")
+  await app.idle()
+  app.expect("user b", "b post 2")
+}
+
+// Output:
+// pending
+// call user a
+// call posts a 1
+// name
+// post
+// -- page
+// call posts a 2
+// post
+// -- person
+// call user b
+// call posts b 2
+// name
+// post
+// ok a page runs the posts, a person both, each shown together

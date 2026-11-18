@@ -168,9 +168,10 @@ test "side by side" {
 		RunTime: true,
 		Summary: "a load has held old content for seconds with nothing saying so",
 		Why: `A load that runs again keeps what it showed until the new answer lands
-(its ` + "`.ready`" + ` stays). That keeps the screen still, but when the answer
-takes seconds and nothing reads ` + "`.loading`" + `, the user looks at the last
-answer with no sign that another is coming.`,
+(its ` + "`.ready`" + ` stays), and a grouped load's call that answered holds its
+answer until its slower siblings do. That keeps the screen still, but
+when the answer takes seconds and nothing reads ` + "`.loading`" + `, the user
+looks at the last answer with no sign that another is coming.`,
 		Fix: "Read `x.loading` while it holds (dim the content, show a ring), or show a spinner in its place.",
 		Wrong: `async fn fetchName(id: int) -> string {
   await sleep(3s)

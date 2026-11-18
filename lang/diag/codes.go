@@ -1004,6 +1004,17 @@ compared as ` + "`f`" + `'s parameters, so they're checked as a call of ` + "`f`
 		Right: "async fn fetchNote(id: int) -> string {\n  await sleep(1ms)\n  return \"note {id}\"\n}\n\ncomponent Note(id: int) {\n  let note = load fetchNote(id)\n  Button(\"Refresh\") {\n    on press { await reload fetchNote(id) }\n  }\n}\n",
 	})
 
+	GroupNotCalls = def(Code{
+		Name:    "group-not-calls",
+		Summary: "`load (…)` of what isn't each a call",
+		Why: `` + "`load (a(), b())`" + ` is one load of several calls, each run again only when
+what its arguments read changes, their answers shown together. A value
+in it has nothing to run or to wait for.`,
+		Fix:   "Group the calls only (`load (api.user(id), api.posts(id))`), and pass the values to them, or beside the load.",
+		Wrong: "async fn fetchUser(id: int) -> string {\n  await sleep(1ms)\n  return \"user {id}\"\n}\n\ncomponent Profile(id: int) {\n  let page = load (fetchUser(id), id)\n  Text(\"{page.loading}\")\n}\n",
+		Right: "async fn fetchUser(id: int) -> string {\n  await sleep(1ms)\n  return \"user {id}\"\n}\n\nasync fn fetchPosts(id: int) -> [string] {\n  await sleep(1ms)\n  return []\n}\n\ncomponent Profile(id: int) {\n  let page = load (fetchUser(id), fetchPosts(id))\n  Text(\"{page.loading}\")\n}\n",
+	})
+
 	OptimisticImpure = def(Code{
 		Name:    "optimistic-impure",
 		Summary: "an optimistic change that reads state, awaits or writes",

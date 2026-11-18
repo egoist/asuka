@@ -576,6 +576,9 @@ func (b *fb) readDeps(deps []dep) {
 func (b *fb) load(m *check.Member) int {
 	u := m.Default.(*syntax.UnaryExpr)
 	ctx := b.l.info.Ctxs[m.Default]
+	if g, ok := u.X.(*syntax.TupleExpr); ok {
+		return b.loadGroup(m, g, ctx)
+	}
 	inner := b.typ(b.l.info.Types[u.X])
 	// Named for what the core's diagnostics say of it: Profile's load of
 	// user at profile.asuka:8.
@@ -589,6 +592,54 @@ func (b *fb) load(m *check.Member) int {
 		c.emit(op("RET"), f)
 	}})
 	return b.callB(uiLoad, bc.KRef, thunk)
+}
+
+// loadGroup makes let x = load (c₁, c₂, …) (rfcs/0017): ui.load_group
+// of a thunk per call, each its own dependencies (and its key, for
+// reload), and combine, which makes their answers the tuple shown.
+func (b *fb) loadGroup(m *check.Member, g *syntax.TupleExpr, ctx *check.FuncCtx) int {
+	tt := b.typ(b.l.info.Types[g]).(*check.Tuple)
+	args := []int{}
+	params := make([]*check.Var, len(g.Elems))
+	pkinds := make([]bc.Kind, len(g.Elems))
+	for i := range g.Elems {
+		params[i] = &check.Var{Type: tt.Elems[i]}
+		pkinds[i] = b.kind(tt.Elems[i])
+	}
+	combine := b.makeClosure(closure{name: "load of " + m.Name(), params: params, pkinds: pkinds, ret: bc.KRef, body: func(c *fb) {
+		vals := make([]int, len(params))
+		for i, v := range params {
+			vals[i] = c.vars[v]
+		}
+		c.emit(op("RET"), c.newStruct(c.l.shape(tt), tt.Elems, vals, -1))
+	}})
+	args = append(args, combine, b.konst(int64(bc.KRef)))
+	for i, x := range g.Elems {
+		call := unparen(x).(*syntax.CallExpr)
+		inner := tt.Elems[i]
+		// Named for what the core's diagnostics say of it: Profile's load
+		// of page (api.user) at profile.asuka:8.
+		thunk := b.makeClosure(closure{name: "load of " + m.Name() + " (" + exprText(call.Fun) + ")", ctxs: []*check.FuncCtx{ctx}, ret: bc.KRef, throws: true, body: func(c *fb) {
+			c.ctx = ctx
+			c.loadKey = c.l.prog.ReloadKey(call)
+			f := c.taskOf(call, -1, inner, false)
+			c.loadKey = nil
+			c.emit(op("RET"), f)
+		}})
+		args = append(args, thunk)
+	}
+	return b.callB(uiLoadGroup, bc.KRef, args...)
+}
+
+// exprText spells a call's callee as its source does: api.user.
+func exprText(e syntax.Expr) string {
+	switch x := unparen(e).(type) {
+	case *syntax.Ident:
+		return x.Name
+	case *syntax.MemberExpr:
+		return exprText(x.X) + "." + x.Name.Name
+	}
+	return "a call"
 }
 
 // reloadKey is fn's key in the core's registry of loads.

@@ -1,0 +1,29 @@
+// load (c₁, c₂, …) (rfcs/0017): one load of several async calls, a
+// Loading of the tuple of their results.
+
+async fn fetchUser(id: int) -> string = "user {id}"
+async fn fetchPosts(id: int) -> [string] = []
+fn count() -> int = 1
+
+component Profile(id: int) {
+  let page = load (fetchUser(id), fetchPosts(id))
+  let mixed = load (fetchUser(id), id) // ERROR "^load \\(a\\(\\), b\\(\\)\\) groups calls: load \\(fetchUser\\(…\\), id\\) has id$"
+  let sync = load (fetchUser(id), count()) // ERROR "^load takes async calls, and count isn't one$"
+
+  Column {
+    match page {
+      .pending => Text("…")
+      .failed(e) => Text(e.message)
+      .ready((u, posts)) => Text("{u}: {posts.count()}")
+    }
+    Text(page.value?.0 ?? "")
+    Text(page.value?.1 ?? "") // ERROR "^the default is a string, not a \\[string\\]|^argument text of Text is a \\[string\\]"
+    Button("x") {
+      on press {
+        page.optimistic(p => (p.0, p.1 + ["draft"]))
+        page.reload()
+        await reload fetchPosts(id)
+      }
+    }
+  }
+}

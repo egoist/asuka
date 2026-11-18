@@ -1180,6 +1180,19 @@ owner disposes it. The checker reports a `reload` of a function no
 `load` in the program calls (`reload-not-loaded`, once the program is
 whole) and a call's errors as `reload-arguments`.
 
+`let x = load (c₁, c₂, …)` (RFC 0017) is CALLB `ui.load_group(combine,
+kind, thunk₁, thunk₂, …)`: a thunk per call, as a single load's (its
+own reads, its own key), and `combine`, a closure of the calls' results
+that makes the tuple (NEWS). The checker types it `Loading<(A, B, …)>`
+and keeps each element a call (`group-not-calls`). The core's loader has
+a slot per call, each an effect with its own run, ticket and answer, its
+own `again` (`x.reload()` writes all, `reload f(…)` the slots of `f`'s
+key): a slot's answer is held until no slot runs, then the loader lands
+them in one batch, `combine`d only when one changed. It's `.pending`
+until each slot answered once, `.failed` while one's last run failed
+(the first in source order), its value kept; `.loading` while a slot
+runs. A single load is a loader of one slot, no `combine`.
+
 ## Navigation and commands
 
 `push(X(…))`, `present(X(…))`: CALLB `ui.push(builder)`, `ui.present(builder)`.

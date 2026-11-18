@@ -2523,10 +2523,32 @@ func (p *parser) loadParen() Expr {
 		x := p.postfixFrom(args.Start, &ParenExpr{X: l[0].Value, Span: args.Span})
 		return &UnaryExpr{Op: LOAD, X: x, Span: p.span(start)}
 	}
+	if l := args.List; len(l) > 1 && groupsCalls(l) {
+		// load (a(), b()) (rfcs/0017): one load of several calls, which
+		// the checker says are each a call (group-not-calls).
+		elems := make([]Expr, len(l))
+		for i, a := range l {
+			elems[i] = a.Value
+		}
+		return &UnaryExpr{Op: LOAD, X: &TupleExpr{Elems: elems, Span: args.Span}, Span: p.span(start)}
+	}
 	c := &CallExpr{Fun: id, Args: args}
 	p.trailingBlock(c)
 	c.Span = p.span(start)
 	return p.postfixFrom(start, c)
+}
+
+// groupsCalls reports whether load's parentheses hold a group: their
+// elements unlabeled, one of them a call at least.
+func groupsCalls(l []*Arg) bool {
+	call := false
+	for _, a := range l {
+		if a.Label != nil {
+			return false
+		}
+		call = call || isCall(a.Value)
+	}
+	return call
 }
 
 // isCall reports whether x is a call, maybe in parentheses.

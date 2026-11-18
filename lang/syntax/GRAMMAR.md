@@ -383,7 +383,10 @@ What the parser decides where the productions are ambiguous:
   declaration may take (the checker's), as `load` is a form.
 - **load** (decision 27): `load` and `(` is a call of a function named
   `load` (`load()`, `load(id)`), unless the parentheses hold one call,
-  which is the `load` operator's operand: `load (api.user(id))`.
+  which is the `load` operator's operand: `load (api.user(id))`, or
+  several unlabeled elements one of which is a call at least, a group
+  (rfcs/0017), whose operand is their tuple: `load (api.user(id),
+  api.posts(id))`.
 - **reload** (rfcs/0017): `reload` and a name is the `reload` operator,
   of a call or of a function by its name (`reload api.notes(id)`,
   `reload api.notes`); `reload` and `(` is a call of a function named

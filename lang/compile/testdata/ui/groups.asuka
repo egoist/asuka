@@ -1,0 +1,133 @@
+// load (c₁, c₂, …) (rfcs/0017): one load of several calls, each run again
+// only when what it reads changes, their answers shown together. The
+// RFC's profile: changing the posts' page runs the posts alone, the user
+// stays; changing the person runs both, and the new user never shows over
+// the old person's posts.
+
+struct User {
+  id: string
+  name: string
+}
+
+enum Problem: Error { offline }
+
+store Api {
+  state userRuns = 0
+  state postRuns = 0
+  state offline = false
+
+  async fn user(id: string) throws -> User {
+    userRuns += 1
+    await sleep(10ms)
+    if offline { throw Problem.offline }
+    return User(id: id, name: "user {id}")
+  }
+
+  async fn posts(id: string, page: int) -> [string] {
+    postRuns += 1
+    await sleep(30ms)
+    return ["{id} post {page}"]
+  }
+}
+
+screen Profile(id: string) {
+  use api: Api
+  state n = 1
+  let page = load (api.user(id), api.posts(id, page: n))
+
+  Column {
+    match page {
+      .pending => Text("…")
+      .failed(e) => Text("failed: {e.message}")
+      .ready((u, posts)) => Column {
+        Text(u.name)
+        for p in posts key p { Text(p) }
+      }
+    }
+    if page.loading { Text("loading") }
+    Text("kept {page.value?.0.name ?? "none"}")
+    Button("Next page") { on press { n += 1 } }
+    Button("Retry") { on press { page.reload() } }
+    Button("Draft") {
+      on press {
+        page.optimistic(p => (p.0, p.1 + ["draft"]))
+        await reload api.posts
+      }
+    }
+  }
+}
+
+component People {
+  state who = "a"
+  Column {
+    Profile(who)
+    Button("Next person") { on press { who = "b" } }
+  }
+}
+
+app {
+  provide Api()
+  People()
+}
+
+test "pending until both answer; together after" {
+  let api = Api()
+  let app = mount(People(), provide: api)
+  app.expect("…")
+  await sleep(15ms)
+  app.expect("…")       // the user answered; the posts haven't
+  await app.idle()
+  app.expect("user a", "a post 1")
+  app.expectNo("loading")
+}
+
+test "the posts' page runs the posts alone" {
+  let api = Api()
+  let app = mount(People(), provide: api)
+  await app.idle()
+  app.tap("Next page")
+  app.expect("user a", "a post 1", "loading")
+  await app.idle()
+  app.expect("user a", "a post 2")
+  expect(api.userRuns == 1)
+  expect(api.postRuns == 2)
+}
+
+test "another person: the new user waits for the new posts" {
+  let api = Api()
+  let app = mount(People(), provide: api)
+  await app.idle()
+  app.tap("Next person")
+  await sleep(15ms)
+  app.expect("user a", "a post 1", "loading")  // user b is in, held
+  app.expectNo("user b")
+  await app.idle()
+  app.expect("user b", "b post 1")
+  app.expectNo("user a")
+}
+
+test "a failure is the first call's, the value kept" {
+  let api = Api()
+  let app = mount(People(), provide: api)
+  await app.idle()
+  api.offline = true
+  app.tap("Retry")
+  await app.idle()
+  app.expect("failed: Problem.offline", "kept user a")
+  api.offline = false
+  app.tap("Retry")
+  await app.idle()
+  app.expect("user a", "a post 1")
+}
+
+test "optimistic over the tuple, confirmed by a reload of one call" {
+  let api = Api()
+  let app = mount(People(), provide: api)
+  await app.idle()
+  app.tap("Draft")
+  app.expect("a post 1", "draft")
+  await app.idle()
+  app.expectNo("draft")
+  expect(api.userRuns == 1)
+  expect(api.postRuns == 2)
+}
