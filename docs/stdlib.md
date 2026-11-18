@@ -34,7 +34,7 @@ they do for the platform's own apps.
 
 | Package | What it has |
 |---|---|
-| [`std/json`](std/json.md) | `json.decode<T>(text)` and `json.encode(value, indent:)`: typed JSON, by the compiler's knowledge of `T` |
+| [`std/json`](std/json.md) | `json.decode<T>(text)` and `json.encode(value, indent:)`: typed JSON, by the compiler's knowledge of `T`; `json.parse(text)`, a `json.Value` (`.null`, `.bool`, `.int`, `.float`, `.string`, `.array`, `.object`; `get(key)`, `at(i)`, `asString()`...): JSON of any shape, as it is, alone or as a struct's field |
 | [`std/math`](std/math.md) | `sqrt`, `pow`, `exp`, `log`, `log2`, `log10`, `floor`, `ceil`, `round`, `sin`, `cos`, `tan`, `atan`, `atan2`, `clamp`, `random`, `randomInt`, `seed`, `pi` |
 | [`std/embed`](std/embed.md) | The package's files compiled into the app: `embed.text(path)`, `bytes(path)`, `json<T>(path)` (read as a `T` and checked as the app compiles), `texts(glob)` and `files(glob)` (`[path: text]`, `[path: bytes]`) |
 | [`std/time`](std/time.md) | `time.now()`, `time.date(2026, 3, 7, hour: 9, zone: .utc)`, `time.unix(s)`, `time.parse(rfc3339)`: a `Time`, an instant with its zone (`.local`, `.utc`, `.fixed(seconds:)`) and its wall clock's `year`, `month`, `day`, `hour`, `minute`, `second`, `nanosecond`, `weekday`. Its methods: `format("EEE d MMM, HH:mm")` (Unicode's date patterns, in English), `rfc3339()`, `add(d)`, `sub(t)` (a `Duration`), `addDate(years:, months:, days:)`, `isBefore`, `isAfter`, `compare`, `sameDay`, `startOfDay`, `truncate(d)`, `inZone`, `utc`, `local`, `unix`, `unixMilli`, `unixNano`. `time.monotonic()` (a `Duration` that only goes forward), `time.since(t)`, `time.ticks(1s)` and `time.ticker(1s)` (a stream of times) |

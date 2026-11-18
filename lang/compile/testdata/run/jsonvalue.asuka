@@ -1,0 +1,90 @@
+// std/json's Value: JSON of any shape, read, matched, made, written and
+// printed as it is; a field of a struct for the part whose shape isn't
+// known.
+
+import std/json
+
+struct Pkg {
+  name: string
+  scripts: json.Value
+  extra: json.Value
+}
+
+test "reading" {
+  let v = try json.parse(r"""{"name": "x", "n": 3, "big": 18446744073709551616, "f": 1.5, "ok": true, "none": null, "nested": {"a": {"b": [10, 20]}}, "n": 4}""")
+  print(v)
+  print(v.get("name")?.asString() ?? "?")
+  print(v.get("n")?.asInt() ?? -1)
+  print(v.get("big")?.asInt() ?? -1)
+  print(v.get("f")?.asFloat() ?? 0)
+  print(v.get("nested")?.get("a")?.get("b")?.at(1)?.asInt() ?? 0)
+  print(v.get("missing") == none)
+  print(v.get("none")?.isNull() ?? false)
+  print(v.get("ok")?.asBool() ?? false)
+  match v {
+    .object(members) => print("{members.count()} members: {members.keys()}")
+    _ => print("not an object")
+  }
+  for x in try json.parse("[1, 2.0, -3, 2.5]").asArray() ?? [] {
+    print(x.asInt() ?? 0)
+  }
+}
+
+test "making and writing" {
+  let made: json.Value = .object(["a": .int(1), "b": .array([.string("x\n"), .null, .float(2.5), .bool(false)])])
+  print(json.encode(made))
+  print(json.encode(made, indent: 2))
+  print("in a string: {made}")
+  print(made == made)
+  print(try json.parse(json.encode(made)) == made)
+}
+
+test "a field of a struct" {
+  let p = try json.decode<Pkg>(r"""{"name": "app", "scripts": {"test": "go test"}}""")
+  print(p.scripts.get("test")?.asString() ?? "")
+  print(p.extra.isNull())
+  print(json.encode(p))
+  let all = try json.decode<[string: json.Value]>(r"""{"a": 1, "b": [true]}""")
+  print(all["b"]?.at(0)?.asBool() ?? false)
+}
+
+test "a mistake says where" {
+  print(try json.parse(r#"{"a": }"#))
+}
+
+// Output:
+// {"name":"x","n":4,"big":18446744073709552000,"f":1.5,"ok":true,"none":null,"nested":{"a":{"b":[10,20]}}}
+// x
+// 4
+// -1
+// 1.5
+// 20
+// true
+// true
+// true
+// 7 members: ["name","n","big","f","ok","none","nested"]
+// 1
+// 2
+// -3
+// 0
+// ok reading
+// {"a":1,"b":["x\n",null,2.5,false]}
+// {
+//   "a": 1,
+//   "b": [
+//     "x\n",
+//     null,
+//     2.5,
+//     false
+//   ]
+// }
+// in a string: {"a":1,"b":["x\n",null,2.5,false]}
+// true
+// true
+// ok making and writing
+// go test
+// true
+// {"name":"app","scripts":{"test":"go test"},"extra":null}
+// true
+// ok a field of a struct
+// FAIL a mistake says where: json: 1:7: expected a value

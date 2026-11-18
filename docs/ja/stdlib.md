@@ -20,7 +20,7 @@ state units = store.read("units", "metric")
 
 | パッケージ | 内容 |
 |---|---|
-| [`std/json`](std/json.md) | `json.decode<T>(text)` と `json.encode(value, indent:)`：コンパイラーが `T` について知っていることにもとづく、型付きの JSON |
+| [`std/json`](std/json.md) | `json.decode<T>(text)` と `json.encode(value, indent:)`：コンパイラーが `T` について知っていることにもとづく、型付きの JSON。`json.parse(text)` は `json.Value`（`.null`、`.bool`、`.int`、`.float`、`.string`、`.array`、`.object`。`get(key)`、`at(i)`、`asString()` など）を返します：形の決まっていない JSON をそのまま扱え、単独でも構造体のフィールドとしても使えます |
 | [`std/math`](std/math.md) | `sqrt`、`pow`、`exp`、`log`、`log2`、`log10`、`floor`、`ceil`、`round`、`sin`、`cos`、`tan`、`atan`、`atan2`、`clamp`、`random`、`randomInt`、`seed`、`pi` |
 | [`std/embed`](std/embed.md) | パッケージのファイルをアプリに組み込みます：`embed.text(path)`、`bytes(path)`、`json<T>(path)`（`T` として読み、コンパイル時に検査）、`texts(glob)` と `files(glob)`（`[パス: テキスト]`、`[パス: バイト列]`） |
 | [`std/time`](std/time.md) | `time.now()`、`time.date(2026, 3, 7, hour: 9, zone: .utc)`、`time.unix(s)`、`time.parse(rfc3339)`：`Time` を返します。タイムゾーン（`.local`、`.utc`、`.fixed(seconds:)`）付きの時刻で、壁時計としての `year`、`month`、`day`、`hour`、`minute`、`second`、`nanosecond`、`weekday` を持ちます。メソッドは `format("EEE d MMM, HH:mm")`（Unicode の日付パターン、英語で出力）、`rfc3339()`、`add(d)`、`sub(t)`（`Duration` を返す）、`addDate(years:, months:, days:)`、`isBefore`、`isAfter`、`compare`、`sameDay`、`startOfDay`、`truncate(d)`、`inZone`、`utc`、`local`、`unix`、`unixMilli`、`unixNano` です。ほかに `time.monotonic()`（前にしか進まない `Duration`）、`time.since(t)`、`time.ticks(1s)` と `time.ticker(1s)`（時刻のストリーム） |

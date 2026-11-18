@@ -394,6 +394,9 @@ func (l *Lowerer) desc(t check.Type) string {
 		case check.EnumType:
 			if x.Obj.RefEnum() {
 				l.shape(t)
+				if check.IsJSONValue(t) {
+					return "J" + l.typeKey(t) + ";" // any JSON, as it is
+				}
 				return "E" + l.typeKey(t) + ";"
 			}
 			l.intEnumShape(x)

@@ -443,6 +443,34 @@ async fn main() throws {
 }
 ```
 
+## JSON of any shape
+
+A struct reads JSON whose shape the program knows (`json.decode<T>`,
+[Data](data.md)). What it can't know, a tool's config or whatever is
+piped in, is a `json.Value`: `json.parse(text)` reads any JSON as it is,
+`get(key)`, `at(i)` and `asString()`, `asInt()`... look inside, and a
+`match` takes its cases (`.object(members)`, `.array(elements)`,
+`.string(s)`...). It prints, and `json.encode` writes it, as JSON.
+
+```asuka check
+import std/json
+import std/os
+
+/// Prints what's at a path in the JSON on stdin: pick user.emails.0
+async fn main() throws {
+  var v = try json.parse(os.readAll().string())
+  for step in (os.args().first() ?? "").split(".") {
+    if step.isEmpty() { continue }
+    let next = if let i = step.toInt() { v.at(i) } else { v.get(step) }
+    v = next ?? json.Value.null
+  }
+  match v {
+    .string(s) => print(s)       // as text, not quoted
+    _ => print(json.encode(v, indent: 2))
+  }
+}
+```
+
 ## Running
 
 `asuka run` runs a program's `main` at once, with no build to wait for: the arguments after `--` are its own, and it exits with the

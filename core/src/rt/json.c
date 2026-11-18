@@ -32,6 +32,7 @@ static const char *desc_end(const char *p) {
 			continue;
 		case 'S':
 		case 'E':
+		case 'J':
 		case 'e': {
 			const char *q = strchr(p, ';');
 			return q ? q + 1 : p + strlen(p);
@@ -57,6 +58,8 @@ typedef struct {
 	const char *s, *end;
 	const ak_json_types *t;
 	int depth;  // arrays and objects open, up to AK_JSON_MAX_DEPTH
+	const char *jdesc;       // the json.Value descriptor last looked up,
+	const ak_shape *jshape;  // and its shape
 	bool failed;
 	char msg[200];
 } parser;
@@ -326,8 +329,16 @@ static bool number(parser *ps, double *out, bool *integral, int64_t *iv) {
 // zero_field starts a field the JSON leaves out, of descriptor fd: none,
 // a scalar's zero, an empty string or collection; false for one it can't
 // leave out (a struct, an enum, bytes).
-static bool zero_field(const char *fd, ak_val *out) {
+static ak_enum *json_null(parser *ps, const char *d);
+
+static bool zero_field(parser *ps, const char *fd, ak_val *out) {
 	if (fd[0] == '?' || desc_kind(fd) != AK_K_REF) return true;  // none, or a zero scalar
+	if (fd[0] == 'J') {
+		// A json.Value left out: null.
+		ak_enum *n = json_null(ps, fd);
+		out->p = n;
+		return n != NULL;
+	}
 	if (fd[0] == 's') out->p = ak_str_empty();
 	else if (fd[0] == '[') out->p = ak_arr_new(desc_kind(fd + 1), NULL, 0);
 	else if (fd[0] == '{') out->p = ak_map_new(AK_K_REF, true, desc_kind(fd + 1), NULL);
@@ -388,7 +399,7 @@ check:
 	for (uint16_t i = 0; i < s->nfields; i++) {
 		if (set[i]) continue;
 		extern const char *ak_json_field_desc(const ak_shape *s, int i);
-		if (!zero_field(ak_json_field_desc(s, i), &o->f[i])) {
+		if (!zero_field(ps, ak_json_field_desc(s, i), &o->f[i])) {
 			fail(ps, "a missing field %s", s->names[i]);
 			goto done;
 		}
@@ -400,6 +411,148 @@ done:
 		return (ak_val){0};
 	}
 	return (ak_val){.p = o};
+}
+
+// ---- json.Value: any JSON ----
+//
+// J<name>; is std/json's Value, an enum whose cases are null, bool, int,
+// float, string, array and object: the document as it is, whatever its
+// shape. Its cases are found by their names' first letters, which differ.
+
+static int json_case(const ak_shape *s, char first) {
+	for (uint16_t c = 0; c < s->ncases; c++)
+		if (s->cases[c].name[0] == first) return c;
+	return -1;
+}
+
+static const ak_shape *json_shape(parser *ps, const char *d) {
+	if (ps->jdesc == d) return ps->jshape;
+	const ak_shape *s = ps->t && ps->t->shape ? ps->t->shape(ps->t->ctx, d + 1, name_len(d)) : NULL;
+	if (!s || json_case(s, 'n') < 0) {
+		fail(ps, "no type %s", d + 1);
+		return NULL;
+	}
+	ps->jdesc = d, ps->jshape = s;
+	return s;
+}
+
+static ak_enum *json_null(parser *ps, const char *d) {
+	const ak_shape *s = json_shape(ps, d);
+	return s ? ak_enum_new(s, (uint16_t)json_case(s, 'n')) : NULL;
+}
+
+static ak_enum *json_case_new(const ak_shape *s, char first, ak_val v) {
+	ak_enum *e = ak_enum_new(s, (uint16_t)json_case(s, first));
+	e->f[0] = v;
+	return e;
+}
+
+// json_int reads the digits from st to end as an int, when they fit.
+static bool json_int(const char *st, const char *end, int64_t *out) {
+	bool neg = st < end && *st == '-';
+	if (neg) st++;
+	if (st == end) return false;
+	uint64_t v = 0, limit = neg ? (uint64_t)INT64_MAX + 1 : (uint64_t)INT64_MAX;
+	for (; st < end; st++) {
+		if (*st < '0' || *st > '9') return false;
+		uint64_t dgt = (uint64_t)(*st - '0');
+		if (v > (limit - dgt) / 10) return false;
+		v = v * 10 + dgt;
+	}
+	*out = neg ? (int64_t)(0 - v) : (int64_t)v;
+	return true;
+}
+
+static ak_val value(parser *ps, const char *d);
+
+static ak_val json_any(parser *ps, const char *d) {
+	const ak_shape *s = json_shape(ps, d);
+	if (!s) return (ak_val){0};
+	char c = *ps->s;
+	switch (c) {
+	case 'n':
+		if (lit(ps, "null")) return (ak_val){.p = ak_enum_new(s, (uint16_t)json_case(s, 'n'))};
+		break;
+	case 't':
+	case 'f':
+		if (lit(ps, "true")) return (ak_val){.p = json_case_new(s, 'b', (ak_val){.i = 1})};
+		if (lit(ps, "false")) return (ak_val){.p = json_case_new(s, 'b', (ak_val){.i = 0})};
+		break;
+	case '"': {
+		ak_str *str_ = str(ps);
+		if (!str_) return (ak_val){0};
+		return (ak_val){.p = json_case_new(s, 's', (ak_val){.p = str_})};
+	}
+	case '[': {
+		lit(ps, "[");
+		ak_arr *a = ak_arr_new(AK_K_REF, s, 0);
+		ws(ps);
+		if (!lit(ps, "]")) {
+			for (;;) {
+				ak_val v = value(ps, d);
+				if (ps->failed) {
+					ak_release(a);
+					return (ak_val){0};
+				}
+				ak_arr_push(&a, v);
+				ws(ps);
+				if (lit(ps, ",")) continue;
+				if (lit(ps, "]")) break;
+				fail(ps, "expected ',' or ']'%s", "");
+				ak_release(a);
+				return (ak_val){0};
+			}
+		}
+		return (ak_val){.p = json_case_new(s, 'a', (ak_val){.p = a})};
+	}
+	case '{': {
+		lit(ps, "{");
+		ak_map *m = ak_map_new(AK_K_REF, true, AK_K_REF, s);
+		ws(ps);
+		if (!lit(ps, "}")) {
+			for (;;) {
+				ws(ps);
+				ak_str *k = str(ps);
+				ws(ps);
+				if (ps->failed || !lit(ps, ":")) {
+					ak_release(k);
+					fail(ps, "expected ':'%s", "");
+					ak_release(m);
+					return (ak_val){0};
+				}
+				ak_val v = value(ps, d);
+				if (ps->failed) {
+					ak_release(k);
+					ak_release(m);
+					return (ak_val){0};
+				}
+				// A member written twice: the last, as JavaScript's.
+				ak_map_set(&m, (ak_val){.p = k}, v);
+				ws(ps);
+				if (lit(ps, ",")) continue;
+				if (lit(ps, "}")) break;
+				fail(ps, "expected ',' or '}'%s", "");
+				ak_release(m);
+				return (ak_val){0};
+			}
+		}
+		return (ak_val){.p = json_case_new(s, 'o', (ak_val){.p = m})};
+	}
+	default: {
+		// A number: an int when it's written as one and fits, else a
+		// float (1.5, 1e3, 18446744073709551616).
+		if (c != '-' && (c < '0' || c > '9')) break;
+		const char *st = ps->s;
+		double f;
+		bool integral;
+		if (!number(ps, &f, &integral, NULL)) return (ak_val){0};
+		int64_t iv;
+		if (integral && json_int(st, ps->s, &iv)) return (ak_val){.p = json_case_new(s, 'i', (ak_val){.i = iv})};
+		return (ak_val){.p = json_case_new(s, 'f', (ak_val){.f = f})};
+	}
+	}
+	fail(ps, "expected a value%s", "");
+	return (ak_val){0};
 }
 
 static ak_val value_of(parser *ps, const char *d);
@@ -421,6 +574,8 @@ static ak_val value(parser *ps, const char *d) {
 
 static ak_val value_of(parser *ps, const char *d) {
 	switch (*d) {
+	case 'J':
+		return json_any(ps, d);
 	case '?':
 		if (lit(ps, "null")) return (ak_val){0};
 		{
@@ -712,7 +867,7 @@ static ak_val value_of(parser *ps, const char *d) {
 				}
 			}
 			for (uint16_t i = 0; i < cs->nfields && !ps->failed; i++)
-				if (!set[i] && !zero_field(ak_json_case_desc(s, ci, i), &e->f[i])) fail(ps, "a missing field %s", cs->names ? cs->names[i] : "");
+				if (!set[i] && !zero_field(ps, ak_json_case_desc(s, ci, i), &e->f[i])) fail(ps, "a missing field %s", cs->names ? cs->names[i] : "");
 			ak_free(set);
 		} else if (cs->nfields == 1) {
 			e->f[0] = value(ps, ak_json_case_desc(s, ci, 0));
@@ -891,6 +1046,22 @@ static void enc_value(encoder *e, ak_val v, const char *d) {
 		else ak_strb_int(b, v.i);
 		return;
 	}
+	case 'J': {
+		// A json.Value: as it is. An array's or an object's items are
+		// the frame's, its descriptor this one.
+		ak_enum *en = v.p;
+		const ak_case *c = en ? &en->shape->cases[ak_enum_case(en)] : NULL;
+		switch (c ? c->name[0] : 'n') {
+		case 'b': ak_strb_bool(b, en->f[0].i != 0); return;
+		case 'i': ak_strb_int(b, en->f[0].i); return;
+		case 'f': enc_value(e, en->f[0], "f"); return;
+		case 's': enc_value(e, en->f[0], "s"); return;
+		case 'a': open_(e, d, en->f[0].p, "[", 1); return;
+		case 'o': open_(e, d, en->f[0].p, "{", 1); return;
+		}
+		ak_strb_cstr(b, "null", 4);
+		return;
+	}
 	case 'E': {
 		ak_enum *en = v.p;
 		const ak_case *c = &en->shape->cases[ak_enum_case(en)];
@@ -917,7 +1088,28 @@ static void enc_step(encoder *e) {
 	const char *key = NULL;
 	size_t keylen = 0;
 	bool done = false;
-	switch (*o->d) {
+	char kind = *o->d;
+	if (kind == 'J') kind = o->o && ((ak_obj *)o->o)->tag == AK_TAG_ARR ? 'a' : 'o';
+	switch (kind) {
+	case 'a':
+	case 'o':
+		// A json.Value's array or object: its items are Values too.
+		if (kind == 'a') {
+			ak_arr *a = o->o;
+			if (!a || o->i >= a->len) done = true;
+			else item = a->data[o->i++], id = o->d;
+		} else {
+			ak_map *m = o->o;
+			while (m && o->i < m->len && m->dead[o->i]) o->i++;
+			if (!m || o->i >= m->len) {
+				done = true;
+			} else {
+				ak_str *k = m->keys[o->i].p;
+				key = k->data, keylen = k->len;
+				item = m->vals[o->i++], id = o->d;
+			}
+		}
+		break;
 	case '[': {
 		ak_arr *a = o->o;
 		if (!a || o->i >= a->len) done = true;
@@ -995,7 +1187,7 @@ static void enc_step(encoder *e) {
 	}
 	if (done) {
 		if (o->any) nl(b, e->indent, depth);
-		ak_strb_cstr(b, *o->d == '[' || *o->d == '<' ? "]" : *o->d == '(' ? ")" : "}", 1);
+		ak_strb_cstr(b, kind == '[' || kind == '<' || kind == 'a' ? "]" : kind == '(' ? ")" : "}", 1);
 		e->open.len--;
 		return;
 	}

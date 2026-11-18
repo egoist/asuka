@@ -326,6 +326,29 @@ async fn main() throws {
 }
 ```
 
+## 任意结构的 JSON
+
+程序知道结构的 JSON，用结构体来读（`json.decode<T>`，见[数据](data.md)）。结构无法预知的，比如工具的配置文件或者从管道传进来的任意内容，就用 `json.Value`：`json.parse(text)` 原样读入任意 JSON，用 `get(key)`、`at(i)` 以及 `asString()`、`asInt()` ……查看里面的内容，也可以用 `match` 匹配它的各个 case（`.object(members)`、`.array(elements)`、`.string(s)` ……）。打印它或者用 `json.encode` 写出它，得到的都是 JSON。
+
+```asuka check
+import std/json
+import std/os
+
+/// 打印 stdin 中 JSON 在某个路径上的值：pick user.emails.0
+async fn main() throws {
+  var v = try json.parse(os.readAll().string())
+  for step in (os.args().first() ?? "").split(".") {
+    if step.isEmpty() { continue }
+    let next = if let i = step.toInt() { v.at(i) } else { v.get(step) }
+    v = next ?? json.Value.null
+  }
+  match v {
+    .string(s) => print(s)       // 作为文本输出，不带引号
+    _ => print(json.encode(v, indent: 2))
+  }
+}
+```
+
 ## 运行
 
 `asuka run` 直接运行程序的 `main`，不需要等待构建：`--` 之后的参数都交给程序，退出时带上程序的退出码。

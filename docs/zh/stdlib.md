@@ -20,7 +20,7 @@ state units = store.read("units", "metric")
 
 | 包 | 内容 |
 |---|---|
-| [`std/json`](std/json.md) | `json.decode<T>(text)` 和 `json.encode(value, indent:)`：带类型的 JSON，依据编译器对 `T` 的了解来读写 |
+| [`std/json`](std/json.md) | `json.decode<T>(text)` 和 `json.encode(value, indent:)`：带类型的 JSON，依据编译器对 `T` 的了解来读写；`json.parse(text)` 返回 `json.Value`（`.null`、`.bool`、`.int`、`.float`、`.string`、`.array`、`.object`；`get(key)`、`at(i)`、`asString()` ……）：任意结构的 JSON，原样保留，可以单独使用，也可以作为结构体的字段 |
 | [`std/math`](std/math.md) | `sqrt`、`pow`、`exp`、`log`、`log2`、`log10`、`floor`、`ceil`、`round`、`sin`、`cos`、`tan`、`atan`、`atan2`、`clamp`、`random`、`randomInt`、`seed`、`pi` |
 | [`std/embed`](std/embed.md) | 把包里的文件编进应用：`embed.text(path)`、`bytes(path)`、`json<T>(path)`（按 `T` 读取，编译时检查）、`texts(glob)` 和 `files(glob)`（`[路径: 文本]`、`[路径: 字节]`） |
 | [`std/time`](std/time.md) | `time.now()`、`time.date(2026, 3, 7, hour: 9, zone: .utc)`、`time.unix(s)`、`time.parse(rfc3339)`：得到一个 `Time`，即带时区（`.local`、`.utc`、`.fixed(seconds:)`）的时刻，以及它在挂钟上的 `year`、`month`、`day`、`hour`、`minute`、`second`、`nanosecond`、`weekday`。它的方法有：`format("EEE d MMM, HH:mm")`（Unicode 的日期模式，英文输出）、`rfc3339()`、`add(d)`、`sub(t)`（得到 `Duration`）、`addDate(years:, months:, days:)`、`isBefore`、`isAfter`、`compare`、`sameDay`、`startOfDay`、`truncate(d)`、`inZone`、`utc`、`local`、`unix`、`unixMilli`、`unixNano`。另有 `time.monotonic()`（只会向前走的 `Duration`）、`time.since(t)`、`time.ticks(1s)` 和 `time.ticker(1s)`（时刻的流） |

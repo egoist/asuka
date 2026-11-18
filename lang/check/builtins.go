@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/egoist/asuka/lang/diag"
+	"github.com/egoist/asuka/lang/prelude"
 	"github.com/egoist/asuka/lang/syntax"
 )
 
@@ -873,6 +874,33 @@ func ProvidesStd(path string) bool {
 	return false
 }
 
+// IsJSONValue reports whether t is std/json's Value, which JSON reads
+// and writes as it is.
+func IsJSONValue(t Type) bool {
+	n, ok := t.(*Named)
+	return ok && n.Obj.Kind == EnumType && n.Obj.Name() == "Value" && n.Obj.Pkg != nil && n.Obj.Pkg.Path == "std/json"
+}
+
+// stdJSON checks std/json: its Asuka (prelude.StdJSON) with the
+// compiler's decode and encode in its scope. It's checked as the checker
+// is made, as the prelude is (checking a package's files while another's
+// are checked isn't), and joins the program once it's imported.
+func (c *Checker) stdJSON() {
+	p := &Package{Path: "std/json", Name: "json", qualify: true}
+	p.Scope = NewScope(c.prelude.Scope)
+	p.Scope.Insert(&Builtin{object: object{name: "decode"}, ID: BJSONDecode})
+	p.Scope.Insert(&Builtin{object: object{name: "encode"}, ID: BJSONEncode})
+	src := prelude.StdJSON()
+	f, errs := syntax.ParseFile(c.fset, src.Name, src.Text)
+	for _, e := range errs {
+		c.diags = append(c.diags, FromSyntax(e))
+	}
+	n := len(c.pkgs)
+	c.checkFiles(p, []*syntax.SourceFile{f}, nil)
+	c.pkgs = c.pkgs[:n]
+	c.jsonPkg = p
+}
+
 func (c *Checker) makeStd(path string) *Package {
 	p := &Package{Path: path, Prelude: false}
 	p.Scope = NewScope(nil)
@@ -883,9 +911,10 @@ func (c *Checker) makeStd(path string) *Package {
 	f2 := &FuncType{Params: []Type{Float, Float}, Result: Float}
 	switch path {
 	case "std/json":
-		p.Name = "json"
-		add("decode", BJSONDecode, "", nil)
-		add("encode", BJSONEncode, "", nil)
+		// Checked as the checker was made (stdJSON): in the program from
+		// its first import.
+		c.pkgs = append(c.pkgs, c.jsonPkg)
+		return c.jsonPkg
 	case "std/math":
 		p.Name = "math"
 		for _, n := range []string{"sqrt", "floor", "ceil", "round", "sin", "cos", "tan", "atan", "exp", "log", "log2", "log10"} {

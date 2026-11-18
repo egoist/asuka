@@ -1,0 +1,94 @@
+// std/json's Asuka: the package the checker makes (lang/check's
+// stdJSON), with the compiler's decode and encode in its scope.
+
+/// A JSON value of any shape, as the document has it: for what a
+/// program can't say the shape of as it compiles (a tool's config, a
+/// response's extra fields, a filter over any document). Where the shape
+/// is known, a struct reads it straight, and a field of a struct may be
+/// a Value for the part that isn't.
+///
+///   let v = try json.parse(text)
+///   let name = v.get("user")?.get("name")?.asString() ?? "?"
+///   match v {
+///     .object(members) => print("{members.count()} members")
+///     _ => print(v)    // as JSON
+///   }
+///
+/// A number written as an integer that fits an int is .int, any other
+/// .float. An object keeps its members in the document's order (one
+/// written twice: the last). json.encode writes a Value as it is, and it
+/// prints and goes in a string as its JSON: "{v}". A struct's field of
+/// type Value that the document leaves out is .null.
+pub enum Value {
+  null
+  bool(bool)
+  int(int)
+  float(float)
+  string(string)
+  array([Value])
+  object([string: Value])
+
+  /// The member key of an object; none when there's no such member, or
+  /// this isn't an object.
+  fn get(key: string) -> Value? = match self {
+    .object(members) => members[key]
+    _ => none
+  }
+
+  /// The element at index of an array; none when it's out of range, or
+  /// this isn't an array.
+  fn at(index: int) -> Value? = match self {
+    .array(elements) => elements.get(index)
+    _ => none
+  }
+
+  /// The string, when this is one.
+  fn asString() -> string? = match self {
+    .string(s) => s
+    _ => none
+  }
+
+  /// The number as an int: an int's, or a float's that's whole and in
+  /// int's range (2.0, as some documents write 2); none otherwise.
+  fn asInt() -> int? = match self {
+    .int(n) => n
+    .float(f) => if f == f.floor() && f >= -9223372036854775808.0 && f < 9223372036854775808.0 { int(f) } else { none }
+    _ => none
+  }
+
+  /// The number as a float, an int's too.
+  fn asFloat() -> float? = match self {
+    .int(n) => float(n)
+    .float(f) => f
+    _ => none
+  }
+
+  /// true or false, when this is one.
+  fn asBool() -> bool? = match self {
+    .bool(b) => b
+    _ => none
+  }
+
+  /// The elements, when this is an array.
+  fn asArray() -> [Value]? = match self {
+    .array(elements) => elements
+    _ => none
+  }
+
+  /// The members, when this is an object.
+  fn asObject() -> [string: Value]? = match self {
+    .object(members) => members
+    _ => none
+  }
+
+  /// Whether this is null.
+  fn isNull() -> bool = match self {
+    .null => true
+    _ => false
+  }
+}
+
+/// text's JSON, whatever its shape: json.decode<Value>(text). It throws
+/// when text isn't JSON (its message says where), or nests arrays and
+/// objects more than 512 deep.
+pub fn parse(text: string) throws -> Value = try decode<Value>(text)

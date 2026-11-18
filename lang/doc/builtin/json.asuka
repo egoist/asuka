@@ -15,6 +15,13 @@
 // an object. A generic function may read or write its
 // T: each call then needs a T JSON can say, which the compiler checks
 // where it's called.
+//
+// What has no shape known as the program compiles is a Value: any JSON,
+// as it is. json.parse(text) reads one; a struct's field may be one, for
+// the part of a document that's free-form.
+//
+//   let v = try json.parse(text)
+//   let version = v.get("engines")?.get("node")?.asString() ?? "any"
 
 /// The value of type T that text says. It throws when text isn't JSON or
 /// doesn't fit T (a value of the wrong type, a missing struct, a number

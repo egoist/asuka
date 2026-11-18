@@ -3,6 +3,8 @@ package doc
 import (
 	"embed"
 	"strings"
+
+	"github.com/egoist/asuka/lang/prelude"
 )
 
 // The documentation of the standard library's packages the compiler
@@ -25,7 +27,13 @@ func Builtin(path string) (*Package, bool) {
 	if err != nil {
 		return nil, false
 	}
-	p, err := FromSources(path, map[string][]byte{name + ".asuka": src})
+	srcs := map[string][]byte{name + ".asuka": src}
+	if path == "std/json" {
+		// Its Value and parse are Asuka the compiler checks: read where
+		// they're declared.
+		srcs["value.asuka"] = prelude.StdJSON().Text
+	}
+	p, err := FromSources(path, srcs)
 	if err != nil {
 		return nil, false
 	}

@@ -12,6 +12,10 @@
 //            with a payload is {"case": [fields...]} or {"case": {...}} by
 //            field labels
 //   e<name>; a payloadless enum stored as an int: its case's name
+//   J<name>; std/json's Value: any JSON, as it is (null, true, 1, 1.5,
+//            "a", [...], {...}); a number that's written as an integer
+//            and fits is its int case, any other its float case; a
+//            field left out is null
 //
 // Two more are written, never read: what print and interpolation show
 // of values JSON can't hold.

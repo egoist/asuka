@@ -326,6 +326,29 @@ async fn main() throws {
 }
 ```
 
+## 形の決まっていない JSON
+
+形がわかっている JSON は構造体で読みます（`json.decode<T>`、[データ](data.md)を参照）。ツールの設定ファイルやパイプで渡される任意の内容のように形がわからないものは `json.Value` で扱います。`json.parse(text)` はどんな JSON もそのまま読み込み、`get(key)`、`at(i)`、`asString()`、`asInt()` などで中身を見たり、`match` でケース（`.object(members)`、`.array(elements)`、`.string(s)` など）を取り出したりできます。表示しても `json.encode` で書き出しても JSON になります。
+
+```asuka check
+import std/json
+import std/os
+
+/// stdin の JSON のうち、パスの位置にある値を表示する：pick user.emails.0
+async fn main() throws {
+  var v = try json.parse(os.readAll().string())
+  for step in (os.args().first() ?? "").split(".") {
+    if step.isEmpty() { continue }
+    let next = if let i = step.toInt() { v.at(i) } else { v.get(step) }
+    v = next ?? json.Value.null
+  }
+  match v {
+    .string(s) => print(s)       // 引用符なしのテキストとして
+    _ => print(json.encode(v, indent: 2))
+  }
+}
+```
+
 ## 実行
 
 `asuka run` はプログラムの `main` をすぐに実行するので、ビルドを待つ必要がありません。`--` の後ろの引数はプログラムに渡され、プログラムの終了コードでそのまま終了します。

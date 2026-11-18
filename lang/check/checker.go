@@ -99,6 +99,8 @@ type Checker struct {
 	// lambdaThrew: whether each closure's body throws, for the built-in
 	// methods that throw when their closure does (Method.Rethrows).
 	lambdaThrew map[*syntax.LambdaExpr]bool
+	// jsonPkg is std/json, checked with the prelude (stdJSON).
+	jsonPkg *Package
 }
 
 // NewChecker makes a checker and checks the prelude with it.
@@ -117,6 +119,7 @@ func NewChecker(fset *syntax.FileSet) *Checker {
 	c.prelude = &Package{Path: "prelude", Name: "prelude", Prelude: true}
 	c.prelude.Scope = NewScope(c.universe)
 	c.checkFiles(c.prelude, files, nil)
+	c.stdJSON()
 	// What a shader's component is made of, under names no app writes
 	// (shaderlang.go).
 	for alias, name := range map[string]string{shaderElement: "Shader", shaderUniform: "Uniform", shaderColor: "colorUniform"} {

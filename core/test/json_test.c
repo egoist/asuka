@@ -26,8 +26,23 @@ static const ak_case shape_cases[] = {
 // Not const: its payloadless cases' shared values are made on it.
 static ak_shape shape_enum = {.name = "Shape", .ncases = 3, .cases = shape_cases};
 
+// std/json's enum Value { null, bool(bool), int(int), float(float),
+// string(string), array([Value]), object([string: Value]) }
+static const uint8_t v_bool[] = {AK_K_BOOL}, v_int[] = {AK_K_INT}, v_float[] = {AK_K_FLOAT}, v_ref[] = {AK_K_REF};
+static const ak_case value_cases[] = {
+	{.name = "null"},
+	{.name = "bool", .nfields = 1, .kinds = v_bool},
+	{.name = "int", .nfields = 1, .kinds = v_int},
+	{.name = "float", .nfields = 1, .kinds = v_float},
+	{.name = "string", .nfields = 1, .kinds = v_ref},
+	{.name = "array", .nfields = 1, .kinds = v_ref},
+	{.name = "object", .nfields = 1, .kinds = v_ref},
+};
+static ak_shape value_enum = {.name = "Value", .ncases = 7, .cases = value_cases};
+
 static const ak_shape *shape(void *ctx, const char *name, size_t n) {
 	AK_UNUSED(ctx);
+	if (n == 5 && memcmp(name, "Value", 5) == 0) return &value_enum;
 	if (n == 4 && memcmp(name, "Todo", 4) == 0) return &todo;
 	if (n == 4 && memcmp(name, "Node", 4) == 0) return &node;
 	if (n == 5 && memcmp(name, "Shape", 5) == 0) return &shape_enum;
@@ -392,4 +407,44 @@ TEST(encode_printed_only) {
 	s = ak_json_encode((ak_val){.p = NULL}, "mii", &types, 0);
 	CHECK_EQ_STR(s->data, "{}");
 	ak_release(s);
+}
+
+// std/json's Value: any JSON, as it is. It reads back what it writes;
+// integers that fit an int are ints, the rest floats; failures, deep
+// nesting included, leave nothing behind.
+TEST(json_value) {
+	int64_t live = ak_obj_live;
+	const char *src = "{\"a\": [1, -2, 2.5, 1e3, 9223372036854775808, true, null, \"s\\n\"], \"b\": {}, \"a\": [], \"c\": {\"d\": [[]]}}";
+	ak_val v = ak_json_decode(src, strlen(src), "JValue;", &types);
+	REQUIRE(!ak_error_pending());
+	ak_str *s = ak_json_encode(v, "JValue;", &types, 0);
+	CHECK_EQ_STR(s->data, "{\"a\":[],\"b\":{},\"c\":{\"d\":[[]]}}");
+	ak_release(s);
+	ak_release(v.p);
+	src = "[1, -2, 2.5, 1e3, 9223372036854775808, -9223372036854775808, true, null, \"s\\n\"]";
+	v = ak_json_decode(src, strlen(src), "JValue;", &types);
+	REQUIRE(!ak_error_pending());
+	ak_enum *e = v.p;
+	CHECK_EQ_INT(ak_enum_case(e), 5);
+	ak_arr *a = e->f[0].p;
+	REQUIRE(a->len == 9);
+	CHECK_EQ_INT(ak_enum_case(a->data[0].p), 2);   // 1: an int
+	CHECK_EQ_INT(ak_enum_case(a->data[2].p), 3);   // 2.5: a float
+	CHECK_EQ_INT(ak_enum_case(a->data[3].p), 3);   // 1e3: a float
+	CHECK_EQ_INT(ak_enum_case(a->data[4].p), 3);   // past an int: a float
+	CHECK_EQ_INT(ak_enum_case(a->data[5].p), 2);   // int's least
+	CHECK(((ak_enum *)a->data[5].p)->f[0].i == INT64_MIN);
+	s = ak_json_encode(v, "JValue;", &types, 0);
+	CHECK_EQ_STR(s->data, "[1,-2,2.5,1000,9223372036854776000,-9223372036854775808,true,null,\"s\\n\"]");
+	ak_release(s);
+	ak_release(v.p);
+	CHECK_EQ_INT(ak_obj_live, live);
+	decode_fails("{\"a\": }", 7, "JValue;", "expected a value");
+	decode_fails("[1, 2", 5, "JValue;", "expected");
+	decode_fails("{\"a\": [1, {\"b\": tru}]}", 22, "JValue;", "expected a value");
+	size_t depth = 100000;
+	char *deep = malloc(depth * 2);
+	for (size_t i = 0; i < depth; i++) deep[i] = '[', deep[depth + i] = ']';
+	decode_fails(deep, depth * 2, "JValue;", "nested too deeply");
+	free(deep);
 }
