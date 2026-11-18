@@ -31,6 +31,7 @@ Each RFC is a file `NNNN-short-name.md` with a header:
 | [0014](0014-loads-hold-what-they-show.md) | Loads hold what they show: `.pending` only before the first answer, `loading` | Built |
 | [0015](0015-diagnostics-with-codes.md) | Diagnostics with codes, for people and agents: one table, `asuka explain`, run-time detectors, `AGENTS.md` | Built |
 | [0016](0016-cleanup.md) | `cleanup { }`: what undoes an effect's run, or goes with its owner | Built |
+| [0017](0017-actions-and-grouped-loads.md) | Changes shown at once, and loads that land together: `optimistic`, `reload f`, `load (a(), b())` | Draft |
 
 ## Background: hot reload today
 
