@@ -477,12 +477,13 @@ final class AsukaSheetWindow: NSWindow {
     }
 
     /// Sizes a sheet as tall as its content to the size the core laid it
-    /// out at, its top edge kept.
+    /// out at (wider than its room when its content can't be narrower),
+    /// its top edge kept and centred where it was.
     func fitSheet(_ n: AsukaNode, _ width: Float, _ height: Float) {
         guard let nav = n.nav, let w = nav.window else { return }
         if width > 0 && height > 0 {
             let f = w.frame
-            let top = CGPoint(x: f.minX, y: f.maxY)
+            let top = CGPoint(x: f.midX - CGFloat(width) / 2, y: f.maxY)
             let size = CGSize(width: CGFloat(width), height: CGFloat(height))
             w.setContentSize(size)
             w.setFrameTopLeftPoint(top)

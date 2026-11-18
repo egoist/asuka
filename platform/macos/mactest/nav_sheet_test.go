@@ -176,6 +176,58 @@ func TestNavFitSheet(t *testing.T) {
 	is("opened again", base)
 }
 
+// A sheet as tall as its content whose content can't be as narrow as a
+// sheet (a fixed width) is as wide as its content, centred on its window
+// as a sheet is; its content shows whole.
+func TestNavFitSheetWide(t *testing.T) {
+	a := Run(t, `
+		app { Root() }
+		component Root {
+		  state open = false
+		  Column {
+		    padding: 20
+		    Text("open {open}")
+		    Button("Show") { on press { open = true } }
+		    Sheet {
+		      bind open: open
+		      detents: [.fit]
+		      Column {
+		        width: 820; height: 300
+		        Row { Text("wide"); View { grow: 1 }; Button("Close") { on press { open = false } } }
+		      }
+		    }
+		  }
+		}
+	`)
+	a.UntilText("open false")
+	a.Do("resize 1400,900", "tap Show")
+	var cw, ch float64
+	tr := a.Until(func(tr *Tree) bool {
+		s := sheetOf(tr)
+		if s == nil {
+			return false
+		}
+		w := sheetWindow(s)
+		cw, ch = size(w["content"])
+		return w["isSheet"] == true && w["visible"] == true && cw == 820 && ch == 300
+	})
+	close := tr.Find("Button", "Close")
+	if close == nil || close.Get("shown") != true {
+		t.Fatalf("Close isn't shown: %v", close)
+	}
+	if x := close.Frame[0] + close.Frame[2]; x > 820 {
+		t.Errorf("Close ends at %v, past the sheet's 820", x)
+	}
+	f := sheetWindow(sheetOf(tr))["frame"].([]any)
+	mf := tr.Main().Frame
+	mid, sheetMid := mf[0]+mf[2]/2, f[0].(float64)+f[2].(float64)/2
+	if d := mid - sheetMid; d > 1 || d < -1 {
+		t.Errorf("the sheet's centre %v isn't its window's %v", sheetMid, mid)
+	}
+	a.Do("tap Close")
+	a.UntilText("open false")
+}
+
 // frameSize is a node's view's size, -1 by -1 if it has no view.
 func frameSize(n *Node) (float64, float64) {
 	if len(n.Frame) < 4 {
