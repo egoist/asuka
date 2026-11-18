@@ -71,17 +71,20 @@ TEST(tz_cases) {
 // Every transition reads back as itself: one second before it is the
 // type before, it the type it names.
 TEST(tz_transitions) {
+	const uint8_t *tidx;
+	const int32_t *mins = ak_tz_transitions(&tidx);
+	REQUIRE(mins && tidx);
 	for (size_t i = 0; i < ak_tz_nnames; i++) {
 		const ak_tz_zone *z = &ak_tz_zones[ak_tz_names[i].zone];
 		for (unsigned k = 0; k < z->ntrans; k++) {
 			unsigned g = z->trans + k;
-			int64_t t = (int64_t)ak_tz_mins[g] * 60;
+			int64_t t = (int64_t)mins[g] * 60;
 			for (size_t s = 0; s < ak_tz_nsecs; s++)
 				if (ak_tz_sec_idx[s] == g) t += ak_tz_secs[s];
-			const ak_tz_type *ty = &ak_tz_types[ak_tz_ztypes[z->types + ak_tz_tidx[g]]];
+			const ak_tz_type *ty = &ak_tz_types[ak_tz_ztypes[z->types + tidx[g]]];
 			if (k + 1 < z->ntrans || !ak_tz_strs[z->footer]) CHECK_EQ_INT(ak_tz_offset(z, t).off, ty->off);
 			if (k > 0) {
-				const ak_tz_type *prev = &ak_tz_types[ak_tz_ztypes[z->types + ak_tz_tidx[g - 1]]];
+				const ak_tz_type *prev = &ak_tz_types[ak_tz_ztypes[z->types + tidx[g - 1]]];
 				CHECK_EQ_INT(ak_tz_offset(z, t - 1).off, prev->off);
 			}
 		}

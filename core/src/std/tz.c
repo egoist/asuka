@@ -6,6 +6,7 @@
 #include "base/thread.h"
 #include "rt/sched.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -254,6 +255,53 @@ static ak_tz_at type_at(const ak_tz_zone *z, unsigned i) {
 	return (ak_tz_at){ty->off, a, (uint32_t)strlen(a)};
 }
 
+// ---- The transitions, inflated as a zone is first read ----
+
+size_t ak_mz_tinfl_decompress_mem_to_mem(void *out, size_t out_len, const void *src, size_t src_len, int flags);
+
+static ak_mutex unpack_mu = AK_MUTEX_INIT;
+static _Atomic(const int32_t *) mins_;
+static const uint8_t *tidx_;
+
+static void unpack(void) {
+	ak_mutex_lock(&unpack_mu);
+	if (!atomic_load(&mins_)) {
+		uint8_t *raw = ak_alloc(ak_tz_packed_raw ? ak_tz_packed_raw : 1);
+		size_t n = ak_mz_tinfl_decompress_mem_to_mem(raw, ak_tz_packed_raw, ak_tz_packed, ak_tz_packed_len, 0);
+		if (n != ak_tz_packed_raw) ak_panic("tz: the packed transitions don't inflate (%zu of %u bytes)", n, (unsigned)ak_tz_packed_raw);
+		int32_t *mins = ak_alloc(sizeof(int32_t) * (ak_tz_ntrans ? ak_tz_ntrans : 1));
+		uint8_t *tidx = ak_alloc(ak_tz_ntrans ? ak_tz_ntrans : 1);
+		size_t at = 0;
+		int64_t prev = 0;
+		for (uint32_t i = 0; i < ak_tz_ntrans; i++) {
+			uint64_t u = 0;
+			for (int shift = 0; at < n; shift += 7) {
+				uint8_t c = raw[at++];
+				u |= (uint64_t)(c & 0x7f) << shift;
+				if (!(c & 0x80)) break;
+			}
+			prev += (int64_t)(u >> 1) ^ -(int64_t)(u & 1);
+			mins[i] = (int32_t)prev;
+		}
+		if (n - at != ak_tz_ntrans) ak_panic("tz: the packed transitions' types are %zu, want %u", n - at, (unsigned)ak_tz_ntrans);
+		memcpy(tidx, raw + at, ak_tz_ntrans);
+		ak_free(raw);
+		tidx_ = tidx;
+		atomic_store(&mins_, mins);  // last: a reader that sees it sees tidx_ too
+	}
+	ak_mutex_unlock(&unpack_mu);
+}
+
+const int32_t *ak_tz_transitions(const uint8_t **tidx) {
+	const int32_t *m = atomic_load(&mins_);
+	if (!m) {
+		unpack();
+		m = atomic_load(&mins_);
+	}
+	if (tidx) *tidx = tidx_;
+	return m;
+}
+
 // trans_secs is transition i's seconds past its minute (most have none).
 static int64_t trans_secs(unsigned i) {
 	size_t lo = 0, hi = ak_tz_nsecs;
@@ -267,24 +315,26 @@ static int64_t trans_secs(unsigned i) {
 }
 
 // at_or_before says transition i is at or before Unix second t.
-static bool at_or_before(unsigned i, int64_t tm, int64_t ts) {
-	int64_t m = ak_tz_mins[i];
+static bool at_or_before(const int32_t *mins, unsigned i, int64_t tm, int64_t ts) {
+	int64_t m = mins[i];
 	return m < tm || (m == tm && trans_secs(i) <= ts);
 }
 
 ak_tz_at ak_tz_offset(const ak_tz_zone *z, int64_t t) {
 	int64_t tm = floor_div(t, 60), ts = t - tm * 60;
 	unsigned lo = 0, hi = z->ntrans;
+	const uint8_t *tidx = NULL;
+	const int32_t *mins = z->ntrans ? ak_tz_transitions(&tidx) : NULL;
 	while (lo < hi) {
 		unsigned mid = lo + (hi - lo) / 2;
-		if (at_or_before(z->trans + mid, tm, ts)) lo = mid + 1;
+		if (at_or_before(mins, z->trans + mid, tm, ts)) lo = mid + 1;
 		else hi = mid;
 	}
 	// After the last transition (or with none), the TZ string says.
 	const char *footer = ak_tz_strs + z->footer;
 	ak_tz_at r;
 	if (lo == z->ntrans && *footer && tz_footer(footer, t, &r)) return r;
-	return type_at(z, lo == 0 ? 0 : ak_tz_tidx[z->trans + lo - 1]);
+	return type_at(z, lo == 0 ? 0 : tidx[z->trans + lo - 1]);
 }
 
 int32_t ak_tz_wall_offset(int64_t w, int32_t (*offset_at)(const void *ctx, int64_t t), const void *ctx) {

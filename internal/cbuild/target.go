@@ -212,6 +212,9 @@ type LibOptions struct {
 	Extra   []string // more of the core's C: an app compiled to C
 	Foreign *Foreign // the C an app's externs call
 	Debug   bool     // a player's build: assertions on, optimized less
+	// Builtins are the ones the app compiled in calls (its module's):
+	// only the std packages' tables of them are linked. nil: every table.
+	Builtins []string
 }
 
 // LibWith is Lib as o says: with o.Foreign, its glue and units are
@@ -233,7 +236,7 @@ func (tc *Toolchain) LibWith(core string, kind LibKind, o LibOptions, out string
 	if kind != Static {
 		cflags = append(cflags, "-fvisibility=hidden")
 	}
-	link, err := tc.linkSource(core, debug, len(o.Extra) > 0, ffi.glue(), ffi.libs())
+	link, err := tc.linkSource(core, debug, len(o.Extra) > 0, ffi.glue(), ffi.libs(), o.Builtins)
 	if err != nil {
 		return err
 	}
@@ -384,6 +387,9 @@ type ExeOptions struct {
 	// imports (std/sqlite's SQLite).
 	Foreign *Foreign
 	Debug   bool
+	// Builtins are the ones App calls (its module's): only the std
+	// packages' tables of them are linked. nil: every table.
+	Builtins []string
 }
 
 // ExeWith builds an executable for the toolchain's target into out: the
@@ -408,7 +414,7 @@ func (tc *Toolchain) ExeWith(core string, o ExeOptions, out string) error {
 		}
 	}
 	flags := tc.coreFlags(core, o.Debug)
-	link, err := tc.linkSource(core, o.Debug, o.App != "", o.Foreign.glue(), units)
+	link, err := tc.linkSource(core, o.Debug, o.App != "", o.Foreign.glue(), units, o.Builtins)
 	if err != nil {
 		return err
 	}

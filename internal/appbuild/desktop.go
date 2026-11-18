@@ -206,6 +206,7 @@ func desktopExe(t cbuild.Target, m *bytecode.Module, c *bytecode.C, host, native
 		if o.App, err = AppC(m); err != nil {
 			return err
 		}
+		o.Builtins = m.Builtins
 	}
 	return tc.ExeWith(core, o, out)
 }

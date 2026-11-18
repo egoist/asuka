@@ -1413,6 +1413,18 @@ has none has no reference to them: an app that doesn't import
 std/sqlite carries no SQLite. A player (`asuka dev`) is built with the C
 of the app's last compile and again when it changes, as for externs.
 
+The std packages' C in the core (`core/src/std`: std/fs's, std/toml's
+parser, std/compress's DEFLATE, std/http's server, ...) registers its
+builtins as tables (`ak_std_libs`), which `core/link/link.c` lists. A
+build with an app compiled in lists only the tables of the builtins its
+module calls (`bytecode.Module.Builtins`: `fs.join` is `AK_USES_FS`,
+cbuild's `usesDefines`), so a table it doesn't call is no root of the
+link, and the linker leaves out its C and what only it reaches: a
+program that prints carries no TOML parser, no zip, no HTTP server. A
+player (`asuka dev`, which loads any bytecode) lists every table, and
+so does a build whose module isn't known (`Builtins` nil). Each table's builtins share its
+name's prefix (`TestLinkRegistersEveryTable`).
+
 **A vendor's prebuilt libraries** are `[c.prebuilt]`'s: a static
 library per target (`ios-arm64`, `ios-simulator-x64`, `macos-arm64`,
 `android-arm`, `linux-x64`, `windows-arm64`, `web`; a universal one for
@@ -2093,9 +2105,13 @@ behavior.
   transitions at all, only an offset at a time. `internal/tzgen` builds a
   pinned release's zic, compiles the zones slim (transitions until a
   zone's rules last changed, then its POSIX TZ string) and packs them
-  into `core/src/std/tzdata_gen.c`: a transition is a minute (an int32)
-  and a type (a byte), about 110 KB for every zone and name; lookups are
-  binary searches of that constant data, nothing decoded or cached.
+  into `core/src/std/tzdata_gen.c`: a transition is a minute and a type,
+  packed (each minute a zigzag varint of its difference from the one
+  before) and DEFLATEd, 12 KB of its 85, which the first lookup inflates
+  (miniz's, std/compress's) under a lock, once for the process; the
+  names and zones, which `time.zone` and `zones()` read, stay as they
+  are. About 30 KB in every app that imports std/time; lookups are
+  binary searches of the inflated arrays.
   `.local` stays the system's (its clock is the device's), and the
   device's zone's name is the system's (TZ, /etc/localtime, Android's
   persist.sys.timezone, Windows's ICU, the browser's Intl).

@@ -1,30 +1,10 @@
 // std.c: the packages' tables, and what several of them share.
 #include "std/std.h"
 
-const ak_lib_entry *const ak_std_libs[] = {
-	ak_std_time,
-	ak_std_url,
-	ak_std_regex,
-	ak_std_encoding,
-	ak_std_crypto,
-	ak_std_html,
-	ak_std_random,
-	ak_std_fs,
-	ak_std_crash,
-	ak_std_update,
-	ak_std_markdown,
-	ak_std_os,
-	ak_std_flag,
-	ak_std_command,
-	ak_std_term,
-	ak_std_signals,
-	ak_std_toml,
-	ak_std_csv,
-	ak_std_compress,
-	ak_std_archive,
-	ak_std_http,
-	NULL,
-};
+// The packages' tables (ak_std_libs) are core/link/link.c's: a build
+// with an app compiled in registers only those whose builtins it calls,
+// so the linker leaves the rest of the core out.
+
 
 uint32_t ak_utf8_decode(const char *str, size_t n, size_t *i) {
 	const uint8_t *p = (const uint8_t *)str + *i;

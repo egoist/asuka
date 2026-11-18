@@ -25,6 +25,9 @@ type ProgramOptions struct {
 	// beside the executable.
 	Static bool
 	Debug  bool
+	// Builtins are the ones App calls (its module's): only the std
+	// packages' tables of them are linked. nil: every table.
+	Builtins []string
 }
 
 // ProgramExe builds a program's executable for the toolchain's target at
@@ -38,7 +41,7 @@ func (tc *Toolchain) ProgramExe(core string, o ProgramOptions, out string) error
 	}
 	flags := tc.coreFlags(core, o.Debug)
 	cflags := append([]string{"-I" + filepath.Join(core, "include")}, tc.base(o.Debug)...)
-	link, err := tc.linkSource(core, o.Debug, true, o.Foreign.glue(), o.Foreign.libs())
+	link, err := tc.linkSource(core, o.Debug, true, o.Foreign.glue(), o.Foreign.libs(), o.Builtins)
 	if err != nil {
 		return err
 	}

@@ -155,7 +155,7 @@ func RunCWith(m *bytecode.Module, f *cbuild.Foreign, sanitize, test bool, patter
 	if err := os.WriteFile(app, src, 0o644); err != nil {
 		return "", err
 	}
-	exe, err := cbuild.RunnerFor(core, cbuild.RunnerOptions{Extra: []string{app}, Foreign: f, Sanitize: sanitize, Dir: dir})
+	exe, err := cbuild.RunnerFor(core, cbuild.RunnerOptions{Extra: []string{app}, Foreign: f, Sanitize: sanitize, Dir: dir, Builtins: m.Builtins})
 	if err != nil {
 		return "", errors.New("the C the module compiles to doesn't build: " + err.Error())
 	}
@@ -248,7 +248,7 @@ func RunMainC(m *bytecode.Module, sanitize bool, o MainOptions) (MainRun, error)
 			return MainRun{}, err
 		}
 	}
-	exe, err := cbuild.RunnerFor(core, cbuild.RunnerOptions{Extra: []string{app}, Foreign: f, Sanitize: sanitize, Dir: dir})
+	exe, err := cbuild.RunnerFor(core, cbuild.RunnerOptions{Extra: []string{app}, Foreign: f, Sanitize: sanitize, Dir: dir, Builtins: m.Builtins})
 	if err != nil {
 		return MainRun{}, errors.New("the C the module compiles to doesn't build: " + err.Error())
 	}

@@ -121,6 +121,20 @@ fn main() throws {
 			t.Errorf("%s: exit %d (want %d)\nstdout: %q (want %q)\nstderr: %q (want %q)", name, got, wantCode, so.String(), wantOut, se.String(), wantErr)
 		}
 	}
+	// Only the std packages' C it calls is in it: the tables of
+	// std/toml, std/archive, std/compress, std/http's server aren't.
+	if data, err := os.ReadFile(exe); err != nil {
+		t.Fatal(err)
+	} else {
+		for _, name := range []string{"toml.decode", "archive.scanBytes", "compress.encodeBytes", "http.srvOpen"} {
+			if bytes.Contains(data, []byte(name)) {
+				t.Errorf("the executable has %s's builtin: a std package's C it doesn't call is linked", name)
+			}
+		}
+		if !bytes.Contains(data, []byte("os.args")) {
+			t.Error("the executable lacks std/os's os.args")
+		}
+	}
 	check("a b", exec.Command(exe, "a", "b"), 0, `args: ["a","b"]`, "")
 	check("exit 5", exec.Command(exe, "5"), 5, "", "")
 	check("fail", exec.Command(exe, "fail"), 1, "", "error: E.bad\n    main (main.asuka:")

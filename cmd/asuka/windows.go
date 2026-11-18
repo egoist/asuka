@@ -176,7 +176,7 @@ func windowsRelease(app *asukaApp, t cbuild.Target, res []byte, exe string, verb
 	if verbose {
 		fmt.Printf("asuka: building the Windows host for %s/%s\n", t.OS, t.Arch)
 	}
-	return appbuild.WindowsHost(t, appbuild.WindowsOptions{App: []string{c}, C: m.C, Native: natives, Resources: obj}, exe)
+	return appbuild.WindowsHost(t, appbuild.WindowsOptions{App: []string{c}, Builtins: m.Builtins, C: m.C, Native: natives, Resources: obj}, exe)
 }
 
 // defaultTimestamps are the RFC 3161 timestamp servers a signature is

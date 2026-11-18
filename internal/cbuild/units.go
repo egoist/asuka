@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/egoist/asuka/internal/ccache"
@@ -231,18 +232,22 @@ func (tc *Toolchain) mingw() bool {
 }
 
 // linkSource compiles core/link/link.c for a build: whether an app is
-// compiled in, whether its externs' glue is, and the units it links that
-// the core calls (their Link macros).
-func (tc *Toolchain) linkSource(core string, debug, app, ffi bool, units []Unit) ([]Object, error) {
-	flags := append(tc.coreFlags(core, debug), linkDefines(app, ffi, units)...)
+// compiled in, whether its externs' glue is, the units it links that the
+// core calls (their Link macros), and the builtins the app calls.
+func (tc *Toolchain) linkSource(core string, debug, app, ffi bool, units []Unit, builtins []string) ([]Object, error) {
+	flags := append(tc.coreFlags(core, debug), linkDefines(app, ffi, units, builtins)...)
 	return tc.CC.CompileCached([]string{LinkSource(core)}, flags)
 }
 
-// linkDefines are core/link/link.c's macros for a build (linkSource).
-func linkDefines(app, ffi bool, units []Unit) []string {
+// linkDefines are core/link/link.c's macros for a build (linkSource). An
+// app compiled in registers the std packages' tables of the builtins it
+// calls (AK_USES_FS for fs.join: what's before the dot), and no others,
+// which the link then leaves out; builtins nil: every table.
+func linkDefines(app, ffi bool, units []Unit, builtins []string) []string {
 	var flags []string
 	if app {
 		flags = append(flags, "-DAK_APP_COMPILED=1")
+		flags = append(flags, usesDefines(builtins)...)
 	}
 	if ffi {
 		flags = append(flags, "-DAK_FFI=1")
@@ -253,6 +258,40 @@ func linkDefines(app, ffi bool, units []Unit) []string {
 		}
 	}
 	return flags
+}
+
+// usesDefines are the AK_USES_<NAME> macros of builtins' prefixes, sorted
+// (the link's object is cached by its flags); none given: AK_USES_ALL.
+func usesDefines(builtins []string) []string {
+	if builtins == nil {
+		return []string{"-DAK_USES_ALL=1"}
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, b := range builtins {
+		name, _, ok := strings.Cut(b, ".")
+		if !ok || name == "" {
+			continue
+		}
+		m := strings.Map(func(r rune) rune {
+			switch {
+			case r >= 'a' && r <= 'z':
+				return r - 'a' + 'A'
+			case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+				return r
+			}
+			return '_'
+		}, name)
+		if !seen[m] {
+			seen[m] = true
+			out = append(out, "-DAK_USES_"+m+"=1")
+		}
+	}
+	sort.Strings(out)
+	if out == nil {
+		out = []string{}
+	}
+	return out
 }
 
 // link links objects and archives into out (written whole, then renamed:

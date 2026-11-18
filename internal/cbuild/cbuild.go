@@ -245,6 +245,9 @@ type RunnerOptions struct {
 	// into when it has Extra or Foreign sources, which differ from run to
 	// run.
 	Dir string
+	// Builtins are the ones Extra's app calls (its module's): only the std
+	// packages' tables of them are linked. nil: every table.
+	Builtins []string
 }
 
 // testFlags are a test build's (the runner's, a host test's): with
@@ -321,7 +324,7 @@ func RunnerFor(core string, o RunnerOptions) (string, error) {
 	if o.Dir == "" {
 		return "", fmt.Errorf("cbuild: a runner with extra sources needs a directory of the caller's")
 	}
-	lflags := append(append([]string{}, flags...), linkDefines(len(o.Extra) > 0, f.glue(), f.libs())...)
+	lflags := append(append([]string{}, flags...), linkDefines(len(o.Extra) > 0, f.glue(), f.libs(), o.Builtins)...)
 	if f != nil {
 		link = append(link, f.Link...)
 	}

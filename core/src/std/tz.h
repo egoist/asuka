@@ -34,8 +34,14 @@ extern const char ak_tz_version[];
 extern const char ak_tz_strs[];
 extern const ak_tz_type ak_tz_types[];
 extern const uint16_t ak_tz_ztypes[];
-extern const int32_t ak_tz_mins[];
-extern const uint8_t ak_tz_tidx[];
+// The transitions, packed and DEFLATEd (tzdata_gen.c; ak_tz_transitions
+// gives them as arrays).
+extern const uint32_t ak_tz_ntrans, ak_tz_packed_raw, ak_tz_packed_len;
+extern const uint8_t ak_tz_packed[];
+// ak_tz_transitions gives every zone's transitions (ak_tz_zone's trans,
+// ntrans index them): each one's minute since the Unix epoch, and its
+// type (*tidx). The first call inflates them; any thread may call it.
+const int32_t *ak_tz_transitions(const uint8_t **tidx);
 extern const uint16_t ak_tz_sec_idx[];
 extern const uint8_t ak_tz_secs[];
 extern const uint16_t ak_tz_nsecs;

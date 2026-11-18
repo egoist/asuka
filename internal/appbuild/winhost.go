@@ -26,6 +26,9 @@ type WindowsOptions struct {
 	// App are an app's C sources (lang/cgen's app.c, its packages' glue):
 	// none for asuka dev's player, which loads the app's bytecode.
 	App []string
+	// Builtins are the ones the app calls (its module's): only the std
+	// packages' tables of them are linked. nil: every table.
+	Builtins []string
 	// Native is the native packages' C (DesktopNatives: the registry's
 	// and the packages'), their include directories and libraries.
 	Native *DesktopC
@@ -124,6 +127,7 @@ func WindowsHost(t cbuild.Target, o WindowsOptions, out string) error {
 		// lang/cgen's app.c first; packages' glue after, compiled with it.
 		eo.App = o.App[0]
 		eo.Sources = append(eo.Sources, o.App[1:]...)
+		eo.Builtins = o.Builtins
 	}
 	if o.Resources != "" {
 		eo.Objects = append(eo.Objects, o.Resources)

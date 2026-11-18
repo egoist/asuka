@@ -22,6 +22,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/binary"
@@ -501,16 +502,40 @@ func (t *tables) c() []byte {
 	}
 	b.WriteString("\n};\n\n")
 	ints(&b, "const uint16_t ak_tz_ztypes", t.ztypes, 16)
-	m := make([]int, len(t.mins))
-	for i, v := range t.mins {
-		m[i] = int(v)
+	// The transitions, the most of the data: packed (each minute as a
+	// zigzag varint of its difference from the one before, then each one's
+	// type) and DEFLATEd, which the core inflates as a zone is first read
+	// (tz.c's transitions): a third of their size in each app.
+	var raw bytes.Buffer
+	prev := int64(0)
+	for _, v := range t.mins {
+		d := int64(v) - prev
+		prev = int64(v)
+		u := uint64(d<<1) ^ uint64(d>>63)
+		for u >= 0x80 {
+			raw.WriteByte(byte(u) | 0x80)
+			u >>= 7
+		}
+		raw.WriteByte(byte(u))
 	}
-	ints(&b, "const int32_t ak_tz_mins", m, 10)
-	ti := make([]int, len(t.tidx))
-	for i, v := range t.tidx {
-		ti[i] = int(v)
+	for _, v := range t.tidx {
+		raw.WriteByte(byte(v))
 	}
-	ints(&b, "const uint8_t ak_tz_tidx", ti, 32)
+	var packed bytes.Buffer
+	fw, err := flate.NewWriter(&packed, flate.BestCompression)
+	if err != nil {
+		panic(err)
+	}
+	fw.Write(raw.Bytes())
+	fw.Close()
+	fmt.Fprintf(&b, "const uint32_t ak_tz_ntrans = %d;\n", len(t.mins))
+	fmt.Fprintf(&b, "const uint32_t ak_tz_packed_raw = %d;\n", raw.Len())
+	fmt.Fprintf(&b, "const uint32_t ak_tz_packed_len = %d;\n\n", packed.Len())
+	pk := make([]int, packed.Len())
+	for i, v := range packed.Bytes() {
+		pk[i] = int(v)
+	}
+	ints(&b, "const uint8_t ak_tz_packed", pk, 24)
 	ints(&b, "const uint16_t ak_tz_sec_idx", t.secIdx, 16)
 	ints(&b, "const uint8_t ak_tz_secs", t.secs, 24)
 	fmt.Fprintf(&b, "const uint16_t ak_tz_nsecs = %d;\n\n", len(t.secs))

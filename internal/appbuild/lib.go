@@ -55,8 +55,9 @@ func lib(t cbuild.Target, kind cbuild.LibKind, m *bytecode.Module, c *bytecode.C
 	if err != nil {
 		return err
 	}
-	var extra []string
+	var extra, builtins []string
 	if m != nil {
+		builtins = m.Builtins
 		src, err := AppC(m)
 		if err != nil {
 			return err
@@ -67,7 +68,7 @@ func lib(t cbuild.Target, kind cbuild.LibKind, m *bytecode.Module, c *bytecode.C
 	if err != nil {
 		return err
 	}
-	return tc.LibWith(core, kind, cbuild.LibOptions{Extra: extra, Foreign: ffi, Debug: m == nil}, out)
+	return tc.LibWith(core, kind, cbuild.LibOptions{Extra: extra, Foreign: ffi, Debug: m == nil, Builtins: builtins}, out)
 }
 
 // LinuxExe builds a Linux app's executable for t at out: the C host

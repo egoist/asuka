@@ -415,7 +415,7 @@ func ProgramExe(t cbuild.Target, m *bytecode.Module, o ProgramBuild, out string)
 	if err != nil {
 		return err
 	}
-	po := cbuild.ProgramOptions{App: app, Foreign: ffi, Debug: o.Debug}
+	po := cbuild.ProgramOptions{App: app, Foreign: ffi, Debug: o.Debug, Builtins: s.Builtins}
 	if len(o.Natives) > 0 && t.OS != "darwin" {
 		natives, err := DesktopNatives(t, o.Natives)
 		if err != nil {
