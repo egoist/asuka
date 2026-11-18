@@ -197,6 +197,7 @@ void ak_os_testing(bool on) {
 void ak_os_reset(void) {
 	stdin_reset();
 	ak_term_reset();
+	ak_os_signals_reset();
 	ak_mutex_lock(&mu);
 	if (ak_lib_print_hook == print_hook) ak_lib_print_hook = NULL;
 	fake_clear();
@@ -606,6 +607,8 @@ typedef struct {
 	ak_future *out, *main;
 } run_t;
 
+static run_t *running;  // the main FakeOS.run runs, while it does
+
 // run_end settles out as the program's end would: exit's code, 1 with
 // the error (written to stderr) for one main threw, else 0.
 // capture starts (on) or ends keeping what's written: print's, os's.
@@ -642,6 +645,7 @@ static void run_end(ak_future *out, void *err) {
 
 static void run_done(void *ctx) {
 	run_t *r = ctx;
+	if (running == r) running = NULL;
 	void *err = NULL;
 	if (r->main->state == AK_FUT_FAILED) {
 		err = r->main->error;
@@ -658,6 +662,17 @@ static void run_done(void *ctx) {
 static void run_cancel(ak_future *f) {
 	run_t *r = f->ctx;
 	if (r) ak_future_cancel(r->main);
+}
+
+// ak_os_fake_end ends the main FakeOS.run runs as a signal would: its
+// cancellation, the run's code code.
+void ak_os_fake_end(int code) {
+	run_t *r = running;
+	if (!r) return;
+	ak_mutex_lock(&mu);
+	if (fake.exit < 0) fake.exit = code;
+	ak_mutex_unlock(&mu);
+	ak_future_cancel(r->main);
 }
 
 static ak_val run_main_fn(ak_val *args, uint32_t n) {
@@ -685,6 +700,7 @@ static ak_val run_main_fn(ak_val *args, uint32_t n) {
 	ak_retain(out);
 	out->ctx = r;
 	out->cancel = run_cancel;
+	running = r;
 	ak_future_wait(r->main, run_done, r);
 	return (ak_val){.p = out};
 }

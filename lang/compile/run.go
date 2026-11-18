@@ -1,8 +1,10 @@
 package compile
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -194,9 +196,19 @@ type MainRun struct {
 	Code           int
 }
 
-// RunMain runs m's fn main on the VM with runner (asuka-run -main): args
-// its arguments, stdin its input, env more of its environment.
-func RunMain(runner string, m *bytecode.Module, args []string, stdin string, env []string) (MainRun, error) {
+// MainOptions are what RunMain and RunMainC run a program with.
+type MainOptions struct {
+	Args  []string // its arguments
+	Stdin string   // its input
+	Env   []string // more of its environment (KEY=value)
+	// Signal, when set, is sent to it once it has written its first line
+	// to stdout ("ready"): as a person's Ctrl-C would be.
+	Signal os.Signal
+}
+
+// RunMain runs m's fn main on the VM with runner (asuka-run -main), as o
+// says.
+func RunMain(runner string, m *bytecode.Module, o MainOptions) (MainRun, error) {
 	dir, err := os.MkdirTemp("", "asuka-run")
 	if err != nil {
 		return MainRun{}, err
@@ -206,12 +218,12 @@ func RunMain(runner string, m *bytecode.Module, args []string, stdin string, env
 	if err := os.WriteFile(p, m.Encode(), 0o644); err != nil {
 		return MainRun{}, err
 	}
-	return runMain(runner, append([]string{"-main", "-program", "prog", p, "--"}, args...), m, stdin, env)
+	return runMain(runner, append([]string{"-main", "-program", "prog", p, "--"}, o.Args...), o)
 }
 
 // RunMainC runs m's fn main compiled to C (lang/cgen), as RunMain does on
 // the VM.
-func RunMainC(m *bytecode.Module, sanitize bool, args []string, stdin string, env []string) (MainRun, error) {
+func RunMainC(m *bytecode.Module, sanitize bool, o MainOptions) (MainRun, error) {
 	core, err := FindCore()
 	if err != nil {
 		return MainRun{}, err
@@ -240,16 +252,35 @@ func RunMainC(m *bytecode.Module, sanitize bool, args []string, stdin string, en
 	if err != nil {
 		return MainRun{}, errors.New("the C the module compiles to doesn't build: " + err.Error())
 	}
-	return runMain(exe, append([]string{"-main", "-program", "prog", "-aot", "--"}, args...), m, stdin, env)
+	return runMain(exe, append([]string{"-main", "-program", "prog", "-aot", "--"}, o.Args...), o)
 }
 
-func runMain(exe string, args []string, m *bytecode.Module, stdin string, env []string) (MainRun, error) {
+func runMain(exe string, args []string, o MainOptions) (MainRun, error) {
 	cmd := exec.Command(exe, args...)
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(os.Environ(), o.Env...)
 	var out, errb bytes.Buffer
-	cmd.Stdin = strings.NewReader(stdin)
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	err := cmd.Run()
+	cmd.Stdin = strings.NewReader(o.Stdin)
+	cmd.Stderr = &errb
+	var err error
+	if o.Signal == nil {
+		cmd.Stdout = &out
+		err = cmd.Run()
+	} else {
+		// Its first line, then the signal, then the rest.
+		pipe, perr := cmd.StdoutPipe()
+		if perr != nil {
+			return MainRun{}, perr
+		}
+		if err = cmd.Start(); err != nil {
+			return MainRun{}, err
+		}
+		rd := bufio.NewReader(pipe)
+		first, _ := rd.ReadString('\n')
+		out.WriteString(first)
+		cmd.Process.Signal(o.Signal)
+		io.Copy(&out, rd)
+		err = cmd.Wait()
+	}
 	r := MainRun{Stdout: out.String(), Stderr: errb.String()}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() >= 0 {

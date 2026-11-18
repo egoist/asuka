@@ -35,6 +35,7 @@ func TestPrograms(t *testing.T) {
 				t.Skip("runs Unix's programs")
 			}
 			var args, env []string
+			var sig os.Signal
 			stdin, code := "", 0
 			for _, l := range strings.Split(src, "\n") {
 				switch {
@@ -44,6 +45,11 @@ func TestPrograms(t *testing.T) {
 					stdin = strings.NewReplacer(`\n`, "\n", `\r`, "\r").Replace(strings.TrimPrefix(l, "// stdin: "))
 				case strings.HasPrefix(l, "// env: "):
 					env = append(env, strings.TrimPrefix(l, "// env: "))
+				case l == "// signal: interrupt":
+					if runtime.GOOS == "windows" {
+						t.Skip("sends a POSIX signal")
+					}
+					sig = os.Interrupt
 				case strings.HasPrefix(l, "// exit: "):
 					code, _ = strconv.Atoi(strings.TrimPrefix(l, "// exit: "))
 				}
@@ -90,9 +96,10 @@ func TestPrograms(t *testing.T) {
 					t.Errorf("%s: stderr:\n%s\nwant:\n%s", backend, got, want)
 				}
 			}
-			r, err := RunMain(runner, res.Module, args, stdin, env)
+			o := MainOptions{Args: args, Stdin: stdin, Env: env, Signal: sig}
+			r, err := RunMain(runner, res.Module, o)
 			check("VM", r, err)
-			r, err = RunMainC(res.Module, true, args, stdin, env)
+			r, err = RunMainC(res.Module, true, o)
 			check("C", r, err)
 		})
 	}

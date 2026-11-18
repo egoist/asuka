@@ -28,6 +28,7 @@ extern const ak_lib_entry ak_std_os[];
 extern const ak_lib_entry ak_std_flag[];
 extern const ak_lib_entry ak_std_command[];
 extern const ak_lib_entry ak_std_term[];
+extern const ak_lib_entry ak_std_signals[];
 
 // Every package's table, NULL-terminated.
 extern const ak_lib_entry *const ak_std_libs[];
@@ -140,6 +141,16 @@ bool ak_os_test_process(void);
 // std/term (term.c): the color choices setColors made, forgotten after
 // each test (ak_os_reset calls it).
 void ak_term_reset(void);
+// Signals (signals.c). ak_os_signals_program makes the process's
+// signals a program's: end(128 + the signal's number) ends it for one no
+// os.signals stream reads, as its main's cancellation when main_is_task,
+// else at once. ak_os_signals_ended tells Windows' close handler the
+// program has ended. ak_os_signals_reset drops a test's streams.
+// ak_os_fake_end ends the main FakeOS.run runs with code (os.c).
+void ak_os_signals_program(void (*end)(int code), bool main_is_task);
+void ak_os_signals_ended(void);
+void ak_os_signals_reset(void);
+void ak_os_fake_end(int code);
 
 // For tests (core/runner): a new empty directory in the system's
 // temporary one (ak_free the path; NULL when it can't be made), and

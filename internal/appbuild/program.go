@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -300,9 +301,26 @@ type Run struct {
 	cleanup func()
 }
 
-// Wait waits for it to end: its exit code.
+// Wait waits for it to end: its exit code. Meanwhile the signals are
+// the program's: Ctrl-C reaches it from the terminal as it reaches this
+// process (they're one process group), which waits for the program to
+// end, its defers run (std/os's signals); a terminate or a hangup sent
+// to this process alone is passed on.
 func (r *Run) Wait() (int, error) {
 	defer r.cleanup()
+	sigs := make(chan os.Signal, 4)
+	signal.Notify(sigs, forwardedSignals...)
+	defer func() {
+		signal.Stop(sigs)
+		close(sigs)
+	}()
+	go func() {
+		for s := range sigs {
+			if s != os.Interrupt && r.Cmd.Process != nil {
+				r.Cmd.Process.Signal(s)
+			}
+		}
+	}()
 	err := r.Cmd.Wait()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() >= 0 {

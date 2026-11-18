@@ -1,0 +1,20 @@
+// signal: interrupt
+// A program that reads os.signals handles Ctrl-C itself: it doesn't end.
+import std/os
+
+async fn main() throws {
+  defer { print("cleaned up") }
+  print("ready")
+  for await s in os.signals() {
+    print("got {s}: finishing first")
+    break
+  }
+  print("finished")
+}
+
+// Stdout:
+// ready
+// got interrupt: finishing first
+// finished
+// cleaned up
+// Stderr:

@@ -191,7 +191,7 @@ struct B { data: bytes }
 	if err := res.Err(); err != nil {
 		t.Fatal(err)
 	}
-	run, err := RunMain(testRunner(t), res.Module, nil, "", nil)
+	run, err := RunMain(testRunner(t), res.Module, MainOptions{})
 	if err != nil {
 		t.Fatalf("%v\n%+v", err, run)
 	}

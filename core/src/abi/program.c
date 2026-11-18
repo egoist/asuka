@@ -38,6 +38,7 @@ static struct {
 	int code;
 	ak_owner *owner;  // init's and main's
 	ak_future *main;
+	int signal_code;  // a signal ended it: 128 and its number
 	const char *trim;  // what the trace's files are relative to
 	asuka_host_callbacks host;  // the host's, kept
 } P = {.mu = AK_MUTEX_INIT};
@@ -98,15 +99,26 @@ static void end(int code) {
 	}
 	fflush(stdout);
 	fflush(stderr);
+	ak_os_signals_ended();
 	if (!P.own_loop) exit(code);
 	wake();
+}
+
+// on_signal ends the program for a signal no os.signals stream reads:
+// main is cancelled (its defers run, then the rest's), and the code is
+// 128 and the signal's number.
+static void on_signal(int code) {
+	if (P.ended) return;
+	P.signal_code = code;
+	if (P.main) ak_future_cancel(P.main);
+	else end(code);
 }
 
 static void main_done(void *ctx) {
 	AK_UNUSED(ctx);
 	ak_future *f = P.main;
 	P.main = NULL;
-	int code = 0;
+	int code = P.signal_code;
 	if (f->state == AK_FUT_FAILED && !ak_is_cancel(f->error)) {
 		report(f->error);
 		code = 1;
@@ -213,6 +225,9 @@ int ak_program_start(ak_module *m, int argc, char **argv, const asuka_host_callb
 	}
 	start_t s = {ak_module_nfuncs(m) ? ak_module_func(m, ak_module_init(m)) : NULL, ak_module_func(m, (uint32_t)mi), false};
 	P.owner = ak_root_new();
+	// Signals are the program's before main runs (it may never await):
+	// one ends an async main as its cancellation.
+	ak_os_signals_program(on_signal, ak_func_async(s.main));
 	ak_with_owner(P.owner, start, &s);
 	if (s.failed) {
 		end(1);

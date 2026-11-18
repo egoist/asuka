@@ -49,6 +49,7 @@ async fn main() throws {
   ```
 
 - `os.exit(code)` はその場で `code` を終了コードとして終了します。stdout と stderr はフラッシュされますが、`defer` やほかの task は実行されません。
+- Ctrl-C は、非同期の `main` を、`main` 自身が終わるときと同じくキャンセルとして終わらせます。まずその `defer` が、続いてほかのすべての task のものが実行され、終了コードは 130 です（128 とシグナルの番号。`kill` が既定で送る終了シグナルは 143、ハングアップは 129）。もう一度 Ctrl-C を押すとその場で終了します。非同期でない `main` も同じくその場で終了します。await しないコードはキャンセルできないためです。`os.signals()` を使うと、シグナルをプログラム自身で扱えます（[シグナル](#シグナル)を参照）。
 - `print` は stdout に 1 行書き、`os.eprint` は stderr に書きます。
 
 ## プロセス：std/os
@@ -67,6 +68,25 @@ async fn main() throws {
 | `os.eprint(text)` | stderr に 1 行書く |
 | `os.writeTo(.stdout, text)`、`writeBytesTo` | テキストやバイト列を、行末を付けずにそのまま `.stdout` か `.stderr` に書く |
 | `os.terminal(.stdout)` | ストリームがパイプやファイルではなく端末（人が見ている）かどうか。色やプロンプトは端末のときだけ出す |
+| `os.signals(kinds)` | 指定した種類のシグナルを届いた順に返す（`Stream<os.Signal>`：`.interrupt`、`.term`、`.hangup`）。読まれている種類ではプログラムは終了しない |
+
+### シグナル
+
+先に片付けておくこと（書きかけのファイル、サーバーで処理中のリクエスト）があるプログラムは、シグナルを自分で読みます。ある種類をストリームが読んでいる間は、その種類でプログラムは終了せず、どうするかはプログラムが決めます。`os.signals()` は Ctrl-C と終了シグナルを、`os.signals([.hangup])` はデーモンが「設定を読み直す」合図に使うハングアップを読みます。
+
+```asuka check
+import std/os
+
+async fn main() throws {
+  let jobs = ["a", "b", "c"]
+  for await s in os.signals() {
+    os.eprint("{s}: finishing {jobs.count()} jobs first")
+    break
+  }
+}
+```
+
+Windows では、Ctrl-C と Ctrl-Break が `.interrupt`、コンソールを閉じたとき、ログオフ、システムのシャットダウンが `.term` で、Windows は数秒待ってくれます。スマートフォンと Web にはシグナルがなく、このストリームは何も返しません。
 
 ```asuka
 import std/os
@@ -468,7 +488,7 @@ test "greets whom it's given" {
 }
 ```
 
-`o.run(main)` は、プログラムが終わるはずの終了コードを返します。0、エラーを投げたときの 1（メッセージは `o.stderr()` に入ります）、または `os.exit` が指定した値です。このときの `os.exit` は、プロセスではなくテスト内の `main` をそこで終わらせます。fake がなければ、テストの `os.args()` と stdin は空です。`command.fake()` はほかのプログラムの代わりに応答するので、それらは実際には実行されません。
+`o.run(main)` は、プログラムが終わるはずの終了コードを返します。0、エラーを投げたときの 1（メッセージは `o.stderr()` に入ります）、または `os.exit` が指定した値です。このときの `os.exit` は、プロセスではなくテスト内の `main` をそこで終わらせます。`o.signal(.interrupt)` は、Ctrl-C を押したときのように、実行中の `main` にシグナルを送ります。`os.signals` のストリームが読んでいればそれが受け取り、そうでなければ `main` がキャンセルされて、`run` は 130 を返します。fake がなければ、テストの `os.args()` と stdin は空です。`command.fake()` はほかのプログラムの代わりに応答するので、それらは実際には実行されません。
 
 ```asuka
 import std/command

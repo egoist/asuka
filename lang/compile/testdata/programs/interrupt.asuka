@@ -1,0 +1,23 @@
+// signal: interrupt
+// exit: 130
+// Ctrl-C ends a program whose main is async as main's cancellation: its
+// defers run, then every other task's, and the code is 130.
+import std/os
+
+async fn background() {
+  defer { print("background stopped") }
+  await sleep(1h)
+}
+
+async fn main() {
+  defer { print("main stopped") }
+  print("ready")
+  await all(background(), sleep(1h))
+  print("never")
+}
+
+// Stdout:
+// ready
+// main stopped
+// background stopped
+// Stderr:

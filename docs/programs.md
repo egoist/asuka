@@ -68,6 +68,12 @@ The program runs as follows:
 
 - `os.exit(code)` ends it at once with `code`: stdout and stderr are
   flushed, but `defer`s and other tasks don't run.
+- Ctrl-C ends an async `main` as its cancellation, as its own end
+  would: its `defer`s run, then every task's, and the exit code is 130
+  (128 and the signal's number: a terminate, `kill`'s default, is 143;
+  a hangup 129). A second Ctrl-C ends it at once, as one ends a `main`
+  that isn't async, since code that doesn't await can't be cancelled.
+  `os.signals()` hands them to the program instead ([Signals](#signals)).
 - `print` writes a line to stdout; `os.eprint` to stderr.
 
 ## The process: std/os
@@ -86,6 +92,32 @@ The program runs as follows:
 | `os.eprint(text)` | a line on stderr |
 | `os.writeTo(.stdout, text)`, `writeBytesTo` | text or bytes as they are, without a line ending, to `.stdout` or `.stderr` |
 | `os.terminal(.stdout)` | whether a stream is a terminal (a person), not a pipe or a file: colors and prompts only for one |
+| `os.signals(kinds)` | the signals of kinds as they come (a `Stream<os.Signal>`: `.interrupt`, `.term`, `.hangup`), which then don't end the program |
+
+### Signals
+
+A program that has something to finish first (a file half written, a
+server's requests in flight) reads the signals itself: while a stream
+reads a kind, that kind doesn't end the program, and the program decides
+what to do. `os.signals()` reads Ctrl-C and a terminate; `os.signals([.hangup])`
+the hangup a daemon takes to mean "read the config again".
+
+```asuka check
+import std/os
+
+async fn main() throws {
+  let jobs = ["a", "b", "c"]
+  for await s in os.signals() {
+    os.eprint("{s}: finishing {jobs.count()} jobs first")
+    break
+  }
+}
+```
+
+On Windows, Ctrl-C and Ctrl-Break are `.interrupt`, and the console
+closing, the user logging off or the system shutting down `.term`, for
+which Windows waits a few seconds. Phones and the web have no signals:
+the stream gives none.
 
 ```asuka
 import std/os
@@ -643,8 +675,11 @@ test "greets whom it's given" {
 
 `o.run(main)` returns the exit code the program would end with: 0, 1
 for an error it throws (its message in `o.stderr()`), or what `os.exit`
-said, which ends the test's `main` there instead of the process. Without
-a fake, a test's `os.args()` and stdin are empty. `command.fake()`
+said, which ends the test's `main` there instead of the process.
+`o.signal(.interrupt)` sends the `main` it runs a signal, as Ctrl-C
+would: an `os.signals` stream gets it, else `main` is cancelled and
+`run` returns 130. Without a fake, a test's `os.args()` and stdin are
+empty. `command.fake()`
 answers for other programs, which then don't run:
 
 ```asuka

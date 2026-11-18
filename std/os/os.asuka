@@ -111,6 +111,65 @@ native fn isTerminal(fd: int) -> bool
 pub fn terminal(stream: Stdio) -> bool = isTerminal(fd(stream))
 
 // ---------------------------------------------------------------------
+// Signals
+
+/// A signal a program can hear: Ctrl-C (interrupt), a request to end
+/// (term: kill's default, a system shutting down, Windows' console
+/// closing) and a hangup (the terminal went; SIGHUP, which daemons take
+/// to mean "reload").
+pub enum Signal { interrupt, term, hangup }
+
+fn kindOf(s: Signal) -> int {
+  match s {
+    .interrupt => return 0
+    .term => return 1
+    .hangup => return 2
+  }
+}
+
+native fn watchSignals(mask: int) -> int
+native fn unwatchSignals(id: int)
+native async fn nextSignal(id: int) -> int
+native fn fakeSignal(kind: int)
+
+/// The signals of kinds as they come, for a program to handle itself:
+/// while a stream reads a kind, that kind doesn't end the program.
+///
+/// Without one, a program whose main is async ends on the first:
+/// main is cancelled (its defers run, and then every task's), and the
+/// exit code is 128 and the signal's number (130 for Ctrl-C, 143 for
+/// term, 129 for a hangup). A second ends it at once, as one does a
+/// program whose main isn't async (code that doesn't await can't be
+/// cancelled).
+///
+///   async fn main() throws {
+///     let server = try await serve()
+///     for await _ in os.signals() {
+///       os.eprint("shutting down…")
+///       break
+///     }
+///     await server.close()
+///   }
+///
+/// Phones and the web have no signals: the stream gives none.
+pub fn signals(kinds: [Signal] = [.interrupt, .term]) -> Stream<Signal> = Stream(send => {
+  var mask = 0
+  for k in kinds {
+    mask = mask | 1 << kindOf(k)
+  }
+  let id = watchSignals(mask)
+  defer { unwatchSignals(id) }
+  while true {
+    let k = await nextSignal(id)
+    send(match k {
+      0 => .interrupt
+      1 => .term
+      _ => .hangup
+    })
+  }
+})
+
+// ---------------------------------------------------------------------
 // Testing
 
 native fn setFake(args: [string], env: [string], hasEnv: bool, stdin: bytes)
@@ -137,6 +196,12 @@ pub struct FakeOS {
   /// returns, os.exit's code, or 1 for an error it throws (written to
   /// stderr as "error: …").
   async fn run(main: async fn() throws) -> int = await runMain(main)
+  /// Sends main, as run runs it, a signal: an os.signals stream that
+  /// reads it gets it; else main is cancelled, its defers run, and run
+  /// returns 128 and the signal's number (130 for .interrupt).
+  fn signal(s: Signal) {
+    fakeSignal(kindOf(s))
+  }
 }
 
 /// Makes the test's process: its arguments (without the program), its

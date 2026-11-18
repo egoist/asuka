@@ -63,6 +63,46 @@ test "exit's code; the task ends there" {
   print(o.exitCode() ?? -1)
 }
 
+async fn serve() {
+  defer { print("serve stopped") }
+  await sleep(1h)
+}
+
+async fn handles() throws {
+  for await s in os.signals([.interrupt, .hangup]) {
+    print("got {s}")
+    if s == .interrupt { break }
+  }
+  print("handled")
+}
+
+async fn interrupt(o: os.FakeOS, s: os.Signal) {
+  await sleep(10ms)
+  o.signal(s)
+}
+
+test "a signal ends main: its defers run, 128 and its number" {
+  let o = os.fake()
+  let (code, _) = await all(o.run(serve), interrupt(o, .interrupt))
+  print(code)
+  print(o.stdout())
+  let t = os.fake()
+  let (term, _) = await all(t.run(serve), interrupt(t, .term))
+  print(term)
+}
+
+test "a stream that reads signals gets them" {
+  let o = os.fake()
+  let (code, _, _) = await all(o.run(handles), interrupt(o, .hangup), sendLater(o))
+  print(code)
+  print(o.stdout())
+}
+
+async fn sendLater(o: os.FakeOS) {
+  await sleep(20ms)
+  o.signal(.interrupt)
+}
+
 // Output:
 // 0
 // none
@@ -90,3 +130,14 @@ test "exit's code; the task ends there" {
 //
 // 4
 // ok exit's code; the task ends there
+// 130
+// serve stopped
+//
+// 143
+// ok a signal ends main: its defers run, 128 and its number
+// 0
+// got hangup
+// got interrupt
+// handled
+//
+// ok a stream that reads signals gets them

@@ -49,6 +49,7 @@ async fn main() throws {
   ```
 
 - `os.exit(code)` 立即以 `code` 结束程序：stdout 和 stderr 会被刷新，但 `defer` 和其他 task 不会执行。
+- Ctrl-C 会像 `main` 自己结束那样，以取消的方式结束异步的 `main`：先执行它的 `defer`，再执行其他所有 task 的，退出码是 130（128 加上信号的编号：终止信号，也就是 `kill` 默认发送的信号，是 143；挂断信号是 129）。再按一次 Ctrl-C 会立即结束程序；不是异步的 `main` 也是这样立即结束，因为不 await 的代码无法取消。用 `os.signals()` 可以把这些信号交给程序自己处理（见[信号](#信号)）。
 - `print` 向 stdout 写一行；`os.eprint` 写到 stderr。
 
 ## 进程：std/os
@@ -67,6 +68,25 @@ async fn main() throws {
 | `os.eprint(text)` | 向 stderr 写一行 |
 | `os.writeTo(.stdout, text)`、`writeBytesTo` | 原样写出文本或字节，不加行尾，目标是 `.stdout` 或 `.stderr` |
 | `os.terminal(.stdout)` | 某个流是否是终端（有人在看），而不是管道或文件：只在终端上输出颜色和提示 |
+| `os.signals(kinds)` | 按到达顺序给出这些种类的信号（一个 `Stream<os.Signal>`：`.interrupt`、`.term`、`.hangup`），被读取的信号不再结束程序 |
+
+### 信号
+
+如果程序有要先收尾的事情（写了一半的文件、服务器上还在处理的请求），可以自己读取信号：只要有流在读某一种信号，这种信号就不会结束程序，由程序决定怎么处理。`os.signals()` 读取 Ctrl-C 和终止信号；`os.signals([.hangup])` 读取挂断信号，守护进程通常把它当作“重新读取配置”。
+
+```asuka check
+import std/os
+
+async fn main() throws {
+  let jobs = ["a", "b", "c"]
+  for await s in os.signals() {
+    os.eprint("{s}: finishing {jobs.count()} jobs first")
+    break
+  }
+}
+```
+
+在 Windows 上，Ctrl-C 和 Ctrl-Break 是 `.interrupt`；控制台关闭、用户注销或系统关机是 `.term`，这时 Windows 会等待几秒钟。手机和 Web 上没有信号，这个流不会给出任何信号。
 
 ```asuka
 import std/os
@@ -468,7 +488,7 @@ test "greets whom it's given" {
 }
 ```
 
-`o.run(main)` 返回程序本该结束时的退出码：0；抛出错误时为 1（消息在 `o.stderr()` 里）；或者 `os.exit` 给出的值，这时 `os.exit` 只结束测试里的 `main`，而不是整个进程。没有 fake 时，测试里的 `os.args()` 和 stdin 都是空的。`command.fake()` 替其他程序作答，这样它们就不会真的运行：
+`o.run(main)` 返回程序本该结束时的退出码：0；抛出错误时为 1（消息在 `o.stderr()` 里）；或者 `os.exit` 给出的值，这时 `os.exit` 只结束测试里的 `main`，而不是整个进程。`o.signal(.interrupt)` 像按下 Ctrl-C 那样，给它正在运行的 `main` 发送信号：如果有 `os.signals` 流在读，流会收到它；否则 `main` 会被取消，`run` 返回 130。没有 fake 时，测试里的 `os.args()` 和 stdin 都是空的。`command.fake()` 替其他程序作答，这样它们就不会真的运行：
 
 ```asuka
 import std/command
