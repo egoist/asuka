@@ -138,8 +138,9 @@ until the new answer comes: `ProfileCard` stays on screen with its state
 and its scroll position, and the run that's going stale is cancelled.
 An answer equal to the last changes nothing.
 
-- `.value` is the latest value, none before the first. A run that fails
-  keeps it, so `.failed` can show the old content beside the error.
+- `.value` is what it shows, none before the first answer. A run that
+  fails keeps it, so `.failed` can show the old content beside the
+  error.
 - `.loading` is true while a run is in flight, the first one included:
   dim the content, or show a ring in a corner. Reading it doesn't follow
   the value, and a `match` doesn't follow it.
@@ -177,3 +178,75 @@ if user.loading {
 
 More often the content is its own already: a screen pushed per id, a
 row per key, each with a `load` of its own.
+
+### Changes shown at once
+
+A toggle, a rename, a like: the screen should show the change before
+the server says so, and take it back if the save fails.
+`x.optimistic(f)` shows what `x` shows, changed by `f`, at once:
+
+```asuka check
+struct Todo {
+  id: int
+  title: string
+  done: bool = false
+}
+
+async fn fetchTodos() -> [Todo] {
+  await sleep(100ms)
+  return [Todo(id: 1, title: "Milk"), Todo(id: 2, title: "Bread")]
+}
+
+async fn saveDone(id: int, done: bool) throws {
+  await sleep(100ms)
+}
+
+fn marked(t: Todo, done: bool) -> Todo {
+  var c = t
+  c.done = done
+  return c
+}
+
+screen Todos {
+  let todos = load fetchTodos()
+
+  match todos {
+    .pending => ProgressRing()
+    .failed(e) => Text(e.message)
+    .ready(ts) => List {
+      for t in ts key t.id {
+        Toggle {
+          on: t.done
+          title: t.title
+          on change(done) {
+            let id = t.id
+            todos.optimistic(ts => ts.map(x => if x.id == id { marked(x, done) } else { x }))
+            try await saveDone(id, done)   // a throw undoes it
+            todos.reload()                 // its answer replaces it
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+- The change is a layer over the load's answer. `match`, `.value` and
+  the rows see it; what reads the paths it changed runs again, nothing
+  else: the toggle above runs its own row.
+- It goes at the first of: the load's next answer, from a run that was
+  in flight or started after it (a `reload()`, a change of what its
+  arguments read), shown in the same frame, so the old value never
+  flashes back; a throw out of the handler, the `fn` or the `task` that
+  made it, undone before the error goes on; and the end of that code
+  with no run in flight or asked for. That last one is a mistake, which
+  a development build says (optimistic-unconfirmed): ask the load again
+  before it ends.
+- Several stack in the order they were made, and each goes on its own:
+  two toggles in flight, the first one failing, undo only the first.
+- `f` is a function of what's shown: it runs again when what's under it
+  changes, so it reads no state and writes none
+  ([optimistic-impure](../errors/optimistic-impure.md)). Read what it
+  needs into a `let` first, as `id` above.
+- On a load that isn't `.ready` there's nothing to change, and it does
+  nothing.

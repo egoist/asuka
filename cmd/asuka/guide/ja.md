@@ -1305,7 +1305,7 @@ screen Profile(id: string) {
 
 `Loading<T>` は `.pending`、`.ready(value)`、`.failed(error)` のいずれかで、`.pending` になるのは最初の結果が届く前だけです。引数が読んでいるものが変わったときや、`.reload()` でもう一度実行したときは、新しい結果が届くまで今のケースのままです。`ProfileCard` は状態もスクロール位置もそのまま画面に残り、古くなりかけている実行はキャンセルされます。前回と等しい結果が届いても、何も変わりません。
 
-- `.value` は最新の値で、最初の結果が届くまでは none です。実行が失敗しても残るので、`.failed` ではエラーと並べて前の内容を表示できます。
+- `.value` は表示しているもので、最初の結果が届くまでは none です。実行が失敗しても残るので、`.failed` ではエラーと並べて前の内容を表示できます。
 - `.loading` は実行中のあいだ true になります（最初の実行も含みます）。内容を薄く表示したり、隅にインジケーターを出したりするのに使います。これを読んでも値の変化には追従せず、`match` もこれには追従しません。
 
 ```asuka
@@ -1337,6 +1337,62 @@ if user.loading {
 ```
 
 もっとも、多くの場合は内容がすでにそれぞれ独立しています。id ごとにプッシュされる画面や key ごとの行が、それぞれ自分の `load` を持つ形です。
+
+##### すぐに表示する変更
+
+チェック、名前の変更、いいね：サーバーが確認する前に画面に変更を表示し、保存に失敗したら取り消したいものです。`x.optimistic(f)` は、`x` が表示するものを `f` で変えて、すぐに表示します。
+
+```asuka
+struct Todo {
+  id: int
+  title: string
+  done: bool = false
+}
+
+async fn fetchTodos() -> [Todo] {
+  await sleep(100ms)
+  return [Todo(id: 1, title: "Milk"), Todo(id: 2, title: "Bread")]
+}
+
+async fn saveDone(id: int, done: bool) throws {
+  await sleep(100ms)
+}
+
+fn marked(t: Todo, done: bool) -> Todo {
+  var c = t
+  c.done = done
+  return c
+}
+
+screen Todos {
+  let todos = load fetchTodos()
+
+  match todos {
+    .pending => ProgressRing()
+    .failed(e) => Text(e.message)
+    .ready(ts) => List {
+      for t in ts key t.id {
+        Toggle {
+          on: t.done
+          title: t.title
+          on change(done) {
+            let id = t.id
+            todos.optimistic(ts => ts.map(x => if x.id == id { marked(x, done) } else { x }))
+            try await saveDone(id, done)   // throw すると取り消される
+            todos.reload()                 // その答えが置き換える
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+- 変更は load の答えの上に重なる層です。`match`、`.value`、各行にはそれが見えます。変更したパスを読むものだけが再び実行され、ほかは実行されません。上のチェックで実行し直されるのは、その行だけです。
+- 層は次のうち最初に起きたときに外れます。load の次の答え（作ったときに実行中だった実行か、そのあと始まった実行のもの：`reload()`、引数が読むものの変化）が届いたとき。同じフレームで表示されるので、古い値が一瞬戻ることはありません。作ったハンドラー、`fn`、`task` から throw されたとき。取り消してから、エラーが先に進みます。そのコードが、実行中の実行も求めた実行もないまま終わったとき。最後のものは間違いで、開発ビルドが知らせます（optimistic-unconfirmed）。終わる前に load をもう一度求めます。
+- 複数の変更は作った順に重なり、それぞれ独立に外れます。2 つのチェックが進行中で 1 つ目が失敗したら、取り消されるのは 1 つ目だけです。
+- `f` は表示するものの関数です。その下にあるものが変わると再び実行されるので、状態を読むことも書くこともしません（[optimistic-impure](https://asuka.egoist.dev/ja/docs/errors/optimistic-impure)）。必要なものは先に `let` に読み込みます。上の `id` のように。
+- `.ready` でない load には変える表示がないので、何もしません。
 
 ### エラー
 
@@ -1807,6 +1863,10 @@ test "archiving removes the row" {
 - not-pub: ほかのパッケージ（またはストア、ワーカー）が公開していない宣言. 宣言に `pub` を付けるか、パッケージが公開しているものを使います。
 - not-sendable: 別のスレッドに渡せない値. それを持つオブジェクトではなく、相手のスレッドが必要とするデータを渡します。
 - not-supported: 言語がまだ対応していないもの. メッセージが示す代わりの書き方を使います。
+- optimistic-impure: 状態を読む、await する、または書き込む楽観的な変更. 必要なものは先に `let` に読み込み、それをクロージャで使います。
+- optimistic-not-loading: load でないものに `optimistic` を呼んだ. 状態そのものを変える（`notes.push(n)`）か、load の `let` に `optimistic` を呼びます。
+- optimistic-not-ready: 準備ができていない load に `optimistic` を呼んだ. `.ready` になってから表示するものを変えます。
+- optimistic-unconfirmed: 楽観的な変更が、load の確認する実行がないままタスクとともに外れた. タスクが終わる前に load をもう一度求めます：`await reload f(…)`、または `x.reload()`。
 - pattern-type: 値の型に一致しえないパターン. 値と同じ型のパターンを書きます。
 - peek-untracked: 何も追従しない場所での `peek`. 値そのものを読みます。
 - plural-categories: 複数形や select のカテゴリーが言語のものと合わないメッセージ. メッセージが挙げるとおり、その言語のカテゴリーを書きます。

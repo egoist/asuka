@@ -1305,7 +1305,7 @@ screen Profile(id: string) {
 
 `Loading<T>` 的值是 `.pending`、`.ready(value)` 或 `.failed(error)` 之一，而且只有在第一次得到结果之前才是 `.pending`。当它的参数所读取的内容变化，或者 `.reload()` 让它再运行一次时，它会保持当前所处的情况，直到新的结果到来：`ProfileCard` 留在屏幕上，它的状态和滚动位置也都还在；那次即将过时的运行则会被取消。如果新结果和上一次相等，什么都不会变。
 
-- `.value` 是最近一次得到的值，第一次之前为 none。某次运行失败时它也会保留，所以 `.failed` 可以在错误旁边继续显示旧内容。
+- `.value` 是它所显示的内容，第一次得到结果之前为 none。某次运行失败时它也会保留，所以 `.failed` 可以在错误旁边继续显示旧内容。
 - `.loading` 在有一次运行正在进行时为 true，第一次也算在内：可以用它把内容调暗，或者在角落里显示一个转圈。读取它不会跟随值的变化，`match` 也不会跟随它。
 
 ```asuka
@@ -1337,6 +1337,62 @@ if user.loading {
 ```
 
 不过更常见的情况是，内容本来就各自独立：每个 id 推入一个页面，每个 key 一行，各自有自己的 `load`。
+
+##### 立刻显示的改动
+
+勾选、重命名、点赞：画面应该在服务器确认之前就显示改动，保存失败时再收回。`x.optimistic(f)` 会立刻显示经 `f` 改动后的 `x` 的内容：
+
+```asuka
+struct Todo {
+  id: int
+  title: string
+  done: bool = false
+}
+
+async fn fetchTodos() -> [Todo] {
+  await sleep(100ms)
+  return [Todo(id: 1, title: "Milk"), Todo(id: 2, title: "Bread")]
+}
+
+async fn saveDone(id: int, done: bool) throws {
+  await sleep(100ms)
+}
+
+fn marked(t: Todo, done: bool) -> Todo {
+  var c = t
+  c.done = done
+  return c
+}
+
+screen Todos {
+  let todos = load fetchTodos()
+
+  match todos {
+    .pending => ProgressRing()
+    .failed(e) => Text(e.message)
+    .ready(ts) => List {
+      for t in ts key t.id {
+        Toggle {
+          on: t.done
+          title: t.title
+          on change(done) {
+            let id = t.id
+            todos.optimistic(ts => ts.map(x => if x.id == id { marked(x, done) } else { x }))
+            try await saveDone(id, done)   // 抛出错误会撤销它
+            todos.reload()                 // 它的结果会替换它
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+- 这个改动是叠在 load 结果之上的一层。`match`、`.value` 和各行看到的都是它；只有读取了它改动过的路径的东西会重新运行，别的都不会：上面的勾选只会让它自己那一行重新运行。
+- 它会在以下情况中最先发生的那一刻撤下：load 的下一个结果到来（来自创建它时正在进行的运行，或之后开始的运行：`reload()`、参数所读内容的变化），并在同一帧里显示，所以旧值不会闪回；创建它的处理函数、`fn` 或 `task` 抛出错误，这时它先被撤销，错误再继续传递；那段代码结束时既没有正在进行的运行，也没有请求运行。最后这种情况是个错误，开发构建会指出来（optimistic-unconfirmed）：在结束之前再请求一次这个 load。
+- 多个改动按创建的顺序叠起来，各自独立地撤下：两个勾选同时进行、第一个失败时，只有第一个被撤销。
+- `f` 是所显示内容的函数：它下面的内容变化时它会重新运行，所以它不读取也不写入状态（[optimistic-impure](https://asuka.egoist.dev/zh/docs/errors/optimistic-impure)）。先把它需要的东西读进一个 `let`，就像上面的 `id`。
+- 对还没有 `.ready` 的 load，没有可以改动的内容，它什么也不做。
 
 ### 错误
 
@@ -1807,6 +1863,10 @@ test "archiving removes the row" {
 - not-pub: 其他包（或 store、worker）没有公开的声明. 在声明处加上 `pub`，或者改用这个包公开的内容。
 - not-sendable: 无法传到另一个线程的值. 传入另一个线程需要的数据，而不是持有这些数据的对象。
 - not-supported: 语言暂时还不支持的写法. 改用消息里给出的替代写法：泛型组件可以改为接收 `View` 或闭包作为 prop。
+- optimistic-impure: 乐观改动读取了状态、await 了或者写入了. 先把需要的东西读进一个 `let`，在闭包里用它；写入放在处理函数里，不要放在改动里。
+- optimistic-not-loading: 对不是 load 的东西调用了 `optimistic`. 直接修改状态（`notes.push(n)`），或者对 load 的 `let` 调用 `optimistic`。
+- optimistic-not-ready: 对还没有就绪的 load 调用了 `optimistic`. 等它 `.ready` 之后再改动它显示的内容：把这个操作放在 `.ready` 分支里，或者先检查 `x.value`。
+- optimistic-unconfirmed: 乐观改动随它的任务一起撤销了：它的 load 没有一次运行来确认它. 在任务结束之前再次请求这个 load：`await reload f(…)`，或者 `x.reload()`。
 - pattern-type: 与值的类型不可能匹配的模式. 写出与值同类型的模式：对 int 用 `1`，而不是 `"one"`。
 - peek-untracked: 在不跟随任何东西的地方使用了 `peek`. 直接读取这个值。
 - plural-categories: 复数或选择消息的类别与语言的类别不符. 按消息列出的类别写出这种语言的类别。
