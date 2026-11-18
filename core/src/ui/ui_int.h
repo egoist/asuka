@@ -545,6 +545,7 @@ void ak_path_reset(void);
 ak_val ak_vm_cell_new(ak_val v, ak_kind k, ak_str *keep_key);
 ak_val ak_vm_cell_get(void *cell, bool track);
 void ak_vm_cell_set(void *cell, ak_val v);  // takes v
+bool ak_vm_cell_read_by(void *cell, const ak_comp *c);  // whole, or a path below it
 ak_val ak_vm_acc_cell(void *cell_or_memo);
 ak_val ak_vm_acc_get(void *acc);
 ak_val ak_vm_acc_path(void *base, const uint8_t *p, uint32_t n, const ak_val *args, ak_kind k);
@@ -555,6 +556,13 @@ ak_val ak_vm_acc_getp(void *acc, const uint8_t *p, uint32_t n, const ak_val *arg
 void ak_vm_acc_keys(void *acc, const uint16_t *fields, uint16_t nf);
 void ak_vm_acc_seek(void *acc, int64_t i);
 void ak_vm_effect(ak_closure *c, bool render);
+// The task running now (its future, borrowed) and its owner; NULL on the
+// main coroutine (react.c).
+ak_future *ak_vm_task_current(ak_owner **owner);
+// ak_ui_load_optimistic_in is ak_ui_load_optimistic for the task whose
+// future is task, owned by owner (its end: owner's disposal), or for
+// synchronous code (task NULL: its end is the ready queue's next run).
+void ak_ui_load_optimistic_in(ak_val loader, ak_closure *f, ak_future *task, ak_owner *owner);
 // A model: the accessor of a prop its component assigns (react.c's
 // "Models"). ak_vm_model_new makes one over the caller's accessor (NULL
 // and an error pending when reading it threw); model_set borrows v.

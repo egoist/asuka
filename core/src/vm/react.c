@@ -431,6 +431,13 @@ void ak_vm_cell_keys(void *p, const uint8_t *path, uint32_t n, const ak_val *arg
 
 uint32_t ak_vm_cell_nodes(void *p) { return ak_path_nodes(((cell *)p)->paths); }
 
+// ak_vm_cell_read_by reports whether c reads the cell, whole or by a
+// path below it.
+bool ak_vm_cell_read_by(void *p, const ak_comp *c) {
+	cell *x = p;
+	return ak_comp_reads(c, &x->node) || ak_path_read_by(x->paths, c);
+}
+
 // ---- Errors between the VM and the graph ----
 //
 // The VM unwinds with a pending error (ak_throw); the graph delivers an
@@ -1156,6 +1163,16 @@ void ak_vm_task_report_unseen(ak_task *t, ak_future *f) {
 	if (t->owner) ak_owner_retain(t->owner);
 	f->unseen = raise_unseen;
 	f->unseen_ctx = t->owner;
+}
+
+// ak_vm_task_current is the future of the task running now and its
+// owner (*owner; NULL when it has none), or NULL on the main coroutine:
+// what an optimistic change (RFC 0017) belongs to.
+ak_future *ak_vm_task_current(ak_owner **owner) {
+	ak_co *co = ak_vm_cur;
+	if (!co || !co->task || !co->task->fut) return NULL;
+	*owner = co->task->owner;
+	return co->task->fut;
 }
 
 void ak_vm_task_done(ak_task *t, void *err) {

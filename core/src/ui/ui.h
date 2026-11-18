@@ -220,13 +220,24 @@ void ak_ui_task(ak_closure *c);
 // pending only before the first answer: a run after that keeps the state
 // until it answers, and an answer equal to the last changes nothing.
 // ak_ui_load_loading reports a run in flight, tracked apart from the
-// state.
+// state. What it shows (the value) is a cell of its own, written only
+// when it changes, compared path by path (rfcs/0013).
 ak_val ak_ui_load(ak_closure *thunk);  // owned
 int64_t ak_ui_load_state(ak_val loader);
 bool ak_ui_load_loading(ak_val loader);
 ak_val ak_ui_load_value(ak_val loader);  // owned
 ak_val ak_ui_load_error(ak_val loader);  // owned
 void ak_ui_load_reload(ak_val loader);
+// ak_ui_load_shown is an accessor of what a loader shows (its answer,
+// layered), once it has answered: a .ready arm's payload, read by paths.
+ak_val ak_ui_load_shown(ak_val loader);  // owned
+// ak_ui_load_optimistic shows f (T -> T, a value function) applied to
+// what the loader shows, at once, until the loader's next answer, a
+// throw out of the task running now, or that task's end with no run to
+// confirm it (RFC 0017). Nothing on a loader that isn't ready
+// (optimistic-not-ready). f's throw is the caller's: no layer is made.
+void ak_ui_load_optimistic(ak_val loader, ak_closure *f);
+uint32_t ak_ui_load_layers(ak_val loader);  // tests
 
 // Instance paths. A state cell kept across reloads (CELLK) is found by
 // its key (Component.x) and the place of the component instance that

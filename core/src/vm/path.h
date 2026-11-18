@@ -89,6 +89,9 @@ void ak_path_set(ak_pnode **tree, ak_node *root, ak_val old, ak_val now, ak_kind
 // readers, as the state goes.
 void ak_path_free(ak_pnode **tree);
 
+// ak_path_read_by reports whether c reads a path below a state.
+bool ak_path_read_by(const ak_pnode *tree, const ak_comp *c);
+
 // ak_path_nodes counts the nodes below a state (the root's container
 // aside): what tests count.
 uint32_t ak_path_nodes(const ak_pnode *tree);

@@ -383,6 +383,15 @@ static uint32_t count(const ak_pnode *n) {
 
 uint32_t ak_path_nodes(const ak_pnode *tree) { return tree ? count(tree) - 1 : 0; }
 
+static bool read_by(const ak_pnode *n, const ak_comp *c) {
+	if (ak_comp_reads(c, &n->sig.node)) return true;
+	bool hit = false;
+	EACH_KID(n, k, hit = hit || read_by(k, c));
+	return hit;
+}
+
+bool ak_path_read_by(const ak_pnode *tree, const ak_comp *c) { return tree && read_by(tree, c); }
+
 // ---- Reads ----
 
 static inline uint16_t u16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }

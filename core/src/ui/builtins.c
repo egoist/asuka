@@ -41,6 +41,8 @@
 //	load.value     l: Loader                    T? (boxed when a scalar)
 //	load.error     l: Loader                                          Error?
 //	load.reload    l: Loader                                          -
+//	load.shown     l: Loader                    an accessor of what it shows (a .ready arm's payload)
+//	load.optimistic l: Loader, f: fn(T) -> T                          - (RFC 0017)
 //	ui.enter       name: string (the component's)                     -
 //	ui.leave       -                                                  -
 //	ui.focus       v: View                                            -
@@ -240,6 +242,17 @@ static ak_val b_load_error(ak_val *a, uint32_t n) {
 static ak_val b_load_reload(ak_val *a, uint32_t n) {
 	AK_UNUSED(n);
 	ak_ui_load_reload(a[0]);
+	return none();
+}
+
+static ak_val b_load_shown(ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	return ak_ui_load_shown(a[0]);
+}
+
+static ak_val b_load_optimistic(ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	ak_ui_load_optimistic(a[0], a[1].p);
 	return none();
 }
 
@@ -494,6 +507,8 @@ void ak_ui_builtins_init(void) {
 		{"load.value", b_load_value},
 		{"load.error", b_load_error},
 		{"load.reload", b_load_reload},
+		{"load.shown", b_load_shown},
+		{"load.optimistic", b_load_optimistic},
 		{"ui.enter", b_enter},
 		{"ui.leave", b_leave},
 		{"ui.focus", b_focus},

@@ -716,24 +716,43 @@ void ak_ui_task(ak_closure *c) {
 // The loader holds what it shows (RFC 0014): it's pending only before
 // its first answer; a run after that keeps the case it's in (ready with
 // the last value, or failed) until it answers, and an answer equal to
-// the last changes nothing. Two signals: node (the state, value and
-// error: what a match and .value follow), written only when an answer
-// changes them, and busy (running: whether a run is in flight, what
-// .loading follows), written as a run starts and ends.
+// the last changes nothing. What it shows is in two signals and a cell:
+// node (the state and the error: what a match follows), written only
+// when an answer changes them; busy (running: whether a run is in
+// flight, what .loading follows), written as a run starts and ends; and
+// shown, a cell of the shown value (what .value and a .ready arm's
+// payload read, by their paths: rfcs/0013), made with the first answer.
+//
+// What it shows is its answer with its layers applied (RFC 0017,
+// x.optimistic(f)): each layer a value function, applied in the order
+// they were made, its result kept (out) so that one that goes re-applies
+// only those above it. Shown is written once per change, with the cell's
+// compare: what reads the paths a layer changed runs again, nothing
+// else. A layer goes at the first of: the answer (or failure) of a run
+// that was in flight when it was made or started after (wait: that
+// run's number), in the flush that shows it; a throw out of the task
+// that made it (its owner's cleanup sees the task's future failed); the
+// end of that task with no run in flight or due (optimistic-unconfirmed).
+// No layers: one test of an empty stack.
+
+typedef struct ak_layer ak_layer;
 
 typedef struct ak_loader {
 	ak_opaque h;
-	ak_node node;    // state, value and error
+	ak_node node;    // state and error
 	ak_node busy;    // running
 	ak_node again;   // written by reload, read by each run
 	uint8_t state;   // AK_LOAD_*
 	uint8_t kind;    // the value's kind, once one came
 	bool running;    // a run is in flight: fut is its task
-	ak_val value;    // the latest value (kept while it runs again, and once it fails)
+	uint32_t runs;   // the runs started: the number of the one in flight
+	ak_val value;    // the latest answer (kept while it runs again, and once it fails)
+	void *shown;     // the cell of what it shows: value, layered (NULL before the first answer)
 	void *error;     // when failed
 	ak_future *fut;  // the run's task, while it's in flight
 	ak_effect *eff;  // borrowed: NULL once disposed
 	ak_closure *thunk;
+	AK_VEC(ak_layer *) layers;  // optimistic changes, oldest first: each retained
 	// Diagnostics (ak_diag_enabled): the load whose answer made the
 	// content this one is in, until its first run says what it read
 	// (load-waterfall); the timer of a hold, while it runs holding the
@@ -741,6 +760,18 @@ typedef struct ak_loader {
 	struct ak_loader *cause;
 	uint64_t hold;
 } ak_loader;
+
+// A layer: x.optimistic(f). Held by its loader's stack and by the task
+// that made it (its owner's cleanup), or the ready queue's check of
+// synchronous code; freed when both let go.
+struct ak_layer {
+	uint32_t rc;
+	uint32_t wait;      // the run whose answer (or failure) takes it out
+	ak_loader *l;       // borrowed: NULL once it went
+	ak_closure *f;      // T -> T; NULL once it went
+	ak_val out;         // what it shows: f of what's under it (the loader's kind)
+	ak_future *task;    // the task that made it (retained); NULL: synchronous code
+};
 
 // A hold this long, with nothing reading .loading, is said (long-hold):
 // time the user waits, on asuka test's virtual clock a test's.
@@ -754,20 +785,48 @@ enum { AK_LOAD_PENDING, AK_LOAD_READY, AK_LOAD_FAILED };
 typedef struct {
 	ak_loader *l;   // retained
 	ak_future *f;   // retained
+	uint32_t run;   // its number
 } loader_ticket;
 
 static void hold_end(ak_loader *l);
 static void loader_describe(void *ctx, char *buf, size_t n);
 static const void *loader_site(void *ctx);
 
+static void layer_release(ak_layer *y) {
+	if (--y->rc) return;
+	ak_release(y->task);
+	ak_free(y);
+}
+
+// layer_off lets go of what a layer shows: it's no longer its loader's.
+static void layer_off(ak_layer *y, ak_kind k) {
+	y->l = NULL;
+	ak_release(y->f);
+	y->f = NULL;
+	ak_release_val(y->out, k);
+	y->out = (ak_val){0};
+}
+
+// layers_clear takes every layer off (the loader went).
+static void layers_clear(ak_loader *l) {
+	for (uint32_t i = 0; i < l->layers.len; i++) {
+		layer_off(l->layers.data[i], (ak_kind)l->kind);
+		layer_release(l->layers.data[i]);
+	}
+	l->layers.len = 0;
+}
+
 static void loader_drop(ak_opaque *o) {
 	ak_loader *l = (ak_loader *)o;
 	hold_end(l);
+	layers_clear(l);
+	ak_vec_free(&l->layers);
 	if (l->cause) ak_release(l->cause);
 	ak_signal_drop(&l->node);
 	ak_signal_drop(&l->busy);
 	ak_signal_drop(&l->again);
 	ak_release_val(l->value, (ak_kind)l->kind);
+	if (l->shown) ak_release(l->shown);
 	if (l->error) ak_release(l->error);
 	if (l->fut) ak_release(l->fut);
 	if (l->thunk) ak_release(l->thunk);
@@ -779,17 +838,82 @@ static void loader_running(ak_loader *l, bool on) {
 	ak_signal_write(&l->busy);
 }
 
+// layer_apply runs y's f on v (borrowed), untracked: its value in *out
+// (owned), false when it threw (the error pending).
+static bool layer_apply(ak_layer *y, ak_val v, ak_kind k, ak_val *out) {
+	void *tok = ak_untrack_begin();
+	ak_val r = ak_call(y->f, &v, 1);
+	ak_untrack_end(tok);
+	if (ak_error_pending()) return false;
+	AK_UNUSED(k);
+	*out = r;
+	return true;
+}
+
+// loader_show writes what the loader shows: its answer with its layers
+// applied again from the from-th (those below keep their outs). A layer
+// whose f throws on what's under it now goes: the change no longer
+// applies to what the load says. One write of shown, compared.
+static void loader_show(ak_loader *l, uint32_t from) {
+	ak_kind k = (ak_kind)l->kind;
+	ak_val v = from ? l->layers.data[from - 1]->out : l->value;
+	uint32_t j = from;
+	for (uint32_t i = from; i < l->layers.len; i++) {
+		ak_layer *y = l->layers.data[i];
+		ak_val nv;
+		if (!layer_apply(y, v, k, &nv)) {
+			ak_release(ak_error_take());
+			layer_off(y, k);
+			layer_release(y);
+			continue;
+		}
+		ak_release_val(y->out, k);
+		y->out = nv;
+		v = nv;
+		l->layers.data[j++] = y;
+	}
+	l->layers.len = j;
+	ak_retain_val(v, k);
+	if (!l->shown) l->shown = ak_vm_cell_new(v, k, NULL).p;
+	else ak_vm_cell_set(l->shown, v);
+}
+
+// layers_settle takes out the layers a run's answer (or failure)
+// confirms: those waiting for it or an earlier one. Whether any went.
+static bool layers_settle(ak_loader *l, uint32_t run) {
+	if (AK_LIKELY(!l->layers.len)) return false;
+	uint32_t j = 0;
+	bool gone = false;
+	for (uint32_t i = 0; i < l->layers.len; i++) {
+		ak_layer *y = l->layers.data[i];
+		if (y->wait <= run) {
+			layer_off(y, (ak_kind)l->kind);
+			layer_release(y);
+			gone = true;
+			continue;
+		}
+		l->layers.data[j++] = y;
+	}
+	l->layers.len = j;
+	return gone;
+}
+
 // loader_answer takes the run's value (borrowed): node is written only
-// when the state or the value changes.
-static void loader_answer(ak_loader *l, ak_val v, ak_kind k) {
-	if (l->state == AK_LOAD_READY && l->kind == k && ak_val_eq(l->value, v, k)) return;
+// when the state changes, shown only when what it shows does.
+static void loader_answer(ak_loader *l, ak_val v, ak_kind k, bool relayer) {
+	if (l->state == AK_LOAD_READY && l->kind == k && ak_val_eq(l->value, v, k)) {
+		if (relayer) loader_show(l, 0);
+		return;
+	}
 	ak_retain_val(v, k);
 	ak_release_val(l->value, (ak_kind)l->kind);
 	l->kind = (uint8_t)k;
 	l->value = v;
+	bool was = l->state == AK_LOAD_READY;
 	if (l->error) ak_release(l->error), l->error = NULL;
 	l->state = AK_LOAD_READY;
-	ak_signal_write(&l->node);
+	if (!was) ak_signal_write(&l->node);
+	loader_show(l, 0);
 }
 
 // loader_fail takes err: the error is news, unless it's the one shown.
@@ -804,11 +928,25 @@ static void loader_fail(ak_loader *l, void *err) {
 	ak_signal_write(&l->node);
 }
 
-// loader_settle shows a run's answer: its value, or its error.
-static void loader_settle(ak_loader *l, ak_future *f) {
+// loader_settle shows run's answer: its value, or its error, with the
+// layers it confirms gone, in one batch.
+static void loader_settle(ak_loader *l, ak_future *f, uint32_t run) {
+	ak_batch_begin();
 	loader_running(l, false);
-	if (f->state == AK_FUT_DONE) loader_answer(l, f->result, (ak_kind)f->kind);
-	else if (!ak_is_cancel(f->error)) loader_fail(l, ak_retain(f->error));
+	bool gone = layers_settle(l, run);
+	if (f->state == AK_FUT_DONE) {
+		loader_answer(l, f->result, (ak_kind)f->kind, gone);
+	} else {
+		if (!ak_is_cancel(f->error)) loader_fail(l, ak_retain(f->error));
+		if (gone) loader_show(l, 0);
+	}
+	ak_batch_end();
+}
+
+// loader_read_by reports whether c reads what l says: its state, or
+// what it shows (whole or a path in it).
+static bool loader_read_by(ak_loader *l, ak_effect *c) {
+	return ak_comp_reads(c, &l->node) || (l->shown && ak_vm_cell_read_by(l->shown, c));
 }
 
 // waterfall checks a load's first run, made in what another's answer
@@ -817,7 +955,7 @@ static void loader_settle(ak_loader *l, ak_future *f) {
 static void waterfall(ak_loader *l) {
 	ak_loader *cause = l->cause;
 	l->cause = NULL;
-	if (l->eff && cause->eff && !ak_comp_reads(l->eff, &cause->node) && ak_diag_first(loader_site(l), "load-waterfall")) {
+	if (l->eff && cause->eff && !loader_read_by(cause, l->eff) && ak_diag_first(loader_site(l), "load-waterfall")) {
 		char mine[512], theirs[512], msg[1536];
 		loader_describe(l, mine, sizeof mine);
 		loader_describe(cause, theirs, sizeof theirs);
@@ -828,20 +966,26 @@ static void waterfall(ak_loader *l) {
 	ak_release(cause);
 }
 
+// load_name is the name a load's description gives it ("load of user":
+// user), or "it".
+static void load_name(const char *desc, char *name, size_t n) {
+	snprintf(name, n, "it");
+	const char *of = strstr(desc, "load of ");
+	if (!of) return;
+	of += strlen("load of ");
+	size_t k = strcspn(of, " ");
+	snprintf(name, n, "%.*s", (int)k, of);
+}
+
 // hold_fire: a run has held the last answer for AK_LONG_HOLD_NS. Nothing
 // reading .loading (busy), nothing says so (long-hold).
 static void hold_fire(void *ctx) {
 	ak_loader *l = ctx;
 	l->hold = 0;
 	if (!l->running || !l->eff || ak_signal_watched(&l->busy) || !ak_diag_first(loader_site(l), "long-hold")) return;
-	char me[512], msg[1536], name[64] = "it";
+	char me[512], msg[1536], name[64];
 	loader_describe(l, me, sizeof me);
-	const char *of = strstr(me, "load of ");
-	if (of) {
-		of += strlen("load of ");
-		size_t k = strcspn(of, " ");
-		snprintf(name, sizeof name, "%.*s", (int)k, of);
-	}
+	load_name(me, name, sizeof name);
 	snprintf(msg, sizeof msg, "%s has shown its last answer for %lld s while loading the next, with nothing saying so: read %s.loading (dim it, show a ring), or show a spinner in its place", me, AK_LONG_HOLD_NS / 1000000000LL, name);
 	const char *where[1] = {me};
 	ak_diag("long-hold", msg, where, 1);
@@ -866,18 +1010,12 @@ static void loader_done(void *ctx) {
 		ak_release(l->fut);
 		l->fut = NULL;
 		hold_end(l);
-		if (AK_UNLIKELY(ak_diag_enabled)) {
-			// What the answer shows is made in this batch: a load made
-			// there waited for this one (load-waterfall).
-			ak_loader *prev = answering;
-			answering = l;
-			ak_batch_begin();
-			loader_settle(l, f);
-			ak_batch_end();
-			answering = prev;
-		} else {
-			loader_settle(l, f);
-		}
+		// What the answer shows is made in this batch: a load made
+		// there waited for this one (load-waterfall).
+		ak_loader *prev = answering;
+		if (AK_UNLIKELY(ak_diag_enabled)) answering = l;
+		loader_settle(l, f, t->run);
+		answering = prev;
 	}
 	ak_release(f);
 	ak_release(l);
@@ -888,13 +1026,16 @@ static void loader_run_fn(void *ctx) {
 	ak_loader *l = ctx;
 	if (l->fut) ak_release(l->fut), l->fut = NULL;  // cancelled with the owner
 	ak_signal_read(&l->again);
+	uint32_t run = ++l->runs;
 	ak_val v = ak_call(l->thunk, NULL, 0);
 	if (AK_UNLIKELY(l->cause)) waterfall(l);
 	if (ak_error_pending()) {
 		void *err = ak_error_take();
 		loader_running(l, false);
+		bool gone = layers_settle(l, run);
 		if (ak_is_cancel(err)) ak_release(err);
 		else loader_fail(l, err);
+		if (gone) loader_show(l, 0);
 		return;
 	}
 	ak_future *f = v.p;
@@ -904,6 +1045,7 @@ static void loader_run_fn(void *ctx) {
 	loader_ticket *t = ak_alloc(sizeof *t);
 	t->l = ak_retain(l);
 	t->f = f;  // the call's reference
+	t->run = run;
 	ak_future_wait(f, loader_done, t);
 }
 
@@ -912,8 +1054,10 @@ static void loader_effect_drop(void *ctx) {
 	l->eff = NULL;
 	hold_end(l);
 	if (l->fut) ak_release(l->fut), l->fut = NULL;
-	// No run is in flight once its owner went: none will answer.
+	// No run is in flight once its owner went: none will answer, and no
+	// layer will be confirmed.
 	loader_running(l, false);
+	layers_clear(l);
 	// It never runs again: its thunk goes now, not with the loader, which
 	// what the thunk holds may hold.
 	ak_release(l->thunk);
@@ -965,13 +1109,25 @@ bool ak_ui_load_loading(ak_val v) {
 	return l->running;
 }
 
-// The latest value, boxed when a scalar; none before the first.
+// What it shows, boxed when a scalar; none before the first answer
+// (followed by the state, which the first answer writes).
 ak_val ak_ui_load_value(ak_val v) {
 	ak_loader *l = loader_arg(v, "load.value");
-	ak_signal_read(&l->node);
-	if (l->kind == AK_K_VOID) return (ak_val){0};
-	if (l->kind == AK_K_REF) return (ak_val){.p = ak_retain(l->value.p)};
-	return (ak_val){.p = ak_box_new((ak_kind)l->kind, l->value)};
+	if (!l->shown) {
+		ak_signal_read(&l->node);
+		return (ak_val){0};
+	}
+	ak_val s = ak_vm_cell_get(l->shown, true);
+	if (l->kind == AK_K_REF) return s;
+	return (ak_val){.p = ak_box_new((ak_kind)l->kind, s)};
+}
+
+// An accessor of what it shows (a .ready arm's payload in a view): reads
+// through it follow their paths in it.
+ak_val ak_ui_load_shown(ak_val v) {
+	ak_loader *l = loader_arg(v, "load.shown");
+	if (!l->shown) ak_panic("load.shown: the load hasn't answered");
+	return ak_vm_acc_cell(l->shown);
 }
 
 ak_val ak_ui_load_error(ak_val v) {
@@ -984,3 +1140,104 @@ void ak_ui_load_reload(ak_val v) {
 	ak_loader *l = loader_arg(v, "load.reload");
 	if (l->eff) ak_signal_write(&l->again);
 }
+
+// ---- Optimistic changes (RFC 0017) ----
+
+// layer_where names where a layer was made, as its closure says it.
+static void layer_where(const ak_layer *y, char *buf, size_t n) {
+	if (y->f) ak_vm_where(y->f, "optimistic change", buf, n);
+	else snprintf(buf, n, "an optimistic change");
+}
+
+// layer_end: the task that made y ended (its owner went), or the
+// synchronous code that did returned. Gone, it's nothing; failed (or
+// cancelled), it's undone; otherwise it goes unless a run is in flight
+// or due to confirm it (optimistic-unconfirmed).
+static void layer_end(ak_layer *y, bool failed) {
+	ak_loader *l = y->l;
+	if (!l) return;
+	bool due = l->running || (l->eff && ak_effect_stale(l->eff));
+	if (!failed && due) return;
+	if (!failed && AK_UNLIKELY(ak_diag_enabled) && ak_diag_first(ak_vm_where_site(y->f), "optimistic-unconfirmed")) {
+		char where[512], load[512], msg[1536], name[64];
+		layer_where(y, where, sizeof where);
+		loader_describe(l, load, sizeof load);
+		load_name(load, name, sizeof name);
+		snprintf(msg, sizeof msg, "an optimistic change of %s went as the code that made it ended, with no run of %s to confirm it: the screen showed it, then took it back; reload what it changed before it ends (await reload …, or %s.reload())", name, name, name);
+		const char *at[2] = {where, load};
+		ak_diag("optimistic-unconfirmed", msg, at, 2);
+	}
+	uint32_t i = 0;
+	while (i < l->layers.len && l->layers.data[i] != y) i++;
+	AK_ASSERT(i < l->layers.len);
+	memmove(l->layers.data + i, l->layers.data + i + 1, sizeof(ak_layer *) * (l->layers.len - i - 1));
+	l->layers.len--;
+	layer_off(y, (ak_kind)l->kind);
+	layer_release(y);
+	ak_batch_begin();
+	loader_show(l, i);
+	ak_batch_end();
+}
+
+static void layer_task_end(void *ctx) {
+	ak_layer *y = ctx;
+	layer_end(y, y->task->state != AK_FUT_DONE);
+	layer_release(y);
+}
+
+static void layer_sync_end(void *ctx) {
+	ak_layer *y = ctx;
+	layer_end(y, false);
+	layer_release(y);
+}
+
+static void layer_hold(void *ctx) { ak_on_cleanup(layer_task_end, ctx); }
+
+void ak_ui_load_optimistic(ak_val v, ak_closure *f) {
+	ak_owner *owner = NULL;
+	ak_future *task = ak_vm_task_current(&owner);
+	ak_ui_load_optimistic_in(v, f, task, owner);
+}
+
+void ak_ui_load_optimistic_in(ak_val v, ak_closure *f, ak_future *task, ak_owner *owner) {
+	ak_loader *l = loader_arg(v, "load.optimistic");
+	if (!l->eff) return;  // gone: it shows nothing again
+	if (l->state != AK_LOAD_READY) {
+		if (AK_UNLIKELY(ak_diag_enabled) && ak_diag_first(ak_vm_where_site(f), "optimistic-not-ready")) {
+			char where[512], load[512], msg[1536], name[64];
+			ak_vm_where(f, "optimistic change", where, sizeof where);
+			loader_describe(l, load, sizeof load);
+			load_name(load, name, sizeof name);
+			snprintf(msg, sizeof msg, "%s isn't ready: there's nothing to show changed (it's %s); change what it shows once it is (match %s { .ready(…) => … })", name, l->state == AK_LOAD_PENDING ? "pending" : "failed", name);
+			const char *at[2] = {where, load};
+			ak_diag("optimistic-not-ready", msg, at, 2);
+		}
+		return;
+	}
+	ak_kind k = (ak_kind)l->kind;
+	ak_layer *y = ak_alloc(sizeof *y);
+	y->rc = 1;
+	y->f = ak_retain(f);
+	// A run in flight confirms it; else the next one started.
+	y->wait = l->running ? l->runs : l->runs + 1;
+	ak_val under = l->layers.len ? l->layers.data[l->layers.len - 1]->out : l->value;
+	if (!layer_apply(y, under, k, &y->out)) {
+		ak_release(y->f);
+		ak_free(y);
+		return;  // its error is the caller's
+	}
+	y->l = l;
+	ak_vec_push(&l->layers, y);
+	y->rc++;
+	if (task && owner) {
+		y->task = ak_retain(task);
+		ak_with_owner(owner, layer_hold, y);
+	} else {
+		ak_ready(layer_sync_end, y);
+	}
+	ak_retain_val(y->out, k);
+	ak_vm_cell_set(l->shown, y->out);
+}
+
+// ak_ui_load_layers counts a loader's layers: what tests count.
+uint32_t ak_ui_load_layers(ak_val v) { return loader_arg(v, "load.layers")->layers.len; }

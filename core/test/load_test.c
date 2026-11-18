@@ -11,7 +11,7 @@ static void *id;            // the cell the thunk reads
 static ak_val loader;       // the app's loader (the test's reference)
 static ak_future *runs[16]; // each run's future (the test's reference)
 static int nruns;
-static int state_reads, busy_reads, builds;
+static int state_reads, busy_reads, value_reads, builds;
 
 // The thunk: a run is a future the test settles.
 static ak_val thunk(ak_closure *c, ak_val *a, uint32_t n) {
@@ -36,6 +36,7 @@ static ak_val busy_text(ak_closure *c, ak_val *a, uint32_t n) {
 
 static ak_val value_text(ak_closure *c, ak_val *a, uint32_t n) {
 	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	value_reads++;
 	ak_val v = ak_ui_load_value(loader);
 	char s[32];
 	snprintf(s, sizeof s, "value %lld", v.p ? (long long)((ak_box *)v.p)->v.i : -1LL);
@@ -73,7 +74,7 @@ static ak_val load_app(ak_closure *c, ak_val *a, uint32_t n) {
 }
 
 static ak_uitest *start(void) {
-	nruns = state_reads = busy_reads = builds = 0;
+	nruns = state_reads = busy_reads = value_reads = builds = 0;
 	id = cell_int(1);
 	ak_uitest *a = mount(load_app, NULL);
 	ak_uitest_settle(a);
@@ -119,7 +120,7 @@ TEST(pending_only_before_the_first_answer) {
 }
 
 // A run after the first keeps the content (built once) and writes busy
-// alone; its answer writes the state once.
+// alone; its answer writes the value, not the state: it's still ready.
 TEST(a_run_keeps_its_case) {
 	ak_uitest *a = start();
 	answer(a, 0, 10);
@@ -133,9 +134,11 @@ TEST(a_run_keeps_its_case) {
 	CHECK_EQ_INT(busy_reads, busies + 1);
 	CHECK_EQ_INT(builds, 2);
 	CHECK_EQ_INT(ak_fake_count(ak_uitest_host(a), AK_OP_DESTROY), 0);
+	int values = value_reads;
 	answer(a, 1, 20);
 	check_text(root(a), "ready|idle|value 20");
-	CHECK_EQ_INT(state_reads, states + 1);
+	CHECK_EQ_INT(state_reads, states);
+	CHECK_EQ_INT(value_reads, values + 1);
 	CHECK_EQ_INT(busy_reads, busies + 2);
 	CHECK_EQ_INT(builds, 2);
 	CHECK_EQ_INT(ak_fake_count(ak_uitest_host(a), AK_OP_DESTROY), 0);
@@ -264,6 +267,333 @@ TEST(a_run_allocates_its_ticket) {
 	settle(a);
 	answer(a, 3, 10);
 	CHECK_EQ_INT(ak_alloc_count - before, 2 * per_run);
+	finish(a);
+}
+
+// ---- Optimistic changes (RFC 0017) ----
+
+static int times_runs;
+
+static ak_val plus1(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(n);
+	return (ak_val){.i = a[0].i + 1};
+}
+
+static ak_val times10(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(n);
+	times_runs++;
+	return (ak_val){.i = a[0].i * 10};
+}
+
+static ak_val throws(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_throw_msg("no");
+	return (ak_val){0};
+}
+
+// A task: its future and its owner, ended as the VM's tasks end (the
+// future settled, then the owner disposed).
+typedef struct {
+	ak_future *f;
+	ak_owner *o;
+} task;
+
+static task task_new(void) { return (task){ak_future_new(AK_K_VOID), ak_root_new()}; }
+
+static void task_end(task *t, const char *fail) {
+	if (fail) ak_future_reject(t->f, error_of(fail));
+	else ak_future_resolve(t->f, (ak_val){0});
+	ak_owner_dispose(t->o);
+	ak_release(t->f);
+	ak_sched_run();
+}
+
+static void change(ak_uitest *a, ak_invoke_fn f, task *t) {
+	ak_closure *c = fn(f, NULL);
+	ak_ui_load_optimistic_in(loader, c, t ? t->f : NULL, t ? t->o : NULL);
+	ak_release(c);
+	ak_uitest_settle(a);
+}
+
+static struct {
+	int n;
+	char code[64];
+	char msg[1024];
+} said;
+
+static void record(void *ctx, const char *code, const char *msg, const char *const *where, int nwhere) {
+	AK_UNUSED(ctx), AK_UNUSED(where), AK_UNUSED(nwhere);
+	said.n++;
+	snprintf(said.code, sizeof said.code, "%s", code);
+	snprintf(said.msg, sizeof said.msg, "%s", msg);
+}
+
+static bool diag_was;
+
+static void listen(void) {
+	diag_was = ak_diag_enabled;
+	ak_diag_enabled = true;
+	ak_diag_reset();
+	memset(&said, 0, sizeof said);
+	ak_diag_set_handler(record, NULL);
+}
+
+static void unlisten(void) {
+	ak_diag_set_handler(NULL, NULL);
+	ak_diag_enabled = diag_was;
+}
+
+// A change shows at once, in one write; the answer it waited for replaces
+// it in the flush that shows it: equal to it, nothing is written (no
+// flash of the old value); unequal, one write, the answer's.
+TEST(a_layer_goes_with_the_answer) {
+	ak_uitest *a = start();
+	answer(a, 0, 10);
+	int values = value_reads, states = state_reads;
+	task t = task_new();
+	change(a, plus1, &t);
+	check_text(root(a), "ready|idle|value 11");
+	CHECK_EQ_INT(value_reads, values + 1);
+	CHECK_EQ_INT(state_reads, states);
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 1);
+	ak_ui_load_reload(loader);
+	settle(a);
+	check_text(root(a), "ready|busy|value 11");
+	answer(a, 1, 11);
+	check_text(root(a), "ready|idle|value 11");
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	CHECK_EQ_INT(value_reads, values + 1);
+	CHECK_EQ_INT(state_reads, states);
+	task_end(&t, NULL);
+	CHECK_EQ_INT(value_reads, values + 1);
+	// Again, and the answer differs: one write, of the answer.
+	t = task_new();
+	change(a, plus1, &t);
+	check_text(root(a), "ready|idle|value 12");
+	ak_ui_load_reload(loader);
+	settle(a);
+	answer(a, 2, 20);
+	check_text(root(a), "ready|idle|value 20");
+	CHECK_EQ_INT(value_reads, values + 3);
+	task_end(&t, NULL);
+	CHECK_EQ_INT(value_reads, values + 3);
+	finish(a);
+}
+
+// A run in flight when the change is made confirms it: its answer takes
+// it out, though it was asked before.
+TEST(a_run_in_flight_confirms_a_layer) {
+	ak_uitest *a = start();
+	answer(a, 0, 10);
+	ak_ui_load_reload(loader);
+	settle(a);
+	task t = task_new();
+	change(a, plus1, &t);
+	check_text(root(a), "ready|busy|value 11");
+	task_end(&t, NULL);  // a run is in flight: it stays
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 1);
+	answer(a, 1, 30);
+	check_text(root(a), "ready|idle|value 30");
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	finish(a);
+}
+
+// A throw out of the task that made it undoes it.
+TEST(a_throw_undoes_a_layer) {
+	ak_uitest *a = start();
+	answer(a, 0, 10);
+	int values = value_reads;
+	task t = task_new();
+	change(a, plus1, &t);
+	ak_ui_load_reload(loader);
+	settle(a);
+	check_text(root(a), "ready|busy|value 11");
+	task_end(&t, "offline");
+	check_text(root(a), "ready|busy|value 10");
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	CHECK_EQ_INT(value_reads, values + 2);
+	answer(a, 1, 10);
+	check_text(root(a), "ready|idle|value 10");
+	CHECK_EQ_INT(value_reads, values + 2);
+	finish(a);
+}
+
+// Two layers: the first one's failure takes it out from under the
+// second, which is applied again to what's below (the answer).
+TEST(layers_stack_and_go_on_their_own) {
+	ak_uitest *a = start();
+	answer(a, 0, 10);
+	times_runs = 0;
+	task t1 = task_new(), t2 = task_new();
+	change(a, plus1, &t1);
+	change(a, times10, &t2);
+	check_text(root(a), "ready|idle|value 110");
+	CHECK_EQ_INT(times_runs, 1);
+	ak_ui_load_reload(loader);
+	settle(a);
+	task_end(&t1, "offline");
+	check_text(root(a), "ready|busy|value 100");
+	CHECK_EQ_INT(times_runs, 2);
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 1);
+	task_end(&t2, NULL);  // the run in flight confirms it
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 1);
+	answer(a, 1, 100);
+	check_text(root(a), "ready|idle|value 100");
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	CHECK_EQ_INT(times_runs, 2);
+	finish(a);
+}
+
+// An answer that lands while a later layer waits re-applies it to the
+// answer: f runs again when what's under it changes.
+TEST(an_answer_under_a_layer_runs_it_again) {
+	ak_uitest *a = start();
+	answer(a, 0, 10);
+	ak_ui_load_reload(loader);
+	settle(a);
+	task t1 = task_new();
+	change(a, plus1, &t1);  // confirmed by run 1, in flight
+	answer(a, 1, 10);
+	task t2 = task_new();
+	times_runs = 0;
+	change(a, times10, &t2);  // waits for the next run
+	check_text(root(a), "ready|idle|value 100");
+	ak_ui_load_reload(loader);
+	settle(a);
+	task_end(&t1, NULL);
+	task_end(&t2, NULL);
+	write_i(id, 2);  // a newer run replaces the one in flight
+	settle(a);
+	answer(a, 3, 7);
+	check_text(root(a), "ready|idle|value 7");
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	CHECK_EQ_INT(times_runs, 1);
+	finish(a);
+}
+
+// A task that ends with no run to confirm its change takes it back, and
+// says so once per site (optimistic-unconfirmed); one that asked for a
+// run before it ended keeps it until the run answers.
+TEST(a_layer_without_a_run_goes_with_its_task) {
+	listen();
+	ak_uitest *a = start();
+	answer(a, 0, 10);
+	ak_closure *c = fn(plus1, NULL);
+	for (int i = 0; i < 2; i++) {
+		task t = task_new();
+		ak_ui_load_optimistic_in(loader, c, t.f, t.o);
+		settle(a);
+		check_text(root(a), "ready|idle|value 11");
+		task_end(&t, NULL);
+		ak_uitest_settle(a);
+		check_text(root(a), "ready|idle|value 10");
+		CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	}
+	CHECK_EQ_INT(said.n, 1);
+	CHECK_EQ_STR(said.code, "optimistic-unconfirmed");
+	task t = task_new();
+	ak_ui_load_optimistic_in(loader, c, t.f, t.o);
+	ak_ui_load_reload(loader);
+	task_end(&t, NULL);
+	settle(a);
+	check_text(root(a), "ready|busy|value 11");
+	answer(a, 1, 11);
+	check_text(root(a), "ready|idle|value 11");
+	CHECK_EQ_INT(said.n, 1);
+	ak_release(c);
+	finish(a);
+	unlisten();
+}
+
+// Synchronous code (no task): its end is the ready queue's next run,
+// before the flush that would show it: with no run asked for, it never
+// shows; with one, it shows until the run answers.
+TEST(a_layer_of_synchronous_code) {
+	ak_uitest *a = start();
+	answer(a, 0, 10);
+	int values = value_reads;
+	change(a, plus1, NULL);
+	check_text(root(a), "ready|idle|value 10");
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	ak_closure *c = fn(plus1, NULL);
+	ak_ui_load_optimistic_in(loader, c, NULL, NULL);
+	ak_release(c);
+	ak_ui_load_reload(loader);
+	settle(a);
+	check_text(root(a), "ready|busy|value 11");
+	answer(a, 1, 11);
+	check_text(root(a), "ready|idle|value 11");
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	// The first change and its undoing ran the binding (their ops one
+	// flush's: nothing showed), the second once, its answer not.
+	CHECK_EQ_INT(value_reads, values + 3);
+	finish(a);
+}
+
+// On a load that isn't ready, nothing (optimistic-not-ready); f's throw
+// is the caller's, and makes no layer.
+TEST(a_change_needs_a_ready_load) {
+	listen();
+	ak_uitest *a = start();
+	task t = task_new();
+	change(a, plus1, &t);
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	CHECK_EQ_INT(said.n, 1);
+	CHECK_EQ_STR(said.code, "optimistic-not-ready");
+	answer(a, 0, 10);
+	ak_closure *c = fn(throws, NULL);
+	ak_ui_load_optimistic_in(loader, c, t.f, t.o);
+	ak_release(c);
+	REQUIRE(ak_error_pending());
+	ak_release(ak_error_take());
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	check_text(root(a), "ready|idle|value 10");
+	task_end(&t, NULL);
+	finish(a);
+	unlisten();
+}
+
+// The load going takes its layers with it; their tasks ending after
+// changes nothing.
+TEST(layers_go_with_their_load) {
+	ak_uitest *a = start();
+	answer(a, 0, 10);
+	task t = task_new();
+	change(a, plus1, &t);
+	ak_buf err = {0};
+	if (!ak_uitest_unmount(a, &err)) T_FAIL("%s", cstr(&err));
+	ak_buf_free(&err);
+	ak_release(a);
+	CHECK_EQ_INT(ak_ui_load_layers(loader), 0);
+	task_end(&t, "offline");
+	ak_release(loader.p);
+	for (int i = 0; i < nruns; i++) ak_release(runs[i]);
+	ak_release(id);
+}
+
+// With no layers, a run that changes the value allocates what it did
+// before RFC 0017 (the run's future and ticket, the binding's text): the
+// stack is one test, the shown cell's write none.
+TEST(an_answer_without_layers_allocates_nothing_more) {
+	ak_uitest *a = start();
+	int64_t v = 10;
+	answer(a, 0, v++);
+	for (int i = 1; i <= 3; i++) {  // warm: the vectors the runs use grow
+		ak_ui_load_reload(loader);
+		settle(a);
+		answer(a, i, v++);
+	}
+	uint64_t before = ak_alloc_count;
+	ak_ui_load_reload(loader);
+	settle(a);
+	answer(a, 4, v++);
+	uint64_t per_run = ak_alloc_count - before;
+	for (int i = 5; i <= 6; i++) {
+		ak_ui_load_reload(loader);
+		settle(a);
+		answer(a, i, v++);
+	}
+	CHECK_EQ_INT(ak_alloc_count - before, 3 * per_run);
 	finish(a);
 }
 
