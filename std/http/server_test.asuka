@@ -1,0 +1,104 @@
+// The server's parts that need no socket: a Router's matching, the
+// replies Reply's makers make, what a Request reads, and events as
+// text/event-stream writes them. (Requests over sockets:
+// lang/compile/testdata/run/httpserve.asuka; the parser and the
+// connections: core/test/httpserver_test.c.)
+
+fn named(name: string) -> async fn(Request) throws -> Reply = async (req: Request) => Reply.text("{name} {req.params}")
+
+async fn body(r: Reply) throws -> string {
+  if let s = r.stream {
+    var all = bytes()
+    for await b in s {
+      all = all.concat(b)
+    }
+    return all.string()
+  }
+  return r.body.string()
+}
+
+test "a router matches method and path" {
+  let api = Router()
+    .get("/", named("home"))
+    .get("/users/:id", named("user"))
+    .post("/users", named("add"))
+    .delete("/users/:id", named("remove"))
+    .get("/files/*path", named("file"))
+    .route("*", "/any", named("any"))
+  async fn call(method: string, path: string) throws -> string {
+    let r = try await api.handle(Request(method: method, path: path))
+    return "{r.status} {try await body(r)} {r.headers["allow"] ?? ""}".trim()
+  }
+  expect(try await call("GET", "/") == "200 home \{}")
+  expect(try await call("GET", "/users/42") == "200 user \{\"id\":\"42\"}")
+  expect(try await call("GET", "/users/42/") == "200 user \{\"id\":\"42\"}")
+  expect(try await call("GET", "/users/caf%C3%A9") == "200 user \{\"id\":\"café\"}")
+  expect(try await call("HEAD", "/users/1") == "200 user \{\"id\":\"1\"}")
+  expect(try await call("DELETE", "/users/7") == "200 remove \{\"id\":\"7\"}")
+  expect(try await call("POST", "/users") == "200 add \{}")
+  expect(try await call("GET", "/files/a/b%20c.txt") == "200 file \{\"path\":\"a/b c.txt\"}")
+  expect(try await call("GET", "/files") == "200 file \{\"path\":\"\"}")
+  expect(try await call("PATCH", "/any") == "200 any \{}")
+  expect(try await call("GET", "/users/1/posts") == "404 Not Found")
+  expect(try await call("PUT", "/users/1") == "405 Method Not Allowed GET, DELETE, HEAD")
+  expect(try await call("GET", "/users") == "405 Method Not Allowed POST")
+}
+
+test "replies" {
+  let t = Reply.text("hi", status: 201)
+  expect(t.status == 201 && t.headers["content-type"] == "text/plain; charset=utf-8" && t.body.string() == "hi")
+  let h = Reply.html("<p>hi</p>", headers: ["Content-Type": "text/html"])
+  expect(h.headers.count() == 1 && h.headers["Content-Type"] == "text/html")
+  let j = Reply.json(["a": 1])
+  expect(j.headers["content-type"] == "application/json" && j.body.string() == "\{\"a\":1}")
+  let d = Reply.data("x".bytes(), type: "image/png")
+  expect(d.headers["content-type"] == "image/png")
+  let r = Reply.redirect("/login")
+  expect(r.status == 302 && r.headers["location"] == "/login" && r.body.isEmpty())
+  expect(Reply.redirect("/new", status: 301).status == 301)
+  expect(Reply(status: 204).stream.isNone())
+  let s = Reply.stream(Stream<bytes>(send => {
+    send("a".bytes())
+    send("b".bytes())
+  }), type: "text/plain")
+  expect(s.headers["content-type"] == "text/plain")
+  expect(try await body(s) == "ab")
+}
+
+test "events as text/event-stream writes them" {
+  let r = Reply.events(Stream<Event>(send => {
+    send(Event(data: "hello"))
+    send(Event(event: "price", data: "1\r\n2\n3", id: "7"))
+    send(Event(event: "bad\nname", data: "", retry: 2s))
+  }))
+  expect(r.headers["content-type"] == "text/event-stream")
+  expect(r.headers["cache-control"] == "no-cache")
+  let text = try await body(r)
+  expect(text == "data: hello\n\nid: 7\nevent: price\ndata: 1\ndata: 2\ndata: 3\n\nevent: badname\nretry: 2000\ndata: \n\n")
+}
+
+struct N {
+  n: int
+}
+
+test "what a request reads" {
+  let req = Request(method: "POST", path: "/search", rawQuery: "q=fish+%26+chips&tag=a&tag=b&empty", headers: ["content-type": "application/json", "x-id": "7"], body: "\{\"n\":3}".bytes(), params: ["id": "42"])
+  expect(req.query("q") == "fish & chips")
+  expect(req.query("empty") == "")
+  expect(req.query("none") == none)
+  expect(req.queryAll("tag") == ["a", "b"])
+  expect(req.header("Content-Type") == "application/json")
+  expect(req.header("X-ID") == "7")
+  expect(req.param("id") == "42" && req.param("other") == "")
+  expect(try req.json<N>().n == 3)
+  expect(req.text() == "\{\"n\":3}")
+}
+
+test "a server's errors" {
+  do {
+    let _ = try await serve(-1, req => .text("no"))
+  } catch ServerError.listen(_, port, reason) {
+    expect(port == -1 && reason == "a port is 0 to 65535")
+  }
+  expect(ServerError.unsupported.message().hasPrefix("a web page can't listen"))
+}

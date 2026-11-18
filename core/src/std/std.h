@@ -33,6 +33,7 @@ extern const ak_lib_entry ak_std_toml[];
 extern const ak_lib_entry ak_std_csv[];
 extern const ak_lib_entry ak_std_compress[];
 extern const ak_lib_entry ak_std_archive[];
+extern const ak_lib_entry ak_std_http[];  // httpserver.c: std/http's server
 
 // Every package's table, NULL-terminated.
 extern const ak_lib_entry *const ak_std_libs[];

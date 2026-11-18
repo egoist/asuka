@@ -20,6 +20,16 @@
 //   for await e in http.events("https://example.com/updates") {
 //     if e.event == "price" { price = e.data }
 //   }
+//
+// And it serves HTTP/1.1, the same C on every system that can listen (a
+// program, a desktop app, a phone's app; not the web), each request's
+// handler a task on the main thread:
+//
+//   let api = http.Router()
+//     .get("/notes/:id", req => .json(try await notes.find(req.param("id"))))
+//     .post("/notes", req => .json(try await notes.add(try req.json<Note>()), status: 201))
+//   let server = try await http.serve(8080, api.handler())
+//   await server.wait()
 
 import std/fs
 import std/json as codec
@@ -176,12 +186,12 @@ pub struct StreamedResponse {
 /// A server-sent event (the HTML standard's text/event-stream).
 pub struct Event {
   /// Its type: what the server said in event:, else "message".
-  event: string
+  event: string = "message"
   /// Its data: the data: lines, joined by \n.
   data: string
   /// The last ID the server gave (id:, in this event or one before), ""
   /// for none: what a reconnection sends back as Last-Event-ID.
-  id: string
+  id: string = ""
   /// How long the server asked a client to wait before reconnecting
   /// (retry:, in this event or one before), 0 for what it hasn't said.
   retry: Duration = 0s
