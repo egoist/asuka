@@ -28,6 +28,7 @@
 #include "rt/lib.h"
 #include "rt/worker.h"
 #include "base/thread.h"
+#include "std/tz.h"
 #include "vm/vm_int.h"
 #include "vm/keep.h"
 #include "ui/ui.h"
@@ -45,6 +46,7 @@ IMPORT("post") void js_post(void);
 IMPORT("timer_set") void js_timer_set(double id, double ms);
 IMPORT("timer_clear") void js_timer_clear(double id);
 IMPORT("zone_offset") double js_zone_offset(double unix_seconds);
+IMPORT("zone_name") uint32_t js_zone_name(char *out, uint32_t cap);
 IMPORT("spawn") void js_spawn(double id, const uint8_t *job, uint32_t len);
 IMPORT("spawn_cancel") void js_spawn_cancel(double id);
 IMPORT("worker_start") void js_worker_start(double id, const uint8_t *job, uint32_t len);
@@ -89,8 +91,10 @@ static void post(void) { js_post(); }
 static void timer_schedule(uint64_t id, int64_t ns) { js_timer_set((double)id, (double)ns / 1e6); }
 static void timer_cancel(uint64_t id) { js_timer_clear((double)id); }
 
-// The browser's zone, for dates (ak_zone_offset).
+// The browser's zone, for dates (ak_zone_offset), and its name
+// (std/time's, ak_tz_local_name).
 static int32_t zone_offset(int64_t t) { return (int32_t)js_zone_offset((double)t); }
+static size_t zone_name(char *out, size_t cap) { return js_zone_name(out, (uint32_t)cap); }
 
 // A native answer of n bytes: into out when it fits, else into *big
 // (native_free's).
@@ -132,6 +136,7 @@ static asuka_host_callbacks callbacks = {
 EXPORT("asuka_web_start") void asuka_web_start(void) {
 	ak_sched_set_timer(timer_schedule, timer_cancel);
 	ak_zone_offset_hook = zone_offset;
+	ak_tz_local_name_hook = zone_name;
 	asuka_start(&callbacks);
 }
 
@@ -349,6 +354,7 @@ EXPORT("asuka_worker_start") int asuka_worker_start(const uint8_t *module, size_
 	ak_in_spawn_worker = true;
 	ak_sched_set_timer(timer_schedule, timer_cancel);
 	ak_zone_offset_hook = zone_offset;
+	ak_tz_local_name_hook = zone_name;
 	asuka_start(&worker_callbacks);
 	ak_module *m = NULL;
 	char msg[512];

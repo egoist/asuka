@@ -2068,6 +2068,19 @@ behavior.
   incremental reading, as a line can turn the paragraph above it into a
   heading), but the blocks are a keyed `for`: a streamed reply changes
   its last block or two a frame, and only their RichTexts typeset again.
+- `std/time`'s named zones (`time.zone("America/New_York")`) are read
+  once, in the core, from its own copy of the IANA tz database: the
+  systems' copies differ in version (an Android or iOS not updated keeps
+  last year's rules), and Windows and the browser don't give a zone's
+  transitions at all, only an offset at a time. `internal/tzgen` builds a
+  pinned release's zic, compiles the zones slim (transitions until a
+  zone's rules last changed, then its POSIX TZ string) and packs them
+  into `core/src/std/tzdata_gen.c`: a transition is a minute (an int32)
+  and a type (a byte), about 110 KB for every zone and name; lookups are
+  binary searches of that constant data, nothing decoded or cached.
+  `.local` stays the system's (its clock is the device's), and the
+  device's zone's name is the system's (TZ, /etc/localtime, Android's
+  persist.sys.timezone, Windows's ICU, the browser's Intl).
 
 **Not yet:** selection for screen reader users (VoiceOver and TalkBack
 read the texts and links but don't select across them).

@@ -15,6 +15,7 @@
 
 import { wasi } from "./wasi.js";
 import { stackRoom } from "./stack.js";
+import { zoneName } from "./zone.js";
 import * as fs from "./fs.js";
 
 const FAILED = 2;
@@ -60,6 +61,7 @@ export function serve(port) {
         },
         timer_clear(id) { clearTimeout(timers.get(id)); timers.delete(id); },
         zone_offset: (s) => -new Date(s * 1000).getTimezoneOffset() * 60,
+        zone_name: (p, cap) => zoneName(memory(), p, cap),
         stack_room: stackRoom(),
         spawn() { throw new Error("asuka: spawn in a worker"); }, // web.c runs a worker's in place
         spawn_cancel() {},
