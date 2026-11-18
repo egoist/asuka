@@ -320,6 +320,38 @@ async fn main() throws {
 
 ディスクにアクセスする呼び出し（`walk`、`readText`、`exists` など）は、システムが答えるまでブロックします。大きなディレクトリツリーをたどるときは `spawn { }` の中で呼べば、プログラムのほかの task は動き続けます。失敗すると、`std/fs` のほかの呼び出しと同じく `FsError` を投げます。一覧を読む権限のないディレクトリは `.denied(path)` です。
 
+### 大きなファイルを少しずつ
+
+`readText` はファイルを丸ごと読みます。それには大きすぎるファイル（ログ、エクスポートしたデータ）は少しずつ読みます。`fs.lines(path)` はファイルの行をストリームで返し、64 KB ずつ読んで、最後の行の後でファイルを閉じます。`fs.open(path, mode:)` が返す `File` を使うと、処理しながら読み書きできます：`readLine()`、`read(count:)`、`readAll()`、`write(data)`、`writeText(text)`、`seek(offset, from:)`、`size()`、`flush()`、`close()`。どれも別のスレッドでシステムを待ちます。開き方は `.read`、`.write`（空から書く）、`.append`、`.readWrite` です。
+
+```asuka check
+import std/fs
+
+/// ログのエラー行を、1 行ずつ別のファイルにコピーする。
+async fn main() throws {
+  let out = try await fs.open("errors.log", mode: .write)
+  defer { try? await out.close() }
+  var kept = 0
+  for await line in fs.lines("server.log") {
+    if line.contains("ERROR") {
+      try await out.writeText(line + "\n")
+      kept += 1
+    }
+  }
+  print("{kept} errors")
+}
+```
+
+書いた内容がファイルに入るのは、バッファーがいっぱいになったとき、`flush()` のとき、`close()` のときです。使い終わった `File` は、上の `defer` のように閉じます。
+
+`fs.glob(pattern)` はパターンに合うパスを並べ替えて返します。使えるのは `*`、`?`、`[a-z]`、`{a,b}`（`{` が補間にならないよう raw 文字列 `r"…"` に書きます）、任意の深さのディレクトリを表す `**` です。`fs.matches(pattern, path)` は 1 つのパスを調べます。`fs.chmod(path, 0o755)` は権限を設定し、`fs.symlink(target, at:)` と `fs.readLink(path)` はシンボリックリンクを作って読みます。`Entry` には `mode` と `isLink` もあります。
+
+```asuka check
+import std/fs
+
+async fn testFiles() throws -> [string] = try await spawn { try fs.glob(r"src/**/*_{test,spec}.asuka") }
+```
+
 ## 複数を同時に
 
 `all(items, f, limit:)` は、各要素で非同期関数を同時に呼び出し、結果を要素の順に返します。ダウンロード、リクエスト、ほかのプログラムの実行を並べて行えます。`limit:` は同時に動かす数です。最初のエラーが残りをキャンセルし、それらが止まってから `all` がそのエラーを投げます（[非同期処理](language/async.md#非同期処理)を参照）。

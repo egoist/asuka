@@ -1,0 +1,117 @@
+// std/fs's open files: written through a buffer, read a line or a part
+// at a time, sought, closed; lines(path); glob and matches; chmod and
+// symbolic links.
+
+import std/fs
+import std/random
+
+test "files" {
+  let dir = fs.join([fs.tempDir(), "asuka-files-test-{random.int(0, 1000000000)}"])
+  try? await spawn { try fs.removeAll(dir) }
+  try await spawn { try fs.mkdirAll(fs.join([dir, "src", "ui"])) }
+  let big = fs.join([dir, "big.log"])
+  // Write 200k lines through the buffer.
+  let w = try await fs.open(big, mode: .write)
+  for i in 0..<200000 {
+    try await w.writeText("line {i}{if i % 2 == 0 { "\r\n" } else { "\n" }}")
+  }
+  try await w.writeText("last, no newline")
+  try await w.close()
+  let sized = try await fs.open(big)
+  print(try await sized.size())
+  try await sized.close()
+  // Read it back line by line.
+  var n = 0
+  var lastLine = ""
+  for await line in fs.lines(big) {
+    n += 1
+    lastLine = line
+  }
+  print("{n} lines, last: {lastLine}")
+  // read, seek, readAll
+  let f = try await fs.open(big)
+  print((try await f.read(count: 6)).string())
+  print(try await f.readLine() ?? "?")
+  print(try await f.seek(-16, from: .end))
+  print((try await f.readAll()).string())
+  print((try await f.read()).count())
+  print(try await f.readLine() ?? "end")
+  try await f.close()
+  try await f.close()
+  do {
+    let _ = try await f.readLine()
+  } catch e {
+    print("after close: {e.message.trimPrefix(dir)}")
+  }
+  // readWrite + append
+  let rw = fs.join([dir, "rw.txt"])
+  let a = try await fs.open(rw, mode: .append)
+  try await a.writeText("one\n")
+  try await a.close()
+  let b = try await fs.open(rw, mode: .append)
+  try await b.writeText("two\n")
+  try await b.close()
+  let c = try await fs.open(rw, mode: .readWrite)
+  print(try await c.readLine() ?? "")
+  try await c.writeText("TWO\n")
+  try await c.seek(0)
+  print((try await c.readAll()).string().replace("\n", "|"))
+  try await c.close()
+  // errors
+  do {
+    let _ = try await fs.open(fs.join([dir, "missing.txt"]))
+  } catch e {
+    print(e.message.hasSuffix("missing.txt: no such file or directory"))
+  }
+  do {
+    let _ = try await fs.open(dir)
+  } catch e: fs.FsError {
+    print(match e { .isDirectory(_) => "a directory"; _ => e.message })
+  }
+  // glob and matches
+  for name in ["src/a.ts", "src/ui/b.tsx", "src/ui/.hidden.ts", "src/c.md", "top.ts"] {
+    try await spawn { try fs.writeText(fs.join([dir, name]), text: "x") }
+  }
+  print(fs.matches(r"src/**/*.{ts,tsx}", "src/ui/b.tsx"))
+  print(fs.matches("src/*.ts", "src/ui/b.ts"))
+  print(fs.matches("*.ts", ".x.ts"))
+  print(fs.matches("[!a]?.md", "bc.md"))
+  print(fs.matches("**/*.ts", "top.ts"))
+  let found = try await spawn { try fs.glob(fs.join([dir, "src", "**", r"*.{ts,tsx}"])) }
+  print(found.map(p => p.trimPrefix(dir)))
+  // chmod, symlink
+  let script = fs.join([dir, "run.sh"])
+  try await spawn { try fs.writeText(script, text: "#!/bin/sh\n") }
+  try fs.chmod(script, 0o755)
+  print((try fs.stat(script)).mode.toString(radix: 8))
+  try fs.symlink("run.sh", at: fs.join([dir, "link.sh"]))
+  print(try fs.readLink(fs.join([dir, "link.sh"])))
+  let walked = try await spawn { try fs.walk(dir) }
+  print(walked.filter(e => e.isLink).map(e => e.name))
+  try await spawn { try fs.removeAll(dir) }
+}
+
+// Output:
+// 2388906
+// 200001 lines, last: last, no newline
+// line 0
+//
+// 2388890
+// last, no newline
+// 0
+// end
+// after close: /big.log: the file is closed
+// one
+// one|TWO|
+// true
+// a directory
+// true
+// false
+// false
+// true
+// true
+// ["/src/a.ts","/src/ui/b.tsx"]
+// 755
+// run.sh
+// ["link.sh"]
+// ok files

@@ -445,6 +445,51 @@ until the system answers: a large tree is walked in `spawn { }`, so
 the program's other tasks go on. A failure is an `FsError`, as for every
 call of `std/fs`: a directory it may not list is `.denied(path)`.
 
+### Large files, a part at a time
+
+`readText` reads a file whole. One too large for that (a log, an
+export) is read a part at a time: `fs.lines(path)` gives its lines as a
+stream, reading 64 KB at a time and closing the file after the last.
+`fs.open(path, mode:)` gives a `File` to read or write as the program
+goes: `readLine()`, `read(count:)`, `readAll()`, `write(data)`,
+`writeText(text)`, `seek(offset, from:)`, `size()`, `flush()` and
+`close()`, each waiting on another thread. Its modes are `.read`,
+`.write` (from empty), `.append` and `.readWrite`.
+
+```asuka check
+import std/fs
+
+/// Copies a log's error lines to another file, a line at a time.
+async fn main() throws {
+  let out = try await fs.open("errors.log", mode: .write)
+  defer { try? await out.close() }
+  var kept = 0
+  for await line in fs.lines("server.log") {
+    if line.contains("ERROR") {
+      try await out.writeText(line + "\n")
+      kept += 1
+    }
+  }
+  print("{kept} errors")
+}
+```
+
+What's written reaches the file as the buffer fills, on `flush()` and
+on `close()`; close a `File` when it's done, as `defer` does above.
+
+`fs.glob(pattern)` lists the paths a pattern matches, sorted: `*`, `?`,
+`[a-z]`, `{a,b}` (in a raw string, `r"…"`, where `{` isn't an
+interpolation) and `**` for any directories. `fs.matches(pattern, path)`
+tests one path. `fs.chmod(path, 0o755)` sets permissions, `fs.symlink(target, at:)`
+and `fs.readLink(path)` make and read symbolic links, and an `Entry` says
+`mode` and `isLink`.
+
+```asuka check
+import std/fs
+
+async fn testFiles() throws -> [string] = try await spawn { try fs.glob(r"src/**/*_{test,spec}.asuka") }
+```
+
 ## Many at once
 
 `all(items, f, limit:)` calls an async function with each item at once

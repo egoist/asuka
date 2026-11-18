@@ -320,6 +320,38 @@ async fn main() throws {
 
 会访问磁盘的调用（`walk`、`readText`、`exists`……）要等系统返回结果才会继续：遍历很大的目录树时放在 `spawn { }` 里，程序的其他 task 就能照常运行。失败时和 `std/fs` 的其他调用一样抛出 `FsError`：没有权限列出的目录是 `.denied(path)`。
 
+### 大文件，分段读写
+
+`readText` 会一次读入整个文件。太大的文件（日志、导出数据）要分段读：`fs.lines(path)` 以流的形式给出文件的每一行，每次读 64 KB，读完最后一行后关闭文件。`fs.open(path, mode:)` 返回一个 `File`，让程序边处理边读写：`readLine()`、`read(count:)`、`readAll()`、`write(data)`、`writeText(text)`、`seek(offset, from:)`、`size()`、`flush()` 和 `close()`，它们都在另一个线程上等待系统。打开方式有 `.read`、`.write`（从空文件开始）、`.append` 和 `.readWrite`。
+
+```asuka check
+import std/fs
+
+/// 逐行把日志里的错误行复制到另一个文件。
+async fn main() throws {
+  let out = try await fs.open("errors.log", mode: .write)
+  defer { try? await out.close() }
+  var kept = 0
+  for await line in fs.lines("server.log") {
+    if line.contains("ERROR") {
+      try await out.writeText(line + "\n")
+      kept += 1
+    }
+  }
+  print("{kept} errors")
+}
+```
+
+写入的内容在缓冲区写满时、调用 `flush()` 时以及 `close()` 时才会真正写进文件；用完 `File` 要关闭它，就像上面用 `defer` 那样。
+
+`fs.glob(pattern)` 按排序列出匹配模式的路径：`*`、`?`、`[a-z]`、`{a,b}`（写在原始字符串 `r"…"` 里，这样 `{` 不会被当作插值）以及表示任意层目录的 `**`。`fs.matches(pattern, path)` 检查单个路径。`fs.chmod(path, 0o755)` 设置权限，`fs.symlink(target, at:)` 和 `fs.readLink(path)` 创建和读取符号链接，`Entry` 里也有 `mode` 和 `isLink`。
+
+```asuka check
+import std/fs
+
+async fn testFiles() throws -> [string] = try await spawn { try fs.glob(r"src/**/*_{test,spec}.asuka") }
+```
+
 ## 同时处理多项
 
 `all(items, f, limit:)` 用每一项同时调用一个异步函数，并按各项的顺序给出结果：适合并行下载、发请求、同时运行其他程序。`limit:` 指定同一时刻最多运行几个；第一个出错的会取消其余的，等它们都停下后 `all` 再抛出这个错误（见[异步](language/async.md#异步)）。

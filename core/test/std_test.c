@@ -739,6 +739,44 @@ TEST(radixes) {
 	REQUIRE(!ak_error_pending());
 }
 
+static bool glob_match(const char *pattern, const char *path) {
+	ak_str *p = ak_str_c(pattern), *s = ak_str_c(path);
+	bool ok = call("fs.matches", (ak_val[]){{.p = p}, {.p = s}}, 2, 3).i != 0;
+	return ok;
+}
+
+// A glob's pattern: *, ?, classes, braces, **; a dot a pattern must say.
+TEST(glob_patterns) {
+	CHECK(glob_match("*.ts", "a.ts"));
+	CHECK(!glob_match("*.ts", "src/a.ts"));
+	CHECK(!glob_match("*.ts", ".a.ts"));
+	CHECK(glob_match(".*.ts", ".a.ts"));
+	CHECK(glob_match("src/**/*.ts", "src/a.ts"));
+	CHECK(glob_match("src/**/*.ts", "src/x/y/z.ts"));
+	CHECK(!glob_match("src/**/*.ts", "src/.git/z.ts"));
+	CHECK(glob_match("**", "a/b/c"));
+	CHECK(glob_match("**/c", "c"));
+	CHECK(glob_match("a?c", "abc"));
+	CHECK(!glob_match("a?c", "a/c"));
+	CHECK(glob_match("a?c", "a\xc3\xa9" "c"));  // ? is a character, é two bytes
+	CHECK(glob_match("[a-c]x", "bx"));
+	CHECK(!glob_match("[!a-c]x", "bx"));
+	CHECK(glob_match("[]]x", "]x"));
+	CHECK(glob_match("a[", "a["));  // no ]: as it is
+	CHECK(glob_match("*.{ts,tsx,{js,jsx}}", "a.jsx"));
+	CHECK(!glob_match("*.{ts,tsx}", "a.js"));
+	CHECK(glob_match("{", "{"));
+	CHECK(!glob_match("", "a"));
+	CHECK(glob_match("", ""));
+#if !defined(_WIN32)
+	CHECK(glob_match("a\\*", "a*"));
+	CHECK(!glob_match("a\\*", "ab"));
+#endif
+	// A pattern that would take exponential time without its bound.
+	CHECK(!glob_match("*a*a*a*a*a*a*a*a*a*a*a*a*b", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+	REQUIRE(!ak_error_pending());
+}
+
 TEST(race_of_none) {
 	int64_t live = ak_obj_live;
 	ak_arr *none = ak_arr_new(AK_K_REF, NULL, 0);
