@@ -114,8 +114,8 @@ func TestScanKeywords(t *testing.T) {
 	const rfc = `app as async await bind break catch component continue
   defer do effect else emit enum event extend extern false fn for if
   import in interface key let load match mut native none on prop provide
-  pub return screen self spawn state store struct style task test throw
-  throws true try type use var while worker`
+  pub reload return screen self spawn state store struct style task test
+  throw throws true try type use var while worker`
 	n := 0
 	for _, w := range strings.Fields(rfc) {
 		n++

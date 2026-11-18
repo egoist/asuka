@@ -81,14 +81,14 @@ parser normalizes each identifier's text).
 ```
 app as async await bind break catch component continue defer do effect
 else emit enum event extend extern false fn for if import in interface
-key let load match mut native none on prop provide pub return screen
-self spawn state store struct style task test throw throws true try type
-use var while worker
+key let load match mut native none on prop provide pub reload return
+screen self spawn state store struct style task test throw throws true
+try type use var while worker
 ```
 
-`mut`, `extend` and `worker` are keywords since 0.2.7: a file that
-names something so is an error that says to rename it ("rename it:
-worker is a keyword since 0.2.7").
+`mut`, `extend` and `worker` are keywords since 0.2.7, `reload` since
+0.2.9: a file that names something so is an error that says to rename
+it ("rename it: worker is a keyword since 0.2.7").
 
 After `.` or `?.`, a keyword is a member's name (`x.type`,
 `.default`). The soft keywords, which only start a declaration or an
@@ -317,6 +317,7 @@ BinaryOp    = "??" | "||" | "&&" | "==" | "!=" | "<" | "<=" | ">" | ">=" | ".." 
 Unary       = ( "!" | "-" | "~" | "await" ) Unary
             | "try" [ "?" ] Unary                (* try? : the ? right after try *)
             | "load" Postfix                     (* load (f(x)): a call in parentheses *)
+            | "reload" Postfix                   (* reload f(x), reload f: what loads ask again *)
             | "spawn" Block
             | Jump
             | Postfix .
@@ -383,6 +384,12 @@ What the parser decides where the productions are ambiguous:
 - **load** (decision 27): `load` and `(` is a call of a function named
   `load` (`load()`, `load(id)`), unless the parentheses hold one call,
   which is the `load` operator's operand: `load (api.user(id))`.
+- **reload** (rfcs/0017): `reload` and a name is the `reload` operator,
+  of a call or of a function by its name (`reload api.notes(id)`,
+  `reload api.notes`); `reload` and `(` is a call of a function named
+  `reload`, and `reload` alone that name. A declaration may still be
+  named `reload` (`fn reload()`, an enum's case), and a member is after
+  `.` (`x.reload()`).
 - **Jumps as values** (decision 22): `throw`, `return`, `break` and
   `continue` where an operand goes are values of type `never`: `x ??
   throw E.missing`. `return` takes a value only when one starts before

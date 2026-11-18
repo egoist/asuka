@@ -1512,6 +1512,8 @@ func (c *Checker) unary(e *syntax.UnaryExpr, want Type) Type {
 		return t
 	case syntax.LOAD:
 		return c.load(e)
+	case syntax.RELOAD:
+		return c.reload(e)
 	}
 	c.errorf(e, diag.InternalError, "unexpected operator %s", e.Op)
 	return Invalid

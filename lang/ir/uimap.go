@@ -49,6 +49,10 @@ const (
 	uiLoadError   = "load.error"   // (loader) -> Error
 	uiLoadReload  = "load.reload"
 	uiLoadShown   = "load.shown" // (loader) -> an accessor of what it shows: a .ready arm's payload, read by paths
+	// (key, kinds, args…): the running loader's key and arguments, recorded by its thunk (rfcs/0017)
+	uiLoadKey = "load.key"
+	// (key, given, kinds, args…) -> a future: every live load of key (with equal args when given) runs again
+	uiLoadReloadAll = "load.reload_all"
 
 	uiPush    = "ui.push"    // (builder) -> void: on the nearest stack
 	uiPop     = "ui.pop"     // () -> void

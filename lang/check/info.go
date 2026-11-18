@@ -9,6 +9,8 @@ type Info struct {
 	Uses       map[*syntax.Ident]Object   // what each name used stands for
 	Defs       map[*syntax.Ident]Object   // what each name declared is
 	Calls      map[*syntax.CallExpr]*Call // what each call calls
+	// Reloads: what each reload f(…) or reload f asks again (rfcs/0017).
+	Reloads map[*syntax.UnaryExpr]*Reload
 	Selections map[syntax.Expr]*Selection // x.name and .name
 	StoreSelf  map[syntax.Expr]*TypeName  // self in a store: the store
 	// Convs: an expression whose value converts implicitly where it's
@@ -108,6 +110,7 @@ type Info struct {
 
 func newInfo() *Info {
 	return &Info{
+		Reloads:        map[*syntax.UnaryExpr]*Reload{},
 		Types:          map[syntax.Expr]Type{},
 		Uses:           map[*syntax.Ident]Object{},
 		Defs:           map[*syntax.Ident]Object{},

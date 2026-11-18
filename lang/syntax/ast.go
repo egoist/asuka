@@ -922,7 +922,7 @@ type UnwrapExpr struct {
 // Optional for try?.
 type UnaryExpr struct {
 	Span
-	Op       Token // NOT, SUB, AWAIT, LOAD or TRY
+	Op       Token // NOT, SUB, AWAIT, LOAD, RELOAD or TRY
 	Optional bool  // try?
 	X        Expr
 }

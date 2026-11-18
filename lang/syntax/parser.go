@@ -292,6 +292,7 @@ var newKeywords = map[Token]string{
 	MUT:    "0.2.7",
 	EXTEND: "0.2.7",
 	WORKER: "0.2.7",
+	RELOAD: "0.2.9",
 }
 
 // newKeyword says to rename a name that's a keyword since a release ("
@@ -2448,6 +2449,18 @@ func (p *parser) parseUnary() Expr {
 		p.next()
 		x := p.parsePostfix()
 		return &UnaryExpr{Op: LOAD, X: x, Span: p.span(start)}
+	case RELOAD:
+		// reload f(…), reload f (rfcs/0017): what loads ask again. Followed
+		// by ( it calls a function named reload, as load(…) does one named
+		// load; alone, it's that name.
+		if next := p.peek(1); next != IDENT && !softKeyword(next) {
+			id := &Ident{Span: Span{start, start + Pos(len(p.lit))}, Name: p.lit}
+			p.next()
+			return p.postfixFrom(start, id)
+		}
+		p.next()
+		x := p.parsePostfix()
+		return &UnaryExpr{Op: RELOAD, X: x, Span: p.span(start)}
 	case THROW, RETURN, BREAK, CONTINUE:
 		// A jump used as a value (decision 22): x ?? throw E.missing.
 		j := &JumpExpr{Tok: p.tok}
@@ -2546,6 +2559,10 @@ func (p *parser) postfixFrom(start Pos, x Expr) Expr {
 			var name *Ident
 			if p.tok == INT {
 				// A tuple's element: t.0, its index the member's name.
+				name = &Ident{Span: Span{p.pos, p.pos + Pos(len(p.lit))}, Name: p.lit}
+				p.next()
+			} else if p.tok == RELOAD {
+				// x.reload(): a Loading's, a method so named.
 				name = &Ident{Span: Span{p.pos, p.pos + Pos(len(p.lit))}, Name: p.lit}
 				p.next()
 			} else {
@@ -2832,6 +2849,11 @@ func (p *parser) parsePrimary() Expr {
 		p.next()
 		if (p.tok == INT || p.tok == FLOAT || p.tok == DURATION || p.tok == LENGTH) && p.pos == p.prevEnd {
 			p.error(start, diag.InvalidLiteral, "a number starts with a digit: 0"+p.toks[p.i-1].lit+p.lit)
+		}
+		if p.tok == RELOAD {
+			id := &Ident{Span: Span{p.pos, p.pos + Pos(len(p.lit))}, Name: p.lit}
+			p.next()
+			return &ImplicitMember{Name: id, Span: p.span(start)}
 		}
 		return &ImplicitMember{Name: p.ident(), Span: p.span(start)}
 	case LPAREN:

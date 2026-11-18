@@ -297,6 +297,7 @@ const (
 	PROP
 	PROVIDE
 	PUB
+	RELOAD
 	RETURN
 	SCREEN
 	SELF
@@ -434,6 +435,7 @@ var tokens = [...]string{
 	PROP:      "prop",
 	PROVIDE:   "provide",
 	PUB:       "pub",
+	RELOAD:    "reload",
 	RETURN:    "return",
 	SCREEN:    "screen",
 	SELF:      "self",

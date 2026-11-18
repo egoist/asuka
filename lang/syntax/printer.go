@@ -1333,7 +1333,7 @@ func (p *printer) expr1(x Expr) {
 		default:
 			p.write(x.Op.String() + " ")
 		}
-		if x.Op == LOAD {
+		if x.Op == LOAD || x.Op == RELOAD {
 			p.exprPrec(x.X, precPostfix)
 		} else {
 			p.exprPrec(x.X, precUnary)

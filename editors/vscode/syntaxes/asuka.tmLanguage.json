@@ -466,7 +466,7 @@
       "patterns": [
         {
           "name": "keyword.control.asuka",
-          "match": "\\b(if|else|for|in|while|match|return|throw|break|continue|defer|do|catch|try|await|spawn|load|emit)\\b"
+          "match": "\\b(if|else|for|in|while|match|return|throw|break|continue|defer|do|catch|try|await|spawn|load|reload|emit)\\b"
         },
         {
           "name": "storage.type.asuka",

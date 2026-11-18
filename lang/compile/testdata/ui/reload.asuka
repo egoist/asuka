@@ -1,0 +1,159 @@
+// reload f(…) and reload f (rfcs/0017): every live load of that call,
+// in any screen of any stack, asks again; await reload … waits for their
+// answers. The RFC's edit screen over the list screen: a rename there
+// updates the list under it, which only the edit screen's load was told
+// of before.
+
+struct Note {
+  id: int
+  title: string
+}
+
+enum Problem: Error { offline }
+
+store Api {
+  state notes = [Note(id: 1, title: "a"), Note(id: 2, title: "b")]
+  state lists = 0
+  state reads: [int] = []
+  state offline = false
+
+  async fn list() throws -> [Note] {
+    lists += 1
+    await sleep(10ms)
+    if offline { throw Problem.offline }
+    return notes
+  }
+
+  async fn note(id: int) -> Note {
+    reads.push(id)
+    await sleep(10ms)
+    return notes.find(n => n.id == id) ?? Note(id: id, title: "?")
+  }
+
+  async fn rename(id: int, title: string) {
+    await sleep(10ms)
+    if let i = notes.index(n => n.id == id) { notes[i].title = title }
+  }
+}
+
+screen NoteList {
+  use api: Api
+  let notes = load api.list()
+  state seen = ""
+
+  Column {
+    match notes {
+      .pending => Text("…")
+      .failed(e) => Text("failed")
+      .ready(ns) => Column {
+        for n in ns key n.id {
+          Button("open {n.title}") { on press { push(EditNote(n.id)) } }
+        }
+      }
+    }
+    Text("seen {seen}")
+    Button("Refresh") {
+      on press {
+        await reload api.list
+        seen = (notes.value ?? []).map(n => n.title).joined(", ")
+      }
+    }
+  }
+}
+
+screen EditNote(id: int) {
+  use api: Api
+  let note = load api.note(id)
+
+  Column {
+    Text("editing {note.value?.title ?? "…"}")
+    Button("Rename") {
+      on press {
+        await api.rename(id, "z")
+        await reload api.list()          // the list under this screen
+        await reload api.note(id)        // this one, not the others'
+        pop()
+      }
+    }
+  }
+}
+
+// A second Api for what it shows: its own instance's loads.
+component Other(api: Api) {
+  provide api
+  Peek(1)
+}
+
+component Peek(id: int) {
+  use api: Api
+  let note = load api.note(id)
+  Text("peek {id} {note.value?.title ?? "…"}")
+}
+
+app {
+  provide Api()
+  Stack { NoteList() }
+}
+
+test "a rename on the edit screen updates the list under it" {
+  let api = Api()
+  let app = mount(Stack { NoteList() }, provide: api)
+  await app.idle()
+  app.tap("open a")
+  await app.idle()
+  app.expect("editing a")
+  app.tap("Rename")
+  await app.idle()
+  app.expect("open z", "open b")
+  app.expectNo("editing")
+  expect(api.lists == 2)
+}
+
+test "reload with arguments reaches the loads of equal ones" {
+  let api = Api()
+  let app = mount(Column { Peek(1); Peek(2); Peek(1) }, provide: api)
+  await app.idle()
+  expect(api.reads == [1, 2, 1])
+  api.notes[0].title = "y"
+  api.notes[1].title = "x"
+  await reload api.note(1)
+  app.expect("peek 1 y", "peek 2 b")
+  expect(api.reads == [1, 2, 1, 1, 1])
+  await reload api.note
+  app.expect("peek 1 y", "peek 2 x")
+  expect(api.reads.count() == 8)
+}
+
+test "await reload returns once they answered, failed or not" {
+  let api = Api()
+  let app = mount(NoteList(), provide: api)
+  await app.idle()
+  api.notes[1].title = "c"
+  app.tap("Refresh")
+  await app.idle()
+  app.expect("seen a, c")
+  api.offline = true
+  app.tap("Refresh")
+  await app.idle()
+  app.expect("failed", "seen a, c")
+}
+
+test "a store's method: every instance's loads" {
+  let one = Api()
+  let two = Api()
+  let app = mount(Column {
+    Peek(1)
+    Other(two)
+  }, provide: one)
+  await app.idle()
+  one.notes[0].title = "one"
+  two.notes[0].title = "two"
+  await reload one.note
+  app.expect("peek 1 one", "peek 1 two")
+}
+
+test "a reload that reaches nothing answers at once" {
+  let api = Api()
+  await reload api.note(9)
+  expect(api.reads == [])
+}

@@ -31,6 +31,9 @@ type fb struct {
 	// (places.go), and what's done with its result there.
 	inout      *lvalue
 	inoutAfter func(r int)
+	// loadKey: the function a load's thunk being made calls, whose key
+	// and arguments taskOf records (load.key) for reload (rfcs/0017).
+	loadKey *check.Function
 
 	vars map[*check.Var]int // a local's register (its box, accessor or memo)
 	// unboxed: boxed vars this function holds the values of (a spawn's

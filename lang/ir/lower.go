@@ -28,6 +28,10 @@ type Lowerer struct {
 	globals   map[*check.Global]int
 	envShape  map[string]int
 	memberIdx map[*check.Member]int
+	// reloadKeys: each function loads and reloads name, its key in the
+	// core's registry of loads (rfcs/0017): from 1, by declaration, so a
+	// generic's instantiations and a store's instances share theirs.
+	reloadKeys map[*check.Function]int
 	enumNames map[string]int // an int enum → the global holding its case names
 	errIDs    map[int]int    // an error's shape → its type id
 	// What the shapes' method tables hold for interfaces (implement):

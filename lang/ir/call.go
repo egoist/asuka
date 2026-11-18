@@ -1012,6 +1012,16 @@ func (b *fb) taskOf(a syntax.Expr, f int, t check.Type, boxed bool) int {
 			}
 		}
 	}
+	if b.loadKey != nil && ci != nil {
+		// A load's: its key and its arguments' values, which reload f(…)
+		// compares (the receiver aside: a store's instances share it).
+		args := pre
+		if ci.Kind == check.CallMethod {
+			args = pre[1:]
+		}
+		b.recordLoadKey(b.loadKey, args)
+		b.loadKey = nil
+	}
 	// The task's closure captures them.
 	var extra []extraCap
 	vars := make([]*check.Var, len(pre))

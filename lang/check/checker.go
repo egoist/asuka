@@ -68,6 +68,8 @@ type Checker struct {
 	hrefs      []*Href
 	nextTP     int
 	loadOK     bool
+	loaded     map[*Function]bool  // what loads call (reload's key)
+	reloads    []*syntax.UnaryExpr // the reloads, checked against loaded once the program's whole
 	inDefer    int
 	free       map[*TypeParam]bool
 	spawns     []*FuncCtx
@@ -160,6 +162,7 @@ func (c *Checker) Program(root *Package) *Program {
 	c.jsonGenerics()
 	c.instanceCycles()
 	c.routeHrefs()
+	c.reloadsLoaded()
 	main := c.entry(root)
 	pkgs := append([]*Package{c.prelude}, c.pkgs...)
 	diags := append([]Diagnostic{}, c.diags...)

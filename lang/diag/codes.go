@@ -982,6 +982,28 @@ its own source of truth, with nothing coming to replace a change.`,
 		Right: "struct Note {\n  title: string\n}\n\ncomponent Notes {\n  state notes: [Note] = []\n  Column {\n    for n in notes key n.title {\n      Text(n.title)\n    }\n    Button(\"Add\") {\n      on press { notes.push(Note(title: \"new\")) }\n    }\n  }\n}\n",
 	})
 
+	ReloadNotLoaded = def(Code{
+		Name:    "reload-not-loaded",
+		Summary: "`reload` of what no load calls",
+		Why: `` + "`reload f(…)`" + ` asks again the loads whose operand is a call of ` + "`f`" + `: the
+call is the key, by the function it calls. A function no ` + "`load`" + ` in the
+program calls, or what isn't a function (a closure, a value's method),
+reaches nothing.`,
+		Fix:   "Reload the function a `load` calls (`reload api.notes`), or a load by its handle (`x.reload()`).",
+		Wrong: "async fn fetchNotes() -> [string] {\n  await sleep(1ms)\n  return []\n}\n\nasync fn fetchTags() -> [string] {\n  await sleep(1ms)\n  return []\n}\n\ncomponent Notes {\n  let notes = load fetchNotes()\n  Button(\"Refresh\") {\n    on press { await reload fetchTags() }\n  }\n}\n",
+		Right: "async fn fetchNotes() -> [string] {\n  await sleep(1ms)\n  return []\n}\n\ncomponent Notes {\n  let notes = load fetchNotes()\n  Button(\"Refresh\") {\n    on press { await reload fetchNotes() }\n  }\n}\n",
+	})
+
+	ReloadArguments = def(Code{
+		Name:    "reload-arguments",
+		Summary: "`reload f(…)` with arguments `f` doesn't take",
+		Why: `` + "`reload f(a)`" + ` reaches the loads of ` + "`f`" + ` whose arguments equal ` + "`a`" + `: they're
+compared as ` + "`f`" + `'s parameters, so they're checked as a call of ` + "`f`" + ` is.`,
+		Fix:   "Give the arguments `f` takes, as its loads call it, or none: `reload f` reaches every load of `f`.",
+		Wrong: "async fn fetchNote(id: int) -> string {\n  await sleep(1ms)\n  return \"note {id}\"\n}\n\ncomponent Note(id: int) {\n  let note = load fetchNote(id)\n  Button(\"Refresh\") {\n    on press { await reload fetchNote(\"{id}\") }\n  }\n}\n",
+		Right: "async fn fetchNote(id: int) -> string {\n  await sleep(1ms)\n  return \"note {id}\"\n}\n\ncomponent Note(id: int) {\n  let note = load fetchNote(id)\n  Button(\"Refresh\") {\n    on press { await reload fetchNote(id) }\n  }\n}\n",
+	})
+
 	OptimisticImpure = def(Code{
 		Name:    "optimistic-impure",
 		Summary: "an optimistic change that reads state, awaits or writes",

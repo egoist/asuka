@@ -1023,6 +1023,8 @@ func (b *fb) unary(e *syntax.UnaryExpr, dst int) int {
 	case syntax.LOAD:
 		b.l.errorf(e, diag.LoadOutsideComponent, "load is a component's let")
 		return b.valueReg(-1, bc.KRef)
+	case syntax.RELOAD:
+		return b.reload(e, dst)
 	}
 	return b.valueReg(-1, bc.KRef)
 }

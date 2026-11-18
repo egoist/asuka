@@ -581,10 +581,61 @@ func (b *fb) load(m *check.Member) int {
 	// user at profile.asuka:8.
 	thunk := b.makeClosure(closure{name: "load of " + m.Name(), ctxs: []*check.FuncCtx{ctx}, ret: bc.KRef, throws: true, body: func(c *fb) {
 		c.ctx = ctx
+		if call, ok := unparen(u.X).(*syntax.CallExpr); ok {
+			c.loadKey = c.l.prog.ReloadKey(call)
+		}
 		f := c.taskOf(u.X, -1, inner, false)
+		c.loadKey = nil
 		c.emit(op("RET"), f)
 	}})
 	return b.callB(uiLoad, bc.KRef, thunk)
+}
+
+// reloadKey is fn's key in the core's registry of loads.
+func (l *Lowerer) reloadKey(fn *check.Function) int {
+	if l.reloadKeys == nil {
+		l.reloadKeys = map[*check.Function]int{}
+	}
+	k, ok := l.reloadKeys[fn]
+	if !ok {
+		k = len(l.reloadKeys) + 1
+		l.reloadKeys[fn] = k
+	}
+	return k
+}
+
+// recordLoadKey emits, in a load's thunk, load.key(key, kinds, args…):
+// the running loader's key and arguments, for reload.
+func (b *fb) recordLoadKey(fn *check.Function, args []int) {
+	b.callBTo(uiLoadKey, bc.None, append([]int{b.konst(int64(b.l.reloadKey(fn))), b.kstr(b.argKinds(args))}, args...)...)
+}
+
+// reload lowers reload f(…) and reload f (rfcs/0017): load.reload_all
+// of f's key, with the arguments' values (and their kinds) when given,
+// whose future answers once every load it reached has.
+func (b *fb) reload(e *syntax.UnaryExpr, dst int) int {
+	r := b.l.info.Reloads[e]
+	if r == nil {
+		b.l.errorf(e, diag.InternalError, "internal: a reload of nothing")
+		return b.valueReg(dst, bc.KRef)
+	}
+	key := b.konst(int64(b.l.reloadKey(r.Func)))
+	if r.Call == nil {
+		return b.copyTo(b.callB(uiLoadReloadAll, bc.KRef, key, b.konst(0), b.kstr("")), dst)
+	}
+	ci := b.l.info.Calls[r.Call]
+	args := b.args(ci, nil)
+	return b.copyTo(b.callB(uiLoadReloadAll, bc.KRef, append([]int{key, b.konst(1), b.kstr(b.argKinds(args))}, args...)...), dst)
+}
+
+// argKinds spells the kinds of the registers args, a digit each (the
+// core's ak_kind), for a builtin that keeps or compares their values.
+func (b *fb) argKinds(args []int) string {
+	kinds := make([]byte, len(args))
+	for i, a := range args {
+		kinds[i] = '0' + byte(b.f.Kinds[a])
+	}
+	return string(kinds)
 }
 
 // accessor passes e to a component or store: a value when it reads

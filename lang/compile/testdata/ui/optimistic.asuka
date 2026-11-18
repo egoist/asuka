@@ -51,8 +51,8 @@ screen Todos {
             on change(done) {
               let id = t.id
               todos.optimistic(ts => ts.map(x => if x.id == id { marked(x, done) } else { x }))
-              try await api.setDone(id, done)
-              todos.reload()
+              try await api.setDone(id, done)   // a throw undoes it
+              await reload api.list            // this list, and every other one, asks again
             }
           }
           Text(if t.done { "{t.id} done" } else { "{t.id} open" })

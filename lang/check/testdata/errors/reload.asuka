@@ -1,0 +1,71 @@
+// reload f(…) and reload f (rfcs/0017): what loads ask again, by the
+// function they call; a task of nothing, awaited for their answers.
+
+async fn fetchNotes() -> [string] = []
+async fn fetchNote(id: int) -> string = "note {id}"
+async fn fetchTags() -> [string] = []
+fn plain() -> int = 1
+
+store Api {
+  async fn list() -> [string] = []
+  async fn unused() -> [string] = []
+  fn refresh() {
+    reload list
+  }
+}
+
+struct Point {
+  x: int
+  async fn far() -> int = x
+}
+
+component Notes(id: int) {
+  use api: Api
+  let notes = load fetchNotes()
+  let note = load fetchNote(id)
+  let items = load api.list()
+  let p = Point(x: 1)
+  let far = load p.far()
+
+  Column {
+    Button("ok") {
+      on press {
+        await reload fetchNotes()
+        await reload fetchNote(id)
+        reload fetchNote
+        await reload api.list()
+        reload api.list
+        await reload Api.list // ERROR "^Api is a type, not a value"
+      }
+    }
+    Button("not loaded") {
+      on press { await reload fetchTags() } // ERROR "^nothing loads fetchTags: reload what a load calls \\(let x = load fetchTags\\(…\\)\\)$"
+    }
+    Button("not loaded by name") {
+      on press { reload api.unused } // ERROR "^nothing loads api.unused"
+    }
+    Button("arguments") {
+      on press { await reload fetchNote("{id}") } // ERROR "argument"
+    }
+    Button("not a function") {
+      on press { reload id } // ERROR "^reload takes what a load calls: a function's call or its name \\(reload api.notes\\(id\\), reload api.notes\\); id isn't one$"
+    }
+    Button("a value's method") {
+      on press { reload p.far() } // ERROR "^reload reaches the loads of a function or a store's method, by its call: p.far isn't one; reload its load with x.reload\\(\\)$"
+    }
+    Button("not async") {
+      on press { reload plain } // ERROR "^nothing loads plain"
+    }
+  }
+}
+
+component Shown {
+  let notes = load fetchNotes()
+  let again = reload fetchNotes() // ERROR "^can't reload here"
+  Text("x")
+}
+
+// await reload … is a task's: it waits where code may.
+fn later() {
+  await reload fetchNotes() // ERROR "^await only where code may wait"
+}

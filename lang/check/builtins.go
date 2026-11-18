@@ -541,6 +541,7 @@ func (c *Checker) load(e *syntax.UnaryExpr) Type {
 	if ci := c.info.Calls[call]; ci != nil && !c.isAsyncCall(ci) {
 		c.errorf(call, diag.NotAsyncCall, "load takes an async call, and this isn't one")
 	}
+	c.noteLoad(call)
 	if IsInvalid(t) {
 		return Invalid
 	}

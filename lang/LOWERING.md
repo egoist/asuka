@@ -1162,6 +1162,24 @@ all that stay, in the batch that writes it, so nothing flashes. The
 checker keeps `f` a value function (`optimistic-impure`: the state it
 reads, through what it calls, and what it writes).
 
+`reload f(args)` and `reload f` (RFC 0017) are CALLB
+`load.reload_all(key, given, kinds, args…)`, whose result is a future
+(a `Task<void>`, which `await` waits for). The key is the lowering's
+number for the function the loads call (`check.Reload.Func`: a declared
+function, or a store's method, so every instance's loads share it),
+from 1 by declaration. A load of such a call says its key from its
+thunk, after it computes the arguments and before it starts the task:
+`load.key(key, kinds, args…)` (the arguments as the call takes them,
+defaults filled, the receiver aside; kinds a digit each). The core keeps
+every such loader in the app's registry (control.c), a hash of lists by
+key, with its arguments' latest values; `reload_all` runs each one of
+the key, whose arguments are `ak_val_eq` to `args` when it's given
+them, as `x.reload()` does, in one batch, and its future resolves once
+each has answered, failed, or gone. A loader leaves the registry as its
+owner disposes it. The checker reports a `reload` of a function no
+`load` in the program calls (`reload-not-loaded`, once the program is
+whole) and a call's errors as `reload-arguments`.
+
 ## Navigation and commands
 
 `push(X(…))`, `present(X(…))`: CALLB `ui.push(builder)`, `ui.present(builder)`.
