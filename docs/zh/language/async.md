@@ -153,7 +153,7 @@ screen Todos {
             let id = t.id
             todos.optimistic(ts => ts.map(x => if x.id == id { marked(x, done) } else { x }))
             try await saveDone(id, done)   // 抛出错误会撤销它
-            todos.reload()                 // 它的结果会替换它
+            await reload fetchTodos()      // 它的结果会替换它
           }
         }
       }
@@ -167,3 +167,68 @@ screen Todos {
 - 多个改动按创建的顺序叠起来，各自独立地撤下：两个勾选同时进行、第一个失败时，只有第一个被撤销。
 - `f` 是所显示内容的函数：它下面的内容变化时它会重新运行，所以它不读取也不写入状态（[optimistic-impure](../errors/optimistic-impure.md)）。先把它需要的东西读进一个 `let`，就像上面的 `id`。
 - 对还没有 `.ready` 的 load，没有可以改动的内容，它什么也不做。
+
+### 重新加载改动影响到的数据
+
+在编辑页面上重命名一条笔记：它下面的列表页面有自己的 load，`note.reload()` 管不到它。`reload` 用读取数据的那个调用来指明改动影响到了什么，于是这个调用的每一个 load 都会再请求一次，不管它在哪里：任何组件、任何栈里的任何页面、任何窗口。
+
+```asuka check
+struct Note {
+  id: int
+  title: string
+}
+
+store Api {
+  state notes = [Note(id: 1, title: "Milk")]
+
+  async fn list() -> [Note] {
+    await sleep(100ms)
+    return notes
+  }
+
+  async fn note(id: int) -> Note {
+    await sleep(100ms)
+    return notes.find(n => n.id == id) ?? Note(id: id, title: "")
+  }
+
+  async fn rename(id: int, title: string) {
+    await sleep(100ms)
+    if let i = notes.index(n => n.id == id) { notes[i].title = title }
+  }
+}
+
+screen Notes {
+  use api: Api
+  let notes = load api.list()
+
+  List {
+    for n in notes.value ?? [] key n.id {
+      Button(n.title) { on press { push(EditNote(n.id)) } }
+    }
+  }
+}
+
+screen EditNote(id: int) {
+  use api: Api
+  let note = load api.note(id)
+
+  Button("Rename") {
+    on press {
+      await api.rename(id, "Oat milk")
+      await reload api.list       // 这个页面下面的列表
+      await reload api.note(id)   // 这条笔记的 load，不包括其他笔记的
+      pop()
+    }
+  }
+}
+
+app {
+  provide Api()
+  Stack { Notes() }
+}
+```
+
+- `reload f(args)` 会触及参数等于 `args` 的那些 `f` 的 load（用 `==` 比较，和依赖的比较方式一样）；`reload f` 则触及 `f` 的每一个 load，不管参数是什么。store 的方法会触及每一个实例的 load。
+- 每一个都像 `x.reload()` 那样运行：保持它显示的内容，在得到结果之前 `.loading` 为 true。
+- `await reload …` 会一直等到它触及的每一个 load 都得到结果或者失败（期间消失的 load 也算）：失败由各个 load 自己显示，只有在等待被取消时它才会抛出错误。不写 `await` 时，这些 load 照样运行，代码继续往下走。
+- 调用就是键：一个函数或 store 方法的 load。闭包调用的 load，或者某个值的方法的 load，用它自己的 `x.reload()`。

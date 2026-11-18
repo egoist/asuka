@@ -1913,7 +1913,7 @@ screen Todos {
             let id = t.id
             todos.optimistic(ts => ts.map(x => if x.id == id { marked(x, done) } else { x }))
             try await saveDone(id, done)   // a throw undoes it
-            todos.reload()                 // its answer replaces it
+            await reload fetchTodos()      // its answer replaces it
           }
         }
       }
@@ -1941,6 +1941,83 @@ screen Todos {
   needs into a `let` first, as `id` above.
 - On a load that isn't `.ready` there's nothing to change, and it does
   nothing.
+
+##### Reloading what a change touched
+
+A note renamed on its edit screen: the list screen under it has a load
+of its own, which `note.reload()` doesn't reach. `reload` names what a
+change touched by the call that reads it, and every load of that call
+asks again, wherever it is: any component, any screen in any stack,
+any window.
+
+```asuka
+struct Note {
+  id: int
+  title: string
+}
+
+store Api {
+  state notes = [Note(id: 1, title: "Milk")]
+
+  async fn list() -> [Note] {
+    await sleep(100ms)
+    return notes
+  }
+
+  async fn note(id: int) -> Note {
+    await sleep(100ms)
+    return notes.find(n => n.id == id) ?? Note(id: id, title: "")
+  }
+
+  async fn rename(id: int, title: string) {
+    await sleep(100ms)
+    if let i = notes.index(n => n.id == id) { notes[i].title = title }
+  }
+}
+
+screen Notes {
+  use api: Api
+  let notes = load api.list()
+
+  List {
+    for n in notes.value ?? [] key n.id {
+      Button(n.title) { on press { push(EditNote(n.id)) } }
+    }
+  }
+}
+
+screen EditNote(id: int) {
+  use api: Api
+  let note = load api.note(id)
+
+  Button("Rename") {
+    on press {
+      await api.rename(id, "Oat milk")
+      await reload api.list       // the list under this screen
+      await reload api.note(id)   // this note's loads, not the others'
+      pop()
+    }
+  }
+}
+
+app {
+  provide Api()
+  Stack { Notes() }
+}
+```
+
+- `reload f(args)` reaches the loads of `f` whose arguments are equal
+  to `args` (`==`, as dependencies are compared); `reload f`, every
+  load of `f`, whatever its arguments. A store's method reaches the
+  loads of every instance's.
+- Each one runs as `x.reload()` does: it holds what it shows, and its
+  `.loading` is true until it answers.
+- `await reload …` waits until every load it reached has answered or
+  failed (one that goes meanwhile counts): their failures are each
+  load's to show, and it throws only when the waiting is cancelled.
+  Without `await`, the loads run and the code goes on.
+- The call is the key: a load of a function or a store's method. One
+  of a closure's call, or of a value's method, has its `x.reload()`.
 
 ### Errors
 
@@ -2581,6 +2658,8 @@ action:)`, `refresh`, `scrollTo`, `back`, `dismiss`, `pickDate`,
 - prop-or-argument: a parameter, a prop, an event or children given in the wrong place. Move it to its place: `Badge(3) { compact: true; on tap { … } }`.
 - recursive-definition: a value or a style defined in terms of itself. Break the cycle: compute one from values that don't read it back.
 - recursive-type: a type that holds a whole copy of itself. Make the field on the way optional (`next: Node?`) or an array (`children: [Node]`).
+- reload-arguments: `reload f(…)` with arguments `f` doesn't take. Give the arguments `f` takes, as its loads call it, or none: `reload f` reaches every load of `f`.
+- reload-not-loaded: `reload` of what no load calls. Reload the function a `load` calls (`reload api.notes`), or a load by its handle (`x.reload()`).
 - reserved-name: a name the language uses itself. Name it otherwise.
 - return-value: a `return` with a value the function doesn't give, or without one it does. Drop the value, or declare the result (`-> T`) and return one everywhere.
 - row-without-key: a `for` in a view over items that change, without a `key`. Say what identifies an item: `for t in todos key t.id`.

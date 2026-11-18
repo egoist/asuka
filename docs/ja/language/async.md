@@ -153,7 +153,7 @@ screen Todos {
             let id = t.id
             todos.optimistic(ts => ts.map(x => if x.id == id { marked(x, done) } else { x }))
             try await saveDone(id, done)   // throw すると取り消される
-            todos.reload()                 // その答えが置き換える
+            await reload fetchTodos()      // その答えが置き換える
           }
         }
       }
@@ -167,3 +167,68 @@ screen Todos {
 - 複数の変更は作った順に重なり、それぞれ独立に外れます。2 つのチェックが進行中で 1 つ目が失敗したら、取り消されるのは 1 つ目だけです。
 - `f` は表示するものの関数です。その下にあるものが変わると再び実行されるので、状態を読むことも書くこともしません（[optimistic-impure](../errors/optimistic-impure.md)）。必要なものは先に `let` に読み込みます。上の `id` のように。
 - `.ready` でない load には変える表示がないので、何もしません。
+
+### 変更が触れたものを読み込み直す
+
+編集画面でノートの名前を変えても、その下の一覧画面には自分の load があり、`note.reload()` はそこまで届きません。`reload` は、変更が触れたものを、それを読む呼び出しで指定します。その呼び出しの load は、どこにあっても（どのコンポーネント、どのスタックのどの画面、どのウィンドウでも）すべてもう一度求めます。
+
+```asuka check
+struct Note {
+  id: int
+  title: string
+}
+
+store Api {
+  state notes = [Note(id: 1, title: "Milk")]
+
+  async fn list() -> [Note] {
+    await sleep(100ms)
+    return notes
+  }
+
+  async fn note(id: int) -> Note {
+    await sleep(100ms)
+    return notes.find(n => n.id == id) ?? Note(id: id, title: "")
+  }
+
+  async fn rename(id: int, title: string) {
+    await sleep(100ms)
+    if let i = notes.index(n => n.id == id) { notes[i].title = title }
+  }
+}
+
+screen Notes {
+  use api: Api
+  let notes = load api.list()
+
+  List {
+    for n in notes.value ?? [] key n.id {
+      Button(n.title) { on press { push(EditNote(n.id)) } }
+    }
+  }
+}
+
+screen EditNote(id: int) {
+  use api: Api
+  let note = load api.note(id)
+
+  Button("Rename") {
+    on press {
+      await api.rename(id, "Oat milk")
+      await reload api.list       // この画面の下にある一覧
+      await reload api.note(id)   // このノートの load だけ。ほかのノートのものは含まない
+      pop()
+    }
+  }
+}
+
+app {
+  provide Api()
+  Stack { Notes() }
+}
+```
+
+- `reload f(args)` は、引数が `args` と等しい（依存関係の比較と同じ `==`）`f` の load に届きます。`reload f` は、引数にかかわらず `f` のすべての load に届きます。store のメソッドは、すべてのインスタンスの load に届きます。
+- それぞれ `x.reload()` と同じように実行されます。表示しているものを保ち、答えが届くまで `.loading` は true です。
+- `await reload …` は、届いたすべての load が答えるか失敗するまで待ちます（そのあいだに消えた load も数えます）。失敗はそれぞれの load が表示するもので、throw するのは待つことがキャンセルされたときだけです。`await` がなければ、load は実行され、コードは先に進みます。
+- 呼び出しがキーです。関数か store のメソッドの load です。クロージャーの呼び出しや値のメソッドの load には、`x.reload()` があります。

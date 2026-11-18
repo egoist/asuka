@@ -294,6 +294,8 @@ component LatestRelease {
 }
 ```
 
+改动了 load 所显示内容的保存操作，用调用来指明它们：`await reload latest()` 会让任何页面上 `latest()` 的每一个 load 再请求一次，并等它们的结果；`x.optimistic(f)` 会在服务器确认之前就显示改动（[立刻显示的改动](language/async.md#立刻显示的改动)、[重新加载改动影响到的数据](language/async.md#重新加载改动影响到的数据)）。
+
 在浏览器里，向其他源发请求需要那个源返回 CORS 头。
 
 较大的响应（视频、压缩包）可以边收边写进文件：`http.download(url, path, progress:)` 先写到路径旁边的文件里，全部收完后再重命名到位，每秒几次以已收到的字节数和总字节数（服务器没说时为 -1）调用 `progress`。它的 `timeout` 是等待后续数据的最长时间，而不是整个下载的时间；取消它所在的 task 就会停止下载，不留下文件。iOS 和 macOS 上用 URLSession，Android 上用 `HttpURLConnection`，Windows 和 Linux 上用 WinHTTP 和 libsoup，都是直接流式写入文件；在浏览器里，则从 fetch 的流中读出，写进应用的文件。

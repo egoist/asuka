@@ -87,6 +87,8 @@ Asuka が報告するエラーと警告には、すべてコードがありま�
 - [prop-or-argument](prop-or-argument.md): パラメーター、プロパティ、イベント、子が置き場所を間違えている。
 - [recursive-definition](recursive-definition.md): 自分自身で定義された値やスタイル。
 - [recursive-type](recursive-type.md): 自分自身の完全なコピーを含む型。
+- [reload-arguments](reload-arguments.md): `f` が受け取らない引数で `reload f(…)` した。
+- [reload-not-loaded](reload-not-loaded.md): どの load も呼んでいないものを `reload` した。
 - [reserved-name](reserved-name.md): 言語自身が使っている名前。
 - [return-value](return-value.md): 関数が返さない値を持つ `return`、または値が必要なのに値のない `return`。
 - [row-without-key](row-without-key.md): 変わるデータをたどる、`key` のないビューの `for`。

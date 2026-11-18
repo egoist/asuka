@@ -222,7 +222,7 @@ screen Todos {
             let id = t.id
             todos.optimistic(ts => ts.map(x => if x.id == id { marked(x, done) } else { x }))
             try await saveDone(id, done)   // a throw undoes it
-            todos.reload()                 // its answer replaces it
+            await reload fetchTodos()      // its answer replaces it
           }
         }
       }
@@ -250,3 +250,80 @@ screen Todos {
   needs into a `let` first, as `id` above.
 - On a load that isn't `.ready` there's nothing to change, and it does
   nothing.
+
+### Reloading what a change touched
+
+A note renamed on its edit screen: the list screen under it has a load
+of its own, which `note.reload()` doesn't reach. `reload` names what a
+change touched by the call that reads it, and every load of that call
+asks again, wherever it is: any component, any screen in any stack,
+any window.
+
+```asuka check
+struct Note {
+  id: int
+  title: string
+}
+
+store Api {
+  state notes = [Note(id: 1, title: "Milk")]
+
+  async fn list() -> [Note] {
+    await sleep(100ms)
+    return notes
+  }
+
+  async fn note(id: int) -> Note {
+    await sleep(100ms)
+    return notes.find(n => n.id == id) ?? Note(id: id, title: "")
+  }
+
+  async fn rename(id: int, title: string) {
+    await sleep(100ms)
+    if let i = notes.index(n => n.id == id) { notes[i].title = title }
+  }
+}
+
+screen Notes {
+  use api: Api
+  let notes = load api.list()
+
+  List {
+    for n in notes.value ?? [] key n.id {
+      Button(n.title) { on press { push(EditNote(n.id)) } }
+    }
+  }
+}
+
+screen EditNote(id: int) {
+  use api: Api
+  let note = load api.note(id)
+
+  Button("Rename") {
+    on press {
+      await api.rename(id, "Oat milk")
+      await reload api.list       // the list under this screen
+      await reload api.note(id)   // this note's loads, not the others'
+      pop()
+    }
+  }
+}
+
+app {
+  provide Api()
+  Stack { Notes() }
+}
+```
+
+- `reload f(args)` reaches the loads of `f` whose arguments are equal
+  to `args` (`==`, as dependencies are compared); `reload f`, every
+  load of `f`, whatever its arguments. A store's method reaches the
+  loads of every instance's.
+- Each one runs as `x.reload()` does: it holds what it shows, and its
+  `.loading` is true until it answers.
+- `await reload …` waits until every load it reached has answered or
+  failed (one that goes meanwhile counts): their failures are each
+  load's to show, and it throws only when the waiting is cancelled.
+  Without `await`, the loads run and the code goes on.
+- The call is the key: a load of a function or a store's method. One
+  of a closure's call, or of a value's method, has its `x.reload()`.

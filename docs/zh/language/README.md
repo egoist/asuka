@@ -58,12 +58,12 @@ app { Counter() }
 
 `app as async await bind break catch component continue defer do effect
 else emit enum event extend extern false fn for if import in interface
-key let load match mut native none on prop provide pub return screen
-self spawn state store struct style task test throw throws true try type
-use var while worker`
+key let load match mut native none on prop provide pub reload return
+screen self spawn state store struct style task test throw throws true
+try type use var while worker`
 
-`mut`、`extend` 和 `worker` 从 0.2.7 起是关键字：以前用它们作名字的地方会报错，并提示你改名。
+`mut`、`extend` 和 `worker` 从 0.2.7 起是关键字，`reload` 从 0.2.9 起是关键字：以前用它们作名字的地方会报错，并提示你改名。
 
 `shader`（[着色器](../components.md#着色器)的声明）、`at`（带路由的屏幕的模式）、`static`（类型的函数：`static fn`）和 `variant`（组件的变体）只在那个位置是关键字，在别处都是普通的名字。
 
-`load` 后面跟一个调用时，它是 [load](async.md#需要加载的数据) 关键字（`load api.user(id)`，或 `load (api.user(id))`）；后面跟的括号里是别的内容时（`load()`、`load(id)`），它调用的是名为 `load` 的函数。
+`load` 后面跟一个调用时，它是 [load](async.md#需要加载的数据) 关键字（`load api.user(id)`，或 `load (api.user(id))`）；后面跟的括号里是别的内容时（`load()`、`load(id)`），它调用的是名为 `load` 的函数。`reload` 后面跟一个名字时，它是 [reload](async.md#重新加载改动影响到的数据) 关键字（`reload api.notes(id)`、`reload api.notes`）；后面跟 `(` 时，它调用的是名为 `reload` 的函数。

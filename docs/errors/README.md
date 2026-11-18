@@ -87,6 +87,8 @@ Every error and warning Asuka reports has a code: a stable name, said in the ter
 - [prop-or-argument](prop-or-argument.md): A parameter, a prop, an event or children given in the wrong place.
 - [recursive-definition](recursive-definition.md): A value or a style defined in terms of itself.
 - [recursive-type](recursive-type.md): A type that holds a whole copy of itself.
+- [reload-arguments](reload-arguments.md): `reload f(…)` with arguments `f` doesn't take.
+- [reload-not-loaded](reload-not-loaded.md): `reload` of what no load calls.
 - [reserved-name](reserved-name.md): A name the language uses itself.
 - [return-value](return-value.md): A `return` with a value the function doesn't give, or without one it does.
 - [row-without-key](row-without-key.md): A `for` in a view over items that change, without a `key`.

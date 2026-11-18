@@ -294,6 +294,8 @@ component LatestRelease {
 }
 ```
 
+load が表示するものを変える保存は、それらを呼び出しで指定します。`await reload latest()` は、どの画面でも `latest()` のすべての load にもう一度求めさせ、その答えを待ちます。`x.optimistic(f)` は、サーバーが確認する前に変更を表示します（[すぐに表示する変更](language/async.md#すぐに表示する変更)、[変更が触れたものを読み込み直す](language/async.md#変更が触れたものを読み込み直す)）。
+
 ブラウザーでは、別のオリジンへのリクエストにはそのオリジンの CORS ヘッダーが必要です。
 
 大きなレスポンス（動画やアーカイブ）は、届くそばからファイルに書けます。`http.download(url, path, progress:)` は、パスの隣のファイルに書き、すべて届いたらパスへ名前を変えます。そのあいだ 1 秒に数回、届いたバイト数と全体のバイト数（サーバーが示さなければ -1）を渡して `progress` を呼びます。`timeout` は全体ではなく、次のデータを待つ最長の時間です。タスクをキャンセルするとダウンロードは止まり、ファイルは残りません。iOS と macOS では URLSession、Android では `HttpURLConnection`、Windows と Linux では WinHTTP と libsoup がそのままファイルへ書き、ブラウザーでは fetch のストリームから読んでアプリのファイルに書きます。

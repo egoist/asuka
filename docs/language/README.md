@@ -66,12 +66,12 @@ belong to the component that made them, and go with it.
 
 `app as async await bind break catch component continue defer do effect
 else emit enum event extend extern false fn for if import in interface
-key let load match mut native none on prop provide pub return screen
-self spawn state store struct style task test throw throws true try type
-use var while worker`
+key let load match mut native none on prop provide pub reload return
+screen self spawn state store struct style task test throw throws true
+try type use var while worker`
 
-`mut`, `extend` and `worker` are keywords since 0.2.7: a name that was
-one is an error that says to rename it.
+`mut`, `extend` and `worker` are keywords since 0.2.7, `reload` since
+0.2.9: a name that was one is an error that says to rename it.
 
 `shader` (a [shader](../components.md#shaders)'s declaration), `at` (a
 routed screen's pattern), `static` (a type's function: `static fn`) and
@@ -81,4 +81,7 @@ they're names.
 `load` followed by a call is the [load](async.md#data-that-loads)
 keyword's (`load api.user(id)`, or `load (api.user(id))`); followed by
 parentheses that hold anything else (`load()`, `load(id)`), it calls a
-function named `load`.
+function named `load`. `reload` followed by a name is the
+[reload](async.md#reloading-what-a-change-touched) keyword's (`reload
+api.notes(id)`, `reload api.notes`); followed by `(`, it calls a
+function named `reload`.

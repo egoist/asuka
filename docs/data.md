@@ -407,6 +407,13 @@ component LatestRelease {
 }
 ```
 
+A save that changes what loads show names them by the call:
+`await reload latest()` asks every load of `latest()` again, on any
+screen, and waits for their answers; `x.optimistic(f)` shows the change
+before the server says so
+([Changes shown at once](language/async.md#changes-shown-at-once),
+[Reloading what a change touched](language/async.md#reloading-what-a-change-touched)).
+
 In a browser, a request to another origin needs that origin's CORS
 headers.
 

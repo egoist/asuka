@@ -87,6 +87,8 @@ Asuka 报告的每个错误和警告都有一个代码：一个稳定的名称�
 - [prop-or-argument](prop-or-argument.md): 参数、属性、事件或子视图放错了位置。
 - [recursive-definition](recursive-definition.md): 用自己来定义自己的值或样式。
 - [recursive-type](recursive-type.md): 包含自身完整副本的类型。
+- [reload-arguments](reload-arguments.md): `reload f(…)` 给出了 `f` 不接受的参数。
+- [reload-not-loaded](reload-not-loaded.md): `reload` 的对象没有被任何 load 调用。
 - [reserved-name](reserved-name.md): 语言本身在用的名称。
 - [return-value](return-value.md): `return` 带了函数不返回的值，或者在需要值时没有带。
 - [row-without-key](row-without-key.md): 视图里的 `for` 遍历会变化的数据，却没有 `key`。

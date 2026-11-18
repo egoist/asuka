@@ -58,12 +58,12 @@ app { Counter() }
 
 `app as async await bind break catch component continue defer do effect
 else emit enum event extend extern false fn for if import in interface
-key let load match mut native none on prop provide pub return screen
-self spawn state store struct style task test throw throws true try type
-use var while worker`
+key let load match mut native none on prop provide pub reload return
+screen self spawn state store struct style task test throw throws true
+try type use var while worker`
 
-`mut`、`extend`、`worker` は 0.2.7 からキーワードです。これらを名前に使っていた箇所はエラーになり、名前を変えるよう示されます。
+`mut`、`extend`、`worker` は 0.2.7 から、`reload` は 0.2.9 からキーワードです。これらを名前に使っていた箇所はエラーになり、名前を変えるよう示されます。
 
 `shader`（[シェーダー](../components.md#シェーダー)の宣言）、`at`（ルート付きの画面のパターン）、`static`（型の関数：`static fn`）、`variant`（コンポーネントのバリアント）は、その位置でだけキーワードで、ほかの場所では普通の名前です。
 
-`load` のあとに呼び出しが続くときは [load](async.md#読み込むデータ) キーワードです（`load api.user(id)`、または `load (api.user(id))`）。括弧の中がそれ以外のとき（`load()`、`load(id)`）は、`load` という名前の関数の呼び出しです。
+`load` のあとに呼び出しが続くときは [load](async.md#読み込むデータ) キーワードです（`load api.user(id)`、または `load (api.user(id))`）。括弧の中がそれ以外のとき（`load()`、`load(id)`）は、`load` という名前の関数の呼び出しです。`reload` のあとに名前が続くときは [reload](async.md#変更が触れたものを読み込み直す) キーワードです（`reload api.notes(id)`、`reload api.notes`）。`(` が続くときは、`reload` という名前の関数の呼び出しです。
