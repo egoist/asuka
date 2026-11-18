@@ -13,10 +13,11 @@
 // type (the focused field, else the first), submit, back, escape, tab,
 // scroll, and dump, which writes what the screen shows (each text,
 // field's text, button's title or accessibility label, a line each, in
-// creation order) to dir/asuka-dump.txt.
+// creation order; then asuka dev's error overlay's) to dir/asuka-dump.txt.
 //
 // The steps run on the main loop, between its turns: a step, then 400 ms
-// for animations to settle.
+// for animations to settle (and, while asuka dev's error overlay fades
+// in, until it has).
 #include "host.h"
 
 #include <ctype.h>
@@ -145,8 +146,9 @@ static void sheet_or_alert(node *n, void *data) {
 	if ((n->kind == AK_KIND_SHEET || n->kind == AK_KIND_ALERT) && n->nav && n->nav->dialog && !n->nav->gone) c->found = n;
 }
 
-// escape closes the top dialog.
+// escape closes the top dialog, or dismisses asuka dev's error overlay.
 static void escape(void) {
+	if (lx_dev_error_escape()) return;
 	find_ctx c = {0};
 	lx_each_node(sheet_or_alert, &c);
 	if (c.found) adw_dialog_close(c.found->nav->dialog);
@@ -363,6 +365,8 @@ static bool step(const char *s, char *err, size_t errn) {
 	verb[vn] = 0;
 	const char *arg = colon ? colon + 1 : "";
 	if (!strcmp(verb, "tap")) {
+		// asuka dev's error overlay, over everything (and modal).
+		if (lx_dev_error_tap(arg)) return true;
 		node *n = find_text_node(arg);
 		if (n) {
 			tap(n);
@@ -561,6 +565,7 @@ static void write_dump(const char *path) {
 	ak_buf b = {0};
 	if (H.root) lx_dump_node(H.root, 0, &b);
 	lx_each_node(dump_floating, &b);
+	lx_dev_error_dump(&b);
 	dsk_write_file(path, b.data ? (const char *)b.data : "", b.len);
 	ak_buf_free(&b);
 }
@@ -597,11 +602,20 @@ static void write_texts(const char *path) {
 		ak_buf_u8(&b, '\n');
 	}
 	ak_vec_free(&c.shown);
+	lx_dev_error_texts(&b);
 	dsk_write_file(path, b.data ? (const char *)b.data : "", b.len);  // whole, then moved in place
 	ak_buf_free(&b);
 }
 
 // ---- The script ----
+
+// settle lets what's coming in finish first (asuka dev's error overlay
+// fades in): the main loop runs until it has, for up to 5 s.
+static void settle(void) {
+	gint64 until = g_get_monotonic_time() + 5 * G_USEC_PER_SEC;
+	while (lx_dev_error_settling() && g_get_monotonic_time() < until)
+		if (!g_main_context_iteration(NULL, 0)) g_usleep(2000);
+}
 
 static gboolean next_step(gpointer data);
 
@@ -639,6 +653,7 @@ static gboolean next_step(gpointer data) {
 			return 0;
 		}
 		char err[256];
+		settle();
 		lx_enter_begin();
 		bool ok = step(s, err, sizeof err);
 		lx_enter_end();
@@ -648,6 +663,7 @@ static gboolean next_step(gpointer data) {
 		return 0;
 	}
 	if (!snap_path) return 0;
+	settle();
 	lx_snapshot(snap_path);
 	const char *dump = getenv("ASUKA_DUMP");
 	if (dump && *dump) {
@@ -678,7 +694,9 @@ static gboolean poll_commands(gpointer data) {
 	}
 	remove(file);
 	free(file);
-	for (char *line = strtok(text, "\n"); line; line = strtok(NULL, "\n")) {
+	// strtok_r: the main loop may run between the lines (settle).
+	char *save = NULL;
+	for (char *line = strtok_r(text, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
 		while (*line == ' ' || *line == '\t') line++;
 		size_t len = strlen(line);
 		while (len && (line[len - 1] == '\r' || line[len - 1] == ' ')) line[--len] = 0;
@@ -692,6 +710,7 @@ static gboolean poll_commands(gpointer data) {
 		const char *arg = sp ? sp + 1 : "";
 		char err[256] = "";
 		bool ok = true;
+		settle();
 		lx_enter_begin();
 		if (!strcmp(verb, "dump")) {
 			char *p = dsk_join(commands_dir, "asuka-dump.txt");

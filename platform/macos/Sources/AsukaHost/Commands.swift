@@ -1,5 +1,6 @@
 // The core's commands to views and to the app: focus, animation, the frame
-// clock, Call (the host's modules), the pasteboard, sharing, announcements.
+// clock, Call (the host's modules), the pasteboard, sharing, announcements,
+// asuka dev's error overlay (DevError.swift).
 // Each part's own commands go to its file.
 import AppKit
 #if canImport(AsukaOps)
@@ -52,6 +53,10 @@ import AsukaOps
             setFrames(args.count > 0 && args[0] != 0)
         case .announce:
             announce(String(decoding: args, as: UTF8.self))
+        case .devError:
+            devError(n, args) // DevError.swift: asuka dev's overlay
+        case .devErrorClear:
+            devErrorClear()
         case .replace:
             n.nav?.instant = true
         case .a11yFocus:

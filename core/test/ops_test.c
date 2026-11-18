@@ -623,6 +623,22 @@ TEST(location) {
 	ak_buf_free(&b);
 }
 
+// The error overlay's DevError command, as ops/ops_test.go's
+// TestDevErrorRoundTrip has its bytes.
+TEST(dev_error) {
+	ak_dev_error e = {AK_DEV_ERROR_RELOAD, AK_STR("T"), AK_STR("m"), AK_STR(""), AK_STR("d")};
+	ak_buf b = {0};
+	ak_append_dev_error(&b, &e);
+	static const uint8_t want[] = {1, 1, 0, 0, 0, 'T', 1, 0, 0, 0, 'm', 0, 0, 0, 0, 1, 0, 0, 0, 'd'};
+	CHECK(b.len == sizeof want && memcmp(b.data, want, sizeof want) == 0);
+	ak_dev_error got;
+	CHECK(ak_decode_dev_error(b.data, b.len, &got));
+	CHECK(got.flags == e.flags && ak_span_eq(got.title, e.title) && ak_span_eq(got.message, e.message) && got.source.len == 0 &&
+	      ak_span_eq(got.details, e.details));
+	CHECK(!ak_decode_dev_error(b.data, b.len - 1, &got));
+	ak_buf_free(&b);
+}
+
 TEST(keys) {
 	static const ak_key keys[] = {{AK_STR("s"), 1}, {AK_STR("enter"), 0}, {AK_STR("ä"), 2}, {AK_STR("ж"), 0}};
 	ak_buf b = {0};

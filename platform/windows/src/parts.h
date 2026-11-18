@@ -99,6 +99,18 @@ node *wh_modal_overlay(HWND top);
 HWND wh_hit(HWND top, POINT screen);
 void wh_overlays_dump(ak_buf *b, void (*walk)(ak_buf *, node *, int));
 
+// ---- deverror.c: asuka dev's error overlay (DevError, DevErrorClear) ----
+void wh_dev_error(node *root, const uint8_t *args, size_t len);
+void wh_dev_error_clear(void);
+void wh_dev_error_follow(void);
+void wh_dev_error_restyle(void);
+bool wh_dev_error_key(MSG *m);
+bool wh_dev_error_primary(HWND ctl);
+bool wh_dev_error_showing(void);
+bool wh_dev_error_tap(const wchar_t *text);
+void wh_dev_error_dump(ak_buf *b);
+void wh_dev_error_print(HDC dc, RECT win);
+
 // ---- focus.c: the keyboard's focus, Tab (RFC 0010) ----
 void wh_focus_start(void);
 void wh_input_seen(const MSG *m);

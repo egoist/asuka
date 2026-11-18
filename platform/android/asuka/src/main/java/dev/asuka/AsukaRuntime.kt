@@ -266,6 +266,8 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     val stacks = LinkedHashSet<AsukaNode>()
     /** Every Overlay, in the order they were presented: the last is on top (Overlay.kt). */
     val overlays = ArrayList<AsukaNode>()
+    /** asuka dev's error overlay (DevError.kt), over everything the app shows. */
+    val devErrors = AsukaDevErrors(this)
     /** Back pops the active stack's top screen, following the predictive back gesture. */
     val back = makeBackCallback()
     val nativeFactories = HashMap<String, (AsukaNativeContext) -> AsukaNativeView>()
@@ -457,6 +459,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             activity.sendEnvironment(force = true)
             enter { AsukaNative.attach() }
         }
+        devErrors.attached()
     }
 
     /**
@@ -499,6 +502,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     }
 
     fun detach(activity: AsukaActivity) {
+        devErrors.detached(activity)
         if (this.activity === activity) {
             nodes[rootID]?.view?.let { (it.parent as? ViewGroup)?.removeView(it) }
             this.activity = null
@@ -556,6 +560,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     private fun restyleAll(changed: Boolean) {
         activity?.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(
             MaterialColors.getColor(themed, com.google.android.material.R.attr.colorSurface, android.graphics.Color.WHITE)))
+        if (changed) devErrors.restyle()
         for (n in ArrayList(nodes.values)) {
             if (changed && n.kind in rebuilt) rebuild(n) else restyle(n)
             if (changed) {
@@ -1182,6 +1187,8 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
                 @Suppress("DEPRECATION") // its replacements (live regions, pane titles) describe views, not events
                 activity?.window?.decorView?.announceForAccessibility(String(b, Charsets.UTF_8))
             }
+            AsukaCommand.DEV_ERROR -> decodeDevError(args)?.let { devErrors.show(id, it) }
+            AsukaCommand.DEV_ERROR_CLEAR -> devErrors.clear()
             AsukaCommand.BACK_EXIT -> backExit()
             AsukaCommand.REPLACE -> (n.view as? AsukaStack)?.instant = true
             AsukaCommand.A11Y_FOCUS -> n.view?.let { v ->

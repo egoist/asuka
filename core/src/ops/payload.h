@@ -387,4 +387,17 @@ bool ak_decode_location(const uint8_t *b, size_t n, ak_location *l);
 void ak_append_location_event(ak_buf *b, ak_span href, ak_span state);
 bool ak_decode_location_event(const uint8_t *b, size_t n, ak_span *href, ak_span *state);
 
+// The error overlay asuka dev shows (ops/deverror.go): the DevError
+// command is u8 flags (AK_DEV_ERROR_RELOAD, AK_DEV_ERROR_BUILD), then the
+// title, the message, the source and the details, u32-length each.
+enum { AK_DEV_ERROR_RELOAD = 1, AK_DEV_ERROR_BUILD = 2 };
+
+typedef struct {
+	uint8_t flags;
+	ak_span title, message, source, details;
+} ak_dev_error;
+
+void ak_append_dev_error(ak_buf *b, const ak_dev_error *e);
+bool ak_decode_dev_error(const uint8_t *b, size_t n, ak_dev_error *e);
+
 #endif

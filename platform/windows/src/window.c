@@ -200,6 +200,8 @@ static LRESULT window_message(UINT m, WPARAM wp, LPARAM lp, bool *handled) {
 		*handled = false;  // CreateWindow's own messages: the window's default handling
 		return 0;
 	}
+	// asuka dev's error overlay follows it (deverror.c).
+	if (m == WM_WINDOWPOSCHANGED) wh_dev_error_follow();
 	r = wh_ctl_message(H.main_ctl, m, wp, lp, &h);
 	if (h) return r;
 	wh_badge_message(m);
@@ -329,6 +331,7 @@ void wh_environment_changed(void) {
 		uint32_t i = 0;
 		void *v;
 		while (wh_map_next(&H.nodes, &i, NULL, &v)) wh_apply_font(v);
+		wh_dev_error_restyle();
 	}
 	if (H.root) wh_report_environment(H.root, &H.env);
 	wh_layout_nav();
@@ -430,6 +433,7 @@ void wh_set_dark(bool dark) {
 	for (uint32_t j = 0; j < H.nsheets; j++) wh_nav_window_redraw(H.sheets[j]);
 	for (uint32_t j = 0; j < H.nwins; j++) wh_nav_window_redraw(H.wins[j]);
 	wh_layout_all_chrome();  // hidden title bars' buttons, in the new colors
+	wh_dev_error_restyle();
 }
 
 void wh_lifecycle(int state) {

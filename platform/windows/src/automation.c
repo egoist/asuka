@@ -63,6 +63,7 @@ static void write_window_png(HWND hwnd, const char *path) {
 	HBITMAP bmp = dib(dc, w, h, &px);
 	HGDIOBJ old = SelectObject(dc, bmp);
 	PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT);
+	if (hwnd == H.window) wh_dev_error_print(dc, r);  // asuka dev's error overlay, over it
 	GdiFlush();
 	int x0 = vis.left - r.left, y0 = vis.top - r.top, vw = vis.right - vis.left, vh = vis.bottom - vis.top;
 	if (x0 < 0 || y0 < 0 || x0 + vw > w || y0 + vh > h || vw <= 0 || vh <= 0) x0 = y0 = 0, vw = w, vh = h;
@@ -224,6 +225,7 @@ char *wh_dump(size_t *len) {
 		walk(&b, H.sheets[i], 1);
 	}
 	wh_overlays_dump(&b, walk);
+	wh_dev_error_dump(&b);
 	for (uint32_t i = 0; i < H.nwins; i++) {
 		wchar_t t[256] = {0};
 		GetWindowTextW(wh_nav_window(H.wins[i]), t, 256);
@@ -348,6 +350,7 @@ static void click(HWND hwnd, LPARAM lp) {
 // tap clicks what shows text: the mouse's messages, at its center, to the
 // window under it that takes them.
 static bool tap(const wchar_t *t) {
+	if (wh_dev_error_tap(t)) return true;  // asuka dev's error overlay, over the rest
 	node *found = showing(t);
 	if (!found && (wh_tap_nav(t) || wh_tap_overlay(t))) return true;  // a tab, a header's or command bar's button; a snackbar's, a dialog's...
 	if (!found) return false;

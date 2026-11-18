@@ -374,6 +374,8 @@ final class AsukaTextField: UITextField {
     /// The Overlays, in the order they were made (Overlay.swift).
     var overlays: [AsukaNode] = []
     var presentCount = 0
+    /// asuka dev's error overlay, while it shows (DevError.swift).
+    var devError: AsukaDevErrorOverlay?
     var anchorsDue = false
     /// The nodes that name others for screen readers (A11y.swift).
     var related = Set<UInt32>()
@@ -787,6 +789,7 @@ final class AsukaTextField: UITextField {
         keyed.remove(id)
         related.remove(id)
         if focusedID == id { focusedID = 0 } // its focus goes with it, unreported
+        if devError?.root == id { clearDevError() } // the core clears it first; never outlives its root
         if n.overlay != nil { destroyOverlay(n) }
         if n.a11y.modal { setA11yModal(n, false) }
         if let s = n.view as? AsukaSnackbarView {
@@ -963,6 +966,10 @@ final class AsukaTextField: UITextField {
         #else
         case .eval, .webNavigate: break
         #endif
+        case .devError:
+            showDevError(id, args)
+        case .devErrorClear:
+            clearDevError()
         case .announce:
             UIAccessibility.post(notification: .announcement, argument: String(decoding: args, as: UTF8.self))
         case .replace:

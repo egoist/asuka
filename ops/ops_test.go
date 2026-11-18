@@ -420,3 +420,20 @@ func TestLocationRoundTrip(t *testing.T) {
 		t.Fatalf("%q %q %v", h, st, ok)
 	}
 }
+
+// A DevError command reads back as written, its bytes as the core writes
+// them (core/test/ops_test.c's dev_error).
+func TestDevErrorRoundTrip(t *testing.T) {
+	e := DevError{Flags: DevErrorReload, Title: "T", Message: "m", Details: "d"}
+	b := AppendDevError(nil, e)
+	want := []byte{1, 1, 0, 0, 0, 'T', 1, 0, 0, 0, 'm', 0, 0, 0, 0, 1, 0, 0, 0, 'd'}
+	if string(b) != string(want) {
+		t.Fatalf("% x, want % x", b, want)
+	}
+	if got, ok := DecodeDevError(b); !ok || got != e {
+		t.Fatalf("%+v %v", got, ok)
+	}
+	if _, ok := DecodeDevError(b[:len(b)-1]); ok {
+		t.Fatal("a cut command decoded")
+	}
+}

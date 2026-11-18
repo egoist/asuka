@@ -106,6 +106,36 @@ void ak_ui_mount(ak_closure *build);
 void ak_ui_unmount(void);
 bool ak_ui_mounted(void);
 
+// ---- asuka dev's error overlay (devoverlay.c) ----
+//
+// What shows over the app, in the host's own views (the DevError
+// command): a build that failed, else the first error of the app's
+// (with how many came after it). Main thread; the ABI calls these only
+// in asuka dev's player.
+
+// ak_dev_overlay_error shows an error of the app's, unless one shows
+// already (then it counts this one), and returns its number, which a
+// source that comes later for it names; reload: the overlay offers
+// Reload.
+uint32_t ak_dev_overlay_error(ak_span title, ak_span message, ak_span details, bool reload);
+// ak_dev_overlay_source adds the lines of the app's source where error
+// seq went wrong (asuka dev's answer), and its details again (the stack,
+// its files relative to the app's; empty: as they were).
+void ak_dev_overlay_source(uint32_t seq, ak_span source, ak_span details);
+// ak_dev_overlay_build shows a build that failed, until
+// ak_dev_overlay_fixed.
+void ak_dev_overlay_build(ak_span message, ak_span source, ak_span details);
+void ak_dev_overlay_fixed(void);
+// ak_dev_overlay_clear_app forgets the app's errors: a new module loads.
+void ak_dev_overlay_clear_app(void);
+// ak_dev_overlay_set_reload sets what Reload does: the app starts again,
+// keeping none of its state.
+void ak_dev_overlay_set_reload(void (*reload)(void));
+// ak_dev_overlay_action is the host's DevErrorAction: Dismiss, Reload.
+void ak_dev_overlay_action(int64_t action);
+bool ak_dev_overlay_showing(void);
+void ak_dev_overlay_reset(void);  // tests: forgets everything
+
 // The environment: what the host reports (an Environment event) about
 // the root view: its size, safe area, keyboard, scale, appearance, text
 // size, languages. One reported before the root mounts is the one it

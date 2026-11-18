@@ -870,9 +870,11 @@ void lx_present(node *n) {
 	case AK_KIND_SHEET:
 		size_sheet(n);
 		adw_dialog_present(n->nav->dialog, lx_declared_win(n)->content);
+		lx_dev_error_raise();  // asuka dev's error overlay stays on top
 		break;
 	case AK_KIND_ALERT:
 		present_alert(n, lx_declared_win(n)->content);
+		lx_dev_error_raise();
 		break;
 	case AK_KIND_SNACKBAR:
 		present_snack(n);

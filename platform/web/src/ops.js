@@ -209,6 +209,7 @@ export const Event = Object.freeze({
   OutsidePress: 63,
   AnchorFrame: 64,
   PressPoint: 65,
+  DevErrorAction: 66,
 });
 
 /** Commands the core sends. */
@@ -250,6 +251,8 @@ export const Command = Object.freeze({
   WindowAction: 35,
   Location: 36,
   Quit: 37,
+  DevError: 38,
+  DevErrorClear: 39,
 });
 
 export const Role = Object.freeze({ None: 0, Button: 1, Header: 2, Image: 3, Link: 4, Text: 5, Search: 6, Checkbox: 7, Radio: 8, RadioGroup: 9, Switch: 10, Tab: 11, TabList: 12, TabPanel: 13, Slider: 14, SpinButton: 15, ProgressBar: 16, Meter: 17, Menu: 18, MenuBar: 19, MenuItem: 20, MenuItemCheckbox: 21, MenuItemRadio: 22, Listbox: 23, Option: 24, ComboBox: 25, Dialog: 26, AlertDialog: 27, Tooltip: 28, Group: 29, Separator: 30, Toolbar: 31, Status: 32 });
@@ -291,6 +294,7 @@ export const Placement = Object.freeze({ Bottom: 0, BottomStart: 1, BottomEnd: 2
 export const TitleBar = Object.freeze({ Default: 0, Hidden: 1 });
 export const SnackbarDuration = Object.freeze({ Short: 0, Long: 1, Indefinite: 2 });
 export const LocationAction = Object.freeze({ Replace: 0, Push: 1, Back: 2, Forward: 3 });
+export const DevErrorAction = Object.freeze({ Dismiss: 0, Reload: 1 });
 
 const utf8 = new TextDecoder();
 const utf8Out = new TextEncoder();
@@ -491,4 +495,5 @@ export const Events = Object.freeze({
   outsidePress: (id, x, y) => new Writer().header(id, 63).f64(x).f64(y).done(),
   anchorFrame: (id, v) => new Writer().header(id, 64).bytes(v).done(),
   pressPoint: (id, x, y) => new Writer().header(id, 65).f64(x).f64(y).done(),
+  devErrorAction: (id, v) => new Writer().header(id, 66).i64(v).done(),
 });

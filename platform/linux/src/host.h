@@ -742,6 +742,19 @@ void lx_snapshot_window(GtkWindow *window, const char *path);
 void lx_automation(void);
 void lx_crash_start(void);
 
+// deverror.c: asuka dev's error overlay (DevError, DevErrorClear)
+void lx_dev_error(node *n, ak_span args);
+void lx_dev_error_clear(void);
+void lx_dev_error_raise(void);
+void lx_dev_error_resized(win *w);
+void lx_dev_error_closing(win *w);
+bool lx_dev_error_over(win *w);
+bool lx_dev_error_settling(void);
+bool lx_dev_error_tap(const char *text);
+bool lx_dev_error_escape(void);
+void lx_dev_error_dump(ak_buf *b);
+void lx_dev_error_texts(ak_buf *b);
+
 // files.c: launches and second instances
 void lx_watch_launches(void);
 void lx_incoming_url(const char *u);

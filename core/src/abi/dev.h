@@ -8,11 +8,28 @@
 //   CLI → player:  1 module (bytecode)    2 ping
 //                  7 restart (bytecode: loaded keeping none of the
 //                    app's state, which all starts again)
+//                  9 source (u32 an uncaught error's number; then
+//                    u32-length strings: the lines of the app's source
+//                    where it went wrong, numbered, and its stack, the
+//                    files relative to the app's)
+//                 10 failed (a build that failed, u32-length strings:
+//                    its first error, the lines of the source at it, its
+//                    other errors; again on each build that fails)
+//                 11 fixed (the app builds again)
 //   player → CLI:  3 log (u8 fd: 1 out, 2 err; then the text)
 //                  4 hello (JSON: the platform, the device)
 //                  5 reloaded (u32 state cells kept, u32 microseconds,
 //                    u8 flags: AK_DEV_RESTARTED for a restart's)
-//                  6 error (text: a module that didn't load, an uncaught error)
+//                  6 error (text: a module that didn't load)
+//                  8 uncaught (an error nothing in the app caught: u32
+//                    its number, u8 flags (AK_DEV_DIDNT_START: the
+//                    module's init threw), then u32-length strings: its
+//                    message and its stack, a line per frame, innermost
+//                    first: "name (file:line)"); the CLI prints it and
+//                    answers with its source
+//
+// The overlay (ui.h's ak_dev_overlay_*) shows what failed, uncaught and
+// source say, over the app.
 #ifndef AK_DEV_H
 #define AK_DEV_H
 
@@ -26,15 +43,24 @@ enum {
 	AK_DEV_RELOADED = 5,
 	AK_DEV_ERROR = 6,
 	AK_DEV_RESTART = 7,
+	AK_DEV_UNCAUGHT = 8,
+	AK_DEV_SOURCE = 9,
+	AK_DEV_FAILED = 10,
+	AK_DEV_FIXED = 11,
 };
 
 // A reloaded frame's flags.
 enum { AK_DEV_RESTARTED = 1 };
+// An uncaught frame's flags.
+enum { AK_DEV_DIDNT_START = 1 };
 
 // ak_dev_set_reload sets what a module that arrives is given to, on the
 // main thread (the ABI's reload: keep state, swap the module, mount);
 // fresh for a restart's, which keeps no state.
 void ak_dev_set_reload(void (*reload)(const uint8_t *module, size_t len, bool fresh));
+// ak_dev_set_frames sets what the CLI's other frames (source, failed,
+// fixed) are given to, on the main thread.
+void ak_dev_set_frames(void (*frame)(uint8_t kind, const uint8_t *p, size_t len));
 
 // ak_dev_connect connects to the CLI at one of hosts (comma-separated:
 // tried in turn) on port, on a thread of its own that reads its frames,
@@ -50,9 +76,9 @@ bool ak_dev_connect(const char *hosts, int port, const char *hello, bool capture
 // makes takes over from the player's own. False when it can't listen.
 bool ak_dev_listen(int port, const char *hello, bool capture, char *err, size_t errcap);
 
-// ak_dev_send sends a frame to the CLI (any thread); a no-op when not
-// connected.
-void ak_dev_send(uint8_t kind, const void *p, size_t len);
+// ak_dev_send sends a frame to the CLI (any thread): false when not
+// connected (on the web, when the page has no asuka dev to send it to).
+bool ak_dev_send(uint8_t kind, const void *p, size_t len);
 bool ak_dev_connected(void);
 
 // ak_dev_player is whether this run is asuka dev's player: it connected

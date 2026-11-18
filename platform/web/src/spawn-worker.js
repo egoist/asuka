@@ -80,6 +80,8 @@ export function serve(port) {
         // can't await one anyway).
         // The page's crash record's runs: those whose pages are open.
         crash_alive: (p, n) => (alive.has(new TextDecoder().decode(new Uint8Array(memory().buffer, p, n))) ? 1 : 0),
+        // asuka dev's frames are the page's core's.
+        dev_send: () => 0,
         sqlite_available: () => (sqlite ? 1 : 0),
         sqlite_send(id) {
           if (!id) return;

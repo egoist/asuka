@@ -426,6 +426,7 @@ var Schema = SchemaDef{
 		{Name: "OutsidePress", Payload: PPoint, Doc: "a press began (a finger, a pen, a mouse's button) in the Overlay's root but outside every view of the overlay: where, in the root's coordinates. To the Overlay"},
 		{Name: "AnchorFrame", Payload: PBytes, Doc: "where an Overlay's Anchor is, in the Overlay's root's coordinates (ops.AppendAnchorFrame): f32 x, y, width, height, then u8 1 while any of it is visible (not scrolled or clipped out of view by a view around it, not hidden, in the window), 0 otherwise. To the Overlay: once it's made, and again each time it changes"},
 		{Name: "PressPoint", Payload: PPoint, Doc: "where a press began on the view, in points from its top left: sent just before Pressed (true), when listened for (a slider's track jumps to it)"},
+		{Name: "DevErrorAction", Payload: PInt, Doc: "the user pressed a button of the overlay DevError shows: a DevErrorAction (Dismiss, Reload); to the root. The overlay stays until DevErrorClear"},
 	},
 	Commands: []CommandDef{
 		{Name: "Focus"},
@@ -465,6 +466,8 @@ var Schema = SchemaDef{
 		{Name: "WindowAction", Doc: "args: u8 WindowAction, then for Size and Fit f32 width, height (its content's, points; Fit: what its content measures, for a window sized to it, which a flyout is placed again at and a panel grows down from its top at) and for Position f32 x, y (its frame's top left, points from the main display's top left); sent to a Window node or, for the main window, the root (desktop and the web; mobile hosts have none)"},
 		{Name: "Location", Doc: "args (ops.AppendLocation): u8 LocationAction, i32 delta (Back: how many entries back, negative), u32-length href (the app's path and query, /chat/7?tab=info), u32-length state (the router's navigation state, which it reads back), u32-length window key (its StateKey, main for the main window unless it names another; empty: none); sent to the root (the main window) or a Window node as a Router's screens change: the web shows the href in the address bar and keeps the state in the history entry (Push a new entry, Replace this one's, Back to an earlier one, Forward to the one the user left: a back the app refused); a desktop host keeps the last one with where the window was, and gives it back as the window opens again (host.Locator); a phone ignores it"},
 		{Name: "Quit", Doc: "args: u8 flags (1 relaunch: the app starts again, with the same arguments, once this process has ended); sent to the root: the desktop host quits the app as the user's Quit does, asking the app first (asuka_quit_request, which may cancel it, and the relaunch with it), then closing its windows; phones and the web, whose apps don't quit themselves, ignore it"},
+		{Name: "DevError", Doc: "args (ops.AppendDevError): u8 DevErrorFlags bits (1 reload: the overlay offers Reload; 2 a build that failed, not an error of the app's), u32-length title, u32-length message, u32-length source (lines of the app's source around where it went wrong, with their numbers: monospaced; empty: none), u32-length details (the stack, or the build's other errors: monospaced; empty: none); sent to the root, only under asuka dev: the host shows an error overlay over everything in the main window (its screens, sheets, alerts and popovers), in its own views, not the app's: the title, the message, the source and the details (the text selectable, scrolling when long), and Dismiss and, with flag 1, Reload, which report DevErrorAction. Sent again while it shows, the overlay shows the new one"},
+		{Name: "DevErrorClear", Doc: "sent to the root: the host removes the overlay DevError shows (the error was dismissed or fixed, the app reloaded, or the root is about to go)"},
 	},
 	Enums: []EnumDef{
 		{Name: "Role", Values: []string{"None", "Button", "Header", "Image", "Link", "Text", "Search", "Checkbox", "Radio", "RadioGroup", "Switch", "Tab", "TabList", "TabPanel", "Slider", "SpinButton", "ProgressBar", "Meter", "Menu", "MenuBar", "MenuItem", "MenuItemCheckbox", "MenuItemRadio", "Listbox", "Option", "ComboBox", "Dialog", "AlertDialog", "Tooltip", "Group", "Separator", "Toolbar", "Status"}},
@@ -506,5 +509,6 @@ var Schema = SchemaDef{
 		{Name: "TitleBar", Values: []string{"Default", "Hidden"}},
 		{Name: "SnackbarDuration", Values: []string{"Short", "Long", "Indefinite"}},
 		{Name: "LocationAction", Values: []string{"Replace", "Push", "Back", "Forward"}},
+		{Name: "DevErrorAction", Values: []string{"Dismiss", "Reload"}},
 	},
 }

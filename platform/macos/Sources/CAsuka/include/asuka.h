@@ -101,6 +101,11 @@ ASUKA_API int asuka_dev_reload(const uint8_t *module, size_t len, uint32_t *micr
 // keeping none of the app's state, which all starts again from its
 // initial values. 0, or -1 with a message in *err.
 ASUKA_API int asuka_dev_restart(const uint8_t *module, size_t len, uint32_t *micros, char **err);
+// Gives the core a frame of asuka dev's (core/src/abi/dev.h: a build
+// that failed, one that's fixed, an uncaught error's source), for a
+// player that gets them itself (the web's page): the error overlay shows
+// what they say. kind is the frame's, p its payload.
+ASUKA_API void asuka_dev_frame(int kind, const uint8_t *p, size_t len);
 // Memory for bytes a host passes in (the web's JavaScript), and for what
 // the core hands out (asuka_native_invoke's answer): asuka_free frees it.
 ASUKA_API void *asuka_alloc(size_t n);

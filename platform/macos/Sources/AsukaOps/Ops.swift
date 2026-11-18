@@ -470,6 +470,7 @@ public enum AsukaEventKind: UInt16 {
     case outsidePress = 63
     case anchorFrame = 64
     case pressPoint = 65
+    case devErrorAction = 66
 }
 
 public enum AsukaCommand: UInt16 {
@@ -510,6 +511,8 @@ public enum AsukaCommand: UInt16 {
     case windowAction = 35
     case location = 36
     case quit = 37
+    case devError = 38
+    case devErrorClear = 39
 }
 
 public enum AsukaRole: Int32 {
@@ -880,6 +883,11 @@ public enum AsukaLocationAction: Int32 {
     case forward = 3
 }
 
+public enum AsukaDevErrorAction: Int32 {
+    case dismiss = 0
+    case reload = 1
+}
+
 /// A prop value. Bytes are valid only during the handler call.
 public enum AsukaValue {
     case bool(Bool)
@@ -1235,5 +1243,8 @@ public enum AsukaEvents {
     }
     public static func pressPoint(_ id: UInt32, x: Double, y: Double) -> [UInt8] {
         var w = AsukaWriter(); w.header(id, 65); w.f64(x); w.f64(y); return w.bytes
+    }
+    public static func devErrorAction(_ id: UInt32, _ v: Int64) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 66); w.u64(UInt64(bitPattern: v)); return w.bytes
     }
 }

@@ -32,6 +32,8 @@
 //     the view tree, the windows, the menu bar and the tray as JSON to
 //     dir/asuka-tree.json (the host's tests read it); snap <file> writes
 //     a snapshot. Each command's errors go to dir/asuka-errors.txt.
+//   - asuka dev's error overlay (DevError.swift) is in each: tap presses its
+//     buttons, the dumps have its texts, the JSON its devError.
 import AppKit
 #if canImport(AsukaOps)
 import AsukaOps
@@ -155,6 +157,8 @@ import AsukaOps
 
     /// Presses what shows text, as a click on it would.
     func tap(_ text: String) -> String? {
+        // asuka dev's error overlay is over everything (DevError.swift).
+        if let r = AsukaDevErrors.shared.tap(text) { return r.isEmpty ? nil : r }
         var found: AsukaNode?
         for n in rt.nodes.values where showing(n) {
             let match = n.text == text && n.kind != .textField || n.title == text && n.kind == .button
@@ -272,7 +276,7 @@ import AsukaOps
         } else {
             return "no key \(key)"
         }
-        let w = rt.keyWin.window
+        let w = AsukaDevErrors.shared.panel.flatMap { $0.isVisible ? $0 : nil } ?? rt.keyWin.window // asuka dev's overlay takes keys
         let typed = flags.contains(.shift) ? chars.uppercased() : chars
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             guard let ev = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
@@ -380,7 +384,7 @@ import AsukaOps
         }
         if let r = rt.root { walk(r, 0) }
         for w in rt.wins.values { if let r = w.root, r !== rt.root, r.parent == nil { walk(r, 0) } }
-        return b + dumpWindows()
+        return b + AsukaDevErrors.shared.dump() + dumpWindows()
     }
 
     /// The app's windows that show, front to back: their titles, the
@@ -415,6 +419,7 @@ import AsukaOps
             else if n.kind == .button && !n.title.isEmpty { lines.append(n.title) }
             else if !n.a11yLabel.isEmpty { lines.append(n.a11yLabel) }
         }
+        lines += AsukaDevErrors.shared.texts() // asuka dev's overlay, over them
         return lines.joined(separator: "\n") + "\n"
     }
 
@@ -434,6 +439,7 @@ import AsukaOps
         out["environment"] = ["width": rt.env.width, "height": rt.env.height, "scale": rt.env.scale, "dark": rt.env.dark,
                               "safeTop": rt.env.safeTop, "locale": rt.env.locale]
         out["keyWindow"] = NSApp.keyWindow?.title ?? ""
+        if let e = AsukaDevErrors.shared.json() { out["devError"] = e }
         AsukaShell.shared.dumpJSON(&out)
         rt.modules1JSON(&out)
         rt.modules2JSON(&out)

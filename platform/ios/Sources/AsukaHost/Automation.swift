@@ -24,7 +24,9 @@ import AsukaOps
 /// tapping it does; `focused` writes where the focused field and the
 /// keyboard are to tmp/asuka-focused.txt; `fits` writes, for each label
 /// or button title shown, its text, its font's size and whether its frame
-/// holds its text (`fits` or `cut`) to tmp/asuka-fits.txt.
+/// holds its text (`fits` or `cut`) to tmp/asuka-fits.txt. While asuka
+/// dev's error overlay shows, `dump` ends with what it shows and `tap`
+/// presses its buttons first (it's over the app).
 @MainActor enum AsukaAutomation {
     static var token: Int32 = 0
 
@@ -100,6 +102,7 @@ import AsukaOps
             }
             if let text, !text.isEmpty { lines.append(text) }
         }
+        if let d = rt.devError, !d.window.isHidden { lines += d.controller.texts }
         write(lines, to: "asuka-dump.txt")
     }
 
@@ -166,6 +169,7 @@ import AsukaOps
     }
 
     static func tap(_ text: String) {
+        if let d = rt.devError, !d.window.isHidden, d.controller.press(text) { return }
         guard var n = find(text) else { print("asuka automation: nothing reads \(text)"); return }
         if n.view is UILabel, let p = n.parent { n = p } // a label inside a pressable view
         switch n.view {

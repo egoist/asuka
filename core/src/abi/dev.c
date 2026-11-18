@@ -11,6 +11,7 @@
 #if defined(__wasm__)
 
 void ak_dev_set_reload(void (*reload)(const uint8_t *, size_t, bool)) { AK_UNUSED(reload); }
+void ak_dev_set_frames(void (*frame)(uint8_t, const uint8_t *, size_t)) { AK_UNUSED(frame); }
 bool ak_dev_connect(const char *host, int port, const char *hello, bool capture, char *err, size_t errcap) {
 	AK_UNUSED(host);
 	AK_UNUSED(port);
@@ -19,11 +20,11 @@ bool ak_dev_connect(const char *host, int port, const char *hello, bool capture,
 	snprintf(err, errcap, "the web reloads the page instead");
 	return false;
 }
-void ak_dev_send(uint8_t kind, const void *p, size_t len) {
-	AK_UNUSED(kind);
-	AK_UNUSED(p);
-	AK_UNUSED(len);
-}
+// The page's asuka dev client (platform/web's asuka.js) sends it on, and
+// gives the CLI's frames back through asuka_dev_frame.
+__attribute__((import_module("asuka"), import_name("dev_send"))) int js_dev_send(uint32_t kind, const void *p, uint32_t len);
+
+bool ak_dev_send(uint8_t kind, const void *p, size_t len) { return js_dev_send(kind, p, (uint32_t)len) != 0; }
 bool ak_dev_listen(int port, const char *hello, bool capture, char *err, size_t errcap) {
 	AK_UNUSED(port);
 	AK_UNUSED(hello);
@@ -72,6 +73,7 @@ typedef int sock_t;
 #endif
 
 static void (*reload_fn)(const uint8_t *, size_t, bool);
+static void (*frame_fn)(uint8_t, const uint8_t *, size_t);
 
 // The session: the one connection to the CLI, which a newer one replaces
 // (one the CLI made through the cable takes over from the player's own).
@@ -89,6 +91,7 @@ static char *hello_json;
 static ak_mutex send_mu = AK_MUTEX_INIT;
 
 void ak_dev_set_reload(void (*reload)(const uint8_t *, size_t, bool)) { reload_fn = reload; }
+void ak_dev_set_frames(void (*frame)(uint8_t, const uint8_t *, size_t)) { frame_fn = frame; }
 
 bool ak_dev_connected(void) {
 	ak_mutex_lock(&mu);
@@ -125,19 +128,18 @@ static bool read_all(sock_t s, uint8_t *p, size_t n) {
 	return true;
 }
 
-// send_on writes a frame to s, send_mu held.
-static void send_on(sock_t s, uint8_t kind, const void *p, size_t len) {
+// send_on writes a frame to s, send_mu held. False when the CLI went
+// away (its reader ends the session).
+static bool send_on(sock_t s, uint8_t kind, const void *p, size_t len) {
 	uint8_t h[5] = {(uint8_t)(len + 1), (uint8_t)((len + 1) >> 8), (uint8_t)((len + 1) >> 16), (uint8_t)((len + 1) >> 24), kind};
-	if (!write_all(s, h, 5) || !write_all(s, p, len)) {
-		// The CLI went away: its reader ends the session.
-	}
+	return write_all(s, h, 5) && write_all(s, p, len);
 }
 
 #if defined(AK_TEST)
 void (*ak_dev_test_sending)(int sock);
 #endif
 
-void ak_dev_send(uint8_t kind, const void *p, size_t len) {
+bool ak_dev_send(uint8_t kind, const void *p, size_t len) {
 	ak_mutex_lock(&send_mu);
 	ak_mutex_lock(&mu);
 	sock_t s = sock;
@@ -145,21 +147,27 @@ void ak_dev_send(uint8_t kind, const void *p, size_t len) {
 #if defined(AK_TEST)
 	if (ak_dev_test_sending && s != BAD_SOCK) ak_dev_test_sending((int)s);
 #endif
-	if (s != BAD_SOCK) send_on(s, kind, p, len);
+	bool sent = s != BAD_SOCK && send_on(s, kind, p, len);
 	ak_mutex_unlock(&send_mu);
+	return sent;
 }
 
 typedef struct {
 	uint8_t *p;
 	size_t len;
-	bool fresh;  // a restart's
-} module_t;
+	uint8_t kind;
+} frame_t;
 
+// deliver gives a frame to what takes it, on the main thread.
 static void deliver(void *ctx) {
-	module_t *m = ctx;
-	if (reload_fn) reload_fn(m->p, m->len, m->fresh);
-	ak_free(m->p);
-	ak_free(m);
+	frame_t *f = ctx;
+	if (f->kind == AK_DEV_MODULE || f->kind == AK_DEV_RESTART) {
+		if (reload_fn) reload_fn(f->p, f->len, f->kind == AK_DEV_RESTART);
+	} else if (frame_fn) {
+		frame_fn(f->kind, f->p, f->len);
+	}
+	ak_free(f->p);
+	ak_free(f);
 }
 
 // session serves s as the CLI's connection until it closes or a newer
@@ -196,14 +204,22 @@ static void session(sock_t s) {
 			ak_free(p);
 			break;
 		}
-		if (h[4] == AK_DEV_MODULE || h[4] == AK_DEV_RESTART) {
-			module_t *m = ak_alloc(sizeof *m);
-			m->p = p;
-			m->len = n - 1;
-			m->fresh = h[4] == AK_DEV_RESTART;
-			ak_post(deliver, m);
-		} else {
+		switch (h[4]) {
+		case AK_DEV_MODULE:
+		case AK_DEV_RESTART:
+		case AK_DEV_SOURCE:
+		case AK_DEV_FAILED:
+		case AK_DEV_FIXED: {
+			frame_t *f = ak_alloc(sizeof *f);
+			f->p = p;
+			f->len = n - 1;
+			f->kind = h[4];
+			ak_post(deliver, f);
+			break;
+		}
+		default:
 			ak_free(p);
+			break;
 		}
 	}
 	ak_mutex_lock(&mu);

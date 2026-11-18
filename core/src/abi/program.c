@@ -11,6 +11,7 @@
 // exits as main ends).
 #include "asuka.h"
 #include "abi/program.h"
+#include "abi/trace.h"
 #include "ui/ui.h"
 #include "vm/vm.h"
 #include "rt/sched.h"
@@ -37,12 +38,6 @@ static struct {
 	int code;
 	ak_owner *owner;  // init's and main's
 	ak_future *main;
-	// The last error thrown, and the VM's stack as it was: what an error
-	// main throws is reported with.
-	void *traced;
-	char trace[4096];
-	char ctrace[4096];  // compiled functions' frames, innermost first
-	uint64_t thread;  // the main thread's
 	const char *trim;  // what the trace's files are relative to
 	asuka_host_callbacks host;  // the host's, kept
 } P = {.mu = AK_MUTEX_INIT};
@@ -53,20 +48,6 @@ static void wake(void) {
 	ak_cond_signal(&P.cond);
 	ak_mutex_unlock(&P.mu);
 	if (P.host_post) P.host_post();
-}
-
-static void on_throw(void *err) {
-	if (err == P.traced || ak_thread_id() != P.thread || ak_is_cancel(err)) return;
-	if (P.traced) ak_release(P.traced);
-	P.traced = ak_retain(err);
-	ak_vm_traceback(P.trace, sizeof P.trace);
-	P.ctrace[0] = 0;
-}
-
-static void on_frame(const char *fn, const char *file, uint32_t line) {
-	if (ak_thread_id() != P.thread || !P.traced || !ak_error_pending()) return;
-	size_t n = strlen(P.ctrace);
-	if (n + 2 < sizeof P.ctrace) snprintf(P.ctrace + n, sizeof P.ctrace - n, "%s (%s:%u)\n", fn, file, line);
 }
 
 // print_frames writes a trace's lines, indented, its files relative to
@@ -92,10 +73,11 @@ static void report(void *err) {
 	ak_str *msg = ak_vm_error_text(err);
 	fprintf(stderr, "error: %s\n", msg->data);
 	ak_release(msg);
-	if (err == P.traced) {
-		print_frames(P.ctrace);
-		print_frames(P.trace);
-	}
+	// Where it was thrown (trace.h), when it's the last error thrown.
+	const char *c, *vm;
+	ak_trace_of(err, &c, &vm);
+	print_frames(c);
+	print_frames(vm);
 	fflush(stderr);
 }
 
@@ -203,7 +185,6 @@ static void data_dir(void) {
 
 int ak_program_start(ak_module *m, int argc, char **argv, const asuka_host_callbacks *cb) {
 	ak_cond_init(&P.cond);
-	P.thread = ak_thread_id();
 	P.host_post = cb ? cb->post : NULL;
 	if (argv) ak_os_set_args(argc, argv);  // else the system's (Windows: UTF-16)
 #if defined(_WIN32)
@@ -216,8 +197,7 @@ int ak_program_start(ak_module *m, int argc, char **argv, const asuka_host_callb
 		P.host = *cb;
 		ak_native_set_host(&P.host);
 	}
-	ak_throw_hook = on_throw;
-	ak_frame_hook = on_frame;
+	ak_trace_start();
 	data_dir();
 	// The program's own directory (std/fs's appDir) is there, as an
 	// app's host makes the app's.
@@ -255,10 +235,7 @@ int ak_program_loop(void) {
 		P.woken = false;
 		ak_mutex_unlock(&P.mu);
 	}
-	if (P.traced) ak_release(P.traced);
-	P.traced = NULL;
-	ak_throw_hook = NULL;
-	ak_frame_hook = NULL;
+	ak_trace_stop();
 	return P.code;
 }
 

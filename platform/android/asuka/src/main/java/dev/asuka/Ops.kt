@@ -473,6 +473,7 @@ object AsukaEventKind {
     const val OUTSIDE_PRESS = 63
     const val ANCHOR_FRAME = 64
     const val PRESS_POINT = 65
+    const val DEV_ERROR_ACTION = 66
 }
 
 object AsukaCommand {
@@ -513,6 +514,8 @@ object AsukaCommand {
     const val WINDOW_ACTION = 35
     const val LOCATION = 36
     const val QUIT = 37
+    const val DEV_ERROR = 38
+    const val DEV_ERROR_CLEAR = 39
 }
 
 object AsukaRole {
@@ -883,6 +886,11 @@ object AsukaLocationAction {
     const val FORWARD = 3
 }
 
+object AsukaDevErrorAction {
+    const val DISMISS = 0
+    const val RELOAD = 1
+}
+
 /** Receives decoded ops, in order, on the main thread. */
 interface AsukaOpHandler {
     fun create(id: Int, kind: Int)
@@ -1092,4 +1100,5 @@ object AsukaEvents {
     fun outsidePress(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 63); f64(x); f64(y) }.bytes()
     fun anchorFrame(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 64); u32(v.size); raw(v) }.bytes()
     fun pressPoint(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 65); f64(x); f64(y) }.bytes()
+    fun devErrorAction(id: Int, v: Long): ByteArray = AsukaWriter().apply { header(id, 66); u64(v) }.bytes()
 }

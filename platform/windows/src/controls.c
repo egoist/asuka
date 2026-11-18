@@ -22,7 +22,8 @@ static uint16_t button_glyph(node *n, HWND ctl, wchar_t *title, int cap) {
 		title[cap - 1] = 0;
 		return wh_directed_glyph(n->icon, wh_is_rtl(n));
 	case KIND_ALERT_WINDOW:
-		GetWindowTextW(ctl, title, cap);  // an alert's dialog's button
+	case KIND_DEV_ERROR:
+		GetWindowTextW(ctl, title, cap);  // an alert's dialog's button, the error overlay's
 		return 0;
 	case AK_KIND_SNACKBAR:
 		if (wh_snack_is_close(n, ctl)) return 0xE711;  // Cancel: an ×
@@ -70,6 +71,7 @@ LRESULT wh_draw_button(node *n, NMCUSTOMDRAW *cd) {
 	if (n->kind == KIND_HEADER || (n->kind == AK_KIND_SNACKBAR && wh_snack_is_close(n, ctl))) variant = AK_BUTTON_VARIANT_PLAIN;
 	if (n->kind == KIND_COMMAND_BAR) variant = wh_command_bar_is_primary(n, ctl) ? AK_BUTTON_VARIANT_FILLED : AK_BUTTON_VARIANT_PLAIN;
 	if (n->kind == KIND_ALERT_WINDOW && wh_alert_dialog_default_button(n, ctl)) variant = AK_BUTTON_VARIANT_FILLED;
+	if (n->kind == KIND_DEV_ERROR && wh_dev_error_primary(ctl)) variant = AK_BUTTON_VARIANT_FILLED;
 	rgba text = p->label, fill = {0};
 	bool stroke = false;
 	switch (variant) {

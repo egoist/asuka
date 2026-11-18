@@ -34,6 +34,18 @@
         <item name="android:windowExitAnimation">@anim/asuka_full_screen_exit</item>
     </style>
 
+    <!-- asuka dev's error overlay (DevError.kt): a window as big as the
+         screen, drawn edge to edge, over the app and its dialogs; it fades
+         in and out. -->
+    <style name="ThemeOverlay.Asuka.DevError" parent="">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Toast</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+    </style>
+
     <!-- Button variants (ui.ButtonVariant): plain is a text button. -->
     <style name="ThemeOverlay.Asuka.TextButton" parent="">
         <item name="materialButtonStyle">@style/Widget.Material3Expressive.Button.TextButton</item>

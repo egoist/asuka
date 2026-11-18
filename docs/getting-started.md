@@ -110,8 +110,9 @@ with each reload's report (`asuka: reloaded in 2.1 ms, 3 states kept`).
 `asuka dev` builds the platform's **player** once: the app's shell (its
 icon, its name, its permissions), but none of the app's code. It
 installs and launches it, then sends it your app; on each save it
-compiles again, and the player loads the new version in place. A save that doesn't compile prints its errors, and the app
-keeps running what it had. Changing `asuka.toml`, the assets or native
+compiles again, and the player loads the new version in place. A save that doesn't compile prints its errors and shows them over the
+app, which keeps running what it had; so does an error the app didn't
+catch ([Errors over the app](development.md#errors-over-the-app)). Changing `asuka.toml`, the assets or native
 code builds and launches the player again.
 
 - **On your computer** (`asuka dev`, or `--platform mac`, `windows`,

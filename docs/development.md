@@ -64,8 +64,9 @@ asuka: reloaded in 2.2 ms, 4 states kept
 ```
 
 A save that doesn't compile prints its errors, as `file:line:col:
-message`, and the player keeps running what it had; the next save that
-compiles goes on from there. A change to the rest of the app (its
+message`, and shows them over the app (see [Errors over the
+app](#errors-over-the-app)); the player keeps running what it had, and
+the next save that compiles goes on from there. A change to the rest of the app (its
 `asuka.toml`, its assets, its native packages' Swift, Kotlin or
 JavaScript) builds the player again, reinstalls it if it changed, and
 launches it.
@@ -145,6 +146,34 @@ and running it again starts the app from nothing too. Either way, files
 the app writes (SQLite databases, files) are kept: they're in the app's
 data directory, on the device or, on the desktop, in Asuka's cache.
 
+## Errors over the app
+
+What goes wrong while you work shows on the device or in the window,
+over the app, not only in the terminal:
+
+- **An error nothing caught**: one a handler, an effect or a task threw
+  with no `Boundary` around it, or one the app's `init` threw. The
+  overlay shows its message, the lines of your source where it was
+  thrown, and the calls that led there, innermost first.
+- **A save that doesn't compile**: its first error, the lines at it with
+  a caret under the part that's wrong, the error's page, and the other
+  errors. It goes by itself as soon as a save compiles, and shows before
+  an error of the app's, which came from the code you're changing.
+
+**Dismiss** (or Escape, or Android's back) goes back to the app as it
+was: the handler or effect that threw stopped there, everything else
+runs on. **Reload**, offered for an error of the app's, starts the app
+over as **r** does, every `state` from its initial value. When more
+errors come while one shows, the first stays, with how many came after
+it: the others usually follow from it. A save that compiles clears the
+app's errors with the old code.
+
+The overlay is drawn in each platform's own views, over the app's
+screens, sheets and alerts, so it shows even when the app's own views
+are what broke. It's only in `asuka dev`: in a build, an error nothing
+caught is logged, and a `Boundary` is how the app shows one to its
+users.
+
 ## Reloading
 
 Asuka watches the app's directory and its local dependencies'
@@ -212,8 +241,10 @@ again.
 ## Logs
 
 The player sends its output and its errors to `asuka dev`, which prints
-them in the terminal: `print`, uncaught errors, and Asuka's own
-warnings and errors, on every platform. A module the player couldn't load
+them in the terminal: `print`, uncaught errors (with the calls that led
+there, which the app also shows: [Errors over the
+app](#errors-over-the-app)), and Asuka's own warnings and errors, on
+every platform. A module the player couldn't load
 says why (`asuka: the player: ...`). In the browser, the page's errors
 print there too.
 

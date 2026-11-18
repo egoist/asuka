@@ -285,6 +285,7 @@ void ak_fake_free(ak_fake *f) {
 	ak_buf_free(&f->error);
 	ak_buf_free(&f->pending);
 	ak_buf_free(&f->ev);
+	ak_buf_free(&f->dev_error);
 	for (uint32_t i = 0; i < f->histories.len; i++) {
 		ak_fake_history *h = &f->histories.data[i];
 		for (uint32_t j = 0; j < h->entries.len; j++) {
@@ -573,6 +574,10 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 		for (uint32_t i = 0; i < v->children.len; i++) v->children.data[i]->parent = NULL;
 		ak_fake_desk_destroyed(f, v->id);
 		if (f->focus == v->id) f->focus = 0;  // its focus goes with it, unreported
+		if (f->dev_error_on == v->id) {
+			fail(f, "Destroy: root %u went with its error overlay showing (DevErrorClear first)", v->id);
+			f->dev_error_on = 0;
+		}
 		slots_delete(f, v->id);
 		free_view(v);
 		return;
@@ -651,6 +656,19 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 			v->presented = true;
 			v->present_seq = ++f->present_seq;
 			break;
+		case AK_CMD_DEV_ERROR: {
+			ak_dev_error e;
+			if (!v->root) { fail(f, "DevError to %u, not the root", v->id); return; }
+			if (!ak_decode_dev_error((const uint8_t *)op->value.s.p, op->value.s.len, &e)) { fail(f, "DevError: bad arguments"); return; }
+			ak_buf_reset(&f->dev_error);
+			ak_buf_put(&f->dev_error, op->value.s.p, op->value.s.len);
+			f->dev_error_on = v->id;
+			return;
+		}
+		case AK_CMD_DEV_ERROR_CLEAR:
+			if (f->dev_error_on != v->id) { fail(f, "DevErrorClear to %u, which shows no error overlay", v->id); return; }
+			f->dev_error_on = 0;
+			return;
 		case AK_CMD_FOCUS:
 			if (ak_fake_takes_focus(v)) focus_to(f, v, f->keyboard, true);
 			break;
@@ -1577,6 +1595,18 @@ void ak_fake_link(ak_fake *f, ak_fake_view *v, ak_span url) {
 
 void ak_fake_lifecycle(ak_fake *f, int64_t state) {
 	ak_fake_dispatch(f, &(ak_event){.kind = AK_EVENT_LIFECYCLE, .i = state});
+}
+
+bool ak_fake_dev_error(const ak_fake *f, ak_dev_error *e) {
+	if (!f->dev_error_on) return false;
+	return ak_decode_dev_error(f->dev_error.data, f->dev_error.len, e);
+}
+
+bool ak_fake_dev_error_press(ak_fake *f, int64_t action) {
+	ak_dev_error e;
+	if (!ak_fake_dev_error(f, &e) || (action == AK_DEV_ERROR_ACTION_RELOAD && !(e.flags & AK_DEV_ERROR_RELOAD))) return false;
+	ak_fake_dispatch(f, &(ak_event){.id = f->dev_error_on, .kind = AK_EVENT_DEV_ERROR_ACTION, .i = action});
+	return true;
 }
 
 void ak_fake_emit_native(ak_fake *f, ak_fake_view *v, const char *name, const ak_fake_native *values, uint32_t n) {

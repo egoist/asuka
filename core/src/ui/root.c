@@ -262,6 +262,7 @@ static void mount_fn(void *ctx, ak_owner *root) {
 	r->el = ak_view_new(r, &cls_root, 0, true);
 	ak_batch_set_root(r->batch, r->el->id);
 	ak_ext_mounted(r);
+	ak_dev_overlay_mounted(r);
 	ak_path_reset();
 	ak_view *v = ak_ui_build(r, m->build, NULL, 0);
 	if (v) {
@@ -302,6 +303,7 @@ bool ak_ui_mounted(void) { return ak_ui.root != NULL; }
 void ak_ui_unmount(void) {
 	ak_ui_root *r = ak_ui.root;
 	if (!r) return;
+	ak_dev_overlay_unmount(r);
 	r->disposed = true;
 	ak_ext_unmount(r);
 	ak_owner_dispose(r->owner);
@@ -601,6 +603,11 @@ void ak_ui_dispatch(const uint8_t *buf, size_t len) {
 			if (r->el) ak_view_mark_measured(r->el);
 			ak_ui_flush();
 		}
+		return;
+	case AK_EVENT_DEV_ERROR_ACTION:
+		// Not in a batch: Reload starts the app again, as a reload does.
+		ak_dev_overlay_action(ev.i);
+		ak_ui_flush();
 		return;
 	case AK_EVENT_LIFECYCLE:
 		if (r && ev.i == AK_LIFECYCLE_MEMORY_WARNING) ak_mcache_clear(&r->measures);

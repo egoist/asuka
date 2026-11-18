@@ -140,6 +140,7 @@ enum {
 	KIND_COMMAND_BAR,    // a stack's command bar (cmdbar.c)
 	KIND_ALERT_WINDOW,   // an alert's dialog (alertdialog.c)
 	KIND_PICTURE,        // a view drawn for another (picture.c)
+	KIND_DEV_ERROR,      // asuka dev's error overlay's buttons (deverror.c)
 };
 
 // An item of a menu of actions (a Menu prop, a Screen's bar buttons, an

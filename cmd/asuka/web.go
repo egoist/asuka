@@ -32,6 +32,7 @@ import (
 
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/internal/devserver"
 	"github.com/egoist/asuka/internal/nativegen"
 	"github.com/egoist/asuka/lang/bytecode"
 	"github.com/egoist/asuka/lang/target"
@@ -377,8 +378,21 @@ func newWebDev(app *asukaApp, work string) (*devServer, *devLoop, error) {
 		s.mu.Unlock()
 		s.send("restart", stamp)
 	})
-	loop.failed = append(loop.failed, func(msg string) { s.send("failed", msg) })
-	loop.fixed = append(loop.fixed, func() { s.send("fixed", "") })
+	// What didn't compile: a failed frame's payload (core/src/abi/dev.h),
+	// which the page gives the core (asuka_dev_frame).
+	loop.failed = append(loop.failed, func(f devserver.Failure) {
+		data := base64.StdEncoding.EncodeToString(f.Encode())
+		s.mu.Lock()
+		s.failed = data
+		s.mu.Unlock()
+		s.send("failed", data)
+	})
+	loop.fixed = append(loop.fixed, func() {
+		s.mu.Lock()
+		s.failed = ""
+		s.mu.Unlock()
+		s.send("fixed", "")
+	})
 	loop.mu.Unlock()
 	return s, loop, nil
 }
@@ -405,6 +419,7 @@ type devServer struct {
 	// moduleStamp names the app's last module, so the page never loads an
 	// old one.
 	moduleStamp string
+	failed      string // the build that failed, as its event's data ("": none)
 	mu          sync.Mutex
 	clients     map[chan string]bool
 	nextID      int64
@@ -550,6 +565,18 @@ func (s *devServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				c <- d
 			}
 		}
+	case p == "/__asuka/uncaught" && r.Method == http.MethodPost:
+		// An error the app didn't catch (an uncaught frame's payload): it's
+		// printed, and the answer is its source frame's payload.
+		b, _ := io.ReadAll(r.Body)
+		u, ok := devserver.DecodeUncaught(b)
+		if !ok {
+			http.Error(w, "a bad report", http.StatusBadRequest)
+			return
+		}
+		source, details := s.loop.uncaught(u)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write(devserver.EncodeSource(u.Seq, source, details))
 	case p == "/__asuka/log" && r.Method == http.MethodPost:
 		b, _ := io.ReadAll(r.Body)
 		printLog(b)
@@ -603,6 +630,13 @@ func (s *devServer) events(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}()
 	io.WriteString(w, ": asuka\n\n")
+	// A page that comes while the build is broken hears so at once.
+	s.mu.Lock()
+	failed := s.failed
+	s.mu.Unlock()
+	if failed != "" {
+		io.WriteString(w, "event: failed\ndata: "+failed+"\n\n")
+	}
 	f.Flush()
 	for {
 		select {
