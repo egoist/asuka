@@ -518,7 +518,31 @@ func (s *androidScreen) foreground() {
 			}
 		}
 		return false
-	}, func() string { return "the focus is on " + focus + ", not " + s.pkg })
+	}, func() string { return "the focus is on " + focus + ", not " + s.pkg + s.crashLog() })
+}
+
+// crashLog is what the device logged of a crash, for a test that failed:
+// the crash buffer (a native crash's backtrace, an uncaught exception's
+// trace) and the last warnings and errors, which say why an app that
+// started went away (a library that didn't load, the system killing it).
+func (s *androidScreen) crashLog() string {
+	var b strings.Builder
+	if out, _ := s.adb("logcat", "-d", "-b", "crash"); strings.TrimSpace(out) != "" {
+		b.WriteString("\nthe crash buffer:\n" + lastLines(out, 150))
+	}
+	if out, _ := s.adb("logcat", "-d", "-t", "400", "*:W"); strings.TrimSpace(out) != "" {
+		b.WriteString("\nthe last warnings and errors:\n" + lastLines(out, 120))
+	}
+	return b.String()
+}
+
+// lastLines is text's last n lines.
+func lastLines(text string, n int) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func TestCounterAndroid(t *testing.T) { counter(t, androidApp(t, "counter", "dev.asuka.counter")) }
