@@ -106,6 +106,7 @@ static ak_view *view_or_none(ak_val *a, uint32_t n, uint32_t i) {
 static ak_view *ref_view(ak_val *a, uint32_t n, uint32_t i) {
 	if (i >= n || !a[i].p) return NULL;
 	ak_val v = ak_vm_cell_get(a[i].p, false);
+	ak_release(v.p);  // the Ref holds it: borrowed here
 	return v.p && ((ak_obj *)v.p)->tag == AK_TAG_VIEW ? v.p : NULL;
 }
 
