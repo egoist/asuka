@@ -403,6 +403,8 @@ func (b *fb) builtinMethod(e *syntax.CallExpr, call *check.Call, recv *int, dst 
 		return r
 	case "enumerated":
 		return b.enumerated(call, recv, dst)
+	case "zip":
+		return b.zip(call, recv, dst)
 	case "i2f", "f2i":
 		x := b.recvValue(call, recv)
 		if m.Special == "i2f" {
@@ -573,6 +575,39 @@ func (b *fb) enumerated(call *check.Call, recv *int, dst int) int {
 	t := b.newStruct(shape, tup.Elems, []int{i, el}, -1)
 	m := b.l.methodPush()
 	b.callInout(m, out, []int{t}, bc.None, m.Throws || m.Fails || hasClosureArg(m))
+	b.emit(op("ADDIK"), i, i, 1)
+	b.jmp(top)
+	b.f.Place(end)
+	return out
+}
+
+// zip pairs two arrays' elements, as long as the shorter: a loop that
+// pushes each pair, a tuple, as enumerated does.
+func (b *fb) zip(call *check.Call, recv *int, dst int) int {
+	x := b.recvValue(call, recv)
+	y := b.value(call.Args[0], -1)
+	at, _ := b.typ(check.Unopt(call.RecvType)).(*check.Array)
+	ot, _ := b.typ(b.typeOf(call.Args[0])).(*check.Array)
+	tup := b.typ(call.Result).(*check.Array).Elem.(*check.Tuple)
+	shape := b.l.shape(tup)
+	out := b.out(dst, bc.KRef)
+	b.emit(op("NEWA"), out, int(bc.KRef), shape, 0, 0)
+	n, m, i, c := b.temp(bc.KInt), b.temp(bc.KInt), b.temp(bc.KInt), b.temp(bc.KBool)
+	b.emit(op("LEN"), n, x)
+	b.emit(op("LEN"), m, y)
+	b.loadInt(i, 0)
+	top, end := b.f.Here(), b.f.NewLabel()
+	b.emit(op("LTI"), c, i, n)
+	b.emitJump(op("JF"), c, end)
+	b.emit(op("LTI"), c, i, m)
+	b.emitJump(op("JF"), c, end)
+	el := b.temp(b.l.kind(at.Elem))
+	b.emit(op("IDX"), el, x, i)
+	ol := b.temp(b.l.kind(ot.Elem))
+	b.emit(op("IDX"), ol, y, i)
+	t := b.newStruct(shape, tup.Elems, []int{el, ol}, -1)
+	push := b.l.methodPush()
+	b.callInout(push, out, []int{t}, bc.None, push.Throws || push.Fails || hasClosureArg(push))
 	b.emit(op("ADDIK"), i, i, 1)
 	b.jmp(top)
 	b.f.Place(end)
@@ -891,6 +926,9 @@ func unparen(e syntax.Expr) syntax.Expr {
 // allRace lowers all(…) and race(…): each call started as a task, then
 // awaited together.
 func (b *fb) allRace(e *syntax.CallExpr, call *check.Call, dst int) int {
+	if call.Each {
+		return b.allEach(call, dst)
+	}
 	res := b.typ(call.Result)
 	isAll := call.Builtin.ID == check.BAll
 	// One array of tasks.
@@ -959,6 +997,29 @@ func (b *fb) allRace(e *syntax.CallExpr, call *check.Call, dst int) int {
 		return b.copyTo(vals[0], dst)
 	}
 	return b.newStruct(b.l.shape(res), types, vals, dst)
+}
+
+// allEach lowers all(items, f, limit:): CALLB async.all_each(items, f,
+// limit, U's kind), which starts f with each item as a task (limit at a
+// time), and awaits the array of their results.
+func (b *fb) allEach(call *check.Call, dst int) int {
+	items := b.value(call.Args[0], -1)
+	f := b.value(call.Args[1], -1)
+	var limit int
+	if call.Args[2] != nil {
+		limit = b.value(call.Args[2], -1)
+	} else {
+		limit = b.konst(0)
+	}
+	u := b.typ(call.Bound["U"])
+	fut := b.callB("async.all_each", bc.KRef, items, f, limit, b.konst(int64(b.l.kind(u))))
+	if b.l.kind(u) == bc.KVoid {
+		b.emit(op("AWAIT"), b.temp(bc.KRef), fut)
+		return -1
+	}
+	r := b.out(dst, bc.KRef)
+	b.emit(op("AWAIT"), r, fut)
+	return r
 }
 
 // startTask starts an async call (or takes a task) as a future; boxed:

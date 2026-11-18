@@ -305,6 +305,75 @@ static ak_val str_to_float(ak_val *args, uint32_t n) {
 	RET_P(ak_box_new(AK_K_FLOAT, (ak_val){.f = v}));
 }
 
+static int digit_of(char c) {
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'z') return c - 'a' + 10;
+	if (c >= 'A' && c <= 'Z') return c - 'A' + 10;
+	return 99;
+}
+
+static bool radix_ok(int64_t radix, const char *what) {
+	if (radix >= 2 && radix <= 36) return true;
+	ak_throw_msg("%s's radix is %lld: it must be 2 to 36", what, (long long)radix);
+	return false;
+}
+
+// str.to_int_radix(s, radix): the whole string as an int in radix, an
+// optional sign first; none when it isn't one, or it's past an int.
+static ak_val str_to_int_radix(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	ak_str *s = STR(0);
+	int64_t radix = A(1).i;
+	if (!radix_ok(radix, "toInt")) RET_VOID;
+	uint32_t i = 0;
+	bool neg = false;
+	if (i < s->len && (s->data[i] == '+' || s->data[i] == '-')) neg = s->data[i++] == '-';
+	if (i == s->len) RET_P(NULL);
+	uint64_t v = 0, limit = neg ? (uint64_t)INT64_MAX + 1 : (uint64_t)INT64_MAX;
+	for (; i < s->len; i++) {
+		int d = digit_of(s->data[i]);
+		if (d >= radix) RET_P(NULL);
+		if (v > (limit - (uint64_t)d) / (uint64_t)radix) RET_P(NULL);
+		v = v * (uint64_t)radix + (uint64_t)d;
+	}
+	int64_t out = neg ? (int64_t)(0 - v) : (int64_t)v;
+	RET_P(ak_box_new(AK_K_INT, (ak_val){.i = out}));
+}
+
+// int.to_string(v, radix): v's digits in radix, lowercase, with a - when
+// it's negative.
+static ak_val int_to_string(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	int64_t radix = A(1).i;
+	if (!radix_ok(radix, "toString")) RET_VOID;
+	int64_t v = A(0).i;
+	uint64_t u = v < 0 ? 0 - (uint64_t)v : (uint64_t)v;
+	char buf[72];
+	int i = sizeof buf;
+	do {
+		buf[--i] = "0123456789abcdefghijklmnopqrstuvwxyz"[u % (uint64_t)radix];
+		u /= (uint64_t)radix;
+	} while (u);
+	if (v < 0) buf[--i] = '-';
+	RET_P(ak_str_new(buf + i, sizeof buf - (size_t)i));
+}
+
+// str.reversed(s): its characters (code points) in the other order.
+static ak_val str_reversed(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	ak_str *s = STR(0);
+	ak_str *out = ak_str_new(NULL, s->len);
+	uint32_t w = s->len;
+	for (uint32_t i = 0; i < s->len;) {
+		uint32_t j = i + 1;
+		while (j < s->len && ((unsigned char)s->data[j] & 0xc0) == 0x80) j++;
+		w -= j - i;
+		memcpy(out->data + w, s->data + i, j - i);
+		i = j;
+	}
+	RET_P(out);
+}
+
 static ak_val str_repeat(ak_val *args, uint32_t n) {
 	AK_UNUSED(n);
 	ak_strb b = {0};
@@ -627,6 +696,156 @@ static ak_val arr_suffix(ak_val *args, uint32_t n) {
 }
 static ak_val arr_concat(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_P(ak_arr_concat(ARR(0), ARR(1))); }
 
+// arr.flat_map(a, f, kind): the arrays f gives, one after another.
+static ak_val arr_flat_map(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	ak_arr *a = ARR(0);
+	ak_kind k = (ak_kind)A(2).i;
+	ak_arr *out = NULL;
+	for (uint32_t i = 0; i < a->len; i++) {
+		ak_arr *r = ak_call(CLOS(1), &a->data[i], 1).p;
+		if (ak_error_pending()) {
+			ak_release(out);
+			RET_VOID;
+		}
+		if (!out) {
+			out = ak_arr_new(k, r ? r->shape : NULL, r ? r->len : 0);
+		}
+		if (r) {
+			out->h.flags |= r->h.flags;
+			if (!out->shape) out->shape = r->shape;
+			for (uint32_t j = 0; j < r->len; j++) {
+				ak_retain_val(r->data[j], k);
+				ak_arr_push(&out, r->data[j]);
+			}
+			ak_release(r);
+		}
+	}
+	RET_P(out ? out : ak_arr_new(k, NULL, 0));
+}
+
+// arr.compact_map(a, f, kind): what f gives, without its nones (an
+// optional: a reference as it is, a scalar boxed).
+static ak_val arr_compact_map(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	ak_arr *a = ARR(0);
+	ak_kind k = (ak_kind)A(2).i;
+	ak_arr *out = ak_arr_new(k, NULL, 0);
+	for (uint32_t i = 0; i < a->len; i++) {
+		ak_val r = ak_call(CLOS(1), &a->data[i], 1);
+		if (ak_error_pending()) {
+			ak_release(out);
+			RET_VOID;
+		}
+		if (!r.p) continue;
+		if (k == AK_K_REF) {
+			if (((ak_obj *)r.p)->tag == AK_TAG_STR) out->h.flags = 1;
+			if (!out->shape && ((ak_obj *)r.p)->tag == AK_TAG_STRUCT) out->shape = ((ak_struct *)r.p)->shape;
+			ak_arr_push(&out, r);
+		} else {
+			ak_arr_push(&out, ((ak_box *)r.p)->v);
+			ak_release(r.p);
+		}
+	}
+	RET_P(out);
+}
+
+// arr.reduce(a, initial, f, kind): f of initial and the first element,
+// then of that and the next, ...
+static ak_val arr_reduce(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	ak_arr *a = ARR(0);
+	ak_kind k = (ak_kind)A(3).i;
+	ak_val acc = A(1);
+	ak_retain_val(acc, k);
+	for (uint32_t i = 0; i < a->len; i++) {
+		ak_val pair[2] = {acc, a->data[i]};
+		ak_val r = ak_call(CLOS(2), pair, 2);
+		ak_release_val(acc, k);
+		if (ak_error_pending()) RET_VOID;
+		acc = r;
+	}
+	return acc;
+}
+
+// arr.unique(a): each element once, where it first comes.
+static ak_val arr_unique(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	ak_arr *a = ARR(0);
+	ak_kind k = ek(a);
+	ak_map *seen = ak_set_new(k, k == AK_K_REF);
+	ak_arr *out = ak_arr_new(k, a->shape, a->len);
+	out->h.flags = a->h.flags;
+	for (uint32_t i = 0; i < a->len; i++) {
+		ak_retain_val(a->data[i], k);
+		if (ak_set_insert(&seen, a->data[i])) {
+			ak_retain_val(a->data[i], k);
+			out->data[out->len++] = a->data[i];
+		}
+	}
+	ak_release(seen);
+	RET_P(out);
+}
+
+// arr.grouped(a, f, kind): the elements by the key f gives them, the keys
+// in the order they first come, each one's elements in theirs.
+static ak_val arr_grouped(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	ak_arr *a = ARR(0);
+	ak_kind k = ek(a), kk = (ak_kind)A(2).i;
+	ak_map *index = ak_map_new(kk, kk == AK_K_REF, AK_K_INT, NULL);  // key -> its group
+	ak_arr *groups = ak_arr_new(AK_K_REF, NULL, 0);
+	for (uint32_t i = 0; i < a->len; i++) {
+		ak_val key = ak_call(CLOS(1), &a->data[i], 1);
+		if (ak_error_pending()) {
+			ak_release(index);
+			ak_release(groups);
+			RET_VOID;
+		}
+		ak_val at;
+		if (ak_map_get(index, key, &at)) {
+			ak_release_val(key, kk);
+		} else {
+			at.i = groups->len;
+			ak_map_set(&index, key, at);
+			ak_arr *g = ak_arr_new(k, a->shape, 1);
+			g->h.flags = a->h.flags;
+			ak_arr_push(&groups, (ak_val){.p = g});
+		}
+		ak_retain_val(a->data[i], k);
+		ak_arr_push((ak_arr **)&groups->data[at.i].p, a->data[i]);
+	}
+	ak_map *out = ak_map_new(kk, kk == AK_K_REF, AK_K_REF, NULL);
+	ak_arr *keys = ak_map_keys(index);
+	for (uint32_t j = 0; j < keys->len; j++) {
+		ak_retain_val(keys->data[j], kk);
+		ak_map_set(&out, keys->data[j], (ak_val){.p = ak_retain(groups->data[j].p)});
+	}
+	ak_release(keys);
+	ak_release(index);
+	ak_release(groups);
+	RET_P(out);
+}
+
+// arr.chunked(a, size): the elements in arrays of size, the last holding
+// what's left.
+static ak_val arr_chunked(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	ak_arr *a = ARR(0);
+	int64_t size = A(1).i;
+	if (size < 1) {
+		ak_throw_msg("chunked's size is %lld: it must be 1 or more", (long long)size);
+		RET_VOID;
+	}
+	uint32_t len = a ? a->len : 0;
+	ak_arr *out = ak_arr_new(AK_K_REF, NULL, (uint32_t)((len + (uint64_t)size - 1) / (uint64_t)size));
+	for (uint64_t i = 0; i < len; i += (uint64_t)size) {
+		uint64_t end = i + (uint64_t)size < len ? i + (uint64_t)size : len;
+		out->data[out->len++].p = ak_arr_slice(a, (int64_t)i, (int64_t)end);
+	}
+	RET_P(out);
+}
+
 // Sorting: a stable merge sort, by a "less" closure, a type's compare
 // method (a closure whose int is negative for less), or, without one, by
 // the elements' natural order (numbers, strings, an enum's cases in
@@ -706,6 +925,24 @@ static ak_val arr_sort(ak_val *args, uint32_t n) {
 	RET_VOID;
 }
 
+// arr.min(a, less?, compare?) and arr.max: the least (greatest) element,
+// the first of equal ones; none when there's none. Ordered as sorted
+// orders.
+static ak_val extreme(ak_val *args, uint32_t n, bool greatest) {
+	ak_arr *a = ARR(0);
+	if (!a || !a->len) RET_P(NULL);
+	sort_ctx c = {n > 1 ? CLOS(1) : NULL, n > 2 && A(2).i, ek(a), false};
+	uint32_t best = 0;
+	for (uint32_t i = 1; i < a->len; i++) {
+		if (greatest ? lt(&c, a->data[best], a->data[i]) : lt(&c, a->data[i], a->data[best])) best = i;
+		if (c.failed) RET_VOID;
+	}
+	return opt(ek(a), a->data[best]);
+}
+
+static ak_val arr_min(ak_val *args, uint32_t n) { return extreme(args, n, false); }
+static ak_val arr_max(ak_val *args, uint32_t n) { return extreme(args, n, true); }
+
 // arr.range(from, to): [from, to). One longer than an array holds (its
 // length is a u32) throws.
 // arr.range(from, to) is from..<to; arr.range(from, to, 1) is from..to,
@@ -752,6 +989,51 @@ static ak_val map_delete(ak_val *args, uint32_t n) {
 static ak_val map_keys(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_P(ak_map_keys(MAP(0))); }
 static ak_val map_values(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_P(ak_map_values(MAP(0))); }
 static ak_val map_is_empty(ak_val *args, uint32_t n) { AK_UNUSED(n); RET_I(MAP(0)->live == 0); }
+
+static ak_kind map_key_kind(const ak_map *m) { return (ak_kind)(m->h.aux & 0xf); }
+static ak_kind map_val_kind(const ak_map *m) { return (ak_kind)(m->h.aux >> 4); }
+
+// map.map_values(m, f, kind): the same keys, in their order, each with f
+// of its value.
+static ak_val map_map_values(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	ak_map *m = MAP(0);
+	ak_kind kk = map_key_kind(m), vk = (ak_kind)A(2).i;
+	ak_map *out = ak_map_new(kk, m->h.flags & AK_MAP_STRKEYS, vk, NULL);
+	for (uint32_t i = 0; i < m->len; i++) {
+		if (m->dead[i]) continue;
+		ak_val v = ak_call(CLOS(1), &m->vals[i], 1);
+		if (ak_error_pending()) {
+			ak_release(out);
+			RET_VOID;
+		}
+		ak_retain_val(m->keys[i], kk);
+		ak_map_set(&out, m->keys[i], v);
+	}
+	RET_P(out);
+}
+
+// map.filter(m, pred): the entries pred(key, value) is true of.
+static ak_val map_filter(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	ak_map *m = MAP(0);
+	ak_kind kk = map_key_kind(m), vk = map_val_kind(m);
+	ak_map *out = ak_map_new(kk, m->h.flags & AK_MAP_STRKEYS, vk, m->vshape);
+	for (uint32_t i = 0; i < m->len; i++) {
+		if (m->dead[i]) continue;
+		ak_val pair[2] = {m->keys[i], m->vals[i]};
+		ak_val r = ak_call(CLOS(1), pair, 2);
+		if (ak_error_pending()) {
+			ak_release(out);
+			RET_VOID;
+		}
+		if (!r.i) continue;
+		ak_retain_val(m->keys[i], kk);
+		ak_retain_val(m->vals[i], vk);
+		ak_map_set(&out, m->keys[i], m->vals[i]);
+	}
+	RET_P(out);
+}
 
 // ---- Sets (rt.h's ak_set_*) ----
 
@@ -1363,6 +1645,9 @@ const ak_lib_entry ak_lib[] = {
 	{"bytes.concat", bytes_concat},
 	{"bytes.str", bytes_str},
 	{"str.fixed", str_from_float_digits},
+	{"str.to_int_radix", str_to_int_radix},
+	{"str.reversed", str_reversed},
+	{"int.to_string", int_to_string},
 
 	{"arr.push", arr_push},
 	{"arr.insert", arr_insert},
@@ -1389,12 +1674,22 @@ const ak_lib_entry ak_lib[] = {
 	{"arr.sorted", arr_sorted},
 	{"arr.sort", arr_sort},
 	{"arr.range", arr_range},
+	{"arr.flat_map", arr_flat_map},
+	{"arr.compact_map", arr_compact_map},
+	{"arr.reduce", arr_reduce},
+	{"arr.unique", arr_unique},
+	{"arr.grouped", arr_grouped},
+	{"arr.chunked", arr_chunked},
+	{"arr.min", arr_min},
+	{"arr.max", arr_max},
 
 	{"map.has", map_has},
 	{"map.delete", map_delete},
 	{"map.keys", map_keys},
 	{"map.values", map_values},
 	{"map.is_empty", map_is_empty},
+	{"map.map_values", map_map_values},
+	{"map.filter", map_filter},
 	{"set.of", set_of},
 	{"set.from", set_from},
 	{"set.has", set_has},

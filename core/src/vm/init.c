@@ -37,6 +37,8 @@ void ak_vm_init(void) {
 	ak_ffi_init();
 	ak_vm_builtins_init();
 	ak_vm_json_init();
+	extern void ak_vm_each_init(void);
+	ak_vm_each_init();
 	extern void ak_native_vm_init(void);
 	ak_native_vm_init();
 	extern void ak_sqlite_init(void);

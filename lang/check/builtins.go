@@ -118,8 +118,25 @@ func (c *Checker) builtinCall(e *syntax.CallExpr, b *Builtin, want Type) Type {
 		call.Result = Void
 		c.callEffects(e, "sleep", true, false)
 	case BAll, BRace:
+		// all(items, f, limit:): f of each item, at once; otherwise the
+		// calls (or tasks) given.
+		var first Type
+		if b.ID == BAll && len(list) >= 2 && list[0].Label == nil {
+			c.inAwait++
+			first = c.expr(list[0].Value, nil)
+			c.inAwait--
+			// An async call's result is the calls form's, whatever it is.
+			ce, isCall := unparen(list[0].Value).(*syntax.CallExpr)
+			asyncCall := isCall && c.info.Calls[ce] != nil && c.isAsyncCall(c.info.Calls[ce])
+			if a, ok := first.(*Array); ok && !asyncCall {
+				if _, tasks := a.Elem.(*Task); !tasks {
+					call.Result = c.allEach(e, a, call, want)
+					break
+				}
+			}
+		}
 		call.Args = positional(-1, "")
-		call.Result = c.allRace(e, b, call.Args)
+		call.Result = c.allRace(e, b, call.Args, first)
 		c.callEffects(e, b.name, true, false)
 	case BMount:
 		// mount(view, provide: store, platform: .android, at: "/inbox"):
@@ -418,16 +435,19 @@ func (c *Checker) sameNumbers(e *syntax.CallExpr, args []syntax.Expr, want Type)
 
 // allRace checks all(…) and race(…): calls of async functions, or
 // tasks, started at once.
-func (c *Checker) allRace(e *syntax.CallExpr, b *Builtin, args []syntax.Expr) Type {
+func (c *Checker) allRace(e *syntax.CallExpr, b *Builtin, args []syntax.Expr, first Type) Type {
 	if len(args) == 0 {
 		c.errorf(e, diag.NotAsyncCall, "%s takes the calls it runs at once: %s(f(), g())", b.name, b.name)
 		return Invalid
 	}
 	var types []Type
-	for _, a := range args {
-		c.inAwait++
-		t := c.expr(a, nil)
-		c.inAwait--
+	for i, a := range args {
+		t := first // the first argument, checked already
+		if i > 0 || t == nil {
+			c.inAwait++
+			t = c.expr(a, nil)
+			c.inAwait--
+		}
 		if tk, ok := t.(*Task); ok {
 			t = tk.Elem
 		} else if arr, ok := t.(*Array); ok && len(args) == 1 {
@@ -469,6 +489,46 @@ func (c *Checker) allRace(e *syntax.CallExpr, b *Builtin, args []syntax.Expr) Ty
 		return Void
 	}
 	return &Tuple{types}
+}
+
+// allEach checks all(items, f, limit:): f, an async function, called
+// with each of items at once (limit at a time, when it's more than 0),
+// its results in items' order. items is checked already: an array of
+// type items.
+func (c *Checker) allEach(e *syntax.CallExpr, items *Array, call *Call, want Type) Type {
+	params := []*Param{
+		{Name: "items", Type: items},
+		{Name: "each", Type: &FuncType{Params: []Type{items.Elem}, Result: tvU, Async: true, Throws: true}},
+		{Name: "limit", Type: Int, Default: zeroLit},
+	}
+	list := e.Args.List
+	if list[1].Label != nil && list[1].Label.Name != "each" && list[1].Label.Name != "limit" {
+		c.errorf(list[1].Label, diag.ArgumentLabel, "all(items, f, limit:) has no argument %s", list[1].Label.Name)
+	}
+	// items is the first argument, checked already: the rest are
+	// matched with the other parameters.
+	rest := c.matchArgList(e, list[1:], params[1:], "all")
+	args := append([]syntax.Expr{list[0].Value}, rest...)
+	s := Subst{}
+	free := map[*TypeParam]bool{tvU: true}
+	c.inferArgs(append([]syntax.Expr{nil}, rest...), params, s, free, nil, &Array{tvU}, "all")
+	c.typeDefaults(args, params)
+	if args[1] == nil {
+		c.errorf(e, diag.ArgumentCount, "all(items, f) takes the async function it calls with each item: all(urls, u => fetch(u))")
+	}
+	u := s[tvU]
+	if u == nil {
+		u = Invalid
+	}
+	call.Args, call.Params, call.Each = args, params, true
+	call.Bound = map[string]Type{"U": u}
+	throws := c.closuresThrow(args, params)
+	call.Throws = throws
+	c.callEffects(e, "all", true, throws)
+	if u == Void {
+		return Void
+	}
+	return &Array{u}
 }
 
 func unparen(e syntax.Expr) syntax.Expr {

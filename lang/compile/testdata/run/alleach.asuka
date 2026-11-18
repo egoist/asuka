@@ -1,0 +1,118 @@
+// all(items, f, limit:): f, an async function, called with each item at
+// once (limit at a time), its results in the items' order; a failure
+// cancels the others, which stop (their defers run) before it's thrown.
+
+async fn double(i: int) throws -> int {
+  await sleep(10ms * (5 - i))
+  if i == 99 { throw Error("bad {i}") }
+  return i * 2
+}
+
+test "each item's result, in order" {
+  print(try await all([1, 2, 3, 4], x => try await double(x)))
+  print(try await all([1, 2, 3, 4], double, limit: 2))
+  print(await all(["a", "b"], async s => s.upper()))
+  let nothing: [int] = []
+  print(try await all(nothing, double))
+  await all([1, 2], async x => { print("void {x}") })
+}
+
+test "at most limit at once" {
+  var running = 0
+  var most = 0
+  let rs = await all([1, 2, 3, 4, 5, 6, 7], async x => {
+    running += 1
+    most = max(most, running)
+    await sleep(10ms)
+    running -= 1
+    return x
+  }, limit: 3)
+  print("{rs.count()} {most}")
+  most = 0
+  let one = await all([3, 1, 2], async x => {
+    running += 1
+    most = max(most, running)
+    await sleep(10ms * x)
+    running -= 1
+    return x * 10
+  }, limit: 1)
+  print("{one} {most}")
+}
+
+async fn slow(i: int) throws -> int {
+  defer { print("defer {i}") }
+  if i == 2 {
+    await sleep(5ms)
+    throw Error("two failed")
+  }
+  await sleep(1s)
+  print("finished {i}")
+  return i
+}
+
+test "a failure cancels the rest" {
+  do {
+    print(try await all([1, 2, 3, 4, 5], slow, limit: 3))
+  } catch e {
+    print("caught {e.message}")
+  }
+}
+
+store Crawler {
+  state done = 0
+
+  task {
+    await all([1, 2, 3, 4, 5, 6], async i => {
+      defer { print("crawl {i} stopped") }
+      await sleep(10ms)
+      done += 1
+    }, limit: 2)
+    print("never: the store went first")
+  }
+}
+
+test "its owner going cancels it" {
+  let c = Crawler()
+  await sleep(15ms)
+  print("done: {c.done}")
+}
+
+async fn letters() -> [string] {
+  await sleep(1ms)
+  return ["a", "b"]
+}
+
+test "calls that return arrays are the calls form" {
+  let (xs, n) = try await all(letters(), double(3))
+  print("{xs} {n}")
+}
+
+test "a negative limit" {
+  print(await all([1], async x => x, limit: -1))
+}
+
+// Output:
+// [2,4,6,8]
+// [2,4,6,8]
+// ["A","B"]
+// []
+// void 1
+// void 2
+// ok each item's result, in order
+// 7 3
+// [30,10,20] 1
+// ok at most limit at once
+// defer 2
+// defer 1
+// defer 3
+// caught two failed
+// ok a failure cancels the rest
+// crawl 1 stopped
+// crawl 2 stopped
+// done: 2
+// crawl 4 stopped
+// crawl 3 stopped
+// ok its owner going cancels it
+// ["a","b"] 6
+// ok calls that return arrays are the calls form
+// FAIL a negative limit: all's limit is -1: it must be 0 (no limit) or more

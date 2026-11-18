@@ -99,7 +99,7 @@ func TestHover(t *testing.T) {
 		{"style: ta|g(.red)", []string{"style tag", "A tag's look."}},
 		{"on chan|ge(on)", []string{"event change(on: bool)"}},
 		{"emit tog|gle(on)", []string{"event toggle(on: bool)", "The toggle was switched."}},
-		{"todos.cou|nt(where:", []string{"fn [model.Todo].count(where: fn(model.Todo) -> bool) -> int", "The number of elements the predicate is true of."}},
+		{"todos.cou|nt(where:", []string{"fn [model.Todo].count(where: fn(model.Todo) throws -> bool) -> int", "The number of elements the predicate is true of."}},
 		{"let remai|ning", []string{"let remaining: int"}},
 		{"model.mat|ches(todo", []string{"pub fn matches(t: model.Todo, f: model.Filter) -> bool", "Whether a todo shows under a filter."}},
 		{"import ./mo|del\n", []string{"package ./model"}},
@@ -447,7 +447,7 @@ func TestSymbolsAndSignatures(t *testing.T) {
 	}{
 		{"model.matches(todo, |filter)", "fn matches(t: model.Todo, f: model.Filter) -> bool", 1},
 		{"Todo(id: next, |title: title)", "Todo(id: int, title: string, done: bool = false)", 1},
-		{"todos.count(|where:", "fn [model.Todo].count(where: fn(model.Todo) -> bool) -> int", 0},
+		{"todos.count(|where:", "fn [model.Todo].count(where: fn(model.Todo) throws -> bool) -> int", 0},
 		{"add(|todo.label())", "fn TodoApp.add(title: string)", 0},
 	} {
 		var sh *SignatureHelp

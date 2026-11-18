@@ -96,6 +96,9 @@ type Checker struct {
 	// The closures whose async-ness or throws came from their bodies, by
 	// their types: their calls' errors say what made them so.
 	inferredFx map[Type]*inferredFx
+	// lambdaThrew: whether each closure's body throws, for the built-in
+	// methods that throw when their closure does (Method.Rethrows).
+	lambdaThrew map[*syntax.LambdaExpr]bool
 }
 
 // NewChecker makes a checker and checks the prelude with it.

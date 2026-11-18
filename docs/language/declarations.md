@@ -90,7 +90,9 @@ struct Money {
 let price: Money = .of(dollars: 4, cents: 50)
 ```
 
-A struct may take type parameters, inferred where it's made:
+A struct may take type parameters, inferred where it's made, or
+written out after its name, as a generic function's are (a store's
+too):
 
 ```asuka check
 struct Page<T> {
@@ -99,6 +101,7 @@ struct Page<T> {
 }
 
 let page = Page(items: [1, 2, 3])     // a Page<int>
+let empty = Page<string>(items: [])   // written out, where nothing else says it
 ```
 
 A struct pattern matches a struct's fields by their names, in `match`

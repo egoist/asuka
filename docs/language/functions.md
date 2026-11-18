@@ -44,6 +44,16 @@ await refresh()
 When a call misses its `await` or its `try` because of what a closure's
 body does, the error says where in the body.
 
+The built-in methods that call a closure at once, an array's `map`,
+`filter`, `reduce`, `sorted(by:)` and the rest, take one that throws: the
+call then throws what the closure throws, and needs its `try`, as
+Swift's `rethrows` does. With a closure that doesn't throw, it doesn't.
+
+```asuka
+let counts = try lines.map(l => try parse(l))
+let sorted = try names.sorted(by: (a, b) => try rank(a) < try rank(b))
+```
+
 A `fn` may be declared in a function's, a handler's, a closure's or a
 method's body too. It sees what's around it as a closure does, and it
 may call itself and the fns declared next to it in its block (and they

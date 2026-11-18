@@ -72,7 +72,7 @@ struct Money {
 let price: Money = .of(dollars: 4, cents: 50)
 ```
 
-结构体可以带类型参数，创建时会自动推断：
+结构体可以带类型参数，创建时会自动推断；也可以像泛型函数那样，把类型参数写在名字后面（store 也一样）：
 
 ```asuka check
 struct Page<T> {
@@ -81,6 +81,7 @@ struct Page<T> {
 }
 
 let page = Page(items: [1, 2, 3])     // 一个 Page<int>
+let empty = Page<string>(items: [])   // 没有别的信息可推断时，直接写出来
 ```
 
 在 `match` 和 `if let` 里，结构体模式按字段名匹配结构体的字段：单写一个 `y` 会绑定字段 `y`，`y: py` 把它绑定为 `py`，`x: 0` 匹配一个值，没有写出的字段匹配任何值。模式可以嵌套：

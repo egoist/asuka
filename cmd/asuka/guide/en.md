@@ -507,17 +507,61 @@ that change their value (`push`, `insert`, `removeAt`, `removeWhere`,
 
 | Type | Methods |
 |---|---|
-| `[T]` | `count()`, `count(where)`, `isEmpty()`, `first()`, `last()`, `get(i)` (a `T?`), `push(x)`, `insert(x, at: i)`, `removeAt(i)`, `removeWhere(p)`, `pop()`, `clear()`, `map(f)`, `filter(p)`, `any(p)`, `all(p)`, `index(p)` (an `int?`), `find(p)`, `contains(x)`, `sum()`, `reversed()`, `slice(from, to)` (`to` left out: the end), `prefix(n)`, `suffix(n)`, `sorted()`, `sorted(by)`, `sort()`, `sort(by)`, `enumerated()`, `joined(separator:)` (of strings), `+` |
+| `[T]` | `count()`, `count(where)`, `isEmpty()`, `first()`, `last()`, `get(i)` (a `T?`), `push(x)`, `insert(x, at: i)`, `removeAt(i)`, `removeWhere(p)`, `pop()`, `clear()`, `map(f)`, `flatMap(f)` (the arrays `f` gives, one after another), `compactMap(f)` (what `f` gives, without its nones), `filter(p)`, `reduce(initial, f)`, `any(p)`, `all(p)`, `index(p)` (an `int?`), `find(p)`, `contains(x)`, `sum()`, `min()`, `max()` (a `T?`; `min(by:)`, `max(by:)` with a less-than), `unique()`, `grouped(by: f)` (a `[K: [T]]`), `chunked(n)`, `zip(other)` (pairs, as long as the shorter), `reversed()`, `slice(from, to)` (`to` left out: the end), `prefix(n)`, `suffix(n)`, `sorted()`, `sorted(by)`, `sort()`, `sort(by)`, `enumerated()`, `joined(separator:)` (of strings), `+` |
 | `Set<T>` | `count()`, `isEmpty()`, `contains(x)`, `insert(x)` (whether it was new), `remove(x)` (whether it was there), `union(s)`, `intersection(s)`, `subtracting(s)`, `isSubset(of: s)`, `isSuperset(of: s)`; `Set(xs)` is an array's distinct elements, `Set<T>()` none |
-| `[K: V]` | `m[k]` (a `V?`), `m[k] = v`, `count()`, `isEmpty()`, `has(k)`, `get(k)`, `remove(k)`, `keys()`, `values()` (in insertion order) |
-| `string` | `count()` (characters), `byteCount()`, `isEmpty()`, `upper()`, `lower()`, `trim()`, `trimStart()`, `trimEnd()`, `trimPrefix(s)`, `trimSuffix(s)`, `contains(s)`, `hasPrefix(s)`, `hasSuffix(s)`, `replace(old, new, count:)` (every one unless count says), `split(sep, count:)`, `fields()` (the words), `lines()`, `find(s)`, `findLast(s)`, `findAny(chars)` (byte offsets, or none), `slice(from, to)` (characters), `byteSlice(from, to)` (bytes: the offsets find gives), `padStart(width, with:)`, `padEnd(width, with:)`, `toInt()`, `toFloat()`, `repeat(n)`, `chars()`, `bytes()`, `+` |
+| `[K: V]` | `m[k]` (a `V?`), `m[k] = v`, `count()`, `isEmpty()`, `has(k)`, `get(k)`, `remove(k)`, `keys()`, `values()` (in insertion order), `mapValues(f)`, `filter((k, v) => …)` |
+| `string` | `count()` (characters), `byteCount()`, `isEmpty()`, `upper()`, `lower()`, `trim()`, `trimStart()`, `trimEnd()`, `trimPrefix(s)`, `trimSuffix(s)`, `contains(s)`, `hasPrefix(s)`, `hasSuffix(s)`, `replace(old, new, count:)` (every one unless count says), `split(sep, count:)`, `fields()` (the words), `lines()`, `find(s)`, `findLast(s)`, `findAny(chars)` (byte offsets, or none), `slice(from, to)` (characters), `byteSlice(from, to)` (bytes: the offsets find gives), `padStart(width, with:)`, `padEnd(width, with:)`, `toInt()`, `toInt(radix:)`, `toFloat()`, `repeat(n)`, `chars()`, `reversed()`, `bytes()`, `+` |
 | `bytes` | `b[i]` (an `int`, 0 to 255; out of range is an error), `count()`, `isEmpty()`, `get(i)` (an `int?`), `slice(from, to)`, `concat(b)`, `string()` (UTF-8; what isn't becomes U+FFFD), `hex()` and `hex(separator)` (`"04 a1"`); `bytes()` is none, `bytes([0x04, 0xa1])` those, `s.bytes()` a string's UTF-8 |
-| `int` | `float()`, `abs()`, `padded(width)` (`7.padded(2)` is `"07"`), `addingChecked(o)`, `subtractingChecked(o)`, `multipliedChecked(o)` (an `int?`: none on overflow) |
+| `int` | `float()`, `abs()`, `toString(radix:)` (`255.toString(radix: 16)` is `"ff"`), `padded(width)` (`7.padded(2)` is `"07"`), `addingChecked(o)`, `subtractingChecked(o)`, `multipliedChecked(o)` (an `int?`: none on overflow) |
 | `float` | `fixed(digits)`, `rounded()`, `floor()`, `ceil()`, `int()` (toward zero), `abs()` |
 | `Color` | `opacity(a)`: drawn at a times its opacity (a semantic color stays semantic); `hex()` (`"#0a84ff"`; a semantic color, its name: `".accent"`) |
 | `Duration` | `nanoseconds()`, `milliseconds()` (ints), `seconds()`, `minutes()`, `hours()` (floats), `rounded(to:)`, `truncated(to:)`, `+`, `-`, `* n` (an int or a float: `1.5 * 1h`), `/ n`, `/ d` (another Duration: how many times it goes in, a float) |
 | `Length` | `* n` (`width: 50% * 2`, a point length scaled) |
 | `T?` | `isNone()`, `isSome()` |
+
+The methods that call a function you give them (`map`, `filter`,
+`reduce`, `sorted(by:)`, `grouped(by:)`, a map's `mapValues`...) take
+one that throws, and then throw what it throws: the call is a `try`.
+Without a throwing function, they don't throw.
+
+```asuka
+fn port(text: string) throws -> int = text.toInt() ?? throw Error("not a port: {text}")
+
+fn ports(lines: [string]) throws -> [int] = try lines.map(l => try port(l))
+```
+
+A few of them, at work:
+
+```asuka
+struct Sale {
+  region: string
+  amount: int
+}
+
+fn report(sales: [Sale]) -> [string] {
+  let byRegion = sales.grouped(by: s => s.region)
+  let totals = byRegion.mapValues(ss => ss.map(s => s.amount).sum())
+  let best = sales.max(by: (a, b) => a.amount < b.amount)
+  let codes = ["7", "x", "42"].compactMap(c => c.toInt())    // [7, 42]
+  let pages = sales.chunked(50)                               // [[Sale]], 50 each
+  var out = ["{best?.region ?? "none"} sold the most"]
+  for (region, total) in totals { out.push("{region}: {total}") }
+  for (i, page) in pages.enumerated() { out.push("page {i + 1}: {page.count()}") }
+  out.push("{codes.reduce(0, (sum, c) => sum + c)}")
+  return out
+}
+```
+
+`unique()` keeps each element once, where it first comes, and
+`grouped(by:)` keeps the keys in the order they first come: both need
+`Hashable` values (the keys, for `grouped`). `min()` and `max()` order
+as `sorted()` does, and give the first of equal elements. `chunked(n)`
+of an `n` under 1 is an error, as `xs[i]` out of range is.
+
+`toInt(radix:)` reads a whole string in a radix from 2 to 36, letters
+in either case and an optional sign first (`"ff".toInt(radix: 16)` is
+255, `"-101".toInt(radix: 2)` is -5), or gives none; `toString(radix:)`
+writes one, lowercase. A radix outside 2 to 36 is an error.
 
 `min`, `max`, `abs`, `float(n)` and `int(x)` are functions;
 `std/math` has the rest (`math.sqrt`, `math.pow`, `math.pi`, ...).
@@ -653,7 +697,9 @@ struct Money {
 let price: Money = .of(dollars: 4, cents: 50)
 ```
 
-A struct may take type parameters, inferred where it's made:
+A struct may take type parameters, inferred where it's made, or
+written out after its name, as a generic function's are (a store's
+too):
 
 ```asuka
 struct Page<T> {
@@ -662,6 +708,7 @@ struct Page<T> {
 }
 
 let page = Page(items: [1, 2, 3])     // a Page<int>
+let empty = Page<string>(items: [])   // written out, where nothing else says it
 ```
 
 A struct pattern matches a struct's fields by their names, in `match`
@@ -871,6 +918,16 @@ await refresh()
 
 When a call misses its `await` or its `try` because of what a closure's
 body does, the error says where in the body.
+
+The built-in methods that call a closure at once, an array's `map`,
+`filter`, `reduce`, `sorted(by:)` and the rest, take one that throws: the
+call then throws what the closure throws, and needs its `try`, as
+Swift's `rethrows` does. With a closure that doesn't throw, it doesn't.
+
+```asuka
+let counts = try lines.map(l => try parse(l))
+let sorted = try names.sorted(by: (a, b) => try rank(a) < try rank(b))
+```
 
 A `fn` may be declared in a function's, a handler's, a closure's or a
 method's body too. It sees what's around it as a closure does, and it
@@ -1733,6 +1790,23 @@ async fn loadThread(id: string) throws -> Thread {
   it holds it (`try await register(); defer { release() }; await
   never()`). What a component holds without awaiting is a `cleanup { }`
   ([Cleanups](https://asuka.egoist.dev/docs/language/components#cleanups)).
+- `all(items, f, limit:)` calls `f`, an async function, with each of
+  `items` at once, and gives their results in the items' order: `let
+  pages = try await all(urls, u => try await http.get(u))`. `limit: 8`
+  runs at most 8 at a time, the next starting as one finishes; left out
+  (or 0), all of them start at once. As `all(a, b)`, it's structured: the
+  first that throws cancels the others and starts no more, and it throws
+  once they've stopped; the task that awaits it going cancels them all.
+  Each runs on the main thread as a task of its own, so it can wait on
+  the network or a file and change state; work for another thread is
+  `spawn`'s, which `f` may await.
+
+  ```asuka
+  async fn fetchAll(urls: [string]) throws -> [string] {
+    let pages = try await all(urls, u => try await http.get(u), limit: 4)
+    return pages.map(p => p.text())
+  }
+  ```
 - `spawn { … }` runs a block on another thread, for work that would hold
   the main thread up (parsing, image processing). It may use values only,
   not state, stores, views, native objects or C pointers, nor a file's

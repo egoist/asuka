@@ -29,6 +29,23 @@ async fn loadThread(id: string) throws -> Thread {
   it holds it (`try await register(); defer { release() }; await
   never()`). What a component holds without awaiting is a `cleanup { }`
   ([Cleanups](components.md#cleanups)).
+- `all(items, f, limit:)` calls `f`, an async function, with each of
+  `items` at once, and gives their results in the items' order: `let
+  pages = try await all(urls, u => try await http.get(u))`. `limit: 8`
+  runs at most 8 at a time, the next starting as one finishes; left out
+  (or 0), all of them start at once. As `all(a, b)`, it's structured: the
+  first that throws cancels the others and starts no more, and it throws
+  once they've stopped; the task that awaits it going cancels them all.
+  Each runs on the main thread as a task of its own, so it can wait on
+  the network or a file and change state; work for another thread is
+  `spawn`'s, which `f` may await.
+
+  ```asuka
+  async fn fetchAll(urls: [string]) throws -> [string] {
+    let pages = try await all(urls, u => try await http.get(u), limit: 4)
+    return pages.map(p => p.text())
+  }
+  ```
 - `spawn { … }` runs a block on another thread, for work that would hold
   the main thread up (parsing, image processing). It may use values only,
   not state, stores, views, native objects or C pointers, nor a file's

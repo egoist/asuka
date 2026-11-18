@@ -37,7 +37,7 @@ component Row(title: string) {
 		{"let b = Box(|)", "store Box<T>(initial: T)", "initial: T"},
 		{"View { on press { emit archive(id: |) } }", "event archive(id: string)", "id: string"},
 		{"View { Text(title) { style: [chip(tint: |)] } }", "style chip(tint: Color = .blue)", "tint: Color = .blue"},
-		{"let r = [1, 2].map(|)", "fn [int].map(transform: fn(int) -> U) -> [U]", "transform: fn(int) -> U"},
+		{"let r = [1, 2].map(|)", "fn [int].map(transform: fn(int) throws -> U) -> [U]", "transform: fn(int) throws -> U"},
 	} {
 		text := strings.Replace(base, "CURSOR", tc.at, 1)
 		i := strings.Index(text, "|")

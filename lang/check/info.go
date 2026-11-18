@@ -208,6 +208,12 @@ type Call struct {
 	Name  string // CallIface, CallNative: the method's name
 	// Awaited: animate(…) awaited, which returns once it's complete.
 	Awaited bool
+	// Throws: a built-in method's call that throws because a closure it's
+	// given does (Method.Rethrows), or all(items, f)'s when f does.
+	Throws bool
+	// Each: all(items, f, limit:), f called with each item; Args and
+	// Params are items, f and limit, Bound["U"] f's result.
+	Each bool
 	// TrKey is CallTr's message; Args are its arguments, by its Params.
 	TrKey *CatalogKey
 }

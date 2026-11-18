@@ -233,6 +233,29 @@ test "a generic calls itself with a closure of its type" {
   print(applied("a", x => x + "b", 2))
 }
 
+// Type arguments written out where nothing else says them.
+struct Stack<T> {
+  items: [T] = []
+
+  mut fn push(x: T) { items.push(x) }
+  mut fn pop() -> T? = items.pop()
+}
+
+store Holder<T>(initial: [T]) {
+  pub state items: [T] = initial
+}
+
+test "a generic type's arguments, written out" {
+  var s = Stack<int>()
+  s.push(1)
+  s.push(2)
+  print(s.pop() ?? 0)
+  let words = Stack<string>(items: ["a"])
+  print(words.items)
+  let h = Holder<int>(initial: [])
+  print(h.items.count())
+}
+
 // Output:
 // 4
 // x
@@ -289,3 +312,7 @@ test "a generic calls itself with a closure of its type" {
 // 4
 // abb
 // ok a generic calls itself with a closure of its type
+// 2
+// ["a"]
+// 0
+// ok a generic type's arguments, written out

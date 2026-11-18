@@ -29,6 +29,11 @@ type Method struct {
 	// passed, copying first when it's shared).
 	Inout  bool
 	Throws bool
+	// Rethrows: the call throws when a closure it's given does (its
+	// function parameters say throws; the builtin calls them at once and
+	// passes their error on), as Swift's rethrows: xs.map(s => try p(s))
+	// is a try.
+	Rethrows bool
 	// Fails: may raise a runtime error (as an index out of range does),
 	// which needs no try.
 	Fails bool
@@ -66,7 +71,7 @@ type Method struct {
 var Methods = []*Method{
 	// Arrays.
 	{Recv: "array", Name: "count", Sig: "() -> int", Special: "len", Doc: "the number of elements"},
-	{Recv: "array", Name: "count", Sig: "(where: fn(T) -> bool) -> int", Builtin: "arr.count", Doc: "the number of elements the predicate is true of"},
+	{Recv: "array", Name: "count", Sig: "(where: fn(T) throws -> bool) -> int", Builtin: "arr.count", Rethrows: true, Doc: "the number of elements the predicate is true of"},
 	{Recv: "array", Name: "isEmpty", Sig: "() -> bool", Builtin: "arr.is_empty"},
 	{Recv: "array", Name: "first", Sig: "() -> T?", Builtin: "arr.first"},
 	{Recv: "array", Name: "last", Sig: "() -> T?", Builtin: "arr.last"},
@@ -74,26 +79,37 @@ var Methods = []*Method{
 	{Recv: "array", Name: "push", Sig: "(value: T)", Builtin: "arr.push", Inout: true},
 	{Recv: "array", Name: "insert", Sig: "(value: T, at: int)", Builtin: "arr.insert", Inout: true, Order: []int{1, 0}},
 	{Recv: "array", Name: "removeAt", Sig: "(index: int) -> T", Builtin: "arr.remove_at", Inout: true, Fails: true, Doc: "removes and returns the element at index; out of range is an error, as xs[i] is"},
-	{Recv: "array", Name: "removeWhere", Sig: "(where: fn(T) -> bool) -> int", Builtin: "arr.remove_where", Inout: true, Doc: "removes the elements the predicate is true of; how many"},
+	{Recv: "array", Name: "removeWhere", Sig: "(where: fn(T) throws -> bool) -> int", Builtin: "arr.remove_where", Inout: true, Rethrows: true, Doc: "removes the elements the predicate is true of; how many"},
 	{Recv: "array", Name: "pop", Sig: "() -> T?", Builtin: "arr.pop", Inout: true},
 	{Recv: "array", Name: "clear", Sig: "()", Builtin: "arr.clear", Inout: true},
-	{Recv: "array", Name: "map", Sig: "(transform: fn(T) -> U) -> [U]", Builtin: "arr.map", Extra: "kindU"},
-	{Recv: "array", Name: "filter", Sig: "(where: fn(T) -> bool) -> [T]", Builtin: "arr.filter"},
-	{Recv: "array", Name: "any", Sig: "(where: fn(T) -> bool) -> bool", Builtin: "arr.any"},
-	{Recv: "array", Name: "all", Sig: "(where: fn(T) -> bool) -> bool", Builtin: "arr.all"},
-	{Recv: "array", Name: "index", Sig: "(where: fn(T) -> bool) -> int?", Builtin: "arr.index"},
-	{Recv: "array", Name: "find", Sig: "(where: fn(T) -> bool) -> T?", Builtin: "arr.find"},
+	{Recv: "array", Name: "map", Sig: "(transform: fn(T) throws -> U) -> [U]", Builtin: "arr.map", Extra: "kindU", Rethrows: true},
+	{Recv: "array", Name: "flatMap", Sig: "(transform: fn(T) throws -> [U]) -> [U]", Builtin: "arr.flat_map", Extra: "kindU", Rethrows: true, Doc: "the arrays transform gives, one after another"},
+	{Recv: "array", Name: "compactMap", Sig: "(transform: fn(T) throws -> U?) -> [U]", Builtin: "arr.compact_map", Extra: "kindU", Rethrows: true, Doc: "what transform gives, without its nones: lines.compactMap(l => l.toInt())"},
+	{Recv: "array", Name: "filter", Sig: "(where: fn(T) throws -> bool) -> [T]", Builtin: "arr.filter", Rethrows: true},
+	{Recv: "array", Name: "reduce", Sig: "(initial: U, combine: fn(U, T) throws -> U) -> U", Builtin: "arr.reduce", Extra: "kindU", Rethrows: true, Doc: "combine of initial and the first element, then of that and the next, and so on: xs.reduce(0, (sum, x) => sum + x)"},
+	{Recv: "array", Name: "any", Sig: "(where: fn(T) throws -> bool) -> bool", Builtin: "arr.any", Rethrows: true},
+	{Recv: "array", Name: "all", Sig: "(where: fn(T) throws -> bool) -> bool", Builtin: "arr.all", Rethrows: true},
+	{Recv: "array", Name: "index", Sig: "(where: fn(T) throws -> bool) -> int?", Builtin: "arr.index", Rethrows: true},
+	{Recv: "array", Name: "find", Sig: "(where: fn(T) throws -> bool) -> T?", Builtin: "arr.find", Rethrows: true},
 	{Recv: "array", Name: "contains", Sig: "(value: T) -> bool", Builtin: "arr.contains", Needs: "Equatable"},
 	{Recv: "array", Name: "sum", Sig: "() -> T", Builtin: "arr.sum", Needs: "number"},
+	{Recv: "array", Name: "min", Sig: "() -> T?", Builtin: "arr.min", Needs: "Comparable", Doc: "the least element (the first of equal ones), none when it's empty"},
+	{Recv: "array", Name: "min", Sig: "(by: fn(T, T) throws -> bool) -> T?", Builtin: "arr.min", Rethrows: true, Doc: "the least element by a less-than: (a, b) => a.age < b.age"},
+	{Recv: "array", Name: "max", Sig: "() -> T?", Builtin: "arr.max", Needs: "Comparable", Doc: "the greatest element (the first of equal ones), none when it's empty"},
+	{Recv: "array", Name: "max", Sig: "(by: fn(T, T) throws -> bool) -> T?", Builtin: "arr.max", Rethrows: true, Doc: "the greatest element by a less-than: (a, b) => a.age < b.age"},
+	{Recv: "array", Name: "unique", Sig: "() -> [T]", Builtin: "arr.unique", Needs: "Hashable", Doc: "each element once, where it first comes"},
+	{Recv: "array", Name: "grouped", Sig: "(by: fn(T) throws -> U) -> [U: [T]]", Builtin: "arr.grouped", Extra: "kindU", Needs: "HashableU", Rethrows: true, Doc: "the elements by the key by gives them, in their order: words.grouped(by: w => w.count())"},
+	{Recv: "array", Name: "chunked", Sig: "(size: int) -> [[T]]", Builtin: "arr.chunked", Fails: true, Doc: "the elements in arrays of size, the last holding what's left; a size under 1 is an error"},
+	{Recv: "array", Name: "zip", Sig: "(other: [U]) -> [(T, U)]", Special: "zip", Doc: "pairs of this array's and other's elements, as long as the shorter: for (name, age) in names.zip(ages)"},
 	{Recv: "array", Name: "reversed", Sig: "() -> [T]", Builtin: "arr.reversed"},
 	{Recv: "array", Name: "slice", Sig: "(from: int, to: int) -> [T]", Builtin: "arr.slice", Doc: "the elements from index from up to to, clamped"},
 	{Recv: "array", Name: "slice", Sig: "(from: int) -> [T]", Builtin: "arr.slice", Doc: "the elements from index from to the end"},
 	{Recv: "array", Name: "prefix", Sig: "(count: int) -> [T]", Builtin: "arr.prefix", Doc: "the first count elements (all of them when there are fewer)"},
 	{Recv: "array", Name: "suffix", Sig: "(count: int) -> [T]", Builtin: "arr.suffix", Doc: "the last count elements (all of them when there are fewer)"},
 	{Recv: "array", Name: "sorted", Sig: "() -> [T]", Builtin: "arr.sorted", Needs: "Comparable"},
-	{Recv: "array", Name: "sorted", Sig: "(by: fn(T, T) -> bool) -> [T]", Builtin: "arr.sorted", Doc: "sorted by a less-than: (a, b) => a.age < b.age; stable"},
+	{Recv: "array", Name: "sorted", Sig: "(by: fn(T, T) throws -> bool) -> [T]", Builtin: "arr.sorted", Rethrows: true, Doc: "sorted by a less-than: (a, b) => a.age < b.age; stable"},
 	{Recv: "array", Name: "sort", Sig: "()", Builtin: "arr.sort", Inout: true, Needs: "Comparable"},
-	{Recv: "array", Name: "sort", Sig: "(by: fn(T, T) -> bool)", Builtin: "arr.sort", Inout: true},
+	{Recv: "array", Name: "sort", Sig: "(by: fn(T, T) throws -> bool)", Builtin: "arr.sort", Inout: true, Rethrows: true},
 	{Recv: "array", Name: "enumerated", Sig: "() -> [(int, T)]", Special: "enumerated", Doc: "the elements with their indexes: for (i, x) in xs.enumerated()"},
 	{Recv: "array", Name: "joined", Sig: "(separator: string = \"\") -> string", Builtin: "str.join", Needs: "string"},
 
@@ -105,6 +121,8 @@ var Methods = []*Method{
 	{Recv: "map", Name: "remove", Sig: "(key: K) -> bool", Builtin: "map.delete", Inout: true, Doc: "removes the key; whether it was there"},
 	{Recv: "map", Name: "keys", Sig: "() -> [K]", Builtin: "map.keys", Doc: "in insertion order"},
 	{Recv: "map", Name: "values", Sig: "() -> [V]", Builtin: "map.values", Doc: "in insertion order"},
+	{Recv: "map", Name: "mapValues", Sig: "(transform: fn(V) throws -> U) -> [K: U]", Builtin: "map.map_values", Extra: "kindU", Rethrows: true, Doc: "the same keys, each with what transform makes of its value"},
+	{Recv: "map", Name: "filter", Sig: "(where: fn(K, V) throws -> bool) -> [K: V]", Builtin: "map.filter", Rethrows: true, Doc: "the entries the predicate is true of, in their order"},
 
 	// Sets.
 	{Recv: "set", Name: "count", Sig: "() -> int", Special: "len", Doc: "the number of elements"},
@@ -145,9 +163,11 @@ var Methods = []*Method{
 	{Recv: "string", Name: "padStart", Sig: "(width: int, with: string = \" \") -> string", Builtin: "str.pad", Extra: "false", Doc: "with copies of with before it, up to width characters: \"7\".padStart(2, with: \"0\") is 07"},
 	{Recv: "string", Name: "padEnd", Sig: "(width: int, with: string = \" \") -> string", Builtin: "str.pad", Extra: "true", Doc: "with copies of with after it, up to width characters"},
 	{Recv: "string", Name: "toInt", Sig: "() -> int?", Builtin: "str.to_int"},
+	{Recv: "string", Name: "toInt", Sig: "(radix: int) -> int?", Builtin: "str.to_int_radix", Fails: true, Doc: "the whole string as an int in radix (2 to 36; letters either case): \"ff\".toInt(radix: 16); none when it isn't one"},
 	{Recv: "string", Name: "toFloat", Sig: "() -> float?", Builtin: "str.to_float"},
 	{Recv: "string", Name: "repeat", Sig: "(count: int) -> string", Builtin: "str.repeat"},
 	{Recv: "string", Name: "chars", Sig: "() -> [string]", Builtin: "str.chars", Doc: "its characters, each a string"},
+	{Recv: "string", Name: "reversed", Sig: "() -> string", Builtin: "str.reversed", Doc: "its characters (code points) in the other order"},
 	{Recv: "string", Name: "bytes", Sig: "() -> bytes", Builtin: "str.to_bytes", Doc: "its UTF-8 bytes"},
 
 	// Colors.
@@ -167,6 +187,7 @@ var Methods = []*Method{
 	// Numbers.
 	{Recv: "int", Name: "float", Sig: "() -> float", Special: "i2f", Doc: "the int as a float, as float(n)"},
 	{Recv: "int", Name: "abs", Sig: "() -> int", Builtin: "math.absi", Fails: true, Doc: "the int without its sign; the smallest int's would overflow, which throws"},
+	{Recv: "int", Name: "toString", Sig: "(radix: int) -> string", Builtin: "int.to_string", Fails: true, Doc: "in radix (2 to 36, lowercase letters), with a - when it's negative: 255.toString(radix: 16) is ff"},
 	{Recv: "int", Name: "padded", Sig: "(width: int) -> string", Builtin: "int.padded", Doc: "in decimal, zeros before it up to width digits: 7.padded(2) is 07"},
 	{Recv: "int", Name: "addingChecked", Sig: "(o: int) -> int?", Builtin: "int.add_checked", Doc: "the sum, or none when it overflows: as +, which throws then"},
 	{Recv: "int", Name: "subtractingChecked", Sig: "(o: int) -> int?", Builtin: "int.sub_checked", Doc: "the difference, or none when it overflows: as -, which throws then"},
@@ -549,6 +570,16 @@ func (m *Method) requires(s Subst) string {
 		if why := whyNotComparable(t); why != "" {
 			return "() orders what's Comparable, and " + typeString(t) + " isn't: " + why + "; or order them with a less-than: " + m.Name + "((a, b) => …)"
 		}
+	case "Hashable":
+		if why := whyNotHashable(t); why != "" {
+			return "keeps each element once by its hash, and " + typeString(t) + " isn't Hashable: " + why
+		}
+	case "HashableU":
+		if u := s[tvU]; u != nil && !IsInvalid(u) {
+			if why := whyNotHashable(u); why != "" {
+				return "(by:) makes a map's keys, and " + typeString(u) + " isn't Hashable: " + why
+			}
+		}
 	case "number":
 		if t != Int && t != Float {
 			return "adds numbers, and these are " + typeString(t) + "s"
@@ -685,11 +716,12 @@ func (p *sigParser) typ() Type {
 			}
 			ps = append(ps, p.typ())
 		}
+		throws := p.eat("throws")
 		r := Type(Void)
 		if p.eat("->") {
 			r = p.typ()
 		}
-		t = &FuncType{Params: ps, Result: r}
+		t = &FuncType{Params: ps, Result: r, Throws: throws}
 	default:
 		switch n := p.ident(); n {
 		case "int":

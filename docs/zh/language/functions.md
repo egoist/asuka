@@ -34,6 +34,13 @@ await refresh()
 
 如果某个调用因为闭包主体里的代码而缺少 `await` 或 `try`，错误信息会指出是主体里的哪一处。
 
+那些会当场调用闭包的内置方法，比如数组的 `map`、`filter`、`reduce`、`sorted(by:)` 等，都可以接受会抛出错误的闭包：这时调用本身也会抛出闭包抛出的错误，需要加 `try`，和 Swift 的 `rethrows` 一样。闭包不会抛出错误时，调用也不会。
+
+```asuka
+let counts = try lines.map(l => try parse(l))
+let sorted = try names.sorted(by: (a, b) => try rank(a) < try rank(b))
+```
+
 函数、处理函数、闭包和方法的主体里也可以声明 `fn`。它像闭包一样能看到周围的东西，可以调用自己，也可以调用同一个代码块里紧挨着它声明的其他 `fn`（它们也能调用它）：
 
 ```asuka

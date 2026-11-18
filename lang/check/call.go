@@ -879,19 +879,7 @@ func (c *Checker) funcCallAs(e *syntax.CallExpr, f *Function, recv syntax.Expr, 
 	for _, tp := range f.TypeParams {
 		free[tp] = true
 	}
-	if len(e.TypeArgs) > 0 {
-		// f<T>(…): the type arguments written out.
-		if len(e.TypeArgs) != len(f.TypeParams) {
-			c.errorf(e, diag.TypeArguments, "%s takes %s", what, plural(len(f.TypeParams), "type argument", "type arguments"))
-		}
-		for i, ta := range e.TypeArgs {
-			t := c.typeExpr(ta)
-			if i < len(f.TypeParams) {
-				s[f.TypeParams[i]] = t
-				delete(free, f.TypeParams[i])
-			}
-		}
-	}
+	c.explicitTypeArgs(e, what, f.TypeParams, s, free)
 	c.inferArgs(args, params, s, free, c.triedWant(e, want), f.Sig.Result, what)
 	call := &Call{Kind: CallFunc, Func: f, Args: args, Params: params, Recv: recv, RecvType: recvType}
 	if f.Recv != nil || f.IsExtMethod() {
@@ -1532,7 +1520,9 @@ func (c *Checker) builtinMethodCall(e *syntax.CallExpr, fn *syntax.MemberExpr, x
 	if m.Inout {
 		c.mutates(fn.X, m.Name)
 	}
-	c.callEffects(e, m.Name, m.Async, m.Throws)
+	throws := m.Throws || m.Rethrows && c.closuresThrow(args, params)
+	c.info.Calls[e].Throws = throws
+	c.callEffects(e, m.Name, m.Async, throws)
 	if m.Recv == "loading" && m.Name == "optimistic" {
 		c.optimisticCall(e, fn, args)
 	}
@@ -1684,6 +1674,24 @@ func fieldParams(tn *TypeName) []*Param {
 	return ps
 }
 
+// explicitTypeArgs binds the type arguments a call writes out, f<T>(…)
+// or Stack<int>(), to its type parameters, which inference then leaves.
+func (c *Checker) explicitTypeArgs(e *syntax.CallExpr, what string, tps []*TypeParam, s Subst, free map[*TypeParam]bool) {
+	if len(e.TypeArgs) == 0 {
+		return
+	}
+	if len(e.TypeArgs) != len(tps) {
+		c.errorf(e, diag.TypeArguments, "%s takes %s", what, plural(len(tps), "type argument", "type arguments"))
+	}
+	for i, ta := range e.TypeArgs {
+		t := c.typeExpr(ta)
+		if i < len(tps) {
+			s[tps[i]] = t
+			delete(free, tps[i])
+		}
+	}
+}
+
 func (c *Checker) structCall(e *syntax.CallExpr, tn *TypeName, want Type) Type {
 	if e.Block != nil {
 		c.errorf(e.Block, diag.UnexpectedBlock, "%s is a struct: its fields go in parentheses, %s(name: value)", tn.name, tn.name)
@@ -1695,6 +1703,7 @@ func (c *Checker) structCall(e *syntax.CallExpr, tn *TypeName, want Type) Type {
 	for _, tp := range tn.TypeParams {
 		free[tp] = true
 	}
+	c.explicitTypeArgs(e, tn.name, tn.TypeParams, s, free)
 	c.inferArgs(args, params, s, free, want, tn.Type, tn.name)
 	n := &Named{Obj: tn}
 	for _, tp := range tn.TypeParams {
@@ -1775,6 +1784,7 @@ func (c *Checker) storeCall(e *syntax.CallExpr, tn *TypeName, want Type) Type {
 	}
 	args := c.matchArgs(e, params, tn.name)
 	if len(tn.TypeParams) == 0 {
+		c.explicitTypeArgs(e, tn.name, nil, Subst{}, nil)
 		for i, a := range args {
 			if a != nil {
 				c.bindingArg(a, params[i].Type, argDesc(params[i])+" of "+tn.name)
@@ -1790,6 +1800,7 @@ func (c *Checker) storeCall(e *syntax.CallExpr, tn *TypeName, want Type) Type {
 	for _, tp := range tn.TypeParams {
 		free[tp] = true
 	}
+	c.explicitTypeArgs(e, tn.name, tn.TypeParams, s, free)
 	saved := c.bindingArgs
 	c.bindingArgs = true
 	c.inferArgs(args, params, s, free, want, tn.Type, tn.name)
@@ -1937,9 +1948,36 @@ func (c *Checker) lambda(e *syntax.LambdaExpr, want Type) Type {
 		}
 	}
 	ctx.Result = ft.Result
+	if c.lambdaThrew == nil {
+		c.lambdaThrew = map[*syntax.LambdaExpr]bool{}
+	}
+	c.lambdaThrew[e] = ctx.threw
 	c.leave(saved)
 	c.inTry, c.inAwait, c.handled, c.loops, c.view = savedTry, savedAwait, savedHandled, savedLoops, savedView
 	return ft
+}
+
+// closuresThrow reports whether a function a call is given may throw: a
+// closure whose body does, or a function value whose type says so.
+func (c *Checker) closuresThrow(args []syntax.Expr, params []*Param) bool {
+	for i, a := range args {
+		if a == nil || i >= len(params) {
+			continue
+		}
+		if _, ok := params[i].Type.(*FuncType); !ok {
+			continue
+		}
+		if lam, ok := unparen(a).(*syntax.LambdaExpr); ok {
+			if c.lambdaThrew[lam] {
+				return true
+			}
+			continue
+		}
+		if ft, ok := Unopt(c.info.Types[a]).(*FuncType); ok && ft.Throws {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Checker) spawn(e *syntax.SpawnExpr) Type {

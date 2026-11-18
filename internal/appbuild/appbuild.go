@@ -263,6 +263,16 @@ func (p *Project) compile(platform target.Platform) (*bytecode.Module, *Uses, []
 			return nil, nil, nil, err
 		}
 		m, u, diags, err := Compile(tmp, p.Deps, platform)
+		copied := filepath.Join(tmp, filepath.Base(p.File))
+		if m != nil {
+			// Where a function is, as an error's trace says it: the file,
+			// not its copy.
+			for i := range m.Funcs {
+				if m.Funcs[i].File == copied {
+					m.Funcs[i].File = p.File
+				}
+			}
+		}
 		for i := range diags {
 			for _, pos := range []*syntax.Position{&diags[i].Pos, &diags[i].End} {
 				if pos.Filename == filepath.Join(tmp, filepath.Base(p.File)) {

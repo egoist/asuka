@@ -368,17 +368,51 @@ fn fnv1a(data: bytes) -> int {
 
 | 型 | メソッド |
 |---|---|
-| `[T]` | `count()`、`count(where)`、`isEmpty()`、`first()`、`last()`、`get(i)`（`T?` を返す）、`push(x)`、`insert(x, at: i)`、`removeAt(i)`、`removeWhere(p)`、`pop()`、`clear()`、`map(f)`、`filter(p)`、`any(p)`、`all(p)`、`index(p)`（`int?` を返す）、`find(p)`、`contains(x)`、`sum()`、`reversed()`、`slice(from, to)`（`to` を省くと末尾まで）、`prefix(n)`、`suffix(n)`、`sorted()`、`sorted(by)`、`sort()`、`sort(by)`、`enumerated()`、`joined(separator:)`（文字列の配列）、`+` |
+| `[T]` | `count()`、`count(where)`、`isEmpty()`、`first()`、`last()`、`get(i)`（`T?` を返す）、`push(x)`、`insert(x, at: i)`、`removeAt(i)`、`removeWhere(p)`、`pop()`、`clear()`、`map(f)`、`flatMap(f)`（`f` が返す配列を順につなげる）、`compactMap(f)`（`f` の結果から none を除く）、`filter(p)`、`reduce(initial, f)`、`any(p)`、`all(p)`、`index(p)`（`int?` を返す）、`find(p)`、`contains(x)`、`sum()`、`min()`、`max()`（`T?` を返す。`min(by:)`、`max(by:)` は「より小さい」の比較を取る）、`unique()`、`grouped(by: f)`（`[K: [T]]` を返す）、`chunked(n)`、`zip(other)`（短いほうの長さまでペアにする）、`reversed()`、`slice(from, to)`（`to` を省くと末尾まで）、`prefix(n)`、`suffix(n)`、`sorted()`、`sorted(by)`、`sort()`、`sort(by)`、`enumerated()`、`joined(separator:)`（文字列の配列）、`+` |
 | `Set<T>` | `count()`、`isEmpty()`、`contains(x)`、`insert(x)`（新しく加わったかを返す）、`remove(x)`（あったかを返す）、`union(s)`、`intersection(s)`、`subtracting(s)`、`isSubset(of: s)`、`isSuperset(of: s)`。`Set(xs)` は配列の重複しない要素、`Set<T>()` は空のセット |
-| `[K: V]` | `m[k]`（`V?` を返す）、`m[k] = v`、`count()`、`isEmpty()`、`has(k)`、`get(k)`、`remove(k)`、`keys()`、`values()`（挿入した順） |
-| `string` | `count()`（文字数）、`byteCount()`、`isEmpty()`、`upper()`、`lower()`、`trim()`、`trimStart()`、`trimEnd()`、`trimPrefix(s)`、`trimSuffix(s)`、`contains(s)`、`hasPrefix(s)`、`hasSuffix(s)`、`replace(old, new, count:)`（count を指定しなければすべて置き換え）、`split(sep, count:)`、`fields()`（空白で区切った単語）、`lines()`、`find(s)`、`findLast(s)`、`findAny(chars)`（バイト単位の位置。見つからなければ none）、`slice(from, to)`（文字単位）、`byteSlice(from, to)`（バイト単位：find が返す位置）、`padStart(width, with:)`、`padEnd(width, with:)`、`toInt()`、`toFloat()`、`repeat(n)`、`chars()`、`bytes()`、`+` |
+| `[K: V]` | `m[k]`（`V?` を返す）、`m[k] = v`、`count()`、`isEmpty()`、`has(k)`、`get(k)`、`remove(k)`、`keys()`、`values()`（挿入した順）、`mapValues(f)`、`filter((k, v) => …)` |
+| `string` | `count()`（文字数）、`byteCount()`、`isEmpty()`、`upper()`、`lower()`、`trim()`、`trimStart()`、`trimEnd()`、`trimPrefix(s)`、`trimSuffix(s)`、`contains(s)`、`hasPrefix(s)`、`hasSuffix(s)`、`replace(old, new, count:)`（count を指定しなければすべて置き換え）、`split(sep, count:)`、`fields()`（空白で区切った単語）、`lines()`、`find(s)`、`findLast(s)`、`findAny(chars)`（バイト単位の位置。見つからなければ none）、`slice(from, to)`（文字単位）、`byteSlice(from, to)`（バイト単位：find が返す位置）、`padStart(width, with:)`、`padEnd(width, with:)`、`toInt()`、`toInt(radix:)`、`toFloat()`、`repeat(n)`、`chars()`、`reversed()`、`bytes()`、`+` |
 | `bytes` | `b[i]`（0 から 255 の `int`。範囲外はエラー）、`count()`、`isEmpty()`、`get(i)`（`int?` を返す）、`slice(from, to)`、`concat(b)`、`string()`（UTF-8 として読み、不正な部分は U+FFFD になる）、`hex()` と `hex(separator)`（`"04 a1"`）。`bytes()` は空のバイト列、`bytes([0x04, 0xa1])` はそのバイト列、`s.bytes()` は文字列の UTF-8 |
-| `int` | `float()`、`abs()`、`padded(width)`（`7.padded(2)` は `"07"`）、`addingChecked(o)`、`subtractingChecked(o)`、`multipliedChecked(o)`（`int?`：オーバーフローなら none） |
+| `int` | `float()`、`abs()`、`toString(radix:)`（`255.toString(radix: 16)` は `"ff"`）、`padded(width)`（`7.padded(2)` は `"07"`）、`addingChecked(o)`、`subtractingChecked(o)`、`multipliedChecked(o)`（`int?`：オーバーフローなら none） |
 | `float` | `fixed(digits)`、`rounded()`、`floor()`、`ceil()`、`int()`（0 の方向へ切り捨て）、`abs()` |
 | `Color` | `opacity(a)`：元の不透明度の a 倍で描く（セマンティックカラーはセマンティックカラーのまま）。`hex()`（`"#0a84ff"`。セマンティックカラーはその名前：`".accent"`） |
 | `Duration` | `nanoseconds()`、`milliseconds()`（整数）、`seconds()`、`minutes()`、`hours()`（浮動小数点数）、`rounded(to:)`、`truncated(to:)`、`+`、`-`、`* n`（整数でも浮動小数点数でも：`1.5 * 1h`）、`/ n`、`/ d`（別の Duration：何個分か。浮動小数点数） |
 | `Length` | `* n`（`width: 50% * 2`：長さを拡大縮小） |
 | `T?` | `isNone()`、`isSome()` |
+
+渡した関数を呼び出すメソッド（`map`、`filter`、`reduce`、`sorted(by:)`、`grouped(by:)`、マップの `mapValues` など）は、エラーを投げる関数も受け取れます。その場合、関数が投げたエラーをそのまま投げるので、呼び出しには `try` が必要です。エラーを投げない関数を渡したときは、メソッドも投げません。
+
+```asuka
+fn port(text: string) throws -> int = text.toInt() ?? throw Error("not a port: {text}")
+
+fn ports(lines: [string]) throws -> [int] = try lines.map(l => try port(l))
+```
+
+いくつかを組み合わせると、次のようになります。
+
+```asuka
+struct Sale {
+  region: string
+  amount: int
+}
+
+fn report(sales: [Sale]) -> [string] {
+  let byRegion = sales.grouped(by: s => s.region)
+  let totals = byRegion.mapValues(ss => ss.map(s => s.amount).sum())
+  let best = sales.max(by: (a, b) => a.amount < b.amount)
+  let codes = ["7", "x", "42"].compactMap(c => c.toInt())    // [7, 42]
+  let pages = sales.chunked(50)                               // [[Sale]]、50 件ずつ
+  var out = ["{best?.region ?? "none"} sold the most"]
+  for (region, total) in totals { out.push("{region}: {total}") }
+  for (i, page) in pages.enumerated() { out.push("page {i + 1}: {page.count()}") }
+  out.push("{codes.reduce(0, (sum, c) => sum + c)}")
+  return out
+}
+```
+
+`unique()` は各要素を最初に現れた位置に一度だけ残し、`grouped(by:)` もキーを最初に現れた順に並べます。どちらも値（`grouped` ではキー）が `Hashable` である必要があります。`min()` と `max()` は `sorted()` と同じ順序で比べ、等しい要素があれば最初のものを返します。`chunked(n)` の `n` が 1 未満だと、範囲外の `xs[i]` と同じくエラーになります。
+
+`toInt(radix:)` は文字列全体を 2 から 36 までの基数で読みます。英字は大文字でも小文字でもよく、先頭に符号を付けられます（`"ff".toInt(radix: 16)` は 255、`"-101".toInt(radix: 2)` は -5）。読めなければ none です。逆に `toString(radix:)` は整数をその基数で、英字は小文字で書き出します。基数が 2 から 36 の範囲外ならエラーです。
 
 `min`、`max`、`abs`、`float(n)`、`int(x)` は関数です。それ以外（`math.sqrt`、`math.pow`、`math.pi` など）は `std/math` にあります。
 
@@ -483,7 +517,7 @@ struct Money {
 let price: Money = .of(dollars: 4, cents: 50)
 ```
 
-構造体は型パラメーターを取れます。型引数は、作るときに推論されます。
+構造体は型パラメーターを取れます。型引数は作るときに推論されますが、ジェネリック関数と同じように名前の後に書くこともできます（ストアも同様です）。
 
 ```asuka
 struct Page<T> {
@@ -492,6 +526,7 @@ struct Page<T> {
 }
 
 let page = Page(items: [1, 2, 3])     // Page<int>
+let empty = Page<string>(items: [])   // ほかに手がかりがないときは書き出す
 ```
 
 `match` と `if let` では、構造体パターンで構造体のフィールドを名前でマッチさせられます。`y` とだけ書くとフィールド `y` を束縛し、`y: py` なら `py` という名前で束縛し、`x: 0` は値にマッチします。書かなかったフィールドは何にでもマッチします。パターンは入れ子にできます。
@@ -646,6 +681,13 @@ await refresh()
 ```
 
 クロージャの本体のせいで呼び出しに `await` や `try` が足りないときは、エラーが本体のどこが原因かを示します。
+
+クロージャをその場で呼び出す組み込みメソッド（配列の `map`、`filter`、`reduce`、`sorted(by:)` など）は、エラーを投げるクロージャも受け取れます。その場合、呼び出し自体がクロージャの投げたエラーを投げるので、`try` が必要です。Swift の `rethrows` と同じです。クロージャが投げなければ、呼び出しも投げません。
+
+```asuka
+let counts = try lines.map(l => try parse(l))
+let sorted = try names.sorted(by: (a, b) => try rank(a) < try rank(b))
+```
 
 `fn` は、関数、ハンドラー、クロージャ、メソッドの本体の中でも宣言できます。クロージャと同じように周りのものを参照でき、自分自身や、同じブロックで隣に宣言した `fn` を呼び出せます（隣の `fn` からも呼び出せます）。
 
@@ -1247,6 +1289,14 @@ async fn loadThread(id: string) throws -> Thread {
 - 非同期関数を呼ぶには `await` が必要です。ハンドラー、タスク、テストでは `await` できますが、コンポーネントの本体とその中の `let` ではできません。クロージャは、非同期関数として渡されるか、本体で `await` していれば非同期になります。`async () => …` と書けば明示できます（[関数とクロージャ](https://asuka.egoist.dev/ja/docs/language/functions)）。
 - **メインスレッド。** すべてのコードはメインスレッドで動きます。`await` で待っている間は、ほかの処理が動けます。状態を変更できるのはメインスレッドだけです。
 - `all(a, b)` は複数の呼び出しを同時に実行し、すべての結果を待ちます。`race(a, b)` は最初に終わった結果を取り、残りをキャンセルします。ほかに `sleep(300ms)` と `withTimeout(5s) { … }` があります。`withTimeout` の値はブロックの値で（`let page = try await withTimeout(5s) { return try await fetch(url) }`）、時間切れになるとエラーを投げます。これらは構造化されていて、キャンセルした処理が止まり、その `defer` が実行されてから戻るかエラーを投げます。`await never()` はタスクが終わるまで待つだけです。読み手がいなくなったときにだけ終わるストリームや、何かを持つ前に await が必要なタスク（`try await register(); defer { release() }; await never()`）に使います。await せずに持てるものは、コンポーネントの `cleanup { }` で戻します（[クリーンアップ](https://asuka.egoist.dev/ja/docs/language/components#クリーンアップ)を参照）。
+- `all(items, f, limit:)` は、非同期関数 `f` を `items` の各要素で同時に呼び出し、結果を要素の順に返します：`let pages = try await all(urls, u => try await http.get(u))`。`limit: 8` と書くと同時に動くのは最大 8 個までで、一つ終わるたびに次が始まります。省略する（または 0 にする）と、すべてが一度に始まります。`all(a, b)` と同じく構造化されていて、最初にエラーを投げたものが残りをキャンセルし、それ以上は始めず、それらが止まってからエラーを投げます。待っているタスクがなくなれば、すべてキャンセルされます。各要素はメインスレッド上でそれぞれ独立したタスクとして動くので、ネットワークやファイルを待ったり、状態を変えたりできます。別のスレッドで行う処理は `spawn` に任せ、`f` からそれを await します。
+
+  ```asuka
+  async fn fetchAll(urls: [string]) throws -> [string] {
+    let pages = try await all(urls, u => try await http.get(u), limit: 4)
+    return pages.map(p => p.text())
+  }
+  ```
 - `spawn { … }` はブロックを別のスレッドで実行します。メインスレッドを止めてしまうような処理（パース、画像処理）に使います。中で使えるのは値だけで、状態、ストア、ビュー、ネイティブのオブジェクト、C のポインター、そしてそれらを持つファイルの `let`（データベースなど）は使えません。使っていればコンパイラーが教えてくれます。Web では、ページの Web Worker の一つで実行されます。Worker はファイルの値だけを自分で作り、それ以外は作りません。呼び出しの間で何かを持ち続ける処理（インデックス、自分で開くデータベースなど）には [ワーカー](#ワーカー) を使います。
 - `for await message in socket.messages { … }` はストリーム、つまり `Stream<T>` を読みます。時間とともに届く値です。`Stream(send => { … })` で作ります。ストリームが最初に読まれたときにブロックがタスクとして動き出し、`send(x)` のたびに値が一つ届きます。ブロックが戻るとストリームは終わり、ブロックが投げたエラーでストリームも失敗します。ループを抜けると（`break`、エラー、オーナーがなくなる）ブロックはキャンセルされます。ストリームの読み手は一つだけです。
 

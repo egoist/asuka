@@ -1,0 +1,160 @@
+// The collections' methods for general code: min and max, reduce,
+// flatMap and compactMap, unique, grouped, chunked and zip; a map's
+// mapValues and filter; radixes; and closures that throw, which make the
+// call throw (rethrows).
+
+struct P {
+  name: string
+  age: int
+
+  fn compare(o: P) -> int = age - o.age
+}
+
+enum Size { small, big }
+
+fn parse(s: string) throws -> int = s.toInt() ?? throw Error("not a number: {s}")
+
+test "min and max" {
+  let xs = [3, 1, 4, 1, 5, 9, 2, 6]
+  print("{xs.min()} {xs.max()} {[0.5, -2.0].min()} {["b", "a"].max()}")
+  let empty: [int] = []
+  print("{empty.min()} {empty.max()}")
+  let ps = [P(name: "a", age: 30), P(name: "b", age: 20), P(name: "c", age: 20)]
+  print("{ps.min()!.name} {ps.max()!.name}")
+  print("{ps.min(by: (a, b) => a.name < b.name)!.name} {ps.max(by: (a, b) => a.name < b.name)!.name}")
+  print([Size.big, .small].min())
+}
+
+test "reducing and flattening" {
+  let xs = [3, 1, 4]
+  print(xs.reduce(0, (s, x) => s + x))
+  print(xs.reduce("", (s, x) => s + "{x}"))
+  print([[1, 2], [], [3]].flatMap(x => x))
+  print(["a b", "c"].flatMap(s => s.split(" ")))
+  print(["1", "x", "3"].compactMap(s => s.toInt()))
+  print(["a", "", "b"].compactMap(s => if s.isEmpty() { none } else { s.upper() }))
+  let ps = [P(name: "a", age: 30), P(name: "b", age: 20)]
+  print(ps.compactMap(p => if p.age > 25 { p } else { none }))
+}
+
+test "unique, grouped, chunked, zip" {
+  print([3, 1, 3, 2, 1].unique())
+  print(["a", "b", "a"].unique())
+  print(["apple", "bob", "avocado", "cat", "banana"].grouped(by: w => w.slice(0, 1)))
+  let ps = [P(name: "a", age: 30), P(name: "b", age: 20), P(name: "c", age: 20)]
+  let byAge = ps.grouped(by: p => p.age)
+  print(byAge[20]!.map(p => p.name))
+  print([1, 2, 3, 4, 5, 6, 7].chunked(3))
+  let nothing: [int] = []
+  print(nothing.chunked(2))
+  print(["a", "b", "c"].zip([1, 2]))
+  for (n, a) in ["x", "y"].zip([10, 20]) { print("{n}={a}") }
+}
+
+test "maps" {
+  let m = ["a": 1, "b": 2, "c": 3]
+  print(m.mapValues(v => v * 10))
+  print(m.mapValues(v => "{v}"))
+  print(m.filter((k, v) => v != 2 && k != "c"))
+}
+
+test "strings and radixes" {
+  print("héllo".reversed())
+  print("ff".toInt(radix: 16))
+  print("-101".toInt(radix: 2))
+  print("zz".toInt(radix: 10))
+  print("7fffffffffffffff".toInt(radix: 16))
+  print("8000000000000000".toInt(radix: 16))
+  print("-8000000000000000".toInt(radix: 16))
+  print(255.toString(radix: 16))
+  print((-5).toString(radix: 2))
+  print((-9223372036854775807 - 1).toString(radix: 16))
+  print(0.toString(radix: 36))
+}
+
+test "closures that throw" {
+  print(try ["1", "2"].map(s => try parse(s)))
+  let bad = try ["1", "x"].map(s => try parse(s)) catch e {
+    print("caught {e.message}")
+    [0]
+  }
+  print(bad)
+  print(try ["3", "1"].sorted(by: (a, b) => try parse(a) < try parse(b)))
+  print(try ["1", "2"].filter(s => try parse(s) > 1))
+  print(try ["1", "2"].reduce(0, (s, x) => s + try parse(x)))
+  print(try? ["1", "q"].flatMap(s => [try parse(s)]))
+  let f = parse
+  print(try ["4"].map(f))
+  var ys = ["3", "1", "2"]
+  try ys.sort(by: (a, b) => try parse(a) < try parse(b))
+  print(ys)
+  let n = try ys.removeWhere(s => try parse(s) > 2)
+  print("{n} {ys}")
+  print(try ["a": "1"].mapValues(v => try parse(v)))
+  print(try? ["a": "1"].filter((k, v) => try parse(k) > 0))
+}
+
+test "a radix out of range" {
+  print("1".toInt(radix: 1))
+}
+
+test "a chunk of nothing" {
+  print([1].chunked(0))
+}
+
+// Output:
+// 1 9 -2 b
+// none none
+// b a
+// a c
+// small
+// ok min and max
+// 8
+// 314
+// [1,2,3]
+// ["a","b","c"]
+// [1,3]
+// ["A","B"]
+// [{"name":"a","age":30}]
+// ok reducing and flattening
+// [3,1,2]
+// ["a","b"]
+// {"a":["apple","avocado"],"b":["bob","banana"],"c":["cat"]}
+// ["b","c"]
+// [[1,2,3],[4,5,6],[7]]
+// []
+// [("a",1),("b",2)]
+// x=10
+// y=20
+// ok unique, grouped, chunked, zip
+// {"a":10,"b":20,"c":30}
+// {"a":"1","b":"2","c":"3"}
+// {"a":1}
+// ok maps
+// olléh
+// 255
+// -5
+// none
+// 9223372036854775807
+// none
+// -9223372036854775808
+// ff
+// -101
+// -8000000000000000
+// 0
+// ok strings and radixes
+// [1,2]
+// caught not a number: x
+// [0]
+// ["1","3"]
+// ["2"]
+// 3
+// none
+// [4]
+// ["1","2","3"]
+// 1 ["1","2"]
+// {"a":1}
+// none
+// ok closures that throw
+// FAIL a radix out of range: toInt's radix is 1: it must be 2 to 36
+// FAIL a chunk of nothing: chunked's size is 0: it must be 1 or more

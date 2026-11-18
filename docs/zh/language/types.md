@@ -88,17 +88,51 @@ fn fnv1a(data: bytes) -> int {
 
 | 类型 | 方法 |
 |---|---|
-| `[T]` | `count()`、`count(where)`、`isEmpty()`、`first()`、`last()`、`get(i)`（返回 `T?`）、`push(x)`、`insert(x, at: i)`、`removeAt(i)`、`removeWhere(p)`、`pop()`、`clear()`、`map(f)`、`filter(p)`、`any(p)`、`all(p)`、`index(p)`（返回 `int?`）、`find(p)`、`contains(x)`、`sum()`、`reversed()`、`slice(from, to)`（省略 `to` 时到末尾）、`prefix(n)`、`suffix(n)`、`sorted()`、`sorted(by)`、`sort()`、`sort(by)`、`enumerated()`、`joined(separator:)`（用于字符串数组）、`+` |
+| `[T]` | `count()`、`count(where)`、`isEmpty()`、`first()`、`last()`、`get(i)`（返回 `T?`）、`push(x)`、`insert(x, at: i)`、`removeAt(i)`、`removeWhere(p)`、`pop()`、`clear()`、`map(f)`、`flatMap(f)`（把 `f` 返回的数组依次接起来）、`compactMap(f)`（`f` 的结果中去掉 none）、`filter(p)`、`reduce(initial, f)`、`any(p)`、`all(p)`、`index(p)`（返回 `int?`）、`find(p)`、`contains(x)`、`sum()`、`min()`、`max()`（返回 `T?`；`min(by:)`、`max(by:)` 接受一个“小于”比较）、`unique()`、`grouped(by: f)`（返回 `[K: [T]]`）、`chunked(n)`、`zip(other)`（两两配对，长度取较短的一方）、`reversed()`、`slice(from, to)`（省略 `to` 时到末尾）、`prefix(n)`、`suffix(n)`、`sorted()`、`sorted(by)`、`sort()`、`sort(by)`、`enumerated()`、`joined(separator:)`（用于字符串数组）、`+` |
 | `Set<T>` | `count()`、`isEmpty()`、`contains(x)`、`insert(x)`（返回是否新加入）、`remove(x)`（返回原本是否存在）、`union(s)`、`intersection(s)`、`subtracting(s)`、`isSubset(of: s)`、`isSuperset(of: s)`；`Set(xs)` 是数组中互不相同的元素，`Set<T>()` 是空集合 |
-| `[K: V]` | `m[k]`（返回 `V?`）、`m[k] = v`、`count()`、`isEmpty()`、`has(k)`、`get(k)`、`remove(k)`、`keys()`、`values()`（按插入顺序） |
-| `string` | `count()`（字符数）、`byteCount()`、`isEmpty()`、`upper()`、`lower()`、`trim()`、`trimStart()`、`trimEnd()`、`trimPrefix(s)`、`trimSuffix(s)`、`contains(s)`、`hasPrefix(s)`、`hasSuffix(s)`、`replace(old, new, count:)`（默认替换全部，count 指定次数）、`split(sep, count:)`、`fields()`（按空白分出的词）、`lines()`、`find(s)`、`findLast(s)`、`findAny(chars)`（字节偏移，找不到时为 none）、`slice(from, to)`（按字符）、`byteSlice(from, to)`（按字节：即 find 给出的偏移）、`padStart(width, with:)`、`padEnd(width, with:)`、`toInt()`、`toFloat()`、`repeat(n)`、`chars()`、`bytes()`、`+` |
+| `[K: V]` | `m[k]`（返回 `V?`）、`m[k] = v`、`count()`、`isEmpty()`、`has(k)`、`get(k)`、`remove(k)`、`keys()`、`values()`（按插入顺序）、`mapValues(f)`、`filter((k, v) => …)` |
+| `string` | `count()`（字符数）、`byteCount()`、`isEmpty()`、`upper()`、`lower()`、`trim()`、`trimStart()`、`trimEnd()`、`trimPrefix(s)`、`trimSuffix(s)`、`contains(s)`、`hasPrefix(s)`、`hasSuffix(s)`、`replace(old, new, count:)`（默认替换全部，count 指定次数）、`split(sep, count:)`、`fields()`（按空白分出的词）、`lines()`、`find(s)`、`findLast(s)`、`findAny(chars)`（字节偏移，找不到时为 none）、`slice(from, to)`（按字符）、`byteSlice(from, to)`（按字节：即 find 给出的偏移）、`padStart(width, with:)`、`padEnd(width, with:)`、`toInt()`、`toInt(radix:)`、`toFloat()`、`repeat(n)`、`chars()`、`reversed()`、`bytes()`、`+` |
 | `bytes` | `b[i]`（返回 `int`，取值 0 到 255；越界是一个错误）、`count()`、`isEmpty()`、`get(i)`（返回 `int?`）、`slice(from, to)`、`concat(b)`、`string()`（按 UTF-8 解码，无效的部分变成 U+FFFD）、`hex()` 和 `hex(separator)`（`"04 a1"`）；`bytes()` 是空的字节序列，`bytes([0x04, 0xa1])` 是这些字节，`s.bytes()` 是字符串的 UTF-8 字节 |
-| `int` | `float()`、`abs()`、`padded(width)`（`7.padded(2)` 是 `"07"`）、`addingChecked(o)`、`subtractingChecked(o)`、`multipliedChecked(o)`（返回 `int?`：溢出时为 none） |
+| `int` | `float()`、`abs()`、`toString(radix:)`（`255.toString(radix: 16)` 是 `"ff"`）、`padded(width)`（`7.padded(2)` 是 `"07"`）、`addingChecked(o)`、`subtractingChecked(o)`、`multipliedChecked(o)`（返回 `int?`：溢出时为 none） |
 | `float` | `fixed(digits)`、`rounded()`、`floor()`、`ceil()`、`int()`（向零取整）、`abs()` |
 | `Color` | `opacity(a)`：以原本不透明度的 a 倍绘制（语义颜色仍然是语义颜色）；`hex()`（`"#0a84ff"`；语义颜色则是它的名字：`".accent"`） |
 | `Duration` | `nanoseconds()`、`milliseconds()`（整数）、`seconds()`、`minutes()`、`hours()`（浮点数）、`rounded(to:)`、`truncated(to:)`、`+`、`-`、`* n`（整数或浮点数：`1.5 * 1h`）、`/ n`、`/ d`（另一个 Duration：它能容纳几个，一个浮点数） |
 | `Length` | `* n`（`width: 50% * 2`：缩放一个长度） |
 | `T?` | `isNone()`、`isSome()` |
+
+会调用你传入的函数的方法（`map`、`filter`、`reduce`、`sorted(by:)`、`grouped(by:)`、map 的 `mapValues` ……）都接受会抛出错误的函数，这时它们会把函数抛出的错误原样抛出，所以调用要加 `try`。传入的函数不会抛出错误时，它们也不会。
+
+```asuka
+fn port(text: string) throws -> int = text.toInt() ?? throw Error("not a port: {text}")
+
+fn ports(lines: [string]) throws -> [int] = try lines.map(l => try port(l))
+```
+
+下面是其中几个方法的实际用法：
+
+```asuka check
+struct Sale {
+  region: string
+  amount: int
+}
+
+fn report(sales: [Sale]) -> [string] {
+  let byRegion = sales.grouped(by: s => s.region)
+  let totals = byRegion.mapValues(ss => ss.map(s => s.amount).sum())
+  let best = sales.max(by: (a, b) => a.amount < b.amount)
+  let codes = ["7", "x", "42"].compactMap(c => c.toInt())    // [7, 42]
+  let pages = sales.chunked(50)                               // [[Sale]]，每组 50 个
+  var out = ["{best?.region ?? "none"} sold the most"]
+  for (region, total) in totals { out.push("{region}: {total}") }
+  for (i, page) in pages.enumerated() { out.push("page {i + 1}: {page.count()}") }
+  out.push("{codes.reduce(0, (sum, c) => sum + c)}")
+  return out
+}
+```
+
+`unique()` 让每个元素只保留一次，留在它第一次出现的位置；`grouped(by:)` 的键也按第一次出现的顺序排列。两者都要求值是 `Hashable` 的（`grouped` 要求的是键）。`min()` 和 `max()` 的排序方式与 `sorted()` 相同，遇到相等的元素时取第一个。`chunked(n)` 的 `n` 小于 1 时会报错，就像 `xs[i]` 越界一样。
+
+`toInt(radix:)` 按 2 到 36 之间的进制读取整个字符串，字母大小写均可，前面可以带正负号（`"ff".toInt(radix: 16)` 是 255，`"-101".toInt(radix: 2)` 是 -5），读不出来时返回 none；`toString(radix:)` 则把整数按进制写出来，字母用小写。进制不在 2 到 36 之间时会报错。
 
 `min`、`max`、`abs`、`float(n)` 和 `int(x)` 是函数；其余的（`math.sqrt`、`math.pow`、`math.pi` ……）在 `std/math` 里。
 
