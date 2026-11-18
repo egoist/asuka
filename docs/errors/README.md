@@ -78,6 +78,8 @@ Every error and warning Asuka reports has a code: a stable name, said in the ter
 - [not-pub](not-pub.md): A declaration another package (or a store, a worker) keeps to itself.
 - [not-sendable](not-sendable.md): A value that can't cross to another thread.
 - [not-supported](not-supported.md): Something the language doesn't do yet.
+- [optimistic-impure](optimistic-impure.md): An optimistic change that reads state, awaits or writes.
+- [optimistic-not-loading](optimistic-not-loading.md): `optimistic` on what isn't a load.
 - [pattern-type](pattern-type.md): A pattern that can't match the value's type.
 - [peek-untracked](peek-untracked.md): `peek` where nothing is followed.
 - [plural-categories](plural-categories.md): A plural or select message whose categories don't match its language's.
@@ -116,5 +118,7 @@ Every error and warning Asuka reports has a code: a stable name, said in the ter
 - [effect-loop](effect-loop.md): Effects that keep dirtying each other in one flush.
 - [load-waterfall](load-waterfall.md): A load that waited for another one it doesn't use.
 - [long-hold](long-hold.md): A load has held old content for seconds with nothing saying so.
+- [optimistic-not-ready](optimistic-not-ready.md): `optimistic` on a load that isn't ready.
+- [optimistic-unconfirmed](optimistic-unconfirmed.md): An optimistic change went with its task, with no run of its load to confirm it.
 - [wide-fanout](wide-fanout.md): One write ran more than 1,000 bindings and lets, more than once.
 - [write-in-memo](write-in-memo.md): State written while a `let` is computed.

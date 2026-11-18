@@ -237,12 +237,13 @@ component Main {
 func TestLoadingProperties(t *testing.T) {
 	root := t.TempDir()
 	c := newClient(t, root)
-	text := "async fn name(id: int) -> string = \"user {id}\"\n\ncomponent A {\n  state id = 1\n  let user = load name(id)\n  Column {\n    Text(user.value ?? \"\")\n    if user.loading { Text(\"…\") }\n  }\n}\n"
+	text := "async fn name(id: int) -> string = \"user {id}\"\n\ncomponent A {\n  state id = 1\n  let user = load name(id)\n  Column {\n    Text(user.value ?? \"\")\n    if user.loading { Text(\"…\") }\n    Button(\"x\") { on press { user.optimistic(n => n + \"!\") } }\n  }\n}\n"
 	uri := c.openText(filepath.Join(root, "a.asuka"), text)
 	c.waitDiags(uri, noDiags)
 	for at, want := range map[string]string{
-		"user.val|ue":   "value: string?",
-		"user.load|ing": "loading: bool",
+		"user.val|ue":      "value: string?",
+		"user.load|ing":    "loading: bool",
+		"user.optim|istic": "optimistic(change: fn(string) -> string)",
 	} {
 		var h *Hover
 		p := tdp(uri, posAt(t, text, at))
@@ -253,7 +254,7 @@ func TestLoadingProperties(t *testing.T) {
 	version := 1
 	text2 := strings.Replace(text, "if user.loading", "if user.", 1)
 	items := complete(t, c, uri, &version, text2, text2[:strings.Index(text2, "if user.")+len("if user.")]+"|")
-	if got := labels(items); !contains(got, "loading") || !contains(got, "value") || !contains(got, "reload") {
+	if got := labels(items); !contains(got, "loading") || !contains(got, "value") || !contains(got, "reload") || !contains(got, "optimistic") {
 		t.Errorf("user.: %v", got)
 	}
 }

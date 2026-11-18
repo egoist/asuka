@@ -11,7 +11,7 @@ component A {
     Text(user.value ?? "")
     Text(user.loading) // ERROR "^argument text of Text is a bool, not a string"
     if user.lodaing { Text("…") } // ERROR "^Loading<string> has no lodaing \\(did you mean loading\\?\\)$"
-    if user.isPending { Text("…") } // ERROR "^Loading<string> has no isPending: it has value \\(the latest\\), loading \\(a run is in flight\\) and reload\\(\\); match it for its case$"
+    if user.isPending { Text("…") } // ERROR "^Loading<string> has no isPending: it has value \\(what it shows\\), loading \\(a run is in flight\\), reload\\(\\) and optimistic\\(change\\); match it for its case$"
     Button("x") { on press { user.loading = false } } // ERROR "^can't assign to user.loading$"
   }
 }

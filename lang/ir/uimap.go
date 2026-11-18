@@ -48,6 +48,7 @@ const (
 	uiLoadValue   = "load.value"   // (loader) -> T? (the latest value; boxed when a scalar)
 	uiLoadError   = "load.error"   // (loader) -> Error
 	uiLoadReload  = "load.reload"
+	uiLoadShown   = "load.shown" // (loader) -> an accessor of what it shows: a .ready arm's payload, read by paths
 
 	uiPush    = "ui.push"    // (builder) -> void: on the nearest stack
 	uiPop     = "ui.pop"     // () -> void

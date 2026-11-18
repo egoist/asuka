@@ -769,7 +769,7 @@ func (fc *fileCtx) varDecl(v *check.Var) string {
 
 // What hover and completion say of a Loading's properties.
 const (
-	loadingValueDoc   = "The latest value: none before the first answer, kept while it loads again and once it fails."
+	loadingValueDoc   = "What it shows: its latest answer, with its optimistic changes applied; none before the first answer, kept while it loads again and once it fails."
 	loadingLoadingDoc = "Whether a run is in flight: the first, or one after an argument changed or `reload()`. The case it's in stays meanwhile."
 )
 

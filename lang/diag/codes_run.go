@@ -316,4 +316,140 @@ test "in one pass" {
 }
 `,
 	})
+
+	OptimisticUnconfirmed = def(Code{
+		Name:    "optimistic-unconfirmed",
+		RunTime: true,
+		Summary: "an optimistic change went with its task, with no run of its load to confirm it",
+		Why: `` + "`x.optimistic(f)`" + ` shows a change until the load answers again. When the task
+that made it ends and the load isn't running or asked to (no
+` + "`reload`" + `), nothing will ever confirm it: keeping it would hide every later
+answer, so it goes, and the screen takes back what it showed.`,
+		Fix: "Before the task ends, ask the load again: `await reload f(…)`, or `x.reload()`.",
+		Wrong: `async fn fetchCount() -> int {
+  await sleep(10ms)
+  return 1
+}
+
+async fn save(n: int) {
+  await sleep(10ms)
+}
+
+component Counter {
+  let count = load fetchCount()
+  Column {
+    Text("{count.value ?? 0}")
+    Button("Add") {
+      on press {
+        count.optimistic(n => n + 1)
+        await save(2)
+      }
+    }
+  }
+}
+
+test "a change nothing confirms" {
+  let app = mount(Counter())
+  await app.idle()
+  app.tap("Add")
+  await app.idle()
+  app.expect("1")
+}
+`,
+		Right: `async fn fetchCount() -> int {
+  await sleep(10ms)
+  return 1
+}
+
+async fn save(n: int) {
+  await sleep(10ms)
+}
+
+component Counter {
+  let count = load fetchCount()
+  Column {
+    Text("{count.value ?? 0}")
+    Button("Add") {
+      on press {
+        count.optimistic(n => n + 1)
+        await save(2)
+        count.reload()
+      }
+    }
+  }
+}
+
+test "a change its load's answer replaces" {
+  let app = mount(Counter())
+  await app.idle()
+  app.tap("Add")
+  await app.idle()
+  app.expect("1")
+}
+`,
+	})
+
+	OptimisticNotReady = def(Code{
+		Name:    "optimistic-not-ready",
+		RunTime: true,
+		Summary: "`optimistic` on a load that isn't ready",
+		Why: `An optimistic change is a function of what a load shows. Pending (before
+its first answer) or failed, it shows nothing to change: the call does
+nothing.`,
+		Fix: "Change what it shows once it's `.ready`: offer the action in the `.ready` arm, or check `x.value` first.",
+		Wrong: `async fn fetchCount() -> int {
+  await sleep(10ms)
+  return 1
+}
+
+component Counter {
+  let count = load fetchCount()
+  Column {
+    Text("{count.value ?? 0}")
+    Button("Add") {
+      on press {
+        count.optimistic(n => n + 1)
+        count.reload()
+      }
+    }
+  }
+}
+
+test "a change before the answer" {
+  let app = mount(Counter())
+  app.tap("Add")
+  await app.idle()
+  app.expect("1")
+}
+`,
+		Right: `async fn fetchCount() -> int {
+  await sleep(10ms)
+  return 1
+}
+
+component Counter {
+  let count = load fetchCount()
+  Column {
+    match count {
+      .pending => Text("…")
+      .failed(e) => Text(e.message)
+      .ready(n) => Button("{n}") {
+        on press {
+          count.optimistic(c => c + 1)
+          count.reload()
+        }
+      }
+    }
+  }
+}
+
+test "a change of what it shows" {
+  let app = mount(Counter())
+  await app.idle()
+  app.tap("1")
+  await app.idle()
+  app.expect("1")
+}
+`,
+	})
 )

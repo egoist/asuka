@@ -1,0 +1,106 @@
+// What a load shows is a state's value to what reads it (rfcs/0013,
+// 0017): a .ready arm's payload is read by its paths, so an optimistic
+// toggle of one row, and the answer that confirms it, run that row's
+// binding of done and nothing else: not the for, not the titles, not the
+// match. Each binding prints as it runs.
+
+struct Todo {
+  id: int
+  title: string
+  done: bool = false
+}
+
+enum Problem: Error { offline }
+
+store Server {
+  state todos = [Todo(id: 1, title: "a"), Todo(id: 2, title: "b"), Todo(id: 3, title: "c")]
+  state failing = false
+
+  async fn list() -> [Todo] {
+    await sleep(10ms)
+    return todos
+  }
+
+  async fn setDone(id: int, done: bool) throws {
+    await sleep(10ms)
+    if failing { throw Problem.offline }
+    if let i = todos.index(t => t.id == id) { todos[i].done = done }
+  }
+}
+
+fn marked(t: Todo, done: bool) -> Todo {
+  var c = t
+  c.done = done
+  return c
+}
+
+fn show(tag: string, s: string) -> string {
+  print(tag)
+  return s
+}
+
+component Todos {
+  use api: Server
+  let todos = load api.list()
+
+  Column {
+    match todos {
+      .pending => Text(show("pending", "…"))
+      .failed(e) => Text("failed")
+      .ready(ts) => Column {
+        Text(show("count", "{ts.count()} todos"))
+        for t in ts key show("key {t.id}", "{t.id}") {
+          Toggle {
+            on: t.done
+            title: show("title {t.id}", t.title)
+            on change(done) {
+              let id = t.id
+              todos.optimistic(ts => ts.map(x => if x.id == id { marked(x, done) } else { x }))
+              try await api.setDone(id, done)
+              todos.reload()
+            }
+          }
+          Text(show("done {t.id}", if t.done { "{t.id} done" } else { "{t.id} open" }))
+        }
+      }
+    }
+  }
+}
+
+test "a toggle runs one row's binding, its confirmation nothing" {
+  let server = Server()
+  let app = mount(Todos(), provide: server)
+  await app.idle()
+  print("-- toggle")
+  app.toggle("b")
+  app.expect("2 done")
+  print("-- confirmed")
+  await app.idle()
+  app.expect("2 done")
+  print("-- failed")
+  server.failing = true
+  app.toggle("c")
+  app.expect("3 done")
+  await app.idle()
+  app.expect("3 open")
+}
+
+// Output:
+// pending
+// count
+// key 1
+// key 2
+// key 3
+// title 1
+// done 1
+// title 2
+// done 2
+// title 3
+// done 3
+// -- toggle
+// done 2
+// -- confirmed
+// -- failed
+// done 3
+// done 3
+// ok a toggle runs one row's binding, its confirmation nothing

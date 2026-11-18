@@ -1475,6 +1475,11 @@ func (c *Checker) methodCall1(e *syntax.CallExpr, fn *syntax.MemberExpr, xt Type
 		c.checkArgsLoosely(e)
 		return Invalid
 	}
+	if name == "optimistic" {
+		c.errorf(fn.Name, diag.OptimisticNotLoading, "%s is %s, not a load: change it, it's state", exprName(fn.X), aType(xt))
+		c.checkArgsLoosely(e)
+		return Invalid
+	}
 	c.errorf(fn.Name, diag.UnknownMember, "%s has no method %s%s", typeString(xt), name, c.memberSuggest(xt, name))
 	c.checkArgsLoosely(e)
 	return Invalid
@@ -1528,6 +1533,9 @@ func (c *Checker) builtinMethodCall(e *syntax.CallExpr, fn *syntax.MemberExpr, x
 		c.mutates(fn.X, m.Name)
 	}
 	c.callEffects(e, m.Name, m.Async, m.Throws)
+	if m.Recv == "loading" && m.Name == "optimistic" {
+		c.optimisticCall(e, fn, args)
+	}
 	return res
 }
 

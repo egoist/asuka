@@ -1,0 +1,83 @@
+// x.optimistic(f) (rfcs/0017): on a load's value only, in a handler, a
+// fn or a task, with f a value function of what the load shows.
+
+struct Todo {
+  id: int
+  done: bool
+}
+
+async fn fetchTodos() -> [Todo] = [Todo(id: 1, done: false)]
+
+fn marked(t: Todo) -> Todo {
+  var c = t
+  c.done = true
+  return c
+}
+
+store Picks {
+  state last = 0
+}
+
+component Todos {
+  use picks: Picks
+  state picked = 1
+  state notes: [string] = []
+  let limit = picked + 1
+  let todos = load fetchTodos()
+
+  Column {
+    Button("ok") {
+      on press {
+        let id = picked
+        todos.optimistic(ts => ts.map(t => if t.id == id { marked(t) } else { t }))
+        todos.optimistic(ts => ts.filter(t => !t.done))
+        todos.reload()
+      }
+    }
+    Button("reads state") {
+      on press {
+        todos.optimistic(ts => ts.map(t => if t.id == picked { marked(t) } else { t })) // ERROR "^the change of todos reads picked, which is state: an optimistic change is a function of what's shown: pass what it needs in \\(let v = picked, outside it\\)$"
+      }
+    }
+    Button("reads a let") {
+      on press { todos.optimistic(ts => if ts.count() > limit { [] } else { ts }) } // ERROR "^the change of todos reads limit, which is state"
+    }
+    Button("reads a store") {
+      on press { todos.optimistic(ts => ts.filter(t => t.id != picks.last)) } // ERROR "^the change of todos reads last, which is state"
+    }
+    Button("writes") {
+      on press {
+        todos.optimistic(ts => {
+          picked = 2 // ERROR "^the change of todos writes picked: it runs again whenever what's under it changes; write in the handler, and give back the changed value$"
+          return ts
+        })
+      }
+    }
+    Button("awaits") {
+      on press {
+        todos.optimistic(async ts => { // ERROR "^this closure is async, where a fn\\(\\[Todo\\]\\) -> \\[Todo\\] is expected, which can't wait"
+          await sleep(1ms)
+          return ts
+        })
+      }
+    }
+    Button("not a load") {
+      on press { notes.optimistic(ns => ns) } // ERROR "^notes is a \\[string\\], not a load: change it, it's state$"
+    }
+  }
+}
+
+// What a component's body declares follows; it doesn't change what's shown.
+component Shown {
+  let todos = load fetchTodos()
+  let shown = todos.optimistic(ts => ts) // ERROR "^can't change what todos shows here: what the UI follows is computed, not changed; make an optimistic change in a handler \\(on press \\{ … \\}\\), a fn or a task$|void|nothing"
+  Text("x")
+}
+
+// A named function is a value function too.
+fn noneDone(ts: [Todo]) -> [Todo] = ts.filter(t => !t.done)
+
+component Named {
+  let todos = load fetchTodos()
+  Button("x") { on press { todos.optimistic(noneDone) } }
+}

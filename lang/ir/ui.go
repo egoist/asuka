@@ -640,7 +640,7 @@ func (b *fb) readsAlone(e syntax.Expr) int {
 			return b.globalCell(o)
 		}
 	case *check.Var:
-		if (o.Kind == check.RowItem || o.Kind == check.ViewMemo) && !o.Boxed() {
+		if (o.Kind == check.RowItem || o.Kind == check.ViewMemo || b.l.prog.AccessorVar(o)) && !o.Boxed() {
 			if r, ok := b.vars[o]; ok {
 				return r
 			}
@@ -1115,10 +1115,34 @@ func (b *fb) matchView(s *syntax.MatchStmt) int {
 			c.emitJump(op("JF"), eq, next)
 			actx := b.l.info.Ctxs[a]
 			c.ctx = actx
+			// A load's .ready(p): what p binds are accessors of what the
+			// load shows, read by their paths (rfcs/0013, 0017).
+			shown := b.loadShownVars(s.Subject, a.Pattern)
+			if len(shown) > 0 {
+				ldr := c.value(s.Subject, -1)
+				acc := c.newReg(bc.KRef)
+				c.callBTo(uiLoadShown, acc, ldr)
+				for _, v := range patternVars(a.Pattern, c.l.info) {
+					steps, ok := shown[v]
+					if !ok {
+						continue
+					}
+					if len(steps) == 0 {
+						c.vars[v] = acc
+						continue
+					}
+					r := c.newReg(bc.KRef)
+					c.emit(op("ACCP"), r, acc, c.str(steps), acc, int(c.kind(v.Type)))
+					c.vars[v] = r
+				}
+			}
 			// Each name the pattern binds: a memo of its part of the
 			// subject.
 			for _, v := range patternVars(a.Pattern, c.l.info) {
 				v := v
+				if _, ok := shown[v]; ok {
+					continue
+				}
 				k := c.kind(v.Type)
 				m := c.makeClosure(closure{name: "payload", ctxs: []*check.FuncCtx{subjCtx}, ret: k, throws: true, body: func(c2 *fb) {
 					c2.ctx = subjCtx
@@ -1142,6 +1166,66 @@ func (b *fb) matchView(s *syntax.MatchStmt) int {
 		c.emit(op("RET"), c.callB(uiFragment, bc.KRef))
 	}})
 	return b.callB(uiSwitch, bc.KRef, sel, build)
+}
+
+// loadShownVars is, for a view's match arm .ready(p) over a load's let
+// (its loader made once), each name p binds and its path in what the
+// load shows (fields of tuples, spelled: f and the index): p a name or
+// tuples of names, the rest of it a wildcard. Marked as accessors, so
+// reads through them are paths. Nil when the arm isn't that.
+func (b *fb) loadShownVars(subject syntax.Expr, p syntax.Pattern) map[*check.Var][]byte {
+	if !b.fixedLoad(subject) {
+		return nil
+	}
+	cp, ok := p.(*syntax.CasePat)
+	if !ok || len(cp.Args) != 1 || b.l.info.Cases[cp] == nil || b.l.info.Cases[cp].Name != "ready" {
+		return nil
+	}
+	out := map[*check.Var][]byte{}
+	var walk func(p syntax.Pattern, steps []byte) bool
+	walk = func(p syntax.Pattern, steps []byte) bool {
+		switch p := p.(type) {
+		case *syntax.WildcardPat:
+			return true
+		case *syntax.BindPat:
+			v, _ := b.l.info.Defs[p.Name].(*check.Var)
+			if v == nil || v.Boxed() {
+				return false
+			}
+			out[v] = steps
+			return true
+		case *syntax.TuplePat:
+			for i, e := range p.Elems {
+				st := append(append([]byte{}, steps...), psField, byte(i), byte(i>>8))
+				if !walk(e, st) {
+					return false
+				}
+			}
+			return true
+		}
+		return false
+	}
+	if !walk(cp.Args[0], nil) {
+		return nil
+	}
+	for v := range out {
+		b.l.prog.SetAccessorVar(v)
+	}
+	return out
+}
+
+// fixedLoad reports whether e is a load's let, read by its name: its
+// loader is made once, so an accessor of what it shows stays its.
+func (b *fb) fixedLoad(e syntax.Expr) bool {
+	switch x := unparen(e).(type) {
+	case *syntax.Ident:
+		m, ok := b.l.info.Uses[x].(*check.Member)
+		return ok && m.Kind == check.LetMember && isLoad(m.Default)
+	case *syntax.MemberExpr:
+		sel := b.l.info.Selections[x]
+		return sel != nil && sel.Kind == check.SelStoreMember && sel.Member.Kind == check.LetMember && isLoad(sel.Member.Default) && !b.l.prog.Reactive(x.X)
+	}
+	return false
 }
 
 // patternVars lists the names a pattern binds.

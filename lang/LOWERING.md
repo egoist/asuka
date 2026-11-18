@@ -1140,6 +1140,27 @@ signals: the state, value and error, which a `match` and `.value` read
 and only an answer that changes them writes; and `busy`, which
 `.loading` (`SelLoading`, as `.value` is) reads and a run writes as it
 starts and ends. Both are tracked reads; neither follows the other.
+What it shows (`.value`) is a cell of its own, made with the first
+answer and written (compared, path by path: rfcs/0013) only when what it
+shows changes; a match doesn't follow it. A view's `match x { .ready(p)
+=> … }` over a load's `let` binds what `p` names to accessors of that
+cell (`load.shown`, then ACCP for a tuple's elements) instead of memos:
+reads through them are paths, so a `for t in p key t.id` follows its
+keys and a row its fields.
+
+`x.optimistic(f)` (RFC 0017) is CALLB `load.optimistic(x, f)`. The
+loader keeps a stack of layers, each `f`, its result over what's under
+it, the run whose answer takes it out (the run in flight, or the next)
+and the task that made it (the running task's future, `ak_vm_task_
+current`): a cleanup on that task's owner takes it out when the task
+failed (its future isn't done as the owner goes) or ended with no run
+in flight or due (`optimistic-unconfirmed`); synchronous code's is
+checked from the ready queue. What it shows is the answer with the
+layers applied, written once per change: a layer added applies itself
+on top, one that goes re-applies those above it, an answer re-applies
+all that stay, in the batch that writes it, so nothing flashes. The
+checker keeps `f` a value function (`optimistic-impure`: the state it
+reads, through what it calls, and what it writes).
 
 ## Navigation and commands
 

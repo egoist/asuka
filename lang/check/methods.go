@@ -256,7 +256,8 @@ var Methods = []*Method{
 	{Recv: "app", Name: "secondInstance", Sig: "(args: [string], dir: string)", Builtin: "test.second_instance", Doc: "the app is started again while it runs"},
 
 	// Loading<T>.
-	{Recv: "loading", Name: "reload", Sig: "()", Builtin: "load.reload"},
+	{Recv: "loading", Name: "reload", Sig: "()", Builtin: "load.reload", Doc: "runs the load again: it holds what it shows, loading true until it answers"},
+	{Recv: "loading", Name: "optimistic", Sig: "(change: fn(T) -> T)", Builtin: "load.optimistic", Doc: "shows change applied to what the load shows, at once, until its next answer, a throw out of the task that made it, or that task's end with no run to confirm it (change is a value function)"},
 
 	// Graphics: a Canvas's, while its draw runs (core/src/ui/canvas.c).
 	{Recv: "graphics", Name: "width", Sig: "() -> float", Builtin: "canvas.width", Field: true, Doc: "the canvas's width, in points"},

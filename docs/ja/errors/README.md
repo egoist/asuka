@@ -78,6 +78,8 @@ Asuka が報告するエラーと警告には、すべてコードがありま�
 - [not-pub](not-pub.md): ほかのパッケージ（またはストア、ワーカー）が公開していない宣言。
 - [not-sendable](not-sendable.md): 別のスレッドに渡せない値。
 - [not-supported](not-supported.md): 言語がまだ対応していないもの。
+- [optimistic-impure](optimistic-impure.md): 状態を読む、await する、または書き込む楽観的な変更。
+- [optimistic-not-loading](optimistic-not-loading.md): load でないものに `optimistic` を呼んだ。
 - [pattern-type](pattern-type.md): 値の型に一致しえないパターン。
 - [peek-untracked](peek-untracked.md): 何も追従しない場所での `peek`。
 - [plural-categories](plural-categories.md): 複数形や select のカテゴリーが言語のものと合わないメッセージ。
@@ -116,5 +118,7 @@ Asuka が報告するエラーと警告には、すべてコードがありま�
 - [effect-loop](effect-loop.md): 1 回のフラッシュの中で互いを汚し続けるエフェクト。
 - [load-waterfall](load-waterfall.md): 使ってもいない別の load を待った load。
 - [long-hold](long-hold.md): load が数秒間、何も示さずに古いコンテンツを保っている。
+- [optimistic-not-ready](optimistic-not-ready.md): 準備ができていない load に `optimistic` を呼んだ。
+- [optimistic-unconfirmed](optimistic-unconfirmed.md): 楽観的な変更が、load の確認する実行がないままタスクとともに外れた。
 - [wide-fanout](wide-fanout.md): 1 回の書き込みが 1,000 を超えるバインディングと let を、2 回以上実行した。
 - [write-in-memo](write-in-memo.md): `let` の計算中に状態に書き込んでいる。

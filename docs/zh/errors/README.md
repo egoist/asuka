@@ -78,6 +78,8 @@ Asuka 报告的每个错误和警告都有一个代码：一个稳定的名称�
 - [not-pub](not-pub.md): 其他包（或 store、worker）没有公开的声明。
 - [not-sendable](not-sendable.md): 无法传到另一个线程的值。
 - [not-supported](not-supported.md): 语言暂时还不支持的写法。
+- [optimistic-impure](optimistic-impure.md): 乐观改动读取了状态、await 了或者写入了。
+- [optimistic-not-loading](optimistic-not-loading.md): 对不是 load 的东西调用了 `optimistic`。
 - [pattern-type](pattern-type.md): 与值的类型不可能匹配的模式。
 - [peek-untracked](peek-untracked.md): 在不跟随任何东西的地方使用了 `peek`。
 - [plural-categories](plural-categories.md): 复数或选择消息的类别与语言的类别不符。
@@ -116,5 +118,7 @@ Asuka 报告的每个错误和警告都有一个代码：一个稳定的名称�
 - [effect-loop](effect-loop.md): 在一次刷新（flush）里不断互相弄脏的 effect。
 - [load-waterfall](load-waterfall.md): 一个 load 等待了另一个它并不使用的 load。
 - [long-hold](long-hold.md): load 保留旧内容已有好几秒，却没有任何提示。
+- [optimistic-not-ready](optimistic-not-ready.md): 对还没有就绪的 load 调用了 `optimistic`。
+- [optimistic-unconfirmed](optimistic-unconfirmed.md): 乐观改动随它的任务一起撤销了：它的 load 没有一次运行来确认它。
 - [wide-fanout](wide-fanout.md): 一次写入让 1,000 多个绑定和 let 重新运行，而且不止一次。
 - [write-in-memo](write-in-memo.md): 在计算 `let` 时写入了状态。

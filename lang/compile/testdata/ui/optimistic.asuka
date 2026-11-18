@@ -1,0 +1,138 @@
+// x.optimistic(f) (rfcs/0017): what a load shows, changed at once, until
+// its next answer replaces it or the task that made it throws. The
+// RFC's todo list: a toggle shows at once, a failed save undoes it, and
+// two in flight go each on their own.
+
+struct Todo {
+  id: int
+  title: string
+  done: bool = false
+}
+
+enum Problem: Error { offline }
+
+store Server {
+  state todos = [Todo(id: 1, title: "a"), Todo(id: 2, title: "b"), Todo(id: 3, title: "c")]
+  state failing: Set<int> = []
+  state lists = 0
+
+  async fn list() -> [Todo] {
+    lists += 1
+    await sleep(10ms)
+    return todos
+  }
+
+  async fn setDone(id: int, done: bool) throws {
+    await sleep(20ms)
+    if failing.contains(id) { throw Problem.offline }
+    if let i = todos.index(t => t.id == id) { todos[i].done = done }
+  }
+}
+
+fn marked(t: Todo, done: bool) -> Todo {
+  var c = t
+  c.done = done
+  return c
+}
+
+screen Todos {
+  use api: Server
+  let todos = load api.list()
+
+  Column {
+    match todos {
+      .pending => Text("…")
+      .failed(e) => Text("failed")
+      .ready(ts) => Column {
+        for t in ts key t.id {
+          Toggle {
+            on: t.done
+            title: t.title
+            on change(done) {
+              let id = t.id
+              todos.optimistic(ts => ts.map(x => if x.id == id { marked(x, done) } else { x }))
+              try await api.setDone(id, done)
+              todos.reload()
+            }
+          }
+          Text(if t.done { "{t.id} done" } else { "{t.id} open" })
+        }
+      }
+    }
+    Text("{(todos.value ?? []).count(t => t.done)} done")
+    Button("Clear") {
+      on press {
+        todos.optimistic(ts => ts.filter(t => !t.done))
+        await sleep(5ms)
+        todos.reload()
+      }
+    }
+  }
+}
+
+app {
+  provide Server()
+  Todos()
+}
+
+test "a toggle shows at once, and its answer keeps it" {
+  let server = Server()
+  let app = mount(Todos(), provide: server)
+  await app.idle()
+  app.expect("2 open", "0 done")
+  app.toggle("b")
+  app.expect("2 done", "1 done")
+  await app.idle()
+  app.expect("2 done", "1 done")
+  expect(server.todos[1].done)
+  expect(server.lists == 2)
+}
+
+test "a failed save undoes it" {
+  let server = Server()
+  server.failing = [3]
+  let app = mount(Todos(), provide: server)
+  await app.idle()
+  app.toggle("c")
+  app.expect("3 done")
+  await app.idle()
+  app.expect("3 open", "0 done")
+  expect(!server.todos[2].done)
+}
+
+test "two in flight: the first fails, the second stays" {
+  let server = Server()
+  server.failing = [1]
+  let app = mount(Todos(), provide: server)
+  await app.idle()
+  app.toggle("a")
+  app.toggle("b")
+  app.expect("1 done", "2 done", "2 done")
+  await app.idle()
+  app.expect("1 open", "2 done", "1 done")
+}
+
+test "the same row twice: the last change is what shows" {
+  let server = Server()
+  let app = mount(Todos(), provide: server)
+  await app.idle()
+  app.toggle("b")
+  app.toggle("b")
+  app.expect("2 open")
+  await app.idle()
+  app.expect("2 open", "0 done")
+  expect(!server.todos[1].done)
+}
+
+test "a change of the whole list, confirmed by its reload" {
+  let server = Server()
+  server.todos[0].done = true
+  let app = mount(Todos(), provide: server)
+  await app.idle()
+  app.expect("1 done")
+  app.tap("Clear")
+  app.expectNo("1 done")
+  app.expect("2 open", "0 done")
+  await app.idle()
+  app.expect("1 done", "2 open", "1 done")
+}

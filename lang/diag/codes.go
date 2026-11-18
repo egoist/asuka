@@ -970,6 +970,83 @@ running again when its arguments change: a component's or a store's
 		Wrong: "async fn fetchName() -> string {\n  await sleep(1ms)\n  return \"Ana\"\n}\n\nfn name() {\n  let n = load fetchName()\n}\n",
 		Right: "async fn fetchName() -> string {\n  await sleep(1ms)\n  return \"Ana\"\n}\n\ncomponent Name {\n  let n = load fetchName()\n  Text(n.value ?? \"…\")\n}\n",
 	})
+
+	OptimisticNotLoading = def(Code{
+		Name:    "optimistic-not-loading",
+		Summary: "`optimistic` on what isn't a load",
+		Why: `` + "`x.optimistic(f)`" + ` shows a change of what a load shows until the load's next
+answer replaces it: it's a layer over the source of truth. A state is
+its own source of truth, with nothing coming to replace a change.`,
+		Fix:   "Change the state itself (`notes.push(n)`), or call `optimistic` on the load's `let`.",
+		Wrong: "struct Note {\n  title: string\n}\n\ncomponent Notes {\n  state notes: [Note] = []\n  Column {\n    for n in notes key n.title {\n      Text(n.title)\n    }\n    Button(\"Add\") {\n      on press { notes.optimistic(ns => ns + [Note(title: \"new\")]) }\n    }\n  }\n}\n",
+		Right: "struct Note {\n  title: string\n}\n\ncomponent Notes {\n  state notes: [Note] = []\n  Column {\n    for n in notes key n.title {\n      Text(n.title)\n    }\n    Button(\"Add\") {\n      on press { notes.push(Note(title: \"new\")) }\n    }\n  }\n}\n",
+	})
+
+	OptimisticImpure = def(Code{
+		Name:    "optimistic-impure",
+		Summary: "an optimistic change that reads state, awaits or writes",
+		Why: `An optimistic change runs again whenever what's under it changes: the
+load's next answer, a change below it that goes. It must give the same
+change each time, from what it's given: a function of the value shown,
+as a binding is. What it reads of state may be different by then, and
+what it writes would be written again.`,
+		Fix: "Read what it needs before, into a `let`, and use that in the closure; write in the handler, not in the change.",
+		Wrong: `struct Todo {
+  id: int
+  done: bool
+}
+
+async fn fetchTodos() -> [Todo] {
+  await sleep(1ms)
+  return [Todo(id: 1, done: false)]
+}
+
+fn marked(t: Todo) -> Todo {
+  var c = t
+  c.done = true
+  return c
+}
+
+component Todos {
+  state picked = 1
+  let todos = load fetchTodos()
+  Button("Done") {
+    on press {
+      todos.optimistic(ts => ts.map(t => if t.id == picked { marked(t) } else { t }))
+      todos.reload()
+    }
+  }
+}
+`,
+		Right: `struct Todo {
+  id: int
+  done: bool
+}
+
+async fn fetchTodos() -> [Todo] {
+  await sleep(1ms)
+  return [Todo(id: 1, done: false)]
+}
+
+fn marked(t: Todo) -> Todo {
+  var c = t
+  c.done = true
+  return c
+}
+
+component Todos {
+  state picked = 1
+  let todos = load fetchTodos()
+  Button("Done") {
+    on press {
+      let id = picked
+      todos.optimistic(ts => ts.map(t => if t.id == id { marked(t) } else { t }))
+      todos.reload()
+    }
+  }
+}
+`,
+	})
 )
 
 // Data, platforms and packages.
