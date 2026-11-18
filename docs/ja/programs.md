@@ -229,6 +229,103 @@ async fn main() throws {
 
 プログラムとデスクトップアプリ（macOS、Windows、Linux）で使えます。スマートフォンと Web のアプリはほかのプログラムを実行できません（`CommandError.unsupported`）。
 
+## 端末：std/term
+
+`std/term` は、プログラムの出力にスタイルを付けたり、端末の前にいる人に質問したりするためのパッケージです。次のプログラムはプロジェクトを作ります。プロジェクト名を尋ね、既存のディレクトリを上書きする前に確認し、出力の色は `--color` フラグでオンにもオフにもできます。
+
+```asuka check
+import std/flag
+import std/fs
+import std/os
+import std/term
+
+/// Makes a project.
+struct Options {
+  /// When to use colors.
+  color: term.ColorMode = .auto
+  /// Where to make it (the name asked for, if not given).
+  dir: string?
+}
+
+async fn main() throws {
+  let o = flag.parse<Options>(os.args())
+  term.setColors(o.color)
+  let name = await term.prompt("Project name:", default: "demo") ?? "demo"
+  let target = try fs.abs(o.dir ?? name)
+  if fs.exists(target) && !(await term.confirm("{target} exists. Overwrite?")) {
+    os.eprint("{term.red("error:", stream: .stderr)} nothing was made")
+    os.exit(1)
+  }
+  try await spawn { try fs.mkdirAll(target) }
+  print("{term.green("✓")} made {term.bold(target)}")
+}
+```
+
+```text
+$ new
+Project name: [demo] notes
+✓ made /home/ann/notes
+```
+
+- **スタイル。** `term.bold(text)`、`dim`、`italic`、`underline` と 8 つの色（`red`、`green`、`yellow`、`blue`、`magenta`、`cyan`、`white`、`black`）は、テキストを端末の制御コードで囲みます。いくつかを同時に指定するには `term.Style` を使います。値として保存して使い回すこともできます：`let warn = term.Style(color: .yellow, bold: true)` としておき、`warn.paint(text)` を呼びます。`Style` には明るい色（`.brightRed`）と `background` もあります。スタイル付きのテキストを別のスタイル付きテキストの中に入れると、内側は自分のスタイルを保ち、その後ろでは外側のスタイルが続きます。
+- **スタイルが表示される条件。** 出力先のストリームが端末で、`NO_COLOR` が設定されておらず（[no-color.org](https://no-color.org)）、`TERM` が `dumb` でないときだけ表示されます。`FORCE_COLOR` が設定されていれば、パイプへの出力でも表示されます（`0` か `false` ならオフ）。スタイルの関数はどれも、テキストを書き出すストリームを `stream:` で受け取ります（省略すると `.stdout`）。`term.colors(.stderr)` で判断の結果がわかり、`term.setColors(.always)`、`.never`、`.auto` でそれを上書きできます。対象は両方のストリーム、または `stream:` で指定した一方です。オプションの構造体に `color: term.ColorMode = .auto` というフィールドを書けば、`--color always|never|auto` フラグになります。Windows では、最初に出力するときにコンソールが制御コードを解釈するように設定されます（仮想ターミナル処理を有効にします）。
+- **質問。** `term.prompt(question, default:)` は質問をして、入力された行を前後の空白を除いて返します。何も入力しなければ `default`（`[demo]` のように表示されます）、`none` は stdin が終わったこと（Ctrl-D、閉じたパイプ）を表します。`term.confirm(question, default: false)` は `[y/N]`（デフォルトが true なら `[Y/n]`）と尋ね、y、yes、n、no か空の答えが返るまで繰り返します。`term.secret(question)` は端末のエコーを切って 1 行読みます。パスワードやトークンの入力向けです。行を読み終えたとき、task がキャンセルされたとき、Ctrl-C でプログラムが終了したときのいずれでも、エコーは元に戻ります。質問は git や gh と同じく stderr に書かれるので、出力をパイプに流しても（`new | tee log`）stdout にはプログラム本来の出力だけが残ります。これらは `async` です。行は別のスレッドで読まれ、そのあいだもプログラムのほかの task は動き続けます。
+- **サイズ。** `term.width()` と `term.height()` は端末の列数と行数です（`COLUMNS` と `LINES` が数値ならそちらが優先）。どのストリームも端末でなければ `none` になります：`term.width() ?? 80`。
+
+テストでは `os.fake(stdin:)` で質問に答え、質問そのものは `o.stderr()` で確認できます。テストのストリームは端末ではないのでスタイルは付きませんが、`os.fake(env: ["FORCE_COLOR": "1"])` や `term.setColors(.always)` で指定すれば付きます。見るのは `os.fake` の `env:` だけなので、テストを実行する環境の変数がテストの出力を変えることはありません。スマートフォンと Web には端末がありません。スタイルは付かず、`prompt` は `none` を返し、`width` も `none` です。
+
+## ファイルとディレクトリ：std/fs
+
+プログラムもアプリと同じく `std/fs` でファイルを読み書きします（[データ](data.md)）。さらに、コマンドラインツールがファイルを探すのに必要な関数があります。
+
+- `fs.home()`：ユーザーのホームディレクトリ（`HOME`、Windows では `USERPROFILE`。テストでは、`os.fake` の `env:` にあればその値）。
+- `fs.tempDir()`：一時ファイル用のディレクトリ（`TMPDIR`、なければ `/tmp`。Windows では `GetTempPath` が返すもの）。
+- `fs.abs(path)`：`path` を作業ディレクトリを基準に絶対パスにし、正規化したもの。
+- `fs.walk(dir, skip:)`：ディレクトリの下にあるものすべてを、深さを問わず `Entry`（`path`、`name`、`isDir`、`size`、`modified`）のリストで返します。ディレクトリごとに、まずそれ自身、続いてその中身が名前順に並びます。`skip:` には中に入らないディレクトリの名前を書きます。ディレクトリへのリンクの中にも入りません。
+
+```asuka check
+import std/fs
+
+async fn main() throws {
+  let root = try fs.abs(".")
+  let entries = try await spawn { try fs.walk(root, skip: [".git", "node_modules"]) }
+  let sources = entries.filter(e => !e.isDir && fs.ext(e.name) == ".asuka")
+  print("{sources.count()} files in {root}")
+  let config = fs.join([fs.home(), ".config", "count", "config.toml"])
+  if fs.exists(config) {
+    print("using {config}")
+  }
+}
+```
+
+ディスクにアクセスする呼び出し（`walk`、`readText`、`exists` など）は、システムが答えるまでブロックします。大きなディレクトリツリーをたどるときは `spawn { }` の中で呼べば、プログラムのほかの task は動き続けます。失敗すると、`std/fs` のほかの呼び出しと同じく `FsError` を投げます。一覧を読む権限のないディレクトリは `.denied(path)` です。
+
+## 複数を同時に
+
+`all(items, f, limit:)` は、各要素で非同期関数を同時に呼び出し、結果を要素の順に返します。ダウンロード、リクエスト、ほかのプログラムの実行を並べて行えます。`limit:` は同時に動かす数です。最初のエラーが残りをキャンセルし、それらが止まってから `all` がそのエラーを投げます（[非同期処理](language/async.md#非同期処理)を参照）。
+
+```asuka check
+import std/flag
+import std/http
+import std/os
+
+/// Downloads pages, a few at a time.
+struct Options {
+  /// -j How many at once.
+  jobs: int = 4
+  /// The pages' URLs.
+  urls: [string]
+}
+
+async fn main() throws {
+  let o = flag.parse<Options>(os.args())
+  let sizes = try await all(o.urls, u => try await http.get(u).body.count(), limit: o.jobs)
+  for (u, n) in o.urls.zip(sizes) {
+    print("{n}\t{u}")
+  }
+}
+```
+
 ## 実行
 
 `asuka run` はプログラムの `main` をすぐに実行するので、ビルドを待つ必要がありません。`--` の後ろの引数はプログラムに渡され、プログラムの終了コードでそのまま終了します。
@@ -370,3 +467,4 @@ test "reads git's branch" {
 | `os.args`、`os.exit`、stdin | ○ | ○ | ○ | アプリでは空、`exit` はエラーを投げる |
 | `std/command` | ○ | ○ | ○ | `unsupported` |
 | `std/flag` | ○ | ○ | ○ | ○（どんなリストでも解析できる） |
+| `std/term` | ○ | ○ | ○ | 端末がない（スタイルなし、`prompt` は `none`） |

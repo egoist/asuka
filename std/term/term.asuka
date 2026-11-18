@@ -1,0 +1,338 @@
+// Package std/term is the terminal a program runs in: text in bold or in
+// color, questions asked of the person at it, and its size.
+//
+//   async fn main() {
+//     let name = await term.prompt("Project name:", default: "demo") ?? "demo"
+//     if await term.confirm("Create {name}?", default: true) {
+//       print("{term.green("✓")} created {term.bold(name)}")
+//     }
+//   }
+//
+// Styled text: term.bold(text), dim, italic, underline, and the eight
+// colors (red, green, ...) for the common case, one thing at a time; a
+// Style for several at once (bold and red, a background, the bright
+// colors), and as a value to name and reuse:
+//
+//   let warning = term.Style(color: .yellow, bold: true)
+//   os.eprint("{warning.paint("warning:", stream: .stderr)} disk almost full")
+//
+// The codes are written only when the stream shows them: it's a
+// terminal, NO_COLOR isn't set (no-color.org) and TERM isn't "dumb";
+// FORCE_COLOR set forces them (0 or false: none). Piped into a file or
+// another program, the text is as it was. term.setColors overrides that,
+// so a --color flag is one line: term.setColors(options.color). On
+// Windows the console is made to show them (its virtual terminal
+// processing) the first time.
+//
+// prompt, confirm and secret write their question on stderr, as git, gh
+// and Rust's dialoguer do, so what a program prints on stdout stays its
+// output when it's piped (tool | jq). They read stdin's next line on
+// another thread: what else the program runs goes on while it waits.
+//
+// A phone's app and the web have no terminal: no styling, prompts give
+// none, width is none. In tests, os.fake's stdin answers prompts, its
+// streams aren't terminals (no styling) and only its env: counts
+// (FORCE_COLOR, COLUMNS).
+
+import std/os
+
+/// A color, one of the terminal's sixteen: what each looks like is the
+/// terminal's theme.
+pub enum Color {
+  black
+  red
+  green
+  yellow
+  blue
+  magenta
+  cyan
+  white
+  brightBlack
+  brightRed
+  brightGreen
+  brightYellow
+  brightBlue
+  brightMagenta
+  brightCyan
+  brightWhite
+}
+
+/// Whether styled text shows: as the stream and the environment say
+/// (auto), or always, or never.
+pub enum ColorMode { auto, always, never }
+
+/// How text looks: a color, a background, and bold, dim, italic or
+/// underlined. Each is off unless it's set.
+///
+///   let title = term.Style(color: .cyan, bold: true)
+///   print(title.paint("Summary"))
+pub struct Style {
+  /// The text's color (none: the terminal's own).
+  color: Color? = none
+  /// The color behind it (none: the terminal's own).
+  background: Color? = none
+  /// Heavier.
+  bold: bool = false
+  /// Fainter.
+  dim: bool = false
+  /// Slanted, where the terminal's font has it.
+  italic: bool = false
+  /// Underlined.
+  underline: bool = false
+
+  /// text in this style, when stream shows styled text (colors(stream));
+  /// as it is otherwise. Styled text inside text keeps its own style and
+  /// takes this one back after it.
+  fn paint(text: string, stream: os.Stdio = .stdout) -> string {
+    if text.isEmpty() || !colors(stream) {
+      return text
+    }
+    var opens: [int] = []
+    var closes: [int] = []
+    if bold {
+      opens.push(1)
+      closes.push(22)
+    }
+    if dim {
+      opens.push(2)
+      closes.push(22)
+    }
+    if italic {
+      opens.push(3)
+      closes.push(23)
+    }
+    if underline {
+      opens.push(4)
+      closes.push(24)
+    }
+    if let c = color {
+      opens.push(code(c))
+      closes.push(39)
+    }
+    if let c = background {
+      opens.push(code(c) + 10)
+      closes.push(49)
+    }
+    return wrap(text, opens, closes)
+  }
+}
+
+fn code(c: Color) -> int = match c {
+  .black => 30
+  .red => 31
+  .green => 32
+  .yellow => 33
+  .blue => 34
+  .magenta => 35
+  .cyan => 36
+  .white => 37
+  .brightBlack => 90
+  .brightRed => 91
+  .brightGreen => 92
+  .brightYellow => 93
+  .brightBlue => 94
+  .brightMagenta => 95
+  .brightCyan => 96
+  .brightWhite => 97
+}
+
+fn sgr(n: int) -> string = "\u{1b}[{n}m"
+
+// wrap puts text between the opening codes and the closing ones. Where
+// text closes one of them itself (styled text inside), it's opened again
+// after, so the outer style goes on.
+fn wrap(text: string, opens: [int], closes: [int]) -> string {
+  if opens.isEmpty() {
+    return text
+  }
+  var body = text
+  var start = ""
+  var end = ""
+  var i = 0
+  while i < opens.count() {
+    start += sgr(opens[i])
+    body = body.replace(sgr(closes[i]), sgr(closes[i]) + sgr(opens[i]))
+    let close = sgr(closes[i])
+    if !end.contains(close) {
+      end = close + end
+    }
+    i += 1
+  }
+  return start + body + end
+}
+
+fn fd(s: os.Stdio) -> int = match s {
+  .stdin => 0
+  .stdout => 1
+  .stderr => 2
+}
+
+fn one(text: string, open: int, close: int, stream: os.Stdio) -> string {
+  if text.isEmpty() || !colors(stream) {
+    return text
+  }
+  return wrap(text, [open], [close])
+}
+
+/// text in bold, when stream shows styled text (colors).
+pub fn bold(text: string, stream: os.Stdio = .stdout) -> string = one(text, 1, 22, stream)
+/// text dimmed (fainter): hints, what matters less.
+pub fn dim(text: string, stream: os.Stdio = .stdout) -> string = one(text, 2, 22, stream)
+/// text in italics (where the terminal's font has them).
+pub fn italic(text: string, stream: os.Stdio = .stdout) -> string = one(text, 3, 23, stream)
+/// text underlined.
+pub fn underline(text: string, stream: os.Stdio = .stdout) -> string = one(text, 4, 24, stream)
+/// text in black.
+pub fn black(text: string, stream: os.Stdio = .stdout) -> string = one(text, 30, 39, stream)
+/// text in red: what failed.
+pub fn red(text: string, stream: os.Stdio = .stdout) -> string = one(text, 31, 39, stream)
+/// text in green: what went well.
+pub fn green(text: string, stream: os.Stdio = .stdout) -> string = one(text, 32, 39, stream)
+/// text in yellow: warnings.
+pub fn yellow(text: string, stream: os.Stdio = .stdout) -> string = one(text, 33, 39, stream)
+/// text in blue.
+pub fn blue(text: string, stream: os.Stdio = .stdout) -> string = one(text, 34, 39, stream)
+/// text in magenta.
+pub fn magenta(text: string, stream: os.Stdio = .stdout) -> string = one(text, 35, 39, stream)
+/// text in cyan.
+pub fn cyan(text: string, stream: os.Stdio = .stdout) -> string = one(text, 36, 39, stream)
+/// text in white.
+pub fn white(text: string, stream: os.Stdio = .stdout) -> string = one(text, 37, 39, stream)
+
+/// Whether text styled for stream shows its style: what setColors said,
+/// else FORCE_COLOR set (on, unless it's 0 or false), else NO_COLOR set
+/// (off), else TERM=dumb (off), else whether stream is a terminal.
+pub fn colors(stream: os.Stdio = .stdout) -> bool = colorsAt(fd(stream))
+
+/// Says whether styled text shows, for stdout and stderr, or the one
+/// stream given: .always, .never, or .auto (colors' own choice, again).
+/// A --color flag is one line:
+///
+///   struct Options {
+///     /// When to use colors.
+///     color: term.ColorMode = .auto
+///   }
+///   term.setColors(flag.parse<Options>(os.args()).color)
+pub fn setColors(mode: ColorMode, stream: os.Stdio? = none) {
+  let c = match mode {
+    .auto => 0
+    .always => 1
+    .never => 2
+  }
+  if let s = stream {
+    setChoice(fd(s), c)
+  } else {
+    setChoice(-1, c)
+  }
+}
+
+/// The terminal's width, in columns: COLUMNS when it's set to a number,
+/// else the terminal's that stdout, stderr or stdin is; none when there's
+/// none (piped, a phone, the web, a test).
+///
+///   let width = term.width() ?? 80
+pub fn width() -> int? = known(dimension(0))
+
+/// The terminal's height, in rows: LINES, else the terminal's, as width.
+pub fn height() -> int? = known(dimension(1))
+
+fn known(n: int) -> int? {
+  if n > 0 {
+    return n
+  }
+  return none
+}
+
+// ---------------------------------------------------------------------
+// Questions
+
+async fn readLine() -> string? = await spawn { os.readLine() }
+
+// ended is a question's end of input: at a terminal (Ctrl-D), what's
+// written next starts a line of its own.
+fn ended() {
+  if os.terminal(.stdin) {
+    os.writeTo(.stderr, "\n")
+  }
+}
+
+/// Asks a question on stderr and waits for a line of stdin: the answer,
+/// without the spaces around it. An empty answer is default when there's
+/// one (shown after the question: "Name: [demo] "), else "". none at the
+/// end of stdin (nobody to ask: a closed pipe, Ctrl-D).
+///
+///   let name = await term.prompt("Your name:") ?? ""
+pub async fn prompt(question: string, default: string? = none) -> string? {
+  var q = question
+  if let d = default {
+    q += " [{d}]"
+  }
+  os.writeTo(.stderr, q + " ")
+  if let line = await readLine() {
+    let answer = line.trim()
+    if answer.isEmpty() {
+      return default ?? ""
+    }
+    return answer
+  }
+  ended()
+  return none
+}
+
+/// Asks a yes-or-no question on stderr: "Delete 3 files? [y/N] ". y or
+/// yes is true, n or no false (in any case), an empty answer is default;
+/// anything else asks again. At the end of stdin it's default.
+///
+///   if await term.confirm("Overwrite {name}?") { … }
+pub async fn confirm(question: string, default: bool = false) -> bool {
+  let hint = if default { "[Y/n]" } else { "[y/N]" }
+  while true {
+    os.writeTo(.stderr, "{question} {hint} ")
+    if let line = await readLine() {
+      let a = line.trim().lower()
+      if a.isEmpty() {
+        return default
+      }
+      if a == "y" || a == "yes" {
+        return true
+      }
+      if a == "n" || a == "no" {
+        return false
+      }
+      os.writeTo(.stderr, "Please answer y or n.\n")
+    } else {
+      ended()
+      return default
+    }
+  }
+  return default
+}
+
+/// Asks for what mustn't show, a password or a token: the line is read
+/// with the terminal's echo off (put back as it was when it's read, when
+/// the task is cancelled, and when the program is ended with Ctrl-C), and
+/// returned as it was typed. none at the end of stdin. Not at a terminal
+/// (piped), it reads stdin's next line.
+///
+///   let token = await term.secret("API token:") ?? ""
+pub async fn secret(question: string) -> string? {
+  os.writeTo(.stderr, question + " ")
+  let hidden = setEcho(false)
+  defer {
+    if hidden {
+      setEcho(true)
+      // The Enter that ended it didn't show.
+      os.writeTo(.stderr, "\n")
+    }
+  }
+  let line = await readLine()
+  if line == none && !hidden {
+    ended()
+  }
+  return line
+}
+
+native fn colorsAt(fd: int) -> bool
+native fn setChoice(fd: int, choice: int)
+native fn dimension(which: int) -> int
+native fn setEcho(on: bool) -> bool

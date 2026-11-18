@@ -154,7 +154,10 @@ func Dir(dir string, opts *Options) (*Result, error) {
 		opts = &o
 	}
 	l := &loader{fset: syntax.NewFileSet(), opts: opts, units: map[string]*unit{}}
-	root, err := l.loadDir("", "", abs)
+	// A package of the standard library's or the platform SDK's (its own
+	// tests, asuka test std/term) is compiled as its import path, which
+	// its native fns are the runtime's under.
+	root, err := l.loadDir(carried(abs), "", abs)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +168,21 @@ func Dir(dir string, opts *Options) (*Result, error) {
 		return nil, fmt.Errorf("no .asuka files in %s", dir)
 	}
 	return l.compile(root), nil
+}
+
+// carried is the import path of the standard library's or the platform
+// SDK's package in dir (std/term), "" when dir isn't one of theirs.
+func carried(dir string) string {
+	ps, err := std.Packages()
+	if err != nil {
+		return ""
+	}
+	for p, d := range ps {
+		if same, err := filepath.Abs(d); err == nil && same == dir {
+			return p
+		}
+	}
+	return ""
 }
 
 // Files compiles one package made of files (name → source).

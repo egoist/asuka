@@ -1,0 +1,92 @@
+import std/os
+
+let esc = "\u{1b}"
+
+test "a test's streams aren't terminals: text as it is" {
+  expect(!colors())
+  expect(!colors(.stderr))
+  expect(red("x") == "x")
+  expect(Style(color: .red, bold: true).paint("x") == "x")
+  expect(width() == none)
+  expect(height() == none)
+}
+
+test "setColors: always and never" {
+  setColors(.always)
+  expect(red("error") == "{esc}[31merror{esc}[39m")
+  expect(bold("b", stream: .stderr) == "{esc}[1mb{esc}[22m")
+  expect(red("") == "")
+  setColors(.never, stream: .stderr)
+  expect(bold("b", stream: .stderr) == "b")
+  expect(bold("b") == "{esc}[1mb{esc}[22m")
+  setColors(.auto)
+  expect(bold("b") == "b")
+}
+
+test "each test starts with auto" {
+  expect(red("x") == "x")
+}
+
+test "a style: several at once, and nested" {
+  setColors(.always)
+  let s = Style(color: .brightRed, background: .blue, bold: true, underline: true)
+  expect(s.paint("x") == "{esc}[1m{esc}[4m{esc}[91m{esc}[44mx{esc}[49m{esc}[39m{esc}[24m{esc}[22m")
+  // Bold and dim share their end: it's written once.
+  expect(Style(bold: true, dim: true).paint("x") == "{esc}[1m{esc}[2mx{esc}[22m")
+  expect(Style().paint("x") == "x")
+  // The inner color ends; the outer one goes on after it.
+  expect(green("a {red("b")} c") == "{esc}[32ma {esc}[31mb{esc}[39m{esc}[32m c{esc}[39m")
+}
+
+test "the environment: FORCE_COLOR, NO_COLOR, TERM, COLUMNS" {
+  let _ = os.fake(env: ["FORCE_COLOR": "1"])
+  expect(colors())
+  expect(cyan("c") == "{esc}[36mc{esc}[39m")
+  let _ = os.fake(env: ["FORCE_COLOR": "0"])
+  expect(!colors())
+  let _ = os.fake(env: ["NO_COLOR": "1", "TERM": "xterm-256color"])
+  expect(!colors())
+  let _ = os.fake(env: ["COLUMNS": "120", "LINES": "40"])
+  expect(width() == 120)
+  expect(height() == 40)
+  let _ = os.fake(env: ["COLUMNS": "wide"])
+  expect(width() == none)
+}
+
+async fn ask() {
+  let name = await prompt("Name:", default: "demo") ?? "(none)"
+  let city = await prompt("City:") ?? "(none)"
+  let sure = await confirm("Create {name} in {city}?")
+  let token = await secret("Token:") ?? "(none)"
+  let more = await prompt("More:") ?? "(none)"
+  print("{name}|{city}|{sure}|{token}|{more}")
+}
+
+test "prompts read the fake's stdin; questions go to stderr" {
+  let o = os.fake(stdin: "\n  Kyoto \nmaybe\nYES\n s3cret \n")
+  expect(await o.run(ask) == 0)
+  expect(o.stdout() == "demo|Kyoto|true| s3cret |(none)\n")
+  expect(o.stderr() == "Name: [demo] City: Create demo in Kyoto? [y/N] Please answer y or n.\nCreate demo in Kyoto? [y/N] Token: More: ")
+}
+
+test "at the end of stdin: none, and confirm's default" {
+  let o = os.fake(stdin: "")
+  expect(await o.run(ask) == 0)
+  expect(o.stdout() == "(none)|(none)|false|(none)|(none)\n")
+  expect(await o.run(async () => {
+    print(await confirm("Go?", default: true))
+  }) == 0)
+  expect(o.stdout().hasSuffix("true\n"))
+}
+
+test "confirm's answers" {
+  let o = os.fake(stdin: "n\nY\n\nno\n")
+  expect(await o.run(async () => {
+    print(await confirm("a?", default: true))
+    print(await confirm("b?"))
+    print(await confirm("c?", default: true))
+    print(await confirm("d?", default: true))
+  }) == 0)
+  expect(o.stdout() == "false\ntrue\ntrue\nfalse\n")
+  expect(o.stderr() == "a? [Y/n] b? [y/N] c? [Y/n] d? [Y/n] ")
+}

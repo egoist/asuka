@@ -1,14 +1,16 @@
-// fs.c: std/fs's builtins: paths, and the file system's calls (POSIX,
-// Win32 in UTF-16, WASI's where the web gives it a directory). The calls
-// block, so apps make them in spawn { }; each is safe on any thread.
+// fs.c: std/fs's builtins: paths, the directories files go in, and the
+// file system's calls (POSIX, Win32 in UTF-16, WASI's where the web gives
+// it a directory). The calls block, so apps make them in spawn { }; each
+// is safe on any thread.
 //
 // A call that fails returns its failure value (none, false) and leaves
 // why in this thread's last error, which fs.failureKind() gives (a
 // FAIL_*) and fs.failureReason() says; the Asuka side throws an FsError
 // of it (std/fs/fs.asuka).
 //
-//	fs.appDir() -> string
+//	fs.appDir() / home() / tempDir() -> string
 //	fs.join(parts) / clean(p) / dir(p) / base(p) / ext(p) -> string
+//	fs.absolute(p) -> string?        against the working directory, cleaned
 //	fs.listNames(p) -> [string]?     names in a directory, sorted
 //	fs.statInfo(p) -> [int]?         [isDir, size, modified (ns)]
 //	fs.readFile(p) -> bytes?
@@ -16,6 +18,7 @@
 //	fs.copyFile(from, to) / moveFile(from, to) -> bool
 //	fs.makeDirs(p) / removeOne(p) / removeTree(p) -> bool
 //	fs.exists(p) -> bool
+//	fs.walkInfo(p) -> [int]?         statInfo's, and whether it's a link
 //	fs.failureKind() -> int / failureReason() -> string
 #if defined(__APPLE__)
 #define _DARWIN_C_SOURCE  // st_mtimespec, getprogname
@@ -28,12 +31,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+#if defined(__ANDROID__) || defined(__wasm__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+#define AK_FS_SANDBOX 1  // a phone's app or the web: no user's home to see
+#endif
+
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
 #include <dirent.h>
 #include <errno.h>
+#if !defined(AK_FS_SANDBOX)
+#include <pwd.h>
+#endif
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -842,6 +855,197 @@ static ak_val remove_all_fn(ak_val *args, uint32_t n) {
 	return (ak_val){.i = remove_all(STR(0), 0)};
 }
 
+// ---- The user's directories ----
+
+// cleaned is p cleaned (a directory's trailing separator gone), and p
+// freed.
+static ak_val cleaned(char *p) {
+	ak_str *s = clean(p, strlen(p));
+	ak_free(p);
+	return (ak_val){.p = s};
+}
+
+static ak_val home_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(args), AK_UNUSED(n);
+#if defined(AK_FS_SANDBOX)
+	return cleaned(ak_fs_app_dir());
+#elif defined(_WIN32)
+	// The environment's, as Go's UserHomeDir: USERPROFILE, which every
+	// session sets, else HOMEDRIVE and HOMEPATH (the core links nothing
+	// but kernel32 and ws2_32, so not the shell's SHGetKnownFolderPath).
+	char *v = ak_os_getenv("USERPROFILE", true);
+	if (v && *v) return cleaned(v);
+	ak_free(v);
+	char *drive = ak_os_getenv("HOMEDRIVE", true), *dir = ak_os_getenv("HOMEPATH", true);
+	if (drive && dir && *drive && *dir) {
+		size_t a = strlen(drive), b = strlen(dir);
+		char *both = ak_alloc(a + b + 1);
+		memcpy(both, drive, a);
+		memcpy(both + a, dir, b + 1);
+		ak_free(drive);
+		ak_free(dir);
+		return cleaned(both);
+	}
+	ak_free(drive);
+	ak_free(dir);
+	return cleaned(dup_path("C:\\"));
+#else
+	char *v = ak_os_getenv("HOME", true);
+	if (v && *v) return cleaned(v);
+	ak_free(v);
+	struct passwd pw, *found = NULL;
+	char buf[4096];
+	if (getpwuid_r(getuid(), &pw, buf, sizeof buf, &found) == 0 && found && found->pw_dir && *found->pw_dir) return cleaned(dup_path(found->pw_dir));
+	return cleaned(dup_path("/"));
+#endif
+}
+
+static ak_val temp_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(args), AK_UNUSED(n);
+#if defined(_WIN32)
+	wchar_t w[MAX_PATH + 2];
+	DWORD k = GetTempPathW(MAX_PATH + 2, w);
+	if (k == 0 || k > MAX_PATH + 1) return cleaned(dup_path("C:\\Windows\\Temp"));
+	int len;
+	return cleaned(narrow(w, &len));
+#elif defined(__wasm__)
+	return cleaned(dup_path("/tmp"));
+#else
+	char *v = ak_os_getenv("TMPDIR", true);
+	if (v && *v) return cleaned(v);
+	ak_free(v);
+#if defined(__ANDROID__)
+	// No TMPDIR for an app: its cache directory, beside its files
+	// (Context.getCacheDir, next to getFilesDir: the app's directory).
+	char *app = ak_fs_app_dir();
+	ak_str *d = clean(app, strlen(app));
+	ak_free(app);
+	size_t i = d->len;
+	while (i > 0 && d->data[i - 1] != '/') i--;
+	char *cache = ak_alloc(i + 6);
+	memcpy(cache, d->data, i);
+	memcpy(cache + i, "cache", 6);
+	ak_release(d);
+	return cleaned(cache);
+#else
+	return cleaned(dup_path("/tmp"));
+#endif
+#endif
+}
+
+// absolute: p against the working directory, cleaned; none when the
+// working directory can't be had (it was removed).
+static ak_val abs_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	const ak_str *p = STR(0);
+#if defined(_WIN32)
+	ak_str *dot = p->len ? NULL : ak_str_new(".", 1);
+	wchar_t *w = wide(dot ? dot : p);
+	ak_release(dot);
+	if (!w) return (ak_val){.p = NULL};
+	DWORD k = GetFullPathNameW(w, 0, NULL, NULL);
+	wchar_t *full = k ? ak_alloc(sizeof(wchar_t) * k) : NULL;
+	DWORD got = full ? GetFullPathNameW(w, k, full, NULL) : 0;
+	ak_free(w);
+	if (got == 0 || got >= k) {
+		failed_os();
+		ak_free(full);
+		return (ak_val){.p = NULL};
+	}
+	int len;
+	char *s = narrow(full, &len);
+	ak_free(full);
+	return cleaned(s);
+#else
+	if (p->len && p->data[0] == '/') return (ak_val){.p = clean(p->data, p->len)};
+#if defined(__wasm__)
+	char *cwd = dup_path("/");
+#else
+	size_t cap = 1024;
+	char *cwd = ak_alloc(cap);
+	while (!getcwd(cwd, cap)) {
+		if (errno != ERANGE || cap > (1u << 20)) {
+			failed_os();
+			ak_free(cwd);
+			return (ak_val){.p = NULL};
+		}
+		ak_free(cwd);
+		cap *= 2;
+		cwd = ak_alloc(cap);
+	}
+#endif
+	size_t c = strlen(cwd);
+	char *both = ak_alloc(c + 1 + p->len + 1);
+	memcpy(both, cwd, c);
+	both[c] = '/';
+	memcpy(both + c + 1, p->data, p->len);
+	both[c + 1 + p->len] = 0;
+	ak_free(cwd);
+	return cleaned(both);
+#endif
+}
+
+// walkInfo: what's at p as statInfo says it (what a link links to; a
+// link that's broken: the link), and 1 when p is a link (walk doesn't
+// enter one), 0 when it isn't.
+static ak_val walk_info_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	int64_t is_dir, size, mtime, link;
+#if defined(_WIN32)
+	wchar_t *w = wide(STR(0));
+	if (!w) return (ak_val){.p = NULL};
+	WIN32_FILE_ATTRIBUTE_DATA a;
+	if (!GetFileAttributesExW(w, GetFileExInfoStandard, &a)) {
+		failed_os();
+		ak_free(w);
+		return (ak_val){.p = NULL};
+	}
+	link = (a.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+	is_dir = (a.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+	size = (int64_t)((uint64_t)a.nFileSizeHigh << 32 | a.nFileSizeLow);
+	mtime = filetime_ns(a.ftLastWriteTime);
+	if (link) {
+		// What it links to, when it's there.
+		HANDLE h = CreateFileW(w, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+		BY_HANDLE_FILE_INFORMATION fi;
+		if (h != INVALID_HANDLE_VALUE) {
+			if (GetFileInformationByHandle(h, &fi)) {
+				is_dir = (fi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+				size = (int64_t)((uint64_t)fi.nFileSizeHigh << 32 | fi.nFileSizeLow);
+				mtime = filetime_ns(fi.ftLastWriteTime);
+			}
+			CloseHandle(h);
+		}
+	}
+	ak_free(w);
+#else
+	const char *p = path(STR(0));
+	struct stat st;
+	if (!p) return (ak_val){.p = NULL};
+	if (lstat(p, &st) != 0) {
+		failed_os();
+		return (ak_val){.p = NULL};
+	}
+	link = S_ISLNK(st.st_mode);
+	struct stat to;
+	if (link && stat(p, &to) == 0) st = to;
+	is_dir = S_ISDIR(st.st_mode);
+	size = (int64_t)st.st_size;
+#if defined(__APPLE__)
+	mtime = (int64_t)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
+#else
+	mtime = (int64_t)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+#endif
+#endif
+	ak_arr *a4 = ak_arr_new(AK_K_INT, NULL, 4);
+	a4->data[0].i = is_dir;
+	a4->data[1].i = is_dir ? 0 : size;
+	a4->data[2].i = mtime;
+	a4->data[3].i = link;
+	a4->len = 4;
+	return (ak_val){.p = a4};
+}
+
 char *ak_fs_temp_dir(void) {
 #if defined(_WIN32)
 	char base[MAX_PATH + 1];
@@ -879,6 +1083,9 @@ bool ak_fs_remove_tree(const char *path) {
 
 const ak_lib_entry ak_std_fs[] = {
 	{"fs.appDir", app_dir_fn},
+	{"fs.home", home_fn},
+	{"fs.tempDir", temp_fn},
+	{"fs.absolute", abs_fn},
 	{"fs.join", join_fn},
 	{"fs.clean", clean_fn},
 	{"fs.dir", dir_fn},
@@ -886,6 +1093,7 @@ const ak_lib_entry ak_std_fs[] = {
 	{"fs.ext", ext_fn},
 	{"fs.listNames", list_fn},
 	{"fs.statInfo", stat_fn},
+	{"fs.walkInfo", walk_info_fn},
 	{"fs.exists", exists_fn},
 	{"fs.readFile", read_fn},
 	{"fs.writeFile", write_fn},

@@ -1,0 +1,38 @@
+// env: FORCE_COLOR=1
+// env: COLUMNS=77
+// env: HOME=/home/ann
+// stdin: \nyes\n  hunter2\n
+// exit: 0
+import std/fs
+import std/os
+import std/term
+
+fn shown(s: string) -> string = s.replace("\u{1b}", "^")
+
+async fn main() throws {
+  let name = await term.prompt("Name:", default: "Ada") ?? "none"
+  let sure = await term.confirm("Sure?")
+  let secret = await term.secret("Password:") ?? "none"
+  print("{name} {sure} [{secret}]")
+  print(await term.prompt("More:") ?? "none")
+  print(shown(term.green("hi {term.bold(name)}")))
+  print(shown(term.Style(color: .brightCyan, italic: true).paint("s")))
+  term.setColors(.never)
+  print(term.red("plain"))
+  print(term.width() ?? -1)
+  print(fs.home())
+  print(try fs.abs(".") == fs.clean(os.cwd()))
+  os.eprint("|")
+}
+
+// Stdout:
+// Ada true [  hunter2]
+// none
+// ^[32mhi ^[1mAda^[22m^[39m
+// ^[3m^[96ms^[39m^[23m
+// plain
+// 77
+// /home/ann
+// true
+// Stderr:
+// Name: [Ada] Sure? [y/N] Password: More: |

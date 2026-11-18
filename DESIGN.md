@@ -1555,8 +1555,9 @@ variable) or a host's (`asuka_program_start`: macOS's dispatch queue);
 as main ends, what's left is cancelled and the process exits 0, 1 with
 `error: <message>` and the trace (the VM's frames, and compiled
 functions' noted on the error's path only: `ak_frame_hook`), or what
-`os.exit` said. std/os, std/command (fork and exec; CreateProcess)
-and std/flag (lang/ir/flag.go writes `flag.spec<T>()`'s description
+`os.exit` said. std/os, std/command (fork and exec; CreateProcess),
+std/term (termios and TIOCGWINSZ; the console's modes on Windows) and
+std/flag (lang/ir/flag.go writes `flag.spec<T>()`'s description
 of T) are the core's C and Asuka. A program whose packages have
 platform code runs on a headless host: platform/desktop/program on
 Windows and Linux (asuka_desktop.h's host half, GLib's loop when it's

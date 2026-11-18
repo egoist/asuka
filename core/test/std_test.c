@@ -8,6 +8,9 @@
 #include "rt/sched.h"
 
 #include <time.h>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 static ak_lib_fn fn(const char *name) {
 	for (const ak_lib_entry *const *t = ak_std_libs; *t; t++)
@@ -642,6 +645,100 @@ TEST(int_extremes) {
 
 // race of no tasks has none to finish first: it waits, as never()
 // does, until it's cancelled; nothing is left behind.
+// Closures for the collections' builtins: a string's first letter as
+// a key; an int's half when it's even, none when it's odd (a boxed
+// optional); "x" throws.
+static ak_val first_letter(ak_closure *c, ak_val *args, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(n);
+	ak_str *s = args[0].p;
+	if (s->len == 1 && s->data[0] == 'x') {
+		ak_throw_msg("no x");
+		return (ak_val){0};
+	}
+	return (ak_val){.p = ak_str_slice(s, 0, 1)};
+}
+
+static ak_val half_of_even(ak_closure *c, ak_val *args, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(n);
+	if (args[0].i % 2) return (ak_val){.p = NULL};
+	return (ak_val){.p = ak_box_new(AK_K_INT, (ak_val){.i = args[0].i / 2})};
+}
+
+static ak_arr *strs(const char *const *xs, uint32_t n) {
+	ak_arr *a = ak_arr_new(AK_K_REF, NULL, n);
+	a->h.flags = 1;
+	for (uint32_t i = 0; i < n; i++) a->data[a->len++].p = ak_str_c(xs[i]);
+	return a;
+}
+
+// grouped, unique and compactMap hold what they keep and let go of the
+// rest, an error included: no object outlives them.
+TEST(collections_refs) {
+	int64_t live = ak_obj_live;
+	ak_closure *key = ak_closure_new(first_letter, NULL, 0, NULL);
+	ak_arr *words = strs((const char *[]){"apple", "bob", "avocado", "bob"}, 4);
+	ak_map *g = call("arr.grouped", (ak_val[]){{.p = words}, {.p = key}, I(AK_K_REF)}, 3, 0).p;
+	REQUIRE(g && g->live == 2);
+	ak_arr *keys = ak_map_keys(g);
+	CHECK_STR((ak_val){.p = ak_retain(keys->data[0].p)}, "a");
+	CHECK_STR((ak_val){.p = ak_retain(keys->data[1].p)}, "b");
+	ak_val as;
+	ak_str *a = ak_str_c("a");
+	REQUIRE(ak_map_get(g, (ak_val){.p = a}, &as));
+	CHECK_EQ_INT(((ak_arr *)as.p)->len, 2);
+	ak_release(a);
+	ak_release(keys);
+	ak_release(g);
+	ak_arr *u = call("arr.unique", (ak_val[]){{.p = words}}, 1, 0).p;
+	CHECK_EQ_INT(u->len, 3);
+	ak_release(u);
+	ak_arr *bad = strs((const char *[]){"a", "x", "b"}, 3);
+	CHECK(call("arr.grouped", (ak_val[]){{.p = bad}, {.p = key}, I(AK_K_REF)}, 3, 0).p == NULL);
+	void *e = ak_error_take();
+	CHECK(e != NULL);
+	ak_release(e);
+	ak_release(bad);
+	ak_release(words);
+	ak_release(key);
+	ak_closure *half = ak_closure_new(half_of_even, NULL, 0, NULL);
+	ak_arr *ns = ak_arr_new(AK_K_INT, NULL, 5);
+	for (int i = 0; i < 5; i++) ns->data[ns->len++].i = i;
+	ak_arr *h = call("arr.compact_map", (ak_val[]){{.p = ns}, {.p = half}, I(AK_K_INT)}, 3, 0).p;
+	REQUIRE(h && h->len == 3);
+	CHECK(h->data[0].i == 0 && h->data[1].i == 1 && h->data[2].i == 2);
+	ak_release(h);
+	ak_arr *ch = call("arr.chunked", (ak_val[]){{.p = ns}, I(2)}, 2, 0).p;
+	CHECK_EQ_INT(ch->len, 3);
+	ak_release(ch);
+	call("arr.chunked", (ak_val[]){{.p = ns}, I(0)}, 2, 0);
+	e = ak_error_take();
+	CHECK(e != NULL);
+	ak_release(e);
+	ak_release(ns);
+	ak_release(half);
+	CHECK_EQ_INT(ak_obj_live, live);
+}
+
+// Radixes: every int round-trips; past an int's range is none.
+TEST(radixes) {
+	ak_str *s = call("int.to_string", (ak_val[]){I(INT64_MIN), I(2)}, 2, 0).p;
+	CHECK_EQ_INT(s->len, 65);
+	ak_box *b = call("str.to_int_radix", (ak_val[]){{.p = s}, I(2)}, 2, 0).p;
+	REQUIRE(b);
+	CHECK(b->v.i == INT64_MIN);
+	ak_release(b);
+	ak_release(s);
+	CHECK_STR(call("int.to_string", (ak_val[]){I(-35), I(36)}, 2, 0), "-z");
+	ak_str *big = ak_str_c("9223372036854775808");
+	CHECK(call("str.to_int_radix", (ak_val[]){{.p = big}, I(10)}, 2, 0).p == NULL);
+	ak_release(big);
+	ak_str *sign = ak_str_c("-");
+	CHECK(call("str.to_int_radix", (ak_val[]){{.p = sign}, I(10)}, 2, 0).p == NULL);
+	ak_release(sign);
+	CHECK_STR(call("str.reversed", (ak_val[]){{.p = ak_str_c("añ😀b")}}, 1, 1), "b😀ña");
+	REQUIRE(!ak_error_pending());
+}
+
 TEST(race_of_none) {
 	int64_t live = ak_obj_live;
 	ak_arr *none = ak_arr_new(AK_K_REF, NULL, 0);
@@ -716,6 +813,119 @@ TEST(command_wait_signalled) {
 	CHECK_EQ_INT(f->result.i, 128 + 9);
 	ak_release(f);
 	call("command.procRelease", (ak_val[]){h}, 1, 0);
+}
+#endif
+
+#if !defined(_WIN32)
+// fs.home and tempDir from the environment; abs against the working
+// directory.
+TEST(user_dirs) {
+	char *home = getenv("HOME") ? strdup(getenv("HOME")) : NULL;
+	char *tmp = getenv("TMPDIR") ? strdup(getenv("TMPDIR")) : NULL;
+	setenv("HOME", "/home/ann/", 1);
+	CHECK_STR(call("fs.home", NULL, 0, 0), "/home/ann");
+	unsetenv("HOME");
+	ak_str *h = call("fs.home", NULL, 0, 0).p;  // the user's records
+	CHECK(h && h->len > 0 && h->data[0] == '/');
+	ak_release(h);
+	setenv("TMPDIR", "/var/t//", 1);
+	CHECK_STR(call("fs.tempDir", NULL, 0, 0), "/var/t");
+	unsetenv("TMPDIR");
+	CHECK_STR(call("fs.tempDir", NULL, 0, 0), "/tmp");
+	if (home) setenv("HOME", home, 1);
+	if (tmp) setenv("TMPDIR", tmp, 1);
+	free(home);
+	free(tmp);
+
+	CHECK_STR(call("fs.absolute", (ak_val[]){S("/a/./b/../c")}, 1, 1), "/a/c");
+	char cwd[4096];
+	REQUIRE(getcwd(cwd, sizeof cwd));
+	CHECK_STR(call("fs.absolute", (ak_val[]){S("")}, 1, 1), cwd);
+	char want[4200];
+	snprintf(want, sizeof want, "%s/x", strcmp(cwd, "/") == 0 ? "" : cwd);
+	CHECK_STR(call("fs.absolute", (ak_val[]){S("a/../x/")}, 1, 1), want);
+}
+
+// fs.walkInfo: a link is what it links to, marked as a link (walk
+// doesn't go into one); a broken one is the link itself.
+TEST(walk_links) {
+	char *d = ak_fs_temp_dir();
+	REQUIRE(d);
+	char sub[4200], link[4200], broken[4200];
+	snprintf(sub, sizeof sub, "%s/sub", d);
+	snprintf(link, sizeof link, "%s/link", d);
+	snprintf(broken, sizeof broken, "%s/broken", d);
+	REQUIRE(ak_fs_make_dirs(sub));
+	REQUIRE(symlink(sub, link) == 0);
+	REQUIRE(symlink("nowhere", broken) == 0);
+	ak_arr *a = call("fs.walkInfo", (ak_val[]){S(sub)}, 1, 1).p;
+	REQUIRE(a);
+	CHECK(a->data[0].i == 1 && a->data[3].i == 0);
+	ak_release(a);
+	a = call("fs.walkInfo", (ak_val[]){S(link)}, 1, 1).p;
+	REQUIRE(a);
+	CHECK(a->data[0].i == 1 && a->data[3].i == 1);
+	ak_release(a);
+	a = call("fs.walkInfo", (ak_val[]){S(broken)}, 1, 1).p;
+	REQUIRE(a);
+	CHECK(a->data[0].i == 0 && a->data[3].i == 1);
+	ak_release(a);
+	CHECK(ak_fs_remove_tree(d));
+	ak_free(d);
+}
+#endif
+
+// term's choice of colors: setColors's, then FORCE_COLOR, NO_COLOR and
+// TERM=dumb; a pipe or a file shows none.
+#if !defined(_WIN32)
+TEST(term_colors) {
+	const char *names[] = {"FORCE_COLOR", "NO_COLOR", "TERM", "COLUMNS", "LINES"};
+	char *saved[5];
+	for (int i = 0; i < 5; i++) {
+		const char *v = getenv(names[i]);
+		saved[i] = v ? strdup(v) : NULL;
+		unsetenv(names[i]);
+	}
+	int fd = 9;  // not a terminal (the tests' streams may be)
+	CHECK(!call("term.colorsAt", (ak_val[]){I(fd)}, 1, 0).i);
+	setenv("FORCE_COLOR", "1", 1);
+	CHECK(call("term.colorsAt", (ak_val[]){I(2)}, 1, 0).i);
+	setenv("NO_COLOR", "1", 1);
+	CHECK(call("term.colorsAt", (ak_val[]){I(2)}, 1, 0).i);  // FORCE_COLOR wins
+	setenv("FORCE_COLOR", "0", 1);
+	CHECK(!call("term.colorsAt", (ak_val[]){I(2)}, 1, 0).i);
+	unsetenv("FORCE_COLOR");
+	CHECK(!call("term.colorsAt", (ak_val[]){I(2)}, 1, 0).i);
+	setenv("NO_COLOR", "", 1);  // empty: as if it weren't set
+	setenv("TERM", "dumb", 1);
+	CHECK(!call("term.colorsAt", (ak_val[]){I(2)}, 1, 0).i);
+	call("term.setChoice", (ak_val[]){I(-1), I(1)}, 2, 0);  // always
+	CHECK(call("term.colorsAt", (ak_val[]){I(1)}, 1, 0).i);
+	CHECK(call("term.colorsAt", (ak_val[]){I(2)}, 1, 0).i);
+	setenv("FORCE_COLOR", "1", 1);
+	call("term.setChoice", (ak_val[]){I(2), I(2)}, 2, 0);  // never, stderr only
+	CHECK(call("term.colorsAt", (ak_val[]){I(1)}, 1, 0).i);
+	CHECK(!call("term.colorsAt", (ak_val[]){I(2)}, 1, 0).i);
+	ak_term_reset();
+	CHECK(call("term.colorsAt", (ak_val[]){I(2)}, 1, 0).i);
+
+	setenv("COLUMNS", "132", 1);
+	setenv("LINES", "x", 1);  // not a number: the terminal's, if any
+	CHECK_EQ_INT(call("term.dimension", (ak_val[]){I(0)}, 1, 0).i, 132);
+	CHECK(call("term.dimension", (ak_val[]){I(1)}, 1, 0).i >= 0);
+	// A test's process: no terminal, and only os.fake's environment.
+	ak_os_testing(true);
+	CHECK(!call("term.colorsAt", (ak_val[]){I(2)}, 1, 0).i);
+	CHECK_EQ_INT(call("term.dimension", (ak_val[]){I(0)}, 1, 0).i, 0);
+	CHECK(!call("term.setEcho", (ak_val[]){I(0)}, 1, 0).i);
+	ak_os_testing(false);
+	ak_os_reset();
+
+	for (int i = 0; i < 5; i++) {
+		if (saved[i]) setenv(names[i], saved[i], 1);
+		else unsetenv(names[i]);
+		free(saved[i]);
+	}
 }
 #endif
 

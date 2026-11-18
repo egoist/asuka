@@ -1,6 +1,8 @@
-// std/fs: paths, and files in a directory of the test's own.
+// std/fs: paths, the user's directories, and files in a directory of
+// the test's own.
 
 import std/fs
+import std/os
 
 test "paths" {
   print(fs.join(["a", "b", "c.md"]))
@@ -55,8 +57,8 @@ test "failures" {
   do {
     let t = try fs.readText(fs.join([root, "nope.txt"]))
     print(t)
-  } catch fs.FsError.notFound(path) {
-    print("not found: {fs.base(path)}")
+  } catch fs.FsError.notFound(p) {
+    print("not found: {fs.base(p)}")
   }
   try fs.mkdirAll(fs.join([root, "d"]))
   try fs.writeText(fs.join([root, "d", "f"]), text: "x")
@@ -77,6 +79,51 @@ test "failures" {
     print(e.message.hasPrefix(root))
   }
   print(fs.exists(fs.join([root, "nope", "x"])))
+  try fs.removeAll(root)
+}
+
+test "the user's directories" {
+  let _ = os.fake(env: ["HOME": "/home/ann/", "TMPDIR": "/var/tmp/x/"])
+  print(fs.home())
+  print(fs.tempDir())
+  let _ = os.fake(env: ["HOME": "/home/ann"])
+  print(fs.tempDir())
+  print(try fs.abs("/a/./b/../c/"))
+  print(try fs.abs("notes/../a.md") == fs.join([os.cwd(), "a.md"]))
+  print(try fs.abs("") == fs.clean(os.cwd()))
+}
+
+test "walk" {
+  let root = fs.join([fs.appDir(), "walk"])
+  try fs.mkdirAll(fs.join([root, "b", "d"]))
+  try fs.mkdirAll(fs.join([root, ".git"]))
+  try fs.writeText(fs.join([root, "a.txt"]), text: "aa")
+  try fs.writeText(fs.join([root, "b", "c.txt"]), text: "c")
+  try fs.writeText(fs.join([root, "b", "d", "e.txt"]), text: "eee")
+  try fs.writeText(fs.join([root, ".git", "HEAD"]), text: "ref")
+  for e in try fs.walk(root) {
+    print("{e.path.trimPrefix(root + "/")} {e.name} {e.isDir} {e.size}")
+  }
+  let shallow = try fs.walk(root, skip: [".git", "d"])
+  print(shallow.map(e => e.path.trimPrefix(root + "/")))
+  // Off the main thread.
+  let all = try await spawn { try fs.walk(root, skip: [".git"]) }
+  let texts = all.filter(e => fs.ext(e.name) == ".txt").map(e => e.name)
+  print(texts)
+  print((try fs.readDir(root)).map(e => e.path == fs.join([root, e.name])))
+  print((try fs.stat(fs.join([root, "a.txt"]))).path.hasSuffix("walk/a.txt"))
+  do {
+    let _ = try fs.walk(fs.join([root, "nope"]))
+  } catch fs.FsError.notFound(p) {
+    print("not found: {fs.base(p)}")
+  }
+  do {
+    let _ = try fs.walk(fs.join([root, "a.txt"]))
+  } catch fs.FsError.notDirectory(p) {
+    print("not a directory: {fs.base(p)}")
+  }
+  try fs.mkdirAll(fs.join([root, "empty"]))
+  print((try fs.walk(fs.join([root, "empty"]))).isEmpty())
   try fs.removeAll(root)
 }
 
@@ -115,3 +162,25 @@ test "failures" {
 // true
 // false
 // ok failures
+// /home/ann
+// /var/tmp/x
+// /tmp
+// /a/c
+// true
+// true
+// ok the user's directories
+// .git .git true 0
+// .git/HEAD HEAD false 3
+// a.txt a.txt false 2
+// b b true 0
+// b/c.txt c.txt false 1
+// b/d d true 0
+// b/d/e.txt e.txt false 3
+// [".git","a.txt","b","b/c.txt","b/d"]
+// ["a.txt","c.txt","e.txt"]
+// [true,true,true]
+// true
+// not found: nope
+// not a directory: a.txt
+// true
+// ok walk

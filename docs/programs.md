@@ -296,6 +296,153 @@ It runs in programs and in desktop apps (macOS, Windows, Linux); an app
 on a phone or the web can't run other programs
 (`CommandError.unsupported`).
 
+## The terminal: std/term
+
+`std/term` styles what a program prints and asks the person at the
+terminal. This one makes a project: a name asked for, a question before
+it overwrites, and colors a `--color` flag can turn on or off.
+
+```asuka check
+import std/flag
+import std/fs
+import std/os
+import std/term
+
+/// Makes a project.
+struct Options {
+  /// When to use colors.
+  color: term.ColorMode = .auto
+  /// Where to make it (the name asked for, if not given).
+  dir: string?
+}
+
+async fn main() throws {
+  let o = flag.parse<Options>(os.args())
+  term.setColors(o.color)
+  let name = await term.prompt("Project name:", default: "demo") ?? "demo"
+  let target = try fs.abs(o.dir ?? name)
+  if fs.exists(target) && !(await term.confirm("{target} exists. Overwrite?")) {
+    os.eprint("{term.red("error:", stream: .stderr)} nothing was made")
+    os.exit(1)
+  }
+  try await spawn { try fs.mkdirAll(target) }
+  print("{term.green("✓")} made {term.bold(target)}")
+}
+```
+
+```text
+$ new
+Project name: [demo] notes
+✓ made /home/ann/notes
+```
+
+- **Style.** `term.bold(text)`, `dim`, `italic`, `underline` and the
+  eight colors (`red`, `green`, `yellow`, `blue`, `magenta`, `cyan`,
+  `white`, `black`) wrap text in the terminal's codes. `term.Style`
+  says several at once and is a value to keep: `let warn =
+  term.Style(color: .yellow, bold: true)`, then `warn.paint(text)`. It
+  has the bright colors (`.brightRed`) and a `background`. Styled text
+  inside styled text keeps its own style, and the outer one goes on
+  after it.
+- **When styles show.** Only when the stream is a terminal, `NO_COLOR`
+  isn't set ([no-color.org](https://no-color.org)) and `TERM` isn't
+  `dumb`; `FORCE_COLOR` turns them on even into a pipe (`0` or `false`:
+  off). Each style function takes `stream:` (`.stdout` unless said),
+  the stream it's printed to. `term.colors(.stderr)` says what was
+  decided, and `term.setColors(.always)`, `.never` or `.auto` overrides
+  it, for both streams or for one (`stream:`). A field `color:
+  term.ColorMode = .auto` is a `--color always|never|auto` flag. On
+  Windows, the console is set to show the codes (its virtual terminal
+  processing) the first time.
+- **Questions.** `term.prompt(question, default:)` asks and returns the
+  line typed, without spaces around it: an empty answer is `default`
+  (shown as `[demo]`), and `none` means stdin ended (Ctrl-D, a closed
+  pipe). `term.confirm(question, default: false)` asks `[y/N]` (`[Y/n]`
+  when the default is true) until it gets y, yes, n, no or nothing.
+  `term.secret(question)` reads a line with the terminal's echo off, for
+  a password or a token; the echo comes back when the line is read, when
+  the task is cancelled and when Ctrl-C ends the program. The questions
+  go to stderr, as git's and gh's do, so stdout stays the program's
+  output when it's piped (`new | tee log`). They're `async`: the line is
+  read on another thread, and the program's other tasks go on.
+- **Size.** `term.width()` and `term.height()` are the terminal's
+  columns and rows (`COLUMNS` and `LINES` first, when they're numbers),
+  `none` when no stream is a terminal: `term.width() ?? 80`.
+
+A test answers the questions with `os.fake(stdin:)`, and finds them in
+`o.stderr()`. Its streams aren't terminals, so nothing is styled, unless
+the test says otherwise with `os.fake(env: ["FORCE_COLOR": "1"])` or
+`term.setColors(.always)`; only `os.fake`'s `env:` counts, so the
+environment the tests run in doesn't change what they print. On a phone
+and the web there's no terminal: no styles, `prompt` gives `none` and
+`width` is `none`.
+
+## Files and directories: std/fs
+
+A program reads and writes files with `std/fs`, as an app does
+([Data](data.md)), and finds them with what a command-line tool needs:
+
+- `fs.home()`: the user's home directory (`HOME`, `USERPROFILE` on
+  Windows; in a test, `os.fake`'s `env:` when it has them).
+- `fs.tempDir()`: the directory for temporary files (`TMPDIR`, else
+  `/tmp`; on Windows, `GetTempPath`'s).
+- `fs.abs(path)`: `path` made absolute against the working directory,
+  and cleaned.
+- `fs.walk(dir, skip:)`: everything under a directory, at every depth,
+  as `Entry`s (`path`, `name`, `isDir`, `size`, `modified`): each
+  directory, then what's in it, in name order. `skip:` names directories
+  it doesn't go into; it doesn't go into links to directories either.
+
+```asuka check
+import std/fs
+
+async fn main() throws {
+  let root = try fs.abs(".")
+  let entries = try await spawn { try fs.walk(root, skip: [".git", "node_modules"]) }
+  let sources = entries.filter(e => !e.isDir && fs.ext(e.name) == ".asuka")
+  print("{sources.count()} files in {root}")
+  let config = fs.join([fs.home(), ".config", "count", "config.toml"])
+  if fs.exists(config) {
+    print("using {config}")
+  }
+}
+```
+
+The calls that touch the disk (`walk`, `readText`, `exists`...) block
+until the system answers: a large tree is walked in `spawn { }`, so
+the program's other tasks go on. A failure is an `FsError`, as for every
+call of `std/fs`: a directory it may not list is `.denied(path)`.
+
+## Many at once
+
+`all(items, f, limit:)` calls an async function with each item at once
+and gives the results in the items' order: downloads, requests, other
+programs run side by side. `limit:` says how many run at a time; the
+first error cancels the rest, and `all` throws it once they've stopped
+([Async](language/async.md#async)).
+
+```asuka check
+import std/flag
+import std/http
+import std/os
+
+/// Downloads pages, a few at a time.
+struct Options {
+  /// -j How many at once.
+  jobs: int = 4
+  /// The pages' URLs.
+  urls: [string]
+}
+
+async fn main() throws {
+  let o = flag.parse<Options>(os.args())
+  let sizes = try await all(o.urls, u => try await http.get(u).body.count(), limit: o.jobs)
+  for (u, n) in o.urls.zip(sizes) {
+    print("{n}\t{u}")
+  }
+}
+```
+
 ## Running
 
 `asuka run` runs a program's `main` at once, with no build to wait for: the arguments after `--` are its own, and it exits with the
@@ -492,3 +639,4 @@ test "reads git's branch" {
 | `os.args`, `os.exit`, stdin | yes | yes | yes | an app: empty, `exit` throws |
 | `std/command` | yes | yes | yes | `unsupported` |
 | `std/flag` | yes | yes | yes | yes (it parses any list) |
+| `std/term` | yes | yes | yes | no terminal: no styles, `prompt` gives `none` |

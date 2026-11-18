@@ -229,6 +229,103 @@ async fn main() throws {
 
 它可以在程序和桌面应用（macOS、Windows、Linux）里使用；手机和 Web 上的应用不能运行其他程序（`CommandError.unsupported`）。
 
+## 终端：std/term
+
+`std/term` 负责给程序的输出加上样式，以及向终端前的人提问。下面这个程序用来创建项目：它会询问项目名，覆盖已有目录前先确认，输出的颜色可以用 `--color` 参数打开或关闭。
+
+```asuka check
+import std/flag
+import std/fs
+import std/os
+import std/term
+
+/// Makes a project.
+struct Options {
+  /// When to use colors.
+  color: term.ColorMode = .auto
+  /// Where to make it (the name asked for, if not given).
+  dir: string?
+}
+
+async fn main() throws {
+  let o = flag.parse<Options>(os.args())
+  term.setColors(o.color)
+  let name = await term.prompt("Project name:", default: "demo") ?? "demo"
+  let target = try fs.abs(o.dir ?? name)
+  if fs.exists(target) && !(await term.confirm("{target} exists. Overwrite?")) {
+    os.eprint("{term.red("error:", stream: .stderr)} nothing was made")
+    os.exit(1)
+  }
+  try await spawn { try fs.mkdirAll(target) }
+  print("{term.green("✓")} made {term.bold(target)}")
+}
+```
+
+```text
+$ new
+Project name: [demo] notes
+✓ made /home/ann/notes
+```
+
+- **样式。** `term.bold(text)`、`dim`、`italic`、`underline` 以及八种颜色（`red`、`green`、`yellow`、`blue`、`magenta`、`cyan`、`white`、`black`）会用终端的控制码把文本包起来。要同时设置好几项，就用 `term.Style`，它也是一个可以保存下来反复使用的值：`let warn = term.Style(color: .yellow, bold: true)`，然后调用 `warn.paint(text)`。`Style` 还提供亮色（`.brightRed`）和 `background`。带样式的文本嵌在另一段带样式的文本里时，内层保持自己的样式，结束后外层的样式会接着生效。
+- **什么时候显示样式。** 只有当输出流是终端、没有设置 `NO_COLOR`（[no-color.org](https://no-color.org)）并且 `TERM` 不是 `dumb` 时才会显示；设置了 `FORCE_COLOR` 时，即使输出到管道也会显示（值为 `0` 或 `false` 则关闭）。每个样式函数都接受 `stream:` 参数，指明文本要打印到哪个流（默认是 `.stdout`）。`term.colors(.stderr)` 返回当前的判断结果，`term.setColors(.always)`、`.never` 或 `.auto` 可以覆盖它，作用于两个流，或用 `stream:` 只作用于其中一个。在选项结构体里写一个 `color: term.ColorMode = .auto` 字段，就得到了 `--color always|never|auto` 参数。在 Windows 上，第一次输出样式时会让控制台开始解析这些控制码（开启它的虚拟终端处理）。
+- **提问。** `term.prompt(question, default:)` 提出问题，返回输入的那一行，去掉首尾空白：直接回车得到 `default`（显示为 `[demo]`），返回 `none` 表示 stdin 已经结束（按了 Ctrl-D，或管道已关闭）。`term.confirm(question, default: false)` 显示 `[y/N]`（默认值为 true 时是 `[Y/n]`），直到得到 y、yes、n、no 或空回答为止。`term.secret(question)` 在关闭终端回显的状态下读取一行，适合输入密码或 token；读完这一行、task 被取消、或者用 Ctrl-C 结束程序时，回显都会恢复。问题写到 stderr，和 git、gh 的做法一样，这样程序的输出通过管道传出去时（`new | tee log`），stdout 里只有程序真正的输出。这几个函数都是 `async` 的：这一行在另一个线程上读取，程序里的其他 task 照常运行。
+- **尺寸。** `term.width()` 和 `term.height()` 是终端的列数和行数（如果 `COLUMNS` 和 `LINES` 是数字，优先使用它们）；没有任何一个流是终端时为 `none`：`term.width() ?? 80`。
+
+在测试里，用 `os.fake(stdin:)` 回答这些问题，问题本身可以在 `o.stderr()` 里找到。测试的流都不是终端，所以不会输出样式，除非测试用 `os.fake(env: ["FORCE_COLOR": "1"])` 或 `term.setColors(.always)` 明确要求；这里只看 `os.fake` 的 `env:`，所以运行测试时的环境变量不会影响测试的输出。手机和 Web 上没有终端：没有样式，`prompt` 返回 `none`，`width` 也是 `none`。
+
+## 文件和目录：std/fs
+
+程序和应用一样，用 `std/fs` 读写文件（[数据](data.md)），另外还提供了命令行工具查找文件时需要的几个函数：
+
+- `fs.home()`：用户的主目录（`HOME`，Windows 上是 `USERPROFILE`；在测试里，如果 `os.fake` 的 `env:` 提供了它们，就用其中的值）。
+- `fs.tempDir()`：存放临时文件的目录（`TMPDIR`，没有时是 `/tmp`；Windows 上是 `GetTempPath` 返回的目录）。
+- `fs.abs(path)`：把 `path` 相对于工作目录转成绝对路径，并做规范化。
+- `fs.walk(dir, skip:)`：目录下所有层级的全部内容，以 `Entry`（`path`、`name`、`isDir`、`size`、`modified`）的列表返回：先是每个目录本身，再是它里面的内容，按名字排序。`skip:` 列出不进入的目录名；指向目录的链接也不会进入。
+
+```asuka check
+import std/fs
+
+async fn main() throws {
+  let root = try fs.abs(".")
+  let entries = try await spawn { try fs.walk(root, skip: [".git", "node_modules"]) }
+  let sources = entries.filter(e => !e.isDir && fs.ext(e.name) == ".asuka")
+  print("{sources.count()} files in {root}")
+  let config = fs.join([fs.home(), ".config", "count", "config.toml"])
+  if fs.exists(config) {
+    print("using {config}")
+  }
+}
+```
+
+会访问磁盘的调用（`walk`、`readText`、`exists`……）要等系统返回结果才会继续：遍历很大的目录树时放在 `spawn { }` 里，程序的其他 task 就能照常运行。失败时和 `std/fs` 的其他调用一样抛出 `FsError`：没有权限列出的目录是 `.denied(path)`。
+
+## 同时处理多项
+
+`all(items, f, limit:)` 用每一项同时调用一个异步函数，并按各项的顺序给出结果：适合并行下载、发请求、同时运行其他程序。`limit:` 指定同一时刻最多运行几个；第一个出错的会取消其余的，等它们都停下后 `all` 再抛出这个错误（见[异步](language/async.md#异步)）。
+
+```asuka check
+import std/flag
+import std/http
+import std/os
+
+/// Downloads pages, a few at a time.
+struct Options {
+  /// -j How many at once.
+  jobs: int = 4
+  /// The pages' URLs.
+  urls: [string]
+}
+
+async fn main() throws {
+  let o = flag.parse<Options>(os.args())
+  let sizes = try await all(o.urls, u => try await http.get(u).body.count(), limit: o.jobs)
+  for (u, n) in o.urls.zip(sizes) {
+    print("{n}\t{u}")
+  }
+}
+```
+
 ## 运行
 
 `asuka run` 直接运行程序的 `main`，不需要等待构建：`--` 之后的参数都交给程序，退出时带上程序的退出码。
@@ -370,3 +467,4 @@ test "reads git's branch" {
 | `os.args`、`os.exit`、stdin | 支持 | 支持 | 支持 | 应用里为空，`exit` 会抛出错误 |
 | `std/command` | 支持 | 支持 | 支持 | `unsupported` |
 | `std/flag` | 支持 | 支持 | 支持 | 支持（它能解析任何列表） |
+| `std/term` | 支持 | 支持 | 支持 | 没有终端：没有样式，`prompt` 返回 `none` |

@@ -1,11 +1,12 @@
-// Package std/fs has paths, and the app's files: its own directory
-// (appDir) and the calls that read and write there. The calls block
-// while the system works, so call them in spawn { }, which runs them on
-// another thread:
+// Package std/fs has paths, the directories files go in (the app's
+// own, the user's home, the temporary one), and the calls that read and
+// write files. The calls block while the system works, so call them in
+// spawn { }, which runs them on another thread:
 //
-//   let path = fs.join([fs.appDir(), "notes", "today.md"])
-//   let text = try await spawn { try fs.readText(path) }
-//   try await spawn { try fs.writeText(path, text: draft) }
+//   let notes = fs.join([fs.appDir(), "notes", "today.md"])
+//   let text = try await spawn { try fs.readText(notes) }
+//   try await spawn { try fs.writeText(notes, text: draft) }
+//   let sources = try await spawn { try fs.walk("src", skip: [".git"]) }
 //
 // Paths use the system's separator (\ on Windows, which takes / too).
 // On the web the app's directory is the page's, kept in the browser's
@@ -45,6 +46,9 @@ pub enum FsError: Error {
 
 /// What's at a path.
 pub struct Entry {
+  /// Where it is: the directory's path joined with name (readDir,
+  /// walk), or the path stat was given.
+  path: string
   /// Its last name: "today.md".
   name: string
   isDir: bool
@@ -59,6 +63,30 @@ pub struct Entry {
 /// app's files on Android, the user's data directory on Windows and
 /// Linux. It may not exist yet: mkdirAll makes it.
 pub native fn appDir() -> string
+
+/// The user's home directory: HOME on macOS and Linux, USERPROFILE on
+/// Windows (else the system's record of the user). An app on a phone or
+/// the web has no user's home to see: there it's appDir. In a test,
+/// os.fake's env: HOME (USERPROFILE) is the home.
+pub native fn home() -> string
+
+/// The directory for temporary files: TMPDIR on macOS and Linux (else
+/// /tmp), GetTempPath's on Windows (TMP, TEMP), the app's own temporary
+/// directory on a phone, the page's /tmp on the web. What's put there may
+/// go when the system needs the room.
+pub native fn tempDir() -> string
+
+/// path made absolute, against the working directory, and cleaned:
+/// abs("notes/../a.md") in /home/ann is "/home/ann/a.md". An absolute
+/// path is only cleaned (on Windows, one without a drive takes the
+/// working directory's). It throws only when the working directory is
+/// gone.
+pub fn abs(path: string) throws -> string {
+  if let p = absolute(path) {
+    return p
+  }
+  throw failure(path)
+}
 
 /// The parts joined by the separator, cleaned; empty parts are left
 /// out: join([dir, "notes", "a.md"]).
@@ -86,9 +114,10 @@ pub fn readDir(path: string) throws -> [Entry] {
   if let names = listNames(path) {
     var out: [Entry] = []
     for name in names {
+      let p = join([path, name])
       // One that went since the listing is left out.
-      if let info = statInfo(join([path, name])) {
-        out.push(entry(name, info))
+      if let info = statInfo(p) {
+        out.push(entry(p, name, info))
       }
     }
     return out
@@ -96,10 +125,64 @@ pub fn readDir(path: string) throws -> [Entry] {
   throw failure(path)
 }
 
+/// Everything under the directory at dir, at every depth: each entry,
+/// then, for a directory, what's in it, in name order (dir itself isn't
+/// in the list). Each Entry's path is dir joined with the names down to
+/// it ("src/ui/list.asuka" for walk("src")).
+///
+/// skip names directories not to go into (".git", "node_modules"): one
+/// is still in the list, without what's in it.
+///
+///   let all = try await spawn { try fs.walk(".", skip: [".git", "node_modules"]) }
+///   let sources = all.filter(e => !e.isDir && fs.ext(e.name) == ".asuka")
+///
+/// A link is listed as what it links to, but a link to a directory isn't
+/// gone into (so a link can't make it go round). What can't be read
+/// throws its FsError (a directory it may not list: .denied(path)), as
+/// readDir does; what goes while it walks is left out. It blocks until
+/// it has it all: walk a large tree in spawn { }.
+pub fn walk(dir: string, skip: [string] = []) throws -> [Entry] {
+  var out: [Entry] = []
+  // What's still to list, the next last.
+  var todo = (try listed(dir, top: true)).reversed()
+  while let e = todo.pop() {
+    out.push(e.entry)
+    if e.entry.isDir && !e.link && !skip.contains(e.entry.name) {
+      for c in (try listed(e.entry.path, top: false)).reversed() {
+        todo.push(c)
+      }
+    }
+  }
+  return out
+}
+
+struct Walked {
+  entry: Entry
+  link: bool
+}
+
+// listed is what's in the directory d, for walk: none of it when d went
+// since its own listing (top: it's walk's dir, which must be there).
+fn listed(d: string, top: bool) throws -> [Walked] {
+  var out: [Walked] = []
+  if let names = listNames(d) {
+    for name in names {
+      let p = join([d, name])
+      // One that went since the listing is left out.
+      if let info = walkInfo(p) {
+        out.push(Walked(entry: entry(p, name, info), link: info[3] != 0))
+      }
+    }
+  } else if top || failureKind() != 2 {
+    throw failure(d)
+  }
+  return out
+}
+
 /// What's at path (a link: what it links to).
 pub fn stat(path: string) throws -> Entry {
   if let info = statInfo(path) {
-    return entry(base(path), info)
+    return entry(path, base(path), info)
   }
   throw failure(path)
 }
@@ -176,7 +259,7 @@ pub fn removeAll(path: string) throws {
   }
 }
 
-fn entry(name: string, info: [int]) -> Entry = Entry(name: name, isDir: info[0] != 0, size: info[1], modified: time.unixNano(info[2]))
+fn entry(path: string, name: string, info: [int]) -> Entry = Entry(path: path, name: name, isDir: info[0] != 0, size: info[1], modified: time.unixNano(info[2]))
 
 // failure is the error of the last call that failed on this thread.
 fn failure(path: string) -> FsError = match failureKind() {
@@ -191,6 +274,8 @@ fn failure(path: string) -> FsError = match failureKind() {
 
 native fn listNames(path: string) -> [string]?
 native fn statInfo(path: string) -> [int]?
+native fn walkInfo(path: string) -> [int]?
+native fn absolute(path: string) -> string?
 native fn readFile(path: string) -> bytes?
 native fn writeFile(path: string, data: bytes, append: bool) -> bool
 native fn copyFile(from: string, to: string) -> bool

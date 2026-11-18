@@ -27,6 +27,7 @@ extern const ak_lib_entry ak_std_markdown[];
 extern const ak_lib_entry ak_std_os[];
 extern const ak_lib_entry ak_std_flag[];
 extern const ak_lib_entry ak_std_command[];
+extern const ak_lib_entry ak_std_term[];
 
 // Every package's table, NULL-terminated.
 extern const ak_lib_entry *const ak_std_libs[];
@@ -127,6 +128,18 @@ void ak_os_set_args(int argc, char **argv);
 void ak_os_testing(bool on);
 void ak_os_reset(void);
 bool ak_os_test_exit(int64_t *code);
+// ak_os_getenv is an environment variable's value as os.env sees it
+// (os.fake's env: in a test that gave one), NULL when it isn't set
+// (ak_free it). In a test without a fake environment, real says whether
+// the real one counts: false for what makes a test's output vary
+// (FORCE_COLOR, COLUMNS).
+char *ak_os_getenv(const char *name, bool real);
+// ak_os_test_process reports whether the process is a test's (the
+// runner's tests, os.fake): its streams are never terminals.
+bool ak_os_test_process(void);
+// std/term (term.c): the color choices setColors made, forgotten after
+// each test (ak_os_reset calls it).
+void ak_term_reset(void);
 
 // For tests (core/runner): a new empty directory in the system's
 // temporary one (ak_free the path; NULL when it can't be made), and
