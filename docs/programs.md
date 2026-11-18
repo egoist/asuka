@@ -693,7 +693,11 @@ async fn main() throws {
   let port = (os.env("PORT") ?? "8080").toInt() ?? 8080
   let server = try await http.serve(port, api.handler(), host: "0.0.0.0")
   print("listening on {server.url}")
-  await server.wait()
+  // Ctrl-C or a terminate: the requests in flight are answered first.
+  for await _ in os.signals() {
+    break
+  }
+  await server.close(grace: 10s)
 }
 ```
 
@@ -742,7 +746,11 @@ $ curl localhost:8080/notes/1
   the requests in flight be answered, and after `grace` cancels the
   handlers still running (their `defer`s run). `server.wait()` waits
   until it's closed. The server belongs to the task that started it,
-  so when `main` returns it closes: `main` awaits `server.wait()`.
+  so when `main` returns it closes: `main` awaits `server.wait()`, or,
+  as above, the signals that end it. Ctrl-C without a stream reading it
+  ends `main`, and with it the server at once: the handlers still
+  running are cancelled. Reading `os.signals()` and closing lets them
+  answer first ([Signals](#signals)).
 
 HTTPS is a reverse proxy's (Caddy, nginx): it terminates TLS and passes
 the requests on over HTTP to a server on `127.0.0.1`, the client's

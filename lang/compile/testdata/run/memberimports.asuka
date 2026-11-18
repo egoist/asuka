@@ -1,0 +1,35 @@
+// A type's static fns and constants see their file's imports, as its
+// methods do: an alias too.
+
+import std/math as m
+import std/json
+
+struct Money {
+  cents: int
+
+  let unit = m.sqrt(10000.0)
+
+  static fn parse(text: string) throws -> Money = Money(cents: try json.decode<int>(text))
+  static fn root(x: float) -> float = m.sqrt(x)
+}
+
+enum Shape {
+  dot
+  circle(r: float)
+
+  static fn unit() -> Shape = .circle(r: m.sqrt(1.0))
+}
+
+test "a type's members see the file's imports" {
+  print(Money.unit)
+  print((try Money.parse("250")).cents)
+  print(Money.root(9.0))
+  print(Shape.unit())
+}
+
+// Output:
+// 100
+// 250
+// 3
+// {"circle":[1]}
+// ok a type's members see the file's imports

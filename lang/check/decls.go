@@ -289,6 +289,7 @@ func (c *Checker) typeConst(t *TypeName, d *syntax.LetDecl) {
 		c.errorf(bp.Name, diag.DuplicateDeclaration, "%s is declared twice in %s", bp.Name.Name, t.name)
 		return
 	}
+	c.inTypeFile(t, d)
 	g := &Global{object: object{bp.Name.Name, bp.Name.Start}, Pkg: t.Pkg, Kind: ConstGlobal, Decl: d, Value: d.Value, Owner: t, Pub: true}
 	c.info.Defs[bp.Name] = g
 	t.Consts[g.name] = g
@@ -309,6 +310,14 @@ func (c *Checker) method(t *TypeName, d *syntax.FuncDecl) {
 	t.Methods[f.name] = f
 }
 
+// inTypeFile checks d, a member of t's checked as the package's own (a
+// static fn, a constant), in t's file's scope: with its imports.
+func (c *Checker) inTypeFile(t *TypeName, d syntax.Node) {
+	if s := c.fileScopes[t.Decl]; s != nil && c.fileScopes[d] == nil {
+		c.fileScopes[d] = s
+	}
+}
+
 // staticFunc declares a static fn of t's: a function in t's namespace
 // (Money.of(dollars: 2), .of(…) where a Money is expected), checked and
 // lowered as any of the package's functions, with no self.
@@ -324,6 +333,7 @@ func (c *Checker) staticFunc(t *TypeName, d *syntax.FuncDecl) {
 		c.errorf(d.Name, diag.DuplicateDeclaration, "%s is declared twice in %s", d.Name.Name, t.name)
 		return
 	}
+	c.inTypeFile(t, d)
 	f := &Function{object: object{d.Name.Name, d.Name.Start}, Pkg: t.Pkg, Decl: d, Static: t}
 	c.info.Defs[d.Name] = f
 	t.Statics[f.name] = f

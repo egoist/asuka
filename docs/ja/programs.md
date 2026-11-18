@@ -517,7 +517,11 @@ async fn main() throws {
   let port = (os.env("PORT") ?? "8080").toInt() ?? 8080
   let server = try await http.serve(port, api.handler(), host: "0.0.0.0")
   print("listening on {server.url}")
-  await server.wait()
+  // Ctrl-C か終了シグナル：処理中のリクエストに先に答える。
+  for await _ in os.signals() {
+    break
+  }
+  await server.close(grace: 10s)
 }
 ```
 
@@ -535,7 +539,7 @@ $ curl localhost:8080/notes/1
 - ルートのパターンは、そのままの文字列、`:name`（1 セグメント）、`*name`（パスの残り全部）でできています。ルートは追加した順に試されます。どのルートにも一致しないパスには 404、パスは一致してもメソッドが違うものには 405（`Allow` 付き）を返します。GET のルートは HEAD にも応えます。
 - エラーを投げたハンドラーには 500 Internal Server Error を返し、そのエラーは `onError` に渡されます（指定がなければ stderr に書かれます）。
 - `http.Limits(headerSize:, bodySize:, connections:, headerTimeout:, readTimeout:, idleTimeout:)` で、受け付ける量と待つ時間を決めます。既定ではヘッダー 64 KiB、ボディ 16 MiB、接続 10000、リクエストのヘッダーが届くまで 30 秒、ボディの途中で待つのは毎回 30 秒まで、次のリクエストまでは 60 秒です。上限を超えたものにはステータス（431、413、408）を返して接続を閉じます。
-- `server.close(grace: 10s)` でサーバーを止めます。すぐに新しい接続の受け付けをやめ、処理中のリクエストには返信させ、`grace` を過ぎてもまだ動いているハンドラーはキャンセルします（`defer` は実行されます）。`server.wait()` は閉じるまで待ちます。サーバーはそれを始めたタスクに属するので、`main` が戻ると閉じます。そのため `main` は `server.wait()` を await します。
+- `server.close(grace: 10s)` でサーバーを止めます。すぐに新しい接続の受け付けをやめ、処理中のリクエストには返信させ、`grace` を過ぎてもまだ動いているハンドラーはキャンセルします（`defer` は実行されます）。`server.wait()` は閉じるまで待ちます。サーバーはそれを始めたタスクに属するので、`main` が戻ると閉じます。そのため `main` は `server.wait()` を await するか、上の例のように終了のシグナルを待ちます。シグナルを読むストリームがないと、Ctrl-C で `main` が終わり、サーバーもすぐに閉じて、まだ動いているハンドラーはキャンセルされます。`os.signals()` を読んでから閉じれば、先に答えさせられます（[シグナル](#シグナル)を参照）。
 
 HTTPS はリバースプロキシー（Caddy、nginx）に任せます。プロキシーが TLS を終端し、`127.0.0.1` で待ち受けるサーバーに HTTP でリクエストを渡します。クライアントのアドレスは `X-Forwarded-For` に入ります。デスクトップアプリも同じようにタスクからローカル API を提供でき、スマートフォンのアプリも動いているあいだは同じです。Web ページは待ち受けられません（`ServerError.unsupported`）。
 
