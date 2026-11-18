@@ -1,4 +1,5 @@
 import std/svg
+import platform/device
 
 /// An account: every window, the forecasts, which windows its card shows,
 /// the account, and what can be done with it.
@@ -127,7 +128,7 @@ screen Detail(id: string) {
           }
           ActionRow("", "Open Claude", "Manage your plan and billing") {
             external: true
-            on press { openURL(services["claude"]!.manage) }
+            on press { device.openURL(services["claude"]!.manage) }
           }
           if !ios {
             ActionRow("trash", "Remove", "Forget this account and its token") {

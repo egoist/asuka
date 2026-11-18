@@ -46,10 +46,14 @@ let tint: Color = if urgent {
 
 ```asuka
 // feedback_mobile.asuka：iOS 和 Android
-pub fn confirm() { haptic(.success) }
+import platform/device
+
+pub fn confirm() { device.haptic(.success) }
 
 // feedback_desktop.asuka：macOS、Windows 和 Linux
-pub fn confirm() { announce("Done") }
+import platform/accessibility
+
+pub fn confirm() { accessibility.announce("Done") }
 
 // feedback_web.asuka
 pub fn confirm() {}

@@ -330,8 +330,11 @@ extension AsukaWindowConfig {
     /// Applies WindowOptions to the main window: its title, its least size,
     /// and its other options (configure: its size and place unless the
     /// user's are remembered).
+    /// The app without a main window (WindowNone) never shows it; one
+    /// reloaded with a main window again shows it.
     func windowOptions(_ b: [UInt8]) {
         let c = AsukaWindowConfig(b)
+        let wasNone = main.cfg.flags.contains(.none)
         if !c.title.isEmpty { main.base = c.title }
         if c.flags.contains(.panel) { makeMainPanel(c) }
         if c.minWidth > 0 || c.minHeight > 0 {
@@ -340,6 +343,13 @@ extension AsukaWindowConfig {
         configure(main, c)
         updateWindowChrome()
         environmentChanged()
+        guard windowsStarted else { return }
+        if c.flags.contains(.none), main.window.isVisible {
+            navTarget.hidByApp = true
+            main.window.orderOut(nil)
+        } else if wasNone, !c.flags.contains(.none), !c.flags.contains(.hidden) {
+            showWin(main, true)
+        }
     }
 
     /// The WindowTitle command: the main window's title when no screen

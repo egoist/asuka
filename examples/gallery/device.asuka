@@ -23,14 +23,14 @@ component Services {
         icon: "doc.on.doc"
         variant: .gray
         on press {
-          copy("https://go.dev")
+          device.copy("https://go.dev")
           copied = true
         }
       }
       Button("Share") {
         icon: "square.and.arrow.up"
         variant: .gray
-        on press { share("https://go.dev") }
+        on press { device.share("https://go.dev") }
       }
     }
   }
@@ -91,7 +91,7 @@ component Documents {
           await report("PDF", () => {
             let path = try await print.pdf(receipt)
             status = ""
-            try await shareFiles([path], title: "Receipt", from: shareButton)
+            try await device.shareFiles([path], title: "Receipt", from: shareButton)
             return ""
           })
         }
@@ -367,7 +367,7 @@ component CameraScreen {
       on error(m) { status = m }
       on code(c) {
         status = "{c.kind}: {c.value}"
-        haptic(.success)
+        device.haptic(.success)
       }
     }
     SafeArea {

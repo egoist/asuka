@@ -5,9 +5,11 @@
 // click) starts and pauses the timer, picks how long it runs, and opens a
 // window with the timer in it.
 // It's a background app (asuka.toml's background): no window and, on a
-// Mac, no Dock icon at launch. The Dock icon's menu (a jump list's tasks
-// on Windows, the launcher's quicklist on Linux) starts and pauses it
-// too.
+// Mac, no Dock icon at launch. Its app block shows nothing outside its
+// windows (a tray icon, a Dock menu, two Windows), so it has no main
+// window at all: the windows it opens are its only ones. The Dock icon's
+// menu (a jump list's tasks on Windows, the launcher's quicklist on
+// Linux) starts and pauses it too.
 //
 //   asuka dev examples/tray
 
@@ -80,7 +82,6 @@ component Focus {
   }
   tray.DockMenu { items: [.button(title: timer.startTitle, run: () => timer.toggle())] }
 
-  Panel()
   Window {
     bind open: open
     title: "Focus"
@@ -171,6 +172,13 @@ component TimerFlyout {
       }
     }
   }
+}
+
+test "the app has no main window: the tray's flyout and its window are its windows" {
+  let app = mountApp()
+  expect(app.windows() == "", app.windows())
+  app.chooseTrayItem("timer", "Open Timer")
+  expect(app.windows().hasPrefix("\"Focus\" 320x220 visible"), app.windows())
 }
 
 test "starts, counts down and resets" {

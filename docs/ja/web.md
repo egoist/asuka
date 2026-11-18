@@ -73,7 +73,7 @@ Web アプリから見える環境（`environment()`）は、ブラウザーの�
 - `platform` は `.web` です。
 - サイズはページ（アプリを要素の中で動かしている場合はその要素）のサイズで、ウィンドウに合わせて変わります。サイズクラスは Material のもので、幅から決まります。
 - セーフエリアはページのもの（`env(safe-area-inset-*)`。ページが `viewport-fit=cover` のときの、スマートフォンのノッチやホームインジケーターの分）です。キーボードは、スマートフォンのキーボードがページを覆っている量です。
-- `dark`（ダークモード）は `prefers-color-scheme`（またはアプリの `setColorScheme`）、`reduceMotion`（視差効果を減らす）は `prefers-reduced-motion`、`fontScale`（文字サイズ）はブラウザーのデフォルトのフォントサイズ（テキストはこれに従います）、`scale` はディスプレイのピクセル比から決まります。
+- `dark`（ダークモード）は `prefers-color-scheme`（またはアプリの `appearance.setColorScheme`）、`reduceMotion`（視差効果を減らす）は `prefers-reduced-motion`、`fontScale`（文字サイズ）はブラウザーのデフォルトのフォントサイズ（テキストはこれに従います）、`scale` はディスプレイのピクセル比から決まります。
 - `locale`、`languages`、`timeZone`、週の始まりの曜日、時刻の表記（12 時間制か 24 時間制か）は、ブラウザーのもの（`navigator.languages`、`Intl`）です。
 
 ## ビューの対応
@@ -117,7 +117,7 @@ Web アプリから見える環境（`environment()`）は、ブラウザーの�
 
 - `platform/secure`：値は、ブラウザーが保持して外に出さない鍵（エクスポートできない WebCrypto の鍵）で暗号化（AES-GCM）され、IndexedDB に保存されます。キーチェーンではありません。アプリのオリジンで動くスクリプトは鍵そのものを読めませんが、その鍵での復号を依頼することはできます。`https`（または `localhost`）が必要です。
 - `platform/device`：`info()` はユーザーエージェントから取得します（Chromium のクライアントヒントからは、システムのバージョンと Android スマートフォンの機種がわかります）。クリップボード、クリップボードの画像（PNG。キャッシュに保存されます）、`clipboardChanges()`（アプリ自身のコピーと、ユーザーがページにクリップボードの読み取りを許可している場合はほかのアプリのコピー）に対応します。`keepAwake`（Screen Wake Lock。ページが再び表示されると取得し直します）、`browse`（新しいタブ）、`pickPhotos` と `pickFiles`（ブラウザーのファイル選択ダイアログ。選んだファイルはキャッシュにコピーされます）にも対応します。
-- `shareFiles`：ファイルを渡して共有シートを開きます（`navigator.share`）。共有シートがなければ、各ファイルをダウンロードします。`platform/preview`：ファイルを新しいタブで開きます（画像、動画、音声、テキスト、PDF、HTML）。それ以外の種類は `PreviewError.noViewer` になります。
+- `device.shareFiles`：ファイルを渡して共有シートを開きます（`navigator.share`）。共有シートがなければ、各ファイルをダウンロードします。`platform/preview`：ファイルを新しいタブで開きます（画像、動画、音声、テキスト、PDF、HTML）。それ以外の種類は `PreviewError.noViewer` になります。
 - `platform/print`：HTML、ファイル（PDF はブラウザーのビューアーで）、アプリ自身の Web ビューを、ブラウザーの印刷ダイアログで印刷します。結果は常に `.unknown` です（ブラウザーが結果を知らせないためです）。`print.pdf` は Web では使えません（`PrintError.unsupported`）。ブラウザーが PDF を作れるのは、印刷ダイアログ（「PDF として保存」）を通したときだけです。
 - `platform/compose`：`mailto:` と `sms:` のリンクを使います。添付ファイルがあれば共有シートを使います。
 - `platform/notify` と `platform/push`：アプリの service worker を通じて、Notification API と Web Push を使います。[通知と Web Push](#通知と-web-push)を参照してください。
@@ -137,7 +137,7 @@ Web アプリから見える環境（`environment()`）は、ブラウザーの�
 - `platform/nfc`：Web NFC の `NDEFReader` を使います。セキュアコンテキストの Android の Chrome で、NDEF メッセージの読み書き、タグの読み取り専用化、タグのシリアル番号が使えます。生のコマンドや容量は使えず、タグでページを開くこともできません。ほかのブラウザーには Web NFC がないので `NfcError.notAvailable` になります（[NFC タグ](nfc.md)）。
 - `platform/tracking` は、ブラウザーが Global Privacy Control か Do Not Track を送っていれば `.denied` を、そうでなければ `.allowed` を、プロンプトを出さずに返します。
 - `platform/pay`：ブラウザーに Apple Pay がある場合（Safari）は、Payment Request API を通じて Apple Pay を使います。マーチャントの検証は、Apple に登録したドメインについてアプリのサーバーが行います（`onValidateMerchant`）。それ以外のブラウザーでは、Google の Web API（pay.google.com から読み込む `pay.js`）を通じて Google Pay を使います。ボタンはそれぞれ純正のものです。シートはタップからしか表示できません。
-- `haptic` は、ブラウザーが対応していれば（Android の Chrome）`navigator.vibrate` を使います。
+- `device.haptic` は、ブラウザーが対応していれば（Android の Chrome）`navigator.vibrate` を使います。
 - Web では使えず、その旨のエラー（またはパッケージ独自の `notAvailable`）になるもの：`platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity`、`platform/photos`（`.denied` を返します。写真の選択は `device.pickPhotos` でできます）、連絡先とカレンダーの読み取り、`platform/transcribe` の `file`、`platform/screen` の `preventCapture` と `screenshots()`。
 
 ## 通知と Web Push
@@ -261,7 +261,7 @@ func notifyChat(ctx context.Context, token string) error {
 
 `WebView` は `<iframe>` で、ページを読み込むたびに新しく作られます。そのため独自の履歴を持ち、タブの履歴には何も追加しません。
 
-アプリ自身のサイトのページ（アプリのアセット、`html`、アプリが書き出したファイル、ページと同じオリジンの任意の URL）では、すべての機能が使えます。Web ビューはページを本来の URL でフレームに読み込み、ページのスクリプトより先に `window.asuka.postMessage` と `preload` を用意します。そのほかに使えるのは次の機能です。`Ref` の `run(script)` と `eval(script)`（Promise は await されます）。`on loaded`、`on error`、`on state`（URL、タイトル、`pushState`、進捗、戻る・進む）。`Ref` の `goBack()`、`goForward()`、`reload()`、`stopLoading()`。リンク、フォーム、`location` の変更による読み込みは、Web ビューを通じて行われます。`block`（マークアップ、`fetch`、XHR、`sendBeacon`、WebSocket、EventSource、要素の `src` と `href`。ブロックした時点ですでに始まっていたリクエストは、送信されてしまうことがあります）。`on request`（Resource Timing）。`on newWindow`（`window.open`、`target=_blank`）。`on download`（添付ファイル、フレームで表示できない種類のファイル、`<a download>`）。`webCookies(url)`（`document.cookie`。`HttpOnly` の Cookie は対象外です）。`html` の相対リンクは、アプリのアセットを基準に解決されます。
+アプリ自身のサイトのページ（アプリのアセット、`html`、アプリが書き出したファイル、ページと同じオリジンの任意の URL）では、すべての機能が使えます。Web ビューはページを本来の URL でフレームに読み込み、ページのスクリプトより先に `window.asuka.postMessage` と `preload` を用意します。そのほかに使えるのは次の機能です。`Ref` の `run(script)` と `eval(script)`（Promise は await されます）。`on loaded`、`on error`、`on state`（URL、タイトル、`pushState`、進捗、戻る・進む）。`Ref` の `goBack()`、`goForward()`、`reload()`、`stopLoading()`。リンク、フォーム、`location` の変更による読み込みは、Web ビューを通じて行われます。`block`（マークアップ、`fetch`、XHR、`sendBeacon`、WebSocket、EventSource、要素の `src` と `href`。ブロックした時点ですでに始まっていたリクエストは、送信されてしまうことがあります）。`on request`（Resource Timing）。`on newWindow`（`window.open`、`target=_blank`）。`on download`（添付ファイル、フレームで表示できない種類のファイル、`<a download>`）。`webview.cookies(url)`（`document.cookie`。`HttpOnly` の Cookie は対象外です）。`html` の相対リンクは、アプリのアセットを基準に解決されます。
 
 ほかのサイトのページは、読み込むことしかできません。ブラウザーがサイトどうしを分離しているためです。読み込みが終わると `on loaded`、サイトに接続できないと `on error` が呼ばれます。サイトがフレーム内での表示を拒否している場合（`X-Frame-Options`、`frame-ancestors`）、Web ビューはそれを検知できず、ブラウザー独自のエラーページが表示されます。ページのリンクの移動先を追ったり、タイトルを読んだりすることはできません。スクリプトの実行、`block` や `preload`、リクエストの報告、Cookie の読み取り、`userAgent` の設定もできません（スクリプトと Cookie はエラーを返し、それ以外は一度だけ警告を出します）。フレームはトップレベルナビゲーションを許可しない sandbox になっているので、ページがアプリを別のページに置き換えてしまうことはありません。
 

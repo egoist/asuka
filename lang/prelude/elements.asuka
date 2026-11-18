@@ -909,7 +909,7 @@ native component Window() {
   event change(open: bool)
   /// the user closed it
   event close
-  /// the user asked to close it: it stays open until open is false, or closeWindow()
+  /// the user asked to close it: it stays open until open is false, or window.close()
   event closeRequest
 }
 
@@ -962,7 +962,7 @@ native component MenuSeparator() {}
 native component WindowCloseGuard() {
   /// it asks while true
   prop when: bool = true
-  /// the user asked to close the window it's in: the window stays open (closeWindow() closes it)
+  /// the user asked to close the window it's in: the window stays open (window.close() closes it)
   event closeRequest
 }
 

@@ -1,0 +1,69 @@
+// An app whose app block shows nothing outside its Windows (a tray's, a
+// menu bar's) has no main window: its root shows in none, and the main
+// window's handle does nothing.
+
+state open = true
+state log = ""
+
+// Shows nothing itself: a registration, a menu bar, a Window.
+component Shell {
+  useKeys([Shortcut(key: "k", primary: true, run: () => { log = log + "k;" })])
+  MenuBar {
+    Menu("File") {
+      MenuItem("Open Panel") { on press { open = true } }
+    }
+  }
+  Holder {
+    Window {
+      bind open: open
+      title: "Panel"
+      width: 200
+      height: 100
+      Column {
+        Text("in the panel")
+        Button("Main") {
+          on press {
+            window.main().focus()
+            log = log + (if window.main().visible { "main shown;" } else { "main not shown;" })
+          }
+        }
+        Button("Current") { on press { window.current().minimize() } }
+      }
+    }
+  }
+}
+
+// A wrapper whose children are what it shows: here, only a Window.
+component Holder {
+  prop children: View
+  children
+}
+
+app {
+  Shell()
+}
+
+test "an app that shows only windows has no main window" {
+  let app = mountApp()
+  expect(app.windows() == "\"Panel\" 200x100 visible focused\n", app.windows())
+  app.expect("in the panel")
+}
+
+test "the main window's handle does nothing without one" {
+  let app = mountApp()
+  let _ = app.windowActions()
+  app.tap("Main")
+  expect(log == "main not shown;", log)
+  expect(app.windowActions() == "", app.windowActions())
+  app.tap("Current")
+  expect(app.windowActions("Panel") == "minimize", app.windowActions("Panel"))
+}
+
+test "its windows open and close as any app's" {
+  let app = mountApp()
+  app.closeWindow("Panel")
+  expect(!open)
+  expect(app.windows() == "", app.windows())
+  app.chooseMenuItem("File > Open Panel")
+  expect(app.windows().contains("\"Panel\""), app.windows())
+}

@@ -1,0 +1,3 @@
+name = "platform/webview"
+version = "0.1.0"
+description = "What the app's web views keep: their cookies"

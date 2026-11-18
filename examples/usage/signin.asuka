@@ -1,6 +1,7 @@
 import std/http
-import platform/secure
 import std/time
+import platform/device
+import platform/secure
 import platform/webauth
 
 /// Signs in with Claude: to add an account, or, with id, that account
@@ -72,7 +73,7 @@ component AddSheet(id: string) {
       let lb = try await http.loopback(page: "<!doctype html><title>Signed in</title><p>You're signed in to Usage: you can close this tab.</p>")
       defer { lb.close() }
       let l = Login(redirect: "http://localhost:{lb.port}/callback")
-      openURL(l.address())
+      device.openURL(l.address())
       let back = try await lb.next()
       if let code = l.codeFrom(back.replace("http://127.0.0.1:", "http://localhost:")) {
         await finish(l, code)

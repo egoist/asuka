@@ -64,6 +64,13 @@ const (
 	// window does: Windows' menu bar, Linux's main menu (a Mac's menu bar
 	// is the app's, whatever the window): a document's window.
 	WindowMenuBar
+	// WindowNone is the root's: the app has no main window (its app
+	// block shows nothing outside its Windows: a tray's, a menu bar's, a
+	// document app's). Sent with WindowHidden, the host never shows the
+	// root's window: Show and Focus don't, nor does reopening the app
+	// (the Dock icon clicked, the app launched again); and with no window
+	// left the app ends, unless it keeps running.
+	WindowNone
 )
 
 // WindowStateFlags are a WindowState event's bits.

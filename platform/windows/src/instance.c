@@ -285,7 +285,13 @@ LRESULT wh_copy_data(LPARAM lp, bool *handled) {
 
 // wh_to_front brings the main window to the front, shown.
 void wh_to_front(void) {
-	if (H.main_ctl) wh_focus_ctl(H.main_ctl);
+	if (!H.no_main) {
+		if (H.main_ctl) wh_focus_ctl(H.main_ctl);
+		return;
+	}
+	// No main window: the window in use last, if it's still open.
+	wh_wctl *c = H.in_use && IsWindow(H.in_use) ? wh_ctl_of(H.in_use) : NULL;
+	if (c && IsWindowVisible(H.in_use)) wh_focus_ctl(c);
 }
 
 // ---- The scheme and the file types, registered for the user ----

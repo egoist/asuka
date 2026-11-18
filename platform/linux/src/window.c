@@ -284,13 +284,20 @@ void lx_update_title(win *w) {
 
 // lx_set_window_options applies WindowOptions to the main window, before
 // it shows.
+// An app without a main window (WindowNone) never shows it; one reloaded
+// with a main window again shows it.
 void lx_set_window_options(ak_span args) {
 	ak_window_config c = ak_decode_window_config((const uint8_t *)args.p, args.len);
 	win *w = H.main;
 	if (!w) return;
+	bool was_none = H.no_main;
+	H.no_main = (c.flags & AK_WINDOW_NONE) != 0;
 	if (c.title.len) str_set(&w->name, c.title);
 	lx_update_title(w);
 	lx_configure(w, &c);
+	if (!H.started) return;
+	if (H.no_main && gtk_widget_get_visible((GtkWidget *)w->window)) gtk_widget_set_visible((GtkWidget *)w->window, 0);
+	else if (was_none && !H.no_main && !w->hidden) lx_show_win(w, true);
 }
 
 void lx_free_win(win *w) {

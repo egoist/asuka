@@ -191,6 +191,6 @@ are tracked, so a binding that reads one follows it:
 | `WebView` | `try await eval(script)` (its value, as JSON), `run(script)` (without waiting), `goBack()`, `goForward()`, `reload()`, `stopLoading()` |
 | `TextField` | `insert(text)`, `format(.bold, on)`, `toggleFormat(.italic)`, `setLink(url)` (a rich field's selection) |
 
-A Ref can be passed along (`shareFiles(paths, from: button)`,
-`a11yFocus(field)`), and kept in a file's `let` for views of several
+A Ref can be passed along (`device.shareFiles(paths, from: button)`,
+`accessibility.focus(field)`), and kept in a file's `let` for views of several
 components.

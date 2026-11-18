@@ -11,9 +11,10 @@
 //
 //   asuka dev --platform android examples/usage
 
-import platform/secure
 import std/storage
 import std/time
+import platform/appearance
+import platform/secure
 
 let accounts: storage.Value<[Account]> = storage.Value("accounts", [])
 /// Shows how much of each quota is used, rather than left.
@@ -30,7 +31,7 @@ state busy: [string] = []
 state foreground = true
 
 app {
-  effect { setColorScheme(scheme.value) }
+  effect { appearance.setColorScheme(scheme.value) }
   on foreground {
     foreground = true
     clock = time.now()

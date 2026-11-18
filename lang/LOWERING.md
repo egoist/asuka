@@ -794,6 +794,7 @@ core/src/ui/elements_gen.h:
 | children | each built, then `ui.add(v, child)` |
 | children of a `LazyChildren` element (`Tab`, `Sheet`, `Destination`, `Window`, `Boundary`, `MenuBar`) | `ui.lazy(v, builder)`, last: one builder of them all (its own FuncCtx, the checker's `CtxBuilder` at the first child), which the runtime builds when they show, under an owner of its own (a `Route`, whose builder would take its `Params`, still adds its children in place) |
 | the app block's first `Window` | `ui.main_window(v)` right after its `ui.new`, before its keys: the main window, its keys the root's options, its children the root's content |
+| the app block | `ui.main_kind(k)` as its function starts, before its views: its main window is its content's (0), its first `Window`'s (1), or none (2), when nothing it can show is a view of the main window's (lang/ir/mainwindow.go: its items, the components they call and what their slots are given; an `if` folded as the app compiles takes its branch) |
 | `toolbar { … }` | `ui.slot(v, AK_KEY_SCREEN_TOOLBAR, fragment)` |
 | a `Lazy` slot (`Popover`'s `content { … }`) | `ui.slot(v, key, builder)`: a closure returning the View, built as it shows |
 | `on error(e, reset) { views }` (an event that `Builds`) | `ui.on(v, ev, closure)`, the closure returning the View it builds |
@@ -1046,10 +1047,10 @@ holds (see "Refs"):
 |---|---|
 | `video.play()`, `.pause()`, `.seek(s)` | `ui.play(v)`, `ui.pause(v)`, `ui.seek(v, s)` |
 | `web.run(js)`, `.goBack()`, `.goForward()`, `.reload()`, `.stopLoading()` | `ui.web_eval(v, js)`, `ui.web_navigate(v, 0..3)` (Method.Consts) |
-| `try await web.eval(js)`, `try await webCookies(url)` | `ui.web_eval_result(v, js)`, `ui.web_cookies(url)`: AWAIT on the future |
+| `try await web.eval(js)` | `ui.web_eval_result(v, js)`: AWAIT on the future |
 | `field.insert(s)`, `.format(.bold, on)`, `.toggleFormat(.bold)`, `.setLink(url)` | `ui.insert_text`, `ui.format(v, f, on)`, `ui.toggle_format(v, f)`, `ui.set_link` |
 | `field.focus()`, `.blur()`, `scroll.scrollTo(x, y, animated: true)` | `ui.focus`, `ui.blur`, `ui.scroll_to` |
-| `share(text)`, `try await shareFiles(paths, mime:, uti:, title:, from: ref)`, `haptic(.success)`, `copy(text)`, `openURL(url)`, `announce(text)`, `a11yFocus(ref)` | `ui.share`, `ui.share_files` (from: the Ref's view, or none), `ui.haptic`, `ui.copy`, `ui.open_url`, `ui.announce`, `ui.a11y_focus` (not called while the Ref holds none) |
+| platform/device's `share(text)`, `shareFiles(paths, mime:, uti:, title:, from: ref)`, `haptic(.success)`, `copy(text)`, `openURL(url)`; platform/accessibility's `announce(text)`, `focus(ref)`; platform/webview's `cookies(url)`; platform/appearance's `setColorScheme(s)` | the packages' `native fn`s (below): `device.share`, `device.coreShareFiles` (from: the Ref, its view read by the builtin), `device.haptic`, `device.copy`, `device.openURL`, `accessibility.announce`, `accessibility.focus` (nothing while the Ref holds none), `webview.cookies` (a future), `appearance.setColorScheme`; std/markdown's and std/base's own (`markdown.openLink`, `base.say`) are the same builtins, so the standard library needs no platform package |
 | `useKeys([…])`, `onOpenURL(u => …)`, `onOpenFiles(ps => …)`, `onShare(items => …)` | `ui.use_keys`, `ui.on_open_url`, `ui.on_open_files`, `ui.on_share`: items of a component's body (or the app's block), called in its function before its views, so they hold while it lives |
 | the app's `on openURL(url) { }`, `on files(paths) { }`, `on share(items) { }`, `on quit(e) { }`, `on secondInstance(args, dir) { }` | `ui.on_open_url`, `ui.on_open_files`, `ui.on_share`, `ui.on_quit`, `ui.on_second_instance` of the handler, in the app's function (check.AppEvents) |
 
@@ -1211,14 +1212,14 @@ taking the ref. The rest (core/src/ui/builtins.c has their arguments):
 | `w.focus()` | `ui.focus(w)`, which focuses a `Window`'s window |
 | `w.visible`, `focused`, `minimized`, `maximized`, `fullScreen`, `alwaysOnTop`, `clickThrough` | `ui.window_flag(w, bit)` (the `WindowState` bit a Const), followed: the first read makes the core listen for `WindowState` |
 | `w.position`, `w.size`, `w.windowState` | `ui.window_pair(w, 0 or 1)` (a `(float, float)`), `ui.window_state(w)` (a `WindowState`), followed |
-| `closeWindow()` | `ui.window_close()`: the window the calling code is in, without asking |
+| `window.close()` | `ui.window_close()`: the window the calling code is in, without asking |
 | `onCloseRequest(fn() -> bool)` (a body's item) | `ui.on_close_request(closure)` |
 | `quit()`, `relaunch()` | `ui.quit()`, `ui.relaunch()`: the `Quit` command to the root |
 | `onQuit(e => …)`, `onSecondInstance((args, dir) => …)` (a body's items), the app block's `on quit(e) { }`, `on secondInstance(args, dir) { }` | `ui.on_quit(closure)`, `ui.on_second_instance(closure)`: handlers that go with the current owner; `asuka_quit_request` runs the first with a `QuitEvent` (its `cancel` and `canceled` closures the runtime's), the `SecondInstance` event the second |
 | `navigate(href)`, `navigate(X(…))`, `replace(href)` | `ui.navigate(href, mode)` (0 navigate, 1 push, 2 replace); `X(…)` a routed screen (below): its href |
 | `router.back()`, `router.dismiss()`, `router.canGoBack()`, `router.href()`, `router.setQuery(q)` (`router` a package of the universe: check.RouterFuncs) | `ui.router_back`, `ui.router_dismiss`, `ui.can_go_back` and `ui.router_href` (both followed: they read the router's address signal, written as its history changes), `ui.set_query` |
 | `runAction(.button(…))` | `ui.run_action(action)`: the action's run (its `run` an `async fn()?`), unless it's disabled, under the calling code's owner; an async one's future is left to run, as a handler's is. Actions the runtime runs (menus, alerts, swipes, snackbars) run under the owner of the view or the code that made them (`ak_ui_call_under`) |
-| `mainWindow()` | `ui.main_window_ref()`: a Ref of the root's view, which window commands take as the main window's (`focus()` on it brings the window forward) |
+| `window.main()`, `window.current()` (`window` a package of the universe, as `router` is: check.WindowFuncs) | `ui.main_window_ref()`: a Ref of the root's view, which window commands take as the main window's (`focus()` on it brings the window forward; nothing in an app without one); `ui.current_window_ref()`: a Ref of the window the calling code is in (its `Window`, else the root's view) |
 
 ## Routes
 

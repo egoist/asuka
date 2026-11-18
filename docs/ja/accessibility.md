@@ -301,9 +301,11 @@ component Rating {
 
 ## 読み上げ
 
-`announce` は、スクリーンリーダーがオンになっていれば、テキストを読み上げさせます。フォーカスのない場所で起きた変化を伝えるためのものです。たとえばトースト、検索結果の件数、完了した保存などです。
+`accessibility.announce`（`platform/accessibility`）は、スクリーンリーダーがオンになっていれば、テキストを読み上げさせます。フォーカスのない場所で起きた変化を伝えるためのものです。たとえばトースト、検索結果の件数、完了した保存などです。
 
 ```asuka
+import platform/accessibility
+
 component SaveButton {
   state shown = false
 
@@ -311,7 +313,7 @@ component SaveButton {
     Button("Save") {
       on press {
         animate(() => { shown = true })
-        announce("Saved") // スクリーンリーダーはトーストに気づかない
+        accessibility.announce("Saved") // スクリーンリーダーはトーストに気づかない
       }
     }
     if shown { Text("Saved") }
@@ -323,9 +325,11 @@ iOS では `UIAccessibility` の読み上げ通知（announcement）、Android �
 
 ## フォーカスの移動
 
-`a11yFocus(ref)` は、スクリーンリーダーのフォーカスをビュー（それを指す `Ref`）に移します。ユーザーの目の前で画面が変わり、大事なものが別の場所にあるときに使います。送信に失敗したフォームの下に出るエラー、検索の最初の結果、スライドインしてきたパネルのタイトルなどです。
+`accessibility.focus(ref)` は、スクリーンリーダーのフォーカスをビュー（それを指す `Ref`）に移します。ユーザーの目の前で画面が変わり、大事なものが別の場所にあるときに使います。送信に失敗したフォームの下に出るエラー、検索の最初の結果、スライドインしてきたパネルのタイトルなどです。
 
 ```asuka
+import platform/accessibility
+
 component SignIn {
   state message = ""
 
@@ -336,7 +340,7 @@ component SignIn {
       try await signIn()
     } catch e {
       message = e.message
-      a11yFocus(error)
+      accessibility.focus(error)
     }
   }
 

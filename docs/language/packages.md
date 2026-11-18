@@ -73,10 +73,14 @@ other files use as they would any:
 
 ```asuka
 // feedback_mobile.asuka: iOS and Android
-pub fn confirm() { haptic(.success) }
+import platform/device
+
+pub fn confirm() { device.haptic(.success) }
 
 // feedback_desktop.asuka: macOS, Windows and Linux
-pub fn confirm() { announce("Done") }
+import platform/accessibility
+
+pub fn confirm() { accessibility.announce("Done") }
 
 // feedback_web.asuka
 pub fn confirm() {}

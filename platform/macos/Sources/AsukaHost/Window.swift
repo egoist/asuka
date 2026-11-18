@@ -47,6 +47,8 @@ struct AsukaWindowConfig: Equatable {
         static let fitContent = Flags(rawValue: 1 << 16)
         static let clickThrough = Flags(rawValue: 1 << 17)
         static let menuBar = Flags(rawValue: 1 << 18)
+        /// The root's: the app has no main window, which never shows.
+        static let none = Flags(rawValue: 1 << 19)
     }
 
     /// ops.DecodeWindowConfig: f32 width, height, min width, min height,

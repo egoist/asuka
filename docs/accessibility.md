@@ -392,11 +392,13 @@ Clamp the value yourself: the screen reader keeps asking.
 
 ## Announcements
 
-`announce` has the screen reader, if one is on, read a text: what
+`accessibility.announce` (`platform/accessibility`) has the screen reader, if one is on, read a text: what
 changed where focus isn't. A toast, a count of search results, a save
 that finished.
 
 ```asuka
+import platform/accessibility
+
 component SaveButton {
   state shown = false
 
@@ -404,7 +406,7 @@ component SaveButton {
     Button("Save") {
       on press {
         animate(() => { shown = true })
-        announce("Saved") // a screen reader wouldn't notice the toast
+        accessibility.announce("Saved") // a screen reader wouldn't notice the toast
       }
     }
     if shown { Text("Saved") }
@@ -421,12 +423,14 @@ focused view says already.
 
 ## Moving focus
 
-`a11yFocus(ref)` moves the screen reader's focus to a view (a `Ref` to it),
+`accessibility.focus(ref)` moves the screen reader's focus to a view (a `Ref` to it),
 for when the screen changed under the user and what matters is
 somewhere else: the error under a form that failed to submit, the first
 result of a search, the title of a panel that slid in.
 
 ```asuka
+import platform/accessibility
+
 component SignIn {
   state message = ""
 
@@ -437,7 +441,7 @@ component SignIn {
       try await signIn()
     } catch e {
       message = e.message
-      a11yFocus(error)
+      accessibility.focus(error)
     }
   }
 

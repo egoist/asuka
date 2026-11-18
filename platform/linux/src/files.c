@@ -28,9 +28,9 @@ static bool start(void) {
 }
 
 // to_front brings the app's main window (else the one last active) to the
-// front.
+// front: an app without one, the one last active.
 static void to_front(void) {
-	if (H.main && !H.main->closing)
+	if (H.main && !H.main->closing && !H.no_main)
 		gtk_window_present(H.main->window);
 	else if (H.active_win && !H.active_win->closing)
 		gtk_window_present(H.active_win->window);

@@ -905,6 +905,7 @@ final class AsukaSheetWindow: NSWindow {
     /// options, or the host's) and shown, unless it opens hidden or the
     /// app runs in the background.
     func startWindows() {
+        windowsStarted = true
         // No WindowOptions: the host's, kept under "main".
         if !main.configured { configure(main, AsukaWindowConfig()) }
         // Shown (automation: without taking the user's focus) unless the

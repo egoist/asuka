@@ -2,10 +2,11 @@
 // beyond what environment() carries (dark mode, Reduce Motion, the text
 // size, a screen reader): the accent color the system's own controls
 // take, and the accessibility settings Increase Contrast and Reduce
-// Transparency.
+// Transparency; and the app's own light or dark, whatever the system's.
 //
 //   let look = appearance.current()   // tracked: follows the settings while it's read
 //   Text("Hi") { color: look.accent ?? .accent }
+//   appearance.setColorScheme(.dark)  // the app dark, whatever the system's setting
 //
 // The platform's controls already follow them. An app reads them for
 // what it draws itself: a chart in the user's accent whatever the app's,
@@ -87,3 +88,8 @@ let followed = live(now(), changes)
 /// The settings, tracked: read in a binding, it follows the user's
 /// changes while it's read (and only then does anything watch them).
 pub fn current() -> Appearance = followed()
+
+/// Shows the app light or dark, whatever the system's setting (.system:
+/// follows it again): its views, its windows' title bars and the
+/// platform's controls. environment().colorScheme follows.
+pub native fn setColorScheme(scheme: ColorScheme)

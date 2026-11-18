@@ -120,6 +120,8 @@ fn tally(words: [string]) -> ([string: int], [int: [string]]) {
 `@platform` は、アプリのビルド先のプラットフォームを表す `Platform` 型の値です（`.iOS`、`.android`、`.macOS`、`.windows`、`.linux`、`.web`）。これはコンパイル時に決まる定数で、追跡されません。ファイルのトップレベルやコンポーネントの本体も含め、値を書ける場所ならどこでも使えます。`@platform` で決まる分岐のうち、あるプラットフォームが通らない側は、そのプラットフォームのビルドに含まれません。コードも、文字列も、ビューも含まれません。
 
 ```asuka check
+import platform/device
+
 let saveKey = if @platform == .macOS { "⌘S" } else { "Ctrl+S" }
 
 component Toolbar {
@@ -127,7 +129,7 @@ component Toolbar {
 
   Row {
     if @platform == .iOS || @platform == .android {
-      Button("Share") { on press { share(link) } }
+      Button("Share") { on press { device.share(link) } }
     }
     match @platform {
       .macOS | .windows | .linux => Text("Save with {saveKey}")

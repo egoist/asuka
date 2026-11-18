@@ -129,12 +129,14 @@ shows the icon instead of the title, and screen readers read the title
 (on a desktop, it's the icon's tooltip too).
 
 ```asuka
+import platform/device
+
 screen Detail(text: string) {
   title: text
   toolbar {
     Button("Share") {
       icon: "square.and.arrow.up"
-      on press { share(text) }
+      on press { device.share(text) }
     }
     Button("Delete") {
       role: .destructive
@@ -160,6 +162,8 @@ the button shows and its title what screen readers say, `disabled` dims
 one, a `menu` makes one open a menu, and what they read is followed.
 
 ```asuka
+import platform/device
+
 screen Message(from: string) {
   state unread = false
 
@@ -173,8 +177,8 @@ screen Message(from: string) {
     Button("Reply") {
       icon: "arrowshape.turn.up.left"
       menu: [
-        .button(title: "Reply", run: () => haptic(.light)),
-        .button(title: "Forward", run: () => haptic(.light)),
+        .button(title: "Reply", run: () => device.haptic(.light)),
+        .button(title: "Forward", run: () => device.haptic(.light)),
       ]
     }
     Button("Mark as unread") {
@@ -186,7 +190,7 @@ screen Message(from: string) {
   primary {
     Button("Compose") {
       icon: "square.and.pencil"
-      on press { haptic(.light) }
+      on press { device.haptic(.light) }
     }
   }
   Text("A message from {from}")
@@ -973,9 +977,10 @@ the app's menus instead ([below](#the-menu-bar-and-keyboard-shortcuts)).
 
 ## Windows
 
-A desktop app has a main window, which holds what its `app` block
-shows. The block's `Window` is the main window: its keys are the main
-window's options, and its children what it shows:
+A desktop app's main window holds what its `app` block shows, unless
+the app has none ([below](#apps-without-a-main-window)). The block's
+`Window` is the main window: its keys are the main window's options,
+and its children what it shows:
 
 ```asuka
 app {
@@ -1105,7 +1110,8 @@ hidden title bar; its shortcuts still work.
 A window that shows only once it's ready opens `hidden` and shows from
 code: its content is built, laid out and drawn meanwhile, so it shows
 whole, never empty. An app that starts in the background (a tray icon's)
-starts its main window with `open` false and shows it from its menu.
+opens its windows from its menu, and needs no main window at all
+([below](#apps-without-a-main-window)).
 
 ### Controlling a window
 
@@ -1145,7 +1151,7 @@ component Main {
 - `w.setAlwaysOnTop(on)` keeps it above other apps' windows, or not.
 - `w.setClickThrough(on)` lets the mouse go through it, or not.
 - `w.close()` closes it as the user does, asking first (below);
-  `closeWindow()` closes the window the calling code is in (the main one
+  `window.close()` closes the window the calling code is in (the main one
   outside every `Window`) without asking. The main window closing quits
   the app, unless it keeps running.
 - Its state follows the user's changes as well as the app's: `w.visible`,
@@ -1155,6 +1161,10 @@ component Main {
   `w.windowState`. A binding that reads them follows them; a
   window's state is reported only once something reads it. A minimized
   window, or one behind others, is still visible.
+
+`window.main()` is the main window's handle and `window.current()` the
+handle of the window the calling code is in (its `Window`'s, else the
+main window's), from anywhere: a menu's item, a tray icon's, a store.
 
 The actions act on the window when the screen next updates, as state
 writes do. On a
@@ -1167,12 +1177,12 @@ taskbar's menu), or `w.close()`, asks first:
 
 - `WindowCloseGuard { when: …; on closeRequest { … } }` in a window
   keeps it open while `when` is true, and runs its `closeRequest`: ask
-  about unsaved changes, then `closeWindow()` once the user has chosen.
+  about unsaved changes, then `window.close()` once the user has chosen.
 - `onCloseRequest(fn() -> bool)`, an item of a component's body, asks a
   function for as long as the component lives: false keeps it open.
 - A `Window`'s own `on closeRequest { … }` (the main window's too) takes
   the user's closing over: the window stays open until `open` is false
-  or `closeWindow()`.
+  or `window.close()`.
 
 ```asuka
 screen NoteScreen {
@@ -1187,7 +1197,7 @@ screen NoteScreen {
     Column {
       Text("Discard the new note?")
       Button("Cancel") { on press { asking = false } }
-      Button("Discard") { on press { closeWindow() } }
+      Button("Discard") { on press { window.close() } }
     }
   }
   TextField { bind text: draft }
@@ -1255,6 +1265,58 @@ component Preferences {
 | Windows | owned by its parent: above it, minimized with it | owned, its parent disabled while it's open |
 | Linux | transient for its parent, destroyed with it | transient and modal |
 | The web | a panel as any other | a panel over a backdrop that takes the page's clicks |
+
+### Apps without a main window
+
+Without a `Window` of its own, the app block's main window holds what
+the block shows. A block that shows nothing there has no main window at
+all: its components show only `Window`s, a tray icon, a `MenuBar`,
+global shortcuts. Its windows are the ones it opens, as a menu bar
+app's or a document app's are:
+
+```asuka
+import platform/tray
+
+state open = false
+
+app {
+  Clock()
+}
+
+component Clock {
+  tray.Tray("clock") {
+    symbol: "clock"
+    menu: [
+      .button(title: "Show Clock", run: () => { open = true }),
+      .button(title: "Quit", run: () => quit()),
+    ]
+  }
+  Window {
+    bind open: open
+    title: "Clock"
+    width: 240
+    height: 120
+    Text("12:00")
+  }
+}
+```
+
+- `window.main()` still names it, but its actions do nothing and its
+  state reads as nothing shown, as on a phone; `window.current()`
+  outside every `Window` is that handle too.
+- Reopening the app (its Dock icon clicked, the app launched again)
+  brings it to the front with the windows it has open; with none, it
+  shows none.
+- The user closing its last window ends the app, unless it keeps
+  running (`asuka.toml`'s `keepRunning` or `background`), which a menu
+  bar app does.
+
+Whether there's a main window is decided as the app compiles, by what
+its code can show on the platform it's built for (an `if @platform`
+takes that platform's branch), not by what its state shows: a block
+that may show a view has a main window, empty while it shows none. On
+the web the tab is the main window, which shows nothing then; on a
+phone the screen is the app's, whatever it shows.
 
 ### What each desktop can do
 
@@ -1372,7 +1434,7 @@ Asuka has no toast component, since iOS and Android have no standard one
 that apps share. Make one from a view placed over the screen,
 shown with an `if` and brought in with a
 [transition](motion.md#enter-and-exit). The gallery's toast does this, and
-calls `announce` so that screen readers say it too. See
+calls `accessibility.announce` so that screen readers say it too. See
 [`examples/gallery`](../examples/gallery).
 
 ## Routes
@@ -1691,7 +1753,7 @@ there.
 To show a sheet of your app's over the app that shares, without opening
 yours, see `platform/sharesheet` in
 [Device](device.md#the-apps-own-share-sheet-platformsharesheet). To share
-from your app instead, `share(text)` shows the system's share sheet,
-and `shareFiles(paths)` shares files: the share menu on a Mac, the share UI
+from your app instead, `device.share(text)` shows the system's share sheet,
+and `device.shareFiles(paths)` shares files: the share menu on a Mac, the share UI
 on Windows, the browser's on the web. Linux has no share sheet: they
 copy what's shared to the clipboard, and say so in a toast.

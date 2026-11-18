@@ -46,7 +46,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 图片（远程加载、缓存、占位图） | `AsyncImage` | `expo-image` | ✓ `Image`（`placeholder`，BlurHash 和 ThumbHash 占位图（`blurHash`、`thumbHash`），淡入的 `transition`；在内存里缓存，iOS 和 Android 上还会缓存到磁盘；解码用各平台自己的解码器：ImageIO、`ImageDecoder`、`NSImage`、WIC、GDK 的加载器、浏览器，所以平台能读的 WebP、HEIC 和 AVIF 都能显示；动图 GIF、APNG 和 WebP 在所有平台上都能播放，用 `animated` 控制；SVG 在 Mac、Linux 和 Web 上可用） |
 | Lottie 动画 | 社区方案（lottie-ios） | `lottie-react-native` | ◐ `std/lottie` 的 `lottie.View`（lottie-ios、lottie-android、lottie-web：JSON 和 dotLottie，`playing`、`loop`、`speed`，可读可写的 `progress`，`segment`、`marker`，按 keypath 的 `overrides`）；Windows 和 Linux 上暂不支持，只显示一个空白区域 |
 | 视频 | `VideoPlayer` | `expo-video` | ✓ `Video`（iOS 和 Mac 上用 AVKit，Android 上用 Media3，Windows 上是 WebView2 里的 `<video>`，Linux 上是 `GtkVideo`（GStreamer），Web 上用 `<video>`） |
-| 网页内容 | `WKWebView` | `react-native-webview` | ✓ `WebView`（iOS 和 Mac 上用 `WKWebView`，Android 的 `WebView`，Windows 上用 WebView2，Linux 上用 WebKitGTK：加载 URL 或 HTML，双向传递消息，在页面脚本之前运行脚本（`preload`），拦截请求，页面状态和历史记录，下载，新窗口，每一个请求，脚本的返回值，`webCookies(url)`；Web 上是 `<iframe>`，以上功能只对应用自己站点的页面完全可用）；`platform/js` 可以在屏幕外运行 JavaScript |
+| 网页内容 | `WKWebView` | `react-native-webview` | ✓ `WebView`（iOS 和 Mac 上用 `WKWebView`，Android 的 `WebView`，Windows 上用 WebView2，Linux 上用 WebKitGTK：加载 URL 或 HTML，双向传递消息，在页面脚本之前运行脚本（`preload`），拦截请求，页面状态和历史记录，下载，新窗口，每一个请求，脚本的返回值，`webview.cookies(url)`；Web 上是 `<iframe>`，以上功能只对应用自己站点的页面完全可用）；`platform/js` 可以在屏幕外运行 JavaScript |
 | 地图 | `Map` | `expo-maps` | ✓ `platform/maps` 的 `maps.View`（iOS 和 Mac 上用 MapKit，Android 上用 Google Maps，Windows、Linux（libshumate）和 Web 上用 OpenStreetMap 的瓦片：区域、标记、用户位置、点按） |
 | 自定义绘制 | `Shape`、`Path`、`Canvas` | `react-native-svg`、Skia | ✓ `Shape` 和 `Path`（填充、描边、线帽、连接方式、虚线，以及可动画的裁剪）；`Canvas`（路径、渐变、文字、变换、裁剪：分别用 Core Graphics、Android 的 `Canvas`、GDI+、GSK、2D `<canvas>` 绘制）；`std/svg` |
 | 图表 | Swift Charts | `victory-native`、社区方案 | ✓ `std/chart`（柱状图、折线图、面积图、散点图；用 `svg.Shape` 绘制，各平台一致） |
@@ -90,7 +90,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 按下和悬停状态 | `ButtonStyle` 的 `isPressed`、`.onHover` | `Pressable` 的 `pressed`、`onHoverIn`/`onHoverOut` | ✓ `pressed { … }` 和 `hovered { … }` 变体；用 `Ref` 的 `pressed` 和 `hovered` 跟随一组视图或相邻视图的状态；`on pressedChange`、`on hoverChange` |
 | 拖放 | `.draggable`、`.dropDestination` | （没有内置） | ✓ `dragItems`、`dropTypes`、`on drop`（应用内拖放应用自己的值；与其他应用之间拖放文本、链接和文件；`dragging { … }` 和 `dragOver { … }` 变体） |
 | 共享元素过渡 | `matchedGeometryEffect`、`.navigationTransition(.zoom)` | shared transitions | ✓ `shared`（一个视图从另一个视图的位置和大小长出来）、页面的 `zoomFrom`（iOS 18 的缩放过渡；Material 的容器变换） |
-| 触感反馈 | `sensoryFeedback` | `expo-haptics` | ✓ `haptic(…)`（Mac 上用 Force Touch 触控板，浏览器里用 `navigator.vibrate`） |
+| 触感反馈 | `sensoryFeedback` | `expo-haptics` | ✓ `device.haptic(…)`（Mac 上用 Force Touch 触控板，浏览器里用 `navigator.vibrate`） |
 | 减弱动态效果 | `accessibilityReduceMotion` | `useReducedMotion` | ✓ `environment().reduceMotion`（iOS 上过渡改为淡入淡出；桌面端和 Web 上 `animate` 里的变化会立即生效） |
 
 ## 数据与服务
@@ -117,7 +117,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | Android 通知渠道 | — | `setNotificationChannelAsync` | ✓ `notify.setChannels`、`setChannelGroups`；推送里也可以指定渠道（iOS 没有渠道） |
 | 会话里的消息 | 通信通知（`INSendMessageIntent`） | 社区方案 | ✓ `Notification(…).from(person, conversation)`、`Message.from`：iOS 的通信通知，Android 的 MessagingStyle 和会话快捷方式；其他平台显示为普通通知 |
 | 在推送显示之前修改它 | Notification Service Extension | 社区方案（`expo-notifications` 不支持） | ✓ `push.rewrite(f)`：应用的代码运行在 iOS 的 Notification Service Extension 里（由 `asuka build` 构建并签名），在 Android 上运行在处理数据消息的 Firebase 服务里 |
-| 剪贴板、分享面板、浏览器 | `UIPasteboard`、`ShareLink`、`SFSafariViewController` | `expo-clipboard`、`expo-sharing`、`expo-web-browser` | ✓ `copy(text)`、`device.clipboardText()`、`clipboardHas`、`clipboardImage`、`copyImage`、`clipboardChanges()`；`share(text)`、`shareFiles(paths)`（Mac 上的分享菜单、Windows 的分享界面、浏览器的分享；Linux 没有分享面板，会复制到剪贴板并弹出提示）；`device.browse(url)`（`SFSafariViewController`、Custom Tab）、`openURL(url)` |
+| 剪贴板、分享面板、浏览器 | `UIPasteboard`、`ShareLink`、`SFSafariViewController` | `expo-clipboard`、`expo-sharing`、`expo-web-browser` | ✓ `device.copy(text)`、`device.clipboardText()`、`clipboardHas`、`clipboardImage`、`copyImage`、`clipboardChanges()`；`device.share(text)`、`device.shareFiles(paths)`（Mac 上的分享菜单、Windows 的分享界面、浏览器的分享；Linux 没有分享面板，会复制到剪贴板并弹出提示）；`device.browse(url)`（`SFSafariViewController`、Custom Tab）、`device.openURL(url)` |
 | 预览文件 | `QLPreviewController`、`.quickLookPreview` | `react-native-file-viewer` | ✓ `platform/preview`（iOS 和 Mac 上用快速查看，支持多个文件和标记；Android、Windows 和 Linux 上用打开该文件的应用；Web 上在新标签页打开） |
 | 打印、从 HTML 生成 PDF | `UIPrintInteractionController`、`UIPrintPageRenderer` | `expo-print` | ✓ `platform/print`（打印文件、HTML、`WebView`，使用系统的打印对话框并返回结果；`print.pdf`：分页、按地区选纸张大小、页边距） |
 | 邮件和短信编辑界面 | `MFMailComposeViewController`、`MFMessageComposeViewController` | `expo-mail-composer`、`expo-sms` | ✓ `platform/compose`（`compose.mail`：收件人、主题、HTML 正文、附件，iOS 上能知道用户做了什么，其他平台交给邮件应用；`compose.message`：iOS 的信息、Android 的短信应用） |
@@ -167,8 +167,8 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 深色模式、语义色、强调色 | 自动处理 | `useColorScheme` | ✓ 语义色、`environment().dark`、`asuka.toml` 的 `accent`（Android 上据此生成 Material 3 配色，`dynamicColor` 则取自壁纸） |
 | 动态字体、字体缩放 | 自动处理 | `allowFontScaling` | ✓ 文本样式和自定义字体都会跟着缩放；`environment().fontScale` |
 | 屏幕阅读器的标签、角色、隐藏 | `.accessibilityLabel`... | `accessibilityLabel`... | ✓ `label`、`hint`、`role`、`a11yHidden`；可点按的视图会被识别为按钮（见[无障碍](accessibility.md)） |
-| 播报 | `AccessibilityNotification.Announcement` | `announceForAccessibility` | ✓ `announce(text)` |
-| 移动屏幕阅读器的焦点 | `@AccessibilityFocusState` | `setAccessibilityFocus` | ✓ `a11yFocus(ref)` |
+| 播报 | `AccessibilityNotification.Announcement` | `announceForAccessibility` | ✓ `accessibility.announce(text)` |
+| 移动屏幕阅读器的焦点 | `@AccessibilityFocusState` | `setAccessibilityFocus` | ✓ `accessibility.focus(ref)` |
 | 屏幕阅读器是否开启 | `voiceOverEnabled` | `isScreenReaderEnabled` | ✓ `environment().screenReader` |
 | 自定义操作、可调节控件 | `.accessibilityAction`、`.accessibilityAdjustableAction` | `accessibilityActions` | ✓ `actions`、`on adjust`（列表的滑动操作也会成为 TalkBack 和 VoiceOver 的操作） |
 
@@ -205,7 +205,7 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 
 | | Electron | MyGo | Asuka |
 |---|---|---|---|
-| 控制窗口 | `BrowserWindow` | `Window` | ✓ `app` 块里的 `Window` 和其他 `Window`、`mainWindow()`、窗口的 `Ref`（`Window as w`）：显示、隐藏、聚焦、最小化、最大化、全屏、尺寸、位置、置顶，并跟随窗口状态；`on closeRequest`、`WindowCloseGuard`；用 `stateKey` 记住窗口位置；`child` 和 `modal` 窗口；`titleBar: .hidden`（Wayland 下由合成器决定，无法设置位置、居中或置顶） |
+| 控制窗口 | `BrowserWindow` | `Window` | ✓ `app` 块里的 `Window` 和其他 `Window`（只有这些 `Window` 的应用，比如托盘应用，没有主窗口）、`window.main()`、`window.current()`、窗口的 `Ref`（`Window as w`）：显示、隐藏、聚焦、最小化、最大化、全屏、尺寸、位置、置顶，并跟随窗口状态；`on closeRequest`、`WindowCloseGuard`；用 `stateKey` 记住窗口位置；`child` 和 `modal` 窗口；`titleBar: .hidden`（Wayland 下由合成器决定，无法设置位置、居中或置顶） |
 | 托盘图标 | `Tray` | 托盘图标 | ✓ `platform/tray` 的 `tray.Tray`（`NSStatusItem`；通知区域；Linux 上的 StatusNotifierItem）：图片或符号、标题、提示、菜单、点击 |
 | 子菜单、退出菜单项 | `MenuItem.submenu`、roles | roles、子菜单 | ✓ `MenuBar`、`Menu`、`MenuItem`（菜单项里嵌套菜单项就是子菜单；`role: .quit`、`.close`、`.openRecent`）；托盘和 Dock 菜单里用 `Action` 的 `.submenu` 和 `.section` |
 | Dock 菜单、跳转列表任务 | `app.dock.setMenu`、`setUserTasks` | Dock 菜单、跳转列表 | ✓ `tray.DockMenu`（Dock 的菜单、跳转列表的“任务”、Linux 启动器的快捷列表） |

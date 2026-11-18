@@ -333,6 +333,7 @@ typedef struct {
 	bool in_background;
 	bool quitting, quit_allowed;
 	bool started;
+	bool no_main;  // the app has no main window (WindowNone): H.main never shows
 	dsk_config cfg;
 	bool dev;  // under asuka dev: a player
 	bool automating;
@@ -673,6 +674,7 @@ bool lx_ask_quit(bool ending);
 void lx_request_quit(void);
 void lx_quit_command(ak_span args);
 bool lx_closing_last(win *w);
+void lx_closed_window(void);
 void lx_save_window(win *w);
 void lx_restore_window(win *w);
 void lx_save_windows(void);

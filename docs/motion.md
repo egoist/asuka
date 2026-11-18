@@ -215,12 +215,14 @@ it has gone out, and takes no touches meanwhile.
   y: -8)`.
 
 ```asuka
+import platform/accessibility
+
 component SaveToast {
   state shown = false
 
   async fn save() {
     animate(() => { shown = true })
-    announce("Saved")
+    accessibility.announce("Saved")
     await sleep(1500ms)
     animate(() => { shown = false })
   }
@@ -806,11 +808,13 @@ moves through its results with Up and Down.
 
 ## Haptics
 
-`haptic` plays feedback: `.selection` (a value ticked over),
+`device.haptic` plays feedback: `.selection` (a value ticked over),
 `.light`, `.medium` and `.heavy` (impacts), and `.success`, `.warning`
 and `.error` (an outcome).
 
 ```asuka
+import platform/device
+
 component Pager {
   state page = 0
 
@@ -822,9 +826,9 @@ component Pager {
       } else if d == .right {
         page = max(page - 1, 0)
       }
-      haptic(.selection)
+      device.haptic(.selection)
     }
-    on longPress { haptic(.medium) }
+    on longPress { device.haptic(.medium) }
     Text("Page {page + 1}")
   }
 }
@@ -838,7 +842,7 @@ Android 11; before that, a key press or a long press.
 On a Mac with a Force Touch trackpad, `.selection` is
 `NSHapticFeedbackManager`'s alignment and the others its level change;
 the trackpad plays them while a finger is on it. Windows and Linux have
-no haptics: `haptic` does nothing there. In a browser it's a short
+no haptics: `device.haptic` does nothing there. In a browser it's a short
 vibration where the browser has `navigator.vibrate` (Chrome on
 Android), and nothing elsewhere.
 

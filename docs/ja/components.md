@@ -57,6 +57,8 @@ component Inbox {
 `RichText` は、装飾付きのテキストを表示します。テキストは `Span`（スパン）のリストです。スパンの中の `"\n"` で新しい段落になります。スパンで既定値のままのフィールドには、`RichText` のスタイルが使われます。
 
 ```asuka
+import platform/device
+
 component About {
   RichText([
     Span(text: "asuka", font: .body.bold()),
@@ -70,7 +72,7 @@ component About {
     Span(text: "in red", color: .red),
     Span(text: "."),
   ]) {
-    on link(url) { openURL(url) }
+    on link(url) { device.openURL(url) }
   }
 }
 ```
@@ -121,7 +123,7 @@ component Answer(question: [Span], answer: [Span]) {
 }
 ```
 
-`selectable: true` を指定した `Text` は単独で選択できます。複数のテキストにまたがって選択させたいときは、`Selectable` の中で `RichText` を使ってください。選択を介さずに何かをコピーするには、`copy(text)` でクリップボードに入れます。
+`selectable: true` を指定した `Text` は単独で選択できます。複数のテキストにまたがって選択させたいときは、`Selectable` の中で `RichText` を使ってください。選択を介さずに何かをコピーするには、`device.copy(text)` でクリップボードに入れます。
 
 ### Markdown
 
@@ -222,13 +224,15 @@ component Actions {
 `menu` を指定したボタンは、タップされると `on press` を実行する代わりにアクションの一覧を表示します（iOS では `UIMenu`、Android では `PopupMenu`、macOS では `NSMenu`、Windows ではポップアップメニュー、Linux では `GtkPopoverMenu`、ブラウザーではポップオーバー）。それぞれは `Action` で、`.button(title:, icon:, role:, disabled:, checked:, run:)` のように書き、タイトル以外は省略できます。`role: .destructive` を指定すると赤で表示されます。`run` の中では await できます（`run: () => { await save() }`）。ハンドラーと同じく、アクションを作ったコードのタスクとして実行され、メニューはその終わりを待ちません。そのコードのスタック、シート、ルーターがそのまま使えるので、`push` や `navigate` も呼べます。`runAction(a)` は、自前のメニューのために、同じようにアクションを実行します。
 
 ```asuka
+import platform/device
+
 component More {
   Button("") {
     icon: "ellipsis.circle"
     label: "More"
     menu: [
-      .button(title: "Copy", icon: "doc.on.doc", run: () => copy("https://example.com")),
-      .button(title: "Share", icon: "square.and.arrow.up", run: () => share("https://example.com")),
+      .button(title: "Copy", icon: "doc.on.doc", run: () => device.copy("https://example.com")),
+      .button(title: "Share", icon: "square.and.arrow.up", run: () => device.share("https://example.com")),
       .button(title: "Delete", icon: "trash", role: .destructive, run: () => {}),
     ]
   }
@@ -696,6 +700,8 @@ component Success {
 `WebView` は、プラットフォームの Web ビューで Web ページを表示します。スクロール、ズーム、テキストの選択もプラットフォームのものです。iOS と macOS では `WKWebView`、Android では `WebView`、Windows では WebView2（Edge のランタイム）、Linux では WebKitGTK 6.0 の `WebKitWebView` です。Linux で WebKitGTK がインストールされていない場合は何も表示せず、何をインストールすればよいかを伝えるメッセージで `on error` を一度だけ呼びます。ブラウザーでは `<iframe>` になり、以下で説明する機能をすべて使えるのはアプリ自身のサイトのページに限られます。詳しくは [Web](web.md#web-ビュー) を参照してください。高さも `grow` も指定しなければ、与えられた領域いっぱいに広がります。
 
 ```asuka
+import platform/device
+
 component Browser {
   state page = WebState()
 
@@ -729,7 +735,7 @@ component Browser {
       block: ["doubleclick.net", "/ads/"]
       on state(s) { page = s }
       on message(m) { print("the page says {m}") }
-      on newWindow(url) { openURL(url) }
+      on newWindow(url) { device.openURL(url) }
     }
   }
 }
@@ -775,7 +781,7 @@ component Page {
 
 `eval` は Promise を待つためにページの `eval` を使いますが、コンテンツセキュリティポリシー（CSP）で `'unsafe-eval'` を許可していないページでは `eval` がブロックされます。そのようなページでは、iOS、Android、macOS、Linux はスクリプトを `run` と同じ方法で実行します。この方法には CSP が適用されません。値はこれまでどおり最後の文の値で、エラーもスクリプトが投げたものですが、Promise は待ちません（Android では `{}` が返り、ほかのプラットフォームではエラーになります）。また、iOS と macOS ではオブジェクトのキーの順序が変わることがあります。Windows は `eval` を使わないので、これまでどおり Promise を待ちます。Web では、アプリがページ内で実行するスクリプトにもブラウザーがページのポリシーを適用するため、`eval` をブロックするページでは `run` も `eval` も拒否されます。
 
-`try await webCookies(url)` は、Web ビューが持っているその URL の Cookie を、`Cookie` ヘッダーの形で取得します。ユーザーがページでサインインした状態を、アプリ自身のリクエストで使うためのものです。
+`try await webview.cookies(url)` は、Web ビューが持っているその URL の Cookie を、`Cookie` ヘッダーの形で取得します。ユーザーがページでサインインした状態を、アプリ自身のリクエストで使うためのものです。
 
 [`examples/downloader`](../../examples/downloader) は、これらをすべて使った例です。アドレスバー、プリロードスクリプト、ブロック、ダウンロードを備えたブラウザーになっています。
 
@@ -920,6 +926,8 @@ iOS と macOS では Metal（`CAMetalLayer`）、Android 13 以降では AGSL（
 見た目、イベント、アクセシビリティのプロパティを何も持たないビューは、自分のネイティブビューを作りません。その子は、ネイティブビューを持つ最も近い祖先に直接入ります。そのため、行や列をいくら入れ子にしてもコストはかかりません。
 
 ```asuka
+import platform/device
+
 component Person {
   state open = false
 
@@ -930,7 +938,7 @@ component Person {
     radius: 12
     label: "Ada, 2 unread"
     on press { open = !open }
-    on longPress { haptic(.medium) }
+    on longPress { device.haptic(.medium) }
     Symbol("person.fill")
     Column {
       grow: 1

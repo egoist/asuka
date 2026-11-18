@@ -101,6 +101,14 @@ static ak_view *view_or_none(ak_val *a, uint32_t n, uint32_t i) {
 	return i < n && a[i].p && ((ak_obj *)a[i].p)->tag == AK_TAG_VIEW ? a[i].p : NULL;
 }
 
+// ref_view is the view a Ref argument (its cell, or none) holds: a
+// package's native fn gets the Ref itself, not its view.
+static ak_view *ref_view(ak_val *a, uint32_t n, uint32_t i) {
+	if (i >= n || !a[i].p) return NULL;
+	ak_val v = ak_vm_cell_get(a[i].p, false);
+	return v.p && ((ak_obj *)v.p)->tag == AK_TAG_VIEW ? v.p : NULL;
+}
+
 static ak_val b_variant(ak_val *a, uint32_t n) {
 	ak_ui_variant(view_arg(a, n, 0, "ui.variant"), (uint8_t)a[1].i, (uint16_t)a[2].i, a[3]);
 	return none();
@@ -302,7 +310,7 @@ static ak_val b_dev_player(ak_val *a, uint32_t n) {
 STR_CMD(b_on_foreground, ak_ui_on_foreground)
 STR_CMD(b_on_background, ak_ui_on_background)
 
-static ak_val b_share_files(ak_val *a, uint32_t n) { return (ak_val){.p = ak_ui_share_files(a[0].p, a[1].p, a[2].p, a[3].p, view_or_none(a, n, 4))}; }
+static ak_val b_share_files(ak_val *a, uint32_t n) { return (ak_val){.p = ak_ui_share_files(a[0].p, a[1].p, a[2].p, a[3].p, ref_view(a, n, 4))}; }
 
 static ak_val b_color_scheme(ak_val *a, uint32_t n) {
 	AK_UNUSED(n);
@@ -328,8 +336,10 @@ static ak_val b_haptic(ak_val *a, uint32_t n) {
 	return none();
 }
 
+// accessibility.focus: nothing while its Ref holds no view.
 static ak_val b_a11y_focus(ak_val *a, uint32_t n) {
-	ak_ui_a11y_focus(view_arg(a, n, 0, "ui.a11y_focus"));
+	ak_view *v = ref_view(a, n, 0);
+	if (v) ak_ui_a11y_focus(v);
 	return none();
 }
 
@@ -509,11 +519,13 @@ void ak_ui_ext_builtins_init(void) {
 		{"ui.model", b_model}, {"ui.model_bound", b_model_bound}, {"ui.model_set", b_model_set},
 		{"ui.animate", b_animate}, {"ui.animate_wait", b_animate_wait}, {"ui.animating", b_animating}, {"ui.on_frame", b_on_frame}, {"ui.frames", b_frames}, {"ui.play", b_play},
 		{"ui.pause", b_pause}, {"ui.seek", b_seek}, {"ui.web_eval", b_web_eval}, {"ui.web_navigate", b_web_navigate},
-		{"ui.web_eval_result", b_web_eval_result}, {"ui.web_cookies", b_web_cookies}, {"ui.insert_text", b_insert_text},
+		{"ui.web_eval_result", b_web_eval_result}, {"webview.cookies", b_web_cookies}, {"ui.insert_text", b_insert_text},
 		{"ui.format", b_format}, {"ui.toggle_format", b_toggle_format}, {"ui.set_link", b_set_link}, {"ui.native", b_native},
-		{"ui.native_set", b_native_set}, {"ui.native_bind", b_native_bind}, {"ui.native_on", b_native_on}, {"ui.share", b_share},
-		{"ui.share_files", b_share_files}, {"ui.haptic", b_haptic}, {"ui.copy", b_copy}, {"ui.open_url", b_open_url},
-		{"ui.announce", b_announce}, {"ui.a11y_focus", b_a11y_focus}, {"ui.call", b_call},
+		{"ui.native_set", b_native_set}, {"ui.native_bind", b_native_bind}, {"ui.native_on", b_native_on}, {"ui.call", b_call},
+		{"device.share", b_share}, {"device.coreShareFiles", b_share_files}, {"device.haptic", b_haptic},
+		{"device.copy", b_copy}, {"device.openURL", b_open_url},
+		{"accessibility.announce", b_announce}, {"accessibility.focus", b_a11y_focus},
+		{"markdown.openLink", b_open_url}, {"base.say", b_announce},
 		{"host.call", b_call}, {"host.send", b_host_send},
 		{"host.u8", b_host_u8}, {"host.u32", b_host_u32}, {"host.u64", b_host_u64},
 		{"host.f64", b_host_f64}, {"host.str", b_host_str},
@@ -521,7 +533,7 @@ void ak_ui_ext_builtins_init(void) {
 		{"host.readU64", b_host_read_u64}, {"host.readF64", b_host_read_f64},
 		{"host.readStr", b_host_read_str}, {"host.process", b_process}, {"ui.view_id", b_view_id},
 		{"sharesheet.coreClose", b_share_close},
-		{"ui.on_open_url", b_on_open_url}, {"ui.on_open_files", b_on_open_files}, {"ui.on_share", b_on_share}, {"ui.color_scheme", b_color_scheme},
+		{"ui.on_open_url", b_on_open_url}, {"ui.on_open_files", b_on_open_files}, {"ui.on_share", b_on_share}, {"appearance.setColorScheme", b_color_scheme},
 		{"ui.dev_player", b_dev_player},
 		{"ui.run_action", b_run_action},
 		{"ui.on_lifecycle", b_on_lifecycle}, {"ui.on_foreground", b_on_foreground}, {"ui.on_background", b_on_background},

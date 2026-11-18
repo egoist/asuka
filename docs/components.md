@@ -76,6 +76,8 @@ starts a new paragraph. A span's fields left at their defaults come
 from the `RichText`'s style.
 
 ```asuka
+import platform/device
+
 component About {
   RichText([
     Span(text: "asuka", font: .body.bold()),
@@ -89,7 +91,7 @@ component About {
     Span(text: "in red", color: .red),
     Span(text: "."),
   ]) {
-    on link(url) { openURL(url) }
+    on link(url) { device.openURL(url) }
   }
 }
 ```
@@ -159,7 +161,7 @@ component Answer(question: [Span], answer: [Span]) {
 
 A `Text` with `selectable: true` is selectable on its own; to select
 across several, use `RichText`s in a `Selectable`. To copy something
-without a selection, `copy(text)` puts it on the clipboard.
+without a selection, `device.copy(text)` puts it on the clipboard.
 
 ### Markdown
 
@@ -304,13 +306,15 @@ stack, sheet and router are its own, so `push` and `navigate` work from
 it. `runAction(a)` runs an action the same way, for a menu of your own.
 
 ```asuka
+import platform/device
+
 component More {
   Button("") {
     icon: "ellipsis.circle"
     label: "More"
     menu: [
-      .button(title: "Copy", icon: "doc.on.doc", run: () => copy("https://example.com")),
-      .button(title: "Share", icon: "square.and.arrow.up", run: () => share("https://example.com")),
+      .button(title: "Copy", icon: "doc.on.doc", run: () => device.copy("https://example.com")),
+      .button(title: "Share", icon: "square.and.arrow.up", run: () => device.share("https://example.com")),
       .button(title: "Delete", icon: "trash", role: .destructive, run: () => {}),
     ]
   }
@@ -953,6 +957,8 @@ pages of the app's own site; see [the web](web.md#web-views). With no
 height and no `grow` it grows to fill the space it's given.
 
 ```asuka
+import platform/device
+
 component Browser {
   state page = WebState()
 
@@ -986,7 +992,7 @@ component Browser {
       block: ["doubleclick.net", "/ads/"]
       on state(s) { page = s }
       on message(m) { print("the page says {m}") }
-      on newWindow(url) { openURL(url) }
+      on newWindow(url) { device.openURL(url) }
     }
   }
 }
@@ -1061,7 +1067,7 @@ order. Windows needs no `eval` and awaits as usual. On the web the
 browser applies the page's policy to what the app runs in it, so a page
 that blocks `eval` refuses both `run` and `eval`.
 
-`try await webCookies(url)` gets the cookies web views have for a URL, as
+`try await webview.cookies(url)` gets the cookies web views have for a URL, as
 a `Cookie` header: what the user signed in to in a page, for your own
 requests.
 
@@ -1291,6 +1297,8 @@ of its own: its children go in the nearest one that does. So nesting
 rows and columns costs nothing.
 
 ```asuka
+import platform/device
+
 component Person {
   state open = false
 
@@ -1301,7 +1309,7 @@ component Person {
     radius: 12
     label: "Ada, 2 unread"
     on press { open = !open }
-    on longPress { haptic(.medium) }
+    on longPress { device.haptic(.medium) }
     Symbol("person.fill")
     Column {
       grow: 1

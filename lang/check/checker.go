@@ -298,6 +298,13 @@ func (c *Checker) initUniverse() {
 		rp.Scope.Insert(&Builtin{object: object{name: f.Name}, ID: BRuntime, Fn: f})
 	}
 	c.universe.Insert(&PkgName{object: object{name: "router"}, Pkg: rp})
+	// window: the app's windows, a package of the universe as router is.
+	wp := &Package{Path: "window", Name: "window"}
+	wp.Scope = NewScope(nil)
+	for _, f := range WindowFuncs {
+		wp.Scope.Insert(&Builtin{object: object{name: f.Name}, ID: BRuntime, Fn: f})
+	}
+	c.universe.Insert(&PkgName{object: object{name: "window"}, Pkg: wp})
 }
 
 // ErrorType is the Error interface.

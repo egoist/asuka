@@ -14,6 +14,7 @@
 //   asuka dev --platform web examples/navigation
 
 import std/url
+import platform/device
 
 struct Message {
   id: int
@@ -59,12 +60,12 @@ pub store Mail {
   pub fn compose() {
     messages.insert(newMessage(next), at: 0)
     next += 1
-    haptic(.success)
+    device.haptic(.success)
   }
 
   pub fn star(id: int) {
     if let i = messages.index(m => m.id == id) { messages[i].starred = !messages[i].starred }
-    haptic(.selection)
+    device.haptic(.selection)
   }
 
   /// Pretends to fetch: a new message comes.
@@ -185,8 +186,8 @@ screen Detail(id: int) at ":id" {
       Button("Reply") {
         icon: "arrowshape.turn.up.left"
         menu: [
-          .button(title: "Reply", icon: "arrowshape.turn.up.left", run: () => haptic(.light)),
-          .button(title: "Forward", icon: "arrowshape.turn.up.forward", run: () => haptic(.light)),
+          .button(title: "Reply", icon: "arrowshape.turn.up.left", run: () => device.haptic(.light)),
+          .button(title: "Forward", icon: "arrowshape.turn.up.forward", run: () => device.haptic(.light)),
         ]
       }
       Button("Mark as unread") {
@@ -212,7 +213,7 @@ screen Detail(id: int) at ":id" {
       role: .destructive
       on press {
         mail.remove(id)
-        haptic(.success)
+        device.haptic(.success)
         pop()
       }
     }
@@ -256,7 +257,7 @@ screen Detail(id: int) at ":id" {
         Menu {
           longPress: true
           actions: [
-            .button(title: "Reply", run: () => haptic(.light)),
+            .button(title: "Reply", run: () => device.haptic(.light)),
             .button(title: "Delete…", role: .destructive, run: () => { confirming = true }),
           ]
           View {
@@ -356,7 +357,7 @@ screen Reply(id: int) {
         variant: .filled
         disabled: draft.isEmpty()
         on press {
-          haptic(.success)
+          device.haptic(.success)
           dismiss()
         }
       }
@@ -412,7 +413,7 @@ screen Settings at "" {
     Button("Try a haptic") {
       variant: .tinted
       on press {
-        if haptics { haptic(.success) }
+        if haptics { device.haptic(.success) }
       }
     }
     Button("About") { href: "/settings/about" }

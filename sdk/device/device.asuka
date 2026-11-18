@@ -1,9 +1,14 @@
 // Package platform/device is what the platform offers apps beyond views:
-// what device it is, its in-app browser, its photo and document pickers,
-// the clipboard (text and images), and keeping the screen on.
+// what device it is, links opened in other apps and in its in-app
+// browser, the share sheet, haptic feedback, its photo and document
+// pickers, the clipboard (text and images), and keeping the screen on.
 //
 //   let info = try await device.info()          // "iPhone", "iOS", "26.0"
+//   device.openURL("mailto:hi@example.com")     // in the app that takes it
 //   try await device.browse("https://go.dev")   // in the app
+//   device.share("https://go.dev")              // the share sheet
+//   device.haptic(.success)
+//   device.copy("Copied")
 //   let photos = try await device.pickPhotos(max: 3)
 //   if let text = try await device.clipboardText() { paste(text) }
 //
@@ -89,6 +94,11 @@ pub async fn info() throws -> Info {
   return try await made().info()
 }
 
+/// Asks the system to open url in the app that takes it: a web address in
+/// the browser, another scheme (tel:, mailto:, another app's) in the app
+/// that handles it. browse shows a web page in the app instead.
+pub native fn openURL(url: string)
+
 /// Shows a web page in the app, over it: SFSafariViewController on iOS,
 /// a Custom Tab on Android; desktops and the web open it in the user's
 /// browser. (openURL leaves the app for the browser on phones too.)
@@ -112,6 +122,57 @@ pub async fn pickPhotos(max: int = 1) throws -> [string] {
 pub async fn pickFiles(types: [string] = [], multiple: bool = false) throws -> [File] {
   return try await made().pickFiles(types: types, multiple: multiple)
 }
+
+/// Shows the system's share sheet for a text or a link: a Mac's share
+/// menu, Windows' share UI, the browser's Web Share sheet. Linux has
+/// none: the text goes on the clipboard, with a toast (as a browser
+/// without one does).
+pub native fn share(text: string)
+
+/// Shows the share sheet for files (their paths): a video to send, a PDF
+/// to save to Files, photos for AirDrop. It returns once the sheet is
+/// gone, whether the user shared or not (Windows: once it shows), and
+/// throws when it couldn't show (a file that isn't there). mime is the
+/// files' type, which the apps on the sheet go by (default: from the
+/// first file's extension); uti is iOS's Uniform Type Identifier
+/// (com.adobe.pdf), ahead of mime; title the sheet's (Android's chooser,
+/// a mail's subject on iOS); from the view the sheet points at where it's
+/// a popover (an iPad, a Mac), usually the button that shares (none: the
+/// screen's middle). Linux has no share sheet: the files go on the
+/// clipboard; a browser without Web Share for files downloads each.
+pub async fn shareFiles(paths: [string], mime: string = "", uti: string = "", title: string = "", from: Ref? = none) throws {
+  try await coreShareFiles(paths, mime, uti, title, from)
+}
+
+native async fn coreShareFiles(paths: [string], mime: string, uti: string, title: string, from: Ref?) throws
+
+/// Haptic feedback, from the lightest to a result's.
+pub enum Haptic {
+  /// A selection changing: a picker's value, a segment.
+  selection
+  /// A light impact: a small element snapping into place.
+  light
+  /// A medium impact.
+  medium
+  /// A heavy impact: a large element landing.
+  heavy
+  /// A task succeeded.
+  success
+  /// A task produced a warning.
+  warning
+  /// A task failed.
+  error
+}
+
+/// Plays haptic feedback: UIFeedbackGenerator on iOS,
+/// performHapticFeedback on Android. A Mac plays the trackpad's (a Force
+/// Touch trackpad: an alignment for selection, a level change for the
+/// rest); a browser vibrates where it can (Chrome on Android); Windows
+/// and Linux have no haptics, and do nothing.
+pub native fn haptic(kind: Haptic)
+
+/// Puts text on the clipboard (copyImage puts an image there).
+pub native fn copy(text: string)
 
 /// The clipboard's text, none if it has none (copy writes it). iOS asks
 /// the user the first time an app reads what another app put there.

@@ -113,10 +113,10 @@ component Stats(w: Ref) {
     Text(if w.visible { "shown" } else { "hidden" })
     Text(sizeOf(w))
     Button("Let it close") { on press { guard = false } }
-    Button("Close now") { on press { closeWindow() } }
+    Button("Close now") { on press { window.close() } }
     Button("Minimize") { on press { w.minimize() } }
     Button("Resize") { on press { w.setSize(300, 200) } }
-    Button("Main window") { on press { mainWindow().focus() } }
+    Button("Main window") { on press { window.main().focus() } }
   }
 }
 

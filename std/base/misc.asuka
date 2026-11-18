@@ -228,7 +228,7 @@ pub store Toasts {
   pub fn add(title: string, description: string = "", kind: string = "", timeout: Duration = 5s, action: string = "") -> int {
     next += 1
     all.push(Toast(id: next, title: title, description: description, kind: kind, timeout: timeout, action: action))
-    announce(if description == "" { title } else { "{title}. {description}" })
+    say(if description == "" { title } else { "{title}. {description}" })
     return next
   }
 
@@ -403,3 +403,6 @@ test "toasts show, and go after their timeout" {
   app.tap("×")
   app.expectNo("Saved")
 }
+
+// Has a screen reader say text (platform/accessibility's announce).
+native fn say(text: string)

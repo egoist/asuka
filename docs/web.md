@@ -139,7 +139,7 @@ The environment a web app sees (`environment()`) is the browser's:
 - The safe area is the page's (`env(safe-area-inset-*)`: a phone's notch
   and home indicator, with the page's `viewport-fit=cover`), and the
   keyboard is how much of the page a phone's keyboard covers.
-- `dark` is `prefers-color-scheme` (or the app's `setColorScheme`),
+- `dark` is `prefers-color-scheme` (or the app's `appearance.setColorScheme`),
   `reduceMotion` `prefers-reduced-motion`, `fontScale` the browser's
   default font size (which text follows), `scale` the display's pixel
   ratio.
@@ -281,7 +281,7 @@ browser:
   Lock, taken again when the page shows); `browse` (a new tab);
   `pickPhotos` and `pickFiles` (the browser's file picker; the files
   copied to the caches).
-- `shareFiles`: the share sheet with the files (`navigator.share`),
+- `device.shareFiles`: the share sheet with the files (`navigator.share`),
   else each file downloaded. `platform/preview`: the file opened in a new
   tab (images, video, audio, text, PDF, HTML); another type is
   `PreviewError.noViewer`.
@@ -356,7 +356,7 @@ browser:
   (`onValidateMerchant`) for a domain registered with Apple; Google Pay
   elsewhere, through Google's web API (`pay.js`, loaded from
   pay.google.com); each one's own button. A sheet shows only from a tap.
-- `haptic` is `navigator.vibrate`, where the browser has it (Chrome on
+- `device.haptic` is `navigator.vibrate`, where the browser has it (Chrome on
   Android).
 - Not on the web, with an error that says so (or the package's own
   `notAvailable`): `platform/review`, `platform/integrity`, `platform/agerange`,
@@ -588,7 +588,7 @@ XHR, `sendBeacon`, WebSocket, EventSource, elements' `src` and `href`;
 a request already under way when it's caught may still go out);
 `on request` (Resource Timing); `on newWindow` (`window.open`,
 `target=_blank`); `on download` (an attachment, a type a frame can't
-show, `<a download>`); `webCookies(url)` (`document.cookie`: not
+show, `<a download>`); `webview.cookies(url)` (`document.cookie`: not
 `HttpOnly` ones). `html`'s relative links resolve against the app's
 assets.
 

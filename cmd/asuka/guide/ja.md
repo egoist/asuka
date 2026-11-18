@@ -249,10 +249,14 @@ let tint: Color = if urgent {
 
 ```asuka
 // feedback_mobile.asuka：iOS と Android
-pub fn confirm() { haptic(.success) }
+import platform/device
+
+pub fn confirm() { device.haptic(.success) }
 
 // feedback_desktop.asuka：macOS、Windows、Linux
-pub fn confirm() { announce("Done") }
+import platform/accessibility
+
+pub fn confirm() { accessibility.announce("Done") }
 
 // feedback_web.asuka
 pub fn confirm() {}
@@ -869,6 +873,8 @@ fn tally(words: [string]) -> ([string: int], [int: [string]]) {
 `@platform` は、アプリのビルド先のプラットフォームを表す `Platform` 型の値です（`.iOS`、`.android`、`.macOS`、`.windows`、`.linux`、`.web`）。これはコンパイル時に決まる定数で、追跡されません。ファイルのトップレベルやコンポーネントの本体も含め、値を書ける場所ならどこでも使えます。`@platform` で決まる分岐のうち、あるプラットフォームが通らない側は、そのプラットフォームのビルドに含まれません。コードも、文字列も、ビューも含まれません。
 
 ```asuka
+import platform/device
+
 let saveKey = if @platform == .macOS { "⌘S" } else { "Ctrl+S" }
 
 component Toolbar {
@@ -876,7 +882,7 @@ component Toolbar {
 
   Row {
     if @platform == .iOS || @platform == .android {
-      Button("Share") { on press { share(link) } }
+      Button("Share") { on press { device.share(link) } }
     }
     match @platform {
       .macOS | .windows | .linux => Text("Save with {saveKey}")
@@ -1137,7 +1143,7 @@ task(query) { results = await search(query) } // query が変わるたびにも�
 task(user.id) { profile = try await load(user.id) } // id が変わったときだけ。名前が変わってもやり直さない
 ```
 
-エフェクトはすぐに実行され、読んだもの（呼び出した関数が読んだものも含む）が変わるたびに再び実行されます。読んだものとは、コードに書かれた部分のことです。`effect { log(user.name) }` は名前が変わると再実行されますが、アバターが変わっても再実行されません。`effect(a, b)` は `a` か `b` が変わったときに再び実行され、本体で読んだものには追従しません。`effect() { }` は何にも追従せず、コンポーネントが作られるときに 1 回だけ実行されます。タスクは非同期です（[非同期処理](https://asuka.egoist.dev/ja/docs/language/async#非同期処理)を参照）。コンポーネントが現れると始まり、丸括弧の中身が変わると前回の実行をキャンセルしてやり直し、コンポーネントがなくなるとキャンセルされます。エフェクトとタスクの丸括弧の中身は比較されます。変わっても値が等しければ何も起きないので、ユーザーの名前が変わっても `task(user.id)` はそのまま続きます。`app` ブロックにも書けます。アプリ自身のもので、アプリが動いている間ずっと有効です（更新のループや、アプリの状態に追従する設定：`effect { setColorScheme(scheme) }`）。
+エフェクトはすぐに実行され、読んだもの（呼び出した関数が読んだものも含む）が変わるたびに再び実行されます。読んだものとは、コードに書かれた部分のことです。`effect { log(user.name) }` は名前が変わると再実行されますが、アバターが変わっても再実行されません。`effect(a, b)` は `a` か `b` が変わったときに再び実行され、本体で読んだものには追従しません。`effect() { }` は何にも追従せず、コンポーネントが作られるときに 1 回だけ実行されます。タスクは非同期です（[非同期処理](https://asuka.egoist.dev/ja/docs/language/async#非同期処理)を参照）。コンポーネントが現れると始まり、丸括弧の中身が変わると前回の実行をキャンセルしてやり直し、コンポーネントがなくなるとキャンセルされます。エフェクトとタスクの丸括弧の中身は比較されます。変わっても値が等しければ何も起きないので、ユーザーの名前が変わっても `task(user.id)` はそのまま続きます。`app` ブロックにも書けます。アプリ自身のもので、アプリが動いている間ずっと有効です（更新のループや、アプリの状態に追従する設定：`effect { appearance.setColorScheme(scheme) }`）。
 
 エフェクトは状態に書き込めますが、自分が追従している状態には書き込めません。`effect { if n > 3 { n = 3 } }` は自分の書き込みのあとにもう一度、一周遅れで実行されます。その前に、ハンドラーはもう `n` が 4 なのを見てしまっています。コンパイラーはこれをエラーにし、代わりの書き方を示します。追従する状態（`state n: int = min(n ?? 0, 3)`、`state selected(results) = 0`）、別のものに追従する `effect(…)`、あるいは読んでいるものを変えるハンドラーの中で書き込むことです。タスクは自分が追従しているものに書き込めます。キャンセルしてやり直すので、いずれ終わります。
 
@@ -1700,7 +1706,7 @@ Ref がビューを持つのは、ビューが表示されている間だけで�
 | `WebView` | `try await eval(script)`（スクリプトの値を JSON で）、`run(script)`（完了を待たない）、`goBack()`、`goForward()`、`reload()`、`stopLoading()` |
 | `TextField` | `insert(text)`、`format(.bold, on)`、`toggleFormat(.italic)`、`setLink(url)`（リッチなフィールドの選択範囲に対して） |
 
-Ref はほかへ渡せます（`shareFiles(paths, from: button)`、`a11yFocus(field)`）。ファイルの `let` に置けば、複数のコンポーネントのビューで使えます。
+Ref はほかへ渡せます（`device.shareFiles(paths, from: button)`、`accessibility.focus(field)`）。ファイルの `let` に置けば、複数のコンポーネントのビューで使えます。
 
 ### アニメーション
 
@@ -1751,32 +1757,52 @@ component Badge {
 
 ### システムの機能
 
+アプリの一部として働くためにコンポーネントが使うものは、プレリュードにあり、インポートは不要です。コンポーネントがある間に登録するもの、環境、アラート、アプリのウィンドウです。
+
 | 関数 | 動作 |
 |---|---|
-| `share(text)` | テキストやリンクの共有シートを表示する |
-| `try await shareFiles(paths, title:, from: ref)` | ファイルの共有シートを、あるビューから（ポップオーバーが指す位置に）表示する。シートが閉じると戻る |
-| `haptic(.success)` | プラットフォームの触覚フィードバック（`Haptic`） |
-| `copy(text)` | テキストをクリップボードに入れる |
-| `openURL(url)` | url を扱えるアプリで開く |
-| `announce(text)` | スクリーンリーダーにテキストを読み上げさせる |
-| `a11yFocus(ref)` | スクリーンリーダーのフォーカスをそのビューに移す |
-| `try await webCookies(url)` | Web ビューが url について保持している Cookie |
 | `useKeys([Shortcut(…)])` | コンポーネントがある間の、ウィンドウのキー操作 |
 | `onOpenURL(u => …)`、`onOpenFiles(paths => …)`、`onShare(items => …)` | コンポーネントがある間に、アプリが開かれたときに渡されたもの、またはほかのアプリから共有されたもの |
 | `quit()`、`relaunch()` | ユーザーが「終了」を選んだときと同じようにアプリを終了し（再び起動し）ます。先にアプリに確認します。デスクトップのみ |
-| `closeWindow()` | コードがあるウィンドウを確認せずに閉じます |
 | `onCloseRequest(fn() -> bool)`、`onQuit(e => …)`、`onSecondInstance((args, dir) => …)` | コンポーネントがあるあいだ：そのウィンドウが閉じる前の確認、アプリの終了の直前（`e.cancel()`）、アプリの再起動を受け取ります |
 | `onBack { … }` | コンポーネントがある画面、シート、ポップオーバーからユーザーが戻ろうとしたときに問い合わせられます。`true` なら引き受け（画面は残る）、`false` なら戻らせます |
 | `onLifecycle(l => …)` | コンポーネントがある間、アプリがフォアグラウンドやバックグラウンドに移ったこと、メモリ警告（`Lifecycle`）を受け取ります |
 | `alert(title, message:, actions:)` | その場でアラートを表示します。`actions` は `.button` の配列です（なければ OK だけ）。`Alert` 要素は、`open` が true の間アラートを表示します |
 | `snackbar(message, action:, duration:, onDismiss:)` | ウィンドウの下部に短いメッセージを、アクション（元に戻す）付きで表示します。閉じるためのクロージャーを返します |
-| `setColorScheme(.dark)` | アプリの外観：`.light`、`.dark`、`.system`（プラットフォームのもの） |
 | `environment()`、`screenEnvironment()` | サイズ、セーフエリア、文字サイズ、プラットフォームなど（追跡されます）。画面やシート自身のものと、画面全体のもの |
-| `mainWindow()` | メインウィンドウの `Ref`。どこからでも `show()`、`hide()`、`focus()` などができます |
+| `window.main()`、`window.current()` | メインウィンドウの `Ref` と、コードがあるウィンドウの `Ref`。どこからでも `show()`、`hide()`、`focus()` などができます |
+| `window.close()` | コードがあるウィンドウを確認せずに閉じます |
+
+システムのサービスに頼むことは[プラットフォーム SDK](https://asuka.egoist.dev/ja/docs/stdlib) のパッケージにあり、ほかのパッケージと同じようにインポートして使います。
+
+| 関数 | 動作 |
+|---|---|
+| `device.share(text)` | テキストやリンクの共有シートを表示する |
+| `try await device.shareFiles(paths, title:, from: ref)` | ファイルの共有シートを、あるビューから（ポップオーバーが指す位置に）表示する。シートが閉じると戻る |
+| `device.haptic(.success)` | プラットフォームの触覚フィードバック（`device.Haptic`） |
+| `device.copy(text)` | テキストをクリップボードに入れる |
+| `device.openURL(url)` | url を扱えるアプリで開く |
+| `accessibility.announce(text)` | スクリーンリーダーにテキストを読み上げさせる |
+| `accessibility.focus(ref)` | スクリーンリーダーのフォーカスをそのビューに移す |
+| `try await webview.cookies(url)` | Web ビューが url について保持している Cookie |
+| `appearance.setColorScheme(.dark)` | アプリの外観：`.light`、`.dark`、`.system`（プラットフォームのもの） |
+
+```asuka
+import platform/device
+
+component ShareLink(link: string) {
+  Button("Share") {
+    on press {
+      device.haptic(.light)
+      device.share(link)
+    }
+  }
+}
+```
 
 アプリが各プラットフォームでどのコードを持つかは、コンパイル時に決まる定数 `@platform` で決めます（[特定のプラットフォーム向けのコード](https://asuka.egoist.dev/ja/docs/language/control-flow#特定のプラットフォーム向けのコード)）。`environment().platform` はビューが実際に動いているプラットフォームで、環境のほかの値と同じように追跡されます。
 
-`useKeys` とこれらの `on…` による登録は、コンポーネントの本体（またはアプリのブロック）に書きます。アプリのブロックでは、これらをイベントとしても扱えます：`on openURL(url) { … }`、`on files(paths) { … }`、`on share(items) { … }`、`on quit(e) { … }`、`on secondInstance(args, dir) { … }`、`on foreground { … }`、`on background { … }`。ブロックの最初の `Window` がメインウィンドウです（[ナビゲーション](https://asuka.egoist.dev/ja/docs/navigation#ウィンドウ)）。
+`useKeys` とこれらの `on…` による登録は、コンポーネントの本体（またはアプリのブロック）に書きます。アプリのブロックでは、これらをイベントとしても扱えます：`on openURL(url) { … }`、`on files(paths) { … }`、`on share(items) { … }`、`on quit(e) { … }`、`on secondInstance(args, dir) { … }`、`on foreground { … }`、`on background { … }`。ブロックの最初の `Window` がメインウィンドウです。`Window` の外に何も表示しない（トレイアイコン、メニューバーだけの）app ブロックには、メインウィンドウがありません（[ナビゲーション](https://asuka.egoist.dev/ja/docs/navigation#ウィンドウ)）。
 
 `std/embed` は、アプリのコンパイル時にパッケージのファイルを読んでアプリに組み込みます。どのプラットフォームでも、実行時に読み込むことなくそのファイルを使えます。
 

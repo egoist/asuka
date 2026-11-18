@@ -340,7 +340,7 @@ effect or a task is compared: a change that leaves it equal does
 nothing, so `task(user.id)` goes on when the user's name changes. The
 `app` block takes them too: the app's own, for as long as it runs (a
 refresh loop, a setting that follows the app's state: `effect {
-setColorScheme(scheme) }`).
+appearance.setColorScheme(scheme) }`).
 
 An effect may write state, but not state it follows: `effect { if n > 3
 { n = 3 } }` would run again after its own write, a pass late, after a

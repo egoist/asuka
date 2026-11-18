@@ -46,7 +46,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 画像（リモート、キャッシュ、プレースホルダー） | `AsyncImage` | `expo-image` | ✓ `Image`（`placeholder`、`blurHash` と `thumbHash` のプレースホルダー、フェードする `transition`。メモリにキャッシュし、iOS と Android ではディスクにも。各プラットフォームのデコーダー（ImageIO、`ImageDecoder`、`NSImage`、WIC、GDK のローダー、ブラウザー）で読むので、プラットフォームが読める WebP、HEIC、AVIF も表示できる。アニメーション GIF、APNG、WebP はすべてのプラットフォームで再生、`animated`。SVG は Mac、Linux、Web） |
 | Lottie アニメーション | コミュニティ製（lottie-ios） | `lottie-react-native` | ◐ `std/lottie` の `lottie.View`（lottie-ios、lottie-android、lottie-web：JSON と dotLottie、`playing`、`loop`、`speed`、読み書きできる `progress`、`segment`、`marker`、キーパスによる `overrides`）。Windows と Linux ではまだ何も表示されない（空の領域） |
 | 動画 | `VideoPlayer` | `expo-video` | ✓ `Video`（iOS と Mac では AVKit、Android では Media3、Windows では WebView2 の中の `<video>`、Linux では `GtkVideo`（GStreamer）、Web では `<video>`） |
-| Web のコンテンツ | `WKWebView` | `react-native-webview` | ✓ `WebView`（iOS と Mac では `WKWebView`、Android の `WebView`、Windows では WebView2、Linux では WebKitGTK：URL か HTML、双方向のメッセージ、ページより先に実行するスクリプト（`preload`）、リクエストのブロック、ページの状態と履歴、ダウンロード、新しいウィンドウ、個々のリクエスト、スクリプトの値、`webCookies(url)`。Web では `<iframe>` で、すべてが使えるのはアプリ自身のサイトのページ）。`platform/js` は画面外で JavaScript を実行する |
+| Web のコンテンツ | `WKWebView` | `react-native-webview` | ✓ `WebView`（iOS と Mac では `WKWebView`、Android の `WebView`、Windows では WebView2、Linux では WebKitGTK：URL か HTML、双方向のメッセージ、ページより先に実行するスクリプト（`preload`）、リクエストのブロック、ページの状態と履歴、ダウンロード、新しいウィンドウ、個々のリクエスト、スクリプトの値、`webview.cookies(url)`。Web では `<iframe>` で、すべてが使えるのはアプリ自身のサイトのページ）。`platform/js` は画面外で JavaScript を実行する |
 | 地図 | `Map` | `expo-maps` | ✓ `platform/maps` の `maps.View`（iOS と Mac では MapKit、Android では Google Maps、Windows、Linux（libshumate）、Web では OpenStreetMap のタイル：表示範囲、マーカー、ユーザーの現在地、タップ） |
 | 独自の描画 | `Shape`、`Path`、`Canvas` | `react-native-svg`、Skia | ✓ `Shape` と `Path`（塗り、線、線端、角の形、破線、アニメーションできるトリム）。`Canvas`（パス、グラデーション、テキスト、変形、クリップ：Core Graphics、Android の `Canvas`、GDI+、GSK、2D の `<canvas>`）。`std/svg` |
 | グラフ | Swift Charts | `victory-native`、コミュニティ製 | ✓ `std/chart`（棒、折れ線、面、点。`svg.Shape` で描くのでどこでも同じ） |
@@ -90,7 +90,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 押下とホバーの状態 | `ButtonStyle` の `isPressed`、`.onHover` | `Pressable` の `pressed`、`onHoverIn`/`onHoverOut` | ✓ `pressed { … }` と `hovered { … }` のバリアント。グループや隣のビューの状態は `Ref` の `pressed` と `hovered` で。`on pressedChange`、`on hoverChange` |
 | ドラッグ＆ドロップ | `.draggable`、`.dropDestination` | （組み込みなし） | ✓ `dragItems`、`dropTypes`、`on drop`（アプリ内ではアプリ自身の値、ほかのアプリとはテキスト、リンク、ファイル。`dragging { … }` と `dragOver { … }` のバリアント） |
 | 共有要素のトランジション | `matchedGeometryEffect`、`.navigationTransition(.zoom)` | shared transitions | ✓ `shared`（ほかのビューの位置とサイズからビューが広がる）、画面の `zoomFrom`（iOS 18 のズーム、Material のコンテナトランスフォーム） |
-| 触覚フィードバック | `sensoryFeedback` | `expo-haptics` | ✓ `haptic(…)`（Mac では感圧タッチトラックパッド、ブラウザーでは `navigator.vibrate`） |
+| 触覚フィードバック | `sensoryFeedback` | `expo-haptics` | ✓ `device.haptic(…)`（Mac では感圧タッチトラックパッド、ブラウザーでは `navigator.vibrate`） |
 | 視差効果を減らす | `accessibilityReduceMotion` | `useReducedMotion` | ✓ `environment().reduceMotion`（iOS ではトランジションがディゾルブになり、デスクトップと Web では `animate` の変更がすぐに適用される） |
 
 ## データとサービス
@@ -117,7 +117,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | Android の通知チャンネル | — | `setNotificationChannelAsync` | ✓ `notify.setChannels`、`setChannelGroups`。プッシュのチャンネル（iOS にはない） |
 | 会話のメッセージ | 通信通知（`INSendMessageIntent`） | コミュニティ製 | ✓ `Notification(…).from(person, conversation)`、`Message.from`：iOS の通信通知、Android の MessagingStyle と会話のショートカット。ほかでは通常の通知 |
 | 表示前のプッシュの書き換え | Notification Service Extension | コミュニティ製（`expo-notifications` にはない） | ✓ `push.rewrite(f)`：iOS の Notification Service Extension の中で（`asuka build` がビルドして署名）、Android ではデータメッセージを受ける Firebase のサービスの中でアプリのコードが動く |
-| クリップボード、共有シート、ブラウザー | `UIPasteboard`、`ShareLink`、`SFSafariViewController` | `expo-clipboard`、`expo-sharing`、`expo-web-browser` | ✓ `copy(text)`、`device.clipboardText()`、`clipboardHas`、`clipboardImage`、`copyImage`、`clipboardChanges()`。`share(text)`、`shareFiles(paths)`（Mac の共有メニュー、Windows の共有 UI、ブラウザーのもの。Linux にはないので、クリップボードにコピーしてトーストで知らせる）。`device.browse(url)`（`SFSafariViewController`、Custom Tab）、`openURL(url)` |
+| クリップボード、共有シート、ブラウザー | `UIPasteboard`、`ShareLink`、`SFSafariViewController` | `expo-clipboard`、`expo-sharing`、`expo-web-browser` | ✓ `device.copy(text)`、`device.clipboardText()`、`clipboardHas`、`clipboardImage`、`copyImage`、`clipboardChanges()`。`device.share(text)`、`device.shareFiles(paths)`（Mac の共有メニュー、Windows の共有 UI、ブラウザーのもの。Linux にはないので、クリップボードにコピーしてトーストで知らせる）。`device.browse(url)`（`SFSafariViewController`、Custom Tab）、`device.openURL(url)` |
 | ファイルのプレビュー | `QLPreviewController`、`.quickLookPreview` | `react-native-file-viewer` | ✓ `platform/preview`（iOS と Mac ではクイックルックで、複数のファイル、マークアップ。Android、Windows、Linux ではそのファイルのアプリ。Web では新しいタブ） |
 | 印刷、HTML からの PDF | `UIPrintInteractionController`、`UIPrintPageRenderer` | `expo-print` | ✓ `platform/print`（ファイル、HTML、`WebView` を、システムのダイアログで印刷し、結果を返す。`print.pdf`：ページ分割、地域の用紙サイズ、余白） |
 | メールとメッセージの作成画面 | `MFMailComposeViewController`、`MFMessageComposeViewController` | `expo-mail-composer`、`expo-sms` | ✓ `platform/compose`（`compose.mail`：宛先、件名、HTML の本文、添付ファイル。iOS ではユーザーが何をしたかがわかり、ほかではメールアプリ。`compose.message`：iOS のメッセージ、Android の SMS アプリ） |
@@ -167,8 +167,8 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | ダークモード、セマンティックカラー、アクセントカラー | 自動 | `useColorScheme` | ✓ セマンティックカラー、`environment().dark`、`asuka.toml` の `accent`（Android ではこれをもとに Material 3 の配色を作り、`dynamicColor` なら壁紙から） |
 | Dynamic Type、フォントサイズ | 自動 | `allowFontScaling` | ✓ テキストスタイルもカスタムフォントも拡大縮小される。`environment().fontScale` |
 | スクリーンリーダーのラベル、ロール、非表示 | `.accessibilityLabel`... | `accessibilityLabel`... | ✓ `label`、`hint`、`role`、`a11yHidden`。押せるビューはボタンになる（[アクセシビリティ](accessibility.md)） |
-| 読み上げ | `AccessibilityNotification.Announcement` | `announceForAccessibility` | ✓ `announce(text)` |
-| スクリーンリーダーのフォーカスの移動 | `@AccessibilityFocusState` | `setAccessibilityFocus` | ✓ `a11yFocus(ref)` |
+| 読み上げ | `AccessibilityNotification.Announcement` | `announceForAccessibility` | ✓ `accessibility.announce(text)` |
+| スクリーンリーダーのフォーカスの移動 | `@AccessibilityFocusState` | `setAccessibilityFocus` | ✓ `accessibility.focus(ref)` |
 | スクリーンリーダーが有効かどうか | `voiceOverEnabled` | `isScreenReaderEnabled` | ✓ `environment().screenReader` |
 | カスタムアクション、調整可能なビュー | `.accessibilityAction`、`.accessibilityAdjustableAction` | `accessibilityActions` | ✓ `actions`、`on adjust`（リストのスワイプアクションも TalkBack と VoiceOver のアクションになる） |
 
@@ -205,7 +205,7 @@ Web ビューのアプリは、HTML と CSS で書いたとおりに、どのシ
 
 | | Electron | MyGo | Asuka |
 |---|---|---|---|
-| ウィンドウの制御 | `BrowserWindow` | `Window` | ✓ `app` ブロックの `Window` とほかの `Window`、`mainWindow()`、ウィンドウの `Ref`（`Window as w`）：表示、非表示、フォーカス、最小化、最大化、フルスクリーン、サイズ、位置、常に手前に表示、状態の追従。`on closeRequest`、`WindowCloseGuard`。`stateKey` による前回の位置の復元。`child` と `modal` のウィンドウ。`titleBar: .hidden`（Wayland では位置の指定、中央への配置、常に手前に表示はできず、コンポジターが決める） |
+| ウィンドウの制御 | `BrowserWindow` | `Window` | ✓ `app` ブロックの `Window` とほかの `Window`（これらだけを持つアプリ、トレイのアプリにはメインウィンドウがない）、`window.main()`、`window.current()`、ウィンドウの `Ref`（`Window as w`）：表示、非表示、フォーカス、最小化、最大化、フルスクリーン、サイズ、位置、常に手前に表示、状態の追従。`on closeRequest`、`WindowCloseGuard`。`stateKey` による前回の位置の復元。`child` と `modal` のウィンドウ。`titleBar: .hidden`（Wayland では位置の指定、中央への配置、常に手前に表示はできず、コンポジターが決める） |
 | トレイアイコン | `Tray` | トレイアイコン | ✓ `platform/tray` の `tray.Tray`（`NSStatusItem`、通知領域、Linux では StatusNotifierItem）：画像またはシンボル、タイトル、ツールチップ、メニュー、クリック |
 | サブメニュー、終了の項目 | `MenuItem.submenu`、ロール | ロール、サブメニュー | ✓ `MenuBar`、`Menu`、`MenuItem`（項目の中の項目はサブメニュー。`role: .quit`、`.close`、`.openRecent`）。トレイと Dock のメニューでは `Action` の `.submenu` と `.section` |
 | Dock のメニュー、ジャンプリストのタスク | `app.dock.setMenu`、`setUserTasks` | Dock のメニュー、ジャンプリスト | ✓ `tray.DockMenu`（Dock のメニュー、ジャンプリストのタスク、Linux のランチャーのクイックリスト） |

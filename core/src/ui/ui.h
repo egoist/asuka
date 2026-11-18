@@ -332,6 +332,15 @@ ak_val ak_ui_window_pair(ak_view *w, int64_t which);  // (x, y) for 0, (width, h
 // ak_ui_main_window makes the app block's Window the main window (its
 // keys the root's options), before its keys are set.
 void ak_ui_main_window(ak_view *w);
+// ak_ui_main_kind says what the app's main window is (AK_MAIN_*), as its
+// function starts: with none, the root's window never shows.
+void ak_ui_main_kind(int64_t kind);
+// The main window's handle (the root's view), and the window the calling
+// code is in (a Window element, or the root's view). Without a main
+// window, the root's view is still the handle: what's done to it does
+// nothing.
+ak_view *ak_ui_main_window_view(void);
+ak_view *ak_ui_current_window(void);
 extern const ak_shape ak_ui_shape_window_state;
 
 // The app (desktop): ak_ui_quit quits it as the user's Quit does

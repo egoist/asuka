@@ -46,17 +46,27 @@ var RouterFuncs = []*RuntimeFunc{
 	{Name: "setQuery", Sig: "(query: string)", Builtin: "ui.set_query", Doc: "changes the shown screen's query, keeping the screen: encoded, a=1&b=2 (url.encodeQuery)"},
 }
 
+// WindowFuncs are window's members (window.main(), window.current()):
+// the app's windows, as Refs whose actions act on them.
+var WindowFuncs = []*RuntimeFunc{
+	{Name: "main", Sig: "() -> Ref", Builtin: "ui.main_window_ref", Doc: "the main window's handle (the app block's Window, or the window its content shows in): show(), hide(), focus() and the rest act on it, wherever they're called from. In an app without a main window (its app block shows nothing outside its Windows) they do nothing, and its state reads as not shown, as on a phone"},
+	{Name: "current", Sig: "() -> Ref", Builtin: "ui.current_window_ref", Doc: "the handle of the window the calling code is in: a Window's content's is that Window's; outside every Window, the main window's"},
+	{Name: "close", Sig: "()", Builtin: "ui.window_close", Doc: "closes the window the calling code is in now, without asking (a Ref's close() asks): what a close request that kept it open calls once the user has chosen"},
+}
+
+// movedFuncs are the prelude's functions that moved into packages (the
+// system's services) and into window: an unknown name of theirs says
+// where they are.
+var movedFuncs = map[string]struct{ pkg, name string }{
+	"share": {"device", "share"}, "shareFiles": {"device", "shareFiles"}, "haptic": {"device", "haptic"},
+	"copy": {"device", "copy"}, "openURL": {"device", "openURL"},
+	"announce": {"accessibility", "announce"}, "a11yFocus": {"accessibility", "focus"},
+	"webCookies": {"webview", "cookies"}, "setColorScheme": {"appearance", "setColorScheme"},
+	"mainWindow": {"window", "main"}, "closeWindow": {"window", "close"},
+}
+
 // RuntimeFuncs lists them (docs/language/system.md).
 var RuntimeFuncs = []*RuntimeFunc{
-	{Name: "share", Sig: "(text: string)", Builtin: "ui.share", Doc: "shows the system's share sheet for a text or a link"},
-	{Name: "shareFiles", Sig: "(paths: [string], mime: string = \"\", uti: string = \"\", title: string = \"\", from: Ref? = none)", Builtin: "ui.share_files", Async: true, Throws: true, Doc: "shares files (their paths) with the share sheet, anchored on from where a popover points (an iPad, a Mac): returns once it's closed"},
-	{Name: "setColorScheme", Sig: "(scheme: ColorScheme)", Builtin: "ui.color_scheme", Doc: "shows the app light or dark, whatever the system's setting (.system: follows it again)"},
-	{Name: "haptic", Sig: "(kind: Haptic)", Builtin: "ui.haptic", Doc: "plays the platform's haptic feedback"},
-	{Name: "copy", Sig: "(text: string)", Builtin: "ui.copy", Doc: "puts text on the clipboard"},
-	{Name: "openURL", Sig: "(url: string)", Builtin: "ui.open_url", Doc: "opens url in the app that handles it (the browser, Mail, Maps)"},
-	{Name: "announce", Sig: "(text: string)", Builtin: "ui.announce", Doc: "has a screen reader say text"},
-	{Name: "a11yFocus", Sig: "(view: Ref)", Builtin: "ui.a11y_focus", NeedsView: true, Doc: "moves a screen reader's focus to the view"},
-	{Name: "webCookies", Sig: "(url: string) -> string", Builtin: "ui.web_cookies", Async: true, Throws: true, Doc: "the cookies the web views keep for url, as a Cookie header"},
 	{Name: "animating", Sig: "() -> bool", Builtin: "ui.animating", Doc: "whether the changes made now animate (inside animate's block and what it causes)"},
 	{Name: "onFrame", Once: true, Sig: "(frame: fn(Duration)) -> fn()", Builtin: "ui.on_frame", Doc: "calls frame at each frame the display draws, with its time, until the closure it returns is called or what called it goes"},
 	{Name: "frames", Sig: "() -> Stream<Duration>", Builtin: "ui.frames", Doc: "the frames the display draws, as a stream of their times: drawn only while it's read (for await t in frames() { … })"},
@@ -69,8 +79,6 @@ var RuntimeFuncs = []*RuntimeFunc{
 	{Name: "relaunch", Sig: "()", Builtin: "ui.relaunch", Doc: "quits the app as quit() does, then starts it again with the same arguments once it has (a canceled quit cancels it)"},
 	{Name: "runAction", Sig: "(action: Action)", Builtin: "ui.run_action", Doc: "runs a .button's run, unless it's disabled, as a menu's choice does: an async one as a task of the calling code's, which this doesn't wait for"},
 	{Name: "devPlayer", Sig: "() -> bool", Builtin: "ui.dev_player", Doc: "whether asuka dev runs the app (its player, its reloads): false in a build and in tests"},
-	{Name: "mainWindow", Sig: "() -> Ref", Builtin: "ui.main_window_ref", Doc: "the main window's handle (the app block's Window, or the window the app shows): show(), hide(), focus() and the rest act on it, wherever they're called from"},
-	{Name: "closeWindow", Sig: "()", Builtin: "ui.window_close", Doc: "closes the window the calling code is in (the main window outside every Window) now, without asking: what a closeRequest that kept it open calls once the user has chosen"},
 	{Name: "onCloseRequest", Body: true, Sig: "(handler: fn() -> bool)", Builtin: "ui.on_close_request", Doc: "asked when the user closes the window the component is in, while it lives: false keeps it open"},
 	{Name: "onQuit", Body: true, Sig: "(handler: fn(QuitEvent))", Builtin: "ui.on_quit", Doc: "hears the app about to quit, however that started, while the component lives: e.cancel() keeps it running"},
 	{Name: "onSecondInstance", Body: true, Sig: "(handler: fn([string], string))", Builtin: "ui.on_second_instance", Doc: "hears the app started again while it runs (its arguments, its working directory), while the component lives"},

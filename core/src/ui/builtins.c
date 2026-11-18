@@ -76,6 +76,8 @@
 //	ui.window_pair    w: View?, which: int (0 position, 1 size)       (float, float)
 //	ui.main_window    w: View (the app block's Window)                -
 //	ui.main_window_ref  -                                             Ref (a cell of the root's view: the main window's handle)
+//	ui.current_window_ref  -                                          Ref (a cell of the calling code's window: a Window, else the root's view)
+//	ui.main_kind      kind: int (AK_MAIN_*: content, Window, none)    -
 //	ui.window_do      w: View?, action: int (WindowAction)            -
 //	ui.window_set     w: View?, x: float, y: float, action: int       -
 //	ui.window_toggle  w: View?, on: bool, onAction: int, offAction: int -
@@ -408,12 +410,24 @@ static ak_val b_relaunch(ak_val *a, uint32_t n) {
 }
 
 // A Ref of the main window: the root's view, which window commands take
-// as the main window's.
+// as the main window's (in an app without one, they do nothing).
 static ak_val b_main_window_ref(ak_val *a, uint32_t n) {
 	AK_UNUSED(a), AK_UNUSED(n);
-	ak_ui_root *r = ak_ui_current();
-	ak_view *v = r && r->el && !r->el->dead ? ak_ui_ref(r->el) : NULL;
-	return ak_vm_cell_new((ak_val){.p = v}, AK_K_REF, NULL);
+	ak_view *v = ak_ui_main_window_view();
+	return ak_vm_cell_new((ak_val){.p = v ? ak_ui_ref(v) : NULL}, AK_K_REF, NULL);
+}
+
+// A Ref of the window the calling code is in: its Window, else the main
+// window's root view.
+static ak_val b_current_window_ref(ak_val *a, uint32_t n) {
+	AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *v = ak_ui_current_window();
+	return ak_vm_cell_new((ak_val){.p = v ? ak_ui_ref(v) : NULL}, AK_K_REF, NULL);
+}
+
+static ak_val b_main_kind(ak_val *a, uint32_t n) {
+	ak_ui_main_kind(n ? a[0].i : 0);
+	return none();
 }
 
 static ak_val b_main_window(ak_val *a, uint32_t n) {
@@ -563,6 +577,8 @@ void ak_ui_builtins_init(void) {
 		{"ui.window_pair", b_window_pair},
 		{"ui.main_window", b_main_window},
 		{"ui.main_window_ref", b_main_window_ref},
+		{"ui.current_window_ref", b_current_window_ref},
+		{"ui.main_kind", b_main_kind},
 		{"ui.window_do", b_window_do},
 		{"ui.window_set", b_window_set},
 		{"ui.window_toggle", b_window_toggle},

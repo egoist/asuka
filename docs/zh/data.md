@@ -334,11 +334,12 @@ component Download(url: string) {
 
 ```asuka
 import std/http
+import platform/device
 
 async fn signInBack(authorize: string) throws -> string {
   let lb = try await http.loopback()
   defer { lb.close() }
-  openURL("{authorize}&redirect_uri={lb.url}")
+  device.openURL("{authorize}&redirect_uri={lb.url}")
   let back = try await lb.next() // http://127.0.0.1:port/callback?code=…
   return back
 }

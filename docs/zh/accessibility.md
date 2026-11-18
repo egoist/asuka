@@ -301,9 +301,11 @@ component Rating {
 
 ## 播报
 
-`announce` 会让屏幕阅读器（如果开着的话）朗读一段文本，用来告知焦点以外发生的变化，比如一条 toast、搜索结果的数量、保存完成。
+`accessibility.announce`（`platform/accessibility`）会让屏幕阅读器（如果开着的话）朗读一段文本，用来告知焦点以外发生的变化，比如一条 toast、搜索结果的数量、保存完成。
 
 ```asuka
+import platform/accessibility
+
 component SaveButton {
   state shown = false
 
@@ -311,7 +313,7 @@ component SaveButton {
     Button("Save") {
       on press {
         animate(() => { shown = true })
-        announce("Saved") // 屏幕阅读器注意不到这个 toast
+        accessibility.announce("Saved") // 屏幕阅读器注意不到这个 toast
       }
     }
     if shown { Text("Saved") }
@@ -323,9 +325,11 @@ component SaveButton {
 
 ## 移动焦点
 
-`a11yFocus(ref)` 会把屏幕阅读器的焦点移到某个视图上（传入指向它的 `Ref`）。适用于屏幕内容在用户眼前变了、而重要的东西在别处的情况：表单提交失败后下面的错误信息、搜索的第一条结果、滑入的面板的标题。
+`accessibility.focus(ref)` 会把屏幕阅读器的焦点移到某个视图上（传入指向它的 `Ref`）。适用于屏幕内容在用户眼前变了、而重要的东西在别处的情况：表单提交失败后下面的错误信息、搜索的第一条结果、滑入的面板的标题。
 
 ```asuka
+import platform/accessibility
+
 component SignIn {
   state message = ""
 
@@ -336,7 +340,7 @@ component SignIn {
       try await signIn()
     } catch e {
       message = e.message
-      a11yFocus(error)
+      accessibility.focus(error)
     }
   }
 

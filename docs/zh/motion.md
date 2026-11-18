@@ -170,12 +170,14 @@ component Flip {
 - `Transition(…)`：自定义过渡，包括 `fade`、`scale`（0 表示不缩放），以及以点为单位的偏移 `x`、`y`。它们可以组合使用：`Transition(fade: true, scale: 0.5, y: -8)`。
 
 ```asuka
+import platform/accessibility
+
 component SaveToast {
   state shown = false
 
   async fn save() {
     animate(() => { shown = true })
-    announce("Saved")
+    accessibility.announce("Saved")
     await sleep(1500ms)
     animate(() => { shown = false })
   }
@@ -654,9 +656,11 @@ component Search {
 
 ## 触感反馈
 
-`haptic` 播放触感反馈：`.selection`（数值切换了一格），`.light`、`.medium` 和 `.heavy`（碰撞），以及 `.success`、`.warning` 和 `.error`（操作结果）。
+`device.haptic` 播放触感反馈：`.selection`（数值切换了一格），`.light`、`.medium` 和 `.heavy`（碰撞），以及 `.success`、`.warning` 和 `.error`（操作结果）。
 
 ```asuka
+import platform/device
+
 component Pager {
   state page = 0
 
@@ -668,9 +672,9 @@ component Pager {
       } else if d == .right {
         page = max(page - 1, 0)
       }
-      haptic(.selection)
+      device.haptic(.selection)
     }
-    on longPress { haptic(.medium) }
+    on longPress { device.haptic(.medium) }
     Text("Page {page + 1}")
   }
 }
@@ -678,7 +682,7 @@ component Pager {
 
 在 iOS 上，它们对应 `UIFeedbackGenerator` 的各种反馈。Android 没有完全对应的反馈：Asuka 会从 `performHapticFeedback` 的常量里挑最接近的来播放。成功、警告和错误在 Android 11 及以上对应 confirm 和 reject，更早的版本则用按键或长按的反馈代替。
 
-在配有 Force Touch 触控板的 Mac 上，`.selection` 对应 `NSHapticFeedbackManager` 的 alignment，其他几种对应它的 level change；只有手指放在触控板上时才能感受到。Windows 和 Linux 没有触感反馈，`haptic` 在那里什么也不做。在浏览器里，如果浏览器支持 `navigator.vibrate`（Android 上的 Chrome），它会短促地振动一下，其他浏览器则什么也不做。
+在配有 Force Touch 触控板的 Mac 上，`.selection` 对应 `NSHapticFeedbackManager` 的 alignment，其他几种对应它的 level change；只有手指放在触控板上时才能感受到。Windows 和 Linux 没有触感反馈，`device.haptic` 在那里什么也不做。在浏览器里，如果浏览器支持 `navigator.vibrate`（Android 上的 Chrome），它会短促地振动一下，其他浏览器则什么也不做。
 
 ## 减弱动态效果
 

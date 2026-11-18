@@ -306,6 +306,42 @@ func TestShellKeepRunning(t *testing.T) {
 	}
 }
 
+// An app whose app block shows nothing outside its Windows has no main
+// window: it never shows, reopening the app (its Dock icon) doesn't bring
+// it, and the app quits with its last window.
+func TestShellNoMainWindow(t *testing.T) {
+	a := Run(t, `
+		state open = true
+
+		component Shell {
+		  Window {
+		    bind open: open
+		    title: "Panel"
+		    width: 240
+		    height: 120
+		    Text("in the panel")
+		  }
+		}
+
+		app { Shell() }
+	`)
+	tr := a.UntilText("in the panel")
+	if m := tr.Main(); m != nil && m.Visible {
+		t.Fatalf("the main window shows: %+v", m)
+	}
+	if w := tr.Window("Panel"); w == nil || !w.Visible {
+		t.Fatalf("the Window doesn't show: %+v", tr.Windows)
+	}
+	a.Do("reopen")
+	if m := a.Tree().Main(); m != nil && m.Visible {
+		t.Fatal("reopening showed the main window")
+	}
+	a.Try("close") // the app quits as it answers
+	if !a.Wait(10 * time.Second) {
+		t.Fatal("the app didn't quit with its last window")
+	}
+}
+
 // A background app is an accessory (no Dock icon, not in ⌘Tab), and keeps
 // running without a window.
 func TestShellBackground(t *testing.T) {

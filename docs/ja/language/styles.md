@@ -139,4 +139,4 @@ Ref がビューを持つのは、ビューが表示されている間だけで�
 | `WebView` | `try await eval(script)`（スクリプトの値を JSON で）、`run(script)`（完了を待たない）、`goBack()`、`goForward()`、`reload()`、`stopLoading()` |
 | `TextField` | `insert(text)`、`format(.bold, on)`、`toggleFormat(.italic)`、`setLink(url)`（リッチなフィールドの選択範囲に対して） |
 
-Ref はほかへ渡せます（`shareFiles(paths, from: button)`、`a11yFocus(field)`）。ファイルの `let` に置けば、複数のコンポーネントのビューで使えます。
+Ref はほかへ渡せます（`device.shareFiles(paths, from: button)`、`accessibility.focus(field)`）。ファイルの `let` に置けば、複数のコンポーネントのビューで使えます。

@@ -83,7 +83,7 @@ Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.pli
 | `platform/screen` | `lock` 和 `setBars` 什么也不做；`preventCapture` 让应用的窗口不出现在截图和录屏中；`screenshots()` 不会报告任何截图 |
 | `platform/transcribe` | 只在本机识别；应用的 bundle 需要它的用途说明，这一项由 `asuka build` 写入 |
 | `platform/sensors` | Mac 没有运动传感器：`available` 为 false，各个流和 `steps` 都会抛出 `SensorError.notAvailable` |
-| `haptic` | 触控板的反馈（需要 Force Touch 触控板）：`.selection` 对应“对齐”反馈，其他类型对应“级别变化”反馈 |
+| `device.haptic` | 触控板的反馈（需要 Force Touch 触控板）：`.selection` 对应“对齐”反馈，其他类型对应“级别变化”反馈 |
 | `platform/widget`、`platform/liveactivity`、`platform/agerange` | Mac 上不支持：`widget.set` 什么也不做，`liveactivity.start` 抛出 "liveactivity: not available"，`agerange.request` 抛出 `AgeRangeError.notAvailable` |
 | `platform/purchase` | StoreKit 2，编译进应用的 Swift 库；导入了这个包的应用，构建时会生成这个库（见[应用内购买](purchases.md)） |
 | `platform/icloud` | 和 iOS 一样，编译进应用的 Swift 库。需要带 iCloud 的描述文件（见上文）：没有的话报错 "icloud: not available"（见 [iCloud](icloud.md)） |
@@ -127,7 +127,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `platform/purchase` | Microsoft Store，仅限从商店安装的应用；否则 `available()` 为 false，其余调用抛出 `PurchaseError.notAvailable`（见[应用内购买](purchases.md)） |
 | `platform/pay` | Windows 上没有能为应用付款的钱包：`available` 返回 `.none`，`pay` 抛出 `PayError.notAvailable`，`PayButton` 什么也不显示 |
 | `platform/appleauth`、`platform/agerange`、`platform/icloud`、`platform/transcribe`、`platform/sensors` | Windows 上不支持：返回不可用，与在缺少这些功能的设备上一样 |
-| `haptic` | 电脑没有触感反馈：什么也不做 |
+| `device.haptic` | 电脑没有触感反馈：什么也不做 |
 | `platform/splash` | Windows 应用没有启动屏：`hold` 和 `hide` 什么也不做 |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android |
 
@@ -147,7 +147,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/audio`、`platform/record` | GStreamer：用 AAC 编码器（FDK、libav 的等等）录音，默认音源即麦克风 |
 | `platform/nowplaying` | 有内容显示时，在会话总线上注册一个 MPRIS 播放器，名为 `org.mpris.MediaPlayer2.<app>.instance<pid>`：对应 GNOME 和 KDE 的媒体控件与锁屏、媒体键以及 `playerctl`。如果应用支持跳过，MPRIS 的 `Seek` 就是跳过，否则是跳转播放位置；封面图是一个 `file://` 或 http(s) URL |
 | `platform/library` | 用户的文件夹（XDG 的 Pictures、Videos、Music、Downloads）下指定的文件夹 |
-| `shareFiles` | 没有分享面板：文件会复制到剪贴板，并弹出一条提示（toast） |
+| `device.shareFiles` | 没有分享面板：文件会复制到剪贴板，并弹出一条提示（toast） |
 | `platform/camera`、`platform/record` | 优先用相机门户（只询问用户一次；使用 PipeWire 的摄像头，需要 `gstreamer1.0-pipewire`），否则用第一个 Video4Linux 摄像头，二者都通过 GStreamer。`take()`：窗口上弹出一个对话框，带实时预览、“拍照”和“取消”按钮。`camera.View`：镜像显示的预览画面，填满它的区域；前置和后置是同一个摄像头（电脑的摄像头本来就朝着用户）。视频优先录成 MPEG-4（x264 或 OpenH264 提供的 H.264，加上 AAC），否则录成 WebM；扫码需要 GStreamer 的 `zbar` 元素。没有摄像头时为 `CameraError.noCamera`；被拒绝时为 `.notAllowed` |
 | `platform/scan`、`platform/vision` | 和 Windows 上一样，用 Asuka 自带的识别器识别条码：QR、Data Matrix、EAN、UPC、Code 128、Code 39（不支持 Aztec、PDF417、Code 93、Codabar 和 ITF）。用 Tesseract（`libtesseract5` 加上对应语言的数据）识别文字；没有人脸检测，`faces` 始终为空。没有 Tesseract 时，`vision.analyze` 的结果里没有文字 |
 | `platform/imageedit` | 用 GdkPixbuf 的加载器解码（装了相应加载器时支持 HEIF 和 WebP），并摆正方向；各项编辑操作由 Asuka 完成；视频帧来自 GStreamer |
@@ -165,7 +165,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/biometric`、`platform/integrity`、`platform/agerange`、`platform/push` | Linux 上都没有：返回不可用或不受支持。`platform/review` 什么也不做；`platform/tracking` 返回 `.allowed` |
 | `platform/pay` | Linux 上没有能为应用付款的钱包：`available` 返回 `.none`，`pay` 抛出 `PayError.notAvailable`，`PayButton` 什么也不显示 |
 | `platform/crash` | Asuka 的崩溃输出，其中也包括原生代码中的崩溃（GTK 代码里收到的信号、GLib 的 abort），这类崩溃报告为 `"native"`；不会读取系统自己的崩溃记录（systemd-coredump、apport） |
-| `haptic` | 桌面设备没有触感反馈：什么也不做 |
+| `device.haptic` | 桌面设备没有触感反馈：什么也不做 |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android |
 
 ## 在浏览器中
@@ -195,7 +195,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/screen` | `lock` 只在全屏时或已安装的应用中有效；隐藏系统栏就是进入全屏；没有 `preventCapture` 和 `screenshots()` |
 | `platform/background` | 页面打开期间一直在运行；任务不会带来额外效果，也没有通知 |
 | `platform/tracking` | 没有提示框：浏览器发送了 Global Privacy Control 或 Do Not Track 时为 `.denied`，否则为 `.allowed` |
-| `haptic` | 浏览器支持时（Android 上的 Chrome）使用 `navigator.vibrate` |
+| `device.haptic` | 浏览器支持时（Android 上的 Chrome）使用 `navigator.vibrate` |
 | `platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity`、`platform/transcribe` | Web 上不支持：返回一个说明这一点的错误，或者该包的 `notAvailable` |
 | `platform/purchase` | 在 Trusted Web Activity 里通过 Digital Goods API 使用 Google Play；其他情况下没有应用商店（`PurchaseError.notAvailable`） |
 | `platform/maps` | 和 Windows 一样，由 Asuka 绘制 OpenStreetMap 的瓦片；页面获得定位权限后，`showsUser` 才会生效 |
@@ -368,8 +368,8 @@ component Gallery {
 ```
 
 - `device.pickPhotos(max:)` 显示系统的照片选择器（iOS 上是 PHPicker，Android 上是 Photo Picker；桌面上是打开对话框，浏览器中是文件选择器），最多可选 `max` 张图片（1 到 255）。它不需要任何权限：由用户自己挑选，应用只能看到被选中的图片。它返回这些图片的文件（可以直接交给 `Image` 显示），用户取消时则为空。这些文件是放在应用临时目录或缓存目录中的副本，要保留的话请把它移走。
-- `device.browse(url)` 在应用内、覆盖在当前界面之上显示一个网页（SFSafariViewController、Custom Tab）。URL 必须是 http 或 https。而 `openURL` 则会离开应用、跳转到浏览器。在桌面上，它会在用户的浏览器中打开页面；在浏览器中，则打开一个新标签页。
-- `device.clipboardText()` 读取剪贴板里的文本，没有文本时返回 `none`。应用第一次读取别的应用放进剪贴板的内容时，iOS 会询问用户。写入剪贴板请用 `copy(text)`。
+- `device.browse(url)` 在应用内、覆盖在当前界面之上显示一个网页（SFSafariViewController、Custom Tab）。URL 必须是 http 或 https。而 `device.openURL` 则会离开应用、跳转到浏览器。在桌面上，它会在用户的浏览器中打开页面；在浏览器中，则打开一个新标签页。
+- `device.clipboardText()` 读取剪贴板里的文本，没有文本时返回 `none`。应用第一次读取别的应用放进剪贴板的内容时，iOS 会询问用户。写入剪贴板请用 `device.copy(text)`。
 - `device.keepAwake(on)` 在 `on` 为 true 时让屏幕保持常亮，适合视频、菜谱、地图这类场景。需要常亮的界面关闭时，记得把它关掉。
 - `device.pickFiles(types:, multiple:)` 显示系统的文档选择器（iOS 的“文件”浏览器、Android 的存储选择器、桌面上的打开对话框、浏览器中的文件选择器；都不需要权限）。`types` 是 MIME 类型（`"application/pdf"`、`"image/*"`；不填则可以选任何文件），`multiple` 允许用户选择多个文件。它为每个文件返回一个 `device.File`：`path` 是复制到应用缓存目录中的副本，另外还有 `name`、`type` 和 `size`；用户取消时则为空。
 - `device.clipboardHas()` 不读取剪贴板，就能告诉你里面装的是 `text`、`image` 还是 `url`（iOS 不会因此询问用户）：这样你可以只在有东西可粘贴时才显示“粘贴”按钮。`device.clipboardImage()` 把剪贴板里的图片读到一个文件中，格式与复制时相同；`device.copyImage(path)` 把一个图片文件放进剪贴板。`device.clipboardChanges()` 是一个流，每当剪贴板变化时给出它当前的内容（iOS 和 Android 会主动通知；Mac 和 Windows 则每秒查询两次；浏览器能看到页面内的复制，在用户允许页面读取剪贴板时，也能看到其他应用的复制）。
@@ -417,28 +417,32 @@ async fn signIn(authorizeURL: string) throws -> string? {
 
 用户关闭面板时，`open` 会抛出 `webauth.WebAuthError.canceled`。`ephemeral: true` 会请求一个私密会话，不带浏览器中的 cookie（iOS 的 `prefersEphemeralWebBrowserSession`；浏览器支持时用 Android 的临时 Custom Tab；Windows 和 Linux 上是一个用完即弃的配置文件）。
 
-## 复制、分享和打开：copy、share、openURL
+## 复制、分享和打开：device.copy、device.share、device.openURL
 
-prelude 中有三个函数可以把文本交给系统处理，使用它们不需要 import。
+`platform/device` 中有三个函数可以把文本交给系统处理。
 
 ```asuka
+import platform/device
+
 component Links {
   Column {
-    Button("Copy link") { on press { copy("https://example.com/s/42") } }
-    Button("Share") { on press { share("https://example.com/s/42") } }
-    Button("Open in browser") { on press { openURL("https://example.com") } }
-    Button("Call") { on press { openURL("tel:+15555550100") } }
+    Button("Copy link") { on press { device.copy("https://example.com/s/42") } }
+    Button("Share") { on press { device.share("https://example.com/s/42") } }
+    Button("Open in browser") { on press { device.openURL("https://example.com") } }
+    Button("Call") { on press { device.openURL("tel:+15555550100") } }
   }
 }
 ```
 
-- `copy(text)` 把文本放进剪贴板。
-- `share(text)` 显示系统的分享面板，用户可以把文本发给某个应用、联系人，或者通过 AirDrop、Nearby Share 发送。URL 会以链接的形式分享。Mac 显示它的共享服务选择器，Windows 显示它的分享界面，浏览器在支持时显示 Web Share 面板；Linux 没有分享面板，所以会把文本复制到剪贴板并弹出一条提示（不支持 Web Share 的浏览器也是这样复制的）。
-- `openURL(url)` 请系统打开一个 URL：网址在浏览器中打开，其他 scheme（`tel:`、`mailto:`、其他应用的 scheme）由能处理它的应用打开。
+- `device.copy(text)` 把文本放进剪贴板。
+- `device.share(text)` 显示系统的分享面板，用户可以把文本发给某个应用、联系人，或者通过 AirDrop、Nearby Share 发送。URL 会以链接的形式分享。Mac 显示它的共享服务选择器，Windows 显示它的分享界面，浏览器在支持时显示 Web Share 面板；Linux 没有分享面板，所以会把文本复制到剪贴板并弹出一条提示（不支持 Web Share 的浏览器也是这样复制的）。
+- `device.openURL(url)` 请系统打开一个 URL：网址在浏览器中打开，其他 scheme（`tel:`、`mailto:`、其他应用的 scheme）由能处理它的应用打开。
 
-`shareFiles(paths, mime:, uti:, title:, from:)` 显示用于分享文件的面板：发送一段视频、把 PDF 存到“文件”、用 AirDrop 传照片。它是 async 的，面板消失后才返回，无论用户有没有分享；如果面板无法显示（比如文件不存在），它会抛出错误。
+`device.shareFiles(paths, mime:, uti:, title:, from:)` 显示用于分享文件的面板：发送一段视频、把 PDF 存到“文件”、用 AirDrop 传照片。它是 async 的，面板消失后才返回，无论用户有没有分享；如果面板无法显示（比如文件不存在），它会抛出错误。
 
 ```asuka
+import platform/device
+
 component ShareReport(report: string) {
   state status = ""
   let button = Ref()
@@ -448,7 +452,7 @@ component ShareReport(report: string) {
       ref: button
       on press {
         do {
-          try await shareFiles([report], mime: "application/pdf", title: "Send the report", from: button)
+          try await device.shareFiles([report], mime: "application/pdf", title: "Send the report", from: button)
         } catch e {
           status = e.message
         }
@@ -468,7 +472,7 @@ component ShareReport(report: string) {
 | `title` | 面板的标题：Android 上是选择器的标题，在 iOS 上则作为邮件的主题。 |
 | `from` | 面板以弹出框（popover）形式出现时（iPad、Mac）所指向的视图的 `Ref`，通常就是触发分享的那个按钮。默认：屏幕中央。 |
 
-在 iOS 上，如果文件的扩展名与它的类型对不上，会像 expo-sharing 那样换一个相符的文件名再分享：作为 JPEG 分享的 `image.pdf` 会以 `image.pdf.jpeg` 的名字发出，它是指向原文件的链接，而不是副本。在 Android 上，文件通过应用的 FileProvider 传递；不在应用自身目录中的文件，会先复制到缓存目录。Mac 上用的是共享服务选择器。Windows 上用的是分享界面（界面一出现 `shareFiles` 就返回，因为 Windows 不会告知它何时关闭）。Linux 没有分享面板：文件会放进剪贴板，与分享文本时一样。浏览器能用 Web Share 面板分享文件时就用它，否则会逐个下载这些文件。
+在 iOS 上，如果文件的扩展名与它的类型对不上，会像 expo-sharing 那样换一个相符的文件名再分享：作为 JPEG 分享的 `image.pdf` 会以 `image.pdf.jpeg` 的名字发出，它是指向原文件的链接，而不是副本。在 Android 上，文件通过应用的 FileProvider 传递；不在应用自身目录中的文件，会先复制到缓存目录。Mac 上用的是共享服务选择器。Windows 上用的是分享界面（界面一出现 `device.shareFiles` 就返回，因为 Windows 不会告知它何时关闭）。Linux 没有分享面板：文件会放进剪贴板，与分享文本时一样。浏览器能用 Web Share 面板分享文件时就用它，否则会逐个下载这些文件。
 
 如果想让应用自己能通过 URL 被打开，请参阅[打包与发布](shipping.md#asukatoml)中 `asuka.toml` 的 `scheme` 和 `links`，以及 prelude 的 `onOpenURL`（或 app 块中的 `on openURL(url)`）。
 
@@ -511,7 +515,7 @@ component Invoice {
 | Linux | 文件的默认应用（`GtkFileLauncher`，在沙盒中由门户打开） | 交给系统之后 |
 | Web | 新标签页，适用于浏览器能直接显示的内容（图片、视频、音频、文本、PDF、HTML）；其他类型为 `noViewer` | 打开之后 |
 
-Android 没有系统级的查看器，也没有能在多个文件之间翻页的查看器：它只打开一个文件，就像 Android 上的邮件应用逐个打开附件那样。在 iOS 上，`preview.show` 目前还不能指定查看器从哪个视图展开（即像 `shareFiles` 的 `from:` 那样传一个 `Ref`）。
+Android 没有系统级的查看器，也没有能在多个文件之间翻页的查看器：它只打开一个文件，就像 Android 上的邮件应用逐个打开附件那样。在 iOS 上，`preview.show` 目前还不能指定查看器从哪个视图展开（即像 `device.shareFiles` 的 `from:` 那样传一个 `Ref`）。
 
 ## 打印与 PDF：platform/print
 
@@ -1244,7 +1248,7 @@ app {
 
 应用用到了 `sharesheet.active` 时，Asuka 会构建这个面板，取代那个只负责打开应用的扩展。这时在 iOS 上，应用的代码会打包成一个框架，应用和它的扩展都加载这个框架，就像 Xcode 让扩展共享代码那样：应用不会因为有了面板而变大。在桌面平台和浏览器中，应用不会出现在其他应用的分享菜单里：`active()` 在这些平台上为 false。
 
-在测试中，`sharesheet.fake()` 会让应用作为分享面板运行（`mountApp()` 显示的就是面板），并记下面板是怎样关闭的（`closed`）；挂载后的应用调用 `share(items)`，就相当于另一个应用分享了这些内容：
+在测试中，`sharesheet.fake()` 会让应用作为分享面板运行（`mountApp()` 显示的就是面板），并记下面板是怎样关闭的（`closed`）；挂载后的应用调用 `device.share(items)`，就相当于另一个应用分享了这些内容：
 
 ```asuka
 import platform/sharesheet
@@ -1762,7 +1766,7 @@ app { Root() }
 
 ## 应用商店服务：platform/review、platform/tracking、platform/integrity、platform/agerange
 
-`review.request()` 请求应用商店弹出评分提示（App Store 的评分提示、Google Play 的应用内评价）。是否显示由商店按照自己的配额决定，而且不会告诉你结果；请在用户顺利完成某件事之后再请求，不要通过按钮触发。如果想做一个“给我们评分”按钮，请用 `openURL(review.appStoreURL(id))` 或 `review.playStoreURL(id)`。
+`review.request()` 请求应用商店弹出评分提示（App Store 的评分提示、Google Play 的应用内评价）。是否显示由商店按照自己的配额决定，而且不会告诉你结果；请在用户顺利完成某件事之后再请求，不要通过按钮触发。如果想做一个“给我们评分”按钮，请用 `device.openURL(review.appStoreURL(id))` 或 `review.playStoreURL(id)`。
 
 `tracking.request()` 显示 iOS 的 App 跟踪透明度（App Tracking Transparency）提示，应用在读取广告标识符或与广告网络共享数据之前必须先发起这个请求；它返回 `.allowed`、`.denied`、`.restricted` 或 `.notAsked`。`tracking.current()` 只读取当前状态，不会发起请求。Android 没有这样的提示：结果是 `.allowed`。
 
@@ -1980,13 +1984,15 @@ phrases = ["New note in ${app}"]
 
 模拟器构建会像 Xcode 那样签名，使用钥匙串中的 Apple Development 身份（属于 `asuka.toml` 中指定的团队）：App Intents 只能在带有团队的应用中运行。如果没有团队，构建会采用临时（ad hoc）签名，CLI 会提示快捷方式将无法运行。
 
-## 触感反馈：haptic
+## 触感反馈：device.haptic
 
-`haptic(kind)` 是 prelude（预置模块）里的函数，用来播放触感反馈（iOS 上是 UIFeedbackGenerator，Android 上是 `performHapticFeedback`）：`.selection`、`.light`、`.medium`、`.heavy`、`.success`、`.warning` 或 `.error`。Mac 会通过触控板给出反馈（需要 Force Touch 触控板：`.selection` 对应对齐反馈，其余对应层级变化反馈）；浏览器在支持的地方会振动（Android 上的 Chrome）；Windows 和 Linux 没有触感反馈，什么也不做。
+`device.haptic(kind)` 用来播放触感反馈（iOS 上是 UIFeedbackGenerator，Android 上是 `performHapticFeedback`），参数是一个 `device.Haptic`：`.selection`、`.light`、`.medium`、`.heavy`、`.success`、`.warning` 或 `.error`。Mac 会通过触控板给出反馈（需要 Force Touch 触控板：`.selection` 对应对齐反馈，其余对应层级变化反馈）；浏览器在支持的地方会振动（Android 上的 Chrome）；Windows 和 Linux 没有触感反馈，什么也不做。
 
 ```asuka
+import platform/device
+
 component Save {
-  Button("Save") { on press { haptic(.success) } }
+  Button("Save") { on press { device.haptic(.success) } }
 }
 ```
 

@@ -163,10 +163,12 @@ static gboolean on_window_close(GtkWindow *window, node *n) {
 	win *w = n->win;
 	if (!w || w->closing) return 0;
 	// The core closes it, or asks the app first (CloseRequest).
-	if (listening(n, AK_EVENT_CLOSE_REQUEST))
+	if (listening(n, AK_EVENT_CLOSE_REQUEST)) {
 		lx_emit(n, (ak_event){.kind = AK_EVENT_CLOSE_REQUEST});
-	else
+	} else {
 		lx_emit(n, (ak_event){.kind = AK_EVENT_DISMISSED});
+		lx_closed_window();
+	}
 	return 1;
 }
 

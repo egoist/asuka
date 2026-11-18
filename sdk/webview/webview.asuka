@@ -1,0 +1,14 @@
+// Package platform/webview is what the app's web views (WebView) keep
+// across them: their cookies, for the app's own requests as the user
+// signed in to a page.
+//
+//   let cookie = try await webview.cookies("https://example.com")
+//   let r = try await http.get(url, headers: ["Cookie": cookie])
+
+/// The cookies the app's web views have for url, as a Cookie header
+/// ("a=1; b=2"; "" with none): WKHTTPCookieStore on Apple platforms,
+/// CookieManager on Android, WebView2's cookie manager on Windows,
+/// WebKitGTK's on Linux. On the web, the app's own site's
+/// (document.cookie: not HttpOnly ones): a browser keeps another site's
+/// to itself.
+pub native async fn cookies(url: string) throws -> string

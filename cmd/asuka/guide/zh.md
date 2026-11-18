@@ -249,10 +249,14 @@ let tint: Color = if urgent {
 
 ```asuka
 // feedback_mobile.asuka：iOS 和 Android
-pub fn confirm() { haptic(.success) }
+import platform/device
+
+pub fn confirm() { device.haptic(.success) }
 
 // feedback_desktop.asuka：macOS、Windows 和 Linux
-pub fn confirm() { announce("Done") }
+import platform/accessibility
+
+pub fn confirm() { accessibility.announce("Done") }
 
 // feedback_web.asuka
 pub fn confirm() {}
@@ -869,6 +873,8 @@ fn tally(words: [string]) -> ([string: int], [int: [string]]) {
 `@platform` 是应用构建时所针对的平台，类型是 `Platform`：`.iOS`、`.android`、`.macOS`、`.windows`、`.linux` 或 `.web`。它是一个常量，编译应用时就已确定：它不会被追踪，凡是能写值的地方都能用，包括文件顶层和组件主体。由它决定的分支中，某个平台不会走的那一支不会进入该平台的构建：代码、字符串和视图都不会。
 
 ```asuka
+import platform/device
+
 let saveKey = if @platform == .macOS { "⌘S" } else { "Ctrl+S" }
 
 component Toolbar {
@@ -876,7 +882,7 @@ component Toolbar {
 
   Row {
     if @platform == .iOS || @platform == .android {
-      Button("Share") { on press { share(link) } }
+      Button("Share") { on press { device.share(link) } }
     }
     match @platform {
       .macOS | .windows | .linux => Text("Save with {saveKey}")
@@ -1137,7 +1143,7 @@ task(query) { results = await search(query) } // query 变化时再运行一次
 task(user.id) { profile = try await load(user.id) } // id 变化时才重新运行，name 变化时不会
 ```
 
-effect 会立即运行，之后每当它读取过的内容（包括它调用的函数读取的内容）变化时再次运行。它读取的就是代码里写到的那部分：`effect { log(user.name) }` 在名字变化时重新运行，头像变化时不会。`effect(a, b)` 只在 `a` 或 `b` 变化时再次运行，它的主体读取的东西都不会被跟随；`effect() { }` 什么都不跟随，只在组件建立时运行一次。task 是异步的（见[异步](https://asuka.egoist.dev/zh/docs/language/async#异步)）：组件出现时启动；圆括号里的内容变化时重新启动（并取消上一次运行）；组件消失时被取消。effect 和 task 圆括号里的内容会被比较：变化后如果值仍然相等，就什么都不会发生，所以用户改名时 `task(user.id)` 会继续运行。`app` 代码块里也可以写它们：它们属于应用本身，在应用运行期间一直有效（比如一个刷新循环，或者一个跟随应用状态的设置：`effect { setColorScheme(scheme) }`）。
+effect 会立即运行，之后每当它读取过的内容（包括它调用的函数读取的内容）变化时再次运行。它读取的就是代码里写到的那部分：`effect { log(user.name) }` 在名字变化时重新运行，头像变化时不会。`effect(a, b)` 只在 `a` 或 `b` 变化时再次运行，它的主体读取的东西都不会被跟随；`effect() { }` 什么都不跟随，只在组件建立时运行一次。task 是异步的（见[异步](https://asuka.egoist.dev/zh/docs/language/async#异步)）：组件出现时启动；圆括号里的内容变化时重新启动（并取消上一次运行）；组件消失时被取消。effect 和 task 圆括号里的内容会被比较：变化后如果值仍然相等，就什么都不会发生，所以用户改名时 `task(user.id)` 会继续运行。`app` 代码块里也可以写它们：它们属于应用本身，在应用运行期间一直有效（比如一个刷新循环，或者一个跟随应用状态的设置：`effect { appearance.setColorScheme(scheme) }`）。
 
 effect 可以写入状态，但不能写入它跟随的状态：`effect { if n > 3 { n = 3 } }` 会在自己写入之后再运行一次，晚了一轮，而在那之前处理函数已经看到 `n` 是 4 了。编译器会报错，并给出替代的写法：跟随的状态（`state n: int = min(n ?? 0, 3)`、`state selected(results) = 0`），跟随别的内容的 `effect(…)`，或者在改变它读取内容的那个处理函数里直接写入。task 可以写入它跟随的状态：它通过取消来重新启动，最终会结束。
 
@@ -1700,7 +1706,7 @@ component Player {
 | `WebView` | `try await eval(script)`（脚本的值，以 JSON 表示）、`run(script)`（不等待结果）、`goBack()`、`goForward()`、`reload()`、`stopLoading()` |
 | `TextField` | `insert(text)`、`format(.bold, on)`、`toggleFormat(.italic)`、`setLink(url)`（作用于富文本输入框的选区） |
 
-Ref 可以传来传去（`shareFiles(paths, from: button)`、`a11yFocus(field)`），也可以放在文件顶层的 `let` 里，供多个组件的视图使用。
+Ref 可以传来传去（`device.shareFiles(paths, from: button)`、`accessibility.focus(field)`），也可以放在文件顶层的 `let` 里，供多个组件的视图使用。
 
 ### 动画
 
@@ -1751,32 +1757,52 @@ component Badge {
 
 ### 系统功能
 
+组件作为应用的一部分所用到的功能都来自 prelude，不需要导入：它存在期间注册的东西、它的环境、警告框，以及应用的窗口。
+
 | 函数 | 作用 |
 |---|---|
-| `share(text)` | 为一段文本或一个链接弹出分享面板 |
-| `try await shareFiles(paths, title:, from: ref)` | 为文件弹出分享面板，从某个视图弹出（弹出框指向的位置）；面板关闭后返回 |
-| `haptic(.success)` | 平台的触感反馈（一个 `Haptic`） |
-| `copy(text)` | 把文本放到剪贴板 |
-| `openURL(url)` | 用能处理 url 的应用打开它 |
-| `announce(text)` | 让屏幕阅读器读出文本 |
-| `a11yFocus(ref)` | 把屏幕阅读器的焦点移到该视图 |
-| `try await webCookies(url)` | Web 视图为 url 保存的 cookie |
 | `useKeys([Shortcut(…)])` | 组件存在期间，窗口的快捷键 |
 | `onOpenURL(u => …)`、`onOpenFiles(paths => …)`、`onShare(items => …)` | 组件存在期间，应用被打开时带来的内容，或其他应用分享给它的内容 |
 | `quit()`、`relaunch()` | 像用户选择“退出”那样退出应用（并重新启动它），会先询问应用；仅桌面端 |
-| `closeWindow()` | 不询问，直接关闭代码所在的窗口 |
 | `onCloseRequest(fn() -> bool)`、`onQuit(e => …)`、`onSecondInstance((args, dir) => …)` | 组件存在期间：组件所在窗口关闭前的询问；应用即将退出（`e.cancel()`）；应用再次被启动 |
 | `onBack { … }` | 用户从组件所在的页面、弹出面板或气泡弹窗返回时询问：`true` 表示接管（页面留下），`false` 表示放行 |
 | `onLifecycle(l => …)` | 组件存在期间：接收应用进入前台、后台，以及内存警告（一个 `Lifecycle`） |
 | `alert(title, message:, actions:)` | 立即显示一个警告框；`actions` 是一组 `.button`（没有时只有一个 OK）。`Alert` 元素则在它的 `open` 为 true 时显示一个 |
 | `snackbar(message, action:, duration:, onDismiss:)` | 在窗口底部显示一条简短消息，可以带一个操作（撤销）；返回一个用来关闭它的闭包 |
-| `setColorScheme(.dark)` | 应用的外观：`.light`、`.dark`，或 `.system`（跟随平台） |
 | `environment()`、`screenEnvironment()` | 尺寸、安全区域、文字大小、平台等（会被跟踪）：页面或弹出面板自己的，以及整个屏幕的 |
-| `mainWindow()` | 主窗口的 `Ref`：在任何地方都可以 `show()`、`hide()`、`focus()` …… |
+| `window.main()`、`window.current()` | 主窗口的 `Ref`，以及代码所在窗口的 `Ref`：在任何地方都可以 `show()`、`hide()`、`focus()` …… |
+| `window.close()` | 不询问，直接关闭代码所在的窗口 |
+
+应用向系统服务请求的功能，在[平台 SDK](https://asuka.egoist.dev/zh/docs/stdlib) 的包里，和其他包一样导入后使用：
+
+| 函数 | 作用 |
+|---|---|
+| `device.share(text)` | 为一段文本或一个链接弹出分享面板 |
+| `try await device.shareFiles(paths, title:, from: ref)` | 为文件弹出分享面板，从某个视图弹出（弹出框指向的位置）；面板关闭后返回 |
+| `device.haptic(.success)` | 平台的触感反馈（一个 `device.Haptic`） |
+| `device.copy(text)` | 把文本放到剪贴板 |
+| `device.openURL(url)` | 用能处理 url 的应用打开它 |
+| `accessibility.announce(text)` | 让屏幕阅读器读出文本 |
+| `accessibility.focus(ref)` | 把屏幕阅读器的焦点移到该视图 |
+| `try await webview.cookies(url)` | Web 视图为 url 保存的 cookie |
+| `appearance.setColorScheme(.dark)` | 应用的外观：`.light`、`.dark`，或 `.system`（跟随平台） |
+
+```asuka
+import platform/device
+
+component ShareLink(link: string) {
+  Button("Share") {
+    on press {
+      device.haptic(.light)
+      device.share(link)
+    }
+  }
+}
+```
 
 应用在各个平台上包含哪些代码，由 `@platform` 决定，它是编译时就已确定的常量（见[特定平台的代码](https://asuka.egoist.dev/zh/docs/language/control-flow#特定平台的代码)）；`environment().platform` 则是视图实际运行的平台，和环境里的其他值一样会被追踪。
 
-`useKeys` 和这些 `on…` 注册写在组件的主体里（或 app 代码块里）。app 代码块还可以把它们当作事件来处理：`on openURL(url) { … }`、`on files(paths) { … }`、`on share(items) { … }`、`on quit(e) { … }`、`on secondInstance(args, dir) { … }`、`on foreground { … }`、`on background { … }`。它的第一个 `Window` 是主窗口（见[导航](https://asuka.egoist.dev/zh/docs/navigation#窗口)）。
+`useKeys` 和这些 `on…` 注册写在组件的主体里（或 app 代码块里）。app 代码块还可以把它们当作事件来处理：`on openURL(url) { … }`、`on files(paths) { … }`、`on share(items) { … }`、`on quit(e) { … }`、`on secondInstance(args, dir) { … }`、`on foreground { … }`、`on background { … }`。它的第一个 `Window` 是主窗口；如果 app 代码块在它的 `Window` 之外什么都不显示（只有托盘图标、菜单栏），它就没有主窗口（见[导航](https://asuka.egoist.dev/zh/docs/navigation#窗口)）。
 
 `std/embed` 在应用编译时读取包里的文件，把它们编进应用，所以每个平台都直接拥有这些文件，运行时不需要加载：
 

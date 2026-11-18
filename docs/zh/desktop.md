@@ -107,6 +107,8 @@ component Panel {
 
 在 `asuka.toml` 中设置 `keepRunning = true`，应用会在最后一个窗口关闭后继续运行：主窗口只是被隐藏（绑定了的 `open` 会变为 false），再次显示它就能回来（在 Mac 上，点击程序坞图标也可以；在 Linux 上，再次启动应用也可以）。设置 `background = true` 还会让应用启动时不显示任何窗口，在 Mac 上也不显示程序坞图标，适合只住在菜单栏或托盘里、以 `Tray` 作为入口的应用。它打开的 `Window` 照常显示。这类应用通过菜单退出：托盘图标菜单里的 `quit()`，或程序坞的“退出”。
 
+这样的应用不需要主窗口：如果 app 代码块在窗口之外什么都不显示（只有托盘图标、菜单栏，以及它的菜单打开的 `Window`），它就没有主窗口，它打开的那些窗口就是它全部的窗口（见[没有主窗口的应用](navigation.md#没有主窗口的应用)）。`examples/tray` 就是这样一个应用。
+
 ## 全局快捷键
 
 `hotkey.Hotkey` 注册的按键，即使其他应用在前台也能被你的应用收到，有效期与它显示的时间相同（它本身不显示任何内容）：
@@ -120,7 +122,7 @@ component Launcher {
   Column {
     hotkey.Hotkey(Shortcut(key: "space", alt: true)) {
       description: "Show the launcher"
-      on press { mainWindow().focus() }
+      on press { window.main().focus() }
       on error(e) { problem = e.message }
     }
     if !problem.isEmpty() { Text(problem) }
@@ -128,7 +130,7 @@ component Launcher {
 }
 ```
 
-每次按下快捷键时，`on press` 都会在主线程上执行；快捷键本身跟随它的绑定（比如用户在设置里自选的按键）：绑定变化时会重新注册。`on error(e)` 会告诉你失败的原因：`.taken`（这组按键已被其他应用占用）、`.notAllowed`（用户拒绝了，或者桌面环境不认识这个应用）、`.notAvailable`、`.noKey`。`mainWindow()` 是主窗口的句柄，在哪里调用都一样：`focus()` 把它切到前台，`show()`、`hide()` 等其他方法也都作用在它上面。
+每次按下快捷键时，`on press` 都会在主线程上执行；快捷键本身跟随它的绑定（比如用户在设置里自选的按键）：绑定变化时会重新注册。`on error(e)` 会告诉你失败的原因：`.taken`（这组按键已被其他应用占用）、`.notAllowed`（用户拒绝了，或者桌面环境不认识这个应用）、`.notAvailable`、`.noKey`。`window.main()` 是主窗口的句柄，在哪里调用都一样：`focus()` 把它切到前台，`show()`、`hide()` 等其他方法也都作用在它上面。
 
 - **macOS**：使用 Carbon 的热键，不需要辅助功能权限。系统自带的快捷键会被视为已占用。按下快捷键不会把应用切到前台，需要的话请对某个窗口调用 `focus()`。
 - **Windows**：使用 `RegisterHotKey`；按下快捷键后，应用可以把自己切到前台。

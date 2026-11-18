@@ -57,6 +57,8 @@ component Inbox {
 `RichText` 显示带样式的文本，内容是一组 `Span`（文本片段）。片段中的 `"\n"` 会另起一段。片段里保持默认值的字段，会沿用 `RichText` 的样式。
 
 ```asuka
+import platform/device
+
 component About {
   RichText([
     Span(text: "asuka", font: .body.bold()),
@@ -70,7 +72,7 @@ component About {
     Span(text: "in red", color: .red),
     Span(text: "."),
   ]) {
-    on link(url) { openURL(url) }
+    on link(url) { device.openURL(url) }
   }
 }
 ```
@@ -121,7 +123,7 @@ component Answer(question: [Span], answer: [Span]) {
 }
 ```
 
-设置了 `selectable: true` 的 `Text` 本身就可以被选择；要跨多个文本选择时，请把 `RichText` 放进 `Selectable`。如果不经过选区直接复制内容，可以用 `copy(text)` 把它放到剪贴板。
+设置了 `selectable: true` 的 `Text` 本身就可以被选择；要跨多个文本选择时，请把 `RichText` 放进 `Selectable`。如果不经过选区直接复制内容，可以用 `device.copy(text)` 把它放到剪贴板。
 
 ### Markdown
 
@@ -222,13 +224,15 @@ component Actions {
 设置了 `menu` 的按钮被点击时会弹出其中的操作，而不是运行 `on press`（iOS 上是 `UIMenu`，Android 上是 `PopupMenu`，macOS 上是 `NSMenu`，Windows 上是弹出菜单，Linux 上是 `GtkPopoverMenu`，浏览器里是一个 popover）。每一项都是一个 `Action`：`.button(title:, icon:, role:, disabled:, checked:, run:)`，除标题外的字段都可省略。`role: .destructive` 会让它显示为红色。`run` 里可以 await（`run: () => { await save() }`）：它作为创建这个操作的代码的 task 运行，菜单不会等它，和事件处理函数一样；那段代码所在的栈、弹出面板和路由器就是它的，所以在里面可以用 `push` 和 `navigate`。`runAction(a)` 以同样的方式运行一个操作，供你自己做的菜单使用。
 
 ```asuka
+import platform/device
+
 component More {
   Button("") {
     icon: "ellipsis.circle"
     label: "More"
     menu: [
-      .button(title: "Copy", icon: "doc.on.doc", run: () => copy("https://example.com")),
-      .button(title: "Share", icon: "square.and.arrow.up", run: () => share("https://example.com")),
+      .button(title: "Copy", icon: "doc.on.doc", run: () => device.copy("https://example.com")),
+      .button(title: "Share", icon: "square.and.arrow.up", run: () => device.share("https://example.com")),
       .button(title: "Delete", icon: "trash", role: .destructive, run: () => {}),
     ]
   }
@@ -696,6 +700,8 @@ component Success {
 `WebView` 用平台的 Web 视图显示网页，滚动、缩放和文本选择都是平台原生的：iOS 和 macOS 上是 `WKWebView`，Android 上是 `WebView`，Windows 上是 WebView2（Edge 的运行时），Linux 上是 WebKitGTK 6.0 的 `WebKitWebView`。Linux 上如果没有安装 WebKitGTK，它什么也不显示，并调用一次 `on error`，告诉你需要安装什么。在浏览器中它是一个 `<iframe>`，下面介绍的功能只有对应用自己站点的页面才能全部使用；参见 [Web](web.md#web-视图)。没有设置高度也没有 `grow` 时，它会扩展到填满可用空间。
 
 ```asuka
+import platform/device
+
 component Browser {
   state page = WebState()
 
@@ -729,7 +735,7 @@ component Browser {
       block: ["doubleclick.net", "/ads/"]
       on state(s) { page = s }
       on message(m) { print("the page says {m}") }
-      on newWindow(url) { openURL(url) }
+      on newWindow(url) { device.openURL(url) }
     }
   }
 }
@@ -775,7 +781,7 @@ component Page {
 
 `eval` 借助页面的 `eval` 来等待 promise，而页面的内容安全策略（CSP）如果不允许 `'unsafe-eval'`，就会拦下 `eval`。在这样的页面上，iOS、Android、macOS 和 Linux 会改用 `run` 的方式执行脚本，这种方式不受 CSP 限制：得到的仍是最后一条语句的值，出错时仍是脚本抛出的错误，只是不会等待 promise（Android 上得到 `{}`，其他平台报错），而且在 iOS 和 macOS 上，对象的键可能换了顺序。Windows 不需要 `eval`，照常等待 promise。在 Web 上，浏览器会对应用在页面里执行的脚本施加页面自己的策略，所以禁止 `eval` 的页面会同时拒绝 `run` 和 `eval`。
 
-`try await webCookies(url)` 获取 Web 视图中某个 URL 的 cookie，形式是一个 `Cookie` 请求头。这样用户在页面里登录之后，你自己发出的请求也能带上这份登录状态。
+`try await webview.cookies(url)` 获取 Web 视图中某个 URL 的 cookie，形式是一个 `Cookie` 请求头。这样用户在页面里登录之后，你自己发出的请求也能带上这份登录状态。
 
 [`examples/downloader`](../../examples/downloader) 用到了以上全部功能：一个带地址栏、预加载脚本、请求拦截和下载功能的浏览器。
 
@@ -920,6 +926,8 @@ component Card(level: float) {
 如果一个视图没有外观、事件和无障碍相关的属性，它就不会生成自己的原生视图，子视图会直接放进最近的、确实有原生视图的那个祖先里。所以多层嵌套行和列不会带来任何开销。
 
 ```asuka
+import platform/device
+
 component Person {
   state open = false
 
@@ -930,7 +938,7 @@ component Person {
     radius: 12
     label: "Ada, 2 unread"
     on press { open = !open }
-    on longPress { haptic(.medium) }
+    on longPress { device.haptic(.medium) }
     Symbol("person.fill")
     Column {
       grow: 1

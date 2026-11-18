@@ -407,6 +407,7 @@ typedef struct {
 	bool quitting, started, snapshotting, scripted;
 	bool launched_for_toast;  // COM started the app for a toast's click
 	bool keep_running;  // the app keeps running with no window (app.KeepRunning)
+	bool no_main;       // the app has no main window (WindowNone): H.window never shows
 
 	node **sheets;
 	uint32_t nsheets;

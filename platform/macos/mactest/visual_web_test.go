@@ -46,6 +46,8 @@ func TestVisualWebView(t *testing.T) {
 	}))
 	defer srv.Close()
 	a := Run(t, fmt.Sprintf(`
+		import platform/webview
+
 		component Web {
 		  state log = ""
 		  let page = Ref()
@@ -69,7 +71,7 @@ func TestVisualWebView(t *testing.T) {
 		    Button("Post") { on press { page.run("window.asuka.postMessage('hi')") } }
 		    Button("Download") { on press { page.run("document.getElementById('f').click()") } }
 		    Button("Popup") { on press { page.run("document.getElementById('p').click()") } }
-		    Button("Cookies") { on press { let c = (try? await webCookies(%[1]q)) ?? "none"; log = log + "cookies {c};" } }
+		    Button("Cookies") { on press { let c = (try? await webview.cookies(%[1]q)) ?? "none"; log = log + "cookies {c};" } }
 		    Text("log:{log}")
 		  }
 		}

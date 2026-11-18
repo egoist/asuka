@@ -78,11 +78,17 @@ void ak_window_root_drop(ak_view *e) {
 
 static bool is_main(const ak_view *w) { return w && w->el == AK_EL_WINDOW && ((window_t *)w->impl)->main; }
 
+// no_main is whether r's app has no main window: its root's view is in
+// none.
+static bool no_main(const ak_ui_root *r) { return r && r->main_kind == AK_MAIN_NONE; }
+
 // The view a handle's commands go to: the open window's, or the root's
-// (the main window); NULL for a closed Window.
+// (the main window); NULL for a closed Window, and for the main window
+// of an app without one.
 static ak_view *handle_view(ak_view *w) {
 	if (!w) return NULL;
 	if (w->el == AK_EL_WINDOW) return is_main(w) ? w->r->el : ((window_t *)w->impl)->win;
+	if (w == w->r->el && no_main(w->r)) return NULL;
 	return w;
 }
 
@@ -289,6 +295,7 @@ void ak_ui_window_action(ak_view *w, int64_t action, float x, float y) {
 		return;
 	}
 	if (!v) {
+		if (w == w->r->el) return;  // no main window
 		if (action == AK_WINDOW_ACTION_SHOW || action == AK_WINDOW_ACTION_FOCUS) {
 			ak_val t = {.i = 1};
 			ak_view_call(w, AK_EV_WINDOW_CHANGE, &t, 1);
@@ -619,6 +626,45 @@ static void main_set(ak_view *w, uint16_t key, ak_val v) {
 		ak_ui_window_action(w, v.i ? AK_WINDOW_ACTION_CLICK_THROUGH : AK_WINDOW_ACTION_NOT_CLICK_THROUGH, 0, 0);
 		break;
 	}
+}
+
+// ak_ui_main_kind is what the app's main window is, as its function
+// starts. With none, WindowOptions say so (hidden, too, for a host that
+// doesn't know): the host never shows the root's window. An app reloaded
+// with a main window again, its content's, gets the host's options back.
+void ak_ui_main_kind(int64_t kind) {
+	ak_ui_root *r = ak_ui_current();
+	if (!r || !r->el || kind < AK_MAIN_CONTENT || kind > AK_MAIN_NONE) return;
+	r->main_kind = (uint8_t)kind;
+	if (kind == AK_MAIN_WINDOW) {
+		r->none_sent = false;  // its Window's options replace them
+		return;
+	}
+	if (kind == AK_MAIN_CONTENT && !r->none_sent) return;
+	ak_window_config c = {0};
+	if (kind == AK_MAIN_NONE) c.flags = AK_WINDOW_NONE | AK_WINDOW_HIDDEN;
+	r->none_sent = kind == AK_MAIN_NONE;
+	c.title = ak_cstr("");
+	c.state_key = ak_cstr("");
+	ak_buf *b = ak_batch_command_begin(r->batch, r->el->id, AK_CMD_WINDOW_OPTIONS);
+	ak_append_window_config(b, &c);
+	ak_batch_command_end(r->batch);
+}
+
+// ak_ui_main_window_view is the main window's handle: the root's view,
+// which window commands take as the main window's. In an app without
+// one, they do nothing to it and its state reads as not shown, as on a
+// phone.
+ak_view *ak_ui_main_window_view(void) {
+	ak_ui_root *r = ak_ui_current();
+	return r && r->el && !r->el->dead ? r->el : NULL;
+}
+
+// ak_ui_current_window is the handle of the window the calling code is
+// in: its Window element, else the main window's (the root's view).
+ak_view *ak_ui_current_window(void) {
+	ak_view *w = target(NULL);
+	return w && !w->dead ? w : NULL;
 }
 
 // ak_ui_main_window makes w (a Window: the app block's) the main

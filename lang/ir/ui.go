@@ -826,6 +826,9 @@ func (b *fb) lowerApp(d *syntax.AppDecl) {
 			}
 		}
 	}
+	// What its main window is, before anything shows: with none, the
+	// root's window never does.
+	b.callBTo(uiMainKind, bc.None, b.konst(int64(b.mainKind(views))))
 	v := b.viewsOf(views)
 	r := b.newReg(bc.KRef)
 	b.move(r, v)

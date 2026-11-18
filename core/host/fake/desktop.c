@@ -349,18 +349,18 @@ static void put_cfg(ak_buf *b, const ak_window_config *c) {
 	if (c->state_key.len) put(b, " key="), put_span(b, c->state_key);
 }
 
-// ak_fake_windows describes the windows, a line each: the main one, then
-// each Window open, by its title.
+// ak_fake_windows describes the windows, a line each: the main one (if
+// the app has one), then each Window open, by its title.
 void ak_fake_windows(ak_fake *f, ak_buf *out) {
 	ak_fake_view *r = ak_fake_root(f);
-	if (r) {
+	ak_window_config rc = r ? cfg_of(win(f, r)) : (ak_window_config){0};
+	if (r && !(rc.flags & AK_WINDOW_NONE)) {  // an app without a main window: none
 		fwin *w = win(f, r);
 		put(out, "main \"");
 		ak_buf_put(out, w->title.data, w->title.len);
 		ak_buf_u8(out, '"');
 		put_state(out, &w->st, w->closed);
-		ak_window_config c = cfg_of(w);
-		put_cfg(out, &c);
+		put_cfg(out, &rc);
 		ak_buf_u8(out, '\n');
 	}
 	ak_fake_view_vec ws = {0};

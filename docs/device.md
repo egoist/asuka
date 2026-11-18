@@ -131,7 +131,7 @@ UserNotifications, AuthenticationServices), except where a Mac differs:
 | `platform/screen` | `lock` and `setBars` do nothing; `preventCapture` leaves the app's windows out of screenshots and recordings; `screenshots()` says nothing |
 | `platform/transcribe` | On the device only; the app's bundle needs its purpose string, which `asuka build` writes |
 | `platform/sensors` | A Mac has no motion sensors: `available` is false, and the streams and `steps` throw `SensorError.notAvailable` |
-| `haptic` | The trackpad's feedback (a Force Touch trackpad): an alignment for `.selection`, a level change for the others |
+| `device.haptic` | The trackpad's feedback (a Force Touch trackpad): an alignment for `.selection`, a level change for the others |
 | `platform/widget`, `platform/liveactivity`, `platform/agerange` | Not on a Mac: `widget.set` does nothing, `liveactivity.start` throws "liveactivity: not available", `agerange.request` `AgeRangeError.notAvailable` |
 | `platform/purchase` | StoreKit 2, in the app's Swift library, which the build makes for an app that imports the package ([In-app purchases](purchases.md)) |
 | `platform/icloud` | As on iOS, in the app's Swift library. Needs a provisioning profile with iCloud (above): without one, "icloud: not available" ([iCloud](icloud.md)) |
@@ -183,7 +183,7 @@ device without it:
 | `platform/purchase` | The Microsoft Store, for an app installed from it; otherwise `available()` is false and the rest throw `PurchaseError.notAvailable` ([In-app purchases](purchases.md)) |
 | `platform/pay` | No wallet pays for a Windows app: `available` says `.none`, `pay` throws `PayError.notAvailable`, `PayButton` shows nothing |
 | `platform/appleauth`, `platform/agerange`, `platform/icloud`, `platform/transcribe`, `platform/sensors` | Not on Windows: unavailable, as on a device without them |
-| `haptic` | A PC has no haptics: it does nothing |
+| `device.haptic` | A PC has no haptics: it does nothing |
 | `platform/splash` | A Windows app has no launch screen: `hold` and `hide` do nothing |
 | `onShare`, shortcuts | iOS and Android only |
 
@@ -218,7 +218,7 @@ names what's missing.
 | `platform/audio`, `platform/record` | GStreamer: an AAC encoder (FDK, libav's...) records, the default source the microphone |
 | `platform/nowplaying` | An MPRIS player on the session bus, named `org.mpris.MediaPlayer2.<app>.instance<pid>` while something shows: GNOME's and KDE's media controls and lock screens, the media keys, `playerctl`. MPRIS's `Seek` is a skip where the app skips, else a seek; the artwork is a `file://` or http(s) URL |
 | `platform/library` | The user's folders (XDG's Pictures, Videos, Music, Downloads), in the folder asked |
-| `shareFiles` | No share sheet: the files are copied to the clipboard, with a toast |
+| `device.shareFiles` | No share sheet: the files are copied to the clipboard, with a toast |
 | `platform/camera`, `platform/record` | The camera portal (it asks the user once; PipeWire's cameras, `gstreamer1.0-pipewire`), else the first Video4Linux camera, through GStreamer. `take()`: a dialog over the window with a live preview, Take Photo and Cancel. `camera.View`: the preview, mirrored, filling its box; front and back are the same camera (a computer's face the user). Videos are MPEG-4 (H.264 from x264 or OpenH264, AAC), else WebM; scanning codes needs GStreamer's `zbar` element. No camera: `CameraError.noCamera`; refused: `.notAllowed` |
 | `platform/scan`, `platform/vision` | Asuka's own reader reads codes, as on Windows: QR, Data Matrix, EAN, UPC, Code 128, Code 39 (no Aztec, PDF417, Code 93, Codabar or ITF). Tesseract (`libtesseract5` and a language's data) reads text; nothing finds faces: `faces` is empty. `vision.analyze` leaves out the text without Tesseract |
 | `platform/imageedit` | GdkPixbuf's loaders decode (HEIF and WebP where their loaders are installed), upright; Asuka does the actions; video frames from GStreamer |
@@ -236,7 +236,7 @@ names what's missing.
 | `platform/biometric`, `platform/integrity`, `platform/agerange`, `platform/push` | None on Linux: not available, not supported. `platform/review` does nothing; `platform/tracking` answers `.allowed` |
 | `platform/pay` | No wallet pays for a Linux app: `available` says `.none`, `pay` throws `PayError.notAvailable`, `PayButton` shows nothing |
 | `platform/crash` | Asuka's crash output, which has a crash in native code too (a signal in GTK's code, a GLib abort), reported as `"native"`; the system's own record (systemd-coredump, apport) isn't read |
-| `haptic` | A desktop has no haptics: it does nothing |
+| `device.haptic` | A desktop has no haptics: it does nothing |
 | `onShare`, shortcuts | iOS and Android only |
 
 ## In a browser
@@ -271,7 +271,7 @@ and its service worker for notifications and Web Push.
 | `platform/screen` | `lock` only full screen or in an installed app; hiding the bars is full screen; no `preventCapture` or `screenshots()` |
 | `platform/background` | The page runs while it's open; a task adds nothing, and has no notification |
 | `platform/tracking` | No prompt: `.denied` when the browser sends Global Privacy Control or Do Not Track, else `.allowed` |
-| `haptic` | `navigator.vibrate`, where the browser has it (Chrome on Android) |
+| `device.haptic` | `navigator.vibrate`, where the browser has it (Chrome on Android) |
 | `platform/review`, `platform/integrity`, `platform/agerange`, `platform/appleauth`, `platform/icloud`, `platform/periodic`, `platform/widget`, `platform/liveactivity`, `platform/transcribe` | Not on the web: an error that says so, or the package's `notAvailable` |
 | `platform/purchase` | Google Play through the Digital Goods API, in a Trusted Web Activity; elsewhere no store (`PurchaseError.notAvailable`) |
 | `platform/maps` | OpenStreetMap's tiles, drawn by Asuka, as on Windows; `showsUser` once the page has the location permission |
@@ -507,11 +507,11 @@ component Gallery {
   app's temporary files or caches: move one to keep it.
 - `device.browse(url)` shows a web page in the app (SFSafariViewController,
   a Custom Tab), over the app's screens. The URL must be http or https.
-  `openURL` leaves the app for the browser instead. A desktop opens
+  `device.openURL` leaves the app for the browser instead. A desktop opens
   the page in the user's browser, and a browser in a new tab.
 - `device.clipboardText()` reads the clipboard's text, `none` if it has
   none. iOS asks the user the first time the app reads what another app
-  put there. `copy(text)` writes it.
+  put there. `device.copy(text)` writes it.
 - `device.keepAwake(on)` keeps the screen on while `on` is true: a video,
   a recipe, a map. Turn it off when the screen that wants it goes.
 - `device.pickFiles(types:, multiple:)` shows the system's document
@@ -601,39 +601,42 @@ browser's cookies (iOS's `prefersEphemeralWebBrowserSession`; Android's
 ephemeral Custom Tab where the browser has one; a throwaway profile on
 Windows and Linux).
 
-## Copy, share and open: copy, share, openURL
+## Copy, share and open: device.copy, device.share, device.openURL
 
-Three of the prelude's functions hand text to the system; they need no
-import.
+Three of `platform/device`'s functions hand text to the system.
 
 ```asuka
+import platform/device
+
 component Links {
   Column {
-    Button("Copy link") { on press { copy("https://example.com/s/42") } }
-    Button("Share") { on press { share("https://example.com/s/42") } }
-    Button("Open in browser") { on press { openURL("https://example.com") } }
-    Button("Call") { on press { openURL("tel:+15555550100") } }
+    Button("Copy link") { on press { device.copy("https://example.com/s/42") } }
+    Button("Share") { on press { device.share("https://example.com/s/42") } }
+    Button("Open in browser") { on press { device.openURL("https://example.com") } }
+    Button("Call") { on press { device.openURL("tel:+15555550100") } }
   }
 }
 ```
 
-- `copy(text)` puts text on the clipboard.
-- `share(text)` shows the system's share sheet, to send it to an app, a
+- `device.copy(text)` puts text on the clipboard.
+- `device.share(text)` shows the system's share sheet, to send it to an app, a
   contact, AirDrop or Nearby Share. A URL is shared as a link. The Mac
   shows its sharing services picker, Windows its share UI, a browser
   the Web Share sheet where it has one; Linux has none, so the text is
   copied to the clipboard, with a toast (as a browser without one
   copies it).
-- `openURL(url)` asks the system to open a URL: a web address in the
+- `device.openURL(url)` asks the system to open a URL: a web address in the
   browser, another scheme (`tel:`, `mailto:`, another app's) in the app
   that handles it.
 
-`shareFiles(paths, mime:, uti:, title:, from:)` shows the share sheet for
+`device.shareFiles(paths, mime:, uti:, title:, from:)` shows the share sheet for
 files: a video to send, a PDF to save to Files, photos for AirDrop. It's
 async, and returns once the sheet is gone, whether the user shared or
 not; it throws when the sheet couldn't show (a file that isn't there).
 
 ```asuka
+import platform/device
+
 component ShareReport(report: string) {
   state status = ""
   let button = Ref()
@@ -643,7 +646,7 @@ component ShareReport(report: string) {
       ref: button
       on press {
         do {
-          try await shareFiles([report], mime: "application/pdf", title: "Send the report", from: button)
+          try await device.shareFiles([report], mime: "application/pdf", title: "Send the report", from: button)
         } catch e {
           status = e.message
         }
@@ -668,7 +671,7 @@ name that does, as expo-sharing does: `image.pdf` shared as a JPEG goes
 as `image.pdf.jpeg`, a link to the file, not a copy. On Android the files
 go through the app's FileProvider; one outside the app's own folders is
 copied to its caches first. On the Mac it's the sharing services
-picker. On Windows it's the share UI (`shareFiles` returns once it
+picker. On Windows it's the share UI (`device.shareFiles` returns once it
 shows: Windows doesn't say when it's gone).
 Linux has none: the files go on the clipboard, as a shared text does. A
 browser shares the files with the Web Share sheet where it can, else
@@ -729,7 +732,7 @@ error (no such file, a download that failed).
 Android has no system viewer, nor one that pages through several files:
 it opens one, as Android's mail apps do with each attachment.
 `preview.show` doesn't take a view for the viewer to grow from on iOS
-(a `Ref`, as `shareFiles`'s `from:`) yet.
+(a `Ref`, as `device.shareFiles`'s `from:`) yet.
 
 ## Printing and PDFs: platform/print
 
@@ -1819,7 +1822,7 @@ other apps' share menus: `active()` is false there.
 
 In a test, `sharesheet.fake()` makes the app run as its sheet
 (`mountApp()` shows it), and keeps how it closed (`closed`); a mounted
-app's `share(items)` is another app sharing them:
+app's `device.share(items)` is another app sharing them:
 
 ```asuka
 import platform/sharesheet
@@ -2595,7 +2598,7 @@ nothing.
 `review.request()` asks the store for its rating prompt (the App
 Store's, Google Play's in-app review). The stores decide whether it
 shows, on their own quotas, and don't say; ask after a success, never
-from a button. For a "Rate us" button, `openURL(review.appStoreURL(id))`
+from a button. For a "Rate us" button, `device.openURL(review.appStoreURL(id))`
 or `review.playStoreURL(id)`.
 
 `tracking.request()` shows iOS's App Tracking Transparency prompt, which
@@ -2981,10 +2984,11 @@ Apple Development identity (`asuka.toml`'s team's): App Intents only run
 in an app with a team. Without one, the build is signed ad hoc, and the
 CLI says the shortcuts won't run.
 
-## Haptics: haptic
+## Haptics: device.haptic
 
-`haptic(kind)`, a prelude function, plays haptic feedback
-(UIFeedbackGenerator; `performHapticFeedback` on Android): `.selection`,
+`device.haptic(kind)` plays haptic feedback
+(UIFeedbackGenerator; `performHapticFeedback` on Android), a
+`device.Haptic`: `.selection`,
 `.light`, `.medium`, `.heavy`, `.success`, `.warning` or `.error`. A Mac
 plays the trackpad's feedback (a Force Touch trackpad: an alignment for
 `.selection`, a level change for the rest); a browser vibrates where it
@@ -2992,8 +2996,10 @@ can (Chrome on Android); Windows and Linux have no haptics, and do
 nothing.
 
 ```asuka
+import platform/device
+
 component Save {
-  Button("Save") { on press { haptic(.success) } }
+  Button("Save") { on press { device.haptic(.success) } }
 }
 ```
 

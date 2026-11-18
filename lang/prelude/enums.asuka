@@ -169,16 +169,6 @@ enum MenuTrigger {
   longPress
 }
 
-enum Haptic {
-  selection
-  light
-  medium
-  heavy
-  success
-  warning
-  error
-}
-
 enum ImageMode {
   fit
   fill

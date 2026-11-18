@@ -44,7 +44,7 @@ These pages cover the whole language, a topic each. For a first look, read [A to
 - [Styles](styles.md): styles, and naming a view to reach it
 - [Animation](animation.md): animate { }, animating values, and per-frame work (onFrame)
 - [Drawing](drawing.md): Canvas, Shape, paths and shaders
-- [The system](system.md): what the app asks of the system (alerts, the share sheet, haptics, windows) and the events it hears (URLs, files, quitting)
+- [The system](system.md): what the app asks of the system (alerts, windows; the share sheet and haptics in the platform SDK) and the events it hears (URLs, files, quitting)
 - [Navigation](navigation.md): screens, tabs and stacks; push, present, pop and dismiss
 - [Text in other languages](languages.md): text in other languages
 - [Native code](native.md): native interfaces and components

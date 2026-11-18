@@ -534,7 +534,7 @@ var Elements = []Element{
 	}, Events: []Event{
 		{Name: "change", Params: []Param{{"open", "bool"}}},
 		{Name: "close", Doc: "the user closed it"},
-		{Name: "closeRequest", Doc: "the user asked to close it: it stays open until open is false, or closeWindow()"},
+		{Name: "closeRequest", Doc: "the user asked to close it: it stays open until open is false, or window.close()"},
 	}, Doc: "a desktop window of its own while open (a window in the page on the web; phones have none): its content is built as it opens, disposed as it closes. The app block's Window is the main window: its keys are the main window's"},
 	{Name: "Router", Children: true, Keys: []Key{
 		{Name: "initial", Type: "string", Positional: true, Default: "\"/\"", Doc: "where it starts when nothing else says (a link the app was opened with, the address its window was left at)"},
@@ -575,7 +575,7 @@ var Elements = []Element{
 	{Name: "WindowCloseGuard", NoStyle: true, Keys: []Key{
 		{Name: "when", Type: "bool", Default: "true", Doc: "it asks while true"},
 	}, Events: []Event{
-		{Name: "closeRequest", Doc: "the user asked to close the window it's in: the window stays open (closeWindow() closes it)"},
+		{Name: "closeRequest", Doc: "the user asked to close the window it's in: the window stays open (window.close() closes it)"},
 	}, Doc: "keeps the window it's in open while when is true, asking the app first (unsaved changes) when the user closes it"},
 	{Name: "WindowKeys", NoStyle: true, Keys: []Key{
 		{Name: "keys", Type: "[Shortcut]", Doc: "what they run"},

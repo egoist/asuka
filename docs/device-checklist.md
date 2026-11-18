@@ -27,7 +27,7 @@ Turn the screen reader on (Settings → Accessibility), open the gallery.
       titles, texts, buttons with their titles ("Compose, button").
 - [ ] The Motion card ("Tap me") is one item, a button, read as its
       texts; double-tapping it toggles it.
-- [ ] The toast: tap "Show a toast" — the reader says "Saved" (`announce`),
+- [ ] The toast: tap "Show a toast" — the reader says "Saved" (`accessibility.announce`),
       without the checkmark's name.
 - [ ] Headings: in the markdown example, the rotor (VoiceOver) or
       "Headings" navigation (TalkBack) moves between the reply's headings.
@@ -143,7 +143,7 @@ GNOME, on real hardware rather than a VM where you can.
 - [ ] Screen readers: VoiceOver (macOS: ⌘F5), Narrator (Windows:
       Ctrl+Win+Enter), Orca (GNOME: Super+Alt+S). Tabbing and the
       reader's own navigation reach each control of the gallery, read
-      with its title and role; `announce` (the toast) is spoken.
+      with its title and role; `accessibility.announce` (the toast) is spoken.
 - [ ] Keyboard: Tab and Shift+Tab move through the controls in order,
       with a visible focus ring; Space and Enter press buttons; Escape
       closes a sheet, an alert and a menu.

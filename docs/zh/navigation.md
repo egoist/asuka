@@ -79,12 +79,14 @@ screen Detail(n: Note) {
 每个按钮都是页面 `toolbar` 里的一个 `Button`。设置了 `icon` 时，导航栏显示图标而不是标题，屏幕阅读器则会读出标题（在桌面端，标题同时也是图标的悬停提示）。
 
 ```asuka
+import platform/device
+
 screen Detail(text: string) {
   title: text
   toolbar {
     Button("Share") {
       icon: "square.and.arrow.up"
-      on press { share(text) }
+      on press { device.share(text) }
     }
     Button("Delete") {
       role: .destructive
@@ -102,6 +104,8 @@ screen Detail(text: string) {
 `bottomToolbar` 把按钮放进屏幕底部的一条栏里，相当于 SwiftUI 的 `ToolbarItem(placement: .bottomBar)`；`primary` 是页面的主操作，比如写邮件或新建，也就是 Material 的浮动操作按钮。它们和导航栏按钮一样都是 `Button`：按钮显示的是 `icon`，屏幕阅读器读的是标题；`disabled` 让按钮变暗，带 `menu` 的按钮点击后弹出菜单；它们读取的内容变化时都会实时反映出来。
 
 ```asuka
+import platform/device
+
 screen Message(from: string) {
   state unread = false
 
@@ -115,8 +119,8 @@ screen Message(from: string) {
     Button("Reply") {
       icon: "arrowshape.turn.up.left"
       menu: [
-        .button(title: "Reply", run: () => haptic(.light)),
-        .button(title: "Forward", run: () => haptic(.light)),
+        .button(title: "Reply", run: () => device.haptic(.light)),
+        .button(title: "Forward", run: () => device.haptic(.light)),
       ]
     }
     Button("Mark as unread") {
@@ -128,7 +132,7 @@ screen Message(from: string) {
   primary {
     Button("Compose") {
       icon: "square.and.pencil"
-      on press { haptic(.light) }
+      on press { device.haptic(.light) }
     }
   }
   Text("A message from {from}")
@@ -694,7 +698,7 @@ component Notes {
 
 ## 窗口
 
-桌面应用都有一个主窗口，用来显示 `app` 块展示的内容。`app` 块里的 `Window` 就是主窗口：它的键是主窗口的选项，它的子元素是主窗口显示的内容：
+桌面应用的主窗口用来显示 `app` 块展示的内容，除非应用没有主窗口（见[下文](#没有主窗口的应用)）。`app` 块里的 `Window` 就是主窗口：它的键是主窗口的选项，它的子元素是主窗口显示的内容：
 
 ```asuka
 app {
@@ -795,7 +799,7 @@ component Editor {
 
 在内容不接收点击的地方，按钮下方的那一条区域仍然可以拖动窗口。在 Windows 上，隐藏标题栏后主窗口就没有菜单栏了，但菜单的快捷键依然有效。
 
-如果希望窗口准备好之后才显示，可以用 `hidden` 打开它，再从代码里显示：在此期间内容已经构建、布局并绘制好了，所以窗口一出现就是完整的，绝不会先闪一下空白。在后台启动的应用（比如托盘图标应用）会让主窗口的 `open` 以 false 启动，再从菜单里把它显示出来。
+如果希望窗口准备好之后才显示，可以用 `hidden` 打开它，再从代码里显示：在此期间内容已经构建、布局并绘制好了，所以窗口一出现就是完整的，绝不会先闪一下空白。在后台启动的应用（比如托盘图标应用）从菜单里打开它的窗口，根本不需要主窗口（见[下文](#没有主窗口的应用)）。
 
 ### 控制窗口
 
@@ -824,8 +828,10 @@ component Main {
 - `w.setSize(width, height)`（内容区的大小，单位为点）、`w.setPosition(x, y)`（窗口框架的左上角，以主显示器的左上角为原点）、`w.center()`。
 - `w.setAlwaysOnTop(on)` 设置窗口是否保持在其他应用的窗口之上。
 - `w.setClickThrough(on)` 设置鼠标是否穿透窗口。
-- `w.close()` 像用户操作那样关闭窗口，会先询问（见下文）；`closeWindow()` 则不询问，直接关闭调用它的代码所在的窗口（不在任何 `Window` 里时是主窗口）。主窗口关闭时，应用就会退出，除非它保持运行。
+- `w.close()` 像用户操作那样关闭窗口，会先询问（见下文）；`window.close()` 则不询问，直接关闭调用它的代码所在的窗口（不在任何 `Window` 里时是主窗口）。主窗口关闭时，应用就会退出，除非它保持运行。
 - 无论变化来自用户还是应用，窗口的状态都会跟着更新：`w.visible`、`w.focused`、`w.minimized`、`w.maximized`、`w.fullScreen`、`w.alwaysOnTop`、`w.clickThrough`、`w.position` 和 `w.size`（分别是 `(x, y)` 和 `(width, height)`），也可以用 `w.windowState` 一次读出全部状态。读取它们的绑定会跟随它们；只有在有东西读取时，才会报告窗口的状态。最小化的窗口、被其他窗口挡住的窗口，都仍然算作可见。
+
+`window.main()` 是主窗口的句柄，`window.current()` 是调用它的代码所在窗口的句柄（在某个 `Window` 里就是那个 `Window` 的，否则是主窗口的），在任何地方都能用：菜单项里、托盘图标里、store 里。
 
 这些操作和状态写入一样，要到屏幕下一次更新时才作用到窗口上。在手机上它们什么也不做，读出来的状态是什么也没显示。
 
@@ -833,9 +839,9 @@ component Main {
 
 当用户关闭窗口（点关闭按钮、按 ⌘W 或 Alt+F4、用程序坞或任务栏的菜单），或者调用 `w.close()` 时，都会先询问：
 
-- 窗口里的 `WindowCloseGuard { when: …; on closeRequest { … } }` 在 `when` 为 true 时让窗口保持打开，并执行它的 `closeRequest`：先问问用户是否保存更改，用户做出选择后再调用 `closeWindow()`。
+- 窗口里的 `WindowCloseGuard { when: …; on closeRequest { … } }` 在 `when` 为 true 时让窗口保持打开，并执行它的 `closeRequest`：先问问用户是否保存更改，用户做出选择后再调用 `window.close()`。
 - 组件里的 `onCloseRequest(fn() -> bool)` 在组件存在期间询问一个函数：返回 false 会让窗口保持打开。
-- `Window` 自己的 `on closeRequest { … }`（主窗口也有）接管用户的关闭操作：窗口会保持打开，直到 `open` 为 false 或调用 `closeWindow()`。
+- `Window` 自己的 `on closeRequest { … }`（主窗口也有）接管用户的关闭操作：窗口会保持打开，直到 `open` 为 false 或调用 `window.close()`。
 
 ```asuka
 screen NoteScreen {
@@ -850,7 +856,7 @@ screen NoteScreen {
     Column {
       Text("Discard the new note?")
       Button("Cancel") { on press { asking = false } }
-      Button("Discard") { on press { closeWindow() } }
+      Button("Discard") { on press { window.close() } }
     }
   }
   TextField { bind text: draft }
@@ -904,6 +910,43 @@ component Preferences {
 | Windows | 由父窗口拥有（owned）：位于父窗口之上，随父窗口一起最小化 | 由父窗口拥有，打开期间父窗口不可操作 |
 | Linux | 相对父窗口设为 transient，随父窗口一起销毁 | transient 且模态 |
 | Web | 和其他面板一样的面板 | 一个面板，下面垫着一层遮罩，拦截页面上的点击 |
+
+### 没有主窗口的应用
+
+如果 app 代码块没有自己的 `Window`，它显示的内容就放在主窗口里。如果它在那里什么都不显示，应用就根本没有主窗口：它的组件只显示 `Window`、托盘图标、`MenuBar` 和全局快捷键。它的窗口就是它自己打开的那些，菜单栏应用和文档类应用都是这样：
+
+```asuka
+import platform/tray
+
+state open = false
+
+app {
+  Clock()
+}
+
+component Clock {
+  tray.Tray("clock") {
+    symbol: "clock"
+    menu: [
+      .button(title: "Show Clock", run: () => { open = true }),
+      .button(title: "Quit", run: () => quit()),
+    ]
+  }
+  Window {
+    bind open: open
+    title: "Clock"
+    width: 240
+    height: 120
+    Text("12:00")
+  }
+}
+```
+
+- `window.main()` 依然指向主窗口，但对它的操作什么也不做，读出来的状态是什么也没显示，和在手机上一样；在任何 `Window` 之外调用的 `window.current()` 也是这个句柄。
+- 重新打开应用（点击程序坞图标、再次启动应用）时，应用会带着已经打开的窗口来到前台；如果一个窗口也没打开，就什么也不显示。
+- 用户关闭最后一个窗口时，应用就会结束，除非它保持运行（`asuka.toml` 的 `keepRunning` 或 `background`），菜单栏应用就是这样做的。
+
+有没有主窗口，是在编译应用时根据它的代码在目标平台上可能显示什么来决定的（`if @platform` 取该平台的分支），而不是看它的状态当前显示了什么：一个可能显示视图的代码块就有主窗口，哪怕它此刻什么都没显示，主窗口也只是空着。在 Web 上，标签页就是主窗口，这种情况下它什么也不显示；在手机上，屏幕始终属于应用，无论它显示什么。
 
 ### 各桌面平台的支持情况
 
@@ -986,7 +1029,7 @@ iOS 和 Android 会忽略 `MenuBar`，所以无论应用跑在哪个平台上，
 
 ## Toast 提示
 
-Asuka 没有提供 toast 组件，因为 iOS 和 Android 都没有一个各应用通用的标准 toast。你可以自己做一个：把一个视图放在页面上方，用 `if` 控制它是否显示，再配一个[过渡](motion.md#进入与退出)让它进场。gallery 示例里的 toast 就是这么做的，它还调用了 `announce`，让屏幕阅读器也把内容读出来。见 [`examples/gallery`](../../examples/gallery)。
+Asuka 没有提供 toast 组件，因为 iOS 和 Android 都没有一个各应用通用的标准 toast。你可以自己做一个：把一个视图放在页面上方，用 `if` 控制它是否显示，再配一个[过渡](motion.md#进入与退出)让它进场。gallery 示例里的 toast 就是这么做的，它还调用了 `accessibility.announce`，让屏幕阅读器也把内容读出来。见 [`examples/gallery`](../../examples/gallery)。
 
 ## 路由
 
@@ -1188,4 +1231,4 @@ app {
 
 在 iOS 上，应用会自带一个分享扩展（share extension），它会带着分享的内容打开应用，和 Android 的做法一样：扩展本身不显示任何界面。分享的内容常常是一个标题加一个链接（比如从 Safari 分享时，页面标题作为文本，URL 作为链接）。[`examples/downloader`](../../examples/downloader) 会从中找出那个链接。桌面端和 Web 不能作为分享目标，在这些平台上 `on share` 永远不会运行。
 
-如果想在发起分享的应用上方显示你自己应用的面板，而不打开你的应用，请参阅[设备](device.md#应用自己的分享面板platformsharesheet)里的 `platform/sharesheet`。反过来，要从你的应用往外分享，`share(text)` 会弹出系统的分享面板，`shareFiles(paths)` 则用来分享文件：在 Mac 上是分享菜单，在 Windows 上是系统的分享界面，在 Web 上是浏览器的分享界面。Linux 没有分享面板，这两个函数会把要分享的内容复制到剪贴板，并用一个 toast 告诉用户。
+如果想在发起分享的应用上方显示你自己应用的面板，而不打开你的应用，请参阅[设备](device.md#应用自己的分享面板platformsharesheet)里的 `platform/sharesheet`。反过来，要从你的应用往外分享，`device.share(text)` 会弹出系统的分享面板，`device.shareFiles(paths)` 则用来分享文件：在 Mac 上是分享菜单，在 Windows 上是系统的分享界面，在 Web 上是浏览器的分享界面。Linux 没有分享面板，这两个函数会把要分享的内容复制到剪贴板，并用一个 toast 告诉用户。

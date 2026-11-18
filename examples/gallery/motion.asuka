@@ -1,4 +1,5 @@
 import std/math
+import platform/accessibility
 
 /// Motion's examples, with the toast they show over the screen's bottom
 /// and a button back to the top.
@@ -28,7 +29,7 @@ component MotionPage {
 
   /// In, then out a while after it's in: a chain of animations.
   async fn showToast() {
-    announce("Saved") // a screen reader wouldn't notice the toast
+    accessibility.announce("Saved") // a screen reader wouldn't notice the toast
     await animate(() => { toast = true })
     await animate(Animation(delay: 1500ms), () => { toast = false })
   }

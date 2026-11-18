@@ -40,7 +40,7 @@ app { Counter() }
 - [样式](styles.md)：样式，以及给视图命名以便引用
 - [动画](animation.md)：animate { }、动画中的值，以及逐帧的工作（onFrame）
 - [绘制](drawing.md)：Canvas、Shape、路径与着色器
-- [系统功能](system.md)：应用向系统请求的事（提示框、分享面板、触感反馈、窗口），以及它收到的事件（URL、文件、退出）
+- [系统功能](system.md)：应用向系统请求的事（提示框、窗口；分享面板和触感反馈在平台 SDK 里），以及它收到的事件（URL、文件、退出）
 - [导航](navigation.md)：屏幕、标签页与导航栈；push、present、pop 与 dismiss
 - [多语言文本](languages.md)：其他语言的文本
 - [原生代码](native.md)：原生接口与原生组件

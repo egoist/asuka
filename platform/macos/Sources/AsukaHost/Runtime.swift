@@ -28,6 +28,8 @@ import AsukaOps
     var wins: [ObjectIdentifier: AsukaWin] = [:]
     var env = AsukaEnvironment()
     var started = false
+    /// startWindows ran: the main window shows as WindowOptions say.
+    var windowsStarted = false
     var config = AsukaConfig.load()
 
     // Calls into the core.

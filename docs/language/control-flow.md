@@ -170,6 +170,8 @@ of that platform's build: not its code, not its strings, not its
 views.
 
 ```asuka check
+import platform/device
+
 let saveKey = if @platform == .macOS { "⌘S" } else { "Ctrl+S" }
 
 component Toolbar {
@@ -177,7 +179,7 @@ component Toolbar {
 
   Row {
     if @platform == .iOS || @platform == .android {
-      Button("Share") { on press { share(link) } }
+      Button("Share") { on press { device.share(link) } }
     }
     match @platform {
       .macOS | .windows | .linux => Text("Save with {saveKey}")

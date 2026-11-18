@@ -686,7 +686,7 @@ pub component Documents(types: [Type]) {
     // The documents are the app's windows: the main one, whose content
     // this is, stays out of sight (an app block's Window { hidden: true }
     // never shows it at all).
-    mainWindow().hide()
+    window.main().hide()
     refreshRecent()
     let dir = recoveryDir()
     let found = (try? fs.readDir(dir)) ?? []

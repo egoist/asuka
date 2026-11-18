@@ -215,7 +215,15 @@ struct ak_ui_root {
 	float fit_min[2], fit_max[2];
 	ak_lsize fit_laid;
 	struct ak_menus *menus;  // MenuBars (menubar.c)
+	// What the app's main window is (AK_MAIN_*, the app's function says
+	// as it starts): its content's, its Window's, or none.
+	uint8_t main_kind;
+	bool none_sent;  // WindowOptions said WindowNone
 };
+
+// The app's main window (ui.main_kind): the window its app block's
+// content shows in, the app block's Window, or none at all.
+enum { AK_MAIN_CONTENT, AK_MAIN_WINDOW, AK_MAIN_NONE };
 
 // The runtime's state, one per process.
 typedef struct {

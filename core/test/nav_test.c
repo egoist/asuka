@@ -1287,6 +1287,68 @@ TEST(window) {
 	ak_release(open_cell);
 }
 
+// An app without a main window (ui.main_kind none: its app block shows
+// nothing outside its Windows): WindowOptions say so, hidden too, and the
+// main window's commands send nothing; reloaded with a main window, its
+// content's, the host's options come back.
+
+static int main_kind;
+
+static ak_val no_main_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_ui_main_kind(main_kind);
+	return (ak_val){.p = ak_ui_new(AK_EL_COLUMN)};
+}
+
+static ak_window_config root_options(ak_fake *f, uint32_t *count) {
+	ak_fake_index_vec cmds = {0};
+	ak_fake_commands(f, AK_CMD_WINDOW_OPTIONS, &cmds);
+	ak_window_config c = {0};
+	*count = cmds.len;
+	if (cmds.len) {
+		ak_op op = ak_fake_op_at(f, cmds.data[cmds.len - 1]);
+		c = ak_decode_window_config((const uint8_t *)op.value.s.p, op.value.s.len);
+	}
+	ak_vec_free(&cmds);
+	return c;
+}
+
+TEST(no_main_window) {
+	main_kind = AK_MAIN_NONE;
+	ak_uitest *a = mount(no_main_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	uint32_t count;
+	ak_window_config c = root_options(f, &count);
+	CHECK_EQ_INT(count, 1);
+	CHECK((c.flags & (AK_WINDOW_NONE | AK_WINDOW_HIDDEN)) == (AK_WINDOW_NONE | AK_WINDOW_HIDDEN));
+	// Its handle does nothing: no command, and nothing shown.
+	ak_fake_reset(f);
+	ak_view *m = ak_ui_main_window_view();
+	REQUIRE(m);
+	ak_ui_window_action(m, AK_WINDOW_ACTION_FOCUS, 0, 0);
+	ak_ui_window_action(NULL, AK_WINDOW_ACTION_SHOW, 0, 0);
+	ak_ui_flush();
+	ak_fake_index_vec cmds = {0};
+	ak_fake_commands(f, AK_CMD_WINDOW_ACTION, &cmds);
+	CHECK_EQ_INT(cmds.len, 0);
+	ak_vec_free(&cmds);
+	CHECK(!ak_ui_window_flag(m, AK_WINDOW_STATE_VISIBLE));
+	// Its main window again, as a reload makes it: the host's options.
+	ak_fake_reset(f);
+	ak_ui_main_kind(AK_MAIN_CONTENT);
+	ak_ui_flush();
+	c = root_options(f, &count);
+	CHECK_EQ_INT(count, 1);
+	CHECK_EQ_INT(c.flags, 0);
+	// Said once: content again sends nothing more.
+	ak_fake_reset(f);
+	ak_ui_main_kind(AK_MAIN_CONTENT);
+	ak_ui_flush();
+	root_options(f, &count);
+	CHECK_EQ_INT(count, 0);
+	done(a);
+}
+
 static ak_val allow_close(ak_closure *c, ak_val *a, uint32_t n) {
 	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
 	return (ak_val){.i = asks_allowed};

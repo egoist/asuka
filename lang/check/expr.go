@@ -267,6 +267,14 @@ func (c *Checker) unknownName(e *syntax.Ident) {
 			return
 		}
 	}
+	if m, ok := movedFuncs[e.Name]; ok {
+		if m.pkg == "window" {
+			c.errorf(e, diag.UndefinedName, "unknown name %s: it's window.%s() now", e.Name, m.name)
+		} else {
+			c.errorf(e, diag.UndefinedName, "unknown name %s: it's platform/%s's now, %s.%s(…) (import platform/%s)", e.Name, m.pkg, m.pkg, m.name, m.pkg)
+		}
+		return
+	}
 	c.errorf(e, diag.UndefinedName, "unknown name %s%s", e.Name, c.suggest(e.Name))
 }
 

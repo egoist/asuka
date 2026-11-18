@@ -73,7 +73,7 @@ Web 应用看到的环境（`environment()`）来自浏览器：
 - `platform` 是 `.web`。
 - 尺寸是页面的尺寸（如果应用嵌在某个元素里，就是那个元素的尺寸），会随窗口变化；尺寸类别按宽度取 Material 的定义。
 - 安全区域就是页面的安全区域（`env(safe-area-inset-*)`，即手机的刘海和主屏幕指示条，前提是页面设置了 `viewport-fit=cover`）；键盘高度是手机键盘遮住页面的那部分。
-- `dark`（深色模式）取自 `prefers-color-scheme`（或应用调用的 `setColorScheme`），`reduceMotion`（减弱动态效果）取自 `prefers-reduced-motion`，`fontScale`（文字大小）取自浏览器的默认字号，文字会随之缩放，`scale`（缩放比例）取自显示器的像素比。
+- `dark`（深色模式）取自 `prefers-color-scheme`（或应用调用的 `appearance.setColorScheme`），`reduceMotion`（减弱动态效果）取自 `prefers-reduced-motion`，`fontScale`（文字大小）取自浏览器的默认字号，文字会随之缩放，`scale`（缩放比例）取自显示器的像素比。
 - `locale`、`languages`、`timeZone`，以及一周的第一天和小时制，都取自浏览器（`navigator.languages`、`Intl`）。
 
 ## 视图如何对应到页面
@@ -117,7 +117,7 @@ Web 应用看到的环境（`environment()`）来自浏览器：
 
 - `platform/secure`：值用 AES-GCM 加密后存放在 IndexedDB 中，密钥由浏览器保管且无法导出（一个不可提取的 WebCrypto 密钥）。它并不是钥匙串：在应用源中运行的脚本读不到密钥，但可以请求用它解密。它需要 `https`（或 `localhost`）。
 - `platform/device`：`info()` 的信息来自 user agent（Chromium 的 client hints 能提供系统版本和 Android 手机型号）；剪贴板、剪贴板里的图片（PNG，保存到缓存目录）以及 `clipboardChanges()`（应用自己的复制操作都能收到；其他应用的复制，只有在用户允许页面读取剪贴板时才能收到）；`keepAwake`（使用 Screen Wake Lock，页面重新显示时会再次获取）；`browse`（打开新标签页）；`pickPhotos` 和 `pickFiles`（浏览器的文件选择器；选中的文件复制到缓存目录）。
-- `shareFiles`：通过分享面板分享文件（`navigator.share`），不支持时逐个下载。`platform/preview`：在新标签页中打开文件（图片、视频、音频、文本、PDF、HTML）；其他类型会抛出 `PreviewError.noViewer`。
+- `device.shareFiles`：通过分享面板分享文件（`navigator.share`），不支持时逐个下载。`platform/preview`：在新标签页中打开文件（图片、视频、音频、文本、PDF、HTML）；其他类型会抛出 `PreviewError.noViewer`。
 - `platform/print`：可以打印 HTML、文件（PDF 在浏览器的查看器中打开）和应用自己的 Web 视图，使用浏览器的打印对话框；结果总是 `.unknown`（浏览器不会告知结果）。Web 上没有 `print.pdf`（抛出 `PrintError.unsupported`）：浏览器只能通过打印对话框生成 PDF（另存为 PDF）。
 - `platform/compose`：使用 `mailto:` 和 `sms:` 链接；带附件时使用分享面板。
 - `platform/notify` 和 `platform/push`：通过应用的 service worker 使用 Notification API 和 Web Push，详见 [通知与 Web Push](#通知与-web-push)。
@@ -137,7 +137,7 @@ Web 应用看到的环境（`environment()`）来自浏览器：
 - `platform/nfc`：在 Chrome for Android 的安全上下文中使用 Web NFC 的 `NDEFReader`：读写 NDEF 消息、把标签设为只读、读取标签的序列号；不支持原始命令，也查不到容量，标签也不能打开页面。其他浏览器没有 Web NFC，会抛出 `NfcError.notAvailable`（见 [NFC 标签](nfc.md)）。
 - `platform/tracking`：浏览器发送了 Global Privacy Control 或 Do Not Track 时返回 `.denied`，否则返回 `.allowed`，不会弹出提示。
 - `platform/pay`：浏览器支持 Apple Pay 时（Safari）通过 Payment Request API 使用它，商户验证由应用的服务器完成（`onValidateMerchant`），网站的域名需要在 Apple 注册；其他浏览器通过 Google 的 Web API（从 pay.google.com 加载的 `pay.js`）使用 Google Pay；两者都使用各自的官方按钮。支付面板只在点击时显示。
-- `haptic` 使用 `navigator.vibrate`，前提是浏览器支持（Android 上的 Chrome）。
+- `device.haptic` 使用 `navigator.vibrate`，前提是浏览器支持（Android 上的 Chrome）。
 - 以下功能在 Web 上不可用，调用时会抛出说明原因的错误（或返回包自己的 `notAvailable`）：`platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity`、`platform/photos`（返回 `.denied`，可以用 `device.pickPhotos` 选择照片）、读取通讯录和日历、`platform/transcribe` 的 `file`，以及 `platform/screen` 的 `preventCapture` 和 `screenshots()`。
 
 ## 通知与 Web Push
@@ -261,7 +261,7 @@ func notifyChat(ctx context.Context, token string) error {
 
 `WebView` 是一个 `<iframe>`，每加载一个页面都会新建一个，所以它有自己独立的历史记录，不会往标签页的历史里添加记录。
 
-应用自己站点的页面（应用的资源、`html`、应用写入的文件，以及与页面同源的任何 URL）可以使用全部功能：视图用真实的 URL 把它加载到 frame 中，并在页面脚本运行之前注入 `window.asuka.postMessage` 和 `preload`；支持 `Ref` 的 `run(script)` 和 `eval(script)`（会等待 promise 完成）；`on loaded`、`on error` 和 `on state`（URL、标题、`pushState`、进度、前进和后退）；`Ref` 的 `goBack()`、`goForward()`、`reload()` 和 `stopLoading()`；页面中的链接、表单和 `location` 变化都通过这个视图加载；`block`（拦截页面的标记、`fetch`、XHR、`sendBeacon`、WebSocket、EventSource 以及元素的 `src` 和 `href`；拦截时已经发出的请求仍可能发送出去）；`on request`（基于 Resource Timing）；`on newWindow`（`window.open`、`target=_blank`）；`on download`（附件、frame 无法显示的类型、`<a download>`）；`webCookies(url)`（`document.cookie`，不包括 `HttpOnly` 的 cookie）。`html` 中的相对链接相对于应用的资源解析。
+应用自己站点的页面（应用的资源、`html`、应用写入的文件，以及与页面同源的任何 URL）可以使用全部功能：视图用真实的 URL 把它加载到 frame 中，并在页面脚本运行之前注入 `window.asuka.postMessage` 和 `preload`；支持 `Ref` 的 `run(script)` 和 `eval(script)`（会等待 promise 完成）；`on loaded`、`on error` 和 `on state`（URL、标题、`pushState`、进度、前进和后退）；`Ref` 的 `goBack()`、`goForward()`、`reload()` 和 `stopLoading()`；页面中的链接、表单和 `location` 变化都通过这个视图加载；`block`（拦截页面的标记、`fetch`、XHR、`sendBeacon`、WebSocket、EventSource 以及元素的 `src` 和 `href`；拦截时已经发出的请求仍可能发送出去）；`on request`（基于 Resource Timing）；`on newWindow`（`window.open`、`target=_blank`）；`on download`（附件、frame 无法显示的类型、`<a download>`）；`webview.cookies(url)`（`document.cookie`，不包括 `HttpOnly` 的 cookie）。`html` 中的相对链接相对于应用的资源解析。
 
 其他站点的页面只能加载，因为浏览器会把不同站点隔离开：加载完成后触发 `on loaded`，站点无法访问时触发 `on error`。如果站点拒绝被嵌入（`X-Frame-Options`、`frame-ancestors`），视图无法感知，浏览器会显示它自己的错误页。视图无法追踪页面里的链接跳转到哪里，也读不到页面标题；无法在页面里运行脚本、对它使用 `block` 或 `preload`、报告它的请求、读取它的 cookie 或设置 `userAgent`（脚本和 cookie 相关的调用会返回错误，其他的会警告一次）。frame 处于沙箱中，不允许顶层导航，所以页面无法把应用导航走。
 

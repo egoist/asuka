@@ -278,8 +278,8 @@ so gaps are found, never silently drawn wrong. The fake host
 
 Gestures on any `View`: `on press`, `on longPress`, `on pan`, `on
 swipe`, `on pinch`, mapped to UIGestureRecognizers and Android's
-`GestureDetector`. Haptics: `haptic(.success)` (UIFeedbackGenerator,
-`performHapticFeedback`).
+`GestureDetector`. Haptics: platform/device's `device.haptic(.success)`
+(UIFeedbackGenerator, `performHapticFeedback`).
 
 ### Navigation
 
@@ -913,8 +913,9 @@ accessibility tree.
 - `TextField` and `Toggle` (switch or checkbox) take a `label` that
   follows the app's language, carried by the common `A11yLabel` prop,
   without replacing the control's value or native editing and toggling.
-- `announce(text)` has the screen reader say what changed where focus
-  isn't (a toast, a count of results); `a11yFocus(ref)` moves it to a
+- platform/accessibility's `announce(text)` has the screen reader say
+  what changed where focus isn't (a toast, a count of results);
+  `focus(ref)` moves it to a
   view; a view's `actions` are what a screen reader offers to do with
   it.
 - A List row's swipe actions are its accessibility actions on Android
@@ -3052,6 +3053,21 @@ menubar.c, keys.c; the Asuka API in docs/navigation.md):
   at 800 by 600 points, a desktop window's size (Electron's default),
   not a phone's, centered. Where the user left it, remembered by the
   host, wins over its size and place.
+- An app may have no main window: without an app block `Window`, the
+  lowering looks at what the block can show (lang/ir/mainwindow.go):
+  its items, the components they call and what their slots are given,
+  an `if @platform` folded to the platform's branch; a `Window`, a
+  `MenuBar`, an `Alert`, a registration or a component that shows
+  nothing more (a tray icon's, a hotkey's) isn't a view of the main
+  window's. With none, it calls `ui.main_kind` none as the app's
+  function starts, and the core sends `WindowOptions` with `WindowNone`
+  (and hidden, for a host that doesn't know it): the host never shows
+  the root's window (Show, Focus, reopening the app), the app ends with
+  the user closing its last window unless it keeps running, and the
+  core sends nothing for the main window's handle, whose state reads as
+  not shown, as on a phone. It's decided as the app compiles, by its
+  code, not its state; a reload that gives the app a main window again
+  sends the host's options back.
 - Any other `Window` is a window of its own while `open` is true, built
   as a `Sheet` is: its children are a builder (`ui.lazy`), built under
   an owner of their own as it opens and disposed as it closes; its view
@@ -3089,7 +3105,10 @@ menubar.c, keys.c; the Asuka API in docs/navigation.md):
   user's as much as the app's.
 - A window's handle is a `Ref`: `Window(…) as w` (a `Ref` of any other
   view names the window that view is in; none, the window the calling
-  code is in, a context each window provides, else the main window).
+  code is in, a context each window provides, else the main window);
+  `window.main()` is the main window's (the root's view) and
+  `window.current()` the calling code's, `window` a package of the
+  universe as `router` is.
   Its actions are one `WindowAction` command (u8 action, two floats for
   a size or a place) to the `Window` node or, for the main window, the
   root: `w.show()`, `hide()`, `focus()` (`ui.focus` of a `Window`),
@@ -3119,7 +3138,7 @@ menubar.c, keys.c; the Asuka API in docs/navigation.md):
   and no handler took it: a `Window` as the user's closing does (`open`
   false, `close`), the main window with `WindowAction` Close, which the
   host does as its own closing would (the app quits, or hides it while
-  it keeps running). `closeWindow()` closes without asking, what a
+  it keeps running). `window.close()` closes without asking, what a
   guard's question calls once the user has chosen. Quitting the app as
   a whole (⌘Q, the session ending) doesn't ask the windows: it asks the
   app (below).

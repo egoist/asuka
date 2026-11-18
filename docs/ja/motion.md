@@ -170,12 +170,14 @@ component Flip {
 - `Transition(…)` は独自のトランジションです。`fade`、`scale`（0 なら拡大縮小なし）、ポイント単位のオフセット `x`、`y` を指定でき、組み合わせることもできます（`Transition(fade: true, scale: 0.5, y: -8)`）。
 
 ```asuka
+import platform/accessibility
+
 component SaveToast {
   state shown = false
 
   async fn save() {
     animate(() => { shown = true })
-    announce("Saved")
+    accessibility.announce("Saved")
     await sleep(1500ms)
     animate(() => { shown = false })
   }
@@ -654,9 +656,11 @@ component Search {
 
 ## 触覚フィードバック
 
-`haptic` はフィードバックを再生します。`.selection`（値が切り替わったとき）、`.light`、`.medium`、`.heavy`（衝撃）、`.success`、`.warning`、`.error`（結果）があります。
+`device.haptic` はフィードバックを再生します。`.selection`（値が切り替わったとき）、`.light`、`.medium`、`.heavy`（衝撃）、`.success`、`.warning`、`.error`（結果）があります。
 
 ```asuka
+import platform/device
+
 component Pager {
   state page = 0
 
@@ -668,9 +672,9 @@ component Pager {
       } else if d == .right {
         page = max(page - 1, 0)
       }
-      haptic(.selection)
+      device.haptic(.selection)
     }
-    on longPress { haptic(.medium) }
+    on longPress { device.haptic(.medium) }
     Text("Page {page + 1}")
   }
 }
@@ -678,7 +682,7 @@ component Pager {
 
 iOS では `UIFeedbackGenerator` のフィードバックを使います。Android には完全に対応するものがないため、Asuka は `performHapticFeedback` の定数のうち最も近いものを再生します。成功、警告、エラーは、Android 11 以降では confirm と reject、それより前では key press と long press になります。
 
-Force Touch トラックパッドを備えた Mac では、`.selection` は `NSHapticFeedbackManager` の alignment に、それ以外は level change になります。トラックパッドは、指が触れている間にこれらを再生します。Windows と Linux には触覚フィードバックがないため、`haptic` は何もしません。ブラウザーでは、`navigator.vibrate` があれば（Android の Chrome）短く振動し、なければ何もしません。
+Force Touch トラックパッドを備えた Mac では、`.selection` は `NSHapticFeedbackManager` の alignment に、それ以外は level change になります。トラックパッドは、指が触れている間にこれらを再生します。Windows と Linux には触覚フィードバックがないため、`device.haptic` は何もしません。ブラウザーでは、`navigator.vibrate` があれば（Android の Chrome）短く振動し、なければ何もしません。
 
 ## 視差効果を減らす
 

@@ -58,7 +58,7 @@ pub component View(text: string) {
           if link {
             emit link(url)
           } else if opens(url) {
-            openURL(url)
+            openLink(url)
           }
         }
       }
@@ -299,6 +299,10 @@ struct Paragraph {
 fn paragraphs(text: string) -> [Paragraph] = (try? json.decode<[Paragraph]>(read(text))) ?? []
 
 native fn read(text: string) -> string
+
+// A link opened in the app that takes it (platform/device's openURL,
+// without the package and its native code).
+native fn openLink(url: string)
 
 /// What text being written will most likely become: a code fence it
 /// opened closed, and in its last paragraph, the code, emphasis and

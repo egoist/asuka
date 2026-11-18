@@ -2,6 +2,10 @@
 // and the system's: sharing, haptics, the clipboard, URLs, screen
 // readers.
 
+import platform/accessibility
+import platform/device
+import platform/webview
+
 let page = Ref()
 
 component Media {
@@ -53,23 +57,23 @@ component Media {
     Button("Top") { on press { scroll.scrollTo(0, 0, animated: false) } }
     Button("System") {
       on press {
-        share("https://example.com")
-        copy("copied")
-        haptic(.success)
-        openURL("https://example.com")
-        announce("Saved")
-        a11yFocus(player)
+        device.share("https://example.com")
+        device.copy("copied")
+        device.haptic(.success)
+        device.openURL("https://example.com")
+        accessibility.announce("Saved")
+        accessibility.focus(player)
       }
     }
     Button("Files") {
       on press {
         do {
-          try await shareFiles(["a.txt"], title: "A file", from: page)
+          try await device.shareFiles(["a.txt"], title: "A file", from: page)
           status = "shared"
         } catch e {
           status = "not shared"
         }
-        status = status + ", " + ((try? await webCookies("https://example.com")) ?? "no cookies")
+        status = status + ", " + ((try? await webview.cookies("https://example.com")) ?? "no cookies")
       }
     }
   }

@@ -1,0 +1,25 @@
+// Package platform/accessibility talks to a screen reader beyond what
+// views say themselves: it has it read a text (what changed where its
+// focus isn't), and moves its focus to a view.
+//
+//   accessibility.announce("Saved")   // a screen reader wouldn't notice the toast
+//   accessibility.focus(error)        // error: a Ref of the view to read next
+//
+// Without a screen reader on, both do nothing. What a view says (its
+// label, its role, its value) is the view's own: its a11y props.
+
+/// Has the screen reader, if one is on, read text: a toast, a count of
+/// search results, a save that finished. UIAccessibility's announcement
+/// on iOS, announceForAccessibility on Android, an announcement request
+/// on macOS, a UI Automation notification on Windows, GTK's announcement
+/// on Linux (GTK 4.14 and later), a polite aria-live region on the web.
+/// Don't announce what the focused view says already.
+pub native fn announce(text: string)
+
+/// Moves the screen reader's focus to the view (a Ref of it), for when
+/// the screen changed under the user and what matters is somewhere else:
+/// the error under a form that failed, a search's first result, the
+/// title of a panel that slid in. It's sent when the screen next updates,
+/// once the view exists and has its frame; a Ref that holds no view does
+/// nothing.
+pub native fn focus(view: Ref)

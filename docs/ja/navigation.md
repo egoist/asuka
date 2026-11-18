@@ -79,12 +79,14 @@ iOS と Android では、スタックごとに専用のバーがあります。W
 それぞれは、画面の `toolbar` の中の `Button` です。`icon` を指定すると、バーにはタイトルの代わりにアイコンが表示され、スクリーンリーダーはタイトルを読み上げます（デスクトップでは、タイトルはアイコンのツールチップにもなります）。
 
 ```asuka
+import platform/device
+
 screen Detail(text: string) {
   title: text
   toolbar {
     Button("Share") {
       icon: "square.and.arrow.up"
-      on press { share(text) }
+      on press { device.share(text) }
     }
     Button("Delete") {
       role: .destructive
@@ -102,6 +104,8 @@ Android では、アクションは入りきる分だけトップアプリバー
 `bottomToolbar` は、SwiftUI の `ToolbarItem(placement: .bottomBar)` と同じように、画面下部のバーにボタンを置きます。`primary` は新規作成や追加のような画面の主要なアクションで、Material のフローティングアクションボタンにあたります。どちらもバーのボタンと同じく `Button` です。`icon` はボタンに表示するもの、タイトルはスクリーンリーダーが読み上げる内容です。`disabled` を指定するとボタンが淡色表示になり、`menu` を指定するとメニューを開くボタンになります。読んでいる値の変化にも追従します。
 
 ```asuka
+import platform/device
+
 screen Message(from: string) {
   state unread = false
 
@@ -115,8 +119,8 @@ screen Message(from: string) {
     Button("Reply") {
       icon: "arrowshape.turn.up.left"
       menu: [
-        .button(title: "Reply", run: () => haptic(.light)),
-        .button(title: "Forward", run: () => haptic(.light)),
+        .button(title: "Reply", run: () => device.haptic(.light)),
+        .button(title: "Forward", run: () => device.haptic(.light)),
       ]
     }
     Button("Mark as unread") {
@@ -128,7 +132,7 @@ screen Message(from: string) {
   primary {
     Button("Compose") {
       icon: "square.and.pencil"
-      on press { haptic(.light) }
+      on press { device.haptic(.light) }
     }
   }
   Text("A message from {from}")
@@ -694,7 +698,7 @@ iOS では `UIMenu`、Android では `PopupMenu` です。Mac では `NSMenu`、
 
 ## ウィンドウ
 
-デスクトップアプリにはメインウィンドウがあり、`app` ブロックが表示するものはそこに入ります。`app` ブロックの `Window` がメインウィンドウで、そのキーがメインウィンドウのオプション、子要素が表示する内容になります。
+デスクトップアプリのメインウィンドウには、`app` ブロックが表示するものが入ります。ただし、メインウィンドウのないアプリもあります（[後述](#メインウィンドウのないアプリ)）。`app` ブロックの `Window` がメインウィンドウで、そのキーがメインウィンドウのオプション、子要素が表示する内容になります。
 
 ```asuka
 app {
@@ -795,7 +799,7 @@ component Editor {
 
 内容がクリックを受け取らないところでは、ボタンの下の帯でウィンドウをドラッグできます。Windows では、タイトルバーを隠したメインウィンドウにはメニューバーがありませんが、ショートカットは使えます。
 
-準備ができてから表示したいウィンドウは、`hidden` で開いてコードから表示します。その間に内容が組み立てられ、レイアウトされ、描画されるので、空のまま表示されることはありません。バックグラウンドで起動するアプリ（トレイアイコンのアプリ）は、メインウィンドウの `open` を false にして起動し、メニューから表示します。
+準備ができてから表示したいウィンドウは、`hidden` で開いてコードから表示します。その間に内容が組み立てられ、レイアウトされ、描画されるので、空のまま表示されることはありません。バックグラウンドで起動するアプリ（トレイアイコンのアプリ）は、ウィンドウをメニューから開きます。メインウィンドウはまったく要りません（[後述](#メインウィンドウのないアプリ)）。
 
 ### ウィンドウの操作
 
@@ -824,8 +828,10 @@ component Main {
 - `w.setSize(width, height)`（内容のサイズ、ポイント）、`w.setPosition(x, y)`（フレームの左上、メインディスプレイの左上から）、`w.center()`。
 - `w.setAlwaysOnTop(on)` で、ほかのアプリのウィンドウより常に手前に置くかどうかを切り替えます。
 - `w.setClickThrough(on)` で、マウスを通過させるかどうかを切り替えます。
-- `w.close()` は、ユーザーが閉じるときと同じようにウィンドウを閉じ、先に確認します（後述）。`closeWindow()` は、呼び出したコードがあるウィンドウ（どの `Window` の中でもなければメインウィンドウ）を確認せずに閉じます。メインウィンドウが閉じると、動き続けるアプリでない限り、アプリは終了します。
+- `w.close()` は、ユーザーが閉じるときと同じようにウィンドウを閉じ、先に確認します（後述）。`window.close()` は、呼び出したコードがあるウィンドウ（どの `Window` の中でもなければメインウィンドウ）を確認せずに閉じます。メインウィンドウが閉じると、動き続けるアプリでない限り、アプリは終了します。
 - ウィンドウの状態は、アプリだけでなくユーザーによる変化にも追従します。`w.visible`、`w.focused`、`w.minimized`、`w.maximized`、`w.fullScreen`、`w.alwaysOnTop`、`w.clickThrough`、`w.position`、`w.size`（それぞれ `(x, y)` と `(width, height)`）があり、`w.windowState` ですべてをまとめて読めます。これらを読むバインディングは追従します。ウィンドウの状態が報告されるのは、何かがそれを読んでからです。最小化されたウィンドウや、ほかのウィンドウの後ろにあるウィンドウも、visible のままです。
+
+`window.main()` はメインウィンドウのハンドル、`window.current()` は呼び出したコードがあるウィンドウ（その `Window` のもの、なければメインウィンドウのもの）のハンドルで、メニューの項目、トレイアイコンのメニュー、ストアなど、どこからでも使えます。
 
 操作は、状態の書き込みと同じく、次に画面が更新されるときにウィンドウに反映されます。スマートフォンでは何もせず、状態は何も表示されていないことを示します。
 
@@ -833,9 +839,9 @@ component Main {
 
 ユーザーがウィンドウを閉じるとき（閉じるボタン、⌘W、Alt+F4、Dock やタスクバーのメニュー）や `w.close()` を呼んだときは、先に確認します。
 
-- ウィンドウの中の `WindowCloseGuard { when: …; on closeRequest { … } }` は、`when` が true のあいだウィンドウを開いたままにし、`closeRequest` を実行します。未保存の変更について確認し、ユーザーが選んだら `closeWindow()` を呼びます。
+- ウィンドウの中の `WindowCloseGuard { when: …; on closeRequest { … } }` は、`when` が true のあいだウィンドウを開いたままにし、`closeRequest` を実行します。未保存の変更について確認し、ユーザーが選んだら `window.close()` を呼びます。
 - コンポーネントの本体に書く `onCloseRequest(fn() -> bool)` は、そのコンポーネントがあるあいだ関数に問い合わせます。false を返すと開いたままです。
-- `Window` 自身の `on closeRequest { … }`（メインウィンドウにもあります）は、ユーザーが閉じる操作を引き受けます。ウィンドウは、`open` が false になるか `closeWindow()` が呼ばれるまで開いたままです。
+- `Window` 自身の `on closeRequest { … }`（メインウィンドウにもあります）は、ユーザーが閉じる操作を引き受けます。ウィンドウは、`open` が false になるか `window.close()` が呼ばれるまで開いたままです。
 
 ```asuka
 screen NoteScreen {
@@ -850,7 +856,7 @@ screen NoteScreen {
     Column {
       Text("Discard the new note?")
       Button("Cancel") { on press { asking = false } }
-      Button("Discard") { on press { closeWindow() } }
+      Button("Discard") { on press { window.close() } }
     }
   }
   TextField { bind text: draft }
@@ -904,6 +910,43 @@ component Preferences {
 | Windows | 親に所有されます。親より手前にあり、親と一緒に最小化されます | 所有され、開いている間は親が無効になります |
 | Linux | 親に対して transient。親と一緒に破棄されます | transient かつモーダル |
 | Web | ほかと同じパネル | ページのクリックを受け止める背景の上のパネル |
+
+### メインウィンドウのないアプリ
+
+app ブロックに自分の `Window` がなければ、ブロックが表示するものはメインウィンドウに入ります。そこに何も表示しないブロックには、メインウィンドウそのものがありません。コンポーネントが表示するのは `Window`、トレイアイコン、`MenuBar`、グローバルショートカットだけです。メニューバーアプリや書類ベースのアプリと同じく、ウィンドウはアプリが開いたものだけになります。
+
+```asuka
+import platform/tray
+
+state open = false
+
+app {
+  Clock()
+}
+
+component Clock {
+  tray.Tray("clock") {
+    symbol: "clock"
+    menu: [
+      .button(title: "Show Clock", run: () => { open = true }),
+      .button(title: "Quit", run: () => quit()),
+    ]
+  }
+  Window {
+    bind open: open
+    title: "Clock"
+    width: 240
+    height: 120
+    Text("12:00")
+  }
+}
+```
+
+- `window.main()` はこの場合もメインウィンドウを指しますが、その操作は何もせず、状態はスマートフォンと同じく何も表示されていないことを示します。どの `Window` の中でもない場所の `window.current()` も、このハンドルになります。
+- アプリをもう一度開くと（Dock アイコンのクリック、アプリの再起動）、開いているウィンドウとともにアプリが前面に出ます。開いているウィンドウがなければ、何も表示しません。
+- ユーザーが最後のウィンドウを閉じるとアプリは終了します。ただし、動き続けるアプリ（`asuka.toml` の `keepRunning` か `background`）は別で、メニューバーアプリはこちらです。
+
+メインウィンドウがあるかどうかは、状態が何を表示しているかではなく、アプリのコンパイル時に、ビルド先のプラットフォームでコードが表示しうるもので決まります（`if @platform` はそのプラットフォームの分岐を通ります）。ビューを表示する可能性のあるブロックにはメインウィンドウがあり、何も表示していない間は空になります。Web ではタブがメインウィンドウで、そのときは何も表示しません。スマートフォンでは、何を表示していても画面はアプリのものです。
 
 ### デスクトップごとの対応状況
 
@@ -986,7 +1029,7 @@ iOS と Android は `MenuBar` を無視するので、どのプラットフォ�
 
 ## トースト
 
-iOS にも Android にも、アプリ間で共通して使われる標準のトーストはないため、Asuka にはトーストのコンポーネントがありません。画面の上に重ねたビューを `if` で表示し、[トランジション](motion.md#表示と非表示のトランジション) で登場させて作ってください。ギャラリーのトーストはこの方法で作られていて、スクリーンリーダーにも読み上げさせるために `announce` を呼んでいます。[`examples/gallery`](../../examples/gallery) を参照してください。
+iOS にも Android にも、アプリ間で共通して使われる標準のトーストはないため、Asuka にはトーストのコンポーネントがありません。画面の上に重ねたビューを `if` で表示し、[トランジション](motion.md#表示と非表示のトランジション) で登場させて作ってください。ギャラリーのトーストはこの方法で作られていて、スクリーンリーダーにも読み上げさせるために `accessibility.announce` を呼んでいます。[`examples/gallery`](../../examples/gallery) を参照してください。
 
 ## ルート
 
@@ -1188,4 +1231,4 @@ app {
 
 iOS では、アプリに共有拡張機能（share extension）が付きます。この拡張機能は、Android と同じように、共有された内容を持ってアプリを開きます。拡張機能が独自の画面を表示することはありません。共有される内容は、タイトルとリンクの組であることがよくあります（Safari からは、ページのタイトルがテキストとして、その URL がリンクとして届きます）。[`examples/downloader`](../../examples/downloader) は、その中からリンクを探します。デスクトップと Web は共有先にならないので、そこでは `on share` は実行されません。
 
-自分のアプリを開かずに、共有元のアプリの上に自分のアプリのシートを表示するには、[デバイスとサービス](device.md#アプリ独自の共有シートplatformsharesheet) の `platform/sharesheet` を参照してください。逆に自分のアプリから共有するには、`share(text)` でシステムの共有シートを表示し、`shareFiles(paths)` でファイルを共有します。Mac では共有メニュー、Windows では共有 UI、Web ではブラウザーの共有 UI になります。Linux には共有シートがないので、これらの関数は共有する内容をクリップボードにコピーし、そのことをトーストで知らせます。
+自分のアプリを開かずに、共有元のアプリの上に自分のアプリのシートを表示するには、[デバイスとサービス](device.md#アプリ独自の共有シートplatformsharesheet) の `platform/sharesheet` を参照してください。逆に自分のアプリから共有するには、`device.share(text)` でシステムの共有シートを表示し、`device.shareFiles(paths)` でファイルを共有します。Mac では共有メニュー、Windows では共有 UI、Web ではブラウザーの共有 UI になります。Linux には共有シートがないので、これらの関数は共有する内容をクリップボードにコピーし、そのことをトーストで知らせます。

@@ -175,6 +175,23 @@ void lx_quit_command(ak_span args) {
 	lx_after_core(quit_later, NULL);
 }
 
+static void quit_without_windows(void *ctx) {
+	(void)ctx;
+	if (!H.no_main || H.quitting || H.cfg.keep_running || H.cfg.background) return;
+	for (uint32_t i = 0; i < H.wins.len; i++) {
+		win *w = H.wins.data[i];
+		if (w != H.main && !w->closing && gtk_widget_get_visible((GtkWidget *)w->window)) return;
+	}
+	lx_request_quit();
+}
+
+// lx_closed_window hears the user close a window: an app without a main
+// window ends with its last (its main one, hidden, would hold it), as a
+// quit does, unless it keeps running.
+void lx_closed_window(void) {
+	if (H.no_main) lx_after_core(quit_without_windows, NULL);
+}
+
 // lx_closing_last reports whether closing w would close the app's last
 // window: the app quits then, so the user's close asks first.
 bool lx_closing_last(win *w) {

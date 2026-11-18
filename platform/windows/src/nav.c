@@ -1536,6 +1536,8 @@ void wh_close_window(node *n) {
 	if (H.in_use == win) H.in_use = NULL;
 }
 
+static void quit_without_windows(void *ctx);
+
 LRESULT wh_window_frame_message(node *fw, UINT m, WPARAM wp, LPARAM lp, bool *handled) {
 	node *n = fw->parent;
 	wh_wctl *c = wh_ctl_of(fw->hwnd);
@@ -1571,7 +1573,10 @@ LRESULT wh_window_frame_message(node *fw, UINT m, WPARAM wp, LPARAM lp, bool *ha
 		if (LOWORD(wp)) H.in_use = fw->hwnd;
 		break;
 	case WM_CLOSE:
-		if (n && !n->dying) wh_emit_kind(n, AK_EVENT_DISMISSED);  // the core closes it
+		if (n && !n->dying) {
+			wh_emit_kind(n, AK_EVENT_DISMISSED);  // the core closes it
+			if (!(c && wh_frameless(c))) wh_after_core(quit_without_windows, NULL);
+		}
 		return 0;
 	}
 	*handled = false;
@@ -1589,6 +1594,26 @@ void wh_set_window_title(const char *title, size_t len) {
 	free(w);
 }
 
+static void show_main_later(void *ctx) {
+	(void)ctx;
+	if (!H.no_main && !IsWindowVisible(H.window)) wh_show_ctl(H.main_ctl, true);
+}
+
+// quit_without_windows ends an app without a main window once the user
+// closed its last window, as a quit does (asking first), unless it keeps
+// running.
+static void quit_without_windows(void *ctx) {
+	(void)ctx;
+	if (!H.no_main || H.quitting || H.config.keep_running || H.config.background || H.keep_running) return;
+	for (uint32_t i = 0; i < H.nwins; i++) {
+		wh_wctl *w = wh_nav_ctl(H.wins[i]);
+		if (w && IsWindowVisible(w->hwnd)) return;
+	}
+	if (!wh_ask_quit(false)) return;
+	H.quitting = true;
+	DestroyWindow(H.window);
+}
+
 static void fit_main_later(void *ctx) {
 	(void)ctx;
 	wh_wctl *c = H.main_ctl;
@@ -1603,6 +1628,12 @@ void wh_window_options(node *n, const uint8_t *args, size_t len) {
 	wh_wctl *c = H.main_ctl;
 	c->n = n;
 	wh_ctl_set_config(c, args, len);
+	// An app without a main window never shows it; one reloaded with a
+	// main window again shows it.
+	bool was_none = H.no_main;
+	H.no_main = wh_ctl_has(c, AK_WINDOW_NONE);
+	if (H.started && H.no_main && IsWindowVisible(H.window)) ShowWindow(H.window, SW_HIDE);
+	if (H.started && was_none && !H.no_main && !wh_ctl_has(c, AK_WINDOW_HIDDEN)) wh_after_core(show_main_later, NULL);
 	if (wh_frameless(c) && !c->cfg.state_key.len) {
 		free(c->key);
 		c->key = NULL;  // a panel shows where the cursor is, unless the app keeps its place

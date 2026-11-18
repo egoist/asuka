@@ -139,4 +139,4 @@ component Player {
 | `WebView` | `try await eval(script)`（脚本的值，以 JSON 表示）、`run(script)`（不等待结果）、`goBack()`、`goForward()`、`reload()`、`stopLoading()` |
 | `TextField` | `insert(text)`、`format(.bold, on)`、`toggleFormat(.italic)`、`setLink(url)`（作用于富文本输入框的选区） |
 
-Ref 可以传来传去（`shareFiles(paths, from: button)`、`a11yFocus(field)`），也可以放在文件顶层的 `let` 里，供多个组件的视图使用。
+Ref 可以传来传去（`device.shareFiles(paths, from: button)`、`accessibility.focus(field)`），也可以放在文件顶层的 `let` 里，供多个组件的视图使用。

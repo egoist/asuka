@@ -185,6 +185,12 @@ the menu bar or the tray, whose `Tray` is the user's way in. A `Window`
 it opens shows as any. Quit such an app from its menus: a `quit()` in
 its tray icon's menu, the Dock's Quit.
 
+Such an app needs no main window: an app block that shows nothing
+outside its windows (a tray icon, a menu bar, the `Window`s its menus
+open) has none, and the windows it opens are its only ones ([Apps
+without a main window](navigation.md#apps-without-a-main-window)).
+`examples/tray` is one.
+
 ## Global shortcuts
 
 `hotkey.Hotkey` registers keys that reach the app while another app
@@ -199,7 +205,7 @@ component Launcher {
   Column {
     hotkey.Hotkey(Shortcut(key: "space", alt: true)) {
       description: "Show the launcher"
-      on press { mainWindow().focus() }
+      on press { window.main().focus() }
       on error(e) { problem = e.message }
     }
     if !problem.isEmpty() { Text(problem) }
@@ -212,7 +218,7 @@ follows its binding (keys the user picks in settings): it's registered
 again as it changes. `on error(e)` says why it failed: `.taken`
 (another app has the keys), `.notAllowed` (the user declined, or the
 desktop doesn't know the app), `.notAvailable`, `.noKey`.
-`mainWindow()` is the main window's handle, wherever it's called from:
+`window.main()` is the main window's handle, wherever it's called from:
 `focus()` brings it to the front, `show()`, `hide()` and the rest act
 on it.
 

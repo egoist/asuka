@@ -83,7 +83,7 @@ macOS でも各パッケージは iOS と同じフレームワーク（AVFoundat
 | `platform/screen` | `lock` と `setBars` は何もしません。`preventCapture` はアプリのウィンドウをスクリーンショットと画面収録から除外します。`screenshots()` は何も知らせません |
 | `platform/transcribe` | デバイス上での認識のみです。アプリのバンドルに利用目的の説明文が必要で、`asuka build` がそれを書き込みます |
 | `platform/sensors` | Mac にはモーションセンサーがありません。`available` は false で、ストリームと `steps` は `SensorError.notAvailable` を投げます |
-| `haptic` | トラックパッドのフィードバック（感圧タッチトラックパッド）です。`.selection` では整列（alignment）、それ以外ではレベル変更（level change）のフィードバックになります |
+| `device.haptic` | トラックパッドのフィードバック（感圧タッチトラックパッド）です。`.selection` では整列（alignment）、それ以外ではレベル変更（level change）のフィードバックになります |
 | `platform/widget`、`platform/liveactivity`、`platform/agerange` | Mac にはありません。`widget.set` は何もせず、`liveactivity.start` は「liveactivity: not available」を、`agerange.request` は `AgeRangeError.notAvailable` を投げます |
 | `platform/purchase` | StoreKit 2 を、アプリの Swift ライブラリの中で使います。このライブラリは、パッケージをインポートしたアプリのためにビルドが作ります（[アプリ内課金](purchases.md)） |
 | `platform/icloud` | iOS と同じで、アプリの Swift ライブラリの中で動きます。iCloud を含むプロビジョニングプロファイルが必要です（上記）。ない場合は「icloud: not available」になります（[iCloud](icloud.md)） |
@@ -127,7 +127,7 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `platform/purchase` | Microsoft Store からインストールしたアプリでは Microsoft Store を使います。それ以外では `available()` は false で、ほかの呼び出しは `PurchaseError.notAvailable` を投げます（[アプリ内課金](purchases.md)） |
 | `platform/pay` | Windows アプリの支払いに使えるウォレットはありません。`available` は `.none` を返し、`pay` は `PayError.notAvailable` を投げ、`PayButton` は何も表示しません |
 | `platform/appleauth`、`platform/agerange`、`platform/icloud`、`platform/transcribe`、`platform/sensors` | Windows にはありません。その機能を持たないデバイスと同じく、利用できません |
-| `haptic` | PC には触覚フィードバックがないので、何もしません |
+| `device.haptic` | PC には触覚フィードバックがないので、何もしません |
 | `platform/splash` | Windows アプリには起動画面がないので、`hold` と `hide` は何もしません |
 | `onShare`、ショートカット | iOS と Android だけです |
 
@@ -147,7 +147,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/audio`、`platform/record` | GStreamer を使います。録音には AAC エンコーダー（FDK、libav など）を使い、マイクは既定のソースです |
 | `platform/nowplaying` | 何かを表示しているあいだ、セッションバスに `org.mpris.MediaPlayer2.<app>.instance<pid>` という名前の MPRIS プレイヤーを置きます。GNOME や KDE のメディアコントロールとロック画面、メディアキー、`playerctl` から操作できます。MPRIS の `Seek` は、アプリがスキップを扱う場合はスキップ、そうでなければシークになります。アートワークは `file://` か http(s) の URL です |
 | `platform/library` | ユーザーのフォルダー（XDG のピクチャ、ビデオ、ミュージック、ダウンロード）の、指定したフォルダーに保存されます |
-| `shareFiles` | 共有シートはありません。ファイルはクリップボードにコピーされ、トーストが表示されます |
+| `device.shareFiles` | 共有シートはありません。ファイルはクリップボードにコピーされ、トーストが表示されます |
 | `platform/camera`、`platform/record` | カメラポータル（ユーザーへの確認は一度だけ。PipeWire のカメラで、`gstreamer1.0-pipewire` が必要）、なければ最初の Video4Linux カメラを、GStreamer を通じて使います。`take()`：ウィンドウの上にダイアログを出し、ライブプレビューと「写真を撮る」「キャンセル」を表示します。`camera.View`：左右反転したプレビューで、枠いっぱいに表示します。前面と背面は同じカメラです（コンピューターのカメラはユーザーのほうを向いているため）。ビデオは MPEG-4（x264 か OpenH264 の H.264 と AAC）、それができなければ WebM です。コードの読み取りには GStreamer の `zbar` エレメントが必要です。カメラがなければ `CameraError.noCamera`、拒否されたら `.notAllowed` です |
 | `platform/scan`、`platform/vision` | Windows と同じく、コードは Asuka 自身のリーダーが読み取ります。QR、Data Matrix、EAN、UPC、Code 128、Code 39 です（Aztec、PDF417、Code 93、Codabar、ITF は読めません）。テキストは Tesseract（`libtesseract5` と各言語のデータ）が読み取ります。顔を検出するものはないので、`faces` は空です。Tesseract がなければ、`vision.analyze` の結果にテキストは含まれません |
 | `platform/imageedit` | GdkPixbuf のローダーでデコードし（HEIF と WebP は、それぞれのローダーがインストールされている場合）、向きを正しく直します。各操作は Asuka が行います。ビデオのフレームは GStreamer で取り出します |
@@ -165,7 +165,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/biometric`、`platform/integrity`、`platform/agerange`、`platform/push` | Linux にはありません。利用不可、非対応と答えます。`platform/review` は何もせず、`platform/tracking` は `.allowed` と答えます |
 | `platform/pay` | Linux アプリの支払いに使えるウォレットはありません。`available` は `.none` を返し、`pay` は `PayError.notAvailable` を投げ、`PayButton` は何も表示しません |
 | `platform/crash` | Asuka のクラッシュ出力を使います。ネイティブコードでのクラッシュ（GTK のコードでのシグナル、GLib の abort）もここに含まれ、`"native"` として報告されます。システム自身の記録（systemd-coredump、apport）は読みません |
-| `haptic` | デスクトップには触覚フィードバックがないので、何もしません |
+| `device.haptic` | デスクトップには触覚フィードバックがないので、何もしません |
 | `onShare`、ショートカット | iOS と Android だけです |
 
 ## ブラウザーの場合
@@ -195,7 +195,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/screen` | `lock` はフルスクリーンかインストールしたアプリでのみ使えます。バーを隠すとフルスクリーンになります。`preventCapture` と `screenshots()` はありません |
 | `platform/background` | ページは開いているあいだ動き続けます。タスクを作っても何も変わらず、通知も出ません |
 | `platform/tracking` | プロンプトは出ません。ブラウザーが Global Privacy Control か Do Not Track を送っていれば `.denied`、そうでなければ `.allowed` です |
-| `haptic` | ブラウザーが対応していれば（Android の Chrome）`navigator.vibrate` を使います |
+| `device.haptic` | ブラウザーが対応していれば（Android の Chrome）`navigator.vibrate` を使います |
 | `platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity`、`platform/transcribe` | Web にはありません。その旨を示すエラーか、パッケージの `notAvailable` になります |
 | `platform/purchase` | Trusted Web Activity の中では、Digital Goods API を通じて Google Play を使います。それ以外ではストアはありません（`PurchaseError.notAvailable`） |
 | `platform/maps` | Windows と同じく、Asuka が OpenStreetMap のタイルを描きます。`showsUser` は、ページに位置情報の許可があれば表示されます |
@@ -368,8 +368,8 @@ component Gallery {
 ```
 
 - `device.pickPhotos(max:)` は、システムの写真ピッカー（iOS では PHPicker、Android では写真選択ツール、デスクトップではファイルを開くダイアログ、ブラウザーではファイル選択）を表示し、最大 `max` 枚（1〜255）の画像を選ばせます。権限は求めません。選ぶのはユーザーで、アプリに見えるのは選ばれたものだけです。戻り値は画像のファイルで、`Image` で表示できます。ユーザーがキャンセルした場合は一つも返りません。ファイルはアプリの一時ファイルかキャッシュに置かれたコピーなので、残しておきたいものは移動してください。
-- `device.browse(url)` は、アプリの画面の上に Web ページを表示します（SFSafariViewController、Custom Tab）。URL は http か https でなければなりません。これに対して `openURL` は、アプリを離れてブラウザーで開きます。デスクトップではユーザーのブラウザーで、ブラウザーでは新しいタブでページを開きます。
-- `device.clipboardText()` はクリップボードのテキストを読み取ります。テキストがなければ `none` です。iOS では、ほかのアプリが置いたものをアプリが初めて読むときにユーザーに確認します。書き込むには `copy(text)` を使います。
+- `device.browse(url)` は、アプリの画面の上に Web ページを表示します（SFSafariViewController、Custom Tab）。URL は http か https でなければなりません。これに対して `device.openURL` は、アプリを離れてブラウザーで開きます。デスクトップではユーザーのブラウザーで、ブラウザーでは新しいタブでページを開きます。
+- `device.clipboardText()` はクリップボードのテキストを読み取ります。テキストがなければ `none` です。iOS では、ほかのアプリが置いたものをアプリが初めて読むときにユーザーに確認します。書き込むには `device.copy(text)` を使います。
 - `device.keepAwake(on)` は、`on` が true のあいだ画面をオンのままにします。ビデオ、レシピ、地図などに使います。それを必要とする画面が閉じたらオフにしてください。
 - `device.pickFiles(types:, multiple:)` は、システムのドキュメントピッカー（iOS の「ファイル」ブラウザー、Android のストレージピッカー、デスクトップではファイルを開くダイアログ、ブラウザーではファイル選択。権限は不要）を表示します。`types` は MIME タイプ（`"application/pdf"`、`"image/*"`。指定しなければどのファイルでも）で、`multiple` を指定すると複数選べます。選ばれたファイルごとに `device.File` を返します。その `path` はアプリのキャッシュにあるコピーで、`name`、`type`、`size` も持ちます。ユーザーがキャンセルした場合は一つも返りません。
 - `device.clipboardHas()` は、クリップボードの中身を読まずに、`text`、`image`、`url` のどれがあるかを返します（iOS はこのときユーザーに確認しません）。貼り付けるものがあるときだけ「ペースト」ボタンを表示する、といった使い方ができます。`device.clipboardImage()` はクリップボードの画像を、コピーされたときの形式のままファイルに読み出します。`device.copyImage(path)` は画像ファイルをクリップボードに置きます。`device.clipboardChanges()` は、クリップボードが変わるたびにその中身を伝えるストリームです（iOS と Android は変化を知らせます。Mac と Windows には毎秒 2 回問い合わせます。ブラウザーはページの中でのコピーと、ユーザーがクリップボードの読み取りを許可した場合はほかのアプリのコピーを検知します）。
@@ -417,28 +417,32 @@ async fn signIn(authorizeURL: string) throws -> string? {
 
 ユーザーがシートを閉じると、`open` は `webauth.WebAuthError.canceled` を投げます。`ephemeral: true` を指定すると、ブラウザーの Cookie を使わないプライベートセッションを求めます（iOS では `prefersEphemeralWebBrowserSession`、Android ではブラウザーが対応していれば ephemeral な Custom Tab、Windows と Linux では使い捨てのプロファイル）。
 
-## コピー、共有、URL を開く：copy、share、openURL
+## コピー、共有、URL を開く：device.copy、device.share、device.openURL
 
-プレリュードには、テキストをシステムに渡す関数が 3 つあります。インポートは不要です。
+`platform/device` には、テキストをシステムに渡す関数が 3 つあります。
 
 ```asuka
+import platform/device
+
 component Links {
   Column {
-    Button("Copy link") { on press { copy("https://example.com/s/42") } }
-    Button("Share") { on press { share("https://example.com/s/42") } }
-    Button("Open in browser") { on press { openURL("https://example.com") } }
-    Button("Call") { on press { openURL("tel:+15555550100") } }
+    Button("Copy link") { on press { device.copy("https://example.com/s/42") } }
+    Button("Share") { on press { device.share("https://example.com/s/42") } }
+    Button("Open in browser") { on press { device.openURL("https://example.com") } }
+    Button("Call") { on press { device.openURL("tel:+15555550100") } }
   }
 }
 ```
 
-- `copy(text)` はテキストをクリップボードに置きます。
-- `share(text)` はシステムの共有シートを表示し、アプリ、連絡先、AirDrop、Nearby Share にテキストを送れるようにします。URL はリンクとして共有されます。Mac では共有サービスのピッカー、Windows では共有 UI、ブラウザーでは Web Share のシート（ある場合）が表示されます。Linux には共有シートがないので、テキストはクリップボードにコピーされ、トーストが表示されます（Web Share のないブラウザーでも同じくコピーされます）。
-- `openURL(url)` は、URL を開くようシステムに頼みます。Web のアドレスはブラウザーで、それ以外のスキーム（`tel:`、`mailto:`、ほかのアプリのスキーム）はそれを扱うアプリで開きます。
+- `device.copy(text)` はテキストをクリップボードに置きます。
+- `device.share(text)` はシステムの共有シートを表示し、アプリ、連絡先、AirDrop、Nearby Share にテキストを送れるようにします。URL はリンクとして共有されます。Mac では共有サービスのピッカー、Windows では共有 UI、ブラウザーでは Web Share のシート（ある場合）が表示されます。Linux には共有シートがないので、テキストはクリップボードにコピーされ、トーストが表示されます（Web Share のないブラウザーでも同じくコピーされます）。
+- `device.openURL(url)` は、URL を開くようシステムに頼みます。Web のアドレスはブラウザーで、それ以外のスキーム（`tel:`、`mailto:`、ほかのアプリのスキーム）はそれを扱うアプリで開きます。
 
-`shareFiles(paths, mime:, uti:, title:, from:)` は、ファイルの共有シートを表示します。送りたいビデオ、「ファイル」に保存したい PDF、AirDrop で送りたい写真などに使います。async 関数で、ユーザーが共有したかどうかにかかわらず、シートが閉じたあとに戻ります。シートを表示できなかった（ファイルが存在しない）場合はエラーを投げます。
+`device.shareFiles(paths, mime:, uti:, title:, from:)` は、ファイルの共有シートを表示します。送りたいビデオ、「ファイル」に保存したい PDF、AirDrop で送りたい写真などに使います。async 関数で、ユーザーが共有したかどうかにかかわらず、シートが閉じたあとに戻ります。シートを表示できなかった（ファイルが存在しない）場合はエラーを投げます。
 
 ```asuka
+import platform/device
+
 component ShareReport(report: string) {
   state status = ""
   let button = Ref()
@@ -448,7 +452,7 @@ component ShareReport(report: string) {
       ref: button
       on press {
         do {
-          try await shareFiles([report], mime: "application/pdf", title: "Send the report", from: button)
+          try await device.shareFiles([report], mime: "application/pdf", title: "Send the report", from: button)
         } catch e {
           status = e.message
         }
@@ -468,7 +472,7 @@ component ShareReport(report: string) {
 | `title` | シートのタイトルです。Android ではチューザーのタイトル、iOS ではメールの件名になります。 |
 | `from` | シートがポップオーバーになる場合（iPad、Mac）に、シートが指し示すビューの `Ref` です。普通は共有ボタンです。既定：画面の中央。 |
 
-iOS では、拡張子がタイプと合わないファイルは、expo-sharing と同じく、タイプに合う名前で共有されます。たとえば JPEG として共有した `image.pdf` は `image.pdf.jpeg` として送られます。これはコピーではなく、ファイルへのリンクです。Android では、ファイルはアプリの FileProvider を通じて渡されます。アプリ自身のフォルダーの外にあるファイルは、先にキャッシュにコピーされます。Mac では共有サービスのピッカーです。Windows では共有 UI です（Windows はいつ閉じたかを知らせないので、`shareFiles` は表示された時点で戻ります）。Linux には共有シートがないので、テキストの共有と同じく、ファイルはクリップボードに置かれます。ブラウザーでは、可能なら Web Share のシートでファイルを共有し、できなければファイルを一つずつダウンロードします。
+iOS では、拡張子がタイプと合わないファイルは、expo-sharing と同じく、タイプに合う名前で共有されます。たとえば JPEG として共有した `image.pdf` は `image.pdf.jpeg` として送られます。これはコピーではなく、ファイルへのリンクです。Android では、ファイルはアプリの FileProvider を通じて渡されます。アプリ自身のフォルダーの外にあるファイルは、先にキャッシュにコピーされます。Mac では共有サービスのピッカーです。Windows では共有 UI です（Windows はいつ閉じたかを知らせないので、`device.shareFiles` は表示された時点で戻ります）。Linux には共有シートがないので、テキストの共有と同じく、ファイルはクリップボードに置かれます。ブラウザーでは、可能なら Web Share のシートでファイルを共有し、できなければファイルを一つずつダウンロードします。
 
 アプリ自身を URL で開けるようにするには、[配布](shipping.md#asukatoml)の `asuka.toml` の `scheme` と `links`、そしてプレリュードの `onOpenURL`（または app ブロックの `on openURL(url)`）を参照してください。
 
@@ -511,7 +515,7 @@ component Invoice {
 | Linux | ファイルの既定のアプリ（`GtkFileLauncher`、サンドボックス内ではポータルのもの） | 渡し終えたとき |
 | Web | ブラウザーが表示できるもの（画像、ビデオ、オーディオ、テキスト、PDF、HTML）は新しいタブで開きます。それ以外のタイプは `noViewer` です | 開いたとき |
 
-Android にはシステムのビューアーも、複数のファイルをめくれるビューアーもありません。そのため、Android のメールアプリが添付ファイルを一つずつ開くのと同じく、一つのファイルだけを開きます。iOS でビューアーが広がり出てくる元のビュー（`shareFiles` の `from:` のような `Ref`）を、`preview.show` はまだ受け取れません。
+Android にはシステムのビューアーも、複数のファイルをめくれるビューアーもありません。そのため、Android のメールアプリが添付ファイルを一つずつ開くのと同じく、一つのファイルだけを開きます。iOS でビューアーが広がり出てくる元のビュー（`device.shareFiles` の `from:` のような `Ref`）を、`preview.show` はまだ受け取れません。
 
 ## 印刷と PDF：platform/print
 
@@ -1244,7 +1248,7 @@ app {
 
 アプリが `sharesheet.active` を使っていると、Asuka はアプリを開くだけの拡張機能の代わりにシートをビルドします。このとき iOS では、アプリのコードがフレームワークになり、Xcode が拡張機能とコードを共有するのと同じように、アプリと拡張機能の両方がそれを読み込みます。シートがあってもアプリのサイズは増えません。デスクトップとブラウザーでは、アプリはほかのアプリの共有メニューに出てこないので、`active()` は false です。
 
-テストでは、`sharesheet.fake()` でアプリを共有シートとして動かせます（`mountApp()` がシートを表示します）。シートがどう閉じたかは `closed` に記録されます。マウントしたアプリの `share(items)` は、ほかのアプリがそれらを共有したことを表します。
+テストでは、`sharesheet.fake()` でアプリを共有シートとして動かせます（`mountApp()` がシートを表示します）。シートがどう閉じたかは `closed` に記録されます。マウントしたアプリの `device.share(items)` は、ほかのアプリがそれらを共有したことを表します。
 
 ```asuka
 import platform/sharesheet
@@ -1762,7 +1766,7 @@ app { Root() }
 
 ## ストア：platform/review, platform/tracking, platform/integrity, platform/agerange
 
-`review.request()` は、ストアに評価のプロンプト（App Store の評価プロンプト、Google Play のアプリ内レビュー）を表示するよう依頼します。表示するかどうかはストアが独自の回数制限に基づいて決め、表示したかどうかは知らされません。何かがうまくいったあとに依頼し、ボタンからは呼ばないでください。「評価する」ボタンには `openURL(review.appStoreURL(id))` か `review.playStoreURL(id)` を使います。
+`review.request()` は、ストアに評価のプロンプト（App Store の評価プロンプト、Google Play のアプリ内レビュー）を表示するよう依頼します。表示するかどうかはストアが独自の回数制限に基づいて決め、表示したかどうかは知らされません。何かがうまくいったあとに依頼し、ボタンからは呼ばないでください。「評価する」ボタンには `device.openURL(review.appStoreURL(id))` か `review.playStoreURL(id)` を使います。
 
 `tracking.request()` は iOS の App Tracking Transparency のプロンプトを表示し、`.allowed`、`.denied`、`.restricted`、`.notAsked` のいずれかを返します。アプリは、広告識別子を読んだり広告ネットワークとデータを共有したりする前に、このプロンプトを表示しなければなりません。`tracking.current()` は、尋ねずに現在の状態を読みます。Android にはこのようなプロンプトがないので、`.allowed` です。
 
@@ -1980,13 +1984,15 @@ iOS では App Shortcuts になります。Siri がそのフレーズ（それ�
 
 シミュレーター向けのビルドは、Xcode と同じように、キーチェーンにある（`asuka.toml` で指定したチームの）Apple Development の証明書で署名されます。App Intents は、チームのあるアプリでしか動かないためです。証明書がなければビルドはアドホック署名になり、CLI はショートカットが動かないことを知らせます。
 
-## 触覚フィードバック：haptic
+## 触覚フィードバック：device.haptic
 
-`haptic(kind)` はプレリュードの関数で、触覚フィードバックを再生します（iOS では UIFeedbackGenerator、Android では `performHapticFeedback`）。種類は `.selection`、`.light`、`.medium`、`.heavy`、`.success`、`.warning`、`.error` のいずれかです。Mac ではトラックパッドのフィードバックを再生します（感圧タッチトラックパッドで、`.selection` では整列、それ以外ではレベル変更のフィードバック）。ブラウザーでは、可能な環境（Android の Chrome）で振動します。Windows と Linux には触覚フィードバックがないので、何もしません。
+`device.haptic(kind)` は触覚フィードバックを再生します（iOS では UIFeedbackGenerator、Android では `performHapticFeedback`）。種類は `device.Haptic` の `.selection`、`.light`、`.medium`、`.heavy`、`.success`、`.warning`、`.error` のいずれかです。Mac ではトラックパッドのフィードバックを再生します（感圧タッチトラックパッドで、`.selection` では整列、それ以外ではレベル変更のフィードバック）。ブラウザーでは、可能な環境（Android の Chrome）で振動します。Windows と Linux には触覚フィードバックがないので、何もしません。
 
 ```asuka
+import platform/device
+
 component Save {
-  Button("Save") { on press { haptic(.success) } }
+  Button("Save") { on press { device.haptic(.success) } }
 }
 ```
 

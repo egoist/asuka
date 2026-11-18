@@ -310,6 +310,7 @@ enum {
 	AK_WINDOW_FIT_CONTENT = 1 << 16,
 	AK_WINDOW_CLICK_THROUGH = 1 << 17,
 	AK_WINDOW_MENU_BAR = 1 << 18,
+	AK_WINDOW_NONE = 1 << 19,
 };
 
 // A WindowState event's flags (ops.WindowStateFlags).

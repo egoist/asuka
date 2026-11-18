@@ -41,9 +41,12 @@ fn draw(g: Graphics) {
 }
 
 fn system() {
-  haptic(.success)
-  haptic(.loud) // ERROR "Haptic has no case or constant loud"
-  share(1) // ERROR "argument text of share"
+  copy("x") // ERROR "unknown name copy: it's platform/device's now, device.copy\(…\) \(import platform/device\)"
+  a11yFocus(Ref()) // ERROR "unknown name a11yFocus: it's platform/accessibility's now, accessibility.focus"
+  mainWindow() // ERROR "unknown name mainWindow: it's window.main\(\) now"
+  window.main().focus()
+  window.current().hide()
+  window.close()
   let stop = onFrame(t => { print("{t}") })
   stop()
   animate { print("now") }
@@ -66,9 +69,7 @@ shader Wrong(label: string) { // ERROR "a shader's parameter is a uniform"
 }
 
 async fn files() throws {
-  shareFiles(["a"]) // ERROR "shareFiles is async"
-  try await shareFiles(["a"], title: "A")
-  let c = webCookies("https://a") // ERROR "webCookies is async|webCookies can throw"
+  closeWindow() // ERROR "unknown name closeWindow: it's window.close\(\) now"
 }
 
 app {

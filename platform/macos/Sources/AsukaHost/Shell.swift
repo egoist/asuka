@@ -168,8 +168,10 @@ import AsukaOps
     /// The Dock icon clicked (or the app opened again) with no window
     /// showing, as when one that keeps running has closed its main window:
     /// the main window comes back.
+    /// An app without a main window has none to bring back.
     func reopen(_ visible: Bool) -> Bool {
-        guard !visible, let w = rt.main?.window, !w.isVisible else { return true }
+        guard !visible, let m = rt.main, !m.cfg.flags.contains(.none), !m.window.isVisible else { return true }
+        let w = m.window
         if w.isMiniaturized { w.deminiaturize(nil) }
         w.makeKeyAndOrderFront(nil)
         if inBackground { NSApp.activate(ignoringOtherApps: true) }

@@ -326,7 +326,7 @@ var Methods = []*Method{
 	{Recv: "ref", Name: "maximize", Sig: "()", Builtin: "ui.window_do", Consts: []int64{4}},
 	{Recv: "ref", Name: "restore", Sig: "()", Builtin: "ui.window_do", Consts: []int64{5}, Doc: "out of minimized or maximized"},
 	{Recv: "ref", Name: "center", Sig: "()", Builtin: "ui.window_do", Consts: []int64{8}, Doc: "centers the window on its display"},
-	{Recv: "ref", Name: "close", Sig: "()", Builtin: "ui.window_do", Consts: []int64{13}, Doc: "closes the window as the user does, asking first (closeWindow() doesn't)"},
+	{Recv: "ref", Name: "close", Sig: "()", Builtin: "ui.window_do", Consts: []int64{13}, Doc: "closes the window as the user does, asking first (window.close() doesn't)"},
 	{Recv: "ref", Name: "setFullScreen", Sig: "(on: bool)", Builtin: "ui.window_toggle", Consts: []int64{6, 7}},
 	{Recv: "ref", Name: "setAlwaysOnTop", Sig: "(on: bool)", Builtin: "ui.window_toggle", Consts: []int64{11, 12}},
 	{Recv: "ref", Name: "setClickThrough", Sig: "(on: bool)", Builtin: "ui.window_toggle", Consts: []int64{14, 15}, Doc: "the mouse goes through the window to what's behind it, or doesn't"},

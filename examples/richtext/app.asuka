@@ -3,6 +3,8 @@
 //
 //   asuka dev --platform ios examples/richtext
 
+import platform/device
+
 screen RichTextDemo {
   title: "Rich text"
 
@@ -52,7 +54,7 @@ screen RichTextDemo {
 fn openLink(url: string) {
   alert("Open link?", message: url, actions: [
     .button(title: "Cancel", role: .cancel),
-    .button(title: "Open", run: () => openURL(url)),
+    .button(title: "Open", run: () => device.openURL(url)),
   ])
 }
 

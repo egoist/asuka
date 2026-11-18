@@ -19,14 +19,15 @@ const (
 	uiRef       = "ui.ref"        // (view) -> view
 	uiFragment  = "ui.fragment"   // () -> view: views without a native view, spliced into their parent
 
-	uiShow    = "ui.show"     // (cond thunk -> bool, then builder, else builder or none) -> view
-	uiFor     = "ui.for"      // (items thunk -> [T], key closure (T, int) -> K or none, row closure (itemAcc, indexAcc) -> view, keyKind int) -> view
-	uiLazyFor = "ui.lazy_for" // (view, items, key, row, keyKind int) -> void: directly in an element that builds rows lazily (List)
+	uiShow        = "ui.show"          // (cond thunk -> bool, then builder, else builder or none) -> view
+	uiFor         = "ui.for"           // (items thunk -> [T], key closure (T, int) -> K or none, row closure (itemAcc, indexAcc) -> view, keyKind int) -> view
+	uiLazyFor     = "ui.lazy_for"      // (view, items, key, row, keyKind int) -> void: directly in an element that builds rows lazily (List)
 	uiForPath     = "ui.for_path"      // (items accessor, key: fields spelled or (itemAcc, int) -> K, row, keyKind int) -> view: over a path's items (rfcs/0013)
 	uiLazyForPath = "ui.lazy_for_path" // (view, items accessor, key, row, keyKind int) -> void
-	uiLazy    = "ui.lazy"     // (view, builder closure) -> void: a LazyChildren element's children, built when they show
+	uiLazy        = "ui.lazy"          // (view, builder closure) -> void: a LazyChildren element's children, built when they show
 
 	uiMainWindow = "ui.main_window" // (view) -> void: the app block's Window is the main window, before its keys
+	uiMainKind   = "ui.main_kind"   // (kind) -> void: the app's main window is its content's (0), its Window's (1), or none (2), as its function starts
 	uiSwitch     = "ui.switch"      // (selector thunk -> int, build closure (int) -> view) -> view: a match in a view, by arm
 	uiDynamic    = "ui.dynamic"     // (build closure -> view) -> view
 
