@@ -159,6 +159,8 @@ static void run(void *p) {
 	ak_release(err);
 	ak_release(s->init);
 	s->init = NULL;
+	extern void ak_vm_thread_end(void);
+	ak_vm_thread_end();  // the VM's registers and frames on this thread
 	ak_post(stopped, s);
 }
 
