@@ -552,7 +552,37 @@ func (s *androidScreen) crashLog() string {
 		}
 		b.WriteString("\nthe app's lines and the system's of it:\n" + lastLines(strings.Join(kept, "\n"), 200))
 	}
+	// Where the window manager has the focus, and, while the app runs,
+	// what its threads are doing (a main thread that never returns to its
+	// loop takes no focus): native backtraces, then Java's.
+	if out, _ := s.adb("shell", "dumpsys", "window"); out != "" {
+		var focus []string
+		for _, l := range strings.Split(out, "\n") {
+			if strings.Contains(l, "mCurrentFocus") || strings.Contains(l, "mFocusedApp") || strings.Contains(l, "mFocusedWindow") || strings.Contains(l, "mInputMethodTarget") {
+				focus = append(focus, strings.TrimSpace(l))
+			}
+		}
+		b.WriteString("\nthe focus:\n" + strings.Join(focus, "\n"))
+	}
+	if pid, _ := s.adb("shell", "pidof", s.pkg); strings.TrimSpace(pid) != "" {
+		p := strings.Fields(pid)[0]
+		if out, _ := s.adb("shell", "debuggerd", "-b", p); strings.TrimSpace(out) != "" {
+			b.WriteString("\nits threads (native):\n" + firstLines(out, 160))
+		}
+		if out, _ := s.adb("shell", "debuggerd", "-j", p); strings.TrimSpace(out) != "" {
+			b.WriteString("\nits threads (Java):\n" + firstLines(out, 120))
+		}
+	}
 	return b.String()
+}
+
+// firstLines is text's first n lines.
+func firstLines(text string, n int) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // lastLines is text's last n lines.
