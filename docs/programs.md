@@ -471,6 +471,106 @@ async fn main() throws {
 }
 ```
 
+## A web service: std/http
+
+`http.serve` makes a program an HTTP/1.1 server, as Go's `net/http`
+and `Bun.serve` do: each request goes to a handler, an async function
+that returns a `Reply`. A `Router` sends requests to handlers by
+method and path, `:name` taking a segment of the path.
+
+```asuka check
+import std/http
+import std/os
+
+struct Note {
+  id: int
+  text: string
+}
+
+struct Draft {
+  text: string
+}
+
+async fn main() throws {
+  var notes: [Note] = []
+  let api = http.Router()
+    .get("/notes", req => .json(notes))
+    .get("/notes/:id", req => {
+      if let n = notes.find(n => n.id == req.param("id").toInt()) {
+        return .json(n)
+      }
+      return .text("no such note", status: 404)
+    })
+    .post("/notes", req => {
+      let draft = try req.json<Draft>()
+      let note = Note(id: notes.count() + 1, text: draft.text)
+      notes.push(note)
+      return .json(note, status: 201)
+    })
+  let port = (os.env("PORT") ?? "8080").toInt() ?? 8080
+  let server = try await http.serve(port, api.handler(), host: "0.0.0.0")
+  print("listening on {server.url}")
+  await server.wait()
+}
+```
+
+```sh
+$ curl -d '{"text":"milk"}' localhost:8080/notes
+{"id":1,"text":"milk"}
+$ curl localhost:8080/notes/1
+{"id":1,"text":"milk"}
+```
+
+- `http.serve(port, handler, host:, limits:, onError:)` listens at
+  `port` (0: one the system picks, which `server.port` says) and
+  returns the `Server` once it does. `host` is `127.0.0.1` unless said:
+  only this computer's clients reach it. `"0.0.0.0"` takes every IPv4
+  interface's (a container, another machine), `"::"` IPv6's too. An
+  address it can't listen at (a port in use) is `ServerError.listen`.
+- Each request's handler runs on the main thread as a task of its own,
+  so it may await what any task does (a database, `http.get`, another
+  program) while the others go on. Reading and parsing requests and
+  writing replies happen on the server's own thread; many connections
+  are served at once, and kept open between requests.
+- A `Request` has its `method`, `path` (as sent, escapes kept),
+  `rawQuery` and `query(name)`, `headers` by lower-case name and
+  `header(name)` in any case, its `body` (read whole first), `text()`
+  and `json<T>()`, the client's `remote` address, and the `params` a
+  route matched (`param(name)`).
+- A `Reply` is made by `.text`, `.json`, `.html`, `.data` and
+  `.redirect`, or as `Reply(status: 204)`; a header's value with lines
+  in it is sent once per line (several Set-Cookie). `.stream(body)`
+  sends a body as it's made, in chunks, and `.events(stream)`
+  server-sent events, which `http.events` and a browser's EventSource
+  read; a client that goes away while they're sent cancels the handler.
+- A route's pattern has text, `:name` (one segment) and `*name` (the
+  rest of the path). Routes are tried in the order they were added; a
+  path none has is answered 404, one whose routes take other methods 405
+  (with `Allow`), and a GET route answers HEAD too.
+- A handler that throws is answered 500 Internal Server Error, and its
+  error goes to `onError` (stderr when there's none).
+- `http.Limits(headerSize:, bodySize:, connections:, headerTimeout:,
+  readTimeout:, idleTimeout:)` says how much it takes and how long it
+  waits: 64 KiB of headers, a 16 MiB body, 10000 connections, 30 s for
+  a request's headers and for each wait in its body, 60 s between
+  requests. What goes past is answered (431, 413, 408) and its
+  connection closed.
+- `server.close(grace: 10s)` stops it: it stops accepting at once, lets
+  the requests in flight be answered, and after `grace` cancels the
+  handlers still running (their `defer`s run). `server.wait()` waits
+  until it's closed. The server belongs to the task that started it,
+  so when `main` returns it closes: `main` awaits `server.wait()`.
+
+HTTPS is a reverse proxy's (Caddy, nginx): it terminates TLS and passes
+the requests on over HTTP to a server on `127.0.0.1`, the client's
+address in `X-Forwarded-For`. A desktop app serves a local API the same
+way, from a task, and a phone's app while it runs; a web page can't
+listen (`ServerError.unsupported`).
+
+A handler is a function, so a test calls it, or the router, with a
+`Request`, no socket between: `let r = try await
+api.handle(http.Request(method: "GET", path: "/notes/1"))`.
+
 ## Running
 
 `asuka run` runs a program's `main` at once, with no build to wait for: the arguments after `--` are its own, and it exits with the
@@ -668,3 +768,4 @@ test "reads git's branch" {
 | `std/command` | yes | yes | yes | `unsupported` |
 | `std/flag` | yes | yes | yes | yes (it parses any list) |
 | `std/term` | yes | yes | yes | no terminal: no styles, `prompt` gives `none` |
+| `http.serve` | yes | yes | yes | a phone's app: while it runs; the web: `unsupported` |

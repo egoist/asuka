@@ -1,0 +1,453 @@
+// std/http's server: HTTP/1.1, the same C in every system's core
+// (core/src/std/httpserver.c). Its thread accepts, reads and writes; a
+// request read whole comes to the main thread, where the handler runs
+// as a task of its own, owned by the server.
+
+import std/json as codec
+import std/os
+import std/url
+
+/// A request a server received, its body read whole before the handler
+/// runs (up to `Limits.bodySize`).
+pub struct Request {
+  /// The method, as the client sent it: "GET", "POST"...
+  method: string
+  /// The path, as sent, percent-escapes kept: "/users/42".
+  path: string
+  /// The query, after the ?, as sent: "q=fish+chips&page=2"; "" for
+  /// none. query(name) reads its values.
+  rawQuery: string = ""
+  /// The headers, by lower-case name. One sent several times has its
+  /// values joined by ", " (a cookie's by "; ").
+  headers: [string: string] = [:]
+  body: bytes = bytes()
+  /// The client's address and port: "203.0.113.7:51234", "[::1]:51234".
+  /// Behind a reverse proxy, the proxy's: the client's is in the header
+  /// the proxy adds (X-Forwarded-For).
+  remote: string = ""
+  /// The path's parameters a Router matched, unescaped: ["id": "42"]
+  /// for /users/:id.
+  params: [string: string] = [:]
+
+  /// A header's value, its name in any case; none when it wasn't sent.
+  fn header(name: string) -> string? = headers[name.lower()]
+
+  /// The first value of the query's name, unescaped; none when it has
+  /// none.
+  fn query(name: string) -> string? {
+    for (k, v) in url.parseQuery(rawQuery) {
+      if k == name {
+        return v
+      }
+    }
+    return none
+  }
+
+  /// Every value of the query's name, unescaped, in order.
+  fn queryAll(name: string) -> [string] = url.parseQuery(rawQuery).filter(kv => kv.0 == name).map(kv => kv.1)
+
+  /// A path parameter's value (params[name]); "" when the route has
+  /// none of that name.
+  fn param(name: string) -> string = params[name] ?? ""
+
+  /// The body as UTF-8 text.
+  fn text() -> string = body.string()
+
+  /// The body as JSON, decoded into T.
+  fn json<T>() throws -> T = try codec.decode<T>(text())
+}
+
+/// What a server answers a request with: a status, headers and a body,
+/// or a body sent as it's made (stream). Reply.text, .json, .html,
+/// .data, .redirect, .stream and .events make one; Reply(status: 204)
+/// is one without a body.
+pub struct Reply {
+  /// The status code: 200, 404...
+  status: int = 200
+  /// The headers, a name in any case. A value with lines in it is sent
+  /// as a header per line: several Set-Cookie. The server writes
+  /// Content-Length, Transfer-Encoding and Date itself; "connection":
+  /// "close" closes the connection after the reply.
+  headers: [string: string] = [:]
+  body: bytes = bytes()
+  /// A body sent as it's made, in pieces (HTTP's chunked coding), in
+  /// body's place: a log, a long answer, events. The reply's head goes
+  /// first; a stream that throws cuts the reply short, which the client
+  /// sees.
+  stream: Stream<bytes>? = none
+
+  /// Text, as text/plain in UTF-8.
+  static fn text(text: string, status: int = 200, headers: [string: string] = [:]) -> Reply = Reply(status: status, headers: typed(headers, "text/plain; charset=utf-8"), body: text.bytes())
+
+  /// An HTML page, as text/html in UTF-8.
+  static fn html(html: string, status: int = 200, headers: [string: string] = [:]) -> Reply = Reply(status: status, headers: typed(headers, "text/html; charset=utf-8"), body: html.bytes())
+
+  /// value written as JSON, as application/json.
+  static fn json<T>(value: T, status: int = 200, headers: [string: string] = [:]) -> Reply = Reply(status: status, headers: typed(headers, "application/json"), body: jsonOf(value))
+
+  /// Bytes, of the content type given: an image, a file.
+  static fn data(data: bytes, type: string = "application/octet-stream", status: int = 200, headers: [string: string] = [:]) -> Reply = Reply(status: status, headers: typed(headers, type), body: data)
+
+  /// A redirect to url (a path, or another site's URL): 302 Found unless
+  /// status says another (301, 303, 307, 308).
+  static fn redirect(url: string, status: int = 302) -> Reply = Reply(status: status, headers: ["location": url])
+
+  /// A body sent as body makes it, of the content type given.
+  static fn stream(body: Stream<bytes>, type: string = "application/octet-stream", status: int = 200, headers: [string: string] = [:]) -> Reply = Reply(status: status, headers: typed(headers, type), stream: body)
+
+  /// Server-sent events (text/event-stream), each sent as it comes: what
+  /// http.events, and a browser's EventSource, read. The client going
+  /// away cancels the stream.
+  static fn events(events: Stream<Event>, headers: [string: string] = [:]) -> Reply {
+    var h = typed(headers, "text/event-stream")
+    if !has(h, "cache-control") {
+      h["cache-control"] = "no-cache"
+    }
+    // nginx, as a reverse proxy, holds a reply back until it's whole.
+    h["x-accel-buffering"] = "no"
+    return Reply(headers: h, stream: Stream<bytes>(send => {
+      for await e in events {
+        send(eventText(e).bytes())
+      }
+    }))
+  }
+}
+
+/// How much a server takes, and how long it waits. What goes past a
+/// limit is answered (431, 413, 408) and its connection closed.
+pub struct Limits {
+  /// A request's line and headers, together, in bytes: 64 KiB.
+  headerSize: int = 65536
+  /// A request's body, in bytes: 16 MiB.
+  bodySize: int = 16777216
+  /// Connections open at once: more wait to be accepted.
+  connections: int = 10000
+  /// The longest a request's line and headers may take to come, from
+  /// their first byte (and a new connection's wait for its first).
+  headerTimeout: Duration = 30s
+  /// The longest wait for more of a request's body, and for a client to
+  /// read more of its reply.
+  readTimeout: Duration = 30s
+  /// The longest a connection waits for its next request, kept open
+  /// after a reply.
+  idleTimeout: Duration = 60s
+}
+
+/// Why a server can't start.
+pub enum ServerError: Error {
+  /// It can't listen at host and port: the port's in use (or below 1024,
+  /// without privileges), the address isn't this computer's.
+  listen(host: string, port: int, reason: string)
+  /// A web page can't listen.
+  unsupported
+
+  /// The error's text: where it can't listen and why; that a web page
+  /// can't.
+  fn message() -> string {
+    match self {
+      .listen(host, port, reason) => return "can't listen at {host}:{port}: {reason}"
+      .unsupported => return "a web page can't listen (a program, a desktop app and a phone's app can)"
+    }
+  }
+}
+
+/// A server that listens: its port, its URL, and close.
+pub struct Server {
+  /// The port it listens at: the one asked for, or the one the system
+  /// picked for 0.
+  port: int
+  /// Its URL: "http://127.0.0.1:8080" (localhost's address for a server
+  /// on every interface).
+  url: string
+  handle: int = 0
+
+  /// Stops it. It stops accepting at once, and closes the connections
+  /// that wait for a request; the requests in flight have grace to be
+  /// answered (their connections close after them), then their handlers
+  /// are cancelled, their defers run. It returns once all of it has
+  /// stopped. A grace of 0s cancels them at once.
+  async fn close(grace: Duration = 10s) {
+    await srvClose(handle, grace.milliseconds())
+  }
+
+  /// Waits until it's closed: what a program's main awaits, so it runs
+  /// on while the server does.
+  async fn wait() {
+    await srvWait(handle)
+  }
+}
+
+/// Serves HTTP/1.1 at port (0: one the system picks, Server.port) on
+/// host, answering each request with what handler returns. host is the
+/// address listened at: 127.0.0.1 (the default) takes only this
+/// computer's clients; "0.0.0.0" every IPv4 interface's, "::" every
+/// interface's (IPv6 and IPv4). TLS is a reverse proxy's to terminate.
+///
+/// Each request's handler runs on the main thread as a task of its own,
+/// which may await what any task does (http.get, a database); requests
+/// come and are answered at once on many connections. One that throws
+/// is answered 500 Internal Server Error, its error given to onError
+/// (written to stderr when there's none). A client that goes away while
+/// its reply streams cancels the handler. The server belongs to the task
+/// that started it: when that ends (main returns, its component goes),
+/// the server closes at once, its handlers cancelled. It throws
+/// ServerError when it can't listen.
+pub async fn serve(port: int, handler: async fn(Request) throws -> Reply, host: string = "127.0.0.1", limits: Limits = Limits(), onError: (fn(Request, Error))? = none) throws -> Server {
+  if port < 0 || port > 65535 {
+    throw ServerError.listen(host: host, port: port, reason: "a port is 0 to 65535")
+  }
+  let report = onError ?? ((req: Request, e: Error) => os.eprint("http: {req.method} {req.path}: {e.message}"))
+  let l = limits
+  let h = srvOpen(dispatcher(handler, report), host, port, [l.headerSize, l.bodySize, l.connections, l.headerTimeout.milliseconds(), l.readTimeout.milliseconds(), l.idleTimeout.milliseconds()])
+  if h == 0 {
+    throw ServerError.unsupported
+  }
+  let failure = await srvListen(h)
+  if !failure.isEmpty() {
+    throw ServerError.listen(host: host, port: port, reason: failure)
+  }
+  let p = srvPort(h)
+  return Server(port: p, url: "http://{urlHost(host)}:{p}", handle: h)
+}
+
+/// A route: a method and a path's pattern, and the handler of what
+/// matches them.
+pub struct Route {
+  /// "GET", "POST"...; "*" for any.
+  method: string
+  /// The pattern's segments: "users", ":id", "*rest".
+  segments: [string]
+  handler: async fn(Request) throws -> Reply
+}
+
+/// Requests sent by method and path to handlers. A pattern's segments
+/// are text, matched as it is, :name, which matches any one segment, or
+/// *name, last, which matches the rest of the path (none of it too);
+/// what they matched is in the request's params, unescaped. Routes are
+/// tried in the order they were added; a trailing slash is the same
+/// path. A path no route has is 404 Not Found; one whose routes take
+/// other methods, 405 Method Not Allowed (with Allow). A GET route
+/// answers HEAD too.
+///
+///   let api = http.Router()
+///     .get("/users/:id", getUser)
+///     .post("/users", addUser)
+///     .get("/files/*path", file)
+///   let server = try await http.serve(8080, api.handler())
+pub struct Router {
+  routes: [Route] = []
+
+  /// The router with a route for GET requests to path.
+  fn get(path: string, handler: async fn(Request) throws -> Reply) -> Router = route("GET", path, handler)
+  /// The router with a route for POST requests to path.
+  fn post(path: string, handler: async fn(Request) throws -> Reply) -> Router = route("POST", path, handler)
+  /// The router with a route for PUT requests to path.
+  fn put(path: string, handler: async fn(Request) throws -> Reply) -> Router = route("PUT", path, handler)
+  /// The router with a route for PATCH requests to path.
+  fn patch(path: string, handler: async fn(Request) throws -> Reply) -> Router = route("PATCH", path, handler)
+  /// The router with a route for DELETE requests to path.
+  fn delete(path: string, handler: async fn(Request) throws -> Reply) -> Router = route("DELETE", path, handler)
+
+  /// The router with a route for method ("*": any) and path.
+  fn route(method: string, path: string, handler: async fn(Request) throws -> Reply) -> Router {
+    var rs = routes
+    rs.push(Route(method: method.upper(), segments: segmentsOf(path), handler: handler))
+    return Router(routes: rs)
+  }
+
+  /// Answers req with the first route that matches it.
+  async fn handle(req: Request) throws -> Reply {
+    let path = segmentsOf(req.path)
+    var allowed: [string] = []
+    for r in routes {
+      if let params = matchPath(r.segments, path) {
+        if r.method == "*" || r.method == req.method || (req.method == "HEAD" && r.method == "GET") {
+          var q = req
+          q.params = params
+          let h = r.handler
+          return try await h(q)
+        }
+        if !allowed.contains(r.method) {
+          allowed.push(r.method)
+        }
+      }
+    }
+    if allowed.isEmpty() {
+      return Reply.text("Not Found", status: 404)
+    }
+    if allowed.contains("GET") && !allowed.contains("HEAD") {
+      allowed.push("HEAD")
+    }
+    return Reply.text("Method Not Allowed", status: 405, headers: ["allow": allowed.joined(separator: ", ")])
+  }
+
+  /// The router as a handler, for serve.
+  fn handler() -> async fn(Request) throws -> Reply {
+    let r = self
+    return async (req: Request) => try await r.handle(req)
+  }
+}
+
+// ---- What the server's C does (core/src/std/httpserver.c) ----
+
+native fn srvOpen(dispatch: async fn(int), host: string, port: int, limits: [int]) -> int
+native async fn srvListen(server: int) -> string
+native fn srvPort(server: int) -> int
+native async fn srvClose(server: int, graceMs: int)
+native async fn srvWait(server: int)
+native fn srvRequest(id: int) -> [string]
+native fn srvBody(id: int) -> bytes
+native fn srvReply(id: int, status: int, headers: [string], body: bytes) throws
+native fn srvStart(id: int, status: int, headers: [string]) throws -> bool
+native async fn srvWrite(id: int, data: bytes) -> bool
+native fn srvEnd(id: int)
+
+// dispatcher is what the server's thread hands each request to: it
+// reads the request, runs the handler, and sends its reply.
+fn dispatcher(handler: async fn(Request) throws -> Reply, report: fn(Request, Error)) -> async fn(int) = async (id: int) => {
+  let parts = srvRequest(id)
+  var headers: [string: string] = [:]
+  var i = 4
+  while i + 1 < parts.count() {
+    headers[parts[i]] = parts[i + 1]
+    i = i + 2
+  }
+  let req = Request(method: parts[0], path: parts[1], rawQuery: parts[2], headers: headers, body: srvBody(id), remote: parts[3])
+  var reply = Reply(status: 500)
+  do {
+    reply = try await handler(req)
+  } catch e {
+    report(req, e)
+    reply = Reply.text("Internal Server Error", status: 500)
+  }
+  await answer(id, req, reply, report)
+}
+
+async fn answer(id: int, req: Request, reply: Reply, report: fn(Request, Error)) {
+  let fields = pairs(reply.headers)
+  if let s = reply.stream {
+    do {
+      if !(try srvStart(id, reply.status, fields)) {
+        return
+      }
+      for await piece in s {
+        if !(await srvWrite(id, piece)) {
+          return
+        }
+      }
+      srvEnd(id)
+    } catch e {
+      // Before its head, a 500; after it, the reply is cut short.
+      report(req, e)
+      try? srvReply(id, 500, [], "Internal Server Error".bytes())
+    }
+    return
+  }
+  do {
+    try srvReply(id, reply.status, fields, reply.body)
+  } catch e {
+    report(req, e)
+    try? srvReply(id, 500, [], "Internal Server Error".bytes())
+  }
+}
+
+fn jsonOf<T>(value: T) -> bytes = codec.encode(value).bytes()
+
+fn pairs(h: [string: string]) -> [string] {
+  var out: [string] = []
+  for (k, v) in h {
+    out.push(k)
+    out.push(v)
+  }
+  return out
+}
+
+fn has(h: [string: string], name: string) -> bool = h.keys().any(k => k.lower() == name)
+
+fn typed(h: [string: string], type: string) -> [string: string] {
+  if has(h, "content-type") {
+    return h
+  }
+  var out = h
+  out["content-type"] = type
+  return out
+}
+
+// eventText is an event as text/event-stream writes it: its data a
+// data: line per line.
+fn eventText(e: Event) -> string {
+  var s = ""
+  let id = oneLine(e.id)
+  let event = oneLine(e.event)
+  if !id.isEmpty() {
+    s = s + "id: {id}\n"
+  }
+  if !event.isEmpty() && event != "message" {
+    s = s + "event: {event}\n"
+  }
+  if e.retry > 0s {
+    s = s + "retry: {e.retry.milliseconds()}\n"
+  }
+  for l in e.data.replace("\r\n", "\n").replace("\r", "\n").split("\n") {
+    s = s + "data: {l}\n"
+  }
+  return s + "\n"
+}
+
+fn oneLine(s: string) -> string = s.replace("\r", "").replace("\n", "")
+
+fn urlHost(host: string) -> string {
+  if host.isEmpty() || host == "0.0.0.0" {
+    return "127.0.0.1"
+  }
+  if host == "::" {
+    return "[::1]"
+  }
+  if host.contains(":") {
+    return "[{host}]"
+  }
+  return host
+}
+
+fn segmentsOf(path: string) -> [string] = path.split("/").filter(s => !s.isEmpty())
+
+// matchPath matches a path's segments against a pattern's: the params,
+// or none.
+fn matchPath(pattern: [string], path: [string]) -> [string: string]? {
+  var params: [string: string] = [:]
+  var i = 0
+  while i < pattern.count() {
+    let p = pattern[i]
+    if p.hasPrefix("*") {
+      var rest: [string] = []
+      var j = i
+      while j < path.count() {
+        if let v = url.pathUnescape(path[j]) {
+          rest.push(v)
+        } else {
+          return none
+        }
+        j = j + 1
+      }
+      params[p.trimPrefix("*")] = rest.joined(separator: "/")
+      return params
+    }
+    if i >= path.count() {
+      return none
+    }
+    if let v = url.pathUnescape(path[i]) {
+      if p.hasPrefix(":") {
+        params[p.trimPrefix(":")] = v
+      } else if p != v {
+        return none
+      }
+    } else {
+      return none
+    }
+    i = i + 1
+  }
+  if i != path.count() {
+    return none
+  }
+  return params
+}

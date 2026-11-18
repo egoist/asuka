@@ -349,6 +349,66 @@ async fn main() throws {
 }
 ```
 
+## Web 服务：std/http
+
+`http.serve` 能把程序变成一个 HTTP/1.1 服务器，用法和 Go 的 `net/http`、`Bun.serve` 类似：每个请求交给一个处理函数，它是一个返回 `Reply` 的 async 函数。`Router` 按方法和路径把请求分发给各个处理函数，`:name` 匹配路径中的一段。
+
+```asuka check
+import std/http
+import std/os
+
+struct Note {
+  id: int
+  text: string
+}
+
+struct Draft {
+  text: string
+}
+
+async fn main() throws {
+  var notes: [Note] = []
+  let api = http.Router()
+    .get("/notes", req => .json(notes))
+    .get("/notes/:id", req => {
+      if let n = notes.find(n => n.id == req.param("id").toInt()) {
+        return .json(n)
+      }
+      return .text("no such note", status: 404)
+    })
+    .post("/notes", req => {
+      let draft = try req.json<Draft>()
+      let note = Note(id: notes.count() + 1, text: draft.text)
+      notes.push(note)
+      return .json(note, status: 201)
+    })
+  let port = (os.env("PORT") ?? "8080").toInt() ?? 8080
+  let server = try await http.serve(port, api.handler(), host: "0.0.0.0")
+  print("listening on {server.url}")
+  await server.wait()
+}
+```
+
+```sh
+$ curl -d '{"text":"milk"}' localhost:8080/notes
+{"id":1,"text":"milk"}
+$ curl localhost:8080/notes/1
+{"id":1,"text":"milk"}
+```
+
+- `http.serve(port, handler, host:, limits:, onError:)` 在 `port` 上监听（传 0 时由系统挑一个端口，实际端口见 `server.port`），开始监听后返回 `Server`。`host` 默认是 `127.0.0.1`，只有本机的客户端能连上。`"0.0.0.0"` 接受所有 IPv4 网卡上的连接（容器、其他机器），`"::"` 还包括 IPv6。无法监听的地址（比如端口已被占用）会抛出 `ServerError.listen`。
+- 每个请求的处理函数都在主线程上作为一个独立的 task 运行，所以它可以 await 任何 task 能等的东西（数据库、`http.get`、其他程序），其他请求同时照常处理。读取和解析请求、写出回复都在服务器自己的线程上完成；它能同时服务很多连接，请求之间连接保持打开。
+- `Request` 有 `method`、`path`（按客户端发来的原样，保留转义）、`rawQuery` 和 `query(name)`、按小写名字存放的 `headers` 和不区分大小写的 `header(name)`、`body`（会先完整读入）、`text()` 和 `json<T>()`、客户端地址 `remote`，以及路由匹配到的 `params`（`param(name)`）。
+- `Reply` 用 `.text`、`.json`、`.html`、`.data`、`.redirect` 创建，或者直接写 `Reply(status: 204)`；头部的值如果有多行，每行作为一个单独的头部发送（比如多个 Set-Cookie）。`.stream(body)` 边生成边分块发送响应体，`.events(stream)` 发送服务器发送事件，`http.events` 和浏览器的 EventSource 都能读；发送过程中客户端断开，处理函数会被取消。
+- 路由的模式由普通文本、`:name`（一段）和 `*name`（路径的剩余部分）组成。路由按添加顺序依次尝试；没有路由匹配的路径返回 404，路径匹配但方法不对的返回 405（带 `Allow`），GET 路由也会响应 HEAD。
+- 抛出错误的处理函数会得到 500 Internal Server Error，错误交给 `onError`（没传时写到 stderr）。
+- `http.Limits(headerSize:, bodySize:, connections:, headerTimeout:, readTimeout:, idleTimeout:)` 规定服务器接受多少数据、等待多久：头部 64 KiB，请求体 16 MiB，10000 个连接，请求头部 30 秒内要发完，请求体每次等待最多 30 秒，两次请求之间最多空闲 60 秒。超出限制时会返回相应状态（431、413、408）并关闭连接。
+- `server.close(grace: 10s)` 关闭服务器：立即停止接受新连接，让正在处理的请求完成回复，超过 `grace` 后取消仍在运行的处理函数（它们的 `defer` 会执行）。`server.wait()` 一直等到服务器关闭。服务器属于启动它的 task，`main` 返回时它也会关闭，所以 `main` 要 await `server.wait()`。
+
+HTTPS 交给反向代理（Caddy、nginx）：由它终止 TLS，再通过 HTTP 把请求转给监听在 `127.0.0.1` 上的服务器，客户端地址放在 `X-Forwarded-For` 里。桌面应用也可以用同样的方式在一个 task 里提供本地 API，手机应用在运行期间也可以；网页不能监听（`ServerError.unsupported`）。
+
+处理函数就是一个函数，所以测试可以直接用一个 `Request` 调用它或者路由，中间不经过 socket：`let r = try await api.handle(http.Request(method: "GET", path: "/notes/1"))`。
+
 ## 运行
 
 `asuka run` 直接运行程序的 `main`，不需要等待构建：`--` 之后的参数都交给程序，退出时带上程序的退出码。
@@ -491,3 +551,4 @@ test "reads git's branch" {
 | `std/command` | 支持 | 支持 | 支持 | `unsupported` |
 | `std/flag` | 支持 | 支持 | 支持 | 支持（它能解析任何列表） |
 | `std/term` | 支持 | 支持 | 支持 | 没有终端：没有样式，`prompt` 返回 `none` |
+| `http.serve` | 支持 | 支持 | 支持 | 手机应用：运行期间可用；Web：`unsupported` |

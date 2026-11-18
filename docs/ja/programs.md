@@ -349,6 +349,66 @@ async fn main() throws {
 }
 ```
 
+## Web サービス：std/http
+
+`http.serve` を使うと、Go の `net/http` や `Bun.serve` と同じようにプログラムを HTTP/1.1 サーバーにできます。リクエストはそれぞれハンドラーに渡されます。ハンドラーは `Reply` を返す async 関数です。`Router` はメソッドとパスでリクエストを振り分け、`:name` はパスの 1 セグメントに一致します。
+
+```asuka check
+import std/http
+import std/os
+
+struct Note {
+  id: int
+  text: string
+}
+
+struct Draft {
+  text: string
+}
+
+async fn main() throws {
+  var notes: [Note] = []
+  let api = http.Router()
+    .get("/notes", req => .json(notes))
+    .get("/notes/:id", req => {
+      if let n = notes.find(n => n.id == req.param("id").toInt()) {
+        return .json(n)
+      }
+      return .text("no such note", status: 404)
+    })
+    .post("/notes", req => {
+      let draft = try req.json<Draft>()
+      let note = Note(id: notes.count() + 1, text: draft.text)
+      notes.push(note)
+      return .json(note, status: 201)
+    })
+  let port = (os.env("PORT") ?? "8080").toInt() ?? 8080
+  let server = try await http.serve(port, api.handler(), host: "0.0.0.0")
+  print("listening on {server.url}")
+  await server.wait()
+}
+```
+
+```sh
+$ curl -d '{"text":"milk"}' localhost:8080/notes
+{"id":1,"text":"milk"}
+$ curl localhost:8080/notes/1
+{"id":1,"text":"milk"}
+```
+
+- `http.serve(port, handler, host:, limits:, onError:)` は `port` で待ち受けを始め（0 ならシステムが選び、実際のポートは `server.port` でわかります）、待ち受けが始まると `Server` を返します。`host` を指定しなければ `127.0.0.1` で、このコンピューターのクライアントしか接続できません。`"0.0.0.0"` ならすべての IPv4 インターフェース（コンテナーやほかのマシン）から、`"::"` なら IPv6 からも受け付けます。待ち受けられないアドレス（使用中のポートなど）は `ServerError.listen` になります。
+- 各リクエストのハンドラーは、メインスレッドでそれぞれ独立したタスクとして動きます。そのため、タスクが待てるものなら何でも await でき（データベース、`http.get`、ほかのプログラム）、そのあいだもほかのリクエストは処理されます。リクエストの読み込みと解析、返信の書き出しはサーバー専用のスレッドで行われます。多くの接続を同時に扱え、接続はリクエストのあいだも開いたままです。
+- `Request` には `method`、`path`（送られたまま。エスケープも残る）、`rawQuery` と `query(name)`、小文字の名前で引ける `headers` と大文字小文字を区別しない `header(name)`、先に全部読み込まれる `body`、`text()` と `json<T>()`、クライアントのアドレス `remote`、ルートが一致させた `params`（`param(name)`）があります。
+- `Reply` は `.text`、`.json`、`.html`、`.data`、`.redirect` で作るか、`Reply(status: 204)` のように書きます。ヘッダーの値に複数の行があると、1 行ずつ別のヘッダーとして送られます（複数の Set-Cookie など）。`.stream(body)` はボディを作るそばからチャンクで送り、`.events(stream)` はサーバー送信イベントを送ります。これは `http.events` でもブラウザーの EventSource でも読めます。送っている途中でクライアントが去ると、ハンドラーはキャンセルされます。
+- ルートのパターンは、そのままの文字列、`:name`（1 セグメント）、`*name`（パスの残り全部）でできています。ルートは追加した順に試されます。どのルートにも一致しないパスには 404、パスは一致してもメソッドが違うものには 405（`Allow` 付き）を返します。GET のルートは HEAD にも応えます。
+- エラーを投げたハンドラーには 500 Internal Server Error を返し、そのエラーは `onError` に渡されます（指定がなければ stderr に書かれます）。
+- `http.Limits(headerSize:, bodySize:, connections:, headerTimeout:, readTimeout:, idleTimeout:)` で、受け付ける量と待つ時間を決めます。既定ではヘッダー 64 KiB、ボディ 16 MiB、接続 10000、リクエストのヘッダーが届くまで 30 秒、ボディの途中で待つのは毎回 30 秒まで、次のリクエストまでは 60 秒です。上限を超えたものにはステータス（431、413、408）を返して接続を閉じます。
+- `server.close(grace: 10s)` でサーバーを止めます。すぐに新しい接続の受け付けをやめ、処理中のリクエストには返信させ、`grace` を過ぎてもまだ動いているハンドラーはキャンセルします（`defer` は実行されます）。`server.wait()` は閉じるまで待ちます。サーバーはそれを始めたタスクに属するので、`main` が戻ると閉じます。そのため `main` は `server.wait()` を await します。
+
+HTTPS はリバースプロキシー（Caddy、nginx）に任せます。プロキシーが TLS を終端し、`127.0.0.1` で待ち受けるサーバーに HTTP でリクエストを渡します。クライアントのアドレスは `X-Forwarded-For` に入ります。デスクトップアプリも同じようにタスクからローカル API を提供でき、スマートフォンのアプリも動いているあいだは同じです。Web ページは待ち受けられません（`ServerError.unsupported`）。
+
+ハンドラーはただの関数なので、テストでは `Request` を渡してハンドラーやルーターを直接呼べます。ソケットは介しません：`let r = try await api.handle(http.Request(method: "GET", path: "/notes/1"))`。
+
 ## 実行
 
 `asuka run` はプログラムの `main` をすぐに実行するので、ビルドを待つ必要がありません。`--` の後ろの引数はプログラムに渡され、プログラムの終了コードでそのまま終了します。
@@ -491,3 +551,4 @@ test "reads git's branch" {
 | `std/command` | ○ | ○ | ○ | `unsupported` |
 | `std/flag` | ○ | ○ | ○ | ○（どんなリストでも解析できる） |
 | `std/term` | ○ | ○ | ○ | 端末がない（スタイルなし、`prompt` は `none`） |
+| `http.serve` | ○ | ○ | ○ | スマートフォンのアプリは動いているあいだ ○、Web は `unsupported` |

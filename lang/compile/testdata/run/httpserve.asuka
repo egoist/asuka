@@ -1,0 +1,214 @@
+// std/http's server over real sockets, on the VM and compiled to C: a
+// JSON API through a Router, what a handler that throws answers, a
+// streamed reply and server-sent events, HEAD, and closing the server,
+// which cancels the handlers still running (their defers run). curl is
+// the client: the tests' fake host has no std/http client of its own.
+//
+// The tests' clock is manual and doesn't move while a program (curl)
+// runs, so no handler here sleeps.
+
+import std/command
+import std/http
+
+struct Note {
+  id: int
+  text: string
+}
+
+async fn curl(args: [string]) throws -> string {
+  let out = try await command.run("curl", ["-s", "-S", "--no-progress-meter"] + args)
+  return out.text().replace("\r", "")
+}
+
+// head is a reply's head without its Date, which changes.
+fn head(text: string) -> string = text.split("\n").filter(l => !l.hasPrefix("Date:")).joined(separator: "\n").trim()
+
+test "a JSON API" {
+  var notes = [Note(id: 1, text: "milk")]
+  let api = http.Router()
+    .get("/notes", req => .json(notes))
+    .get("/notes/:id", req => {
+      let id = req.param("id").toInt() ?? 0
+      if let n = notes.find(n => n.id == id) {
+        return .json(n)
+      }
+      return .text("no note {id}", status: 404)
+    })
+    .post("/notes", req => {
+      let n = try req.json<Note>()
+      notes.push(n)
+      return .json(n, status: 201, headers: ["location": "/notes/{n.id}"])
+    })
+  let server = try await http.serve(0, api.handler())
+  print(server.port > 0)
+  print(try await curl(["{server.url}/notes/1"]))
+  print(head(try await curl(["-i", "-H", "content-type: application/json", "-d", "\{\"id\":2,\"text\":\"tea\"}", "{server.url}/notes"])))
+  print(try await curl(["{server.url}/notes"]))
+  print(try await curl(["-w", " %\{http_code}", "{server.url}/notes/9"]))
+  print(head(try await curl(["-i", "-X", "DELETE", "{server.url}/notes"])))
+  print(try await curl(["-w", " %\{http_code}", "{server.url}/nowhere"]))
+  await server.close()
+}
+
+test "what a request says" {
+  let server = try await http.serve(0, req => .text("{req.method} {req.path} q={req.query("q") ?? "-"} all={req.queryAll("t")} ua={req.header("User-Agent") ?? "-"} body={req.text()} local={req.remote.hasPrefix("127.0.0.1:")}"))
+  print(try await curl(["-A", "test/1", "{server.url}/a%20b?q=fish+%26+chips&t=1&t=2"]))
+  print(try await curl(["-A", "", "-X", "PUT", "--data-binary", "x y", "{server.url}/up"]))
+  print(head(try await curl(["-I", "-A", "t", "{server.url}/"])))
+  await server.close()
+}
+
+test "a handler that throws" {
+  var seen: [string] = []
+  let server = try await http.serve(0, req => {
+    throw Error("no database")
+  }, onError: (req, e) => seen.push("{req.path}: {e.message}"))
+  print(try await curl(["-w", " %\{http_code}", "{server.url}/x"]))
+  print(seen)
+  await server.close()
+}
+
+test "streams and events" {
+  let api = http.Router()
+    .get("/count", req => .stream(Stream<bytes>(send => {
+      for i in 1..3 {
+        send("line {i}\n".bytes())
+      }
+    }), type: "text/plain"))
+    .get("/events", req => .events(Stream<http.Event>(send => {
+      send(http.Event(data: "hello"))
+      send(http.Event(event: "price", data: "1\n2", id: "7", retry: 1500ms))
+    })))
+  let server = try await http.serve(0, api.handler())
+  print(head(try await curl(["-i", "{server.url}/count"])))
+  print(head(try await curl(["-i", "{server.url}/events"])))
+  // HTTP/1.0 has no chunks: the body goes to the connection's end.
+  print(head(try await curl(["-i", "-0", "{server.url}/count"])))
+  await server.close()
+}
+
+test "closing cancels what's running, its defers run" {
+  // started says when the handlers have begun.
+  var notify: (fn(string))? = none
+  let started = Stream<string>(send => {
+    notify = send
+    await never()
+  })
+  var ran: [string] = []
+  let api = http.Router()
+    .get("/slow", req => {
+      defer { ran.push("the slow handler's defer") }
+      if let n = notify {
+        n("slow")
+      }
+      await never()
+      return .text("never")
+    })
+    .get("/feed", req => .stream(Stream<bytes>(send => {
+      defer { ran.push("the feed's defer") }
+      send("first\n".bytes())
+      if let n = notify {
+        n("feed")
+      }
+      await never()
+    })))
+  let server = try await http.serve(0, api.handler())
+  let slow = try command.start("curl", ["-s", "{server.url}/slow"], stdout: .null, stderr: .null)
+  let feed = try command.start("curl", ["-s", "-N", "{server.url}/feed"], stdout: .null, stderr: .null)
+  // Once both handlers have begun, the server closes at once; the
+  // clients, cut off, end. (The stream's producer starts as it's first
+  // read, before a request can reach a handler: requests come to the
+  // main thread only as this task awaits.)
+  async fn watch() throws -> [string] {
+    var seen: [string] = []
+    for await s in started {
+      seen.push(s)
+      if seen.count() == 2 {
+        break
+      }
+    }
+    await server.close(grace: 0s)
+    print("closed, and ran {ran.sorted()}")
+    return seen
+  }
+  let (seen, a, b) = try await all(watch(), slow.wait(), feed.wait())
+  print("{seen.sorted()} {a != 0} {b != 0}")
+}
+
+test "a port that's taken" {
+  let a = try await http.serve(0, req => .text("a"))
+  do {
+    let _ = try await http.serve(a.port, req => .text("b"))
+  } catch http.ServerError.listen(_, port, reason) {
+    print("{port == a.port}: {reason}")
+  }
+  do {
+    let _ = try await http.serve(70000, req => .text("c"))
+  } catch e {
+    print(e.message)
+  }
+  await a.close()
+}
+
+// Output:
+// true
+// {"id":1,"text":"milk"}
+// HTTP/1.1 201 Created
+// Location: /notes/2
+// Content-Type: application/json
+// Content-Length: 21
+//
+// {"id":2,"text":"tea"}
+// [{"id":1,"text":"milk"},{"id":2,"text":"tea"}]
+// no note 9 404
+// HTTP/1.1 405 Method Not Allowed
+// Allow: GET, POST, HEAD
+// Content-Type: text/plain; charset=utf-8
+// Content-Length: 18
+//
+// Method Not Allowed
+// Not Found 404
+// ok a JSON API
+// GET /a%20b q=fish & chips all=["1","2"] ua=test/1 body= local=true
+// PUT /up q=- all=[] ua=- body=x y local=true
+// HTTP/1.1 200 OK
+// Content-Type: text/plain; charset=utf-8
+// Content-Length: 39
+// ok what a request says
+// Internal Server Error 500
+// ["/x: no database"]
+// ok a handler that throws
+// HTTP/1.1 200 OK
+// Content-Type: text/plain
+// Transfer-Encoding: chunked
+//
+// line 1
+// line 2
+// line 3
+// HTTP/1.1 200 OK
+// Content-Type: text/event-stream
+// Cache-Control: no-cache
+// X-Accel-Buffering: no
+// Transfer-Encoding: chunked
+//
+// data: hello
+//
+// id: 7
+// event: price
+// retry: 1500
+// data: 1
+// data: 2
+// HTTP/1.1 200 OK
+// Content-Type: text/plain
+// Connection: close
+//
+// line 1
+// line 2
+// line 3
+// ok streams and events
+// closed, and ran ["the feed's defer","the slow handler's defer"]
+// ["feed","slow"] true true
+// ok closing cancels what's running, its defers run
+// true: the port is in use
+// can't listen at 127.0.0.1:70000: a port is 0 to 65535
+// ok a port that's taken

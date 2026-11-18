@@ -1567,6 +1567,24 @@ packages' Swift is what URLSession is reached through). asuka.toml's
 puts them in the app (Contents/Helpers, bin/, beside the .exe), built
 with the app's data folder (`Module.Data`) so they share its data.
 
+**std/http's server** (`http.serve`) is the core's C, the same on every
+system that can listen (core/src/std/httpserver.c; the web's core says
+it can't): a thread per server runs one poll() loop (WSAPoll on
+Windows) over its listener and its non-blocking connections, reads and
+parses HTTP/1.1 (its own strict parser: framing a proxy could read
+otherwise is refused), and posts each request, read whole within the
+limits, to the main thread. There std/http's dispatch closure runs the
+handler as a task under the server's owner (a child of the task that
+called serve), and the reply goes back as bytes on a queue the thread
+is woken for (a pipe; a loopback UDP socket on Windows). One request at
+a time per connection, so pipelined ones wait their turn; a streamed
+reply's next piece is asked for once what's queued drops below 64 KiB;
+a client gone while its reply streams cancels the task. Closing stops
+accepting, lets requests in flight answer, then disposes the owner. An
+open connection holds the scheduler, so a test's loop waits for what
+it posts. TLS is a reverse proxy's; it would sit between the socket and
+the connection's buffers.
+
 **An app's metadata** is `asuka.toml` beside its Asuka code (TOML 1.0, read
 by `internal/toml`), all optional:
 name, ID (bundle ID and application ID), version and build number, a
