@@ -10,7 +10,9 @@
 // clicks itself and never passes them on.
 //
 // Hover is an NSTrackingArea per view, checked again as views appear, move
-// or show under a still pointer. Gestures are Gestures.swift's, drops and
+// or show under a still pointer. Its areas work in the active app alone, so
+// leaving the app clears every hover and coming back checks them again
+// (appActive). Gestures are Gestures.swift's, drops and
 // drags DragDrop.swift's.
 import AppKit
 #if canImport(AsukaOps)
