@@ -18,6 +18,8 @@ const ak_lib_entry *const ak_std_libs[] = {
 	ak_std_command,
 	ak_std_term,
 	ak_std_signals,
+	ak_std_toml,
+	ak_std_csv,
 	NULL,
 };
 

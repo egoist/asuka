@@ -1,0 +1,163 @@
+import std/json
+
+enum Level { debug, info, warn }
+
+struct Server {
+  host: string
+  port: int
+  tags: [string]
+}
+
+struct Owner {
+  name: string
+  dob: string
+}
+
+struct Config {
+  title: string
+  owner: Owner
+  servers: [Server]
+  ratio: float
+  level: Level
+  verbose: bool?
+  limits: [string: int]
+  rustVersion: string
+}
+
+let doc = r"""
+  # A config file.
+  title = "TOML Example"
+  ratio = 2
+  level = "warn"
+  rust-version = "1.80"
+
+  [owner]
+  name = "Tom Preston-Werner"
+  dob = 1979-05-27 07:32:00-08:00
+
+  [limits]
+  cpu = 4
+  "memory.mb" = 512
+
+  [[servers]]
+  host = "alpha"
+  port = 8_001
+  tags = ["a", 'b']
+
+  [[servers]]
+  host = "beta"
+  port = 0x1F41
+  """
+
+test "a struct from a document" {
+  let c: Config = try decode(doc)
+  expect(c.title == "TOML Example")
+  expect(c.owner.dob == "1979-05-27T07:32:00-08:00")
+  expect(c.servers.count() == 2)
+  expect(c.servers[0].port == 8001)
+  expect(c.servers[0].tags == ["a", "b"])
+  expect(c.servers[1].port == 8001)
+  expect(c.servers[1].tags == [])
+  expect(c.ratio == 2.0)
+  expect(c.level == .warn)
+  expect(c.verbose == none)
+  expect(c.limits["memory.mb"] == 512)
+  expect(c.rustVersion == "1.80")
+}
+
+test "written and read back" {
+  let c = try decode<Config>(doc)
+  let out = try encode(c)
+  let back: Config = try decode(out)
+  expect(back == c)
+  expect(out.hasPrefix("title = \"TOML Example\"\nratio = 2.0\nlevel = \"warn\"\nrustVersion = \"1.80\"\n\n[owner]\n"))
+  expect(out.contains("ratio = 2.0\n"))
+  expect(out.contains("\n[[servers]]\nhost = \"alpha\"\nport = 8001\n"))
+  expect(out.contains("\n[limits]\ncpu = 4\n\"memory.mb\" = 512\n"))
+  expect(!out.contains("verbose"))
+}
+
+test "errors say where" {
+  let bad = try? decode<Config>("title = 1\n")
+  expect(bad == none)
+  do {
+    let _ = try decode<Server>("host = \"h\"\nport = \"80\"\n")
+    expect(false)
+  } catch e {
+    expect(e.message == "toml: 2:8: port: expected an integer, not a string")
+  }
+  do {
+    let _ = try parse("a = 1\na = 2")
+    expect(false)
+  } catch e {
+    expect(e.message == "toml: 2:1: a key defined twice: 'a'")
+  }
+  do {
+    let _ = try decode<[string: [Server]]>("[[servers]]\nhost = \"x\"\nport = 1\ntags = [\"a\", 1]\n")
+    expect(false)
+  } catch e {
+    expect(e.message == "toml: 4:14: servers[0].tags[1]: expected a string, not an integer")
+  }
+  do {
+    let _ = try decode<Config>("title = \"t\"\n")
+    expect(false)
+  } catch e {
+    expect(e.message == "toml: 1:1: a missing key owner")
+  }
+}
+
+test "any document as a json.Value" {
+  let v = try parse(doc)
+  expect(v.get("title")?.asString() == "TOML Example")
+  expect(v.get("servers")?.at(1)?.get("port")?.asInt() == 8001)
+  expect(v.get("owner")?.get("dob")?.asString() == "1979-05-27T07:32:00-08:00")
+  expect(v.get("ratio")?.asInt() == 2)
+  let inf = try parse("x = -inf\ny = nan")
+  expect(inf.get("x")?.asFloat() == -1.0 / 0.0)
+  let y = inf.get("y")?.asFloat() ?? 0.0
+  expect(y != y)
+  let back = try encode(inf)
+  expect(back == "x = -inf\ny = nan\n")
+}
+
+test "a json.Value written" {
+  let v = try json.parse(r"""{"a": 1, "b": {"c": [1, 2.5, "x"], "d": {"e": true}}, "n": null, "list": [{"k": 1}, {"k": 2}]}""")
+  let out = try encode(v)
+  expect(out == "a = 1\n\n[b]\nc = [1, 2.5, \"x\"]\n\n[b.d]\ne = true\n\n[[list]]\nk = 1\n\n[[list]]\nk = 2\n")
+  expect(try parse(out) == (try json.parse(r"""{"a": 1, "b": {"c": [1, 2.5, "x"], "d": {"e": true}}, "list": [{"k": 1}, {"k": 2}]}""")))
+}
+
+test "what TOML can't hold" {
+  do {
+    let _ = try encode([1, 2])
+    expect(false)
+  } catch e {
+    expect(e.message.hasPrefix("toml: a TOML document is a table"))
+  }
+  let xs: [string: [int?]] = ["a": [1, none]]
+  do {
+    let _ = try encode(xs)
+    expect(false)
+  } catch e {
+    expect(e.message == "toml: a[1]: TOML has no null: an array's element can't be none")
+  }
+}
+
+test "strings: escapes, multi-line, literal" {
+  let v = try parse(r#"""
+    a = "tab\there \u00e9 \U0001F600"
+    b = """
+    one \
+      two"""
+    c = 'C:\path'
+    d = '''
+    raw\n'''
+    """#)
+  expect(v.get("a")?.asString() == "tab\there é 😀")
+  expect(v.get("b")?.asString() == "one two")
+  expect(v.get("c")?.asString() == "C:\\path")
+  expect(v.get("d")?.asString() == "raw\\n")
+  let s = try encode(["k": "line\n\"q\"\\"])
+  expect(s == "k = \"line\\n\\\"q\\\"\\\\\"\n")
+  expect((try parse(s)).get("k")?.asString() == "line\n\"q\"\\")
+}

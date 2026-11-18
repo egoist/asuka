@@ -29,6 +29,8 @@ extern const ak_lib_entry ak_std_flag[];
 extern const ak_lib_entry ak_std_command[];
 extern const ak_lib_entry ak_std_term[];
 extern const ak_lib_entry ak_std_signals[];
+extern const ak_lib_entry ak_std_toml[];
+extern const ak_lib_entry ak_std_csv[];
 
 // Every package's table, NULL-terminated.
 extern const ak_lib_entry *const ak_std_libs[];
@@ -151,6 +153,10 @@ void ak_os_signals_program(void (*end)(int code), bool main_is_task);
 void ak_os_signals_ended(void);
 void ak_os_signals_reset(void);
 void ak_os_fake_end(int code);
+// std/toml (toml.c): text's TOML as the toml-test suite's JSON (its
+// tables' keys sorted, its scalars tagged and normalized: core/test's
+// toml_test.c), or false and why in err (line:column: why).
+bool ak_toml_tagged(const char *text, size_t n, ak_buf *out, char *err, size_t errn);
 
 // For tests (core/runner): a new empty directory in the system's
 // temporary one (ak_free the path; NULL when it can't be made), and

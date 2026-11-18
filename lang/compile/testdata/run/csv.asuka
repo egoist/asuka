@@ -1,0 +1,93 @@
+// std/csv: CSV read as Go's encoding/csv reads it, into rows or structs
+// by the header, written back, and read a row at a time from a stream of
+// lines, on the VM and compiled to C (core/src/std/csv.c).
+
+import std/csv
+
+enum Unit { kg, pcs }
+
+struct Item {
+  name: string
+  qty: int
+  price: float
+  unit: Unit
+  organic: bool?
+  tags: [string]
+}
+
+let text = "\u{feff}Name,Qty,Price,Unit,Organic,Tags\r\n\"Apples, red\",3,1.25,kg,yes,\"[\"\"fruit\"\"]\"\r\nSoap,10,0.5,pcs,,[]\r\n"
+
+test "rows" {
+  for row in try csv.parse(text) {
+    print(row)
+  }
+  print(try csv.parse("a\tb\n\n# c\n\"multi\nline\"\t\"q\"\"q\"\n", separator: "\t", comment: "#"))
+}
+
+test "structs" {
+  let items = try csv.decode<Item>(text)
+  for i in items {
+    print("{i.name}: {i.qty} {i.unit} at {i.price}, organic {i.organic}, {i.tags}")
+  }
+  print(try csv.encode(items))
+  print(try csv.decode<Item>(try csv.encode(items)) == items)
+  print(try csv.encode([["a,b", "say \"hi\"", " lead", "x"], ["", "1"]], separator: ";", crlf: true).replace("\r\n", "|"))
+}
+
+test "a row at a time" {
+  let lines = Stream<string>(send => {
+    for l in text.split("\r\n") {
+      send(l)
+    }
+  })
+  var total = 0.0
+  for await i in csv.stream<Item>(lines) {
+    total += i.price * float(i.qty)
+  }
+  print(total)
+}
+
+test "mistakes" {
+  for src in ["a,b\n1,2,3", "a\n\"b\"c", "a\n\"open", "x\"y"] {
+    do {
+      let _ = try csv.parse(src)
+    } catch e {
+      print(e.message)
+    }
+  }
+  do {
+    let _ = try csv.decode<Item>("name,qty,price,unit,tags\nx,1.5,1,kg,[]")
+  } catch e {
+    print(e.message)
+  }
+  do {
+    let _ = try csv.decode<Item>("name,qty\nx,1")
+  } catch e {
+    print(e.message)
+  }
+}
+
+// Output:
+// ["Name","Qty","Price","Unit","Organic","Tags"]
+// ["Apples, red","3","1.25","kg","yes","[\"fruit\"]"]
+// ["Soap","10","0.5","pcs","","[]"]
+// [["a","b"],["multi\nline","q\"q"]]
+// ok rows
+// Apples, red: 3 kg at 1.25, organic true, ["fruit"]
+// Soap: 10 pcs at 0.5, organic none, []
+// name,qty,price,unit,organic,tags
+// "Apples, red",3,1.25,kg,true,"[""fruit""]"
+// Soap,10,0.5,pcs,,[]
+//
+// true
+// a,b;"say ""hi""";" lead";x|;1|
+// ok structs
+// 8.75
+// ok a row at a time
+// csv: 2:1: a row of 3 fields, not 2 as the first
+// csv: 2:3: a " in a quoted field must be doubled ("a""b")
+// csv: 2:1: a quoted field that doesn't end
+// csv: 1:2: a bare " in a field that isn't quoted (quote the field, and double the quote: "a""b")
+// csv: 2:3: qty: "1.5" isn't an integer
+// csv: 1:1: no column price in the header for Item's field (make the field optional for a column that may be missing)
+// ok mistakes

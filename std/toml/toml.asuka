@@ -1,0 +1,55 @@
+// Package std/toml reads and writes TOML (toml.io, version 1.0), the
+// format of config files, as typed values: as std/json does, the
+// compiler knows the type read or written.
+//
+//   struct Server { host: string; port: int }
+//   struct Config { title: string; servers: [Server]; debug: bool? }
+//
+//   let cfg = try toml.decode<Config>(text)
+//   let same: Config = try toml.decode(text)
+//   let out = try toml.encode(cfg)
+//
+// A struct reads from a table by its fields' names, a key written in a
+// config file's way matching too: rust-version and rust_version read
+// into rustVersion. Keys the struct hasn't are ignored. A field the
+// table leaves out is empty, as std/json's: none for an optional, 0,
+// false, "", an empty array or map; a missing table for a struct field
+// is an error. An int reads from an integer, a float from either
+// number, a string from a string; [T] from an array (an array of
+// tables, [[servers]], too), [string: T] from a table, an enum without
+// payloads from its case's name.
+//
+// TOML's dates and times read as their text, in RFC 3339's form (T and
+// Z upper case): time.parse(cfg.released) makes a Time of an offset
+// date-time. What has no shape known as the program compiles is a
+// json.Value: toml.parse(text) reads any document as one.
+//
+//   let doc = try toml.parse(text)
+//   let edition = doc.get("package")?.get("edition")?.asString() ?? "2021"
+//
+// An error says where, as line:column, and which key: "toml: 3:8:
+// server.port: expected an integer, not a string".
+
+import std/json
+
+/// The value of type T that text, a TOML document, says. It throws when
+/// text isn't TOML 1.0 or doesn't fit T, its message saying where
+/// (line:column), at which key and why. T comes from what's expected of
+/// the call (let cfg: Config = try toml.decode(text)) or is given:
+/// toml.decode<Config>(text).
+pub native fn decode<T>(text: string) throws -> T
+
+/// value as a TOML document: a struct's fields in their declaration
+/// order (a map's entries in its own), plain keys first, then each table
+/// as a [section] and each array of tables as [[sections]]. A field
+/// that's none isn't written, TOML having no null; a float is written
+/// with its point (1.0), a string as a basic string. It throws for what
+/// a document can't be or hold: a value that isn't a table at the top
+/// (a struct, a [string: T], a json.Value object), none in an array.
+pub native fn encode<T>(value: T) throws -> string
+
+/// text's TOML, whatever its shape, as a json.Value: a table is an
+/// .object (in the document's order), an integer .int, a float .float,
+/// a date or a time a .string of its text. It throws when text isn't
+/// TOML.
+pub fn parse(text: string) throws -> json.Value = try decode<json.Value>(text)

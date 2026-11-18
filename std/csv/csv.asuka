@@ -1,0 +1,124 @@
+// Package std/csv reads and writes CSV (RFC 4180), as Go's encoding/csv
+// reads it: fields separated by commas (or another character: a tab, a
+// semicolon), a field in double quotes holding commas, line breaks and
+// quotes (doubled: "a ""quoted"" word"), lines ended by LF or CRLF.
+// Empty lines are skipped, a UTF-8 byte order mark at the start too.
+//
+//   let rows = try csv.parse(text)               // [[string]]
+//   let out = try csv.encode(rows)
+//
+// A struct reads its rows by the header, the first row: each field from
+// the column of its name (as it is, else with case, spaces, dashes and
+// underscores aside: "First Name" is firstName), other columns ignored.
+// A cell is a string as it is; an int, a float or a bool when the field
+// is one (true, false, yes, no, 1, 0...); none when the field is
+// optional and the cell empty; an enum's case by its name; anything else
+// from the cell's JSON.
+//
+//   struct Sale { item: string; qty: int; price: float; note: string? }
+//
+//   let sales = try csv.decode<Sale>(text)
+//   let back = try csv.encode(sales)               // the header, then the rows
+//
+// A file too big to hold reads a row at a time from its lines, a stream
+// (os.lines(), a command's lines()): csv.stream<Sale>(os.lines()). A
+// quoted field over several lines is put back together.
+//
+// A mistake throws, its message saying where, as line:column: "csv:
+// 3:9: qty: "x" isn't an integer". Every row has the first's number of
+// fields, unless flexible: true.
+
+/// Reads text's rows, each a [string]: what it has as it's written (the
+/// header row, if it has one, among them). separator is the character
+/// between fields; comment, when it's one, starts lines to skip;
+/// trimLeadingSpace drops the spaces a field starts with; lazyQuotes
+/// takes a quote where it isn't allowed as it is; flexible lets rows
+/// have different numbers of fields. It throws for a mistake (a quote
+/// that isn't doubled, a quoted field that doesn't end, a row of the
+/// wrong length), saying where.
+pub fn parse(text: string, separator: string = ",", comment: string = "", trimLeadingSpace: bool = false, lazyQuotes: bool = false, flexible: bool = false) throws -> [[string]] {
+  return try read<[string]>(text, separator, comment, trimLeadingSpace, lazyQuotes, flexible, 1, [], -1)
+}
+
+/// Reads text's rows as T: a struct, from the header (the first row)
+/// and each row after it; or an array ([string], [int]...), each row's
+/// cells as they are. It throws when a row doesn't fit T (a cell that
+/// isn't an int, a column the header hasn't for a field that isn't
+/// optional), saying where. The options are parse's.
+pub fn decode<T>(text: string, separator: string = ",", comment: string = "", trimLeadingSpace: bool = false, lazyQuotes: bool = false, flexible: bool = false) throws -> [T] {
+  return try read<T>(text, separator, comment, trimLeadingSpace, lazyQuotes, flexible, 1, [], -1)
+}
+
+/// rows as CSV text: a struct's with a header of its fields' names
+/// first (unless header is false: a part of a file written before),
+/// arrays' as they are. A field is quoted when it must be (it holds the
+/// separator, a quote or a line break, or starts with a space); a number
+/// is written as it prints, none as an empty field, an enum's case by its
+/// name. Each row ends with a line feed, or CRLF when crlf is true.
+pub fn encode<T>(rows: [T], separator: string = ",", header: bool = true, crlf: bool = false) throws -> string {
+  return try write<T>(rows, separator, header, crlf)
+}
+
+/// The rows of lines, a stream of a file's lines without their line
+/// endings (os.lines(), command's lines()), as they come: a struct's
+/// from the header, the first row, as decode reads them; an array's as
+/// they are. Only the row being read is held. The stream fails with
+/// what decode would throw. The options are parse's.
+///
+///   for await sale in csv.stream<Sale>(os.lines()) {
+///     total += sale.price * float(sale.qty)
+///   }
+pub fn stream<T>(lines: Stream<string>, separator: string = ",", comment: string = "", trimLeadingSpace: bool = false, lazyQuotes: bool = false, flexible: bool = false) -> Stream<T> = Stream(send => {
+  let needsHeader = isStruct<T>()
+  var header: [string] = []
+  var fields = -1
+  var first = true
+  var text = ""
+  var open = false
+  var start = 0
+  var n = 0
+  for await line in lines {
+    n += 1
+    if open {
+      text = text + "\n" + line
+    } else {
+      text = line
+      start = n
+    }
+    open = incomplete(text, separator, trimLeadingSpace, lazyQuotes)
+    if open {
+      continue
+    }
+    if first {
+      // The first row: the header, or the number of fields each row has.
+      let rows = try read<[string]>(text, separator, comment, trimLeadingSpace, lazyQuotes, flexible, start, [], -1)
+      if rows.isEmpty() {
+        continue
+      }
+      first = false
+      if !flexible {
+        fields = rows[0].count()
+      }
+      if needsHeader {
+        header = rows[0]
+        continue
+      }
+    }
+    for row in try read<T>(text, separator, comment, trimLeadingSpace, lazyQuotes, flexible, start, header, fields) {
+      send(row)
+    }
+  }
+  if open {
+    // A quoted field that doesn't end: an error, or (lazyQuotes) the
+    // last row.
+    for row in try read<T>(text, separator, comment, trimLeadingSpace, lazyQuotes, flexible, start, header, fields) {
+      send(row)
+    }
+  }
+})
+
+// The runtime's side (core/src/std/csv.c).
+native fn read<T>(text: string, separator: string, comment: string, trim: bool, lazy: bool, flexible: bool, line: int, header: [string], fields: int) throws -> [T]
+native fn incomplete(text: string, separator: string, trim: bool, lazy: bool) -> bool
+native fn write<T>(rows: [T], separator: string, header: bool, crlf: bool) throws -> string
+native fn isStruct<T>() -> bool

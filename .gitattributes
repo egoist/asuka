@@ -3,3 +3,6 @@ ops/testdata/** -text
 # Windows runs gradlew.bat through cmd.exe, whose labels and gotos need
 # CRLF: kept as it is, on every system (the CLI embeds it).
 platform/android/gradlew.bat -text
+
+# toml-test's cases, some of them CRLF or not UTF-8 on purpose: byte for byte.
+core/test/testdata/toml/cases.txt -text

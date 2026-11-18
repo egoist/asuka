@@ -548,6 +548,76 @@ async fn main() throws {
 }
 ```
 
+## Config files and data: TOML and CSV
+
+`std/toml` reads a config file into a struct as `std/json` reads JSON:
+`toml.decode<Config>(text)`, its fields by their names (a key written
+`min-qty` or `min_qty` reads into `minQty`), an optional left out of the
+file `none`; `toml.encode(config)` writes one back, and `toml.parse(text)`
+reads any document as a `json.Value`. A field the file leaves out is
+empty, as with JSON (0, `""`, none), not the struct's default: a setting
+that may be missing is an optional, or the struct is made with its
+defaults and read only when the file is there. A mistake says where:
+`toml: 2:11: min-qty: expected an integer, not a string`.
+
+`std/csv` reads rows: `csv.parse(text)` as `[[string]]`, `csv.decode<T>(text)`
+into structs by the header row (a cell read as the field's type: an int,
+a float, a bool, an enum's case; an empty one `none` for an optional),
+and `csv.encode(rows)` writes them back with the header. A file too big
+to hold is read a row at a time from a stream of its lines,
+`csv.stream<T>(os.lines())`: here a sales file piped in, totalled with
+what `~/.config/sales/config.toml` sets.
+
+```toml
+currency = "USD"
+min-qty = 2
+```
+
+```
+item,qty,price
+"Tea, green",2,3.5
+Cake,1,4.25
+```
+
+```asuka check
+import std/csv
+import std/fs
+import std/os
+import std/toml
+
+/// Totals the sales piped in, as a CSV.
+struct Config {
+  currency: string = "EUR"
+  /// Rows of fewer units are left out.
+  minQty: int? = none
+}
+
+struct Sale {
+  item: string
+  qty: int
+  price: float
+}
+
+async fn main() throws {
+  let path = fs.join([fs.home(), ".config", "sales", "config.toml"])
+  var config = Config()
+  if fs.exists(path) {
+    config = try toml.decode<Config>(try await spawn { try fs.readText(path) })
+  }
+  var total = 0.0
+  for await sale in csv.stream<Sale>(os.lines()) {
+    if sale.qty >= (config.minQty ?? 1) {
+      total += sale.price * float(sale.qty)
+    }
+  }
+  print("{total} {config.currency}")
+}
+```
+
+`separator: "\t"` reads tab-separated values; `comment: "#"` skips the
+lines that start with it, `flexible: true` lets rows have different
+numbers of fields.
+
 ## Running
 
 `asuka run` runs a program's `main` at once, with no build to wait for: the arguments after `--` are its own, and it exits with the
