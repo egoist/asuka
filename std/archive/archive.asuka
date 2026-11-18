@@ -1,0 +1,370 @@
+// Package std/archive reads and writes zip and tar archives (.zip, .tar,
+// .tar.gz), the same on every platform: lists what's in one, reads its
+// files, extracts it into a directory, and makes one of a directory or
+// of bytes.
+//
+//   let entries = try await spawn { try archive.list("site.zip") }
+//   try await spawn { try archive.extract("site.zip", to: dir) }
+//   try await spawn { try archive.create("backup.tar.gz", from: notesDir) }
+//
+// An archive's format is told from its bytes (a zip, a tar, a gzipped
+// tar), whatever its name. A file's archive is read and written a piece
+// at a time, so one of any size takes little memory; the calls block
+// while they work, so call them in spawn { }, which runs them on another
+// thread. Archives in memory are bytes: entries, decode and encode.
+//
+// Extracting is safe with an archive from anywhere: an entry whose name
+// would put it outside the directory ("../../.profile", "/etc/passwd",
+// "C:\x", a path through a link) throws unsafePath and nothing is written
+// there, and what the archive decompresses to may not pass a limit (1 GB
+// unless the call says), so a "zip bomb" can't fill the disk.
+//
+// Zip entries are stored or deflated (others, and encrypted ones, are
+// listed but throw unsupported when read), zip64's when it's needed;
+// tar's are POSIX ustar with pax headers for what ustar can't say, and
+// GNU's long names and large numbers are read.
+
+import std/fs
+import std/time
+
+/// An archive's format.
+pub enum Format {
+  /// zip: each entry compressed on its own (deflated, or stored when that
+  /// doesn't make it smaller).
+  zip
+  /// tar, uncompressed.
+  tar
+  /// tar, gzipped: .tar.gz, .tgz.
+  tarGz
+}
+
+/// What an entry is.
+pub enum Kind {
+  file
+  dir
+  /// A symbolic link: target is where it points, from where it is.
+  symlink
+  /// A tar's hard link: target is the entry, before it, whose file it is.
+  hardLink
+  /// What else a tar can hold (a device, a FIFO): listed, never extracted
+  /// or written.
+  other
+}
+
+/// An entry of an archive, as list and entries give it.
+pub struct Entry {
+  /// Its path in the archive, with / between names: "docs/a.md" (without
+  /// a "./" before it, or a directory's / after it).
+  name: string
+  kind: Kind
+  /// Its data's size, in bytes (0 but for a file).
+  size: int
+  /// What its data takes in the archive: a zip's entry compressed; a tar's
+  /// is its size.
+  compressedSize: int
+  /// When its content last changed. A zip entry with no time zone (an
+  /// MS-DOS time, without an extended timestamp) is read in the local
+  /// zone.
+  modified: time.Time
+  /// Its permissions, as Unix says them: 0o644, 0o755.
+  mode: int
+  /// A link's target; "" for what isn't a link.
+  target: string
+}
+
+/// A file of an archive, with its data: what decode gives, and what
+/// encode writes.
+pub struct File {
+  /// Its path in the archive, with / between names: "docs/a.md". One
+  /// that isn't inside the archive (absolute, with "..") can't be
+  /// written.
+  name: string
+  data: bytes = bytes()
+  kind: Kind = .file
+  /// When its content last changed; none, written: now.
+  modified: time.Time? = none
+  /// Its permissions, as Unix says them; 0, written: 0o644 for a file,
+  /// 0o755 for a directory.
+  mode: int = 0
+  /// A link's target.
+  target: string = ""
+}
+
+/// Why reading, extracting or writing an archive failed. A file the
+/// system can't read or write throws its fs.FsError instead.
+pub enum ArchiveError: Error {
+  /// It isn't a zip or a tar, or it's broken: a header that's wrong, data
+  /// that ends too soon, a checksum that doesn't match.
+  corrupt(reason: string)
+  /// What it decompresses to is more than limit bytes.
+  tooLarge(limit: int)
+  /// An entry's name (or a link's target) would put it outside the
+  /// directory it's extracted to, or outside the archive.
+  unsafePath(name: string, reason: string)
+  /// What isn't read or written here: a zip entry compressed with another
+  /// method than DEFLATE, or encrypted; a zip of several disks; a tar's
+  /// sparse file; a format a path's name doesn't say.
+  unsupported(reason: string)
+
+  /// The error's text: "corrupt archive: notes.zip: its checksum doesn't
+  /// match".
+  fn message() -> string = match self {
+    .corrupt(r) => "corrupt archive: {r}"
+    .tooLarge(l) => "the archive decompresses to more than {l} bytes (raise the limit with limit:)"
+    .unsafePath(n, r) => "{n}: {r}"
+    .unsupported(r) => "unsupported: {r}"
+  }
+}
+
+/// The most bytes extracting or decoding makes unless it says: 1 GB.
+pub let defaultLimit = 1 << 30
+
+/// The entries of the archive at path, in its order. A zip's are read
+/// from its directory at its end; a tar's, from end to end.
+pub fn list(path: string) throws -> [Entry] {
+  if let names = scanFile(path) {
+    return listed(names, scanInfo())
+  }
+  throw failure(-1)
+}
+
+/// The data of the file named name in the archive at path; none when it
+/// has no such file. It throws as extract does.
+///
+///   let readme = try await spawn { try archive.read("pkg.tar.gz", name: "README.md") }
+pub fn read(path: string, name: string, limit: int = defaultLimit) throws -> bytes? {
+  if let data = entryFile(path, name, limit) {
+    return data
+  }
+  if failed() {
+    throw failure(limit)
+  }
+  return none
+}
+
+/// Extracts the archive at path into the directory to (made if it isn't
+/// there), entry by entry: files (their permissions and times kept),
+/// directories, and links whose target stays inside to (where the system
+/// lets the app make links; a tar's hard link is a copy of its file).
+/// What's there already is replaced, a directory merged.
+///
+/// It throws unsafePath for an entry that would land outside to, and
+/// tooLarge once what it writes passes limit bytes: what it extracted
+/// before stays.
+///
+///   try await spawn { try archive.extract(download, to: fs.join([fs.appDir(), "maps"])) }
+pub fn extract(path: string, to: string, limit: int = defaultLimit) throws {
+  if !extractFile(path, to, limit) {
+    throw failure(limit)
+  }
+}
+
+/// Makes the archive at path (replacing what's there) of from: a
+/// directory's tree, its entries named from inside it ("notes/a.md" for
+/// from's notes/a.md), or one file. A link in it is archived as what it
+/// links to. format is told from path's name (.zip, .tar, .tar.gz or
+/// .tgz) unless it's said; level is the zip's or the gzip's: 0 to 9, 6
+/// unless it says.
+///
+///   try await spawn { try archive.create("backup.zip", from: fs.appDir()) }
+pub fn create(path: string, from: string, format: Format? = none, level: int = 6) throws {
+  let f = try formatOf(path, format)
+  let top = try fs.stat(from)
+  var files: [fs.Entry] = []
+  var names: [string] = []
+  if top.isDir {
+    let root = fs.clean(from)
+    let skip = try fs.abs(path)
+    for e in try fs.walk(from) {
+      if !e.isDir && (try fs.abs(e.path)) == skip {
+        continue // the archive itself, when it's made inside from
+      }
+      files.push(e)
+      names.push(if root == "." { e.path } else { e.path.trimPrefix(root).trimPrefix("/").trimPrefix("\\") })
+    }
+  } else {
+    files.push(top)
+    names.push(fs.base(from))
+  }
+  var targets: [string] = []
+  var sources: [string] = []
+  var info: [int] = []
+  for e in files {
+    targets.push("")
+    sources.push(e.path)
+    let kind = if e.isDir { 1 } else { 0 }
+    for x in infoOf(kind, mode: -1, modified: e.modified) {
+      info.push(x)
+    }
+  }
+  if !createFile(path, code(f), level, names, targets, sources, info) {
+    throw failure(-1)
+  }
+}
+
+/// The entries of the archive in data.
+pub fn entries(data: bytes) throws -> [Entry] {
+  if let names = scanBytes(data, false, -1) {
+    return listed(names, scanInfo())
+  }
+  throw failure(-1)
+}
+
+/// The archive in data, each entry with its data. It throws tooLarge when
+/// its files' data is more than limit bytes in all.
+///
+///   let files = try archive.decode(body)
+///   let readme = files.find(f => f.name == "README.md")
+pub fn decode(data: bytes, limit: int = defaultLimit) throws -> [File] {
+  if let names = scanBytes(data, true, limit) {
+    let es = listed(names, scanInfo())
+    let ds = scanData()
+    var out: [File] = []
+    for (i, e) in es.enumerated() {
+      out.push(File(name: e.name, data: ds[i], kind: e.kind, modified: e.modified, mode: e.mode, target: e.target))
+    }
+    return out
+  }
+  throw failure(limit)
+}
+
+/// An archive of files, in format (a zip unless it says), at level: 0 to
+/// 9, 6 unless it says. A name that isn't a path inside the archive
+/// throws unsafePath, as does a link whose target isn't; a zip can't have
+/// a hard link.
+///
+///   let zip = try archive.encode([
+///     archive.File(name: "notes/today.md", data: text.bytes()),
+///     archive.File(name: "notes/old", kind: .dir),
+///   ])
+pub fn encode(files: [File], format: Format = .zip, level: int = 6) throws -> bytes {
+  var names: [string] = []
+  var targets: [string] = []
+  var datas: [bytes] = []
+  var info: [int] = []
+  let now = time.now()
+  for f in files {
+    names.push(f.name)
+    targets.push(f.target)
+    datas.push(f.data)
+    for x in infoOf(kindCode(f.kind), mode: f.mode, modified: f.modified ?? now) {
+      info.push(x)
+    }
+  }
+  if let out = encodeFiles(code(format), level, names, targets, datas, info) {
+    return out
+  }
+  throw failure(-1)
+}
+
+fn code(f: Format) -> int = match f {
+  .zip => 0
+  .tar => 1
+  .tarGz => 2
+}
+
+fn kindCode(k: Kind) -> int = match k {
+  .file => 0
+  .dir => 1
+  .symlink => 2
+  .hardLink => 3
+  .other => 4
+}
+
+fn kindOf(k: int) -> Kind = match k {
+  0 => .file
+  1 => .dir
+  2 => .symlink
+  3 => .hardLink
+  _ => .other
+}
+
+fn formatOf(path: string, format: Format?) throws -> Format {
+  if let f = format {
+    return f
+  }
+  let name = fs.base(path).lower()
+  if name.hasSuffix(".zip") {
+    return .zip
+  }
+  if name.hasSuffix(".tar") {
+    return .tar
+  }
+  if name.hasSuffix(".tar.gz") || name.hasSuffix(".tgz") {
+    return .tarGz
+  }
+  throw ArchiveError.unsupported("{path}: its name doesn't say a format (.zip, .tar, .tar.gz, .tgz): say format:")
+}
+
+// infoOf is what the C side takes of an entry: its kind, mode, time (ns
+// since 1970), and its time on the local clock as MS-DOS keeps it (a
+// zip's), between 1980 and 2107.
+fn infoOf(kind: int, mode: int, modified: time.Time) -> [int] {
+  let t = modified.local()
+  var dos = 0
+  if t.year < 1980 {
+    dos = (1 << 5 | 1) << 16
+  } else if t.year > 2107 {
+    dos = (127 << 25 | 12 << 21 | 31 << 16) | (23 << 11 | 59 << 5 | 29)
+  } else {
+    let date = (t.year - 1980) << 9 | t.month << 5 | t.day
+    dos = date << 16 | (t.hour << 11 | t.minute << 5 | t.second / 2)
+  }
+  return [kind, mode, modified.unixNano(), dos]
+}
+
+// listed makes the entries of a scan's names (and targets) and numbers.
+fn listed(names: [string], info: [int]) -> [Entry] {
+  var out: [Entry] = []
+  var i = 0
+  while i * 2 < names.count() {
+    let n = info.slice(i * 6, i * 6 + 6)
+    out.push(Entry(name: names[i * 2], kind: kindOf(n[0]), size: n[1], compressedSize: n[2], modified: timeOf(n[4], n[5]), mode: n[3], target: names[i * 2 + 1]))
+    i += 1
+  }
+  return out
+}
+
+// timeOf reads an entry's time: ns since 1970, or MS-DOS's date << 16 |
+// time on the local clock.
+fn timeOf(kind: int, t: int) -> time.Time {
+  if kind == 0 {
+    return time.unixNano(t)
+  }
+  let date = t >> 16
+  let clock = t & 0xffff
+  return time.date((date >> 9) + 1980, date >> 5 & 15, date & 31, hour: clock >> 11, minute: clock >> 5 & 63, second: (clock & 31) * 2)
+}
+
+// failure is the error of the last call that failed on this thread.
+fn failure(limit: int) -> Error {
+  let p = failurePath()
+  let r = failureReason()
+  let said = if p.isEmpty() { r } else { "{p}: {r}" }
+  return match failureKind() {
+    2 => fs.FsError.notFound(p)
+    3 => fs.FsError.exists(p)
+    4 => fs.FsError.denied(p)
+    5 => fs.FsError.notDirectory(p)
+    6 => fs.FsError.isDirectory(p)
+    7 => fs.FsError.notEmpty(p)
+    10 => ArchiveError.corrupt(said)
+    11 => ArchiveError.tooLarge(limit)
+    12 => ArchiveError.unsafePath(name: p, reason: r)
+    13 => ArchiveError.unsupported(said)
+    _ => fs.FsError.failed(path: p, reason: r)
+  }
+}
+
+native fn scanBytes(data: bytes, withData: bool, limit: int) -> [string]?
+native fn scanFile(path: string) -> [string]?
+native fn scanInfo() -> [int]
+native fn scanData() -> [bytes]
+native fn entryFile(path: string, name: string, limit: int) -> bytes?
+native fn extractFile(path: string, dir: string, limit: int) -> bool
+native fn encodeFiles(format: int, level: int, names: [string], targets: [string], datas: [bytes], info: [int]) -> bytes?
+native fn createFile(path: string, format: int, level: int, names: [string], targets: [string], sources: [string], info: [int]) -> bool
+native fn failed() -> bool
+native fn failureKind() -> int
+native fn failureReason() -> string
+native fn failurePath() -> string

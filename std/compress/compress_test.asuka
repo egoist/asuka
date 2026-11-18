@@ -1,0 +1,148 @@
+import std/embed
+import std/fs
+
+let hello = "hello, world\n"
+
+fn sample() -> bytes {
+  // Text that compresses, and bytes that don't.
+  var b: [int] = []
+  var x = 12345
+  for i in 0..<20000 {
+    x = (x * 1103515245 + 12345) & 0x7fffffff
+    b.push(if i < 10000 { i % 7 + 97 } else { x >> 16 & 255 })
+  }
+  return bytes(b)
+}
+
+test "round trips, in every format and level" {
+  let data = sample()
+  for f in [Format.gzip, .zlib, .deflate] {
+    for level in [0, 1, 6, 9, -3, 42] {
+      let packed = encode(data, format: f, level: level)
+      expect(try decode(packed, format: f) == data)
+    }
+    expect(try decode(encode(bytes(), format: f), format: f) == bytes())
+  }
+  // Level 0 stores; 9 is no larger than 1.
+  expect(encode(data, level: 0).count() > data.count())
+  expect(encode(data, level: 9).count() <= encode(data, level: 1).count())
+  // gzip's header has no name and no time: the same data, the same bytes.
+  expect(encode(data) == encode(data))
+  let g = encode("x".bytes())
+  expect(g[0] == 0x1f && g[1] == 0x8b && g[2] == 8 && g[3] == 0 && g[4] == 0 && g[9] == 255)
+}
+
+test "what other tools made" {
+  // gzip -9 of a file (its name and time in the header).
+  expect((try decode(embed.bytes("testdata/hello.txt.gz"))).string() == hello)
+  // Two gzip members one after another read as one.
+  expect((try decode(embed.bytes("testdata/two.gz"))).string() == "one\ntwo\n")
+  // Python's zlib.compress, and raw DEFLATE.
+  expect((try decode(embed.bytes("testdata/hello.zlib"), format: .zlib)).string() == hello)
+  expect((try decode(embed.bytes("testdata/hello.deflate"), format: .deflate)).string() == hello)
+  // Zeros after a gzip stream are padding.
+  expect((try decode(embed.bytes("testdata/hello.txt.gz").concat(bytes([0, 0, 0])))).string() == hello)
+}
+
+fn errorOf(of: fn() throws -> bytes) -> string {
+  do {
+    let _ = try of()
+  } catch e {
+    return e.message
+  }
+  return "no error"
+}
+
+test "corrupt data" {
+  let good = embed.bytes("testdata/hello.txt.gz")
+  expect(errorOf(() => try decode("hello".bytes())) == "corrupt data: not gzip: its first bytes aren't 1f 8b")
+  expect(errorOf(() => try decode(bytes())) == "corrupt data: the data ends too soon")
+  expect(errorOf(() => try decode(good.slice(0, good.count() - 4))) == "corrupt data: the data ends too soon")
+  expect(errorOf(() => try decode(good.slice(0, 15))) == "corrupt data: the data ends too soon")
+  // A byte of the CRC-32 changed.
+  var b: [int] = []
+  for i in 0..<good.count() {
+    b.push(if i == good.count() - 6 { good[i] ^ 1 } else { good[i] })
+  }
+  expect(errorOf(() => try decode(bytes(b))) == "corrupt data: gzip's checksum doesn't match")
+  expect(errorOf(() => try decode(good.concat("junk".bytes()))) == "corrupt data: data after the gzip stream")
+  expect(errorOf(() => try decode("hello".bytes(), format: .zlib)).hasPrefix("corrupt data: "))
+  let z = embed.bytes("testdata/hello.zlib")
+  var zb: [int] = []
+  for i in 0..<z.count() {
+    zb.push(if i == z.count() - 1 { z[i] ^ 1 } else { z[i] })
+  }
+  expect(errorOf(() => try decode(bytes(zb), format: .zlib)) == "corrupt data: zlib's checksum doesn't match")
+  expect(errorOf(() => try decode(bytes([0xff, 0xff]), format: .deflate)).hasPrefix("corrupt data: "))
+  do {
+    let _ = try decode("hello".bytes())
+  } catch CompressError.corrupt(r) {
+    expect(r.hasPrefix("not gzip"))
+  }
+}
+
+test "a limit on what it makes" {
+  var big: [int] = []
+  for _ in 0..<100000 {
+    big.push(0)
+  }
+  let packed = encode(bytes(big))
+  expect(packed.count() < 1000)
+  expect((try decode(packed, limit: 100000)).count() == 100000)
+  do {
+    let _ = try decode(packed, limit: 99999)
+    expect(false)
+  } catch CompressError.tooLarge(l) {
+    expect(l == 99999)
+  }
+  expect(errorOf(() => try decode(packed, limit: 10)) == "it decompresses to more than 10 bytes (raise the limit with limit:)")
+}
+
+test "files" {
+  let dir = fs.join([fs.tempDir(), "compress-test"])
+  try fs.removeAll(dir)
+  try fs.mkdirAll(dir)
+  let plain = fs.join([dir, "data.bin"])
+  let packed = fs.join([dir, "data.bin.gz"])
+  let back = fs.join([dir, "back.bin"])
+  let data = sample()
+  try fs.write(plain, data: data)
+  try encodeFile(from: plain, to: packed)
+  expect(try decode(try fs.read(packed)) == data)
+  try decodeFile(from: packed, to: back)
+  expect(try fs.read(back) == data)
+  // Off the main thread, in another format.
+  try await spawn { try encodeFile(from: plain, to: packed, format: .zlib, level: 9) }
+  try await spawn { try decodeFile(from: packed, to: back, format: .zlib) }
+  expect(try fs.read(back) == data)
+  // What fails: a file that isn't there, data that isn't gzip, a limit;
+  // what it made of to is removed.
+  do {
+    try decodeFile(from: fs.join([dir, "nope.gz"]), to: back)
+    expect(false)
+  } catch fs.FsError.notFound(p) {
+    expect(fs.base(p) == "nope.gz")
+  }
+  do {
+    try decodeFile(from: plain, to: back)
+    expect(false)
+  } catch CompressError.corrupt(_) {
+    expect(!fs.exists(back))
+  }
+  try encodeFile(from: plain, to: packed)
+  do {
+    try decodeFile(from: packed, to: back, limit: 1000)
+    expect(false)
+  } catch CompressError.tooLarge(l) {
+    expect(l == 1000 && !fs.exists(back))
+  }
+  // To may not be from: the file stays as it was.
+  do {
+    try encodeFile(from: plain, to: plain)
+    expect(false)
+  } catch e {
+    expect(e.message.hasSuffix("it's the file being read"))
+  }
+  expect(try fs.read(plain) == data)
+  try fs.removeAll(dir)
+}

@@ -413,6 +413,41 @@ until the system answers: a large tree is walked in `spawn { }`, so
 the program's other tasks go on. A failure is an `FsError`, as for every
 call of `std/fs`: a directory it may not list is `.denied(path)`.
 
+## Archives and compression: std/archive, std/compress
+
+`std/archive` lists, reads, extracts and makes zip and tar archives
+(`.zip`, `.tar`, `.tar.gz`), and `std/compress` compresses bytes and
+files with gzip (or zlib, or raw DEFLATE): `compress.encodeFile(from:
+log, to: log + ".gz")`. A file is read and written a piece at a time,
+so an archive of any size takes little memory, and the calls block
+while they work: make them in `spawn { }`.
+
+An archive from elsewhere is safe to extract: an entry that would land
+outside the directory (`../../.profile`, an absolute path, a path
+through a link) throws `unsafePath` and nothing is written there, and
+`limit:` bounds what it may decompress to (1 GB unless it says), so a
+zip bomb can't fill the disk.
+
+```asuka check
+import std/archive
+import std/os
+
+/// pack DIR OUT.zip: archives DIR. unpack ARCHIVE DIR: extracts it.
+async fn main() throws {
+  let a = os.args()
+  if a.count() == 3 && a[0] == "pack" {
+    try await spawn { try archive.create(a[2], from: a[1]) }
+  } else if a.count() == 3 && a[0] == "unpack" {
+    let entries = try await spawn { try archive.list(a[1]) }
+    print("{entries.count()} entries")
+    try await spawn { try archive.extract(a[1], to: a[2], limit: 8 << 30) }
+  } else {
+    os.eprint("usage: pack DIR OUT.zip | unpack ARCHIVE DIR")
+    os.exit(2)
+  }
+}
+```
+
 ## Many at once
 
 `all(items, f, limit:)` calls an async function with each item at once

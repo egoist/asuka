@@ -1,0 +1,106 @@
+// std/archive: zip, tar and tar.gz written and read back, what Python's
+// zipfile made (hex: an MS-DOS time and a code page 437 name; an entry
+// named ../evil.txt), extracting, and refusing what lands outside.
+
+import std/archive
+import std/encoding
+import std/fs
+import std/time
+
+fn hex(s: string) -> bytes = try encoding.hexDecode(s) catch { bytes() }
+
+let dosZip = "504b0304140000000000a320432ab04d88e2040000000400000008000000636166822e7478746f6c640a504b01021403140000000000a320432ab04d88e20400000004000000080000000000000000000000800100000000636166822e747874504b05060000000001000100360000002a0000000000"
+let slipZip = "504b03041400000000007b0a735daf5d682c0500000005000000060000006f6b2e74787466696e650a504b03041400000000007b0a735d7acd3fb705000000050000000b0000002e2e2f6576696c2e7478746576696c0a504b010214031400000000007b0a735daf5d682c05000000050000000600000000000000000000008001000000006f6b2e747874504b010214031400000000007b0a735d7acd3fb705000000050000000b00000000000000000000008001290000002e2e2f6576696c2e747874504b050600000000020002006d000000570000000000"
+
+test "round trips" {
+  let t = time.unix(1704209444, zone: .utc)
+  let files = [
+    archive.File(name: "notes", kind: .dir, modified: t),
+    archive.File(name: "notes/today.md", data: "today\n".repeat(100).bytes(), modified: t),
+    archive.File(name: "notes/run.sh", data: "#!/bin/sh\n".bytes(), modified: t, mode: 0o755),
+    archive.File(name: "notes/latest", kind: .symlink, modified: t, target: "today.md"),
+    archive.File(name: "日本語.txt", data: "こんにちは".bytes(), modified: t),
+  ]
+  for f in [archive.Format.zip, .tar, .tarGz] {
+    let data = try archive.encode(files, format: f)
+    print(f)
+    for e in try archive.entries(data) {
+      let link = if e.target.isEmpty() { "" } else { " -> {e.target}" }
+      print("  {e.name} {e.kind} {e.size} {e.mode:o} {e.modified.utc().rfc3339()}{link}")
+    }
+    let back = try archive.decode(data)
+    print("  {back.map(x => x.data) == files.map(x => x.data)}")
+  }
+}
+
+test "what Python made" {
+  let e = (try archive.entries(hex(dosZip)))[0]
+  print("{e.name} {e.modified.year}-{e.modified.month}-{e.modified.day} {e.modified.hour}:{e.modified.minute}:{e.modified.second}")
+  print((try archive.entries(hex(slipZip))).map(x => x.name))
+}
+
+test "extracting, and refusing what lands outside" {
+  let root = fs.join([fs.appDir(), "archive-run"])
+  try fs.removeAll(root)
+  try fs.mkdirAll(root)
+  let z = fs.join([root, "a.zip"])
+  try fs.write(z, data: try archive.encode([archive.File(name: "d/a.txt", data: "a".bytes())]))
+  try await spawn { try archive.extract(z, to: fs.join([root, "out"])) }
+  print(try fs.readText(fs.join([root, "out", "d", "a.txt"])))
+  print((try archive.read(z, name: "d/a.txt"))?.string() ?? "none")
+  print((try archive.read(z, name: "d/b.txt"))?.string() ?? "none")
+  let s = fs.join([root, "slip.zip"])
+  try fs.write(s, data: hex(slipZip))
+  do {
+    try archive.extract(s, to: fs.join([root, "out"]))
+  } catch archive.ArchiveError.unsafePath(n, r) {
+    print("{n}: {r}")
+  }
+  print(fs.exists(fs.join([root, "evil.txt"])))
+  do {
+    let _ = try archive.encode([archive.File(name: "/etc/passwd")])
+  } catch e {
+    print(e.message)
+  }
+  do {
+    let _ = try archive.decode(try archive.encode([archive.File(name: "big", data: "x".repeat(1000).bytes())]), limit: 999)
+  } catch e {
+    print(e.message)
+  }
+  try fs.removeAll(root)
+}
+
+// Output:
+// zip
+//   notes dir 0 755 2024-01-02T15:30:44Z
+//   notes/today.md file 600 644 2024-01-02T15:30:44Z
+//   notes/run.sh file 10 755 2024-01-02T15:30:44Z
+//   notes/latest symlink 0 777 2024-01-02T15:30:44Z -> today.md
+//   日本語.txt file 15 644 2024-01-02T15:30:44Z
+//   true
+// tar
+//   notes dir 0 755 2024-01-02T15:30:44Z
+//   notes/today.md file 600 644 2024-01-02T15:30:44Z
+//   notes/run.sh file 10 755 2024-01-02T15:30:44Z
+//   notes/latest symlink 0 777 2024-01-02T15:30:44Z -> today.md
+//   日本語.txt file 15 644 2024-01-02T15:30:44Z
+//   true
+// tarGz
+//   notes dir 0 755 2024-01-02T15:30:44Z
+//   notes/today.md file 600 644 2024-01-02T15:30:44Z
+//   notes/run.sh file 10 755 2024-01-02T15:30:44Z
+//   notes/latest symlink 0 777 2024-01-02T15:30:44Z -> today.md
+//   日本語.txt file 15 644 2024-01-02T15:30:44Z
+//   true
+// ok round trips
+// café.txt 2001-2-3 4:5:6
+// ["ok.txt","../evil.txt"]
+// ok what Python made
+// a
+// a
+// none
+// ../evil.txt: it isn't a path inside the directory
+// false
+// /etc/passwd: it isn't a path inside the archive
+// the archive decompresses to more than 999 bytes (raise the limit with limit:)
+// ok extracting, and refusing what lands outside

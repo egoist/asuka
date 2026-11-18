@@ -1,0 +1,292 @@
+import std/embed
+import std/fs
+import std/time
+
+// 2024-01-02 15:30:44 UTC: the fixtures' files' time.
+let fixed = 1704209444
+let long = "dir/a-very-long-directory-name-that-goes-on-and-on/and-a-file-name-that-is-also-quite-long-so-the-path-passes-one-hundred-bytes.txt"
+
+fn scratch(name: string) throws -> string {
+  let d = fs.join([fs.tempDir(), "archive-test", name])
+  try fs.removeAll(d)
+  try fs.mkdirAll(d)
+  return d
+}
+
+let fixtures = embed.files("testdata/*")
+
+// fx is a fixture's bytes (testdata/README.md: what made them).
+fn fx(name: string) -> bytes = fixtures["testdata/" + name] ?? bytes()
+
+fn fixture(name: string) throws -> string {
+  let p = fs.join([try scratch("fixtures"), name])
+  try fs.write(p, data: fx(name))
+  return p
+}
+
+fn line(e: Entry) -> string = "{e.name} {e.kind} {e.size} {e.mode:o} {e.target}"
+
+fn errorOf(of: fn() throws) -> string {
+  do {
+    try of()
+  } catch e {
+    return e.message
+  }
+  return "no error"
+}
+
+test "what Info-ZIP's zip made (zip64's too)" {
+  for name in ["tools.zip", "zip64.zip"] {
+    let p = try fixture(name)
+    let es = try list(p)
+    expect(es.map(e => line(e)) == [
+      "dir dir 0 755 ",
+      "dir/empty dir 0 755 ",
+      "dir/run.sh file 18 755 ",
+      "dir/link symlink 0 755 a.txt",
+      "dir/a.txt file 39 644 ",
+      "dir/a-very-long-directory-name-that-goes-on-and-on dir 0 755 ",
+      "{long} file 5 644 ",
+      "dir/héllo.txt file 3 644 ",
+    ])
+    expect(es.all(e => e.modified.unix() == fixed))
+    let a = es.find(e => e.name == "dir/a.txt")
+    expect((a?.compressedSize ?? 99) < 39)
+    expect((try read(p, name: "dir/a.txt"))?.string() == "hello, world\nhello, world\nhello, world\n")
+    expect((try read(p, name: "./dir/héllo.txt"))?.string() == "é\n")
+    expect(try read(p, name: "dir/nope") == none)
+    expect(try read(p, name: "dir") == none)
+    expect(try entries(fx(name)) == es)
+  }
+}
+
+test "what bsdtar made: pax, GNU, ustar" {
+  for name in ["pax.tar.gz", "gnu.tar.gz"] {
+    let p = try fixture(name)
+    let es = try list(p)
+    expect(es.map(e => line(e)) == [
+      "dir dir 0 755 ",
+      "dir/empty dir 0 755 ",
+      "dir/run.sh file 18 755 ",
+      "dir/link symlink 0 755 a.txt",
+      "dir/a.txt file 39 644 ",
+      "dir/a-very-long-directory-name-that-goes-on-and-on dir 0 755 ",
+      "dir/héllo.txt file 3 644 ",
+      "{long} file 5 644 ",
+    ])
+    expect(es.all(e => e.modified.unix() == fixed))
+    expect((try read(p, name: long))?.string() == "long\n")
+    let files = try decode(fx(name))
+    expect(files.find(f => f.name == "dir/run.sh")?.data.string() == "#!/bin/sh\necho hi\n")
+  }
+  let es = try entries(fx("ustar.tar"))
+  expect(es.map(e => line(e)) == ["dir/a.txt file 39 644 ", "dir/run.sh file 18 755 ", "dir/link symlink 0 755 a.txt"])
+}
+
+test "an old zip: MS-DOS's time and code page 437" {
+  let es = try entries(fx("dos.zip"))
+  expect(es.count() == 1)
+  let e = es[0]
+  // caf\x82 in code page 437.
+  expect(e.name == "café.txt")
+  let m = e.modified
+  expect(m.year == 2001 && m.month == 2 && m.day == 3 && m.hour == 4 && m.minute == 5 && m.second == 6)
+  expect(m.zone == time.Zone.local)
+  expect((try decode(fx("dos.zip")))[0].data.string() == "old\n")
+}
+
+test "round trips: zip, tar, tar.gz" {
+  let t = time.unix(fixed)
+  let deep = "deep/" + "x".repeat(120) + "/" + "y".repeat(120) + "/z.txt"
+  var text: [string] = []
+  for i in 0..<2000 {
+    text.push("line {i % 10}")
+  }
+  let files = [
+    File(name: "notes", kind: .dir, modified: t),
+    File(name: "notes/today.md", data: text.joined(separator: "\n").bytes(), modified: t),
+    File(name: "notes/empty.txt", modified: t),
+    File(name: "notes/run.sh", data: "#!/bin/sh\n".bytes(), modified: t, mode: 0o755),
+    File(name: "notes/latest", kind: .symlink, modified: t, target: "today.md"),
+    File(name: "日本語/ファイル.txt", data: "こんにちは".bytes(), modified: t),
+    File(name: deep, data: "deep".bytes(), modified: t),
+    File(name: "old.txt", data: "1969".bytes(), modified: time.unix(-86400)),
+  ]
+  for format in [Format.zip, .tar, .tarGz] {
+    let data = try encode(files, format: format)
+    let back = try decode(data)
+    expect(back.map(f => f.name) == files.map(f => f.name))
+    for (i, f) in back.enumerated() {
+      expect(f.data == files[i].data)
+      expect(f.kind == files[i].kind)
+      expect(f.target == files[i].target)
+    }
+    let es = try entries(data)
+    expect(es.map(e => e.mode) == [0o755, 0o644, 0o644, 0o755, 0o777, 0o644, 0o644, 0o644])
+    expect(es[1].size == files[1].data.count())
+    expect(es.slice(0, 7).all(e => e.modified.unix() == fixed))
+    if format == .zip {
+      // Deflated, and stored when that's no smaller.
+      expect(es[1].compressedSize < es[1].size / 10)
+      expect(es[3].compressedSize == es[3].size)
+      // A zip's time before 1980 is MS-DOS's first.
+      expect(es[7].modified.year == 1980)
+    } else {
+      expect(es[7].modified.unix() == -86400)
+    }
+    // Level 0: stored; trailing slashes and ./ are dropped.
+    let stored = try encode([File(name: "./a/b/", kind: .dir), File(name: "a/b/c.txt", data: text.joined(separator: "\n").bytes())], format: format, level: 0)
+    let s = try entries(stored)
+    expect(s.map(e => e.name) == ["a/b", "a/b/c.txt"])
+    if format == .zip {
+      expect(s[1].compressedSize == s[1].size)
+    }
+  }
+  // Nothing in it.
+  expect(try entries(try encode([])) == [])
+  expect(try entries(try encode([], format: .tarGz)) == [])
+}
+
+test "what isn't an archive" {
+  expect(errorOf(() => try entries("hello".bytes())) == "corrupt archive: not a zip or tar archive")
+  expect(errorOf(() => try entries(bytes())) == "corrupt archive: not a zip or tar archive")
+  var junk: [int] = []
+  for i in 0..<2000 {
+    junk.push(i * 7 % 256)
+  }
+  expect(errorOf(() => try entries(bytes(junk))) == "corrupt archive: not a zip or tar archive")
+  let gz = fx("pax.tar.gz")
+  expect(errorOf(() => try entries(gz.slice(0, 300))).hasPrefix("corrupt archive: "))
+  let zip = fx("tools.zip")
+  expect(errorOf(() => try entries(zip.slice(0, zip.count() - 30))).hasPrefix("corrupt archive: "))
+  expect(errorOf(() => try decode(fx("badcrc.zip"))) == "corrupt archive: a.txt: its checksum doesn't match")
+  expect(errorOf(() => try decode(fx("liar.zip"))) == "corrupt archive: big.txt: it's larger than the zip says")
+  do {
+    let _ = try decode("nope".bytes())
+  } catch ArchiveError.corrupt(r) {
+    expect(r == "not a zip or tar archive")
+  }
+}
+
+test "a bomb: a limit on what it makes" {
+  var zeros: [int] = []
+  for _ in 0..<200000 {
+    zeros.push(0)
+  }
+  let big = bytes(zeros)
+  for format in [Format.zip, .tarGz] {
+    let data = try encode([File(name: "a", data: big), File(name: "b", data: big)], format: format)
+    expect(data.count() < 2000)
+    expect((try decode(data, limit: 400000)).count() == 2)
+    do {
+      let _ = try decode(data, limit: 399999)
+      expect(false)
+    } catch ArchiveError.tooLarge(l) {
+      expect(l == 399999)
+    }
+    let p = fs.join([try scratch("bomb"), "bomb"])
+    try fs.write(p, data: data)
+    let dir = try scratch("bomb-out")
+    expect(errorOf(() => try extract(p, to: dir, limit: 300000)) == "the archive decompresses to more than 300000 bytes (raise the limit with limit:)")
+    // What came before the limit stays; nothing past it.
+    expect((try fs.stat(fs.join([dir, "a"]))).size == 200000)
+    expect(!fs.exists(fs.join([dir, "b"])))
+    try extract(p, to: dir, limit: 400000)
+    expect((try fs.stat(fs.join([dir, "b"]))).size == 200000)
+    expect(errorOf(() => try read(p, name: "b", limit: 10)) == "the archive decompresses to more than 10 bytes (raise the limit with limit:)")
+  }
+}
+
+test "extracting" {
+  for name in ["tools.zip", "zip64.zip", "pax.tar.gz", "gnu.tar.gz"] {
+    let dir = try scratch("x-" + name)
+    let p = try fixture(name)
+    try await spawn { try extract(p, to: dir) }
+    let a = fs.join([dir, "dir", "a.txt"])
+    expect(try fs.readText(a) == "hello, world\nhello, world\nhello, world\n")
+    expect((try fs.stat(a)).modified.unix() == fixed)
+    expect(try fs.readText(fs.join([dir, "dir", "héllo.txt"])) == "é\n")
+    expect(try fs.readText(fs.join([dir, long])) == "long\n")
+    expect((try fs.stat(fs.join([dir, "dir", "empty"]))).isDir)
+    // The link, read through.
+    expect(try fs.readText(fs.join([dir, "dir", "link"])) == "hello, world\nhello, world\nhello, world\n")
+    // Again, over what's there.
+    try extract(p, to: dir)
+    expect(try fs.readText(a) == "hello, world\nhello, world\nhello, world\n")
+  }
+  // Into a directory that isn't there yet.
+  let fresh = fs.join([try scratch("fresh"), "a", "b"])
+  try extract(try fixture("ustar.tar"), to: fresh)
+  expect(try fs.readText(fs.join([fresh, "dir", "run.sh"])) == "#!/bin/sh\necho hi\n")
+}
+
+test "zip-slip: nothing outside the directory" {
+  let root = try scratch("slip")
+  let dir = fs.join([root, "out"])
+  for name in ["slip.zip", "slip.tar.gz"] {
+    let p = try fixture(name)
+    do {
+      try extract(p, to: dir)
+      expect(false)
+    } catch ArchiveError.unsafePath(n, _) {
+      expect(n == "../evil.txt")
+    }
+    expect(fs.exists(fs.join([dir, "ok.txt"])))
+    expect(!fs.exists(fs.join([root, "evil.txt"])))
+  }
+  expect(errorOf(() => try extract(try fixture("abs.zip"), to: dir)) == "/abs.txt: it isn't a path inside the directory")
+  expect(errorOf(() => try extract(try fixture("backslash.zip"), to: dir)) == "..\\evil.txt: it isn't a path inside the directory")
+  // A link out of it, then a file through the link.
+  expect(errorOf(() => try extract(try fixture("linkout.tar.gz"), to: dir)) == "out: its link's target ../.. isn't inside the directory")
+  // A link inside it, then a file through that: refused too.
+  let msg = errorOf(() => try extract(try fixture("linkin.tar.gz"), to: dir))
+  expect(msg.hasPrefix("l/b.txt: it would be written through the link "))
+  expect(!fs.exists(fs.join([dir, "d", "b.txt"])))
+  // Listing them is fine: only extracting refuses.
+  expect((try list(try fixture("slip.zip"))).map(e => e.name) == ["ok.txt", "../evil.txt"])
+}
+
+test "writing refuses what extracting would" {
+  expect(errorOf(() => try encode([File(name: "../x")])) == "../x: it isn't a path inside the archive")
+  expect(errorOf(() => try encode([File(name: "/x")], format: .tar)) == "/x: it isn't a path inside the archive")
+  expect(errorOf(() => try encode([File(name: "")])) == ": it isn't a path inside the archive")
+  expect(errorOf(() => try encode([File(name: "l", kind: .symlink, target: "../../etc")])) == "l: its link's target ../../etc isn't inside the archive")
+  expect(errorOf(() => try encode([File(name: "h", kind: .hardLink, target: "a")])) == "unsupported: h: a zip has no hard links")
+  let t = try encode([File(name: "a", data: "a".bytes()), File(name: "h", kind: .hardLink, target: "a")], format: .tar)
+  expect((try entries(t)).map(e => line(e)) == ["a file 1 644 ", "h hardLink 0 644 a"])
+  // A hard link extracts as a copy of its file.
+  let p = fs.join([try scratch("hard"), "h.tar"])
+  try fs.write(p, data: t)
+  let dir = try scratch("hard-out")
+  try extract(p, to: dir)
+  expect(try fs.readText(fs.join([dir, "h"])) == "a")
+}
+
+test "create: a directory's tree, or a file" {
+  let src = try scratch("create-src")
+  try fs.mkdirAll(fs.join([src, "sub", "empty"]))
+  try fs.writeText(fs.join([src, "a.txt"]), text: "a")
+  try fs.writeText(fs.join([src, "sub", "b.txt"]), text: "b".repeat(5000))
+  let out = try scratch("create-out")
+  for name in ["t.zip", "t.tar", "t.tar.gz", "t.tgz"] {
+    let p = fs.join([out, name])
+    try await spawn { try create(p, from: src) }
+    expect((try list(p)).map(e => "{e.name} {e.kind}") == ["a.txt file", "sub dir", "sub/b.txt file", "sub/empty dir"])
+    let dir = try scratch("create-x")
+    try extract(p, to: dir)
+    expect(try fs.readText(fs.join([dir, "sub", "b.txt"])) == "b".repeat(5000))
+  }
+  // A file alone; the format said.
+  let one = fs.join([out, "one.bin"])
+  try create(one, from: fs.join([src, "a.txt"]), format: .tarGz, level: 9)
+  expect((try list(one)).map(e => e.name) == ["a.txt"])
+  // The archive inside what it archives isn't in itself.
+  try create(fs.join([src, "self.zip"]), from: src)
+  expect(!(try list(fs.join([src, "self.zip"]))).any(e => e.name == "self.zip"))
+  // A name that says no format; a source that isn't there.
+  expect(errorOf(() => try create(fs.join([out, "t.rar"]), from: src)).hasSuffix("its name doesn't say a format (.zip, .tar, .tar.gz, .tgz): say format:"))
+  do {
+    try create(fs.join([out, "x.zip"]), from: fs.join([src, "nope"]))
+    expect(false)
+  } catch fs.FsError.notFound(_) {}
+}

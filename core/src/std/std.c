@@ -17,6 +17,8 @@ const ak_lib_entry *const ak_std_libs[] = {
 	ak_std_flag,
 	ak_std_command,
 	ak_std_term,
+	ak_std_compress,
+	ak_std_archive,
 	NULL,
 };
 
