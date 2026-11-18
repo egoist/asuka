@@ -833,6 +833,16 @@ type StringLit struct {
 	Multiline bool // """…"""
 	Segments  []string
 	Interps   []Expr
+	// Specs are the interpolations' formats ({x:>8.2}), one per
+	// interpolation, nil for one without; nil when none has one.
+	Specs []*FormatSpec
+}
+
+// A FormatSpec is an interpolation's format: the text after its colon,
+// "{price:>8.2}"'s ">8.2".
+type FormatSpec struct {
+	Span
+	Text string
 }
 
 // A BoolLit is true or false.

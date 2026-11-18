@@ -70,6 +70,21 @@ compiles (an icon's markup, a pattern) must parse too.`,
 		Right: "let brand = #123456\n",
 	})
 
+	FormatSpec = def(Code{
+		Name:    "format-spec",
+		Summary: "an interpolation's format that doesn't fit its value",
+		Why: `A format after a colon in an interpolation (` + "`\"{price:>8.2f}\"`" + `) says how its
+value is written: ` + "`[[fill]align][sign][#][0][width][,|_][.precision][type]`" + `, as
+Python's and Rust's say. A sign, ` + "`#`" + `, ` + "`0`" + `, grouping and a type are a number's
+(` + "`x`" + `, ` + "`X`" + `, ` + "`o`" + `, ` + "`b`" + ` an int's digits, ` + "`f`" + `, ` + "`e`" + `, ` + "`%`" + ` a float's); other values
+are written as their text, which takes a fill, an alignment, a width and
+a precision (the most characters). The compiler reads the format, so a
+mistake shows where it's written.`,
+		Fix:   "Write the format for the value's type, as the message says: `{n:>6}`, `{x:.2f}`, `{n:#x}`, `{name:<12}`.",
+		Wrong: "fn price(cents: int) -> string = \"{cents:.2}\"\n",
+		Right: "fn price(cents: int) -> string = \"{float(cents) / 100:.2f}\"\n",
+	})
+
 	InvalidCharacter = def(Code{
 		Name:    "invalid-character",
 		Summary: "a character that isn't part of the language here",

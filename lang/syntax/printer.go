@@ -1649,6 +1649,9 @@ func (p *printer) stringLit(s *StringLit) {
 		if i > 0 {
 			p.write("{")
 			p.expr(s.Interps[i-1])
+			if i-1 < len(s.Specs) && s.Specs[i-1] != nil {
+				p.write(":" + s.Specs[i-1].Text)
+			}
 			p.write("}")
 		}
 		p.out = append(p.out, seg...)

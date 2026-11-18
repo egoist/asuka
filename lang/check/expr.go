@@ -53,9 +53,12 @@ func (c *Checker) expr1(e syntax.Expr, want Type) Type {
 		if _, err := Unescape(strings.Join(e.Segments, ""), e.Raw); err != nil {
 			c.errorf(e, diag.InvalidLiteral, "%v", err)
 		}
-		for _, x := range e.Interps {
+		for i, x := range e.Interps {
 			t := c.expr(x, nil)
 			c.interpolated(x, t)
+			if i < len(e.Specs) && e.Specs[i] != nil {
+				c.formatSpec(e.Specs[i], t)
+			}
 		}
 		return String
 	case *syntax.BoolLit:

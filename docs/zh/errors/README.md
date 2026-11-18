@@ -21,6 +21,7 @@ Asuka 报告的每个错误和警告都有一个代码：一个稳定的名称�
 - [extension-conflict](extension-conflict.md): 扩展添加了类型已有的名称，或者另一个扩展也添加了同样的名称。
 - [fn-body](fn-body.md): 函数缺少函数体，或者有了不该有的函数体。
 - [follows-nothing](follows-nothing.md): `state x()` 没有可跟随的东西。
+- [format-spec](format-spec.md): 插值的格式和它的值对不上。
 - [group-not-calls](group-not-calls.md): `load (…)` 里的元素不都是调用。
 - [import-cycle](import-cycle.md): 相互导入的包。
 - [int-overflow](int-overflow.md): 超出 64 位范围的整数字面量。

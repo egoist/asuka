@@ -621,13 +621,18 @@ func (b *fb) stringLit(e *syntax.StringLit, dst int) int {
 	type part struct {
 		text string
 		x    syntax.Expr // nil for text
+		spec string      // x's format ("" none)
 	}
 	var parts []part
 	for i, x := range e.Interps {
 		if s := literalText(segs[i], e.Raw, e.Multiline); s != "" {
 			parts = append(parts, part{text: s})
 		}
-		parts = append(parts, part{x: x})
+		pt := part{x: x}
+		if i < len(e.Specs) && e.Specs[i] != nil {
+			pt.spec = e.Specs[i].Text
+		}
+		parts = append(parts, pt)
 	}
 	if s := literalText(segs[len(segs)-1], e.Raw, e.Multiline); s != "" {
 		parts = append(parts, part{text: s})
@@ -641,7 +646,7 @@ func (b *fb) stringLit(e *syntax.StringLit, dst int) int {
 				vals = append(vals, b.kstr(p.text))
 				continue
 			}
-			v, k := b.stringPart(p.x)
+			v, k := b.stringPart(p.x, p.spec)
 			ks = append(ks, k)
 			vals = append(vals, v)
 		}
@@ -684,9 +689,21 @@ func (b *fb) stringLit(e *syntax.StringLit, dst int) int {
 
 // stringPart is an interpolated value: a scalar INTERP prints itself, or
 // a string.
-func (b *fb) stringPart(x syntax.Expr) (int, bc.Kind) {
+func (b *fb) stringPart(x syntax.Expr, spec string) (int, bc.Kind) {
 	t := b.typeOf(x)
 	v := b.value(x, -1)
+	if spec != "" {
+		// Formatted ({x:>8.2f}): a number by its digits, anything else by
+		// its text (core/src/rt/lib.c's str.fmt_*).
+		f := b.kstr(spec)
+		switch t {
+		case check.Int:
+			return b.callB("str.fmt_int", bc.KRef, v, f), bc.KRef
+		case check.Float:
+			return b.callB("str.fmt_float", bc.KRef, v, f), bc.KRef
+		}
+		return b.callB("str.fmt_text", bc.KRef, b.describe(v, t), f), bc.KRef
+	}
 	switch t {
 	case check.Int, check.Float, check.Bool:
 		return v, b.l.kind(t)

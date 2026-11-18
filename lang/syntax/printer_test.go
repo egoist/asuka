@@ -190,6 +190,7 @@ func TestFormatCases(t *testing.T) {
 	tests := []struct{ src, want string }{
 		// Spacing.
 		{"let x=a+b*c", "let x = a + b * c\n"},
+		{`let s = "{ price :>8.2f}|{n:#x}|{ name }"`, "let s = \"{price:>8.2f}|{n:#x}|{name}\"\n"},
 		{"let r=0 ..< n", "let r = 0..<n\n"},
 		{"let r = a .. b", "let r = a..b\n"},
 		{"let r = a .. .b.c(1) + 1", "let r = a .. .b.c(1) + 1\n"},

@@ -237,6 +237,17 @@
       "contentName": "source.asuka.embedded",
       "patterns": [
         {
+          "match": "(:)([^{}\"()\\[\\]:]*)(?=\\})",
+          "captures": {
+            "1": {
+              "name": "punctuation.separator.format.asuka"
+            },
+            "2": {
+              "name": "constant.other.placeholder.format.asuka"
+            }
+          }
+        },
+        {
           "include": "#statements"
         }
       ]

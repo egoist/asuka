@@ -151,6 +151,7 @@ package syntax
 // after a number reads (50% is a length, 10%3 a remainder).
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -3023,6 +3024,12 @@ func (p *parser) parseString() *StringLit {
 		}
 		p.exprLev = lev
 		s.Interps = append(s.Interps, x)
+		var spec *FormatSpec
+		if p.tok == FORMAT_SPEC {
+			spec = &FormatSpec{Span: Span{p.pos, p.pos + Pos(len(p.lit)+1)}, Text: p.lit}
+			p.next()
+		}
+		s.Specs = append(s.Specs, spec)
 		switch p.tok {
 		case STRING_MID:
 			s.Segments = append(s.Segments, p.lit[1:len(p.lit)-1])
@@ -3044,6 +3051,9 @@ func (p *parser) parseString() *StringLit {
 			}
 		}
 		break
+	}
+	if !slices.ContainsFunc(s.Specs, func(f *FormatSpec) bool { return f != nil }) {
+		s.Specs = nil // none has a format
 	}
 	s.Span = p.span(start)
 	lineBreaks(s)

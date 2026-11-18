@@ -27,7 +27,7 @@ func scanAll(src string) (toks []string, errs []string, s *Scanner) {
 		case tok.IsLiteral():
 			name := map[Token]string{
 				IDENT: "ident", INT: "int", FLOAT: "float", DURATION: "duration", LENGTH: "length",
-				COLOR: "color", STRING: "string", STRING_HEAD: "head", STRING_MID: "mid", STRING_TAIL: "tail",
+				COLOR: "color", STRING: "string", STRING_HEAD: "head", STRING_MID: "mid", STRING_TAIL: "tail", FORMAT_SPEC: "spec",
 			}[tok]
 			toks = append(toks, name+":"+lit)
 		default:
@@ -69,6 +69,11 @@ func TestScanTokens(t *testing.T) {
 		{`"\{not} \u{1F600}"`, `string:"\{not} \u{1F600}"`},
 		{"\"\"\"\n{a}\n\"\"\"", "head:\"\"\"\n{ ident:a tail:}\n\"\"\""},
 		{`"{"inner {x}"}"`, `head:"{ head:"inner { ident:x tail:}" tail:}"`},
+		// A format: what follows a colon the interpolation's expression
+		// doesn't hold, up to the }.
+		{`"{x:>8.2f} {n:#x}!"`, `head:"{ ident:x spec:>8.2f mid:} { ident:n spec:#x tail:}!"`},
+		{`"{x:*^9}{y:}"`, `head:"{ ident:x spec:*^9 mid:}{ ident:y spec: tail:}"`},
+		{`"{f(a: 1):<4} {m["k"]:>3}"`, `head:"{ ident:f ( ident:a : int:1 ) spec:<4 mid:} { ident:m [ string:"k" ] spec:>3 tail:}"`},
 		// Identifiers and keywords.
 		{"count Text _ _x ünï", "ident:count ident:Text ident:_ ident:_x ident:ünï"},
 		{"x.type .default a?.match", "ident:x . ident:type . ident:default ident:a ?. ident:match"},

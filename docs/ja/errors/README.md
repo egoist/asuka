@@ -21,6 +21,7 @@ Asuka が報告するエラーと警告には、すべてコードがありま�
 - [extension-conflict](extension-conflict.md): 型がすでに持つ名前、またはほかの拡張も追加する名前を追加する拡張。
 - [fn-body](fn-body.md): 本体のない関数、または持てない本体を持つ関数。
 - [follows-nothing](follows-nothing.md): 追従するもののない `state x()`。
+- [format-spec](format-spec.md): 値に合わない補間の書式。
 - [group-not-calls](group-not-calls.md): `load (…)` の要素が、どれも呼び出しというわけではない。
 - [import-cycle](import-cycle.md): 互いにインポートし合うパッケージ。
 - [int-overflow](int-overflow.md): 64 ビットに収まらない整数リテラル。

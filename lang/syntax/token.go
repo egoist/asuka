@@ -194,6 +194,7 @@ const (
 	STRING_HEAD // "…{: a string up to its first interpolation
 	STRING_MID  // }…{: between two interpolations
 	STRING_TAIL // }…": after the last interpolation
+	FORMAT_SPEC // :>10.2 in "{x:>10.2}": an interpolation's format, its text after the colon
 	literalEnd
 
 	operatorBeg
@@ -336,6 +337,7 @@ var tokens = [...]string{
 	STRING_HEAD: "string",
 	STRING_MID:  "string",
 	STRING_TAIL: "string",
+	FORMAT_SPEC: "format spec",
 
 	ADD:   "+",
 	SUB:   "-",

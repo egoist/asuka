@@ -34,6 +34,34 @@ an array's are (`(1,"a","red")`), and a map whose keys aren't strings
 with each key as it's written (`{1:"a"}`); a function, which has no
 text, as its type (`<fn(int) -> int>`).
 
+An interpolation may say how it's written after a colon, as Python
+and Rust do: `"{price:>8.2f}"`. The format is
+`[[fill]align][sign][#][0][width][,|_][.precision][type]`: `<`, `>` and
+`^` align left, right and centered in the width, after the fill
+character (a space unless it's given); `+` writes a plus too; `0` fills
+with zeros after the sign; `,` or `_` groups an int's digits (and a
+float's whole part); `.2` is a float's digits after its point, or the
+most characters of a text. The type is `x`, `X`, `o` or `b` for an
+int's digits in hexadecimal, octal or binary (`#` writes `0x`, `0o`,
+`0b` before them), or `f`, `e` and `%` for a number as a fixed point, an
+exponent or a percentage. A number is right-aligned, anything else
+left-aligned as its text, which takes a fill, an alignment, a width and
+a precision. The compiler reads the format: one that doesn't fit its
+value is an error where it's written
+([format-spec](../errors/format-spec.md)).
+
+```asuka check
+fn row(name: string, count: int, share: float) -> string = "{name:<10}{count:>6,}{share:>8.1%}"
+
+let price = "{1234.5:,.2f}"          // 1,234.50
+let hex = "{255:#06x}"               // 0x00ff
+let title = "{"Total":*^11}"         // ***Total***
+let table = row("asuka", 12500, 0.4) // asuka     12,500   40.0%
+```
+
+A width counts characters (code points), not how wide a terminal draws
+them.
+
 A tuple's elements are read by their place, `pair.0` and `pair.1`, and
 a `var`'s change in place (`pair.0 += 1`); a place the tuple doesn't
 have (`pair.2` of a pair) is a compile error. A tuple is also taken

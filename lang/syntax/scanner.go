@@ -383,6 +383,14 @@ redo:
 	case ',':
 		tok = COMMA
 	case ':':
+		if n := len(s.frames); n > 0 && s.frames[n-1].kind == interp {
+			// A colon an interpolation's expression doesn't hold (no
+			// bracket of its is open): its format, up to the }.
+			for s.ch != '}' && s.ch != eof && s.ch != '\n' && s.ch != '"' {
+				s.next()
+			}
+			return pos, FORMAT_SPEC, s.src[start+1 : s.offset]
+		}
 		tok = COLON
 	case ';':
 		tok = SEMICOLON

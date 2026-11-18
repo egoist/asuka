@@ -323,10 +323,13 @@ func Walk(v Visitor, n Node) {
 	case *BadItem:
 
 	// Expressions.
-	case *Ident, *BasicLit, *BoolLit, *NoneLit, *SelfExpr, *AtExpr, *BadExpr:
+	case *Ident, *BasicLit, *BoolLit, *NoneLit, *SelfExpr, *AtExpr, *BadExpr, *FormatSpec:
 	case *StringLit:
-		for _, x := range n.Interps {
+		for i, x := range n.Interps {
 			walk(x)
+			if i < len(n.Specs) && n.Specs[i] != nil {
+				walk(n.Specs[i])
+			}
 		}
 	case *ImplicitMember:
 		walk(n.Name)

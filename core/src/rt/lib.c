@@ -374,6 +374,206 @@ static ak_val str_reversed(ak_val *args, uint32_t n) {
 	RET_P(out);
 }
 
+// ---- Formats ----
+//
+// An interpolation's format, "{price:>8.2f}": [[fill]align][sign][#][0]
+// [width][,|_][.precision][type], as lang/check's ParseFormatSpec reads
+// it (which said what's wrong as the app compiled: here a format is one
+// it took). str.fmt_int(n, spec), str.fmt_float(x, spec) and
+// str.fmt_text(s, spec) write a value by it.
+
+typedef struct {
+	const char *fill;
+	uint32_t filln;  // its bytes: one character
+	char align;      // '<', '>', '^', '=' (after the sign: 0's), or 0
+	char sign;       // '+', ' ', or 0
+	bool alt, zero;
+	int64_t width, prec;  // -1: none
+	char group, type;
+} fspec;
+
+static int64_t fspec_num(const char **p, const char *end) {
+	int64_t n = -1;
+	while (*p < end && **p >= '0' && **p <= '9') {
+		if (n < 0) n = 0;
+		if (n < 100000) n = n * 10 + (**p - '0');
+		(*p)++;
+	}
+	return n;
+}
+
+static void fspec_parse(const ak_str *s, fspec *f) {
+	*f = (fspec){.fill = " ", .filln = 1, .width = -1, .prec = -1};
+	const char *p = s->data, *end = s->data + s->len;
+	uint32_t c1 = 1;
+	while (p + c1 < end && ((unsigned char)p[c1] & 0xc0) == 0x80) c1++;
+	if (p + c1 < end && (p[c1] == '<' || p[c1] == '>' || p[c1] == '^')) {
+		f->fill = p, f->filln = c1, f->align = p[c1];
+		p += c1 + 1;
+	} else if (p < end && (*p == '<' || *p == '>' || *p == '^')) {
+		f->align = *p++;
+	}
+	if (p < end && (*p == '+' || *p == '-' || *p == ' ')) {
+		if (*p != '-') f->sign = *p;
+		p++;
+	}
+	if (p < end && *p == '#') f->alt = true, p++;
+	if (p < end && *p == '0') f->zero = true, p++;
+	f->width = fspec_num(&p, end);
+	if (p < end && (*p == ',' || *p == '_')) f->group = *p++;
+	if (p < end && *p == '.') {
+		p++;
+		f->prec = fspec_num(&p, end);
+	}
+	if (p < end) f->type = *p;
+	if (f->zero && !f->align) f->fill = "0", f->filln = 1, f->align = '=';
+}
+
+static size_t code_points(const char *s, size_t n) {
+	size_t c = 0;
+	for (size_t i = 0; i < n; i++) c += ((unsigned char)s[i] & 0xc0) != 0x80;
+	return c;
+}
+
+static void fill_n(ak_strb *b, const fspec *f, int64_t n) {
+	for (int64_t i = 0; i < n; i++) ak_strb_cstr(b, f->fill, f->filln);
+}
+
+// fspec_out writes head (a sign, a 0x) and body padded to the width:
+// aligned as f says, else as def ('>' a number's, '<' text's).
+static ak_val fspec_out(const fspec *f, const char *head, size_t headn, const char *body, size_t bodyn, char def) {
+	ak_strb b = {0};
+	int64_t pad = f->width - (int64_t)(code_points(head, headn) + code_points(body, bodyn));
+	char align = f->align ? f->align : def;
+	if (pad <= 0) align = 0;
+	switch (align) {
+	case '<':
+		ak_strb_cstr(&b, head, headn), ak_strb_cstr(&b, body, bodyn), fill_n(&b, f, pad);
+		break;
+	case '>':
+		fill_n(&b, f, pad), ak_strb_cstr(&b, head, headn), ak_strb_cstr(&b, body, bodyn);
+		break;
+	case '^':
+		fill_n(&b, f, pad / 2), ak_strb_cstr(&b, head, headn), ak_strb_cstr(&b, body, bodyn), fill_n(&b, f, pad - pad / 2);
+		break;
+	case '=':
+		ak_strb_cstr(&b, head, headn), fill_n(&b, f, pad), ak_strb_cstr(&b, body, bodyn);
+		break;
+	default:
+		ak_strb_cstr(&b, head, headn), ak_strb_cstr(&b, body, bodyn);
+	}
+	RET_P(ak_strb_finish(&b));
+}
+
+// grouped writes digits (n of them, the integer part) with sep between
+// groups of every digits, then the rest as it is.
+static void grouped(ak_strb *b, const char *digits, size_t n, char sep, int every, const char *rest, size_t restn) {
+	for (size_t i = 0; i < n; i++) {
+		if (sep && i && (n - i) % (size_t)every == 0) ak_strb_cstr(b, &sep, 1);
+		ak_strb_cstr(b, digits + i, 1);
+	}
+	ak_strb_cstr(b, rest, restn);
+}
+
+static ak_val fmt_float(double x, const fspec *f) {
+	char head[2] = {0};
+	size_t headn = 0;
+	bool neg = signbit(x) && x == x;
+	if (neg) head[headn++] = '-';
+	else if (f->sign && x == x) head[headn++] = f->sign;
+	double a = fabs(x);
+	char buf[400];
+	int n;
+	if (x != x || a == INFINITY) {
+		n = snprintf(buf, sizeof buf, "%s", x != x ? "NaN" : "Infinity");
+		fspec g = *f;
+		if (g.align == '=') g.align = 0, g.fill = " ";  // no zeros before Infinity
+		return fspec_out(&g, head, headn, buf, (size_t)n, '>');
+	}
+	int prec = f->prec >= 0 ? (int)f->prec : 6;
+	if (f->type == 'e') {
+		n = snprintf(buf, sizeof buf, "%.*e", prec, a);
+	} else if (f->type == '%') {
+		n = snprintf(buf, sizeof buf, "%.*f%%", prec, a * 100);
+	} else if (f->type == 'f' || f->prec >= 0) {
+		n = snprintf(buf, sizeof buf, "%.*f", prec, a);
+	} else {
+		ak_str *s = ak_str_from_float(a);  // the shortest, as "{x}" writes it
+		n = (int)(s->len < sizeof buf ? s->len : sizeof buf - 1);
+		memcpy(buf, s->data, (size_t)n);
+		ak_release(s);
+	}
+	if (n < 0 || (size_t)n >= sizeof buf) n = (int)strlen(buf);
+	if (!f->group) return fspec_out(f, head, headn, buf, (size_t)n, '>');
+	size_t whole = strcspn(buf, ".e%");
+	ak_strb g = {0};
+	grouped(&g, buf, whole, f->group, 3, buf + whole, (size_t)n - whole);
+	ak_str *body = ak_strb_finish(&g);
+	ak_val out = fspec_out(f, head, headn, body->data, body->len, '>');
+	ak_release(body);
+	return out;
+}
+
+static ak_val str_fmt_float(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	fspec f;
+	fspec_parse(STR(1), &f);
+	return fmt_float(A(0).f, &f);
+}
+
+static ak_val str_fmt_int(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	fspec f;
+	fspec_parse(STR(1), &f);
+	int64_t v = A(0).i;
+	if (f.type == 'f' || f.type == 'e' || f.type == '%') return fmt_float((double)v, &f);
+	int radix = 10, every = 3;
+	const char *ds = "0123456789abcdef", *prefix = "";
+	switch (f.type) {
+	case 'x': radix = 16, every = 4, prefix = "0x"; break;
+	case 'X': radix = 16, every = 4, prefix = "0X", ds = "0123456789ABCDEF"; break;
+	case 'o': radix = 8, every = 4, prefix = "0o"; break;
+	case 'b': radix = 2, every = 4, prefix = "0b"; break;
+	}
+	uint64_t u = v < 0 ? 0 - (uint64_t)v : (uint64_t)v;
+	char digits[72];
+	int i = sizeof digits;
+	do {
+		digits[--i] = ds[u % (uint64_t)radix];
+		u /= (uint64_t)radix;
+	} while (u);
+	char head[4];
+	size_t headn = 0;
+	if (v < 0) head[headn++] = '-';
+	else if (f.sign) head[headn++] = f.sign;
+	if (f.alt && *prefix) head[headn++] = prefix[0], head[headn++] = prefix[1];
+	ak_strb g = {0};
+	grouped(&g, digits + i, sizeof digits - (size_t)i, f.group, every, "", 0);
+	ak_str *body = ak_strb_finish(&g);
+	ak_val out = fspec_out(&f, head, headn, body->data, body->len, '>');
+	ak_release(body);
+	return out;
+}
+
+// str.fmt_text(s, spec): text by its fill, alignment, width and
+// precision (the most characters it keeps).
+static ak_val str_fmt_text(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	fspec f;
+	fspec_parse(STR(1), &f);
+	ak_str *s = STR(0);
+	size_t len = s->len;
+	if (f.prec >= 0) {
+		int64_t kept = 0;
+		size_t i = 0;
+		for (; i < s->len; i++) {
+			if (((unsigned char)s->data[i] & 0xc0) != 0x80 && kept++ == f.prec) break;
+		}
+		len = i;
+	}
+	return fspec_out(&f, "", 0, s->data, len, '<');
+}
+
 static ak_val str_repeat(ak_val *args, uint32_t n) {
 	AK_UNUSED(n);
 	ak_strb b = {0};
@@ -1647,6 +1847,9 @@ const ak_lib_entry ak_lib[] = {
 	{"str.fixed", str_from_float_digits},
 	{"str.to_int_radix", str_to_int_radix},
 	{"str.reversed", str_reversed},
+	{"str.fmt_int", str_fmt_int},
+	{"str.fmt_float", str_fmt_float},
+	{"str.fmt_text", str_fmt_text},
 	{"int.to_string", int_to_string},
 
 	{"arr.push", arr_push},
