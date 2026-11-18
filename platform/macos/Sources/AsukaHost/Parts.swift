@@ -18,6 +18,8 @@
 //   - focus: the keyboard's focus (Focusable, Tab, FocusTrap, KeyText) and
 //     screen readers' roles, states and relations (Focus.swift, A11y.swift).
 //     Overlays (Overlay.swift) are navigation's.
+//   - asuka dev's error overlay (DevError.swift): AppKit's views over the
+//     main window, none of the app's, so it has no hooks here.
 import AppKit
 #if canImport(AsukaOps)
 import AsukaOps

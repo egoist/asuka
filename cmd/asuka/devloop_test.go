@@ -189,6 +189,85 @@ func TestDevWebEditedInitializer(t *testing.T) {
 	reload("0", "0", 1, "Count: 0, taps: 2")
 }
 
+// boomApp is an app whose Boom button throws an error nothing catches.
+const boomApp = `component Boom {
+  state n = 0
+
+  Column {
+    Text("n: {n}")
+    Button("Add") { on press { n += 1 } }
+    Button("Boom") { on press { try explode(n) } }
+  }
+}
+
+fn explode(n: int) throws {
+  throw Error("boom at {n}")
+}
+
+app { Boom() }
+`
+
+// shows polls a player's dump until it has each of want (a hang guard,
+// not a timing assertion), and returns it.
+func shows(t *testing.T, dump func() string, want ...string) string {
+	t.Helper()
+	var got string
+	for i := 0; i < 200; i++ {
+		got = dump()
+		ok := true
+		for _, w := range want {
+			ok = ok && strings.Contains(got, w)
+		}
+		if ok {
+			return got
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("the player shows:\n%s\nwant %q", got, want)
+	return ""
+}
+
+// asuka dev's error overlay on the web: an error the app didn't catch
+// shows over it with the lines where it was thrown, and Dismiss goes back
+// to the app as it was; a build that fails shows until it builds again;
+// Reload starts the app again.
+func TestDevWebErrorOverlay(t *testing.T) {
+	dir := counterDir(t)
+	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(boomApp), 0o644)
+	loop, automate := webDev(t, dir)
+	dump := func() string { return automate("dump") }
+	automate("tap Add\ntap Boom")
+	shows(t, dump, "Uncaught error", "boom at 1", "> 12 |   throw Error(\"boom at {n}\")", "explode (app.asuka:12)", "Dismiss", "Reload")
+	if got := automate("tap Dismiss\ndump"); strings.Contains(got, "Uncaught error") || !strings.Contains(got, "n: 1") {
+		t.Fatalf("after Dismiss, the page shows:\n%s", got)
+	}
+	// A save that doesn't build: the overlay says why, over the app.
+	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(strings.Replace(boomApp, "n += 1", "n += \"x\"", 1)), 0o644)
+	if loop.compile() {
+		t.Fatal("it compiled")
+	}
+	shows(t, dump, "Build failed", "app.asuka:6:32: += doesn't take an int and a string", "> 6 |", "^^^")
+	// Fixed: the overlay goes, the app reloads.
+	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(boomApp), 0o644)
+	if !loop.compile() {
+		t.Fatal("didn't compile")
+	}
+	nextReload(t, loop)
+	if got := dump(); strings.Contains(got, "Build failed") || !strings.Contains(got, "n: 1") {
+		t.Fatalf("after the fix, the page shows:\n%s", got)
+	}
+	// Reload: the app starts again, from its initial state.
+	automate("tap Boom")
+	shows(t, dump, "Uncaught error", "boom at 1")
+	automate("tap Reload")
+	if r := nextReload(t, loop); !r.restarted {
+		t.Fatalf("Reload: %+v", r)
+	}
+	if got := dump(); strings.Contains(got, "Uncaught error") || !strings.Contains(got, "n: 0") {
+		t.Fatalf("after Reload, the page shows:\n%s", got)
+	}
+}
+
 // webDev serves the app in dir under asuka dev's web server to headless
 // Chrome, and waits for the page's first load: the loop, and the page's
 // automation (its commands, a line each; what it answers).
@@ -259,4 +338,105 @@ func chromePath() string {
 		}
 	}
 	return ""
+}
+
+// asuka dev's error overlay on this Mac: an error the app didn't catch
+// shows over the player's window, in AppKit's views, with the lines where
+// it was thrown and the stack, and Dismiss goes back to the app as it was;
+// a build that fails shows until it builds again; Reload starts the app
+// again. ASUKA_DEVERROR_SNAPS=dir keeps the overlay's snapshots there.
+func TestDevDesktopErrorOverlay(t *testing.T) {
+	needMacBuild(t)
+	dir := counterDir(t)
+	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(boomApp), 0o644)
+	app := projectApp(t, dir, nil)
+	app.platform = target.MacOS
+	work := t.TempDir()
+	loop, err := newDevLoop(app, "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loop.close()
+	exe, err := buildDesktopPlayer(app, platformMac, cbuild.Host(), work, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmds := t.TempDir()
+	cmd := exec.Command(exe)
+	cmd.Env = append(os.Environ(),
+		"ASUKA_DEV=127.0.0.1:"+strconv.Itoa(loop.port()),
+		"ASUKA_DATA="+filepath.Join(work, "data"),
+		"ASUKA_COMMANDS="+cmds)
+	var out strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { cmd.Process.Kill(); cmd.Wait() }()
+	if r := nextReload(t, loop); !r.first {
+		t.Fatalf("the first report: %+v", r)
+	}
+	// automate runs the player's automation commands (a line each) and
+	// returns its tree's dump, which has the overlay's texts.
+	automate := func(commands string) string {
+		t.Helper()
+		done, tree := filepath.Join(cmds, "asuka-done.txt"), filepath.Join(cmds, "asuka-tree.txt")
+		os.Remove(done)
+		os.Remove(tree)
+		part := filepath.Join(cmds, "commands.part")
+		os.WriteFile(part, []byte(commands+"\ntree\n"), 0o644)
+		os.Rename(part, filepath.Join(cmds, "asuka-commands.txt"))
+		// The player writes done, empty, once it has run them (a hang guard).
+		for deadline := time.Now().Add(90 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+			if _, err := os.Stat(done); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the player didn't run %q:\n%s", commands, out.String())
+			}
+		}
+		b, _ := os.ReadFile(tree)
+		return string(b)
+	}
+	dump := func() string { return automate("") }
+	snaps := os.Getenv("ASUKA_DEVERROR_SNAPS")
+	snap := func(name string) string {
+		if snaps == "" {
+			return ""
+		}
+		return "snap " + filepath.Join(snaps, name) + "\n"
+	}
+	automate("tap Add\ntap Boom")
+	shows(t, dump, "deverror \"Uncaught error\"", "\"boom at 1\"", "> 12 |   throw Error(\"boom at {n}\")", "explode (app.asuka:12)",
+		"button \"Dismiss\"", "button \"Reload\" default")
+	automate(snap("uncaught.png"))
+	if got := automate("tap Dismiss"); strings.Contains(got, "Uncaught error") || !strings.Contains(got, `"n: 1"`) {
+		t.Fatalf("after Dismiss, the window shows:\n%s", got)
+	}
+	// A save that doesn't build: the overlay says why, over the app.
+	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(strings.Replace(boomApp, "n += 1", "n += \"x\"", 1)), 0o644)
+	if loop.compile() {
+		t.Fatal("it compiled")
+	}
+	shows(t, dump, "deverror \"Build failed\" build", "app.asuka:6:32: += doesn't take an int and a string", "> 6 |", "^^^")
+	automate(snap("build.png"))
+	// Fixed: the overlay goes, the app reloads.
+	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(boomApp), 0o644)
+	if !loop.compile() {
+		t.Fatal("didn't compile")
+	}
+	nextReload(t, loop)
+	if got := shows(t, dump, `"n: 1"`); strings.Contains(got, "Build failed") {
+		t.Fatalf("after the fix, the window shows:\n%s", got)
+	}
+	// Reload: the app starts again, from its initial state.
+	automate("tap Boom")
+	shows(t, dump, "Uncaught error", "boom at 1")
+	automate("tap Reload")
+	if r := nextReload(t, loop); !r.restarted {
+		t.Fatalf("Reload: %+v", r)
+	}
+	if got := shows(t, dump, `"n: 0"`); strings.Contains(got, "Uncaught error") {
+		t.Fatalf("after Reload, the window shows:\n%s\n%s", got, out.String())
+	}
 }

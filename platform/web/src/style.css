@@ -601,7 +601,20 @@ textarea.asuka-field { overflow-y: auto; display: block; }
 
 html:has(> body > .asuka-page), body:has(> .asuka-page) { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
 .asuka-page { position: fixed; inset: 0; }
-.asuka-error { position: fixed; inset: auto 12px 12px 12px; z-index: 1000; max-height: 60vh; overflow: auto; margin: 0; padding: 14px 16px; border-radius: 12px; background: #2b0d0d; color: #ffd7d7; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; box-shadow: 0 10px 40px rgb(0 0 0 / 0.4); user-select: text; }
+/* The error overlay (deverror.js): asuka dev's errors, and a core that stopped. */
+.asuka-error { box-sizing: border-box; position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; background: var(--asuka-background); color: var(--asuka-label); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif; }
+.asuka-error:not([open]) { display: none; }
+.asuka-error::backdrop { background: transparent; }
+.asuka-error-body { flex: 1; overflow: auto; padding: calc(24px + env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 20px max(20px, env(safe-area-inset-left)); user-select: text; -webkit-user-select: text; }
+.asuka-error-title { margin: 0 0 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--asuka-red); }
+.asuka-error-build .asuka-error-title { color: var(--asuka-orange); }
+.asuka-error-message { margin: 0 0 16px; font-size: 19px; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.asuka-error-source, .asuka-error-details { margin: 0 0 16px; padding: 12px 14px; border-radius: 10px; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
+.asuka-error-source { background: var(--asuka-secondary-background); }
+.asuka-error-details { padding: 0; color: var(--asuka-secondary-label); white-space: pre-wrap; overflow-wrap: anywhere; }
+.asuka-error-buttons { display: flex; gap: 12px; padding: 12px max(20px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); border-top: 1px solid var(--asuka-separator); }
+.asuka-error-buttons button { flex: 1; min-height: 44px; border: 0; border-radius: 10px; font: inherit; font-weight: 600; background: var(--asuka-secondary-background); color: var(--asuka-label); cursor: pointer; }
+.asuka-error-buttons .asuka-error-primary { background: var(--asuka-accent); color: var(--asuka-on-accent); }
 
 /* An indeterminate progress bar: under way, how far unknown. */
 .asuka-progress:indeterminate { background: var(--asuka-fill-strong) linear-gradient(90deg, transparent, var(--tint, var(--asuka-accent)) 30% 70%, transparent) no-repeat; background-size: 40% 100%; animation: asuka-indeterminate 1.4s ease-in-out infinite; }

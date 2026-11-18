@@ -29,6 +29,7 @@ import { notifyFor } from "./modules/system-notify.js";
 import { startCore } from "./core.js";
 import { Crash } from "./crash.js";
 import { app as nativeApp } from "./native.js";
+import { showDevError, hideDevError } from "./deverror.js";
 // What packages' generated JavaScript (asuka native) builds on: globalThis.asuka.native.
 export * as native from "./native.js";
 
@@ -82,13 +83,14 @@ export async function start(options = {}) {
       module: options.module,
       dev: !!dev,
       log: dev?.log,
+      devSend: dev?.send,
       appDir: data,
       workers: options.workers,
       sqlite: sqlite ? () => sqlite : null,
       crash: (host.crash = new Crash(host)),
     });
   } catch (e) {
-    showError(container, "The app couldn't load: " + e.message);
+    showError(container, "The app couldn't load", e.message);
     throw e;
   }
   if (dev) dev.attach(host, core);
@@ -106,17 +108,19 @@ function watchTrap(container, host) {
   const trapped = (err) => {
     if (shown || !(err instanceof WebAssembly.RuntimeError)) return;
     shown = true;
-    showError(container, "The app stopped: " + (host.crash?.panicMessage() || err.message));
+    showError(container, "The app stopped", host.crash?.panicMessage() || err.message);
   };
   globalThis.addEventListener?.("error", (e) => trapped(e.error));
   globalThis.addEventListener?.("unhandledrejection", (e) => trapped(e.reason));
 }
 
-function showError(container, msg) {
-  const d = document.createElement("pre");
-  d.className = "asuka-error";
-  d.textContent = msg;
-  container.appendChild(d);
+// showError shows what stopped the page (no core to ask: a trap, a core
+// that didn't load) in the error overlay; Reload loads the page again.
+function showError(container, title, msg) {
+  showDevError(container, { flags: 1, title, message: msg, source: "", details: "" }, {
+    dismiss: () => hideDevError(container),
+    reload: () => location.reload(),
+  });
 }
 
 /** devClient is asuka dev's side of the page: logs to the terminal, reloads with each build. */
@@ -140,6 +144,27 @@ function devClient(url) {
   addEventListener("unhandledrejection", (e) => log(2, `page: ${e.reason?.stack || e.reason}\n`));
   let host = null, core = null;
   const report = (r, first, restarted) => fetch(base + "reloaded", { method: "POST", body: JSON.stringify({ First: first, Restarted: restarted, Kept: r.kept, Micros: r.micros }) }).catch(() => {});
+  // asuka dev's frames for the core (core/src/abi/dev.h's kinds), held until it's there.
+  const Frame = { Reloaded: 5, Uncaught: 8, Source: 9, Failed: 10, Fixed: 11 };
+  let held = [];
+  const frame = (kind, bytes) => {
+    if (core?.frame) core.frame(kind, bytes);
+    else held.push([kind, bytes]);
+  };
+  // The core's frames for asuka dev: a restart the error overlay's Reload made,
+  // and an error the app didn't catch, which it prints and answers with its source.
+  const toCLI = (kind, bytes) => {
+    if (kind === Frame.Reloaded && bytes.length >= 8) {
+      const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      report({ kept: v.getUint32(0, true), micros: v.getUint32(4, true) }, false, (bytes[8] & 1) !== 0);
+      return;
+    }
+    if (kind !== Frame.Uncaught) return;
+    fetch(base + "uncaught", { method: "POST", body: bytes })
+      .then((res) => (res.ok ? res.arrayBuffer() : null))
+      .then((b) => b && frame(Frame.Source, new Uint8Array(b)))
+      .catch(() => {});
+  };
   const events = new EventSource(base + "events");
   // A new build of the app's module: loaded in place, its state and views kept. A
   // restart's: loaded keeping none of its state.
@@ -165,16 +190,9 @@ function devClient(url) {
     send();
     fs.flush().then(() => location.reload());
   });
-  events.addEventListener("failed", (e) => {
-    let d = document.querySelector(".asuka-build-error");
-    if (!d) {
-      d = document.createElement("pre");
-      d.className = "asuka-error asuka-build-error";
-      document.body.appendChild(d);
-    }
-    d.textContent = e.data;
-  });
-  events.addEventListener("fixed", () => document.querySelector(".asuka-build-error")?.remove());
+  // A build that failed (its frame's payload, base64), and its fix: the overlay shows it.
+  events.addEventListener("failed", (e) => frame(Frame.Failed, Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0))));
+  events.addEventListener("fixed", () => frame(Frame.Fixed, new Uint8Array(0)));
   // GUI tests' commands (e2e/), as the mobile hosts' debug builds take them.
   events.addEventListener("automation", async (e) => {
     const { id, commands } = JSON.parse(e.data);
@@ -189,10 +207,15 @@ function devClient(url) {
   });
   return {
     log,
+    send: toCLI,
     attach(h, c) {
       host = h;
       core = c || null;
-      if (core?.loaded) report(core.loaded, true);
+      // A first module that didn't start: the overlay says why, and the CLI printed it.
+      if (core?.loaded && !core.loaded.failed) report(core.loaded, true);
+      const frames = held;
+      held = [];
+      for (const [kind, bytes] of frames) frame(kind, bytes);
     },
     lastError: () => errorText.trim().split("\n").slice(-30).join("\n"),
   };

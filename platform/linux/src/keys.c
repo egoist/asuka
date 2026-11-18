@@ -167,6 +167,7 @@ static gboolean on_key(GtkEventControllerKey *k, guint keyval, guint keycode, Gd
 		start = kr->pop;
 	}
 	if (!w || w->closing) return 0;
+	if (lx_dev_error_over(w)) return 0;  // asuka dev's error overlay: modal
 	GdkEvent *ev = gtk_event_controller_get_current_event((GtkEventController *)k);
 	if (ev && gdk_key_event_is_modifier(ev)) return 0;
 	GtkWidget *focus = gtk_window_get_focus(w->window);
@@ -207,7 +208,7 @@ bool lx_key_to_nodes(const char *key, uint8_t mods) {
 	if (!strcmp(key, "esc")) key = "escape";
 	win *w = H.active_win;
 	if (!w || w->closing) w = H.main;
-	if (!w) return false;
+	if (!w || lx_dev_error_over(w)) return false;
 	GtkWidget *focus = gtk_window_get_focus(w->window);
 	if (focus && lx_composing(focus)) return false;
 	char buf[8];

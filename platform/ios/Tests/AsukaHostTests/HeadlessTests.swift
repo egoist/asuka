@@ -588,6 +588,69 @@ struct Reader {
         XCTAssertTrue(rt.nodes[stack]!.vc!.parent === rt.nodes[second]!.vc)
         XCTAssertTrue(view(stack).isDescendant(of: view(second)))
     }
+
+    // MARK: asuka dev's error overlay
+
+    /// A DevError command's arguments, as ops.AppendDevError writes them.
+    func devError(_ flags: UInt8, _ title: String, _ message: String, _ source: String = "", _ details: String = "") -> [UInt8] {
+        var w = AsukaWriter()
+        w.u8(flags)
+        for s in [title, message, source, details] { w.string(s) }
+        return w.bytes
+    }
+
+    /// The overlay is a window of its own over the app's, alerts' too; it
+    /// shows the error's parts, offers Reload only when the core does,
+    /// sends what's pressed to the root and stays until DevErrorClear.
+    func testDevErrorOverlay() {
+        let r = root()
+        _ = sent()
+        command(r, .devError, devError(1, "Uncaught error", "boom at 1", "> 12 |   throw Error(\"boom at {n}\")\n     |   ^^^^^", "explode (app.asuka:12)"))
+        guard let o = rt.devError else { return XCTFail("no overlay") }
+        XCTAssertFalse(o.window.isHidden)
+        XCTAssertTrue(o.window !== window)
+        XCTAssertGreaterThan(o.window.windowLevel, .alert)
+        XCTAssertTrue(o.window.isKeyWindow)
+        XCTAssertTrue(window.accessibilityElementsHidden) // VoiceOver reads the overlay only
+        let c = o.controller
+        XCTAssertEqual(c.texts, ["Uncaught error", "boom at 1", "> 12 |   throw Error(\"boom at {n}\")\n     |   ^^^^^", "explode (app.asuka:12)", "Dismiss", "Reload"])
+        XCTAssertEqual(c.titleView.textColor, .systemRed)
+        XCTAssertFalse(c.sourceBox.isHidden)
+        XCTAssertFalse(c.reloadButton.isHidden)
+        // The source's lines aren't wrapped: its box scrolls sideways.
+        o.window.layoutIfNeeded()
+        XCTAssertGreaterThanOrEqual(c.sourceBox.contentSize.width, c.sourceBox.textView.frame.maxX)
+        XCTAssertTrue(c.press("Reload"))
+        XCTAssertTrue(c.press("Dismiss"))
+        let acts = sent(.devErrorAction)
+        XCTAssertEqual(acts.map(\.id), [r, r])
+        XCTAssertEqual(acts.map(\.int), [Int64(AsukaDevErrorAction.reload.rawValue), Int64(AsukaDevErrorAction.dismiss.rawValue)])
+        // Pressed, it stays: the core says when it goes.
+        XCTAssertFalse(o.window.isHidden)
+        // Sent again: the same window shows the new error, a build's in
+        // orange, without Reload, nor a source or details when empty.
+        command(r, .devError, devError(2, "Build failed", "app.asuka:6:32: += doesn't take an int and a string"))
+        XCTAssertTrue(rt.devError === o)
+        XCTAssertEqual(c.titleView.textColor, .systemOrange)
+        XCTAssertTrue(c.reloadButton.isHidden)
+        XCTAssertTrue(c.sourceBox.isHidden)
+        XCTAssertTrue(c.detailsView.isHidden)
+        XCTAssertFalse(c.press("Reload"))
+        XCTAssertEqual(c.texts, ["Build failed", "app.asuka:6:32: += doesn't take an int and a string", "Dismiss"])
+        command(r, .devErrorClear)
+        XCTAssertNil(rt.devError)
+        XCTAssertTrue(o.window.isHidden)
+        XCTAssertTrue(window.isKeyWindow)
+        XCTAssertFalse(window.accessibilityElementsHidden)
+        // Cut short: nothing shows.
+        command(r, .devError, Array(devError(0, "Uncaught error", "x").dropLast(1)))
+        XCTAssertNil(rt.devError)
+        // Its root destroyed without a DevErrorClear: it goes with it.
+        command(r, .devError, devError(0, "Uncaught error", "x"))
+        XCTAssertNotNil(rt.devError)
+        rt.destroy(r)
+        XCTAssertNil(rt.devError)
+    }
 }
 
 /// The Keys prop as ops.AppendKeys writes it.

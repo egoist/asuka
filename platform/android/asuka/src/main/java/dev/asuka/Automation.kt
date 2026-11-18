@@ -37,6 +37,10 @@ import java.io.File
  * files/asuka-states.txt (RFC 0010: a line each, `name=value` fields
  * after a tab; hidden=true: a modal hides it from TalkBack).
  *
+ * While asuka dev's error overlay shows (DevError.kt), it covers the
+ * app: the commands read and press its views (dump: its title, message,
+ * source, details and buttons; tap Dismiss; back), not the app's.
+ *
  * Only in a debuggable app.
  */
 object AsukaAutomation {
@@ -70,13 +74,14 @@ object AsukaAutomation {
                 val deg = arg.substringBefore(' ').toFloatOrNull() ?: return
                 shown(rt).firstOrNull { textOf(it) == arg.substringAfter(' ') }?.let { rotate(it, deg) }
             }
-            "back" -> rt.activity?.onBackPressedDispatcher?.onBackPressed()
+            "back" -> if (!rt.devErrors.back()) rt.activity?.onBackPressedDispatcher?.onBackPressed()
             "tab" -> rt.activity?.window?.decorView?.let { tab(it, arg) }
         }
     }
 
+    /** The views shown, in creation order; asuka dev's error overlay's alone while it covers the app's. */
     private fun shown(rt: AsukaRuntime): List<View> =
-        rt.nodes.values.sortedBy { it.id }.map { it.view }.filter { it.isShown && it.alpha > 0f }
+        rt.devErrors.shownViews() ?: rt.nodes.values.sortedBy { it.id }.map { it.view }.filter { it.isShown && it.alpha > 0f }
 
     private fun textOf(v: View): String? {
         val t = (v as? TextView)?.text?.toString()

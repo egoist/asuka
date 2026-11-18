@@ -1254,6 +1254,8 @@ fun AsukaRuntime.present(n: AsukaNode) {
         AsukaKind.ALERT -> presentAlert(act, n)
         AsukaKind.SNACKBAR -> (n.view as AsukaSnackbar).present(act)
     }
+    // A window over asuka dev's error overlay: it goes over it again.
+    if (n.kind != AsukaKind.SNACKBAR) devErrors.raise()
 }
 
 private fun AsukaRuntime.presentSheet(act: AsukaActivity, n: AsukaNode) {

@@ -29,8 +29,9 @@ compiles the app again, in milliseconds, and the page loads the new
 version in place, keeping the app's state, as the other platforms'
 players do; the terminal reports each reload (`asuka: reloaded in 1.1
 ms, 3 states kept`). The app's output and the page's errors print in the
-terminal; a save that doesn't compile shows its errors over the page
-until the next one compiles. A change to `asuka.toml`, the assets or a
+terminal; a save that doesn't compile, or an error the app didn't
+catch, shows over the page ([Errors over the
+app](development.md#errors-over-the-app)). A change to `asuka.toml`, the assets or a
 native package's JavaScript reloads the page (the app starts again).
 
 The flags, beside `asuka dev`'s own (`--lang`, `--dir`, `-v`):

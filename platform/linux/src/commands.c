@@ -1,6 +1,6 @@
 // commands.c: the core's commands to a view (focus, present, animate,
 // a module's call…) and to the root (the menu bar, the window's options,
-// the accent, the locale, quitting).
+// the accent, the locale, quitting, asuka dev's error overlay).
 #include "host.h"
 
 #include <stdlib.h>
@@ -54,6 +54,12 @@ void lx_command(node *n, ak_cmd c, ak_span args) {
 		return;
 	case AK_CMD_ANNOUNCE:
 		lx_announce(args);
+		return;
+	case AK_CMD_DEV_ERROR:
+		lx_dev_error(n, args);
+		return;
+	case AK_CMD_DEV_ERROR_CLEAR:
+		lx_dev_error_clear();
 		return;
 	case AK_CMD_REPLACE:
 		if (n->nav) n->nav->pending = -2;

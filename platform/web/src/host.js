@@ -26,6 +26,7 @@ import * as text from "./text.js";
 import { redrawCanvases } from "./draw.js";
 import { Focus } from "./focus.js";
 import { Overlays } from "./overlay.js";
+import { DevErrors } from "./deverror.js";
 import * as a11y from "./a11y.js";
 
 const NaN32 = NaN;
@@ -108,6 +109,7 @@ export class Host {
     this.motion = new Motion(this);
     this.focus = new Focus(this);
     this.overlays = new Overlays(this);
+    this.devErrors = new DevErrors(this);
     this.measurer = document.createElement("div");
     this.measurer.className = "asuka-measurer";
     container.appendChild(this.measurer);
@@ -842,6 +844,12 @@ export class Host {
       }
       case Command.Announce:
         this.announce(new TextDecoder().decode(args));
+        break;
+      case Command.DevError:
+        this.devErrors.show(n, args);
+        break;
+      case Command.DevErrorClear:
+        this.devErrors.clear();
         break;
       case Command.Frames:
         this.motion.frames(args[0] !== 0, n);

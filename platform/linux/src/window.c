@@ -126,6 +126,7 @@ void lx_win_allocated(win *w, int width, int height) {
 	w->env_h = fh;
 	lx_queue_window_state(w);
 	lx_size_covers(w);
+	lx_dev_error_resized(w);
 	if (w->node) return;  // a Window's node is its root: it reports its own environment
 	ak_environment env;
 	lx_win_env(w, &env);
@@ -301,6 +302,7 @@ void lx_free_win(win *w) {
 			break;
 		}
 	if (H.active_win == w) H.active_win = NULL;
+	lx_dev_error_closing(w);
 	// Its memory stays: signals of its window may still come as GTK
 	// finishes destroying it, and nodes may name it; it's small.
 }

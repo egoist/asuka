@@ -570,4 +570,9 @@ ak_val ak_vm_model_new(void *inner, bool bound);
 bool ak_vm_model_bound(void *model);
 void ak_vm_model_set(void *model, ak_val v);
 
+// The error overlay's (devoverlay.c): a root that mounts gets what
+// shows; one that goes clears it first.
+void ak_dev_overlay_mounted(ak_ui_root *r);
+void ak_dev_overlay_unmount(ak_ui_root *r);
+
 #endif

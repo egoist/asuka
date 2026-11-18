@@ -6,11 +6,11 @@
 
 const char *const ak_kind_names[AK_KIND_COUNT] = {NULL, "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay"};
 
-const char *const ak_event_names[AK_EVENT_COUNT] = {NULL, "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint"};
+const char *const ak_event_names[AK_EVENT_COUNT] = {NULL, "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint", "DevErrorAction"};
 
-const uint8_t ak_event_payloads[AK_EVENT_COUNT] = {0, AK_P_NONE, AK_P_NONE, AK_P_STRING, AK_P_NONE, AK_P_NONE, AK_P_NONE, AK_P_BOOL, AK_P_FLOAT, AK_P_POINT, AK_P_ENVIRONMENT, AK_P_INT, AK_P_INT, AK_P_INT, AK_P_INT, AK_P_NONE, AK_P_NONE, AK_P_GESTURE, AK_P_GESTURE, AK_P_GESTURE, AK_P_INT, AK_P_POINT, AK_P_STRING, AK_P_BYTES, AK_P_STRING, AK_P_INT, AK_P_INT, AK_P_NONE, AK_P_STRING, AK_P_STRING, AK_P_STRING, AK_P_STRING, AK_P_FLOAT, AK_P_BYTES, AK_P_INT, AK_P_BYTES, AK_P_STRING, AK_P_BYTES, AK_P_STRING, AK_P_BYTES, AK_P_BOOL, AK_P_BOOL, AK_P_GESTURE, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BOOL, AK_P_NONE, AK_P_POINT, AK_P_INT, AK_P_NONE, AK_P_INT, AK_P_BYTES, AK_P_NONE, AK_P_INT, AK_P_BYTES, AK_P_BYTES, AK_P_NONE, AK_P_BYTES, AK_P_INT, AK_P_STRING, AK_P_POINT, AK_P_BYTES, AK_P_POINT};
+const uint8_t ak_event_payloads[AK_EVENT_COUNT] = {0, AK_P_NONE, AK_P_NONE, AK_P_STRING, AK_P_NONE, AK_P_NONE, AK_P_NONE, AK_P_BOOL, AK_P_FLOAT, AK_P_POINT, AK_P_ENVIRONMENT, AK_P_INT, AK_P_INT, AK_P_INT, AK_P_INT, AK_P_NONE, AK_P_NONE, AK_P_GESTURE, AK_P_GESTURE, AK_P_GESTURE, AK_P_INT, AK_P_POINT, AK_P_STRING, AK_P_BYTES, AK_P_STRING, AK_P_INT, AK_P_INT, AK_P_NONE, AK_P_STRING, AK_P_STRING, AK_P_STRING, AK_P_STRING, AK_P_FLOAT, AK_P_BYTES, AK_P_INT, AK_P_BYTES, AK_P_STRING, AK_P_BYTES, AK_P_STRING, AK_P_BYTES, AK_P_BOOL, AK_P_BOOL, AK_P_GESTURE, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BYTES, AK_P_BOOL, AK_P_NONE, AK_P_POINT, AK_P_INT, AK_P_NONE, AK_P_INT, AK_P_BYTES, AK_P_NONE, AK_P_INT, AK_P_BYTES, AK_P_BYTES, AK_P_NONE, AK_P_BYTES, AK_P_INT, AK_P_STRING, AK_P_POINT, AK_P_BYTES, AK_P_POINT, AK_P_INT};
 
-const char *const ak_cmd_names[AK_CMD_COUNT] = {NULL, "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit"};
+const char *const ak_cmd_names[AK_CMD_COUNT] = {NULL, "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear"};
 
 const ak_prop_info ak_common_props[AK_COMMON_PROP_COUNT] = {
 	{NULL, 0, -1},
@@ -411,6 +411,7 @@ static const char *const enum_Placement[] = {"Bottom", "BottomStart", "BottomEnd
 static const char *const enum_TitleBar[] = {"Default", "Hidden"};
 static const char *const enum_SnackbarDuration[] = {"Short", "Long", "Indefinite"};
 static const char *const enum_LocationAction[] = {"Replace", "Push", "Back", "Forward"};
+static const char *const enum_DevErrorAction[] = {"Dismiss", "Reload"};
 
 const ak_enum_info ak_enums[AK_ENUM_COUNT] = {
 	{"Role", enum_Role, 33},
@@ -452,6 +453,7 @@ const ak_enum_info ak_enums[AK_ENUM_COUNT] = {
 	{"TitleBar", enum_TitleBar, 2},
 	{"SnackbarDuration", enum_SnackbarDuration, 3},
 	{"LocationAction", enum_LocationAction, 4},
+	{"DevErrorAction", enum_DevErrorAction, 2},
 };
 
 const char *ak_kind_name(ak_view_kind k) { return k < AK_KIND_COUNT ? ak_kind_names[k] : NULL; }

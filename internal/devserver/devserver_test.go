@@ -107,6 +107,58 @@ func TestPlatforms(t *testing.T) {
 	}
 }
 
+// A build that failed goes to its platform's players, and to each that
+// says hello until it's fixed, after the module; an uncaught error a
+// player reports is Uncaught's, and its source goes back to it.
+func TestOverlay(t *testing.T) {
+	uncaught := make(chan Uncaught, 1)
+	var player *Player
+	s, err := Listen("127.0.0.1:0", Events{
+		Uncaught: func(p *Player, u Uncaught) { player = p; uncaught <- u },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.Send(target.IOS, []byte("v1"))
+	f := Failure{Message: "app.asuka:3:5: count isn't declared", Source: "> 3 | count += 1", Details: "1 more error"}
+	s.Fail(target.IOS, f)
+	c := dial(t, s)
+	defer c.Close()
+	c.Write(frame(KindHello, []byte(`{"platform":"ios"}`)))
+	if k, b := read(c); k != KindModule || b != "v1" {
+		t.Fatalf("%d %q", k, b)
+	}
+	if k, b := read(c); k != KindFailed || b != string(f.Encode()) {
+		t.Fatalf("%d %q", k, b)
+	}
+	s.Fixed(target.Android) // another platform's: nothing
+	s.Fixed(target.IOS)
+	if k, b := read(c); k != KindFixed || b != "" {
+		t.Fatalf("%d %q", k, b)
+	}
+	s.Fixed(target.IOS) // fixed already: nothing
+	s.Fail(target.IOS, f)
+	if k, _ := read(c); k != KindFailed {
+		t.Fatal(k)
+	}
+	// An uncaught error, and its source back.
+	report := []byte{7, 0, 0, 0, flagDidntStart}
+	report = appendStr(appendStr(report, "boom"), "init (/app/app.asuka:2)")
+	c.Write(frame(KindUncaught, report))
+	u := <-uncaught
+	if u != (Uncaught{Seq: 7, DidntStart: true, Message: "boom", Trace: "init (/app/app.asuka:2)"}) {
+		t.Fatalf("%+v", u)
+	}
+	player.Source(u.Seq, "> 2 | throw", "init (app.asuka:2)")
+	if k, b := read(c); k != KindSource || b != string(EncodeSource(7, "> 2 | throw", "init (app.asuka:2)")) {
+		t.Fatalf("%d %q", k, b)
+	}
+	if _, ok := DecodeUncaught(report[:len(report)-1]); ok {
+		t.Fatal("a cut report decoded")
+	}
+}
+
 func dial(t *testing.T, s *Server) net.Conn {
 	t.Helper()
 	c, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(s.Port()))

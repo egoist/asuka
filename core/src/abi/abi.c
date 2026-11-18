@@ -17,6 +17,7 @@
 #include "native/native.h"
 #include "vm/keep.h"
 #include "abi/dev.h"
+#include "abi/trace.h"
 #include "base/thread.h"
 #include "std/std.h"
 
@@ -51,10 +52,18 @@ static void wake(void) {
 	if (host.post) host.post();
 }
 
+static bool dev_player;  // asuka dev runs the app here (ak_dev_player)
+static void dev_report(void *err, bool didnt_start);
+
 static void on_error(void *ctx, void *err) {
 	AK_UNUSED(ctx);
+	if (ak_is_cancel(err)) return;
 	// An error nothing caught (no Boundary around it): the app's default,
-	// logged. In development the player shows it too (the dev loop's).
+	// logged. Under asuka dev the overlay shows it, and the CLI prints it.
+	if (dev_player) {
+		dev_report(err, false);
+		return;
+	}
 	fprintf(stderr, "asuka: %s\n", ak_error_message(err)->data);
 }
 
@@ -207,6 +216,12 @@ static int start_module(ak_module *m, bool mount, bool fresh, char **err) {
 		if (ak_error_pending()) {
 			void *e = ak_error_take();
 			snprintf(msg, sizeof msg, "asuka: init: %s", ak_error_message(e)->data);
+			if (dev_player && !ak_is_cancel(e)) {
+				// The overlay shows it, over a root of no app's: the old
+				// app went.
+				dev_report(e, true);
+				if (mount) ak_ui_mount(NULL);
+			}
 			ak_release(e);
 			fail(err, msg);
 			return -1;
@@ -260,9 +275,15 @@ static int load_module(const uint8_t *p, size_t n, bool fresh, char **err) {
 	char msg[512];
 	ak_module *m = ak_module_load(p, n, msg, sizeof msg);
 	if (!m) {
+		if (dev_player) {
+			// The app that ran (if any) runs on, under the overlay.
+			ak_dev_overlay_error(AK_STR("The app didn't load"), (ak_span){msg, (uint32_t)strlen(msg)}, AK_STR(""), false);
+			if (!ak_ui_mounted()) ak_ui_mount(NULL);
+		}
 		fail(err, msg);
 		return -1;
 	}
+	if (dev_player) ak_dev_overlay_clear_app();  // the errors were the old module's
 	return start_module(m, true, fresh, err);
 }
 
@@ -292,22 +313,114 @@ int asuka_has_app(void) { return app_loader() != NULL; }
 
 // ---- asuka dev ----
 
-static bool dev_player;  // asuka dev runs the app here (ak_dev_player)
-
 bool ak_dev_player(void) { return dev_player; }
+
+static bool init_failed;  // the last load's init threw: dev_report said so
+
+static void reloaded(int64_t t0, bool fresh) {
+	uint32_t kept = ak_keep_restored(), us = (uint32_t)((ak_now_ns() - t0) / 1000);
+	uint8_t b[9] = {(uint8_t)kept, (uint8_t)(kept >> 8), (uint8_t)(kept >> 16), (uint8_t)(kept >> 24), (uint8_t)us, (uint8_t)(us >> 8), (uint8_t)(us >> 16), (uint8_t)(us >> 24), fresh ? AK_DEV_RESTARTED : 0};
+	ak_dev_send(AK_DEV_RELOADED, b, sizeof b);
+}
 
 static void reload(const uint8_t *p, size_t n, bool fresh) {
 	int64_t t0 = ak_now_ns();
 	char *err = NULL;
+	init_failed = false;
 	if (load_module(p, n, fresh, &err) != 0) {
-		ak_dev_send(AK_DEV_ERROR, err, strlen(err));
-		fprintf(stderr, "%s\n", err);
+		// An init that threw went to the CLI as uncaught, with its stack.
+		if (!init_failed) {
+			ak_dev_send(AK_DEV_ERROR, err, strlen(err));
+			fprintf(stderr, "%s\n", err);
+		}
 		free(err);
 		return;
 	}
-	uint32_t kept = ak_keep_restored(), us = (uint32_t)((ak_now_ns() - t0) / 1000);
-	uint8_t b[9] = {(uint8_t)kept, (uint8_t)(kept >> 8), (uint8_t)(kept >> 16), (uint8_t)(kept >> 24), (uint8_t)us, (uint8_t)(us >> 8), (uint8_t)(us >> 16), (uint8_t)(us >> 24), fresh ? AK_DEV_RESTARTED : 0};
-	ak_dev_send(AK_DEV_RELOADED, b, sizeof b);
+	reloaded(t0, fresh);
+}
+
+// dev_report shows err, which nothing in the app caught, in the overlay
+// with where it was thrown, and sends it to asuka dev, which prints it
+// and answers with the lines of the source where it went wrong (source,
+// dev_frame). didnt_start: the module's init threw it.
+static void dev_report(void *err, bool didnt_start) {
+	ak_str *msg = ak_vm_error_text(err);
+	const char *c, *vm;
+	ak_trace_of(err, &c, &vm);
+	ak_buf trace = {0};
+	ak_buf_put(&trace, c, strlen(c));
+	ak_buf_put(&trace, vm, strlen(vm));
+	while (trace.len && trace.data[trace.len - 1] == '\n') trace.len--;
+	ak_span m = {msg->data, msg->len}, t = {(const char *)trace.data, (uint32_t)trace.len};
+	if (didnt_start) init_failed = true;
+	uint32_t seq = ak_dev_overlay_error(didnt_start ? AK_STR("The app didn't start") : AK_STR("Uncaught error"), m, t, true);
+	ak_buf f = {0};
+	ak_buf_u32(&f, seq);
+	ak_buf_u8(&f, didnt_start ? AK_DEV_DIDNT_START : 0);
+	ak_buf_str(&f, m.p, m.len);
+	ak_buf_str(&f, t.p, t.len);
+	if (!ak_dev_send(AK_DEV_UNCAUGHT, f.data, f.len)) {
+		// No asuka dev to print it: the player's log has it.
+		fprintf(stderr, "asuka: %s%s\n", didnt_start ? "init: " : "", msg->data);
+		if (t.len) fprintf(stderr, "%.*s\n", (int)t.len, t.p);
+	}
+	ak_buf_free(&f);
+	ak_buf_free(&trace);
+	ak_release(msg);
+}
+
+// dev_restart is the overlay's Reload: the app starts again from its
+// module, keeping none of its state, as asuka dev's restart does.
+static void dev_restart(void) {
+	if (!module) return;
+	int64_t t0 = ak_now_ns();
+	ak_module *m = module;
+	ak_module_retain(m);  // start_module lets the old one (this one) go
+	char *err = NULL;
+	init_failed = false;
+	int rc = start_module(m, true, true, &err);
+	free(err);  // an init that threw: the overlay shows it
+	if (rc == 0) reloaded(t0, true);
+}
+
+// dev_frame takes asuka dev's frames for the overlay (dev.h).
+static void dev_frame(uint8_t kind, const uint8_t *p, size_t n) {
+	ak_reader r = {p, n, 0, false};
+	switch (kind) {
+	case AK_DEV_SOURCE: {
+		uint32_t seq = ak_read_u32(&r);
+		ak_span source = ak_read_str(&r), details = ak_read_str(&r);
+		if (!r.err) ak_dev_overlay_source(seq, source, details);
+		break;
+	}
+	case AK_DEV_FAILED: {
+		ak_span message = ak_read_str(&r), source = ak_read_str(&r), details = ak_read_str(&r);
+		if (!r.err) ak_dev_overlay_build(message, source, details);
+		break;
+	}
+	case AK_DEV_FIXED: ak_dev_overlay_fixed(); break;
+	}
+}
+
+static void keep_states(void);
+
+// dev_begin makes this run asuka dev's player: states kept across
+// reloads, the run-time diagnostics, errors traced for the overlay.
+static void dev_begin(void) {
+	keep_states();
+	ak_diag_enabled = true;  // a development build: the run-time diagnostics (rfcs/0015)
+	if (dev_player) return;
+	dev_player = true;
+	ak_trace_start();
+	ak_dev_overlay_set_reload(dev_restart);
+	ak_dev_set_reload(reload);
+	ak_dev_set_frames(dev_frame);
+}
+
+void asuka_dev_frame(int kind, const uint8_t *p, size_t len) {
+	if (!started) return;
+	dev_begin();
+	dev_frame((uint8_t)kind, p, len);
 }
 
 static void keep_states(void) {
@@ -319,9 +432,7 @@ static void keep_states(void) {
 
 static int dev_load(const uint8_t *p, size_t n, bool fresh, uint32_t *micros, char **err) {
 	if (err) *err = NULL;
-	dev_player = true;
-	ak_diag_enabled = true;  // a development build: the run-time diagnostics (rfcs/0015)
-	keep_states();
+	dev_begin();
 	int64_t t0 = ak_now_ns();
 	if (load_module(p, n, fresh, err) != 0) return -1;
 	if (micros) *micros = (uint32_t)((ak_now_ns() - t0) / 1000);
@@ -338,10 +449,7 @@ int asuka_dev_connect(const char *host_name, int port, const char *hello, char *
 		fail(err, "asuka: asuka_dev_connect before asuka_start");
 		return -1;
 	}
-	keep_states();
-	ak_dev_set_reload(reload);
-	dev_player = true;
-	ak_diag_enabled = true;  // a development build: the run-time diagnostics (rfcs/0015)
+	dev_begin();
 	char msg[256];
 	if (!ak_dev_connect(host_name, port, hello, true, msg, sizeof msg)) {
 		fail(err, msg);
@@ -356,10 +464,7 @@ int asuka_dev_listen(int port, const char *hello, char **err) {
 		fail(err, "asuka: asuka_dev_listen before asuka_start");
 		return -1;
 	}
-	keep_states();
-	ak_dev_set_reload(reload);
-	dev_player = true;
-	ak_diag_enabled = true;  // a development build: the run-time diagnostics (rfcs/0015)
+	dev_begin();
 	char msg[256];
 	if (!ak_dev_listen(port, hello, true, msg, sizeof msg)) {
 		fail(err, msg);

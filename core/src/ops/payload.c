@@ -737,3 +737,23 @@ bool ak_decode_location_event(const uint8_t *b, size_t n, ak_span *href, ak_span
 	*state = ak_read_str(&r);
 	return !r.err;
 }
+
+// The error overlay.
+
+void ak_append_dev_error(ak_buf *b, const ak_dev_error *e) {
+	ak_buf_u8(b, e->flags);
+	ak_buf_wstr(b, e->title);
+	ak_buf_wstr(b, e->message);
+	ak_buf_wstr(b, e->source);
+	ak_buf_wstr(b, e->details);
+}
+
+bool ak_decode_dev_error(const uint8_t *b, size_t n, ak_dev_error *e) {
+	ak_reader r = reader(b, n);
+	e->flags = ak_read_u8(&r);
+	e->title = ak_read_str(&r);
+	e->message = ak_read_str(&r);
+	e->source = ak_read_str(&r);
+	e->details = ak_read_str(&r);
+	return !r.err;
+}

@@ -2,7 +2,7 @@
 // a sheet's or alert's Present, animations, opening a URL, a module's call,
 // the clipboard, media, frames, announcements, sharing, scrolling, the
 // accent and color scheme, the menu bar, windows' options and actions, a
-// router's address, the language, quitting.
+// router's address, the language, quitting; asuka dev's error overlay.
 #include "win.h"
 
 void wh_set_accent(ak_color c) {
@@ -10,6 +10,7 @@ void wh_set_accent(ak_color c) {
 	H.accent = c;
 	wh_palette(&H.theme, H.dark, c);
 	RedrawWindow(H.window, NULL, NULL, RDW_INVALIDATE | RDW_ALLCHILDREN);
+	wh_dev_error_restyle();
 }
 
 // wh_set_color_scheme shows the app light or dark whatever the system's
@@ -217,6 +218,12 @@ void wh_command(node *n, uint16_t cmd, const uint8_t *args, size_t len) {
 		break;
 	case AK_CMD_QUIT:
 		wh_quit(len > 0 && (args[0] & 1));
+		break;
+	case AK_CMD_DEV_ERROR:
+		wh_dev_error(n, args, len);  // asuka dev's error overlay (deverror.c)
+		break;
+	case AK_CMD_DEV_ERROR_CLEAR:
+		wh_dev_error_clear();
 		break;
 	}
 }

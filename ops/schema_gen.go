@@ -702,11 +702,13 @@ const (
 	EventAnchorFrame EventKind = 64
 	// EventPressPoint: where a press began on the view, in points from its top left: sent just before Pressed (true), when listened for (a slider's track jumps to it).
 	EventPressPoint EventKind = 65
+	// EventDevErrorAction: the user pressed a button of the overlay DevError shows: a DevErrorAction (Dismiss, Reload); to the root. The overlay stays until DevErrorClear.
+	EventDevErrorAction EventKind = 66
 )
 
-var eventNames = [...]string{"", "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint"}
+var eventNames = [...]string{"", "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint", "DevErrorAction"}
 
-var eventPayloads = [...]Payload{0, PNone, PNone, PString, PNone, PNone, PNone, PBool, PFloat, PPoint, PEnvironment, PInt, PInt, PInt, PInt, PNone, PNone, PGesture, PGesture, PGesture, PInt, PPoint, PString, PBytes, PString, PInt, PInt, PNone, PString, PString, PString, PString, PFloat, PBytes, PInt, PBytes, PString, PBytes, PString, PBytes, PBool, PBool, PGesture, PBytes, PBytes, PBytes, PBytes, PBytes, PBool, PNone, PPoint, PInt, PNone, PInt, PBytes, PNone, PInt, PBytes, PBytes, PNone, PBytes, PInt, PString, PPoint, PBytes, PPoint}
+var eventPayloads = [...]Payload{0, PNone, PNone, PString, PNone, PNone, PNone, PBool, PFloat, PPoint, PEnvironment, PInt, PInt, PInt, PInt, PNone, PNone, PGesture, PGesture, PGesture, PInt, PPoint, PString, PBytes, PString, PInt, PInt, PNone, PString, PString, PString, PString, PFloat, PBytes, PInt, PBytes, PString, PBytes, PString, PBytes, PBool, PBool, PGesture, PBytes, PBytes, PBytes, PBytes, PBytes, PBool, PNone, PPoint, PInt, PNone, PInt, PBytes, PNone, PInt, PBytes, PBytes, PNone, PBytes, PInt, PString, PPoint, PBytes, PPoint, PInt}
 
 func (e EventKind) String() string {
 	if int(e) < len(eventNames) && e > 0 {
@@ -796,9 +798,13 @@ const (
 	CmdLocation CommandID = 36
 	// CmdQuit: args: u8 flags (1 relaunch: the app starts again, with the same arguments, once this process has ended); sent to the root: the desktop host quits the app as the user's Quit does, asking the app first (asuka_quit_request, which may cancel it, and the relaunch with it), then closing its windows; phones and the web, whose apps don't quit themselves, ignore it.
 	CmdQuit CommandID = 37
+	// CmdDevError: args (ops.AppendDevError): u8 DevErrorFlags bits (1 reload: the overlay offers Reload; 2 a build that failed, not an error of the app's), u32-length title, u32-length message, u32-length source (lines of the app's source around where it went wrong, with their numbers: monospaced; empty: none), u32-length details (the stack, or the build's other errors: monospaced; empty: none); sent to the root, only under asuka dev: the host shows an error overlay over everything in the main window (its screens, sheets, alerts and popovers), in its own views, not the app's: the title, the message, the source and the details (the text selectable, scrolling when long), and Dismiss and, with flag 1, Reload, which report DevErrorAction. Sent again while it shows, the overlay shows the new one.
+	CmdDevError CommandID = 38
+	// CmdDevErrorClear: sent to the root: the host removes the overlay DevError shows (the error was dismissed or fixed, the app reloaded, or the root is about to go).
+	CmdDevErrorClear CommandID = 39
 )
 
-var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit"}
+var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear"}
 
 func (c CommandID) String() string {
 	if int(c) < len(commandNames) && c > 0 {
@@ -1251,4 +1257,11 @@ const (
 	LocationActionPush
 	LocationActionBack
 	LocationActionForward
+)
+
+type DevErrorAction int32
+
+const (
+	DevErrorActionDismiss DevErrorAction = iota
+	DevErrorActionReload
 )

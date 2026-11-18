@@ -2,7 +2,9 @@
 // (core/src/abi/dev.h): players connect and say hello (their platform),
 // get the app's latest bytecode for their platform and again on every
 // build (or to restart with, keeping no state), and send back their logs
-// and how each reload went.
+// and how each reload went. The error overlay a player shows hears from
+// it too: a build that failed (and when it's fixed), and the source of an
+// error the app didn't catch, which the player reports.
 package devserver
 
 import (
@@ -26,10 +28,81 @@ const (
 	KindReloaded = 5
 	KindError    = 6
 	KindRestart  = 7
+	KindUncaught = 8
+	KindSource   = 9
+	KindFailed   = 10
+	KindFixed    = 11
 )
 
 // A reloaded frame's flags.
 const flagRestarted = 1
+
+// An uncaught frame's flags.
+const flagDidntStart = 1
+
+// Uncaught is an error nothing in the app caught, as a player reports it.
+type Uncaught struct {
+	Seq uint32 // its number, which its source names (Player.Source)
+	// DidntStart: the module's init threw it, and the app didn't start.
+	DidntStart bool
+	Message    string
+	// Trace is where it was thrown: a line per frame, innermost first,
+	// "name (file:line)".
+	Trace string
+}
+
+// Failure is a build that failed, as a player's error overlay shows it:
+// its first error, the lines of the source at it, and the rest.
+type Failure struct {
+	Message, Source, Details string
+}
+
+func appendStr(b []byte, s string) []byte {
+	b = binary.LittleEndian.AppendUint32(b, uint32(len(s)))
+	return append(b, s...)
+}
+
+func (f Failure) encode() []byte {
+	return appendStr(appendStr(appendStr(nil, f.Message), f.Source), f.Details)
+}
+
+// Encode is f as a failed frame's payload (the web's page gets it from
+// the dev server's events, not a connection of its own).
+func (f Failure) Encode() []byte { return f.encode() }
+
+// DecodeUncaught reads an uncaught frame's payload.
+func DecodeUncaught(b []byte) (Uncaught, bool) {
+	var u Uncaught
+	if len(b) < 5 {
+		return u, false
+	}
+	u.Seq = binary.LittleEndian.Uint32(b)
+	u.DidntStart = b[4]&flagDidntStart != 0
+	b = b[5:]
+	str := func() (string, bool) {
+		if len(b) < 4 {
+			return "", false
+		}
+		n := binary.LittleEndian.Uint32(b)
+		if uint64(len(b)-4) < uint64(n) {
+			return "", false
+		}
+		s := string(b[4 : 4+n])
+		b = b[4+n:]
+		return s, true
+	}
+	var ok1, ok2 bool
+	u.Message, ok1 = str()
+	u.Trace, ok2 = str()
+	return u, ok1 && ok2
+}
+
+// EncodeSource is a source frame's payload: an uncaught error's number,
+// the lines of the source where it went wrong, its stack as shown.
+func EncodeSource(seq uint32, source, details string) []byte {
+	b := binary.LittleEndian.AppendUint32(nil, seq)
+	return appendStr(appendStr(b, source), details)
+}
 
 // Events are what players report.
 type Events struct {
@@ -43,6 +116,9 @@ type Events struct {
 	// how long it took, and whether it was a restart's (Restart).
 	Reloaded func(p *Player, kept uint32, micros uint32, restarted bool)
 	Error    func(p *Player, text []byte)
+	// Uncaught is told of an error nothing in the app caught; its source
+	// goes back with Player.Source.
+	Uncaught func(p *Player, u Uncaught)
 	Gone     func(p *Player, err error)
 }
 
@@ -54,6 +130,7 @@ type Server struct {
 	ev      Events
 	mu      sync.Mutex
 	modules map[target.Platform][]byte
+	failed  map[target.Platform]Failure // a platform's build that failed, until Fixed
 	ps      map[*Player]bool
 }
 
@@ -74,7 +151,7 @@ func Listen(addr string, ev Events) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{ln: ln, ev: ev, ps: map[*Player]bool{}, modules: map[target.Platform][]byte{}}
+	s := &Server{ln: ln, ev: ev, ps: map[*Player]bool{}, modules: map[target.Platform][]byte{}, failed: map[target.Platform]Failure{}}
 	go s.accept()
 	return s, nil
 }
@@ -153,6 +230,42 @@ func (s *Server) Restart() {
 	}
 }
 
+// Fail tells platform's players, and each that says hello until Fixed,
+// that the app's build failed: their overlay shows it.
+func (s *Server) Fail(platform target.Platform, f Failure) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failed[platform] = f
+	for p := range s.ps {
+		if p.hello && p.Platform == platform {
+			p.send(KindFailed, f.encode())
+		}
+	}
+}
+
+// Fixed tells platform's players the app builds again, if Fail told them
+// it didn't. Before the module that's sent next.
+func (s *Server) Fixed(platform target.Platform) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.failed[platform]; !ok {
+		return
+	}
+	delete(s.failed, platform)
+	for p := range s.ps {
+		if p.hello && p.Platform == platform {
+			p.send(KindFixed, nil)
+		}
+	}
+}
+
+// Source answers an uncaught error p reported (seq, its number): the
+// lines of the app's source where it went wrong, and its stack as the
+// overlay shows it.
+func (p *Player) Source(seq uint32, source, details string) error {
+	return p.send(KindSource, EncodeSource(seq, source, details))
+}
+
 func (s *Server) accept() {
 	for {
 		c, err := s.ln.Accept()
@@ -213,6 +326,9 @@ func (s *Server) hello(p *Player, b []byte) {
 	if m != nil {
 		p.send(KindModule, m)
 	}
+	if f, ok := s.failed[platform]; ok {
+		p.send(KindFailed, f.encode())
+	}
 	s.mu.Unlock()
 	if m == nil && s.ev.Need != nil {
 		s.ev.Need(p, platform)
@@ -251,6 +367,10 @@ func (p *Player) read(s *Server) error {
 		case KindError:
 			if ev.Error != nil {
 				ev.Error(p, b)
+			}
+		case KindUncaught:
+			if u, ok := DecodeUncaught(b); ok && ev.Uncaught != nil {
+				ev.Uncaught(p, u)
 			}
 		}
 	}

@@ -732,7 +732,9 @@ enum {
 	AK_EVENT_ANCHOR_FRAME = 64,
 	// where a press began on the view, in points from its top left: sent just before Pressed (true), when listened for (a slider's track jumps to it)
 	AK_EVENT_PRESS_POINT = 65,
-	AK_EVENT_COUNT = 66,
+	// the user pressed a button of the overlay DevError shows: a DevErrorAction (Dismiss, Reload); to the root. The overlay stays until DevErrorClear
+	AK_EVENT_DEV_ERROR_ACTION = 66,
+	AK_EVENT_COUNT = 67,
 };
 
 // Commands.
@@ -808,7 +810,11 @@ enum {
 	AK_CMD_LOCATION = 36,
 	// args: u8 flags (1 relaunch: the app starts again, with the same arguments, once this process has ended); sent to the root: the desktop host quits the app as the user's Quit does, asking the app first (asuka_quit_request, which may cancel it, and the relaunch with it), then closing its windows; phones and the web, whose apps don't quit themselves, ignore it
 	AK_CMD_QUIT = 37,
-	AK_CMD_COUNT = 38,
+	// args (ops.AppendDevError): u8 DevErrorFlags bits (1 reload: the overlay offers Reload; 2 a build that failed, not an error of the app's), u32-length title, u32-length message, u32-length source (lines of the app's source around where it went wrong, with their numbers: monospaced; empty: none), u32-length details (the stack, or the build's other errors: monospaced; empty: none); sent to the root, only under asuka dev: the host shows an error overlay over everything in the main window (its screens, sheets, alerts and popovers), in its own views, not the app's: the title, the message, the source and the details (the text selectable, scrolling when long), and Dismiss and, with flag 1, Reload, which report DevErrorAction. Sent again while it shows, the overlay shows the new one
+	AK_CMD_DEV_ERROR = 38,
+	// sent to the root: the host removes the overlay DevError shows (the error was dismissed or fixed, the app reloaded, or the root is about to go)
+	AK_CMD_DEV_ERROR_CLEAR = 39,
+	AK_CMD_COUNT = 40,
 };
 
 // Enums, by their index in ak_enums.
@@ -852,7 +858,8 @@ enum {
 	AK_ENUM_TITLE_BAR = 36,
 	AK_ENUM_SNACKBAR_DURATION = 37,
 	AK_ENUM_LOCATION_ACTION = 38,
-	AK_ENUM_COUNT = 39,
+	AK_ENUM_DEV_ERROR_ACTION = 39,
+	AK_ENUM_COUNT = 40,
 };
 
 // Role.
@@ -1299,6 +1306,13 @@ enum {
 	AK_LOCATION_ACTION_BACK = 2,
 	AK_LOCATION_ACTION_FORWARD = 3,
 	AK_LOCATION_ACTION_COUNT = 4,
+};
+
+// DevErrorAction.
+enum {
+	AK_DEV_ERROR_ACTION_DISMISS = 0,
+	AK_DEV_ERROR_ACTION_RELOAD = 1,
+	AK_DEV_ERROR_ACTION_COUNT = 2,
 };
 
 // A prop's name and wire type; enum is its enum's index (AK_ENUM_*) for

@@ -81,6 +81,9 @@ export async function startCore(host, options = {}) {
       // SQLite worker, answered into the core once it isn't running.
       // platform/crash's record: whether a run's page is open (crash.js's marks).
       crash_alive: (p, n) => (options.crash?.alive(new TextDecoder().decode(new Uint8Array(memory().buffer, p, n))) ? 1 : 0),
+      // asuka dev's frames from the core (core/src/abi/dev.h): the page's
+      // dev client sends them on (1), or there's none (0).
+      dev_send: (kind, p, n) => (options.devSend ? (options.devSend(kind, new Uint8Array(memory().buffer, p, n).slice()), 1) : 0),
       sqlite_available: () => (sqlite ? 1 : 0),
       sqlite_send: (id, op, conn, p, n) => {
         const input = new Uint8Array(memory().buffer, p, n).slice();
@@ -106,22 +109,26 @@ export async function startCore(host, options = {}) {
     try { return f(p, bytes.length); } finally { e.asuka_free(p); }
   };
   // asuka dev's loads: the state cells kept (0 for the first, and a restart's, which keeps
-  // none) and the microseconds taken.
+  // none) and the microseconds taken; failed when the module didn't load or start (the
+  // error overlay says why).
   const devLoad = (bytes, restart) => {
     const micros = e.asuka_alloc(4);
     try {
       const kept = withBytes(bytes, (p, n) => (restart ? e.asuka_dev_restart : e.asuka_dev_reload)(p, n, micros, 0));
-      if (kept < 0) throw new Error("asuka: the app's module didn't load (see the console)");
-      return { kept, micros: new DataView(memory().buffer).getUint32(micros, true) };
+      return { kept: Math.max(kept, 0), micros: new DataView(memory().buffer).getUint32(micros, true), failed: kept < 0 };
     } finally {
       e.asuka_free(micros);
     }
+  };
+  const devLoaded = (r) => {
+    if (r.failed) throw new Error("asuka: the app's module didn't load (the error overlay says why)");
+    return r;
   };
   const core = {
     /** reload loads asuka dev's next module, keeping the app's state and views: { kept, micros }. */
     reload: (bytes) => new Promise((ok, fail) => host.call(() => {
       try {
-        ok(devLoad(bytes, false));
+        ok(devLoaded(devLoad(bytes, false)));
         pool?.reload(bytes);
         workers?.reload(bytes);
       } catch (err) { fail(err); }
@@ -129,11 +136,13 @@ export async function startCore(host, options = {}) {
     /** restart loads asuka dev's module keeping none of the app's state: { kept: 0, micros }. */
     restart: (bytes) => new Promise((ok, fail) => host.call(() => {
       try {
-        ok(devLoad(bytes, true));
+        ok(devLoaded(devLoad(bytes, true)));
         pool?.reload(bytes);
         workers?.reload(bytes);
       } catch (err) { fail(err); }
     })),
+    /** frame gives the core a frame of asuka dev's (core/src/abi/dev.h): a build that failed, its fix, an error's source. */
+    frame: (kind, bytes) => host.call(() => { withBytes(bytes, (p, n) => e.asuka_dev_frame(kind, p, n)); e.asuka_run_posted(); }),
     event: (bytes) => withBytes(bytes, (p, n) => e.asuka_event(p, n)),
     listCount: (id) => Number(e.asuka_list_count(id)),
     listBind: (id, index, cell) => e.asuka_list_bind(id, BigInt(index), cell),

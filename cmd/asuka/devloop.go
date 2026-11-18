@@ -40,10 +40,10 @@ type devLoop struct {
 	mu       sync.Mutex
 	module   []byte // the last module that compiled, for the loop's player's platform
 	loaded   map[*devserver.Player]bool
-	modules  []func(module []byte) // more players (the web's page)
-	restarts []func()              // told to restart (the web's page)
-	failed   []func(msg string)    // told what didn't compile
-	fixed    []func()              // told when it compiles again
+	modules  []func(module []byte)       // more players (the web's page)
+	restarts []func()                    // told to restart (the web's page)
+	failed   []func(f devserver.Failure) // told what didn't compile
+	fixed    []func()                    // told when it compiles again
 	broken   bool
 	// The C the players were built with (cKey), once launched: a module
 	// that calls other C (its extern declarations changed) waits for
@@ -97,10 +97,11 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 		Error: func(p *devserver.Player, text []byte) {
 			msg := strings.TrimSpace(string(text))
 			fmt.Fprintf(os.Stderr, "asuka: the player: %s\n", msg)
-			select {
-			case d.playerErr <- msg:
-			default:
-			}
+			d.notePlayerErr(msg)
+		},
+		Uncaught: func(p *devserver.Player, u devserver.Uncaught) {
+			source, details := d.uncaught(u)
+			p.Source(u.Seq, source, details)
 		},
 		Gone: func(p *devserver.Player, err error) {
 			d.mu.Lock()
@@ -114,6 +115,33 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	d.srv = srv
 	d.compile()
 	return d, nil
+}
+
+// uncaught prints an error a player's app didn't catch, and returns what
+// its overlay shows of it: the lines where it was thrown, and its stack.
+func (d *devLoop) uncaught(u devserver.Uncaught) (source, details string) {
+	source, details = uncaughtSource(d.app.dir, u.Trace)
+	what := "error"
+	if u.DidntStart {
+		what = "the app didn't start"
+		d.notePlayerErr(u.Message)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "asuka: %s: %s\n", what, u.Message)
+	for _, l := range strings.Split(details, "\n") {
+		if l != "" {
+			b.WriteString("    " + l + "\n")
+		}
+	}
+	os.Stderr.WriteString(b.String())
+	return source, details
+}
+
+func (d *devLoop) notePlayerErr(msg string) {
+	select {
+	case d.playerErr <- msg:
+	default:
+	}
 }
 
 // report prints a player's report: the first load, a reload with the
@@ -185,15 +213,20 @@ func (d *devLoop) compile() bool {
 	}()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "asuka:", err)
+		failure := buildFailure(d.app.dir, diags, err)
+		d.srv.Fail(d.platform, failure)
+		d.srv.Fail("", failure)
 		d.mu.Lock()
 		d.broken = true
 		fs := d.failed
 		d.mu.Unlock()
 		for _, f := range fs {
-			f(err.Error())
+			f(failure)
 		}
 		return false
 	}
+	d.srv.Fixed(d.platform)
+	d.srv.Fixed("")
 	b := m.Encode()
 	d.mu.Lock()
 	d.module = b
@@ -263,11 +296,13 @@ func (d *devLoop) compileFor(platform target.Platform) {
 // player's, and sends its players the module, printing the diagnostics
 // shown doesn't have.
 func (d *devLoop) compileOther(platform target.Platform, shown map[string]bool) {
-	m, _, err := d.app.compileShown(platform, shown)
+	m, diags, err := d.app.compileShown(platform, shown)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "asuka: for %s: %v\n", platform.Title(), err)
+		d.srv.Fail(platform, buildFailure(d.app.dir, diags, err))
 		return
 	}
+	d.srv.Fixed(platform)
 	d.srv.Send(platform, m.Encode())
 }
 

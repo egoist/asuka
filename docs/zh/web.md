@@ -13,7 +13,7 @@ asuka build --platform web examples/counter     # 生成静态网站，位于 ex
 
 ## asuka dev --platform web
 
-`asuka dev --platform web` 会构建一次开发 App，在 `http://localhost:8790/`（端口被占用时换一个空闲端口）上提供页面并自动打开。每次保存都会在几毫秒内重新编译应用，页面原地加载新版本并保留应用的状态，和其他平台的开发 App 一样；终端会报告每次重载（`asuka: reloaded in 1.1 ms, 3 states kept`）。应用的输出以及页面上的错误都会打印到终端；如果保存的代码无法编译，错误信息会覆盖在页面上，直到下一次编译成功为止。修改 `asuka.toml`、资源或原生包的 JavaScript 会让页面重新加载（应用从头开始）。
+`asuka dev --platform web` 会构建一次开发 App，在 `http://localhost:8790/`（端口被占用时换一个空闲端口）上提供页面并自动打开。每次保存都会在几毫秒内重新编译应用，页面原地加载新版本并保留应用的状态，和其他平台的开发 App 一样；终端会报告每次重载（`asuka: reloaded in 1.1 ms, 3 states kept`）。应用的输出以及页面上的错误都会打印到终端；如果保存的代码无法编译，或者应用有没被捕获的错误，它会显示在页面上方（见[应用上方的错误](development.md#应用上方的错误)）。修改 `asuka.toml`、资源或原生包的 JavaScript 会让页面重新加载（应用从头开始）。
 
 除了 `asuka dev` 本身的参数（`--lang`、`--dir`、`-v`），还有这些参数：
 

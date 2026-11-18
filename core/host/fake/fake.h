@@ -171,6 +171,10 @@ struct ak_fake {
 	ak_id focus;
 	bool keyboard;
 	uint32_t present_seq;
+	// asuka dev's error overlay (DevError): the root it shows on (0:
+	// none) and its arguments.
+	ak_id dev_error_on;
+	ak_buf dev_error;
 };
 
 ak_fake *ak_fake_new(void);
@@ -332,6 +336,12 @@ void ak_fake_open_url(ak_fake *f, const char *url);
 // its URL, to the view.
 void ak_fake_link(ak_fake *f, ak_fake_view *v, ak_span url);
 void ak_fake_lifecycle(ak_fake *f, int64_t state);  // AK_LIFECYCLE_*
+// ak_fake_dev_error is what asuka dev's error overlay shows (its strings
+// valid until the next apply): false when it shows nothing.
+// ak_fake_dev_error_press presses its Dismiss or Reload (an
+// AK_DEV_ERROR_ACTION_*), as the user does: false when it isn't there.
+bool ak_fake_dev_error(const ak_fake *f, ak_dev_error *e);
+bool ak_fake_dev_error_press(ak_fake *f, int64_t action);
 // ak_fake_emit_native sends a native view's event: its name and named
 // values (their type says which field: as ak_fake_native).
 void ak_fake_emit_native(ak_fake *f, ak_fake_view *v, const char *name, const ak_fake_native *values, uint32_t n);
