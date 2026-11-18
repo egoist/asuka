@@ -11,6 +11,12 @@ screen Weather(city: string) {
     }
   }
 
+  effect(city) {
+    let id = watch(city)
+    cleanup { unwatch(id) }
+  }
+  cleanup { cleanup(city) }
+
   task(city) {
     let (today, week) = await all(fetchToday(city), fetchWeek(city))
     let fastest = await race(mirror1(city), mirror2(city))

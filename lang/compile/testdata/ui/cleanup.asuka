@@ -1,0 +1,317 @@
+// cleanup { } (rfcs/0016): an effect's runs before its next run and as
+// it goes; a body's, as the component goes. Last registered first, the
+// effect's (what the owner made) before the body's.
+
+state log = ""
+
+fn note(s: string) { log = log + s + " " }
+
+// The effect's and the body's, in order.
+state n = 0
+state shown = true
+
+component Panel {
+  prop name = "p"
+  effect(n) {
+    let v = n
+    note("run{v}")
+    cleanup { note("undo{v}") }
+  }
+  cleanup { note("gone:{name}") }
+  Text(name)
+}
+
+component Page {
+  Column {
+    Button("Inc") { on press { n += 1 } }
+    Button("Hide") { on press { shown = false } }
+    Button("Show") { on press { shown = true } }
+    if shown { Panel { name: "x" } }
+  }
+}
+
+test "an effect's cleanup runs before its next run and as it goes, then the body's" {
+  log = ""
+  n = 0
+  shown = true
+  let app = mount(Page())
+  expect(log == "run0 ")
+  app.tap("Inc")
+  expect(log == "run0 undo0 run1 ")
+  app.tap("Hide")
+  expect(log == "run0 undo0 run1 undo1 gone:x ")
+  app.tap("Inc")
+  expect(log == "run0 undo0 run1 undo1 gone:x ")
+  app.tap("Show")
+  expect(log == "run0 undo0 run1 undo1 gone:x run2 ")
+}
+
+// Several, under ifs and in loops: what a run reached, last first.
+state flag = false
+state k = 0
+
+component Many {
+  effect(k) {
+    let v = k
+    cleanup { note("a{v}") }
+    if flag {
+      cleanup { note("flag{v}") }
+    }
+    for i in 0..<2 {
+      cleanup { note("loop{v}.{i}") }
+    }
+    cleanup { note("z{v}") }
+  }
+  Button("Next") { on press { k += 1 } }
+}
+
+test "what a run registered, last first" {
+  log = ""
+  k = 0
+  flag = false
+  let app = mount(Many())
+  app.tap("Next")
+  expect(log == "z0 loop0.1 loop0.0 a0 ")
+  flag = true
+  log = ""
+  app.tap("Next")
+  expect(log == "z1 loop1.1 loop1.0 a1 ")
+  log = ""
+  app.tap("Next")
+  expect(log == "z2 loop2.1 loop2.0 flag2 a2 ")
+}
+
+// An effect that follows what its body reads, undoing a registration.
+store Bus {
+  state listeners: [int] = []
+  state last = 0
+  pub fn listen() -> int {
+    last += 1
+    listeners.push(last)
+    return last
+  }
+  pub fn unlisten(id: int) { listeners.removeWhere(x => x == id) }
+}
+
+let bus = Bus()
+
+state following = true
+
+component Listener {
+  effect {
+    if following {
+      let id = peek(bus.listen())
+      cleanup { bus.unlisten(id) }
+    }
+  }
+  Text("{bus.listeners.count()} listening")
+}
+
+component Toggler {
+  Column {
+    Button("Toggle") { on press { following = !following } }
+    Button("Hide") { on press { shown = false } }
+    if shown { Listener() }
+  }
+}
+
+test "a listener held while followed, undone when it isn't and when the component goes" {
+  bus.listeners = []
+  following = true
+  shown = true
+  let app = mount(Toggler())
+  app.expect("1 listening")
+  app.tap("Toggle")
+  app.expect("0 listening")
+  app.tap("Toggle")
+  app.expect("1 listening")
+  app.tap("Hide")
+  expect(bus.listeners.count() == 0)
+}
+
+// Rows, match arms and sheets dispose theirs.
+state items = [1, 2, 3]
+
+component Row(id: int) {
+  cleanup { note("row{id}") }
+  Text("row {id}")
+}
+
+enum Mode { a, b }
+state mode = Mode.a
+
+component A {
+  cleanup { note("A") }
+  Text("A")
+}
+
+component B {
+  effect { cleanup { note("B's effect") } }
+  Text("B")
+}
+
+state open = false
+
+component Note {
+  cleanup { note("sheet") }
+  Text("in the sheet")
+}
+
+component Lists {
+  Column {
+    for id in items key id { Row(id) }
+    match mode {
+      .a => A()
+      .b => B()
+    }
+    Button("Drop") { on press { items.removeWhere(x => x == 2) } }
+    Button("Swap") { on press { mode = if mode == .a { .b } else { .a } } }
+    Button("Open") { on press { open = true } }
+    Sheet {
+      bind open: open
+      Note()
+    }
+  }
+}
+
+test "a row leaving, a match changing arm and a sheet closing run their cleanups" {
+  log = ""
+  items = [1, 2, 3]
+  mode = .a
+  open = false
+  let app = mount(Lists())
+  app.tap("Drop")
+  expect(log == "row2 ")
+  app.tap("Swap")
+  expect(log == "row2 A ")
+  app.tap("Swap")
+  expect(log == "row2 A B's effect ")
+  app.tap("Open")
+  app.expect("in the sheet")
+  app.dismiss()
+  expect(log == "row2 A B's effect sheet ")
+}
+
+// A screen popped runs its cleanups.
+screen Detail {
+  title: "Detail"
+  cleanup { note("popped") }
+  Text("detail")
+}
+
+screen Home {
+  title: "Home"
+  Button("Open") { on press { push(Detail()) } }
+}
+
+test "a screen popped" {
+  log = ""
+  let app = mount(Stack { Home() })
+  app.tap("Open")
+  app.expect("detail")
+  app.back()
+  expect(log == "popped ")
+}
+
+// A store's, when the let that holds it makes it again: a let that reads
+// what changes (an argument is an accessor: it follows, and the store
+// stays).
+store Room(name: string) {
+  cleanup { note("left {name}") }
+}
+
+state big = false
+state roomName = "lobby"
+
+component InRoom {
+  let room = if big { Room(name: "hall") } else { Room(name: roomName) }
+  Column {
+    Text("in {room.name}")
+    Button("Grow") { on press { big = true } }
+    Button("Rename") { on press { roomName = "kitchen" } }
+  }
+}
+
+test "a store made again undoes the last one; an argument that changes doesn't make it again" {
+  log = ""
+  big = false
+  roomName = "lobby"
+  let app = mount(InRoom())
+  app.tap("Rename")
+  app.expect("in kitchen")
+  expect(log == "")
+  app.tap("Grow")
+  app.expect("in hall")
+  expect(log == "left kitchen ")
+}
+
+// A removed row's task's defer reads its own item, not the one at its old
+// index.
+component Held(id: int) {
+  task {
+    defer { note("held{id}") }
+    await never()
+  }
+  Text("held {id}")
+}
+
+state held = [1, 2, 3]
+
+component Helds {
+  Column {
+    for id in held key id { Held(id) }
+    Button("Drop") { on press { held.removeWhere(x => x == 2) } }
+  }
+}
+
+test "a removed row's defer reads its item" {
+  log = ""
+  held = [1, 2, 3]
+  let app = mount(Helds())
+  app.tap("Drop")
+  app.expectNo("held 2")
+  expect(log == "held2 ")
+}
+
+// A body's cleanup reads its props and state as the component goes.
+component Reader {
+  prop label = "?"
+  state count = 0
+  cleanup { note("{label}:{count}") }
+  Button("Count") { on press { count += 1 } }
+}
+
+component Holder {
+  Column {
+    Button("Hide") { on press { shown = false } }
+    if shown { Reader { label: "r" } }
+  }
+}
+
+test "a body's cleanup reads what the component has as it goes" {
+  log = ""
+  shown = true
+  let app = mount(Holder())
+  app.tap("Count")
+  app.tap("Count")
+  app.tap("Hide")
+  expect(log == "r:2 ")
+}
+
+// cleanup is a name elsewhere.
+struct Job {
+  cleanup: string
+}
+
+fn cleanup(j: Job) -> string = j.cleanup
+
+test "cleanup as a name" {
+  expect(cleanup(Job(cleanup: "ok")) == "ok")
+  let cleanup = Job(cleanup: "done")
+  expect(cleanup.cleanup == "done")
+}
+
+app {
+  cleanup { note("app") }
+  Page()
+}

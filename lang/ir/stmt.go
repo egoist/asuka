@@ -122,6 +122,8 @@ func (b *fb) stmt(it syntax.Item) {
 		b.l.errorf(it, diag.NotSupported, "can't lower this statement")
 	case *syntax.DeferStmt:
 		b.withDefer(s, nil, nil)
+	case *syntax.CleanupStmt:
+		b.cleanupStmt(s)
 	default:
 		b.l.errorf(it, diag.NotSupported, "can't lower this statement")
 	}

@@ -5,6 +5,7 @@
 #include "t.h"
 #include "fake/uitest.h"
 #include "ui/ui_int.h"
+#include "vm/vm_int.h"
 #include "fuzz.h"
 
 #include <stdio.h>
@@ -1119,6 +1120,57 @@ TEST(steady_state_flush_allocates_nothing) {
 	ak_ui_stats st;
 	ak_ui_get_stats(&st);
 	CHECK_EQ_INT(st.views, 0);
+}
+
+// An effect that registers a cleanup each run (cleanup { } in its body,
+// rfcs/0016): the cleanup runs before the effect's next run and as its
+// owner goes, and registering it allocates nothing in the steady state.
+static void *cl_cell;
+static ak_closure *cl_undo;
+static int cl_runs, cl_undone;
+
+static ak_val cl_undo_fn(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	cl_undone++;
+	return (ak_val){0};
+}
+
+static ak_val cl_effect_fn(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	(void)ak_vm_cell_get(cl_cell, true);
+	cl_runs++;
+	ak_vm_cleanup(cl_undo);
+	return (ak_val){0};
+}
+
+static void cl_build(void *ctx, ak_owner *root) {
+	AK_UNUSED(ctx), AK_UNUSED(root);
+	ak_closure *e = fn(cl_effect_fn, NULL);
+	ak_vm_effect(e, false);
+	ak_release(e);
+}
+
+TEST(effect_cleanup_runs_before_each_run_and_allocates_nothing) {
+	setup();
+	cl_runs = cl_undone = 0;
+	cl_cell = cell_int(0);
+	cl_undo = fn(cl_undo_fn, NULL);
+	ak_owner *r = ak_root(cl_build, NULL);
+	CHECK_EQ_INT(cl_runs, 1);
+	CHECK_EQ_INT(cl_undone, 0);
+	write_i(cl_cell, 1);
+	CHECK_EQ_INT(cl_runs, 2);
+	CHECK_EQ_INT(cl_undone, 1);  // the first run's, before the second
+	uint64_t before = ak_alloc_count;
+	for (int i = 2; i < 1002; i++) write_i(cl_cell, i);
+	if (ak_alloc_count != before) T_FAIL("%llu allocations in 1000 runs", (unsigned long long)(ak_alloc_count - before));
+	CHECK_EQ_INT(cl_undone, 1001);
+	ak_owner_dispose(r);
+	CHECK_EQ_INT(cl_undone, 1002);  // the last run's, as it goes
+	write_i(cl_cell, 0);
+	CHECK_EQ_INT(cl_runs, 1002);
+	ak_release(cl_undo);
+	ak_release(cl_cell);
 }
 
 TEST(mount_unmount_keeps_nothing) {

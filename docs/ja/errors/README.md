@@ -11,6 +11,7 @@ Asuka が報告するエラーと警告には、すべてコードがありま�
 - [bad-operand](bad-operand.md): 演算子が受け付けない値に使われている。
 - [brace-placement](brace-placement.md): ブロックの `{` は前の行の末尾に書く。
 - [cannot-infer-type](cannot-infer-type.md): 書かれた内容から値の型を判断できない。
+- [cleanup-reads-what-it-follows](cleanup-reads-what-it-follows.md): エフェクトが追従するものを読むエフェクトの cleanup。
 - [closure-keeps-itself](closure-keeps-itself.md): 自分を保存した変数を通して自分を呼ぶクロージャー。
 - [constraint-not-met](constraint-not-met.md): ジェネリックやメソッドが必要とするものを型が持っていない。
 - [deprecated-syntax](deprecated-syntax.md): 置き換えられた古い書き方（`asuka fmt` が書き直す）。

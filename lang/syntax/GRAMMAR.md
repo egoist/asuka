@@ -103,8 +103,8 @@ Ident       = IDENT | SoftKeyword .              (* where a declaration names so
 Name        = IDENT | Keyword .                  (* a label, a prop set's, a member's, a field's *)
 ```
 
-`shader`, `at`, `static`, `variant`, `with` and `release` are keywords
-only in their productions below; elsewhere they're names.
+`shader`, `at`, `static`, `variant`, `cleanup`, `with` and `release` are
+keywords only in their productions below; elsewhere they're names.
 
 ### Literals
 
@@ -253,6 +253,7 @@ Member      = "prop" Ident [ ":" Type ] [ "=" Expr ]
             | Func
             | "task" [ "(" [ Expr { "," Expr } [ "," ] ] ")" ] Block
             | "effect" [ "(" [ Expr { "," Expr } [ "," ] ] ")" ] Block
+            | "cleanup" Block                      (* cleanup is a name elsewhere (rfcs/0016) *)
             | "variant" Ident "=" Expr             (* variant is a name elsewhere *)
             | "style" Ident [ Params ] Block .     (* a style of the block's own *)
 
@@ -271,6 +272,7 @@ Stmt        = IfStmt
             | "throw" Expr
             | ( "break" | "continue" ) [ Ident ]    (* a loop's name, on break's line *)
             | "defer" Block
+            | "cleanup" Block                      (* in an effect's body (rfcs/0016) *)
             | "emit" Name [ Args ]                  (* the ( on emit's line *)
             | Expr [ AssignOp Expr ] .
 IfStmt      = "if" Cond Block [ "else" ( IfStmt | Block ) ] .

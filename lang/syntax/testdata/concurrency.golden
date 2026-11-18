@@ -1,4 +1,4 @@
-SourceFile 1:1-81:3
+SourceFile 1:1-87:3
   Imports: [2]
     ImportDecl 1:1-1:16
       Path: [2]
@@ -11,7 +11,7 @@ SourceFile 1:1-81:3
       Names: [1]
         Ident "Accelerometer" 2:26-2:39
   Decls: [6]
-    ScreenDecl 4:1-42:2 blank
+    ScreenDecl 4:1-48:2 blank
       Name: Ident "Weather" 4:8-4:15
       Params: ParamList 4:15-4:29
         List: [1]
@@ -20,8 +20,8 @@ SourceFile 1:1-81:3
             Type: NamedType 4:22-4:28
               Path: [1]
                 Ident "string" 4:22-4:28
-      Body: Block 4:30-42:2
-        Items: [8]
+      Body: Block 4:30-48:2
+        Items: [10]
           LetDecl 5:3-5:42 Keyword=let
             Pattern: BindPat 5:7-5:15
               Name: Ident "forecast" 5:7-5:15
@@ -67,489 +67,523 @@ SourceFile 1:1-81:3
                                 Value: MemberExpr 10:23-10:32
                                   X: Ident "reading" 10:23-10:30
                                   Name: Ident "x" 10:31-10:32
-          TaskDecl 14:3-23:4 blank
+          EffectDecl 14:3-17:4 blank
             Deps: [1]
-              Ident "city" 14:8-14:12
-            Body: Block 14:14-23:4
-              Items: [4]
-                LetDecl 15:5-15:69 Keyword=let
-                  Pattern: TuplePat 15:9-15:22
-                    Elems: [2]
-                      BindPat 15:10-15:15
-                        Name: Ident "today" 15:10-15:15
-                      BindPat 15:17-15:21
-                        Name: Ident "week" 15:17-15:21
-                  Value: UnaryExpr 15:25-15:69 Op=await
-                    X: CallExpr 15:31-15:69
-                      Fun: Ident "all" 15:31-15:34
-                      Args: ArgList 15:34-15:69
-                        List: [2]
-                          Arg 15:35-15:51
-                            Value: CallExpr 15:35-15:51
-                              Fun: Ident "fetchToday" 15:35-15:45
-                              Args: ArgList 15:45-15:51
-                                List: [1]
-                                  Arg 15:46-15:50
-                                    Value: Ident "city" 15:46-15:50
-                          Arg 15:53-15:68
-                            Value: CallExpr 15:53-15:68
-                              Fun: Ident "fetchWeek" 15:53-15:62
-                              Args: ArgList 15:62-15:68
-                                List: [1]
-                                  Arg 15:63-15:67
-                                    Value: Ident "city" 15:63-15:67
-                LetDecl 16:5-16:59 Keyword=let
-                  Pattern: BindPat 16:9-16:16
-                    Name: Ident "fastest" 16:9-16:16
-                  Value: UnaryExpr 16:19-16:59 Op=await
-                    X: CallExpr 16:25-16:59
-                      Fun: Ident "race" 16:25-16:29
-                      Args: ArgList 16:29-16:59
-                        List: [2]
-                          Arg 16:30-16:43
-                            Value: CallExpr 16:30-16:43
-                              Fun: Ident "mirror1" 16:30-16:37
-                              Args: ArgList 16:37-16:43
-                                List: [1]
-                                  Arg 16:38-16:42
-                                    Value: Ident "city" 16:38-16:42
-                          Arg 16:45-16:58
-                            Value: CallExpr 16:45-16:58
-                              Fun: Ident "mirror2" 16:45-16:52
-                              Args: ArgList 16:52-16:58
-                                List: [1]
-                                  Arg 16:53-16:57
-                                    Value: Ident "city" 16:53-16:57
-                LetDecl 17:5-19:6 Keyword=let
-                  Pattern: BindPat 17:9-17:16
-                    Name: Ident "summary" 17:9-17:16
-                  Value: UnaryExpr 17:19-19:6 Op=await
-                    X: SpawnExpr 17:25-19:6
-                      Body: Block 17:31-19:6
-                        Items: [1]
-                          ReturnStmt 18:7-18:45
-                            Value: CallExpr 18:14-18:45
-                              Fun: Ident "summarize" 18:14-18:23
-                              Args: ArgList 18:23-18:45
-                                List: [3]
-                                  Arg 18:24-18:29
-                                    Value: Ident "today" 18:24-18:29
-                                  Arg 18:31-18:35
-                                    Value: Ident "week" 18:31-18:35
-                                  Arg 18:37-18:44
-                                    Value: Ident "fastest" 18:37-18:44
-                ExprStmt 20:5-22:6
-                  X: UnaryExpr 20:5-22:6 Op=await
-                    X: CallExpr 20:11-22:6
-                      Fun: Ident "withTimeout" 20:11-20:22
-                      Args: ArgList 20:22-20:26
-                        List: [1]
-                          Arg 20:23-20:25
-                            Value: BasicLit 20:23-20:25 Kind=duration Value="5s"
-                      Block: Block 20:27-22:6
-                        Items: [1]
-                          ExprStmt 21:7-21:46
-                            X: UnaryExpr 21:7-21:46 Op=await
-                              X: CallExpr 21:13-21:46
-                                Fun: MemberExpr 21:13-21:22
-                                  X: Ident "http" 21:13-21:17
-                                  Name: Ident "post" 21:18-21:22
-                                Args: ArgList 21:22-21:46
-                                  List: [2]
-                                    Arg 21:23-21:30
-                                      Value: StringLit 21:23-21:30 Segments=["/seen"]
-                                    Arg 21:32-21:45
-                                      Label: Ident "body" 21:32-21:36
-                                      Value: Ident "summary" 21:38-21:45
-          PropSet 25:3-25:14 blank
-            Name: Ident "title" 25:3-25:8
-            Value: Ident "city" 25:10-25:14
-          MatchStmt 27:3-33:4 blank
-            Subject: Ident "forecast" 27:9-27:17
-            Arms: [3]
-              MatchArm 28:5-28:31
-                Pattern: CasePat 28:5-28:13 implicit
-                  Path: [1]
-                    Ident "pending" 28:6-28:13
-                Body: ExprStmt 28:17-28:31
-                  X: CallExpr 28:17-28:31
-                    Fun: Ident "ProgressView" 28:17-28:29
-                    Args: ArgList 28:29-28:31
-              MatchArm 29:5-29:48
-                Pattern: CasePat 29:5-29:14 implicit
-                  Path: [1]
-                    Ident "ready" 29:6-29:11
-                  Args: [1]
-                    BindPat 29:12-29:13
-                      Name: Ident "f" 29:12-29:13
-                Body: ExprStmt 29:18-29:48
-                  X: CallExpr 29:18-29:48
-                    Fun: Ident "Text" 29:18-29:22
-                    Args: ArgList 29:22-29:48
+              Ident "city" 14:10-14:14
+            Body: Block 14:16-17:4
+              Items: [2]
+                LetDecl 15:5-15:25 Keyword=let
+                  Pattern: BindPat 15:9-15:11
+                    Name: Ident "id" 15:9-15:11
+                  Value: CallExpr 15:14-15:25
+                    Fun: Ident "watch" 15:14-15:19
+                    Args: ArgList 15:19-15:25
                       List: [1]
-                        Arg 29:23-29:47
-                          Value: StringLit 29:23-29:47 Segments=["" "° / " "°"]
-                            Interps: [2]
-                              MemberExpr 29:25-29:31
-                                X: Ident "f" 29:25-29:26
-                                Name: Ident "high" 29:27-29:31
-                              MemberExpr 29:38-29:43
-                                X: Ident "f" 29:38-29:39
-                                Name: Ident "low" 29:40-29:43
-              MatchArm 30:5-32:6
-                Pattern: CasePat 30:5-30:15 implicit
-                  Path: [1]
-                    Ident "failed" 30:6-30:12
-                  Args: [1]
-                    BindPat 30:13-30:14
-                      Name: Ident "e" 30:13-30:14
-                Body: ExprStmt 30:19-32:6
-                  X: CallExpr 30:19-32:6
-                    Fun: Ident "Button" 30:19-30:25
-                    Args: ArgList 30:25-30:34
-                      List: [1]
-                        Arg 30:26-30:33
-                          Value: StringLit 30:26-30:33 Segments=["Retry"]
-                    Block: Block 30:35-32:6
-                      Items: [1]
-                        OnHandler 31:7-31:35
-                          Name: Ident "tap" 31:10-31:13
-                          Body: Block 31:14-31:35
-                            Items: [1]
-                              ExprStmt 31:16-31:33
-                                X: CallExpr 31:16-31:33
-                                  Fun: MemberExpr 31:16-31:31
-                                    X: Ident "forecast" 31:16-31:24
-                                    Name: Ident "reload" 31:25-31:31
-                                  Args: ArgList 31:31-31:33
-          IfStmt 34:3-36:4
-            Cond: LetCond 34:6-34:40
-              Pattern: BindPat 34:10-34:14
-                Name: Ident "last" 34:10-34:14
-              Value: MemberExpr 34:17-34:40 optional
-                X: MemberExpr 34:17-34:31
-                  X: Ident "forecast" 34:17-34:25
-                  Name: Ident "value" 34:26-34:31
-                Name: Ident "updated" 34:33-34:40
-            Then: Block 34:41-36:4
-              Items: [1]
-                ExprStmt 35:5-35:53
-                  X: CallExpr 35:5-35:53
-                    Fun: Ident "Text" 35:5-35:9
-                    Args: ArgList 35:9-35:36
-                      List: [1]
-                        Arg 35:10-35:35
-                          Value: StringLit 35:10-35:35 Segments=["Updated " ""]
-                            Interps: [1]
-                              MemberExpr 35:20-35:33
-                                X: Ident "last" 35:20-35:24
-                                Name: Ident "relative" 35:25-35:33
-                    Block: Block 35:37-35:53
-                      Items: [1]
-                        PropSet 35:39-35:51
-                          Name: Ident "fontSize" 35:39-35:47
-                          Value: BasicLit 35:49-35:51 Kind=integer Value="12"
-          ExprStmt 37:3-41:4
-            X: CallExpr 37:3-41:4
-              Fun: Ident "Boundary" 37:3-37:11
-              Block: Block 37:12-39:4
-                Items: [1]
-                  ExprStmt 38:5-38:20
-                    X: CallExpr 38:5-38:20
-                      Fun: Ident "Chart" 38:5-38:10
-                      Args: ArgList 38:10-38:20
-                        List: [1]
-                          Arg 38:11-38:19
-                            Value: Ident "readings" 38:11-38:19
-              Handlers: [1]
-                OnHandler 39:5-41:4
-                  Name: Ident "error" 39:8-39:13
-                  Params: [1]
-                    Ident "e" 39:14-39:15
-                  Body: Block 39:17-41:4
+                        Arg 15:20-15:24
+                          Value: Ident "city" 15:20-15:24
+                CleanupStmt 16:5-16:28
+                  Body: Block 16:13-16:28
                     Items: [1]
-                      ExprStmt 40:5-40:42
-                        X: CallExpr 40:5-40:42
-                          Fun: Ident "Text" 40:5-40:9
-                          Args: ArgList 40:9-40:42
+                      ExprStmt 16:15-16:26
+                        X: CallExpr 16:15-16:26
+                          Fun: Ident "unwatch" 16:15-16:22
+                          Args: ArgList 16:22-16:26
                             List: [1]
-                              Arg 40:10-40:41
-                                Value: StringLit 40:10-40:41 Segments=["The chart failed: " ""]
-                                  Interps: [1]
-                                    MemberExpr 40:30-40:39
-                                      X: Ident "e" 40:30-40:31
-                                      Name: Ident "message" 40:32-40:39
-    FuncDecl 44:1-51:2 blank async throws
-      Name: Ident "fetchForecast" 44:10-44:23
-      Params: ParamList 44:23-44:37
-        List: [1]
-          Param 44:24-44:36
-            Name: Ident "city" 44:24-44:28
-            Type: NamedType 44:30-44:36
-              Path: [1]
-                Ident "string" 44:30-44:36
-      Result: NamedType 44:48-44:56
-        Path: [1]
-          Ident "Forecast" 44:48-44:56
-      Body: Block 44:57-51:2
-        Items: [4]
-          LetDecl 45:3-45:42 Keyword=let
-            Pattern: BindPat 45:7-45:13
-              Name: Ident "cached" 45:7-45:13
-            Value: UnaryExpr 45:16-45:42 Op=try optional
-              X: UnaryExpr 45:21-45:42 Op=await
-                X: CallExpr 45:27-45:42
-                  Fun: MemberExpr 45:27-45:36
-                    X: Ident "cache" 45:27-45:32
-                    Name: Ident "get" 45:33-45:36
-                  Args: ArgList 45:36-45:42
-                    List: [1]
-                      Arg 45:37-45:41
-                        Value: Ident "city" 45:37-45:41
-          IfStmt 46:3-48:4
-            Cond: LetCond 46:6-46:20
-              Pattern: BindPat 46:10-46:11
-                Name: Ident "c" 46:10-46:11
-              Value: Ident "cached" 46:14-46:20
-            Then: Block 46:21-48:4
+                              Arg 16:23-16:25
+                                Value: Ident "id" 16:23-16:25
+          CleanupStmt 18:3-18:28
+            Body: Block 18:11-18:28
               Items: [1]
-                ReturnStmt 47:5-47:13
-                  Value: Ident "c" 47:12-47:13
-          LetDecl 49:3-49:66 Keyword=let
-            Pattern: BindPat 49:7-49:8
-              Name: Ident "f" 49:7-49:8
-            Type: NamedType 49:10-49:18
-              Path: [1]
-                Ident "Forecast" 49:10-49:18
-            Value: UnaryExpr 49:21-49:66 Op=try
-              X: UnaryExpr 49:25-49:66 Op=await
-                X: CallExpr 49:31-49:66
-                  Fun: MemberExpr 49:31-49:64
-                    X: CallExpr 49:31-49:59
-                      Fun: MemberExpr 49:31-49:39
-                        X: Ident "http" 49:31-49:35
-                        Name: Ident "get" 49:36-49:39
-                      Args: ArgList 49:39-49:59
+                ExprStmt 18:13-18:26
+                  X: CallExpr 18:13-18:26
+                    Fun: Ident "cleanup" 18:13-18:20
+                    Args: ArgList 18:20-18:26
+                      List: [1]
+                        Arg 18:21-18:25
+                          Value: Ident "city" 18:21-18:25
+          TaskDecl 20:3-29:4 blank
+            Deps: [1]
+              Ident "city" 20:8-20:12
+            Body: Block 20:14-29:4
+              Items: [4]
+                LetDecl 21:5-21:69 Keyword=let
+                  Pattern: TuplePat 21:9-21:22
+                    Elems: [2]
+                      BindPat 21:10-21:15
+                        Name: Ident "today" 21:10-21:15
+                      BindPat 21:17-21:21
+                        Name: Ident "week" 21:17-21:21
+                  Value: UnaryExpr 21:25-21:69 Op=await
+                    X: CallExpr 21:31-21:69
+                      Fun: Ident "all" 21:31-21:34
+                      Args: ArgList 21:34-21:69
+                        List: [2]
+                          Arg 21:35-21:51
+                            Value: CallExpr 21:35-21:51
+                              Fun: Ident "fetchToday" 21:35-21:45
+                              Args: ArgList 21:45-21:51
+                                List: [1]
+                                  Arg 21:46-21:50
+                                    Value: Ident "city" 21:46-21:50
+                          Arg 21:53-21:68
+                            Value: CallExpr 21:53-21:68
+                              Fun: Ident "fetchWeek" 21:53-21:62
+                              Args: ArgList 21:62-21:68
+                                List: [1]
+                                  Arg 21:63-21:67
+                                    Value: Ident "city" 21:63-21:67
+                LetDecl 22:5-22:59 Keyword=let
+                  Pattern: BindPat 22:9-22:16
+                    Name: Ident "fastest" 22:9-22:16
+                  Value: UnaryExpr 22:19-22:59 Op=await
+                    X: CallExpr 22:25-22:59
+                      Fun: Ident "race" 22:25-22:29
+                      Args: ArgList 22:29-22:59
+                        List: [2]
+                          Arg 22:30-22:43
+                            Value: CallExpr 22:30-22:43
+                              Fun: Ident "mirror1" 22:30-22:37
+                              Args: ArgList 22:37-22:43
+                                List: [1]
+                                  Arg 22:38-22:42
+                                    Value: Ident "city" 22:38-22:42
+                          Arg 22:45-22:58
+                            Value: CallExpr 22:45-22:58
+                              Fun: Ident "mirror2" 22:45-22:52
+                              Args: ArgList 22:52-22:58
+                                List: [1]
+                                  Arg 22:53-22:57
+                                    Value: Ident "city" 22:53-22:57
+                LetDecl 23:5-25:6 Keyword=let
+                  Pattern: BindPat 23:9-23:16
+                    Name: Ident "summary" 23:9-23:16
+                  Value: UnaryExpr 23:19-25:6 Op=await
+                    X: SpawnExpr 23:25-25:6
+                      Body: Block 23:31-25:6
+                        Items: [1]
+                          ReturnStmt 24:7-24:45
+                            Value: CallExpr 24:14-24:45
+                              Fun: Ident "summarize" 24:14-24:23
+                              Args: ArgList 24:23-24:45
+                                List: [3]
+                                  Arg 24:24-24:29
+                                    Value: Ident "today" 24:24-24:29
+                                  Arg 24:31-24:35
+                                    Value: Ident "week" 24:31-24:35
+                                  Arg 24:37-24:44
+                                    Value: Ident "fastest" 24:37-24:44
+                ExprStmt 26:5-28:6
+                  X: UnaryExpr 26:5-28:6 Op=await
+                    X: CallExpr 26:11-28:6
+                      Fun: Ident "withTimeout" 26:11-26:22
+                      Args: ArgList 26:22-26:26
                         List: [1]
-                          Arg 49:40-49:58
-                            Value: StringLit 49:40-49:58 Segments=["/forecast/" ""]
-                              Interps: [1]
-                                Ident "city" 49:52-49:56
-                    Name: Ident "json" 49:60-49:64
-                  Args: ArgList 49:64-49:66
-          ReturnStmt 50:3-50:11
-            Value: Ident "f" 50:10-50:11
-    FuncDecl 53:1-53:40 blank
-      Name: Ident "later" 53:4-53:9
-      Params: ParamList 53:9-53:37
-        List: [1]
-          Param 53:10-53:36
-            Name: Ident "f" 53:10-53:11
-            Type: FuncType 53:13-53:36 async
-              Params: [1]
-                NamedType 53:22-53:28
+                          Arg 26:23-26:25
+                            Value: BasicLit 26:23-26:25 Kind=duration Value="5s"
+                      Block: Block 26:27-28:6
+                        Items: [1]
+                          ExprStmt 27:7-27:46
+                            X: UnaryExpr 27:7-27:46 Op=await
+                              X: CallExpr 27:13-27:46
+                                Fun: MemberExpr 27:13-27:22
+                                  X: Ident "http" 27:13-27:17
+                                  Name: Ident "post" 27:18-27:22
+                                Args: ArgList 27:22-27:46
+                                  List: [2]
+                                    Arg 27:23-27:30
+                                      Value: StringLit 27:23-27:30 Segments=["/seen"]
+                                    Arg 27:32-27:45
+                                      Label: Ident "body" 27:32-27:36
+                                      Value: Ident "summary" 27:38-27:45
+          PropSet 31:3-31:14 blank
+            Name: Ident "title" 31:3-31:8
+            Value: Ident "city" 31:10-31:14
+          MatchStmt 33:3-39:4 blank
+            Subject: Ident "forecast" 33:9-33:17
+            Arms: [3]
+              MatchArm 34:5-34:31
+                Pattern: CasePat 34:5-34:13 implicit
                   Path: [1]
-                    Ident "string" 53:22-53:28
-              Result: NamedType 53:33-53:36
-                Path: [1]
-                  Ident "int" 53:33-53:36
-      Body: Block 53:38-53:40
-    FuncDecl 55:1-61:2 blank async
-      Name: Ident "refreshAll" 55:10-55:20
-      Params: ParamList 55:20-55:22
-      Body: Block 55:23-61:2
-        Items: [3]
-          LetDecl 56:3-58:4 Keyword=let
-            Pattern: BindPat 56:7-56:14
-              Name: Ident "refresh" 56:7-56:14
-            Value: LambdaExpr 56:17-58:4 async parens
-              Body: Block 56:29-58:4
+                    Ident "pending" 34:6-34:13
+                Body: ExprStmt 34:17-34:31
+                  X: CallExpr 34:17-34:31
+                    Fun: Ident "ProgressView" 34:17-34:29
+                    Args: ArgList 34:29-34:31
+              MatchArm 35:5-35:48
+                Pattern: CasePat 35:5-35:14 implicit
+                  Path: [1]
+                    Ident "ready" 35:6-35:11
+                  Args: [1]
+                    BindPat 35:12-35:13
+                      Name: Ident "f" 35:12-35:13
+                Body: ExprStmt 35:18-35:48
+                  X: CallExpr 35:18-35:48
+                    Fun: Ident "Text" 35:18-35:22
+                    Args: ArgList 35:22-35:48
+                      List: [1]
+                        Arg 35:23-35:47
+                          Value: StringLit 35:23-35:47 Segments=["" "° / " "°"]
+                            Interps: [2]
+                              MemberExpr 35:25-35:31
+                                X: Ident "f" 35:25-35:26
+                                Name: Ident "high" 35:27-35:31
+                              MemberExpr 35:38-35:43
+                                X: Ident "f" 35:38-35:39
+                                Name: Ident "low" 35:40-35:43
+              MatchArm 36:5-38:6
+                Pattern: CasePat 36:5-36:15 implicit
+                  Path: [1]
+                    Ident "failed" 36:6-36:12
+                  Args: [1]
+                    BindPat 36:13-36:14
+                      Name: Ident "e" 36:13-36:14
+                Body: ExprStmt 36:19-38:6
+                  X: CallExpr 36:19-38:6
+                    Fun: Ident "Button" 36:19-36:25
+                    Args: ArgList 36:25-36:34
+                      List: [1]
+                        Arg 36:26-36:33
+                          Value: StringLit 36:26-36:33 Segments=["Retry"]
+                    Block: Block 36:35-38:6
+                      Items: [1]
+                        OnHandler 37:7-37:35
+                          Name: Ident "tap" 37:10-37:13
+                          Body: Block 37:14-37:35
+                            Items: [1]
+                              ExprStmt 37:16-37:33
+                                X: CallExpr 37:16-37:33
+                                  Fun: MemberExpr 37:16-37:31
+                                    X: Ident "forecast" 37:16-37:24
+                                    Name: Ident "reload" 37:25-37:31
+                                  Args: ArgList 37:31-37:33
+          IfStmt 40:3-42:4
+            Cond: LetCond 40:6-40:40
+              Pattern: BindPat 40:10-40:14
+                Name: Ident "last" 40:10-40:14
+              Value: MemberExpr 40:17-40:40 optional
+                X: MemberExpr 40:17-40:31
+                  X: Ident "forecast" 40:17-40:25
+                  Name: Ident "value" 40:26-40:31
+                Name: Ident "updated" 40:33-40:40
+            Then: Block 40:41-42:4
+              Items: [1]
+                ExprStmt 41:5-41:53
+                  X: CallExpr 41:5-41:53
+                    Fun: Ident "Text" 41:5-41:9
+                    Args: ArgList 41:9-41:36
+                      List: [1]
+                        Arg 41:10-41:35
+                          Value: StringLit 41:10-41:35 Segments=["Updated " ""]
+                            Interps: [1]
+                              MemberExpr 41:20-41:33
+                                X: Ident "last" 41:20-41:24
+                                Name: Ident "relative" 41:25-41:33
+                    Block: Block 41:37-41:53
+                      Items: [1]
+                        PropSet 41:39-41:51
+                          Name: Ident "fontSize" 41:39-41:47
+                          Value: BasicLit 41:49-41:51 Kind=integer Value="12"
+          ExprStmt 43:3-47:4
+            X: CallExpr 43:3-47:4
+              Fun: Ident "Boundary" 43:3-43:11
+              Block: Block 43:12-45:4
                 Items: [1]
-                  ExprStmt 57:5-57:21
-                    X: UnaryExpr 57:5-57:21 Op=await
-                      X: CallExpr 57:11-57:21
-                        Fun: Ident "sleep" 57:11-57:16
-                        Args: ArgList 57:16-57:21
-                          List: [1]
-                            Arg 57:17-57:20
-                              Value: BasicLit 57:17-57:20 Kind=duration Value="1ms"
-          ExprStmt 59:3-59:18
-            X: UnaryExpr 59:3-59:18 Op=await
-              X: CallExpr 59:9-59:18
-                Fun: Ident "refresh" 59:9-59:16
-                Args: ArgList 59:16-59:18
-          ExprStmt 60:3-60:30
-            X: CallExpr 60:3-60:30
-              Fun: Ident "later" 60:3-60:8
-              Args: ArgList 60:8-60:30
-                List: [1]
-                  Arg 60:9-60:29
-                    Value: LambdaExpr 60:9-60:29 async
-                      Params: [1]
-                        Param 60:15-60:16
-                          Name: Ident "s" 60:15-60:16
-                      Body: CallExpr 60:20-60:29
-                        Fun: MemberExpr 60:20-60:27
-                          X: Ident "s" 60:20-60:21
-                          Name: Ident "count" 60:22-60:27
-                        Args: ArgList 60:27-60:29
-    WorkerDecl 63:1-74:2 blank
-      Name: Ident "SearchIndex" 63:8-63:19
-      Params: ParamList 63:19-63:44
-        List: [1]
-          Param 63:20-63:43
-            Name: Ident "language" 63:20-63:28
-            Type: NamedType 63:30-63:36
-              Path: [1]
-                Ident "string" 63:30-63:36
-            Default: StringLit 63:39-63:43 Segments=["en"]
-      Body: Block 63:45-74:2
-        Items: [5]
-          LetDecl 64:3-64:35 Keyword=var
-            Pattern: BindPat 64:7-64:12
-              Name: Ident "words" 64:7-64:12
-            Type: MapType 64:14-64:29
-              Key: NamedType 64:15-64:21
-                Path: [1]
-                  Ident "string" 64:15-64:21
-              Value: ArrayType 64:23-64:28
-                Elem: NamedType 64:24-64:27
-                  Path: [1]
-                    Ident "int" 64:24-64:27
-            Value: MapExpr 64:32-64:35
-          LetDecl 65:3-65:31 Keyword=let
-            Pattern: BindPat 65:7-65:11
-              Name: Ident "stop" 65:7-65:11
-            Value: ArrayExpr 65:14-65:31
-              Elems: [2]
-                StringLit 65:15-65:20 Segments=["the"]
-                Ident "language" 65:22-65:30
-          FuncDecl 67:3-71:4 blank pub
-            Name: Ident "add" 67:10-67:13
-            Params: ParamList 67:13-67:36
-              List: [2]
-                Param 67:14-67:21
-                  Name: Ident "id" 67:14-67:16
-                  Type: NamedType 67:18-67:21
-                    Path: [1]
-                      Ident "int" 67:18-67:21
-                Param 67:23-67:35
-                  Name: Ident "text" 67:23-67:27
-                  Type: NamedType 67:29-67:35
-                    Path: [1]
-                      Ident "string" 67:29-67:35
-            Body: Block 67:37-71:4
-              Items: [1]
-                ForStmt 68:5-70:6
-                  Pattern: BindPat 68:9-68:10
-                    Name: Ident "w" 68:9-68:10
-                  Seq: CallExpr 68:14-68:27
-                    Fun: MemberExpr 68:14-68:25
-                      X: Ident "text" 68:14-68:18
-                      Name: Ident "fields" 68:19-68:25
-                    Args: ArgList 68:25-68:27
-                  Body: Block 68:28-70:6
-                    Items: [1]
-                      IfStmt 69:7-69:82
-                        Cond: UnaryExpr 69:10-69:27 Op=!
-                          X: CallExpr 69:11-69:27
-                            Fun: MemberExpr 69:11-69:24
-                              X: Ident "stop" 69:11-69:15
-                              Name: Ident "contains" 69:16-69:24
-                            Args: ArgList 69:24-69:27
-                              List: [1]
-                                Arg 69:25-69:26
-                                  Value: Ident "w" 69:25-69:26
-                        Then: Block 69:28-69:82
-                          Items: [1]
-                            AssignStmt 69:30-69:80 Op==
-                              Target: IndexExpr 69:30-69:46
-                                X: Ident "words" 69:30-69:35
-                                Index: CallExpr 69:36-69:45
-                                  Fun: MemberExpr 69:36-69:43
-                                    X: Ident "w" 69:36-69:37
-                                    Name: Ident "lower" 69:38-69:43
-                                  Args: ArgList 69:43-69:45
-                              Value: BinaryExpr 69:49-69:80 Op=+
-                                X: ParenExpr 69:49-69:73
-                                  X: BinaryExpr 69:50-69:72 Op=??
-                                    X: IndexExpr 69:50-69:66
-                                      X: Ident "words" 69:50-69:55
-                                      Index: CallExpr 69:56-69:65
-                                        Fun: MemberExpr 69:56-69:63
-                                          X: Ident "w" 69:56-69:57
-                                          Name: Ident "lower" 69:58-69:63
-                                        Args: ArgList 69:63-69:65
-                                    Y: ArrayExpr 69:70-69:72
-                                Y: ArrayExpr 69:76-69:80
-                                  Elems: [1]
-                                    Ident "id" 69:77-69:79
-          FuncDecl 72:3-72:59 pub
-            Name: Ident "find" 72:10-72:14
-            Params: ParamList 72:14-72:25
-              List: [1]
-                Param 72:15-72:24
-                  Name: Ident "q" 72:15-72:16
-                  Type: NamedType 72:18-72:24
-                    Path: [1]
-                      Ident "string" 72:18-72:24
-            Result: ArrayType 72:29-72:34
-              Elem: NamedType 72:30-72:33
-                Path: [1]
-                  Ident "int" 72:30-72:33
-            Value: BinaryExpr 72:37-72:59 Op=??
-              X: IndexExpr 72:37-72:53
-                X: Ident "words" 72:37-72:42
-                Index: CallExpr 72:43-72:52
-                  Fun: MemberExpr 72:43-72:50
-                    X: Ident "q" 72:43-72:44
-                    Name: Ident "lower" 72:45-72:50
-                  Args: ArgList 72:50-72:52
-              Y: ArrayExpr 72:57-72:59
-          FuncDecl 73:3-73:29
-            Name: Ident "clear" 73:6-73:11
-            Params: ParamList 73:11-73:13
-            Body: Block 73:14-73:29
-              Items: [1]
-                AssignStmt 73:16-73:27 Op==
-                  Target: Ident "words" 73:16-73:21
-                  Value: MapExpr 73:24-73:27
-    StoreDecl 76:1-81:2 blank
-      Name: Ident "Notes" 76:7-76:12
-      Body: Block 76:13-81:2
-        Items: [3]
-          LetDecl 77:3-77:28 Keyword=let
-            Pattern: BindPat 77:7-77:12
-              Name: Ident "index" 77:7-77:12
-            Value: CallExpr 77:15-77:28
-              Fun: Ident "SearchIndex" 77:15-77:26
-              Args: ArgList 77:26-77:28
-          StateDecl 78:3-78:28
-            Name: Ident "results" 78:9-78:16
-            Type: ArrayType 78:18-78:23
-              Elem: NamedType 78:19-78:22
-                Path: [1]
-                  Ident "int" 78:19-78:22
-            Value: ArrayExpr 78:26-78:28
-          FuncDecl 80:3-80:67 blank pub async
-            Name: Ident "search" 80:16-80:22
-            Params: ParamList 80:22-80:33
-              List: [1]
-                Param 80:23-80:32
-                  Name: Ident "q" 80:23-80:24
-                  Type: NamedType 80:26-80:32
-                    Path: [1]
-                      Ident "string" 80:26-80:32
-            Body: Block 80:34-80:67
-              Items: [1]
-                AssignStmt 80:36-80:65 Op==
-                  Target: Ident "results" 80:36-80:43
-                  Value: UnaryExpr 80:46-80:65 Op=await
-                    X: CallExpr 80:52-80:65
-                      Fun: MemberExpr 80:52-80:62
-                        X: Ident "index" 80:52-80:57
-                        Name: Ident "find" 80:58-80:62
-                      Args: ArgList 80:62-80:65
+                  ExprStmt 44:5-44:20
+                    X: CallExpr 44:5-44:20
+                      Fun: Ident "Chart" 44:5-44:10
+                      Args: ArgList 44:10-44:20
                         List: [1]
-                          Arg 80:63-80:64
-                            Value: Ident "q" 80:63-80:64
+                          Arg 44:11-44:19
+                            Value: Ident "readings" 44:11-44:19
+              Handlers: [1]
+                OnHandler 45:5-47:4
+                  Name: Ident "error" 45:8-45:13
+                  Params: [1]
+                    Ident "e" 45:14-45:15
+                  Body: Block 45:17-47:4
+                    Items: [1]
+                      ExprStmt 46:5-46:42
+                        X: CallExpr 46:5-46:42
+                          Fun: Ident "Text" 46:5-46:9
+                          Args: ArgList 46:9-46:42
+                            List: [1]
+                              Arg 46:10-46:41
+                                Value: StringLit 46:10-46:41 Segments=["The chart failed: " ""]
+                                  Interps: [1]
+                                    MemberExpr 46:30-46:39
+                                      X: Ident "e" 46:30-46:31
+                                      Name: Ident "message" 46:32-46:39
+    FuncDecl 50:1-57:2 blank async throws
+      Name: Ident "fetchForecast" 50:10-50:23
+      Params: ParamList 50:23-50:37
+        List: [1]
+          Param 50:24-50:36
+            Name: Ident "city" 50:24-50:28
+            Type: NamedType 50:30-50:36
+              Path: [1]
+                Ident "string" 50:30-50:36
+      Result: NamedType 50:48-50:56
+        Path: [1]
+          Ident "Forecast" 50:48-50:56
+      Body: Block 50:57-57:2
+        Items: [4]
+          LetDecl 51:3-51:42 Keyword=let
+            Pattern: BindPat 51:7-51:13
+              Name: Ident "cached" 51:7-51:13
+            Value: UnaryExpr 51:16-51:42 Op=try optional
+              X: UnaryExpr 51:21-51:42 Op=await
+                X: CallExpr 51:27-51:42
+                  Fun: MemberExpr 51:27-51:36
+                    X: Ident "cache" 51:27-51:32
+                    Name: Ident "get" 51:33-51:36
+                  Args: ArgList 51:36-51:42
+                    List: [1]
+                      Arg 51:37-51:41
+                        Value: Ident "city" 51:37-51:41
+          IfStmt 52:3-54:4
+            Cond: LetCond 52:6-52:20
+              Pattern: BindPat 52:10-52:11
+                Name: Ident "c" 52:10-52:11
+              Value: Ident "cached" 52:14-52:20
+            Then: Block 52:21-54:4
+              Items: [1]
+                ReturnStmt 53:5-53:13
+                  Value: Ident "c" 53:12-53:13
+          LetDecl 55:3-55:66 Keyword=let
+            Pattern: BindPat 55:7-55:8
+              Name: Ident "f" 55:7-55:8
+            Type: NamedType 55:10-55:18
+              Path: [1]
+                Ident "Forecast" 55:10-55:18
+            Value: UnaryExpr 55:21-55:66 Op=try
+              X: UnaryExpr 55:25-55:66 Op=await
+                X: CallExpr 55:31-55:66
+                  Fun: MemberExpr 55:31-55:64
+                    X: CallExpr 55:31-55:59
+                      Fun: MemberExpr 55:31-55:39
+                        X: Ident "http" 55:31-55:35
+                        Name: Ident "get" 55:36-55:39
+                      Args: ArgList 55:39-55:59
+                        List: [1]
+                          Arg 55:40-55:58
+                            Value: StringLit 55:40-55:58 Segments=["/forecast/" ""]
+                              Interps: [1]
+                                Ident "city" 55:52-55:56
+                    Name: Ident "json" 55:60-55:64
+                  Args: ArgList 55:64-55:66
+          ReturnStmt 56:3-56:11
+            Value: Ident "f" 56:10-56:11
+    FuncDecl 59:1-59:40 blank
+      Name: Ident "later" 59:4-59:9
+      Params: ParamList 59:9-59:37
+        List: [1]
+          Param 59:10-59:36
+            Name: Ident "f" 59:10-59:11
+            Type: FuncType 59:13-59:36 async
+              Params: [1]
+                NamedType 59:22-59:28
+                  Path: [1]
+                    Ident "string" 59:22-59:28
+              Result: NamedType 59:33-59:36
+                Path: [1]
+                  Ident "int" 59:33-59:36
+      Body: Block 59:38-59:40
+    FuncDecl 61:1-67:2 blank async
+      Name: Ident "refreshAll" 61:10-61:20
+      Params: ParamList 61:20-61:22
+      Body: Block 61:23-67:2
+        Items: [3]
+          LetDecl 62:3-64:4 Keyword=let
+            Pattern: BindPat 62:7-62:14
+              Name: Ident "refresh" 62:7-62:14
+            Value: LambdaExpr 62:17-64:4 async parens
+              Body: Block 62:29-64:4
+                Items: [1]
+                  ExprStmt 63:5-63:21
+                    X: UnaryExpr 63:5-63:21 Op=await
+                      X: CallExpr 63:11-63:21
+                        Fun: Ident "sleep" 63:11-63:16
+                        Args: ArgList 63:16-63:21
+                          List: [1]
+                            Arg 63:17-63:20
+                              Value: BasicLit 63:17-63:20 Kind=duration Value="1ms"
+          ExprStmt 65:3-65:18
+            X: UnaryExpr 65:3-65:18 Op=await
+              X: CallExpr 65:9-65:18
+                Fun: Ident "refresh" 65:9-65:16
+                Args: ArgList 65:16-65:18
+          ExprStmt 66:3-66:30
+            X: CallExpr 66:3-66:30
+              Fun: Ident "later" 66:3-66:8
+              Args: ArgList 66:8-66:30
+                List: [1]
+                  Arg 66:9-66:29
+                    Value: LambdaExpr 66:9-66:29 async
+                      Params: [1]
+                        Param 66:15-66:16
+                          Name: Ident "s" 66:15-66:16
+                      Body: CallExpr 66:20-66:29
+                        Fun: MemberExpr 66:20-66:27
+                          X: Ident "s" 66:20-66:21
+                          Name: Ident "count" 66:22-66:27
+                        Args: ArgList 66:27-66:29
+    WorkerDecl 69:1-80:2 blank
+      Name: Ident "SearchIndex" 69:8-69:19
+      Params: ParamList 69:19-69:44
+        List: [1]
+          Param 69:20-69:43
+            Name: Ident "language" 69:20-69:28
+            Type: NamedType 69:30-69:36
+              Path: [1]
+                Ident "string" 69:30-69:36
+            Default: StringLit 69:39-69:43 Segments=["en"]
+      Body: Block 69:45-80:2
+        Items: [5]
+          LetDecl 70:3-70:35 Keyword=var
+            Pattern: BindPat 70:7-70:12
+              Name: Ident "words" 70:7-70:12
+            Type: MapType 70:14-70:29
+              Key: NamedType 70:15-70:21
+                Path: [1]
+                  Ident "string" 70:15-70:21
+              Value: ArrayType 70:23-70:28
+                Elem: NamedType 70:24-70:27
+                  Path: [1]
+                    Ident "int" 70:24-70:27
+            Value: MapExpr 70:32-70:35
+          LetDecl 71:3-71:31 Keyword=let
+            Pattern: BindPat 71:7-71:11
+              Name: Ident "stop" 71:7-71:11
+            Value: ArrayExpr 71:14-71:31
+              Elems: [2]
+                StringLit 71:15-71:20 Segments=["the"]
+                Ident "language" 71:22-71:30
+          FuncDecl 73:3-77:4 blank pub
+            Name: Ident "add" 73:10-73:13
+            Params: ParamList 73:13-73:36
+              List: [2]
+                Param 73:14-73:21
+                  Name: Ident "id" 73:14-73:16
+                  Type: NamedType 73:18-73:21
+                    Path: [1]
+                      Ident "int" 73:18-73:21
+                Param 73:23-73:35
+                  Name: Ident "text" 73:23-73:27
+                  Type: NamedType 73:29-73:35
+                    Path: [1]
+                      Ident "string" 73:29-73:35
+            Body: Block 73:37-77:4
+              Items: [1]
+                ForStmt 74:5-76:6
+                  Pattern: BindPat 74:9-74:10
+                    Name: Ident "w" 74:9-74:10
+                  Seq: CallExpr 74:14-74:27
+                    Fun: MemberExpr 74:14-74:25
+                      X: Ident "text" 74:14-74:18
+                      Name: Ident "fields" 74:19-74:25
+                    Args: ArgList 74:25-74:27
+                  Body: Block 74:28-76:6
+                    Items: [1]
+                      IfStmt 75:7-75:82
+                        Cond: UnaryExpr 75:10-75:27 Op=!
+                          X: CallExpr 75:11-75:27
+                            Fun: MemberExpr 75:11-75:24
+                              X: Ident "stop" 75:11-75:15
+                              Name: Ident "contains" 75:16-75:24
+                            Args: ArgList 75:24-75:27
+                              List: [1]
+                                Arg 75:25-75:26
+                                  Value: Ident "w" 75:25-75:26
+                        Then: Block 75:28-75:82
+                          Items: [1]
+                            AssignStmt 75:30-75:80 Op==
+                              Target: IndexExpr 75:30-75:46
+                                X: Ident "words" 75:30-75:35
+                                Index: CallExpr 75:36-75:45
+                                  Fun: MemberExpr 75:36-75:43
+                                    X: Ident "w" 75:36-75:37
+                                    Name: Ident "lower" 75:38-75:43
+                                  Args: ArgList 75:43-75:45
+                              Value: BinaryExpr 75:49-75:80 Op=+
+                                X: ParenExpr 75:49-75:73
+                                  X: BinaryExpr 75:50-75:72 Op=??
+                                    X: IndexExpr 75:50-75:66
+                                      X: Ident "words" 75:50-75:55
+                                      Index: CallExpr 75:56-75:65
+                                        Fun: MemberExpr 75:56-75:63
+                                          X: Ident "w" 75:56-75:57
+                                          Name: Ident "lower" 75:58-75:63
+                                        Args: ArgList 75:63-75:65
+                                    Y: ArrayExpr 75:70-75:72
+                                Y: ArrayExpr 75:76-75:80
+                                  Elems: [1]
+                                    Ident "id" 75:77-75:79
+          FuncDecl 78:3-78:59 pub
+            Name: Ident "find" 78:10-78:14
+            Params: ParamList 78:14-78:25
+              List: [1]
+                Param 78:15-78:24
+                  Name: Ident "q" 78:15-78:16
+                  Type: NamedType 78:18-78:24
+                    Path: [1]
+                      Ident "string" 78:18-78:24
+            Result: ArrayType 78:29-78:34
+              Elem: NamedType 78:30-78:33
+                Path: [1]
+                  Ident "int" 78:30-78:33
+            Value: BinaryExpr 78:37-78:59 Op=??
+              X: IndexExpr 78:37-78:53
+                X: Ident "words" 78:37-78:42
+                Index: CallExpr 78:43-78:52
+                  Fun: MemberExpr 78:43-78:50
+                    X: Ident "q" 78:43-78:44
+                    Name: Ident "lower" 78:45-78:50
+                  Args: ArgList 78:50-78:52
+              Y: ArrayExpr 78:57-78:59
+          FuncDecl 79:3-79:29
+            Name: Ident "clear" 79:6-79:11
+            Params: ParamList 79:11-79:13
+            Body: Block 79:14-79:29
+              Items: [1]
+                AssignStmt 79:16-79:27 Op==
+                  Target: Ident "words" 79:16-79:21
+                  Value: MapExpr 79:24-79:27
+    StoreDecl 82:1-87:2 blank
+      Name: Ident "Notes" 82:7-82:12
+      Body: Block 82:13-87:2
+        Items: [3]
+          LetDecl 83:3-83:28 Keyword=let
+            Pattern: BindPat 83:7-83:12
+              Name: Ident "index" 83:7-83:12
+            Value: CallExpr 83:15-83:28
+              Fun: Ident "SearchIndex" 83:15-83:26
+              Args: ArgList 83:26-83:28
+          StateDecl 84:3-84:28
+            Name: Ident "results" 84:9-84:16
+            Type: ArrayType 84:18-84:23
+              Elem: NamedType 84:19-84:22
+                Path: [1]
+                  Ident "int" 84:19-84:22
+            Value: ArrayExpr 84:26-84:28
+          FuncDecl 86:3-86:67 blank pub async
+            Name: Ident "search" 86:16-86:22
+            Params: ParamList 86:22-86:33
+              List: [1]
+                Param 86:23-86:32
+                  Name: Ident "q" 86:23-86:24
+                  Type: NamedType 86:26-86:32
+                    Path: [1]
+                      Ident "string" 86:26-86:32
+            Body: Block 86:34-86:67
+              Items: [1]
+                AssignStmt 86:36-86:65 Op==
+                  Target: Ident "results" 86:36-86:43
+                  Value: UnaryExpr 86:46-86:65 Op=await
+                    X: CallExpr 86:52-86:65
+                      Fun: MemberExpr 86:52-86:62
+                        X: Ident "index" 86:52-86:57
+                        Name: Ident "find" 86:58-86:62
+                      Args: ArgList 86:62-86:65
+                        List: [1]
+                          Arg 86:63-86:64
+                            Value: Ident "q" 86:63-86:64

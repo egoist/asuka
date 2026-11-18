@@ -64,10 +64,7 @@ pub component Toggle {
   task(off()) {
     if let g = group { g.items.put(Item(value: value, label: value, ref: me, disabled: off())) }
   }
-  task {
-    defer { if let g = group { g.items.remove(value) } }
-    await never()
-  }
+  cleanup { if let g = group { g.items.remove(value) } }
 
   View {
     ref: me
@@ -381,10 +378,7 @@ pub component Radio(value: string) {
   }
 
   task(label, isDisabled()) { g.items.put(Item(value: value, label: if label == "" { value } else { label }, ref: me, disabled: isDisabled())) }
-  task {
-    defer { g.items.remove(value) }
-    await never()
-  }
+  cleanup { g.items.remove(value) }
 
   View {
     ref: me

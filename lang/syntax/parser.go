@@ -764,6 +764,8 @@ func describeNode(n Node) string {
 		return n.Tok.String()
 	case *DeferStmt:
 		return "defer"
+	case *CleanupStmt:
+		return "cleanup"
 	case *EmitStmt:
 		return "emit"
 	case *AssignStmt:
@@ -1864,6 +1866,13 @@ func (p *parser) itemAfterPub(start Pos) Item {
 			d := &VariantDecl{Name: p.ident()}
 			p.expect(ASSIGN)
 			d.Value = p.parseExpr()
+			d.Span = p.span(start)
+			return d
+		}
+		// cleanup { … }: contextual, as variant is (rfcs/0016).
+		if p.lit == "cleanup" && next == LBRACE {
+			p.next()
+			d := &CleanupStmt{Body: p.parseBlock()}
 			d.Span = p.span(start)
 			return d
 		}

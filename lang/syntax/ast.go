@@ -734,6 +734,15 @@ type DeferStmt struct {
 	Body *Block
 }
 
+// A CleanupStmt is cleanup { … }: its block runs when the owner it's
+// registered with goes, or before its effect runs again (rfcs/0016).
+// cleanup is contextual: a name elsewhere.
+type CleanupStmt struct {
+	Span
+	Trivia
+	Body *Block
+}
+
 // An EmitStmt is emit name(args).
 type EmitStmt struct {
 	Span
@@ -791,6 +800,7 @@ func (*ReturnStmt) itemNode()  {}
 func (*ThrowStmt) itemNode()   {}
 func (*BranchStmt) itemNode()  {}
 func (*DeferStmt) itemNode()   {}
+func (*CleanupStmt) itemNode() {}
 func (*EmitStmt) itemNode()    {}
 func (*AssignStmt) itemNode()  {}
 func (*ExprStmt) itemNode()    {}

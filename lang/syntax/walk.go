@@ -308,6 +308,8 @@ func Walk(v Visitor, n Node) {
 		}
 	case *DeferStmt:
 		walk(n.Body)
+	case *CleanupStmt:
+		walk(n.Body)
 	case *EmitStmt:
 		walk(n.Name)
 		if n.Args != nil {

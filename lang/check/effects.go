@@ -112,6 +112,14 @@ func (c *Checker) writeRoot(x syntax.Expr) (Object, syntax.Node) {
 // A local fn's writes are the maker's too; a lambda's aren't (a callback
 // writes when it's called, later).
 func (x *FuncCtx) closureUses(child *FuncCtx) {
+	if child.Kind == CtxCleanup {
+		// A cleanup runs untracked, as its owner goes or before its
+		// effect runs again: what it reads isn't followed, and what it
+		// writes is written then (rfcs/0016).
+		x.stateWrites = append(x.stateWrites, child.stateWrites...)
+		x.writeCalls = append(x.writeCalls, child.writeCalls...)
+		return
+	}
 	switch child.Kind {
 	case CtxLambda, CtxLocalFn:
 	default:

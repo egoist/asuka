@@ -24,9 +24,11 @@ async fn loadThread(id: string) throws -> Thread {
   await withTimeout(5s) { return try await fetch(url) }`), and which
   throws when the time runs out. They're structured: what they cancel has
   stopped, its `defer`s run, before they return or throw.
-  `await never()` waits for nothing but the task's end: a task that
-  holds something while its component is shown (`defer { release() };
-  await never()`), or a stream that ends only when its reader goes.
+  `await never()` waits for nothing but the task's end: a stream that
+  ends only when its reader goes, or a task that awaits something before
+  it holds it (`try await register(); defer { release() }; await
+  never()`). What a component holds without awaiting is a `cleanup { }`
+  ([Cleanups](components.md#cleanups)).
 - `spawn { … }` runs a block on another thread, for work that would hold
   the main thread up (parsing, image processing). It may use values only,
   not state, stores, views, native objects or C pointers, nor a file's

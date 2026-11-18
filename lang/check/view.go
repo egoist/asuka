@@ -299,15 +299,17 @@ func (c *Checker) componentBody(t *TypeName) {
 			c.taskDecl(d)
 		case *syntax.EffectDecl:
 			c.effectDecl(d, t.name+".effect")
+		case *syntax.CleanupStmt:
+			c.cleanupStmt(d, true)
 		}
 	}
 	if comp.Store {
 		for _, it := range comp.Body.Items {
 			switch it.(type) {
 			case *syntax.PropDecl, *syntax.EventDecl, *syntax.StateDecl, *syntax.LetDecl, *syntax.UseDecl,
-				*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
+				*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.CleanupStmt, *syntax.BadItem:
 			default:
-				c.errorf(it, diag.MisplacedDeclaration, "a store has no views or statements: it's state, lets, fns, tasks and effects")
+				c.errorf(it, diag.MisplacedDeclaration, "a store has no views or statements: it's state, lets, fns, tasks, effects and cleanups")
 			}
 		}
 		return
@@ -316,7 +318,7 @@ func (c *Checker) componentBody(t *TypeName) {
 	for _, it := range comp.Body.Items {
 		switch it.(type) {
 		case *syntax.PropDecl, *syntax.EventDecl, *syntax.StateDecl, *syntax.LetDecl, *syntax.UseDecl,
-			*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
+			*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.CleanupStmt, *syntax.BadItem:
 		default:
 			views = append(views, it)
 		}
@@ -495,6 +497,9 @@ func (c *Checker) viewItem(it syntax.Item, el *ElementCall) {
 	case *syntax.StateDecl, *syntax.PropDecl, *syntax.EventDecl, *syntax.VariantDecl, *syntax.UseDecl, *syntax.ProvideDecl,
 		*syntax.TaskDecl, *syntax.EffectDecl, *syntax.FuncDecl:
 		c.errorf(it, diag.StatementInView, "%s belongs in a component's body, not in an element's block", itemName(it))
+	case *syntax.CleanupStmt:
+		c.errorf(it, diag.StatementInView, "a cleanup in a view: it goes in a component's body (it runs when the component goes), or in an effect's")
+		c.cleanupStmt(s, true)
 	case *syntax.StyleDecl:
 		c.errorf(it, diag.MisplacedDeclaration, "a style is declared at the top of a file")
 	case *syntax.BadItem:
@@ -1228,7 +1233,7 @@ func (c *Checker) rootComponent(t *TypeName) *TypeName {
 	for _, it := range comp.Body.Items {
 		switch it := it.(type) {
 		case *syntax.PropDecl, *syntax.EventDecl, *syntax.StateDecl, *syntax.LetDecl, *syntax.UseDecl,
-			*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
+			*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.CleanupStmt, *syntax.BadItem:
 		case *syntax.ExprStmt:
 			if call != nil {
 				return nil

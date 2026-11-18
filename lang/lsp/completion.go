@@ -648,13 +648,28 @@ func (c *completer) context(path []syntax.Node) (blockKind, *check.TypeName) {
 		case *syntax.StyleDecl:
 			return elementBlock, c.fc.styleType()
 		case *syntax.FuncDecl, *syntax.LambdaExpr, *syntax.OnHandler, *syntax.TaskDecl, *syntax.EffectDecl,
-			*syntax.TestDecl, *syntax.DeferStmt, *syntax.SpawnExpr, *syntax.DoStmt:
+			*syntax.TestDecl, *syntax.DeferStmt, *syntax.CleanupStmt, *syntax.SpawnExpr, *syntax.DoStmt:
 			return stmtBlock, nil
 		case *syntax.StructDecl, *syntax.EnumDecl, *syntax.InterfaceDecl:
 			return typeBody, nil
 		}
 	}
 	return topLevel, nil
+}
+
+// inEffect reports whether the innermost body around the cursor is an
+// effect's, where a cleanup { } may go (rfcs/0016).
+func inEffect(path []syntax.Node) bool {
+	for i := len(path) - 1; i >= 0; i-- {
+		switch path[i].(type) {
+		case *syntax.EffectDecl:
+			return true
+		case *syntax.FuncDecl, *syntax.LambdaExpr, *syntax.OnHandler, *syntax.TaskDecl, *syntax.TestDecl,
+			*syntax.DeferStmt, *syntax.CleanupStmt, *syntax.SpawnExpr, *syntax.ComponentDecl, *syntax.ScreenDecl, *syntax.StoreDecl, *syntax.AppDecl:
+			return false
+		}
+	}
+	return false
 }
 
 // atItemStart reports whether the word is where an item of a block
@@ -666,7 +681,7 @@ func atItemStart(before string) bool {
 
 var (
 	topKeywords       = []string{"component", "screen", "store", "worker", "struct", "enum", "interface", "fn", "async", "type", "style", "state", "let", "app", "test", "import", "pub", "native", "extern", "extend"}
-	componentKeywords = []string{"prop", "event", "state", "let", "use", "provide", "fn", "async", "task", "effect", "pub"}
+	componentKeywords = []string{"prop", "event", "state", "let", "use", "provide", "fn", "async", "task", "effect", "cleanup", "pub"}
 	viewKeywords      = []string{"if", "for", "match"}
 	stmtKeywords      = []string{"let", "var", "if", "for", "while", "match", "return", "throw", "break", "continue", "defer", "do", "emit", "try", "await"}
 	exprKeywords      = []string{"true", "false", "none", "if", "match", "await", "try", "load", "spawn", "throw", "return"}
@@ -719,7 +734,7 @@ func (c *completer) general(path []syntax.Node, pos syntax.Pos, before string) {
 		}
 	case storeBody:
 		if item {
-			c.keywords([]string{"state", "let", "use", "fn", "async", "task", "effect", "pub"})
+			c.keywords([]string{"state", "let", "use", "fn", "async", "task", "effect", "cleanup", "pub"})
 		}
 	case workerBody:
 		if item {
@@ -736,6 +751,9 @@ func (c *completer) general(path []syntax.Node, pos syntax.Pos, before string) {
 	}
 	if item && kind == stmtBlock {
 		c.keywords(stmtKeywords)
+		if inEffect(path) {
+			c.keywords([]string{"cleanup"})
+		}
 	}
 	c.names(path, pos, item && views)
 	c.keywords(exprKeywords)

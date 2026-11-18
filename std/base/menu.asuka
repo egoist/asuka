@@ -58,10 +58,12 @@ pub component Menu {
   pub variant open = open
 
   // In a menubar: one of its menus while it shows.
-  task {
-    if let b = ctx.bar { b.add(ctx) }
-    defer { if let b = ctx.bar { b.remove(ctx) } }
-    await never()
+  effect {
+    if let b = ctx.bar {
+      let menu = ctx
+      b.add(menu)
+      cleanup { b.remove(menu) }
+    }
   }
 
   task(hovering) {
@@ -120,10 +122,9 @@ pub component MenuTrigger {
   task(disabled) {
     if let b = c.bar { b.items.put(Item(value: id(), label: "", ref: c.trigger, disabled: disabled)) }
   }
-  task {
+  effect {
     let mine = id()
-    defer { if let b = c.bar { b.items.remove(mine) } }
-    await never()
+    cleanup { if let b = c.bar { b.items.remove(mine) } }
   }
 
   // A menubar's one Tab stop: the trigger the keyboard was on, else the
@@ -220,10 +221,9 @@ pub component MenuItem {
   pub variant disabled = disabled
 
   task(label, disabled) { c.items.put(Item(value: id(), label: label, ref: me, disabled: disabled)) }
-  task {
+  effect {
     let mine = id()
-    defer { c.items.remove(mine) }
-    await never()
+    cleanup { c.items.remove(mine) }
   }
 
   View {
@@ -270,10 +270,9 @@ pub component MenuCheckboxItem {
   pub variant disabled = disabled
 
   task(label, disabled) { c.items.put(Item(value: id(), label: label, ref: me, disabled: disabled)) }
-  task {
+  effect {
     let mine = id()
-    defer { c.items.remove(mine) }
-    await never()
+    cleanup { c.items.remove(mine) }
   }
 
   View {
@@ -352,10 +351,9 @@ pub component MenuRadioItem(value: string) {
   pub variant disabled = disabled
 
   task(label, disabled) { c.items.put(Item(value: id(), label: label, ref: me, disabled: disabled)) }
-  task {
+  effect {
     let mine = id()
-    defer { c.items.remove(mine) }
-    await never()
+    cleanup { c.items.remove(mine) }
   }
 
   View {
@@ -403,10 +401,9 @@ pub component MenuSubmenuTrigger {
   task(label, disabled) {
     if let p = c.parent { p.items.put(Item(value: id(), label: label, ref: c.trigger, disabled: disabled)) }
   }
-  task {
+  effect {
     let mine = id()
-    defer { if let p = c.parent { p.items.remove(mine) } }
-    await never()
+    cleanup { if let p = c.parent { p.items.remove(mine) } }
   }
 
   View {

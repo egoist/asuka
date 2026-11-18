@@ -474,7 +474,7 @@
         },
         {
           "name": "storage.type.asuka",
-          "match": "\\b(app|effect)\\b(?=\\s*\\{)"
+          "match": "\\b(app|effect|cleanup)\\b(?=\\s*\\{)"
         },
         {
           "name": "storage.type.asuka",

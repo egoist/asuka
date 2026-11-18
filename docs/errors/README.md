@@ -11,6 +11,7 @@ Every error and warning Asuka reports has a code: a stable name, said in the ter
 - [bad-operand](bad-operand.md): An operator on values it doesn't take.
 - [brace-placement](brace-placement.md): A block's `{` goes at the end of the line before.
 - [cannot-infer-type](cannot-infer-type.md): The compiler can't tell a value's type from what's written.
+- [cleanup-reads-what-it-follows](cleanup-reads-what-it-follows.md): An effect's cleanup that reads what the effect follows.
 - [closure-keeps-itself](closure-keeps-itself.md): A closure that calls itself through the variable it's stored in.
 - [constraint-not-met](constraint-not-met.md): A type that lacks what a generic or a method needs of it.
 - [deprecated-syntax](deprecated-syntax.md): A form the language replaced, which `asuka fmt` rewrites.

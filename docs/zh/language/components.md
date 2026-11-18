@@ -248,3 +248,24 @@ task(user.id) { profile = try await load(user.id) } // id 变化时才重新运�
 effect 会立即运行，之后每当它读取过的内容（包括它调用的函数读取的内容）变化时再次运行。它读取的就是代码里写到的那部分：`effect { log(user.name) }` 在名字变化时重新运行，头像变化时不会。`effect(a, b)` 只在 `a` 或 `b` 变化时再次运行，它的主体读取的东西都不会被跟随。task 是异步的（见[异步](async.md#异步)）：组件出现时启动；圆括号里的内容变化时重新启动（并取消上一次运行）；组件消失时被取消。effect 和 task 圆括号里的内容会被比较：变化后如果值仍然相等，就什么都不会发生，所以用户改名时 `task(user.id)` 会继续运行。`app` 代码块里也可以写它们：它们属于应用本身，在应用运行期间一直有效（比如一个刷新循环，或者一个跟随应用状态的设置：`effect { setColorScheme(scheme) }`）。
 
 effect 可以写入状态，但不能写入它跟随的状态：`effect { if n > 3 { n = 3 } }` 会在自己写入之后再运行一次，晚了一轮，而在那之前处理函数已经看到 `n` 是 4 了。编译器会报错，并给出替代的写法：跟随的状态（`state n: int = min(n ?? 0, 3)`、`state selected(results) = 0`），跟随别的内容的 `effect(…)`，或者在改变它读取内容的那个处理函数里直接写入。task 可以写入它跟随的状态：它通过取消来重新启动，最终会结束。
+
+### cleanup
+
+```asuka
+effect {
+  let id = bus.listen("refresh", e => reload())
+  cleanup { bus.unlisten(id) }          // 下一次运行之前，以及 effect 消失时
+}
+effect(roomId) {
+  let room = roomId
+  chat.join(room)
+  cleanup { chat.leave(room) }          // 离开这次运行加入的房间
+}
+cleanup { tabs.remove(value) }          // 组件消失时
+```
+
+effect 主体里的 `cleanup { … }` 会在 effect 下一次运行之前、以及 effect 消失时运行：这次运行建立了什么，它就撤销什么。它可以写在 `if` 里（只撤销这个分支做过的事），也可以写在循环里（执行到几次就注册几次）；有多个时，后注册的先运行。写在组件、store 或 `app` 的主体里、和 effect 与 task 并列时，它会在这个实例消失时运行，排在 effect 的 cleanup 之后。
+
+cleanup 是一个闭包：它能看到这次运行的局部变量；它不能 await，也不能抛出错误（它在 owner 消失的过程中运行，后面的 cleanup 还得接着运行；用 `try?` 或 `do { } catch { }` 处理错误）；它读取的东西不会被跟随。它读到的状态是它运行那一刻的值。在 effect 再次运行之前，那已经是 effect 跟随的东西变化之后了，所以 `cleanup { chat.leave(roomId) }` 离开的会是新房间：要把这次运行的值存进 `let`，否则编译器会给出警告（[cleanup-reads-what-it-follows](../errors/cleanup-reads-what-it-follows.md)）。它写入的东西算作它所在 effect 的写入。
+
+处理函数、函数、task 和测试里不能写 cleanup：task 用 `defer` 撤销它启动的东西，`defer` 会在 task 结束或被取消时运行；处理函数和函数没有自己的 owner 来运行它。

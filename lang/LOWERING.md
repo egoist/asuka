@@ -729,6 +729,14 @@ The function's body, in order:
    or a let read alone is read directly (CGET, MREAD). The effect's
    closure is named `Component/effect`, which the run-time guard's
    panic says as "Component's effect at file:line".
+   `cleanup { B }` (rfcs/0016) is CLEANUP of a closure of B (named
+   `…/cleanup`), which registers it with the owner current there
+   (`ak_on_cleanup`): in the body, the owner the instance is built
+   under, which runs it as it's disposed; in an effect's body, where
+   it's reached, the effect's own, which runs it before the effect's
+   next run (`ak_sig_owner_clean`) and as it's disposed. The app's and
+   a store's are the same. Cleanups run last registered first, after
+   what their owner made.
 6. The view items: one element is the component's view; several make a
    fragment (CALLB `ui.fragment`, then `ui.add` each).
 

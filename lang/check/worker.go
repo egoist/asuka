@@ -108,6 +108,8 @@ func (c *Checker) workerMembers(t *TypeName, params *syntax.ParamList, body *syn
 			c.errorf(d, diag.MisplacedDeclaration, "a worker has no variants: a component declares them, for its caller's styles")
 		case *syntax.TaskDecl, *syntax.EffectDecl:
 			c.errorf(d, diag.MisplacedDeclaration, "a worker has no tasks or effects: its pub fns run when they're called")
+		case *syntax.CleanupStmt:
+			c.errorf(d, diag.MisplacedDeclaration, "a worker has no cleanups: nothing owns it; its pub fns run when they're called")
 		case *syntax.BadItem:
 		default:
 			c.errorf(it, diag.MisplacedDeclaration, "a worker has no views or statements: it's vars, lets and fns")

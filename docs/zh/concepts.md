@@ -127,6 +127,18 @@ effect(selected) { analytics.log("selected", selected) }
 
 effect 不能写入它跟随的状态（否则它会在自己写入之后再运行一次）：编译器会报错，并给出替代的写法。
 
+effect 建立的东西，由它主体里的 `cleanup { … }` 撤销。cleanup 会在 effect 再次运行之前执行，也会在 effect 随组件一起消失时执行：
+
+```asuka
+effect(roomId) {
+  let room = roomId
+  chat.join(room)
+  cleanup { chat.leave(room) }
+}
+```
+
+cleanup 读取状态时，读到的是它运行那一刻的值，那时 effect 跟随的东西已经变了。所以要把这次运行用到的值存进 `let`，就像这里的 `room`；cleanup 读取它所在 effect 跟随的东西时，编译器会给出警告。
+
 `task` 是组件在显示期间进行的异步工作：组件出现时启动，组件消失时被取消。如果在圆括号里写了值，这些值变化时它会重新启动，并取消上一次运行。圆括号里的值会被比较：`task(user.id)` 在 id 变化时才重新启动，用户改名时不会。
 
 ```asuka
@@ -193,6 +205,17 @@ Boundary {
 - `match` 切换情况时：旧情况的 owner；
 - 页面被弹出时（返回按钮、滑动手势、`pop()`）：该页面的 owner；
 - 弹出面板关闭时：其内容的 owner。
+
+组件主体里的 `cleanup { … }` 会在它的 owner 被销毁时运行；effect 主体里的 cleanup 也会在这时运行，此外还会在 effect 每次再次运行之前运行。store 和 app 的主体里也可以写 cleanup。多个 cleanup 按注册的相反顺序运行，并且在它们的 owner 创建的东西都停下之后才运行：先是 effect 的 cleanup，再是主体的。组件注册过的东西，就在这里撤销：
+
+```asuka
+component Tab(value: string) {
+  use tabs: TabsContext
+  effect { tabs.add(value) }
+  cleanup { tabs.remove(value) }
+  Text(value)
+}
+```
 
 被取消的 task 会在它正在等待的那个 `await` 处结束，并在结束途中运行它的 `defer`：这里就是停止它所启动的东西的地方。
 

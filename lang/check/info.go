@@ -393,6 +393,7 @@ const (
 	CtxLocalFn                      // a fn declared in a block (LocalFn)
 	CtxStyle                        // a style's body: its parameters' and uses' (applied where it's used, never a function)
 	CtxWorker                       // a worker's body: its constructor, run on its thread
+	CtxCleanup                      // cleanup { }: an effect's or a body's (rfcs/0016)
 )
 
 // A FuncCtx is a function body being checked: a declared function, or a
@@ -437,6 +438,9 @@ type FuncCtx struct {
 	// under peek aren't kept; a closure's reads are its maker's, and a
 	// local fn's writes; calls are kept to follow them through.
 	stateReads, stateWrites []stateUse
+	// cleanups: the cleanup { }s an effect's body registers, whose reads
+	// are checked against what the effect follows.
+	cleanups []*FuncCtx
 	readCalls, writeCalls   []callUse
 	inferRes                bool // a lambda whose result is inferred from its body
 	threw                   bool // lets an error out

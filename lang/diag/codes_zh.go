@@ -398,6 +398,11 @@ var zh = map[string]Text{
 		"effect 读取的东西变化时会再次运行。如果它写的正是这个东西，它就会在自己写入之后再运行一次，晚了一轮：处理函数已经看到了它要修正的值，屏幕也可能把这个值显示上一帧。",
 		"在声明处把值限制在范围内（`state n: int = min(n ?? 0, 3)`），改为跟随别的东西（`effect(other) { … }`、`state x(other) = …`），或者在修改它所读内容的处理函数里写入。",
 	},
+	"cleanup-reads-what-it-follows": {
+		"effect 的 cleanup 读取了 effect 所跟随的东西",
+		"effect 里的 `cleanup { }` 会在 effect 下一次运行之前执行，而 effect 之所以再次运行，正是因为它跟随的东西变了。在 cleanup 里读取它，读到的是新值：`cleanup { leave(room) }` 离开的是正要加入的房间，而不是这次运行加入的那个。",
+		"把这次运行的值存进一个 `let`，在 cleanup 里读它：先 `let r = room`，再 `cleanup { leave(r) }`。",
+	},
 	"row-without-key": {
 		"视图里的 `for` 遍历会变化的数据，却没有 `key`",
 		"没有 key 时，行按位置保留：某一项移动后，原来位置上的行会显示下一项，却还带着原来那一行的状态、task 和视图。",

@@ -128,10 +128,12 @@ pub component Field {
   let ctx = FieldContext(name: name, invalidByApp: invalid, disabled: disabled, check: validate, form: form)
   provide ctx
 
-  task {
-    if let f = form { f.checks[name] = validate }
-    defer { if let f = form { f.checks.remove(name) } }
-    await never()
+  effect {
+    if let f = form {
+      let n = name
+      f.checks[n] = validate
+      cleanup { f.checks.remove(n) }
+    }
   }
 
   /// While wrong (the app says so, or its check).

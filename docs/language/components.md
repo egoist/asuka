@@ -348,3 +348,39 @@ instead: a state that follows (`state n: int = min(n ?? 0, 3)`,
 `state selected(results) = 0`), an `effect(…)` that follows something
 else, or the handler that changes what it reads. A task may write what
 it follows: it restarts by cancelling, and ends.
+
+### Cleanups
+
+```asuka
+effect {
+  let id = bus.listen("refresh", e => reload())
+  cleanup { bus.unlisten(id) }          // before the next run, and as it goes
+}
+effect(roomId) {
+  let room = roomId
+  chat.join(room)
+  cleanup { chat.leave(room) }          // the room this run joined
+}
+cleanup { tabs.remove(value) }          // as the component goes
+```
+
+`cleanup { … }` in an effect's body runs before the effect's next run
+and when the effect goes: what the run set up, it undoes. It may be
+under an `if` (it undoes only what that branch did) or in a loop (once
+for each time it was reached), and several run last first. In a
+component's, a store's or the `app`'s body, beside its effects and
+tasks, it runs when the instance goes, after its effects' cleanups.
+
+A cleanup is a closure: it sees the run's locals, it doesn't await or
+throw (it runs as its owner goes, and the cleanups after it still have
+to: catch with `try?` or `do { } catch { }`), and what it reads isn't
+followed. It reads state as it is when it runs. Before the effect runs
+again, that's after what the effect follows has changed, so
+`cleanup { chat.leave(roomId) }` would leave the new room: keep the
+run's value in a `let`, and the compiler warns when you don't
+([cleanup-reads-what-it-follows](../errors/cleanup-reads-what-it-follows.md)).
+What it writes counts as its effect's writes.
+
+Handlers, functions, tasks and tests don't take one: a task undoes what
+it started with `defer`, which runs as it ends or is cancelled, and a
+handler or a function has no owner of its own to run it.

@@ -95,6 +95,7 @@ func (c *Checker) finalize() {
 	}
 	c.workerCalls()
 	c.checkEffectWrites()
+	c.checkCleanupReads()
 	c.checkKeys()
 	touches := c.touchesState(ctxs)
 	for _, s := range c.spawns {
@@ -330,6 +331,8 @@ func (c *Checker) notFollowedHere() string {
 			}
 		case CtxTest:
 			return "a test's"
+		case CtxCleanup:
+			return "a cleanup's"
 		case CtxSpawn:
 			return "spawn's"
 		}

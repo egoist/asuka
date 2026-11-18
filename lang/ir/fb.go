@@ -676,7 +676,8 @@ func (b *fb) makeClosure(s closure) int {
 			continue
 		}
 		k := c.kind(v.Type)
-		if v.Kind == check.RowItem || v.Kind == check.ViewMemo {
+		if v.Kind == check.RowItem || v.Kind == check.ViewMemo || l.prog.AccessorVar(v) {
+			// An accessor (a for's key's item over a path, of any type).
 			k = bc.KRef
 		}
 		r := c.newReg(k)

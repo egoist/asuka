@@ -155,10 +155,7 @@ pub component AccordionTrigger {
   pub variant disabled = i.disabled
 
   task(label, i.disabled) { a.items.put(Item(value: i.value, label: label, ref: i.trigger, disabled: i.disabled)) }
-  task {
-    defer { a.items.remove(i.value) }
-    await never()
-  }
+  cleanup { a.items.remove(i.value) }
 
   View {
     ref: i.trigger
@@ -270,10 +267,7 @@ pub component Tab(value: string) {
   pub variant disabled = disabled
 
   task(label, disabled) { t.items.put(Item(value: value, label: if label == "" { value } else { label }, ref: me, disabled: disabled)) }
-  task {
-    defer { t.items.remove(value) }
-    await never()
-  }
+  cleanup { t.items.remove(value) }
 
   View {
     ref: me

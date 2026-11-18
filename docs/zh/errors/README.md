@@ -11,6 +11,7 @@ Asuka 报告的每个错误和警告都有一个代码：一个稳定的名称�
 - [bad-operand](bad-operand.md): 运算符用在了它不接受的值上。
 - [brace-placement](brace-placement.md): 代码块的 `{` 要写在上一行的末尾。
 - [cannot-infer-type](cannot-infer-type.md): 编译器无法从代码中推断出值的类型。
+- [cleanup-reads-what-it-follows](cleanup-reads-what-it-follows.md): effect 的 cleanup 读取了 effect 所跟随的东西。
 - [closure-keeps-itself](closure-keeps-itself.md): 闭包通过保存它的变量调用自己。
 - [constraint-not-met](constraint-not-met.md): 类型缺少泛型或方法对它的要求。
 - [deprecated-syntax](deprecated-syntax.md): 已被替换的旧写法，`asuka fmt` 会自动改写。

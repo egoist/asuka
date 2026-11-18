@@ -139,3 +139,26 @@ test "the icon goes with its owner" {
   await app.idle()
   expect(app.trays() == "")
 }
+
+component Renamed {
+  state name = "first"
+  Column {
+    Button("Rename") { on press { name = "second" } }
+    tray.Tray(name) {
+      symbol: "star"
+      menu: [.button(title: "Show", run: () => { open = true })]
+    }
+  }
+}
+
+test "an icon whose id changes replaces the last one" {
+  let app = mount(Renamed())
+  await app.idle()
+  expect(app.trays() == "first: symbol=\"star\"\n  Show\n", app.trays())
+  app.tap("Rename")
+  await app.idle()
+  expect(app.trays() == "second: symbol=\"star\"\n  Show\n", app.trays())
+  // The last id's anchor goes with it; the new one's is the new icon's.
+  expect(tray.anchor("first").tray == 0)
+  expect(tray.anchor("second").tray != 0)
+}

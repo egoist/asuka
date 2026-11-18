@@ -1144,6 +1144,9 @@ func (p *printer) node(n Node) {
 	case *DeferStmt:
 		p.write("defer ")
 		p.block(n.Body)
+	case *CleanupStmt:
+		p.write("cleanup ")
+		p.block(n.Body)
 	case *EmitStmt:
 		p.write("emit " + n.Name.Name)
 		if n.Args != nil {

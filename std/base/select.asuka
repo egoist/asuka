@@ -157,10 +157,7 @@ pub component SelectItem(value: string) {
     c.items.put(Item(value: value, label: text(), ref: me, disabled: disabled))
     c.labels[value] = text()
   }
-  task {
-    defer { c.items.remove(value) }
-    await never()
-  }
+  cleanup { c.items.remove(value) }
 
   View {
     ref: me
@@ -291,10 +288,7 @@ pub component ListboxItem(value: string) {
   }
 
   task(label, off()) { c.items.put(Item(value: value, label: if label == "" { value } else { label }, ref: me, disabled: off())) }
-  task {
-    defer { c.items.remove(value) }
-    await never()
-  }
+  cleanup { c.items.remove(value) }
 
   View {
     ref: me
@@ -468,10 +462,7 @@ pub component ComboboxItem(value: string) {
       c.items.remove(value)
     }
   }
-  task {
-    defer { c.items.remove(value) }
-    await never()
-  }
+  cleanup { c.items.remove(value) }
 
   View {
     ref: me
@@ -650,4 +641,36 @@ test "a combobox filters as it's typed in, and chooses" {
   app.expect("city bar")
   app.type("x", into: "City")
   app.expect("No city")
+}
+
+component ListboxWithout {
+  state showWork = true
+  state account: [string] = []
+  Column {
+    Listbox {
+      bind value: account
+      ListboxItem("home") { Text("Home") }
+      if showWork { ListboxItem("work") { Text("Work") } }
+      ListboxItem("other") { Text("Other") }
+    }
+    Button {
+      on press { showWork = false }
+      Text("Hide work")
+    }
+  }
+}
+
+test "an item that goes leaves its listbox" {
+  let app = mount(ListboxWithout(), platform: .macOS)
+  app.tab()
+  expect(app.focused() == "Home", app.focused())
+  app.pressKey("down")
+  expect(app.focused() == "Work", app.focused())
+  app.pressKey("up")
+  app.tap("Hide work")
+  app.expectNo("Work")
+  app.tab()
+  expect(app.focused() == "Home", app.focused())
+  app.pressKey("down")
+  expect(app.focused() == "Other", "the arrows skip what went: {app.focused()}")
 }

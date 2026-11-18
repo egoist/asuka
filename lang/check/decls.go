@@ -732,6 +732,10 @@ func (c *Checker) appBody(p *Package) {
 			c.effectDecl(d, "app.effect")
 			continue
 		}
+		if d, ok := it.(*syntax.CleanupStmt); ok {
+			c.cleanupStmt(d, true)
+			continue
+		}
 		views = append(views, it)
 	}
 	views = c.bodyCalls(views)

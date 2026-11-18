@@ -1577,6 +1577,42 @@ instead: a state that follows (`state n: int = min(n ?? 0, 3)`,
 else, or the handler that changes what it reads. A task may write what
 it follows: it restarts by cancelling, and ends.
 
+##### Cleanups
+
+```asuka
+effect {
+  let id = bus.listen("refresh", e => reload())
+  cleanup { bus.unlisten(id) }          // before the next run, and as it goes
+}
+effect(roomId) {
+  let room = roomId
+  chat.join(room)
+  cleanup { chat.leave(room) }          // the room this run joined
+}
+cleanup { tabs.remove(value) }          // as the component goes
+```
+
+`cleanup { … }` in an effect's body runs before the effect's next run
+and when the effect goes: what the run set up, it undoes. It may be
+under an `if` (it undoes only what that branch did) or in a loop (once
+for each time it was reached), and several run last first. In a
+component's, a store's or the `app`'s body, beside its effects and
+tasks, it runs when the instance goes, after its effects' cleanups.
+
+A cleanup is a closure: it sees the run's locals, it doesn't await or
+throw (it runs as its owner goes, and the cleanups after it still have
+to: catch with `try?` or `do { } catch { }`), and what it reads isn't
+followed. It reads state as it is when it runs. Before the effect runs
+again, that's after what the effect follows has changed, so
+`cleanup { chat.leave(roomId) }` would leave the new room: keep the
+run's value in a `let`, and the compiler warns when you don't
+([cleanup-reads-what-it-follows](https://asuka.egoist.dev/docs/errors/cleanup-reads-what-it-follows)).
+What it writes counts as its effect's writes.
+
+Handlers, functions, tasks and tests don't take one: a task undoes what
+it started with `defer`, which runs as it ends or is cancelled, and a
+handler or a function has no owner of its own to run it.
+
 ### Stores
 
 A store is state with the functions that change it, shared by the views
@@ -1675,9 +1711,11 @@ async fn loadThread(id: string) throws -> Thread {
   await withTimeout(5s) { return try await fetch(url) }`), and which
   throws when the time runs out. They're structured: what they cancel has
   stopped, its `defer`s run, before they return or throw.
-  `await never()` waits for nothing but the task's end: a task that
-  holds something while its component is shown (`defer { release() };
-  await never()`), or a stream that ends only when its reader goes.
+  `await never()` waits for nothing but the task's end: a stream that
+  ends only when its reader goes, or a task that awaits something before
+  it holds it (`try await register(); defer { release() }; await
+  never()`). What a component holds without awaiting is a `cleanup { }`
+  ([Cleanups](https://asuka.egoist.dev/docs/language/components#cleanups)).
 - `spawn { … }` runs a block on another thread, for work that would hold
   the main thread up (parsing, image processing). It may use values only,
   not state, stores, views, native objects or C pointers, nor a file's
@@ -2384,6 +2422,7 @@ action:)`, `refresh`, `scrollTo`, `back`, `dismiss`, `pickDate`,
 - bad-operand: an operator on values it doesn't take. Convert one side (`float(n)`), use a method (`a.concat(b)`), or give the type the operator's method.
 - brace-placement: a block's `{` goes at the end of the line before. Move the `{` to the end of the line before: `fn f() {`, `Row {`, `if x {`.
 - cannot-infer-type: the compiler can't tell a value's type from what's written. Write the type where the value goes: `let ids: [int] = []`, `Type.case`, `f<T>(…)`.
+- cleanup-reads-what-it-follows: an effect's cleanup that reads what the effect follows. Keep the run's value in a `let` and read that in the cleanup: `let r = room`, then `cleanup { leave(r) }`.
 - closure-keeps-itself: a closure that calls itself through the variable it's stored in. Declare a function in the block instead, `fn name(…) { … }`: it can call itself.
 - constraint-not-met: a type that lacks what a generic or a method needs of it. Use a type that has it (an id instead of the whole value), or give the type what's missing.
 - deprecated-syntax: a form the language replaced, which `asuka fmt` rewrites. Run `asuka fmt -w`, or write `style: name`.

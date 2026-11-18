@@ -1,0 +1,135 @@
+// cleanup { } (rfcs/0016): in an effect's body, or an item of a
+// component's, a store's or the app's body; nowhere else. It can't
+// await or throw; its writes are its effect's, and its reads of what the
+// effect follows are warned about.
+
+fn mayFail() throws -> int { return 1 }
+
+async fn later() {}
+
+store Bus {
+  state ids: [int] = []
+  pub fn listen() -> int {
+    ids.push(1)
+    return 1
+  }
+  pub fn unlisten(id: int) { ids.removeWhere(x => x == id) }
+  cleanup { ids = [] }
+}
+
+component Ok {
+  prop room = "lobby"
+  state n = 0
+  state log = ""
+  let bus = Bus()
+  effect {
+    let id = bus.listen()
+    cleanup { bus.unlisten(id) }
+  }
+  effect(room) {
+    let r = room
+    if r != "" {
+      cleanup { log = "left {r}" }
+    }
+    for i in 0..<3 {
+      cleanup { print(i) }
+    }
+    do {
+      let x = try mayFail()
+      cleanup { print(x) }
+    } catch {}
+    cleanup {
+      defer { print("last") }
+      if r == "" { return }
+      print(r)
+    }
+  }
+  cleanup { print("gone {room} {n}") }
+  Text(room)
+}
+
+component Misplaced {
+  state n = 0
+  task {
+    cleanup { print("no") } // ERROR "^a task's cleanup is a defer \\{ \\}"
+    await later()
+  }
+  fn helper() {
+    cleanup { print("no") } // ERROR "^a fn runs under its caller's owner"
+  }
+  effect {
+    defer {
+      cleanup { print("no") } // ERROR "^a cleanup inside a defer"
+    }
+    let f = () => {
+      cleanup { print("no") } // ERROR "^a closure runs where it's called"
+    }
+    f()
+    cleanup {
+      cleanup { print("no") } // ERROR "^a cleanup inside a cleanup"
+    }
+  }
+  Column {
+    Button("x") {
+      on press {
+        cleanup { print("no") } // ERROR "^a handler runs once per event"
+      }
+    }
+    if n > 0 {
+      cleanup { print("no") } // ERROR "^a cleanup in a view"
+    }
+  }
+}
+
+component NoAwaitNoThrow {
+  effect {
+    cleanup {
+      await later()         // ERROR "a cleanup runs at once, as its owner goes"
+      let v = try mayFail() // ERROR "^a cleanup can't throw"
+      let w = try? mayFail()
+      print(w ?? 0)
+    }
+  }
+  Text("x")
+}
+
+component Writes {
+  state n = 0
+  state other = 0
+  effect { // ERROR "^this effect writes n"
+    print(n)
+    cleanup { n = 0 }
+  }
+  effect(other) { // ERROR "^this effect writes other"
+    cleanup { other = 0 }
+  }
+  // A body's cleanup writes what it likes: it runs as the component goes.
+  cleanup { n = 0 }
+  Text("{n} {other}")
+}
+
+component Reads {
+  prop room = "lobby"
+  state n = 0
+  let label = "fixed"
+  let doubled = n * 2
+  effect(room) {
+    print(room)
+    cleanup { print(room) } // WARNING "^this cleanup reads room as it is when the cleanup runs: before the effect runs again, that's after room changed; keep this run's value in a let \\(let v = room\\) and read that$"
+  }
+  effect {
+    print("{n} {label}")
+    cleanup { print(label) }
+  }
+  effect {
+    print(doubled)
+    cleanup { print(doubled) } // WARNING "^this cleanup reads doubled"
+  }
+  effect {
+    print(peek(n))
+    cleanup { print(n) }
+  }
+  // Not an effect's: what it reads, it reads as the component goes.
+  cleanup { print("{room} {n}") }
+  Text(room)
+}

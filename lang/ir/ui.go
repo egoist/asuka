@@ -290,6 +290,8 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 			b.effectDecl(d)
 		case *syntax.TaskDecl:
 			b.taskDecl(d, comp.Store)
+		case *syntax.CleanupStmt:
+			b.cleanupStmt(d)
 		}
 		b.release(mark)
 	}
@@ -302,7 +304,7 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 	for _, it := range comp.Body.Items {
 		switch it.(type) {
 		case *syntax.PropDecl, *syntax.EventDecl, *syntax.StateDecl, *syntax.LetDecl, *syntax.UseDecl,
-			*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.BadItem:
+			*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.CleanupStmt, *syntax.BadItem:
 		default:
 			views = append(views, it)
 		}
@@ -384,6 +386,22 @@ func (b *fb) taskDecl(d *syntax.TaskDecl, store bool) {
 		c.emit(op("RET0"))
 	}})
 	b.emit(op("EFFECT"), clos)
+}
+
+// cleanupStmt registers cleanup { B } (rfcs/0016): CLEANUP of a closure
+// of B, with the owner current here. In an effect's body that's the
+// effect's own, which runs it before the effect's next run and when it
+// goes; in a component's, a store's or the app's body, the owner the
+// instance is built under.
+func (b *fb) cleanupStmt(s *syntax.CleanupStmt) {
+	ctx := b.l.info.Ctxs[s]
+	clos := b.makeClosure(closure{name: "cleanup", ctxs: []*check.FuncCtx{ctx}, ret: bc.KVoid, throws: true, body: func(c *fb) {
+		c.ctx = ctx
+		c.at(s)
+		c.block(s.Body)
+		c.emit(op("RET0"))
+	}})
+	b.emit(op("CLEANUP"), clos)
 }
 
 // effectDecl makes an effect: effect { B } runs B, following what it
@@ -672,6 +690,9 @@ func (b *fb) lowerApp(d *syntax.AppDecl) {
 		if _, ok := it.(*syntax.EffectDecl); ok {
 			continue
 		}
+		if _, ok := it.(*syntax.CleanupStmt); ok {
+			continue
+		}
 		views = append(views, it)
 	}
 	b.appHandlers()
@@ -685,6 +706,9 @@ func (b *fb) lowerApp(d *syntax.AppDecl) {
 		case *syntax.EffectDecl:
 			b.at(x)
 			b.effectDecl(x)
+		case *syntax.CleanupStmt:
+			b.at(x)
+			b.cleanupStmt(x)
 		}
 		b.release(mark)
 	}

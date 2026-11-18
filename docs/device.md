@@ -1261,10 +1261,9 @@ come and go.
 import platform/notify
 
 component Chat(id: string) {
-  task {
+  effect {
     notify.present(n => if n.thread == id { .hide } else { .banner })   // the chat is on screen
-    defer { notify.stopPresenting() }
-    await never()
+    cleanup { notify.stopPresenting() }
   }
 
   Text("Chat")

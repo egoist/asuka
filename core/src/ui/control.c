@@ -375,12 +375,15 @@ void ak_row_update(ak_row *rw, ak_val item, ak_kind item_kind, int64_t i) {
 }
 
 void ak_row_free(ak_row *rw, ak_kind key_kind) {
+	// Gone first: what its owner runs as it's disposed (its cleanups, its
+	// tasks' defers) reads its own item, as its for last placed it, not
+	// what's at its old index now.
+	if (rw->item_acc) ak_vm_acc_row_gone(rw->item_acc);
 	ak_owner_dispose(rw->owner);
 	rw->owner = NULL;
 	ak_release(rw->cell_item);
 	ak_release(rw->cell_index);
 	if (rw->item_acc) {
-		ak_vm_acc_row_gone(rw->item_acc);
 		ak_release(rw->item_acc);
 		rw->item_acc = NULL;
 	}

@@ -102,10 +102,9 @@ pub component ToolbarButton {
   pub variant disabled = disabled
 
   task(label, disabled) { t.items.put(Item(value: id(), label: label, ref: me, disabled: disabled && !focusableWhenDisabled)) }
-  task {
+  effect {
     let mine = id()
-    defer { t.items.remove(mine) }
-    await never()
+    cleanup { t.items.remove(mine) }
   }
 
   // The toolbar's one Tab stop: the button the keyboard was on, else the

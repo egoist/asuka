@@ -70,6 +70,8 @@ func (c *Checker) stmt(it syntax.Item) {
 		c.throwValue(s, s.Value)
 	case *syntax.BranchStmt:
 		c.branch(s, s.Tok, s.Label)
+	case *syntax.CleanupStmt:
+		c.cleanupStmt(s, false)
 	case *syntax.DeferStmt:
 		if c.inDefer > 0 {
 			c.errorf(s, diag.MisplacedStatement, "a defer inside a defer: put the code in the first one")
@@ -128,6 +130,8 @@ func itemName(it syntax.Item) string {
 		return "task"
 	case *syntax.EffectDecl:
 		return "effect"
+	case *syntax.CleanupStmt:
+		return "cleanup"
 	case *syntax.StyleDecl:
 		return "a style"
 	case *syntax.PropSet:
@@ -794,6 +798,8 @@ func ctxLabel(ctx *FuncCtx) string {
 		return "a task"
 	case CtxEffect:
 		return "an effect"
+	case CtxCleanup:
+		return "a cleanup"
 	case CtxTest:
 		return "a test"
 	}
