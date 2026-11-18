@@ -21,7 +21,8 @@
 //   let back = try csv.encode(sales)               // the header, then the rows
 //
 // A file too big to hold reads a row at a time from its lines, a stream
-// (os.lines(), a command's lines()): csv.stream<Sale>(os.lines()). A
+// (fs.lines(path), os.lines(), a command's lines()):
+// csv.stream<Sale>(fs.lines("sales.csv")). A
 // quoted field over several lines is put back together.
 //
 // A mistake throws, its message saying where, as line:column: "csv:
@@ -60,7 +61,7 @@ pub fn encode<T>(rows: [T], separator: string = ",", header: bool = true, crlf: 
 }
 
 /// The rows of lines, a stream of a file's lines without their line
-/// endings (os.lines(), command's lines()), as they come: a struct's
+/// endings (fs.lines(path), os.lines(), command's lines()), as they come: a struct's
 /// from the header, the first row, as decode reads them; an array's as
 /// they are. Only the row being read is held. The stream fails with
 /// what decode would throw. The options are parse's.

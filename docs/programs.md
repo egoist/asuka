@@ -565,7 +565,8 @@ into structs by the header row (a cell read as the field's type: an int,
 a float, a bool, an enum's case; an empty one `none` for an optional),
 and `csv.encode(rows)` writes them back with the header. A file too big
 to hold is read a row at a time from a stream of its lines,
-`csv.stream<T>(os.lines())`: here a sales file piped in, totalled with
+`csv.stream<T>(fs.lines("sales.csv"))`, or `csv.stream<T>(os.lines())`
+for stdin's: here a sales file piped in, totalled with
 what `~/.config/sales/config.toml` sets.
 
 ```toml

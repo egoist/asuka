@@ -405,7 +405,7 @@ async fn main() throws {
 
 `std/toml` は、`std/json` が JSON を読むのと同じように設定ファイルを構造体に読み込みます。`toml.decode<Config>(text)` はフィールド名で値を読み（`min-qty` や `min_qty` と書かれたキーも `minQty` に入ります）、ファイルにないオプショナルは `none` になります。`toml.encode(config)` で書き戻し、`toml.parse(text)` はどんなドキュメントも `json.Value` として読みます。ファイルにないフィールドは JSON と同じく空の値（0、`""`、none）になり、構造体のデフォルト値にはなりません。省略されうる設定はオプショナルにするか、デフォルト値で構造体を作っておき、ファイルがあるときだけ読み込みます。間違いがあれば場所を示します：`toml: 2:11: min-qty: expected an integer, not a string`。
 
-`std/csv` は行を読みます。`csv.parse(text)` は `[[string]]` として、`csv.decode<T>(text)` はヘッダー行にもとづいて構造体として読み（セルはフィールドの型で読まれます：int、float、bool、列挙型のケース。オプショナルの空のセルは `none`）、`csv.encode(rows)` はヘッダーとともに書き戻します。メモリーに収まらないほど大きいファイルは、行のストリームから 1 行ずつ読めます：`csv.stream<T>(os.lines())`。次の例は、パイプで渡された売上データを `~/.config/sales/config.toml` の設定に従って集計します。
+`std/csv` は行を読みます。`csv.parse(text)` は `[[string]]` として、`csv.decode<T>(text)` はヘッダー行にもとづいて構造体として読み（セルはフィールドの型で読まれます：int、float、bool、列挙型のケース。オプショナルの空のセルは `none`）、`csv.encode(rows)` はヘッダーとともに書き戻します。メモリーに収まらないほど大きいファイルは、行のストリームから 1 行ずつ読めます：`csv.stream<T>(fs.lines("sales.csv"))`、標準入力なら `csv.stream<T>(os.lines())` です。次の例は、パイプで渡された売上データを `~/.config/sales/config.toml` の設定に従って集計します。
 
 ```toml
 currency = "USD"

@@ -405,7 +405,7 @@ async fn main() throws {
 
 `std/toml` 读取配置文件的方式和 `std/json` 读取 JSON 一样：`toml.decode<Config>(text)` 按字段名把配置读进结构体（写成 `min-qty` 或 `min_qty` 的键都会读进 `minQty`），文件里没有的可选字段为 `none`；`toml.encode(config)` 把它写回去，`toml.parse(text)` 则把任意文档读成 `json.Value`。和 JSON 一样，文件里没写的字段取空值（0、`""`、none），而不是结构体里的默认值：可能缺省的设置就声明为可选类型，或者先用默认值创建结构体，只在文件存在时才去读它。出错时会指出位置：`toml: 2:11: min-qty: expected an integer, not a string`。
 
-`std/csv` 按行读取：`csv.parse(text)` 得到 `[[string]]`，`csv.decode<T>(text)` 按表头一行把每行读进结构体（单元格按字段的类型读取：int、float、bool、枚举的 case；可选字段遇到空单元格为 `none`），`csv.encode(rows)` 再连同表头一起写回去。文件太大、不便整个读进内存时，可以从它各行组成的流里一次读一行：`csv.stream<T>(os.lines())`。下面的例子读取从管道传进来的销售数据，并按 `~/.config/sales/config.toml` 的设置汇总：
+`std/csv` 按行读取：`csv.parse(text)` 得到 `[[string]]`，`csv.decode<T>(text)` 按表头一行把每行读进结构体（单元格按字段的类型读取：int、float、bool、枚举的 case；可选字段遇到空单元格为 `none`），`csv.encode(rows)` 再连同表头一起写回去。文件太大、不便整个读进内存时，可以从它各行组成的流里一次读一行：`csv.stream<T>(fs.lines("sales.csv"))`，标准输入则用 `csv.stream<T>(os.lines())`。下面的例子读取从管道传进来的销售数据，并按 `~/.config/sales/config.toml` 的设置汇总：
 
 ```toml
 currency = "USD"
