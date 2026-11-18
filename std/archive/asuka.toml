@@ -1,0 +1,3 @@
+name = "std/archive"
+version = "0.1.0"
+description = "Zip and tar archives: listed, read, written and extracted safely"

@@ -20,6 +20,8 @@ const ak_lib_entry *const ak_std_libs[] = {
 	ak_std_signals,
 	ak_std_toml,
 	ak_std_csv,
+	ak_std_compress,
+	ak_std_archive,
 	NULL,
 };
 

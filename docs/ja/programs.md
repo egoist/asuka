@@ -352,6 +352,32 @@ import std/fs
 async fn testFiles() throws -> [string] = try await spawn { try fs.glob(r"src/**/*_{test,spec}.asuka") }
 ```
 
+## アーカイブと圧縮：std/archive、std/compress
+
+`std/archive` は zip と tar のアーカイブ（`.zip`、`.tar`、`.tar.gz`）の一覧、読み取り、展開、作成を行い、`std/compress` はバイト列やファイルを gzip（または zlib、生の DEFLATE）で圧縮します（`compress.encodeFile(from: log, to: log + ".gz")`）。ファイルは少しずつ読み書きするので、どんなに大きなアーカイブでもメモリはわずかしか使いません。ただし処理のあいだ呼び出しはブロックするので、`spawn { }` の中で呼びます。
+
+よそから来たアーカイブも安全に展開できます。ディレクトリの外に出てしまうエントリ（`../../.profile`、絶対パス、リンクを経由するパス）があると `unsafePath` を投げ、そこには何も書きません。展開する量は `limit:`（指定がなければ 1 GB）で制限されるので、zip 爆弾でディスクがいっぱいになることもありません。
+
+```asuka check
+import std/archive
+import std/os
+
+/// pack DIR OUT.zip：DIR をアーカイブにする。unpack ARCHIVE DIR：アーカイブを展開する。
+async fn main() throws {
+  let a = os.args()
+  if a.count() == 3 && a[0] == "pack" {
+    try await spawn { try archive.create(a[2], from: a[1]) }
+  } else if a.count() == 3 && a[0] == "unpack" {
+    let entries = try await spawn { try archive.list(a[1]) }
+    print("{entries.count()} entries")
+    try await spawn { try archive.extract(a[1], to: a[2], limit: 8 << 30) }
+  } else {
+    os.eprint("usage: pack DIR OUT.zip | unpack ARCHIVE DIR")
+    os.exit(2)
+  }
+}
+```
+
 ## 複数を同時に
 
 `all(items, f, limit:)` は、各要素で非同期関数を同時に呼び出し、結果を要素の順に返します。ダウンロード、リクエスト、ほかのプログラムの実行を並べて行えます。`limit:` は同時に動かす数です。最初のエラーが残りをキャンセルし、それらが止まってから `all` がそのエラーを投げます（[非同期処理](language/async.md#非同期処理)を参照）。

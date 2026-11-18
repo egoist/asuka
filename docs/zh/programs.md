@@ -352,6 +352,32 @@ import std/fs
 async fn testFiles() throws -> [string] = try await spawn { try fs.glob(r"src/**/*_{test,spec}.asuka") }
 ```
 
+## 归档与压缩：std/archive、std/compress
+
+`std/archive` 用来列出、读取、解压和创建 zip 与 tar 归档（`.zip`、`.tar`、`.tar.gz`）；`std/compress` 用 gzip（也可以是 zlib 或原始 DEFLATE）压缩字节和文件，例如 `compress.encodeFile(from: log, to: log + ".gz")`。文件是逐块读写的，所以再大的归档也只占用很少的内存；不过这些调用在工作时会阻塞，要放在 `spawn { }` 里调用。
+
+来自别处的归档也可以放心解压：如果某个条目会落到目标目录之外（`../../.profile`、绝对路径、经过链接的路径），就会抛出 `unsafePath`，那里不会写入任何东西；`limit:` 限制解压出的总量（默认 1 GB），所以 zip 炸弹没法把磁盘写满。
+
+```asuka check
+import std/archive
+import std/os
+
+/// pack DIR OUT.zip：把 DIR 打包成归档。unpack ARCHIVE DIR：把归档解压出来。
+async fn main() throws {
+  let a = os.args()
+  if a.count() == 3 && a[0] == "pack" {
+    try await spawn { try archive.create(a[2], from: a[1]) }
+  } else if a.count() == 3 && a[0] == "unpack" {
+    let entries = try await spawn { try archive.list(a[1]) }
+    print("{entries.count()} entries")
+    try await spawn { try archive.extract(a[1], to: a[2], limit: 8 << 30) }
+  } else {
+    os.eprint("usage: pack DIR OUT.zip | unpack ARCHIVE DIR")
+    os.exit(2)
+  }
+}
+```
+
 ## 同时处理多项
 
 `all(items, f, limit:)` 用每一项同时调用一个异步函数，并按各项的顺序给出结果：适合并行下载、发请求、同时运行其他程序。`limit:` 指定同一时刻最多运行几个；第一个出错的会取消其余的，等它们都停下后 `all` 再抛出这个错误（见[异步](language/async.md#异步)）。

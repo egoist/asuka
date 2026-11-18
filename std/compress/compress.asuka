@@ -1,0 +1,122 @@
+// Package std/compress compresses bytes and files with DEFLATE (RFC
+// 1951), the same on every platform: in gzip's format (.gz files, HTTP's
+// Content-Encoding: gzip), zlib's (PNG's, HTTP's deflate), or raw.
+//
+//   let packed = compress.encode(json.encode(notes).bytes())
+//   let notes: [Note] = try json.decode((try compress.decode(packed)).string())
+//
+// Files are compressed and decompressed a piece at a time, so a file of
+// any size takes little memory; the calls block while they work, so call
+// them in spawn { }, which runs them on another thread:
+//
+//   try await spawn { try compress.encodeFile(from: log, to: log + ".gz") }
+//
+// What a decoding makes is bounded: past limit bytes (1 GB unless the
+// call says), it throws tooLarge, so data made to expand without end (a
+// "zip bomb") can't fill the memory or the disk.
+
+import std/fs
+
+/// How the compressed bytes are framed around DEFLATE's.
+pub enum Format {
+  /// gzip (RFC 1952): a header, then DEFLATE, then a CRC-32. Decoding
+  /// reads several members one after another as one, as gzip does.
+  gzip
+  /// zlib (RFC 1950): a two-byte header, then DEFLATE, then an Adler-32.
+  zlib
+  /// DEFLATE as it is (RFC 1951), with no header and no checksum: what a
+  /// zip's entries hold.
+  deflate
+}
+
+/// Why a decoding failed.
+pub enum CompressError: Error {
+  /// The data isn't in the format: a header that's wrong, a block that's
+  /// broken, a checksum that doesn't match, or it ends too soon.
+  corrupt(reason: string)
+  /// It decompresses to more than limit bytes.
+  tooLarge(limit: int)
+
+  /// The error's text: "corrupt data: gzip's checksum doesn't match".
+  fn message() -> string = match self {
+    .corrupt(r) => "corrupt data: {r}"
+    .tooLarge(l) => "it decompresses to more than {l} bytes (raise the limit with limit:)"
+  }
+}
+
+/// The most bytes a decoding makes unless it says: 1 GB.
+pub let defaultLimit = 1 << 30
+
+/// data compressed in format, at level: 0 (stored as it is, quickest) to
+/// 9 (smallest, slowest); 6, zlib's default, unless it says. A level
+/// outside 0 to 9 is the nearest one. gzip's header has no name and no
+/// time, so the same data gives the same bytes.
+///
+///   let packed = compress.encode(data)                     // gzip
+///   let small = compress.encode(data, format: .zlib, level: 9)
+pub fn encode(data: bytes, format: Format = .gzip, level: int = 6) -> bytes = encodeBytes(data, code(format), level)
+
+/// What data decompresses to, read in format. It throws corrupt when
+/// data isn't in the format, and tooLarge past limit bytes (at most 4 GB,
+/// what bytes hold).
+///
+///   let data = try compress.decode(packed)
+///   let page = try compress.decode(body, format: .zlib, limit: 10 << 20)
+pub fn decode(data: bytes, format: Format = .gzip, limit: int = defaultLimit) throws -> bytes {
+  if let out = decodeBytes(data, code(format), limit) {
+    return out
+  }
+  throw failure(limit)
+}
+
+/// Compresses the file at from into the file at to (made, or emptied
+/// first), a piece at a time. A file the system can't read or write
+/// throws its fs.FsError; to may not be from.
+///
+///   try await spawn { try compress.encodeFile(from: "app.log", to: "app.log.gz") }
+pub fn encodeFile(from: string, to: string, format: Format = .gzip, level: int = 6) throws {
+  if !deflateFile(from, to, code(format), level) {
+    throw failure(0)
+  }
+}
+
+/// Decompresses the file at from into the file at to (made, or emptied
+/// first), a piece at a time. It throws as decode does, or the file's
+/// fs.FsError; what it made of to before it failed is removed.
+///
+///   try await spawn { try compress.decodeFile(from: "dump.sql.gz", to: "dump.sql", limit: 8 << 30) }
+pub fn decodeFile(from: string, to: string, format: Format = .gzip, limit: int = defaultLimit) throws {
+  if !inflateFile(from, to, code(format), limit) {
+    throw failure(limit)
+  }
+}
+
+fn code(f: Format) -> int = match f {
+  .gzip => 0
+  .zlib => 1
+  .deflate => 2
+}
+
+// failure is the error of the last call that failed on this thread.
+fn failure(limit: int) -> Error {
+  let p = failurePath()
+  return match failureKind() {
+    2 => fs.FsError.notFound(p)
+    3 => fs.FsError.exists(p)
+    4 => fs.FsError.denied(p)
+    5 => fs.FsError.notDirectory(p)
+    6 => fs.FsError.isDirectory(p)
+    7 => fs.FsError.notEmpty(p)
+    10 => CompressError.corrupt(failureReason())
+    11 => CompressError.tooLarge(limit)
+    _ => fs.FsError.failed(path: p, reason: failureReason())
+  }
+}
+
+native fn encodeBytes(data: bytes, format: int, level: int) -> bytes
+native fn decodeBytes(data: bytes, format: int, limit: int) -> bytes?
+native fn deflateFile(from: string, to: string, format: int, level: int) -> bool
+native fn inflateFile(from: string, to: string, format: int, limit: int) -> bool
+native fn failureKind() -> int
+native fn failureReason() -> string
+native fn failurePath() -> string

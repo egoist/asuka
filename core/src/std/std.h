@@ -31,6 +31,8 @@ extern const ak_lib_entry ak_std_term[];
 extern const ak_lib_entry ak_std_signals[];
 extern const ak_lib_entry ak_std_toml[];
 extern const ak_lib_entry ak_std_csv[];
+extern const ak_lib_entry ak_std_compress[];
+extern const ak_lib_entry ak_std_archive[];
 
 // Every package's table, NULL-terminated.
 extern const ak_lib_entry *const ak_std_libs[];

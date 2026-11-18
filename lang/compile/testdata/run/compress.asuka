@@ -1,0 +1,96 @@
+// std/compress: gzip, zlib and DEFLATE, round trips, what gzip and zlib
+// made (hex), corrupt data, the limit, and files.
+
+import std/compress
+import std/encoding
+import std/fs
+
+fn hex(s: string) -> bytes = try encoding.hexDecode(s) catch { bytes() }
+
+test "round trips" {
+  let text = "hello, world\n".repeat(50)
+  for f in [compress.Format.gzip, .zlib, .deflate] {
+    for level in [0, 1, 6, 9] {
+      let packed = compress.encode(text.bytes(), format: f, level: level)
+      let back = try compress.decode(packed, format: f)
+      print("{f} {level} {packed.count() < text.byteCount()} {back.string() == text}")
+    }
+  }
+  print(compress.encode("hi".bytes()).hex(" "))
+}
+
+test "what other tools made" {
+  // gzip -9 hello.txt (the name in its header), two members, Python's zlib.
+  print((try compress.decode(hex("1f8b0808a4bb9365020368656c6c6f2e74787400cb48cdc9c9d75128cf2fca49e10200537424f40d000000"))).string().trimEnd())
+  print((try compress.decode(hex("1f8b0800000000000003cbcf4be502009fa817f8040000001f8b08000000000000032b29cfe702007408179604000000"))).string().trimEnd())
+  print((try compress.decode(hex("78dacb48cdc9c9d75128cf2fca49e1020021e70493"), format: .zlib)).string().trimEnd())
+}
+
+test "failures" {
+  for (data, f) in [(hex("1f8b0808a4bb9365020368656c6c6f2e74787400cb48cdc9c9d75128cf2fca49e10200537424f40d0000"), compress.Format.gzip), (hex("1f8b0808a4bb9365020368656c6c6f2e74787400cb48cdc9c9d75128cf2fca49e10200537424f40d000001"), .gzip), ("nope".bytes(), .gzip), (hex("78dacb48cdc9c9d75128cf2fca49e1020021e70494"), .zlib), (bytes([0xff]), .deflate)] {
+    do {
+      let b = try compress.decode(data, format: f)
+      print("decoded {b.count()}")
+    } catch e {
+      print(e.message)
+    }
+  }
+  let zeros = compress.encode(bytes([0, 0]))
+  print((try compress.decode(zeros, limit: 2)).count())
+  do {
+    let _ = try compress.decode(zeros, limit: 1)
+  } catch compress.CompressError.tooLarge(l) {
+    print("too large: {l}")
+  }
+}
+
+test "files" {
+  let dir = fs.join([fs.appDir(), "compress-run"])
+  try fs.removeAll(dir)
+  try fs.mkdirAll(dir)
+  let a = fs.join([dir, "a.txt"])
+  try fs.writeText(a, text: "file ".repeat(1000))
+  try await spawn { try compress.encodeFile(from: a, to: a + ".gz") }
+  print((try fs.stat(a + ".gz")).size < 100)
+  try compress.decodeFile(from: a + ".gz", to: fs.join([dir, "b.txt"]))
+  print(try fs.readText(fs.join([dir, "b.txt"])) == "file ".repeat(1000))
+  do {
+    try compress.decodeFile(from: a, to: fs.join([dir, "c.txt"]))
+  } catch e {
+    print("{e.message} {fs.exists(fs.join([dir, "c.txt"]))}")
+  }
+  try fs.removeAll(dir)
+}
+
+// Output:
+// gzip 0 false true
+// gzip 1 true true
+// gzip 6 true true
+// gzip 9 true true
+// zlib 0 false true
+// zlib 1 true true
+// zlib 6 true true
+// zlib 9 true true
+// deflate 0 false true
+// deflate 1 true true
+// deflate 6 true true
+// deflate 9 true true
+// 1f 8b 08 00 00 00 00 00 00 ff 01 02 00 fd ff 68 69 ac 2a 93 d8 02 00 00 00
+// ok round trips
+// hello, world
+// one
+// two
+// hello, world
+// ok what other tools made
+// corrupt data: the data ends too soon
+// corrupt data: gzip's size doesn't match
+// corrupt data: not gzip: its first bytes aren't 1f 8b
+// corrupt data: zlib's checksum doesn't match
+// corrupt data: not DEFLATE: a block is broken
+// 2
+// too large: 1
+// ok failures
+// true
+// true
+// corrupt data: not gzip: its first bytes aren't 1f 8b false
+// ok files

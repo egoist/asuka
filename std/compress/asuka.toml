@@ -1,0 +1,3 @@
+name = "std/compress"
+version = "0.1.0"
+description = "gzip, zlib and DEFLATE: bytes and files compressed and decompressed"
