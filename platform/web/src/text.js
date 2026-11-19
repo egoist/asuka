@@ -100,7 +100,38 @@ export function loadFamily(h, name) {
   faces.set(name, p);
 }
 
-/** linesWidth is the width of an element's widest line of text. */
+/**
+ * boxSize is an element's border box as laid out, [width, height] in CSS
+ * pixels: its computed width and height, which are its border box's
+ * because every element in .asuka is box-sizing: border-box (style.css).
+ * They are its used size, which a transform around it leaves as it is,
+ * where getBoundingClientRect scales it. An inline element has no used
+ * size: it gets its box as drawn.
+ */
+export function boxSize(el) {
+  const cs = getComputedStyle(el);
+  const w = parseFloat(cs.width), h = parseFloat(cs.height);
+  if (w >= 0 && h >= 0) return [w, h];
+  const r = el.getBoundingClientRect();
+  return [r.width, r.height];
+}
+
+/**
+ * scaledOnly says whether every transform on el and around it only moves,
+ * scales or flips it, so that its lines are drawn across, as laid out:
+ * none rotates or skews it.
+ */
+export function scaledOnly(el) {
+  for (let p = el; p; p = p.parentElement) {
+    const t = getComputedStyle(p).transform;
+    if (t === "none") continue;
+    const m = new DOMMatrixReadOnly(t);
+    if (!m.is2D || Math.abs(m.b) > 1e-6 || Math.abs(m.c) > 1e-6) return false;
+  }
+  return true;
+}
+
+/** linesWidth is the width of an element's widest line of text, as drawn. */
 export function linesWidth(el) {
   const r = document.createRange();
   r.selectNodeContents(el);

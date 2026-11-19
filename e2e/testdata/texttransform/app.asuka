@@ -1,0 +1,58 @@
+// Text Transform shows texts in views drawn under a transform, which
+// layout doesn't see (e2e's TestTextTransform*): the same text twice,
+// blue as it is and red in a view drawn at half its size, each its text
+// in its own color; a text that wraps in a view 160 points wide, drawn
+// at half its size; and a padded text that wraps in a view 200 points
+// wide, turned a quarter.
+
+component TextTransform {
+  View {
+    grow: 1
+    justify: .center
+    align: .center
+    gap: 24
+    background: #ffffff
+
+    Text("Measure this") {
+      font: Font(size: 16, weight: .bold)
+      color: #0000ff
+      background: #0000ff
+    }
+    View {
+      transform: Transform(scale: 0.5)
+      Text("Measure this") {
+        font: Font(size: 16, weight: .bold)
+        color: #ff0000
+        background: #ff0000
+      }
+    }
+    View {
+      transform: Transform(scale: 0.5)
+      View {
+        width: 160
+        align: .start
+        Text("Wrapped at half its size, it fits its frame")
+      }
+    }
+    View {
+      height: 220
+      justify: .center
+      View {
+        width: 200
+        align: .start
+        transform: Transform(rotation: 90)
+        Text("Turned a quarter and wrapped, it fits its frame") {
+          padding: [10, 0]
+        }
+      }
+    }
+  }
+}
+
+app { TextTransform() }
+
+test "the texts" {
+  let app = mount(TextTransform())
+  app.expect("Measure this")
+  app.expect("Turned a quarter and wrapped, it fits its frame")
+}
