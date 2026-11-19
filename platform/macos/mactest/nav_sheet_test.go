@@ -178,7 +178,8 @@ func TestNavFitSheet(t *testing.T) {
 
 // A sheet as tall as its content whose content can't be as narrow as a
 // sheet (a fixed width) is as wide as its content, centred on its window
-// as a sheet is; its content shows whole, unless its window is too narrow.
+// as a sheet is; its content shows whole. While it shows, its window can't
+// be made too narrow for it, and a window that already is widens.
 func TestNavFitSheetWide(t *testing.T) {
 	a := Run(t, `
 		app { Root() }
@@ -200,6 +201,10 @@ func TestNavFitSheetWide(t *testing.T) {
 		}
 	`)
 	a.UntilText("open false")
+	before := winRect(a.Tree().Main(), "minSize")
+	if len(before) != 2 || before[0] >= 900 {
+		t.Fatalf("the window's own least size %v", before)
+	}
 	a.Do("resize 1400,900", "tap Show")
 	var cw, ch float64
 	tr := a.Until(func(tr *Tree) bool {
@@ -224,26 +229,37 @@ func TestNavFitSheetWide(t *testing.T) {
 	if d := mid - sheetMid; d > 1 || d < -1 {
 		t.Errorf("the sheet's centre %v isn't its window's %v", sheetMid, mid)
 	}
-	// No wider than its window less the margin a sheet keeps (40 on each
-	// side): in a window narrower than its content it's 80 narrower than
-	// the window; in a wider one, its content's width again.
-	width := func(want float64) {
+	// While it shows, its window can't be made narrower than the sheet
+	// and the margin a sheet keeps (40 on each side): the window's least
+	// width is 900; closed, the window's own least size is back.
+	least := func(what string, want float64) {
 		t.Helper()
 		a.Until(func(tr *Tree) bool {
-			s := sheetOf(tr)
-			if s == nil {
-				return false
-			}
-			cw, _ := size(sheetWindow(s)["content"])
-			return cw == want
+			m := winRect(tr.Main(), "minSize")
+			return len(m) == 2 && m[0] == want
 		})
 	}
-	a.Do("resize 700,900")
-	width(620)
-	a.Do("resize 1400,900")
-	width(820)
+	least("shown", 900)
 	a.Do("tap Close")
 	a.UntilText("open false")
+	least("closed", before[0])
+
+	// Opened in a window too narrow for it, the window widens to the sheet
+	// and its margin, and the sheet shows whole.
+	a.Do("resize 700,900", "tap Show")
+	a.Until(func(tr *Tree) bool {
+		s := sheetOf(tr)
+		if s == nil || sheetWindow(s)["visible"] != true {
+			return false
+		}
+		cw, _ := size(sheetWindow(s)["content"])
+		mw, _ := size(tr.Main().Props["content"])
+		return cw == 820 && mw == 900
+	})
+	least("shown in a narrow window", 900)
+	a.Do("tap Close")
+	a.UntilText("open false")
+	least("closed again", before[0])
 }
 
 // frameSize is a node's view's size, -1 by -1 if it has no view.

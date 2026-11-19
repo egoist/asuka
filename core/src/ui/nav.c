@@ -248,35 +248,19 @@ static void fit_sheet_style(ak_view *e, ak_llength width, float most) {
 	}
 }
 
-// The room the Mac keeps between a sheet and its window's sides, 40 on
-// each (the host's sheetRoom).
-#define FIT_SHEET_MARGIN 80
-
-// fit_sheet_most is the widest a sheet on e's window may be: the window
-// less the margin, but never narrower than the room.
-static float fit_sheet_most(ak_ui_root *r, ak_view *e, float room) {
-	ak_view *w = e->up;
-	float ww = w && w->prov && w->prov->env.width > 0 ? w->prov->env.width : r->env.width;
-	return ww - FIT_SHEET_MARGIN > room ? ww - FIT_SHEET_MARGIN : room;
-}
-
 // layout_fit_sheet lays a sheet as tall as its content out at the width
 // its environment gives, or wider if its content can't be that narrow (a
-// fixed width), up to its window's width less a margin, and at its
-// content's height there, up to the environment's height, and sends
-// WindowAction Fit as that changes.
+// fixed width), and its content's height there, up to the environment's
+// height, and sends WindowAction Fit as that changes.
 static void layout_fit_sheet(ak_ui_root *r, ak_view *e, ak_lpass *lp) {
 	ak_prov *p = e->prov;
 	ak_lsize room = {p->env.width, p->env.height};
-	float most = fit_sheet_most(r, e, room.w);
 	if (p->fit_wait || room.w <= 0 || room.h <= 0 ||
-	    (!ak_lnode_dirty(e->box) && p->fit_sent && room.w == p->room.w && room.h == p->room.h && most == p->most))
+	    (!ak_lnode_dirty(e->box) && p->fit_sent && room.w == p->room.w && room.h == p->room.h))
 		return;
-	p->most = most;
 	fit_sheet_style(e, AK_LAUTO, room.h);
 	float w = ak_lnode_layout(e->box, (ak_lsize){AK_LMIN_CONTENT, AK_LMAX_CONTENT}, lp).w;
 	if (!(w > room.w)) w = room.w;
-	if (w > most) w = most;
 	fit_sheet_style(e, ak_lpt(w), room.h);
 	ak_lsize s = ak_lnode_layout(e->box, (ak_lsize){w, AK_LMAX_CONTENT}, lp);
 	p->room = room;

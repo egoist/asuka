@@ -359,7 +359,6 @@ typedef struct ak_prov {
 	ak_node node;  // read: follows the environment
 	ak_lsize laid;  // as last laid out
 	ak_lsize room;  // a fit sheet's, as last laid out
-	float most;     // the widest a fit sheet may be, as last laid out
 	float max_w;    // a fit root's widest (a popover's)
 	bool fits;      // sized to its content: a popover's, an accessory's
 	bool full_width;
