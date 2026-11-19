@@ -248,21 +248,39 @@ static void fit_sheet_style(ak_view *e, ak_llength width, float most) {
 	}
 }
 
+// fit_sheet_overflows says whether anything under n, as last laid out,
+// reaches past right, x being n's left in the root's coordinates.
+static bool fit_sheet_overflows(ak_lnode *n, float x, float right) {
+	uint32_t k;
+	ak_lnode *const *c = ak_lnode_children(n, &k);
+	for (uint32_t i = 0; i < k; i++) {
+		ak_lframe f = ak_lnode_frame(c[i]);
+		if (x + f.x + f.w > right + 0.5f || fit_sheet_overflows(c[i], x + f.x, right)) return true;
+	}
+	return false;
+}
+
 // layout_fit_sheet lays a sheet as tall as its content out at the width
-// its environment gives, or wider if its content can't be that narrow (a
-// fixed width), and its content's height there, up to the environment's
-// height, and sends WindowAction Fit as that changes.
+// its environment gives, and its content's height there, up to the
+// environment's height, and sends WindowAction Fit as that changes. Only
+// content that reaches past that width (a fixed width) is laid out at its
+// narrowest, to widen the sheet to it: text, which can always wrap, isn't
+// measured at its narrowest otherwise.
 static void layout_fit_sheet(ak_ui_root *r, ak_view *e, ak_lpass *lp) {
 	ak_prov *p = e->prov;
 	ak_lsize room = {p->env.width, p->env.height};
 	if (p->fit_wait || room.w <= 0 || room.h <= 0 ||
 	    (!ak_lnode_dirty(e->box) && p->fit_sent && room.w == p->room.w && room.h == p->room.h))
 		return;
-	fit_sheet_style(e, AK_LAUTO, room.h);
-	float w = ak_lnode_layout(e->box, (ak_lsize){AK_LMIN_CONTENT, AK_LMAX_CONTENT}, lp).w;
-	if (!(w > room.w)) w = room.w;
-	fit_sheet_style(e, ak_lpt(w), room.h);
-	ak_lsize s = ak_lnode_layout(e->box, (ak_lsize){w, AK_LMAX_CONTENT}, lp);
+	fit_sheet_style(e, ak_lpt(room.w), room.h);
+	ak_lsize s = ak_lnode_layout(e->box, (ak_lsize){room.w, AK_LMAX_CONTENT}, lp);
+	if (fit_sheet_overflows(e->box, 0, s.w)) {
+		fit_sheet_style(e, AK_LAUTO, room.h);
+		float w = ak_lnode_layout(e->box, (ak_lsize){AK_LMIN_CONTENT, AK_LMAX_CONTENT}, lp).w;
+		if (!(w > room.w)) w = room.w;
+		fit_sheet_style(e, ak_lpt(w), room.h);
+		s = ak_lnode_layout(e->box, (ak_lsize){w, AK_LMAX_CONTENT}, lp);
+	}
 	p->room = room;
 	if (p->fit_sent && s.w == p->laid.w && s.h == p->laid.h) return;
 	p->laid = s, p->fit_sent = true;
