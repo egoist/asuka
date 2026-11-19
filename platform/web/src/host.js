@@ -659,10 +659,11 @@ export class Host {
     // element's ::after (asuka-bordered), above its children with the
     // frame's own corner; an outline is painted under positioned
     // children. A scroller keeps the outline, which its content can
-    // cover: a layer in it would scroll away with the content.
+    // cover: a layer in it would scroll away with the content. So does a
+    // picker's box, whose ::after is its chevron.
     const el = n.el, s = el.style;
     const line = n.borderWidth > 0 ? `${n.borderWidth}px solid ${this.css(n.borderColor) || "var(--asuka-separator)"}` : "";
-    const layer = line !== "" && !el.classList.contains("asuka-scroller");
+    const layer = line !== "" && !el.classList.contains("asuka-scroller") && !el.classList.contains("asuka-select-box");
     el.classList.toggle("asuka-bordered", layer);
     if (layer) s.setProperty("--asuka-border", line);
     else s.removeProperty("--asuka-border");

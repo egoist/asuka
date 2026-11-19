@@ -13,6 +13,8 @@
   --asuka-grouped-background: #f2f2f7;
   --asuka-secondary-grouped-background: #fff;
   --asuka-separator: rgb(60 60 67 / 0.22);
+  /* The picker's chevron, a mask (.asuka-select-box::after). */
+  --asuka-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
   --asuka-red: #ff3b30;
   --asuka-orange: #ff9500;
   --asuka-yellow: #ffcc00;
@@ -266,7 +268,30 @@ textarea.asuka-field { overflow-y: auto; display: block; }
 .asuka-checkbox { width: 20px; height: 20px; margin: 2px; accent-color: var(--tint, var(--asuka-accent)); cursor: pointer; }
 
 .asuka-slider { width: 100%; margin: 0; height: 28px; cursor: pointer; }
-.asuka-select { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--asuka-separator); background: var(--asuka-background); color: var(--asuka-label); max-width: 100%; }
+/* A picker's box draws its look: a hairline (an outline, as an app's
+   border is), corners, the background, and a chevron. An app's
+   background, border and corner radius replace the box's; the select
+   draws none of its own. */
+.asuka-select-box { border-radius: 8px; background: var(--asuka-background); outline: 1px solid var(--asuka-separator); outline-offset: -1px; }
+.asuka-select-box::after { content: ""; position: absolute; top: 50%; inset-inline-end: 8px; width: 12px; height: 12px; margin-top: -6px; background: var(--asuka-secondary-label); -webkit-mask: var(--asuka-chevron) center / contain no-repeat; mask: var(--asuka-chevron) center / contain no-repeat; pointer-events: none; }
+/* The keyboard's focus ring goes around the box an app sizes, not the
+   select inside it; on ::before, which no app prop sets. */
+.asuka-select-box::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.asuka-select-box:has(> .asuka-select:focus-visible)::before { outline: 2px solid var(--asuka-accent); outline-offset: 2px; }
+/* A box that clips would cut a ring outside it off: there it's inside. */
+.asuka-clip.asuka-select-box:has(> .asuka-select:focus-visible)::before { outline-offset: -2px; }
+.asuka .asuka-select:focus-visible { outline: none; }
+/* In forced colors a background is Canvas: the chevron takes the text's. */
+@media (forced-colors: active) { .asuka-select-box::after { background: CanvasText; } }
+/* Disabled, the box dims with its chevron and hairline, not only its
+   text; the select keeps opacity 1, not the browser's own dimming too. */
+.asuka-select-box:has(> .asuka-select:disabled) { opacity: 0.5; }
+.asuka-select:disabled { opacity: 1; }
+/* The select fills the box, so all of the drawn picker opens it. */
+.asuka-select { -webkit-appearance: none; appearance: none; flex: 1 0 auto; min-height: 100%; margin: 0; font: inherit; padding-block: 6px; padding-inline: 8px 28px; border: none; border-radius: inherit; background: transparent; color: inherit; max-width: 100%; }
+/* The list it opens keeps the page's colors, not the select's
+   transparent background and the app's text color. */
+.asuka-select option { background-color: var(--asuka-background); color: var(--asuka-label); }
 .asuka-color { width: 32px; height: 32px; padding: 0; border: none; border-radius: 50%; background: none; cursor: pointer; }
 .asuka-color::-webkit-color-swatch-wrapper { padding: 0; }
 .asuka-color::-webkit-color-swatch { border: 1px solid var(--asuka-separator); border-radius: 50%; }
@@ -274,7 +299,7 @@ textarea.asuka-field { overflow-y: auto; display: block; }
 .asuka-date { font: inherit; padding: 6px 10px; border: none; border-radius: 8px; background: var(--asuka-fill); color: var(--asuka-label); }
 /* Disabled, the pickers are at the 0.5 every dimmed control is; a checkbox and a
    slider keep the browser's own look, drawn in grey, and none of them points. */
-.asuka-select:disabled, .asuka-color:disabled, .asuka-date:disabled { opacity: 0.5; }
+.asuka-color:disabled, .asuka-date:disabled { opacity: 0.5; }
 .asuka-checkbox:disabled, .asuka-slider:disabled, .asuka-color:disabled { cursor: default; }
 .asuka-progress { width: 100%; height: 4px; -webkit-appearance: none; appearance: none; border: none; border-radius: 2px; background: var(--asuka-fill-strong); overflow: hidden; }
 .asuka-progress::-webkit-progress-bar { background: var(--asuka-fill-strong); }

@@ -1,0 +1,69 @@
+// Picker Style shows a picker with a background of the app's (e2e's
+// TestPickerStyle*): red, 200 by 40 points, under a magenta square 48
+// points high that the test measures it against. Under it, a picker laid
+// out right to left, a disabled one, one with the app's shadow, one with
+// the app's text color, one with the app's border and one that clips,
+// for what the picker's box draws.
+
+component PickerStyle {
+  View {
+    grow: 1
+    justify: .center
+    align: .center
+    gap: 24
+    background: #ffffff
+
+    View {
+      width: 48
+      height: 48
+      background: #ff00ff
+    }
+    Picker(["One", "Two"]) {
+      selected: 0
+      width: 200
+      height: 40
+      background: #ff0000
+    }
+    View {
+      layoutDirection: .rightToLeft
+      Picker(["Right"]) {
+        selected: 0
+        width: 200
+      }
+    }
+    Picker(["Off"]) {
+      selected: 0
+      width: 200
+      disabled: true
+    }
+    Picker(["Shadow"]) {
+      selected: 0
+      width: 200
+      shadow: Shadow(color: #00000050, radius: 8, y: 2)
+    }
+    Picker(["Ink"]) {
+      selected: 0
+      width: 200
+      color: #0000ff
+    }
+    Picker(["Border"]) {
+      selected: 0
+      width: 200
+      border: 1
+      borderColor: #0000ff
+    }
+    Picker(["Clip"]) {
+      selected: 0
+      width: 200
+      radius: 12
+      clip: true
+    }
+  }
+}
+
+app { PickerStyle() }
+
+test "the picker under the square" {
+  let app = mount(PickerStyle())
+  app.expect("One")
+}
