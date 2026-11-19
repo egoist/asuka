@@ -180,6 +180,55 @@ func TestNavFitSheet(t *testing.T) {
 // sheet (a fixed width) is as wide as its content, centred on its window
 // as a sheet is; its content shows whole. While it shows, its window can't
 // be made too narrow for it, and a window that already is widens.
+// A fit sheet wider than a sheet, laid out at its narrowest to widen it,
+// with a line of text under its wide content: as tall as its content at
+// the width it's widened to, the text on one line, not as tall as the
+// text at its narrowest (a word on each line).
+func TestNavFitSheetWideText(t *testing.T) {
+	a := Run(t, `
+		app { Root() }
+		component Root {
+		  state open = false
+		  Column {
+		    padding: 20
+		    Text("open {open}")
+		    Button("Show") { on press { open = true } }
+		    Sheet {
+		      bind open: open
+		      detents: [.fit]
+		      Column {
+		        View { width: 820; height: 40 }
+		        Text("one line of text under the wide view, which wraps a word on each line at its narrowest")
+		      }
+		    }
+		  }
+		}
+	`)
+	a.UntilText("open false")
+	a.Do("resize 1400,900", "tap Show")
+	var cw, ch float64
+	tr := a.Until(func(tr *Tree) bool {
+		s := sheetOf(tr)
+		if s == nil {
+			return false
+		}
+		w := sheetWindow(s)
+		cw, ch = size(w["content"])
+		return w["isSheet"] == true && w["visible"] == true && cw == 820
+	})
+	text := tr.Find("Text", "one line of text under the wide view, which wraps a word on each line at its narrowest")
+	if text == nil {
+		t.Fatal("the text isn't shown")
+	}
+	th := text.Frame[3]
+	if th <= 0 || th > 30 {
+		t.Errorf("the text is %v high: not one line", th)
+	}
+	if want := 40 + th; ch < want-1 || ch > want+1 {
+		t.Errorf("the sheet is %vx%v, want %v high: its content's, at its width", cw, ch, want)
+	}
+}
+
 func TestNavFitSheetWide(t *testing.T) {
 	a := Run(t, `
 		app { Root() }
