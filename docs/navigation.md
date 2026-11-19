@@ -615,7 +615,8 @@ component Notes {
   as tall as its content instead, as a Mac's sheets are: for a form or a
   confirmation, whose content has a height of its own. It's a sheet's
   width, or wider when its content can't be that narrow (a fixed
-  `width`), so the content shows whole. It follows the
+  `width`), so the content shows whole, up to its window's width less a
+  margin on each side. It follows the
   content as it changes, up to the most a sheet may be, beyond which a
   `Scroll` in it scrolls; the user doesn't resize it. Only macOS has
   such a sheet for now; elsewhere it's large.

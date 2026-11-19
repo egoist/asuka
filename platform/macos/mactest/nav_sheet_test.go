@@ -178,7 +178,7 @@ func TestNavFitSheet(t *testing.T) {
 
 // A sheet as tall as its content whose content can't be as narrow as a
 // sheet (a fixed width) is as wide as its content, centred on its window
-// as a sheet is; its content shows whole.
+// as a sheet is; its content shows whole, unless its window is too narrow.
 func TestNavFitSheetWide(t *testing.T) {
 	a := Run(t, `
 		app { Root() }
@@ -224,6 +224,24 @@ func TestNavFitSheetWide(t *testing.T) {
 	if d := mid - sheetMid; d > 1 || d < -1 {
 		t.Errorf("the sheet's centre %v isn't its window's %v", sheetMid, mid)
 	}
+	// No wider than its window less the margin a sheet keeps (40 on each
+	// side): in a window narrower than its content it's 80 narrower than
+	// the window; in a wider one, its content's width again.
+	width := func(want float64) {
+		t.Helper()
+		a.Until(func(tr *Tree) bool {
+			s := sheetOf(tr)
+			if s == nil {
+				return false
+			}
+			cw, _ := size(sheetWindow(s)["content"])
+			return cw == want
+		})
+	}
+	a.Do("resize 700,900")
+	width(620)
+	a.Do("resize 1400,900")
+	width(820)
 	a.Do("tap Close")
 	a.UntilText("open false")
 }
