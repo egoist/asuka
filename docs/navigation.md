@@ -615,8 +615,8 @@ component Notes {
   as tall as its content instead, as a Mac's sheets are: for a form or a
   confirmation, whose content has a height of its own. It follows the
   content as it changes, up to the most a sheet may be, beyond which a
-  `Scroll` in it scrolls; the user doesn't resize it. Only macOS has
-  such a sheet for now; elsewhere it's large.
+  `Scroll` in it scrolls; the user doesn't resize it. macOS and the
+  web have such a sheet; elsewhere it's large.
 - `grabber: true` shows the handle at its top (iOS, Android, and the
   web's bottom sheet).
 - Its content is built when it opens and disposed when it closes, so
