@@ -107,6 +107,14 @@ export function linesWidth(el) {
   return r.getBoundingClientRect().width;
 }
 
-export function horizontalInset(n) {
-  return n.inset ? n.inset[1] + n.inset[3] : 0;
+/**
+ * insetSize is a view's ContentInset across and down, [left + right,
+ * top + bottom]: the padding and border the core sent, which the element
+ * draws inside its border box. They're the core's to add to the size it
+ * measures, so a view measures its content alone, and the constraints
+ * the core gives are its content's.
+ */
+export function insetSize(n) {
+  const v = n.inset;
+  return v ? [v[1] + v[3], v[0] + v[2]] : [0, 0];
 }
