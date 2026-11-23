@@ -53,6 +53,7 @@ struct follow {
 	ak_box *selfbox;     // a scalar's current value as T?, reused while only it holds it
 	bool self;           // the thunk takes the state's current value (T?)
 	bool has;            // computed or set once
+	bool kept;           // its value is one kept across a reload, which its first update keeps
 };
 
 static void cell_drop(ak_opaque *o) {
@@ -140,6 +141,16 @@ static bool follow_update(void *ctx) {
 	} else {
 		v = ak_call(w->update, NULL, 0);
 	}
+	if (w->kept) {
+		// The first run, which linked what the initializer reads: the
+		// value kept across the reload stands (a write: an error the
+		// initializer raised is gone with what it returned).
+		w->kept = false;
+		if (ak_error_pending()) ak_release(ak_error_take());
+		else ak_release_val(v, k);
+		w->has = true;
+		return true;
+	}
 	if (ak_error_pending()) {
 		ak_raise(ak_error_take());  // the follow holds it, as a memo does
 		return true;
@@ -221,9 +232,15 @@ ak_val ak_vm_follow_new(ak_closure *update, ak_kind k, ak_str *keep_key, bool se
 	if (ak_current_owner()) ak_on_cleanup(follow_gone, ak_retain(w));
 	if (keep_key && ak_vm_keep_find) {
 		// A value kept across a reload is a write: it stands until what
-		// the initializer reads changes.
+		// the initializer reads changes. The initializer can't run yet
+		// (it reads its component's env, whole only once the component's
+		// function has made every member), so the value waits for its
+		// first run, at the first read, as a write would after it.
 		ak_val kept;
-		if (ak_vm_keep_find(keep_key, k, &kept)) follow_store(w, kept, true);
+		if (ak_vm_keep_find(keep_key, k, &kept)) {
+			w->c.v = kept;
+			w->kept = true;
+		}
 		ak_vm_keep_add(keep_key, w);
 	}
 	return (ak_val){.p = w};
