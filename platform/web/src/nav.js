@@ -53,6 +53,7 @@ import { decodeSidebar, sameShape, badgeNumber } from "./sidebar.js";
 import * as text from "./text.js";
 import { snackbarKind, presentSnackbar, placeSnackbar } from "./snackbar.js";
 import { RouteHistory, decodeLocation, encodeLocationEvent } from "./history.js";
+import "./doubleclick.js"; // a double-click's second press on what its first opened
 
 const headerHeight = 52;
 const searchHeight = 48;
