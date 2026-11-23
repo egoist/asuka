@@ -104,10 +104,33 @@ type webPage struct {
 	Base           string // the path the site is served at: its <base href>
 	Host, Core     string // the URLs of the host's directory, the core's wasm
 	Options        map[string]any
+	Launch         [2]string // the splash's colors, light and dark: the page's until the first frame
 	Icon, Manifest bool
 	// Scripts are its native packages' generated JavaScript, loaded
 	// before it starts: they register the packages' modules and views.
 	Scripts []string
+}
+
+// launchColors are the splash's colors, light and dark (the light one
+// for both without a dark one), when asuka.toml sets its background;
+// none otherwise, so the page keeps the host's own while it loads.
+func launchColors(c *appConfig) [2]string {
+	if c == nil || !c.Splash.colored {
+		return [2]string{}
+	}
+	return [2]string{c.Splash.Background, c.Splash.DarkBackground}
+}
+
+// launchStyle paints the page in the launch colors until the app's first
+// frame (the host marks its container asuka-drawn then), so a page that
+// is loading shows the app's color, not the host's background: "" for
+// none. The colors are asuka.toml's, checked as #rrggbb.
+func launchStyle(launch [2]string) string {
+	if launch[0] == "" {
+		return ""
+	}
+	const sel = "html:not(:has(.asuka-drawn)), .asuka-page:not(.asuka-drawn)"
+	return fmt.Sprintf("<style>\n%s { background: %s; }\n@media (prefers-color-scheme: dark) { %s { background: %s; } }\n</style>\n", sel, launch[0], sel, launch[1])
 }
 
 // siteBase is a site's base path, with its slashes: "/", "/app/".
@@ -151,6 +174,7 @@ func webIndex(p webPage) string {
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 `)
 	}
+	b.WriteString(launchStyle(p.Launch))
 	fmt.Fprintf(&b, `<link rel="stylesheet" href="%[1]s/style.css">
 <link rel="modulepreload" href="%[1]s/asuka.js">
 <link rel="preload" href="%[2]s" as="fetch" type="application/wasm" crossorigin>
@@ -652,7 +676,7 @@ func (s *devServer) index(w http.ResponseWriter) {
 		opts["sqlite"] = "asuka/" + webSQLitePath
 	}
 	io.WriteString(w, webIndex(webPage{
-		Name: s.app.displayName(), Lang: devLangOr("en"),
+		Name: s.app.displayName(), Lang: devLangOr("en"), Launch: launchColors(s.app.cfg),
 		Host: "asuka", Core: "asuka.wasm?" + s.stamp,
 		Scripts: prefixed("asuka/", scriptPaths(*s.scripts.Load())), Icon: s.app.cfg.Icon != "",
 		Options: opts,
@@ -961,7 +985,7 @@ func buildWeb(app *asukaApp, o *buildOptions) error {
 	}
 	base = siteBase(base)
 	page := webIndex(webPage{
-		Name: name, Lang: "en", Base: base, Host: hostDir, Core: wasmName,
+		Name: name, Lang: "en", Base: base, Host: hostDir, Core: wasmName, Launch: launchColors(app.cfg),
 		Options:  opts,
 		Icon:     icon,
 		Manifest: true,

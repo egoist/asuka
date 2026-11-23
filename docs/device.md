@@ -2535,10 +2535,12 @@ darkBackground = "#1B2440"
 It shows from the tap on the icon until the app's first frame: iOS's
 launch screen, then a copy of it over the app until the first frame is
 ready; Android 12's splash screen (the image in the middle of the icon's
-circle) and, before, the window's background. The desktops and the web
-have no launch screen: there `hold` and `hide` do nothing. To keep it up
-while the app loads, call `splash.hold()` as it starts (in the root
-component) and `splash.hide()` once it's ready:
+circle) and, before, the window's background. The desktops have no
+launch screen. On the web, when asuka.toml sets its `background`, its
+colors (not its image) are the page's while it loads, until the app's
+first frame, held or not. On the desktops and the web `hold` and `hide`
+do nothing. To keep it up while the app loads, call `splash.hold()` as
+it starts (in the root component) and `splash.hide()` once it's ready:
 
 ```asuka
 import platform/splash

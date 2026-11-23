@@ -96,6 +96,7 @@ export class Host {
     this.nextCell = 0;
     this.envSent = null;
     this.fontScale = 1;
+    this.drawn = false; // its first batch is applied: the container is asuka-drawn
     this.natives = new Map(); // asuka.registerNative's factories, by kind
     this.fonts = options.fonts || []; // the app's font files (assets/fonts)
     container.classList.add("asuka");
@@ -273,6 +274,11 @@ export class Host {
     this.motion.batchEnd();
     this.focus.batched();
     this.overlays.batched();
+    // The first batch is applied: the page's launch color gives way (index.html).
+    if (!this.drawn) {
+      this.drawn = true;
+      this.container.classList.add("asuka-drawn");
+    }
   }
 
   create(id, kind) {
