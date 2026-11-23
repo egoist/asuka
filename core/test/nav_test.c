@@ -662,6 +662,10 @@ TEST(sheet) {
 // ---- A sheet as tall as its content (DetentFit, macOS) ----
 
 static bool fit_wide;         // its content holds a view wider than a sheet
+static float fit_fixed;       // its column's width (0: none of its own)
+static bool fit_wrap;         // its column is in a view of no width of its own
+static float fit_wrap_pad;    // that view's padding on each side
+static bool fit_absolute;     // its column is placed out of the flow
 static int fit_min_measures;  // its text's measures at its narrowest
 
 // fit_measure measures text as the fake host does, 8pt a character in
@@ -680,6 +684,10 @@ static void fit_measure(void *ctx, ak_fake_view *v, float w, float h, float aw, 
 	*oh = at > 0 ? ceilf(full / at) * 20 : 20;
 }
 
+// The prelude's Edges, in types.asuka's field order.
+static const uint8_t fit_edges_kinds[] = {AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT};
+static const ak_shape fit_edges_shape = {"Edges", 6, fit_edges_kinds, NULL, NULL, 0, NULL, false, NULL};
+
 static ak_val fit_content(ak_closure *c, ak_val *a, uint32_t n) {
 	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
 	ak_view *col = ak_ui_new(AK_EL_COLUMN);
@@ -687,13 +695,23 @@ static ak_val fit_content(ak_closure *c, ak_val *a, uint32_t n) {
 	for (int i = 0; i < 2000; i++) words[i] = i % 10 == 9 ? ' ' : 'w';
 	words[2000] = 0;
 	add(col, text(words));
+	if (fit_fixed > 0) set_i(col, AK_KEY_WIDTH, ak_length_pt(fit_fixed));
+	if (fit_absolute) set_i(col, AK_KEY_ABSOLUTE, 1);
 	if (fit_wide) {
 		ak_view *v = ak_ui_new(AK_EL_VIEW);
 		set_i(v, AK_KEY_WIDTH, ak_length_pt(820));
 		set_i(v, AK_KEY_HEIGHT, ak_length_pt(10));
 		add(col, v);
 	}
-	return (ak_val){.p = col};
+	if (!fit_wrap) return (ak_val){.p = col};
+	ak_view *wrap = ak_ui_new(AK_EL_VIEW);
+	if (fit_wrap_pad > 0) {
+		ak_struct *e = ak_struct_new(&fit_edges_shape);
+		for (int i = 0; i < 4; i++) e->f[i].f = fit_wrap_pad;
+		set(wrap, AK_KEY_PADDING, (ak_val){.p = e});
+	}
+	add(wrap, col);
+	return (ak_val){.p = wrap};
 }
 
 static ak_val fit_app(ak_closure *c, ak_val *a, uint32_t n) {
@@ -740,6 +758,77 @@ TEST(fit_sheet_measures_its_narrowest_only_for_wide_content) {
 		done(a);
 		ak_release(open_cell);
 	}
+}
+
+// fit_report_room reports a sheet's room as the given width, as a host
+// does a sheet narrower than its window (a card).
+static void fit_report_room(ak_fake *f, ak_fake_view *sheet, float width) {
+	ak_environment e = f->env;
+	e.width = width;
+	e.height -= e.safe_top + 10;
+	e.safe_top = 0;
+	ak_fake_dispatch(f, &(ak_event){.id = sheet->id, .kind = AK_EVENT_ENVIRONMENT, .env = e});
+}
+
+// In a card, a sheet narrower than the app's window, content that comes
+// down to one view of a fixed width narrower than the sheet (a dialog of
+// its own width), alone or in views of no width of their own, narrows
+// the sheet to that view and the padding around it: its Fit is that
+// wide, and its text wraps at the view's width without being measured at
+// its narrowest. A view as wide as a sheet keeps a sheet's width, as
+// content of no fixed width does or a view placed out of the flow, and a
+// wider one widens the sheet to it. A sheet as wide as the window (a narrow web page's bottom sheet)
+// keeps its width; on a phone, where a fit sheet is large, no Fit is
+// sent.
+TEST(fit_sheet_narrows_to_its_fixed_width_content) {
+	const float room = 390;  // the sheet's room
+	const struct {
+		float fixed, pad;
+		bool wrap, absolute;
+		float window;  // the app's window's width
+		uint8_t platform;
+		float fit;  // 0: no Fit
+	} cases[] = {
+		{195, 0, false, false, 1000, AK_PLATFORM_MACOS, 195},                // the sheet's content
+		{195, 0, true, false, 1000, AK_PLATFORM_MACOS, 195},                 // in a view of no width
+		{195, 20, true, false, 1000, AK_PLATFORM_MACOS, 235},                // in a padded view
+		{room, 0, false, false, 1000, AK_PLATFORM_MACOS, room},              // as wide as a sheet
+		{room + 100, 0, false, false, 1000, AK_PLATFORM_MACOS, room + 100},  // wider than a sheet
+		{0, 0, false, false, 1000, AK_PLATFORM_MACOS, room},                 // no fixed width
+		{195, 0, false, true, 1000, AK_PLATFORM_MACOS, room},                // out of the flow
+		{195, 0, false, false, room, AK_PLATFORM_WEB, room},                 // a bottom sheet
+		{195, 0, false, false, room, AK_PLATFORM_IOS, 0},                    // a phone's
+	};
+	for (size_t i = 0; i < sizeof cases / sizeof *cases; i++) {
+		fit_wide = false, fit_min_measures = 0;
+		fit_fixed = cases[i].fixed, fit_wrap = cases[i].wrap, fit_wrap_pad = cases[i].pad;
+		fit_absolute = cases[i].absolute;
+		open_cell = ak_vm_cell_new((ak_val){.i = 0}, AK_K_BOOL, NULL).p;
+		setup();
+		ak_closure *c = fn(fit_app, NULL);
+		ak_uitest *a = ak_uitest_mount_at(c, NULL, cases[i].platform, (ak_span){0});
+		ak_release(c);
+		ak_fake *f = ak_uitest_host(a);
+		f->measure_fn = fit_measure;
+		ak_environment env = f->env;
+		env.width = cases[i].window;
+		ak_fake_set_environment(f, &env);
+		ak_vm_cell_set(open_cell, (ak_val){.i = 1});
+		ak_ui_flush();
+		ak_fake_view *sheet = nth(a, AK_KIND_SHEET, 0);
+		REQUIRE(sheet && sheet->presented);
+		fit_report_room(f, sheet, room);
+		ak_fake_view *t = nth(a, AK_KIND_TEXT, 0);
+		REQUIRE(t);
+		float text_w = cases[i].fixed > 0 ? cases[i].fixed : room;
+		if (sheet->fit[0] != cases[i].fit) T_FAIL("case %zu: the Fit is %g wide, want %g", i, sheet->fit[0], cases[i].fit);
+		if (t->frame[2] != text_w) T_FAIL("case %zu: the text is %g wide, want %g", i, t->frame[2], text_w);
+		if (cases[i].fixed <= room && fit_min_measures)
+			T_FAIL("case %zu: the text was measured at its narrowest %d times", i, fit_min_measures);
+		done(a);
+		ak_release(open_cell);
+	}
+	fit_fixed = 0, fit_wrap = false, fit_wrap_pad = 0, fit_absolute = false;
 }
 
 // ---- A sheet's screen (a Router's sheet route's) ----

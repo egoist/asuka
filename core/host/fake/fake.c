@@ -537,6 +537,7 @@ static void window_command(ak_fake *f, ak_fake_view *v, ak_cmd c, ak_span args) 
 		if (v->kind == AK_KIND_SHEET) {
 			// A sheet as tall as its content is sized with Fit.
 			if (!ok || a != AK_WINDOW_ACTION_FIT) fail(f, "a WindowAction on a Sheet other than Fit");
+			else v->fit[0] = x, v->fit[1] = y;
 			return;
 		}
 		char kb[16];

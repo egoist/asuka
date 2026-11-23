@@ -271,24 +271,52 @@ static bool fit_sheet_overflows(ak_lnode *n, float x, float right) {
 	return false;
 }
 
+// fit_sheet_fixed_width is the fixed width (points) of the one view n's
+// content comes down to, through views of one child and no width of their
+// own (a View that pads it, say), else 0. A view placed out of the flow
+// (absolute) takes no room, and doesn't count.
+static float fit_sheet_fixed_width(ak_lnode *n) {
+	for (;;) {
+		uint32_t k;
+		ak_lnode *const *c = ak_lnode_children(n, &k);
+		if (k != 1) return 0;
+		const ak_lstyle *st = ak_lnode_style(c[0]);
+		if (st->position == AK_LABSOLUTE) return 0;
+		if (st->width.u == AK_LUNIT_POINT) return st->width.v;
+		if (!ak_llength_is_auto(st->width)) return 0;
+		n = c[0];
+	}
+}
+
 // layout_fit_sheet lays a sheet as tall as its content out at the width
 // its environment gives, and its content's height there, up to the
 // environment's height, and sends WindowAction Fit as that changes. Only
 // content that reaches past that width (a fixed width) is laid out at its
 // narrowest, to widen the sheet to it: text, which can always wrap, isn't
-// measured at its narrowest otherwise.
+// measured at its narrowest otherwise. In a card, a sheet narrower than
+// the app's window (a Mac's, a wide web page's), content that comes down
+// to one view of a fixed width narrower than that (a dialog of its own
+// width) narrows the sheet to it; padding around that view reaches past
+// the narrowed sheet, and widens it again as wide content does. A sheet
+// as wide as the window (a narrow web page's bottom sheet) keeps its
+// width.
 static void layout_fit_sheet(ak_ui_root *r, ak_view *e, ak_lpass *lp) {
 	ak_prov *p = e->prov;
 	ak_lsize room = {p->env.width, p->env.height};
 	if (p->fit_wait || room.w <= 0 || room.h <= 0 ||
 	    (!ak_lnode_dirty(e->box) && p->fit_sent && room.w == p->room.w && room.h == p->room.h))
 		return;
-	fit_sheet_style(e, ak_lpt(room.w), room.h);
-	ak_lsize s = ak_lnode_layout(e->box, (ak_lsize){room.w, AK_LMAX_CONTENT}, lp);
+	float width = room.w;
+	if (room.w < r->env.width) {
+		float fixed = fit_sheet_fixed_width(e->box);
+		if (fixed > 0 && fixed < width) width = fixed;
+	}
+	fit_sheet_style(e, ak_lpt(width), room.h);
+	ak_lsize s = ak_lnode_layout(e->box, (ak_lsize){width, AK_LMAX_CONTENT}, lp);
 	if (fit_sheet_overflows(e->box, 0, s.w)) {
 		fit_sheet_style(e, AK_LAUTO, room.h);
 		float w = ak_lnode_layout(e->box, (ak_lsize){AK_LMIN_CONTENT, AK_LMAX_CONTENT}, lp).w;
-		if (!(w > room.w)) w = room.w;
+		if (!(w > width)) w = width;
 		fit_sheet_style(e, ak_lpt(w), room.h);
 		s = ak_lnode_layout(e->box, (ak_lsize){w, AK_LMAX_CONTENT}, lp);
 	}
