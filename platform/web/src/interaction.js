@@ -12,6 +12,7 @@ const slop = 10; // points a touch moves before it's a drag, not a tap
 const longPressMs = 500;
 const tapDelayMs = 150; // UIScrollView's delay before a touch in it shows pressed
 const pressedMinMs = 64; // a quick tap still shows its pressed look
+const menuClickMs = 500; // how long a menu waits for its release's click
 
 const pressEvents = new Set([Event.Press, Event.LongPress, Event.Pressed]);
 const gestureEvents = new Set([Event.Pan, Event.Pinch, Event.Rotate, Event.Swipe]);
@@ -240,8 +241,21 @@ export class Interaction {
       else this.showPressed(p, false);
     }
     if (!fire) return;
-    if (p.n.menu && p.n.menuTrigger !== 1) this.h.menus.open(p.n, e.clientX, e.clientY);
-    else this.h.emit(p.n, Event.Press, Events.press);
+    if (p.n.menu && p.n.menuTrigger !== 1) {
+      // On the click that follows the release, as a Button's menu: the
+      // browser's light dismiss comes before it, at the release's mouseup
+      // (after a tap, in a later task than the touchend), and would close
+      // a menu shown earlier. A release that brings no click opens it
+      // after menuClickMs.
+      const n = p.n, x = e.clientX, y = e.clientY;
+      const open = () => {
+        clearTimeout(t);
+        removeEventListener("click", open, true);
+        this.h.menus.open(n, x, y);
+      };
+      const t = setTimeout(open, menuClickMs);
+      addEventListener("click", open, true);
+    } else this.h.emit(p.n, Event.Press, Events.press);
   }
 
   swipe(g, e) {

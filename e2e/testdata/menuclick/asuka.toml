@@ -1,0 +1,3 @@
+name = "Menu Click"
+id = "dev.asuka.menuclick"
+orientations = ["portrait"]
