@@ -51,12 +51,13 @@ function fillWidth(c, natural) {
   return natural;
 }
 
+/** heightOf is an element's height as laid out with no height set (auto), which a transform around it leaves as it is. */
 function heightOf(h, el) {
   return h.measurable(el, () => {
     const s = el.style;
     const saved = s.height;
     s.height = "auto";
-    const r = el.getBoundingClientRect().height;
+    const r = text.boxSize(el)[1];
     s.height = saved;
     return r;
   });
@@ -298,12 +299,12 @@ const textField = {
     return false;
   },
   measure(h, n, c) {
-    const el = n.el;
     const w = fitWidth(c, 200, 80);
-    if (!n.multiline) {
-      return [w, heightOf(h, el)];
-    }
-    return [w, multilineHeight(h, n, w)];
+    // The core's width and the size it's told are the content's, as
+    // measureNow's are (text.insetSize); the input draws the inset.
+    const [iw, ih] = text.insetSize(n);
+    const hh = n.multiline ? multilineHeight(h, n, w + iw) : heightOf(h, n.el);
+    return [w, Math.max(hh - ih, 0)];
   },
   resized(h, n) {},
 };
