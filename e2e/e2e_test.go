@@ -491,37 +491,57 @@ func androidApp(t *testing.T, example, pkg string) *androidScreen {
 }
 
 var (
-	focusRE = regexp.MustCompile(`mCurrentFocus=Window\{\S+ \S+ ([^}]*)\}`)
-	waitRE  = regexp.MustCompile(`text="Wait"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"`)
+	focusRE   = regexp.MustCompile(`mCurrentFocus=Window\{\S+ \S+ ([^}]*)\}`)
+	resumedRE = regexp.MustCompile(`topResumedActivity=ActivityRecord\{\S+ \S+ (\S+)`)
+	waitRE    = regexp.MustCompile(`text="Wait"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"`)
 )
 
-// foreground waits for the app's window to have the focus, answering
-// Wait to what the system shows over it: a slow emulator's "isn't
-// responding" dialogs (the launcher's, System UI's), which would cover
-// what the test reads and taps.
+// foreground waits for the app to be in front, answering Wait to what
+// the system shows over it: a slow emulator's "isn't responding" dialogs
+// (the launcher's, System UI's), which would cover what the test reads
+// and taps. In front is the app's window having the focus on any
+// display (a dump can hold several, the first not the app's: the
+// emulator's images differ), or its activity the top resumed one.
 func (s *androidScreen) foreground() {
-	var focus string
+	var focus []string
+	var resumed string
 	until(s.t, func() bool {
 		// The whole dump: "windows" alone has no focus line on Android 17,
 		// and a display with none says mCurrentFocus=null.
 		out, _ := s.adb("shell", "dumpsys", "window")
-		focus = ""
-		if m := focusRE.FindStringSubmatch(out); m != nil {
-			focus = m[1]
+		focus = focus[:0]
+		for _, m := range focusRE.FindAllStringSubmatch(out, -1) {
+			focus = append(focus, m[1])
 		}
-		if strings.HasPrefix(focus, s.pkg+"/") {
+		acts, _ := s.adb("shell", "dumpsys", "activity", "activities")
+		resumed = ""
+		if m := resumedRE.FindStringSubmatch(acts); m != nil {
+			resumed = m[1]
+		}
+		if strings.HasPrefix(resumed, s.pkg+"/") {
 			return true
 		}
-		if strings.Contains(focus, "Not Responding") {
+		for _, f := range focus {
+			if strings.HasPrefix(f, s.pkg+"/") {
+				return true
+			}
+		}
+		for _, f := range focus {
+			if !strings.Contains(f, "Not Responding") {
+				continue
+			}
 			s.adb("shell", "uiautomator", "dump", "/sdcard/asuka-ui.xml")
 			ui, _ := s.adb("exec-out", "cat", "/sdcard/asuka-ui.xml")
 			if m := waitRE.FindStringSubmatch(ui); m != nil {
 				n := func(i int) int { v, _ := strconv.Atoi(m[i]); return v }
 				s.adb("shell", "input", "tap", strconv.Itoa((n(1)+n(3))/2), strconv.Itoa((n(2)+n(4))/2))
 			}
+			break
 		}
 		return false
-	}, func() string { return "the focus is on " + focus + ", not " + s.pkg + s.crashLog() })
+	}, func() string {
+		return fmt.Sprintf("the focus is on %q and the top resumed activity is %q, not %s%s", focus, resumed, s.pkg, s.crashLog())
+	})
 }
 
 // crashLog is what the device logged of a crash, for a test that failed:
