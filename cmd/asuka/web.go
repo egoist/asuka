@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"image"
 	"image/png"
 	"io"
 	"io/fs"
@@ -427,6 +428,12 @@ type devServer struct {
 		ID         int64
 		Out, Error string
 	}
+
+	// The app's icon as icon last read it, and its file's path and time
+	// (under mu).
+	iconPath string
+	iconTime time.Time
+	iconImg  *image.NRGBA
 }
 
 // automate sends the page the debug automation's commands (the request's
@@ -545,6 +552,8 @@ func (s *devServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(p, "/web/") && path.Ext(p) == ".js":
 		w.Header().Set("Content-Type", contentType(p))
 		http.ServeFile(w, r, filepath.Join(s.app.dir, "web", path.Base(p)))
+	case p == "/icons/favicon.png" || p == "/icons/apple-touch-icon.png":
+		s.icon(w, r, p)
 	case strings.HasPrefix(p, "/assets/"):
 		http.ServeFile(w, r, filepath.Join(s.app.dir, filepath.FromSlash(strings.TrimPrefix(path.Clean(p), "/"))))
 	case p == "/__asuka/events":
@@ -589,6 +598,41 @@ func (s *devServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// icon serves the app's icon as the page's favicon (32) or iOS's home
+// screen icon (180), made as a build makes them (webIcons): none without
+// an icon in asuka.toml. The icon is read again only when its file
+// changes, so loadIcon's warnings show once, not on each page load.
+func (s *devServer) icon(w http.ResponseWriter, r *http.Request, p string) {
+	path := s.app.cfg.Icon
+	if path == "" {
+		http.NotFound(w, r)
+		return
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.mu.Lock()
+	img := s.iconImg
+	if s.iconPath != path || !s.iconTime.Equal(fi.ModTime()) {
+		if img, err = loadIcon(path); err == nil {
+			s.iconPath, s.iconTime, s.iconImg = path, fi.ModTime(), img
+		}
+	}
+	s.mu.Unlock()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	px := 32
+	if p == "/icons/apple-touch-icon.png" {
+		px = 180
+	}
+	w.Header().Set("Content-Type", "image/png")
+	png.Encode(w, resize(img, px))
+}
+
 // index serves the page that runs the app (at / and at any route's
 // path: a Router's addresses).
 func (s *devServer) index(w http.ResponseWriter) {
@@ -610,7 +654,7 @@ func (s *devServer) index(w http.ResponseWriter) {
 	io.WriteString(w, webIndex(webPage{
 		Name: s.app.displayName(), Lang: devLangOr("en"),
 		Host: "asuka", Core: "asuka.wasm?" + s.stamp,
-		Scripts: prefixed("asuka/", scriptPaths(*s.scripts.Load())),
+		Scripts: prefixed("asuka/", scriptPaths(*s.scripts.Load())), Icon: s.app.cfg.Icon != "",
 		Options: opts,
 	}))
 }
