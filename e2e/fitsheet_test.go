@@ -99,3 +99,49 @@ func TestFitSheetWeb(t *testing.T) {
 		})
 	}
 }
+
+// A .fit sheet whose content is one column 300 points wide
+// (e2e/testdata/fitsheetfixed): on a narrow page (Chrome's window here,
+// under 600) a bottom sheet as wide as the page; on a wide one (1000) a
+// card as wide as the column.
+func TestFitSheetFixedWidthWeb(t *testing.T) {
+	browser := chrome()
+	if browser == "" {
+		t.Skip("no Chrome (ASUKA_CHROME)")
+	}
+	url := webServer(t, "e2e/testdata/fitsheetfixed")
+	page := devtoolsPage(t, browser, url, "1")
+	// dialogWidth is the sheet's width once it's shown and laid out at
+	// want, or its last width (bounded).
+	dialogWidth := func(want float64) float64 {
+		var got float64
+		for deadline := time.Now().Add(within); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+			var r struct{ Result struct{ Value float64 } }
+			if err := page.call("Runtime.evaluate", map[string]any{
+				"expression":    `(() => { const d = document.querySelector("dialog[open]"); return d && d.textContent.includes("Stop Lisinopril?") ? d.getBoundingClientRect().width : 0; })()`,
+				"returnByValue": true,
+			}, &r); err != nil {
+				t.Fatal(err)
+			}
+			if got = r.Result.Value; got == want {
+				break
+			}
+		}
+		return got
+	}
+	var page0 struct{ Result struct{ Value float64 } }
+	if err := page.call("Runtime.evaluate", map[string]any{"expression": "document.documentElement.clientWidth", "returnByValue": true}, &page0); err != nil {
+		t.Fatal(err)
+	}
+	if w := page0.Result.Value; w >= 600 {
+		t.Fatalf("the page is %v wide, not a narrow one", w)
+	} else if got := dialogWidth(w); got != w {
+		t.Errorf("on a page %v wide, the bottom sheet is %v wide, want the page's width", w, got)
+	}
+	if err := page.call("Emulation.setDeviceMetricsOverride", map[string]any{"width": 1000, "height": 700, "deviceScaleFactor": 1, "mobile": false}, &struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := dialogWidth(300); got != 300 {
+		t.Errorf("on a page 1000 wide, the sheet is %v wide, want the column's 300", got)
+	}
+}

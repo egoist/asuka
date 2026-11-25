@@ -641,7 +641,11 @@ component Notes {
   confirmation, whose content has a height of its own. It's a sheet's
   width, or wider when its content can't be that narrow (a fixed
   `width`), so the content shows whole, up to the page's width on the
-  web. On a Mac, while it shows, its window can't be made narrower than
+  web. A card, as a Mac's sheet and a wide page's are, whose content is
+  one view of a fixed `width` narrower than a sheet (a dialog of its
+  own width), alone or in views of no width of their own, is that
+  view's width and any padding around it; a narrow page's bottom sheet
+  stays the page's width. On a Mac, while it shows, its window can't be made narrower than
   the sheet and a margin on each side, and a window already narrower
   widens. It follows the content as it changes, up to the most a sheet may be, beyond which a
   `Scroll` in it scrolls; the user doesn't resize it. macOS and the

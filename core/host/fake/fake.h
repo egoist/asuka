@@ -73,6 +73,7 @@ struct ak_fake_view {
 	AK_VEC(ak_event_kind) listens;
 	bool root;
 	bool presented;  // got Present
+	float fit[2];    // a sheet as tall as its content: its last Fit, width and height
 	// A List's, as its last ListUpdate had them.
 	AK_VEC(int64_t) items;
 	AK_VEC(ak_fake_section) sections;

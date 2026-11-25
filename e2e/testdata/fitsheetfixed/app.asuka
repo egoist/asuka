@@ -1,0 +1,30 @@
+// Fit Sheet Fixed opens a sheet as tall as its content whose content is
+// one column 300 points wide (e2e's TestFitSheetFixedWidthWeb): a card
+// on a wide page is the column's width, a narrow page's bottom sheet the
+// page's.
+
+component FitSheetFixed {
+  state open = true
+
+  View {
+    grow: 1
+    Text("Behind")
+    Sheet {
+      open: open
+      detents: [.fit]
+      on dismiss { open = false }
+      Column {
+        width: 300
+        padding: 20
+        Text("Stop Lisinopril?")
+      }
+    }
+  }
+}
+
+app { FitSheetFixed() }
+
+test "the sheet's content shows" {
+  let app = mount(FitSheetFixed())
+  app.expect("Stop Lisinopril?")
+}
