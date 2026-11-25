@@ -1,0 +1,533 @@
+// A list of pull requests: the user's part in them, filtered as GitHub's
+// search filters (state, drafts, review, checks), searched, sorted, and
+// grouped by the user's part when it's every one. Each row says its
+// state, checks, review, size, labels and age; its menu opens, copies,
+// closes or reopens it.
+
+import platform/device
+import std/i18n
+import std/time
+
+/// When something happened, said relative to now: "3 hours ago".
+fn ago(t: time.Time) -> string = i18n.formatRelative(t)
+
+/// How drafts are shown.
+enum DraftFilter {
+  any
+  only
+  hide
+
+  fn title() -> string = match self {
+    .any => "Any"
+    .only => "Drafts Only"
+    .hide => "Hide Drafts"
+  }
+
+  fn qualifier() -> string = match self {
+    .any => ""
+    .only => "draft:true"
+    .hide => "draft:false"
+  }
+}
+
+/// What the reviewers decided, to filter by.
+enum ReviewFilter {
+  any
+  approved
+  changesRequested
+  required
+  none
+
+  fn title() -> string = match self {
+    .any => "Any"
+    .approved => "Approved"
+    .changesRequested => "Changes Requested"
+    .required => "Review Required"
+    .none => "No Reviews"
+  }
+
+  fn qualifier() -> string = match self {
+    .any => ""
+    .approved => "review:approved"
+    .changesRequested => "review:changes_requested"
+    .required => "review:required"
+    .none => "review:none"
+  }
+}
+
+/// What the checks came to, to filter by.
+enum ChecksFilter {
+  any
+  passing
+  failing
+
+  fn title() -> string = match self {
+    .any => "Any"
+    .passing => "Passing"
+    .failing => "Failing"
+  }
+
+  fn qualifier() -> string = match self {
+    .any => ""
+    .passing => "status:success"
+    .failing => "status:failure"
+  }
+}
+
+/// A list's filters: kept per list, as the user left them.
+struct Filters {
+  state: StateFilter = .open
+  sort: Sort = .readiness
+  drafts: DraftFilter = .any
+  review: ReviewFilter = .any
+  checks: ChecksFilter = .any
+
+  fn qualifiers() -> string = [drafts.qualifier(), review.qualifier(), checks.qualifier()].filter(q => !q.isEmpty()).joined(separator: " ")
+  fn narrowed() -> bool = drafts != .any || review != .any || checks != .any
+}
+
+/// The pull requests a list shows, as far as it's paged, and its
+/// filters: the app's (Lists), so a list comes back as it was left.
+store PullList(involvement: Involvement, pulls: Pulls) {
+  pub state filters = Filters()
+  pub state query = ""
+  pub state items: [Pull] = []
+  pub state viewer = ""
+  pub state total = 0
+  pub state loading = false
+  pub state refreshing = false
+  pub state problem = ""
+  state next: string? = none
+  state loadedAt = time.unix(0)
+  state loadedFor = ""
+
+  /// What GitHub is asked: the filters and the query.
+  pub let search = [filters.qualifiers(), query.trim()].filter(q => !q.isEmpty()).joined(separator: " ")
+  pub let more = next != none
+
+  /// The pull requests, sorted as the filters say.
+  pub let shown = filters.sort.apply(items)
+
+  /// What the list asks for, loaded unless it was in the last minute.
+  pub async fn show() {
+    let key = "{filters.state.title()} {search}"
+    if loading || (key == loadedFor && time.now().sub(loadedAt) < 1min) { return }
+    await refresh()
+  }
+
+  /// From the first page again: pulled, by pull to refresh; quiet, a
+  /// poll's, which shows no spinner and keeps a failure to itself.
+  pub async fn refresh(pulled: bool = false, quiet: bool = false) {
+    loading = !quiet
+    refreshing = pulled
+    defer {
+      loading = false
+      refreshing = false
+    }
+    let key = "{filters.state.title()} {search}"
+    do {
+      let page = try await pulls.search(involvement, filters.state, search)
+      items = page.pulls
+      viewer = page.viewer
+      total = page.total
+      next = page.next
+      problem = ""
+      loadedAt = time.now()
+      loadedFor = key
+    } catch e {
+      if !quiet { problem = e.message }
+    }
+  }
+
+  /// The next page, up to 500 pull requests.
+  pub async fn nextPage() {
+    let after = next else { return }
+    if loading || items.count() >= 500 { return }
+    loading = true
+    defer { loading = false }
+    do {
+      let page = try await pulls.search(involvement, filters.state, search, after: after)
+      let have = Set(items.map(p => p.id))
+      items += page.pulls.filter(p => !have.contains(p.id))
+      next = page.next
+    } catch e {
+      problem = e.message
+    }
+  }
+
+  /// Shows a change to a pull request at once (a close, a merge), before
+  /// the next refresh says so.
+  pub fn change(id: string, state: PullState) {
+    if let i = items.index(p => p.id == id) { items[i].state = state }
+  }
+}
+
+/// Every list's pull requests and filters: the app's.
+store Lists {
+  use pulls: Pulls
+
+  let all = PullList(.all, pulls)
+  let reviewing = PullList(.reviewing, pulls)
+  let authored = PullList(.authored, pulls)
+  let assigned = PullList(.assigned, pulls)
+  let mentioned = PullList(.mentioned, pulls)
+
+  /// Every list again, quietly: after a change to a pull request.
+  pub async fn refreshAll() {
+    for l in [all, reviewing, authored, assigned, mentioned] { await l.refresh(quiet: true) }
+  }
+
+  pub fn list(i: Involvement) -> PullList = match i {
+    .all => all
+    .reviewing => reviewing
+    .authored => authored
+    .assigned => assigned
+    .mentioned => mentioned
+  }
+}
+
+/// Which group a pull request is in, in the list of every one: the
+/// user's own, those waiting on their review, the others.
+fn group(p: Pull, viewer: string) -> int {
+  if p.author.login == viewer { return 0 }
+  if p.requested.contains(viewer) { return 1 }
+  return 2
+}
+
+fn groupTitle(g: int) -> string = match g {
+  0 => "Created by You"
+  1 => "Review Requested"
+  _ => "Others"
+}
+
+/// Whether there's room for a pull request beside the list.
+fn sideBySide() -> bool = environment().width >= 900
+
+screen PullsScreen(involvement: Involvement) {
+  use lists: Lists
+  use pulls: Pulls
+  state chosen: Pull? = none
+
+  let list = lists.list(involvement)
+  // Grouped by the user's part when the list is of every one.
+  let grouped = involvement == .all
+  let rows = if grouped {
+    list.shown.sorted((a, b) => group(a, list.viewer) < group(b, list.viewer))
+  } else {
+    list.shown
+  }
+
+  task(list.filters, list.query) {
+    if !list.query.isEmpty() { await sleep(250ms) }
+    await list.show()
+  }
+  // A quiet look every five minutes while the list shows.
+  task {
+    while true {
+      await sleep(5min)
+      await list.refresh(quiet: true)
+    }
+  }
+
+  fn filter(title: string, checked: bool, set: fn()) -> Action = .button(title: title, checked: checked, run: set)
+
+  title: involvement.title()
+  bind search: list.query
+  searchPlaceholder: "Search, or repo:, label:, author:…"
+  toolbar {
+    Button("Filters") {
+      icon: "line.3.horizontal.decrease"
+      menu: [
+        .section(title: "State", items: stateFilters.map(s => filter(s.title(), list.filters.state == s, () => { list.filters.state = s }))),
+        .section(title: "Sort By", items: sorts.map(s => filter(s.title(), list.filters.sort == s, () => { list.filters.sort = s }))),
+        .submenu(title: "Drafts", items: [DraftFilter.any, .only, .hide].map(d => filter(d.title(), list.filters.drafts == d, () => { list.filters.drafts = d }))),
+        .submenu(title: "Review", items: [ReviewFilter.any, .approved, .changesRequested, .required, .none].map(r => filter(r.title(), list.filters.review == r, () => { list.filters.review = r }))),
+        .submenu(title: "Checks", items: [ChecksFilter.any, .passing, .failing].map(c => filter(c.title(), list.filters.checks == c, () => { list.filters.checks = c }))),
+        .button(title: "Clear Filters", disabled: !list.filters.narrowed(), run: () => {
+          list.filters.drafts = .any
+          list.filters.review = .any
+          list.filters.checks = .any
+        }),
+      ]
+    }
+    Button("Refresh") {
+      icon: "arrow.clockwise"
+      disabled: list.loading
+      on press { await list.refresh() }
+    }
+    if sideBySide() {
+      if let p = chosen {
+        PullActions(p.repo, p.number)
+      }
+    }
+  }
+
+  // Under a hidden title bar (a desktop's), the strip the window's
+  // buttons and the toolbar are in: the list's heading goes there, and
+  // the pull request scrolls under the toolbar, cut off at its edge.
+  let bar = environment().safeTop
+
+  if sideBySide() {
+    Row {
+      grow: 1
+      Column {
+        width: 420
+        shrink: 0
+        if bar > 0 {
+          Row {
+            height: bar
+            align: .center
+            padding: [0, 20]
+            Text(involvement.title()) {
+              font: .title2.bold()
+              lines: 1
+            }
+          }
+        }
+        PullRows(rows, list, grouped) {
+          selected: chosen?.id ?? ""
+          on open(p) { chosen = p }
+        }
+      }
+      View {
+        width: 1
+        background: .separator
+      }
+      View {
+        grow: 1
+        // A view of its own for each pull request: its spinner, scroll
+        // position and tab start over.
+        for p in (if let c = chosen { [c] } else { [] }) key p.id {
+          PullView(p.repo, p.number)
+        }
+        if chosen == none {
+          Column {
+            grow: 1
+            padding: Edges(top: bar)
+            justify: .center
+            align: .center
+            gap: 8
+            StateIcon(.open) {
+              size: 36
+              opacity: 0.4
+            }
+            Text("Choose a pull request") { color: .secondaryLabel }
+          }
+        }
+      }
+    }
+  } else {
+    SafeArea {
+      grow: 1
+      PullRows(rows, list, grouped)
+    }
+  }
+}
+
+/// The rows of a list, with what it's waiting for: the first page's
+/// spinner, a problem and its Retry, a banner when a refresh failed
+/// over rows already shown, pull to refresh, more at the end.
+component PullRows(rows: [Pull], list: PullList, grouped: bool) {
+  prop selected = ""
+  event open(pull: Pull)
+  use pulls: Pulls
+
+  if rows.isEmpty() {
+    Column {
+      grow: 1
+      justify: .center
+      align: .center
+      gap: 12
+      padding: 32
+      if list.loading {
+        ProgressRing()
+        Text("Loading pull requests…") { color: .secondaryLabel }
+      } else if !list.problem.isEmpty() {
+        Symbol("exclamationmark.triangle") {
+          font: .largeTitle
+          color: .tertiaryLabel
+        }
+        Text("Couldn't load pull requests") { font: .headline }
+        Text(list.problem) {
+          color: .secondaryLabel
+          textAlign: .center
+        }
+        Button("Try Again") {
+          variant: .tinted
+          on press { await list.refresh() }
+        }
+      } else {
+        StateIcon(.merged) {
+          size: 36
+          opacity: 0.4
+        }
+        Text(if !list.query.trim().isEmpty() { "Nothing matches “{list.query.trim()}”" } else if list.filters.narrowed() { "Nothing under these filters" } else { "No pull requests" }) {
+          font: .headline
+        }
+        Button("Check Again") {
+          variant: .tinted
+          on press { await list.refresh() }
+        }
+      }
+    }
+  } else {
+    if !list.problem.isEmpty() {
+      Row {
+        gap: 8
+        align: .center
+        padding: [8, 16]
+        background: Color.orange.opacity(0.15)
+        Symbol("exclamationmark.triangle.fill") { color: .orange }
+        Text("Couldn't refresh: {list.problem} Showing the last pull requests loaded.") {
+          font: .footnote
+          grow: 1
+          shrink: 1
+        }
+        Button("Retry") { on press { await list.refresh() } }
+      }
+    }
+    List {
+      grow: 1
+      refreshing: list.refreshing
+      on refresh { await list.refresh(pulled: true) }
+      on endReached { await list.nextPage() }
+      section: i => if grouped { groupTitle(group(rows[i], list.viewer)) } else { "" }
+      header: name => if name.isEmpty() { View() } else {
+        View {
+          padding: [6, 16]
+          Text(name) {
+            font: .footnote.semibold()
+            color: .secondaryLabel
+          }
+        }
+      }
+      swipeActions: i => quickActions(rows[i], list, pulls)
+      for p in rows key p.id {
+        PullRow(p) {
+          selected: p.id == selected
+          on press {
+            if open { emit open(p) } else { push(PullScreen(p.repo, p.number)) }
+          }
+        }
+      }
+    }
+  }
+}
+
+/// A row's quick actions: close an open one, ready a draft, reopen a
+/// closed one; each shown at once.
+fn quickActions(p: Pull, list: PullList, pulls: Pulls) -> [Action] {
+  let id = p.id
+  return match p.state {
+    .open => [.button(title: "Close", icon: "xmark.circle", role: .destructive, run: () => {
+      list.change(id, .closed)
+      try? await pulls.close(id)
+      await list.refresh(quiet: true)
+    })]
+    .draft => [
+      .button(title: "Ready", icon: "checkmark.circle", run: () => {
+        list.change(id, .open)
+        try? await pulls.markReady(id)
+        await list.refresh(quiet: true)
+      }),
+      .button(title: "Close", icon: "xmark.circle", role: .destructive, run: () => {
+        list.change(id, .closed)
+        try? await pulls.close(id)
+        await list.refresh(quiet: true)
+      }),
+    ]
+    .closed => [.button(title: "Reopen", icon: "arrow.uturn.backward", run: () => {
+      list.change(id, .open)
+      try? await pulls.reopen(id)
+      await list.refresh(quiet: true)
+    })]
+    .merged => []
+  }
+}
+
+/// A pull request in a list: its state, number, title, checks and
+/// review; then its author, repository, labels, size and age.
+component PullRow(pull: Pull) {
+  prop selected = false
+  event press
+
+  Menu {
+    longPress: true
+    actions: [
+      .button(title: "Open on GitHub", icon: "safari", run: () => try? await device.browse(pull.url)),
+      .button(title: "Copy Link", icon: "link", run: () => device.copy(pull.url)),
+      .button(title: "Copy Number", icon: "number", run: () => device.copy("#{pull.number}")),
+    ]
+    Row {
+      gap: 10
+      padding: [10, 16]
+      align: .start
+      background: if selected { Color.accent.opacity(0.15) } else { .clear }
+      on press { emit press }
+      StateIcon(pull.state) {
+        conflicting: pull.conflicting && pull.state == .open
+        margin: Edges(top: 2)
+      }
+      Column {
+        grow: 1
+        shrink: 1
+        gap: 4
+        Row {
+          gap: 6
+          align: .start
+          Text(pull.title) {
+            font: .headline
+            lines: 2
+            grow: 1
+            shrink: 1
+          }
+          ChecksIcon(pull.checks)
+          ReviewIcon(pull.review)
+        }
+        Row {
+          gap: 6
+          align: .center
+          wrap: true
+          Text("{pull.repo} #{pull.number}") {
+            font: .footnote
+            color: .secondaryLabel
+            lines: 1
+          }
+          for l in pull.labels.prefix(3) key l.name { LabelChip(l) }
+          if pull.labels.count() > 3 {
+            Text("+{pull.labels.count() - 3}") {
+              font: .caption
+              color: .secondaryLabel
+            }
+          }
+        }
+        Row {
+          gap: 6
+          align: .center
+          Avatar(pull.author) { size: 16 }
+          Text(pull.author.login) {
+            font: .footnote
+            color: .secondaryLabel
+            lines: 1
+            shrink: 1
+          }
+          Text("·") { color: .tertiaryLabel }
+          Text(ago(pull.updated)) {
+            font: .footnote
+            color: .secondaryLabel
+            lines: 1
+            grow: 1
+          }
+          Text("+{pull.additions}") {
+            font: .footnote
+            color: .green
+          }
+          Text("−{pull.deletions}") {
+            font: .footnote
+            color: .red
+          }
+        }
+      }
+    }
+  }
+}

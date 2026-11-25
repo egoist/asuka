@@ -1,0 +1,553 @@
+// The pull requests: searched across GitHub for the signed-in user, one
+// in detail, and what changes one (merge, close, review...).
+
+import std/json
+import std/time
+import std/url
+
+/// Whose pull requests: the user's part in them.
+enum Involvement {
+  all
+  reviewing
+  authored
+  assigned
+  mentioned
+
+  fn title() -> string = match self {
+    .all => "Involved"
+    .reviewing => "Review Requests"
+    .authored => "Created"
+    .assigned => "Assigned"
+    .mentioned => "Mentioned"
+  }
+
+  fn icon() -> string = match self {
+    .all => "tray"
+    .reviewing => "eye"
+    .authored => "square.and.pencil"
+    .assigned => "person"
+    .mentioned => "at"
+  }
+
+  fn qualifier() -> string = match self {
+    .all => "involves:@me"
+    .reviewing => "review-requested:@me"
+    .authored => "author:@me"
+    .assigned => "assignee:@me"
+    .mentioned => "mentions:@me"
+  }
+}
+
+let involvements: [Involvement] = [.all, .reviewing, .authored, .assigned, .mentioned]
+
+/// Which state: GitHub's is:open, is:closed, is:merged.
+enum StateFilter {
+  open
+  closed
+  merged
+  all
+
+  fn title() -> string = match self {
+    .open => "Open"
+    .closed => "Closed"
+    .merged => "Merged"
+    .all => "All"
+  }
+
+  fn qualifier() -> string = match self {
+    .open => "is:open"
+    .closed => "is:closed is:unmerged"
+    .merged => "is:merged"
+    .all => ""
+  }
+}
+
+let stateFilters: [StateFilter] = [.open, .closed, .merged, .all]
+
+/// How a list is sorted.
+enum Sort {
+  readiness
+  updated
+  newest
+  oldest
+  largest
+  smallest
+
+  fn title() -> string = match self {
+    .readiness => "Merge Readiness"
+    .updated => "Recently Updated"
+    .newest => "Newest"
+    .oldest => "Oldest"
+    .largest => "Largest"
+    .smallest => "Smallest"
+  }
+
+  /// pulls in this order; the same rank, most recently updated first.
+  fn apply(pulls: [Pull]) -> [Pull] = pulls.sorted((a, b) => {
+    let by = match self {
+      .readiness => a.readiness() - b.readiness()
+      .updated => 0
+      .newest => b.number - a.number
+      .oldest => a.number - b.number
+      .largest => b.size() - a.size()
+      .smallest => a.size() - b.size()
+    }
+    if by != 0 { return by < 0 }
+    return a.updated > b.updated
+  })
+}
+
+let sorts: [Sort] = [.readiness, .updated, .newest, .oldest, .largest, .smallest]
+
+/// One page of a search.
+struct Page {
+  pulls: [Pull]
+  total: int
+  next: string? = none
+  viewer: string
+}
+
+private struct PageInfo {
+  hasNextPage: bool = false
+  endCursor: string? = none
+}
+
+private struct SearchResult {
+  issueCount: int = 0
+  pageInfo: PageInfo = PageInfo()
+  nodes: [PullNode] = []
+}
+
+private struct Viewer {
+  login: string = ""
+  avatarUrl: string = ""
+}
+
+private struct SearchData {
+  search: SearchResult
+  viewer: Viewer
+}
+
+let pullFields = r"""
+  id number title url state isDraft mergeable reviewDecision additions deletions createdAt updatedAt
+  author { login avatarUrl }
+  repository { nameWithOwner }
+  labels(first: 10) { nodes { name color } }
+  reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login avatarUrl } ... on Team { name } } } }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  """
+
+let searchQuery = r"""
+  query($q: String!, $after: String) {
+    viewer { login avatarUrl }
+    search(query: $q, type: ISSUE, first: 50, after: $after) {
+      issueCount
+      pageInfo { hasNextPage endCursor }
+      nodes { ... on PullRequest { PULL } }
+    }
+  }
+  """.replace("PULL", pullFields)
+
+/// The search GitHub runs: the user's part, the state, and what they
+/// typed (GitHub's own qualifiers, repo:, label:, author:, work in it).
+fn searchText(involvement: Involvement, state: StateFilter, text: string) -> string =
+  ["is:pr", "archived:false", involvement.qualifier(), state.qualifier(), text.trim(), "sort:updated-desc"]
+    .filter(s => !s.isEmpty())
+    .joined(separator: " ")
+
+// A pull request in detail.
+
+struct CheckRun {
+  kind: string = ""
+  name: string = ""
+  status: string = ""
+  conclusion: string = ""
+  detailsUrl: string = ""
+  context: string = ""
+  state: string = ""
+  targetUrl: string = ""
+  description: string = ""
+}
+
+/// A check, a CI job's or a commit status's, as the details show it.
+struct Check {
+  name: string
+  result: Checks
+  detail: string
+  link: string
+
+  static fn of(c: CheckRun) -> Check {
+    if c.kind == "StatusContext" {
+      return Check(name: c.context, result: Checks.of(c.state), detail: c.description, link: c.targetUrl)
+    }
+    let result: Checks = if c.status != "COMPLETED" {
+      .pending
+    } else {
+      match c.conclusion {
+        "SUCCESS" | "NEUTRAL" | "SKIPPED" => .passing
+        "FAILURE" | "TIMED_OUT" | "CANCELLED" | "ACTION_REQUIRED" | "STARTUP_FAILURE" => .failing
+        _ => .none
+      }
+    }
+    let detail = if c.status != "COMPLETED" { c.status.lower().replace("_", " ") } else { c.conclusion.lower().replace("_", " ") }
+    return Check(name: c.name, result: result, detail: detail, link: c.detailsUrl)
+  }
+}
+
+struct Contexts {
+  nodes: [CheckRun] = []
+}
+
+struct FullRollup {
+  state: string = ""
+  contexts: Contexts = Contexts()
+}
+
+struct HeadCommit {
+  oid: string = ""
+  statusCheckRollup: FullRollup? = none
+}
+
+struct HeadCommitNode {
+  commit: HeadCommit
+}
+
+struct CommitCount {
+  totalCount: int = 0
+  nodes: [HeadCommitNode] = []
+}
+
+struct ReviewNode {
+  state: string = ""
+  author: Actor? = none
+}
+
+struct CommitAuthor {
+  name: string = ""
+  user: Actor? = none
+}
+
+struct TimelineCommit {
+  oid: string = ""
+  messageHeadline: string = ""
+  committedDate: string = ""
+  author: CommitAuthor = CommitAuthor()
+}
+
+struct TimelineNode {
+  kind: string = ""
+  id: string = ""
+  author: Actor? = none
+  actor: Actor? = none
+  body: string = ""
+  state: string = ""
+  createdAt: string = ""
+  submittedAt: string = ""
+  commit: TimelineCommit? = none
+}
+
+struct AutoMerge {
+  mergeMethod: string = ""
+}
+
+struct HeadRef {
+  id: string = ""
+}
+
+struct DetailNode {
+  id: string = ""
+  number: int = 0
+  title: string = ""
+  url: string = ""
+  body: string = ""
+  state: string = ""
+  isDraft: bool = false
+  mergeable: string = ""
+  mergeStateStatus: string = ""
+  reviewDecision: string? = none
+  additions: int = 0
+  deletions: int = 0
+  changedFiles: int = 0
+  createdAt: string = ""
+  updatedAt: string = ""
+  headRefName: string = ""
+  baseRefName: string = ""
+  headRef: HeadRef? = none
+  viewerCanUpdate: bool = false
+  autoMergeRequest: AutoMerge? = none
+  author: Actor? = none
+  repository: RepoName = RepoName()
+  labels: Node<Label> = Node()
+  reviewRequests: Node<ReviewRequest> = Node()
+  latestOpinionatedReviews: Node<ReviewNode> = Node()
+  commits: CommitCount = CommitCount()
+  timelineItems: Node<TimelineNode> = Node()
+}
+
+struct RepoDetail {
+  mergeCommitAllowed: bool = true
+  squashMergeAllowed: bool = true
+  rebaseMergeAllowed: bool = true
+  autoMergeAllowed: bool = false
+  viewerPermission: string = ""
+  pullRequest: DetailNode? = none
+}
+
+private struct DetailData {
+  repository: RepoDetail? = none
+}
+
+/// How a pull request is merged.
+enum MergeMethod {
+  merge
+  squash
+  rebase
+
+  fn title() -> string = match self {
+    .merge => "Create a Merge Commit"
+    .squash => "Squash and Merge"
+    .rebase => "Rebase and Merge"
+  }
+
+  fn button() -> string = match self {
+    .merge => "Merge"
+    .squash => "Squash and Merge"
+    .rebase => "Rebase and Merge"
+  }
+
+  fn graphql() -> string = match self {
+    .merge => "MERGE"
+    .squash => "SQUASH"
+    .rebase => "REBASE"
+  }
+}
+
+/// A reviewer and where they stand.
+struct ReviewerState {
+  who: Actor
+  state: Review
+}
+
+/// Something that happened on a pull request, in order.
+enum Event {
+  comment(id: string, who: Actor, body: string, at: time.Time)
+  review(id: string, who: Actor, verdict: Review, body: string, at: time.Time)
+  commit(oid: string, headline: string, who: string, at: time.Time)
+  happened(what: string, who: string, at: time.Time)
+
+  fn key() -> string = match self {
+    .comment(id, _, _, _) => id
+    .review(id, _, _, _, _) => id
+    .commit(oid, _, _, _) => oid
+    .happened(what, who, at) => "{what}-{who}-{at.unix()}"
+  }
+}
+
+/// A pull request in detail.
+struct Detail {
+  pull: Pull
+  body: string
+  base: string
+  head: string
+  headRefId: string
+  files: int
+  commits: int
+  checks: [Check]
+  reviewers: [ReviewerState]
+  events: [Event]
+  methods: [MergeMethod]
+  autoMergeAllowed: bool
+  autoMerge: bool
+  canUpdate: bool
+  mergeState: string
+}
+
+private fn at(text: string) -> time.Time = (try? time.parse(text)) ?? time.unix(0)
+
+private fn eventOf(n: TimelineNode) -> Event? {
+  let who = n.author ?? n.actor ?? Actor(login: "ghost")
+  return match n.kind {
+    "IssueComment" => .comment(id: n.id, who: who, body: n.body, at: at(n.createdAt))
+    "PullRequestReview" => if n.state == "PENDING" { none } else {
+      .review(id: n.id, who: who, verdict: match n.state {
+        "APPROVED" => Review.approved
+        "CHANGES_REQUESTED" => Review.changesRequested
+        _ => Review.none
+      }, body: n.body, at: at(n.submittedAt))
+    }
+    "PullRequestCommit" => if let c = n.commit {
+      .commit(oid: c.oid, headline: c.messageHeadline, who: c.author.user?.login ?? c.author.name, at: at(c.committedDate))
+    } else { none }
+    "MergedEvent" => .happened(what: "merged", who: who.login, at: at(n.createdAt))
+    "ClosedEvent" => .happened(what: "closed", who: who.login, at: at(n.createdAt))
+    "ReopenedEvent" => .happened(what: "reopened", who: who.login, at: at(n.createdAt))
+    "ReadyForReviewEvent" => .happened(what: "marked it ready for review", who: who.login, at: at(n.createdAt))
+    "ConvertToDraftEvent" => .happened(what: "converted it to a draft", who: who.login, at: at(n.createdAt))
+    _ => none
+  }
+}
+
+let detailQuery = r"""
+  query($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission
+      pullRequest(number: $number) {
+        id number title url body state isDraft mergeable mergeStateStatus reviewDecision
+        additions deletions changedFiles createdAt updatedAt headRefName baseRefName viewerCanUpdate
+        headRef { id }
+        autoMergeRequest { mergeMethod }
+        author { login avatarUrl }
+        repository { nameWithOwner }
+        labels(first: 20) { nodes { name color } }
+        reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login avatarUrl } ... on Team { name } } } }
+        latestOpinionatedReviews(first: 20) { nodes { state author { login avatarUrl } } }
+        commits(last: 1) {
+          totalCount
+          nodes { commit { oid statusCheckRollup { state contexts(first: 100) { nodes {
+            kind: __typename
+            ... on CheckRun { name status conclusion detailsUrl }
+            ... on StatusContext { context state targetUrl description }
+          } } } } }
+        }
+        timelineItems(last: 100, itemTypes: [ISSUE_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_COMMIT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT, READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) {
+          nodes {
+            kind: __typename
+            ... on IssueComment { id author { login avatarUrl } body createdAt }
+            ... on PullRequestReview { id author { login avatarUrl } body state submittedAt }
+            ... on PullRequestCommit { id commit { oid messageHeadline committedDate author { name user { login } } } }
+            ... on MergedEvent { id actor { login } createdAt }
+            ... on ClosedEvent { id actor { login } createdAt }
+            ... on ReopenedEvent { id actor { login } createdAt }
+            ... on ReadyForReviewEvent { id actor { login } createdAt }
+            ... on ConvertToDraftEvent { id actor { login } createdAt }
+          }
+        }
+      }
+    }
+  }
+  """
+
+/// A file a pull request changes, and its patch.
+struct File {
+  filename: string
+  status: string = "modified"
+  additions: int = 0
+  deletions: int = 0
+  patch: string = ""
+}
+
+/// The pull requests of the signed-in user, and what changes them.
+store Pulls {
+  use gh: GitHub
+
+  /// A page of the search; after, the last page's cursor.
+  pub async fn search(involvement: Involvement, state: StateFilter, text: string, after: string? = none) throws -> Page {
+    let vars: [string: json.Value] = ["q": searchText(involvement, state, text), "after": if let a = after { json.Value.string(a) } else { json.Value.null }]
+    let d: SearchData = try await gh.graphql(searchQuery, variables: .object(vars))
+    return Page(
+      pulls: d.search.nodes.filter(n => !n.id.isEmpty()).map(n => n.pull()),
+      total: d.search.issueCount,
+      next: if d.search.pageInfo.hasNextPage { d.search.pageInfo.endCursor } else { none },
+      viewer: d.viewer.login,
+    )
+  }
+
+  /// repo's pull request number, in detail.
+  pub async fn detail(repo: string, number: int) throws -> Detail {
+    let parts = repo.split("/")
+    let vars: [string: json.Value] = ["owner": parts[0], "name": parts.get(1) ?? "", "number": number]
+    let d: DetailData = try await gh.graphql(detailQuery, variables: .object(vars))
+    let r = d.repository else { throw GitHubError.graphql(message: "No repository {repo}") }
+    let p = r.pullRequest else { throw GitHubError.graphql(message: "No pull request #{number} in {repo}") }
+    let node = PullNode(
+      id: p.id, number: p.number, title: p.title, url: p.url, state: p.state, isDraft: p.isDraft,
+      mergeable: p.mergeable, reviewDecision: p.reviewDecision, additions: p.additions, deletions: p.deletions,
+      createdAt: p.createdAt, updatedAt: p.updatedAt, author: p.author, repository: p.repository,
+      labels: p.labels, reviewRequests: p.reviewRequests,
+      commits: Node(nodes: p.commits.nodes.map(c => LastCommit(commit: RollupCommit(statusCheckRollup: if let s = c.commit.statusCheckRollup { Rollup(state: s.state) } else { none })))),
+    )
+    var methods: [MergeMethod] = []
+    if r.squashMergeAllowed { methods.push(.squash) }
+    if r.mergeCommitAllowed { methods.push(.merge) }
+    if r.rebaseMergeAllowed { methods.push(.rebase) }
+    // The reviewers: who reviewed, then who's asked to.
+    var reviewers = p.latestOpinionatedReviews.nodes.compactMap(n => if let a = n.author {
+      ReviewerState(who: a, state: Review.of(n.state))
+    } else { none })
+    for rr in p.reviewRequests.nodes {
+      if let who = rr.requestedReviewer {
+        let login = if who.login.isEmpty() { who.name } else { who.login }
+        if !reviewers.any(x => x.who.login == login) {
+          reviewers.push(ReviewerState(who: Actor(login: login, avatarUrl: who.avatarUrl), state: .required))
+        }
+      }
+    }
+    return Detail(
+      pull: node.pull(),
+      body: p.body,
+      base: p.baseRefName,
+      head: p.headRefName,
+      headRefId: p.headRef?.id ?? "",
+      files: p.changedFiles,
+      commits: p.commits.totalCount,
+      checks: (p.commits.nodes.first()?.commit.statusCheckRollup?.contexts.nodes ?? []).map(c => Check.of(c)),
+      reviewers: reviewers,
+      events: p.timelineItems.nodes.compactMap(n => eventOf(n)),
+      methods: methods,
+      autoMergeAllowed: r.autoMergeAllowed,
+      autoMerge: p.autoMergeRequest != none,
+      canUpdate: p.viewerCanUpdate,
+      mergeState: p.mergeStateStatus,
+    )
+  }
+
+  /// The files a pull request changes, with their patches.
+  pub async fn files(repo: string, number: int) throws -> [File] {
+    var out: [File] = []
+    var page = 1
+    while page <= 10 {
+      let text = try await gh.call(Request(method: "GET", path: "/repos/{repo}/pulls/{number}/files?per_page=100&page={page}"))
+      let got: [File] = try json.decode(text)
+      out += got
+      if got.count() < 100 { break }
+      page += 1
+    }
+    return out
+  }
+
+  async fn mutate(mutation: string, input: [string: json.Value]) throws {
+    let _: json.Value = try await gh.graphql("mutation($input: {mutation.title()}Input!) \{ {mutation}(input: $input) \{ clientMutationId } }", variables: .object(["input": .object(input)]))
+  }
+
+  pub async fn merge(id: string, method: MergeMethod) throws {
+    try await mutate("mergePullRequest", ["pullRequestId": id, "mergeMethod": method.graphql()])
+  }
+
+  pub async fn enableAutoMerge(id: string, method: MergeMethod) throws {
+    try await mutate("enablePullRequestAutoMerge", ["pullRequestId": id, "mergeMethod": method.graphql()])
+  }
+
+  pub async fn disableAutoMerge(id: string) throws {
+    try await mutate("disablePullRequestAutoMerge", ["pullRequestId": id])
+  }
+
+  pub async fn close(id: string) throws { try await mutate("closePullRequest", ["pullRequestId": id]) }
+  pub async fn reopen(id: string) throws { try await mutate("reopenPullRequest", ["pullRequestId": id]) }
+  pub async fn markReady(id: string) throws { try await mutate("markPullRequestReadyForReview", ["pullRequestId": id]) }
+  pub async fn convertToDraft(id: string) throws { try await mutate("convertPullRequestToDraft", ["pullRequestId": id]) }
+  pub async fn deleteBranch(refId: string) throws { try await mutate("deleteRef", ["refId": refId]) }
+
+  pub async fn comment(id: string, body: string) throws {
+    try await mutate("addComment", ["subjectId": id, "body": body])
+  }
+
+  /// Submits a review: APPROVE, REQUEST_CHANGES or COMMENT.
+  pub async fn review(id: string, verdict: string, body: string) throws {
+    try await mutate("addPullRequestReview", ["pullRequestId": id, "event": verdict, "body": body])
+  }
+}
+
+extend string {
+  /// "addComment" as GraphQL's input type names it: "AddComment".
+  fn title() -> string = if isEmpty() { self } else { slice(0, 1).upper() + slice(1) }
+}

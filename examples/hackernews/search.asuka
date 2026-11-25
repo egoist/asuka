@@ -1,0 +1,89 @@
+// Searching every story ever posted (Algolia's index of the site), as
+// the user types: a moment after they stop. The search is the app's:
+// going to a feed and back finds it as it was left.
+
+store Search {
+  use hn: HN
+
+  pub state query = ""
+  pub state stories: [Story] = []
+  pub state loading = false
+  pub state problem = ""
+  state page = 0
+  state more = false
+
+  task(query) {
+    let q = query.trim()
+    stories = []
+    problem = ""
+    if q.isEmpty() { return }
+    await sleep(300ms)
+    await fetch(0)
+  }
+
+  pub async fn fetch(p: int) {
+    let q = query.trim()
+    if q.isEmpty() { return }
+    loading = true
+    defer { loading = false }
+    do {
+      let r = try await hn.search(q, page: p)
+      stories = if p == 0 { r.stories } else { stories + r.stories }
+      page = p
+      more = r.more
+      problem = ""
+    } catch e {
+      problem = e.message
+    }
+  }
+
+  pub async fn next() {
+    if more && !loading { await fetch(page + 1) }
+  }
+}
+
+screen SearchScreen {
+  use search: Search
+  state chosen: Story? = none
+
+  title: "Search"
+  bind search: search.query
+  searchPlaceholder: "Search stories"
+  toolbar {
+    if sideBySide() {
+      if let s = chosen {
+        StoryActions(s)
+      }
+    }
+  }
+
+  if search.query.trim().isEmpty() {
+    SafeArea {
+      grow: 1
+      justify: .center
+      align: .center
+      gap: 10
+      padding: 32
+      Symbol("magnifyingglass") {
+        font: .largeTitle
+        color: .tertiaryLabel
+      }
+      Text("Every story since 2007, by its title, link and author.") {
+        color: .secondaryLabel
+        textAlign: .center
+      }
+    }
+  } else {
+    StoriesAndThread(search.stories, chosen?.id ?? 0) {
+      heading: "Search"
+      ranked: false
+      loading: search.loading
+      problem: search.problem
+      empty: "Nothing matches “{search.query.trim()}”"
+      on choose(s) { chosen = s }
+      on retry { await search.fetch(0) }
+      on refresh { await search.fetch(0) }
+      on end { await search.next() }
+    }
+  }
+}

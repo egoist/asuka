@@ -1,0 +1,93 @@
+// GitHub's API: GraphQL for the pull requests, their details and what
+// changes them; REST for a pull request's files. Over a transport (the
+// network, or a test's answers), with the user's token.
+
+import std/http
+import std/json
+
+let api = "https://api.github.com"
+
+/// A request to GitHub: its method, path (from the API's root) and JSON
+/// body, and the answer's status and body.
+struct Request {
+  method: string
+  path: string
+  body: string = ""
+  accept: string = "application/vnd.github+json"
+}
+
+struct Answer {
+  status: int
+  body: string
+}
+
+/// Sends r with token over the network.
+async fn send(r: Request, token: string) throws -> Answer {
+  let res = try await http.request(
+    r.method,
+    "{api}{r.path}",
+    headers: [
+      "authorization": "Bearer {token}",
+      "accept": r.accept,
+      "content-type": "application/json",
+      "x-github-api-version": "2022-11-28",
+    ],
+    body: r.body.bytes(),
+  )
+  return Answer(status: res.status, body: res.text())
+}
+
+/// What GitHub said went wrong.
+enum GitHubError: Error {
+  unauthorized
+  status(code: int, message: string)
+  graphql(message: string)
+
+  fn message() -> string = match self {
+    .unauthorized => "GitHub didn't accept the token: sign in again."
+    .status(code, message) => if message.isEmpty() { "GitHub answered {code}" } else { message }
+    .graphql(message) => message
+  }
+}
+
+private struct Message {
+  message: string = ""
+}
+
+private struct GraphQLError {
+  message: string = ""
+}
+
+private struct Envelope<T> {
+  data: T?
+  errors: [GraphQLError] = []
+}
+
+private struct Query {
+  query: string
+  variables: json.Value
+}
+
+/// The API, as the user signed in.
+store GitHub(token: string, transport: async fn(Request, string) throws -> Answer = send) {
+  /// Sends r, throwing what GitHub says of a failure.
+  pub async fn call(r: Request) throws -> string {
+    let a = try await transport(r, token)
+    if a.status == 401 { throw GitHubError.unauthorized }
+    if a.status < 200 || a.status > 299 {
+      let m = (try? json.decode<Message>(a.body))?.message ?? ""
+      throw GitHubError.status(code: a.status, message: m)
+    }
+    return a.body
+  }
+
+  /// A GraphQL query's data, as T.
+  pub async fn graphql<T>(query: string, variables: json.Value = .object([:])) throws -> T {
+    let body = json.encode(Query(query: query, variables: variables))
+    let text = try await call(Request(method: "POST", path: "/graphql", body: body))
+    let e: Envelope<T> = try json.decode(text)
+    if let first = e.errors.first() { throw GitHubError.graphql(message: first.message) }
+    let data = e.data else { throw GitHubError.graphql(message: "GitHub answered no data") }
+    return data
+  }
+}

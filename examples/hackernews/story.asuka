@@ -1,0 +1,221 @@
+// A story and its thread: the story's title, link and text over its
+// comments, each reply under the comment it answers. Tapping a comment
+// collapses it and its replies.
+
+import platform/device
+
+/// A story's thread on a screen of its own: a phone's, pushed from the
+/// list.
+screen StoryScreen(story: Story) {
+  title: "Comments"
+  toolbar { StoryActions(story) }
+  SafeArea {
+    grow: 1
+    ThreadView(story)
+  }
+}
+
+/// What the bar offers for a story: open its link, share it, save it.
+component StoryActions(story: Story) {
+  use saved: Saved
+
+  Button("Open Link") {
+    icon: "safari"
+    on press { try? await device.browse(story.link()) }
+  }
+  Button("Share") {
+    icon: "square.and.arrow.up"
+    on press { device.share(story.link()) }
+  }
+  Button(if saved.has(story.id) { "Unsave" } else { "Save" }) {
+    icon: if saved.has(story.id) { "bookmark.fill" } else { "bookmark" }
+    on press {
+      if saved.has(story.id) { saved.remove(story.id) } else { saved.add(story) }
+    }
+  }
+}
+
+/// A story over its comments: on its own screen, or beside the list.
+component ThreadView(story: Story) {
+  use hn: HN
+
+  let thread = load hn.thread(story.id)
+  state collapsed = Set<int>()
+  state pulling = false
+
+  // What the thread says of the story is newer than what the list knew.
+  let shown = thread.value?.story() ?? story
+  let comments = rows(thread.value?.children ?? [], collapsed)
+
+  fn toggle(id: int) {
+    if !collapsed.remove(id) { collapsed.insert(id) }
+  }
+
+  // The thread's rows: the story, then what's loading or failed, or
+  // its comments.
+  let items: [ThreadItem] = [ThreadItem.story(shown)] + match thread {
+    .pending => [ThreadItem.loading]
+    .failed(e) => [ThreadItem.failed(e.message)]
+    .ready(t) => if t.children.isEmpty() { [ThreadItem.empty] } else { comments.map(r => ThreadItem.comment(r)) }
+  }
+
+  List {
+    grow: 1
+    edgeEffect: .hard
+    refreshing: pulling
+    on refresh {
+      pulling = true
+      await reload hn.thread(story.id)
+      pulling = false
+    }
+    for item in items key item.key() {
+      match item {
+        .story(st) => StoryHeader(st)
+        .loading => Row {
+          justify: .center
+          padding: 32
+          ProgressRing()
+        }
+        .failed(message) => Column {
+          align: .center
+          gap: 10
+          padding: 32
+          Text("Couldn't load the comments") { font: .headline }
+          Text(message) {
+            color: .secondaryLabel
+            textAlign: .center
+          }
+          Button("Try Again") {
+            variant: .tinted
+            on press { thread.reload() }
+          }
+        }
+        .empty => Text("No comments yet") {
+          color: .secondaryLabel
+          padding: 32
+          textAlign: .center
+        }
+        .comment(r) => CommentView(r) {
+          collapsed: collapsed.contains(r.comment.id)
+          on toggle { toggle(r.comment.id) }
+        }
+      }
+    }
+  }
+}
+
+/// A row of a thread.
+enum ThreadItem {
+  story(Story)
+  loading
+  failed(string)
+  empty
+  comment(CommentRow)
+
+  fn key() -> int = match self {
+    .story(_) => -1
+    .loading => -2
+    .failed(_) => -3
+    .empty => -4
+    .comment(r) => r.comment.id
+  }
+}
+
+/// The story at the top of its thread: its title, the link it's about,
+/// what it says.
+component StoryHeader(story: Story) {
+  Column {
+    gap: 8
+    padding: [14, 16]
+    Text(story.title) {
+      font: .title3.semibold()
+      selectable: true
+    }
+    if !story.url.isEmpty() {
+      Button(story.site()) {
+        icon: "safari"
+        variant: .plain
+        alignSelf: .start
+        on press { try? await device.browse(story.url) }
+      }
+    }
+    Row {
+      gap: 6
+      wrap: true
+      align: .center
+      Button(story.by) {
+        variant: .plain
+        font: .footnote.semibold()
+        on press { push(UserScreen(story.by)) }
+      }
+      Text(meta(Story(id: story.id, title: story.title, score: story.score, descendants: story.descendants, time: story.time, type: story.type))) {
+        font: .footnote
+        color: .secondaryLabel
+      }
+    }
+    if !story.text.isEmpty() {
+      Selectable {
+        RichText(spans(story.text)) {
+          on link(url) { try? await device.browse(url) }
+        }
+      }
+    }
+  }
+}
+
+/// A comment in its thread, indented by its depth: its author and age,
+/// then its text, or how many replies it hides while collapsed.
+component CommentView(row: CommentRow) {
+  prop collapsed = false
+  event toggle
+
+  let c = row.comment
+  let rail = [Color.blue, .green, .orange, .purple, .pink, .red]
+
+  Row {
+    padding: Edges(top: 8, bottom: 8, start: 16 + 12 * float(min(row.depth, 8)), end: 16)
+    gap: 10
+    on press { emit toggle }
+    if row.depth > 0 {
+      View {
+        width: 2
+        shrink: 0
+        radius: 1
+        background: rail[(row.depth - 1) % rail.count()].opacity(0.6)
+      }
+    }
+    Column {
+      grow: 1
+      shrink: 1
+      gap: 4
+      Row {
+        gap: 6
+        align: .center
+        Text(if c.author.isEmpty() { "[deleted]" } else { c.author }) {
+          font: .footnote.semibold()
+          color: if c.author.isEmpty() { .tertiaryLabel } else { .label }
+        }
+        Text(posted(c.createdAtI)) {
+          font: .footnote
+          color: .secondaryLabel
+          grow: 1
+        }
+        if collapsed && row.replies > 0 {
+          Text("+{row.replies}") {
+            font: .footnote
+            color: .secondaryLabel
+          }
+        }
+        Symbol(if collapsed { "chevron.right" } else { "chevron.down" }) {
+          font: .caption
+          color: .tertiaryLabel
+        }
+      }
+      if !collapsed {
+        RichText(spans(c.text)) {
+          on link(url) { try? await device.browse(url) }
+        }
+      }
+    }
+  }
+}

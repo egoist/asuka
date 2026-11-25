@@ -1,0 +1,82 @@
+// A user's profile: karma, how long they've been around, what they wrote
+// about themselves, and their latest stories.
+
+import platform/device
+import std/time
+
+screen UserScreen(id: string) {
+  use hn: HN
+
+  let user = load (hn.user(id), hn.submissions(id))
+
+  title: id
+  toolbar {
+    Button("Open on Hacker News") {
+      icon: "safari"
+      on press { try? await device.browse("https://news.ycombinator.com/user?id={id}") }
+    }
+  }
+
+  SafeArea {
+    grow: 1
+    match user {
+      .pending => Column {
+        grow: 1
+        justify: .center
+        align: .center
+        ProgressRing()
+      }
+      .failed(e) => Column {
+        grow: 1
+        justify: .center
+        align: .center
+        gap: 10
+        padding: 32
+        Text("Couldn't load {id}") { font: .headline }
+        Text(e.message) {
+          color: .secondaryLabel
+          textAlign: .center
+        }
+        Button("Try Again") {
+          variant: .tinted
+          on press { user.reload() }
+        }
+      }
+      .ready((u, posts)) => Column {
+        grow: 1
+        Column {
+          gap: 8
+          padding: [14, 16]
+          Row {
+            gap: 16
+            Stat("Karma", "{u.karma}")
+            Stat("Joined", time.unix(u.created).format("MMM yyyy"))
+          }
+          if !u.about.isEmpty() {
+            Selectable {
+              RichText(spans(u.about)) {
+                on link(url) { try? await device.browse(url) }
+              }
+            }
+          }
+        }
+        Stories(posts.stories) {
+          ranked: false
+          empty: "No stories yet"
+        }
+      }
+    }
+  }
+}
+
+/// A number and what it counts.
+component Stat(label: string, value: string) {
+  Column {
+    gap: 2
+    Text(value) { font: .title3.semibold() }
+    Text(label) {
+      font: .footnote
+      color: .secondaryLabel
+    }
+  }
+}

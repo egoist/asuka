@@ -1,0 +1,728 @@
+// A pull request in detail: what it is and where it stands, what can be
+// done with it (merge, ready, close, review...), and its summary,
+// conversation and files.
+
+import platform/device
+import std/markdown
+import std/svg
+import std/time
+
+/// A pull request's own screen: a phone's, pushed from the list.
+screen PullScreen(repo: string, number: int) {
+  title: "#{number}"
+  toolbar { PullActions(repo, number) }
+  SafeArea {
+    grow: 1
+    PullView(repo, number)
+  }
+}
+
+/// What the bar offers for a pull request: open it, share its link.
+component PullActions(repo: string, number: int) {
+  let link = "https://github.com/{repo}/pull/{number}"
+
+  Button("Open on GitHub") {
+    icon: "safari"
+    on press { try? await device.browse(link) }
+  }
+  Button("Share") {
+    icon: "square.and.arrow.up"
+    on press { device.share(link) }
+  }
+}
+
+/// The verdict a review gives.
+enum Verdict {
+  comment
+  approve
+  requestChanges
+
+  fn title() -> string = match self {
+    .comment => "Comment"
+    .approve => "Approve"
+    .requestChanges => "Request Changes"
+  }
+}
+
+/// A pull request, loaded: on its own screen or beside the list.
+component PullView(repo: string, number: int) {
+  use pulls: Pulls
+  use lists: Lists
+
+  let detail = load pulls.detail(repo, number)
+  state tab = 0
+  state method: MergeMethod? = none
+  state confirming = false
+  state composing = false
+  state verdict = Verdict.comment
+  state busy = ""
+  state failure = ""
+  state failing = false
+
+  // Checks that are running are looked at again every 45 seconds, the
+  // rest every minute, while it shows.
+  task {
+    while true {
+      let pending = detail.value?.checks.any(c => c.result == .pending) ?? false
+      await sleep(if pending { 45s } else { 60s })
+      detail.reload()
+    }
+  }
+
+  /// Runs a change, says what's happening meanwhile and what failed,
+  /// then loads it and the lists again.
+  async fn act(what: string, change: async fn() throws) {
+    busy = what
+    defer { busy = "" }
+    do {
+      try await change()
+      await reload pulls.detail(repo, number)
+      await lists.refreshAll()
+    } catch e {
+      failure = e.message
+      failing = true
+    }
+  }
+
+  match detail {
+    .pending => Column {
+      grow: 1
+      justify: .center
+      align: .center
+      ProgressRing()
+    }
+    .failed(e) => Column {
+      grow: 1
+      justify: .center
+      align: .center
+      gap: 10
+      padding: 32
+      Text("Couldn't load #{number}") { font: .headline }
+      Text(e.message) {
+        color: .secondaryLabel
+        textAlign: .center
+      }
+      Button("Try Again") {
+        variant: .tinted
+        on press { detail.reload() }
+      }
+    }
+    .ready(d) => Scroll {
+      grow: 1
+      edgeEffect: .hard
+      Column {
+        padding: 16
+        gap: 14
+        Header(d)
+        Row {
+          gap: 8
+          align: .center
+          wrap: true
+          Primary(d, method ?? d.methods.first() ?? .merge) {
+            busy: busy
+            on act(what, change) { await act(what, change) }
+            on merge { confirming = true }
+          }
+          if d.pull.state == .open && d.methods.count() > 1 {
+            Button("") {
+              icon: "chevron.down"
+              label: "Merge Method"
+              tooltip: "Merge Method"
+              variant: .gray
+              menu: d.methods.map(m => .button(title: m.title(), checked: m == (method ?? d.methods[0]), run: () => { method = m }))
+            }
+          }
+          Button("Comment") {
+            icon: "bubble.left"
+            variant: .gray
+            on press {
+              verdict = .comment
+              composing = true
+            }
+          }
+          if d.pull.state == .open || d.pull.state == .draft {
+            Button("Review") {
+              icon: "checkmark.circle"
+              variant: .gray
+              on press {
+                verdict = .approve
+                composing = true
+              }
+            }
+          }
+          More(d) {
+            on act(what, change) { await act(what, change) }
+            on refresh { detail.reload() }
+          }
+          if !busy.isEmpty() {
+            ProgressRing { width: 18 }
+            Text(busy) {
+              font: .footnote
+              color: .secondaryLabel
+            }
+          }
+        }
+        Segmented(["Summary", "Conversation", "Files"]) { bind selected: tab }
+        match tab {
+          0 => Summary(d)
+          1 => Conversation(d)
+          _ => Files(repo, number)
+        }
+      }
+    }
+  }
+
+  Alert(if let d = detail.value { "{(method ?? d.methods.first() ?? .merge).button()} #{number}?" } else { "Merge?" }) {
+    bind open: confirming
+    message: if let d = detail.value { "Into {d.base}, from {d.head}." } else { "" }
+    Button("Cancel") { role: .cancel }
+    Button("Merge") {
+      on press {
+        if let d = detail.value {
+          let m = method ?? d.methods.first() ?? .merge
+          let id = d.pull.id
+          await act("Merging…", async () => try await pulls.merge(id, m))
+        }
+      }
+    }
+  }
+
+  Alert("Couldn't do that") {
+    bind open: failing
+    message: failure
+    Button("OK") { role: .cancel }
+  }
+
+  Sheet {
+    bind open: composing
+    detents: [.medium, .large]
+    grabber: true
+    if let d = detail.value {
+      Composer(d, verdict) {
+        on done(v, body) {
+          composing = false
+          let id = d.pull.id
+          match v {
+            .comment => await act("Commenting…", async () => try await pulls.comment(id, body))
+            .approve => await act("Approving…", async () => try await pulls.review(id, "APPROVE", body))
+            .requestChanges => await act("Requesting changes…", async () => try await pulls.review(id, "REQUEST_CHANGES", body))
+          }
+        }
+        on cancel { composing = false }
+      }
+    }
+  }
+}
+
+/// What it is: its repository and number, title, state, who wants what
+/// merged where, and how big it is.
+component Header(d: Detail) {
+  let p = d.pull
+
+  Column {
+    gap: 8
+    Text("{p.repo} #{p.number}") {
+      font: .footnote
+      color: .secondaryLabel
+    }
+    Text(p.title) {
+      font: .title2.semibold()
+      selectable: true
+    }
+    Row {
+      gap: 8
+      align: .center
+      wrap: true
+      Row {
+        gap: 4
+        align: .center
+        padding: [3, 10]
+        radius: 12
+        background: p.state.color()
+        StateIcon(p.state) {
+          size: 14
+          tint: .onAccent
+        }
+        Text(if p.conflicting && p.state == .open { "Conflicts" } else { p.state.title() }) {
+          font: .footnote.semibold()
+          color: .onAccent
+        }
+      }
+      Avatar(p.author)
+      Text(p.author.login) { font: .subheadline.semibold() }
+      Text("wants to merge {d.commits} commit{if d.commits == 1 { "" } else { "s" }}") {
+        font: .subheadline
+        color: .secondaryLabel
+      }
+    }
+    Row {
+      gap: 6
+      align: .center
+      wrap: true
+      Branch(d.base)
+      Symbol("arrow.left") {
+        font: .caption
+        color: .secondaryLabel
+      }
+      Branch(d.head) { copyable: true }
+    }
+    Row {
+      gap: 6
+      align: .center
+      Text("+{p.additions}") {
+        font: .footnote
+        color: .green
+      }
+      Text("−{p.deletions}") {
+        font: .footnote
+        color: .red
+      }
+      Text("· {d.files} file{if d.files == 1 { "" } else { "s" }} · updated {ago(p.updated)}") {
+        font: .footnote
+        color: .secondaryLabel
+      }
+    }
+  }
+}
+
+/// A branch's name, in a pill; copyable, its menu copies it.
+component Branch(name: string) {
+  prop copyable = false
+
+  Menu {
+    longPress: true
+    actions: if copyable { [.button(title: "Copy Branch Name", icon: "doc.on.doc", run: () => device.copy(name))] } else { [] }
+    Row {
+      gap: 4
+      align: .center
+      padding: [2, 8]
+      radius: 6
+      background: .secondaryBackground
+      svg.View(iconBranch) {
+        width: 12
+        height: 12
+        color: .secondaryLabel
+      }
+      Text(name) {
+        font: Font.footnote.family("Menlo")
+        lines: 1
+      }
+    }
+  }
+}
+
+/// The one thing to do next: merge (in the method chosen), ready a
+/// draft, turn auto-merge on or off, resolve conflicts, reopen.
+component Primary(d: Detail, method: MergeMethod) {
+  prop busy = ""
+  event act(what: string, change: async fn() throws)
+  event merge
+  use pulls: Pulls
+
+  let p = d.pull
+  let id = p.id
+  let pending = d.checks.any(c => c.result == .pending)
+
+  match p.state {
+    .merged => View()
+    .closed => Button("Reopen") {
+      icon: "arrow.uturn.backward"
+      variant: .tinted
+      disabled: !busy.isEmpty()
+      on press { emit act("Reopening…", async () => try await pulls.reopen(id)) }
+    }
+    .draft => Button("Ready for Review") {
+      icon: "checkmark.circle"
+      variant: .filled
+      disabled: !busy.isEmpty()
+      on press { emit act("Marking ready…", async () => try await pulls.markReady(id)) }
+    }
+    .open => if p.conflicting {
+      Button("Resolve Conflicts") {
+        icon: "exclamationmark.triangle"
+        variant: .tinted
+        on press { try? await device.browse("{p.url}/conflicts") }
+      }
+    } else if d.autoMerge {
+      Button("Disable Auto-Merge") {
+        variant: .tinted
+        disabled: !busy.isEmpty()
+        on press { emit act("Disabling auto-merge…", async () => try await pulls.disableAutoMerge(id)) }
+      }
+    } else if pending && d.autoMergeAllowed {
+      Button("Enable Auto-Merge") {
+        icon: "clock"
+        variant: .filled
+        disabled: !busy.isEmpty()
+        on press { emit act("Enabling auto-merge…", async () => try await pulls.enableAutoMerge(id, method)) }
+      }
+    } else {
+      Button(method.button()) {
+        variant: .filled
+        disabled: !busy.isEmpty() || d.methods.isEmpty()
+        on press { emit merge }
+      }
+    }
+  }
+}
+
+/// Everything else that can be done with it.
+component More(d: Detail) {
+  event act(what: string, change: async fn() throws)
+  event refresh
+  use pulls: Pulls
+
+  let p = d.pull
+  let id = p.id
+  let ref = d.headRefId
+  let closing: [Action] = match p.state {
+    .open | .draft => [.button(title: "Close Pull Request", icon: "xmark.circle", role: .destructive, run: () => { emit act("Closing…", async () => try await pulls.close(id)) })]
+    .closed => [.button(title: "Reopen", icon: "arrow.uturn.backward", run: () => { emit act("Reopening…", async () => try await pulls.reopen(id)) })]
+    .merged => []
+  }
+  let deleting: [Action] = if (p.state == .merged || p.state == .closed) && !ref.isEmpty() {
+    [.button(title: "Delete Branch {d.head}", icon: "trash", role: .destructive, run: () => { emit act("Deleting the branch…", async () => try await pulls.deleteBranch(ref)) })]
+  } else {
+    []
+  }
+
+  Button("") {
+    icon: "ellipsis.circle"
+    label: "More"
+    tooltip: "More"
+    variant: .gray
+    menu: [
+      .button(title: "Refresh", icon: "arrow.clockwise", run: () => { emit refresh }),
+      .section(title: "", items: if p.state == .open {
+        [.button(title: "Convert to Draft", icon: "pencil", run: () => { emit act("Converting to a draft…", async () => try await pulls.convertToDraft(id)) })]
+      } else if p.state == .draft {
+        [.button(title: "Ready for Review", icon: "checkmark.circle", run: () => { emit act("Marking ready…", async () => try await pulls.markReady(id)) })]
+      } else { [] }),
+      .section(title: "", items: [
+        .button(title: "Open on GitHub", icon: "safari", run: () => try? await device.browse(p.url)),
+        .button(title: "Copy Link", icon: "link", run: () => device.copy(p.url)),
+        .button(title: "Copy Number", icon: "number", run: () => device.copy("#{p.number}")),
+        .button(title: "Copy Checkout Command", icon: "chevron.left.forwardslash.chevron.right", run: () => device.copy("gh pr checkout {p.number} --repo {p.repo}")),
+      ]),
+      .section(title: "", items: closing + deleting),
+    ]
+  }
+}
+
+/// Who reviewed it, its labels, its description and its checks.
+component Summary(d: Detail) {
+  state checksOpen = true
+
+  let passing = d.checks.count(where: c => c.result == .passing)
+  let failing = d.checks.count(where: c => c.result == .failing)
+  let running = d.checks.count(where: c => c.result == .pending)
+
+  Column {
+    gap: 18
+    Section("Reviewers") {
+      if d.reviewers.isEmpty() {
+        Text("No reviewers") { color: .secondaryLabel }
+      }
+      for r in d.reviewers key r.who.login {
+        Row {
+          gap: 8
+          align: .center
+          Avatar(r.who) { size: 22 }
+          Text(r.who.login) { grow: 1 }
+          Text(match r.state {
+            .approved => "Approved"
+            .changesRequested => "Changes requested"
+            .required => "Awaiting review"
+            .none => "Commented"
+          }) {
+            font: .footnote
+            color: match r.state {
+              .approved => .green
+              .changesRequested => .orange
+              _ => .secondaryLabel
+            }
+          }
+        }
+      }
+    }
+    if !d.pull.labels.isEmpty() {
+      Section("Labels") {
+        Row {
+          gap: 6
+          wrap: true
+          for l in d.pull.labels key l.name { LabelChip(l) }
+        }
+      }
+    }
+    Section("Description") {
+      if d.body.trim().isEmpty() {
+        Text("No description") { color: .secondaryLabel }
+      } else {
+        markdown.View(d.body)
+      }
+    }
+    Section(if d.checks.isEmpty() { "Checks" } else { "Checks · {passing} passing, {failing} failing, {running} running" }) {
+      if d.checks.isEmpty() {
+        Text("No checks") { color: .secondaryLabel }
+      }
+      for (i, c) in d.checks.enumerated() key i {
+        Row {
+          gap: 8
+          align: .center
+          padding: [4, 0]
+          on press {
+            if !c.link.isEmpty() { try? await device.browse(c.link) }
+          }
+          View {
+            opacity: if c.result == .none { 0.4 } else { 1 }
+            ChecksIcon(if c.result == .none { Checks.passing } else { c.result })
+          }
+          Text(c.name) {
+            grow: 1
+            shrink: 1
+            lines: 1
+          }
+          Text(c.detail) {
+            font: .footnote
+            color: .secondaryLabel
+          }
+        }
+      }
+    }
+  }
+}
+
+/// A part of the summary, under its heading.
+component Section(title: string) {
+  prop children: View
+
+  Column {
+    gap: 8
+    Text(title) {
+      font: .subheadline.semibold()
+      color: .secondaryLabel
+    }
+    children
+  }
+}
+
+/// Its comments, reviews, commits and what happened to it, in order.
+component Conversation(d: Detail) {
+  state newestFirst = false
+
+  let events = if newestFirst { d.events.reversed() } else { d.events }
+
+  Column {
+    gap: 12
+    Row {
+      justify: .spaceBetween
+      align: .center
+      Text("{d.events.count()} events") {
+        font: .footnote
+        color: .secondaryLabel
+      }
+      Button(if newestFirst { "Newest First" } else { "Oldest First" }) {
+        icon: "arrow.up.arrow.down"
+        variant: .plain
+        on press { newestFirst = !newestFirst }
+      }
+    }
+    if events.isEmpty() {
+      Text("Nothing yet") { color: .secondaryLabel }
+    }
+    for e in events key e.key() {
+      match e {
+        .comment(_, who, body, at) => Card(who, "commented", at) { markdown.View(body) }
+        .review(_, who, verdict, body, at) => Card(who, match verdict {
+          .approved => "approved these changes"
+          .changesRequested => "requested changes"
+          _ => "reviewed"
+        }, at) {
+          tint: match verdict {
+            .approved => .green
+            .changesRequested => .orange
+            _ => .clear
+          }
+          if !body.trim().isEmpty() { markdown.View(body) }
+        }
+        .commit(oid, headline, who, at) => Row {
+          gap: 8
+          align: .center
+          padding: Edges(start: 4)
+          svg.View(iconBranch) {
+            width: 14
+            height: 14
+            color: .secondaryLabel
+          }
+          Text(headline) {
+            grow: 1
+            shrink: 1
+            lines: 1
+          }
+          Text(oid.slice(0, 7)) {
+            font: Font.footnote.family("Menlo")
+            color: .secondaryLabel
+          }
+        }
+        .happened(what, who, at) => Text("{who} {what} · {ago(at)}") {
+          font: .footnote
+          color: .secondaryLabel
+          padding: Edges(start: 4)
+        }
+      }
+    }
+  }
+}
+
+/// A comment or a review: who, what, when, and what they wrote.
+component Card(who: Actor, did: string, at: time.Time) {
+  prop tint: Color = .clear
+  prop children: View
+
+  Column {
+    gap: 8
+    padding: 12
+    radius: 10
+    border: 1
+    borderColor: if tint == .clear { .separator } else { tint }
+    Row {
+      gap: 6
+      align: .center
+      Avatar(who)
+      Text(who.login) { font: .subheadline.semibold() }
+      Text("{did} · {ago(at)}") {
+        font: .footnote
+        color: .secondaryLabel
+        shrink: 1
+      }
+    }
+    children
+  }
+}
+
+/// The files it changes; each one's patch shows under it when tapped.
+component Files(repo: string, number: int) {
+  use pulls: Pulls
+  let files = load pulls.files(repo, number)
+  state open = Set<string>()
+
+  match files {
+    .pending => ProgressRing()
+    .failed(e) => Text(e.message) { color: .secondaryLabel }
+    .ready(fs) => Column {
+      gap: 8
+      for f in fs key f.filename {
+        Column {
+          radius: 8
+          border: 1
+          borderColor: .separator
+          clip: true
+          Row {
+            gap: 8
+            align: .center
+            padding: [8, 10]
+            background: .secondaryBackground
+            on press {
+              let name = f.filename
+              if !open.remove(name) { open.insert(name) }
+            }
+            Symbol(if open.contains(f.filename) { "chevron.down" } else { "chevron.right" }) {
+              font: .caption
+              color: .secondaryLabel
+            }
+            Text(f.filename) {
+              font: Font.footnote.family("Menlo")
+              grow: 1
+              shrink: 1
+              lines: 1
+            }
+            Text("+{f.additions}") {
+              font: .footnote
+              color: .green
+            }
+            Text("−{f.deletions}") {
+              font: .footnote
+              color: .red
+            }
+          }
+          if open.contains(f.filename) { Patch(f.patch) }
+        }
+      }
+    }
+  }
+}
+
+/// A file's patch: added lines on green, removed on red, hunks in blue.
+component Patch(patch: string) {
+  let lines = patch.lines()
+
+  Scroll {
+    horizontal: true
+    Column {
+      padding: [6, 0]
+      if lines.isEmpty() {
+        Text("No changes to show (a binary file, or too large).") {
+          font: .footnote
+          color: .secondaryLabel
+          padding: [4, 10]
+        }
+      }
+      for (i, l) in lines.prefix(500).enumerated() key i {
+        Text(if l.isEmpty() { " " } else { l }) {
+          font: Font.footnote.family("Menlo")
+          padding: [1, 10]
+          lines: 1
+          color: if l.hasPrefix("@@") { .blue } else { .label }
+          background: if l.hasPrefix("+") { Color.green.opacity(0.15) } else if l.hasPrefix("-") { Color.red.opacity(0.15) } else { .clear }
+        }
+      }
+      if lines.count() > 500 {
+        Text("{lines.count() - 500} more lines on GitHub") {
+          font: .footnote
+          color: .secondaryLabel
+          padding: [4, 10]
+        }
+      }
+    }
+  }
+}
+
+/// A comment or a review, written: its verdict and what it says.
+component Composer(d: Detail, initial: Verdict) {
+  event done(verdict: Verdict, body: string)
+  event cancel
+  state verdict = initial
+  state body = ""
+
+  let verdicts = if d.pull.state == .open || d.pull.state == .draft { [Verdict.comment, .approve, .requestChanges] } else { [Verdict.comment] }
+  let ready = !body.trim().isEmpty() || verdict == .approve
+
+  SafeArea {
+    grow: 1
+    padding: 16
+    gap: 12
+    Row {
+      justify: .spaceBetween
+      align: .center
+      Button("Cancel") { on press { emit cancel } }
+      Text(if verdict == .comment { "Comment on #{d.pull.number}" } else { "Review #{d.pull.number}" }) { font: .headline }
+      Button("Submit") {
+        variant: .filled
+        disabled: !ready
+        on press { emit done(verdict, body.trim()) }
+      }
+    }
+    if verdicts.count() > 1 {
+      Segmented(verdicts.map(v => v.title())) {
+        selected: verdicts.index(v => v == verdict) ?? 0
+        on change(i) { verdict = verdicts[i] }
+      }
+    }
+    TextField {
+      bind text: body
+      multiline: true
+      placeholder: if verdict == .approve { "Leave a comment (optional)" } else { "Leave a comment" }
+      grow: 1
+    }
+  }
+}

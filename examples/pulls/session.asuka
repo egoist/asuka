@@ -1,0 +1,152 @@
+// Who's signed in: a GitHub token, kept in the platform's keychain
+// (platform/secure), checked with GitHub before it's kept. On a desktop
+// the GitHub CLI's sign-in can be used instead of making a token.
+
+import platform/device
+import platform/secure
+import std/command
+import std/json
+
+let tokenKey = "github-token"
+
+/// Where sign-in stands.
+enum Phase {
+  starting
+  signedOut
+  signedIn(token: string, login: string)
+}
+
+private struct ViewerData {
+  viewer: Actor
+}
+
+/// The session: its token, and signing in and out.
+store Session(transport: async fn(Request, string) throws -> Answer = send, keep: bool = true) {
+  /// How the API is reached: the network, or a test's answers.
+  pub let via = transport
+  pub state phase: Phase = .starting
+  pub state problem = ""
+  pub state checking = false
+
+  task {
+    let kept = if keep { try? await secure.read(tokenKey) } else { none }
+    if let token = kept ?? none {
+      if !(await signIn(token, keeping: false)) { phase = .signedOut }
+    } else {
+      phase = .signedOut
+    }
+  }
+
+  /// Signs in with token, once GitHub says whose it is; kept, unless it
+  /// was already. False, with the problem said, when it can't.
+  pub async fn signIn(token: string, keeping: bool = true) -> bool {
+    let t = token.trim()
+    if t.isEmpty() { return false }
+    checking = true
+    defer { checking = false }
+    do {
+      let gh = GitHub(t, transport: transport)
+      let d: ViewerData = try await gh.graphql("query \{ viewer \{ login avatarUrl } }")
+      if keeping && keep { try? await secure.write(tokenKey, t) }
+      problem = ""
+      phase = .signedIn(token: t, login: d.viewer.login)
+      return true
+    } catch e {
+      problem = e.message
+      return false
+    }
+  }
+
+  /// The GitHub CLI's token (gh auth token), on a desktop where it's
+  /// installed and signed in.
+  pub async fn signInWithCLI() -> bool {
+    do {
+      let out = try await command.run("gh", ["auth", "token"])
+      if out.code != 0 {
+        problem = "The GitHub CLI isn't signed in: run gh auth login, then try again."
+        return false
+      }
+      return await signIn(out.text().trim())
+    } catch e {
+      problem = "The GitHub CLI (gh) isn't installed: get it from cli.github.com, or use a token."
+      return false
+    }
+  }
+
+  pub async fn signOut() {
+    if keep { try? await secure.remove(tokenKey) }
+    phase = .signedOut
+  }
+}
+
+/// Signing in: a token, made on GitHub with the scopes the app needs.
+screen SignIn {
+  use session: Session
+  state token = ""
+
+  let newToken = "https://github.com/settings/tokens/new?scopes=repo,read:org&description=Pulls"
+
+  title: "Sign In"
+
+  SafeArea {
+    grow: 1
+    Scroll {
+      grow: 1
+      Column {
+        padding: 24
+        gap: 16
+        maxWidth: 480
+        alignSelf: .center
+        width: 100%
+        Column {
+          gap: 8
+          align: .center
+          padding: Edges(top: 24, bottom: 8)
+          StateIcon(.open) { size: 44 }
+          Text("Pulls") { font: .largeTitle.bold() }
+          Text("Your pull requests across GitHub: what needs your review, what's ready to merge.") {
+            color: .secondaryLabel
+            textAlign: .center
+          }
+        }
+        TextField {
+          bind text: token
+          placeholder: "Personal access token"
+          secure: true
+          autocapitalize: .off
+          autocorrect: .no
+          on submit { await session.signIn(token) }
+        }
+        if !session.problem.isEmpty() {
+          Text(session.problem) {
+            color: .red
+            font: .footnote
+          }
+        }
+        Button(if session.checking { "Signing In…" } else { "Sign In" }) {
+          variant: .filled
+          disabled: token.trim().isEmpty() || session.checking
+          on press { await session.signIn(token) }
+        }
+        Button("Create a Token on GitHub") {
+          icon: "key"
+          variant: .plain
+          on press { try? await device.browse(newToken) }
+        }
+        if @platform == .macOS || @platform == .windows || @platform == .linux {
+          Button("Use the GitHub CLI's Sign-In") {
+            icon: "chevron.left.forwardslash.chevron.right"
+            variant: .bordered
+            disabled: session.checking
+            on press { await session.signInWithCLI() }
+          }
+        }
+        Text("The token stays on this device, in its keychain. It needs the repo and read:org scopes.") {
+          font: .footnote
+          color: .secondaryLabel
+          textAlign: .center
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,111 @@
+// The app on the fake host, its API answered from here.
+
+let answers: [string: string] = [
+  "{firebase}/topstories.json": "[1, 2, 3]",
+  "{firebase}/newstories.json": "[3]",
+  "{firebase}/item/1.json": r#"{"id": 1, "type": "story", "by": "pg", "title": "Launch HN: Asuka", "url": "https://www.example.com/asuka", "score": 120, "descendants": 2, "time": 1700000000}"#,
+  "{firebase}/item/2.json": r#"{"id": 2, "type": "story", "by": "dang", "title": "Ask HN: What are you working on?", "text": "Tell us<p>about it", "score": 30, "descendants": 0, "time": 1700000000}"#,
+  "{firebase}/item/3.json": "null",
+  "{algolia}/items/1": r#"{"id": 1, "type": "story", "author": "pg", "title": "Launch HN: Asuka", "url": "https://www.example.com/asuka", "points": 121, "created_at_i": 1700000000, "children": [ {"id": 10, "author": "ada", "text": "Native widgets <i>everywhere</i>.", "created_at_i": 1700000100, "children": [ {"id": 11, "author": "grace", "text": "Even on Linux?", "created_at_i": 1700000200, "children": []} ]} ]}"#,
+  "{firebase}/user/pg.json": r#"{"id": "pg", "created": 1160418092, "karma": 157236, "about": "Bug fixer."}"#,
+  "{algolia}/search_by_date?hitsPerPage=30&page=0&tags=story%2Cauthor_pg": r#"{"hits": [{"objectID": "1", "title": "Launch HN: Asuka", "author": "pg", "points": 121, "num_comments": 2, "created_at_i": 1700000000}], "nbPages": 1}"#,
+  "{algolia}/search?hitsPerPage=30&page=0&query=asuka&tags=story": r#"{"hits": [{"objectID": "1", "title": "Launch HN: Asuka", "url": "https://example.com/asuka", "author": "pg", "points": 121, "num_comments": 2, "created_at_i": 1700000000}], "nbPages": 1}"#,
+]
+
+async fn fake(link: string) throws -> string = answers[link] ?? throw Error("no answer for {link}")
+
+/// Whether a text on screen has part in it: a line whose age is now's.
+fn showsPart(app: TestApp, part: string) -> bool = app.texts().any(t => t.contains(part))
+
+async fn offline(link: string) throws -> string = throw Error("The Internet connection appears to be offline.")
+
+test "the top stories, a thread, collapsing" {
+  let app = mount(Stack { FeedScreen(.top) }, provide: [HN(get: fake), Feeds(), Search(), Saved()])
+  await app.until("it shows", () => app.has("Launch HN: Asuka"))
+  app.expect("Ask HN: What are you working on?", "example.com")
+  expect(showsPart(app, "120 points · pg"), "the story's points and author")
+  app.tap("Launch HN: Asuka")
+  await app.until("it shows", () => app.has("Even on Linux?"))
+  app.expect("Native widgets everywhere.")
+  expect(showsPart(app, "121 points"), "the thread's points")
+  // Collapsing ada's comment hides grace's reply, and counts it.
+  app.tap("ada")
+  app.expectNo("Even on Linux?")
+  app.expect("+1")
+  app.tap("ada")
+  app.expect("Even on Linux?")
+}
+
+test "switching feeds" {
+  let app = mount(Stack { FeedScreen(.top) { switching: true } }, provide: [HN(get: fake), Feeds(), Search(), Saved()])
+  await app.until("it shows", () => app.has("Launch HN: Asuka"))
+  app.tap("Feeds")
+  app.tap("New")
+  await app.until("it shows", () => !app.has("Launch HN: Asuka"))
+  app.expect("No stories")
+}
+
+test "a user's profile" {
+  let app = mount(Stack { UserScreen("pg") }, provide: [HN(get: fake), Feeds(), Search(), Saved()])
+  await app.until("it shows", () => app.has("157236"))
+  app.expect("Bug fixer.", "Oct 2006", "Launch HN: Asuka")
+}
+
+test "searching" {
+  let app = mount(Stack { SearchScreen() }, provide: [HN(get: fake), Feeds(), Search(), Saved()])
+  app.type("asuka", into: "Search stories")
+  await app.until("it shows", () => app.has("Launch HN: Asuka"))
+  app.type("zzz", into: "Search stories")
+  await app.until("it shows", () => app.has("Couldn't load the stories"))
+}
+
+test "saving a story" {
+  let app = mount(Compact(), provide: [HN(get: fake), Feeds(), Search(), Saved()])
+  await app.until("it shows", () => app.has("Launch HN: Asuka"))
+  app.swipe("Launch HN: Asuka", action: "Save")
+  app.tap("Saved")
+  app.expect("Launch HN: Asuka")
+  app.swipe("Launch HN: Asuka", action: "Unsave")
+  app.expect("Swipe a story, or long-press it, to save it for later.")
+}
+
+test "offline, then Try Again" {
+  let app = mount(Stack { FeedScreen(.top) }, provide: [HN(get: offline), Feeds(), Search(), Saved()])
+  await app.until("it shows", () => app.has("Couldn't load the stories"))
+  app.expect("The Internet connection appears to be offline.", "Try Again")
+}
+
+test "the sidebar of feeds, where there's room" {
+  let app = mount(Wide(), provide: [HN(get: fake), Feeds(), Search(), Saved()])
+  app.in(.sidebar).expect("Top", "New", "Best", "Ask HN", "Show HN", "Jobs", "Search", "Saved")
+  await app.until("the top stories", () => app.has("Launch HN: Asuka"))
+  app.tap("New")
+  await app.until("the new stories", () => app.has("No stories"))
+}
+
+/// How many times the top stories were asked for.
+state topAsked = 0
+
+async fn counting(link: string) throws -> string {
+  if link.hasSuffix("/topstories.json") { topAsked += 1 }
+  return try await fake(link)
+}
+
+test "going to another feed and back keeps what's loaded" {
+  topAsked = 0
+  let app = mount(Wide(), provide: [HN(get: counting), Feeds(), Search(), Saved()])
+  await app.until("the top stories", () => app.has("Launch HN: Asuka"))
+  app.tap("New")
+  await app.until("the new stories", () => app.has("No stories"))
+  app.tap("Top")
+  app.expect("Launch HN: Asuka")
+  await app.idle()
+  expect(topAsked == 1, "the top stories asked for once, not again on coming back")
+  // The search, too, is as it was left.
+  app.tap("Search")
+  app.type("asuka", into: "Search stories")
+  await app.until("the results", () => app.has("Launch HN: Asuka"))
+  app.tap("Saved")
+  app.tap("Search")
+  app.expect("Launch HN: Asuka")
+}

@@ -1,0 +1,139 @@
+// Pulls: your pull requests across GitHub, after T3 Code's pull requests
+// page. Those you're involved in, waiting on your review, created by
+// you, assigned or mentioning you; filtered, searched and sorted by how
+// ready they are to merge. One in detail: its checks, reviews,
+// conversation and files, and what can be done with it: merge (in the
+// repository's methods), auto-merge, ready, convert to a draft, close,
+// reopen, delete its branch, comment and review.
+//
+// A sidebar of the lists where there's room (a tablet, a desktop's
+// window), the pull request chosen beside the list; tabs on a phone.
+//
+//   asuka dev --platform ios examples/pulls
+
+import platform/device
+
+app {
+  provide Session()
+  Window {
+    width: 1280
+    height: 820
+    minWidth: 720
+    minHeight: 480
+    stateKey: "main"
+    titleBar: .hidden
+    Root()
+  }
+}
+
+/// Signing in, or the signed-in user's pull requests.
+component Root {
+  use session: Session
+
+  match session.phase {
+    .starting => Column {
+      grow: 1
+      justify: .center
+      align: .center
+      ProgressRing()
+    }
+    .signedOut => Stack { SignIn() }
+    .signedIn(token, login) => SignedIn(token, login)
+  }
+}
+
+/// The API as the user signed in, and the lists.
+component SignedIn(token: string, login: string) {
+  use session: Session
+  provide GitHub(token, transport: session.via)
+  provide Pulls()
+  provide Lists()
+
+  if environment().widthClass == .compact { Compact(login) } else { Wide(login) }
+}
+
+/// A sidebar of the lists, beside the one chosen.
+component Wide(login: string) {
+  use lists: Lists
+
+  Split("Pulls") {
+    Sidebar("Pull Requests") {
+      for i in involvements {
+        Destination(i.title()) {
+          icon: i.icon()
+          badge: if lists.list(i).total > 0 && lists.list(i).filters.state == .open { "{lists.list(i).total}" } else { "" }
+          PullsScreen(i)
+        }
+      }
+    }
+    Sidebar(login) {
+      Destination("Account") {
+        icon: "person.circle"
+        AccountScreen(login)
+      }
+    }
+  }
+}
+
+/// Tabs: every pull request, those waiting on a review, the user's own,
+/// the account.
+component Compact(login: string) {
+  use lists: Lists
+
+  Tabs {
+    Tab("Inbox") {
+      icon: "tray"
+      Stack { PullsScreen(.all) }
+    }
+    Tab("Reviews") {
+      icon: "eye"
+      badge: if lists.list(.reviewing).total > 0 { "{lists.list(.reviewing).total}" } else { "" }
+      Stack { PullsScreen(.reviewing) }
+    }
+    Tab("Created") {
+      icon: "square.and.pencil"
+      Stack { PullsScreen(.authored) }
+    }
+    Tab("Account") {
+      icon: "person.circle"
+      Stack { AccountScreen(login) }
+    }
+  }
+}
+
+/// Who's signed in, and signing out.
+screen AccountScreen(login: string) {
+  use session: Session
+  state asking = false
+
+  title: "Account"
+  SafeArea {
+    grow: 1
+    Column {
+      padding: 24
+      gap: 16
+      align: .center
+      Avatar(Actor(login: login)) { size: 72 }
+      Text(login) { font: .title2.semibold() }
+      Button("Open Profile on GitHub") {
+        icon: "safari"
+        variant: .gray
+        on press { try? await device.browse("https://github.com/{login}") }
+      }
+      Button("Sign Out") {
+        role: .destructive
+        variant: .bordered
+        on press { asking = true }
+      }
+    }
+  }
+  Alert("Sign out of GitHub?") {
+    bind open: asking
+    message: "The token is removed from this device."
+    Button("Cancel") { role: .cancel }
+    Button("Sign Out") {
+      role: .destructive
+      on press { await session.signOut() }
+    }
+  }
+}

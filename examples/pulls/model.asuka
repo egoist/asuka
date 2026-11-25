@@ -1,0 +1,175 @@
+// What the app shows of a pull request, and how GitHub's GraphQL
+// answers read into it.
+
+import std/time
+
+/// A person (or an app) on GitHub.
+struct Actor {
+  login: string = ""
+  avatarUrl: string = ""
+}
+
+struct Label {
+  name: string
+  color: string = "888888"
+}
+
+/// Where a pull request is, in the filters' words.
+enum PullState {
+  open
+  draft
+  merged
+  closed
+
+  fn title() -> string = match self {
+    .open => "Open"
+    .draft => "Draft"
+    .merged => "Merged"
+    .closed => "Closed"
+  }
+
+  fn color() -> Color = match self {
+    .open => .green
+    .draft => .gray
+    .merged => .purple
+    .closed => .red
+  }
+}
+
+/// What a pull request's checks came to: GitHub's status rollup.
+enum Checks {
+  none
+  pending
+  passing
+  failing
+
+  static fn of(rollup: string) -> Checks = match rollup {
+    "SUCCESS" => .passing
+    "FAILURE" | "ERROR" => .failing
+    "PENDING" | "EXPECTED" => .pending
+    _ => .none
+  }
+}
+
+/// What its reviewers decided.
+enum Review {
+  none
+  required
+  approved
+  changesRequested
+
+  static fn of(decision: string) -> Review = match decision {
+    "APPROVED" => .approved
+    "CHANGES_REQUESTED" => .changesRequested
+    "REVIEW_REQUIRED" => .required
+    _ => .none
+  }
+}
+
+/// A pull request, as a list shows it.
+struct Pull {
+  id: string
+  number: int
+  title: string
+  url: string
+  repo: string
+  author: Actor
+  state: PullState
+  conflicting: bool
+  checks: Checks
+  review: Review
+  additions: int
+  deletions: int
+  labels: [Label]
+  requested: [string]
+  updated: time.Time
+  created: time.Time
+
+  fn owner() -> string = repo.split("/")[0]
+  fn name() -> string = repo.split("/").get(1) ?? ""
+  fn size() -> int = additions + deletions
+
+  /// How ready it is to merge, best first: approved and passing, then
+  /// passing, then the rest, then drafts, then what's done, then
+  /// what conflicts (T3 Code's "merge readiness").
+  fn readiness() -> int {
+    if conflicting && state == .open { return 5 }
+    if state == .merged || state == .closed { return 4 }
+    if state == .draft { return 3 }
+    if review == .approved && checks == .passing { return 0 }
+    if checks == .passing { return 1 }
+    return 2
+  }
+}
+
+// GraphQL's shapes: what the queries ask for, as they answer it.
+
+struct Node<T> {
+  nodes: [T] = []
+}
+
+struct RepoName {
+  nameWithOwner: string = ""
+}
+
+struct Reviewer {
+  login: string = ""
+  name: string = ""
+  avatarUrl: string = ""
+}
+
+struct ReviewRequest {
+  requestedReviewer: Reviewer? = none
+}
+
+struct Rollup {
+  state: string = ""
+}
+
+struct RollupCommit {
+  statusCheckRollup: Rollup? = none
+}
+
+struct LastCommit {
+  commit: RollupCommit
+}
+
+/// A pull request as the search and the details ask for it.
+struct PullNode {
+  id: string = ""
+  number: int = 0
+  title: string = ""
+  url: string = ""
+  state: string = ""
+  isDraft: bool = false
+  mergeable: string = ""
+  reviewDecision: string? = none
+  additions: int = 0
+  deletions: int = 0
+  createdAt: string = ""
+  updatedAt: string = ""
+  author: Actor? = none
+  repository: RepoName = RepoName()
+  labels: Node<Label> = Node()
+  reviewRequests: Node<ReviewRequest> = Node()
+  commits: Node<LastCommit> = Node()
+
+  fn pull() -> Pull = Pull(
+    id: id,
+    number: number,
+    title: title,
+    url: url,
+    repo: repository.nameWithOwner,
+    author: author ?? Actor(login: "ghost"),
+    state: if state == "MERGED" { .merged } else if state == "CLOSED" { .closed } else if isDraft { .draft } else { .open },
+    conflicting: mergeable == "CONFLICTING",
+    checks: Checks.of(commits.nodes.first()?.commit.statusCheckRollup?.state ?? ""),
+    review: Review.of(reviewDecision ?? ""),
+    additions: additions,
+    deletions: deletions,
+    labels: labels.nodes,
+    requested: reviewRequests.nodes.compactMap(r => r.requestedReviewer).map(r => if r.login.isEmpty() { r.name } else { r.login }),
+    updated: (try? time.parse(updatedAt)) ?? time.unix(0),
+    created: (try? time.parse(createdAt)) ?? time.unix(0),
+  )
+}

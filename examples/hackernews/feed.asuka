@@ -1,0 +1,375 @@
+// A feed's stories, a page at a time: its ids come first (all of them,
+// up to 500), then the stories of each page as the list nears its end.
+
+import platform/device
+import std/i18n
+import std/time
+
+/// When a story or comment was posted (Unix seconds), said relative to
+/// now in the language shown: "3 hours ago".
+fn posted(seconds: int) -> string = i18n.formatRelative(time.unix(seconds))
+
+/// A feed's stories, as far as the user has scrolled. It belongs to the
+/// app (Feeds), not to a screen: going to another feed and back shows
+/// what was loaded at once.
+store FeedModel(feed: Feed, hn: HN) {
+  pub state stories: [Story] = []
+  pub state problem = ""
+  pub state loading = false
+  pub state refreshing = false
+  state ids: [int] = []
+  state loadedAt = time.unix(0)
+
+  let pageSize = 30
+
+  pub let more = stories.count() < ids.count()
+
+  /// The feed, loaded unless it was in the last five minutes: as a
+  /// screen shows it.
+  pub async fn show() {
+    if loading || (!stories.isEmpty() && time.now().sub(loadedAt) < 5min) { return }
+    await refresh()
+  }
+
+  /// The feed from its start again: pulled, by the user's pull to
+  /// refresh, whose spinner shows meanwhile.
+  pub async fn refresh(pulled: bool = false) {
+    loading = true
+    refreshing = pulled
+    defer {
+      loading = false
+      refreshing = false
+    }
+    do {
+      let fresh = try await hn.ids(feed)
+      let first = try await hn.stories(fresh.prefix(pageSize))
+      ids = fresh
+      stories = first
+      problem = ""
+      loadedAt = time.now()
+    } catch e {
+      problem = e.message
+    }
+  }
+
+  /// The next page.
+  pub async fn next() {
+    if loading || !more { return }
+    loading = true
+    defer { loading = false }
+    do {
+      let page = ids.slice(stories.count(), stories.count() + pageSize)
+      let got = try await hn.stories(page)
+      // A story may have moved up into a page already shown.
+      let shown = Set(stories.map(s => s.id))
+      stories += got.filter(s => !shown.contains(s.id))
+      problem = ""
+    } catch e {
+      problem = e.message
+    }
+  }
+}
+
+/// Every feed's stories, and the story chosen in each: the app's.
+store Feeds {
+  use hn: HN
+
+  let top = FeedModel(.top, hn)
+  let new = FeedModel(.new, hn)
+  let best = FeedModel(.best, hn)
+  let ask = FeedModel(.ask, hn)
+  let show = FeedModel(.show, hn)
+  let jobs = FeedModel(.jobs, hn)
+
+  pub fn model(f: Feed) -> FeedModel = match f {
+    .top => top
+    .new => new
+    .best => best
+    .ask => ask
+    .show => show
+    .jobs => jobs
+  }
+}
+
+/// Whether there's room for a story's thread beside the list (a desktop's
+/// window, a tablet across), rather than pushed over it.
+fn sideBySide() -> bool = environment().width >= 900
+
+/// A feed's stories. With switching, its bar has a menu of the feeds
+/// (a phone's, where the feeds aren't in a sidebar). Where there's room,
+/// the story chosen shows beside the list.
+screen FeedScreen(initial: Feed) {
+  prop switching = false
+  use feeds: Feeds
+  state feed = initial
+  state chosen: Story? = none
+
+  let model = feeds.model(feed)
+
+  task(feed) { await model.show() }
+
+  title: feed.title()
+  toolbar {
+    if switching {
+      Button("Feeds") {
+        icon: "line.3.horizontal.decrease"
+        menu: allFeeds.map(f => .button(title: f.title(), icon: f.icon(), checked: f == feed, run: () => { feed = f }))
+      }
+    }
+    Button("Refresh") {
+      icon: "arrow.clockwise"
+      disabled: model.loading
+      on press { await model.refresh() }
+    }
+    if sideBySide() {
+      if let s = chosen {
+        StoryActions(s)
+      }
+    }
+  }
+  StoriesAndThread(model.stories, chosen?.id ?? 0) {
+    heading: feed.title()
+    loading: model.loading
+    refreshing: model.refreshing
+    problem: model.problem
+    on choose(s) { chosen = s }
+    on retry { await model.refresh() }
+    on refresh { await model.refresh(pulled: true) }
+    on end { await model.next() }
+  }
+}
+
+/// Stories, and the one chosen beside them where there's room; else the
+/// list alone, whose rows push their threads.
+component StoriesAndThread(stories: [Story], chosenId: int) {
+  prop heading = ""
+  prop loading = false
+  prop refreshing = false
+  prop problem = ""
+  prop ranked = true
+  prop empty = "No stories"
+  event choose(story: Story)
+  event retry
+  event refresh
+  event end
+
+  let chosen = stories.find(s => s.id == chosenId)
+  // Under a hidden title bar (a desktop's), the strip the window's
+  // buttons and the toolbar are in: the list's heading goes there, and
+  // the thread scrolls under the toolbar, cut off at its edge.
+  let bar = environment().safeTop
+
+  if sideBySide() {
+    Row {
+      grow: 1
+      Column {
+        width: 380
+        shrink: 0
+        if bar > 0 {
+          Row {
+            height: bar
+            align: .center
+            padding: [0, 20]
+            Text(heading) {
+              font: .title2.bold()
+              lines: 1
+            }
+          }
+        }
+        Stories(stories) {
+          loading: loading
+          refreshing: refreshing
+          problem: problem
+          ranked: ranked
+          empty: empty
+          selected: chosenId
+          on open(s) { emit choose(s) }
+          on retry { emit retry }
+          on refresh { emit refresh }
+          on end { emit end }
+        }
+      }
+      View {
+        width: 1
+        background: .separator
+      }
+      View {
+        grow: 1
+        // A thread of its own for each story: its spinner, its scroll
+        // position and what's collapsed in it start over, rather than
+        // the last story's showing while the next loads.
+        for s in (if let c = chosen { [c] } else { [] }) key s.id {
+          ThreadView(s)
+        }
+        if chosen == none {
+          Column {
+            grow: 1
+            padding: Edges(top: bar)
+            justify: .center
+            align: .center
+            gap: 8
+            Symbol("bubble.left.and.bubble.right") {
+              font: .largeTitle
+              color: .tertiaryLabel
+            }
+            Text("Choose a story to read its comments") { color: .secondaryLabel }
+          }
+        }
+      }
+    }
+  } else {
+    SafeArea {
+      grow: 1
+      Stories(stories) {
+        loading: loading
+        refreshing: refreshing
+        problem: problem
+        ranked: ranked
+        empty: empty
+        on retry { emit retry }
+        on refresh { emit refresh }
+        on end { emit end }
+      }
+    }
+  }
+}
+
+/// A list of stories, with what it's waiting for: the first page's
+/// spinner, a problem and its Retry, pull to refresh, more at its end.
+component Stories(stories: [Story]) {
+  prop loading = false
+  prop refreshing = false
+  prop problem = ""
+  prop ranked = true
+  prop empty = "No stories"
+  prop selected = 0
+  event open(story: Story)
+  event retry
+  event refresh
+  event end
+
+  use saved: Saved
+
+  if stories.isEmpty() {
+    Column {
+      grow: 1
+      justify: .center
+      align: .center
+      gap: 12
+      padding: 32
+      if loading {
+        ProgressRing()
+      } else if !problem.isEmpty() {
+        Symbol("wifi.exclamationmark") {
+          font: .largeTitle
+          color: .tertiaryLabel
+        }
+        Text("Couldn't load the stories") { font: .headline }
+        Text(problem) {
+          color: .secondaryLabel
+          textAlign: .center
+        }
+        Button("Try Again") {
+          variant: .tinted
+          on press { emit retry }
+        }
+      } else {
+        Text(empty) { color: .secondaryLabel }
+      }
+    }
+  } else {
+    List {
+      grow: 1
+      refreshing: refreshing
+      on refresh { emit refresh }
+      on endReached { emit end }
+      swipeActions: i => [saveAction(stories[i], saved)]
+      for (i, s) in stories.enumerated() key s.id {
+        StoryRow(s) {
+          rank: if ranked { i + 1 } else { 0 }
+          selected: s.id == selected
+          on open {
+            if open { emit open(s) } else { push(StoryScreen(s)) }
+          }
+        }
+      }
+    }
+  }
+}
+
+/// Saving a story, or forgetting it: a row's swipe, a menu's item.
+fn saveAction(s: Story, saved: Saved) -> Action = if saved.has(s.id) {
+  .button(title: "Unsave", icon: "bookmark.slash", run: () => saved.remove(s.id))
+} else {
+  .button(title: "Save", icon: "bookmark", run: () => saved.add(s))
+}
+
+/// A story in a list: its rank, title and site; its points, author, age
+/// and comments. Pressed, its thread; its menu opens, shares and saves.
+component StoryRow(story: Story) {
+  prop rank = 0
+  prop selected = false
+  event open
+  use saved: Saved
+
+  Menu {
+    longPress: true
+    actions: [
+      .button(title: "Open Link", icon: "safari", run: () => try? await device.browse(story.link())),
+      .button(title: "Share", icon: "square.and.arrow.up", run: () => device.share(story.link())),
+      .button(title: "Copy Link", icon: "link", run: () => device.copy(story.link())),
+      saveAction(story, saved),
+      .button(title: story.by, icon: "person", run: () => push(UserScreen(story.by))),
+    ]
+    Row {
+      gap: 12
+      padding: [10, 16]
+      align: .start
+      background: if selected { Color.accent.opacity(0.15) } else { .clear }
+      on press { emit open }
+      if rank > 0 {
+        Text("{rank}") {
+          font: .callout
+          color: .tertiaryLabel
+          width: 24
+          shrink: 0
+          textAlign: .end
+        }
+      }
+      Column {
+        grow: 1
+        shrink: 1
+        gap: 4
+        Text(story.title) { font: .headline }
+        if !story.site().isEmpty() {
+          Text(story.site()) {
+            font: .footnote
+            color: .secondaryLabel
+            lines: 1
+          }
+        }
+        Text(meta(story)) {
+          font: .footnote
+          color: .secondaryLabel
+          lines: 1
+        }
+      }
+      if saved.has(story.id) {
+        Symbol("bookmark.fill") {
+          font: .footnote
+          color: .orange
+        }
+      }
+    }
+  }
+}
+
+/// A story's points, author, age and comments, on a line.
+fn meta(s: Story) -> string {
+  var parts: [string] = []
+  if s.type != "job" { parts.push("{s.score} points") }
+  if !s.by.isEmpty() { parts.push(s.by) }
+  if s.time > 0 { parts.push(posted(s.time)) }
+  if s.type != "job" { parts.push(if s.descendants == 1 { "1 comment" } else { "{s.descendants} comments" }) }
+  return parts.joined(separator: " · ")
+}

@@ -1,0 +1,224 @@
+// The Hacker News API: the lists and items of its Firebase API
+// (hacker-news.firebaseio.com), and Algolia's (hn.algolia.com), which
+// answers a story's whole thread in one request, and searches.
+
+import std/http
+import std/json
+import std/url
+
+/// A list of stories on the site.
+enum Feed {
+  top
+  new
+  best
+  ask
+  show
+  jobs
+
+  fn title() -> string = match self {
+    .top => "Top"
+    .new => "New"
+    .best => "Best"
+    .ask => "Ask HN"
+    .show => "Show HN"
+    .jobs => "Jobs"
+  }
+
+  fn icon() -> string = match self {
+    .top => "flame"
+    .new => "clock"
+    .best => "star"
+    .ask => "questionmark.bubble"
+    .show => "sparkles"
+    .jobs => "briefcase"
+  }
+
+  fn path() -> string = match self {
+    .top => "topstories"
+    .new => "newstories"
+    .best => "beststories"
+    .ask => "askstories"
+    .show => "showstories"
+    .jobs => "jobstories"
+  }
+}
+
+let allFeeds: [Feed] = [.top, .new, .best, .ask, .show, .jobs]
+
+/// A story, an Ask HN, a job: an item at the top of a thread.
+struct Story {
+  id: int
+  title: string
+  url: string = ""
+  by: string = ""
+  score: int = 0
+  descendants: int = 0
+  time: int = 0
+  text: string = ""
+  type: string = "story"
+
+  /// The site it links to, without www: "" for a text post.
+  fn site() -> string = host(url)
+  fn link() -> string = if url.isEmpty() { "https://news.ycombinator.com/item?id={id}" } else { url }
+}
+
+/// A comment, and its replies.
+struct Comment {
+  id: int
+  author: string = ""
+  text: string = ""
+  createdAtI: int = 0
+  children: [Comment] = []
+}
+
+/// A story with its thread, as Algolia's items endpoint answers it.
+struct Thread {
+  id: int
+  title: string = ""
+  url: string = ""
+  author: string = ""
+  points: int = 0
+  text: string = ""
+  type: string = "story"
+  createdAtI: int = 0
+  children: [Comment] = []
+
+  fn story() -> Story = Story(
+    id: id,
+    title: title,
+    url: url,
+    by: author,
+    score: points,
+    descendants: count(children),
+    time: createdAtI,
+    text: text,
+    type: type,
+  )
+}
+
+/// A user's profile.
+struct User {
+  id: string
+  created: int = 0
+  karma: int = 0
+  about: string = ""
+}
+
+/// A comment as a row of a thread: how deep it is, and how many replies
+/// are under it.
+struct CommentRow {
+  comment: Comment
+  depth: int
+  replies: int
+}
+
+private struct Hit {
+  objectID: string
+  title: string = ""
+  url: string = ""
+  author: string = ""
+  points: int = 0
+  numComments: int = 0
+  createdAtI: int = 0
+  storyText: string = ""
+}
+
+private struct Hits {
+  hits: [Hit] = []
+  nbPages: int = 0
+}
+
+/// One page of search results.
+struct Results {
+  stories: [Story]
+  more: bool
+}
+
+/// How many comments a thread holds, replies included.
+fn count(cs: [Comment]) -> int = cs.map(c => 1 + count(c.children)).sum()
+
+/// The thread as rows, its replies under each comment, skipping those
+/// under a collapsed one (each still counted).
+fn rows(cs: [Comment], collapsed: Set<int>, depth: int = 0) -> [CommentRow] {
+  var out: [CommentRow] = []
+  for c in cs {
+    // A deleted comment with no replies is nothing to show.
+    if c.text.isEmpty() && c.author.isEmpty() && c.children.isEmpty() { continue }
+    out.push(CommentRow(comment: c, depth: depth, replies: count(c.children)))
+    if !collapsed.contains(c.id) { out += rows(c.children, collapsed, depth: depth + 1) }
+  }
+  return out
+}
+
+/// A URL's host without www.
+fn host(link: string) -> string {
+  let u = url.parse(link) else { return "" }
+  return u.host.trimPrefix("www.")
+}
+
+let firebase = "https://hacker-news.firebaseio.com/v0"
+let algolia = "https://hn.algolia.com/api/v1"
+
+/// GETs url's body as text: the network's, or a test's.
+async fn fetchText(link: string) throws -> string {
+  let r = try await http.get(link)
+  if !r.ok() { throw Error("Hacker News answered {r.status}") }
+  return r.text()
+}
+
+/// The site's API, over a transport (the network, or a test's answers).
+store HN(get: async fn(string) throws -> string = fetchText) {
+  /// The stories of a feed, in its order: their ids, which come first.
+  pub async fn ids(feed: Feed) throws -> [int] = try json.decode(try await get("{firebase}/{feed.path()}.json"))
+
+  /// The stories of ids, in their order; those deleted or dead left out.
+  pub async fn stories(ids: [int]) throws -> [Story] {
+    let found = try await all(ids, id => try await item(id), limit: 10)
+    return found.compactMap(s => s)
+  }
+
+  async fn item(id: int) throws -> Story? {
+    let text = try await get("{firebase}/item/{id}.json")
+    if text.trim() == "null" { return none }
+    let s: Story = try json.decode(text)
+    if s.title.isEmpty() { return none }
+    return s
+  }
+
+  /// A story with its whole thread.
+  pub async fn thread(id: int) throws -> Thread = try json.decode(try await get("{algolia}/items/{id}"))
+
+  /// A user's profile.
+  pub async fn user(id: string) throws -> User {
+    let text = try await get("{firebase}/user/{url.pathEscape(id)}.json")
+    if text.trim() == "null" { throw Error("No user named {id}") }
+    return try json.decode(text)
+  }
+
+  /// Stories matching query, the most relevant first; page counts from 0.
+  pub async fn search(query: string, page: int = 0) throws -> Results {
+    let q = url.encodeQuery(["query": query, "tags": "story", "page": "{page}", "hitsPerPage": "30"])
+    return try results(try await get("{algolia}/search?{q}"), page)
+  }
+
+  /// A user's latest stories.
+  pub async fn submissions(user: string, page: int = 0) throws -> Results {
+    let q = url.encodeQuery(["tags": "story,author_{user}", "page": "{page}", "hitsPerPage": "30"])
+    return try results(try await get("{algolia}/search_by_date?{q}"), page)
+  }
+
+  fn results(text: string, page: int) throws -> Results {
+    let h: Hits = try json.decode(text)
+    let stories = h.hits.map(x => Story(
+      id: x.objectID.toInt() ?? 0,
+      title: x.title,
+      url: x.url,
+      by: x.author,
+      score: x.points,
+      descendants: x.numComments,
+      time: x.createdAtI,
+      text: x.storyText,
+    ))
+    return Results(stories: stories, more: page + 1 < h.nbPages)
+  }
+}

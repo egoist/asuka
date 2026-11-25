@@ -1,0 +1,118 @@
+// A pull request's state and its checks and review, as GitHub's apps
+// draw them: Lucide's git icons (ISC), in each state's color.
+
+import std/svg
+
+let iconOpen = svg.Icon(r"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></svg>""")
+let iconDraft = svg.Icon(r"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M18 6V5"/><path d="M18 11v-1"/><line x1="6" x2="6" y1="9" y2="21"/></svg>""")
+let iconClosed = svg.Icon(r"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M6 9v12"/><path d="m21 3-6 6"/><path d="m21 9-6-6"/><path d="M18 11.5V15"/><circle cx="18" cy="18" r="3"/></svg>""")
+let iconMerged = svg.Icon(r"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>""")
+let iconBranch = svg.Icon(r"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>""")
+
+/// The icon of a pull request's state, in its color; a conflict shows
+/// as a red dot on it.
+component StateIcon(state: PullState) {
+  prop conflicting = false
+  prop size = 18.0
+  prop tint: Color? = none
+
+  View {
+    width: size
+    height: size
+    shrink: 0
+    label: state.title()
+    svg.View(match state {
+      .open => iconOpen
+      .draft => iconDraft
+      .merged => iconMerged
+      .closed => iconClosed
+    }) {
+      width: size
+      height: size
+      color: tint ?? state.color()
+    }
+    if conflicting {
+      View {
+        absolute: true
+        right: -2
+        bottom: -2
+        width: 8
+        height: 8
+        radius: 4
+        background: .red
+        border: 1.5
+        borderColor: .background
+        label: "Conflicts"
+      }
+    }
+  }
+}
+
+/// What the checks came to: passed, failed, running.
+component ChecksIcon(checks: Checks) {
+  if checks != .none {
+    Symbol(match checks {
+      .passing => "checkmark.circle.fill"
+      .failing => "xmark.circle.fill"
+      .pending => "clock.fill"
+      .none => "circle"
+    }) {
+      font: .footnote
+      color: match checks {
+        .passing => .green
+        .failing => .red
+        .pending => .orange
+        .none => .tertiaryLabel
+      }
+      label: match checks {
+        .passing => "Checks passed"
+        .failing => "Checks failed"
+        .pending => "Checks running"
+        .none => ""
+      }
+    }
+  }
+}
+
+/// What the reviewers decided.
+component ReviewIcon(review: Review) {
+  if review == .approved || review == .changesRequested {
+    Symbol(if review == .approved { "person.fill.checkmark" } else { "person.fill.xmark" }) {
+      font: .footnote
+      color: if review == .approved { .green } else { .orange }
+      label: if review == .approved { "Approved" } else { "Changes requested" }
+    }
+  }
+}
+
+/// A label, in its color.
+component LabelChip(label: Label) {
+  let tint = Color.parse(label.color) ?? .gray
+
+  Text(label.name) {
+    font: .caption
+    color: .label
+    padding: [2, 8]
+    radius: 9
+    background: tint.opacity(0.22)
+    border: 1
+    borderColor: tint.opacity(0.6)
+    lines: 1
+  }
+}
+
+/// A person's picture, round.
+component Avatar(actor: Actor) {
+  prop size = 20.0
+
+  Image(if actor.avatarUrl.isEmpty() { "https://github.com/{actor.login}.png?size=80" } else { actor.avatarUrl }) {
+    width: size
+    height: size
+    shrink: 0
+    radius: size / 2
+    clip: true
+    mode: .fill
+    background: .secondaryBackground
+    label: actor.login
+  }
+}

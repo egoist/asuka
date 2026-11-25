@@ -1,0 +1,82 @@
+// Hacker News writes comments and posts in a little HTML: paragraphs
+// (<p>), italics, links, and code (<pre><code>). spans makes a
+// RichText's spans of it; a paragraph quoting another comment (starting
+// with ">") is set off in the secondary color.
+
+import std/html
+
+/// text, HN's HTML, as spans: links as links, code in a mono font.
+fn spans(text: string) -> [Span] {
+  var out: [Span] = []
+  for (i, para) in text.split("<p>").enumerated() {
+    if para.trim().isEmpty() { continue }
+    if !out.isEmpty() { out.push(Span(text: "\n\n")) }
+    let quote = html.unescape(para).trimStart().hasPrefix(">")
+    out += inline(para, quote)
+  }
+  return out
+}
+
+/// The spans of a paragraph's tags and text.
+private fn inline(para: string, quote: bool) -> [Span] {
+  var out: [Span] = []
+  var italic = false
+  var mono = false
+  var link = ""
+  var rest = para
+  while !rest.isEmpty() {
+    let lt = rest.find("<") ?? rest.byteCount()
+    if lt > 0 {
+      var t = html.unescape(rest.byteSlice(0, lt))
+      if mono { t = t.trimSuffix("\n") }
+      out.push(Span(
+        text: t,
+        italic: italic || quote,
+        mono: mono,
+        color: if quote { .secondaryLabel } else { .default },
+        link: link,
+      ))
+    }
+    if lt >= rest.byteCount() { break }
+    let gt = rest.find(">") ?? rest.byteCount() - 1
+    let tag = rest.byteSlice(lt + 1, gt).lower()
+    rest = rest.byteSlice(gt + 1)
+    if tag == "i" || tag == "em" {
+      italic = true
+    } else if tag == "/i" || tag == "/em" {
+      italic = false
+    } else if tag == "pre" {
+      out.push(Span(text: "\n"))
+    } else if tag == "code" {
+      mono = true
+    } else if tag == "/code" {
+      mono = false
+    } else if tag.hasPrefix("a ") {
+      link = html.unescape(attribute(tag, "href"))
+    } else if tag == "/a" {
+      link = ""
+    }
+  }
+  return out
+}
+
+/// The value of a tag's attribute name, as written ("" when it has none).
+private fn attribute(tag: string, name: string) -> string {
+  let at = tag.find("{name}=\"") else { return "" }
+  let from = at + name.byteCount() + 2
+  let value = tag.byteSlice(from)
+  let end = value.find("\"") ?? value.byteCount()
+  return value.byteSlice(0, end)
+}
+
+/// text, HN's HTML, as plain text: for a preview, or a share.
+fn plain(text: string) -> string = spans(text).map(s => s.text).joined(separator: "")
+
+test "html as spans" {
+  let s = spans("Hi <i>there</i>.<p>&gt; quoted<p>See <a href=\"https:&#x2F;&#x2F;example.com&#x2F;a\" rel=\"nofollow\">example.com&#x2F;a</a><p><pre><code>  let x = 1\n</code></pre>")
+  expect(plain("Hi <i>there</i>.") == "Hi there.")
+  expect(s[1].text == "there" && s[1].italic)
+  expect(s.any(x => x.text == "> quoted" && x.italic))
+  expect(s.any(x => x.link == "https://example.com/a" && x.text == "example.com/a"))
+  expect(s.any(x => x.mono && x.text == "  let x = 1"))
+}

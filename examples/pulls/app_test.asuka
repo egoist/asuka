@@ -1,0 +1,121 @@
+// The app on the fake host, GitHub answered from here: what it asks
+// for, and the changes it makes, recorded.
+
+/// The mutations sent, by name and what they said.
+state sent: [string] = []
+
+let searchAnswer = r"""
+{"data": {"viewer": {"login": "ada", "avatarUrl": ""}, "search": {"issueCount": 2, "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [
+  {"id": "PR_1", "number": 12, "title": "Add the merge queue", "url": "https://github.com/acme/app/pull/12", "state": "OPEN", "isDraft": false, "mergeable": "MERGEABLE", "reviewDecision": "APPROVED", "additions": 120, "deletions": 8, "createdAt": "2026-11-20T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z", "author": {"login": "ada", "avatarUrl": ""}, "repository": {"nameWithOwner": "acme/app"}, "labels": {"nodes": [{"name": "feature", "color": "a2eeef"}]}, "reviewRequests": {"nodes": []}, "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}},
+  {"id": "PR_2", "number": 7, "title": "Fix the flaky login test", "url": "https://github.com/acme/api/pull/7", "state": "OPEN", "isDraft": false, "mergeable": "CONFLICTING", "reviewDecision": "REVIEW_REQUIRED", "additions": 3, "deletions": 40, "createdAt": "2026-11-22T10:00:00Z", "updatedAt": "2026-11-25T08:00:00Z", "author": {"login": "bob", "avatarUrl": ""}, "repository": {"nameWithOwner": "acme/api"}, "labels": {"nodes": []}, "reviewRequests": {"nodes": [{"requestedReviewer": {"login": "ada"}}]}, "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE"}}}]}}
+]}}}
+  """
+
+let detailAnswer = r"""
+{"data": {"repository": {"mergeCommitAllowed": true, "squashMergeAllowed": true, "rebaseMergeAllowed": false, "autoMergeAllowed": true, "viewerPermission": "WRITE", "pullRequest": {
+  "id": "PR_1", "number": 12, "title": "Add the merge queue", "url": "https://github.com/acme/app/pull/12", "body": "Queues **merges** so main stays green.", "state": "OPEN", "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "reviewDecision": "APPROVED", "additions": 120, "deletions": 8, "changedFiles": 2, "createdAt": "2026-11-20T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z", "headRefName": "merge-queue", "baseRefName": "main", "viewerCanUpdate": true, "headRef": {"id": "REF_1"}, "autoMergeRequest": null,
+  "author": {"login": "ada", "avatarUrl": ""}, "repository": {"nameWithOwner": "acme/app"}, "labels": {"nodes": [{"name": "feature", "color": "a2eeef"}]},
+  "reviewRequests": {"nodes": [{"requestedReviewer": {"name": "core-team"}}]},
+  "latestOpinionatedReviews": {"nodes": [{"state": "APPROVED", "author": {"login": "grace", "avatarUrl": ""}}]},
+  "commits": {"totalCount": 3, "nodes": [{"commit": {"oid": "abc1234def", "statusCheckRollup": {"state": "SUCCESS", "contexts": {"nodes": [
+    {"kind": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://ci.example.com/1"},
+    {"kind": "StatusContext", "context": "coverage", "state": "SUCCESS", "targetUrl": "", "description": "92%"}
+  ]}}}}]},
+  "timelineItems": {"nodes": [
+    {"kind": "PullRequestCommit", "id": "C_1", "commit": {"oid": "abc1234def", "messageHeadline": "Queue merges", "committedDate": "2026-11-20T10:00:00Z", "author": {"name": "Ada", "user": {"login": "ada"}}}},
+    {"kind": "IssueComment", "id": "IC_1", "author": {"login": "bob", "avatarUrl": ""}, "body": "Nice, does it handle reverts?", "createdAt": "2026-11-21T10:00:00Z"},
+    {"kind": "PullRequestReview", "id": "R_1", "author": {"login": "grace", "avatarUrl": ""}, "body": "", "state": "APPROVED", "submittedAt": "2026-11-22T10:00:00Z"}
+  ]}
+}}}}
+  """
+
+let filesAnswer = r#"[{"filename": "queue.go", "status": "added", "additions": 2, "deletions": 0, "patch": "@@ -0,0 +1,2 @@\n+package queue\n+func Run() {}"}, {"filename": "README.md", "status": "modified", "additions": 0, "deletions": 1, "patch": "@@ -1,2 +1,1 @@\n-old line"}]"#
+
+async fn fake(r: Request, token: string) throws -> Answer {
+  if token != "good" { return Answer(status: 401, body: r#"{"message": "Bad credentials"}"#) }
+  if r.path.hasSuffix("/files?per_page=100&page=1") { return Answer(status: 200, body: filesAnswer) }
+  let b = r.body
+  if b.contains("mutation(") {
+    let name = b.split("Input!")[0].split(": ").last() ?? ""
+    let input = b.split("input").last() ?? ""
+    sent.push("{name} {input}")
+    return Answer(status: 200, body: r#"{"data": {"x": {"clientMutationId": null}}}"#)
+  }
+  if b.contains("search(query") { return Answer(status: 200, body: searchAnswer) }
+  if b.contains("pullRequest(number") { return Answer(status: 200, body: detailAnswer) }
+  return Answer(status: 200, body: r#"{"data": {"viewer": {"login": "ada", "avatarUrl": ""}}}"#)
+}
+
+/// Whether a text on screen has part in it.
+fn showsPart(app: TestApp, part: string) -> bool = app.texts().any(t => t.contains(part))
+
+test "signing in, and a bad token" {
+  let app = mount(Root(), provide: Session(transport: fake, keep: false))
+  await app.until("the sign-in", () => app.has("Sign In"))
+  app.type("nope", into: "Personal access token")
+  app.tap("Sign In")
+  await app.until("the problem", () => app.has("GitHub didn't accept the token: sign in again."))
+  app.type("good", into: "Personal access token")
+  app.tap("Sign In")
+  await app.until("the pull requests", () => app.has("Add the merge queue"))
+  app.expect("Created by You", "Review Requested", "Fix the flaky login test")
+}
+
+test "a pull request: its summary, merging it" {
+  sent = []
+  let app = mount(Stack { PullsScreen(.all) }, provide: [GitHub("good", transport: fake), Pulls(), Lists()])
+  await app.until("the list", () => app.has("Add the merge queue"))
+  app.tap("Add the merge queue")
+  await app.until("the details", () => app.has("Squash and Merge"))
+  app.expect("Queues merges so main stays green.", "grace", "Approved", "core-team", "Awaiting review", "build", "coverage", "merge-queue")
+  expect(showsPart(app, "wants to merge 3 commits"), "the commits")
+  app.tap("Squash and Merge")
+  app.expect("Squash and Merge #12?")
+  app.tap("Merge")
+  await app.until("the merge", () => !sent.isEmpty())
+  expect(sent.count() == 1 && sent[0].hasPrefix("MergePullRequest") && sent[0].contains("SQUASH"), "merged by squashing: {sent}")
+}
+
+test "the merge method, the conversation and the files" {
+  sent = []
+  let app = mount(Stack { PullScreen("acme/app", 12) }, provide: [GitHub("good", transport: fake), Pulls(), Lists()])
+  await app.until("the details", () => app.has("Squash and Merge"))
+  app.tap("Merge Method")
+  app.tap("Create a Merge Commit")
+  app.expect("Merge")
+  app.tap("Conversation")
+  app.expect("Nice, does it handle reverts?", "Queue merges", "abc1234")
+  app.tap("Files")
+  await app.until("the files", () => app.has("queue.go"))
+  app.tap("queue.go")
+  app.expect("+package queue")
+}
+
+test "reviewing, closing" {
+  sent = []
+  let app = mount(Stack { PullScreen("acme/app", 12) }, provide: [GitHub("good", transport: fake), Pulls(), Lists()])
+  await app.until("the details", () => app.has("Squash and Merge"))
+  app.tap("Review")
+  app.type("Looks good", into: "Leave a comment (optional)")
+  app.tap("Submit")
+  await app.until("the review", () => sent.any(s => s.hasPrefix("AddPullRequestReview")))
+  expect(sent.any(s => s.contains("APPROVE") && s.contains("Looks good")), "approved: {sent}")
+  app.tap("More")
+  app.tap("Close Pull Request")
+  await app.until("the close", () => sent.any(s => s.hasPrefix("ClosePullRequest")))
+}
+
+test "a conflict, a failed check, a review asked of the user" {
+  let app = mount(Stack { PullsScreen(.all) }, provide: [GitHub("good", transport: fake), Pulls(), Lists()])
+  await app.until("the list", () => app.has("Fix the flaky login test"))
+  app.expect("Conflicts", "Checks failed", "Checks passed", "Approved", "acme/api #7")
+}
+
+test "the sidebar of lists, with counts" {
+  let app = mount(Wide("ada"), provide: [Session(transport: fake, keep: false), GitHub("good", transport: fake), Pulls(), Lists()])
+  app.in(.sidebar).expect("Involved", "Review Requests", "Created", "Assigned", "Mentioned", "Account")
+  await app.until("the list", () => app.has("Add the merge queue"))
+  app.in(.sidebar).expect("2")
+  app.tap("Account")
+  app.expect("Sign Out")
+}

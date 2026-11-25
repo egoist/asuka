@@ -1,0 +1,5 @@
+name = "Hacker News"
+id = "dev.asuka.hackernews"
+version = "1.0.0"
+build = 1
+orientations = ["portrait", "landscape"]

@@ -1,0 +1,66 @@
+// Hacker News: the site's feeds, a story's thread, people's profiles,
+// search, and stories saved for later. A sidebar of the feeds where
+// there's room (a tablet, a desktop's window); tabs on a phone, the feeds
+// in a menu.
+//
+//   asuka dev --platform ios examples/hackernews
+
+app {
+  provide HN()
+  provide Feeds()
+  provide Search()
+  provide Saved()
+  // A desktop's window: big enough for the feeds, the stories and a
+  // thread side by side, where the user left it last time.
+  Window {
+    width: 1280
+    height: 820
+    minWidth: 720
+    minHeight: 480
+    stateKey: "main"
+    titleBar: .hidden
+    if environment().widthClass == .compact { Compact() } else { Wide() }
+  }
+}
+
+/// A sidebar of the feeds, beside the one chosen.
+component Wide {
+  Split("Hacker News") {
+    Sidebar("Feeds") {
+      for f in allFeeds {
+        Destination(f.title()) {
+          icon: f.icon()
+          FeedScreen(f)
+        }
+      }
+    }
+    Sidebar("Library") {
+      Destination("Search") {
+        icon: "magnifyingglass"
+        SearchScreen()
+      }
+      Destination("Saved") {
+        icon: "bookmark"
+        SavedScreen()
+      }
+    }
+  }
+}
+
+/// Tabs: the stories (the feeds in their bar's menu), search, saved.
+component Compact {
+  Tabs {
+    Tab("Stories") {
+      icon: "newspaper"
+      Stack { FeedScreen(.top) { switching: true } }
+    }
+    Tab("Search") {
+      icon: "magnifyingglass"
+      Stack { SearchScreen() }
+    }
+    Tab("Saved") {
+      icon: "bookmark"
+      Stack { SavedScreen() }
+    }
+  }
+}

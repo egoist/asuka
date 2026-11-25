@@ -1,0 +1,35 @@
+// The stories the user saved, kept on the device.
+
+import std/storage
+
+store Saved {
+  let kept = storage.Value<[Story]>("saved", [])
+
+  pub let stories = kept.value
+
+  pub fn has(id: int) -> bool = kept.value.any(s => s.id == id)
+  pub fn add(s: Story) {
+    if !has(s.id) { kept.value = [s] + kept.value }
+  }
+  pub fn remove(id: int) { kept.value = kept.value.filter(s => s.id != id) }
+}
+
+screen SavedScreen {
+  use saved: Saved
+  state chosen: Story? = none
+
+  title: "Saved"
+  toolbar {
+    if sideBySide() {
+      if let s = chosen {
+        StoryActions(s)
+      }
+    }
+  }
+  StoriesAndThread(saved.stories, chosen?.id ?? 0) {
+    heading: "Saved"
+    ranked: false
+    empty: "Swipe a story, or long-press it, to save it for later."
+    on choose(s) { chosen = s }
+  }
+}
