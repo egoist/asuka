@@ -1,0 +1,46 @@
+// Zoom From pushes a tile's screen out of the tile (e2e's
+// TestZoomFromWeb): a stack of a grid of colored tiles, each shared as
+// "tile-<n>", each pushing a screen that zooms from it.
+
+component Tiles {
+  Column {
+    padding: 16
+    gap: 12
+    for i in 1..<5 key i {
+      View {
+        label: "Tile {i}"
+        height: 80
+        radius: 12
+        background: #3366cc
+        shared: "tile-{i}"
+        on press { push(Tile(i)) }
+        Text("Tile {i}") { color: #ffffff }
+      }
+    }
+  }
+}
+
+screen Tile(n: int) {
+  title: "Tile {n}"
+  zoomFrom: "tile-{n}"
+  View {
+    grow: 1
+    background: #3366cc
+    Text("Detail {n}") { color: #ffffff }
+  }
+}
+
+screen Home {
+  title: "Tiles"
+  Tiles()
+}
+
+app {
+  Stack { Home() }
+}
+
+test "a tile pushes its screen" {
+  let app = mount(Stack { Home() })
+  app.tap("Tile 2")
+  app.expect("Detail 2")
+}

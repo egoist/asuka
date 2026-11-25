@@ -125,7 +125,12 @@ export class Motion {
     return true;
   }
 
-  match(n, key) { n.match = key || ""; }
+  match(n, key) {
+    n.match = key || "";
+    // For a screen that zooms out of the view (nav.js's zoom).
+    if (n.match) n.el?.setAttribute("data-asuka-shared", n.match);
+    else n.el?.removeAttribute("data-asuka-shared");
+  }
 
   /** matchViews moves each view that came in with a Match key from where the one that went out was, and that one to it, fading. */
   matchViews() {

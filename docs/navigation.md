@@ -312,7 +312,9 @@ screen Photo(id: int) {
 On iOS this is the system's zoom transition (iOS 18 and later; before
 that, the screen pushes as usual). Android does its own zoom, and
 popping with the predictive back gesture goes back into the view. The
-desktops and the web push and pop as usual.
+web zooms too: the screen grows from the view's place, clipped to it,
+and shrinks back into it as it's popped. The desktops push and pop as
+usual.
 [`examples/gallery`](../examples/gallery)'s photo grid does this.
 
 ## Back

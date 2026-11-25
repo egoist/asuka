@@ -3,7 +3,9 @@
 //   - A Stack shows its top Screen under a header bar of its own (as the
 //     Windows host's): a back button while there's a screen to go back
 //     to, the screen's title, its bar buttons, its search field. Pushes
-//     and pops slide (they cross-fade with reduced motion).
+//     and pops slide (they cross-fade with reduced motion); a screen with
+//     zoomFrom grows out of the view on the screen below that shares its
+//     key, and goes back into it.
 //   - A screen's Toolbar is a bar at the bottom of its stack, under the
 //     screens (the buttons that don't fit in a More options menu), and its
 //     Primary action a floating button at the bottom trailing corner, over
@@ -473,6 +475,14 @@ export class Navigation {
       (push ? inS : outS).el.animate([{ opacity: push ? 0 : 1 }, { opacity: push ? 1 : 0 }], opts).onfinish = finish;
       return;
     }
+    // A screen that zooms out of a view on the screen below (zoomFrom,
+    // the view's shared key) grows from it and goes back into it.
+    const top = push ? inS : outS, under = push ? outS : inS;
+    const src = top?.zoomFrom && under?.el ? sharedIn(under.el, top.zoomFrom) : null;
+    if (src?.isConnected) {
+      this.zoom(top, src, push, finish);
+      return;
+    }
     if (push) {
       inS.el.animate([{ transform: `translateX(${away}px)` }, { transform: "none" }], opts).onfinish = finish;
       outS?.el.animate([{ transform: "none" }, { transform: `translateX(${-away / 3}px)` }], opts);
@@ -480,6 +490,40 @@ export class Navigation {
       outS.el.animate([{ transform: "none" }, { transform: `translateX(${away}px)` }], opts).onfinish = finish;
       inS?.el.animate([{ transform: `translateX(${-away / 3}px)` }, { transform: "none" }], opts);
     }
+  }
+
+  /**
+   * zoom animates a push out of src (a view on the screen below) or a pop
+   * back into it, as iOS's zoom transition and Material's container
+   * transform do: the screen scales from the view's place, clipped to its
+   * shape, its corners rounding, and the view hides while the screen
+   * stands for it. Measured once the screen is laid out (the frames come
+   * after the batch that pushed it), hidden until then.
+   */
+  zoom(screen, from, push, done) {
+    const el = screen.el;
+    if (push) el.style.opacity = "0";
+    requestAnimationFrame(() => {
+      el.style.opacity = "";
+      const s = el.getBoundingClientRect(), r = from.getBoundingClientRect();
+      if (!s.width || !s.height || !r.width || !r.height || !from.isConnected) { done(); return; }
+      // Uniform scale, the screen centered on the view's center, clipped
+      // to the view's rectangle (in the screen's own coordinates).
+      const k = Math.max(r.width / s.width, r.height / s.height);
+      const tx = r.left + r.width / 2 - s.left - (k * s.width) / 2, ty = r.top + r.height / 2 - s.top - (k * s.height) / 2;
+      const l = (r.left - s.left - tx) / k, t = (r.top - s.top - ty) / k;
+      const rr = (s.width - l - r.width / k), bb = (s.height - t - r.height / k);
+      const radius = parseFloat(getComputedStyle(from).borderTopLeftRadius) || 12;
+      const small = { transformOrigin: "0 0", transform: `translate(${tx}px, ${ty}px) scale(${k})`, clipPath: `inset(${t}px ${rr}px ${bb}px ${l}px round ${radius / k}px)` };
+      const full = { transformOrigin: "0 0", transform: "none", clipPath: "inset(0px 0px 0px 0px round 0px)" };
+      from.style.visibility = "hidden";
+      const a = el.animate(push ? [small, full] : [full, small], { duration: 450, easing: "cubic-bezier(0.32, 0.72, 0, 1)", fill: "forwards" });
+      a.onfinish = a.oncancel = () => {
+        from.style.visibility = "";
+        if (push) a.cancel();
+        done();
+      };
+    });
   }
 
   /** goBack is the user's back on a stack: the top screen asks the core (ui.OnBack), or slides out, then the core hears it was popped. */
@@ -1543,6 +1587,7 @@ const screen = {
       case P.Screen.Title: n.title = v; break;
       case P.Screen.Actions: n.actions = decodeActions(v); break;
       case P.Screen.BackGesture: n.backGesture = !!v; return;
+      case P.Screen.ZoomFrom: n.zoomFrom = v || ""; return;
       case P.Screen.Icon: n.icon = v; break;
       case P.Screen.Search: n.search = v; break;
       case P.Screen.SearchText: n.searchText = v; break;
@@ -1993,3 +2038,8 @@ export const navKinds = {
   [Kind.Split]: split,
   [Kind.Snackbar]: snackbarKind,
 };
+
+/** sharedIn is the element under el (a screen's) of the view whose shared key (Match: motion.js marks it) is key, or null: a List's rows too. */
+function sharedIn(el, key) {
+  return el.querySelector(`[data-asuka-shared="${CSS.escape(key)}"]`);
+}

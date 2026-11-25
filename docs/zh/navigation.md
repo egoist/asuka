@@ -206,7 +206,7 @@ screen Photo(id: int) {
 }
 ```
 
-在 iOS 上，这用的是系统的缩放过渡（iOS 18 及以上；更早的版本照常推入）。Android 上是 Asuka 自己实现的缩放，用预测性返回手势弹出时也会缩回到视图里。桌面端和 Web 照常推入和弹出。[`examples/gallery`](../../examples/gallery) 的照片网格就用了这个效果。
+在 iOS 上，这用的是系统的缩放过渡（iOS 18 及以上；更早的版本照常推入）。Android 上是 Asuka 自己实现的缩放，用预测性返回手势弹出时也会缩回到视图里。Web 上也会缩放：页面从视图所在的位置、按视图的形状裁剪着长出来，弹出时再缩回视图里。桌面端照常推入和弹出。[`examples/gallery`](../../examples/gallery) 的照片网格就用了这个效果。
 
 ## 返回
 
