@@ -229,13 +229,3 @@ uint8_t *wh_glyph_coverage(uint16_t glyph, const wchar_t *face, int size) {
 	return out;
 }
 
-// wh_app_icon is the app's icon (its executable's first icon resource).
-HICON wh_app_icon(void) {
-	static HICON icon;
-	static bool tried;
-	if (!tried) {
-		tried = true;
-		icon = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(1));
-	}
-	return icon;
-}

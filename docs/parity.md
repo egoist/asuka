@@ -174,6 +174,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Custom fonts | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`, `Font(family:)` |
 | Lifecycle | `scenePhase` | AppState | ✓ `onLifecycle` |
 | Launch screen | `UILaunchScreen` | `expo-splash-screen` | ✓ `asuka.toml`'s `splash`; `platform/splash` holds it while the app loads |
+| Alternate app icons | `setAlternateIconName` | community (`expo-dynamic-app-icon`) | ✓ `asuka.toml`'s `alternateIcons`, `platform/appicon`'s `set` (iOS's home screen; Android's launcher, as the app leaves the screen; the Mac's Dock, Windows' windows and taskbar, the web page's icon; not on Linux, whose launchers show the desktop file's) |
 | Status bar, navigation bar | `statusBarHidden`, `preferredStatusBarStyle` | `expo-status-bar`, `expo-navigation-bar` | ✓ `screen.setBars` (`platform/screen`) |
 | Orientation lock | `supportedInterfaceOrientations` | `expo-screen-orientation` | ✓ `screen.lock` |
 | Screenshots | `isCaptured`, `userDidTakeScreenshotNotification` | `expo-screen-capture` | ✓ `screen.preventCapture` (Android: black captures; iOS: covered while recorded; macOS and Windows: the windows left out), `screen.screenshots()` |

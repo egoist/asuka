@@ -81,6 +81,7 @@ Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.pli
 | `platform/background` | 任务会阻止 App Nap 拖慢应用；没有通知，所以 `update` 不起作用 |
 | `platform/periodic` | `NSBackgroundActivityScheduler`：任务只在应用运行期间执行（系统不会为了它们启动应用）；需要接通电源的任务，会在 Mac 使用电池时等待 |
 | `platform/screen` | `lock`、`setBars` 和 `setBrightness` 什么也不做；`preventCapture` 让应用的窗口不出现在截图和录屏中；`screenshots()` 不会报告任何截图 |
+| `platform/appicon` | `set` 在应用运行期间更换程序坞里的图标，下次启动时也会换上；访达里仍是应用自己的图标 |
 | `platform/transcribe` | 只在本机识别；应用的 bundle 需要它的用途说明，这一项由 `asuka build` 写入 |
 | `platform/sensors` | Mac 没有运动传感器：`available` 为 false，各个流和 `steps` 都会抛出 `SensorError.notAvailable` |
 | `device.haptic` | 触控板的反馈（需要 Force Touch 触控板）：`.selection` 对应“对齐”反馈，其他类型对应“级别变化”反馈 |
@@ -121,6 +122,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `platform/background` | 任务会阻止电脑进入睡眠；没有通知，所以 `update` 不起作用 |
 | `platform/periodic` | 应用运行期间用定时器执行（系统不会为了它们启动应用）；需要接通电源的任务，会在电脑使用电池时等待 |
 | `platform/screen` | `lock`、`setBars` 和 `setBrightness` 什么也不做；`preventCapture` 让应用的窗口不出现在截图和录屏中；`screenshots()` 不会报告任何截图 |
+| `platform/appicon` | `set` 更换应用窗口和任务栏按钮的图标，下次启动时也会换上；开始菜单和可执行文件仍是应用自己的图标 |
 | `platform/tracking` | 没有提示框：“设置”中的广告 ID 开着就是允许，否则就是拒绝 |
 | `platform/push`、`platform/widget`、`platform/review`、`platform/integrity` | 这些能力只属于打包（应用商店）应用，或者依赖 Apple 和 Google 的服务：`push.register` 会抛出错误，`widget.set` 什么也不做，`review.request` 不显示任何东西，`integrity.supported()` 为 false |
 | `platform/liveactivity` | 这是手机的能力：`enabled` 为 false，`start` 抛出 "liveactivity: not available" |
@@ -157,6 +159,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/background` | 任务会阻止系统挂起；没有通知，`update` 不起作用 |
 | `platform/periodic` | 应用运行期间按定时器执行任务（系统不会为了它们启动应用）；需要接通电源的任务会在使用电池时等待，需要网络的任务会在离线时等待 |
 | `platform/screen` | `lock`、`setBars`、`preventCapture` 和 `setBrightness` 什么也不做；`screenshots()` 不会报告任何截图 |
+| `platform/appicon` | `set` 抛出 `notAvailable`：启动器显示的是 desktop 文件里的图标 |
 | `platform/sensors` | iio-sensor-proxy（适用于二合一设备、平板）：光线传感器（单位为 lux），以及由加速度计得出的方向，表示为沿朝上那条轴的 1 g，随设备转动而变化。没有其他传感器：`available` 为 false，各个流和 `steps` 都会抛出 `SensorError.notAvailable` |
 | `platform/contacts`、`platform/calendar` | Evolution Data Server 中的通讯录和日历（来自 GNOME 通讯录、GNOME 日历和在线账户）：有它时访问权限为 `.allowed`（日历为 `.full`）；`pick` 是一个带搜索框的联系人对话框；`add` 先确认，再保存到默认通讯录或该日程所属的日历。没有它时：通讯录的访问权限为 `.denied`，日历为 `.writeOnly`；`add` 会在用户的联系人或日历应用中打开一个 vCard 或 iCalendar 文件，并返回 false；`contacts.pick` 会抛出错误 |
 | `platform/photos` 的照片库、`platform/appleauth`、`platform/transcribe`、`platform/widget`、`platform/liveactivity` | Linux 上都没有：照片库的访问权限为 `.denied`；`appleauth.available()` 为 false，它的按钮什么也不显示；`transcribe` 抛出 `TranscribeError.notAvailable`，`liveactivity.start` 抛出 "liveactivity: not available"；`widget.set` 什么也不做。`platform/splash` 也没有启动屏可以保持 |
@@ -193,6 +196,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/js` | 一个隐藏的沙盒 iframe |
 | `platform/contacts`、`platform/calendar` | 浏览器支持 Contact Picker 时（Android 上的 Chrome）可以用 `contacts.pick`；`add` 会下载一个 vCard 或 `.ics` 文件；Web 上无法读取通讯录和日历 |
 | `platform/screen` | `lock` 只在全屏时或已安装的应用中有效；隐藏系统栏就是进入全屏；没有 `preventCapture`、`screenshots()` 和 `setBrightness` |
+| `platform/appicon` | `set` 更换页面（标签页）的图标，下次访问时也会换上；已安装的 Web 应用仍用清单里的图标 |
 | `platform/background` | 页面打开期间一直在运行；任务不会带来额外效果，也没有通知 |
 | `platform/tracking` | 没有提示框：浏览器发送了 Global Privacy Control 或 Do Not Track 时为 `.denied`，否则为 `.allowed` |
 | `device.haptic` | 浏览器支持时（Android 上的 Chrome）使用 `navigator.vibrate` |
@@ -1669,6 +1673,43 @@ component Player {
 桌面窗口既没有方向，也没有系统栏：`lock` 和 `setBars` 在桌面端什么也不做；显示器的亮度由用户自己决定（`setBrightness` 什么也不做，`brightness()` 是 `none`）。在 Mac 和 Windows 上（Linux 不行），`preventCapture` 会让应用的窗口不出现在截图和录屏中；桌面系统不会把用户截屏的事告诉应用。浏览器只有在全屏或作为已安装的应用运行时才能锁定方向，靠进入全屏来隐藏系统栏，而防截屏、截屏通知和亮度设置它都不支持。
 
 这些设置作用于整个应用，而不是某个页面：页面如果改了其中某项，离开时要把它恢复原样（在页面的 task 里用 `defer`）。
+
+## 应用图标：platform/appicon
+
+`asuka.toml` 列出应用除了自己的图标之外还能显示的图标，每个平台的构建会像生成应用图标一样生成它们：
+
+```toml
+icon = "icon.png"
+
+[alternateIcons]
+dark = "icons/dark.png"
+classic = "icons/classic.png"
+```
+
+```asuka check
+import platform/appicon
+
+component IconPicker {
+  state shown = appicon.current() ?? "default"
+
+  Column {
+    gap: 8
+    for name in ["default"] + appicon.names() key name {
+      Button(name) {
+        on press {
+          try? await appicon.set(if name == "default" { none } else { name })
+          shown = appicon.current() ?? "default"
+        }
+      }
+    }
+    Text("Showing {shown}")
+  }
+}
+```
+
+- `appicon.names()` 是 `alternateIcons` 里的名字，`appicon.current()` 是应用当前显示的那个（`none` 表示应用自己的图标）。
+- `appicon.set(name)` 换上其中一个，`set(none)` 换回应用自己的图标。选择会一直保留，重新启动和更新后都不变。构建里没有的名字会抛出 `AppIconError.unknown`。
+- iOS 会更换主屏幕上的图标，并由系统弹出提示告诉用户，应用无法省略这个提示；应用在后台时调用的，会在回到前台时生效。Android 在应用离开屏幕时更换启动器里的图标（应用显示时更换可能会关闭应用）：应用抽屉里显示新图标，主屏幕上指向旧图标的快捷方式会被移除。
 
 ## 启动屏：platform/splash
 

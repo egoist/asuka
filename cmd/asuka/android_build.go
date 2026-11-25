@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/egoist/asuka/internal/appbuild"
@@ -60,7 +61,7 @@ and give its password in ASUKA_KEYSTORE_PASSWORD (and ASUKA_KEY_PASSWORD if the 
 	os.RemoveAll(res)
 	icon := "@android:drawable/sym_def_app_icon"
 	if cfg.Icon != "" {
-		if err := androidIcons(cfg.Icon, res); err != nil {
+		if err := androidIcons(cfg, res); err != nil {
 			return err
 		}
 		icon = "@mipmap/ic_launcher"
@@ -155,10 +156,29 @@ func firstOf(vs ...string) string {
 	return ""
 }
 
-// androidIcons writes the launcher icons: a legacy icon per density and
-// an adaptive one (Android 8+), whose foreground is the icon inside the
-// safe zone and whose background is the icon's corner color.
-func androidIcons(path, res string) error {
+// androidIcons writes the launcher icons: the app's (asuka.toml's icon,
+// ic_launcher) and its alternates' (ic_launcher_<name>, each an activity
+// alias's: androidManifest).
+func androidIcons(cfg *appConfig, res string) error {
+	if err := androidIcon(cfg.Icon, res, "ic_launcher"); err != nil {
+		return err
+	}
+	for _, name := range cfg.alternateIconNames() {
+		if err := androidIcon(cfg.AlternateIcons[name], res, androidIconRes(name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// androidIconRes is an alternate icon's resource name: lower case, as
+// resource names are.
+func androidIconRes(name string) string { return "ic_launcher_" + strings.ToLower(name) }
+
+// androidIcon writes a launcher icon named name: a legacy icon per
+// density and an adaptive one (Android 8+), whose foreground is the icon
+// inside the safe zone and whose background is the icon's corner color.
+func androidIcon(path, res, name string) error {
 	icon, err := loadIcon(path)
 	if err != nil {
 		return err
@@ -169,7 +189,7 @@ func androidIcons(path, res string) error {
 	}{{"mdpi", 1}, {"hdpi", 1.5}, {"xhdpi", 2}, {"xxhdpi", 3}, {"xxxhdpi", 4}}
 	for _, d := range densities {
 		dir := filepath.Join(res, "mipmap-"+d.dir)
-		if err := writePNG(filepath.Join(dir, "ic_launcher.png"), resize(icon, int(48*d.scale))); err != nil {
+		if err := writePNG(filepath.Join(dir, name+".png"), resize(icon, int(48*d.scale))); err != nil {
 			return err
 		}
 		// 108dp, the icon in the middle 72dp (the mask shows at least that).
@@ -182,7 +202,7 @@ func androidIcons(path, res string) error {
 				fg.SetNRGBA(x+off, y+off, inner.NRGBAAt(x, y))
 			}
 		}
-		if err := writePNG(filepath.Join(dir, "ic_launcher_foreground.png"), fg); err != nil {
+		if err := writePNG(filepath.Join(dir, name+"_foreground.png"), fg); err != nil {
 			return err
 		}
 	}
@@ -192,19 +212,23 @@ func androidIcons(path, res string) error {
 	}
 	values := filepath.Join(res, "values")
 	os.MkdirAll(values, 0o755)
-	if err := os.WriteFile(filepath.Join(values, "asuka_icon.xml"), []byte(fmt.Sprintf(`<resources>
-    <color name="asuka_icon_background">#%02X%02X%02X</color>
+	bgName := "asuka_icon_background"
+	if name != "ic_launcher" {
+		bgName = "asuka_" + name + "_background"
+	}
+	if err := os.WriteFile(filepath.Join(values, "asuka_"+name+".xml"), []byte(fmt.Sprintf(`<resources>
+    <color name="%s">#%02X%02X%02X</color>
 </resources>
-`, bg.R, bg.G, bg.B)), 0o644); err != nil {
+`, bgName, bg.R, bg.G, bg.B)), 0o644); err != nil {
 		return err
 	}
 	anydpi := filepath.Join(res, "mipmap-anydpi-v26")
 	os.MkdirAll(anydpi, 0o755)
-	return os.WriteFile(filepath.Join(anydpi, "ic_launcher.xml"), []byte(`<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/asuka_icon_background" />
-    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+	return os.WriteFile(filepath.Join(anydpi, name+".xml"), []byte(fmt.Sprintf(`<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/%s" />
+    <foreground android:drawable="@mipmap/%s_foreground" />
 </adaptive-icon>
-`), 0o644)
+`, bgName, name)), 0o644)
 }
 
 // buildAndroidLibs builds the C core with the app compiled in as a shared

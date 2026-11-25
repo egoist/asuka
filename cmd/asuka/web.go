@@ -598,6 +598,9 @@ func (s *devServer) index(w http.ResponseWriter) {
 	s.mu.Unlock()
 	opts := map[string]any{"name": s.app.cfg.ID, "title": s.app.displayName(), "dev": "/__asuka/", "module": module,
 		"fonts": fontFiles(s.app), "version": s.app.cfg.Version, "build": s.app.cfg.Build, "serviceWorker": "sw.js"}
+	if icons, err := webAlternateIcons(s.app.cfg); err == nil && icons != nil {
+		opts["icons"] = icons
+	}
 	if s.vapid != "" {
 		opts["vapidPublicKey"] = s.vapid
 	}
@@ -892,6 +895,13 @@ func buildWeb(app *asukaApp, o *buildOptions) error {
 		return err
 	}
 	opts := map[string]any{"name": app.cfg.ID, "title": name, "fonts": fontFiles(app), "version": app.cfg.Version, "build": app.cfg.Build, "serviceWorker": swName}
+	icons, err := webAlternateIcons(app.cfg)
+	if err != nil {
+		return err
+	}
+	if icons != nil {
+		opts["icons"] = icons
+	}
 	if icon {
 		opts["icon"] = "icons/icon-192.png"
 	}
@@ -1039,4 +1049,26 @@ func (s *devServer) findNatives() error {
 	s.sqlite.Store(&sqlite)
 	s.scripts.Store(&scripts)
 	return nil
+}
+
+// webAlternateIcons are asuka.toml's alternate icons as the page's icon
+// shows them (platform/appicon): each a 64-pixel PNG, as a data: URL, by
+// name. nil without any.
+func webAlternateIcons(c *appConfig) (map[string]string, error) {
+	if len(c.AlternateIcons) == 0 {
+		return nil, nil
+	}
+	out := map[string]string{}
+	for name, p := range c.AlternateIcons {
+		img, err := loadIcon(p)
+		if err != nil {
+			return nil, fmt.Errorf("alternateIcons.%s: %w", name, err)
+		}
+		var b bytes.Buffer
+		if err := png.Encode(&b, resize(img, 64)); err != nil {
+			return nil, err
+		}
+		out[name] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(b.Bytes())
+	}
+	return out, nil
 }

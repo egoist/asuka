@@ -133,6 +133,20 @@ func writeMacBundle(app *asukaApp, bundle, work string, release bool, run func(d
 		}
 		info["CFBundleIconFile"] = "AppIcon"
 	}
+	// The alternate icons (platform/appicon), shaped as the app's, which
+	// the Dock shows while the app runs.
+	for _, name := range app.cfg.alternateIconNames() {
+		dir := filepath.Join(work, "AppIcons", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", err
+		}
+		if err := os.MkdirAll(filepath.Join(res, "AppIcons"), 0o755); err != nil {
+			return "", err
+		}
+		if err := macIcon(app.cfg.AlternateIcons[name], dir, filepath.Join(res, "AppIcons", name+".icns"), run); err != nil {
+			return "", err
+		}
+	}
 	// asuka.toml's fileTypes, their icons as .icns files of their own.
 	types := app.cfg.fileTypes()
 	icons := map[int]string{}

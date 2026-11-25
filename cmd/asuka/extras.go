@@ -157,17 +157,25 @@ func writeAssetCatalog(c *appConfig, work string, icon bool) (string, error) {
 	}
 	os.WriteFile(filepath.Join(cat, "Contents.json"), []byte(`{"info":{"author":"asuka","version":1}}`), 0o644)
 	if icon {
-		img, err := loadIcon(c.Icon)
-		if err != nil {
-			return "", err
+		// The app's icon, and its alternates (platform/appicon), each an
+		// icon set of its name.
+		sets := map[string]string{"AppIcon": c.Icon}
+		for name, p := range c.AlternateIcons {
+			sets[name] = p
 		}
-		set := filepath.Join(cat, "AppIcon.appiconset")
-		if err := writePNG(filepath.Join(set, "icon.png"), opaque(resize(img, 1024))); err != nil {
-			return "", err
-		}
-		contents := `{"images":[{"filename":"icon.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"asuka","version":1}}`
-		if err := os.WriteFile(filepath.Join(set, "Contents.json"), []byte(contents), 0o644); err != nil {
-			return "", err
+		for name, p := range sets {
+			img, err := loadIcon(p)
+			if err != nil {
+				return "", err
+			}
+			set := filepath.Join(cat, name+".appiconset")
+			if err := writePNG(filepath.Join(set, "icon.png"), opaque(resize(img, 1024))); err != nil {
+				return "", err
+			}
+			contents := `{"images":[{"filename":"icon.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"asuka","version":1}}`
+			if err := os.WriteFile(filepath.Join(set, "Contents.json"), []byte(contents), 0o644); err != nil {
+				return "", err
+			}
 		}
 	}
 	if !c.splashOn() {

@@ -231,7 +231,48 @@ export class DeclaredError extends Error {
  * where its assets are served from; its version (asuka.toml's), and
  * whether it's asuka dev's build. Set as the host starts.
  */
-export const app = { name: "app", assets: "assets", version: "", build: "", dev: false };
+export const app = { name: "app", assets: "assets", version: "", build: "", dev: false, icons: {}, showIcon, savedIcon };
+
+// The page's icon (its tab's): the app's, or one of its alternate icons
+// (platform/appicon), kept in localStorage for the next visit.
+let ownIcon; // the page's own icon's link and address, as the page had them
+const iconKey = () => "asuka." + app.name + ".appicon";
+
+/** savedIcon is the alternate icon the app chose last, if the build still has it; "" for its own. */
+export function savedIcon() {
+  let n = "";
+  try { n = localStorage.getItem(iconKey()) || ""; } catch {}
+  return Object.hasOwn(app.icons, n) ? n : "";
+}
+
+/** showIcon shows the alternate icon named name as the page's icon ("": the app's own) and keeps the choice. */
+export function showIcon(name) {
+  if (name && !Object.hasOwn(app.icons, name)) return false;
+  try {
+    if (name) localStorage.setItem(iconKey(), name);
+    else localStorage.removeItem(iconKey());
+  } catch {}
+  if (typeof document === "undefined") return true;
+  let link = document.querySelector('link[rel="icon"]');
+  ownIcon ??= { link, href: link?.getAttribute("href") ?? null, type: link?.getAttribute("type") ?? null };
+  if (!name) {
+    // The app's own again: the page's link as it was, or none.
+    if (ownIcon.href == null) link?.remove();
+    else if (link) {
+      link.setAttribute("href", ownIcon.href);
+      if (ownIcon.type) link.setAttribute("type", ownIcon.type);
+    }
+    return true;
+  }
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "icon";
+    document.head.appendChild(link);
+  }
+  link.type = "image/png";
+  link.href = app.icons[name];
+  return true;
+}
 
 /**
  * The app's files, for a package that hands it some: a browser gives a

@@ -1,0 +1,96 @@
+// Package platform/appicon changes the icon the app shows to another of
+// those its asuka.toml lists, as a user picks a theme's icon or a
+// season's:
+//
+//   # asuka.toml
+//   icon = "icon.png"
+//
+//   [alternateIcons]
+//   dark = "icons/dark.png"
+//   classic = "icons/classic.png"
+//
+//   try await appicon.set("dark")
+//   try await appicon.set(none)       // the app's own again
+//
+// Each build makes the alternates as it makes the app's icon, so a name
+// set picks is one asuka.toml has (names() lists them). The choice stays
+// until it's set again, across launches and updates.
+//
+// iOS changes the home screen's icon, and tells the user so itself (an
+// alert the app can't leave out). Android changes the launcher's as the
+// app leaves the screen, since changing it while the app shows can close
+// it: the app drawer shows the new icon, and the home screen's shortcut
+// to the old one goes (the user adds the new one). The Mac changes the
+// Dock's while the app runs, Windows its windows' and the taskbar's, and
+// the web the page's (its tab's) icon; the Finder, the Start menu and an
+// installed web app keep the app's own. Linux's launchers take the icon
+// from the app's desktop file: set throws notAvailable there.
+
+/// Why the icon didn't change.
+pub enum AppIconError: Error {
+  /// appicon: this platform can't change the app's icon
+  notAvailable
+  /// appicon: asuka.toml's alternateIcons has no icon of that name
+  unknown
+  /// appicon: the system didn't change the icon
+  failed
+}
+
+/// The platform's icons.
+native interface Icons {
+  /// The alternate icons this build has, by name.
+  /// @mainThread
+  fn names() -> [string]
+  /// The alternate icon the app shows (or will, Android's once the app
+  /// leaves the screen); "" for its own.
+  /// @mainThread
+  fn current() -> string
+  /// Shows the alternate icon named name; "": the app's own.
+  async fn set(name: string)
+}
+
+// Made once; none where the platform has no code for it.
+let icons = try? Icons()
+
+/// The names of the icons the app may show besides its own: asuka.toml's
+/// alternateIcons, sorted. None where the icon can't change.
+pub fn names() -> [string] {
+  if let i = icons {
+    if let n = try? i.names() {
+      return n.sorted()
+    }
+  }
+  return []
+}
+
+/// The alternate icon the app shows, by name; none while it shows its
+/// own. On Android, one set while the app is in front is current at
+/// once, though the launcher shows it as the app leaves.
+pub fn current() -> string? {
+  if let i = icons {
+    if let c = try? i.current(), !c.isEmpty() {
+      return c
+    }
+  }
+  return none
+}
+
+/// Shows the alternate icon named name (one of asuka.toml's
+/// alternateIcons), or the app's own with none. It throws
+/// AppIconError.unknown for a name the build has no icon of, and
+/// notAvailable where the icon can't change (Linux).
+pub async fn set(name: string?) throws {
+  if let i = icons {
+    let n = name ?? ""
+    if !n.isEmpty() && !names().contains(n) {
+      throw AppIconError.unknown
+    }
+    try await i.set(name: n)
+    return
+  }
+  throw AppIconError.notAvailable
+}
+
+/// Whether the app's icon can change here: false on Linux, and where the
+/// build has no alternate icons.
+pub fn available() -> bool = !names().isEmpty()

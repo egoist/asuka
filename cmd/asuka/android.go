@@ -209,9 +209,20 @@ func (t *androidToolchain) buildAPK(app *asukaApp, work string) (apk, hash strin
 	// The splash and Firebase's settings (androidRes).
 	res := filepath.Join(work, "res")
 	os.RemoveAll(res)
-	if wrote, err := androidRes(app.cfg, res); err != nil {
+	wrote, err := androidRes(app.cfg, res)
+	if err != nil {
 		return "", "", err
-	} else if wrote {
+	}
+	// The app's icon and its alternates (the manifest's aliases name
+	// them), as a release has them.
+	if app.cfg.Icon != "" {
+		if err := androidIcons(app.cfg, res); err != nil {
+			return "", "", err
+		}
+		extra = append(extra, "-PasukaIcon=@mipmap/ic_launcher")
+		wrote = true
+	}
+	if wrote {
 		extra = append(extra, "-PasukaRes="+res)
 		mods += dirDigest(res)
 	}

@@ -441,6 +441,11 @@ func (t *iosToolchain) compileAssets(cfg *appConfig, work, bundle, infoPath stri
 		"--minimum-deployment-target", iosMin, "--target-device", "iphone"}
 	if icon {
 		args = append(args, "--app-icon", "AppIcon")
+		// Info.plist's CFBundleAlternateIcons, which setAlternateIconName
+		// picks from.
+		for _, name := range cfg.alternateIconNames() {
+			args = append(args, "--alternate-app-icon", name)
+		}
 	}
 	if slices.Contains(cfg.iosDevices(), 2) {
 		args = append(args, "--target-device", "ipad") // the iPad's icon sizes, CFBundleIcons~ipad

@@ -58,6 +58,7 @@ github = "you/notes"
 | `version` | 字符串 | `1.0` | 用户看到的版本号。 |
 | `build` | 整数 | `1` | 构建编号，每次上传都必须递增。`asuka publish` 会自动把构建编号为商店中现有最大编号的下一个，所以这里只是起始值。Windows 上 `.exe` 的文件版本由 `version` 和 `build` 组成（`1.2.0.7`）。 |
 | `icon` | 路径 | 无，使用平台的通用图标 | 一张 1024×1024 的正方形 PNG，用于 iOS 时不能有透明区域。每个平台的构建会自动生成该平台需要的各种尺寸。上架 App Store 必须提供。 |
+| `alternateIcons` | 表 | 无 | 应用可以换用的其他图标，按名字列出：`dark = "icons/dark.png"`，和 `icon` 一样是正方形 PNG。名字只能包含字母和数字，并以字母开头。用 `platform/appicon` 在它们之间切换（[应用图标](device.md#应用图标platformappicon)）。 |
 | `accent` | 颜色 | 平台默认 | `"#rrggbb"` 或 `"#rrggbbaa"`。在 iOS 上是 tint 色；在 Android 上是 Material 3 配色方案的种子色；在 Mac 上是 `Accent`、填充按钮和链接的颜色（AppKit 自带的控件仍然使用用户选择的颜色）；在 Windows 上是控件的强调色，在 Linux 上是 libadwaita 的强调色；在 Web 上是页面的强调色以及 manifest 的 `theme_color`。 |
 | `orientations` | 字符串数组 | 两者都支持 | `"portrait"`、`"landscape"`：应用在手机上支持的方向。iPad 上总是支持全部四个方向，因为分屏浏览和台前调度要求如此；Android 16 在平板和折叠屏设备上也会忽略这项设置。 |
 | `scheme` | 字符串 | 无 | 应用的 URL scheme：`notes://` 开头的 URL 会打开应用，并由应用的 `on openURL(url)` 接收，支持 iOS、Android、Mac、Windows 和 Linux。只能包含字母、数字、`+`、`-` 和 `.`，并以字母开头。见[深度链接](navigation.md#深度链接)。 |

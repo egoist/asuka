@@ -55,6 +55,23 @@ func winresSyso(app *asukaApp, goarch string) ([]byte, error) {
 		}
 		res[rtGroupIcon] = map[uint16][]byte{1: group.Bytes()}
 	}
+	// The alternate icons (platform/appicon): a group each
+	// (alternateIconID), which the host loads as the app shows one.
+	if app.cfg != nil {
+		for i, name := range app.cfg.alternateIconNames() {
+			images, sizes, err := iconImages(app.cfg.AlternateIcons[name])
+			if err != nil {
+				return nil, fmt.Errorf("alternateIcons.%s: %w", name, err)
+			}
+			if res[rtIcon] == nil {
+				res[rtIcon] = map[uint16][]byte{}
+			}
+			if res[rtGroupIcon] == nil {
+				res[rtGroupIcon] = map[uint16][]byte{}
+			}
+			res[rtGroupIcon][uint16(alternateIconID(i))] = iconGroup(res[rtIcon], images, sizes)
+		}
+	}
 	// asuka.toml's fileTypes' icons: a group each (fileTypeIconID), which
 	// the types' DefaultIcon names ("app.exe",-101).
 	for i, t := range app.cfg.fileTypes() {
@@ -71,21 +88,7 @@ func winresSyso(app *asukaApp, goarch string) ([]byte, error) {
 		if res[rtGroupIcon] == nil {
 			res[rtGroupIcon] = map[uint16][]byte{}
 		}
-		var group bytes.Buffer
-		binary.Write(&group, binary.LittleEndian, [3]uint16{0, 1, uint16(len(images))})
-		for j, img := range images {
-			id := uint16(len(res[rtIcon]) + 1)
-			res[rtIcon][id] = img
-			dim := byte(sizes[j])
-			if sizes[j] >= 256 {
-				dim = 0
-			}
-			group.Write([]byte{dim, dim, 0, 0})
-			binary.Write(&group, binary.LittleEndian, [2]uint16{1, 32})
-			binary.Write(&group, binary.LittleEndian, uint32(len(img)))
-			binary.Write(&group, binary.LittleEndian, id)
-		}
-		res[rtGroupIcon][uint16(fileTypeIconID(i))] = group.Bytes()
+		res[rtGroupIcon][uint16(fileTypeIconID(i))] = iconGroup(res[rtIcon], images, sizes)
 	}
 
 	// The resource section: three levels of directories (type, id,
@@ -331,4 +334,24 @@ func (n verNode) encode() []byte {
 		binary.LittleEndian.PutUint16(b[4:], 1)
 	}
 	return b
+}
+
+// iconGroup adds an icon's images to icons (the RT_ICON resources, each
+// the next ID) and is their RT_GROUP_ICON: the images' sizes and IDs.
+func iconGroup(icons map[uint16][]byte, images [][]byte, sizes []int) []byte {
+	var group bytes.Buffer
+	binary.Write(&group, binary.LittleEndian, [3]uint16{0, 1, uint16(len(images))})
+	for j, img := range images {
+		id := uint16(len(icons) + 1)
+		icons[id] = img
+		dim := byte(sizes[j])
+		if sizes[j] >= 256 {
+			dim = 0
+		}
+		group.Write([]byte{dim, dim, 0, 0})
+		binary.Write(&group, binary.LittleEndian, [2]uint16{1, 32})
+		binary.Write(&group, binary.LittleEndian, uint32(len(img)))
+		binary.Write(&group, binary.LittleEndian, id)
+	}
+	return group.Bytes()
 }

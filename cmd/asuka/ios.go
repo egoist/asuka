@@ -327,8 +327,9 @@ func (t *iosToolchain) link(app *asukaApp, work, hostObj, lib string) (string, e
 	if err := app.cfg.writeLprojs(bundle); err != nil {
 		return "", err
 	}
-	if app.cfg.splashOn() {
-		if err := t.compileAssets(app.cfg, work, bundle, filepath.Join(bundle, "Info.plist"), false); err != nil {
+	// The app's icon and its alternates, as a release has them.
+	if app.cfg.splashOn() || app.cfg.Icon != "" {
+		if err := t.compileAssets(app.cfg, work, bundle, filepath.Join(bundle, "Info.plist"), app.cfg.Icon != ""); err != nil {
 			return "", err
 		}
 	}

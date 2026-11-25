@@ -1,6 +1,12 @@
 name = "Services"
 id = "dev.asuka.services"
 scheme = "asukaservices"
+icon = "icon.png"
+
+# The icons the app may show instead (platform/appicon).
+[alternateIcons]
+night = "icons/night.png"
+sunset = "icons/sunset.png"
 
 [ios.locationPurposes]
 route = "To draw your route exactly."

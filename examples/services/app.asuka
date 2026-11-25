@@ -9,6 +9,7 @@
 
 import platform/agerange
 import platform/appearance
+import platform/appicon
 import platform/appleauth
 import platform/audio
 import platform/biometric
@@ -232,6 +233,19 @@ screen Services {
           bright = !bright
           screen.setBrightness(if bright { 1.0 } else { none })
           status = if let b = screen.brightness() { "Brightness: {(b * 100).rounded()}%" } else { "No brightness to set here" }
+        }
+      }
+      Item("Next app icon") {
+        on press {
+          // The app's own (""), then each of asuka.toml's alternateIcons.
+          let all = [""] + appicon.names()
+          let at = all.index((n) => n == (appicon.current() ?? "")) ?? 0
+          let name = all[(at + 1) % all.count()]
+          let next: string? = if name.isEmpty() { none } else { name }
+          await run(() => {
+            try await appicon.set(next)
+            return "App icon: {next ?? "the app's own"}"
+          })
         }
       }
       Item("Keep out of screenshots") {

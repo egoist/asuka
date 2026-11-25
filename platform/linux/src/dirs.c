@@ -210,4 +210,12 @@ const char *asuka_desktop_data_dir(void) { return lx_data_dir(); }
 const char *asuka_desktop_config_dir(void) { return lx_config_dir(); }
 const char *asuka_desktop_cache_dir(void) { return lx_cache_dir(); }
 const char *asuka_desktop_logs_dir(void) { return lx_logs_dir(); }
+// GNOME and the other launchers take the app's icon from its desktop
+// file: it doesn't change while the app runs.
+const char *asuka_desktop_app_icons(void) { return NULL; }
+const char *asuka_desktop_app_icon(void) { return ""; }
+bool asuka_desktop_set_app_icon(const char *name) {
+	(void)name;
+	return false;
+}
 const char *asuka_desktop_assets_dir(void) { return S(assets); }

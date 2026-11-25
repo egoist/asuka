@@ -28,4 +28,8 @@ type Config struct {
 	UpdateFeed   string `json:"updateFeed,omitempty"`
 	UpdateKey    string `json:"updateKey,omitempty"`
 	UpdateTarget string `json:"updateTarget,omitempty"`
+	// AlternateIcons are the names of the alternate icons the
+	// executable has (platform/appicon), comma-separated: icon groups
+	// 201, 202 and on, in this order (Windows).
+	AlternateIcons string `json:"alternateIcons,omitempty"`
 }

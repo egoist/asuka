@@ -155,6 +155,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | カスタムフォント | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`、`Font(family:)` |
 | ライフサイクル | `scenePhase` | AppState | ✓ `onLifecycle` |
 | 起動画面 | `UILaunchScreen` | `expo-splash-screen` | ✓ `asuka.toml` の `splash`。`platform/splash` で読み込み中は表示を保つ |
+| アプリアイコンの切り替え | `setAlternateIconName` | コミュニティ（`expo-dynamic-app-icon`） | ✓ `asuka.toml` の `alternateIcons`、`platform/appicon` の `set`（iOS のホーム画面。Android のランチャーはアプリが画面から離れたときに切り替わる。Mac の Dock、Windows のウィンドウとタスクバー、Web ページのアイコン。Linux はランチャーが desktop ファイルのアイコンを表示するので不可） |
 | ステータスバー、ナビゲーションバー | `statusBarHidden`、`preferredStatusBarStyle` | `expo-status-bar`、`expo-navigation-bar` | ✓ `screen.setBars`（`platform/screen`） |
 | 画面の向きの固定 | `supportedInterfaceOrientations` | `expo-screen-orientation` | ✓ `screen.lock` |
 | スクリーンショット | `isCaptured`、`userDidTakeScreenshotNotification` | `expo-screen-capture` | ✓ `screen.preventCapture`（Android：キャプチャーは黒くなる。iOS：録画中は覆われる。macOS と Windows：ウィンドウはキャプチャーから除かれる）、`screen.screenshots()` |

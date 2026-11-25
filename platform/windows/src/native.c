@@ -73,6 +73,96 @@ const char *asuka_desktop_logs_dir(void) {
 	return made(H.dirs.logs, &done);
 }
 
+// ---- The app's icon ----
+//
+// Its own is the executable's first icon group; its alternates
+// (platform/appicon) the groups from 201 on, in asuka-app.json's
+// alternateIcons order. The one the app shows is kept in its config
+// directory's asuka-appicon file ("" or none: its own), read once.
+
+static char chosen_icon[128];
+static bool chosen_read;
+
+// alternate_index is name's place among the alternates, -1 if it isn't one.
+static int alternate_index(const char *name) {
+	const char *p = H.config.alternate_icons;
+	size_t n = strlen(name);
+	if (!p || !n) return -1;
+	for (int i = 0;; i++) {
+		const char *e = strchr(p, ',');
+		size_t k = e ? (size_t)(e - p) : strlen(p);
+		if (k == n && !strncmp(p, name, n)) return i;
+		if (!e) return -1;
+		p = e + 1;
+	}
+}
+
+static char *chosen_path(void) { return dsk_join(asuka_desktop_config_dir(), "asuka-appicon"); }
+
+static void read_chosen(void) {
+	if (chosen_read) return;
+	chosen_read = true;
+	char *path = chosen_path();
+	size_t n;
+	char *t = dsk_read_file(path, &n);
+	free(path);
+	if (!t) return;
+	t[strcspn(t, "\r\n")] = 0;
+	if (alternate_index(t) >= 0) snprintf(chosen_icon, sizeof chosen_icon, "%s", t);
+	free(t);
+}
+
+// wh_app_icon is the icon the app shows: its own, or the alternate it chose.
+HICON wh_app_icon(void) {
+	static HICON own;
+	static bool tried;
+	if (!tried) {
+		tried = true;
+		own = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(1));
+	}
+	read_chosen();
+	int i = alternate_index(chosen_icon);
+	if (i >= 0) {
+		HICON h = (HICON)LoadImageW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(201 + i), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+		if (h) return h;
+	}
+	return own;
+}
+
+const char *asuka_desktop_app_icons(void) { return H.config.alternate_icons ? H.config.alternate_icons : ""; }
+
+const char *asuka_desktop_app_icon(void) {
+	read_chosen();
+	return chosen_icon;
+}
+
+// set_window_icon gives one of the process's windows the icon, and its
+// class too (the windows made from now on), lp the icon.
+static BOOL CALLBACK set_window_icon(HWND w, LPARAM lp) {
+	DWORD pid = 0;
+	GetWindowThreadProcessId(w, &pid);
+	if (pid != GetCurrentProcessId()) return TRUE;
+	wchar_t cls[64];
+	if (!GetClassNameW(w, cls, (int)WH_LEN(cls)) || wcscmp(cls, WH_CLASS_WINDOW) != 0) return TRUE;
+	SetClassLongPtrW(w, GCLP_HICON, lp);
+	SendMessageW(w, WM_SETICON, ICON_BIG, lp);
+	SendMessageW(w, WM_SETICON, ICON_SMALL, lp);
+	return TRUE;
+}
+
+bool asuka_desktop_set_app_icon(const char *name) {
+	read_chosen();
+	if (*name && alternate_index(name) < 0) return false;
+	char *path = chosen_path();
+	bool ok = dsk_write_file(path, name, strlen(name));
+	free(path);
+	if (!ok) return false;
+	snprintf(chosen_icon, sizeof chosen_icon, "%s", name);
+	// The windows' title bars and taskbar buttons, now.
+	EnumWindows(set_window_icon, (LPARAM)wh_app_icon());
+	return true;
+}
+
 const char *asuka_desktop_assets_dir(void) {
 	static char *abs;
 	if (!abs) {

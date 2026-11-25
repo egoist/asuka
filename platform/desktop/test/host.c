@@ -62,6 +62,12 @@ const char *asuka_desktop_data_dir(void) { return dir("ASUKA_DATA"); }
 const char *asuka_desktop_config_dir(void) { return dir("ASUKA_DATA"); }
 const char *asuka_desktop_cache_dir(void) { return dir("ASUKA_DATA"); }
 const char *asuka_desktop_logs_dir(void) { return dir("ASUKA_DATA"); }
+const char *asuka_desktop_app_icons(void) { return NULL; }
+const char *asuka_desktop_app_icon(void) { return ""; }
+bool asuka_desktop_set_app_icon(const char *name) {
+	(void)name;
+	return false;
+}
 const char *asuka_desktop_assets_dir(void) { return dir("ASUKA_ASSETS"); }
 
 // ---- The core's callbacks ----

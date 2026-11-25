@@ -155,6 +155,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 自定义字体 | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`、`Font(family:)` |
 | 生命周期 | `scenePhase` | AppState | ✓ `onLifecycle` |
 | 启动画面 | `UILaunchScreen` | `expo-splash-screen` | ✓ `asuka.toml` 的 `splash`；`platform/splash` 可以在应用加载期间保持它显示 |
+| 更换应用图标 | `setAlternateIconName` | 社区（`expo-dynamic-app-icon`） | ✓ `asuka.toml` 的 `alternateIcons`、`platform/appicon` 的 `set`（iOS 的主屏幕；Android 的启动器，在应用离开屏幕时生效；Mac 的程序坞、Windows 的窗口和任务栏、Web 页面的图标；Linux 不支持，启动器显示的是 desktop 文件里的图标） |
 | 状态栏、导航栏 | `statusBarHidden`、`preferredStatusBarStyle` | `expo-status-bar`、`expo-navigation-bar` | ✓ `screen.setBars`（`platform/screen`） |
 | 锁定屏幕方向 | `supportedInterfaceOrientations` | `expo-screen-orientation` | ✓ `screen.lock` |
 | 截屏 | `isCaptured`、`userDidTakeScreenshotNotification` | `expo-screen-capture` | ✓ `screen.preventCapture`（Android 上截图是黑的；iOS 上录屏时内容会被遮住；macOS 和 Windows 上截图里不包含这些窗口）、`screen.screenshots()` |

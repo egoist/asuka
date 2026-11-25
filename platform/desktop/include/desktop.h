@@ -133,6 +133,8 @@ typedef struct {
 	char *lang, *direction;
 	bool background, keep_running, multiple_instances;
 	char *update_feed, *update_key, *update_target;
+	// The executable's alternate icons' names, comma-separated (Windows).
+	char *alternate_icons;
 } dsk_config;
 
 // dsk_config_load reads the settings: from ASUKA_APP_CONFIG, else

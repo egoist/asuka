@@ -56,6 +56,7 @@ void dsk_config_load(dsk_config *c) {
 	c->update_feed = dup_or_null(dsk_json_str(j, "updateFeed", NULL));
 	c->update_key = dup_or_null(dsk_json_str(j, "updateKey", NULL));
 	c->update_target = dup_or_null(dsk_json_str(j, "updateTarget", NULL));
+	c->alternate_icons = dup_or_null(dsk_json_str(j, "alternateIcons", NULL));
 	dsk_json_free(j);
 }
 
@@ -114,7 +115,7 @@ void dsk_dirs_find(dsk_dirs *d, int platform, const char *data) {
 
 void dsk_config_free(dsk_config *c) {
 	char **s[] = {&c->name, &c->id, &c->version, &c->build, &c->accent, &c->scheme, &c->file_types, &c->lang,
-		&c->direction, &c->update_feed, &c->update_key, &c->update_target};
+		&c->direction, &c->update_feed, &c->update_key, &c->update_target, &c->alternate_icons};
 	for (size_t i = 0; i < sizeof s / sizeof *s; i++) free(*s[i]);
 	memset(c, 0, sizeof *c);
 }

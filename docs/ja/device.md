@@ -81,6 +81,7 @@ macOS でも各パッケージは iOS と同じフレームワーク（AVFoundat
 | `platform/background` | タスクの実行中は App Nap によってアプリが遅くなるのを防ぎます。通知は出ないので、`update` は何も変えません |
 | `platform/periodic` | `NSBackgroundActivityScheduler` を使います。タスクはアプリの実行中に動きます（タスクのためにアプリが起動されることはありません）。電源を必要とするタスクは、Mac がバッテリーで動いているあいだ待ちます |
 | `platform/screen` | `lock`、`setBars`、`setBrightness` は何もしません。`preventCapture` はアプリのウィンドウをスクリーンショットと画面収録から除外します。`screenshots()` は何も知らせません |
+| `platform/appicon` | `set` はアプリの実行中に Dock のアイコンを変え、次の起動時にも変えます。Finder ではアプリ自身のアイコンのままです |
 | `platform/transcribe` | デバイス上での認識のみです。アプリのバンドルに利用目的の説明文が必要で、`asuka build` がそれを書き込みます |
 | `platform/sensors` | Mac にはモーションセンサーがありません。`available` は false で、ストリームと `steps` は `SensorError.notAvailable` を投げます |
 | `device.haptic` | トラックパッドのフィードバック（感圧タッチトラックパッド）です。`.selection` では整列（alignment）、それ以外ではレベル変更（level change）のフィードバックになります |
@@ -121,6 +122,7 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `platform/background` | タスクの実行中は PC がスリープしないようにします。通知は出ないので、`update` は何も変えません |
 | `platform/periodic` | アプリの実行中にタイマーで動きます（タスクのためにアプリが起動されることはありません）。電源を必要とするタスクは、PC がバッテリーで動いているあいだ待ちます |
 | `platform/screen` | `lock`、`setBars`、`setBrightness` は何もしません。`preventCapture` はアプリのウィンドウをスクリーンショットと画面録画から除外します。`screenshots()` は何も知らせません |
+| `platform/appicon` | `set` はアプリのウィンドウとタスクバーボタンのアイコンを変え、次の起動時にも変えます。スタートメニューと実行ファイルはアプリ自身のアイコンのままです |
 | `platform/tracking` | プロンプトは出ません。「設定」で広告 ID がオンなら許可、オフなら拒否です |
 | `platform/push`、`platform/widget`、`platform/review`、`platform/integrity` | これらはパッケージ化された（ストアの）アプリか、Apple や Google のものです。`push.register` はエラーを投げ、`widget.set` は何もせず、`review.request` は何も表示せず、`integrity.supported()` は false です |
 | `platform/liveactivity` | スマートフォンの機能です。`enabled` は false で、`start` は「liveactivity: not available」を投げます |
@@ -157,6 +159,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/background` | タスクの実行中はシステムがサスペンドしないようにします。通知は出ず、`update` は何も変えません |
 | `platform/periodic` | タスクはアプリの実行中にタイマーで動きます（タスクのためにアプリが起動されることはありません）。電源を必要とするタスクはバッテリーで動いているあいだ、ネットワークを必要とするタスクはオフラインのあいだ待ちます |
 | `platform/screen` | `lock`、`setBars`、`preventCapture`、`setBrightness` は何もしません。`screenshots()` は何も知らせません |
+| `platform/appicon` | `set` は `notAvailable` を投げます。ランチャーは desktop ファイルのアイコンを表示します |
 | `platform/sensors` | iio-sensor-proxy（2-in-1 PC、タブレット）を使います。照度センサーをルクス単位で、加速度センサーの向きを、上を向いている軸に沿った 1 g として、向きが変わるたびに伝えます。ほかのセンサーはないので、`available` は false で、ストリームと `steps` は `SensorError.notAvailable` を投げます |
 | `platform/contacts`、`platform/calendar` | Evolution Data Server のアドレス帳とカレンダー（GNOME Contacts、GNOME Calendar、オンラインアカウントのもの）を使います。アドレス帳やカレンダーがあれば、アクセスは `.allowed`（カレンダーは `.full`）です。`pick` は検索欄付きの連絡先のダイアログです。`add` は確認してから、既定のアドレス帳またはイベントのカレンダーに保存します。Evolution Data Server がない場合、連絡先のアクセスは `.denied`、カレンダーのアクセスは `.writeOnly` です。`add` は vCard か iCalendar のファイルをユーザーの連絡先アプリやカレンダーアプリで開いて false を返し、`contacts.pick` はエラーを投げます |
 | `platform/photos` のライブラリ、`platform/appleauth`、`platform/transcribe`、`platform/widget`、`platform/liveactivity` | Linux にはありません。ライブラリのアクセスは `.denied` です。`appleauth.available()` は false で、そのボタンは何も表示しません。`transcribe` は `TranscribeError.notAvailable` を、`liveactivity.start` は「liveactivity: not available」を投げます。`widget.set` は何もしません。`platform/splash` には保持しておく起動画面がありません |
@@ -193,6 +196,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/js` | 非表示の、サンドボックス化された frame |
 | `platform/contacts`、`platform/calendar` | `contacts.pick` はブラウザーに Contact Picker がある場合（Android の Chrome）に使えます。`add` は vCard か `.ics` ファイルをダウンロードします。Web では連絡先やカレンダーを読み取れません |
 | `platform/screen` | `lock` はフルスクリーンかインストールしたアプリでのみ使えます。バーを隠すとフルスクリーンになります。`preventCapture`、`screenshots()`、`setBrightness` はありません |
+| `platform/appicon` | `set` はページ（タブ）のアイコンを変え、次に開いたときにも変えます。インストールした Web アプリはマニフェストのアイコンのままです |
 | `platform/background` | ページは開いているあいだ動き続けます。タスクを作っても何も変わらず、通知も出ません |
 | `platform/tracking` | プロンプトは出ません。ブラウザーが Global Privacy Control か Do Not Track を送っていれば `.denied`、そうでなければ `.allowed` です |
 | `device.haptic` | ブラウザーが対応していれば（Android の Chrome）`navigator.vibrate` を使います |
@@ -1669,6 +1673,43 @@ component Player {
 デスクトップのウィンドウには向きもシステムバーもないので、`lock` と `setBars` は何もしません。ディスプレイの明るさはユーザーが決めるものなので、`setBrightness` も何もせず、`brightness()` は `none` です。`preventCapture` は、Mac と Windows では（Linux では効きません）アプリのウィンドウがスクリーンショットや画面収録に写らないようにします。デスクトップは、スクリーンショットが撮られたことをアプリに知らせません。ブラウザーで向きを固定できるのは、全画面表示のときかインストールされたアプリの中だけです。バーは全画面表示にすることで隠し、キャプチャの防止もスクリーンショットの通知も、明るさの設定もありません。
 
 これらの設定は画面ごとではなく、アプリ全体のものです。ある画面で設定したら、その画面が閉じるときに元に戻してください（タスクの中の `defer`）。
+
+## アプリのアイコン：platform/appicon
+
+`asuka.toml` には、アプリ自身のアイコンのほかに表示できるアイコンを並べます。各ビルドは、アプリのアイコンと同じようにそれらを作ります。
+
+```toml
+icon = "icon.png"
+
+[alternateIcons]
+dark = "icons/dark.png"
+classic = "icons/classic.png"
+```
+
+```asuka check
+import platform/appicon
+
+component IconPicker {
+  state shown = appicon.current() ?? "default"
+
+  Column {
+    gap: 8
+    for name in ["default"] + appicon.names() key name {
+      Button(name) {
+        on press {
+          try? await appicon.set(if name == "default" { none } else { name })
+          shown = appicon.current() ?? "default"
+        }
+      }
+    }
+    Text("Showing {shown}")
+  }
+}
+```
+
+- `appicon.names()` は `alternateIcons` の名前で、`appicon.current()` はアプリが今表示しているものです（`none` はアプリ自身のアイコン）。
+- `appicon.set(name)` でそのアイコンに切り替え、`set(none)` でアプリ自身のアイコンに戻します。選んだアイコンは、再起動やアップデートのあとも変わりません。ビルドにない名前は `AppIconError.unknown` を投げます。
+- iOS はホーム画面のアイコンを変え、そのことをシステムのアラートでユーザーに伝えます（アプリはこのアラートを省けません）。アプリがバックグラウンドにあるあいだに呼んだ場合は、前面に戻ったときに変わります。Android はアプリが画面から離れたときにランチャーのアイコンを変えます（表示中に変えるとアプリが閉じることがあるため）。アプリドロワーには新しいアイコンが表示され、ホーム画面にあった古いアイコンへのショートカットは消えます。
 
 ## 起動画面：platform/splash
 

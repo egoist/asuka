@@ -49,6 +49,9 @@ type appConfig struct {
 	Build   int    `json:"build"`
 	// Icon is a square PNG, 1024×1024, without transparency for iOS.
 	Icon string `json:"icon"`
+	// AlternateIcons are the other icons the app may show
+	// (platform/appicon's set), by name: square PNGs, as Icon.
+	AlternateIcons map[string]string `json:"alternateIcons"`
 	// Orientations: portrait, landscape (default both).
 	Orientations []string `json:"orientations"`
 	// C is the C the app's extern declarations call ([c], docs/c.md):
@@ -430,6 +433,17 @@ func loadConfig(dir string) (*appConfig, error) {
 	if c.Icon != "" && !filepath.IsAbs(c.Icon) {
 		c.Icon = filepath.Join(dir, c.Icon)
 	}
+	if len(c.AlternateIcons) > 0 && c.Icon == "" {
+		return nil, errors.New("asuka.toml: alternateIcons: the app needs its own icon too (icon)")
+	}
+	for name, p := range c.AlternateIcons {
+		if !alternateIconName.MatchString(name) {
+			return nil, fmt.Errorf("asuka.toml: alternateIcons: %q isn't a name an icon can have: letters and digits, starting with a letter", name)
+		}
+		if !filepath.IsAbs(p) {
+			c.AlternateIcons[name] = filepath.Join(dir, p)
+		}
+	}
 	if c.Android.Keystore != "" && !filepath.IsAbs(c.Android.Keystore) {
 		c.Android.Keystore = filepath.Join(dir, c.Android.Keystore)
 	}
@@ -683,7 +697,14 @@ func (c *appConfig) gradleProps() []string {
 
 func (c *appConfig) androidManifest(debug bool) string {
 	var b strings.Builder
-	b.WriteString("<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">\n")
+	// With alternate icons the launcher's entries are activity aliases,
+	// one an icon (androidIconAliases): the activity's own leaves.
+	aliases := len(c.AlternateIcons) > 0
+	if aliases {
+		b.WriteString("<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" xmlns:tools=\"http://schemas.android.com/tools\">\n")
+	} else {
+		b.WriteString("<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">\n")
+	}
 	for _, p := range c.Android.Permissions {
 		p, flags, _ := strings.Cut(p, "|")
 		name, max, _ := strings.Cut(p, ":")
@@ -716,9 +737,17 @@ func (c *appConfig) androidManifest(debug bool) string {
 		theme = ` android:theme="@style/Theme.Asuka.Splash"`
 	}
 	fmt.Fprintf(&b, "        <activity android:name=\"dev.asuka.AsukaActivity\" android:exported=\"true\"%s>\n", theme)
-	// asuka.toml's shortcuts: the launcher's (androidShortcutRes).
-	if len(c.Shortcuts) > 0 {
+	// asuka.toml's shortcuts: the launcher's (androidShortcutRes), on
+	// the aliases when they're the launcher's entries.
+	if len(c.Shortcuts) > 0 && !aliases {
 		b.WriteString("            <meta-data android:name=\"android.app.shortcuts\" android:resource=\"@xml/asuka_shortcuts\" />\n")
+	}
+	if aliases {
+		b.WriteString(`            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+`)
 	}
 	filter := func(verify bool, data string) {
 		v := ""
@@ -748,6 +777,9 @@ func (c *appConfig) androidManifest(debug bool) string {
 	// platform/nfc's tags that open the app (asuka.toml's nfc).
 	b.WriteString(c.nfcFilters())
 	b.WriteString("        </activity>\n")
+	if aliases {
+		b.WriteString(c.androidIconAliases())
+	}
 	// A share sheet (platform/sharesheet): the shares go to its Activity.
 	if c.ShareTarget.on && c.shareSheet {
 		b.WriteString("        <activity android:name=\"dev.asuka.AsukaShareActivity\" android:exported=\"true\">\n")
@@ -795,4 +827,44 @@ func (c *appConfig) allows(o string) bool {
 		}
 	}
 	return false
+}
+
+// alternateIconName is what an alternate icon may be called: it names an
+// Android activity alias, an iOS icon set and a file on the desktops.
+var alternateIconName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
+
+// alternateIconNames are asuka.toml's alternateIcons' names, sorted.
+func (c *appConfig) alternateIconNames() []string {
+	names := make([]string, 0, len(c.AlternateIcons))
+	for n := range c.AlternateIcons {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// androidIconAliases are the launcher's entries of an app with alternate
+// icons: an activity alias of AsukaActivity for each icon, the app's
+// (dev.asuka.AppIcon) enabled, each other one's (dev.asuka.AppIcon.<name>)
+// not. platform/appicon enables the one the app shows; the launcher shows
+// the enabled one's icon.
+func (c *appConfig) androidIconAliases() string {
+	var b strings.Builder
+	for _, name := range append([]string{""}, c.alternateIconNames()...) {
+		comp, icon, enabled := "dev.asuka.AppIcon", "@mipmap/ic_launcher", true
+		if name != "" {
+			comp, icon, enabled = comp+"."+name, "@mipmap/"+androidIconRes(name), false
+		}
+		fmt.Fprintf(&b, "        <activity-alias android:name=\"%s\" android:targetActivity=\"dev.asuka.AsukaActivity\" android:exported=\"true\" android:enabled=\"%t\" android:icon=\"%s\">\n", comp, enabled, icon)
+		b.WriteString(`            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+`)
+		if len(c.Shortcuts) > 0 {
+			b.WriteString("            <meta-data android:name=\"android.app.shortcuts\" android:resource=\"@xml/asuka_shortcuts\" />\n")
+		}
+		b.WriteString("        </activity-alias>\n")
+	}
+	return b.String()
 }

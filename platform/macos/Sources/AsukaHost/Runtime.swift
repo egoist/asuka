@@ -112,6 +112,13 @@ import AsukaOps
     /// Starts the core and the app in it.
     private func boot() {
         started = true
+        // The alternate icon the app chose (platform/appicon), the Dock's
+        // again from launch.
+        if let name = UserDefaults.standard.string(forKey: "AsukaAppIcon"),
+           let url = Bundle.main.url(forResource: name, withExtension: "icns", subdirectory: "AppIcons"),
+           let image = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = image
+        }
         // The app's own files (std/fs's appDir): ASUKA_DATA (asuka dev's
         // work directory), else Application Support/<its ID>.
         appDir.path.withCString { asuka_set_app_dir($0) }

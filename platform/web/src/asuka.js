@@ -28,7 +28,7 @@ import * as worker from "./worker.js";
 import { notifyFor } from "./modules/system-notify.js";
 import { startCore } from "./core.js";
 import { Crash } from "./crash.js";
-import { app as nativeApp } from "./native.js";
+import { app as nativeApp, savedIcon } from "./native.js";
 import { showDevError, hideDevError } from "./deverror.js";
 // What packages' generated JavaScript (asuka native) builds on: globalThis.asuka.native.
 export * as native from "./native.js";
@@ -72,6 +72,9 @@ export async function start(options = {}) {
   nativeApp.version = options.version || "";
   nativeApp.build = String(options.build || "");
   nativeApp.dev = !!options.dev;
+  // The alternate icons (platform/appicon); the one the app chose shows from the start.
+  nativeApp.icons = options.icons || {};
+  if (savedIcon()) nativeApp.showIcon(savedIcon());
   // The app's own native views and modules (registerNative, registerModule).
   for (const [k, f] of natives) host.natives.set(k, f);
   for (const [k, m] of modules) host.modules.registered.set(k, m);

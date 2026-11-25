@@ -1,0 +1,3 @@
+name = "platform/appicon"
+version = "0.1.0"
+description = "Changes the app's icon to another its asuka.toml lists"

@@ -93,6 +93,15 @@ const char *asuka_desktop_cache_dir(void);
 const char *asuka_desktop_logs_dir(void);
 // Where its assets are (assets/ beside the executable, or asuka dev's).
 const char *asuka_desktop_assets_dir(void);
+// Its alternate icons (asuka.toml's alternateIcons, platform/appicon):
+// their names, comma-separated ("" when the build has none), or NULL
+// where the platform's icon can't change (Linux: the desktop file's);
+// the one it shows ("" for its own); and showing one (name "": its own),
+// on its windows and taskbar buttons, kept for the next launch: false
+// when it can't.
+const char *asuka_desktop_app_icons(void);
+const char *asuka_desktop_app_icon(void);
+bool asuka_desktop_set_app_icon(const char *name);
 
 // ---- The registry's: for the hosts ----
 

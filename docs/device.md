@@ -129,6 +129,7 @@ UserNotifications, AuthenticationServices), except where a Mac differs:
 | `platform/background` | The task keeps App Nap from slowing the app; there's no notification, so `update` changes nothing |
 | `platform/periodic` | `NSBackgroundActivityScheduler`: the tasks run while the app runs (it isn't launched for them); one that wants power waits while the Mac is on its battery |
 | `platform/screen` | `lock`, `setBars` and `setBrightness` do nothing; `preventCapture` leaves the app's windows out of screenshots and recordings; `screenshots()` says nothing |
+| `platform/appicon` | `set` changes the Dock's icon while the app runs, and again as it launches; the Finder keeps the app's own |
 | `platform/transcribe` | On the device only; the app's bundle needs its purpose string, which `asuka build` writes |
 | `platform/sensors` | A Mac has no motion sensors: `available` is false, and the streams and `steps` throw `SensorError.notAvailable` |
 | `device.haptic` | The trackpad's feedback (a Force Touch trackpad): an alignment for `.selection`, a level change for the others |
@@ -177,6 +178,7 @@ device without it:
 | `platform/background` | The task keeps the PC from sleeping; there's no notification, so `update` changes nothing |
 | `platform/periodic` | Timers while the app runs (it isn't launched for them); one that wants power waits while the PC is on its battery |
 | `platform/screen` | `lock`, `setBars` and `setBrightness` do nothing; `preventCapture` leaves the app's windows out of screenshots and recordings; `screenshots()` says nothing |
+| `platform/appicon` | `set` changes the app's windows' and taskbar buttons' icon, and again as it launches; the Start menu and the executable keep the app's own |
 | `platform/tracking` | No prompt: allowed while the advertising ID is on in Settings, else denied |
 | `platform/push`, `platform/widget`, `platform/review`, `platform/integrity` | Packaged (Store) apps' or Apple's and Google's: `push.register` throws, `widget.set` does nothing, `review.request` shows nothing, `integrity.supported()` is false |
 | `platform/liveactivity` | A phone's: `enabled` is false, `start` throws "liveactivity: not available" |
@@ -228,6 +230,7 @@ names what's missing.
 | `platform/background` | The task keeps the system from suspending; no notification, `update` changes nothing |
 | `platform/periodic` | The tasks run on a timer while the app runs (it isn't launched for them); one that wants power waits while on the battery, one that wants the network while it's offline |
 | `platform/screen` | `lock`, `setBars`, `preventCapture` and `setBrightness` do nothing; `screenshots()` says nothing |
+| `platform/appicon` | `set` throws `notAvailable`: the launcher shows the desktop file's icon |
 | `platform/sensors` | iio-sensor-proxy (convertibles, tablets): the light sensor, in lux, and the accelerometer's orientation as 1 g along the axis that's up, as it turns. No others: `available` is false, and the streams and `steps` throw `SensorError.notAvailable` |
 | `platform/contacts`, `platform/calendar` | Evolution Data Server's address books and calendars (GNOME Contacts', GNOME Calendar's, the online accounts'): access is `.allowed` (calendars' `.full`) when it has one; `pick` is a dialog of the contacts with a search field; `add` asks, then saves in the default address book or the event's calendar. Without it: contacts' access is `.denied`, calendars' `.writeOnly`; `add` opens a vCard or an iCalendar file in the user's contacts or calendar app, and answers false; `contacts.pick` throws |
 | `platform/photos`' library, `platform/appleauth`, `platform/transcribe`, `platform/widget`, `platform/liveactivity` | None on Linux: the library's access is `.denied`; `appleauth.available()` is false and its button shows nothing; `transcribe` throws `TranscribeError.notAvailable`, `liveactivity.start` "liveactivity: not available"; `widget.set` does nothing. `platform/splash` has nothing to hold |
@@ -269,6 +272,7 @@ and its service worker for notifications and Web Push.
 | `platform/js` | A hidden, sandboxed frame |
 | `platform/contacts`, `platform/calendar` | `contacts.pick` where the browser has the Contact Picker (Chrome on Android); `add` downloads a vCard or an `.ics` file; reading them isn't on the web |
 | `platform/screen` | `lock` only full screen or in an installed app; hiding the bars is full screen; no `preventCapture`, `screenshots()` or `setBrightness` |
+| `platform/appicon` | `set` changes the page's icon (its tab's), and again on the next visit; an installed web app keeps the manifest's |
 | `platform/background` | The page runs while it's open; a task adds nothing, and has no notification |
 | `platform/tracking` | No prompt: `.denied` when the browser sends Global Privacy Control or Do Not Track, else `.allowed` |
 | `device.haptic` | `navigator.vibrate`, where the browser has it (Chrome on Android) |
@@ -2467,6 +2471,52 @@ going full screen, and has neither, nor a brightness to set.
 
 These are the app's, not a screen's: a screen that sets one sets it back
 as it goes (a `defer` in its task).
+
+## The app's icon: platform/appicon
+
+`asuka.toml` lists the icons the app may show besides its own, and
+each build makes them as it makes the app's icon:
+
+```toml
+icon = "icon.png"
+
+[alternateIcons]
+dark = "icons/dark.png"
+classic = "icons/classic.png"
+```
+
+```asuka check
+import platform/appicon
+
+component IconPicker {
+  state shown = appicon.current() ?? "default"
+
+  Column {
+    gap: 8
+    for name in ["default"] + appicon.names() key name {
+      Button(name) {
+        on press {
+          try? await appicon.set(if name == "default" { none } else { name })
+          shown = appicon.current() ?? "default"
+        }
+      }
+    }
+    Text("Showing {shown}")
+  }
+}
+```
+
+- `appicon.names()` are `alternateIcons`' names, `appicon.current()`
+  the one the app shows (`none`: its own).
+- `appicon.set(name)` shows one, and `set(none)` the app's own again.
+  The choice stays across launches and updates. A name the build has
+  no icon of throws `AppIconError.unknown`.
+- iOS changes the home screen's icon and tells the user so itself, in
+  an alert the app can't leave out; one set while the app is in the
+  background changes as it comes back. Android changes the launcher's
+  icon as the app leaves the screen (changing it while the app shows can
+  close it): the app drawer shows the new one, and a home screen
+  shortcut to the old one goes.
 
 ## The launch screen: platform/splash
 

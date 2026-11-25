@@ -428,3 +428,7 @@ func windowsFileTypes(types []fileType, iconIDs map[int]int) []filetype.Type {
 // fileTypeIconID is the group icon resource ID of the i-th file type's
 // icon in a Windows executable (the app's is 1).
 func fileTypeIconID(i int) int { return 101 + i }
+
+// alternateIconID is the icon group of asuka.toml's i-th alternate icon
+// (alternateIconNames' order) in a Windows executable.
+func alternateIconID(i int) int { return 201 + i }
