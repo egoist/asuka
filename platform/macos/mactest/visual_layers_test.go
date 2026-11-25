@@ -151,9 +151,9 @@ func TestVisualGlassButtons(t *testing.T) {
 }
 
 // A disabled filled button keeps its title white: AppKit only lightens its
-// accent bezel, and its gray disabled text would all but vanish on it.
-// Enabled, the title is AppKit's again; a title color of the app's own
-// stays its.
+// accent bezel, and its gray disabled text would all but vanish on it; a
+// title color of the app's own is drawn as given. Enabled, AppKit draws
+// its title again.
 func TestVisualFilledDisabled(t *testing.T) {
 	a := Run(t, `
 		component Buttons {
@@ -172,14 +172,14 @@ func TestVisualFilledDisabled(t *testing.T) {
 	if sign == nil || red == nil {
 		t.Fatalf("buttons:\n%s", tr.Raw())
 	}
-	// Disabled, its cell draws its title white (titleAsGiven), as AppKit
+	// Disabled, its cell draws its title white (titleAsGiven), where AppKit
 	// would draw it gray.
 	white := func(b *Node) bool { return b.Get("titleAsGiven") == true && b.Str("titleColor") == "#ffffffff" }
 	if sign.Get("enabled") != false || !white(sign) {
 		t.Errorf("disabled: enabled %v, title %q drawn as given %v", sign.Get("enabled"), sign.Str("titleColor"), sign.Get("titleAsGiven"))
 	}
-	if c := red.Str("titleColor"); c == "#ffffffff" || c == "" {
-		t.Errorf("the app's own title color became %q", c)
+	if c := red.Str("titleColor"); c == "#ffffffff" || c == "" || red.Get("titleAsGiven") != true {
+		t.Errorf("the app's own title color: %q, drawn as given %v", c, red.Get("titleAsGiven"))
 	}
 	a.Do("tap Toggle")
 	tr = a.Until(func(tr *Tree) bool { b := tr.Find("Button", "Sign On"); return b != nil && b.Get("enabled") == true })
