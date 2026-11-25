@@ -1,0 +1,75 @@
+// Field accessories is an e2e's app (e2e/fieldkeyboard_test.go): two
+// fields, each with its own bar on the keyboard, the second's taller, a
+// third with neither a bar nor the same keys (a number pad), and the
+// keyboard heights the app is given while focus moves from one to
+// another.
+
+import std/time
+
+// a field's bar: Done, named for its field, so the screen tells which
+// bar is on the keyboard; tall, 16 points taller
+component Bar(field: Ref, name: string, tall: bool = false) {
+  Row {
+    padding: [if tall { 14 } else { 6 }, 16]; justify: .end; material: .bar
+    Button("Done {name}") { on press { field.blur() } }
+  }
+}
+
+component FieldAccessories {
+  state first = ""
+  state second = ""
+  state third = ""
+  // the keyboard heights since a Focus button was pressed, each change
+  state seen: [int] = []
+  state watching = false
+  // when Focus third was pressed, and how many milliseconds later the
+  // keyboard's height first changed (-1: not yet)
+  state pressed = 0
+  state movedAfter = -1
+  let firstField = Ref()
+  let secondField = Ref()
+  let thirdField = Ref()
+  let env = environment()
+
+  effect(env.keyboard) {
+    if watching { seen = seen + [int(env.keyboard)] }
+    if pressed > 0 && movedAfter < 0 { movedAfter = time.monotonic().milliseconds() - pressed }
+  }
+
+  Column {
+    grow: 1; gap: 12
+    padding: [env.safeTop + 16, 16, max(env.safeBottom, env.keyboard) + 16, 16]
+    Text("ready")
+    Text(if env.keyboard > 0 { "keyboard up" } else { "keyboard down" })
+    Text("keyboard: {int(env.keyboard)}")
+    Text("seen: {seen.map(k => "{k}").joined(separator: " ")}")
+    Text("moved after: {movedAfter}")
+    TextField { bind text: first; label: "First"; ref: firstField; accessory { Bar(firstField, name: "first") } }
+    TextField { bind text: second; label: "Second"; ref: secondField; accessory { Bar(secondField, name: "second", tall: true) } }
+    TextField { bind text: third; label: "Third"; keyboard: .number; ref: thirdField }
+    Button("Focus first") { on press { firstField.focus() } }
+    Button("Dismiss") {
+      on press {
+        firstField.blur()
+        secondField.blur()
+        thirdField.blur()
+      }
+    }
+    Button("Focus second") { on press { seen = [int(env.keyboard)]; watching = true; secondField.focus() } }
+    Button("Focus third") {
+      on press {
+        seen = [int(env.keyboard)]
+        watching = true
+        pressed = time.monotonic().milliseconds()
+        thirdField.focus()
+      }
+    }
+  }
+}
+
+app { FieldAccessories() }
+
+test "the fields are there" {
+  let app = mount(FieldAccessories())
+  app.expect("ready")
+}
