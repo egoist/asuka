@@ -3,6 +3,7 @@ import { staticFunctionMiddleware } from "@tanstack/start-static-server-function
 
 import { loadDoc, loadNav } from "@/lib/docs.server"
 import { isLocale, localized, type Locale } from "@/lib/locales"
+import type { ReferenceGroup } from "@/lib/reference"
 
 export interface TocItem {
   id: string
@@ -21,8 +22,8 @@ export interface NavItem {
 export interface NavSection {
   title: string
   items: NavItem[]
-  /** "reference": a section of the API reference's sidebar (/docs/std, /docs/platform), not the docs'. */
-  group?: "reference"
+  /** A section of the API reference's sidebar, the part's (/docs/language, /docs/std), not the docs'. */
+  reference?: ReferenceGroup
 }
 
 export type Navs = NavSection[]
@@ -43,8 +44,8 @@ export interface Doc {
   prev?: { slug: string; title: string; episode: number }
   next?: { slug: string; title: string; episode: number }
   editUrl: string
-  /** A page of the API reference: its source is a package's, its sidebar the reference's. */
-  reference?: boolean
+  /** A page of the API reference, its part: its sidebar is that part's. */
+  reference?: ReferenceGroup
   /** A guide's packages in the API reference (std/http): what its examples import. */
   references?: string[]
 }

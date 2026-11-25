@@ -3,10 +3,9 @@ import { Outlet, useMatches } from "@tanstack/react-router"
 import { DocsNav } from "@/components/docs/docs-nav"
 import type { Doc, Navs } from "@/lib/docs"
 
-/** The sidebar of a page: the API reference's for one of its pages, else the docs'. */
+/** The sidebar of a page: its part of the API reference's (the language's, std's) for one of its pages, else the docs'. */
 export function sidebarOf(nav: Navs, page: Doc | null | undefined): Navs {
-  const reference = !!page?.reference
-  return nav.filter((s) => (s.group === "reference") === reference)
+  return nav.filter((s) => s.reference === page?.reference)
 }
 
 /** The docs, in either language: the sidebar, and the page. */

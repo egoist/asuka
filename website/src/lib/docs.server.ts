@@ -109,7 +109,7 @@ export async function loadNav(locale: Locale): Promise<Navs> {
 /**
  * The reference's sidebar: the standard library's packages and the
  * platform SDK's, each set's list first. The docs' sidebar is the
- * sections without a group; a page of the reference shows these.
+ * sections of no part; a page of the reference shows its part's.
  */
 async function referenceNav(locale: Locale): Promise<NavSection[]> {
   const words = messages[locale].reference
@@ -123,14 +123,14 @@ async function referenceNav(locale: Locale): Promise<NavSection[]> {
       const pages = tree.children.flatMap((node) => (node.type === "list" ? navItems(node, group) : []))
       return {
         title: words[group as "language" | "errors"],
-        group: "reference",
+        reference: group,
         items: [{ slug: group, title: messages[locale].docs.overview, description: words[`${group as "language" | "errors"}About`] }, ...pages],
       }
     })
   )
   return [...written, ...generatedGroups.map((group) => ({
     title: words[group],
-    group: "reference",
+    reference: group,
     items: [
       { slug: group, title: messages[locale].docs.overview, description: words[`${group}About`] },
       ...packages.filter((p) => p.path.startsWith(group + "/")).map((p) => ({ slug: p.slug, title: p.path, description: p.description })),
@@ -166,11 +166,11 @@ function sentence(text: string) {
 }
 
 export async function loadDoc(locale: Locale, slug: string): Promise<Doc | undefined> {
-  const reference = referenceGroupOf(slug) !== undefined
+  const reference = referenceGroupOf(slug)
   const [page, nav, file] = await Promise.all([render(locale, slug), loadNav(locale), reference ? undefined : fileOf(locale, slug)])
   if (!page || (!file && !reference)) return undefined
-  // The page's sidebar: the docs', or the reference's.
-  const sections = nav.filter((s) => (s.group === "reference") === reference)
+  // The page's sidebar: the docs', or its part of the reference's.
+  const sections = nav.filter((s) => s.reference === reference)
   const order = sections.flatMap((s) => s.items).filter((i) => i.slug !== undefined)
   const index = order.findIndex((i) => i.slug === slug)
   const item = order[index]

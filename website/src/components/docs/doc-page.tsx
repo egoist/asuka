@@ -74,7 +74,7 @@ export function DocPage({ doc }: { doc: Doc }) {
           </SheetTrigger>
           <SheetContent side="left" className="w-72 overflow-y-auto">
             <SheetHeader>
-              <SheetTitle>{doc.reference ? words.nav.references : t.documentation}</SheetTitle>
+              <SheetTitle>{doc.reference ? words.reference[doc.reference] : t.documentation}</SheetTitle>
             </SheetHeader>
             <div className="px-2 pb-8">
               <DocsNav sections={nav} page={doc} onNavigate={() => setMenuOpen(false)} />

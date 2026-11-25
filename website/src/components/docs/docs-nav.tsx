@@ -31,7 +31,7 @@ export function DocsNav({ sections, page, onNavigate }: { sections: NavSection[]
                     className={`group ${item}`}
                     activeProps={{ className: "bg-muted font-medium text-foreground! shadow-[inset_2px_0_0_var(--unit)]" }}
                   >
-                    {section.group === "reference" ? (
+                    {section.reference ? (
                       // A package of the API reference: its name (time, for std/time).
                       <span className={/^(std|platform)\//.test(p.slug) ? "font-mono text-[13px]" : undefined}>{p.title.replace(/^(std|platform)\//, "")}</span>
                     ) : (
