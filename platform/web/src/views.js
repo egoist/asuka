@@ -51,12 +51,13 @@ function fillWidth(c, natural) {
   return natural;
 }
 
+/** heightOf is an element's height as laid out with no height set (auto), which a transform around it leaves as it is. */
 function heightOf(h, el) {
   return h.measurable(el, () => {
     const s = el.style;
     const saved = s.height;
     s.height = "auto";
-    const r = el.getBoundingClientRect().height;
+    const r = text.boxSize(el)[1];
     s.height = saved;
     return r;
   });
@@ -171,11 +172,7 @@ const button = {
   label(h, n, v) { if (!n.title && v) n.el.title = v; },
   inset(h, n) { padInset(n); },
   measure(h, n, c) {
-    let [w, hh] = h.measureElement(n, n.el, { width: NaN, height: NaN, availW: Infinity, availH: Infinity });
-    // Its padding, when the style sets one, is the core's to add: its
-    // title alone.
-    const v = padded(n);
-    if (v) { w = Math.max(w - v[1] - v[3], 0); hh = Math.max(hh - v[0] - v[2], 0); }
+    const [w, hh] = h.measureElement(n, n.el, { width: NaN, height: NaN, availW: Infinity, availH: Infinity });
     return [fitWidth(c, w, w), hh];
   },
 };
@@ -314,12 +311,12 @@ const textField = {
     return false;
   },
   measure(h, n, c) {
-    const el = n.el;
     const w = fitWidth(c, 200, 80);
-    if (!n.multiline) {
-      return [w, heightOf(h, el)];
-    }
-    return [w, multilineHeight(h, n, w)];
+    // The core's width and the size it's told are the content's, as
+    // measureNow's are (text.insetSize); the input draws the inset.
+    const [iw, ih] = text.insetSize(n);
+    const hh = n.multiline ? multilineHeight(h, n, w + iw) : heightOf(h, n.el);
+    return [w, Math.max(hh - ih, 0)];
   },
   resized(h, n) {},
 };
@@ -457,9 +454,9 @@ const toggle = {
 
 function rectOf(h, el, inner) {
   return h.measurable(el, () => {
-    const r = inner.getBoundingClientRect();
+    const [w, hh] = text.boxSize(inner);
     const cs = getComputedStyle(inner);
-    return { width: r.width + parseFloat(cs.marginLeft) + parseFloat(cs.marginRight), height: r.height + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom) };
+    return { width: w + parseFloat(cs.marginLeft) + parseFloat(cs.marginRight), height: hh + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom) };
   });
 }
 

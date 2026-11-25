@@ -752,24 +752,34 @@ export class Host {
   measureNow(n, el, c, opts) {
     const s = el.style;
     const saved = [s.width, s.height, s.maxWidth, s.left, s.top];
+    // The core's constraints and the size it's told are the content's
+    // (text.insetSize).
+    const [iw, ih] = text.insetSize(n);
+    const availW = c.availW + iw;
     s.maxWidth = "none";
     s.height = "auto";
-    if (c.width === c.width) s.width = c.width + "px";
+    if (c.width === c.width) s.width = c.width + iw + "px";
     else if (c.availW === Infinity) s.width = "max-content";
     else if (c.availW === -Infinity) s.width = "min-content";
     else {
       s.width = "max-content";
-      if (el.getBoundingClientRect().width > c.availW) s.width = Math.max(c.availW, 0) + "px";
+      if (text.boxSize(el)[0] > availW) s.width = Math.max(availW, iw) + "px";
     }
-    let r = el.getBoundingClientRect();
-    let w = r.width, h = r.height;
-    if (opts.tight && c.width !== c.width && c.availW === c.availW && Math.abs(c.availW) !== Infinity && w >= c.availW - 0.5) {
+    let [w, h] = text.boxSize(el);
+    if (opts.tight && c.width !== c.width && c.availW === c.availW && Math.abs(c.availW) !== Infinity && w >= availW - 0.5) {
       // Wrapped: as wide as its widest line, as UIKit and Android measure.
-      const tw = text.linesWidth(el);
-      if (tw > 0) w = Math.min(w, tw + text.horizontalInset(n));
+      // The line's box is as drawn, so under a scale it's scaled back by
+      // the element's drawn width over its used one. Under a rotation or a
+      // skew the box isn't the line's width, and the text keeps the width
+      // it was given.
+      if (text.scaledOnly(el)) {
+        const drawn = el.getBoundingClientRect().width;
+        const tw = text.linesWidth(el) * (drawn > 0 ? w / drawn : 1);
+        if (tw > 0) w = Math.min(w, tw + iw);
+      }
     }
     s.width = saved[0]; s.height = saved[1]; s.maxWidth = saved[2];
-    return [w, h];
+    return [Math.max(w - iw, 0), Math.max(h - ih, 0)];
   }
 
   // --- Commands to the root ---

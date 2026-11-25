@@ -1,0 +1,49 @@
+// Text Padding shows the same text three times (e2e's TestTextPadding*):
+// blue with no padding; red with 10 points above and below and 20 at
+// each side; and green with that padding, stretched across a view 130
+// points wide, which gives it its width. Each is its text in its own
+// color, under a magenta square 48 points high that the test measures
+// them against.
+
+component TextPadding {
+  View {
+    grow: 1
+    justify: .center
+    align: .center
+    gap: 24
+    background: #ffffff
+
+    View {
+      width: 48
+      height: 48
+      background: #ff00ff
+    }
+    Text("Measure") {
+      font: Font(size: 16, weight: .bold)
+      color: #0000ff
+      background: #0000ff
+    }
+    Text("Measure") {
+      padding: [10, 20]
+      font: Font(size: 16, weight: .bold)
+      color: #ff0000
+      background: #ff0000
+    }
+    View {
+      width: 130
+      Text("Measure") {
+        padding: [10, 20]
+        font: Font(size: 16, weight: .bold)
+        color: #00ff00
+        background: #00ff00
+      }
+    }
+  }
+}
+
+app { TextPadding() }
+
+test "the texts under the square" {
+  let app = mount(TextPadding())
+  app.expect("Measure")
+}

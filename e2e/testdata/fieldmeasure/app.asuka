@@ -1,0 +1,35 @@
+// Field Measure shows text fields 200 points wide (e2e's
+// TestFieldMeasure*): one line and multiline, each plain and with
+// padding of 10 points all round; a plain one line in a view drawn at
+// half its size (a transform, which layout doesn't see); and a multiline
+// one with 50 points of padding at each side holding a paragraph. Each
+// says which it is in its placeholder.
+
+component FieldMeasure {
+  state note = "Blood pressure was taken twice, seated, after five minutes of rest. Both readings were within the target the care plan sets."
+
+  View {
+    grow: 1
+    justify: .center
+    align: .center
+    gap: 24
+    background: #ffffff
+
+    TextField { width: 200; placeholder: "Plain" }
+    TextField { width: 200; padding: [10, 10]; placeholder: "Padded" }
+    TextField { width: 200; multiline: true; placeholder: "Plain lines" }
+    TextField { width: 200; multiline: true; padding: [10, 10]; placeholder: "Padded lines" }
+    View {
+      transform: Transform(scale: 0.5)
+      TextField { width: 200; placeholder: "Half size" }
+    }
+    TextField { width: 200; multiline: true; padding: [10, 50]; placeholder: "Paragraph"; bind text: note }
+  }
+}
+
+app { FieldMeasure() }
+
+test "the fields" {
+  let app = mount(FieldMeasure())
+  app.expect("Padded")
+}
