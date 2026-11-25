@@ -170,6 +170,17 @@ var symbols = map[string]string{
 	"at":                        "alternate_email",
 	"textformat":                "text_format",
 	"link.badge.plus":           "add_link",
+	// Feeds, people and lists (examples/hackernews, examples/pulls).
+	"questionmark.bubble":   "contact_support",
+	"briefcase":             "work",
+	"bookmark.slash":        "bookmark_remove",
+	"newspaper":             "newspaper",
+	"safari":                "explore",
+	"wifi.exclamationmark":  "signal_wifi_bad",
+	"person.fill.checkmark": "how_to_reg",
+	"person.fill.xmark":     "person_off",
+	"arrow.up.arrow.down":   "swap_vert",
+	"number":                "tag",
 }
 
 // fills are the SF Symbols with a ".fill" variant here.
@@ -189,6 +200,7 @@ var fills = map[string]bool{
 	"hand.thumbsup": true, "hand.thumbsdown": true, "gift": true, "tray": true, "archivebox": true,
 	"pin": true, "ellipsis.circle": true, "arrow.forward.circle": true, "arrow.backward.circle": true,
 	"arrowshape.turn.up.forward": true, "arrowshape.turn.up.backward": true,
+	"clock": true, "questionmark.bubble": true, "briefcase": true, "newspaper": true,
 }
 
 // labels name the symbols for TalkBack where the Material symbol's name
@@ -216,6 +228,9 @@ var labels = map[string]string{
 	"chevron.left.forwardslash.chevron.right": "Code", "text.quote": "Quote", "list.number": "Numbered list",
 	"arrowshape.turn.up.left": "Reply", "arrowshape.turn.up.left.2": "Reply all", "at": "Mention",
 	"textformat": "Format", "link.badge.plus": "Add link",
+	"questionmark.bubble": "Questions", "briefcase": "Jobs", "bookmark.slash": "Remove bookmark", "newspaper": "News",
+	"safari": "Open in browser", "wifi.exclamationmark": "No connection", "person.fill.checkmark": "Approved",
+	"person.fill.xmark": "Changes requested", "arrow.up.arrow.down": "Sort", "number": "Number",
 }
 
 // label is the TalkBack label of an SF Symbol name.

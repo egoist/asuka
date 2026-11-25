@@ -163,6 +163,7 @@ var Methods = []*Method{
 	{Recv: "string", Name: "slice", Sig: "(from: int, to: int) -> string", Builtin: "str.slice", Doc: "the characters from from up to to, clamped"},
 	{Recv: "string", Name: "slice", Sig: "(from: int) -> string", Builtin: "str.slice", Doc: "the characters from from to the end"},
 	{Recv: "string", Name: "byteSlice", Sig: "(from: int, to: int) -> string", Builtin: "str.byte_slice", Doc: "the bytes from from up to to (the offsets find gives), clamped"},
+	{Recv: "string", Name: "byteSlice", Sig: "(from: int) -> string", Builtin: "str.byte_slice", Doc: "the bytes from from (an offset find gives) to the end"},
 	{Recv: "string", Name: "padStart", Sig: "(width: int, with: string = \" \") -> string", Builtin: "str.pad", Extra: "false", Doc: "with copies of with before it, up to width characters: \"7\".padStart(2, with: \"0\") is 07"},
 	{Recv: "string", Name: "padEnd", Sig: "(width: int, with: string = \" \") -> string", Builtin: "str.pad", Extra: "true", Doc: "with copies of with after it, up to width characters"},
 	{Recv: "string", Name: "toInt", Sig: "() -> int?", Builtin: "str.to_int"},
@@ -199,6 +200,7 @@ var Methods = []*Method{
 	{Recv: "bytes", Name: "isEmpty", Sig: "() -> bool", Builtin: "bytes.is_empty"},
 	{Recv: "bytes", Name: "get", Sig: "(index: int) -> int?", Builtin: "bytes.get", Doc: "the byte at index (0 to 255), or none when it's out of range"},
 	{Recv: "bytes", Name: "slice", Sig: "(from: int, to: int) -> bytes", Builtin: "bytes.slice", Doc: "the bytes from from up to to, clamped"},
+	{Recv: "bytes", Name: "slice", Sig: "(from: int) -> bytes", Builtin: "bytes.slice", Doc: "the bytes from from to the end"},
 	{Recv: "bytes", Name: "concat", Sig: "(other: bytes) -> bytes", Builtin: "bytes.concat", Doc: "these bytes, then other's"},
 	{Recv: "bytes", Name: "toArray", Sig: "() -> [u8]", Builtin: "bytes.to_array", Doc: "the bytes as an array of u8s; bytes(xs) makes them back"},
 	{Recv: "bytes", Name: "string", Sig: "() -> string", Builtin: "bytes.str", Doc: "the bytes read as UTF-8 text; what isn't UTF-8 becomes U+FFFD"},
@@ -244,7 +246,7 @@ var Methods = []*Method{
 
 	// What mount returns, in tests.
 	{Recv: "app", Name: "tap", Sig: "(text: string)", Builtin: "test.tap", Doc: "taps the control showing text, and waits for what it does"},
-	{Recv: "app", Name: "type", Sig: "(text: string, into: string)", Builtin: "test.type", Doc: "types text into the field labelled or showing into"},
+	{Recv: "app", Name: "type", Sig: "(text: string, into: string)", Builtin: "test.type", Doc: "types text into the field labelled or showing into: a TextField, an alert's field, or a screen's search field by its placeholder"},
 	{Recv: "app", Name: "expect", Sig: "(text: string)", Builtin: "test.expect", Variadic: true, Doc: "fails the test unless each text is shown: a text, a title, a field's text or placeholder, an accessibility label, a tab, a bar button, an alert's button, an open menu's item"},
 	{Recv: "app", Name: "expectNo", Sig: "(text: string)", Builtin: "test.expect_no", Variadic: true, Doc: "fails the test if any of the texts is shown"},
 	{Recv: "app", Name: "has", Sig: "(text: string) -> bool", Builtin: "test.has", Doc: "whether the screen shows text, anywhere"},
@@ -252,7 +254,7 @@ var Methods = []*Method{
 	{Recv: "app", Name: "snapshot", Sig: "() -> string", Builtin: "test.dump", Doc: "what the screen shows: each layer's views, a line each, with their kinds, frames, texts and states"},
 	{Recv: "app", Name: "disabled", Sig: "(text: string) -> bool", Builtin: "test.disabled", Doc: "whether what shows text is disabled: a control (or a view around it), a bar button, an alert's button, an open menu's item; it fails unless one thing shows text"},
 	{Recv: "app", Name: "longPress", Sig: "(text: string)", Builtin: "test.long_press", Doc: "long-presses what shows text: a view that takes a long press, or one with a context menu, which opens"},
-	{Recv: "app", Name: "submit", Sig: "(label: string = \"\")", Builtin: "test.submit", Doc: "presses return in the field label names (as type finds it; \"\": the field typed in last), or an alert's field"},
+	{Recv: "app", Name: "submit", Sig: "(label: string = \"\")", Builtin: "test.submit", Doc: "presses return in the field label names (as type finds it; \"\": the field typed in last), an alert's field, or a screen's search field (its searchSubmit)"},
 	{Recv: "app", Name: "toggle", Sig: "(label: string)", Builtin: "test.toggle", Doc: "flips the switch or checkbox label names: one with that accessibility label, or the one next to a text"},
 	{Recv: "app", Name: "slide", Sig: "(label: string, value: float)", Builtin: "test.slide", Doc: "moves the slider label names (as toggle finds it) to value"},
 	{Recv: "app", Name: "select", Sig: "(option: string)", Builtin: "test.select", Doc: "chooses option in the picker, wheel or segmented control that has it"},

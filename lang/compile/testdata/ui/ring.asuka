@@ -1,0 +1,37 @@
+// A ProgressRing keeps its platform's size where its parent would
+// stretch it (a Column's default), centered; a parent's own align, or
+// the ring's alignSelf or size, still say where and how big.
+
+component Rings {
+  Column {
+    width: 300
+    gap: 8
+    ProgressRing { label: "stretched" }
+    Column {
+      align: .start
+      ProgressRing { label: "at the start" }
+    }
+    for i in [1] key i {
+      ProgressRing { label: "in a for" }
+    }
+    ProgressRing {
+      label: "sized"
+      width: 60
+    }
+  }
+}
+
+test "a ring isn't stretched" {
+  let app = mount(Rings())
+  let (x, _, w, h) = app.frameOf("stretched")
+  expect(w == h && w < 100, "its own size: {w}x{h}")
+  expect(x == (300 - w) / 2, "centered: {x}")
+  let (sx, _, _, _) = app.frameOf("at the start")
+  expect(sx == 0, "a parent's .start: {sx}")
+  let (fx, _, fw, _) = app.frameOf("in a for")
+  expect(fw < 100 && fx > 0, "a for's ring too: {fx} {fw}")
+  let (_, _, zw, zh) = app.frameOf("sized")
+  expect(zw == 60 && zh == 60, "a ring given a size: {zw}x{zh}")
+}
+
+app { Rings() }

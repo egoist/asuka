@@ -12,6 +12,10 @@ let icon = match (online, unread) {
 }
 ```
 
+A branch whose value says nothing of its type, an empty `[]` or `[:]`
+or an implicit `.case`, takes the other branch's: `if let c = chosen {
+[c] } else { [] }` is a `[Story]`.
+
 A tuple pattern (`(true, 0)`) matches each element with a pattern of
 its own. Matching an optional tuple, it matches the tuple when there's
 one, as a case pattern does (`none` is an arm of its own): `if let

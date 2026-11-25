@@ -133,6 +133,9 @@ struct AsukaListRow {
             appearance = AsukaListAppearance(rawValue: v.enumValue) ?? .plain
         case AsukaProp.List.inset:
             inset = CGFloat(v.float)
+        case AsukaProp.List.edgeEffect:
+            scroll.edgeEffect = Int(v.int)
+            rt.applyEdgeEffect(scroll)
         case AsukaProp.List.anchor:
             bottom = AsukaScrollAnchor(rawValue: v.enumValue) == .bottom
             stuck = true

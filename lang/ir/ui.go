@@ -264,8 +264,9 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 			}
 		case check.UseMember:
 			r := b.local(bc.KRef)
-			key := b.kstr(b.l.typeKey(check.Unopt(b.typ(m.Type))))
-			b.callBTo(uiUse, r, key)
+			t := b.typ(m.Type)
+			key := b.kstr(b.l.typeKey(check.Unopt(t)))
+			b.callBTo(uiUse, r, key, b.konst(useRequired(t)))
 			b.memberRegs[m] = r
 		}
 		if m.Kind == check.PropMember && m.Assigned {

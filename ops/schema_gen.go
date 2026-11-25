@@ -245,24 +245,28 @@ const (
 	PropScrollRefreshing  PropID = 66
 	// PropScrollPaging: it stops only at multiples of its own size along its axis, a page each (iOS's isPagingEnabled; Android snaps each swipe to the next page, or back), and hides its scroll bars; a swipe that settles on a page sends Paged.
 	PropScrollPaging PropID = 67
+	// PropScrollEdgeEffect: how its content is set off from a bar it scrolls under: iOS 26's topEdgeEffect style; on macOS 26, the style of its column's (a split view's item's) scroll edge effect under the toolbar. Elsewhere nothing.
+	PropScrollEdgeEffect PropID = 68
 )
 
 // List props.
 const (
 	PropListRefreshable PropID = 64
 	PropListRefreshing  PropID = 65
+	// PropListEdgeEffect: as a Scroll's.
+	PropListEdgeEffect PropID = 66
 	// PropListColumns: a grid of this many columns (0, 1: a list, with separators); each cell (width - gap * (columns - 1)) / columns wide, a row as tall as its tallest.
-	PropListColumns PropID = 66
+	PropListColumns PropID = 67
 	// PropListGap: a grid's spacing between cells, across and down.
-	PropListGap PropID = 67
+	PropListGap PropID = 68
 	// PropListAppearance: a list's look (not a grid's): inset grouped, its rows the list's width less Inset on each side; or bare, with no separators and nothing behind its rows, which draw their own.
-	PropListAppearance PropID = 68
+	PropListAppearance PropID = 69
 	// PropListInset: an inset grouped list's rows' inset from each side, in points (the core's, from the platform's margins).
-	PropListInset PropID = 69
+	PropListInset PropID = 70
 	// PropListAnchor: where the list rests. Bottom (a chat's messages): it opens at its end, rows that don't fill it sit at its bottom, and while it's scrolled to its end it stays there, as rows are added at the end, as rows change height, and as the list gets shorter (the keyboard). Either way, rows added or removed before the ones on screen keep those where they are, unless the list is at its start (Top) or end (Bottom).
-	PropListAnchor PropID = 70
+	PropListAnchor PropID = 71
 	// PropListSelecting: the list is selecting rows: each shows the platform's selection control (iOS's edit mode circles; a Material checkbox at the row's end on Android; a highlight on desktop), a tap selects or deselects the row instead of pressing it (RowSelected), and rows don't swipe. A host whose control takes room from the rows reports it with RowInset.
-	PropListSelecting PropID = 71
+	PropListSelecting PropID = 72
 )
 
 // Activity props.
@@ -580,7 +584,7 @@ const (
 
 var commonProps = [...]propInfo{{}, {"Background", TColor}, {"CornerRadius", TFloat}, {"BorderWidth", TFloat}, {"BorderColor", TColor}, {"Opacity", TFloat}, {"Hidden", TBool}, {"Clip", TBool}, {"A11yLabel", TString}, {"A11yHint", TString}, {"A11yRole", TEnum}, {"A11yActions", TBytes}, {"A11yAdjustable", TBool}, {"A11yHidden", TBool}, {"Color", TColor}, {"TextStyle", TEnum}, {"FontSize", TFloat}, {"FontWeight", TEnum}, {"TextAlign", TEnum}, {"LineLimit", TInt}, {"Disabled", TBool}, {"Menu", TBytes}, {"MenuTrigger", TEnum}, {"Transform", TBytes}, {"Shadow", TBytes}, {"Gradient", TBytes}, {"Transition", TBytes}, {"Material", TEnum}, {"FontFamily", TString}, {"SwipeActions", TBytes}, {"LayoutDirection", TEnum}, {"ContentInset", TEdges}, {"LeadingSwipeActions", TBytes}, {"Selected", TBool}, {"Match", TString}, {"InterceptBack", TBool}, {"Tooltip", TString}, {"Keys", TBytes}, {"Focusable", TBool}, {"NoFocusOnPress", TBool}, {"NoFocusRing", TBool}, {"FocusTrap", TBool}, {"A11yChecked", TEnum}, {"A11yExpanded", TEnum}, {"A11ySelected", TBool}, {"A11yValue", TString}, {"A11yRange", TBytes}, {"A11yModal", TBool}, {"A11yControls", TInt}, {"A11yLabelledBy", TInt}, {"A11yDescribedBy", TInt}}
 
-var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TInt}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}, {{"Root", TInt}, {"Anchor", TInt}, {"Modal", TBool}}}
+var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}, {"EdgeEffect", TEnum}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"EdgeEffect", TEnum}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TInt}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}, {{"Root", TInt}, {"Anchor", TInt}, {"Modal", TBool}}}
 
 // Events.
 const (
@@ -1194,6 +1198,14 @@ type ScrollAnchor int32
 const (
 	ScrollAnchorTop ScrollAnchor = iota
 	ScrollAnchorBottom
+)
+
+type EdgeEffect int32
+
+const (
+	EdgeEffectAutomatic EdgeEffect = iota
+	EdgeEffectSoft
+	EdgeEffectHard
 )
 
 type WindowAction int32

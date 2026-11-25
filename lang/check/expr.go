@@ -2399,18 +2399,37 @@ func (c *Checker) ifExpr(e *syntax.IfExpr, want Type) Type {
 // block's value): its condition, then each branch's block as a value;
 // els is an *IfExpr, an *IfStmt or a *Block.
 func (c *Checker) ifValue(n syntax.Node, cond syntax.Expr, then *syntax.Block, els syntax.Node, want Type) Type {
-	c.openScope()
-	c.cond(cond)
-	a := c.valueBlock(then, want)
-	c.closeScope()
-	var b Type
-	switch el := els.(type) {
-	case *syntax.IfExpr:
-		b = c.expr(el, want)
-	case *syntax.IfStmt:
-		b = c.ifValue(el, el.Cond, el.Then, el.Else, want)
-	case *syntax.Block:
-		b = c.valueBlock(el, want)
+	elsValue := func(want Type) Type {
+		switch el := els.(type) {
+		case *syntax.IfExpr:
+			return c.expr(el, want)
+		case *syntax.IfStmt:
+			return c.ifValue(el, el.Cond, el.Then, el.Else, want)
+		case *syntax.Block:
+			return c.valueBlock(el, want)
+		}
+		return nil
+	}
+	var a, b Type
+	// A branch whose value says nothing of its type ([], [:], .case) takes
+	// the other's, when nothing else is expected: if let c = chosen { [c] }
+	// else { [] }.
+	if want == nil && needsContext(then) && !needsContext(els) {
+		b = elsValue(nil)
+		c.openScope()
+		c.cond(cond)
+		a = c.valueBlock(then, hintOf(b))
+		c.closeScope()
+	} else {
+		c.openScope()
+		c.cond(cond)
+		a = c.valueBlock(then, want)
+		c.closeScope()
+		w := want
+		if w == nil && needsContext(els) {
+			w = hintOf(a)
+		}
+		b = elsValue(w)
 	}
 	if want != nil {
 		return want
@@ -2422,6 +2441,41 @@ func (c *Checker) ifValue(n syntax.Node, cond syntax.Expr, then *syntax.Block, e
 	}
 	c.convertBranch(then, t)
 	c.convertBranch(els, t)
+	return t
+}
+
+// needsContext reports a branch whose value is an empty array or map
+// literal, or an implicit member (.red): it has a type only from what's
+// expected of it.
+func needsContext(n syntax.Node) bool {
+	switch x := n.(type) {
+	case *syntax.Block:
+		if x == nil || len(x.Items) == 0 {
+			return false
+		}
+		if s, ok := x.Items[len(x.Items)-1].(*syntax.ExprStmt); ok {
+			return needsContext(s.X)
+		}
+	case *syntax.ExprStmt:
+		return needsContext(x.X)
+	case *syntax.ParenExpr:
+		return needsContext(x.X)
+	case *syntax.ArrayExpr:
+		return len(x.Elems) == 0
+	case *syntax.MapExpr:
+		return len(x.Entries) == 0
+	case syntax.Expr:
+		return implicitRoot(x)
+	}
+	return false
+}
+
+// hintOf is a branch's type as what's expected of the other: none when
+// it says nothing (it's invalid, none, or never returns).
+func hintOf(t Type) Type {
+	if t == nil || IsInvalid(t) || t == Never || t == NoneType {
+		return nil
+	}
 	return t
 }
 

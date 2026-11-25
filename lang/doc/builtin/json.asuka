@@ -8,8 +8,11 @@
 //   let same = try json.decode<[Note]>(text)
 //   let out = json.encode(notes, indent: 2)
 //
-// A struct reads from an object by its fields' names; a field the object
-// doesn't have is empty (nil, 0, false, "", an empty array or map), but
+// A struct reads from an object by its fields' names, a key in a web
+// API's snake_case naming one too: html_url reads into htmlUrl or
+// htmlURL, created_at into createdAt (a key that's the field's own name
+// wins). json.encode writes the fields' own names. A field the object
+// doesn't have, or has as null, is empty (nil, 0, false, "", an empty array or map), but
 // a missing struct is an error. An enum without payloads reads from its
 // case's name, an optional from null; [T] from an array, [string: T] from
 // an object. A generic function may read or write its

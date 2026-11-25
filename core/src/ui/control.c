@@ -535,6 +535,7 @@ static void reconcile(for_t *s, ak_arr *list) {
 		f->kids.data[f->kids.len++] = rw->el;
 		if (rw->old < 0) {
 			rw->el->parent = f;
+			ak_view_placed(rw->el);
 			ak_view_inherit_dir(f, rw->el);
 		}
 	}

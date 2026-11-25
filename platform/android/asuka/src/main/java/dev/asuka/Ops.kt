@@ -193,17 +193,19 @@ object AsukaProp {
         const val REFRESHABLE = 65
         const val REFRESHING = 66
         const val PAGING = 67
+        const val EDGE_EFFECT = 68
     }
 
     object List {
         const val REFRESHABLE = 64
         const val REFRESHING = 65
-        const val COLUMNS = 66
-        const val GAP = 67
-        const val APPEARANCE = 68
-        const val INSET = 69
-        const val ANCHOR = 70
-        const val SELECTING = 71
+        const val EDGE_EFFECT = 66
+        const val COLUMNS = 67
+        const val GAP = 68
+        const val APPEARANCE = 69
+        const val INSET = 70
+        const val ANCHOR = 71
+        const val SELECTING = 72
     }
 
     object Activity {
@@ -831,6 +833,12 @@ object AsukaDragPhase {
 object AsukaScrollAnchor {
     const val TOP = 0
     const val BOTTOM = 1
+}
+
+object AsukaEdgeEffect {
+    const val AUTOMATIC = 0
+    const val SOFT = 1
+    const val HARD = 2
 }
 
 object AsukaWindowAction {

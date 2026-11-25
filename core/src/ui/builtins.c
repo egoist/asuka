@@ -189,9 +189,16 @@ static ak_val b_lazy_for(ak_val *a, uint32_t n) {
 	return none();
 }
 
+// ui.use(key, required): the store provided under key; none when nothing
+// above provides one, which is an error when it's required.
 static ak_val b_use(ak_val *a, uint32_t n) {
-	AK_UNUSED(n);
-	return ak_ui_use(a[0].p);
+	ak_val v = ak_ui_use(a[0].p);
+	if (!v.p && n > 1 && a[1].i) {
+		const ak_str *k = a[0].p;
+		ak_throw_msg("nothing provides %.*s here: provide %.*s(…) in a component above this one (a test: mount(…, provide: [%.*s(…)]))", (int)k->len,
+		             k->data, (int)k->len, k->data, (int)k->len, k->data);
+	}
+	return v;
 }
 
 // A component that provides runs under an owner of its own: its

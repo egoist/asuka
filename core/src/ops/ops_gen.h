@@ -279,24 +279,28 @@ enum {
 	AK_PROP_SCROLL_REFRESHING = 66,
 	// it stops only at multiples of its own size along its axis, a page each (iOS's isPagingEnabled; Android snaps each swipe to the next page, or back), and hides its scroll bars; a swipe that settles on a page sends Paged
 	AK_PROP_SCROLL_PAGING = 67,
+	// how its content is set off from a bar it scrolls under: iOS 26's topEdgeEffect style; on macOS 26, the style of its column's (a split view's item's) scroll edge effect under the toolbar. Elsewhere nothing
+	AK_PROP_SCROLL_EDGE_EFFECT = 68,
 };
 
 // List props.
 enum {
 	AK_PROP_LIST_REFRESHABLE = 64,
 	AK_PROP_LIST_REFRESHING = 65,
+	// as a Scroll's
+	AK_PROP_LIST_EDGE_EFFECT = 66,
 	// a grid of this many columns (0, 1: a list, with separators); each cell (width - gap * (columns - 1)) / columns wide, a row as tall as its tallest
-	AK_PROP_LIST_COLUMNS = 66,
+	AK_PROP_LIST_COLUMNS = 67,
 	// a grid's spacing between cells, across and down
-	AK_PROP_LIST_GAP = 67,
+	AK_PROP_LIST_GAP = 68,
 	// a list's look (not a grid's): inset grouped, its rows the list's width less Inset on each side; or bare, with no separators and nothing behind its rows, which draw their own
-	AK_PROP_LIST_APPEARANCE = 68,
+	AK_PROP_LIST_APPEARANCE = 69,
 	// an inset grouped list's rows' inset from each side, in points (the core's, from the platform's margins)
-	AK_PROP_LIST_INSET = 69,
+	AK_PROP_LIST_INSET = 70,
 	// where the list rests. Bottom (a chat's messages): it opens at its end, rows that don't fill it sit at its bottom, and while it's scrolled to its end it stays there, as rows are added at the end, as rows change height, and as the list gets shorter (the keyboard). Either way, rows added or removed before the ones on screen keep those where they are, unless the list is at its start (Top) or end (Bottom)
-	AK_PROP_LIST_ANCHOR = 70,
+	AK_PROP_LIST_ANCHOR = 71,
 	// the list is selecting rows: each shows the platform's selection control (iOS's edit mode circles; a Material checkbox at the row's end on Android; a highlight on desktop), a tap selects or deselects the row instead of pressing it (RowSelected), and rows don't swipe. A host whose control takes room from the rows reports it with RowInset
-	AK_PROP_LIST_SELECTING = 71,
+	AK_PROP_LIST_SELECTING = 72,
 };
 
 // Activity props.
@@ -853,13 +857,14 @@ enum {
 	AK_ENUM_SHARE_KIND = 31,
 	AK_ENUM_DRAG_PHASE = 32,
 	AK_ENUM_SCROLL_ANCHOR = 33,
-	AK_ENUM_WINDOW_ACTION = 34,
-	AK_ENUM_PLACEMENT = 35,
-	AK_ENUM_TITLE_BAR = 36,
-	AK_ENUM_SNACKBAR_DURATION = 37,
-	AK_ENUM_LOCATION_ACTION = 38,
-	AK_ENUM_DEV_ERROR_ACTION = 39,
-	AK_ENUM_COUNT = 40,
+	AK_ENUM_EDGE_EFFECT = 34,
+	AK_ENUM_WINDOW_ACTION = 35,
+	AK_ENUM_PLACEMENT = 36,
+	AK_ENUM_TITLE_BAR = 37,
+	AK_ENUM_SNACKBAR_DURATION = 38,
+	AK_ENUM_LOCATION_ACTION = 39,
+	AK_ENUM_DEV_ERROR_ACTION = 40,
+	AK_ENUM_COUNT = 41,
 };
 
 // Role.
@@ -1243,6 +1248,14 @@ enum {
 	AK_SCROLL_ANCHOR_TOP = 0,
 	AK_SCROLL_ANCHOR_BOTTOM = 1,
 	AK_SCROLL_ANCHOR_COUNT = 2,
+};
+
+// EdgeEffect.
+enum {
+	AK_EDGE_EFFECT_AUTOMATIC = 0,
+	AK_EDGE_EFFECT_SOFT = 1,
+	AK_EDGE_EFFECT_HARD = 2,
+	AK_EDGE_EFFECT_COUNT = 3,
 };
 
 // WindowAction.

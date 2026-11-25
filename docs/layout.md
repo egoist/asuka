@@ -106,8 +106,10 @@ direction, and sizes that include padding and borders.
   main axis. A growing child can also shrink below its content's size,
   so a growing view around a `Scroll` scrolls rather than taking the
   scroll's full height.
-- **`shrink`** is how much a child gives up when the line overflows. 0
-  is the default; 1: text wraps, controls keep their minimum size.
+- **`shrink`** is how much a child gives up when the line overflows, as
+  CSS's `flex-shrink`: 1 when it isn't set (text wraps, controls keep
+  their minimum size), 0 keeps its size (a number column, an icon, a
+  button beside text that wraps).
 - **`basis`** is a child's starting size along the main axis; `.auto`,
   the default, is its content's.
 
@@ -324,7 +326,11 @@ A `Color` is one of:
     (transparent);
   - the system's hues: `.red`, `.orange`, `.yellow`, `.green`, `.blue`,
     `.purple`, `.pink`, `.gray`.
-- **A fixed color**: `#7c3aed`, or `#7c3aed80` with its alpha.
+- **A fixed color**: `#7c3aed`, or `#7c3aed80` with its alpha. A color
+  the app only has as it runs (a label's from a server, a theme the user
+  saved) is `Color.parse("#7c3aed")` (a `Color?`: none for text that
+  isn't one; the `#` may be left out) or `Color.rgb(124, 58, 237, alpha:
+  0.5)`, its channels 0 to 255.
 
 Where the semantic colors come from:
 

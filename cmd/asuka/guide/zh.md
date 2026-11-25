@@ -437,11 +437,11 @@ fn conversions(n: int, level: u8, ratio: float) -> [u8] {
 | `[T]` | `count()`、`count(where)`、`isEmpty()`、`first()`、`last()`、`get(i)`（返回 `T?`）、`push(x)`、`pushFirst(x)`、`insert(x, at: i)`、`removeAt(i)`、`removeWhere(p)`、`pop()`、`popFirst()`、`clear()`、`map(f)`、`flatMap(f)`（把 `f` 返回的数组依次接起来）、`compactMap(f)`（`f` 的结果中去掉 none）、`filter(p)`、`reduce(initial, f)`、`any(p)`、`all(p)`、`index(p)`（返回 `int?`）、`find(p)`、`contains(x)`、`sum()`、`min()`、`max()`（返回 `T?`；`min(by:)`、`max(by:)` 接受一个“小于”比较，`min(key:)`、`max(key:)` 按键比较）、`unique()`、`grouped(by: f)`（返回 `[K: [T]]`）、`chunked(n)`、`zip(other)`（两两配对，长度取较短的一方）、`reversed()`、`slice(from, to)`（省略 `to` 时到末尾）、`prefix(n)`、`suffix(n)`、`sorted()`、`sorted(by)`、`sorted(key:, descending:)`、`sort()`、`sort(by)`、`sort(key:, descending:)`、`enumerated()`、`joined(separator:)`（用于字符串数组）、`lazy()`（得到 `Seq<T>`）、`+` |
 | `Set<T>` | `count()`、`isEmpty()`、`contains(x)`、`insert(x)`（返回是否新加入）、`remove(x)`（返回原本是否存在）、`union(s)`、`intersection(s)`、`subtracting(s)`、`isSubset(of: s)`、`isSuperset(of: s)`、`lazy()`；`Set(xs)` 是数组中互不相同的元素，`Set<T>()` 是空集合 |
 | `[K: V]` | `m[k]`（返回 `V?`）、`m[k] = v`、`count()`、`isEmpty()`、`has(k)`、`get(k)`、`remove(k)`、`keys()`、`values()`（按插入顺序）、`mapValues(f)`、`filter((k, v) => …)`、`lazy()`（它的 `(key, value)` 对） |
-| `string` | `count()`（字符数）、`byteCount()`、`isEmpty()`、`upper()`、`lower()`、`trim()`、`trimStart()`、`trimEnd()`、`trimPrefix(s)`、`trimSuffix(s)`、`contains(s, ignoreCase:)`、`hasPrefix(s, ignoreCase:)`、`hasSuffix(s, ignoreCase:)`、`equals(s, ignoreCase:)`、`compare(s, ignoreCase:)`（负数、零或正数）、`foldCase()`、`replace(old, new, count:)`（默认替换全部，count 指定次数）、`split(sep, count:)`、`fields()`（按空白分出的词）、`lines()`、`find(s)`、`findLast(s)`、`findAny(chars)`（字节偏移，找不到时为 none）、`slice(from, to)`（按字符）、`byteSlice(from, to)`（按字节：即 find 给出的偏移）、`padStart(width, with:)`、`padEnd(width, with:)`、`toInt()`、`toInt(radix:)`、`toFloat()`、`repeat(n)`、`chars()`、`graphemes()`、`lazy()`（它的 char，一个 `Seq<char>`）、`reversed()`、`bytes()`、`+` |
-| `bytes` | `b[i]`（返回 `int`，取值 0 到 255；越界是一个错误）、`count()`、`isEmpty()`、`get(i)`（返回 `int?`）、`slice(from, to)`、`concat(b)`、`string()`（按 UTF-8 解码，无效的部分变成 U+FFFD）、`hex()` 和 `hex(separator)`（`"04 a1"`）、`toArray()`（返回 `[u8]`）；`bytes()` 是空的字节序列，`bytes([0x04, 0xa1])` 是这些字节，`bytes(xs)` 是一个 `[u8]` 里的字节，`s.bytes()` 是字符串的 UTF-8 字节 |
+| `string` | `count()`（字符数）、`byteCount()`、`isEmpty()`、`upper()`、`lower()`、`trim()`、`trimStart()`、`trimEnd()`、`trimPrefix(s)`、`trimSuffix(s)`、`contains(s, ignoreCase:)`、`hasPrefix(s, ignoreCase:)`、`hasSuffix(s, ignoreCase:)`、`equals(s, ignoreCase:)`、`compare(s, ignoreCase:)`（负数、零或正数）、`foldCase()`、`replace(old, new, count:)`（默认替换全部，count 指定次数）、`split(sep, count:)`、`fields()`（按空白分出的词）、`lines()`、`find(s)`、`findLast(s)`、`findAny(chars)`（字节偏移，找不到时为 none）、`slice(from, to)`（按字符；省略 `to` 表示到末尾）、`byteSlice(from, to)`（按字节：即 find 给出的偏移；省略 `to` 表示到末尾）、`padStart(width, with:)`、`padEnd(width, with:)`、`toInt()`、`toInt(radix:)`、`toFloat()`、`repeat(n)`、`chars()`、`graphemes()`、`lazy()`（它的 char，一个 `Seq<char>`）、`reversed()`、`bytes()`、`+` |
+| `bytes` | `b[i]`（返回 `int`，取值 0 到 255；越界是一个错误）、`count()`、`isEmpty()`、`get(i)`（返回 `int?`）、`slice(from, to)`（省略 `to` 表示到末尾）、`concat(b)`、`string()`（按 UTF-8 解码，无效的部分变成 U+FFFD）、`hex()` 和 `hex(separator)`（`"04 a1"`）、`toArray()`（返回 `[u8]`）；`bytes()` 是空的字节序列，`bytes([0x04, 0xa1])` 是这些字节，`bytes(xs)` 是一个 `[u8]` 里的字节，`s.bytes()` 是字符串的 UTF-8 字节 |
 | `int`、`i8` … `u64` | `float()`、`abs()`（用于有符号整数）、`toString(radix:)`（`255.toString(radix: 16)` 是 `"ff"`）、`padded(width)`（`7.padded(2)` 是 `"07"`）、`addingChecked(o)`、`subtractingChecked(o)`、`multipliedChecked(o)`（返回 `int?`，对 `u8` 返回 `u8?`：溢出时为 none）；`T.min`、`T.max`、`T.parse(text, radix:)`（返回 `T?`） |
 | `float` | `fixed(digits)`、`rounded()`、`floor()`、`ceil()`、`int()`（向零取整）、`abs()` |
-| `Color` | `opacity(a)`：以原本不透明度的 a 倍绘制（语义颜色仍然是语义颜色）；`hex()`（`"#0a84ff"`；语义颜色则是它的名字：`".accent"`） |
+| `Color` | `Color.parse(text)`（`#rrggbb`、`#rgb`、`#rrggbbaa`：返回 `Color?`）、`Color.rgb(r, g, b, alpha:)`；`opacity(a)`：以原本不透明度的 a 倍绘制（语义颜色仍然是语义颜色）；`hex()`（`"#0a84ff"`；语义颜色则是它的名字：`".accent"`） |
 | `Duration` | `nanoseconds()`、`milliseconds()`（整数）、`seconds()`、`minutes()`、`hours()`（浮点数）、`rounded(to:)`、`truncated(to:)`、`+`、`-`、`* n`（整数或浮点数：`1.5 * 1h`）、`/ n`、`/ d`（另一个 Duration：它能容纳几个，一个浮点数） |
 | `Length` | `* n`（`width: 50% * 2`：缩放一个长度） |
 | `T?` | `isNone()`、`isSome()` |
@@ -1053,6 +1053,8 @@ let icon = match (online, unread) {
 }
 ```
 
+如果某个分支的值本身看不出类型（空的 `[]`、`[:]`，或者隐式的 `.case`），它就沿用另一个分支的类型：`if let c = chosen { [c] } else { [] }` 是 `[Story]`。
+
 元组模式（`(true, 0)`）用各自的模式分别匹配元组的每个元素。匹配可选的元组时，它和成员模式一样，在有值时匹配其中的元组（`none` 要单独写一个分支）：`if let (name, age) = found { … }`、`let (x, y) = cursor else { return }`。
 
 带类型的名字（`c: Circle`）用来判断接口值是什么类型：值是这个类型时才匹配，并以这个类型绑定它；结构体的模式（`Circle(radius)`）和写明类型的枚举成员（`Unit.big(n)`）也是这样。对接口值的 `match` 要以 `_` 结尾，详见[接口与泛型](https://asuka.egoist.dev/zh/docs/language/functions#接口与泛型)：`if let c: Circle = shape { … }`、`let sq: Square = shape else { return }`。
@@ -1515,7 +1517,7 @@ screen Inbox {
 
 组件提供的东西只属于它显示的视图：两个并排的组件各自提供一个 `Theme`，它们看到的都是自己的那个，而不是对方的。
 
-用可选类型 `use` 时，如果上面没有谁提供，取到的就是 none。这适合既能单独使用、也能放在一组里使用的组件，比如复选框，可以放在复选框组里，也可以不放。
+如果上面没有谁提供 `use` 的 store，会报错，并说明该提供哪个 store（测试里用 `mount(…, provide: [Api.fake(), Mailbox()])`，它们按顺序创建，和 `provide` 一样）。用可选类型 `use` 时，如果上面没有谁提供，取到的就是 none。这适合既能单独使用、也能放在一组里使用的组件，比如复选框，可以放在复选框组里，也可以不放。
 
 ```asuka
 store Group {

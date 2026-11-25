@@ -238,6 +238,11 @@ import AsukaOps
                 setRefreshable(n, v.bool)
             case AsukaProp.Scroll.refreshing:
                 setRefreshing(n, v.bool)
+            case AsukaProp.Scroll.edgeEffect:
+                if let a = s as? AsukaScrollView {
+                    a.edgeEffect = Int(v.int)
+                    applyEdgeEffect(a)
+                }
             default: break
             }
         case .activity:
@@ -634,6 +639,87 @@ extension AsukaRuntime: NSTextFieldDelegate {
 /// A Scroll's view.
 class AsukaScrollView: NSScrollView {
     override var isFlipped: Bool { true }
+
+    /// How much of its top a hidden title bar's strip covers: its content
+    /// starts below it and scrolls under it, as a scroll view under
+    /// UIKit's navigation bar does.
+    var barInset: CGFloat = 0
+    /// The room the pull to refresh spinner takes above the content.
+    var refreshInset: CGFloat = 0
+    /// Its EdgeEffect (0: automatic, 1: soft, 2: hard).
+    var edgeEffect = 0
+
+    /// Its content's insets: the bar's, then the spinner's. A scroll view
+    /// at its top stays at its top as they change.
+    func applyInsets() {
+        let top = barInset + refreshInset
+        guard contentInsets.top != top else { return }
+        let atTop = contentView.bounds.minY <= -contentInsets.top + 0.5
+        automaticallyAdjustsContentInsets = false
+        contentInsets = NSEdgeInsets(top: top, left: 0, bottom: 0, right: 0)
+        scrollerInsets = NSEdgeInsets(top: barInset, left: 0, bottom: 0, right: 0)
+        if atTop {
+            contentView.scroll(to: CGPoint(x: contentView.bounds.minX, y: -top))
+            reflectScrolledClipView(contentView)
+        }
+    }
+
+    /// The bar's room again, as it's placed or the window changes.
+    func followBar() {
+        MainActor.assumeIsolated {
+            let rt = AsukaRuntime.shared
+            barInset = CGFloat(rt.barOverlap(self))
+            applyInsets()
+            rt.applyEdgeEffect(self)
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        followBar()
+    }
+
+    /// Whether the scroll gesture under way goes to the scroll view around
+    /// this one: decided by its first move, for the whole gesture and its
+    /// momentum.
+    private var passing = false
+    private var decided = false
+
+    /// A scroll along an axis this view can't scroll (a horizontal one's
+    /// vertical swipe, content that fits) goes to the scroll view around
+    /// it, as a browser and UIKit hand it on: the page scrolls with the
+    /// pointer over a diff that scrolls sideways. A gesture's beginning
+    /// and end go to both (AppKit's scroll view follows only a gesture it
+    /// saw begin, and the other must see it end); its moves and momentum
+    /// to the one it's for.
+    override func scrollWheel(with event: NSEvent) {
+        let outer = superview?.enclosingScrollView
+        let dx = abs(event.scrollingDeltaX), dy = abs(event.scrollingDeltaY)
+        let wheel = event.phase == [] && event.momentumPhase == []  // a mouse's wheel: each notch on its own
+        let edge = event.phase == .began || event.phase == .mayBegin || event.phase == .ended || event.phase == .cancelled
+        if wheel || event.phase == .began || event.phase == .mayBegin { decided = false }
+        if !decided && (dx > 0 || dy > 0) {
+            let doc = documentView?.frame.size ?? .zero
+            let room = contentView.bounds.size
+            passing = dy > dx ? doc.height <= room.height + 0.5 : doc.width <= room.width + 0.5
+            decided = true
+        }
+        guard let outer else {
+            super.scrollWheel(with: event)
+            return
+        }
+        if edge && !wheel {
+            super.scrollWheel(with: event)
+            outer.scrollWheel(with: event)
+            return
+        }
+        if decided && passing { outer.scrollWheel(with: event) } else { super.scrollWheel(with: event) }
+    }
+
+    override func layout() {
+        super.layout()
+        followBar()
+    }
 }
 
 /// ColorPicker's well: the color panel is the app's one (NSColorPanel's

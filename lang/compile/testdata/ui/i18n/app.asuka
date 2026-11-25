@@ -127,6 +127,22 @@ test "the pseudo locale accents the source's messages" {
   app.expect("Inbox")
 }
 
+test "relative times in the language shown, with its plurals" {
+  let app = mount(Inbox())
+  let now = time.unixNano(1773576000000000000) // 2026-03-15 12:00 UTC
+  expect(i18n.formatRelative(now.add(-2h), now: now) == "2 hours ago")
+  app.tap("Arabic")
+  expect(i18n.formatRelative(now.add(-2h), now: now) == "قبل ساعتين")    // two
+  expect(i18n.formatRelative(now.add(-3h), now: now) == "قبل 3 ساعات")   // few
+  expect(i18n.formatRelative(now.add(-11h), now: now) == "قبل 11 ساعة")  // many
+  expect(i18n.formatRelative(now.add(-48h), now: now) == "أول أمس")
+  app.tap("German")
+  expect(i18n.formatRelative(now.add(-48h), now: now) == "vorgestern")
+  expect(i18n.formatRelative(now.add(-48h), now: now, numeric: true) == "vor 2 Tagen")
+  expect(i18n.formatRelative(now, now: now) == "jetzt")
+  app.tap("System")
+}
+
 test "the app's languages, each by its own name" {
   expect(i18n.languages() == ["en", "ar", "de"])
   expect(i18n.autonym("de") == "Deutsch")

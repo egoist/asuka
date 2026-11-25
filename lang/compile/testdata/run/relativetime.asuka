@@ -1,0 +1,37 @@
+// Relative times (std/i18n's formatRelative): an app without catalogs
+// writes English's, in the unit the device's calendar picks.
+
+import std/i18n
+import std/time
+
+test "relative times" {
+  let now = time.unixNano(1773576000000000000) // 2026-03-15 12:00 UTC
+  print(i18n.formatRelative(now, now: now))
+  print(i18n.formatRelative(now.add(-45s), now: now))
+  print(i18n.formatRelative(now.add(-3h), now: now))
+  print(i18n.formatRelative(now.add(-3h), now: now, style: .short))
+  print(i18n.formatRelative(now.add(-3h), now: now, style: .narrow))
+  print(i18n.formatRelative(now.add(5h), now: now))
+  print(i18n.formatRelative(now.add(-24h), now: now))
+  print(i18n.formatRelative(now.add(-24h), now: now, numeric: true))
+  print(i18n.formatRelative(now.add(-7 * 24h), now: now))
+  print(i18n.formatRelative(now.add(-20 * 24h), now: now))
+  print(i18n.formatRelative(now.add(-400 * 24h), now: now))
+  print(i18n.formatRelative(now.add(1234 * 24h), now: now, numeric: true))
+  expect(i18n.formatRelative(time.now().add(-90s)) == "1 minute ago")
+}
+
+// Output:
+// now
+// 45 seconds ago
+// 3 hours ago
+// 3 hr. ago
+// 3h ago
+// in 5 hours
+// yesterday
+// 1 day ago
+// last week
+// 2 weeks ago
+// last year
+// in 3 years
+// ok relative times

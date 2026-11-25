@@ -143,6 +143,18 @@ ak_str *ak_i18n_format_number(double v, int flags, int min_frac, int max_frac);
 ak_str *ak_i18n_format_decimal(const ak_str *digits, int flags, int min_frac, int max_frac, const ak_str *currency);
 ak_str *ak_i18n_format_int(int64_t v, int flags);
 ak_str *ak_i18n_format_date(int64_t ns, int date_style, int time_style);
+// The relative times a catalog's language carries: 7 units (second ...
+// year) in 3 widths, 3 parts each (i18n/compile.go).
+#define AK_I18N_RELATIVE_SLOTS 63
+// ak_i18n_relative_unit picks the unit t is said in seen from now (both
+// nanoseconds since the Unix epoch, compared in the device's zone): 0
+// second, 1 minute, 2 hour, 3 day, 4 week, 5 month, 6 year, and how many
+// of it (negative in the past), as package i18n's RelativeUnit does.
+int ak_i18n_relative_unit(int64_t t, int64_t now, int64_t *n);
+// ak_i18n_format_relative writes t seen from now in the language shown:
+// "in 3 hours", "2 days ago", style 0 long, 1 short, 2 narrow; unless
+// numeric, an offset it names by its name ("yesterday", "now"). Owned.
+ak_str *ak_i18n_format_relative(int64_t t, int64_t now, int style, bool numeric);
 // ak_i18n_autonym is a language's name in itself ("Deutsch"), of the
 // catalogs' languages; another tag as it is. Owned.
 ak_str *ak_i18n_autonym(const ak_str *tag);

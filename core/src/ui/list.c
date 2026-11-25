@@ -162,6 +162,9 @@ static void list_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 	case AK_KEY_LIST_ANCHOR:
 		if (e->finalized) ak_batch_set_enum(b, e->id, key == AK_KEY_LIST_ANCHOR ? AK_PROP_LIST_ANCHOR : AK_PROP_LIST_APPEARANCE, (int32_t)v.i);
 		break;
+	case AK_KEY_LIST_EDGE_EFFECT:
+		if (prev || v.i) ak_batch_set_enum(b, e->id, AK_PROP_LIST_EDGE_EFFECT, (int32_t)v.i);
+		break;
 	case AK_KEY_LIST_SELECTING:
 		if (prev || v.i) ak_batch_set_bool(b, e->id, AK_PROP_LIST_SELECTING, v.i != 0);
 		ak_view_listen(e, AK_EVENT_ROW_INSET);

@@ -387,6 +387,7 @@ enum {
 	BY_SEGMENT,   // a Segmented's segment
 	BY_ITEM,      // an item of a Screen's bar buttons, toolbar or primary action, or an alert's buttons
 	BY_FIELD,     // an alert's text field, by its placeholder
+	BY_SEARCH,    // a Screen's search field, in its bar, by its placeholder
 	BY_SNACKBAR,  // a snackbar's message
 	BY_SNACK_ACT, // a snackbar's action
 };
@@ -405,7 +406,8 @@ enum { IN_ANYWHERE, IN_CONTENT, IN_NAVIGATION_BAR, IN_TOOLBAR, IN_TAB_BAR, IN_SI
 
 static int region_of(const target *t) {
 	switch (t->how) {
-	case BY_TITLE: return IN_NAVIGATION_BAR;
+	case BY_TITLE:
+	case BY_SEARCH: return IN_NAVIGATION_BAR;
 	case BY_TAB: return IN_TAB_BAR;
 	case BY_DEST: return IN_SIDEBAR;
 	case BY_ITEM:
@@ -561,6 +563,7 @@ static void targets_in(ak_uitest *a, const ak_fake_view_vec *ls, ak_span text, t
 		switch (v->kind) {
 		case AK_KIND_SCREEN: {
 			if (text.len && ak_span_eq(screen_title(v), text)) add_target(a, out, v, BY_TITLE, 0);
+			if (text.len && ak_span_eq(ak_fake_string(v, AK_PROP_SCREEN_SEARCH), text)) add_target(a, out, v, BY_SEARCH, 0);
 			items_titled(a, out, v, AK_PROP_SCREEN_ACTIONS, 0, text);
 			items_titled(a, out, v, AK_PROP_SCREEN_TOOLBAR, AK_SCREEN_TOOLBAR_ACTIONS, text);
 			ak_action_vec items = {0};
@@ -580,8 +583,10 @@ static void targets_in(ak_uitest *a, const ak_fake_view_vec *ls, ak_span text, t
 			ak_sidebar_heading_vec secs = {0};
 			ak_sidebar_item_vec items = {0};
 			ak_fake_sidebar(v, &secs, &items);
+			// A destination, by its title or its badge (on its row: a tap
+			// there picks it), as a tab is.
 			for (uint32_t j = 0; j < items.len; j++)
-				if (ak_span_eq(items.data[j].title, text)) add_target(a, out, v, BY_DEST, j);
+				if (ak_span_eq(items.data[j].title, text) || ak_span_eq(items.data[j].badge, text)) add_target(a, out, v, BY_DEST, j);
 			ak_vec_free(&secs);
 			ak_vec_free(&items);
 			break;
@@ -668,6 +673,19 @@ static void targets_of(const ak_fake_view *v, text_fn f, void *ctx) {
 		ak_fake_strings(v, AK_PROP_SEGMENTED_SEGMENTS, &segs);
 		for (uint32_t i = 0; i < segs.len; i++) f(segs.data[i], ctx);
 		ak_vec_free(&segs);
+		break;
+	}
+	case AK_KIND_SPLIT: {
+		// Each destination's title, then its badge, as the sidebar shows them.
+		ak_sidebar_heading_vec secs = {0};
+		ak_sidebar_item_vec items = {0};
+		ak_fake_sidebar(v, &secs, &items);
+		for (uint32_t i = 0; i < items.len; i++) {
+			if (items.data[i].title.len) f(items.data[i].title, ctx);
+			if (items.data[i].badge.len) f(items.data[i].badge, ctx);
+		}
+		ak_vec_free(&secs);
+		ak_vec_free(&items);
 		break;
 	}
 	case AK_KIND_ALERT: items_text(v, AK_PROP_ALERT_BUTTONS, f, ctx); break;
@@ -1247,7 +1265,7 @@ typedef bool (*target_ok)(const target *t);
 // alert_text is an alert's title or message: read, as a Screen's title
 // is, not pressed. Its button with the same title is the one a tap means.
 static bool alert_text(const target *t) { return t->how == BY_VIEW && t->v->kind == AK_KIND_ALERT; }
-static bool not_label(const target *t) { return t->how != BY_SNACKBAR && t->how != BY_TITLE && t->how != BY_FIELD && !alert_text(t); }
+static bool not_label(const target *t) { return t->how != BY_SNACKBAR && t->how != BY_TITLE && t->how != BY_FIELD && t->how != BY_SEARCH && !alert_text(t); }
 static bool by_view(const target *t) { return t->how == BY_VIEW; }
 static bool not_shown(const target *t) { return t->how != BY_SNACKBAR && t->how != BY_TITLE && !alert_text(t); }
 
@@ -1551,6 +1569,18 @@ static bool alert_field(ak_uitest *a, ak_span label, ak_fake_view **alert, uint3
 	return ok;
 }
 
+// search_field is the Screen whose bar's search field label names (its
+// placeholder), as a user finds it.
+static bool search_field(ak_uitest *a, ak_span label, ak_fake_view **screen) {
+	target_vec ts = {0};
+	targets_in_reach(a, label, &ts);
+	bool ok = false;
+	for (uint32_t i = 0; i < ts.len && !ok; i++)
+		if (ts.data[i].how == BY_SEARCH) *screen = ts.data[i].v, ok = true;
+	ak_vec_free(&ts);
+	return ok;
+}
+
 static char *cstr(ak_buf *b, ak_span s) {
 	ak_buf_reset(b);
 	ak_buf_put(b, s.p, s.len);
@@ -1565,6 +1595,12 @@ bool ak_uitest_type(ak_uitest *a, ak_span text, ak_span label, ak_buf *err) {
 	uint32_t field;
 	if (label.len && alert_field(a, label, &alert, &field)) {
 		ak_fake_type_in_alert(a->f, alert, field, cstr(&s, text));
+		ak_buf_free(&s);
+		return settled(a, err);
+	}
+	ak_fake_view *screen;
+	if (label.len && search_field(a, label, &screen)) {
+		ak_fake_type_search(a->f, screen, cstr(&s, text));
 		ak_buf_free(&s);
 		return settled(a, err);
 	}
@@ -1588,6 +1624,11 @@ bool ak_uitest_submit(ak_uitest *a, ak_span label, ak_buf *err) {
 	uint32_t field;
 	if (label.len && alert_field(a, label, &alert, &field)) {
 		if (!ak_fake_return_in_alert(a->f, alert)) return failure(a, err, "the alert's default button is disabled%.*s", sp(""));
+		return settled(a, err);
+	}
+	ak_fake_view *screen;
+	if (label.len && search_field(a, label, &screen)) {
+		ak_fake_submit(a->f, screen);
 		return settled(a, err);
 	}
 	if (label.len) {

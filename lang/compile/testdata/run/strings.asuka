@@ -71,7 +71,8 @@ test "trimming, splitting, finding" {
   print("abc".findAny("xyz") ?? -1)
   let s = "héllo wörld"
   if let at = s.find(" ") {
-    print(s.byteSlice(0, at) + "|" + s.byteSlice(at + 1, s.byteCount()))
+    print(s.byteSlice(0, at) + "|" + s.byteSlice(at + 1, s.byteCount()) + "|" + s.byteSlice(at + 1))
+    print("abcdef".bytes().slice(4).string())
   }
   print("7".padStart(3, with: "0") + " " + "7".padEnd(3) + "|")
   print("héllo".padStart(8, with: "ab") + " " + "toolong".padStart(3))
@@ -120,7 +121,8 @@ test "trimming, splitting, finding" {
 // -1
 // 6
 // -1
-// héllo|wörld
+// héllo|wörld|wörld
+// ef
 // 007 7  |
 // abahéllo toolong
 // ok trimming, splitting, finding

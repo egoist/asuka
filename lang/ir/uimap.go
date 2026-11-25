@@ -1,5 +1,7 @@
 package ir
 
+import "github.com/egoist/asuka/lang/check"
+
 // The UI runtime's builtins the lowering calls (core/src/ui/ui.h's
 // protocol; the C side registers them by these names in
 // core/src/ui/builtins.c). Every argument is an ak_val of the kind
@@ -38,7 +40,7 @@ const (
 	uiTask       = "ui.task"        // (closure) -> void: starts it as a task when the component mounts; cancelled when it goes
 	uiOwner      = "ui.owner"       // () -> owner?: the current owner, which a component that holds handlers keeps in its env
 	uiHandler    = "ui.handler"     // (async closure, owner?) -> closure: a handler of a component's event, its tasks held by the owner (none: the current one) and run where it's made
-	uiUse        = "ui.use"         // (key string) -> the value provided under key (a store), or an error
+	uiUse        = "ui.use"         // (key string, required int) -> the value provided under key (a store); none, or an error when required
 	uiScopeBegin = "ui.scope_begin" // () -> int: an owner of its own for a component that provides, the one it replaced
 	uiScopeEnd   = "ui.scope_end"   // (int) -> void: back to the owner scope_begin replaced
 	uiProvide    = "ui.provide"     // (key string, value) -> void: on the current owner, for the components below
@@ -69,3 +71,12 @@ const (
 	uiTestExpectNo = "test.expect_no" // (app, text) -> void
 	uiTestIdle     = "test.idle"      // ([app]) -> future: settles when nothing is left to run
 )
+
+// useRequired is use's second argument: 1 when what's used must be
+// provided (use api: Api), 0 when none is an answer (use group: Group?).
+func useRequired(t check.Type) int64 {
+	if check.Unopt(t) != t {
+		return 0
+	}
+	return 1
+}

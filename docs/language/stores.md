@@ -38,7 +38,10 @@ What a component provides is for the views it shows: two components
 side by side that each provide a `Theme` see their own, not each
 other's.
 
-`use` with an optional type is none when nothing above provides one: a
+A `use` that nothing above provides is an error, which says the store
+to provide (in a test, `mount(…, provide: [Api.fake(), Mailbox()])`,
+made in order as `provide`s are). `use` with an optional type is none
+when nothing above provides one: a
 component that works alone and in a group (a checkbox, in a checkbox
 group or not).
 

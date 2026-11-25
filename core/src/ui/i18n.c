@@ -162,6 +162,10 @@ typedef struct {
 	uint8_t by_hour[24];
 	ak_span styles[50];  // (date style * 5 + time style) * 2 + (24 hours)
 	ak_span *skels;      // 2 per skeleton
+	// Relative times: by (unit * 3 + width) * 3 + part, parts the future
+	// patterns, the past ones and the named forms, joined by U+001F
+	// (i18n/compile.go).
+	ak_span relative[AK_I18N_RELATIVE_SLOTS];
 	uint32_t *msgs;  // per key, the offset of its nodes in the blob + 1 (0: none)
 } cat_lang;
 
@@ -240,7 +244,7 @@ static void read_pattern(ak_reader *r, num_pattern *p) {
 }
 
 ak_catalog *ak_i18n_catalog(ak_bytes *blob) {
-	if (!blob || blob->len < 4 || memcmp(blob->data, "AKC3", 4) != 0) {
+	if (!blob || blob->len < 4 || memcmp(blob->data, "AKC4", 4) != 0) {
 		ak_throw_msg("i18n.catalog: not a compiled catalog");
 		return NULL;
 	}
@@ -307,6 +311,7 @@ ak_catalog *ak_i18n_catalog(ak_bytes *blob) {
 				l->skels = ak_alloc(2 * c->nskels * sizeof(ak_span));
 				for (uint32_t k = 0; k < 2 * c->nskels && !r.err; k++) l->skels[k] = ak_read_str(&r);
 			}
+			for (int k = 0; k < AK_I18N_RELATIVE_SLOTS && !r.err; k++) l->relative[k] = ak_read_str(&r);
 		}
 		l->msgs = ak_alloc((c->nkeys ? c->nkeys : 1) * sizeof(uint32_t));
 		uint32_t n = ak_read_u32(&r);
@@ -1537,6 +1542,102 @@ ak_str *ak_i18n_format_date(int64_t ns, int date_style, int time_style) {
 	sbuf s = {0};
 	int hc = ak_locale_hour_cycle();
 	format_date(&s, l, l->styles[(date_style * 5 + time_style) * 2 + (hc == 24)], ns, ak_locale_first_weekday());
+	return sb_str(&s);
+}
+
+// ---- Relative times (relative.go's FormatRelative) ----
+
+// days_of is the number of a civil date counted from 1970-01-01 (Howard
+// Hinnant's days_from_civil).
+static int64_t days_of(const civil *c) {
+	int64_t y = c->year - (c->month <= 2);
+	int64_t era = (y >= 0 ? y : y - 399) / 400;
+	int64_t yoe = y - era * 400;
+	int64_t mp = c->month > 2 ? c->month - 3 : c->month + 9;
+	int64_t doy = (153 * mp + 2) / 5 + c->day - 1;
+	int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+	return era * 146097 + doe - 719468;
+}
+
+static int64_t in_day(const civil *c) {
+	return (int64_t)c->hour * 3600000000000 + (int64_t)c->minute * 60000000000 + (int64_t)c->second * 1000000000 + c->nanosecond;
+}
+
+int ak_i18n_relative_unit(int64_t t, int64_t now, int64_t *n) {
+	int64_t a = now, b = t, sign = 1;
+	if (t < now) a = t, b = now, sign = -1;
+	civil ca = civil_of(a), cb = civil_of(b);
+	// Whole months: b's place in its month before a's in its own takes
+	// one off.
+	int64_t months = (cb.year - ca.year) * 12 + (cb.month - ca.month);
+	if (months > 0 && (cb.day < ca.day || (cb.day == ca.day && in_day(&cb) < in_day(&ca)))) months--;
+	if (months >= 12) return *n = sign * (months / 12), 6;
+	if (months > 0) return *n = sign * months, 5;
+	int64_t days = days_of(&cb) - days_of(&ca);
+	if (days > 0 && in_day(&cb) < in_day(&ca)) days--;
+	if (days >= 7) return *n = sign * (days / 7), 4;
+	if (days > 0) return *n = sign * days, 3;
+	// Under a day: the time between them. b - a can't overflow here: the
+	// two are within a few days of each other.
+	int64_t d = b - a;
+	if (d >= 3600000000000) return *n = sign * (d / 3600000000000), 2;
+	if (d >= 60000000000) return *n = sign * (d / 60000000000), 1;
+	return *n = sign * (d / 1000000000), 0;
+}
+
+// rel_field is field i of s, fields separated by U+001F ("" past its
+// last).
+static ak_span rel_field(ak_span s, int i) {
+	size_t at = 0;
+	for (; i > 0 && at <= s.len; i--) {
+		const char *sep = memchr(s.p + at, 0x1f, s.len - at);
+		if (!sep) return AK_STR("");
+		at = (size_t)(sep - s.p) + 1;
+	}
+	const char *end = at < s.len ? memchr(s.p + at, 0x1f, s.len - at) : NULL;
+	return (ak_span){s.p + at, end ? (size_t)(end - (s.p + at)) : s.len - at};
+}
+
+ak_str *ak_i18n_format_relative(int64_t t, int64_t now, int style, bool numeric) {
+	int64_t n;
+	int unit = ak_i18n_relative_unit(t, now, &n);
+	if (style < 0 || style > 2) style = 0;
+	int64_t abs = n < 0 ? -n : n;  // n is far from INT64_MIN: years at most
+	const cat_lang *l = shown_formats();
+	if (!l || !l->dates) {
+		// No catalog's dates: English's.
+		static const char *const units[] = {"second", "minute", "hour", "day", "week", "month", "year"};
+		if (!numeric && unit == 0 && n == 0) return ak_str_c("now");
+		if (!numeric && unit == 3 && (n == 1 || n == -1)) return ak_str_c(n < 0 ? "yesterday" : "tomorrow");
+		char buf[64];
+		snprintf(buf, sizeof buf, n < 0 ? "%lld %s%s ago" : "in %lld %s%s", (long long)abs, units[unit], abs == 1 ? "" : "s");
+		return ak_str_c(buf);
+	}
+	const ak_span *slots = &l->relative[(unit * 3 + style) * 3];
+	sbuf s = {0};
+	if (!numeric && n >= -2 && n <= 2 && (n != 0 || unit == 0)) {
+		ak_span named = rel_field(slots[2], (int)n + 2);
+		if (named.len) {
+			sb_span(&s, named);
+			return sb_str(&s);
+		}
+	}
+	ak_operands o = ak_operands_int(abs);
+	ak_span pats = slots[n < 0 ? 1 : 0];
+	ak_span p = rel_field(pats, ak_plural(l->tag, &o, false));
+	if (!p.len) p = rel_field(pats, AK_PLURAL_OTHER);
+	decimal d;
+	dec_int(&d, abs);
+	const char *hole = NULL;
+	for (size_t i = 0; i + 3 <= p.len && !hole; i++)
+		if (memcmp(p.p + i, "{0}", 3) == 0) hole = p.p + i;
+	if (!hole) {
+		sb_span(&s, p);
+		return sb_str(&s);
+	}
+	sb_put(&s, p.p, (size_t)(hole - p.p));
+	format_number(&s, l, d.s, (num_opts){.integer = true});
+	sb_put(&s, hole + 3, p.len - (size_t)(hole + 3 - p.p));
 	return sb_str(&s);
 }
 

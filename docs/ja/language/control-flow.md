@@ -11,6 +11,8 @@ let icon = match (online, unread) {
 }
 ```
 
+値から型がわからない分岐（空の `[]` や `[:]`、暗黙の `.case`）は、もう一方の分岐の型になります。`if let c = chosen { [c] } else { [] }` は `[Story]` です。
+
 タプルパターン（`(true, 0)`）は、タプルの要素ごとにそれぞれのパターンでマッチさせます。オプショナルなタプルに対しては、ケースのパターンと同じように、値があればそのタプルにマッチします（`none` は別のアームで扱います）：`if let (name, age) = found { … }`、`let (x, y) = cursor else { return }`。
 
 型つきの名前（`c: Circle`）は、インターフェースの値が何の型なのかを調べます。値がその型のときにマッチし、その型として束縛します。構造体のパターン（`Circle(radius)`）や型を明記した列挙型のケース（`Unit.big(n)`）も同じです。インターフェースの値に対する `match` は `_` で終わらせます。詳しくは[インターフェースとジェネリクス](functions.md#インターフェースとジェネリクス)を参照してください：`if let c: Circle = shape { … }`、`let sq: Square = shape else { return }`。

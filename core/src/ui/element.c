@@ -289,12 +289,23 @@ void ak_view_inherit_dir(ak_view *e, ak_view *k) {
 	}
 }
 
+// ak_view_placed gives a view that's just been placed, and the views of
+// a fragment placed (a for's, an if's), their layout style again when
+// their class adjusts it by where they are (a ProgressRing by its
+// parent's align): it was made before they had a parent.
+void ak_view_placed(ak_view *k) {
+	if (k->cls->adjust && k->box) ak_style_relayout(k);
+	if (k->frag)
+		for (uint32_t i = 0; i < k->kids.len; i++) ak_view_placed(k->kids.data[i]);
+}
+
 void ak_view_append(ak_view *e, ak_view *k) {
 	if (!k) return;
 	ak_view_finalize(k);
 	if (k->parent) ak_panic("ui: a view added twice (it has a parent already)");
 	k->parent = e;
 	ak_vec_push(&e->kids, (ak_view *)ak_retain(k));
+	ak_view_placed(k);
 	ak_view_inherit_dir(e, k);
 	ak_view_mark_kids(e);
 	ak_view_attach_native(k);

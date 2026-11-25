@@ -7,6 +7,17 @@ store Notes {
   state draft = ""
 }
 
+store Owner(first: string) {
+  state name = first
+}
+
+component Byline {
+  use notes: Notes
+  use owner: Owner
+
+  Text("{owner.name}'s {notes.items.count()} notes")
+}
+
 screen List {
   use notes: Notes
 
@@ -89,6 +100,74 @@ test "a screen's bar and bottom toolbar, push and pop" {
   app.expect("Bread", "4 notes, depth 1")
   app.tap("Clear")
   app.expectNo("Milk", "Eggs", "Tea", "Bread")
+}
+
+screen Finder {
+  use notes: Notes
+  state query = ""
+  state submitted = ""
+
+  title: "Find"
+  bind search: query
+  searchPlaceholder: "Search notes"
+  on searchSubmit { submitted = query }
+
+  Column {
+    for item in notes.items.filter(i => i.contains(query, ignoreCase: true)) key item {
+      Text(item)
+    }
+    Text("submitted {submitted}")
+  }
+}
+
+test "typing in a screen's search field" {
+  let app = mount(Stack { Finder() }, provide: Notes())
+  app.expect("Milk", "Eggs")
+  app.type("mi", into: "Search notes")
+  app.expect("Milk")
+  app.expectNo("Eggs")
+  app.submit("Search notes")
+  app.expect("submitted mi")
+}
+
+component Unprovided {
+  Boundary {
+    Byline()
+    on error(e, reset) { Text("caught: {e.message}") }
+  }
+}
+
+component Optional {
+  use owner: Owner?
+  Text(owner?.name ?? "no owner")
+}
+
+test "a use nothing provides is an error, an optional one none" {
+  let app = mount(Unprovided(), provide: Notes())
+  app.expect("caught: nothing provides Owner here: provide Owner(…) in a component above this one (a test: mount(…, provide: [Owner(…)]))")
+  let other = mount(Optional())
+  other.expect("no owner")
+}
+
+test "mount provides several stores" {
+  let app = mount(Byline(), provide: [Notes(), Owner("Grace")])
+  app.expect("Grace's 2 notes")
+}
+
+// A store that uses another, made after it, as provides in a component.
+store Tally {
+  use notes: Notes
+  pub let count = notes.items.count()
+}
+
+component TallyText {
+  use tally: Tally
+  Text("{tally.count} tallied")
+}
+
+test "mount's stores are made in order, each seeing the ones before" {
+  let app = mount(TallyText(), provide: [Notes(), Tally()])
+  app.expect("2 tallied")
 }
 
 test "onBack keeps a draft" {

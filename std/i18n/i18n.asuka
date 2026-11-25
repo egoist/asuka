@@ -5,6 +5,7 @@
 //
 //   Text(i18n.formatNumber(1234567.891))          // 1,234,567.891; 1.234.567,891
 //   Text(i18n.formatDate(time.now(), date: .long)) // January 5, 2026
+//   Text(i18n.formatRelative(post.at))             // 3 hours ago; vor 3 Stunden
 //   Button(i18n.autonym("de")) { on press { i18n.setLocale("de") } }
 //
 // The language follows the user's (the system's preferred languages,
@@ -102,6 +103,22 @@ pub fn formatPercent(ratio: float, fractionDigits: int = 0) -> string = format_n
 /// user's hour cycle. No style at all is a medium date.
 pub fn formatDate(t: time.Time, date: DateStyle = .medium, time: DateStyle = .none) -> string = format_date(t.instant, date, time)
 
+/// How long formatRelative's words are, CLDR's widths of relative
+/// times: long (3 hours ago), short (3 hr. ago), narrow (3h ago).
+pub enum RelativeStyle { long, short, narrow }
+
+/// A time as it's seen from now, in the language's words: "in 3 hours",
+/// "2 days ago", "last month". The unit is the largest of years, months,
+/// weeks, days, hours, minutes and seconds between them on the device's
+/// calendar that isn't 0, its count truncated, as Apple's
+/// RelativeDateTimeFormatter picks it: "1 day ago" until it's 2 days,
+/// and 01:00 says "2 hours ago" of 23:00 the day before. Unless numeric,
+/// what the language has a word for is said by it: "now" (under a
+/// second), "yesterday", "tomorrow", "last week", "next year". Read in a
+/// binding, it follows the language, not the clock: show it again when
+/// time passes.
+pub fn formatRelative(t: time.Time, now: time.Time = time.now(), style: RelativeStyle = .long, numeric: bool = false) -> string = format_relative(t.instant, now.instant, style, numeric)
+
 native fn set_locale(tag: string)
 native fn set_languages(tags: [string])
 native fn preferred_languages() -> [string]
@@ -111,3 +128,4 @@ native fn format_number(n: float, flags: int, minFrac: int, maxFrac: int) -> str
 native fn format_decimal(amount: string, flags: int, minFrac: int, maxFrac: int, currency: string) -> string
 native fn format_int(n: int, flags: int) -> string
 native fn format_date(t: int, date: DateStyle, time: DateStyle) -> string
+native fn format_relative(t: int, now: int, style: RelativeStyle, numeric: bool) -> string

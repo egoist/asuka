@@ -758,14 +758,19 @@ func (b *fb) builtinCall(e *syntax.CallExpr, call *check.Call, dst int) int {
 	case check.BMount:
 		var bl int
 		if p := call.Args[1]; p != nil {
-			// The builder provides the store, then builds the view.
-			store := b.value(p, -1)
-			key := b.l.typeKey(b.rawType(p))
-			sv := &check.Var{}
+			// The builder makes and provides the stores, in order, then
+			// builds the view.
+			stores := []syntax.Expr{p}
+			if list, ok := p.(*syntax.ArrayExpr); ok && len(list.Elems) > 0 {
+				stores = list.Elems
+			}
 			x := call.Args[0]
 			ctx := b.l.info.Ctxs[x]
-			bl = b.makeClosure(closure{name: "mount", ctxs: []*check.FuncCtx{ctx}, extra: []extraCap{{sv, store}}, ret: bc.KRef, throws: true, body: func(c *fb) {
-				c.callBTo(uiProvide, bc.None, c.kstr(key), c.vars[sv])
+			bl = b.makeClosure(closure{name: "mount", ctxs: []*check.FuncCtx{ctx}, ret: bc.KRef, throws: true, body: func(c *fb) {
+				for _, s := range stores {
+					v := c.value(s, -1)
+					c.callBTo(uiProvide, bc.None, c.kstr(c.l.typeKey(c.rawType(s))), v)
+				}
 				v, _ := c.viewExpr(x)
 				c.emit(op("RET"), v)
 			}})
@@ -895,6 +900,21 @@ func (b *fb) builtinCall(e *syntax.CallExpr, call *check.Call, dst int) int {
 		return b.shaderProgram(e, dst)
 	case check.BBytesFrom:
 		return b.copyTo(b.callB("bytes.from", bc.KRef, b.value(call.Args[0], -1)), dst)
+	case check.BColorRGB:
+		var vals []int
+		for _, a := range call.Args[:3] {
+			vals = append(vals, b.value(a, -1))
+		}
+		var alpha int
+		if call.Args[3] != nil {
+			alpha = b.value(call.Args[3], -1)
+		} else {
+			alpha = b.temp(bc.KFloat)
+			b.emit(op("KFLOAT"), alpha, b.l.floatConst(1))
+		}
+		return b.copyTo(b.callB("color.rgb", b.l.kind(check.Color), append(vals, alpha)...), dst)
+	case check.BColorParse:
+		return b.copyTo(b.callB("color.parse", bc.KRef, b.value(call.Args[0], -1)), dst)
 	case check.BIntParse:
 		text := b.value(call.Args[0], -1)
 		radix := b.konst(10)

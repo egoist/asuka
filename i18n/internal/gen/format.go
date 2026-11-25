@@ -39,6 +39,10 @@ var (
 	styles    = []string{"full", "long", "medium", "short"}
 	// Zone: the localized GMT format, and the names of UTC.
 	zoneKeys = []string{"gmtFormat", "gmtZeroFormat", "hourFormat", "utcLong", "utcShort"}
+	// Relative times: [unit][width], each slot a unit's patterns in a
+	// width (relativeSlot).
+	relativeUnits  = []string{"second", "minute", "hour", "day", "week", "month", "year"}
+	relativeWidths = []string{"", "-short", "-narrow"}
 	// Numbers: [system][symbol], system the default one, then latn when
 	// the default is another.
 	numberKeys = []string{"digits", "decimal", "group", "minusSign", "plusSign", "percentSign", "exponential", "infinity", "nan", "decimalPattern", "percentPattern",
@@ -47,8 +51,8 @@ var (
 
 // slots lays the record out.
 type slots struct {
-	months, days, periods, eras, dateFormats, timeFormats, dateTimeFormats, atTimeFormats, zone, numbers, minGrouping, skeletons, count int
-	skeletonKeys                                                                                                                        []string
+	months, days, periods, eras, dateFormats, timeFormats, dateTimeFormats, atTimeFormats, zone, numbers, minGrouping, skeletons, relative, count int
+	skeletonKeys                                                                                                                                  []string
 }
 
 func newSlots(skeletons []string) slots {
@@ -67,6 +71,7 @@ func newSlots(skeletons []string) slots {
 	s.numbers = take(2 * len(numberKeys))
 	s.minGrouping = take(1)
 	s.skeletons = take(len(skeletons))
+	s.relative = take(len(relativeUnits) * len(relativeWidths) * relativeParts)
 	s.count = n
 	s.skeletonKeys = skeletons
 	return s
@@ -94,6 +99,77 @@ type gregorian struct {
 	AtTime struct {
 		Standard map[string]string `json:"standard"`
 	} `json:"dateTimeFormats-atTime"`
+}
+
+// relativeCounts are the plural categories of a relative time's
+// patterns, in i18n.Plural's order, and relativeOffsets the offsets
+// with named forms (relative-type-N: "yesterday" is -1 day's).
+var (
+	relativeCounts  = []string{"zero", "one", "two", "few", "many", "other"}
+	relativeOffsets = []string{"-2", "-1", "0", "1", "2"}
+)
+
+// relativeSep separates the fields of a relative time's slot, and
+// relativeParts is how many slots a unit has in a width (relativeSlots).
+const (
+	relativeSep   = "\x1f"
+	relativeParts = 3
+)
+
+// dateField is a unit's entry of dateFields.json in a width.
+type dateField struct {
+	future, past map[string]string
+	named        map[string]string // by offset
+}
+
+func (f *dateField) UnmarshalJSON(b []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	f.named = map[string]string{}
+	for k, v := range raw {
+		switch {
+		case k == "relativeTime-type-future":
+			if err := json.Unmarshal(v, &f.future); err != nil {
+				return err
+			}
+		case k == "relativeTime-type-past":
+			if err := json.Unmarshal(v, &f.past); err != nil {
+				return err
+			}
+		case strings.HasPrefix(k, "relative-type-"):
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				return err
+			}
+			f.named[strings.TrimPrefix(k, "relative-type-")] = s
+		}
+	}
+	return nil
+}
+
+// relativeSlots are a unit's slots in a width: its future patterns by
+// plural category (relativeCounts), its past ones, and the named forms
+// of relativeOffsets, each joined by relativeSep, "" for those the
+// locale hasn't; none when it has no patterns of the unit.
+func relativeSlots(f *dateField) []string {
+	if f == nil || len(f.future) == 0 && len(f.past) == 0 {
+		return nil
+	}
+	var out []string
+	for _, m := range []map[string]string{f.future, f.past} {
+		var ps []string
+		for _, c := range relativeCounts {
+			ps = append(ps, m["relativeTimePattern-count-"+c])
+		}
+		out = append(out, strings.Join(ps, relativeSep))
+	}
+	var named []string
+	for _, o := range relativeOffsets {
+		named = append(named, f.named[o])
+	}
+	return append(out, strings.Join(named, relativeSep))
 }
 
 type numbersData map[string]json.RawMessage
@@ -133,7 +209,7 @@ func writeFormatTables(out, cache string, core map[string][]byte) error {
 		return wanted[dir] && slices.Contains(files, file)
 	}
 
-	dates, err := readPackage(datesPackage, cache, func(n string) bool { return inMain(n, "ca-gregorian.json", "timeZoneNames.json") })
+	dates, err := readPackage(datesPackage, cache, func(n string) bool { return inMain(n, "ca-gregorian.json", "timeZoneNames.json", "dateFields.json") })
 	if err != nil {
 		return err
 	}
@@ -352,6 +428,32 @@ func writeFormatTables(out, cache string, core map[string][]byte) error {
 		z := tz.Main[tag].Dates.TimeZoneNames
 		for i, v := range []string{z.GMTFormat, z.GMTZeroFormat, z.HourFormat, z.Zone.Etc.UTC.Long.Standard, z.Zone.Etc.UTC.Short.Standard} {
 			r.values[sl.zone+i] = v
+		}
+
+		// Relative times: a width the locale hasn't is the next wider
+		// one's (narrow, short, then long), as CLDR's inheritance has it.
+		var df struct {
+			Main map[string]struct {
+				Dates struct {
+					Fields map[string]*dateField `json:"fields"`
+				} `json:"dates"`
+			} `json:"main"`
+		}
+		if err := json.Unmarshal(dates["main/"+tag+"/dateFields.json"], &df); err != nil {
+			return fmt.Errorf("%s dateFields.json: %v", tag, err)
+		}
+		fields := df.Main[tag].Dates.Fields
+		for u, unit := range relativeUnits {
+			for w := range relativeWidths {
+				var v []string
+				for k := w; k >= 0 && v == nil; k-- {
+					v = relativeSlots(fields[unit+relativeWidths[k]])
+				}
+				if v == nil {
+					return fmt.Errorf("%s has no relative times of the %s", tag, unit)
+				}
+				copy(r.values[sl.relative+(u*len(relativeWidths)+w)*relativeParts:], v)
+			}
 		}
 
 		// Numbers.
@@ -703,7 +805,7 @@ func writeFormatTables(out, cache string, core map[string][]byte) error {
 		{"slotDateFormats", sl.dateFormats}, {"slotTimeFormats", sl.timeFormats},
 		{"slotDateTimeFormats", sl.dateTimeFormats}, {"slotAtTimeFormats", sl.atTimeFormats},
 		{"slotZone", sl.zone}, {"slotNumbers", sl.numbers}, {"slotMinGrouping", sl.minGrouping},
-		{"slotSkeletons", sl.skeletons}, {"slotCount", sl.count},
+		{"slotSkeletons", sl.skeletons}, {"slotRelative", sl.relative}, {"slotCount", sl.count},
 	} {
 		fmt.Fprintf(&b, "\t%s = %d\n", c.name, c.v)
 	}

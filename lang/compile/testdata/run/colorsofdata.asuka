@@ -1,0 +1,27 @@
+// Colors the app has only as it runs: Color.rgb of numbers, Color.parse
+// of hex text (a label's color from a server).
+
+struct Label {
+  name: string
+  color: string
+}
+
+test "colors of data" {
+  print(Color.rgb(215, 58, 74))
+  print(Color.rgb(0, 0, 0, alpha: 0.5))
+  print(Color.rgb(300, -1, 16))
+  let labels = [Label(name: "bug", color: "d73a4a"), Label(name: "short", color: "#F0A"), Label(name: "bad", color: "red")]
+  for l in labels {
+    print("{l.name} {Color.parse(l.color) ?? .gray}")
+  }
+  expect(Color.parse("#11223344") == Color.rgb(17, 34, 51, alpha: 68.0 / 255))
+}
+
+// Output:
+// #d73a4a
+// #00000080
+// #ff0010
+// bug #d73a4a
+// short #ff00aa
+// bad .gray
+// ok colors of data

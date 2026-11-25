@@ -780,8 +780,22 @@ static void progress_finalize(ak_view *e) {
 
 static const ak_el_class cls_progress = {.name = "Progress", .kind = AK_KIND_PROGRESS, .flags = AK_ELF_TEXT | AK_ELF_MEASURED, .init = value_init,
                                          .set = progress_set, .finalize = progress_finalize, .drop = value_drop};
+// A ring is its platform's size unless it's given one: where its parent
+// would stretch it across (a Column's default), it's centered instead,
+// as UIActivityIndicatorView and Android's indicator keep their size (a
+// stretched ring, square, would be as tall as the column is wide).
+static void ring_adjust(ak_view *e, ak_lstyle *ls) {
+	if (ls->align_self != AK_LALIGN_AUTO) return;
+	ak_view *p = e->parent;
+	while (p && p->frag) p = p->parent;
+	if (!p) return;
+	const ak_val *a = ak_style_get(p, AK_KEY_ALIGN);
+	int64_t align = a ? a->i : 0;  // types.asuka's Align: 0 auto (stretch), 4 stretch
+	if (align == 0 || align == 4) ls->align_self = AK_LALIGN_CENTER;
+}
+
 static const ak_el_class cls_ring = {.name = "ProgressRing", .kind = AK_KIND_PROGRESS_RING, .flags = AK_ELF_MEASURED, .init = value_init,
-                                     .set = progress_set, .finalize = progress_finalize, .drop = value_drop};
+                                     .set = progress_set, .finalize = progress_finalize, .adjust = ring_adjust, .drop = value_drop};
 
 static void activity_init(ak_view *e) {
 	ak_view_measure(e);
@@ -960,6 +974,9 @@ static void scroll_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 		ak_style_relayout(s->content);
 		break;
 	case AK_KEY_SCROLL_REFRESHING: ak_refresh_set(e, &s->refresh_shown, AK_PROP_SCROLL_REFRESHING, v); break;
+	case AK_KEY_SCROLL_EDGE_EFFECT:
+		if (prev || v.i) ak_batch_set_enum(e->r->batch, e->id, AK_PROP_SCROLL_EDGE_EFFECT, (int32_t)v.i);
+		break;
 	case AK_KEY_SCROLL_PAGING:
 		if (prev || v.i) ak_batch_set_bool(e->r->batch, e->id, AK_PROP_SCROLL_PAGING, v.i != 0);
 		if (v.i) {

@@ -176,7 +176,8 @@ func (b *fb) styleApply(d *check.StyleDef, args []syntax.Expr, outer *styleEnv) 
 		if v := it.Use; v != nil {
 			mark := b.mark()
 			r := b.local(bc.KRef)
-			b.callBTo(uiUse, r, b.kstr(b.l.typeKey(check.Unopt(b.typ(v.Type)))))
+			t := b.typ(v.Type)
+			b.callBTo(uiUse, r, b.kstr(b.l.typeKey(check.Unopt(t))), b.konst(useRequired(t)))
 			env.vars[v] = r
 			b.release(mark)
 		}

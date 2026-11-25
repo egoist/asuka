@@ -65,7 +65,8 @@ print(app.snapshot())     // 屏幕上显示的内容，每行一个视图
 只有用户能看到的内容才算数：
 
 - 每个导航栈最上面的页面（它下面的页面不显示）；
-- 选中的标签页的内容，以及标签栏中每个标签页的标题；
+- 选中的标签页的内容，以及标签栏中每个标签页的标题（和徽标）；
+- 分栏的侧边栏：每个目的地的标题和徽标；
 - 显示在其余内容之上的弹出面板、警告框和弹出框（popover）；
 - 列表中在其高度内放得下的行：Asuka 按平台的请求绑定列表的行，`asuka test` 也一样，就像集合视图（collection view）那样；
 - 不包括任何隐藏的内容。
@@ -79,6 +80,7 @@ print(app.snapshot())     // 屏幕上显示的内容，每行一个视图
 ```asuka
 app.tap("Add")                      // 按钮、行、标签页、开关、分段控件的段、菜单项
 app.type("ada@example.com", into: "Email")  // 占位文字或标签为 Email 的输入框
+app.type("milk", into: "Search notes")      // 屏幕栏里的搜索框，按它的占位文字找
 app.tapLink("https://asuka.dev")     // RichText 中指向它的链接
 app.share([SharedItem(kind: .link, text: "https://asuka.dev")])  // 另一个应用分享了它：onShare 会收到
 await app.idle()                    // 直到没有任何东西要运行：task、定时器、加载
@@ -293,6 +295,8 @@ test "archiving removes the row" {
   app.expectNo("Hello")
 }
 ```
+
+`provide:` 接受一个 store；视图用到好几个 store 时，也可以传一个列表：`mount(Inbox(), provide: [Mailbox.fake([sample]), Session()])`。
 
 ## 在各平台上测试
 

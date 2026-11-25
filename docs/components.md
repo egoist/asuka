@@ -651,7 +651,9 @@ component Upload {
 
 A ring is measured. Each platform gives it its own size (iOS 58 points,
 Android 48dp, a Mac and Windows 32, Linux and the web 32). A style that
-sets one side sets the other too, so the ring stays square. Screen
+sets one side sets the other too, so the ring stays square. Where its
+parent would stretch it (a `Column`'s default `align`), it keeps that
+size, centered, as the platforms' indicators do. Screen
 readers read it as a progress indicator with its percentage.
 
 | | ring | without a value |
@@ -1436,6 +1438,15 @@ component Carousel {
 Pages count from the reading start: right to left, the first is the
 rightmost. When the scroll view's size changes (a rotation), it stays on
 its page. Screen readers say "page 2 of 3" on the dots and adjust them.
+
+**Under a bar.** A scroll view (a `Scroll`, a `List`) whose top is
+under a bar its content can show through, iOS's navigation bar or a
+desktop window's hidden title bar, starts its content below the bar and
+scrolls it under. `edgeEffect` is how the content is set off from the
+bar as it goes under: `.automatic` (the platform's), `.soft` (it fades)
+or `.hard` (a clear edge), the scroll edge effect of iOS 26 and macOS 26
+(on a Mac, the style of the split view column it's in). Elsewhere it
+does nothing.
 
 **Pull to refresh.** `on refresh` turns it on (`UIRefreshControl`,
 `SwipeRefreshLayout`). Set `refreshing` true while you refresh; the

@@ -346,6 +346,73 @@ static void check_str(ak_str *s, const char *want) {
 	ak_release(s);
 }
 
+// Every case of relative_cases.txt (what package i18n's FormatRelative
+// says), said by the core in the language shown, with the catalog's
+// data for it.
+TEST(relative_cases) {
+	load();
+	ak_uitest *a = mount_reading("en", empty_app);
+	char *text = read_file("core/test/testdata/relative_cases.txt", NULL);
+	REQUIRE(text);
+	int cases = 0, failures = 0;
+	char *save = NULL;
+	for (char *line = strtok_r(text, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
+		if (line[0] == '#') continue;
+		char *f[6] = {0};
+		int nf = 0;
+		for (char *p = line; p && nf < 6; nf++) {
+			f[nf] = p;
+			char *tab = strchr(p, '\t');
+			if (tab) *tab = 0;
+			p = tab ? tab + 1 : NULL;
+		}
+		if (nf < 6) {
+			T_FAIL("a short line");
+			continue;
+		}
+		ak_str *loc = ak_str_c(f[0]);
+		ak_ui_set_locale(loc);
+		ak_str *got = ak_i18n_format_relative(strtoll(f[1], NULL, 10), strtoll(f[2], NULL, 10), atoi(f[3]), atoi(f[4]) != 0);
+		if (strcmp(got->data, f[5]) != 0 && failures++ < 25) T_FAIL("%s %s from %s (style %s, numeric %s): %s, want %s", f[0], f[1], f[2], f[3], f[4], got->data, f[5]);
+		ak_release(got);
+		ak_release(loc);
+		cases++;
+	}
+	CHECK(cases > 1000);
+	free(text);
+	done(a);
+	unload();
+}
+
+// The unit of a relative time, on the device's calendar.
+TEST(relative_units) {
+	ak_zone_set_utc(true);
+	int64_t now = 1773576000000000000;  // 2026-03-15 12:00 UTC
+	int64_t h = 3600000000000, n;
+	CHECK_EQ_INT(ak_i18n_relative_unit(now, now, &n), 0);
+	CHECK_EQ_INT(n, 0);
+	CHECK_EQ_INT(ak_i18n_relative_unit(now - 13 * h, now, &n), 2);  // yesterday 23:00: hours
+	CHECK_EQ_INT(n, -13);
+	CHECK_EQ_INT(ak_i18n_relative_unit(now + 47 * h, now, &n), 3);
+	CHECK_EQ_INT(n, 1);
+	CHECK_EQ_INT(ak_i18n_relative_unit(now - 20 * 24 * h, now, &n), 4);
+	CHECK_EQ_INT(n, -2);
+	CHECK_EQ_INT(ak_i18n_relative_unit(now - 400 * 24 * h, now, &n), 6);
+	CHECK_EQ_INT(n, -1);
+	// No catalog: English.
+	ak_locale_reset();
+	ak_i18n_reset();
+	ak_str *s = ak_i18n_format_relative(now - 3 * h, now, 0, false);
+	CHECK_EQ_STR(s->data, "3 hours ago");
+	ak_release(s);
+	s = ak_i18n_format_relative(now - 24 * h, now, 0, false);
+	CHECK_EQ_STR(s->data, "yesterday");
+	ak_release(s);
+	s = ak_i18n_format_relative(now + 60000000000, now, 0, true);
+	CHECK_EQ_STR(s->data, "in 1 minute");
+	ak_release(s);
+}
+
 // Numbers and dates outside messages (std/i18n): in the language shown,
 // with the catalog's data for it, in the user's hour cycle.
 TEST(formatting) {
@@ -659,7 +726,7 @@ static void put_str(ak_buf *b, const char *s) { ak_buf_str(b, s, strlen(s)); }
 // digits at least.
 static ak_bytes *catalog_min_int(uint8_t min_int) {
 	ak_buf b = {0};
-	ak_buf_put(&b, "AKC3", 4);
+	ak_buf_put(&b, "AKC4", 4);
 	put_str(&b, "zz");
 	ak_buf_u32(&b, 0);  // keys
 	ak_buf_u32(&b, 0);  // skeletons

@@ -219,6 +219,7 @@ static void layout_keys(const ak_view *e, const ak_val **k) {
 }
 
 static float lk_float(const ak_val **k, uint16_t key) { return k[key] ? (float)k[key]->f : 0; }
+static float l_shrink(float v) { return v > 0 ? v : 0; }  // CSS: a negative flex-shrink is invalid
 static int64_t lk_int(const ak_val **k, uint16_t key) { return k[key] ? k[key]->i : 0; }
 static bool lk_bool(const ak_val **k, uint16_t key) { return k[key] && k[key]->i; }
 static ak_struct *lk_struct(const ak_val **k, uint16_t key) { return k[key] ? k[key]->p : NULL; }
@@ -252,10 +253,9 @@ void ak_style_layout(ak_view *e, ak_lstyle *l) {
 	l->max_height = ak_length(lk_int(k, AK_KEY_MAX_HEIGHT));
 	l->aspect_ratio = lk_float(k, AK_KEY_ASPECT_RATIO);
 	l->flex_grow = lk_float(k, AK_KEY_GROW);
-	// Shrink 0 is CSS's default (1); below 0, none.
-	float shrink = lk_float(k, AK_KEY_SHRINK);
-	if (shrink < 0) l->flex_shrink = 0;
-	else if (shrink > 0) l->flex_shrink = shrink;
+	// CSS's flex-shrink when it's set (0: the view keeps its size, as
+	// shrink: 0 does on the web); 1 when it isn't.
+	if (k[AK_KEY_SHRINK]) l->flex_shrink = l_shrink((float)k[AK_KEY_SHRINK]->f);
 	l->flex_basis = ak_length(lk_int(k, AK_KEY_BASIS));
 	if (lk_bool(k, AK_KEY_ABSOLUTE)) l->position = AK_LABSOLUTE;
 	l->inset = (ak_lrect){ak_length(lk_int(k, AK_KEY_TOP)), ak_length(lk_int(k, AK_KEY_RIGHT)),
@@ -490,7 +490,9 @@ static void send(ak_view *e, uint16_t key, const ak_val *v, const ak_val *prev) 
 // is_zero reports whether v is key's zero (what a view shows unset).
 static bool is_zero(uint16_t key, ak_val v) {
 	switch ((ak_kind)ak_key_kinds[key]) {
-	case AK_K_FLOAT: return key == AK_KEY_OPACITY ? v.f == 1 : v.f == 0;
+	// What a key is when it's unset: opacity's 1, shrink's 1 (0 keeps a
+	// view's size, so it's a value, not the default).
+	case AK_K_FLOAT: return key == AK_KEY_OPACITY || key == AK_KEY_SHRINK ? v.f == 1 : v.f == 0;
 	case AK_K_REF: {
 		if (!v.p) return true;
 		const ak_obj *o = v.p;

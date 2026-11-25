@@ -198,7 +198,7 @@ func (c *Checker) builtinCall(e *syntax.CallExpr, b *Builtin, want Type) Type {
 		c.callEffects(e, b.name, true, false)
 	case BMount:
 		// mount(view, provide: store, platform: .android, at: "/inbox"):
-		// the store provided to the view, the platform it runs on (asuka
+		// the store (or stores, [a, b]) provided to the view, the platform it runs on (asuka
 		// test's unless it says), where its Router starts.
 		ps := []*Param{{Name: "view", Type: View}, {Name: "provide", Type: nil, Default: zeroLit},
 			{Name: "platform", Type: nil, Default: zeroLit}, {Name: "at", Type: String, Default: zeroLit}}
@@ -211,16 +211,27 @@ func (c *Checker) builtinCall(e *syntax.CallExpr, b *Builtin, want Type) Type {
 		if args[3] != nil {
 			c.assign(args[3], String, "where mount's Router starts")
 		}
-		if args[0] != nil {
-			c.builderExpr(args[0])
-		}
+		// A store, or a list of them ([HN(get: fake), Feeds()]), made and
+		// provided in order in the builder, as a component's provides are:
+		// each is made where the ones before it are provided.
+		var stores []syntax.Expr
 		if args[1] != nil {
-			pt := c.expr(args[1], nil)
-			if n, ok := pt.(*Named); !ok || n.Obj.Kind != StoreType {
-				if !IsInvalid(pt) {
-					c.errorf(args[1], diag.TypeMismatch, "provide takes a store: this is %s", aType(pt))
-				}
+			stores = []syntax.Expr{args[1]}
+			if list, ok := args[1].(*syntax.ArrayExpr); ok && len(list.Elems) > 0 {
+				stores = list.Elems
 			}
+		}
+		if args[0] != nil {
+			c.builderExprAfter(args[0], func() {
+				for _, x := range stores {
+					pt := c.expr(x, nil)
+					if n, ok := pt.(*Named); !ok || n.Obj.Kind != StoreType {
+						if !IsInvalid(pt) {
+							c.errorf(x, diag.TypeMismatch, "provide takes a store, or a list of stores: this is %s", aType(pt))
+						}
+					}
+				}
+			})
 		}
 		call.Args = args
 		call.Result = TestApp
@@ -301,6 +312,27 @@ func (c *Checker) builtinCall(e *syntax.CallExpr, b *Builtin, want Type) Type {
 				c.errorf(args[0], diag.TypeMismatch, "bytes(…) takes an [int] or a [u8], not %s", aType(t))
 			}
 		}
+	case BColorRGB:
+		// Color.rgb(red, green, blue, alpha: 1): channels 0 to 255.
+		ps := []*Param{{Name: "red", Type: Int}, {Name: "green", Type: Int}, {Name: "blue", Type: Int},
+			{Name: "alpha", Type: Float, Default: &syntax.BasicLit{Kind: syntax.FLOAT, Value: "1.0"}}}
+		args := c.matchArgs(e, ps, "Color.rgb")
+		for i, a := range args {
+			if a != nil {
+				c.assign(a, ps[i].Type, "Color.rgb's "+ps[i].Name)
+			}
+		}
+		call.Args, call.Params = args, ps
+		call.Result = Color
+	case BColorParse:
+		// Color.parse(text): #rgb, #rrggbb, #rrggbbaa, or none.
+		ps := []*Param{{Name: "text", Type: String}}
+		args := c.matchArgs(e, ps, "Color.parse")
+		if args[0] != nil {
+			c.assign(args[0], String, "the text Color.parse reads")
+		}
+		call.Args, call.Params = args, ps
+		call.Result = MakeOptional(Color)
 	case BIntParse:
 		// T.parse(text, radix: 10): the whole text as a T, or none.
 		t := c.universe.LookupType(b.name).Type
@@ -726,10 +758,17 @@ func (c *Checker) isAsyncCall(call *Call) bool {
 
 // builderExpr checks a view that's built later, where it's placed: a
 // closure of its own (a builder).
-func (c *Checker) builderExpr(x syntax.Expr) {
+func (c *Checker) builderExpr(x syntax.Expr) { c.builderExprAfter(x, nil) }
+
+// builderExprAfter checks x as a builder, first, in it, what before
+// does (mount's stores, made in its builder before its view).
+func (c *Checker) builderExprAfter(x syntax.Expr, before func()) {
 	saved := c.ctx
 	savedView := c.view
 	c.enter(CtxBuilder, x, "builder")
+	if before != nil {
+		before()
+	}
 	c.view = true
 	t := c.expr(x, View)
 	if !IsInvalid(t) && t != View {

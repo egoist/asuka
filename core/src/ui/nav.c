@@ -1099,8 +1099,10 @@ static const ak_el_class cls_tabs = {.name = "Tabs", .kind = AK_KIND_TABS, .flag
 
 typedef struct {
 	ak_view *stack;  // the detail, its kid
-	AK_VEC(ak_view *) dests;  // its Destinations (retained)
-	AK_VEC(ak_view *) groups;  // its Sidebars (retained)
+	// Its Destinations (retained), in order, through its Sidebars and
+	// the fragments of a for or an if: collected again as they change.
+	AK_VEC(ak_view *) dests;
+	ak_view *shown_dest;  // the one shown (retained)
 	int64_t reported, shown;
 	bool known;
 	ak_buf sent;
@@ -1111,10 +1113,8 @@ typedef struct {
 	ak_view *group;  // the Sidebar it's in, if any (its split keeps it)
 } dest_t;
 
-// A Sidebar: Destinations under a heading, which it hands its Split.
-typedef struct {
-	AK_VEC(ak_view *) dests;  // retained until it's in a Split
-} group_t;
+// A Sidebar: Destinations under a heading, its kids (through the
+// fragments of a for or an if), which its Split collects.
 
 static void split_init(ak_view *e) {
 	split_t *s = ak_alloc(sizeof *s);
@@ -1126,21 +1126,41 @@ static void split_init(ak_view *e) {
 	ak_release(s->stack);
 }
 
+static void split_collect(ak_view *e);
+
+static void report_selected(void *p) {
+	void **a = p;
+	ak_view *e = a[0];
+	ak_val arg = {.i = (int64_t)(intptr_t)a[1]};
+	if (!e->dead) ak_view_call(e, AK_EV_SPLIT_CHANGE, &arg, 1);
+	ak_release(e);
+	ak_free(a);
+}
+
+// moved says the destination shown is at i now, as the user's choice
+// is said: to the host, and to selected's binding, soon (not in the
+// flush that collected the destinations).
+static void moved(ak_view *e, int64_t i) {
+	split_t *s = e->impl;
+	s->reported = i, s->known = true;
+	ak_batch_set_int(e->r->batch, e->id, AK_PROP_SPLIT_SELECTED, i);
+	void **a = ak_alloc(2 * sizeof(void *));
+	a[0] = ak_retain(e);
+	a[1] = (void *)(intptr_t)i;
+	ak_post(report_selected, a);
+}
+
+static void release_dests(split_t *s) {
+	for (uint32_t i = 0; i < s->dests.len; i++) ak_release(s->dests.data[i]);
+	s->dests.len = 0;
+}
+
 static void split_drop(ak_view *e) {
 	split_t *s = e->impl;
 	if (!s) return;
-	for (uint32_t i = 0; i < s->dests.len; i++) {
-		s->dests.data[i]->up = NULL;
-		dest_t *dt = s->dests.data[i]->impl;
-		if (dt) dt->group = NULL;
-		ak_release(s->dests.data[i]);
-	}
+	release_dests(s);
 	ak_vec_free(&s->dests);
-	for (uint32_t i = 0; i < s->groups.len; i++) {
-		s->groups.data[i]->up = NULL;
-		ak_release(s->groups.data[i]);
-	}
-	ak_vec_free(&s->groups);
+	ak_release(s->shown_dest);
 	ak_buf_free(&s->sent);
 	ak_free(s);
 }
@@ -1150,6 +1170,9 @@ static void split_show(ak_view *e, int64_t i) {
 	if (i == s->shown || i < 0 || i >= s->dests.len || e->dead) return;
 	s->shown = i;
 	ak_view *d = s->dests.data[i];
+	ak_retain(d);
+	ak_release(s->shown_dest);
+	s->shown_dest = d;
 	dest_t *dt = d->impl;
 	if (ak_stack_depth(s->stack)) ak_stack_replace(s->stack);
 	ak_view *screen = ak_stack_push(s->stack, dt->build, NULL, 0, d->owner);
@@ -1174,6 +1197,7 @@ static void split_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 
 static void split_finalize(ak_view *e) {
 	split_t *s = e->impl;
+	split_collect(e);
 	ak_view_listen(e, AK_EVENT_SELECTED);
 	if (!s->known) {
 		s->known = true;
@@ -1182,40 +1206,67 @@ static void split_finalize(ak_view *e) {
 	split_show(e, key_int(e, AK_KEY_SPLIT_SELECTED, 0));
 }
 
-// split_take adds a destination, of group (a Sidebar) or none.
-static void split_take(ak_view *e, ak_view *d, ak_view *group) {
+static const char *el_name(const ak_view *v) { return v->el ? ak_el_names[v->el] : v->cls->name; }
+
+// collect_dests adds the Destinations under v (a Split's kid, a Sidebar,
+// a for's or an if's fragment) to s's, in order, marking each view it
+// goes through as the split's (bar): a change to a fragment's kids or a
+// destination's keys collects them again.
+static void collect_dests(ak_view *split, split_t *s, ak_view *v, ak_view *group) {
+	if (v == s->stack || v->dead) return;
+	v->bar = split;
+	v->up = split;
+	if (v->el == AK_EL_DESTINATION) {
+		((dest_t *)v->impl)->group = group;
+		ak_vec_push(&s->dests, (ak_view *)ak_retain(v));
+		return;
+	}
+	if (v->el == AK_EL_SIDEBAR) {
+		if (group) ak_panic("ui: a Sidebar holds Destinations, not a Sidebar");
+		group = v;
+	} else if (v->cls != &ak_class_frag) {
+		ak_panic(group ? "ui: Sidebar holds Destinations, not a %s" : "ui: Split holds Destinations and Sidebars, not a %s", el_name(v));
+	}
+	for (uint32_t i = 0; i < v->kids.len; i++) collect_dests(split, s, v->kids.data[i], group);
+}
+
+// split_collect collects the split's destinations again. The one shown
+// stays shown where it moved to; when it's gone, the one at its place
+// (or the last) is shown instead.
+static void split_collect(ak_view *e) {
 	split_t *s = e->impl;
-	ak_view_finalize(d);
-	d->up = e;
-	((dest_t *)d->impl)->group = group;
-	ak_vec_push(&s->dests, (ak_view *)ak_retain(d));
+	ak_view *shown = s->shown_dest;
+	int64_t was = s->shown;
+	AK_VEC(ak_view *) old = {0};
+	// Held until the new list is made: the shown one may be in it.
+	for (uint32_t i = 0; i < s->dests.len; i++) ak_vec_push(&old, s->dests.data[i]);
+	s->dests.len = 0;
+	for (uint32_t i = 0; i < e->kids.len; i++) collect_dests(e, s, e->kids.data[i], NULL);
+	int64_t now = -1;
+	for (uint32_t i = 0; i < s->dests.len && shown; i++)
+		if (s->dests.data[i] == shown) now = i;
+	for (uint32_t i = 0; i < old.len; i++) ak_release(old.data[i]);
+	ak_vec_free(&old);
+	if (!e->finalized || was < 0) return;
+	if (now >= 0) {
+		s->shown = now;
+		if (now != was) moved(e, now);
+		return;
+	}
+	// The one shown went: its place's, or the last.
+	s->shown = -1;
+	ak_release(s->shown_dest);
+	s->shown_dest = NULL;
+	int64_t i = was < (int64_t)s->dests.len ? was : (int64_t)s->dests.len - 1;
+	if (i < 0) return;
+	split_show(e, i);
+	moved(e, i);
 }
 
 static void split_add(ak_view *e, ak_view *child) {
 	split_t *s = e->impl;
-	if (child->el == AK_EL_SIDEBAR) {
-		ak_view_finalize(child);
-		child->up = e;
-		ak_vec_push(&s->groups, (ak_view *)ak_retain(child));
-		group_t *g = child->impl;
-		for (uint32_t i = 0; i < g->dests.len; i++) {
-			split_take(e, g->dests.data[i], child);
-			ak_release(g->dests.data[i]);
-		}
-		g->dests.len = 0;
-	} else if (child->el == AK_EL_DESTINATION) {
-		split_take(e, child, NULL);
-	} else {
-		ak_panic("ui: Split holds Destinations and Sidebars, not a %s", child->el ? ak_el_names[child->el] : child->cls->name);
-	}
-	ak_view_sync(e);
-	if (e->finalized && s->shown < 0) split_show(e, key_int(e, AK_KEY_SPLIT_SELECTED, 0));
-}
-
-// split_add_dest adds a destination of group's once group is in the split.
-static void split_add_dest(ak_view *e, ak_view *d, ak_view *group) {
-	split_t *s = e->impl;
-	split_take(e, d, group);
+	ak_view_append(e, child);
+	split_collect(e);
 	ak_view_sync(e);
 	if (e->finalized && s->shown < 0) split_show(e, key_int(e, AK_KEY_SPLIT_SELECTED, 0));
 }
@@ -1224,6 +1275,7 @@ static void split_add_dest(ak_view *e, ak_view *d, ak_view *group) {
 // same section are one.
 static void split_sync(ak_view *e) {
 	split_t *s = e->impl;
+	split_collect(e);
 	uint32_t n = s->dests.len;
 	ak_sidebar_item *items = ak_alloc((n ? n : 1) * sizeof *items);
 	ak_sidebar_section *secs = ak_alloc((n ? n : 1) * sizeof *secs);
@@ -1302,32 +1354,19 @@ static void dest_add(ak_view *e, ak_view *child) {
 static const ak_el_class cls_dest = {.name = "Destination", .kind = AK_KIND_VIEW, .flags = AK_ELF_FRAGMENT | AK_ELF_FLATTEN | AK_ELF_CHILDREN,
                                      .init = dest_init, .set = dest_set, .add = dest_add, .lazy = dest_lazy, .drop = dest_drop};
 
-static void group_init(ak_view *e) { e->impl = ak_alloc(sizeof(group_t)); }
-
-static void group_drop(ak_view *e) {
-	group_t *g = e->impl;
-	if (!g) return;
-	for (uint32_t i = 0; i < g->dests.len; i++) ak_release(g->dests.data[i]);
-	ak_vec_free(&g->dests);
-	ak_free(g);
-}
-
 static void group_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 	AK_UNUSED(key), AK_UNUSED(v), AK_UNUSED(prev);
 	if (e->up && !e->up->dead) ak_view_sync(e->up);  // its split's sidebar
 }
 
 static void group_add(ak_view *e, ak_view *child) {
-	if (child->el != AK_EL_DESTINATION) ak_panic("ui: Sidebar holds Destinations, not a %s", child->el ? ak_el_names[child->el] : child->cls->name);
-	if (e->up && !e->up->dead) {
-		split_add_dest(e->up, child, e);
-		return;
-	}
-	ak_vec_push(&((group_t *)e->impl)->dests, (ak_view *)ak_retain(child));
+	if (child->el != AK_EL_DESTINATION && child->cls != &ak_class_frag) ak_panic("ui: Sidebar holds Destinations, not a %s", el_name(child));
+	ak_view_append(e, child);
+	if (e->up && !e->up->dead) ak_view_sync(e->up);
 }
 
 static const ak_el_class cls_group = {.name = "Sidebar", .kind = AK_KIND_VIEW, .flags = AK_ELF_FRAGMENT | AK_ELF_FLATTEN | AK_ELF_CHILDREN,
-                                      .init = group_init, .set = group_set, .add = group_add, .drop = group_drop};
+                                      .set = group_set, .add = group_add};
 
 // ---- PageControl ----
 

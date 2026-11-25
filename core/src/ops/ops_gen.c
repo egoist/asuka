@@ -114,11 +114,13 @@ static const ak_prop_info props_Scroll[] = {
 	{"Refreshable", AK_T_BOOL, -1},
 	{"Refreshing", AK_T_BOOL, -1},
 	{"Paging", AK_T_BOOL, -1},
+	{"EdgeEffect", AK_T_ENUM, 34},
 };
 
 static const ak_prop_info props_List[] = {
 	{"Refreshable", AK_T_BOOL, -1},
 	{"Refreshing", AK_T_BOOL, -1},
+	{"EdgeEffect", AK_T_ENUM, 34},
 	{"Columns", AK_T_INT, -1},
 	{"Gap", AK_T_FLOAT, -1},
 	{"Appearance", AK_T_ENUM, 20},
@@ -317,7 +319,7 @@ static const ak_prop_info props_ProgressRing[] = {
 static const ak_prop_info props_Snackbar[] = {
 	{"Message", AK_T_STRING, -1},
 	{"Action", AK_T_STRING, -1},
-	{"Duration", AK_T_ENUM, 37},
+	{"Duration", AK_T_ENUM, 38},
 	{"Window", AK_T_INT, -1},
 };
 
@@ -370,7 +372,7 @@ const ak_prop_info *const ak_kind_props[AK_KIND_COUNT] = {
 	props_Overlay,
 };
 
-const uint8_t ak_kind_prop_counts[AK_KIND_COUNT] = {0, 2, 1, 3, 14, 2, 3, 4, 8, 1, 1, 14, 1, 5, 6, 7, 2, 2, 0, 1, 2, 2, 4, 3, 2, 9, 6, 6, 5, 2, 3, 2, 1, 3, 3, 5, 3, 2, 4, 3};
+const uint8_t ak_kind_prop_counts[AK_KIND_COUNT] = {0, 2, 1, 3, 14, 2, 3, 5, 9, 1, 1, 14, 1, 5, 6, 7, 2, 2, 0, 1, 2, 2, 4, 3, 2, 9, 6, 6, 5, 2, 3, 2, 1, 3, 3, 5, 3, 2, 4, 3};
 
 static const char *const enum_Role[] = {"None", "Button", "Header", "Image", "Link", "Text", "Search", "Checkbox", "Radio", "RadioGroup", "Switch", "Tab", "TabList", "TabPanel", "Slider", "SpinButton", "ProgressBar", "Meter", "Menu", "MenuBar", "MenuItem", "MenuItemCheckbox", "MenuItemRadio", "Listbox", "Option", "ComboBox", "Dialog", "AlertDialog", "Tooltip", "Group", "Separator", "Toolbar", "Status"};
 static const char *const enum_A11yChecked[] = {"None", "Unchecked", "Checked", "Mixed"};
@@ -406,6 +408,7 @@ static const char *const enum_SemanticColor[] = {"None", "Label", "SecondaryLabe
 static const char *const enum_ShareKind[] = {"Text", "Link", "Image", "Video", "Audio", "File"};
 static const char *const enum_DragPhase[] = {"Began", "Dropped", "Cancelled"};
 static const char *const enum_ScrollAnchor[] = {"Top", "Bottom"};
+static const char *const enum_EdgeEffect[] = {"Automatic", "Soft", "Hard"};
 static const char *const enum_WindowAction[] = {"Show", "Hide", "Focus", "Minimize", "Maximize", "Restore", "Fullscreen", "ExitFullscreen", "Center", "Size", "Position", "AlwaysOnTop", "NotAlwaysOnTop", "Close", "ClickThrough", "NotClickThrough", "Fit"};
 static const char *const enum_Placement[] = {"Bottom", "BottomStart", "BottomEnd", "Top", "TopStart", "TopEnd", "Right", "RightStart", "RightEnd", "Left", "LeftStart", "LeftEnd"};
 static const char *const enum_TitleBar[] = {"Default", "Hidden"};
@@ -448,6 +451,7 @@ const ak_enum_info ak_enums[AK_ENUM_COUNT] = {
 	{"ShareKind", enum_ShareKind, 6},
 	{"DragPhase", enum_DragPhase, 3},
 	{"ScrollAnchor", enum_ScrollAnchor, 2},
+	{"EdgeEffect", enum_EdgeEffect, 3},
 	{"WindowAction", enum_WindowAction, 17},
 	{"Placement", enum_Placement, 12},
 	{"TitleBar", enum_TitleBar, 2},

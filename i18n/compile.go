@@ -41,7 +41,7 @@ type CompileOptions struct {
 
 // The blob, little-endian, strings a u32 length and UTF-8:
 //
-//	"AKC3", string source language
+//	"AKC4", string source language
 //	u32 key count, per key a string
 //	u32 skeleton count (of the messages' {d, date, ::skeleton}s)
 //	u32 language count, per language:
@@ -79,6 +79,12 @@ type CompileOptions struct {
 //	    style) * 2 + (0: 12 hours, 1: 24), styles 0 none, 1 short, 2
 //	    medium, 3 long, 4 full
 //	    the skeletons' patterns, 2 each (12 hours, 24)
+//	    63 strings: the relative times, by (unit * 3 + width) * 3 +
+//	    part, units second, minute, hour, day, week, month, year, widths
+//	    long, short, narrow, parts the future patterns, the past ones
+//	    (each 6, by Plural, "" for a category the language hasn't) and
+//	    the named forms of -2 to 2 ("yesterday" is -1 day's; "" for
+//	    none), each joined by U+001F
 //	  u32 message count, per message u32 key index and its nodes
 //
 // Nodes are u32 count, then each u8 kind and:
@@ -174,7 +180,7 @@ func (c *Catalog) CompileWith(o CompileOptions) (*Compiled, error) {
 			}
 		}
 	}
-	w.b = append(w.b, "AKC3"...)
+	w.b = append(w.b, "AKC4"...)
 	w.str(c.source)
 	w.u32(len(out.Keys))
 	for _, k := range out.Keys {
@@ -329,6 +335,9 @@ func (w *cWriter) dates(lang string) {
 		for _, hc := range cycles {
 			w.str(NewDateFormatter(base+hc, DateOptions{Skeleton: skel}).Pattern())
 		}
+	}
+	for i := slotRelative; i < slotCount; i++ {
+		w.str(d.v[i])
 	}
 }
 

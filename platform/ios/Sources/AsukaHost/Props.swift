@@ -579,6 +579,8 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             s.isPagingEnabled = v.bool
             s.showsHorizontalScrollIndicator = !v.bool
             s.showsVerticalScrollIndicator = !v.bool
+        case (.scroll, AsukaProp.Scroll.edgeEffect):
+            if let s = n.view as? UIScrollView { asukaEdgeEffect(s, v.enumValue) }
         case (.scroll, AsukaProp.Scroll.horizontal):
             guard let s = n.view as? UIScrollView else { return }
             s.alwaysBounceVertical = !v.bool
@@ -677,3 +679,10 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
     }
 }
 #endif
+
+/// A scroll view's top edge effect under a bar (iOS 26): 0 automatic,
+/// 1 soft, 2 hard.
+@MainActor func asukaEdgeEffect(_ s: UIScrollView, _ effect: Int32) {
+    guard #available(iOS 26.0, *) else { return }
+    s.topEdgeEffect.style = effect == 2 ? .hard : effect == 1 ? .soft : .automatic
+}

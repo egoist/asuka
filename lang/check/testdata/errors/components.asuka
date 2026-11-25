@@ -60,3 +60,15 @@ component Unknown {
 }
 
 fn bitsOfBools(a: bool, b: bool) -> bool = a | b && !b // ERROR "\| takes ints, not a bool"
+
+// A List's rows come from one for: a header, a status, a second for
+// aren't rows.
+component Feed {
+  state ids = [1, 2]
+
+  List {
+    Text("Header") // ERROR "a List's rows come from one for in it"
+    for id in ids key id { Text("{id}") }
+    for id in ids key id { Text("again {id}") } // ERROR "a List has one for"
+  }
+}

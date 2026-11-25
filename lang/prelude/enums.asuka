@@ -250,6 +250,12 @@ enum ScrollAnchor {
   bottom
 }
 
+enum EdgeEffect {
+  automatic
+  soft
+  hard
+}
+
 enum PopoverPlacement {
   bottom
   bottomStart

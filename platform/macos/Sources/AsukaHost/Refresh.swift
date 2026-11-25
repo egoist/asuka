@@ -104,12 +104,22 @@ let asukaRefreshHeight: CGFloat = 40
             s.autoresizingMask = [.minXMargin, .maxXMargin] // its margins stretch: it stays centered
             sv.addSubview(s)
             s.startAnimation(nil)
-            sv.contentInsets = NSEdgeInsets(top: asukaRefreshHeight, left: 0, bottom: 0, right: 0)
+            if let a = sv as? AsukaScrollView {
+                a.refreshInset = asukaRefreshHeight
+                a.applyInsets()
+            } else {
+                sv.contentInsets = NSEdgeInsets(top: asukaRefreshHeight, left: 0, bottom: 0, right: 0)
+            }
             return
         }
         r.spinner?.stopAnimation(nil)
         r.spinner?.removeFromSuperview()
-        sv.contentInsets = NSEdgeInsetsZero
+        if let a = sv as? AsukaScrollView {
+            a.refreshInset = 0
+            a.applyInsets()
+        } else {
+            sv.contentInsets = NSEdgeInsetsZero
+        }
     }
 
     /// The spinner centered in the room above the content.

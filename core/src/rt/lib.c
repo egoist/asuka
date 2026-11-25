@@ -477,8 +477,7 @@ static ak_val str_find_any(ak_val *args, uint32_t n) {
 static int64_t char_to_byte(const ak_str *s, int64_t c);
 
 static ak_val str_byte_slice(ak_val *args, uint32_t n) {
-	AK_UNUSED(n);
-	RET_P(ak_str_slice(STR(0), A(1).i, A(2).i));
+	RET_P(ak_str_slice(STR(0), A(1).i, n > 2 ? A(2).i : (STR(0) ? (int64_t)STR(0)->len : 0)));
 }
 
 // str.pad(s, width, with, end): s with copies of with before it (after it
@@ -2394,6 +2393,49 @@ static ak_val color_hex(ak_val *args, uint32_t n) {
 	RET_P(ak_str_new(buf, (size_t)len));
 }
 
+// color.rgb(r, g, b, alpha) is Color.rgb: each channel 0 to 255 (clamped),
+// alpha 0 to 1.
+static ak_val color_rgb(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	uint64_t c[4];
+	for (int i = 0; i < 3; i++) {
+		int64_t v = args[i].i;
+		c[i] = (uint64_t)(v < 0 ? 0 : v > 255 ? 255 : v);
+	}
+	double a = args[3].f;
+	c[3] = (uint64_t)(a != a || a <= 0 ? 0 : a >= 1 ? 255 : (uint64_t)(a * 255 + 0.5));
+	RET_I((int64_t)((2ull << 32) | c[0] << 24 | c[1] << 16 | c[2] << 8 | c[3]));
+}
+
+static int hex_digit(char ch) {
+	if (ch >= '0' && ch <= '9') return ch - '0';
+	if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+	if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+	return -1;
+}
+
+// color.parse(text) is Color.parse: #rgb, #rrggbb or #rrggbbaa (the #
+// may be left out, as GitHub's labels leave it), as a color; none for
+// anything else.
+static ak_val color_parse(ak_val *args, uint32_t n) {
+	AK_UNUSED(n);
+	const ak_str *s = STR(0);
+	if (!s) return (ak_val){.p = NULL};
+	const char *p = s->data;
+	size_t len = s->len;
+	if (len && p[0] == '#') p++, len--;
+	if (len != 3 && len != 6 && len != 8) return (ak_val){.p = NULL};
+	uint32_t rgba = 0;
+	for (size_t i = 0; i < len; i++) {
+		int d = hex_digit(p[i]);
+		if (d < 0) return (ak_val){.p = NULL};
+		rgba = rgba << 4 | (uint32_t)d;
+		if (len == 3) rgba = rgba << 4 | (uint32_t)d;  // #f0a is #ff00aa
+	}
+	if (len != 8) rgba = rgba << 8 | 0xff;
+	return (ak_val){.p = ak_box_new(AK_K_INT, (ak_val){.i = (int64_t)((2ull << 32) | rgba)})};
+}
+
 // appearance.rgb(r, g, b) is an opaque RGB color, each channel 0 to 255:
 // platform/appearance's accent, which the platform's side gives as numbers.
 static ak_val appearance_rgb(ak_val *args, uint32_t n) {
@@ -2487,8 +2529,7 @@ static ak_val bytes_at(ak_val *args, uint32_t n) {
 }
 
 static ak_val bytes_slice(ak_val *args, uint32_t n) {
-	AK_UNUSED(n);
-	int64_t len = blen(BYTES(0)), from = A(1).i, to = A(2).i;
+	int64_t len = blen(BYTES(0)), from = A(1).i, to = n > 2 ? A(2).i : len;
 	if (from < 0) from = 0;
 	if (to > len) to = len;
 	if (to < from) to = from;
@@ -2633,6 +2674,8 @@ const ak_lib_entry ak_lib[] = {
 
 	{"color.opacity", color_opacity},
 	{"color.hex", color_hex},
+	{"color.rgb", color_rgb},
+	{"color.parse", color_parse},
 	{"async.never", async_never},
 	{"async.in_worker", async_in_worker},
 	{"appearance.rgb", appearance_rgb},

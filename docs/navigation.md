@@ -450,6 +450,29 @@ the user's choice writes it, and writing it shows another. A
 `Sidebar`'s title heads its destinations (a destination's own
 `section:` names one too).
 
+Destinations may come from a `for` or an `if`, in a `Sidebar` or not: a
+folder each, a repository each. The sidebar follows them as they change,
+and the destination shown stays shown where it moves to (`selected`
+follows it); when it goes, the one at its place is shown.
+
+```asuka
+state folders = ["Inbox", "Work"]
+
+app {
+  Split("Mail") {
+    Sidebar("Folders") {
+      for f in folders key f {
+        Destination(f) { Mailbox(f) }
+      }
+    }
+  }
+}
+
+screen Mailbox(name: string) {
+  Text("No mail in {name}")
+}
+```
+
 | | Compact (a phone) | Wide |
 |---|---|---|
 | iOS | the split view collapsed into a stack, as iOS does it: the sidebar is the first screen, an inset grouped list; a row pushes its destination, and back returns to the list | `UISplitViewController`'s sidebar beside the content (Liquid Glass on iOS 26), which the user can hide |
@@ -1106,6 +1129,15 @@ component Editor {
   TextField { multiline: true; grow: 1 }
 }
 ```
+
+A screen's own safe area is the part of it the strip covers, so a
+`SafeArea` in a screen keeps clear of it too, and a heading can go in it
+level with the window's buttons. A scroll view whose top is under the
+strip starts its content below it and scrolls it under, as under iOS's
+navigation bar (`edgeEffect` sets how it's cut off:
+[Components](components.md#scroll)). A window whose content is a `Split`
+has its sidebar under the window's buttons, as a Mac's split view apps
+do, with or without a hidden title bar; the toolbar is over the detail.
 
 The strip under the buttons still drags the window, where the content
 takes no clicks. On Windows the main window has no menu bar under a

@@ -1274,6 +1274,12 @@ void ak_fake_type(ak_fake *f, ak_fake_view *v, const char *s) {
 
 void ak_fake_submit(ak_fake *f, ak_fake_view *v) { emit(f, v, AK_EVENT_SUBMIT); }
 
+void ak_fake_type_search(ak_fake *f, ak_fake_view *screen, const char *s) {
+	ak_span str = ak_cstr(s);
+	set_prop(screen, AK_PROP_SCREEN_SEARCH_TEXT, &(ak_value){.type = AK_T_STRING, .s = str});
+	if (listening(f, screen, AK_EVENT_TEXT_CHANGED)) ak_fake_dispatch(f, &(ak_event){.id = screen->id, .kind = AK_EVENT_TEXT_CHANGED, .s = str});
+}
+
 void ak_fake_flip(ak_fake *f, ak_fake_view *v) {
 	bool on = !ak_fake_bool(v, AK_PROP_TOGGLE_ON);
 	set_int(v, AK_PROP_TOGGLE_ON, AK_T_BOOL, on);

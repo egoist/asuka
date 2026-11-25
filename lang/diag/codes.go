@@ -846,8 +846,9 @@ block's views.`,
 		Name:    "no-children",
 		Summary: "children given to an element that takes none, or not those",
 		Why: `An element takes children when it declares ` + "`prop children: View`" + ` (or is a
-container); an ` + "`Alert`" + `'s block holds its buttons and fields only.`,
-		Fix:   "Put the views in a container (`Column`, `Row`), or beside the element.",
+container); an ` + "`Alert`" + `'s block holds its buttons and fields only, and a
+` + "`List`" + `'s one ` + "`for`" + `, whose items are its rows.`,
+		Fix:   "Put the views in a container (`Column`, `Row`), or beside the element. A row of another kind in a `List` (a header, a status) is an item of its `for`: an enum of the kinds of row.",
 		Wrong: "component Note {\n  Text(\"Title\") {\n    Text(\"Body\")\n  }\n}\n",
 		Right: "component Note {\n  Column {\n    Text(\"Title\")\n    Text(\"Body\")\n  }\n}\n",
 	})

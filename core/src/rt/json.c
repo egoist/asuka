@@ -107,6 +107,12 @@ static bool lit(parser *ps, const char *w) {
 	return false;
 }
 
+// null_next reports whether the value at ps is null, without reading it.
+static bool null_next(const parser *ps) {
+	const char *p = ps->s;
+	return ps->end - p >= 4 && memcmp(p, "null", 4) == 0 && (ps->end - p == 4 || !((p[4] >= 'a' && p[4] <= 'z') || (p[4] >= '0' && p[4] <= '9')));
+}
+
 static void put_utf8(ak_strb *b, uint32_t c) {
 	char t[4];
 	size_t n;
@@ -447,28 +453,62 @@ static bool zero_field(parser *ps, const char *fd, ak_val *out) {
 	return true;
 }
 
+// snake_eq is whether the n bytes at k, a key written in snake_case
+// (or kebab-case) as most web APIs write them, name the field name:
+// each word of the key, its first letter in either case, is the name's
+// next (html_url reads into htmlUrl and htmlURL, created_at_i into
+// createdAtI). The key has an underscore or a dash, so a key that's
+// the name in another case alone (ID, Title) names no field.
+static bool snake_eq(const char *name, const char *k, size_t n) {
+	bool sep = false;
+	size_t i = 0, j = 0;
+	for (; j < n; j++)
+		if (k[j] == '_' || k[j] == '-') sep = true;
+	if (!sep) return false;
+	for (j = 0; j < n; j++) {
+		char c = k[j];
+		if (c == '_' || c == '-') continue;
+		char p = name[i];
+		if (p == 0) return false;
+		if (p >= 'A' && p <= 'Z') p = (char)(p - 'A' + 'a');
+		if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+		if (p != c) return false;
+		i++;
+	}
+	return name[i] == 0;
+}
+
 // field_named is the field of s named by the n bytes at k, -1 when it
 // has none: the one after the last (hint) first, as an object's keys
-// usually come in its fields' order, then each.
-static int field_named(const ak_shape *s, const char *k, size_t n, int hint) {
+// usually come in its fields' order, then each. A key that's no
+// field's name may be one in snake_case (snake_eq): *loose says so.
+static int field_named(const ak_shape *s, const char *k, size_t n, int hint, bool *loose) {
+	*loose = false;
 	if (!s->names) return -1;
 	for (int j = 0; j < s->nfields; j++) {
 		int i = (hint + j) % s->nfields;
 		const char *name = s->names[i];
 		if (name && strncmp(name, k, n) == 0 && name[n] == 0) return i;
 	}
+	for (int i = 0; i < s->nfields; i++) {
+		if (s->names[i] && snake_eq(s->names[i], k, n)) {
+			*loose = true;
+			return i;
+		}
+	}
 	return -1;
 }
 
 // key_field reads an object's key, a string, and is the field of s it
 // names (-1: none): without making the string when it has no escapes.
-static int key_field(parser *ps, const ak_shape *s, int hint) {
+static int key_field(parser *ps, const ak_shape *s, int hint, bool *loose) {
+	*loose = false;
 	if (ps->s < ps->end && *ps->s == '"') {
 		const char *k = ps->s + 1, *e = k;
 		while (e < ps->end && *e != '"' && *e != '\\') e++;
 		if (e < ps->end && *e == '"') {
 			ps->s = e + 1;
-			return field_named(s, k, (size_t)(e - k), hint);
+			return field_named(s, k, (size_t)(e - k), hint, loose);
 		}
 	}
 	ak_str *k = str(ps);
@@ -476,7 +516,7 @@ static int key_field(parser *ps, const ak_shape *s, int hint) {
 		ak_release(k);
 		return -1;
 	}
-	int i = field_named(s, k->data, k->len, hint);
+	int i = field_named(s, k->data, k->len, hint, loose);
 	ak_release(k);
 	return i;
 }
@@ -484,9 +524,10 @@ static int key_field(parser *ps, const ak_shape *s, int hint) {
 static ak_val object_struct(parser *ps, const ak_shape *s, const char *d) {
 	AK_UNUSED(d);
 	ak_struct *o = ak_struct_new(s);
-	// Which fields the object set: on the stack for most structs.
-	bool few[64];
-	bool *set = s->nfields <= 64 ? few : ak_alloc(s->nfields);
+	// Which fields the object set (1; 2 by their own name, which a
+	// snake_case key doesn't replace): on the stack for most structs.
+	uint8_t few[64];
+	uint8_t *set = s->nfields <= 64 ? few : ak_alloc(s->nfields);
 	memset(set, 0, s->nfields);
 	int next = 0;
 	ws(ps);
@@ -498,27 +539,34 @@ static ak_val object_struct(parser *ps, const ak_shape *s, const char *d) {
 	if (lit(ps, "}")) goto check;
 	for (;;) {
 		ws(ps);
-		int idx = key_field(ps, s, next);
+		bool loose;
+		int idx = key_field(ps, s, next, &loose);
 		if (ps->failed) goto done;
 		ws(ps);
 		if (!lit(ps, ":")) {
 			fail(ps, "expected ':'%s", "");
 			goto done;
 		}
-		if (idx >= 0) next = idx + 1 < s->nfields ? idx + 1 : 0;
-		if (idx < 0) {
+		if (idx >= 0 && !loose) next = idx + 1 < s->nfields ? idx + 1 : 0;
+		ws(ps);
+		extern const char *ak_json_field_desc(const ak_shape *s, int i);
+		if (idx >= 0 && ak_json_field_desc(s, idx)[0] != '?' && null_next(ps)) {
+			// null for a field that isn't optional: as if the object didn't
+			// have it (an API's "text": null), empty unless a key sets it.
+			idx = -1;
+		}
+		if (idx < 0 || (loose && set[idx] == 2)) {
 			if (!skip_value(ps)) goto done;  // a field it doesn't have
 		} else {
 			// The field's own descriptor is in the shape's field
 			// descriptors, which the compiler keeps in the shape's names
 			// as "name:desc" ... see field_desc.
-			extern const char *ak_json_field_desc(const ak_shape *s, int i);
 			const char *fd = ak_json_field_desc(s, idx);
 			ak_val v = value(ps, fd);
 			if (ps->failed) goto done;
 			ak_release_val(o->f[idx], (ak_kind)s->kinds[idx]);
 			o->f[idx] = v;
-			set[idx] = true;
+			set[idx] = loose ? 1 : 2;
 		}
 		ws(ps);
 		if (lit(ps, ",")) continue;
@@ -980,7 +1028,7 @@ static ak_val value_of(parser *ps, const char *d) {
 			ws(ps);
 			if (!ps->failed && !lit(ps, "]")) fail(ps, "expected ']'%s", "");
 		} else if (lit(ps, "{")) {
-			bool *set = cs->nfields ? ak_alloc(cs->nfields) : NULL;
+			uint8_t *set = cs->nfields ? ak_alloc(cs->nfields) : NULL;
 			ws(ps);
 			if (!lit(ps, "}")) {
 				for (;;) {
@@ -994,17 +1042,22 @@ static ak_val value_of(parser *ps, const char *d) {
 						break;
 					}
 					int fi = -1;
+					bool loose = false;
 					for (uint16_t i = 0; i < cs->nfields; i++)
 						if (cs->names && cs->names[i] && strcmp(cs->names[i], k->data) == 0) fi = i;
+					for (uint16_t i = 0; fi < 0 && i < cs->nfields; i++)
+						if (cs->names && cs->names[i] && snake_eq(cs->names[i], k->data, k->len)) fi = i, loose = true;
 					ak_release(k);
-					if (fi < 0) {
+					ws(ps);
+					if (fi >= 0 && ak_json_case_desc(s, ci, fi)[0] != '?' && null_next(ps)) fi = -1;  // null: as if it weren't there
+					if (fi < 0 || (loose && set[fi] == 2)) {
 						if (!skip_value(ps)) break;  // a field it doesn't have
 					} else {
 						ak_val v = value(ps, ak_json_case_desc(s, ci, fi));
 						if (ps->failed) break;
 						ak_release_val(e->f[fi], (ak_kind)cs->kinds[fi]);  // written twice: the last
 						e->f[fi] = v;
-						set[fi] = true;
+						set[fi] = loose ? 1 : 2;
 					}
 					ws(ps);
 					if (lit(ps, ",")) continue;

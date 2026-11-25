@@ -100,7 +100,8 @@ print(app.snapshot())     // what the screen shows, a view a line
 Only what a user could see counts:
 
 - the top screen of each stack (the screens under it don't show);
-- the selected tab's page, and every tab's title in the tab bar;
+- the selected tab's page, and every tab's title (and badge) in the tab bar;
+- a split's sidebar: each destination's title and badge;
 - the sheets, alerts and popovers presented, over the rest;
 - a list's rows that fit its height: Asuka binds a list's rows as the
   platform asks for them, and so does `asuka test`, as a collection
@@ -119,6 +120,7 @@ lists are bound, and what the app's tasks posted has run.
 ```asuka
 app.tap("Add")                      // a button, a row, a tab, a toggle, a segment, a menu's item
 app.type("ada@example.com", into: "Email")  // the field with that placeholder or label
+app.type("milk", into: "Search notes")      // a screen's search field, by its placeholder
 app.tapLink("https://asuka.dev")     // the link in a RichText
 app.share([SharedItem(kind: .link, text: "https://asuka.dev")])  // another app shares it: onShare hears it
 await app.idle()                    // until nothing is left to run: tasks, timers, loads
@@ -396,6 +398,9 @@ test "archiving removes the row" {
   app.expectNo("Hello")
 }
 ```
+
+`provide:` takes a store, or a list of them for a view that uses
+several: `mount(Inbox(), provide: [Mailbox.fake([sample]), Session()])`.
 
 ## Testing on the platforms
 

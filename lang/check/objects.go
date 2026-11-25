@@ -626,6 +626,8 @@ const (
 	BReplace     // replace(href): the Router's, replacing where it is
 	BPeek        // peek(e): e, read without following it (rfcs/0012)
 	BIntParse    // u8.parse(text, radix:): an integer type's from text (the Builtin's name is the type's)
+	BColorRGB    // Color.rgb(red, green, blue, alpha:): a color of numbers (a server's, a picker's)
+	BColorParse  // Color.parse(text): a color of its hex text (#d73a4a), or none
 	BBytesFrom   // bytes(xs): an [int]'s (each modulo 256) or a [u8]'s bytes
 	BKeep        // keep(x): x, which the compiler can't leave uncomputed (testing.go)
 	BSnapshot    // expectSnapshot(x): x as its stored snapshot says (testing.go)

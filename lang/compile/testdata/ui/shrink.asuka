@@ -1,0 +1,35 @@
+// shrink: 0 keeps a view's size in a row that overflows, as CSS's
+// flex-shrink: 0 does; unset, it's 1, and a view gives up its share.
+
+let long = "a much longer title that has to wrap onto a second line here"
+
+component Ranked(rank: string, fixed: bool) {
+  Row {
+    width: 300
+    if fixed {
+      Text(rank) {
+        width: 24
+        shrink: 0
+      }
+    } else {
+      Text(rank) { width: 24 }
+    }
+    Text(long) {
+      grow: 1
+      shrink: 1
+    }
+  }
+}
+
+test "shrink 0 keeps the size; unset, it shrinks" {
+  let app = mount(Column {
+    Ranked("1", fixed: true)
+    Ranked("2", fixed: false)
+  })
+  let (_, _, w1, _) = app.frameOf("1")
+  let (_, _, w2, _) = app.frameOf("2")
+  expect(w1 == 24, "shrink 0: {w1}")
+  expect(w2 < 24, "unset: {w2}")
+}
+
+app { Ranked("1", fixed: true) }

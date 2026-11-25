@@ -297,6 +297,26 @@ screen Mailbox(name: string) {
 
 每个目的地的内容是一个导航栈的第一个页面：它下面的代码用 `push` 推入页面。选择另一个目的地时，栈里的页面会立即被替换成那个目的地的第一个页面，原来的页面随之销毁。第一个页面没有自己的标题时，用目的地的标题。`bind selected` 是选中的目的地，跨所有分区连续计数；用户的选择会写入它，代码写入它也会切换到对应的目的地。`Sidebar` 的标题是其中目的地的分区标题（目的地自己的 `section:` 也可以指定分区）。
 
+目的地也可以由 `for` 或 `if` 生成，放在 `Sidebar` 里或外都行：每个文件夹一个，每个仓库一个。它们变化时侧边栏会跟着变；正在显示的目的地挪了位置也继续显示（`selected` 跟着更新）；它被移除时，改为显示原来位置上的那个。
+
+```asuka
+state folders = ["Inbox", "Work"]
+
+app {
+  Split("Mail") {
+    Sidebar("Folders") {
+      for f in folders key f {
+        Destination(f) { Mailbox(f) }
+      }
+    }
+  }
+}
+
+screen Mailbox(name: string) {
+  Text("No mail in {name}")
+}
+```
+
 | | 紧凑（手机） | 宽屏 |
 |---|---|---|
 | iOS | 按 iOS 的做法折叠成一个导航栈：侧边栏是第一个页面，显示为 inset grouped 列表；点一行会推入对应的目的地，返回则回到列表 | `UISplitViewController` 的侧边栏放在内容旁边（iOS 26 上是 Liquid Glass 风格），用户可以把它隐藏 |
@@ -796,6 +816,8 @@ component Editor {
   TextField { multiline: true; grow: 1 }
 }
 ```
+
+屏幕自己的安全区域就是被这条区域遮住的部分，所以屏幕里的 `SafeArea` 同样会避开它，也可以在这条区域里放一个和窗口按钮齐平的标题。顶部位于这条区域下面的滚动视图，内容会从它下方开始，并在滚动时滑到它下面，和 iOS 导航栏下的行为一样（`edgeEffect` 决定边缘效果：见[组件](components.md#scroll)）。内容是 `Split` 的窗口，不论是否隐藏标题栏，侧边栏都会延伸到窗口按钮下面，和 Mac 上的分栏视图应用一样；工具栏位于详情一侧之上。
 
 在内容不接收点击的地方，按钮下方的那一条区域仍然可以拖动窗口。在 Windows 上，隐藏标题栏后主窗口就没有菜单栏了，但菜单的快捷键依然有效。
 

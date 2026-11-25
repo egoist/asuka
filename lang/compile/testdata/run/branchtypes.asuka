@@ -1,0 +1,32 @@
+// An if's branch whose value says nothing of its type ([], [:], an
+// implicit .case) takes the other branch's.
+
+struct Story {
+  id: int
+}
+
+enum Tint { red, blue }
+
+fn shown(chosen: Story?) -> [Story] {
+  let xs = if let c = chosen { [c] } else { [] }
+  return xs
+}
+
+test "a branch's type from the other" {
+  print(shown(Story(id: 3)).count())
+  print(shown(none).count())
+  let empty = if shown(none).isEmpty() { [:] } else { ["a": 1] }
+  print(empty.count())
+  let t = if true { Tint.red } else { .blue }
+  print(t)
+  let first = if false { [] } else { [1, 2] }
+  print(first.count())
+}
+
+// Output:
+// 1
+// 0
+// 0
+// red
+// 2
+// ok a branch's type from the other

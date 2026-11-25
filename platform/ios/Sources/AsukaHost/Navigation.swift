@@ -868,6 +868,8 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             n.list?.setAppearance(AsukaListAppearance(rawValue: v.enumValue) ?? .plain, inset: n.list?.inset ?? 0)
         case (.list, AsukaProp.List.inset):
             n.list?.setAppearance(n.list?.appearance ?? .plain, inset: CGFloat(v.float))
+        case (.list, AsukaProp.List.edgeEffect):
+            if let c = n.list?.collection { asukaEdgeEffect(c, v.enumValue) }
         case (.list, AsukaProp.List.anchor):
             n.list?.setAnchor(AsukaScrollAnchor(rawValue: v.enumValue) ?? .top)
         case (.list, AsukaProp.List.selecting):

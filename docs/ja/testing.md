@@ -65,7 +65,8 @@ print(app.snapshot())     // 画面に表示されているもの（1 行に 1 �
 対象になるのは、ユーザーに見えるものだけです。
 
 - 各スタックのいちばん上の画面（その下の画面は見えません）
-- 選択されているタブのページと、タブバーにあるすべてのタブのタイトル
+- 選択されているタブのページと、タブバーにあるすべてのタブのタイトル（とバッジ）
+- 分割ビューのサイドバー：各行き先のタイトルとバッジ
 - ほかのものの上に表示されているシート、アラート、ポップオーバー
 - リストの高さに収まる行。Asuka はプラットフォームに求められたときにリストの行をバインドします。`asuka test` もコレクションビューと同じように行を求めます
 - 非表示のものは含みません
@@ -79,6 +80,7 @@ print(app.snapshot())     // 画面に表示されているもの（1 行に 1 �
 ```asuka
 app.tap("Add")                      // ボタン、行、タブ、トグル、セグメント、メニューの項目
 app.type("ada@example.com", into: "Email")  // そのプレースホルダーかラベルを持つフィールド
+app.type("milk", into: "Search notes")      // 画面のバーの検索フィールド（プレースホルダーで探す）
 app.tapLink("https://asuka.dev")     // RichText の中の、そこへのリンク
 app.share([SharedItem(kind: .link, text: "https://asuka.dev")])  // ほかのアプリが共有：onShare が受け取る
 await app.idle()                    // 実行するものがなくなるまで：タスク、タイマー、読み込み
@@ -293,6 +295,8 @@ test "archiving removes the row" {
   app.expectNo("Hello")
 }
 ```
+
+`provide:` にはストアを 1 つ渡します。ビューが複数のストアを使うときは、リストで渡せます：`mount(Inbox(), provide: [Mailbox.fake([sample]), Session()])`。
 
 ## プラットフォームでのテスト
 

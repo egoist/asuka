@@ -38,6 +38,30 @@ test "round trip" {
   print(xs.sum())
 }
 
+struct Pull {
+  number: int
+  htmlURL: string
+  createdAt: string
+  headRefName: string
+}
+
+test "snake case keys" {
+  let p: Pull = try json.decode(r"""{"number": 3, "html_url": "u", "created_at": "t", "head_ref_name": "x", "headRefName": "own"}""")
+  print("{p.number} {p.htmlURL} {p.createdAt} {p.headRefName}")
+  print(json.encode(p))
+}
+
+struct Comment {
+  author: string = "anonymous"
+  text: string
+  parent: int?
+}
+
+test "null as a field's absence" {
+  let c: Comment = try json.decode(r"""{"author": null, "text": null, "parent": null}""")
+  print("[{c.author}] [{c.text}] {c.parent == none}")
+}
+
 test "bad json" {
   do {
     let n: Note = try json.decode(r"""{"id": "x"}""")
@@ -55,5 +79,10 @@ test "bad json" {
 // {"id":7,"title":"hi","score":1.5,"done":true,"status":"archived","tags":[{"name":"a"},{"name":"b"}],"extra":{"x":1},"parent":null}
 // 6
 // ok round trip
+// 3 u t own
+// {"number":3,"htmlURL":"u","createdAt":"t","headRefName":"own"}
+// ok snake case keys
+// [] [] true
+// ok null as a field's absence
 // error
 // ok bad json

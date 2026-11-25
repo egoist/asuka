@@ -190,17 +190,19 @@ public enum AsukaProp {
         public static let refreshable: UInt16 = 65
         public static let refreshing: UInt16 = 66
         public static let paging: UInt16 = 67
+        public static let edgeEffect: UInt16 = 68
     }
 
     public enum List {
         public static let refreshable: UInt16 = 64
         public static let refreshing: UInt16 = 65
-        public static let columns: UInt16 = 66
-        public static let gap: UInt16 = 67
-        public static let appearance: UInt16 = 68
-        public static let inset: UInt16 = 69
-        public static let anchor: UInt16 = 70
-        public static let selecting: UInt16 = 71
+        public static let edgeEffect: UInt16 = 66
+        public static let columns: UInt16 = 67
+        public static let gap: UInt16 = 68
+        public static let appearance: UInt16 = 69
+        public static let inset: UInt16 = 70
+        public static let anchor: UInt16 = 71
+        public static let selecting: UInt16 = 72
     }
 
     public enum Activity {
@@ -828,6 +830,12 @@ public enum AsukaDragPhase: Int32 {
 public enum AsukaScrollAnchor: Int32 {
     case top = 0
     case bottom = 1
+}
+
+public enum AsukaEdgeEffect: Int32 {
+    case automatic = 0
+    case soft = 1
+    case hard = 2
 }
 
 public enum AsukaWindowAction: Int32 {

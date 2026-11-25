@@ -253,6 +253,7 @@ ak_view *ak_frag_new(void);
 void ak_view_make_view(ak_view *e);  // gives it a native view
 void ak_view_finalize(ak_view *e);
 void ak_view_append(ak_view *e, ak_view *k);           // retains k
+void ak_view_placed(ak_view *k);  // its layout style again, now it has a parent (cls->adjust)
 void ak_view_remove(ak_view *e, ak_view *k, bool destroy);  // releases k
 // Many of e's kids removed in one pass: each taken out, then all unlinked
 // (released).

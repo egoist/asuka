@@ -88,6 +88,10 @@ let asukaSheetMargin: CGFloat = 80
     }
 }
 
+/// The identifier of the accessories that carry a scroll edge effect's
+/// style.
+let asukaEdgeID = NSUserInterfaceItemIdentifier("asuka.edgeEffect")
+
 /// What a window's title and toolbar show: the innermost shown stack's top
 /// screen.
 @MainActor final class AsukaChrome {
@@ -97,6 +101,9 @@ let asukaSheetMargin: CGFloat = 80
     var actions: [AsukaActionItem] = []
     var search = ""
     var searchField: NSSearchField?
+    /// The split view the window's content is, whose sidebar the toolbar
+    /// leaves to it.
+    var split: AsukaSplit?
     var ids: [NSToolbarItem.Identifier] = []
     var toolbar: NSToolbar?
     /// The bar buttons' menus, registered in byMenu.
@@ -562,6 +569,71 @@ final class AsukaSheetWindow: NSWindow {
         syncOverlays()
     }
 
+    /// How much of v a hidden title bar's strip (and its toolbar) covers,
+    /// from v's top: none when it's below the strip.
+    func barOverlap(_ v: NSView) -> Float {
+        guard let nw = v.window, let w = win(of: nw) else { return 0 }
+        let bar = safeTop(w)
+        if bar <= 0 { return 0 }
+        let r = w.content.convert(v.bounds, from: v)
+        let y = w.content.isFlipped ? r.minY : w.content.bounds.height - r.maxY
+        return max(bar - Float(y), 0)
+    }
+
+    /// The scroll edge effect a scroll view asks for, where AppKit takes
+    /// it (macOS 26.1): the style of its split view column's edge under the
+    /// toolbar (a collapsed accessory of the column's), else its window's
+    /// title bar's (a title bar accessory of no height). The last asked
+    /// wins; automatic leaves AppKit's own.
+    func applyEdgeEffect(_ sv: AsukaScrollView) {
+        guard #available(macOS 26.1, *), sv.edgeEffect != 0, let nw = sv.window else { return }
+        let style: NSScrollEdgeEffectStyle = sv.edgeEffect == 2 ? .hard : .soft
+        var p = sv.superview
+        while let v = p, !(v is AsukaSplitDetail) { p = v.superview }
+        if let detail = p as? AsukaSplitDetail,
+           let s = nodes.values.lazy.compactMap({ $0.split }).first(where: { $0.detail === detail }),
+           let item = s.ctl?.splitViewItems.last {
+            let acc: NSSplitViewItemAccessoryViewController
+            if let a = item.topAlignedAccessoryViewControllers.first(where: { $0.identifier == asukaEdgeID }) {
+                acc = a
+            } else {
+                acc = NSSplitViewItemAccessoryViewController()
+                acc.identifier = asukaEdgeID
+                acc.view = NSView(frame: CGRect(x: 0, y: 0, width: 0, height: 0))
+                acc.automaticallyAppliesContentInsets = false
+                item.addTopAlignedAccessoryViewController(acc)
+            }
+            if acc.preferredScrollEdgeEffectStyle != style { acc.preferredScrollEdgeEffectStyle = style }
+            return
+        }
+        let acc: NSTitlebarAccessoryViewController
+        if let a = nw.titlebarAccessoryViewControllers.first(where: { $0.identifier == asukaEdgeID }) {
+            acc = a
+        } else {
+            acc = NSTitlebarAccessoryViewController()
+            acc.identifier = asukaEdgeID
+            acc.layoutAttribute = .bottom
+            acc.view = NSView(frame: CGRect(x: 0, y: 0, width: 0, height: 0))
+            nw.addTitlebarAccessoryViewController(acc)
+        }
+        if acc.preferredScrollEdgeEffectStyle != style { acc.preferredScrollEdgeEffectStyle = style }
+    }
+
+    /// How much of a stack's screen a hidden title bar's strip (and its
+    /// toolbar) covers: its top inset, so a SafeArea in it keeps clear of
+    /// the window's buttons and the bar's, as the window's own does. A
+    /// screen whose top is below the bar (in a sheet, lower in a window)
+    /// has none.
+    func underBar(_ n: AsukaNode) -> Float {
+        guard let v = n.view, let nw = v.window, let w = win(of: nw) else { return 0 }
+        let bar = safeTop(w)
+        if bar <= 0 { return 0 }
+        // The screen's top, in points down from the content's top.
+        let top = w.content.convert(v.bounds, from: v)
+        let y = w.content.isFlipped ? top.minY : w.content.bounds.height - top.maxY
+        return max(bar - Float(y), 0)
+    }
+
     /// Sends a screen's or sheet's environment if it changed.
     func reportScreen(_ n: AsukaNode, _ s: CGSize) {
         guard let nav = n.nav, s.width > 0 else { return }
@@ -570,6 +642,7 @@ final class AsukaSheetWindow: NSWindow {
         e.height = Float(s.height)
         e.safeTop = 0; e.safeRight = 0; e.safeBottom = 0; e.safeLeft = 0
         if n.kind == .window, let w = n.window { e.safeTop = safeTop(w) }
+        if n.kind == .screen { e.safeTop = underBar(n) }
         // Its window's display's scale: a Window on another display than
         // the main window's has its own.
         if let w = n.view?.window, w.backingScaleFactor > 0 { e.scale = Float(w.backingScaleFactor) }

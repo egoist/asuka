@@ -46,4 +46,49 @@ test "sections" {
   app.in(.sidebar).expect("Text", "Buttons", "About")
 }
 
+// Destinations from a for and an if: the sidebar follows them, and the
+// one shown stays shown as others come and go.
+state folders = ["Inbox", "Work"]
+state archive = false
+state picked = 0
+
+component Mail {
+  Split("Mail") {
+    bind selected: picked
+    Sidebar("Folders") {
+      for f in folders key f {
+        Destination(f) { Text("the {f} folder") }
+      }
+    }
+    if archive {
+      Destination("Archive") { Text("the archive") }
+    }
+    Destination("Settings") { Text("the settings") }
+  }
+}
+
+test "destinations from a for and an if" {
+  let app = mount(Mail())
+  app.in(.sidebar).expect("Inbox", "Work", "Settings")
+  app.in(.sidebar).expectNo("Archive")
+  app.tap("Work")
+  app.expect("the Work folder")
+  // One added before it: Work stays shown, one further down.
+  folders = ["Drafts", "Inbox", "Work"]
+  await app.idle()
+  app.in(.sidebar).expect("Drafts")
+  app.expect("the Work folder")
+  expect(picked == 2)
+  archive = true
+  await app.idle()
+  app.tap("Archive")
+  app.expect("the archive")
+  // The one shown goes: the one at its place shows instead.
+  archive = false
+  await app.idle()
+  app.in(.sidebar).expectNo("Archive")
+  app.expect("the settings")
+  expect(picked == 3)
+}
+
 app { Gallery() }

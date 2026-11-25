@@ -108,8 +108,8 @@ export const KindProp = Object.freeze({
   TextField: Object.freeze({ Value: 64, Placeholder: 65, Keyboard: 66, ReturnKey: 67, Secure: 68, Autocapitalize: 69, Autocorrect: 70, ContentType: 71, Multiline: 72, Plain: 73, Selection: 74, Rich: 75, PasteTypes: 76, Accessory: 77 }),
   Toggle: Object.freeze({ On: 64, Checkbox: 65 }),
   Slider: Object.freeze({ Value: 64, Min: 65, Max: 66 }),
-  Scroll: Object.freeze({ Horizontal: 64, Refreshable: 65, Refreshing: 66, Paging: 67 }),
-  List: Object.freeze({ Refreshable: 64, Refreshing: 65, Columns: 66, Gap: 67, Appearance: 68, Inset: 69, Anchor: 70, Selecting: 71 }),
+  Scroll: Object.freeze({ Horizontal: 64, Refreshable: 65, Refreshing: 66, Paging: 67, EdgeEffect: 68 }),
+  List: Object.freeze({ Refreshable: 64, Refreshing: 65, EdgeEffect: 66, Columns: 67, Gap: 68, Appearance: 69, Inset: 70, Anchor: 71, Selecting: 72 }),
   Activity: Object.freeze({ Animating: 64 }),
   Stack: Object.freeze({ Routed: 64 }),
   Screen: Object.freeze({ Title: 64, Actions: 65, BackGesture: 66, Icon: 67, Search: 68, SearchText: 69, SearchButton: 70, ZoomFrom: 71, LargeTitle: 72, BarColor: 73, Toolbar: 74, Primary: 75, PrimaryExtended: 76, Badge: 77 }),
@@ -289,6 +289,7 @@ export const SemanticColor = Object.freeze({ None: 0, Label: 1, SecondaryLabel: 
 export const ShareKind = Object.freeze({ Text: 0, Link: 1, Image: 2, Video: 3, Audio: 4, File: 5 });
 export const DragPhase = Object.freeze({ Began: 0, Dropped: 1, Cancelled: 2 });
 export const ScrollAnchor = Object.freeze({ Top: 0, Bottom: 1 });
+export const EdgeEffect = Object.freeze({ Automatic: 0, Soft: 1, Hard: 2 });
 export const WindowAction = Object.freeze({ Show: 0, Hide: 1, Focus: 2, Minimize: 3, Maximize: 4, Restore: 5, Fullscreen: 6, ExitFullscreen: 7, Center: 8, Size: 9, Position: 10, AlwaysOnTop: 11, NotAlwaysOnTop: 12, Close: 13, ClickThrough: 14, NotClickThrough: 15, Fit: 16 });
 export const Placement = Object.freeze({ Bottom: 0, BottomStart: 1, BottomEnd: 2, Top: 3, TopStart: 4, TopEnd: 5, Right: 6, RightStart: 7, RightEnd: 8, Left: 9, LeftStart: 10, LeftEnd: 11 });
 export const TitleBar = Object.freeze({ Default: 0, Hidden: 1 });

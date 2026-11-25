@@ -28,6 +28,32 @@ struct AsukaSidebarRow: Equatable {
     var detailObserver: NSObjectProtocol?
 }
 
+/// The content item's view: the detail Stack, below the window's toolbar.
+/// A window whose content is a split view goes to its top edge (the
+/// sidebar under the window's buttons, as AppKit's split view apps have
+/// it), and the toolbar is over the detail: the Stack takes the room under
+/// it, its safe area. Under a hidden title bar the Stack fills it, and its
+/// screens' safe area is the bar's.
+final class AsukaSplitDetail: AsukaView {
+    override func resizeSubviews(withOldSize oldSize: NSSize) { layoutStack() }
+
+    override func layout() {
+        super.layout()
+        layoutStack()
+    }
+
+    func layoutStack() {
+        guard let v = subviews.first else { return }
+        var top: CGFloat = 0
+        // Under a title bar the app hid, the content is the app's to place
+        // (its screens' safe area says where the bar is).
+        let hidden = MainActor.assumeIsolated { AsukaRuntime.shared.win(of: window)?.cfg.titleBar == .hidden }
+        if #available(macOS 11.0, *), !hidden { top = safeAreaInsets.top }
+        let r = CGRect(x: 0, y: top, width: bounds.width, height: max(bounds.height - top, 0))
+        if v.frame != r { v.frame = r }
+    }
+}
+
 /// A row's view: its symbol, title and badge, which it lays out itself as
 /// it's sized, from its leading edge.
 final class AsukaSidebarCell: NSTableCellView {
@@ -88,7 +114,7 @@ final class AsukaSidebarCell: NSTableCellView {
         scroll.autohidesScrollers = true
         let sideVC = NSViewController()
         sideVC.view = scroll
-        let detail = AsukaView(frame: .zero)
+        let detail = AsukaSplitDetail(frame: .zero)
         s.detail = detail
         let contentVC = NSViewController()
         contentVC.view = detail
@@ -256,9 +282,8 @@ final class AsukaSidebarCell: NSTableCellView {
         p.children.insert(c, at: min(i, p.children.count))
         c.parent = p
         guard let v = c.view else { return true }
-        v.frame = detail.bounds
-        v.autoresizingMask = [.width, .height] // width and height follow
         detail.addSubview(v)
+        (detail as? AsukaSplitDetail)?.layoutStack()
         // The content item sizes the Stack after the window's resize is
         // reported (a full-size content view's split lays out late), so its
         // screens follow its own frame.

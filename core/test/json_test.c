@@ -6,6 +6,11 @@ static const uint8_t todo_kinds[] = {AK_K_REF, AK_K_BOOL, AK_K_REF, AK_K_REF};
 static const char *const todo_names[] = {"title\0s", "done\0b", "tags\0[s", "due\0?i"};
 static const ak_shape todo = {.name = "Todo", .nfields = 4, .kinds = todo_kinds, .names = todo_names};
 
+// struct Repo { htmlURL: string; createdAt: int; fullName: string; id: int }
+static const uint8_t repo_kinds[] = {AK_K_REF, AK_K_INT, AK_K_REF, AK_K_INT};
+static const char *const repo_names[] = {"htmlURL\0s", "createdAt\0i", "fullName\0s", "id\0i"};
+static const ak_shape repo = {.name = "Repo", .nfields = 4, .kinds = repo_kinds, .names = repo_names};
+
 static const char *const filter_cases[] = {"all", "unread", "flagged"};
 
 // struct Node { name: string; next: Node? }: a type that nests itself.
@@ -45,6 +50,7 @@ static const ak_shape *shape(void *ctx, const char *name, size_t n) {
 	if (n == 5 && memcmp(name, "Value", 5) == 0) return &value_enum;
 	if (n == 4 && memcmp(name, "Todo", 4) == 0) return &todo;
 	if (n == 4 && memcmp(name, "Node", 4) == 0) return &node;
+	if (n == 4 && memcmp(name, "Repo", 4) == 0) return &repo;
 	if (n == 5 && memcmp(name, "Shape", 5) == 0) return &shape_enum;
 	if (n == 5 && memcmp(name, "Error", 5) == 0) return &ak_shape_error;
 	return NULL;
@@ -79,6 +85,49 @@ TEST(decode_structs) {
 	CHECK_EQ_STR(out->data, "[{\"title\":\"milk é\",\"done\":true,\"tags\":[\"a\",\"b\"],\"due\":null},{\"title\":\"eggs\",\"done\":false,\"tags\":[],\"due\":3}]");
 	ak_release(out);
 	ak_release(a);
+}
+
+TEST(snake_case_keys) {
+	// A web API's snake_case keys read into the fields they name; a field's
+	// own name wins over one, whichever comes first; a key that's a name
+	// in another case alone names nothing.
+	const char *src = "{\"html_url\": \"u\", \"created_at\": 5, \"fullName\": \"own\", \"full_name\": \"snake\", \"ID\": 9, \"id\": 2}";
+	ak_val v = ak_json_decode(src, strlen(src), "SRepo;", &types);
+	REQUIRE(!ak_error_pending());
+	ak_struct *r = v.p;
+	CHECK_EQ_STR(((ak_str *)r->f[0].p)->data, "u");
+	CHECK_EQ_INT(r->f[1].i, 5);
+	CHECK_EQ_STR(((ak_str *)r->f[2].p)->data, "own");
+	CHECK_EQ_INT(r->f[3].i, 2);
+	ak_release(r);
+	src = "{\"full_name\": \"snake\", \"fullName\": \"own\", \"Id\": 3, \"html-url\": \"k\"}";
+	v = ak_json_decode(src, strlen(src), "SRepo;", &types);
+	REQUIRE(!ak_error_pending());
+	r = v.p;
+	CHECK_EQ_STR(((ak_str *)r->f[0].p)->data, "k");
+	CHECK_EQ_STR(((ak_str *)r->f[2].p)->data, "own");
+	CHECK_EQ_INT(r->f[3].i, 0);
+	ak_release(r);
+}
+
+TEST(null_for_a_field_is_its_absence) {
+	// "title": null reads as a Todo without a title (empty); "due": null,
+	// an optional's, is none.
+	const char *src = "{\"title\": null, \"done\": true, \"tags\": null, \"due\": null}";
+	ak_val v = ak_json_decode(src, strlen(src), "STodo;", &types);
+	REQUIRE(!ak_error_pending());
+	ak_struct *t = v.p;
+	CHECK_EQ_STR(((ak_str *)t->f[0].p)->data, "");
+	CHECK_EQ_INT(t->f[1].i, 1);
+	CHECK_EQ_INT(((ak_arr *)t->f[2].p)->len, 0);
+	CHECK(t->f[3].p == NULL);
+	ak_release(t);
+	// A snake_case key's null doesn't empty what the field's own name set.
+	src = "{\"fullName\": \"own\", \"full_name\": null}";
+	v = ak_json_decode(src, strlen(src), "SRepo;", &types);
+	REQUIRE(!ak_error_pending());
+	CHECK_EQ_STR(((ak_str *)((ak_struct *)v.p)->f[2].p)->data, "own");
+	ak_release(v.p);
 }
 
 TEST(errors_say_where) {

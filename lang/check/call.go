@@ -120,6 +120,15 @@ func (c *Checker) call(e *syntax.CallExpr, want Type) Type {
 				}
 				return c.caseCall(e, tn, k, want)
 			}
+			if tn.Type == Color && (fn.Name.Name == "rgb" || fn.Name.Name == "parse") {
+				// Color.rgb(215, 58, 74), Color.parse("#d73a4a"): a color
+				// the app has only as it runs.
+				id := BColorRGB
+				if fn.Name.Name == "parse" {
+					id = BColorParse
+				}
+				return c.builtinCall(e, &Builtin{object: object{name: "Color"}, ID: id}, want)
+			}
 			if IsInteger(tn.Type) && fn.Name.Name == "parse" {
 				// u64.parse("18446744073709551615"), u8.parse("ff", radix: 16).
 				return c.builtinCall(e, &Builtin{object: object{name: tn.name}, ID: BIntParse}, want)

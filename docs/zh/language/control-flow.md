@@ -11,6 +11,8 @@ let icon = match (online, unread) {
 }
 ```
 
+如果某个分支的值本身看不出类型（空的 `[]`、`[:]`，或者隐式的 `.case`），它就沿用另一个分支的类型：`if let c = chosen { [c] } else { [] }` 是 `[Story]`。
+
 元组模式（`(true, 0)`）用各自的模式分别匹配元组的每个元素。匹配可选的元组时，它和成员模式一样，在有值时匹配其中的元组（`none` 要单独写一个分支）：`if let (name, age) = found { … }`、`let (x, y) = cursor else { return }`。
 
 带类型的名字（`c: Circle`）用来判断接口值是什么类型：值是这个类型时才匹配，并以这个类型绑定它；结构体的模式（`Circle(radius)`）和写明类型的枚举成员（`Unit.big(n)`）也是这样。对接口值的 `match` 要以 `_` 结尾，详见[接口与泛型](functions.md#接口与泛型)：`if let c: Circle = shape { … }`、`let sq: Square = shape else { return }`。

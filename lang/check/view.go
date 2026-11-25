@@ -726,6 +726,9 @@ func (c *Checker) elementBlock(items []syntax.Item, ec *ElementCall) {
 		if comp.Element != nil && comp.Element.Name == "Alert" {
 			c.alertChildren(children)
 		}
+		if comp.Element != nil && comp.Element.Name == "List" {
+			c.listChildren(children)
+		}
 		return
 	}
 	// A component's: one builder of them all, its children prop.
@@ -736,6 +739,24 @@ func (c *Checker) elementBlock(items []syntax.Item, ec *ElementCall) {
 	c.viewItems(children, ec)
 	c.view = savedView
 	c.leave(saved)
+}
+
+// listChildren checks that a List's block is one for: its rows, made
+// as they come into view. Another view there (a header, a status line)
+// is no row of the list's.
+func (c *Checker) listChildren(items []syntax.Item) {
+	fors := 0
+	for _, it := range items {
+		if _, ok := it.(*syntax.ForStmt); ok {
+			fors++
+			if fors == 1 {
+				continue
+			}
+			c.errorf(it, diag.NoChildren, "a List has one for: its rows; put the items of both in one array (an enum of the kinds of row)")
+			continue
+		}
+		c.errorf(it, diag.NoChildren, "a List's rows come from one for in it: make this a row of the for's items (an enum of the kinds of row), or put it beside the List")
+	}
 }
 
 // alertChildren checks that an Alert's block holds Buttons and

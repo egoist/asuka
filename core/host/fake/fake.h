@@ -287,6 +287,9 @@ void ak_fake_tap(ak_fake *f, ak_fake_view *v);
 void ak_fake_long_press(ak_fake *f, ak_fake_view *v);
 void ak_fake_type(ak_fake *f, ak_fake_view *v, const char *s);  // a TextField's text
 void ak_fake_submit(ak_fake *f, ak_fake_view *v);
+// ak_fake_type_search types s into a Screen's search field (its bar's):
+// its text, reported with TextChanged as a host reports typing there.
+void ak_fake_type_search(ak_fake *f, ak_fake_view *screen, const char *s);
 void ak_fake_flip(ak_fake *f, ak_fake_view *v);  // a Toggle
 void ak_fake_pick_color(ak_fake *f, ak_fake_view *v, ak_color c);
 void ak_fake_slide(ak_fake *f, ak_fake_view *v, double value);

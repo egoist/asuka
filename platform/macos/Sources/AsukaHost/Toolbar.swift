@@ -10,6 +10,7 @@ import AsukaOps
 #endif
 
 private let backID = NSToolbarItem.Identifier("asuka.back")
+private let sidebarSeparatorID = NSToolbarItem.Identifier("asuka.sidebarSeparator")
 private let searchID = NSToolbarItem.Identifier("asuka.search")
 private let actionPrefix = "asuka.action."
 
@@ -54,6 +55,21 @@ private let actionPrefix = "asuka.action."
         return found
     }
 
+    /// The split view a window's content is (its root's only content, down
+    /// through views that hold one thing), if it is one: such a window goes
+    /// to its top edge, its sidebar under the window's buttons and its
+    /// toolbar over the detail, as Mail's and Notes' do.
+    func windowSplit(_ w: AsukaWin) -> AsukaSplit? {
+        var n = w.root
+        while let c = n {
+            if let s = c.split { return s }
+            let kids = c.children.filter { $0.kind != .sheet && $0.kind != .alert && $0.kind != .window && $0.kind != .popover }
+            if kids.count != 1 { return nil }
+            n = kids[0]
+        }
+        return nil
+    }
+
     /// Makes every window's title and toolbar again, once the call into
     /// the core in progress has returned.
     func updateWindowChrome() {
@@ -95,6 +111,15 @@ private let actionPrefix = "asuka.action."
             }
             return
         }
+        let split = windowSplit(w)
+        // Its content to the top edge while it's a split view's (and when
+        // the app hid the title bar); under the title bar otherwise.
+        let full = split != nil || w.cfg.titleBar == .hidden
+        if full != w.window.styleMask.contains(.fullSizeContentView) {
+            if full { w.window.styleMask.insert(.fullSizeContentView) } else { w.window.styleMask.remove(.fullSizeContentView) }
+            if w.isMain { environmentChanged() } else { windowContentResized(w) }
+        }
+        c.split = split
         var ids: [NSToolbarItem.Identifier] = []
         c.back = liveScreens(stack) > 1
         if c.back { ids.append(backID) }
@@ -110,6 +135,9 @@ private let actionPrefix = "asuka.action."
         if !c.search.isEmpty { ids.append(searchID) }
         for i in c.actions.indices { ids.append(NSToolbarItem.Identifier(actionPrefix + String(i))) }
         if toolbarReversed { ids.reverse() }
+        // Over a split view's sidebar, nothing: the title and the items go
+        // over the detail, from the sidebar's edge as it's resized.
+        if #available(macOS 11.0, *), split != nil { ids.insert(sidebarSeparatorID, at: 0) }
         if c.toolbar == nil {
             // Its own identifier: toolbars that share one keep the same
             // items, which the windows' don't.
@@ -141,6 +169,10 @@ private let actionPrefix = "asuka.action."
     /// Makes the item for an identifier of a window's chrome.
     func toolbarItem(_ w: AsukaWin, _ ident: NSToolbarItem.Identifier) -> NSToolbarItem? {
         let c = w.chrome
+        if ident == sidebarSeparatorID {
+            guard #available(macOS 11.0, *), let sv = c.split?.ctl?.splitView else { return nil }
+            return NSTrackingSeparatorToolbarItem(identifier: ident, splitView: sv, dividerIndex: 0)
+        }
         if ident == backID {
             let it = NSToolbarItem(itemIdentifier: ident)
             let back = asukaWord("back")

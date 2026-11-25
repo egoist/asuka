@@ -29,7 +29,7 @@ native component Style {
   prop aspectRatio: float
   /// its share of the space left on its parent's main axis
   prop grow: float
-  /// how much it gives up when the line overflows (0: the default)
+  /// how much it gives up when the line overflows, as CSS's flex-shrink: 1 when it isn't set; 0 keeps its size
   prop shrink: float
   /// its starting size on the main axis (.auto: its content's)
   prop basis: Length
@@ -562,6 +562,8 @@ native component Scroll() {
   prop paging: bool
   /// the page it shows (paging): a swipe that settles writes it, and writing it scrolls there
   prop page: int
+  /// how its content is set off from a bar it scrolls under (iOS 26's and macOS 26's scroll edge effect): .soft fades it, .hard cuts it off
+  prop edgeEffect: EdgeEffect
   /// its content offset as it scrolls
   event scroll(x: float, y: float)
   /// pulled to refresh
@@ -580,6 +582,8 @@ native component List() {
   prop appearance: ListAppearance
   /// .bottom: a chat's, which rests at its end
   prop anchor: ScrollAnchor
+  /// how its content is set off from a bar it scrolls under (iOS 26's and macOS 26's scroll edge effect): .soft fades it, .hard cuts it off
+  prop edgeEffect: EdgeEffect
   /// row index's actions, revealed by swiping it from its trailing edge (a destructive one red; the first a full swipe's)
   prop swipeActions: fn(int) -> [Action]
   /// row index's actions revealed from its leading edge (Mail's Unread)
