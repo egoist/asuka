@@ -105,7 +105,7 @@ TEST(screen_column) {
 // lines, the title in 1), not at their own narrowest; laid out at that
 // width after, it answers the same.
 TEST(a_column_at_its_min_content_width_lays_its_texts_out_at_it) {
-	int a = 9, b = 50;  // b: 400pt on one line, 2 lines at 200pt, 50 at its narrowest
+	int a = 9, b = 50;  // b: 400pt on one line, 2 lines at 200pt, 50 lines at its narrowest
 	ak_lnode *title = label(&a), *t = label(&b);
 	ak_lnode_style(t)->min_width = ak_lpt(220);
 	ak_lnode_style(t)->padding = ak_lrect_all(ak_lpt(10));
