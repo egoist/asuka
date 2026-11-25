@@ -37,6 +37,12 @@ public final class AsukaViewController: UIViewController {
                 vc.sendEnvironment()
                 AsukaRuntime.shared.reportScreens()
             }
+            // The text size, as the views in the window have it: on iOS
+            // 27 the traits take it after its notification. Each text
+            // takes its new font, and the core measures them.
+            registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (vc: AsukaViewController, _: UITraitCollection) in
+                vc.followTextSize()
+            }
         }
         keyboardTracker.isHidden = true
         keyboardTracker.isUserInteractionEnabled = false
@@ -146,13 +152,36 @@ public final class AsukaViewController: UIViewController {
 
     /// Text size or Reduce Motion changed: the root and the screens report
     /// it, a turn later, once each text has its new font (followTextSize)
-    /// for the core to measure with.
+    /// for the core to measure with. The views in the window take the new
+    /// text size from their traits, and a label that adjusts to the text
+    /// size puts back the font of the size its traits have: while they
+    /// lag the app's (iOS 27 changes them after the notification), the
+    /// core would measure the old fonts, and see no change as UIKit grows
+    /// them. Then it waits for the traits (their change follows the text
+    /// size), or a second at most.
     @objc func contentSizeChanged() {
         DispatchQueue.main.async {
-            for n in AsukaRuntime.shared.nodes.values { n.followTextSize() }
-            self.sendEnvironment()
-            AsukaRuntime.shared.reportScreens()
+            let app = UIApplication.shared.preferredContentSizeCategory
+            if self.traitCollection.preferredContentSizeCategory == app {
+                self.followTextSize()
+                return
+            }
+            self.textSizePending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                if self.textSizePending { self.followTextSize() }
+            }
         }
+    }
+
+    /// Whether a text size change waits for the window's traits to have it.
+    var textSizePending = false
+
+    /// Each text takes its new font, then the core measures them.
+    func followTextSize() {
+        textSizePending = false
+        for n in AsukaRuntime.shared.nodes.values { n.followTextSize() }
+        sendEnvironment()
+        AsukaRuntime.shared.reportScreens()
     }
 
     /// The formats or the languages changed in Settings.
@@ -202,10 +231,10 @@ public final class AsukaViewController: UIViewController {
         e.keyboard = Float(keyboard)
         let scale = traitCollection.displayScale
         e.scale = Float(scale > 0 ? scale : UIScreen.main.scale)
-        // The app's text size, as the nodes' fonts take it (AsukaNode.font):
-        // the current traits may not have it yet as it changes.
-        let size = UITraitCollection(preferredContentSizeCategory: UIApplication.shared.preferredContentSizeCategory)
-        e.fontScale = Float(UIFontMetrics.default.scaledValue(for: 17, compatibleWith: size) / 17)
+        // The text size the window's traits have, which its views' fonts
+        // follow: the core measures again as they change (their change
+        // makes followTextSize send it), never before the fonts have it.
+        e.fontScale = asukaFontScale(of: view)
         e.dark = traitCollection.userInterfaceStyle == .dark
         e.reduceMotion = UIAccessibility.isReduceMotionEnabled
         e.screenReader = UIAccessibility.isVoiceOverRunning

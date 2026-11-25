@@ -329,6 +329,17 @@ extension AsukaActionItem {
 
 func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.decode(b) }
 
+/// The text size a view's texts are in, as the core's font scale: in a
+/// window, its traits' (which its labels' fonts follow, and which take a
+/// new size after the app's: the core measures again as they change), out
+/// of one, the app's (which followTextSize gives the labels there).
+@MainActor func asukaFontScale(of view: UIView) -> Float {
+    var category = view.traitCollection.preferredContentSizeCategory
+    if view.window == nil || category == .unspecified { category = UIApplication.shared.preferredContentSizeCategory }
+    let size = UITraitCollection(preferredContentSizeCategory: category)
+    return Float(UIFontMetrics.default.scaledValue(for: 17, compatibleWith: size) / 17)
+}
+
 @MainActor extension AsukaRuntime {
     var topController: UIViewController? {
         var vc: UIViewController? = controller
@@ -354,7 +365,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         }
         let t = view.traitCollection
         e.scale = Float(t.displayScale > 0 ? t.displayScale : UIScreen.main.scale)
-        e.fontScale = Float(UIFontMetrics.default.scaledValue(for: 17) / 17)
+        e.fontScale = asukaFontScale(of: view)
         e.dark = t.userInterfaceStyle == .dark
         e.reduceMotion = UIAccessibility.isReduceMotionEnabled
         e.screenReader = UIAccessibility.isVoiceOverRunning

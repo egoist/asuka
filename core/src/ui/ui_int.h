@@ -397,6 +397,11 @@ void ak_prov_attach(ak_view *v, ak_prov *p);
 // ak_view_env is the environment e is laid out in (its provider's, else
 // the root's), read: a render effect that calls it follows it.
 const ak_environment *ak_view_env(ak_view *e);
+// ak_view_font_scale is the text size e is laid out in, as the font
+// scale of its nearest provider's environment (a screen's, a sheet's: a
+// host reports each), else its root's: what a measurement of its text
+// is kept by. It reads no signal (layout asks it).
+float ak_view_font_scale(const ak_view *e);
 void ak_root_layout_provs(ak_ui_root *r, ak_lpass *p);
 // ak_overlays_layout_hook lays out the open Overlays (floating.c's
 // ak_overlays_layout), after the providers.

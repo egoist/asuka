@@ -116,6 +116,13 @@ static void prov_adjust(ak_view *e, ak_lstyle *ls) {
 	ls->width = ak_lpct(100), ls->height = ak_lpct(100);
 }
 
+float ak_view_font_scale(const ak_view *e) {
+	for (const ak_view *x = e; x; x = x->parent ? x->parent : x->up) {
+		if (x->prov && x->prov->env.font_scale > 0) return x->prov->env.font_scale;
+	}
+	return e->r->env.font_scale;
+}
+
 const ak_environment *ak_view_env(ak_view *e) {
 	for (ak_view *x = e; x; x = x->parent ? x->parent : x->up) {
 		if (x->prov) {
@@ -140,12 +147,14 @@ static bool env_same(const ak_environment *a, const ak_environment *b) {
 // laid out again. False when it's the same.
 static bool prov_take(ak_prov *p, const ak_environment *env) {
 	if (env_same(env, &p->env)) return false;
-	float old = p->env.scale;
+	float old = p->env.scale, old_font = p->env.font_scale;
 	ak_ui_env_strings(&p->env, p->strs, env);
 	ak_signal_write(&p->node);
 	if (p->view) {
 		ak_lnode_mark_dirty(p->view->box);
-		if (env->scale > 0 && env->scale != old) ak_view_mark_measured(p->view);
+		// What the host measured was in another scale or text size, as the
+		// root's (root_set_env).
+		if ((env->scale > 0 && env->scale != old) || env->font_scale != old_font) ak_view_mark_measured(p->view);
 	}
 	return true;
 }

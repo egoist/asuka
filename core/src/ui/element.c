@@ -526,7 +526,7 @@ static ak_lsize measure_cb(void *ctx, ak_lconstraints c) {
 		k.family = f->f[3].p;
 	}
 	k.lines = ak_style_int(e, AK_KEY_LINES, 0);
-	k.font_scale = r->env.font_scale;
+	k.font_scale = ak_view_font_scale(e);
 	k.scale = ak_view_scale(e);
 	k.inset = e->insets[0] != 0 || e->insets[1] != 0 || e->insets[2] != 0 || e->insets[3] != 0;
 	float cs[4] = {key_bits_f(c.width), key_bits_f(c.height), key_bits_f(c.avail_w), key_bits_f(c.avail_h)};

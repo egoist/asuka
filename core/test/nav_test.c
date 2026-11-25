@@ -858,7 +858,7 @@ static ak_val sheet_screen_app(ak_closure *c, ak_val *a, uint32_t n) {
 // A Screen in a sheet is as big as the sheet, whose environment the host
 // reports (not the screen's): its content is laid out at the sheet's size
 // (not the window's, which a sheet is shorter than), and again as the
-// sheet's changes.
+// sheet's changes, its texts measured again as its text size does.
 TEST(sheet_screen_follows_its_sheet) {
 	open_cell = ak_vm_cell_new((ak_val){.i = 1}, AK_K_BOOL, NULL).p;
 	ak_uitest *a = mount(sheet_screen_app, NULL);
@@ -878,6 +878,15 @@ TEST(sheet_screen_follows_its_sheet) {
 	big.height = h + 100;
 	ak_fake_dispatch(f, &(ak_event){.id = sheet->id, .kind = AK_EVENT_ENVIRONMENT, .env = big});
 	CHECK_EQ_F(bottom->frame[1] + bottom->frame[3], h + 100);
+	// Its text size changes before the window's (a host's views take a new
+	// size at different moments): what it measured is measured again, in
+	// that size, though the root's is the same.
+	int before = f->measures;
+	big.font_scale = 2;
+	ak_fake_dispatch(f, &(ak_event){.id = sheet->id, .kind = AK_EVENT_ENVIRONMENT, .env = big});
+	ak_ui_environment(&e);
+	CHECK_EQ_F(e.font_scale, 1);
+	CHECK(f->measures > before);
 	done(a);
 	ak_release(open_cell);
 }
