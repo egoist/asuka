@@ -116,7 +116,10 @@ func launch(t *testing.T, platform, app string) string {
 	})
 	// The first build of a platform's host takes a while.
 	deadline := time.Now().Add(15 * time.Minute)
-	for !strings.Contains(logs.String(), "watching for changes") {
+	// Launched is connected: a player relaunched before it connected (as a
+	// test that relaunches at once does) would find the last run's asuka
+	// dev, which it keeps, and not this one's.
+	for !strings.Contains(logs.String(), "watching for changes") || !strings.Contains(logs.String(), " connected\n") {
 		select {
 		case <-exited:
 			t.Fatalf("asuka dev --platform %s %s quit:\n%s", platform, appDir(app), logs.String())

@@ -678,7 +678,6 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         return CGSize(width: ceil(s.width * k) / k, height: ceil(s.height * k) / k)
     }
 }
-#endif
 
 /// A scroll view's top edge effect under a bar (iOS 26): 0 automatic,
 /// 1 soft, 2 hard.
@@ -686,3 +685,4 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
     guard #available(iOS 26.0, *) else { return }
     s.topEdgeEffect.style = effect == 2 ? .hard : effect == 1 ? .soft : .automatic
 }
+#endif
