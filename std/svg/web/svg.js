@@ -27,7 +27,7 @@ function decode(b) {
   for (let i = 0; i < n && at < b.length; i++) {
     const fill = paint(), stroke = paint(), width = f32();
     const cap = ["butt", "round", "square"][Math.min(u8(), 2)], join = ["miter", "round", "bevel"][Math.min(u8(), 2)];
-    const end = at + u32();
+    const len = u32(), end = at + len; // the path's length, then the path: at is after the length
     const d = [];
     const nums = (k) => { const a = []; for (let j = 0; j < k; j++) a.push(+f32().toFixed(4)); return a; };
     while (at < Math.min(end, b.length)) {

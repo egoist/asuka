@@ -3,21 +3,19 @@
 package e2e
 
 import (
-	"html"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestStdWebViews runs the standard library's and the platform SDK's web
 // view tests: each {std,sdk}/<name>/tests/*_view_test.js, a module the page imports (served
 // from the checkout, so it imports its package's web/ as an app does),
-// in headless Chrome, which prints the page once the test wrote its
-// result into #result: "PASS ..." or "FAIL" and why.
+// in headless Chrome, read once the test wrote its result into
+// #result: "PASS ..." or "FAIL" and why.
 func TestStdWebViews(t *testing.T) {
 	browser := chrome()
 	if browser == "" {
@@ -43,16 +41,21 @@ func TestStdWebViews(t *testing.T) {
 			mux.Handle("/", files)
 			srv := httptest.NewServer(mux)
 			defer srv.Close()
-			out, err := exec.Command(browser, "--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-gpu",
-				"--user-data-dir="+t.TempDir(), "--virtual-time-budget=20000", "--dump-dom", srv.URL+"/test.html").Output()
-			if err != nil {
-				t.Fatalf("%v\n%s", err, out)
+			// A page that draws frames, as an app's does: a view's
+			// ResizeObserver and requestAnimationFrame run.
+			page := devtoolsPage(t, browser, srv.URL+"/test.html", "1")
+			result := "RUNNING"
+			for deadline := time.Now().Add(within); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+				var r struct{ Result struct{ Value string } }
+				if err := page.call("Runtime.evaluate", map[string]any{
+					"expression": `document.getElementById("result")?.textContent ?? "RUNNING"`, "returnByValue": true,
+				}, &r); err != nil {
+					t.Fatal(err)
+				}
+				if result = r.Result.Value; result != "RUNNING" {
+					break
+				}
 			}
-			m := regexp.MustCompile(`(?s)<pre id="result">(.*?)</pre>`).FindStringSubmatch(string(out))
-			if m == nil {
-				t.Fatalf("no result in:\n%s", out)
-			}
-			result := html.UnescapeString(m[1])
 			t.Log(result)
 			if !strings.HasPrefix(result, "PASS") {
 				t.Fatal(result)
