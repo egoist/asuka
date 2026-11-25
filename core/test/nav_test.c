@@ -673,7 +673,7 @@ static void fit_measure(void *ctx, ak_fake_view *v, float w, float h, float aw, 
 	float at = w == w ? w : aw;
 	if (aw < 0 && isinf(aw) && w != w) {
 		fit_min_measures++;
-		at = 80;  // its widest word
+		at = 72;  // its widest word: 9 characters
 	}
 	if (!(at < full)) at = full;
 	*ow = at;
