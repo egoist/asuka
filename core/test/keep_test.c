@@ -239,6 +239,81 @@ TEST(reload_keeps_a_follow_as_a_write) {
 	ak_keep_stop();
 }
 
+// A follow's initializer reads its component's env, which the component's
+// function puts in the box its members' thunks capture only once it has
+// made every member (lang/LOWERING.md): a value kept across a reload
+// doesn't run it as the follow is made, but at its first read, after.
+// (A store's `state intro = readIntro(shelf)` read the box empty there:
+// "vm: calling none".)
+static struct {
+	int64_t *env;  // the box: NULL until the maker has made every member
+	int early;     // runs that found it empty
+} ke;
+
+static ak_val ke_update(ak_closure *c, ak_val *args, uint32_t nargs) {
+	AK_UNUSED(c);
+	AK_UNUSED(args);
+	AK_UNUSED(nargs);
+	ak_signal_read(&kf.n);
+	if (!ke.env) {
+		ke.early++;
+		return (ak_val){.i = -1};
+	}
+	return (ak_val){.i = *ke.env * 10};
+}
+
+static void ke_make(void *ctx, ak_owner *root) {
+	AK_UNUSED(root);
+	ke.env = NULL;
+	ak_closure *u = ak_closure_new(ke_update, NULL, 0, NULL);
+	kf.f = ak_vm_follow_new(u, AK_K_INT, kf.key, false);
+	ak_release(u);
+	ke.env = ctx;  // every member made: the box filled
+}
+
+TEST(reload_runs_a_kept_follow_after_its_maker) {
+	memset(&kf, 0, sizeof kf);
+	memset(&ke, 0, sizeof ke);
+	int64_t env = 1;
+	kf.key = ak_str_c("Vista.intro");
+	ak_keep_start();
+	ak_keep_use(find, NULL);
+	ak_owner *r = ak_root(ke_make, &env);
+	CHECK_EQ_INT(cell_int(kf.f), 10);
+	ak_vm_cell_set(kf.f.p, (ak_val){.i = 5});
+
+	ak_keep_save();
+	CHECK_EQ_INT(ak_keep_saved(), 1);
+	ak_owner_dispose(r);
+	ak_release(kf.f.p);
+	ak_keep_use(find, NULL);
+	r = ak_root(ke_make, &env);
+	CHECK_EQ_INT(ke.early, 0);
+	CHECK_EQ_INT(cell_int(kf.f), 5);
+	CHECK_EQ_INT(ak_keep_restored(), 1);
+	CHECK_EQ_INT(ke.early, 0);
+	// What it follows changes: the initializer's again.
+	env = 2;
+	ak_signal_write(&kf.n);
+	CHECK_EQ_INT(cell_int(kf.f), 20);
+
+	// Kept again, and written before its first read: the write stands.
+	ak_keep_save();
+	ak_owner_dispose(r);
+	ak_release(kf.f.p);
+	ak_keep_use(find, NULL);
+	r = ak_root(ke_make, &env);
+	ak_vm_cell_set(kf.f.p, (ak_val){.i = 7});
+	CHECK_EQ_INT(cell_int(kf.f), 7);
+	CHECK_EQ_INT(ke.early, 0);
+
+	ak_owner_dispose(r);
+	ak_release(kf.f.p);
+	ak_keep_discard();
+	ak_release(kf.key);
+	ak_keep_stop();
+}
+
 // A follow's reads, its initializer's runs (given its current value, a
 // scalar boxed as an optional) and its writes allocate nothing once
 // it's made.

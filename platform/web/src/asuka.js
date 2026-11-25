@@ -94,8 +94,8 @@ export async function start(options = {}) {
     showError(container, "The app couldn't load", e.message);
     throw e;
   }
-  if (dev) dev.attach(host, core);
-  watchTrap(container, host);
+  const trapped = watchTrap(container, host);
+  if (dev) dev.attach(host, core, trapped);
   try { notifyFor(host); } catch (e) { console.warn("platform/notify:", e); }
   return host;
 }
@@ -103,7 +103,8 @@ export async function start(options = {}) {
 // watchTrap shows that the app stopped when its core traps (its panic, or a
 // fault: out of memory, its stack overflowed): the page can't go on, and
 // says so rather than sitting still. The panic's message is the crash
-// record's, when it keeps one.
+// record's, when it keeps one. It returns what shows it, for a trap the page
+// caught (asuka dev's reload).
 function watchTrap(container, host) {
   let shown = false;
   const trapped = (err) => {
@@ -113,6 +114,7 @@ function watchTrap(container, host) {
   };
   globalThis.addEventListener?.("error", (e) => trapped(e.error));
   globalThis.addEventListener?.("unhandledrejection", (e) => trapped(e.reason));
+  return trapped;
 }
 
 // showError shows what stopped the page (no core to ask: a trap, a core
@@ -143,7 +145,7 @@ function devClient(url) {
   };
   addEventListener("error", (e) => log(2, `page: ${e.message} (${e.filename}:${e.lineno})\n${e.error?.stack || ""}\n`));
   addEventListener("unhandledrejection", (e) => log(2, `page: ${e.reason?.stack || e.reason}\n`));
-  let host = null, core = null;
+  let host = null, core = null, trapped = null;
   const report = (r, first, restarted) => fetch(base + "reloaded", { method: "POST", body: JSON.stringify({ First: first, Restarted: restarted, Kept: r.kept, Micros: r.micros }) }).catch(() => {});
   // asuka dev's frames for the core (core/src/abi/dev.h's kinds), held until it's there.
   const Frame = { Reloaded: 5, Uncaught: 8, Source: 9, Failed: 10, Fixed: 11 };
@@ -180,6 +182,9 @@ function devClient(url) {
         report(await (restart ? core.restart(bytes) : core.reload(bytes)), false, restart);
       } catch (err) {
         log(2, `page: the new module didn't load: ${err?.message || err}\n`);
+        // The core trapped loading it (a panic): it can't go on, so the page
+        // says the app stopped, with its Reload, rather than sitting still.
+        trapped?.(err);
       }
       send();
     });
@@ -209,9 +214,10 @@ function devClient(url) {
   return {
     log,
     send: toCLI,
-    attach(h, c) {
+    attach(h, c, onTrap) {
       host = h;
       core = c || null;
+      trapped = onTrap || null;
       // A first module that didn't start: the overlay says why, and the CLI printed it.
       if (core?.loaded && !core.loaded.failed) report(core.loaded, true);
       const frames = held;
