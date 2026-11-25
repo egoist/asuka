@@ -1023,11 +1023,13 @@ export class Navigation {
     if (resizable) {
       const grip = div("asuka-window-grip");
       d.appendChild(grip);
-      this.drag(grip, (dx, dy) => {
+      this.drag(grip, (dx, dy, at) => {
         const wn = n.win;
         if (wn.maximized) return;
-        wn.w = this.h.windows.clamp(wn.w + dx, wn.minWidth || 200, wn.maxWidth);
-        wn.h = this.h.windows.clamp(wn.h - wn.bar + dy, wn.minHeight || 120, wn.maxHeight) + wn.bar;
+        at.w ??= wn.w;
+        at.h ??= wn.h - wn.bar;
+        wn.w = this.h.windows.clamp(at.w + dx, wn.minWidth || 200, wn.maxWidth);
+        wn.h = this.h.windows.clamp(at.h + dy, wn.minHeight || 120, wn.maxHeight) + wn.bar;
         this.sizeDialog(n);
       }, () => this.h.windows.save(n));
     }
@@ -1037,10 +1039,13 @@ export class Navigation {
     n.shown = true;
     this.dialogs.push(n);
     if (title) {
-      this.drag(title, (dx, dy) => {
+      this.drag(title, (dx, dy, at) => {
         const wn = n.win;
         if (wn.maximized) return;
-        wn.x += dx; wn.y += dy;
+        at.x ??= wn.x;
+        at.y ??= wn.y;
+        wn.x = at.x + dx;
+        wn.y = at.y + dy;
         this.sizeDialog(n);
       }, () => this.h.windows.save(n));
     }
@@ -1152,22 +1157,31 @@ export class Navigation {
     if (!placed) for (const el of els) c.appendChild(el);
   }
 
+  /**
+   * drag calls move(dx, dy, at) as the pointer moves after a primary
+   * press on handle (not on a button in it): dx, dy from where it
+   * pressed, and at, an object kept for the drag, where move keeps what
+   * it began from. What it drags follows the pointer, so past a limit it
+   * waits for the pointer to come back. end, if given, is called as the
+   * pointer is released or cancelled.
+   */
   drag(handle, move, end) {
-    let last = null;
+    let start = null, at = null;
     handle.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("button")) return;
-      last = [e.clientX, e.clientY];
+      if (e.button !== 0 || e.target.closest("button")) return;
+      start = [e.clientX, e.clientY];
+      at = {};
       handle.setPointerCapture(e.pointerId);
     });
     handle.addEventListener("pointermove", (e) => {
-      if (!last) return;
-      move(e.clientX - last[0], e.clientY - last[1]);
-      last = [e.clientX, e.clientY];
+      if (start) move(e.clientX - start[0], e.clientY - start[1], at);
     });
-    handle.addEventListener("pointerup", () => {
-      if (last && end) end();
-      last = null;
-    });
+    const stop = () => {
+      if (start && end) end();
+      start = null;
+    };
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
   }
 
   // --- SplitView ---
