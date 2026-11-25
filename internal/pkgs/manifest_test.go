@@ -1,6 +1,11 @@
 package pkgs
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
 
 func TestSetDependency(t *testing.T) {
 	src := "# My app\nname = \"Notes\"\n\n[dependencies]\n# charts\n\"@acme/charts\" = \"^1.0.0\"\n\n[ios]\nteam = \"X\"\n"
@@ -56,6 +61,46 @@ func TestLockRoundTrip(t *testing.T) {
 	m.Dependencies["a"] = "^1.1.0"
 	if back.Current(m) {
 		t.Fatal("a changed range needs resolving again")
+	}
+}
+
+// A lock written again with the same contents is left as it is, its time
+// too: asuka dev's watcher reads a new time as the app changing. A lock
+// that changed is written.
+func TestWriteLockUnchanged(t *testing.T) {
+	c := registry(t, world)
+	l, err := Resolve(c, map[string]string{"a": "^1.0.0"}, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := WriteLock(dir, l); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, LockFile)
+	past := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(path, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteLock(dir, l); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.ModTime().Equal(past) {
+		t.Fatalf("an unchanged lock was written again (its time %v, was %v)", fi.ModTime(), past)
+	}
+	if l, err = Resolve(c, map[string]string{"a": "^1.1.0"}, "."); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteLock(dir, l); err != nil {
+		t.Fatal(err)
+	}
+	back, err := ReadLock(dir)
+	if err != nil || versions(back) != "a=1.1.0 b=1.3.0" {
+		t.Fatalf("a changed lock wasn't written: %+v, %v", back, err)
 	}
 }
 
