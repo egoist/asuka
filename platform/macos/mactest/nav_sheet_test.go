@@ -176,10 +176,6 @@ func TestNavFitSheet(t *testing.T) {
 	is("opened again", base)
 }
 
-// A sheet as tall as its content whose content can't be as narrow as a
-// sheet (a fixed width) is as wide as its content, centred on its window
-// as a sheet is; its content shows whole. While it shows, its window can't
-// be made too narrow for it, and a window that already is widens.
 // A fit sheet wider than a sheet, laid out at its narrowest to widen it,
 // with a line of text under its wide content: as tall as its content at
 // the width it's widened to, the text on one line, not as tall as the
@@ -229,6 +225,10 @@ func TestNavFitSheetWideText(t *testing.T) {
 	}
 }
 
+// A sheet as tall as its content whose content can't be as narrow as a
+// sheet (a fixed width) is as wide as its content, centred on its window
+// as a sheet is; its content shows whole. While it shows, its window can't
+// be made too narrow for it, and a window that already is widens.
 func TestNavFitSheetWide(t *testing.T) {
 	a := Run(t, `
 		app { Root() }
