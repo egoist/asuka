@@ -33,6 +33,7 @@ WEAK void asuka_run_posted(void) {}
 WEAK int asuka_quit_request(int ending) { (void)ending; return 0; }
 WEAK void asuka_setenv(const char *key, const char *value) { (void)key; (void)value; }
 WEAK void asuka_set_app_dir(const char *path) { (void)path; }
+WEAK void asuka_set_dir(int kind, const char *path) { (void)kind, (void)path; }
 WEAK void asuka_set_start(const char *href) { (void)href; }
 WEAK char *asuka_crash_start(const char *info) { (void)info; return NULL; }
 WEAK void asuka_crash_notify(void) {}

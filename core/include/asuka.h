@@ -135,6 +135,13 @@ ASUKA_API void asuka_setenv(const char *key, const char *value);
 // directory on Android, its data directory on desktops). Before
 // asuka_start; without it the core reads ASUKA_DATA, else guesses.
 ASUKA_API void asuka_set_app_dir(const char *path);
+// Sets one of the app's directories, ASUKA_DIR_*: where it keeps its
+// settings (std/fs's configDir), what it can make again (cacheDir), its
+// logs (logDir); ASUKA_DIR_APP is asuka_set_app_dir's. Before asuka_start;
+// without it the core reads ASUKA_CONFIG, ASUKA_CACHE or ASUKA_LOGS, else
+// puts it in the platform's place for it.
+enum { ASUKA_DIR_APP = 0, ASUKA_DIR_CONFIG = 1, ASUKA_DIR_CACHE = 2, ASUKA_DIR_LOGS = 3 };
+ASUKA_API void asuka_set_dir(int kind, const char *path);
 // The address the main window's first Router starts at, the next time
 // it's built ("" or NULL: its initial, or the link the app is opened
 // with): where a browser opened the page, where a desktop window was left.

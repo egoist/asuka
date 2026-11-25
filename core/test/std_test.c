@@ -836,6 +836,90 @@ TEST(app_dir) {
 	ak_free(d);
 }
 
+static void put_env(const char *k, const char *v) {
+#if defined(_WIN32)
+	_putenv_s(k, v);
+#else
+	setenv(k, v, 1);
+#endif
+}
+
+static void drop_env(const char *k) {
+#if defined(_WIN32)
+	_putenv_s(k, "");
+#else
+	unsetenv(k);
+#endif
+}
+
+// The app's other directories: what the host set, else ASUKA_CONFIG,
+// ASUKA_CACHE and ASUKA_LOGS, else the platform's place for them, named by
+// the app directory's last part.
+TEST(app_dirs) {
+	static const char *const fn[] = {"fs.appDir", "fs.configDir", "fs.cacheDir", "fs.logDir"};
+	static const char *const env[] = {"ASUKA_DATA", "ASUKA_CONFIG", "ASUKA_CACHE", "ASUKA_LOGS"};
+	char *saved[4];
+	for (int k = 0; k < 4; k++) {
+		const char *v = getenv(env[k]);
+		saved[k] = v ? strcpy(malloc(strlen(v) + 1), v) : NULL;
+		drop_env(env[k]);
+	}
+	// Set by the host.
+	static const char *const set[] = {"/a", "/c", "/k", "/l"};
+	for (int k = 0; k < 4; k++) ak_fs_set_dir(k, set[k]);
+	for (int k = 0; k < 4; k++) CHECK_STR(call(fn[k], NULL, 0, 0), set[k]);
+	// The environment's, when the host set none.
+	for (int k = 1; k < 4; k++) ak_fs_set_dir(k, NULL);
+	put_env("ASUKA_CACHE", "/env/cache");
+	CHECK_STR(call("fs.cacheDir", NULL, 0, 0), "/env/cache");
+	drop_env("ASUKA_CACHE");
+	// The platform's, for an app whose directory ends in its name.
+#if defined(_WIN32)
+	ak_fs_set_app_dir("C:\\Users\\ann\\AppData\\Local\\Notes");
+	put_env("APPDATA", "C:\\Users\\ann\\AppData\\Roaming");
+	CHECK_STR(call("fs.configDir", NULL, 0, 0), "C:\\Users\\ann\\AppData\\Roaming\\Notes");
+	CHECK_STR(call("fs.cacheDir", NULL, 0, 0), "C:\\Users\\ann\\AppData\\Local\\Notes\\Cache");
+	CHECK_STR(call("fs.logDir", NULL, 0, 0), "C:\\Users\\ann\\AppData\\Local\\Notes\\Logs");
+#elif defined(__APPLE__)
+	const char *home = getenv("HOME");
+	REQUIRE(home && *home);
+	ak_fs_set_app_dir("/Users/ann/Library/Application Support/dev.asuka.notes");
+	char want[1024];
+	CHECK_STR(call("fs.configDir", NULL, 0, 0), "/Users/ann/Library/Application Support/dev.asuka.notes");
+	snprintf(want, sizeof want, "%s/Library/Caches/dev.asuka.notes", home);
+	CHECK_STR(call("fs.cacheDir", NULL, 0, 0), want);
+	snprintf(want, sizeof want, "%s/Library/Logs/dev.asuka.notes", home);
+	CHECK_STR(call("fs.logDir", NULL, 0, 0), want);
+#else
+	ak_fs_set_app_dir("/home/ann/.local/share/dev.asuka.notes/");
+	char *xdg[3];
+	static const char *const xn[] = {"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"};
+	for (int i = 0; i < 3; i++) {
+		const char *v = getenv(xn[i]);
+		xdg[i] = v ? strcpy(malloc(strlen(v) + 1), v) : NULL;
+	}
+	put_env("XDG_CONFIG_HOME", "/x/config");
+	put_env("XDG_CACHE_HOME", "/x/cache");
+	put_env("XDG_STATE_HOME", "relative"); // not absolute: XDG says to ignore it
+	put_env("HOME", getenv("HOME") ? getenv("HOME") : "/home/ann");
+	CHECK_STR(call("fs.configDir", NULL, 0, 0), "/x/config/dev.asuka.notes");
+	CHECK_STR(call("fs.cacheDir", NULL, 0, 0), "/x/cache/dev.asuka.notes");
+	char want[1024];
+	snprintf(want, sizeof want, "%s/.local/state/dev.asuka.notes", getenv("HOME"));
+	CHECK_STR(call("fs.logDir", NULL, 0, 0), want);
+	for (int i = 0; i < 3; i++) {
+		if (xdg[i]) put_env(xn[i], xdg[i]);
+		else drop_env(xn[i]);
+		free(xdg[i]);
+	}
+#endif
+	for (int k = 0; k < 4; k++) {
+		ak_fs_set_dir(k, NULL);
+		if (saved[k]) put_env(env[k], saved[k]);
+		free(saved[k]);
+	}
+}
+
 TEST(url_parts) {
 	ak_val r = call("url.parts", (ak_val[]){S("http://u@[::1]:/p")}, 1, 1);
 	ak_arr *a = r.p;

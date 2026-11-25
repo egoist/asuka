@@ -40,6 +40,11 @@ void lx_dirs_init(const char *argv0) {
 	// The app's own directory (std/fs's appDir), before the crash record
 	// and the core start.
 	asuka_set_app_dir(lx_data_dir());
+	// Its other directories (std/fs's configDir, cacheDir, logDir): the
+	// host's own, so the two agree.
+	asuka_set_dir(ASUKA_DIR_CONFIG, dirs.config);
+	asuka_set_dir(ASUKA_DIR_CACHE, dirs.cache);
+	asuka_set_dir(ASUKA_DIR_LOGS, dirs.logs);
 }
 
 // lx_os_version is the distribution and its version: the host's, in a

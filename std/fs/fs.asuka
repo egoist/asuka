@@ -70,6 +70,29 @@ pub struct Entry {
 /// Linux. It may not exist yet: mkdirAll makes it.
 pub native fn appDir() -> string
 
+/// Where the app keeps its settings, kept across launches: on Windows
+/// AppData\Roaming\<the app>, which follows the user to other computers;
+/// on Linux ~/.config/<the app> (XDG_CONFIG_HOME); elsewhere appDir. It
+/// may not exist yet: mkdirAll makes it.
+pub native fn configDir() -> string
+
+/// Where the app keeps what it can make again (downloaded images, a
+/// computed index): not backed up, and the system or the user may empty
+/// it, so read what's there as a guess. Library/Caches on iOS and macOS,
+/// the app's cache on Android, AppData\Local\<the app>\Cache on Windows,
+/// ~/.cache/<the app> on Linux (XDG_CACHE_HOME), the page's own on the
+/// web, kept across visits. It may not exist yet: mkdirAll makes it.
+///
+///   let file = fs.join([fs.cacheDir(), "avatars", "{user.id}.png"])
+pub native fn cacheDir() -> string
+
+/// Where the app writes its logs: Library/Logs/<the app> on macOS, where
+/// Console shows them; Library/Logs on iOS; a logs folder in the app's
+/// directory on Android and the web; AppData\Local\<the app>\Logs on
+/// Windows; ~/.local/state/<the app> on Linux (XDG_STATE_HOME). It may
+/// not exist yet: mkdirAll makes it.
+pub native fn logDir() -> string
+
 /// The user's home directory: HOME on macOS and Linux, USERPROFILE on
 /// Windows (else the system's record of the user). An app on a phone or
 /// the web has no user's home to see: there it's appDir. In a test,

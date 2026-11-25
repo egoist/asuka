@@ -221,7 +221,7 @@ Web ビューのアプリは、HTML と CSS で書いたとおりに、どのシ
 | ファイルの関連付け | `fileAssociations`（electron-builder）、`open-file` | ファイルの関連付け | ✓ `asuka.toml` の `fileTypes`、`on files(paths)`（iOS、Android、インストールした Web アプリでも） |
 | 単一インスタンスと二回目の起動 | `requestSingleInstanceLock`、`second-instance` | 単一インスタンス | ✓ `on secondInstance(args, dir)`、`asuka.toml` の `singleInstance`（Mac では引数ではなくファイルを渡す） |
 | 終了と、終了前の確認 | `app.quit`、`before-quit` | 終了 | ✓ `quit()`、`relaunch()`、`on quit(e)`（`e.cancel()`、`e.sessionEnding`） |
-| アプリのフォルダー | `app.getPath` | ディレクトリ | ◐ `fs.appDir()`、アプリ自身のディレクトリ（すべてのプラットフォーム）。設定、キャッシュ、ログの個別のフォルダーはない |
+| アプリのフォルダー | `app.getPath` | ディレクトリ | ✓ `fs.appDir()`（アプリのファイル）、`configDir()`（設定：Windows では Roaming の AppData、Linux では `~/.config`）、`cacheDir()`（Library/Caches、Android のキャッシュ、`~/.cache`。Web では別に保存）、`logDir()`（Library/Logs、`~/.local/state`）。どれもすべてのプラットフォームで、それぞれの決まった場所にある |
 | 最近使った書類 | `app.addRecentDocument` | 最近使った書類 | ✓ `platform/recent`（Mac の「最近使った項目を開く」、ジャンプリスト、Linux のユーザーの最近使ったファイル） |
 | 書類ベースのアプリ | — | 書類 | ✓ `platform/document`：`Documents`、ファイルごとのウィンドウ、「ファイル」メニュー、自動保存、復元用のコピー、閉じるときと終了するときの保存の確認、ほかのアプリによるファイルの変更（スマートフォンと Web では一度に一つの書類で、その場で保存） |
 | ログイン時の起動 | `app.setLoginItemSettings` | ログイン時に起動 | ✓ `platform/login`（`SMAppService`、macOS 13 以降。Run キー。XDG autostart または Background ポータル） |

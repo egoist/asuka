@@ -61,8 +61,12 @@ export async function start(options = {}) {
   const sqliteWasm = options.sqlite;
   const sqlite = sqliteWasm ? import("./sqlite.js").then((m) => m.load(new URL(sqliteWasm, document.baseURI))) : null;
   sqlite?.catch(() => {});
-  const data = "/data/" + name.replace(/[^\w.-]/g, "_");
-  await fs.mount({ name, dir: data, output: dev?.log });
+  const safe = name.replace(/[^\w.-]/g, "_");
+  const data = "/data/" + safe;
+  // The app's files, and its caches (std/fs's cacheDir: the core's
+  // /cache/<the data directory's name>) kept apart, each in its own
+  // database.
+  await Promise.all([fs.mount({ name, dir: data, output: dev?.log }), fs.mount({ name: name + "#cache", dir: "/cache/" + safe })]);
   const host = new Host(container, { ...options, fullPage, name });
   nativeApp.assets = host.assets;
   nativeApp.version = options.version || "";

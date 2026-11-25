@@ -221,7 +221,7 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 | 文件关联 | `fileAssociations`（electron-builder）、`open-file` | 文件关联 | ✓ `asuka.toml` 的 `fileTypes`、`on files(paths)`（iOS、Android 和已安装的 Web 应用也支持） |
 | 单实例、第二次启动 | `requestSingleInstanceLock`、`second-instance` | 单实例 | ✓ `on secondInstance(args, dir)`、`asuka.toml` 的 `singleInstance`（Mac 传递的是文件，不是命令行参数） |
 | 退出、退出前询问 | `app.quit`、`before-quit` | 退出 | ✓ `quit()`、`relaunch()`、`on quit(e)`（`e.cancel()`、`e.sessionEnding`） |
-| 应用的目录 | `app.getPath` | 目录 | ◐ `fs.appDir()`，应用自己的目录（所有平台）；没有单独的配置、缓存和日志目录 |
+| 应用的目录 | `app.getPath` | 目录 | ✓ `fs.appDir()`（应用的文件）、`configDir()`（设置：Windows 上是 Roaming AppData，Linux 上是 `~/.config`）、`cacheDir()`（Library/Caches、Android 的缓存目录、`~/.cache`；Web 上单独保存）和 `logDir()`（Library/Logs、`~/.local/state`），在所有平台上都放在各平台约定的位置 |
 | 最近使用的文档 | `app.addRecentDocument` | 最近文档 | ✓ `platform/recent`（Mac 上的“打开最近使用”、跳转列表、Linux 上用户的最近文件） |
 | 基于文档的应用 | — | 文档 | ✓ `platform/document`：`Documents`，每个文件一个窗口，“文件”菜单，自动保存，恢复副本，关闭和退出时询问是否保存，处理被其他应用修改的文件（手机和 Web 上一次只打开一个文档，原地保存） |
 | 登录时启动 | `app.setLoginItemSettings` | 登录时启动 | ✓ `platform/login`（`SMAppService`，macOS 13 及以上；Run 注册表项；XDG 自启动或 Background portal） |

@@ -132,10 +132,16 @@ void ak_ed25519_public(const uint8_t seed[32], uint8_t pub[32]);
 void ak_ed25519_sign(const uint8_t seed[32], const uint8_t pub[32], const uint8_t *m, size_t n, uint8_t sig[64]);
 bool ak_ed25519_verify(const uint8_t pub[32], const uint8_t *m, size_t n, const uint8_t sig[64]);
 
-// The app's directory (fs.appDir): what the host set with
-// asuka_set_app_dir, else ASUKA_DATA, else the platform's default.
+// The app's directories: its files (fs.appDir), its settings (configDir),
+// its caches (cacheDir) and its logs (logDir), ASUKA_DIR_*'s order. Each
+// is what the host set with asuka_set_dir (asuka_set_app_dir: the app's),
+// else ASUKA_DATA, ASUKA_CONFIG, ASUKA_CACHE or ASUKA_LOGS, else the
+// platform's place for it.
+enum { AK_DIR_APP, AK_DIR_CONFIG, AK_DIR_CACHE, AK_DIR_LOGS, AK_DIR_COUNT };
+void ak_fs_set_dir(int kind, const char *path);
 void ak_fs_set_app_dir(const char *path);
-// ak_fs_app_dir is that directory's path (ak_free it).
+// ak_fs_dir is kind's path (ak_free it); ak_fs_app_dir the app's.
+char *ak_fs_dir(int kind);
 char *ak_fs_app_dir(void);
 // ak_fs_make_dirs makes path and the directories above it (a UTF-8
 // path); false if it can't.

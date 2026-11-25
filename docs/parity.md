@@ -249,7 +249,7 @@ Windows and Linux unless the row says otherwise.
 | File associations | `fileAssociations` (electron-builder), `open-file` | file associations | ✓ `asuka.toml`'s `fileTypes`, `on files(paths)` (also iOS, Android and installed web apps) |
 | One instance, its second launch | `requestSingleInstanceLock`, `second-instance` | a single instance | ✓ `on secondInstance(args, dir)`, `asuka.toml`'s `singleInstance` (the Mac passes files, not arguments) |
 | Quitting, asking first | `app.quit`, `before-quit` | quitting | ✓ `quit()`, `relaunch()`, `on quit(e)` (`e.cancel()`, `e.sessionEnding`) |
-| The app's folders | `app.getPath` | directories | ◐ `fs.appDir()`, the app's own directory (everywhere); no separate config, cache and log folders |
+| The app's folders | `app.getPath` | directories | ✓ `fs.appDir()` (the app's files), `configDir()` (its settings: Roaming AppData on Windows, `~/.config` on Linux), `cacheDir()` (Library/Caches, Android's cache, `~/.cache`; the web's kept apart) and `logDir()` (Library/Logs, `~/.local/state`), each in its platform's place, everywhere |
 | Recent documents | `app.addRecentDocument` | recent documents | ✓ `platform/recent` (Open Recent on the Mac, the jump list, the user's recent files on Linux) |
 | Document-based apps | — | documents | ✓ `platform/document`: `Documents`, a window per file, the File menu, autosave, recovery copies, save questions on close and quit, files changed by other apps (phones and the web: one document at a time, saved in place) |
 | Starting at login | `app.setLoginItemSettings` | start at login | ✓ `platform/login` (`SMAppService`, macOS 13+; the Run key; XDG autostart or the Background portal) |

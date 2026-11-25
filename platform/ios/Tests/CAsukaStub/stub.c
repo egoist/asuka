@@ -53,6 +53,7 @@ void asuka_list_bind(uint32_t list, int64_t index, uint32_t cell) { (void)list, 
 void asuka_run_posted(void) {}
 void asuka_setenv(const char *key, const char *value) { (void)key, (void)value; }
 void asuka_set_app_dir(const char *path) { (void)path; }
+void asuka_set_dir(int kind, const char *path) { (void)kind, (void)path; }
 char *asuka_crash_start(const char *info) {
 	(void)info;
 	return NULL;

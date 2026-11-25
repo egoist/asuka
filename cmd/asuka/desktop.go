@@ -128,8 +128,7 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 	if err != nil {
 		return err
 	}
-	data := filepath.Join(work, "data")
-	os.MkdirAll(data, 0o755)
+	dirs := devDirs(work)
 	// The app's programs ([bin]), built once, where command.bundled finds
 	// them (ASUKA_BIN_DIR), as a release has them beside the app.
 	bins := filepath.Join(work, "bin")
@@ -148,9 +147,8 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 			return err
 		}
 		proc.stop()
-		env := append(os.Environ(),
+		env := append(append(os.Environ(), dirs...),
 			fmt.Sprintf("ASUKA_DEV=%s:%d", devHost, loop.port()),
-			"ASUKA_DATA="+data,
 			// Read where they are, so changing one needs no rebuild.
 			"ASUKA_ASSETS="+filepath.Join(app.dir, "assets"),
 			"ASUKA_BIN_DIR="+bins,
@@ -170,8 +168,8 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 		} else {
 			name, args := exe, []string(nil)
 			if wrap != nil {
-				name, args = wrap[0], append(wrap[1:len(wrap):len(wrap)], "env", "ASUKA_DEV="+fmt.Sprintf("%s:%d", devHost, loop.port()),
-					"ASUKA_DATA="+data, "ASUKA_ASSETS="+filepath.Join(app.dir, "assets"), "ASUKA_BIN_DIR="+bins,
+				name, args = wrap[0], append(append(wrap[1:len(wrap):len(wrap)], "env", "ASUKA_DEV="+fmt.Sprintf("%s:%d", devHost, loop.port())), dirs...)
+				args = append(args, "ASUKA_ASSETS="+filepath.Join(app.dir, "assets"), "ASUKA_BIN_DIR="+bins,
 					"ASUKA_APP_CONFIG="+filepath.Join(filepath.Dir(exe), appconfig.File))
 				args = append(args, exe)
 			}
@@ -305,4 +303,14 @@ func stdNativeDirs() []string {
 		}
 	}
 	return out
+}
+
+// devDirs is the environment that puts an app's directories (std/fs's
+// appDir, configDir, cacheDir, logDir) in its work directory under
+// development, not the user's, the data directory made.
+func devDirs(work string) []string {
+	data := filepath.Join(work, "data")
+	os.MkdirAll(data, 0o755)
+	return []string{"ASUKA_DATA=" + data, "ASUKA_CONFIG=" + filepath.Join(work, "config"),
+		"ASUKA_CACHE=" + filepath.Join(work, "cache"), "ASUKA_LOGS=" + filepath.Join(work, "logs")}
 }

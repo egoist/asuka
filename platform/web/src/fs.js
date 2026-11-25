@@ -27,6 +27,7 @@ const S_IFDIR = 0o040000, S_IFREG = 0o100000;
 const files = new Map(); // path -> { dir, data, size, mode, mtime, ino, chunked }
 // The data directories kept in IndexedDB: an app's each (several apps
 // may run on one page, each with its own), and its database.
+let flushOnHide = false; // the page's listeners that write every store as it goes, added once
 const stores = []; // { dir, name, db, channel, dirty: Map<path, Set<chunk> | true (all of it)>, writing: Set<path> }
 const CHUNK = 64 * 1024;
 let flushTimer = 0;
@@ -392,7 +393,8 @@ export async function mount({ name, dir = "/data", output } = {}) {
   } catch (e) {
     console.warn("asuka: the app's files won't be kept:", e);
   }
-  if (stores.length === 1 && globalThis.document) {
+  if (!flushOnHide && globalThis.document) {
+    flushOnHide = true;
     // Written at once as the page goes (or may go: hidden).
     addEventListener("pagehide", () => flush(true));
     document.addEventListener("visibilitychange", () => { if (document.hidden) flush(true); });

@@ -132,6 +132,11 @@ static bool start_core(void) {
 	callbacks.post = cb_post;
 	wh_native_host_callbacks(&callbacks);  // the native packages' registry, and platform/host's modules
 	asuka_set_app_dir(H.dirs.data);
+	// Its other directories (std/fs's configDir, cacheDir, logDir): the
+	// host's own, so the two agree.
+	asuka_set_dir(ASUKA_DIR_CONFIG, H.dirs.config);
+	asuka_set_dir(ASUKA_DIR_CACHE, H.dirs.cache);
+	asuka_set_dir(ASUKA_DIR_LOGS, H.dirs.logs);
 	asuka_start(&callbacks);
 	wh_report_environment(&(node){.id = 0}, &H.env);
 	// The main window's router starts where the window was left

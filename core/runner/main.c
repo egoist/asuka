@@ -428,8 +428,18 @@ static void run_test(void *ctx) {
 void ak_runner_run(const ak_func *f, ak_val *args, uint32_t nargs) {
 	failure[0] = 0;
 	ak_diag_reset();  // each test's app is a run of its own
+	// Its directories its own, in a folder that goes with it: never the
+	// user's.
 	char *dir = ak_fs_temp_dir();
 	ak_fs_set_app_dir(dir);
+	if (dir) {
+		static const char *const sub[] = {[AK_DIR_CONFIG] = "config", [AK_DIR_CACHE] = "cache", [AK_DIR_LOGS] = "logs"};
+		for (int k = AK_DIR_CONFIG; k < AK_DIR_COUNT; k++) {
+			char p[4096];
+			snprintf(p, sizeof p, "%s/%s", dir, sub[k]);
+			ak_fs_set_dir(k, p);
+		}
+	}
 	ak_owner *o = ak_owner_new();
 	run_t r = {f, NULL, args, nargs};
 	ak_with_owner(o, run_test, &r);
@@ -453,5 +463,5 @@ void ak_runner_run(const ak_func *f, ak_val *args, uint32_t nargs) {
 		ak_fs_remove_tree(dir);
 		ak_free(dir);
 	}
-	ak_fs_set_app_dir(NULL);
+	for (int k = 0; k < AK_DIR_COUNT; k++) ak_fs_set_dir(k, NULL);
 }

@@ -318,9 +318,7 @@ func cmdRun(args []string) error {
 			// An app's program shares the app's data: under development,
 			// what asuka dev's run on this computer keeps.
 			if w, err := workDir(&asukaApp{dir: p.Root, name: filepath.Base(p.Root)}, thisComputer()); err == nil {
-				data := filepath.Join(w, "data")
-				os.MkdirAll(data, 0o755)
-				env = append(env, "ASUKA_DATA="+data)
+				env = append(env, devDirs(w)...)
 			}
 		}
 		code, err := appbuild.RunProgram(m, appbuild.ProgramOptions{Name: p.ProgramName(), Args: progArgs, Env: env, Trim: cwdOr(p.Dir), Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr})

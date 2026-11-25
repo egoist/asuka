@@ -99,6 +99,18 @@ test "the user's directories" {
   print(try fs.abs("") == fs.clean(os.cwd()))
 }
 
+test "the app's directories" {
+  // A test's are its own, in its app directory, and each apart.
+  let dirs = [fs.configDir(), fs.cacheDir(), fs.logDir()]
+  print(dirs.map((d) => d.hasPrefix(fs.appDir())))
+  print(dirs.map((d) => fs.base(d)))
+  for d in dirs {
+    try fs.mkdirAll(d)
+    try fs.write(fs.join([d, "x.txt"]), "x".bytes())
+  }
+  print(dirs.map((d) => fs.exists(fs.join([d, "x.txt"]))))
+}
+
 test "walk" {
   let root = fs.join([fs.appDir(), "walk"])
   try fs.mkdirAll(fs.join([root, "b", "d"]))
@@ -177,6 +189,10 @@ test "walk" {
 // true
 // true
 // ok the user's directories
+// [true,true,true]
+// ["config","cache","logs"]
+// [true,true,true]
+// ok the app's directories
 // .git .git true 0
 // .git/HEAD HEAD false 3
 // a.txt a.txt false 2

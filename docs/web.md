@@ -201,9 +201,11 @@ storage (IndexedDB) before the app starts and written back a moment
 after they change, and as the page is hidden or closed. Tabs of the app share them: a tab's writes reach the others,
 which read the files again (a file a tab changed and hasn't written yet
 stays its own, until it's written: the last tab to write a file keeps
-it). What the user drops, pastes or picks is copied
-into the app's caches (`/tmp`), as on iOS and Android, and comes to the
-app as a path.
+it). Its caches (`fs.cacheDir()`) are kept the same way, in a database
+of their own, so the browser can clear them without the app's files.
+What the user drops, pastes or picks is copied into the page's
+temporary directory (`/tmp`, kept while the page is open), and comes to
+the app as a path.
 
 `spawn { … }` runs on one of the page's Web Workers (up to four, started
 as `spawn` first needs them), each running the app's code again, its

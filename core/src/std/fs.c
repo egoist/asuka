@@ -8,7 +8,7 @@
 // FAIL_*) and fs.failureReason() says; the Asuka side throws an FsError
 // of it (std/fs/fs.asuka).
 //
-//	fs.appDir() / home() / tempDir() -> string
+//	fs.appDir() / configDir() / cacheDir() / logDir() / home() / tempDir() -> string
 //	fs.join(parts) / clean(p) / dir(p) / base(p) / ext(p) -> string
 //	fs.absolute(p) -> string?        against the working directory, cleaned
 //	fs.listNames(p) -> [string]?     names in a directory, sorted
@@ -292,15 +292,26 @@ static ak_val ext_fn(ak_val *args, uint32_t n) {
 	return (ak_val){.p = ak_str_new("", 0)};
 }
 
-// ---- The app's directory ----
+// ---- The app's directories ----
+//
+// Where the app keeps its files (fs.appDir), its settings (configDir), what
+// it can make again (cacheDir) and its logs (logDir). Each is what the host
+// set (asuka_set_dir), else ASUKA_DATA, ASUKA_CONFIG, ASUKA_CACHE or
+// ASUKA_LOGS, else the platform's place for it: the desktop hosts' rules
+// (platform/desktop's dsk_dirs), the app's name the app directory's last
+// part.
 
-static char *app_dir;
+static char *dirs[AK_DIR_COUNT];
+static const char *const dir_env[AK_DIR_COUNT] = {"ASUKA_DATA", "ASUKA_CONFIG", "ASUKA_CACHE", "ASUKA_LOGS"};
 
-void ak_fs_set_app_dir(const char *path) {
-	char *old = app_dir;
-	app_dir = path && *path ? strcpy(ak_alloc(strlen(path) + 1), path) : NULL;
+void ak_fs_set_dir(int kind, const char *path) {
+	if (kind < 0 || kind >= AK_DIR_COUNT) return;
+	char *old = dirs[kind];
+	dirs[kind] = path && *path ? strcpy(ak_alloc(strlen(path) + 1), path) : NULL;
 	ak_free(old);
 }
+
+void ak_fs_set_app_dir(const char *path) { ak_fs_set_dir(AK_DIR_APP, path); }
 
 static char *dup_path(const char *s) {
 	size_t n = strlen(s);
@@ -309,10 +320,19 @@ static char *dup_path(const char *s) {
 	return p;
 }
 
-char *ak_fs_app_dir(void) {
-	if (app_dir) return dup_path(app_dir);
-	const char *env = getenv("ASUKA_DATA");
-	if (env && *env) return dup_path(env);
+// joined is a and b with the platform's separator between (ak_free it).
+static char *joined(const char *a, const char *b) {
+	size_t n = strlen(a) + strlen(b) + 2;
+	char *p = ak_alloc(n);
+#if defined(_WIN32)
+	snprintf(p, n, "%s\\%s", a, b);
+#else
+	snprintf(p, n, "%s/%s", a, b);
+#endif
+	return p;
+}
+
+static char *default_app_dir(void) {
 #if !defined(__wasm__)
 	char buf[1024];
 #endif
@@ -357,12 +377,121 @@ char *ak_fs_app_dir(void) {
 	return dup_path(".");
 }
 
-static ak_val app_dir_fn(ak_val *args, uint32_t n) {
-	AK_UNUSED(args), AK_UNUSED(n);
-	char *d = ak_fs_app_dir();
+#if !defined(_WIN32) && !defined(__wasm__) && !defined(__ANDROID__) && !defined(__APPLE__)
+// home_dir is where the user's folders are: XDG's env (an absolute path),
+// else HOME and rel, else NULL (ak_free it).
+static char *home_dir(const char *xdg, const char *rel) {
+	const char *x = xdg ? getenv(xdg) : NULL;
+	if (x && x[0] == '/') return dup_path(x);
+	const char *home = getenv("HOME");
+	return home && *home ? joined(home, rel) : NULL;
+}
+#endif
+
+// default_dir is kind's place by the platform's rules, for the app whose
+// directory is app (ak_free it).
+static char *default_dir(int kind, const char *app) {
+	if (kind == AK_DIR_APP) return default_app_dir();
+	const char *name = app + strlen(app);
+	while (name > app && is_sep(name[-1])) name--;
+	const char *end = name;
+	while (name > app && !is_sep(name[-1])) name--;
+	char base[512];
+	snprintf(base, sizeof base, "%.*s", (int)(end - name), name);
+	if (!base[0]) snprintf(base, sizeof base, "asuka");
+	char *d = NULL;
+#if defined(_WIN32)
+	// Settings roam with the user (AppData\Roaming); the rest stays on
+	// this computer, in the app's Local AppData.
+	if (kind == AK_DIR_CONFIG) {
+		const char *roaming = getenv("APPDATA");
+		if (roaming && *roaming) d = joined(roaming, base);
+	} else {
+		d = joined(app, kind == AK_DIR_CACHE ? "Cache" : "Logs");
+	}
+#elif defined(__wasm__)
+	// The page's: settings and logs with the app's files, kept; its
+	// caches kept too, by themselves (the web host's /cache).
+	if (kind == AK_DIR_CACHE) d = joined("/cache", base);
+	else d = kind == AK_DIR_CONFIG ? dup_path(app) : joined(app, "Logs");
+#elif defined(__ANDROID__)
+	// Context.getCacheDir, beside getFilesDir (the app's directory).
+	if (kind == AK_DIR_CACHE) {
+		size_t n = (size_t)(name - app);
+		d = ak_alloc(n + 6);
+		memcpy(d, app, n);
+		memcpy(d + n, "cache", 6);
+	} else {
+		d = kind == AK_DIR_CONFIG ? dup_path(app) : joined(app, "logs");
+	}
+#elif defined(__APPLE__)
+	// Settings in Application Support with the app's files; caches in
+	// Library/Caches, which isn't backed up; logs in Library/Logs, where
+	// Console finds them.
+	const char *home = getenv("HOME");
+	if (kind == AK_DIR_CONFIG) {
+		d = dup_path(app);
+	} else if (home && *home) {
+#if TARGET_OS_IPHONE
+		d = joined(home, kind == AK_DIR_CACHE ? "Library/Caches" : "Library/Logs");
+#else
+		char *lib = joined(home, kind == AK_DIR_CACHE ? "Library/Caches" : "Library/Logs");
+		d = joined(lib, base);
+		ak_free(lib);
+#endif
+	}
+#else
+	// XDG's: ~/.config, ~/.cache, ~/.local/state.
+	char *x = kind == AK_DIR_CONFIG ? home_dir("XDG_CONFIG_HOME", ".config")
+	        : kind == AK_DIR_CACHE  ? home_dir("XDG_CACHE_HOME", ".cache")
+	                                : home_dir("XDG_STATE_HOME", ".local/state");
+	if (x) {
+		d = joined(x, base);
+		ak_free(x);
+	}
+#endif
+	return d ? d : joined(app, kind == AK_DIR_CONFIG ? "config" : kind == AK_DIR_CACHE ? "cache" : "logs");
+}
+
+char *ak_fs_dir(int kind) {
+	if (kind < 0 || kind >= AK_DIR_COUNT) kind = AK_DIR_APP;
+	if (dirs[kind]) return dup_path(dirs[kind]);
+	const char *env = getenv(dir_env[kind]);
+	if (env && *env) return dup_path(env);
+	if (kind == AK_DIR_APP) return default_app_dir();
+	char *app = ak_fs_dir(AK_DIR_APP);
+	char *d = default_dir(kind, app);
+	ak_free(app);
+	return d;
+}
+
+char *ak_fs_app_dir(void) { return ak_fs_dir(AK_DIR_APP); }
+
+static ak_val dir_val(int kind) {
+	char *d = ak_fs_dir(kind);
 	ak_str *s = ak_str_c(d);
 	ak_free(d);
 	return (ak_val){.p = s};
+}
+
+static ak_val app_dir_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(args), AK_UNUSED(n);
+	return dir_val(AK_DIR_APP);
+}
+
+static ak_val config_dir_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(args), AK_UNUSED(n);
+	return dir_val(AK_DIR_CONFIG);
+}
+
+static ak_val cache_dir_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(args), AK_UNUSED(n);
+	return dir_val(AK_DIR_CACHE);
+}
+
+static ak_val log_dir_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(args), AK_UNUSED(n);
+	return dir_val(AK_DIR_LOGS);
 }
 
 // ---- The file system ----
@@ -2006,6 +2135,9 @@ static ak_val read_link_fn(ak_val *args, uint32_t n) {
 
 const ak_lib_entry ak_std_fs[] = {
 	{"fs.appDir", app_dir_fn},
+	{"fs.configDir", config_dir_fn},
+	{"fs.cacheDir", cache_dir_fn},
+	{"fs.logDir", log_dir_fn},
 	{"fs.home", home_fn},
 	{"fs.tempDir", temp_fn},
 	{"fs.absolute", abs_fn},

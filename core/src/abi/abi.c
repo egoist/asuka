@@ -541,6 +541,7 @@ void asuka_setenv(const char *key, const char *value) {
 }
 
 void asuka_set_app_dir(const char *path) { ak_fs_set_app_dir(path); }
+void asuka_set_dir(int kind, const char *path) { ak_fs_set_dir(kind, path); }
 
 void asuka_set_start(const char *href) { ak_router_set_start(href ? ak_cstr(href) : ak_cstr("")); }
 
