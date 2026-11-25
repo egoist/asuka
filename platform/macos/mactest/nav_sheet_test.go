@@ -4,6 +4,7 @@ package mactest
 
 import (
 	"testing"
+	"time"
 )
 
 const styleResizable = 1 << 3
@@ -309,6 +310,124 @@ func TestNavFitSheetWide(t *testing.T) {
 	a.Do("tap Close")
 	a.UntilText("open false")
 	least("closed again", before[0])
+}
+
+// A fit sheet whose content can't be as narrow as its room but is no wider
+// than a sheet may be (600 here, in a window 650 wide): the window widens
+// to the sheet and its margin, and stays held there when the sheet, its
+// content changed, is laid out again at that width, where it fills its
+// room exactly.
+func TestNavFitSheetHeldAtItsWidth(t *testing.T) {
+	a := Run(t, `
+		app { Root() }
+		component Root {
+		  state open = false
+		  state more = false
+		  Column {
+		    padding: 20
+		    Text("open {open}")
+		    Button("Show") { on press { open = true } }
+		    Sheet {
+		      bind open: open
+		      detents: [.fit]
+		      Column {
+		        width: 600
+		        Button("More") { on press { more = true } }
+		        if more { Text("more shown") }
+		        Button("Close") { on press { open = false } }
+		      }
+		    }
+		  }
+		}
+	`)
+	a.UntilText("open false")
+	before := winRect(a.Tree().Main(), "minSize")
+	if len(before) != 2 || before[0] >= 600 {
+		t.Fatalf("the window's own least size %v", before)
+	}
+	a.Do("resize 650,900", "tap Show")
+	a.Until(func(tr *Tree) bool {
+		s := sheetOf(tr)
+		if s == nil || sheetWindow(s)["visible"] != true {
+			return false
+		}
+		cw, _ := size(sheetWindow(s)["content"])
+		mw, _ := size(tr.Main().Props["content"])
+		return cw == 600 && mw == 680
+	})
+	// The content grows, so the sheet is laid out again at a room of 600,
+	// as wide as it is: the hold stays
+	a.Do("tap More")
+	a.UntilText("more shown")
+	time.Sleep(time.Second)
+	if m := winRect(a.Tree().Main(), "minSize"); len(m) != 2 || m[0] != 680 {
+		t.Errorf("shown: the window's least size is %v, want 680 wide", m)
+	}
+	a.Do("tap Close")
+	a.UntilText("open false")
+	if m := winRect(a.Tree().Main(), "minSize"); len(m) != 2 || m[0] != before[0] {
+		t.Errorf("closed: the window's least size is %v, want its own %v", m, before)
+	}
+}
+
+// A sheet as tall as its content that can be as narrow as a sheet leaves
+// its window's least size the window's own while it shows: the window can
+// still be made narrower, and the sheet narrows with it.
+func TestNavFitSheetNarrowWindow(t *testing.T) {
+	a := Run(t, `
+		app { Root() }
+		component Root {
+		  state open = false
+		  Column {
+		    padding: 20
+		    Text("open {open}")
+		    Button("Show") { on press { open = true } }
+		    Sheet {
+		      bind open: open
+		      detents: [.fit]
+		      Column {
+		        padding: 20
+		        View { height: 100; background: .blue }
+		        Button("Close") { on press { open = false } }
+		      }
+		    }
+		  }
+		}
+	`)
+	a.UntilText("open false")
+	before := winRect(a.Tree().Main(), "minSize")
+	if len(before) != 2 || before[0] >= 600 {
+		t.Fatalf("the window's own least size %v", before)
+	}
+	// shows waits for the sheet at want wide, its room's width, in a
+	// window winW wide, then checks the window's least size is its own.
+	shows := func(what string, want, winW float64) {
+		t.Helper()
+		var tr *Tree
+		a.Until(func(x *Tree) bool {
+			tr = x
+			s := sheetOf(x)
+			if s == nil || sheetWindow(s)["visible"] != true {
+				return false
+			}
+			roomW, _ := pair(s.Get("sheetRoom"))
+			cw, _ := size(sheetWindow(s)["content"])
+			mw, _ := size(x.Main().Props["content"])
+			return cw == want && roomW == want && mw == winW
+		})
+		if m := winRect(tr.Main(), "minSize"); len(m) != 2 || m[0] != before[0] {
+			t.Errorf("%s: the window's least size is %v, want its own %v", what, m, before)
+		}
+	}
+	a.Do("resize 1400,900", "tap Show")
+	shows("shown", 640, 1400)
+	a.Do("resize 600,900")
+	shows("narrowed", 520, 600)
+	a.Do("tap Close")
+	a.UntilText("open false")
+	if m := winRect(a.Tree().Main(), "minSize"); len(m) != 2 || m[0] != before[0] {
+		t.Errorf("closed: the window's least size is %v, want its own %v", m, before)
+	}
 }
 
 // frameSize is a node's view's size, -1 by -1 if it has no view.
