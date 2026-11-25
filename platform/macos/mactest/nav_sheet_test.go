@@ -430,6 +430,63 @@ func TestNavFitSheetNarrowWindow(t *testing.T) {
 	}
 }
 
+// A wide fit sheet on a Window widens that window and holds its width,
+// not the main window's; the Window closed with the sheet up, the main
+// window still has its own least size.
+func TestNavFitSheetWideOnWindow(t *testing.T) {
+	a := Run(t, `
+		app { Root() }
+		component Root {
+		  state open = false
+		  state sheet = false
+		  Column {
+		    padding: 20
+		    Text("open {open} sheet {sheet}")
+		    Button("Open") { on press { open = true } }
+		    Button("Close") { on press { open = false } }
+		    Window {
+		      bind open: open
+		      title: "Inspector"
+		      width: 400
+		      height: 400
+		      Column {
+		        Button("Show") { on press { sheet = true } }
+		        Sheet {
+		          bind open: sheet
+		          detents: [.fit]
+		          View { width: 820; height: 100 }
+		        }
+		      }
+		    }
+		  }
+		}
+	`)
+	a.UntilText("open false sheet false")
+	before := winRect(a.Tree().Main(), "minSize")
+	a.Do("resize 1400,900", "tap Open")
+	a.Until(func(tr *Tree) bool { w := tr.Window("Inspector"); return w != nil && w.Visible })
+	a.Do("tap Show")
+	a.Until(func(tr *Tree) bool {
+		w := tr.Window("Inspector")
+		s := sheetOf(tr)
+		if w == nil || s == nil || sheetWindow(s)["visible"] != true {
+			return false
+		}
+		cw, _ := size(sheetWindow(s)["content"])
+		m := winRect(w, "minSize")
+		return cw == 820 && len(m) == 2 && m[0] == 900 && w.Content[2] == 900
+	})
+	if m := winRect(a.Tree().Main(), "minSize"); len(m) != 2 || m[0] != before[0] || m[1] != before[1] {
+		t.Errorf("the sheet on the Window shown, the main window's least size is %v, want %v", m, before)
+	}
+	a.Do("tap Close")
+	a.UntilText("open false sheet true")
+	a.Until(func(tr *Tree) bool { return tr.Window("Inspector") == nil })
+	if m := winRect(a.Tree().Main(), "minSize"); len(m) != 2 || m[0] != before[0] || m[1] != before[1] {
+		t.Errorf("the Window closed, the main window's least size is %v, want its own %v", m, before)
+	}
+}
+
 // frameSize is a node's view's size, -1 by -1 if it has no view.
 func frameSize(n *Node) (float64, float64) {
 	if len(n.Frame) < 4 {
