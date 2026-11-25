@@ -499,9 +499,10 @@ var (
 // foreground waits for the app to be in front, answering Wait to what
 // the system shows over it: a slow emulator's "isn't responding" dialogs
 // (the launcher's, System UI's), which would cover what the test reads
-// and taps. In front is the app's window having the focus on any
-// display (a dump can hold several, the first not the app's: the
-// emulator's images differ), or its activity the top resumed one.
+// and taps, with the focus or without it. In front is the app's window
+// having the focus on any display (a dump can hold several, the first
+// not the app's: the emulator's images differ), or its activity the top
+// resumed one, and no such dialog on the screen.
 func (s *androidScreen) foreground() {
 	var focus []string
 	var resumed string
@@ -518,27 +519,26 @@ func (s *androidScreen) foreground() {
 		if m := resumedRE.FindStringSubmatch(acts); m != nil {
 			resumed = m[1]
 		}
-		if strings.HasPrefix(resumed, s.pkg+"/") {
-			return true
-		}
+		front := strings.HasPrefix(resumed, s.pkg+"/")
+		dialog := false
 		for _, f := range focus {
-			if strings.HasPrefix(f, s.pkg+"/") {
-				return true
-			}
+			front = front || strings.HasPrefix(f, s.pkg+"/")
+			dialog = dialog || strings.Contains(f, "Not Responding")
 		}
-		for _, f := range focus {
-			if !strings.Contains(f, "Not Responding") {
-				continue
-			}
-			s.adb("shell", "uiautomator", "dump", "/sdcard/asuka-ui.xml")
-			ui, _ := s.adb("exec-out", "cat", "/sdcard/asuka-ui.xml")
-			if m := waitRE.FindStringSubmatch(ui); m != nil {
-				n := func(i int) int { v, _ := strconv.Atoi(m[i]); return v }
-				s.adb("shell", "input", "tap", strconv.Itoa((n(1)+n(3))/2), strconv.Itoa((n(2)+n(4))/2))
-			}
-			break
+		if !front && !dialog {
+			return false
 		}
-		return false
+		// What the screen shows: an "isn't responding" dialog may sit over
+		// the app without the focus (the launcher's, on CI's images). Wait
+		// answers it, and the app is in front once none shows.
+		s.adb("shell", "uiautomator", "dump", "/sdcard/asuka-ui.xml")
+		ui, _ := s.adb("exec-out", "cat", "/sdcard/asuka-ui.xml")
+		if m := waitRE.FindStringSubmatch(ui); m != nil && strings.Contains(ui, "t responding") {
+			n := func(i int) int { v, _ := strconv.Atoi(m[i]); return v }
+			s.adb("shell", "input", "tap", strconv.Itoa((n(1)+n(3))/2), strconv.Itoa((n(2)+n(4))/2))
+			return false
+		}
+		return front
 	}, func() string {
 		return fmt.Sprintf("the focus is on %q and the top resumed activity is %q, not %s%s", focus, resumed, s.pkg, s.crashLog())
 	})
