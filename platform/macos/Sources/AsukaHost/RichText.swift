@@ -305,8 +305,9 @@ final class AsukaRichTextView: NSTextView {
         let w = c.fitWidth(minContent)
         var s = r.layoutAt(w)
         if w < asukaBig { s.width = min(s.width.rounded(.up), w) }
-        // Typeset again at the width it shows at, if it shows yet: before
-        // it's placed, its frame typesets it (placeInlines).
+        // Typeset again at the width it shows at, unless that's the width
+        // just measured; before it's placed it has none, and its frame
+        // typesets it (placeInlines).
         if r.width > 0 && r.width != w { _ = r.layoutAt(r.width) }
         return CGSize(width: s.width.rounded(.up), height: s.height.rounded(.up))
     }

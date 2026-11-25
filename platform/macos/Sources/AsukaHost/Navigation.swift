@@ -66,7 +66,8 @@ let asukaSheetMargin: CGFloat = 80
     /// (fitSheet): before, it would slide in at its room's size.
     var begin: (() -> Void)?
     /// The least content size a fit sheet's window had before the sheet
-    /// held its width (holdSheetWidth), given back as the sheet goes.
+    /// held its width (holdSheetWidth), given back as the sheet goes or
+    /// no longer needs the room (releaseSheetWidth).
     var parentLeast: CGSize?
     var alert: NSAlert?
     var alertStyle: Int32 = 0
@@ -492,12 +493,20 @@ final class AsukaSheetWindow: NSWindow {
 
     /// Sizes a sheet as tall as its content to the size the core laid it
     /// out at (wider than its room when its content can't be narrower),
-    /// its top edge kept and centred where it was, its window held wide
-    /// enough for it.
+    /// its top edge kept and centred where it was. While it's wider than
+    /// its room, its window is held wide enough for it, and stays held
+    /// while the window is no wider than that: there the sheet fills its
+    /// room exactly, as one that can be narrower does.
     func fitSheet(_ n: AsukaNode, _ width: Float, _ height: Float) {
         guard let nav = n.nav, let w = nav.window else { return }
         if width > 0 && height > 0 {
-            holdSheetWidth(n, CGFloat(width))
+            let wide = CGFloat(width)
+            if let over = onWin(n), wide > sheetRoom(n, over).width + 0.5
+                || (nav.parentLeast != nil && over.content.bounds.width <= wide + asukaSheetMargin + 0.5) {
+                holdSheetWidth(n, wide)
+            } else {
+                releaseSheetWidth(n)
+            }
             let f = w.frame
             let top = CGPoint(x: f.midX - CGFloat(width) / 2, y: f.maxY)
             let size = CGSize(width: CGFloat(width), height: CGFloat(height))
@@ -514,9 +523,9 @@ final class AsukaSheetWindow: NSWindow {
     }
 
     /// Keeps the window a fit sheet is on as wide as the sheet and the
-    /// margin around it while it shows: the window's least width is
-    /// raised to that, and a window already narrower widens about its
-    /// centre, as far as its screen allows.
+    /// margin around it: the window's least width is raised to that, and
+    /// a window already narrower widens about its centre, as far as its
+    /// screen allows.
     func holdSheetWidth(_ n: AsukaNode, _ width: CGFloat) {
         guard let nav = n.nav, let over = onWin(n) else { return }
         let pw = over.window
@@ -536,8 +545,8 @@ final class AsukaSheetWindow: NSWindow {
         pw.setFrame(f, display: true)
     }
 
-    /// Gives a fit sheet's window back its own least size as the sheet
-    /// goes.
+    /// Gives a fit sheet's window back its own least size, as the sheet
+    /// goes or no longer needs the room.
     func releaseSheetWidth(_ n: AsukaNode) {
         guard let nav = n.nav, let least = nav.parentLeast else { return }
         nav.parentLeast = nil

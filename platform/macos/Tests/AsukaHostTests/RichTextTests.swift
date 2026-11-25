@@ -41,6 +41,7 @@ final class RichTextTests: XCTestCase {
         let rt = AsukaRuntime.shared
         let id: UInt32 = 6001
         rt.create(id, kind: AsukaKind.richText.rawValue)
+        defer { rt.destroy(id) }
         plain(String(repeating: "word ", count: 400)).withUnsafeBytes {
             rt.setProp(id, prop: AsukaProp.RichText.content, value: .bytes($0))
         }

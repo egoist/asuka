@@ -645,11 +645,12 @@ component Notes {
   one view of a fixed `width` narrower than a sheet (a dialog of its
   own width), alone or in views of no width of their own, is that
   view's width and any padding around it; a narrow page's bottom sheet
-  stays the page's width. On a Mac, while it shows, its window can't be made narrower than
-  the sheet and a margin on each side, and a window already narrower
-  widens. It follows the content as it changes, up to the most a sheet may be, beyond which a
-  `Scroll` in it scrolls; the user doesn't resize it. macOS and the
-  web have such a sheet; elsewhere it's large.
+  stays the page's width. On a Mac, while it's wider than a sheet, its
+  window can't be made narrower than the sheet and a margin on each
+  side, and a window already narrower widens. The sheet follows the
+  content as it changes, up to the most a sheet may be, beyond which a
+  `Scroll` in it scrolls; the user doesn't resize it. macOS and the web
+  have such a sheet; elsewhere it's large.
 - `grabber: true` shows the handle at its top (iOS, Android, and the
   web's bottom sheet).
 - Its content is built when it opens and disposed when it closes, so
