@@ -28,9 +28,13 @@ if (typeof addEventListener === "function") {
     lastPress = { ...p, open: layers() };
     if (swallowing) { e.stopPropagation(); e.preventDefault(); }
   }, true);
+  // A press swallowed that ends with no dblclick (dragged off, a touch)
+  // leaves nothing swallowed for the keyboard: a key, or a click it
+  // makes (Enter on a button: no pointer, detail 0), is its own.
+  addEventListener("keydown", () => { swallowing = false; }, true);
   for (const type of ["pointerup", "mousedown", "mouseup", "click", "dblclick"]) {
     addEventListener(type, (e) => {
-      if (!swallowing) return;
+      if (!swallowing || (type === "click" && e.detail === 0)) return;
       e.stopPropagation();
       e.preventDefault();
       if (type === "dblclick") swallowing = false;
