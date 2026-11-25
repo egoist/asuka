@@ -639,11 +639,11 @@ component Notes {
   confirmation, whose content has a height of its own. It's a sheet's
   width, or wider when its content can't be that narrow (a fixed
   `width`), so the content shows whole, up to the page's width on the
-  web. On a Mac, while it shows, its window can't be made narrower than
-  the sheet and a margin on each side, and a window already narrower
-  widens. It follows the content as it changes, up to the most a sheet may be, beyond which a
-  `Scroll` in it scrolls; the user doesn't resize it. macOS and the
-  web have such a sheet; elsewhere it's large.
+  web. On a Mac, while it's wider, its window can't be made narrower
+  than the sheet and a margin on each side, and a window already narrower
+  widens. The sheet follows the content as it changes, up to the most a
+  sheet may be, beyond which a `Scroll` in it scrolls; the user doesn't
+  resize it. macOS and the web have such a sheet; elsewhere it's large.
 - `grabber: true` shows the handle at its top (iOS, Android, and the
   web's bottom sheet).
 - Its content is built when it opens and disposed when it closes, so
