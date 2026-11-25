@@ -182,7 +182,9 @@ func ReadLock(dir string) (*Lock, error) {
 	return &l, nil
 }
 
-// WriteLock writes dir's asuka.lock.
+// WriteLock writes dir's asuka.lock, unless it already says the same: a
+// write that changes nothing would still change its time, which asuka
+// dev's watcher takes for a change to the app.
 func WriteLock(dir string, l *Lock) error {
 	sort.Slice(l.Packages, func(i, j int) bool { return l.Packages[i].ID < l.Packages[j].ID })
 	b, err := toml.Marshal(l)
@@ -192,7 +194,11 @@ func WriteLock(dir string, l *Lock) error {
 	var buf bytes.Buffer
 	buf.WriteString("# Written by asuka (asuka add, asuka install): the versions of the app's\n# dependencies, and their hashes. Commit it; don't edit it.\n\n")
 	buf.Write(b)
-	return os.WriteFile(filepath.Join(dir, LockFile), buf.Bytes(), 0o644)
+	path := filepath.Join(dir, LockFile)
+	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, buf.Bytes()) {
+		return nil
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o644)
 }
 
 // Current reports whether l still answers m's dependencies.
