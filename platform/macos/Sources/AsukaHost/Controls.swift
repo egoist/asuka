@@ -443,10 +443,6 @@ import AsukaOps
         (b.cell as? AsukaButtonCell)?.titleAsGiven = macVariant(n) == .filled && !b.isEnabled
         if color == nil && n.color != 0 { color = asukaColor(n.color) }
         guard let c = color else {
-            // A title colored before (a filled button that was disabled)
-            // takes AppKit's color again: setting the title alone leaves
-            // the color it had.
-            if b.attributedTitle.length > 0 { b.attributedTitle = NSAttributedString() }
             b.title = n.title
             return
         }
