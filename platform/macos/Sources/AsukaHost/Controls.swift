@@ -428,8 +428,8 @@ import AsukaOps
 
     /// Sets a button's title, colored for a plain or tinted button (the
     /// bezel can't take a color for the text), and white on a disabled
-    /// filled one, whose bezel AppKit only lightens: its gray disabled text
-    /// would all but vanish on it.
+    /// filled one without a color of the app's, whose bezel AppKit only
+    /// lightens: its gray disabled text would all but vanish on it.
     func buttonTitle(_ n: AsukaNode) {
         guard let b = n.view as? NSButton else { return }
         glassShape(n)
@@ -443,10 +443,6 @@ import AsukaOps
         (b.cell as? AsukaButtonCell)?.titleAsGiven = macVariant(n) == .filled && !b.isEnabled
         if color == nil && n.color != 0 { color = asukaColor(n.color) }
         guard let c = color else {
-            // A title colored before (a filled button that was disabled)
-            // takes AppKit's color again: setting the title alone leaves
-            // the color it had.
-            if b.attributedTitle.length > 0 { b.attributedTitle = NSAttributedString() }
             b.title = n.title
             return
         }
@@ -753,9 +749,10 @@ final class AsukaColorWell: NSColorWell {
 
 /// A button's cell. AppKit draws a disabled button's title in its dimmed
 /// color whatever its attributed title says; a disabled filled button's
-/// (titleAsGiven) is drawn as its attributed title says while its window
-/// is key, white on the accent bezel AppKit only lightens. In a window
-/// that isn't key the bezel is gray, and AppKit's title is drawn.
+/// (titleAsGiven) is drawn as its attributed title says (white, or the
+/// app's color) while its window is key, on the accent bezel AppKit only
+/// lightens. In a window that isn't key the bezel is gray, and AppKit's
+/// title is drawn.
 final class AsukaButtonCell: NSButtonCell {
     var titleAsGiven = false
 
