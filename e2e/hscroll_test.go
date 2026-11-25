@@ -13,17 +13,13 @@ import (
 func TestHorizontalScrollAccessibilityAndroid(t *testing.T) {
 	s := androidApp(t, "e2e/testdata/hscroll", "dev.asuka.hscroll")
 	waitFor(t, s, []string{"Horizontal scroll", "three"})
-	out, err := s.adb("shell", "uiautomator", "dump", "/sdcard/asuka-ui.xml")
+	ui, err := s.uiDump()
 	if err != nil {
-		t.Fatalf("uiautomator dump: %v: %s", err, out)
+		t.Fatalf("uiautomator dump: %v: %s", err, ui)
 	}
 	if pid, _ := s.adb("shell", "pidof", s.pkg); strings.TrimSpace(pid) == "" {
 		log, _ := s.adb("logcat", "-d", "-b", "crash")
 		t.Fatalf("the app quit when its views were read:\n%s", log)
-	}
-	ui, err := s.adb("exec-out", "cat", "/sdcard/asuka-ui.xml")
-	if err != nil {
-		t.Fatal(err)
 	}
 	if !strings.Contains(ui, `text="three"`) {
 		t.Fatalf(`the dump has no text="three": %s`, ui)

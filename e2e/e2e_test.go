@@ -529,19 +529,45 @@ func (s *androidScreen) foreground() {
 			return false
 		}
 		// What the screen shows: an "isn't responding" dialog may sit over
-		// the app without the focus (the launcher's, on CI's images). Wait
-		// answers it, and the app is in front once none shows.
-		s.adb("shell", "uiautomator", "dump", "/sdcard/asuka-ui.xml")
-		ui, _ := s.adb("exec-out", "cat", "/sdcard/asuka-ui.xml")
-		if m := waitRE.FindStringSubmatch(ui); m != nil && strings.Contains(ui, "t responding") {
-			n := func(i int) int { v, _ := strconv.Atoi(m[i]); return v }
-			s.adb("shell", "input", "tap", strconv.Itoa((n(1)+n(3))/2), strconv.Itoa((n(2)+n(4))/2))
-			return false
-		}
-		return front
+		// the app without the focus (the launcher's, on CI's images).
+		_, answered, _ := s.uiDumpOnce()
+		return front && !answered
 	}, func() string {
 		return fmt.Sprintf("the focus is on %q and the top resumed activity is %q, not %s%s", focus, resumed, s.pkg, s.crashLog())
 	})
+}
+
+// uiDump is UiAutomator's dump of the screen, with no "isn't responding"
+// dialog over the app: a slow emulator's launcher or System UI may show
+// one at any time, without taking the focus, and Wait answers it.
+func (s *androidScreen) uiDump() (string, error) {
+	var ui string
+	var err error
+	for range 10 {
+		var answered bool
+		if ui, answered, err = s.uiDumpOnce(); err != nil || !answered {
+			return ui, err
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return ui, err
+}
+
+// uiDumpOnce dumps the screen; answered says it showed an "isn't
+// responding" dialog, whose Wait it pressed.
+func (s *androidScreen) uiDumpOnce() (ui string, answered bool, err error) {
+	if out, err := s.adb("shell", "uiautomator", "dump", "/sdcard/asuka-ui.xml"); err != nil {
+		return out, false, err
+	}
+	if ui, err = s.adb("exec-out", "cat", "/sdcard/asuka-ui.xml"); err != nil {
+		return ui, false, err
+	}
+	if m := waitRE.FindStringSubmatch(ui); m != nil && strings.Contains(ui, "t responding") {
+		n := func(i int) int { v, _ := strconv.Atoi(m[i]); return v }
+		s.adb("shell", "input", "tap", strconv.Itoa((n(1)+n(3))/2), strconv.Itoa((n(2)+n(4))/2))
+		return ui, true, nil
+	}
+	return ui, false, nil
 }
 
 // crashLog is what the device logged of a crash, for a test that failed:

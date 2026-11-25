@@ -20,12 +20,9 @@ import (
 func TestFieldStyleAndroid(t *testing.T) {
 	s := androidApp(t, "e2e/testdata/field-style", "dev.asuka.fieldstyle")
 	waitFor(t, s, []string{"Field styling"})
-	if out, err := s.adb("shell", "uiautomator", "dump", "/sdcard/asuka-ui.xml"); err != nil {
-		t.Fatalf("field bounds: %v: %s", err, out)
-	}
-	out, err := s.adb("exec-out", "cat", "/sdcard/asuka-ui.xml")
+	out, err := s.uiDump()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("field bounds: %v: %s", err, out)
 	}
 	matches := boundsRE.FindAllStringSubmatch(out, -1)
 	if len(matches) != 5 {

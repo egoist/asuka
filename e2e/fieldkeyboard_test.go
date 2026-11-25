@@ -64,8 +64,7 @@ var boundsRE = regexp.MustCompile(`class="android\.widget\.EditText"[^>]*bounds=
 
 // fieldBounds is the first text field's frame on screen, in pixels, from UiAutomator.
 func (s *androidScreen) fieldBounds() (l, t, r, b int) {
-	s.adb("shell", "uiautomator", "dump", "/sdcard/asuka-ui.xml")
-	out, _ := s.adb("exec-out", "cat", "/sdcard/asuka-ui.xml")
+	out, _ := s.uiDump()
 	m := boundsRE.FindStringSubmatch(out)
 	if m == nil {
 		s.t.Fatalf("no text field in:\n%s", out)
