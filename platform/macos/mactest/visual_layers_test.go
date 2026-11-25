@@ -150,9 +150,6 @@ func TestVisualGlassButtons(t *testing.T) {
 	check("no longer glass", tr.Kind("Button")[2], 1, shapeAutomatic, prominenceAuto)
 }
 
-// A Picker is a pop-up button: its prompt while none is chosen (a hidden
-// item, not in its menu), then the chosen item; the user's choice writes
-
 // A disabled filled button keeps its title white: AppKit only lightens its
 // accent bezel, and its gray disabled text would all but vanish on it.
 // Enabled, the title is AppKit's again; a title color of the app's own
