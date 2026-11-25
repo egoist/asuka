@@ -126,6 +126,11 @@ func TestBackdropPressWeb(t *testing.T) {
 	if strings.Contains(shown, "dismissed 1") {
 		t.Fatalf("a click on the backdrop with no press there dismissed the sheet")
 	}
+	// Inside shows where Open was pressed: pressed within a double-click's
+	// time of it, it would be a double-click's second press on what the
+	// first opened, which goes nowhere (doubleclick.js). A press of its own
+	// comes after that time.
+	time.Sleep(600 * time.Millisecond)
 	pressText(t, d, "Inside")
 	if got := waitText(t, d, "inside 1", "dismissed 1"); got != "inside 1" {
 		t.Fatalf("a click on the backdrop with no press there dismissed the sheet")
