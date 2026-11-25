@@ -177,6 +177,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Status bar, navigation bar | `statusBarHidden`, `preferredStatusBarStyle` | `expo-status-bar`, `expo-navigation-bar` | ✓ `screen.setBars` (`platform/screen`) |
 | Orientation lock | `supportedInterfaceOrientations` | `expo-screen-orientation` | ✓ `screen.lock` |
 | Screenshots | `isCaptured`, `userDidTakeScreenshotNotification` | `expo-screen-capture` | ✓ `screen.preventCapture` (Android: black captures; iOS: covered while recorded; macOS and Windows: the windows left out), `screen.screenshots()` |
+| Screen brightness | `UIScreen.brightness` | `expo-brightness` | ✓ `screen.setBrightness`, `screen.brightness()` (iOS and Android: the app's while it's in front, the user's put back as it goes; the desktops and the web leave it to the user) |
 | Crash reports | MetricKit, Crashlytics, Sentry | Sentry, Crashlytics (`@react-native-firebase/crashlytics`) | ✓ `platform/crash`: Asuka's fatal errors with the Asuka stack, uncaught exceptions, MetricKit's crashes and hangs, Android's native crashes and ANRs, the desktops' crashes, with breadcrumbs and values; the app sends them where it likes (no service built in); symbols from `asuka build` |
 
 ## Appearance and accessibility

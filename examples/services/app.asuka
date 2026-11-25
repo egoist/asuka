@@ -99,6 +99,7 @@ screen Services {
   state lastImage = ""
   state tilting = false
   state hidden = false
+  state bright = false
 
   let pow = power.status()
   let look = appearance.current()
@@ -224,6 +225,13 @@ screen Services {
         on press {
           hidden = !hidden
           screen.setBars(hideStatus: hidden)
+        }
+      }
+      Item("Full brightness, or the system's") {
+        on press {
+          bright = !bright
+          screen.setBrightness(if bright { 1.0 } else { none })
+          status = if let b = screen.brightness() { "Brightness: {(b * 100).rounded()}%" } else { "No brightness to set here" }
         }
       }
       Item("Keep out of screenshots") {

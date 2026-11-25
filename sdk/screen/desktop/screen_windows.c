@@ -296,7 +296,13 @@ static void stop_shots(void *call) {
 // A desktop doesn't tell an app of its screenshots: it waits for the end.
 static void s_shots(screen_Screens *self, screen_fn_int taken, asuka_call *call) { asuka_call_on_cancel(call, stop_shots, call); }
 
-static const screen_Screens_vtable vt = {.displays = s_displays, .watchDisplays = s_watch, .lock = s_lock, .setBars = s_bars, .preventCapture = s_capture, .watchScreenshots = s_shots};
+// The display's brightness is the user's to set on a desktop: the app
+// neither sets nor reads it.
+static void s_set_brightness(screen_Screens *self, double level, asuka_error *err) { (void)self, (void)level, (void)err; }
+static double s_brightness(screen_Screens *self, asuka_error *err) { (void)self, (void)err; return -1; }
+
+static const screen_Screens_vtable vt = {.displays = s_displays, .watchDisplays = s_watch, .lock = s_lock, .setBars = s_bars, .preventCapture = s_capture,
+	.setBrightness = s_set_brightness, .brightness = s_brightness, .watchScreenshots = s_shots};
 
 screen_Screens *screen_make_Screens(asuka_error *err) {
 	screen_Screens *s = malloc(sizeof *s);

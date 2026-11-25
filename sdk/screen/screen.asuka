@@ -1,8 +1,8 @@
 // Package platform/screen is the displays the device has (where each is,
 // its work area, scale and refresh rate) and what an app sets about the
 // screen it runs on: the orientations it may turn to, the system bars,
-// whether what it shows may be captured, and the screenshots the user
-// takes.
+// its brightness, whether what it shows may be captured, and the
+// screenshots the user takes.
 //
 //   let displays = screen.displays()   // tracked: follows the displays while it's read
 //   screen.lock(.landscape)
@@ -90,6 +90,14 @@ native interface Screens {
   fn setBars(style: BarStyle, hideStatus: bool, hideNavigation: bool)
   /// @mainThread
   fn preventCapture(on: bool)
+  /// The brightness the app shows the screen at, 0 to 1; negative: the
+  /// system's.
+  /// @mainThread
+  fn setBrightness(level: float)
+  /// The screen's brightness now, 0 to 1; negative where the platform
+  /// doesn't say.
+  /// @mainThread
+  fn brightness() -> float
   /// Calls taken with each screenshot of the app, until the task is
   /// cancelled.
   async fn watchScreenshots(taken: fn(int))
@@ -191,6 +199,36 @@ pub fn setBars(style: BarStyle = .auto, hideStatus: bool = false, hideNavigation
   if let p = platform {
     try? p.setBars(style: style, hideStatus: hideStatus, hideNavigation: hideNavigation)
   }
+}
+
+/// Shows the screen at level, from 0 (its darkest) to 1 (its brightest),
+/// while the app is in front: a ticket's or a boarding pass's code at 1,
+/// so a scanner reads it. none gives the screen back to the system's
+/// brightness (and the user's auto-brightness). As the app leaves the
+/// screen the system's brightness comes back, and the app's as it
+/// returns: Android sets the window's own; iOS sets the screen's and puts
+/// the user's back as the app goes. Nothing on the desktops and the web,
+/// whose displays are the user's to set.
+///
+///   on appear { screen.setBrightness(1) }
+///   on disappear { screen.setBrightness(none) }
+pub fn setBrightness(level: float?) {
+  if let p = platform {
+    let l = if let v = level { min(max(v, 0.0), 1.0) } else { -1.0 }
+    try? p.setBrightness(level: l)
+  }
+}
+
+/// The screen's brightness now, from 0 to 1: the app's, while it sets
+/// one, else the system's. none where the platform doesn't say (the
+/// desktops, the web).
+pub fn brightness() -> float? {
+  if let p = platform {
+    if let b = try? p.brightness(), b >= 0 {
+      return b
+    }
+  }
+  return none
 }
 
 /// Keeps what the app shows out of screenshots and recordings while on is

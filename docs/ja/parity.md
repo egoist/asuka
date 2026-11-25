@@ -158,6 +158,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | ステータスバー、ナビゲーションバー | `statusBarHidden`、`preferredStatusBarStyle` | `expo-status-bar`、`expo-navigation-bar` | ✓ `screen.setBars`（`platform/screen`） |
 | 画面の向きの固定 | `supportedInterfaceOrientations` | `expo-screen-orientation` | ✓ `screen.lock` |
 | スクリーンショット | `isCaptured`、`userDidTakeScreenshotNotification` | `expo-screen-capture` | ✓ `screen.preventCapture`（Android：キャプチャーは黒くなる。iOS：録画中は覆われる。macOS と Windows：ウィンドウはキャプチャーから除かれる）、`screen.screenshots()` |
+| 画面の明るさ | `UIScreen.brightness` | `expo-brightness` | ✓ `screen.setBrightness`、`screen.brightness()`（iOS と Android：アプリが前面にあるあいだはアプリの明るさ、離れるとユーザーの明るさに戻る。デスクトップと Web ではユーザーに任せる） |
 | クラッシュレポート | MetricKit、Crashlytics、Sentry | Sentry、Crashlytics（`@react-native-firebase/crashlytics`） | ✓ `platform/crash`：Asuka のスタック付きの Asuka の致命的なエラー、捕捉されなかった例外、MetricKit のクラッシュとハング、Android のネイティブクラッシュと ANR、デスクトップのクラッシュを、パンくずと値とともに。送り先はアプリが決める（組み込みのサービスはない）。シンボルは `asuka build` が出力 |
 
 ## 外観とアクセシビリティ

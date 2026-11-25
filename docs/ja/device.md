@@ -80,7 +80,7 @@ macOS でも各パッケージは iOS と同じフレームワーク（AVFoundat
 | `platform/integrity` | iOS と同じく App Attest です。プロビジョニングプロファイルが必要です（上記）。ない場合 `supported()` は false です |
 | `platform/background` | タスクの実行中は App Nap によってアプリが遅くなるのを防ぎます。通知は出ないので、`update` は何も変えません |
 | `platform/periodic` | `NSBackgroundActivityScheduler` を使います。タスクはアプリの実行中に動きます（タスクのためにアプリが起動されることはありません）。電源を必要とするタスクは、Mac がバッテリーで動いているあいだ待ちます |
-| `platform/screen` | `lock` と `setBars` は何もしません。`preventCapture` はアプリのウィンドウをスクリーンショットと画面収録から除外します。`screenshots()` は何も知らせません |
+| `platform/screen` | `lock`、`setBars`、`setBrightness` は何もしません。`preventCapture` はアプリのウィンドウをスクリーンショットと画面収録から除外します。`screenshots()` は何も知らせません |
 | `platform/transcribe` | デバイス上での認識のみです。アプリのバンドルに利用目的の説明文が必要で、`asuka build` がそれを書き込みます |
 | `platform/sensors` | Mac にはモーションセンサーがありません。`available` は false で、ストリームと `steps` は `SensorError.notAvailable` を投げます |
 | `device.haptic` | トラックパッドのフィードバック（感圧タッチトラックパッド）です。`.selection` では整列（alignment）、それ以外ではレベル変更（level change）のフィードバックになります |
@@ -120,7 +120,7 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `platform/maps` | Windows にはデスクトップアプリ向けの地図コントロールがありません（Windows 自身のものには Bing Maps のキーが必要です）。そのため Asuka が OpenStreetMap のタイルを描きます。タイルは 2 枚ずつダウンロードされ、アプリのキャッシュに 1 週間保存されます。地図には「© OpenStreetMap contributors」が表示されます。ドラッグ、ホイール、ピンチ、ダブルクリック、+ と - で操作できます。`.satellite` と `.hybrid` は道路地図を表示し（無料の航空写真がないため）、`showsUser` は Linux と同じく何も表示しません |
 | `platform/background` | タスクの実行中は PC がスリープしないようにします。通知は出ないので、`update` は何も変えません |
 | `platform/periodic` | アプリの実行中にタイマーで動きます（タスクのためにアプリが起動されることはありません）。電源を必要とするタスクは、PC がバッテリーで動いているあいだ待ちます |
-| `platform/screen` | `lock` と `setBars` は何もしません。`preventCapture` はアプリのウィンドウをスクリーンショットと画面録画から除外します。`screenshots()` は何も知らせません |
+| `platform/screen` | `lock`、`setBars`、`setBrightness` は何もしません。`preventCapture` はアプリのウィンドウをスクリーンショットと画面録画から除外します。`screenshots()` は何も知らせません |
 | `platform/tracking` | プロンプトは出ません。「設定」で広告 ID がオンなら許可、オフなら拒否です |
 | `platform/push`、`platform/widget`、`platform/review`、`platform/integrity` | これらはパッケージ化された（ストアの）アプリか、Apple や Google のものです。`push.register` はエラーを投げ、`widget.set` は何もせず、`review.request` は何も表示せず、`integrity.supported()` は false です |
 | `platform/liveactivity` | スマートフォンの機能です。`enabled` は false で、`start` は「liveactivity: not available」を投げます |
@@ -156,7 +156,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/maps` | libshumate（`libshumate-1.0-1`）で OpenStreetMap のタイルの地図を表示します。`.satellite` と `.hybrid` は道路地図を表示します。ユーザーの位置を示すレイヤーはありません。libshumate がなければ、ビューにその旨が表示され、`error` が報告されます |
 | `platform/background` | タスクの実行中はシステムがサスペンドしないようにします。通知は出ず、`update` は何も変えません |
 | `platform/periodic` | タスクはアプリの実行中にタイマーで動きます（タスクのためにアプリが起動されることはありません）。電源を必要とするタスクはバッテリーで動いているあいだ、ネットワークを必要とするタスクはオフラインのあいだ待ちます |
-| `platform/screen` | `lock`、`setBars`、`preventCapture` は何もしません。`screenshots()` は何も知らせません |
+| `platform/screen` | `lock`、`setBars`、`preventCapture`、`setBrightness` は何もしません。`screenshots()` は何も知らせません |
 | `platform/sensors` | iio-sensor-proxy（2-in-1 PC、タブレット）を使います。照度センサーをルクス単位で、加速度センサーの向きを、上を向いている軸に沿った 1 g として、向きが変わるたびに伝えます。ほかのセンサーはないので、`available` は false で、ストリームと `steps` は `SensorError.notAvailable` を投げます |
 | `platform/contacts`、`platform/calendar` | Evolution Data Server のアドレス帳とカレンダー（GNOME Contacts、GNOME Calendar、オンラインアカウントのもの）を使います。アドレス帳やカレンダーがあれば、アクセスは `.allowed`（カレンダーは `.full`）です。`pick` は検索欄付きの連絡先のダイアログです。`add` は確認してから、既定のアドレス帳またはイベントのカレンダーに保存します。Evolution Data Server がない場合、連絡先のアクセスは `.denied`、カレンダーのアクセスは `.writeOnly` です。`add` は vCard か iCalendar のファイルをユーザーの連絡先アプリやカレンダーアプリで開いて false を返し、`contacts.pick` はエラーを投げます |
 | `platform/photos` のライブラリ、`platform/appleauth`、`platform/transcribe`、`platform/widget`、`platform/liveactivity` | Linux にはありません。ライブラリのアクセスは `.denied` です。`appleauth.available()` は false で、そのボタンは何も表示しません。`transcribe` は `TranscribeError.notAvailable` を、`liveactivity.start` は「liveactivity: not available」を投げます。`widget.set` は何もしません。`platform/splash` には保持しておく起動画面がありません |
@@ -192,7 +192,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/webauth` | ポップアップを開き、アプリと同じオリジンのページに戻ってきたら完了です（カスタムスキームではページを開けないため） |
 | `platform/js` | 非表示の、サンドボックス化された frame |
 | `platform/contacts`、`platform/calendar` | `contacts.pick` はブラウザーに Contact Picker がある場合（Android の Chrome）に使えます。`add` は vCard か `.ics` ファイルをダウンロードします。Web では連絡先やカレンダーを読み取れません |
-| `platform/screen` | `lock` はフルスクリーンかインストールしたアプリでのみ使えます。バーを隠すとフルスクリーンになります。`preventCapture` と `screenshots()` はありません |
+| `platform/screen` | `lock` はフルスクリーンかインストールしたアプリでのみ使えます。バーを隠すとフルスクリーンになります。`preventCapture`、`screenshots()`、`setBrightness` はありません |
 | `platform/background` | ページは開いているあいだ動き続けます。タスクを作っても何も変わらず、通知も出ません |
 | `platform/tracking` | プロンプトは出ません。ブラウザーが Global Privacy Control か Do Not Track を送っていれば `.denied`、そうでなければ `.allowed` です |
 | `device.haptic` | ブラウザーが対応していれば（Android の Chrome）`navigator.vibrate` を使います |
@@ -1664,8 +1664,9 @@ component Player {
 - `screen.setBars(style:, hideStatus:, hideNavigation:)` はステータスバーのスタイルを設定します（`.auto` はダークモードに従い、`.light` は暗い画像の上に置く明るいアイコン、`.dark` は暗いアイコンです）。また、ステータスバーや Android のナビゲーションバーを隠せます。隠したバーは、画面の端からスワイプすると一時的に表示されます。セーフエリアもそれに合わせて変わります。
 - `screen.preventCapture(on)` は、アプリがスクリーンショットや画面収録に写らないようにします。Android ではウィンドウをセキュアにするので、キャプチャは黒くなり、最近使ったアプリの一覧でも空白で表示されます。iOS ではスクリーンショットを防げませんが、画面収録、ミラーリング、AirPlay のあいだはアプリを覆い隠します。
 - `screen.screenshots()` は、ユーザーが撮ったスクリーンショットのストリームです（iOS、Android 14 以降）。
+- `screen.setBrightness(level)` は、アプリが前面にあるあいだ画面を `level`（0〜1）の明るさで表示します（搭乗券のコードを 1 にして、スキャナーで読み取りやすくするなど）。`none` を渡すとシステムの明るさに戻ります。アプリが離れるとユーザーの明るさに戻り、戻ってくるとアプリの明るさになります。Android ではウィンドウ自身の明るさを設定し、iOS では画面の明るさを設定して、離れるときにユーザーの明るさを元に戻します。`screen.brightness()` は現在の明るさです。
 
-デスクトップのウィンドウには向きもシステムバーもないので、`lock` と `setBars` は何もしません。`preventCapture` は、Mac と Windows では（Linux では効きません）アプリのウィンドウがスクリーンショットや画面収録に写らないようにします。デスクトップは、スクリーンショットが撮られたことをアプリに知らせません。ブラウザーで向きを固定できるのは、全画面表示のときかインストールされたアプリの中だけです。バーは全画面表示にすることで隠し、キャプチャの防止もスクリーンショットの通知もありません。
+デスクトップのウィンドウには向きもシステムバーもないので、`lock` と `setBars` は何もしません。ディスプレイの明るさはユーザーが決めるものなので、`setBrightness` も何もせず、`brightness()` は `none` です。`preventCapture` は、Mac と Windows では（Linux では効きません）アプリのウィンドウがスクリーンショットや画面収録に写らないようにします。デスクトップは、スクリーンショットが撮られたことをアプリに知らせません。ブラウザーで向きを固定できるのは、全画面表示のときかインストールされたアプリの中だけです。バーは全画面表示にすることで隠し、キャプチャの防止もスクリーンショットの通知も、明るさの設定もありません。
 
 これらの設定は画面ごとではなく、アプリ全体のものです。ある画面で設定したら、その画面が閉じるときに元に戻してください（タスクの中の `defer`）。
 

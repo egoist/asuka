@@ -158,6 +158,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 状态栏、导航栏 | `statusBarHidden`、`preferredStatusBarStyle` | `expo-status-bar`、`expo-navigation-bar` | ✓ `screen.setBars`（`platform/screen`） |
 | 锁定屏幕方向 | `supportedInterfaceOrientations` | `expo-screen-orientation` | ✓ `screen.lock` |
 | 截屏 | `isCaptured`、`userDidTakeScreenshotNotification` | `expo-screen-capture` | ✓ `screen.preventCapture`（Android 上截图是黑的；iOS 上录屏时内容会被遮住；macOS 和 Windows 上截图里不包含这些窗口）、`screen.screenshots()` |
+| 屏幕亮度 | `UIScreen.brightness` | `expo-brightness` | ✓ `screen.setBrightness`、`screen.brightness()`（iOS 和 Android：应用在前台时用应用的亮度，离开时恢复用户的亮度；桌面和 Web 交给用户自己调） |
 | 崩溃报告 | MetricKit、Crashlytics、Sentry | Sentry、Crashlytics（`@react-native-firebase/crashlytics`） | ✓ `platform/crash`：Asuka 的致命错误（附 Asuka 调用栈）、未捕获的异常、MetricKit 记录的崩溃和卡顿、Android 的原生崩溃和 ANR、桌面端的崩溃，附带面包屑和自定义值；报告发到哪里由应用决定（没有内置服务）；`asuka build` 会生成符号文件 |
 
 ## 外观与无障碍

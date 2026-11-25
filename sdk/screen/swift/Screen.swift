@@ -2,7 +2,8 @@
 // first, those its scenes show on after it, in a row),
 // the host's orientation lock and status bar (AsukaScreen, which its
 // controllers read), a cover over the window while the screen's recorded
-// or mirrored, and UIApplication's screenshot notification. The Mac:
+// or mirrored, UIApplication's screenshot notification, and the screen's
+// brightness, the user's put back as the app goes. The Mac:
 // NSScreen's screens (the first has the menu bar), its windows left out
 // of captures (NSWindow.sharingType); the orientation and the bars are a
 // phone's.
@@ -39,6 +40,20 @@ final class SystemScreens: Screens {
     }
 
     @MainActor func preventCapture(on: Bool) throws { CaptureGuard.shared.set(on) }
+
+    @MainActor func setBrightness(level: Double) throws {
+        #if canImport(UIKit)
+        BrightnessKeeper.shared.set(level < 0 ? nil : CGFloat(level))
+        #endif
+    }
+
+    @MainActor func brightness() throws -> Double {
+        #if canImport(UIKit)
+        return Double(BrightnessKeeper.shared.level ?? BrightnessKeeper.screen.brightness)
+        #else
+        return -1 // a Mac's displays are the user's to set
+        #endif
+    }
 
     func watchScreenshots(taken: @escaping (Int) -> Void) async throws {
         #if canImport(UIKit)
@@ -179,6 +194,43 @@ final class SystemScreens: Screens {
 }
 
 #if canImport(UIKit)
+/// The app's brightness: UIScreen's is the device's, kept after the app
+/// leaves, so the user's is put back as the app goes into the background
+/// and the app's set again as it comes back, as Wallet does with a pass.
+@MainActor final class BrightnessKeeper: NSObject {
+    static let shared = BrightnessKeeper()
+    private(set) var level: CGFloat? // the app's; nil: the system's
+    private var users: CGFloat? // the user's, while the app's shows
+    private var observing = false
+
+    static var screen: UIScreen { AsukaNative.window?.windowScene?.screen ?? UIScreen.main }
+
+    func set(_ l: CGFloat?) {
+        if !observing {
+            observing = true
+            let nc = NotificationCenter.default
+            nc.addObserver(self, selector: #selector(leave), name: UIApplication.willResignActiveNotification, object: nil)
+            nc.addObserver(self, selector: #selector(back), name: UIApplication.didBecomeActiveNotification, object: nil)
+        }
+        if l == nil { leave() }
+        level = l.map { min(max($0, 0), 1) }
+        if UIApplication.shared.applicationState == .active { back() }
+    }
+
+    /// The user's brightness again.
+    @objc func leave() {
+        if let u = users { Self.screen.brightness = u }
+        users = nil
+    }
+
+    /// The app's brightness, the user's kept to put back.
+    @objc func back() {
+        guard let l = level else { return }
+        if users == nil { users = Self.screen.brightness }
+        Self.screen.brightness = l
+    }
+}
+
 /// Counts the screenshots the user takes while watched.
 @MainActor final class ScreenshotWatch: NSObject {
     private let taken: (Int) -> Void

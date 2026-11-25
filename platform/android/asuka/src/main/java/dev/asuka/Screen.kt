@@ -21,6 +21,8 @@ object AsukaDisplay {
     var hideStatus = false
     var hideNavigation = false
     var secure = false
+    /** The window's brightness, 0 to 1; negative: the system's (BRIGHTNESS_OVERRIDE_NONE). */
+    var brightness = -1f
     val screenshots = ArrayList<(Result<ByteArray>) -> Unit>()
     private var callback: Any? = null // Activity.ScreenCaptureCallback, on Android 14 and later
 
@@ -38,6 +40,12 @@ object AsukaDisplay {
         bars(act, night)
         if (secure) act.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         else act.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        // The window's own: the system's again as the app leaves the
+        // screen, the app's again as it comes back.
+        val want = if (brightness < 0f) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else brightness.coerceIn(0f, 1f)
+        if (act.window.attributes.screenBrightness != want) {
+            act.window.attributes = act.window.attributes.apply { screenBrightness = want }
+        }
     }
 
     /** The bars' icons and whether they show; after edge to edge, which sets the icons by the scheme. */

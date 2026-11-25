@@ -80,7 +80,7 @@ Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.pli
 | `platform/integrity` | 和 iOS 一样使用 App Attest。需要描述文件（见上文）：没有的话 `supported()` 为 false |
 | `platform/background` | 任务会阻止 App Nap 拖慢应用；没有通知，所以 `update` 不起作用 |
 | `platform/periodic` | `NSBackgroundActivityScheduler`：任务只在应用运行期间执行（系统不会为了它们启动应用）；需要接通电源的任务，会在 Mac 使用电池时等待 |
-| `platform/screen` | `lock` 和 `setBars` 什么也不做；`preventCapture` 让应用的窗口不出现在截图和录屏中；`screenshots()` 不会报告任何截图 |
+| `platform/screen` | `lock`、`setBars` 和 `setBrightness` 什么也不做；`preventCapture` 让应用的窗口不出现在截图和录屏中；`screenshots()` 不会报告任何截图 |
 | `platform/transcribe` | 只在本机识别；应用的 bundle 需要它的用途说明，这一项由 `asuka build` 写入 |
 | `platform/sensors` | Mac 没有运动传感器：`available` 为 false，各个流和 `steps` 都会抛出 `SensorError.notAvailable` |
 | `device.haptic` | 触控板的反馈（需要 Force Touch 触控板）：`.selection` 对应“对齐”反馈，其他类型对应“级别变化”反馈 |
@@ -120,7 +120,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `platform/maps` | Windows 没有供桌面应用使用的地图控件（它自带的那个需要 Bing Maps 密钥），所以由 Asuka 自己绘制 OpenStreetMap 的瓦片：每次下载两张，在应用的缓存目录中保留一周，地图上标注“© OpenStreetMap contributors”；支持拖动、滚轮或双指缩放、双击，以及 + 和 - 键。`.satellite` 和 `.hybrid` 显示的也是街道图（没有免费的卫星影像），`showsUser` 不显示任何东西，这两点与 Linux 相同 |
 | `platform/background` | 任务会阻止电脑进入睡眠；没有通知，所以 `update` 不起作用 |
 | `platform/periodic` | 应用运行期间用定时器执行（系统不会为了它们启动应用）；需要接通电源的任务，会在电脑使用电池时等待 |
-| `platform/screen` | `lock` 和 `setBars` 什么也不做；`preventCapture` 让应用的窗口不出现在截图和录屏中；`screenshots()` 不会报告任何截图 |
+| `platform/screen` | `lock`、`setBars` 和 `setBrightness` 什么也不做；`preventCapture` 让应用的窗口不出现在截图和录屏中；`screenshots()` 不会报告任何截图 |
 | `platform/tracking` | 没有提示框：“设置”中的广告 ID 开着就是允许，否则就是拒绝 |
 | `platform/push`、`platform/widget`、`platform/review`、`platform/integrity` | 这些能力只属于打包（应用商店）应用，或者依赖 Apple 和 Google 的服务：`push.register` 会抛出错误，`widget.set` 什么也不做，`review.request` 不显示任何东西，`integrity.supported()` 为 false |
 | `platform/liveactivity` | 这是手机的能力：`enabled` 为 false，`start` 抛出 "liveactivity: not available" |
@@ -156,7 +156,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/maps` | 用 libshumate（`libshumate-1.0-1`）显示 OpenStreetMap 瓦片地图；`.satellite` 和 `.hybrid` 显示的也是街道图；没有用户位置图层。没有 libshumate 时，视图会显示相应说明，并报告 `error` |
 | `platform/background` | 任务会阻止系统挂起；没有通知，`update` 不起作用 |
 | `platform/periodic` | 应用运行期间按定时器执行任务（系统不会为了它们启动应用）；需要接通电源的任务会在使用电池时等待，需要网络的任务会在离线时等待 |
-| `platform/screen` | `lock`、`setBars` 和 `preventCapture` 什么也不做；`screenshots()` 不会报告任何截图 |
+| `platform/screen` | `lock`、`setBars`、`preventCapture` 和 `setBrightness` 什么也不做；`screenshots()` 不会报告任何截图 |
 | `platform/sensors` | iio-sensor-proxy（适用于二合一设备、平板）：光线传感器（单位为 lux），以及由加速度计得出的方向，表示为沿朝上那条轴的 1 g，随设备转动而变化。没有其他传感器：`available` 为 false，各个流和 `steps` 都会抛出 `SensorError.notAvailable` |
 | `platform/contacts`、`platform/calendar` | Evolution Data Server 中的通讯录和日历（来自 GNOME 通讯录、GNOME 日历和在线账户）：有它时访问权限为 `.allowed`（日历为 `.full`）；`pick` 是一个带搜索框的联系人对话框；`add` 先确认，再保存到默认通讯录或该日程所属的日历。没有它时：通讯录的访问权限为 `.denied`，日历为 `.writeOnly`；`add` 会在用户的联系人或日历应用中打开一个 vCard 或 iCalendar 文件，并返回 false；`contacts.pick` 会抛出错误 |
 | `platform/photos` 的照片库、`platform/appleauth`、`platform/transcribe`、`platform/widget`、`platform/liveactivity` | Linux 上都没有：照片库的访问权限为 `.denied`；`appleauth.available()` 为 false，它的按钮什么也不显示；`transcribe` 抛出 `TranscribeError.notAvailable`，`liveactivity.start` 抛出 "liveactivity: not available"；`widget.set` 什么也不做。`platform/splash` 也没有启动屏可以保持 |
@@ -192,7 +192,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/webauth` | 一个弹出窗口，回到与应用同源的页面时即完成（自定义 scheme 无法打开页面） |
 | `platform/js` | 一个隐藏的沙盒 iframe |
 | `platform/contacts`、`platform/calendar` | 浏览器支持 Contact Picker 时（Android 上的 Chrome）可以用 `contacts.pick`；`add` 会下载一个 vCard 或 `.ics` 文件；Web 上无法读取通讯录和日历 |
-| `platform/screen` | `lock` 只在全屏时或已安装的应用中有效；隐藏系统栏就是进入全屏；没有 `preventCapture` 和 `screenshots()` |
+| `platform/screen` | `lock` 只在全屏时或已安装的应用中有效；隐藏系统栏就是进入全屏；没有 `preventCapture`、`screenshots()` 和 `setBrightness` |
 | `platform/background` | 页面打开期间一直在运行；任务不会带来额外效果，也没有通知 |
 | `platform/tracking` | 没有提示框：浏览器发送了 Global Privacy Control 或 Do Not Track 时为 `.denied`，否则为 `.allowed` |
 | `device.haptic` | 浏览器支持时（Android 上的 Chrome）使用 `navigator.vibrate` |
@@ -1664,8 +1664,9 @@ component Player {
 - `screen.setBars(style:, hideStatus:, hideNavigation:)` 设置状态栏的样式（`.auto` 跟随深色模式；`.light` 是浅色图标，适合下方是深色画面的情况；`.dark` 是深色图标），还可以隐藏状态栏或 Android 的导航栏（从屏幕边缘滑动会让它们短暂出现）。安全区域会随之更新。
 - `screen.preventCapture(on)` 让应用不出现在截图和录屏中。Android 会把窗口设为安全窗口：截图和录屏都是黑屏，最近任务里也显示为空白。iOS 无法阻止截图：它只能在屏幕被录制、镜像或通过 AirPlay 投放时把应用遮住。
 - `screen.screenshots()` 是用户每次截屏组成的流（iOS；Android 14 及以上）。
+- `screen.setBrightness(level)` 让应用在前台时以 `level`（0 到 1）的亮度显示屏幕，比如把登机牌的二维码调到 1，方便扫码；传 `none` 则交还给系统亮度。应用离开前台时恢复用户原来的亮度，回到前台时再用应用的亮度：Android 设置的是窗口自己的亮度，iOS 设置的是屏幕亮度，并在离开时把用户的亮度放回去。`screen.brightness()` 是当前的亮度。
 
-桌面窗口既没有方向，也没有系统栏：`lock` 和 `setBars` 在桌面端什么也不做。在 Mac 和 Windows 上（Linux 不行），`preventCapture` 会让应用的窗口不出现在截图和录屏中；桌面系统不会把用户截屏的事告诉应用。浏览器只有在全屏或作为已安装的应用运行时才能锁定方向，靠进入全屏来隐藏系统栏，而防截屏和截屏通知这两样它都不支持。
+桌面窗口既没有方向，也没有系统栏：`lock` 和 `setBars` 在桌面端什么也不做；显示器的亮度由用户自己决定（`setBrightness` 什么也不做，`brightness()` 是 `none`）。在 Mac 和 Windows 上（Linux 不行），`preventCapture` 会让应用的窗口不出现在截图和录屏中；桌面系统不会把用户截屏的事告诉应用。浏览器只有在全屏或作为已安装的应用运行时才能锁定方向，靠进入全屏来隐藏系统栏，而防截屏、截屏通知和亮度设置它都不支持。
 
 这些设置作用于整个应用，而不是某个页面：页面如果改了其中某项，离开时要把它恢复原样（在页面的 task 里用 `defer`）。
 

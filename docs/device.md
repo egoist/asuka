@@ -128,7 +128,7 @@ UserNotifications, AuthenticationServices), except where a Mac differs:
 | `platform/integrity` | App Attest, as on iOS. Needs a provisioning profile (above): without one `supported()` is false |
 | `platform/background` | The task keeps App Nap from slowing the app; there's no notification, so `update` changes nothing |
 | `platform/periodic` | `NSBackgroundActivityScheduler`: the tasks run while the app runs (it isn't launched for them); one that wants power waits while the Mac is on its battery |
-| `platform/screen` | `lock` and `setBars` do nothing; `preventCapture` leaves the app's windows out of screenshots and recordings; `screenshots()` says nothing |
+| `platform/screen` | `lock`, `setBars` and `setBrightness` do nothing; `preventCapture` leaves the app's windows out of screenshots and recordings; `screenshots()` says nothing |
 | `platform/transcribe` | On the device only; the app's bundle needs its purpose string, which `asuka build` writes |
 | `platform/sensors` | A Mac has no motion sensors: `available` is false, and the streams and `steps` throw `SensorError.notAvailable` |
 | `device.haptic` | The trackpad's feedback (a Force Touch trackpad): an alignment for `.selection`, a level change for the others |
@@ -176,7 +176,7 @@ device without it:
 | `platform/maps` | Windows has no map control for desktop apps (its own needs a Bing Maps key): Asuka draws OpenStreetMap's tiles, downloaded two at a time and kept a week in the app's caches, with "© OpenStreetMap contributors" on the map; drag, the wheel or a pinch, double-click, + and -. `.satellite` and `.hybrid` show the streets (no free imagery), and `showsUser` shows nothing, as on Linux |
 | `platform/background` | The task keeps the PC from sleeping; there's no notification, so `update` changes nothing |
 | `platform/periodic` | Timers while the app runs (it isn't launched for them); one that wants power waits while the PC is on its battery |
-| `platform/screen` | `lock` and `setBars` do nothing; `preventCapture` leaves the app's windows out of screenshots and recordings; `screenshots()` says nothing |
+| `platform/screen` | `lock`, `setBars` and `setBrightness` do nothing; `preventCapture` leaves the app's windows out of screenshots and recordings; `screenshots()` says nothing |
 | `platform/tracking` | No prompt: allowed while the advertising ID is on in Settings, else denied |
 | `platform/push`, `platform/widget`, `platform/review`, `platform/integrity` | Packaged (Store) apps' or Apple's and Google's: `push.register` throws, `widget.set` does nothing, `review.request` shows nothing, `integrity.supported()` is false |
 | `platform/liveactivity` | A phone's: `enabled` is false, `start` throws "liveactivity: not available" |
@@ -227,7 +227,7 @@ names what's missing.
 | `platform/maps` | libshumate's map of OpenStreetMap's tiles (`libshumate-1.0-1`); `.satellite` and `.hybrid` show the streets; no user location layer. Without libshumate, the view says so and reports `error` |
 | `platform/background` | The task keeps the system from suspending; no notification, `update` changes nothing |
 | `platform/periodic` | The tasks run on a timer while the app runs (it isn't launched for them); one that wants power waits while on the battery, one that wants the network while it's offline |
-| `platform/screen` | `lock`, `setBars` and `preventCapture` do nothing; `screenshots()` says nothing |
+| `platform/screen` | `lock`, `setBars`, `preventCapture` and `setBrightness` do nothing; `screenshots()` says nothing |
 | `platform/sensors` | iio-sensor-proxy (convertibles, tablets): the light sensor, in lux, and the accelerometer's orientation as 1 g along the axis that's up, as it turns. No others: `available` is false, and the streams and `steps` throw `SensorError.notAvailable` |
 | `platform/contacts`, `platform/calendar` | Evolution Data Server's address books and calendars (GNOME Contacts', GNOME Calendar's, the online accounts'): access is `.allowed` (calendars' `.full`) when it has one; `pick` is a dialog of the contacts with a search field; `add` asks, then saves in the default address book or the event's calendar. Without it: contacts' access is `.denied`, calendars' `.writeOnly`; `add` opens a vCard or an iCalendar file in the user's contacts or calendar app, and answers false; `contacts.pick` throws |
 | `platform/photos`' library, `platform/appleauth`, `platform/transcribe`, `platform/widget`, `platform/liveactivity` | None on Linux: the library's access is `.denied`; `appleauth.available()` is false and its button shows nothing; `transcribe` throws `TranscribeError.notAvailable`, `liveactivity.start` "liveactivity: not available"; `widget.set` does nothing. `platform/splash` has nothing to hold |
@@ -268,7 +268,7 @@ and its service worker for notifications and Web Push.
 | `platform/webauth` | A popup, done when it comes back to a page of the app's own origin (a custom scheme can't open a page) |
 | `platform/js` | A hidden, sandboxed frame |
 | `platform/contacts`, `platform/calendar` | `contacts.pick` where the browser has the Contact Picker (Chrome on Android); `add` downloads a vCard or an `.ics` file; reading them isn't on the web |
-| `platform/screen` | `lock` only full screen or in an installed app; hiding the bars is full screen; no `preventCapture` or `screenshots()` |
+| `platform/screen` | `lock` only full screen or in an installed app; hiding the bars is full screen; no `preventCapture`, `screenshots()` or `setBrightness` |
 | `platform/background` | The page runs while it's open; a task adds nothing, and has no notification |
 | `platform/tracking` | No prompt: `.denied` when the browser sends Global Privacy Control or Do Not Track, else `.allowed` |
 | `device.haptic` | `navigator.vibrate`, where the browser has it (Chrome on Android) |
@@ -2450,13 +2450,20 @@ component Player {
   the app while the screen is recorded, mirrored or on AirPlay.
 - `screen.screenshots()` is a stream of the screenshots the user takes
   (iOS; Android 14 and later).
+- `screen.setBrightness(level)` shows the screen at `level`, from 0 to 1,
+  while the app is in front (a boarding pass's code at 1, for the
+  scanner); `none` gives it back to the system's brightness. The user's
+  comes back as the app leaves and the app's as it returns: Android sets
+  the window's own, iOS sets the screen's and puts the user's back.
+  `screen.brightness()` is the brightness now.
 
 A desktop window has no orientation or system bars: `lock` and
-`setBars` do nothing there. `preventCapture` keeps the app's windows out
+`setBars` do nothing there, and its displays' brightness is the user's
+(`setBrightness` does nothing, `brightness()` is `none`). `preventCapture` keeps the app's windows out
 of screenshots and recordings on the Mac and Windows (not on Linux); a
 desktop doesn't tell the app of its screenshots. A browser locks the
 orientation only full screen or in an installed app, hides the bars by
-going full screen, and has neither.
+going full screen, and has neither, nor a brightness to set.
 
 These are the app's, not a screen's: a screen that sets one sets it back
 as it goes (a `defer` in its task).

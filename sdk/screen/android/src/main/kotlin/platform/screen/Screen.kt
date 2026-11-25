@@ -3,7 +3,9 @@
 // system bars are the app's insets), followed by its listener. The
 // orientation, the bars and FLAG_SECURE are the host's AsukaDisplay's,
 // which the activity applies again when it's made again; screenshots
-// are Android 14's ScreenCaptureCallback (DETECT_SCREEN_CAPTURE).
+// are Android 14's ScreenCaptureCallback (DETECT_SCREEN_CAPTURE). The
+// brightness is the window's own (AsukaDisplay's too), the system's
+// setting read when the app sets none.
 package platform.screen
 
 import android.content.Context
@@ -75,6 +77,18 @@ class AndroidScreens(private val app: Context) : Screens {
     override fun preventCapture(on: Boolean) {
         AsukaDisplay.secure = on
         AsukaDisplay.applyNow()
+    }
+
+    override fun setBrightness(level: Double) {
+        AsukaDisplay.brightness = level.toFloat()
+        AsukaDisplay.applyNow()
+    }
+
+    override fun brightness(): Double {
+        if (AsukaDisplay.brightness >= 0f) return AsukaDisplay.brightness.toDouble()
+        // The system's setting, 0 to 255.
+        val v = runCatching { android.provider.Settings.System.getInt(app.contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS) }.getOrNull()
+        return if (v == null) -1.0 else (v / 255.0).coerceIn(0.0, 1.0)
     }
 
     override suspend fun watchScreenshots(taken: (Long) -> kotlin.Unit) = withContext(Dispatchers.Main) {

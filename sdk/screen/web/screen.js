@@ -93,6 +93,9 @@ export function makeScreens() {
       else if (!hide && d.fullscreenElement) d.exitFullscreen?.()?.catch?.(() => {});
     },
     preventCapture(_on) {},
+    // A page can't set or read the display's brightness.
+    setBrightness(_level) {},
+    brightness() { return -1; },
     async watchScreenshots(signal, _taken) {
       await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
     },
