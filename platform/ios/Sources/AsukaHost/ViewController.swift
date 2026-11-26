@@ -15,6 +15,12 @@ public final class AsukaViewController: UIViewController {
     /// with the finger as a list's interactive dismissal drags it down,
     /// when no notification says so.
     private let keyboardTracker = UIView()
+    /// The field that took the focus last (fieldFocus).
+    private weak var keyboardField: UIResponder?
+    /// Whether the layout guide waits: set as focus moves from one field to
+    /// another with an accessory on either (fieldFocus), cleared by the
+    /// keyboard's next notification (keyboardWillChange).
+    private var keyboardHeld = false
 
     public override func viewDidLoad() {
         super.viewDidLoad()
@@ -126,9 +132,10 @@ public final class AsukaViewController: UIViewController {
     /// interactive dismissal (a list's keyboardDismissMode), the keyboard
     /// follows the finger with no notification, and what sits on it (a
     /// chat's composer) follows the guide, frame by frame. Notified
-    /// changes agree with it once their animation is set up.
+    /// changes agree with it once their animation is set up. While the
+    /// keyboard is held (fieldFocus), the guide isn't followed.
     private func trackKeyboard() -> Bool {
-        guard let window = view.window else { return false }
+        guard view.window != nil, !keyboardHeld else { return false }
         var h = keyboardTracker.frame.height
         if #unavailable(iOS 17.0) {
             // The guide sits on the safe area while the keyboard's away.
@@ -136,12 +143,7 @@ public final class AsukaViewController: UIViewController {
         }
         h = max(0, min(h, view.bounds.height))
         guard abs(h - keyboard) > 0.5 else { return false }
-        if h < 0.5 {
-            keyboardEnd = nil
-        } else {
-            let r = CGRect(x: 0, y: view.bounds.maxY - h, width: view.bounds.width, height: h)
-            keyboardEnd = view.convert(r, to: window.screen.coordinateSpace)
-        }
+        setKeyboardEnd(height: h)
         return true
     }
 
@@ -205,6 +207,7 @@ public final class AsukaViewController: UIViewController {
         } else {
             keyboardEnd = (info[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
         }
+        keyboardHeld = false  // the keyboard's own word on a move held for (fieldFocus)
         updateKeyboard()
         let duration = (info[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
         let curve = (info[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt) ?? 7
@@ -216,6 +219,60 @@ public final class AsukaViewController: UIViewController {
         } completion: { _ in
             AsukaRuntime.shared.revealFocused()
         }
+    }
+
+    /// A field takes the focus: become is its becomeFirstResponder.
+    ///
+    /// When the focus comes from another field with the keyboard up and
+    /// either has an accessory (inputAccessoryView), UIKit swaps their
+    /// bars, and the keyboard's layout guide has the keyboard shrink by the
+    /// old bar and grow by the new one, a few layout passes in a row:
+    /// followed, what sits on the keyboard would drop and come back up. So
+    /// the keyboard is held: the guide isn't followed until the keyboard's
+    /// next notification, which is followed as ever, with its animation. On
+    /// the on-screen keyboard that notification follows the swap's layout
+    /// passes, and a real change (another keyboard, another bar's height)
+    /// moves the views with the keyboard.
+    ///
+    /// With a hardware keyboard, where only the bars show (the keyboard is
+    /// as tall as the old bar), the swap sends no notification, and the
+    /// guide stays at 0 after it. There the keyboard is the new bar, known
+    /// now, and the hold lasts until the keyboard's next notification (the
+    /// field losing the focus, say): till then an interactive dismissal
+    /// isn't followed.
+    func fieldFocus(_ field: UIResponder, _ become: () -> Bool) -> Bool {
+        let from = keyboardField
+        let oldBar = from?.inputAccessoryView?.frame.height ?? 0
+        let swap = keyboard > 0 && from !== field && from?.isFirstResponder == true
+            && (from?.inputAccessoryView != nil || field.inputAccessoryView != nil)
+        if swap { keyboardHeld = true }
+        let took = become()
+        if !took {
+            if swap {
+                keyboardHeld = false
+                view.setNeedsLayout()
+            }
+            return false
+        }
+        keyboardField = field
+        if swap && abs(keyboard - oldBar) <= 0.5 {
+            // The bars swap at once, and so do the views.
+            setKeyboardEnd(height: field.inputAccessoryView?.frame.height ?? 0)
+            updateKeyboard()
+            sendEnvironment()
+            AsukaRuntime.shared.reportScreens()
+        }
+        return true
+    }
+
+    /// The keyboard's frame, as tall as h, from the view's bottom.
+    private func setKeyboardEnd(height h: CGFloat) {
+        guard h >= 0.5, let window = view.window else {
+            keyboardEnd = nil
+            return
+        }
+        let r = CGRect(x: 0, y: view.bounds.maxY - h, width: view.bounds.width, height: h)
+        keyboardEnd = view.convert(r, to: window.screen.coordinateSpace)
     }
 
     func sendEnvironment() {
