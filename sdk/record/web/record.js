@@ -18,7 +18,45 @@ function level() {
   return rms > 0.001 ? Math.min(rms, 1) : 0;
 }
 
+// The microphone's permission: navigator.permissions' "microphone",
+// queried when the recorder is made and followed by its change event.
+// access is synchronous: the state as last known ("notAsked" until the
+// query settles), and what the last request learned, which a browser
+// without a "microphone" permission to query (Firefox, an older Safari)
+// says nothing else of.
+let permission = null; // the PermissionStatus, once queried
+let known = "prompt";
+const accessOf = (state) => ({ granted: "allowed", denied: "denied" })[state] ?? "notAsked";
+
+async function queryPermission() {
+  if (permission || !navigator.permissions?.query) return;
+  try {
+    permission = await navigator.permissions.query({ name: "microphone" });
+    known = permission.state;
+    permission.addEventListener?.("change", () => { known = permission.state; });
+  } catch { /* no "microphone" permission's name here */ }
+}
+
+// requestAccess opens the microphone (the browser asks, if it hasn't) and
+// closes it at once.
+async function requestAccess() {
+  if (!navigator.mediaDevices?.getUserMedia) return "denied"; // not a secure context
+  let answer;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((t) => t.stop());
+    answer = "allowed";
+  } catch (e) {
+    // No microphone at all says nothing of the permission.
+    answer = mediaError(e)?.message === "not allowed" ? "denied" : null;
+  }
+  if (answer) known = answer === "allowed" ? "granted" : "denied";
+  else if (permission) known = permission.state;
+  return answer ?? accessOf(known);
+}
+
 export function makeRecorder() {
+  queryPermission();
   return {
     async record(signal, quality, maxMs, path, background, title) {
       if (rec) throw new RecordError("busy");
@@ -67,5 +105,7 @@ export function makeRecorder() {
     status() {
       return { level: level(), recording: Boolean(rec?.recording), elapsed: rec ? rec.ms() : 0 };
     },
+    access() { return accessOf(known); },
+    requestAccess,
   };
 }

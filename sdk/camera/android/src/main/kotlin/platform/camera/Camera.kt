@@ -8,6 +8,7 @@ package platform.camera
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -28,6 +29,7 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -49,6 +51,40 @@ import android.view.View as AndroidView
 private fun cameraFile(ext: String): File {
     val dir = File(AsukaModules.context.cacheDir, "asuka-camera").apply { mkdirs() }
     return File(dir, UUID.randomUUID().toString() + "." + ext)
+}
+
+/**
+ * Whether the app has asked for a permission: Android says only whether
+ * it's granted, so each ask is kept in the app's preferences, by the
+ * permission's name (platform/record's file too: both ask for the
+ * microphone).
+ */
+private val asked get() = AsukaModules.context.getSharedPreferences("asuka.permissions", Context.MODE_PRIVATE)
+
+private fun isGranted(permission: String) =
+    ContextCompat.checkSelfPermission(AsukaModules.context, permission) == PackageManager.PERMISSION_GRANTED
+
+/** Asks for a permission (if not granted), noting the ask when there's a screen to ask on. Main thread. */
+private fun requestPermission(permission: String, done: (Boolean) -> kotlin.Unit) {
+    val shown = AsukaModules.activity != null
+    AsukaModules.requestPermissions(arrayOf(permission)) { ok ->
+        if (shown) asked.edit { putBoolean(permission, true) }
+        done(ok)
+    }
+}
+
+/**
+ * A permission now, asking nothing: "allowed"; "denied" once asked (the
+ * user said no, now or for good); "notAsked" before.
+ */
+private fun permissionAccess(permission: String): String {
+    val a = asked
+    if (isGranted(permission)) {
+        // Granted (here, or in Settings): taken away later, it's denied.
+        if (!a.getBoolean(permission, false)) a.edit { putBoolean(permission, true) }
+        return "allowed"
+    }
+    return if (a.getBoolean(permission, false)) "denied" else "notAsked"
 }
 
 /** The kinds of code ML Kit reads, by platform/scan's names. */
@@ -167,10 +203,10 @@ internal class CameraView(private val events: ViewEvents) : View {
 
     private fun bind() {
         val act = AsukaModules.activity as? ComponentActivity ?: return
-        AsukaModules.requestPermissions(arrayOf(Manifest.permission.CAMERA)) { ok ->
+        requestPermission(Manifest.permission.CAMERA) { ok ->
             if (!ok) {
                 events.error("not allowed")
-                return@requestPermissions
+                return@requestPermission
             }
             val future = ProcessCameraProvider.getInstance(act)
             future.addListener({
@@ -212,7 +248,7 @@ internal class CameraView(private val events: ViewEvents) : View {
         if (recording != null) return done(Result.failure(Exception("already recording")))
         val mic = Manifest.permission.RECORD_AUDIO
         if (mute || !AsukaModules.declares(mic)) startRecording(vc, false, maxMs, done)
-        else AsukaModules.requestPermissions(arrayOf(mic)) { ok -> startRecording(vc, ok, maxMs, done) }
+        else requestPermission(mic) { ok -> startRecording(vc, ok, maxMs, done) }
     }
 
     // The permission is checked: withAudioEnabled is only called with it granted.
@@ -282,7 +318,7 @@ private fun takePhoto(done: (Result<String>) -> kotlin.Unit) {
         }
     }
     if (AsukaModules.declares(Manifest.permission.CAMERA)) {
-        AsukaModules.requestPermissions(arrayOf(Manifest.permission.CAMERA)) { ok ->
+        requestPermission(Manifest.permission.CAMERA) { ok ->
             if (ok) launch() else done(Result.failure(CameraException(CameraError.NOT_ALLOWED)))
         }
     } else launch()
@@ -306,6 +342,14 @@ private class CameraXCamera : Camera {
 
     override fun stopRecording() {
         android.os.Handler(android.os.Looper.getMainLooper()).post { CameraView.current?.stopRecording() }
+    }
+
+    override fun access(): String = permissionAccess(Manifest.permission.CAMERA)
+
+    override suspend fun requestAccess(): String = withContext(Dispatchers.Main) {
+        val p = Manifest.permission.CAMERA
+        if (!isGranted(p)) suspendCancellableCoroutine { c -> requestPermission(p) { if (c.isActive) c.resume(kotlin.Unit) } }
+        permissionAccess(p)
     }
 }
 

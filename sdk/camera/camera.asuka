@@ -73,6 +73,46 @@ native interface Camera {
   /// (or maxDuration, if not 0): its file.
   async fn record(mute: bool, maxDuration: Duration) -> string
   fn stopRecording()
+  /// The camera's permission now, asking nothing: "notAsked", "denied"
+  /// or "allowed".
+  /// @mainThread
+  fn access() -> string
+  /// Asks for the camera if it hasn't been asked; the answer, as access.
+  /// @mainThread
+  async fn requestAccess() -> string
+}
+
+/// Whether the app may use the camera: asked for with request(), or the
+/// first time it's used.
+pub enum Access {
+  /// Not asked yet: request() (or using it) shows the system's question.
+  notAsked
+  /// The user said no, or a policy (parental controls, an MDM profile)
+  /// forbids it: device.openSettings() takes the user where it's turned
+  /// on.
+  denied
+  allowed
+}
+
+fn accessOf(s: string) -> Access = match s {
+  "allowed" => .allowed
+  "denied" => .denied
+  _ => .notAsked
+}
+
+/// Whether the app may use the camera now, asking nothing: to show why
+/// before asking, or the way to Settings after a no.
+pub fn access() -> Access {
+  if let c = cam {
+    return accessOf((try? c.access()) ?? "")
+  }
+  return .notAsked
+}
+
+/// Asks for the camera, if the user hasn't been asked (else the answer
+/// already given): what they said.
+pub async fn request() throws -> Access {
+  return accessOf(try await camera().requestAccess())
 }
 
 let cam = try? Camera()

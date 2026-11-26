@@ -139,6 +139,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 应用商店评分 | `requestReview` | `expo-store-review` | ✓ `platform/review`（App Store 的评分弹窗、Play 的应用内评价） |
 | 跟踪权限 | App Tracking Transparency | `expo-tracking-transparency` | ✓ `platform/tracking` |
 | 打开应用的设置页（权限被拒绝之后） | `UIApplication.openSettingsURLString` | `Linking.openSettings()` | ✓ `device.openSettings()`（iOS 上是应用的设置页，Android 上是“应用信息”，Mac 和 Windows 上是“隐私与安全性”） |
+| 相机和麦克风的权限：查询或请求 | `AVCaptureDevice.authorizationStatus`、`requestAccess` | `Camera.getCameraPermissionsAsync`、`requestCameraPermissionsAsync`、`getMicrophonePermissionsAsync` | ✓ `camera.access()`、`camera.request()`、`record.access()`、`record.request()`（`.notAsked`、`.denied`、`.allowed`） |
 | 应用完整性 | App Attest | `expo-app-integrity` | ✓ `platform/integrity`（App Attest、Play Integrity） |
 | 年龄段 | Declared Age Range | `expo-age-range` | ✓ `platform/agerange`（Declared Age Range、Play Age Signals） |
 | 传感器 | Core Motion | `expo-sensors` | ✓ `platform/sensors`（加速度计、陀螺仪、磁力计、设备运动、气压计、光线、计步器；所有平台坐标轴和单位一致；Core Motion、SensorManager、Linux 上 iio-sensor-proxy 提供的光线和方向、Generic Sensor API；Mac 和 Windows 不支持） |

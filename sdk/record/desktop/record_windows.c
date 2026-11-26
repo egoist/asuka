@@ -505,10 +505,25 @@ static record_Status r_status(record_Recorder *self, asuka_error *err) {
 	return s;
 }
 
+// Windows never asks a desktop app for the microphone: Settings' privacy
+// switches (every app's, desktop apps', a policy's) allow it or don't.
+static const char *access_now(void) { return denied() ? "denied" : "allowed"; }
+
+static char *r_access(record_Recorder *self, asuka_error *err) { return asuka_strdup(access_now()); }
+
+// requestAccess has nothing to ask: the switches' answer, at once.
+static void r_request_access(record_Recorder *self, asuka_call *call) { record_Recorder_requestAccess_done(call, asuka_strdup(access_now())); }
+
 static void r_release(record_Recorder *self) {}  // the one recorder lives with the app
 
-static const record_Recorder_vtable vt = {
-    .release = r_release, .record = r_record, .stop = r_stop, .pause = r_pause, .resume = r_resume, .status = r_status};
+static const record_Recorder_vtable vt = {.release = r_release,
+                                          .record = r_record,
+                                          .stop = r_stop,
+                                          .pause = r_pause,
+                                          .resume = r_resume,
+                                          .status = r_status,
+                                          .access = r_access,
+                                          .requestAccess = r_request_access};
 
 record_Recorder *record_make_Recorder(asuka_error *err) {
 	static record_Recorder recorder = {&vt};

@@ -11,6 +11,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.MediaRecorder
 import android.os.Build
@@ -21,6 +22,7 @@ import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import dev.asuka.AsukaModules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -33,6 +35,40 @@ import kotlin.time.Duration.Companion.milliseconds
 
 private const val CHANNEL = "asuka.recording"
 private const val NOTIFICATION = 0x6e76_0001
+
+/**
+ * Whether the app has asked for a permission: Android says only whether
+ * it's granted, so each ask is kept in the app's preferences, by the
+ * permission's name (platform/camera's file too: both ask for the
+ * microphone).
+ */
+private val asked get() = AsukaModules.context.getSharedPreferences("asuka.permissions", Context.MODE_PRIVATE)
+
+private fun isGranted(permission: String) =
+    ContextCompat.checkSelfPermission(AsukaModules.context, permission) == PackageManager.PERMISSION_GRANTED
+
+/** Asks for a permission (if not granted), noting the ask when there's a screen to ask on. Main thread. */
+private fun requestPermission(permission: String, done: (Boolean) -> kotlin.Unit) {
+    val shown = AsukaModules.activity != null
+    AsukaModules.requestPermissions(arrayOf(permission)) { ok ->
+        if (shown) asked.edit { putBoolean(permission, true) }
+        done(ok)
+    }
+}
+
+/**
+ * A permission now, asking nothing: "allowed"; "denied" once asked (the
+ * user said no, now or for good); "notAsked" before.
+ */
+private fun permissionAccess(permission: String): String {
+    val a = asked
+    if (isGranted(permission)) {
+        // Granted (here, or in Settings): taken away later, it's denied.
+        if (!a.getBoolean(permission, false)) a.edit { putBoolean(permission, true) }
+        return "allowed"
+    }
+    return if (a.getBoolean(permission, false)) "denied" else "notAsked"
+}
 
 internal object AudioRecorder : Recorder {
     private val app get() = AsukaModules.context
@@ -47,7 +83,7 @@ internal object AudioRecorder : Recorder {
     override suspend fun record(quality: Quality, maxDuration: Duration, path: String, background: Boolean, title: String): String =
         withContext(Dispatchers.Main) {
             if (recorder != null) throw RecordException(RecordError.BUSY)
-            val ok = suspendCancellableCoroutine { c -> AsukaModules.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO)) { if (c.isActive) c.resume(it) } }
+            val ok = suspendCancellableCoroutine { c -> requestPermission(Manifest.permission.RECORD_AUDIO) { if (c.isActive) c.resume(it) } }
             if (!ok) throw RecordException(RecordError.NOT_ALLOWED)
             if (recorder != null) throw RecordException(RecordError.BUSY)
             this@AudioRecorder.title = title.ifEmpty { "Recording" }
@@ -144,6 +180,14 @@ internal object AudioRecorder : Recorder {
     override fun resume() {
         runCatching { recorder?.resume() }
         if (recorder != null && since == 0L) since = SystemClock.elapsedRealtime()
+    }
+
+    override fun access(): String = permissionAccess(Manifest.permission.RECORD_AUDIO)
+
+    override suspend fun requestAccess(): String = withContext(Dispatchers.Main) {
+        val p = Manifest.permission.RECORD_AUDIO
+        if (!isGranted(p)) suspendCancellableCoroutine { c -> requestPermission(p) { if (c.isActive) c.resume(kotlin.Unit) } }
+        permissionAccess(p)
     }
 
     override fun status(): Status {

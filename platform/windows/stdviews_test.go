@@ -1,6 +1,7 @@
 package windows_test
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -51,13 +52,15 @@ func TestStdViews(t *testing.T) {
 				Sources: []string{test, filepath.Join(desk, "test", "unit.c"), filepath.Join(desk, "src", "jsontree.c")},
 				Flags:   []string{"-I" + filepath.Join(desk, "include"), "-I" + dir},
 			}
-			// It runs in a desktop/ of its own, its package's test data (tests/)
-			// beside it.
+			// It runs in a desktop/ of its own, its package's test data (tests/,
+			// if it has any) beside it.
 			local, guest := w.job(t)
 			if err := appbuild.DesktopExe(target(w), nil, host, natives, filepath.Join(local, "desktop", "view_test.exe")); err != nil {
 				t.Fatal(err)
 			}
-			copyTree(t, filepath.Join(pkg, "tests"), filepath.Join(local, "tests"))
+			if _, err := os.Stat(filepath.Join(pkg, "tests")); err == nil {
+				copyTree(t, filepath.Join(pkg, "tests"), filepath.Join(local, "tests"))
+			}
 			out, err := w.run(t, guest+`\desktop`, guest+`\desktop\view_test.exe`, nil)
 			t.Logf("%s", out)
 			if err != nil {

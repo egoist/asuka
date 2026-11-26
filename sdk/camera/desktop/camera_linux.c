@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 typedef struct _GstMessage GstMessage;
@@ -56,6 +57,10 @@ static struct {
 	opener *waiting;
 	char *src;  // a source found without the portal (V4L2's)
 } grant = {-1, false, NULL, NULL};
+
+// told is the permission as this process last learned it ("allowed",
+// "denied"; NULL: not yet): the portal's answer, or no portal to ask.
+static const char *told;
 
 static bool gst_has(const char *element) {
 	gpointer f = G(gst_element_factory_find)(element);
@@ -109,6 +114,7 @@ static void v4l2(void) {
 		finish_open(NULL, E_NO_CAMERA, NULL);
 		return;
 	}
+	told = "allowed";  // no portal asked: the device's node is the user's
 	free(grant.src);
 	grant.src = asuka_sprintf("v4l2src device=/dev/%s ! decodebin", dev);
 	free(dev);
@@ -248,6 +254,7 @@ static void remote_opened(GObject *src, GAsyncResult *res, gpointer p) {
 
 static void access_answered(void *ctx, guint32 code, GVariant *results) {
 	GDBusConnection *conn = ctx;
+	told = code == 0 ? "allowed" : "denied";
 	if (code != 0) {
 		finish_open(NULL, E_DENIED, NULL);
 		return;
@@ -258,20 +265,34 @@ static void access_answered(void *ctx, guint32 code, GVariant *results) {
 	                                            G(g_variant_new)("(a{sv})", &b), NULL, G_DBUS_CALL_FLAGS_NONE, 5000, NULL, NULL, remote_opened, conn);
 }
 
-static void presence(GObject *src, GAsyncResult *res, gpointer p) {
-	GDBusConnection *conn = p;
+// ask_presence asks the camera portal whether it has a camera (its
+// IsCameraPresent), answered to done with the bus as its source.
+static void ask_presence(GDBusConnection *conn, GAsyncReadyCallback done, gpointer p) {
+	G(g_dbus_connection_call)(conn, ASUKA_PORTAL, ASUKA_PORTAL_PATH, "org.freedesktop.DBus.Properties", "Get",
+	                          G(g_variant_new)("(ss)", "org.freedesktop.portal.Camera", "IsCameraPresent"), NULL, G_DBUS_CALL_FLAGS_NONE, 5000, NULL,
+	                          done, p);
+}
+
+// present reads ask_presence's answer: false with no portal, or no
+// camera it shows.
+static bool present(GDBusConnection *conn, GAsyncResult *res) {
 	GError *e = NULL;
 	GVariant *v = G(g_dbus_connection_call_finish)(conn, res, &e);
-	bool present = false;
+	bool yes = false;
 	if (v) {
 		GVariant *inner = NULL;
 		G(g_variant_get)(v, "(v)", &inner);
-		if (inner && G(g_variant_is_of_type)(inner, G_VARIANT_TYPE("b"))) present = G(g_variant_get_boolean)(inner);
+		if (inner && G(g_variant_is_of_type)(inner, G_VARIANT_TYPE("b"))) yes = G(g_variant_get_boolean)(inner);
 		if (inner) G(g_variant_unref)(inner);
 		G(g_variant_unref)(v);
 	}
 	if (e) G(g_error_free)(e);
-	if (!present || !gst_has("pipewiresrc")) {
+	return yes;
+}
+
+static void presence(GObject *src, GAsyncResult *res, gpointer p) {
+	GDBusConnection *conn = p;
+	if (!present(conn, res) || !gst_has("pipewiresrc")) {
 		// No portal, or no camera it shows (PipeWire without its camera
 		// support): V4L2's, outside a sandbox.
 		v4l2();
@@ -309,9 +330,7 @@ static void camera_open(opened_fn fn, void *ctx) {
 		v4l2();
 		return;
 	}
-	G(g_dbus_connection_call)(conn, ASUKA_PORTAL, ASUKA_PORTAL_PATH, "org.freedesktop.DBus.Properties", "Get",
-	                          G(g_variant_new)("(ss)", "org.freedesktop.portal.Camera", "IsCameraPresent"), NULL, G_DBUS_CALL_FLAGS_NONE, 5000, NULL,
-	                          presence, conn);
+	ask_presence(conn, presence, conn);
 }
 
 // camera_open_cancel forgets ctx's waiting.
@@ -995,12 +1014,174 @@ static void c_stop_recording(camera_Camera *self, asuka_error *err) {
 	if (current) stop_recording(current);
 }
 
+// ---- The permission ----
+//
+// The camera portal asks the user once, and its permission store keeps
+// the answer: the "devices" table's "camera", "yes" or "no" for an app's
+// ID (a Flatpak's; "" for apps outside a sandbox, in older portals).
+// Without a portal there's no one to ask: the camera's node is open to
+// the user, allowed.
+
+#define PERMISSIONS "org.freedesktop.impl.portal.PermissionStore"
+#define PERMISSIONS_PATH "/org/freedesktop/impl/portal/PermissionStore"
+
+static bool sandboxed(void) {
+	const char *f = getenv("FLATPAK_ID");
+	struct stat st;
+	return (f && *f) || stat("/.flatpak-info", &st) == 0;
+}
+
+static const char *app_id(void) {
+	const char *f = getenv("FLATPAK_ID");
+	return f && *f ? f : asuka_desktop_app_id();
+}
+
+static bool test_source(void) {
+	const char *test = getenv("ASUKA_CAMERA_SOURCE");
+	return test && *test;
+}
+
+enum { STORE_NONE, STORE_UNSET, STORE_YES, STORE_NO };
+
+// store is what the permission store said for the app, last time it was
+// asked: STORE_NONE when it can't be read (no store, or a sandbox's bus
+// that doesn't reach it), STORE_UNSET when it has no answer (no table
+// yet: no app was asked). The store is asked without waiting (the main
+// thread never blocks on the bus): as the camera's made, and again each
+// time access reads what it said, for the next read. lookups counts the
+// answers.
+static int store = STORE_NONE;
+static bool store_known, looking;
+static unsigned lookups;
+
+static void looked_up(GObject *src, GAsyncResult *res, gpointer p) {
+	GError *e = NULL;
+	GVariant *r = G(g_dbus_connection_call_finish)((GDBusConnection *)src, res, &e);
+	int say = STORE_UNSET;
+	if (!r) {
+		bool unset = e && e->message && strstr(e->message, "org.freedesktop.portal.Error.NotFound");
+		if (e) G(g_error_free)(e);
+		say = unset ? STORE_UNSET : STORE_NONE;
+	} else {
+		GVariant *perms = G(g_variant_get_child_value)(r, 0);
+		const char *ids[] = {app_id(), sandboxed() ? NULL : ""};
+		for (size_t i = 0; i < 2 && say == STORE_UNSET; i++) {
+			if (!ids[i]) continue;
+			GVariant *v = G(g_variant_lookup_value)(perms, ids[i], G_VARIANT_TYPE("as"));
+			if (!v) continue;
+			if (G(g_variant_n_children)(v) > 0) {
+				GVariant *c = G(g_variant_get_child_value)(v, 0);
+				const char *word = G(g_variant_get_string)(c, NULL);
+				if (word && !strcmp(word, "yes")) say = STORE_YES;
+				else if (word && !strcmp(word, "no")) say = STORE_NO;
+				G(g_variant_unref)(c);
+			}
+			G(g_variant_unref)(v);
+		}
+		G(g_variant_unref)(perms);
+		G(g_variant_unref)(r);
+	}
+	store = say;
+	store_known = true;
+	looking = false;
+	lookups++;
+}
+
+// look_up asks the store again, unless it's being asked.
+static void look_up(void) {
+	if (looking) return;
+	GDBusConnection *conn = asuka_linux() ? asuka_linux_bus(G_BUS_TYPE_SESSION, NULL) : NULL;
+	if (!conn) {
+		store = STORE_NONE;
+		store_known = true;
+		lookups++;
+		return;
+	}
+	looking = true;
+	G(g_dbus_connection_call)(conn, PERMISSIONS, PERMISSIONS_PATH, PERMISSIONS, "Lookup", G(g_variant_new)("(ss)", "devices", "camera"),
+	                          G_VARIANT_TYPE("(a{sas}v)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, looked_up, NULL);
+}
+
+static const char *access_now(void) {
+	if (test_source()) return "allowed";  // nothing's asked for it
+	look_up();
+	// Before the store's first answer: what this process learned, else
+	// not asked.
+	if (!store_known) return told ? told : "notAsked";
+	if (store == STORE_YES) return "allowed";
+	if (store == STORE_NO) return "denied";
+	if (told) return told;
+	if (store == STORE_NONE && !sandboxed()) return "allowed";  // no portal's store: no portal to ask
+	return "notAsked";
+}
+
+static char *c_access(camera_Camera *self, asuka_error *err) { return asuka_strdup(access_now()); }
+
+// ask_access asks the camera portal (AccessCamera: the user's asked
+// once, the store's answer after) and gives fn(ctx) the answer: 0 is
+// allowed; else the user said no (or closed the question). Without a
+// camera portal nothing asks: allowed.
+typedef void (*access_fn)(void *ctx, const char *answer);
+
+typedef struct {
+	access_fn fn;
+	void *ctx;
+	GDBusConnection *conn;
+} asking;
+
+static void asked(asking *a, const char *answer) {
+	told = answer;
+	a->fn(a->ctx, answer);
+	free(a);
+}
+
+static void portal_answered(void *ctx, guint32 code, GVariant *results) { asked(ctx, code == 0 ? "allowed" : "denied"); }
+
+static void request_presence(GObject *src, GAsyncResult *res, gpointer p) {
+	asking *a = p;
+	if (!present(a->conn, res)) {
+		asked(a, "allowed");
+		return;
+	}
+	portal_request(a->conn, "org.freedesktop.portal.Camera", "AccessCamera", portal_answered, a);
+}
+
+static void ask_access(access_fn fn, void *ctx) {
+	asking *a = calloc(1, sizeof *a);
+	*a = (asking){fn, ctx, test_source() || !asuka_linux() ? NULL : asuka_linux_bus(G_BUS_TYPE_SESSION, NULL)};
+	if (!a->conn) {
+		asked(a, "allowed");
+		return;
+	}
+	ask_presence(a->conn, request_presence, a);
+}
+
+// request_done answers requestAccess, waiting in ctx (a slot of its own,
+// emptied if its task went first).
+static void request_done(void *ctx, const char *answer) {
+	camera_pending **w = ctx;
+	camera_answer(w, answer);
+	free(w);
+}
+
+static void c_request_access(camera_Camera *self, asuka_call *call) {
+	camera_pending **w = calloc(1, sizeof *w);
+	camera_wait(call, camera_Camera_requestAccess_done, w, NULL, NULL);
+	ask_access(request_done, w);
+}
+
 static void c_release(camera_Camera *self) {}  // the one camera lives with the app
 
-static const camera_Camera_vtable camera_vt = {
-    .release = c_release, .take = c_take, .capture = c_capture, .record = c_record, .stopRecording = c_stop_recording};
+static const camera_Camera_vtable camera_vt = {.release = c_release,
+                                               .take = c_take,
+                                               .capture = c_capture,
+                                               .record = c_record,
+                                               .stopRecording = c_stop_recording,
+                                               .access = c_access,
+                                               .requestAccess = c_request_access};
 
 camera_Camera *camera_make_Camera(asuka_error *err) {
 	static camera_Camera cam = {&camera_vt};
+	if (!store_known && !test_source()) look_up();  // so access has the store's answer by the time it's read
 	return &cam;
 }

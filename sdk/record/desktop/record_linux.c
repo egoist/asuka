@@ -317,10 +317,23 @@ static record_Status r_status(record_Recorder *self, asuka_error *err) {
 	};
 }
 
+// Linux has no microphone permission to ask for: no portal guards it,
+// the user's session reaches the sound server, and a Flatpak has its
+// socket from its manifest (--socket=pulseaudio). Allowed, both ways.
+static char *r_access(record_Recorder *self, asuka_error *err) { return asuka_strdup("allowed"); }
+
+static void r_request_access(record_Recorder *self, asuka_call *call) { record_Recorder_requestAccess_done(call, asuka_strdup("allowed")); }
+
 static void r_release(record_Recorder *self) {}  // the one recorder lives with the app
 
-static const record_Recorder_vtable vt = {
-    .release = r_release, .record = r_record, .stop = r_stop, .pause = r_pause, .resume = r_resume, .status = r_status};
+static const record_Recorder_vtable vt = {.release = r_release,
+                                          .record = r_record,
+                                          .stop = r_stop,
+                                          .pause = r_pause,
+                                          .resume = r_resume,
+                                          .status = r_status,
+                                          .access = r_access,
+                                          .requestAccess = r_request_access};
 
 record_Recorder *record_make_Recorder(asuka_error *err) {
 	static record_Recorder recorder = {&vt};

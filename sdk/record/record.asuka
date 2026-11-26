@@ -51,6 +51,45 @@ native interface Recorder {
   fn pause()
   fn resume()
   fn status() -> Status
+  /// The microphone's permission now, asking nothing: "notAsked",
+  /// "denied" or "allowed".
+  fn access() -> string
+  /// Asks for the microphone if it hasn't been asked; the answer, as
+  /// access.
+  async fn requestAccess() -> string
+}
+
+/// Whether the app may use the microphone: asked for with request(), or the
+/// first time it's used.
+pub enum Access {
+  /// Not asked yet: request() (or using it) shows the system's question.
+  notAsked
+  /// The user said no, or a policy (parental controls, an MDM profile)
+  /// forbids it: device.openSettings() takes the user where it's turned
+  /// on.
+  denied
+  allowed
+}
+
+fn accessOf(s: string) -> Access = match s {
+  "allowed" => .allowed
+  "denied" => .denied
+  _ => .notAsked
+}
+
+/// Whether the app may record sound now, asking nothing: to show why
+/// before asking, or the way to Settings after a no.
+pub fn access() -> Access {
+  if let r = recorder {
+    return accessOf((try? r.access()) ?? "")
+  }
+  return .notAsked
+}
+
+/// Asks for the microphone, if the user hasn't been asked (else the
+/// answer already given): what they said.
+pub async fn request() throws -> Access {
+  return accessOf(try await rec().requestAccess())
 }
 
 let recorder = try? Recorder()

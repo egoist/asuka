@@ -239,6 +239,38 @@ component Shutter {
 
 视图第一次显示时会请求相机权限。如果被拒绝，或者设备没有摄像头（比如 iOS 模拟器），视图会报告 `error`，`capture` 会抛出 `CameraError.notAllowed` 或 `.noCamera`；屏幕上没有 `camera.View` 时抛出 `.noView`。导入 `platform/camera` 的应用在 iOS 上会自动带上相机和麦克风的用途说明（在 asuka.toml 的 `[ios.usage]` 里可以写你自己的），在 Android 上会带上 `CAMERA` 和 `RECORD_AUDIO` 权限。
 
+`camera.access()` 告诉你应用能不能用相机，不会询问用户：`.notAsked`、`.denied` 或 `.allowed`。`camera.request()` 会在用户还没被问过时询问，并给出用户的回答。请在用户做需要相机的事时、先说明原因再询问；用户拒绝之后，系统不会再问：`device.openSettings()` 可以带用户去打开它的地方。
+
+```asuka check
+import platform/camera
+import platform/device
+
+component ScanButton {
+  state why = ""
+
+  Column {
+    gap: 8
+    Button("Scan a receipt") {
+      on press {
+        if camera.access() == .denied {
+          why = "The camera is off for this app"
+          return
+        }
+        if (try? await camera.request()) == .allowed {
+          why = ""
+        }
+      }
+    }
+    if !why.isEmpty() {
+      Text(why)
+      Button("Open Settings") { on press { let _ = device.openSettings() } }
+    }
+  }
+}
+```
+
+iOS 和 Mac 给出用户的选择（被策略禁止时为 `.denied`）；Android 给出是否已授权，以及应用是否问过；Windows 不会询问桌面应用，所以除非在设置里对桌面应用关闭了相机，否则都是 `.allowed`；Linux 上是相机门户对这个应用的回答（没有门户时为 `.allowed`）；浏览器给出它对这个网站的权限。`record.access()` 和 `record.request()` 对麦克风也一样。
+
 ## 录制视频：platform/record
 
 处于视频模式的 `camera.View` 可以录像：`record.start()` 录下它显示的画面，除非指定 `mute`，否则同时录下麦克风的声音，直到调用 `record.stop()`（或到达 `maxDuration`），然后返回文件，即应用缓存目录里的一个 MPEG-4 视频。`camera.record` 和 `camera.stopRecording` 的作用相同。

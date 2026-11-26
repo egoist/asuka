@@ -101,6 +101,26 @@ import Foundation
         return Status(level: level, recording: r.isRecording, elapsed: max(r.currentTime, 0))
     }
 
+    func access() throws -> String { Self.access() }
+
+    func requestAccess() async throws -> String {
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            _ = await AVCaptureDevice.requestAccess(for: .audio) // answers off the main thread
+        }
+        return Self.access()
+    }
+
+    /// The microphone's permission as access says it: "notAsked", "denied"
+    /// (or restricted) or "allowed". AVCaptureDevice's is the same one
+    /// AVAudioSession asks for on iOS.
+    static func access() -> String {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .notDetermined: return "notAsked"
+        case .authorized: return "allowed"
+        default: return "denied"
+        }
+    }
+
     private func observeInterruptions() {
         #if os(iOS)
         interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in

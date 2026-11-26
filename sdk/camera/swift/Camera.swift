@@ -399,6 +399,29 @@ final class AVCamera: Camera {
     }
 
     func stopRecording() throws { MainActor.assumeIsolated { CameraView.current?.stopRecording() } }
+
+    @MainActor func access() throws -> String { mediaAccess(.video) }
+
+    @MainActor func requestAccess() async throws -> String { await requestMediaAccess(.video) }
+}
+
+/// A device's permission as access says it: "notAsked", "denied" (or
+/// restricted) or "allowed".
+func mediaAccess(_ media: AVMediaType) -> String {
+    switch AVCaptureDevice.authorizationStatus(for: media) {
+    case .notDetermined: return "notAsked"
+    case .authorized: return "allowed"
+    default: return "denied"
+    }
+}
+
+/// Asks for it if it hasn't been asked (the system's prompt, which
+/// answers off the main thread), then the permission again.
+func requestMediaAccess(_ media: AVMediaType) async -> String {
+    if AVCaptureDevice.authorizationStatus(for: media) == .notDetermined {
+        _ = await AVCaptureDevice.requestAccess(for: media)
+    }
+    return mediaAccess(media)
 }
 
 func makeCamera() throws -> any Camera { AVCamera() }

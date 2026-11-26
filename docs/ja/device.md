@@ -239,6 +239,38 @@ component Shutter {
 
 ビューは最初に表示されたときにカメラの許可を求めます。拒否されたときや、カメラのないデバイス（iOS シミュレーター）では `error` を報告し、`capture` は `CameraError.notAllowed` か `.noCamera` を投げます（画面に `camera.View` がないときは `.noView`）。`platform/camera` をインポートしたアプリには、iOS ではカメラとマイクの利用目的の説明文が（asuka.toml の `[ios.usage]` で独自の文にできます）、Android では `CAMERA` と `RECORD_AUDIO` の権限が加わります。
 
+`camera.access()` は、アプリがカメラを使えるかどうかを、何も尋ねずに返します（`.notAsked`、`.denied`、`.allowed`）。`camera.request()` は、まだ尋ねていなければユーザーに尋ね、その答えを返します。ユーザーがカメラの要る操作をしたときに、理由を伝えてから尋ねてください。一度断られるとシステムはもう尋ねないので、`device.openSettings()` でオンにできる場所へ案内します。
+
+```asuka check
+import platform/camera
+import platform/device
+
+component ScanButton {
+  state why = ""
+
+  Column {
+    gap: 8
+    Button("Scan a receipt") {
+      on press {
+        if camera.access() == .denied {
+          why = "The camera is off for this app"
+          return
+        }
+        if (try? await camera.request()) == .allowed {
+          why = ""
+        }
+      }
+    }
+    if !why.isEmpty() {
+      Text(why)
+      Button("Open Settings") { on press { let _ = device.openSettings() } }
+    }
+  }
+}
+```
+
+iOS と Mac はユーザーの選択を返します（ポリシーで禁止されている場合は `.denied`）。Android は許可されているかどうかと、アプリが尋ねたかどうかを返します。Windows はデスクトップアプリに何も尋ねないので、設定でデスクトップアプリのカメラをオフにしていなければ `.allowed` です。Linux はカメラポータルのこのアプリへの答え（ポータルがなければ `.allowed`）、ブラウザーはそのサイトへの許可です。`record.access()` と `record.request()` はマイクについて同じことをします。
+
 ## ビデオの録画：platform/record
 
 ビデオモードの `camera.View` は録画できます。`record.start()` はビューに映っているものを、`mute` を指定しない限りマイクの音と一緒に、`record.stop()` を呼ぶまで（または `maxDuration` まで）録画し、ファイル（アプリのキャッシュにある MPEG-4 の動画）を返します。`camera.record` と `camera.stopRecording` も同じものです。

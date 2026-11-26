@@ -332,6 +332,48 @@ given the camera's and the microphone's purpose strings on iOS (set your
 own in asuka.toml's `[ios.usage]`) and the `CAMERA` and `RECORD_AUDIO`
 permissions on Android.
 
+`camera.access()` says whether the app may use the camera, asking
+nothing: `.notAsked`, `.denied` or `.allowed`. `camera.request()` asks,
+if the user hasn't been asked, and gives what they said. Ask when the
+user does what needs it, after saying why; after a no, the system asks
+no more: `device.openSettings()` takes them where it's turned on.
+
+```asuka check
+import platform/camera
+import platform/device
+
+component ScanButton {
+  state why = ""
+
+  Column {
+    gap: 8
+    Button("Scan a receipt") {
+      on press {
+        if camera.access() == .denied {
+          why = "The camera is off for this app"
+          return
+        }
+        if (try? await camera.request()) == .allowed {
+          why = ""
+        }
+      }
+    }
+    if !why.isEmpty() {
+      Text(why)
+      Button("Open Settings") { on press { let _ = device.openSettings() } }
+    }
+  }
+}
+```
+
+iOS and the Mac say what the user chose (or a policy, as `.denied`);
+Android, whether it's granted, and whether the app has asked; Windows
+asks a desktop app nothing, so it's `.allowed` unless the camera is off
+for desktop apps in Settings; on Linux, the camera portal's answer for
+the app (`.allowed` where there's no portal); a browser, its permission
+for the site. `record.access()` and `record.request()` are the microphone's,
+alike.
+
 ## Recording video: platform/record
 
 A `camera.View` in video mode records: `record.start()` records what it

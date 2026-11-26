@@ -1289,10 +1289,24 @@ static void c_stop_recording(camera_Camera *self, asuka_error *err) {
 	if (current) stop_recording(current);
 }
 
+// Windows never asks a desktop app for the camera: Settings' privacy
+// switches (every app's, desktop apps', a policy's) allow it or don't.
+static const char *access_now(void) { return capability_denied(L"webcam") ? "denied" : "allowed"; }
+
+static char *c_access(camera_Camera *self, asuka_error *err) { return asuka_strdup(access_now()); }
+
+// requestAccess has nothing to ask: the switches' answer, at once.
+static void c_request_access(camera_Camera *self, asuka_call *call) { camera_Camera_requestAccess_done(call, asuka_strdup(access_now())); }
+
 static void c_release(camera_Camera *self) {}  // the one camera lives with the app
 
-static const camera_Camera_vtable camera_vt = {
-    .release = c_release, .take = c_take, .capture = c_capture, .record = c_record, .stopRecording = c_stop_recording};
+static const camera_Camera_vtable camera_vt = {.release = c_release,
+                                               .take = c_take,
+                                               .capture = c_capture,
+                                               .record = c_record,
+                                               .stopRecording = c_stop_recording,
+                                               .access = c_access,
+                                               .requestAccess = c_request_access};
 
 camera_Camera *camera_make_Camera(asuka_error *err) {
 	static camera_Camera cam = {&camera_vt};

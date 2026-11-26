@@ -139,6 +139,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | ストアのレビュー | `requestReview` | `expo-store-review` | ✓ `platform/review`（App Store のプロンプト、Play のアプリ内レビュー） |
 | トラッキングの許可 | App Tracking Transparency | `expo-tracking-transparency` | ✓ `platform/tracking` |
 | アプリの設定を開く（権限を断られたあと） | `UIApplication.openSettingsURLString` | `Linking.openSettings()` | ✓ `device.openSettings()`（iOS ではアプリの設定ページ、Android では「アプリ情報」、Mac と Windows では「プライバシーとセキュリティ」） |
+| カメラとマイクの権限の確認と要求 | `AVCaptureDevice.authorizationStatus`、`requestAccess` | `Camera.getCameraPermissionsAsync`、`requestCameraPermissionsAsync`、`getMicrophonePermissionsAsync` | ✓ `camera.access()`、`camera.request()`、`record.access()`、`record.request()`（`.notAsked`、`.denied`、`.allowed`） |
 | アプリの完全性 | App Attest | `expo-app-integrity` | ✓ `platform/integrity`（App Attest、Play Integrity） |
 | 年齢層 | Declared Age Range | `expo-age-range` | ✓ `platform/agerange`（Declared Age Range、Play Age Signals） |
 | センサー | Core Motion | `expo-sensors` | ✓ `platform/sensors`（加速度計、ジャイロスコープ、磁力計、デバイスモーション、気圧計、照度、歩数計。どこでも同じ軸と単位。Core Motion、SensorManager、Linux では iio-sensor-proxy の照度と向き、Generic Sensor API。Mac と Windows にはない） |

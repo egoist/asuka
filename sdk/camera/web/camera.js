@@ -216,7 +216,45 @@ function takeWithInput() {
   });
 }
 
+// The camera's permission: navigator.permissions' "camera",
+// queried when the camera is made and followed by its change event.
+// access is synchronous: the state as last known ("notAsked" until the
+// query settles), and what the last request learned, which a browser
+// without a "camera" permission to query (Firefox, an older Safari)
+// says nothing else of.
+let permission = null; // the PermissionStatus, once queried
+let known = "prompt";
+const accessOf = (state) => ({ granted: "allowed", denied: "denied" })[state] ?? "notAsked";
+
+async function queryPermission() {
+  if (permission || !navigator.permissions?.query) return;
+  try {
+    permission = await navigator.permissions.query({ name: "camera" });
+    known = permission.state;
+    permission.addEventListener?.("change", () => { known = permission.state; });
+  } catch { /* no "camera" permission's name here */ }
+}
+
+// requestAccess opens the camera (the browser asks, if it hasn't) and
+// closes it at once.
+async function requestAccess() {
+  if (!navigator.mediaDevices?.getUserMedia) return "denied"; // not a secure context
+  let answer;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    stream.getTracks().forEach((t) => t.stop());
+    answer = "allowed";
+  } catch (e) {
+    // No camera at all says nothing of the permission.
+    answer = mediaError(e)?.message === "not allowed" ? "denied" : null;
+  }
+  if (answer) known = answer === "allowed" ? "granted" : "denied";
+  else if (permission) known = permission.state;
+  return answer ?? accessOf(known);
+}
+
 export function makeCamera() {
+  queryPermission();
   return {
     async take() {
       const phone = matchMedia?.("(pointer: coarse)").matches && (navigator.maxTouchPoints || 0) > 0;
@@ -244,5 +282,7 @@ export function makeCamera() {
       });
     },
     stopRecording() { for (const v of views) v.recording?.stop(); },
+    access() { return accessOf(known); },
+    requestAccess,
   };
 }
