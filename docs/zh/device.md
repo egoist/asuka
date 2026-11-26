@@ -1530,6 +1530,54 @@ async fn signInWithApple(token: string, code: string) throws {}
 
 `Credential` 的 `user` 是账号的稳定 ID；把 `identityToken`（由 Apple 签名的 JWT）和 `authorizationCode` 发给你的服务器，由服务器向 Apple 验证。`email`、`givenName` 和 `familyName` 只在用户第一次登录这个应用时提供：务必在那时保存下来。`AppleAuthError.canceled` 表示用户关闭了登录面板。`appleauth.credentialState(user)` 告诉你用户是否仍在这个应用上使用“通过 Apple 登录”（如果是 `.revoked`，就让用户退出登录）。Android 上没有这项功能：`SignInButton` 什么也不显示，`available()` 为 false，`signIn` 会抛出 `AppleAuthError.notAvailable`；Windows、Linux 和 Web 上也是如此。在这些平台上，可以通过网页完成“通过 Apple 登录”（`platform/webauth`）。Mac 和 iOS 一样支持这项功能，但需要描述文件（见[在 Mac 上](#在-mac-上)）。在测试中，`appleauth.fake()` 会替用户作答，答案由它的 `credential`、`cancel` 和 `states` 决定。
 
+## 通过 Google 登录：platform/googleauth
+
+`googleauth.signIn(clients, scopes:, nonce:)` 用用户的 Google 账号登录，和 Google 自己的 SDK 一样，给出一个 `GoogleUser`：它的 `id`、`email`、`name`、`givenName`、`familyName` 和 `picture`，给应用服务器用的 `idToken`，以及在个人资料之外请求的 `scopes` 对应的 `accessToken`。返回 `none` 表示用户取消了。
+
+```asuka check
+import platform/googleauth
+
+let clients = googleauth.Clients(
+  ios: "1234-ios.apps.googleusercontent.com",
+  web: "1234-web.apps.googleusercontent.com",
+  webRedirect: "https://example.com/",
+  desktop: "1234-desktop.apps.googleusercontent.com",
+  desktopSecret: "GOCSPX-example"
+)
+
+component SignIn {
+  state who = ""
+
+  Column {
+    gap: 12
+    Button("Sign in with Google") {
+      on press {
+        do {
+          if let user = try await googleauth.signIn(clients) {
+            who = user.email
+            // Send user.idToken to the app's server, which verifies it.
+          }
+        } catch e {
+          who = e.message
+        }
+      }
+    }
+    Text(who)
+  }
+}
+```
+
+各平台用各自的方式登录，各用一个在 Google Cloud 控制台创建的对应类型的 OAuth 客户端（在 `Clients` 里给出）：
+
+| | 方式 | 客户端 |
+| --- | --- | --- |
+| Android | Credential Manager 的账号选择器（系统的）；scopes 通过 Google 的 Authorization API 请求 | ID 令牌用 Web 客户端的 ID（`web`）；还必须存在一个带应用包名和签名证书的 Android 客户端 |
+| iOS、macOS | 在系统的登录面板（`platform/webauth`）里打开 Google 的登录页面，使用 PKCE | iOS 客户端（`ios`）；它的 ID 反过来写就是回调的 scheme |
+| Windows、Linux | 在 `platform/webauth` 的窗口里打开登录页面，回到应用自己在 127.0.0.1 上的服务器（RFC 8252） | 桌面客户端及其密钥（`desktop`、`desktopSecret`：已安装应用的密钥，并不保密） |
+| Web | 一个弹出窗口，回到应用的页面 | Web 客户端（`web`），`webRedirect` 是它已授权的重定向 URI 之一 |
+
+ID 令牌是 Google 签名的 JWT：应用的服务器要先验证它（用 Google 的公钥验证签名，检查 `aud` 是应用的客户端、`iss`、`exp`，以及服务器交给应用的 `nonce`），才能相信它所说的身份。`Clients` 里没有当前平台的客户端时，会抛出 `GoogleAuthError.notConfigured`。`googleauth.signOut()` 让 Android 的选择器下次重新询问；其他平台上，会话由浏览器保留。
+
 ## 钱包支付：platform/pay
 
 `platform/pay` 用平台自带的钱包收款：在 iOS、macOS 和 Safari 里是 Apple Pay，在 Android 和其他浏览器里是 Google Pay。它适用于实体商品和服务（订单、打车、门票、捐款）；在应用里出售的数字内容要走应用商店的内购。用户在钱包的支付面板里付款，应用拿到钱包给出的支付令牌（token），交给自己的支付处理商（Stripe、Adyen、Braintree 等），由服务器完成扣款。Asuka 自己从不扣款。

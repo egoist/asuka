@@ -1530,6 +1530,54 @@ async fn signInWithApple(token: string, code: string) throws {}
 
 `Credential` の `user` は、アカウントの変わらない ID です。`identityToken`（Apple が署名した JWT）と `authorizationCode` を自分のサーバーに送り、サーバーで Apple に照会して検証します。`email`、`givenName`、`familyName` が届くのは、ユーザーが初めてそのアプリにサインインしたときだけなので、そのときに保存してください。`AppleAuthError.canceled` は、ユーザーがシートを閉じたことを表します。`appleauth.credentialState(user)` は、ユーザーがそのアプリでまだ Apple でサインインを使っているかどうかを返します（`.revoked` ならサインアウトさせてください）。Android にはこの機能がありません。`SignInButton` は何も表示せず、`available()` は false で、`signIn` は `AppleAuthError.notAvailable` を投げます。Windows、Linux、Web でも同じです。これらのプラットフォームでは、Web 経由で Apple でサインインを使ってください（`platform/webauth`）。Mac では、プロビジョニングプロファイルがあれば iOS と同じように使えます（[Mac の場合](#mac-の場合)を参照）。テストでは、`appleauth.fake()` がユーザーの代わりに応答します。応答の内容は、その `credential`、`cancel`、`states` で決めます。
 
+## Google でサインイン：platform/googleauth
+
+`googleauth.signIn(clients, scopes:, nonce:)` は、Google 自身の SDK と同じように、ユーザーの Google アカウントでサインインし、`GoogleUser` を返します。`id`、`email`、`name`、`givenName`、`familyName`、`picture`、アプリのサーバーに渡す `idToken`、そしてプロフィール以外に求めた `scopes` のための `accessToken` を持ちます。`none` はユーザーがキャンセルしたことを表します。
+
+```asuka check
+import platform/googleauth
+
+let clients = googleauth.Clients(
+  ios: "1234-ios.apps.googleusercontent.com",
+  web: "1234-web.apps.googleusercontent.com",
+  webRedirect: "https://example.com/",
+  desktop: "1234-desktop.apps.googleusercontent.com",
+  desktopSecret: "GOCSPX-example"
+)
+
+component SignIn {
+  state who = ""
+
+  Column {
+    gap: 12
+    Button("Sign in with Google") {
+      on press {
+        do {
+          if let user = try await googleauth.signIn(clients) {
+            who = user.email
+            // Send user.idToken to the app's server, which verifies it.
+          }
+        } catch e {
+          who = e.message
+        }
+      }
+    }
+    Text(who)
+  }
+}
+```
+
+プラットフォームごとにサインインの方法が異なり、それぞれ Google Cloud コンソールで作った種類の OAuth クライアントを使います（`Clients` で指定します）。
+
+| | 方法 | クライアント |
+| --- | --- | --- |
+| Android | Credential Manager のアカウント選択画面（システムのもの）。scopes は Google の Authorization API で求めます | ID トークンには Web クライアントの ID（`web`）。アプリのパッケージ名と署名証明書を登録した Android クライアントも必要です |
+| iOS、macOS | システムのサインインシート（`platform/webauth`）で Google のサインインページを開き、PKCE を使います | iOS クライアント（`ios`）。その ID を逆にしたものがコールバックのスキームです |
+| Windows、Linux | `platform/webauth` のウィンドウでサインインページを開き、127.0.0.1 上のアプリ自身のサーバーに戻ります（RFC 8252） | デスクトップクライアントとそのシークレット（`desktop`、`desktopSecret`。インストールされるアプリのもので、秘密ではありません） |
+| Web | ポップアップで、アプリのページに戻ります | Web クライアント（`web`）。`webRedirect` はその承認済みリダイレクト URI の一つです |
+
+ID トークンは Google が署名した JWT です。アプリのサーバーは、示された人物を信用する前にそれを検証します（Google の鍵による署名、`aud` がアプリのクライアントであること、`iss`、`exp`、そしてサーバーがアプリに渡した `nonce`）。`Clients` にそのプラットフォームのクライアントがなければ `GoogleAuthError.notConfigured` を投げます。`googleauth.signOut()` は、Android の選択画面が次回もう一度尋ねるようにします。ほかのプラットフォームでは、セッションはブラウザーが保持します。
+
 ## ウォレット決済：platform/pay
 
 `platform/pay` は、プラットフォームのウォレットで支払いを受け付けます。iOS、macOS、Safari では Apple Pay、Android とそのほかのブラウザーでは Google Pay です。対象は物理的な商品やサービス（注文、配車、チケット、寄付など）で、アプリ内で販売するデジタルコンテンツには各ストアのアプリ内課金を使います。ユーザーはウォレットのシートで支払い、アプリは決済代行業者（Stripe、Adyen、Braintree など）に渡すウォレットの支払いトークンを受け取ります。請求するのはアプリのサーバーです。Asuka 自身がカードに請求することはありません。

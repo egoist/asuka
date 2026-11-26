@@ -1,0 +1,46 @@
+import std/encoding
+import std/url
+
+test "the PKCE challenge is the verifier's SHA-256, base64url without padding (S256)" {
+  // As Python's hashlib and base64.urlsafe_b64encode make it.
+  expect(challenge("dBjftJeZ4CVP-mJ92K9ZLbcmyLSI3T6TJXRLNsxz-xxx") == "jnSKi630OOkMKXnw5ReZGp6GzkiYpXs3KAFtCHhb4N0")
+}
+
+test "the sign-in asks for the profile and the app's scopes, with PKCE" {
+  let u = url.parse(authorizeURL("c.apps.googleusercontent.com", "com.googleusercontent.apps.c:/oauth2redirect",
+    ["https://www.googleapis.com/auth/drive.readonly"], "n1", "s1", "ch", "code"))!
+  expect(u.host == "accounts.google.com")
+  expect(u.query("scope") == "openid email profile https://www.googleapis.com/auth/drive.readonly")
+  expect(u.query("code_challenge") == "ch" && u.query("code_challenge_method") == "S256")
+  expect(u.query("nonce") == "n1" && u.query("state") == "s1" && u.query("response_type") == "code")
+}
+
+test "the callback's code, its state checked" {
+  expect((try codeOf([("code", "abc"), ("state", "s1")], "s1")) == "abc")
+  expect((try codeOf([("error", "access_denied")], "s1")) == none)
+  var said = ""
+  do {
+    let _ = try codeOf([("code", "abc"), ("state", "other")], "s1")
+  } catch e {
+    said = e.message
+  }
+  expect(said == "googleauth: the sign-in's state doesn't match")
+}
+
+test "the account is read from the ID token" {
+  let claims = "\{\"sub\":\"42\",\"email\":\"ada@example.com\",\"name\":\"Ada Lovelace\",\"given_name\":\"Ada\",\"family_name\":\"Lovelace\",\"picture\":\"https://p/a.png\"}"
+  let jwt = "e30.{encoding.base64URLEncode(claims.bytes())}.sig"
+  let u = try userOf(jwt, "tok")
+  expect(u.id == "42" && u.email == "ada@example.com" && u.givenName == "Ada" && u.familyName == "Lovelace")
+  expect(u.picture == "https://p/a.png" && u.idToken == jwt && u.accessToken == "tok")
+}
+
+test "a platform without a client isn't configured" {
+  var said = ""
+  do {
+    let _ = try await signIn(Clients())
+  } catch e {
+    said = e.message
+  }
+  expect(said == "googleauth: no OAuth client for this platform (Clients)")
+}

@@ -2232,6 +2232,64 @@ iOS does, with a provisioning profile (see [On a Mac](#on-a-mac)). In a
 test, `appleauth.fake()` answers as the user would: its `credential`,
 `cancel` and `states`.
 
+## Sign in with Google: platform/googleauth
+
+`googleauth.signIn(clients, scopes:, nonce:)` signs the user in with
+their Google account, as Google's own SDKs do, and gives a `GoogleUser`:
+its `id`, `email`, `name`, `givenName`, `familyName` and `picture`, an
+`idToken` for the app's server, and an `accessToken` for the `scopes` it
+asked for besides the profile's. `none` means the user cancelled.
+
+```asuka check
+import platform/googleauth
+
+let clients = googleauth.Clients(
+  ios: "1234-ios.apps.googleusercontent.com",
+  web: "1234-web.apps.googleusercontent.com",
+  webRedirect: "https://example.com/",
+  desktop: "1234-desktop.apps.googleusercontent.com",
+  desktopSecret: "GOCSPX-example"
+)
+
+component SignIn {
+  state who = ""
+
+  Column {
+    gap: 12
+    Button("Sign in with Google") {
+      on press {
+        do {
+          if let user = try await googleauth.signIn(clients) {
+            who = user.email
+            // Send user.idToken to the app's server, which verifies it.
+          }
+        } catch e {
+          who = e.message
+        }
+      }
+    }
+    Text(who)
+  }
+}
+```
+
+Each platform signs in its own way, with an OAuth client of its type
+made in the Google Cloud console (`Clients` names them):
+
+| | How | Client |
+| --- | --- | --- |
+| Android | Credential Manager's account chooser, the system's; scopes through Google's Authorization API | the web client's ID (`web`) for the ID token; an Android client with the app's package and signing certificate must exist |
+| iOS, macOS | Google's sign-in page in the system's sheet (`platform/webauth`), with PKCE | the iOS client (`ios`); its reversed ID is the callback's scheme |
+| Windows, Linux | the sign-in page in `platform/webauth`'s window, back to a server of the app's on 127.0.0.1 (RFC 8252) | the desktop client and its secret (`desktop`, `desktopSecret`: an installed app's, not a secret) |
+| Web | a popup back to the app's page | the web client (`web`), `webRedirect` one of its authorized redirect URIs |
+
+The ID token is a JWT signed by Google: the app's server verifies it
+(its signature with Google's keys, `aud` the app's client, `iss`, `exp`,
+and the `nonce` it gave the app) before trusting who it says. A
+platform without its client in `Clients` throws
+`GoogleAuthError.notConfigured`. `googleauth.signOut()` makes Android's
+chooser ask again; elsewhere the browser keeps its session.
+
 ## Wallet payments: platform/pay
 
 `platform/pay` takes payments with the platform's wallet: Apple Pay on

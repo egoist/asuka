@@ -1,0 +1,308 @@
+// Package platform/googleauth signs the user in with their Google
+// account, as Google's own SDKs and Expo's Google sign-in do: the
+// account's ID, email, name and picture, and an ID token to send the
+// app's server (which verifies it), with an access token for the scopes
+// the app asks for.
+//
+//   let clients = googleauth.Clients(ios: "1234-abc.apps.googleusercontent.com",
+//     web: "1234-def.apps.googleusercontent.com",
+//     desktop: "1234-ghi.apps.googleusercontent.com", desktopSecret: "GOCSPX-…",
+//     webRedirect: "https://example.com/")
+//   if let user = try await googleauth.signIn(clients) {
+//     try await signInOnServer(user.idToken)
+//   }
+//
+// Each platform signs in its own way, with an OAuth client of its type
+// made in the Google Cloud console:
+// - iOS and the Mac: Google's sign-in page in the system's sheet
+//   (platform/webauth), with the iOS client (its reversed ID the
+//   callback scheme), PKCE and no secret.
+// - Android: Credential Manager's account chooser, a sheet of the
+//   system's (Google's Sign in with Google): the ID token is for the web
+//   client; asking for scopes shows Google's consent too (its
+//   Authorization API). The Android client, with the app's package name
+//   and signing certificate, needs no ID here, but must exist.
+// - Windows and Linux: the sign-in page in platform/webauth's window,
+//   redirecting to the app on the loopback interface (RFC 8252), with the
+//   desktop client and its secret (an installed app's, not a secret).
+// - The web: a popup back to the app's page (webRedirect), with the web
+//   client.
+
+import platform/webauth
+import std/crypto
+import std/encoding
+import std/http
+import std/json
+import std/url
+
+/// The OAuth clients the app made in the Google Cloud console, one a
+/// platform it runs on ("": a platform it doesn't sign in on).
+pub struct Clients {
+  /// The iOS client, for iOS and the Mac.
+  ios: string = ""
+  /// The web client: the web's, and the audience of Android's ID tokens
+  /// (Credential Manager's server client ID).
+  web: string = ""
+  /// The web: the page Google sends the user back to, one of the web
+  /// client's authorized redirect URIs ("https://example.com/").
+  webRedirect: string = ""
+  /// The desktop client, for Windows and Linux, and its secret.
+  desktop: string = ""
+  desktopSecret: string = ""
+}
+
+/// The signed-in account.
+pub struct GoogleUser {
+  /// The account's stable ID (the ID token's sub).
+  id: string
+  email: string = ""
+  name: string = ""
+  givenName: string = ""
+  familyName: string = ""
+  /// The profile picture's URL; "" for none.
+  picture: string = ""
+  /// A JWT signed by Google, for the app's server: it verifies it
+  /// (its signature, aud: the app's client, iss, exp, and the nonce) before
+  /// trusting what it says.
+  idToken: string
+  /// For Google's APIs, with the scopes asked for; "" when none were.
+  accessToken: string = ""
+}
+
+/// Why a sign-in didn't happen.
+pub enum GoogleAuthError: Error {
+  /// No client for this platform in Clients, or a platform that can't.
+  notConfigured
+  /// Google refused it: its error and description.
+  failed(reason: string)
+
+  /// The error's text.
+  fn message() -> string = match self {
+    .notConfigured => "googleauth: no OAuth client for this platform (Clients)"
+    .failed(r) => "googleauth: {r}"
+  }
+}
+
+/// Android's Credential Manager and Authorization API.
+native interface Android {
+  /// Shows the account chooser: the credential as JSON ({idToken, id,
+  /// email, name, givenName, familyName, picture, accessToken}), "" when
+  /// the user cancelled.
+  async fn signIn(serverClientId: string, nonce: string, scopes: [string]) -> string
+  /// Forgets the account chosen (the chooser asks again next time).
+  async fn signOut()
+}
+
+let android = try? Android()
+
+/// Signs in with Google: the account, or none if the user cancelled.
+/// scopes are Google's API scopes to ask for besides the profile's
+/// ("https://www.googleapis.com/auth/drive.readonly"); with any, the
+/// user's consent covers them and accessToken has them. nonce, when
+/// given, is in the ID token for the server to check (a random value the
+/// server made, against replays).
+pub async fn signIn(clients: Clients, scopes: [string] = [], nonce: string = "") throws -> GoogleUser? {
+  let p = environment().platform
+  if p == .android {
+    if clients.web.isEmpty() { throw GoogleAuthError.notConfigured }
+    let a = android else { throw GoogleAuthError.notConfigured }
+    let got = try await a.signIn(serverClientId: clients.web, nonce: nonce, scopes: scopes)
+    if got.isEmpty() { return none }
+    let c: NativeUser = try json.decode(got)
+    return GoogleUser(id: c.id, email: c.email, name: c.name, givenName: c.givenName, familyName: c.familyName,
+      picture: c.picture, idToken: c.idToken, accessToken: c.accessToken)
+  }
+  if p == .iOS || p == .macOS {
+    if clients.ios.isEmpty() { throw GoogleAuthError.notConfigured }
+    return try await withScheme(clients.ios, scopes, nonce)
+  }
+  if p == .windows || p == .linux {
+    if clients.desktop.isEmpty() { throw GoogleAuthError.notConfigured }
+    return try await withLoopback(clients.desktop, clients.desktopSecret, scopes, nonce)
+  }
+  if p == .web {
+    if clients.web.isEmpty() || clients.webRedirect.isEmpty() { throw GoogleAuthError.notConfigured }
+    return try await withPopup(clients.web, clients.webRedirect, scopes, nonce)
+  }
+  throw GoogleAuthError.notConfigured
+}
+
+/// Forgets the account chosen, so the next sign-in asks which (Android's
+/// Credential Manager remembers it; elsewhere it's the browser's
+/// session, which this doesn't end).
+pub async fn signOut() throws {
+  if environment().platform == .android {
+    if let a = android {
+      try await a.signOut()
+    }
+  }
+}
+
+// ---- OAuth, with PKCE ----
+
+struct NativeUser {
+  idToken: string = ""
+  id: string = ""
+  email: string = ""
+  name: string = ""
+  givenName: string = ""
+  familyName: string = ""
+  picture: string = ""
+  accessToken: string = ""
+}
+
+let authorize = "https://accounts.google.com/o/oauth2/v2/auth"
+let tokenURL = "https://oauth2.googleapis.com/token"
+
+/// The scopes asked for: the profile's, then the app's.
+fn scopeOf(scopes: [string]) -> string = (["openid", "email", "profile"] + scopes).unique().joined(separator: " ")
+
+fn random() -> string = encoding.base64URLEncode(crypto.randomBytes(32))
+
+fn challenge(verifier: string) -> string = encoding.base64URLEncode(crypto.sha256(verifier.bytes()))
+
+fn authorizeURL(client: string, redirect: string, scopes: [string], nonce: string, state: string, challenge: string, response: string) -> string {
+  var q: [string: string] = ["client_id": client, "redirect_uri": redirect, "response_type": response, "scope": scopeOf(scopes),
+    "state": state, "prompt": "select_account"]
+  if !challenge.isEmpty() {
+    q["code_challenge"] = challenge
+    q["code_challenge_method"] = "S256"
+  }
+  if !nonce.isEmpty() { q["nonce"] = nonce }
+  return "{authorize}?{url.encodeQuery(q)}"
+}
+
+/// The callback's code, after checking its state; none if Google said
+/// the user denied it.
+fn codeOf(query: [(string, string)], state: string) throws -> string? {
+  let get = (name: string) => query.find(kv => kv.0 == name)?.1 ?? ""
+  let err = get("error")
+  if err == "access_denied" { return none }
+  if !err.isEmpty() { throw GoogleAuthError.failed(reason: "{err}: {get("error_description")}") }
+  if get("state") != state { throw GoogleAuthError.failed(reason: "the sign-in's state doesn't match") }
+  let code = get("code")
+  if code.isEmpty() { throw GoogleAuthError.failed(reason: "no code in the sign-in's answer") }
+  return code
+}
+
+struct TokenReply {
+  id_token: string = ""
+  access_token: string = ""
+  error: string = ""
+  error_description: string = ""
+}
+
+/// Trades the code for tokens, and reads the account from the ID token.
+async fn exchange(client: string, secret: string, code: string, verifier: string, redirect: string, scopes: [string]) throws -> GoogleUser {
+  var form: [string: string] = ["client_id": client, "code": code, "code_verifier": verifier, "grant_type": "authorization_code",
+    "redirect_uri": redirect]
+  if !secret.isEmpty() { form["client_secret"] = secret }
+  let r = try await http.post(tokenURL, body: url.encodeQuery(form).bytes(), headers: ["content-type": "application/x-www-form-urlencoded"])
+  let t: TokenReply = try json.decode(r.text())
+  if r.status != 200 || t.id_token.isEmpty() {
+    throw GoogleAuthError.failed(reason: if t.error.isEmpty() { "the token endpoint answered {r.status}" } else { "{t.error}: {t.error_description}" })
+  }
+  return try userOf(t.id_token, if scopes.isEmpty() { "" } else { t.access_token })
+}
+
+struct Claims {
+  sub: string = ""
+  email: string = ""
+  name: string = ""
+  given_name: string = ""
+  family_name: string = ""
+  picture: string = ""
+}
+
+/// The account an ID token says, read (not verified: the app's server
+/// does that).
+fn userOf(idToken: string, accessToken: string) throws -> GoogleUser {
+  let parts = idToken.split(".")
+  if parts.count() != 3 { throw GoogleAuthError.failed(reason: "the ID token isn't a JWT") }
+  let c: Claims = try json.decode((try encoding.base64Decode(parts[1])).string())
+  return GoogleUser(id: c.sub, email: c.email, name: c.name, givenName: c.given_name, familyName: c.family_name,
+    picture: c.picture, idToken: idToken, accessToken: accessToken)
+}
+
+/// iOS and the Mac: the iOS client's reversed ID is the callback's
+/// scheme, which ASWebAuthenticationSession ends on.
+async fn withScheme(client: string, scopes: [string], nonce: string) throws -> GoogleUser? {
+  let scheme = client.split(".").reversed().joined(separator: ".")
+  let redirect = "{scheme}:/oauth2redirect"
+  let verifier = random()
+  let state = random()
+  var back = ""
+  do {
+    back = try await webauth.open(authorizeURL(client, redirect, scopes, nonce, state, challenge(verifier), "code"), callbackScheme: scheme)
+  } catch webauth.WebAuthError.canceled {
+    return none
+  }
+  let u = url.parse(back) else { throw GoogleAuthError.failed(reason: "the callback isn't a URL") }
+  let code = try codeOf(url.parseQuery(u.rawQuery), state) else { return none }
+  return try await exchange(client, "", code, verifier, redirect, scopes)
+}
+
+/// Windows and Linux: a server of the app's on 127.0.0.1 takes the
+/// redirect; the window closes as it does.
+async fn withLoopback(client: string, secret: string, scopes: [string], nonce: string) throws -> GoogleUser? {
+  let verifier = random()
+  let state = random()
+  var redirect = ""
+  let answers = Stream<[(string, string)]>(send => {
+    let s = try await http.serve(0, req => {
+      if req.path != "/" { return http.Reply.text("", status: 404) }
+      send(url.parseQuery(req.rawQuery))
+      return http.Reply.text("Signed in: you can close this window and go back to the app.")
+    })
+    defer { await s.close() }
+    redirect = "http://127.0.0.1:{s.port}/"
+    await never()
+  })
+  var query: [(string, string)] = []
+  let opened = async () => {
+    // The page's server is up once redirect is set.
+    while redirect.isEmpty() { await sleep(10ms) }
+    try await webauth.open(authorizeURL(client, redirect, scopes, nonce, state, challenge(verifier), "code"))
+  }
+  let answered = async () => {
+    for await q in answers {
+      query = q
+      break
+    }
+  }
+  do {
+    try await race(answered(), opened())
+  } catch webauth.WebAuthError.canceled {
+    return none
+  }
+  let code = try codeOf(query, state) else { return none }
+  return try await exchange(client, secret, code, verifier, redirect, scopes)
+}
+
+/// The web: a popup back to the app's page with the tokens in its
+/// fragment (the web client's implicit flow, which has no secret to
+/// keep).
+async fn withPopup(client: string, redirect: string, scopes: [string], nonce: string) throws -> GoogleUser? {
+  let state = random()
+  let n = if nonce.isEmpty() { random() } else { nonce } // the implicit flow wants one
+  var back = ""
+  do {
+    back = try await webauth.open(authorizeURL(client, redirect, scopes, n, state, "", if scopes.isEmpty() { "id_token" } else { "id_token token" }))
+  } catch webauth.WebAuthError.canceled {
+    return none
+  }
+  let (_, fragment, _) = cutAt(back, "#")
+  let q = url.parseQuery(fragment)
+  let get = (name: string) => q.find(kv => kv.0 == name)?.1 ?? ""
+  if get("error") == "access_denied" { return none }
+  if !get("error").isEmpty() { throw GoogleAuthError.failed(reason: get("error")) }
+  if get("state") != state { throw GoogleAuthError.failed(reason: "the sign-in's state doesn't match") }
+  return try userOf(get("id_token"), get("access_token"))
+}
+
+fn cutAt(s: string, sep: string) -> (string, string, bool) {
+  if let i = s.find(sep) {
+    return (s.byteSlice(0, i), s.byteSlice(i + sep.byteCount()), true)
+  }
+  return (s, "", false)
+}
