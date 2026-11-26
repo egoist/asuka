@@ -1,0 +1,39 @@
+// Disabled opacity shows each kind of control disabled (e2e's
+// TestDisabledOpacityWeb): one the web host dims is at one opacity,
+// whatever its kind.
+
+let sizes = ["Small", "Medium", "Large"]
+
+component DisabledOpacity {
+  state name = "Ada"
+  state on = true
+  state choice = 0
+  state count = 1.0
+  state size = 1
+  state day = 1764000000000
+  state tint = #039be5
+
+  SafeArea {
+    padding: 16
+    gap: 12
+
+    Text("ready")
+    Button("Plain") { disabled: true }
+    Button("Filled") { variant: .filled; disabled: true }
+    TextField { bind text: name; disabled: true }
+    Toggle { bind on: on; disabled: true }
+    Segmented(["One", "Two"]) { bind selected: choice; disabled: true }
+    Stepper { bind value: count; disabled: true }
+    Picker(sizes) { bind selected: size; disabled: true }
+    Wheel(sizes) { bind selected: size; disabled: true }
+    DatePicker { bind value: day; disabled: true }
+    ColorPicker { bind value: tint; disabled: true }
+  }
+}
+
+app { DisabledOpacity() }
+
+test "the controls show" {
+  let app = mount(DisabledOpacity())
+  app.expect("ready")
+}
