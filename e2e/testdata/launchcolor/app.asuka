@@ -1,0 +1,16 @@
+// Launch Color has a splash (asuka.toml), whose color is the page's while
+// the app loads (e2e's TestLaunchColorWeb).
+
+component Launch {
+  Column {
+    padding: 24
+    Text("status: ready")
+  }
+}
+
+app { Launch() }
+
+test "it shows its status" {
+  let app = mount(Launch())
+  app.expect("status: ready")
+}

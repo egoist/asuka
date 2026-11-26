@@ -1,0 +1,5 @@
+name = "Launch Color"
+id = "dev.asuka.launchcolor"
+
+[splash]
+background = "#4a63b5"

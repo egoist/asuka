@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -55,6 +57,48 @@ func TestDevServerServesRoutes(t *testing.T) {
 		s.ServeHTTP(w, r)
 		if w.Code != c.code || (c.code == 200 && !strings.Contains(w.Body.String(), `<base href="/">`)) {
 			t.Errorf("%s: %d\n%s", c.path, w.Code, w.Body.String())
+		}
+	}
+}
+
+// The splash's colors are the page's until the app's first frame when
+// asuka.toml sets its background: the light one in dark mode too without
+// a dark one. A splash with an image alone, or none, leaves the page
+// without a launch style.
+func TestWebIndexLaunch(t *testing.T) {
+	page := func(toml string) string {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte(toml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		c, err := loadConfig(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return webIndex(webPage{Name: "A", Host: "asuka", Core: "asuka.wasm", Launch: launchColors(c)})
+	}
+	const sel = "html:not(:has(.asuka-drawn)), .asuka-page:not(.asuka-drawn)"
+	for _, c := range []struct {
+		toml        string
+		light, dark string
+	}{
+		{"[splash]\nbackground = \"#f5f7f9\"\ndarkBackground = \"#0e0f12\"", "#f5f7f9", "#0e0f12"},
+		{"[splash]\nbackground = \"#f5f7f9\"", "#f5f7f9", "#f5f7f9"},
+	} {
+		p := page(c.toml)
+		for _, want := range []string{
+			sel + " { background: " + c.light + "; }",
+			"@media (prefers-color-scheme: dark) { " + sel + " { background: " + c.dark + "; } }",
+		} {
+			if !strings.Contains(p, want) {
+				t.Errorf("%q: the page lacks %q:\n%s", c.toml, want, p)
+			}
+		}
+	}
+	for _, toml := range []string{"[splash]\nimage = \"logo.png\"", `name = "A"`} {
+		if strings.Contains(page(toml), "asuka-drawn") {
+			t.Errorf("%q: the page has a launch style", toml)
 		}
 	}
 }

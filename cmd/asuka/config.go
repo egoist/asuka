@@ -180,6 +180,9 @@ type appConfig struct {
 		// the light one).
 		Background     string `json:"background"`
 		DarkBackground string `json:"darkBackground"`
+		// colored is whether asuka.toml sets Background itself, rather
+		// than loadConfig: only then is a loading web page its color.
+		colored bool
 	} `json:"splash"`
 	// Widgets are the app's home screen widgets (platform/widget fills them).
 	Widgets []widgetConfig `json:"widgets"`
@@ -464,6 +467,7 @@ func loadConfig(dir string) (*appConfig, error) {
 			sp.Size = 120
 		}
 		sp.Size = min(sp.Size, 160)
+		sp.colored = sp.Background != ""
 		if sp.Background == "" {
 			sp.Background = "#ffffff"
 		}

@@ -165,7 +165,9 @@ that takes files also needs the App Group `group.<id>`. See
 
 The launch screen on iOS and Android: an image in the middle of a color,
 from the tap on the icon until the app's first frame (or
-`splash.Hide`). The desktops and the web have none.
+`splash.Hide`). On the web, when it sets `background`, its colors (not
+its image) are the page's while it loads, until the app's first frame.
+The desktops have none.
 
 ```toml
 [splash]
