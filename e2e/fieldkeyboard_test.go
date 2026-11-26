@@ -190,7 +190,10 @@ func TestFieldKeyboardChangeIOS(t *testing.T) {
 		t.Fatalf("the keyboard's height went %s, want it lower for the number pad", arrows(hs))
 	}
 	for i := 1; i < len(hs); i++ {
-		if hs[i] > hs[i-1] {
+		// A point up isn't the bar coming back (its height, 40 points and
+		// more): iOS 27's notifications say the keyboard is a point taller
+		// on the way to the number pad.
+		if hs[i] > hs[i-1]+1 {
 			t.Fatalf("the keyboard's height went %s, want it only to go down", arrows(hs))
 		}
 	}
