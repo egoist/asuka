@@ -126,6 +126,25 @@ char *dsk_exe_path(void);
 char *dsk_dir(const char *path);
 const char *dsk_base(const char *path);
 
+// ---- Images kept across launches (imagecache.c) ----
+
+// The images' cache's size, past which the least recently used go.
+#define DSK_IMAGE_CACHE_LIMIT (256LL << 20)
+
+// dsk_image_cache_read is url's image's bytes, kept in dir (the app's
+// caches' asuka-images), or NULL (free it); it marks it used.
+uint8_t *dsk_image_cache_read(const char *dir, const char *url, size_t *len);
+// dsk_image_cache_write keeps url's image's bytes in dir; the first
+// write of a run trims it to DSK_IMAGE_CACHE_LIMIT. From any thread.
+void dsk_image_cache_write(const char *dir, const char *url, const uint8_t *data, size_t len);
+// dsk_image_cache_trim deletes dir's least recently used files past
+// limit bytes.
+void dsk_image_cache_trim(const char *dir, long long limit);
+// dsk_image_cache_storable reports whether a response may be kept: not
+// one whose Cache-Control (NULL: none) says no-store, nor one from this
+// machine (asuka dev's assets, which change).
+bool dsk_image_cache_storable(const char *url, const char *cache_control);
+
 // ---- The app's settings (asuka-app.json) ----
 
 typedef struct {
@@ -135,7 +154,14 @@ typedef struct {
 	char *update_feed, *update_key, *update_target;
 	// The executable's alternate icons' names, comma-separated (Windows).
 	char *alternate_icons;
+	// What asuka.toml says to the app's packages, by key
+	// ("analytics.measurementId"): asuka_desktop_app_setting's.
+	char **setting_keys, **setting_values;
+	size_t nsettings;
 } dsk_config;
+
+// dsk_config_setting is c's setting key ("" when it has none).
+const char *dsk_config_setting(const dsk_config *c, const char *key);
 
 // dsk_config_load reads the settings: from ASUKA_APP_CONFIG, else
 // asuka-app.json beside the executable, else in an install prefix's
