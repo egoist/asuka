@@ -11,3 +11,27 @@ permissions = ["android.permission.RECORD_AUDIO"]
 
 [windows]
 libraries = ["ole32", "advapi32"]
+
+# Linux: PocketSphinx and its US English model (pocketsphinx-en-us),
+# GStreamer to decode and to listen. A Flatpak builds PocketSphinx, which
+# GNOME's runtime hasn't (its model installed with it), and has a socket
+# to the sound server for the microphone.
+[linux]
+flatpak = ["--socket=pulseaudio"]
+flatpakModules = ['''
+name: pocketsphinx
+buildsystem: cmake-ninja
+config-opts:
+  - -DCMAKE_BUILD_TYPE=Release
+  - -DCMAKE_INSTALL_LIBDIR=/app/lib
+  - -DBUILD_SHARED_LIBS=ON
+  - -DBUILD_GSTREAMER=OFF
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /bin
+sources:
+  - type: archive
+    url: https://github.com/cmusphinx/pocketsphinx/archive/refs/tags/v5.1.1.tar.gz
+    sha256: e2db414eb66618cd0a98de77507db32517a48f6900b06bfb94c0acc4bef5761d
+''']

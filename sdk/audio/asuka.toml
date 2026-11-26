@@ -4,3 +4,8 @@ description = "Sounds and music, played with the platform's player"
 
 [windows]
 libraries = ["winmm"]
+
+# Its sound is GStreamer's, through the sound server: a Flatpak's socket
+# to it.
+[linux]
+flatpak = ["--socket=pulseaudio"]

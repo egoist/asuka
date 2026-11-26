@@ -10,3 +10,8 @@ permissions = ["android.permission.RECORD_AUDIO", "android.permission.FOREGROUND
 
 [windows]
 libraries = ["winmm", "advapi32", "ole32"]
+
+# Its sound is GStreamer's, through the sound server: a Flatpak's socket
+# to it.
+[linux]
+flatpak = ["--socket=pulseaudio"]

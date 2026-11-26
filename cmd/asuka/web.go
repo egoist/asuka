@@ -33,9 +33,9 @@ import (
 
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/cbuild"
-	"github.com/egoist/asuka/internal/qrcode"
 	"github.com/egoist/asuka/internal/devserver"
 	"github.com/egoist/asuka/internal/nativegen"
+	"github.com/egoist/asuka/internal/qrcode"
 	"github.com/egoist/asuka/lang/bytecode"
 	"github.com/egoist/asuka/lang/target"
 	webhost "github.com/egoist/asuka/platform/web"

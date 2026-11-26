@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -405,18 +406,28 @@ finish-args:
     sources:
       - type: dir
         path: %[4]s
-`, app.displayName(), app.bundleID, rt, exe, dirs, flatpakExtraArgs(app.cfg), flatpakModules(app.cfg))
+`, app.displayName(), app.bundleID, rt, exe, dirs, flatpakExtraArgs(app), flatpakModules(app.cfg))
 }
 
 // flatpakExtraArgs are the finish-args the app's packages need (their
-// manifests' linux.flatpak), as the manifest's lines.
-func flatpakExtraArgs(c *appConfig) string {
+// manifests' linux.flatpak), and the sound server's socket for an app
+// that shows a Video (GStreamer plays it through PulseAudio's, which
+// PipeWire serves too), as the manifest's lines.
+func flatpakExtraArgs(app *asukaApp) string {
+	args := app.cfg.flatpakArgs
+	if app.refs("", "Video") && !slices.Contains(args, flatpakSound) {
+		args = append(slices.Clone(args), flatpakSound)
+	}
 	var b strings.Builder
-	for _, a := range c.flatpakArgs {
+	for _, a := range args {
 		b.WriteString("  - " + a + "\n")
 	}
 	return b.String()
 }
+
+// flatpakSound is the finish-arg that lets a Flatpak play and record
+// sound.
+const flatpakSound = "--socket=pulseaudio"
 
 // flatpakModules are the modules the app's packages build before it
 // (their manifests' linux.flatpakModules), as the manifest's list items.

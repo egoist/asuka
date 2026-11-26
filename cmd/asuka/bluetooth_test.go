@@ -116,4 +116,16 @@ func TestFlatpakModules(t *testing.T) {
 	if !strings.Contains(f, "      - type: archive\n        url: https://poppler.freedesktop.org/") {
 		t.Errorf("Poppler's source:\n%s", f)
 	}
+
+	// platform/transcribe's PocketSphinx too, and the sound server's
+	// socket (its and platform/record's), once.
+	importStd(t, &c, "", "transcribe")
+	importStd(t, &c, "", "record")
+	f = flatpakManifest(app, "reader")
+	if !strings.Contains(f, "  - name: pocketsphinx\n") || strings.Index(f, "  - name: pocketsphinx\n") > strings.Index(f, "  - name: reader\n") {
+		t.Errorf("PocketSphinx's module:\n%s", f)
+	}
+	if n := strings.Count(f, "--socket=pulseaudio"); n != 1 {
+		t.Errorf("the sound socket %d times:\n%s", n, f)
+	}
 }

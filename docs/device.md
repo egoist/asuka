@@ -198,7 +198,11 @@ printing, opening files and links, keeping the system awake), the
 portal asks the user as it does, and it works in a Flatpak sandbox as
 out of one. The Flatpak manifest `asuka build --platform linux` writes
 lets the app reach only the display, the GPU, the network and the
-portals. Services Asuka reaches without a portal (Speech Dispatcher,
+portals, and the sound server for an app that plays or records sound (a
+`Video`, `platform/audio`, `platform/record`, `platform/transcribe`); it
+builds the libraries the GNOME runtime hasn't that a package opens
+(Poppler for `platform/pdf`, PocketSphinx for `platform/transcribe`).
+Services Asuka reaches without a portal (Speech Dispatcher,
 Evolution Data Server for contacts and calendars, NetworkManager for the
 connection's type, iio-sensor-proxy, a Video4Linux camera) need the
 `finish-args` that open them, added to the manifest; without them, the

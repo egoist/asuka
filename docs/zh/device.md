@@ -136,7 +136,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 
 ## 在 Linux 上
 
-Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面门户（portal）来做的事情（文件、相机、定位、通知、邮件、打印、打开文件和链接、阻止系统休眠），都由门户按它自己的方式询问用户，而且在 Flatpak 沙盒内外都能正常工作。`asuka build --platform linux` 生成的 Flatpak 清单只允许应用访问显示、GPU、网络和门户。Asuka 不经门户、直接访问的那些服务（Speech Dispatcher、提供通讯录和日历的 Evolution Data Server、提供连接类型的 NetworkManager、iio-sensor-proxy、Video4Linux 摄像头），需要你在清单里加上开放它们的 `finish-args`；否则包的表现就和在没有这项服务的系统上一样。定时通知需要沙盒外的 systemd：在 Flatpak 中，它只会在应用运行时显示（见[各平台的情况](#各平台的情况)）。
+Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面门户（portal）来做的事情（文件、相机、定位、通知、邮件、打印、打开文件和链接、阻止系统休眠），都由门户按它自己的方式询问用户，而且在 Flatpak 沙盒内外都能正常工作。`asuka build --platform linux` 生成的 Flatpak 清单只允许应用访问显示、GPU、网络和门户；播放或录制声音的应用（用了 `Video`、`platform/audio`、`platform/record`、`platform/transcribe`）还可以访问声音服务器。包要打开、而 GNOME 运行时里没有的库（`platform/pdf` 的 Poppler、`platform/transcribe` 的 PocketSphinx），清单会一并构建。Asuka 不经门户、直接访问的那些服务（Speech Dispatcher、提供通讯录和日历的 Evolution Data Server、提供连接类型的 NetworkManager、iio-sensor-proxy、Video4Linux 摄像头），需要你在清单里加上开放它们的 `finish-args`；否则包的表现就和在没有这项服务的系统上一样。定时通知需要沙盒外的 systemd：在 Flatpak 中，它只会在应用运行时显示（见[各平台的情况](#各平台的情况)）。
 
 在 Linux 上，Asuka 访问桌面服务时，有门户就走门户，此外还用到 GLib、GTK，以及桌面系统通常自带的一些库。每个库都在第一次用到时才加载：如果系统里没有，就会返回一个说明缺了什么的错误。
 
