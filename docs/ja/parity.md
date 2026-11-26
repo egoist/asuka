@@ -50,6 +50,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 地図 | `Map` | `expo-maps` | ✓ `platform/maps` の `maps.View`（iOS と Mac では MapKit、Android では Google Maps、Windows、Linux（libshumate）、Web では OpenStreetMap のタイル：表示範囲、マーカー、ユーザーの現在地、タップ） |
 | 独自の描画 | `Shape`、`Path`、`Canvas` | `react-native-svg`、Skia | ✓ `Shape` と `Path`（塗り、線、線端、角の形、破線、アニメーションできるトリム）。`Canvas`（パス、グラデーション、テキスト、変形、クリップ：Core Graphics、Android の `Canvas`、GDI+、GSK、2D の `<canvas>`）。`std/svg` |
 | グラフ | Swift Charts | `victory-native`、コミュニティ製 | ✓ `std/chart`（棒、折れ線、面、点。`svg.Shape` で描くのでどこでも同じ） |
+| QR コード（生成） | Core Image の `CIQRCodeGenerator` | `react-native-qrcode-svg`、コミュニティ製 | ✓ `std/qrcode`（`qrcode.View(text)`、`encode`、`svg()`：Asuka で書かれ、どこでも同じ。Flutter は `qr_flutter`） |
 | シェーダー | `.colorEffect(ShaderLibrary...)` | Skia のランタイムエフェクト | ✓ `shader` 宣言（Asuka で書き、アプリと一緒にコンパイル：iOS と Mac では Metal、Android 13 以降では AGSL、Web では WebGL 2、Windows では Direct3D 11、Linux では OpenGL） |
 | ネイティブへの抜け道 | `UIViewRepresentable` | ネイティブモジュール | ✓ ネイティブパッケージ：`native interface` や `native component` を Asuka で宣言し、iOS と Mac では Swift、Android では Kotlin、Web では JavaScript、Windows と Linux では C で実装（[ネイティブコード](native.md)）。C のライブラリは `extern` で直接呼び出せる（[Asuka から C を呼ぶ](c.md)） |
 | ページング、ページのドット | `.scrollTargetBehavior(.paging)`、`TabView(.page)` | `react-native-pager-view` | ✓ `Scroll` の `paging`、`PageControl` |

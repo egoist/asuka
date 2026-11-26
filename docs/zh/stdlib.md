@@ -57,6 +57,7 @@ state units = store.read("units", "metric")
 | [`std/svg`](std/svg.md) | `svg.Icon(markup)` 在应用编译时解析，`svg.View(icon) { color }` 显示它；`svg.Shape(layers)`：应用自己画的路径，会跟随它的框（[组件](components.md)） |
 | [`std/base`](std/base.md) | 只有行为、没有外观的组件，由应用设置样式，在各平台上表现一致：`Select`、`Combobox`、`Menu`、`Dialog`、`Popover`、`Tooltip`、`Tabs`、`Checkbox`、`Switch`、`RadioGroup`、`Slider`、`Field` 和 `Form`、toast 等。每个组件都会处理好自己的状态、键盘与焦点、屏幕阅读器，以及它浮在窗口上的位置（[自定义外观](components.md#自定义外观)） |
 | [`std/chart`](std/chart.md) | `chart.View(series) { labels, label, low, high, grid, format }`；`chart.Series(name:, kind: .bar \| .line \| .area \| .points, values:, smooth:, color:)`：用 Asuka 写成，通过 `svg.Shape` 绘制（[组件](components.md)） |
+| [`std/qrcode`](std/qrcode.md) | `qrcode.View(text) { correction, dark, light, quiet, label }`：二维码，用平台的矢量绘图画出；`qrcode.encode(text, correction: .low \| .medium \| .quartile \| .high)`（一个 `Code`：`size`、`version`、`dark(x, y)`、`svg()`；会抛出 `QRError.tooLong`）：用 Asuka 写成，各平台一致（[组件](components.md#二维码)） |
 | [`std/markdown`](std/markdown.md) | `markdown.View(text) { streaming }` 和 `markdown.heal(text)`：把 Markdown 显示为平台自己的富文本，流式输入时边接收边修补（[组件](components.md)） |
 
 ## 平台 SDK：`platform/`

@@ -1,0 +1,3 @@
+name = "std/qrcode"
+version = "0.1.0"
+description = "QR codes: made in Asuka, drawn with the platform's vector drawing"

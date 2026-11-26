@@ -57,6 +57,7 @@ state units = store.read("units", "metric")
 | [`std/svg`](std/svg.md) | アプリのコンパイル時に解析される `svg.Icon(markup)` と、`svg.View(icon) { color }`。`svg.Shape(layers)`：アプリが描くパスで、自分の枠に追従します（[コンポーネント](components.md)） |
 | [`std/base`](std/base.md) | 振る舞いだけを持ち見た目を持たないコンポーネント。アプリがスタイルを付け、どこでも同じように動きます：`Select`、`Combobox`、`Menu`、`Dialog`、`Popover`、`Tooltip`、`Tabs`、`Checkbox`、`Switch`、`RadioGroup`、`Slider`、`Field` と `Form`、トーストなど。それぞれが状態、キーボードとフォーカス、スクリーンリーダー、ウィンドウの上での位置を扱います（[独自の見た目](components.md#独自の見た目)） |
 | [`std/chart`](std/chart.md) | `chart.View(series) { labels, label, low, high, grid, format }`。`chart.Series(name:, kind: .bar \| .line \| .area \| .points, values:, smooth:, color:)`：Asuka で書かれ、`svg.Shape` で描かれます（[コンポーネント](components.md)） |
+| [`std/qrcode`](std/qrcode.md) | `qrcode.View(text) { correction, dark, light, quiet, label }`：QR コード。プラットフォームのベクター描画で描かれます。`qrcode.encode(text, correction: .low \| .medium \| .quartile \| .high)`（`Code`：`size`、`version`、`dark(x, y)`、`svg()`。`QRError.tooLong` を投げます）：Asuka で書かれ、どこでも同じです（[コンポーネント](components.md#qr-コード)） |
 | [`std/markdown`](std/markdown.md) | `markdown.View(text) { streaming }` と `markdown.heal(text)`：Markdown をプラットフォームのスタイル付きテキストとして表示し、ストリーミング中は届くそばから補修します（[コンポーネント](components.md)） |
 
 ## プラットフォーム SDK：`platform/`

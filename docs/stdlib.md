@@ -71,6 +71,7 @@ they do for the platform's own apps.
 | [`std/svg`](std/svg.md) | `svg.Icon(markup)`, parsed when the app compiles, and `svg.View(icon) { color }`; `svg.Shape(layers)`: paths the app draws, which follow their box ([SVG icons](components.md#svg-icons)) |
 | [`std/base`](std/base.md) | Components with behavior and no look, styled by the app, the same everywhere: `Select`, `Combobox`, `Menu`, `Dialog`, `Popover`, `Tooltip`, `Tabs`, `Checkbox`, `Switch`, `RadioGroup`, `Slider`, `Field` and `Form`, toasts... Each handles its state, the keyboard and focus, screen readers and its place over the window ([Your own look](components.md#your-own-look)) |
 | [`std/chart`](std/chart.md) | `chart.View(series) { labels, label, low, high, grid, format }`; `chart.Series(name:, kind: .bar \| .line \| .area \| .points, values:, smooth:, color:)`: in Asuka, drawn with `svg.Shape` ([Charts](components.md#charts)) |
+| [`std/qrcode`](std/qrcode.md) | `qrcode.View(text) { correction, dark, light, quiet, label }`: a QR code, drawn with the platform's vector drawing; `qrcode.encode(text, correction: .low \| .medium \| .quartile \| .high)` (a `Code`: `size`, `version`, `dark(x, y)`, `svg()`; throws `QRError.tooLong`): in Asuka, the same everywhere ([QR codes](components.md#qr-codes)) |
 | [`std/markdown`](std/markdown.md) | `markdown.View(text) { streaming }` and `markdown.heal(text)`: Markdown as the platform's styled text, healed while it streams in ([Markdown](components.md#markdown)) |
 
 ## The platform SDK: `platform/`

@@ -1,0 +1,61 @@
+import std/crypto
+import std/encoding
+
+/// The code's modules as "1"s and "0"s, row by row, hashed: what
+/// internal/qrcode (the CLI's encoder, whose codes Asuka's reader and
+/// Core Image read back) gives for the same text and level.
+fn digest(c: Code) -> string {
+  var s: [string] = []
+  for d in c.modules { s.push(if d { "1" } else { "0" }) }
+  return encoding.hexEncode(crypto.sha256(s.joined(separator: "").bytes()))
+}
+
+fn check(text: string, level: Correction, version: int, mask: int, want: string) throws {
+  let c = try encode(text, correction: level)
+  expect(c.version == version && c.size == version * 4 + 17 && c.modules.count() == c.size * c.size)
+  expect(c.mask == mask)
+  expect(digest(c) == want)
+}
+
+test "codes are the CLI's, module for module" {
+  try check("", .medium, 1, 6, "4242a2086c2c4c2b9aa3f8238465c59c6d5170e4c8279d9886ae8b6dcd1573f5")
+  try check("01234567", .medium, 1, 2, "f3893350666aa94b0ca61d127aeb35a2d6d7d481c0d7ee65f9da685de37ae225")
+  try check("HELLO WORLD", .quartile, 1, 0, "98ee3af8dfb46e027fa18006e4cb5079826d9b1aeeec68886f356578867c468c")
+  try check("https://asuka.egoist.dev/docs", .low, 2, 5, "7f9c863007383ece27f6f85f9380a088f1521fc777012139382963d585201f43")
+  try check("Hello, 世界! ✓", .high, 3, 2, "ab8e3613780dc94d3ddf42a8f830aa13650a6aed240fd1b8f213de57428272c4")
+  try check("Asuka QR ".repeat(30), .medium, 12, 1, "746c2a8d5b1fffa3e6f25c7558b5e5918d84f93cf8f70aca049eb7cb15c9a4d8")
+  try check("0123456789".repeat(100), .high, 22, 4, "419491c3676e4155d3d0329e8a95d43fc70194ff4c727af547ce54320f3b59b6")
+  try check("a".repeat(2953), .low, 40, 1, "c27a04b5479583f147f7a50ff0707d1cd63ee3f0a5af3365cdd06bb9091adb1e")
+}
+
+test "a text no code holds says so" {
+  var said = ""
+  do {
+    let _ = try encode("a".repeat(2954), correction: .low)
+  } catch e {
+    said = e.message
+  }
+  expect(said == "2954 bytes are too many for a QR code at this level of error correction")
+}
+
+test "the finders are where readers look" {
+  let c = try encode("hi")
+  // Each finder's dark ring and center, and the light ring between.
+  for (cx, cy) in [(3, 3), (c.size - 4, 3), (3, c.size - 4)] {
+    expect(c.dark(cx, cy) && c.dark(cx - 3, cy - 3) && !c.dark(cx - 2, cy - 2) && c.dark(cx - 1, cy - 1))
+  }
+}
+
+test "svg draws a module a unit, with its quiet zone" {
+  let c = try encode("1")
+  let s = c.svg()
+  expect(s.hasPrefix("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 29 29\""))
+  // The top-left finder's first row: seven dark modules, one run.
+  expect(s.contains("M4 4h7v1h-7z"))
+  expect(!c.svg(light: "").contains("<rect"))
+}
+
+test "View draws the code, and screen readers hear its text" {
+  let app = mount(View("https://example.com"))
+  app.expect("https://example.com")
+}

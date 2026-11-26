@@ -97,7 +97,7 @@ Asuka 会监听应用所在的目录及其本地依赖（`asuka.toml` 中的 `fi
 - **签名**：开发 App 由你的团队用开发证书签名。团队依次取自 `--team`、`ASUKA_TEAM_ID`、`asuka.toml` 的 `ios.team`，都没有的话就用钥匙串里 Apple Development 证书所属的团队。第一次运行时，Asuka 会让 Xcode 生成所需的开发描述文件，顺带把这台手机注册到团队，并打开应用用到的功能（推送、App Groups 等）。这一步使用 Xcode “设置 › 账户”中登录的 Apple ID；如果设置了 `ASUKA_ASC_KEY_ID`（或 `ios.appStoreConnect`），则改用 [App Store Connect API 密钥](shipping.md)。团队已有的描述文件如果合适（包括通配符描述文件），就直接使用。
 - **连接到 Mac**：插着数据线时，Mac 会像 Xcode 一样经数据线连接开发 App，手机不需要连接任何网络。没有数据线时，开发 App 通过网络连接 `asuka dev`，依次尝试 Mac 的各个地址（或 `ASUKA_DEV_HOST` 指定的地址），端口在空闲时为 8791；iOS 会询问一次是否允许这个应用查找本地网络中的设备，请选择允许，之后也可以在手机的“设置 › App › 本地网络”中打开。无论哪种方式，`asuka dev` 重新启动后开发 App 都会自己重新连上，从主屏幕再次打开的开发 App 也能找到它。如果开发 App 一直没有连上，Asuka 会告诉你该检查什么。
 
-**手机浏览器**：`asuka dev --platform web --lan` 会向局域网提供应用，并打印可以打开的地址。
+**手机浏览器**：`asuka dev --platform web --lan` 会向局域网提供应用，并打印可以打开的地址，第一个还附有二维码，用手机相机扫一下即可。
 
 ## 资源
 

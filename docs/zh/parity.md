@@ -50,6 +50,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 地图 | `Map` | `expo-maps` | ✓ `platform/maps` 的 `maps.View`（iOS 和 Mac 上用 MapKit，Android 上用 Google Maps，Windows、Linux（libshumate）和 Web 上用 OpenStreetMap 的瓦片：区域、标记、用户位置、点按） |
 | 自定义绘制 | `Shape`、`Path`、`Canvas` | `react-native-svg`、Skia | ✓ `Shape` 和 `Path`（填充、描边、线帽、连接方式、虚线，以及可动画的裁剪）；`Canvas`（路径、渐变、文字、变换、裁剪：分别用 Core Graphics、Android 的 `Canvas`、GDI+、GSK、2D `<canvas>` 绘制）；`std/svg` |
 | 图表 | Swift Charts | `victory-native`、社区方案 | ✓ `std/chart`（柱状图、折线图、面积图、散点图；用 `svg.Shape` 绘制，各平台一致） |
+| 二维码（生成） | Core Image 的 `CIQRCodeGenerator` | `react-native-qrcode-svg`、社区方案 | ✓ `std/qrcode`（`qrcode.View(text)`、`encode` 和 `svg()`：用 Asuka 写成，各平台一致；Flutter：`qr_flutter`） |
 | 着色器 | `.colorEffect(ShaderLibrary...)` | Skia 的 runtime effect | ✓ `shader` 声明（用 Asuka 编写，随应用一起编译：iOS 和 Mac 上是 Metal，Android 13 及以上是 AGSL，Web 上是 WebGL 2，Windows 上是 Direct3D 11，Linux 上是 OpenGL） |
 | 原生扩展 | `UIViewRepresentable` | 原生模块 | ✓ 原生包：在 Asuka 里声明 `native interface` 或 `native component`，在 iOS 和 Mac 上用 Swift 实现，Android 上用 Kotlin，Web 上用 JavaScript，Windows 和 Linux 上用 C（见[原生代码](native.md)）；C 库用 `extern` 直接调用（见[在 Asuka 中调用 C](c.md)） |
 | 分页、页码圆点 | `.scrollTargetBehavior(.paging)`、`TabView(.page)` | `react-native-pager-view` | ✓ `Scroll` 的 `paging`、`PageControl` |

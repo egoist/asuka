@@ -885,6 +885,34 @@ component Week(steps: [float], goal: [float]) {
 - 颜色默认依次是应用的强调色和系统颜色（`chart.palette`）。
 - 屏幕阅读器把整张图表当作一张图片来读：先读 `label`，再读每个系列的值。样式里没有高度时，它的高度是 200。
 
+### 二维码
+
+`std/qrcode` 生成二维码：把链接、票据或 Wi-Fi 网络显示出来，给另一台手机的相机扫。它是用 Asuka 写的，所以同一段文字在每个平台上生成的码都一样；`qrcode.View` 用平台的矢量绘图（一个 `Canvas`）画出来，多大都清晰。
+
+```asuka check
+import std/qrcode
+
+component Invite(link: string) {
+  Column {
+    align: .center
+    gap: 12
+    qrcode.View(link) {
+      width: 220
+      height: 220
+    }
+    Text("Scan to join") { color: .secondaryLabel }
+  }
+}
+```
+
+- 码会选能装下这段文字的最小版本，用模块最少的模式（数字；大写字母和 ` $%*+-./:`；否则是 UTF-8 字节），以及标准评分最好的掩码。
+- `correction` 是码损坏多少还能读出来：`.low`（7%）、`.medium`（15%，默认）、`.quartile`、`.high`（30%：中间盖一个小 logo 也够）。文字超过最大的码能装的量（`.low` 时 2,953 字节）时，画出的是一个空白方块；`qrcode.encode(text)` 则会抛出 `QRError.tooLong`。
+- 深色模式下它也是浅底深码（`dark`、`light`），因为相机读这种最准；四周留有标准规定的 4 个模块宽的空白区（`quiet`）。样式没给尺寸时它是 200 点见方，在自己的框里居中。
+- 屏幕阅读器读出它的文字，或者它的 `label`。
+- `qrcode.encode(text, correction:)` 给出模块本身（`size`、`dark(x, y)`），可以用别的方式画；`svg()` 把它们变成 SVG 标记，用来保存或分享。
+
+扫码是相机和 `platform/scan` 的事（[条码和二维码](device.md#条码和二维码platformscan)）。
+
 ### 着色器
 
 着色器用一段 GPU 程序给框里的每个像素上色：流动的渐变、噪声、光晕、波纹。用 `shader Name(params) { … }` 声明一个着色器，写法就是 Asuka 自己的语法，用的时候把它当成视图：参数就是它的 uniform，像组件的参数一样设置，它也像组件一样接受样式。着色器在应用编译时为所有平台编译好：写错了就是编译错误，并指出所在的行；设备上只编译平台自己的程序。

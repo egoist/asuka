@@ -231,7 +231,8 @@ devicectl list devices` lists them).
   player doesn't connect, Asuka says what to check.
 
 **A phone's browser**: `asuka dev --platform web --lan` serves the app to
-your network, and prints the addresses to open.
+your network, and prints the addresses to open, the first as a QR code
+for the phone's camera.
 
 ## Assets
 

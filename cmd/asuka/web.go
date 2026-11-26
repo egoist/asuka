@@ -33,6 +33,7 @@ import (
 
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/internal/qrcode"
 	"github.com/egoist/asuka/internal/devserver"
 	"github.com/egoist/asuka/internal/nativegen"
 	"github.com/egoist/asuka/lang/bytecode"
@@ -319,8 +320,15 @@ func devWeb(dir string, o *devOptions, stop <-chan os.Signal) error {
 	s.url = url
 	fmt.Printf("asuka: %s at %s (the player built in %.1fs)\n", app.name, url, time.Since(start).Seconds())
 	if o.lan {
-		for _, a := range lanAddrs() {
+		addrs := lanAddrs()
+		for _, a := range addrs {
 			fmt.Printf("asuka: on this network: http://%s:%d/\n", a, ln.Addr().(*net.TCPAddr).Port)
+		}
+		// The first one as a QR code: a phone's camera opens it.
+		if len(addrs) > 0 {
+			if c, err := qrcode.Encode(fmt.Sprintf("http://%s:%d/", addrs[0], ln.Addr().(*net.TCPAddr).Port), qrcode.Low); err == nil {
+				fmt.Print(c.Terminal())
+			}
 		}
 	}
 	hostWatch := newWebWatcher(srcDir)

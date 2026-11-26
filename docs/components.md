@@ -1230,6 +1230,49 @@ component Week(steps: [float], goal: [float]) {
 - Screen readers read the chart as one image: its `label`, then each
   series' values. Its height is 200 when its style gives none.
 
+### QR codes
+
+`std/qrcode` makes QR codes: a link, a ticket or a Wi-Fi network shown
+for another phone's camera. It's written in Asuka, so a text's code is
+the same on every platform, and `qrcode.View` draws it with the
+platform's vector drawing (a `Canvas`), sharp at any size.
+
+```asuka check
+import std/qrcode
+
+component Invite(link: string) {
+  Column {
+    align: .center
+    gap: 12
+    qrcode.View(link) {
+      width: 220
+      height: 220
+    }
+    Text("Scan to join") { color: .secondaryLabel }
+  }
+}
+```
+
+- The code takes the smallest version that holds the text, in the mode
+  with the fewest modules (digits; capitals and ` $%*+-./:`; else UTF-8
+  bytes), and the mask the standard rates best.
+- `correction` is how much can be lost and still read: `.low` (7%),
+  `.medium` (15%, the default), `.quartile`, `.high` (30%: enough for a
+  small logo over the middle). A text longer than the largest code holds
+  (2,953 bytes at `.low`) draws an empty square; `qrcode.encode(text)`
+  throws `QRError.tooLong` instead.
+- It's dark on light (`dark`, `light`) in dark mode too, since cameras
+  read that best, with the standard's quiet zone of 4 modules around it
+  (`quiet`). It's 200 points square unless its style sizes it, centered
+  in its box.
+- Screen readers say its text, or its `label`.
+- `qrcode.encode(text, correction:)` gives the modules (`size`,
+  `dark(x, y)`) to draw another way, and `svg()` gives them as SVG markup,
+  to save or share.
+
+Reading codes is the camera's and `platform/scan`'s ([Barcodes and QR
+codes](device.md#barcodes-and-qr-codes-platformscan)).
+
 ### Shaders
 
 A shader colors each pixel of a box with a GPU program: flowing

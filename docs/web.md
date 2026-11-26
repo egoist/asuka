@@ -37,8 +37,8 @@ native package's JavaScript reloads the page (the app starts again).
 The flags, beside `asuka dev`'s own (`--lang`, `--dir`, `-v`):
 
 - `--port`: the server's port.
-- `--lan`: serve to your network too, and print its addresses: open the
-  app in a phone's browser.
+- `--lan`: serve to your network too, and print its addresses, the
+  first as a QR code: a phone's camera opens the app in its browser.
 - `--no-open`: don't open the browser.
 - `--once`: serve, without watching.
 
