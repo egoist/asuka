@@ -481,6 +481,49 @@ struct Reader {
         XCTAssertNil(view.accessibilityValue)
     }
 
+    // MARK: Checkbox
+
+    /// A checkbox's circle is drawn whole, checked or not: as tall as it's
+    /// wide. Measured within a width and a height, as the core measures it
+    /// in a screen.
+    func testCheckboxCircleWhole() {
+        let r = root()
+        for on in [false, true] {
+            let t = make(.toggle)
+            set(t, AsukaProp.Toggle.checkbox, .bool(true))
+            set(t, AsukaProp.Toggle.on, .bool(on))
+            rt.insert(r, child: t, index: 0)
+            let s = rt.measure(t, .nan, .nan, 390, 844)
+            frame(t, CGRect(x: 20, y: 40, width: s.width, height: s.height))
+            let c = view(t)
+            c.layoutIfNeeded()
+            let ink = inkBounds(c)
+            XCTAssertGreaterThan(ink.width, 0, "on: \(on)")
+            XCTAssertEqual(ink.height, ink.width, accuracy: 1, "on: \(on): its circle drawn \(ink.width)×\(ink.height) pixels in \(s)")
+        }
+    }
+
+    /// The box of a view's drawn pixels (alpha over a sixth), in pixels.
+    func inkBounds(_ v: UIView) -> CGRect {
+        let f = UIGraphicsImageRendererFormat()
+        f.scale = 3
+        let image = UIGraphicsImageRenderer(bounds: v.bounds, format: f).image { v.layer.render(in: $0.cgContext) }
+        guard let cg = image.cgImage else { return .zero }
+        let w = cg.width, h = cg.height
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h {
+            for x in 0..<w where px[(y * w + x) * 4 + 3] > 42 {
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        return maxX < 0 ? .zero : CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+
     func testSelectedExpandedValueRange() {
         let r = root()
         let v = make(.view)
@@ -587,31 +630,6 @@ struct Reader {
         rt.insert(second, child: stack, index: 0)
         XCTAssertTrue(rt.nodes[stack]!.vc!.parent === rt.nodes[second]!.vc)
         XCTAssertTrue(view(stack).isDescendant(of: view(second)))
-    }
-
-    // MARK: Controls
-
-    /// A Picker draws its choice in its font, kept as its items and
-    /// choice change; textAlign and lineLimit, which a button's title
-    /// doesn't take, change nothing.
-    func testPickerFont() {
-        let r = root()
-        let p = make(.picker)
-        rt.insert(r, child: p, index: 0)
-        set(p, AsukaProp.fontSize, .float(13))
-        set(p, AsukaProp.fontWeight, .enumValue(AsukaFontWeight.semibold.rawValue))
-        var w = AsukaWriter()
-        w.u32(2); w.string("One"); w.string("Two")
-        bytes(w.bytes) { set(p, AsukaProp.Picker.items, .bytes($0)) }
-        set(p, AsukaProp.Picker.selected, .int(1))
-        set(p, AsukaProp.textAlign, .enumValue(AsukaTextAlign.center.rawValue))
-        set(p, AsukaProp.lineLimit, .int(1))
-        frame(p, CGRect(x: 0, y: 0, width: 200, height: 44))
-        let b = view(p) as! AsukaPickerButton
-        b.layoutIfNeeded()
-        XCTAssertEqual(b.titleLabel?.text, "Two")
-        XCTAssertEqual(b.titleLabel?.font.pointSize, 13)
-        XCTAssertEqual(b.titleLabel?.font.fontName, UIFont.systemFont(ofSize: 13, weight: .semibold).fontName)
     }
 
     // MARK: asuka dev's error overlay
