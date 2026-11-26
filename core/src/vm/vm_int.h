@@ -184,9 +184,10 @@ typedef struct ak_co {
 	uint32_t nuntracks, ucap;
 	struct ak_task *task;  // NULL for the main coroutine
 	// What compiled async functions' calls read (ops.h): the C stack's
-	// limit on the thread it runs on (ak_stack_limit, kept: a
-	// thread-local's read is a call on Apple's systems), and how deep
-	// they call each other directly in C (ak_op_acall).
+	// limit on the thread it runs on (ak_stack_limit, kept for a run, as
+	// ak_vm_run starts it again: a thread-local's read is a call on
+	// Apple's systems, and a task's runs may be on different threads),
+	// and how deep they call each other directly in C (ak_op_acall).
 	uintptr_t lim;
 	uint32_t adepth;
 } ak_co;

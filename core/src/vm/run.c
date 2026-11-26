@@ -49,6 +49,11 @@ static bool threw(ak_co *co, bool boundary, uint32_t callpc) {
 bool ak_vm_run(ak_co *co, ak_val *out) {
 	ak_co *prev = cur_co();
 	ak_vm_cur = co;
+	// The C stack's limit its compiled functions read is this run's
+	// thread's: a task may resume on another thread than the last run's
+	// (a program's main queue, drained by libdispatch's threads), whose
+	// stack is elsewhere.
+	co->lim = 0;
 	bool suspended = false;
 	for (;;) {
 		ak_frame *fr = &co->frames[co->nframes - 1];

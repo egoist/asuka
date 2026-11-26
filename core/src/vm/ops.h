@@ -826,8 +826,9 @@ AK_OP_APPEND(p, void *, p)
 #undef AK_OP_APPEND
 
 // ak_op_lim is the C stack's limit for a compiled async function's body
-// on co: the thread's, kept on the coroutine (which runs on the thread
-// that made it), so a call reads no thread-local.
+// on co: the thread's, kept on the coroutine for its run (ak_vm_run
+// clears it, since a task may resume on another thread), so a call reads
+// no thread-local.
 static inline uintptr_t ak_op_lim(ak_co *co) {
 	if (AK_UNLIKELY(!co->lim)) co->lim = ak_stack_limit();
 	return co->lim;
