@@ -2,6 +2,7 @@ package appbuild
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/asuka/internal/cbuild"
@@ -31,11 +32,38 @@ func AppC(m *bytecode.Module) (string, error) {
 // (asuka_dev_connect). A player is built for debugging (assertions on,
 // optimized less); a release isn't.
 func Lib(t cbuild.Target, kind cbuild.LibKind, m *bytecode.Module, out string) error {
+	return LibWithUpdates(t, kind, m, nil, out)
+}
+
+// Updates are what a phone release takes over-the-air updates with (RFC
+// 0006): its fingerprint, which an update must have been made against,
+// the feed it checks and the public key updates are signed with.
+type Updates struct {
+	Fingerprint, Feed, Key string
+	// Version is the app's, Built when the build was made (seconds since
+	// 1970): an update older is older code.
+	Version string
+	Built   int64
+}
+
+// defines are core/link/link.c's macros of u.
+func (u *Updates) defines() []string {
+	if u == nil || u.Fingerprint == "" {
+		return nil
+	}
+	q := func(s string) string { return strconv.Quote(s) }
+	return []string{"-DAK_FINGERPRINT=" + q(u.Fingerprint), "-DAK_UPDATE_FEED=" + q(u.Feed), "-DAK_UPDATE_KEY=" + q(u.Key),
+		"-DAK_UPDATE_VERSION=" + q(u.Version), "-DAK_UPDATE_BUILT=" + strconv.FormatInt(u.Built, 10)}
+}
+
+// LibWithUpdates is Lib for a release that takes over-the-air updates
+// (u nil: none).
+func LibWithUpdates(t cbuild.Target, kind cbuild.LibKind, m *bytecode.Module, u *Updates, out string) error {
 	var c *bytecode.C
 	if m != nil {
 		c = m.C
 	}
-	return lib(t, kind, m, c, out)
+	return lib(t, kind, m, c, u.defines(), out)
 }
 
 // PlayerLib builds a dev player's core for t into out, as Lib with no
@@ -43,10 +71,10 @@ func Lib(t cbuild.Target, kind cbuild.LibKind, m *bytecode.Module, out string) e
 // compile; nil for none) compiled in, which the module the player loads
 // calls through its ffi.* builtins.
 func PlayerLib(t cbuild.Target, kind cbuild.LibKind, c *bytecode.C, out string) error {
-	return lib(t, kind, nil, c, out)
+	return lib(t, kind, nil, c, nil, out)
 }
 
-func lib(t cbuild.Target, kind cbuild.LibKind, m *bytecode.Module, c *bytecode.C, out string) error {
+func lib(t cbuild.Target, kind cbuild.LibKind, m *bytecode.Module, c *bytecode.C, defines []string, out string) error {
 	core, err := cbuild.CoreDir()
 	if err != nil {
 		return err
@@ -68,7 +96,7 @@ func lib(t cbuild.Target, kind cbuild.LibKind, m *bytecode.Module, c *bytecode.C
 	if err != nil {
 		return err
 	}
-	return tc.LibWith(core, kind, cbuild.LibOptions{Extra: extra, Foreign: ffi, Debug: m == nil, Builtins: builtins}, out)
+	return tc.LibWith(core, kind, cbuild.LibOptions{Extra: extra, Foreign: ffi, Debug: m == nil, Builtins: builtins, Defines: defines}, out)
 }
 
 // LinuxExe builds a Linux app's executable for t at out: the C host

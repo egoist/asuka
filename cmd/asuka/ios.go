@@ -35,6 +35,9 @@ type iosToolchain struct {
 	sdk, sdkName, clang, target, goarch string
 	release                             bool // optimized, without the debug automation
 	verbose                             bool
+	// updates are what the release takes over-the-air updates with (RFC
+	// 0006; nil: none).
+	updates *appbuild.Updates
 	// packages is what the app's Swift packages bring besides the host's
 	// object, as the last buildHost built them (nil without any).
 	packages *swiftPackageOutput
@@ -244,7 +247,7 @@ func (t *iosToolchain) buildCore(work string, m *bytecode.Module, c *bytecode.C)
 	}
 	lib := filepath.Join(work, "libasuka.a")
 	if m != nil {
-		return lib, appbuild.Lib(target, cbuild.Static, m, lib)
+		return lib, appbuild.LibWithUpdates(target, cbuild.Static, m, t.updates, lib)
 	}
 	return lib, appbuild.PlayerLib(target, cbuild.Static, c, lib)
 }

@@ -85,6 +85,9 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 			return err
 		}
 		features = usedFeatures(app, cfg)
+		if tc.updates, err = app.otaUpdates("ios", m); err != nil {
+			return err
+		}
 	} else {
 		features = playerFeatures(app, cfg)
 		// It reaches asuka dev on the local network.

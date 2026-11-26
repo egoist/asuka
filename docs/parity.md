@@ -208,7 +208,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | GUI tests | XCUITest, Detox, Maestro | ✓ `asuka test --gui`: the app's flows (`flows/*.flow`: `tap Add`, `type hello`, `see Count: 1`, `back`) on the simulator, an emulator, a phone, headless Chrome or this computer ([GUI tests](testing.md#gui-tests-flows)); a desktop app's steps and snapshots too (`ASUKA_SCRIPT`, `ASUKA_SNAPSHOT`) |
 | Benchmarks | Instruments | ✓ `bench/` (against SwiftUI and Compose) |
 | Embedding in an existing app | brownfield (React Native's) | ✓ `asuka build --platform ios --xcframework`, `asuka build --platform android --aar` |
-| Over-the-air updates | EAS Update | ✗ (a release has the app compiled into it) |
+| Over-the-air updates | EAS Update | ✓ `asuka publish --update` and `platform/update` (the app's code, run by the core's VM, signed, for the builds of its native fingerprint; rolled back after a crash at launch) |
 
 ## On the desktop
 
@@ -268,6 +268,4 @@ Windows and Linux unless the row says otherwise.
 
 ## Not yet
 
-In order of what apps miss most: over-the-air updates
-(EAS Update's: a release has the app compiled into it).
 On Linux, speech to text.

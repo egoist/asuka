@@ -574,7 +574,9 @@ A desktop app updates itself as Mac apps do with Sparkle: it checks a
 feed for a newer version, shows its release notes, downloads it (only
 what changed, when there's a delta from the version it runs), checks
 that it's signed with your key, installs it and relaunches. Phones
-update from their stores; a web app's page reloads for a newer site.
+update from their stores, and between store releases their code over
+the air ([below](#phones-updates-of-the-apps-code)); a web app's page
+reloads for a newer site.
 
 ### Set up
 
@@ -824,6 +826,43 @@ The signatures are the ones `asuka build` made: the server only chooses.
   (`update-desktop-database`, `update-mime-database`). A Flatpak, a Snap,
   a distribution's package or an AppImage updates through its own
   channel: there the app doesn't update itself.
+
+### Phones: updates of the app's code
+
+Between store releases a phone app takes updates of its code over the
+air, as Expo's updates do: its Asuka code, which the core's VM runs in
+place of the code compiled into the build, signed with the same key as
+desktop updates. A build made with asuka.toml's `[updates]` takes them:
+
+```sh
+asuka build --platform ios --update      # in dist/updates: the update, signed, and its manifest
+asuka publish --platform ios --update    # built, and uploaded where [updates] says
+```
+
+An update fits only the builds whose native side it was made against:
+their *fingerprint*, of the CLI's version, the native code of the
+packages the app imports and its own, the builtins the build links, its
+assets and asuka.toml (but for its version and build). An update that
+needs more (a new native package or asset, a permission) is for the next
+store build: its manifest names a fingerprint no installed build has,
+and it reaches none.
+
+In the app, `update.UpdateWindow()` checks soon after launch and once a
+day, downloads what it finds, and the next launch runs it; there's no
+window on a phone. `update.check()`, `Release.install()` and `relaunch()`
+(which runs it at once) do it by hand, and `update.version()` says what
+runs (`1.4.0+1764150000`: the update's number after the `+`). A launch of
+an update that ends in its first seconds twice in a row, as a crash at
+startup does, goes back to the build's code, and that update isn't taken
+again.
+
+An update's code runs some times slower than compiled code (its own
+logic: layout, signals and the views stay native) until the next store
+build compiles it. Keep to what the stores allow: Apple lets an app
+download interpreted code that doesn't change its purpose, and App
+Review rules out features review didn't see (2.5.2, 2.5.19); Google
+Play allows code that runs in an interpreter. Updates are for fixes and
+small changes.
 
 ## In an existing app
 

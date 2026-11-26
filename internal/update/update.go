@@ -42,6 +42,12 @@ type Manifest struct {
 	// Previous are the archives of the versions before, newest first,
 	// which `asuka build` makes the deltas of the next version from.
 	Previous []Archive `json:"previous,omitempty"`
+	// Fingerprint and Update are a phone's over-the-air update's (RFC
+	// 0006): the fingerprint of the builds it fits (theirs must be it),
+	// and its number, which grows with each update published (its
+	// time, in seconds since 1970). Its URL is the update's module.
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Update      int64  `json:"update,omitempty"`
 }
 
 // Delta is a delta update of the app of version From, signed like the

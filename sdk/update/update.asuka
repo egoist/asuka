@@ -37,9 +37,12 @@
 // The host does what only it can, through its "update" module (DESIGN.md,
 // "Updates"): it says how the app is installed, downloads, and puts a
 // verified update in place (on the Mac once the app quits; on Windows and
-// Linux at once, the running executable set aside). Where it has none (a
-// phone, which updates from its store; a host that doesn't update apps),
-// the package says updates aren't available. On the web, a new version is
+// Linux at once, the running executable set aside). A phone updates from
+// its store, and between releases takes updates of the app's code over
+// the air (ota.asuka, RFC 0006: asuka publish --update): the same check,
+// install and relaunch, the code run by the core's VM. Where there's
+// neither (a host that doesn't update apps), the package says updates
+// aren't available. On the web, a new version is
 // a reload of the page: check() reads the version.json `asuka build`
 // writes beside it, and relaunch() reloads.
 
@@ -112,6 +115,11 @@ pub struct Release {
       progress(1, 1)
       return
     }
+    if let o = ota() {
+      try await installOta(o, manifest, progress)
+      for f in installedFns.values() { f(self) }
+      return
+    }
     try await installManifest(manifest, current, progress)
     for f in installedFns.values() { f(self) }
   }
@@ -144,7 +152,12 @@ let page = try? Page()
 
 /// The running app's version, asuka.toml's ("" before the host says, or
 /// where it has no updates).
-pub fn version() -> string = hostInfo?.version ?? ""
+pub fn version() -> string {
+  if let o = ota() {
+    return if o.running.isEmpty() { o.version } else { o.running }
+  }
+  return hostInfo?.version ?? ""
+}
 
 /// Why the app can't update itself here, or none when it can: not on a
 /// phone (notAvailable), in a build without updates or asuka dev's
@@ -152,6 +165,7 @@ pub fn version() -> string = hostInfo?.version ?? ""
 /// (managed), one macOS runs from a read-only copy (translocated), or
 /// where the user can't write (notWritable).
 pub async fn unsupported() -> UpdateError? {
+  if ota().isSome() { return none }
   if let p = page {
     let current = (try? p.current()) ?? ""
     if current.isEmpty() { return UpdateError.notConfigured }
@@ -171,6 +185,9 @@ pub async fn check() throws -> Release? {
     let r = try await p.latest()
     if r.version.isEmpty() || compareVersions(r.version, current) <= 0 { return none }
     return Release(version: r.version, notes: r.notes, date: r.date, size: 1, current: current)
+  }
+  if let o = ota() {
+    return try await checkOta(o)
   }
   let i = try await installable()
   let feed = if feedOverride.isEmpty() { i.feed } else { feedOverride }
@@ -209,6 +226,10 @@ fn messageOf(e: Error) -> string = e.message.trimPrefix("update: ")
 pub fn relaunch() {
   if let p = page {
     try? p.reload()
+    return
+  }
+  if ota().isSome() {
+    otaRelaunch()
     return
   }
   host.relaunchApp()
@@ -266,7 +287,7 @@ pub fn setAutomaticChecks(on: bool) {
 
 /// Whether what a check in the background finds is installed without
 /// asking (the update window's checkbox): it runs at the next launch.
-pub fn automaticDownloads() -> bool = prefs.value.automaticDownloads
+pub fn automaticDownloads() -> bool = prefs.value.automaticDownloads || ota().isSome()
 
 /// Turns installing what a check in the background finds without asking
 /// on or off (the update window's checkbox), for a setting of the app.

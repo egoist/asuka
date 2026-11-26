@@ -215,6 +215,9 @@ type LibOptions struct {
 	// Builtins are the ones the app compiled in calls (its module's):
 	// only the std packages' tables of them are linked. nil: every table.
 	Builtins []string
+	// Defines are more of core/link/link.c's macros: a phone release's
+	// AK_FINGERPRINT and its updates' feed and key (RFC 0006).
+	Defines []string
 }
 
 // LibWith is Lib as o says: with o.Foreign, its glue and units are
@@ -236,7 +239,7 @@ func (tc *Toolchain) LibWith(core string, kind LibKind, o LibOptions, out string
 	if kind != Static {
 		cflags = append(cflags, "-fvisibility=hidden")
 	}
-	link, err := tc.linkSource(core, debug, len(o.Extra) > 0, ffi.glue(), ffi.libs(), o.Builtins)
+	link, err := tc.linkSource(core, debug, len(o.Extra) > 0, ffi.glue(), ffi.libs(), o.Builtins, o.Defines...)
 	if err != nil {
 		return err
 	}

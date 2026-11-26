@@ -189,7 +189,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | GUI のテスト | XCUITest、Detox、Maestro | ✓ `asuka test --gui`：アプリのフロー（`flows/*.flow`：`tap Add`、`type hello`、`see Count: 1`、`back`）を、シミュレーター、エミュレーター、スマートフォン、ヘッドレス Chrome、このコンピューターで実行する（[GUI テスト](testing.md#gui-テストフロー)）。デスクトップアプリの操作手順とスナップショットも（`ASUKA_SCRIPT`、`ASUKA_SNAPSHOT`） |
 | ベンチマーク | Instruments | ✓ `bench/`（SwiftUI、Compose との比較） |
 | 既存のアプリへの組み込み | ブラウンフィールド（React Native のもの） | ✓ `asuka build --platform ios --xcframework`、`asuka build --platform android --aar` |
-| OTA アップデート | EAS Update | ✗（リリースビルドにはアプリがコンパイルされて組み込まれています） |
+| OTA アップデート | EAS Update | ✓ `asuka publish --update` と `platform/update`（アプリのコードをコアの VM が実行。署名され、ネイティブのフィンガープリントが同じビルドにだけ届き、起動時にクラッシュすると元に戻る） |
 
 ## デスクトップのフレームワーク
 
@@ -240,4 +240,4 @@ Web ビューのアプリは、HTML と CSS で書いたとおりに、どのシ
 
 ## 未対応のもの
 
-アプリでの需要が高いものとして、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）があります。Linux では音声のテキスト化が未対応です。
+Linux では音声のテキスト化が未対応です。

@@ -20,7 +20,7 @@ Each RFC is a file `NNNN-short-name.md` with a header:
 | [0003](0003-in-process-code-patching.md) | In-process code patching and an interpreted app package | Rejected |
 | [0004](0004-asuka-test.md) | asuka test: the same UI tests on the platforms' real views | Draft |
 | [0005](0005-devtools.md) | Devtools: debugging, inspecting and profiling an app | Draft |
-| [0006](0006-over-the-air-updates.md) | Over-the-air updates on phones | Accepted |
+| [0006](0006-over-the-air-updates.md) | Over-the-air updates on phones | Built |
 | [0007](0007-c-core-and-asuka-language.md) | A C core and the Asuka language | Accepted |
 | [0008](0008-no-go-at-run-time-and-c-ffi.md) | No Go at run time, and C from Asuka | Accepted |
 | [0009](0009-styles.md) | Composable styles | Built |

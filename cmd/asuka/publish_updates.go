@@ -198,3 +198,45 @@ func names(paths []string) string {
 	}
 	return strings.Join(n, ", ")
 }
+
+// publishOTA writes an over-the-air update of a phone app's code and
+// uploads it where asuka.toml's updates say: the module, then its
+// manifest, which installed builds of its fingerprint read.
+func publishOTA(app *asukaApp, o *publishOptions) error {
+	u, err := app.cfg.updates()
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return errors.New("publishing an update needs asuka.toml's updates: asuka update keygen prints them")
+	}
+	var bucket *s3Client
+	switch {
+	case u.S3 != nil:
+		if bucket, err = newS3Client(u.S3); err != nil {
+			return err
+		}
+	case u.GitHub != "":
+		if _, err := exec.LookPath(ghCommand); err != nil {
+			return errors.New("publishing to GitHub needs its CLI, gh (https://cli.github.com), signed in (gh auth login, or GH_TOKEN)")
+		}
+	default:
+		return fmt.Errorf("asuka publish uploads to updates.github or updates.s3; with updates.url alone, build the update (asuka build --update) and upload dist/updates to %s yourself, the manifest last", u.URL)
+	}
+	b := o.buildOptions
+	if err := b.setVersion(app); err != nil {
+		return err
+	}
+	if b.out == "" {
+		b.out = filepath.Join(app.dir, "dist")
+	}
+	file, manifest, err := writeOTAUpdate(app, b.platform, b.out)
+	if err != nil {
+		return err
+	}
+	if bucket != nil {
+		return publishS3(bucket, u, []string{file}, []string{manifest})
+	}
+	notes, _ := u.releaseNotes(app.dir, app.cfg.Version)
+	return publishGitHub(u, app.cfg.Version, notes, []string{file}, []string{manifest}, o.draft)
+}

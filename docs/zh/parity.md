@@ -189,7 +189,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | GUI 测试 | XCUITest、Detox、Maestro | ✓ `asuka test --gui`：在 iOS 模拟器、Android 模拟器、手机、无头 Chrome 或这台电脑上运行应用的流程（`flows/*.flow`：`tap Add`、`type hello`、`see Count: 1`、`back`）（见[GUI 测试](testing.md#gui-测试流程)）；桌面应用也可以执行操作步骤并截图（`ASUKA_SCRIPT`、`ASUKA_SNAPSHOT`） |
 | 基准测试 | Instruments | ✓ `bench/`（与 SwiftUI 和 Compose 对比） |
 | 嵌入现有应用 | brownfield（React Native 的方案） | ✓ `asuka build --platform ios --xcframework`、`asuka build --platform android --aar` |
-| OTA 更新 | EAS Update | ✗（发布版本里应用已经编译进去了） |
+| OTA 更新 | EAS Update | ✓ `asuka publish --update` 和 `platform/update`（应用的代码，由核心的虚拟机运行，经过签名，只发给原生指纹相同的构建；启动时崩溃会回滚） |
 
 ## 与桌面端框架对比
 
@@ -240,4 +240,4 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 
 ## 尚未支持
 
-按应用最常缺少的程度排序：OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了）。Linux 上的语音转文字。
+Linux 上的语音转文字。

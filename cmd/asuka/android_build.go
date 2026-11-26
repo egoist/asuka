@@ -242,9 +242,13 @@ func buildAndroidLibs(app *asukaApp, tc *androidToolchain, work string) (string,
 	if err != nil {
 		return "", err
 	}
+	updates, err := app.otaUpdates("android", m)
+	if err != nil {
+		return "", err
+	}
 	for _, a := range androidABIs {
 		out := filepath.Join(jni, a.abi, "libasuka.so")
-		if err := appbuild.Lib(cbuild.Target{OS: "android", Arch: a.goarch}, cbuild.Shared, m, out); err != nil {
+		if err := appbuild.LibWithUpdates(cbuild.Target{OS: "android", Arch: a.goarch}, cbuild.Shared, m, updates, out); err != nil {
 			return "", fmt.Errorf("%s: %v", a.abi, err)
 		}
 	}

@@ -1,0 +1,109 @@
+// Over-the-air updates of a phone app's code (RFC 0006): a release built
+// with asuka.toml's [updates] knows its fingerprint (what its native side
+// gives code), the feed and the public key; check() reads the manifest of
+// its platform and fingerprint (update-<platform>-<fingerprint>.json), a
+// Release's install() downloads the update's module into Updates in the
+// app's directory, checks its signature and puts it in place, and the
+// core runs it at the next launch (or now: relaunch()), going back to
+// the build's code if a launch of it crashes.
+
+import std/encoding
+import std/fs
+import std/json
+
+/// The core's (core/src/std/update.c): a line each, the build's
+/// fingerprint ("": it takes no updates), the feed, the public key, the
+/// update running ("": the build's code), the app's version, when the
+/// build was made.
+native fn otaInfo() -> string
+/// Runs the app again on the next turn: the update in place, if any.
+native fn otaRelaunch()
+
+struct Ota {
+  fingerprint: string
+  feed: string
+  key: string
+  running: string
+  version: string
+  built: int
+}
+
+/// The build's over-the-air updates, or none (a desktop, the web, a
+/// phone build without [updates], asuka dev's player).
+fn ota() -> Ota? {
+  let l = otaInfo().split("\n")
+  if l.count() < 6 || l[0].isEmpty() { return none }
+  return Ota(fingerprint: l[0], feed: l[1], key: l[2], running: l[3], version: l[4], built: l[5].toInt() ?? 0)
+}
+
+/// The platform's name in the feed's files.
+fn otaPlatform() -> string = if environment().platform == .android { "android" } else { "ios" }
+
+/// The number of an update's version ("1.4.0+1764150000": 1764150000; 0:
+/// none).
+fn otaNumber(label: string) -> int {
+  let (_, n, has) = cut(label, "+")
+  return if has { n.toInt() ?? 0 } else { 0 }
+}
+
+fn otaDir() -> string = fs.join([fs.appDir(), "Updates"])
+
+fn otaFile(m: Manifest) -> string = "{m.update}.asukab"
+
+/// The newest update of the build's fingerprint and channel newer than
+/// what runs, or none.
+async fn checkOta(o: Ota) throws -> Release? {
+  let feed = if feedOverride.isEmpty() { o.feed } else { feedOverride }
+  let target = "{otaPlatform()}-{o.fingerprint.slice(0, 16)}"
+  var text: string? = none
+  do {
+    text = try await manifestText(feed, target, o.version, followed)
+  } catch e {
+    throw UpdateError.failed(reason: "checking for updates: {messageOf(e)}")
+  }
+  let t = text ?? ""
+  if t.isEmpty() { return none }
+  if t.byteCount() > maxManifestSize { throw UpdateError.failed(reason: "checking for updates: the manifest is too large") }
+  var m = Manifest()
+  do {
+    m = try json.decode<Manifest>(t)
+  } catch e {
+    throw UpdateError.failed(reason: "checking for updates: {e.message}")
+  }
+  if m.url.isEmpty() || m.signature.isEmpty() || m.size <= 0 || m.update <= 0 {
+    throw UpdateError.failed(reason: "checking for updates: the manifest is incomplete")
+  }
+  // Another build's, or no newer than what runs (the build's own code is
+  // as new as when it was built).
+  if m.fingerprint != o.fingerprint { return none }
+  if m.update <= max(o.built, otaNumber(o.running)) || !onChannel(m.version, followed) { return none }
+  // One set aside (a launch of it crashed) isn't taken again.
+  if fs.exists(fs.join([otaDir(), otaFile(m) + ".bad"])) { return none }
+  let current = if o.running.isEmpty() { o.version } else { o.running }
+  return Release(version: "{m.version}+{m.update}", notes: m.notes, date: m.date, size: m.size, manifest: m, current: current)
+}
+
+/// Downloads m's module, checks its signature with the build's key, and
+/// puts it in place for the next launch; the others go.
+async fn installOta(o: Ota, m: Manifest, progress: fn(int, int)) throws {
+  let dir = otaDir()
+  try await spawn { try fs.mkdirAll(dir) }
+  let name = otaFile(m)
+  let part = fs.join([dir, name + ".part"])
+  defer { try? fs.remove(part) }
+  let key = (try? encoding.base64Decode(o.key)) ?? bytes()
+  try await downloadSigned(m.url, m.size, m.signature, key, part, progress)
+  let record = "{m.version}+{m.update}\n{m.fingerprint}\n{name}\n"
+  try await spawn {
+    try fs.rename(part, fs.join([dir, name]))
+    let cur = fs.join([dir, "current"])
+    try fs.writeText(cur + ".part", record)
+    try fs.rename(cur + ".part", cur)
+    // The updates before (the running one's module is in memory already).
+    for e in try fs.readDir(dir) {
+      if fs.ext(e.name) == ".asukab" && e.name != name {
+        try? fs.remove(e.path)
+      }
+    }
+  }
+}

@@ -4296,6 +4296,29 @@ over files, as its `native fn`s; the host does what only it can.
   `log` methods say what `info` answers, what a URL downloads (a file's
   bytes, quarter by quarter, or a status, an error, a download held until
   cancelled) and what it downloaded and installed.
+- Phones (RFC 0006): a release built with `[updates]` takes updates of
+  the app's code over the air. link.c's `AK_FINGERPRINT` (with the feed,
+  the key, the app's version and when it was built: `update.otaInfo`) is
+  a SHA-256 of what the build's native side gives code (the CLI's
+  version, or a development CLI's core sources; the platform; the
+  bytecode's format; the builtin tables linked; the app's externs; the
+  imported packages' and the app's native code; its assets; asuka.toml
+  but for version and build: cmd/asuka/ota.go). `asuka build|publish
+  --update` writes the app's module (as asuka dev sends one), signed,
+  and `update-<platform>-<fingerprint[:16]>.json` with the manifest's
+  `fingerprint` and `update` (a number that grows: when it was made). The
+  package's ota.asuka checks that manifest for the build's fingerprint,
+  takes an update newer than both the build and what runs and not set
+  aside, downloads it with std/http into `Updates/` in the app's
+  directory, verifies it (`verifyFile`) and writes `Updates/current`
+  (version, fingerprint, file). At launch `asuka_run` (abi/ota.c) runs
+  that module instead of the build's code when its fingerprint is the
+  build's, marking `Updates/launching` until it has run 10 s after
+  mounting; two launches in a row that end before (a crash loop, not a
+  user's closing the app) set it aside (`.bad`), as does a module that
+  doesn't load or whose init throws, and the build's code runs.
+  `relaunch()` (`update.otaRelaunch`) runs it at once, on the next turn,
+  as asuka dev reloads.
 - The web: the page's version is the host's (`asuka.native.app.version`,
   "" under asuka dev); the build writes `version.json` (`Cache-Control:
   no-cache`), which the package's web side (sdk/update/web) reads past

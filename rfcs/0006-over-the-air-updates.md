@@ -1,6 +1,6 @@
 # 0006: Over-the-air updates on phones
 
-- **Status**: Accepted (2026-11-26; rejected on 2026-11-15 for the Go
+- **Status**: Built (2026-11-26; rejected on 2026-11-15 for the Go
   runtime it was written for, reopened for the C core and its VM)
 - **Created**: 2026-11-15
 - **Related**: 0003 (in-process code patching), 0007 (the C core and the
@@ -85,11 +85,13 @@ What `asuka publish --update` (a phone's platform) makes:
   the core loads it (`asuka_load`'s path) instead of the build's code;
   otherwise it runs the build's.
 - **Rollback**: before loading an update the core marks it as launching
-  (`Updates/launching`); once the app has shown its first frame and run
-  for 10 seconds, the mark goes. A launch that finds the mark left
-  behind (the last one ended before that: a crash, a hang the system
-  killed) moves the update aside (`Updates/bad/<version>`, never taken
-  again) and runs the build's code. An update whose module doesn't load
+  (`Updates/launching`, with how many launches before ended early); once
+  the app has mounted and run for 10 seconds, the mark goes. A launch
+  that finds the mark left behind follows one that ended before that (a
+  crash, a hang the system killed, or the user closing the app at once):
+  after two in a row, as a crash at launch repeats and a user's closing
+  doesn't, the core sets the update aside (its files renamed `.bad`,
+  never taken again) and runs the build's code. An update whose module doesn't load
   (corrupt, a VM error at init) is moved aside at once.
 - **Checking and downloading** are `platform/update`'s, in Asuka, as on
   the desktops: `update.check()` reads the platform's manifest for the

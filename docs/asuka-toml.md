@@ -304,8 +304,8 @@ See [Languages](i18n.md#catalogs).
 
 ## updates
 
-A desktop app's updates: the key they're signed with, and where they're
-published. `asuka update keygen` makes the key pair and prints this
+A desktop app's updates, and a phone app's updates of its code: the key
+they're signed with, and where they're published. `asuka update keygen` makes the key pair and prints this
 table.
 
 ```toml

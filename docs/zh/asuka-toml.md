@@ -260,7 +260,7 @@ source = "ja"
 
 ## updates
 
-桌面应用的自动更新：签名更新所用的密钥，以及更新发布在哪里。`asuka update keygen` 会生成密钥对，并打印出这张表。
+桌面应用的自动更新，以及手机应用代码的更新：签名更新所用的密钥，以及更新发布在哪里。`asuka update keygen` 会生成密钥对，并打印出这张表。
 
 ```toml
 [updates]

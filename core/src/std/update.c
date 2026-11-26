@@ -32,6 +32,7 @@
 #define _DEFAULT_SOURCE
 #endif
 #include "std/std.h"
+#include "abi/ota.h"
 
 #include <errno.h>
 #include <stdarg.h>
@@ -63,6 +64,30 @@ static void failf(const char *fmt, ...) {
 static ak_val failure_fn(ak_val *args, uint32_t n) {
 	AK_UNUSED(args), AK_UNUSED(n);
 	return (ak_val){.p = ak_str_c(why)};
+}
+
+// update.otaInfo() -> string: a phone release's over-the-air updates
+// (RFC 0006), a line each: the build's fingerprint ("" : it takes none),
+// the feed, the public key, the version of the update running ("": the
+// build's code), the app's version, and when the build was made.
+static ak_val ota_info_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(args), AK_UNUSED(n);
+	size_t len = strlen(ak_link_fingerprint) + strlen(ak_link_update_feed) + strlen(ak_link_update_key) + strlen(ak_ota_running()) +
+	             strlen(ak_link_update_version) + 40;
+	char *s = malloc(len);
+	snprintf(s, len, "%s\n%s\n%s\n%s\n%s\n%lld", ak_link_fingerprint, ak_link_update_feed, ak_link_update_key, ak_ota_running(),
+	         ak_link_update_version, ak_link_update_built);
+	ak_val v = {.p = ak_str_c(s)};
+	free(s);
+	return v;
+}
+
+// update.otaRelaunch(): runs the app again on the next turn, the update
+// in place if there's one this build takes (abi/ota.c).
+static ak_val ota_relaunch_fn(ak_val *args, uint32_t n) {
+	AK_UNUSED(args), AK_UNUSED(n);
+	ak_ota_relaunch();
+	return (ak_val){0};
 }
 
 // ---- Paths ----
@@ -957,5 +982,7 @@ const ak_lib_entry ak_std_update[] = {
 	{"update.makeLink", make_link_fn},
 	{"update.validPath", valid_path_fn},
 	{"update.failure", failure_fn},
+	{"update.otaInfo", ota_info_fn},
+	{"update.otaRelaunch", ota_relaunch_fn},
 	{NULL, NULL},
 };

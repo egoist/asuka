@@ -59,6 +59,7 @@ func publishFlags(o *publishOptions) *flagSet {
 	fs.Bool(&o.noWait, "no-wait", 0, "iOS, Mac App Store: stop once App Store Connect has the upload, without waiting for Apple to process it")
 	fs.String(&o.track, "track", 0, "internal", "Android: the track to release to: internal, alpha, beta, production, or a closed track's name")
 	fs.Float(&o.rollout, "rollout", 0, 0, "Android: roll the release out to this `fraction` of users, as 0.1, raised later in the Play Console (default: all)")
+	fs.Bool(&o.update, "update", 0, "iOS, Android: an over-the-air update of the app's code, not a store build: uploaded where asuka.toml's updates say, for the installed builds whose native side it fits")
 	fs.Bool(&o.draft, "draft", 0, "Android: a draft release, to roll out in the Play Console; mac, windows, linux on GitHub: upload to a draft release, which you publish once every platform is there (default: published)")
 	fs.Bool(&o.cancelReview, "cancel-review", 0, "Android: if the app has changes in review, cancel that review and send them with this release (default: stop)")
 	fs.String(&o.profile, "profile", 0, "", "iOS: a provisioning `profile`'s path, name or UUID (default: asuka.toml's, else the best match installed)")
@@ -80,6 +81,16 @@ func cmdPublish(args []string) error {
 	}
 	if err := o.check(fs.set); err != nil {
 		return err
+	}
+	if o.update {
+		if o.platform != platformIOS && o.platform != platformAndroid {
+			return errors.New("--update is iOS's and Android's: a desktop app's update is published with each build")
+		}
+		app, err := loadApp(dir, o.platform)
+		if err != nil {
+			return err
+		}
+		return publishOTA(app, &o)
 	}
 	if desktopPlatform(o.platform) && !(o.platform == platformMac && o.appStore) {
 		app, err := loadApp(dir, o.platform)

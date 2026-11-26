@@ -5,6 +5,13 @@
 //
 //   AK_APP_COMPILED  an app is compiled in (lang/cgen's asuka_app_module);
 //                    without, the build is a player, which loads bytecode
+//   AK_FINGERPRINT   the build's fingerprint (an over-the-air update's
+//                    must be it: abi/ota.c), with AK_UPDATE_FEED and
+//                    AK_UPDATE_KEY, where updates are and the public key
+//                    they're signed with, AK_UPDATE_VERSION and
+//                    AK_UPDATE_BUILT, the app's version and when it was
+//                    built (seconds since 1970: an update older is older
+//                    code)
 //   AK_FFI           the glue of the app's extern declarations (lang/cffi's
 //                    asuka_ffi_register)
 //   AK_STD_SQLITE    std/sqlite's C (its asuka.toml's [c]: SQLite and asq,
@@ -32,6 +39,23 @@ ak_module *asuka_app_module(void);
 ak_module *(*const ak_link_app)(void) = asuka_app_module;
 #else
 ak_module *(*const ak_link_app)(void) = NULL;
+#endif
+
+// AK_FINGERPRINT  the build's fingerprint, a string (RFC 0006: what its
+//                 native side gives code; an over-the-air update must
+//                 have been made against it); none: the build takes none
+#if defined(AK_FINGERPRINT)
+const char *const ak_link_fingerprint = AK_FINGERPRINT;
+const char *const ak_link_update_feed = AK_UPDATE_FEED;
+const char *const ak_link_update_key = AK_UPDATE_KEY;
+const char *const ak_link_update_version = AK_UPDATE_VERSION;
+const long long ak_link_update_built = AK_UPDATE_BUILT;
+#else
+const char *const ak_link_fingerprint = "";
+const char *const ak_link_update_feed = "";
+const char *const ak_link_update_key = "";
+const char *const ak_link_update_version = "";
+const long long ak_link_update_built = 0;
 #endif
 
 #if defined(AK_FFI)

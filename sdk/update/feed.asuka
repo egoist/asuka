@@ -25,6 +25,11 @@ pub struct Manifest {
   /// The archives of the versions before, newest first (what the next
   /// build makes its deltas from).
   previous: [ManifestArchive] = []
+  /// A phone's over-the-air update's (RFC 0006): the fingerprint of the
+  /// builds it fits, and its number, which grows with each update (when
+  /// it was made, in seconds since 1970). Its url is its module's.
+  fingerprint: string = ""
+  update: int = 0
 
   /// The delta from version from, if the manifest has one.
   fn deltaFrom(from: string) -> ManifestDelta? = deltas.find(d => d.from == from)

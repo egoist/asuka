@@ -234,8 +234,8 @@ func (tc *Toolchain) mingw() bool {
 // linkSource compiles core/link/link.c for a build: whether an app is
 // compiled in, whether its externs' glue is, the units it links that the
 // core calls (their Link macros), and the builtins the app calls.
-func (tc *Toolchain) linkSource(core string, debug, app, ffi bool, units []Unit, builtins []string) ([]Object, error) {
-	flags := append(tc.coreFlags(core, debug), linkDefines(app, ffi, units, builtins)...)
+func (tc *Toolchain) linkSource(core string, debug, app, ffi bool, units []Unit, builtins []string, more ...string) ([]Object, error) {
+	flags := append(append(tc.coreFlags(core, debug), linkDefines(app, ffi, units, builtins)...), more...)
 	return tc.CC.CompileCached([]string{LinkSource(core)}, flags)
 }
 

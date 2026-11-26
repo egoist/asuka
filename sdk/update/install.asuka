@@ -7,6 +7,7 @@
 // part, and internal/update's install.go and files.go).
 
 import platform/host
+import std/http
 import std/json
 import std/fs
 import std/crypto
@@ -123,6 +124,12 @@ let retries = [1s, 3s]
 // mend (the network, a gateway's 5xx, a rate limit) is tried again.
 async fn download(u: string, to: string, progress: fn(int, int)) throws -> int {
   try checkURL(u)
+  // A phone has no update module: its over-the-air updates come through
+  // std/http.
+  if ota().isSome() {
+    let r = try await http.download(u, to, timeout: 300s, progress: progress)
+    return r.status
+  }
   var attempt = 0
   while true {
     let args = json.encode(DownloadArgs(url: u, to: to)).bytes()

@@ -18,6 +18,7 @@
 #include "vm/keep.h"
 #include "abi/dev.h"
 #include "abi/trace.h"
+#include "abi/ota.h"
 #include "base/thread.h"
 #include "std/std.h"
 
@@ -306,12 +307,43 @@ int asuka_run(char **err) {
 		fail(err, "asuka: no app is compiled into this build (a player loads one with asuka_dev_connect)");
 		return -1;
 	}
+	// An over-the-air update made for this build runs in its place
+	// (abi/ota.c); one that doesn't start is set aside, and the build's
+	// code runs.
+	ak_module *u = ak_ota_take();
+	if (u) {
+		if (run_module(u, err) == 0) {
+			ak_ota_mounted();
+			return 0;
+		}
+		fprintf(stderr, "asuka: the update didn't start: %s\n", err && *err ? *err : "");
+		if (err && *err) {
+			free(*err);
+			*err = NULL;
+		}
+		ak_ota_failed();
+	}
 	ak_module *m = app_loader()();
 	ak_module_retain(m);  // the build's own stays with it
 	return run_module(m, err);
 }
 
 int asuka_has_app(void) { return app_loader() != NULL; }
+
+int ak_abi_relaunch(ak_module *m) {
+	char *err = NULL;
+	if (!m) {
+		if (!app_loader()) return -1;
+		m = app_loader()();
+		ak_module_retain(m);
+	}
+	int rc = run_module(m, &err);
+	if (err) {
+		fprintf(stderr, "asuka: relaunch: %s\n", err);
+		free(err);
+	}
+	return rc;
+}
 
 // ---- asuka dev ----
 
