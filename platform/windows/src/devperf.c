@@ -13,7 +13,8 @@
 #define DP_CLASS L"AsukaDevPerf"
 #define DP_PAD_X 6
 #define DP_PAD_Y 4
-#define DP_MARGIN 8
+#define DP_MARGIN 8  // from the trailing edge
+#define DP_TOP 6     // from the top, below a hidden title bar's buttons
 #define DP_RADIUS 6
 #define DP_ALPHA 184  // the box's
 
@@ -67,17 +68,22 @@ static void draw(void) {
 	float k = (float)wh_dpi(owner) / 96;
 	int pad_x = (int)lroundf(DP_PAD_X * k), pad_y = (int)lroundf(DP_PAD_Y * k), radius = (int)lroundf(DP_RADIUS * k);
 	HDC sdc = GetDC(NULL), mdc = CreateCompatibleDC(sdc);
-	HFONT font = CreateFontW(-(int)lroundf(10 * k * 96 / 72), 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+	HFONT font = CreateFontW(-(int)lroundf(10 * k), 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
 	                         ANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
 	HGDIOBJ old_font = SelectObject(mdc, font);
 	RECT tr = {0, 0, 0, 0};
 	DrawTextW(mdc, dp_text, -1, &tr, DT_CALCRECT | DT_NOPREFIX | DT_LEFT);
 	int w = tr.right + 2 * pad_x, h = tr.bottom + 2 * pad_y;
-	// The corner: the client area's top trailing one, in screen pixels.
+	// The corner: the client area's top trailing one, below a hidden title
+	// bar's caption buttons, in screen pixels (a mirrored window's client
+	// origin is its top right).
 	RECT cr;
 	GetClientRect(owner, &cr);
-	POINT at = {H.rtl ? (int)lroundf(DP_MARGIN * k) : cr.right - w - (int)lroundf(DP_MARGIN * k), (int)lroundf(DP_MARGIN * k)};
-	ClientToScreen(owner, &at);
+	POINT o = {0, 0};
+	ClientToScreen(owner, &o);
+	if (GetWindowLongPtrW(owner, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) o.x -= cr.right;
+	int margin = (int)lroundf(DP_MARGIN * k);
+	POINT at = {o.x + (H.rtl ? margin : cr.right - w - margin), o.y + (int)lroundf((wh_safe_top(H.main_ctl) + DP_TOP) * k)};
 	BITMAPINFO bi = {0};
 	bi.bmiHeader.biSize = sizeof bi.bmiHeader;
 	bi.bmiHeader.biWidth = w;
@@ -121,8 +127,12 @@ static void draw(void) {
 	DeleteObject(font);
 	DeleteDC(mdc);
 	ReleaseDC(NULL, sdc);
-	// Over the app's sheets and popovers, which the main window owns too.
-	SetWindowPos(dp_win, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+	// Over the app's sheets and popovers, which the main window owns too,
+	// while the app is the one in use; else where it is: raised, it would
+	// come over the windows of the app in use.
+	HWND fg = GetForegroundWindow();
+	bool ours = fg && GetWindowThreadProcessId(fg, NULL) == GetCurrentThreadId();
+	SetWindowPos(dp_win, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW | (ours ? 0 : SWP_NOZORDER));
 }
 
 void wh_dev_perf(const uint8_t *args, size_t len) {

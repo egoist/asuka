@@ -40,7 +40,7 @@ static gboolean main_close_request(GtkWindow *window, gpointer data) {
 }
 
 win *lx_new_main_window(void) {
-	win *w = lx_new_win((GtkWindow *)adw_application_window_new(H.app));
+	win *w = lx_new_win(g_object_new(lx_window_type, "application", H.app, NULL));  // an AdwApplicationWindow (view.c)
 	const char *t = getenv("ASUKA_TEST");
 	if (t && *t) gtk_window_set_decorated(w->window, 0);
 	str_setc(&w->name, H.app_name);

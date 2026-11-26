@@ -17,7 +17,7 @@
 #include <math.h>
 #include <stdlib.h>
 
-GType lx_view_type;
+GType lx_view_type, lx_window_type;
 
 // GTK 4's class layout on 64-bit Linux (ABI-stable for the 4.x series).
 #if UINTPTR_MAX == 0xffffffffffffffffu
@@ -59,7 +59,7 @@ bool lx_is_view(gpointer w) { return w && g_type_check_instance_is_a((GTypeInsta
 
 void lx_snapshot_view(GtkWidget *w, GtkSnapshot *snap);
 static void snapshot_highlight(node *n, GtkSnapshot *snap, graphene_rect_t bounds);
-static void snapshot_perf(node *n, GtkWidget *w, GtkSnapshot *snap, graphene_rect_t bounds);
+static void snapshot_perf(GtkWidget *window, GtkSnapshot *snap);
 void lx_allocate_view(GtkWidget *w, int width, int height);
 
 static void view_snapshot(GtkWidget *w, GtkSnapshot *snap) { lx_snapshot_view(w, snap); }
@@ -121,6 +121,22 @@ static void class_init(gpointer class, gpointer data) {
 	gtk_widget_class_set_css_name(class, "asuka-view");
 }
 
+// AsukaWindow, the main window: an AdwApplicationWindow that draws asuka
+// dev's performance overlay after everything in it, the dialogs it hosts
+// (sheets, alerts) and their dimming too.
+static void (*parent_window_snapshot)(GtkWidget *w, GtkSnapshot *snap);
+
+static void window_snapshot(GtkWidget *w, GtkSnapshot *snap) {
+	parent_window_snapshot(w, snap);
+	snapshot_perf(w, snap);
+}
+
+static void window_class_init(gpointer class, gpointer data) {
+	(void)data;
+	parent_window_snapshot = GET_VFUNC(g_type_class_peek_parent(class), OFF_WIDGET_SNAPSHOT);
+	SET_VFUNC(class, OFF_WIDGET_SNAPSHOT, window_snapshot);
+}
+
 void lx_register_classes(void) {
 	if (lx_view_type) return;
 	GType parent = gtk_widget_get_type();
@@ -129,6 +145,10 @@ void lx_register_classes(void) {
 	node_offset = (q.instance_size + sizeof(void *) - 1) / sizeof(void *) * sizeof(void *);
 	lx_view_type = g_type_register_static_simple(parent, "AsukaView", q.class_size, class_init,
 		(guint)(node_offset + sizeof(void *)), NULL, (GTypeFlags)0);
+	parent = adw_application_window_get_type();
+	g_type_query(parent, &q);
+	lx_window_type = g_type_register_static_simple(parent, "AsukaWindow", q.class_size, window_class_init, q.instance_size, NULL,
+		(GTypeFlags)0);
 }
 
 // lx_view_new makes an AsukaView the host holds a reference to.
@@ -341,7 +361,6 @@ void lx_snapshot_view(GtkWidget *w, GtkSnapshot *snap) {
 		gtk_snapshot_append_border(snap, &rr, bw, cs);
 	}
 	snapshot_highlight(n, snap, bounds);
-	snapshot_perf(n, w, snap, bounds);
 }
 
 // ---- asuka dev's inspector's highlight (DevHighlight, DevHighlightClear) ----
@@ -391,40 +410,43 @@ static void snapshot_highlight(node *n, GtkSnapshot *snap, graphene_rect_t bound
 //
 // The core's numbers (frames a second, flushes, the last flush's phases,
 // memory) in a small box over the top end corner of the root's view,
-// drawn by the root itself after everything in it, so it takes no clicks
-// and isn't in the accessibility tree: monospaced, light on a dark
-// translucent rounded box. The core sends its text twice a second while
-// it's on, and none to remove it.
+// drawn by its window (AsukaWindow) after everything in it, the dialogs
+// the app presented since too, so it takes no clicks and isn't in the
+// accessibility tree: monospaced, light on a dark translucent rounded
+// box. The core sends its text twice a second while it's on, and none to
+// remove it.
 
 static struct {
-	ak_id root;
-	GtkWidget *widget;  // referenced
+	GtkWidget *widget;  // the root's, referenced
 	char *text;
 } PF;
 
+// redraw_perf has the window the root's view is in draw again.
+static void redraw_perf(void) {
+	GtkRoot *r = PF.widget ? gtk_widget_get_root(PF.widget) : NULL;
+	if (r) gtk_widget_queue_draw((GtkWidget *)r);
+}
+
 void lx_dev_perf(node *n, ak_span args) {
-	if (PF.widget) {
-		gtk_widget_queue_draw(PF.widget);
-		g_object_unref(PF.widget);
-	}
+	redraw_perf();
+	if (PF.widget) g_object_unref(PF.widget);
 	PF.widget = NULL;
-	PF.root = 0;
 	free(PF.text);
 	PF.text = NULL;
 	if (!n || !n->widget || !args.len) return;
 	PF.text = str_dup(args);
-	PF.root = n->id;
 	PF.widget = g_object_ref(n->widget);
-	gtk_widget_queue_draw(n->widget);
+	redraw_perf();
 }
 
 void lx_dev_perf_dump(ak_buf *b) {
 	if (PF.text) ak_buf_printf(b, "DevPerf %s\n", PF.text);
 }
 
-static void snapshot_perf(node *n, GtkWidget *w, GtkSnapshot *snap, graphene_rect_t bounds) {
-	if (!PF.root || n->id != PF.root || !PF.text) return;
-	PangoLayout *l = gtk_widget_create_pango_layout(w, PF.text);
+static void snapshot_perf(GtkWidget *window, GtkSnapshot *snap) {
+	graphene_rect_t root;
+	if (!PF.text || (GtkWidget *)gtk_widget_get_root(PF.widget) != window || !gtk_widget_compute_bounds(PF.widget, window, &root)) return;
+	PangoLayout *l = gtk_widget_create_pango_layout(window, PF.text);
 	PangoAttrList *attrs = pango_attr_list_new();
 	pango_attr_list_insert(attrs, pango_attr_family_new("monospace"));
 	pango_attr_list_insert(attrs, pango_attr_size_new_absolute(10 * PANGO_SCALE));
@@ -434,15 +456,15 @@ static void snapshot_perf(node *n, GtkWidget *w, GtkSnapshot *snap, graphene_rec
 	int tw = 0, th = 0;
 	pango_layout_get_pixel_size(l, &tw, &th);
 	float pw = (float)tw + 12, ph = (float)th + 8;
-	float x = H.rtl ? 8 : bounds.size.width - pw - 8;
-	graphene_rect_t box = {{x, 6}, {pw, ph}};
+	float x = root.origin.x + (H.rtl ? 8 : root.size.width - pw - 8), y = root.origin.y + 6;
+	graphene_rect_t box = {{x, y}, {pw, ph}};
 	GskRoundedRect rr = rounded(box, 6);
 	GdkRGBA bg = {0, 0, 0, 0.72f}, fg = {1, 1, 1, 1};
 	gtk_snapshot_push_rounded_clip(snap, &rr);
 	gtk_snapshot_append_color(snap, &bg, &box);
 	gtk_snapshot_pop(snap);
 	gtk_snapshot_save(snap);
-	gtk_snapshot_translate(snap, &(graphene_point_t){x + 6, 10});
+	gtk_snapshot_translate(snap, &(graphene_point_t){x + 6, y + 4});
 	gtk_snapshot_append_layout(snap, l, &fg);
 	gtk_snapshot_restore(snap);
 	g_object_unref(l);

@@ -373,7 +373,7 @@ void lx_apply_batch(const uint8_t *buf, size_t len);
 void lx_measure_cb(uint32_t id, float width, float height, float aw, float ah, float *ow, float *oh);
 
 // view.c
-extern GType lx_view_type;
+extern GType lx_view_type, lx_window_type;
 void lx_register_classes(void);
 GtkWidget *lx_view_new(void);
 bool lx_is_view(gpointer w);
