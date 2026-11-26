@@ -1,0 +1,87 @@
+// platform/transcribe on Windows (modules_test.go's TestTranscribe): what
+// the device recognizes, and two recordings of one sentence turned into
+// text by SAPI's dictation: an AAC .m4a (platform/record's) and a 22 kHz
+// WAV; a missing file and a language with no recognizer fail. It writes
+// DIR\transcribed once it's done, then listens to the microphone until
+// Finish is pressed, and writes DIR\listened.
+import std/fs
+import platform/transcribe
+
+fn describe(r: transcribe.Result) -> string {
+  // The words in order, in the recording's 2.7 seconds.
+  var timed = r.segments.count() >= 5
+  var last = 0.0
+  for s in r.segments {
+    timed = timed && s.start >= last && s.duration > 0 && s.start + s.duration < 3.5
+    last = s.start
+  }
+  return "{r.text.lower()} | {r.language} | timed:{timed}"
+}
+
+component Transcribe(dir: string) {
+  state check = "?"
+  state absent = "?"
+  state m4a = "?"
+  state wav = "?"
+  state missing = "?"
+  state other = "?"
+  state listened = "?"
+  Column {
+    gap: 4; padding: 8
+    Text("check: {check}")
+    Text("absent: {absent}")
+    Text("m4a: {m4a}")
+    Text("wav: {wav}")
+    Text("missing: {missing}")
+    Text("other: {other}")
+    Text("listened: {listened}")
+    Button("Finish") { on press { transcribe.finish() } }
+  }
+  task {
+    do {
+      let a = try await transcribe.check("en-US")
+      check = "{a.onDevice} {a.language}"
+      let b = try await transcribe.check("tlh")
+      absent = "{b.onDevice} {b.language}"
+    } catch e {
+      check = e.message
+    }
+    do {
+      m4a = describe(try await transcribe.file(fs.join([dir, "speech.m4a"]), language: "en-US"))
+    } catch e {
+      m4a = e.message
+    }
+    do {
+      wav = describe(try await transcribe.file(fs.join([dir, "speech.wav"])))
+    } catch e {
+      wav = e.message
+    }
+    do {
+      missing = describe(try await transcribe.file(fs.join([dir, "nothing.m4a"])))
+    } catch e {
+      missing = if e.message.hasPrefix("transcribe: can't read the recording") { "can't read" } else { e.message }
+    }
+    do {
+      other = describe(try await transcribe.file(fs.join([dir, "speech.wav"]), language: "is-IS"))
+    } catch e {
+      other = e.message
+    }
+    try? fs.write(fs.join([dir, "transcribed"]), data: "done".bytes())
+    // The microphone until Finish (the VM has none: what it heard, nothing).
+    var n = 0
+    do {
+      listened = "listening"
+      for await h in transcribe.listen(language: "en-US") {
+        n += 1
+        if h.final {
+          listened = "final '{h.text}' after {n}"
+        }
+      }
+    } catch e {
+      listened = e.message
+    }
+    try? fs.write(fs.join([dir, "listened"]), data: "done".bytes())
+  }
+}
+
+app { Transcribe(dir: "TRANSCRIBE_DIR") }

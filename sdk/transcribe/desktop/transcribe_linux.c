@@ -1,11 +1,6 @@
-// platform/transcribe on Windows and Linux: no recognizer on the device
-// is part of either that apps can count on (Windows' speech recognition is
-// the microphone's, and may use Microsoft's servers; Linux has none), so
-// check says so and file and listen fail with notAvailable, rather than
-// sending the sound to a server. macOS runs the package's Swift.
-#ifdef _WIN32
-#include "asuka_windows.h"
-#endif
+// platform/transcribe on Linux: no speech recognizer is part of the
+// system that apps can count on, so check says so and file and listen
+// fail with notAvailable, rather than sending the sound to a server.
 #include "transcribe.asuka.h"
 
 #include <stdlib.h>
@@ -13,11 +8,6 @@
 
 // device_language is the user's language as a BCP 47 tag.
 static char *device_language(void) {
-#ifdef _WIN32
-	wchar_t w[LOCALE_NAME_MAX_LENGTH];
-	if (GetUserDefaultLocaleName(w, LOCALE_NAME_MAX_LENGTH) > 0) return asuka_narrow(w, -1);
-	return asuka_strdup("en-US");
-#else
 	const char *lang = getenv("LANG");
 	char *s = asuka_strdup(lang && *lang ? lang : "");
 	char *dot = strpbrk(s, ".@");
@@ -25,7 +15,6 @@ static char *device_language(void) {
 	for (char *p = s; *p; p++)
 		if (*p == '_') *p = '-';
 	return s;
-#endif
 }
 
 static void check(transcribe_Recognizer *self, const char *language, asuka_call *call) {
@@ -39,8 +28,6 @@ static void file(transcribe_Recognizer *self, const char *path, const char *lang
 	asuka_call_fail(call, &e);
 }
 
-// The microphone's recognizers (Windows' speech recognition, Linux has
-// none) aren't ones apps can count on to stay on the device: not here.
 static void listen(transcribe_Recognizer *self, const char *language, transcribe_fn_Heard heard, asuka_call *call) {
 	asuka_error e = {0};
 	asuka_error_declared(&e, transcribe_TranscribeError_notAvailable);

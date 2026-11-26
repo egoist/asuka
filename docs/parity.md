@@ -164,7 +164,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Video thumbnails | `AVAssetImageGenerator` | `expo-video-thumbnails` | ✓ `imageedit.videoFrame` |
 | A view as an image | `ImageRenderer`, `drawHierarchy` | `react-native-view-shot` | ✓ `imageedit.capture(view: ref)`: PNG or JPEG, drawn by the platform (layers, Android's `View`, the window's pixels on Windows and Linux; on the web an SVG copy of the elements) |
 | Text, faces and codes in an image | Vision | no | ✓ `platform/vision`, with where each is (Vision; ML Kit on Android, only in the apps that import it; Windows' OCR and face detection; Tesseract's text on Linux, no faces; the browser's Shape Detection API where it has one) |
-| Speech to text | Speech (`SFSpeechRecognizer`) | community (`expo-speech-recognition`) | ◐ `platform/transcribe` (a recording, on the device only: Speech on iOS and macOS, Android 13's on-device recognizer, a browser's on-device recognizer (Chrome 139 and later); `transcribe.listen`: dictation from the microphone, as it's said; not on Windows and Linux, whose recognizers take only the microphone) |
+| Speech to text | Speech (`SFSpeechRecognizer`) | community (`expo-speech-recognition`) | ◐ `platform/transcribe` (a recording, on the device only: Speech on iOS and macOS, Android 13's on-device recognizer, a browser's on-device recognizer (Chrome 139 and later); Windows' desktop speech recognizer (SAPI); `transcribe.listen`: dictation from the microphone, as it's said; not on Linux, which has no recognizer) |
 | The photo library | PhotoKit | `expo-media-library` | ✓ `platform/photos`: permission, listing, thumbnails, the original files (PhotoKit, MediaStore) |
 | Text to speech | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech` (a queue, voices, pitch, rate, pause; AVSpeechSynthesizer, TextToSpeech, SAPI, Speech Dispatcher, `speechSynthesis`) |
 | Contacts | Contacts, ContactsUI | `expo-contacts` | ✓ `platform/contacts` (`pick()` and the new contact form without permission; the address book with it) |
@@ -276,4 +276,4 @@ mouse through all of it, or none).
 In order of what apps miss most: widgets of the app's own layout (one
 template for now), and over-the-air updates
 (EAS Update's: a release has the app compiled into it).
-On Windows and Linux, speech to text.
+On Linux, speech to text.

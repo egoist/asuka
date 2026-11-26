@@ -8,3 +8,6 @@ NSMicrophoneUsageDescription = "What you say is turned into text on this device.
 
 [android]
 permissions = ["android.permission.RECORD_AUDIO"]
+
+[windows]
+libraries = ["ole32", "advapi32"]

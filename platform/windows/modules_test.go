@@ -160,3 +160,61 @@ func itoa(i int) string {
 	}
 	return string(b[n:])
 }
+
+// platform/transcribe (testdata/transcribe.asuka): SAPI's dictation, on
+// the device, hears a spoken sentence in an .m4a and a WAV (made by
+// macOS's say), with its words' timing; listening ends with finish.
+func TestTranscribe(t *testing.T) {
+	w := onWindows(t)
+	local, guest := w.job(t)
+	for _, f := range []string{"speech.m4a", "speech.wav"} {
+		b, err := os.ReadFile(filepath.Join("testdata", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(local, f), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src, err := os.ReadFile(filepath.Join("testdata", "transcribe.asuka"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := strings.ReplaceAll(guest, `\`, `\\`)
+	buildStdApp(t, w, strings.ReplaceAll(string(src), "TRANSCRIBE_DIR", dir), local, "transcribe")
+	d := script(t, w, local, guest, "app.exe", "waitfor:"+guest+`\transcribed`, "wait:1s", "tap:Finish", "waitfor:"+guest+`\listened`, "snap:done")
+	dump := d["done"]
+	t.Logf("%s", dump)
+	shows(t, dump, "transcribed", []string{
+		"check: true en-US",
+		"absent: false tlh",
+		"missing: can't read",
+		"other: TranscribeError.notAvailable",
+	})
+	// Listening ends as Finish is pressed: with what was heard (the VM has
+	// no microphone, so nothing), or at once with notAvailable.
+	if !strings.Contains(dump, `"listened: final '' after 1"`) && !strings.Contains(dump, `"listened: TranscribeError.notAvailable"`) {
+		t.Errorf("listening didn't end as it should:\n%s", dump)
+	}
+	// The desktop recognizer's dictation isn't word for word, but hears
+	// most of the sentence, in both.
+	for _, f := range []string{"m4a: ", "wav: "} {
+		i := strings.Index(dump, f)
+		if i < 0 {
+			t.Fatalf("no %q in the dump", f)
+		}
+		line := dump[i:]
+		if j := strings.IndexByte(line, '\n'); j >= 0 {
+			line = line[:j]
+		}
+		heard := 0
+		for _, word := range []string{"quick", "brown", "fox", "jumps", "over", "lazy", "dog"} {
+			if strings.Contains(line, word) {
+				heard++
+			}
+		}
+		if heard < 5 || !strings.Contains(line, "| en-US | timed:true") {
+			t.Errorf("%s: heard %d of 7 words, or no language or timing", line, heard)
+		}
+	}
+}

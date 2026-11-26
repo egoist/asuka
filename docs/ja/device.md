@@ -128,7 +128,8 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `platform/liveactivity` | スマートフォンの機能です。`enabled` は false で、`start` は「liveactivity: not available」を投げます |
 | `platform/purchase` | Microsoft Store からインストールしたアプリでは Microsoft Store を使います。それ以外では `available()` は false で、ほかの呼び出しは `PurchaseError.notAvailable` を投げます（[アプリ内課金](purchases.md)） |
 | `platform/pay` | Windows アプリの支払いに使えるウォレットはありません。`available` は `.none` を返し、`pay` は `PayError.notAvailable` を投げ、`PayButton` は何も表示しません |
-| `platform/appleauth`、`platform/agerange`、`platform/icloud`、`platform/transcribe`、`platform/sensors` | Windows にはありません。その機能を持たないデバイスと同じく、利用できません |
+| `platform/appleauth`、`platform/agerange`、`platform/icloud`、`platform/sensors` | Windows にはありません。その機能を持たないデバイスと同じく、利用できません |
+| `platform/transcribe` | Windows のデスクトップ音声認識で、PC 上で処理します。英語の認識は Windows に付属し、ほかの言語はその言語パックの音声認識と一緒に入ります。どれが使えるかは `check` でわかります。`listen` は既定のマイクを使います |
 | `device.haptic` | PC には触覚フィードバックがないので、何もしません |
 | `platform/splash` | Windows アプリには起動画面がないので、`hold` と `hide` は何もしません |
 | `onShare`、ショートカット | iOS と Android だけです |
@@ -1638,7 +1639,7 @@ async fn caption(recording: string) throws -> string {
 }
 ```
 
-iOS と Mac では Speech フレームワークにデバイス上で処理するよう求め、Android ではデバイス上の認識エンジン（Android 13 以降）を使います。ブラウザーでは、デバイス上で動くブラウザー自身の認識エンジン（Chrome 139 以降）に録音を再生して聞かせるので、ファイル一つにほぼその長さの時間がかかり、`segments` はありません。デバイスでできないとき（Windows、Linux、古い Android、その認識エンジンのないブラウザー）は、音声をサーバーに送る代わりに `TranscribeError.notAvailable` を投げます。言語のモデルをダウンロード中のときは `.downloading` です（ブラウザーはそのときインストールを始めます）。
+iOS と Mac では Speech フレームワークにデバイス上で処理するよう求め、Android ではデバイス上の認識エンジン（Android 13 以降）を使います。ブラウザーでは、デバイス上で動くブラウザー自身の認識エンジン（Chrome 139 以降）に録音を再生して聞かせるので、ファイル一つにほぼその長さの時間がかかり、`segments` はありません。Windows ではデスクトップ音声認識（SAPI の音声入力。英語は Windows に付属し、ほかの言語はその言語パックの音声認識と一緒に入ります）を使います。デバイスでできないとき（Linux、古い Android、その認識エンジンのないブラウザー、認識エンジンのない Windows の言語）は、音声をサーバーに送る代わりに `TranscribeError.notAvailable` を投げます。言語のモデルをダウンロード中のときは `.downloading` です（ブラウザーはそのときインストールを始めます）。
 
 `transcribe.listen(language)` は音声入力です。マイクを聞き、話すそばから結果を返します。毎回の `Heard` の `text` には、それまでのテキストがすべて入っています（最後のいくつかの単語は、まだ変わることがあります）。最後の一つは `final` です。`transcribe.finish()` を呼んだとき、または認識エンジンが話し声を聞かなくなったときに来ます。読んでいるタスクを止めると、すぐに聞くのをやめ、それ以降は何も残しません。最初に使うときにマイクと音声認識の許可を求めます。`file` と同じく、同じプラットフォームでデバイス上で動きます。
 

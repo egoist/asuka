@@ -128,7 +128,8 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `platform/liveactivity` | 这是手机的能力：`enabled` 为 false，`start` 抛出 "liveactivity: not available" |
 | `platform/purchase` | Microsoft Store，仅限从商店安装的应用；否则 `available()` 为 false，其余调用抛出 `PurchaseError.notAvailable`（见[应用内购买](purchases.md)） |
 | `platform/pay` | Windows 上没有能为应用付款的钱包：`available` 返回 `.none`，`pay` 抛出 `PayError.notAvailable`，`PayButton` 什么也不显示 |
-| `platform/appleauth`、`platform/agerange`、`platform/icloud`、`platform/transcribe`、`platform/sensors` | Windows 上不支持：返回不可用，与在缺少这些功能的设备上一样 |
+| `platform/appleauth`、`platform/agerange`、`platform/icloud`、`platform/sensors` | Windows 上不支持：返回不可用，与在缺少这些功能的设备上一样 |
+| `platform/transcribe` | 用 Windows 的桌面语音识别器在本机识别：英语的随 Windows 附带，其他语言的随该语言包的语音识别功能安装；`check` 会告诉你哪些可用。`listen` 使用默认麦克风 |
 | `device.haptic` | 电脑没有触感反馈：什么也不做 |
 | `platform/splash` | Windows 应用没有启动屏：`hold` 和 `hide` 什么也不做 |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android |
@@ -1638,7 +1639,7 @@ async fn caption(recording: string) throws -> string {
 }
 ```
 
-在 iOS 和 Mac 上用的是 Speech 框架，并要求只在设备上处理；在 Android 上是系统的设备端识别器（Android 13 及以上）；在浏览器中，是浏览器自己在设备上运行的识别器（Chrome 139 及以上），录音会被播放给它听，所以识别一个文件大约需要它本身的时长，结果也没有 `segments`。设备做不到时（Windows、Linux、较旧的 Android、没有这种识别器的浏览器），它会抛出 `TranscribeError.notAvailable`，而不是把声音发到服务器；语言模型还在下载时抛出 `.downloading`（浏览器这时会开始安装它）。
+在 iOS 和 Mac 上用的是 Speech 框架，并要求只在设备上处理；在 Android 上是系统的设备端识别器（Android 13 及以上）；在浏览器中，是浏览器自己在设备上运行的识别器（Chrome 139 及以上），录音会被播放给它听，所以识别一个文件大约需要它本身的时长，结果也没有 `segments`；在 Windows 上是桌面语音识别器（SAPI 的听写：英语的随 Windows 附带，其他语言的随该语言包的语音识别功能安装）。设备做不到时（Linux、较旧的 Android、没有这种识别器的浏览器、Windows 上没有识别器的语言），它会抛出 `TranscribeError.notAvailable`，而不是把声音发到服务器；语言模型还在下载时抛出 `.downloading`（浏览器这时会开始安装它）。
 
 `transcribe.listen(language)` 用于听写：它监听麦克风，边说边给出识别结果，每次一个 `Heard`，其中的 `text` 是到目前为止的全部文字（最后几个词可能还会变）。最后一个是 `final` 的：调用了 `transcribe.finish()`，或者识别器不再听到说话时就会给出。停止读取它的任务会立刻停止监听，之后的内容不再保留。第一次使用时会请求麦克风和语音识别的权限；它与 `file` 一样在设备上运行，支持的平台也相同。
 

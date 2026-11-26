@@ -184,7 +184,8 @@ device without it:
 | `platform/liveactivity` | A phone's: `enabled` is false, `start` throws "liveactivity: not available" |
 | `platform/purchase` | The Microsoft Store, for an app installed from it; otherwise `available()` is false and the rest throw `PurchaseError.notAvailable` ([In-app purchases](purchases.md)) |
 | `platform/pay` | No wallet pays for a Windows app: `available` says `.none`, `pay` throws `PayError.notAvailable`, `PayButton` shows nothing |
-| `platform/appleauth`, `platform/agerange`, `platform/icloud`, `platform/transcribe`, `platform/sensors` | Not on Windows: unavailable, as on a device without them |
+| `platform/appleauth`, `platform/agerange`, `platform/icloud`, `platform/sensors` | Not on Windows: unavailable, as on a device without them |
+| `platform/transcribe` | Windows' desktop speech recognizer, on the PC: English's comes with Windows, another language's with its language pack's speech recognition; `check` says which. `listen` takes the default microphone |
 | `device.haptic` | A PC has no haptics: it does nothing |
 | `platform/splash` | A Windows app has no launch screen: `hold` and `hide` do nothing |
 | `onShare`, shortcuts | iOS and Android only |
@@ -2420,8 +2421,11 @@ The Speech framework on iOS and the Mac, asked to stay on the device;
 Android's on-device recognizer (Android 13 and later); in a browser,
 its own recognizer where it runs on the device (Chrome 139 and later),
 which hears the recording played into it, so a file takes about its own
-length and has no `segments`. Where the device can't (Windows, Linux, an
-older Android, a browser without one), it throws
+length and has no `segments`; Windows' desktop speech recognizer (SAPI's
+dictation: English's comes with Windows, another language's with its
+language pack's speech recognition). Where the device can't (Linux, an
+older Android, a browser without one, a Windows language with no
+recognizer), it throws
 `TranscribeError.notAvailable` rather than send the sound to a server;
 `.downloading` while the language's model comes (a browser starts
 installing it then).
