@@ -118,14 +118,24 @@ class KeystoreKeychain(private val app: Context) : Keychain {
         return String(c.doFinal(raw, 12, raw.size - 12), Charsets.UTF_8)
     }
 
+    /**
+     * The device can't keep a protected key: logged with why (the
+     * Keystore's own words: "At least one biometric must be enrolled…"),
+     * since the app sees only SecureError.notAvailable.
+     */
+    private fun notAvailable(e: Exception): Nothing {
+        android.util.Log.w("asuka", "secure: a protected key can't be made here: $e${e.cause?.let { " ($it)" } ?: ""}")
+        throw SecureException(SecureError.NOT_AVAILABLE)
+    }
+
     private fun sealProtected(value: String): String {
         if (!canAsk()) throw SecureException(SecureError.NOT_AVAILABLE)
         val pub = try {
             publicKey()
         } catch (e: IllegalStateException) {
-            throw SecureException(SecureError.NOT_AVAILABLE) // no screen lock, or nothing enrolled
+            notAvailable(e) // no screen lock, or nothing enrolled
         } catch (e: java.security.InvalidAlgorithmParameterException) {
-            throw SecureException(SecureError.NOT_AVAILABLE)
+            notAvailable(e)
         }
         val aes = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
         val c = Cipher.getInstance("AES/GCM/NoPadding")
