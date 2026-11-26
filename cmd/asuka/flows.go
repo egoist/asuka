@@ -22,7 +22,7 @@ import (
 // through the app, run on a platform's player as asuka dev runs it (the
 // simulator, an emulator, the browser, this computer), as Maestro's flows
 // are. A step is the core's automation's (core/src/ui/automate.c): tap,
-// type, submit, back, see, notsee; wait is the runner's own. A step that
+// type, submit, back, tab, see, notsee; wait is the runner's own. A step that
 // fails is tried again until it passes or flowTimeout passes: the app may
 // be loading, animating, waiting on the network. Each flow starts the
 // app afresh, its state from its initial values.
@@ -42,7 +42,7 @@ type flowStep struct {
 	arg  string
 }
 
-var flowVerbs = map[string]bool{"tap": true, "type": true, "submit": true, "back": true, "see": true, "notsee": true, "wait": true}
+var flowVerbs = map[string]bool{"tap": true, "type": true, "submit": true, "back": true, "tab": true, "see": true, "notsee": true, "wait": true}
 
 // parseFlow reads a flow: a step a line, "verb argument"; # comments.
 func parseFlow(file string, src string) (flow, error) {
@@ -55,7 +55,7 @@ func parseFlow(file string, src string) (flow, error) {
 		verb, arg, _ := strings.Cut(l, " ")
 		arg = strings.TrimSpace(arg)
 		if !flowVerbs[verb] {
-			return f, fmt.Errorf("%s:%d: no step %q (tap, type, submit, back, see, notsee, wait)", file, i+1, verb)
+			return f, fmt.Errorf("%s:%d: no step %q (tap, type, submit, back, tab, see, notsee, wait)", file, i+1, verb)
 		}
 		needs := verb != "submit" && verb != "back"
 		if needs != (arg != "") {

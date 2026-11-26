@@ -428,6 +428,8 @@ void ak_back_attach(ak_back *b, ak_view *e);  // the view its Back events come t
 void ak_back_run(ak_back *b);
 uint32_t ak_nav_screens(ak_view *stack);  // a Stack's screens (0: not one)
 bool ak_nav_pop_top(ak_view *stack);      // its top screen off, as its back button does
+int64_t ak_tabs_selected(ak_view *tabs);  // the tab Tabs shows (-1: not Tabs)
+void ak_tabs_select(ak_view *tabs, int64_t i);  // shows tab i, as the user's choosing it
 // ak_ui_dispatch_event delivers an event to its view, as one the host
 // sent does (ak_ui_dispatch's, decoded).
 void ak_ui_dispatch_event(const ak_event *ev);

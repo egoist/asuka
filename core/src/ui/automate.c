@@ -3,7 +3,9 @@
 // for asuka test --gui's flows. A command does what the host would report
 // the user doing: tap sends the view's Press, type its field's text
 // change (and the text to the field, which shows it), submit its Submit,
-// back takes the top screen off the deepest stack. dump says the texts
+// back takes the top screen off the deepest stack, tab chooses a tab by
+// its title. Only what shows counts: a Stack's top screen, Tabs' selected
+// tab. dump says the texts
 // showing; see and notsee check for one. Each command answers a line: ok,
 // the dump's texts, or "error: why".
 #include "ui/ui_ext.h"
@@ -38,9 +40,13 @@ static void walk_view(walk *w, ak_view *e) {
 		return;
 	}
 	w->depth++;
-	// A Stack shows its top screen: those under it aren't on the screen.
-	uint32_t from = e->el == AK_EL_STACK && e->kids.len ? e->kids.len - 1 : 0;
-	for (uint32_t i = from; i < e->kids.len && !w->stop; i++) walk_view(w, e->kids.data[i]);
+	// A Stack shows its top screen, Tabs its selected tab: the others
+	// aren't on the screen.
+	uint32_t from = 0, to = e->kids.len;
+	if (e->el == AK_EL_STACK && e->kids.len) from = e->kids.len - 1;
+	int64_t sel = ak_tabs_selected(e);
+	if (sel >= 0 && sel < (int64_t)e->kids.len) from = (uint32_t)sel, to = (uint32_t)sel + 1;
+	for (uint32_t i = from; i < to && !w->stop; i++) walk_view(w, e->kids.data[i]);
 	if (e->kind == AK_KIND_LIST && e->el == AK_EL_LIST) ak_list_each_cell(e, walk_cell, w);
 	w->depth--;
 }
@@ -214,6 +220,38 @@ static void back(ak_buf *out) {
 	ak_buf_put(out, "ok\n", 3);
 }
 
+// tab: the Tab titled arg, in any Tabs (shown or not), and its index.
+typedef struct {
+	ak_span title;
+	ak_view *tabs;
+	int64_t index;
+} tab_find;
+
+static bool find_tab(ak_view *e, void *ctx) {
+	tab_find *t = ctx;
+	if (e->el != AK_EL_TABS) return false;
+	for (uint32_t i = 0; i < e->kids.len; i++) {
+		const ak_val *v = ak_style_get(e->kids.data[i], AK_KEY_TAB_TITLE);
+		if (v && is(v->p, t->title)) {
+			t->tabs = e;
+			t->index = i;
+			return true;
+		}
+	}
+	return false;
+}
+
+static void tab(ak_span arg, ak_buf *out) {
+	tab_find t = {arg, NULL, -1};
+	walk_all(find_tab, &t);
+	if (!t.tabs) {
+		ak_buf_printf(out, "error: no tab \"%.*s\"\n", (int)arg.len, arg.p);
+		return;
+	}
+	ak_tabs_select(t.tabs, t.index);
+	ak_buf_put(out, "ok\n", 3);
+}
+
 typedef struct {
 	ak_buf *out;
 } dumping;
@@ -248,6 +286,7 @@ void ak_ui_automate(ak_span commands, ak_buf *out) {
 		else if (VERB("type")) type(arg, out);
 		else if (VERB("submit")) submit(out);
 		else if (VERB("back")) back(out);
+		else if (VERB("tab")) tab(arg, out);
 		else if (VERB("dump")) {
 			dumping d = {out};
 			walk_all(dump_view, &d);
@@ -258,7 +297,7 @@ void ak_ui_automate(ak_span commands, ak_buf *out) {
 			if (!shown(arg)) ak_buf_put(out, "ok\n", 3);
 			else ak_buf_printf(out, "error: \"%.*s\" shows\n", (int)arg.len, arg.p);
 		} else {
-			ak_buf_printf(out, "error: no command %.*s (tap, type, submit, back, see, notsee, dump)\n", (int)verb.len, verb.p);
+			ak_buf_printf(out, "error: no command %.*s (tap, type, submit, back, tab, see, notsee, dump)\n", (int)verb.len, verb.p);
 		}
 #undef VERB
 	}

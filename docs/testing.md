@@ -455,6 +455,7 @@ asuka test --gui                      # this computer
 | `type <text>` | Types into the text field tapped last (else the first one), as the user's typing does. |
 | `submit` | Presses return in that field. |
 | `back` | Goes back from the top screen, as its back button does. |
+| `tab <title>` | Chooses the tab with that title, as tapping it in the tab bar does. |
 | `see <text>` | Something on the screen shows the text, all of it or as part of a longer one. |
 | `notsee <text>` | Nothing on the screen shows it. |
 | `wait <time>` | Waits (`500ms`, `2s`). |
@@ -462,7 +463,8 @@ asuka test --gui                      # this computer
 A step that fails is tried again until it passes or `--timeout` (10s)
 runs out, since the app may still be loading or waiting on the network.
 Then the flow fails, with the step's line and what the screen shows. A
-screen under the top one doesn't count as showing. `--run text` runs
+screen under the top one, or a tab that isn't chosen, doesn't count as
+showing. `--run text` runs
 only the flows whose names contain the text. The steps go through
 Asuka's own views, as the platform's events would come, so a flow runs
 the same everywhere, and what it shows is the platform's widgets.

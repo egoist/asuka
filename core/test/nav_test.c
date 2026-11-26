@@ -555,6 +555,15 @@ TEST(tabs) {
 	ak_vm_cell_set(badge, (ak_val){.p = ak_str_c("")});
 	ak_ui_flush();
 	CHECK(span_is(ak_fake_string(inbox, AK_PROP_SCREEN_BADGE), ""));
+	// asuka dev's automation: tab chooses one as the user does, the host
+	// told; only the shown tab's page shows.
+	ak_buf out = {0};
+	ak_ui_automate(ak_cstr("see inbox page\nnotsee settings page\ntab Settings\nsee settings page\nnotsee inbox page\ntab Nope"), &out);
+	ak_buf_u8(&out, 0);
+	CHECK_EQ_STR((const char *)out.data, "ok\nok\nok\nok\nok\nerror: no tab \"Nope\"\n");
+	CHECK_EQ_INT(peek_i(sel_cell), 1);
+	CHECK_EQ_INT(ak_fake_int(tabs, AK_PROP_TABS_SELECTED), 1);
+	ak_buf_free(&out);
 	done(a);
 	ak_release(sel_cell), ak_release(badge);
 }
@@ -1004,7 +1013,7 @@ TEST(automation) {
 	             "error: no screen to go back from\n"
 	             "error: nothing shows \"Nope\"\n"
 	             "error: \"Open\" shows\n"
-	             "error: no command fly (tap, type, submit, back, see, notsee, dump)\n") == 0);
+	             "error: no command fly (tap, type, submit, back, tab, see, notsee, dump)\n") == 0);
 	done(a);
 
 	// type: into the field, which shows it.

@@ -1144,6 +1144,25 @@ static void tabs_event(ak_view *e, const ak_event *ev) {
 	ak_view_call(e, AK_EV_TABS_CHANGE, &arg, 1);
 }
 
+// ak_tabs_selected is the tab Tabs shows (-1: not Tabs).
+int64_t ak_tabs_selected(ak_view *tabs) {
+	if (!tabs || tabs->el != AK_EL_TABS || tabs->dead || !tabs->impl) return -1;
+	tabs_t *t = tabs->impl;
+	return t->known ? t->reported : key_int(tabs, AK_KEY_TABS_SELECTED, 0);
+}
+
+// ak_tabs_select shows tab i, as the user's choosing it does (asuka dev's
+// automation's tab): the host's tab bar shows it too.
+void ak_tabs_select(ak_view *tabs, int64_t i) {
+	if (!tabs || tabs->el != AK_EL_TABS || tabs->dead || i < 0 || i >= (int64_t)tabs->kids.len) return;
+	ak_batch_begin();
+	ak_batch_set_int(tabs->r->batch, tabs->id, AK_PROP_TABS_SELECTED, i);
+	tabs_event(tabs, &(ak_event){.id = tabs->id, .kind = AK_EVENT_SELECTED, .i = i});
+	ak_sched_run();
+	ak_batch_end();
+	ak_ui_flush();
+}
+
 static const ak_el_class cls_tabs = {.name = "Tabs", .kind = AK_KIND_TABS, .flags = AK_ELF_CHILDREN, .init = tabs_init, .set = tabs_set,
                                      .finalize = tabs_finalize, .event = tabs_event, .adjust = grow_adjust, .add = tabs_add, .drop = tabs_drop};
 

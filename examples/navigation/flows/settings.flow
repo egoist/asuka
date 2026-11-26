@@ -1,0 +1,11 @@
+# The Settings tab: its own stack, kept as the Inbox tab comes back.
+tab Settings
+see Notifications
+notsee Message 19
+tap About
+see Native widgets, driven by Asuka and fine-grained signals.
+back
+see About
+tab Inbox
+see Message 19
+notsee Notifications
