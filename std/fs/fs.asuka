@@ -105,6 +105,19 @@ pub native fn home() -> string
 /// go when the system needs the room.
 pub native fn tempDir() -> string
 
+/// The bytes of one of the app's assets (its project's assets/ folder),
+/// by its name there ("data/cities.json"), as the platform keeps them: in
+/// the app's bundle on iOS and the Mac, Android's APK assets, the site's
+/// files on the web, beside the executable on Windows and Linux. It
+/// throws when there's no such asset, or no app (a program has none).
+///
+///   let cities: [City] = try json.decode(try await fs.readAsset("cities.json").string())
+pub async fn readAsset(name: string) throws -> bytes {
+  return try await coreReadAsset(name)
+}
+
+native async fn coreReadAsset(name: string) throws -> bytes
+
 /// path made absolute, against the working directory, and cleaned:
 /// abs("notes/../a.md") in /home/ann is "/home/ann/a.md". An absolute
 /// path is only cleaned (on Windows, one without a drive takes the

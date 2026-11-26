@@ -56,6 +56,16 @@ private fun AsukaRuntime.registerBuiltinModules() {
     modules["web"] = webMethods()
     modules["share"] = shareMethods()
     modules["view"] = captureMethods()
+    // fs.readAsset: an asset's bytes (asuka dev's copy, else the APK's),
+    // read off the main thread.
+    modules["assets"] = mapOf("read" to { args, reply ->
+        val name = String(args, Charsets.UTF_8).removePrefix("./")
+        Thread {
+            val dev = java.io.File(app.filesDir, "asuka/assets/$name")
+            val data = runCatching { if (dev.isFile) dev.readBytes() else app.assets.open(name).use { it.readBytes() } }.getOrNull()
+            reply(if (data != null) Result.success(data) else Result.failure(Exception("no asset $name")))
+        }.start()
+    })
     modules["library"] = libraryMethods()
     modules["photoLibrary"] = AsukaPhotoLibrary(this).methods()
     modules["background"] = AsukaBackground(this).methods()

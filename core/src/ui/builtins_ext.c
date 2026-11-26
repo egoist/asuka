@@ -51,6 +51,7 @@
 //	ui.share                text: string                                   -
 //	ui.share_files          paths: [string], mime: string, uti: string,
 //	                        title: string, from: View?                     Task<void>
+//	fs.coreReadAsset        name: string                                   Task<bytes>
 //	imageedit.coreCapture   view: Ref, format: int, quality: float,
 //	                        scale: float                                   Task<string>
 //	ui.haptic               kind: int (Haptic)                             -
@@ -317,6 +318,11 @@ STR_CMD(b_on_background, ak_ui_on_background)
 
 static ak_val b_share_files(ak_val *a, uint32_t n) { return (ak_val){.p = ak_ui_share_files(a[0].p, a[1].p, a[2].p, a[3].p, ref_view(a, n, 4))}; }
 
+static ak_val b_read_asset(ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	return (ak_val){.p = ak_ui_read_asset(a[0].p)};
+}
+
 static ak_val b_capture(ak_val *a, uint32_t n) {
 	if (n < 4) return none();
 	return (ak_val){.p = ak_ui_capture(ref_view(a, n, 0), a[1].i, a[2].f, a[3].f)};
@@ -537,7 +543,7 @@ void ak_ui_ext_builtins_init(void) {
 		{"ui.web_eval_result", b_web_eval_result}, {"webview.cookies", b_web_cookies}, {"ui.insert_text", b_insert_text},
 		{"ui.format", b_format}, {"ui.toggle_format", b_toggle_format}, {"ui.set_link", b_set_link}, {"ui.native", b_native},
 		{"ui.native_set", b_native_set}, {"ui.native_bind", b_native_bind}, {"ui.native_on", b_native_on}, {"ui.call", b_call},
-		{"device.share", b_share}, {"device.coreShareFiles", b_share_files}, {"imageedit.coreCapture", b_capture}, {"device.haptic", b_haptic},
+		{"device.share", b_share}, {"device.coreShareFiles", b_share_files}, {"imageedit.coreCapture", b_capture}, {"fs.coreReadAsset", b_read_asset}, {"device.haptic", b_haptic},
 		{"device.copy", b_copy}, {"device.openURL", b_open_url},
 		{"accessibility.announce", b_announce}, {"accessibility.focus", b_a11y_focus},
 		{"markdown.openLink", b_open_url}, {"base.say", b_announce},

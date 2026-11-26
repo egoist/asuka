@@ -139,7 +139,31 @@ static gboolean attempt(gpointer data) {
 	return 0; // G_SOURCE_REMOVE
 }
 
-static const method_t capture_methods[] = {{"view", "capture", capture}};
+// fs.readAsset: an asset's bytes, from the app's assets folder.
+static void read_asset(ak_span args, reply *r) {
+	char path[4200];
+	int len = snprintf(path, sizeof path, "%s/%.*s", S(H.assets), (int)args.len, args.p);
+	if (len <= 0 || (size_t)len >= sizeof path || memchr(args.p, 0, args.len)) {
+		reply_err(r, "no asset %.*s", (int)args.len, args.p);
+		return;
+	}
+	FILE *f = fopen(path, "rb");
+	if (!f) {
+		reply_err(r, "no asset %.*s", (int)args.len, args.p);
+		return;
+	}
+	ak_buf b = {0};
+	char chunk[65536];
+	size_t got;
+	while ((got = fread(chunk, 1, sizeof chunk, f)) > 0) ak_buf_put(&b, chunk, got);
+	bool bad = ferror(f);
+	fclose(f);
+	if (bad) reply_err(r, "no asset %.*s", (int)args.len, args.p);
+	else reply_ok(r, b.data, b.len);
+	ak_buf_free(&b);
+}
+
+static const method_t capture_methods[] = {{"view", "capture", capture}, {"assets", "read", read_asset}};
 
 static void capture_modules(void) { lx_register_methods(capture_methods, AK_LEN(capture_methods)); }
 

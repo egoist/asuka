@@ -69,6 +69,16 @@ struct AsukaModuleError: LocalizedError {
         #endif
         modules["share"] = AsukaShare.methods(self)
         modules["view"] = AsukaCapture.methods(self)
+        // fs.readAsset: an asset's bytes, read off the main thread.
+        modules["assets"] = ["read": { args, reply in
+            let name = String(decoding: args, as: UTF8.self)
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let url = AsukaAssets.url(name), url.isFileURL, let data = try? Data(contentsOf: url) else {
+                    return reply(.failure(AsukaModuleError("no asset \(name)")))
+                }
+                reply(.success(data))
+            }
+        }]
         // platform/recent, platform/login and platform/dock: a desktop's. iOS's
         // Files keeps its own recent files, an app doesn't start at login,
         // and a phone has no Dock or taskbar.

@@ -466,6 +466,20 @@ ak_future *ak_ui_capture(ak_view *v, int64_t format, double quality, double scal
 	return f;
 }
 
+// ak_ui_read_asset reads one of the app's assets (name: relative to its
+// assets/), as its host finds them (the "assets" module's "read": the
+// bundle's, Android's AssetManager, the site's, the folder beside the
+// executable): a future of its bytes.
+ak_future *ak_ui_read_asset(ak_str *name) {
+	ak_span n = ak_span_str(name);
+	if (!n.len) {
+		ak_future *f = ak_future_new(AK_K_REF);
+		ak_future_reject(f, error_of(AK_STR("readAsset: no name")));
+		return f;
+	}
+	return call_future(AK_STR("assets"), AK_STR("read"), n.p, n.len, false);
+}
+
 // ---- Events that aren't a view's ----
 
 void ak_anim_frame(ak_id id, double seconds);

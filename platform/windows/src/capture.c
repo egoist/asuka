@@ -134,3 +134,38 @@ static void m_capture(wh_reply *r, const uint8_t *a, size_t n) {
 static const wh_method_def view_methods[] = {{"capture", m_capture}, {NULL, NULL}};
 
 const wh_module_def wh_view_module = {"view", view_methods};
+
+// ---- fs.readAsset: the "assets" module's "read" ----
+
+// read: an asset's bytes, from the assets folder beside the executable
+// (or asuka dev's); its name's / are Windows' \.
+static void m_read(wh_reply *r, const uint8_t *a, size_t n) {
+	char path[MAX_PATH * 3];
+	int len = snprintf(path, sizeof path, "%s\\%.*s", asuka_desktop_assets_dir(), (int)n, (const char *)a);
+	if (len <= 0 || (size_t)len >= sizeof path || memchr(a, 0, n)) {
+		wh_reply_fail(r, "no asset %.*s", (int)n, (const char *)a);
+		return;
+	}
+	for (char *p = path; *p; p++)
+		if (*p == '/') *p = '\\';
+	wchar_t *w = wh_wide(path, len);
+	HANDLE f = CreateFileW(w, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	free(w);
+	LARGE_INTEGER size;
+	if (f == INVALID_HANDLE_VALUE || !GetFileSizeEx(f, &size) || size.QuadPart > 512 * 1024 * 1024) {
+		if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
+		wh_reply_fail(r, "no asset %.*s", (int)n, (const char *)a);
+		return;
+	}
+	uint8_t *buf = malloc((size_t)size.QuadPart + 1);
+	DWORD got = 0;
+	bool ok = buf && ReadFile(f, buf, (DWORD)size.QuadPart, &got, NULL) && got == (DWORD)size.QuadPart;
+	CloseHandle(f);
+	if (ok) wh_reply_ok(r, buf, got);
+	else wh_reply_fail(r, "no asset %.*s", (int)n, (const char *)a);
+	free(buf);
+}
+
+static const wh_method_def assets_methods[] = {{"read", m_read}, {NULL, NULL}};
+
+const wh_module_def wh_assets_module = {"assets", assets_methods};

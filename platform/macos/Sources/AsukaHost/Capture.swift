@@ -3,13 +3,24 @@ import AppKit
 import AsukaOps
 #endif
 
-// A view drawn into an image file (imageedit.capture): the "view"
+// The app's assets read (fs.readAsset: the "assets" module's "read"), and
+// a view drawn into an image file (imageedit.capture): the "view"
 // module's "capture". args: u32 the native view, f32 x, y, width, height
 // of what's drawn in it (a width below 0: all of it; y from its top), u8
 // format (0 JPEG, 1 PNG), f32 quality, f32 scale (0: the screen's);
 // answers the file's path, in the caches.
 @MainActor extension AsukaRuntime {
     func registerCaptureModule() {
+        // fs.readAsset: an asset's bytes, read off the main thread.
+        registerModule("assets", ["read": { args, reply in
+            let name = String(decoding: args, as: UTF8.self)
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let url = AsukaAssets.url(name), url.isFileURL, let data = try? Data(contentsOf: url) else {
+                    return reply(.failure(AsukaModuleError("no asset \(name)")))
+                }
+                reply(.success(data))
+            }
+        }])
         registerModule("view", ["capture": { [weak self] args, reply in
             guard args.count >= 29 else { return reply(.failure(AsukaModuleError("bad arguments"))) }
             let (id, asked, png, quality, scale) = args.withUnsafeBytes { b -> (UInt32, NSRect, Bool, CGFloat, CGFloat) in

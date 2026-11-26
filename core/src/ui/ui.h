@@ -486,6 +486,8 @@ ak_future *ak_ui_share_files(ak_arr *paths, ak_str *mime, ak_str *uti, ak_str *t
 // ak_ui_capture: v drawn into an image file (format 0 JPEG, 1 PNG): a
 // future of its path (share.c).
 ak_future *ak_ui_capture(ak_view *v, int64_t format, double quality, double scale);
+// ak_ui_read_asset: one of the app's assets' bytes, as its host reads it (share.c).
+ak_future *ak_ui_read_asset(ak_str *name);
 void ak_ui_haptic(int64_t kind);
 void ak_ui_copy(ak_str *text);
 void ak_ui_open_url(ak_str *url);
