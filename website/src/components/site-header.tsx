@@ -6,6 +6,7 @@ import { GitHubIcon } from "@/components/icons"
 import { LanguageMenu } from "@/components/language-menu"
 import { Mark, Wordmark } from "@/components/logo"
 import { Search } from "@/components/search"
+import { ThemeMenu } from "@/components/theme-menu"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { messages, routes, useLocale } from "@/lib/i18n"
@@ -55,6 +56,7 @@ export function SiteHeader() {
       <div className="ml-auto flex items-center gap-1">
         <Search />
         <LanguageMenu />
+        <ThemeMenu />
         <a href={site.repo} aria-label="GitHub" className={buttonVariants({ variant: "ghost", size: "icon" })}>
           <GitHubIcon />
         </a>

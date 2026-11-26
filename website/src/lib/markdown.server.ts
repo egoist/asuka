@@ -41,8 +41,10 @@ export interface RenderedMarkdown {
   sections: Section[]
 }
 
-// The site is dark only: one theme, its colors as --shiki-dark.
-const themes = { dark: "github-dark-default" } as const
+// A theme for each of the site's printings: every token's colors as
+// --shiki-light and --shiki-dark, the one shown chosen by <html>'s class
+// (styles.css).
+const themes = { light: "github-light-default", dark: "github-dark-default" } as const
 
 // Asuka's grammar is the editors': the VS Code extension's TextMate grammar
 // (editors/vscode), so the site highlights the language as an editor does.

@@ -27,6 +27,7 @@ const en = {
     english: "",
   },
   language: { label: "Language", auto: "Auto" },
+  theme: { label: "Theme", system: "System", light: "Light", dark: "Dark" },
   search: {
     button: "Search docs…",
     title: "Search the docs",
@@ -87,6 +88,7 @@ const zh: Messages = {
     english: "API 参考由源码中的注释生成，目前只有英文版。",
   },
   language: { label: "语言", auto: "自动" },
+  theme: { label: "主题", system: "跟随系统", light: "浅色", dark: "深色" },
   search: {
     button: "搜索文档…",
     title: "搜索文档",
@@ -145,6 +147,7 @@ const ja: Messages = {
     english: "API リファレンスはソースのコメントから生成されており、現在は英語のみです。",
   },
   language: { label: "言語", auto: "自動" },
+  theme: { label: "テーマ", system: "システムに合わせる", light: "ライト", dark: "ダーク" },
   search: {
     button: "ドキュメントを検索…",
     title: "ドキュメントを検索",

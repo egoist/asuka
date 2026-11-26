@@ -6,6 +6,7 @@ import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
 import { localeInfo, localeScript, useLocale } from "@/lib/i18n"
 import { site } from "@/lib/site"
+import { themeScript } from "@/lib/theme"
 import appCss from "@/styles.css?url"
 
 export const Route = createRootRoute({
@@ -25,8 +26,10 @@ export const Route = createRootRoute({
       { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
     ],
-    // Before anything shows: the page in the reader's language.
+    // Before anything shows: the page in the reader's language, and in
+    // their theme (the class on <html>, which hydration leaves as it is).
     scripts: [
+      { children: themeScript },
       { children: localeScript },
       // Analytics, in production only.
       ...(import.meta.env.PROD
@@ -42,7 +45,7 @@ export const Route = createRootRoute({
 function RootDocument({ children }: { children: React.ReactNode }) {
   const locale = useLocale()
   return (
-    <html lang={localeInfo[locale].lang} className="dark">
+    <html lang={localeInfo[locale].lang} suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>

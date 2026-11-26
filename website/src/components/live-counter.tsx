@@ -110,7 +110,7 @@ function Op({ text }: { text: string }) {
       ) : (
         <>
           <span className="text-foreground/80">{tail.slice(0, eq + 1)}</span>
-          <span className="text-[#a5d6a7]">{tail.slice(eq + 1)}</span>
+          <span className="text-[#2f7a36] dark:text-[#a5d6a7]">{tail.slice(eq + 1)}</span>
         </>
       )}
     </>
@@ -362,13 +362,13 @@ export function LiveCounter({ code }: { code: string }) {
           </button>
         </p>
 
-        {/* The app, as an iPhone shows it. */}
+        {/* The app, as an iPhone shows it, in the site's appearance: its screen white or black, its bezel dark in both. */}
         <div className="flex justify-center px-4 py-6" data-platform="ios">
-          <div className="relative flex h-[260px] w-[200px] flex-col items-center justify-center gap-2 rounded-[34px] border-[5px] border-[#2a282e] bg-black shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
-            <span aria-hidden className="absolute top-2.5 h-[18px] w-[64px] rounded-full bg-[#1c1b1f]" />
+          <div className="relative flex h-[260px] w-[200px] flex-col items-center justify-center gap-2 rounded-[34px] border-[5px] border-[#2a282e] bg-white shadow-[0_0_0_1px_rgb(14_13_16/0.1)] dark:bg-black dark:shadow-[0_0_0_1px_rgb(255_255_255/0.06)]">
+            <span aria-hidden className="absolute top-2.5 h-[18px] w-[64px] rounded-full bg-black dark:bg-[#1c1b1f]" />
             <span className={cn("relative transition-opacity duration-200", !mounted && "opacity-0")}>
               <span ref={box} aria-hidden className="live-box hud absolute opacity-0 [inset:-6px_-10px]" />
-              <span aria-live="polite" className="text-[22px] font-bold text-white tabular-nums [font-family:-apple-system,'SF_Pro_Display',system-ui,sans-serif]">
+              <span aria-live="polite" className="text-[22px] font-bold text-black tabular-nums dark:text-white [font-family:-apple-system,'SF_Pro_Display',system-ui,sans-serif]">
                 {label(count)}
               </span>
             </span>
@@ -376,7 +376,7 @@ export function LiveCounter({ code }: { code: string }) {
               <button ref={button} type="button" onClick={press} className="mock-button cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2">
                 Add
               </button>
-              <span ref={touch} aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 -mt-5 -ml-5 size-10 rounded-full bg-white opacity-0" />
+              <span ref={touch} aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 -mt-5 -ml-5 size-10 rounded-full bg-black/50 opacity-0 dark:bg-white" />
             </span>
           </div>
         </div>
