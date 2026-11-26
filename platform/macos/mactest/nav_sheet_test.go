@@ -494,3 +494,48 @@ func frameSize(n *Node) (float64, float64) {
 	}
 	return n.Frame[2], n.Frame[3]
 }
+
+// A screen with zoomFrom grows out of the view on the screen below that
+// shares its key, and goes back into it: the view hides while the screen
+// stands for it, and shows again once it's done, pushed or popped; the
+// pushed screen shows, and the one below hides as after a slide.
+func TestNavZoomFrom(t *testing.T) {
+	a := Run(t, `
+		app { Stack { Home() } }
+		screen Home {
+		  title: "Tiles"
+		  Column {
+		    padding: 16
+		    gap: 12
+		    for i in 1..<4 key i {
+		      View {
+		        label: "Tile {i}"
+		        height: 80
+		        radius: 12
+		        background: .blue
+		        shared: "tile-{i}"
+		        on press { push(Tile(i)) }
+		        Text("Tile {i}")
+		      }
+		    }
+		  }
+		}
+		screen Tile(n: int) {
+		  title: "Tile {n}"
+		  zoomFrom: "tile-{n}"
+		  Text("Detail {n}")
+		}
+	`)
+	a.UntilText("Tile 2")
+	shown := func(tr *Tree, text string) bool {
+		n := tr.FindText(text)
+		return n != nil && n.Get("hidden") != true
+	}
+	a.Do("tap Tile 2")
+	a.Until(func(tr *Tree) bool { return shown(tr, "Detail 2") && !shown(tr, "Tile 1") })
+	a.Do("back")
+	tr := a.Until(func(tr *Tree) bool { return tr.FindText("Detail 2") == nil && shown(tr, "Tile 1") })
+	if !shown(tr, "Tile 2") {
+		t.Fatalf("the tile the screen zoomed back into stayed hidden:\n%s", tr.Raw())
+	}
+}

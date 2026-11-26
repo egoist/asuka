@@ -239,4 +239,4 @@ MyGo にあって Asuka にまだないものは次のとおりです。書類�
 
 ## 未対応のもの
 
-アプリでの需要が高い順に、パラメーターとエンティティを持つ App Intents（ショートカットはまだどちらも受け付けません）、アプリ独自のレイアウトのウィジェット（いまはテンプレートが一つだけです）、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）、シミュレーターやエミュレーターでのアプリの GUI テストです。Windows と Linux では Lottie（`lottie.View` は空の領域になります）、Linux と Web では音声のテキスト化が未対応です。Mac、Windows、Linux では画面の `zoomFrom`（代わりにプッシュがスライドします）が、Mac、Windows、Linux、Web ではジェスチャーによるリストの選択の開始が、また `asuka publish` による Mac App Store へのアップロード（`.pkg` は Transporter でアップロードしてください）が未対応です。
+アプリでの需要が高い順に、パラメーターとエンティティを持つ App Intents（ショートカットはまだどちらも受け付けません）、アプリ独自のレイアウトのウィジェット（いまはテンプレートが一つだけです）、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）、シミュレーターやエミュレーターでのアプリの GUI テストです。Windows と Linux では Lottie（`lottie.View` は空の領域になります）、Linux と Web では音声のテキスト化が未対応です。Windows と Linux では画面の `zoomFrom`（代わりにプッシュがスライドします）が、Mac、Windows、Linux、Web ではジェスチャーによるリストの選択の開始が、また `asuka publish` による Mac App Store へのアップロード（`.pkg` は Transporter でアップロードしてください）が未対応です。

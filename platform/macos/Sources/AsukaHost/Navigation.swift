@@ -1,6 +1,8 @@
 // Navigation on a Mac:
 //
-//   - A Stack shows its top Screen, which fills it; pushes and pops slide.
+//   - A Stack shows its top Screen, which fills it; pushes and pops slide,
+//     and a screen with zoomFrom grows out of the view below that shares
+//     its key, and goes back into it.
 //     The window's toolbar is the innermost shown stack's: a back button,
 //     the top screen's bar buttons and search field, and the screen's
 //     title as the window's (Toolbar.swift).
@@ -38,6 +40,9 @@ let asukaSheetMargin: CGFloat = 80
 
     // Screen.
     var backGesture = true
+    /// ScreenOptions.ZoomFrom: the Match key of the view below it zooms
+    /// out of; "": none.
+    var zoomFrom = ""
     var search = ""
     var searchText = ""
     var tabItem: AsukaTabViewItem?
@@ -413,6 +418,13 @@ final class AsukaSheetWindow: NSWindow {
             if !push { slidOut(out, outView) }
             return
         }
+        // A screen that zooms out of a view on the screen below (zoomFrom,
+        // the view's Match key) grows from it, and goes back into it.
+        let top = push ? inN : out, under = push ? out : inN
+        if let key = top.nav?.zoomFrom, !key.isEmpty, let underView = under.view, let src = zoomSource(key, in: underView) {
+            zoom(stack, top, src, push)
+            return
+        }
         func at(_ x: CGFloat) -> CGRect { CGRect(origin: CGPoint(x: x, y: 0), size: b.size) }
         if push {
             inView.frame = at(away)
@@ -442,6 +454,79 @@ final class AsukaSheetWindow: NSWindow {
                 }
             }
         })
+    }
+
+    /// The view on screen under view whose Match key is key: the one a
+    /// screen zooms out of (a List's rows too, which are nodes of their
+    /// own).
+    func zoomSource(_ key: String, in view: NSView) -> NSView? {
+        for n in nodes.values where n.match == key {
+            if let v = n.view, v.window != nil, !v.isHiddenOrHasHiddenAncestor, v.isDescendant(of: view), v.bounds.width > 0, v.bounds.height > 0 { return v }
+        }
+        return nil
+    }
+
+    /// Animates a push out of src (a view on the screen below) or a pop
+    /// back into it, as iOS's zoom transition: the screen, as drawn,
+    /// grows from the view's place, filling it as a photo fills its frame
+    /// and clipped to its corners, and the view hides while the screen
+    /// stands for it. A pushed screen is drawn a turn later, once the core
+    /// has laid it out (its frames come after the batch that pushed it),
+    /// and hidden until then.
+    func zoom(_ stack: AsukaNode, _ screen: AsukaNode, _ src: NSView, _ push: Bool) {
+        guard let sv = stack.view, let view = screen.view else { return }
+        if push {
+            view.alphaValue = 0
+        } else {
+            sv.addSubview(view)
+            screen.nav?.slidingOut = true
+            navTarget.exiting[ObjectIdentifier(view)] = view
+        }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                let full = sv.bounds
+                let small = src.convert(src.bounds, to: sv)
+                guard full.width > 0, full.height > 0, small.width > 0, small.height > 0, src.window != nil,
+                      let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                    view.alphaValue = 1
+                    if !push { self.slidOut(screen, view) }
+                    return
+                }
+                view.alphaValue = 1
+                view.cacheDisplay(in: view.bounds, to: rep)
+                let image = NSImage(size: view.bounds.size)
+                image.addRepresentation(rep)
+                let shot = NSView(frame: push ? small : full)
+                shot.wantsLayer = true
+                shot.layer?.contents = image
+                shot.layer?.contentsGravity = .resizeAspectFill
+                shot.layer?.masksToBounds = true
+                let radius = max(src.layer?.cornerRadius ?? 0, 10)
+                shot.layer?.cornerRadius = push ? radius : 0
+                sv.addSubview(shot, positioned: .above, relativeTo: nil)
+                src.isHidden = true
+                view.isHidden = true
+                NSAnimationContext.runAnimationGroup({ ctx in
+                    ctx.duration = 0.4
+                    ctx.allowsImplicitAnimation = true
+                    ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0.72, 0, 1)
+                    shot.animator().frame = push ? full : small
+                    shot.layer?.cornerRadius = push ? 0 : radius
+                }, completionHandler: {
+                    MainActor.assumeIsolated {
+                        shot.removeFromSuperview()
+                        src.isHidden = false
+                        if push {
+                            view.isHidden = false
+                            // The screen below hides, as after a slide.
+                            if self.topScreen(stack) === screen, let b = stack.children.last(where: { !$0.dying && $0 !== screen })?.view { b.isHidden = true }
+                        } else {
+                            self.slidOut(screen, view)
+                        }
+                    }
+                })
+            }
+        }
     }
 
     /// A screen popped has slid out: its view goes, and it, if the core
@@ -687,6 +772,9 @@ final class AsukaSheetWindow: NSWindow {
                 nav.primary = asukaRebased(asukaActionItems(v), AsukaActions.primaryBase)
             case AsukaProp.Screen.backGesture:
                 nav.backGesture = v.int != 0 || v.bool
+            case AsukaProp.Screen.zoomFrom:
+                nav.zoomFrom = v.string
+                return
             case AsukaProp.Screen.icon:
                 n.icon = v.string
                 if let it = nav.tabItem { it.image = symbolImage(v.string) }
