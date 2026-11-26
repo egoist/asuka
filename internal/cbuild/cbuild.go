@@ -121,9 +121,11 @@ var GCCFlags = []string{"-Wno-format-truncation"}
 // keeps its g in R28. The core needn't be: x28 is callee-saved, so it
 // keeps its own across its calls into the app, and the app's ways in set
 // and restore it. Without them the app's C passes the limit as an
-// argument, as on amd64.
+// argument, as on amd64. Windows on ARM64 takes the argument too: there
+// the app's code found x28 not holding the limit (every app threw a
+// stack overflow at its first component, its stack nearly empty).
 func AppFlags(t Target) []string {
-	if t.Arch == "arm64" {
+	if t.Arch == "arm64" && t.OS != "windows" {
 		return []string{"-ffixed-x28", "-DAK_CG_X28"}
 	}
 	return nil
