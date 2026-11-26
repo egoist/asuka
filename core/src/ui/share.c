@@ -441,6 +441,31 @@ ak_future *ak_ui_share_files(ak_arr *paths, ak_str *mime, ak_str *uti, ak_str *t
 	return f;
 }
 
+// ak_ui_capture draws v as it shows now, with what's in it, into an image
+// file in the app's caches, the host's own drawing (the "view" module's
+// "capture": u32 the native view, f32 x, y, width, height of v in it (a
+// width of -1: all of it), u8 format (imageedit's Format: 0 JPEG, 1 PNG),
+// f32 quality (JPEG's, 0 to 1), f32 scale (pixels per point; 0: the
+// screen's)): a future of the file's path.
+ak_future *ak_ui_capture(ak_view *v, int64_t format, double quality, double scale) {
+	ak_view *a;
+	float rect[4];
+	if (!v || !ak_view_native_rect(v, &a, rect)) {
+		ak_future *f = ak_future_new(AK_K_REF);
+		ak_future_reject(f, error_of(v ? AK_STR("capture: the view isn't showing") : AK_STR("capture: the Ref holds no view")));
+		return f;
+	}
+	ak_buf b = {0};
+	ak_buf_u32(&b, a->id);
+	for (int i = 0; i < 4; i++) ak_buf_f32(&b, rect[i]);
+	ak_buf_u8(&b, (uint8_t)format);
+	ak_buf_f32(&b, (float)quality);
+	ak_buf_f32(&b, (float)scale);
+	ak_future *f = call_future(AK_STR("view"), AK_STR("capture"), b.data, b.len, true);
+	ak_buf_free(&b);
+	return f;
+}
+
 // ---- Events that aren't a view's ----
 
 void ak_anim_frame(ak_id id, double seconds);

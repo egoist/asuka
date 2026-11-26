@@ -143,6 +143,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | Bluetooth LE | Core Bluetooth | コミュニティ製（`react-native-ble-plx`） | ✓ `platform/bluetooth`（スキャン、接続、サービス、読み取り、書き込み、通知。アドバタイズと GATT サーバー。バックグラウンドのスキャンと状態の復元。Core Bluetooth、Android の BLE、WinRT のもの、BlueZ。Chromium の Web Bluetooth のデバイス選択画面で、ペリフェラルの役割はない）（[Bluetooth](bluetooth.md)） |
 | 画像の編集 | Core Graphics、ImageIO | `expo-image-manipulator` | ✓ `platform/imageedit`（リサイズ、切り抜き、回転、反転、塗りつぶし、モザイク。HEIC を読み、JPEG か PNG で書き出し、向きを正す。Image I/O、Android の `Bitmap`、WIC、GdkPixbuf、canvas） |
 | 動画のサムネイル | `AVAssetImageGenerator` | `expo-video-thumbnails` | ✓ `imageedit.videoFrame` |
+| ビューを画像にする | `ImageRenderer`、`drawHierarchy` | `react-native-view-shot` | ✓ `imageedit.capture(view: ref)`：PNG か JPEG。プラットフォームが描く（レイヤー、Android の `View`、Windows と Linux ではウィンドウのピクセル、Web では要素の SVG のコピー） |
 | 画像の中のテキスト、顔、コード | Vision | なし | ✓ `platform/vision`、それぞれの位置とともに（Vision。Android では ML Kit で、インポートしたアプリにだけ含まれる。Windows の OCR と顔検出。Linux では Tesseract のテキストのみで顔はない。ブラウザーでは Shape Detection API があればそれ） |
 | 音声のテキスト化 | Speech（`SFSpeechRecognizer`） | コミュニティ製（`expo-speech-recognition`） | ◐ `platform/transcribe`（録音をデバイス上だけで：iOS と macOS では Speech、Android 13 のデバイス上の認識、ブラウザーのデバイス上の認識（Chrome 139 以降）。`transcribe.listen`：マイクからの話すそばからの音声入力。Windows と Linux の認識はマイクしか受け付けないため非対応） |
 | 写真ライブラリ | PhotoKit | `expo-media-library` | ✓ `platform/photos`：許可、一覧、サムネイル、元のファイル（PhotoKit、MediaStore） |

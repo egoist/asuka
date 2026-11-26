@@ -325,4 +325,43 @@ TEST(share_files) {
 	done(a);
 }
 
+// capture: the view's native view and its rect, the format, quality and
+// scale, as a call to the view module, whose answer is the file's path.
+static bool view_module(void *ctx, ak_span module, ak_span method, ak_span args, ak_buf *out) {
+	AK_UNUSED(ctx);
+	if (!ak_span_eqc(module, "view") || !ak_span_eqc(method, "capture")) return false;
+	ak_reader r = {(const uint8_t *)args.p, args.len, 0, false};
+	uint32_t id = ak_read_u32(&r);
+	float x = ak_read_f32(&r), y = ak_read_f32(&r), w = ak_read_f32(&r), h = ak_read_f32(&r);
+	uint8_t format = ak_read_u8(&r);
+	float quality = ak_read_f32(&r), scale = ak_read_f32(&r);
+	char s[200];
+	snprintf(s, sizeof s, "capture:%u:%g,%g,%g,%g:%u:%g:%g", id != 0, x, y, w > 0 ? 1.0 : w, h > 0 ? 1.0 : h, format, quality, scale);
+	logs(s);
+	ak_buf_put(out, "/caches/view.png", 16);
+	return true;
+}
+
+TEST(capture) {
+	log_buf[0] = 0;
+	ak_uitest *a = mount(plain_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	f->call_fn = view_module;
+	ak_future *fut = ak_ui_capture(target, 1, 0.5, 2);
+	ak_ui_flush();
+	ak_uitest_settle(a);
+	CHECK(fut->state == AK_FUT_DONE);
+	if (fut->state == AK_FUT_DONE) {
+		ak_str *p = fut->result.p;
+		CHECK(p && p->len == 16 && memcmp(p->data, "/caches/view.png", 16) == 0);
+	}
+	CHECK_EQ_STR(log_buf, "capture:1:0,0,-1,-1:1:0.5:2");
+	ak_release(fut);
+	fut = ak_ui_capture(NULL, 0, 0.9, 0);
+	CHECK(fut->state == AK_FUT_FAILED);
+	ak_release(fut);
+	ak_release(target);
+	done(a);
+}
+
 T_MAIN()

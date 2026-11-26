@@ -2850,6 +2850,50 @@ Core Graphics and Image I/O on iOS and the Mac, `Bitmap` and
 Media Foundation on Windows, GdkPixbuf and GStreamer on Linux. A source
 that isn't an image throws `EditError.noImage`.
 
+### A view as an image
+
+`imageedit.capture(view: ref)` draws the view a `Ref` holds, as it shows
+now with everything in it, into a PNG (or `format: .jpeg`) in the app's
+caches: a card to share, a receipt to save. The platform draws it, so its
+widgets look as they do on the screen. `scale` is pixels per point (the
+screen's by default).
+
+```asuka check
+import platform/device
+import platform/imageedit
+
+component Receipt(total: string) {
+  let card = Ref()
+
+  Column {
+    View {
+      ref: card
+      padding: 16
+      radius: 12
+      background: #f2f2f7
+      Text("Paid {total}")
+    }
+    Button("Share") {
+      on press {
+        do {
+          let image = try await imageedit.capture(view: card)
+          try await device.shareFiles(paths: [image.path], from: card)
+        } catch e {
+          print(e.message)
+        }
+      }
+    }
+  }
+}
+```
+
+iOS and the Mac draw the view's layers, and Android draws its `View`
+(the window's pixels where a video or a map is in it). Windows and Linux
+take the window's pixels where the view is (Windows at the screen's
+scale, whatever `scale` asks). A
+browser copies the elements into an SVG image, so an image from another
+site that doesn't allow it (CORS) comes out blank there.
+
 ## Text to speech: platform/speech
 
 `speech.speak(text)` speaks, in the device's voice for the text's

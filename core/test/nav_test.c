@@ -945,8 +945,9 @@ TEST(inspector_tree) {
 		if (!f->highlight_on) break;
 		if (f->highlight_on == top->id) {
 			found = true;
+			// Its own native view: all of it.
 			CHECK(f->highlight[0] == 0 && f->highlight[1] == 0);
-			CHECK(f->highlight[2] == top->frame[2] && f->highlight[3] == top->frame[3]);
+			CHECK(f->highlight[2] == -1 && f->highlight[3] == -1);
 		}
 	}
 	CHECK(found);

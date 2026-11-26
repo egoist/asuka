@@ -158,6 +158,7 @@ import AsukaOps
     /// web views' cookies).
     func registerVisualModules() {
         registerWebModules()
+        registerCaptureModule() // Capture.swift: a view into an image file
     }
 
     // MARK: Props

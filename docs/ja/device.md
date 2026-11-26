@@ -1917,6 +1917,41 @@ async fn poster(video: string) throws -> string {
 
 iOS と Mac では Core Graphics と Image I/O、Android では `Bitmap` と `MediaMetadataRetriever`、ブラウザーでは canvas、Windows では WIC と Media Foundation、Linux では GdkPixbuf と GStreamer を使います。画像でないソースには `EditError.noImage` を投げます。
 
+### ビューを画像にする
+
+`imageedit.capture(view: ref)` は、`Ref` が持つビューを、中にあるものも含めていま表示されているとおりに、アプリのキャッシュに PNG（`format: .jpeg` なら JPEG）として描きます。共有するカードや保存するレシートに使います。描くのはプラットフォームなので、ウィジェットは画面で見えるとおりになります。`scale` は 1 ポイントあたりのピクセル数です（デフォルトは画面のもの）。
+
+```asuka check
+import platform/device
+import platform/imageedit
+
+component Receipt(total: string) {
+  let card = Ref()
+
+  Column {
+    View {
+      ref: card
+      padding: 16
+      radius: 12
+      background: #f2f2f7
+      Text("Paid {total}")
+    }
+    Button("Share") {
+      on press {
+        do {
+          let image = try await imageedit.capture(view: card)
+          try await device.shareFiles(paths: [image.path], from: card)
+        } catch e {
+          print(e.message)
+        }
+      }
+    }
+  }
+}
+```
+
+iOS と Mac ではビューのレイヤーを、Android ではその `View` を描きます（中に動画や地図があれば、その位置のウィンドウのピクセルを使います）。Windows と Linux では、ビューの位置にあるウィンドウのピクセルを取ります（Windows は `scale` にかかわらず画面のスケールです）。ブラウザーでは要素を SVG 画像にコピーするので、ほかのサイトの画像で、それを許可していない（CORS）ものはそこで空白になります。
+
 ## 音声読み上げ：platform/speech
 
 `speech.speak(text)` はテキストの言語に合ったデバイスの声で（または `Options(language:, voice:, rate:, pitch:, volume:)` の指定で）読み上げ、読み終わってから戻ります。読み上げ中に頼まれたものは順番を待ちます。`stop()` で止め（読み上げ中の呼び出しは `SpeechError.stopped` を投げます）、`pause()` と `resume()` で単語の区切りで一時停止して再開し、`speaking()` で読み上げ中かどうかがわかり、`voices()` で声の一覧とその `quality` が得られます。

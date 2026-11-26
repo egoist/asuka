@@ -7,7 +7,6 @@
 #include "ui/ui_ext.h"
 #include "rt/sched.h"
 
-#include <math.h>
 #include <stdio.h>
 
 // json_str writes s as a JSON string.
@@ -120,6 +119,34 @@ static ak_view *kid_at(ak_view *e, uint32_t i) {
 	return n.found;
 }
 
+// ak_view_native_rect finds the view with a native view v is in (v
+// itself, or for a view without one of its own, a layout's, the nearest
+// around it that has one) and where v is in it: x, y, width, height in
+// points; a width of -1 for all of it (v's own native view). False for a
+// fragment, which has no box, or a view that's gone.
+bool ak_view_native_rect(ak_view *v, ak_view **anchor, float rect[4]) {
+	ak_view *a = v;
+	rect[0] = rect[1] = 0;
+	rect[2] = rect[3] = -1;
+	if (v && !v->real) {
+		if (!v->box) return false;
+		ak_lframe fr = ak_lnode_frame(v->box);
+		rect[0] = fr.x, rect[1] = fr.y, rect[2] = fr.w, rect[3] = fr.h;
+		for (a = v->parent; a && !a->real; a = a->parent) {
+			if (a->box) {
+				ak_lframe pf = ak_lnode_frame(a->box);
+				rect[0] += pf.x;
+				rect[1] += pf.y;
+			}
+		}
+	}
+	// A view with a native view of its own is all of it (-1): the host's
+	// bounds for it, as it placed it.
+	if (!a || a->dead || !a->real || !a->id || !a->r || a->r->disposed) return false;
+	*anchor = a;
+	return true;
+}
+
 // What the highlight last showed: a view's id and the rect in it.
 static struct {
 	bool on;
@@ -164,30 +191,9 @@ void ak_ui_highlight(ak_span path) {
 			}
 		}
 	}
-	// The view with a native view it's in, and where in it: a view without
-	// one of its own (a layout's) is laid out in the nearest that has.
-	ak_view *a = v;
-	float rect[4] = {0, 0, -1, -1};
-	if (v && !v->real) {
-		if (!v->box) {
-			a = NULL;  // a fragment: no box of its own
-		} else {
-			ak_lframe fr = ak_lnode_frame(v->box);
-			rect[0] = fr.x, rect[1] = fr.y, rect[2] = fr.w, rect[3] = fr.h;
-			for (a = v->parent; a && !a->real; a = a->parent) {
-				if (a->box) {
-					ak_lframe pf = ak_lnode_frame(a->box);
-					rect[0] += pf.x;
-					rect[1] += pf.y;
-				}
-			}
-		}
-	} else if (v && !isnan(v->sent[2])) {
-		// Its own bounds; a view the host sizes (a screen, a sheet) has
-		// none sent: -1, the bounds the host gave it.
-		rect[2] = v->sent[2];
-		rect[3] = v->sent[3];
-	}
+	ak_view *a = NULL;
+	float rect[4];
+	if (!v || !ak_view_native_rect(v, &a, rect)) a = NULL;
 	if (!a || a->dead || !a->real || !a->id || !a->r || a->r->disposed) {
 		highlight_clear(r);
 	} else if (!H.on || H.id != a->id || memcmp(H.rect, rect, sizeof rect) != 0) {

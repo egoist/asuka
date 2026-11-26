@@ -22,9 +22,10 @@ private final class AsukaHighlightView: NSView {
         devHighlightClear()
         guard args.count >= 16, let v, let content = v.window?.contentView else { return }
         var r = AsukaReader(args)
-        var rect = NSRect(x: CGFloat(r.f32()), y: CGFloat(r.f32()), width: CGFloat(r.f32()), height: CGFloat(r.f32()))
-        if rect.width < 0 || rect.height < 0 { rect = v.bounds }
-        else if !v.isFlipped { rect.origin.y = v.bounds.height - rect.maxY }
+        let rx = r.f32(), ry = r.f32(), rw = r.f32(), rh = r.f32()
+        // A width below 0: all of it (NSRect's width is never below 0).
+        var rect = rw < 0 || rh < 0 ? v.bounds : NSRect(x: CGFloat(rx), y: CGFloat(ry), width: CGFloat(rw), height: CGFloat(rh))
+        if rw >= 0, rh >= 0, !v.isFlipped { rect.origin.y = v.bounds.height - rect.maxY }
         let h = AsukaHighlightView(frame: v.convert(rect, to: content))
         h.wantsLayer = true
         h.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.18).cgColor

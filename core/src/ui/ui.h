@@ -483,6 +483,9 @@ void ak_ui_native_on(ak_view *v, ak_str *name, ak_closure *handler, const char *
 // native modules' calls, what other apps open the app with or share.
 void ak_ui_share(ak_str *text);
 ak_future *ak_ui_share_files(ak_arr *paths, ak_str *mime, ak_str *uti, ak_str *title, ak_view *from);
+// ak_ui_capture: v drawn into an image file (format 0 JPEG, 1 PNG): a
+// future of its path (share.c).
+ak_future *ak_ui_capture(ak_view *v, int64_t format, double quality, double scale);
 void ak_ui_haptic(int64_t kind);
 void ak_ui_copy(ak_str *text);
 void ak_ui_open_url(ak_str *url);

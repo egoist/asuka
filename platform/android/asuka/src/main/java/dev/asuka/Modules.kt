@@ -55,6 +55,7 @@ fun AsukaRuntime.call(root: Int, args: ByteBuffer) {
 private fun AsukaRuntime.registerBuiltinModules() {
     modules["web"] = webMethods()
     modules["share"] = shareMethods()
+    modules["view"] = captureMethods()
     modules["library"] = libraryMethods()
     modules["photoLibrary"] = AsukaPhotoLibrary(this).methods()
     modules["background"] = AsukaBackground(this).methods()

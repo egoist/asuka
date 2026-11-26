@@ -431,6 +431,9 @@ bool ak_nav_pop_top(ak_view *stack);      // its top screen off, as its back but
 // ak_ui_dispatch_event delivers an event to its view, as one the host
 // sent does (ak_ui_dispatch's, decoded).
 void ak_ui_dispatch_event(const ak_event *ev);
+// ak_view_native_rect: the view with a native view v is in, and v's rect
+// in it (a width of -1: all of it); false if there's none (inspect.c).
+bool ak_view_native_rect(ak_view *v, ak_view **anchor, float rect[4]);
 void ak_back_release(ak_back *b);
 // ak_root_event takes the root view's events: Back, the main window's.
 void ak_root_event(ak_view *e, const ak_event *ev);

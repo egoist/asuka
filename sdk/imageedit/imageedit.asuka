@@ -6,6 +6,7 @@
 // a canvas on the web, WIC on Windows, GdkPixbuf on Linux.
 //
 //   let r = try await imageedit.edit(photo, [.resize(1080, 0)], quality: 0.8)
+//   let card = try await imageedit.capture(view: cardRef)   // a view, as it shows
 //
 // A source is what Image takes: a file's path, a file:// or http(s) URL,
 // or a file in the app's assets.
@@ -128,3 +129,19 @@ pub async fn size(source: string) throws -> Result {
 pub async fn videoFrame(source: string, at: Duration = 0s, actions: [Action] = [], format: Format = .jpeg, quality: float = 0.9) throws -> Result {
   return try await ed().videoFrame(source, at, actions.map(a => step(a)), format, q(quality))
 }
+
+/// Draws the view a Ref holds, as it shows now with all that's in it,
+/// into an image file in the app's caches: a card to share, a receipt to
+/// save. The platform draws it, its own widgets as they look: a view's
+/// layer on iOS and the Mac, Android's View, the window's pixels where it
+/// is on Windows (at the screen's scale) and Linux, the page's elements
+/// on the web (an image from another site without CORS draws blank
+/// there). scale is pixels per point (0: the screen's); quality is
+/// JPEG's, from 0 to 1.
+pub async fn capture(view: Ref, format: Format = .png, quality: float = 0.9, scale: float = 0) throws -> Result {
+  let path = try await coreCapture(view, format, q(quality), scale)
+  let s = try await ed().size(path)
+  return Result(path: path, width: s.width, height: s.height)
+}
+
+native async fn coreCapture(view: Ref?, format: Format, quality: float, scale: float) throws -> string

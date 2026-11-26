@@ -18,8 +18,9 @@ extension AsukaRuntime {
         clearDevHighlight()
         guard args.count >= 16, let w = v.window else { return }
         var r = AsukaReader(args)
-        var rect = CGRect(x: CGFloat(r.f32()), y: CGFloat(r.f32()), width: CGFloat(r.f32()), height: CGFloat(r.f32()))
-        if rect.width < 0 || rect.height < 0 { rect = v.bounds }
+        let rx = r.f32(), ry = r.f32(), rw = r.f32(), rh = r.f32()
+        // A width below 0: all of it (CGRect's width is never below 0).
+        let rect = rw < 0 || rh < 0 ? v.bounds : CGRect(x: CGFloat(rx), y: CGFloat(ry), width: CGFloat(rw), height: CGFloat(rh))
         let h = UIView(frame: v.convert(rect, to: w))
         h.isUserInteractionEnabled = false
         h.isAccessibilityElement = false

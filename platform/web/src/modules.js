@@ -24,6 +24,7 @@ const enc = new TextEncoder();
 export const files = {
   share: "system", compose: "system", notify: "system", push: "system", // the share sheet; platform/compose, notify, push
   web: "web", // WebView's eval and cookies
+  view: "capture", // imageedit.capture: a view drawn into an image file
   dock: "desktop", recent: "desktop", login: "desktop", // platform/host's
   icloud: "services", periodic: "services", background: "services", widget: "services", liveActivity: "services",
   photoLibrary: "services", library: "services", contacts: "services", calendar: "services", // platform/host's
@@ -32,6 +33,7 @@ export const files = {
 const load = {
   system: () => import("./modules/system.js"),
   web: () => import("./modules/web.js"),
+  capture: () => import("./modules/capture.js"),
   desktop: () => import("./modules/desktop.js"),
   services: () => import("./modules/services.js"),
 };

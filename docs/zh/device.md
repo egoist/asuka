@@ -1917,6 +1917,41 @@ async fn poster(video: string) throws -> string {
 
 在 iOS 和 Mac 上用的是 Core Graphics 和 Image I/O，在 Android 上是 `Bitmap` 和 `MediaMetadataRetriever`，在浏览器中是 canvas，在 Windows 上是 WIC 和 Media Foundation，在 Linux 上是 GdkPixbuf 和 GStreamer。来源不是图片时会抛出 `EditError.noImage`。
 
+### 把视图存成图片
+
+`imageedit.capture(view: ref)` 会把 `Ref` 指向的视图按它现在的样子（连同里面的一切）画成应用缓存目录里的一张 PNG（也可以用 `format: .jpeg`），比如要分享的卡片、要保存的收据。由平台来画，所以控件和屏幕上看到的一样。`scale` 是每个点对应的像素数，默认是屏幕的。
+
+```asuka check
+import platform/device
+import platform/imageedit
+
+component Receipt(total: string) {
+  let card = Ref()
+
+  Column {
+    View {
+      ref: card
+      padding: 16
+      radius: 12
+      background: #f2f2f7
+      Text("Paid {total}")
+    }
+    Button("Share") {
+      on press {
+        do {
+          let image = try await imageedit.capture(view: card)
+          try await device.shareFiles(paths: [image.path], from: card)
+        } catch e {
+          print(e.message)
+        }
+      }
+    }
+  }
+}
+```
+
+在 iOS 和 Mac 上画的是视图的图层，在 Android 上画的是它的 `View`（里面有视频或地图时，取窗口在那里的像素）。Windows 和 Linux 取窗口在视图位置上的像素（Windows 总是按屏幕的缩放比例，不管 `scale` 是多少）。浏览器会把元素复制进一张 SVG 图片里，所以来自其他网站、又不允许跨域（CORS）的图片在那里会是空白。
+
 ## 文字转语音：platform/speech
 
 `speech.speak(text)` 用设备上对应文字语言的声音朗读（也可以用 `Options(language:, voice:, rate:, pitch:, volume:)` 指定），读完后才返回；正在朗读时又要读的内容会排队等候。`stop()` 停止朗读（正在朗读或等待的调用会抛出 `SpeechError.stopped`），`pause()` 和 `resume()` 在某个词处暂停并继续，`speaking()` 表示是否正在朗读，`voices()` 列出所有声音及其 `quality`。

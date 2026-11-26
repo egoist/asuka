@@ -68,6 +68,7 @@ struct AsukaModuleError: LocalizedError {
         modules["library"] = AsukaLibrary.methods()
         #endif
         modules["share"] = AsukaShare.methods(self)
+        modules["view"] = AsukaCapture.methods(self)
         // platform/recent, platform/login and platform/dock: a desktop's. iOS's
         // Files keeps its own recent files, an app doesn't start at login,
         // and a phone has no Dock or taskbar.

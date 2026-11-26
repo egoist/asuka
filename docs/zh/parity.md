@@ -143,6 +143,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 低功耗蓝牙 | Core Bluetooth | 社区方案（`react-native-ble-plx`） | ✓ `platform/bluetooth`（扫描、连接、服务、读、写、通知；广播和 GATT 服务端；后台扫描和状态恢复；Core Bluetooth、Android 的 BLE、WinRT、BlueZ；Chromium 里 Web Bluetooth 的设备选择器，不支持外设角色）（见[蓝牙](bluetooth.md)） |
 | 图片编辑 | Core Graphics、ImageIO | `expo-image-manipulator` | ✓ `platform/imageedit`（缩放、裁剪、旋转、翻转、填充、像素化；读入 HEIC，输出 JPEG 或 PNG，方向自动摆正；Image I/O、Android 的 `Bitmap`、WIC、GdkPixbuf、canvas） |
 | 视频缩略图 | `AVAssetImageGenerator` | `expo-video-thumbnails` | ✓ `imageedit.videoFrame` |
+| 把视图存成图片 | `ImageRenderer`、`drawHierarchy` | `react-native-view-shot` | ✓ `imageedit.capture(view: ref)`：PNG 或 JPEG，由平台来画（图层、Android 的 `View`，Windows 和 Linux 上取窗口的像素；Web 上是元素的 SVG 副本） |
 | 识别图片中的文字、人脸和码 | Vision | 无 | ✓ `platform/vision`，同时给出每一项的位置（Vision；Android 上用 ML Kit，只打包进导入了它的应用；Windows 的 OCR 和人脸检测；Linux 上用 Tesseract 识别文字，不支持人脸；浏览器有 Shape Detection API 时用它） |
 | 语音转文字 | Speech（`SFSpeechRecognizer`） | 社区方案（`expo-speech-recognition`） | ◐ `platform/transcribe`（识别一段录音，只在设备上进行：iOS 和 macOS 上用 Speech，Android 13 的设备端识别器，浏览器在设备上运行的识别器（Chrome 139 及以上）；`transcribe.listen`：从麦克风边说边识别的听写；Windows 和 Linux 不支持，它们的识别器只接受麦克风） |
 | 照片图库 | PhotoKit | `expo-media-library` | ✓ `platform/photos`：权限、列出照片、缩略图、原始文件（PhotoKit、MediaStore） |
