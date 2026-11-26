@@ -228,7 +228,7 @@ Web ビューのアプリは、HTML と CSS で書いたとおりに、どのシ
 | 終了と、終了前の確認 | `app.quit`、`before-quit` | 終了 | ✓ `quit()`、`relaunch()`、`on quit(e)`（`e.cancel()`、`e.sessionEnding`） |
 | アプリのフォルダー | `app.getPath` | ディレクトリ | ✓ `fs.appDir()`（アプリのファイル）、`configDir()`（設定：Windows では Roaming の AppData、Linux では `~/.config`）、`cacheDir()`（Library/Caches、Android のキャッシュ、`~/.cache`。Web では別に保存）、`logDir()`（Library/Logs、`~/.local/state`）。どれもすべてのプラットフォームで、それぞれの決まった場所にある |
 | 最近使った書類 | `app.addRecentDocument` | 最近使った書類 | ✓ `platform/recent`（Mac の「最近使った項目を開く」、ジャンプリスト、Linux のユーザーの最近使ったファイル） |
-| 書類ベースのアプリ | — | 書類 | ✓ `platform/document`：`Documents`、ファイルごとのウィンドウ、「ファイル」メニュー、自動保存、復元用のコピー、閉じるときと終了するときの保存の確認、ほかのアプリによるファイルの変更（スマートフォンと Web では一度に一つの書類で、その場で保存） |
+| 書類ベースのアプリ | — | 書類 | ✓ `platform/document`：`Documents`、ファイルごとのウィンドウ、「ファイル」メニュー、自動保存、復元用のコピー、閉じるときと終了するときの保存の確認、ほかのアプリによるファイルの変更、バージョン（バージョンをブラウズ…）、ロック（スマートフォンと Web では一度に一つの書類で、その場で保存） |
 | ログイン時の起動 | `app.setLoginItemSettings` | ログイン時に起動 | ✓ `platform/login`（`SMAppService`、macOS 13 以降。Run キー。XDG autostart または Background ポータル） |
 | ファイルの監視 | Node の `fs.watch`（chokidar） | `WatchFiles`、watch プラグイン | ✓ `std/watch` の `watch.path`：名前の変更は対にし、アトミックな保存は書き込みとして扱い、連続した変更はまとめる。スマートフォンと Web では非対応 |
 | ディスプレイ | `screen` | ディスプレイ | ✓ `screen.displays()`、`nearest`、`matching`（Wayland では作業領域なし。スマートフォンと Web ではそれぞれの画面） |
@@ -237,8 +237,6 @@ Web ビューのアプリは、HTML と CSS で書いたとおりに、どのシ
 | アクセントカラー、コントラストを上げる、透明度を下げる | `systemPreferences` | アクセントカラーとアクセシビリティ | ✓ `platform/appearance`（Linux では「透明度を下げる」はなし） |
 | 再生中の情報とメディアキー | （なし：ページ内の `navigator.mediaSession`） | Now Playing | ✓ `platform/nowplaying`（`MPNowPlayingInfoCenter`、ウィンドウの SystemMediaTransportControls、MPRIS のプレイヤー） |
 | 自動アップデート：署名付きのリリース、差分、Sparkle のウィンドウ | `autoUpdater`（Squirrel）、electron-updater | アップデーターとそのプラグイン | ✓ `platform/update`（`update.UpdateWindow`、`update.AppMenu()`、`checkForUpdates`、`check`、`install`、`relaunch`。Ed25519 の署名、差分アップデート、チャンネル。GitHub のリリース、S3 のバケット、任意の HTTPS のディレクトリ、独自のサーバー。`asuka publish --platform mac\|windows\|linux`）。システムのパッケージ、Flatpak、ストアでインストールしたアプリは、それらを通じてアップデートする。Web は再読み込み |
-
-MyGo にあって Asuka にまだないものは、書類のバージョン（Mac の「すべてのバージョンをブラウズ」）とロックです。
 
 ## 未対応のもの
 

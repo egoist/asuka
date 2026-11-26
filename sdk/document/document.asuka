@@ -24,6 +24,7 @@
 //     document.Documents(types) { editor: doc => Editor(doc) }
 //   }
 
+import std/crypto
 import platform/dialog
 import std/fs
 import std/i18n
@@ -67,6 +68,11 @@ native interface Files {
   /// When the file last changed, in milliseconds since 1970 (0: it
   /// isn't there).
   async fn modified(path: string) -> int
+  /// Whether the file is locked, so it can't be changed: a Mac's Locked
+  /// (the Finder's, the immutable flag), elsewhere not writable.
+  fn locked(path: string) -> bool
+  /// Locks the file, or unlocks it.
+  fn setLocked(path: string, on: bool)
 }
 
 let files = try? Files()
@@ -100,6 +106,84 @@ async fn modifiedOf(path: string) throws -> int {
     return 0
   }
   return (try fs.stat(path)).modified.unixNano()
+}
+
+/// Whether path is locked (the platform's Files', else not writable).
+fn lockedFile(path: string) -> bool {
+  if path.isEmpty() {
+    return false
+  }
+  if let f = files {
+    return (try? f.locked(path)) ?? false
+  }
+  if let e = try? fs.stat(path) {
+    return e.mode & 0o200 == 0
+  }
+  return false
+}
+
+fn setLockedFile(path: string, on: bool) throws {
+  if let f = files {
+    try f.setLocked(path, on)
+    return
+  }
+  let e = try fs.stat(path)
+  try fs.chmod(path, if on { e.mode & ~0o222 } else { e.mode | 0o200 })
+}
+
+// ---- Versions ----
+
+/// A version of a document: its file as it was before a save replaced it.
+pub struct Version {
+  /// When the file was last changed, as it is in this version.
+  at: time.Time
+  /// Where the version is kept (in versionsDir()).
+  path: string
+}
+
+/// Where documents keep their versions: Versions in the app's directory,
+/// a folder for each file.
+pub fn versionsDir() -> string = fs.join([fs.appDir(), "Versions"])
+
+/// The folder of file's versions.
+fn versionsOf(file: string) -> string = fs.join([versionsDir(), crypto.sha256(file.bytes()).hex().slice(0, 24)])
+
+/// How long a save waits after the last version to keep another, but a
+/// save the user asks for, which always does.
+let versionEvery = 5min
+
+/// The versions in dir, the latest first.
+fn listVersions(dir: string) -> [Version] {
+  var out: [Version] = []
+  for e in (try? fs.readDir(dir)) ?? [] {
+    if e.isDir || fs.ext(e.name) != ".data" {
+      continue
+    }
+    if let ms = stem(e.name).toInt() {
+      out.push(Version(at: time.unixMilli(ms), path: e.path))
+    }
+  }
+  return out.sorted((a, b) => a.at > b.at)
+}
+
+/// Which of versions (the latest first) are kept as time passes, as a
+/// Mac keeps its documents' and Time Machine its backups: each of the
+/// last hour's, then one an hour for a day, one a day for a month, and
+/// one a week from then. The rest are what thinned returns.
+fn thinned(versions: [Version], now: time.Time) -> [Version] {
+  var seen: Set<string> = Set()
+  var drop: [Version] = []
+  for v in versions {
+    let age = now - v.at
+    let ms = v.at.unixMilli()
+    let bucket = if age < 1h { "m{ms}" } else if age < 24h { "h{ms / 3600000}" } else if age < 720h { "d{ms / 86400000}" } else { "w{ms / 604800000}" }
+    if seen.contains(bucket) {
+      drop.push(v)
+    } else {
+      seen.insert(bucket)
+    }
+  }
+  return drop
 }
 
 /// How long after the last change a document saves itself (or, when it
@@ -143,6 +227,15 @@ pub store Document<T>(path: string, read: fn(bytes) throws -> T, write: fn(T) ->
   state saves = 0
   // Its recovery copy's name in recoveryDir() ("": none written).
   state copy = ""
+  /// Its file is locked: the document isn't saved until it's unlocked
+  /// (an edit counts in lockedEdits, which an editor asks about).
+  pub state locked = false
+  /// Edits made while it's locked, counted: what Documents asks about
+  /// (Unlock, Duplicate, Cancel), as a Mac does.
+  pub state lockedEdits = 0
+  // The next save keeps a version (a restore's), and when the last was.
+  state versionNext = false
+  state lastVersion: time.Time? = none
 
   task {
     if file.isEmpty() {
@@ -169,7 +262,7 @@ pub store Document<T>(path: string, read: fn(bytes) throws -> T, write: fn(T) ->
       return
     }
     await sleep(autosaveAfter)
-    if file.isEmpty() || state == .conflict || state == .failed {
+    if file.isEmpty() || state == .conflict || state == .failed || locked {
       await keepCopy()
     } else {
       await save()
@@ -181,6 +274,7 @@ pub store Document<T>(path: string, read: fn(bytes) throws -> T, write: fn(T) ->
     do {
       let data = try await readFile(file)
       known = try await modifiedOf(file)
+      locked = lockedFile(file)
       content = try read(data)
       error = ""
       state = .saved
@@ -207,13 +301,17 @@ pub store Document<T>(path: string, read: fn(bytes) throws -> T, write: fn(T) ->
     }
   }
 
-  /// Changes the content: saved a moment after the last change.
+  /// Changes the content: saved a moment after the last change. While
+  /// the file is locked it isn't (lockedEdits counts the edit).
   pub fn edit(c: T) {
     content = c
     if state != .conflict {
       state = .edited
     }
     edits += 1
+    if locked {
+      lockedEdits += 1
+    }
   }
 
   /// Whether it has changes that aren't in its file: an untitled one
@@ -221,9 +319,12 @@ pub store Document<T>(path: string, read: fn(bytes) throws -> T, write: fn(T) ->
   pub fn unsaved() -> bool = edits > 0 && (state == .edited || state == .saving || state == .conflict || state == .failed && content.isSome())
 
   /// Saves now, unless another program changed the file since it was
-  /// read (a conflict). An untitled document can't: Save As.
-  pub async fn save() {
-    await put(false)
+  /// read (a conflict), or it's locked. An untitled document can't: Save
+  /// As. version keeps the file as it was in its versions (a save the
+  /// user asks for); otherwise one is kept when the last is a few minutes
+  /// old.
+  pub async fn save(version: bool = false) {
+    await put(false, version)
   }
 
   /// Saves as soon as it can, as save does, from code that can't wait
@@ -234,11 +335,15 @@ pub store Document<T>(path: string, read: fn(bytes) throws -> T, write: fn(T) ->
 
   /// Writes this document's content over the file, whatever changed it.
   pub async fn saveAnyway() {
-    await put(true)
+    await put(true, true)
   }
 
-  async fn put(force: bool) {
+  async fn put(force: bool, version: bool) {
     if file.isEmpty() {
+      return
+    }
+    if locked {
+      await keepCopy()
       return
     }
     if let c = content {
@@ -253,7 +358,9 @@ pub store Document<T>(path: string, read: fn(bytes) throws -> T, write: fn(T) ->
           }
         }
         state = .saving
-        try await writeFile(file, write(c))
+        let data = write(c)
+        await keepVersion(data, version)
+        try await writeFile(file, data)
         known = try await modifiedOf(file)
         error = ""
         if state == .saving {
@@ -290,6 +397,78 @@ pub store Document<T>(path: string, read: fn(bytes) throws -> T, write: fn(T) ->
       edits = 0
       await dropCopy()
       recent.add(target)
+    }
+  }
+
+  // keepVersion keeps the file as it is, before data replaces it, in its
+  // versions: when always, after a restore, or when the last version is
+  // versionEvery old; then thins them.
+  async fn keepVersion(data: bytes, always: bool) {
+    let dir = versionsOf(file)
+    if lastVersion == none {
+      lastVersion = listVersions(dir).first()?.at
+    }
+    let now = time.now()
+    if !always && !versionNext {
+      if let last = lastVersion {
+        if now - last < versionEvery {
+          return
+        }
+      }
+    }
+    do {
+      let old = try await readFile(file)
+      if old == data {
+        return
+      }
+      let at = (try? fs.stat(file))?.modified ?? now
+      try fs.mkdirAll(dir)
+      try await writeFile(fs.join([dir, "{at.unixMilli()}.data"]), old)
+      versionNext = false
+      lastVersion = now
+      for v in thinned(listVersions(dir), now) {
+        try? fs.remove(v.path)
+      }
+    } catch {
+      // No version (the file gone, the app's directory not writable): the
+      // save goes on.
+    }
+  }
+
+  /// The file's earlier versions, the latest first: each as it was before
+  /// a save replaced it (none for an untitled document).
+  pub fn versions() -> [Version] = if file.isEmpty() { [] } else { listVersions(versionsOf(file)) }
+
+  /// Brings v's content back, as an edit (saved, the file as it is now
+  /// kept as a version first).
+  pub async fn restore(v: Version) throws {
+    let c = try read(try await readFile(v.path))
+    versionNext = true
+    edit(c)
+  }
+
+  /// Locks the document's file, its changes saved first: no one changes
+  /// it until it's unlocked (a Mac's Locked).
+  pub async fn lock() throws {
+    if file.isEmpty() {
+      throw Error("document: an untitled document can't be locked")
+    }
+    if state == .edited {
+      await save()
+    }
+    try setLockedFile(file, true)
+    locked = true
+  }
+
+  /// Unlocks the document's file, and saves what was edited meanwhile.
+  pub async fn unlock() throws {
+    if file.isEmpty() {
+      return
+    }
+    try setLockedFile(file, false)
+    locked = false
+    if edits > 0 && state == .edited {
+      await save()
     }
   }
 
@@ -341,6 +520,11 @@ pub store Document<T>(path: string, read: fn(bytes) throws -> T, write: fn(T) ->
     } catch {
       try fs.copy(file, target)
       try fs.remove(file)
+    }
+    // Its versions go with it.
+    let from = versionsOf(file)
+    if fs.exists(from) {
+      try? fs.rename(from, versionsOf(target))
     }
     file = target
     name = fs.base(target)
@@ -508,7 +692,7 @@ struct Entry {
 /// A text editor's documents (UTF-8 text, of types): on a desktop a
 /// window per document open (width by height), the File menu's New (⌘N),
 /// Open… (⌘O), Open Recent, Close (⌘W), Save (⌘S), Save As…, Duplicate,
-/// Rename…, Move To… and Revert, the recovery copies of the last run's
+/// Rename…, Move To…, Revert, Browse Versions… and Lock, the recovery copies of the last run's
 /// unsaved documents opened again, and questions before closing a
 /// document whose changes would be lost; on a phone or in a browser, a
 /// list of the documents in documentsDir() and the one open. editor
@@ -527,6 +711,8 @@ pub component Documents(types: [Type]) {
   /// The recent documents Open Recent lists (Windows, Linux).
   state recents: [string] = []
   state quitting = false
+  /// The window whose document's versions show (an entry's ID; -1: none).
+  state browsing = -1
   // Read as the component's view is built, where the platform is its.
   let desktop = onDesktop()
   let mac = onMac()
@@ -589,7 +775,7 @@ pub component Documents(types: [Type]) {
       await saveAs(d)
       return
     }
-    await d.save()
+    await d.save(version: true)
     if d.state == .conflict {
       alert(say("changedOnDisk", ["name": d.name]), message: say("changedOnDiskDetail"), actions: [
         .button(title: say("saveAnyway"), run: () => { await d.saveAnyway() }),
@@ -675,6 +861,18 @@ pub component Documents(types: [Type]) {
       .button(title: say("revert"), role: .destructive, run: () => { await d.revert() }),
       .button(title: say("cancel"), role: .cancel),
     ])
+  }
+
+  async fn toggleLock(d: Document<string>) {
+    do {
+      if d.locked {
+        try await d.unlock()
+      } else {
+        try await d.lock()
+      }
+    } catch e {
+      failed("failedLocked", d.name, e)
+    }
   }
 
   // The last run's recovery copies: their documents open again, edited
@@ -803,6 +1001,15 @@ pub component Documents(types: [Type]) {
             disabled: current < 0
             on press { if let d = doc() { revert(d) } }
           }
+          MenuItem(say("browseVersions")) {
+            disabled: current < 0 || (doc()?.file ?? "").isEmpty()
+            on press { browsing = current }
+          }
+          MenuSeparator()
+          MenuItem(if doc()?.locked ?? false { say("unlock") } else { say("lock") }) {
+            disabled: current < 0 || (doc()?.file ?? "").isEmpty()
+            on press { if let d = doc() { await toggleLock(d) } }
+          }
         } else {
           MenuItem(say("save")) {
             shortcut: .cmd("s")
@@ -818,6 +1025,14 @@ pub component Documents(types: [Type]) {
             disabled: current < 0
             on press { if let d = doc() { revert(d) } }
           }
+          MenuItem(say("browseVersions")) {
+            disabled: current < 0 || (doc()?.file ?? "").isEmpty()
+            on press { browsing = current }
+          }
+          MenuItem(if doc()?.locked ?? false { say("unlock") } else { say("lock") }) {
+            disabled: current < 0 || (doc()?.file ?? "").isEmpty()
+            on press { if let d = doc() { await toggleLock(d) } }
+          }
           MenuSeparator()
           MenuItem(say("close")) {
             shortcut: .cmd("w")
@@ -832,6 +1047,9 @@ pub component Documents(types: [Type]) {
         width: width
         height: height
         editor: editor
+        browsing: browsing == e.id
+        on browsed { browsing = -1 }
+        on duplicate(d) { duplicate(d) }
         on ready(d) { docs[e.id] = d }
         on use { current = e.id }
         on save(d) { await saveAsking(d) }
@@ -871,9 +1089,22 @@ component DocumentWindow(entry: Entry) {
   /// Save from its keys, which may ask.
   event save(doc: Document<string>)
   event close
+  /// Its versions show (Browse Versions…), until browsed.
+  prop browsing = false
+  event browsed
+  /// Duplicate, asked as an edit met the locked file.
+  event duplicate(doc: Document<string>)
   let doc = open(entry.path, read: data => data.string(), write: text => text.bytes())
   let win = Ref()
   state shown = true
+
+  // An edit of a locked document: Unlock, Duplicate (the edit in a new
+  // document, this one as its file is) or Cancel, as a Mac asks.
+  task(doc.lockedEdits) {
+    if doc.lockedEdits > 0 {
+      askLocked(doc, () => { emit duplicate(doc) })
+    }
+  }
 
   // finish closes the window (its question answered).
   fn finish() {
@@ -955,6 +1186,121 @@ component DocumentWindow(entry: Entry) {
       ]
     }
     editor(doc)
+    Sheet {
+      open: browsing
+      on dismiss { emit browsed }
+      VersionBrowser(doc) {
+        on done { emit browsed }
+      }
+    }
+  }
+}
+
+// The question an edit of a locked document asks, once while it shows.
+var askingLocked = false
+
+fn askLocked(doc: Document<string>, duplicate: fn()) {
+  if askingLocked {
+    return
+  }
+  askingLocked = true
+  alert(say("lockedQuestion", ["name": doc.name]), message: say("lockedDetail"), actions: [
+    .button(title: say("unlock"), run: () => {
+      askingLocked = false
+      do {
+        try await doc.unlock()
+      } catch e {
+        failed("failedLocked", doc.name, e)
+        await doc.revert()
+      }
+    }),
+    .button(title: say("duplicate"), run: () => {
+      askingLocked = false
+      duplicate()
+      await doc.revert()
+    }),
+    .button(title: say("cancel"), role: .cancel, run: () => {
+      askingLocked = false
+      await doc.revert()
+    }),
+  ])
+}
+
+/// A document's earlier versions, the latest first, the one chosen shown
+/// beside them: Restore brings it back (as an edit, saved).
+component VersionBrowser(doc: Document<string>) {
+  event done
+  state versions: [Version] = []
+  state chosen = 0
+  state preview = ""
+  // A window's sheet: the list beside the text; a phone's: above it.
+  let desktop = onDesktop()
+
+  task {
+    versions = doc.versions()
+  }
+
+  task(chosen, versions) {
+    preview = if let v = versions.get(chosen) { (try? fs.readText(v.path)) ?? "" } else { "" }
+  }
+
+  Column {
+    gap: 12
+    padding: 16
+    width: if desktop { 640 } else { 100% }
+    height: if desktop { 420 } else { 100% }
+    Text(say("versionsOf", ["name": doc.name])) { font: .headline }
+    if versions.isEmpty() {
+      Text(say("noVersions")) {
+        color: .secondaryLabel
+        grow: 1
+      }
+    } else {
+      View {
+        direction: if desktop { .row } else { .column }
+        gap: 12
+        grow: 1
+        Scroll {
+          width: if desktop { 200 } else { 100% }
+          height: if desktop { 100% } else { 180 }
+          Column {
+            for (i, v) in versions.enumerated() key v.path {
+              View {
+                padding: [8, 10]
+                radius: 6
+                background: if i == chosen { .accent.opacity(0.18) } else { .clear }
+                role: .button
+                a11ySelected: i == chosen
+                on press { chosen = i }
+                Text(i18n.formatDate(v.at, date: .medium, time: .short))
+              }
+            }
+          }
+        }
+        Scroll {
+          grow: 1
+          Text(preview) { selectable: true }
+        }
+      }
+    }
+    Row {
+      gap: 8
+      justify: .end
+      Button(say("cancel")) { on press { emit done } }
+      Button(say("restore")) {
+        disabled: versions.isEmpty()
+        on press {
+          if let v = versions.get(chosen) {
+            do {
+              try await doc.restore(v)
+            } catch e {
+              alert(say("failedRestored"), message: e.message)
+            }
+          }
+          emit done
+        }
+      }
+    }
   }
 }
 
@@ -1049,11 +1395,49 @@ screen DocumentList(types: [Type]) {
   }
 }
 
-/// A document open on a phone: its editor, saved as it changes.
+/// A document open on a phone: its editor, saved as it changes; its
+/// versions and its lock in the bar's menu.
 screen DocumentScreen(path: string) {
   prop editor: fn(Document<string>) -> View
   let doc = open(path, read: data => data.string(), write: text => text.bytes())
+  state browsing = false
+
+  task(doc.lockedEdits) {
+    if doc.lockedEdits > 0 {
+      askLocked(doc, () => {
+        let copy = fs.join([fs.dir(path), say("copyName", ["name": stem(fs.base(path))]) + fs.ext(path)])
+        try? fs.writeText(copy, doc.content ?? "")
+      })
+    }
+  }
 
   title: doc.name
+  toolbar {
+    Button(say("browseVersions")) {
+      icon: "clock.arrow.circlepath"
+      on press { browsing = true }
+    }
+    Button(if doc.locked { say("unlock") } else { say("lock") }) {
+      icon: if doc.locked { "lock.fill" } else { "lock.open" }
+      on press {
+        do {
+          if doc.locked {
+            try await doc.unlock()
+          } else {
+            try await doc.lock()
+          }
+        } catch e {
+          failed("failedLocked", doc.name, e)
+        }
+      }
+    }
+  }
   editor(doc)
+  Sheet {
+    open: browsing
+    on dismiss { browsing = false }
+    VersionBrowser(doc) {
+      on done { browsing = false }
+    }
+  }
 }

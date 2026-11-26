@@ -1,0 +1,80 @@
+import std/fs
+import std/time
+
+fn textDoc(path: string) -> Document<string> = open(path, read: data => data.string(), write: text => text.bytes())
+
+fn scratch(name: string) throws -> string {
+  let dir = fs.join([fs.tempDir(), "document-test", name])
+  try fs.removeAll(dir)
+  try fs.mkdirAll(dir)
+  return dir
+}
+
+test "versions thin out as they age: each of an hour's, hourly, daily, weekly" {
+  let now = time.unix(10_000_000)
+  var vs: [Version] = []
+  // Every 10 minutes for 3 days, the latest first.
+  for i in 0..<432 {
+    vs.push(Version(at: now - 10min * i, path: "{i}"))
+  }
+  let drop = thinned(vs, now)
+  let kept = vs.filter(v => !drop.any(d => d.path == v.path))
+  let hour = kept.filter(v => now - v.at < 1h).count()
+  let day = kept.filter(v => now - v.at >= 1h && now - v.at < 24h).count()
+  let older = kept.filter(v => now - v.at >= 24h).count()
+  expect(hour == 6)
+  expect(day >= 23 && day <= 24)
+  expect(older >= 2 && older <= 3)
+}
+
+test "a save keeps the file as it was; restore brings a version back" {
+  let dir = try scratch("versions")
+  let path = fs.join([dir, "notes.txt"])
+  try fs.writeText(path, "first")
+  try fs.removeAll(versionsOf(path))
+  let doc = textDoc(path)
+  await sleep(1ms)
+  expect(doc.content == "first" && doc.versions().isEmpty())
+  doc.edit("second")
+  await doc.save(version: true)
+  expect(try fs.readText(path) == "second")
+  let vs = doc.versions()
+  expect(vs.count() == 1)
+  expect(try fs.readText(vs[0].path) == "first")
+  // Saving what's there already keeps nothing.
+  await doc.save(version: true)
+  expect(doc.versions().count() == 1)
+  try await doc.restore(vs[0])
+  expect(doc.content == "first" && doc.state == .edited)
+  await doc.save()
+  expect(try fs.readText(path) == "first")
+  // The restore kept the file it replaced.
+  expect(doc.versions().count() == 2)
+  // Renamed, its versions go with it.
+  try await doc.rename("renamed.txt")
+  expect(doc.versions().count() == 2)
+  try fs.removeAll(versionsOf(doc.file))
+}
+
+test "a locked document isn't saved; unlocked, its edit is" {
+  let dir = try scratch("locked")
+  let path = fs.join([dir, "notes.txt"])
+  try fs.writeText(path, "kept")
+  let doc = textDoc(path)
+  await sleep(1ms)
+  try await doc.lock()
+  expect(doc.locked)
+  // Opened again, it's locked.
+  let again = textDoc(path)
+  await sleep(1ms)
+  expect(again.locked)
+  doc.edit("changed")
+  expect(doc.lockedEdits == 1)
+  await doc.save()
+  expect(try fs.readText(path) == "kept")
+  expect(doc.unsaved())
+  try await doc.unlock()
+  expect(!doc.locked)
+  expect(try fs.readText(path) == "changed")
+  await doc.discard()
+}

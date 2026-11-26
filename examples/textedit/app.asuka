@@ -1,6 +1,7 @@
 // TextEdit is a plain text editor with documents (platform/document): on
 // the desktop a window per file, the File menu (New, Open…, Open Recent,
-// Save, Save As…, Duplicate, Rename…, Move To…, Revert), autosave a
+// Save, Save As…, Duplicate, Rename…, Move To…, Revert, Browse
+// Versions…, Lock), autosave a
 // moment after typing stops, recovery copies of what can't be saved in
 // place (opened again at the next launch), questions before changes are
 // lost, and a bar when another app changes the file being edited (keep

@@ -228,7 +228,7 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 | 退出、退出前询问 | `app.quit`、`before-quit` | 退出 | ✓ `quit()`、`relaunch()`、`on quit(e)`（`e.cancel()`、`e.sessionEnding`） |
 | 应用的目录 | `app.getPath` | 目录 | ✓ `fs.appDir()`（应用的文件）、`configDir()`（设置：Windows 上是 Roaming AppData，Linux 上是 `~/.config`）、`cacheDir()`（Library/Caches、Android 的缓存目录、`~/.cache`；Web 上单独保存）和 `logDir()`（Library/Logs、`~/.local/state`），在所有平台上都放在各平台约定的位置 |
 | 最近使用的文档 | `app.addRecentDocument` | 最近文档 | ✓ `platform/recent`（Mac 上的“打开最近使用”、跳转列表、Linux 上用户的最近文件） |
-| 基于文档的应用 | — | 文档 | ✓ `platform/document`：`Documents`，每个文件一个窗口，“文件”菜单，自动保存，恢复副本，关闭和退出时询问是否保存，处理被其他应用修改的文件（手机和 Web 上一次只打开一个文档，原地保存） |
+| 基于文档的应用 | — | 文档 | ✓ `platform/document`：`Documents`，每个文件一个窗口，“文件”菜单，自动保存，恢复副本，关闭和退出时询问是否保存，处理被其他应用修改的文件，版本（浏览所有版本…），锁定（手机和 Web 上一次只打开一个文档，原地保存） |
 | 登录时启动 | `app.setLoginItemSettings` | 登录时启动 | ✓ `platform/login`（`SMAppService`，macOS 13 及以上；Run 注册表项；XDG 自启动或 Background portal） |
 | 监听文件变化 | Node 的 `fs.watch`（chokidar） | `WatchFiles`、watch 插件 | ✓ `std/watch` 的 `watch.path`：重命名成对报告，原子保存视为写入，连续的变化会合并；手机和 Web 不支持 |
 | 显示器 | `screen` | 显示器 | ✓ `screen.displays()`、`nearest`、`matching`（Wayland 下没有工作区域；手机和 Web 上是它们自己的屏幕） |
@@ -237,8 +237,6 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 | 强调色、增强对比度、降低透明度 | `systemPreferences` | 强调色和辅助功能设置 | ✓ `platform/appearance`（Linux 上没有降低透明度） |
 | 正在播放和媒体键 | （无：只能在页面里用 `navigator.mediaSession`） | 正在播放 | ✓ `platform/nowplaying`（`MPNowPlayingInfoCenter`；窗口的 SystemMediaTransportControls；一个 MPRIS 播放器） |
 | 自动更新：签名的版本、增量更新、Sparkle 式窗口 | `autoUpdater`（Squirrel）、electron-updater | 更新器及其插件 | ✓ `platform/update`（`update.UpdateWindow`、`update.AppMenu()`、`checkForUpdates`、`check`、`install`、`relaunch`；Ed25519 签名、增量更新、更新渠道；GitHub releases、S3 存储桶或任意 HTTPS 目录，或者你自己的服务器；`asuka publish --platform mac\|windows\|linux`）；由系统包管理器、Flatpak 或应用商店安装的应用通过它们更新；Web 上刷新页面即可 |
-
-MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览所有版本”）和锁定。
 
 ## 尚未支持
 

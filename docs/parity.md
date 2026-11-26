@@ -256,7 +256,7 @@ Windows and Linux unless the row says otherwise.
 | Quitting, asking first | `app.quit`, `before-quit` | quitting | ✓ `quit()`, `relaunch()`, `on quit(e)` (`e.cancel()`, `e.sessionEnding`) |
 | The app's folders | `app.getPath` | directories | ✓ `fs.appDir()` (the app's files), `configDir()` (its settings: Roaming AppData on Windows, `~/.config` on Linux), `cacheDir()` (Library/Caches, Android's cache, `~/.cache`; the web's kept apart) and `logDir()` (Library/Logs, `~/.local/state`), each in its platform's place, everywhere |
 | Recent documents | `app.addRecentDocument` | recent documents | ✓ `platform/recent` (Open Recent on the Mac, the jump list, the user's recent files on Linux) |
-| Document-based apps | — | documents | ✓ `platform/document`: `Documents`, a window per file, the File menu, autosave, recovery copies, save questions on close and quit, files changed by other apps (phones and the web: one document at a time, saved in place) |
+| Document-based apps | — | documents | ✓ `platform/document`: `Documents`, a window per file, the File menu, autosave, recovery copies, save questions on close and quit, files changed by other apps, versions (Browse Versions…), locking (phones and the web: one document at a time, saved in place) |
 | Starting at login | `app.setLoginItemSettings` | start at login | ✓ `platform/login` (`SMAppService`, macOS 13+; the Run key; XDG autostart or the Background portal) |
 | Watching files | Node's `fs.watch` (chokidar) | `WatchFiles`, the watch plugin | ✓ `std/watch`'s `watch.path`: renames paired, atomic saves as writes, bursts coalesced; phones and the web: unsupported |
 | Displays | `screen` | displays | ✓ `screen.displays()`, `nearest`, `matching` (Wayland: no work area; phones and the web: theirs) |
@@ -265,9 +265,6 @@ Windows and Linux unless the row says otherwise.
 | Accent color, Increase Contrast, Reduce Transparency | `systemPreferences` | accent color and accessibility | ✓ `platform/appearance` (no Reduce Transparency on Linux) |
 | Now Playing and the media keys | (none: `navigator.mediaSession` in the page) | Now Playing | ✓ `platform/nowplaying` (`MPNowPlayingInfoCenter`; the window's SystemMediaTransportControls; an MPRIS player) |
 | Auto-updates: signed releases, deltas, Sparkle's window | `autoUpdater` (Squirrel), electron-updater | the updater, its plugin | ✓ `platform/update` (`update.UpdateWindow`, `update.AppMenu()`, `checkForUpdates`, `check`, `install`, `relaunch`; Ed25519 signatures, delta updates, channels; GitHub releases, an S3 bucket or any HTTPS directory, a server of yours; `asuka publish --platform mac\|windows\|linux`); apps the system's packages, Flatpak or a store installed update through them; the web reloads |
-
-Not yet, of what MyGo has: of its documents, versions (a Mac's Browse
-All Versions) and locking.
 
 ## Not yet
 

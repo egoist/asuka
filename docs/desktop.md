@@ -629,7 +629,15 @@ conflict: `saveAnyway()` keeps the app's content, `revert()` takes the
 file's. Its `file` is where it's kept ("" for an untitled one) and its
 `name` what it's called; `saveAs(path)`, `rename(name)` and
 `moveTo(dir)` move it, `unsaved()` says whether it has changes its file
-hasn't, and `discard()` lets them go. `document.open(path, read:,
+hasn't, and `discard()` lets them go. `versions()` are its file's
+earlier contents, the latest first: a save keeps the file as it was
+before replacing it (every save the user asks for, and an autosave a few
+minutes after the last version), thinned as they age as a Mac's are
+(each of the last hour's, then one an hour for a day, one a day for a
+month, one a week); `restore(v)` brings one back, as an edit.
+`lock()` locks its file (a Mac's Locked, elsewhere read-only), which
+`locked` says, and `unlock()` unlocks it: a locked document isn't saved,
+and an edit counts in `lockedEdits` for the editor to ask about. `document.open(path, read:,
 write:)` makes a document of any type of content, its own read and
 write functions turning bytes into it and back; `Documents` edits text.
 
@@ -647,7 +655,8 @@ What the user gets:
   As… (⌥⇧⌘S), Rename…, Move To… and Revert to Saved. On Windows and
   Linux, Notepad's and GNOME Text Editor's: New, Open…, Open Recent (its
   documents and Clear Menu), Save, Save As… (Ctrl+Shift+S), Revert,
-  Close and Quit. Each acts on the document whose window is in use.
+  Close and Quit; on both, Browse Versions… and Lock (Unlock). Each acts
+  on the document whose window is in use.
   Its words follow the app's language (English, German, Spanish,
   French, Japanese and Chinese; English otherwise).
 - **Autosave**: a document is saved a moment after the user stops
@@ -655,6 +664,11 @@ What the user gets:
   changed by another app, its file not writable) keeps its changes in a
   recovery copy in `document.recoveryDir()`, and a quit keeps them there
   too: the next launch opens those documents again, edited.
+- **Versions and locks**: Browse Versions… shows the document's earlier
+  versions, each one's text beside the list, and Restore brings the one
+  chosen back (the document as it was kept as a version too). Editing a
+  locked document asks, as a Mac does: Unlock, Duplicate (the edit in a
+  new document) or Cancel (the file as it is).
 - **Questions where changes would be lost**: closing an untitled
   document with changes asks whether to keep it (Save…, Delete, Cancel);
   closing one whose save failed or met another app's change asks

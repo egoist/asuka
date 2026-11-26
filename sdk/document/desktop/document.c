@@ -184,7 +184,38 @@ static void d_read(document_Files *self, const char *path, asuka_call *call) { s
 static void d_write(document_Files *self, const char *path, asuka_bytes data, asuka_call *call) { start(1, path, data, call); }
 static void d_modified(document_Files *self, const char *path, asuka_call *call) { start(2, path, (asuka_bytes){0}, call); }
 
-static const document_Files_vtable vt = {.read = d_read, .write = d_write, .modified = d_modified};
+// A locked file is one that can't be written: Windows' read-only
+// attribute, Unix's write bits.
+#ifdef _WIN32
+static bool d_locked(document_Files *self, const char *path, asuka_error *err) {
+	wchar_t *w = asuka_wide(path);
+	DWORD a = GetFileAttributesW(w);
+	free(w);
+	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_READONLY);
+}
+
+static void d_set_locked(document_Files *self, const char *path, bool on, asuka_error *err) {
+	wchar_t *w = asuka_wide(path);
+	DWORD a = GetFileAttributesW(w);
+	if (a == INVALID_FILE_ATTRIBUTES || !SetFileAttributesW(w, on ? a | FILE_ATTRIBUTE_READONLY : a & ~(DWORD)FILE_ATTRIBUTE_READONLY))
+		asuka_win_fail(err, HRESULT_FROM_WIN32(GetLastError()), "document: can't lock or unlock the file");
+	free(w);
+}
+#else
+static bool d_locked(document_Files *self, const char *path, asuka_error *err) {
+	struct stat st;
+	return stat(path, &st) == 0 && !(st.st_mode & S_IWUSR);
+}
+
+static void d_set_locked(document_Files *self, const char *path, bool on, asuka_error *err) {
+	struct stat st;
+	// Locked: no one writes it; unlocked: its owner does again.
+	if (stat(path, &st) != 0 || chmod(path, on ? st.st_mode & ~(mode_t)(S_IWUSR | S_IWGRP | S_IWOTH) : st.st_mode | S_IWUSR) != 0)
+		asuka_error_failed(err, "errno", errno, "document: can't lock or unlock %s: %s", path, strerror(errno));
+}
+#endif
+
+static const document_Files_vtable vt = {.read = d_read, .write = d_write, .modified = d_modified, .locked = d_locked, .setLocked = d_set_locked};
 
 document_Files *document_make_Files(asuka_error *err) {
 	document_Files *f = malloc(sizeof *f);

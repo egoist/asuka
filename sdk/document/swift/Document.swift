@@ -35,6 +35,17 @@ final class CoordinatedFiles: Files {
         return Int(date.timeIntervalSince1970 * 1000)
     }
 
+    /// A Mac's Locked (the Finder's): the file's immutable flag, which
+    /// nothing changes or deletes while it's set.
+    func locked(path: String) throws -> Bool {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: path)
+        return (attrs?[.immutable] as? Bool) ?? false
+    }
+
+    func setLocked(path: String, on: Bool) throws {
+        try FileManager.default.setAttributes([.immutable: on], ofItemAtPath: path)
+    }
+
     /// Runs f with a coordinator on a thread of its own.
     private static func coordinated<R>(_ f: @escaping (NSFileCoordinator, URL) throws -> R) -> (String) async throws -> R {
         { path in
