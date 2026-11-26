@@ -23,7 +23,18 @@ const char *zlibVersion(void) { return "built in"; }
 #else
 #include <zlib.h>
 
-static uint32_t crc_of(uint32_t crc, const uint8_t *p, size_t n) { return (uint32_t)crc32_z(crc, p, n); }
+// crc32 takes a uInt's length (crc32_z, a size_t's, is Android 9's and
+// later): a gigabyte at a time.
+static uint32_t crc_of(uint32_t crc, const uint8_t *p, size_t n) {
+	uLong c = crc;
+	while (n > 0) {
+		uInt k = n > (1u << 30) ? (1u << 30) : (uInt)n;
+		c = crc32(c, p, k);
+		p += k;
+		n -= k;
+	}
+	return (uint32_t)c;
+}
 #endif
 
 uint32_t checksum_crc32(const uint8_t *data, size_t len) { return crc_of(0, data, len); }
