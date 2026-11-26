@@ -277,7 +277,6 @@ fn pollOf(status: int, body: string, scopes: [string]) throws -> Poll {
   throw GoogleAuthError.failed(reason: if t.error.isEmpty() { "the token endpoint answered {status}" } else { "{t.error}: {t.error_description}" })
 }
 
-
 /// The scopes asked for: the profile's, then the app's.
 fn scopeOf(scopes: [string]) -> string = (["openid", "email", "profile"] + scopes).unique().joined(separator: " ")
 

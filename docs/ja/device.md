@@ -2508,15 +2508,33 @@ fn offer(notes: [Note]) {
 
 `platform/car` はアプリを車の画面、つまり CarPlay と Android Auto に表示します。表示されるのはアプリのビューではなくプラットフォームのテンプレート（リスト、グリッド、タブ、情報、地図上の場所、再生中の表示）で、値として記述し、アプリの状態に追従させ、行を選んだときに何をするかを指定します。`asuka.toml` の `[car]` にアプリのカテゴリを書くと、CLI がそこから CarPlay の entitlement とシーン、Android Auto のサービスを追加します。詳しくは[車の画面](car.md)を参照してください。
 
-```asuka
-car.Screen {
-  root: .list(title: "Library", items: albums.map(a => car.Item(
-    title: a.title,
-    image: a.cover,
-    browsable: true,
-    run: () => car.push(() => album(a)),
-  )))
+```asuka check
+import platform/car
+
+struct Album {
+  title: string
+  cover: string
+  tracks: [string]
 }
+
+let albums = [Album(title: "Morning", cover: "covers/morning.jpg", tracks: ["Sunrise", "Coffee"])]
+
+fn album(a: Album) -> car.Template = .list(title: a.title, items: a.tracks.map(t => car.Item(title: t)))
+
+component Library {
+  car.Screen {
+    root: .list(title: "Library", items: albums.map(a => car.Item(
+      title: a.title,
+      image: a.cover,
+      browsable: true,
+      run: () => car.push(() => album(a)),
+    )))
+  }
+
+  Text(if car.connected() { "On the car's screen" } else { "Not in a car" })
+}
+
+app { Library() }
 ```
 
 ## 触覚フィードバック：device.haptic

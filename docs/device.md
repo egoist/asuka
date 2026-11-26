@@ -3716,15 +3716,33 @@ follow the app's state, with what choosing their rows does.
 the CarPlay entitlement and scene and Android Auto's service. See [Car
 screens](car.md).
 
-```asuka
-car.Screen {
-  root: .list(title: "Library", items: albums.map(a => car.Item(
-    title: a.title,
-    image: a.cover,
-    browsable: true,
-    run: () => car.push(() => album(a)),
-  )))
+```asuka check
+import platform/car
+
+struct Album {
+  title: string
+  cover: string
+  tracks: [string]
 }
+
+let albums = [Album(title: "Morning", cover: "covers/morning.jpg", tracks: ["Sunrise", "Coffee"])]
+
+fn album(a: Album) -> car.Template = .list(title: a.title, items: a.tracks.map(t => car.Item(title: t)))
+
+component Library {
+  car.Screen {
+    root: .list(title: "Library", items: albums.map(a => car.Item(
+      title: a.title,
+      image: a.cover,
+      browsable: true,
+      run: () => car.push(() => album(a)),
+    )))
+  }
+
+  Text(if car.connected() { "On the car's screen" } else { "Not in a car" })
+}
+
+app { Library() }
 ```
 
 ## Haptics: device.haptic
