@@ -1,0 +1,19 @@
+// A Segmented's font reaches its host: the core sends its FontSize and
+// FontWeight.
+
+component SegmentedFont {
+  Column {
+    Text("segmented")
+    Segmented(["One", "Two"]) { font: Font(size: 15, weight: .medium) }
+  }
+}
+
+app { SegmentedFont() }
+
+test "a segmented control takes its font" {
+  let app = mount(SegmentedFont())
+  app.expect("segmented")
+  let ops = app.ops()
+  expect(ops.contains("FontSize=15"), ops)
+  expect(ops.contains("FontWeight=5"), ops)
+}

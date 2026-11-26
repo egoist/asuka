@@ -1,0 +1,19 @@
+// A Picker's font reaches its host: the core sends its FontSize and
+// FontWeight.
+
+component PickerFont {
+  Column {
+    Text("picker")
+    Picker(["One", "Two"]) { font: Font(size: 13, weight: .medium) }
+  }
+}
+
+app { PickerFont() }
+
+test "a picker takes its font" {
+  let app = mount(PickerFont())
+  app.expect("picker")
+  let ops = app.ops()
+  expect(ops.contains("FontSize=13"), ops)
+  expect(ops.contains("FontWeight=5"), ops)
+}
