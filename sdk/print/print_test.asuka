@@ -1,0 +1,10 @@
+test "text as markup: escaped, its whitespace kept, headed by its title" {
+  let h = textHTML("a < b & c\n\n  \"col\"  2", "Lab <result>", false)
+  expect(h.contains("<title>Lab &lt;result&gt;</title>"))
+  expect(h.contains("<h1>Lab &lt;result&gt;</h1>"))
+  expect(h.contains("<pre>a &lt; b &amp; c\n\n  &quot;col&quot;  2</pre>"))
+  expect(h.contains("white-space:pre-wrap"))
+  expect(h.contains("system-ui"))
+  let m = textHTML("x", "", true)
+  expect(m.contains("ui-monospace") && !m.contains("<h1>"))
+}

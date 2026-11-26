@@ -4,6 +4,7 @@
 // paper, a PDF); the app gives what to print.
 //
 //   let done = try await print.html(receipt, job: "Receipt")
+//   try await print.text(report, job: "Lab result", mono: true)
 //   let path = try await print.pdf(receipt)   // for share, preview, mail
 //   try await print.webView(page)             // what a WebView shows
 //
@@ -144,6 +145,28 @@ pub async fn file(source: string, job: string = "", orientation: Orientation = .
 pub async fn html(markup: string, job: string = "", orientation: Orientation = .portrait) throws -> Outcome {
   return try await made().html(markup: markup, job: jobOf(name: job, orientation: orientation))
 }
+
+/// Prints plain text: a report, a note, lab results, as the app shows
+/// them. Its lines and blank lines stay as they are, long ones wrapped;
+/// mono sets it in the platform's fixed-width font, for text laid out in
+/// columns, else the body font. job titles the print job and heads the
+/// first page. It goes as html prints.
+pub async fn text(s: string, job: string = "", mono: bool = false, orientation: Orientation = .portrait) throws -> Outcome {
+  return try await html(textHTML(s, job, mono), job: job, orientation: orientation)
+}
+
+/// s as HTML markup: escaped, its whitespace kept, headed by title.
+fn textHTML(s: string, title: string, mono: bool) -> string {
+  let font = if mono { "ui-monospace, Menlo, Consolas, 'DejaVu Sans Mono', monospace" } else { "system-ui, -apple-system, 'Segoe UI', Roboto, Cantarell, sans-serif" }
+  let head = if title.isEmpty() { "" } else { "<h1>{escapeHTML(title)}</h1>" }
+  return "<!doctype html><html><head><meta charset=\"utf-8\"><title>{escapeHTML(title)}</title><style>" +
+    "body\{font-family:{font};font-size:11pt;line-height:1.4;margin:0}" +
+    "h1\{font-family:system-ui,sans-serif;font-size:14pt;margin:0 0 12pt}" +
+    "pre\{font:inherit;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}" +
+    "</style></head><body>{head}<pre>{escapeHTML(s)}</pre></body></html>"
+}
+
+fn escapeHTML(s: string) -> string = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
 /// Prints the page a WebView shows, as it is now (what the user has done
 /// on it, what its scripts changed), laid out for the paper the user

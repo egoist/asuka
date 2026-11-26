@@ -537,6 +537,7 @@ async fn printReceipt(receipt: string) throws -> string {
 
 - `print.file(source, job:, orientation:)` 打印 PDF 或图片（可以是路径、资源或 http(s) URL，与 `preview.show` 接受的一样）。其他类型会抛出 `print.PrintError.unsupported`，但 Windows 和 Linux 例外：Windows 上由文件所属的应用来打印，Linux 上由打印机决定接受什么（即 CUPS 能打印的内容）。
 - `print.html(markup, job:, orientation:)` 打印 HTML 标记，分页方式与浏览器打印网页相同：CSS 的 `@media print` 和 `break-before` 都会生效。图片和样式要用绝对 URL（`https:`、`data:`）。
+- `print.text(s, job:, mono:, orientation:)` 打印纯文本，就像应用里显示的报告或笔记那样：行和空行保持原样，过长的行会自动换行，`job` 作为标题显示在最前面；`mono: true` 会改用平台的等宽字体，适合按列排版的文本。
 - `print.webView(view, job:, orientation:)` 打印 `WebView` 当前显示的页面（包括用户和页面脚本对它做过的改动），按它的浏览器打印网页的方式分页：`view` 是装着这个 WebView 的 `Ref`（用 `ref:` 放进去）。如果 Ref 里没有应用正在显示的 WebView，会抛出 `print.PrintError.unsupported`。
 
 ```asuka

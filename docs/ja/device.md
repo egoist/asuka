@@ -537,6 +537,7 @@ async fn printReceipt(receipt: string) throws -> string {
 
 - `print.file(source, job:, orientation:)` は PDF か画像を印刷します（ソースは `preview.show` と同じく、パス、アセット、http(s) の URL）。それ以外のタイプは `print.PrintError.unsupported` を投げます。ただし Windows と Linux は例外です。Windows ではファイルに対応するアプリが印刷し、Linux ではプリンターが CUPS で印刷できるものを受け付けます。
 - `print.html(markup, job:, orientation:)` はマークアップを、ブラウザーがページを印刷するのと同じようにページ分けして印刷します。CSS の `@media print` と `break-before` が効きます。画像とスタイルは絶対 URL（`https:`、`data:`）から読み込みます。
+- `print.text(s, job:, mono:, orientation:)` はプレーンテキストを、アプリが表示するレポートやメモのように印刷します。行と空行はそのまま、長い行は折り返し、`job` を見出しにします。`mono: true` にすると、列にそろえたテキスト向けにプラットフォームの等幅フォントを使います。
 - `print.webView(view, job:, orientation:)` は、`WebView` が今表示しているページ（ユーザーやページのスクリプトが加えた変更も含めて）を、そのブラウザーがページを印刷するようにページ分けして印刷します。`view` は WebView を入れた `Ref`（`ref:`）です。アプリが表示している WebView を Ref が持っていなければ、`print.PrintError.unsupported` を投げます。
 
 ```asuka

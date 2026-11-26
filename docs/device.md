@@ -772,6 +772,10 @@ async fn printReceipt(receipt: string) throws -> string {
 - `print.html(markup, job:, orientation:)` prints markup, paginated as a
   browser prints a page: CSS's `@media print` and `break-before` apply.
   Images and styles come from absolute URLs (`https:`, `data:`).
+- `print.text(s, job:, mono:, orientation:)` prints plain text, as an
+  app shows a report or a note: its lines and blank lines as they are,
+  long ones wrapped, under `job` as a heading; `mono: true` sets it in
+  the platform's fixed-width font, for text in columns.
 - `print.webView(view, job:, orientation:)` prints the page a `WebView`
   shows, as it is now (what the user and its scripts did on it),
   paginated as its browser prints a page: `view` is the `Ref` the
