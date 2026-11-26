@@ -10,7 +10,8 @@ import (
 // A disabled control the web host dims is at one opacity, whatever its
 // kind (e2e/testdata/disabled-opacity): a button, a field, a switch, a
 // segmented control's choices, a stepper's buttons, a picker, a wheel, a
-// date picker and a color picker all at the 0.5 a disabled view has.
+// date picker and a color picker all at the 0.5 a disabled view has. A
+// picker and a wheel are dimmed by their box, which draws their look.
 func TestDisabledOpacityWeb(t *testing.T) {
 	browser := chrome()
 	if browser == "" {
@@ -22,6 +23,7 @@ func TestDisabledOpacityWeb(t *testing.T) {
 	// drawn yet
 	js := `(() => {
 	  const o = (el) => el && el.disabled ? getComputedStyle(el).opacity : null;
+	  const box = (el) => el && el.disabled ? getComputedStyle(el.closest(".asuka-select-box")).opacity : null;
 	  const buttons = [...document.querySelectorAll(".asuka-button")];
 	  const selects = document.querySelectorAll("select.asuka-select");
 	  return {
@@ -31,8 +33,8 @@ func TestDisabledOpacityWeb(t *testing.T) {
 	    switch: o(document.querySelector(".asuka-switch")),
 	    segment: o(document.querySelector(".asuka-segmented button")),
 	    stepper: o(document.querySelector(".asuka-stepper button")),
-	    picker: o(selects[0]),
-	    wheel: o(selects[1]),
+	    picker: box(selects[0]),
+	    wheel: box(selects[1]),
 	    date: o(document.querySelector(".asuka-date")),
 	    color: o(document.querySelector(".asuka-color")),
 	  };
