@@ -234,7 +234,7 @@ names what's missing.
 | `platform/appicon` | `set` throws `notAvailable`: the launcher shows the desktop file's icon |
 | `platform/sensors` | iio-sensor-proxy (convertibles, tablets): the light sensor, in lux, and the accelerometer's orientation as 1 g along the axis that's up, as it turns. No others: `available` is false, and the streams and `steps` throw `SensorError.notAvailable` |
 | `platform/contacts`, `platform/calendar` | Evolution Data Server's address books and calendars (GNOME Contacts', GNOME Calendar's, the online accounts'): access is `.allowed` (calendars' `.full`) when it has one; `pick` is a dialog of the contacts with a search field; `add` asks, then saves in the default address book or the event's calendar. Without it: contacts' access is `.denied`, calendars' `.writeOnly`; `add` opens a vCard or an iCalendar file in the user's contacts or calendar app, and answers false; `contacts.pick` throws |
-| `platform/photos`' library, `platform/appleauth`, `platform/transcribe`, `platform/widget`, `platform/liveactivity` | None on Linux: the library's access is `.denied`; `appleauth.available()` is false and its button shows nothing; `transcribe` throws `TranscribeError.notAvailable`, `liveactivity.start` "liveactivity: not available"; `widget.set` does nothing. `platform/splash` has nothing to hold |
+| `platform/photos`' library, `platform/appleauth`, `platform/widget`, `platform/liveactivity` | None on Linux: the library's access is `.denied`; `appleauth.available()` is false and its button shows nothing; `liveactivity.start` "liveactivity: not available"; `widget.set` does nothing. `platform/splash` has nothing to hold |
 | `platform/purchase` | No store: `available()` is false, the rest throw `PurchaseError.notAvailable` |
 | `platform/icloud` | No iCloud: "icloud: not available" |
 | `platform/biometric`, `platform/integrity`, `platform/agerange`, `platform/push` | None on Linux: not available, not supported. `platform/review` does nothing; `platform/tracking` answers `.allowed` |
@@ -2423,9 +2423,11 @@ its own recognizer where it runs on the device (Chrome 139 and later),
 which hears the recording played into it, so a file takes about its own
 length and has no `segments`; Windows' desktop speech recognizer (SAPI's
 dictation: English's comes with Windows, another language's with its
-language pack's speech recognition). Where the device can't (Linux, an
-older Android, a browser without one, a Windows language with no
-recognizer), it throws
+language pack's speech recognition); on Linux, PocketSphinx, the
+recognizer the distributions package (`pocketsphinx-en-us` on Debian
+and Ubuntu), in English. Where the device can't (an older Android, a
+browser without one, a Windows language with no recognizer, Linux
+without PocketSphinx or in another language), it throws
 `TranscribeError.notAvailable` rather than send the sound to a server;
 `.downloading` while the language's model comes (a browser starts
 installing it then).

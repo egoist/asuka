@@ -608,3 +608,81 @@ component Root {
 		t.Fatalf("click region %v %v %v %v (%v): want one 60×30, at x 30 or past the window's own inset, below the text:\n%s", x, y, w, h, err, dump)
 	}
 }
+
+// platform/transcribe on Linux: PocketSphinx, where the distribution has
+// it and its English model (pocketsphinx-en-us), hears a recording of a
+// spoken sentence (the Windows tests', made by macOS's say), with its
+// words' timing; a language without a model isn't available.
+func TestTranscribe(t *testing.T) {
+	onLinux(t)
+	if _, err := os.Stat("/usr/share/pocketsphinx/model/en-us/en-us.lm.bin"); err != nil {
+		t.Skip("no PocketSphinx English model (pocketsphinx-en-us)")
+	}
+	dir := t.TempDir()
+	wav, err := os.ReadFile(filepath.Join("..", "windows", "testdata", "speech.wav"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(dir, "speech.wav"), wav, 0o644)
+	exe := filepath.Join(dir, "app")
+	src := `
+import std/fs
+import platform/transcribe
+
+component Root {
+  state check = "?"
+  state heard = "?"
+  state other = "?"
+  Column {
+    Text("check: {check}")
+    Text("heard: {heard}")
+    Text("other: {other}")
+  }
+  task {
+    do {
+      let a = try await transcribe.check("en-US")
+      check = "{a.onDevice} {a.language}"
+      let r = try await transcribe.file(fs.join(["DIR", "speech.wav"]))
+      let timed = r.segments.count() > 0 && r.segments.all(s => s.start >= 0 && s.duration > 0 && s.start + s.duration < 3.5)
+      heard = "{r.text.lower()} | {r.language} | timed:{timed}"
+    } catch e {
+      heard = e.message
+    }
+    do {
+      let _ = try await transcribe.file(fs.join(["DIR", "speech.wav"]), language: "is-IS")
+      other = "heard"
+    } catch e {
+      other = e.message
+    }
+    try? fs.write(fs.join(["DIR", "transcribed"]), data: "done".bytes())
+  }
+}
+
+app { Root() }
+`
+	res := compile.Files(map[string][]byte{"app.asuka": []byte(strings.ReplaceAll(src, "DIR", dir))}, &compile.Options{Platform: "linux"})
+	if err := res.Err(); err != nil {
+		t.Fatalf("the app doesn't compile:\n%v", err)
+	}
+	if err := appbuild.LinuxExe(target(), appbuild.StripTests(res.Module), []string{filepath.Join("..", "..", "sdk", "transcribe")}, exe); err != nil {
+		t.Fatal(err)
+	}
+	d := script(t, dir, exe, "waitfor:"+filepath.Join(dir, "transcribed"), "snap:done")
+	dump := d["done"]
+	t.Logf("%s", dump)
+	shows(t, dump, "transcribed", []string{"check: true en-US", "other: TranscribeError.notAvailable"})
+	i := strings.Index(dump, "heard: ")
+	line := dump[i:]
+	if j := strings.IndexByte(line, '\n'); j >= 0 {
+		line = line[:j]
+	}
+	n := 0
+	for _, w := range []string{"quick", "brown", "fox", "jumps", "over", "lazy", "dog"} {
+		if strings.Contains(line, w) {
+			n++
+		}
+	}
+	if n < 4 || !strings.Contains(line, "| en-US | timed:true") {
+		t.Errorf("%s: heard %d of 7 words, or no language or timing", line, n)
+	}
+}

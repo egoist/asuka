@@ -975,6 +975,10 @@ typedef struct _GstObject GstObject;
 typedef struct _GstElement GstElement;
 typedef struct _GstElementFactory GstElementFactory;
 typedef struct _GstBus GstBus;
+// GstMessageType's bits the packages ask the bus for.
+typedef unsigned int GstMessageType;
+#define GST_MESSAGE_EOS (1u << 0)
+#define GST_MESSAGE_ERROR (1u << 1)
 typedef struct _GstMessage GstMessage;
 typedef struct _GstEvent GstEvent;
 typedef struct _GstCaps GstCaps;
@@ -982,6 +986,13 @@ typedef struct _GstStructure GstStructure;
 typedef struct _GstSample GstSample;
 typedef struct _GstBuffer GstBuffer;
 typedef struct _GstAppSink GstAppSink;
+
+// PocketSphinx's, opaque (5's and 5prealpha's alike; a config is a
+// ps_config_t in 5, a cmd_ln_t before).
+typedef struct ps_decoder_s ps_decoder_t;
+typedef struct ps_seg_s ps_seg_t;
+typedef struct ps_config_s ps_config_t;
+typedef struct arg_s arg_t;
 typedef guint64 GstClockTime;
 #define GST_CLOCK_TIME_NONE ((GstClockTime)-1)
 #define GST_SECOND ((gint64)1000000000)
@@ -1076,6 +1087,8 @@ enum {
 	ASUKA_LIB_SHUMATE,  // libshumate: maps
 	ASUKA_LIB_GEOCODE,  // geocode-glib: place names
 	ASUKA_LIB_XTST,     // libXtst: the host's automation's real input (X11)
+	ASUKA_LIB_POCKETSPHINX,  // CMU PocketSphinx: speech recognition (5, or 5prealpha's .so.3)
+	ASUKA_LIB_SPHINXBASE,    // its 5prealpha's configuration (cmd_ln)
 	ASUKA_LIB_COUNT,
 };
 

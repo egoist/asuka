@@ -163,7 +163,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/appicon` | `set` 抛出 `notAvailable`：启动器显示的是 desktop 文件里的图标 |
 | `platform/sensors` | iio-sensor-proxy（适用于二合一设备、平板）：光线传感器（单位为 lux），以及由加速度计得出的方向，表示为沿朝上那条轴的 1 g，随设备转动而变化。没有其他传感器：`available` 为 false，各个流和 `steps` 都会抛出 `SensorError.notAvailable` |
 | `platform/contacts`、`platform/calendar` | Evolution Data Server 中的通讯录和日历（来自 GNOME 通讯录、GNOME 日历和在线账户）：有它时访问权限为 `.allowed`（日历为 `.full`）；`pick` 是一个带搜索框的联系人对话框；`add` 先确认，再保存到默认通讯录或该日程所属的日历。没有它时：通讯录的访问权限为 `.denied`，日历为 `.writeOnly`；`add` 会在用户的联系人或日历应用中打开一个 vCard 或 iCalendar 文件，并返回 false；`contacts.pick` 会抛出错误 |
-| `platform/photos` 的照片库、`platform/appleauth`、`platform/transcribe`、`platform/widget`、`platform/liveactivity` | Linux 上都没有：照片库的访问权限为 `.denied`；`appleauth.available()` 为 false，它的按钮什么也不显示；`transcribe` 抛出 `TranscribeError.notAvailable`，`liveactivity.start` 抛出 "liveactivity: not available"；`widget.set` 什么也不做。`platform/splash` 也没有启动屏可以保持 |
+| `platform/photos` 的照片库、`platform/appleauth`、`platform/widget`、`platform/liveactivity` | Linux 上都没有：照片库的访问权限为 `.denied`；`appleauth.available()` 为 false，它的按钮什么也不显示；`liveactivity.start` 抛出 "liveactivity: not available"；`widget.set` 什么也不做。`platform/splash` 也没有启动屏可以保持 |
 | `platform/purchase` | 没有应用商店：`available()` 为 false，其余调用抛出 `PurchaseError.notAvailable` |
 | `platform/icloud` | 没有 iCloud："icloud: not available" |
 | `platform/biometric`、`platform/integrity`、`platform/agerange`、`platform/push` | Linux 上都没有：返回不可用或不受支持。`platform/review` 什么也不做；`platform/tracking` 返回 `.allowed` |
@@ -1639,7 +1639,7 @@ async fn caption(recording: string) throws -> string {
 }
 ```
 
-在 iOS 和 Mac 上用的是 Speech 框架，并要求只在设备上处理；在 Android 上是系统的设备端识别器（Android 13 及以上）；在浏览器中，是浏览器自己在设备上运行的识别器（Chrome 139 及以上），录音会被播放给它听，所以识别一个文件大约需要它本身的时长，结果也没有 `segments`；在 Windows 上是桌面语音识别器（SAPI 的听写：英语的随 Windows 附带，其他语言的随该语言包的语音识别功能安装）。设备做不到时（Linux、较旧的 Android、没有这种识别器的浏览器、Windows 上没有识别器的语言），它会抛出 `TranscribeError.notAvailable`，而不是把声音发到服务器；语言模型还在下载时抛出 `.downloading`（浏览器这时会开始安装它）。
+在 iOS 和 Mac 上用的是 Speech 框架，并要求只在设备上处理；在 Android 上是系统的设备端识别器（Android 13 及以上）；在浏览器中，是浏览器自己在设备上运行的识别器（Chrome 139 及以上），录音会被播放给它听，所以识别一个文件大约需要它本身的时长，结果也没有 `segments`；在 Windows 上是桌面语音识别器（SAPI 的听写：英语的随 Windows 附带，其他语言的随该语言包的语音识别功能安装）。在 Linux 上是各发行版打包的识别器 PocketSphinx（Debian 和 Ubuntu 上的 `pocketsphinx-en-us`），支持英语。设备做不到时（较旧的 Android、没有这种识别器的浏览器、Windows 上没有识别器的语言、没有安装 PocketSphinx 或使用其他语言的 Linux），它会抛出 `TranscribeError.notAvailable`，而不是把声音发到服务器；语言模型还在下载时抛出 `.downloading`（浏览器这时会开始安装它）。
 
 `transcribe.listen(language)` 用于听写：它监听麦克风，边说边给出识别结果，每次一个 `Heard`，其中的 `text` 是到目前为止的全部文字（最后几个词可能还会变）。最后一个是 `final` 的：调用了 `transcribe.finish()`，或者识别器不再听到说话时就会给出。停止读取它的任务会立刻停止监听，之后的内容不再保留。第一次使用时会请求麦克风和语音识别的权限；它与 `file` 一样在设备上运行，支持的平台也相同。
 

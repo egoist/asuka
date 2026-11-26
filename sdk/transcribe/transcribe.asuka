@@ -4,9 +4,10 @@
 // later); the browser's, where it has one on the device (Chrome 139 and
 // later: the Web Speech API's processLocally); Windows' desktop speech
 // recognizer (SAPI's dictation, English's with Windows, another
-// language's with its language pack). Where the device can't (Linux has
-// no recognizer), it says so (TranscribeError.notAvailable) rather than
-// sending the sound to a server. An app that imports it is given the
+// language's with its language pack); on Linux, PocketSphinx where the
+// distribution has it, in English. Where the device can't, it says so
+// (TranscribeError.notAvailable) rather than sending the sound to a
+// server. An app that imports it is given the
 // permissions it needs: iOS's speech recognition, with its purpose
 // string (asuka.toml's ios.usage.NSSpeechRecognitionUsageDescription says
 // it better), and on Android the microphone's, which its recognizer asks

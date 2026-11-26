@@ -1265,6 +1265,33 @@ SYM(GST, void, gst_mini_object_unref, (gpointer mini_object))
 SYM(GSTAPP, GstSample *, gst_app_sink_pull_sample, (GstAppSink *appsink))
 SYM(GSTAPP, GstSample *, gst_app_sink_try_pull_sample, (GstAppSink *appsink, GstClockTime timeout))
 SYM(GSTAPP, GstSample *, gst_app_sink_try_pull_preroll, (GstAppSink *appsink, GstClockTime timeout))
+SYM(GSTAPP, gboolean, gst_app_sink_is_eos, (GstAppSink *appsink))
+SYM(GST, GstMessage *, gst_bus_pop_filtered, (GstBus *bus, GstMessageType types))
+
+// ---- Native packages: PocketSphinx (transcribe), 5 or 5prealpha ----
+// Both: the decoder. 5prealpha's ps_seg_iter takes a score's pointer too,
+// which 5's ignores (an argument more is harmless in C's calls).
+SYM(POCKETSPHINX, ps_decoder_t *, ps_init, (ps_config_t *config))
+SYM(POCKETSPHINX, int, ps_free, (ps_decoder_t *ps))
+SYM(POCKETSPHINX, int, ps_start_utt, (ps_decoder_t *ps))
+SYM(POCKETSPHINX, int, ps_process_raw, (ps_decoder_t *ps, const gint16 *data, size_t n_samples, int no_search, int full_utt))
+SYM(POCKETSPHINX, int, ps_end_utt, (ps_decoder_t *ps))
+SYM(POCKETSPHINX, const char *, ps_get_hyp, (ps_decoder_t *ps, gint32 *out_best_score))
+SYM(POCKETSPHINX, guint8, ps_get_in_speech, (ps_decoder_t *ps))
+SYM(POCKETSPHINX, ps_seg_t *, ps_seg_iter, (ps_decoder_t *ps, gint32 *out_best_score))
+SYM(POCKETSPHINX, ps_seg_t *, ps_seg_next, (ps_seg_t *seg))
+SYM(POCKETSPHINX, const char *, ps_seg_word, (ps_seg_t *seg))
+SYM(POCKETSPHINX, void, ps_seg_frames, (ps_seg_t *seg, int *out_sf, int *out_ef))
+SYM(POCKETSPHINX, void, ps_seg_free, (ps_seg_t *seg))
+SYM(POCKETSPHINX, const arg_t *, ps_args, (void))
+// 5's configuration (NULL in 5prealpha's).
+SYM(POCKETSPHINX, ps_config_t *, ps_config_init, (const arg_t *defn))
+SYM(POCKETSPHINX, const char *, ps_config_set_str, (ps_config_t *config, const char *name, const char *val))
+SYM(POCKETSPHINX, void, ps_default_search_args, (ps_config_t *config))
+SYM(POCKETSPHINX, int, ps_config_free, (ps_config_t *config))
+// 5prealpha's: sphinxbase's.
+SYM(SPHINXBASE, ps_config_t *, cmd_ln_init, (ps_config_t *inout_cmdln, const arg_t *defn, gint32 strict, ...))
+SYM(SPHINXBASE, int, cmd_ln_free_r, (ps_config_t *cmdln))
 
 // ---- Native packages: GTK and libadwaita besides ----
 SYM(GTK, void, gtk_picture_set_can_shrink, (GtkPicture *self, gboolean can_shrink))

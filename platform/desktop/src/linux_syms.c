@@ -48,6 +48,8 @@ static const lib_names sonames[ASUKA_LIB_COUNT] = {
 	[ASUKA_LIB_SHUMATE] = {{"libshumate-1.0.so.1", "libshumate-1.0.so"}},
 	[ASUKA_LIB_GEOCODE] = {{"libgeocode-glib-2.so.0", "libgeocode-glib.so.0", "libgeocode-glib-2.so"}},
 	[ASUKA_LIB_XTST] = {{"libXtst.so.6", "libXtst.so"}},
+	[ASUKA_LIB_POCKETSPHINX] = {{"libpocketsphinx.so.5", "libpocketsphinx.so.3", "libpocketsphinx.so"}},
+	[ASUKA_LIB_SPHINXBASE] = {{"libsphinxbase.so.3", "libsphinxbase.so"}},
 };
 
 static void *handles[ASUKA_LIB_COUNT];

@@ -145,7 +145,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 视频缩略图 | `AVAssetImageGenerator` | `expo-video-thumbnails` | ✓ `imageedit.videoFrame` |
 | 把视图存成图片 | `ImageRenderer`、`drawHierarchy` | `react-native-view-shot` | ✓ `imageedit.capture(view: ref)`：PNG 或 JPEG，由平台来画（图层、Android 的 `View`，Windows 和 Linux 上取窗口的像素；Web 上是元素的 SVG 副本） |
 | 识别图片中的文字、人脸和码 | Vision | 无 | ✓ `platform/vision`，同时给出每一项的位置（Vision；Android 上用 ML Kit，只打包进导入了它的应用；Windows 的 OCR 和人脸检测；Linux 上用 Tesseract 识别文字，不支持人脸；浏览器有 Shape Detection API 时用它） |
-| 语音转文字 | Speech（`SFSpeechRecognizer`） | 社区方案（`expo-speech-recognition`） | ◐ `platform/transcribe`（识别一段录音，只在设备上进行：iOS 和 macOS 上用 Speech，Android 13 的设备端识别器，浏览器在设备上运行的识别器（Chrome 139 及以上）；Windows 的桌面语音识别器（SAPI）；`transcribe.listen`：从麦克风边说边识别的听写；Linux 没有识别器，不支持） |
+| 语音转文字 | Speech（`SFSpeechRecognizer`） | 社区方案（`expo-speech-recognition`） | ✓ `platform/transcribe`（识别一段录音，只在设备上进行：iOS 和 macOS 上用 Speech，Android 13 的设备端识别器，浏览器在设备上运行的识别器（Chrome 139 及以上）；Windows 的桌面语音识别器（SAPI），Linux 上发行版提供的 PocketSphinx（英语）；`transcribe.listen`：从麦克风边说边识别的听写） |
 | 照片图库 | PhotoKit | `expo-media-library` | ✓ `platform/photos`：权限、列出照片、缩略图、原始文件（PhotoKit、MediaStore） |
 | 文字转语音 | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech`（队列、声音、音调、语速、暂停；AVSpeechSynthesizer、TextToSpeech、SAPI、Speech Dispatcher、`speechSynthesis`） |
 | 通讯录 | Contacts、ContactsUI | `expo-contacts` | ✓ `platform/contacts`（`pick()` 和新建联系人界面不需要权限；访问通讯录需要权限） |
@@ -240,4 +240,4 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 
 ## 尚未支持
 
-Linux 上的语音转文字。
+上面各表中没有完全缺失的功能：标为 ◐ 的行或行内的说明会写明还缺什么。

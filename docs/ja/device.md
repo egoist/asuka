@@ -163,7 +163,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/appicon` | `set` は `notAvailable` を投げます。ランチャーは desktop ファイルのアイコンを表示します |
 | `platform/sensors` | iio-sensor-proxy（2-in-1 PC、タブレット）を使います。照度センサーをルクス単位で、加速度センサーの向きを、上を向いている軸に沿った 1 g として、向きが変わるたびに伝えます。ほかのセンサーはないので、`available` は false で、ストリームと `steps` は `SensorError.notAvailable` を投げます |
 | `platform/contacts`、`platform/calendar` | Evolution Data Server のアドレス帳とカレンダー（GNOME Contacts、GNOME Calendar、オンラインアカウントのもの）を使います。アドレス帳やカレンダーがあれば、アクセスは `.allowed`（カレンダーは `.full`）です。`pick` は検索欄付きの連絡先のダイアログです。`add` は確認してから、既定のアドレス帳またはイベントのカレンダーに保存します。Evolution Data Server がない場合、連絡先のアクセスは `.denied`、カレンダーのアクセスは `.writeOnly` です。`add` は vCard か iCalendar のファイルをユーザーの連絡先アプリやカレンダーアプリで開いて false を返し、`contacts.pick` はエラーを投げます |
-| `platform/photos` のライブラリ、`platform/appleauth`、`platform/transcribe`、`platform/widget`、`platform/liveactivity` | Linux にはありません。ライブラリのアクセスは `.denied` です。`appleauth.available()` は false で、そのボタンは何も表示しません。`transcribe` は `TranscribeError.notAvailable` を、`liveactivity.start` は「liveactivity: not available」を投げます。`widget.set` は何もしません。`platform/splash` には保持しておく起動画面がありません |
+| `platform/photos` のライブラリ、`platform/appleauth`、`platform/widget`、`platform/liveactivity` | Linux にはありません。ライブラリのアクセスは `.denied` です。`appleauth.available()` は false で、そのボタンは何も表示しません。`liveactivity.start` は「liveactivity: not available」を投げます。`widget.set` は何もしません。`platform/splash` には保持しておく起動画面がありません |
 | `platform/purchase` | ストアはありません。`available()` は false で、ほかの呼び出しは `PurchaseError.notAvailable` を投げます |
 | `platform/icloud` | iCloud はありません。「icloud: not available」になります |
 | `platform/biometric`、`platform/integrity`、`platform/agerange`、`platform/push` | Linux にはありません。利用不可、非対応と答えます。`platform/review` は何もせず、`platform/tracking` は `.allowed` と答えます |
@@ -1639,7 +1639,7 @@ async fn caption(recording: string) throws -> string {
 }
 ```
 
-iOS と Mac では Speech フレームワークにデバイス上で処理するよう求め、Android ではデバイス上の認識エンジン（Android 13 以降）を使います。ブラウザーでは、デバイス上で動くブラウザー自身の認識エンジン（Chrome 139 以降）に録音を再生して聞かせるので、ファイル一つにほぼその長さの時間がかかり、`segments` はありません。Windows ではデスクトップ音声認識（SAPI の音声入力。英語は Windows に付属し、ほかの言語はその言語パックの音声認識と一緒に入ります）を使います。デバイスでできないとき（Linux、古い Android、その認識エンジンのないブラウザー、認識エンジンのない Windows の言語）は、音声をサーバーに送る代わりに `TranscribeError.notAvailable` を投げます。言語のモデルをダウンロード中のときは `.downloading` です（ブラウザーはそのときインストールを始めます）。
+iOS と Mac では Speech フレームワークにデバイス上で処理するよう求め、Android ではデバイス上の認識エンジン（Android 13 以降）を使います。ブラウザーでは、デバイス上で動くブラウザー自身の認識エンジン（Chrome 139 以降）に録音を再生して聞かせるので、ファイル一つにほぼその長さの時間がかかり、`segments` はありません。Windows ではデスクトップ音声認識（SAPI の音声入力。英語は Windows に付属し、ほかの言語はその言語パックの音声認識と一緒に入ります）を使います。Linux ではディストリビューションがパッケージにしている認識エンジン PocketSphinx（Debian と Ubuntu では `pocketsphinx-en-us`）を英語で使います。デバイスでできないとき（古い Android、その認識エンジンのないブラウザー、認識エンジンのない Windows の言語、PocketSphinx がないかほかの言語の Linux）は、音声をサーバーに送る代わりに `TranscribeError.notAvailable` を投げます。言語のモデルをダウンロード中のときは `.downloading` です（ブラウザーはそのときインストールを始めます）。
 
 `transcribe.listen(language)` は音声入力です。マイクを聞き、話すそばから結果を返します。毎回の `Heard` の `text` には、それまでのテキストがすべて入っています（最後のいくつかの単語は、まだ変わることがあります）。最後の一つは `final` です。`transcribe.finish()` を呼んだとき、または認識エンジンが話し声を聞かなくなったときに来ます。読んでいるタスクを止めると、すぐに聞くのをやめ、それ以降は何も残しません。最初に使うときにマイクと音声認識の許可を求めます。`file` と同じく、同じプラットフォームでデバイス上で動きます。
 

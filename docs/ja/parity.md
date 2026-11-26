@@ -145,7 +145,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 動画のサムネイル | `AVAssetImageGenerator` | `expo-video-thumbnails` | ✓ `imageedit.videoFrame` |
 | ビューを画像にする | `ImageRenderer`、`drawHierarchy` | `react-native-view-shot` | ✓ `imageedit.capture(view: ref)`：PNG か JPEG。プラットフォームが描く（レイヤー、Android の `View`、Windows と Linux ではウィンドウのピクセル、Web では要素の SVG のコピー） |
 | 画像の中のテキスト、顔、コード | Vision | なし | ✓ `platform/vision`、それぞれの位置とともに（Vision。Android では ML Kit で、インポートしたアプリにだけ含まれる。Windows の OCR と顔検出。Linux では Tesseract のテキストのみで顔はない。ブラウザーでは Shape Detection API があればそれ） |
-| 音声のテキスト化 | Speech（`SFSpeechRecognizer`） | コミュニティ製（`expo-speech-recognition`） | ◐ `platform/transcribe`（録音をデバイス上だけで：iOS と macOS では Speech、Android 13 のデバイス上の認識、ブラウザーのデバイス上の認識（Chrome 139 以降）。Windows のデスクトップ音声認識（SAPI）。`transcribe.listen`：マイクからの話すそばからの音声入力。Linux には認識エンジンがないため非対応） |
+| 音声のテキスト化 | Speech（`SFSpeechRecognizer`） | コミュニティ製（`expo-speech-recognition`） | ✓ `platform/transcribe`（録音をデバイス上だけで：iOS と macOS では Speech、Android 13 のデバイス上の認識、ブラウザーのデバイス上の認識（Chrome 139 以降）。Windows のデスクトップ音声認識（SAPI）、Linux ではディストリビューションの PocketSphinx（英語）。`transcribe.listen`：マイクからの話すそばからの音声入力） |
 | 写真ライブラリ | PhotoKit | `expo-media-library` | ✓ `platform/photos`：許可、一覧、サムネイル、元のファイル（PhotoKit、MediaStore） |
 | 読み上げ | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech`（キュー、声、ピッチ、速度、一時停止。AVSpeechSynthesizer、TextToSpeech、SAPI、Speech Dispatcher、`speechSynthesis`） |
 | 連絡先 | Contacts、ContactsUI | `expo-contacts` | ✓ `platform/contacts`（`pick()` と新規連絡先の画面は許可なしで、アドレス帳は許可を得て） |
@@ -240,4 +240,4 @@ Web ビューのアプリは、HTML と CSS で書いたとおりに、どのシ
 
 ## 未対応のもの
 
-Linux では音声のテキスト化が未対応です。
+上の表に、まったくない機能はありません。◐ の行や行の中の注記に、足りないものを書いています。
