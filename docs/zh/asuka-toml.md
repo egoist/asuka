@@ -193,7 +193,7 @@ phrases = ["New note in ${app}"]
 | `url` | 字符串 | 必填 | 打开应用时使用的 URL：属于应用 `scheme` 的 URL，或者 `links` 中某个域名的链接。 |
 | `symbol` | 字符串 | 无 | SF Symbol 的名称，与 `Symbol` 接受的一样。 |
 | `phrases` | 字符串数组 | `"<title> in ${app}"` | Siri 能识别的说法，每句都要包含代表应用名称的 `${app}`，也可以包含 `options` 参数的 `${name}`。仅限 iOS。 |
-| `params` | 表数组 | 无 | 快捷方式要询问的值，每个填进 `url` 中对应的 `{name}`：`name`、`title`、`type`（`string`、`int`、`float`、`bool`、`options`）、`prompt`、`optional`、`default`，以及 `options` 参数的 `options`（`{ value, title }`）。Android 用默认值打开 `url`。见[参数](device.md#参数)。 |
+| `params` | 表数组 | 无 | 快捷方式要询问的值，每个填进 `url` 中对应的 `{name}`：`name`、`title`、`type`（`string`、`int`、`float`、`bool`、`options`、`entity`）、`prompt`、`optional`、`default`、`options` 参数的 `options`（`{ value, title }`），以及 `entity` 参数的 `entity`：它的种类，也就是应用自己的那类数据（`platform/shortcuts`）。Android 用默认值打开 `url`。见[参数](device.md#参数)。 |
 
 见[快捷方式](device.md#快捷方式siri聚焦搜索与启动器)。
 

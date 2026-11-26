@@ -95,6 +95,10 @@ type shortcutParam struct {
 	Default any `json:"default"`
 	// Options are an options param's values, and their titles.
 	Options []shortcutOption `json:"options"`
+	// Entity is an entity param's kind: the app's own things of it
+	// (platform/shortcuts' setEntities), which Siri and the Shortcuts app
+	// offer; its {name} in the URL is the chosen one's id.
+	Entity string `json:"entity"`
 }
 
 type shortcutOption struct {
@@ -102,7 +106,7 @@ type shortcutOption struct {
 	Title string `json:"title"`
 }
 
-var shortcutParamTypes = []string{"string", "int", "float", "bool", "options"}
+var shortcutParamTypes = []string{"string", "int", "float", "bool", "options", "entity"}
 
 // defaultText is p's default as the URL has it ("": none).
 func (p shortcutParam) defaultText() string {
@@ -141,6 +145,12 @@ func (s *shortcutConfig) checkParam(p *shortcutParam, seen map[string]bool) erro
 	}
 	if !strings.Contains(s.URL, "{"+p.Name+"}") {
 		return fmt.Errorf("shortcut %s: param %s isn't in its url (put {%s} where its value goes)", s.ID, p.Name, p.Name)
+	}
+	if (p.Type == "entity") != (p.Entity != "") || p.Entity != "" && !identifier.MatchString(p.Entity) {
+		return fmt.Errorf("shortcut %s: param %s: an entity param names its kind (entity = \"note\": letters, digits and _), and only it does", s.ID, p.Name)
+	}
+	if p.Type == "entity" && p.Default != nil {
+		return fmt.Errorf("shortcut %s: param %s: an entity param has no default (the app's things change)", s.ID, p.Name)
 	}
 	if (p.Type == "options") != (len(p.Options) > 0) {
 		return fmt.Errorf("shortcut %s: param %s: options are an options param's, which has at least one", s.ID, p.Name)
@@ -188,6 +198,29 @@ func (s shortcutConfig) staticURL() string {
 	u := s.URL
 	for _, p := range s.Params {
 		u = strings.ReplaceAll(u, "{"+p.Name+"}", url.QueryEscape(p.defaultText()))
+	}
+	return u
+}
+
+// entityParam is the shortcut's entity param (nil: none): Android's
+// launcher has a shortcut of its own for each of the app's things.
+func (s shortcutConfig) entityParam() *shortcutParam {
+	for i := range s.Params {
+		if s.Params[i].Type == "entity" {
+			return &s.Params[i]
+		}
+	}
+	return nil
+}
+
+// entityURL is URL with the entity param's {name} kept, for its things'
+// ids, and the other params' defaults in their places.
+func (s shortcutConfig) entityURL() string {
+	u := s.URL
+	for _, p := range s.Params {
+		if p.Type != "entity" {
+			u = strings.ReplaceAll(u, "{"+p.Name+"}", url.QueryEscape(p.defaultText()))
+		}
 	}
 	return u
 }
@@ -265,8 +298,8 @@ func (c *appConfig) checkWidgets() error {
 					continue
 				}
 				i := slices.IndexFunc(s.Params, func(q shortcutParam) bool { return q.Name == m[1] })
-				if i < 0 || s.Params[i].Type != "options" {
-					return fmt.Errorf("shortcut %s: phrase %q has ${%s}, which isn't an options param (Siri hears an option's title; it can't hear any text)", s.ID, p, m[1])
+				if i < 0 || s.Params[i].Type != "options" && s.Params[i].Type != "entity" {
+					return fmt.Errorf("shortcut %s: phrase %q has ${%s}, which isn't an options or entity param (Siri hears an option's or an entity's title; it can't hear any text)", s.ID, p, m[1])
 				}
 			}
 		}
@@ -552,6 +585,59 @@ private func asukaEscape(_ s: String) -> String {
 }
 
 `)
+	// Each entity kind's AppEntity and its query: the app's things of it,
+	// as platform/shortcuts' setEntities kept them in its defaults (App
+	// Intents run in the app's process).
+	kinds := map[string]bool{}
+	for _, s := range c.Shortcuts {
+		for _, p := range s.Params {
+			if p.Type != "entity" || kinds[p.Entity] {
+				continue
+			}
+			kinds[p.Entity] = true
+			fmt.Fprintf(&b, `struct AsukaEntity_%[1]s: AppEntity {
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: %[2]s)
+    static let defaultQuery = AsukaEntityQuery_%[1]s()
+    let id: String
+    let title: String
+    let subtitle: String
+    var displayRepresentation: DisplayRepresentation {
+        subtitle.isEmpty ? DisplayRepresentation(title: "\(title)") : DisplayRepresentation(title: "\(title)", subtitle: "\(subtitle)")
+    }
+}
+
+struct AsukaEntityQuery_%[1]s: EntityStringQuery {
+    /// The app's things of the kind, as it last set them.
+    static func all() -> [AsukaEntity_%[1]s] {
+        guard let data = UserDefaults.standard.data(forKey: %[3]s),
+              let items = try? JSONSerialization.jsonObject(with: data) as? [[String: String]] else { return [] }
+        return items.compactMap { i in
+            guard let id = i["id"] else { return nil }
+            return AsukaEntity_%[1]s(id: id, title: i["title"] ?? id, subtitle: i["subtitle"] ?? "")
+        }
+    }
+    func entities(for identifiers: [String]) async throws -> [AsukaEntity_%[1]s] {
+        Self.all().filter { identifiers.contains($0.id) }
+    }
+    func entities(matching string: String) async throws -> [AsukaEntity_%[1]s] {
+        Self.all().filter { $0.title.localizedCaseInsensitiveContains(string) }
+    }
+    func suggestedEntities() async throws -> [AsukaEntity_%[1]s] { Self.all() }
+}
+
+`, p.Entity, swiftString(p.Title), swiftString("asuka.entities."+p.Entity))
+		}
+	}
+	if len(kinds) > 0 {
+		// What platform/shortcuts calls (by name: the host is compiled
+		// before the app) once the entities change, so Siri's phrases
+		// that name them follow.
+		b.WriteString(`@objc(AsukaShortcutsBridge) final class AsukaShortcutsBridge: NSObject {
+    @objc static func update() { AsukaAppShortcuts.updateAppShortcutParameters() }
+}
+
+`)
+	}
 	for _, s := range c.Shortcuts {
 		for _, p := range s.Params {
 			if p.Type != "options" {
@@ -573,6 +659,9 @@ private func asukaEscape(_ s: String) -> String {
 			typ := map[string]string{"string": "String", "int": "Int", "float": "Double", "bool": "Bool"}[p.Type]
 			if p.Type == "options" {
 				typ = fmt.Sprintf("AsukaShortcut_%s_%s", s.ID, p.Name)
+			}
+			if p.Type == "entity" {
+				typ = "AsukaEntity_" + p.Entity
 			}
 			args := "title: " + swiftString(p.Title)
 			if p.Default != nil {
@@ -600,13 +689,19 @@ private func asukaEscape(_ s: String) -> String {
 		fmt.Fprintf(&b, "        %s url = %s\n", decl, swiftString(s.URL))
 		for _, p := range s.Params {
 			val := "String(describing: " + p.Name + ")"
-			if p.Type == "options" {
+			switch p.Type {
+			case "options":
 				val = p.Name + ".rawValue"
+			case "entity":
+				val = p.Name + ".id"
 			}
 			if p.Default == nil && p.Optional {
 				val = p.Name + ".map { String(describing: $0) } ?? \"\""
-				if p.Type == "options" {
+				switch p.Type {
+				case "options":
 					val = p.Name + "?.rawValue ?? \"\""
+				case "entity":
+					val = p.Name + "?.id ?? \"\""
 				}
 			}
 			fmt.Fprintf(&b, "        url = url.replacingOccurrences(of: %s, with: asukaEscape(%s))\n", swiftString("{"+p.Name+"}"), val)
@@ -931,6 +1026,9 @@ func (c *appConfig) androidShortcutRes(res string) error {
 	xml.WriteString("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!-- Generated by the Asuka CLI from asuka.toml's shortcuts. -->\n<shortcuts xmlns:android=\"http://schemas.android.com/apk/res/android\">\n")
 	strs.WriteString("<resources>\n")
 	for _, s := range c.Shortcuts {
+		if s.entityParam() != nil {
+			continue // one of the app's things' each, made as they're set
+		}
 		rn := resName(s.ID)
 		icon := ""
 		if d := symbolDrawable(firstOf(s.Symbol, "app.badge")); d != "" {
@@ -971,6 +1069,22 @@ func (c *appConfig) androidShortcutRes(res string) error {
 		fmt.Fprintf(&strs, "    <string name=\"asuka_shortcut_%s\">%s</string>\n", rn, xmlText(s.Title))
 	}
 	xml.WriteString("</shortcuts>\n")
+	// The shortcuts that take one of the app's things: platform/shortcuts'
+	// setEntities makes a launcher shortcut of each (its id|kind|param|
+	// title|url, the url's {param} the thing's id).
+	var ents []string
+	for _, s := range c.Shortcuts {
+		if p := s.entityParam(); p != nil {
+			ents = append(ents, strings.Join([]string{s.ID, p.Entity, p.Name, s.Title, s.entityURL()}, "|"))
+		}
+	}
+	if len(ents) > 0 {
+		strs.WriteString("    <string-array name=\"asuka_entity_shortcuts\">\n")
+		for _, e := range ents {
+			fmt.Fprintf(&strs, "        <item>%s</item>\n", xmlText(e))
+		}
+		strs.WriteString("    </string-array>\n")
+	}
 	strs.WriteString("</resources>\n")
 	os.MkdirAll(filepath.Join(res, "xml"), 0o755)
 	os.MkdirAll(filepath.Join(res, "values"), 0o755)

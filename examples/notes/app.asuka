@@ -13,6 +13,7 @@ import platform/dialog
 import std/fs
 import platform/hotkey
 import platform/shell
+import platform/shortcuts
 import std/sqlite
 import std/url
 import ./model.{Note, openDB, search}
@@ -51,10 +52,14 @@ async fn export(notes: [Note]) {
 }
 
 app {
-  // asukanotes://add?text=... adds a note (asuka.toml's scheme).
+  // asukanotes://add?text=... adds a note (asuka.toml's scheme);
+  // asukanotes://done/<id> marks one done (the Mark Done shortcut's).
   on openURL(raw) {
     if let u = url.parse(raw) {
       if u.host == "add" { await addNote(u.query("text") ?? "") }
+      if u.host == "done", let id = u.path.replace("/", "").toInt() {
+        await write("update notes set done = 1 where id = ?", [id])
+      }
     }
   }
   Window {
@@ -87,6 +92,13 @@ screen NotesScreen {
   // as the table does).
   let notes: sqlite.Live<Note> = db.watch(search, [query])
   let done = notes.rows.count(n => n.done)
+
+  // The notes not done yet, which the Mark Done shortcut offers (Siri,
+  // the Shortcuts app, Android's launcher), as they change.
+  let all: sqlite.Live<Note> = db.watch(search, [""])
+  effect {
+    shortcuts.setEntities("note", all.rows.filter(n => !n.done).map(n => shortcuts.Entity(id: "{n.id}", title: n.text)))
+  }
 
   title: "Notes"
   bind search: query

@@ -171,7 +171,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Calendars | EventKit, EventKitUI | `expo-calendar` | ✓ `platform/calendar` (the event form without permission; calendars and events with it; EventKit, the Calendar Provider) |
 | Home screen widgets | WidgetKit | `expo-widgets` | ✓ `platform/widget` and `asuka.toml`'s `widgets` (a template in every size, the lock screen's on iOS; timelines, countdowns, taps with a URL; iOS and Android) |
 | Live Activities | ActivityKit | `expo-live-activity` | ✓ `platform/liveactivity` (iOS: the lock screen and the Dynamic Island; Android 16's Live Updates; countdowns, progress, alerts, push tokens for a server's updates) |
-| App Intents, shortcuts | App Intents, App Shortcuts | — | ✓ `asuka.toml`'s `shortcuts` (iOS: App Shortcuts with Siri phrases, in Spotlight and Shortcuts, and parameters: text, numbers, switches, options a phrase can name; Android: launcher shortcuts); not app entities yet |
+| App Intents, shortcuts | App Intents, App Shortcuts | — | ✓ `asuka.toml`'s `shortcuts` (iOS: App Shortcuts with Siri phrases, in Spotlight and Shortcuts, and parameters: text, numbers, switches, options, and the app's own things (`platform/shortcuts`' entities), which a phrase can name; Android: launcher shortcuts, one for each of those things) |
 | Custom fonts | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`, `Font(family:)` |
 | Lifecycle | `scenePhase` | AppState | ✓ `onLifecycle` |
 | Launch screen | `UILaunchScreen` | `expo-splash-screen` | ✓ `asuka.toml`'s `splash`; `platform/splash` holds it while the app loads |
@@ -273,8 +273,7 @@ mouse through all of it, or none).
 
 ## Not yet
 
-In order of what apps miss most: App Intents with entities (a
-shortcut's parameters are values, not the app's own things yet), widgets
-of the app's own layout (one template for now), and over-the-air updates
+In order of what apps miss most: widgets of the app's own layout (one
+template for now), and over-the-air updates
 (EAS Update's: a release has the app compiled into it). On Windows and Linux, Lottie (`lottie.View` is an empty box).
 On Windows and Linux, speech to text.

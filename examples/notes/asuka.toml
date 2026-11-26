@@ -2,6 +2,22 @@ name = "Notes"
 id = "dev.asuka.notes"
 scheme = "asukanotes"
 
+# A shortcut that takes one of the app's notes (platform/shortcuts'
+# setEntities): "Mark Buy milk done in Notes" in Siri, the Shortcuts app's
+# action, and on Android a launcher shortcut for each note.
+[[shortcuts]]
+id = "markDone"
+title = "Mark Done"
+url = "asukanotes://done/{note}"
+symbol = "checkmark.circle"
+phrases = ["Mark ${note} done in ${app}"]
+
+[[shortcuts.params]]
+name = "note"
+title = "Note"
+type = "entity"
+entity = "note"
+
 # The notes command: the same notes from a terminal (cli/). asuka build
 # puts it in the app (the Mac's Contents/Helpers, Linux's bin, beside the
 # Windows .exe); asuka run --bin notes -- add "Buy milk" runs it.

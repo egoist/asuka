@@ -2115,6 +2115,40 @@ default = "home"
 
 「Add a task in Todo」と言うと Siri が *What's the task?* と尋ね、`todo://add?title=Buy%20milk&list=home` を開きます。「Add a work task in Todo」と言えば、タイトルだけを尋ねます。パラメーターの `type` は `string`（デフォルト）、`int`、`float`、`bool`、`options` のいずれかです。`default` のないパラメーターは Siri が尋ねます。ただし `optional` なら尋ねず、URL のその部分は空になります。フレーズには `options` のパラメーター（`${list}`）を入れられ、Siri は各選択肢のタイトルを聞き取ります。それ以外の型はフレーズに入れられません。Siri は任意のテキストを聞き取れないためです。「ショートカット」App では、どのパラメーターもアクションの項目になります。Android では、ランチャーのショートカットは各パラメーターのデフォルト値（なければ空）を入れた URL を開きます。
 
+### アプリ自身のデータ
+
+`entity` 型のパラメーターは、アプリ自身のデータを一つ受け取ります。メモ、プレイリスト、連絡先などです。アプリが `platform/shortcuts` でそれが何かを伝えると、アプリが動いていないときでも、Siri と「ショートカット」App がタイトルでそれを提示します。
+
+```toml
+[[shortcuts]]
+id = "markDone"
+title = "Mark Done"
+url = "notes://done/{note}"
+phrases = ["Mark ${note} done in ${app}"]
+
+[[shortcuts.params]]
+name = "note"
+title = "Note"
+type = "entity"
+entity = "note"
+```
+
+```asuka check
+import platform/shortcuts
+
+struct Note {
+  id: int
+  text: string
+}
+
+// メモが変わるたびに。
+fn offer(notes: [Note]) {
+  shortcuts.setEntities("note", notes.map(n => shortcuts.Entity(id: "{n.id}", title: n.text)))
+}
+```
+
+「Mark Buy milk done in Notes」と言うと `notes://done/12` が開きます。選ばれたデータの `id` が URL のパラメーターの位置に入ります。フレーズには、`options` のパラメーターと同じように entity のパラメーターを入れられます。Android では、それぞれのデータが一つずつランチャーのショートカットになり（ランチャーが表示できる数まで）、同じ URL を開きます。[`examples/notes`](../../examples/notes) がこの機能を使っています。
+
 ## 触覚フィードバック：device.haptic
 
 `device.haptic(kind)` は触覚フィードバックを再生します（iOS では UIFeedbackGenerator、Android では `performHapticFeedback`）。種類は `device.Haptic` の `.selection`、`.light`、`.medium`、`.heavy`、`.success`、`.warning`、`.error` のいずれかです。Mac ではトラックパッドのフィードバックを再生します（感圧タッチトラックパッドで、`.selection` では整列、それ以外ではレベル変更のフィードバック）。ブラウザーでは、可能な環境（Android の Chrome）で振動します。Windows と Linux には触覚フィードバックがないので、何もしません。

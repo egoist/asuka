@@ -317,3 +317,98 @@ default = 2
 		t.Error("the metadata has no options enum")
 	}
 }
+
+// An entity param: the app's own things (platform/shortcuts'
+// setEntities), an AppEntity whose query reads them from the defaults,
+// which a phrase can name; on Android a launcher shortcut each, not a
+// static one.
+func TestShortcutEntities(t *testing.T) {
+	dir := t.TempDir()
+	toml := `id = "com.example.notes"
+scheme = "notes"
+
+[[shortcuts]]
+id = "openNote"
+title = "Open Note"
+url = "notes://note/{note}?from=siri"
+phrases = ["Open ${note} in ${app}"]
+
+[[shortcuts.params]]
+name = "note"
+title = "Note"
+type = "entity"
+entity = "note"
+
+[[shortcuts]]
+id = "newNote"
+title = "New Note"
+url = "notes://new"
+`
+	os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte(toml), 0o644)
+	c, err := loadConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sw := c.shortcutsSwift()
+	for _, want := range []string{
+		"struct AsukaEntity_note: AppEntity",
+		"static let defaultQuery = AsukaEntityQuery_note()",
+		"struct AsukaEntityQuery_note: EntityStringQuery",
+		`UserDefaults.standard.data(forKey: "asuka.entities.note")`,
+		"var note: AsukaEntity_note\n",
+		`url = url.replacingOccurrences(of: "{note}", with: asukaEscape(note.id))`,
+		`"Open \(\.$note) in \(.applicationName)"`,
+		"@objc(AsukaShortcutsBridge) final class AsukaShortcutsBridge: NSObject",
+	} {
+		if !strings.Contains(sw, want) {
+			t.Errorf("no %q in\n%s", want, sw)
+		}
+	}
+	res := t.TempDir()
+	if err := c.androidShortcutRes(res); err != nil {
+		t.Fatal(err)
+	}
+	x, _ := os.ReadFile(filepath.Join(res, "xml", "asuka_shortcuts.xml"))
+	if strings.Contains(string(x), `android:shortcutId="openNote"`) || !strings.Contains(string(x), `android:shortcutId="newNote"`) {
+		t.Errorf("static shortcuts (an entity's are made as they're set):\n%s", x)
+	}
+	v, _ := os.ReadFile(filepath.Join(res, "values", "asuka_shortcuts.xml"))
+	if !strings.Contains(string(v), `<item>openNote|note|note|Open Note|notes://note/{note}?from=siri</item>`) {
+		t.Errorf("the entity shortcuts:\n%s", v)
+	}
+	for _, bad := range []string{
+		`{name = "note", type = "entity"}`,                 // no kind
+		`{name = "note", entity = "note"}`,                 // a kind on a string
+		`{name = "note", type = "entity", entity = "a-b"}`, // not an identifier
+		`{name = "note", type = "entity", entity = "n", default = "x"}`,
+	} {
+		os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte("[[shortcuts]]\nid = \"a\"\ntitle = \"A\"\nurl = \"x://a/{note}\"\nparams = ["+bad+"]\n"), 0o644)
+		if _, err := loadConfig(dir); err == nil {
+			t.Errorf("no error for params %s", bad)
+		}
+	}
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	tc, err := newIOSToolchain(false)
+	if err != nil {
+		t.Skip(err)
+	}
+	work := t.TempDir()
+	_, src, consts, err := tc.buildShortcuts(work, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(work, "App.app")
+	os.MkdirAll(bundle, 0o755)
+	if err := tc.shortcutsMetadata(work, bundle, src, consts); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := os.ReadFile(filepath.Join(bundle, "Metadata.appintents", "extract.actionsdata"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(meta), "AsukaEntity_note") || !strings.Contains(string(meta), "AsukaShortcut_openNote") {
+		t.Error("the metadata has no entity or its intent")
+	}
+}

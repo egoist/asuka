@@ -195,7 +195,7 @@ phrases = ["New note in ${app}"]
 | `url` | 文字列 | 必須 | アプリを開く URL です。`scheme` の URL か、`links` のどれかの URL にします。 |
 | `symbol` | 文字列 | なし | `Symbol` が受け取るのと同じ、SF Symbol の名前です。 |
 | `phrases` | 文字列の配列 | `"<title> in ${app}"` | Siri が聞き取るフレーズで、どれにもアプリの名前を表す `${app}` を含めます。`options` のパラメーターの `${name}` も入れられます。iOS だけで使われます。 |
-| `params` | テーブルの配列 | なし | ショートカットが尋ねる値で、それぞれ `url` の `{name}` に入ります。`name`、`title`、`type`（`string`、`int`、`float`、`bool`、`options`）、`prompt`、`optional`、`default`、`options` のパラメーターなら `options`（`{ value, title }`）。Android はデフォルト値で `url` を開きます。[パラメーター](device.md#パラメーター)を参照してください。 |
+| `params` | テーブルの配列 | なし | ショートカットが尋ねる値で、それぞれ `url` の `{name}` に入ります。`name`、`title`、`type`（`string`、`int`、`float`、`bool`、`options`、`entity`）、`prompt`、`optional`、`default`、`options` のパラメーターなら `options`（`{ value, title }`）、`entity` のパラメーターなら `entity`（その種類、つまりアプリ自身のデータの種類。`platform/shortcuts`）。Android はデフォルト値で `url` を開きます。[パラメーター](device.md#パラメーター)を参照してください。 |
 
 [ショートカット](device.md#ショートカットsirispotlightランチャー)を参照してください。
 

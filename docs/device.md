@@ -3168,6 +3168,47 @@ In the Shortcuts app, every param is a field of the action. On Android,
 the launcher's shortcut opens the URL with each param's default, or
 empty.
 
+### The app's own things
+
+A param of type `entity` takes one of the app's own things: a note, a
+playlist, a contact. The app says what they are with
+`platform/shortcuts`, and Siri and the Shortcuts app offer them by
+title, even while the app isn't running:
+
+```toml
+[[shortcuts]]
+id = "markDone"
+title = "Mark Done"
+url = "notes://done/{note}"
+phrases = ["Mark ${note} done in ${app}"]
+
+[[shortcuts.params]]
+name = "note"
+title = "Note"
+type = "entity"
+entity = "note"
+```
+
+```asuka check
+import platform/shortcuts
+
+struct Note {
+  id: int
+  text: string
+}
+
+// Each time the notes change.
+fn offer(notes: [Note]) {
+  shortcuts.setEntities("note", notes.map(n => shortcuts.Entity(id: "{n.id}", title: n.text)))
+}
+```
+
+"Mark Buy milk done in Notes" opens `notes://done/12`: the chosen
+thing's `id` takes the param's place in the URL. A phrase can name an
+entity param, as it can an `options` one. On Android each thing is a
+launcher shortcut of its own (as many as the launcher shows), opening
+the same URL. [`examples/notes`](../examples/notes) does this.
+
 ## Haptics: device.haptic
 
 `device.haptic(kind)` plays haptic feedback

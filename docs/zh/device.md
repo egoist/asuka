@@ -2115,6 +2115,40 @@ default = "home"
 
 说“Add a task in Todo”时，Siri 会问 *What's the task?*，然后打开 `todo://add?title=Buy%20milk&list=home`；说“Add a work task in Todo”则直接问标题。参数的 `type` 可以是 `string`（默认）、`int`、`float`、`bool` 或 `options`。没有 `default` 的参数，Siri 会询问，除非它是 `optional`，这时它在 URL 中的位置留空。短语里可以引用 `options` 类型的参数（`${list}`），Siri 能听懂每个选项的标题；其他类型不能出现在短语里，因为 Siri 无法识别任意文字。在“快捷指令”App 里，每个参数都是这个操作的一个字段。在 Android 上，启动器快捷方式打开的 URL 里填的是各参数的默认值，没有默认值则留空。
 
+### 应用自己的数据
+
+`entity` 类型的参数接受应用自己的一项数据：一条笔记、一个播放列表、一个联系人。应用用 `platform/shortcuts` 告诉系统有哪些，Siri 和“快捷指令”App 就会按标题提供它们，即使应用没有在运行：
+
+```toml
+[[shortcuts]]
+id = "markDone"
+title = "Mark Done"
+url = "notes://done/{note}"
+phrases = ["Mark ${note} done in ${app}"]
+
+[[shortcuts.params]]
+name = "note"
+title = "Note"
+type = "entity"
+entity = "note"
+```
+
+```asuka check
+import platform/shortcuts
+
+struct Note {
+  id: int
+  text: string
+}
+
+// 每次笔记变化时。
+fn offer(notes: [Note]) {
+  shortcuts.setEntities("note", notes.map(n => shortcuts.Entity(id: "{n.id}", title: n.text)))
+}
+```
+
+说“Mark Buy milk done in Notes”会打开 `notes://done/12`：选中那一项的 `id` 填进 URL 中参数的位置。短语里可以引用 entity 参数，就像引用 `options` 参数一样。在 Android 上，每一项都是一个单独的启动器快捷方式（启动器能显示多少就有多少），打开同样的 URL。[`examples/notes`](../../examples/notes) 就用了这个功能。
+
 ## 触感反馈：device.haptic
 
 `device.haptic(kind)` 用来播放触感反馈（iOS 上是 UIFeedbackGenerator，Android 上是 `performHapticFeedback`），参数是一个 `device.Haptic`：`.selection`、`.light`、`.medium`、`.heavy`、`.success`、`.warning` 或 `.error`。Mac 会通过触控板给出反馈（需要 Force Touch 触控板：`.selection` 对应对齐反馈，其余对应层级变化反馈）；浏览器在支持的地方会振动（Android 上的 Chrome）；Windows 和 Linux 没有触感反馈，什么也不做。

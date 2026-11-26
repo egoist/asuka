@@ -1,0 +1,43 @@
+// Package platform/shortcuts gives the app's shortcuts (asuka.toml's
+// [[shortcuts]]) the app's own things to offer: a shortcut's param of
+// type "entity" takes one of them (a note, a playlist, a contact), which
+// Siri hears by its title and the Shortcuts app lists, and its {name} in
+// the shortcut's URL is the chosen one's id. On Android, each of them is a
+// launcher shortcut of its own (as many as the launcher shows). Set them
+// as they change; they're kept until set again, read without the app
+// running.
+//
+//   shortcuts.setEntities("note", notes.map(n => shortcuts.Entity(id: "{n.id}", title: n.title)))
+//
+// The desktops and the web have no such shortcuts: setEntities does
+// nothing there.
+
+import std/json
+
+/// One of the app's things a shortcut offers.
+pub struct Entity {
+  /// What the shortcut's URL gets in its param's place.
+  id: string
+  /// What Siri hears and the Shortcuts app shows.
+  title: string
+  /// A line under the title.
+  subtitle: string = ""
+}
+
+/// The platform's side.
+native interface Store {
+  /// Keeps the kind's entities (JSON: an array of objects with id,
+  /// title, subtitle) where the shortcuts read them.
+  fn set(kind: string, json: string)
+}
+
+// Made once; none where the platform has no shortcuts.
+let store = try? Store()
+
+/// Sets the things of a kind (an entity param's entity in asuka.toml)
+/// the app's shortcuts offer: all of them, replacing those set before.
+pub fn setEntities(kind: string, entities: [Entity]) {
+  if let s = store {
+    try? s.set(kind, json.encode(entities))
+  }
+}

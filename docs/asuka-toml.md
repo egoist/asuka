@@ -233,7 +233,7 @@ phrases = ["New note in ${app}"]
 | `url` | string | required | What the app is opened with: a URL of its `scheme`, or one of its `links`. |
 | `symbol` | string | none | An SF Symbol's name, as `Symbol` takes it. |
 | `phrases` | strings | `"<title> in ${app}"` | What Siri hears, each with `${app}`, the app's name, and maybe an `options` param's `${name}`. iOS only. |
-| `params` | array of tables | none | What the shortcut asks for, each filling its `{name}` in `url`: `name`, `title`, `type` (`string`, `int`, `float`, `bool`, `options`), `prompt`, `optional`, `default`, and an `options` param's `options` (`{ value, title }`). Android opens `url` with the defaults. See [Parameters](device.md#parameters). |
+| `params` | array of tables | none | What the shortcut asks for, each filling its `{name}` in `url`: `name`, `title`, `type` (`string`, `int`, `float`, `bool`, `options`, `entity`), `prompt`, `optional`, `default`, an `options` param's `options` (`{ value, title }`), and an `entity` param's `entity`: its kind, the app's own things of it (`platform/shortcuts`). Android opens `url` with the defaults. See [Parameters](device.md#parameters). |
 
 See [Shortcuts](device.md#shortcuts-siri-spotlight-the-launcher).
 

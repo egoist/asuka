@@ -152,7 +152,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | カレンダー | EventKit、EventKitUI | `expo-calendar` | ✓ `platform/calendar`（イベントの編集画面は許可なしで、カレンダーとイベントは許可を得て。EventKit、Calendar Provider） |
 | ホーム画面ウィジェット | WidgetKit | `expo-widgets` | ✓ `platform/widget` と `asuka.toml` の `widgets`（すべてのサイズに一つのテンプレート、iOS ではロック画面のものも。タイムライン、カウントダウン、URL を開くタップ。iOS と Android） |
 | ライブアクティビティ | ActivityKit | `expo-live-activity` | ✓ `platform/liveactivity`（iOS：ロック画面と Dynamic Island。Android 16 の Live Update。カウントダウン、進捗、アラート、サーバーからの更新のためのプッシュトークン） |
-| App Intents、ショートカット | App Intents、App Shortcuts | — | ✓ `asuka.toml` の `shortcuts`（iOS：Siri のフレーズ付きの App Shortcuts で、Spotlight とショートカットに出る。パラメーターはテキスト、数値、スイッチ、フレーズに入れられる選択肢。Android：ランチャーのショートカット）。アプリのエンティティはまだ非対応 |
+| App Intents、ショートカット | App Intents、App Shortcuts | — | ✓ `asuka.toml` の `shortcuts`（iOS：Siri のフレーズ付きの App Shortcuts で、Spotlight とショートカットに出る。パラメーターはテキスト、数値、スイッチ、選択肢、アプリ自身のデータ（`platform/shortcuts` のエンティティ）で、選択肢とエンティティはフレーズに入れられる。Android：ランチャーのショートカットで、データ一つにつき一つ） |
 | カスタムフォント | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`、`Font(family:)` |
 | ライフサイクル | `scenePhase` | AppState | ✓ `onLifecycle` |
 | 起動画面 | `UILaunchScreen` | `expo-splash-screen` | ✓ `asuka.toml` の `splash`。`platform/splash` で読み込み中は表示を保つ |
@@ -242,4 +242,4 @@ MyGo にあって Asuka にまだないものは次のとおりです。書類�
 
 ## 未対応のもの
 
-アプリでの需要が高い順に、エンティティを持つ App Intents（ショートカットのパラメーターはまだ値だけで、アプリ自身のデータは扱えません）、アプリ独自のレイアウトのウィジェット（いまはテンプレートが一つだけです）、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）です。Windows と Linux では Lottie（`lottie.View` は空の領域になります）、Windows と Linux では音声のテキスト化が未対応です。
+アプリでの需要が高い順に、アプリ独自のレイアウトのウィジェット（いまはテンプレートが一つだけです）、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）です。Windows と Linux では Lottie（`lottie.View` は空の領域になります）、Windows と Linux では音声のテキスト化が未対応です。
