@@ -22,8 +22,9 @@ func TestMenuClickWeb(t *testing.T) {
 	// opened says whether one menu is open after a click or a tap.
 	opened := func(how string) bool {
 		t.Helper()
-		// Long after the release's events, the light dismiss and the click.
-		time.Sleep(700 * time.Millisecond)
+		// After the release's events, the light dismiss and the click, and
+		// before menuClickMs's fallback.
+		time.Sleep(300 * time.Millisecond)
 		var n int
 		if err := pageEval(d, `document.querySelectorAll(":popover-open").length`, &n); err != nil {
 			t.Fatal(err)

@@ -245,8 +245,9 @@ export class Interaction {
       // On the click that follows the release, as a Button's menu: the
       // browser's light dismiss comes before it, at the release's mouseup
       // (after a tap, in a later task than the touchend), and would close
-      // a menu shown earlier. A release that brings no click opens it
-      // after menuClickMs.
+      // a menu shown earlier. The timer opens it anyway after menuClickMs
+      // if no click comes, so the listener never waits for a later,
+      // unrelated click.
       const n = p.n, x = e.clientX, y = e.clientY;
       const open = () => {
         clearTimeout(t);
