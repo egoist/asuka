@@ -456,9 +456,16 @@ asuka test --gui                      # this computer
 | `submit` | Presses return in that field. |
 | `back` | Goes back from the top screen, as its back button does. |
 | `tab <title>` | Chooses the tab with that title, as tapping it in the tab bar does. |
-| `see <text>` | Something on the screen shows the text, all of it or as part of a longer one. |
+| `scroll` | Scrolls the list on the screen down a page. |
+| `scrollto <text>` | Scrolls the list down until something shows the text. |
+| `see <text>` | Something on the screen shows the text. |
 | `notsee <text>` | Nothing on the screen shows it. |
 | `wait <time>` | Waits (`500ms`, `2s`). |
+
+A text is matched as a whole: `see Message 1` doesn't match `Message
+19`. A `*` in it matches any characters, for text that changes:
+`see Count: *`. A list makes views only for the rows on the screen, so
+a row further down shows once `scroll` or `scrollto` brings it there.
 
 A step that fails is tried again until it passes or `--timeout` (10s)
 runs out, since the app may still be loading or waiting on the network.

@@ -1,0 +1,5 @@
+# The oldest message, below the screen's end on a phone: scrolled to,
+# then opened (Message 1 alone: a text matches all of it, not Message 19).
+scrollto Message 1
+tap Message 1
+see No note yet.

@@ -4,10 +4,12 @@
 // the user doing: tap sends the view's Press, type its field's text
 // change (and the text to the field, which shows it), submit its Submit,
 // back takes the top screen off the deepest stack, tab chooses a tab by
-// its title. Only what shows counts: a Stack's top screen, Tabs' selected
-// tab. dump says the texts
-// showing; see and notsee check for one. Each command answers a line: ok,
-// the dump's texts, or "error: why".
+// its title, scroll scrolls the List that shows a page down (a List has
+// views only for the rows the host has bound, those on the screen). Only
+// what shows counts: a Stack's top screen, Tabs' selected tab. dump says
+// the texts showing; see and notsee check for one. A text is matched all
+// of it, a * in it any characters ("Count: *"). Each command answers a
+// line: ok, the dump's texts, or "error: why".
 #include "ui/ui_ext.h"
 #include "rt/sched.h"
 
@@ -16,6 +18,7 @@
 static bool listens(const ak_view *e, uint16_t k) { return k < 128 && (e->listens[k / 64] >> (k % 64)) & 1; }
 
 static bool is(const ak_str *s, ak_span t) { return s && s->len == t.len && memcmp(s->data, t.p, t.len) == 0; }
+
 
 // The views in the tree's order (the inspector's: the roots, each view's
 // children, a List's cells), as a walk calls f until it returns true; a
@@ -67,41 +70,45 @@ static void walk_all(visit f, void *ctx) {
 typedef struct {
 	ak_span text;
 	ak_view *found;
-	bool partly;  // the text is in it, not all of it
 } find;
 
-static bool contains(const ak_str *s, ak_span t) {
-	if (!s || t.len == 0 || s->len < t.len) return false;
-	for (uint32_t i = 0; i + t.len <= s->len; i++)
-		if (memcmp(s->data + i, t.p, t.len) == 0) return true;
-	return false;
+// glob matches s against p, all of it: a * in p is any run of characters
+// (none too), the rest itself.
+static bool glob(const char *p, uint32_t pn, const char *s, uint32_t sn) {
+	uint32_t pi = 0, si = 0, star = UINT32_MAX, mark = 0;
+	while (si < sn) {
+		if (pi < pn && p[pi] == '*') {
+			star = pi++;
+			mark = si;
+		} else if (pi < pn && p[pi] == s[si]) {
+			pi++, si++;
+		} else if (star != UINT32_MAX) {
+			pi = star + 1;
+			si = ++mark;
+		} else {
+			return false;
+		}
+	}
+	while (pi < pn && p[pi] == '*') pi++;
+	return pi == pn;
 }
+
+static bool matches(const ak_str *s, ak_span t) { return s && glob(t.p, t.len, s->data, s->len); }
 
 static bool find_text(ak_view *e, void *ctx) {
 	find *f = ctx;
-	if (is(e->text, f->text) || is(e->text2, f->text)) {
+	if (matches(e->text, f->text) || matches(e->text2, f->text)) {
 		f->found = e;
 		return true;
 	}
 	return false;
 }
 
-static bool find_part(ak_view *e, void *ctx) {
-	find *f = ctx;
-	if (contains(e->text, f->text) || contains(e->text2, f->text)) {
-		f->found = e;
-		f->partly = true;
-		return true;
-	}
-	return false;
-}
-
-// shown is the view whose text (a Text's, a Button's title) is t, or that
-// has it in its text.
+// shown is the view whose text (a Text's, a Button's title) is t, all of
+// it; a * in t is any characters ("Count: *").
 static ak_view *shown(ak_span t) {
-	find f = {t, NULL, false};
+	find f = {t, NULL};
 	walk_all(find_text, &f);
-	if (!f.found) walk_all(find_part, &f);
 	return f.found;
 }
 
@@ -220,6 +227,38 @@ static void back(ak_buf *out) {
 	ak_buf_put(out, "ok\n", 3);
 }
 
+// scroll: the first List that shows, a page further down: to the row
+// after the last the host has bound, as many on as it binds.
+static bool first_list(ak_view *e, void *ctx) {
+	if (e->kind == AK_KIND_LIST && e->el == AK_EL_LIST) {
+		*(ak_view **)ctx = e;
+		return true;
+	}
+	return false;
+}
+
+static void scroll(ak_buf *out) {
+	ak_view *l = NULL;
+	walk_all(first_list, &l);
+	if (!l) {
+		ak_buf_put(out, "error: no list\n", 15);
+		return;
+	}
+	uint32_t n;
+	int64_t last = ak_list_bound(l, &n), count = ak_list_count(l);
+	if (last >= count - 1) {
+		ak_buf_put(out, "error: the list is at its end\n", 30);
+		return;
+	}
+	int64_t to = last + (n > 1 ? n - 1 : 1);
+	if (to > count - 1) to = count - 1;
+	ak_batch_begin();
+	ak_ui_scroll_to_item(l, to, false);
+	ak_batch_end();
+	ak_ui_flush();
+	ak_buf_put(out, "ok\n", 3);
+}
+
 // tab: the Tab titled arg, in any Tabs (shown or not), and its index.
 typedef struct {
 	ak_span title;
@@ -287,6 +326,7 @@ void ak_ui_automate(ak_span commands, ak_buf *out) {
 		else if (VERB("submit")) submit(out);
 		else if (VERB("back")) back(out);
 		else if (VERB("tab")) tab(arg, out);
+		else if (VERB("scroll")) scroll(out);
 		else if (VERB("dump")) {
 			dumping d = {out};
 			walk_all(dump_view, &d);
@@ -297,7 +337,7 @@ void ak_ui_automate(ak_span commands, ak_buf *out) {
 			if (!shown(arg)) ak_buf_put(out, "ok\n", 3);
 			else ak_buf_printf(out, "error: \"%.*s\" shows\n", (int)arg.len, arg.p);
 		} else {
-			ak_buf_printf(out, "error: no command %.*s (tap, type, submit, back, tab, see, notsee, dump)\n", (int)verb.len, verb.p);
+			ak_buf_printf(out, "error: no command %.*s (tap, type, submit, back, tab, scroll, see, notsee, dump)\n", (int)verb.len, verb.p);
 		}
 #undef VERB
 	}

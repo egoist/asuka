@@ -1036,6 +1036,23 @@ void ak_list_unbind(ak_view *e, ak_id cell) {
 	if (i >= 0) unbind_cell(st, (uint32_t)i);
 }
 
+// ak_list_bound is the last row the host has bound (-1: none) and how
+// many rows it has bound: where the shown rows end.
+int64_t ak_list_bound(ak_view *e, uint32_t *n) {
+	list_t *st = e->impl;
+	int64_t last = -1;
+	uint32_t rows = 0;
+	for (uint32_t i = 0; st && i < st->cells.len; i++) {
+		lcell *c = st->cells.data[i];
+		if (c->header) continue;
+		int64_t at = cell_index(c, false);
+		if (at > last) last = at;
+		rows++;
+	}
+	if (n) *n = rows;
+	return last;
+}
+
 void ak_list_each_cell(ak_view *e, void (*f)(ak_view *c, void *ctx), void *ctx) {
 	list_t *st = e->impl;
 	for (uint32_t i = 0; st && i < st->cells.len; i++) f(st->cells.data[i]->el, ctx);

@@ -1003,8 +1003,8 @@ TEST(automation) {
 	CHECK(strcmp(automate("see Open\ntap Open", &out), "ok\nok\n") == 0);
 	ak_uitest_settle(a);
 	CHECK_EQ_INT(stack->children.len, 2);
-	CHECK(strcmp(automate("see tick\nnotsee Nope\ndump", &out), "ok\nok\ntick 0\nBack\nHome\nOpen\n") == 0 ||
-	      strstr(automate("dump", &out), "tick 0\n") != NULL);
+	// Whole texts, a * any characters; the top screen alone shows.
+	CHECK_EQ_STR(automate("see tick *\nnotsee tick\nnotsee Nope\nsee Back\nnotsee Open\ndump", &out), "ok\nok\nok\nok\nok\ntick 0\nBack\n");
 	// back takes the top screen off, as its back button does.
 	CHECK(strcmp(automate("back", &out), "ok\n") == 0);
 	ak_uitest_settle(a);
@@ -1013,7 +1013,7 @@ TEST(automation) {
 	             "error: no screen to go back from\n"
 	             "error: nothing shows \"Nope\"\n"
 	             "error: \"Open\" shows\n"
-	             "error: no command fly (tap, type, submit, back, tab, see, notsee, dump)\n") == 0);
+	             "error: no command fly (tap, type, submit, back, tab, scroll, see, notsee, dump)\n") == 0);
 	done(a);
 
 	// type: into the field, which shows it.

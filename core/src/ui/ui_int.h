@@ -565,6 +565,7 @@ void ak_list_row_keys(ak_view *v);
 void ak_list_unbind(ak_view *e, ak_id cell);
 void ak_list_layout(ak_view *e, ak_lpass *p);
 void ak_list_each_cell(ak_view *e, void (*f)(ak_view *c, void *ctx), void *ctx);
+int64_t ak_list_bound(ak_view *e, uint32_t *n);  // the last row bound (-1: none), and how many are
 
 // ---- path.c ----
 

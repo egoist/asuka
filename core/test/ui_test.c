@@ -2064,4 +2064,38 @@ TEST(events_from_a_host_that_sends_anything) {
 	}
 }
 
+// asuka dev's automation's scroll: the List a page further, to the row
+// after the last the host bound; at its end, an error.
+TEST(automation_scroll) {
+	ak_arr *all = todos(100);
+	items = cell_ref(ak_retain(all));
+	ak_uitest *a = mount(list_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_reset(f);
+	ak_buf out = {0};
+	ak_ui_automate(ak_cstr("see item 0\nnotsee item 90\nscroll"), &out);
+	ak_buf_u8(&out, 0);
+	CHECK_EQ_STR((const char *)out.data, "ok\nok\nok\n");
+	ak_fake_index_vec sent = {0};
+	ak_fake_commands(f, AK_CMD_SCROLL_TO, &sent);
+	CHECK_EQ_INT(sent.len, 1);
+	if (sent.len == 1) {
+		ak_op op = ak_fake_op_at(f, sent.data[0]);
+		uint32_t to;
+		memcpy(&to, op.value.s.p, 4);
+		CHECK(to > 5 && to < 100);  // past the rows that fit the screen
+	}
+	ak_vec_free(&sent);
+	// The host binds the last rows: at its end.
+	ak_fake_view *cell = ak_fake_new_cell(f);
+	ak_fake_bind(f, nth(a, AK_KIND_LIST, 0), 99, cell);
+	ak_buf_reset(&out);
+	ak_ui_automate(ak_cstr("scroll\nsee item 99"), &out);
+	ak_buf_u8(&out, 0);
+	CHECK_EQ_STR((const char *)out.data, "error: the list is at its end\nok\n");
+	ak_buf_free(&out);
+	done(a);
+	ak_release(items), ak_release(all);
+}
+
 T_MAIN()

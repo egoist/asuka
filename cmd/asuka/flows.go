@@ -22,7 +22,8 @@ import (
 // through the app, run on a platform's player as asuka dev runs it (the
 // simulator, an emulator, the browser, this computer), as Maestro's flows
 // are. A step is the core's automation's (core/src/ui/automate.c): tap,
-// type, submit, back, tab, see, notsee; wait is the runner's own. A step that
+// type, submit, back, tab, scroll, see, notsee; wait and scrollto (scroll
+// until the text shows) are the runner's own. A step that
 // fails is tried again until it passes or flowTimeout passes: the app may
 // be loading, animating, waiting on the network. Each flow starts the
 // app afresh, its state from its initial values.
@@ -42,7 +43,7 @@ type flowStep struct {
 	arg  string
 }
 
-var flowVerbs = map[string]bool{"tap": true, "type": true, "submit": true, "back": true, "tab": true, "see": true, "notsee": true, "wait": true}
+var flowVerbs = map[string]bool{"tap": true, "type": true, "submit": true, "back": true, "tab": true, "scroll": true, "scrollto": true, "see": true, "notsee": true, "wait": true}
 
 // parseFlow reads a flow: a step a line, "verb argument"; # comments.
 func parseFlow(file string, src string) (flow, error) {
@@ -55,9 +56,9 @@ func parseFlow(file string, src string) (flow, error) {
 		verb, arg, _ := strings.Cut(l, " ")
 		arg = strings.TrimSpace(arg)
 		if !flowVerbs[verb] {
-			return f, fmt.Errorf("%s:%d: no step %q (tap, type, submit, back, tab, see, notsee, wait)", file, i+1, verb)
+			return f, fmt.Errorf("%s:%d: no step %q (tap, type, submit, back, tab, scroll, scrollto, see, notsee, wait)", file, i+1, verb)
 		}
-		needs := verb != "submit" && verb != "back"
+		needs := verb != "submit" && verb != "back" && verb != "scroll"
 		if needs != (arg != "") {
 			if needs {
 				return f, fmt.Errorf("%s:%d: %s what?", file, i+1, verb)
@@ -190,6 +191,12 @@ func (d *devLoop) runFlow(f flow) error {
 			time.Sleep(w)
 			continue
 		}
+		if s.verb == "scrollto" {
+			if err := d.scrollTo(f, s); err != nil {
+				return err
+			}
+			continue
+		}
 		cmd := s.verb
 		if s.arg != "" {
 			cmd += " " + s.arg
@@ -212,6 +219,41 @@ func (d *devLoop) runFlow(f flow) error {
 		}
 	}
 	return nil
+}
+
+// scrollTo scrolls the list that shows a page at a time until it shows
+// the step's text, or its end comes, or flowTimeout passes.
+func (d *devLoop) scrollTo(f flow, s flowStep) error {
+	deadline := time.Now().Add(flowTimeout)
+	atEnd := 0 // tries since the list said it's at its end: its last rows bind in a moment
+	for {
+		ans, err := d.automation.run("see "+s.arg, flowTimeout)
+		if err != nil {
+			return fmt.Errorf("%s:%d: scrollto %s: %v", f.file, s.line, s.arg, err)
+		}
+		if !strings.HasPrefix(strings.TrimSpace(ans), "error: ") {
+			return nil
+		}
+		ans, err = d.automation.run("scroll", flowTimeout)
+		if err != nil {
+			return fmt.Errorf("%s:%d: scrollto %s: %v", f.file, s.line, s.arg, err)
+		}
+		ended := strings.HasPrefix(strings.TrimSpace(ans), "error: ")
+		if ended {
+			atEnd++
+		} else {
+			atEnd = 0
+		}
+		if time.Now().After(deadline) || atEnd >= 10 {
+			shows, _ := d.automation.run("dump", flowTimeout)
+			why := "nothing shows it"
+			if ended {
+				why += " (" + strings.TrimPrefix(strings.TrimSpace(ans), "error: ") + ")"
+			}
+			return fmt.Errorf("%s:%d: scrollto %s: %s\n    the app shows:\n%s", f.file, s.line, s.arg, why, indent(strings.TrimSpace(shows), "      "))
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
 }
 
 // restartAndWait starts the app again with none of its state, and waits
