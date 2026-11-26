@@ -263,6 +263,7 @@ Windows and Linux unless the row says otherwise.
 | Starting at login | `app.setLoginItemSettings` | start at login | ✓ `platform/login` (`SMAppService`, macOS 13+; the Run key; XDG autostart or the Background portal) |
 | Watching files | Node's `fs.watch` (chokidar) | `WatchFiles`, the watch plugin | ✓ `std/watch`'s `watch.path`: renames paired, atomic saves as writes, bursts coalesced; phones and the web: unsupported |
 | Displays | `screen` | displays | ✓ `screen.displays()`, `nearest`, `matching` (Wayland: no work area; phones and the web: theirs) |
+| Capturing the screen | `desktopCapturer` | — | ✓ `screen.capture(display)`: a PNG of a display (ScreenCaptureKit with the Screen Recording permission; the display's pixels on Windows; the screenshot portal on Linux; the browser's picker; a phone's own window) |
 | Sleep, wake, lock, idle time, battery | `powerMonitor` | power | ✓ `platform/power` (phones: battery, Low Power Mode, lock; the web: the battery) |
 | Progress and attention on the app's icon | `setProgressBar`, `flashFrame`, `dock.bounce` | the Dock and the taskbar | ✓ `dock.setProgress`, `dock.requestAttention` (Linux: docks with the Unity launcher API) |
 | Accent color, Increase Contrast, Reduce Transparency | `systemPreferences` | accent color and accessibility | ✓ `platform/appearance` (no Reduce Transparency on Linux) |

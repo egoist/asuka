@@ -5,21 +5,34 @@
 // which the activity applies again when it's made again; screenshots
 // are Android 14's ScreenCaptureCallback (DETECT_SCREEN_CAPTURE). The
 // brightness is the window's own (AsukaDisplay's too), the system's
-// setting read when the app sets none.
+// setting read when the app sets none. A capture is the activity's
+// window: PixelCopy's (with its SurfaceViews and TextureViews: video,
+// maps) from Android 8, the views drawn into a bitmap before it.
 package platform.screen
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
+import android.view.PixelCopy
+import android.view.Window
 import android.view.WindowManager
+import androidx.annotation.RequiresApi
+import androidx.core.graphics.createBitmap
 import dev.asuka.AsukaDisplay
 import dev.asuka.AsukaModules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.UUID
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class AndroidScreens(private val app: Context) : Screens {
     private val dm = app.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
@@ -110,6 +123,50 @@ class AndroidScreens(private val app: Context) : Screens {
         } finally {
             stop()
         }
+    }
+
+    // What the app's window shows: on a phone, what's on screen while
+    // the app is in front. Another display's id: not available.
+    override suspend fun capture(display: String): String {
+        val bmp = withContext(Dispatchers.Main) {
+            val act = AsukaModules.activity ?: throw CaptureException(CaptureError.NOT_AVAILABLE)
+            val window = act.window ?: throw CaptureException(CaptureError.NOT_AVAILABLE)
+            @Suppress("DEPRECATION")
+            val shown = (if (Build.VERSION.SDK_INT >= 30) act.display else act.windowManager.defaultDisplay)?.displayId
+                ?: android.view.Display.DEFAULT_DISPLAY
+            if (display != "" && display != shown.toString()) throw CaptureException(CaptureError.NOT_AVAILABLE)
+            val root = window.decorView
+            if (root.width <= 0 || root.height <= 0) throw CaptureException(CaptureError.NOT_AVAILABLE)
+            val b = createBitmap(root.width, root.height)
+            // Not recycled when this throws: a cancelled PixelCopy may still write to it.
+            if (Build.VERSION.SDK_INT >= 26) copy(window, b) else root.draw(Canvas(b))
+            b
+        }
+        return withContext(Dispatchers.IO) {
+            try {
+                val f = File(app.cacheDir, "screen-${UUID.randomUUID()}.png")
+                try {
+                    f.outputStream().use { out ->
+                        if (!bmp.compress(Bitmap.CompressFormat.PNG, 100, out)) throw Exception("screen.capture: the PNG wasn't written")
+                    }
+                } catch (e: Throwable) {
+                    f.delete()
+                    throw e
+                }
+                f.absolutePath
+            } finally {
+                bmp.recycle()
+            }
+        }
+    }
+
+    /** The window's pixels into b, as the compositor has them. */
+    @RequiresApi(26)
+    private suspend fun copy(window: Window, b: Bitmap) = suspendCancellableCoroutine<kotlin.Unit> { cont ->
+        PixelCopy.request(window, b, { result ->
+            if (result == PixelCopy.SUCCESS) cont.resume(kotlin.Unit)
+            else cont.resumeWithException(Exception("screen.capture: PixelCopy failed ($result)"))
+        }, Handler(Looper.getMainLooper()))
     }
 }
 

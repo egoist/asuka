@@ -5,10 +5,15 @@
 // WM_DPICHANGED, which the system window hears; the displays are read
 // again then, and again a moment later, as some changes settle after the
 // message. Capture is kept out with WDA_EXCLUDEFROMCAPTURE on the app's
-// windows, those that show later too. Main thread.
+// windows, those that show later too. A capture copies the monitor's
+// pixels from the screen (BitBlt with CAPTUREBLT, so layered windows are
+// in it), in physical pixels, and writes them as a PNG (WIC) on a thread
+// of its own. Main thread, but the capture's work.
 #include "asuka_windows.h"
 #include "screen.asuka.h"
 
+#include <stdatomic.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -301,8 +306,181 @@ static void s_shots(screen_Screens *self, screen_fn_int taken, asuka_call *call)
 static void s_set_brightness(screen_Screens *self, double level, asuka_error *err) { (void)self, (void)level, (void)err; }
 static double s_brightness(screen_Screens *self, asuka_error *err) { (void)self, (void)err; return -1; }
 
+// ---- Capture ----
+
+// physical has the calling thread see the monitors in physical pixels
+// (per-monitor aware, as the host makes the process), returning what it
+// saw them in before, for unphysical: NULL where Windows can't (before
+// 10's 1607, where a process that's aware is so on every thread).
+typedef DPI_AWARENESS_CONTEXT(WINAPI *set_thread_dpi)(DPI_AWARENESS_CONTEXT);
+static set_thread_dpi thread_dpi(void) {
+	static set_thread_dpi set;
+	static atomic_bool loaded;
+	if (!atomic_load(&loaded)) {
+		*(FARPROC *)&set = GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetThreadDpiAwarenessContext");
+		atomic_store(&loaded, true);
+	}
+	return set;
+}
+static DPI_AWARENESS_CONTEXT physical(void) {
+	set_thread_dpi set = thread_dpi();
+	return set ? set(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) : NULL;
+}
+static void unphysical(DPI_AWARENESS_CONTEXT was) {
+	set_thread_dpi set = thread_dpi();
+	if (set && was) set(was);
+}
+
+typedef struct {
+	const wchar_t *device;  // NULL: the primary
+	RECT r;
+	bool found;
+} finding;
+
+static BOOL CALLBACK find_each(HMONITOR h, HDC dc, LPRECT r, LPARAM p) {
+	finding *f = (finding *)p;
+	MONITORINFOEXW mi;
+	memset(&mi, 0, sizeof mi);
+	mi.cbSize = sizeof mi;
+	if (!GetMonitorInfoW(h, (MONITORINFO *)&mi)) return TRUE;
+	if (f->device ? wcscmp(mi.szDevice, f->device) != 0 : !(mi.dwFlags & MONITORINFOF_PRIMARY)) return TRUE;
+	f->r = mi.rcMonitor;
+	f->found = true;
+	return FALSE;
+}
+
+// find_monitor is the rectangle of the monitor whose device name is
+// display ("": the primary), in physical pixels, in the virtual screen's
+// coordinates: false if none is.
+static bool find_monitor(const char *display, RECT *r) {
+	finding f = {0};
+	wchar_t *w = display && *display ? asuka_wide(display) : NULL;
+	f.device = w;
+	DPI_AWARENESS_CONTEXT was = physical();
+	EnumDisplayMonitors(NULL, NULL, find_each, (LPARAM)&f);
+	unphysical(was);
+	free(w);
+	*r = f.r;
+	return f.found && f.r.right > f.r.left && f.r.bottom > f.r.top;
+}
+
+// shot_path is a new file's name in the app's caches (dir), made unique
+// by the time, the process and a count.
+static char *shot_path(const char *dir) {
+	static atomic_uint count;
+	char *sub = asuka_sprintf("%s\\asuka-screen", dir);
+	wchar_t *w = asuka_wide(sub);
+	CreateDirectoryW(w, NULL);  // there already, or made
+	free(w);
+	FILETIME ft;
+	GetSystemTimeAsFileTime(&ft);
+	unsigned long long t = ((unsigned long long)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+	char *path = asuka_sprintf("%s\\capture-%llx-%lx-%x.png", sub, t, (unsigned long)GetCurrentProcessId(), atomic_fetch_add(&count, 1) + 1);
+	free(sub);
+	return path;
+}
+
+// shoot captures the display ("": the primary) as a PNG in dir: its path
+// (malloc's), or NULL with err set (CaptureError.notAvailable when
+// there's no such display). Any thread; *width and *height its pixels.
+static char *shoot(const char *display, const char *dir, int *width, int *height, asuka_error *err) {
+	RECT r;
+	if (!find_monitor(display, &r)) {
+		asuka_error_declared(err, screen_CaptureError_notAvailable);
+		return NULL;
+	}
+	int w = r.right - r.left, h = r.bottom - r.top;
+	DPI_AWARENESS_CONTEXT was = physical();  // the screen's DC in physical pixels too
+	HDC screen = GetDC(NULL);
+	HDC mem = screen ? CreateCompatibleDC(screen) : NULL;
+	BITMAPINFO bi;
+	memset(&bi, 0, sizeof bi);
+	bi.bmiHeader.biSize = sizeof bi.bmiHeader;
+	bi.bmiHeader.biWidth = w;
+	bi.bmiHeader.biHeight = -h;  // top down
+	bi.bmiHeader.biPlanes = 1;
+	bi.bmiHeader.biBitCount = 32;
+	bi.bmiHeader.biCompression = BI_RGB;
+	void *bits = NULL;
+	HBITMAP bmp = mem ? CreateDIBSection(screen, &bi, DIB_RGB_COLORS, &bits, NULL, 0) : NULL;
+	bool copied = false;
+	if (bmp && bits) {
+		HGDIOBJ old = SelectObject(mem, bmp);
+		copied = BitBlt(mem, 0, 0, w, h, screen, r.left, r.top, SRCCOPY | CAPTUREBLT) != 0;
+		GdiFlush();
+		SelectObject(mem, old);
+	}
+	DWORD why = copied ? 0 : GetLastError();
+	if (mem) DeleteDC(mem);
+	if (screen) ReleaseDC(NULL, screen);
+	unphysical(was);
+	if (!copied) {
+		if (bmp) DeleteObject(bmp);
+		asuka_win_fail(err, HRESULT_FROM_WIN32(why ? why : ERROR_ACCESS_DENIED), "screen: can't copy the screen");
+		return NULL;
+	}
+	uint8_t *px = bits;
+	for (size_t i = 0, n = (size_t)w * h * 4; i < n; i += 4) px[i + 3] = 255;  // GDI leaves alpha 0: opaque
+	asuka_bytes png = {0};
+	bool encoded = asuka_win_png((UINT)w, (UINT)h, px, &png);
+	DeleteObject(bmp);
+	if (!encoded) {
+		asuka_error_failed(err, "screen", 0, "screen: can't encode the capture as a PNG");
+		return NULL;
+	}
+	char *path = shot_path(dir);
+	wchar_t *wp = asuka_wide(path);
+	FILE *f = _wfopen(wp, L"wb");
+	free(wp);
+	bool ok = f && fwrite(png.data, 1, png.len, f) == png.len;
+	if (f && fclose(f) != 0) ok = false;
+	free(png.data);
+	if (!ok) {
+		asuka_error_failed(err, "screen", 0, "screen: can't write %s", path);
+		free(path);
+		return NULL;
+	}
+	*width = w;
+	*height = h;
+	return path;
+}
+
+typedef struct {
+	asuka_call *call;
+	char *display, *dir;
+} shot;
+
+static void shoot_off_main(void *p) {
+	shot *s = p;
+	asuka_error err = {0};
+	int w, h;
+	char *path = shoot(s->display, s->dir, &w, &h, &err);
+	if (path) screen_Screens_capture_done(s->call, path);  // takes path
+	else asuka_call_fail(s->call, &err);
+	free(s->display);
+	free(s->dir);
+	free(s);
+}
+
+// A display that isn't there fails at once; the copy and its PNG are a
+// worker's (a 4K screen's PNG takes a while).
+static void s_shoot(screen_Screens *self, const char *display, asuka_call *call) {
+	RECT r;
+	if (!find_monitor(display, &r)) {
+		asuka_error err = {0};
+		asuka_error_declared(&err, screen_CaptureError_notAvailable);
+		asuka_call_fail(call, &err);
+		return;
+	}
+	shot *s = calloc(1, sizeof *s);
+	s->call = call;
+	s->display = asuka_strdup(display ? display : "");
+	s->dir = asuka_strdup(asuka_desktop_cache_dir());
+	if (!asuka_desktop_spawn(shoot_off_main, s)) shoot_off_main(s);
+}
+
 static const screen_Screens_vtable vt = {.displays = s_displays, .watchDisplays = s_watch, .lock = s_lock, .setBars = s_bars, .preventCapture = s_capture,
-	.setBrightness = s_set_brightness, .brightness = s_brightness, .watchScreenshots = s_shots};
+	.setBrightness = s_set_brightness, .brightness = s_brightness, .watchScreenshots = s_shots, .capture = s_shoot};
 
 screen_Screens *screen_make_Screens(asuka_error *err) {
 	screen_Screens *s = malloc(sizeof *s);

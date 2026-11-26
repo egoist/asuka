@@ -2587,6 +2587,52 @@ going full screen, and has neither, nor a brightness to set.
 These are the app's, not a screen's: a screen that sets one sets it back
 as it goes (a `defer` in its task).
 
+### Capturing the screen
+
+`screen.capture(display)` takes what a display shows as a PNG file in
+the app's caches (`Image` shows it; share or save it): the primary
+display without one, or one of `screen.displays()`.
+
+```asuka check
+import platform/screen
+
+component Grab {
+  state shot = ""
+  state note = ""
+
+  Column {
+    gap: 12
+    Button("Capture the screen") {
+      on press {
+        do {
+          shot = try await screen.capture()
+        } catch screen.CaptureError.notAllowed {
+          note = "Allow screen recording in System Settings"
+        } catch e {
+          note = e.message
+        }
+      }
+    }
+    if !shot.isEmpty() {
+      Image(shot) { height: 200 }
+    }
+    Text(note)
+  }
+}
+```
+
+| | What it captures |
+| --- | --- |
+| macOS | the display, by ScreenCaptureKit; the first capture asks for Screen Recording (System Settings › Privacy & Security), which a no makes `notAllowed` |
+| Windows | the display's pixels, asking nothing |
+| Linux | the screenshot portal's, which asks the user the first time |
+| Web | a screen or a window the user picks in the browser's picker (call it from a press) |
+| iOS, Android | the app's own window: what's on the screen while it's in front |
+
+It throws `CaptureError.notAllowed` when the user says no, and
+`.notAvailable` where the platform can't (no such display, a browser
+without screen capture, Linux without the portal).
+
 ## The app's icon: platform/appicon
 
 `asuka.toml` lists the icons the app may show besides its own, and

@@ -235,6 +235,7 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 | 登录时启动 | `app.setLoginItemSettings` | 登录时启动 | ✓ `platform/login`（`SMAppService`，macOS 13 及以上；Run 注册表项；XDG 自启动或 Background portal） |
 | 监听文件变化 | Node 的 `fs.watch`（chokidar） | `WatchFiles`、watch 插件 | ✓ `std/watch` 的 `watch.path`：重命名成对报告，原子保存视为写入，连续的变化会合并；手机和 Web 不支持 |
 | 显示器 | `screen` | 显示器 | ✓ `screen.displays()`、`nearest`、`matching`（Wayland 下没有工作区域；手机和 Web 上是它们自己的屏幕） |
+| 截取屏幕 | `desktopCapturer` | — | ✓ `screen.capture(display)`：显示器内容的 PNG（Mac 上用 ScreenCaptureKit，需要录屏权限；Windows 上取显示器的像素；Linux 上用截图门户；浏览器里由用户在选择框中挑选；手机上是应用自己的窗口） |
 | 睡眠、唤醒、锁屏、空闲时间、电池 | `powerMonitor` | 电源 | ✓ `platform/power`（手机：电池、低电量模式、锁屏；Web：电池） |
 | 应用图标上的进度和提醒 | `setProgressBar`、`flashFrame`、`dock.bounce` | Dock 和任务栏 | ✓ `dock.setProgress`、`dock.requestAttention`（Linux：支持 Unity 启动器 API 的 dock） |
 | 强调色、增强对比度、降低透明度 | `systemPreferences` | 强调色和辅助功能设置 | ✓ `platform/appearance`（Linux 上没有降低透明度） |

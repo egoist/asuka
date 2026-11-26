@@ -1747,6 +1747,48 @@ component Player {
 
 这些设置作用于整个应用，而不是某个页面：页面如果改了其中某项，离开时要把它恢复原样（在页面的 task 里用 `defer`）。
 
+### 截取屏幕
+
+`screen.capture(display)` 把一个显示器当前显示的内容截成 PNG 文件，存在应用的缓存目录里（`Image` 可以显示它，也可以分享或保存）：不传参数时截主显示器，也可以传 `screen.displays()` 中的一个。
+
+```asuka check
+import platform/screen
+
+component Grab {
+  state shot = ""
+  state note = ""
+
+  Column {
+    gap: 12
+    Button("Capture the screen") {
+      on press {
+        do {
+          shot = try await screen.capture()
+        } catch screen.CaptureError.notAllowed {
+          note = "Allow screen recording in System Settings"
+        } catch e {
+          note = e.message
+        }
+      }
+    }
+    if !shot.isEmpty() {
+      Image(shot) { height: 200 }
+    }
+    Text(note)
+  }
+}
+```
+
+| | 截取的内容 |
+| --- | --- |
+| macOS | 用 ScreenCaptureKit 截取显示器；第一次截取时会请求“录屏”权限（系统设置 › 隐私与安全性），用户拒绝则是 `notAllowed` |
+| Windows | 显示器上的像素，不需要任何授权 |
+| Linux | 截图门户（portal）给出的截图，第一次会询问用户 |
+| Web | 用户在浏览器的选择框里选的屏幕或窗口（请在按下按钮时调用） |
+| iOS、Android | 应用自己的窗口：应用在前台时，屏幕上显示的就是它 |
+
+用户拒绝时抛出 `CaptureError.notAllowed`，平台做不到时（没有这个显示器、浏览器不支持截取屏幕、Linux 上没有门户）抛出 `.notAvailable`。
+
 ## 应用图标：platform/appicon
 
 `asuka.toml` 列出应用除了自己的图标之外还能显示的图标，每个平台的构建会像生成应用图标一样生成它们：

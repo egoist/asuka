@@ -1747,6 +1747,48 @@ component Player {
 
 これらの設定は画面ごとではなく、アプリ全体のものです。ある画面で設定したら、その画面が閉じるときに元に戻してください（タスクの中の `defer`）。
 
+### 画面のキャプチャ
+
+`screen.capture(display)` は、ディスプレイに映っているものを PNG ファイルとしてアプリのキャッシュに保存します（`Image` で表示でき、共有や保存もできます）。引数がなければメインのディスプレイを、`screen.displays()` の一つを渡せばそのディスプレイをキャプチャします。
+
+```asuka check
+import platform/screen
+
+component Grab {
+  state shot = ""
+  state note = ""
+
+  Column {
+    gap: 12
+    Button("Capture the screen") {
+      on press {
+        do {
+          shot = try await screen.capture()
+        } catch screen.CaptureError.notAllowed {
+          note = "Allow screen recording in System Settings"
+        } catch e {
+          note = e.message
+        }
+      }
+    }
+    if !shot.isEmpty() {
+      Image(shot) { height: 200 }
+    }
+    Text(note)
+  }
+}
+```
+
+| | キャプチャするもの |
+| --- | --- |
+| macOS | ScreenCaptureKit によるディスプレイの内容。初回は「画面収録」の許可を求め（システム設定 › プライバシーとセキュリティ）、断られると `notAllowed` |
+| Windows | ディスプレイのピクセル。何も確認しません |
+| Linux | スクリーンショットポータルが撮ったもの。初回はユーザーに確認します |
+| Web | ユーザーがブラウザーの選択画面で選んだ画面かウィンドウ（ボタンを押したときに呼んでください） |
+| iOS、Android | アプリ自身のウィンドウ。アプリが前面にあるあいだ画面に映っているのはそれです |
+
+ユーザーが断ると `CaptureError.notAllowed` を、プラットフォームにできないとき（そのディスプレイがない、画面のキャプチャに対応していないブラウザー、ポータルのない Linux）は `.notAvailable` を投げます。
+
 ## アプリのアイコン：platform/appicon
 
 `asuka.toml` には、アプリ自身のアイコンのほかに表示できるアイコンを並べます。各ビルドは、アプリのアイコンと同じようにそれらを作ります。

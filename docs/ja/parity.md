@@ -235,6 +235,7 @@ Web ビューのアプリは、HTML と CSS で書いたとおりに、どのシ
 | ログイン時の起動 | `app.setLoginItemSettings` | ログイン時に起動 | ✓ `platform/login`（`SMAppService`、macOS 13 以降。Run キー。XDG autostart または Background ポータル） |
 | ファイルの監視 | Node の `fs.watch`（chokidar） | `WatchFiles`、watch プラグイン | ✓ `std/watch` の `watch.path`：名前の変更は対にし、アトミックな保存は書き込みとして扱い、連続した変更はまとめる。スマートフォンと Web では非対応 |
 | ディスプレイ | `screen` | ディスプレイ | ✓ `screen.displays()`、`nearest`、`matching`（Wayland では作業領域なし。スマートフォンと Web ではそれぞれの画面） |
+| 画面のキャプチャ | `desktopCapturer` | — | ✓ `screen.capture(display)`：ディスプレイの内容の PNG（Mac は ScreenCaptureKit と画面収録の許可、Windows はディスプレイのピクセル、Linux はスクリーンショットポータル、ブラウザーは選択画面、スマートフォンはアプリ自身のウィンドウ） |
 | スリープ、スリープ解除、ロック、アイドル時間、バッテリー | `powerMonitor` | 電源 | ✓ `platform/power`（スマートフォンではバッテリー、低電力モード、ロック。Web ではバッテリー） |
 | アプリのアイコンでの進捗と注意喚起 | `setProgressBar`、`flashFrame`、`dock.bounce` | Dock とタスクバー | ✓ `dock.setProgress`、`dock.requestAttention`（Linux では Unity launcher API に対応したドック） |
 | アクセントカラー、コントラストを上げる、透明度を下げる | `systemPreferences` | アクセントカラーとアクセシビリティ | ✓ `platform/appearance`（Linux では「透明度を下げる」はなし） |

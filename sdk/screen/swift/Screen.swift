@@ -6,13 +6,19 @@
 // brightness, the user's put back as the app goes. The Mac:
 // NSScreen's screens (the first has the menu bar), its windows left out
 // of captures (NSWindow.sharingType); the orientation and the bars are a
-// phone's.
+// phone's. A capture is the app's window on iOS (what's on the screen
+// while it's in front), a display's picture on the Mac: ScreenCaptureKit
+// on macOS 14 and later, CGDisplayCreateImage before; both ask for Screen
+// Recording.
 import Foundation
 import Asuka
+import ImageIO
 #if canImport(UIKit)
 import UIKit
 #else
 import AppKit
+// Weak: macOS 12.3's; an app that runs on macOS 11 loads without it.
+@_weakLinked import ScreenCaptureKit
 #endif
 
 final class SystemScreens: Screens {
@@ -61,6 +67,109 @@ final class SystemScreens: Screens {
         defer { Task { @MainActor in w.stop() } }
         #endif
         await Self.untilCancelled()
+    }
+
+    func capture(display: String) async throws -> String {
+        #if canImport(UIKit)
+        let image = try await MainActor.run { try Self.drawWindow(display) }
+        #else
+        let image = try await Self.shoot(display)
+        #endif
+        return try Self.save(image)
+    }
+
+    #if canImport(UIKit)
+    /// The app's window as the screen shows it, with the scene's other
+    /// windows over it (an alert's, a sheet's), at the screen's scale: on
+    /// a phone, what's on the screen while the app is in front.
+    @MainActor static func drawWindow(_ display: String) throws -> CGImage {
+        guard display.isEmpty || display == "main" else { throw CaptureError.notAvailable }
+        guard let window = AsukaNative.window, window.bounds.width >= 1, window.bounds.height >= 1 else { throw CaptureError.notAvailable }
+        let screen = window.windowScene?.screen ?? UIScreen.main
+        guard screen === UIScreen.main else { throw CaptureError.notAvailable }
+        let windows = (window.windowScene?.windows ?? [window]).filter { !$0.isHidden && $0.alpha > 0 }.sorted { $0.windowLevel < $1.windowLevel }
+        let format = UIGraphicsImageRendererFormat(for: window.traitCollection)
+        format.scale = screen.scale
+        format.opaque = true
+        let picture = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            for w in windows {
+                w.drawHierarchy(in: w.convert(w.bounds, to: window), afterScreenUpdates: false)
+            }
+        }
+        guard let image = picture.cgImage else { throw CaptureError.notAvailable }
+        return image
+    }
+    #else
+    /// The display's picture at its pixels (the Mac's CGDirectDisplayID;
+    /// "": the main display), once Screen Recording is allowed.
+    static func shoot(_ display: String) async throws -> CGImage {
+        let id: CGDirectDisplayID
+        if display.isEmpty {
+            id = CGMainDisplayID()
+        } else if let n = UInt32(display) {
+            id = n
+        } else {
+            throw CaptureError.notAvailable
+        }
+        guard activeDisplays().contains(id) else { throw CaptureError.notAvailable }
+        // The first request shows the system's prompt; a grant made in
+        // System Settings may hold only once the app is opened again.
+        if !CGPreflightScreenCaptureAccess() && !CGRequestScreenCaptureAccess() { throw CaptureError.notAllowed }
+        if #available(macOS 14, *) {
+            do {
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                guard let d = content.displays.first(where: { $0.displayID == id }) else { throw CaptureError.notAvailable }
+                let filter = SCContentFilter(display: d, excludingWindows: [])
+                let config = SCStreamConfiguration()
+                let scale = CGFloat(filter.pointPixelScale)
+                config.width = Int((filter.contentRect.width * scale).rounded())
+                config.height = Int((filter.contentRect.height * scale).rounded())
+                config.captureResolution = .best
+                config.showsCursor = false // as the system's screenshots
+                return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            } catch let e as NSError where e.domain == SCStreamErrorDomain && e.code == SCStreamError.Code.userDeclined.rawValue {
+                throw CaptureError.notAllowed
+            }
+        }
+        guard let image = legacyDisplayImage(id) else { throw CaptureError.notAllowed }
+        return image
+    }
+
+    /// The displays drawn now (a mirrored one's set too).
+    static func activeDisplays() -> [CGDirectDisplayID] {
+        var n: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &n) == .success, n > 0 else { return [] }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(n))
+        guard CGGetOnlineDisplayList(n, &ids, &n) == .success else { return [] }
+        return Array(ids.prefix(Int(n))).filter { CGDisplayIsActive($0) != 0 }
+    }
+
+    /// CGDisplayCreateImage, macOS 11 to 13's way (ScreenCaptureKit's
+    /// screenshots are macOS 14's): found at run time, since newer SDKs
+    /// leave it out.
+    static func legacyDisplayImage(_ id: CGDirectDisplayID) -> CGImage? {
+        typealias Create = @convention(c) (CGDirectDisplayID) -> Unmanaged<CGImage>?
+        guard let f = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGDisplayCreateImage") else { return nil } // RTLD_DEFAULT
+        return unsafeBitCast(f, to: Create.self)(id)?.takeRetainedValue()
+    }
+    #endif
+
+    /// The image as a PNG in the app's caches: its path.
+    static func save(_ image: CGImage) throws -> String {
+        var dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        #if !canImport(UIKit)
+        // A Mac's caches are the user's: the app's own folder in them.
+        dir = dir.appendingPathComponent(Bundle.main.bundleIdentifier ?? "asuka", isDirectory: true)
+        #endif
+        dir = dir.appendingPathComponent("asuka-screen", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("screen-\(UUID().uuidString).png")
+        guard let d = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
+        }
+        CGImageDestinationAddImage(d, image, nil)
+        guard CGImageDestinationFinalize(d) else { throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path]) }
+        return url.path
     }
 
     static func untilCancelled() async {

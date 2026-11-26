@@ -101,6 +101,26 @@ native interface Screens {
   /// Calls taken with each screenshot of the app, until the task is
   /// cancelled.
   async fn watchScreenshots(taken: fn(int))
+  /// What the display (its id; "": the primary) shows, as a PNG file in
+  /// the app's caches: its path. Throws CaptureError's.
+  async fn capture(display: string) -> string
+}
+
+/// Why a capture didn't happen.
+pub enum CaptureError: Error {
+  /// The user said no: the Mac's Screen Recording permission (System
+  /// Settings › Privacy & Security), Linux's screenshot permission, the
+  /// browser's picker cancelled.
+  notAllowed
+  /// The platform can't: no display by that id, a browser without screen
+  /// capture, Linux without the screenshot portal.
+  notAvailable
+
+  /// The error's text.
+  fn message() -> string = match self {
+    .notAllowed => "screen: capturing the screen isn't allowed"
+    .notAvailable => "screen: capturing the screen isn't available here"
+  }
 }
 
 // Made once; none where the platform has no code for it.
@@ -242,6 +262,21 @@ pub fn preventCapture(on: bool) {
   if let p = platform {
     try? p.preventCapture(on: on)
   }
+}
+
+/// What a display shows now, as a PNG file in the app's caches (Image
+/// shows it; share or save it): the primary display without one. A Mac
+/// asks for Screen Recording the first time (System Settings › Privacy &
+/// Security), Linux asks through its screenshot portal, a browser lets
+/// the user pick a screen or a window in its picker; Windows asks
+/// nothing. On a phone it's the app's own window, which is what's on the
+/// screen while the app is in front. Throws CaptureError.notAllowed when
+/// the user says no, .notAvailable where the platform can't.
+pub async fn capture(display: Display? = none) throws -> string {
+  if let p = platform {
+    return try await p.capture(display: display?.id ?? "")
+  }
+  throw CaptureError.notAvailable
 }
 
 /// Each screenshot the user takes of the app (a count, from 1), to say
