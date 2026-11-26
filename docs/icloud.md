@@ -158,10 +158,11 @@ downloaded file too, but may race with a sync.
 how it goes. `icloud.evict(path)` takes a file off the device and keeps
 it in iCloud, to free room: it's downloaded again when it's read.
 
-Moving a file of the device's into iCloud, or one out of iCloud onto the
-device, isn't in the package yet: write it with `writeFile` (and delete
-the device's copy), or read it with `readFile` and write it with
-`std/fs`.
+`icloud.moveIn(from:, to:)` moves a file of the device's into iCloud (to
+a path in a container): iCloud uploads it, and it's gone from where it
+was. `icloud.moveOut(from:, to:)` moves one out onto the device, its
+alone: downloaded first if it isn't here, and gone from iCloud on every
+device.
 
 ### Conflicts
 
@@ -187,8 +188,10 @@ async fn keepTheOther(path: string) throws {
 
 ### Sharing a link
 
-A public link to a file, which anyone with it can download a copy from,
-isn't in `platform/icloud` yet.
+`icloud.link(path)` makes a public link to a file, as iCloud Drive's
+Copy Link does: anyone with it downloads a copy. Its `url` is the link,
+and `expires` when it stops working (none: as long as the file's
+there). Send it with the share sheet (`device.share`).
 
 ## asuka.toml and entitlements
 
@@ -252,22 +255,26 @@ The package doesn't use CloudKit's databases (records, queries, sharing).
 
 ## Testing
 
-`asuka test` has no iCloud: the account
-isn't available, the lists are empty, a `Value` keeps its default and
-what the test sets it to, and the calls throw "icloud: not available",
-as on Android. The package has no fake iCloud yet that a test could play
-the other devices with.
+`asuka test` has no iCloud: the account isn't available, the lists are
+empty, a `Value` keeps its default and what the test sets it to, and the
+calls throw "icloud: not available", as on Android. `icloud.fake()`
+installs one a test drives, signed in: its container is a folder of the
+app's (`path("Documents/a.txt")` is a file in it), and the test plays
+the user's other devices: `arrive(rel, data)` is another device's new
+file, listed and not yet downloaded; `change(key, value)` another
+device's change of a `Value`; `conflict(rel, data)` another device's
+version of a file; `signOut()` and `signIn(account)` the user's
+account.
 
-```asuka
+```asuka check
 import platform/icloud
 
-test "no iCloud in tests" {
-  expect(!icloud.account().available)
-  expect(icloud.files(.documents).isEmpty())
-  do {
-    let _ = try await icloud.documents()
-  } catch e {
-    expect(e.message == "icloud: not available")
-  }
+test "another device's file arrives" {
+  let ic = icloud.fake()
+  ic.arrive("Documents/today.txt", "Rain all day.".bytes())
+  let files = try await icloud.list(.documents)
+  expect(files.map(f => f.name) == ["today.txt"] && files[0].status == .notDownloaded)
+  let text = (try await icloud.readFile(ic.path("Documents/today.txt"))).string()
+  expect(text == "Rain all day." && ic.downloaded("Documents/today.txt"))
 }
 ```

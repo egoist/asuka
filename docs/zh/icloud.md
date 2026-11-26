@@ -100,7 +100,7 @@ component Reader {
 
 `icloud.download(path)` 开始下载一个文件，下载的进度可以从它的 `File` 上看到。`icloud.evict(path)` 把文件从本机移除，但在 iCloud 里保留，以腾出空间：下次读取时会重新下载。
 
-这个包暂时还不能把本机的文件移进 iCloud，或者把 iCloud 里的文件移出到本机：请用 `writeFile` 写入（再删掉本机的副本），或者用 `readFile` 读出来，再用 `std/fs` 写入。
+`icloud.moveIn(from:, to:)` 把本机的一个文件移进 iCloud（移到容器里的某个路径）：iCloud 会上传它，原来的位置上就没有了。`icloud.moveOut(from:, to:)` 把 iCloud 里的文件移出到本机，只归这台设备所有：如果它还不在本机，会先下载下来，然后在所有设备的 iCloud 里删除。
 
 ### 冲突
 
@@ -119,7 +119,7 @@ async fn keepTheOther(path: string) throws {
 
 ### 分享链接
 
-`platform/icloud` 暂时还不能生成文件的公开链接（任何拿到链接的人都能从中下载文件的一份副本）。
+`icloud.link(path)` 生成一个文件的公开链接，和 iCloud 云盘的“拷贝链接”一样：任何拿到链接的人都能下载它的一份副本。它的 `url` 是链接，`expires` 是链接失效的时间（none：只要文件还在就一直有效）。可以用分享面板（`device.share`）把它发出去。
 
 ## asuka.toml 与 entitlement
 
@@ -159,18 +159,17 @@ iCloud 按应用自己的 ID 保存它的值和文档。`asuka dev` 的开发 Ap
 
 ## 测试
 
-`asuka test` 里没有 iCloud：账户不可用，文件列表是空的，`Value` 只保留它的默认值和测试设置的值，其他调用都会像在 Android 上一样抛出 "icloud: not available"。这个包暂时还没有模拟的 iCloud，让测试来扮演用户的其他设备。
+`asuka test` 里没有 iCloud：账户不可用，文件列表是空的，`Value` 只保留它的默认值和测试设置的值，其他调用都会像在 Android 上一样抛出 "icloud: not available"。`icloud.fake()` 会装上一个由测试驱动、已经登录的 iCloud：它的容器是应用的一个文件夹（`path("Documents/a.txt")` 就是其中的一个文件），测试来扮演用户的其他设备：`arrive(rel, data)` 是另一台设备新建的文件，出现在列表里、还没有下载；`change(key, value)` 是另一台设备对某个 `Value` 的修改；`conflict(rel, data)` 是另一台设备保存的文件版本；`signOut()` 和 `signIn(account)` 是用户的账户。
 
-```asuka
+```asuka check
 import platform/icloud
 
-test "no iCloud in tests" {
-  expect(!icloud.account().available)
-  expect(icloud.files(.documents).isEmpty())
-  do {
-    let _ = try await icloud.documents()
-  } catch e {
-    expect(e.message == "icloud: not available")
-  }
+test "another device's file arrives" {
+  let ic = icloud.fake()
+  ic.arrive("Documents/today.txt", "Rain all day.".bytes())
+  let files = try await icloud.list(.documents)
+  expect(files.map(f => f.name) == ["today.txt"] && files[0].status == .notDownloaded)
+  let text = (try await icloud.readFile(ic.path("Documents/today.txt"))).string()
+  expect(text == "Rain all day." && ic.downloaded("Documents/today.txt"))
 }
 ```

@@ -100,7 +100,7 @@ iCloud にあるアプリのファイルは、アプリの**コンテナー**に
 
 `icloud.download(path)` は、ファイルのダウンロードを始めます。進み具合は、そのファイルの `File` でわかります。`icloud.evict(path)` は、ファイルを iCloud に残したままデバイスから取り除き、空き容量を増やします。取り除いたファイルは、次に読むときに再びダウンロードされます。
 
-デバイス上のファイルを iCloud に移したり、iCloud のファイルをデバイス上に移したりする機能は、まだパッケージにありません。`writeFile` で書き込む（そしてデバイス上のコピーを削除する）か、`readFile` で読んで `std/fs` で書き込んでください。
+`icloud.moveIn(from:, to:)` は、デバイス上のファイルを iCloud に（コンテナーの中のパスへ）移します。iCloud がアップロードし、元の場所からはなくなります。`icloud.moveOut(from:, to:)` は、iCloud のファイルをデバイス上に移し、このデバイスだけのものにします。まだデバイスにない場合は先にダウンロードし、すべてのデバイスの iCloud から削除されます。
 
 ### 競合
 
@@ -119,7 +119,7 @@ async fn keepTheOther(path: string) throws {
 
 ### リンクの共有
 
-ファイルの公開リンク（リンクを知っていれば誰でもファイルのコピーをダウンロードできるもの）は、まだ `platform/icloud` にありません。
+`icloud.link(path)` は、iCloud Drive の「リンクをコピー」と同じように、ファイルの公開リンクを作ります。リンクを知っていれば誰でもコピーをダウンロードできます。`url` がリンクで、`expires` はリンクが使えなくなる時刻です（none：ファイルがある限り使えます）。共有シート（`device.share`）で送れます。
 
 ## asuka.toml とエンタイトルメント
 
@@ -159,18 +159,17 @@ Mac では、iCloud のエンタイトルメントを使うには、アプリに
 
 ## テスト
 
-`asuka test` には iCloud がありません。Android と同じく、アカウントは利用できず、一覧は空で、`Value` はデフォルト値と、テストが設定した値を保つだけです。呼び出しは「icloud: not available」を投げます。ユーザーのほかのデバイスの役をテストが演じられるフェイクの iCloud は、まだパッケージにありません。
+`asuka test` には iCloud がありません。Android と同じく、アカウントは利用できず、一覧は空で、`Value` はデフォルト値と、テストが設定した値を保つだけです。呼び出しは「icloud: not available」を投げます。`icloud.fake()` は、テストが動かす、サインイン済みの iCloud を用意します。コンテナーはアプリのフォルダーで（`path("Documents/a.txt")` はその中のファイルです）、テストがユーザーのほかのデバイスの役を演じます。`arrive(rel, data)` はほかのデバイスが作った新しいファイル（一覧に出て、まだダウンロードされていないもの）、`change(key, value)` はほかのデバイスによる `Value` の変更、`conflict(rel, data)` はほかのデバイスが保存したファイルのバージョン、`signOut()` と `signIn(account)` はユーザーのアカウントです。
 
-```asuka
+```asuka check
 import platform/icloud
 
-test "no iCloud in tests" {
-  expect(!icloud.account().available)
-  expect(icloud.files(.documents).isEmpty())
-  do {
-    let _ = try await icloud.documents()
-  } catch e {
-    expect(e.message == "icloud: not available")
-  }
+test "another device's file arrives" {
+  let ic = icloud.fake()
+  ic.arrive("Documents/today.txt", "Rain all day.".bytes())
+  let files = try await icloud.list(.documents)
+  expect(files.map(f => f.name) == ["today.txt"] && files[0].status == .notDownloaded)
+  let text = (try await icloud.readFile(ic.path("Documents/today.txt"))).string()
+  expect(text == "Rain all day." && ic.downloaded("Documents/today.txt"))
 }
 ```

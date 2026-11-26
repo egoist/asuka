@@ -1,0 +1,49 @@
+import std/fs
+
+test "a file moves into iCloud and out again" {
+  let ic = fake()
+  let local = fs.join([fs.appDir(), "draft.txt"])
+  try fs.write(local, "Rain all day.".bytes())
+  let there = ic.path("Documents/draft.txt")
+  try await moveIn(from: local, to: there)
+  expect(!fs.exists(local))
+  expect((try await list(.documents)).map(f => f.name) == ["draft.txt"])
+  try await moveOut(from: there, to: local)
+  expect((try fs.read(local)).string() == "Rain all day.")
+  expect((try await list(.documents)).isEmpty())
+}
+
+test "a file only in iCloud is downloaded as it moves out" {
+  let ic = fake()
+  ic.arrive("Documents/note.txt", "From the iPad.".bytes())
+  let out = fs.join([fs.appDir(), "note.txt"])
+  try await moveOut(from: ic.path("Documents/note.txt"), to: out)
+  expect((try fs.read(out)).string() == "From the iPad.")
+  expect(ic.downloaded("Documents/note.txt"))
+}
+
+test "a link is to a file that's there" {
+  let ic = fake()
+  ic.arrive("Documents/trip.pdf", "%PDF".bytes())
+  let l = try await link(ic.path("Documents/trip.pdf"))
+  expect(l.url.hasSuffix("#trip.pdf") && l.expires == none)
+  var said = ""
+  do {
+    let _ = try await link(ic.path("Documents/none.pdf"))
+  } catch e {
+    said = e.message
+  }
+  expect(said.hasPrefix("icloud: no file at"))
+}
+
+test "signed out, nothing moves" {
+  let ic = fake()
+  ic.signOut()
+  var said = ""
+  do {
+    try await moveIn(from: fs.join([fs.appDir(), "x"]), to: ic.path("Documents/x"))
+  } catch e {
+    said = e.message
+  }
+  expect(said == "icloud: not signed in")
+}

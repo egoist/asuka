@@ -366,6 +366,62 @@ pub async fn rename(from: string, to: string) throws {
   let _ = try await call("move", json.encode(["from": from, "to": to]).bytes())
 }
 
+/// Moves the file of the device's at from (outside the containers) into
+/// iCloud, at to (a path in a container): iCloud uploads it, and it's
+/// gone from where it was.
+pub async fn moveIn(from: string, to: string) throws {
+  if let f = faked {
+    try f.need()
+    try fs.mkdirAll(fs.dir(to))
+    try fs.rename(from, to)
+    f.changed()
+    return
+  }
+  let _ = try await call("moveIn", json.encode(["from": from, "to": to]).bytes())
+}
+
+/// Moves the file in iCloud at from out to the device, at to (outside
+/// the containers): it's this device's alone, and gone from iCloud on
+/// every device. A file only in iCloud is downloaded first.
+pub async fn moveOut(from: string, to: string) throws {
+  if let f = faked {
+    try f.fetch(from)
+    try fs.mkdirAll(fs.dir(to))
+    try fs.rename(from, to)
+    f.changed()
+    return
+  }
+  let _ = try await call("moveOut", json.encode(["from": from, "to": to]).bytes())
+}
+
+/// A public link to a file in iCloud, which anyone who has it can
+/// download a copy from, and when it stops working (none: as long as
+/// the file is there).
+pub struct Link {
+  url: string
+  expires: time.Time? = none
+}
+
+/// A public link to path's file in iCloud (uploaded first), to send to
+/// someone: anyone with it downloads a copy (iCloud Drive's Copy Link).
+pub async fn link(path: string) throws -> Link {
+  if let f = faked {
+    try f.need()
+    if !fs.exists(path) && f.remote[path] == none {
+      throw Error("icloud: no file at {path}")
+    }
+    return Link(url: "https://www.icloud.com/iclouddrive/test#{fs.base(path)}")
+  }
+  let b = try await call("link", path.bytes())
+  let w: WireLink = try json.decode(b.string())
+  return Link(url: w.url, expires: if w.expires > 0 { time.unixMilli(w.expires) } else { none })
+}
+
+struct WireLink {
+  url: string = ""
+  expires: int = 0
+}
+
 /// The versions other devices saved of path, in conflict with this one.
 pub async fn conflicts(path: string) throws -> [Version] {
   if let f = faked {
