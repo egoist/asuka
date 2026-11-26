@@ -214,9 +214,11 @@ enum AsukaMenus {
             addAppItems(view, m)
             view.addItem(.separator())
         }
-        // back: goes along the responder chain to the window in use (its
-        // delegate, Toolbar.swift), which enables it while it can go back.
-        asukaAddItem(view, asukaWord("back"), Selector(("back:")), "[")
+        // Back goes to the window in use (rt.keyWin), as its back button
+        // does, enabled while it can go back (AsukaNavTarget's
+        // validation), not to whatever window is key: one shows when no
+        // window is key, the app being in the background.
+        asukaAddItem(view, asukaWord("back"), #selector(AsukaNavTarget.back(_:)), "[").target = AsukaNavTarget.shared
         view.addItem(.separator())
         asukaAddItem(view, menuWord("Enter Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), "f", [.control])
         asukaAddSubmenu(bar, menuWord("View"), view)

@@ -373,14 +373,13 @@ extension AsukaNavTarget: NSToolbarDelegate {
     @objc func barItem(_ sender: Any?) { rt.barItem(sender) }
 }
 
-// The View menu's Back (back:, sent along the responder chain) goes to the
-// window it's in: its delegate. It's enabled while that window's stack has
-// a screen to go back to.
-extension AsukaWin: NSMenuItemValidation {
-    @objc func back(_ sender: Any?) { MainActor.assumeIsolated { AsukaRuntime.shared.back(self) } }
-
+// The View menu's Back (its target, MenuBar.swift): enabled while the
+// window in use can go back, and while no window of another's (an open
+// panel) is key, as the responder chain would have it.
+extension AsukaNavTarget: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if item.action == #selector(back(_:)) { return MainActor.assumeIsolated { AsukaRuntime.shared.canGoBack(self) } }
-        return true
+        guard item.action == #selector(back(_:)) else { return true }
+        if let k = NSApp.keyWindow, !rt.allWins.contains(where: { $0.window === k }) { return false }
+        return rt.canGoBack(rt.keyWin)
     }
 }
