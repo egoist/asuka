@@ -332,6 +332,13 @@ type appConfig struct {
 	// Health is what an app of platform/health asks of Android's Health
 	// Connect: the kinds it reads and writes, its privacy policy (health.go).
 	Health healthConfig `json:"health"`
+	// Car is what an app of platform/car is on a car's screen: its
+	// category, which CarPlay and Android Auto show it by (car.go).
+	Car carConfig `json:"car"`
+	// carScene: the app has CarPlay's scene (carExtras); carAndroid, its
+	// Android Auto category ("media": a media browser), "" none.
+	carScene   bool
+	carAndroid string
 	// Ads is what an app of platform/ads gives Google Mobile Ads: its
 	// AdMob app IDs, more ad networks' SKAdNetwork identifiers (ads.go).
 	Ads adsConfig `json:"ads"`
@@ -460,6 +467,9 @@ func loadConfig(dir string) (*appConfig, error) {
 	}
 	if err := c.Health.check(); err != nil {
 		return nil, fmt.Errorf("asuka.toml: health: %v", err)
+	}
+	if err := c.Car.check(); err != nil {
+		return nil, fmt.Errorf("asuka.toml: car: %v", err)
 	}
 	if err := c.Ads.check(); err != nil {
 		return nil, fmt.Errorf("asuka.toml: ads: %v", err)
@@ -594,7 +604,7 @@ const bluetoothPackage = "platform/bluetooth"
 // permissionsFor adds what the app's own asuka.toml asks of the
 // packages deps (the program's imports, by import path) beyond their
 // manifests (depManifests): Apple Pay's merchant IDs, the nfc,
-// bluetooth, health and ads tables. nil deps: every package's (the player runs any app).
+// bluetooth, health, ads and car tables. nil deps: every package's (the player runs any app).
 // Run after depManifests, whose permissions these change.
 func (c *appConfig) permissionsFor(deps []string) {
 	c.payEntitlement(deps)
@@ -602,6 +612,7 @@ func (c *appConfig) permissionsFor(deps []string) {
 	c.healthExtras(deps)
 	c.adsExtras(deps)
 	c.analyticsExtras(deps)
+	c.carExtras(deps)
 	if deps == nil || slices.Contains(deps, bluetoothPackage) {
 		c.bluetoothExtras()
 	}

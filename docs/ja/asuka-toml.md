@@ -372,6 +372,22 @@ banner = "banner.png"
 
 Apple TV のビルド（`asuka build --platform tvos`）にはキーは要りません。iOS のアプリを tvOS のプロファイルで署名したものです。[テレビ](tv.md)を参照してください。
 
+## car
+
+`platform/car` をインポートしたアプリが、車の画面で何であるかを指定します。カテゴリによって、どの車に表示されるか、どのテンプレートを使えるか、各プラットフォームのビルドに何が加わるかが決まります。iOS ではそのカテゴリの CarPlay の entitlement と CarPlay シーン、Android では Car App Library のサービスとそのカテゴリ、`automotive_app_desc.xml`、Car App API のレベル（オーディオアプリではメディアブラウザー）です。このパッケージをインポートしていないアプリには何もしません。
+
+```toml
+[car]
+category = "audio"
+```
+
+| キー | 型 | デフォルト | 内容 |
+|---|---|---|---|
+| `category` | 文字列 | なし | アプリの車での種類：`audio`、`communication`、`charging`、`parking`、`fueling`（CarPlay と Android Auto の両方）、`quickFood`、`drivingTask`（CarPlay のみ）、`pointOfInterest`、`iot`、`weather`（Android Auto のみ）。指定しないと、アプリは車に表示されません。 |
+| `minCarApiLevel` | 整数 | `1` | アプリのテンプレートが Android Auto で必要とする Car App API のレベル（1 から 7。タブには 6 が必要）。 |
+
+CarPlay の entitlement は Apple に申請して付与してもらいます。署名付きビルドのプロファイルにそのカテゴリのものがないと、その旨が表示されます。詳しくは[車の画面](car.md#カテゴリasukatoml-の-car)を参照してください。
+
 ## linux
 
 Linux のビルドが、デスクトップファイルと AppStream の metainfo に書き出すアプリの情報です。ランチャー、ソフトウェアセンター、Flathub に表示されます。Flathub とソフトウェアセンターは、概要、説明、ライセンス、開発者を求めます。

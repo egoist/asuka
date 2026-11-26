@@ -2471,6 +2471,21 @@ fn offer(notes: [Note]) {
 
 「Mark Buy milk done in Notes」と言うと `notes://done/12` が開きます。選ばれたデータの `id` が URL のパラメーターの位置に入ります。フレーズには、`options` のパラメーターと同じように entity のパラメーターを入れられます。Android では、それぞれのデータが一つずつランチャーのショートカットになり（ランチャーが表示できる数まで）、同じ URL を開きます。[`examples/notes`](../../examples/notes) がこの機能を使っています。
 
+## 車の画面：platform/car
+
+`platform/car` はアプリを車の画面、つまり CarPlay と Android Auto に表示します。表示されるのはアプリのビューではなくプラットフォームのテンプレート（リスト、グリッド、タブ、情報、地図上の場所、再生中の表示）で、値として記述し、アプリの状態に追従させ、行を選んだときに何をするかを指定します。`asuka.toml` の `[car]` にアプリのカテゴリを書くと、CLI がそこから CarPlay の entitlement とシーン、Android Auto のサービスを追加します。詳しくは[車の画面](car.md)を参照してください。
+
+```asuka
+car.Screen {
+  root: .list(title: "Library", items: albums.map(a => car.Item(
+    title: a.title,
+    image: a.cover,
+    browsable: true,
+    run: () => car.push(() => album(a)),
+  )))
+}
+```
+
 ## 触覚フィードバック：device.haptic
 
 `device.haptic(kind)` は触覚フィードバックを再生します（iOS では UIFeedbackGenerator、Android では `performHapticFeedback`）。種類は `device.Haptic` の `.selection`、`.light`、`.medium`、`.heavy`、`.success`、`.warning`、`.error` のいずれかです。Mac ではトラックパッドのフィードバックを再生します（感圧タッチトラックパッドで、`.selection` では整列、それ以外ではレベル変更のフィードバック）。ブラウザーでは、可能な環境（Android の Chrome）で振動します。Windows と Linux には触覚フィードバックがないので、何もしません。

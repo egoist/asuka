@@ -363,7 +363,7 @@ func (t *iosToolchain) infoPlist(cfg *appConfig, simulator bool) (map[string]any
 		"UIRequiredDeviceCapabilities":         []string{"arm64"},
 		"UILaunchScreen":                       map[string]any{},
 		"CADisableMinimumFrameDurationOnPhone": true, // 120 Hz on ProMotion iPhones
-		"UIApplicationSceneManifest":           map[string]any{"UIApplicationSupportsMultipleScenes": false},
+		"UIApplicationSceneManifest":           cfg.sceneManifest(),
 		"UISupportedInterfaceOrientations":     orient,
 		"DTPlatformName":                       t.sdkName,
 		"DTPlatformVersion":                    sdkVersion,

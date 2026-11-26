@@ -34,7 +34,8 @@ func (c *appConfig) splashOn() bool { return c != nil && c.Splash.Background != 
 // from the asset catalog, compileAssets'; AsukaSplash, for the host's
 // copy of it that stays until the first frame).
 func (c *appConfig) plistExtras() map[string]any {
-	m := map[string]any{"UILaunchScreen": map[string]any{}}
+	// The scenes: the window's, and platform/car's CarPlay scene.
+	m := map[string]any{"UILaunchScreen": map[string]any{}, "UIApplicationSceneManifest": c.sceneManifest()}
 	if u := c.ubiquitousContainers(); u != nil {
 		m["NSUbiquitousContainers"] = u
 	}
@@ -258,6 +259,11 @@ func androidRes(c *appConfig, res string) (bool, error) {
 		wrote = true
 	}
 	if ok, err := androidTVRes(c, res); err != nil {
+		return false, err
+	} else if ok {
+		wrote = true
+	}
+	if ok, err := c.androidCarRes(res); err != nil {
 		return false, err
 	} else if ok {
 		wrote = true

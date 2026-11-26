@@ -513,7 +513,6 @@ const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <key>UIDeviceFamily</key><array>%s</array>
 <key>CADisableMinimumFrameDurationOnPhone</key><true/>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
-<key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 %s</dict></plist>
 `

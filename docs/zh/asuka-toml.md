@@ -370,6 +370,22 @@ banner = "banner.png"
 
 Apple TV 构建（`asuka build --platform tvos`）不需要任何键：它就是 iOS 应用，用 tvOS 描述文件签名。见[电视](tv.md)。
 
+## car
+
+导入了 `platform/car` 的应用在车机屏幕上属于哪一类。类别决定了哪些汽车会显示它、它能用哪些模板，以及每个平台的构建要加上什么：iOS 上是该类别的 CarPlay entitlement 和一个 CarPlay 场景；Android 上是 Car App Library 的服务及其类别、`automotive_app_desc.xml` 和 Car App API 等级（音频应用则是一个媒体浏览服务）。没有导入这个包的应用不受它影响。
+
+```toml
+[car]
+category = "audio"
+```
+
+| 键 | 类型 | 默认值 | 含义 |
+|---|---|---|---|
+| `category` | 字符串 | 无 | 应用在车上的类别：`audio`、`communication`、`charging`、`parking` 或 `fueling`（CarPlay 和 Android Auto 都有），`quickFood` 或 `drivingTask`（仅 CarPlay），`pointOfInterest`、`iot` 或 `weather`（仅 Android Auto）。不设置时，应用不会显示在汽车上。 |
+| `minCarApiLevel` | 整数 | `1` | 应用的模板在 Android Auto 上需要的 Car App API 等级，1 到 7（标签页需要 6）。 |
+
+CarPlay 的 entitlement 需要向 Apple 申请；签名构建的描述文件缺少该类别的 entitlement 时会提示。详见[车机屏幕](car.md#类别asukatoml-的-car)。
+
 ## linux
 
 Linux 构建的 desktop 文件和 AppStream metainfo 对应用的描述，也就是启动器、软件中心和 Flathub 显示的内容。Flathub 和软件中心要求提供摘要、描述、许可证和开发者。

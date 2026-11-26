@@ -1,0 +1,7 @@
+name = "platform/car"
+version = "0.1.0"
+description = "The app on a car's screen: CarPlay's and Android Auto's templates, lists, grids, tabs and now playing"
+
+# What else each platform needs (the CarPlay entitlement and scene, the
+# CarAppService, its category and automotive_app_desc.xml) is the CLI's,
+# from the app's asuka.toml's [car] (cmd/asuka/car.go).

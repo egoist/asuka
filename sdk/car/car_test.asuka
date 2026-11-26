@@ -1,0 +1,158 @@
+// The car's screen on FakeCar: what the app's Screen shows, what
+// choosing does, the car's back button.
+
+let albums = ["Spring": ["Allegro", "Largo"], "Winter": ["Adagio"]]
+
+component Library {
+  state playing = ""
+  state shown = true
+
+  fn album(name: string) -> Template = .list(
+    title: name,
+    items: (albums[name] ?? []).map(t => Item(title: t, playing: t == playing, run: () => {
+      playing = t
+    })),
+    actions: [.button(title: "Shuffle", run: () => { playing = "shuffled" })],
+  )
+
+  Column {
+    Text("Playing: {playing}")
+    if shown {
+      Screen {
+        root: .list(title: "Library", items: albums.keys().map(a => Item(title: a, browsable: true, run: () => push(() => album(a)))))
+      }
+    }
+    Button("Hide") { on press { shown = false } }
+    Text(if connected() { "In the car" } else { "Parked" })
+  }
+}
+
+test "the root shows, and follows what it reads" {
+  let c = fake()
+  let app = mount(Library())
+  await app.idle()
+  expect(c.titles() == ["Library"])
+  expect(c.texts() == ["Spring", "Winter"])
+  app.expect("Parked")
+  c.connect()
+  await app.idle()
+  app.expect("In the car")
+}
+
+test "choosing pushes, and the car's back button pops" {
+  let c = fake()
+  let app = mount(Library())
+  await app.idle()
+  try c.select("Spring")
+  await app.idle()
+  expect(c.titles() == ["Library", "Spring"])
+  expect(depth() == 2)
+  expect(c.texts() == ["Allegro", "Largo", "Shuffle"])
+  try c.select("Largo")
+  await app.idle()
+  app.expect("Playing: Largo")
+  // The pushed template follows the state it reads.
+  expect(c.title() == "Spring")
+  try c.select("Shuffle")
+  await app.idle()
+  app.expect("Playing: shuffled")
+  c.back()
+  await app.idle()
+  expect(c.titles() == ["Library"])
+  expect(depth() == 1)
+}
+
+test "nothing to choose throws" {
+  let c = fake()
+  let app = mount(Library())
+  await app.idle()
+  var failed = false
+  do {
+    try c.select("Summer")
+  } catch e {
+    failed = e.message.contains("Summer")
+  }
+  expect(failed)
+}
+
+test "pop, popToRoot, and a car that goes" {
+  let c = fake()
+  let app = mount(Library())
+  await app.idle()
+  try c.select("Spring")
+  await app.idle()
+  push(() => .message(title: "Done", text: "All played"))
+  await app.idle()
+  expect(c.titles() == ["Library", "Spring", "Done"])
+  expect(c.texts() == ["All played"])
+  pop()
+  await app.idle()
+  expect(c.titles() == ["Library", "Spring"])
+  popToRoot()
+  await app.idle()
+  expect(c.titles() == ["Library"])
+  c.connect()
+  try c.select("Winter")
+  await app.idle()
+  c.disconnect()
+  await app.idle()
+  expect(c.titles() == ["Library"])
+}
+
+test "a Screen that goes leaves nothing" {
+  let c = fake()
+  let app = mount(Library())
+  await app.idle()
+  try c.select("Spring")
+  await app.idle()
+  app.tap("Hide")
+  await app.idle()
+  expect(c.titles() == [])
+  expect(depth() == 1)
+}
+
+component Shop {
+  Screen {
+    root: .tabs([
+      Tab(title: "Nearby", symbol: "mappin", content: .places(title: "Chargers", places: [
+        Place(title: "Main St", detail: "2 free", latitude: 35.68, longitude: 139.76, run: () => push(() => .info(
+          title: "Main St",
+          fields: [Field(title: "Free", detail: "2 of 4"), Field(title: "Power", detail: "150 kW")],
+          actions: [.button(title: "Reserve", run: () => pop()), .button(title: "Busy", disabled: true, run: () => pop())],
+        ))),
+      ])),
+      Tab(title: "Favorites", symbol: "star", content: .grid(title: "Favorites", items: [Item(title: "Home", symbol: "house"), Item(title: "Work", symbol: "briefcase")])),
+    ])
+  }
+}
+
+test "tabs, places, info and their buttons" {
+  let c = fake()
+  let app = mount(Shop())
+  await app.idle()
+  expect(c.titles() == ["Nearby | Favorites"])
+  expect(c.texts() == ["Main St"])
+  try c.select("Main St")
+  await app.idle()
+  expect(c.title() == "Main St")
+  expect(c.texts() == ["Free: 2 of 4", "Power: 150 kW", "Reserve", "Busy"])
+  var disabled = false
+  do {
+    try c.select("Busy")
+  } catch {
+    disabled = true
+  }
+  expect(disabled)
+  try c.select("Reserve")
+  await app.idle()
+  expect(c.titles() == ["Nearby | Favorites"])
+}
+
+test "nowPlaying" {
+  let c = fake()
+  let app = mount(Library())
+  await app.idle()
+  push(() => .nowPlaying)
+  await app.idle()
+  expect(c.title() == "Now Playing")
+}

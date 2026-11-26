@@ -36,6 +36,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        // Another role's scene (platform/car's CarPlay) is a package's: its
+        // configuration is Info.plist's, with the package's delegate.
+        if session.role != .windowApplication { return session.configuration }
         let c = UISceneConfiguration(name: nil, sessionRole: session.role)
         c.delegateClass = SceneDelegate.self
         return c

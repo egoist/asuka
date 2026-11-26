@@ -2471,6 +2471,21 @@ fn offer(notes: [Note]) {
 
 说“Mark Buy milk done in Notes”会打开 `notes://done/12`：选中那一项的 `id` 填进 URL 中参数的位置。短语里可以引用 entity 参数，就像引用 `options` 参数一样。在 Android 上，每一项都是一个单独的启动器快捷方式（启动器能显示多少就有多少），打开同样的 URL。[`examples/notes`](../../examples/notes) 就用了这个功能。
 
+## 车机屏幕：platform/car
+
+`platform/car` 把应用显示在汽车的屏幕上，也就是 CarPlay 和 Android Auto：显示的不是应用的视图，而是平台的模板（列表、网格、标签页、信息、地图上的地点、正在播放），用值来描述，跟随应用的状态，并说明选中其中的行时做什么。`asuka.toml` 的 `[car]` 说明应用的类别，CLI 据此加上 CarPlay 的 entitlement 和场景，以及 Android Auto 的服务。详见[车机屏幕](car.md)。
+
+```asuka
+car.Screen {
+  root: .list(title: "Library", items: albums.map(a => car.Item(
+    title: a.title,
+    image: a.cover,
+    browsable: true,
+    run: () => car.push(() => album(a)),
+  )))
+}
+```
+
 ## 触感反馈：device.haptic
 
 `device.haptic(kind)` 用来播放触感反馈（iOS 上是 UIFeedbackGenerator，Android 上是 `performHapticFeedback`），参数是一个 `device.Haptic`：`.selection`、`.light`、`.medium`、`.heavy`、`.success`、`.warning` 或 `.error`。Mac 会通过触控板给出反馈（需要 Force Touch 触控板：`.selection` 对应对齐反馈，其余对应层级变化反馈）；浏览器在支持的地方会振动（Android 上的 Chrome）；Windows 和 Linux 没有触感反馈，什么也不做。

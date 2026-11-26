@@ -1,0 +1,179 @@
+// Car Audio plays an album on the phone and on a car's screen
+// (platform/car): CarPlay's and Android Auto's templates list the album's
+// tracks, mark the one playing and open the player, whose controls are
+// platform/nowplaying's, as the lock screen's are.
+//
+//   asuka dev --platform ios examples/car      # the simulator's I/O › External Displays › CarPlay
+//   asuka dev --platform android examples/car  # Android Auto's Desktop Head Unit
+
+import platform/audio
+import platform/car
+import platform/nowplaying
+
+struct Track {
+  title: string
+  file: string
+  cover: string
+}
+
+let artist = "Asuka Ensemble"
+let album = "A Day in Sines"
+
+let tracks = [
+  Track(title: "Morning", file: "music/morning.mp3", cover: "covers/morning.jpg"),
+  Track(title: "Afternoon", file: "music/afternoon.mp3", cover: "covers/afternoon.jpg"),
+  Track(title: "Evening", file: "music/evening.mp3", cover: "covers/evening.jpg"),
+]
+
+component Player {
+  state index = 0
+  // playing carries playback from a track to the next.
+  state playing = false
+  state music: audio.Player? = none
+  state status = audio.Status()
+
+  let track = tracks[index]
+
+  fn next() { index = (index + 1) % tracks.count() }
+  fn previous() { index = (index + tracks.count() - 1) % tracks.count() }
+
+  fn toggle() {
+    if status.playing { music?.pause() } else { music?.play() }
+    status.playing = !status.playing
+    playing = status.playing
+  }
+
+  /// Plays track i from its start, as choosing it on the car does.
+  fn play(i: int) {
+    if i == index {
+      music?.seek(0)
+      music?.play()
+    } else {
+      index = i
+    }
+    playing = true
+    status.playing = true
+  }
+
+  // The track's player, made again when the track changes: at the end it
+  // plays the next one.
+  task(index) {
+    let m = audio.Player(track.file)
+    music = m
+    status = audio.Status()
+    defer {
+      m.release()
+      music = none
+    }
+    if playing { m.play() }
+    while true {
+      let s = await m.status()
+      if s.ended {
+        next()
+        return
+      }
+      status = s
+      playing = s.playing
+      await sleep(250ms)
+    }
+  }
+
+  // The system's controls (the car's player's too) follow the player, and
+  // drive it.
+  nowplaying.NowPlaying {
+    title: track.title
+    artist: artist
+    album: album
+    artwork: track.cover
+    player: music
+    on next { next() }
+    on previous { previous() }
+  }
+
+  /// The album's tracks, as the car's rows (or cells): choosing one plays
+  /// it and shows the player.
+  fn rows() -> [car.Item] {
+    var out: [car.Item] = []
+    for (i, t) in tracks.enumerated() {
+      out.push(car.Item(
+        title: t.title,
+        detail: artist,
+        image: t.cover,
+        playing: i == index && status.playing,
+        run: () => {
+          play(i)
+          car.push(() => .nowPlaying)
+        },
+      ))
+    }
+    return out
+  }
+
+  car.Screen {
+    root: .tabs([
+      car.Tab(title: "Album", symbol: "music.note.list", content: .list(title: album, items: rows())),
+      car.Tab(title: "Covers", symbol: "square.grid.2x2", content: .grid(title: "Covers", items: rows())),
+    ])
+  }
+
+  SafeArea {
+    justify: .center
+    align: .center
+    padding: 24
+    Column {
+      align: .center
+      gap: 16
+      Image(track.cover) {
+        width: 240
+        height: 240
+        radius: 16
+      }
+      Column {
+        align: .center
+        gap: 4
+        Text(track.title) { font: .title2.bold() }
+        Text("{artist} — {album}") { color: .secondaryLabel }
+        Text(if car.connected() { "On the car's screen too" } else { "Connect CarPlay or Android Auto" }) {
+          color: .secondaryLabel
+          font: .footnote
+        }
+      }
+      Row {
+        gap: 12
+        Button("Previous") {
+          variant: .gray
+          on press { previous() }
+        }
+        Button(if status.playing { "Pause" } else { "Play" }) {
+          variant: .filled
+          on press { toggle() }
+        }
+        Button("Next") {
+          variant: .gray
+          on press { next() }
+        }
+      }
+    }
+  }
+}
+
+app { Player() }
+
+test "the car lists the album, and choosing a track plays it" {
+  let c = car.fake()
+  let app = mount(Player())
+  await sleep(1ms)
+  expect(c.titles() == ["Album | Covers"])
+  expect(c.texts() == ["Morning", "Afternoon", "Evening"])
+  app.expect("Connect CarPlay or Android Auto")
+  c.connect()
+  await sleep(1ms)
+  app.expect("On the car's screen too")
+  try c.select("Evening")
+  await sleep(1ms)
+  app.expect("Evening", "Pause")
+  expect(c.title() == "Now Playing")
+  c.back()
+  await sleep(1ms)
+  expect(c.titles() == ["Album | Covers"])
+}

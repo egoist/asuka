@@ -474,9 +474,10 @@ final class AsukaTextField: UITextField {
     }
 
     /// Starts the core without a screen, if it hasn't started: the system
-    /// launched the app in the background for a task (platform/periodic). The
-    /// root view is made, and goes on screen if a scene comes.
-    func startHeadless() {
+    /// launched the app in the background for a task (platform/periodic), or
+    /// for a scene of a package's (platform/car's CarPlay). The root view is
+    /// made, and goes on screen if a window scene comes.
+    public func startHeadless() {
         guard !started else { return }
         boot()
     }

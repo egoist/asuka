@@ -3665,6 +3665,27 @@ entity param, as it can an `options` one. On Android each thing is a
 launcher shortcut of its own (as many as the launcher shows), opening
 the same URL. [`examples/notes`](../examples/notes) does this.
 
+## Car screens: platform/car
+
+`platform/car` shows the app on a car's screen, CarPlay's and Android
+Auto's: not its views, but the platforms' templates (lists, grids,
+tabs, facts, places on a map, Now Playing), described as values that
+follow the app's state, with what choosing their rows does.
+`asuka.toml`'s `[car]` says the app's category, from which the CLI adds
+the CarPlay entitlement and scene and Android Auto's service. See [Car
+screens](car.md).
+
+```asuka
+car.Screen {
+  root: .list(title: "Library", items: albums.map(a => car.Item(
+    title: a.title,
+    image: a.cover,
+    browsable: true,
+    run: () => car.push(() => album(a)),
+  )))
+}
+```
+
 ## Haptics: device.haptic
 
 `device.haptic(kind)` plays haptic feedback

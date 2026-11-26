@@ -423,6 +423,29 @@ banner = "banner.png"
 An Apple TV build (`asuka build --platform tvos`) needs no key: it's
 the iOS app's, signed with a tvOS profile. See [TVs](tv.md).
 
+## car
+
+What an app that imports `platform/car` is on a car's screen. The
+category decides which cars show it and which templates it has, and
+what each platform's build adds: the category's CarPlay entitlement and
+a CarPlay scene on iOS; the Car App Library's service with its category,
+`automotive_app_desc.xml` and the Car App API level on Android (an
+audio app's: a media browser). It does nothing for an app that doesn't
+import the package.
+
+```toml
+[car]
+category = "audio"
+```
+
+| Key | Type | Default | What it is |
+|---|---|---|---|
+| `category` | string | none | What the app is on a car: `audio`, `communication`, `charging`, `parking` or `fueling` (CarPlay and Android Auto), `quickFood` or `drivingTask` (CarPlay only), `pointOfInterest`, `iot` or `weather` (Android Auto only). Without it, the app doesn't show on cars. |
+| `minCarApiLevel` | integer | `1` | The Car App API level the app's templates need on Android Auto, 1 to 7 (tabs: 6). |
+
+Apple grants CarPlay's entitlements on request; a signed build whose
+profile lacks the category's says so. See [Car screens](car.md#categories-asukatomls-car).
+
 ## linux
 
 What a Linux build's desktop file and AppStream metainfo say of the

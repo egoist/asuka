@@ -1,0 +1,12 @@
+name = "Car Audio"
+id = "dev.asuka.car"
+version = "1.0.0"
+build = 1
+icon = "icon.png"
+accent = "#8E44AD"
+
+# An audio app on a car's screen: CarPlay's audio entitlement (Apple grants
+# it on request; a simulator build has it anyway), Android Auto's media
+# browser.
+[car]
+category = "audio"

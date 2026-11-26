@@ -112,6 +112,7 @@ func loadApp(dir, platform string) (*asukaApp, error) {
 	warnDevLang(cfg)
 	warnShareSheet(cfg)
 	warnAnalytics(app, platform)
+	warnCar(app, platform)
 	return app, nil
 }
 

@@ -103,6 +103,11 @@ func (c *appConfig) dropTVExtensions() {
 		c.pushRewrite = false
 		left = append(left, "push's rewrite")
 	}
+	if c.carScene {
+		c.carScene = false
+		delete(c.entitlements, c.carEntitlement())
+		left = append(left, "CarPlay")
+	}
 	if len(left) > 0 && !c.tvToldDropped {
 		c.tvToldDropped = true
 		fmt.Printf("asuka: tvOS has no %s: the Apple TV app goes without\n", strings.Join(left, ", "))

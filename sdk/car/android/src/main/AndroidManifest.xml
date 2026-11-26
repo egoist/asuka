@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- platform/car: the images Android Auto's media browser reads (an audio
+     app's rows'). The service a car binds, with the app's category, is the
+     CLI's, from asuka.toml's [car]. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider android:name="platform.car.AsukaCarImages" android:authorities="${applicationId}.asuka.car" android:exported="true" />
+    </application>
+</manifest>

@@ -29,6 +29,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import dev.asuka.AsukaImages
+import dev.asuka.AsukaMediaSession
 import dev.asuka.AsukaModules
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Dispatchers
@@ -85,25 +86,29 @@ internal object MediaCenter : Center {
         for (w in watchers.toList()) w(c, v)
     }
 
+    private val callback = object : MediaSession.Callback() {
+        override fun onPlay() = command(Command.PLAY, 0.0)
+        override fun onPause() = command(Command.PAUSE, 0.0)
+        override fun onStop() = command(Command.STOP, 0.0)
+        override fun onSkipToNext() = command(Command.NEXT, 0.0)
+        override fun onSkipToPrevious() = command(Command.PREVIOUS, 0.0)
+        override fun onSeekTo(pos: Long) = command(Command.SEEK, pos / 1000.0)
+        override fun onFastForward() = command(Command.SKIP_FORWARD, info?.skip ?: 0.0)
+        override fun onRewind() = command(Command.SKIP_BACKWARD, info?.skip ?: 0.0)
+        override fun onCustomAction(action: String, extras: Bundle?) {
+            when (action) {
+                SKIP_FORWARD -> command(Command.SKIP_FORWARD, info?.skip ?: 0.0)
+                SKIP_BACKWARD -> command(Command.SKIP_BACKWARD, info?.skip ?: 0.0)
+            }
+        }
+    }
+
+    // The app's session (the host's, which platform/car's media browser
+    // hands Android Auto too), with this package's callback.
     private fun session(): MediaSession {
         session?.let { return it }
-        val s = MediaSession(app, "asuka")
-        s.setCallback(object : MediaSession.Callback() {
-            override fun onPlay() = command(Command.PLAY, 0.0)
-            override fun onPause() = command(Command.PAUSE, 0.0)
-            override fun onStop() = command(Command.STOP, 0.0)
-            override fun onSkipToNext() = command(Command.NEXT, 0.0)
-            override fun onSkipToPrevious() = command(Command.PREVIOUS, 0.0)
-            override fun onSeekTo(pos: Long) = command(Command.SEEK, pos / 1000.0)
-            override fun onFastForward() = command(Command.SKIP_FORWARD, info?.skip ?: 0.0)
-            override fun onRewind() = command(Command.SKIP_BACKWARD, info?.skip ?: 0.0)
-            override fun onCustomAction(action: String, extras: Bundle?) {
-                when (action) {
-                    SKIP_FORWARD -> command(Command.SKIP_FORWARD, info?.skip ?: 0.0)
-                    SKIP_BACKWARD -> command(Command.SKIP_BACKWARD, info?.skip ?: 0.0)
-                }
-            }
-        }, Handler(Looper.getMainLooper()))
+        val s = AsukaMediaSession.get(app)
+        AsukaMediaSession.addCallback(callback)
         app.packageManager.getLaunchIntentForPackage(app.packageName)?.let {
             s.setSessionActivity(PendingIntent.getActivity(app, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         }
@@ -228,9 +233,12 @@ internal object MediaCenter : Center {
             }
         }
         manager().cancel(NOTIFICATION)
+        // The session stays, the app's for as long as it runs (Android Auto
+        // may hold its token): it shows nothing now.
         session?.let {
+            it.setMetadata(null)
+            it.setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_NONE, 0, 0f).build())
             it.isActive = false
-            it.release()
         }
         session = null
     }

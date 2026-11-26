@@ -1,0 +1,606 @@
+// Package platform/car shows the app on a car's screen: CarPlay on iOS,
+// Android Auto on Android. A car's screen shows the platform's templates,
+// not the app's views (the driver's eyes are on the road, and the car
+// decides how its screen looks): lists, grids, tabs, facts, a message,
+// places on a map, and what plays. The app describes them as values, and
+// they follow what they read, as views do.
+//
+//   car.Screen {
+//     root: .list(title: "Library", items: tracks.map(t => car.Item(
+//       title: t.title,
+//       detail: t.artist,
+//       image: t.cover,
+//       playing: t == playing,
+//       run: () => play(t),
+//     )))
+//   }
+//
+// A Screen shows while it's mounted, wherever it is in the app (it shows
+// nothing on the phone); while several are, the last one mounted shows.
+// push puts a template over it (the car's back button takes it away
+// again), pop and popToRoot go back. connected says whether a car's
+// screen shows the app.
+//
+// A car shows only the apps of the categories its platform allows
+// (asuka.toml's [car]: audio, communication, EV charging, parking,
+// fueling, quick food ordering, driving tasks; on Android Auto points of
+// interest, the Internet of things, weather), and CarPlay apps need
+// Apple's entitlement for theirs. On the other platforms, and with no
+// [car], nothing shows, and connected is false.
+//
+// An audio app's player is platform/nowplaying's: push .nowPlaying to
+// show it, with its controls, which run the NowPlaying's handlers.
+
+/// A row of a list, or a cell of a grid.
+pub struct Item {
+  title: string
+  /// A line under the title (a grid cell's under its image on Android).
+  detail: string = ""
+  /// An image: an asset ("covers/spring.jpg"), a file's path, an http(s)
+  /// URL. A square one shows best.
+  image: string = ""
+  /// A symbol's name, as Symbol's, when there's no image.
+  symbol: string = ""
+  /// Whether choosing it shows more (it pushes a template): a chevron at
+  /// its end.
+  browsable: bool = false
+  /// Whether it's what plays now: CarPlay marks it (Android Auto's own
+  /// player shows what plays).
+  playing: bool = false
+  /// How much of it was played, from 0 to 1 (CarPlay's bar under it).
+  progress: float? = none
+  /// A disabled row shows, and can't be chosen.
+  enabled: bool = true
+  /// What choosing it does.
+  run: (async fn())? = none
+}
+
+/// Rows under a header.
+pub struct Section {
+  title: string = ""
+  items: [Item]
+}
+
+/// A label and its value, on an info template.
+pub struct Field {
+  title: string
+  detail: string = ""
+}
+
+/// A place on a map, listed beside it.
+pub struct Place {
+  title: string
+  /// What's said of it: its address, its price, what's free there.
+  detail: string = ""
+  latitude: float
+  longitude: float
+  /// How far it is, in meters, shown in the car's units (Android Auto
+  /// lists a place that pushes nothing only with its distance).
+  distance: float? = none
+  /// What choosing it does (a template that says more, pushed).
+  run: (async fn())? = none
+}
+
+/// A tab of a tab bar: its title, its symbol, and what it shows.
+pub struct Tab {
+  title: string
+  symbol: string = ""
+  content: Template
+}
+
+/// What a car's screen shows. A field left out is its zero:
+/// .list(title: "Recent", items: recent) has no sections and no actions.
+/// actions are the template's buttons (.button(title:, icon:, run:); a
+/// section's are taken in, a submenu isn't): in a list's or a grid's bar,
+/// under an info's or a message's text.
+pub enum Template {
+  /// Rows: items (a section without a header), then sections; empty is
+  /// what it says with no rows. CPListTemplate; Android's ListTemplate.
+  list(title: string, items: [Item], sections: [Section], actions: [Action], empty: string)
+  /// Buttons in a grid, an image and a title each (CarPlay shows 8 at
+  /// most). CPGridTemplate; Android's GridTemplate.
+  grid(title: string, items: [Item], actions: [Action])
+  /// Tabs, each a template of its own (a list, a grid, an info or
+  /// places). CPTabBarTemplate; Android's TabTemplate (car API level 6;
+  /// before, the first tab).
+  tabs(tabs: [Tab])
+  /// Facts, a label and its value each, with buttons under them.
+  /// CPInformationTemplate; Android's PaneTemplate.
+  info(title: string, fields: [Field], actions: [Action])
+  /// A message, with buttons under it (a symbol over it on Android).
+  /// CPInformationTemplate; Android's MessageTemplate.
+  message(title: string, text: string, symbol: string, actions: [Action])
+  /// Places on a map, listed beside it. CPPointOfInterestTemplate;
+  /// Android's PlaceListMapTemplate.
+  places(title: string, places: [Place])
+  /// What plays, and its controls: platform/nowplaying's NowPlaying.
+  /// CPNowPlayingTemplate; on Android Auto, its own player.
+  nowPlaying
+}
+
+// ---- What the platforms get ----
+
+/// A template's kind (the platforms' numbers).
+enum Kind {
+  list
+  grid
+  tabs
+  info
+  message
+  places
+  nowPlaying
+}
+
+/// An item as the platforms get it: run is its handler's number (0:
+/// none), progress is -1 when there's none.
+struct ShownItem {
+  run: int = 0
+  title: string = ""
+  detail: string = ""
+  image: string = ""
+  symbol: string = ""
+  browsable: bool = false
+  playing: bool = false
+  progress: float = -1
+  enabled: bool = true
+}
+
+struct ShownSection {
+  title: string = ""
+  items: [ShownItem] = []
+}
+
+/// A button: style 0 normal, 1 cancel, 2 destructive.
+struct ShownAction {
+  run: int = 0
+  title: string = ""
+  symbol: string = ""
+  style: int = 0
+  enabled: bool = true
+}
+
+struct ShownPlace {
+  run: int = 0
+  title: string = ""
+  detail: string = ""
+  latitude: float = 0
+  longitude: float = 0
+  /// Meters; -1: not known.
+  distance: float = -1
+}
+
+/// A template as the platforms get it. id is its place on the stack's:
+/// the same while it's there (the platform changes it in place), 1 the
+/// root's, 0 a tab's.
+struct Shown {
+  id: int = 0
+  kind: Kind = .list
+  title: string = ""
+  text: string = ""
+  symbol: string = ""
+  empty: string = ""
+  sections: [ShownSection] = []
+  fields: [Field] = []
+  actions: [ShownAction] = []
+  places: [ShownPlace] = []
+  tabs: [Shown] = []
+}
+
+/// The car's screen: CarPlay's interface controller, Android Auto's
+/// screens.
+/// @mainThread
+native interface Head {
+  /// Shows stack: the root first, then each template pushed over the one
+  /// before. The platform changes the ones it shows in place (by id),
+  /// pushes the ones it doesn't, and pops the ones gone.
+  fn show(stack: [Shown])
+  /// Calls connected with whether a car's screen shows the app, at once
+  /// and as one comes and goes, until the task is cancelled.
+  async fn connections(connected: fn(bool))
+  /// Calls chose with the number of what the user chose, and back with
+  /// how many templates are left when the car's back button took one
+  /// away, until the task is cancelled.
+  async fn events(chose: fn(int), back: fn(int))
+}
+
+// Made once; none where no car shows the app (not iOS or Android, or no
+// [car] in asuka.toml).
+let head = try? Head()
+
+/// A template pushed: its place's id, and the function that makes it
+/// (so that it follows what it reads).
+struct Pushed {
+  id: int
+  make: fn() -> Template
+}
+
+state pushed: [Pushed] = []
+state serial = 1
+
+// The Screens mounted, by number, in order: the last one shows.
+state screens: [int] = []
+state screenSerial = 0
+
+// What was last shown, and the handlers its numbers name (number n is
+// runs[n - 1]).
+state sentShown: [Shown]? = none
+state runs: [Action] = []
+
+/// Puts a template over what the car's screen shows; the car's back
+/// button takes it away again. template makes it, and it follows what
+/// that reads: car.push(() => album(a)).
+pub fn push(template: fn() -> Template) {
+  serial += 1
+  pushed.push(Pushed(id: serial, make: template))
+}
+
+/// Takes the template on top away, back to the one under it (the root
+/// stays).
+pub fn pop() {
+  if !pushed.isEmpty() {
+    pushed = pushed.prefix(pushed.count() - 1)
+  }
+}
+
+/// Takes every template pushed away, back to the root.
+pub fn popToRoot() {
+  pushed = []
+}
+
+/// How many templates the car's screen has on its stack: 1, the root,
+/// and those pushed.
+pub fn depth() -> int = pushed.count() + 1
+
+fn connections() -> Stream<bool> = Stream(send => {
+  if let h = head {
+    try await h.connections(connected: c => send(c))
+  } else {
+    send(false)
+  }
+})
+
+let followed = live(false, connections)
+
+/// Whether a car's screen shows the app now (tracked: read in a binding,
+/// it follows the car as it comes and goes).
+pub fn connected() -> bool {
+  if let f = faked {
+    return f.connected
+  }
+  return followed()
+}
+
+/// Runs what number n names, as the user chose it.
+fn choose(n: int) {
+  if n >= 1 && n <= runs.count() {
+    runAction(runs[n - 1])
+  }
+}
+
+/// The car's back button took templates away: left are left.
+fn wentBack(left: int) {
+  let keep = max(left - 1, 0)
+  if keep < pushed.count() {
+    pushed = pushed.prefix(keep)
+  }
+}
+
+/// Numbers the handlers of what's shown, as it encodes it.
+struct Encoder {
+  runs: [Action] = []
+
+  mut fn number(a: Action) -> int {
+    runs.push(a)
+    return runs.count()
+  }
+
+  mut fn item(i: Item) -> ShownItem {
+    var run = 0
+    if let r = i.run {
+      if i.enabled {
+        run = number(.button(title: i.title, run: r))
+      }
+    }
+    return ShownItem(run: run, title: i.title, detail: i.detail, image: i.image, symbol: i.symbol, browsable: i.browsable, playing: i.playing, progress: if let p = i.progress { min(max(p, 0.0), 1.0) } else { -1.0 }, enabled: i.enabled)
+  }
+
+  mut fn rows(xs: [Item]) -> [ShownItem] {
+    var out: [ShownItem] = []
+    for x in xs {
+      out.push(item(x))
+    }
+    return out
+  }
+
+  mut fn actions(xs: [Action]) -> [ShownAction] {
+    var out: [ShownAction] = []
+    for a in xs {
+      match a {
+        .button(title, icon, role, disabled, _, run) => {
+          var n = 0
+          if !disabled && run.isSome() {
+            n = number(a)
+          }
+          let style = match role {
+            .normal => 0
+            .cancel => 1
+            .destructive => 2
+          }
+          out.push(ShownAction(run: n, title: title, symbol: icon, style: style, enabled: !disabled))
+        }
+        .section(_, sub) => {
+          for x in actions(sub) {
+            out.push(x)
+          }
+        }
+        .submenu(_, _, _) => {}
+      }
+    }
+    return out
+  }
+
+  mut fn template(t: Template, id: int) -> Shown {
+    match t {
+      .list(title, items, sections, acts, empty) => {
+        var ss: [ShownSection] = []
+        if !items.isEmpty() {
+          ss.push(ShownSection(items: rows(items)))
+        }
+        for s in sections {
+          ss.push(ShownSection(title: s.title, items: rows(s.items)))
+        }
+        return Shown(id: id, kind: .list, title: title, empty: empty, sections: ss, actions: actions(acts))
+      }
+      .grid(title, items, acts) => {
+        return Shown(id: id, kind: .grid, title: title, sections: [ShownSection(items: rows(items))], actions: actions(acts))
+      }
+      .tabs(tabs) => {
+        var ts: [Shown] = []
+        for tab in tabs {
+          var s = template(tab.content, 0)
+          if s.title.isEmpty() {
+            s.title = tab.title
+          }
+          s.text = tab.title
+          s.symbol = tab.symbol
+          ts.push(s)
+        }
+        return Shown(id: id, kind: .tabs, tabs: ts)
+      }
+      .info(title, fields, acts) => {
+        return Shown(id: id, kind: .info, title: title, fields: fields, actions: actions(acts))
+      }
+      .message(title, text, symbol, acts) => {
+        return Shown(id: id, kind: .message, title: title, text: text, symbol: symbol, actions: actions(acts))
+      }
+      .places(title, places) => {
+        var ps: [ShownPlace] = []
+        for p in places {
+          var run = 0
+          if let r = p.run {
+            run = number(.button(title: p.title, run: r))
+          }
+          ps.push(ShownPlace(run: run, title: p.title, detail: p.detail, latitude: p.latitude, longitude: p.longitude, distance: p.distance ?? -1.0))
+        }
+        return Shown(id: id, kind: .places, title: title, places: ps)
+      }
+      .nowPlaying => {
+        return Shown(id: id, kind: .nowPlaying)
+      }
+    }
+  }
+}
+
+/// What the car's screen shows: the root (number 1) and the templates
+/// pushed over it, encoded with their handlers.
+fn encode(root: Template) -> ([Shown], [Action]) {
+  var e = Encoder()
+  var shown = [e.template(root, 1)]
+  for p in pushed {
+    shown.push(e.template(p.make(), p.id))
+  }
+  return (shown, e.runs)
+}
+
+fn send(shown: [Shown], handlers: [Action]) {
+  runs = handlers
+  if let f = faked {
+    f.shown = shown
+    return
+  }
+  if let was = peek(sentShown) {
+    if was == shown {
+      return
+    }
+  }
+  sentShown = shown
+  if let h = head {
+    try? h.show(shown)
+  }
+}
+
+/// The app on a car's screen, while it's mounted (it shows nothing on
+/// the phone): root is the template the car's screen starts at and goes
+/// back to, and push puts more over it. It follows what it reads.
+pub component Screen {
+  prop root: Template = .list()
+
+  state me = 0
+
+  let onTop = me != 0 && screens.last() == me
+
+  effect {
+    if onTop {
+      let (shown, handlers) = encode(root)
+      send(shown, handlers)
+    }
+  }
+
+  // Mounted: on the list (the last one shows), what the user chooses
+  // heard until it goes; gone, off it, and the last one leaves the car's
+  // screen with nothing of the app's.
+  task {
+    screenSerial += 1
+    let mine = screenSerial
+    me = mine
+    screens.push(mine)
+    defer {
+      screens.removeWhere(x => x == mine)
+      if screens.isEmpty() {
+        pushed = []
+        send([], [])
+      }
+    }
+    if let h = head {
+      try? await h.events(chose: n => choose(n), back: left => wentBack(left))
+    } else {
+      await never()
+    }
+  }
+
+  // A car that goes takes what was pushed with it: it starts at the
+  // root again.
+  task {
+    if let h = head {
+      try? await h.connections(connected: c => {
+        if !c {
+          pushed = []
+        }
+      })
+    }
+  }
+}
+
+// ---- Testing ----
+
+state faked: FakeCar? = none
+
+/// A car's screen for a test: fake() installs it, and from then on the
+/// app's Screen shows on it, as a car's would, and the test chooses
+/// what's on it, as a driver would.
+pub store FakeCar {
+  /// Whether a car's screen shows the app (connected's).
+  pub state connected = false
+  /// What shows, the root first (the platforms' encoding).
+  state shown: [Shown] = []
+
+  /// Connects a car, as plugging the phone in does.
+  pub fn connect() {
+    connected = true
+  }
+
+  /// Takes the car away: what was pushed goes, as on a car.
+  pub fn disconnect() {
+    connected = false
+    pushed = []
+  }
+
+  /// The title of each template shown, the root first (a tab bar's: its
+  /// tabs' titles, joined with " | ").
+  pub fn titles() -> [string] = shown.map(s => titleOf(s))
+
+  /// The title of the template on top.
+  pub fn title() -> string = if let s = shown.last() { titleOf(s) } else { "" }
+
+  /// What the template on top shows, in order: its rows' and its cells'
+  /// titles (a tab bar's first tab's), its fields as "title: detail", its
+  /// places', its message, its buttons'; "Now Playing" for .nowPlaying.
+  pub fn texts() -> [string] {
+    if let s = shown.last() {
+      return textsOf(if s.kind == .tabs { s.tabs.first() ?? s } else { s })
+    }
+    return []
+  }
+
+  /// Chooses what shows title on the template on top (a row, a cell, a
+  /// place, a button; on a tab bar, a tab's), as the driver would, and
+  /// starts what it runs. It throws when nothing there has that title
+  /// and runs something (a disabled one doesn't).
+  pub fn select(title: string) throws {
+    if let s = shown.last() {
+      let n = runOf(s, title)
+      if n > 0 {
+        choose(n)
+        return
+      }
+    }
+    let top = if let s = shown.last() { titleOf(s) } else { "" }
+    throw Error("car: nothing to choose titled \"{title}\" on \"{top}\" ({texts().joined(separator: ", ")})")
+  }
+
+  /// The car's back button: takes the template on top away.
+  pub fn back() {
+    if shown.count() > 1 {
+      wentBack(shown.count() - 1)
+    }
+  }
+}
+
+fn titleOf(s: Shown) -> string = if s.kind == .tabs {
+  s.tabs.map(t => t.text).joined(separator: " | ")
+} else if s.kind == .nowPlaying {
+  "Now Playing"
+} else {
+  s.title
+}
+
+fn textsOf(s: Shown) -> [string] {
+  var out: [string] = []
+  for sec in s.sections {
+    for i in sec.items {
+      out.push(i.title)
+    }
+  }
+  for f in s.fields {
+    out.push(if f.detail.isEmpty() { f.title } else { "{f.title}: {f.detail}" })
+  }
+  for p in s.places {
+    out.push(p.title)
+  }
+  if !s.text.isEmpty() && s.kind == .message {
+    out.push(s.text)
+  }
+  for a in s.actions {
+    out.push(a.title)
+  }
+  if s.kind == .nowPlaying {
+    out.push("Now Playing")
+  }
+  return out
+}
+
+/// The number of what's titled title on s (0: none).
+fn runOf(s: Shown, title: string) -> int {
+  for sec in s.sections {
+    for i in sec.items {
+      if i.title == title && i.run > 0 {
+        return i.run
+      }
+    }
+  }
+  for p in s.places {
+    if p.title == title && p.run > 0 {
+      return p.run
+    }
+  }
+  for a in s.actions {
+    if a.title == title && a.run > 0 {
+      return a.run
+    }
+  }
+  for t in s.tabs {
+    let n = runOf(t, title)
+    if n > 0 {
+      return n
+    }
+  }
+  return 0
+}
+
+/// Installs a FakeCar, for a test: from now on the app's Screen shows on
+/// it, not on the platform's, and connected is its.
+pub fn fake() -> FakeCar {
+  let f = FakeCar()
+  faked = f
+  return f
+}
