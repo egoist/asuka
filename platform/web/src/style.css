@@ -451,7 +451,8 @@ textarea.asuka-field { overflow-y: auto; display: block; }
 
 /* Sheets, alerts, popovers, menus, windows */
 
-.asuka dialog { color: var(--asuka-label); font: inherit; }
+/* A modal dialog is user-select: text in Chrome's own style sheet, not .asuka's none. */
+.asuka dialog { color: var(--asuka-label); font: inherit; user-select: none; -webkit-user-select: none; }
 /* A dialog takes the keyboard as it opens, and a press on its background
    keeps it there; its controls show where the keyboard is, not it. */
 .asuka dialog:focus, .asuka dialog:focus-visible { outline: none; }
