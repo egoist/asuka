@@ -305,9 +305,10 @@ func (s *iosScreen) command(cmds string) {
 	file := filepath.Join(s.tmp, "asuka-commands.txt")
 	// The app removes the file as it reads it. One it hasn't read yet (its main
 	// thread is showing the keyboard, say) mustn't be written over, which would
-	// lose that command. An app just launched may never read one sent before it
-	// listened, so this is bounded.
-	for range 500 {
+	// lose that command: a loaded simulator's app can take seconds (CI's
+	// lost a type before its send so). An app just launched may never read
+	// one sent before it listened, so this is bounded, at half a minute.
+	for range 3000 {
 		if _, err := os.Stat(file); os.IsNotExist(err) {
 			break
 		}
