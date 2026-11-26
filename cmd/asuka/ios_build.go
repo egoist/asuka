@@ -154,6 +154,9 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 	if err := copyDir(filepath.Join(app.dir, "assets"), filepath.Join(bundle, "assets")); err != nil {
 		return err
 	}
+	if err := cfg.copyGoogleServices(bundle, cfg.ID); err != nil {
+		return err
+	}
 	// The privacy manifest, which App Store Connect requires.
 	manifest, err := privacyManifest(app.dir, code, cfg.IOS.Collected...)
 	if err != nil {

@@ -1,0 +1,568 @@
+// Package platform/analytics counts what people do in the app, for
+// Google Analytics: events and their parameters, the screens they see,
+// who they are (a user ID, user properties), with Consent Mode's
+// settings. Google Analytics for Firebase on iOS, macOS and Android (the
+// Firebase project's GoogleService-Info.plist and google-services.json,
+// named in asuka.toml), gtag.js on the web, and GA4's Measurement
+// Protocol on Windows and Linux (a web stream's measurement ID and API
+// secret, in asuka.toml's [analytics]).
+//
+//   try analytics.log("level_end", ["level": 3, "result": "won"])
+//   try analytics.screen("Settings")
+//   try analytics.setUserId(user.id)
+//   analytics.setConsent(analytics.Consent(adStorage: false, adUserData: false))
+//
+// Names are checked here, as Firebase checks them, so that every
+// platform takes and refuses the same events: an event's and a
+// parameter's name is 1 to 40 letters, digits and underscores, a letter
+// first, without the prefixes firebase_, google_ and ga_; an event has
+// at most 25 parameters. A text value longer than Analytics keeps (100
+// characters; a user property's 36) is cut, a bool is sent as 1 or 0,
+// and a parameter whose value is none is left out.
+//
+// A platform the app hasn't configured sends nothing: available() says
+// whether it does. Tests record: analytics.fake() gives the package a
+// FakeAnalytics, whose events are what the app logged.
+
+import std/json
+
+/// Why the package refused a call: what the app gave it isn't what
+/// Analytics takes.
+pub enum AnalyticsError: Error {
+  /// analytics: not a name: 1 to 40 letters, digits and underscores (a user property's 1 to 24), a letter first
+  invalidName(name: string)
+  /// analytics: a name Analytics keeps for its own: one that starts with firebase_, google_ or ga_, or an event or user property it logs itself
+  reservedName(name: string)
+  /// analytics: too many parameters: an event has at most 25 (its items count as one), at most 200 items, an item at most 27
+  tooManyParameters(event: string)
+  /// analytics: a value Analytics doesn't take: a parameter's is a string, a number or a bool, items are an ecommerce event's (log's items), and a user ID is at most 256 characters
+  invalidValue(name: string)
+
+  /// The error's text: "analytics: ", what's wrong, and the name.
+  fn message() -> string = match self {
+    .invalidName(name) => "analytics: not a name: {name} (1 to 40 letters, digits and underscores, a letter first; a user property's 1 to 24)"
+    .reservedName(name) => "analytics: {name} is Analytics' own (firebase_, google_ and ga_ start its names; it logs that one itself)"
+    .tooManyParameters(event) => "analytics: too many parameters in {event} (at most 25; 200 items, of 27 parameters each)"
+    .invalidValue(name) => "analytics: {name}'s value isn't one Analytics takes (a string, a number or a bool; items, log's, on an ecommerce event; a user ID of at most 256 characters)"
+  }
+}
+
+/// Consent Mode's settings: what the user lets Analytics and Google's ads
+/// do. true grants one, false denies it, and none leaves it as it was.
+/// Until the app sets one, it's asuka.toml's [analytics.consent] (granted
+/// when that doesn't say).
+pub struct Consent {
+  /// Analytics may keep identifiers on the device (its app instance ID,
+  /// the web's cookies). Denied, Firebase sends events without them, and
+  /// Windows and Linux send none.
+  analyticsStorage: bool? = none
+  /// Advertising may keep identifiers on the device.
+  adStorage: bool? = none
+  /// The user's data may be sent to Google for advertising.
+  adUserData: bool? = none
+  /// Advertising may be personalized (remarketing).
+  adPersonalization: bool? = none
+}
+
+/// A product in an ecommerce event's items (view_item, add_to_cart,
+/// purchase...): Analytics' item parameters, those left empty (or none)
+/// left out, and params for the rest (item_category2, a custom one).
+pub struct Item {
+  /// item_id: the product's ID or SKU (an item has an ID or a name).
+  id: string = ""
+  /// item_name.
+  name: string = ""
+  /// item_brand, item_category, item_variant.
+  brand: string = ""
+  category: string = ""
+  variant: string = ""
+  /// The price of one, in the event's currency.
+  price: float? = none
+  quantity: int? = none
+  /// The coupon and the discount (of one) that applied to it.
+  coupon: string = ""
+  discount: float? = none
+  /// Its place in the list it was shown in, and the list's (item_list_id,
+  /// item_list_name).
+  index: int? = none
+  listId: string = ""
+  listName: string = ""
+  /// The store or affiliate it's sold through, and the physical place
+  /// (a Google Place ID).
+  affiliation: string = ""
+  locationId: string = ""
+  /// Other parameters of the item's, by their names.
+  params: [string: json.Value] = [:]
+}
+
+/// An event as the app logged it, its parameters and items' as they're
+/// sent: text cut to what Analytics keeps, bools as 1 or 0, none left
+/// out (FakeAnalytics's events).
+pub struct Event {
+  name: string
+  params: [string: json.Value] = [:]
+  /// Its items' parameters (item_id, price...).
+  items: [[string: json.Value]] = []
+}
+
+// What crosses to the platforms' code: a parameter (its kind says which
+// of its values it is), an item of an event's items (an ecommerce
+// event's products), and the consent, as it's given.
+
+enum Kind {
+  text
+  integer
+  number
+}
+
+struct WireValue {
+  name: string = ""
+  kind: Kind = .text
+  text: string = ""
+  integer: int = 0
+  number: float = 0.0
+}
+
+struct WireItem {
+  params: [WireValue] = []
+}
+
+/// The platform's Google Analytics.
+native interface Collector {
+  /// Logs an event (screen_view: a screen) with its parameters and items.
+  fn log(name: string, params: [WireValue], items: [WireItem])
+  /// Sets the user's ID, or clears it (none).
+  fn setUserId(id: string?)
+  /// Sets a user property, or clears it (none).
+  fn setUserProperty(name: string, value: string?)
+  /// Parameters every event logged from now on has.
+  fn setDefaults(params: [WireValue])
+  /// Turns collection on or off, kept for the app's next launches.
+  fn setEnabled(on: bool)
+  /// Updates the consent's settings that aren't none.
+  fn setConsent(consent: Consent)
+  /// The app instance ID (the web's and the desktops' client ID); none
+  /// when there's none (analytics storage denied, collection off).
+  async fn appInstanceId() -> string?
+  /// Forgets what Analytics keeps on the device: the app instance ID,
+  /// the user's ID and properties.
+  fn reset()
+}
+
+// Made once, as the app starts; none where the app hasn't configured
+// Analytics for the platform (no GoogleService-Info.plist,
+// google-services.json or measurement ID).
+let collector = try? Collector()
+
+state faked: FakeAnalytics? = none
+
+// The limits Firebase and the Measurement Protocol hold every event to.
+let nameMax = 40
+let propertyNameMax = 24
+let textMax = 100
+let propertyMax = 36
+let userIdMax = 256
+let paramsMax = 25
+let itemsMax = 200
+let itemParamsMax = 27
+
+let reservedPrefixes = ["firebase_", "google_", "ga_"]
+
+// Events Analytics logs itself (Firebase's and the Measurement
+// Protocol's reserved names).
+let reservedEvents: Set<string> = [
+  "ad_activeview", "ad_click", "ad_exposure", "ad_query", "ad_reward", "adunit_exposure",
+  "app_background", "app_clear_data", "app_exception", "app_install", "app_remove",
+  "app_store_refund", "app_store_subscription_cancel", "app_store_subscription_convert",
+  "app_store_subscription_renew", "app_update", "app_upgrade", "dynamic_link_app_open",
+  "dynamic_link_app_update", "dynamic_link_first_open", "error", "first_open", "first_visit",
+  "in_app_purchase", "notification_dismiss", "notification_foreground", "notification_open",
+  "notification_receive", "notification_send", "os_update", "session_start",
+  "session_start_with_rollout", "user_engagement",
+]
+
+// User properties Analytics sets itself.
+/// The ecommerce events, Google's recommended ones: the events that may
+/// have items (log's).
+pub let ecommerceEvents: Set<string> = [
+  "add_payment_info", "add_shipping_info", "add_to_cart", "add_to_wishlist", "begin_checkout", "purchase", "refund",
+  "remove_from_cart", "select_item", "select_promotion", "view_cart", "view_item", "view_item_list", "view_promotion",
+]
+
+let reservedProperties: Set<string> = ["first_open_time", "first_visit_time", "last_deep_link_referrer", "user_id", "first_open_after_install"]
+
+/// Whether the app's events go anywhere on this platform: Analytics is
+/// configured for it (asuka.toml names its Firebase file, or its
+/// measurement ID), or a test faked it.
+pub fn available() -> bool {
+  if let _ = faked {
+    return true
+  }
+  if let _ = collector {
+    return true
+  }
+  return false
+}
+
+/// Logs an event: its name, its parameters (strings, numbers and
+/// bools), and for an ecommerce event (view_item, add_to_cart,
+/// purchase...: ecommerceEvents) its items, the products. Throws an
+/// AnalyticsError when a name or a value isn't one Analytics takes, on
+/// every platform alike.
+///
+///   try analytics.log("select_content", ["content_type": "image", "content_id": "P12453"])
+///   try analytics.log("purchase", ["currency": "USD", "value": 30.03, "transaction_id": "T_1"],
+///     items: [analytics.Item(id: "SKU_123", name: "Socks", price: 10.01, quantity: 3)])
+pub fn log(name: string, params: [string: json.Value] = [:], items: [Item] = []) throws {
+  try checkEvent(name)
+  if !items.isEmpty() && !ecommerceEvents.contains(name) {
+    // Firebase takes items only on its ecommerce events.
+    throw AnalyticsError.invalidValue(name: "items")
+  }
+  let values = try wireParams(name, params, if items.isEmpty() { 0 } else { 1 })
+  send(name, values, try wireItems(name, items))
+}
+
+/// Logs that the user sees a screen, as a screen_view event (on the web
+/// and the desktops, a page view titled name): its name ("Settings"),
+/// and its class, the kind of screen it is ("SettingsScreen"; "" leaves
+/// it out). Call it as the screen shows: Asuka's screens aren't reported
+/// for the app.
+pub fn screen(name: string, class: string = "") throws {
+  var params: [string: json.Value] = ["screen_name": name]
+  if !class.isEmpty() {
+    params["screen_class"] = class
+  }
+  send("screen_view", try wireParams("screen_view", params, 0), [])
+}
+
+/// Sets the ID of the user, as the app knows them (none: signed out),
+/// for every event from now on and the next launches. Throws
+/// invalidValue for an ID longer than 256 characters. Never a name, an
+/// email or anything that identifies them to Google.
+pub fn setUserId(id: string?) throws {
+  if let s = id {
+    if units(s) > userIdMax {
+      throw AnalyticsError.invalidValue(name: "user_id")
+    }
+  }
+  if let f = faked {
+    f.userId = id
+    return
+  }
+  if let c = collector {
+    try? c.setUserId(id: id)
+  }
+}
+
+/// Sets a user property (none clears it): what describes the user, for
+/// every event from now on ("plan": "pro"). Its name is 1 to 24 letters,
+/// digits and underscores, a letter first; its value is cut to 36
+/// characters.
+pub fn setUserProperty(name: string, value: string?) throws {
+  try checkName(name, propertyNameMax)
+  if reservedProperties.contains(name) {
+    throw AnalyticsError.reservedName(name: name)
+  }
+  var v: string? = none
+  if let s = value {
+    v = cut(s, propertyMax)
+  }
+  if let f = faked {
+    if let s = v {
+      f.userProperties[name] = s
+    } else {
+      f.userProperties.remove(name)
+    }
+    return
+  }
+  if let c = collector {
+    try? c.setUserProperty(name: name, value: v)
+  }
+}
+
+/// Parameters every event logged from now on has (an empty map: none),
+/// as log takes them; an event's own of the same name win.
+pub fn setDefaults(params: [string: json.Value]) throws {
+  let values = try wireParams("defaults", params, 0)
+  if let f = faked {
+    f.defaults = paramsOf(values)
+    return
+  }
+  if let c = collector {
+    try? c.setDefaults(params: values)
+  }
+}
+
+/// Turns collection on or off (off: nothing is sent), for this launch
+/// and the next ones: off until the user agrees, on once they do.
+/// asuka.toml's analytics.enabled is what it is until the app sets it.
+pub fn setEnabled(on: bool) {
+  if let f = faked {
+    f.enabled = on
+    return
+  }
+  if let c = collector {
+    try? c.setEnabled(on: on)
+  }
+}
+
+/// Updates Consent Mode's settings that consent sets (the rest stay as
+/// they were): what the user agreed to in the app's consent dialog.
+pub fn setConsent(consent: Consent) {
+  if let f = faked {
+    f.consent = Consent(
+      analyticsStorage: consent.analyticsStorage ?? f.consent.analyticsStorage,
+      adStorage: consent.adStorage ?? f.consent.adStorage,
+      adUserData: consent.adUserData ?? f.consent.adUserData,
+      adPersonalization: consent.adPersonalization ?? f.consent.adPersonalization,
+    )
+    return
+  }
+  if let c = collector {
+    try? c.setConsent(consent: consent)
+  }
+}
+
+/// The app instance ID Analytics knows this install by (the web's and the
+/// desktops' client ID), to join the app's own data with Analytics'
+/// (BigQuery's user_pseudo_id); none when there's none: Analytics isn't
+/// configured, collection is off, or analytics storage is denied.
+pub async fn appInstanceId() -> string? {
+  if let f = faked {
+    if !f.enabled || f.consent.analyticsStorage == false {
+      return none
+    }
+    return f.appInstanceId
+  }
+  if let c = collector {
+    return (try? await c.appInstanceId()) ?? none
+  }
+  return none
+}
+
+/// Forgets what Analytics keeps of the user on the device: its app
+/// instance ID (a new one is made), the user's ID and properties. For a
+/// user who signs out and asks to be forgotten.
+pub fn reset() {
+  if let f = faked {
+    f.userId = none
+    f.userProperties = [:]
+    f.resets += 1
+    f.appInstanceId = "fake-app-instance-{f.resets}"
+    return
+  }
+  if let c = collector {
+    try? c.reset()
+  }
+}
+
+/// Analytics, as a test sees it: fake() installs it, and from then on
+/// the package records what the app does in it instead of sending it.
+pub store FakeAnalytics {
+  /// The events logged, oldest first (none while collection is off).
+  pub state events: [Event] = []
+  /// The user's ID (setUserId), none when there's none.
+  pub state userId: string? = none
+  /// The user's properties (setUserProperty), as they're sent.
+  pub state userProperties: [string: string] = [:]
+  /// The default parameters (setDefaults), which the events have too.
+  pub state defaults: [string: json.Value] = [:]
+  /// Collection's on (setEnabled): off, events aren't recorded.
+  pub state enabled: bool = true
+  /// The consent as the app set it, each setting none until it does.
+  pub state consent: Consent = Consent()
+  /// How many times the app reset its data.
+  pub state resets: int = 0
+  /// What appInstanceId answers (a new one after each reset).
+  pub state appInstanceId: string = "fake-app-instance"
+
+  /// The events named name, oldest first.
+  pub fn logged(name: string) -> [Event] = events.filter(e => e.name == name)
+}
+
+/// Installs a FakeAnalytics, for a test: from now on what the app logs
+/// is recorded in it, not sent.
+pub fn fake() -> FakeAnalytics {
+  let f = FakeAnalytics()
+  faked = f
+  return f
+}
+
+// send gives an event, checked, to the fake or the platform.
+fn send(name: string, values: [WireValue], items: [WireItem]) {
+  if let f = faked {
+    if f.enabled {
+      var params = f.defaults
+      for (k, v) in paramsOf(values) {
+        params[k] = v
+      }
+      f.events.push(Event(name: name, params: params, items: items.map(it => paramsOf(it.params))))
+    }
+    return
+  }
+  if let c = collector {
+    try? c.log(name: name, params: values, items: items)
+  }
+}
+
+// checkEvent throws for an event's name that isn't one, or is reserved.
+fn checkEvent(name: string) throws {
+  try checkName(name, nameMax)
+  if reservedEvents.contains(name) {
+    throw AnalyticsError.reservedName(name: name)
+  }
+}
+
+// checkName throws for a name that isn't 1 to max letters, digits and
+// underscores (ASCII), a letter first, or that has a reserved prefix.
+fn checkName(name: string, max: int) throws {
+  if name.isEmpty() || name.count() > max {
+    throw AnalyticsError.invalidName(name: name)
+  }
+  var first = true
+  for c in name {
+    let n = c.code()
+    let letter = n >= 65 && n <= 90 || n >= 97 && n <= 122
+    let digit = n >= 48 && n <= 57
+    if first && !letter || !letter && !digit && c != '_' {
+      throw AnalyticsError.invalidName(name: name)
+    }
+    first = false
+  }
+  for p in reservedPrefixes {
+    if name.hasPrefix(p) {
+      throw AnalyticsError.reservedName(name: name)
+    }
+  }
+}
+
+// wireParams checks event's parameters and makes them what crosses:
+// at most 25 of them, with more (its items) than these.
+fn wireParams(event: string, params: [string: json.Value], more: int) throws -> [WireValue] {
+  var values: [WireValue] = []
+  for (name, v) in params {
+    try checkName(name, nameMax)
+    if name == "items" {
+      // An event's items are log's items.
+      throw AnalyticsError.invalidValue(name: name)
+    }
+    if let w = try wireValue(name, v) {
+      values.push(w)
+    }
+  }
+  if values.count() + more > paramsMax {
+    throw AnalyticsError.tooManyParameters(event: event)
+  }
+  return values
+}
+
+// wireItems checks event's items and makes them what crosses: their
+// parameters, those set.
+fn wireItems(event: string, items: [Item]) throws -> [WireItem] {
+  if items.count() > itemsMax {
+    throw AnalyticsError.tooManyParameters(event: event)
+  }
+  var out: [WireItem] = []
+  for it in items {
+    var w = WireItem()
+    let texts = [
+      ("item_id", it.id), ("item_name", it.name), ("item_brand", it.brand), ("item_category", it.category),
+      ("item_variant", it.variant), ("coupon", it.coupon), ("item_list_id", it.listId),
+      ("item_list_name", it.listName), ("affiliation", it.affiliation), ("location_id", it.locationId),
+    ]
+    for (name, text) in texts {
+      if !text.isEmpty() {
+        w.params.push(WireValue(name: name, kind: .text, text: cut(text, textMax)))
+      }
+    }
+    if let v = it.price {
+      w.params.push(try number("price", v))
+    }
+    if let v = it.discount {
+      w.params.push(try number("discount", v))
+    }
+    if let n = it.quantity {
+      w.params.push(WireValue(name: "quantity", kind: .integer, integer: n))
+    }
+    if let n = it.index {
+      w.params.push(WireValue(name: "index", kind: .integer, integer: n))
+    }
+    for (name, v) in it.params {
+      try checkName(name, nameMax)
+      if let x = try wireValue(name, v) {
+        let _ = w.params.removeWhere(p => p.name == name)
+        w.params.push(x)
+      }
+    }
+    if w.params.count() > itemParamsMax {
+      throw AnalyticsError.tooManyParameters(event: event)
+    }
+    out.push(w)
+  }
+  return out
+}
+
+// number is a float parameter, which must be a number (not NaN or an
+// infinity).
+fn number(name: string, f: float) throws -> WireValue {
+  if f - f != 0.0 {
+    throw AnalyticsError.invalidValue(name: name)
+  }
+  return WireValue(name: name, kind: .number, number: f)
+}
+
+// wireValue is a parameter's value as it's sent: text cut to what
+// Analytics keeps, a bool as 1 or 0; none for none.
+fn wireValue(name: string, v: json.Value) throws -> WireValue? = match v {
+  .null => none
+  .bool(b) => WireValue(name: name, kind: .integer, integer: if b { 1 } else { 0 })
+  .int(n) => WireValue(name: name, kind: .integer, integer: n)
+  .float(f) => try number(name, f)
+  .string(s) => WireValue(name: name, kind: .text, text: cut(s, textMax))
+  _ => throw AnalyticsError.invalidValue(name: name)
+}
+
+// paramsOf is what crosses as the app's parameters again (the fake's).
+fn paramsOf(values: [WireValue]) -> [string: json.Value] {
+  var out: [string: json.Value] = [:]
+  for w in values {
+    out[w.name] = valueOf(w)
+  }
+  return out
+}
+
+fn valueOf(w: WireValue) -> json.Value = match w.kind {
+  .text => .string(w.text)
+  .integer => .int(w.integer)
+  .number => .float(w.number)
+}
+
+// units counts s as Analytics does: in UTF-16 code units (a character
+// past the Basic Multilingual Plane, an emoji, is two).
+fn units(s: string) -> int {
+  var n = 0
+  for c in s {
+    n += if c.code() > 0xFFFF { 2 } else { 1 }
+  }
+  return n
+}
+
+// cut is s cut to at most max UTF-16 code units, on a whole character
+// (a grapheme: an emoji's parts, a letter and its accents, stay together).
+fn cut(s: string, max: int) -> string {
+  if units(s) <= max {
+    return s
+  }
+  var out = ""
+  var n = 0
+  for g in s.graphemes() {
+    let u = units(g)
+    if n + u > max {
+      break
+    }
+    out += g
+    n += u
+  }
+  return out
+}

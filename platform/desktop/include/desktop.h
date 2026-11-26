@@ -154,7 +154,14 @@ typedef struct {
 	char *update_feed, *update_key, *update_target;
 	// The executable's alternate icons' names, comma-separated (Windows).
 	char *alternate_icons;
+	// What asuka.toml says to the app's packages, by key
+	// ("analytics.measurementId"): asuka_desktop_app_setting's.
+	char **setting_keys, **setting_values;
+	size_t nsettings;
 } dsk_config;
+
+// dsk_config_setting is c's setting key ("" when it has none).
+const char *dsk_config_setting(const dsk_config *c, const char *key);
 
 // dsk_config_load reads the settings: from ASUKA_APP_CONFIG, else
 // asuka-app.json beside the executable, else in an install prefix's

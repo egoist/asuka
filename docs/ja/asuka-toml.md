@@ -86,6 +86,7 @@ github = "you/notes"
 | `bluetooth` | テーブル | | `platform/bluetooth` を使うアプリが、パッケージに必要なもの以上に求めるものです。バックグラウンドと、スキャンによる位置情報を指定します。[bluetooth](#bluetooth) を参照してください。 |
 | `health` | テーブル | | `platform/health` を使う Android アプリが Health Connect で読み書きするデータと、アプリのプライバシーポリシーです。[health](#health) を参照してください。 |
 | `ads` | テーブル | | `platform/ads` を使うアプリの AdMob アプリ ID です。[ads](#ads) を参照してください。 |
+| `analytics` | テーブル | | `platform/analytics` で使う Google Analytics の設定です。Web とデスクトップが送る Web ストリームと、収集と同意の初期状態です。[analytics](#analytics) を参照してください。 |
 | `bin` | テーブル | なし | プロジェクトのプログラムです。それぞれ専用のディレクトリにあるコマンドラインツールで、デスクトップアプリに組み込まれます。[bin](#bin) を参照してください。 |
 
 Windows のビルドに必要なのはこれだけです。署名の証明書は環境変数で渡します（[配布](shipping.md#windows)を参照）。
@@ -302,6 +303,7 @@ iOS のビルドの設定です。`team` は Mac のビルドのチームにも�
 | `backgroundModes` | 文字列の配列 | なし | Info.plist の `UIBackgroundModes` に追加します。`"audio"` を指定すると、画面がロックされていても録音と再生ができます。 |
 | `iphoneOnly` | 真偽値 | `false` | iPad を対象から外します。iPad ではアプリは iPhone アプリとして、スマートフォンサイズのウィンドウで動きます。 |
 | `storekit` | 文字列 | なし | StoreKit の構成ファイル（Xcode の `.storekit`）です。Xcode のスキームと同じように、`asuka dev` のシミュレーター向けビルドはこのファイルの商品を販売します。[アプリ内課金](purchases.md#購入のテスト)を参照してください。 |
+| `googleServices` | パス | なし | `platform/analytics` で使う、Firebase プロジェクトの `GoogleService-Info.plist` です。iOS と Mac のビルドがアプリに含めます。アプリの `id` と同じ Apple アプリのものである必要があります。 |
 | `nonExemptEncryption` | 文字列 | `"no"` | ビルドが暗号化について申告する内容（`ITSAppUsesNonExemptEncryption`）です。これは法的な申告で、内容は開発者が判断します。`"no"`、`"yes"`、または何も申告しない `"ask"` を指定します。`"ask"` の場合は、アップロードのたびに App Store Connect が尋ねます。 |
 | `collected` | テーブルの配列 | なし | アプリが収集するデータで、プライバシーマニフェストに使います（下記を参照）。 |
 | `appStoreConnect` | テーブル | | `asuka publish` がアップロードに使う App Store Connect API キーです。`keyId`、`issuerId`（個人キーでは不要）、`key`（`.p8` のパス。デフォルトは、`altool` と同じく `~/.appstoreconnect/private_keys` にある `AuthKey_<keyId>.p8`）を指定します。[公開](shipping.md#ストアへの公開)を参照してください。 |
@@ -346,7 +348,7 @@ Android のビルドの設定です。
 | `keyAlias` | 文字列 | なし | キーストアの中のアップロード鍵のエイリアスです。 |
 | `dynamicColor` | 真偽値 | `false` | Material のアプリと同じように、ユーザーの壁紙から色を取ります（Android 12 以降）。それ以外の環境では `accent` がシードになります。 |
 | `permissions` | 文字列の配列 | 各パッケージのもの | マニフェストに追加する権限です（`"android.permission.CAMERA"`）。`"<name>:28"` と書くと、Android 9（API 28）までだけ権限を要求します。アプリがインポートするパッケージは、必要な権限を自分で追加します。 |
-| `googleServices` | パス | なし | `platform/push` で使う、Firebase プロジェクトの `google-services.json` です。 |
+| `googleServices` | パス | なし | `platform/push` と `platform/analytics` で使う、Firebase プロジェクトの `google-services.json` です。 |
 | `mapsKey` | 文字列 | なし | `platform/maps` で使う、Google Maps Platform の API キー（Maps SDK for Android）です。 |
 | `serviceAccount` | パス | なし | `asuka publish` が Google Play へのアップロードに使う、Google Cloud のサービスアカウントの JSON キーです。リポジトリには入れないでください。 |
 
@@ -433,6 +435,27 @@ android = "ca-app-pub-3940256099942544~3347511713"
 | `skAdNetworks` | 文字列の配列 | なし | Google のもののほかに加える広告ネットワークの SKAdNetwork 識別子（`"abcd1234.skadnetwork"`）です。AdMob のメディエーションでほかのネットワークの広告を表示するときに使います。 |
 
 上の ID は Google のサンプルアプリのもので、開発中にテスト広告（`ads.testUnit`）と組み合わせて使います。[広告](device.md#広告platformads)を参照してください。
+
+## analytics
+
+`platform/analytics` を使うアプリが、Firebase の設定ファイル（`ios.googleServices`、`android.googleServices`）のほかに Google Analytics について指定するものです。Web（gtag.js）と Windows・Linux（Measurement Protocol）が送る GA4 の Web ストリームと、アプリが変更する（`setEnabled`、`setConsent`）までの、すべてのプラットフォームでの収集と同意モードの初期状態です。このパッケージを使わないアプリには影響しません。
+
+```toml
+[analytics]
+measurementId = "G-XXXXXXXXXX"
+apiSecret = "…"
+enabled = false
+consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "denied" }
+```
+
+| キー | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `measurementId` | 文字列 | なし | GA4 の Web ストリームの測定 ID（`G-…`。Firebase の Web アプリの `measurementId`）で、Web とデスクトップで使います。 |
+| `apiSecret` | 文字列 | なし | そのストリームの Measurement Protocol API シークレット（「管理 > データストリーム」で作成）で、Windows と Linux で使います。Web ページには決して載りません。`ASUKA_ANALYTICS_API_SECRET` で上書きできます。 |
+| `enabled` | 真偽値 | `true` | `false` にすると、アプリが `analytics.setEnabled(true)` を呼ぶまで収集をオフで始めます。Firebase の `FIREBASE_ANALYTICS_COLLECTION_ENABLED` と `firebase_analytics_collection_enabled` にあたります。 |
+| `consent` | テーブル | 許可 | 同意モードの初期値で、それぞれ `"granted"` か `"denied"` です：`analyticsStorage`、`adStorage`、`adUserData`、`adPersonalization`。 |
+
+[アナリティクス](device.md#アナリティクスplatformanalytics)を参照してください。
 
 ## c
 

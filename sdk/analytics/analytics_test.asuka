@@ -1,0 +1,201 @@
+import std/json
+
+// said is the message of what f throws ("" when it doesn't).
+fn said(f: fn() throws) -> string {
+  do {
+    try f()
+  } catch e {
+    return e.message
+  }
+  return ""
+}
+
+// First: no test has faked Analytics yet.
+test "without the platform's Analytics, events go nowhere, still checked" {
+  expect(!available())
+  try log("level_end", ["level": 3])
+  try screen("Home")
+  expect(said(() => try log("first_open")).hasPrefix("analytics: first_open"))
+  expect(await appInstanceId() == none)
+}
+
+test "names are checked as Firebase checks them" {
+  let _ = fake()
+  expect(said(() => try log("level_end")) == "")
+  expect(said(() => try log("a")) == "")
+  expect(said(() => try log("A_1_b")) == "")
+  expect(said(() => try log("x".repeat(40))) == "")
+  expect(said(() => try log("x".repeat(41))).hasPrefix("analytics: not a name: "))
+  expect(said(() => try log("")).hasPrefix("analytics: not a name"))
+  expect(said(() => try log("1st")).hasPrefix("analytics: not a name: 1st"))
+  expect(said(() => try log("_x")).hasPrefix("analytics: not a name"))
+  expect(said(() => try log("level-end")).hasPrefix("analytics: not a name"))
+  expect(said(() => try log("level end")).hasPrefix("analytics: not a name"))
+  expect(said(() => try log("café")).hasPrefix("analytics: not a name"))
+  expect(said(() => try log("firebase_x")).hasPrefix("analytics: firebase_x is Analytics' own"))
+  expect(said(() => try log("google_x")).hasPrefix("analytics: google_x"))
+  expect(said(() => try log("ga_x")).hasPrefix("analytics: ga_x"))
+  expect(said(() => try log("session_start")).hasPrefix("analytics: session_start is Analytics' own"))
+  expect(said(() => try log("first_open")).hasPrefix("analytics: first_open"))
+  // Recommended events are the app's to log.
+  expect(said(() => try log("screen_view")) == "")
+  expect(said(() => try log("ad_impression")) == "")
+  expect(said(() => try log("purchase")) == "")
+}
+
+test "parameters' names, and their number" {
+  let _ = fake()
+  expect(said(() => try log("e", ["ok_1": 1])) == "")
+  expect(said(() => try log("e", ["1x": 1])).hasPrefix("analytics: not a name: 1x"))
+  expect(said(() => try log("e", ["ga_x": 1])).hasPrefix("analytics: ga_x"))
+  expect(said(() => try log("e", ["p".repeat(41): 1])).hasPrefix("analytics: not a name"))
+  var many: [string: json.Value] = [:]
+  for i in 0..<25 {
+    many["p{i}"] = i
+  }
+  expect(said(() => try log("e", many)) == "")
+  many["p25"] = 25
+  expect(said(() => try log("e", many)) == "analytics: too many parameters in e (at most 25; 200 items, of 27 parameters each)")
+  // What's none isn't a parameter, nor counted.
+  many["p25"] = .null
+  expect(said(() => try log("e", many)) == "")
+}
+
+test "values as they're sent" {
+  let a = fake()
+  let long = "y".repeat(150)
+  let coupon: string? = none
+  try log("e", ["s": "hi", "n": 3, "f": 2.5, "b": true, "no": false, "long": long, "coupon": coupon])
+  let p = a.events[0].params
+  expect(p["s"] == .string("hi"))
+  expect(p["n"] == .int(3))
+  expect(p["f"] == .float(2.5))
+  expect(p["b"] == .int(1) && p["no"] == .int(0))
+  expect(p["long"] == .string("y".repeat(100)))
+  expect(p["coupon"] == none)
+  expect(said(() => try log("e", ["o": ["k": 1]])).hasPrefix("analytics: o's value"))
+  expect(said(() => try log("e", ["l": [1, 2]])).hasPrefix("analytics: l's value"))
+  let nan = 0.0 / 0.0
+  expect(said(() => try log("e", ["x": nan])).hasPrefix("analytics: x's value"))
+  expect(said(() => try log("e", ["x": 1.0 / 0.0])).hasPrefix("analytics: x's value"))
+}
+
+test "text is cut on a whole character, counted as Firebase counts it" {
+  // An emoji is two UTF-16 units: 99 x's and one leave no room for it.
+  expect(cut("x".repeat(99) + "😀", 100) == "x".repeat(99))
+  expect(cut("x".repeat(98) + "😀", 100) == "x".repeat(98) + "😀")
+  // A flag (two regional indicators, four units) isn't split in half.
+  expect(cut("x".repeat(97) + "🇯🇵", 100) == "x".repeat(97))
+  expect(cut("short", 100) == "short")
+  expect(units("aé😀") == 4)
+}
+
+test "an ecommerce event's items" {
+  let a = fake()
+  try log("purchase", ["currency": "USD", "value": 30.03], items: [
+    Item(id: "SKU_123", name: "z".repeat(120), price: 10.01, quantity: 3, params: ["item_category2": "socks", "price": 9.5]),
+    Item(name: "Hat"),
+  ])
+  let e = a.logged("purchase")[0]
+  expect(e.params["currency"] == .string("USD"))
+  expect(e.items.count() == 2)
+  let item = e.items[0]
+  expect(item["item_id"] == .string("SKU_123"))
+  expect(item["quantity"] == .int(3))
+  expect(item["item_name"] == .string("z".repeat(100)))
+  expect(item["item_category2"] == .string("socks"))
+  // params win over the fields.
+  expect(item["price"] == .float(9.5))
+  expect(item["coupon"] == none && item["index"] == none)
+  expect(e.items[1] == ["item_name": .string("Hat")])
+  expect(said(() => try log("purchase", ["items": "SKU_123"])).hasPrefix("analytics: items's value"))
+  // Items only on an ecommerce event, as Firebase takes them.
+  expect(said(() => try log("level_end", items: [Item(id: "x")])).hasPrefix("analytics: items's value"))
+  expect(said(() => try log("view_item", items: [Item(id: "x")])) == "")
+  expect(ecommerceEvents.contains("add_to_cart"))
+  expect(said(() => try log("purchase", items: [Item(params: ["9": 1])])).hasPrefix("analytics: not a name: 9"))
+  expect(said(() => try log("purchase", items: [Item(price: 0.0 / 0.0)])).hasPrefix("analytics: price's value"))
+  var lots: [Item] = []
+  for i in 0..<201 {
+    lots.push(Item(id: "{i}"))
+  }
+  expect(said(() => try log("purchase", items: lots)).hasPrefix("analytics: too many parameters in purchase"))
+  lots.pop()
+  expect(said(() => try log("purchase", items: lots)) == "")
+  // The items count as one of the 25.
+  var many: [string: json.Value] = [:]
+  for i in 0..<25 {
+    many["p{i}"] = i
+  }
+  expect(said(() => try log("purchase", many, items: [Item(id: "x")])).hasPrefix("analytics: too many parameters"))
+}
+
+test "a screen is a screen_view" {
+  let a = fake()
+  try screen("Settings", class: "SettingsScreen")
+  try screen("Home")
+  expect(a.events.count() == 2)
+  expect(a.events[0].name == "screen_view")
+  expect(a.events[0].params["screen_name"] == .string("Settings"))
+  expect(a.events[0].params["screen_class"] == .string("SettingsScreen"))
+  expect(a.events[1].params["screen_class"] == none)
+}
+
+test "the user: their ID and properties" {
+  let a = fake()
+  try setUserId("u_123")
+  expect(a.userId == "u_123")
+  try setUserId(none)
+  expect(a.userId == none)
+  expect(said(() => try setUserId("u".repeat(257))).hasPrefix("analytics: user_id's value"))
+  try setUserId("u".repeat(256))
+  try setUserProperty("plan", "pro")
+  try setUserProperty("motto", "m".repeat(40))
+  expect(a.userProperties["plan"] == "pro")
+  expect(a.userProperties["motto"] == "m".repeat(36))
+  try setUserProperty("plan", none)
+  expect(a.userProperties["plan"] == none)
+  expect(said(() => try setUserProperty("p".repeat(25), "x")).hasPrefix("analytics: not a name"))
+  expect(said(() => try setUserProperty("user_id", "x")).hasPrefix("analytics: user_id is Analytics' own"))
+  expect(said(() => try setUserProperty("first_open_time", "x")).hasPrefix("analytics: first_open_time"))
+  expect(said(() => try setUserProperty("google_x", "x")).hasPrefix("analytics: google_x"))
+}
+
+test "defaults go with every event, the event's own winning" {
+  let a = fake()
+  try setDefaults(["app_variant": "beta", "level": 1])
+  try log("level_end", ["level": 2])
+  expect(a.events[0].params["app_variant"] == .string("beta"))
+  expect(a.events[0].params["level"] == .int(2))
+  expect(said(() => try setDefaults(["items": [["item_id": "x"]]])).hasPrefix("analytics: items's value"))
+  try setDefaults([:])
+  try log("again")
+  expect(a.events[1].params.isEmpty())
+}
+
+test "collection off, nothing is logged; consent merges" {
+  let a = fake()
+  setEnabled(false)
+  try log("ignored")
+  expect(a.events.isEmpty())
+  expect(await appInstanceId() == none)
+  setEnabled(true)
+  try log("counted")
+  expect(a.events.map(e => e.name) == ["counted"])
+  setConsent(Consent(analyticsStorage: true, adStorage: false))
+  setConsent(Consent(adUserData: false))
+  expect(a.consent.analyticsStorage == true && a.consent.adStorage == false && a.consent.adUserData == false)
+  expect(a.consent.adPersonalization == none)
+  expect(await appInstanceId() == "fake-app-instance")
+  setConsent(Consent(analyticsStorage: false))
+  expect(await appInstanceId() == none)
+}
+
+test "reset forgets the user and the instance" {
+  let a = fake()
+  try setUserId("u_1")
+  try setUserProperty("plan", "pro")
+  reset()
+  expect(a.userId == none && a.userProperties.isEmpty() && a.resets == 1)
+  expect(await appInstanceId() == "fake-app-instance-1")
+}

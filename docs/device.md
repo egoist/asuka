@@ -5,7 +5,7 @@ what's in an image, photos and files, previewing, printing and PDFs, the
 mail and message composers, location, notifications and push, sound, Now Playing and recording,
 the network's state, the shared library, work in the background, shares
 from other apps, JavaScript, sign-in and biometrics, the screen, maps,
-the stores' services, ads, and crash reports.
+the stores' services, ads, crash reports and analytics.
 This page covers each package: what it does, its API, the permissions it
 brings and how it behaves on each platform.
 
@@ -41,6 +41,7 @@ web need nothing declared (see each one's section below).
 | `platform/vision` | ML Kit's text, face and barcode models (about 30 MB) | |
 | `platform/photos` | `READ_MEDIA_IMAGES`, `READ_MEDIA_VISUAL_USER_SELECTED`; `READ_EXTERNAL_STORAGE` (Android 12 and earlier) | `NSPhotoLibraryUsageDescription` |
 | `platform/push` | Firebase Cloud Messaging, `POST_NOTIFICATIONS` | the `aps-environment` entitlement; `remote-notification` background mode |
+| `platform/analytics` | Firebase Analytics (`INTERNET`, `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `AD_ID`); `android.googleServices`' settings | Firebase Analytics, the file `ios.googleServices` names, from the app's launch |
 | `platform/appleauth` | | the Sign in with Apple entitlement |
 | `platform/pay` | Google Pay's library, its API enabled, its callbacks service | the Apple Pay entitlement, with `asuka.toml`'s `applePay.merchantIds` |
 | `platform/biometric` | `USE_BIOMETRIC` | `NSFaceIDUsageDescription` |
@@ -137,6 +138,7 @@ UserNotifications, AuthenticationServices), except where a Mac differs:
 | `platform/purchase` | StoreKit 2, in the app's Swift library, which the build makes for an app that imports the package ([In-app purchases](purchases.md)) |
 | `platform/icloud` | As on iOS, in the app's Swift library. Needs a provisioning profile with iCloud (above): without one, "icloud: not available" ([iCloud](icloud.md)) |
 | `platform/splash` | A Mac app has no launch screen: `hold` and `hide` do nothing |
+| `platform/analytics` | Firebase, as on iOS, with the same `GoogleService-Info.plist` (an Apple app of the app's ID) |
 | `onShare`, shortcuts | iOS and Android only: a Mac app isn't offered in other apps' share menus, and `asuka.toml`'s `shortcuts` aren't added |
 
 ## On Windows
@@ -188,6 +190,7 @@ device without it:
 | `platform/transcribe` | Windows' desktop speech recognizer, on the PC: English's comes with Windows, another language's with its language pack's speech recognition; `check` says which. `listen` takes the default microphone |
 | `device.haptic` | A PC has no haptics: it does nothing |
 | `platform/splash` | A Windows app has no launch screen: `hold` and `hide` do nothing |
+| `platform/analytics` | GA4's Measurement Protocol, to `asuka.toml`'s web stream with its API secret: batched off the main thread, the client ID and what isn't sent yet kept in the app's data directory ([Analytics](#analytics-platformanalytics)) |
 | `onShare`, shortcuts | iOS and Android only |
 
 ## On Linux
@@ -244,6 +247,7 @@ names what's missing.
 | `platform/biometric`, `platform/integrity`, `platform/agerange`, `platform/push` | None on Linux: not available, not supported. `platform/review` does nothing; `platform/tracking` answers `.allowed` |
 | `platform/pay` | No wallet pays for a Linux app: `available` says `.none`, `pay` throws `PayError.notAvailable`, `PayButton` shows nothing |
 | `platform/crash` | Asuka's crash output, which has a crash in native code too (a signal in GTK's code, a GLib abort), reported as `"native"`; the system's own record (systemd-coredump, apport) isn't read |
+| `platform/analytics` | GA4's Measurement Protocol, as on Windows |
 | `device.haptic` | A desktop has no haptics: it does nothing |
 | `onShare`, shortcuts | iOS and Android only |
 
@@ -286,6 +290,7 @@ and its service worker for notifications and Web Push.
 | `platform/maps` | OpenStreetMap's tiles, drawn by Asuka, as on Windows; `showsUser` once the page has the location permission |
 | `platform/pay` | Apple Pay where the browser has it (Safari), through the Payment Request API, the merchant validated by the app's server (`onValidateMerchant`); Google Pay elsewhere, through Google's web API (pay.js); each one's own button. A sheet shows only from a tap |
 | `platform/crash` | Asuka's fatal errors, and uncaught JavaScript errors as `"exception"` reports that aren't fatal |
+| `platform/analytics` | gtag.js, loaded from Google, for `asuka.toml`'s web stream; collection off is gtag's own switch, kept in `localStorage` |
 | `platform/splash` | `hold` and `hide` do nothing |
 | `onShare`, shortcuts | iOS and Android only |
 
@@ -3808,3 +3813,151 @@ pages leave its record alone. Under `asuka test` no record is kept:
 **Under `asuka dev`** the player keeps the record as a build does; its
 own native crashes aren't the app's, and aren't reported to it; a build
 of the app (`asuka dev --once`, `asuka build`) reports everything.
+
+## Analytics: platform/analytics
+
+`platform/analytics` tells Google Analytics what people do in the app:
+the events the app logs and their parameters, the screens they see, who
+they are (a user ID, user properties), and what they consent to
+(Consent Mode). It's Google Analytics for Firebase on iOS, macOS and
+Android, gtag.js on the web, and GA4's Measurement Protocol on Windows
+and Linux, as React Native's and Flutter's Firebase Analytics are on
+the phones.
+
+```asuka check
+import platform/analytics
+
+component Shop {
+  state note = ""
+
+  task {
+    try? analytics.screen("Shop", class: "ShopScreen")
+  }
+
+  Column {
+    gap: 8
+    Button("Buy two pairs") {
+      on press {
+        do {
+          try analytics.log("purchase", ["currency": "USD", "value": 20.02, "transaction_id": "T_1001"],
+            items: [analytics.Item(id: "SKU_123", name: "Socks", price: 10.01, quantity: 2)])
+        } catch e {
+          note = e.message
+        }
+      }
+    }
+    Text(note)
+  }
+}
+
+component ConsentBanner {
+  Row {
+    gap: 8
+    Button("Accept") {
+      on press {
+        analytics.setConsent(analytics.Consent(analyticsStorage: true, adStorage: true, adUserData: true, adPersonalization: true))
+      }
+    }
+    Button("Decline") {
+      on press {
+        analytics.setConsent(analytics.Consent(analyticsStorage: false, adStorage: false, adUserData: false, adPersonalization: false))
+      }
+    }
+  }
+}
+
+test "buying logs a purchase" {
+  let a = analytics.fake()
+  let app = mount(Shop())
+  app.tap("Buy two pairs")
+  let p = a.logged("purchase")
+  expect(p.count() == 1 && p[0].items[0]["item_id"] == .string("SKU_123"))
+}
+```
+
+- `analytics.log(name, params, items:)` logs an event. Its parameters
+  are strings, numbers and bools (a bool is sent as 1 or 0, a `none`
+  left out); an ecommerce event's products are its `items`, each an
+  `analytics.Item` (`id`, `name`, `price`, `quantity`, `params` for the
+  rest). Only the ecommerce events (`view_item`, `add_to_cart`,
+  `purchase`...: `analytics.ecommerceEvents`) take items, as Firebase
+  does. Google's recommended events (`login`, `sign_up`, `purchase`,
+  `select_content`...) fill Analytics' own reports.
+- `analytics.screen(name, class:)` logs a `screen_view`. The app's
+  screens aren't reported for it (on iOS and Android Firebase would see
+  only Asuka's one view controller or activity, so its automatic
+  reporting is off): call it as a screen shows.
+- `setUserId(id)` (`none` once the user signs out) and
+  `setUserProperty(name, value)` describe the user for the events after
+  them; `setDefaults(params)` gives every event those parameters.
+- `setEnabled(false)` turns collection off, for this launch and the
+  next ones; `setConsent(Consent(...))` sets Consent Mode's settings
+  (`true` grants one, `false` denies it, `none` leaves it). Until the
+  app says, `asuka.toml`'s `[analytics]` does (below): an app that asks
+  first starts with collection off, or with the consent denied.
+- `await analytics.appInstanceId()` is the ID Analytics knows the
+  install by (BigQuery's `user_pseudo_id`), `none` while collection is
+  off or analytics storage is denied; `reset()` forgets it, the user's
+  ID and properties: the install is a new one.
+
+Every platform takes the same events, since the package checks them
+before any platform sees them. An event's and a parameter's name is 1
+to 40 letters, digits and underscores, starting with a letter, and
+doesn't start with `firebase_`, `google_` or `ga_`, nor is it one of
+the events Analytics logs itself (`first_open`, `session_start`,
+`app_update`...). An event has at most 25 parameters (its items count
+as one), and at most 200 items, of 27 parameters each. A user property's
+name is 1 to 24 of those characters, and isn't one Analytics sets
+(`user_id`, `first_open_time`...). Breaking a rule throws an
+`AnalyticsError` (`invalidName`, `reservedName`, `tooManyParameters`,
+`invalidValue`), as does a user ID over 256 characters. A text value
+longer than Analytics keeps is cut instead: 100 characters, a user
+property's 36.
+
+Each platform's settings are in `asuka.toml` ([analytics](asuka-toml.md#analytics)):
+
+```toml
+[ios]
+googleServices = "GoogleService-Info.plist"   # iOS and the Mac
+[android]
+googleServices = "google-services.json"
+[analytics]
+measurementId = "G-XXXXXXXXXX"   # the web, Windows and Linux: a web stream's
+apiSecret = "…"                   # Windows and Linux
+enabled = false                   # until the app calls setEnabled(true)
+consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "denied" }
+```
+
+- **iOS and macOS**: the Firebase project's `GoogleService-Info.plist`
+  for an Apple app of the app's ID, which the build carries; the same
+  file serves the Mac. Firebase starts as the app launches.
+- **Android**: its `google-services.json`, with an Android app of the
+  app's ID. Firebase Analytics declares the advertising ID permission
+  (`AD_ID`): say so in Play Console's advertising ID declaration.
+- **The web**: gtag.js, loaded from Google, for the web stream of
+  `measurementId` (a Firebase web app's `measurementId` is its stream's).
+  The page has no API secret. `reset()` forgets the browser's client ID
+  (Analytics' cookies): the next visit is a new instance.
+- **Windows and Linux**: the Measurement Protocol, to the same web
+  stream, with one of its API secrets (Analytics' Admin, Data streams,
+  Measurement Protocol API secrets; `ASUKA_ANALYTICS_API_SECRET` instead
+  of `apiSecret` keeps it out of the repository). The events go in
+  batches of up to 25 from a thread of their own, a few seconds after
+  the first, so the app never waits for the network. The install's
+  client ID is made on the first launch and kept in the app's data
+  directory, with the user's ID and properties and the events not sent
+  yet (sent on the next launch, up to 72 hours old; tried again later
+  while offline). A session ends after 30 minutes without an event. A
+  screen is a page view, titled with its name, at
+  `app://<the app's ID>/<name>`. Nothing is sent while analytics storage
+  is denied.
+
+A platform without its settings sends nothing: `available()` is false
+there, the calls do nothing, and `asuka dev` and `asuka build` say
+what's missing. Under `asuka dev`, the web and the desktops send to
+Analytics' DebugView; on a phone, Firebase's debug mode does (on
+Android, `adb shell setprop debug.firebase.analytics.app <the app's ID>`).
+In tests, `analytics.fake()` records what the app logs instead (its
+`events`, `logged(name)`, `userId`, `userProperties`, `consent`).
+What the app sends is yours to declare in the stores' privacy labels
+(App Store Connect's App Privacy, Google Play's Data safety).

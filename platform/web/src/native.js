@@ -229,9 +229,11 @@ export class DeclaredError extends Error {
  * The app the page runs: its name (asuka.toml's, the host's options), for
  * a package to keep its data under, as the host keeps the app's; and
  * where its assets are served from; its version (asuka.toml's), and
- * whether it's asuka dev's build. Set as the host starts.
+ * whether it's asuka dev's build; and what its asuka.toml says to its
+ * packages (settings, strings by key: "analytics.measurementId"). Set as
+ * the host starts.
  */
-export const app = { name: "app", assets: "assets", version: "", build: "", dev: false, icons: {}, showIcon, savedIcon };
+export const app = { name: "app", assets: "assets", version: "", build: "", dev: false, icons: {}, settings: {}, showIcon, savedIcon };
 
 // The page's icon (its tab's): the app's, or one of its alternate icons
 // (platform/appicon), kept in localStorage for the next visit.

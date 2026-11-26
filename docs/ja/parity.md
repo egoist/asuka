@@ -169,6 +169,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | スクリーンショット | `isCaptured`、`userDidTakeScreenshotNotification` | `expo-screen-capture` | ✓ `screen.preventCapture`（Android：キャプチャーは黒くなる。iOS：録画中は覆われる。macOS と Windows：ウィンドウはキャプチャーから除かれる）、`screen.screenshots()` |
 | 画面の明るさ | `UIScreen.brightness` | `expo-brightness` | ✓ `screen.setBrightness`、`screen.brightness()`（iOS と Android：アプリが前面にあるあいだはアプリの明るさ、離れるとユーザーの明るさに戻る。デスクトップと Web ではユーザーに任せる） |
 | クラッシュレポート | MetricKit、Crashlytics、Sentry | Sentry、Crashlytics（`@react-native-firebase/crashlytics`） | ✓ `platform/crash`：Asuka のスタック付きの Asuka の致命的なエラー、捕捉されなかった例外、MetricKit のクラッシュとハング、Android のネイティブクラッシュと ANR、デスクトップのクラッシュを、パンくずと値とともに。送り先はアプリが決める（組み込みのサービスはない）。シンボルは `asuka build` が出力 |
+| プロダクトアナリティクス | Google Analytics for Firebase | `@react-native-firebase/analytics`（Flutter では `firebase_analytics`） | ✓ `platform/analytics`：iOS・macOS・Android では Firebase、Web では gtag.js、Windows と Linux では GA4 の Measurement Protocol（メインスレッドの外でまとめて送信）。型付きパラメータと EC の商品を持つイベントを、どのプラットフォームでも Firebase と同じ規則でチェック。画面、ユーザー ID とユーザープロパティ、デフォルトパラメータ、収集のオン・オフ、同意モード v2、アプリインスタンス ID、リセット。テスト用のフェイク |
 
 ## 外観とアクセシビリティ
 

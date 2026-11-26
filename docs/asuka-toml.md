@@ -100,6 +100,7 @@ These apply on every platform the key means something on.
 | `bluetooth` | table | | What an app of `platform/bluetooth` asks beyond the package's needs: the background, the location from scans. See [bluetooth](#bluetooth). |
 | `health` | table | | What an Android app of `platform/health` reads and writes in Health Connect, and its privacy policy. See [health](#health). |
 | `ads` | table | | The AdMob app IDs of an app of `platform/ads`. See [ads](#ads). |
+| `analytics` | table | | Google Analytics for `platform/analytics`: the web stream the web and the desktops send to, and what collection and consent start as. See [analytics](#analytics). |
 | `bin` | tables | none | The project's programs: command-line tools in directories of their own, built into the desktop apps. See [bin](#bin). |
 
 A Windows build needs nothing beyond these: its signing certificate is
@@ -347,6 +348,7 @@ purpose strings go in the Mac's Info.plist as well.
 | `infoPlist` | table | none | String keys added to Info.plist. |
 | `backgroundModes` | strings | none | Added to Info.plist's `UIBackgroundModes`: `"audio"`, to record and play with the screen locked. |
 | `iphoneOnly` | boolean | `false` | Leaves iPad out: the app runs there as an iPhone app, in a phone-sized window. |
+| `googleServices` | path | none | The Firebase project's `GoogleService-Info.plist`, for `platform/analytics`: the iOS and Mac builds carry it. It must be an Apple app's of the app's `id`. |
 | `storekit` | string | none | A StoreKit configuration file (Xcode's `.storekit`) that `asuka dev`'s simulator build sells from, as Xcode's scheme does: see [In-app purchases](purchases.md#testing-your-purchases). |
 | `nonExemptEncryption` | string | `"no"` | What a build says of its encryption (`ITSAppUsesNonExemptEncryption`), a legal statement that's yours to make: `"no"`, `"yes"`, or `"ask"`, which says nothing, so App Store Connect asks at each upload. |
 | `collected` | array of tables | none | The data the app collects, for its privacy manifest (see below). |
@@ -395,7 +397,7 @@ The Android build's.
 | `keyAlias` | string | none | The upload key's alias in the keystore. |
 | `dynamicColor` | boolean | `false` | Takes the colors from the user's wallpaper (Android 12 and later), as Material apps do; `accent` is the seed elsewhere. |
 | `permissions` | strings | the packages' own | Permissions added to the manifest: `"android.permission.CAMERA"`. `"<name>:28"` asks for one up to Android 9 (API 28) only. The packages the app imports add those they need. |
-| `googleServices` | path | none | The Firebase project's `google-services.json`, for `platform/push`. |
+| `googleServices` | path | none | The Firebase project's `google-services.json`, for `platform/push` and `platform/analytics`. |
 | `mapsKey` | string | none | A Google Maps Platform API key (Maps SDK for Android), for `platform/maps`. |
 | `serviceAccount` | path | none | The Google Cloud service account's JSON key `asuka publish` uploads to Google Play with. Keep it out of the repository. |
 
@@ -499,6 +501,33 @@ android = "ca-app-pub-3940256099942544~3347511713"
 
 The IDs above are Google's sample apps', for development with its test
 ads (`ads.testUnit`). See [Ads](device.md#ads-platformads).
+
+## analytics
+
+What an app that imports `platform/analytics` tells Google Analytics
+beyond its Firebase files (`ios.googleServices`,
+`android.googleServices`): the GA4 web stream the web (gtag.js) and
+Windows and Linux (the Measurement Protocol) send to, and what
+collection and Consent Mode start as on every platform, until the app
+changes them (`setEnabled`, `setConsent`). It does nothing for an app
+that doesn't import the package.
+
+```toml
+[analytics]
+measurementId = "G-XXXXXXXXXX"
+apiSecret = "…"
+enabled = false
+consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "denied" }
+```
+
+| Key | Type | Default | What it is |
+|---|---|---|---|
+| `measurementId` | string | none | A GA4 web stream's measurement ID (`G-…`; a Firebase web app's `measurementId`), for the web and the desktops. |
+| `apiSecret` | string | none | A Measurement Protocol API secret of that stream (Admin, Data streams), for Windows and Linux; never on a web page. `ASUKA_ANALYTICS_API_SECRET` overrides it. |
+| `enabled` | boolean | `true` | `false` starts collection off, until the app calls `analytics.setEnabled(true)`: Firebase's `FIREBASE_ANALYTICS_COLLECTION_ENABLED` and `firebase_analytics_collection_enabled`. |
+| `consent` | table | granted | Consent Mode's defaults, `"granted"` or `"denied"` each: `analyticsStorage`, `adStorage`, `adUserData`, `adPersonalization`. |
+
+See [Analytics](device.md#analytics-platformanalytics).
 
 ## c
 

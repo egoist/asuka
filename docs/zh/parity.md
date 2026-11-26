@@ -169,6 +169,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 截屏 | `isCaptured`、`userDidTakeScreenshotNotification` | `expo-screen-capture` | ✓ `screen.preventCapture`（Android 上截图是黑的；iOS 上录屏时内容会被遮住；macOS 和 Windows 上截图里不包含这些窗口）、`screen.screenshots()` |
 | 屏幕亮度 | `UIScreen.brightness` | `expo-brightness` | ✓ `screen.setBrightness`、`screen.brightness()`（iOS 和 Android：应用在前台时用应用的亮度，离开时恢复用户的亮度；桌面和 Web 交给用户自己调） |
 | 崩溃报告 | MetricKit、Crashlytics、Sentry | Sentry、Crashlytics（`@react-native-firebase/crashlytics`） | ✓ `platform/crash`：Asuka 的致命错误（附 Asuka 调用栈）、未捕获的异常、MetricKit 记录的崩溃和卡顿、Android 的原生崩溃和 ANR、桌面端的崩溃，附带面包屑和自定义值；报告发到哪里由应用决定（没有内置服务）；`asuka build` 会生成符号文件 |
+| 产品数据分析 | Google Analytics for Firebase | `@react-native-firebase/analytics`（Flutter 的 `firebase_analytics`） | ✓ `platform/analytics`：iOS、macOS 和 Android 上用 Firebase，Web 上用 gtag.js，Windows 和 Linux 上用 GA4 的 Measurement Protocol（在主线程之外批量发送）；带类型参数和电商商品的事件，在所有平台上都按 Firebase 的规则检查；页面浏览、用户 ID 和用户属性、默认参数、开关数据收集、意见征求模式 v2、应用实例 ID、重置；测试用的模拟实现 |
 
 ## 外观与无障碍
 

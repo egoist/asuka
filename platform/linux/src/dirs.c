@@ -206,6 +206,7 @@ const char *asuka_desktop_app_name(void) { return S(H.app_name); }
 const char *asuka_desktop_app_id(void) { return S(H.app_id); }
 const char *asuka_desktop_app_version(void) { return S(H.cfg.version); }
 const char *asuka_desktop_app_build(void) { return S(H.cfg.build); }
+const char *asuka_desktop_app_setting(const char *key) { return dsk_config_setting(&H.cfg, key); }
 const char *asuka_desktop_data_dir(void) { return lx_data_dir(); }
 const char *asuka_desktop_config_dir(void) { return lx_config_dir(); }
 const char *asuka_desktop_cache_dir(void) { return lx_cache_dir(); }

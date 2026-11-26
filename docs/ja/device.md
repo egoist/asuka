@@ -1,6 +1,6 @@
 # デバイスとサービス
 
-Asuka のパッケージを使うと、ビューの外にあるデバイスの機能も扱えます。カメラ、バーコードや QR コード、画像に写っているものの認識、写真とファイル、プレビュー、印刷と PDF、メールとメッセージの作成画面、位置情報、通知とプッシュ通知、サウンド、再生中の情報（Now Playing）と録音、ネットワークの状態、写真やファイルのライブラリへの保存、バックグラウンドでの処理、ほかのアプリからの共有、JavaScript、サインインと生体認証、画面、地図、ストアのサービス、広告、クラッシュレポートです。このページでは、パッケージごとに何ができるか、その API、必要になる権限、プラットフォームごとの動作を説明します。
+Asuka のパッケージを使うと、ビューの外にあるデバイスの機能も扱えます。カメラ、バーコードや QR コード、画像に写っているものの認識、写真とファイル、プレビュー、印刷と PDF、メールとメッセージの作成画面、位置情報、通知とプッシュ通知、サウンド、再生中の情報（Now Playing）と録音、ネットワークの状態、写真やファイルのライブラリへの保存、バックグラウンドでの処理、ほかのアプリからの共有、JavaScript、サインインと生体認証、画面、地図、ストアのサービス、広告、クラッシュレポート、アナリティクスです。このページでは、パッケージごとに何ができるか、その API、必要になる権限、プラットフォームごとの動作を説明します。
 
 どのパッケージも、すべてのプラットフォームで同じ API を持ちます。iOS と Android ではほぼすべての機能が使えます。macOS、Windows、Linux では、Asuka が各パッケージをデスクトップ自身のサービスで実装し、ブラウザーでは Web の API で実装します。プラットフォームに対応する機能がない場合、パッケージはその機能を持たないスマートフォンと同じように振る舞います。つまり、パッケージの `notAvailable` エラーになるか、足りないものを示すエラーになるか、何もしない呼び出しになります。各パッケージの節では、何ができるか、各プラットフォームが何を使ってそれを実現しているかを説明します。さらに、各デスクトップとブラウザーにはそれぞれ専用の節があり（[Mac の場合](#mac-の場合)、[Windows の場合](#windows-の場合)、[Linux の場合](#linux-の場合)、[ブラウザーの場合](#ブラウザーの場合)）、そこで必要な設定と、iOS や Android との違いを表にまとめています。
 
@@ -20,6 +20,7 @@ Asuka のパッケージを使うと、ビューの外にあるデバイスの�
 | `platform/vision` | ML Kit のテキスト、顔、バーコードのモデル（約 30 MB） | |
 | `platform/photos` | `READ_MEDIA_IMAGES`、`READ_MEDIA_VISUAL_USER_SELECTED`。`READ_EXTERNAL_STORAGE`（Android 12 以前） | `NSPhotoLibraryUsageDescription` |
 | `platform/push` | Firebase Cloud Messaging、`POST_NOTIFICATIONS` | `aps-environment` エンタイトルメント。`remote-notification` バックグラウンドモード |
+| `platform/analytics` | Firebase Analytics（`INTERNET`、`ACCESS_NETWORK_STATE`、`WAKE_LOCK`、`AD_ID`）。`android.googleServices` の設定 | Firebase Analytics。`ios.googleServices` が指すファイル。アプリの起動時から |
 | `platform/appleauth` | | Sign in with Apple のエンタイトルメント |
 | `platform/pay` | Google Pay のライブラリ、その API の有効化、コールバック用のサービス | Apple Pay のエンタイトルメント（`asuka.toml` の `applePay.merchantIds` とともに） |
 | `platform/biometric` | `USE_BIOMETRIC` | `NSFaceIDUsageDescription` |
@@ -89,6 +90,7 @@ macOS でも各パッケージは iOS と同じフレームワーク（AVFoundat
 | `platform/purchase` | StoreKit 2 を、アプリの Swift ライブラリの中で使います。このライブラリは、パッケージをインポートしたアプリのためにビルドが作ります（[アプリ内課金](purchases.md)） |
 | `platform/icloud` | iOS と同じで、アプリの Swift ライブラリの中で動きます。iCloud を含むプロビジョニングプロファイルが必要です（上記）。ない場合は「icloud: not available」になります（[iCloud](icloud.md)） |
 | `platform/splash` | Mac アプリには起動画面がないので、`hold` と `hide` は何もしません |
+| `platform/analytics` | iOS と同じく Firebase を、同じ `GoogleService-Info.plist`（アプリの ID と同じ Apple アプリのもの）で使います |
 | `onShare`、ショートカット | iOS と Android だけです。Mac アプリはほかのアプリの共有メニューに表示されず、`asuka.toml` の `shortcuts` も追加されません |
 
 ## Windows の場合
@@ -132,6 +134,7 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `platform/transcribe` | Windows のデスクトップ音声認識で、PC 上で処理します。英語の認識は Windows に付属し、ほかの言語はその言語パックの音声認識と一緒に入ります。どれが使えるかは `check` でわかります。`listen` は既定のマイクを使います |
 | `device.haptic` | PC には触覚フィードバックがないので、何もしません |
 | `platform/splash` | Windows アプリには起動画面がないので、`hold` と `hide` は何もしません |
+| `platform/analytics` | GA4 の Measurement Protocol で、`asuka.toml` の Web ストリームに API シークレットを使って送ります。メインスレッドの外でまとめて送り、クライアント ID と未送信のイベントはアプリのデータディレクトリに保存します（[アナリティクス](#アナリティクスplatformanalytics)） |
 | `onShare`、ショートカット | iOS と Android だけです |
 
 ## Linux の場合
@@ -169,6 +172,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/biometric`、`platform/integrity`、`platform/agerange`、`platform/push` | Linux にはありません。利用不可、非対応と答えます。`platform/review` は何もせず、`platform/tracking` は `.allowed` と答えます |
 | `platform/pay` | Linux アプリの支払いに使えるウォレットはありません。`available` は `.none` を返し、`pay` は `PayError.notAvailable` を投げ、`PayButton` は何も表示しません |
 | `platform/crash` | Asuka のクラッシュ出力を使います。ネイティブコードでのクラッシュ（GTK のコードでのシグナル、GLib の abort）もここに含まれ、`"native"` として報告されます。システム自身の記録（systemd-coredump、apport）は読みません |
+| `platform/analytics` | Windows と同じく GA4 の Measurement Protocol を使います |
 | `device.haptic` | デスクトップには触覚フィードバックがないので、何もしません |
 | `onShare`、ショートカット | iOS と Android だけです |
 
@@ -206,6 +210,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/maps` | Windows と同じく、Asuka が OpenStreetMap のタイルを描きます。`showsUser` は、ページに位置情報の許可があれば表示されます |
 | `platform/pay` | ブラウザーが対応していれば（Safari）、Payment Request API を通じて Apple Pay を使います。マーチャントの検証はアプリのサーバーが行います（`onValidateMerchant`）。それ以外では、Google の Web API（pay.js）を通じて Google Pay を使います。ボタンはそれぞれ専用のものです。シートはタップからしか表示できません |
 | `platform/crash` | Asuka の致命的なエラーと、捕捉されなかった JavaScript のエラーを扱います。後者は致命的でない `"exception"` のレポートになります |
+| `platform/analytics` | Google から読み込む gtag.js で、`asuka.toml` の Web ストリームに送ります。収集のオフは gtag 自身のスイッチで、`localStorage` に保存されます |
 | `platform/splash` | `hold` と `hide` は何もしません |
 | `onShare`、ショートカット | iOS と Android だけです |
 
@@ -2541,3 +2546,87 @@ app { Root() }
 **プラットフォームごとの違い。** iOS では、レポートを読むアプリにだけ MetricKit をリンクし、MetricKit は診断情報を共有拡張機能ではなくアプリに届けます。MetricKit は iOS 17 以降ではクラッシュのプロセス ID を持っているので、その実行のコンテキストと結び付けられます。それより前のバージョンでは、クラッシュの直前の実行と結び付けます。シミュレーターでは MetricKit は診断情報を届けません。Android では追加の設定は要りませんが、Android 11 より前にはネイティブクラッシュと ANR の記録がありません。macOS では、MetricKit は macOS 12 から使えます。アプリを終了させた、捕捉されない Objective-C の例外は、MetricKit のクラッシュとして報告されます（メインスレッドの例外は AppKit が捕捉してログに出力します）。Windows エラー報告は、これまでどおり記録を残します。ブラウザーでは、記録はアプリのファイル（IndexedDB）に置かれ、次の起動時に読まれます。捕捉されなかった JavaScript のエラー（Asuka のものでも、アプリの `web/*.js` のものでも）は、その場で `"exception"` レポートになります。致命的なエラーとしては扱われず（ページは動き続けます）、その実行のコンテキストが付きます。1 回の実行につき最大 20 件で、同じエラーは一度だけです。ページはオリジンの `localStorage` に自分の実行が生きていることを記録するので、同じアプリのほかの開いているページがその記録に手を出すことはありません。`asuka test` では記録は残らず、`reports()` は何も渡さずに終わり、ほかの関数は何もしません。
 
 **`asuka dev` では**、開発用アプリもビルドと同じように記録を残します。開発用アプリ自身のネイティブクラッシュはアプリのものではないので、アプリには報告されません。アプリのビルド（`asuka dev --once`、`asuka build`）では、すべてが報告されます。
+
+## アナリティクス：platform/analytics
+
+`platform/analytics` は、ユーザーがアプリで何をしたかを Google Analytics に伝えます。アプリが記録するイベントとそのパラメータ、ユーザーが見た画面、ユーザーが誰か（ユーザー ID とユーザープロパティ）、ユーザーが何に同意したか（同意モード、Consent Mode）です。iOS・macOS・Android では Google Analytics for Firebase、Web では gtag.js、Windows と Linux では GA4 の Measurement Protocol を使います。React Native や Flutter がスマートフォンで使う Firebase Analytics と同じ役割です。
+
+```asuka check
+import platform/analytics
+
+component Shop {
+  state note = ""
+
+  task {
+    try? analytics.screen("Shop", class: "ShopScreen")
+  }
+
+  Column {
+    gap: 8
+    Button("Buy two pairs") {
+      on press {
+        do {
+          try analytics.log("purchase", ["currency": "USD", "value": 20.02, "transaction_id": "T_1001"],
+            items: [analytics.Item(id: "SKU_123", name: "Socks", price: 10.01, quantity: 2)])
+        } catch e {
+          note = e.message
+        }
+      }
+    }
+    Text(note)
+  }
+}
+
+component ConsentBanner {
+  Row {
+    gap: 8
+    Button("Accept") {
+      on press {
+        analytics.setConsent(analytics.Consent(analyticsStorage: true, adStorage: true, adUserData: true, adPersonalization: true))
+      }
+    }
+    Button("Decline") {
+      on press {
+        analytics.setConsent(analytics.Consent(analyticsStorage: false, adStorage: false, adUserData: false, adPersonalization: false))
+      }
+    }
+  }
+}
+
+test "buying logs a purchase" {
+  let a = analytics.fake()
+  let app = mount(Shop())
+  app.tap("Buy two pairs")
+  let p = a.logged("purchase")
+  expect(p.count() == 1 && p[0].items[0]["item_id"] == .string("SKU_123"))
+}
+```
+
+- `analytics.log(name, params, items:)` はイベントを記録します。パラメータは文字列・数値・真偽値です（真偽値は 1 か 0 として送られ、`none` のパラメータは省かれます）。EC イベントの商品は `items` に入れ、1 つずつ `analytics.Item`（`id`、`name`、`price`、`quantity`、それ以外は `params`）で表します。Firebase と同じく、商品を持てるのは EC イベント（`view_item`、`add_to_cart`、`purchase` など。`analytics.ecommerceEvents`）だけです。Google の推奨イベント（`login`、`sign_up`、`purchase`、`select_content` など）を使うと、Analytics の標準レポートにそのまま反映されます。
+- `analytics.screen(name, class:)` は `screen_view` を記録します。アプリの画面は自動では報告されません（iOS と Android では Firebase から見えるのは Asuka の 1 つのビューコントローラやアクティビティだけなので、自動報告はオフにしてあります）。画面が表示されたときに呼び出してください。
+- `setUserId(id)`（サインアウトしたら `none`）と `setUserProperty(name, value)` は、それ以降のイベントのユーザーを表します。`setDefaults(params)` は、それ以降のすべてのイベントにそのパラメータを付けます。
+- `setEnabled(false)` は収集をオフにし、次回以降の起動にも引き継がれます。`setConsent(Consent(...))` は同意モードの設定です（`true` で許可、`false` で拒否、`none` はそのまま）。アプリが設定するまでは `asuka.toml` の `[analytics]` に従います（後述）。先に同意を求めるアプリは、収集をオフにした状態や、同意を拒否した状態から始められます。
+- `await analytics.appInstanceId()` は、Analytics がこのインストールを識別する ID（BigQuery の `user_pseudo_id`）です。収集がオフのときや、アナリティクス ストレージが拒否されているときは `none` です。`reset()` はこの ID とユーザーの ID・プロパティを消し、インストールを新しいものとして扱わせます。
+
+どのプラットフォームでも受け付けるイベントは同じです。パッケージが、プラットフォームに渡す前に自分でチェックするからです。イベント名とパラメータ名は、英字・数字・アンダースコアの 1〜40 文字で、英字で始まり、`firebase_`・`google_`・`ga_` で始まらず、Analytics が自分で記録するイベント（`first_open`、`session_start`、`app_update` など）でもないものです。1 つのイベントのパラメータは最大 25 個（商品は 1 つと数えます）、商品は最大 200 個で、商品 1 つにつきパラメータは最大 27 個です。ユーザープロパティ名は同じ文字の 1〜24 文字で、Analytics が自分で設定するもの（`user_id`、`first_open_time` など）は使えません。規則に反すると `AnalyticsError`（`invalidName`、`reservedName`、`tooManyParameters`、`invalidValue`）が投げられます。256 文字を超えるユーザー ID も同じです。一方、Analytics が保存できる長さを超えるテキストの値は切り詰められます。パラメータの値は 100 文字、ユーザープロパティの値は 36 文字までです。
+
+プラットフォームごとの設定は `asuka.toml` に書きます（[analytics](asuka-toml.md#analytics)）。
+
+```toml
+[ios]
+googleServices = "GoogleService-Info.plist"   # iOS と Mac
+[android]
+googleServices = "google-services.json"
+[analytics]
+measurementId = "G-XXXXXXXXXX"   # Web、Windows、Linux：Web ストリームのもの
+apiSecret = "…"                   # Windows と Linux
+enabled = false                   # アプリが setEnabled(true) を呼ぶまで
+consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "denied" }
+```
+
+- **iOS と macOS**：Firebase プロジェクトの、アプリの ID と同じ Apple アプリの `GoogleService-Info.plist` です。ビルドがアプリに含めます。Mac も同じファイルを使います。Firebase はアプリの起動時に始動します。
+- **Android**：アプリの ID と同じ Android アプリを含む `google-services.json` です。Firebase Analytics は広告 ID の権限（`AD_ID`）を宣言するので、Play Console の広告 ID の申告でそのように答えてください。
+- **Web**：Google から読み込む gtag.js で、`measurementId` の Web ストリームに送ります（Firebase の Web アプリの `measurementId` がそのストリームのものです）。ページには API シークレットを置きません。`reset()` はブラウザのクライアント ID（Analytics の Cookie）を消し、次の訪問は新しいインスタンスになります。
+- **Windows と Linux**：Measurement Protocol で同じ Web ストリームに送り、その API シークレットを 1 つ使います（Analytics の「管理 > データストリーム > Measurement Protocol API シークレット」で作成します。`apiSecret` の代わりに `ASUKA_ANALYTICS_API_SECRET` を使えば、リポジトリに入れずに済みます）。イベントは専用のスレッドから、最初のイベントの数秒後に最大 25 個ずつまとめて送られるので、アプリがネットワークを待つことはありません。インストールのクライアント ID は初回起動時に作られ、ユーザーの ID とプロパティ、まだ送っていないイベントとともにアプリのデータディレクトリに保存されます（未送信のイベントは次の起動時に送られ、最大 72 時間保持されます。オフラインのときは後で再試行します）。イベントのない状態が 30 分続くとセッションが終わります。画面はページビューとして、画面名をタイトルに、`app://<アプリの ID>/<画面名>` を URL にして送られます。アナリティクス ストレージが拒否されている間は何も送りません。
+
+設定のないプラットフォームでは何も送られません。そこでは `available()` が false になり、呼び出しは何もせず、`asuka dev` と `asuka build` が足りないものを知らせます。`asuka dev` では、Web とデスクトップは Analytics の DebugView に送ります。スマートフォンでは Firebase のデバッグモードを有効にします（Android では `adb shell setprop debug.firebase.analytics.app <アプリの ID>`）。テストでは、`analytics.fake()` が送る代わりにアプリの記録した内容を保持します（`events`、`logged(name)`、`userId`、`userProperties`、`consent`）。アプリが何を送るかは、各ストアのプライバシー情報（App Store Connect の「App のプライバシー」、Google Play の「データ セーフティ」）であなたが申告してください。

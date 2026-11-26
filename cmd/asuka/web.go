@@ -735,6 +735,9 @@ func (s *devServer) index(w http.ResponseWriter) {
 	if s.vapid != "" {
 		opts["vapidPublicKey"] = s.vapid
 	}
+	if st := s.app.cfg.analyticsSettings(platformWeb, true); st != nil {
+		opts["settings"] = st
+	}
 	if *s.sqlite.Load() != "" {
 		opts["sqlite"] = "asuka/" + webSQLitePath
 	}
@@ -1038,6 +1041,9 @@ func buildWeb(app *asukaApp, o *buildOptions) error {
 	}
 	if vapid != "" {
 		opts["vapidPublicKey"] = vapid
+	}
+	if st := app.cfg.analyticsSettings(platformWeb, false); st != nil {
+		opts["settings"] = st
 	}
 	if sqlite != "" {
 		opts["sqlite"] = hostDir + "/" + webSQLitePath

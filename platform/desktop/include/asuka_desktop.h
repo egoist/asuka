@@ -86,6 +86,10 @@ const char *asuka_desktop_app_id(void);
 // Its version and build (asuka.toml's version and build; "" if none).
 const char *asuka_desktop_app_version(void);
 const char *asuka_desktop_app_build(void);
+// What the app's asuka.toml says to its packages, by key
+// ("analytics.measurementId": the CLI writes the app's settings for the
+// packages it imports); "" when it says nothing.
+const char *asuka_desktop_app_setting(const char *key);
 // Its directories (each platform's place for them: dsk_dirs), made if missing.
 const char *asuka_desktop_data_dir(void);
 const char *asuka_desktop_config_dir(void);

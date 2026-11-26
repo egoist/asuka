@@ -111,6 +111,7 @@ func loadApp(dir, platform string) (*asukaApp, error) {
 	app.refresh()
 	warnDevLang(cfg)
 	warnShareSheet(cfg)
+	warnAnalytics(app, platform)
 	return app, nil
 }
 
@@ -201,6 +202,10 @@ func (a *asukaApp) hostConfig(platform, target string, updates bool) appconfig.C
 	}
 	if u, err := a.cfg.updates(); err == nil && u != nil && target != "" && updates {
 		c.UpdateFeed, c.UpdateKey, c.UpdateTarget = u.feed(target), strings.TrimSpace(u.PublicKey), target
+	}
+	if platform == platformWindows || platform == platformLinux {
+		// What the packages' C reads of asuka.toml (platform/analytics').
+		c.Settings = a.cfg.analyticsSettings(platform, target == "")
 	}
 	if platform == platformWindows && target != "" {
 		// The executable's alternate icons (alternateIconID), which the

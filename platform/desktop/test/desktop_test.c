@@ -315,6 +315,25 @@ static void test_windows_names(void) {
 	CHECK(!dsk_windows_name("a\0b", 3));
 }
 
+// The app's settings (asuka-app.json): its own, and its packages'
+// (settings: asuka_desktop_app_setting's), strings only.
+static void test_config(const char *dir) {
+	char *p = dsk_join(dir, "asuka-app.json");
+	const char *j = "{\"name\":\"Notes\",\"settings\":{\"analytics.measurementId\":\"G-ABC\",\"analytics.debug\":\"true\",\"n\":3}}";
+	dsk_write_file(p, j, strlen(j));
+	setenv("ASUKA_APP_CONFIG", p, 1);
+	dsk_config c;
+	dsk_config_load(&c);
+	CHECK(c.name && !strcmp(c.name, "Notes"));
+	CHECK(!strcmp(dsk_config_setting(&c, "analytics.measurementId"), "G-ABC"));
+	CHECK(!strcmp(dsk_config_setting(&c, "analytics.debug"), "true"));
+	CHECK(!strcmp(dsk_config_setting(&c, "n"), "") && !strcmp(dsk_config_setting(&c, "none"), ""));
+	dsk_config_free(&c);
+	CHECK(c.nsettings == 0 && !strcmp(dsk_config_setting(&c, "analytics.debug"), ""));
+	unsetenv("ASUKA_APP_CONFIG");
+	free(p);
+}
+
 int main(int argc, char **argv) {
 	test_windows_names();
 	test_words();
@@ -324,6 +343,7 @@ int main(int argc, char **argv) {
 		test_state(argv[1]);
 		test_exists(argv[1]);
 		test_anim(argv[1]);
+		test_config(argv[1]);
 	}
 	fprintf(stderr, "%d failures\n", failed);
 	return failed ? 1 : 0;

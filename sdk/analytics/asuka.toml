@@ -1,0 +1,9 @@
+name = "platform/analytics"
+version = "0.1.0"
+description = "Google Analytics: Firebase on iOS, macOS and Android, gtag.js on the web, the Measurement Protocol on Windows and Linux"
+
+# Firebase is configured as the app launches (FirebaseApp.configure), when
+# its build has the project's GoogleService-Info.plist (asuka.toml's
+# ios.googleServices).
+[ios]
+launch = "AsukaAnalyticsLaunch"

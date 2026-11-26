@@ -188,6 +188,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Screenshots | `isCaptured`, `userDidTakeScreenshotNotification` | `expo-screen-capture` | ✓ `screen.preventCapture` (Android: black captures; iOS: covered while recorded; macOS and Windows: the windows left out), `screen.screenshots()` |
 | Screen brightness | `UIScreen.brightness` | `expo-brightness` | ✓ `screen.setBrightness`, `screen.brightness()` (iOS and Android: the app's while it's in front, the user's put back as it goes; the desktops and the web leave it to the user) |
 | Crash reports | MetricKit, Crashlytics, Sentry | Sentry, Crashlytics (`@react-native-firebase/crashlytics`) | ✓ `platform/crash`: Asuka's fatal errors with the Asuka stack, uncaught exceptions, MetricKit's crashes and hangs, Android's native crashes and ANRs, the desktops' crashes, with breadcrumbs and values; the app sends them where it likes (no service built in); symbols from `asuka build` |
+| Product analytics | Google Analytics for Firebase | `@react-native-firebase/analytics` (Flutter's `firebase_analytics`) | ✓ `platform/analytics`: Firebase on iOS, macOS and Android, gtag.js on the web, GA4's Measurement Protocol on Windows and Linux (batched off the main thread); events with typed parameters and ecommerce items, checked as Firebase checks them on every platform; screens, the user's ID and properties, default parameters, collection on and off, Consent Mode v2, the app instance ID, reset; a fake for tests |
 
 ## Appearance and accessibility
 

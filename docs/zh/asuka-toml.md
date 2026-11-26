@@ -84,6 +84,7 @@ github = "you/notes"
 | `bluetooth` | 表 | | 使用 `platform/bluetooth` 的应用在包本身所需之外的额外声明：后台运行、通过扫描定位。见 [bluetooth](#bluetooth)。 |
 | `health` | 表 | | 使用 `platform/health` 的 Android 应用在 Health Connect 中读写哪些数据，以及应用的隐私政策。见 [health](#health)。 |
 | `ads` | 表 | | 使用 `platform/ads` 的应用的 AdMob 应用 ID。见 [ads](#ads)。 |
+| `analytics` | 表 | | 供 `platform/analytics` 使用的 Google Analytics 设置：Web 和桌面端发送到哪个 Web 数据流，以及数据收集和意见征求的初始状态。见 [analytics](#analytics)。 |
 | `bin` | 表 | 无 | 项目自带的程序：放在各自目录里的命令行工具，会构建进桌面应用。见 [bin](#bin)。 |
 
 Windows 构建只需要上面这些键；它的签名证书通过环境变量提供（见[打包与发布](shipping.md#windows)）。
@@ -300,6 +301,7 @@ iOS 构建的配置。`team` 同时也是 Mac 构建所用的团队，`usage` �
 | `backgroundModes` | 字符串数组 | 无 | 添加到 Info.plist 的 `UIBackgroundModes`：`"audio"` 可以在锁屏时继续录音和播放。 |
 | `iphoneOnly` | 布尔值 | `false` | 不支持 iPad：应用在 iPad 上作为 iPhone 应用运行，窗口是手机大小。 |
 | `storekit` | 字符串 | 无 | StoreKit 配置文件（Xcode 的 `.storekit`）。`asuka dev` 的模拟器构建会像 Xcode 的 scheme 那样，用它来售卖商品：见[应用内购买](purchases.md#测试购买)。 |
+| `googleServices` | 路径 | 无 | Firebase 项目的 `GoogleService-Info.plist`，供 `platform/analytics` 使用：iOS 和 Mac 构建会把它打包进应用。它必须属于与应用 `id` 相同的 Apple 应用。 |
 | `nonExemptEncryption` | 字符串 | `"no"` | 构建对自身加密情况的声明（`ITSAppUsesNonExemptEncryption`），这是一项需要你自己做出的法律声明：`"no"`、`"yes"`，或者 `"ask"`（不做声明，App Store Connect 会在每次上传时询问）。 |
 | `collected` | 表数组 | 无 | 应用收集的数据，用于隐私清单（见下文）。 |
 | `appStoreConnect` | 表 | | `asuka publish` 上传时使用的 App Store Connect API 密钥：`keyId`、`issuerId`（个人密钥没有）和 `key`，即 `.p8` 文件的路径（默认按 `altool` 的方式查找 `~/.appstoreconnect/private_keys` 下的 `AuthKey_<keyId>.p8`）。见[发布到应用商店](shipping.md#发布到应用商店)。 |
@@ -344,7 +346,7 @@ Android 构建的配置。
 | `keyAlias` | 字符串 | 无 | 上传密钥在 keystore 中的别名。 |
 | `dynamicColor` | 布尔值 | `false` | 像 Material 应用那样从用户的壁纸取色（Android 12 及以上）；在其他情况下以 `accent` 为种子色。 |
 | `permissions` | 字符串数组 | 各个包自带的权限 | 添加到 manifest 的权限：`"android.permission.CAMERA"`。写成 `"<name>:28"` 表示只在 Android 9（API 28）及以下申请。应用导入的包会自动添加它们需要的权限。 |
-| `googleServices` | 路径 | 无 | Firebase 项目的 `google-services.json`，供 `platform/push` 使用。 |
+| `googleServices` | 路径 | 无 | Firebase 项目的 `google-services.json`，供 `platform/push` 和 `platform/analytics` 使用。 |
 | `mapsKey` | 字符串 | 无 | Google Maps Platform 的 API 密钥（Maps SDK for Android），供 `platform/maps` 使用。 |
 | `serviceAccount` | 路径 | 无 | `asuka publish` 上传到 Google Play 时使用的 Google Cloud 服务账号的 JSON 密钥。不要把它放进仓库。 |
 
@@ -431,6 +433,27 @@ android = "ca-app-pub-3940256099942544~3347511713"
 | `skAdNetworks` | 字符串数组 | 无 | 除 Google 之外，其他广告网络的 SKAdNetwork 标识符（`"abcd1234.skadnetwork"`），用于通过 AdMob 中介展示其他广告网络的广告。 |
 
 上面的 ID 是 Google 示例应用的，供开发时配合测试广告（`ads.testUnit`）使用。见[广告](device.md#广告platformads)。
+
+## analytics
+
+导入了 `platform/analytics` 的应用，在 Firebase 的配置文件（`ios.googleServices`、`android.googleServices`）之外还要告诉 Google Analytics 的内容：Web（gtag.js）以及 Windows 和 Linux（Measurement Protocol）发送到哪个 GA4 Web 数据流，以及在应用自己更改（`setEnabled`、`setConsent`）之前，各平台上数据收集和意见征求模式的初始状态。没有导入这个包的应用不受影响。
+
+```toml
+[analytics]
+measurementId = "G-XXXXXXXXXX"
+apiSecret = "…"
+enabled = false
+consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "denied" }
+```
+
+| 键 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `measurementId` | 字符串 | 无 | GA4 Web 数据流的衡量 ID（`G-…`，即 Firebase Web 应用的 `measurementId`），供 Web 和桌面端使用。 |
+| `apiSecret` | 字符串 | 无 | 这个数据流的 Measurement Protocol API 密钥（在“管理 > 数据流”中创建），供 Windows 和 Linux 使用；永远不会出现在网页里。可用 `ASUKA_ANALYTICS_API_SECRET` 覆盖。 |
+| `enabled` | 布尔值 | `true` | 设为 `false` 时数据收集一开始是关闭的，直到应用调用 `analytics.setEnabled(true)`：对应 Firebase 的 `FIREBASE_ANALYTICS_COLLECTION_ENABLED` 和 `firebase_analytics_collection_enabled`。 |
+| `consent` | 表 | 同意 | 意见征求模式的初始值，每项为 `"granted"` 或 `"denied"`：`analyticsStorage`、`adStorage`、`adUserData`、`adPersonalization`。 |
+
+见[数据分析](device.md#数据分析platformanalytics)。
 
 ## c
 

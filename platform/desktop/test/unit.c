@@ -5,6 +5,7 @@
 #include "asuka_desktop.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 void asuka_desktop_post(void (*fn)(void *ctx), void *ctx) { fn(ctx); }
 bool asuka_desktop_on_main(void) { return true; }
@@ -17,6 +18,16 @@ const char *asuka_desktop_app_name(void) { return "Test"; }
 const char *asuka_desktop_app_id(void) { return "dev.asuka.test"; }
 const char *asuka_desktop_app_version(void) { return "1.0"; }
 const char *asuka_desktop_app_build(void) { return "1"; }
+// A setting is the environment's ASUKA_SETTING_<key>, its dots
+// underscores ("analytics.measurementId": ASUKA_SETTING_analytics_measurementId).
+const char *asuka_desktop_app_setting(const char *key) {
+	char name[256] = "ASUKA_SETTING_";
+	size_t n = strlen(name);
+	for (const char *p = key; *p && n + 1 < sizeof name; p++) name[n++] = *p == '.' ? '_' : *p;
+	name[n] = 0;
+	const char *v = getenv(name);
+	return v ? v : "";
+}
 static const char *dir(void) {
 	const char *d = getenv("ASUKA_DATA");
 	return d ? d : ".";

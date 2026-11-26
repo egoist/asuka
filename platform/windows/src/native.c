@@ -42,6 +42,7 @@ const char *asuka_desktop_app_name(void) { return H.app_name ? H.app_name : ""; 
 const char *asuka_desktop_app_id(void) { return H.app_id ? H.app_id : ""; }
 const char *asuka_desktop_app_version(void) { return H.config.version ? H.config.version : ""; }
 const char *asuka_desktop_app_build(void) { return H.config.build ? H.config.build : ""; }
+const char *asuka_desktop_app_setting(const char *key) { return dsk_config_setting(&H.config, key); }
 
 // made reports a directory, made the first time it's asked for.
 static const char *made(const char *dir, bool *done) {

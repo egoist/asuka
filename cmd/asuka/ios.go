@@ -282,6 +282,9 @@ func (t *iosToolchain) link(app *asukaApp, work, hostObj, lib string) (string, e
 	if err := app.cfg.copyStoreKit(bundle); err != nil {
 		return "", err
 	}
+	if err := app.cfg.copyGoogleServices(bundle, app.bundleID); err != nil {
+		return "", err
+	}
 	urls := ""
 	if t := app.cfg.urlTypes(true); t != nil {
 		schemes := t[0].(map[string]any)["CFBundleURLSchemes"].([]string)

@@ -32,4 +32,8 @@ type Config struct {
 	// executable has (platform/appicon), comma-separated: icon groups
 	// 201, 202 and on, in this order (Windows).
 	AlternateIcons string `json:"alternateIcons,omitempty"`
+	// Settings are what asuka.toml says to the app's packages, by key
+	// ("analytics.measurementId": platform/analytics'), which their C
+	// reads (asuka_desktop_app_setting).
+	Settings map[string]string `json:"settings,omitempty"`
 }

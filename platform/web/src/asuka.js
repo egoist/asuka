@@ -15,7 +15,9 @@
 // worker starts with it), serviceWorker (the
 // URL of the app's service worker, sw.js with the app's settings, which
 // the page registers: its notifications and pushes), vapidPublicKey (the
-// app's VAPID key, for platform/push), icon (a notification's icon),
+// app's VAPID key, for platform/push), settings (what the app's
+// asuka.toml says to its packages, by key: "analytics.measurementId"),
+// icon (a notification's icon),
 // mapTiles (the URL of platform/maps' map tiles, with {z}, {x} and {y}:
 // OpenStreetMap's by default), workers (false: spawn runs on the page's
 // thread, not its workers), dev (asuka dev's: the page reloads with each
@@ -72,6 +74,8 @@ export async function start(options = {}) {
   nativeApp.version = options.version || "";
   nativeApp.build = String(options.build || "");
   nativeApp.dev = !!options.dev;
+  // What the app's asuka.toml says to its packages (platform/analytics' measurement ID).
+  nativeApp.settings = options.settings || {};
   // The alternate icons (platform/appicon); the one the app chose shows from the start.
   nativeApp.icons = options.icons || {};
   if (savedIcon()) nativeApp.showIcon(savedIcon());

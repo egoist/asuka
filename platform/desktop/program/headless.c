@@ -70,6 +70,10 @@ const char *asuka_desktop_app_name(void) { return ASUKA_PROGRAM_NAME; }
 const char *asuka_desktop_app_id(void) { return ASUKA_PROGRAM_NAME; }
 const char *asuka_desktop_app_version(void) { return ASUKA_PROGRAM_VERSION; }
 const char *asuka_desktop_app_build(void) { return ""; }
+const char *asuka_desktop_app_setting(const char *key) {
+	(void)key;
+	return "";
+}
 
 // ---- Directories ----
 

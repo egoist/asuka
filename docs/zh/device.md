@@ -1,6 +1,6 @@
 # 设备与服务
 
-Asuka 提供了一系列包，让应用用上视图之外的设备能力：相机、条码、图像内容识别、照片和文件、文件预览、打印和 PDF、邮件和短信编辑界面、定位、通知和推送、声音、正在播放（Now Playing）和录音、网络状态、共享的媒体库、后台任务、接收其他应用的分享、JavaScript、登录和生物识别、屏幕、地图、应用商店提供的服务、广告，以及崩溃报告。本页逐一介绍这些包：它们能做什么、API 怎么用、会给应用带来哪些权限，以及在各个平台上的表现。
+Asuka 提供了一系列包，让应用用上视图之外的设备能力：相机、条码、图像内容识别、照片和文件、文件预览、打印和 PDF、邮件和短信编辑界面、定位、通知和推送、声音、正在播放（Now Playing）和录音、网络状态、共享的媒体库、后台任务、接收其他应用的分享、JavaScript、登录和生物识别、屏幕、地图、应用商店提供的服务、广告、崩溃报告，以及数据分析。本页逐一介绍这些包：它们能做什么、API 怎么用、会给应用带来哪些权限，以及在各个平台上的表现。
 
 每个包在所有平台上都是同一套 API，iOS 和 Android 几乎支持其中的全部功能。在 macOS、Windows 和 Linux 上，Asuka 会用桌面系统自己的服务来实现各个包；在浏览器中则用 Web API。如果某个平台根本没有对应的能力，包的表现就和在一台缺少该功能的手机上一样：返回这个包的 `notAvailable` 错误，返回一个说明缺了什么的错误，或者调用了也什么都不做。每个包的小节都会说明它能做什么、在各平台上分别靠什么实现。每个桌面平台和浏览器也各有专门的一节（[在 Mac 上](#在-mac-上)、[在 Windows 上](#在-windows-上)、[在 Linux 上](#在-linux-上)、[在浏览器中](#在浏览器中)），介绍应用在那里需要做哪些配置，并用一张表列出它与 iOS 和 Android 的不同之处。
 
@@ -20,6 +20,7 @@ Asuka 提供了一系列包，让应用用上视图之外的设备能力：相�
 | `platform/vision` | ML Kit 的文字、人脸和条码模型（约 30 MB） | |
 | `platform/photos` | `READ_MEDIA_IMAGES`、`READ_MEDIA_VISUAL_USER_SELECTED`；`READ_EXTERNAL_STORAGE`（Android 12 及更早版本） | `NSPhotoLibraryUsageDescription` |
 | `platform/push` | Firebase Cloud Messaging、`POST_NOTIFICATIONS` | `aps-environment` entitlement；`remote-notification` 后台模式 |
+| `platform/analytics` | Firebase Analytics（`INTERNET`、`ACCESS_NETWORK_STATE`、`WAKE_LOCK`、`AD_ID`）；`android.googleServices` 的设置 | Firebase Analytics，`ios.googleServices` 指定的文件，从应用启动时开始 |
 | `platform/appleauth` | | 通过 Apple 登录（Sign in with Apple）的 entitlement |
 | `platform/pay` | Google Pay 的库，启用它的 API，以及它的回调服务 | Apple Pay 的 entitlement，带有 `asuka.toml` 的 `applePay.merchantIds` |
 | `platform/biometric` | `USE_BIOMETRIC` | `NSFaceIDUsageDescription` |
@@ -89,6 +90,7 @@ Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.pli
 | `platform/purchase` | StoreKit 2，编译进应用的 Swift 库；导入了这个包的应用，构建时会生成这个库（见[应用内购买](purchases.md)） |
 | `platform/icloud` | 和 iOS 一样，编译进应用的 Swift 库。需要带 iCloud 的描述文件（见上文）：没有的话报错 "icloud: not available"（见 [iCloud](icloud.md)） |
 | `platform/splash` | Mac 应用没有启动屏：`hold` 和 `hide` 什么也不做 |
+| `platform/analytics` | 和 iOS 一样使用 Firebase，用同一个 `GoogleService-Info.plist`（与应用 ID 相同的 Apple 应用） |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android：Mac 应用不会出现在其他应用的分享菜单里，`asuka.toml` 的 `shortcuts` 也不会被添加 |
 
 ## 在 Windows 上
@@ -132,6 +134,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `platform/transcribe` | 用 Windows 的桌面语音识别器在本机识别：英语的随 Windows 附带，其他语言的随该语言包的语音识别功能安装；`check` 会告诉你哪些可用。`listen` 使用默认麦克风 |
 | `device.haptic` | 电脑没有触感反馈：什么也不做 |
 | `platform/splash` | Windows 应用没有启动屏：`hold` 和 `hide` 什么也不做 |
+| `platform/analytics` | GA4 的 Measurement Protocol，用 API 密钥发送到 `asuka.toml` 里的 Web 数据流：在主线程之外批量发送，客户端 ID 和尚未发出的事件保存在应用的数据目录里（[数据分析](#数据分析platformanalytics)） |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android |
 
 ## 在 Linux 上
@@ -169,6 +172,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/biometric`、`platform/integrity`、`platform/agerange`、`platform/push` | Linux 上都没有：返回不可用或不受支持。`platform/review` 什么也不做；`platform/tracking` 返回 `.allowed` |
 | `platform/pay` | Linux 上没有能为应用付款的钱包：`available` 返回 `.none`，`pay` 抛出 `PayError.notAvailable`，`PayButton` 什么也不显示 |
 | `platform/crash` | Asuka 的崩溃输出，其中也包括原生代码中的崩溃（GTK 代码里收到的信号、GLib 的 abort），这类崩溃报告为 `"native"`；不会读取系统自己的崩溃记录（systemd-coredump、apport） |
+| `platform/analytics` | GA4 的 Measurement Protocol，和 Windows 一样 |
 | `device.haptic` | 桌面设备没有触感反馈：什么也不做 |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android |
 
@@ -206,6 +210,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/maps` | 和 Windows 一样，由 Asuka 绘制 OpenStreetMap 的瓦片；页面获得定位权限后，`showsUser` 才会生效 |
 | `platform/pay` | 浏览器支持 Apple Pay 时（Safari）通过 Payment Request API 使用它，商户验证由应用的服务器完成（`onValidateMerchant`）；其他浏览器通过 Google 的 Web API（pay.js）使用 Google Pay；两者都使用各自的官方按钮。支付面板只在点击时显示 |
 | `platform/crash` | Asuka 的致命错误，以及未捕获的 JavaScript 错误；后者作为非致命的 `"exception"` 报告 |
+| `platform/analytics` | 从 Google 加载的 gtag.js，发送到 `asuka.toml` 里的 Web 数据流；关闭数据收集用的是 gtag 自己的开关，并保存在 `localStorage` 里 |
 | `platform/splash` | `hold` 和 `hide` 什么也不做 |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android |
 
@@ -2541,3 +2546,87 @@ app { Root() }
 **各平台的细节。** iOS 只会把 MetricKit 链接进读取报告的应用，并且把诊断交给应用本身，而不是它的分享扩展。从 iOS 17 开始，MetricKit 会给出崩溃的进程 ID，借此可以把崩溃关联到那一次运行的上下文；在此之前，则关联到崩溃之前的最后一次运行。MetricKit 在模拟器上不会送达诊断。Android 不需要额外配置；Android 11 之前没有原生崩溃和 ANR 的记录。macOS：MetricKit 从 macOS 12 开始可用；导致应用退出的未捕获 Objective-C 异常会以 MetricKit 崩溃报告的形式出现（主线程上的这类异常会被 AppKit 捕获并记入日志）。Windows 错误报告（Windows Error Reporting）照常保留它自己的记录。在浏览器中，记录保存在应用的文件中（IndexedDB），下次启动时读取。未捕获的 JavaScript 错误（无论来自 Asuka 还是应用的 `web/*.js`）会立即生成一份 `"exception"` 报告，它是非致命的（页面会继续运行），并附带本次运行的上下文；每次运行最多 20 份，同一个错误只报告一次。每个页面都会在同源的 `localStorage` 里标记自己这次运行还活着，这样应用其他开着的页面就不会去动它的记录。在 `asuka test` 下不会保存记录：`reports()` 不给出任何报告就结束，其余调用什么也不做。
 
 **在 `asuka dev` 下**，开发 App 会像正式构建一样保存记录；开发 App 自身的原生崩溃不属于你的应用，不会报告给它；应用的构建（`asuka dev --once`、`asuka build`）则会报告所有崩溃。
+
+## 数据分析：platform/analytics
+
+`platform/analytics` 把用户在应用里做了什么告诉 Google Analytics：应用记录的事件和参数、用户看过的页面、用户是谁（用户 ID 和用户属性），以及用户同意了什么（意见征求模式，Consent Mode）。在 iOS、macOS 和 Android 上它使用 Google Analytics for Firebase，在 Web 上使用 gtag.js，在 Windows 和 Linux 上使用 GA4 的 Measurement Protocol，相当于 React Native 和 Flutter 在手机上用的 Firebase Analytics。
+
+```asuka check
+import platform/analytics
+
+component Shop {
+  state note = ""
+
+  task {
+    try? analytics.screen("Shop", class: "ShopScreen")
+  }
+
+  Column {
+    gap: 8
+    Button("Buy two pairs") {
+      on press {
+        do {
+          try analytics.log("purchase", ["currency": "USD", "value": 20.02, "transaction_id": "T_1001"],
+            items: [analytics.Item(id: "SKU_123", name: "Socks", price: 10.01, quantity: 2)])
+        } catch e {
+          note = e.message
+        }
+      }
+    }
+    Text(note)
+  }
+}
+
+component ConsentBanner {
+  Row {
+    gap: 8
+    Button("Accept") {
+      on press {
+        analytics.setConsent(analytics.Consent(analyticsStorage: true, adStorage: true, adUserData: true, adPersonalization: true))
+      }
+    }
+    Button("Decline") {
+      on press {
+        analytics.setConsent(analytics.Consent(analyticsStorage: false, adStorage: false, adUserData: false, adPersonalization: false))
+      }
+    }
+  }
+}
+
+test "buying logs a purchase" {
+  let a = analytics.fake()
+  let app = mount(Shop())
+  app.tap("Buy two pairs")
+  let p = a.logged("purchase")
+  expect(p.count() == 1 && p[0].items[0]["item_id"] == .string("SKU_123"))
+}
+```
+
+- `analytics.log(name, params, items:)` 记录一个事件。参数可以是字符串、数字和布尔值（布尔值以 1 或 0 发送，值为 `none` 的参数会被省略）；电商事件的商品放在 `items` 里，每件是一个 `analytics.Item`（`id`、`name`、`price`、`quantity`，其余的放在 `params` 里）。和 Firebase 一样，只有电商事件（`view_item`、`add_to_cart`、`purchase` 等，见 `analytics.ecommerceEvents`）可以带商品。使用 Google 推荐的事件（`login`、`sign_up`、`purchase`、`select_content` 等）可以直接用上 Analytics 自带的报告。
+- `analytics.screen(name, class:)` 记录一个 `screen_view`。应用的页面不会被自动上报（在 iOS 和 Android 上，Firebase 只能看到 Asuka 唯一的那个 view controller 或 activity，所以它的自动上报是关闭的）：请在页面显示时调用它。
+- `setUserId(id)`（用户退出登录后传 `none`）和 `setUserProperty(name, value)` 为之后的事件描述用户；`setDefaults(params)` 给之后的每个事件都加上这些参数。
+- `setEnabled(false)` 关闭数据收集，本次和以后的启动都有效；`setConsent(Consent(...))` 设置意见征求模式（`true` 表示同意，`false` 表示拒绝，`none` 表示保持不变）。在应用自己设置之前，以 `asuka.toml` 的 `[analytics]` 为准（见下文）：需要先征求用户同意的应用，可以让数据收集一开始就关闭，或者一开始就拒绝相应的授权。
+- `await analytics.appInstanceId()` 是 Analytics 用来识别这次安装的 ID（BigQuery 里的 `user_pseudo_id`），数据收集关闭或拒绝分析存储时为 `none`；`reset()` 会清除它以及用户的 ID 和属性，这次安装就会被当成一个新的实例。
+
+所有平台接受的事件都是一样的，因为包会在交给平台之前先检查一遍。事件名和参数名是 1 到 40 个字母、数字或下划线，以字母开头，不能以 `firebase_`、`google_` 或 `ga_` 开头，也不能是 Analytics 自己记录的事件（`first_open`、`session_start`、`app_update` 等）。一个事件最多 25 个参数（商品算一个），最多 200 件商品，每件最多 27 个参数。用户属性名是 1 到 24 个上述字符，并且不能是 Analytics 自己设置的（`user_id`、`first_open_time` 等）。违反这些规则会抛出 `AnalyticsError`（`invalidName`、`reservedName`、`tooManyParameters`、`invalidValue`），超过 256 个字符的用户 ID 也是如此。而超过 Analytics 保存长度的文本值会被截断：参数值保留 100 个字符，用户属性值保留 36 个。
+
+各平台的设置都写在 `asuka.toml` 里（[analytics](asuka-toml.md#analytics)）：
+
+```toml
+[ios]
+googleServices = "GoogleService-Info.plist"   # iOS 和 Mac
+[android]
+googleServices = "google-services.json"
+[analytics]
+measurementId = "G-XXXXXXXXXX"   # Web、Windows 和 Linux：一个 Web 数据流的
+apiSecret = "…"                   # Windows 和 Linux
+enabled = false                   # 直到应用调用 setEnabled(true)
+consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "denied" }
+```
+
+- **iOS 和 macOS**：Firebase 项目里与应用 ID 相同的 Apple 应用的 `GoogleService-Info.plist`，构建时会打包进应用；Mac 也用同一个文件。Firebase 在应用启动时就开始工作。
+- **Android**：项目的 `google-services.json`，其中要有与应用 ID 相同的 Android 应用。Firebase Analytics 会声明广告 ID 权限（`AD_ID`）：请在 Play 管理中心的广告 ID 声明里如实填写。
+- **Web**：从 Google 加载的 gtag.js，发送到 `measurementId` 对应的 Web 数据流（Firebase Web 应用的 `measurementId` 就是它的数据流）。页面里不会有 API 密钥。`reset()` 会清除浏览器的客户端 ID（Analytics 的 Cookie），下次访问就是一个新实例。
+- **Windows 和 Linux**：通过 Measurement Protocol 发送到同一个 Web 数据流，使用它的一个 API 密钥（在 Analytics 的“管理 > 数据流 > Measurement Protocol API 密钥”中创建；用 `ASUKA_ANALYTICS_API_SECRET` 代替 `apiSecret`，就可以不把它放进代码仓库）。事件在单独的线程上批量发送，每批最多 25 个，在第一个事件之后几秒发出，应用永远不必等待网络。这次安装的客户端 ID 在第一次启动时生成，和用户的 ID、属性以及尚未发出的事件一起保存在应用的数据目录里（尚未发出的事件会在下次启动时发送，最多保留 72 小时；离线时会稍后重试）。30 分钟内没有新事件，会话就会结束。页面会作为一次网页浏览（page view）发送，标题是页面的名字，地址是 `app://<应用 ID>/<名字>`。拒绝分析存储期间什么也不会发送。
+
+缺少设置的平台什么也不会发送：那里的 `available()` 为 false，各个调用什么也不做，`asuka dev` 和 `asuka build` 会提示缺少什么。在 `asuka dev` 下，Web 和桌面端会发送到 Analytics 的 DebugView；在手机上则需要打开 Firebase 的调试模式（Android 上运行 `adb shell setprop debug.firebase.analytics.app <应用 ID>`）。在测试里，`analytics.fake()` 会记录应用记录的内容而不发送（它的 `events`、`logged(name)`、`userId`、`userProperties`、`consent`）。应用发送了哪些数据，需要你在应用商店的隐私信息里自行声明（App Store Connect 的“App 隐私”、Google Play 的“数据安全”）。

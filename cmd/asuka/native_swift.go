@@ -60,8 +60,9 @@ type swiftPackageOutput struct {
 	forceLoad  []string // modules' static libraries, linked whole
 	archives   []string
 	frameworks []string
-	// static are binary targets' static frameworks (Google Mobile Ads'):
-	// linked whole, as Xcode with -ObjC, and not embedded; their privacy
+	// static are binary targets' static frameworks (Google Mobile Ads',
+	// Firebase's): linked whole, whether or not the Swift imports them,
+	// and not embedded; their privacy
 	// manifests go in the app in bundles of their own.
 	static  []string
 	bundles []string
@@ -217,6 +218,10 @@ func (b *swiftBuild) build() (*swiftPackageOutput, error) {
 			case ".a":
 				out.archives = append(out.archives, p)
 			case ".framework":
+				// A binary target's static framework (Firebase's,
+				// GoogleAppMeasurement's) is linked, as Xcode links it,
+				// whether or not the Swift imports it; a dynamic one is
+				// embedded.
 				if staticFramework(p) {
 					out.static = append(out.static, p)
 				} else {
@@ -255,6 +260,11 @@ func (o *swiftPackageOutput) linkFlags() []string {
 	}
 	if len(o.frameworks)+len(o.static) > 0 {
 		flags = append(flags, "-F", o.products, "-F", filepath.Join(o.products, "PackageFrameworks"))
+	}
+	if len(o.static) > 0 {
+		// Other static libraries' Objective-C categories, which nothing
+		// names, loaded too: what Firebase's setup asks of an app (-ObjC).
+		flags = append(flags, "-Xlinker", "-ObjC")
 	}
 	return flags
 }

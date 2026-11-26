@@ -129,6 +129,13 @@ func writeMacBundle(app *asukaApp, bundle, work string, release bool, run func(d
 			info[k] = v
 		}
 	}
+	// Firebase's settings and file, for platform/analytics.
+	for k, v := range app.cfg.analyticsPlist() {
+		info[k] = v
+	}
+	if err := app.cfg.copyGoogleServices(res, app.bundleID); err != nil {
+		return "", err
+	}
 	// The purpose strings are the same keys on macOS (camera, contacts...);
 	// location's is NSLocationUsageDescription there.
 	for k, v := range app.cfg.IOS.Usage {

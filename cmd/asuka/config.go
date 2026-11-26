@@ -98,6 +98,10 @@ type appConfig struct {
 		// asuka dev's build for the simulator sells from, as Xcode's scheme
 		// does (platform/purchase, which asuka dev builds into the app).
 		StoreKit string `json:"storekit"`
+		// GoogleServices is the Firebase project's GoogleService-Info.plist,
+		// for platform/analytics: the iOS and Mac builds carry it, as
+		// Firebase reads it (analytics.go).
+		GoogleServices string `json:"googleServices"`
 		// IPhoneOnly leaves iPad out: the app runs there as an iPhone app,
 		// in a phone-sized window. By default it's an iPad app too, in
 		// Split View and Stage Manager, at any size the user gives it.
@@ -232,6 +236,9 @@ type appConfig struct {
 	// nfcOn: the app imports platform/nfc (addNFC): its filters and
 	// uses-feature go in the manifest.
 	nfcOn bool
+	// analyticsOn: the app imports platform/analytics (analyticsExtras):
+	// its builds carry the Firebase files and the analytics settings.
+	analyticsOn bool
 	// liveActivity: the app uses platform/liveactivity
 	// (ASUKA_LIVEACTIVITY): on iOS its widget extension has the Live
 	// Activities' template, with or without widgets.
@@ -323,6 +330,10 @@ type appConfig struct {
 	// Ads is what an app of platform/ads gives Google Mobile Ads: its
 	// AdMob app IDs, more ad networks' SKAdNetwork identifiers (ads.go).
 	Ads adsConfig `json:"ads"`
+	// Analytics is what an app of platform/analytics says of Google
+	// Analytics beyond its Firebase files: the web stream the web and
+	// the desktops send to, and what collection starts as (analytics.go).
+	Analytics analyticsConfig `json:"analytics"`
 	// Web is what a web build needs (cmd/asuka/web.go).
 	Web struct {
 		// VapidPublicKey is the app server's VAPID public key (base64url, an
@@ -347,7 +358,7 @@ type appConfig struct {
 		Keystore string `json:"keystore"`
 		KeyAlias string `json:"keyAlias"`
 		// GoogleServices is the Firebase project's google-services.json,
-		// for platform/push (Firebase Cloud Messaging).
+		// for platform/push (Firebase Cloud Messaging) and platform/analytics.
 		GoogleServices string `json:"googleServices"`
 		// MapsKey is a Google Maps Platform API key (Maps SDK for Android),
 		// for platform/maps.
@@ -445,6 +456,9 @@ func loadConfig(dir string) (*appConfig, error) {
 	if err := c.Ads.check(); err != nil {
 		return nil, fmt.Errorf("asuka.toml: ads: %v", err)
 	}
+	if err := c.Analytics.check(); err != nil {
+		return nil, fmt.Errorf("asuka.toml: analytics: %v", err)
+	}
 	if _, err := c.updates(); err != nil {
 		return nil, err
 	}
@@ -473,6 +487,9 @@ func loadConfig(dir string) (*appConfig, error) {
 	}
 	if c.Android.GoogleServices != "" && !filepath.IsAbs(c.Android.GoogleServices) {
 		c.Android.GoogleServices = filepath.Join(dir, c.Android.GoogleServices)
+	}
+	if c.IOS.GoogleServices != "" && !filepath.IsAbs(c.IOS.GoogleServices) {
+		c.IOS.GoogleServices = filepath.Join(dir, c.IOS.GoogleServices)
 	}
 	if sp := &c.Splash; sp.Image != "" || sp.Background != "" {
 		if sp.Image != "" && !filepath.IsAbs(sp.Image) {
@@ -576,6 +593,7 @@ func (c *appConfig) permissionsFor(deps []string) {
 	c.addNFC(deps)
 	c.healthExtras(deps)
 	c.adsExtras(deps)
+	c.analyticsExtras(deps)
 	if deps == nil || slices.Contains(deps, bluetoothPackage) {
 		c.bluetoothExtras()
 	}

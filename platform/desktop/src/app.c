@@ -57,7 +57,24 @@ void dsk_config_load(dsk_config *c) {
 	c->update_key = dup_or_null(dsk_json_str(j, "updateKey", NULL));
 	c->update_target = dup_or_null(dsk_json_str(j, "updateTarget", NULL));
 	c->alternate_icons = dup_or_null(dsk_json_str(j, "alternateIcons", NULL));
+	const dsk_json *s = dsk_json_get(j, "settings");
+	if (s && s->type == DSK_JOBJ && s->n) {
+		c->setting_keys = calloc(s->n, sizeof *c->setting_keys);
+		c->setting_values = calloc(s->n, sizeof *c->setting_values);
+		for (size_t i = 0; c->setting_keys && c->setting_values && i < s->n; i++) {
+			if (s->kids[i].type != DSK_JSTR) continue;
+			c->setting_keys[c->nsettings] = strdup(s->keys[i]);
+			c->setting_values[c->nsettings] = strdup(s->kids[i].str);
+			c->nsettings++;
+		}
+	}
 	dsk_json_free(j);
+}
+
+const char *dsk_config_setting(const dsk_config *c, const char *key) {
+	for (size_t i = 0; i < c->nsettings; i++)
+		if (c->setting_keys[i] && !strcmp(c->setting_keys[i], key)) return c->setting_values[i] ? c->setting_values[i] : "";
+	return "";
 }
 
 // xdg is an XDG base directory: the variable's if it's absolute (the spec
@@ -117,6 +134,12 @@ void dsk_config_free(dsk_config *c) {
 	char **s[] = {&c->name, &c->id, &c->version, &c->build, &c->accent, &c->scheme, &c->file_types, &c->lang,
 		&c->direction, &c->update_feed, &c->update_key, &c->update_target, &c->alternate_icons};
 	for (size_t i = 0; i < sizeof s / sizeof *s; i++) free(*s[i]);
+	for (size_t i = 0; i < c->nsettings; i++) {
+		free(c->setting_keys[i]);
+		free(c->setting_values[i]);
+	}
+	free(c->setting_keys);
+	free(c->setting_values);
 	memset(c, 0, sizeof *c);
 }
 
