@@ -264,11 +264,28 @@ UINT wh_text_format(const node *n) {
 	return f;
 }
 
+// wh_inset_rect is r, the node's client rect, less its padding
+// (ContentInset). Its inner edges are rounded to pixels as its frame's
+// edges are (wh_place_at), not each side's width alone: at 150%, 5pt is
+// 7.5px, 8 a side, 16 in all, where the frame (the text's width and 10pt,
+// rounded as one) has 15, and the text, a pixel short of what it
+// measured, would wrap. Transformed, or not placed yet: each side alone.
 RECT wh_inset_rect(const node *n, RECT r) {
-	r.top += wh_px(n, n->inset[0]);
-	r.right -= wh_px(n, n->inset[1]);
-	r.bottom -= wh_px(n, n->inset[2]);
-	r.left += wh_px(n, n->inset[3]);
+	bool xf = n->xf.tx != 0 || n->xf.ty != 0 || n->xf.sx != 1 || n->xf.sy != 1 || n->xf.rot != 0;
+	if (n->placed && !xf && n->frame[2] > 0 && n->frame[3] > 0) {
+		float x = n->frame[0], y = n->frame[1];
+		if (n->parent && n->parent->kind == AK_KIND_SCROLL) x -= n->parent->scroll_x, y -= n->parent->scroll_y;
+		int x0 = wh_px(n, x), y0 = wh_px(n, y), x1 = wh_px(n, x + n->frame[2]), y1 = wh_px(n, y + n->frame[3]);
+		r.top += wh_px(n, y + n->inset[0]) - y0;
+		r.right -= x1 - wh_px(n, x + n->frame[2] - n->inset[1]);
+		r.bottom -= y1 - wh_px(n, y + n->frame[3] - n->inset[2]);
+		r.left += wh_px(n, x + n->inset[3]) - x0;
+	} else {
+		r.top += wh_px(n, n->inset[0]);
+		r.right -= wh_px(n, n->inset[1]);
+		r.bottom -= wh_px(n, n->inset[2]);
+		r.left += wh_px(n, n->inset[3]);
+	}
 	if (r.right < r.left) r.right = r.left;
 	if (r.bottom < r.top) r.bottom = r.top;
 	return r;
