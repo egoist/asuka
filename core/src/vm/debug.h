@@ -200,8 +200,12 @@ void ak_dbg_reset(void);
 #if AK_VM_DEBUGGER
 #include <stdatomic.h>
 // ak_dbg_on is nonzero while the interpreter calls ak_dbg_hook before
-// each instruction: breakpoints are set, a step runs, a pause is asked.
+// each instruction: its bits say who wants it. AK_DBG_ON_DEBUG while
+// breakpoints are set, a step runs or a pause is asked; AK_DBG_ON_PROF
+// while the profiler's sampler wants a sample of the main thread's stack
+// (vm/prof.h), which the hook takes and clears.
 extern _Atomic int ak_dbg_on;
+enum { AK_DBG_ON_DEBUG = 1, AK_DBG_ON_PROF = 2 };
 struct ak_co;
 // ak_dbg_hook is called before the instruction at pc of co's top frame
 // runs (an interpreted function's), when ak_dbg_on: it may stop there,

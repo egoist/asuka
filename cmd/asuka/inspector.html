@@ -4,15 +4,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Asuka Inspector</title>
 <style>
-  :root { color-scheme: light dark; --bg: #fff; --fg: #1d1d1f; --dim: #6e6e73; --line: #e5e5ea; --sel: #e8f0fe; --accent: #0a66d8; --chip: #f2f2f7; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f5f5f7; --dim: #a1a1a6; --line: #38383a; --sel: #23374f; --accent: #5aa2ff; --chip: #2c2c2e; } }
+  :root { color-scheme: light dark; --bg: #fff; --fg: #1d1d1f; --dim: #6e6e73; --line: #e5e5ea; --sel: #e8f0fe; --accent: #0a66d8; --chip: #f2f2f7; --bad: #d70015;
+    --app: #3478f6; --props: #ff9f0a; --layout: #af52de; --frames: #30b0c7; --after: #34c759; --cpu: #5e8fd6; --cpu2: #8e8e93; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f5f5f7; --dim: #a1a1a6; --line: #38383a; --sel: #23374f; --accent: #5aa2ff; --chip: #2c2c2e; --bad: #ff453a;
+    --app: #0a84ff; --props: #ff9f0a; --layout: #bf5af2; --frames: #40c8e0; --after: #30d158; --cpu: #4a78c2; --cpu2: #636366; } }
   * { box-sizing: border-box; }
   body { margin: 0; font: 13px/1.4 -apple-system, system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); height: 100vh; display: flex; flex-direction: column; }
   header { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   header h1 { font-size: 14px; margin: 0 8px 0 0; }
-  input[type=search], select, button { font: inherit; color: inherit; background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  input[type=search], select, button, a.button { font: inherit; color: inherit; background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; text-decoration: none; }
+  button:disabled, a.button[aria-disabled=true] { opacity: 0.45; pointer-events: none; }
   input[type=search] { flex: 1; min-width: 160px; }
-  #status { color: var(--dim); }
+  .tabs { display: flex; gap: 2px; background: var(--chip); border-radius: 7px; padding: 2px; }
+  .tabs button { border: 0; background: none; padding: 3px 10px; border-radius: 5px; }
+  .tabs button[aria-selected=true] { background: var(--bg); box-shadow: 0 0 0 1px var(--line); }
+  #status, #pstatus { color: var(--dim); }
+  .grow { flex: 1; }
   main { flex: 1; display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); min-height: 0; }
   #tree { overflow: auto; padding: 6px 0; border-right: 1px solid var(--line); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
   .row { display: flex; align-items: center; gap: 6px; padding: 1px 8px; white-space: nowrap; cursor: default; }
@@ -23,35 +30,97 @@
   .el { color: var(--accent); }
   .tx { color: var(--fg); overflow: hidden; text-overflow: ellipsis; max-width: 40ch; }
   .fr { color: var(--dim); }
-  #detail { overflow: auto; padding: 12px; }
-  #detail h2 { font-size: 15px; margin: 0 0 8px; }
-  #detail dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
-  #detail dt { color: var(--dim); }
-  #detail dd { margin: 0; word-break: break-word; font-family: ui-monospace, Menlo, monospace; }
+  #detail, #pdetail { overflow: auto; padding: 12px; }
+  #detail h2, #pdetail h2 { font-size: 15px; margin: 0 0 8px; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+  dt { color: var(--dim); }
+  dd { margin: 0; word-break: break-word; font-family: ui-monospace, Menlo, monospace; }
   .empty { color: var(--dim); padding: 16px; }
-  @media (max-width: 640px) { main { grid-template-columns: 1fr; grid-template-rows: 2fr 1fr; } #tree { border-right: 0; border-bottom: 1px solid var(--line); } }
+  #perf { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); grid-template-rows: auto auto minmax(120px, auto) minmax(0, 1fr); min-height: 0; }
+  #perf[hidden], main[hidden] { display: none; }
+  .bar { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  #record.on { color: var(--bad); border-color: var(--bad); }
+  #summary { grid-column: 1 / -1; padding: 6px 12px; color: var(--dim); }
+  #summary b { color: var(--fg); font-weight: 600; }
+  #timeline-wrap { grid-column: 1; position: relative; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow-y: auto; max-height: 46vh; }
+  #timeline { display: block; width: 100%; cursor: grab; }
+  #timeline.dragging { cursor: grabbing; }
+  #tip { position: fixed; z-index: 2; pointer-events: none; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; box-shadow: 0 4px 16px rgba(0,0,0,.15);
+    font-size: 12px; max-width: 360px; white-space: pre-wrap; }
+  #pdetail { grid-column: 2; grid-row: 3 / 5; border-left: 1px solid var(--line); }
+  .lower { grid-column: 1; display: flex; flex-direction: column; min-height: 0; }
+  .subtabs { display: flex; gap: 2px; padding: 6px 12px 0; }
+  .subtabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 4px 8px; color: var(--dim); }
+  .subtabs button[aria-selected=true] { color: var(--fg); border-bottom-color: var(--accent); }
+  .pane { flex: 1; overflow: auto; min-height: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: right; padding: 3px 8px; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  th { position: sticky; top: 0; background: var(--bg); color: var(--dim); font-weight: 500; cursor: pointer; user-select: none; }
+  td.name, th.name { text-align: left; white-space: normal; }
+  td.where { text-align: left; color: var(--dim); font-family: ui-monospace, Menlo, monospace; }
+  tr.sel td { background: var(--sel); }
+  tbody tr:hover td { background: var(--chip); }
+  .crumbs { padding: 4px 12px; color: var(--dim); }
+  .crumbs a { color: var(--accent); cursor: pointer; }
+  #flamec { display: block; width: 100%; }
+  .legend { display: inline-flex; gap: 10px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  @media (max-width: 640px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 2fr 1fr; } #tree { border-right: 0; border-bottom: 1px solid var(--line); }
+    #perf { grid-template-columns: 1fr; } #pdetail { grid-column: 1; grid-row: auto; border-left: 0; border-top: 1px solid var(--line); }
+  }
 </style>
 <header>
   <h1>Asuka Inspector</h1>
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-views" aria-selected="true" aria-controls="views">Views</button>
+    <button role="tab" id="tab-perf" aria-selected="false" aria-controls="perf">Performance</button>
+  </div>
   <select id="player" aria-label="Device"></select>
   <input id="filter" type="search" placeholder="Filter by element or text" aria-label="Filter">
   <button id="refresh">Refresh</button>
-  <label><input id="live" type="checkbox" checked> Live</label>
+  <label id="live-label"><input id="live" type="checkbox" checked> Live</label>
   <span id="status"></span>
 </header>
-<main>
+<main id="views">
   <div id="tree" role="tree"></div>
   <div id="detail"><p class="empty">Select a view.</p></div>
 </main>
+<section id="perf" hidden>
+  <div class="bar">
+    <label title="Frames a second, flushes, the last flush's phases and the memory, over the app"><input id="overlay" type="checkbox"> Overlay on the device</label>
+    <button id="record">● Record</button>
+    <label id="cpu-label" title="Which of the app's functions the main thread spends its time in, sampled every millisecond"><input id="cpu" type="checkbox" checked> Sample the app's functions</label>
+    <span id="pstatus"></span>
+    <span class="grow"></span>
+    <a class="button" id="export-trace" aria-disabled="true" title="Chrome's trace event format: opens in ui.perfetto.dev and chrome://tracing">Export trace</a>
+    <a class="button" id="export-ss" aria-disabled="true" title="For speedscope.app">Export for speedscope</a>
+  </div>
+  <div id="summary">Record while you use the app, then stop: each flush, the display's dropped frames and the app's functions show here.</div>
+  <div id="timeline-wrap"><canvas id="timeline" aria-label="Timeline: flushes, dropped frames and the app's functions"></canvas></div>
+  <div class="lower">
+    <div class="subtabs" role="tablist">
+      <button data-pane="top" aria-selected="true">Top functions</button>
+      <button data-pane="flame" aria-selected="false">Flame graph</button>
+      <button data-pane="flushes" aria-selected="false">Slowest flushes</button>
+    </div>
+    <div class="pane" id="pane-top"></div>
+    <div class="pane" id="pane-flame" hidden><div class="crumbs" id="crumbs"></div><canvas id="flamec"></canvas></div>
+    <div class="pane" id="pane-flushes" hidden></div>
+  </div>
+  <div id="pdetail"><p class="empty">Select a flush or a function.</p></div>
+</section>
+<div id="tip" hidden></div>
 <script>
 const $ = (id) => document.getElementById(id);
 let players = [], selected = null, hovered = null, folded = new Set(), busy = false;
+let tab = "views";
 // The view the app highlights: the row under the pointer, else the one
 // selected; sent again at each refresh (the core sends the host only a change).
 let lit = { key: "", path: "" };
 function highlight() {
   const p = current();
-  const want = { key: p ? p.key : "", path: p ? (hovered ?? selected ?? "") : "" };
+  const want = { key: p && tab === "views" ? p.key : "", path: p && tab === "views" ? (hovered ?? selected ?? "") : "" };
   if (lit.key && lit.key !== want.key) post(lit.key, "");
   // Nothing to show that's already not shown: nothing to send.
   if (want.key && (want.path || lit.path || lit.key !== want.key)) post(want.key, want.path);
@@ -81,6 +150,7 @@ function render() {
   const tree = $("tree");
   tree.textContent = "";
   if (!p) { tree.innerHTML = '<p class="empty">No app is connected: run it with asuka dev.</p>'; return; }
+  if (!p.tree) return;
   const filter = $("filter").value.trim().toLowerCase();
   const all = [];
   (p.tree.roots || []).forEach((r, i) => rows(r, String(i), 0, all, filter));
@@ -106,28 +176,37 @@ function render() {
   const detail = $("detail");
   if (!sel) { detail.innerHTML = '<p class="empty">Select a view.</p>'; return; }
   const n = sel.node, f = n.frame;
-  const fields = [["Element", n.el], ["Native view", n.id || "none (laid out in its parent's)"],
+  detailList(detail, n.el, [["Element", n.el], ["Native view", n.id || "none (laid out in its parent's)"],
     ["Frame", f ? `x ${f[0]}, y ${f[1]}, ${f[2]} × ${f[3]} (in its parent's view)` : "none"],
-    ["Text", n.text], ["Text 2", n.text2], ["Children", (n.kids || []).length]];
-  detail.innerHTML = "<h2></h2><dl></dl>";
-  detail.querySelector("h2").textContent = n.el;
-  const dl = detail.querySelector("dl");
+    ["Text", n.text], ["Text 2", n.text2], ["Children", (n.kids || []).length]]);
+}
+
+function detailList(el, title, fields) {
+  el.innerHTML = "<h2></h2><dl></dl>";
+  el.querySelector("h2").textContent = title;
+  const dl = el.querySelector("dl");
   for (const [k, v] of fields) {
-    if (v === undefined || v === "") continue;
+    if (v === undefined || v === "" || v === null) continue;
     const dt = document.createElement("dt"); dt.textContent = k;
     const dd = document.createElement("dd"); dd.textContent = String(v);
     dl.append(dt, dd);
   }
 }
 
-async function refresh() {
+// refresh asks for the views (the Views tab), or only for the players as
+// they last answered (the Performance tab: walking the tree is work on the
+// device, which a recording would show).
+async function refresh(trees = tab === "views") {
   if (busy) return;
   busy = true;
   try {
-    const res = await fetch("tree", { cache: "no-store" });
+    const res = await fetch(trees || !players.length ? "tree" : "players", { cache: "no-store" });
     const data = await res.json();
     const before = $("player").value;
+    const old = new Map(players.map((p) => [p.key, p]));
     players = data.players || [];
+    // The trees the last ask got, for a list without them.
+    for (const p of players) if (!p.tree && old.get(p.key)?.tree) p.tree = old.get(p.key).tree;
     $("player").innerHTML = "";
     for (const p of players) {
       const o = document.createElement("option");
@@ -140,6 +219,7 @@ async function refresh() {
     highlight();
     $("status").textContent = players.length ? `${players.length} app${players.length > 1 ? "s" : ""} · ${new Date().toLocaleTimeString()}` : "waiting for the app";
     render();
+    perfControls();
   } catch (e) {
     $("status").textContent = "asuka dev isn't answering: " + e.message;
   } finally {
@@ -147,9 +227,23 @@ async function refresh() {
   }
 }
 
-$("refresh").onclick = refresh;
+function setTab(t) {
+  tab = t;
+  $("tab-views").setAttribute("aria-selected", t === "views");
+  $("tab-perf").setAttribute("aria-selected", t === "perf");
+  $("views").hidden = t !== "views";
+  $("perf").hidden = t !== "perf";
+  for (const id of ["filter", "refresh", "live-label"]) $(id).hidden = t !== "views";
+  highlight();
+  if (t === "perf") { perfControls(); loadLast(); requestAnimationFrame(drawAll); }
+  try { localStorage.setItem("asuka-inspector-tab", t); } catch {}
+}
+
+$("tab-views").onclick = () => setTab("views");
+$("tab-perf").onclick = () => setTab("perf");
+$("refresh").onclick = () => refresh(true);
 $("filter").oninput = render;
-$("player").onchange = () => { selected = hovered = null; render(); highlight(); };
+$("player").onchange = () => { selected = hovered = null; render(); highlight(); perfControls(); loadLast(); };
 $("tree").onmouseleave = () => { hovered = null; highlight(); };
 // Escape: nothing selected, nothing highlighted.
 addEventListener("keydown", (e) => { if (e.key === "Escape") { selected = hovered = null; render(); highlight(); } });
@@ -157,7 +251,540 @@ addEventListener("keydown", (e) => { if (e.key === "Escape") { selected = hovere
 addEventListener("pagehide", () => {
   if (lit.key) navigator.sendBeacon(`highlight?key=${encodeURIComponent(lit.key)}&path=`);
 });
-setInterval(() => { if ($("live").checked && !document.hidden) refresh(); }, 1000);
-refresh();
+setInterval(() => { if (!document.hidden && (tab === "perf" || $("live").checked)) refresh(); }, 1000);
+
+// ---- Performance ----
+
+// prof is the recording shown: the player's, its name, and what's drawn
+// from it (flushes, frames, the CPU's slices and call tree).
+let prof = null, recordingSince = 0, stopping = false;
+const view = { t0: 0, t1: 1 };  // the timeline's range, ns
+let pick = null;  // the flush or slice selected
+const PHASES = ["app", "props", "layout", "frames", "after"];
+const PHASE_TITLES = { app: "App code", props: "Props batch", layout: "Layout", frames: "Frames batch", after: "Layout handlers" };
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const ms = (ns) => { const v = ns / 1e6; return v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : v.toFixed(0); };
+
+function perfControls() {
+  const p = current();
+  const rec = $("record");
+  $("overlay").disabled = rec.disabled = !p;
+  $("overlay").checked = !!p?.overlay;
+  $("cpu-label").hidden = p && !p.cpu;
+  const recording = !!p?.recording && !stopping;
+  rec.textContent = stopping ? "Stopping…" : recording ? "■ Stop" : "● Record";
+  rec.classList.toggle("on", recording);
+  rec.disabled = !p || stopping;
+  if (recording && !recordingSince) recordingSince = Date.now();
+  if (!recording) recordingSince = 0;
+  $("pstatus").textContent = recording ? `recording ${((Date.now() - recordingSince) / 1000).toFixed(0)} s` : "";
+  const key = p ? encodeURIComponent(p.key) : "";
+  for (const [id, fmt] of [["export-trace", "trace"], ["export-ss", "speedscope"]]) {
+    const a = $(id);
+    const ok = !!prof && prof.key === p?.key;
+    a.setAttribute("aria-disabled", !ok);
+    if (ok) a.href = `perf/export?key=${key}&format=${fmt}`;
+    else a.removeAttribute("href");
+  }
+}
+
+$("overlay").onchange = (e) => {
+  const p = current();
+  if (!p) return;
+  p.overlay = e.target.checked;
+  fetch(`perf/overlay?key=${encodeURIComponent(p.key)}&on=${p.overlay ? 1 : 0}`, { method: "POST" }).catch(() => {});
+};
+
+$("record").onclick = async () => {
+  const p = current();
+  if (!p) return;
+  const key = encodeURIComponent(p.key);
+  if (!p.recording) {
+    p.recording = true;
+    recordingSince = Date.now();
+    perfControls();
+    await fetch(`perf/record?key=${key}&cpu=${$("cpu").checked ? 1 : 0}`, { method: "POST" }).catch(() => {});
+    return;
+  }
+  stopping = true;
+  perfControls();
+  try {
+    const res = await fetch(`perf/stop?key=${key}`, { method: "POST" });
+    if (!res.ok) throw new Error(await res.text());
+    show(p.key, await res.json());
+  } catch (e) {
+    $("pstatus").textContent = "the recording didn't come: " + e.message;
+  } finally {
+    stopping = false;
+    p.recording = false;
+    perfControls();
+  }
+};
+
+async function loadLast() {
+  const p = current();
+  if (!p || !p.profile || prof?.key === p.key) return;
+  try {
+    const res = await fetch(`perf/profile?key=${encodeURIComponent(p.key)}`, { cache: "no-store" });
+    if (res.ok) show(p.key, await res.json());
+  } catch {}
+}
+
+// show takes a recording ({name, profile}) apart for drawing.
+function show(key, { name, profile: r }) {
+  const flushes = (r.flushes || []).map((f, i) => ({ ...f, i, total: f.d.reduce((a, b) => a + b, 0), nops: f.ops.reduce((a, b) => a + b, 0) }));
+  const dropped = [];
+  let prev = -1;
+  for (const [t, n] of r.frames || []) {
+    if (n > 0 && prev >= 0) dropped.push({ t0: prev, t1: t, n });
+    prev = t;
+  }
+  const cpu = r.cpu ? cpuOf(r.cpu) : null;
+  prof = { key, name, r, flushes, dropped, frames: r.frames || [], cpu };
+  view.t0 = 0;
+  view.t1 = Math.max(r.duration, 1);
+  pick = null;
+  const slowest = flushes.reduce((a, f) => (!a || f.total > a.total ? f : a), null);
+  const total = flushes.reduce((a, f) => a + f.total, 0);
+  const nd = dropped.reduce((a, d) => a + d.n, 0);
+  const s = $("summary");
+  s.innerHTML = "";
+  const add = (html) => s.insertAdjacentHTML("beforeend", html);
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  add(`<b>${esc(name)}</b> · ${(r.duration / 1e9).toFixed(1)} s · <b>${flushes.length}</b> flush${flushes.length === 1 ? "" : "es"} (${ms(total)} ms)`);
+  if (slowest) add(` · slowest <b>${ms(slowest.total)} ms</b>`);
+  add(` · <b>${nd}</b> frame${nd === 1 ? "" : "s"} dropped (${(r.frames || []).length} drawn)`);
+  if (cpu) add(` · ${cpu.samples.length} samples`);
+  else if (r.cpu === null) add(" · the app's functions weren't sampled");
+  if (r.truncated || r.cpu?.truncated) add(' · <b style="color:var(--bad)">cut short</b>');
+  add(` <span class="legend">${PHASES.map((p) => `<span><i style="background:var(--${p})"></i>${PHASE_TITLES[p]}</span>`).join("")}<span><i style="background:var(--bad)"></i>Dropped frames</span></span>`);
+  flame.focus = 0;
+  renderTop();
+  renderFlushes();
+  perfControls();
+  $("pdetail").innerHTML = '<p class="empty">Select a flush or a function.</p>';
+  drawAll();
+}
+
+// cpuOf reads the samples' call tree: each node's stack, its own and
+// total time, the slices of the timeline (consecutive samples' common
+// calls merged), and each function's own and total time.
+function cpuOf(c) {
+  const funcs = c.funcs.map(([name, file, line]) => ({ name, file, line }));
+  const nodes = c.nodes.map(([parent, func]) => ({ parent, func, self: 0, total: 0, kids: [], depth: 0 }));
+  for (let i = 1; i < nodes.length; i++) { nodes[nodes[i].parent].kids.push(i); nodes[i].depth = nodes[nodes[i].parent].depth + 1; }
+  const stack = (n) => { const s = []; for (; n > 0; n = nodes[n].parent) s.push(nodes[n].func); return s.reverse(); };
+  const samples = [...c.samples].sort((a, b) => a[0] - b[0]);
+  for (const [, n, w] of samples) nodes[n].self += w;
+  for (let i = nodes.length - 1; i >= 0; i--) { nodes[i].total += nodes[i].self; if (i > 0) nodes[nodes[i].parent].total += nodes[i].total; }
+  // Each function's time: its own, and with what it called (a recursion counted once).
+  const self = new Float64Array(funcs.length), total = new Float64Array(funcs.length);
+  for (const [, n, w] of samples) {
+    const st = stack(n);
+    if (!st.length) continue;
+    self[st[st.length - 1]] += w;
+    for (const f of new Set(st)) total[f] += w;
+  }
+  // The slices, as asuka dev's trace has them.
+  const slices = [];
+  let open = [], last = 0;
+  const gap = 2 * (c.interval || 1e6);
+  const close = (k, at) => { while (open.length > k) { const o = open.pop(); if (at > o.t0) slices.push({ func: o.func, t0: o.t0, t1: at, depth: open.length }); } };
+  for (const [t, n, w] of samples) {
+    let t0 = Math.max(t - w, last);
+    if (open.length && t0 - last > gap) close(0, last);
+    const st = stack(n);
+    let k = 0;
+    while (k < open.length && k < st.length && open[k].func === st[k]) k++;
+    close(k, t0);
+    for (const f of st.slice(k)) open.push({ func: f, t0 });
+    last = t;
+  }
+  close(0, last);
+  const depth = slices.reduce((a, s) => Math.max(a, s.depth + 1), 0);
+  return { funcs, nodes, samples, slices, depth, self, total, sum: nodes[0].total, interval: c.interval };
+}
+
+const shortFile = (f) => (f ? f.split(/[\\/]/).slice(-2).join("/") : "");
+const where = (f) => (f.file ? `${shortFile(f.file)}:${f.line}` : "");
+const isApp = (f) => !!f.file;
+
+// ---- The timeline ----
+
+const LANE = { axis: 18, flush: 28, frames: 14, row: 15, gap: 6 };
+let layoutY = {};
+
+function drawAll() { drawTimeline(); drawFlame(); }
+
+function canvasSize(c, h) {
+  const dpr = devicePixelRatio || 1;
+  const w = c.parentElement.clientWidth;
+  c.style.height = h + "px";
+  c.width = Math.max(1, Math.round(w * dpr));
+  c.height = Math.max(1, Math.round(h * dpr));
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [g, w];
+}
+
+function drawTimeline() {
+  const c = $("timeline");
+  if ($("perf").hidden) return;
+  const rows = prof?.cpu ? Math.min(prof.cpu.depth, 40) : 0;
+  layoutY = { axis: 0, flush: LANE.axis + 2, frames: LANE.axis + 2 + LANE.flush + LANE.gap, cpu: LANE.axis + 2 + LANE.flush + LANE.gap + LANE.frames + LANE.gap };
+  const h = layoutY.cpu + Math.max(rows, prof ? 1 : 0) * LANE.row + 8;
+  const [g, w] = canvasSize(c, prof ? h : 120);
+  g.clearRect(0, 0, w, h);
+  g.font = "11px -apple-system, system-ui, sans-serif";
+  g.textBaseline = "middle";
+  if (!prof) {
+    g.fillStyle = css("--dim");
+    g.fillText("No recording yet.", 12, 60);
+    return;
+  }
+  const x = (t) => ((t - view.t0) / (view.t1 - view.t0)) * w;
+  // The axis: a tick every 1, 2 or 5 of a power of ten ms.
+  const span = view.t1 - view.t0;
+  let step = 1e3;
+  while (span / step > w / 70) step *= step.toString().startsWith("1") ? 2 : step.toString().startsWith("2") ? 2.5 : 2;
+  g.fillStyle = css("--dim");
+  g.strokeStyle = css("--line");
+  g.beginPath();
+  for (let t = Math.ceil(view.t0 / step) * step; t <= view.t1; t += step) {
+    const px = Math.round(x(t)) + 0.5;
+    g.moveTo(px, LANE.axis - 4);
+    g.lineTo(px, h);
+    g.fillText(`${(t / 1e6).toFixed(step >= 1e6 ? 0 : step >= 1e5 ? 1 : step >= 1e4 ? 2 : 3)} ms`, px + 3, 8);
+  }
+  g.globalAlpha = 0.5;
+  g.stroke();
+  g.globalAlpha = 1;
+  const label = (text, y) => { g.fillStyle = css("--dim"); g.fillText(text, 4, y); };
+  // The flushes: their phases end to end.
+  const colors = PHASES.map((p) => css("--" + p));
+  for (const f of prof.flushes) {
+    if (f.t + f.total < view.t0 || f.t > view.t1) continue;
+    let t = f.t;
+    f.d.forEach((d, i) => {
+      if (d > 0) {
+        g.fillStyle = colors[i];
+        g.fillRect(x(t), layoutY.flush, Math.max(1, x(t + d) - x(t)), LANE.flush);
+      }
+      t += d;
+    });
+    if (pick?.flush === f) {
+      g.strokeStyle = css("--fg");
+      g.lineWidth = 2;
+      g.strokeRect(x(f.t) - 1, layoutY.flush - 1, Math.max(2, x(f.t + f.total) - x(f.t)) + 2, LANE.flush + 2);
+      g.lineWidth = 1;
+    }
+  }
+  if (!prof.flushes.length) label("No flush: the app changed nothing.", layoutY.flush + LANE.flush / 2);
+  // The display's frames: a tick each where there's room, the gaps that dropped some in red.
+  const fpx = prof.frames.length > 1 ? w / ((view.t1 - view.t0) / (prof.r.duration / prof.frames.length)) : 0;
+  if (fpx > 3) {
+    g.fillStyle = css("--line");
+    for (const [t] of prof.frames) if (t >= view.t0 && t <= view.t1) g.fillRect(x(t), layoutY.frames + 3, 1, LANE.frames - 6);
+  }
+  g.fillStyle = css("--bad");
+  for (const d of prof.dropped) {
+    if (d.t1 < view.t0 || d.t0 > view.t1) continue;
+    g.fillRect(x(d.t0), layoutY.frames, Math.max(2, x(d.t1) - x(d.t0)), LANE.frames);
+  }
+  // The app's functions, sampled.
+  if (prof.cpu) {
+    for (const s of prof.cpu.slices) {
+      if (s.depth >= rows || s.t1 < view.t0 || s.t0 > view.t1) continue;
+      const x0 = x(s.t0), x1 = x(s.t1), y = layoutY.cpu + s.depth * LANE.row;
+      const f = prof.cpu.funcs[s.func];
+      g.fillStyle = isApp(f) ? hue(f.name) : css("--cpu2");
+      if (pick?.func === s.func) g.fillStyle = css("--accent");
+      g.fillRect(x0, y, Math.max(1, x1 - x0 - 0.5), LANE.row - 1);
+      if (x1 - x0 > 30) {
+        g.save();
+        g.beginPath();
+        g.rect(x0, y, x1 - x0, LANE.row);
+        g.clip();
+        g.fillStyle = "#fff";
+        g.fillText(f.name, Math.max(x0, 0) + 3, y + LANE.row / 2);
+        g.restore();
+      }
+    }
+  } else {
+    label(prof.r.cpu === null ? "The app's functions weren't sampled." : "", layoutY.cpu + LANE.row / 2);
+  }
+}
+
+// hue colors a function by its name, the same in each of its slices.
+function hue(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  return `hsl(${200 + (h % 80)}, ${45 + (h % 20)}%, ${dark ? 38 + (h % 10) : 48 + (h % 12)}%)`;
+}
+
+// at finds what's under the pointer in the timeline.
+function timelineAt(px, py, w) {
+  if (!prof) return null;
+  const t = view.t0 + (px / w) * (view.t1 - view.t0);
+  const slack = (3 / w) * (view.t1 - view.t0);
+  if (py >= layoutY.flush && py < layoutY.flush + LANE.flush) {
+    const f = prof.flushes.find((f) => t >= f.t - slack && t <= f.t + f.total + slack);
+    if (f) {
+      let at = f.t, phase = null;
+      f.d.forEach((d, i) => { if (t >= at && t < at + d) phase = i; at += d; });
+      return { flush: f, phase };
+    }
+  }
+  if (py >= layoutY.frames && py < layoutY.frames + LANE.frames) {
+    const d = prof.dropped.find((d) => t >= d.t0 - slack && t <= d.t1 + slack);
+    if (d) return { dropped: d };
+  }
+  if (prof.cpu && py >= layoutY.cpu) {
+    const depth = Math.floor((py - layoutY.cpu) / LANE.row);
+    const s = prof.cpu.slices.find((s) => s.depth === depth && t >= s.t0 && t <= s.t1);
+    if (s) return { slice: s, func: s.func };
+  }
+  return null;
+}
+
+function tipText(hit) {
+  if (hit.flush) {
+    const f = hit.flush;
+    const lines = [`${flushName(f)} at ${ms(f.t)} ms: ${ms(f.total)} ms`];
+    f.d.forEach((d, i) => { if (d > 0) lines.push(`${i === hit.phase ? "▸ " : "  "}${PHASE_TITLES[PHASES[i]]} ${ms(d)} ms`); });
+    lines.push(`${f.nops} ops · ${f.effects} effects · ${f.measures} measures · ${f.allocs} allocations`);
+    return lines.join("\n");
+  }
+  if (hit.dropped) return `${hit.dropped.n} frame${hit.dropped.n === 1 ? "" : "s"} dropped: ${ms(hit.dropped.t1 - hit.dropped.t0)} ms between two frames`;
+  if (hit.slice) {
+    const f = prof.cpu.funcs[hit.slice.func];
+    return `${f.name}${f.file ? "\n" + where(f) : ""}\n${ms(hit.slice.t1 - hit.slice.t0)} ms here`;
+  }
+  return "";
+}
+
+function flushName(f) {
+  switch (f.cause) {
+    case "event": return f.event ? `Flush (${f.event})` : "Flush";
+    case "posted": return "Flush (a task, a timer)";
+    case "list": return "Flush (a list's rows)";
+    case "load": return "Flush (the app loaded)";
+  }
+  return "Flush";
+}
+
+{
+  const c = $("timeline"), tip = $("tip");
+  let drag = null;
+  c.addEventListener("wheel", (e) => {
+    if (!prof) return;
+    e.preventDefault();
+    const w = c.clientWidth, span = view.t1 - view.t0;
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey) {
+      const d = ((e.shiftKey ? e.deltaY : e.deltaX) / w) * span;
+      view.t0 += d; view.t1 += d;
+    } else {
+      const at = view.t0 + (e.offsetX / w) * span;
+      const k = Math.exp(e.deltaY * 0.002);
+      const ns = Math.min(Math.max(span * k, 20e3), prof.r.duration * 1.2 + 1);
+      view.t0 = at - ((at - view.t0) / span) * ns;
+      view.t1 = view.t0 + ns;
+    }
+    drawTimeline();
+  }, { passive: false });
+  c.addEventListener("mousedown", (e) => { drag = { x: e.clientX, t0: view.t0, t1: view.t1, moved: false }; c.classList.add("dragging"); });
+  addEventListener("mouseup", (e) => {
+    if (drag && !drag.moved) {
+      const hit = timelineAt(e.clientX - c.getBoundingClientRect().left, e.clientY - c.getBoundingClientRect().top, c.clientWidth);
+      if (hit && e.target === c) select(hit);
+    }
+    drag = null;
+    c.classList.remove("dragging");
+  });
+  addEventListener("mousemove", (e) => {
+    if (drag) {
+      const d = ((e.clientX - drag.x) / c.clientWidth) * (drag.t1 - drag.t0);
+      if (Math.abs(e.clientX - drag.x) > 3) drag.moved = true;
+      view.t0 = drag.t0 - d; view.t1 = drag.t1 - d;
+      drawTimeline();
+      tip.hidden = true;
+      return;
+    }
+    if (e.target !== c) { tip.hidden = true; return; }
+    const hit = timelineAt(e.offsetX, e.offsetY, c.clientWidth);
+    const text = hit && tipText(hit);
+    tip.hidden = !text;
+    if (text) {
+      tip.textContent = text;
+      tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + "px";
+      tip.style.top = e.clientY + 14 + "px";
+    }
+  });
+  c.addEventListener("mouseleave", () => { tip.hidden = true; });
+  c.addEventListener("dblclick", () => { if (prof) { view.t0 = 0; view.t1 = prof.r.duration; drawTimeline(); } });
+}
+
+// select shows a flush's or a function's details.
+function select(hit) {
+  pick = hit;
+  const el = $("pdetail");
+  if (hit.flush) {
+    const f = hit.flush;
+    const fields = [["Started", `${ms(f.t)} ms`], ["By", f.event ? `an event: ${f.event}` : { posted: "a task, a timer or a post", list: "a list binding rows", load: "the app loading", other: "the core" }[f.cause] || f.cause], ["Took", `${ms(f.total)} ms`]];
+    f.d.forEach((d, i) => fields.push([PHASE_TITLES[PHASES[i]], `${ms(d)} ms`]));
+    fields.push(["Effects run", f.effects], ["Ops sent", f.nops]);
+    f.ops.forEach((n, i) => { if (n) fields.push([`  ${prof.r.ops[i]}`, n]); });
+    fields.push(["Measures", `${f.measures} (and ${f.hits} cached)`], ["Allocations", `${f.allocs} (${(f.bytes / 1024).toFixed(1)} KB)`]);
+    detailList(el, flushName(f), fields);
+  } else if (hit.func !== undefined) {
+    const c = prof.cpu, f = c.funcs[hit.func];
+    detailList(el, f.name, [["Where", f.file ? `${f.file}:${f.line}` : "outside the app's code"], ["Own time", `${ms(c.self[hit.func])} ms (${pct(c.self[hit.func])})`],
+      ["With what it calls", `${ms(c.total[hit.func])} ms (${pct(c.total[hit.func])})`]]);
+    for (const tr of $("pane-top").querySelectorAll("tr[data-f]")) tr.classList.toggle("sel", Number(tr.dataset.f) === hit.func);
+  } else if (hit.dropped) {
+    detailList(el, "Dropped frames", [["Frames", hit.dropped.n], ["Between two frames", `${ms(hit.dropped.t1 - hit.dropped.t0)} ms`], ["At", `${ms(hit.dropped.t0)} ms`]]);
+  }
+  drawAll();
+}
+
+const pct = (ns) => (prof?.cpu?.sum ? ((100 * ns) / prof.cpu.sum).toFixed(1) + "%" : "");
+
+// ---- Top functions ----
+
+let topSort = "self";
+function renderTop() {
+  const el = $("pane-top");
+  if (!prof?.cpu) {
+    el.innerHTML = `<p class="empty">${prof ? "The app's functions weren't sampled in this recording." : "No recording yet."}</p>`;
+    return;
+  }
+  const c = prof.cpu;
+  const rows = c.funcs.map((f, i) => ({ f, i, self: c.self[i], total: c.total[i] })).filter((r) => r.total > 0);
+  rows.sort((a, b) => b[topSort] - a[topSort] || b.total - a.total);
+  const th = (k, t) => `<th data-k="${k}">${t}${topSort === k ? " ▾" : ""}</th>`;
+  el.innerHTML = `<table><thead><tr>${th("self", "Own ms")}<th>Own</th>${th("total", "Total ms")}<th>Total</th><th class="name">Function</th><th class="name">Where</th></tr></thead><tbody></tbody></table>`;
+  const tb = el.querySelector("tbody");
+  for (const r of rows.slice(0, 300)) {
+    const tr = document.createElement("tr");
+    tr.dataset.f = r.i;
+    tr.innerHTML = `<td>${ms(r.self)}</td><td>${pct(r.self)}</td><td>${ms(r.total)}</td><td>${pct(r.total)}</td><td class="name"></td><td class="where"></td>`;
+    tr.children[4].textContent = r.f.name;
+    tr.children[5].textContent = r.f.file ? `${shortFile(r.f.file)}:${r.f.line}` : "";
+    if (r.f.file) tr.children[5].title = r.f.file;
+    tr.onclick = () => select({ func: r.i });
+    tb.append(tr);
+  }
+  for (const h of el.querySelectorAll("th[data-k]")) h.onclick = () => { topSort = h.dataset.k; renderTop(); };
+}
+
+// ---- The flame graph: the samples' call tree, the root's calls on top ----
+
+const flame = { focus: 0, boxes: [] };
+function drawFlame() {
+  const c = $("flamec");
+  if ($("pane-flame").hidden || $("perf").hidden) return;
+  const cpu = prof?.cpu;
+  const crumbs = $("crumbs");
+  crumbs.textContent = "";
+  if (!cpu || !cpu.sum) {
+    canvasSize(c, 40);
+    crumbs.textContent = prof ? "The app's functions weren't sampled in this recording." : "No recording yet.";
+    return;
+  }
+  // The path to the node in focus, clickable.
+  const path = [];
+  for (let n = flame.focus; n > 0; n = cpu.nodes[n].parent) path.unshift(n);
+  const link = (text, n) => { const a = document.createElement("a"); a.textContent = text; a.onclick = () => { flame.focus = n; drawFlame(); }; return a; };
+  crumbs.append(link("All", 0));
+  for (const n of path) { crumbs.append(" › "); crumbs.append(link(cpu.funcs[cpu.nodes[n].func].name, n)); }
+  const H = 17;
+  let depth = 0;
+  const walk = (n, d) => { depth = Math.max(depth, d); for (const k of cpu.nodes[n].kids) walk(k, d + 1); };
+  walk(flame.focus, 0);
+  const [g, w] = canvasSize(c, Math.min(depth, 60) * H + 4);
+  g.font = "11px -apple-system, system-ui, sans-serif";
+  g.textBaseline = "middle";
+  flame.boxes = [];
+  const root = cpu.nodes[flame.focus];
+  const draw = (n, x0, x1, d) => {
+    if (d > 60 || x1 - x0 < 0.5) return;
+    const node = cpu.nodes[n], f = cpu.funcs[node.func];
+    if (d > 0) {
+      const y = (d - 1) * H;
+      g.fillStyle = pick?.func === node.func ? css("--accent") : isApp(f) ? hue(f.name) : css("--cpu2");
+      g.fillRect(x0, y, Math.max(0.5, x1 - x0 - 1), H - 1);
+      if (x1 - x0 > 30) {
+        g.save(); g.beginPath(); g.rect(x0, y, x1 - x0, H); g.clip();
+        g.fillStyle = "#fff";
+        g.fillText(`${f.name} ${ms(node.total)} ms`, x0 + 3, y + H / 2);
+        g.restore();
+      }
+      flame.boxes.push({ n, x0, x1, y });
+    }
+    let x = x0;
+    const kids = [...node.kids].sort((a, b) => cpu.nodes[b].total - cpu.nodes[a].total);
+    for (const k of kids) {
+      const kw = ((x1 - x0) * cpu.nodes[k].total) / Math.max(node.total, 1);
+      draw(k, x, x + kw, d + 1);
+      x += kw;
+    }
+  };
+  draw(flame.focus, 0, w, 0);
+  void root;
+}
+{
+  const c = $("flamec"), tip = $("tip");
+  const at = (e) => flame.boxes.find((b) => e.offsetX >= b.x0 && e.offsetX < b.x1 && e.offsetY >= b.y && e.offsetY < b.y + 17);
+  c.addEventListener("mousemove", (e) => {
+    const b = at(e);
+    tip.hidden = !b;
+    if (!b) return;
+    const node = prof.cpu.nodes[b.n], f = prof.cpu.funcs[node.func];
+    tip.textContent = `${f.name}${f.file ? "\n" + where(f) : ""}\n${ms(node.total)} ms (${pct(node.total)}), ${ms(node.self)} ms its own`;
+    tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + "px";
+    tip.style.top = e.clientY + 14 + "px";
+  });
+  c.addEventListener("mouseleave", () => { tip.hidden = true; });
+  c.addEventListener("click", (e) => { const b = at(e); if (b) { flame.focus = b.n; select({ func: prof.cpu.nodes[b.n].func }); } });
+}
+
+// ---- The slowest flushes ----
+
+function renderFlushes() {
+  const el = $("pane-flushes");
+  if (!prof?.flushes.length) { el.innerHTML = `<p class="empty">${prof ? "No flush in this recording." : "No recording yet."}</p>`; return; }
+  const rows = [...prof.flushes].sort((a, b) => b.total - a.total).slice(0, 200);
+  el.innerHTML = `<table><thead><tr><th>At ms</th><th class="name">Flush</th><th>Total ms</th>${PHASES.map((p) => `<th>${PHASE_TITLES[p]}</th>`).join("")}<th>Ops</th><th>Effects</th><th>Measures</th><th>Allocations</th></tr></thead><tbody></tbody></table>`;
+  const tb = el.querySelector("tbody");
+  for (const f of rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${ms(f.t)}</td><td class="name"></td><td>${ms(f.total)}</td>${f.d.map((d) => `<td>${ms(d)}</td>`).join("")}<td>${f.nops}</td><td>${f.effects}</td><td>${f.measures}</td><td>${f.allocs}</td>`;
+    tr.children[1].textContent = flushName(f);
+    tr.onclick = () => {
+      // The flush in the middle of the timeline, with room around it.
+      const pad = Math.max(f.total * 4, 2e6);
+      view.t0 = f.t - pad; view.t1 = f.t + f.total + pad;
+      select({ flush: f });
+    };
+    tb.append(tr);
+  }
+}
+
+for (const b of document.querySelectorAll(".subtabs button")) {
+  b.onclick = () => {
+    for (const o of document.querySelectorAll(".subtabs button")) o.setAttribute("aria-selected", o === b);
+    for (const p of ["top", "flame", "flushes"]) $("pane-" + p).hidden = p !== b.dataset.pane;
+    drawFlame();
+  };
+}
+addEventListener("resize", () => requestAnimationFrame(drawAll));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
+
+let startTab = "views";
+try { startTab = localStorage.getItem("asuka-inspector-tab") || "views"; } catch {}
+refresh(true).then(() => setTab(startTab === "perf" ? "perf" : "views"));
+renderTop();
+renderFlushes();
 </script>
 </html>

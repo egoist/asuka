@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -37,7 +38,17 @@ type Unit struct {
 	// compiled (a [c.download] of its package's): a build that links the
 	// prebuilt library never needs it.
 	Fetch func() error
+	// Hot are those of its sources (by their names) compiled optimized as
+	// a release's in the dev configuration too (HotFlags): what a
+	// player's profile should see running at a release's speed, the VM's
+	// interpreter, whose -O1 dispatch is slower out of proportion.
+	Hot []string
 }
+
+// HotFlags are what a Unit's Hot sources get after the dev
+// configuration's flags (the last -O wins): a release's optimization,
+// still with symbols and the development build's checks (AK_DEBUG).
+var HotFlags = []string{"-O2"}
 
 // Config is a build's configuration's name: dev (a player's: assertions
 // on, optimized less, with symbols) or release.
@@ -71,7 +82,7 @@ func (tc *Toolchain) base(debug bool) []string {
 func CoreUnit(core string) Unit {
 	srcs, _ := Sources(core, false)
 	flags := append(append(append([]string{}, Flags...), Includes(core)...), "-fvisibility=hidden")
-	return Unit{Name: "core", Sources: srcs, Flags: flags, Embedded: CoreEmbedded()}
+	return Unit{Name: "core", Sources: srcs, Flags: flags, Embedded: CoreEmbedded(), Hot: []string{"interp.c"}}
 }
 
 // coreFlags are what C compiled as the core is gets (an app compiled to
@@ -161,9 +172,20 @@ func (tc *Toolchain) BuildUnit(u Unit, debug bool) (string, error) {
 			return "", fmt.Errorf("cbuild: %s: %v", u.Name, err)
 		}
 	}
-	objs, err := tc.CC.CompileCached(u.Sources, flags)
+	srcs, hot := u.Sources, []string(nil)
+	if debug && len(u.Hot) > 0 {
+		srcs, hot = splitHot(u.Sources, u.Hot)
+	}
+	objs, err := tc.CC.CompileCached(srcs, flags)
 	if err != nil {
 		return "", fmt.Errorf("cbuild: %s for %s: %v", u.Name, tc.Target, err)
+	}
+	if len(hot) > 0 {
+		more, err := tc.CC.CompileCached(hot, append(append([]string{}, flags...), HotFlags...))
+		if err != nil {
+			return "", fmt.Errorf("cbuild: %s for %s: %v", u.Name, tc.Target, err)
+		}
+		objs = append(objs, more...)
 	}
 	if len(objs) == 0 {
 		return "", nil
@@ -313,4 +335,17 @@ func (tc *Toolchain) link(objs []string, as []archiveRef, ld []string, out strin
 		return err
 	}
 	return nil
+}
+
+// splitHot is srcs without the files hot names (by their base names), and
+// those files.
+func splitHot(srcs, hot []string) (cold, hots []string) {
+	for _, s := range srcs {
+		if slices.Contains(hot, filepath.Base(s)) {
+			hots = append(hots, s)
+		} else {
+			cold = append(cold, s)
+		}
+	}
+	return cold, hots
 }

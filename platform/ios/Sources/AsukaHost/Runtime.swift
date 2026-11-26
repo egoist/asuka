@@ -996,6 +996,8 @@ final class AsukaTextField: UITextField {
             showDevHighlight(n.view, args)
         case .devHighlightClear:
             clearDevHighlight()
+        case .devPerf:
+            showDevPerf(args)
         case .announce:
             UIAccessibility.post(notification: .announcement, argument: String(decoding: args, as: UTF8.self))
         case .replace:

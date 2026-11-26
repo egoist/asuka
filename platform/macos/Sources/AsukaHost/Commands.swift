@@ -61,6 +61,8 @@ import AsukaOps
             devHighlight(n.view, args) // DevHighlight.swift
         case .devHighlightClear:
             devHighlightClear()
+        case .devPerf:
+            devPerf(args) // DevPerf.swift
         case .replace:
             n.nav?.instant = true
         case .a11yFocus:
@@ -206,9 +208,12 @@ import AsukaOps
         frameClock = AsukaFrameClock(view: main.content)
     }
 
-    func tick() {
+    /// A frame: at, when the display shows it (the display link's
+    /// target, on the uptime clock CACurrentMediaTime and systemUptime
+    /// share), else now.
+    func tick(at: TimeInterval? = nil) {
         guard frameClock != nil, let r = root else { return }
-        let t = ProcessInfo.processInfo.systemUptime - asukaStart
+        let t = (at ?? ProcessInfo.processInfo.systemUptime) - asukaStart
         send(AsukaEvents.frame(r.id, t))
     }
 
@@ -311,7 +316,15 @@ let asukaStart = ProcessInfo.processInfo.systemUptime
         }
     }
 
-    @objc func tick(_ sender: Any?) { AsukaRuntime.shared.tick() }
+    @objc func tick(_ sender: Any?) {
+        if #available(macOS 14.0, *), let l = sender as? CADisplayLink {
+            // The frame's vsync, not when the main thread got to it: the
+            // gaps between them are the frames the display showed.
+            AsukaRuntime.shared.tick(at: l.targetTimestamp)
+            return
+        }
+        AsukaRuntime.shared.tick()
+    }
 
     func stop() {
         if #available(macOS 14.0, *) { (link as? CADisplayLink)?.invalidate() }

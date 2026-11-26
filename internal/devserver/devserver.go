@@ -150,7 +150,10 @@ type Events struct {
 	Logpoint func(p *Player, l Logpoint)
 	// Pong is told of the answer to Player.Ping.
 	Pong func(p *Player)
-	Gone func(p *Player, err error)
+	// Profile is told of a recording a player made (perf.go), as JSON:
+	// DecodeProfile reads it.
+	Profile func(p *Player, profile []byte)
+	Gone    func(p *Player, err error)
 }
 
 // Server serves players. A module is a platform's: what players of
@@ -169,6 +172,9 @@ type Server struct {
 	// (SetExceptions): every player gets them as it says hello.
 	debug      map[target.Platform]*debugSetup
 	exceptions byte
+	// perf: the performance overlay is on (SetPerfOverlay), for every
+	// player that says hello.
+	perf bool
 }
 
 // Player is a connected player.
@@ -184,6 +190,9 @@ type Player struct {
 	// exts: the extensions it was sent, by module, how long (Extend:
 	// under wmu).
 	exts map[uint64]int
+	// perf and recording are its overlay's and its recording's, as asuka
+	// dev last turned them (under wmu).
+	perf, recording bool
 }
 
 // Listen serves on addr (":0" picks a port).
@@ -418,7 +427,11 @@ func (s *Server) hello(p *Player, b []byte) {
 	if f, ok := s.failed[platform]; ok {
 		p.send(KindFailed, f.encode())
 	}
+	perf := s.perf
 	s.mu.Unlock()
+	if perf {
+		p.SetPerfOverlay(true)
+	}
 	if m == nil && s.ev.Need != nil {
 		s.ev.Need(p, platform)
 	}
@@ -468,6 +481,10 @@ func (p *Player) read(s *Server) error {
 		case KindTree:
 			if ev.Tree != nil {
 				ev.Tree(p, b)
+			}
+		case KindProfile:
+			if ev.Profile != nil {
+				ev.Profile(p, b)
 			}
 		default:
 			s.debugFrame(p, h[4], b)

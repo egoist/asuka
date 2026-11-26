@@ -113,6 +113,11 @@ void wh_dev_highlight_clear(void);
 void wh_dev_error_dump(ak_buf *b);
 void wh_dev_error_print(HDC dc, RECT win);
 
+// ---- devperf.c: asuka dev's performance overlay (DevPerf) ----
+void wh_dev_perf(const uint8_t *args, size_t len);
+void wh_dev_perf_follow(void);
+void wh_dev_perf_dump(ak_buf *b);
+
 // ---- focus.c: the keyboard's focus, Tab (RFC 0010) ----
 void wh_focus_start(void);
 void wh_input_seen(const MSG *m);

@@ -126,6 +126,7 @@ typedef struct ak_graph {
 	} diag_writes[8];
 	uint32_t ndiag_writes;
 	uint64_t enqueued;  // effects ever queued (ak_signal_enqueued)
+	uint64_t ran;       // effects ever run (ak_signal_ran)
 } ak_graph;
 
 extern ak_graph *ak_sig;

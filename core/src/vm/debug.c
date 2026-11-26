@@ -4,6 +4,7 @@
 #include "base/thread.h"
 #include "signal/signal.h"
 #include "rt/unicode.h"
+#include "vm/prof.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -87,10 +88,12 @@ static void lock(void) {
 
 static void unlock(void) { ak_mutex_unlock(&mu); }
 
-// update_on sets ak_dbg_on from what wants the hook (mu held).
+// update_on sets ak_dbg_on's debugger bit from what wants the hook (mu
+// held), leaving the profiler's as it is.
 static void update_on(void) {
-	int on = atomic_load(&bp_count) > 0 || atomic_load(&pause_req) || atomic_load(&step_on);
-	atomic_store(&ak_dbg_on, on);
+	bool on = atomic_load(&bp_count) > 0 || atomic_load(&pause_req) || atomic_load(&step_on);
+	if (on) atomic_fetch_or(&ak_dbg_on, AK_DBG_ON_DEBUG);
+	else atomic_fetch_and(&ak_dbg_on, ~AK_DBG_ON_DEBUG);
 }
 
 // ---- The main thread's ----
@@ -240,7 +243,11 @@ static bool step_stops(ak_co *co, const ak_frame *fr, uint32_t pc) {
 static bool hit(ak_co *co, ak_frame *fr, uint32_t pc);
 
 void ak_dbg_hook(ak_co *co, uint32_t pc) {
-	if (evaluating || !ak_signal_on_main_thread() || atomic_load_explicit(&held, memory_order_relaxed)) return;
+	if (!ak_signal_on_main_thread()) return;
+	int on = atomic_load_explicit(&ak_dbg_on, memory_order_relaxed);
+	// The profiler's sample, due: the stack as it is before pc runs.
+	if (on & AK_DBG_ON_PROF) ak_prof_take(co, pc);
+	if (evaluating || !(on & AK_DBG_ON_DEBUG) || atomic_load_explicit(&held, memory_order_relaxed)) return;
 	ak_frame *fr = &co->frames[co->nframes - 1];
 	if (atomic_load_explicit(&pause_req, memory_order_relaxed)) {
 		stop(co, pc, "pause", NULL);

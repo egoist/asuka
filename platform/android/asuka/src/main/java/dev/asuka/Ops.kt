@@ -521,6 +521,7 @@ object AsukaCommand {
     const val DEV_ERROR_CLEAR = 39
     const val DEV_HIGHLIGHT = 40
     const val DEV_HIGHLIGHT_CLEAR = 41
+    const val DEV_PERF = 42
 }
 
 object AsukaRole {

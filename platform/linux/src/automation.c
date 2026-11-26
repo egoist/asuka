@@ -573,6 +573,7 @@ static void write_dump(const char *path) {
 	if (H.root) lx_dump_node(H.root, 0, &b);
 	lx_each_node(dump_floating, &b);
 	lx_dev_error_dump(&b);
+	lx_dev_perf_dump(&b);
 	dsk_write_file(path, b.data ? (const char *)b.data : "", b.len);
 	ak_buf_free(&b);
 }

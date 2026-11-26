@@ -82,6 +82,12 @@ type devLoop struct {
 	// loop ends.
 	automation *automation
 	flows      []flow
+	// The performance tools (devperf.go): the overlay and the terminal's
+	// recording as the terminal last turned them (under mu), what reaches
+	// every player, and the players' recordings.
+	perfOverlay, perfRecording bool
+	perfAll                    []perfAll
+	profiles                   *devProfiles
 	// firstLoad is closed when a player first reports the app loaded;
 	// playerErr gets what a player reports going wrong (--once's).
 	firstLoad     chan struct{}
@@ -102,7 +108,8 @@ type devReload struct {
 func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	d := &devLoop{app: app, out: os.Stdout, platform: app.platform.Or(), loaded: map[*devserver.Player]bool{}, reloads: make(chan devReload, 16),
 		firstLoad: make(chan struct{}), playerErr: make(chan string, 1), inspector: newInspector(), automation: newAutomation(),
-		mods: map[target.Platform]*bytecode.Module{}}
+		mods: map[target.Platform]*bytecode.Module{}, profiles: newDevProfiles()}
+	d.inspector.profiles = d.profiles
 	if devDebugPort >= 0 && d.platform != target.Web {
 		// Before the players' events, which it hears from the first.
 		d.debugger = dap.New(dap.Options{Resolve: d.resolveBreakpoints, Files: d.sourceFiles, Root: app.dir, Compile: d.compileEval})
@@ -119,9 +126,10 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 		Logpoint:  func(p *devserver.Player, l devserver.Logpoint) { d.debugger.Logpoint(p, l) },
 		Automated: func(p *devserver.Player, seq uint32, answers string) { d.automation.answered(seq, answers) },
 		Tree: func(p *devserver.Player, tree []byte) {
-			d.inspector.put(fmt.Sprintf("%p", p), playerName(p.Info), tree, false, func(path string) { p.Highlight(path) })
+			d.inspector.put(playerKey(p), playerName(p.Info), tree, false, func(path string) { p.Highlight(path) }, nativePerf(p))
 		},
-		Need: func(p *devserver.Player, platform target.Platform) { d.compileFor(platform) },
+		Profile: func(p *devserver.Player, b []byte) { d.gotProfile(playerKey(p), playerName(p.Info), b) },
+		Need:    func(p *devserver.Player, platform target.Platform) { d.compileFor(platform) },
 		Log: func(p *devserver.Player, stderr bool, text []byte) {
 			w := os.Stdout
 			if stderr {
@@ -151,7 +159,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 			d.mu.Lock()
 			delete(d.loaded, p)
 			d.mu.Unlock()
-			d.inspector.forget(fmt.Sprintf("%p", p))
+			d.inspector.forget(playerKey(p))
 			d.debugger.Gone(p)
 		},
 	})
@@ -167,6 +175,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 		}
 	}
 	d.inspector.askers = append(d.inspector.askers, srv.Inspect)
+	d.perfAll = append(d.perfAll, nativePerfAll(srv))
 	d.automation.send = d.nativeAutomation(srv)
 	if url, err := d.inspector.listen(); err == nil {
 		d.inspectorURL = url
@@ -569,7 +578,7 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 	keys, restore := devKeys()
 	defer restore()
 	if keys != nil {
-		fmt.Fprintln(d.out, "asuka: watching for changes (r: restart, i: the inspector, Ctrl-C: stop)")
+		fmt.Fprintln(d.out, "asuka: watching for changes (r: restart, i: the inspector, p: the performance overlay, t: record a profile, Ctrl-C: stop)")
 	} else {
 		fmt.Fprintln(d.out, "asuka: watching for changes (Ctrl-C to stop)")
 	}
@@ -585,6 +594,10 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 				if d.inspectorURL != "" {
 					openBrowser(d.inspectorURL)
 				}
+			case 'p', 'P':
+				d.togglePerfOverlay()
+			case 't', 'T':
+				d.toggleRecording()
 			}
 		case <-stop:
 			if p.stop != nil {

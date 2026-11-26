@@ -226,6 +226,7 @@ char *wh_dump(size_t *len) {
 	}
 	wh_overlays_dump(&b, walk);
 	wh_dev_error_dump(&b);
+	wh_dev_perf_dump(&b);
 	for (uint32_t i = 0; i < H.nwins; i++) {
 		wchar_t t[256] = {0};
 		GetWindowTextW(wh_nav_window(H.wins[i]), t, 256);

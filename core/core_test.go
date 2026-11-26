@@ -176,9 +176,9 @@ func compileEvals(t *testing.T, m *bytecode.Module, spec, stem string) {
 
 // threadTests are the C tests that run threads of their own (the
 // allocator's blocks freed across threads, workers, std/http's server,
-// std/net, Argon2's lanes), which TestCThreads runs again under
-// ThreadSanitizer.
-var threadTests = []string{"alloc", "worker", "httpserver", "net", "tls", "password"}
+// std/net, Argon2's lanes, the profiler's sampler), which TestCThreads
+// runs again under ThreadSanitizer.
+var threadTests = []string{"alloc", "worker", "httpserver", "net", "tls", "password", "prof"}
 
 // TestCThreads builds the core and each of threadTests under
 // ThreadSanitizer (which ASan excludes) and runs them: the workers'
@@ -202,6 +202,7 @@ func TestCThreads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	modules := compileModules(t, tmp)
 	for _, name := range threadTests {
 		t.Run(strings.ToUpper(name[:1])+name[1:], func(t *testing.T) {
 			obj, err := cc.Compile([]string{filepath.Join(root, "test", name+"_test.c")}, filepath.Join(tmp, name), flags)
@@ -214,7 +215,7 @@ func TestCThreads(t *testing.T) {
 			}
 			cmd := exec.Command(exe)
 			cmd.Dir = filepath.Join(root, "test")
-			cmd.Env = append(os.Environ(), "ASUKA_ROOT="+filepath.Dir(root), "TSAN_OPTIONS=halt_on_error=1 second_deadlock_stack=1")
+			cmd.Env = append(os.Environ(), "ASUKA_ROOT="+filepath.Dir(root), "AK_TEST_MODULES="+modules, "TSAN_OPTIONS=halt_on_error=1 second_deadlock_stack=1")
 			if testing.Verbose() {
 				cmd.Env = append(cmd.Env, "T_VERBOSE=1")
 			}

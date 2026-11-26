@@ -1208,6 +1208,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             AsukaCommand.DEV_ERROR_CLEAR -> devErrors.clear()
             AsukaCommand.DEV_HIGHLIGHT -> showDevHighlight(n.view, args, density)
             AsukaCommand.DEV_HIGHLIGHT_CLEAR -> clearDevHighlight()
+            AsukaCommand.DEV_PERF -> showDevPerf(this, args)
             AsukaCommand.BACK_EXIT -> backExit()
             AsukaCommand.REPLACE -> (n.view as? AsukaStack)?.instant = true
             AsukaCommand.A11Y_FOCUS -> n.view?.let { v ->

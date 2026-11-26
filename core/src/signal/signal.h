@@ -339,6 +339,9 @@ bool ak_signal_on_main_thread(void);
 // grows by across a write is how many the write runs (wide-fanout).
 // ak_signal_each_reader calls fn with each computation that read n.
 uint64_t ak_signal_enqueued(void);
+// ak_signal_ran counts the effects run, ever (asuka dev's performance
+// tools: a flush's effects).
+uint64_t ak_signal_ran(void);
 void ak_signal_each_reader(const ak_node *n, void (*fn)(void *ctx, const ak_comp *c), void *ctx);
 // ak_comp_reads reports whether c's last run read n: itself, or through
 // the memos it read (a load whose arguments read another's answer).

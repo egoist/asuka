@@ -518,6 +518,7 @@ public enum AsukaCommand: UInt16 {
     case devErrorClear = 39
     case devHighlight = 40
     case devHighlightClear = 41
+    case devPerf = 42
 }
 
 public enum AsukaRole: Int32 {

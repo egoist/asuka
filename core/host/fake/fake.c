@@ -286,6 +286,7 @@ void ak_fake_free(ak_fake *f) {
 	ak_buf_free(&f->pending);
 	ak_buf_free(&f->ev);
 	ak_buf_free(&f->dev_error);
+	ak_buf_free(&f->dev_perf);
 	for (uint32_t i = 0; i < f->histories.len; i++) {
 		ak_fake_history *h = &f->histories.data[i];
 		for (uint32_t j = 0; j < h->entries.len; j++) {
@@ -580,6 +581,10 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 			fail(f, "Destroy: root %u went with its error overlay showing (DevErrorClear first)", v->id);
 			f->dev_error_on = 0;
 		}
+		if (f->dev_perf_on == v->id) {
+			fail(f, "Destroy: root %u went with its performance overlay showing (an empty DevPerf first)", v->id);
+			f->dev_perf_on = 0;
+		}
 		if (v->kind == AK_KIND_LIST) f->nlists--;
 		if (v->presented) f->npresented--;
 		if (v->id == f->root_id) f->root_id = 0;
@@ -686,6 +691,18 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 			if (!v->root) { fail(f, "DevHighlightClear to %u, not the root", v->id); return; }
 			f->highlight_on = 0;
 			return;
+		case AK_CMD_DEV_PERF:
+			if (!v->root) { fail(f, "DevPerf to %u, not the root", v->id); return; }
+			if (!op->value.s.len && !f->dev_perf_on) { fail(f, "DevPerf with no text to %u, which shows no performance overlay", v->id); return; }
+			ak_buf_reset(&f->dev_perf);
+			ak_buf_put(&f->dev_perf, op->value.s.p, op->value.s.len);
+			f->dev_perf_on = op->value.s.len ? v->id : 0;
+			f->dev_perfs++;
+			return;
+		case AK_CMD_FRAMES:
+			if (!v->root) { fail(f, "Frames to %u, not the root", v->id); return; }
+			f->frames = op->value.s.len && op->value.s.p[0];
+			break;
 		case AK_CMD_FOCUS:
 			if (ak_fake_takes_focus(v)) focus_to(f, v, f->keyboard, true);
 			break;
@@ -1632,6 +1649,12 @@ void ak_fake_lifecycle(ak_fake *f, int64_t state) {
 bool ak_fake_dev_error(const ak_fake *f, ak_dev_error *e) {
 	if (!f->dev_error_on) return false;
 	return ak_decode_dev_error(f->dev_error.data, f->dev_error.len, e);
+}
+
+bool ak_fake_dev_perf(const ak_fake *f, ak_span *text) {
+	if (!f->dev_perf_on) return false;
+	*text = (ak_span){(const char *)f->dev_perf.data, (uint32_t)f->dev_perf.len};
+	return true;
 }
 
 bool ak_fake_dev_error_press(ak_fake *f, int64_t action) {

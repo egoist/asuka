@@ -26,7 +26,7 @@ import * as text from "./text.js";
 import { redrawCanvases } from "./draw.js";
 import { Focus } from "./focus.js";
 import { Overlays } from "./overlay.js";
-import { DevErrors, showHighlight, hideHighlight } from "./deverror.js";
+import { DevErrors, showHighlight, hideHighlight, showPerf } from "./deverror.js";
 import * as a11y from "./a11y.js";
 
 const NaN32 = NaN;
@@ -882,6 +882,9 @@ export class Host {
       }
       case Command.DevHighlightClear:
         hideHighlight(this.container);
+        break;
+      case Command.DevPerf:
+        showPerf(this.container, new TextDecoder().decode(args));
         break;
       case Command.Frames:
         this.motion.frames(args[0] !== 0, n);

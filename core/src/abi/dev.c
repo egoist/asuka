@@ -349,7 +349,10 @@ static void session(sock_t s) {
 		case AK_DEV_FIXED:
 		case AK_DEV_INSPECT:
 		case AK_DEV_HIGHLIGHT:
-		case AK_DEV_AUTOMATE: {
+		case AK_DEV_AUTOMATE:
+		case AK_DEV_PERF:
+		case AK_DEV_PROFILE_START:
+		case AK_DEV_PROFILE_STOP: {
 			frame_t *f = ak_alloc(sizeof *f);
 			f->p = p;
 			f->len = n - 1;

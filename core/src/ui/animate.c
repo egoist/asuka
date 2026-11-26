@@ -171,13 +171,15 @@ static void frame_fn_drop(ak_opaque *o) {
 // set_frames asks the host for frames while a callback is registered.
 static void set_frames(ak_ui_root *r) {
 	ak_rext *x = ak_rext_of(r);
-	bool on = false;
+	bool on = ak_perf_wants_frames();  // asuka dev's performance tools'
 	for (uint32_t i = 0; i < x->frames.len; i++) on |= !x->frames.data[i]->stopped;
 	if (on == x->frames_on || !r->el || r->disposed) return;
 	x->frames_on = on;
 	uint8_t arg = on ? 1 : 0;
 	ak_batch_command(r->batch, r->el->id, AK_CMD_FRAMES, &arg, 1);
 }
+
+void ak_anim_frames_sync(ak_ui_root *r) { set_frames(r); }
 
 static void frame_stop(ak_frame_fn *fn) {
 	if (fn->stopped) return;

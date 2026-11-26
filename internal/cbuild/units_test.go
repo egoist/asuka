@@ -66,3 +66,20 @@ func TestZigLinuxGlibc(t *testing.T) {
 	}
 	t.Errorf("flags %v: no -target %s", tc.Flags, want)
 }
+
+// The core's interpreter is its hot source: the dev configuration
+// compiles it apart, optimized as a release's.
+func TestCoreHot(t *testing.T) {
+	core, err := filepath.Abs("../../core")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := CoreUnit(core)
+	cold, hot := splitHot(u.Sources, u.Hot)
+	if len(hot) != 1 || filepath.Base(hot[0]) != "interp.c" || filepath.Base(filepath.Dir(hot[0])) != "vm" {
+		t.Fatalf("hot: %v", hot)
+	}
+	if len(cold) != len(u.Sources)-1 {
+		t.Fatalf("%d cold of %d", len(cold), len(u.Sources))
+	}
+}

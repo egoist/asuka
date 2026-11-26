@@ -397,7 +397,7 @@ func newWebDev(app *asukaApp, work string) (*devServer, *devLoop, error) {
 		return nil, nil, err
 	}
 	src, _ := webSource()
-	s := &devServer{app: app, src: src, wasm: filepath.Join(work, "asuka.wasm"), vapid: vapid, clients: map[chan string]bool{}}
+	s := &devServer{app: app, src: src, wasm: filepath.Join(work, "asuka.wasm"), vapid: vapid, clients: map[chan string]bool{}, pages: map[string]*webPerfPage{}}
 	// The loop compiles the app first: the player has the C its externs
 	// call.
 	loop, err := newDevLoop(app, "127.0.0.1:0")
@@ -443,6 +443,41 @@ func newWebDev(app *asukaApp, work string) (*devServer, *devLoop, error) {
 		s.mu.Unlock()
 		s.send("inspect", "")
 		return n
+	})
+	// The performance tools reach the pages by their events too ("<page>
+	// ...", * for every page); a page's recording comes back at
+	// /__asuka/profile.
+	loop.perfAll = append(loop.perfAll, perfAll{
+		overlay: func(on bool) {
+			s.mu.Lock()
+			s.perf = on
+			for _, p := range s.pages {
+				p.overlay = on
+			}
+			s.mu.Unlock()
+			s.send("perf", "* "+boolDigit(on))
+		},
+		start: func() {
+			s.mu.Lock()
+			for _, p := range s.pages {
+				p.recording = true
+			}
+			s.mu.Unlock()
+			s.send("profile", "* start 0")
+		},
+		stop: func() []string {
+			s.mu.Lock()
+			var keys []string
+			for id, p := range s.pages {
+				if p.recording {
+					p.recording = false
+					keys = append(keys, "web:"+id)
+				}
+			}
+			s.mu.Unlock()
+			s.send("profile", "* stop")
+			return keys
+		},
 	})
 	loop.restarts = append(loop.restarts, func() {
 		s.mu.Lock()
@@ -494,8 +529,13 @@ type devServer struct {
 	failed      string // the build that failed, as its event's data ("": none)
 	mu          sync.Mutex
 	clients     map[chan string]bool
-	nextID      int64
-	waiting     map[int64]chan struct {
+	// pages are the pages connected, by their id, with what the
+	// performance tools last asked of each; perf: the overlay's on for
+	// every page (the terminal's p).
+	pages   map[string]*webPerfPage
+	perf    bool
+	nextID  int64
+	waiting map[int64]chan struct {
 		ID         int64
 		Out, Error string
 	}
@@ -660,7 +700,15 @@ func (s *devServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		page := r.URL.Query().Get("page")
 		s.loop.inspector.put("web:"+page, name, b, true, func(path string) {
 			s.send("highlight", page+" "+path)
-		})
+		}, s.pagePerf(page))
+	case p == "/__asuka/profile" && r.Method == http.MethodPost:
+		// A page's recording (its core's AK_DEV_PROFILE).
+		b, _ := io.ReadAll(io.LimitReader(r.Body, 256<<20))
+		name := "Web"
+		if n := r.URL.Query().Get("name"); n != "" {
+			name += " (" + n + ")"
+		}
+		s.loop.gotProfile("web:"+r.URL.Query().Get("page"), name, b)
 	case p == "/__asuka/uncaught" && r.Method == http.MethodPost:
 		// An error the app didn't catch (an uncaught frame's payload): it's
 		// printed, and the answer is its source frame's payload.
@@ -758,21 +806,30 @@ func (s *devServer) events(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	c := make(chan string, 8)
+	page := r.URL.Query().Get("page")
 	s.mu.Lock()
 	s.clients[c] = true
+	if page != "" {
+		s.pages[page] = &webPerfPage{overlay: s.perf}
+	}
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		delete(s.clients, c)
+		delete(s.pages, page)
 		s.mu.Unlock()
 	}()
 	io.WriteString(w, ": asuka\n\n")
-	// A page that comes while the build is broken hears so at once.
+	// A page that comes while the build is broken hears so at once, and
+	// while the overlay's on, that it is.
 	s.mu.Lock()
-	failed := s.failed
+	failed, perf := s.failed, s.perf
 	s.mu.Unlock()
 	if failed != "" {
 		io.WriteString(w, "event: failed\ndata: "+failed+"\n\n")
+	}
+	if perf && page != "" {
+		io.WriteString(w, "event: perf\ndata: "+page+" 1\n\n")
 	}
 	f.Flush()
 	for {
@@ -783,6 +840,48 @@ func (s *devServer) events(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, m)
 			f.Flush()
 		}
+	}
+}
+
+// webPerfPage is what the performance tools last asked of a page.
+type webPerfPage struct {
+	overlay, recording bool
+}
+
+func boolDigit(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
+
+// pagePerf drives a page's performance tools by its events: no CPU
+// samples (the web's core has no thread to sample with).
+func (s *devServer) pagePerf(page string) *perfCtl {
+	with := func(f func(p *webPerfPage)) {
+		s.mu.Lock()
+		if p := s.pages[page]; p != nil {
+			f(p)
+		}
+		s.mu.Unlock()
+	}
+	return &perfCtl{
+		overlay: func(on bool) {
+			with(func(p *webPerfPage) { p.overlay = on })
+			s.send("perf", page+" "+boolDigit(on))
+		},
+		start: func(bool) {
+			with(func(p *webPerfPage) { p.recording = true })
+			s.send("profile", page+" start 0")
+		},
+		stop: func() {
+			with(func(p *webPerfPage) { p.recording = false })
+			s.send("profile", page+" stop")
+		},
+		state: func() (overlay, recording bool) {
+			with(func(p *webPerfPage) { overlay, recording = p.overlay, p.recording })
+			return
+		},
 	}
 }
 

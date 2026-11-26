@@ -252,6 +252,7 @@ bool ak_follow_settled(const ak_follow *f) {
 // Effects.
 
 static void effect_update(ak_comp *e) {
+	g->ran++;  // a count, not a branch: asuka dev's performance tools
 	ak_owner_retain(&e->owner);
 	ak_frame f = {.prev = g->frame};
 	g->frame = &f;
@@ -533,6 +534,7 @@ const void *ak_comp_site(const ak_comp *c) {
 }
 
 uint64_t ak_signal_enqueued(void) { return g->enqueued; }
+uint64_t ak_signal_ran(void) { return g->ran; }
 
 void ak_signal_each_reader(const ak_node *n, void (*fn)(void *ctx, const ak_comp *c), void *ctx) {
 	for (const ak_link *l = n->subs; l; l = l->next_sub) fn(ctx, l->sub);

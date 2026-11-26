@@ -148,6 +148,67 @@ void ak_dev_overlay_action(int64_t action);
 bool ak_dev_overlay_showing(void);
 void ak_dev_overlay_reset(void);  // tests: forgets everything
 
+// ---- asuka dev's performance tools (perf.c) ----
+//
+// In a development build (asuka dev's players; the tests'), the core
+// measures each flush, from the host's call that started it (an event, a
+// posted job, a list's row) to its end, in phases: the app's code (its
+// handlers, effects and tasks, and the core's work for them), the props
+// batch's crossing into the host, layout (with the host's measures), the
+// frames batch's crossing, and what came after (layout handlers); and
+// counts its work: effects run, ops sent (by code), measures, allocations.
+// The display's frames come from the host's Frame events (the Frames
+// command asks for them), and a gap of more than one frame's interval is
+// frames dropped. Nothing is measured until the overlay is on or a
+// recording runs; a release build has none of it.
+//
+// The overlay (DevPerf to the root, twice a second): frames a second and
+// those dropped, flushes a second, the last flush's time by phase, the
+// worst of the last five seconds, its work, the process's memory and the
+// allocations a second. A recording keeps every flush, the display's
+// frames and, where the VM samples (vm/prof.h), the app's functions'
+// time, written as JSON for asuka dev (ak_perf_record_stop).
+
+#if defined(AK_DEBUG) || defined(AK_TEST)
+#define AK_PERF 1
+#else
+#define AK_PERF 0
+#endif
+
+// What started the host's call a flush ran in (ak_perf_enter).
+enum { AK_PERF_EVENT = 1, AK_PERF_POSTED, AK_PERF_LIST, AK_PERF_LOAD, AK_PERF_OTHER };
+// A flush's phases.
+enum { AK_PERF_APP, AK_PERF_PROPS, AK_PERF_LAYOUT, AK_PERF_FRAMES, AK_PERF_AFTER, AK_PERF_NPHASES };
+
+// ak_perf_set_overlay turns the overlay on or off (asuka dev's perf frame).
+void ak_perf_set_overlay(bool on);
+bool ak_perf_overlay(void);
+// ak_perf_record_start starts a recording (anew), sampling the app's
+// functions every interval_us (0: 1 ms) when cpu and the build can.
+void ak_perf_record_start(bool cpu, uint32_t interval_us);
+// ak_perf_record_stop ends the recording and writes it to out as JSON:
+// {"version", "duration" (ns), "truncated", "phases", "ops" (the op
+// codes' names, from 1), "flushes": [{"t", "cause", "event", "d" (each
+// phase's ns), "ops" (by code), "effects", "measures", "hits", "allocs",
+// "bytes"}], "frames": [[t, dropped]], "cpu": {vm/prof.h's} or null};
+// times in ns from its start.
+void ak_perf_record_stop(ak_buf *out);
+bool ak_perf_recording(void);
+void ak_perf_reset(void);  // tests: everything off and forgotten
+
+#if AK_PERF
+// ak_perf_enter and ak_perf_leave bracket a call of the host's into the
+// core (cause, and for an event its kind): the flushes in it are its.
+void ak_perf_enter(uint8_t cause, uint16_t event);
+void ak_perf_leave(void);
+#else
+static inline void ak_perf_enter(uint8_t cause, uint16_t event) {
+	(void)cause;
+	(void)event;
+}
+static inline void ak_perf_leave(void) {}
+#endif
+
 // The environment: what the host reports (an Environment event) about
 // the root view: its size, safe area, keyboard, scale, appearance, text
 // size, languages. One reported before the root mounts is the one it

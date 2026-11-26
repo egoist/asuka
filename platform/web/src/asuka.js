@@ -159,7 +159,8 @@ function devClient(url) {
   let host = null, core = null, trapped = null;
   const report = (r, first, restarted) => fetch(base + "reloaded", { method: "POST", body: JSON.stringify({ First: first, Restarted: restarted, Kept: r.kept, Micros: r.micros }) }).catch(() => {});
   // asuka dev's frames for the core (core/src/abi/dev.h's kinds), held until it's there.
-  const Frame = { Reloaded: 5, Uncaught: 8, Source: 9, Failed: 10, Fixed: 11, Inspect: 12, Tree: 13, Highlight: 14, Automate: 15, Automated: 16 };
+  const Frame = { Reloaded: 5, Uncaught: 8, Source: 9, Failed: 10, Fixed: 11, Inspect: 12, Tree: 13, Highlight: 14, Automate: 15, Automated: 16,
+    Perf: 24, ProfileStart: 25, ProfileStop: 26, Profile: 27 };
   let held = [];
   const frame = (kind, bytes) => {
     if (core?.frame) core.frame(kind, bytes);
@@ -181,6 +182,10 @@ function devClient(url) {
       fetch(`${base}tree?page=${page}&name=${encodeURIComponent(browser())}`, { method: "POST", body: bytes }).catch(() => {});
       return;
     }
+    if (kind === Frame.Profile) {
+      fetch(`${base}profile?page=${page}&name=${encodeURIComponent(browser())}`, { method: "POST", body: bytes }).catch(() => {});
+      return;
+    }
     if (kind !== Frame.Uncaught) return;
     fetch(base + "uncaught", { method: "POST", body: bytes })
       .then((res) => (res.ok ? res.arrayBuffer() : null))
@@ -194,7 +199,7 @@ function devClient(url) {
     for (const [name, re] of [["Edge", /Edg\//], ["Firefox", /Firefox\//], ["Chrome", /Chrome\//], ["Safari", /Safari\//]]) if (re.test(ua)) return name;
     return "browser";
   };
-  const events = new EventSource(base + "events");
+  const events = new EventSource(base + "events?page=" + page);
   // A new build of the app's module: loaded in place, its state and views kept. A
   // restart's: loaded keeping none of its state.
   let loading = Promise.resolve();
@@ -236,6 +241,25 @@ function devClient(url) {
     new DataView(b.buffer).setUint32(0, seq, true);
     b.set(cmds, 4);
     if (core?.frame) frame(Frame.Automate, b);
+  });
+  // The performance overlay ("<page> 1", on; 0: off; * for every page), and a
+  // recording ("<page> start <microseconds>", "<page> stop"), which the core
+  // answers with a profile frame as it stops.
+  const mine = (to) => to === page || to === "*";
+  events.addEventListener("perf", (e) => {
+    const [to, on] = e.data.split(" ");
+    if (mine(to)) frame(Frame.Perf, Uint8Array.of(on === "1" ? 1 : 0));
+  });
+  events.addEventListener("profile", (e) => {
+    const [to, what, us = "0"] = e.data.split(" ");
+    if (!mine(to)) return;
+    if (what === "stop") {
+      frame(Frame.ProfileStop, new Uint8Array(0));
+      return;
+    }
+    const b = new Uint8Array(5);
+    new DataView(b.buffer).setUint32(1, Number(us) >>> 0, true);
+    frame(Frame.ProfileStart, b);
   });
   // It selected a view ("<page> <path>"; no path: none): the core highlights it.
   events.addEventListener("highlight", (e) => {

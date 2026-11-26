@@ -396,6 +396,122 @@ Not yet:
 
 Only development builds have the debugger; a release build has none.
 
+## Performance
+
+`asuka dev` shows how fast the app runs as you use it, on every
+platform: a performance overlay over the app, and profiles you record
+around an interaction and read in the inspector, in Perfetto or in
+speedscope.
+
+The app's work comes in **flushes**: something happens (a tap, a timer,
+a task finishing, a list showing new rows), the app's code runs (the
+handler, then the effects and bindings that read what it changed), and
+Asuka sends the platform what changed in one go. A flush has five
+phases:
+
+- **App**: the app's code, its handlers, effects and tasks, and Asuka's
+  own work for them.
+- **Props**: the platform applying what changed (texts, colors, views
+  made and removed).
+- **Layout**: laying the views out, with the platform measuring texts
+  and controls.
+- **Frames**: the platform moving the views to their new frames.
+- **After**: `on layout` handlers, and what they change.
+
+A frame the display misses because the app was busy is a **dropped
+frame**: the screen shows the same picture twice, and an animation or a
+scroll stutters. At 60 frames a second, a frame lasts 16.7 ms; at 120,
+8.3 ms.
+
+### The overlay
+
+Press **p** in the terminal `asuka dev` runs in to show the overlay on
+every device the app runs on (press it again to hide it), or turn it on
+for one device in the inspector's **Performance** tab. It's a small box
+at the top of the app, over its screens and sheets, that doesn't take
+your taps:
+
+```
+UI 60 fps · dropped 0 · 4 flushes/s
+last 1.8 ms: app 0.9 props 0.3 layout 0.4 frames 0.2
+worst 6.1 ms · 42 ops · 7 effects · 3 measures
+memory 31.2 MB · 1.2k allocs/s · 120 views
+```
+
+- **UI fps**: frames the display drew in the last second, and how many
+  it **dropped** in the last five.
+- **flushes/s**: how many flushes ran in the last second (an idle app
+  runs none).
+- **last**: the last flush's time, by phase (frames includes after).
+- **worst**: the slowest flush of the last five seconds.
+- **ops, effects, measures**: the last flush's work: the changes it sent
+  the platform, the effects and bindings that ran, the texts and
+  controls the platform measured.
+- **memory**: the app's memory; **allocs/s**: its allocations a second;
+  **views**: the platform's views it has.
+
+It updates twice a second, stays on across reloads and restarts, and
+measuring costs the app almost nothing while it's off.
+
+### Recording a profile
+
+To see where a slow interaction's time goes, record it:
+
+1. Open the inspector (**i**) and its **Performance** tab, pick the
+   device, and press **Record**.
+2. Do the slow thing in the app: tap, scroll, open the screen.
+3. Press **Stop**.
+
+Or press **t** in the terminal to record on every device at once, and
+**t** again to stop: each device's profile is saved in the current
+directory as `asuka-profile-<device>-<time>.json`, and the terminal
+prints a summary: its flushes, the slowest, the frames dropped, and the
+functions that took the most time.
+
+With **Sample the app's functions** on (the default), the profile also
+says which of your functions the app spent its time in: Asuka looks at
+what's running a thousand times a second. Not on the web, whose
+profiles have the flushes and the frames.
+
+### Reading a profile
+
+The Performance tab shows the recording:
+
+- **The timeline**: each flush as a bar, colored by phase; below it, the
+  display's dropped frames in red; below them, your functions as they
+  ran, callers above the functions they called. Scroll to zoom, drag to
+  move, double-click to see it all, hover for details, and click a
+  flush or a function to see its numbers.
+- **Top functions**: each function's own time (in it, not in what it
+  called) and total time (with what it called), the slowest first, with
+  its file and line. A function in parentheses is time outside your
+  code: `(layout)`, `(props batch)` and `(frames batch)` are the
+  platform's work in those phases, `(runtime)` Asuka's own between your
+  functions.
+- **Flame graph**: the calls as a tree, each as wide as its time; click
+  one to zoom into it.
+- **Slowest flushes**: the flushes by their time, with their phases and
+  work; click one to find it in the timeline.
+
+Where to look first: a flush that takes longer than a frame drops
+frames. If its **app** phase is long, your code is the cost: the top
+functions say which (a `let` that sorts a long list on every change, a
+loop that builds strings). A long **layout** with many measures is a
+big tree laid out again: a `List` instead of a long `Column` lays out
+only the rows on screen. Long **props** or **frames** with many ops is
+a lot of the screen changing at once.
+
+**Export trace** saves the profile for [Perfetto](https://ui.perfetto.dev)
+(or `chrome://tracing`): drag the file in to see the same tracks, with
+every flush's numbers. **Export for speedscope** saves it for
+[speedscope](https://www.speedscope.app), whose flame graphs, left
+heavy view and sandwich view show your functions. A file `t` saved
+opens in Perfetto too.
+
+A profile is of a development build: your code runs in `asuka dev`'s
+player, which is slower than a release build, compiled ahead of time.
+The proportions are what to read: which phase, which function.
+
 ## Errors and their codes
 
 Every error and warning has a code, the name of the rule it reports a

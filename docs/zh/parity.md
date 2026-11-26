@@ -190,6 +190,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 实时重载并保留状态 | 预览、Fast Refresh | ✓ `asuka dev`：开发 App 在每次保存后几毫秒内换上新版本，并保留所有 `state`；手机、桌面和浏览器都是如此（见[开发](development.md)） |
 | 检查视图 | Xcode 的视图调试器、React Native DevTools、Flutter DevTools | ✓ `asuka dev` 的检查器：在浏览器中以树的形式显示正在运行的应用的视图（元素、文字、frame），指针指向的视图会在设备上高亮（见[开发](development.md#检查器)） |
 | 调试器 | Xcode 的 LLDB、Android Studio 的调试器、React Native DevTools（Hermes） | ✓ `asuka dev` 自带：在应用的 `.asuka` 文件里设断点（可加条件、命中次数，或作为日志点）、在没有被捕获的错误抛出处停下、单步执行、查看调用栈和每一层的变量、在暂停的那一层里对表达式求值，支持模拟器、iPhone、Android、Mac、Windows 和 Linux（不支持 Web），可以用 VS Code 或任何带 DAP 客户端的编辑器（见[开发](development.md#调试器)） |
+| 性能 | Xcode 的 Instruments、React Native 的 Perf Monitor 和 DevTools 性能分析器、Flutter 的性能浮层和 DevTools | ✓ `asuka dev` 自带：所有平台上都有叠在应用上方的浮层（每秒帧数和掉帧、刷新次数、上一次刷新各阶段的耗时、内存），还可以在检查器或终端里录制性能记录：每次刷新的各阶段耗时和工作量、掉帧，以及（Web 除外）对应用函数的采样；页面里有时间线、耗时最多的函数和火焰图，并可导出到 Perfetto 和 speedscope（见[开发](development.md#性能)） |
 | 检查开发环境 | Expo 的 doctor、`flutter doctor` | ✓ `asuka doctor`：这台电脑能为每个平台构建什么，以及其余的还需要安装什么 |
 | 在手机上运行 | Xcode 的 Run、Expo 的开发构建 | ✓ `asuka dev --platform ios`、`android`，或两者同时（`ios,android`）：iOS 模拟器、Android 模拟器、Android 手机（`adb reverse`），以及通过 USB 或 Wi-Fi 连接的 iPhone（`--device iphone`，由你的团队签名） |
 | 在电视上运行 | SwiftUI 的 tvOS target；react-native-tvos、Expo 的 TV 配置插件 | ✓ `asuka dev --platform tvos` 和 `asuka build --platform tvos`（Apple TV：运行在 tvOS UIKit 上的 iOS 宿主），`asuka.toml` 中 `[tv]` 的 `android`（Android TV）；平台的焦点引擎作用于应用的视图，遥控器的返回键和播放/暂停键，`environment().tv`（[电视](tv.md)） |

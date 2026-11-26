@@ -200,8 +200,12 @@ static LRESULT window_message(UINT m, WPARAM wp, LPARAM lp, bool *handled) {
 		*handled = false;  // CreateWindow's own messages: the window's default handling
 		return 0;
 	}
-	// asuka dev's error overlay follows it (deverror.c).
-	if (m == WM_WINDOWPOSCHANGED) wh_dev_error_follow();
+	// asuka dev's error overlay follows it (deverror.c), and its performance
+	// overlay (devperf.c).
+	if (m == WM_WINDOWPOSCHANGED) {
+		wh_dev_error_follow();
+		wh_dev_perf_follow();
+	}
 	r = wh_ctl_message(H.main_ctl, m, wp, lp, &h);
 	if (h) return r;
 	wh_badge_message(m);

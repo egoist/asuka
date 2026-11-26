@@ -59,6 +59,7 @@ bool lx_is_view(gpointer w) { return w && g_type_check_instance_is_a((GTypeInsta
 
 void lx_snapshot_view(GtkWidget *w, GtkSnapshot *snap);
 static void snapshot_highlight(node *n, GtkSnapshot *snap, graphene_rect_t bounds);
+static void snapshot_perf(node *n, GtkWidget *w, GtkSnapshot *snap, graphene_rect_t bounds);
 void lx_allocate_view(GtkWidget *w, int width, int height);
 
 static void view_snapshot(GtkWidget *w, GtkSnapshot *snap) { lx_snapshot_view(w, snap); }
@@ -340,6 +341,7 @@ void lx_snapshot_view(GtkWidget *w, GtkSnapshot *snap) {
 		gtk_snapshot_append_border(snap, &rr, bw, cs);
 	}
 	snapshot_highlight(n, snap, bounds);
+	snapshot_perf(n, w, snap, bounds);
 }
 
 // ---- asuka dev's inspector's highlight (DevHighlight, DevHighlightClear) ----
@@ -383,4 +385,65 @@ static void snapshot_highlight(node *n, GtkSnapshot *snap, graphene_rect_t bound
 	float bw[4] = {1, 1, 1, 1};
 	GdkRGBA cs[4] = {line, line, line, line};
 	gtk_snapshot_append_border(snap, &rr, bw, cs);
+}
+
+// ---- asuka dev's performance overlay (DevPerf) ----
+//
+// The core's numbers (frames a second, flushes, the last flush's phases,
+// memory) in a small box over the top end corner of the root's view,
+// drawn by the root itself after everything in it, so it takes no clicks
+// and isn't in the accessibility tree: monospaced, light on a dark
+// translucent rounded box. The core sends its text twice a second while
+// it's on, and none to remove it.
+
+static struct {
+	ak_id root;
+	GtkWidget *widget;  // referenced
+	char *text;
+} PF;
+
+void lx_dev_perf(node *n, ak_span args) {
+	if (PF.widget) {
+		gtk_widget_queue_draw(PF.widget);
+		g_object_unref(PF.widget);
+	}
+	PF.widget = NULL;
+	PF.root = 0;
+	free(PF.text);
+	PF.text = NULL;
+	if (!n || !n->widget || !args.len) return;
+	PF.text = str_dup(args);
+	PF.root = n->id;
+	PF.widget = g_object_ref(n->widget);
+	gtk_widget_queue_draw(n->widget);
+}
+
+void lx_dev_perf_dump(ak_buf *b) {
+	if (PF.text) ak_buf_printf(b, "DevPerf %s\n", PF.text);
+}
+
+static void snapshot_perf(node *n, GtkWidget *w, GtkSnapshot *snap, graphene_rect_t bounds) {
+	if (!PF.root || n->id != PF.root || !PF.text) return;
+	PangoLayout *l = gtk_widget_create_pango_layout(w, PF.text);
+	PangoAttrList *attrs = pango_attr_list_new();
+	pango_attr_list_insert(attrs, pango_attr_family_new("monospace"));
+	pango_attr_list_insert(attrs, pango_attr_size_new_absolute(10 * PANGO_SCALE));
+	pango_attr_list_insert(attrs, pango_attr_weight_new((PangoWeight)500));  // medium
+	pango_layout_set_attributes(l, attrs);
+	pango_attr_list_unref(attrs);
+	int tw = 0, th = 0;
+	pango_layout_get_pixel_size(l, &tw, &th);
+	float pw = (float)tw + 12, ph = (float)th + 8;
+	float x = H.rtl ? 8 : bounds.size.width - pw - 8;
+	graphene_rect_t box = {{x, 6}, {pw, ph}};
+	GskRoundedRect rr = rounded(box, 6);
+	GdkRGBA bg = {0, 0, 0, 0.72f}, fg = {1, 1, 1, 1};
+	gtk_snapshot_push_rounded_clip(snap, &rr);
+	gtk_snapshot_append_color(snap, &bg, &box);
+	gtk_snapshot_pop(snap);
+	gtk_snapshot_save(snap);
+	gtk_snapshot_translate(snap, &(graphene_point_t){x + 6, 10});
+	gtk_snapshot_append_layout(snap, l, &fg);
+	gtk_snapshot_restore(snap);
+	g_object_unref(l);
 }

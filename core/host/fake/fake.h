@@ -187,6 +187,14 @@ struct ak_fake {
 	// over (0: none) and the rect in it.
 	ak_id highlight_on;
 	float highlight[4];
+	// asuka dev's performance overlay (DevPerf): the root it shows on (0:
+	// none), its text, and how many DevPerf came.
+	ak_id dev_perf_on;
+	ak_buf dev_perf;
+	uint32_t dev_perfs;
+	// Whether the root asked for frames (Frames): what the display sends
+	// while it's on (ak_fake_display_frame).
+	bool frames;
 };
 
 ak_fake *ak_fake_new(void);
@@ -364,6 +372,9 @@ void ak_fake_lifecycle(ak_fake *f, int64_t state);  // AK_LIFECYCLE_*
 // AK_DEV_ERROR_ACTION_*), as the user does: false when it isn't there.
 bool ak_fake_dev_error(const ak_fake *f, ak_dev_error *e);
 bool ak_fake_dev_error_press(ak_fake *f, int64_t action);
+// ak_fake_dev_perf is the text asuka dev's performance overlay shows
+// (valid until the next apply): false when it shows nothing.
+bool ak_fake_dev_perf(const ak_fake *f, ak_span *text);
 // ak_fake_emit_native sends a native view's event: its name and named
 // values (their type says which field: as ak_fake_native).
 void ak_fake_emit_native(ak_fake *f, ak_fake_view *v, const char *name, const ak_fake_native *values, uint32_t n);

@@ -269,7 +269,16 @@ void asuka_unload(void) {
 
 // load_module loads a module's bytes and runs its app (fresh: none of
 // the old app's state kept).
+static int load_module_in(const uint8_t *p, size_t n, bool fresh, char **err);
+
 static int load_module(const uint8_t *p, size_t n, bool fresh, char **err) {
+	ak_perf_enter(AK_PERF_LOAD, 0);
+	int rc = load_module_in(p, n, fresh, err);
+	ak_perf_leave();
+	return rc;
+}
+
+static int load_module_in(const uint8_t *p, size_t n, bool fresh, char **err) {
 	if (err) *err = NULL;
 	if (!started) {
 		fail(err, "asuka: asuka_load before asuka_start");
@@ -442,6 +451,22 @@ static void dev_frame(uint8_t kind, const uint8_t *p, size_t n) {
 		break;
 	}
 	case AK_DEV_HIGHLIGHT: ak_ui_highlight((ak_span){(const char *)p, (uint32_t)n}); break;
+	case AK_DEV_PERF:
+		if (n >= 1) ak_perf_set_overlay(p[0] & AK_DEV_PERF_OVERLAY);
+		break;
+	case AK_DEV_PROFILE_START: {
+		uint8_t flags = ak_read_u8(&r);
+		uint32_t us = ak_read_u32(&r);
+		if (!r.err) ak_perf_record_start(flags & AK_DEV_PROFILE_CPU, us);
+		break;
+	}
+	case AK_DEV_PROFILE_STOP: {
+		ak_buf b = {0};
+		ak_perf_record_stop(&b);
+		ak_dev_send(AK_DEV_PROFILE, b.data, b.len);
+		ak_buf_free(&b);
+		break;
+	}
 	case AK_DEV_AUTOMATE: {
 		// asuka test --gui's commands: their answers, under the same number.
 		uint32_t seq = ak_read_u32(&r);

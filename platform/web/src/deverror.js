@@ -128,3 +128,51 @@ export function showHighlight(container, el, rect) {
 export function hideHighlight(container) {
   container.querySelector(":scope > .asuka-highlight")?.remove();
 }
+
+/**
+ * showPerf shows asuka dev's performance overlay (DevPerf): the core's
+ * numbers (frames a second, flushes, the last flush's phases, memory) in a
+ * small box over the app's top end corner, monospaced, light on a dark
+ * translucent background, in the top layer (over the app's dialogs, raised
+ * again at each update), taking no clicks and hidden from screen readers.
+ * No text removes it.
+ */
+export function showPerf(container, text) {
+  let d = container.querySelector(":scope > .asuka-perf");
+  if (!text) {
+    d?.remove();
+    return;
+  }
+  if (!d) {
+    d = document.createElement("div");
+    d.className = "asuka-perf";
+    d.setAttribute("aria-hidden", "true");
+    d.popover = "manual";
+    Object.assign(d.style, {
+      position: "fixed", inset: "auto", margin: "0", boxSizing: "border-box", padding: "4px 6px",
+      background: "rgba(0, 0, 0, 0.72)", color: "#fff", borderRadius: "6px", border: "0",
+      font: "500 10px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", whiteSpace: "pre",
+      pointerEvents: "none", overflow: "visible", userSelect: "none",
+    });
+    container.append(d);
+  }
+  if (d.textContent !== text) d.textContent = text;
+  // The container's top end corner, below the safe area's top.
+  const b = container.getBoundingClientRect();
+  const rtl = getComputedStyle(container).direction === "rtl";
+  d.style.top = `calc(${Math.max(b.top, 0)}px + env(safe-area-inset-top, 0px) + 6px)`;
+  if (rtl) {
+    d.style.left = `${Math.max(b.left, 0) + 8}px`;
+    d.style.right = "auto";
+  } else {
+    d.style.right = `${Math.max(innerWidth - b.right, 0) + 8}px`;
+    d.style.left = "auto";
+  }
+  // Over what the app opened since.
+  try {
+    if (d.matches(":popover-open")) d.hidePopover();
+    d.showPopover();
+  } catch {
+    d.style.zIndex = "2147483647";
+  }
+}

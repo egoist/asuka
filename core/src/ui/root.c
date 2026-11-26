@@ -265,6 +265,7 @@ static void mount_fn(void *ctx, ak_owner *root) {
 	ak_batch_set_root(r->batch, r->el->id);
 	ak_ext_mounted(r);
 	ak_dev_overlay_mounted(r);
+	ak_perf_mounted(r);
 	ak_path_reset();
 	ak_view *v = ak_ui_build(r, m->build, NULL, 0);
 	if (v) {
@@ -306,6 +307,7 @@ void ak_ui_unmount(void) {
 	ak_ui_root *r = ak_ui.root;
 	if (!r) return;
 	ak_dev_overlay_unmount(r);
+	ak_perf_unmount(r);
 	r->disposed = true;
 	ak_ext_unmount(r);
 	ak_owner_dispose(r->owner);
@@ -481,6 +483,7 @@ static void report_layouts(ak_ui_root *r);
 
 void ak_root_flush(ak_ui_root *r) {
 	if (!r) return;
+	ak_perf_flush_begin();
 	ak_retain(r->el);
 	r->flushes++;
 	ak_ui.stats.flushes++;
@@ -501,7 +504,9 @@ void ak_root_flush(ak_ui_root *r) {
 	r->kids_q.len = 0;
 	ak_overlays_sync(r);
 	ak_anim_before_apply(r);
+	ak_perf_phase(r, AK_PERF_PROPS);
 	ak_root_apply(r);
+	ak_perf_phase(r, AK_PERF_LAYOUT);
 	root_layout(r);
 	ak_focus_rels_flush(r);  // a relation's Ref may hold a view made since
 	bool frames = r->frame_q.len > 0;
@@ -514,7 +519,9 @@ void ak_root_flush(ak_ui_root *r) {
 	r->frame_q.len = 0;
 	if (frames) ak_anim_frames(r, false);
 	ak_anim_flushed(r);
+	ak_perf_phase(r, AK_PERF_FRAMES);
 	ak_root_apply(r);
+	ak_perf_phase(r, AK_PERF_AFTER);
 	if (r->laying < 3 && ak_overlays_report_due(r)) {
 		// An overlay's place handler, as a layout handler: then what it wrote.
 		r->laying++;
@@ -525,6 +532,7 @@ void ak_root_flush(ak_ui_root *r) {
 		r->laying--;
 	}
 	report_layouts(r);
+	ak_perf_flush_end();
 	ak_release(r->el);
 }
 
@@ -580,9 +588,18 @@ static void flush_after(void) {
 	if (ak_sched_has_ready()) ak_sched_wake();
 }
 
+static void dispatch(const ak_event *e);
+
 void ak_ui_dispatch(const uint8_t *buf, size_t len) {
 	ak_event ev;
 	if (ak_event_decode(buf, len, &ev) != AK_OK) return;
+	ak_perf_enter(AK_PERF_EVENT, ev.kind);
+	dispatch(&ev);
+	ak_perf_leave();
+}
+
+static void dispatch(const ak_event *e) {
+	ak_event ev = *e;
 	ak_ui_root *r = ak_ui.root;
 	switch (ev.kind) {
 	case AK_EVENT_ENVIRONMENT:
@@ -614,6 +631,7 @@ void ak_ui_dispatch(const uint8_t *buf, size_t len) {
 		return;
 	case AK_EVENT_LIFECYCLE:
 		if (r && ev.i == AK_LIFECYCLE_MEMORY_WARNING) ak_mcache_clear(&r->measures);
+		ak_perf_lifecycle(ev.i);
 		ak_crash_lifecycle((int)ev.i);
 		ak_batch_begin();
 		ak_ui_lifecycle(ev.i);
@@ -644,29 +662,35 @@ int64_t ak_ui_list_count(uint32_t list) {
 void ak_ui_list_bind(uint32_t list, int64_t index, uint32_t cell) {
 	ak_view *e = ak_view_of(list);
 	if (!e || e->el != AK_EL_LIST || e->dead) return;
+	ak_perf_enter(AK_PERF_LIST, 0);
 	ak_retain(e);
 	ak_batch_begin();
 	ak_list_bind(e, index, cell);
 	ak_batch_end();
 	ak_root_flush(e->r);
 	ak_release(e);
+	ak_perf_leave();
 }
 
 void ak_ui_list_unbind(uint32_t list, uint32_t cell) {
 	ak_view *e = ak_view_of(list);
 	if (!e || e->el != AK_EL_LIST || e->dead) return;
+	ak_perf_enter(AK_PERF_LIST, 0);
 	ak_retain(e);
 	ak_batch_begin();
 	ak_list_unbind(e, cell);
 	ak_batch_end();
 	ak_root_flush(e->r);
 	ak_release(e);
+	ak_perf_leave();
 }
 
 void ak_ui_run_posted(void) {
+	ak_perf_enter(AK_PERF_POSTED, 0);
 	ak_batch_begin();
 	ak_sched_run_posted();
 	flush_after();
+	ak_perf_leave();
 }
 
 static void reset_frames(ak_view *e) {

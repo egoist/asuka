@@ -824,7 +824,9 @@ enum {
 	AK_CMD_DEV_HIGHLIGHT = 40,
 	// sent to the root: the host removes the highlight DevHighlight shows
 	AK_CMD_DEV_HIGHLIGHT_CLEAR = 41,
-	AK_CMD_COUNT = 42,
+	// args: the overlay's text, UTF-8 (lines separated by \n; empty: none); sent to the root, only under asuka dev, while its performance overlay is on, as its numbers change (twice a second): the host shows the text in a small box of its own views over the top end corner of the main window's safe area (monospaced, light on a translucent dark background, in front of everything, its screens, sheets and alerts, not taking any touch or click, not read by a screen reader), replacing what it showed; empty, it removes the box
+	AK_CMD_DEV_PERF = 42,
+	AK_CMD_COUNT = 43,
 };
 
 // Enums, by their index in ak_enums.

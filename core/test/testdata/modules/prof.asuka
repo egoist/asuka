@@ -1,0 +1,16 @@
+// The profiler's test program (core/test/prof_test.c): spin is where the
+// main thread spends its time, in fib.
+fn fib(n: int) -> int {
+  if n < 2 {
+    return n
+  }
+  return fib(n - 1) + fib(n - 2)
+}
+
+fn spin() -> int {
+  return fib(18)
+}
+
+fn main() {
+  let _ = spin()
+}

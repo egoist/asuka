@@ -812,9 +812,11 @@ const (
 	CmdDevHighlight CommandID = 40
 	// CmdDevHighlightClear: sent to the root: the host removes the highlight DevHighlight shows.
 	CmdDevHighlightClear CommandID = 41
+	// CmdDevPerf: args: the overlay's text, UTF-8 (lines separated by \n; empty: none); sent to the root, only under asuka dev, while its performance overlay is on, as its numbers change (twice a second): the host shows the text in a small box of its own views over the top end corner of the main window's safe area (monospaced, light on a translucent dark background, in front of everything, its screens, sheets and alerts, not taking any touch or click, not read by a screen reader), replacing what it showed; empty, it removes the box.
+	CmdDevPerf CommandID = 42
 )
 
-var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear", "DevHighlight", "DevHighlightClear"}
+var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear", "DevHighlight", "DevHighlightClear", "DevPerf"}
 
 func (c CommandID) String() string {
 	if int(c) < len(commandNames) && c > 0 {

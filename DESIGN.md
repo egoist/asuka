@@ -166,7 +166,11 @@ breakpoint's condition, an editor's watch) is compiled by the CLI
 against the module running, as an extension of it the player builds
 into one with it, sharing its types and globals (in such a build a
 module's shapes are reached through a table, so an extension's are its
-base's). The loader
+base's). asuka dev's CPU profiler (core/src/vm/prof.c) uses the same
+switch, its sampler thread setting a bit of the flag so the hooked
+loop's hook takes the main thread's stack on the main thread itself. A
+player's interpreter is compiled at -O2 (the rest of its core at -O1).
+The loader
 checks every instruction is one the VM has, and resolves builtins by
 name through a hash. An error an instruction throws (an overflow, an
 index) saves its frame's pc first, so its trace names its line, as the
@@ -1083,6 +1087,16 @@ creation; a binding that gains visual props makes its container real
 and the flush moves its children into the new view (it then stays real).
 `if`, `for` and `match` are fragments: no box and no view, their
 children splice into the parent's layout and native children.
+
+**Measured in development** (core/src/ui/perf.c, rfcs/0005's
+Profiles): in a development build, while asuka dev's performance
+overlay or a recording is on, each flush is timed by phase (the app's
+code from the host's call, the props batch's crossing, layout with its
+measures, the frames batch's crossing, layout handlers) and its work
+counted (effects run, ops by code, measures, allocations); the display's
+frames come from the `Frames`/`Frame` pair `onFrame` uses, and the
+overlay's text goes to the root as `DevPerf` twice a second. Off, each
+mark is one test; a release build has none of it.
 
 ## layout
 

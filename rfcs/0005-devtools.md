@@ -433,22 +433,21 @@ served by `asuka dev`, so it needs nothing installed and runs wherever
 
 ### Signals and flushes
 
-The page's Updates tab records, while it's on:
+Built: each flush measured and counted (see Profiles: the core's
+`ui/perf.c`), what started it (the host's call: an event and its kind, a
+posted job, a list's rows, a module loading), shown in the overlay and
+kept by a recording. Not yet:
 
-- **Each flush**: what started it (the signal written, and where:
-  the handler's file and line), the memos that recomputed and the ones
-  that didn't need to, the effects that ran, the ops emitted (by kind),
-  the measures, the layout passes and the views laid out again, and the
-  two crossings. Counted, as Asuka's tests count work, with times
-  beside the counts.
+- **Why a flush ran**: the signal written and where (the handler's file
+  and line), the memos that recomputed and the ones that didn't need
+  to.
 - **Why a view updated**: from a view's props, the write that caused
   it, through the memos between them.
 - **Updates on the device**: views flash briefly as their props change,
   as React DevTools' "highlight updates" does.
 
 The signal graph has what this needs: every link knows its dep and its
-sub. Recording it is behind the build tag; with recording off, a
-devtools build costs one branch per flush.
+sub.
 
 ### Network
 
@@ -479,21 +478,114 @@ logcat's `asuka` tag) go there as well, for a built app.
 
 ### Profiles
 
-- **pprof**: the devtools server answers `/debug/pprof/` (CPU, heap,
-  goroutines, allocations, blocking), and `asuka dev` prints the
-  `go tool pprof` command for each.
-- **Traces**: the page records a `runtime/trace` around an interaction.
-  In a devtools build, the flush marks its phases as regions (effects,
-  props batch, layout, frames batch), so `go tool trace` shows where a
-  slow frame's time went, on the main thread and in the goroutines it
-  waited on.
-- **Dropped frames**: the hosts report the frames the platform dropped
-  (`CADisplayLink`'s timestamps on iOS, `FrameMetrics` on Android, the
-  compositor's on the desktop, `requestAnimationFrame` on the web)
-  beside the flushes that ran in them.
-- **A performance overlay**: an optional line over the app: frames a
-  second, flushes a second, ops and effects in the last flush, the Go
-  heap.
+The Go-era plan (pprof and `runtime/trace` from the app's process) went
+with Go at run time (RFC 0008): the app's code runs on the core's VM,
+on the platform's main thread, so the core measures it itself. Built
+(docs/development.md's "Performance" says how to use it):
+
+- **The flush, measured** (`core/src/ui/perf.c`, development builds
+  only: `AK_PERF`, `AK_DEBUG` or the tests'; a release has none of it).
+  The host's calls into the core (an event, a posted job, a list's
+  rows, a module loading: `ak_perf_enter`) bracket the flushes they
+  run; `ak_root_flush` marks its phases: **app** (from the call, or the
+  last flush's end, to the props batch: the handler, the effects, the
+  tasks, the views made), **props** (the first crossing, the host
+  applying it), **layout** (with the host's measures, and the frames
+  queued), **frames** (the second crossing) and **after** (layout
+  handlers and their flushes, nested in it). Each is a clock read; its
+  work is counted beside it: effects run (the signal graph's count),
+  ops by code (the batch decoded as it's about to cross, its decoding
+  left out of the phases' times), the host's measures and the cache's,
+  allocations (`ak_alloc_count`). Nothing runs while neither the
+  overlay nor a recording is on (one test per mark); on, the steady
+  state allocates nothing (the overlay's text in a buffer it keeps:
+  `core/test/perf_test.c` counts it). A flush that did nothing (a
+  display frame's, nothing to change) isn't one.
+- **The display's frames**: no new ABI. The core asks the host for
+  frames with the `Frames` command the language's `onFrame` already
+  uses (CADisplayLink on iOS, macOS 14's view display link, Android's
+  Choreographer, the web's `requestAnimationFrame`, GTK's frame clock,
+  the Windows host's timer), while the app or the tools want them, and
+  each `Frame` event's time is a frame drawn. A gap longer than one and a
+  half intervals is frames dropped: the interval is read from the last
+  64 gaps (the one a quarter of them are shorter than, snapped to a
+  refresh rate within a tenth: 60, 120, 144...), so neither a late frame
+  nor the short gap after it moves it. A gap over five seconds, or the
+  app going to the background, is a pause, not frames dropped. macOS's
+  frames now carry the display link's target time (iOS's did), not
+  when the main thread got to them.
+- **The overlay**: `DevPerf` to the root, a text the core writes twice
+  a second (on a display frame, so it costs nothing when nothing's
+  drawn), the host shows it in a small box of its own views in the top
+  end corner of the main window, monospaced, light on dark, taking no
+  touch, hidden from screen readers; an empty one removes it. Each
+  host's: a UIView over the window's subviews (iOS), an NSView over the
+  content view letting clicks through (macOS), a TextView in the decor
+  view (Android), a layered owned popup like the inspector's highlight
+  (Windows), drawn by the root view's snapshot after its children
+  (Linux), a top-layer popover (the web). It says frames a second and
+  dropped, flushes a second, the last flush's phases, the worst of the
+  last five seconds, its ops, effects and measures, the process's
+  memory and allocations a second. It stays on across reloads (the
+  core keeps it, and a root that mounts gets it).
+- **CPU samples** (`core/src/vm/prof.c`): a sampler thread wakes every
+  millisecond and, while the main thread is busy (its section, which the
+  flush's marks set: idle between the host's calls), adds the time since
+  it last woke to what's due and sets a bit in the debugger's flag
+  (`ak_dbg_on`'s `AK_DBG_ON_PROF`). The interpreter already asks that
+  flag as a frame is entered or left and a jump is taken (the
+  debugger's switch points, nothing per instruction), and set, runs its
+  hooked loop, whose hook takes the sample on the main thread itself:
+  the running coroutine's frames and the bodies inlined in them, with
+  the time due as its weight, interned into a call tree of functions
+  named by their name and file (not their address: a reload's module
+  may reuse one). No thread reads another's stack, and the VM is
+  unchanged for it: a sample is a switch to the hooked loop and back.
+  Time due as the main thread changes section is the section's
+  (`(props batch)`, `(layout)`, `(frames batch)`, `(layout
+  handlers)`), or the core's own between the app's functions
+  (`(runtime)`). Samples land at the next switch point (a builtin that
+  runs long counts in its caller), the usual safepoint bias. Only where
+  the debugger's loop is and there are threads: every player but the
+  web's. The dev player's interpreter (`interp.c`) is built at -O2 (the
+  core unit's `Hot` sources, internal/cbuild), the rest at -O1, so a
+  profile's VM time is near a release's.
+- **Recordings**: the dev connection's frames 24 (the overlay on or
+  off), 25 (a recording starts, sampling or not, at an interval), 26
+  (it stops) and 27 (the player's answer: JSON, every flush's record,
+  each display frame and the frames dropped before it, the samples'
+  functions, call tree and samples), bounded (100,000 flushes and
+  frames, two minutes of samples; past them it says it was cut short).
+  The web's page relays them through its events and posts.
+  `internal/devserver` reads it (`Profile`) and writes it as Chrome's
+  trace event format (Perfetto, chrome://tracing: a track of flushes
+  with their phases nested and their work as arguments, one of the
+  app's functions, consecutive samples' common calls merged into
+  slices, one of dropped frames) or a speedscope file (a sampled
+  profile of the functions and an evented one of the flushes).
+- **In asuka dev**: **p** in the terminal turns every player's overlay
+  on or off (and that of players that connect later); **t** records on
+  every player and, again, saves each one's trace in the current
+  directory and prints a summary (flushes, the slowest, frames dropped,
+  the top functions). The inspector's Performance tab does it a player
+  at a time (the overlay, Record and Stop, sampling or not) and draws
+  the recording: a timeline (flushes by phase, dropped frames, the
+  functions' slices; zoom, pan, details), the top functions by their
+  own and total time, a flame graph, the slowest flushes; and exports
+  it. While it records, the page doesn't ask for the views (walking the
+  tree is work the recording would show).
+- Not yet: the heap (what's alive, by type); Android's FrameMetrics
+  (the frames the system drew late, with the render thread's time) and
+  the compositor's own frames on the desktops, beside the main thread's;
+  the Windows host's frames from the display's vsync (DwmFlush or
+  the compositor clock on a thread of their own) rather than its 16 ms
+  timer, which the system's timer resolution rounds, so its frames a
+  second say the timer's rate;
+  the host's own time in a profile (its UIKit or GTK frames), which a
+  native profiler (Instruments, Perfetto's system traces) shows; on
+  Windows the sampler's wait is the system timer's (about 1 ms with
+  the default timer resolution, coarser on some systems), and the
+  samples' weights are the time that actually passed.
 
 ## Milestones
 
@@ -506,11 +598,14 @@ Each is useful on its own, in this order:
    configurations. Not built: the player's paused state.
 3. **The inspector**: the tree, props, style, frames, where each view
    was made, highlight and pick, opening the source in an editor.
-4. **Signals and flushes**: the Updates tab and the device's update
-   flashes.
+4. **Signals and flushes**: each flush measured and counted (built:
+   see Profiles); the Updates tab, why a view updated, and the device's
+   update flashes.
 5. **Network and logs**: CDP's Network and Console in Chrome DevTools.
-6. **Profiles**: pprof, traces with the flush's regions, dropped frames,
-   the performance overlay.
+6. **Profiles** (built): the performance overlay, recordings of the
+   flushes' phases and work, dropped frames and the app's functions
+   sampled, the inspector's Performance tab, traces for Perfetto and
+   speedscope.
 7. **Built apps**: the same tools in a built debug app on a device and
    in the browser, over `adb reverse`, the device's tunnel and the dev
    server's socket.

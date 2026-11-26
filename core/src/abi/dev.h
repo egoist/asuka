@@ -42,6 +42,13 @@
 //                    level; answered with debug-values)
 //                 23 debug-reset (the debugger detached: no breakpoints,
 //                    no step, and a paused app goes on)
+//                 24 perf (u8 flags: 1 the performance overlay shows;
+//                    ui.h's ak_perf_set_overlay)
+//                 25 profile-start (u8 flags: 1 sample the app's
+//                    functions; u32 the interval, microseconds (0: 1
+//                    ms): a recording starts, ak_perf_record_start)
+//                 26 profile-stop (the recording ends: answered with
+//                    profile)
 //                 30 debug-extend (an extension of a module, lang/
 //                    bytecode's Extension: the functions the
 //                    breakpoints' code and evaluations name)
@@ -76,6 +83,7 @@
 //                 21 debug-continued (the app runs again)
 //                 22 debug-values (u32 a debug-variables' number, then
 //                    JSON: the children of the value it named)
+//                 27 profile (JSON: a recording, ak_perf_record_stop's)
 //                 33 debug-result (u32 a debug-evaluate's number, then
 //                    JSON: the value, or why not)
 //                 34 debug-log (JSON: a logpoint's message, or why a
@@ -118,12 +126,20 @@ enum {
 	AK_DEV_DEBUG_CONTINUED = 21,
 	AK_DEV_DEBUG_VALUES = 22,
 	AK_DEV_DEBUG_RESET = 23,
+	AK_DEV_PERF = 24,
+	AK_DEV_PROFILE_START = 25,
+	AK_DEV_PROFILE_STOP = 26,
+	AK_DEV_PROFILE = 27,
 	AK_DEV_DEBUG_EXTEND = 30,
 	AK_DEV_DEBUG_EXCEPTIONS = 31,
 	AK_DEV_DEBUG_EVALUATE = 32,
 	AK_DEV_DEBUG_RESULT = 33,
 	AK_DEV_DEBUG_LOG = 34,
 };
+// A perf frame's flags.
+enum { AK_DEV_PERF_OVERLAY = 1 };
+// A profile-start frame's flags.
+enum { AK_DEV_PROFILE_CPU = 1 };
 
 // A reloaded frame's flags.
 enum { AK_DEV_RESTARTED = 1 };

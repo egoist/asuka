@@ -500,6 +500,7 @@ bool ak_ext_dispatch(const ak_event *ev) {
 	switch (ev->kind) {
 	case AK_EVENT_FRAME:
 		begin_root_event();
+		ak_perf_display_frame(ak_ui.root, ev->f);
 		ak_anim_frame(ev->id, ev->f);
 		end_root_event();
 		return true;

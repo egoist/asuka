@@ -21,7 +21,8 @@
 //     Overlays (Overlay.swift) are navigation's.
 //   - asuka dev's error overlay (DevError.swift): AppKit's views over the
 //     main window, none of the app's, so it has no hooks here; and its
-//     inspector's highlight (DevHighlight.swift), likewise.
+//     inspector's highlight (DevHighlight.swift) and performance overlay
+//     (DevPerf.swift), likewise.
 import AppKit
 #if canImport(AsukaOps)
 import AsukaOps

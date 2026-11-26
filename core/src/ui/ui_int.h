@@ -614,4 +614,36 @@ void ak_vm_model_set(void *model, ak_val v);
 void ak_dev_overlay_mounted(ak_ui_root *r);
 void ak_dev_overlay_unmount(ak_ui_root *r);
 
+// The performance tools' (perf.c): the flush's phases (ak_root_flush),
+// the display's frames (a Frame event's time, the host's clock, seconds),
+// a root that mounts or goes, and whether the host's frames are wanted
+// (animate.c asks for them while the app or the tools want them).
+// ak_anim_frames_sync asks for them, or stops, as that changes.
+#if AK_PERF
+void ak_perf_flush_begin(void);
+void ak_perf_phase(ak_ui_root *r, int phase);
+void ak_perf_flush_end(void);
+void ak_perf_display_frame(ak_ui_root *r, double t);
+void ak_perf_mounted(ak_ui_root *r);
+void ak_perf_unmount(ak_ui_root *r);
+void ak_perf_lifecycle(int64_t lifecycle);
+bool ak_perf_wants_frames(void);
+#else
+static inline void ak_perf_flush_begin(void) {}
+static inline void ak_perf_phase(ak_ui_root *r, int phase) {
+	(void)r;
+	(void)phase;
+}
+static inline void ak_perf_flush_end(void) {}
+static inline void ak_perf_display_frame(ak_ui_root *r, double t) {
+	(void)r;
+	(void)t;
+}
+static inline void ak_perf_mounted(ak_ui_root *r) { (void)r; }
+static inline void ak_perf_unmount(ak_ui_root *r) { (void)r; }
+static inline void ak_perf_lifecycle(int64_t lifecycle) { (void)lifecycle; }
+static inline bool ak_perf_wants_frames(void) { return false; }
+#endif
+void ak_anim_frames_sync(ak_ui_root *r);
+
 #endif

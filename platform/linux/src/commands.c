@@ -67,6 +67,9 @@ void lx_command(node *n, ak_cmd c, ak_span args) {
 	case AK_CMD_DEV_HIGHLIGHT_CLEAR:
 		lx_dev_highlight_clear();
 		return;
+	case AK_CMD_DEV_PERF:
+		lx_dev_perf(n, args);
+		return;
 	case AK_CMD_REPLACE:
 		if (n->nav) n->nav->pending = -2;
 		return;
