@@ -285,8 +285,11 @@ fun AsukaRuntime.outsidePresses(e: MotionEvent, inScope: (AsukaOverlay) -> Boole
     val action = e.actionMasked
     if (overlays.isEmpty() || (action != MotionEvent.ACTION_DOWN && action != MotionEvent.ACTION_POINTER_DOWN)) return false
     val i = e.actionIndex
-    val rx = e.getRawX(i)
-    val ry = e.getRawY(i)
+    // Before Android 10 there's only the first pointer's raw position:
+    // another's is as far from it on the screen as in the event's view.
+    val q = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
+    val rx = if (q) e.getRawX(i) else e.rawX + e.getX(i) - e.getX(0)
+    val ry = if (q) e.getRawY(i) else e.rawY + e.getY(i) - e.getY(0)
     val d = density
     val at = IntArray(2)
     var modal = false

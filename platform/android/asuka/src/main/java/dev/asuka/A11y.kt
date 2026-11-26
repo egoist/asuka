@@ -8,6 +8,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeProvider
 import android.widget.TextView
+import androidx.annotation.RequiresApi
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -139,16 +140,31 @@ class AsukaA11yDelegate(private val rt: AsukaRuntime, val id: Int, val orig: Vie
     override fun onRequestSendAccessibilityEvent(host: ViewGroup, child: View, event: AccessibilityEvent): Boolean =
         orig?.onRequestSendAccessibilityEvent(host, child, event) ?: super.onRequestSendAccessibilityEvent(host, child, event)
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun addExtraDataToAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo, extraDataKey: String, arguments: Bundle?) =
         orig?.addExtraDataToAccessibilityNodeInfo(host, info, extraDataKey, arguments)
             ?: super.addExtraDataToAccessibilityNodeInfo(host, info, extraDataKey, arguments)
 }
 
+/** The field View keeps its delegate in, for Android before 10, which has no getter. */
+private val delegateField by lazy {
+    runCatching { View::class.java.getDeclaredField("mAccessibilityDelegate").apply { isAccessible = true } }.getOrNull()
+}
+
+/**
+ * v's accessibility delegate. Before Android 10 there's no getter: it's
+ * read from the view's field, as AndroidX's ViewCompat does, or null if
+ * that can't be read.
+ */
+fun accessibilityDelegateOf(v: View): View.AccessibilityDelegate? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) v.accessibilityDelegate
+    else runCatching { delegateField?.get(v) as? View.AccessibilityDelegate }.getOrNull()
+
 /** Puts n's view under its delegate (once: it reads the props when asked). */
 fun AsukaRuntime.installA11y(n: AsukaNode) {
     val v = n.view
     if (v is AsukaRichText) return // its own (a heading's, its links')
-    val cur = v.accessibilityDelegate
+    val cur = accessibilityDelegateOf(v)
     if (cur is AsukaA11yDelegate && cur.id == n.id) return
     v.accessibilityDelegate = AsukaA11yDelegate(this, n.id, (cur as? AsukaA11yDelegate)?.orig ?: cur)
 }
@@ -159,7 +175,10 @@ fun AsukaRuntime.a11yChanged(n: AsukaNode) {
     if (!v.isAttachedToWindow) return
     val am = app.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
     if (!am.isEnabled) return
-    val e = AccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+    // Before Android 11 an event comes from the pool.
+    @Suppress("DEPRECATION")
+    val e = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) AccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+        else AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
     e.contentChangeTypes = AccessibilityEvent.CONTENT_CHANGE_TYPE_STATE_DESCRIPTION
     v.sendAccessibilityEventUnchecked(e)
 }

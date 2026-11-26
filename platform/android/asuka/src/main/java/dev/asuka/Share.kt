@@ -9,6 +9,7 @@ import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.core.content.IntentCompat
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -44,9 +45,9 @@ fun AsukaRuntime.receive(intent: Intent) {
     val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)?.trim().orEmpty()
     val uris = ArrayList<Uri>()
     if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
-        intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)?.let { uris.addAll(it) }
+        IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.let { uris.addAll(it) }
     } else {
-        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)?.let { uris.add(it) }
+        IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.let { uris.add(it) }
     }
     // Some apps give the files only in the clip.
     if (uris.isEmpty()) intent.clipData?.let { c -> for (i in 0 until c.itemCount) c.getItemAt(i).uri?.let { uris.add(it) } }

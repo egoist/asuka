@@ -439,7 +439,7 @@ extern fn acme_version() -> CString
   tables, as for sources: `libraries` (`log` on Android, `z`) and
   `frameworks` (`Security`).
 - **Build it** for the platforms' oldest versions Asuka runs on (iOS 16,
-  macOS 11, Android 13), and for the web against WASI's C library
+  macOS 11, Android 7), and for the web against WASI's C library
   (`wasm32-wasi`), with no threads.
 
 The libraries are linked into the app, as your own C is: there's nothing

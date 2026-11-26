@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Telephony
 import android.text.Html
 import androidx.activity.result.ActivityResultLauncher
@@ -50,7 +51,8 @@ fun AsukaRuntime.composeMethods(): Map<String, AsukaModuleMethod> = mapOf(
     "can" to { _, reply ->
         val pm = app.packageManager
         fun takes(uri: String) = pm.queryIntentActivities(Intent(Intent.ACTION_SENDTO, Uri.parse(uri)), 0).isNotEmpty()
-        val phone = pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY_MESSAGING)
+        // Before Android 13 there's no messaging feature of its own: telephony's.
+        val phone = pm.hasSystemFeature(if (Build.VERSION.SDK_INT >= 33) PackageManager.FEATURE_TELEPHONY_MESSAGING else PackageManager.FEATURE_TELEPHONY)
         val text = phone && takes("smsto:")
         val mms = text && Telephony.Sms.getDefaultSmsPackage(app) != null
         reply(Result.success(byteArrayOf(if (takes("mailto:")) 1 else 0, 0, if (text) 1 else 0, if (mms) 1 else 0)))

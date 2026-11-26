@@ -9,7 +9,6 @@ package platform.location
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.Notification as AndroidNotification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -33,6 +32,11 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
 import dev.asuka.AsukaModules
 import dev.asuka.AsukaRuntime
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +55,9 @@ private val main = Handler(Looper.getMainLooper())
 
 private fun granted(ctx: Context, p: String) = ctx.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 private fun foreground(ctx: Context) = granted(ctx, Manifest.permission.ACCESS_FINE_LOCATION) || granted(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)
-private fun background(ctx: Context) = foreground(ctx) && granted(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+// Before Android 10 background location comes with the foreground permission.
+private fun background(ctx: Context) = foreground(ctx) &&
+    (Build.VERSION.SDK_INT < 29 || granted(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION))
 
 private fun lm(ctx: Context) = ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
@@ -80,7 +86,7 @@ class AndroidLocator(private val ctx: Context) : Locator {
             Store.asked(ctx) -> Level.DENIED
             else -> Level.NOT_ASKED
         }
-        return Authorization(level = level, precise = granted(ctx, Manifest.permission.ACCESS_FINE_LOCATION), off = !lm(ctx).isLocationEnabled)
+        return Authorization(level = level, precise = granted(ctx, Manifest.permission.ACCESS_FINE_LOCATION), off = !LocationManagerCompat.isLocationEnabled(lm(ctx)))
     }
 
     override suspend fun watchAuthorization(changed: (Authorization) -> Unit) {
@@ -103,7 +109,8 @@ class AndroidLocator(private val ctx: Context) : Locator {
             ask(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }
         if (always && foreground(ctx) && !background(ctx)) {
-            // Android 11 and later take the user to the app's settings.
+            // Android 11 and later take the user to the app's settings
+            // (before Android 10 there's nothing more to ask: background()).
             ask(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
         }
         return authorization()
@@ -118,8 +125,10 @@ class AndroidLocator(private val ctx: Context) : Locator {
 
     private fun provider(): String {
         val m = lm(ctx)
+        // Before Android 12 there's no fused provider: GPS when it's on and
+        // allowed, the network's otherwise.
         return when {
-            m.hasProvider(LocationManager.FUSED_PROVIDER) -> LocationManager.FUSED_PROVIDER
+            Build.VERSION.SDK_INT >= 31 && m.hasProvider(LocationManager.FUSED_PROVIDER) -> LocationManager.FUSED_PROVIDER
             granted(ctx, Manifest.permission.ACCESS_FINE_LOCATION) && m.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
             else -> LocationManager.NETWORK_PROVIDER
         }
@@ -132,7 +141,8 @@ class AndroidLocator(private val ctx: Context) : Locator {
             suspendCancellableCoroutine { c ->
                 val cancel = android.os.CancellationSignal()
                 c.invokeOnCancellation { cancel.cancel() }
-                lm(ctx).getCurrentLocation(provider(), cancel, ctx.mainExecutor) { l ->
+                // Before Android 11, the first update the provider gives (or none in 30 seconds).
+                LocationManagerCompat.getCurrentLocation(lm(ctx), provider(), cancel, ContextCompat.getMainExecutor(ctx)) { l ->
                     if (l != null) c.resume(position(l)) else c.resumeWithException(LocationException(LocationError.UNAVAILABLE))
                 }
             }
@@ -154,14 +164,24 @@ class AndroidLocator(private val ctx: Context) : Locator {
         }
     }
 
-    override suspend fun placeName(latitude: Double, longitude: Double): String = suspendCancellableCoroutine { c ->
-        if (!Geocoder.isPresent()) { c.resumeWithException(LocationException(LocationError.UNAVAILABLE)); return@suspendCancellableCoroutine }
-        Geocoder(ctx, Locale.getDefault()).getFromLocation(latitude, longitude, 1, object : Geocoder.GeocodeListener {
-            override fun onGeocode(list: MutableList<android.location.Address>) {
-                val a = list.firstOrNull()
-                val parts = listOfNotNull(a?.subLocality ?: a?.featureName, a?.locality ?: a?.adminArea ?: a?.countryName).distinct()
-                if (parts.isEmpty()) c.resumeWithException(Exception("location: no name for this place")) else c.resume(parts.joinToString(", "))
-            }
+    override suspend fun placeName(latitude: Double, longitude: Double): String {
+        if (!Geocoder.isPresent()) throw LocationException(LocationError.UNAVAILABLE)
+        val g = Geocoder(ctx, Locale.getDefault())
+        val list = if (Build.VERSION.SDK_INT >= 33) geocode(g, latitude, longitude) else withContext(Dispatchers.IO) {
+            // Before Android 13 the geocoder answers only as it blocks: on a worker.
+            @Suppress("DEPRECATION")
+            try { g.getFromLocation(latitude, longitude, 1) ?: emptyList() } catch (e: java.io.IOException) { throw Exception(e.message ?: "location: no name for this place") }
+        }
+        val a = list.firstOrNull()
+        val parts = listOfNotNull(a?.subLocality ?: a?.featureName, a?.locality ?: a?.adminArea ?: a?.countryName).distinct()
+        if (parts.isEmpty()) throw Exception("location: no name for this place")
+        return parts.joinToString(", ")
+    }
+
+    @RequiresApi(33)
+    private suspend fun geocode(g: Geocoder, latitude: Double, longitude: Double): List<android.location.Address> = suspendCancellableCoroutine { c ->
+        g.getFromLocation(latitude, longitude, 1, object : Geocoder.GeocodeListener {
+            override fun onGeocode(list: MutableList<android.location.Address>) { c.resume(list) }
             override fun onError(message: String?) { c.resumeWithException(Exception(message ?: "location: no name for this place")) }
         })
     }
@@ -309,25 +329,33 @@ object Background {
         val m = lm(ctx)
         val accuracy = if (u.significant) 2L else u.accuracy.value
         val interval = u.interval.inWholeMilliseconds.takeIf { it > 0 } ?: if (u.significant) 5 * 60_000L else 10_000L
+        // Before Android 12 there's no fused provider: GPS for the best
+        // accuracy (when it's allowed), the network's for the rest.
         val provider = when {
             accuracy == 4L -> LocationManager.PASSIVE_PROVIDER
-            m.hasProvider(LocationManager.FUSED_PROVIDER) -> LocationManager.FUSED_PROVIDER
-            accuracy <= 1 && m.hasProvider(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+            Build.VERSION.SDK_INT >= 31 && m.hasProvider(LocationManager.FUSED_PROVIDER) -> LocationManager.FUSED_PROVIDER
+            accuracy <= 1 && granted(ctx, Manifest.permission.ACCESS_FINE_LOCATION) && LocationManagerCompat.hasProvider(m, LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
             else -> LocationManager.NETWORK_PROVIDER
         }
-        val quality = when (accuracy) {
-            0L, 1L -> LocationRequest.QUALITY_HIGH_ACCURACY
-            2L -> LocationRequest.QUALITY_BALANCED_POWER_ACCURACY
-            else -> LocationRequest.QUALITY_LOW_POWER
-        }
         val distance = if (u.significant) maxOf(u.distance, 500.0) else u.distance
-        val req = LocationRequest.Builder(interval).setQuality(quality).setMinUpdateDistanceMeters(distance.toFloat())
-            .setMaxUpdateDelayMillis(u.delay.inWholeMilliseconds).build()
-        m.requestLocationUpdates(provider, req, updatesIntent(ctx))
+        if (Build.VERSION.SDK_INT >= 31) {
+            val quality = when (accuracy) {
+                0L, 1L -> LocationRequest.QUALITY_HIGH_ACCURACY
+                2L -> LocationRequest.QUALITY_BALANCED_POWER_ACCURACY
+                else -> LocationRequest.QUALITY_LOW_POWER
+            }
+            val req = LocationRequest.Builder(interval).setQuality(quality).setMinUpdateDistanceMeters(distance.toFloat())
+                .setMaxUpdateDelayMillis(u.delay.inWholeMilliseconds).build()
+            m.requestLocationUpdates(provider, req, updatesIntent(ctx))
+        } else {
+            // Before Android 12 the provider stands for the accuracy, and
+            // each update comes as it's found (none held back to batch).
+            m.requestLocationUpdates(provider, interval, distance.toFloat(), updatesIntent(ctx))
+        }
     }
 
     fun startService(ctx: Context) {
-        runCatching { ctx.startForegroundService(Intent(ctx, LocationService::class.java)) }
+        runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, LocationService::class.java)) }
     }
 
     /** Asks again for what ran, after a reboot or an update (which clear it). */
@@ -422,8 +450,15 @@ object Events {
         if (was == null && kind == Transition.EXIT || was == (kind == Transition.ENTER)) return null
         if (kind !in r.events) return null
         val e = JSONObject().put("crossing", true).put("region", id).put("kind", kind.value).put("time", System.currentTimeMillis() * 1_000_000)
-        runCatching { lm(ctx).getLastKnownLocation(LocationManager.FUSED_PROVIDER) }.getOrNull()?.let { e.put("at", json(position(it))) }
+        lastKnown(ctx)?.let { e.put("at", json(position(it))) }
         return e
+    }
+
+    /** The fused provider's last position; before Android 12, the newer of GPS's and the network's. */
+    @SuppressLint("MissingPermission") // a region's crossing comes with the permission granted (runCatching: revoked since)
+    private fun lastKnown(ctx: Context): Location? {
+        val ps = if (Build.VERSION.SDK_INT >= 31) listOf(LocationManager.FUSED_PROVIDER) else listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        return ps.mapNotNull { runCatching { lm(ctx).getLastKnownLocation(it) }.getOrNull() }.maxByOrNull { it.time }
     }
 
     fun hold(@Suppress("UNUSED_PARAMETER") id: Long) {
@@ -460,8 +495,9 @@ class LocationReceiver : BroadcastReceiver() {
                     main.post { Events.received(ctx, emptyList(), listOf(id to kind), hold) }
                     return
                 }
+                // Before Android 12 a broadcast brings one position.
                 @Suppress("DEPRECATION")
-                val ls: List<Location> = x.getParcelableArrayList<Location>(LocationManager.KEY_LOCATIONS)
+                val ls: List<Location> = (if (Build.VERSION.SDK_INT >= 31) x.getParcelableArrayList<Location>(LocationManager.KEY_LOCATIONS) else null)
                     ?: listOfNotNull(x.getParcelable<Location>(LocationManager.KEY_LOCATION_CHANGED))
                 main.post { Events.received(ctx, ls.map { position(it) }, emptyList(), hold) }
             }
@@ -493,18 +529,22 @@ class LocationService : Service() {
         val u = Store.updates(this) ?: return false
         if (u.optString("title").isEmpty()) return false
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (nm.getNotificationChannel(CHANNEL) == null) nm.createNotificationChannel(NotificationChannel(CHANNEL, "Location", NotificationManager.IMPORTANCE_LOW))
+        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
+            nm.createNotificationChannel(NotificationChannel(CHANNEL, "Location", NotificationManager.IMPORTANCE_LOW))
+        }
         val open = packageManager.getLaunchIntentForPackage(packageName)
-        val b = AndroidNotification.Builder(this, CHANNEL)
+        // Before Android 8 there are no channels: the notification's own priority, low as the channel's importance.
+        val b = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(applicationInfo.icon)
             .setContentTitle(u.optString("title"))
             .setOngoing(true)
-            .setCategory(AndroidNotification.CATEGORY_NAVIGATION)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
         u.optString("text").takeIf { it.isNotEmpty() }?.let { b.setContentText(it) }
-        if (Build.VERSION.SDK_INT >= 31) b.setForegroundServiceBehavior(AndroidNotification.FOREGROUND_SERVICE_IMMEDIATE)
         if (open != null) b.setContentIntent(PendingIntent.getActivity(this, ID, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         return try {
-            startForeground(ID, b.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            ServiceCompat.startForeground(this, ID, b.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
             true
         } catch (e: Exception) {
             // Not allowed now (started from the background without always):

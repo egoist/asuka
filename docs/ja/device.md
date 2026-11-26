@@ -1640,7 +1640,7 @@ async fn caption(recording: string) throws -> string {
 }
 ```
 
-iOS と Mac では Speech フレームワークにデバイス上で処理するよう求め、Android ではデバイス上の認識エンジン（Android 13 以降）を使います。ブラウザーでは、デバイス上で動くブラウザー自身の認識エンジン（Chrome 139 以降）に録音を再生して聞かせるので、ファイル一つにほぼその長さの時間がかかり、`segments` はありません。Windows ではデスクトップ音声認識（SAPI の音声入力。英語は Windows に付属し、ほかの言語はその言語パックの音声認識と一緒に入ります）を使います。Linux ではディストリビューションがパッケージにしている認識エンジン PocketSphinx（Debian と Ubuntu では `pocketsphinx-en-us`）を英語で使います。デバイスでできないとき（古い Android、その認識エンジンのないブラウザー、認識エンジンのない Windows の言語、PocketSphinx がないかほかの言語の Linux）は、音声をサーバーに送る代わりに `TranscribeError.notAvailable` を投げます。言語のモデルをダウンロード中のときは `.downloading` です（ブラウザーはそのときインストールを始めます）。
+iOS と Mac では Speech フレームワークにデバイス上で処理するよう求め、Android ではデバイス上の認識エンジン（録音は Android 13 以降、`listen` は Android 12 以降）を使います。ブラウザーでは、デバイス上で動くブラウザー自身の認識エンジン（Chrome 139 以降）に録音を再生して聞かせるので、ファイル一つにほぼその長さの時間がかかり、`segments` はありません。Windows ではデスクトップ音声認識（SAPI の音声入力。英語は Windows に付属し、ほかの言語はその言語パックの音声認識と一緒に入ります）を使います。Linux ではディストリビューションがパッケージにしている認識エンジン PocketSphinx（Debian と Ubuntu では `pocketsphinx-en-us`）を英語で使います。デバイスでできないとき（古い Android、その認識エンジンのないブラウザー、認識エンジンのない Windows の言語、PocketSphinx がないかほかの言語の Linux）は、音声をサーバーに送る代わりに `TranscribeError.notAvailable` を投げます。言語のモデルをダウンロード中のときは `.downloading` です（ブラウザーはそのときインストールを始めます）。
 
 `transcribe.listen(language)` は音声入力です。マイクを聞き、話すそばから結果を返します。毎回の `Heard` の `text` には、それまでのテキストがすべて入っています（最後のいくつかの単語は、まだ変わることがあります）。最後の一つは `final` です。`transcribe.finish()` を呼んだとき、または認識エンジンが話し声を聞かなくなったときに来ます。読んでいるタスクを止めると、すぐに聞くのをやめ、それ以降は何も残しません。最初に使うときにマイクと音声認識の許可を求めます。`file` と同じく、同じプラットフォームでデバイス上で動きます。
 

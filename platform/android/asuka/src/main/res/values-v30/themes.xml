@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and later: windows drawn edge to edge go under any cutout. -->
+<resources>
+    <style name="ThemeOverlay.Asuka.FullScreenDialog" parent="Base.ThemeOverlay.Asuka.FullScreenDialog">
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+    </style>
+    <style name="ThemeOverlay.Asuka.DevError" parent="Base.ThemeOverlay.Asuka.DevError">
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+    </style>
+</resources>

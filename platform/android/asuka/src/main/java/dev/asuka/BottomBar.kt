@@ -173,7 +173,8 @@ class AsukaScreenBar(private val screen: AsukaScreen, private val rt: AsukaRunti
                 // With children, it opens them as a menu.
                 val act = rt.activity ?: return@setOnClickListener
                 val m = PopupMenu(act, v)
-                if (rt.fillMenu(m.menu, cur.items)) m.setForceShowIcon(true)
+                // Before Android 10 a popup menu can't show its items' icons.
+                if (rt.fillMenu(m.menu, cur.items) && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) m.setForceShowIcon(true)
                 m.setOnMenuItemClickListener { item ->
                     if (item.hasSubMenu() || item.itemId < 0) return@setOnMenuItemClickListener false
                     val i = PRIMARY_BASE + item.itemId

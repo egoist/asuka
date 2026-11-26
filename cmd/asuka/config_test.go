@@ -51,13 +51,15 @@ permissions = ["android.permission.CAMERA"]`), 0o644)
 	}
 	m := c.androidManifest(true)
 	for _, want := range []string{`android.permission.CAMERA`, `android:scheme="notes"`, `android:autoVerify="true"`,
-		`android:host="notes.example.com"`, `usesCleartextTraffic`} {
+		`android:host="notes.example.com"`, `usesCleartextTraffic`, `@xml/asuka_network_security_debug`} {
 		if !strings.Contains(m, want) {
 			t.Errorf("manifest lacks %s:\n%s", want, m)
 		}
 	}
-	if strings.Contains(c.androidManifest(false), "Cleartext") {
+	if r := c.androidManifest(false); strings.Contains(r, "Cleartext") || strings.Contains(r, "_debug") {
 		t.Error("a release manifest allows cleartext")
+	} else if !strings.Contains(r, `android:networkSecurityConfig="@xml/asuka_network_security"`) {
+		t.Errorf("a release manifest lacks the network security config:\n%s", r)
 	}
 	if d := c.associatedDomains(true); len(d) != 1 || d[0] != "applinks:notes.example.com?mode=developer" {
 		t.Errorf("domains %v", d)

@@ -20,6 +20,11 @@ func TestBluetoothConfig(t *testing.T) {
 		`<uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />`,
 		`<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />`,
 		`<uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />`,
+		// Before Android 12: the install's Bluetooth permissions, and the
+		// location a scan needs there.
+		`<uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />`,
+		`<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />`,
+		`<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />`,
 	} {
 		if !strings.Contains(m, want) {
 			t.Errorf("the manifest has no %s:\n%s", want, m)
@@ -28,7 +33,7 @@ func TestBluetoothConfig(t *testing.T) {
 	if mod := stdAndroidManifest(t, "bluetooth"); !strings.Contains(mod, `<uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />`) {
 		t.Errorf("platform/bluetooth's module's manifest:\n%s", mod)
 	}
-	if strings.Contains(m, "AsukaBluetoothScanReceiver") || strings.Contains(m, "LOCATION") {
+	if strings.Contains(m, "AsukaBluetoothScanReceiver") || strings.Count(m, "LOCATION") != 1 {
 		t.Errorf("background scanning without asking for it:\n%s", m)
 	}
 	if c.IOS.Usage["NSBluetoothAlwaysUsageDescription"] == "" || len(c.plistArrays["UIBackgroundModes"]) != 0 {

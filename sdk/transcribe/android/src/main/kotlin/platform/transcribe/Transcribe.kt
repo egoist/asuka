@@ -1,7 +1,10 @@
 // platform/transcribe on Android: Android 13's on-device recognizer, in a
 // segmented session, fed the file decoded to 16 kHz mono, or listening to
-// the microphone with partial results: only ever on the device. Its
-// listener runs on the main thread.
+// the microphone with partial results: only ever on the device. Before
+// Android 13 a file is notAvailable, and listening is Android 12's
+// on-device recognizer: before 12, whose recognizer may send what's said
+// to a server, it's notAvailable too. Its listener runs on the main
+// thread.
 package platform.transcribe
 
 import android.Manifest
@@ -18,6 +21,7 @@ import android.os.ParcelFileDescriptor
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import androidx.annotation.RequiresApi
 import dev.asuka.AsukaModules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -32,8 +36,17 @@ private object Transcriber {
     private val app get() = AsukaModules.context
     var busy = false
 
-    fun available() = SpeechRecognizer.isOnDeviceRecognitionAvailable(app)
+    /** Whether it can listen: before Android 12, whether the system has a recognizer. */
+    fun available() = Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(app)
 
+    /** Asks for the language's pack, for next time: whether it's coming (Android 13 and later). */
+    private fun download(sr: SpeechRecognizer, intent: Intent): Boolean {
+        if (Build.VERSION.SDK_INT < 33) return false
+        runCatching { sr.triggerModelDownload(intent) }
+        return true
+    }
+
+    @RequiresApi(33)
     fun run(path: String, language: String, reply: (kotlin.Result<Result>) -> kotlin.Unit): () -> kotlin.Unit {
         busy = true
         val pipe = ParcelFileDescriptor.createPipe()
@@ -86,13 +99,11 @@ private object Transcriber {
                     SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> finish(null)
                     // Often only that its pack isn't here yet: ask for it, for next time.
                     SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED -> {
-                        runCatching { sr.triggerModelDownload(intent) }
+                        download(sr, intent)
                         finish(TranscribeException(TranscribeError.NOT_AVAILABLE))
                     }
-                    SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> {
-                        runCatching { sr.triggerModelDownload(intent) }
-                        finish(TranscribeException(TranscribeError.DOWNLOADING))
-                    }
+                    SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ->
+                        finish(TranscribeException(if (download(sr, intent)) TranscribeError.DOWNLOADING else TranscribeError.NOT_AVAILABLE))
                     else -> finish(Exception("the recognizer failed ($error)"))
                 }
             }
@@ -108,6 +119,7 @@ private object Transcriber {
 
     /** Listens to the microphone on the device, calling heard with what
      *  it's heard (its partial results, then its final one). */
+    @RequiresApi(31)
     fun listen(language: String, heard: (Heard) -> kotlin.Unit, reply: (kotlin.Result<kotlin.Unit>) -> kotlin.Unit): () -> kotlin.Unit {
         busy = true
         val sr = SpeechRecognizer.createOnDeviceSpeechRecognizer(app)
@@ -156,13 +168,12 @@ private object Transcriber {
                     SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT, SpeechRecognizer.ERROR_CLIENT -> finish(null)
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> finish(TranscribeException(TranscribeError.NOT_ALLOWED))
                     SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED -> {
-                        runCatching { sr.triggerModelDownload(intent) }
+                        download(sr, intent)
                         finish(TranscribeException(TranscribeError.NOT_AVAILABLE))
                     }
-                    SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> {
-                        runCatching { sr.triggerModelDownload(intent) }
-                        finish(TranscribeException(TranscribeError.DOWNLOADING))
-                    }
+                    // Before Android 13 its pack isn't asked for: not available.
+                    SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ->
+                        finish(TranscribeException(if (download(sr, intent)) TranscribeError.DOWNLOADING else TranscribeError.NOT_AVAILABLE))
                     else -> finish(Exception("the recognizer failed ($error)"))
                 }
             }
@@ -256,6 +267,8 @@ private class OnDeviceRecognizer : Recognizer {
 
     override suspend fun file(path: String, language: String): Result = withContext(Dispatchers.Main) {
         val lang = language.ifEmpty { Locale.getDefault().toLanguageTag() }
+        // A file is the recognizer's audio source from Android 13.
+        if (Build.VERSION.SDK_INT < 33) throw TranscribeException(TranscribeError.NOT_AVAILABLE)
         if (!Transcriber.available()) throw TranscribeException(TranscribeError.NOT_AVAILABLE)
         if (Transcriber.busy) throw Exception("already transcribing")
         val ok = suspendCancellableCoroutine { c -> AsukaModules.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO)) { if (c.isActive) c.resume(it) } }
@@ -268,7 +281,7 @@ private class OnDeviceRecognizer : Recognizer {
 
     override suspend fun listen(language: String, heard: (Heard) -> kotlin.Unit) = withContext(Dispatchers.Main) {
         val lang = language.ifEmpty { Locale.getDefault().toLanguageTag() }
-        if (!Transcriber.available()) throw TranscribeException(TranscribeError.NOT_AVAILABLE)
+        if (Build.VERSION.SDK_INT < 31 || !Transcriber.available()) throw TranscribeException(TranscribeError.NOT_AVAILABLE)
         if (Transcriber.busy) throw Exception("transcribe: already listening")
         val ok = suspendCancellableCoroutine { c -> AsukaModules.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO)) { if (c.isActive) c.resume(it) } }
         if (!ok) throw TranscribeException(TranscribeError.NOT_ALLOWED)

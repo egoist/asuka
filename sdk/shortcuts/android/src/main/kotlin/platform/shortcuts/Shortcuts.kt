@@ -3,18 +3,21 @@
 // opening the shortcut's URL with the thing's id), as many as the
 // launcher shows. The shortcuts that take things are the CLI's
 // res/values string-array asuka_entity_shortcuts: id|kind|param|title|url.
+// Android 7.0 has no launcher shortcuts: there it keeps nothing.
 package platform.shortcuts
 
 import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.net.Uri
+import android.os.Build
 import dev.asuka.AsukaModules
 import org.json.JSONArray
 import java.net.URLEncoder
 
 class LauncherShortcuts : Store {
     override fun set(kind: String, json: String) {
+        if (Build.VERSION.SDK_INT < 25) return
         val app = AsukaModules.context
         val sm = app.getSystemService(ShortcutManager::class.java) ?: return
         val res = app.resources.getIdentifier("asuka_entity_shortcuts", "array", app.packageName)

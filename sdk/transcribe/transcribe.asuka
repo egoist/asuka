@@ -1,8 +1,9 @@
 // Package platform/transcribe turns a recording into text, on the device:
 // nothing leaves it. The Speech framework on iOS and macOS, asked to
-// stay on the device; Android's on-device recognizer (Android 13 and
-// later); the browser's, where it has one on the device (Chrome 139 and
-// later: the Web Speech API's processLocally); Windows' desktop speech
+// stay on the device; Android's on-device recognizer (a file on Android
+// 13 and later, listening on 12 and later); the browser's, where
+// it has one on the device (Chrome 139 and later: the Web Speech API's
+// processLocally); Windows' desktop speech
 // recognizer (SAPI's dictation, English's with Windows, another
 // language's with its language pack); on Linux, PocketSphinx where the
 // distribution has it, in English. Where the device can't, it says so

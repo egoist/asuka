@@ -18,7 +18,8 @@
 /// How hot the device runs: how much the system slows it to cool it
 /// (Apple's thermal state, Android's thermal status).
 pub enum Thermal {
-  /// No slowing, or the system doesn't say (Windows, Linux, the web).
+  /// No slowing, or the system doesn't say (Windows, Linux, the web,
+  /// Android before 10).
   nominal
   /// Warm; the system does some background work later.
   fair

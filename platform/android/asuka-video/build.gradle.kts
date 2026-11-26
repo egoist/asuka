@@ -12,7 +12,7 @@ android {
     namespace = "dev.asuka.video"
     compileSdk = 36
     defaultConfig {
-        minSdk = 33
+        minSdk = 24
         consumerProguardFiles("consumer-rules.pro")
     }
     compileOptions {

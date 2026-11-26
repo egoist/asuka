@@ -13,6 +13,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.NotificationCompat
@@ -262,6 +263,8 @@ object AsukaNotifications {
     private fun manager(ctx: Context) = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     fun defaultChannel(ctx: Context) {
+        // Before Android 8 there are no channels: the builder's priority and defaults say it (legacyChannel).
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = manager(ctx)
         if (nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(NotificationChannel(CHANNEL, "Notifications", NotificationManager.IMPORTANCE_DEFAULT))
@@ -277,6 +280,13 @@ object AsukaNotifications {
 
     /** notify.SetChannels: makes and renames them, deletes the ones it made before that aren't listed. */
     fun setChannels(ctx: Context, a: JSONArray) {
+        // Before Android 8 there are no channels: they're kept, and the
+        // builder gives a notification its channel's priority, sound and
+        // vibration (legacyChannel).
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            prefs(ctx).edit().putString("legacyChannels", a.toString()).apply()
+            return
+        }
         val nm = manager(ctx)
         val ids = HashSet<String>()
         for (i in 0 until a.length()) {
@@ -299,6 +309,8 @@ object AsukaNotifications {
 
     /** notify.SetChannelGroups, likewise. */
     fun setGroups(ctx: Context, a: JSONArray) {
+        // Before Android 8 there are no channels to group: nothing shows them.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = manager(ctx)
         val ids = HashSet<String>()
         for (i in 0 until a.length()) {
@@ -379,7 +391,7 @@ object AsukaNotifications {
 
     private fun build(ctx: Context, spec: JSONObject, quiet: Boolean): Notification? {
         val id = spec.getString("id")
-        val channel = spec.optString("channel").takeIf { it.isNotEmpty() && manager(ctx).getNotificationChannel(it) != null } ?: CHANNEL
+        val channel = spec.optString("channel").takeIf { it.isNotEmpty() && hasChannel(ctx, it) } ?: CHANNEL
         val b = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(ctx.applicationInfo.icon)
             .setContentTitle(spec.optString("title"))
@@ -389,6 +401,7 @@ object AsukaNotifications {
             .setDeleteIntent(broadcast(ctx, AsukaNotifyReceiver.DELETED, id, "", spec, mutable = false))
         spec.optString("subtitle").takeIf { it.isNotEmpty() }?.let { b.setSubText(it) }
         spec.optInt("badge").takeIf { it > 0 }?.let { b.setNumber(it) }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) legacyChannel(ctx, b, channel, quiet || spec.optBoolean("silent"))
         if (quiet || spec.optBoolean("silent")) b.setSilent(true)
         spec.optString("thread").takeIf { it.isNotEmpty() }?.let {
             b.setGroup(it).setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
@@ -419,6 +432,43 @@ object AsukaNotifications {
             b.setStyle(NotificationCompat.BigTextStyle().bigText(spec.optString("body")))
         }
         return b.build()
+    }
+
+    /** Whether the app made channel id (notify.SetChannels): before Android 8, whether it's kept. */
+    private fun hasChannel(ctx: Context, id: String): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) manager(ctx).getNotificationChannel(id) != null
+        else legacyChannelSpec(ctx, id) != null
+
+    private fun legacyChannelSpec(ctx: Context, id: String): JSONObject? {
+        val a = try { JSONArray(prefs(ctx).getString("legacyChannels", "[]")) } catch (_: Exception) { return null }
+        for (i in 0 until a.length()) a.optJSONObject(i)?.takeIf { it.optString("id") == id }?.let { return it }
+        return null
+    }
+
+    /**
+     * Before Android 8, what a channel would say goes on the builder: its
+     * importance as the priority; its sound and vibration as the defaults
+     * (a low or min one makes no sound, as its channel wouldn't; vibrating
+     * takes the VIBRATE permission). The default channel's: the default
+     * priority and sound, no vibration (as the channel it makes).
+     */
+    private fun legacyChannel(ctx: Context, b: NotificationCompat.Builder, channel: String, silent: Boolean) {
+        val c = if (channel == CHANNEL) null else legacyChannelSpec(ctx, channel)
+        val importance = c?.optInt("importance") ?: 0
+        b.setPriority(when (importance) {
+            1 -> NotificationCompat.PRIORITY_HIGH
+            2 -> NotificationCompat.PRIORITY_LOW
+            3 -> NotificationCompat.PRIORITY_MIN
+            else -> NotificationCompat.PRIORITY_DEFAULT
+        })
+        if (silent || importance == 2 || importance == 3) return
+        var d = NotificationCompat.DEFAULT_LIGHTS
+        if (c?.optBoolean("silent") != true) d = d or NotificationCompat.DEFAULT_SOUND
+        if (c != null && !c.optBoolean("noVibration") &&
+            ctx.checkSelfPermission(Manifest.permission.VIBRATE) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            d = d or NotificationCompat.DEFAULT_VIBRATE
+        }
+        b.setDefaults(d)
     }
 
     /** A message: MessagingStyle with its conversation's messages, and the conversation's long-lived shortcut. */
@@ -549,8 +599,10 @@ object AsukaNotifications {
             style.addLine("${x.getCharSequence(Notification.EXTRA_TITLE) ?: ""}  ${x.getCharSequence(Notification.EXTRA_TEXT) ?: ""}".trim())
         }
         top.optString("summary").takeIf { it.isNotEmpty() }?.let { style.setSummaryText(it) }
-        val channel = latest?.optString("channel")?.takeIf { it.isNotEmpty() && manager(ctx).getNotificationChannel(it) != null }
-            ?: kids.firstOrNull()?.notification?.channelId ?: CHANNEL
+        // Before Android 8 there are no channels: the summary is silent either way.
+        val channel = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) CHANNEL
+            else latest?.optString("channel")?.takeIf { it.isNotEmpty() && manager(ctx).getNotificationChannel(it) != null }
+                ?: kids.firstOrNull()?.notification?.channelId ?: CHANNEL
         val open = (ctx.packageManager.getLaunchIntentForPackage(ctx.packageName) ?: Intent()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val n = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(ctx.applicationInfo.icon)

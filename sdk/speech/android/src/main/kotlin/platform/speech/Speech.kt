@@ -8,6 +8,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -46,8 +47,23 @@ private object Engine {
     private val audio get() = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
-    private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attributes).build()
+    // Before Android 8 audio focus is asked for with a listener, for the
+    // stream the attributes play on (music's).
+    private val focus = if (Build.VERSION.SDK_INT >= 26) AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attributes).build() else null
+    private val focusListener = AudioManager.OnAudioFocusChangeListener {}
     private var focused = false
+
+    @Suppress("DEPRECATION")
+    private fun requestFocus(): Boolean {
+        val r = if (Build.VERSION.SDK_INT >= 26) audio.requestAudioFocus(focus!!)
+            else audio.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+        return r == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    @Suppress("DEPRECATION")
+    private fun abandonFocus() {
+        if (Build.VERSION.SDK_INT >= 26) audio.abandonAudioFocusRequest(focus!!) else audio.abandonAudioFocus(focusListener)
+    }
 
     val speaking get() = queue.isNotEmpty()
 
@@ -77,7 +93,9 @@ private object Engine {
             override fun onError(id: String) { main.post { current(id)?.let { done(it, Exception("speech failed")) } } }
             override fun onError(id: String, code: Int) { main.post { current(id)?.let { done(it, Exception("speech failed ($code)")) } } }
             override fun onStop(id: String, interrupted: Boolean) { main.post { current(id)?.let { done(it, SpeechException(SpeechError.STOPPED)) } } }
-            // The word being spoken: where a pause resumes from.
+            // The word being spoken: where a pause resumes from. Before
+            // Android 8 the engine doesn't say, and a pause resumes from the
+            // utterance's start.
             override fun onRangeStart(id: String, start: Int, end: Int, frame: Int) {
                 main.post {
                     val uid = current(id) ?: return@post
@@ -100,7 +118,7 @@ private object Engine {
         t.setPitch((if (o.pitch > 0) o.pitch else 1.0).toFloat().coerceIn(0.5f, 2f))
         t.setSpeechRate((if (o.rate > 0) o.rate else 1.0).toFloat().coerceIn(0.5f, 2f))
         val params = Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, o.volume.toFloat().coerceIn(0f, 1f)) }
-        if (!focused) focused = audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        if (!focused) focused = requestFocus()
         spokenFrom[u.id] = u.offset
         t.speak(u.text.substring(u.offset), TextToSpeech.QUEUE_ADD, params, u.id + "#" + gen)
     }
@@ -119,7 +137,7 @@ private object Engine {
         spokenFrom.remove(id)
         u.done(err)
         if (queue.isEmpty() && focused) {
-            audio.abandonAudioFocusRequest(focus)
+            abandonFocus()
             focused = false
         }
     }
@@ -147,7 +165,7 @@ private object Engine {
         halt()
         for (u in us) u.done(SpeechException(SpeechError.STOPPED))
         if (focused) {
-            audio.abandonAudioFocusRequest(focus)
+            abandonFocus()
             focused = false
         }
     }

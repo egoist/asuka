@@ -56,7 +56,7 @@ object AsukaAutomation {
         }
         receiver = r
         val f = IntentFilter("dev.asuka.automation")
-        app.registerReceiver(r, f, Context.RECEIVER_EXPORTED)
+        androidx.core.content.ContextCompat.registerReceiver(app, r, f, androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
     }
 
     private fun run(rt: AsukaRuntime, line: String) {
@@ -162,7 +162,7 @@ object AsukaAutomation {
 
     /** What TalkBack is told about each view: its class, hint and content description. */
     private fun a11y(rt: AsukaRuntime) = write(rt, "asuka-a11y.txt", shown(rt).map { v ->
-        val i = v.createAccessibilityNodeInfo()
+        val i = androidx.core.view.accessibility.AccessibilityNodeInfoCompat.wrap(v.createAccessibilityNodeInfo())
         "${i.className}\t${i.hintText ?: ""}\t${i.contentDescription ?: ""}"
     })
 
@@ -194,7 +194,9 @@ object AsukaAutomation {
         if (i.isHeading) f += "heading=true"
         if (v.isFocused) f += "focused=" + (if (v.isInTouchMode) "touch" else "keyboard")
         if (hiddenFromScreenReaders(v)) f += "hidden=true"
-        if (!v.defaultFocusHighlightEnabled || (v as? AsukaContainer)?.noFocusRing == true) f += "focusRing=none"
+        // Before Android 8 there's no default focus highlight: only the container's ring.
+        val highlight = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O || v.defaultFocusHighlightEnabled
+        if (!highlight || (v as? AsukaContainer)?.noFocusRing == true) f += "focusRing=none"
         if (f.size == 1) null // its class alone: nothing of RFC 0010's
         else (textOf(v) ?: a11yTextOf(v)?.toString() ?: "") + "\t" + f.joinToString(" ")
     })

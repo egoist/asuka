@@ -9,3 +9,7 @@ plugins {
 android {
     namespace = "platform.nfc"
 }
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.16.0")
+}

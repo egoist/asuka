@@ -9,6 +9,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.Build
 import android.os.SystemClock
 import android.text.SpannableString
 import android.text.Spanned
@@ -94,9 +95,26 @@ object AsukaWidgetLayout {
         }
     }
 
-    private fun RemoteViews.color(id: Int, method: String, p: Paint) = when (p) {
-        is Paint.Res -> setColorStateList(id, method, p.id)
-        is Paint.Argb -> setColorStateList(id, method, ColorStateList.valueOf(p.c))
+    private fun RemoteViews.color(ctx: Context, id: Int, method: String, p: Paint) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            when (p) {
+                is Paint.Res -> setColorStateList(id, method, p.id)
+                is Paint.Argb -> setColorStateList(id, method, ColorStateList.valueOf(p.c))
+            }
+            return
+        }
+        // Before Android 12 there are no color state lists: the color, as
+        // it resolves for the configuration now, through the int setters;
+        // a bar's tint has none (it's the theme's accent).
+        val c = when (p) {
+            is Paint.Res -> ctx.getColor(p.id)
+            is Paint.Argb -> p.c
+        }
+        when (method) {
+            "setTextColor" -> setTextColor(id, c)
+            "setImageTintList" -> setInt(id, "setColorFilter", c)
+            "setBackgroundTintList" -> setInt(id, "setBackgroundColor", c)
+        }
     }
 
     private fun dp(ctx: Context, v: Double) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), ctx.resources.displayMetrics).toInt()
@@ -152,6 +170,7 @@ object AsukaWidgetLayout {
      * where no part of it has a link of its own.
      */
     fun render(ctx: Context, root: JSONObject, open: (String) -> PendingIntent): RemoteViews {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return legacyRender(ctx, root, open)
         val bg = root.optString("bg")
         val v = node(ctx, root, axis = null, stretch = false, open = open, isRoot = true)
         // A widget's padding (Android's design guidance: 16dp), unless it has its own.
@@ -160,10 +179,37 @@ object AsukaWidgetLayout {
             v.setViewPadding(ID, p, p, p, p)
         }
         v.setInt(ID, "setBackgroundResource", R.drawable.asuka_widget_background)
-        paint(bg)?.let { v.color(ID, "setBackgroundTintList", it) }
+        paint(bg)?.let { v.color(ctx, ID, "setBackgroundTintList", it) }
         v.setViewLayoutWidth(ID, ViewGroup.LayoutParams.MATCH_PARENT.toFloat(), TypedValue.COMPLEX_UNIT_PX)
         v.setViewLayoutHeight(ID, ViewGroup.LayoutParams.MATCH_PARENT.toFloat(), TypedValue.COMPLEX_UNIT_PX)
         return v
+    }
+
+    /**
+     * Before Android 12 a view's size can't be set: the root goes in a
+     * cell, which fills the widget (asuka_wl_cell) and has the widget's
+     * background and padding, and places the root where its own
+     * alignment would place what it holds.
+     */
+    private fun legacyRender(ctx: Context, root: JSONObject, open: (String) -> PendingIntent): RemoteViews {
+        val cell = RemoteViews(ctx.packageName, R.layout.asuka_wl_cell)
+        if (listOf("pt", "pb", "ps", "pe").all { root.optDouble(it, 0.0) <= 0 }) {
+            val p = dp(ctx, 16.0)
+            cell.setViewPadding(ID, p, p, p, p)
+        }
+        cell.setInt(ID, "setBackgroundResource", R.drawable.asuka_widget_background)
+        paint(root.optString("bg"))?.let { cell.color(ctx, ID, "setBackgroundTintList", it) }
+        val a = root.optString("align")
+        cell.setInt(ID, "setGravity", when (root.optString("t")) {
+            "column" -> Gravity.TOP or when (a) { "center" -> Gravity.CENTER_HORIZONTAL; "end" -> Gravity.END; else -> Gravity.START }
+            "row" -> Gravity.START or when (a) { "start" -> Gravity.TOP; "end" -> Gravity.BOTTOM; else -> Gravity.CENTER_VERTICAL }
+            "layers" -> when (a) { "start" -> Gravity.START; "end" -> Gravity.END; else -> Gravity.CENTER_HORIZONTAL } or
+                when (root.optString("valign")) { "start" -> Gravity.TOP; "end" -> Gravity.BOTTOM; else -> Gravity.CENTER_VERTICAL }
+            else -> Gravity.TOP or Gravity.START
+        })
+        cell.removeAllViews(ID)
+        cell.addView(ID, node(ctx, root, axis = null, stretch = false, open = open, isRoot = true))
+        return cell
     }
 
     /** axis: its parent's ('v' a column, 'h' a row, null layers or the root). */
@@ -186,7 +232,8 @@ object AsukaWidgetLayout {
                 for (i in 0 until (kids?.length() ?: 0)) {
                     val c = kids!!.getJSONObject(i)
                     val cv = node(ctx, c, if (col) 'v' else 'h', col && a == "stretch", open)
-                    if (i > 0 && spacing > 0) {
+                    // Before Android 12 a margin can't be set: no spacing.
+                    if (i > 0 && spacing > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                         cv.setViewLayoutMargin(ID, if (col) RemoteViews.MARGIN_TOP else RemoteViews.MARGIN_START, spacing.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
                     }
                     v.addView(ID, cv)
@@ -209,7 +256,7 @@ object AsukaWidgetLayout {
                 val (size, medium) = textStyle(ctx, n.optString("style"))
                 if (n.optDouble("size", 0.0) > 0) v.setTextViewTextSize(ID, TypedValue.COMPLEX_UNIT_SP, n.optDouble("size").toFloat())
                 else v.setTextViewTextSize(ID, TypedValue.COMPLEX_UNIT_PX, size)
-                v.color(ID, "setTextColor", color ?: Paint.Res(R.color.asuka_widget_on_surface))
+                v.color(ctx, ID, "setTextColor", color ?: Paint.Res(R.color.asuka_widget_on_surface))
                 if (t == "text") {
                     v.setTextViewText(ID, weighted(n.optString("text"), n.optString("weight"), medium))
                     val lines = n.optInt("lines")
@@ -225,28 +272,36 @@ object AsukaWidgetLayout {
             "symbol" -> {
                 val res = symbolDrawables[n.optString("name")] ?: symbolDrawables[n.optString("name").removeSuffix(".fill")]
                 if (res != null) v.setImageViewResource(ID, res)
-                v.color(ID, "setImageTintList", color ?: Paint.Res(R.color.asuka_widget_on_surface))
+                v.color(ctx, ID, "setImageTintList", color ?: Paint.Res(R.color.asuka_widget_on_surface))
                 // Its size: as tall as the body's text, by default (Material's 24dp beside 16sp).
-                val px = if (n.optDouble("size", 0.0) > 0) dp(ctx, n.optDouble("size")) else dp(ctx, 20.0)
-                v.setViewLayoutWidth(ID, px.toFloat(), TypedValue.COMPLEX_UNIT_PX)
-                v.setViewLayoutHeight(ID, px.toFloat(), TypedValue.COMPLEX_UNIT_PX)
+                // Before Android 12, the drawable's own.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val px = if (n.optDouble("size", 0.0) > 0) dp(ctx, n.optDouble("size")) else dp(ctx, 20.0)
+                    v.setViewLayoutWidth(ID, px.toFloat(), TypedValue.COMPLEX_UNIT_PX)
+                    v.setViewLayoutHeight(ID, px.toFloat(), TypedValue.COMPLEX_UNIT_PX)
+                }
             }
             "image" -> bitmap(ctx, n.optString("name"))?.let { v.setImageViewBitmap(ID, it) }
             "progress" -> {
                 v.setProgressBar(ID, 1000, (n.optDouble("value", 0.0).coerceIn(0.0, 1.0) * 1000).toInt(), false)
-                v.color(ID, "setProgressTintList", color ?: Paint.Res(R.color.asuka_widget_accent))
-                if (axis != 'h') v.setViewLayoutWidth(ID, ViewGroup.LayoutParams.MATCH_PARENT.toFloat(), TypedValue.COMPLEX_UNIT_PX)
+                v.color(ctx, ID, "setProgressTintList", color ?: Paint.Res(R.color.asuka_widget_accent))
+                if (axis != 'h' && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    v.setViewLayoutWidth(ID, ViewGroup.LayoutParams.MATCH_PARENT.toFloat(), TypedValue.COMPLEX_UNIT_PX)
+                }
             }
             "gauge" -> {
                 v.setProgressBar(R.id.asuka_wl_ring, 1000, (n.optDouble("value", 0.0).coerceIn(0.0, 1.0) * 1000).toInt(), false)
-                v.color(R.id.asuka_wl_ring, "setProgressTintList", color ?: Paint.Res(R.color.asuka_widget_accent))
+                v.color(ctx, R.id.asuka_wl_ring, "setProgressTintList", color ?: Paint.Res(R.color.asuka_widget_accent))
                 v.setTextViewText(R.id.asuka_wl_label, n.optString("text"))
             }
             "divider" -> {
-                v.color(ID, "setBackgroundTintList", Paint.Res(R.color.asuka_widget_outline_variant))
+                // The drawable first: before Android 12 the color replaces it.
                 v.setInt(ID, "setBackgroundResource", R.drawable.asuka_wl_fill)
+                v.color(ctx, ID, "setBackgroundTintList", Paint.Res(R.color.asuka_widget_outline_variant))
                 val match = ViewGroup.LayoutParams.MATCH_PARENT.toFloat()
-                if (axis == 'h') v.setViewLayoutHeight(ID, match, TypedValue.COMPLEX_UNIT_PX) else v.setViewLayoutWidth(ID, match, TypedValue.COMPLEX_UNIT_PX)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (axis == 'h') v.setViewLayoutHeight(ID, match, TypedValue.COMPLEX_UNIT_PX) else v.setViewLayoutWidth(ID, match, TypedValue.COMPLEX_UNIT_PX)
+                }
             }
             "spacer" -> {
                 val min = dp(ctx, n.optDouble("size", 0.0))
@@ -263,17 +318,21 @@ object AsukaWidgetLayout {
         if (pt > 0 || pb > 0 || ps > 0 || pe > 0) v.setViewPadding(ID, if (rtl) pe else ps, pt, if (rtl) ps else pe, pb)
         if (!isRoot) paint(n.optString("bg"))?.let {
             v.setInt(ID, "setBackgroundResource", R.drawable.asuka_wl_fill)
-            v.color(ID, "setBackgroundTintList", it)
+            v.color(ctx, ID, "setBackgroundTintList", it)
         }
-        val radius = n.optDouble("radius", 0.0)
-        if (radius > 0) v.setViewOutlinePreferredRadius(ID, radius.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
-        val match = ViewGroup.LayoutParams.MATCH_PARENT.toFloat()
-        // Its frame; a layer or the root that fills, both ways; a column's
-        // child that stretches, across it.
-        if (n.optDouble("w", 0.0) > 0) v.setViewLayoutWidth(ID, n.optDouble("w").toFloat(), TypedValue.COMPLEX_UNIT_DIP)
-        else if (stretch || n.optBoolean("fill") && axis == null) v.setViewLayoutWidth(ID, match, TypedValue.COMPLEX_UNIT_PX)
-        if (n.optDouble("h", 0.0) > 0) v.setViewLayoutHeight(ID, n.optDouble("h").toFloat(), TypedValue.COMPLEX_UNIT_DIP)
-        else if (n.optBoolean("fill") && axis == null) v.setViewLayoutHeight(ID, match, TypedValue.COMPLEX_UNIT_PX)
+        // Before Android 12 a view's corners and frame can't be set: its
+        // layout's own (wrapping what it holds), square.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val radius = n.optDouble("radius", 0.0)
+            if (radius > 0) v.setViewOutlinePreferredRadius(ID, radius.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+            val match = ViewGroup.LayoutParams.MATCH_PARENT.toFloat()
+            // Its frame; a layer or the root that fills, both ways; a column's
+            // child that stretches, across it.
+            if (n.optDouble("w", 0.0) > 0) v.setViewLayoutWidth(ID, n.optDouble("w").toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+            else if (stretch || n.optBoolean("fill") && axis == null) v.setViewLayoutWidth(ID, match, TypedValue.COMPLEX_UNIT_PX)
+            if (n.optDouble("h", 0.0) > 0) v.setViewLayoutHeight(ID, n.optDouble("h").toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+            else if (n.optBoolean("fill") && axis == null) v.setViewLayoutHeight(ID, match, TypedValue.COMPLEX_UNIT_PX)
+        }
         val opacity = n.optDouble("opacity", 1.0)
         if (opacity < 1) v.setFloat(ID, "setAlpha", opacity.toFloat())
         val url = n.optString("url")

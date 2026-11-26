@@ -18,6 +18,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.FileProvider
+import androidx.core.content.pm.PackageInfoCompat
 import dev.asuka.AsukaModules
 import dev.asuka.AsukaUnsupportedException
 import java.io.File as JFile
@@ -32,7 +33,7 @@ class AndroidDevice(private val app: Context) : Platform {
     override suspend fun info(): NativeInfo {
         val p = app.packageManager.getPackageInfo(app.packageName, 0)
         return NativeInfo(model = Build.MODEL, system = "Android", systemVersion = Build.VERSION.RELEASE,
-            appVersion = p.versionName ?: "", build = p.longVersionCode.toString(),
+            appVersion = p.versionName ?: "", build = PackageInfoCompat.getLongVersionCode(p).toString(),
             source = installSource(), installedMs = p.firstInstallTime, updatedMs = p.lastUpdateTime)
     }
 
@@ -110,7 +111,8 @@ class AndroidDevice(private val app: Context) : Platform {
         val text = d.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) || d.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML)
         val image = d.hasMimeType("image/*")
         // A link: a URI list, or text the system classified as a URL.
-        val url = d.hasMimeType(ClipDescription.MIMETYPE_TEXT_URILIST) ||
+        // Before Android 12 the system doesn't classify it: a URI list only.
+        val url = d.hasMimeType(ClipDescription.MIMETYPE_TEXT_URILIST) || Build.VERSION.SDK_INT >= 31 &&
             d.classificationStatus == ClipDescription.CLASSIFICATION_COMPLETE && d.getConfidenceScore(TextClassifier.TYPE_URL) >= 0.5f
         return ClipboardKinds(text = text, image = image, url = url)
     }

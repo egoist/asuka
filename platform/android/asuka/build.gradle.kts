@@ -16,10 +16,13 @@ android {
     namespace = "dev.asuka"
     compileSdk = 36
     defaultConfig {
-        minSdk = 33
+        minSdk = 24
         consumerProguardFiles("consumer-rules.pro")
     }
     compileOptions {
+        // java.time and the rest of Java 8's library on Android 7 (API 24,
+        // 25), which hasn't it: desugared into the app.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -51,6 +54,7 @@ if (embed) afterEvaluate {
 kotlin { jvmToolchain(17) }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     api("com.google.android.material:material:1.14.0")
     api("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.core:core-ktx:1.16.0")

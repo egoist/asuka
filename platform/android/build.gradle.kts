@@ -79,13 +79,15 @@ subprojects {
         .take(4).joinToString("") { "%02x".format(it) }
     layout.buildDirectory.set(rootProject.layout.buildDirectory.dir("native/$name-$source"))
     plugins.withId("com.android.library") {
+        dependencies.add("coreLibraryDesugaring", "com.android.tools:desugar_jdk_libs:2.1.5")
         extensions.configure<com.android.build.gradle.LibraryExtension> {
             compileSdk = 36
             defaultConfig {
-                minSdk = 33
+                minSdk = 24
                 testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
             }
             compileOptions {
+                isCoreLibraryDesugaringEnabled = true
                 sourceCompatibility = JavaVersion.VERSION_17
                 targetCompatibility = JavaVersion.VERSION_17
             }

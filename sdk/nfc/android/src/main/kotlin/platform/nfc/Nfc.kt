@@ -29,6 +29,8 @@ import android.nfc.tech.TagTechnology
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import dev.asuka.AsukaModules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
@@ -95,7 +97,7 @@ class AndroidReader(private val app: Application) : Reader {
         }
         withContext(Dispatchers.Main) {
             changed(state())
-            app.registerReceiver(r, IntentFilter(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED), Context.RECEIVER_NOT_EXPORTED)
+            ContextCompat.registerReceiver(app, r, IntentFilter(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
         }
         try {
             awaitCancellation()
@@ -288,7 +290,7 @@ class AndroidReader(private val app: Application) : Reader {
         i.putExtra("asuka.nfc.given", true)
         // A URI's tag opens the app as its link (openURL).
         if (action == NfcAdapter.ACTION_NDEF_DISCOVERED && i.data != null) return
-        val tag = i.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java) ?: return
+        val tag = IntentCompat.getParcelableExtra(i, NfcAdapter.EXTRA_TAG, Tag::class.java) ?: return
         val h = ++handles
         held[h] = Held(tag)
         io.execute {

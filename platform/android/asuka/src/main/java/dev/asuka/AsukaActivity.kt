@@ -1,8 +1,10 @@
 package dev.asuka
 
 import android.content.ComponentCallbacks2
+import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -100,8 +102,10 @@ open class AsukaActivity : AppCompatActivity() {
         }
         // The core starts now, with the window's size and insets, so the
         // first frame has the app's views; a frame that doesn't fill the
-        // window (a share sheet's) is measured first.
-        if (fillsWindow) {
+        // window (a share sheet's) is measured first. Before Android 11 the
+        // window's size and insets aren't known till it's laid out: it's
+        // measured first too.
+        if (fillsWindow && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val m = windowManager.currentWindowMetrics
             val bars = m.windowInsets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
             safe = safeInsets(intArrayOf(bars.top, bars.right, bars.bottom, bars.left))
@@ -218,7 +222,7 @@ open class AsukaActivity : AppCompatActivity() {
             scale = d,
             fontScale = c.fontScale,
             dark = runtime.isNight(c),
-            reduceMotion = !android.animation.ValueAnimator.areAnimatorsEnabled(),
+            reduceMotion = !animatorsEnabled(this),
             screenReader = a11y.isTouchExplorationEnabled,
             widthClass = widthClass(size[0] / d), heightClass = heightClass(size[1] / d),
             locale = runtime.region.locale,
@@ -339,3 +343,12 @@ internal fun openedFileURL(ctx: android.content.Context, uri: android.net.Uri): 
     input.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
     return android.net.Uri.fromFile(f).toString()
 }
+
+/**
+ * Whether animations run: not when they're turned off in the system's
+ * settings (less motion). Before Android 8 that's read from the setting
+ * itself: an animator duration scale of 0.
+ */
+internal fun animatorsEnabled(c: Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) android.animation.ValueAnimator.areAnimatorsEnabled()
+    else android.provider.Settings.Global.getFloat(c.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f

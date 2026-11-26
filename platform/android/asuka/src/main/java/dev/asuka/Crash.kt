@@ -5,6 +5,8 @@ import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
 import android.os.Process
+import androidx.annotation.RequiresApi
+import androidx.core.content.pm.PackageInfoCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -19,7 +21,7 @@ import java.util.UUID
  * - an uncaught JVM exception, as the app ends (the handler before it,
  *   the system's, still runs): inbox/exception-<UUID>.json, with every
  *   thread's stack;
- * - on the next launch, how the last runs ended, from
+ * - on the next launch (Android 11 and later), how the last runs ended, from
  *   ActivityManager.getHistoricalProcessExitReasons: native crashes
  *   with their tombstone, ANRs with their traces, low-memory kills,
  *   excessive resource use: inbox/exit-<time>-<pid>.json, and its trace
@@ -47,8 +49,12 @@ object AsukaCrash {
             if (previous != null) previous.uncaughtException(t, e)
             else { Process.killProcess(Process.myPid()); System.exit(10) }
         }
-        val app = context.applicationContext
-        Thread({ runCatching { exits(app, root, box) } }, "asuka-crash").start()
+        // Before Android 11 there's no record of how the last run ended:
+        // only what the crash handler wrote.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val app = context.applicationContext
+            Thread({ runCatching { exits(app, root, box) } }, "asuka-crash").start()
+        }
     }
 
     /**
@@ -60,7 +66,7 @@ object AsukaCrash {
         val state = ActivityManager.RunningAppProcessInfo()
         ActivityManager.getMyMemoryState(state)
         val p = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
-        val build = p?.longVersionCode?.toString() ?: ""
+        val build = p?.let { PackageInfoCompat.getLongVersionCode(it).toString() } ?: ""
         return JSONObject(mapOf(
             "model" to Build.MODEL, "system" to "Android", "systemVersion" to Build.VERSION.RELEASE,
             "appVersion" to (p?.versionName ?: ""), "build" to build,
@@ -87,6 +93,7 @@ object AsukaCrash {
     }
 
     /** Writes how the runs since the last launch ended, those that crashed. */
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun exits(context: Context, root: File, box: File) {
         val am = context.getSystemService(ActivityManager::class.java) ?: return
         val seen = File(root, "exits")

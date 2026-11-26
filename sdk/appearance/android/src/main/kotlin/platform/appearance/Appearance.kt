@@ -1,6 +1,7 @@
 // platform/appearance on Android: the accent is the wallpaper's color
 // Material You takes (the system's accent1, at its light or dark tone, as
-// the system's dynamic primary); more contrast is the contrast level
+// the system's dynamic primary), none before Android 12, which has no
+// system accent (an app's colors are its own); more contrast is the contrast level
 // above standard (Android 14) or high contrast text. Android has no
 // Reduce Transparency. The configuration's changes (dark mode, the
 // wallpaper's colors) come through the application's callbacks.
@@ -25,11 +26,13 @@ class MaterialAppearance(private val app: Context) : System {
     private val ui = app.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
 
     override fun current(): Settings {
+        val contrast = if (Build.VERSION.SDK_INT >= 34 && ui.contrast > 0f) true
+        else AndroidSettings.Secure.getInt(app.contentResolver, "high_text_contrast_enabled", 0) == 1
+        // Before Android 12 the system has no accent of its own: none.
+        if (Build.VERSION.SDK_INT < 31) return Settings(hasAccent = false, increaseContrast = contrast, reduceTransparency = false)
         // The system's own colors, whatever the app's scheme.
         val night = (app.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val c = app.getColor(if (night) android.R.color.system_accent1_200 else android.R.color.system_accent1_600)
-        val contrast = if (Build.VERSION.SDK_INT >= 34 && ui.contrast > 0f) true
-        else AndroidSettings.Secure.getInt(app.contentResolver, "high_text_contrast_enabled", 0) == 1
         return Settings(hasAccent = true, red = ((c shr 16) and 0xff).toLong(), green = ((c shr 8) and 0xff).toLong(), blue = (c and 0xff).toLong(),
             increaseContrast = contrast, reduceTransparency = false)
     }

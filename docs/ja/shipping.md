@@ -117,7 +117,7 @@ keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 2
 ASUKA_KEYSTORE_PASSWORD=... asuka build --platform android
 ```
 
-（鍵のパスワードがキーストアと異なる場合は `ASUKA_KEY_PASSWORD` も渡します。CI では `ASUKA_KEYSTORE` と `ASUKA_KEY_ALIAS` でキーストアとエイリアスを指定します。）これで Google Play 向けの `.aab` ができます。対象は、64 ビットと 32 ビットの ARM のスマートフォンと x86_64（エミュレーター、Chromebook）で、Android 13 以降です。中身は、アーキテクチャごとにコンパイルしたアプリです。Play はこの `.aab` から、各スマートフォンのアーキテクチャだけを含む APK を作ります。`std/sqlite` を使うアプリでは、各アーキテクチャのアプリに SQLite が組み込まれます。`asuka publish --platform android` は、ビルドしてから Google Play にアップロードします（[ストアへの公開](#ストアへの公開)を参照）。
+（鍵のパスワードがキーストアと異なる場合は `ASUKA_KEY_PASSWORD` も渡します。CI では `ASUKA_KEYSTORE` と `ASUKA_KEY_ALIAS` でキーストアとエイリアスを指定します。）これで Google Play 向けの `.aab` ができます。対象は、64 ビットと 32 ビットの ARM のスマートフォンと x86_64（エミュレーター、Chromebook）で、Android 7 以降です。中身は、アーキテクチャごとにコンパイルしたアプリです。Play はこの `.aab` から、各スマートフォンのアーキテクチャだけを含む APK を作ります。`std/sqlite` を使うアプリでは、各アーキテクチャのアプリに SQLite が組み込まれます。`asuka publish --platform android` は、ビルドしてから Google Play にアップロードします（[ストアへの公開](#ストアへの公開)を参照）。
 
 `--apk` を付けると、代わりにすべてのアーキテクチャを含む署名済みのリリース用 `.apk` を作ります。そのままインストールできます（`adb install dist/<Name>.apk`）。リリースビルドのテストや、ストアを通さずにアプリを配るときに使います。
 

@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.os.Build
 import android.view.View
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -78,6 +79,8 @@ class AsukaCanvas(private val rt: AsukaRuntime) : View(rt.themed) {
         fun radial(colors: IntArray, stops: FloatArray): Shader? {
             val cx = f() * d; val cy = f() * d; val rad = f() * d; val fx = f() * d; val fy = f() * d
             if (colors.size < 2 || rad <= 0f) return null
+            // Before Android 12 a radial gradient has no focus: it spreads from its center.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return android.graphics.RadialGradient(cx, cy, rad, colors, stops, Shader.TileMode.CLAMP)
             val longs = LongArray(colors.size) { android.graphics.Color.pack(colors[it]) }
             return android.graphics.RadialGradient(fx, fy, 0f, cx, cy, rad, longs, stops, Shader.TileMode.CLAMP)
         }
@@ -168,7 +171,7 @@ class AsukaCanvas(private val rt: AsukaRuntime) : View(rt.themed) {
                     val align = r.get().toInt()
                     val x = f() * d; val y = f() * d
                     val b = ByteArray(r.int).also { r.get(it) }
-                    text.typeface = Typeface.create(Typeface.DEFAULT, if (weight > 0) weight else 400, false)
+                    text.typeface = AsukaFonts.weighted(context, Typeface.DEFAULT, if (weight > 0) weight else 400, false)
                     text.textAlign = when (align) {
                         AsukaTextAlign.CENTER -> Paint.Align.CENTER
                         AsukaTextAlign.END -> Paint.Align.RIGHT

@@ -2422,7 +2422,8 @@ async fn caption(recording: string) throws -> string {
 ```
 
 The Speech framework on iOS and the Mac, asked to stay on the device;
-Android's on-device recognizer (Android 13 and later); in a browser,
+Android's on-device recognizer (a recording on Android 13 and later,
+`listen` on Android 12 and later); in a browser,
 its own recognizer where it runs on the device (Chrome 139 and later),
 which hears the recording played into it, so a file takes about its own
 length and has no `segments`; Windows' desktop speech recognizer (SAPI's

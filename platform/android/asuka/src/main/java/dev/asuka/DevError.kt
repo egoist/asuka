@@ -184,7 +184,8 @@ class AsukaDevErrors(private val rt: AsukaRuntime) {
                 w.statusBarColor = Color.TRANSPARENT
                 w.navigationBarColor = Color.TRANSPARENT
             }
-            w.isNavigationBarContrastEnforced = true
+            // A scrim behind three-button navigation (before Android 10 the system has none to enforce).
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) w.isNavigationBarContrastEnforced = true
             if (!animated) w.setWindowAnimations(0)
         }
         bars(d)
@@ -238,7 +239,8 @@ class AsukaDevErrors(private val rt: AsukaRuntime) {
 
         // The title: small and semibold, the error's red, or a build's orange.
         text(e.title, appearance(com.google.android.material.R.attr.textAppearanceLabelLarge), 8).apply {
-            typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+            // Before Android 9 there are no weights between: 600 is bold.
+            typeface = androidx.core.graphics.TypefaceCompat.create(ctx, Typeface.DEFAULT, 600, false)
             setTextColor(if (e.build) MaterialColors.harmonizeWithPrimary(ctx, if (night) 0xFFFFB86E.toInt() else 0xFF8B5000.toInt())
                 else color(androidx.appcompat.R.attr.colorError, Color.RED))
             ViewCompat.setAccessibilityHeading(this, true)
@@ -295,7 +297,7 @@ class AsukaDevErrors(private val rt: AsukaRuntime) {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(color(com.google.android.material.R.attr.colorSurface, Color.WHITE))
             layoutDirection = if (rt.rtl) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
-            accessibilityPaneTitle = e.title
+            ViewCompat.setAccessibilityPaneTitle(this, e.title)
             addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
             addView(MaterialDivider(ctx), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(buttons, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))

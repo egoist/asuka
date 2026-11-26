@@ -1,6 +1,9 @@
 package dev.asuka
 
+import android.content.Context
 import android.content.res.Configuration
+import android.content.res.Resources
+import android.os.Build
 import android.os.LocaleList
 import java.util.Locale
 
@@ -16,15 +19,34 @@ data class AsukaRegion(val languages: String, val locale: String, val firstWeekd
  * are the user's whatever language the app shows.
  */
 private fun AsukaRuntime.systemLocales(): LocaleList {
+    // Before Android 13 there's no app's language in the configuration:
+    // the system's resources have the system's locales.
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return Resources.getSystem().configuration.locales
     val list = app.getSystemService(android.app.LocaleManager::class.java)?.systemLocales
     return if (list == null || list.isEmpty) app.resources.configuration.locales else list
 }
 
+/** Where the app's language is kept before Android 13, which has no per-app languages. */
+private fun AsukaRuntime.localePrefs() = app.getSharedPreferences("dev.asuka.locale", Context.MODE_PRIVATE)
+
+/** The app's language SaveLocale kept, before Android 13, or null: the system's. */
+fun AsukaRuntime.savedAppLocale(): String? = localePrefs().getString("locale", null)?.ifEmpty { null }
+
+/** Keeps the app's language for its next launches, before Android 13, or "" to follow the system's. */
+fun AsukaRuntime.saveAppLocale(tag: String) = localePrefs().edit().putString("locale", tag).apply()
+
+/** l without its extensions (-u-, -t-). */
+private fun stripped(l: Locale): Locale =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) l.stripExtensions()
+    else runCatching { Locale.Builder().setLocale(l).clearExtensions().build() }.getOrDefault(l)
+
 fun AsukaRuntime.readRegion(): AsukaRegion {
     val tags = LinkedHashSet<String>()
     // The configuration has the app's language first, if it has one.
+    // Before Android 13 it has only the system's: the app's saved one comes first.
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) savedAppLocale()?.let { tags.add(stripped(Locale.forLanguageTag(it)).toLanguageTag()) }
     val config = app.resources.configuration.locales
-    for (i in 0 until config.size()) tags.add(config[i].stripExtensions().toLanguageTag())
+    for (i in 0 until config.size()) tags.add(stripped(config[i]).toLanguageTag())
     val formats = systemLocales()[0]
     return AsukaRegion(tags.joinToString(","), formats.toLanguageTag(), firstWeekday(formats), hourCycle(formats))
 }

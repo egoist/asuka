@@ -5,6 +5,8 @@ import android.content.ContentUris
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -23,9 +25,12 @@ import java.util.UUID
  * "export" JSON (path, name). Off the main thread where they wait.
  */
 class AsukaPhotoLibrary(private val rt: AsukaRuntime) {
-    private val all =
-        if (Build.VERSION.SDK_INT >= 34) arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-        else arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
+    private val all = when {
+        Build.VERSION.SDK_INT >= 34 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
+        // Before Android 13, photos are read with the storage permission.
+        else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
 
     private fun granted(p: String) = ContextCompat.checkSelfPermission(rt.app, p) == PackageManager.PERMISSION_GRANTED
 
@@ -76,22 +81,33 @@ class AsukaPhotoLibrary(private val rt: AsukaRuntime) {
     )
 
     private fun list(screenshots: Boolean, offset: Int, limit: Int): JSONArray {
+        // Before Android 10 there are no relative paths: the file's path says where it is.
+        @Suppress("DEPRECATION")
+        val path = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) MediaStore.Images.Media.RELATIVE_PATH else MediaStore.Images.Media.DATA
         val projection = arrayOf(
             MediaStore.Images.Media._ID, MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT,
-            MediaStore.Images.Media.DATE_TAKEN, MediaStore.Images.Media.DATE_ADDED, MediaStore.Images.Media.RELATIVE_PATH,
+            MediaStore.Images.Media.DATE_TAKEN, MediaStore.Images.Media.DATE_ADDED, path,
         )
-        val where = if (screenshots) "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?" else null
+        val where = if (screenshots) "$path LIKE ?" else null
         val whereArgs = if (screenshots) arrayOf("%Screenshot%") else null
-        val q: Bundle = Bundle().apply {
-            putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, where)
-            putStringArray(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, whereArgs)
-            putString(android.content.ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "${MediaStore.Images.Media.DATE_ADDED} DESC")
-            putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, limit)
-            putInt(android.content.ContentResolver.QUERY_ARG_OFFSET, offset)
-        }
+        val sort = "${MediaStore.Images.Media.DATE_ADDED} DESC"
         val out = JSONArray()
-        rt.app.contentResolver.query(collection, projection, q, null)?.use { c: Cursor ->
-            while (c.moveToNext()) {
+        val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val q: Bundle = Bundle().apply {
+                putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, where)
+                putStringArray(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, whereArgs)
+                putString(android.content.ContentResolver.QUERY_ARG_SQL_SORT_ORDER, sort)
+                putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, limit)
+                putInt(android.content.ContentResolver.QUERY_ARG_OFFSET, offset)
+            }
+            rt.app.contentResolver.query(collection, projection, q, null)
+        } else {
+            // Before Android 11 MediaStore takes no limit or offset: the
+            // cursor starts at offset, and limit rows are read from it.
+            rt.app.contentResolver.query(collection, projection, where, whereArgs, sort)?.also { it.moveToPosition(offset - 1) }
+        }
+        cursor?.use { c: Cursor ->
+            while (out.length() < limit && c.moveToNext()) {
                 val taken = c.getLong(3)
                 out.put(JSONObject()
                     .put("id", c.getLong(0).toString()).put("width", c.getInt(1)).put("height", c.getInt(2))
@@ -112,17 +128,46 @@ class AsukaPhotoLibrary(private val rt: AsukaRuntime) {
         // It fits in the box it's given, and the short side is the one
         // asked for: a long screenshot's box is as long as it is.
         var long = size
-        rt.app.contentResolver.query(u, arrayOf(MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT), null, null, null)?.use { c ->
-            if (c.moveToFirst() && minOf(c.getInt(0), c.getInt(1)) > 0) {
-                long = minOf(maxOf(c.getInt(0), c.getInt(1)) * size / minOf(c.getInt(0), c.getInt(1)), size * 8)
+        var turn = 0
+        rt.app.contentResolver.query(u, arrayOf(MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT, MediaStore.Images.Media.ORIENTATION), null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                if (minOf(c.getInt(0), c.getInt(1)) > 0) long = minOf(maxOf(c.getInt(0), c.getInt(1)) * size / minOf(c.getInt(0), c.getInt(1)), size * 8)
+                turn = c.getInt(2)
             }
         }
-        val bmp: Bitmap = rt.app.contentResolver.loadThumbnail(u, Size(long, long), null)
+        val bmp: Bitmap =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) rt.app.contentResolver.loadThumbnail(u, Size(long, long), null)
+            else decodeThumbnail(u, long, turn)
         val tmp = File(dir, UUID.randomUUID().toString())
         tmp.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 80, it) }
         bmp.recycle()
         tmp.renameTo(f)
         return f.path
+    }
+
+    /**
+     * Before Android 10 there's no loadThumbnail: the photo decoded at the
+     * largest sample that still fills box, scaled to fit it and turned as
+     * it was taken (MediaStore's orientation), as loadThumbnail gives it.
+     */
+    private fun decodeThumbnail(u: Uri, box: Int, turn: Int): Bitmap {
+        val r = rt.app.contentResolver
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        r.openInputStream(u)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: throw Exception("no such photo")
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= box) sample *= 2
+        var b = r.openInputStream(u)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+            ?: throw Exception("not an image")
+        val k = box.toFloat() / maxOf(b.width, b.height)
+        if (k < 1 || turn != 0) {
+            val m = Matrix()
+            if (k < 1) m.postScale(k, k)
+            if (turn != 0) m.postRotate(turn.toFloat())
+            val t = Bitmap.createBitmap(b, 0, 0, b.width, b.height, m, true)
+            if (t !== b) b.recycle()
+            b = t
+        }
+        return b
     }
 
     private fun export(id: String): JSONObject {

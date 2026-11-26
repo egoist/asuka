@@ -19,11 +19,15 @@ import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import androidx.annotation.RequiresApi
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import dev.asuka.AsukaImages
 import dev.asuka.AsukaModules
 import kotlinx.coroutines.awaitCancellation
@@ -36,6 +40,7 @@ private const val SKIP_FORWARD = "asuka.nowplaying.skipForward"
 private const val SKIP_BACKWARD = "asuka.nowplaying.skipBackward"
 
 /** The notification channel, made once. */
+@RequiresApi(26)
 private fun channel(ctx: Context): String {
     val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (nm.getNotificationChannel(CHANNEL) == null) {
@@ -43,6 +48,11 @@ private fun channel(ctx: Context): String {
     }
     return CHANNEL
 }
+
+/** A notification on the channel. Before Android 8 there are no channels: its own priority, low as the channel's importance. */
+private fun builder(ctx: Context): Notification.Builder =
+    if (Build.VERSION.SDK_INT >= 26) Notification.Builder(ctx, channel(ctx))
+    else @Suppress("DEPRECATION") Notification.Builder(ctx).setPriority(Notification.PRIORITY_LOW)
 
 private fun Info.has(c: Command) = commands and (1L shl c.value.toInt()) != 0L
 
@@ -157,7 +167,7 @@ internal object MediaCenter : Center {
     fun notification(ctx: Context): Notification? {
         val i = info ?: return null
         val s = session ?: return null
-        val b = Notification.Builder(ctx, channel(ctx))
+        val b = builder(ctx)
             .setSmallIcon(ctx.applicationInfo.icon)
             .setContentTitle(i.title)
             .setContentText(i.artist)
@@ -166,7 +176,8 @@ internal object MediaCenter : Center {
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setOnlyAlertOnce(true)
             .setOngoing(i.state == State.PLAYING)
-            .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        // Before Android 12 a foreground service's notification shows at once.
+        if (Build.VERSION.SDK_INT >= 31) b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
         if (i.album.isNotEmpty()) b.setSubText(i.album)
         art?.let { b.setLargeIcon(it) }
         s.controller.sessionActivity?.let { b.setContentIntent(it) }
@@ -182,11 +193,12 @@ internal object MediaCenter : Center {
     private fun startForeground() {
         if (service) return
         try {
-            app.startForegroundService(Intent(app, MediaService::class.java))
+            ContextCompat.startForegroundService(app, Intent(app, MediaService::class.java))
             service = true
-        } catch (_: ForegroundServiceStartNotAllowedException) {
-            // In the background without an exemption: the notification
-            // alone, as Media3 does.
+        } catch (e: IllegalStateException) {
+            // Android 12 and later, in the background without an exemption:
+            // the notification alone, as Media3 does.
+            if (Build.VERSION.SDK_INT < 31 || e !is ForegroundServiceStartNotAllowedException) throw e
         } catch (_: SecurityException) {
             // Not declared.
         }
@@ -255,8 +267,8 @@ class MediaService : Service() {
         // Started for the foreground, it must go there, even if playback
         // paused or went meanwhile; then it leaves it at once.
         val n = MediaCenter.notification(this)
-            ?: Notification.Builder(this, channel(this)).setSmallIcon(applicationInfo.icon).build()
-        startForeground(NOTIFICATION, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            ?: builder(this).setSmallIcon(applicationInfo.icon).build()
+        ServiceCompat.startForeground(this, NOTIFICATION, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         if (!MediaCenter.playing) {
             stopForeground(if (MediaCenter.notification(this) != null) STOP_FOREGROUND_DETACH else STOP_FOREGROUND_REMOVE)
             stopSelf()

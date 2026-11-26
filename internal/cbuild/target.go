@@ -31,7 +31,7 @@ func Host() Target {
 const (
 	IOSMin     = "16.0"
 	MacOSMin   = "11.0"
-	AndroidAPI = "33"
+	AndroidAPI = "24"
 	// LinuxGlibc is the glibc Zig builds Linux's C against: what it calls
 	// is in this one and every later one, so its libraries link with any
 	// glibc system's compiler and its executables run there (Debian 10,

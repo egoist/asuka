@@ -514,9 +514,9 @@ pub fn scan(services: [string] = [], duplicates: bool = false) -> Stream<Adverti
 /// hears (restored()). Android's is a scan the system runs, which goes on
 /// after the app's process has gone (Android pauses one without services
 /// while the screen is off): what it hears then is kept for restored(),
-/// until a later run scans so again or calls stopBackgroundScan. The
-/// desktops scan only while the app runs; the web throws notAvailable,
-/// as scan does.
+/// until a later run scans so again or calls stopBackgroundScan; before
+/// Android 8 it throws notAvailable. The desktops scan only while the app
+/// runs; the web throws notAvailable, as scan does.
 pub fn backgroundScan(services: [string], duplicates: bool = false) -> Stream<Advertisement> =
   scanning(ScanOptions(services: services.map(u => uuid(u)), duplicates: duplicates, background: true))
 

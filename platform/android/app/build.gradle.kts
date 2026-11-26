@@ -19,7 +19,7 @@ android {
     prop("asukaNdkVersion")?.let { ndkVersion = it }
     defaultConfig {
         applicationId = prop("asukaApplicationId") ?: "dev.asuka.app"
-        minSdk = 33
+        minSdk = 24
         targetSdk = 36
         versionCode = (prop("asukaVersionCode") ?: "1").toInt()
         versionName = prop("asukaVersionName") ?: "1.0"
@@ -70,6 +70,9 @@ android {
         }
     }
     compileOptions {
+        // java.time and the rest of Java 8's library on Android 7 (API 24,
+        // 25), which hasn't it: desugared into the app.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -78,6 +81,7 @@ android {
 kotlin { jvmToolchain(17) }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     val prebuilt = prop("asukaPrebuiltDeps")
     if (prebuilt != null) {
         // The host's, its optional modules' and the std and sdk packages'

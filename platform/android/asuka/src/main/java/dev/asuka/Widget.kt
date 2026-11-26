@@ -4,12 +4,14 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.SizeF
@@ -30,25 +32,36 @@ import org.json.JSONObject
  */
 open class AsukaWidgetProvider(private val kind: String, private val sizes: String) : AppWidgetProvider() {
     override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
-        for (id in ids) mgr.updateAppWidget(id, views(ctx))
+        for (id in ids) mgr.updateAppWidget(id, views(ctx, mgr, id))
         schedule(ctx, ids)
     }
 
     override fun onAppWidgetOptionsChanged(ctx: Context, mgr: AppWidgetManager, id: Int, options: Bundle) {
-        mgr.updateAppWidget(id, views(ctx))
+        mgr.updateAppWidget(id, views(ctx, mgr, id))
     }
 
-    private fun views(ctx: Context): RemoteViews {
+    private fun views(ctx: Context, mgr: AppWidgetManager, id: Int): RemoteViews {
         val entry = AsukaWidgets.current(AsukaWidgets.entries(ctx, kind))
         val ss = sizes.split(',')
         fun layout(size: String) = AsukaWidgets.render(ctx, kind, entry, size)
-        // Each size it comes in, from the smallest box that takes it.
-        val m = LinkedHashMap<SizeF, RemoteViews>()
-        if ("small" in ss) m[SizeF(40f, 40f)] = layout("small")
-        if ("medium" in ss) m[SizeF(200f, 40f)] = layout("medium")
-        if ("large" in ss) m[SizeF(200f, 200f)] = layout("large")
-        if (m.isEmpty()) m[SizeF(40f, 40f)] = layout("small")
-        return RemoteViews(m)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Each size it comes in, from the smallest box that takes it.
+            val m = LinkedHashMap<SizeF, RemoteViews>()
+            if ("small" in ss) m[SizeF(40f, 40f)] = layout("small")
+            if ("medium" in ss) m[SizeF(200f, 40f)] = layout("medium")
+            if ("large" in ss) m[SizeF(200f, 200f)] = layout("large")
+            if (m.isEmpty()) m[SizeF(40f, 40f)] = layout("small")
+            return RemoteViews(m)
+        }
+        // Before Android 12 there are no responsive layouts: the one for the
+        // widget's size now (in dp), as the boxes above choose it; a resize
+        // lays it out again (onAppWidgetOptionsChanged).
+        val o = mgr.getAppWidgetOptions(id)
+        val w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+        val h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+        val have = listOf("small", "medium", "large").filter { it in ss }.ifEmpty { listOf("small") }
+        val fits = have.filter { when (it) { "large" -> w >= 200 && h >= 200; "medium" -> w >= 200 && h >= 40; else -> true } }
+        return layout(fits.lastOrNull() ?: have.first())
     }
 
     /** An alarm for the next entry's time, or a countdown's end: then it updates again. */
@@ -100,7 +113,7 @@ object AsukaWidgets {
         if (e == null) {
             // Nothing set yet: the widget's name, as the gallery shows it.
             val label = runCatching {
-                AppWidgetManager.getInstance(ctx).getInstalledProvidersForPackage(ctx.packageName, null)
+                providers(ctx, AppWidgetManager.getInstance(ctx))
                     .firstOrNull { kindOf(ctx, it.provider) == kind }?.loadLabel(ctx.packageManager)
             }.getOrNull()
             text(R.id.asuka_widget_title, label ?: kind)
@@ -134,7 +147,10 @@ object AsukaWidgets {
         if (e.optBoolean("showProgress")) {
             v.setViewVisibility(R.id.asuka_widget_progress, View.VISIBLE)
             v.setProgressBar(R.id.asuka_widget_progress, 1000, (e.optDouble("progress", 0.0).coerceIn(0.0, 1.0) * 1000).toInt(), false)
-            v.setColorStateList(R.id.asuka_widget_progress, "setProgressTintList", ColorStateList.valueOf(tint))
+            // Before Android 12 a widget's bar can't be tinted: it's the theme's accent.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                v.setColorStateList(R.id.asuka_widget_progress, "setProgressTintList", ColorStateList.valueOf(tint))
+            }
         } else v.setViewVisibility(R.id.asuka_widget_progress, View.GONE)
         val until = e.optLong("untilMs")
         if (until > 0) {
@@ -155,6 +171,11 @@ object AsukaWidgets {
         return PendingIntent.getActivity(ctx, ("asuka.widget." + kind).hashCode(), i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
+    /** The app's widget providers (before Android 8, picked from every app's). */
+    private fun providers(ctx: Context, mgr: AppWidgetManager): List<AppWidgetProviderInfo> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) mgr.getInstalledProvidersForPackage(ctx.packageName, null)
+        else mgr.installedProviders.filter { it.provider.packageName == ctx.packageName }
+
     /** A provider's kind: its receiver's dev.asuka.widget.kind. */
     fun kindOf(ctx: Context, provider: ComponentName): String? = runCatching {
         ctx.packageManager.getReceiverInfo(provider, PackageManager.GET_META_DATA).metaData?.getString("dev.asuka.widget.kind")
@@ -169,7 +190,7 @@ object AsukaWidgets {
     /** Updates kind's widgets (null: every kind's). */
     fun update(ctx: Context, kind: String?) {
         val mgr = AppWidgetManager.getInstance(ctx)
-        for (p in mgr.getInstalledProvidersForPackage(ctx.packageName, null)) {
+        for (p in providers(ctx, mgr)) {
             if (kind != null && kindOf(ctx, p.provider) != kind) continue
             val ids = mgr.getAppWidgetIds(p.provider)
             ctx.sendBroadcast(Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).setComponent(p.provider)

@@ -27,7 +27,7 @@ import (
 // code is rebuilt as a shared library and pushed into the app's private
 // files, where the shell app loads it from, and the app is restarted.
 
-const androidMinAPI = "33"
+const androidMinAPI = "24"
 
 type androidToolchain struct {
 	// sys is the computer the tools are on (androidsdk: their places

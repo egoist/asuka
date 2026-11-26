@@ -2,6 +2,7 @@ package dev.asuka
 
 import android.graphics.Outline
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.view.View
 import android.view.ViewOutlineProvider
 import java.nio.ByteBuffer
@@ -21,6 +22,35 @@ class AsukaGradient(val colors: IntArray, val offsets: FloatArray, val sx: Float
             5 -> GradientDrawable.Orientation.BR_TL
             6 -> GradientDrawable.Orientation.BOTTOM_TOP
             else -> GradientDrawable.Orientation.BL_TR
+        }
+    }
+
+    /**
+     * The colors at even steps, as GradientDrawable spaces them before
+     * Android 10 (which takes no offsets): the stops themselves when
+     * they're even, else the gradient sampled finely enough to look the same.
+     */
+    fun evenColors(): IntArray {
+        val n = colors.size
+        if (n < 2 || offsets.indices.all { Math.abs(offsets[it] - it / (n - 1f)) < 1e-4f }) return colors
+        val steps = 64
+        return IntArray(steps + 1) { s ->
+            val t = s / steps.toFloat()
+            var i = 0
+            while (i < n - 1 && offsets[i + 1] < t) i++
+            if (t <= offsets[0]) return@IntArray colors[0]
+            if (i >= n - 1) return@IntArray colors[n - 1]
+            val span = offsets[i + 1] - offsets[i]
+            val f = if (span > 0f) ((t - offsets[i]) / span).coerceIn(0f, 1f) else 1f
+            val a = colors[i]
+            val c = colors[i + 1]
+            var out = 0
+            for (sh in 0..24 step 8) {
+                val x = (a ushr sh) and 0xff
+                val y = (c ushr sh) and 0xff
+                out = out or (Math.round(x + (y - x) * f) shl sh)
+            }
+            out
         }
     }
 }
@@ -70,6 +100,8 @@ fun AsukaRuntime.setShadow(n: AsukaNode, b: ByteBuffer) {
         }
     }
     v.elevation = radius / 2 * density
+    // Before Android 9 a shadow can't be tinted: it stays black.
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
     val col = color(c)
     v.outlineSpotShadowColor = col
     v.outlineAmbientShadowColor = col

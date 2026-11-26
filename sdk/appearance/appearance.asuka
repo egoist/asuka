@@ -18,8 +18,8 @@ pub struct Appearance {
   /// The accent the user picked: macOS's accent color, Windows's accent
   /// color, GNOME's and KDE's through the settings portal, Android 12's
   /// wallpaper color, the browser's AccentColor where it has one. none
-  /// where the system has none: iOS (an app's tint is its own), Linux
-  /// desktops whose portal has none, most browsers.
+  /// where the system has none: iOS (an app's tint is its own), Android
+  /// before 12, Linux desktops whose portal has none, most browsers.
   accent: Color? = none
   /// The user asked for more contrast: Increase Contrast on iOS and the
   /// Mac, Windows's contrast themes, GNOME's high contrast, Android's

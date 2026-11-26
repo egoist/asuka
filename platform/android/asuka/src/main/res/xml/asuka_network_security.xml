@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's network security (asuka build's manifest names it): the
+     system's certificate authorities, and Let's Encrypt's roots, which
+     Android 7.0 doesn't have (7.1.1 added ISRG Root X1), so a site
+     they sign loads there too. Cleartext HTTP stays off, as Android's
+     default is. -->
+<network-security-config>
+    <base-config>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/asuka_isrg_root_x1" />
+            <certificates src="@raw/asuka_isrg_root_x2" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

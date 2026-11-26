@@ -4,6 +4,7 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
@@ -12,6 +13,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.TextView
+import androidx.appcompat.widget.TooltipCompat
 import androidx.core.view.ViewCompat
 import androidx.core.widget.TextViewCompat
 import com.google.android.material.button.MaterialButton
@@ -175,7 +177,7 @@ fun AsukaRuntime.applyTextStyle(tv: TextView, style: Int, size: Float = 0f, weig
     if (custom != null) {
         tv.typeface = custom
     } else if (w > 0) {
-        tv.typeface = Typeface.create(tv.typeface, w, false)
+        tv.typeface = AsukaFonts.weighted(app, tv.typeface, w, false)
     }
 }
 
@@ -293,7 +295,8 @@ fun AsukaRuntime.applyBackground(n: AsukaNode) {
         // Over the background color: a GradientDrawable fills one or the other.
         n.backgroundAnimator?.cancel()
         val d = GradientDrawable(g.orientation(), g.colors)
-        d.setColors(g.colors, g.offsets)
+        // Before Android 10 a GradientDrawable takes no offsets: its colors are spaced evenly, so it gets the stops resampled.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) d.setColors(g.colors, g.offsets) else d.setColors(g.evenColors())
         d.cornerRadius = toRadius
         if (n.borderWidth > 0) d.setStroke(Math.round(n.borderWidth * density), color(n.borderColor, Color.GRAY))
         n.view.background = d
@@ -474,7 +477,7 @@ fun AsukaRuntime.propString(id: Int, prop: Int, v: String) {
         AsukaProp.A11Y_LABEL -> if (view is AsukaEditText) view.sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
         else view.contentDescription = v
         // A mouse's hover, or a long press when the view has none of its own.
-        AsukaProp.TOOLTIP -> view.tooltipText = v.ifEmpty { null }
+        AsukaProp.TOOLTIP -> TooltipCompat.setTooltipText(view, v.ifEmpty { null })
         AsukaProp.A11Y_HINT -> ViewCompat.setStateDescription(view, v)
         AsukaProp.A11Y_VALUE -> { installA11y(n); a11yChanged(n) }
         AsukaProp.FONT_FAMILY -> {
@@ -509,7 +512,7 @@ fun AsukaRuntime.propString(id: Int, prop: Int, v: String) {
                         settingProp = false
                     }
                     AsukaProp.TextField.PLACEHOLDER -> e.hint = v
-                    AsukaProp.TextField.CONTENT_TYPE -> e.setAutofillHints(autofillHint(v))
+                    AsukaProp.TextField.CONTENT_TYPE -> ViewCompat.setAutofillHints(e, autofillHint(v))
                 }
             }
         }

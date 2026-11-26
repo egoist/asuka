@@ -327,7 +327,7 @@ extern fn acme_version() -> CString
 - **值**是库相对于 `asuka.toml` 的路径，也可以是多个路径组成的列表。每个都必须是静态库：`.a`，在 Windows 上也可以是 `.lib`。
 - **没有对应库的目标**无法构建，并会说明原因（`[c.prebuilt] has no library for android-x64`）。`asuka test` 和 `asuka run` 链接的是本机对应的那一个（`macos-arm64`、`linux-x64` 等），所以想测试这些调用，也要把本机的目标写上。
 - **库对系统的依赖**和源码一样写在各平台的表里：`libraries`（Android 上的 `log`、`z`）和 `frameworks`（`Security`）。
-- **构建这些库时**，要面向 Asuka 支持的最低系统版本（iOS 16、macOS 11、Android 13）；Web 版要基于 WASI 的 C 库（`wasm32-wasi`）构建，并且不使用线程。
+- **构建这些库时**，要面向 Asuka 支持的最低系统版本（iOS 16、macOS 11、Android 7）；Web 版要基于 WASI 的 C 库（`wasm32-wasi`）构建，并且不使用线程。
 
 这些库和你自己的 C 代码一样链接进应用：运行时不需要在应用旁边查找、嵌入或签名任何东西，应用没用到的部分也会被去掉。包的 `[c.prebuilt]` 会随包一起发布，库文件就在包的 tarball 里。
 

@@ -4,7 +4,9 @@ import android.annotation.SuppressLint
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RuntimeShader
+import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -29,7 +31,7 @@ class AsukaShaderView(private val rt: AsukaRuntime) : AsukaContainer(rt.themed) 
     var animated = false
         set(v) { field = v; invalidate() }
 
-    private var shader: RuntimeShader? = null
+    private var shader: android.graphics.Shader? = null // a RuntimeShader
     private var failed = false
     private val paint = Paint()
     private val start = System.nanoTime()
@@ -74,8 +76,14 @@ class AsukaShaderView(private val rt: AsukaRuntime) : AsukaContainer(rt.themed) 
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        // Before Android 13 there's no AGSL: the view draws without its shader, its children over its background.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) drawShader(canvas)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun drawShader(canvas: Canvas) {
         if (agsl.isEmpty() || width == 0 || height == 0 || words.isEmpty()) return
-        var s = shader
+        var s = shader as RuntimeShader?
         if (s == null && !failed) {
             try {
                 s = RuntimeShader(agsl)

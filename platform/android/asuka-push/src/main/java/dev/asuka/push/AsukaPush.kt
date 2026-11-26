@@ -14,7 +14,10 @@ import dev.asuka.AsukaRuntime
 import dev.asuka.withPermission
 import org.json.JSONObject
 
-/** platform/push's registration: notifications allowed (Android 13's prompt), then FCM's token. */
+/**
+ * platform/push's registration: notifications allowed (Android 13's
+ * prompt; before it, whether they're on), then FCM's token.
+ */
 class AsukaPushPlugin : AsukaPlugin {
     override fun register(rt: AsukaRuntime) {
         AsukaPushHub.register = { r, reply ->

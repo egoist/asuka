@@ -7,9 +7,11 @@ usage = { NSBluetoothAlwaysUsageDescription = "To connect to your Bluetooth devi
 
 [android]
 # Android 12's nearby devices permissions: the scan's "neverForLocation"
-# unless the app's asuka.toml has bluetooth.location (Asuka's Android is
-# 13 and later, so not the older Bluetooth and location permissions).
-permissions = ["android.permission.BLUETOOTH_SCAN|neverForLocation", "android.permission.BLUETOOTH_CONNECT", "android.permission.BLUETOOTH_ADVERTISE"]
+# unless the app's asuka.toml has bluetooth.location. Before 12 (":30":
+# up to Android 11), the install's Bluetooth permissions, and the location
+# permission a scan needs there.
+permissions = ["android.permission.BLUETOOTH_SCAN|neverForLocation", "android.permission.BLUETOOTH_CONNECT", "android.permission.BLUETOOTH_ADVERTISE",
+  "android.permission.BLUETOOTH:30", "android.permission.BLUETOOTH_ADMIN:30", "android.permission.ACCESS_FINE_LOCATION:30"]
 
 # A background scan: iOS's bluetooth-central mode, with which the central
 # manager has its restore identifier (iOS keeps the scan when it ends the

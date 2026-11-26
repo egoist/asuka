@@ -727,8 +727,13 @@ func (c *appConfig) androidManifest(debug bool) string {
 	if c.androidHasLocales() {
 		b.WriteString(" android:localeConfig=\"@xml/asuka_locales_config\"")
 	}
+	// The host's network security: the system's authorities and Let's
+	// Encrypt's roots, which Android 7.0 lacks; asuka dev's player also
+	// loads the app over cleartext HTTP.
 	if debug {
-		b.WriteString(" android:usesCleartextTraffic=\"true\"")
+		b.WriteString(" android:usesCleartextTraffic=\"true\" android:networkSecurityConfig=\"@xml/asuka_network_security_debug\"")
+	} else {
+		b.WriteString(" android:networkSecurityConfig=\"@xml/asuka_network_security\"")
 	}
 	b.WriteString(">\n")
 	// The Maps SDK's key (platform/maps, platform/maps), which it reads from the manifest.

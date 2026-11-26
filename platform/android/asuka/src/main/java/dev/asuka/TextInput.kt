@@ -12,6 +12,7 @@ import androidx.appcompat.widget.AppCompatEditText
 import androidx.core.view.ContentInfoCompat
 import androidx.core.view.OnReceiveContentListener
 import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import java.io.File
 import java.io.InputStream
 import java.nio.ByteBuffer
@@ -47,7 +48,7 @@ class AsukaEditText(context: Context, private val rt: AsukaRuntime, private val 
     // description would be read in place of what's typed. No label: its placeholder.
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
-        (rt.nodes[id]?.props?.get(AsukaProp.A11Y_LABEL) as? String)?.takeIf { it.isNotEmpty() }?.let { info.hintText = it }
+        (rt.nodes[id]?.props?.get(AsukaProp.A11Y_LABEL) as? String)?.takeIf { it.isNotEmpty() }?.let { AccessibilityNodeInfoCompat.wrap(info).hintText = it }
     }
 
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {

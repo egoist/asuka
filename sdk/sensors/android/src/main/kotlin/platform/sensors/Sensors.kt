@@ -124,7 +124,7 @@ class AndroidSensors(private val context: Context) : Sensors {
 
     /** Asks for a permission not granted yet: whether it is. */
     private suspend fun permitted(permission: String): Boolean = withContext(Dispatchers.Main) {
-        if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) return@withContext true
+        if (AsukaModules.granted(permission)) return@withContext true
         val act = AsukaModules.activity as? ComponentActivity ?: return@withContext false
         suspendCancellableCoroutine { c ->
             var launcher: ActivityResultLauncher<String>? = null

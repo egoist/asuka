@@ -10,8 +10,10 @@ package platform.screen
 
 import android.content.Context
 import android.hardware.display.DisplayManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.view.WindowManager
 import dev.asuka.AsukaDisplay
 import dev.asuka.AsukaModules
@@ -28,7 +30,7 @@ class AndroidScreens(private val app: Context) : Screens {
         return all.map { d ->
             val ctx = app.createDisplayContext(d)
             val density = ctx.resources.displayMetrics.density
-            val px = ctx.getSystemService(WindowManager::class.java)?.maximumWindowMetrics?.bounds
+            val px = pixels(ctx, d)
             val w = ((px?.width() ?: ctx.resources.displayMetrics.widthPixels) / density).toDouble()
             val h = ((px?.height() ?: ctx.resources.displayMetrics.heightPixels) / density).toDouble()
             // The default display at the origin, the others after it.
@@ -37,6 +39,15 @@ class AndroidScreens(private val app: Context) : Screens {
             Display(id = d.displayId.toString(), name = d.name ?: "", bounds = r, workArea = r, scale = density.toDouble(),
                 refreshRate = d.refreshRate.toDouble(), primary = d.displayId == android.view.Display.DEFAULT_DISPLAY)
         }
+    }
+
+    /** A display's whole size in pixels: before Android 11, its real metrics. */
+    @Suppress("DEPRECATION")
+    private fun pixels(ctx: Context, d: android.view.Display): android.graphics.Rect? {
+        if (Build.VERSION.SDK_INT >= 30) return ctx.getSystemService(WindowManager::class.java)?.maximumWindowMetrics?.bounds
+        val m = DisplayMetrics()
+        d.getRealMetrics(m)
+        return android.graphics.Rect(0, 0, m.widthPixels, m.heightPixels)
     }
 
     override suspend fun watchDisplays(changed: (List<Display>) -> kotlin.Unit) = withContext(Dispatchers.Main) {

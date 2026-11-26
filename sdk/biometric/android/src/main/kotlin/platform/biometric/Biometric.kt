@@ -10,6 +10,7 @@ import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import dev.asuka.AsukaModules
 import dev.asuka.AsukaUnsupportedException
@@ -46,7 +47,7 @@ class PromptAuthenticator(private val app: Context) : Authenticator {
         val info = BiometricPrompt.PromptInfo.Builder().setTitle(title).setAllowedAuthenticators(allowed)
         if (noPasscode) info.setNegativeButtonText(cancel.ifEmpty { act.getString(android.R.string.cancel) })
         suspendCancellableCoroutine<kotlin.Unit> { cont ->
-            val prompt = BiometricPrompt(act, act.mainExecutor, object : BiometricPrompt.AuthenticationCallback() {
+            val prompt = BiometricPrompt(act, ContextCompat.getMainExecutor(act), object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     if (cont.isActive) cont.resume(kotlin.Unit)
                 }

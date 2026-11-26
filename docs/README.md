@@ -70,7 +70,7 @@ package for something a platform doesn't have (sensors or home screen
 widgets on a Mac) answers there that it isn't available, so the app can
 check and do without.
 
-Apps run on iOS 16, Android 13 (API 33), macOS 11, Windows 10 and Linux
+Apps run on iOS 16, Android 7 (API 24), macOS 11, Windows 10 and Linux
 with GTK 4.14 and libadwaita 1.5, and later; and in current browsers.
 The `asuka` CLI is one program, installed with one command ([Getting
 started](getting-started.md#install-the-cli)); building for a platform needs that platform's tools (Xcode,

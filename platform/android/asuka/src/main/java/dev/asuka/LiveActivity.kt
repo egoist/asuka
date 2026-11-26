@@ -56,7 +56,8 @@ object AsukaLiveActivities {
 
     fun channel(ctx: Context): String {
         val nm = nm(ctx)
-        if (nm.getNotificationChannel(CHANNEL) == null) {
+        // Before Android 8 there are no channels: the builder's priority says it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(NotificationChannel(CHANNEL, "Live updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 setShowBadge(false)
             })
@@ -68,6 +69,7 @@ object AsukaLiveActivities {
     fun enabled(ctx: Context): Boolean {
         val nm = nm(ctx)
         if (!nm.areNotificationsEnabled()) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
         val ch = nm.getNotificationChannel(CHANNEL)
         return ch == null || ch.importance != NotificationManager.IMPORTANCE_NONE
     }
@@ -192,7 +194,7 @@ object AsukaLiveActivities {
         val tint = color(c.optString("tint")) ?: ctx.getColor(R.color.asuka_widget_accent)
         val since = c.optLong("sinceMs")
         val until = c.optLong("untilMs")
-        val b = Notification.Builder(ctx, channel(ctx))
+        val b = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(ctx, channel(ctx)) else legacyBuilder(ctx, alert != null))
             .setContentTitle(title.ifEmpty { ctx.applicationInfo.loadLabel(ctx.packageManager) })
             .setContentText(subtitle.ifEmpty { null })
             .setOngoing(ongoing)
@@ -200,7 +202,6 @@ object AsukaLiveActivities {
             // Silent but for an alert: its own group, alerting as its
             // summary would (it has none), as NotificationCompat's setSilent.
             .setGroup("$TAG.$id")
-            .setGroupAlertBehavior(if (alert == null) Notification.GROUP_ALERT_SUMMARY else Notification.GROUP_ALERT_ALL)
             .setColor(tint)
             .setCategory(if (c.optBoolean("showProgress")) Notification.CATEGORY_PROGRESS else Notification.CATEGORY_STATUS)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -210,13 +211,20 @@ object AsukaLiveActivities {
             .setDeleteIntent(PendingIntent.getBroadcast(ctx, id.hashCode(),
                 Intent(ctx, AsukaLiveActivityReceiver::class.java).setAction(AsukaLiveActivityReceiver.DISMISSED).putExtra("id", id),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            b.setGroupAlertBehavior(if (alert == null) Notification.GROUP_ALERT_SUMMARY else Notification.GROUP_ALERT_ALL)
+        }
         val sym = symbolDrawables[c.optString("symbol")]
         if (sym != null) b.setSmallIcon(Icon.createWithResource(ctx, sym)) else b.setSmallIcon(ctx.applicationInfo.icon)
         if (alert != null) {
             val text = listOf(alert.optString("title"), alert.optString("body")).filter { it.isNotEmpty() }.joinToString(": ")
             if (text.isNotEmpty()) b.setTicker(text)
         }
-        if (timeoutMs > 0) b.setTimeoutAfter(timeoutMs)
+        if (timeoutMs > 0) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) b.setTimeoutAfter(timeoutMs)
+            // Before Android 8 a notification has no timeout: an alarm takes it away.
+            else scheduleTimeout(ctx, id, now + timeoutMs)
+        }
         // The value: Android 16's status bar chip; before, the header's text.
         if (value.isNotEmpty()) {
             if (Build.VERSION.SDK_INT >= 36) b.setShortCriticalText(value) else b.setSubText(value)
@@ -244,6 +252,31 @@ object AsukaLiveActivities {
         b.extras.putBoolean("android.requestPromotedOngoing", ongoing)
         nm(ctx).notify(TAG, id.hashCode(), b.build())
         if (ongoing && nextRefresh > 0) scheduleRefresh(ctx, id, nextRefresh) else cancelRefresh(ctx, id)
+    }
+
+    /**
+     * Before Android 8, a builder without a channel: its priority is the
+     * channel's importance, and only an alert makes a sound (the builder's
+     * defaults; without them it's silent), as the group's alert behavior.
+     */
+    @Suppress("DEPRECATION")
+    private fun legacyBuilder(ctx: Context, alerts: Boolean): Notification.Builder {
+        val b = Notification.Builder(ctx).setPriority(Notification.PRIORITY_DEFAULT)
+        // Its channel's sound, without vibration (the channel doesn't vibrate).
+        if (alerts) b.setDefaults(Notification.DEFAULT_SOUND or Notification.DEFAULT_LIGHTS)
+        return b
+    }
+
+    /** An ended activity's timeout, before Android 8: its notification is cancelled, unless it started again. */
+    fun timedOut(ctx: Context, id: String) {
+        if (record(ctx, id) == null) nm(ctx).cancel(TAG, id.hashCode())
+    }
+
+    private fun scheduleTimeout(ctx: Context, id: String, at: Long) {
+        val pi = PendingIntent.getBroadcast(ctx, id.hashCode(),
+            Intent(ctx, AsukaLiveActivityReceiver::class.java).setAction(AsukaLiveActivityReceiver.TIMEOUT).putExtra("id", id),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        ctx.getSystemService(AlarmManager::class.java).set(AlarmManager.RTC, at, pi)
     }
 
     private fun refreshIntent(ctx: Context, id: String) = PendingIntent.getBroadcast(ctx, id.hashCode(),
@@ -274,12 +307,14 @@ class AsukaLiveActivityReceiver : BroadcastReceiver() {
         when (intent.action) {
             DISMISSED -> AsukaLiveActivities.dismissed(ctx, id)
             REFRESH -> AsukaLiveActivities.refresh(ctx, id)
+            TIMEOUT -> AsukaLiveActivities.timedOut(ctx, id)
         }
     }
 
     companion object {
         const val DISMISSED = "dev.asuka.liveActivity.dismissed"
         const val REFRESH = "dev.asuka.liveActivity.refresh"
+        const val TIMEOUT = "dev.asuka.liveActivity.timeout"
     }
 }
 

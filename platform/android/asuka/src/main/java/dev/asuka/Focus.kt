@@ -1,5 +1,6 @@
 package dev.asuka
 
+import android.os.Build
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.View
@@ -125,12 +126,15 @@ fun AsukaRuntime.setFocusProp(n: AsukaNode, prop: Int, on: Boolean): Boolean {
     when (prop) {
         AsukaProp.FOCUSABLE -> if (n.kind != AsukaKind.TEXT_FIELD) {
             // A tab stop; a tap in touch mode doesn't focus it, as a button's doesn't.
-            v.focusable = if (on) View.FOCUSABLE else View.FOCUSABLE_AUTO
+            // Before Android 8 there's no FOCUSABLE_AUTO: a pressable view stays focusable.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) v.focusable = if (on) View.FOCUSABLE else View.FOCUSABLE_AUTO
+            else v.isFocusable = on || v.isClickable
             if (on && !n.touchFocused) v.isFocusableInTouchMode = false
         }
         AsukaProp.NO_FOCUS_ON_PRESS -> if (on && n.kind != AsukaKind.TEXT_FIELD && !n.touchFocused) v.isFocusableInTouchMode = false
         AsukaProp.NO_FOCUS_RING -> {
-            v.defaultFocusHighlightEnabled = !on
+            // Before Android 8 there's no default focus highlight: only the container's ring.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) v.defaultFocusHighlightEnabled = !on
             (v as? AsukaContainer)?.let { it.noFocusRing = on; it.refreshDrawableState() }
         }
         AsukaProp.FOCUS_TRAP -> (v as? AsukaContainer)?.focusTrap = on

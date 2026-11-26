@@ -289,6 +289,13 @@ object AsukaModules {
         onMain { rt.withPermission(permissions, done) }
     }
 
+    /**
+     * Whether the app has permission: one newer than this Android (the
+     * notifications', nearby devices', activity recognition's) counts as
+     * had where what it guards needed no asking.
+     */
+    fun granted(permission: String): Boolean = AsukaRuntime.current?.granted(permission) ?: false
+
     /** Whether the app's manifest asks for permission (its own, or a package's). */
     fun declares(permission: String): Boolean = AsukaRuntime.current?.declares(permission) ?: false
 

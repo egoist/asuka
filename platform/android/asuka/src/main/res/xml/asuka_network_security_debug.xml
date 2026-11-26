@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- asuka dev's: as asuka_network_security.xml, with cleartext HTTP, which
+     the player loads the app from (its usesCleartextTraffic is ignored
+     once a configuration is named). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/asuka_isrg_root_x1" />
+            <certificates src="@raw/asuka_isrg_root_x2" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

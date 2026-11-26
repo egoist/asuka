@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.Build
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import dev.asuka.AsukaModules
@@ -30,7 +31,8 @@ class AndroidPower(private val app: Context) : Monitor {
         val scale = b?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
         val st = b?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
         val plugged = (b?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
-        val heat = when (pm.currentThermalStatus) {
+        // Before Android 10 the system doesn't say: nominal.
+        val heat = if (Build.VERSION.SDK_INT < 29) Thermal.NOMINAL else when (pm.currentThermalStatus) {
             PowerManager.THERMAL_STATUS_NONE, PowerManager.THERMAL_STATUS_LIGHT -> Thermal.NOMINAL
             PowerManager.THERMAL_STATUS_MODERATE -> Thermal.FAIR
             PowerManager.THERMAL_STATUS_SEVERE -> Thermal.SERIOUS
@@ -67,14 +69,18 @@ class AndroidPower(private val app: Context) : Monitor {
             addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
         }
         battery = ContextCompat.registerReceiver(app, receiver, f, ContextCompat.RECEIVER_NOT_EXPORTED)
-        val thermal = PowerManager.OnThermalStatusChangedListener { report() }
-        pm.addThermalStatusListener(ContextCompat.getMainExecutor(app), thermal)
+        // Before Android 10 there's no thermal status to watch.
+        val unwatch: () -> kotlin.Unit = if (Build.VERSION.SDK_INT >= 29) {
+            val thermal = PowerManager.OnThermalStatusChangedListener { report() }
+            pm.addThermalStatusListener(ContextCompat.getMainExecutor(app), thermal)
+            ({ pm.removeThermalStatusListener(thermal) })
+        } else ({})
         report()
         try {
             awaitCancellation()
         } finally {
             app.unregisterReceiver(receiver)
-            pm.removeThermalStatusListener(thermal)
+            unwatch()
         }
     }
 

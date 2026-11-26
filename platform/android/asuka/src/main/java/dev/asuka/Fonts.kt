@@ -5,7 +5,10 @@ import android.graphics.Typeface
 import android.graphics.fonts.Font
 import android.graphics.fonts.FontFamily
 import android.graphics.fonts.FontStyle
+import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
+import androidx.core.graphics.TypefaceCompat
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -41,6 +44,15 @@ object AsukaFonts {
         return t
     }
 
+    /**
+     * t in weight (1-1000). Before Android 9 a typeface takes no weight:
+     * TypefaceCompat picks the system family's nearest (bold from 600 when
+     * it can't).
+     */
+    fun weighted(ctx: Context, t: Typeface?, weight: Int, italic: Boolean): Typeface =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) Typeface.create(t, weight, italic)
+        else TypefaceCompat.create(ctx, t, weight, italic)
+
     private fun resolve(ctx: Context, family: String, weight: Int, italic: Boolean): Typeface? {
         val src = sources(ctx)
         src[family]?.let { p ->
@@ -49,20 +61,68 @@ object AsukaFonts {
         }
         val faces = src.filterKeys { it.startsWith("$family-") }
         if (faces.isNotEmpty()) {
-            var b: FontFamily.Builder? = null
-            for (p in faces.values) {
-                val f = (if (p.startsWith("/")) Font.Builder(File(p)) else Font.Builder(ctx.assets, p)).build()
-                if (b == null) b = FontFamily.Builder(f)
-                else try { b.addFont(f) } catch (_: IllegalArgumentException) {} // a style it has
-            }
-            val style = FontStyle(if (weight > 0) weight else 400, if (italic) FontStyle.FONT_SLANT_ITALIC else FontStyle.FONT_SLANT_UPRIGHT)
-            return Typeface.CustomFallbackBuilder(b!!.build()).setSystemFallback("sans-serif").setStyle(style).build()
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) faceFamily(ctx, faces, weight, italic)
+            else nearestFace(ctx, family, faces, weight, italic)
         }
         // A system family; an unknown one is the default.
         val t = Typeface.create(family, Typeface.NORMAL)
         if (t == Typeface.DEFAULT) return null
-        return if (weight > 0) Typeface.create(t, weight, italic)
+        return if (weight > 0) weighted(ctx, t, weight, italic)
         else Typeface.create(t, if (italic) Typeface.ITALIC else Typeface.NORMAL)
+    }
+
+    /** The faces as one family, in weight and slant. */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun faceFamily(ctx: Context, faces: Map<String, String>, weight: Int, italic: Boolean): Typeface {
+        var b: FontFamily.Builder? = null
+        for (p in faces.values) {
+            val f = (if (p.startsWith("/")) Font.Builder(File(p)) else Font.Builder(ctx.assets, p)).build()
+            if (b == null) b = FontFamily.Builder(f)
+            else try { b.addFont(f) } catch (_: IllegalArgumentException) {} // a style it has
+        }
+        val style = FontStyle(if (weight > 0) weight else 400, if (italic) FontStyle.FONT_SLANT_ITALIC else FontStyle.FONT_SLANT_UPRIGHT)
+        return Typeface.CustomFallbackBuilder(b!!.build()).setSystemFallback("sans-serif").setStyle(style).build()
+    }
+
+    /**
+     * Before Android 10 there's no Font.Builder to make a family of the
+     * faces: the face its file's name says is nearest (Inter-SemiBold:
+     * 600), slanted or emboldened by Android when there's none such.
+     */
+    private fun nearestFace(ctx: Context, family: String, faces: Map<String, String>, weight: Int, italic: Boolean): Typeface {
+        val want = if (weight > 0) weight else 400
+        val (name, p) = faces.entries.minBy { (k, _) ->
+            val (w, i) = faceStyle(k.removePrefix("$family-"))
+            (if (i != italic) 10000 else 0) + kotlin.math.abs(w - want)
+        }
+        val (w, i) = faceStyle(name.removePrefix("$family-"))
+        val t = if (p.startsWith("/")) Typeface.createFromFile(p) else Typeface.createFromAsset(ctx.assets, p)
+        val bold = want >= 600 && w < 600
+        val slant = italic && !i
+        return when {
+            bold && slant -> Typeface.create(t, Typeface.BOLD_ITALIC)
+            bold -> Typeface.create(t, Typeface.BOLD)
+            slant -> Typeface.create(t, Typeface.ITALIC)
+            else -> t
+        }
+    }
+
+    /** A face's weight and slant from its file's name: SemiBoldItalic is 600, italic. */
+    private fun faceStyle(suffix: String): Pair<Int, Boolean> {
+        val s = suffix.lowercase().filter { it.isLetter() }
+        val italic = "italic" in s || "oblique" in s
+        val weight = when (s.replace("italic", "").replace("oblique", "")) {
+            "thin", "hairline" -> 100
+            "extralight", "ultralight" -> 200
+            "light" -> 300
+            "medium" -> 500
+            "semibold", "demibold" -> 600
+            "bold" -> 700
+            "extrabold", "ultrabold" -> 800
+            "black", "heavy" -> 900
+            else -> 400 // Regular, Book, Normal
+        }
+        return weight to italic
     }
 
     /** A font file's name (no extension) → its path: a pushed file's, or an asset's ("fonts/Inter-Bold.ttf"). */

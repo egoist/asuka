@@ -164,7 +164,7 @@ class AsukaScreen(context: Context, val nodeID: Int, private val rt: AsukaRuntim
     // With nothing focused in its window, a key passes no view: it comes
     // back unhandled, and starts at the sheet's or popover's node.
     init {
-        addOnUnhandledKeyEventListener { _, e ->
+        ViewCompat.addOnUnhandledKeyEventListener(this) { _, e ->
             val n = rt.nodes[nodeID]
             (n?.kind == AsukaKind.SHEET || n?.kind == AsukaKind.POPOVER) &&
                 rootView !== rt.activity?.window?.decorView && findFocus() == null && rt.routeKey(e, null, n)
@@ -751,7 +751,7 @@ fun AsukaRuntime.environment(v: View, keyboardPx: Int? = null): AsukaEnvironment
         scale = d,
         fontScale = c.fontScale,
         dark = isNight(c),
-        reduceMotion = !android.animation.ValueAnimator.areAnimatorsEnabled(),
+        reduceMotion = !animatorsEnabled(app),
         screenReader = (app.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager).isTouchExplorationEnabled,
         widthClass = widthClass(win.width / d), heightClass = heightClass(win.height / d),
         locale = region.locale,
@@ -1103,7 +1103,8 @@ fun AsukaRuntime.styled(a: AsukaAction): CharSequence {
 fun AsukaRuntime.showMenu(n: AsukaNode) {
     val act = activity ?: return
     val m = PopupMenu(act, n.outer)
-    if (fillMenu(m.menu, n.actions)) m.setForceShowIcon(true)
+    // Before Android 10 a popup menu can't show its items' icons.
+    if (fillMenu(m.menu, n.actions) && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) m.setForceShowIcon(true)
     val id = n.id
     m.setOnMenuItemClickListener { item ->
         if (item.hasSubMenu() || item.itemId < 0) return@setOnMenuItemClickListener false
@@ -1169,7 +1170,8 @@ fun AsukaRuntime.fillMenu(menu: android.view.Menu, actions: List<AsukaAction>, g
         }
     }
     add(menu, actions, group)
-    if (sections) menu.setGroupDividerEnabled(true)
+    // Before Android 9 a platform menu has no dividers between its groups.
+    if (sections) androidx.core.view.MenuCompat.setGroupDividerEnabled(menu, true)
     return icons
 }
 
@@ -1373,7 +1375,9 @@ private fun AsukaRuntime.presentFullScreen(act: AsukaActivity, n: AsukaNode) {
             w.statusBarColor = Color.TRANSPARENT
             w.navigationBarColor = Color.TRANSPARENT
         }
-        w.isNavigationBarContrastEnforced = true // a scrim behind three-button navigation, as the activity's
+        // A scrim behind three-button navigation, as the activity's (before
+        // Android 10 the system has none to enforce).
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) w.isNavigationBarContrastEnforced = true
         w.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
     n.dialog = d
@@ -1425,7 +1429,7 @@ private fun AsukaRuntime.presentFullScreen(act: AsukaActivity, n: AsukaNode) {
     val back = object : OnBackPressedCallback(true) {
         var shrinking = false
         override fun handleOnBackStarted(e: BackEventCompat) {
-            shrinking = !n.intercepts && android.animation.ValueAnimator.areAnimatorsEnabled()
+            shrinking = !n.intercepts && animatorsEnabled(app)
         }
         override fun handleOnBackProgressed(e: BackEventCompat) {
             if (shrinking) shape(e.progress, e.swipeEdge)
@@ -1594,8 +1598,8 @@ private fun AsukaRuntime.alertFieldsView(ctx: Context, n: AsukaNode, submit: () 
         }
         e.typeface = typeface // a password's input type turns it monospaced, placeholder and all
         if (f.contentType.isNotEmpty()) {
-            e.setAutofillHints(autofillHint(f.contentType))
-            e.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
+            ViewCompat.setAutofillHints(e, autofillHint(f.contentType))
+            ViewCompat.setImportantForAutofill(e, View.IMPORTANT_FOR_AUTOFILL_YES)
         }
         e.setText(f.text)
         e.setSelection(e.length())
@@ -1633,9 +1637,10 @@ fun AsukaRuntime.haptic(kind: Int) {
         AsukaHaptic.LIGHT -> HapticFeedbackConstants.KEYBOARD_TAP
         AsukaHaptic.MEDIUM -> HapticFeedbackConstants.VIRTUAL_KEY
         AsukaHaptic.HEAVY -> HapticFeedbackConstants.LONG_PRESS
-        AsukaHaptic.SUCCESS -> HapticFeedbackConstants.CONFIRM
-        AsukaHaptic.WARNING -> HapticFeedbackConstants.REJECT
-        AsukaHaptic.ERROR -> HapticFeedbackConstants.REJECT
+        // Before Android 11 there's no confirm or reject: a tap for success,
+        // a long press's for the others.
+        AsukaHaptic.SUCCESS -> if (android.os.Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.CONTEXT_CLICK
+        AsukaHaptic.WARNING, AsukaHaptic.ERROR -> if (android.os.Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS
         else -> return
     }
     v.performHapticFeedback(c)

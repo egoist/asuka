@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
@@ -162,6 +163,14 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
 
     /** The SaveLocale command: the app's language for its next launches, or "" to follow the system's. */
     private fun saveLocale(tag: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            // Before Android 13 there are no per-app languages: the app
+            // keeps its own (readRegion puts it first), and the environment
+            // says so now.
+            saveAppLocale(tag)
+            regionChanged()
+            return
+        }
         // The system tells the process with a configuration change, which
         // the Activity handles (configChanges): the language has changed by then.
         app.getSystemService(android.app.LocaleManager::class.java)?.applicationLocales =
@@ -815,7 +824,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         val v: android.widget.FrameLayout = if (horizontal) AsukaHorizontalScroll(themed).apply { isFillViewport = false }
             else NestedScrollView(themed).apply { isFillViewport = false }
         v.layoutDirection = directionOf(n)
-        carryViewProps(old, v)
+        carryViewProps(n, old, v)
         clipsToFrame(v)
         reportScrolls(v, n.id)
         while (old.childCount > 0) {
@@ -844,17 +853,24 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
      * horizontal) and the new one doesn't get again: what TalkBack is
      * told, its tooltip, whether it's shown, enabled, and its transform.
      */
-    private fun carryViewProps(old: View, v: View) {
+    private fun carryViewProps(n: AsukaNode, old: View, v: View) {
         v.contentDescription = old.contentDescription
         androidx.core.view.ViewCompat.setStateDescription(v, androidx.core.view.ViewCompat.getStateDescription(old))
         // Its node's, over the new view's own. Any other is the old view's
         // own (NestedScrollView's casts its host to one): the new view keeps
         // its own.
-        val d = old.accessibilityDelegate
-        if (d is AsukaA11yDelegate) v.accessibilityDelegate = AsukaA11yDelegate(this, d.id, v.accessibilityDelegate)
+        val d = accessibilityDelegateOf(old)
+        if (d is AsukaA11yDelegate) v.accessibilityDelegate = AsukaA11yDelegate(this, d.id, accessibilityDelegateOf(v))
         v.accessibilityLiveRegion = old.accessibilityLiveRegion
-        v.defaultFocusHighlightEnabled = old.defaultFocusHighlightEnabled
-        v.tooltipText = old.tooltipText
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            v.defaultFocusHighlightEnabled = old.defaultFocusHighlightEnabled
+            v.tooltipText = old.tooltipText
+        } else {
+            // Before Android 8 there's no default focus highlight, and a
+            // tooltip (TooltipCompat's long press) can't be read back: the
+            // node's is set again.
+            androidx.appcompat.widget.TooltipCompat.setTooltipText(v, (n.props[AsukaProp.TOOLTIP] as? String)?.ifEmpty { null })
+        }
         v.importantForAccessibility = old.importantForAccessibility
         v.visibility = old.visibility
         v.isEnabled = old.isEnabled
@@ -875,7 +891,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             layoutDirection = directionOf(n)
             // What props set on the switch before checkbox came (they go
             // in the order the app wrote them): its name for TalkBack first.
-            carryViewProps(old, this)
+            carryViewProps(n, old, this)
             setOnCheckedChangeListener { _, on -> if (!settingProp) emit(id, AsukaEventKind.TOGGLED) { AsukaEvents.toggled(id, on) } }
         }
         val parent = old.parent as? ViewGroup
@@ -899,7 +915,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         // What props set on the button before its variant came (they go in
         // the order the app wrote them): label: before variant: is its name
         // for TalkBack.
-        carryViewProps(old, b)
+        carryViewProps(n, old, b)
         (n.props[AsukaProp.Button.ICON] as? String)?.let { setButtonIcon(n, b, it) }
         val parent = old.parent as? ViewGroup
         if (parent != null) {

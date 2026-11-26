@@ -36,6 +36,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
@@ -44,6 +45,9 @@ import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import dev.asuka.AsukaModules
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -79,12 +83,16 @@ class AndroidAdapter(private val ctx: Context) : Adapter {
     private val adapter: BluetoothAdapter? get() = manager?.adapter
 
     private fun granted(p: String) = ctx.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
-    private val central = arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-    private val peripheral = arrayOf(Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
+    // Before Android 12 there are no nearby devices permissions: a scan
+    // needs the location permission, and the rest the install's.
+    private val central = if (Build.VERSION.SDK_INT >= 31) arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    private val peripheral = if (Build.VERSION.SDK_INT >= 31) arrayOf(Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
+        else arrayOf()
 
     override fun state(): State {
         val a = adapter ?: return State.UNSUPPORTED
-        if (!granted(Manifest.permission.BLUETOOTH_CONNECT)) return State.UNAUTHORIZED
+        if (Build.VERSION.SDK_INT >= 31 && !granted(Manifest.permission.BLUETOOTH_CONNECT)) return State.UNAUTHORIZED
         return when (a.state) {
             BluetoothAdapter.STATE_ON -> State.ON
             BluetoothAdapter.STATE_TURNING_ON, BluetoothAdapter.STATE_TURNING_OFF -> State.RESETTING
@@ -98,7 +106,7 @@ class AndroidAdapter(private val ctx: Context) : Adapter {
         }
         withContext(Dispatchers.Main) {
             changed(state())
-            ctx.registerReceiver(r, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED), Context.RECEIVER_NOT_EXPORTED)
+            ContextCompat.registerReceiver(ctx, r, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
         }
         try {
             awaitCancellation()
@@ -158,6 +166,8 @@ class AndroidAdapter(private val ctx: Context) : Adapter {
 
     /** A background scan: BackgroundScan's, read until the task is cancelled. */
     private suspend fun backgroundScan(scanner: BluetoothLeScanner, options: ScanOptions, found: (Heard) -> Unit) {
+        // Before Android 8 there is no scan the system runs for the app.
+        if (Build.VERSION.SDK_INT < 26) throw BluetoothException(BluetoothError.NOT_AVAILABLE)
         // Its receiver is only in the apps that call backgroundScan.
         if (!BackgroundScan.declared(ctx)) throw BluetoothException(BluetoothError.NOT_AVAILABLE)
         val r = BackgroundScan.Reader(options.services, options.duplicates, found)
@@ -256,6 +266,12 @@ class AndroidAdapter(private val ctx: Context) : Adapter {
             override fun onCharacteristicRead(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
                 main.post { c.finish(if (status == BluetoothGatt.GATT_SUCCESS) value else BluetoothException(BluetoothError.UNSUPPORTED)) }
             }
+            // Before Android 13 the value is the characteristic's.
+            @Suppress("OVERRIDE_DEPRECATION")
+            override fun onCharacteristicRead(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
+                @Suppress("DEPRECATION") val value = ch.value ?: ByteArray(0)
+                onCharacteristicRead(g, ch, value, status)
+            }
             override fun onCharacteristicWrite(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
                 main.post { c.finish(if (status == BluetoothGatt.GATT_SUCCESS) null else BluetoothException(BluetoothError.UNSUPPORTED)) }
             }
@@ -265,6 +281,11 @@ class AndroidAdapter(private val ctx: Context) : Adapter {
             override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {
                 val key = "${short(ch.service.uuid)} ${short(ch.uuid)}"
                 main.post { c.subs[key]?.toList()?.forEach { it(value) } }
+            }
+            @Suppress("OVERRIDE_DEPRECATION")
+            override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+                @Suppress("DEPRECATION") val value = ch.value ?: ByteArray(0)
+                onCharacteristicChanged(g, ch, value)
             }
             override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) = main.post { c.finish(rssi.toLong()) }.let {}
             override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) = main.post { c.mtu = mtu; c.finish(mtu.toLong()) }.let {}
@@ -347,9 +368,9 @@ class AndroidAdapter(private val ctx: Context) : Adapter {
         val ch = characteristic(c, service, characteristic)
         val type = if (response) BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
         if (response) {
-            c.run<Any?> { it.writeCharacteristic(ch, value, type) == BluetoothStatusCodes.SUCCESS }
+            c.run<Any?> { writeCharacteristic(it, ch, value, type) }
         } else {
-            c.ops.withLock { withContext(Dispatchers.Main) { c.gatt?.writeCharacteristic(ch, value, type) } }
+            c.ops.withLock { withContext(Dispatchers.Main) { c.gatt?.let { writeCharacteristic(it, ch, value, type) } } }
         }
     }
 
@@ -386,7 +407,25 @@ class AndroidAdapter(private val ctx: Context) : Adapter {
                 BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
             else -> BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
         }
-        c.run<Any?> { it.writeDescriptor(d, v) == BluetoothStatusCodes.SUCCESS }
+        c.run<Any?> { writeDescriptor(it, d, v) }
+    }
+
+    // Before Android 13 a write takes the characteristic's (the
+    // descriptor's) value, and says only whether it started.
+
+    @Suppress("DEPRECATION")
+    private fun writeCharacteristic(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray, type: Int): Boolean {
+        if (Build.VERSION.SDK_INT >= 33) return g.writeCharacteristic(ch, value, type) == BluetoothStatusCodes.SUCCESS
+        ch.writeType = type
+        ch.value = value
+        return g.writeCharacteristic(ch)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun writeDescriptor(g: BluetoothGatt, d: BluetoothGattDescriptor, value: ByteArray): Boolean {
+        if (Build.VERSION.SDK_INT >= 33) return g.writeDescriptor(d, value) == BluetoothStatusCodes.SUCCESS
+        d.value = value
+        return g.writeDescriptor(d)
     }
 
     // The app as a peripheral.
@@ -509,9 +548,21 @@ class AndroidAdapter(private val ctx: Context) : Adapter {
         val to = subscribers[u]?.toList() ?: return 0
         main.post {
             val indicate = ch.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY == 0
-            for (d in to) server?.notifyCharacteristicChanged(d, ch, indicate, value)
+            val s = server ?: return@post
+            for (d in to) notifyChanged(s, d, ch, indicate, value)
         }
         return to.size.toLong()
+    }
+
+    /** Before Android 13 the value is the characteristic's. */
+    @Suppress("DEPRECATION")
+    private fun notifyChanged(s: BluetoothGattServer, d: BluetoothDevice, ch: BluetoothGattCharacteristic, indicate: Boolean, value: ByteArray) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            s.notifyCharacteristicChanged(d, ch, indicate, value)
+            return
+        }
+        ch.value = value
+        s.notifyCharacteristicChanged(d, ch, indicate)
     }
 
     override suspend fun advertise(options: Advertising) {
@@ -558,18 +609,45 @@ internal fun advertisement(ctx: Context, r: ScanResult): Heard {
     rec?.serviceData?.forEach { (k, v) -> sd[short(k.uuid)] = v }
     val md = HashMap<String, ByteArray>()
     rec?.manufacturerSpecificData?.let { m -> for (i in 0 until m.size()) md[String.format("%04x", m.keyAt(i))] = m.valueAt(i) }
-    val named = ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    val named = Build.VERSION.SDK_INT < 31 || ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
     val name = (if (named) runCatching { r.device.name }.getOrNull() else null) ?: rec?.deviceName ?: ""
     val ago = SystemClock.elapsedRealtimeNanos() - r.timestampNanos
     return Heard(
         device = Device(id = r.device.address, name = name), rssi = r.rssi.toLong(), localName = rec?.deviceName ?: "",
         services = rec?.serviceUuids?.map { short(it.uuid) } ?: emptyList(),
-        solicited = rec?.serviceSolicitationUuids?.map { short(it.uuid) } ?: emptyList(),
+        solicited = if (Build.VERSION.SDK_INT >= 29) rec?.serviceSolicitationUuids?.map { short(it.uuid) } ?: emptyList()
+            else rec?.bytes?.let(::solicited) ?: emptyList(),
         serviceData = sd, manufacturerData = md,
         txPower = (rec?.txPowerLevel ?: Int.MIN_VALUE).let { if (it == Int.MIN_VALUE) 0L else it.toLong() },
         hasTxPower = (rec?.txPowerLevel ?: Int.MIN_VALUE) != Int.MIN_VALUE,
-        connectable = r.isConnectable, time = System.currentTimeMillis() * 1_000_000 - ago.coerceAtLeast(0),
+        // Before Android 8 a scan result doesn't say: connectable.
+        connectable = Build.VERSION.SDK_INT < 26 || r.isConnectable, time = System.currentTimeMillis() * 1_000_000 - ago.coerceAtLeast(0),
     )
+}
+
+/**
+ * The solicited services of an advertisement's bytes (its 16-, 32- and
+ * 128-bit lists): ScanRecord reads them only from Android 10.
+ */
+private fun solicited(b: ByteArray): List<String> {
+    val out = ArrayList<String>()
+    var i = 0
+    while (i < b.size) {
+        val n = b[i].toInt() and 0xff
+        if (n == 0 || i + n >= b.size) break
+        val size = when (b[i + 1].toInt() and 0xff) { 0x14 -> 2; 0x1f -> 4; 0x15 -> 16; else -> 0 }
+        var j = i + 2
+        while (size > 0 && j + size <= i + 1 + n) {
+            // Little endian: the last byte first.
+            val hex = (j + size - 1 downTo j).joinToString("") { "%02x".format(b[it]) }
+            val u = if (size == 16) "${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}"
+                else "${hex.padStart(8, '0')}$BASE"
+            out.add(short(UUID.fromString(u)))
+            j += size
+        }
+        i += n + 1
+    }
+    return out
 }
 
 /**
@@ -612,8 +690,12 @@ internal object BackgroundScan {
 
     private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun declared(c: Context): Boolean =
-        c.packageManager.queryBroadcastReceivers(Intent(c, BluetoothScanReceiver::class.java), PackageManager.ResolveInfoFlags.of(0)).isNotEmpty()
+    @Suppress("DEPRECATION") // queryBroadcastReceivers' flags as an int, before Android 13
+    fun declared(c: Context): Boolean {
+        val i = Intent(c, BluetoothScanReceiver::class.java)
+        return if (Build.VERSION.SDK_INT >= 33) c.packageManager.queryBroadcastReceivers(i, PackageManager.ResolveInfoFlags.of(0)).isNotEmpty()
+            else c.packageManager.queryBroadcastReceivers(i, 0).isNotEmpty()
+    }
 
     /**
      * Adds a background scan: the system's starts, or widens to its
@@ -621,6 +703,7 @@ internal object BackgroundScan {
      * it stops). Throws as it can't start.
      */
     @SuppressLint("MissingPermission") // asked for first (AndroidAdapter.ready)
+    @RequiresApi(26)
     fun add(c: Context, scanner: BluetoothLeScanner, r: Reader): Long {
         val want: Set<String>? = if (r.services.isEmpty() || readers.values.any { it.services.isEmpty() }) null
             else (readers.values.flatMap { it.services } + r.services).toSet()
@@ -653,8 +736,9 @@ internal object BackgroundScan {
     private fun stop(c: Context) {
         running = false
         services = null
+        // Before Android 8 there is none to stop.
         val scanner = c.getSystemService(BluetoothManager::class.java)?.adapter?.bluetoothLeScanner
-        runCatching { scanner?.stopScan(intent(c)) }
+        if (Build.VERSION.SDK_INT >= 26) runCatching { scanner?.stopScan(intent(c)) }
         prefs(c).edit().remove("duplicates").apply()
     }
 
@@ -675,6 +759,8 @@ internal object BackgroundScan {
 
     /** The receiver's broadcast: what the scan heard, or why it stopped. done once it's handled. */
     fun received(c: Context, i: Intent, done: () -> Unit) {
+        // Only Android 8 and later's scans send it.
+        if (Build.VERSION.SDK_INT < 26) return done()
         val err = i.getIntExtra(BluetoothLeScanner.EXTRA_ERROR_CODE, 0)
         if (err != 0) {
             if (readers.isNotEmpty()) {
@@ -685,7 +771,7 @@ internal object BackgroundScan {
             }
             return done()
         }
-        val rs = i.getParcelableArrayListExtra(BluetoothLeScanner.EXTRA_LIST_SCAN_RESULT, ScanResult::class.java)
+        val rs = IntentCompat.getParcelableArrayListExtra(i, BluetoothLeScanner.EXTRA_LIST_SCAN_RESULT, ScanResult::class.java)
         if (rs.isNullOrEmpty()) return done()
         val ads = rs.map { advertisement(c, it) }
         if (readers.isNotEmpty()) {

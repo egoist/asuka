@@ -117,7 +117,7 @@ keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 2
 ASUKA_KEYSTORE_PASSWORD=... asuka build --platform android
 ```
 
-（如果密钥的密码与 keystore 的不同，还要设置 `ASUKA_KEY_PASSWORD`；在 CI 中，可以用 `ASUKA_KEYSTORE` 和 `ASUKA_KEY_ALIAS` 指定 keystore 和别名。）这会生成一个用于 Google Play 的 `.aab`，支持 64 位和 32 位 ARM 手机以及 x86_64（Android 模拟器、Chromebook），要求 Android 13 及以上。其中是为每个架构编译好的应用。Play 会根据它为每台手机生成只包含该机架构的 APK。使用了 `std/sqlite` 的应用，每个架构下的应用里都编译进了 SQLite。`asuka publish --platform android` 会构建并上传到 Google Play（见[发布到应用商店](#发布到应用商店)）。
+（如果密钥的密码与 keystore 的不同，还要设置 `ASUKA_KEY_PASSWORD`；在 CI 中，可以用 `ASUKA_KEYSTORE` 和 `ASUKA_KEY_ALIAS` 指定 keystore 和别名。）这会生成一个用于 Google Play 的 `.aab`，支持 64 位和 32 位 ARM 手机以及 x86_64（Android 模拟器、Chromebook），要求 Android 7 及以上。其中是为每个架构编译好的应用。Play 会根据它为每台手机生成只包含该机架构的 APK。使用了 `std/sqlite` 的应用，每个架构下的应用里都编译进了 SQLite。`asuka publish --platform android` 会构建并上传到 Google Play（见[发布到应用商店](#发布到应用商店)）。
 
 加上 `--apk` 则会生成一个已签名、包含所有架构的发布版 `.apk`，可以直接安装（`adb install dist/<Name>.apk`）：适合测试发布构建，或者不经应用商店分发应用。
 

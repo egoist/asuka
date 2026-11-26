@@ -1,11 +1,18 @@
 package dev.asuka
 
+import android.Manifest
 import android.content.ContentValues
+import android.media.MediaScannerConnection
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 private val copier = Executors.newSingleThreadExecutor()
 
@@ -32,13 +39,21 @@ fun AsukaRuntime.libraryMethods(): Map<String, AsukaModuleMethod> = mapOf(
         }
         fun done(r: Result<String>) = onMain { reply(r.map { it.toByteArray() }) }
         if (!src.isFile) reply(Result.failure(Exception("no file at ${src.path}")))
-        else copier.execute {
+        else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) copier.execute {
             done(runCatching { saveToMediaStore(src, collection, dir, folder, name, mime) }.onSuccess { if (move) src.delete() })
+        }
+        // Before Android 10, writing to the shared folders takes the storage permission.
+        else withPermission(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE)) { ok ->
+            if (!ok) reply(Result.failure(Exception("not allowed: storage")))
+            else copier.execute {
+                done(runCatching { saveToSharedFolder(src, dir, folder, name, mime) }.onSuccess { if (move) src.delete() })
+            }
         }
     },
 )
 
-/** Copies src into a MediaStore collection, pending until it's whole; its URI. */
+/** Copies src into a MediaStore collection, pending until it's whole; its URI. Android 10 and later. */
+@RequiresApi(Build.VERSION_CODES.Q)
 private fun AsukaRuntime.saveToMediaStore(src: File, collection: Int, dir: String, folder: String, name: String, mime: String): String {
     val volume = MediaStore.VOLUME_EXTERNAL_PRIMARY
     val uri = when (collection) {
@@ -63,4 +78,33 @@ private fun AsukaRuntime.saveToMediaStore(src: File, collection: Int, dir: Strin
         throw e
     }
     return item.toString()
+}
+
+/**
+ * Before Android 10 (no relative paths, no pending items): copies src into
+ * the shared folder, a taken name numbered as MediaStore numbers it, and
+ * has the media scanner add it; its URI (the file's, if the scanner gives
+ * none).
+ */
+private fun AsukaRuntime.saveToSharedFolder(src: File, dir: String, folder: String, name: String, mime: String): String {
+    @Suppress("DEPRECATION")
+    val top = Environment.getExternalStoragePublicDirectory(dir)
+    val parent = if (folder.isEmpty()) top else File(top, folder)
+    if (!parent.isDirectory && !parent.mkdirs()) error("couldn't add to the library")
+    val base = name.substringBeforeLast('.')
+    val ext = name.substringAfterLast('.', "")
+    var f = File(parent, name)
+    var n = 1
+    while (f.exists()) f = File(parent, if (ext.isEmpty()) "$base (${n++})" else "$base (${n++}).$ext")
+    try {
+        f.outputStream().use { out -> src.inputStream().use { it.copyTo(out, 1 shl 16) } }
+    } catch (e: Exception) {
+        f.delete()
+        throw e
+    }
+    val scanned = CountDownLatch(1)
+    var uri: Uri? = null
+    MediaScannerConnection.scanFile(app, arrayOf(f.path), arrayOf(mime)) { _, u -> uri = u; scanned.countDown() }
+    scanned.await(10, TimeUnit.SECONDS)
+    return (uri ?: Uri.fromFile(f)).toString()
 }

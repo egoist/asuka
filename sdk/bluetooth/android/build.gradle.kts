@@ -9,3 +9,7 @@ plugins {
 android {
     namespace = "platform.bluetooth"
 }
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.16.0")
+}

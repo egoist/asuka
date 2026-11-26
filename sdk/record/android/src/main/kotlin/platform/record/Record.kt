@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.MediaRecorder
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -64,7 +65,8 @@ internal object AudioRecorder : Recorder {
         val f = if (path.isNotEmpty()) File(path) else File(dir, java.util.UUID.randomUUID().toString() + ".m4a")
         // While the app is on screen: Android doesn't let one start later.
         if (background) runCatching { startService() }
-        val r = MediaRecorder(app)
+        // Before Android 12 a recorder isn't given the app's context.
+        val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(app) else @Suppress("DEPRECATION") MediaRecorder()
         try {
             r.setAudioSource(MediaRecorder.AudioSource.MIC)
             r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
@@ -95,7 +97,7 @@ internal object AudioRecorder : Recorder {
 
     private fun startService() {
         val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (nm.getNotificationChannel(CHANNEL) == null) {
+        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(NotificationChannel(CHANNEL, "Recording", NotificationManager.IMPORTANCE_LOW))
         }
         // Its notification shows (the system asks first); recording goes on either way.
@@ -173,6 +175,7 @@ class RecordService : Service() {
             .setContentTitle(AudioRecorder.title)
             .setOngoing(true)
             .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW) // before Android 8, which has no channels
             .setUsesChronometer(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)

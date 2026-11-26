@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.os.Build
 import android.text.Layout
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -61,6 +62,15 @@ private class AsukaInlineSpan(val index: Int, val w: Int, val h: Int) : android.
 
     override fun draw(canvas: Canvas, text: CharSequence?, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int, paint: Paint) {}
 }
+
+/** A typeface over a span. Before Android 9 a TypefaceSpan takes only a family's name: this sets the typeface itself. */
+private class AsukaTypefaceSpan(private val typeface: Typeface) : android.text.style.MetricAffectingSpan() {
+    override fun updateDrawState(tp: TextPaint) { tp.typeface = typeface }
+    override fun updateMeasureState(tp: TextPaint) { tp.typeface = typeface }
+}
+
+private fun typefaceSpan(t: Typeface): Any =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) TypefaceSpan(t) else AsukaTypefaceSpan(t)
 
 /** Marks a span's background, which the view draws per line. */
 private class AsukaBackgroundSpan(val color: Int)
@@ -293,9 +303,9 @@ class AsukaRichText(private val rt: AsukaRuntime, private val id2: Int) : AsukaC
             val w = weightOf(s.weight)
             val custom = if (family.isNotEmpty() && !s.mono && (w > 0 || s.italic)) AsukaFonts.typeface(rt.app, family, w, s.italic) else null
             if (custom != null) {
-                span(TypefaceSpan(custom))
+                span(typefaceSpan(custom))
             } else if (w > 0) {
-                span(TypefaceSpan(Typeface.create(if (s.mono) Typeface.MONOSPACE else Typeface.DEFAULT, w, s.italic)))
+                span(typefaceSpan(AsukaFonts.weighted(rt.app, if (s.mono) Typeface.MONOSPACE else Typeface.DEFAULT, w, s.italic)))
             } else if (s.italic) {
                 span(StyleSpan(Typeface.ITALIC))
             }
@@ -368,7 +378,8 @@ class AsukaRichText(private val rt: AsukaRuntime, private val id2: Int) : AsukaC
             .setTextDirection(direction)
             .setIncludePad(false)
             .setLineSpacing(extra, mult)
-            .setUseLineSpacingFromFallbacks(true)
+        // Before Android 9 lines are as tall as the text's own font says, not its fallbacks'.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) b.setUseLineSpacingFromFallbacks(true)
         if (left > 0) b.setMaxLines(left).setEllipsize(TextUtils.TruncateAt.END)
         return b.build()
     }

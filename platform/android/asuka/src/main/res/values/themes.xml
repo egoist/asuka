@@ -20,15 +20,16 @@
          window as big as the screen, drawn edge to edge, see-through behind
          its content so predictive back shows the app under it as the
          content shrinks; it slides up and back down. -->
-    <style name="ThemeOverlay.Asuka.FullScreenDialog" parent="">
+    <style name="Base.ThemeOverlay.Asuka.FullScreenDialog" parent="">
         <item name="android:windowIsFloating">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:windowAnimationStyle">@style/Animation.Asuka.FullScreenDialog</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
     </style>
+    <!-- Over the display's cutout too: values-v28 and values-v30. -->
+    <style name="ThemeOverlay.Asuka.FullScreenDialog" parent="Base.ThemeOverlay.Asuka.FullScreenDialog" />
     <style name="Animation.Asuka.FullScreenDialog" parent="">
         <item name="android:windowEnterAnimation">@anim/asuka_full_screen_enter</item>
         <item name="android:windowExitAnimation">@anim/asuka_full_screen_exit</item>
@@ -37,14 +38,15 @@
     <!-- asuka dev's error overlay (DevError.kt): a window as big as the
          screen, drawn edge to edge, over the app and its dialogs; it fades
          in and out. -->
-    <style name="ThemeOverlay.Asuka.DevError" parent="">
+    <style name="Base.ThemeOverlay.Asuka.DevError" parent="">
         <item name="android:windowIsFloating">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:windowAnimationStyle">@android:style/Animation.Toast</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
     </style>
+    <!-- Over the display's cutout too: values-v28 and values-v30. -->
+    <style name="ThemeOverlay.Asuka.DevError" parent="Base.ThemeOverlay.Asuka.DevError" />
 
     <!-- Button variants (ui.ButtonVariant): plain is a text button. -->
     <style name="ThemeOverlay.Asuka.TextButton" parent="">

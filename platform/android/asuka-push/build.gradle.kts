@@ -11,7 +11,7 @@ android {
     namespace = "dev.asuka.push"
     compileSdk = 36
     defaultConfig {
-        minSdk = 33
+        minSdk = 24
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

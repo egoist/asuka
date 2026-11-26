@@ -259,7 +259,7 @@ ASUKA_KEYSTORE_PASSWORD=... asuka build --platform android
 (`ASUKA_KEY_PASSWORD` too if the key's differs; `ASUKA_KEYSTORE` and
 `ASUKA_KEY_ALIAS` name them in CI.) It makes an `.aab` for Google Play, for
 64-bit and 32-bit ARM phones and x86_64 (emulators, Chromebooks),
-Android 13 and later: the app compiled for each architecture. Play makes
+Android 7 and later: the app compiled for each architecture. Play makes
 each phone's APK from it, with only that phone's architecture. An app
 that uses `std/sqlite` has SQLite compiled into it for each
 architecture. `asuka publish --platform android` makes it and uploads it to Google Play (see

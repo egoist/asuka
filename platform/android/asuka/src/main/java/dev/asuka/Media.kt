@@ -8,6 +8,7 @@ import android.graphics.Matrix
 import androidx.exifinterface.media.ExifInterface
 import java.io.ByteArrayInputStream
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -23,6 +24,7 @@ import android.view.animation.OvershootInterpolator
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
+import androidx.annotation.RequiresApi
 import java.io.File
 import android.net.Uri
 import java.net.HttpURLConnection
@@ -105,19 +107,25 @@ object AsukaImages {
         return app.assets.open(source).use { it.readBytes() }
     }
 
-    /** Makes an animated image's drawable off the main thread; done gets it there (null if it can't be). */
-    fun animation(data: ByteArray, done: (android.graphics.drawable.AnimatedImageDrawable?) -> Unit) {
+    /** Makes an animated image's drawable (an AnimatedImageDrawable) off the main thread; done gets it there (null if it can't be). */
+    fun animation(data: ByteArray, done: (android.graphics.drawable.Drawable?) -> Unit) {
+        // Before Android 9 there's no AnimatedImageDrawable: the image stays its first frame.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) { done(null); return }
         pool.execute {
-            val d = runCatching {
-                android.graphics.ImageDecoder.decodeDrawable(android.graphics.ImageDecoder.createSource(ByteBuffer.wrap(data)))
-                    as? android.graphics.drawable.AnimatedImageDrawable
-            }.getOrNull()
+            val d = runCatching { animatedDrawable(data) }.getOrNull()
             main.post { done(d) }
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.P)
+    private fun animatedDrawable(data: ByteArray): android.graphics.drawable.Drawable? =
+        android.graphics.ImageDecoder.decodeDrawable(android.graphics.ImageDecoder.createSource(ByteBuffer.wrap(data)))
+            .takeIf { it is android.graphics.drawable.AnimatedImageDrawable }
+
     /** Whether data is a file ImageDecoder animates: a GIF, a WebP with an ANIM chunk, an AVIF or HEIF sequence. */
     private fun animates(data: ByteArray): Boolean {
+        // Before Android 9 nothing animates: BitmapFactory decodes the first frame.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
         fun at(i: Int, s: String) = data.size >= i + s.length && (s.indices).all { data[i + it] == s[it].code.toByte() }
         if (at(0, "GIF8")) return true
         if (at(0, "RIFF") && at(8, "WEBPVP8X") && data.size > 20) return data[20].toInt() and 2 != 0
@@ -148,6 +156,8 @@ object AsukaImages {
 
     /** What BitmapFactory doesn't read (HEIF and AVIF, where the device has their codecs): ImageDecoder, which turns it upright itself. */
     private fun decodeOther(data: ByteArray, maxSide: Int): AsukaImage {
+        // Before Android 9 there's no ImageDecoder, and BitmapFactory has no codec for it.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) error("can't decode the image")
         var w = 0
         var h = 0
         val b = runCatching {
@@ -275,7 +285,7 @@ class AsukaImageView(context: Context) : androidx.appcompat.widget.AppCompatImag
         set(v) { field = v; animating() }
     private var placeholderAlpha = 1f
     private var fade: ValueAnimator? = null
-    private var anim: android.graphics.drawable.AnimatedImageDrawable? = null
+    private var anim: android.graphics.drawable.Animatable? = null
     private val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
     private val m = Matrix()
 
@@ -326,9 +336,9 @@ class AsukaImageView(context: Context) : androidx.appcompat.widget.AppCompatImag
     }
 
     /** Plays an animated picture in place of its first frame. */
-    fun play(d: android.graphics.drawable.AnimatedImageDrawable) {
+    fun play(d: android.graphics.drawable.Drawable) {
         val a = imageAlpha
-        anim = d
+        anim = d as? android.graphics.drawable.Animatable
         setImageDrawable(d)
         imageAlpha = a
         animating()

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 9 and 10: windows drawn edge to edge go under a cutout on the
+     screen's short edges, as androidx.activity's edge to edge has the
+     activity's (long edges' come with Android 11: values-v30). -->
+<resources>
+    <style name="ThemeOverlay.Asuka.FullScreenDialog" parent="Base.ThemeOverlay.Asuka.FullScreenDialog">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+    <style name="ThemeOverlay.Asuka.DevError" parent="Base.ThemeOverlay.Asuka.DevError">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>
