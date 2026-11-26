@@ -146,6 +146,8 @@ asuka publish --platform ios --review --notes @release-notes/ios --release manua
 - `--review` 会在 App Store 版本（即 `asuka.toml` 中的 `version`）不存在时创建它，为它关联这个构建，然后提交审核。首次提交之前，需要先在 App Store Connect 中填好商品页信息、截图和隐私问卷，缺了什么会打印出来。`--release auto` 在审核通过后自动发布，`--release manual` 则等你手动发布。
 - `--no-wait` 在 Apple 收到上传后就结束，不再等待处理。
 
+`asuka publish --platform mac --appstore` 用同一个密钥为 Mac App Store 做同样的事：上传 `.pkg`（由 `--appstore` 构建），使用应用的 macOS 构建和版本、Mac 版 TestFlight，以及审核。
+
 **Google Play。** 在 Google Cloud 中创建一个服务账号，并为它生成 JSON 密钥（IAM › Service accounts › Keys）；所在项目需要开启 Google Play Android Developer API。然后在 Play Console 的 Users and permissions 中邀请这个服务账号的邮箱，并授予它发布该应用的权限。在 `asuka.toml`（`[android]` 中的 `serviceAccount = "play.json"`）或 `ASUKA_PLAY_SERVICE_ACCOUNT`（文件路径或 JSON 内容）中指定这个密钥。注意，应用的第一个 `.aab` 只能在 Play Console 中上传：先在那里创建应用并手动上传第一个构建，之后的构建再交给 `asuka publish`。
 
 ```sh
@@ -186,7 +188,7 @@ asuka build --platform mac --profile Notes.provisionprofile --notarize asuka
 
 描述文件会以 `Contents/embedded.provisionprofile` 的形式放进应用。签名时，应用会从描述文件授予的 entitlement 中取出它的包需要的那些（`com.apple.developer.aps-environment`、`com.apple.developer.applesignin`、`com.apple.developer.devicecheck.appattest-environment`），再加上应用 ID、团队和强化运行时。描述文件缺了什么，构建会告诉你。不加 `--sign` 时，签名身份取钥匙串中该描述文件允许的证书（Developer ID Application）；如果 `--sign` 指定的身份不在描述文件中，会报错。`--profile` 可以是文件路径，也可以是已安装描述文件的名称或 UUID；`ASUKA_MAC_PROFILE` 和 `asuka.toml` 的 `mac.profile` 作用相同。三者都没有指定时，使用了这些包的应用会用已安装的（位于 Xcode 描述文件目录中的）与其 ID 最匹配的描述文件签名；一个都找不到，就不带描述文件签名，此时构建会告诉你哪些功能在 Mac 上无法使用，应用的其余部分照常工作。
 
-`--appstore` 则改为生成用于 Mac App Store 的 `dist/darwin-arm64/<name>-<version>-darwin-arm64.pkg`：应用运行在 App 沙盒中（允许访问网络和用户选择的文件），用 Mac App Store 描述文件对应的证书签名（Apple Distribution；描述文件依次取 `asuka.toml` 的 `mac.appStoreProfile`、`--profile`、最佳匹配），安装包则用团队的 Mac Installer Distribution 证书签名。之后用 Transporter 或 `xcrun altool --upload-package` 上传即可；`asuka publish` 目前还不支持上传 Mac 构建。公证只适用于在商店之外分发的应用，所以同时使用 `--notarize` 和 `--appstore` 会报错。
+`--appstore` 则改为生成用于 Mac App Store 的 `dist/darwin-arm64/<name>-<version>-darwin-arm64.pkg`：应用运行在 App 沙盒中（允许访问网络和用户选择的文件），用 Mac App Store 描述文件对应的证书签名（Apple Distribution；描述文件依次取 `asuka.toml` 的 `mac.appStoreProfile`、`--profile`、最佳匹配），安装包则用团队的 Mac Installer Distribution 证书签名。`asuka publish --platform mac --appstore` 会构建它，并像 iOS 应用一样上传到 App Store Connect：支持 TestFlight 的 `--groups`、提交 Mac App Store 审核的 `--review`、`--notes`，以及用 `--file` 上传之前构建好的 `.pkg`（见[发布到应用商店](#发布到应用商店)）。如果应用的某个包需要更高版本的 macOS（比如 `platform/camera` 需要 macOS 13），应用会在 Info.plist 里写明。公证只适用于在商店之外分发的应用，所以同时使用 `--notarize` 和 `--appstore` 会报错。
 
 ## Windows
 

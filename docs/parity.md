@@ -278,5 +278,4 @@ app compiled into it), and GUI tests of an app on the simulator and the
 emulator. On Windows and Linux, Lottie (`lottie.View` is an empty box).
 On Linux and the web, speech to text. On Windows, a screen's `zoomFrom`
 (a push slides instead; Linux slides as libadwaita's navigation does,
-GNOME having no zoom). And uploading to the Mac App Store with
-`asuka publish` (upload the `.pkg` with Transporter).
+GNOME having no zoom).

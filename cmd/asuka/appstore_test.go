@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -161,6 +162,7 @@ type fakeASC struct {
 	srv      *httptest.Server
 	pub      *ecdsa.PublicKey
 	log      []string
+	queries  []string // each request's method, path and query
 	bodies   map[string][]map[string]any
 	parts    map[int64][]byte
 	failPart int // parts to fail once with a 500
@@ -213,6 +215,7 @@ func (f *fakeASC) serve(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	path := r.URL.Path
 	body, _ := io.ReadAll(r.Body)
+	f.queries = append(f.queries, r.Method+" "+path+"?"+r.URL.Query().Encode())
 	if strings.HasPrefix(path, "/parts/") {
 		// The upload's parts: presigned, no token.
 		if r.Header.Get("Authorization") != "" || r.Header.Get("X-Part") != "yes" {
@@ -457,6 +460,44 @@ func TestPublishIOS(t *testing.T) {
 	}
 }
 
+// A Mac App Store build goes up as an iOS one does, as the Mac's: its
+// .pkg, its builds, versions and review App Store Connect's macOS ones.
+func TestPublishMacAppStore(t *testing.T) {
+	c, f := testASC(t)
+	c.platform = "MAC_OS"
+	app := testApp(t)
+	var built int
+	build, _ := fakeBuild(t, 2500, ".pkg", &built)
+	o := &publishOptions{review: true}
+	if err := publishIOS(c, app, o, map[string]string{"": "Faster sync."}, build); err != nil {
+		t.Fatalf("%v\nrequests: %v", err, f.log)
+	}
+	if a := f.attrs("POST /v1/buildUploads", 0); a["platform"] != "MAC_OS" {
+		t.Fatalf("buildUploads %v", a)
+	}
+	if a := f.attrs("POST /v1/buildUploadFiles", 0); a["fileName"] != "Notes.pkg" || a["uti"] != "com.apple.pkg" {
+		t.Fatalf("buildUploadFiles %v", a)
+	}
+	if a := f.attrs("POST /v1/appStoreVersions", 0); a["platform"] != "MAC_OS" {
+		t.Fatalf("version %v", a)
+	}
+	if a := f.attrs("POST /v1/reviewSubmissions", 0); a["platform"] != "MAC_OS" {
+		t.Fatalf("review submission %v", a)
+	}
+	var platformed, ios int
+	for _, q := range f.queries {
+		if strings.Contains(q, "MAC_OS") {
+			platformed++
+		}
+		if strings.Contains(q, "=IOS") {
+			ios++
+		}
+	}
+	if platformed == 0 || ios != 0 {
+		t.Fatalf("queries for macOS %d, for iOS %d: %v", platformed, ios, f.queries)
+	}
+}
+
 func TestPublishIOSRefusals(t *testing.T) {
 	var built int
 	build, _ := fakeBuild(t, 10, ".ipa", &built)
@@ -624,5 +665,39 @@ func TestASCErrorText(t *testing.T) {
 	}
 	if !e.has("STATE_ERROR") || e.has("ENTITY_ERROR") {
 		t.Fatal("has")
+	}
+}
+
+// A Mac App Store .pkg's app's numbers: a component package's payload,
+// and a product archive's (what asuka build --appstore makes), a level
+// down.
+func TestReadPkgInfo(t *testing.T) {
+	if _, err := exec.LookPath("pkgbuild"); err != nil {
+		t.Skip("no pkgbuild (macOS)")
+	}
+	dir := t.TempDir()
+	app := filepath.Join(dir, "root", "Notes.app", "Contents")
+	os.MkdirAll(filepath.Join(app, "MacOS"), 0o755)
+	os.WriteFile(filepath.Join(app, "MacOS", "Notes"), []byte("#!/bin/sh\n"), 0o755)
+	os.WriteFile(filepath.Join(app, "Info.plist"), []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.example.notes</string>
+<key>CFBundleShortVersionString</key><string>1.2</string>
+<key>CFBundleVersion</key><string>9</string>
+<key>CFBundleExecutable</key><string>Notes</string>
+</dict></plist>`), 0o644)
+	component := filepath.Join(dir, "Notes-component.pkg")
+	if out, err := exec.Command("pkgbuild", "--component", filepath.Join(dir, "root", "Notes.app"), "--install-location", "/Applications", component).CombinedOutput(); err != nil {
+		t.Fatalf("pkgbuild: %v\n%s", err, out)
+	}
+	product := filepath.Join(dir, "Notes.pkg")
+	if out, err := exec.Command("productbuild", "--package", component, product).CombinedOutput(); err != nil {
+		t.Fatalf("productbuild: %v\n%s", err, out)
+	}
+	for _, p := range []string{component, product} {
+		info, err := readPkgInfo(p)
+		if err != nil || info != (ipaInfo{"com.example.notes", "1.2", "9"}) {
+			t.Errorf("%s: %+v, %v", filepath.Base(p), info, err)
+		}
 	}
 }

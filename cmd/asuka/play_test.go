@@ -346,6 +346,13 @@ func TestPublishFlags(t *testing.T) {
 		{[]string{"--platform", "android", "--rollout", "0.2", "--draft"}, "a draft isn't rolled out"},
 		{[]string{"--platform", "ios", "--groups", "a", "--review", "--release", "manual"}, ""},
 		{[]string{"--platform", "android", "--track", "beta", "--rollout", "0.5"}, ""},
+		// The Mac App Store's: App Store Connect's flags, its profile's signature.
+		{[]string{"--platform", "mac", "--appstore", "--groups", "a", "--review"}, ""},
+		{[]string{"--platform", "mac", "--appstore", "--file", "a.pkg"}, ""},
+		{[]string{"--platform", "mac", "--appstore", "--file", "a.ipa"}, "a .pkg"},
+		{[]string{"--platform", "mac", "--appstore", "--notarize", "env"}, "--notarize is for --platform mac without --appstore"},
+		{[]string{"--platform", "mac", "--appstore", "--track", "beta"}, "--track is for --platform android"},
+		{[]string{"--platform", "mac", "--groups", "a"}, "--groups is for --platform ios or android"},
 	} {
 		var o publishOptions
 		fs := publishFlags(&o)

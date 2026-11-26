@@ -47,15 +47,16 @@ func publishFlags(o *publishOptions) *flagSet {
 		"the `platform` whose store to upload to: ios, App Store Connect (TestFlight and the App Store); android, Google Play; mac, windows or linux, the update files where asuka.toml's updates say (installed apps update to it)")
 	fs.String(&o.sign, "sign", 0, "", "macOS: a signing `identity`, e.g. \"Developer ID Application: ...\" (default: ad hoc)")
 	fs.String(&o.notarize, "notarize", 0, "", "macOS: notarize the app and staple the ticket: a notarytool keychain `profile`, or \"env\"")
+	fs.Bool(&o.appStore, "appstore", 0, "macOS: upload to App Store Connect for the Mac App Store and TestFlight, as iOS does (--groups, --review, --notes), a .pkg asuka build --appstore makes, in place of the update files")
 	fs.String(&o.arch, "arch", 0, "", "Linux and Windows: amd64 or arm64")
 	fs.String(&o.version, "version", 0, "", "the `version` to build, in place of asuka.toml's (as CI takes it from the tag)")
-	fs.String(&o.file, "file", 0, "", "upload this .ipa or .aab (from asuka build) instead of building one")
+	fs.String(&o.file, "file", 0, "", "upload this .ipa, .aab or (macOS, --appstore) .pkg from asuka build instead of building one")
 	fs.Int(&o.build, "build", 0, 0, "the build `number` (default: one more than the store's highest, at least asuka.toml's build)")
 	fs.String(&o.notes, "notes", 0, "", "what's new: text in the store's default language, @file likewise, or @dir with a file per language as the store names it (en-US.txt); TestFlight's What to Test and, with --review, the App Store's What's New; Play's release notes")
-	fs.String(&o.groups, "groups", 0, "", "iOS: the TestFlight groups to give the build to, by name, comma separated (with an external group, the build goes to beta review)")
-	fs.Bool(&o.review, "review", 0, "iOS: submit the version, with this build, for App Store review")
-	fs.String(&o.release, "release", 0, "", "iOS, with --review: once approved, release it automatically (auto) or by hand (manual); default: as App Store Connect has it")
-	fs.Bool(&o.noWait, "no-wait", 0, "iOS: stop once App Store Connect has the upload, without waiting for Apple to process it")
+	fs.String(&o.groups, "groups", 0, "", "iOS, Mac App Store: the TestFlight groups to give the build to, by name, comma separated (with an external group, the build goes to beta review)")
+	fs.Bool(&o.review, "review", 0, "iOS, Mac App Store: submit the version, with this build, for App Store review")
+	fs.String(&o.release, "release", 0, "", "iOS, Mac App Store, with --review: once approved, release it automatically (auto) or by hand (manual); default: as App Store Connect has it")
+	fs.Bool(&o.noWait, "no-wait", 0, "iOS, Mac App Store: stop once App Store Connect has the upload, without waiting for Apple to process it")
 	fs.String(&o.track, "track", 0, "internal", "Android: the track to release to: internal, alpha, beta, production, or a closed track's name")
 	fs.Float(&o.rollout, "rollout", 0, 0, "Android: roll the release out to this `fraction` of users, as 0.1, raised later in the Play Console (default: all)")
 	fs.Bool(&o.draft, "draft", 0, "Android: a draft release, to roll out in the Play Console; mac, windows, linux on GitHub: upload to a draft release, which you publish once every platform is there (default: published)")
@@ -80,7 +81,7 @@ func cmdPublish(args []string) error {
 	if err := o.check(fs.set); err != nil {
 		return err
 	}
-	if desktopPlatform(o.platform) {
+	if desktopPlatform(o.platform) && !(o.platform == platformMac && o.appStore) {
 		app, err := loadApp(dir, o.platform)
 		if err != nil {
 			return err
@@ -95,12 +96,16 @@ func cmdPublish(args []string) error {
 	if err != nil {
 		return err
 	}
-	if o.platform == platformIOS {
+	if o.platform == platformIOS || o.platform == platformMac {
 		key, err := loadASCKey(app.cfg)
 		if err != nil {
 			return err
 		}
-		return publishIOS(newASC(key, o.verbose), app, &o, notes, buildForStore)
+		c := newASC(key, o.verbose)
+		if o.platform == platformMac {
+			c.platform = "MAC_OS"
+		}
+		return publishIOS(c, app, &o, notes, buildForStore)
 	}
 	sa, err := loadServiceAccount(app.cfg)
 	if err != nil {
@@ -114,7 +119,8 @@ func (o *publishOptions) check(set map[string]bool) error {
 	if o.platform == "" {
 		return errors.New("usage: asuka publish --platform ios|android|mac|windows|linux [flags] [dir]")
 	}
-	ios := o.platform == platformIOS
+	// The Mac App Store's: App Store Connect's, as iOS's.
+	ios := o.platform == platformIOS || o.platform == platformMac && o.appStore
 	only := func(platform string, names ...string) error {
 		for _, n := range names {
 			if set[n] {
@@ -123,7 +129,7 @@ func (o *publishOptions) check(set map[string]bool) error {
 		}
 		return nil
 	}
-	if desktopPlatform(o.platform) {
+	if desktopPlatform(o.platform) && !ios {
 		// The release notes are the changelog's; the rest is the stores'.
 		if err := only("ios or android", "file", "build", "notes", "groups", "review", "release", "no-wait", "track", "rollout", "cancel-review", "profile"); err != nil {
 			return err
@@ -133,7 +139,12 @@ func (o *publishOptions) check(set map[string]bool) error {
 		}
 		return only("linux or windows", "arch")
 	}
-	if err := only("mac, windows or linux", "sign", "notarize", "arch", "version"); err != nil {
+	if o.platform == platformMac {
+		// What a Mac App Store build takes; it's signed by its profile.
+		if err := only("mac without --appstore", "sign", "notarize", "draft"); err != nil {
+			return err
+		}
+	} else if err := only("mac, windows or linux", "sign", "notarize", "arch", "version"); err != nil {
 		return err
 	}
 	if ios {
@@ -143,7 +154,11 @@ func (o *publishOptions) check(set map[string]bool) error {
 	} else if err := only("ios", "groups", "review", "release", "no-wait", "profile"); err != nil {
 		return err
 	}
-	if want := map[bool]string{true: ".ipa", false: ".aab"}[ios]; o.file != "" && !strings.EqualFold(filepath.Ext(o.file), want) {
+	want := map[bool]string{true: ".ipa", false: ".aab"}[ios]
+	if o.platform == platformMac {
+		want = ".pkg"
+	}
+	if o.file != "" && !strings.EqualFold(filepath.Ext(o.file), want) {
 		return fmt.Errorf("--file %s: a %s", o.file, want)
 	}
 	if o.file != "" && set["build"] {
@@ -183,6 +198,15 @@ func buildForStore(app *asukaApp, o *buildOptions) (string, error) {
 	if o.platform == platformIOS {
 		o.distribution = "app-store"
 		return ipaPath(app.cfg, o), buildIOS(app, o)
+	}
+	if o.platform == platformMac {
+		// The Mac App Store's .pkg (buildMac writes it there).
+		o.appStore = true
+		arch, err := macArch(o.arch)
+		if err != nil {
+			return "", err
+		}
+		return releaseFile(app, o, "darwin", arch, ".pkg"), buildMac(app, o)
 	}
 	return aabPath(app.cfg, o), buildAndroid(app, o)
 }
@@ -320,6 +344,40 @@ func readIPAInfo(path string) (ipaInfo, error) {
 	return ipaInfo{}, fmt.Errorf("%s: no Payload/<app>.app/Info.plist: not an .ipa", path)
 }
 
+// readPkgInfo is a Mac App Store .pkg's app's bundle ID, version and
+// build: its PackageInfo's bundle (pkgutil expands it; macOS).
+func readPkgInfo(path string) (ipaInfo, error) {
+	dir, err := os.MkdirTemp("", "asuka-pkg-*")
+	if err != nil {
+		return ipaInfo{}, err
+	}
+	defer os.RemoveAll(dir)
+	out := filepath.Join(dir, "x")
+	if b, err := exec.Command("pkgutil", "--expand-full", path, out).CombinedOutput(); err != nil {
+		return ipaInfo{}, fmt.Errorf("%s: pkgutil (macOS) can't expand it: %v\n%s", path, err, b)
+	}
+	plists, _ := filepath.Glob(filepath.Join(out, "*", "Payload", "*.app", "Contents", "Info.plist"))
+	if len(plists) == 0 {
+		plists, _ = filepath.Glob(filepath.Join(out, "Payload", "*.app", "Contents", "Info.plist"))
+	}
+	if len(plists) == 0 {
+		return ipaInfo{}, fmt.Errorf("%s: no <app>.app/Contents/Info.plist in its payload: not an app's .pkg", path)
+	}
+	data, err := exec.Command("plutil", "-convert", "xml1", "-o", "-", plists[0]).Output()
+	if err != nil {
+		return ipaInfo{}, fmt.Errorf("%s: its Info.plist: %v", path, err)
+	}
+	m, err := plistStrings(data)
+	if err != nil {
+		return ipaInfo{}, fmt.Errorf("%s: Info.plist: %v", path, err)
+	}
+	info := ipaInfo{m["CFBundleIdentifier"], m["CFBundleShortVersionString"], m["CFBundleVersion"]}
+	if info.id == "" || info.version == "" || info.build == "" {
+		return ipaInfo{}, fmt.Errorf("%s: its Info.plist lacks the bundle ID, version or build", path)
+	}
+	return info, nil
+}
+
 // plistStrings reads an XML property list's top-level string values.
 func plistStrings(data []byte) (map[string]string, error) {
 	d := xml.NewDecoder(bytes.NewReader(data))
@@ -375,7 +433,11 @@ func publishIOSSteps(c *ascClient, app *asukaApp, o *publishOptions, notes map[s
 	var info ipaInfo
 	if o.file != "" {
 		var err error
-		if info, err = readIPAInfo(o.file); err != nil {
+		read := readIPAInfo
+		if strings.EqualFold(filepath.Ext(o.file), ".pkg") {
+			read = readPkgInfo
+		}
+		if info, err = read(o.file); err != nil {
 			return err
 		}
 		if info.id != cfg.ID {

@@ -321,6 +321,10 @@ then:
   you.
 - `--no-wait` stops once Apple has the upload.
 
+`asuka publish --platform mac --appstore` does the same for the Mac
+App Store, with the same key: the `.pkg` (`--appstore` builds), the
+app's macOS builds and version, TestFlight for Mac, and review.
+
 **Google Play.** Make a service account in Google Cloud, with a JSON key
 (IAM › Service accounts › Keys), in a project with the Google Play
 Android Developer API turned on. Invite its email in the Play Console
@@ -424,9 +428,13 @@ App Sandbox (with the network and the files the user picks), signed
 with a Mac App Store profile's certificate (Apple Distribution;
 asuka.toml's `mac.appStoreProfile`, else `--profile`, else the best match),
 and the package with the team's Mac Installer Distribution certificate.
-Upload it with Transporter or `xcrun altool --upload-package`;
-`asuka publish` doesn't upload Mac builds yet. Notarizing is for apps
-outside the store: `--notarize` with `--appstore` is an error.
+`asuka publish --platform mac --appstore` builds it and uploads it to
+App Store Connect as the iOS app goes: TestFlight's `--groups`,
+`--review` for the Mac App Store, `--notes`, and `--file` for a `.pkg`
+built before (see [Publishing](#publishing)). An app that needs a later
+macOS for a package of its own (`platform/camera`'s macOS 13) says so in
+its Info.plist. Notarizing is for apps outside the store: `--notarize`
+with `--appstore` is an error.
 
 ## Windows
 

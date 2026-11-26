@@ -117,6 +117,18 @@ type ascClient struct {
 	poll time.Duration
 	// parallel is how many parts of a build upload at once.
 	parallel int
+	// platform is the app's on App Store Connect: "IOS" ("" too), or
+	// "MAC_OS" for the Mac App Store.
+	platform string
+}
+
+// plat is the platform App Store Connect's builds, versions and reviews
+// are of.
+func (c *ascClient) plat() string {
+	if c.platform == "" {
+		return "IOS"
+	}
+	return c.platform
 }
 
 func newASC(key *ascKey, verbose bool) *ascClient {
@@ -358,6 +370,7 @@ type ascStateDetail struct {
 
 type ascBuildUpload struct {
 	CFBundleVersion string `json:"cfBundleVersion"`
+	Platform        string `json:"platform"`
 	State           struct {
 		State    string           `json:"state"`
 		Errors   []ascStateDetail `json:"errors"`
@@ -438,11 +451,12 @@ func buildNumber(s string) int {
 // highestBuild is the app's highest build number, of its builds and of
 // the uploads not yet builds.
 func (c *ascClient) highestBuild(appID string) (int, error) {
-	builds, err := ascList[ascBuild](c, "/v1/builds"+query("filter[app]", appID, "sort", "-uploadedDate", "limit", "200", "fields[builds]", "version"), 1)
+	// Each platform numbers its builds apart.
+	builds, err := ascList[ascBuild](c, "/v1/builds"+query("filter[app]", appID, "filter[preReleaseVersion.platform]", c.plat(), "sort", "-uploadedDate", "limit", "200", "fields[builds]", "version"), 1)
 	if err != nil {
 		return 0, err
 	}
-	uploads, err := ascList[ascBuildUpload](c, "/v1/apps/"+appID+"/buildUploads"+query("sort", "-uploadedDate", "limit", "200", "fields[buildUploads]", "cfBundleVersion"), 1)
+	uploads, err := ascList[ascBuildUpload](c, "/v1/apps/"+appID+"/buildUploads"+query("sort", "-uploadedDate", "limit", "200", "fields[buildUploads]", "cfBundleVersion,platform"), 1)
 	if err != nil {
 		return 0, err
 	}
@@ -451,7 +465,9 @@ func (c *ascClient) highestBuild(appID string) (int, error) {
 		high = max(high, buildNumber(b.Attributes.Version))
 	}
 	for _, u := range uploads {
-		high = max(high, buildNumber(u.Attributes.CFBundleVersion))
+		if p := u.Attributes.Platform; p == "" || p == c.plat() {
+			high = max(high, buildNumber(u.Attributes.CFBundleVersion))
+		}
 	}
 	return high, nil
 }
@@ -466,7 +482,7 @@ func stateText(s string) string { return strings.ToLower(strings.ReplaceAll(s, "
 // checkVersionOpen fails if the version takes no more builds, before a
 // build is made for it.
 func (c *ascClient) checkVersionOpen(appID, version string) error {
-	vs, err := ascList[ascVersion](c, "/v1/apps/"+appID+"/appStoreVersions"+query("filter[platform]", "IOS",
+	vs, err := ascList[ascVersion](c, "/v1/apps/"+appID+"/appStoreVersions"+query("filter[platform]", c.plat(),
 		"filter[versionString]", version, "fields[appStoreVersions]", "versionString,appVersionState"), 0)
 	if err != nil {
 		return err
@@ -518,8 +534,17 @@ func (c *ascClient) betaGroups(appID string, names []string) ([]ascRes[ascBetaGr
 	return out, nil
 }
 
-// upload sends the .ipa to App Store Connect, which processes it into a
-// build: the upload's ID.
+// uploadUTI is the type of a build's file: an iOS app's .ipa, a Mac
+// app's installer package.
+func uploadUTI(path string) string {
+	if strings.EqualFold(filepath.Ext(path), ".pkg") {
+		return "com.apple.pkg"
+	}
+	return "com.apple.ipa"
+}
+
+// upload sends the .ipa (a Mac app's .pkg) to App Store Connect, which
+// processes it into a build: the upload's ID.
 func (c *ascClient) upload(appID, path, version, build string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -532,13 +557,13 @@ func (c *ascClient) upload(appID, path, version, build string) (string, error) {
 	}
 	var up ascOne[ascBuildUpload]
 	if err := c.do(http.MethodPost, "/v1/buildUploads", data("buildUploads", "", map[string]any{
-		"cfBundleShortVersionString": version, "cfBundleVersion": build, "platform": "IOS",
+		"cfBundleShortVersionString": version, "cfBundleVersion": build, "platform": c.plat(),
 	}, map[string]any{"app": to("apps", appID)}), &up); err != nil {
 		return "", err
 	}
 	var file ascOne[ascUploadFile]
 	if err := c.do(http.MethodPost, "/v1/buildUploadFiles", data("buildUploadFiles", "", map[string]any{
-		"fileName": filepath.Base(path), "fileSize": st.Size(), "uti": "com.apple.ipa", "assetType": "ASSET",
+		"fileName": filepath.Base(path), "fileSize": st.Size(), "uti": uploadUTI(path), "assetType": "ASSET",
 	}, map[string]any{"buildUpload": to("buildUploads", up.Data.ID)}), &file); err != nil {
 		return "", err
 	}
@@ -710,7 +735,7 @@ func (c *ascClient) processed(appID, uploadID, version, build string) (string, e
 		if buildID == "" {
 			// The build, by its numbers, before the upload links it.
 			bs, err := ascList[ascBuild](c, "/v1/builds"+query("filter[app]", appID, "filter[version]", build,
-				"filter[preReleaseVersion.version]", version, "filter[preReleaseVersion.platform]", "IOS", "fields[builds]", "version,processingState"), 1)
+				"filter[preReleaseVersion.version]", version, "filter[preReleaseVersion.platform]", c.plat(), "fields[builds]", "version,processingState"), 1)
 			if err != nil {
 				return "", err
 			}
@@ -842,7 +867,7 @@ var editableStates = []string{"PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "R
 // submitReview makes (or finds) the App Store version, gives it the
 // build, its What's New and release, and submits it for review.
 func (c *ascClient) submitReview(appID, buildID, version string, notes map[string]string, release string) error {
-	all, err := ascList[ascVersion](c, "/v1/apps/"+appID+"/appStoreVersions"+query("filter[platform]", "IOS",
+	all, err := ascList[ascVersion](c, "/v1/apps/"+appID+"/appStoreVersions"+query("filter[platform]", c.plat(),
 		"fields[appStoreVersions]", "versionString,appVersionState", "limit", "200"), 0)
 	if err != nil {
 		return err
@@ -863,7 +888,7 @@ func (c *ascClient) submitReview(appID, buildID, version string, notes map[strin
 	}
 	if v == nil {
 		var made ascOne[ascVersion]
-		attrs["platform"], attrs["versionString"] = "IOS", version
+		attrs["platform"], attrs["versionString"] = c.plat(), version
 		if err := c.do(http.MethodPost, "/v1/appStoreVersions", data("appStoreVersions", "", attrs,
 			map[string]any{"app": to("apps", appID)}), &made); err != nil {
 			return fmt.Errorf("making version %s on the App Store: %v", version, err)
@@ -920,7 +945,7 @@ func (c *ascClient) submitReview(appID, buildID, version string, notes map[strin
 	}
 	// The submission: the draft one, or the one with issues to answer,
 	// else a new one.
-	subs, err := ascList[ascSubmission](c, "/v1/reviewSubmissions"+query("filter[app]", appID, "filter[platform]", "IOS",
+	subs, err := ascList[ascSubmission](c, "/v1/reviewSubmissions"+query("filter[app]", appID, "filter[platform]", c.plat(),
 		"filter[state]", "READY_FOR_REVIEW,UNRESOLVED_ISSUES"), 0)
 	if err != nil {
 		return err
@@ -930,7 +955,7 @@ func (c *ascClient) submitReview(appID, buildID, version string, notes map[strin
 		subID = subs[0].ID
 	} else {
 		var s ascOne[ascSubmission]
-		if err := c.do(http.MethodPost, "/v1/reviewSubmissions", data("reviewSubmissions", "", map[string]any{"platform": "IOS"},
+		if err := c.do(http.MethodPost, "/v1/reviewSubmissions", data("reviewSubmissions", "", map[string]any{"platform": c.plat()},
 			map[string]any{"app": to("apps", appID)}), &s); err != nil {
 			return err
 		}

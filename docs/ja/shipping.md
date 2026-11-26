@@ -146,6 +146,8 @@ asuka publish --platform ios --review --notes @release-notes/ios --release manua
 - `--review` は、App Store のバージョン（`asuka.toml` の `version`）がなければ作成し、そこにビルドを割り当てて審査に提出します。初回の提出では、先に App Store Connect でストアの掲載情報、スクリーンショット、プライバシーに関する回答を入力しておく必要があります。足りないものは表示されます。`--release auto` は承認されるとすぐにリリースし、`--release manual` はリリースを手動で行うまで待ちます。
 - `--no-wait` は、Apple がアップロードを受け取った時点で終了します。
 
+`asuka publish --platform mac --appstore` は、同じキーで Mac App Store に対して同じことを行います。`.pkg`（`--appstore` でビルドしたもの）、アプリの macOS 向けのビルドとバージョン、Mac 版の TestFlight、審査が対象です。
+
 **Google Play。** Google Play Android Developer API を有効にしたプロジェクトで、Google Cloud のサービス アカウントを作成し、JSON キーを発行します（「IAM」›「サービス アカウント」›「キー」）。Play Console の「ユーザーと権限」でそのアカウントのメールアドレスを招待し、アプリをリリースする権限を付与します。キーは `asuka.toml`（`[android]` の `serviceAccount = "play.json"`）か `ASUKA_PLAY_SERVICE_ACCOUNT`（パスか JSON そのもの）で指定します。Play は、アプリの最初の `.aab` を Play Console からしか受け付けません。Play Console でアプリを作成し、最初のビルドは手動でアップロードしてください。2 つ目以降のビルドは `asuka publish` でアップロードできます。
 
 ```sh
@@ -186,7 +188,7 @@ asuka build --platform mac --profile Notes.provisionprofile --notarize asuka
 
 プロファイルは `Contents/embedded.provisionprofile` としてアプリに入ります。アプリは、プロファイルのエンタイトルメントのうちパッケージが必要とするもの（`com.apple.developer.aps-environment`、`com.apple.developer.applesignin`、`com.apple.developer.devicecheck.appattest-environment`）、アプリの ID とチーム、そして hardened runtime を付けて署名されます。プロファイルに足りないものはビルドが教えてくれます。`--sign` を省略すると、プロファイルが許可する、キーチェーン内の証明書（Developer ID Application）で署名します。プロファイルに含まれない証明書を `--sign` に指定するとエラーになります。`--profile` には、パス、またはインストール済みのプロファイルの名前か UUID を指定します。`ASUKA_MAC_PROFILE` や asuka.toml の `mac.profile` でも同じ指定ができます。どれも指定がなければ、これらのパッケージを使うアプリは、アプリの ID に最も合うインストール済みのプロファイル（Xcode のプロファイル用フォルダーにあるもの）で署名されます。それもなければプロファイルなしで署名されます。その場合、Mac で何が動かないかをビルドが表示し、アプリのそれ以外の部分は問題なく動きます。
 
-`--appstore` を指定すると、代わりに Mac App Store 向けの `dist/darwin-arm64/<name>-<version>-darwin-arm64.pkg` を作ります。アプリは App Sandbox に入り（ネットワークと、ユーザーが選んだファイルにアクセスできます）、Mac App Store のプロファイルの証明書（Apple Distribution）で署名されます。プロファイルは asuka.toml の `mac.appStoreProfile`、なければ `--profile`、それもなければ最も合うものです。パッケージは、チームの Mac Installer Distribution 証明書で署名されます。アップロードには Transporter か `xcrun altool --upload-package` を使ってください。`asuka publish` は、まだ Mac のビルドのアップロードに対応していません。公証はストア外で配布するアプリのためのものなので、`--appstore` と `--notarize` を一緒に指定するとエラーになります。
+`--appstore` を指定すると、代わりに Mac App Store 向けの `dist/darwin-arm64/<name>-<version>-darwin-arm64.pkg` を作ります。アプリは App Sandbox に入り（ネットワークと、ユーザーが選んだファイルにアクセスできます）、Mac App Store のプロファイルの証明書（Apple Distribution）で署名されます。プロファイルは asuka.toml の `mac.appStoreProfile`、なければ `--profile`、それもなければ最も合うものです。パッケージは、チームの Mac Installer Distribution 証明書で署名されます。`asuka publish --platform mac --appstore` は、これをビルドして、iOS アプリと同じように App Store Connect にアップロードします。TestFlight の `--groups`、Mac App Store の審査への提出の `--review`、`--notes`、以前にビルドした `.pkg` を渡す `--file` が使えます（[ストアへの公開](#ストアへの公開)を参照）。アプリのパッケージがより新しい macOS を必要とする場合（`platform/camera` は macOS 13）、アプリはそのことを Info.plist に書きます。公証はストア外で配布するアプリのためのものなので、`--appstore` と `--notarize` を一緒に指定するとエラーになります。
 
 ## Windows
 
