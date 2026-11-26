@@ -29,10 +29,29 @@ import kotlinx.coroutines.withContext
 class AndroidDevice(private val app: Context) : Platform {
     private val cm get() = app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
 
-    override suspend fun info(): Info {
+    override suspend fun info(): NativeInfo {
         val p = app.packageManager.getPackageInfo(app.packageName, 0)
-        return Info(model = Build.MODEL, system = "Android", systemVersion = Build.VERSION.RELEASE,
-            appVersion = p.versionName ?: "", build = p.longVersionCode.toString())
+        return NativeInfo(model = Build.MODEL, system = "Android", systemVersion = Build.VERSION.RELEASE,
+            appVersion = p.versionName ?: "", build = p.longVersionCode.toString(),
+            source = installSource(), installedMs = p.firstInstallTime, updatedMs = p.lastUpdateTime)
+    }
+
+    /**
+     * Where the app came from: the package that installed it (Play's,
+     * another store's), else a sideloaded copy, or a developer's
+     * (debuggable: asuka dev's, Android Studio's).
+     */
+    private fun installSource(): InstallSource {
+        if (app.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) return InstallSource.DEVELOPMENT
+        val by = runCatching {
+            if (Build.VERSION.SDK_INT >= 30) app.packageManager.getInstallSourceInfo(app.packageName).installingPackageName
+            else @Suppress("DEPRECATION") app.packageManager.getInstallerPackageName(app.packageName)
+        }.getOrNull()
+        return when (by) {
+            null, "", "com.android.shell", "com.google.android.packageinstaller", "com.android.packageinstaller" -> InstallSource.DIRECT
+            "com.android.vending" -> InstallSource.PLAY_STORE
+            else -> InstallSource.OTHER_STORE
+        }
     }
 
     override suspend fun browse(url: String) = withContext(Dispatchers.Main) {

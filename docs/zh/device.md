@@ -377,7 +377,7 @@ component Gallery {
 - `device.keepAwake(on)` 在 `on` 为 true 时让屏幕保持常亮，适合视频、菜谱、地图这类场景。需要常亮的界面关闭时，记得把它关掉。
 - `device.pickFiles(types:, multiple:)` 显示系统的文档选择器（iOS 的“文件”浏览器、Android 的存储选择器、桌面上的打开对话框、浏览器中的文件选择器；都不需要权限）。`types` 是 MIME 类型（`"application/pdf"`、`"image/*"`；不填则可以选任何文件），`multiple` 允许用户选择多个文件。它为每个文件返回一个 `device.File`：`path` 是复制到应用缓存目录中的副本，另外还有 `name`、`type` 和 `size`；用户取消时则为空。
 - `device.clipboardHas()` 不读取剪贴板，就能告诉你里面装的是 `text`、`image` 还是 `url`（iOS 不会因此询问用户）：这样你可以只在有东西可粘贴时才显示“粘贴”按钮。`device.clipboardImage()` 把剪贴板里的图片读到一个文件中，格式与复制时相同；`device.copyImage(path)` 把一个图片文件放进剪贴板。`device.clipboardChanges()` 是一个流，每当剪贴板变化时给出它当前的内容（iOS 和 Android 会主动通知；Mac 和 Windows 则每秒查询两次；浏览器能看到页面内的复制，在用户允许页面读取剪贴板时，也能看到其他应用的复制）。
-- `device.info()` 返回设备和应用的信息：`model`（"iPhone"、"Pixel 9"、"Mac"、"PC"）、`system`（"iOS"、"Android"、"macOS"、"Windows"、"Linux"）、`systemVersion`，以及 `appVersion` 和 `build`，即 `asuka.toml` 中的 `version` 和 `build`。
+- `device.info()` 返回设备和应用的信息：`model`（"iPhone"、"Pixel 9"、"Mac"、"PC"）、`system`（"iOS"、"Android"、"macOS"、"Windows"、"Linux"）、`systemVersion`，以及 `appVersion` 和 `build`，即 `asuka.toml` 中的 `version` 和 `build`。和 expo-application 一样，`source` 表示应用从哪里来（`.appStore`、`.testFlight`、`.playStore`、`.otherStore`（比如 Microsoft Store 或 Flathub）、`.direct`（下载或侧载的 APK）、`.development`（开发者的构建）），`installedAt` 和 `updatedAt` 是应用安装的时间和当前版本安装的时间（Web 上没有，`source` 为 `.unknown`）：可以用来显示测试版横幅，或者提示下载来的副本去商店安装。
 
 ```asuka
 import platform/device

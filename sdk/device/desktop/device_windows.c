@@ -22,9 +22,37 @@ static DWORD build(void) {
 	return rtl && rtl(&v) == 0 ? v.dwBuildNumber : 0;
 }
 
+// file_ms is a file's creation (or last write) time, in ms since 1970;
+// 0 when it can't be read.
+static int64_t file_ms(const wchar_t *path, bool created) {
+	WIN32_FILE_ATTRIBUTE_DATA a;
+	if (!GetFileAttributesExW(path, GetFileExInfoStandard, &a)) return 0;
+	FILETIME ft = created ? a.ftCreationTime : a.ftLastWriteTime;
+	uint64_t t = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;  // 100 ns since 1601
+	return t ? (int64_t)(t / 10000) - INT64_C(11644473600000) : 0;
+}
+
 static void p_info(device_Platform *self, asuka_call *call) {
-	device_Info i = {asuka_strdup("PC"), asuka_strdup("Windows"), asuka_sprintf("10.0.%lu", (unsigned long)build()),
-	                 asuka_strdup(asuka_desktop_app_version()), asuka_strdup(asuka_desktop_app_build())};
+	// Where it came from: a package's (the Microsoft Store's, an MSIX
+	// installer's), asuka dev's, else a download or an installer.
+	device_InstallSource source = device_InstallSource_direct;
+	typedef LONG(WINAPI * full_name_fn)(UINT32 *, PWSTR);
+	full_name_fn full = (full_name_fn)(void (*)(void))GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetCurrentPackageFullName");
+	UINT32 n = 0;
+	if (full && full(&n, NULL) != 15700L /* APPMODEL_ERROR_NO_PACKAGE */) source = device_InstallSource_otherStore;
+	if (getenv("ASUKA_DEV")) source = device_InstallSource_development;
+	// Installed as the app's data folder was made (its first run), updated
+	// as its executable was written.
+	wchar_t exe[MAX_PATH];
+	int64_t updated = GetModuleFileNameW(NULL, exe, MAX_PATH) ? file_ms(exe, false) : 0;
+	wchar_t *data = asuka_wide(asuka_desktop_data_dir());
+	int64_t installed = file_ms(data, true);
+	free(data);
+	if (!installed || (updated && installed > updated)) installed = updated;
+	device_NativeInfo i = {.model = asuka_strdup("PC"), .system = asuka_strdup("Windows"),
+	                       .systemVersion = asuka_sprintf("10.0.%lu", (unsigned long)build()),
+	                       .appVersion = asuka_strdup(asuka_desktop_app_version()), .build = asuka_strdup(asuka_desktop_app_build()),
+	                       .source = source, .installedMs = installed, .updatedMs = updated};
 	device_Platform_info_done(call, i);
 }
 

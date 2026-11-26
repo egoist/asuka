@@ -13,19 +13,67 @@ import AppKit
 #endif
 
 final class SystemDevice: Platform {
-    func info() async throws -> Info {
+    func info() async throws -> NativeInfo {
         let b = Bundle.main.infoDictionary ?? [:]
         let app = b["CFBundleShortVersionString"] as? String ?? ""
         let build = b["CFBundleVersion"] as? String ?? ""
+        let (source, installed, updated) = Self.install()
         #if canImport(UIKit)
         return await MainActor.run {
-            Info(model: UIDevice.current.model, system: UIDevice.current.systemName, systemVersion: UIDevice.current.systemVersion, appVersion: app, build: build)
+            NativeInfo(model: UIDevice.current.model, system: UIDevice.current.systemName, systemVersion: UIDevice.current.systemVersion, appVersion: app, build: build,
+                       source: source, installedMs: installed, updatedMs: updated)
         }
         #else
         let v = ProcessInfo.processInfo.operatingSystemVersion
         let version = v.patchVersion > 0 ? "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)" : "\(v.majorVersion).\(v.minorVersion)"
-        return Info(model: "Mac", system: "macOS", systemVersion: version, appVersion: app, build: build)
+        return NativeInfo(model: "Mac", system: "macOS", systemVersion: version, appVersion: app, build: build,
+                          source: source, installedMs: installed, updatedMs: updated)
         #endif
+    }
+
+    /// Where the app came from, and when it was installed and updated (ms
+    /// since 1970; 0: unknown). The store's receipt says a store's copy:
+    /// sandboxReceipt is TestFlight's. A simulator's, a provisioning
+    /// profile's (a developer's, an ad hoc copy) and asuka dev's player
+    /// are a developer's; a Mac app without a receipt was downloaded. The
+    /// app's data container was made as it was installed; its bundle, as
+    /// this version was.
+    static func install() -> (InstallSource, Int, Int) {
+        let fm = FileManager.default
+        func ms(_ url: URL?, _ key: FileAttributeKey) -> Int {
+            guard let p = url?.path, let d = (try? fm.attributesOfItem(atPath: p))?[key] as? Date else { return 0 }
+            return Int(d.timeIntervalSince1970 * 1000)
+        }
+        let receipt = Bundle.main.appStoreReceiptURL
+        let hasReceipt = receipt.map { fm.fileExists(atPath: $0.path) } ?? false
+        var source = InstallSource.direct
+        #if targetEnvironment(simulator)
+        source = .development
+        #else
+        if ProcessInfo.processInfo.environment["ASUKA_DEV"] != nil {
+            source = .development
+        } else if receipt?.lastPathComponent == "sandboxReceipt" {
+            // TestFlight's, or a developer's build run from Xcode's.
+            source = Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") == nil ? .testFlight : .development
+        } else if Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") != nil {
+            source = .development
+        } else if hasReceipt {
+            source = .appStore
+        } else {
+            #if canImport(UIKit)
+            source = .appStore // a store's copy whose receipt is yet to come
+            #endif
+        }
+        #endif
+        #if canImport(UIKit)
+        let home = fm.urls(for: .documentDirectory, in: .userDomainMask).first?.deletingLastPathComponent()
+        #else
+        let home = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first.map { $0.appendingPathComponent(Bundle.main.bundleIdentifier ?? "") }
+        #endif
+        let updated = ms(Bundle.main.bundleURL, .modificationDate)
+        var installed = ms(home, .creationDate)
+        if installed == 0 || (updated > 0 && installed > updated) { installed = updated }
+        return (source, installed, updated)
     }
 
     func browse(url: String) async throws {

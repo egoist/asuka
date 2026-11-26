@@ -377,7 +377,7 @@ component Gallery {
 - `device.keepAwake(on)` は、`on` が true のあいだ画面をオンのままにします。ビデオ、レシピ、地図などに使います。それを必要とする画面が閉じたらオフにしてください。
 - `device.pickFiles(types:, multiple:)` は、システムのドキュメントピッカー（iOS の「ファイル」ブラウザー、Android のストレージピッカー、デスクトップではファイルを開くダイアログ、ブラウザーではファイル選択。権限は不要）を表示します。`types` は MIME タイプ（`"application/pdf"`、`"image/*"`。指定しなければどのファイルでも）で、`multiple` を指定すると複数選べます。選ばれたファイルごとに `device.File` を返します。その `path` はアプリのキャッシュにあるコピーで、`name`、`type`、`size` も持ちます。ユーザーがキャンセルした場合は一つも返りません。
 - `device.clipboardHas()` は、クリップボードの中身を読まずに、`text`、`image`、`url` のどれがあるかを返します（iOS はこのときユーザーに確認しません）。貼り付けるものがあるときだけ「ペースト」ボタンを表示する、といった使い方ができます。`device.clipboardImage()` はクリップボードの画像を、コピーされたときの形式のままファイルに読み出します。`device.copyImage(path)` は画像ファイルをクリップボードに置きます。`device.clipboardChanges()` は、クリップボードが変わるたびにその中身を伝えるストリームです（iOS と Android は変化を知らせます。Mac と Windows には毎秒 2 回問い合わせます。ブラウザーはページの中でのコピーと、ユーザーがクリップボードの読み取りを許可した場合はほかのアプリのコピーを検知します）。
-- `device.info()` はデバイスとアプリの情報です。`model`（"iPhone"、"Pixel 9"、"Mac"、"PC"）、`system`（"iOS"、"Android"、"macOS"、"Windows"、"Linux"）、`systemVersion`、そして `asuka.toml` の `version` と `build` である `appVersion` と `build` を持ちます。
+- `device.info()` はデバイスとアプリの情報です。`model`（"iPhone"、"Pixel 9"、"Mac"、"PC"）、`system`（"iOS"、"Android"、"macOS"、"Windows"、"Linux"）、`systemVersion`、そして `asuka.toml` の `version` と `build` である `appVersion` と `build` を持ちます。expo-application と同じく、`source` はアプリの入手元（`.appStore`、`.testFlight`、`.playStore`、Microsoft Store や Flathub などの `.otherStore`、ダウンロードやサイドロードした APK の `.direct`、開発者のビルドの `.development`）で、`installedAt` と `updatedAt` はアプリがインストールされた日時と、このバージョンがインストールされた日時です（Web ではなく、`source` は `.unknown`）。ベータ版のバナーを出したり、ダウンロードしたコピーにストアを案内したりするのに使えます。
 
 ```asuka
 import platform/device

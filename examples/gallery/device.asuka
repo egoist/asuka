@@ -156,6 +156,7 @@ component PlatformSection {
 
   Section("Platform") {
     Text(if let i = info.value { "{i.model}, {i.system} {i.systemVersion}" } else { "" }) { color: .secondaryLabel }
+    Text(if let i = info.value { "Installed from {i.source}" + (if let t = i.installedAt { ", {t.format("MMM d, yyyy")}" } else { "" }) } else { "" }) { color: .secondaryLabel }
     Row {
       gap: 12
       wrap: true

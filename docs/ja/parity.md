@@ -121,7 +121,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | ファイルのプレビュー | `QLPreviewController`、`.quickLookPreview` | `react-native-file-viewer` | ✓ `platform/preview`（iOS と Mac ではクイックルックで、複数のファイル、マークアップ。Android、Windows、Linux ではそのファイルのアプリ。Web では新しいタブ） |
 | 印刷、HTML からの PDF | `UIPrintInteractionController`、`UIPrintPageRenderer` | `expo-print` | ✓ `platform/print`（ファイル、HTML、`WebView` を、システムのダイアログで印刷し、結果を返す。`print.pdf`：ページ分割、地域の用紙サイズ、余白） |
 | メールとメッセージの作成画面 | `MFMailComposeViewController`、`MFMessageComposeViewController` | `expo-mail-composer`、`expo-sms` | ✓ `platform/compose`（`compose.mail`：宛先、件名、HTML の本文、添付ファイル。iOS ではユーザーが何をしたかがわかり、ほかではメールアプリ。`compose.message`：iOS のメッセージ、Android の SMS アプリ） |
-| スリープの防止、デバイスの情報 | `isIdleTimerDisabled`、`UIDevice` | `expo-keep-awake`、`expo-device` | ✓ `device.keepAwake(on)`、`device.info()` |
+| スリープの防止、デバイスとインストールの情報 | `isIdleTimerDisabled`、`UIDevice` | `expo-keep-awake`、`expo-device`、`expo-application` | ✓ `device.keepAwake(on)`、`device.info()`（アプリの入手元とインストール日時を含む） |
 | ネットワークの状態 | `NWPathMonitor` | `expo-network` | ✓ `platform/network`（`network.status()`：オンラインかどうか、Wi-Fi かモバイル通信か、従量制かどうか、省データモード。NWPathMonitor、ConnectivityManager、Network List Manager、NetworkManager、Network Information API） |
 | ギャラリーやダウンロードへの保存 | `PHPhotoLibrary` | `expo-media-library` | ✓ `platform/library`（`library.save`：写真、Android のギャラリーとダウンロード、ミュージック。デスクトップではダウンロード、ピクチャ、ムービー、ミュージックのフォルダー） |
 | バックグラウンドの処理 | `beginBackgroundTask`、`BGTaskScheduler` | `expo-task-manager`、`expo-background-task` | ✓ `platform/background`：Android はアプリを動かし続け、進捗とボタンを通知に出す。iOS はおよそ 30 秒。デスクトップはアプリが休止されないようにする（App Nap、スリープ）。`platform/periodic`：システムがときどき実行する処理で、画面なしでアプリを起動する（BGTaskScheduler、WorkManager。デスクトップではアプリの実行中のタイマー） |

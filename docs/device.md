@@ -537,7 +537,14 @@ component Gallery {
 - `device.info()` is the device and the app: `model` ("iPhone", "Pixel
   9", "Mac", "PC"), `system` ("iOS", "Android", "macOS", "Windows",
   "Linux"), `systemVersion`, and `appVersion` and `build`,
-  `asuka.toml`'s `version` and `build`.
+  `asuka.toml`'s `version` and `build`. As expo-application says,
+  `source` is where the app came from (`.appStore`, `.testFlight`,
+  `.playStore`, `.otherStore` such as the Microsoft Store or Flathub,
+  `.direct` for a download or a sideloaded APK, `.development` for a
+  developer's build), and `installedAt` and `updatedAt` are when it was
+  installed and when this version was (none on the web, which reports
+  `.unknown`): to show a beta's banner, or point a downloaded copy at
+  the store.
 
 ```asuka
 import platform/device

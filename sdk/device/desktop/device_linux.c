@@ -3,12 +3,16 @@
 // browser; GdkClipboard; the session kept from idling
 // (gtk_application_inhibit). GTK is touched on the main thread, where its
 // answers come; copying what's picked runs on a thread of its own.
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE  // statx
+#endif
 #include "asuka_linux.h"
 #include "device.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 
 static void fail(asuka_call *call, asuka_error *e) { asuka_call_fail(call, e); }
@@ -38,8 +42,29 @@ static char *os_version(void) {
 	return asuka_strdup("linux");
 }
 
+// born_ms is when path was made (statx's birth time, where the file
+// system keeps it), else last changed if !birth; ms since 1970, 0 if
+// unknown.
+static int64_t born_ms(const char *path, bool birth) {
+	struct statx sx;
+	if (statx(AT_FDCWD, path, 0, STATX_BTIME | STATX_MTIME, &sx) != 0) return 0;
+	if (birth) return (sx.stx_mask & STATX_BTIME) ? (int64_t)sx.stx_btime.tv_sec * 1000 + sx.stx_btime.tv_nsec / 1000000 : 0;
+	return (int64_t)sx.stx_mtime.tv_sec * 1000 + sx.stx_mtime.tv_nsec / 1000000;
+}
+
 static void p_info(device_Platform *self, asuka_call *call) {
-	device_Info i = {asuka_strdup("PC"), asuka_strdup("Linux"), os_version(), asuka_strdup(asuka_desktop_app_version()), asuka_strdup(asuka_desktop_app_build())};
+	// Where it came from: a Flatpak (Flathub, another remote), asuka
+	// dev's, else a download or a distribution's package.
+	device_InstallSource source = getenv("FLATPAK_ID") ? device_InstallSource_otherStore : device_InstallSource_direct;
+	if (getenv("ASUKA_DEV")) source = device_InstallSource_development;
+	// Installed as the app's data folder was made (its first run), updated
+	// as its executable was written.
+	int64_t updated = born_ms("/proc/self/exe", false);
+	int64_t installed = born_ms(asuka_desktop_data_dir(), true);
+	if (!installed || (updated && installed > updated)) installed = updated;
+	device_NativeInfo i = {.model = asuka_strdup("PC"), .system = asuka_strdup("Linux"), .systemVersion = os_version(),
+	                       .appVersion = asuka_strdup(asuka_desktop_app_version()), .build = asuka_strdup(asuka_desktop_app_build()),
+	                       .source = source, .installedMs = installed, .updatedMs = updated};
 	device_Platform_info_done(call, i);
 }
 

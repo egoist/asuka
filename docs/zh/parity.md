@@ -121,7 +121,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 预览文件 | `QLPreviewController`、`.quickLookPreview` | `react-native-file-viewer` | ✓ `platform/preview`（iOS 和 Mac 上用快速查看，支持多个文件和标记；Android、Windows 和 Linux 上用打开该文件的应用；Web 上在新标签页打开） |
 | 打印、从 HTML 生成 PDF | `UIPrintInteractionController`、`UIPrintPageRenderer` | `expo-print` | ✓ `platform/print`（打印文件、HTML、`WebView`，使用系统的打印对话框并返回结果；`print.pdf`：分页、按地区选纸张大小、页边距） |
 | 邮件和短信编辑界面 | `MFMailComposeViewController`、`MFMessageComposeViewController` | `expo-mail-composer`、`expo-sms` | ✓ `platform/compose`（`compose.mail`：收件人、主题、HTML 正文、附件，iOS 上能知道用户做了什么，其他平台交给邮件应用；`compose.message`：iOS 的信息、Android 的短信应用） |
-| 保持屏幕常亮、设备信息 | `isIdleTimerDisabled`、`UIDevice` | `expo-keep-awake`、`expo-device` | ✓ `device.keepAwake(on)`、`device.info()` |
+| 保持屏幕常亮、设备和安装信息 | `isIdleTimerDisabled`、`UIDevice` | `expo-keep-awake`、`expo-device`、`expo-application` | ✓ `device.keepAwake(on)`、`device.info()`（含应用来源和安装时间） |
 | 网络状态 | `NWPathMonitor` | `expo-network` | ✓ `platform/network`（`network.status()`：是否在线、Wi-Fi 还是蜂窝网络、是否按流量计费、低数据模式；NWPathMonitor、ConnectivityManager、网络列表管理器、NetworkManager、Network Information API） |
 | 保存到相册、下载目录 | `PHPhotoLibrary` | `expo-media-library` | ✓ `platform/library`（`library.save`：照片、Android 的相册和下载目录、音乐；桌面端的下载、图片、影片和音乐文件夹） |
 | 后台任务 | `beginBackgroundTask`、`BGTaskScheduler` | `expo-task-manager`、`expo-background-task` | ✓ `platform/background`：Android 会让应用保持运行，并在通知里显示进度和按钮；iOS 大约多给 30 秒；桌面端让应用不被挂起（App Nap、睡眠）。`platform/periodic`：系统不定期运行的任务，会在没有界面的情况下启动应用（BGTaskScheduler、WorkManager；桌面端是应用运行期间的定时器） |

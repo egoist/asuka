@@ -17,6 +17,8 @@
 // open dialog on desktops, the browser's file picker. What they give are
 // copies in the app's caches, the app's to keep or move.
 
+import std/time
+
 /// The device and the app.
 pub struct Info {
   /// "iPhone", "Pixel 9", "Mac", "PC".
@@ -29,6 +31,48 @@ pub struct Info {
   appVersion: string = ""
   /// asuka.toml's build.
   build: string = ""
+  /// Where the app came from: a store, TestFlight, a download, a
+  /// developer's build.
+  source: InstallSource = .unknown
+  /// When it was installed on this device (iOS, Android, the desktops);
+  /// none where the platform doesn't say (the web).
+  installedAt: time.Time? = none
+  /// When this version of it was installed: an update's time, else
+  /// installedAt.
+  updatedAt: time.Time? = none
+}
+
+/// Info as the platform's code makes it: its times as milliseconds since
+/// 1970 (0: none), which Info's are made of.
+struct NativeInfo {
+  model: string = ""
+  system: string = ""
+  systemVersion: string = ""
+  appVersion: string = ""
+  build: string = ""
+  source: InstallSource = .unknown
+  installedMs: int = 0
+  updatedMs: int = 0
+}
+
+/// Where an app came from, as its platform tells: to show a beta's
+/// banner, to point a sideloaded copy at the store.
+pub enum InstallSource {
+  /// The platform doesn't say (the web).
+  unknown
+  /// The App Store, the Mac App Store.
+  appStore
+  /// TestFlight: a beta, from App Store Connect.
+  testFlight
+  /// Google Play.
+  playStore
+  /// Another store: an Android one (Galaxy Store, F-Droid), the Microsoft
+  /// Store, Flathub.
+  otherStore
+  /// Not from a store: a download, an installer, a sideloaded APK.
+  direct
+  /// A developer's build: asuka dev's, the simulator's, a debug build.
+  development
 }
 
 /// A file the user picked.
@@ -55,7 +99,7 @@ pub struct ClipboardKinds {
 /// The platform's side.
 native interface Platform {
   /// The device and the app.
-  async fn info() -> Info
+  async fn info() -> NativeInfo
   /// Shows a web page in the app (or the browser, on desktops).
   async fn browse(url: string)
   /// The photo picker, for up to max images; their copies' paths.
@@ -91,7 +135,10 @@ fn made() throws -> Platform {
 
 /// The device and the app.
 pub async fn info() throws -> Info {
-  return try await made().info()
+  let n = try await made().info()
+  let at = (ms: int) => if ms > 0 { time.unixMilli(ms) } else { none }
+  return Info(model: n.model, system: n.system, systemVersion: n.systemVersion, appVersion: n.appVersion, build: n.build,
+    source: n.source, installedAt: at(n.installedMs), updatedAt: at(n.updatedMs))
 }
 
 /// Asks the system to open url in the app that takes it: a web address in
