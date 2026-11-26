@@ -387,6 +387,16 @@ type devPlayer struct {
 // the player reported going wrong first.
 func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 	defer d.close()
+	if len(d.flows) > 0 {
+		// asuka test --gui runs the app as it is: one that doesn't compile
+		// fails now, rather than waiting for a save.
+		d.mu.Lock()
+		broken := d.module == nil || d.broken
+		d.mu.Unlock()
+		if broken {
+			return errors.New("the app doesn't compile (its errors are above)")
+		}
+	}
 	if err := d.launch(p); err != nil {
 		return err
 	}
