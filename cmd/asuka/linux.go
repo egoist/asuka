@@ -398,14 +398,14 @@ finish-args:
   - --socket=fallback-x11
   - --device=dri
 %[6]smodules:
-  - name: %[4]s
+%[7]s  - name: %[4]s
     buildsystem: simple
     build-commands:
       - cp -a %[5]s /app/
     sources:
       - type: dir
         path: %[4]s
-`, app.displayName(), app.bundleID, rt, exe, dirs, flatpakExtraArgs(app.cfg))
+`, app.displayName(), app.bundleID, rt, exe, dirs, flatpakExtraArgs(app.cfg), flatpakModules(app.cfg))
 }
 
 // flatpakExtraArgs are the finish-args the app's packages need (their
@@ -414,6 +414,25 @@ func flatpakExtraArgs(c *appConfig) string {
 	var b strings.Builder
 	for _, a := range c.flatpakArgs {
 		b.WriteString("  - " + a + "\n")
+	}
+	return b.String()
+}
+
+// flatpakModules are the modules the app's packages build before it
+// (their manifests' linux.flatpakModules), as the manifest's list items.
+func flatpakModules(c *appConfig) string {
+	var b strings.Builder
+	for _, m := range c.flatpakModules {
+		for i, line := range strings.Split(strings.TrimRight(m, "\n"), "\n") {
+			switch {
+			case i == 0:
+				b.WriteString("  - " + line + "\n")
+			case line == "":
+				b.WriteString("\n")
+			default:
+				b.WriteString("    " + line + "\n")
+			}
+		}
 	}
 	return b.String()
 }

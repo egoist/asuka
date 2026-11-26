@@ -642,6 +642,12 @@ battery_Battery *battery_make_Battery(asuka_error *err) {
   [linux]
   libraries = []
   ```
+- **A system library a Flatpak lacks**: a library the package's Linux C
+  opens at run time (`asuka_linux_load`) that the GNOME runtime hasn't
+  is built into a Flatpak by a module of the package's: its
+  `linux.flatpakModules`, each one module of the manifest in YAML, from
+  its `name:` line, built before the app (platform/pdf builds Poppler
+  so).
 - **A library of its own**: a C library the package builds with (a
   parser, a decoder) goes in `desktop/third_party/<name>/`, unchanged,
   with its license and the version it is; a file of the package's

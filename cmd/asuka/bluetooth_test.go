@@ -99,3 +99,21 @@ func TestAddPermission(t *testing.T) {
 		t.Errorf("%v, want %v", c.Android.Permissions, want)
 	}
 }
+
+// A package's Flatpak modules (platform/pdf's Poppler, which the GNOME
+// runtime hasn't) are built before the app, each a list item of the
+// manifest's modules.
+func TestFlatpakModules(t *testing.T) {
+	var c appConfig
+	importStd(t, &c, "", "pdf")
+	app := &asukaApp{cfg: &c, bundleID: "dev.asuka.reader", name: "reader"}
+	f := flatpakManifest(app, "reader")
+	poppler := strings.Index(f, "modules:\n  - name: poppler\n    buildsystem: cmake-ninja\n    config-opts:\n      - -DCMAKE_BUILD_TYPE=Release\n")
+	own := strings.Index(f, "  - name: reader\n    buildsystem: simple\n")
+	if poppler < 0 || own < poppler {
+		t.Errorf("the Flatpak's manifest:\n%s", f)
+	}
+	if !strings.Contains(f, "      - type: archive\n        url: https://poppler.freedesktop.org/") {
+		t.Errorf("Poppler's source:\n%s", f)
+	}
+}

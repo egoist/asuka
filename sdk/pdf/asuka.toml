@@ -1,3 +1,39 @@
 name = "platform/pdf"
 version = "0.1.0"
 description = "A PDF in the app's screen: PDFKit, PdfRenderer, Windows.Data.Pdf, Poppler, the browser's viewer"
+
+# Linux opens Poppler's GLib library (libpoppler-glib8 on Debian and
+# Ubuntu, poppler-glib on Fedora). GNOME's Flatpak runtime hasn't it: a
+# Flatpak builds it, with what a viewer uses (no utilities, Qt, NSS or
+# GPG signatures, no network).
+[linux]
+flatpakModules = ['''
+name: poppler
+buildsystem: cmake-ninja
+config-opts:
+  - -DCMAKE_BUILD_TYPE=Release
+  - -DCMAKE_INSTALL_LIBDIR=/app/lib
+  - -DENABLE_GLIB=ON
+  - -DENABLE_CPP=OFF
+  - -DENABLE_UTILS=OFF
+  - -DENABLE_QT5=OFF
+  - -DENABLE_QT6=OFF
+  - -DENABLE_BOOST=OFF
+  - -DENABLE_NSS3=OFF
+  - -DENABLE_GPGME=OFF
+  - -DENABLE_LIBCURL=OFF
+  - -DENABLE_LIBTIFF=OFF
+  - -DENABLE_LIBOPENJPEG=OFF
+  - -DENABLE_BROTLI=OFF
+  - -DENABLE_GOBJECT_INTROSPECTION=OFF
+  - -DBUILD_MANUAL_TESTS=OFF
+  - -DBUILD_GTK_TESTS=OFF
+  - -DBUILD_CPP_TESTS=OFF
+cleanup:
+  - /include
+  - /lib/pkgconfig
+sources:
+  - type: archive
+    url: https://poppler.freedesktop.org/poppler-26.11.0.tar.xz
+    sha256: 41c32680160addf5a8dd7a830e4869c01e9f6bee1abb91e44fabd1ba9d7828fb
+''']

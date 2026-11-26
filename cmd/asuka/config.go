@@ -264,6 +264,9 @@ type appConfig struct {
 	// flatpakArgs are the Flatpak's finish-args the packages need (the
 	// system bus names they talk to).
 	flatpakArgs []string
+	// flatpakModules are the modules the Flatpak builds before the app
+	// (the packages' manifests' linux.flatpakModules), each in YAML.
+	flatpakModules []string
 	// What the app's native packages' Swift needs (their Info.plist and
 	// entitlements, nativeNeeds): Info.plist's keys, and what each of
 	// their entitlements is for.

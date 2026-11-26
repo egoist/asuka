@@ -81,6 +81,11 @@ type manifestNeeds struct {
 		// Flatpak are the Flatpak's finish-args (the system bus names
 		// the package talks to).
 		Flatpak []string `json:"flatpak"`
+		// FlatpakModules are modules the Flatpak builds before the app,
+		// for a library the package opens that the GNOME runtime hasn't
+		// (Poppler): each one module of the manifest, in YAML, from its
+		// name: line.
+		FlatpakModules []string `json:"flatpakModules"`
 	} `json:"linux"`
 }
 
@@ -238,6 +243,7 @@ func (c *appConfig) addNeeds(m *manifestNeeds) error {
 	add(&c.androidTop, m.Android.Manifest...)
 	add(&c.androidModules, m.Android.HostModules...)
 	add(&c.flatpakArgs, m.Linux.Flatpak...)
+	add(&c.flatpakModules, m.Linux.FlatpakModules...)
 	return nil
 }
 

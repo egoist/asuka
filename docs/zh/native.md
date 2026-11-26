@@ -448,6 +448,7 @@ battery_Battery *battery_make_Battery(asuka_error *err) {
   [linux]
   libraries = []
   ```
+- **Flatpak 里缺少的系统库**：包的 Linux C 代码在运行时打开（`asuka_linux_load`）、而 GNOME 运行时里没有的库，由包提供的模块编进 Flatpak：写在它的 `linux.flatpakModules` 里，每一项是清单里的一个模块（YAML，从 `name:` 那一行开始），在应用之前构建（platform/pdf 就是这样构建 Poppler 的）。
 - **自带的库**：包构建时用到的 C 库（解析器、解码器）放在 `desktop/third_party/<名字>/` 里，不做修改，附上它的许可证和版本；由包自己的某个文件引入它的源码（`#include "third_party/<名字>/<名字>.c"`），这样它和包的 C 代码一起编译，改动它也会让应用重新构建。
 
 在 macOS 上运行的是包的 Swift 代码（它的 `Package.swift`），不运行它的 C 代码。
