@@ -41,6 +41,20 @@ irm https://asuka.egoist.dev/install.ps1 | iex
 
 `asuka upgrade` 把命令行工具更新到最新的 release（`asuka upgrade 0.3.0` 则更新到这个版本），预先构建好的库也会一并更新。asuka 每天会在后台检查一次有没有更新的 release，如果有，就在命令结束时提示你；这个检查从不让命令等待。设置 `ASUKA_NO_UPDATE_CHECK=1` 可以关掉它，在 CI 中它也不会运行。
 
+`asuka doctor` 会告诉你这台电脑能为每个平台构建和运行什么，以及其余平台还需要安装什么：
+
+```
+$ asuka doctor
+✓ iOS
+  ✓ Xcode: Xcode 26.1
+  ✓ a simulator: 4 iPhone simulators
+✗ Android
+  ✗ the Android SDK and NDK: no Android SDK: install Android Studio or set ANDROID_HOME (Android Studio › SDK Manager: SDK Tools › NDK)
+...
+```
+
+标着 `!` 的项是可选的：没有模拟器也照样能构建 Android 应用。`asuka doctor -p android` 只检查一个平台，平台没准备好时命令会失败（可以作为 CI 任务的第一步）；`--json` 以 JSON 输出结果。
+
 ## 创建应用
 
 ```sh

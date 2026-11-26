@@ -72,6 +72,23 @@ newer release and, if there is one, says so when a command ends; it
 never makes a command wait. `ASUKA_NO_UPDATE_CHECK=1` turns that off,
 and it's off in CI.
 
+`asuka doctor` says what your computer can build and run for each
+platform, and what to install for the rest:
+
+```
+$ asuka doctor
+✓ iOS
+  ✓ Xcode: Xcode 26.1
+  ✓ a simulator: 4 iPhone simulators
+✗ Android
+  ✗ the Android SDK and NDK: no Android SDK: install Android Studio or set ANDROID_HOME (Android Studio › SDK Manager: SDK Tools › NDK)
+...
+```
+
+A line marked `!` is optional: without an emulator you can still build
+for Android. `asuka doctor -p android` checks one platform, and fails if
+it isn't ready (as a CI job's first step); `--json` says it as JSON.
+
 ## Make an app
 
 ```sh

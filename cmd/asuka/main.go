@@ -16,6 +16,7 @@
 //	asuka explain [code]                     a diagnostic code's page: why, how to fix, examples
 //	asuka guide                              the language on one page, for coding agents
 //	asuka lsp                                the language server, for editors
+//	asuka doctor [-p platform]               what this computer can build for each platform, and what to install
 //	asuka cache stats|clean                  the build cache's size and hits; empty it
 //	asuka upgrade [version]                  replace this asuka with its latest release
 package main
@@ -71,6 +72,7 @@ func usage() {
   asuka install [-update] [dir]             fetch what asuka.lock names (resolving again with -update)
   asuka pkg pack|publish [dir]              pack, or publish to the npm registry, a package
   asuka cache stats|clean                   the build cache's size and hits; empty it
+  asuka doctor [-p platform] [--json]      what this computer can build and run for each platform, and what to install
   asuka version                             print the CLI's version
   asuka upgrade [version]                   replace this asuka with its latest release (or version)
   asuka check [--json] [dir]                report an Asuka package's problems (file:line:col: error[code]: message)
@@ -146,6 +148,8 @@ func main() {
 		err = cmdCheck(os.Args[2:])
 	case "explain":
 		err = cmdExplain(os.Args[2:])
+	case "doctor":
+		err = cmdDoctor(os.Args[2:])
 	case "guide":
 		err = cmdGuide(os.Args[2:])
 	case "cache":

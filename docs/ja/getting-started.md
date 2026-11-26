@@ -41,6 +41,20 @@ irm https://asuka.egoist.dev/install.ps1 | iex
 
 `asuka upgrade` は CLI を最新のリリースに更新します（`asuka upgrade 0.3.0` ならそのバージョンに）。ビルド済みのライブラリも合わせて更新されます。また asuka は 1 日に 1 回、新しいリリースが出ていないかをバックグラウンドで確認し、出ていればコマンドの終わりにそれを知らせます。この確認のためにコマンドが待たされることはありません。`ASUKA_NO_UPDATE_CHECK=1` で無効にでき、CI では動きません。
 
+`asuka doctor` は、このコンピューターで各プラットフォーム向けに何をビルド・実行できるか、残りのプラットフォームに何をインストールすればよいかを表示します。
+
+```
+$ asuka doctor
+✓ iOS
+  ✓ Xcode: Xcode 26.1
+  ✓ a simulator: 4 iPhone simulators
+✗ Android
+  ✗ the Android SDK and NDK: no Android SDK: install Android Studio or set ANDROID_HOME (Android Studio › SDK Manager: SDK Tools › NDK)
+...
+```
+
+`!` の付いた行は任意の項目です。エミュレーターがなくても Android 向けのビルドはできます。`asuka doctor -p android` は一つのプラットフォームだけを調べ、準備ができていなければ失敗します（CI ジョブの最初のステップに使えます）。`--json` を付けると JSON で出力します。
+
 ## アプリの作成
 
 ```sh
