@@ -423,7 +423,14 @@ pub store Document<T>(path: string, read: fn(bytes) throws -> T, write: fn(T) ->
       }
       let at = (try? fs.stat(file))?.modified ?? now
       try fs.mkdirAll(dir)
-      try await writeFile(fs.join([dir, "{at.unixMilli()}.data"]), old)
+      // Named by when the file was written; two writes in a millisecond
+      // (or a file system's coarser times) don't share a name: the later
+      // one's is the next free millisecond, so it still sorts after.
+      var ms = at.unixMilli()
+      while (try? fs.stat(fs.join([dir, "{ms}.data"]))) != none {
+        ms += 1
+      }
+      try await writeFile(fs.join([dir, "{ms}.data"]), old)
       versionNext = false
       lastVersion = now
       for v in thinned(listVersions(dir), now) {
