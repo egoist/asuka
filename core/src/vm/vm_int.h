@@ -14,6 +14,17 @@ typedef struct { uint32_t pc, line; } ak_line;
 // A function's body inlined in another's: its code [start, end), in
 // func, called at line (bytecode.Inline).
 typedef struct { uint32_t start, end, func, line; } ak_inline;
+// A name of the source's a function holds in register reg over its pcs
+// [from, to) (bytecode.Local), for the debugger (debug.c): via says how
+// the register holds the value (AK_LOCAL_*), desc is its type's
+// descriptor (rt/json.h's, "d" a duration, "c" a color; "-" none).
+typedef struct {
+	ak_str *name, *desc;
+	uint32_t from, to;
+	uint16_t reg;
+	uint8_t via;
+} ak_local;
+enum { AK_LOCAL_VALUE, AK_LOCAL_BOX, AK_LOCAL_SIGNAL };
 
 // A function's body compiled to C (lang/cgen): it takes its arguments
 // (borrowed; it retains what it keeps) and the running closure, and
@@ -70,7 +81,12 @@ struct ak_func {
 	uint32_t nlines;
 	ak_inline *inlines;
 	uint32_t ninlines;
+	ak_local *locals;
+	uint32_t nlocals;
 	uint32_t index;
+	// The debugger's: where its breakpoints are (debug.c), made as it's
+	// first run with some set.
+	struct ak_dbg_fn *dbg;
 };
 
 #define AK_F_ASYNC 1
@@ -326,6 +342,11 @@ void ak_vm_acc_keys(void *acc, const uint16_t *fields, uint16_t nf);
 // ak_vm_acc_path with one index step last) to the element at i.
 void ak_vm_acc_seek(void *acc, int64_t i);
 ak_val ak_vm_call_untracked(ak_closure *c, ak_val *args, uint32_t nargs);
+// ak_vm_dbg_peek reads what a state's cell, a let's memo or an accessor
+// holds now (borrowed), running nothing and following nothing: false
+// when it can't say without running code (a memo not computed yet, an
+// accessor that calls a function or reads a path). The debugger's.
+bool ak_vm_dbg_peek(void *p, ak_val *v, ak_kind *k);
 void ak_vm_effect(ak_closure *c, bool render);
 void ak_vm_cleanup(ak_closure *c);
 void ak_vm_batch(bool begin);

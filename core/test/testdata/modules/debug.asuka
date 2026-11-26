@@ -1,0 +1,61 @@
+// The debugger's test program (core/test/debug_test.c): its lines are
+// where the test sets breakpoints and expects stops.
+struct Point {
+  x: int
+  y: int
+}
+
+enum Shape {
+  circle(radius: float)
+  square(side: float)
+}
+
+enum Light {
+  red
+  green
+}
+
+fn add(a: int, b: int) -> int {
+  let sum = a + b
+  return sum
+}
+
+fn run() -> int {
+  var total = 0
+  let p = Point(x: 1, y: 2)
+  let names = ["a", "b"]
+  let shape = Shape.circle(radius: 1.5)
+  let light = Light.green
+  let wait = 300ms
+  for i in 0..<3 {
+    total = add(total, i)
+  }
+  let label = "done"
+  return total + p.x
+}
+
+struct Node {
+  name: string
+  next: Node?
+}
+
+fn values() -> int {
+  var count = 1
+  let bump = () => count + 1
+  count += 1
+  let some: int? = 5
+  let nothing: int? = none
+  let ages = ["ann": 30, "bo": 4]
+  let ids: Set<int> = [3, 1]
+  let deep = Node(name: "a", next: Node(name: "b", next: Node(name: "c", next: Node(name: "d", next: Node(name: "e", next: none)))))
+  let long = "x".repeat(300)
+  let letter = 'q'
+  let pair = (1, "one")
+  let small: u8 = 200
+  return bump() + ages.count()
+}
+
+fn main() {
+  let _ = run()
+  let _ = values()
+}

@@ -92,6 +92,11 @@ type Options struct {
 	// Cover names the files whose statements count their runs, for
 	// asuka test --cover (cover.go); none: nothing is counted.
 	Cover []string
+	// Locals records the names of each function's parameters and
+	// locals, and the registers that hold them, for the debugger
+	// (Func.Locals, bytecode.Local): a build the optimizer won't change
+	// (asuka dev's).
+	Locals bool
 }
 
 // Lower lowers prog (checked without errors) to a program.

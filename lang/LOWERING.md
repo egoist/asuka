@@ -404,6 +404,18 @@ first, as a `return` runs a function's.
   it's made: values only). A closure stored in a var it captures (one
   that calls itself through it) holds the box that holds it: a cycle
   the checker warns of, pointing at a local fn.
+- A FuncDef's `Locals` (bytecode.Local) name its registers for the
+  debugger (core/src/vm/debug.c), in code the optimizer leaves alone
+  (asuka dev's: ir.Options.Locals): each parameter, local, capture, a
+  method's `self`, a component's members in its function and its env as
+  `self` in its closures, with the register, the pcs `[From, To)` where
+  the name holds it (from the instruction after the one that sets it to
+  where its block, statement or block of arguments lets the register
+  go: `fb.setVar`, `endLocal`), how the register holds the value
+  (`Via`: the value; a box, for a var closures share; a state's cell, a
+  let's memo, an accessor) and its type's descriptor (`Desc`: rt/json.h's,
+  a duration `d` and a color `c`). The optimizer drops them: its passes
+  move values between registers and instructions, and renumber them.
 - A local fn (`fn walk(…)` in a block) is a function of its own; the
   fns declared one after another in a block are a group, which shares
   one list of captures (the outer locals its fns use, and those the

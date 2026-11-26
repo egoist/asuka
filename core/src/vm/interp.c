@@ -1,5 +1,6 @@
 #include "vm/vm_int.h"
 #include "vm/ops.h"
+#include "vm/debug.h"
 
 #include <stdio.h>
 
@@ -269,6 +270,7 @@ int ak_vm_interp(ak_co *co, ak_val *out) {
 		R = co->regs + fr->base; \
 		M = F->mod; \
 		ip = code + fr->pc; \
+		DEBUG_CHECK(); \
 	} while (0)
 	// After anything that may run more VM code (and grow the stacks).
 #define RELOAD() do { \
@@ -277,17 +279,46 @@ int ak_vm_interp(ak_co *co, ak_val *out) {
 	} while (0)
 	// Where the frame resumes, saved before a call (the pc after it).
 #define SAVE() (fr->pc = (uint32_t)(ip - code))
+	// A jump taken (a loop's way round): the debugger may want to see it.
+#define JUMP(off) do { ip += (off); DEBUG_CHECK(); } while (0)
 	// The instruction running's pc, for its handlers and its line.
 #define IPC() ((uint32_t)(a - 1 - code))
 #define CHECK_ERR() do { if (AK_UNLIKELY(*err != NULL)) goto unwind; } while (0)
+
+	// The debugger's hook (debug.h), in a development build. Threaded,
+	// dispatch goes through one of two tables: the instructions' own, or,
+	// while the debugger wants to see each instruction (ak_dbg_on:
+	// breakpoints, a step, a pause), one whose every entry is the hook,
+	// which then runs the instruction. Which one is decided again as a
+	// frame is entered or left, a jump is taken (a loop goes round) and
+	// the hook returns: nothing is asked per instruction. With a switch,
+	// each instruction asks the flag.
+#if AK_VM_DEBUGGER
+#define DEBUG_ON() atomic_load_explicit(&ak_dbg_on, memory_order_relaxed)
+#define DEBUG_HOOK() if (AK_UNLIKELY(DEBUG_ON())) goto debug_hook
+#else
+#define DEBUG_HOOK() (void)0
+#endif
 
 #if AK_VM_THREADED
 #define LABEL(name) &&L_##name,
 	static const void *const dispatch[AK_OP__COUNT] = {AK_OP_LIST(LABEL)};
 #undef LABEL
-#define OP(name) L_##name: ip += AK_OPW_##name;
-#define NEXT() do { a = ip + 1; goto *dispatch[*ip]; } while (0)
+#if AK_VM_DEBUGGER
+#define LABEL(name) &&debug_hook,
+	static const void *const debug_dispatch[AK_OP__COUNT] = {AK_OP_LIST(LABEL)};
+#undef LABEL
+	const void *const *disp = dispatch;
+#define DEBUG_CHECK() (disp = AK_UNLIKELY(DEBUG_ON()) ? debug_dispatch : dispatch)
+#define DISPATCH disp
 #else
+#define DEBUG_CHECK() (void)0
+#define DISPATCH dispatch
+#endif
+#define OP(name) L_##name: ip += AK_OPW_##name;
+#define NEXT() do { a = ip + 1; goto *DISPATCH[*ip]; } while (0)
+#else
+#define DEBUG_CHECK() (void)0
 #define OP(name) case AK_OP_##name: ip += AK_OPW_##name;
 #define NEXT() goto next
 #endif
@@ -298,6 +329,10 @@ int ak_vm_interp(ak_co *co, ak_val *out) {
 #else
 next:
 	a = ip + 1;
+	DEBUG_HOOK();
+#if AK_VM_DEBUGGER
+run:
+#endif
 	switch (*ip) {
 #endif
 	OP(NOP)
@@ -451,11 +486,11 @@ next:
 	OP(INTERP) setref(R, a[0], ak_op_interp(R, a[1], a[2], M->strings[off32(a + 3)])); NEXT();
 	OP(LTS) R[a[0]].i = ak_str_cmp(R[a[1]].p, R[a[2]].p) < 0; NEXT();
 
-	OP(JMP) ip += joff(a); NEXT();
-	OP(JT) if (R[a[0]].i) ip += joff(a + 1); NEXT();
-	OP(JF) if (!R[a[0]].i) ip += joff(a + 1); NEXT();
-	OP(JNONE) if (!R[a[0]].p) ip += joff(a + 1); NEXT();
-	OP(JSOME) if (R[a[0]].p) ip += joff(a + 1); NEXT();
+	OP(JMP) JUMP(joff(a)); NEXT();
+	OP(JT) if (R[a[0]].i) JUMP(joff(a + 1)); NEXT();
+	OP(JF) if (!R[a[0]].i) JUMP(joff(a + 1)); NEXT();
+	OP(JNONE) if (!R[a[0]].p) JUMP(joff(a + 1)); NEXT();
+	OP(JSOME) if (R[a[0]].p) JUMP(joff(a + 1)); NEXT();
 	OP(ISSHAPE) R[a[0]].i = ak_op_isshape(R[a[1]].p, &M->shapes[off32(a + 2)].s); NEXT();
 
 	OP(CALL) {
@@ -615,7 +650,7 @@ next:
 	OP(MGET) setref(R, a[0], ak_op_mget(R[a[1]].p, R[a[2]])); NEXT();
 	OP(MSET) ak_op_mset(R, a[0], R[a[1]], R[a[2]]); NEXT();
 	OP(MGETJ)
-		if (!ak_op_mgetj(R, a[0], R[a[1]].p, R[a[2]])) ip += joff(a + 3);
+		if (!ak_op_mgetj(R, a[0], R[a[1]].p, R[a[2]])) JUMP(joff(a + 3));
 		NEXT();
 
 	OP(CELL) {
@@ -832,16 +867,16 @@ next:
 	OP(MODIS) R[a[0]].i = R[a[1]].i % (int16_t)a[2]; NEXT();
 	OP(DIVIK) R[a[0]].i = R[a[1]].i / M->ints[off32(a + 2)]; NEXT();
 	OP(MODIK) R[a[0]].i = R[a[1]].i % M->ints[off32(a + 2)]; NEXT();
-	OP(JLTI) if (R[a[0]].i < R[a[1]].i) ip += joff(a + 2); NEXT();
-	OP(JLEI) if (R[a[0]].i <= R[a[1]].i) ip += joff(a + 2); NEXT();
-	OP(JEQI) if (R[a[0]].i == R[a[1]].i) ip += joff(a + 2); NEXT();
-	OP(JNEI) if (R[a[0]].i != R[a[1]].i) ip += joff(a + 2); NEXT();
-	OP(JLTIS) if (R[a[0]].i < (int16_t)a[1]) ip += joff(a + 2); NEXT();
-	OP(JLEIS) if (R[a[0]].i <= (int16_t)a[1]) ip += joff(a + 2); NEXT();
-	OP(JGTIS) if (R[a[0]].i > (int16_t)a[1]) ip += joff(a + 2); NEXT();
-	OP(JGEIS) if (R[a[0]].i >= (int16_t)a[1]) ip += joff(a + 2); NEXT();
-	OP(JEQIS) if (R[a[0]].i == (int16_t)a[1]) ip += joff(a + 2); NEXT();
-	OP(JNEIS) if (R[a[0]].i != (int16_t)a[1]) ip += joff(a + 2); NEXT();
+	OP(JLTI) if (R[a[0]].i < R[a[1]].i) JUMP(joff(a + 2)); NEXT();
+	OP(JLEI) if (R[a[0]].i <= R[a[1]].i) JUMP(joff(a + 2)); NEXT();
+	OP(JEQI) if (R[a[0]].i == R[a[1]].i) JUMP(joff(a + 2)); NEXT();
+	OP(JNEI) if (R[a[0]].i != R[a[1]].i) JUMP(joff(a + 2)); NEXT();
+	OP(JLTIS) if (R[a[0]].i < (int16_t)a[1]) JUMP(joff(a + 2)); NEXT();
+	OP(JLEIS) if (R[a[0]].i <= (int16_t)a[1]) JUMP(joff(a + 2)); NEXT();
+	OP(JGTIS) if (R[a[0]].i > (int16_t)a[1]) JUMP(joff(a + 2)); NEXT();
+	OP(JGEIS) if (R[a[0]].i >= (int16_t)a[1]) JUMP(joff(a + 2)); NEXT();
+	OP(JEQIS) if (R[a[0]].i == (int16_t)a[1]) JUMP(joff(a + 2)); NEXT();
+	OP(JNEIS) if (R[a[0]].i != (int16_t)a[1]) JUMP(joff(a + 2)); NEXT();
 	OP(IDXF)
 		if (!ak_op_idxf(R, a[0], R[a[1]].p, R[a[2]].i, a[3])) goto thrown;
 		NEXT();
@@ -853,6 +888,20 @@ next:
 	default:
 		ak_panic("vm: bad opcode %u in %s at %u", *ip, F->name->data, IPC());
 	}
+#endif
+
+#if AK_VM_DEBUGGER
+debug_hook:
+	// It may stop here, and wait; it runs none of the app's code. Then
+	// the instruction runs.
+	ak_dbg_hook(co, (uint32_t)(ip - code));
+	RELOAD();
+#if AK_VM_THREADED
+	DEBUG_CHECK();
+	goto *dispatch[*ip];
+#else
+	goto run;
+#endif
 #endif
 
 thrown:
@@ -895,6 +944,11 @@ unwind_frame:
 	}
 #undef OP
 #undef NEXT
+#undef DEBUG_HOOK
+#undef DEBUG_CHECK
+#undef DEBUG_ON
+#undef DISPATCH
+#undef JUMP
 #undef LOAD
 #undef RELOAD
 #undef SAVE

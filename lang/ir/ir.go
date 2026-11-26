@@ -41,7 +41,12 @@ type Func struct {
 	// Inlines are the functions the optimizer inlined into it: [Start,
 	// End) is Func's body, called at Line (bytecode.Inline).
 	Inlines []Inline
-	labels  []int // per label, the instruction it's at (-1: not placed yet)
+	// Locals are the names the debugger shows (bytecode.Local): each a
+	// register from one instruction to another. Recorded with Options'
+	// Locals; the optimizer drops them (its passes move values between
+	// registers and instructions).
+	Locals []Local
+	labels []int // per label, the instruction it's at (-1: not placed yet)
 	// tempSpans: where reference registers were temps, by the lowered
 	// code's instructions (the optimizer's first pass reads them, then
 	// drops them: they don't follow the code as it changes).
@@ -57,6 +62,16 @@ type Inline struct {
 	Start, End Label
 	Func       int
 	Line       int32
+}
+
+// A Local is a name that's in a register over [Start, End) of the
+// code's instructions (End -1: to the function's end).
+type Local struct {
+	Name       string
+	Reg        int
+	Via        uint8 // bytecode.LocalValue, LocalBox, LocalSignal
+	Desc       string
+	Start, End int
 }
 
 // NewLabel makes a label, not placed yet.
@@ -186,6 +201,16 @@ func (f *Func) encode() bytecode.FuncDef {
 		if s, e := at(in.Start), at(in.End); s < e {
 			def.Inlines = append(def.Inlines, bytecode.Inline{Start: uint32(s), End: uint32(e), Func: uint32(in.Func), Line: uint32(in.Line)})
 		}
+	}
+	for _, l := range f.Locals {
+		end := l.End
+		if end < 0 || end > len(f.Code) {
+			end = len(f.Code)
+		}
+		if l.Start >= end {
+			continue
+		}
+		def.Locals = append(def.Locals, bytecode.Local{Name: l.Name, Reg: uint16(l.Reg), Via: l.Via, Desc: l.Desc, From: uint32(pcs[l.Start]), To: uint32(pcs[end])})
 	}
 	return def
 }

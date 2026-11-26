@@ -924,8 +924,8 @@ const (
 	lvCell
 	lvField
 	lvIndex
-	lvModel // a prop its component assigns: set whole only (the checker's)
-	lvSome  // inner's value when it isn't none: x?.f's x (places.go)
+	lvModel  // a prop its component assigns: set whole only (the checker's)
+	lvSome   // inner's value when it isn't none: x?.f's x (places.go)
 	lvGlobal // a file's var: its global's slot in cell
 )
 
@@ -1859,10 +1859,11 @@ func (b *fb) localGroup(items []syntax.Item) {
 			params = append(params, c.newReg(c.kind(p.Type)))
 		}
 		for _, v := range g.Captures {
-			c.vars[v] = c.newReg(c.capKind(v))
+			c.setVar(v, c.newReg(c.capKind(v)))
 		}
 		if g.UsesEnv {
 			c.envReg = c.newReg(bc.KRef)
+			c.noteEnv()
 		}
 		c.openScope()
 		for i, p := range lf.Sig.Params {
@@ -1872,7 +1873,7 @@ func (b *fb) localGroup(items []syntax.Item) {
 			if p.Var.Boxed() {
 				c.declare(p.Var, params[i])
 			} else {
-				c.vars[p.Var] = params[i]
+				c.setVar(p.Var, params[i])
 			}
 		}
 		if lf.Sig.Throws {

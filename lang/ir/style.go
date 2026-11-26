@@ -6,6 +6,7 @@ import (
 	"github.com/egoist/asuka/lang/diag"
 	"github.com/egoist/asuka/lang/prelude"
 	"github.com/egoist/asuka/lang/syntax"
+	"sort"
 )
 
 // Styles (lang/LOWERING.md's "Styles", rfcs/0009): an element's style:
@@ -115,9 +116,16 @@ func (b *fb) bindEnv(env *styleEnv) {
 	if b.l.styleMemo == nil {
 		b.l.styleMemo = map[*check.Var]bool{}
 	}
-	for v, r := range env.vars {
-		b.vars[v] = r
+	// In the registers' order: what the module says doesn't depend on a
+	// map's.
+	vs := make([]*check.Var, 0, len(env.vars))
+	for v := range env.vars {
+		vs = append(vs, v)
+	}
+	sort.Slice(vs, func(i, j int) bool { return env.vars[vs[i]] < env.vars[vs[j]] })
+	for _, v := range vs {
 		b.l.styleMemo[v] = env.memo[v]
+		b.setVar(v, env.vars[v])
 	}
 }
 

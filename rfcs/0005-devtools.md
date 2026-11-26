@@ -13,9 +13,10 @@ an app in Go:
 - **An error overlay.** A panic, or a build that fails, shows on the
   device or window over the app, with its stack, the lines in your
   source, and Reload. Today they print in the terminal only.
-- **A debugger.** `asuka dev --debug` runs the app's Go code under
-  Delve, and editors attach to one address that stays the same across
-  reloads, with their breakpoints kept.
+- **A debugger.** Breakpoints, stepping and the stack with each
+  frame's locals, in the app's code on the core's own VM (asuka dev's
+  player), kept across reloads; editors attach to asuka dev (DAP), one
+  address for the whole session.
 - **An inspector.** A page that `asuka dev` serves shows the app's view
   tree, each view's props, style and frame, where in the source it was
   made, and which signals it reads. Pick a view by tapping it on the
@@ -138,31 +139,102 @@ views, so it shows even when the app's tree is the thing that's broken.
 
 ### The debugger
 
-`asuka dev --debug` builds the Go code with `-gcflags=all=-N -l` and
-runs it under Delve, headless (`dlv exec --headless --api-version=2`),
-instead of running it directly. An editor attaches to Delve's DAP
-server through `asuka dev`, at one address that doesn't change:
+The app's code runs on the core's bytecode VM in asuka dev's player (on
+a phone, the simulator, the emulator, a desktop), so the debugger is
+the VM's own (`core/src/vm/debug.c`), not Delve. Built so far: the
+engine, the debug info it reads, and its frames on the dev connection.
 
-- **Reloads.** Every save starts a new process, with a new Delve. `asuka
-  dev` is a DAP proxy: it keeps the editor's connection, remembers the
-  breakpoints the editor set (`setBreakpoints`,
-  `setFunctionBreakpoints`), sets them in each new process before it
-  continues, and tells the editor a new process started. The editor's
-  session lasts as long as `asuka dev` does.
-- **A paused main thread.** A breakpoint in a handler or an effect
-  stops the main thread with the app's Go code. On the desktop that
-  freezes the window, as any native debugger does. With the player,
-  the core's calls would time out after ten seconds and the player
-  would drop the session. While Delve has the process stopped, `asuka
-  dev` tells the player (a new message on the dev transport,
-  `mPaused`), which stops counting the timeout and dims the app under
-  a banner, "Paused in the debugger".
-- **Editors.** `asuka dev --debug` prints a VS Code `launch.json` entry
-  (`"request": "attach", "mode": "remote"`) and GoLand's settings, and
-  `asuka new` can write the first.
-- **What runs where.** Delve debugs the Go code; the host's Swift and
-  Kotlin are Xcode's and Android Studio's to debug, attached to the
-  player as to any app.
+- **Debug info.** The bytecode already has each function's line table
+  (and the inlined bodies', whose lines are their own files'). lang/ir
+  now records its names too (`bytecode.Local`, lang/LOWERING.md's
+  Functions): each parameter, local and capture, a method's `self`, a
+  component's members and env, with its register, the pcs where the
+  name holds it, how the register holds the value (the value, a var's
+  box, a state's cell, a let's memo, an accessor) and its type's
+  descriptor. Only code the optimizer leaves alone has them, which is
+  asuka dev's (its passes move values between registers); a release's
+  module has none.
+- **Breakpoints** are by file and line, kept as such and resolved
+  against each function's line table as it first runs with them: a
+  reload's new functions resolve them again, so they hold across saves
+  with nothing re-sent. A breakpoint further along the line the frame
+  last stopped at (a call's arguments on the lines below it, then the
+  call) doesn't stop again; a loop's way round does.
+- **Stepping** by line and frame: over (the frame's next line, or its
+  caller's once it returns), in (the next line that runs, in whichever
+  function) and out (the caller's, once the frame returned), on the
+  same coroutine for over and out, so a task's `await` doesn't stop in
+  whatever runs meanwhile. **Pause** stops at the next instruction the
+  app runs (an idle app, when it next runs code: an event, a timer).
+- **A stop** says the stack, innermost first, through the coroutine's
+  frames and the bodies inlined in them, each frame's function, file
+  and line, and its locals in scope at its pc (one per name, the
+  innermost), each with its type and its value as the language writes
+  it (`Todo(title: "Milk", done: false)`, `.circle(radius: 2)`, `none`,
+  `300ms`), cut short past a length and three levels. Nothing of the
+  app's runs to say it: a type's own description isn't called, a state
+  shows the value its cell holds, a let the one its memo last computed.
+  A value's children (fields, payloads, elements, entries) come on
+  request, by their path from the local.
+- **A paused main thread.** The app's code runs on the main thread, so
+  a stop pauses it, as a native debugger's breakpoint does: the UI
+  doesn't draw until it goes on. The dev connection's reader thread
+  hands the paused thread the CLI's commands directly (a condition
+  variable it waits on), not through a post it wouldn't run, and
+  answers pings itself. A module that arrives while it's paused lets it
+  go on, stopping nowhere until the main thread loaded it (the reload
+  runs once the paused code returned); the CLI going drops its
+  breakpoints and lets a paused app go on. Code a `spawn` runs on a
+  worker doesn't stop. The web has none: its page can't wait on its
+  main thread for a command.
+- **What it costs.** The debugger is compiled into development builds
+  only (`AK_DEBUG`, the players' core); a release build's interpreter
+  is the same machine code as without it. In a development build the
+  interpreter dispatches through one of two tables, its instructions'
+  own or, while the debugger wants to see each instruction
+  (breakpoints, a step, a pause), one whose every entry is the hook,
+  and decides which as a frame is entered or left and a jump is taken:
+  nothing is checked per instruction. Measured on bench/vm's programs,
+  unoptimized as asuka dev compiles them, with nothing set: 2.5% (a
+  string-heavy one) to 19% (a tight loop of array writes) more
+  instructions retired, one more per instruction dispatched (the
+  table's base is a variable), with cycles within the machine's noise
+  (0 to 5%).
+
+The protocol (`core/src/abi/dev.h`, `internal/devserver/debug.go`):
+the CLI sends a file's breakpoints (17: they replace the file's), a
+command (18: continue, step over, in, out, pause), a request for a
+value's children (19: a frame of the stop's, a path, a range of them),
+and a reset (23: detached); the player sends where it stopped (20:
+JSON, the reason, the frames and their locals), that it goes on again
+(21), and a request's answer (22). A ping (2) is answered by the
+player's connection thread, paused or not. In Go,
+`Server.SetBreakpoints(file, lines)` keeps them per file and sends them
+to every player, and to each that connects later before its module;
+`Player.Debug(cmd)`, `Player.Variables(...)` and `Server.DebugReset()`
+drive a player; `Events.Stopped`, `Continued` and `Values` hear it; and
+`ResolveBreakpoints(module, file, lines)` moves a breakpoint on a line
+without code to the next that has, in the function it's in, as an
+editor shows it.
+
+The next step is the editor's side:
+
+- **A DAP adapter in asuka dev**, at one address that lasts as long as
+  asuka dev does, whatever reloads: `setBreakpoints` through
+  `ResolveBreakpoints` (the lines it verified, moved) and
+  `Server.SetBreakpoints`; a thread per player; `stackTrace`, `scopes`
+  and `variables` from the stop and `Player.Variables` (a
+  `variablesReference` per path); `continue`, `next`, `stepIn`,
+  `stepOut` and `pause` as commands; `disconnect` as a reset. Files are
+  the module's names for them: the sources' absolute paths, an
+  editor's own.
+- **Editors.** The VS Code extension contributes the debugger (an
+  `attach` configuration to asuka dev's address); asuka dev prints it,
+  and the address for others.
+- **The player's paused state**: dimming the app under a banner,
+  "Paused in the debugger", drawn by each host as the error overlay is.
+- Later: conditional breakpoints and logpoints, stopping where an error
+  nothing catches is thrown, evaluating an expression in a frame.
 
 ### The inspector
 
@@ -274,8 +346,9 @@ Each is useful on its own, in this order:
 
 1. **The error overlay**: panics and builds that fail, with the source
    and Reload; `DevError` in every host.
-2. **The debugger**: `asuka dev --debug`, the DAP proxy that keeps
-   breakpoints across reloads, the player's paused state.
+2. **The debugger**: the VM's (built: the debug info, the engine, the
+   dev connection's frames), then asuka dev's DAP adapter, the editors'
+   configurations and the player's paused state.
 3. **The inspector**: the tree, props, style, frames, where each view
    was made, highlight and pick, opening the source in an editor.
 4. **Signals and flushes**: the Updates tab and the device's update

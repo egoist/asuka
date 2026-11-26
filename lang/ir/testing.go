@@ -43,7 +43,7 @@ func (b *fb) testParams(t *check.Test) {
 		if p.Boxed() {
 			b.declare(p, regs[i])
 		} else {
-			b.vars[p] = regs[i]
+			b.setVar(p, regs[i])
 		}
 	}
 }

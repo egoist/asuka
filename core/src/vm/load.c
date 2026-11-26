@@ -1,4 +1,5 @@
 #include "vm/vm_int.h"
+#include "vm/debug.h"
 
 #include <stdatomic.h>
 
@@ -117,11 +118,23 @@ typedef struct {
 	int32_t shape;
 } rfield;
 
+// rname reads a field's name, which may carry its JSON descriptor after a
+// NUL ("title\0s": bytecode.Field): one that doesn't gets an empty one,
+// so that what reads a field's descriptor past its name's NUL
+// (ak_json_field_desc, the debugger's) reads within the string.
+static ak_str *rname(loader *l) {
+	ak_str *s = rstr(l);
+	if (memchr(s->data, 0, s->len)) return s;
+	ak_str *t = ak_str_new(s->data, s->len + 1);  // its NUL, then the string's own
+	ak_release(s);
+	return t;
+}
+
 static rfield *rfields(loader *l, uint32_t *n) {
 	*n = count(l, 9);
 	rfield *f = ak_alloc(sizeof(rfield) * (*n ? *n : 1));
 	for (uint32_t i = 0; i < *n; i++) {
-		f[i].name = rstr(l);
+		f[i].name = rname(l);
 		f[i].kind = ak_read_u8(&l->r);
 		f[i].shape = (int32_t)ak_read_u32(&l->r);
 	}
@@ -308,6 +321,18 @@ ak_module *ak_module_load(const uint8_t *p, size_t n, char *err, size_t errcap) 
 			f->inlines[h].func = ak_read_u32(&l->r);
 			f->inlines[h].line = ak_read_u32(&l->r);
 		}
+		f->nlocals = count(l, 19);
+		f->locals = ak_alloc(sizeof(ak_local) * (f->nlocals ? f->nlocals : 1));
+		for (uint32_t h = 0; h < f->nlocals; h++) {
+			ak_local *lc = &f->locals[h];
+			lc->name = rstr(l);
+			lc->reg = ak_read_u16(&l->r);
+			lc->via = ak_read_u8(&l->r);
+			lc->desc = rstr(l);
+			lc->from = ak_read_u32(&l->r);
+			lc->to = ak_read_u32(&l->r);
+			if (lc->reg >= f->nregs || lc->via > AK_LOCAL_SIGNAL || lc->from > lc->to || lc->to > f->ncode) fail(l, "bad local");
+		}
 	}
 
 	m->nbuiltins = count(l, 4);
@@ -393,6 +418,12 @@ static void module_free(void *ctx) {
 		ak_free(f->handlers);
 		ak_free(f->lines);
 		ak_free(f->inlines);
+		for (uint32_t k = 0; k < f->nlocals; k++) {
+			ak_release(f->locals[k].name);
+			ak_release(f->locals[k].desc);
+		}
+		ak_free(f->locals);
+		ak_vm_dbg_forget(f);
 	}
 	ak_free(m->funcs);
 	for (uint32_t i = 0; i < m->nshapes; i++) {

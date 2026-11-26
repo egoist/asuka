@@ -5,6 +5,8 @@
 #include "abi/dev.h"
 #include "base/thread.h"
 #include "rt/sched.h"
+#include "vm/debug.h"
+#include "ops/ops.h"
 
 #include <stdio.h>
 
@@ -162,12 +164,61 @@ typedef struct {
 static void deliver(void *ctx) {
 	frame_t *f = ctx;
 	if (f->kind == AK_DEV_MODULE || f->kind == AK_DEV_RESTART) {
+		// Held as it arrived (session's), so that what was paused got
+		// here: the new module's code stops where it should.
+		ak_dbg_hold(false);
 		if (reload_fn) reload_fn(f->p, f->len, f->kind == AK_DEV_RESTART);
 	} else if (frame_fn) {
 		frame_fn(f->kind, f->p, f->len);
 	}
 	ak_free(f->p);
 	ak_free(f);
+}
+
+// debug_sink sends the debugger's events to the CLI (vm/debug.h).
+static void debug_sink(int event, uint32_t seq, const char *json, size_t len) {
+	switch (event) {
+	case AK_DBG_STOPPED: ak_dev_send(AK_DEV_DEBUG_STOPPED, json, len); break;
+	case AK_DBG_CONTINUED: ak_dev_send(AK_DEV_DEBUG_CONTINUED, NULL, 0); break;
+	case AK_DBG_VARIABLES: {
+		uint8_t *p = ak_alloc(len + 4);
+		p[0] = (uint8_t)seq, p[1] = (uint8_t)(seq >> 8), p[2] = (uint8_t)(seq >> 16), p[3] = (uint8_t)(seq >> 24);
+		memcpy(p + 4, json, len);
+		ak_dev_send(AK_DEV_DEBUG_VALUES, p, len + 4);
+		ak_free(p);
+		break;
+	}
+	}
+}
+
+// debug_frame hands a debugger's frame to the debugger, on the
+// connection's thread: the main thread may be paused, waiting for it.
+static void debug_frame(uint8_t kind, const uint8_t *p, size_t n) {
+	ak_reader r = {p, n, 0, false};
+	switch (kind) {
+	case AK_DEV_DEBUG_BREAKPOINTS: {
+		ak_span file = ak_read_str(&r);
+		uint32_t count = ak_read_u32(&r);
+		if (r.err || count > (n - r.off) / 4) break;
+		uint32_t *lines = ak_alloc(sizeof(uint32_t) * (count ? count : 1));
+		for (uint32_t i = 0; i < count; i++) lines[i] = ak_read_u32(&r);
+		ak_dbg_set_breakpoints(file.p, file.len, lines, count);
+		ak_free(lines);
+		break;
+	}
+	case AK_DEV_DEBUG_COMMAND:
+		if (n >= 1) ak_dbg_command(p[0]);
+		break;
+	case AK_DEV_DEBUG_VARIABLES: {
+		uint32_t seq = ak_read_u32(&r), frame = ak_read_u32(&r), start = ak_read_u32(&r), count = ak_read_u32(&r), np = ak_read_u32(&r);
+		if (r.err || np > (n - r.off) / 4 || np > 64) break;
+		uint32_t path[64];
+		for (uint32_t i = 0; i < np; i++) path[i] = ak_read_u32(&r);
+		ak_dbg_variables(seq, frame, path, np, start, count);
+		break;
+	}
+	case AK_DEV_DEBUG_RESET: ak_dbg_reset(); break;
+	}
 }
 
 // session serves s as the CLI's connection until it closes or a newer
@@ -205,8 +256,26 @@ static void session(sock_t s) {
 			break;
 		}
 		switch (h[4]) {
+		case AK_DEV_PING:
+			// Answered here, not by the main thread: it answers while the
+			// app is paused in the debugger.
+			ak_dev_send(AK_DEV_PING, NULL, 0);
+			ak_free(p);
+			break;
+		case AK_DEV_DEBUG_BREAKPOINTS:
+		case AK_DEV_DEBUG_COMMAND:
+		case AK_DEV_DEBUG_VARIABLES:
+		case AK_DEV_DEBUG_RESET:
+			debug_frame(h[4], p, n - 1);
+			ak_free(p);
+			break;
 		case AK_DEV_MODULE:
 		case AK_DEV_RESTART:
+			// A paused app goes on, stopping nowhere, until the main
+			// thread loaded it (deliver): what's paused returns, then
+			// the reload runs.
+			ak_dbg_hold(true);
+			// fall through
 		case AK_DEV_SOURCE:
 		case AK_DEV_FAILED:
 		case AK_DEV_FIXED:
@@ -232,6 +301,8 @@ static void session(sock_t s) {
 		ak_cond_broadcast(&ended);
 	}
 	ak_mutex_unlock(&mu);
+	// The CLI went: its breakpoints go, and a paused app goes on.
+	if (current) ak_dbg_reset();
 	ak_mutex_lock(&send_mu);  // not under a sender
 	close_sock(s);
 	ak_mutex_unlock(&send_mu);
@@ -409,6 +480,7 @@ static void net_init(void) {
 }
 
 static void set_hello(const char *hello) {
+	ak_dbg_set_sink(debug_sink);  // the debugger's stops go to the CLI
 	ak_mutex_lock(&mu);
 	if (!hello_json && hello) {
 		hello_json = ak_alloc(strlen(hello) + 1);

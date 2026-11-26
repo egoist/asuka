@@ -61,7 +61,7 @@ func (b *fb) elementRef(ec *check.ElementCall, v int) {
 	if ec.As != nil {
 		cell := b.local(bc.KRef)
 		b.refNew(cell)
-		b.vars[ec.As] = cell
+		b.setVar(ec.As, cell)
 		b.setRef(cell, v)
 	}
 	if ec.Ref != nil {

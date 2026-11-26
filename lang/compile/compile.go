@@ -550,13 +550,17 @@ func (l *loader) compile(root *unit) *Result {
 			}
 		}
 	}
-	p, diags := ir.Lower(prog, &ir.Options{Platform: string(l.opts.Platform.Or()), Debug: l.opts.Debug, Version: projectVersion(vdir), Lang: l.opts.Lang, Direction: l.opts.Direction, Accent: accent, AccentFlags: accentFlags, Cover: cover, NoFuse: l.opts.NoFuse})
+	optimize := !l.opts.NoOptimize && !l.opts.Cover && os.Getenv("ASUKA_OPT") != "0"
+	// Code the optimizer leaves alone names its locals for the debugger
+	// (asuka dev's): the optimizer's passes move values between
+	// registers, so its code has none.
+	p, diags := ir.Lower(prog, &ir.Options{Platform: string(l.opts.Platform.Or()), Debug: l.opts.Debug, Version: projectVersion(vdir), Lang: l.opts.Lang, Direction: l.opts.Direction, Accent: accent, AccentFlags: accentFlags, Cover: cover, NoFuse: l.opts.NoFuse, Locals: !optimize})
 	res.Diags = append(res.Diags, diags...)
 	if len(res.Diags) > 0 {
 		return res
 	}
 	res.IR = p
-	if !l.opts.NoOptimize && !l.opts.Cover && os.Getenv("ASUKA_OPT") != "0" {
+	if optimize {
 		p.Optimize()
 	}
 	res.Module = p.Encode()

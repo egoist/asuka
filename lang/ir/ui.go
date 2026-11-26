@@ -30,16 +30,17 @@ func (b *fb) lowerFunc(f *check.Function, recv check.Type) {
 			// An interface's: a provided method, compiled for recv.
 			r := b.newReg(b.l.kind(recv))
 			if ctx.Self != nil {
-				b.vars[ctx.Self] = r
+				b.setVar(ctx.Self, r)
 			}
 		default:
 			b.envReg = b.newReg(bc.KRef)
 			b.comp = f.Recv
+			b.noteEnv()
 		}
 	} else if f.IsExtMethod() {
 		r := b.newReg(b.l.kind(recv))
 		if ctx.Self != nil {
-			b.vars[ctx.Self] = r
+			b.setVar(ctx.Self, r)
 		}
 	}
 	var params []int
@@ -54,7 +55,7 @@ func (b *fb) lowerFunc(f *check.Function, recv check.Type) {
 		if p.Var.Boxed() {
 			b.declare(p.Var, params[i])
 		} else {
-			b.vars[p.Var] = params[i]
+			b.setVar(p.Var, params[i])
 		}
 	}
 	if f.Sig.Async || ctx.Awaits {
@@ -279,6 +280,7 @@ func (b *fb) lowerComponent(t *check.TypeName) {
 		b.release(mark)
 	}
 	b.envReg = b.publishEnv(t, true)
+	b.noteMembers(comp.Order)
 	// What it provides, its effects and tasks.
 	for _, it := range comp.Body.Items {
 		mark := b.mark()
@@ -447,7 +449,7 @@ func (b *fb) state(r int, decl syntax.Node, init syntax.Expr, ctx *check.FuncCtx
 		if self != nil {
 			n := b.temp(bc.KRef)
 			b.emit(op("KNONE"), n)
-			b.vars[self] = n
+			b.setVar(self, n)
 		}
 		var v int
 		if init != nil {
@@ -1018,7 +1020,7 @@ func (b *fb) showView(s *syntax.IfStmt) int {
 				}})
 				r := c.newReg(bc.KRef)
 				c.emit(op("MEMO"), r, m, int(k))
-				c.vars[u] = r
+				c.setVar(u, r)
 			}
 			v := c.viewsOf(s.Then.Items)
 			c.emit(op("RET"), v)
@@ -1235,12 +1237,12 @@ func (b *fb) matchView(s *syntax.MatchStmt) int {
 						continue
 					}
 					if len(steps) == 0 {
-						c.vars[v] = acc
+						c.setVar(v, acc)
 						continue
 					}
 					r := c.newReg(bc.KRef)
 					c.emit(op("ACCP"), r, acc, c.str(steps), acc, int(c.kind(v.Type)))
-					c.vars[v] = r
+					c.setVar(v, r)
 				}
 			}
 			// Each name the pattern binds: a memo of its part of the
@@ -1258,7 +1260,7 @@ func (b *fb) matchView(s *syntax.MatchStmt) int {
 				}})
 				r := c.newReg(bc.KRef)
 				c.emit(op("MEMO"), r, m, int(k))
-				c.vars[v] = r
+				c.setVar(v, r)
 			}
 			var view int
 			switch body := a.Body.(type) {
@@ -1687,7 +1689,7 @@ func (b *fb) componentCall(ec *check.ElementCall) int {
 	if ec.As != nil {
 		asCell = b.local(bc.KRef)
 		b.refNew(asCell)
-		b.vars[ec.As] = asCell
+		b.setVar(ec.As, asCell)
 	}
 	var vals []int
 	none := func() int {
@@ -1954,7 +1956,7 @@ func (b *fb) showChain(s *syntax.IfStmt, vc *check.ViewCond) (cond, then int) {
 			}})
 			r := c.newReg(bc.KRef)
 			c.emit(op("MEMO"), r, um, int(k))
-			c.vars[u] = r
+			c.setVar(u, r)
 		}
 		v := c.viewsOf(s.Then.Items)
 		c.emit(op("RET"), v)

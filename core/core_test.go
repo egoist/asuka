@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/lang/compile"
 )
 
 var updateKnown = flag.Bool("update-known", false, "rewrite core/test/testdata/css/known_failures.txt (TestC/Layout)")
@@ -42,6 +43,7 @@ func TestC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	modules := compileModules(t, tmp)
 	tests, _ := filepath.Glob(filepath.Join(root, "test", "*_test.c"))
 	for _, src := range tests {
 		name := strings.TrimSuffix(filepath.Base(src), "_test.c")
@@ -64,7 +66,7 @@ func TestC(t *testing.T) {
 			for _, diag := range []bool{false, true} {
 				cmd := exec.Command(exe)
 				cmd.Dir = filepath.Join(root, "test")
-				cmd.Env = append(os.Environ(), "ASUKA_ROOT="+filepath.Dir(root))
+				cmd.Env = append(os.Environ(), "ASUKA_ROOT="+filepath.Dir(root), "AK_TEST_MODULES="+modules)
 				if diag {
 					cmd.Env = append(cmd.Env, "AK_TEST_DIAG=1")
 				}
@@ -84,6 +86,33 @@ func TestC(t *testing.T) {
 			}
 		})
 	}
+}
+
+// compileModules compiles each core/test/testdata/modules/*.asuka, a
+// package of one file, as asuka dev does (not optimized: its locals named
+// for the debugger), into dir/modules/<name>.akb: the modules C tests
+// load (AK_TEST_MODULES names the directory).
+func compileModules(t *testing.T, dir string) string {
+	out := filepath.Join(dir, "modules")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	srcs, _ := filepath.Glob(filepath.Join("test", "testdata", "modules", "*.asuka"))
+	for _, p := range srcs {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := filepath.Base(p)
+		res := compile.Files(map[string][]byte{name: b}, &compile.Options{NoOptimize: true, Debug: true, NoCatalogs: true, NoTests: true})
+		if err := res.Err(); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		if err := os.WriteFile(filepath.Join(out, strings.TrimSuffix(name, ".asuka")+".akb"), res.Module.Encode(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
 }
 
 // threadTests are the C tests that run threads of their own (the

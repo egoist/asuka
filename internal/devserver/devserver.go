@@ -4,7 +4,8 @@
 // build (or to restart with, keeping no state), and send back their logs
 // and how each reload went. The error overlay a player shows hears from
 // it too: a build that failed (and when it's fixed), and the source of an
-// error the app didn't catch, which the player reports.
+// error the app didn't catch, which the player reports. The debugger's
+// frames (debug.go) set breakpoints, step, and say where the app paused.
 package devserver
 
 import (
@@ -135,7 +136,16 @@ type Events struct {
 	Tree func(p *Player, tree []byte)
 	// Automated is told of the answers to Automate's commands.
 	Automated func(p *Player, seq uint32, answers string)
-	Gone      func(p *Player, err error)
+	// Stopped is told that a player's app paused in the debugger (a
+	// breakpoint, a step, a pause): it waits for Player.Debug.
+	Stopped func(p *Player, stop Stop)
+	// Continued is told that a paused player's app runs again.
+	Continued func(p *Player)
+	// Values is told of the answer to Player.Variables, under its seq.
+	Values func(p *Player, seq uint32, v Variables)
+	// Pong is told of the answer to Player.Ping.
+	Pong func(p *Player)
+	Gone func(p *Player, err error)
 }
 
 // Server serves players. A module is a platform's: what players of
@@ -149,6 +159,9 @@ type Server struct {
 	failed  map[target.Platform]Failure // a platform's build that failed, until Fixed
 	ps      map[*Player]bool
 	conns   uint64 // players that connected
+	// breakpoints are the debugger's, by file (SetBreakpoints): every
+	// player gets them as it says hello.
+	breakpoints map[string][]int
 }
 
 // Player is a connected player.
@@ -385,6 +398,9 @@ func (s *Server) hello(p *Player, b []byte) {
 	}
 	s.mu.Lock()
 	p.Info, p.Platform, p.hello = b, platform, true
+	// The breakpoints first: its module's code may stop at them as it
+	// starts.
+	s.sendBreakpoints(p)
 	m := s.modules[platform]
 	if m != nil {
 		p.send(KindModule, m)
@@ -443,6 +459,8 @@ func (p *Player) read(s *Server) error {
 			if ev.Tree != nil {
 				ev.Tree(p, b)
 			}
+		default:
+			s.debugFrame(p, h[4], b)
 		}
 	}
 }

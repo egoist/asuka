@@ -689,6 +689,38 @@ ak_val ak_vm_acc_cell(void *p) {
 	return (ak_val){.p = acc_new(ACC_CELL, (ak_kind)((cell *)p)->kind, (ak_val){.p = ak_retain(p)})};
 }
 
+bool ak_vm_dbg_peek(void *p, ak_val *v, ak_kind *k) {
+	const ak_obj *o = p;
+	switch (o->tag) {
+	case AK_TAG_CELL: {
+		const cell *c = p;
+		if (is_follow(c) && !((const follow *)c)->has) return false;
+		*v = c->v;
+		*k = (ak_kind)c->kind;
+		return true;
+	}
+	case AK_TAG_MEMO: {
+		const memo *m = p;
+		if (!m->has) return false;
+		*v = m->v;
+		*k = (ak_kind)m->kind;
+		return true;
+	}
+	case AK_TAG_ACC: {
+		const acc *a = p;
+		if (a->mode == ACC_VALUE) {
+			*v = a->v;
+			*k = (ak_kind)a->kind;
+			return true;
+		}
+		if (a->mode == ACC_CELL || a->mode == ACC_MEMO) return ak_vm_dbg_peek(a->v.p, v, k);
+		return false;
+	}
+	default:
+		return false;
+	}
+}
+
 static ak_val model_get(void *m);
 static ak_val apath_read(apath *ap, ak_kind k, const uint8_t *p, uint32_t n, const ak_val *args);
 

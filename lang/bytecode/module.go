@@ -10,7 +10,7 @@ import (
 // Magic starts every module; Version changes with the format.
 const (
 	Magic   = "AKBC"
-	Version = 8
+	Version = 9
 )
 
 // Kind is how a value is stored (core/src/rt/rt.h's ak_kind).
@@ -90,6 +90,30 @@ type Inline struct {
 	Line       uint32
 }
 
+// Local is a name of the source's a function holds in a register, for
+// the debugger (core/src/vm/debug.c): it shows the name's value while the
+// function is at a pc in [From, To) (in words). Only code the optimizer
+// left alone has them (lang/ir drops them as it optimizes: its passes
+// move values between registers), which is asuka dev's.
+type Local struct {
+	Name string
+	Reg  uint16
+	Via  uint8 // how the register holds the value: LocalValue, LocalBox, LocalSignal
+	// Desc is the value's type's descriptor (core/src/rt/json.h's), with
+	// a duration "d" and a color "c" (test.show's): how the debugger
+	// writes it. "-": none (a closure's, a view's), shown by what the
+	// value says of itself.
+	Desc     string
+	From, To uint32
+}
+
+// How a Local's register holds its value.
+const (
+	LocalValue  = iota // the value itself
+	LocalBox           // a var closures capture: a box (VBOX) holding it
+	LocalSignal        // a state's cell, a let's memo, a parameter's accessor: what it holds now
+)
+
 // Function flags.
 const (
 	FAsync  = 1 << iota // may suspend
@@ -120,6 +144,7 @@ type FuncDef struct {
 	Handlers []Handler
 	Lines    []Line
 	Inlines  []Inline // the functions inlined into it, none nested
+	Locals   []Local  // its parameters' and locals' names, for the debugger
 }
 
 // Test is a test block, or a bench.
@@ -279,6 +304,15 @@ func (m *Module) Encode() []byte {
 			w.u32(in.Func)
 			w.u32(in.Line)
 		}
+		w.u32(uint32(len(f.Locals)))
+		for _, l := range f.Locals {
+			w.str(l.Name)
+			w.u16(l.Reg)
+			w.u8(l.Via)
+			w.str(l.Desc)
+			w.u32(l.From)
+			w.u32(l.To)
+		}
 	}
 	w.u32(uint32(len(m.Builtins)))
 	for _, b := range m.Builtins {
@@ -353,6 +387,9 @@ func Decode(b []byte) (*Module, error) {
 		}
 		for c := r.u32(); c > 0 && r.err == nil; c-- {
 			f.Inlines = append(f.Inlines, Inline{r.u32(), r.u32(), r.u32(), r.u32()})
+		}
+		for c := r.u32(); c > 0 && r.err == nil; c-- {
+			f.Locals = append(f.Locals, Local{Name: r.str(), Reg: r.u16(), Via: r.u8(), Desc: r.str(), From: r.u32(), To: r.u32()})
 		}
 		m.Funcs = append(m.Funcs, f)
 	}

@@ -31,6 +31,7 @@ import (
 // what it may (opt_inline.go), and compacts each function's registers.
 func (p *Program) Optimize() {
 	for _, f := range p.Funcs {
+		f.Locals = nil // the debugger's: the passes move values between registers
 		o := &optimizer{p: p, f: f, n: len(f.Kinds)}
 		o.passes()
 	}

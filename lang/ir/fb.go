@@ -47,6 +47,10 @@ type fb struct {
 	loadKey *check.Function
 
 	vars map[*check.Var]int // a local's register (its box, accessor or memo)
+	// openLocals: the debugger's names (Func.Locals) still in their
+	// registers, by register; localOf: a name's, by its var.
+	openLocals map[int][]int
+	localOf    map[*check.Var]int
 	// unboxed: boxed vars this function holds the values of (a spawn's
 	// copies), in their registers.
 	unboxed map[*check.Var]bool
@@ -201,6 +205,7 @@ func (b *fb) mark() int { return len(b.temps) }
 // optimizer, which lets its value go after its last read (opt_release.go).
 func (b *fb) release(mark int) {
 	for _, r := range b.temps[mark:] {
+		b.endLocal(r)
 		k := b.f.Kinds[r]
 		b.free[k] = append(b.free[k], r)
 		if k == bc.KRef {
@@ -254,6 +259,7 @@ func (b *fb) closeScope() {
 		}
 	}
 	for _, r := range b.scopes[n-1] {
+		b.endLocal(r)
 		k := b.f.Kinds[r]
 		if k == bc.KRef {
 			// Let go of what it held: a value someone changes next
@@ -296,6 +302,9 @@ func (b *fb) regs(ks []bc.Kind) int {
 func (b *fb) releaseRegs(base int, ks []bc.Kind) {
 	if len(ks) == 0 {
 		return
+	}
+	for i := range ks {
+		b.endLocal(base + i)
 	}
 	for i, k := range ks {
 		if k == bc.KRef {
@@ -467,7 +476,7 @@ func (b *fb) declare(v *check.Var, init int) int {
 		r := b.local(bc.KRef)
 		val := b.valueReg(init, k)
 		b.emit(op("VBOX"), r, val, int(k))
-		b.vars[v] = r
+		b.setVar(v, r)
 		return r
 	}
 	r := b.local(k)
@@ -482,8 +491,164 @@ func (b *fb) declare(v *check.Var, init int) int {
 	if init >= 0 {
 		b.move(r, init)
 	}
-	b.vars[v] = r
+	b.setVar(v, r)
 	return r
+}
+
+// setVar makes r v's register from here on.
+func (b *fb) setVar(v *check.Var, r int) {
+	b.vars[v] = r
+	if b.l.opts.Locals {
+		b.noteLocal(v, r)
+	}
+}
+
+// noteLocal records v's name for the debugger (Func.Locals): in r from
+// the next instruction on, until r is let go of (endLocal) or v is
+// given another register.
+func (b *fb) noteLocal(v *check.Var, r int) {
+	name := v.Name()
+	if r < 0 || r >= len(b.f.Kinds) || !debugName(name) {
+		return
+	}
+	if i, ok := b.localOf[v]; ok && b.f.Locals[i].End < 0 {
+		b.closeLocal(i)
+	}
+	via := uint8(bc.LocalValue)
+	switch {
+	case v.Boxed() && !b.unboxed[v]:
+		via = bc.LocalBox
+	case v.Kind == check.RowItem, v.Kind == check.ViewMemo, b.l.prog.AccessorVar(v), v.Kind == check.StyleLocal && b.l.styleMemo[v]:
+		via = bc.LocalSignal
+	}
+	b.localOf[v] = b.addLocal(name, r, via, b.l.debugDesc(b.subst.Apply(v.Type)))
+}
+
+// addLocal records a name the debugger shows, in r from the next
+// instruction on, and returns its index in Func.Locals.
+func (b *fb) addLocal(name string, r int, via uint8, desc string) int {
+	if b.openLocals == nil {
+		b.openLocals, b.localOf = map[int][]int{}, map[*check.Var]int{}
+	}
+	b.f.Locals = append(b.f.Locals, Local{Name: name, Reg: r, Via: via, Desc: desc, Start: len(b.f.Code), End: -1})
+	i := len(b.f.Locals) - 1
+	b.openLocals[r] = append(b.openLocals[r], i)
+	return i
+}
+
+// noteEnv records the component's or store's env as "self" for the
+// debugger: a struct of its members, each shown as what it holds now.
+func (b *fb) noteEnv() {
+	if b.l.opts.Locals && b.envReg >= 0 {
+		b.addLocal("self", b.envReg, bc.LocalValue, "-")
+	}
+}
+
+// noteMembers records the registers of a component's members in its own
+// function, by their names, for the debugger.
+func (b *fb) noteMembers(order []*check.Member) {
+	if !b.l.opts.Locals {
+		return
+	}
+	for _, m := range order {
+		r, ok := b.memberRegs[m]
+		if !ok || !debugName(m.Name()) {
+			continue
+		}
+		// A state's cell, a let's memo, a parameter's accessor: what it
+		// holds (the debugger shows any other value as it is).
+		b.addLocal(m.Name(), r, bc.LocalSignal, b.l.debugDesc(b.subst.Apply(m.Type)))
+	}
+}
+
+// debugName reports whether a var's name is the source's (not one the
+// checker or the lowering made up).
+func debugName(n string) bool {
+	if n == "" || n == "_" {
+		return false
+	}
+	c := n[0]
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
+}
+
+// endLocal ends the names in register r: it's let go of here.
+func (b *fb) endLocal(r int) {
+	if len(b.openLocals[r]) == 0 {
+		return
+	}
+	for _, i := range b.openLocals[r] {
+		b.f.Locals[i].End = len(b.f.Code)
+	}
+	delete(b.openLocals, r)
+}
+
+// closeLocal ends the name Locals[i] here.
+func (b *fb) closeLocal(i int) {
+	b.f.Locals[i].End = len(b.f.Code)
+	r := b.f.Locals[i].Reg
+	is := b.openLocals[r]
+	for j, k := range is {
+		if k == i {
+			b.openLocals[r] = append(is[:j:j], is[j+1:]...)
+			break
+		}
+	}
+}
+
+// debugDesc is t's descriptor as the debugger writes its values
+// (bytecode.Local's Desc): its JSON descriptor (desc), but a duration's
+// "d" and a color's "c", and nothing made for it but a payloadless
+// enum's shape, which names its cases.
+func (l *Lowerer) debugDesc(t check.Type) string {
+	switch x := t.(type) {
+	case *check.Basic:
+		switch x {
+		case check.Duration:
+			return "d"
+		case check.Color:
+			return "c"
+		case check.Int, check.Length, check.Pointer:
+			return "i"
+		case check.Char:
+			return "r"
+		case check.I8, check.I16, check.I32, check.U8, check.U16, check.U32, check.U64:
+			return "n" + string(rune('0'+check.IntCode(x)))
+		case check.Float:
+			return "f"
+		case check.Bool:
+			return "b"
+		case check.String:
+			return "s"
+		case check.Bytes:
+			return "y"
+		}
+		return "-"
+	case *check.Optional:
+		return "?" + l.debugDesc(x.Elem)
+	case *check.Array:
+		return "[" + l.debugDesc(x.Elem)
+	case *check.Map:
+		if x.Key != check.String {
+			return "m" + l.debugDesc(x.Key) + l.debugDesc(x.Elem)
+		}
+		return "{" + l.debugDesc(x.Elem)
+	case *check.Set:
+		return "<" + l.debugDesc(x.Elem)
+	case *check.Tuple:
+		return "("
+	case *check.Named:
+		switch x.Obj.Kind {
+		case check.StructType:
+			return "S" + l.typeKey(t) + ";"
+		case check.EnumType:
+			if x.Obj.RefEnum() {
+				return "E" + l.typeKey(t) + ";"
+			}
+			l.intEnumShape(x)
+			return "e" + l.typeKey(t) + ";"
+		}
+	}
+	return "-"
 }
 
 // plainData reports whether t's values are data alone, made of numbers,
@@ -829,7 +994,7 @@ func (b *fb) makeClosure(s closure) int {
 			k = bc.KRef
 		}
 		r := c.newReg(k)
-		c.vars[v] = r
+		c.setVar(v, r)
 	}
 	// Captures.
 	var caps []int // the maker's registers
@@ -902,9 +1067,10 @@ func (b *fb) makeClosure(s closure) int {
 				reg = env
 			}
 			c.envReg = reg
+			c.noteEnv()
 			continue
 		}
-		c.vars[capVars[i]] = reg
+		c.setVar(capVars[i], reg)
 	}
 	c.f.Flags &= bc.FSized // what its parameters' types said
 	if s.throws {

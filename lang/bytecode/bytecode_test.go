@@ -27,7 +27,8 @@ func TestRoundTrip(t *testing.T) {
 	a.Emit(Byname["RET"], 0)
 	a.PatchJump(j, len(a.Code))
 	a.Emit(Byname["RET0"])
-	m.Funcs = []FuncDef{{Name: "f", File: "a.asuka", NParams: 1, Kinds: []Kind{KInt}, Flags: FThrows, Code: a.Code, Handlers: []Handler{{0, 3, 5}}, Lines: []Line{{0, 1}}}}
+	m.Funcs = []FuncDef{{Name: "f", File: "a.asuka", NParams: 1, Kinds: []Kind{KInt}, Flags: FThrows, Code: a.Code, Handlers: []Handler{{0, 3, 5}}, Lines: []Line{{0, 1}},
+		Locals: []Local{{Name: "x", Reg: 0, Via: LocalValue, Desc: "i", From: 0, To: 9}, {Name: "s", Reg: 0, Via: LocalBox, Desc: "?s", From: 3, To: 5}}}}
 	got, err := Decode(m.Encode())
 	if err != nil {
 		t.Fatal(err)
