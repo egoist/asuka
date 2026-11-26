@@ -58,8 +58,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: stable }
-      - name: GTK 4, libadwaita, WebKitGTK, libsoup 3, a display and a session bus
-        run: sudo apt-get update && sudo apt-get install -y libgtk-4-1 libadwaita-1-0 libwebkitgtk-6.0-4 libsoup-3.0-0 xvfb dbus clang
+      - name: GTK 4, libadwaita, WebKitGTK, libsoup 3, Poppler, a display and a session bus
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-1 libadwaita-1-0 libwebkitgtk-6.0-4 libsoup-3.0-0 libpoppler-glib8t64 xvfb dbus clang
       - uses: mlugg/setup-zig@v2
       - name: the prebuilt libraries (Zig's, as a release builds them) link with gcc and clang
         run: xvfb-run -a dbus-run-session go test ./cmd/asuka -run LinuxPrebuiltFromZig -v

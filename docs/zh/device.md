@@ -522,6 +522,48 @@ component Invoice {
 
 Android 没有系统级的查看器，也没有能在多个文件之间翻页的查看器：它只打开一个文件，就像 Android 上的邮件应用逐个打开附件那样。在 iOS 上，`preview.show` 目前还不能指定查看器从哪个视图展开（即像 `device.shareFiles` 的 `from:` 那样传一个 `Ref`）。
 
+## 显示 PDF：platform/pdf
+
+`pdf.View` 把 PDF 显示在应用的界面里，和其他视图并列：页面从上往下排，适应视图的宽度，可以滚动浏览，双指缩放。`source` 可以是文件路径、资源的路径（和 `Image` 的写法一样），或者 http(s) URL（先下载下来）。
+
+```asuka check
+import platform/pdf
+
+component Manual {
+  state page = 0
+  state pages = 0
+
+  Column {
+    grow: 1
+    pdf.View {
+      source: "docs/Manual.pdf"
+      bind page: page
+      grow: 1
+      on loaded(n) { pages = n }
+    }
+    Row {
+      justify: .spaceBetween
+      padding: 12
+      Button("Previous") { on press { page = max(0, page - 1) } }
+      Text("{page + 1} of {pages}")
+      Button("Next") { on press { page = min(pages - 1, page + 1) } }
+    }
+  }
+}
+```
+
+`page` 是当前显示的页，从 0 开始：设置它会滚动到那一页；绑定之后，它会跟随用户的滚动（`pageChange` 也会告诉你）。显示出来之后，`loaded` 给出页数；显示不了时，`error` 说明原因（文件不存在、不是 PDF、已加密、下载失败）。
+
+| | 用什么显示 |
+| --- | --- |
+| iOS、macOS | PDFKit 的 `PDFView` |
+| Android | `PdfRenderer` 渲染的页面，放在一个能滚动、能缩放（双击、双指）的列表里 |
+| Windows | `Windows.Data.Pdf` 渲染的页面 |
+| Linux | Poppler（`libpoppler-glib8`）渲染的页面，前提是发行版提供了它 |
+| Web | 浏览器自带的查看器；没有查看器的浏览器（大多数手机上的）会显示一个打开它的链接，`loaded` 给出的页数是 0 |
+
+如果想把文件交给系统的查看器，见 `platform/preview`；要生成 PDF，用 `print.pdf`。
+
 ## 打印与 PDF：platform/print
 
 `platform/print` 可以为文件或 HTML 标记显示系统的打印对话框，其中包含可用的打印机和各种选项（份数、页码范围、纸张、方向；Android 和 Mac 上还有“存储为 PDF”）；它还能把 HTML 排版成分页的 PDF。对话框关闭后，负责打印的调用会返回一个 `print.Outcome`。这个包的名字与 prelude 的 `print` 相同：如果还要打印文本，导入时给它换个名字。

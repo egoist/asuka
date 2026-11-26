@@ -20,8 +20,9 @@ import (
 // passes when it exits 0. What a package's C works out without a
 // platform (parsing, decoding, encoding) is tested so on every system.
 // A view's Linux test (desktop/*_linux_test.c) is built with the package's
-// glue too and runs on Linux, with GTK: it includes its view's C, makes
-// the view and drives it as the host would.
+// glue (and the shared C that fetches) too and runs on Linux, with GTK:
+// it includes its view's C, makes the view and drives it as the host
+// would.
 func TestStdUnits(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("built with the POSIX test host's flags")
@@ -58,8 +59,11 @@ func TestStdUnits(t *testing.T) {
 				}
 			}
 			if view {
+				// The glue, and what a view's C may call to get its content
+				// (asuka_desktop_local_file's downloads: fetch.c, tls.c).
 				glue, _ := filepath.Glob(filepath.Join(dir, "*.asuka.c"))
 				srcs = append(srcs, glue...)
+				srcs = append(srcs, filepath.Join(desk, "src", "fetch.c"), filepath.Join(desk, "src", "tls.c"))
 			}
 			flags := append(append([]string{}, cbuild.Flags...), "-I"+filepath.Join(desk, "include"), "-I"+dir, "-D_GNU_SOURCE")
 			work := t.TempDir()

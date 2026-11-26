@@ -746,6 +746,55 @@ it opens one, as Android's mail apps do with each attachment.
 `preview.show` doesn't take a view for the viewer to grow from on iOS
 (a `Ref`, as `device.shareFiles`'s `from:`) yet.
 
+## Showing a PDF: platform/pdf
+
+`pdf.View` shows a PDF in the app's screen, as a view among the others:
+its pages one under the other, fitted to the view's width, scrolled
+through and pinched to zoom. Its `source` is a file's path, an asset's
+(as `Image` takes it), or an http(s) URL, downloaded first.
+
+```asuka check
+import platform/pdf
+
+component Manual {
+  state page = 0
+  state pages = 0
+
+  Column {
+    grow: 1
+    pdf.View {
+      source: "docs/Manual.pdf"
+      bind page: page
+      grow: 1
+      on loaded(n) { pages = n }
+    }
+    Row {
+      justify: .spaceBetween
+      padding: 12
+      Button("Previous") { on press { page = max(0, page - 1) } }
+      Text("{page + 1} of {pages}")
+      Button("Next") { on press { page = min(pages - 1, page + 1) } }
+    }
+  }
+}
+```
+
+`page` is the page shown, from 0: setting it scrolls there, and bound
+it follows the user's scrolling (`pageChange` says so too). `loaded`
+gives the page count once it shows; `error` says why it can't (no such
+file, not a PDF, encrypted, a download that failed).
+
+| | What shows it |
+| --- | --- |
+| iOS, macOS | PDFKit's `PDFView` |
+| Android | the pages rendered by `PdfRenderer` in a list that scrolls and zooms (double-tap, pinch) |
+| Windows | the pages rendered by `Windows.Data.Pdf` |
+| Linux | the pages rendered by Poppler (`libpoppler-glib8`), where the distribution has it |
+| Web | the browser's own viewer; a browser without one (most phones') shows a link that opens it, and `loaded` gives 0 pages |
+
+To hand a file to the system's viewer instead, see `platform/preview`;
+to make a PDF, `print.pdf`.
+
 ## Printing and PDFs: platform/print
 
 `platform/print` shows the system's print dialog, with its printers and

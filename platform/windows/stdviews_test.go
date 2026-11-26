@@ -42,6 +42,11 @@ func TestStdViews(t *testing.T) {
 			}
 			view := filepath.Join(dir, strings.TrimSuffix(filepath.Base(test), "_test.c")+".c") // the test includes it
 			natives.Sources = slices.DeleteFunc(natives.Sources, func(s string) bool { return s == view })
+			// And from its package's library (an sdk or std package's C is
+			// one): the test's copy is the only one.
+			for i := range natives.Units {
+				natives.Units[i].Sources = slices.DeleteFunc(slices.Clone(natives.Units[i].Sources), func(s string) bool { return s == view })
+			}
 			host := &appbuild.DesktopC{
 				Sources: []string{test, filepath.Join(desk, "test", "unit.c"), filepath.Join(desk, "src", "jsontree.c")},
 				Flags:   []string{"-I" + filepath.Join(desk, "include"), "-I" + dir},

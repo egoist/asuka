@@ -1047,6 +1047,8 @@ typedef struct _SecretValue SecretValue;
 typedef struct _GeocodeLocation GeocodeLocation;
 typedef struct _GeocodeReverse GeocodeReverse;
 typedef struct _GeocodePlace GeocodePlace;
+typedef struct _PopplerDocument PopplerDocument;
+typedef struct _PopplerPage PopplerPage;
 
 // The desktop portal's bus name and object.
 #define ASUKA_PORTAL "org.freedesktop.portal.Desktop"
@@ -1089,6 +1091,7 @@ enum {
 	ASUKA_LIB_XTST,     // libXtst: the host's automation's real input (X11)
 	ASUKA_LIB_POCKETSPHINX,  // CMU PocketSphinx: speech recognition (5, or 5prealpha's .so.3)
 	ASUKA_LIB_SPHINXBASE,    // its 5prealpha's configuration (cmd_ln)
+	ASUKA_LIB_POPPLER,       // Poppler's GLib API: PDFs
 	ASUKA_LIB_COUNT,
 };
 

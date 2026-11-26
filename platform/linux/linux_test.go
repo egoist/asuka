@@ -15,6 +15,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"image/png"
 	"net"
 	"net/http"
 	"os"
@@ -684,5 +685,82 @@ app { Root() }
 	}
 	if n < 4 || !strings.Contains(line, "| en-US | timed:true") {
 		t.Errorf("%s: heard %d of 7 words, or no language or timing", line, n)
+	}
+}
+
+// platform/pdf on Linux: Poppler's pages in the app's window, where the
+// system has Poppler (libpoppler-glib8): loaded with its pages' count,
+// the page the app sets scrolled to and not told back, and the pages
+// drawn (white, the window's background around them).
+func TestPdf(t *testing.T) {
+	onLinux(t)
+	if libs, _ := filepath.Glob("/usr/lib/*/libpoppler-glib.so.8"); len(libs) == 0 {
+		t.Skip("no Poppler (libpoppler-glib8)")
+	}
+	pdf, err := filepath.Abs(filepath.Join("..", "..", "sdk", "pdf", "tests", "three.pdf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "app")
+	src := `
+import platform/pdf
+
+component Root {
+  state pages = 0
+  state page = 0
+  state told = 0
+  state err = "none"
+  Column {
+    grow: 1
+    Row {
+      gap: 8; padding: 8
+      Text("pages: {pages} page: {page} told: {told} error: {err}")
+      Button("Last") { on press { page = 2 } }
+    }
+    pdf.View {
+      source: "PDF"
+      bind page: page
+      grow: 1
+      on loaded(n) { pages = n }
+      on pageChange(p) { told += 1 }
+      on error(m) { err = m }
+    }
+  }
+}
+
+app { Root() }
+`
+	res := compile.Files(map[string][]byte{"app.asuka": []byte(strings.ReplaceAll(src, "PDF", pdf))}, &compile.Options{Platform: "linux"})
+	if err := res.Err(); err != nil {
+		t.Fatalf("the app doesn't compile:\n%v", err)
+	}
+	if err := appbuild.LinuxExe(target(), appbuild.StripTests(res.Module), []string{filepath.Join("..", "..", "sdk", "pdf")}, exe); err != nil {
+		t.Fatal(err)
+	}
+	d := script(t, dir, exe, "wait:1s", "snap:loaded", "tap:Last", "wait:500ms", "snap:last")
+	shows(t, d["loaded"], "loaded", []string{"pages: 3 page: 0 told: 0 error: none"})
+	shows(t, d["last"], "last", []string{"pages: 3 page: 2 told: 0 error: none"})
+	// The first page drawn: white, on the window's background.
+	f, err := os.Open(filepath.Join(dir, "loaded.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := img.Bounds()
+	white := 0
+	for y := b.Min.Y + b.Dy()/3; y < b.Max.Y; y += 4 {
+		for x := b.Min.X; x < b.Max.X; x += 4 {
+			if r, g, bl, _ := img.At(x, y).RGBA(); r>>8 == 255 && g>>8 == 255 && bl>>8 == 255 {
+				white++
+			}
+		}
+	}
+	if total := (b.Dx() / 4) * (b.Dy() * 2 / 3 / 4); white < total/3 {
+		t.Errorf("the pages aren't drawn: %d of %d pixels white", white, total)
 	}
 }

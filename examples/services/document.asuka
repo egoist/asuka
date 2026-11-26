@@ -1,0 +1,43 @@
+import platform/pdf
+
+// A PDF in the screen (platform/pdf): its pages scrolled and zoomed, and
+// the page shown followed and set from the bar below it.
+screen PdfScreen {
+  state page = 0
+  state pages = 0
+  state note = ""
+
+  title: "PDF"
+
+  Column {
+    grow: 1
+    pdf.View {
+      source: "sample.pdf"
+      bind page: page
+      grow: 1
+      on loaded(n) { pages = n }
+      on error(m) { note = m }
+    }
+    SafeArea {
+      padding: 12
+      Row {
+        align: .center
+        justify: .spaceBetween
+        Button("Previous") {
+          disabled: page == 0
+          on press { page -= 1 }
+        }
+        Text(if note.isEmpty() { "Page {page + 1} of {pages}" } else { note })
+        Button("Next") {
+          disabled: pages == 0 || page >= pages - 1
+          on press { page += 1 }
+        }
+      }
+    }
+  }
+}
+
+test "the PDF screen counts its pages from the first" {
+  let app = mount(Stack { PdfScreen() })
+  app.expect("Page 1 of 0")
+}

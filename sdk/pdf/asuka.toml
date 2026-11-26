@@ -1,0 +1,3 @@
+name = "platform/pdf"
+version = "0.1.0"
+description = "A PDF in the app's screen: PDFKit, PdfRenderer, Windows.Data.Pdf, Poppler, the browser's viewer"

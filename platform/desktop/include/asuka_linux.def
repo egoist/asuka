@@ -1419,6 +1419,23 @@ SYM(SHUMATE, void, shumate_marker_layer_remove_all, (GtkWidget *self))
 SYM(SHUMATE, GtkWidget *, shumate_marker_new, (void))
 SYM(SHUMATE, void, shumate_marker_set_child, (GtkWidget *self, GtkWidget *child))
 
+// ---- Native packages: Poppler's GLib API (pdf), and the cairo it draws with ----
+SYM(CAIRO, cairo_surface_t *, cairo_image_surface_create_for_data, (unsigned char *data, cairo_format_t format, int width, int height, int stride))
+SYM(CAIRO, int, cairo_format_stride_for_width, (cairo_format_t format, int width))
+SYM(CAIRO, void, cairo_surface_flush, (cairo_surface_t *surface))
+SYM(CAIRO, void, cairo_surface_destroy, (cairo_surface_t *surface))
+SYM(CAIRO, cairo_t *, cairo_create, (cairo_surface_t *target))
+SYM(CAIRO, void, cairo_destroy, (cairo_t *cr))
+SYM(CAIRO, void, cairo_translate, (cairo_t *cr, double tx, double ty))
+SYM(CAIRO, void, cairo_scale, (cairo_t *cr, double sx, double sy))
+SYM(CAIRO, void, cairo_set_source_rgb, (cairo_t *cr, double red, double green, double blue))
+SYM(CAIRO, void, cairo_paint, (cairo_t *cr))
+SYM(POPPLER, PopplerDocument *, poppler_document_new_from_file, (const char *uri, const char *password, GError **error))
+SYM(POPPLER, int, poppler_document_get_n_pages, (PopplerDocument *document))
+SYM(POPPLER, PopplerPage *, poppler_document_get_page, (PopplerDocument *document, int index))
+SYM(POPPLER, void, poppler_page_get_size, (PopplerPage *page, double *width, double *height))
+SYM(POPPLER, void, poppler_page_render, (PopplerPage *page, cairo_t *cairo))
+
 // ---- Native packages: geocode-glib (location) ----
 SYM(GEOCODE, GeocodeLocation *, geocode_location_new, (gdouble latitude, gdouble longitude, gdouble accuracy))
 SYM(GEOCODE, GeocodeReverse *, geocode_reverse_new_for_location, (GeocodeLocation *location))

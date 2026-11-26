@@ -522,6 +522,48 @@ component Invoice {
 
 Android にはシステムのビューアーも、複数のファイルをめくれるビューアーもありません。そのため、Android のメールアプリが添付ファイルを一つずつ開くのと同じく、一つのファイルだけを開きます。iOS でビューアーが広がり出てくる元のビュー（`device.shareFiles` の `from:` のような `Ref`）を、`preview.show` はまだ受け取れません。
 
+## PDF の表示：platform/pdf
+
+`pdf.View` は、PDF をアプリの画面の中に、ほかのビューと並べて表示します。ページは上から下に並び、ビューの幅に合わせて表示され、スクロールしたりピンチで拡大したりできます。`source` には、ファイルのパス、アセットのパス（`Image` と同じ書き方）、http(s) の URL（先にダウンロードされます）を指定します。
+
+```asuka check
+import platform/pdf
+
+component Manual {
+  state page = 0
+  state pages = 0
+
+  Column {
+    grow: 1
+    pdf.View {
+      source: "docs/Manual.pdf"
+      bind page: page
+      grow: 1
+      on loaded(n) { pages = n }
+    }
+    Row {
+      justify: .spaceBetween
+      padding: 12
+      Button("Previous") { on press { page = max(0, page - 1) } }
+      Text("{page + 1} of {pages}")
+      Button("Next") { on press { page = min(pages - 1, page + 1) } }
+    }
+  }
+}
+```
+
+`page` は表示中のページで、0 から数えます。設定するとそのページまでスクロールし、バインドするとユーザーのスクロールに追従します（`pageChange` でも通知されます）。表示されると `loaded` がページ数を伝え、表示できないときは `error` が理由（ファイルがない、PDF ではない、暗号化されている、ダウンロードに失敗した）を伝えます。
+
+| | 表示に使うもの |
+| --- | --- |
+| iOS、macOS | PDFKit の `PDFView` |
+| Android | `PdfRenderer` が描いたページを、スクロールと拡大（ダブルタップ、ピンチ）ができるリストに並べたもの |
+| Windows | `Windows.Data.Pdf` が描いたページ |
+| Linux | Poppler（`libpoppler-glib8`）が描いたページ（ディストリビューションに Poppler がある場合） |
+| Web | ブラウザー自身のビューアー。ビューアーのないブラウザー（ほとんどのスマートフォンのもの）では、PDF を開くリンクが表示され、`loaded` のページ数は 0 です |
+
+ファイルをシステムのビューアーに渡したい場合は `platform/preview` を、PDF を作る場合は `print.pdf` を使います。
+
 ## 印刷と PDF：platform/print
 
 `platform/print` は、ファイルや HTML マークアップに対して、プリンターとオプション（部数、ページ、用紙、向き。Android と Mac では「PDF として保存」も）を備えたシステムの印刷ダイアログを表示します。また、HTML をページに割り付けて PDF にすることもできます。印刷の呼び出しはどれも、ダイアログが閉じると `print.Outcome` を返します。このパッケージの名前はプレリュードの `print` と同じなので、テキストの出力にも `print` を使いたいときは、別の名前でインポートしてください。

@@ -1,0 +1,37 @@
+// Package platform/pdf shows a PDF in the app's screen, as a view among
+// its others: PDFKit's PDFView on iOS and the Mac, pages rendered by
+// Android's PdfRenderer in a list that scrolls and zooms, Windows'
+// renderer (Windows.Data.Pdf) and Poppler on Linux in the same, the
+// browser's own viewer on the web.
+//
+//   state page = 0
+//
+//   pdf.View {
+//     source: "docs/Guide.pdf"
+//     bind page: page
+//     grow: 1
+//     on loaded(pages) { count = pages }
+//   }
+//
+// To hand a file to the system's viewer instead (Quick Look, the app the
+// user opens PDFs with), see platform/preview; to make a PDF,
+// platform/print's print.pdf.
+
+/// A PDF's pages, one under the other, fitted to the view's width; the
+/// user scrolls through them and pinches to zoom. Give it a size, or grow.
+pub native component View {
+  /// The PDF: a file's path, an asset's path (as Image takes it), or an
+  /// http(s) URL, which is downloaded first.
+  prop source: string = ""
+  /// The page shown, from 0; setting it scrolls there. Bound, it follows
+  /// the user's scrolling.
+  prop page: int = 0
+  /// The document is shown: how many pages it has (0 where the platform
+  /// doesn't say: the web).
+  event loaded(pages: int)
+  /// The page the user scrolled to (the one filling most of the view).
+  event pageChange(page: int)
+  /// Why it can't show: the file isn't there or isn't a PDF, it's
+  /// encrypted, the download failed, or the platform has no viewer.
+  event error(message: string)
+}

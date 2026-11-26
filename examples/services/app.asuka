@@ -543,6 +543,9 @@ screen Services {
       Item("Map") {
         on press { push(MapScreen()) }
       }
+      Item("PDF") {
+        on press { push(PdfScreen()) }
+      }
       Item("Refresh in the background, hourly") {
         on press {
           periodic.schedule("refresh", every: 1h, network: true)

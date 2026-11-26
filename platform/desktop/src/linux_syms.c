@@ -50,6 +50,7 @@ static const lib_names sonames[ASUKA_LIB_COUNT] = {
 	[ASUKA_LIB_XTST] = {{"libXtst.so.6", "libXtst.so"}},
 	[ASUKA_LIB_POCKETSPHINX] = {{"libpocketsphinx.so.5", "libpocketsphinx.so.3", "libpocketsphinx.so"}},
 	[ASUKA_LIB_SPHINXBASE] = {{"libsphinxbase.so.3", "libsphinxbase.so"}},
+	[ASUKA_LIB_POPPLER] = {{"libpoppler-glib.so.8", "libpoppler-glib.so"}},
 };
 
 static void *handles[ASUKA_LIB_COUNT];
