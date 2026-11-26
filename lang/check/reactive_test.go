@@ -16,6 +16,7 @@ let viaFn = readsCount() + 1
 fn readsCount() -> int = count
 fn pure(x: int) -> int = x + 1
 fn indirect() -> int = readsCount()
+fn onDesktop() -> bool = environment().platform == .macOS
 
 component C(title: string) {
   state n = 0
@@ -25,6 +26,10 @@ component C(title: string) {
   let d = indirect()
   let e = [1, 2].map(x => x + n)
   let f = [1, 2].map(x => x + 1)
+  // The environment is a signal (the host says it after mount), through a
+  // function too.
+  let g = environment().width
+  let h = onDesktop()
 
   Column {
     Text("{b}")
@@ -52,7 +57,7 @@ component C(title: string) {
 			comp = tn
 		}
 	}
-	memo := map[string]bool{"a": true, "b": false, "c": false, "d": true, "e": true, "f": false}
+	memo := map[string]bool{"a": true, "b": false, "c": false, "d": true, "e": true, "f": false, "g": true, "h": true}
 	for name, want := range memo {
 		if m := comp.Comp.Members[name]; m.Memo != want {
 			t.Errorf("let %s: memo %v, want %v", name, m.Memo, want)

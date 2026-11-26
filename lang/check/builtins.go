@@ -453,6 +453,12 @@ func (c *Checker) builtinCall(e *syntax.CallExpr, b *Builtin, want Type) Type {
 	case BEnvironment:
 		positional(0, "nothing: environment()")
 		call.Result = c.prelude.Scope.Lookup("Environment").(*TypeName).Type
+		// It reads the environment, a signal: a function that calls it
+		// reads state, so what calls that function follows it too (a
+		// binding of onDesktop(), the platform known once the host says).
+		if c.ctx != nil {
+			c.ctx.readsState = true
+		}
 	case BSet:
 		// Set(xs): xs's distinct elements; Set<T>(): none.
 		args := positional(-1, "")
