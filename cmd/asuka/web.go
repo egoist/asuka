@@ -397,6 +397,15 @@ func newWebDev(app *asukaApp, work string) (*devServer, *devLoop, error) {
 		s.mu.Unlock()
 		s.send("module", stamp)
 	})
+	// The inspector asks the pages for their views by their events; each
+	// answers at /__asuka/tree.
+	loop.inspector.askers = append(loop.inspector.askers, func() int {
+		s.mu.Lock()
+		n := len(s.clients)
+		s.mu.Unlock()
+		s.send("inspect", "")
+		return n
+	})
 	loop.restarts = append(loop.restarts, func() {
 		s.mu.Lock()
 		stamp := s.moduleStamp
@@ -598,6 +607,15 @@ func (s *devServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				c <- d
 			}
 		}
+	case p == "/__asuka/tree" && r.Method == http.MethodPost:
+		// A page's views (its core's AK_DEV_TREE), for the inspector: page
+		// is the page's own id, name its browser.
+		b, _ := io.ReadAll(io.LimitReader(r.Body, 64<<20))
+		name := "Web"
+		if n := r.URL.Query().Get("name"); n != "" {
+			name += " (" + n + ")"
+		}
+		s.loop.inspector.put("web:"+r.URL.Query().Get("page"), name, b, true)
 	case p == "/__asuka/uncaught" && r.Method == http.MethodPost:
 		// An error the app didn't catch (an uncaught frame's payload): it's
 		// printed, and the answer is its source frame's payload.

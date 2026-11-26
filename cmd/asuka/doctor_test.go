@@ -14,9 +14,11 @@ import (
 // emulator) leaves a platform ready.
 func TestDoctor(t *testing.T) {
 	e := doctorEnv{
-		goos:    "linux",
-		ios:     func() (*iosToolchain, error) { return nil, errors.New("no Xcode") },
-		android: func() (*androidToolchain, error) { return nil, errors.New("no Android SDK: install Android Studio or set ANDROID_HOME") },
+		goos: "linux",
+		ios:  func() (*iosToolchain, error) { return nil, errors.New("no Xcode") },
+		android: func() (*androidToolchain, error) {
+			return nil, errors.New("no Android SDK: install Android Studio or set ANDROID_HOME")
+		},
 		toolchain: func(t cbuild.Target) (*cbuild.Toolchain, error) {
 			if t.OS == "linux" {
 				return &cbuild.Toolchain{Target: t, CC: cbuild.Compiler{Path: "/usr/bin/cc"}}, nil

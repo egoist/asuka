@@ -401,6 +401,14 @@ static void dev_frame(uint8_t kind, const uint8_t *p, size_t n) {
 		break;
 	}
 	case AK_DEV_FIXED: ak_dev_overlay_fixed(); break;
+	case AK_DEV_INSPECT: {
+		// The inspector's: the views, as they are now.
+		ak_buf b = {0};
+		ak_ui_inspect(&b);
+		ak_dev_send(AK_DEV_TREE, b.data, b.len);
+		ak_buf_free(&b);
+		break;
+	}
 	}
 }
 

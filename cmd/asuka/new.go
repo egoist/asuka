@@ -11,8 +11,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/egoist/asuka/internal/toml"
 	"github.com/egoist/asuka/internal/guide"
+	"github.com/egoist/asuka/internal/toml"
 	tpl "github.com/egoist/asuka/template"
 )
 

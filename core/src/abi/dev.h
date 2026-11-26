@@ -16,6 +16,8 @@
 //                    its first error, the lines of the source at it, its
 //                    other errors; again on each build that fails)
 //                 11 fixed (the app builds again)
+//                 12 inspect (asuka dev's inspector asks for the views:
+//                    answered with a tree)
 //   player → CLI:  3 log (u8 fd: 1 out, 2 err; then the text)
 //                  4 hello (JSON: the platform, the device)
 //                  5 reloaded (u32 state cells kept, u32 microseconds,
@@ -27,6 +29,8 @@
 //                    message and its stack, a line per frame, innermost
 //                    first: "name (file:line)"); the CLI prints it and
 //                    answers with its source
+//
+//                 13 tree (JSON: the app's views, ui.h's ak_ui_inspect)
 //
 // The overlay (ui.h's ak_dev_overlay_*) shows what failed, uncaught and
 // source say, over the app.
@@ -47,6 +51,8 @@ enum {
 	AK_DEV_SOURCE = 9,
 	AK_DEV_FAILED = 10,
 	AK_DEV_FIXED = 11,
+	AK_DEV_INSPECT = 12,
+	AK_DEV_TREE = 13,
 };
 
 // A reloaded frame's flags.

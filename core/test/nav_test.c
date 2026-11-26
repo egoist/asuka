@@ -891,6 +891,39 @@ TEST(sheet_screen_follows_its_sheet) {
 	ak_release(open_cell);
 }
 
+// asuka dev's inspector: the views as JSON, a sheet's content among the
+// roots (it's no view's child), each with its element, text and frame.
+TEST(inspector_tree) {
+	open_cell = ak_vm_cell_new((ak_val){.i = 1}, AK_K_BOOL, NULL).p;
+	ak_uitest *a = mount(sheet_screen_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *sheet = nth(a, AK_KIND_SHEET, 0);
+	REQUIRE(sheet && sheet->presented);
+	ak_fake_report_sheet(f, sheet);
+	ak_buf b = {0};
+	ak_ui_inspect(&b);
+	ak_buf_u8(&b, 0);
+	const char *j = (const char *)b.data;
+	const char *head = "{\"roots\":[{\"el\":";
+	CHECK(strncmp(j, head, strlen(head)) == 0);
+	CHECK(strstr(j, "\"text\":\"at the top\"") != NULL);
+	CHECK(strstr(j, "\"text\":\"at the bottom\"") != NULL);
+	CHECK(strstr(j, "\"el\":\"Sheet\"") != NULL);
+	CHECK(strstr(j, "\"frame\":[") != NULL);
+	// Balanced: a tree, not a run-on.
+	int depth = 0, least = 0;
+	for (const char *p = j; *p; p++) {
+		if (*p == '[' || *p == '{') depth++;
+		if (*p == ']' || *p == '}') depth--;
+		if (depth < least) least = depth;
+	}
+	CHECK_EQ_INT(depth, 0);
+	CHECK_EQ_INT(least, 0);
+	ak_buf_free(&b);
+	done(a);
+	ak_release(open_cell);
+}
+
 // ---- Popover (popover_test.go) ----
 
 static ak_val pop_content(ak_closure *c, ak_val *a, uint32_t n) {

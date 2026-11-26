@@ -126,6 +126,10 @@ void ak_dev_overlay_source(uint32_t seq, ak_span source, ak_span details);
 // ak_dev_overlay_fixed.
 void ak_dev_overlay_build(ak_span message, ak_span source, ak_span details);
 void ak_dev_overlay_fixed(void);
+// ak_ui_inspect writes the app's views to out as JSON, as asuka dev's
+// inspector shows them (inspect.c): {"roots":[{"el", "id", "text",
+// "text2", "frame", "kids"}, ...]}.
+void ak_ui_inspect(ak_buf *out);
 // ak_dev_overlay_clear_app forgets the app's errors: a new module loads.
 void ak_dev_overlay_clear_app(void);
 // ak_dev_overlay_set_reload sets what Reload does: the app starts again,

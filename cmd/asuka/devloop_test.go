@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,6 +95,7 @@ func TestDevDesktop(t *testing.T) {
 	if b := waitFile(t, tapped+".txt"); !strings.Contains(string(b), `"Count: 1"`) {
 		t.Fatalf("after tapping Add:\n%s", b)
 	}
+	inspects(t, loop, "macOS", `"text":"Count: 1"`)
 	// A save: the next module, which says Total.
 	useCounter(t, "Total: ")
 	if !loop.compile() {
@@ -118,6 +121,32 @@ func TestDevDesktop(t *testing.T) {
 	}
 }
 
+// inspects asks the players for their views, as the inspector's page
+// does, and wants one player, called name, whose tree has each of want.
+func inspects(t *testing.T, loop *devLoop, name string, want ...string) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	loop.inspector.ServeHTTP(rec, httptest.NewRequest("GET", "/tree", nil))
+	var got struct{ Players []inspectorPlayer }
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("%v: %s", err, rec.Body.String())
+	}
+	if len(got.Players) != 1 || !strings.HasPrefix(got.Players[0].Name, name) {
+		t.Fatalf("the inspector's players: %s", rec.Body.String())
+	}
+	tree := string(got.Players[0].Tree)
+	for _, w := range want {
+		if !strings.Contains(tree, w) {
+			t.Fatalf("the tree has no %s:\n%s", w, tree)
+		}
+	}
+	rec = httptest.NewRecorder()
+	loop.inspector.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if !strings.Contains(rec.Body.String(), "<title>Asuka Inspector</title>") {
+		t.Fatalf("the inspector's page: %s", rec.Body.String())
+	}
+}
+
 // The dev loop on the web: the page runs the player (the core as
 // WebAssembly, without an app), loads the Counter's module, counts a
 // press, and loads the next module in place on a save, keeping the
@@ -128,6 +157,7 @@ func TestDevWeb(t *testing.T) {
 	if got := automate("tap Add\ndump"); !strings.Contains(got, "Count: 1") {
 		t.Fatalf("after tapping Add, the page shows:\n%s", got)
 	}
+	inspects(t, loop, "Web (Chrome)", `"text":"Count: 1"`)
 	useCounter(t, "Total: ")
 	if !loop.compile() {
 		t.Fatal("didn't compile")

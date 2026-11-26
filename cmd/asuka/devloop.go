@@ -53,6 +53,8 @@ type devLoop struct {
 	stale    bool
 	// reloads receives each reload a player reports (tests).
 	reloads chan devReload
+	// inspector serves the app's views to the inspector's page.
+	inspector *inspector
 	// firstLoad is closed when a player first reports the app loaded;
 	// playerErr gets what a player reports going wrong (--once's).
 	firstLoad     chan struct{}
@@ -72,16 +74,13 @@ type devReload struct {
 // waited on: the players get the first that does.
 func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	d := &devLoop{app: app, out: os.Stdout, platform: app.platform.Or(), loaded: map[*devserver.Player]bool{}, reloads: make(chan devReload, 16),
-		firstLoad: make(chan struct{}), playerErr: make(chan string, 1)}
+		firstLoad: make(chan struct{}), playerErr: make(chan string, 1), inspector: newInspector()}
 	srv, err := devserver.Listen(addr, devserver.Events{
 		Hello: func(p *devserver.Player, b []byte) {
-			var h struct{ Platform, Device string }
-			json.Unmarshal(b, &h)
-			who := h.Platform
-			if h.Device != "" {
-				who += " (" + h.Device + ")"
-			}
-			fmt.Fprintf(d.out, "asuka: %s connected\n", who)
+			fmt.Fprintf(d.out, "asuka: %s connected\n", playerName(b))
+		},
+		Tree: func(p *devserver.Player, tree []byte) {
+			d.inspector.put(fmt.Sprintf("%p", p), playerName(p.Info), tree, false)
 		},
 		Need: func(p *devserver.Player, platform target.Platform) { d.compileFor(platform) },
 		Log: func(p *devserver.Player, stderr bool, text []byte) {
@@ -107,12 +106,17 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 			d.mu.Lock()
 			delete(d.loaded, p)
 			d.mu.Unlock()
+			d.inspector.forget(fmt.Sprintf("%p", p))
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
 	d.srv = srv
+	d.inspector.askers = append(d.inspector.askers, srv.Inspect)
+	if url, err := d.inspector.listen(); err == nil {
+		fmt.Fprintf(d.out, "asuka: the inspector (the app's views): %s\n", url)
+	}
 	d.compile()
 	return d, nil
 }
@@ -183,7 +187,24 @@ func msText(ms float64) string {
 func (d *devLoop) port() int { return d.srv.Port() }
 
 // close disconnects every player.
-func (d *devLoop) close() { d.srv.Close() }
+func (d *devLoop) close() {
+	d.srv.Close()
+	d.inspector.close()
+}
+
+// playerName is who a player is, from its hello: "iOS (iPhone 17)".
+func playerName(hello []byte) string {
+	var h struct{ Platform, Device string }
+	json.Unmarshal(hello, &h)
+	who := h.Platform
+	if n, ok := map[string]string{"ios": "iOS", "android": "Android", "darwin": "macOS", "macos": "macOS", "windows": "Windows", "linux": "Linux", "web": "Web"}[who]; ok {
+		who = n
+	}
+	if h.Device != "" && h.Device != "desktop" {
+		who += " (" + h.Device + ")"
+	}
+	return who
+}
 
 // compile compiles the app and sends the module to the players,
 // reporting whether it compiled for the loop's player. What didn't is

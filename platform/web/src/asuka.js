@@ -155,7 +155,7 @@ function devClient(url) {
   let host = null, core = null, trapped = null;
   const report = (r, first, restarted) => fetch(base + "reloaded", { method: "POST", body: JSON.stringify({ First: first, Restarted: restarted, Kept: r.kept, Micros: r.micros }) }).catch(() => {});
   // asuka dev's frames for the core (core/src/abi/dev.h's kinds), held until it's there.
-  const Frame = { Reloaded: 5, Uncaught: 8, Source: 9, Failed: 10, Fixed: 11 };
+  const Frame = { Reloaded: 5, Uncaught: 8, Source: 9, Failed: 10, Fixed: 11, Inspect: 12, Tree: 13 };
   let held = [];
   const frame = (kind, bytes) => {
     if (core?.frame) core.frame(kind, bytes);
@@ -169,11 +169,22 @@ function devClient(url) {
       report({ kept: v.getUint32(0, true), micros: v.getUint32(4, true) }, false, (bytes[8] & 1) !== 0);
       return;
     }
+    if (kind === Frame.Tree) {
+      fetch(`${base}tree?page=${page}&name=${encodeURIComponent(browser())}`, { method: "POST", body: bytes }).catch(() => {});
+      return;
+    }
     if (kind !== Frame.Uncaught) return;
     fetch(base + "uncaught", { method: "POST", body: bytes })
       .then((res) => (res.ok ? res.arrayBuffer() : null))
       .then((b) => b && frame(Frame.Source, new Uint8Array(b)))
       .catch(() => {});
+  };
+  // This page's id, and its browser's name, for the inspector's list of apps.
+  const page = Math.random().toString(36).slice(2, 10);
+  const browser = () => {
+    const ua = navigator.userAgent;
+    for (const [name, re] of [["Edge", /Edg\//], ["Firefox", /Firefox\//], ["Chrome", /Chrome\//], ["Safari", /Safari\//]]) if (re.test(ua)) return name;
+    return "browser";
   };
   const events = new EventSource(base + "events");
   // A new build of the app's module: loaded in place, its state and views kept. A
@@ -206,6 +217,8 @@ function devClient(url) {
   // A build that failed (its frame's payload, base64), and its fix: the overlay shows it.
   events.addEventListener("failed", (e) => frame(Frame.Failed, Uint8Array.from(atob(e.data), (c) => c.charCodeAt(0))));
   events.addEventListener("fixed", () => frame(Frame.Fixed, new Uint8Array(0)));
+  // The inspector asks for the app's views: the core answers with a tree frame.
+  events.addEventListener("inspect", () => core?.frame && frame(Frame.Inspect, new Uint8Array(0)));
   // GUI tests' commands (e2e/), as the mobile hosts' debug builds take them.
   events.addEventListener("automation", async (e) => {
     const { id, commands } = JSON.parse(e.data);

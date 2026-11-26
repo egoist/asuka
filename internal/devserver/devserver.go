@@ -32,6 +32,10 @@ const (
 	KindSource   = 9
 	KindFailed   = 10
 	KindFixed    = 11
+	// KindInspect asks a player for its views; it answers with KindTree
+	// (JSON: core/src/ui/inspect.c's).
+	KindInspect = 12
+	KindTree    = 13
 )
 
 // A reloaded frame's flags.
@@ -119,7 +123,9 @@ type Events struct {
 	// Uncaught is told of an error nothing in the app caught; its source
 	// goes back with Player.Source.
 	Uncaught func(p *Player, u Uncaught)
-	Gone     func(p *Player, err error)
+	// Tree is told of a player's views, as JSON, answering Inspect.
+	Tree func(p *Player, tree []byte)
+	Gone func(p *Player, err error)
 }
 
 // Server serves players. A module is a platform's: what players of
@@ -266,6 +272,26 @@ func (p *Player) Source(seq uint32, source, details string) error {
 	return p.send(KindSource, EncodeSource(seq, source, details))
 }
 
+// Inspect asks every player that said hello for its views (Events.Tree
+// hears them); how many it asked.
+func (s *Server) Inspect() int {
+	s.mu.Lock()
+	var ps []*Player
+	for p := range s.ps {
+		if p.hello {
+			ps = append(ps, p)
+		}
+	}
+	s.mu.Unlock()
+	n := 0
+	for _, p := range ps {
+		if p.send(KindInspect, nil) == nil {
+			n++
+		}
+	}
+	return n
+}
+
 func (s *Server) accept() {
 	for {
 		c, err := s.ln.Accept()
@@ -371,6 +397,10 @@ func (p *Player) read(s *Server) error {
 		case KindUncaught:
 			if u, ok := DecodeUncaught(b); ok && ev.Uncaught != nil {
 				ev.Uncaught(p, u)
+			}
+		case KindTree:
+			if ev.Tree != nil {
+				ev.Tree(p, b)
 			}
 		}
 	}
