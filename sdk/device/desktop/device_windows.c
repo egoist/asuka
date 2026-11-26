@@ -423,9 +423,16 @@ static void p_awake(device_Platform *self, bool on, asuka_error *err) {
 	SetThreadExecutionState(on ? ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED : ES_CONTINUOUS);
 }
 
+// A desktop app has no page of its own in Settings: Privacy & security,
+// where what apps may use (the camera, the microphone, location) is.
+static bool p_settings(device_Platform *self, asuka_error *err) {
+	return (INT_PTR)ShellExecuteW(NULL, L"open", L"ms-settings:privacy", NULL, NULL, SW_SHOWNORMAL) > 32;
+}
+
 static const device_Platform_vtable vt = {
     .info = p_info, .browse = p_browse, .pickPhotos = p_photos, .pickFiles = p_files, .clipboardText = p_text,
     .clipboardHas = p_has, .clipboardImage = p_image, .copyImage = p_copy, .watchClipboard = p_watch, .keepAwake = p_awake,
+    .openSettings = p_settings,
 };
 
 device_Platform *device_make_Platform(asuka_error *err) {

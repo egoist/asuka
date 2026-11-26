@@ -644,6 +644,12 @@ component Links {
 - `device.openURL(url)` asks the system to open a URL: a web address in the
   browser, another scheme (`tel:`, `mailto:`, another app's) in the app
   that handles it.
+- `device.openSettings()` opens the app's page of the system's settings,
+  where the user turns on what they once said no to (the camera,
+  notifications, location): the app's Settings page on iOS, its App info
+  on Android; Privacy & Security on a Mac and on Windows, which have no
+  page for an app. It returns false where there's nothing to open (Linux,
+  the web).
 
 `device.shareFiles(paths, mime:, uti:, title:, from:)` shows the share sheet for
 files: a video to send, a PDF to save to Files, photos for AirDrop. It's

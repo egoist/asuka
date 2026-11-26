@@ -442,6 +442,7 @@ component Links {
 - `device.copy(text)` 把文本放进剪贴板。
 - `device.share(text)` 显示系统的分享面板，用户可以把文本发给某个应用、联系人，或者通过 AirDrop、Nearby Share 发送。URL 会以链接的形式分享。Mac 显示它的共享服务选择器，Windows 显示它的分享界面，浏览器在支持时显示 Web Share 面板；Linux 没有分享面板，所以会把文本复制到剪贴板并弹出一条提示（不支持 Web Share 的浏览器也是这样复制的）。
 - `device.openURL(url)` 请系统打开一个 URL：网址在浏览器中打开，其他 scheme（`tel:`、`mailto:`、其他应用的 scheme）由能处理它的应用打开。
+- `device.openSettings()` 打开系统设置里属于这个应用的页面，用户可以在那里打开之前拒绝过的权限（相机、通知、定位）：iOS 上是应用自己的设置页，Android 上是它的“应用信息”；Mac 和 Windows 没有单个应用的页面，打开的是“隐私与安全性”。没有可打开的页面时（Linux、Web）返回 false。
 
 `device.shareFiles(paths, mime:, uti:, title:, from:)` 显示用于分享文件的面板：发送一段视频、把 PDF 存到“文件”、用 AirDrop 传照片。它是 async 的，面板消失后才返回，无论用户有没有分享；如果面板无法显示（比如文件不存在），它会抛出错误。
 

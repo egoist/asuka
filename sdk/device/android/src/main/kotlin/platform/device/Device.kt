@@ -161,6 +161,20 @@ class AndroidDevice(private val app: Context) : Platform {
         if (on) w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
+
+    /** The app's App info page: its permissions, notifications, storage. */
+    override fun openSettings(): Boolean {
+        val i = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            android.net.Uri.fromParts("package", app.packageName, null))
+        val act = AsukaModules.activity
+        if (act == null) i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            (act ?: app).startActivity(i)
+            true
+        } catch (_: android.content.ActivityNotFoundException) {
+            false
+        }
+    }
 }
 
 fun makePlatform(): Platform = AndroidDevice(AsukaModules.context)

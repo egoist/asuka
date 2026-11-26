@@ -221,6 +221,20 @@ final class SystemDevice: Platform {
         #endif
     }
 
+    @MainActor func openSettings() throws -> Bool {
+        #if canImport(UIKit)
+        // The app's own page: its permissions, notifications and language.
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return false }
+        UIApplication.shared.open(url)
+        return true
+        #else
+        // A Mac has no page for an app: Privacy & Security, its list of what
+        // apps may use.
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") else { return false }
+        return NSWorkspace.shared.open(url)
+        #endif
+    }
+
     #if os(macOS)
     @MainActor static var awake: NSObjectProtocol?
 

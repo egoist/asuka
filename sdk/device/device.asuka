@@ -121,6 +121,10 @@ native interface Platform {
   /// Keeps the screen on while on.
   /// @mainThread
   fn keepAwake(on: bool)
+  /// Opens the app's page of the system's settings; false where there's
+  /// none.
+  /// @mainThread
+  fn openSettings() -> bool
 }
 
 // Made once; none where the platform has no code for it.
@@ -145,6 +149,18 @@ pub async fn info() throws -> Info {
 /// the browser, another scheme (tel:, mailto:, another app's) in the app
 /// that handles it. browse shows a web page in the app instead.
 pub native fn openURL(url: string)
+
+/// Opens the app's page of the system's settings, where the user turns
+/// on what they once said no to (the camera, notifications, location):
+/// the app's Settings page on iOS, its App info on Android; on a Mac and
+/// Windows, which have no page for an app, Privacy & Security. Returns
+/// false where there's nothing to open (Linux, the web, asuka test).
+pub fn openSettings() -> bool {
+  if let p = platform {
+    return (try? p.openSettings()) ?? false
+  }
+  return false
+}
 
 /// Shows a web page in the app, over it: SFSafariViewController on iOS,
 /// a Custom Tab on Android; desktops and the web open it in the user's

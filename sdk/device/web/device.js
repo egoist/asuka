@@ -232,5 +232,8 @@ export function makePlatform() {
       document.removeEventListener("visibilitychange", shown);
     },
     keepAwake,
+    // A page has no settings of the system's to open (a site's are the
+    // browser's, behind its address bar).
+    openSettings: () => false,
   };
 }

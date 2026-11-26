@@ -138,6 +138,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 应用内购买、订阅 | StoreKit 2 | `expo-iap`、`react-native-iap`、RevenueCat | ✓ `platform/purchase`（带本地化价格和优惠的商品、购买、待处理的付款、从应用启动起的交易流、完成交易、权益、恢复购买、订阅状态、管理订阅/退款/兑换码面板；iOS 和 macOS 上用 StoreKit 2，Play Billing，Microsoft Store，Trusted Web Activity 里的 Digital Goods API；测试用 `purchase.fake()`）（见[应用内购买](purchases.md)） |
 | 应用商店评分 | `requestReview` | `expo-store-review` | ✓ `platform/review`（App Store 的评分弹窗、Play 的应用内评价） |
 | 跟踪权限 | App Tracking Transparency | `expo-tracking-transparency` | ✓ `platform/tracking` |
+| 打开应用的设置页（权限被拒绝之后） | `UIApplication.openSettingsURLString` | `Linking.openSettings()` | ✓ `device.openSettings()`（iOS 上是应用的设置页，Android 上是“应用信息”，Mac 和 Windows 上是“隐私与安全性”） |
 | 应用完整性 | App Attest | `expo-app-integrity` | ✓ `platform/integrity`（App Attest、Play Integrity） |
 | 年龄段 | Declared Age Range | `expo-age-range` | ✓ `platform/agerange`（Declared Age Range、Play Age Signals） |
 | 传感器 | Core Motion | `expo-sensors` | ✓ `platform/sensors`（加速度计、陀螺仪、磁力计、设备运动、气压计、光线、计步器；所有平台坐标轴和单位一致；Core Motion、SensorManager、Linux 上 iio-sensor-proxy 提供的光线和方向、Generic Sensor API；Mac 和 Windows 不支持） |

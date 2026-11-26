@@ -342,9 +342,14 @@ static void p_awake(device_Platform *self, bool on, asuka_error *err) {
 	else G(gtk_application_uninhibit)(app, inhibit), inhibit = 0;
 }
 
+// Linux's desktops have no settings page for an app that every one
+// opens the same way (and a Flatpak runs none of the host's): none.
+static bool p_settings(device_Platform *self, asuka_error *err) { return false; }
+
 static const device_Platform_vtable vt = {
     .info = p_info, .browse = p_browse, .pickPhotos = p_photos, .pickFiles = p_files, .clipboardText = p_text,
     .clipboardHas = p_has, .clipboardImage = p_image, .copyImage = p_copy, .watchClipboard = p_watch, .keepAwake = p_awake,
+    .openSettings = p_settings,
 };
 
 device_Platform *device_make_Platform(asuka_error *err) {

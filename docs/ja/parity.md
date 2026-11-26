@@ -138,6 +138,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | アプリ内課金、サブスクリプション | StoreKit 2 | `expo-iap`、`react-native-iap`、RevenueCat | ✓ `platform/purchase`（ローカライズされた価格とオファー付きの商品、購入、保留中の支払い、アプリの起動時からのトランザクションのストリーム、完了処理、エンタイトルメント、復元、サブスクリプションの状態、管理・返金・オファーコードのシート。iOS と macOS では StoreKit 2、Play Billing、Microsoft Store、Trusted Web Activity の Digital Goods API。テストには `purchase.fake()`）（[アプリ内課金](purchases.md)） |
 | ストアのレビュー | `requestReview` | `expo-store-review` | ✓ `platform/review`（App Store のプロンプト、Play のアプリ内レビュー） |
 | トラッキングの許可 | App Tracking Transparency | `expo-tracking-transparency` | ✓ `platform/tracking` |
+| アプリの設定を開く（権限を断られたあと） | `UIApplication.openSettingsURLString` | `Linking.openSettings()` | ✓ `device.openSettings()`（iOS ではアプリの設定ページ、Android では「アプリ情報」、Mac と Windows では「プライバシーとセキュリティ」） |
 | アプリの完全性 | App Attest | `expo-app-integrity` | ✓ `platform/integrity`（App Attest、Play Integrity） |
 | 年齢層 | Declared Age Range | `expo-age-range` | ✓ `platform/agerange`（Declared Age Range、Play Age Signals） |
 | センサー | Core Motion | `expo-sensors` | ✓ `platform/sensors`（加速度計、ジャイロスコープ、磁力計、デバイスモーション、気圧計、照度、歩数計。どこでも同じ軸と単位。Core Motion、SensorManager、Linux では iio-sensor-proxy の照度と向き、Generic Sensor API。Mac と Windows にはない） |
