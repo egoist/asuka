@@ -32,7 +32,11 @@ final class AsukaCheckbox: UIButton {
     }
 
     private func update() {
-        configuration?.image = UIImage(systemName: isOn ? "checkmark.circle.fill" : "circle")
+        // Within a finite height the button is as tall as its symbol's
+        // alignment rect, which is shorter than the circle the symbol draws
+        // and cuts off its top and bottom; without the insets it's as tall
+        // as within an infinite one.
+        configuration?.image = UIImage(systemName: isOn ? "checkmark.circle.fill" : "circle")?.withAlignmentRectInsets(.zero)
         configuration?.baseForegroundColor = isOn ? nil : .tertiaryLabel // the tint when on
         if #available(iOS 17.0, *) { accessibilityTraits = [.button, .toggleButton] }
         accessibilityValue = isOn ? "1" : "0"
