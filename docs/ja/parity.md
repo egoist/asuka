@@ -144,7 +144,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 画像の編集 | Core Graphics、ImageIO | `expo-image-manipulator` | ✓ `platform/imageedit`（リサイズ、切り抜き、回転、反転、塗りつぶし、モザイク。HEIC を読み、JPEG か PNG で書き出し、向きを正す。Image I/O、Android の `Bitmap`、WIC、GdkPixbuf、canvas） |
 | 動画のサムネイル | `AVAssetImageGenerator` | `expo-video-thumbnails` | ✓ `imageedit.videoFrame` |
 | 画像の中のテキスト、顔、コード | Vision | なし | ✓ `platform/vision`、それぞれの位置とともに（Vision。Android では ML Kit で、インポートしたアプリにだけ含まれる。Windows の OCR と顔検出。Linux では Tesseract のテキストのみで顔はない。ブラウザーでは Shape Detection API があればそれ） |
-| 音声のテキスト化 | Speech（`SFSpeechRecognizer`） | コミュニティ製（`expo-speech-recognition`） | ◐ `platform/transcribe`（録音をデバイス上だけで：iOS と macOS では Speech、Android 13 のデバイス上の認識、Windows の音声認識。Linux と Web にはない） |
+| 音声のテキスト化 | Speech（`SFSpeechRecognizer`） | コミュニティ製（`expo-speech-recognition`） | ◐ `platform/transcribe`（録音をデバイス上だけで：iOS と macOS では Speech、Android 13 のデバイス上の認識、ブラウザーのデバイス上の認識（Chrome 139 以降）。マイクからのリアルタイムの認識はまだない。Windows と Linux の認識はマイクしか受け付けないため非対応） |
 | 写真ライブラリ | PhotoKit | `expo-media-library` | ✓ `platform/photos`：許可、一覧、サムネイル、元のファイル（PhotoKit、MediaStore） |
 | 読み上げ | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech`（キュー、声、ピッチ、速度、一時停止。AVSpeechSynthesizer、TextToSpeech、SAPI、Speech Dispatcher、`speechSynthesis`） |
 | 連絡先 | Contacts、ContactsUI | `expo-contacts` | ✓ `platform/contacts`（`pick()` と新規連絡先の画面は許可なしで、アドレス帳は許可を得て） |
@@ -241,4 +241,4 @@ MyGo にあって Asuka にまだないものは次のとおりです。書類�
 
 ## 未対応のもの
 
-アプリでの需要が高い順に、エンティティを持つ App Intents（ショートカットのパラメーターはまだ値だけで、アプリ自身のデータは扱えません）、アプリ独自のレイアウトのウィジェット（いまはテンプレートが一つだけです）、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）、シミュレーターやエミュレーターでのアプリの GUI テストです。Windows と Linux では Lottie（`lottie.View` は空の領域になります）、Linux と Web では音声のテキスト化が未対応です。Windows では画面の `zoomFrom`（代わりにプッシュがスライドします。Linux は libadwaita のナビゲーションと同じくスライドします。GNOME にはズームのトランジションがありません）が未対応です。
+アプリでの需要が高い順に、エンティティを持つ App Intents（ショートカットのパラメーターはまだ値だけで、アプリ自身のデータは扱えません）、アプリ独自のレイアウトのウィジェット（いまはテンプレートが一つだけです）、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）、シミュレーターやエミュレーターでのアプリの GUI テストです。Windows と Linux では Lottie（`lottie.View` は空の領域になります）、Windows と Linux では音声のテキスト化が未対応です。Windows では画面の `zoomFrom`（代わりにプッシュがスライドします。Linux は libadwaita のナビゲーションと同じくスライドします。GNOME にはズームのトランジションがありません）が未対応です。

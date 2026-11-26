@@ -209,6 +209,9 @@ func nativeScripts(natives []nativePackage) ([]webScript, error) {
 			if err != nil || d.IsDir() {
 				return err
 			}
+			if strings.HasSuffix(f, ".test.js") {
+				return nil // the package's own tests (node --test), not the app's
+			}
 			r, _ := filepath.Rel(dir, f)
 			r = filepath.ToSlash(r)
 			out = append(out, webScript{path: "packages/" + nativegen.Sanitize(p.path) + "/" + r, file: f, entry: r == entry})

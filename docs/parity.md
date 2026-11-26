@@ -163,7 +163,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Image editing | Core Graphics, ImageIO | `expo-image-manipulator` | ✓ `platform/imageedit` (resize, crop, rotate, flip, fill, pixelate; HEIC in, JPEG or PNG out, upright; Image I/O, Android's `Bitmap`, WIC, GdkPixbuf, a canvas) |
 | Video thumbnails | `AVAssetImageGenerator` | `expo-video-thumbnails` | ✓ `imageedit.videoFrame` |
 | Text, faces and codes in an image | Vision | no | ✓ `platform/vision`, with where each is (Vision; ML Kit on Android, only in the apps that import it; Windows' OCR and face detection; Tesseract's text on Linux, no faces; the browser's Shape Detection API where it has one) |
-| Speech to text | Speech (`SFSpeechRecognizer`) | community (`expo-speech-recognition`) | ◐ `platform/transcribe` (a recording, on the device only: Speech on iOS and macOS, Android 13's on-device recognizer, Windows' speech recognition; not on Linux and the web) |
+| Speech to text | Speech (`SFSpeechRecognizer`) | community (`expo-speech-recognition`) | ◐ `platform/transcribe` (a recording, on the device only: Speech on iOS and macOS, Android 13's on-device recognizer, a browser's on-device recognizer (Chrome 139 and later); not live from the microphone, and not on Windows and Linux, whose recognizers take only the microphone) |
 | The photo library | PhotoKit | `expo-media-library` | ✓ `platform/photos`: permission, listing, thumbnails, the original files (PhotoKit, MediaStore) |
 | Text to speech | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech` (a queue, voices, pitch, rate, pause; AVSpeechSynthesizer, TextToSpeech, SAPI, Speech Dispatcher, `speechSynthesis`) |
 | Contacts | Contacts, ContactsUI | `expo-contacts` | ✓ `platform/contacts` (`pick()` and the new contact form without permission; the address book with it) |
@@ -277,6 +277,6 @@ shortcut's parameters are values, not the app's own things yet), widgets of the 
 template for now), over-the-air updates (EAS Update's: a release has the
 app compiled into it), and GUI tests of an app on the simulator and the
 emulator. On Windows and Linux, Lottie (`lottie.View` is an empty box).
-On Linux and the web, speech to text. On Windows, a screen's `zoomFrom`
+On Windows and Linux, speech to text. On Windows, a screen's `zoomFrom`
 (a push slides instead; Linux slides as libadwaita's navigation does,
 GNOME having no zoom).

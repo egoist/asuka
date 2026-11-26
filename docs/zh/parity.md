@@ -144,7 +144,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 图片编辑 | Core Graphics、ImageIO | `expo-image-manipulator` | ✓ `platform/imageedit`（缩放、裁剪、旋转、翻转、填充、像素化；读入 HEIC，输出 JPEG 或 PNG，方向自动摆正；Image I/O、Android 的 `Bitmap`、WIC、GdkPixbuf、canvas） |
 | 视频缩略图 | `AVAssetImageGenerator` | `expo-video-thumbnails` | ✓ `imageedit.videoFrame` |
 | 识别图片中的文字、人脸和码 | Vision | 无 | ✓ `platform/vision`，同时给出每一项的位置（Vision；Android 上用 ML Kit，只打包进导入了它的应用；Windows 的 OCR 和人脸检测；Linux 上用 Tesseract 识别文字，不支持人脸；浏览器有 Shape Detection API 时用它） |
-| 语音转文字 | Speech（`SFSpeechRecognizer`） | 社区方案（`expo-speech-recognition`） | ◐ `platform/transcribe`（识别一段录音，只在设备上进行：iOS 和 macOS 上用 Speech，Android 13 的设备端识别器，Windows 的语音识别；Linux 和 Web 不支持） |
+| 语音转文字 | Speech（`SFSpeechRecognizer`） | 社区方案（`expo-speech-recognition`） | ◐ `platform/transcribe`（识别一段录音，只在设备上进行：iOS 和 macOS 上用 Speech，Android 13 的设备端识别器，浏览器在设备上运行的识别器（Chrome 139 及以上）；还不能直接从麦克风实时识别；Windows 和 Linux 不支持，它们的识别器只接受麦克风） |
 | 照片图库 | PhotoKit | `expo-media-library` | ✓ `platform/photos`：权限、列出照片、缩略图、原始文件（PhotoKit、MediaStore） |
 | 文字转语音 | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech`（队列、声音、音调、语速、暂停；AVSpeechSynthesizer、TextToSpeech、SAPI、Speech Dispatcher、`speechSynthesis`） |
 | 通讯录 | Contacts、ContactsUI | `expo-contacts` | ✓ `platform/contacts`（`pick()` 和新建联系人界面不需要权限；访问通讯录需要权限） |
@@ -241,4 +241,4 @@ MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览�
 
 ## 尚未支持
 
-按应用最常缺少的程度排序：带实体的 App Intents（快捷方式的参数目前只能是值，还不能是应用自己的数据）、应用自定义布局的小组件（目前只有一种模板）、OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了），以及在模拟器上对应用做 GUI 测试。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Linux 和 Web 上的语音转文字。Windows 上页面的 `zoomFrom`（推入时改为滑入；Linux 按 libadwaita 导航的方式滑入，GNOME 没有缩放过渡）。
+按应用最常缺少的程度排序：带实体的 App Intents（快捷方式的参数目前只能是值，还不能是应用自己的数据）、应用自定义布局的小组件（目前只有一种模板）、OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了），以及在模拟器上对应用做 GUI 测试。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Windows 和 Linux 上的语音转文字。Windows 上页面的 `zoomFrom`（推入时改为滑入；Linux 按 libadwaita 导航的方式滑入，GNOME 没有缩放过渡）。

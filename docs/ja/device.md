@@ -200,7 +200,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/background` | ページは開いているあいだ動き続けます。タスクを作っても何も変わらず、通知も出ません |
 | `platform/tracking` | プロンプトは出ません。ブラウザーが Global Privacy Control か Do Not Track を送っていれば `.denied`、そうでなければ `.allowed` です |
 | `device.haptic` | ブラウザーが対応していれば（Android の Chrome）`navigator.vibrate` を使います |
-| `platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity`、`platform/transcribe` | Web にはありません。その旨を示すエラーか、パッケージの `notAvailable` になります |
+| `platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity` | Web にはありません。その旨を示すエラーか、パッケージの `notAvailable` になります |
 | `platform/purchase` | Trusted Web Activity の中では、Digital Goods API を通じて Google Play を使います。それ以外ではストアはありません（`PurchaseError.notAvailable`） |
 | `platform/maps` | Windows と同じく、Asuka が OpenStreetMap のタイルを描きます。`showsUser` は、ページに位置情報の許可があれば表示されます |
 | `platform/pay` | ブラウザーが対応していれば（Safari）、Payment Request API を通じて Apple Pay を使います。マーチャントの検証はアプリのサーバーが行います（`onValidateMerchant`）。それ以外では、Google の Web API（pay.js）を通じて Google Pay を使います。ボタンはそれぞれ専用のものです。シートはタップからしか表示できません |
@@ -1638,7 +1638,7 @@ async fn caption(recording: string) throws -> string {
 }
 ```
 
-iOS と Mac では Speech フレームワークにデバイス上で処理するよう求め、Android ではデバイス上の認識エンジン（Android 13 以降）、Windows では OS の音声認識を使います。デバイスでできないとき（ブラウザー、Linux、古い Android）は、音声をサーバーに送る代わりに `TranscribeError.notAvailable` を投げます。言語のモデルをダウンロード中のときは `.downloading` です。
+iOS と Mac では Speech フレームワークにデバイス上で処理するよう求め、Android ではデバイス上の認識エンジン（Android 13 以降）を使います。ブラウザーでは、デバイス上で動くブラウザー自身の認識エンジン（Chrome 139 以降）に録音を再生して聞かせるので、ファイル一つにほぼその長さの時間がかかり、`segments` はありません。デバイスでできないとき（Windows、Linux、古い Android、その認識エンジンのないブラウザー）は、音声をサーバーに送る代わりに `TranscribeError.notAvailable` を投げます。言語のモデルをダウンロード中のときは `.downloading` です（ブラウザーはそのときインストールを始めます）。
 
 ## 画面：platform/screen
 

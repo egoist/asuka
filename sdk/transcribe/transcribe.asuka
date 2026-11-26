@@ -1,9 +1,11 @@
 // Package platform/transcribe turns a recording into text, on the device:
 // nothing leaves it. The Speech framework on iOS and macOS, asked to
 // stay on the device; Android's on-device recognizer (Android 13 and
-// later); Windows' speech recognition. Where the device can't, it says so
-// (TranscribeError.notAvailable) rather than sending the sound to a
-// server. An app that imports it is given the permissions it needs: iOS's
+// later); the browser's, where it has one on the device (Chrome 139 and
+// later: the Web Speech API's processLocally). Where the device can't
+// (Windows' and Linux's recognizers take only the microphone, if there's
+// one), it says so (TranscribeError.notAvailable) rather than sending the
+// sound to a server. An app that imports it is given the permissions it needs: iOS's
 // speech recognition, with its purpose string (asuka.toml's
 // ios.usage.NSSpeechRecognitionUsageDescription says it better), and on
 // Android the microphone's, which its recognizer asks for.

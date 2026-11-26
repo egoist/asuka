@@ -200,7 +200,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/background` | 页面打开期间一直在运行；任务不会带来额外效果，也没有通知 |
 | `platform/tracking` | 没有提示框：浏览器发送了 Global Privacy Control 或 Do Not Track 时为 `.denied`，否则为 `.allowed` |
 | `device.haptic` | 浏览器支持时（Android 上的 Chrome）使用 `navigator.vibrate` |
-| `platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity`、`platform/transcribe` | Web 上不支持：返回一个说明这一点的错误，或者该包的 `notAvailable` |
+| `platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity` | Web 上不支持：返回一个说明这一点的错误，或者该包的 `notAvailable` |
 | `platform/purchase` | 在 Trusted Web Activity 里通过 Digital Goods API 使用 Google Play；其他情况下没有应用商店（`PurchaseError.notAvailable`） |
 | `platform/maps` | 和 Windows 一样，由 Asuka 绘制 OpenStreetMap 的瓦片；页面获得定位权限后，`showsUser` 才会生效 |
 | `platform/pay` | 浏览器支持 Apple Pay 时（Safari）通过 Payment Request API 使用它，商户验证由应用的服务器完成（`onValidateMerchant`）；其他浏览器通过 Google 的 Web API（pay.js）使用 Google Pay；两者都使用各自的官方按钮。支付面板只在点击时显示 |
@@ -1638,7 +1638,7 @@ async fn caption(recording: string) throws -> string {
 }
 ```
 
-在 iOS 和 Mac 上用的是 Speech 框架，并要求只在设备上处理；在 Android 上是系统的设备端识别器（Android 13 及以上）；在 Windows 上是系统的语音识别。设备做不到时（浏览器、Linux、较旧的 Android），它会抛出 `TranscribeError.notAvailable`，而不是把声音发到服务器；语言模型还在下载时抛出 `.downloading`。
+在 iOS 和 Mac 上用的是 Speech 框架，并要求只在设备上处理；在 Android 上是系统的设备端识别器（Android 13 及以上）；在浏览器中，是浏览器自己在设备上运行的识别器（Chrome 139 及以上），录音会被播放给它听，所以识别一个文件大约需要它本身的时长，结果也没有 `segments`。设备做不到时（Windows、Linux、较旧的 Android、没有这种识别器的浏览器），它会抛出 `TranscribeError.notAvailable`，而不是把声音发到服务器；语言模型还在下载时抛出 `.downloading`（浏览器这时会开始安装它）。
 
 ## 屏幕：platform/screen
 

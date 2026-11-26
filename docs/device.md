@@ -276,7 +276,7 @@ and its service worker for notifications and Web Push.
 | `platform/background` | The page runs while it's open; a task adds nothing, and has no notification |
 | `platform/tracking` | No prompt: `.denied` when the browser sends Global Privacy Control or Do Not Track, else `.allowed` |
 | `device.haptic` | `navigator.vibrate`, where the browser has it (Chrome on Android) |
-| `platform/review`, `platform/integrity`, `platform/agerange`, `platform/appleauth`, `platform/icloud`, `platform/periodic`, `platform/widget`, `platform/liveactivity`, `platform/transcribe` | Not on the web: an error that says so, or the package's `notAvailable` |
+| `platform/review`, `platform/integrity`, `platform/agerange`, `platform/appleauth`, `platform/icloud`, `platform/periodic`, `platform/widget`, `platform/liveactivity` | Not on the web: an error that says so, or the package's `notAvailable` |
 | `platform/purchase` | Google Play through the Digital Goods API, in a Trusted Web Activity; elsewhere no store (`PurchaseError.notAvailable`) |
 | `platform/maps` | OpenStreetMap's tiles, drawn by Asuka, as on Windows; `showsUser` once the page has the location permission |
 | `platform/pay` | Apple Pay where the browser has it (Safari), through the Payment Request API, the merchant validated by the app's server (`onValidateMerchant`); Google Pay elsewhere, through Google's web API (pay.js); each one's own button. A sheet shows only from a tap |
@@ -2417,10 +2417,14 @@ async fn caption(recording: string) throws -> string {
 ```
 
 The Speech framework on iOS and the Mac, asked to stay on the device;
-Android's on-device recognizer (Android 13 and later); Windows' speech
-recognition. Where the device can't (a browser, Linux, an older
-Android), it throws `TranscribeError.notAvailable` rather than send the
-sound to a server; `.downloading` while the language's model comes.
+Android's on-device recognizer (Android 13 and later); in a browser,
+its own recognizer where it runs on the device (Chrome 139 and later),
+which hears the recording played into it, so a file takes about its own
+length and has no `segments`. Where the device can't (Windows, Linux, an
+older Android, a browser without one), it throws
+`TranscribeError.notAvailable` rather than send the sound to a server;
+`.downloading` while the language's model comes (a browser starts
+installing it then).
 
 ## The screen: platform/screen
 
