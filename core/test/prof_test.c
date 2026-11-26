@@ -89,6 +89,10 @@ TEST(samples_the_main_thread) {
 TEST(sections_take_their_time) {
 	REQUIRE(ak_prof_start(100000));
 	ak_prof_section(AK_PROF_LAYOUT);
+	// A tick before the switch was the app's (start's section): its time
+	// went to it as the section changed, and its flag mustn't end the
+	// wait. What's due from here on is the layout's.
+	atomic_fetch_and(&ak_dbg_on, ~AK_DBG_ON_PROF);
 	// Busy outside the app's code until the sampler said some was due.
 	for (int i = 0; i < 2000000 && !(atomic_load(&ak_dbg_on) & AK_DBG_ON_PROF); i++) {
 		volatile int x = 0;
