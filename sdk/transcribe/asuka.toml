@@ -1,9 +1,10 @@
 name = "platform/transcribe"
 version = "0.1.0"
-description = "Recordings turned into text, on the device"
+description = "Recordings and what's said into the microphone turned into text, on the device"
 
 [ios.usage]
 NSSpeechRecognitionUsageDescription = "Speech is turned into text on this device."
+NSMicrophoneUsageDescription = "What you say is turned into text on this device."
 
 [android]
 permissions = ["android.permission.RECORD_AUDIO"]

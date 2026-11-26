@@ -168,7 +168,7 @@ func TestStdManifests(t *testing.T) {
 		"sharesheet.active": {derived: []string{"shareSheet"}},
 		"sharesheet.done":   {no: []string{"AsukaShareActivity"}},
 		"nowplaying":        {android: []string{"FOREGROUND_SERVICE_MEDIA_PLAYBACK"}, module: []string{`android:name="platform.nowplaying.MediaService"`}, modes: []string{"audio"}},
-		"transcribe":        {android: []string{"RECORD_AUDIO"}, usage: []string{"NSSpeechRecognitionUsageDescription"}},
+		"transcribe":        {android: []string{"RECORD_AUDIO"}, usage: []string{"NSSpeechRecognitionUsageDescription", "NSMicrophoneUsageDescription"}},
 		"periodic":          {modes: []string{"fetch", "processing"}, plist: []string{"BGTaskSchedulerPermittedIdentifiers"}, hostModules: []string{"periodic"}, flags: []string{"ASUKA_PERIODIC"}},
 		"liveactivity": {android: []string{"POST_PROMOTED_NOTIFICATIONS", `<receiver android:name="dev.asuka.AsukaLiveActivityReceiver" android:exported="false" />`},
 			flags: []string{"ASUKA_LIVEACTIVITY"}, plist: []string{"NSSupportsLiveActivities"}},

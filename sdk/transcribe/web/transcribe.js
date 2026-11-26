@@ -6,7 +6,8 @@
 // onDevice false, file's notAvailable) rather than sending the sound to
 // a server, as the Web Speech API otherwise does. One whose language pack
 // isn't installed yet starts installing it, and file says downloading.
-// The browser gives no timing: segments are empty.
+// The browser gives no timing: segments are empty. listen hears the
+// microphone with the same recognizer, on the device, as it's spoken.
 import { TranscribeError } from "./transcribe.asuka.js";
 
 const native = () => globalThis.asuka.native;
@@ -91,6 +92,69 @@ function recognize(audio, language, signal) {
   });
 }
 
+// The recognition listening to the microphone, which finish stops.
+let listening = null;
+
+// listen hears the microphone on the device, calling heard with all it's
+// heard so far (its final results, then the one it's still hearing).
+function listenTo(language, heard, signal) {
+  return new Promise((resolve, reject) => {
+    const rec = new (Recognition())();
+    rec.lang = language;
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.processLocally = true;
+    let text = "";
+    let failed = null;
+    const finished = () => {
+      signal?.removeEventListener("abort", abort);
+      if (listening === rec) listening = null;
+      if (failed) return reject(failed);
+      heard({ text, final: true });
+      resolve();
+    };
+    const abort = () => {
+      failed = signal.reason ?? new DOMException("cancelled", "AbortError");
+      try { rec.abort(); } catch { finished(); }
+    };
+    rec.onresult = (e) => {
+      let t = "";
+      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      text = t.trim().replace(/\s+/g, " ");
+      heard({ text, final: false });
+    };
+    rec.onerror = (e) => {
+      if (e.error === "no-speech" || e.error === "aborted") return;
+      failed ??= new TranscribeError(e.error === "not-allowed" || e.error === "audio-capture" ? "notAllowed" : "notAvailable");
+    };
+    rec.onend = finished;
+    signal?.addEventListener("abort", abort, { once: true });
+    listening = rec;
+    try {
+      rec.start();
+    } catch {
+      listening = null;
+      reject(new TranscribeError("notAvailable"));
+    }
+  });
+}
+
+async function ready(l) {
+  switch (await status(l)) {
+    case "available":
+      return;
+    case "downloadable":
+      // Its language pack, from the browser (Permissions-Policy:
+      // on-device-speech-recognition); asked again once it's in.
+      Recognition().install?.({ langs: [l], processLocally: true }).catch(() => {});
+      throw new TranscribeError("downloading");
+    case "downloading":
+      throw new TranscribeError("downloading");
+    default:
+      throw new TranscribeError("notAvailable");
+  }
+}
+
 export function makeRecognizer() {
   return {
     async check(signal, language) {
@@ -99,21 +163,18 @@ export function makeRecognizer() {
     },
     async file(signal, path, language) {
       const l = lang(language);
-      switch (await status(l)) {
-        case "available":
-          break;
-        case "downloadable":
-          // Its language pack, from the browser (Permissions-Policy:
-          // on-device-speech-recognition); asked again once it's in.
-          Recognition().install?.({ langs: [l], processLocally: true }).catch(() => {});
-          throw new TranscribeError("downloading");
-        case "downloading":
-          throw new TranscribeError("downloading");
-        default:
-          throw new TranscribeError("notAvailable");
-      }
+      await ready(l);
       const text = await recognize(await readAudio(path), l, signal);
       return { text, segments: [], language: l };
+    },
+    async listen(signal, language, heard) {
+      const l = lang(language);
+      await ready(l);
+      if (listening) throw new Error("transcribe: already listening");
+      await listenTo(l, heard, signal);
+    },
+    finish() {
+      try { listening?.stop(); } catch {}
     },
   };
 }

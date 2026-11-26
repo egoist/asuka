@@ -1640,6 +1640,34 @@ async fn caption(recording: string) throws -> string {
 
 在 iOS 和 Mac 上用的是 Speech 框架，并要求只在设备上处理；在 Android 上是系统的设备端识别器（Android 13 及以上）；在浏览器中，是浏览器自己在设备上运行的识别器（Chrome 139 及以上），录音会被播放给它听，所以识别一个文件大约需要它本身的时长，结果也没有 `segments`。设备做不到时（Windows、Linux、较旧的 Android、没有这种识别器的浏览器），它会抛出 `TranscribeError.notAvailable`，而不是把声音发到服务器；语言模型还在下载时抛出 `.downloading`（浏览器这时会开始安装它）。
 
+`transcribe.listen(language)` 用于听写：它监听麦克风，边说边给出识别结果，每次一个 `Heard`，其中的 `text` 是到目前为止的全部文字（最后几个词可能还会变）。最后一个是 `final` 的：调用了 `transcribe.finish()`，或者识别器不再听到说话时就会给出。停止读取它的任务会立刻停止监听，之后的内容不再保留。第一次使用时会请求麦克风和语音识别的权限；它与 `file` 一样在设备上运行，支持的平台也相同。
+
+```asuka check
+import platform/transcribe
+
+component Dictation {
+  state on = false
+  state text = ""
+
+  task(on) {
+    if !on { return }
+    for await h in transcribe.listen() {
+      text = h.text
+    }
+    on = false
+  }
+
+  Column {
+    Text(text)
+    Button(if on { "Done" } else { "Dictate" }) {
+      on press {
+        if on { transcribe.finish() } else { on = true }
+      }
+    }
+  }
+}
+```
+
 ## 屏幕：platform/screen
 
 ```asuka

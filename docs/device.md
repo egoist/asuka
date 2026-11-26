@@ -2426,6 +2426,40 @@ older Android, a browser without one), it throws
 `.downloading` while the language's model comes (a browser starts
 installing it then).
 
+`transcribe.listen(language)` is dictation: it listens to the
+microphone and gives what's said as it's said, a `Heard` each time, with
+all the `text` so far (its last words may still change). The last one is
+`final`: once `transcribe.finish()` is called, or the recognizer stops
+hearing speech. Stopping the task that reads it stops listening at once,
+keeping nothing more. It asks for the microphone and speech recognition
+the first time, and runs on the device on the same platforms as `file`.
+
+```asuka check
+import platform/transcribe
+
+component Dictation {
+  state on = false
+  state text = ""
+
+  task(on) {
+    if !on { return }
+    for await h in transcribe.listen() {
+      text = h.text
+    }
+    on = false
+  }
+
+  Column {
+    Text(text)
+    Button(if on { "Done" } else { "Dictate" }) {
+      on press {
+        if on { transcribe.finish() } else { on = true }
+      }
+    }
+  }
+}
+```
+
 ## The screen: platform/screen
 
 ```asuka

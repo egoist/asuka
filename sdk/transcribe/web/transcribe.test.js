@@ -97,3 +97,26 @@ test("a recognizer that takes only the microphone isn't one for files", async ()
   browser("available", [], { trackless: true });
   await assert.rejects(makeRecognizer().file(null, "/data/hi.m4a", ""), /not available/);
 });
+
+test("listening hears the microphone as it's spoken, and finish ends it", async () => {
+  const seen = browser("available", ["hello", " there"]);
+  const r = makeRecognizer();
+  const heard = [];
+  const done = r.listen(null, "en-US", (h) => {
+    heard.push(h);
+    if (!h.final && heard.length === 1) r.finish();
+  });
+  await done;
+  assert.equal(seen.started, undefined); // the microphone: no track
+  assert.equal(seen.processLocally, true);
+  assert.deepEqual(heard, [{ text: "hello there", final: false }, { text: "hello there", final: true }]);
+  // Again, once done; and a cancelled task stops it.
+  const ac = new AbortController();
+  const again = r.listen(ac.signal, "", () => ac.abort());
+  await assert.rejects(again, /cancelled|abort/i);
+});
+
+test("listening where there's no recognizer on the device says so", async () => {
+  delete globalThis.SpeechRecognition;
+  await assert.rejects(makeRecognizer().listen(null, "", () => {}), /not available/);
+});

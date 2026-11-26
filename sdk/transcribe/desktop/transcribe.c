@@ -1,8 +1,8 @@
-// platform/transcribe on Windows and Linux: no recognizer of files on the
-// device is part of either that apps can count on (Windows' speech
-// recognition is the microphone's, Linux has none), so check says so and
-// file fails with notAvailable, rather than sending the sound to a
-// server. macOS runs the package's Swift.
+// platform/transcribe on Windows and Linux: no recognizer on the device
+// is part of either that apps can count on (Windows' speech recognition is
+// the microphone's, and may use Microsoft's servers; Linux has none), so
+// check says so and file and listen fail with notAvailable, rather than
+// sending the sound to a server. macOS runs the package's Swift.
 #ifdef _WIN32
 #include "asuka_windows.h"
 #endif
@@ -39,7 +39,17 @@ static void file(transcribe_Recognizer *self, const char *path, const char *lang
 	asuka_call_fail(call, &e);
 }
 
-static const transcribe_Recognizer_vtable vt = {.check = check, .file = file};
+// The microphone's recognizers (Windows' speech recognition, Linux has
+// none) aren't ones apps can count on to stay on the device: not here.
+static void listen(transcribe_Recognizer *self, const char *language, transcribe_fn_Heard heard, asuka_call *call) {
+	asuka_error e = {0};
+	asuka_error_declared(&e, transcribe_TranscribeError_notAvailable);
+	asuka_call_fail(call, &e);
+}
+
+static void finish(transcribe_Recognizer *self, asuka_error *err) {}
+
+static const transcribe_Recognizer_vtable vt = {.check = check, .file = file, .listen = listen, .finish = finish};
 
 transcribe_Recognizer *transcribe_make_Recognizer(asuka_error *err) {
 	transcribe_Recognizer *r = malloc(sizeof *r);

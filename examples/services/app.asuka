@@ -33,6 +33,7 @@ import std/math
 import std/time
 import std/url
 import platform/tracking
+import platform/transcribe
 import platform/widget
 
 /// What the last service said: the app's, as notifications and links
@@ -104,6 +105,7 @@ screen Services {
   state recording = false
   state lastImage = ""
   state tilting = false
+  state dictating = false
   state hidden = false
   state bright = false
 
@@ -128,6 +130,19 @@ screen Services {
   }
   task {
     for await _ in power.suspends() { print("services: going to sleep") }
+  }
+  // While dictating: what's said into the microphone, as it's said; Stop
+  // dictating hears it to its end (its last is final).
+  task(dictating) {
+    if !dictating { return }
+    do {
+      for await h in transcribe.listen() {
+        status = if h.final { "Heard: {h.text}" } else { "Hearing: {h.text}" }
+      }
+    } catch e {
+      status = e.message
+    }
+    dictating = false
   }
   // While tilting: the device's attitude, ten times a second.
   task(tilting) {
@@ -311,6 +326,11 @@ screen Services {
       }
       Item("Voices") {
         on press { await run(() => "{(try await speech.voices()).count()} voices") }
+      }
+      Item(if dictating { "Stop dictating" } else { "Dictate" }) {
+        on press {
+          if dictating { transcribe.finish() } else { dictating = true }
+        }
       }
 
       Heading("Images, people, events")

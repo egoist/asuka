@@ -12,6 +12,10 @@
 //
 //   let r = try await transcribe.file(path)
 //   text = r.text
+//
+//   for await h in transcribe.listen() {   // the microphone, as it's spoken
+//     text = h.text
+//   }
 
 /// What transcribing fails with.
 pub enum TranscribeError: Error {
@@ -40,6 +44,16 @@ pub struct Result {
   language: string = ""
 }
 
+/// What's been heard from the microphone so far (listen's).
+pub struct Heard {
+  /// Everything said since listening began, as the recognizer has it now:
+  /// its last words may change as more comes.
+  text: string = ""
+  /// The last of them: the recognizer is done (finish was called, or it
+  /// stopped hearing speech), and the text won't change.
+  final: bool = false
+}
+
 /// What the device can do.
 pub struct Availability {
   /// It can transcribe the language here.
@@ -52,6 +66,13 @@ pub struct Availability {
 native interface Recognizer {
   async fn check(language: string) -> Availability
   async fn file(path: string, language: string) -> Result
+  /// Listens to the microphone, calling heard with what it's heard as it
+  /// hears it, and returns once it's done (its last call's final); a
+  /// cancelled task stops it.
+  async fn listen(language: string, heard: fn(Heard))
+  /// Stops listening to the microphone: what's been said is heard to its
+  /// end, then listen returns.
+  fn finish()
 }
 
 let recognizer = try? Recognizer()
@@ -74,4 +95,25 @@ pub async fn check(language: string = "") throws -> Availability {
 /// recording with no speech in it is an empty Result. One at a time.
 pub async fn file(path: string, language: string = "") throws -> Result {
   return try await rec().file(path, language)
+}
+
+/// Listens to the microphone and turns what the user says into text as
+/// they say it, on the device: dictation. Each Heard has all the text so
+/// far; the last is final, once finish is called or the recognizer stops
+/// hearing speech. Stopping the task that reads it stops listening at
+/// once. It asks for the microphone and speech recognition the first time.
+///
+///   for await h in transcribe.listen() {
+///     draft = h.text
+///   }
+pub fn listen(language: string = "") -> Stream<Heard> = Stream(send => {
+  try await rec().listen(language, heard: h => send(h))
+})
+
+/// Stops listening (listen's), keeping what's been said: its last Heard,
+/// final, comes once the recognizer has it.
+pub fn finish() {
+  if let r = recognizer {
+    try? r.finish()
+  }
 }

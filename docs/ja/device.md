@@ -1640,6 +1640,34 @@ async fn caption(recording: string) throws -> string {
 
 iOS と Mac では Speech フレームワークにデバイス上で処理するよう求め、Android ではデバイス上の認識エンジン（Android 13 以降）を使います。ブラウザーでは、デバイス上で動くブラウザー自身の認識エンジン（Chrome 139 以降）に録音を再生して聞かせるので、ファイル一つにほぼその長さの時間がかかり、`segments` はありません。デバイスでできないとき（Windows、Linux、古い Android、その認識エンジンのないブラウザー）は、音声をサーバーに送る代わりに `TranscribeError.notAvailable` を投げます。言語のモデルをダウンロード中のときは `.downloading` です（ブラウザーはそのときインストールを始めます）。
 
+`transcribe.listen(language)` は音声入力です。マイクを聞き、話すそばから結果を返します。毎回の `Heard` の `text` には、それまでのテキストがすべて入っています（最後のいくつかの単語は、まだ変わることがあります）。最後の一つは `final` です。`transcribe.finish()` を呼んだとき、または認識エンジンが話し声を聞かなくなったときに来ます。読んでいるタスクを止めると、すぐに聞くのをやめ、それ以降は何も残しません。最初に使うときにマイクと音声認識の許可を求めます。`file` と同じく、同じプラットフォームでデバイス上で動きます。
+
+```asuka check
+import platform/transcribe
+
+component Dictation {
+  state on = false
+  state text = ""
+
+  task(on) {
+    if !on { return }
+    for await h in transcribe.listen() {
+      text = h.text
+    }
+    on = false
+  }
+
+  Column {
+    Text(text)
+    Button(if on { "Done" } else { "Dictate" }) {
+      on press {
+        if on { transcribe.finish() } else { on = true }
+      }
+    }
+  }
+}
+```
+
 ## 画面：platform/screen
 
 ```asuka
