@@ -245,6 +245,7 @@ static device_ClipboardKinds kinds(void) {
 	k.image = G(gdk_content_formats_contain_gtype)(f, G(gdk_texture_get_type)()) || G(gdk_content_formats_contain_mime_type)(f, "image/png");
 	k.url = G(gdk_content_formats_contain_mime_type)(f, "text/uri-list") || G(gdk_content_formats_contain_gtype)(f, G(gdk_file_list_get_type)()) ||
 	        G(gdk_content_formats_contain_gtype)(f, G(g_file_get_type)());
+	k.html = G(gdk_content_formats_contain_mime_type)(f, "text/html");
 	return k;
 }
 
@@ -300,6 +301,117 @@ static void p_copy(device_Platform *self, const char *path, asuka_call *call) {
 	device_Platform_copyImage_done(call);
 }
 
+// utf8_of is another app's text/html as UTF-8: as it is, less a BOM and
+// the NULs some apps end it with, or, with a UTF-16 BOM (Firefox's, on
+// X11), converted. An unpaired surrogate becomes U+FFFD.
+static char *utf8_of(const unsigned char *p, size_t n) {
+	bool le = n >= 2 && p[0] == 0xFF && p[1] == 0xFE, be = n >= 2 && p[0] == 0xFE && p[1] == 0xFF;
+	if (!le && !be) {
+		if (n >= 3 && p[0] == 0xEF && p[1] == 0xBB && p[2] == 0xBF) p += 3, n -= 3;
+		while (n && !p[n - 1]) n--;
+		char *s = malloc(n + 1);
+		memcpy(s, p, n);
+		s[n] = 0;
+		return s;
+	}
+	size_t units = (n - 2) / 2;
+	const unsigned char *u = p + 2;
+	char *s = malloc(units * 3 + 1), *o = s;
+	for (size_t i = 0; i < units; i++) {
+		uint32_t c = le ? (uint32_t)(u[2 * i] | u[2 * i + 1] << 8) : (uint32_t)(u[2 * i] << 8 | u[2 * i + 1]);
+		if (c >= 0xD800 && c < 0xDC00 && i + 1 < units) {
+			uint32_t d = le ? (uint32_t)(u[2 * i + 2] | u[2 * i + 3] << 8) : (uint32_t)(u[2 * i + 2] << 8 | u[2 * i + 3]);
+			if (d >= 0xDC00 && d < 0xE000) c = 0x10000 + ((c - 0xD800) << 10) + (d - 0xDC00), i++;
+		}
+		if (c >= 0xD800 && c < 0xE000) c = 0xFFFD;
+		if (!c) break;
+		if (c < 0x80) *o++ = (char)c;
+		else if (c < 0x800) *o++ = (char)(0xC0 | c >> 6), *o++ = (char)(0x80 | (c & 0x3F));
+		else if (c < 0x10000) *o++ = (char)(0xE0 | c >> 12), *o++ = (char)(0x80 | (c >> 6 & 0x3F)), *o++ = (char)(0x80 | (c & 0x3F));
+		else *o++ = (char)(0xF0 | c >> 18), *o++ = (char)(0x80 | (c >> 12 & 0x3F)), *o++ = (char)(0x80 | (c >> 6 & 0x3F)), *o++ = (char)(0x80 | (c & 0x3F));
+	}
+	*o = 0;
+	return s;
+}
+
+typedef struct {
+	asuka_call *call;
+	GInputStream *in;
+	GOutputStream *out;
+} reading;
+
+static void html_spliced(GObject *src, GAsyncResult *res, gpointer p) {
+	reading *r = p;
+	GError *e = NULL;
+	gssize n = G(g_output_stream_splice_finish)((GOutputStream *)src, res, &e);
+	GBytes *b = n >= 0 ? G(g_memory_output_stream_steal_as_bytes)((GMemoryOutputStream *)r->out) : NULL;
+	G(g_object_unref)(r->out);
+	G(g_object_unref)(r->in);
+	if (!b) {
+		asuka_error err = {0};
+		asuka_error_failed(&err, "device", 0, "device: the clipboard's HTML: %s", e && e->message ? e->message : "unreadable");
+		if (e) G(g_error_free)(e);
+		fail(r->call, &err);
+		free(r);
+		return;
+	}
+	if (e) G(g_error_free)(e);
+	gsize size = 0;
+	const unsigned char *d = G(g_bytes_get_data)(b, &size);
+	device_Platform_clipboardHTML_done(r->call, utf8_of(d, d ? size : 0));
+	G(g_bytes_unref)(b);
+	free(r);
+}
+
+static void html_read(GObject *src, GAsyncResult *res, gpointer call) {
+	GError *e = NULL;
+	GInputStream *in = G(gdk_clipboard_read_finish)((GdkClipboard *)src, res, NULL, &e);
+	if (!in) {
+		// Gone before it was read (another copy): none.
+		if (e) G(g_error_free)(e);
+		device_Platform_clipboardHTML_done(call, NULL);
+		return;
+	}
+	reading *r = malloc(sizeof *r);
+	*r = (reading){call, in, G(g_memory_output_stream_new_resizable)()};
+	G(g_output_stream_splice_async)(r->out, in, G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE | G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET, G_PRIORITY_DEFAULT, NULL,
+	                                html_spliced, r);
+}
+
+static void p_html(device_Platform *self, asuka_call *call) {
+	GdkClipboard *c = clipboard();
+	if (!c) return no_clipboard(call);
+	if (!kinds().html) {
+		device_Platform_clipboardHTML_done(call, NULL);
+		return;
+	}
+	const char *mimes[] = {"text/html", NULL};
+	G(gdk_clipboard_read_async)(c, mimes, G_PRIORITY_DEFAULT, NULL, html_read, call);
+}
+
+// p_copy_html offers both: text/html, and the text as GTK offers a string
+// (text/plain;charset=utf-8, text/plain, and X11's UTF8_STRING...).
+static void p_copy_html(device_Platform *self, const char *html, const char *text, asuka_call *call) {
+	GdkClipboard *c = clipboard();
+	if (!c) return no_clipboard(call);
+	GBytes *b = G(g_bytes_new)(html, strlen(html));
+	GValue v = {0};
+	G(g_value_init)(&v, G_TYPE_STRING);
+	G(g_value_set_string)(&v, text);
+	GdkContentProvider *ps[2] = {G(gdk_content_provider_new_for_bytes)("text/html", b), G(gdk_content_provider_new_for_value)(&v)};
+	G(g_bytes_unref)(b);
+	G(g_value_unset)(&v);
+	GdkContentProvider *u = G(gdk_content_provider_new_union)(ps, 2);
+	gboolean ok = G(gdk_clipboard_set_content)(c, u);
+	G(g_object_unref)(u);
+	if (!ok) {
+		asuka_error e = {0};
+		asuka_error_failed(&e, "device", 0, "the clipboard took no HTML");
+		return fail(call, &e);
+	}
+	device_Platform_copyHTML_done(call);
+}
+
 typedef struct {
 	device_fn_ClipboardKinds changed;
 	asuka_call *call;
@@ -348,8 +460,8 @@ static bool p_settings(device_Platform *self, asuka_error *err) { return false; 
 
 static const device_Platform_vtable vt = {
     .info = p_info, .browse = p_browse, .pickPhotos = p_photos, .pickFiles = p_files, .clipboardText = p_text,
-    .clipboardHas = p_has, .clipboardImage = p_image, .copyImage = p_copy, .watchClipboard = p_watch, .keepAwake = p_awake,
-    .openSettings = p_settings,
+    .clipboardHas = p_has, .clipboardImage = p_image, .copyImage = p_copy, .clipboardHTML = p_html, .copyHTML = p_copy_html,
+    .watchClipboard = p_watch, .keepAwake = p_awake, .openSettings = p_settings,
 };
 
 device_Platform *device_make_Platform(asuka_error *err) {

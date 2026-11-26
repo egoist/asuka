@@ -3,7 +3,8 @@
 // browser's file picker (its files copied into the app's caches, /tmp, as
 // iOS and Android give them), the async Clipboard API (browsers read the
 // clipboard only for a focused page, and ask the user first; images are
-// PNG, what browsers put there and take), the Screen Wake Lock.
+// PNG, what browsers put there and take; rich text, HTML), the Screen
+// Wake Lock.
 
 const native = () => globalThis.asuka.native;
 const urlish = /^\s*[a-z][a-z0-9+.-]*:\/\/\S+\s*$/i;
@@ -61,12 +62,13 @@ function denied(e) {
 }
 
 async function kinds() {
-  const out = { text: false, image: false, url: false };
+  const out = { text: false, image: false, url: false, html: false };
   try {
     if (navigator.clipboard.read) {
       for (const it of await navigator.clipboard.read()) {
         if (it.types.some((t) => t.startsWith("image/"))) out.image = true;
         if (it.types.includes("text/uri-list")) out.url = true;
+        if (it.types.includes("text/html")) out.html = true;
         if (it.types.includes("text/plain")) {
           out.text = true;
           if (urlish.test(await (await it.getType("text/plain")).text())) out.url = true;
@@ -185,6 +187,28 @@ export function makePlatform() {
       // A promise, as Safari wants it, so the write keeps the user's gesture.
       await navigator.clipboard.write([new ClipboardItem({ "image/png": pngOf(bytes.slice(), native().files.typeOf(path)) })]);
     },
+    async clipboardHTML(_signal) {
+      if (!navigator.clipboard.read) throw new native().UnsupportedError("device: this browser reads only text from the clipboard");
+      let items;
+      try {
+        items = await navigator.clipboard.read();
+      } catch (e) {
+        denied(e);
+        return null;
+      }
+      const it = items.find((it) => it.types.includes("text/html"));
+      return it ? (await it.getType("text/html")).text() : null;
+    },
+    async copyHTML(_signal, html, text) {
+      if (!navigator.clipboard?.write || !globalThis.ClipboardItem) {
+        await navigator.clipboard.writeText(text); // this browser puts only text there
+        return;
+      }
+      await navigator.clipboard.write([new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" }),
+      })]);
+    },
     // What changes it is seen, as browsers tell a page: copies and cuts in
     // it, and, where the user has let the page read the clipboard
     // (Chrome's permission), another app's copy, read again as the page is
@@ -197,8 +221,10 @@ export function makePlatform() {
             let s = "";
             for (const it of await navigator.clipboard.read()) {
               s += it.types.join(",") + ";";
-              if (it.types.includes("text/plain")) s += await (await it.getType("text/plain")).text();
-              else for (const t of it.types) s += (await it.getType(t)).size + ";";
+              if (it.types.includes("text/plain")) {
+                s += await (await it.getType("text/plain")).text();
+                if (it.types.includes("text/html")) s += ";" + await (await it.getType("text/html")).text();
+              } else for (const t of it.types) s += (await it.getType(t)).size + ";";
             }
             return s;
           }

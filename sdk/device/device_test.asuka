@@ -1,0 +1,18 @@
+test "rich text's plain text, for the apps that paste text" {
+  expect(plainOf("<p>Hello <b>there</b></p><p>Two &amp; three</p>") == "Hello there\nTwo & three")
+  expect(plainOf("<ul><li>One</li><li>Two</li></ul>") == "One\nTwo")
+  expect(plainOf("a<br>b<br/>c") == "a\nb\nc")
+  expect(plainOf("<style>p \{ color: red }</style><p>Shown</p>") == "Shown")
+  expect(plainOf("x &lt;y&gt; &quot;z&quot;&nbsp;") == "x <y> \"z\"")
+  expect(plainOf("no tags") == "no tags")
+}
+
+test "no platform, no rich clipboard" {
+  var said = ""
+  do {
+    let _ = try await clipboardHTML()
+  } catch e {
+    said = e.message
+  }
+  expect(said.contains("unsupported"))
+}

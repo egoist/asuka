@@ -132,14 +132,83 @@ final class SystemDevice: Platform {
     @MainActor static func kinds() -> ClipboardKinds {
         #if canImport(UIKit)
         let pb = UIPasteboard.general
-        return ClipboardKinds(text: pb.hasStrings, image: pb.hasImages, url: pb.hasURLs)
+        // contains(pasteboardTypes:) reads the types, not the data: no prompt.
+        return ClipboardKinds(text: pb.hasStrings, image: pb.hasImages, url: pb.hasURLs,
+                              html: pb.contains(pasteboardTypes: richTypes))
         #else
         let pb = NSPasteboard.general
         let types = pb.types ?? []
         let image = types.contains { UTType($0.rawValue)?.conforms(to: .image) ?? false }
         let url = types.contains(.URL) || types.contains(.fileURL)
-        return ClipboardKinds(text: types.contains(.string), image: image, url: url)
+        let html = types.contains { richTypes.contains($0.rawValue) }
+        return ClipboardKinds(text: types.contains(.string), image: image, url: url, html: html)
         #endif
+    }
+
+    /// The types rich text arrives in, the one read first first: HTML (a
+    /// browser's, a mail's), a web archive (Safari's: its HTML inside),
+    /// RTF and flat RTFD (Notes', Pages', TextEdit's).
+    static let richTypes = [UTType.html.identifier, webArchive, UTType.rtf.identifier, UTType.flatRTFD.identifier]
+    static let webArchive = "Apple Web Archive pasteboard type"
+
+    func clipboardHTML() async throws -> String? {
+        await MainActor.run {
+            #if canImport(UIKit)
+            let pb = UIPasteboard.general
+            func data(_ t: String) -> Data? {
+                if let d = pb.data(forPasteboardType: t) { return d }
+                return (pb.value(forPasteboardType: t) as? String).map { Data($0.utf8) }
+            }
+            #else
+            let pb = NSPasteboard.general
+            func data(_ t: String) -> Data? { pb.data(forType: NSPasteboard.PasteboardType(t)) }
+            #endif
+            for t in Self.richTypes {
+                guard let d = data(t), let html = Self.html(d, type: t) else { continue }
+                return html
+            }
+            return nil
+        }
+    }
+
+    /// A rich type's data as HTML: HTML as it is (UTF-8; UTF-16 with its
+    /// mark; else Windows' Latin 1), a web archive's main page, RTF and
+    /// RTFD converted.
+    @MainActor static func html(_ d: Data, type: String) -> String? {
+        switch type {
+        case UTType.html.identifier:
+            if d.starts(with: [0xFF, 0xFE]) || d.starts(with: [0xFE, 0xFF]) { return String(data: d, encoding: .utf16) }
+            return String(data: d, encoding: .utf8) ?? String(data: d, encoding: .windowsCP1252)
+        case webArchive:
+            guard let plist = try? PropertyListSerialization.propertyList(from: d, format: nil) as? [String: Any],
+                  let main = plist["WebMainResource"] as? [String: Any],
+                  let page = main["WebResourceData"] as? Data else { return nil }
+            if let name = main["WebResourceTextEncodingName"] as? String {
+                let cf = CFStringConvertIANACharSetNameToEncoding(name as CFString)
+                if cf != kCFStringEncodingInvalidId,
+                   let s = String(data: page, encoding: String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cf))) { return s }
+            }
+            return String(data: page, encoding: .utf8)
+        default:
+            let kind: NSAttributedString.DocumentType = type == UTType.rtf.identifier ? .rtf : .rtfd
+            guard let a = try? NSAttributedString(data: d, options: [.documentType: kind], documentAttributes: nil),
+                  let out = try? a.data(from: NSRange(location: 0, length: a.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.html]) else { return nil }
+            return String(data: out, encoding: .utf8)
+        }
+    }
+
+    func copyHTML(html: String, text: String) async throws {
+        await MainActor.run {
+            #if canImport(UIKit)
+            UIPasteboard.general.setItems([[UTType.html.identifier: Data(html.utf8), UTType.utf8PlainText.identifier: text]])
+            #else
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.declareTypes([.html, .string], owner: nil)
+            pb.setString(html, forType: .html)
+            pb.setString(text, forType: .string)
+            #endif
+        }
     }
 
     func clipboardImage() async throws -> String? {

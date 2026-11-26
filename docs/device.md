@@ -573,10 +573,14 @@ component Gallery {
   each, its `path` a copy in the app's caches, with its `name`, `type`
   and `size`, or none if the user cancelled.
 - `device.clipboardHas()` says whether the clipboard holds `text`, an
-  `image` or a `url`, without reading it (iOS doesn't ask the user for
+  `image`, a `url` or rich text (`html`), without reading it (iOS doesn't ask the user for
   this): show a Paste button only when there's something to paste.
   `device.clipboardImage()` reads its image into a file, in the format it
   was copied in; `device.copyImage(path)` puts an image file on it.
+  `device.clipboardHTML()` reads rich text (what a browser, a mail or a
+  document copied, its bold, links and lists) as HTML;
+  `device.copyHTML(html, text:)` puts it there, with `text` (by default
+  the HTML's own) for the apps that paste plain text.
   `device.clipboardChanges()` is a stream of what it holds at each change
   (iOS and Android say; the Mac and Windows are asked twice a second; a
   browser sees copies in the page, and others' where the user lets it

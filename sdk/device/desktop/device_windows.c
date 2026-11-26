@@ -9,6 +9,7 @@
 #include "device.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
@@ -214,6 +215,12 @@ static UINT cf_url(void) {
 	return cf;
 }
 
+static UINT cf_html(void) {
+	static UINT cf;
+	if (!cf) cf = RegisterClipboardFormatW(L"HTML Format");
+	return cf;
+}
+
 // open_clipboard opens it, waiting a little for another app that has it
 // open (the clipboard history reads what's just copied).
 static bool open_clipboard(void) {
@@ -247,6 +254,7 @@ static device_ClipboardKinds kinds(void) {
 	k.text = IsClipboardFormatAvailable(CF_UNICODETEXT);
 	k.image = IsClipboardFormatAvailable(cf_png()) || IsClipboardFormatAvailable(CF_DIB) || IsClipboardFormatAvailable(CF_DIBV5);
 	k.url = IsClipboardFormatAvailable(cf_url()) || IsClipboardFormatAvailable(CF_HDROP);
+	k.html = IsClipboardFormatAvailable(cf_html());
 	return k;
 }
 
@@ -377,6 +385,115 @@ static void p_copy(device_Platform *self, const char *path, asuka_call *call) {
 	free(png.data);
 }
 
+// offset is a CF_HTML header's field (name:digits), or -1: absent, or
+// past the data's n bytes.
+static long long offset(const char *head, const char *name, size_t n) {
+	const char *f = strstr(head, name);
+	if (!f) return -1;
+	f += strlen(name);
+	long long v = 0;
+	if (*f < '0' || *f > '9') return -1;
+	for (; *f >= '0' && *f <= '9'; f++) {
+		v = v * 10 + (*f - '0');
+		if (v > (long long)n) return -1;
+	}
+	return v;
+}
+
+// fragment is CF_HTML's HTML: the fragment its StartFragment and
+// EndFragment byte offsets mark, else what's between its comments, else
+// all from StartHTML (each app writes the header a little differently).
+static char *fragment(const char *d, size_t n) {
+	// The header: up to the first tag.
+	size_t hn = 0;
+	while (hn < n && d[hn] != '<') hn++;
+	char *head = malloc(hn + 1);
+	memcpy(head, d, hn);
+	head[hn] = 0;
+	long long sf = offset(head, "StartFragment:", n), ef = offset(head, "EndFragment:", n), sh = offset(head, "StartHTML:", n),
+	          eh = offset(head, "EndHTML:", n);
+	free(head);
+	size_t from = 0, to = 0;
+	if (sf >= 0 && ef >= sf) {
+		from = (size_t)sf, to = (size_t)ef;
+	} else {
+		static const char starts[] = "<!--StartFragment-->", ends[] = "<!--EndFragment-->";
+		char *z = malloc(n + 1);
+		memcpy(z, d, n);
+		z[n] = 0;
+		const char *a = strstr(z, starts), *b = a ? strstr(a, ends) : NULL;
+		if (b) from = (size_t)(a - z) + sizeof starts - 1, to = (size_t)(b - z);
+		else from = sh >= 0 ? (size_t)sh : hn, to = eh >= (long long)from ? (size_t)eh : n;
+		free(z);
+	}
+	char *s = malloc(to - from + 1);
+	memcpy(s, d + from, to - from);
+	s[to - from] = 0;
+	return s;
+}
+
+static void p_html(device_Platform *self, asuka_call *call) {
+	char *s = NULL;
+	if (IsClipboardFormatAvailable(cf_html()) && open_clipboard()) {
+		HANDLE h = GetClipboardData(cf_html());
+		const char *p = h ? GlobalLock(h) : NULL;
+		if (p) {
+			// Up to its NUL, if it has one, but never past its memory.
+			size_t cap = GlobalSize(h), n = 0;
+			while (n < cap && p[n]) n++;
+			s = fragment(p, n);
+			GlobalUnlock(h);
+		}
+		CloseClipboard();
+	}
+	device_Platform_clipboardHTML_done(call, s);
+}
+
+// cf_html_of is html as CF_HTML: the header and its byte offsets (fixed
+// width, so its length is known before they are), then html as a
+// fragment in a document.
+static char *cf_html_of(const char *html, size_t *len) {
+	static const char fmt[] = "Version:0.9\r\nStartHTML:%010lu\r\nEndHTML:%010lu\r\nStartFragment:%010lu\r\nEndFragment:%010lu\r\n";
+	static const char pre[] = "<html><body>\r\n<!--StartFragment-->", post[] = "<!--EndFragment-->\r\n</body>\r\n</html>";
+	size_t head = (size_t)snprintf(NULL, 0, fmt, 0ul, 0ul, 0ul, 0ul), hn = strlen(html);
+	size_t sf = head + sizeof pre - 1, ef = sf + hn, end = ef + sizeof post - 1;
+	char *s = malloc(end + 1);
+	snprintf(s, head + 1, fmt, (unsigned long)head, (unsigned long)end, (unsigned long)sf, (unsigned long)ef);
+	memcpy(s + head, pre, sizeof pre - 1);
+	memcpy(s + sf, html, hn);
+	memcpy(s + ef, post, sizeof post);
+	*len = end + 1;
+	return s;
+}
+
+static void p_copy_html(device_Platform *self, const char *html, const char *text, asuka_call *call) {
+	asuka_error e = {0};
+	if (strlen(html) > 0xFFFFFFF0u) {
+		asuka_error_failed(&e, "device", 0, "device: the HTML is too long for the clipboard");
+		return fail(call, &e);
+	}
+	size_t n = 0;
+	char *cf = cf_html_of(html, &n);
+	wchar_t *w = asuka_wide(text);
+	if (!open_clipboard()) {
+		asuka_error_failed(&e, "device", 0, "the clipboard is in use");
+		fail(call, &e);
+	} else {
+		EmptyClipboard();
+		bool ok = put(cf_html(), cf, n);
+		ok = put(CF_UNICODETEXT, w, (wcslen(w) + 1) * sizeof(wchar_t)) && ok;
+		CloseClipboard();
+		if (ok) {
+			device_Platform_copyHTML_done(call);
+		} else {
+			asuka_error_failed(&e, "device", 0, "the clipboard took no HTML");
+			fail(call, &e);
+		}
+	}
+	free(cf);
+	free(w);
+}
+
 typedef struct {
 	device_fn_ClipboardKinds changed;
 	asuka_call *call;
@@ -431,8 +548,8 @@ static bool p_settings(device_Platform *self, asuka_error *err) {
 
 static const device_Platform_vtable vt = {
     .info = p_info, .browse = p_browse, .pickPhotos = p_photos, .pickFiles = p_files, .clipboardText = p_text,
-    .clipboardHas = p_has, .clipboardImage = p_image, .copyImage = p_copy, .watchClipboard = p_watch, .keepAwake = p_awake,
-    .openSettings = p_settings,
+    .clipboardHas = p_has, .clipboardImage = p_image, .copyImage = p_copy, .clipboardHTML = p_html, .copyHTML = p_copy_html,
+    .watchClipboard = p_watch, .keepAwake = p_awake, .openSettings = p_settings,
 };
 
 device_Platform *device_make_Platform(asuka_error *err) {

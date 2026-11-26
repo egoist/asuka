@@ -1,6 +1,7 @@
 // platform/device on Android: Build and the package's info, Custom Tabs, the
 // Photo Picker and the storage picker (no permission), ClipboardManager
-// (images through the app's FileProvider, the host's), the window's
+// (images through the app's FileProvider, the host's; rich text as an HTML
+// clip), the window's
 // FLAG_KEEP_SCREEN_ON.
 package platform.device
 
@@ -114,7 +115,15 @@ class AndroidDevice(private val app: Context) : Platform {
         // Before Android 12 the system doesn't classify it: a URI list only.
         val url = d.hasMimeType(ClipDescription.MIMETYPE_TEXT_URILIST) || Build.VERSION.SDK_INT >= 31 &&
             d.classificationStatus == ClipDescription.CLASSIFICATION_COMPLETE && d.getConfidenceScore(TextClassifier.TYPE_URL) >= 0.5f
-        return ClipboardKinds(text = text, image = image, url = url)
+        return ClipboardKinds(text = text, image = image, url = url, html = d.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML))
+    }
+
+    override suspend fun clipboardHTML(): String? = withContext(Dispatchers.Main) {
+        cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.htmlText
+    }
+
+    override suspend fun copyHTML(html: String, text: String) = withContext(Dispatchers.Main) {
+        cm.setPrimaryClip(ClipData.newHtmlText("text", text, html))
     }
 
     override suspend fun clipboardImage(): String? {
