@@ -654,16 +654,21 @@ export class Host {
   }
 
   applyBorder(n) {
-    // Drawn inside the frame, over the content, as a layer's border:
-    // children are placed from the frame's corner, not inside a border.
-    const s = n.el.style;
-    if (n.borderWidth > 0) {
-      s.outline = `${n.borderWidth}px solid ${this.css(n.borderColor) || "var(--asuka-separator)"}`;
-      s.outlineOffset = -n.borderWidth + "px";
-    } else {
-      s.outline = "";
-      s.outlineOffset = "";
-    }
+    // Drawn inside the frame, as a layer's border: children are placed
+    // from the frame's corner, not inside a border. The line is the
+    // element's ::after (asuka-bordered), above its children with the
+    // frame's own corner; an outline is painted under positioned
+    // children. A scroller keeps the outline, which its content can
+    // cover: a layer in it would scroll away with the content.
+    const el = n.el, s = el.style;
+    const line = n.borderWidth > 0 ? `${n.borderWidth}px solid ${this.css(n.borderColor) || "var(--asuka-separator)"}` : "";
+    const layer = line !== "" && !el.classList.contains("asuka-scroller");
+    el.classList.toggle("asuka-bordered", layer);
+    if (layer) s.setProperty("--asuka-border", line);
+    else s.removeProperty("--asuka-border");
+    const outline = line !== "" && !layer;
+    s.outline = outline ? line : "";
+    s.outlineOffset = outline ? -n.borderWidth + "px" : "";
   }
 
   applyShadow(n) {

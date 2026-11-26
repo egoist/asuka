@@ -1,0 +1,55 @@
+// Border Corner shows a card (e2e's TestBorderCorner*): 200 by 120
+// points, with a black border 1 point wide, corners of 12 and its
+// content clipped to them, and a green header across its top. Under it,
+// a scroll view 80 points high with a red border, its content taller,
+// and a round orange image 60 points wide with a blue border 3 wide.
+
+component BorderCorner {
+  View {
+    grow: 1
+    justify: .center
+    align: .center
+    background: #ffffff
+
+    View {
+      width: 200
+      height: 120
+      radius: 12
+      border: 1
+      borderColor: #000000
+      clip: true
+      background: #ffffff
+
+      View {
+        height: 40
+        background: #00c000
+      }
+    }
+    Scroll {
+      width: 200
+      height: 80
+      margin: Edges(top: 24)
+      border: 2
+      borderColor: #ff0000
+      Column {
+        gap: 10
+        for i in 0..10 {
+          View {
+            height: 30
+            background: #e0e0e0
+          }
+        }
+      }
+    }
+    Image("orange.png") {
+      width: 60
+      height: 60
+      margin: Edges(top: 24)
+      radius: 30
+      border: 3
+      borderColor: #0000ff
+    }
+  }
+}
+
+app { BorderCorner() }
