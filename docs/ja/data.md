@@ -221,6 +221,28 @@ async fn keepToken(token: string) throws {
 }
 ```
 
+### 保護された秘密情報
+
+`secure.write(key, value, protected: true)` で保存した秘密情報は、ユーザーが本人であることを確かめてからでないと読めません。`secure.read(key, prompt:)` は先にシステムの確認（iOS と Mac では Face ID、Touch ID、パスコード。Android では指紋、顔、画面ロック。Windows Hello）を `prompt` を添えて表示し、ユーザーが解除しなければ `SecureError.cancelled` を投げます。
+
+```asuka check
+import platform/secure
+
+async fn keepVaultKey(key: string) throws {
+  try await secure.write("vault", key, protected: true)
+}
+
+async fn vaultKey() throws -> string? {
+  do {
+    return try await secure.read("vault", prompt: "Unlock your vault")
+  } catch secure.SecureError.cancelled {
+    return none
+  }
+}
+```
+
+デバイスが確認できない場合（パスコードが未設定、生体情報が未登録、Linux のキーリング、Web）、保護された書き込みは `SecureError.notAvailable` を投げ、何も保存しません。Windows では、秘密情報は Windows Hello だけが出せる鍵で暗号化されるので、書き込むときにも Hello が確認し、その文言は Hello 自身のものです（`prompt` はスマートフォンと Mac で使われます）。iOS には Face ID の利用目的の説明文が必要ですが、`platform/secure` をインポートすると加わります（asuka.toml の `[ios.usage]` で独自の文にできます）。
+
 ## ユーザーのデバイス間で共有する値：platform/icloud
 
 iOS と macOS では、`icloud.Value(key, default)` は iCloud のキーバリューストアに保存されるストアで、別のデバイスが値を変えると読み直されます。`storage.Value` がデバイスに保存されるのと同じ感覚です。

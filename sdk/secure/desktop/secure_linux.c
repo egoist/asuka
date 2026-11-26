@@ -3,7 +3,10 @@
 // app's own schema (its ID), labeled with the app's name and the key: the
 // Linux host's secure store's items. Without libsecret, or a keyring, the
 // calls fail saying so. libsecret answers on GLib's main loop: the calls
-// start on the main thread.
+// start on the main thread. The Secret Service has no way to ask the user
+// to prove it's them before an item is read (an unlocked keyring hands
+// out its items): a protected write is SecureError.notAvailable, kept
+// nowhere, and a read's prompt goes unused.
 #include "asuka_linux.h"
 #include "secure.asuka.h"
 
@@ -78,7 +81,7 @@ static void looked_up(GObject *src, GAsyncResult *res, gpointer call) {
 	secure_Keychain_get_done(call, s);
 }
 
-static void k_get(secure_Keychain *self, const char *key, asuka_call *call) {
+static void k_get(secure_Keychain *self, const char *key, const char *prompt, asuka_call *call) {
 	if (!ready(call)) return;
 	GHashTable *t = table(key);
 	G(secret_password_lookupv)(schema(), t, NULL, looked_up, call);
@@ -91,7 +94,12 @@ static void stored(GObject *src, GAsyncResult *res, gpointer call) {
 	secure_Keychain_set_done(call);
 }
 
-static void k_set(secure_Keychain *self, const char *key, const char *value, asuka_call *call) {
+static void k_set(secure_Keychain *self, const char *key, const char *value, bool protected, asuka_call *call) {
+	if (protected) {
+		asuka_error e = {0};
+		asuka_error_declared(&e, secure_SecureError_notAvailable);
+		return asuka_call_fail(call, &e);
+	}
 	if (!ready(call)) return;
 	GHashTable *t = table(key);
 	SecretValue *v = G(secret_value_new)(value, strlen(value), "application/octet-stream");

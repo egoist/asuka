@@ -321,6 +321,38 @@ async fn keepToken(token: string) throws {
 }
 ```
 
+### Protected secrets
+
+`secure.write(key, value, protected: true)` keeps a secret that's read
+only once the user proves it's them: `secure.read(key, prompt:)` shows
+the system's question first (Face ID, Touch ID or the passcode on iOS
+and the Mac; the fingerprint, the face or the screen lock on Android;
+Windows Hello), saying `prompt`, and throws `SecureError.cancelled` if
+the user doesn't unlock it.
+
+```asuka check
+import platform/secure
+
+async fn keepVaultKey(key: string) throws {
+  try await secure.write("vault", key, protected: true)
+}
+
+async fn vaultKey() throws -> string? {
+  do {
+    return try await secure.read("vault", prompt: "Unlock your vault")
+  } catch secure.SecureError.cancelled {
+    return none
+  }
+}
+```
+
+Where the device can't ask (no passcode set, nothing enrolled, Linux's
+keyring, the web), a protected write throws `SecureError.notAvailable`
+and keeps nothing. On Windows the secret is encrypted with a key only
+Windows Hello gives, so Hello asks when it's written too, in its own
+words (`prompt` is the phones' and the Mac's). iOS needs Face ID's purpose string, which importing
+`platform/secure` gives (set your own in asuka.toml's `[ios.usage]`).
+
 ## Values the user's devices share: platform/icloud
 
 On iOS and macOS, `icloud.Value(key, default)` is a store kept in iCloud's

@@ -10,6 +10,13 @@
 // Each value is bound to its key's name (the cipher's additional data),
 // so a value can't be moved to another name. The database is the one the
 // web host's secure store kept ("asuka-secure:" and the app's name).
+//
+// A browser can't ask the user to prove it's them before a value is read
+// (WebAuthn proves a credential, not a keychain's unlock): a protected
+// write is SecureError.notAvailable, kept nowhere, and a read's prompt
+// goes unused.
+
+import { SecureError } from "./secure.asuka.js";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -96,11 +103,14 @@ export function makeKeychain() {
   let store = null;
   const s = () => (store ??= new SecureStore(idbBackend("asuka-secure:" + globalThis.asuka.native.app.name)));
   return {
-    async get(_signal, key) {
+    async get(_signal, key, _prompt) {
       const v = await s().get(key);
       return v ? dec.decode(v) : null;
     },
-    async set(_signal, key, value) { await s().set(key, enc.encode(value)); },
+    async set(_signal, key, value, protected_) {
+      if (protected_) throw new SecureError("notAvailable");
+      await s().set(key, enc.encode(value));
+    },
     async remove(_signal, key) { await s().delete(key); },
   };
 }

@@ -101,7 +101,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 状態 | `@State`、`@Observable` | フック | ✓ `state`、ストア、派生した `let`（細粒度のシグナル：書き込むと、それを読んでいるところだけが更新される）（[コンセプト](concepts.md)） |
 | 永続化する小さな値 | `@AppStorage` | AsyncStorage | ✓ `std/storage` の `storage.Value`、`std/store`（UserDefaults、SharedPreferences、Windows と Linux ではファイル、`localStorage`） |
 | SQLite | SwiftData / GRDB | `expo-sqlite` | ✓ `std/sqlite`（`migrate`、行を `T` に直接デコードする `query<T>`、`exec`、トランザクション。メインスレッドの外で実行。`watch<T>`：読んでいるテーブルに書き込みがあったときや引数が変わったときに再実行されるライブクエリ。どのプラットフォームでも同じ SQLite で、ブラウザーではページのワーカーで動く）（[データ](data.md)） |
-| セキュアストレージ | キーチェーン | `expo-secure-store` | ✓ `platform/secure`（キーチェーン、Android Keystore、資格情報マネージャー、libsecret。Web では、ブラウザーが外に出さない鍵で暗号化して IndexedDB に保存するもので、キーチェーンではない） |
+| セキュアストレージ | キーチェーン | `expo-secure-store` | ✓ `platform/secure`（キーチェーン、Android Keystore、資格情報マネージャー、libsecret。Web では、ブラウザーが外に出さない鍵で暗号化して IndexedDB に保存するもので、キーチェーンではない）。`protected: true`：Face ID、指紋、Windows Hello、パスコードで確認してから読めるもので、`requireAuthentication` に当たる |
 | ファイル、ネットワーク | Foundation | `expo-file-system`、fetch | ✓ `std/fs`。`std/http`（プラットフォーム自身のクライアント：URLSession、`HttpURLConnection`、WinHTTP、libsoup、`fetch`）、`http.download`、`http.stream` とサーバー送信イベント（`http.events`）。`std/websocket` |
 | 写真 | `PhotosPicker` | `expo-image-picker` | ✓ `device.pickPhotos(max:)` |
 | 書類 | `UIDocumentPickerViewController` | `expo-document-picker` | ✓ `device.pickFiles(types:, multiple:)`。デスクトップでは `platform/dialog` |

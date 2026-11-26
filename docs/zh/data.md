@@ -221,6 +221,28 @@ async fn keepToken(token: string) throws {
 }
 ```
 
+### 受保护的机密
+
+`secure.write(key, value, protected: true)` 保存的机密，只有在用户证明是本人之后才能读出：`secure.read(key, prompt:)` 会先显示系统的验证（iOS 和 Mac 上是 Face ID、触控 ID 或密码；Android 上是指纹、人脸或锁屏；Windows Hello），并显示 `prompt`；用户没有解锁时，它会抛出 `SecureError.cancelled`。
+
+```asuka check
+import platform/secure
+
+async fn keepVaultKey(key: string) throws {
+  try await secure.write("vault", key, protected: true)
+}
+
+async fn vaultKey() throws -> string? {
+  do {
+    return try await secure.read("vault", prompt: "Unlock your vault")
+  } catch secure.SecureError.cancelled {
+    return none
+  }
+}
+```
+
+设备无法验证时（没有设置密码、没有录入任何生物特征、Linux 的钥匙环、Web），受保护的写入会抛出 `SecureError.notAvailable`，什么也不保存。在 Windows 上，机密用只有 Windows Hello 才能给出的密钥加密，所以写入时 Hello 也会询问，用的是它自己的文字（`prompt` 用在手机和 Mac 上）。iOS 需要 Face ID 的用途说明，导入 `platform/secure` 时会自动带上（在 asuka.toml 的 `[ios.usage]` 里可以写你自己的）。
+
 ## 用户各设备共享的值：platform/icloud
 
 在 iOS 和 macOS 上，`icloud.Value(key, default)` 是一个保存在 iCloud 键值存储里的 store，另一台设备修改它时会重新读取，就像 `storage.Value` 保存在本机一样：

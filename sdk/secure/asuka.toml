@@ -2,5 +2,9 @@ name = "platform/secure"
 version = "0.1.0"
 description = "Small secrets (tokens, passwords), kept encrypted by the platform"
 
+# A protected secret asks for Face ID.
+[ios]
+usage = { NSFaceIDUsageDescription = "To unlock what you keep protected." }
+
 [windows]
-libraries = ["advapi32"]
+libraries = ["advapi32", "bcrypt", "ole32"]
