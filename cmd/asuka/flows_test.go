@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/egoist/asuka/internal/cbuild"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +41,9 @@ func TestGUIFlowsWeb(t *testing.T) {
 	}
 	if chromePath() == "" {
 		t.Skip("no Chrome")
+	}
+	if _, err := cbuild.ForTarget(cbuild.Target{OS: "wasm", Arch: "wasm32"}); err != nil {
+		t.Skip(err) // the web's player is built with Zig
 	}
 	defer func(d time.Duration) { flowTimeout = d }(flowTimeout)
 	for _, app := range []string{"counter", "navigation"} {
