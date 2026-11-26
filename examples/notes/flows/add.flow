@@ -1,0 +1,9 @@
+# Two notes added, each listed (and, for the Mark Done shortcut, offered).
+tap New note
+type Buy milk
+submit
+see Buy milk
+tap New note
+type Call mom
+submit
+see Call mom

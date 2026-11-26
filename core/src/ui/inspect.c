@@ -7,6 +7,7 @@
 #include "ui/ui_ext.h"
 #include "rt/sched.h"
 
+#include <math.h>
 #include <stdio.h>
 
 // json_str writes s as a JSON string.
@@ -59,7 +60,10 @@ static void view_json(walk *w, ak_view *e) {
 		ak_buf_put(b, ",\"text2\":", 9);
 		json_str(b, e->text2->data, e->text2->len);
 	}
-	if (e->real) ak_buf_printf(b, ",\"frame\":[%g,%g,%g,%g]", (double)e->sent[0], (double)e->sent[1], (double)e->sent[2], (double)e->sent[3]);
+	// A view the host sizes (a screen, a window) has no frame sent: none
+	// (NaN isn't JSON).
+	if (e->real && !isnan(e->sent[0]) && !isnan(e->sent[2]))
+		ak_buf_printf(b, ",\"frame\":[%g,%g,%g,%g]", (double)e->sent[0], (double)e->sent[1], (double)e->sent[2], (double)e->sent[3]);
 	if (e->frag) ak_buf_put(b, ",\"fragment\":true", 16);
 	ak_buf_put(b, ",\"kids\":[", 9);
 	walk inner = {b, true, w->depth + 1};

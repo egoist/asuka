@@ -95,9 +95,18 @@ static bool glob(const char *p, uint32_t pn, const char *s, uint32_t sn) {
 
 static bool matches(const ak_str *s, ak_span t) { return s && glob(t.p, t.len, s->data, s->len); }
 
+// key_str is a view's string key, as last set (NULL: none).
+static const ak_str *key_str(const ak_view *e, uint16_t key) {
+	const ak_val *v = ak_style_get(e, key);
+	return v && v->p && ((ak_obj *)v->p)->tag == AK_TAG_STR ? v->p : NULL;
+}
+
 static bool find_text(ak_view *e, void *ctx) {
 	find *f = ctx;
-	if (matches(e->text, f->text) || matches(e->text2, f->text)) {
+	// What it shows, or what a screen reader says of it (a Button with
+	// only an icon: its label), or a field's placeholder.
+	if (matches(e->text, f->text) || matches(e->text2, f->text) || matches(key_str(e, AK_KEY_LABEL), f->text) ||
+	    (e->kind == AK_KIND_TEXT_FIELD && matches(key_str(e, AK_KEY_TEXT_FIELD_PLACEHOLDER), f->text))) {
 		f->found = e;
 		return true;
 	}

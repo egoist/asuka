@@ -462,8 +462,9 @@ asuka test --gui                      # this computer
 | `notsee <text>` | Nothing on the screen shows it. |
 | `wait <time>` | Waits (`500ms`, `2s`). |
 
-A text is matched as a whole: `see Message 1` doesn't match `Message
-19`. A `*` in it matches any characters, for text that changes:
+A text is what a view shows, its label (a button with only an icon) or a
+field's placeholder (`tap New note`), matched as a whole: `see Message 1`
+doesn't match `Message 19`. A `*` in it matches any characters, for text that changes:
 `see Count: *`. A list makes views only for the rows on the screen, so
 a row further down shows once `scroll` or `scrollto` brings it there.
 
