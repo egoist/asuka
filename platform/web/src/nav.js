@@ -1159,26 +1159,29 @@ export class Navigation {
 
   /**
    * drag calls move(dx, dy, at) as the pointer moves after a primary
-   * press on handle (not on a button in it): dx, dy from where it
-   * pressed, and at, an object kept for the drag, where move keeps what
-   * it began from. What it drags follows the pointer, so past a limit it
-   * waits for the pointer to come back. end, if given, is called as the
-   * pointer is released or cancelled.
+   * press on handle by one pointer (not on a button in it; other pointers
+   * are ignored until it's released): dx, dy from where it pressed, and
+   * at, an object kept for the drag, where move keeps what it began from.
+   * move works from what it keeps in at, so what it drags follows the
+   * pointer: past a limit it waits for the pointer to come back. end, if
+   * given, is called as the pointer is released or cancelled.
    */
   drag(handle, move, end) {
-    let start = null, at = null;
+    let id = null, start = null, at = null;
     handle.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || e.target.closest("button")) return;
+      if (start || e.button !== 0 || e.target.closest("button")) return;
+      id = e.pointerId;
       start = [e.clientX, e.clientY];
       at = {};
       handle.setPointerCapture(e.pointerId);
     });
     handle.addEventListener("pointermove", (e) => {
-      if (start) move(e.clientX - start[0], e.clientY - start[1], at);
+      if (start && e.pointerId === id) move(e.clientX - start[0], e.clientY - start[1], at);
     });
-    const stop = () => {
-      if (start && end) end();
+    const stop = (e) => {
+      if (!start || e.pointerId !== id) return;
       start = null;
+      if (end) end();
     };
     handle.addEventListener("pointerup", stop);
     handle.addEventListener("pointercancel", stop);
