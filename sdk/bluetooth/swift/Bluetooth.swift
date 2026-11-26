@@ -164,7 +164,9 @@ func uuidString(_ u: CBUUID) -> String { u.uuidString.lowercased() }
     private var centralManager: CBCentralManager?
     private var central: CBCentralManager { centralManager ?? makeCentral() }
     private var peripheralManager: CBPeripheralManager?
+    #if !os(tvOS)
     private var pm: CBPeripheralManager { peripheralManager ?? makePeripheralManager() }
+    #endif
 
     /// The central manager, made once; with its restore identifier only
     /// when the app has the bluetooth-central mode (one without it is
@@ -182,8 +184,9 @@ func uuidString(_ u: CBUUID) -> String { u.uuidString.lowercased() }
         return c
     }
 
+    #if !os(tvOS)
     /// The peripheral manager, made once; with its restore identifier only
-    /// with the bluetooth-peripheral mode.
+    /// with the bluetooth-peripheral mode. Apple TV is a central only.
     @discardableResult func makePeripheralManager() -> CBPeripheralManager {
         if let p = peripheralManager { return p }
         var o: [String: Any] = [:]
@@ -194,6 +197,7 @@ func uuidString(_ u: CBUUID) -> String { u.uuidString.lowercased() }
         peripheralManager = p
         return p
     }
+    #endif
 
     // What iOS restored, until watchRestored reads it, and who does.
     private var restoredNow: Brought?
@@ -697,10 +701,12 @@ func uuidString(_ u: CBUUID) -> String { u.uuidString.lowercased() }
 
     // MARK: The peripheral's side
 
+    #if !os(tvOS)
     private func whenOn(_ then: @escaping () -> Void) {
         if pm.state == .poweredOn { then(); return }
         pmWaiters.append(then)
     }
+    #endif
 
     nonisolated func peripheralManagerDidUpdateState(_ p: CBPeripheralManager) {
         MainActor.assumeIsolated {
@@ -720,6 +726,10 @@ func uuidString(_ u: CBUUID) -> String { u.uuidString.lowercased() }
     }
 
     func serve(_ services: [ServedService], _ f: Box<Request>, _ done: @escaping (Swift.Result<Void, Error>) -> Void) {
+        #if os(tvOS)
+        // Apple TV can't be a peripheral: it serves nothing.
+        done(.failure(BluetoothError.unsupported))
+        #else
         serving = f
         serveDone = done
         whenOn { [unowned self] in
@@ -761,6 +771,7 @@ func uuidString(_ u: CBUUID) -> String { u.uuidString.lowercased() }
                 self.pm.add(ms)
             }
         }
+        #endif
     }
 
     nonisolated func peripheralManager(_ p: CBPeripheralManager, didAdd s: CBService, error: Error?) {
@@ -830,6 +841,9 @@ func uuidString(_ u: CBUUID) -> String { u.uuidString.lowercased() }
     }
 
     func advertise(_ o: Advertising, _ done: @escaping (Swift.Result<Void, Error>) -> Void) {
+        #if os(tvOS)
+        done(.failure(BluetoothError.unsupported))
+        #else
         advertiseDone = done
         whenOn { [unowned self] in
             var d: [String: Any] = [:]
@@ -837,6 +851,7 @@ func uuidString(_ u: CBUUID) -> String { u.uuidString.lowercased() }
             if !o.services.isEmpty { d[CBAdvertisementDataServiceUUIDsKey] = o.services.map { CBUUID(string: $0) } }
             self.pm.startAdvertising(d)
         }
+        #endif
     }
 
     nonisolated func peripheralManagerDidStartAdvertising(_ p: CBPeripheralManager, error: Error?) {

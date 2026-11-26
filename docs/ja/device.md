@@ -1580,8 +1580,41 @@ component SignIn {
 | iOS、macOS | システムのサインインシート（`platform/webauth`）で Google のサインインページを開き、PKCE を使います | iOS クライアント（`ios`）。その ID を逆にしたものがコールバックのスキームです |
 | Windows、Linux | `platform/webauth` のウィンドウでサインインページを開き、127.0.0.1 上のアプリ自身のサーバーに戻ります（RFC 8252） | デスクトップクライアントとそのシークレット（`desktop`、`desktopSecret`。インストールされるアプリのもので、秘密ではありません） |
 | Web | ポップアップで、アプリのページに戻ります | Web クライアント（`web`）。`webRedirect` はその承認済みリダイレクト URI の一つです |
+| テレビ（Apple TV、Android TV） | `signInWithCode`：アプリがアドレスとコードを表示し、ユーザーがスマートフォンやコンピュータで入力します（Google のテレビや入力が限られたデバイス向けのサインイン） | 「テレビと入力が限られたデバイス」タイプのクライアントとそのシークレット（`tv`、`tvSecret`） |
 
 ID トークンは Google が署名した JWT です。アプリのサーバーは、示された人物を信用する前にそれを検証します（Google の鍵による署名、`aud` がアプリのクライアントであること、`iss`、`exp`、そしてサーバーがアプリに渡した `nonce`）。`Clients` にそのプラットフォームのクライアントがなければ `GoogleAuthError.notConfigured` を投げます。`googleauth.signOut()` は、Android の選択画面が次回もう一度尋ねるようにします。ほかのプラットフォームでは、セッションはブラウザーが保持します。
+
+テレビには表示できるサインインのシートがないので、そこでは `signIn` はエラーを投げます。代わりに `googleauth.signInWithCode(clients, show:, scopes:)` でサインインします。`show` には、アプリが表示する `DeviceCode`（`url`、`code`、コードの有効期間 `expires`）が渡され、ユーザーが別のデバイスでコードを入力するまで待ちます。ユーザーがそこで許可するとアカウントを返し、拒否すると `none` を返します。入力の前にコードの期限が切れたら `GoogleAuthError.expired` を投げるので、もう一度呼んで新しいコードをもらってください。`tv` のクライアントがあればどのプラットフォームでも使えます。Google がこのサインインに許すスコープは、プロフィールのものとごく一部のもの（アプリが作った Drive のファイル、YouTube）です。
+
+```asuka check
+import platform/googleauth
+
+let clients = googleauth.Clients(tv: "1234-tv.apps.googleusercontent.com", tvSecret: "GOCSPX-example")
+
+component TVSignIn {
+  state prompt = ""
+
+  Column {
+    gap: 24
+    Button("Google でサインイン") {
+      on press {
+        do {
+          let user = try await googleauth.signInWithCode(clients, show: c => {
+            prompt = "スマートフォンで {c.url} を開き、{c.code} を入力してください"
+          })
+          if let u = user {
+            prompt = u.email
+            // u.idToken をアプリのサーバーに送り、サーバーで検証します。
+          }
+        } catch e {
+          prompt = e.message
+        }
+      }
+    }
+    Text(prompt) { font: .title2 }
+  }
+}
+```
 
 ## ウォレット決済：platform/pay
 

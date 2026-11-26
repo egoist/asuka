@@ -56,8 +56,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
                      fetchCompletionHandler done: @escaping (UIBackgroundFetchResult) -> Void) {
+        #if os(tvOS)
+        // A TV shows no alerts: every push that reaches the app is data.
+        AsukaPush.shared.received(userInfo)
+        #else
         // A notification with an alert comes through the center's delegate.
         if (userInfo["aps"] as? [String: Any])?["alert"] == nil { AsukaPush.shared.received(userInfo) }
+        #endif
         done(.newData)
     }
     #endif

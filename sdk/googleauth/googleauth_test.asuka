@@ -44,3 +44,49 @@ test "a platform without a client isn't configured" {
   }
   expect(said == "googleauth: no OAuth client for this platform (Clients)")
 }
+
+test "a sign-in with a code needs the TV client" {
+  var said = ""
+  do {
+    let _ = try await signInWithCode(Clients(ios: "c.apps.googleusercontent.com"), show: c => {})
+  } catch e {
+    said = e.message
+  }
+  expect(said == "googleauth: no OAuth client for this platform (Clients)")
+}
+
+test "the device code endpoint's answer: the code to show, and how often to ask" {
+  let body = "\{\"device_code\":\"4/dev\",\"user_code\":\"ABC-DEF-GHI\",\"expires_in\":1800,\"interval\":5,\"verification_url\":\"https://www.google.com/device\"}"
+  let (c, every) = try deviceCodeOf(200, body)
+  expect(c.url == "https://www.google.com/device" && c.code == "ABC-DEF-GHI" && c.device == "4/dev")
+  expect(c.expires == 30min && every == 5s)
+  let (_, fallback) = try deviceCodeOf(200, "\{\"device_code\":\"d\",\"user_code\":\"u\",\"expires_in\":60}")
+  expect(fallback == 5s)
+  var said = ""
+  do {
+    let _ = try deviceCodeOf(401, "\{\"error\":\"invalid_client\",\"error_description\":\"The OAuth client was not found.\"}")
+  } catch e {
+    said = e.message
+  }
+  expect(said == "googleauth: invalid_client: The OAuth client was not found.")
+}
+
+test "a poll: not yet, slower, no, expired, or the account" {
+  expect(try pollOf(428, "\{\"error\":\"authorization_pending\"}", []) == .pending)
+  expect(try pollOf(403, "\{\"error\":\"slow_down\"}", []) == .slower)
+  expect(try pollOf(403, "\{\"error\":\"access_denied\"}", []) == .denied)
+  var said = ""
+  do {
+    let _ = try pollOf(400, "\{\"error\":\"expired_token\"}", [])
+  } catch e {
+    said = e.message
+  }
+  expect(said == "googleauth: the code expired before the user entered it")
+  let claims = "\{\"sub\":\"42\",\"email\":\"ada@example.com\"}"
+  let jwt = "e30.{encoding.base64URLEncode(claims.bytes())}.sig"
+  let p = try pollOf(200, "\{\"id_token\":\"{jwt}\",\"access_token\":\"tok\"}", ["https://www.googleapis.com/auth/drive.file"])
+  match p {
+    .signedIn(u) => { expect(u.id == "42" && u.email == "ada@example.com" && u.accessToken == "tok") }
+    _ => { expect(false) }
+  }
+}

@@ -271,7 +271,12 @@ func (f *fakeASC) serve(w http.ResponseWriter, r *http.Request) {
 	case "GET /v1/apps/app1/appStoreVersions":
 		var out []map[string]any
 		for _, v := range f.versions {
-			if s := q.Get("filter[versionString]"); s == "" || v["attributes"].(map[string]any)["versionString"] == s {
+			attrs := v["attributes"].(map[string]any)
+			// A version that names its platform is only that platform's.
+			if p, ok := attrs["platform"]; ok && q.Get("filter[platform]") != "" && p != q.Get("filter[platform]") {
+				continue
+			}
+			if s := q.Get("filter[versionString]"); s == "" || attrs["versionString"] == s {
 				out = append(out, v)
 			}
 		}
@@ -611,7 +616,7 @@ func TestReadIPAInfo(t *testing.T) {
 	writeIPA(t, ipa, map[string]any{"CFBundleIdentifier": "com.x.y", "CFBundleShortVersionString": "2.0", "CFBundleVersion": "17",
 		"CFBundleIcons": map[string]any{"CFBundlePrimaryIcon": map[string]any{"CFBundleIconName": "AppIcon"}}, "Z": "z"})
 	info, err := readIPAInfo(ipa)
-	if err != nil || info != (ipaInfo{"com.x.y", "2.0", "17"}) {
+	if err != nil || info != (ipaInfo{"com.x.y", "2.0", "17", ""}) {
 		t.Fatalf("%+v %v", info, err)
 	}
 	writeIPA(t, ipa, map[string]any{"CFBundleIdentifier": "com.x.y"})
@@ -696,7 +701,7 @@ func TestReadPkgInfo(t *testing.T) {
 	}
 	for _, p := range []string{component, product} {
 		info, err := readPkgInfo(p)
-		if err != nil || info != (ipaInfo{"com.example.notes", "1.2", "9"}) {
+		if err != nil || info != (ipaInfo{"com.example.notes", "1.2", "9", ""}) {
 			t.Errorf("%s: %+v, %v", filepath.Base(p), info, err)
 		}
 	}

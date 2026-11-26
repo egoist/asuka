@@ -6,7 +6,7 @@ import PackageDescription
 
 let package = Package(
     name: "AnalyticsNative",
-    platforms: [.iOS("16.0"), .macOS("11.0")],
+    platforms: [.iOS("16.0"), .tvOS("17.0"), .macOS("11.0")],
     products: [.library(name: "AnalyticsNative", targets: ["AnalyticsNative"])],
     dependencies: [
         .package(url: "https://github.com/egoist/asuka", from: "0.1.0"),

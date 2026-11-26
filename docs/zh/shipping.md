@@ -121,7 +121,7 @@ ASUKA_KEYSTORE_PASSWORD=... asuka build --platform android
 
 加上 `--apk` 则会生成一个已签名、包含所有架构的发布版 `.apk`，可以直接安装（`adb install dist/<Name>.apk`）：适合测试发布构建，或者不经应用商店分发应用。
 
-**电视**：在 `asuka.toml` 的 `[tv]` 中设置 `android = true` 后，Android 构建同时也是 Android TV 应用，手机和电视共用同一个 `.aab`。`asuka build --platform tvos` 会生成 Apple TV 应用：一个用 tvOS 描述文件签名的 `.ipa`，位于 `dist/tvos`。见[电视](tv.md)。
+**电视**：在 `asuka.toml` 的 `[tv]` 中设置 `android = true` 后，Android 构建同时也是 Android TV 应用，手机和电视共用同一个 `.aab`。`asuka build --platform tvos` 会生成 Apple TV 应用：一个用 tvOS 描述文件签名的 `.ipa`，位于 `dist/tvos`；`asuka publish --platform tvos` 则负责上传它（见[发布到应用商店](#发布到应用商店)）。见[电视](tv.md)。
 
 ## 发布到应用商店
 
@@ -149,6 +149,8 @@ asuka publish --platform ios --review --notes @release-notes/ios --release manua
 - `--no-wait` 在 Apple 收到上传后就结束，不再等待处理。
 
 `asuka publish --platform mac --appstore` 用同一个密钥为 Mac App Store 做同样的事：上传 `.pkg`（由 `--appstore` 构建），使用应用的 macOS 构建和版本、Mac 版 TestFlight，以及审核。
+
+`asuka publish --platform tvos` 则为 Apple TV 应用做这件事，密钥和选项都相同：上传 tvOS 的 `.ipa`（用该应用 ID 的 tvOS App Store 描述文件签名，可以用 `--profile` 指定；iPhone 应用的描述文件不能给它签名），使用应用的 tvOS 构建和版本、TestFlight 群组，以及审核。在 App Store Connect 中，iPhone 应用和 Apple TV 应用是同一条记录，共用一个 bundle ID 和其中的 App 内购买项目：请先给这条记录加上 tvOS（在应用页面选择 Add Platform › tvOS），`asuka publish` 会在构建之前检查这一点。
 
 **Google Play。** 在 Google Cloud 中创建一个服务账号，并为它生成 JSON 密钥（IAM › Service accounts › Keys）；所在项目需要开启 Google Play Android Developer API。然后在 Play Console 的 Users and permissions 中邀请这个服务账号的邮箱，并授予它发布该应用的权限。在 `asuka.toml`（`[android]` 中的 `serviceAccount = "play.json"`）或 `ASUKA_PLAY_SERVICE_ACCOUNT`（文件路径或 JSON 内容）中指定这个密钥。注意，应用的第一个 `.aab` 只能在 Play Console 中上传：先在那里创建应用并手动上传第一个构建，之后的构建再交给 `asuka publish`。
 

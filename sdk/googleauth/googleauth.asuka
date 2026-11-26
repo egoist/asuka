@@ -27,6 +27,16 @@
 //   desktop client and its secret (an installed app's, not a secret).
 // - The web: a popup back to the app's page (webRedirect), with the web
 //   client.
+//
+// A TV has no browser to sign in with (Apple TV), or no account chooser
+// of the system's (Android TV): signInWithCode signs it in the way
+// Google's own TV apps do, with a code the user enters on their phone or
+// computer, at the address the app shows (Google's sign-in for TVs and
+// limited-input devices), with a client of that type and its secret.
+//
+//   let user = try await googleauth.signInWithCode(clients, show: c => {
+//     prompt = "Go to {c.url} and enter {c.code}"
+//   })
 
 import platform/webauth
 import std/crypto
@@ -49,6 +59,21 @@ pub struct Clients {
   /// The desktop client, for Windows and Linux, and its secret.
   desktop: string = ""
   desktopSecret: string = ""
+  /// The client for TVs and limited-input devices (signInWithCode), and
+  /// its secret (an installed app's, not a secret).
+  tv: string = ""
+  tvSecret: string = ""
+}
+
+/// What the TV shows the user to sign in (signInWithCode): the address to
+/// go to on a phone or a computer, and the code to enter there.
+pub struct DeviceCode {
+  /// The address: "https://www.google.com/device".
+  url: string
+  /// The code the user enters: "ABC-DEF-GHI".
+  code: string
+  /// How long the code works; then signInWithCode throws expired.
+  expires: Duration
 }
 
 /// The signed-in account.
@@ -75,11 +100,15 @@ pub enum GoogleAuthError: Error {
   notConfigured
   /// Google refused it: its error and description.
   failed(reason: string)
+  /// signInWithCode's code ran out before the user entered it: call it
+  /// again for a new one.
+  expired
 
   /// The error's text.
   fn message() -> string = match self {
     .notConfigured => "googleauth: no OAuth client for this platform (Clients)"
     .failed(r) => "googleauth: {r}"
+    .expired => "googleauth: the code expired before the user entered it"
   }
 }
 
@@ -100,8 +129,12 @@ let android = try? Android()
 /// ("https://www.googleapis.com/auth/drive.readonly"); with any, the
 /// user's consent covers them and accessToken has them. nonce, when
 /// given, is in the ID token for the server to check (a random value the
-/// server made, against replays).
+/// server made, against replays). On a TV, sign in with signInWithCode:
+/// signIn throws there.
 pub async fn signIn(clients: Clients, scopes: [string] = [], nonce: string = "") throws -> GoogleUser? {
+  if environment().tv {
+    throw GoogleAuthError.failed(reason: "a TV signs in with a code (signInWithCode)")
+  }
   let p = environment().platform
   if p == .android {
     if clients.web.isEmpty() { throw GoogleAuthError.notConfigured }
@@ -125,6 +158,38 @@ pub async fn signIn(clients: Clients, scopes: [string] = [], nonce: string = "")
     return try await withPopup(clients.web, clients.webRedirect, scopes, nonce)
   }
   throw GoogleAuthError.notConfigured
+}
+
+/// Signs in with a code, as a TV does: show gets the address and the code
+/// for the app to show ("On your phone, go to google.com/device and enter
+/// ABC-DEF-GHI"), and the account comes once the user has entered it and
+/// said yes there; none if they said no. It throws GoogleAuthError.expired
+/// when the code ran out first. scopes are those Google allows this
+/// sign-in (besides the profile's: Drive's files the app made, YouTube's);
+/// accessToken has them. Cancelling the task stops it. It works anywhere,
+/// with clients.tv: on a TV it's the way to sign in.
+pub async fn signInWithCode(clients: Clients, show: fn(DeviceCode), scopes: [string] = []) throws -> GoogleUser? {
+  if clients.tv.isEmpty() { throw GoogleAuthError.notConfigured }
+  let r = try await http.post(deviceURL, body: url.encodeQuery(["client_id": clients.tv, "scope": scopeOf(scopes)]).bytes(),
+    headers: ["content-type": "application/x-www-form-urlencoded"])
+  let (code, every) = try deviceCodeOf(r.status, r.text())
+  show(DeviceCode(url: code.url, code: code.code, expires: code.expires))
+  var interval = every
+  var left = code.expires
+  while true {
+    await sleep(interval)
+    left = left - interval
+    let t = try await http.post(tokenURL, body: url.encodeQuery(["client_id": clients.tv, "client_secret": clients.tvSecret, "device_code": code.device,
+      "grant_type": "urn:ietf:params:oauth:grant-type:device_code"]).bytes(), headers: ["content-type": "application/x-www-form-urlencoded"])
+    match try pollOf(t.status, t.text(), scopes) {
+      .signedIn(u) => { return u }
+      .denied => { return none }
+      .slower => { interval = interval + 5s }
+      .pending => {
+        if left <= 0s { throw GoogleAuthError.expired }
+      }
+    }
+  }
 }
 
 /// Forgets the account chosen, so the next sign-in asks which (Android's
@@ -153,6 +218,65 @@ struct NativeUser {
 
 let authorize = "https://accounts.google.com/o/oauth2/v2/auth"
 let tokenURL = "https://oauth2.googleapis.com/token"
+let deviceURL = "https://oauth2.googleapis.com/device/code"
+
+// ---- With a code, for TVs (RFC 8628) ----
+
+struct DeviceReply {
+  device_code: string = ""
+  user_code: string = ""
+  verification_url: string = ""
+  expires_in: int = 0
+  interval: int = 0
+  error: string = ""
+  error_description: string = ""
+}
+
+/// The device code endpoint's answer: the code to show, and the polls'
+/// interval (5 seconds when it says none).
+fn deviceCodeOf(status: int, body: string) throws -> (Code, Duration) {
+  let d: DeviceReply = try json.decode(body)
+  if status != 200 || d.device_code.isEmpty() || d.user_code.isEmpty() {
+    throw GoogleAuthError.failed(reason: if d.error.isEmpty() { "the device code endpoint answered {status}" } else { "{d.error}: {d.error_description}" })
+  }
+  let every = if d.interval > 0 { 1s * d.interval } else { 5s }
+  return (Code(url: d.verification_url, code: d.user_code, expires: 1s * d.expires_in, device: d.device_code), every)
+}
+
+/// A code as signInWithCode holds it: what the user sees, and the device
+/// code it polls with.
+struct Code {
+  url: string
+  code: string
+  expires: Duration
+  device: string
+}
+
+/// What a poll of the token endpoint says.
+enum Poll {
+  /// The user entered the code and said yes.
+  signedIn(user: GoogleUser)
+  /// Not yet.
+  pending
+  /// Not yet, and ask less often.
+  slower
+  /// The user said no.
+  denied
+}
+
+/// A poll's answer: the account, or what to do next.
+fn pollOf(status: int, body: string, scopes: [string]) throws -> Poll {
+  let t: TokenReply = try json.decode(body)
+  if status == 200 && !t.id_token.isEmpty() {
+    return .signedIn(user: try userOf(t.id_token, if scopes.isEmpty() { "" } else { t.access_token }))
+  }
+  if t.error == "authorization_pending" { return .pending }
+  if t.error == "slow_down" { return .slower }
+  if t.error == "access_denied" { return .denied }
+  if t.error == "expired_token" { throw GoogleAuthError.expired }
+  throw GoogleAuthError.failed(reason: if t.error.isEmpty() { "the token endpoint answered {status}" } else { "{t.error}: {t.error_description}" })
+}
+
 
 /// The scopes asked for: the profile's, then the app's.
 fn scopeOf(scopes: [string]) -> string = (["openid", "email", "profile"] + scopes).unique().joined(separator: " ")

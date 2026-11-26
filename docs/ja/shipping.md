@@ -121,7 +121,7 @@ ASUKA_KEYSTORE_PASSWORD=... asuka build --platform android
 
 `--apk` を付けると、代わりにすべてのアーキテクチャを含む署名済みのリリース用 `.apk` を作ります。そのままインストールできます（`adb install dist/<Name>.apk`）。リリースビルドのテストや、ストアを通さずにアプリを配るときに使います。
 
-**テレビ**：`asuka.toml` の `[tv]` で `android = true` にすると、Android のビルドは Android TV のアプリにもなり、スマートフォンとテレビで同じ `.aab` を使います。`asuka build --platform tvos` は Apple TV のアプリを作ります。tvOS のプロファイルで署名した `.ipa` が `dist/tvos` にできます。[テレビ](tv.md)を参照してください。
+**テレビ**：`asuka.toml` の `[tv]` で `android = true` にすると、Android のビルドは Android TV のアプリにもなり、スマートフォンとテレビで同じ `.aab` を使います。`asuka build --platform tvos` は Apple TV のアプリを作ります。tvOS のプロファイルで署名した `.ipa` が `dist/tvos` にでき、`asuka publish --platform tvos` でアップロードできます（[ストアへの公開](#ストアへの公開)を参照）。[テレビ](tv.md)を参照してください。
 
 ## ストアへの公開
 
@@ -149,6 +149,8 @@ asuka publish --platform ios --review --notes @release-notes/ios --release manua
 - `--no-wait` は、Apple がアップロードを受け取った時点で終了します。
 
 `asuka publish --platform mac --appstore` は、同じキーで Mac App Store に対して同じことを行います。`.pkg`（`--appstore` でビルドしたもの）、アプリの macOS 向けのビルドとバージョン、Mac 版の TestFlight、審査が対象です。
+
+`asuka publish --platform tvos` は、同じキーとオプションで Apple TV アプリに対して同じことを行います。tvOS の `.ipa`（アプリの ID に対応する tvOS の App Store 用プロファイルで署名したもの。`--profile` で選べます。iPhone アプリのプロファイルでは署名できません）、アプリの tvOS 向けのビルドとバージョン、TestFlight のグループ、審査が対象です。App Store Connect では iPhone アプリと Apple TV アプリは一つのレコードで、バンドル ID と App 内課金を共有します。先にそのレコードに tvOS を追加してください（アプリのページで Add Platform › tvOS）。`asuka publish` はビルドの前にこれを確認します。
 
 **Google Play。** Google Play Android Developer API を有効にしたプロジェクトで、Google Cloud のサービス アカウントを作成し、JSON キーを発行します（「IAM」›「サービス アカウント」›「キー」）。Play Console の「ユーザーと権限」でそのアカウントのメールアドレスを招待し、アプリをリリースする権限を付与します。キーは `asuka.toml`（`[android]` の `serviceAccount = "play.json"`）か `ASUKA_PLAY_SERVICE_ACCOUNT`（パスか JSON そのもの）で指定します。Play は、アプリの最初の `.aab` を Play Console からしか受け付けません。Play Console でアプリを作成し、最初のビルドは手動でアップロードしてください。2 つ目以降のビルドは `asuka publish` でアップロードできます。
 

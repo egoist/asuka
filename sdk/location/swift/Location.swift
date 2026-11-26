@@ -5,6 +5,11 @@
 // The background's events are kept (UserDefaults) until the app says
 // it handled them, so a launch the system made for one, or one that
 // ended before it was read, loses none.
+//
+// Apple TV allows when in use only, and gives one position at a time
+// (requestLocation): no background updates or regions (the package
+// computes those from the positions), and a watch asks again every few
+// minutes, for a TV that stays where it is.
 import Foundation
 import CoreLocation
 import Asuka
@@ -68,15 +73,22 @@ final class CoreLocator: Locator {
     }
 
     func support() throws -> Support {
+        #if os(tvOS)
+        return Support(updates: false, regions: false, maxRegions: 0, maxRadius: 0, dwell: false, relaunch: false)
+        #else
         let regions = CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self)
         #if os(iOS)
         return Support(updates: true, regions: regions, maxRegions: 20, maxRadius: onMain { Hub.shared.maxRadius }, dwell: false, relaunch: true)
         #else
         return Support(updates: false, regions: regions, maxRegions: 20, maxRadius: onMain { Hub.shared.maxRadius }, dwell: false, relaunch: false)
         #endif
+        #endif
     }
 
     func startUpdates(options: Updates) async throws {
+        #if os(tvOS)
+        throw LocationError.unavailable
+        #endif
         let a = try await request(always: false)
         guard a.level == .whenInUse || a.level == .always else { throw LocationError.denied }
         await MainActor.run { Hub.shared.startUpdates(options) }
@@ -143,6 +155,9 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
     private var watchers: [Int: Box<Fix>] = [:]
     private var currents: [(Result<Fix, Error>) -> Void] = []
     private var next = 0
+    #if os(tvOS)
+    private var watchTimer: Timer?
+    #endif
     #if os(iOS)
     private var holds: [Int: UIBackgroundTaskIdentifier] = [:]
     #endif
@@ -175,7 +190,11 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
 
     // MARK: What the user allowed
 
+    #if os(tvOS)
+    var maxRadius: Double { 0 }
+    #else
     var maxRadius: Double { bg.maximumRegionMonitoringDistance }
+    #endif
 
     private func refreshServices() {
         DispatchQueue.global().async {
@@ -251,7 +270,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
                     done(self.authorization)
                 }
             }
-            #if os(iOS)
+            #if os(iOS) || os(tvOS)
             access.requestWhenInUseAuthorization()
             #else
             access.requestAlwaysAuthorization()
@@ -297,7 +316,18 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
             guard ok else { started(.failure(LocationError.denied)); return }
             self.next += 1
             self.watchers[self.next] = f
+            #if os(tvOS)
+            // One position at a time on tvOS: now, and again every five
+            // minutes while someone watches.
+            if self.watchers.count == 1 {
+                self.fg.requestLocation()
+                self.watchTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+                    MainActor.assumeIsolated { Hub.shared.fg.requestLocation() }
+                }
+            }
+            #else
             if self.watchers.count == 1 { self.fg.startUpdatingLocation() }
+            #endif
             if let l = self.fg.location { f.f(Self.position(l)) }
             started(.success(self.next))
         }
@@ -305,7 +335,11 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
 
     func unwatch(_ id: Int) {
         guard watchers.removeValue(forKey: id) != nil else { return }
+        #if os(tvOS)
+        if watchers.isEmpty { watchTimer?.invalidate(); watchTimer = nil }
+        #else
         if watchers.isEmpty { fg.stopUpdatingLocation() }
+        #endif
     }
 
     static func position(_ l: CLLocation) -> Fix {
@@ -333,6 +367,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
     }
 
     private func apply(_ o: Updates) {
+        #if !os(tvOS)
         bg.stopUpdatingLocation()
         bg.stopMonitoringSignificantLocationChanges()
         if o.significant {
@@ -360,17 +395,23 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
         bg.showsBackgroundLocationIndicator = o.indicator
         #endif
         bg.startUpdatingLocation()
+        #endif
     }
 
     func stopUpdates() {
         defaults.removeObject(forKey: "asuka.location.updates")
+        #if !os(tvOS)
         bg.stopUpdatingLocation()
         bg.stopMonitoringSignificantLocationChanges()
+        #endif
     }
 
     // MARK: Regions
 
     func monitor(_ r: Region) throws {
+        #if os(tvOS)
+        throw LocationError.unavailable
+        #else
         #if os(iOS)
         guard authorization.level == .always else { throw LocationError.needsAlways }
         #endif
@@ -389,18 +430,24 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
         var saved = defaults.dictionary(forKey: "asuka.location.regions") as? [String: [String: Any]] ?? [:]
         saved[r.id] = ["events": r.events.map(\.rawValue), "dwell": r.dwell]
         defaults.set(saved, forKey: "asuka.location.regions")
+        #endif
     }
 
     func stopMonitoring(_ which: (String) -> Bool) {
+        #if !os(tvOS)
         var saved = defaults.dictionary(forKey: "asuka.location.regions") as? [String: [String: Any]] ?? [:]
         for r in bg.monitoredRegions where which(r.identifier) {
             bg.stopMonitoring(for: r)
             saved[r.identifier] = nil
         }
         defaults.set(saved, forKey: "asuka.location.regions")
+        #endif
     }
 
     var monitored: [Region] {
+        #if os(tvOS)
+        return []
+        #else
         let saved = defaults.dictionary(forKey: "asuka.location.regions") as? [String: [String: Any]] ?? [:]
         return bg.monitoredRegions.compactMap { r in
             guard let c = r as? CLCircularRegion else { return nil }
@@ -408,6 +455,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
             return Region(id: r.identifier, latitude: c.center.latitude, longitude: c.center.longitude, radius: c.radius,
                           events: events, dwell: saved[r.identifier]?["dwell"] as? Double ?? 300)
         }
+        #endif
     }
 
     // MARK: Events, kept until done
@@ -520,6 +568,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
         add(e)
     }
 
+    #if !os(tvOS)
     nonisolated func locationManager(_ m: CLLocationManager, didEnterRegion region: CLRegion) {
         MainActor.assumeIsolated { crossed(region, .enter) }
     }
@@ -538,6 +587,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
             if state == .inside { crossed(region, .enter) }
         }
     }
+    #endif
 }
 
 func makeLocator() throws -> any Locator { CoreLocator() }

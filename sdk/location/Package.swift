@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "LocationNative",
-    platforms: [.iOS("16.0"), .macOS("11.0")],
+    platforms: [.iOS("16.0"), .tvOS("17.0"), .macOS("11.0")],
     products: [.library(name: "LocationNative", targets: ["LocationNative"])],
     dependencies: [
         .package(url: "https://github.com/egoist/asuka", from: "0.1.0"),

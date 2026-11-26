@@ -18,6 +18,7 @@ bigger or simpler for a room's distance.
 asuka dev --platform tvos .                # an Apple TV simulator, reloaded on save
 asuka build --platform tvos --simulator .  # a release .app for the simulator
 asuka build --platform tvos .              # an .ipa for Apple TVs, in dist/tvos
+asuka publish --platform tvos .            # built and uploaded to TestFlight
 ```
 
 `asuka dev --platform tvos` runs the app on an Apple TV simulator: the
@@ -30,9 +31,17 @@ shows the remote itself.
 
 `asuka build --platform tvos` signs the app with a tvOS provisioning
 profile for its ID (`--profile` picks one; App Store by default, or
-`--distribution`), as an iOS build signs with an iOS one. Upload the
-`.ipa` to App Store Connect with Transporter, as an Apple TV app of the
-same record or another. Apps run on tvOS 17 and later.
+`--distribution`), as an iOS build signs with an iOS one: make one at
+developer.apple.com (Profiles › + › tvOS), since the iPhone app's
+profile doesn't sign the Apple TV app. Apps run on tvOS 17 and later.
+
+`asuka publish --platform tvos` builds the `.ipa` and uploads it to App
+Store Connect, as `--platform ios` does, with the same key and options
+(`--groups`, `--review`, `--notes`, `--file`):
+[Publishing](shipping.md#publishing). The Apple TV app is a platform of
+the iPhone app's record, with its bundle ID and in-app purchases: add
+tvOS to the record in App Store Connect first (the app's page, Add
+Platform › tvOS).
 
 The app's icon on Apple TV is a layered image, 5 by 3: Asuka makes it
 from `asuka.toml`'s `icon`, the icon in the middle of its corner's
@@ -44,16 +53,12 @@ the color behind the icon ([asuka.toml](asuka-toml.md#tv)).
 
 What tvOS doesn't have, a tvOS build goes without: a share target,
 widgets and Live Activities, App Shortcuts, push notifications'
-rewriting; and web views (tvOS has no WebKit), notifications, the
-photo library, contacts, calendars and the mail composer. A package
-that calls them throws `unsupported` there, as on any platform that
-lacks them; check `environment().tv` and do without.
-
-The standard library's packages with native code (`std/http`,
-`std/websocket`, `std/sqlite`, `std/store`, `std/svg`) run on Apple TV
-as on an iPhone. The platform SDK's packages (`platform/...`) are built
-for iOS and the Mac only for now: on Apple TV each throws
-`unsupported`.
+rewriting; and web views (tvOS has no WebKit), notifications that show
+(only the app's badge), the photo library and its picker, contacts,
+calendars and the mail composer. A package that calls them throws
+`unsupported` there, as on any platform that lacks them; check
+`environment().tv` and do without. [Packages on Apple
+TV](#packages-on-apple-tv) says which work.
 
 ## Android TV
 
@@ -175,7 +180,47 @@ component Shelf(items: [string]) {
 The safe area keeps the app clear of a TV's edges, which some TVs
 crop: tvOS reports it in `environment()`'s insets.
 
+## Packages on Apple TV
+
+The standard library's packages run on Apple TV as on an iPhone, those
+with native code too (`std/http`, `std/websocket`, `std/sqlite`,
+`std/store`, `std/svg`). Of the platform SDK's, those whose services
+tvOS has run there, some with less than on a phone:
+
+| Package | On Apple TV |
+|---|---|
+| `platform/analytics` | as on an iPhone (Firebase, with `ios.googleServices`) |
+| `platform/appearance`, `platform/audio`, `platform/crash`, `platform/document`, `platform/icloud`, `platform/imageedit`, `platform/network`, `platform/periodic`, `platform/speech`, `platform/splash`, `platform/tracking`, `platform/vision` | as on an iPhone |
+| `platform/appicon` | as on an iPhone: each of `alternateIcons` is a layered icon too, made as the app's is |
+| `platform/appleauth` | as on an iPhone: Sign in with Apple's sheet and button |
+| `platform/bluetooth` | a central only: scanning, connecting, reading and writing; `serve` and `advertise` throw `unsupported` |
+| `platform/device` | `info`, `openURL`, `openSettings`, `keepAwake`; no browser, photo or document picker (`unsupported`), and no clipboard: nothing to read, and copying throws `unsupported` |
+| `platform/googleauth` | `signInWithCode`: the TV shows an address and a code the user enters on their phone or computer, Google's sign-in for TVs; `signIn` throws |
+| `platform/integrity` | App Attest, on an Apple TV (not the simulator) |
+| `platform/js` | JavaScriptCore, without WebKit: the language and its built-ins, timers too, but no DOM or `fetch` |
+| `platform/location` | when in use only, a position at a time: `positions()` asks again every five minutes; no background updates, and regions are computed while the app runs |
+| `platform/maps` | Apple Maps, which doesn't rotate or tilt |
+| `platform/notify` | the badge alone: `request` asks for it and `setBadge` sets it; `schedule` and `show` throw `unsupported` |
+| `platform/nowplaying` | as on an iPhone: Control Center and the remote's play and pause |
+| `platform/power` | no battery (`battery` false): the thermal state |
+| `platform/purchase` | StoreKit, as on an iPhone; `manageSubscriptions`, `requestRefund` and `redeemCode` throw `unsupported` (tvOS has no such sheets: subscriptions are in Settings) |
+| `platform/push` | the device's token; a push sets the badge or reaches the app as data (`received`), and none is opened |
+| `platform/screen` | the TV's screen; no brightness to set |
+| `platform/secure` | the keychain; a `protected` secret is `SecureError.notAvailable`: an Apple TV has no passcode, Face ID or Touch ID |
+
+The others aren't built for tvOS, for what it lacks: `platform/ads`
+(Google's ads SDK has no tvOS), `agerange`, `biometric` (`check` says
+there's none), `calendar`, `camera` and `record` (an Apple TV has no
+camera or microphone of its own), `compose`, `contacts`, `dialog`,
+`health`, `liveactivity`, `nfc`, `pay`, `pdf`, `photos`, `preview`,
+`print`, `review` (tvOS has no rating prompt), `scan`, `sensors`,
+`sharesheet`, `shortcuts`, `transcribe`, `webauth`, `webview` and
+`widget`; and the desktop's (`tray`, `dock`, `hotkey`, ...), as on an
+iPhone. Their calls throw `unsupported`, or answer that there's none
+(`biometric.check`).
+
 ## Native packages on tvOS
+
 
 A native package's Swift is built for tvOS when its `Package.swift`
 names tvOS among its platforms (or names none):

@@ -6,7 +6,7 @@
 // through IOPSNotificationCreateRunLoopSource; ProcessInfo's Low Power
 // Mode and thermal state; NSWorkspace's sleep and wake; loginwindow's
 // screenIsLocked and screenIsUnlocked; Quartz's seconds since the last
-// input.
+// input. Apple TV runs on mains: no battery, its thermal state only.
 import Foundation
 #if canImport(UIKit)
 import UIKit
@@ -61,7 +61,10 @@ final class SystemPower: Monitor {
         case .serious: s.thermal = .serious
         default: s.thermal = .critical
         }
-        #if canImport(UIKit)
+        #if os(tvOS)
+        // No battery: on the mains.
+        s.level = -1
+        #elseif canImport(UIKit)
         let d = UIDevice.current
         let was = d.isBatteryMonitoringEnabled
         if !was { d.isBatteryMonitoringEnabled = true }
@@ -108,7 +111,8 @@ final class SystemPower: Monitor {
         let nc = NotificationCenter.default
         var names: [Notification.Name] = [ProcessInfo.thermalStateDidChangeNotification]
         if #available(macOS 12, *) { names.append(.NSProcessInfoPowerStateDidChange) }
-        #if canImport(UIKit)
+        #if os(tvOS)
+        #elseif canImport(UIKit)
         UIDevice.current.isBatteryMonitoringEnabled = true
         names += [UIDevice.batteryStateDidChangeNotification, UIDevice.batteryLevelDidChangeNotification]
         #else
@@ -163,7 +167,8 @@ final class SystemPower: Monitor {
 
     func stop() {
         NotificationCenter.default.removeObserver(self)
-        #if canImport(UIKit)
+        #if os(tvOS)
+        #elseif canImport(UIKit)
         if status != nil { UIDevice.current.isBatteryMonitoringEnabled = false }
         #else
         NSWorkspace.shared.notificationCenter.removeObserver(self)

@@ -77,8 +77,10 @@ import AppKit
     func setInteractive(_ on: Bool) {
         map.isScrollEnabled = on
         map.isZoomEnabled = on
+        #if !os(tvOS) // tvOS's map neither rotates nor tilts
         map.isRotateEnabled = on
         map.isPitchEnabled = on
+        #endif
     }
 
     /// A tap on the map, not on a marker: press.

@@ -272,7 +272,8 @@ release build, or for an app given out other than through a store.
 **TVs**: with `asuka.toml`'s `[tv]` `android = true` the Android build is
 an Android TV app too, the same `.aab` for phones and TVs. `asuka build
 --platform tvos` makes the Apple TV app, an `.ipa` signed with a tvOS
-profile, in `dist/tvos`. See [TVs](tv.md).
+profile, in `dist/tvos`, and `asuka publish --platform tvos` uploads it
+(see [Publishing](#publishing)). See [TVs](tv.md).
 
 ## Publishing
 
@@ -329,6 +330,15 @@ then:
 `asuka publish --platform mac --appstore` does the same for the Mac
 App Store, with the same key: the `.pkg` (`--appstore` builds), the
 app's macOS builds and version, TestFlight for Mac, and review.
+
+`asuka publish --platform tvos` does it for the Apple TV app, with the
+same key and options: the tvOS `.ipa`, signed with a tvOS App Store
+profile for the app's ID (`--profile` picks one; the iPhone app's
+profile doesn't sign it), the app's tvOS builds and version, TestFlight's
+groups, and review. The iPhone app and the Apple TV app are one record
+in App Store Connect, with one bundle ID and its in-app purchases: add
+tvOS to the record first (the app's page, Add Platform › tvOS), which
+`asuka publish` checks before it builds.
 
 **Google Play.** Make a service account in Google Cloud, with a JSON key
 (IAM › Service accounts › Keys), in a project with the Google Play

@@ -21,9 +21,9 @@ import std/time
 
 /// The device and the app.
 pub struct Info {
-  /// "iPhone", "Pixel 9", "Mac", "PC".
+  /// "iPhone", "Apple TV", "Pixel 9", "Mac", "PC".
   model: string = ""
-  /// "iOS", "Android", "macOS", "Windows", "Linux".
+  /// "iOS", "tvOS", "Android", "macOS", "Windows", "Linux".
   system: string = ""
   /// "26.0", "16".
   systemVersion: string = ""

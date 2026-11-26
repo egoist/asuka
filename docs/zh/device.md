@@ -1580,8 +1580,41 @@ component SignIn {
 | iOS、macOS | 在系统的登录面板（`platform/webauth`）里打开 Google 的登录页面，使用 PKCE | iOS 客户端（`ios`）；它的 ID 反过来写就是回调的 scheme |
 | Windows、Linux | 在 `platform/webauth` 的窗口里打开登录页面，回到应用自己在 127.0.0.1 上的服务器（RFC 8252） | 桌面客户端及其密钥（`desktop`、`desktopSecret`：已安装应用的密钥，并不保密） |
 | Web | 一个弹出窗口，回到应用的页面 | Web 客户端（`web`），`webRedirect` 是它已授权的重定向 URI 之一 |
+| 电视（Apple TV、Android TV） | `signInWithCode`：应用显示一个网址和一个代码，用户在手机或电脑上输入（Google 为电视和输入受限设备提供的登录方式） | “电视和输入受限设备”类型的客户端及其密钥（`tv`、`tvSecret`） |
 
 ID 令牌是 Google 签名的 JWT：应用的服务器要先验证它（用 Google 的公钥验证签名，检查 `aud` 是应用的客户端、`iss`、`exp`，以及服务器交给应用的 `nonce`），才能相信它所说的身份。`Clients` 里没有当前平台的客户端时，会抛出 `GoogleAuthError.notConfigured`。`googleauth.signOut()` 让 Android 的选择器下次重新询问；其他平台上，会话由浏览器保留。
+
+电视上没有可以弹出的登录面板，所以在那里 `signIn` 会抛出错误：请改用 `googleauth.signInWithCode(clients, show:, scopes:)` 登录。它的 `show` 会收到要显示给用户的 `DeviceCode`（`url`、`code`，以及代码的有效时长 `expires`），然后一直等待用户在另一台设备上输入代码。用户在那边同意后，它返回账号；用户拒绝时返回 `none`；代码在用户输入前过期，则抛出 `GoogleAuthError.expired`，再调用一次就能拿到新的代码。它在任何平台上都能用，只要提供 `tv` 客户端；Google 允许它请求个人资料的 scopes，以及少数其他 scopes（应用自己创建的 Drive 文件、YouTube）。
+
+```asuka check
+import platform/googleauth
+
+let clients = googleauth.Clients(tv: "1234-tv.apps.googleusercontent.com", tvSecret: "GOCSPX-example")
+
+component TVSignIn {
+  state prompt = ""
+
+  Column {
+    gap: 24
+    Button("通过 Google 登录") {
+      on press {
+        do {
+          let user = try await googleauth.signInWithCode(clients, show: c => {
+            prompt = "请在手机上打开 {c.url}，输入 {c.code}"
+          })
+          if let u = user {
+            prompt = u.email
+            // 把 u.idToken 发给应用的服务器，由服务器验证。
+          }
+        } catch e {
+          prompt = e.message
+        }
+      }
+    }
+    Text(prompt) { font: .title2 }
+  }
+}
+```
 
 ## 钱包支付：platform/pay
 

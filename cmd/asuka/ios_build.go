@@ -309,10 +309,9 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 		fmt.Println("asuka:", dsyms, "(its symbols: upload them to your crash service; the .ipa has them for App Store Connect)")
 	}
 	fmt.Printf("asuka: %s in %.0fs\n", ipa, time.Since(start).Seconds())
-	if prof.kind == "app-store" && tc.tv() {
-		fmt.Println("asuka: upload it to App Store Connect with Transporter, as an Apple TV app")
-	} else if prof.kind == "app-store" {
-		fmt.Println("asuka: asuka publish --platform ios builds and uploads it to App Store Connect (or upload this one: asuka publish --platform ios --file " + ipa + ")")
+	if prof.kind == "app-store" {
+		p := map[bool]string{true: platformTVOS, false: platformIOS}[tc.tv()]
+		fmt.Printf("asuka: asuka publish --platform %s builds and uploads it to App Store Connect (or upload this one: asuka publish --platform %s --file %s)\n", p, p, ipa)
 	}
 	return nil
 }
@@ -458,6 +457,9 @@ func (t *iosToolchain) compileAssets(cfg *appConfig, work, bundle, infoPath stri
 				return err
 			}
 			args = append(args, "--app-icon", tvBrandAssets)
+			for _, name := range cfg.alternateIconNames() {
+				args = append(args, "--alternate-app-icon", name)
+			}
 		}
 	} else {
 		args = append(args, "--target-device", "iphone")
@@ -655,8 +657,14 @@ func pickProfileOn(team, id, want, distribution, udid, platform string) (*profil
 			continue
 		}
 		if !p.forPlatform(platform) {
-			if want != "" {
-				near = append(near, fmt.Sprintf("%q (%s's, not %s's)", p.name, strings.Join(p.platforms, ", "), platform))
+			// An iOS profile for a tvOS build is close: the app's
+			// tvOS one is another, made for the same app ID.
+			if want != "" || platform != "iOS" && p.kind == distribution {
+				on := strings.Join(p.platforms, ", ")
+				if on == "" {
+					on = "iOS"
+				}
+				near = append(near, fmt.Sprintf("%q (%s's, not %s's)", p.name, on, platform))
 			}
 			continue
 		}

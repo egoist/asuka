@@ -2287,6 +2287,7 @@ made in the Google Cloud console (`Clients` names them):
 | iOS, macOS | Google's sign-in page in the system's sheet (`platform/webauth`), with PKCE | the iOS client (`ios`); its reversed ID is the callback's scheme |
 | Windows, Linux | the sign-in page in `platform/webauth`'s window, back to a server of the app's on 127.0.0.1 (RFC 8252) | the desktop client and its secret (`desktop`, `desktopSecret`: an installed app's, not a secret) |
 | Web | a popup back to the app's page | the web client (`web`), `webRedirect` one of its authorized redirect URIs |
+| A TV (Apple TV, Android TV) | `signInWithCode`: the app shows an address and a code, which the user enters on their phone or computer (Google's sign-in for TVs and limited-input devices) | a client for TVs and Limited Input devices and its secret (`tv`, `tvSecret`) |
 
 The ID token is a JWT signed by Google: the app's server verifies it
 (its signature with Google's keys, `aud` the app's client, `iss`, `exp`,
@@ -2294,6 +2295,46 @@ and the `nonce` it gave the app) before trusting who it says. A
 platform without its client in `Clients` throws
 `GoogleAuthError.notConfigured`. `googleauth.signOut()` makes Android's
 chooser ask again; elsewhere the browser keeps its session.
+
+A TV has no sign-in sheet to show, so `signIn` throws there: sign in
+with `googleauth.signInWithCode(clients, show:, scopes:)`. Its `show`
+gets the `DeviceCode` for the app to show (`url`, `code`, and how long
+it works, `expires`), and it waits while the user enters the code on
+another device. It gives the account once they've said yes there,
+`none` if they said no, and throws `GoogleAuthError.expired` if the
+code ran out first: call it again for a new one. It works anywhere,
+with the `tv` client; Google allows it the profile's scopes and a few
+others (Drive's files the app made, YouTube's).
+
+```asuka check
+import platform/googleauth
+
+let clients = googleauth.Clients(tv: "1234-tv.apps.googleusercontent.com", tvSecret: "GOCSPX-example")
+
+component TVSignIn {
+  state prompt = ""
+
+  Column {
+    gap: 24
+    Button("Sign in with Google") {
+      on press {
+        do {
+          let user = try await googleauth.signInWithCode(clients, show: c => {
+            prompt = "On your phone, go to {c.url} and enter {c.code}"
+          })
+          if let u = user {
+            prompt = u.email
+            // Send u.idToken to the app's server, which verifies it.
+          }
+        } catch e {
+          prompt = e.message
+        }
+      }
+    }
+    Text(prompt) { font: .title2 }
+  }
+}
+```
 
 ## Wallet payments: platform/pay
 

@@ -43,6 +43,10 @@ import Intents
 ///   (25 seconds at most); a tap or an action that opens the app is done
 ///   at once.
 /// - "stop" (the method's name); "channels", "channelGroups": Android's.
+///
+/// tvOS has the badge alone: "request" asks for it, "badge" sets it, and
+/// "schedule" is unsupported (a TV shows no notifications); there's
+/// nothing showing to list or remove, no categories, and no responses.
 @MainActor final class AsukaNotifyCenter: NSObject, UNUserNotificationCenterDelegate {
     static let shared = AsukaNotifyCenter()
     private let categoriesKey = "asuka.notify.categories"
@@ -61,9 +65,46 @@ import Intents
         installed = true
         let center = UNUserNotificationCenter.current()
         center.delegate = self
+        #if !os(tvOS)
         if let d = UserDefaults.standard.data(forKey: categoriesKey) { center.setNotificationCategories(Self.categories(d)) }
+        #endif
     }
 
+    #if os(tvOS)
+    func methods() -> [String: AsukaModuleMethod] {
+        let center = UNUserNotificationCenter.current()
+        let done: AsukaModuleMethod = { _, reply in reply(.success(Data())) }
+        return [
+            "request": { _, reply in
+                center.requestAuthorization(options: [.badge]) { granted, error in
+                    if let error { reply(.failure(error)) } else { reply(.success(Data([granted ? 1 : 0]))) }
+                }
+            },
+            "schedule": { _, reply in reply(.failure(AsukaModuleError("unsupported: tvOS shows no notifications, only the app's badge"))) },
+            "cancel": { args, reply in
+                center.removePendingNotificationRequests(withIdentifiers: [String(decoding: args, as: UTF8.self)])
+                reply(.success(Data()))
+            },
+            "badge": { args, reply in
+                let n = args.count >= 4 ? Int(args.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self).littleEndian }) : 0
+                center.setBadgeCount(n) { error in reply(error.map { .failure($0) } ?? .success(Data())) }
+            },
+            "showing": { _, reply in reply(.success(Data("[]".utf8))) },
+            "categories": done, "remove": done, "removeThread": done, "removeAll": done, "present": done, "presented": done,
+            "actionDone": done, "channels": done, "channelGroups": done,
+            "nextPresent": { [unowned self] _, reply in self.presents.next(reply) },
+            "nextAction": { [unowned self] _, reply in self.actions.next(reply) },
+            "stop": { [unowned self] args, reply in
+                switch String(decoding: args, as: UTF8.self) {
+                case "nextPresent": self.presents.stop()
+                case "nextAction": self.actions.stop()
+                default: break
+                }
+                reply(.success(Data()))
+            },
+        ]
+    }
+    #else
     func methods() -> [String: AsukaModuleMethod] {
         let center = UNUserNotificationCenter.current()
         return [
@@ -268,12 +309,14 @@ import Intents
             MainActor.assumeIsolated { AsukaNotifyCenter.shared.pendingActions.removeValue(forKey: token)?() }
         }
     }
+    #endif
 }
 
 /// Notifications' content from their spec (sdk/notify's Spec):
 /// platform/notify's, and a push's rewrite (push.rewrite, in the Notification
 /// Service Extension); and what's reported of one that shows.
 enum AsukaNotifyContent {
+    #if !os(tvOS)
     /// Makes the content o says (into base: a push's, which keeps its aps),
     /// with its image attached and, for a message (unless message is
     /// false), as a communication notification. done gets it on the main
@@ -427,6 +470,7 @@ enum AsukaNotifyContent {
                 "url": c.userInfo["url"] as? String ?? "", "data": data, "category": c.categoryIdentifier,
                 "thread": c.threadIdentifier, "time": Int64(n.date.timeIntervalSince1970 * 1000), "remote": remote]
     }
+    #endif
 
     /// A push's data: its payload's keys beside aps, as strings.
     static func pushData(_ userInfo: [AnyHashable: Any]) -> [String: String] {

@@ -4,8 +4,13 @@
 // A protected one carries an access control (the user's presence: Face ID
 // or Touch ID, else the passcode), so the keychain itself won't give it
 // up until the user proves it's them; the device must have a passcode.
+// Apple TV's keychain keeps secrets as an iPhone's does, but it has no
+// passcode, Face ID or Touch ID to protect one with: a protected secret
+// is SecureError.notAvailable there.
 import Foundation
+#if !os(tvOS)
 import LocalAuthentication
+#endif
 import Security
 
 final class SecKeychain: Keychain {
@@ -67,6 +72,7 @@ final class SecKeychain: Keychain {
                 // A protected one: the user proves it's them, asked in the
                 // app's words, and the keychain takes that proof (asking
                 // nothing more). No words: the keychain asks in its own.
+                #if !os(tvOS)
                 if attrs?[kSecAttrAccessControl as String] != nil, !prompt.isEmpty {
                     let ctx = LAContext()
                     do {
@@ -83,6 +89,7 @@ final class SecKeychain: Keychain {
                     }
                     q[kSecUseAuthenticationContext as String] = ctx
                 }
+                #endif
             }
             q[kSecReturnData as String] = true
             q[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -114,6 +121,9 @@ final class SecKeychain: Keychain {
         try await Self.offMain { [self] in
             var add: [String: Any]
             if protected {
+                #if os(tvOS)
+                throw SecureError.notAvailable
+                #else
                 // Without a passcode (or with nothing to ask with), the
                 // keychain can't keep it protected: say so before the
                 // old value's gone.
@@ -138,6 +148,7 @@ final class SecKeychain: Keychain {
                 if SecItemCopyMatching(probe as CFDictionary, nil) == errSecMissingEntitlement {
                     throw SecureError.notAvailable
                 }
+                #endif
                 #endif
             } else {
                 add = query(key)

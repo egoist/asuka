@@ -10,17 +10,18 @@ Asuka のアプリは Apple TV と Android TV（Google TV も含む）で、テ�
 asuka dev --platform tvos .                # Apple TV シミュレーターで実行し、保存のたびに再読み込み
 asuka build --platform tvos --simulator .  # シミュレーター用のリリース .app
 asuka build --platform tvos .              # Apple TV 実機用の .ipa（dist/tvos に出力）
+asuka publish --platform tvos .            # ビルドして TestFlight にアップロード
 ```
 
 `asuka dev --platform tvos` は、Apple TV シミュレーターでアプリを動かします。起動中のものがあればそれを、なければ Apple TV 4K のシミュレーターを起動して使います（`--device` でほかのものを指定できます）。tvOS シミュレーターは Xcode の tvOS プラットフォームと一緒にインストールされます。Xcode › Settings › Components から入れるか、`xcodebuild -downloadPlatform tvOS` を実行してください。シミュレーターでは、矢印キーがリモコンの方向ボタン、Return が中央のボタン、Escape が Menu（戻る）ボタンになります。Window › Show Apple TV Remote でリモコンそのものも表示できます。
 
-`asuka build --platform tvos` は、iOS のビルドが iOS のプロビジョニングプロファイルで署名するのと同じように、アプリの ID に対応する tvOS のプロビジョニングプロファイルで署名します（`--profile` で選べます。デフォルトは App Store 用で、`--distribution` でも選べます）。`.ipa` は Transporter で App Store Connect にアップロードし、同じアプリレコード（または別のレコード）の Apple TV アプリにします。tvOS 17 以降で動きます。
+`asuka build --platform tvos` は、iOS のビルドが iOS のプロビジョニングプロファイルで署名するのと同じように、アプリの ID に対応する tvOS のプロビジョニングプロファイルで署名します（`--profile` で選べます。デフォルトは App Store 用で、`--distribution` でも選べます）。iPhone アプリのプロファイルでは Apple TV アプリに署名できないので、developer.apple.com で tvOS 用のものを作ってください（Profiles › + › tvOS）。tvOS 17 以降で動きます。
+
+`asuka publish --platform tvos` は、`--platform ios` と同じように `.ipa` をビルドして App Store Connect にアップロードします。キーもオプション（`--groups`、`--review`、`--notes`、`--file`）も同じです（[ストアへの公開](shipping.md#ストアへの公開)）。Apple TV アプリは iPhone アプリと同じレコードのプラットフォームの一つで、バンドル ID と App 内課金を共有します。先に App Store Connect でそのレコードに tvOS を追加してください（アプリのページで Add Platform › tvOS）。
 
 Apple TV でのアプリのアイコンは 5:3 のレイヤー画像です。Asuka は `asuka.toml` の `icon` からこれを作ります。アイコンを、その隅の色で塗った背景の中央に置き、二つのレイヤーに分けるので、フォーカスがアイコンに来ると tvOS がそれらを傾けて視差効果を出します。トップシェルフの画像（アプリのアイコンがホーム画面の最上段にあるとき、その上に表示される画像）も同じように作ります。`[tv]` の `banner` で両方に自分の画像を使え、`background` でアイコンの後ろの色を指定できます（[asuka.toml](asuka-toml.md#tv)）。
 
-tvOS にないものは、tvOS のビルドにも含まれません。共有先（share target）、ウィジェットとライブアクティビティ、App Shortcuts、プッシュ通知の書き換え、それに Web ビュー（tvOS には WebKit がありません）、通知、写真ライブラリ、連絡先、カレンダー、メール作成画面です。これらを呼ぶパッケージは、それを持たないほかのプラットフォームと同じく、tvOS では `unsupported` を投げます。`environment().tv` を確認して、テレビでは使わないようにしてください。
-
-ネイティブコードを持つ標準ライブラリのパッケージ（`std/http`、`std/websocket`、`std/sqlite`、`std/store`、`std/svg`）は、Apple TV でも iPhone と同じように動きます。プラットフォーム SDK のパッケージ（`platform/...`）は今のところ iOS と Mac 向けにだけビルドされるので、Apple TV ではどれも `unsupported` を投げます。
+tvOS にないものは、tvOS のビルドにも含まれません。共有先（share target）、ウィジェットとライブアクティビティ、App Shortcuts、プッシュ通知の書き換え、それに Web ビュー（tvOS には WebKit がありません）、画面に表示される通知（あるのはアプリのバッジだけです）、写真ライブラリと写真ピッカー、連絡先、カレンダー、メール作成画面です。これらを呼ぶパッケージは、それを持たないほかのプラットフォームと同じく、tvOS では `unsupported` を投げます。`environment().tv` を確認して、テレビでは使わないようにしてください。どのパッケージが使えるかは [Apple TV のパッケージ](#apple-tv-のパッケージ)にまとめてあります。
 
 ## Android TV
 
@@ -112,7 +113,35 @@ component Shelf(items: [string]) {
 
 セーフエリアは、テレビの端（端を切り落とすテレビもあります）からアプリを離します。tvOS は `environment()` のインセットでそれを伝えます。
 
+## Apple TV のパッケージ
+
+標準ライブラリのパッケージは、ネイティブコードを持つもの（`std/http`、`std/websocket`、`std/sqlite`、`std/store`、`std/svg`）も含めて、Apple TV でも iPhone と同じように動きます。プラットフォーム SDK のパッケージは、tvOS にそのサービスがあるものが Apple TV で動きます。ただし、スマートフォンよりできることが少ないものもあります。
+
+| パッケージ | Apple TV では |
+|---|---|
+| `platform/analytics` | iPhone と同じ（Firebase。`ios.googleServices` が必要です） |
+| `platform/appearance`、`platform/audio`、`platform/crash`、`platform/document`、`platform/icloud`、`platform/imageedit`、`platform/network`、`platform/periodic`、`platform/speech`、`platform/splash`、`platform/tracking`、`platform/vision` | iPhone と同じ |
+| `platform/appicon` | iPhone と同じ。`alternateIcons` のアイコンも、アプリのアイコンと同じようにレイヤー画像になります |
+| `platform/appleauth` | iPhone と同じ。「Apple でサインイン」のシートとボタン |
+| `platform/bluetooth` | セントラルとしてだけ動きます（スキャン、接続、読み書き）。`serve` と `advertise` は `unsupported` を投げます |
+| `platform/device` | `info`、`openURL`、`openSettings`、`keepAwake` が使えます。ブラウザ、写真ピッカー、書類ピッカーはなく（`unsupported`）、クリップボードもありません。読んでも何もなく、コピーすると `unsupported` を投げます |
+| `platform/googleauth` | `signInWithCode` を使います。テレビにアドレスとコードを表示し、ユーザーがスマートフォンやコンピュータで入力する、Google のテレビ向けのサインインです。`signIn` はエラーを投げます |
+| `platform/integrity` | App Attest。実機の Apple TV でだけ使えます（シミュレーターでは使えません） |
+| `platform/js` | WebKit なしの JavaScriptCore で動きます。言語と組み込みオブジェクト、タイマーはありますが、DOM や `fetch` はありません |
+| `platform/location` | 使用中のみの許可で、位置を一度に一つずつ取得します。`positions()` は 5 分ごとに取り直します。バックグラウンドの更新はなく、領域はアプリの実行中にパッケージが計算します |
+| `platform/maps` | Apple マップ。回転や傾きはできません |
+| `platform/notify` | バッジだけです。`request` でバッジの許可を求め、`setBadge` でバッジを付けます。`schedule` と `show` は `unsupported` を投げます |
+| `platform/nowplaying` | iPhone と同じ。コントロールセンターとリモコンの再生・一時停止 |
+| `platform/power` | バッテリーはありません（`battery` は false）。わかるのは熱の状態だけです |
+| `platform/purchase` | iPhone と同じく StoreKit。`manageSubscriptions`、`requestRefund`、`redeemCode` は `unsupported` を投げます（tvOS にはそうしたシートがなく、サブスクリプションは「設定」で管理します） |
+| `platform/push` | デバイスのトークンが取れます。プッシュはバッジを付けるか、データとしてアプリに届き（`received`）、開かれるものはありません |
+| `platform/screen` | テレビの画面です。設定できる明るさはありません |
+| `platform/secure` | キーチェーン。`protected` のシークレットは `SecureError.notAvailable` になります。Apple TV にはパスコードも Face ID も Touch ID もないからです |
+
+ほかのパッケージは、tvOS にないものを使うため tvOS 向けにはビルドされません。`platform/ads`（Google の広告 SDK は tvOS に対応していません）、`agerange`、`biometric`（`check` はないと答えます）、`calendar`、`camera` と `record`（Apple TV 自体にはカメラもマイクもありません）、`compose`、`contacts`、`dialog`、`health`、`liveactivity`、`nfc`、`pay`、`pdf`、`photos`、`preview`、`print`、`review`（tvOS には評価のプロンプトがありません）、`scan`、`sensors`、`sharesheet`、`shortcuts`、`transcribe`、`webauth`、`webview`、`widget`、それにデスクトップ用のもの（`tray`、`dock`、`hotkey` など）は iPhone と同じです。これらを呼ぶと `unsupported` を投げるか、ないと答えます（`biometric.check`）。
+
 ## tvOS のネイティブパッケージ
+
 
 ネイティブパッケージの Swift は、`Package.swift` のプラットフォームに tvOS が含まれていれば（あるいはプラットフォームを一つも挙げていなければ）、tvOS 向けにビルドされます。
 

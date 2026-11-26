@@ -117,8 +117,8 @@ type ascClient struct {
 	poll time.Duration
 	// parallel is how many parts of a build upload at once.
 	parallel int
-	// platform is the app's on App Store Connect: "IOS" ("" too), or
-	// "MAC_OS" for the Mac App Store.
+	// platform is the app's on App Store Connect: "IOS" ("" too),
+	// "TV_OS" for Apple TV, or "MAC_OS" for the Mac App Store.
 	platform string
 }
 
@@ -431,7 +431,7 @@ func (c *ascClient) findApp(bundleID string) (ascRes[ascApp], error) {
 			return a, nil
 		}
 	}
-	return ascRes[ascApp]{}, fmt.Errorf("App Store Connect has no app %s (or the API key can't see it): add it (Apps › + › New App) with that bundle ID, then publish again", bundleID)
+	return ascRes[ascApp]{}, fmt.Errorf("App Store Connect has no app %s (or the API key can't see it): add it (Apps › + › New App, with the %s platform) with that bundle ID, then publish again", bundleID, platformNames[c.plat()])
 }
 
 // buildNumber reads a build number: its first number ("12" of "12" or
@@ -470,6 +470,30 @@ func (c *ascClient) highestBuild(appID string) (int, error) {
 		}
 	}
 	return high, nil
+}
+
+// platformNames are App Store Connect's platforms as its pages name
+// them.
+var platformNames = map[string]string{"IOS": "iOS", "TV_OS": "tvOS", "MAC_OS": "macOS"}
+
+// checkPlatform fails if the app's record has no versions of c's
+// platform: the record wasn't made for it, nor was the platform added
+// since (adding it makes its first version), so App Store Connect would
+// refuse the upload. An iPhone app's record has iOS from the start.
+func (c *ascClient) checkPlatform(appID string) error {
+	if c.plat() == "IOS" {
+		return nil
+	}
+	vs, err := ascList[ascVersion](c, "/v1/apps/"+appID+"/appStoreVersions"+query("filter[platform]", c.plat(),
+		"fields[appStoreVersions]", "versionString", "limit", "1"), 1)
+	if err != nil {
+		return err
+	}
+	if len(vs) == 0 {
+		name := platformNames[c.plat()]
+		return fmt.Errorf("the app has no %s platform on App Store Connect: add it (the app's page, Add Platform › %s; it shares the record, its bundle ID and in-app purchases with the app's other platforms), then publish again", name, name)
+	}
+	return nil
 }
 
 // closedStates are a version's states that take no more builds: approved,

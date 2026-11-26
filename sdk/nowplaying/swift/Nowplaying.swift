@@ -4,7 +4,8 @@
 // headsets and the keyboard's media keys send. iOS shows the app whose
 // audio session plays: the session is put in the playback category (the
 // package gives the app the audio background mode, so it plays on with
-// the screen locked).
+// the screen locked). Apple TV's Now Playing (Control Center, the Siri
+// Remote's buttons) is the same center's.
 import Asuka
 import AVFoundation
 import Foundation
@@ -49,9 +50,10 @@ typealias PlatformImage = NSImage
         info = new
         if !targets {
             targets = true
-            #if os(iOS)
+            #if os(iOS) || os(tvOS)
             // Heard with the silent switch on and the screen locked; iOS
-            // shows the Now Playing of the app whose session plays.
+            // (and tvOS) shows the Now Playing of the app whose session
+            // plays.
             try? AVAudioSession.sharedInstance().setCategory(.playback)
             UIApplication.shared.beginReceivingRemoteControlEvents()
             #endif

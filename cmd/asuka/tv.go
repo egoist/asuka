@@ -61,11 +61,12 @@ func (c *appConfig) checkTV(dir string) error {
 }
 
 // tvHostFlags are the iOS host's optional parts tvOS has what they need
-// of: the others (WebKit's web views, notifications, the photo library,
-// contacts, calendars, mail, widgets and Live Activities, share and
-// notification extensions) aren't built for it, and the packages that
-// call them throw unsupported there.
-var tvHostFlags = []string{"ASUKA_CRASH", "ASUKA_ICLOUD", "ASUKA_LIBRARY", "ASUKA_PERIODIC", "ASUKA_SHADER", "ASUKA_VIDEO"}
+// of (notifications and pushes as tvOS has them: the badge, and data
+// pushes): the others (WebKit's web views, communication notifications,
+// the photo library, contacts, calendars, mail, widgets and Live
+// Activities, share and notification extensions) aren't built for it,
+// and the packages that call them throw unsupported there.
+var tvHostFlags = []string{"ASUKA_CRASH", "ASUKA_ICLOUD", "ASUKA_LIBRARY", "ASUKA_NOTIFY", "ASUKA_PERIODIC", "ASUKA_PUSH", "ASUKA_SHADER", "ASUKA_VIDEO"}
 
 // hostFeatures are the host's flags a build of t has of features: all
 // of them on iOS, tvOS's on a TV.
@@ -188,17 +189,22 @@ func (t *iosToolchain) linkTV(app *asukaApp, work, hostObj, lib string) (string,
 // and its front (the icon in the middle, as tall as frac of it; nothing
 // over a banner, which has its own).
 func (c *appConfig) tvLayers(w, h int, frac float64) (back, front *image.NRGBA, err error) {
-	if c.TV.Banner != "" {
-		b, err := loadImage(c.TV.Banner)
+	return c.tvLayersOf(c.Icon, c.TV.Banner, w, h, frac)
+}
+
+// tvLayersOf are tvLayers of an icon or a banner (the banner's ahead).
+func (c *appConfig) tvLayersOf(iconPath, banner string, w, h int, frac float64) (back, front *image.NRGBA, err error) {
+	if banner != "" {
+		b, err := loadImage(banner)
 		if err != nil {
 			return nil, nil, err
 		}
 		return cover(b, w, h), image.NewNRGBA(image.Rect(0, 0, w, h)), nil
 	}
-	if c.Icon == "" {
+	if iconPath == "" {
 		return nil, nil, errors.New("asuka.toml has no icon (nor tv.banner) to make the TV's banner of")
 	}
-	icon, err := loadIcon(c.Icon)
+	icon, err := loadIcon(iconPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -282,56 +288,18 @@ func cover(src *image.NRGBA, w, h int) *image.NRGBA {
 
 // writeTVBrandAssets writes Apple TV's icon and top shelf images into the
 // asset catalog cat: "App Icon & Top Shelf Image", which actool compiles
-// into the bundle's icons (CFBundleIcons) and TVTopShelfImage.
+// into the bundle's icons (CFBundleIcons) and TVTopShelfImage; and each
+// of asuka.toml's alternateIcons as an image stack of its name (its icon
+// in the middle of tv.background, or of its corner's color), which
+// actool lists in CFBundleAlternateIcons (platform/appicon).
 func (c *appConfig) writeTVBrandAssets(cat string) error {
 	ba := filepath.Join(cat, tvBrandAssets+".brandassets")
 	os.RemoveAll(ba)
-	info := map[string]any{"author": "asuka", "version": 1}
-	writeJSON := func(dir string, v map[string]any) error {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-		v["info"] = info
-		b, _ := json.MarshalIndent(v, "", "  ")
-		return os.WriteFile(filepath.Join(dir, "Contents.json"), b, 0o644)
-	}
-	// An icon: a stack of two layers, the back and the front, which tvOS
-	// moves apart as the focus tilts it (its parallax).
-	stack := func(name string, w, h int, scales []int, idiom string) error {
-		dir := filepath.Join(ba, name+".imagestack")
-		var layers []any
-		for _, l := range []string{"Front", "Back"} {
-			ldir := filepath.Join(dir, l+".imagestacklayer")
-			var images []any
-			for _, s := range scales {
-				back, front, err := c.tvLayers(w*s, h*s, 0.6)
-				if err != nil {
-					return err
-				}
-				img := front
-				if l == "Back" {
-					img = back
-				}
-				file := fmt.Sprintf("%s@%dx.png", strings.ToLower(l), s)
-				if err := writePNG(filepath.Join(ldir, "Content.imageset", file), img); err != nil {
-					return err
-				}
-				images = append(images, map[string]any{"filename": file, "idiom": idiom, "scale": fmt.Sprintf("%dx", s)})
-			}
-			if err := writeJSON(filepath.Join(ldir, "Content.imageset"), map[string]any{"images": images}); err != nil {
-				return err
-			}
-			if err := writeJSON(ldir, map[string]any{}); err != nil {
-				return err
-			}
-			layers = append(layers, map[string]any{"filename": l + ".imagestacklayer"})
-		}
-		return writeJSON(dir, map[string]any{"layers": layers})
-	}
-	if err := stack("App Icon", 400, 240, []int{1, 2}, "tv"); err != nil {
+	main := func(w, h int, frac float64) (*image.NRGBA, *image.NRGBA, error) { return c.tvLayers(w, h, frac) }
+	if err := writeTVStack(filepath.Join(ba, "App Icon.imagestack"), 400, 240, []int{1, 2}, main); err != nil {
 		return err
 	}
-	if err := stack("App Icon - App Store", 1280, 768, []int{1}, "tv"); err != nil {
+	if err := writeTVStack(filepath.Join(ba, "App Icon - App Store.imagestack"), 1280, 768, []int{1}, main); err != nil {
 		return err
 	}
 	// The top shelf's: the app's image, flat, wide.
@@ -349,7 +317,7 @@ func (c *appConfig) writeTVBrandAssets(cat string) error {
 			}
 			images = append(images, map[string]any{"filename": file, "idiom": "tv", "scale": fmt.Sprintf("%dx", s)})
 		}
-		return writeJSON(dir, map[string]any{"images": images})
+		return writeCatalogJSON(dir, map[string]any{"images": images})
 	}
 	if err := shelf("Top Shelf Image", 1920, 720); err != nil {
 		return err
@@ -357,12 +325,69 @@ func (c *appConfig) writeTVBrandAssets(cat string) error {
 	if err := shelf("Top Shelf Image Wide", 2320, 720); err != nil {
 		return err
 	}
-	return writeJSON(ba, map[string]any{"assets": []any{
+	if err := writeCatalogJSON(ba, map[string]any{"assets": []any{
 		map[string]any{"filename": "App Icon - App Store.imagestack", "idiom": "tv", "role": "primary-app-icon", "size": "1280x768"},
 		map[string]any{"filename": "App Icon.imagestack", "idiom": "tv", "role": "primary-app-icon", "size": "400x240"},
 		map[string]any{"filename": "Top Shelf Image Wide.imageset", "idiom": "tv", "role": "top-shelf-image-wide", "size": "2320x720"},
 		map[string]any{"filename": "Top Shelf Image.imageset", "idiom": "tv", "role": "top-shelf-image", "size": "1920x720"},
-	}})
+	}}); err != nil {
+		return err
+	}
+	for _, name := range c.alternateIconNames() {
+		icon := c.AlternateIcons[name]
+		dir := filepath.Join(cat, name+".imagestack")
+		os.RemoveAll(dir)
+		if err := writeTVStack(dir, 400, 240, []int{1, 2}, func(w, h int, frac float64) (*image.NRGBA, *image.NRGBA, error) {
+			return c.tvLayersOf(icon, "", w, h, frac)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeTVStack writes an icon at dir: a stack of two layers of w×h at
+// scales, the back and the front, which tvOS moves apart as the focus
+// tilts it (its parallax).
+func writeTVStack(dir string, w, h int, scales []int, layersOf func(w, h int, frac float64) (*image.NRGBA, *image.NRGBA, error)) error {
+	var layers []any
+	for _, l := range []string{"Front", "Back"} {
+		ldir := filepath.Join(dir, l+".imagestacklayer")
+		var images []any
+		for _, s := range scales {
+			back, front, err := layersOf(w*s, h*s, 0.6)
+			if err != nil {
+				return err
+			}
+			img := front
+			if l == "Back" {
+				img = back
+			}
+			file := fmt.Sprintf("%s@%dx.png", strings.ToLower(l), s)
+			if err := writePNG(filepath.Join(ldir, "Content.imageset", file), img); err != nil {
+				return err
+			}
+			images = append(images, map[string]any{"filename": file, "idiom": "tv", "scale": fmt.Sprintf("%dx", s)})
+		}
+		if err := writeCatalogJSON(filepath.Join(ldir, "Content.imageset"), map[string]any{"images": images}); err != nil {
+			return err
+		}
+		if err := writeCatalogJSON(ldir, map[string]any{}); err != nil {
+			return err
+		}
+		layers = append(layers, map[string]any{"filename": l + ".imagestacklayer"})
+	}
+	return writeCatalogJSON(dir, map[string]any{"layers": layers})
+}
+
+// writeCatalogJSON writes an asset catalog entry's Contents.json in dir.
+func writeCatalogJSON(dir string, v map[string]any) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	v["info"] = map[string]any{"author": "asuka", "version": 1}
+	b, _ := json.MarshalIndent(v, "", "  ")
+	return os.WriteFile(filepath.Join(dir, "Contents.json"), b, 0o644)
 }
 
 // tvBrandAssets is the catalog's app icon set on tvOS, as Xcode names it.

@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "ImageeditNative",
-    platforms: [.iOS("16.0"), .macOS("13.0")],
+    platforms: [.iOS("16.0"), .tvOS("17.0"), .macOS("13.0")],
     products: [.library(name: "ImageeditNative", targets: ["ImageeditNative"])],
     dependencies: [
         .package(url: "https://github.com/egoist/asuka", from: "0.1.0"),

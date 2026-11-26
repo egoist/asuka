@@ -1,10 +1,14 @@
 // platform/device on iOS and the Mac: UIDevice and the bundle, the in-app
 // browser (SFSafariViewController; the Mac's browser), PHPicker and the
-// document picker (NSOpenPanel on the Mac), the pasteboard.
+// document picker (NSOpenPanel on the Mac), the pasteboard. Apple TV has
+// no browser, pickers or clipboard: those say unsupported, or nothing's
+// there.
 import Foundation
 import UniformTypeIdentifiers
 import Asuka
-#if canImport(UIKit)
+#if os(tvOS)
+import UIKit
+#elseif canImport(UIKit)
 import UIKit
 import SafariServices
 import PhotosUI
@@ -20,7 +24,7 @@ final class SystemDevice: Platform {
         let (source, installed, updated) = Self.install()
         #if canImport(UIKit)
         return await MainActor.run {
-            NativeInfo(model: UIDevice.current.model, system: UIDevice.current.systemName, systemVersion: UIDevice.current.systemVersion, appVersion: app, build: build,
+            NativeInfo(model: UIDevice.current.model, system: Self.systemName, systemVersion: UIDevice.current.systemVersion, appVersion: app, build: build,
                        source: source, installedMs: installed, updatedMs: updated)
         }
         #else
@@ -30,6 +34,17 @@ final class SystemDevice: Platform {
                           source: source, installedMs: installed, updatedMs: updated)
         #endif
     }
+
+    #if canImport(UIKit)
+    /// The system's name: "iOS" (iPadOS's too), "tvOS".
+    @MainActor static var systemName: String {
+        #if os(tvOS)
+        return "tvOS"
+        #else
+        return UIDevice.current.systemName
+        #endif
+    }
+    #endif
 
     /// Where the app came from, and when it was installed and updated (ms
     /// since 1970; 0: unknown). The store's receipt says a store's copy:
@@ -80,7 +95,9 @@ final class SystemDevice: Platform {
         guard let u = URL(string: url), u.scheme == "https" || u.scheme == "http" else {
             throw Self.error("device: not a web URL: \(url)")
         }
-        #if canImport(UIKit)
+        #if os(tvOS)
+        throw AsukaNativeError.unsupported("device: tvOS has no web browser")
+        #elseif canImport(UIKit)
         try await MainActor.run {
             guard let top = AsukaNative.presenter else { throw Self.error("device: no screen to show it on") }
             top.present(SFSafariViewController(url: u), animated: true)
@@ -92,7 +109,9 @@ final class SystemDevice: Platform {
     }
 
     func pickPhotos(max: Int) async throws -> [String] {
-        #if canImport(UIKit)
+        #if os(tvOS)
+        throw AsukaNativeError.unsupported("device: tvOS has no photo picker")
+        #elseif canImport(UIKit)
         let results: [PHPickerResult] = try await MainActor.run {
             guard let top = AsukaNative.presenter else { throw Self.error("device: no screen to show it on") }
             return top
@@ -104,6 +123,9 @@ final class SystemDevice: Platform {
     }
 
     func pickFiles(types: [String], multiple: Bool) async throws -> [File] {
+        #if os(tvOS)
+        throw AsukaNativeError.unsupported("device: tvOS has no document picker")
+        #else
         var uts = types.compactMap(Self.utType)
         if uts.isEmpty || uts.contains(.item) { uts = [.item] }
         #if canImport(UIKit)
@@ -115,22 +137,29 @@ final class SystemDevice: Platform {
         #else
         return try await Self.open(types: uts, multiple: multiple, limit: 0)
         #endif
+        #endif
     }
 
     func clipboardText() async throws -> String? {
-        await MainActor.run {
+        #if os(tvOS)
+        return nil // tvOS has no clipboard
+        #else
+        return await MainActor.run {
             #if canImport(UIKit)
             UIPasteboard.general.string
             #else
             NSPasteboard.general.string(forType: .string)
             #endif
         }
+        #endif
     }
 
     func clipboardHas() async throws -> ClipboardKinds { await MainActor.run { Self.kinds() } }
 
     @MainActor static func kinds() -> ClipboardKinds {
-        #if canImport(UIKit)
+        #if os(tvOS)
+        return ClipboardKinds(text: false, image: false, url: false, html: false)
+        #elseif canImport(UIKit)
         let pb = UIPasteboard.general
         // contains(pasteboardTypes:) reads the types, not the data: no prompt.
         return ClipboardKinds(text: pb.hasStrings, image: pb.hasImages, url: pb.hasURLs,
@@ -152,7 +181,10 @@ final class SystemDevice: Platform {
     static let webArchive = "Apple Web Archive pasteboard type"
 
     func clipboardHTML() async throws -> String? {
-        await MainActor.run {
+        #if os(tvOS)
+        return nil
+        #else
+        return await MainActor.run {
             #if canImport(UIKit)
             let pb = UIPasteboard.general
             func data(_ t: String) -> Data? {
@@ -169,6 +201,7 @@ final class SystemDevice: Platform {
             }
             return nil
         }
+        #endif
     }
 
     /// A rich type's data as HTML: HTML as it is (UTF-8; UTF-16 with its
@@ -198,6 +231,9 @@ final class SystemDevice: Platform {
     }
 
     func copyHTML(html: String, text: String) async throws {
+        #if os(tvOS)
+        throw AsukaNativeError.unsupported("device: tvOS has no clipboard")
+        #else
         await MainActor.run {
             #if canImport(UIKit)
             UIPasteboard.general.setItems([[UTType.html.identifier: Data(html.utf8), UTType.utf8PlainText.identifier: text]])
@@ -209,9 +245,13 @@ final class SystemDevice: Platform {
             pb.setString(text, forType: .string)
             #endif
         }
+        #endif
     }
 
     func clipboardImage() async throws -> String? {
+        #if os(tvOS)
+        return nil
+        #else
         // The image as it was copied (its bytes, not a re-encoding), in the
         // first image type the clipboard has.
         let found: (Data, String)? = await MainActor.run {
@@ -238,9 +278,13 @@ final class SystemDevice: Platform {
         let f = try Self.cacheDir("asuka-clipboard").appendingPathComponent(UUID().uuidString + "." + ext)
         try data.write(to: f)
         return f.path
+        #endif
     }
 
     func copyImage(path: String) async throws {
+        #if os(tvOS)
+        throw AsukaNativeError.unsupported("device: tvOS has no clipboard")
+        #else
         let url = URL(fileURLWithPath: path)
         guard let data = try? Data(contentsOf: url) else { throw Self.error("device: no file at \(path)") }
         try await MainActor.run {
@@ -267,14 +311,19 @@ final class SystemDevice: Platform {
             }
             #endif
         }
+        #endif
     }
 
     func watchClipboard(changed: @escaping (ClipboardKinds) -> Void) async throws {
+        #if os(tvOS)
+        return // nothing changes: tvOS has no clipboard
+        #else
         let w = await MainActor.run { ClipboardWatch(changed) }
         defer { Task { @MainActor in w.stop() } }
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 3_600_000_000_000)
         }
+        #endif
     }
 
     @MainActor func keepAwake(on: Bool) throws {
@@ -343,7 +392,7 @@ final class SystemDevice: Platform {
         return out
     }
 
-    #if canImport(UIKit)
+    #if canImport(UIKit) && !os(tvOS)
     /// Copies the picked images to files (the picker's are temporary).
     static func copy(_ results: [PHPickerResult]) async -> [String] {
         guard let dir = try? cacheDir("asuka-photos") else { return [] }
@@ -385,6 +434,7 @@ final class SystemDevice: Platform {
     static func error(_ m: String) -> Error { NSError(domain: "device", code: 0, userInfo: [NSLocalizedDescriptionKey: m]) }
 }
 
+#if !os(tvOS)
 /// Watches the pasteboard: iOS says when it changes (and the app coming
 /// back may bring another app's copy); the Mac doesn't, so its change
 /// count is read twice a second.
@@ -429,8 +479,10 @@ final class SystemDevice: Platform {
         timer = nil
     }
 }
+#endif
 
-#if canImport(UIKit)
+#if os(tvOS)
+#elseif canImport(UIKit)
 extension UIViewController {
     /// PHPicker over this controller, for up to max images: what's picked.
     @MainActor func pickPhotos(_ max: Int) async -> [PHPickerResult] {

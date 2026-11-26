@@ -115,7 +115,9 @@ final class AppleIDProvider: Provider {
     func setVariant(_ value: ButtonVariant) { variant = value; make() }
     func setCornerRadius(_ value: Double) {
         radius = value
+        #if !os(tvOS) // tvOS's button keeps its own shape
         if radius >= 0 { box.button?.cornerRadius = radius }
+        #endif
     }
 
     private func make() {
@@ -129,10 +131,14 @@ final class AppleIDProvider: Provider {
         default: s = box.dark ? .white : .black
         }
         let b = ASAuthorizationAppleIDButton(authorizationButtonType: t, authorizationButtonStyle: s)
+        #if os(tvOS)
+        // The remote's Select, on the focused button.
+        b.addTarget(self, action: #selector(pressed), for: .primaryActionTriggered)
+        #elseif canImport(UIKit)
         if radius >= 0 { b.cornerRadius = radius }
-        #if canImport(UIKit)
         b.addTarget(self, action: #selector(pressed), for: .touchUpInside)
         #else
+        if radius >= 0 { b.cornerRadius = radius }
         b.target = self
         b.action = #selector(pressed)
         #endif

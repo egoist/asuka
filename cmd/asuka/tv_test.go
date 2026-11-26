@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -184,8 +185,8 @@ func TestTVOSToolchain(t *testing.T) {
 		}
 	}
 	// The host's parts tvOS has; iOS keeps them all.
-	all := []string{"ASUKA_NOTIFY", "ASUKA_SHADER", "ASUKA_VIDEO", "ASUKA_WEBVIEW", "ASUKA_WIDGET"}
-	if got := tc.hostFeatures(all); !slices.Equal(got, []string{"ASUKA_SHADER", "ASUKA_VIDEO"}) {
+	all := []string{"ASUKA_CONVERSATIONS", "ASUKA_NOTIFY", "ASUKA_PUSH", "ASUKA_SHADER", "ASUKA_VIDEO", "ASUKA_WEBVIEW", "ASUKA_WIDGET"}
+	if got := tc.hostFeatures(all); !slices.Equal(got, []string{"ASUKA_NOTIFY", "ASUKA_PUSH", "ASUKA_SHADER", "ASUKA_VIDEO"}) {
 		t.Errorf("tvOS's host flags: %v", got)
 	}
 	if got := (&iosToolchain{sdkName: "iphoneos"}).hostFeatures(all); !slices.Equal(got, all) {
@@ -287,5 +288,52 @@ func TestTVBrandAssets(t *testing.T) {
 	front := decodePNG(t, filepath.Join(ba, "App Icon.imagestack", "Front.imagestacklayer", "Content.imageset", "front@1x.png"))
 	if _, _, _, a := front.At(2, 2).RGBA(); a != 0 {
 		t.Error("the front layer isn't clear at its edge")
+	}
+}
+
+// An alternate icon (platform/appicon) on Apple TV: an image stack of its
+// name in the catalog, which actool (where Xcode has tvOS) lists in
+// CFBundleAlternateIcons beside the brand assets' primary icon.
+func TestTVAlternateIcons(t *testing.T) {
+	dir := t.TempDir()
+	icon := writeTestIcon(t, dir)
+	c := &appConfig{Icon: icon, AlternateIcons: map[string]string{"Dark": icon}}
+	cat := filepath.Join(dir, "Assets.xcassets")
+	if err := writeCatalogJSON(cat, map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.writeTVBrandAssets(cat); err != nil {
+		t.Fatal(err)
+	}
+	img := decodePNG(t, filepath.Join(cat, "Dark.imagestack", "Back.imagestacklayer", "Content.imageset", "back@2x.png"))
+	if b := img.Bounds(); b.Dx() != 800 || b.Dy() != 480 {
+		t.Errorf("back@2x: %v", b)
+	}
+	if err := exec.Command("xcrun", "--sdk", "appletvsimulator", "--show-sdk-version").Run(); err != nil {
+		t.Skip("no tvOS SDK (Xcode's tvOS platform)")
+	}
+	out, partial := filepath.Join(dir, "out"), filepath.Join(dir, "partial.plist")
+	os.MkdirAll(out, 0o755)
+	cmd := exec.Command("xcrun", "actool", "--compile", out, "--platform", "appletvsimulator", "--minimum-deployment-target", tvosMin,
+		"--target-device", "tv", "--app-icon", tvBrandAssets, "--alternate-app-icon", "Dark",
+		"--output-partial-info-plist", partial, "--output-format", "human-readable-text", cat)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("actool: %v\n%s", err, b)
+	} else if strings.Contains(string(b), "warning") {
+		t.Errorf("actool: %s", b)
+	}
+	b, err := exec.Command("plutil", "-convert", "json", "-o", "-", partial).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info struct {
+		CFBundleIcons struct {
+			CFBundlePrimaryIcon    string
+			CFBundleAlternateIcons map[string]struct{ CFBundleIconName string }
+		}
+	}
+	json.Unmarshal(b, &info)
+	if info.CFBundleIcons.CFBundlePrimaryIcon != "App Icon" || info.CFBundleIcons.CFBundleAlternateIcons["Dark"].CFBundleIconName != "Dark" {
+		t.Errorf("CFBundleIcons: %s", b)
 	}
 }

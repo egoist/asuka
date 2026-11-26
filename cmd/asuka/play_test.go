@@ -329,7 +329,7 @@ func TestPublishFlags(t *testing.T) {
 		err  string
 	}{
 		{[]string{}, "usage"},
-		{[]string{"--platform", "web"}, "one of ios, android, mac, windows, linux"},
+		{[]string{"--platform", "web"}, "one of ios, tvos, android, mac, windows, linux"},
 		{[]string{"--platform", "mac"}, ""},
 		{[]string{"--platform", "mac", "--arch", "arm64"}, "--arch is for --platform linux or windows"},
 		{[]string{"--platform", "linux", "--notarize", "env"}, "--notarize is for --platform mac"},

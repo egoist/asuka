@@ -11,7 +11,9 @@
 //
 // Each platform's host shows them as its own apps' do (iOS's and macOS's
 // UserNotifications, Android's notifications, Windows' toasts, Linux's
-// desktop notifications, the browser's), through platform/host.
+// desktop notifications, the browser's), through platform/host. Apple TV
+// shows none: request asks for the app's badge, setBadge sets it, and
+// schedule and show throw unsupported.
 //
 //   if try await notify.request() {
 //     try await notify.schedule(notify.Notification(title: "Tea", body: "It's ready", after: 4min))

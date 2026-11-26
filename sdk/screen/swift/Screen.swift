@@ -9,7 +9,8 @@
 // phone's. A capture is the app's window on iOS (what's on the screen
 // while it's in front), a display's picture on the Mac: ScreenCaptureKit
 // on macOS 14 and later, CGDisplayCreateImage before; both ask for Screen
-// Recording.
+// Recording. Apple TV: its one screen, the TV, whose brightness is the
+// TV's own (none to set).
 import Foundation
 import Asuka
 import ImageIO
@@ -48,13 +49,15 @@ final class SystemScreens: Screens {
     @MainActor func preventCapture(on: Bool) throws { CaptureGuard.shared.set(on) }
 
     @MainActor func setBrightness(level: Double) throws {
-        #if canImport(UIKit)
+        #if canImport(UIKit) && !os(tvOS)
         BrightnessKeeper.shared.set(level < 0 ? nil : CGFloat(level))
         #endif
     }
 
     @MainActor func brightness() throws -> Double {
-        #if canImport(UIKit)
+        #if os(tvOS)
+        return -1 // the TV's own
+        #elseif canImport(UIKit)
         return Double(BrightnessKeeper.shared.level ?? BrightnessKeeper.screen.brightness)
         #else
         return -1 // a Mac's displays are the user's to set
@@ -193,7 +196,12 @@ final class SystemScreens: Screens {
             let b = s.bounds
             let r = Rect(x: x, y: 0, width: b.width, height: b.height)
             x += b.width
-            return Display(id: s === main ? "main" : "external-\(i)", name: s === main ? "Built-in Display" : "External Display",
+            #if os(tvOS)
+            let builtIn = "TV"
+            #else
+            let builtIn = "Built-in Display"
+            #endif
+            return Display(id: s === main ? "main" : "external-\(i)", name: s === main ? builtIn : "External Display",
                            bounds: r, workArea: r, scale: s.scale, refreshRate: Double(s.maximumFramesPerSecond), primary: s === main)
         }
         #else
@@ -235,7 +243,11 @@ final class SystemScreens: Screens {
         super.init()
         let nc = NotificationCenter.default
         #if canImport(UIKit)
-        for n in [UIScene.willConnectNotification, UIScene.didDisconnectNotification, UIScreen.modeDidChangeNotification, UIDevice.orientationDidChangeNotification] {
+        var names = [UIScene.willConnectNotification, UIScene.didDisconnectNotification, UIScreen.modeDidChangeNotification]
+        #if os(iOS)
+        names.append(UIDevice.orientationDidChangeNotification)
+        #endif
+        for n in names {
             nc.addObserver(self, selector: #selector(report), name: n, object: nil)
         }
         #else
@@ -287,7 +299,11 @@ final class SystemScreens: Screens {
             let v = cover ?? {
                 let v = UIView(frame: window.bounds)
                 v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                #if os(tvOS)
+                v.backgroundColor = .black
+                #else
                 v.backgroundColor = .systemBackground
+                #endif
                 return v
             }()
             cover = v
@@ -302,7 +318,7 @@ final class SystemScreens: Screens {
     }
 }
 
-#if canImport(UIKit)
+#if canImport(UIKit) && !os(tvOS)
 /// The app's brightness: UIScreen's is the device's, kept after the app
 /// leaves, so the user's is put back as the app goes into the background
 /// and the app's set again as it comes back, as Wallet does with a pass.
@@ -340,6 +356,9 @@ final class SystemScreens: Screens {
     }
 }
 
+#endif
+
+#if canImport(UIKit)
 /// Counts the screenshots the user takes while watched.
 @MainActor final class ScreenshotWatch: NSObject {
     private let taken: (Int) -> Void

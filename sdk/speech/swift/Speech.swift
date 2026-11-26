@@ -9,7 +9,7 @@ import Foundation
     static let shared = SpeechSynth()
     private let synth = AVSpeechSynthesizer()
     private var waiting: [ObjectIdentifier: CheckedContinuation<Void, Error>] = [:]
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     private var session: (AVAudioSession.Category, AVAudioSession.CategoryOptions)? // what it was, if this set it
     #endif
 
@@ -57,7 +57,7 @@ import Foundation
     func resume() { synth.continueSpeaking() }
     var speaking: Bool { synth.isSpeaking || synth.isPaused || !waiting.isEmpty }
 
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     /// Plays through the silent switch, ducking others, while it speaks,
     /// unless the app's session already plays (platform/audio's).
     private func claimSession() {

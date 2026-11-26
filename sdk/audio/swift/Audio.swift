@@ -42,7 +42,7 @@ import Foundation
     }
 
     func play() throws {
-        #if os(iOS)
+        #if os(iOS) || os(tvOS)
         // Heard with the silent switch on, as a music or game app's sound.
         try? AVAudioSession.sharedInstance().setCategory(.playback)
         try? AVAudioSession.sharedInstance().setActive(true)

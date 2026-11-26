@@ -12,7 +12,9 @@
 // its title, make it a message): iOS's Notification Service Extension
 // runs it, Android's Firebase service for data messages.
 //
-// Each platform's host does it as its apps do, through platform/host.
+// Each platform's host does it as its apps do, through platform/host. On
+// Apple TV a push shows no alert: it sets the badge, or reaches the app as
+// data (received); none is opened.
 
 import platform/host
 import std/json

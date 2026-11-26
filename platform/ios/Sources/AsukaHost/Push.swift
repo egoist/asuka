@@ -7,7 +7,9 @@ import UserNotifications
 /// "nextOpened" answer with the next message (push.Message's JSON), kept
 /// until asked; "stop" (the method's name) fails the waiting ones with
 /// "stopped". The notification center's delegate (AsukaNotifyCenter)
-/// hands it the pushes that come and the ones tapped.
+/// hands it the pushes that come and the ones tapped. On tvOS a push
+/// shows no alert: it sets the badge, or is data the app gets (received);
+/// none is opened.
 @MainActor final class AsukaPush {
     static let shared = AsukaPush()
     private var registering: [(Result<Data, Error>) -> Void] = []
@@ -17,7 +19,12 @@ import UserNotifications
     func methods() -> [String: AsukaModuleMethod] {
         [
             "register": { [unowned self] _, reply in
-                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                #if os(tvOS)
+                let options: UNAuthorizationOptions = [.badge]
+                #else
+                let options: UNAuthorizationOptions = [.alert, .sound, .badge]
+                #endif
+                UNUserNotificationCenter.current().requestAuthorization(options: options) { granted, _ in
                     DispatchQueue.main.async {
                         self.allowed = granted
                         self.registering.append(reply)

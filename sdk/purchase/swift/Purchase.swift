@@ -213,7 +213,7 @@ final class Send: @unchecked Sendable {
         let offerID = o.offer?.id ?? ""
         if let sig = o.signature, !offerID.isEmpty {
             if !sig.jws.isEmpty {
-                if #available(iOS 18.4, macOS 15.4, *) {
+                if #available(iOS 18.4, macOS 15.4, tvOS 18.4, *) {
                     options.formUnion(StoreKit.Product.PurchaseOption.promotionalOffer(offerID, compactJWS: sig.jws))
                 }
             } else {
@@ -222,7 +222,7 @@ final class Send: @unchecked Sendable {
                 }
                 options.insert(.promotionalOffer(offerID: offerID, keyID: sig.keyId, nonce: nonce, signature: data, timestamp: sig.timestamp))
             }
-        } else if o.offer?.type == .winBack, #available(iOS 18.0, macOS 15.0, *) {
+        } else if o.offer?.type == .winBack, #available(iOS 18.0, macOS 15.0, tvOS 18.0, *) {
             if let w = p.subscription?.winBackOffers.first(where: { $0.id == offerID }) { options.insert(.winBackOffer(w)) }
         }
         let result: StoreKit.Product.PurchaseResult
@@ -294,7 +294,11 @@ final class Send: @unchecked Sendable {
     }
 
     func manage(_ productID: String) async throws {
-        #if canImport(UIKit)
+        #if os(tvOS)
+        // tvOS has no sheet of the user's subscriptions: they're in
+        // Settings › Users and Accounts › Subscriptions.
+        throw AsukaNativeError.unsupported("purchase: tvOS has no subscriptions sheet")
+        #elseif canImport(UIKit)
         guard let scene else { throw AsukaNativeError.unsupported("purchase: no screen") }
         if #available(iOS 17.0, *), let g = products[productID]?.subscription?.subscriptionGroupID {
             try await AppStore.showManageSubscriptions(in: scene, subscriptionGroupID: g)
@@ -308,18 +312,24 @@ final class Send: @unchecked Sendable {
     }
 
     func refund(_ id: UInt64) async throws -> Bool {
-        #if canImport(UIKit)
+        #if os(tvOS)
+        throw AsukaNativeError.unsupported("purchase: tvOS has no refund sheet")
+        #elseif canImport(UIKit)
         guard let scene else { throw AsukaNativeError.unsupported("purchase: no screen") }
         let s = try await StoreKit.Transaction.beginRefundRequest(for: id, in: scene)
         #else
         guard let c = window?.contentViewController else { throw AsukaNativeError.unsupported("purchase: no window") }
         let s = try await StoreKit.Transaction.beginRefundRequest(for: id, in: c)
         #endif
+        #if !os(tvOS)
         return s == .success
+        #endif
     }
 
     func redeem() async throws {
-        #if canImport(UIKit)
+        #if os(tvOS)
+        throw AsukaNativeError.unsupported("purchase: tvOS has no offer code sheet")
+        #elseif canImport(UIKit)
         guard let scene else { throw AsukaNativeError.unsupported("purchase: no screen") }
         try await AppStore.presentOfferCodeRedeemSheet(in: scene)
         #else
@@ -389,7 +399,7 @@ final class Send: @unchecked Sendable {
         case .introductory: return .introductory
         case .code: return .code
         default:
-            if #available(iOS 18.0, macOS 15.0, *), t == .winBack { return .winBack }
+            if #available(iOS 18.0, macOS 15.0, tvOS 18.0, *), t == .winBack { return .winBack }
             return .promotional
         }
     }
@@ -407,7 +417,7 @@ final class Send: @unchecked Sendable {
             var offers: [Offer] = []
             if let i = s.introductoryOffer { offers.append(offer(i, .introductory, currency)) }
             for o in s.promotionalOffers { offers.append(offer(o, .promotional, currency)) }
-            if #available(iOS 18.0, macOS 15.0, *) {
+            if #available(iOS 18.0, macOS 15.0, tvOS 18.0, *) {
                 for o in s.winBackOffers { offers.append(offer(o, .winBack, currency)) }
             }
             var level = 0
@@ -427,7 +437,7 @@ final class Send: @unchecked Sendable {
         var env = "", store = "", offerID = "", offerType = OfferType.base
         if #available(iOS 16.0, macOS 13.0, *) { env = t.environment.rawValue }
         if #available(iOS 17.0, macOS 14.0, *) { store = t.storefront.countryCode } else { store = t.storefrontCountryCode }
-        if #available(iOS 17.2, macOS 14.2, *) {
+        if #available(iOS 17.2, macOS 14.2, tvOS 17.2, *) {
             if let o = t.offer {
                 offerID = o.id ?? ""
                 offerType = Self.offerType(o.type)
