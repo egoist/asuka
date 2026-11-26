@@ -366,6 +366,7 @@ var Methods = []*Method{
 	{Recv: "ref", Name: "goForward", Sig: "()", Builtin: "ui.web_navigate", Consts: []int64{1}},
 	{Recv: "ref", Name: "reload", Sig: "()", Builtin: "ui.web_navigate", Consts: []int64{2}},
 	{Recv: "ref", Name: "stopLoading", Sig: "()", Builtin: "ui.web_navigate", Consts: []int64{3}},
+	{Recv: "ref", Name: "load", Sig: "(url: string)", Builtin: "ui.web_load", Doc: "loads url in a WebView now, the one it was given too once its page has moved on (a link followed): its url prop, unchanged, wouldn't"},
 	{Recv: "ref", Name: "insert", Sig: "(text: string)", Builtin: "ui.insert_text", Doc: "types text into a TextField where its cursor is, over its selection"},
 	{Recv: "ref", Name: "format", Sig: "(format: TextFormat, on: bool)", Builtin: "ui.format", Doc: "a rich TextField's selection (or what's typed next) in a style, or not"},
 	{Recv: "ref", Name: "toggleFormat", Sig: "(format: TextFormat)", Builtin: "ui.toggle_format"},

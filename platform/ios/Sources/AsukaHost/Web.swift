@@ -65,7 +65,23 @@ import AsukaOps
         loadFileURL(file, allowingReadAccessTo: file.deletingLastPathComponent())
     }
 
+    /// Reloaded after its page's process ended, before a page loaded since.
+    private var crashReloaded = false
+
+    /// The page's web content process ended (memory, a crash): reported,
+    /// and the page loaded again once, so the view isn't left blank; again
+    /// before a page loads, only reported.
+    func webViewWebContentProcessDidTerminate(_ w: WKWebView) {
+        let id = asukaID
+        runtime?.emit(id, .failed) { AsukaEvents.failed(id, "the page's web process ended") }
+        if !crashReloaded {
+            crashReloaded = true
+            w.reload()
+        }
+    }
+
     func webView(_ w: WKWebView, didFinish navigation: WKNavigation!) {
+        crashReloaded = false
         let id = asukaID, url = w.url?.absoluteString ?? ""
         runtime?.emit(id, .navigated) { AsukaEvents.navigated(id, url) }
     }

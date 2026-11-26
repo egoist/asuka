@@ -424,6 +424,20 @@ TEST(web_view) {
 	ak_fake_commands(f, AK_CMD_WEB_NAVIGATE, &cmds);
 	CHECK(cmds.len == 2 && ak_fake_op_at(f, cmds.data[0]).value.s.p[0] == 0 && ak_fake_op_at(f, cmds.data[1]).value.s.p[0] == 2);
 	ak_vec_free(&cmds);
+	// load(url): the URL it was given, sent again (its page has moved on
+	// since, which its prop, unchanged, wouldn't say).
+	ak_fake_reset(f);
+	ak_str *again = ak_str_c("https://example.com");
+	ak_ui_web_load(web, again);
+	ak_release(again);
+	ak_ui_flush();
+	ak_fake_view *after = nth(a, AK_KIND_WEB_VIEW, 0);
+	int sent = 0;
+	for (uint32_t i = 0; i < ak_fake_op_count(f); i++) {
+		ak_op op = ak_fake_op_at(f, i);
+		if (op.prop == AK_PROP_WEB_VIEW_URL && op.id == after->id) sent++;
+	}
+	CHECK_EQ_INT(sent, 1);
 	ak_str *t = settled_str(a, title), *c = settled_str(a, cookies);
 	CHECK(t && strcmp(t->data, "\"A page\"") == 0);
 	CHECK(c && strcmp(c->data, "sid=1; theme=dark") == 0);

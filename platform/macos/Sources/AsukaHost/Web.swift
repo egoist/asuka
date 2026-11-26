@@ -86,6 +86,7 @@ let asukaBridgeJS = "window.asuka = { postMessage: function (m) { window.webkit.
     }
 
     func webView(_ v: WKWebView, didFinish navigation: WKNavigation!) {
+        AsukaWebCrash.reloaded.remove(ObjectIdentifier(v))
         if let n = rt.node(of: v) {
             let u = v.url?.absoluteString ?? ""
             rt.emit(n, .navigated) { AsukaEvents.navigated($0, u) }
@@ -96,6 +97,7 @@ let asukaBridgeJS = "window.asuka = { postMessage: function (m) { window.webkit.
     func webView(_ v: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { rt.webState(v) }
     func webView(_ v: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { rt.webFailed(v, error) }
     func webView(_ v: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { rt.webFailed(v, error) }
+    func webViewWebContentProcessDidTerminate(_ v: WKWebView) { rt.webTerminated(v) }
 
     /// The main frame's response that the view can't show, or an
     /// attachment, is cancelled and reported as a Download; the rest load.
@@ -283,6 +285,20 @@ let asukaBridgeJS = "window.asuka = { postMessage: function (m) { window.webkit.
         emit(n, .webState) { AsukaEvents.webState($0, bytes) }
     }
 
+    /// The page's web content process ended (memory, a crash): reported,
+    /// and the page loaded again once, so the view isn't left blank; again
+    /// before a page loads, only reported.
+    func webTerminated(_ v: WKWebView) {
+        if let n = node(of: v) {
+            emit(n, .failed) { AsukaEvents.failed($0, "the page's web process ended") }
+        }
+        if !AsukaWebCrash.reloaded.contains(ObjectIdentifier(v)) {
+            AsukaWebCrash.reloaded.insert(ObjectIdentifier(v))
+            v.reload()
+        }
+        webState(v)
+    }
+
     func webFailed(_ v: WKWebView, _ err: Error) {
         if let n = node(of: v) {
             let msg = asukaErrorText(err)
@@ -292,6 +308,7 @@ let asukaBridgeJS = "window.asuka = { postMessage: function (m) { window.webkit.
     }
 
     func closeWeb(_ n: AsukaNode, _ w: AsukaWeb) {
+        AsukaWebCrash.reloaded.remove(ObjectIdentifier(w.view))
         for o in w.observations { o.invalidate() }
         w.observations = []
         w.block += 1 // a rule list still compiling is dropped
@@ -317,4 +334,10 @@ func asukaQuoteMeta(_ s: String) -> String {
         out.append(c)
     }
     return out
+}
+
+/// The web views reloaded after their page's process ended, until a page
+/// loads in them again.
+@MainActor enum AsukaWebCrash {
+    static var reloaded = Set<ObjectIdentifier>()
 }

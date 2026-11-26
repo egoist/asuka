@@ -1019,7 +1019,9 @@ What it shows:
 What it reports:
 
 - `on loaded(url)` gets the URL of each page that has loaded; `on
-  error(message)` a message when one couldn't.
+  error(message)` a message when one couldn't, or when the page's web
+  process ended (out of memory, a crash: "the page's web process
+  ended"), after which the view loads the page again, once.
 - `on state(s)` follows the page, as an address bar does: a `WebState`
   with its `url`, `title`, `loading`, `progress` (0 to 1), `canGoBack`
   and `canGoForward`.
@@ -1036,6 +1038,10 @@ What it reports:
 
 A `Ref`'s `goBack()`, `goForward()`, `reload()` and `stopLoading()`
 move through its history, load the page again, or stop it loading.
+`load(url)` loads a URL now, the view's own `url` too once its page has
+moved on (a link followed): setting `url` to what it already is
+changes nothing, so a tab that sends its web view home on each visit
+calls `load`.
 
 ### Talking to the page
 

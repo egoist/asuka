@@ -752,13 +752,13 @@ component Browser {
 
 报告什么：
 
-- 每个页面加载完成时，`on loaded(url)` 会收到它的 URL；页面加载失败时，`on error(message)` 会收到错误信息。
+- 每个页面加载完成时，`on loaded(url)` 会收到它的 URL；页面加载失败，或页面的网页进程结束（内存不足、崩溃：“the page's web process ended”）时，`on error(message)` 会收到错误信息，进程结束后视图会重新加载一次页面。
 - `on state(s)` 像地址栏一样跟踪页面的状态：一个 `WebState`，包含 `url`、`title`、`loading`、`progress`（0 到 1）、`canGoBack` 和 `canGoForward`。
 - `on newWindow(url)` 收到页面想在新窗口中打开的 URL（`window.open`、`target="_blank"` 的链接）。没有设置它时，那个页面会直接在当前视图中加载。
 - `on download(d)` 收到页面无法显示、应当保存为文件的响应（比如指向 `.zip` 的链接、`Content-Disposition: attachment`），形式是一个 `WebDownload`，包含 `url`、`mime`、`filename` 和 `size`（未知时为 -1）。它本身并不会下载文件。
 - `on request(url)` 收到页面发出的每个请求的 URL（脚本、图片、媒体、`fetch`）。**iOS 和 macOS 不支持**：`WKWebView` 不允许应用看到这些请求。
 
-`Ref` 的 `goBack()`、`goForward()`、`reload()` 和 `stopLoading()` 分别用于在历史记录中后退、前进，重新加载页面，以及停止加载。
+`Ref` 的 `goBack()`、`goForward()`、`reload()` 和 `stopLoading()` 分别用于在历史记录中后退、前进，重新加载页面，以及停止加载。`load(url)` 会立即加载一个 URL；当页面已经跳转离开（用户点了链接）之后，也可以用它重新加载视图自己的 `url`：把 `url` 设成它当前的值不会有任何效果，所以每次进入都要把网页视图带回首页的标签页应该调用 `load`。
 
 ### 与页面通信
 

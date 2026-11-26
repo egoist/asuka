@@ -467,6 +467,7 @@ void ak_ui_video_pause(ak_view *v);
 void ak_ui_video_seek(ak_view *v, double seconds);
 void ak_ui_web_eval(ak_view *v, ak_str *script);
 void ak_ui_web_navigate(ak_view *v, int64_t to);  // 0 back, 1 forward, 2 reload, 3 stop
+void ak_ui_web_load(ak_view *v, ak_str *url);
 ak_future *ak_ui_web_eval_result(ak_view *v, ak_str *script);  // a string: JSON
 ak_future *ak_ui_web_cookies(ak_str *url);                      // a string: a Cookie header
 void ak_ui_insert_text(ak_view *v, ak_str *text);

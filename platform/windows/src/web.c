@@ -37,6 +37,7 @@ enum {
 	WV_ADD_SOURCE_CHANGED = 11,
 	WV_ADD_HISTORY_CHANGED = 13,
 	WV_ADD_NAVIGATION_COMPLETED = 15,
+	WV_ADD_PROCESS_FAILED = 25,
 	WV_ADD_SCRIPT_ON_DOCUMENT_CREATED = 27,
 	WV_REMOVE_SCRIPT_ON_DOCUMENT_CREATED = 28,
 	WV_EXECUTE_SCRIPT = 29,
@@ -62,6 +63,7 @@ enum {
 	SET2_PUT_USER_AGENT = 22,
 
 	NAV_COMPLETED_GET_IS_SUCCESS = 3,
+	PROCESS_FAILED_GET_KIND = 3,
 	NAV_COMPLETED_GET_STATUS = 4,
 	MSG_TRY_GET_STRING = 5,
 	NEW_WIN_GET_URI = 3,
@@ -208,6 +210,7 @@ struct wh_web {
 	char **block;
 	uint32_t nblock;
 	bool requests, filtered, loading, closed;
+	bool crash_reloaded;  // reloaded after its page's process ended, before a page loaded since
 	video *video;
 };
 
@@ -335,6 +338,7 @@ static void on_navigation_completed(wh_web *w, uintptr_t a, void *args) {
 	BOOL ok = FALSE;
 	CALL_P(args, NAV_COMPLETED_GET_IS_SUCCESS, &ok);
 	if (ok) {
+		w->crash_reloaded = false;
 		size_t len;
 		char *s = source(w, &len);
 		wh_emit_str(w->n, AK_EVENT_NAVIGATED, s, len);
@@ -345,6 +349,26 @@ static void on_navigation_completed(wh_web *w, uintptr_t a, void *args) {
 		char msg[96];
 		int len = snprintf(msg, sizeof msg, "the page couldn't load (WebView2 error %d)", status);
 		wh_emit_str(w->n, AK_EVENT_FAILED, msg, (size_t)len);
+	}
+	web_state(w);
+}
+
+// on_process_failed: the page's renderer ended or stopped answering (out
+// of memory, a crash): reported, and the page loaded again once, so the
+// view isn't left blank; again before a page loads, only reported. The
+// browser's own process ending is reported alone.
+static void on_process_failed(wh_web *w, uintptr_t a, void *args) {
+	(void)a;
+	if (w->closed) return;
+	int kind = 0;
+	CALL_P(args, PROCESS_FAILED_GET_KIND, &kind);
+	// RENDER_PROCESS_EXITED, RENDER_PROCESS_UNRESPONSIVE (the main frame's).
+	bool page = kind == 1 || kind == 2;
+	static const char msg[] = "the page's web process ended";
+	wh_emit_str(w->n, AK_EVENT_FAILED, msg, sizeof msg - 1);
+	if (page && !w->crash_reloaded) {
+		w->crash_reloaded = true;
+		CALL_V(w->view, WV_RELOAD);
 	}
 	web_state(w);
 }
@@ -564,6 +588,7 @@ static void set_up(wh_web *w, com controller) {
 	}
 	add_event(w, w->view, WV_ADD_NAVIGATION_STARTING, on_navigation_starting);
 	add_event(w, w->view, WV_ADD_NAVIGATION_COMPLETED, on_navigation_completed);
+	add_event(w, w->view, WV_ADD_PROCESS_FAILED, on_process_failed);
 	add_event(w, w->view, WV_ADD_SOURCE_CHANGED, on_state_changed);
 	add_event(w, w->view, WV_ADD_HISTORY_CHANGED, on_state_changed);
 	add_event(w, w->view, WV_ADD_DOCUMENT_TITLE_CHANGED, on_state_changed);

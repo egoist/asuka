@@ -233,6 +233,11 @@ static ak_val b_web_navigate(ak_val *a, uint32_t n) {
 	return none();
 }
 
+static ak_val b_web_load(ak_val *a, uint32_t n) {
+	ak_ui_web_load(view_arg(a, n, 0, "ui.web_load"), a[1].p);
+	return none();
+}
+
 static ak_val b_web_eval_result(ak_val *a, uint32_t n) { return (ak_val){.p = ak_ui_web_eval_result(view_or_none(a, n, 0), a[1].p)}; }
 
 static ak_val b_web_cookies(ak_val *a, uint32_t n) {
@@ -539,7 +544,7 @@ void ak_ui_ext_builtins_init(void) {
 		{"ui.variant_declare", b_variant_declare}, {"ui.layer_variant", b_layer_variant}, {"ui.variant_read", b_variant_read},
 		{"ui.model", b_model}, {"ui.model_bound", b_model_bound}, {"ui.model_set", b_model_set},
 		{"ui.animate", b_animate}, {"ui.animate_wait", b_animate_wait}, {"ui.animating", b_animating}, {"ui.on_frame", b_on_frame}, {"ui.frames", b_frames}, {"ui.play", b_play},
-		{"ui.pause", b_pause}, {"ui.seek", b_seek}, {"ui.web_eval", b_web_eval}, {"ui.web_navigate", b_web_navigate},
+		{"ui.pause", b_pause}, {"ui.seek", b_seek}, {"ui.web_eval", b_web_eval}, {"ui.web_navigate", b_web_navigate}, {"ui.web_load", b_web_load},
 		{"ui.web_eval_result", b_web_eval_result}, {"webview.cookies", b_web_cookies}, {"ui.insert_text", b_insert_text},
 		{"ui.format", b_format}, {"ui.toggle_format", b_toggle_format}, {"ui.set_link", b_set_link}, {"ui.native", b_native},
 		{"ui.native_set", b_native_set}, {"ui.native_bind", b_native_bind}, {"ui.native_on", b_native_on}, {"ui.call", b_call},

@@ -752,13 +752,13 @@ component Browser {
 
 ページの様子を知らせるコールバックは次のとおりです。
 
-- `on loaded(url)` は読み込みが完了した各ページの URL を受け取り、`on error(message)` は読み込めなかったときにメッセージを受け取ります。
+- `on loaded(url)` は読み込みが完了した各ページの URL を受け取り、`on error(message)` は読み込めなかったときや、ページの Web プロセスが終了したとき（メモリ不足やクラッシュ。「the page's web process ended」）にメッセージを受け取ります。プロセスが終了したあとは、ビューがページを一度読み込み直します。
 - `on state(s)` は、アドレスバーのようにページの状態を追います。`WebState` で、`url`、`title`、`loading`、`progress`（0 から 1）、`canGoBack`、`canGoForward` を持ちます。
 - `on newWindow(url)` は、ページが新しいウィンドウで開こうとした URL（`window.open` や `target="_blank"` のリンク）を受け取ります。指定しなければ、そのページはこのビューの中で読み込まれます。
 - `on download(d)` は、ページが表示できないレスポンス、つまり保存すべきファイル（`.zip` へのリンクや `Content-Disposition: attachment`）を、`url`、`mime`、`filename`、`size`（不明なら -1）を持つ `WebDownload` として受け取ります。ダウンロード自体は行いません。
 - `on request(url)` は、ページが送る各リクエスト（スクリプト、画像、メディア、`fetch`）の URL を受け取ります。**iOS と macOS では使えません**。`WKWebView` がアプリにリクエストを見せないためです。
 
-`Ref` の `goBack()`、`goForward()`、`reload()`、`stopLoading()` で、履歴を戻る・進む、ページを再読み込みする、読み込みを止める、ができます。
+`Ref` の `goBack()`、`goForward()`、`reload()`、`stopLoading()` で、履歴を戻る・進む、ページを再読み込みする、読み込みを止める、ができます。`load(url)` は URL をすぐに読み込みます。ページが移動したあと（リンクをたどったとき）にビュー自身の `url` を読み込み直すのにも使えます。`url` を今と同じ値に設定しても何も変わらないので、表示するたびに Web ビューを最初のページに戻すタブは `load` を呼びます。
 
 ### ページとのやり取り
 

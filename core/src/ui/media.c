@@ -445,6 +445,13 @@ void ak_ui_web_navigate(ak_view *v, int64_t to) {
 	if (is_web(v) && to >= 0 && to <= 3) ak_batch_command(ak_view_batch(v), v->id, AK_CMD_WEB_NAVIGATE, &b, 1);
 }
 
+// ak_ui_web_load loads url in the view now: its URL prop sent again, as
+// it may be the one the view was given, which its page has left since
+// (a link followed), and which a binding doesn't send twice.
+void ak_ui_web_load(ak_view *v, ak_str *url) {
+	if (is_web(v) && url) send_str(v, AK_PROP_WEB_VIEW_URL, (ak_val){.p = url});
+}
+
 // ak_ui_web_eval_result runs script as eval does, and is a future of its
 // value as JSON (the last statement's, or what its promise resolves to),
 // rejected with what it threw.

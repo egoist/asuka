@@ -45,6 +45,12 @@ class AsukaWebView(private val rt: AsukaRuntime, private val asukaID: Int) : Web
     }
 
     private var preload: String? = null
+    private var userAgent = ""
+    /** The page it shows (what a replacement loads), its HTML when it was given markup. */
+    private var page = ""
+    private var html: String? = null
+    /** A replacement made as its renderer ended, before a page loaded since. */
+    var crashed = false
     private var title = ""
     private var loading = false
     private var stateQueued = false
@@ -69,11 +75,25 @@ class AsukaWebView(private val rt: AsukaRuntime, private val asukaID: Int) : Web
 
             override fun onPageFinished(view: WebView, url: String) {
                 loading = false
+                crashed = false
                 state()
                 rt.emit(asukaID, AsukaEventKind.NAVIGATED) { AsukaEvents.navigated(asukaID, url) }
             }
 
-            override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) = state()
+            override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
+                if (url.startsWith("http") || url.startsWith("file:")) { page = url; html = null }
+                state()
+            }
+
+            // The page's renderer ended (memory, a crash): reported, and, as
+            // a WebView can't be used again then, a new one put in its place,
+            // showing the page again (once: one whose renderer ends before a
+            // page loads stays blank).
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                rt.emit(asukaID, AsukaEventKind.FAILED) { AsukaEvents.failed(asukaID, "the page's web process ended") }
+                rt.onMain { rt.replaceWebView(asukaID, this@AsukaWebView) }
+                return true
+            }
 
             override fun onReceivedError(view: WebView, req: WebResourceRequest, err: WebResourceError) {
                 if (!req.isForMainFrame) return
@@ -163,7 +183,30 @@ class AsukaWebView(private val rt: AsukaRuntime, private val asukaID: Int) : Web
     }
 
     fun setUserAgent(ua: String) {
+        userAgent = ua
         settings.userAgentString = ua.ifEmpty { null }
+    }
+
+    /** Shows markup (the HTML prop). */
+    fun loadHTML(markup: String) {
+        html = markup
+        loadDataWithBaseURL(null, markup, "text/html", "utf-8", null)
+    }
+
+    /** A new WebView for this one's node, with its settings, showing its page (unless it crashed before). */
+    fun successor(): AsukaWebView {
+        val w = AsukaWebView(rt, asukaID)
+        w.blockHosts = blockHosts
+        w.blockParts = blockParts
+        w.reportRequests = reportRequests
+        if (userAgent.isNotEmpty()) w.setUserAgent(userAgent)
+        preload?.let { w.setPreload(it) }
+        w.crashed = true
+        if (!crashed) {
+            val h = html
+            if (h != null) w.loadHTML(h) else w.load(page)
+        }
+        return w
     }
 
     /** Block's patterns: u32 count, then u32-length strings. */
@@ -250,6 +293,8 @@ class AsukaWebView(private val rt: AsukaRuntime, private val asukaID: Int) : Web
     /** Loads source: an http(s) URL, a file (an absolute path, file://), or one of the app's assets. */
     fun load(source: String) {
         if (source.isEmpty()) return
+        page = source
+        html = null
         if (source.startsWith("http://") || source.startsWith("https://")) { loadUrl(source); return }
         settings.allowFileAccess = true // the app's own files
         val url = when {
@@ -261,6 +306,22 @@ class AsukaWebView(private val rt: AsukaRuntime, private val asukaID: Int) : Web
         }
         loadUrl(url)
     }
+}
+
+/** Puts a new WebView in the place of old, whose renderer ended, in its node and its parent. */
+fun AsukaRuntime.replaceWebView(id: Int, old: AsukaWebView) {
+    val n = nodes[id] ?: return
+    if (n.view !== old) return
+    val w = old.successor()
+    val parent = old.parent as? android.view.ViewGroup
+    if (parent != null) {
+        val i = parent.indexOfChild(old)
+        val lp = old.layoutParams
+        parent.removeViewAt(i)
+        parent.addView(w, i, lp)
+    }
+    n.view = w
+    old.destroy()
 }
 
 /**

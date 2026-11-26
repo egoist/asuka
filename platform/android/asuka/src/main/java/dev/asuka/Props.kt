@@ -494,7 +494,7 @@ fun AsukaRuntime.propString(id: Int, prop: Int, v: String) {
             AsukaKind.VIDEO -> if (prop == AsukaProp.Video.SOURCE) (view as AsukaVideo).load(v)
             AsukaKind.WEB_VIEW -> when (prop) {
                 AsukaProp.WebView.URL -> (view as AsukaWebView).load(v)
-                AsukaProp.WebView.HTML -> if (v.isNotEmpty()) (view as AsukaWebView).loadDataWithBaseURL(null, v, "text/html", "utf-8", null)
+                AsukaProp.WebView.HTML -> if (v.isNotEmpty()) (view as AsukaWebView).loadHTML(v)
                 AsukaProp.WebView.PRELOAD -> (view as AsukaWebView).setPreload(v)
                 AsukaProp.WebView.USER_AGENT -> (view as AsukaWebView).setUserAgent(v)
             }
