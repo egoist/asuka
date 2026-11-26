@@ -461,6 +461,12 @@ bool ak_future_unwait(ak_future *f, ak_cb cb, void *ctx) {
 	return false;
 }
 
+void *ak_future_waiter(const ak_future *f, ak_cb cb) {
+	for (const ak_waiter *w = f->waiters; w; w = w->next)
+		if (w->cb == cb) return w->ctx;
+	return NULL;
+}
+
 void ak_future_cancel(ak_future *f) {
 	if (f->state != AK_FUT_PENDING) return;
 	if (f->cancel) {

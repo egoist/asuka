@@ -40,7 +40,10 @@ F5 (Run Extension) after `npm install`.
 
 The extension debugs the app `asuka dev` runs, on whatever it runs on
 (the iOS simulator or an iPhone, Android, this computer; not the web):
-breakpoints in `.asuka` files, stepping, the stack and its variables.
+breakpoints in `.asuka` files (conditions, hit counts, logpoints),
+stopping on errors (uncaught, or all), stepping, the stack and its
+variables, and evaluating expressions while paused (hovers, the Watch
+view, the debug console).
 `asuka dev` is the debug adapter: it listens on `127.0.0.1:8791` (or
 the port it prints, or `--debug-port`'s). In **Run and Debug**, add a
 configuration:

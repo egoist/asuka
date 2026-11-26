@@ -564,6 +564,11 @@ func (l *loader) compile(root *unit) *Result {
 		p.Optimize()
 	}
 	res.Module = p.Encode()
+	if !optimize {
+		// Its frames' locals are named: the debugger evaluates
+		// expressions in them.
+		res.Module.Evaluator = &Evaluator{res: res}
+	}
 	glue, err := cffi.Generate(prog)
 	if err != nil {
 		pos := syntax.Position{Filename: root.dir, Line: 1, Column: 1}

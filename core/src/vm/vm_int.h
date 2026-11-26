@@ -7,9 +7,16 @@
 #include "rt/sched.h"
 #include "rt/json.h"
 #include "vm/opcodes_gen.h"
+#include "vm/debug.h"
 #include "signal/signal.h"
 
-typedef struct { uint32_t start, end, target; } ak_handler;
+// A range of code an error is caught in, at target: rethrows, a
+// handler that always throws it on (a defer's: bytecode.Handler's
+// Rethrows), which the debugger looks past for the code that catches it.
+typedef struct {
+	uint32_t start, end, target;
+	bool rethrows;
+} ak_handler;
 typedef struct { uint32_t pc, line; } ak_line;
 // A function's body inlined in another's: its code [start, end), in
 // func, called at line (bytecode.Inline).
@@ -153,7 +160,40 @@ struct ak_module {
 	// long as the module, for callbacks that outlive their call.
 	ak_json_types native_types;
 	ak_frozen frozen;  // the constants its init froze (rt.freeze), freed with it
+#if AK_VM_DEBUGGER
+	// What the debugger reads (debug.h): the encoding's FNV-1a, as
+	// lang/bytecode's Hash says it, which an extension names its base
+	// by; shape i (AK_MOD_SHAPE), the base's for an extension's below
+	// its own. An extension (ak_module_extend) is a module of its base
+	// (retained) and the debugger's expressions: its own functions,
+	// shapes and strings from own_* on, the base's below (its functions
+	// copies of the base's, run as its own), the base's globals (exts:
+	// the base's extensions alive, whose globals follow the base's as an
+	// extension adds some). globals0 is how many a module had loaded.
+	uint64_t hash;
+	const ak_shape **shapep;
+	struct ak_module *base, *exts, *next_ext;
+	uint32_t own_funcs, own_shapes, own_strings, globals0;
+#endif
 };
+
+// AK_MOD_SHAPE is module m's shape i: in a build with the debugger,
+// through m's table, an extension's base's shapes being its own.
+#if AK_VM_DEBUGGER
+#define AK_MOD_SHAPE(m, i) ((m)->shapep[i])
+#else
+#define AK_MOD_SHAPE(m, i) (&(m)->shapes[i].s)
+#endif
+
+#if AK_VM_DEBUGGER
+// ak_module_extend builds module base and an extension of it (lang/
+// bytecode's Extension, p: its encoding) into one: base's tables, then
+// the extension's, its functions and shapes its own. The globals it adds
+// are base's, made by its inits as it's built, once (an extension built
+// again with the same ones doesn't make them again). NULL (err says why)
+// when it doesn't fit base. Main thread.
+ak_module *ak_module_extend(ak_module *base, const uint8_t *p, size_t n, char *err, size_t errcap);
+#endif
 
 void ak_module_retain(ak_module *m);
 // ak_vm_running_module is the module whose code is running: the VM's
@@ -355,6 +395,14 @@ ak_val ak_vm_call_untracked(ak_closure *c, ak_val *args, uint32_t nargs);
 // when it can't say without running code (a memo not computed yet, an
 // accessor that calls a function or reads a path). The debugger's.
 bool ak_vm_dbg_peek(void *p, ak_val *v, ak_kind *k);
+// ak_vm_dbg_read reads what a state's cell, a let's memo or an accessor
+// holds now, computing it if it must, without following it: the value
+// (owned) and its kind, false (an error pending) when computing it
+// threw. The debugger's evaluations' (their locals'). Main thread.
+bool ak_vm_dbg_read(void *p, ak_val *v, ak_kind *k);
+// ak_vm_effect_closure is the closure e, an effect of the VM's, runs
+// (NULL: another's).
+ak_closure *ak_vm_effect_closure(ak_effect *e);
 void ak_vm_effect(ak_closure *c, bool render);
 void ak_vm_cleanup(ak_closure *c);
 void ak_vm_batch(bool begin);

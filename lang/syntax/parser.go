@@ -224,9 +224,14 @@ func ParseFile(fset *FileSet, filename string, src []byte) (*SourceFile, ErrorLi
 }
 
 // ParseExpr parses a single expression, for tools and tests.
-func ParseExpr(src string) (Expr, ErrorList) {
+func ParseExpr(src string) (Expr, ErrorList) { return ParseExprIn(NewFileSet(), "", src) }
+
+// ParseExprIn parses a single expression, its positions a file of fset's
+// named filename: what the debugger evaluates, checked with a program
+// whose positions are fset's.
+func ParseExprIn(fset *FileSet, filename, src string) (Expr, ErrorList) {
 	var p parser
-	p.init(NewFileSet(), "", []byte(src))
+	p.init(fset, filename, []byte(src))
 	x := p.parseExpr()
 	for p.tok == NEWLINE || p.tok == SEMICOLON {
 		p.next()

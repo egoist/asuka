@@ -330,10 +330,38 @@ What it does:
   a line without code moves to the next line that has some, as the
   editor shows. They stay set as you save and as the app launches
   again; one in a file the app doesn't use yet waits until it does.
+- **Conditions, hit counts and logpoints.** A breakpoint's condition is
+  an Asuka expression (`todo.done && count > 3`), written as code on
+  that line would be: the frame's names, the file's imports, a
+  component's members. It stops only where the condition holds. A hit
+  count stops at the hits it says, counted where the condition holds:
+  `5` (the fifth), `>= 5`, `> 5`, `<= 5`, `< 5`, `% 5` (every fifth). A
+  logpoint doesn't stop: it writes its message in the debug console,
+  each `{expression}` in it replaced by its value, as in a string
+  (`count is {count}`). One that doesn't compile says why on the
+  breakpoint; one that throws as it runs stops there, saying why.
+- **Errors.** In the editor's breakpoints, **Uncaught Errors** (on at
+  first) stops the app where an error nothing in it catches is thrown,
+  before anything unwinds: the stack and its variables are as they were
+  at the `throw`, or at the call or the operation that failed (`a / 0`,
+  an index out of range). An error is caught by a `catch` around it, a
+  `try?`, a `catch` after an expression, a `Boundary` around the
+  component, or what awaits the task it's thrown in; a `defer` runs and
+  throws it on, so it doesn't catch it. **All Errors** stops at every
+  one, caught or not. The editor shows the error's type and message.
 - **Where it stopped**: the stack, and each frame's variables (its
   parameters, `let`s and `var`s, `self`, a component's `state`s as they
   are now), written as Asuka writes them, with a struct's fields, an
   enum's payload and the items of an array, a map or a set to expand.
+- **Evaluating** an expression in the frame you're looking at, while the
+  app is paused: hovering over a name, the Watch view, the debug
+  console. It's compiled as code at that line would be and runs on the
+  device, written as variables are, with its parts to expand. It's code
+  of the app's: what it calls runs (a function, a store's method), with
+  what that does (state it writes changes, the app shows it once it
+  goes on), and nothing stops at a breakpoint or an error meanwhile.
+  Assigning to a variable of the frame isn't an expression: you can't
+  change a value that way. It can't `await`.
 - **Continue, step over, step into, step out and pause.** A pause stops
   the app the next time it runs code (a tap, a timer): an idle app runs
   none.
@@ -341,7 +369,8 @@ What it does:
   the iPhone and the emulator stop and go on each by itself.
 - The app's output, in the editor's debug console.
 - A save while the app is paused lets it go on, and the new code it
-  loads stops at the breakpoints.
+  loads stops at the breakpoints, their conditions and logpoints
+  compiled again for it.
 
 While the app is paused, its main thread waits, as it does in Xcode's or
 Android Studio's debugger: the app doesn't draw or answer touches, and a
@@ -351,9 +380,10 @@ the pause for an app that isn't responding.
 
 Not yet:
 
-- Conditional breakpoints, logpoints, evaluating an expression (watches,
-  the debug console), changing a value, or stopping where an error
-  nothing catches is thrown.
+- Changing a variable's value from the editor.
+- An expression that would make a type of the app's an interface's
+  value where the app's own code never does (`let s: Shape = circle`
+  with `Circle` never a `Shape` in the app): the debugger says so.
 - The web (`--platform web`): a page can't wait on its main thread while
   the app is paused.
 - Code a `spawn` runs on a worker doesn't stop.

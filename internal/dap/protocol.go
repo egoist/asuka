@@ -105,9 +105,22 @@ type source struct {
 type setBreakpointsArgs struct {
 	Source      source `json:"source"`
 	Breakpoints []struct {
-		Line int `json:"line"`
+		Line         int    `json:"line"`
+		Condition    string `json:"condition"`
+		HitCondition string `json:"hitCondition"`
+		LogMessage   string `json:"logMessage"`
 	} `json:"breakpoints"`
 	Lines []int `json:"lines"` // deprecated, an older client's
+}
+
+type setExceptionBreakpointsArgs struct {
+	Filters []string `json:"filters"`
+}
+
+type evaluateArgs struct {
+	Expression string `json:"expression"`
+	FrameID    int    `json:"frameId"`
+	Context    string `json:"context"` // "watch", "repl", "hover", "clipboard"
 }
 
 type threadArgs struct {
@@ -135,38 +148,47 @@ type variablesArgs struct {
 
 // capabilities are what the adapter does, as initialize answers.
 type capabilities struct {
-	SupportsConfigurationDoneRequest   bool  `json:"supportsConfigurationDoneRequest"`
-	SupportsFunctionBreakpoints        bool  `json:"supportsFunctionBreakpoints"`
-	SupportsConditionalBreakpoints     bool  `json:"supportsConditionalBreakpoints"`
-	SupportsHitConditionalBreakpoints  bool  `json:"supportsHitConditionalBreakpoints"`
-	SupportsEvaluateForHovers          bool  `json:"supportsEvaluateForHovers"`
-	ExceptionBreakpointFilters         []any `json:"exceptionBreakpointFilters"`
-	SupportsStepBack                   bool  `json:"supportsStepBack"`
-	SupportsSetVariable                bool  `json:"supportsSetVariable"`
-	SupportsRestartFrame               bool  `json:"supportsRestartFrame"`
-	SupportsGotoTargetsRequest         bool  `json:"supportsGotoTargetsRequest"`
-	SupportsStepInTargetsRequest       bool  `json:"supportsStepInTargetsRequest"`
-	SupportsCompletionsRequest         bool  `json:"supportsCompletionsRequest"`
-	SupportsModulesRequest             bool  `json:"supportsModulesRequest"`
-	SupportsRestartRequest             bool  `json:"supportsRestartRequest"`
-	SupportsExceptionOptions           bool  `json:"supportsExceptionOptions"`
-	SupportsValueFormattingOptions     bool  `json:"supportsValueFormattingOptions"`
-	SupportsExceptionInfoRequest       bool  `json:"supportsExceptionInfoRequest"`
-	SupportTerminateDebuggee           bool  `json:"supportTerminateDebuggee"`
-	SupportsDelayedStackTraceLoading   bool  `json:"supportsDelayedStackTraceLoading"`
-	SupportsLoadedSourcesRequest       bool  `json:"supportsLoadedSourcesRequest"`
-	SupportsLogPoints                  bool  `json:"supportsLogPoints"`
-	SupportsTerminateThreadsRequest    bool  `json:"supportsTerminateThreadsRequest"`
-	SupportsSetExpression              bool  `json:"supportsSetExpression"`
-	SupportsTerminateRequest           bool  `json:"supportsTerminateRequest"`
-	SupportsDataBreakpoints            bool  `json:"supportsDataBreakpoints"`
-	SupportsReadMemoryRequest          bool  `json:"supportsReadMemoryRequest"`
-	SupportsDisassembleRequest         bool  `json:"supportsDisassembleRequest"`
-	SupportsCancelRequest              bool  `json:"supportsCancelRequest"`
-	SupportsBreakpointLocationsRequest bool  `json:"supportsBreakpointLocationsRequest"`
-	SupportsSteppingGranularity        bool  `json:"supportsSteppingGranularity"`
-	SupportsInstructionBreakpoints     bool  `json:"supportsInstructionBreakpoints"`
-	SupportsSingleThreadExecutionReqs  bool  `json:"supportsSingleThreadExecutionRequests"`
+	SupportsConfigurationDoneRequest   bool              `json:"supportsConfigurationDoneRequest"`
+	SupportsFunctionBreakpoints        bool              `json:"supportsFunctionBreakpoints"`
+	SupportsConditionalBreakpoints     bool              `json:"supportsConditionalBreakpoints"`
+	SupportsHitConditionalBreakpoints  bool              `json:"supportsHitConditionalBreakpoints"`
+	SupportsEvaluateForHovers          bool              `json:"supportsEvaluateForHovers"`
+	ExceptionBreakpointFilters         []exceptionFilter `json:"exceptionBreakpointFilters"`
+	SupportsStepBack                   bool              `json:"supportsStepBack"`
+	SupportsSetVariable                bool              `json:"supportsSetVariable"`
+	SupportsRestartFrame               bool              `json:"supportsRestartFrame"`
+	SupportsGotoTargetsRequest         bool              `json:"supportsGotoTargetsRequest"`
+	SupportsStepInTargetsRequest       bool              `json:"supportsStepInTargetsRequest"`
+	SupportsCompletionsRequest         bool              `json:"supportsCompletionsRequest"`
+	SupportsModulesRequest             bool              `json:"supportsModulesRequest"`
+	SupportsRestartRequest             bool              `json:"supportsRestartRequest"`
+	SupportsExceptionOptions           bool              `json:"supportsExceptionOptions"`
+	SupportsValueFormattingOptions     bool              `json:"supportsValueFormattingOptions"`
+	SupportsExceptionInfoRequest       bool              `json:"supportsExceptionInfoRequest"`
+	SupportTerminateDebuggee           bool              `json:"supportTerminateDebuggee"`
+	SupportsDelayedStackTraceLoading   bool              `json:"supportsDelayedStackTraceLoading"`
+	SupportsLoadedSourcesRequest       bool              `json:"supportsLoadedSourcesRequest"`
+	SupportsLogPoints                  bool              `json:"supportsLogPoints"`
+	SupportsTerminateThreadsRequest    bool              `json:"supportsTerminateThreadsRequest"`
+	SupportsSetExpression              bool              `json:"supportsSetExpression"`
+	SupportsTerminateRequest           bool              `json:"supportsTerminateRequest"`
+	SupportsDataBreakpoints            bool              `json:"supportsDataBreakpoints"`
+	SupportsReadMemoryRequest          bool              `json:"supportsReadMemoryRequest"`
+	SupportsDisassembleRequest         bool              `json:"supportsDisassembleRequest"`
+	SupportsCancelRequest              bool              `json:"supportsCancelRequest"`
+	SupportsBreakpointLocationsRequest bool              `json:"supportsBreakpointLocationsRequest"`
+	SupportsSteppingGranularity        bool              `json:"supportsSteppingGranularity"`
+	SupportsInstructionBreakpoints     bool              `json:"supportsInstructionBreakpoints"`
+	SupportsSingleThreadExecutionReqs  bool              `json:"supportsSingleThreadExecutionRequests"`
+}
+
+// exceptionFilter is one of the errors an editor may have the app stop
+// at (initialize's exceptionBreakpointFilters).
+type exceptionFilter struct {
+	Filter      string `json:"filter"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Default     bool   `json:"default"`
 }
 
 type breakpoint struct {

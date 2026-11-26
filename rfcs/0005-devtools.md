@@ -144,8 +144,9 @@ a phone, the simulator, the emulator, a desktop), so the debugger is
 the VM's own (`core/src/vm/debug.c`), not Delve. Built: the engine,
 the debug info it reads, its frames on the dev connection, asuka dev's
 DAP adapter (`internal/dap`) and the VS Code extension's debugger
-(`editors/vscode/debug.js`); docs/development.md's "The debugger" says
-how to use it.
+(`editors/vscode/debug.js`), with conditions, hit counts, logpoints,
+stopping at errors and evaluating in a frame; docs/development.md's
+"The debugger" says how to use it.
 
 - **Debug info.** The bytecode already has each function's line table
   (and the inlined bodies', whose lines are their own files'). lang/ir
@@ -163,6 +164,68 @@ how to use it.
   with nothing re-sent. A breakpoint further along the line the frame
   last stopped at (a call's arguments on the lines below it, then the
   call) doesn't stop again; a loop's way round does.
+- **Conditions, hit counts and logpoints.** A breakpoint may have a
+  condition (an Asuka expression), a hit condition (`5`, `>= 5`, `% 5`:
+  the hits counted where the condition holds) and a log message (text
+  with `{expressions}`, as a string's: a logpoint, which logs and goes
+  on). The CLI compiles the condition and the message for each function
+  the line is in, at the line's first pc, with the locals in scope there
+  as parameters (see Evaluating, below), and sends them with the
+  breakpoint (its code: the module's hash, the function, the
+  extension's functions, the locals they take); the engine calls them as
+  the line's reached, on the paused thread, nothing stopping meanwhile.
+  A hit is once a line's run (its later pcs on the same line, as a
+  call's arguments below it, are the same hit), so a logpoint logs once.
+  Code compiled for another module (the one a save is bringing) is
+  passed over, the line not stopping; code that doesn't compile, or
+  throws as it runs, stops there and says why (`debug-log`). A
+  breakpoint set again with the same condition and hit condition (its
+  key) keeps its count.
+- **Errors.** With its filters set, the engine stops where an error is
+  thrown, before it unwinds the stack, as the interpreter's unwinding
+  starts (the throw, the instruction that failed, the call whose callee
+  or builtin threw: the error path only, nothing on the others): every
+  error (all), or one nothing in the app catches (uncaught). That's
+  predicted as it's thrown: a handler covering the pc in a frame it
+  would unwind, through the calls of builtins it passes (C that lets it
+  go on), but not a handler that throws it on (a `defer`'s: the
+  bytecode marks them, `Handler.Rethrows`); past the coroutine's
+  frames, the catcher of the effect whose run it ends, or of the
+  current owner (a `Boundary`'s), or for a task, what awaits it (its
+  coroutine's frames from its AWAIT) or someone having looked for it. A
+  typed `catch` around it counts as catching; one that doesn't match
+  throws it on, a new throw then predicted again. An error stops once
+  (its rethrows don't). The stop says the error's type and message (its
+  `message`, run), and whether it's uncaught.
+- **Evaluating** an expression in a frame of the stop's (an editor's
+  hover, watch, console). The CLI keeps each development module's
+  compile (lang/compile's `Evaluator`): its checked program and its
+  lowering. An expression is checked as code at the frame's pc
+  (`check.CheckEval`: the frame's file's scope, its function's locals in
+  scope there as parameters, by the types lang/ir recorded with them;
+  a method's `self` with its fields by their bare names; a component's
+  env with its members), lowered as a function after the module's
+  (`ir.LowerEval`), and with whatever it needs that the module lacks (a
+  generic instantiated, a type, a hoisted constant made by an init of
+  its own) makes the module's extension (`bytecode.Extension`): tables
+  that continue the module's, a copy of the lowering's, so the module
+  sent is untouched and each expression adds to the same extension. The
+  player builds the module and the extension into one
+  (`ak_module_extend`): the module's functions copied in (run as the
+  extension's, so what an expression's closure holds keeps it), its
+  types and globals shared (in a development build a module's shapes
+  are reached through a table, the module's own or the base's: one
+  indirection at NEWS, NEWE, NEWA and ISSHAPE), its own functions,
+  types and strings after them; an extension's globals are the base's,
+  grown (its init makes them, once). The engine calls the function with
+  the frame's locals (a state's, a let's or an accessor's value read as
+  it is now, untracked), the app's code running as it does (side
+  effects included; no stop meanwhile), and answers the value as a
+  local's, holding it while the stop lasts so its children can be
+  asked for (frame `0x80000000 | ref`). An expression that would give
+  the module's own types more (a type used as an interface it's never
+  converted to in the app's code: methods on its shape) is refused, and
+  the lowering starts again from the module. It can't await.
 - **Stepping** by line and frame: over (the frame's next line, or its
   caller's once it returns), in (the next line that runs, in whichever
   function) and out (the caller's, once the frame returned), on the
@@ -200,7 +263,8 @@ how to use it.
   a frame is entered or left and as a jump is taken, and when it's set
   leaves for the other, its frame resuming where it was; the other
   leaves the same way once it's clear. Nothing is checked per
-  instruction. Measured on bench/vm's programs with nothing set (both
+  instruction. The error filters' flag is asked as an error starts to
+  unwind a frame, on the error's path only. Measured on bench/vm's programs with nothing set (both
   at -O2), the core with the debugger retires 2 to 7% more instructions
   than without (the checks at calls, returns and jumps). (A first
   version kept one loop and switched its dispatch table, a variable:
@@ -208,20 +272,28 @@ how to use it.
   instructions' dispatches merged into one.)
 
 The protocol (`core/src/abi/dev.h`, `internal/devserver/debug.go`):
-the CLI sends a file's breakpoints (17: they replace the file's), a
-command (18: continue, step over, in, out, pause), a request for a
-value's children (19: a frame of the stop's, a path, a range of them),
-and a reset (23: detached); the player sends where it stopped (20:
-JSON, the reason, the frames and their locals), that it goes on again
-(21), and a request's answer (22). A ping (2) is answered by the
-player's connection thread, paused or not. In Go,
-`Server.SetBreakpoints(file, lines)` keeps them per file and sends them
-to every player, and to each that connects later before its module;
-`Player.Debug(cmd)`, `Player.Variables(...)` and `Server.DebugReset()`
-drive a player; `Events.Stopped`, `Continued` and `Values` hear it; and
+the CLI sends a file's breakpoints (17: they replace the file's; each
+its line, key, hit condition and code), a command (18: continue, step
+over, in, out, pause), a request for a value's children (19: a frame
+of the stop's, a path, a range of them), a reset (23: detached), an
+extension (30), the error filters (31: uncaught, all) and an
+evaluation (32: a frame, the extension's function, the locals it
+takes, the value's descriptor); the player sends where it stopped (20:
+JSON, the reason, the error, the frames, each with its locals, its
+module's hash, function and pc), that it goes on again (21), a
+request's answer (22), an evaluation's (33) and a logpoint's line or a
+breakpoint's failure (34). A ping (2) is answered by the player's
+connection thread, paused or not. In Go,
+`Server.SetBreakpoints(platform, file, bps)` and `Server.Extend(platform,
+ext)` keep them per platform and file and send them to its players,
+and to each that connects later before its module;
+`Server.SetExceptions(filters)` likewise to every player;
+`Player.Debug(cmd)`, `Player.Variables(...)`, `Player.Evaluate(...)` and
+`Server.DebugReset()` drive a player; `Events.Stopped`, `Continued`,
+`Values`, `Result` and `Logpoint` hear it; and
 `ResolveBreakpoints(module, file, lines)` moves a breakpoint on a line
 without code to the next that has, in the function it's in, as an
-editor shows it.
+editor shows it. (Frames 24 to 29 are left for the other devtools.)
 
 The editor's side, as built:
 
@@ -231,15 +303,20 @@ The editor's side, as built:
   does, whatever reloads; not for the web, whose loop has no debugger.
   One editor at a time: one that connects takes over (the other hears
   `terminated`, and the players are reset). `launch` is `attach`: the
-  app is asuka dev's, running already. It declares honestly what it
-  does: `configurationDone`, nothing else optional (no conditions, hit
-  counts, logpoints, evaluation, `setVariable`, exception filters,
-  `terminate`); `evaluate` fails, saying so.
+  app is asuka dev's, running already. It declares what it does:
+  `configurationDone`, conditional and hit-conditional breakpoints,
+  logpoints, `evaluate` (hovers too), `exceptionInfo` and two exception
+  filters, `uncaught` (on by default, as debugpy's) and `all`; not
+  `setVariable` or `terminate`.
 - **Breakpoints** are the adapter's, by the editor's path: each is
   resolved (`ResolveBreakpoints`) in every platform's module that
   compiled last, the loop's first, and the union of the lines resolved
-  is what `Server.SetBreakpoints` sends; a file whose breakpoints don't
-  change isn't sent again. A line without code is answered moved, one
+  is what the dev loop sends (`dap.Dev`'s `SetBreakpoints`: their
+  conditions and log messages compiled for each platform's module, the
+  first error of each said on the breakpoint as its message); a file
+  whose breakpoints don't change isn't sent again, but for a compile,
+  which sends each again with its code compiled for the new module. A
+  hit condition that isn't one (`often`) is said so, and none is set. A line without code is answered moved, one
   in no module's code unverified ("pending"). Each compile resolves them
   again before its module goes out (`Compiled`), and a breakpoint whose
   line moved, or that gained or lost code, is a `breakpoint` event. The
@@ -260,7 +337,20 @@ The editor's side, as built:
   `indexedVariables`, asked a page at a time; the rest `named`. A
   thread's references go as it goes on. A `variables` is answered on a
   goroutine of its own, so a `continue` meanwhile isn't kept waiting.
-- **Output**: the players' logs and their uncaught errors, as `output`
+- **Errors**: `setExceptionBreakpoints`' filters go to every player;
+  a stop at an error is `stopped` with reason `exception`, a
+  description (an error nothing catches, or one thrown) and its type
+  and message as text; `exceptionInfo` answers its type, message, the
+  break mode (`unhandled` or `always`) and the stack.
+- **Evaluate** compiles the expression for the frame (`Options.Compile`:
+  the dev loop's, for the module the frame's hash names, among the last
+  few compiled) and sends it to the thread's player with the extension
+  (a player is sent an extension once per length), waiting as
+  `variables` does; the value, its type, and its children as a
+  reference (`ResultFrame | ref`). Not paused, or in a frame whose
+  locals aren't known, it fails, saying so.
+- **Output**: the players' logs, their uncaught errors and their
+  logpoints' lines (at the logpoint's source and line), as `output`
   events; asuka dev ending is `terminated`. An editor gone without
   `disconnect` is a `disconnect`: `Server.DebugReset`.
 - **Editors.** The VS Code extension contributes the `asuka` debugger:
@@ -289,8 +379,17 @@ The editor's side, as built:
   each host to run its event loop nested while paused (a new call in
   the ABI, the hosts' own, as a modal dialog's loop), which isn't worth
   it while the editor shows the stop. Later, if at all.
-- Later: conditional breakpoints and logpoints, stopping where an error
-  nothing catches is thrown, evaluating an expression in a frame.
+- **Tests**: core/test/debug_test.c (evaluating in a stop's frames, a
+  struct's children, a closure's, what throws; conditions, hit counts,
+  logpoints, code that fails or is another module's; errors uncaught
+  and all, past a defer, an instruction's), with expressions compiled
+  by core_test.go as the CLI does (testdata/modules/debug.evals);
+  lang/compile's TestEvaluator; internal/devserver's and internal/dap's
+  frames and requests; cmd/asuka's TestDevDebugger on the macOS player
+  (evaluate `count + 1`, a logpoint's line, a condition's stop, an
+  uncaught error's stop and its info).
+- Later: changing a variable's value (`setVariable`); an expression
+  that gives the app's types a conformance their code never makes.
 
 ### The inspector
 

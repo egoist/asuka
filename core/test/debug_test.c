@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L  // nanosleep under -std=c17
 // The VM's debugger (core/src/vm/debug.c): breakpoints, steps, pauses,
 // what a stop says of the stack and its locals, and the paused main
 // thread taking commands from another thread. Its program is
@@ -93,12 +94,22 @@ static char *dup_json(const char *json, size_t len) {
 	return s;
 }
 
+// What evaluations answered (AK_DBG_RESULT) and what logpoints and
+// failed conditions said (AK_DBG_LOG), in order; on_stop, when set, asks
+// more at each stop, before its command.
+#define MAX_ANSWERS 16
+static char *answers[MAX_ANSWERS], *logs[MAX_ANSWERS];
+static uint32_t answer_seqs[MAX_ANSWERS];
+static int nanswers, nlogs;
+static void (*on_stop)(int stop);
+
 static void sink(int event, uint32_t seq, const char *json, size_t len) {
 	switch (event) {
 	case AK_DBG_STOPPED: {
 		int i = nstops;
 		if (nstops < MAX_STOPS) stops[nstops++] = dup_json(json, len);
 		if (ask_frame >= 0) ak_dbg_variables(7, (uint32_t)ask_frame, ask_path, ask_npath, 0, 0);
+		if (on_stop) on_stop(i);
 		int cmd = i < nscript ? script[i] : AK_DBG_CONTINUE;
 		if (cmd) ak_dbg_command(cmd);
 		break;
@@ -111,20 +122,115 @@ static void sink(int event, uint32_t seq, const char *json, size_t len) {
 		vars = dup_json(json, len);
 		vars_seq = seq;
 		break;
+	case AK_DBG_RESULT:
+		if (nanswers < MAX_ANSWERS) answer_seqs[nanswers] = seq, answers[nanswers++] = dup_json(json, len);
+		break;
+	case AK_DBG_LOG:
+		if (nlogs < MAX_ANSWERS) logs[nlogs++] = dup_json(json, len);
+		break;
 	}
 }
 
 static void reset(void) {
 	for (int i = 0; i < nstops; i++) free(stops[i]);
-	nstops = ncontinued = nscript = 0;
+	for (int i = 0; i < nanswers; i++) free(answers[i]);
+	for (int i = 0; i < nlogs; i++) free(logs[i]);
+	nstops = ncontinued = nscript = nanswers = nlogs = 0;
 	ask_frame = -1;
+	on_stop = NULL;
 	free(vars);
 	vars = NULL;
 	ak_dbg_reset();
+	ak_dbg_exceptions(0);
 	ak_dbg_set_sink(sink);
 }
 
-static void breakpoints(const uint32_t *lines, uint32_t n) { ak_dbg_set_breakpoints(FILE_NAME, strlen(FILE_NAME), lines, n); }
+// ---- What the debugger's CLI compiled: debug.evals ----
+
+// An expression of debug.evals (core_test.go's compileEvals): compiled
+// for a frame of function fn at pc, it's the extension's function func,
+// taking the locals params, its value of descriptor desc.
+typedef struct {
+	char name[32], desc[32];
+	uint32_t fn, pc, func, np, params[16];
+} eval_t;
+static eval_t evals[32];
+static int nevals;
+static uint8_t *ext;
+static size_t next;
+
+static uint8_t *read_file(const char *name, size_t *n) {
+	const char *dir = getenv("AK_TEST_MODULES");
+	if (!dir) return NULL;
+	char path[1024];
+	snprintf(path, sizeof path, "%s/%s", dir, name);
+	FILE *f = fopen(path, "rb");
+	if (!f) return NULL;
+	fseek(f, 0, SEEK_END);
+	long len = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	uint8_t *p = malloc((size_t)len + 1);
+	*n = fread(p, 1, (size_t)len, f);
+	p[*n] = 0;
+	fclose(f);
+	return p;
+}
+
+// load_evals reads debug.evals and debug.akx, once, and hands the
+// debugger the extension.
+static bool load_evals(void) {
+	if (!ext) {
+		size_t n;
+		char *t = (char *)read_file("debug.evals", &n);
+		if (!t) return false;
+		ext = read_file("debug.akx", &next);
+		for (char *line = strtok(t, "\n"); line && nevals < 32; line = strtok(NULL, "\n")) {
+			eval_t *e = &evals[nevals];
+			int off = 0;
+			if (sscanf(line, "%31s %u %u %u %31s %u%n", e->name, &e->fn, &e->pc, &e->func, e->desc, &e->np, &off) < 6) continue;
+			for (uint32_t i = 0; i < e->np && i < 16; i++) {
+				int k = 0;
+				sscanf(line + off, " %u%n", &e->params[i], &k);
+				off += k;
+			}
+			nevals++;
+		}
+		free(t);
+	}
+	if (!ext) return false;
+	ak_dbg_extend(ext, next);
+	return true;
+}
+
+static const eval_t *eval_named(const char *name) {
+	for (int i = 0; i < nevals; i++)
+		if (strcmp(evals[i].name, name) == 0) return &evals[i];
+	T_FAIL("no eval %s", name);
+	return &evals[0];
+}
+
+static uint64_t hash_of(ak_module *m) { return m->hash; }
+static ak_module *eval_module;
+
+// evaluate asks the paused main thread to evaluate name in a frame of
+// the stop's.
+static void evaluate(uint32_t seq, uint32_t frame, const char *name) {
+	const eval_t *e = eval_named(name);
+	ak_dbg_evaluate(seq, frame, hash_of(eval_module), e->func, e->params, e->np, e->desc, strlen(e->desc));
+}
+
+// a breakpoint at line of fn's (by name) whose condition (cond) or log
+// message (log) is debug.evals' expression of that name.
+static ak_dbg_code code_for(ak_module *m, const char *cond, const char *log) {
+	const eval_t *e = eval_named(cond ? cond : log);
+	return (ak_dbg_code){.base = hash_of(m), .func = e->fn, .cond = cond ? e->func : AK_DBG_NONE, .log = log ? e->func : AK_DBG_NONE, .nparams = e->np, .params = e->params};
+}
+
+static void breakpoints(const uint32_t *lines, uint32_t n) {
+	ak_dbg_bp bps[16];
+	for (uint32_t i = 0; i < n && i < 16; i++) bps[i] = (ak_dbg_bp){.line = lines[i]};
+	ak_dbg_set_breakpoints(FILE_NAME, strlen(FILE_NAME), bps, n);
+}
 
 // top_line is the line of a stop's innermost frame.
 static int top_line(const char *stop) {
@@ -472,6 +578,215 @@ TEST(debug_values) {
 	ak_module_release(m);
 }
 
+// ---- Evaluating, conditions, logpoints ----
+
+static void evaluate_at_add(int stop) {
+	if (stop != 0) return;
+	evaluate(1, 0, "sum");      // a * 10 + b, in add's frame
+	evaluate(2, 1, "swapped");  // a struct, in run's: its children next
+	uint32_t root[] = {0};
+	ak_dbg_variables(9, AK_DBG_RESULT_FRAME | 1, root, 1, 0, 0);
+	evaluate(3, 1, "names");    // a closure of its own
+	evaluate(4, 0, "zero");     // it throws
+	evaluate(5, 5, "sum");      // no such frame
+}
+
+// While paused, an expression evaluates in a frame of the stop's with
+// its locals: its value as a local's, its children asked for by the
+// result's frame; what it throws, its message. The app goes on as it
+// was.
+TEST(debug_evaluate) {
+	ak_module *m = load();
+	if (!m) return;
+	reset();
+	if (!load_evals()) {
+		fprintf(stderr, "debug: no debug.evals (go test ./core compiles it)\n");
+		ak_module_release(m);
+		return;
+	}
+	eval_module = m;
+	uint32_t lines[] = {L_RETSUM};
+	breakpoints(lines, 1);
+	on_stop = evaluate_at_add;
+	CHECK_EQ_INT(call(m, "run"), 4);
+	REQUIRE(nstops == 3);
+	REQUIRE(nanswers == 5);
+	CHECK_EQ_INT(answer_seqs[0], 1);
+	// add(0, 0): a * 10 + b.
+	CHECK_EQ_STR(answers[0], "{\"result\":{\"name\":\"\",\"type\":\"int\",\"value\":\"0\"},\"ref\":0}");
+	CHECK_HAS(answers[1], "\"value\":\"Point(x: 2, y: 1)\",\"children\":2},\"ref\":1}");
+	CHECK_EQ_STR(vars, "{\"total\":2,\"variables\":[{\"name\":\"x\",\"type\":\"int\",\"value\":\"2\"},{\"name\":\"y\",\"type\":\"int\",\"value\":\"1\"}]}");
+	CHECK_HAS(answers[2], "\"type\":\"[string]\",\"value\":\"[\\\"a!\\\", \\\"b!\\\"]\"");
+	CHECK_EQ_STR(answers[3], "{\"error\":\"division by zero\"}");
+	CHECK_EQ_STR(answers[4], "{\"error\":\"no such frame\"}");
+	// Not paused: an error at once.
+	evaluate(6, 0, "sum");
+	CHECK_EQ_STR(answers[5], "{\"error\":\"not paused\"}");
+	// What a module the extension isn't of evaluates: nothing.
+	reset();
+	breakpoints(lines, 1);
+	on_stop = evaluate_at_add;  // no extension now: the CLI's code changed
+	CHECK_EQ_INT(call(m, "run"), 4);
+	CHECK_HAS(answers[0], "{\"error\":\"the app's code changed since: evaluate it again\"}");
+	ak_dbg_forget_extensions();
+	ak_module_release(m);
+}
+
+// set_code sets a breakpoint at L_BODY whose code is debug.evals' cond
+// or log, with a hit condition.
+static void set_code(ak_module *m, const char *cond, const char *log, uint8_t hit_op, uint32_t hit_n, const char *error) {
+	ak_dbg_code c = {0};
+	if (cond || log) c = code_for(m, cond, log);
+	if (error) c.error = error, c.elen = strlen(error);
+	ak_dbg_bp bp = {.line = L_BODY, .flags = (uint8_t)((cond ? AK_DBG_BP_COND : 0) | (log ? AK_DBG_BP_LOG : 0)), .hit_op = hit_op, .hit_n = hit_n, .ncode = 1, .code = &c};
+	if (!cond && !log) bp.ncode = 0;
+	ak_dbg_set_breakpoints(FILE_NAME, strlen(FILE_NAME), &bp, 1);
+}
+
+// A breakpoint's condition, its hit count, a logpoint: evaluated as the
+// line's reached, the app stopping only where they say.
+TEST(debug_conditions) {
+	ak_module *m = load();
+	if (!m) return;
+	reset();
+	if (!load_evals()) {
+		ak_module_release(m);
+		return;
+	}
+	// i == 2: the third time round.
+	set_code(m, "iseq", NULL, 0, 0, NULL);
+	CHECK_EQ_INT(call(m, "run"), 4);
+	REQUIRE(nstops == 1);
+	CHECK_HAS(stops[0], "{\"name\":\"i\",\"type\":\"int\",\"value\":\"2\"}");
+	// The second hit; every second; from the second on.
+	struct {
+		uint8_t op;
+		uint32_t n;
+		int stops;
+		const char *first;
+	} hits[] = {
+	    {AK_DBG_HIT_EQ, 2, 1, "1"},
+	    {AK_DBG_HIT_MOD, 2, 1, "1"},
+	    {AK_DBG_HIT_GE, 2, 2, "1"},
+	    {AK_DBG_HIT_LT, 2, 1, "0"},
+	};
+	for (size_t h = 0; h < sizeof hits / sizeof *hits; h++) {
+		reset();
+		REQUIRE(load_evals());
+		set_code(m, NULL, NULL, hits[h].op, hits[h].n, NULL);
+		CHECK_EQ_INT(call(m, "run"), 4);
+		if (nstops != hits[h].stops) T_FAIL("hit op %d %u: %d stops", hits[h].op, hits[h].n, nstops);
+		char want[64];
+		snprintf(want, sizeof want, "{\"name\":\"i\",\"type\":\"int\",\"value\":\"%s\"}", hits[h].first);
+		if (nstops) CHECK_HAS(stops[0], want);
+	}
+	// A logpoint: what it says each time, and no stop.
+	reset();
+	REQUIRE(load_evals());
+	set_code(m, NULL, "logi", 0, 0, NULL);
+	CHECK_EQ_INT(call(m, "run"), 4);
+	CHECK_EQ_INT(nstops, 0);
+	REQUIRE(nlogs == 3);
+	CHECK_EQ_STR(logs[0], "{\"file\":\"debug.asuka\",\"line\":31,\"text\":\"i is 0, total 0\"}");
+	CHECK_EQ_STR(logs[2], "{\"file\":\"debug.asuka\",\"line\":31,\"text\":\"i is 2, total 1\"}");
+	// A condition that throws stops, saying why; one that didn't compile
+	// too.
+	reset();
+	REQUIRE(load_evals());
+	set_code(m, "isbad", NULL, 0, 0, NULL);
+	CHECK_EQ_INT(call(m, "run"), 4);
+	CHECK_EQ_INT(nstops, 3);
+	REQUIRE(nlogs == 3);
+	CHECK_EQ_STR(logs[0], "{\"file\":\"debug.asuka\",\"line\":31,\"error\":\"the breakpoint's condition: division by zero\"}");
+	reset();
+	REQUIRE(load_evals());
+	set_code(m, "iseq", NULL, 0, 0, "unknown name nope");
+	CHECK_EQ_INT(call(m, "run"), 4);
+	CHECK_EQ_INT(nstops, 3);
+	REQUIRE(nlogs >= 1);
+	CHECK_HAS(logs[0], "\"error\":\"unknown name nope\"");
+	// Code compiled for another module (the one coming): not this one's
+	// line, which goes on.
+	reset();
+	REQUIRE(load_evals());
+	ak_dbg_code c = code_for(m, "iseq", NULL);
+	c.base ^= 1;
+	ak_dbg_bp bp = {.line = L_BODY, .flags = AK_DBG_BP_COND, .ncode = 1, .code = &c};
+	ak_dbg_set_breakpoints(FILE_NAME, strlen(FILE_NAME), &bp, 1);
+	CHECK_EQ_INT(call(m, "run"), 4);
+	CHECK_EQ_INT(nstops, 0);
+	ak_dbg_forget_extensions();
+	ak_module_release(m);
+}
+
+static void call_uncaught(void *ctx) {
+	ak_vm_call(ak_module_find(ctx, "uncaughtOne"), NULL, 0);
+	if (ak_error_pending()) ak_release(ak_error_take());
+}
+
+static void ignore_error(void *ctx, void *err) {
+	AK_UNUSED(ctx);
+	AK_UNUSED(err);
+}
+
+// Errors: with uncaught set, the app stops where an error nothing
+// catches is thrown (a defer, which throws it on, doesn't), once; with
+// all, at every one. The stop has the error, and the frames as they
+// were.
+TEST(debug_exceptions) {
+	ak_module *m = load();
+	if (!m) return;
+	reset();
+	ak_dbg_exceptions(AK_DBG_EXC_UNCAUGHT);
+	CHECK_EQ_INT(atomic_load(&ak_dbg_exc), AK_DBG_EXC_UNCAUGHT);
+	CHECK_EQ_INT(call(m, "caughtOne"), -1);
+	CHECK_EQ_INT(nstops, 0);
+	ak_vm_call(ak_module_find(m, "uncaughtOne"), NULL, 0);
+	REQUIRE(ak_error_pending());
+	ak_release(ak_error_take());
+	REQUIRE(nstops == 1);
+	const char *s = stops[0];
+	if (getenv("T_VERBOSE")) fprintf(stderr, "%s\n", s);
+	CHECK_HAS(s, "{\"reason\":\"exception\",\"exception\":{\"type\":\"Oops\",");
+	CHECK_HAS(s, "\"uncaught\":true}");
+	CHECK(top_is(s, "fail"));
+	CHECK_EQ_INT(top_line(s), 74);
+	CHECK_HAS(s, "{\"name\":\"doubled\",\"type\":\"int\",\"value\":\"4\"}");
+	CHECK_HAS(s, "{\"name\":\"uncaughtOne\"");
+	// An instruction's: divide by zero, in divide called by divideBy.
+	reset();
+	ak_dbg_exceptions(AK_DBG_EXC_UNCAUGHT);
+	ak_val zero = {.i = 0};
+	ak_vm_call(ak_module_find(m, "divideBy"), &zero, 1);
+	REQUIRE(ak_error_pending());
+	ak_release(ak_error_take());
+	REQUIRE(nstops == 1);
+	CHECK_HAS(stops[0], "\"exception\":{\"type\":\"Error\",\"message\":\"division by zero\",\"uncaught\":true}");
+	CHECK(top_is(stops[0], "divide"));
+	CHECK_EQ_INT(top_line(stops[0]), 89);
+	CHECK_HAS(stops[0], "{\"name\":\"b\",\"type\":\"int\",\"value\":\"0\"}");
+	// A Boundary's (a catcher's) around where it ends: caught.
+	reset();
+	ak_dbg_exceptions(AK_DBG_EXC_UNCAUGHT);
+	ak_owner *c = ak_catch(call_uncaught, m, ignore_error, NULL);
+	ak_owner_dispose(c);
+	CHECK_EQ_INT(nstops, 0);
+	// All: the one caught stops too, saying it's caught.
+	reset();
+	ak_dbg_exceptions(AK_DBG_EXC_ALL);
+	CHECK_EQ_INT(call(m, "caughtOne"), -1);
+	REQUIRE(nstops == 1);
+	CHECK_HAS(stops[0], "\"uncaught\":false}");
+	CHECK_EQ_INT(top_line(stops[0]), 74);
+	// None: none.
+	reset();
+	CHECK_EQ_INT(call(m, "caughtOne"), -1);
+	ak_vm_call(ak_module_find(m, "uncaughtOne"), NULL, 0);
+	ak_release(ak_error_take());
+	CHECK_EQ_INT(nstops, 0);
+	ak_module_release(m);
+}
+
 #if !defined(_WIN32)
 // Through asuka dev's connection (abi/dev.c): the CLI's frames reach the
 // debugger on the connection's own thread, which answers pings while the
@@ -581,13 +896,19 @@ TEST(debug_dev_connection) {
 	REQUIRE(expect(AK_DEV_HELLO, buf, sizeof buf));
 	// The breakpoint, then a ping: answered once the frame before it was
 	// read and handed over, on the same thread.
-	uint8_t bp[4 + sizeof FILE_NAME - 1 + 8];
-	uint32_t flen = sizeof FILE_NAME - 1, one = 1, line = L_RETSUM;
-	memcpy(bp, &flen, 4);
-	memcpy(bp + 4, FILE_NAME, flen);
-	memcpy(bp + 4 + flen, &one, 4);
-	memcpy(bp + 8 + flen, &line, 4);
-	send_raw(AK_DEV_DEBUG_BREAKPOINTS, bp, sizeof bp);
+	// file, n, then line, key, flags, hit op, hit n, codes (none).
+	uint8_t bp[4 + sizeof FILE_NAME - 1 + 4 + 18];
+	uint32_t flen = sizeof FILE_NAME - 1, one = 1, line = L_RETSUM, zero = 0;
+	uint8_t *w = bp;
+	memcpy(w, &flen, 4), w += 4;
+	memcpy(w, FILE_NAME, flen), w += flen;
+	memcpy(w, &one, 4), w += 4;
+	memcpy(w, &line, 4), w += 4;
+	memcpy(w, &zero, 4), w += 4;
+	*w++ = 0, *w++ = 0;
+	memcpy(w, &zero, 4), w += 4;
+	memcpy(w, &zero, 4), w += 4;
+	send_raw(AK_DEV_DEBUG_BREAKPOINTS, bp, (size_t)(w - bp));
 	send_raw(AK_DEV_PING, NULL, 0);
 	REQUIRE(expect(AK_DEV_PING, buf, sizeof buf));
 	CHECK_EQ_INT(atomic_load(&ak_dbg_on), 1);

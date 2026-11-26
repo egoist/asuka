@@ -143,6 +143,11 @@ type Events struct {
 	Continued func(p *Player)
 	// Values is told of the answer to Player.Variables, under its seq.
 	Values func(p *Player, seq uint32, v Variables)
+	// Result is told of the answer to Player.Evaluate, under its seq.
+	Result func(p *Player, seq uint32, r Result)
+	// Logpoint is told of what a logpoint said, or why a breakpoint's
+	// code failed.
+	Logpoint func(p *Player, l Logpoint)
 	// Pong is told of the answer to Player.Ping.
 	Pong func(p *Player)
 	Gone func(p *Player, err error)
@@ -159,9 +164,11 @@ type Server struct {
 	failed  map[target.Platform]Failure // a platform's build that failed, until Fixed
 	ps      map[*Player]bool
 	conns   uint64 // players that connected
-	// breakpoints are the debugger's, by file (SetBreakpoints): every
-	// player gets them as it says hello.
-	breakpoints map[string][]int
+	// debug is what the debugger set, by platform (SetBreakpoints,
+	// Extend), and exceptions the errors that stop the apps
+	// (SetExceptions): every player gets them as it says hello.
+	debug      map[target.Platform]*debugSetup
+	exceptions byte
 }
 
 // Player is a connected player.
@@ -174,6 +181,9 @@ type Player struct {
 	Platform target.Platform
 	hello    bool
 	seq      uint64 // the order it connected in
+	// exts: the extensions it was sent, by module, how long (Extend:
+	// under wmu).
+	exts map[uint64]int
 }
 
 // Listen serves on addr (":0" picks a port).

@@ -119,6 +119,7 @@ func (d *dapClient) event(name string) map[string]any {
 			body, _ := m["body"].(map[string]any)
 			return body
 		}
+		d.events = append(d.events, m)
 	}
 }
 
@@ -146,9 +147,11 @@ func (d *dapClient) locals(thread any) (frame map[string]any, lines []string) {
 // asuka dev's debugger on this Mac, end to end: an editor attaches to
 // the dev loop's adapter, sets a breakpoint in a handler of the app's
 // source, the player (the macOS host) stops there as its script taps
-// Add, with the handler's locals (the component's state); it steps,
-// goes on, stops again on the next tap with the count one more, and
-// detaching lets it run on.
+// Add, with the handler's locals (the component's state); it evaluates
+// an expression there, steps, goes on, stops again on the next tap with
+// the count one more; a logpoint logs and a conditional breakpoint stops
+// only when its condition holds; an error nothing catches stops where
+// it's thrown; and detaching lets it run on.
 func TestDevDebugger(t *testing.T) {
 	needMacBuild(t)
 	dir := filepath.Join(t.TempDir(), "counter")
@@ -164,6 +167,12 @@ func TestDevDebugger(t *testing.T) {
       on press {
         let next = count + 1
         count = next
+      }
+    }
+    Button("Fail") {
+      on press {
+        let why = "boom {count}"
+        throw Error(why)
       }
     }
   }
@@ -197,12 +206,12 @@ app { Counter() }
 		t.Fatal(err)
 	}
 	marks := t.TempDir()
-	tap1, tap2, end := filepath.Join(marks, "tap1"), filepath.Join(marks, "tap2"), filepath.Join(marks, "end")
+	tap1, tap2, tap3, tap4, end := filepath.Join(marks, "tap1"), filepath.Join(marks, "tap2"), filepath.Join(marks, "tap3"), filepath.Join(marks, "tap4"), filepath.Join(marks, "end")
 	cmd := exec.Command(exe)
 	cmd.Env = append(os.Environ(),
 		"ASUKA_DEV=127.0.0.1:"+strconv.Itoa(loop.port()),
 		"ASUKA_DATA="+filepath.Join(t.TempDir(), "data"),
-		"ASUKA_SCRIPT=waitfor:"+tap1+";tap:Add;waitfor:"+tap2+";tap:Add;waitfor:"+end)
+		"ASUKA_SCRIPT=waitfor:"+tap1+";tap:Add;waitfor:"+tap2+";tap:Add;waitfor:"+tap3+";tap:Add;waitfor:"+tap4+";tap:Fail;waitfor:"+end)
 	var out strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Start(); err != nil {
@@ -240,6 +249,13 @@ app { Counter() }
 	if got := strings.Join(locals, "\n"); !strings.Contains(got, "count: int = 0") {
 		t.Fatalf("locals at the breakpoint:\n%s", got)
 	}
+	// An expression in the frame: the state as it is now.
+	if ev := d.request("evaluate", map[string]any{"expression": "count + 1", "frameId": frame["id"], "context": "repl"}); ev["result"] != "1" || ev["type"] != "int" {
+		t.Fatalf("evaluate: %v", ev)
+	}
+	if m := d.requestFail("evaluate", map[string]any{"expression": "nope * 2", "frameId": frame["id"], "context": "watch"}); !strings.Contains(m, "nope") {
+		t.Fatalf("evaluate what doesn't compile: %s", m)
+	}
 	// Over the let: next has its value.
 	d.request("next", map[string]any{"threadId": st["threadId"]})
 	st = d.event("stopped")
@@ -255,8 +271,89 @@ app { Counter() }
 	if _, locals = d.locals(st["threadId"]); !strings.Contains(strings.Join(locals, "\n"), "count: int = 1") {
 		t.Fatalf("the second stop:\n%s", strings.Join(locals, "\n"))
 	}
-	// Detached: the app goes on, and its count is 2.
-	d.request("disconnect", map[string]any{})
+	// A logpoint where it stopped, and a condition on the next line:
+	// neither stops this time round (next is 2).
+	bps = d.request("setBreakpoints", map[string]any{"source": map[string]any{"path": src}, "breakpoints": []any{
+		map[string]any{"line": 8, "logMessage": "count is {count}"},
+		map[string]any{"line": 9, "condition": "next == 3"},
+	}})
+	for _, bp := range bps["breakpoints"].([]any) {
+		if bp := bp.(map[string]any); bp["verified"] != true || bp["message"] != nil {
+			t.Fatalf("the breakpoints: %v", bps)
+		}
+	}
+	// What errors stop: one nothing catches.
+	d.request("setExceptionBreakpoints", map[string]any{"filters": []string{"uncaught"}})
+	d.request("continue", map[string]any{"threadId": st["threadId"]})
+	d.event("continued")
 	inspects(t, loop, "macOS", `"text":"Count: 2"`)
+
+	// The third tap: it logs, then stops at the condition, next 3.
+	os.WriteFile(tap3, nil, 0o644)
+	st = d.event("stopped")
+	frame, locals = d.locals(st["threadId"])
+	if st["reason"] != "breakpoint" || frame["line"] != 9.0 || !strings.Contains(strings.Join(locals, "\n"), "next: int = 3") {
+		t.Fatalf("the condition's stop at %v: %v\n%s", frame["line"], st, strings.Join(locals, "\n"))
+	}
+	if !d.sawOutput("count is 2\n") {
+		t.Fatalf("no logpoint's output: %v", d.events)
+	}
+	d.request("continue", map[string]any{"threadId": st["threadId"]})
+	d.event("continued")
+	inspects(t, loop, "macOS", `"text":"Count: 3"`)
+
+	// Fail throws what nothing catches: it stops at the throw, why in
+	// its locals; the error's details.
+	os.WriteFile(tap4, nil, 0o644)
+	st = d.event("stopped")
+	frame, locals = d.locals(st["threadId"])
+	if st["reason"] != "exception" || frame["line"] != 15.0 || !strings.Contains(strings.Join(locals, "\n"), `why: string = "boom 3"`) {
+		t.Fatalf("the error's stop at %v: %v\n%s", frame["line"], st, strings.Join(locals, "\n"))
+	}
+	if info := d.request("exceptionInfo", map[string]any{"threadId": st["threadId"]}); info["description"] != "boom 3" || info["breakMode"] != "unhandled" {
+		t.Fatalf("exceptionInfo: %v", info)
+	}
+	if ev := d.request("evaluate", map[string]any{"expression": "why.count() + count", "frameId": frame["id"], "context": "hover"}); ev["result"] != "9" {
+		t.Fatalf("evaluate at the error: %v", ev)
+	}
+	// Detached: the app goes on (the error's its uncaught one, which
+	// the overlay shows).
+	d.request("disconnect", map[string]any{})
 	os.WriteFile(end, nil, 0o644)
+}
+
+// requestFail sends a request that must fail, and returns its message.
+func (d *dapClient) requestFail(command string, args any) string {
+	d.t.Helper()
+	d.seq++
+	b, _ := json.Marshal(map[string]any{"seq": d.seq, "type": "request", "command": command, "arguments": args})
+	if _, err := fmt.Fprintf(d.c, "Content-Length: %d\r\n\r\n%s", len(b), b); err != nil {
+		d.t.Fatal(err)
+	}
+	for {
+		m := d.read()
+		if m["type"] != "response" {
+			d.events = append(d.events, m)
+			continue
+		}
+		if m["request_seq"] != float64(d.seq) {
+			continue
+		}
+		if m["success"] != false {
+			d.t.Fatalf("%s succeeded: %v", command, m["body"])
+		}
+		msg, _ := m["message"].(string)
+		return msg
+	}
+}
+
+// sawOutput reports whether an output event said text, among the events
+// read meanwhile.
+func (d *dapClient) sawOutput(text string) bool {
+	for _, m := range d.events {
+		if body, _ := m["body"].(map[string]any); m["event"] == "output" && body["output"] == text {
+			return true
+		}
+	}
+	return false
 }

@@ -62,6 +62,9 @@ type Lowerer struct {
 	variantIDs map[*check.VariantDef]int64
 	// cov counts statements' runs, with Options.Cover (cover.go).
 	cov *coverer
+	// ev is what the debugger's expressions lowered after the module
+	// (eval.go): nil until the first.
+	ev *evalState
 }
 
 // Options say how to lower.
@@ -122,7 +125,7 @@ func Lower(prog *check.Program, opts *Options) (*Program, []check.Diagnostic) {
 		methodFrom:  map[int]map[string]string{},
 		catalog:     -1,
 	}
-	l.out = &Program{Mod: l.mod}
+	l.out = &Program{Mod: l.mod, l: l}
 	l.opts = opts
 	// ASUKA_OPT_SKIP=fuse: Seq pipelines and arrays' closure methods
 	// lowered as the runtime's calls, not as loops (seqfuse.go): what the
@@ -779,8 +782,14 @@ func (l *Lowerer) finishConsts() {
 }
 
 func (l *Lowerer) finishStrings() {
+	l.writeStrings(l.pendingStrings)
+	l.stringsFn.emit(op("RET0"))
+}
+
+// writeStrings writes ps's tables into init.strings (l.stringsFn).
+func (l *Lowerer) writeStrings(ps []pendingStrings) {
 	b := l.stringsFn
-	for _, p := range l.pendingStrings {
+	for _, p := range ps {
 		mark := b.mark()
 		// literalChunk of them from a block, the rest added one by one: a
 		// table of any length (an enum's 70000 cases' names) takes as many
@@ -805,7 +814,6 @@ func (l *Lowerer) finishStrings() {
 		b.emit(op("GSET"), p.global, arr, int(bc.KRef))
 		b.release(mark)
 	}
-	b.emit(op("RET0"))
 }
 
 func repeatKind(k bc.Kind, n int) []bc.Kind {
@@ -908,7 +916,7 @@ func (l *Lowerer) lowerTest(t *check.Test) {
 		b.emit(op("MOVR"), blk, m)
 		b.emit(op("CALLB"), e, l.builtin("error"), blk, 1)
 		b.emit(op("THROW"), e)
-		b.f.Handlers = append(b.f.Handlers, Handler{start, end, target})
+		b.f.Handlers = append(b.f.Handlers, Handler{Start: start, End: end, Target: target, Rethrows: true})
 	})
 }
 

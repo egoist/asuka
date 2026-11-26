@@ -160,7 +160,13 @@ registers, 8 frames), the thread's main one with a large one. With the
 debugger compiled in (a player's core), the loop is made twice: the
 release build's, which asks for the debugger only as a frame is entered
 or left and a jump is taken, and a copy that calls its hook before each
-instruction, run while it wants that. The loader
+instruction, run while it wants that; an error about to unwind a frame
+asks whether errors stop the app. What the debugger evaluates (a
+breakpoint's condition, an editor's watch) is compiled by the CLI
+against the module running, as an extension of it the player builds
+into one with it, sharing its types and globals (in such a build a
+module's shapes are reached through a table, so an extension's are its
+base's). The loader
 checks every instruction is one the VM has, and resolves builtins by
 name through a hash. An error an instruction throws (an overflow, an
 index) saves its frame's pc first, so its trace names its line, as the

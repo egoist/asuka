@@ -111,6 +111,9 @@ void ak_future_wait(ak_future *f, ak_cb cb, void *ctx);
 // ak_future_unwait removes a waiter ak_future_wait added (a no-op once
 // it was queued).
 bool ak_future_unwait(ak_future *f, ak_cb cb, void *ctx);  // whether it was waiting
+// ak_future_waiter is the ctx of f's first waiter that waits with cb
+// (NULL: none): the debugger's, finding the task awaiting a task.
+void *ak_future_waiter(const ak_future *f, ak_cb cb);
 void ak_future_cancel(ak_future *f);
 // ak_future_take gives the result (owned, retained) or throws the error.
 ak_val ak_future_take(ak_future *f);

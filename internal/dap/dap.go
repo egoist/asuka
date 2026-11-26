@@ -16,7 +16,12 @@
 // line without code moves to the next that has, in its function) and
 // sends the players the lines resolved, again whenever the app compiles
 // (Compiled), telling the editor of a breakpoint that moved or now has
-// code.
+// code. A breakpoint may have a condition, a hit condition and a log
+// message (a logpoint), which the dev loop compiles for each player's
+// module (Dev.SetBreakpoints) and the player evaluates as the line's
+// reached. Errors stop the app where they're thrown (exception filters:
+// uncaught, all), and an expression evaluates in a paused frame (the
+// editor's hovers, watches and console: Options.Compile).
 package dap
 
 import (
@@ -24,25 +29,46 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/egoist/asuka/internal/devserver"
 )
 
-// Dev is the dev loop's side the adapter drives: devserver.Server's.
+// Dev is the dev loop's side the adapter drives: its devserver.Server's,
+// and its modules', which compile the breakpoints' code.
 type Dev interface {
-	// SetBreakpoints sets file's breakpoints on every player (lines:
-	// none), and on each that connects later.
-	SetBreakpoints(file string, lines []int)
+	// SetBreakpoints sets file's breakpoints on every player (none:
+	// nil), and on each that connects later: their conditions and log
+	// messages compiled for each player's module. It returns why each
+	// breakpoint's code doesn't compile ("": it does; nil: all do).
+	SetBreakpoints(file string, bps []Breakpoint) []string
+	// SetExceptions sets the errors that stop the players' apps
+	// (devserver.ExcUncaught, ExcAll; 0: none).
+	SetExceptions(filters byte)
 	// DebugReset detaches the debugger from every player.
 	DebugReset()
+}
+
+// Breakpoint is a breakpoint as the adapter sends it: at Line (resolved),
+// stopping where Condition holds (an expression; "": always) at the
+// hits HitOp and HitN say, or logging LogMessage there (text with {expr}s
+// in it) and going on. Key is what its hit count goes with.
+type Breakpoint struct {
+	Line       int
+	Condition  string
+	LogMessage string
+	HitOp      devserver.HitOp
+	HitN       int
+	Key        uint32
 }
 
 // Options are what the adapter knows of the app.
@@ -60,6 +86,10 @@ type Options struct {
 	// its path from there, one outside (a dependency's) is shown as
 	// such.
 	Root string
+	// Compile compiles an expression to evaluate in frame f of p's stop
+	// (an editor's hover, watch, console). Nil: evaluating isn't
+	// supported.
+	Compile func(p *devserver.Player, f devserver.Frame, expr string) (*devserver.Fragment, error)
 }
 
 // Server is the adapter: it accepts an editor's connection (one at a
@@ -80,13 +110,15 @@ type Server struct {
 	sess       *session
 	threads    map[*devserver.Player]*thread
 	nextThread int
-	files      map[string]*fileBPs // by the editor's path
-	sent       map[string][]int    // what Dev has, by the modules' file
+	files      map[string]*fileBPs     // by the editor's path
+	sent       map[string][]Breakpoint // what Dev has, by the modules' file
 	nextBP     int
 	refs       map[int]*ref
 	nextRef    int
 	vseq       uint32
 	waits      map[uint32]chan devserver.Variables
+	rwaits     map[uint32]chan devserver.Result
+	exceptions byte // the filters the editor set
 	closed     bool
 }
 
@@ -106,6 +138,16 @@ type fileBPs struct {
 	lines    []int  // as asked (1-based)
 	ids      []int
 	resolved []int // where each stops (0: nowhere yet)
+	// What each does there: its condition, hit condition and log
+	// message, as asked; why its code or its hit condition doesn't work
+	// ("": it does).
+	specs []bpSpec
+	errs  []string
+}
+
+// bpSpec is what a breakpoint does at its line, as the editor asked.
+type bpSpec struct {
+	cond, hit, log string
 }
 
 type refKind int
@@ -129,8 +171,8 @@ type ref struct {
 // New is an adapter that isn't listening yet: the dev loop's events go
 // to it from the start.
 func New(opts Options) *Server {
-	return &Server{opts: opts, threads: map[*devserver.Player]*thread{}, files: map[string]*fileBPs{}, sent: map[string][]int{},
-		refs: map[int]*ref{}, waits: map[uint32]chan devserver.Variables{}}
+	return &Server{opts: opts, threads: map[*devserver.Player]*thread{}, files: map[string]*fileBPs{}, sent: map[string][]Breakpoint{},
+		refs: map[int]*ref{}, waits: map[uint32]chan devserver.Variables{}, rwaits: map[uint32]chan devserver.Result{}}
 }
 
 // Listen accepts editors' connections on addr.
@@ -241,6 +283,13 @@ func (s *Server) Stopped(p *devserver.Player, st devserver.Stop) {
 // stoppedEvent tells the editor t stopped (mu held).
 func (s *Server) stoppedEvent(t *thread) {
 	body := map[string]any{"reason": t.stop.Reason, "threadId": t.id, "allThreadsStopped": false}
+	if x := t.stop.Exception; x != nil {
+		body["description"] = "Paused on an error thrown"
+		if x.Uncaught {
+			body["description"] = "Paused on an error nothing catches"
+		}
+		body["text"] = x.Type + ": " + x.Message
+	}
 	if t.stop.Reason == "breakpoint" && len(t.stop.Frames) > 0 {
 		f := t.stop.Frames[0]
 		var hit []int
@@ -290,6 +339,39 @@ func (s *Server) Values(p *devserver.Player, seq uint32, v devserver.Variables) 
 	if ch != nil {
 		ch <- v
 	}
+}
+
+// Result is a player's answer to an evaluation.
+func (s *Server) Result(p *devserver.Player, seq uint32, r devserver.Result) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	ch := s.rwaits[seq]
+	delete(s.rwaits, seq)
+	s.mu.Unlock()
+	if ch != nil {
+		ch <- r
+	}
+}
+
+// Logpoint is what a player's logpoint said (or why a breakpoint's code
+// failed), shown in the editor's debug console at its line.
+func (s *Server) Logpoint(p *devserver.Player, l devserver.Logpoint) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sess == nil {
+		return
+	}
+	body := map[string]any{"category": "console", "output": l.Text + "\n", "source": s.source(l.File), "line": s.sess.lineOut(l.Line)}
+	if l.Error != "" {
+		body["category"] = "stderr"
+		body["output"] = l.Error + "\n"
+	}
+	s.eventLocked("output", body)
 }
 
 // Output is what a player's app printed (stderr: to its standard error),
@@ -368,12 +450,17 @@ func (s *Server) resolve(file string, lines []int) []int {
 	return s.opts.Resolve(file, lines)
 }
 
-// syncDev sends Dev the lines of each of files that changed (bmu held,
-// mu not).
-func (s *Server) syncDev(files []string) {
+// syncDev sends Dev the breakpoints of each of files that changed, or
+// all (force: the app compiled: their code is compiled for each
+// platform's module, a platform's first among them), and notes why
+// each's code doesn't compile (bmu held, mu not). It returns the files
+// whose breakpoints' errors changed.
+func (s *Server) syncDev(files []string, force bool) []*fileBPs {
 	type set struct {
-		file  string
-		lines []int
+		file string
+		bps  []Breakpoint
+		from []*fileBPs // each's
+		idx  []int
 	}
 	var sets []set
 	seen := map[string]bool{}
@@ -383,43 +470,120 @@ func (s *Server) syncDev(files []string) {
 			continue
 		}
 		seen[f] = true
-		var lines []int
+		st := set{file: f}
 		for _, fb := range s.files {
 			if fb.file != f {
 				continue
 			}
-			for _, l := range fb.resolved {
-				if l > 0 && !slices.Contains(lines, l) {
-					lines = append(lines, l)
+			for i, l := range fb.resolved {
+				if l <= 0 || slices.ContainsFunc(st.bps, func(b Breakpoint) bool { return b.Line == l }) {
+					continue
 				}
+				b := Breakpoint{Line: l, Condition: fb.specs[i].cond, LogMessage: fb.specs[i].log}
+				op, n, err := parseHit(fb.specs[i].hit)
+				if err == nil {
+					b.HitOp, b.HitN = op, n
+				}
+				if b.Condition != "" || fb.specs[i].hit != "" {
+					h := fnv.New32a()
+					h.Write([]byte(b.Condition + "\x00" + fb.specs[i].hit))
+					b.Key = h.Sum32()
+				}
+				st.bps = append(st.bps, b)
+				st.from = append(st.from, fb)
+				st.idx = append(st.idx, i)
 			}
 		}
-		sort.Ints(lines)
+		sort.Sort(byLine(st))
 		prev, had := s.sent[f]
-		if len(lines) == 0 {
+		if len(st.bps) == 0 {
 			if !had {
 				continue
 			}
 			delete(s.sent, f)
-		} else if had && slices.Equal(lines, prev) {
+		} else if had && slices.Equal(st.bps, prev) && !force {
 			continue
 		} else {
-			s.sent[f] = lines
+			s.sent[f] = st.bps
 		}
-		sets = append(sets, set{f, lines})
+		sets = append(sets, st)
 	}
 	s.mu.Unlock()
 	if s.Dev == nil {
-		return
+		return nil
 	}
+	var changed []*fileBPs
 	for _, st := range sets {
-		s.Dev.SetBreakpoints(st.file, st.lines)
+		errs := s.Dev.SetBreakpoints(st.file, st.bps)
+		s.mu.Lock()
+		for k, fb := range st.from {
+			i := st.idx[k]
+			if i >= len(fb.errs) {
+				continue
+			}
+			e := ""
+			if k < len(errs) {
+				e = errs[k]
+			}
+			if _, _, err := parseHit(fb.specs[i].hit); err != nil {
+				e = err.Error()
+			}
+			if fb.errs[i] != e {
+				fb.errs[i] = e
+				if !slices.Contains(changed, fb) {
+					changed = append(changed, fb)
+				}
+			}
+		}
+		s.mu.Unlock()
 	}
+	return changed
+}
+
+// byLine sorts a set's breakpoints (and what each is of) by line.
+type byLine struct {
+	file string
+	bps  []Breakpoint
+	from []*fileBPs
+	idx  []int
+}
+
+func (b byLine) Len() int           { return len(b.bps) }
+func (b byLine) Less(i, j int) bool { return b.bps[i].Line < b.bps[j].Line }
+func (b byLine) Swap(i, j int) {
+	b.bps[i], b.bps[j] = b.bps[j], b.bps[i]
+	b.from[i], b.from[j] = b.from[j], b.from[i]
+	b.idx[i], b.idx[j] = b.idx[j], b.idx[i]
+}
+
+// parseHit reads a hit condition as editors write it: a count ("5": the
+// fifth hit), or an operator and a count (">= 5", "> 2", "< 3", "<= 3",
+// "== 5", "% 3": every third). "": none.
+func parseHit(h string) (devserver.HitOp, int, error) {
+	h = strings.TrimSpace(h)
+	if h == "" {
+		return devserver.HitAny, 0, nil
+	}
+	op := devserver.HitEQ
+	for _, o := range []struct {
+		s  string
+		op devserver.HitOp
+	}{{">=", devserver.HitGE}, {"<=", devserver.HitLE}, {"==", devserver.HitEQ}, {">", devserver.HitGT}, {"<", devserver.HitLT}, {"%", devserver.HitMod}, {"=", devserver.HitEQ}} {
+		if rest, ok := strings.CutPrefix(h, o.s); ok {
+			op, h = o.op, strings.TrimSpace(rest)
+			break
+		}
+	}
+	n, err := strconv.Atoi(h)
+	if err != nil || n < 0 {
+		return devserver.HitAny, 0, fmt.Errorf("The hit count isn't a count: write 5, >= 5, > 5, <= 5, < 5 or %% 5")
+	}
+	return op, n, nil
 }
 
 // setBreakpoints replaces the editor's breakpoints in path with lines,
-// and says where each stops.
-func (s *Server) setBreakpoints(path string, lines []int) []breakpoint {
+// which do what specs say there, and says where each stops.
+func (s *Server) setBreakpoints(path string, lines []int, specs []bpSpec) []breakpoint {
 	s.bmu.Lock()
 	defer s.bmu.Unlock()
 	file := s.canonical(path)
@@ -439,6 +603,7 @@ func (s *Server) setBreakpoints(path string, lines []int) []breakpoint {
 		old[l] = fb.ids[i]
 	}
 	fb.file, fb.lines, fb.resolved, fb.ids = file, append([]int(nil), lines...), res, make([]int, len(lines))
+	fb.specs, fb.errs = specs, make([]string, len(lines))
 	for i, l := range lines {
 		if id, ok := old[l]; ok {
 			fb.ids[i] = id
@@ -448,13 +613,14 @@ func (s *Server) setBreakpoints(path string, lines []int) []breakpoint {
 			fb.ids[i] = s.nextBP
 		}
 	}
-	out := s.breakpointsOf(fb)
 	if len(lines) == 0 {
 		delete(s.files, path)
 	}
 	s.mu.Unlock()
-	s.syncDev(touched)
-	return out
+	s.syncDev(touched, false)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.breakpointsOf(fb)
 }
 
 // breakpointsOf is fb's breakpoints as the editor sees them, their
@@ -471,6 +637,9 @@ func (s *Server) breakpointOf(fb *fileBPs, i, asked int) breakpoint {
 	b := breakpoint{ID: fb.ids[i], Line: asked}
 	if r := fb.resolved[i]; r > 0 {
 		b.Verified, b.Line = true, r
+		if i < len(fb.errs) && fb.errs[i] != "" {
+			b.Message = fb.errs[i]
+		}
 	} else {
 		b.Message = "No code of the app's on this line (yet)"
 		b.Reason = "pending"
@@ -526,15 +695,31 @@ func (s *Server) Compiled() {
 		}
 	}
 	s.mu.Unlock()
-	s.syncDev(touched)
+	// Their code is compiled for each platform's module: again for the
+	// new one (a platform's first, which the players of the platform
+	// get them for).
+	changed := s.syncDev(touched, true)
+	s.mu.Lock()
+	for _, fb := range changed {
+		if s.files[fb.path] != fb || s.sess == nil {
+			continue
+		}
+		for i, l := range fb.lines {
+			b := s.breakpointOf(fb, i, l)
+			b.Line = s.sess.lineOut(b.Line)
+			s.eventLocked("breakpoint", map[string]any{"reason": "changed", "breakpoint": b})
+		}
+	}
+	s.mu.Unlock()
 }
 
 // resetLocked forgets the editor's breakpoints and references (mu held):
 // it detached.
 func (s *Server) resetLocked() {
 	s.files = map[string]*fileBPs{}
-	s.sent = map[string][]int{}
+	s.sent = map[string][]Breakpoint{}
 	s.refs = map[int]*ref{}
+	s.exceptions = 0
 }
 
 // ---- The editor's session ----
@@ -658,7 +843,9 @@ func (s *Server) request(sess *session, m *message) bool {
 		sess.lines1 = a.LinesStartAt1 == nil || *a.LinesStartAt1
 		sess.cols1 = a.ColumnsStartAt1 == nil || *a.ColumnsStartAt1
 		s.mu.Unlock()
-		sess.respond(m, capabilities{SupportsConfigurationDoneRequest: true, ExceptionBreakpointFilters: []any{}})
+		sess.respond(m, capabilities{SupportsConfigurationDoneRequest: true, SupportsConditionalBreakpoints: true,
+			SupportsHitConditionalBreakpoints: true, SupportsLogPoints: true, SupportsEvaluateForHovers: s.opts.Compile != nil,
+			SupportsExceptionInfoRequest: true, ExceptionBreakpointFilters: exceptionFilters})
 		sess.event("initialized", nil)
 	case "attach", "launch":
 		// Launch is attach: the app is asuka dev's, running already (an
@@ -682,22 +869,74 @@ func (s *Server) request(sess *session, m *message) bool {
 			break
 		}
 		var lines []int
+		var specs []bpSpec
 		if a.Breakpoints != nil {
 			for _, b := range a.Breakpoints {
 				lines = append(lines, sess.lineIn(b.Line))
+				specs = append(specs, bpSpec{cond: strings.TrimSpace(b.Condition), hit: strings.TrimSpace(b.HitCondition), log: b.LogMessage})
 			}
 		} else {
 			for _, l := range a.Lines {
 				lines = append(lines, sess.lineIn(l))
+				specs = append(specs, bpSpec{})
 			}
 		}
-		bps := s.setBreakpoints(a.Source.Path, lines)
+		bps := s.setBreakpoints(a.Source.Path, lines, specs)
 		for i := range bps {
 			bps[i].Line = sess.lineOut(bps[i].Line)
 		}
 		sess.respond(m, map[string]any{"breakpoints": bps})
 	case "setExceptionBreakpoints":
-		sess.respond(m, map[string]any{"breakpoints": []breakpoint{}})
+		var a setExceptionBreakpointsArgs
+		json.Unmarshal(m.Arguments, &a)
+		var filters byte
+		out := []breakpoint{}
+		for _, f := range a.Filters {
+			switch f {
+			case "uncaught":
+				filters |= devserver.ExcUncaught
+			case "all":
+				filters |= devserver.ExcAll
+			default:
+				out = append(out, breakpoint{Message: "No such filter: " + f})
+				continue
+			}
+			out = append(out, breakpoint{Verified: true})
+		}
+		s.bmu.Lock()
+		s.mu.Lock()
+		s.exceptions = filters
+		s.mu.Unlock()
+		if s.Dev != nil {
+			s.Dev.SetExceptions(filters)
+		}
+		s.bmu.Unlock()
+		sess.respond(m, map[string]any{"breakpoints": out})
+	case "exceptionInfo":
+		var a threadArgs
+		json.Unmarshal(m.Arguments, &a)
+		s.mu.Lock()
+		t := s.threadByID(a.ThreadID)
+		var body map[string]any
+		if t != nil && t.stop != nil && t.stop.Exception != nil {
+			x := t.stop.Exception
+			mode := "always"
+			if x.Uncaught {
+				mode = "unhandled"
+			}
+			var trace strings.Builder
+			for _, f := range t.stop.Frames {
+				fmt.Fprintf(&trace, "%s (%s:%d)\n", f.Name, f.File, f.Line)
+			}
+			body = map[string]any{"exceptionId": x.Type, "description": x.Message, "breakMode": mode,
+				"details": map[string]any{"message": x.Message, "typeName": x.Type, "stackTrace": strings.TrimRight(trace.String(), "\n")}}
+		}
+		s.mu.Unlock()
+		if body == nil {
+			sess.fail(m, "The thread isn't stopped at an error")
+			break
+		}
+		sess.respond(m, body)
 	case "configurationDone":
 		s.mu.Lock()
 		sess.ready = true
@@ -771,7 +1010,17 @@ func (s *Server) request(sess *session, m *message) bool {
 			sess.respond(m, nil)
 		}
 	case "evaluate":
-		sess.fail(m, "Evaluating expressions isn't supported yet: the Variables view shows each frame's locals")
+		var a evaluateArgs
+		json.Unmarshal(m.Arguments, &a)
+		// Answered when the player is, as variables are.
+		go func() {
+			body, err := s.evaluate(sess, a)
+			if err != nil {
+				sess.fail(m, err.Error())
+				return
+			}
+			sess.respond(m, body)
+		}()
 	case "disconnect", "terminate":
 		s.mu.Lock()
 		current := s.sess == sess
@@ -823,6 +1072,73 @@ func (s *Server) threadByID(id int) *thread {
 }
 
 var errNotPaused = errors.New("not paused")
+
+// exceptionFilters are the errors an editor may have the app stop at.
+var exceptionFilters = []exceptionFilter{
+	{Filter: "uncaught", Label: "Uncaught Errors", Description: "Stop where an error is thrown that nothing in the app catches (no catch, no Boundary)", Default: true},
+	{Filter: "all", Label: "All Errors", Description: "Stop where any error is thrown, caught or not"},
+}
+
+// evaluate evaluates an expression in a frame of a stopped thread, and
+// waits for the player's answer, the player's going or the session's
+// ending.
+func (s *Server) evaluate(sess *session, a evaluateArgs) (any, error) {
+	if s.opts.Compile == nil {
+		return nil, errors.New("Evaluating expressions isn't supported here")
+	}
+	s.mu.Lock()
+	r := s.refs[a.FrameID]
+	if r == nil || r.kind != refFrame || r.t.stop == nil {
+		s.mu.Unlock()
+		return nil, errors.New("Pause the app (or stop it at a breakpoint) to evaluate: the expression runs in a paused frame")
+	}
+	t, frame := r.t, r.frame
+	f := t.stop.Frames[frame]
+	s.mu.Unlock()
+	if f.Module == "" {
+		return nil, errors.New("This frame's locals aren't known: evaluate in another")
+	}
+	fr, err := s.opts.Compile(t.p, f, a.Expression)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.vseq++
+	seq := s.vseq
+	ch := make(chan devserver.Result, 1)
+	s.rwaits[seq] = ch
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.rwaits, seq)
+		s.mu.Unlock()
+	}()
+	if err := t.p.Evaluate(seq, frame, fr); err != nil {
+		return nil, err
+	}
+	var res devserver.Result
+	select {
+	case res = <-ch:
+	case <-t.gone:
+		return nil, errors.New("the player disconnected")
+	case <-sess.done:
+		return nil, errors.New("detached")
+	}
+	if res.Error != "" {
+		return nil, errors.New(res.Error)
+	}
+	if res.Value == nil {
+		return nil, errors.New("no value")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t.stop == nil {
+		return nil, errNotPaused
+	}
+	v := s.variable(t, devserver.ResultFrame|res.Ref, []int{0}, *res.Value)
+	return map[string]any{"result": v.Value, "type": v.Type, "variablesReference": v.VariablesReference,
+		"namedVariables": v.NamedVariables, "indexedVariables": v.IndexedVariables}, nil
+}
 
 func (s *Server) stackTrace(sess *session, a stackTraceArgs) (any, error) {
 	s.mu.Lock()

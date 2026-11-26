@@ -76,6 +76,7 @@ type devLoop struct {
 	// (under mu).
 	debugger *dap.Server
 	mods     map[target.Platform]*bytecode.Module
+	recent   []*bytecode.Module
 	// automation runs the core's automation on the player; flows, when
 	// set, are run once the app has loaded (asuka test --gui), then the
 	// loop ends.
@@ -104,7 +105,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 		mods: map[target.Platform]*bytecode.Module{}}
 	if devDebugPort >= 0 && d.platform != target.Web {
 		// Before the players' events, which it hears from the first.
-		d.debugger = dap.New(dap.Options{Resolve: d.resolveBreakpoints, Files: d.sourceFiles, Root: app.dir})
+		d.debugger = dap.New(dap.Options{Resolve: d.resolveBreakpoints, Files: d.sourceFiles, Root: app.dir, Compile: d.compileEval})
 	}
 	srv, err := devserver.Listen(addr, devserver.Events{
 		Hello: func(p *devserver.Player, b []byte) {
@@ -114,6 +115,8 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 		Stopped:   func(p *devserver.Player, st devserver.Stop) { d.debugger.Stopped(p, st) },
 		Continued: func(p *devserver.Player) { d.debugger.Continued(p) },
 		Values:    func(p *devserver.Player, seq uint32, v devserver.Variables) { d.debugger.Values(p, seq, v) },
+		Result:    func(p *devserver.Player, seq uint32, r devserver.Result) { d.debugger.Result(p, seq, r) },
+		Logpoint:  func(p *devserver.Player, l devserver.Logpoint) { d.debugger.Logpoint(p, l) },
 		Automated: func(p *devserver.Player, seq uint32, answers string) { d.automation.answered(seq, answers) },
 		Tree: func(p *devserver.Player, tree []byte) {
 			d.inspector.put(fmt.Sprintf("%p", p), playerName(p.Info), tree, false, func(path string) { p.Highlight(path) })
@@ -157,7 +160,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	}
 	d.srv = srv
 	if d.debugger != nil {
-		d.debugger.Dev = srv
+		d.debugger.Dev = devDebug{d}
 		if err := d.listenDebugger(devDebugPort); err != nil {
 			srv.Close()
 			return nil, err
@@ -244,6 +247,12 @@ func (d *devLoop) compiled(platform target.Platform, m *bytecode.Module) {
 	}
 	d.mu.Lock()
 	d.mods[platform] = m
+	// The modules the players may still run, whose frames an expression
+	// is compiled for: the last few.
+	d.recent = append(d.recent, m)
+	if len(d.recent) > 4 {
+		d.recent = d.recent[len(d.recent)-4:]
+	}
 	d.mu.Unlock()
 	d.debugger.Compiled()
 }

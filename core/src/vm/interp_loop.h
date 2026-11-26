@@ -72,6 +72,20 @@ static int INTERP_NAME(ak_co *co, ak_val *out) {
 #else
 #define SWITCHPOINT() (void)0
 #endif
+	// An error about to unwind the frame (thrown here, or by what it
+	// called): the debugger may stop where it's thrown, before it
+	// unwinds, when it's asked to stop on errors (debug.h's
+	// ak_dbg_thrown). Only on the error's path.
+#if AK_VM_DEBUGGER
+#define THROWN(skip) do { \
+		if (AK_UNLIKELY(atomic_load_explicit(&ak_dbg_exc, memory_order_relaxed))) { \
+			ak_dbg_thrown(co, IPC(), (skip)); \
+			RELOAD(); \
+		} \
+	} while (0)
+#else
+#define THROWN(skip) (void)0
+#endif
 
 #if AK_VM_THREADED
 #define LABEL(name) &&L_##name,
@@ -266,7 +280,7 @@ next:
 	OP(JF) if (!R[a[0]].i) JUMP(joff(a + 1)); NEXT();
 	OP(JNONE) if (!R[a[0]].p) JUMP(joff(a + 1)); NEXT();
 	OP(JSOME) if (R[a[0]].p) JUMP(joff(a + 1)); NEXT();
-	OP(ISSHAPE) R[a[0]].i = ak_op_isshape(R[a[1]].p, &M->shapes[off32(a + 2)].s); NEXT();
+	OP(ISSHAPE) R[a[0]].i = ak_op_isshape(R[a[1]].p, AK_MOD_SHAPE(M, off32(a + 2))); NEXT();
 
 	OP(CALL) {
 		const ak_func *g = &M->funcs[off32(a + 1)];
@@ -395,6 +409,7 @@ next:
 		void *e = R[a[0]].p;
 		R[a[0]].p = NULL;
 		ak_throw(e);
+		THROWN(true);
 		// Handlers of the same function don't catch it again: look
 		// from the caller on.
 		goto unwind_frame;
@@ -406,17 +421,17 @@ next:
 	OP(VGET) ak_op_vget(R, a[0], R[a[1]].p); NEXT();
 	OP(VSET) ak_op_vset(R[a[0]].p, R[a[1]]); NEXT();
 	OP(VTAKE) ak_op_vtake(R, a[0], R[a[1]].p); NEXT();
-	OP(NEWS) setref(R, a[0], ak_op_news(&M->shapes[off32(a + 1)].s, R + a[3])); NEXT();
+	OP(NEWS) setref(R, a[0], ak_op_news(AK_MOD_SHAPE(M, off32(a + 1)), R + a[3])); NEXT();
 	OP(GETF) ak_op_getf(R, a[0], R[a[1]].p, a[2]); NEXT();
 	OP(SETF) ak_op_setf(R, a[0], a[1], R[a[2]]); NEXT();
-	OP(NEWE) setref(R, a[0], ak_op_newe(&M->shapes[off32(a + 1)].s, a[3], R + a[4])); NEXT();
+	OP(NEWE) setref(R, a[0], ak_op_newe(AK_MOD_SHAPE(M, off32(a + 1)), a[3], R + a[4])); NEXT();
 	OP(ECASE) R[a[0]].i = ak_enum_case(R[a[1]].p); NEXT();
 	OP(GETP) ak_op_getp(R, a[0], R[a[1]].p, a[2]); NEXT();
 	OP(BOX) setref(R, a[0], ak_box_new((ak_kind)a[2], R[a[1]])); NEXT();
 	OP(UNBOX) R[a[0]] = ((ak_box *)R[a[1]].p)->v; NEXT();
 	OP(NEWA) {
 		uint32_t s = off32(a + 2);
-		setref(R, a[0], ak_op_newa((ak_kind)a[1], s == 0xFFFFFFFF ? NULL : &M->shapes[s].s, R + a[4], a[5]));
+		setref(R, a[0], ak_op_newa((ak_kind)a[1], s == 0xFFFFFFFF ? NULL : AK_MOD_SHAPE(M, s), R + a[4], a[5]));
 		NEXT();
 	}
 	OP(IDX)
@@ -679,10 +694,12 @@ thrown:
 unwind:
 	// An error is pending: find a handler, in this frame, then its
 	// callers'.
+	THROWN(false);
 	{
 		int64_t h = ak_vm_find_handler(F, IPC());
 		if (h >= 0) {
 			ip = code + h;
+			SWITCHPOINT();  // a step from where it stopped at the error
 			NEXT();
 		}
 	}
@@ -712,6 +729,7 @@ unwind_frame:
 #undef OP
 #undef NEXT
 #undef SWITCHPOINT
+#undef THROWN
 #undef DEBUG_ON
 #undef JUMP
 #undef LOAD

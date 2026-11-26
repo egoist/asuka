@@ -56,6 +56,10 @@ void ak_builtin_register(const char *name, ak_builtin_fn fn) {
 static ak_val rt_freeze(ak_val *args, uint32_t n) {
 	AK_UNUSED(n);
 	ak_module *m = ak_vm_running_module();
+#if AK_VM_DEBUGGER
+	// An extension's init makes its base's globals: the base keeps them.
+	if (m && m->base) m = m->base;
+#endif
 	ak_freeze(args[0], (ak_kind)args[1].i, m ? &m->frozen : NULL);
 	return args[0];
 }
@@ -180,49 +184,17 @@ static void fill_fields(ak_module *m, loader *l, rfield *rf, uint32_t n, uint8_t
 		kinds[i] = rf[i].kind;
 		if (rf[i].shape >= 0) {
 			if ((uint32_t)rf[i].shape >= m->nshapes) fail(l, "bad shape index");
-			else shapes[i] = &m->shapes[rf[i].shape].s;
+			else shapes[i] = AK_MOD_SHAPE(m, (uint32_t)rf[i].shape);
 		}
 		names[i] = rf[i].name->data;  // kept alive by the module (fieldnames below)
 	}
 }
 
-ak_module *ak_module_load(const uint8_t *p, size_t n, char *err, size_t errcap) {
-	loader L = {{p, n, 0, false}, err, errcap, false}, *l = &L;
-	if (n < 8 || memcmp(p, "AKBC", 4) != 0) {
-		fail(l, "not a module");
-		return NULL;
-	}
-	l->r.off = 4;
-	uint32_t version = ak_read_u32(&l->r);
-	if (version != AK_BC_VERSION) {
-		snprintf(err, errcap, "bytecode: version %u, want %d", version, AK_BC_VERSION);
-		return NULL;
-	}
-	ak_module *m = ak_alloc(sizeof *m);
-	m->rc = 1;
-	m->nints = count(l, 8);
-	m->ints = ak_alloc(sizeof(int64_t) * (m->nints ? m->nints : 1));
-	for (uint32_t i = 0; i < m->nints; i++) m->ints[i] = (int64_t)ak_read_u64(&l->r);
-	m->nfloats = count(l, 8);
-	m->floats = ak_alloc(sizeof(double) * (m->nfloats ? m->nfloats : 1));
-	for (uint32_t i = 0; i < m->nfloats; i++) m->floats[i] = ak_read_f64(&l->r);
-	m->nstrings = count(l, 4);
-	m->strings = ak_alloc(sizeof(ak_str *) * (m->nstrings ? m->nstrings : 1));
-	// Constants are immortal: reading them costs no reference counting,
-	// and spawn's threads share them. A module is freed only once nothing
-	// of what ran it is left (on a reload, after the old views went and
-	// kept state was copied into the new module's values).
-	for (uint32_t i = 0; i < m->nstrings; i++) {
-		m->strings[i] = rstr(l);
-		ak_make_immortal(m->strings[i]);
-	}
-
-	// Shapes refer to each other by index: allocate them all first.
-	m->nshapes = count(l, 4);
-	m->shapes = ak_alloc(sizeof(ak_vm_shape) * (m->nshapes ? m->nshapes : 1));
+// read_shapes reads m's shapes [from, to), allocated already: they refer
+// to each other by index.
+static void read_shapes(ak_module *m, loader *l, uint32_t from, uint32_t to) {
 	__typeof__(m->names) *names = &m->names;
-	ak_shape_call = shape_call;  // what rt calls a type's own ==, hash and JSON through
-	for (uint32_t i = 0; i < m->nshapes && !l->failed; i++) {
+	for (uint32_t i = from; i < to && !l->failed; i++) {
 		ak_vm_shape *vs = &m->shapes[i];
 		vs->mod = m;
 		ak_str *name = rstr(l);
@@ -266,10 +238,11 @@ ak_module *ak_module_load(const uint8_t *p, size_t n, char *err, size_t errcap) 
 			own_hook(vs, &vs->methods[k]);
 		}
 	}
+}
 
-	m->nfuncs = count(l, 8);
-	m->funcs = ak_alloc(sizeof(ak_func) * (m->nfuncs ? m->nfuncs : 1));
-	for (uint32_t i = 0; i < m->nfuncs && !l->failed; i++) {
+// read_funcs reads m's functions [from, to).
+static void read_funcs(ak_module *m, loader *l, uint32_t from, uint32_t to) {
+	for (uint32_t i = from; i < to && !l->failed; i++) {
 		ak_func *f = &m->funcs[i];
 		f->mod = m;
 		f->index = i;
@@ -305,7 +278,11 @@ ak_module *ak_module_load(const uint8_t *p, size_t n, char *err, size_t errcap) 
 		for (uint32_t h = 0; h < f->nhandlers; h++) {
 			f->handlers[h].start = ak_read_u32(&l->r);
 			f->handlers[h].end = ak_read_u32(&l->r);
-			f->handlers[h].target = ak_read_u32(&l->r);
+			uint32_t t = ak_read_u32(&l->r);
+			// Its top bit: it throws the error on (bytecode.Handler's
+			// Rethrows).
+			f->handlers[h].target = t & 0x7FFFFFFFu;
+			f->handlers[h].rethrows = (t >> 31) != 0;
 		}
 		f->nlines = count(l, 8);
 		f->lines = ak_alloc(sizeof(ak_line) * (f->nlines ? f->nlines : 1));
@@ -334,18 +311,81 @@ ak_module *ak_module_load(const uint8_t *p, size_t n, char *err, size_t errcap) 
 			if (lc->reg >= f->nregs || lc->via > AK_LOCAL_SIGNAL || lc->from > lc->to || lc->to > f->ncode) fail(l, "bad local");
 		}
 	}
+}
 
-	m->nbuiltins = count(l, 4);
-	m->builtins = ak_alloc(sizeof(ak_builtin_fn) * (m->nbuiltins ? m->nbuiltins : 1));
-	for (uint32_t i = 0; i < m->nbuiltins && !l->failed; i++) {
+// read_builtins reads n builtins' names into m's from from on, resolving
+// each.
+static void read_builtins(ak_module *m, loader *l, uint32_t from, uint32_t n) {
+	for (uint32_t i = from; i < from + n && !l->failed; i++) {
 		ak_str *name = rstr(l);
 		m->builtins[i] = ak_builtin_find(name->data);
 		if (!m->builtins[i] && !l->failed) {
-			snprintf(err, errcap, "bytecode: no builtin %s", name->data);
+			snprintf(l->err, l->errcap, "bytecode: no builtin %s", name->data);
 			l->failed = true;
 		}
 		ak_release(name);
 	}
+}
+
+// check_funcs fails the load when a method or an inlined body of m's
+// names a function it doesn't have.
+static void check_funcs(ak_module *m, loader *l, uint32_t shapes_from, uint32_t funcs_from) {
+	for (uint32_t i = shapes_from; i < m->nshapes && !l->failed; i++)
+		for (uint32_t k = 0; k < m->shapes[i].nmethods; k++)
+			if (m->shapes[i].methods[k].func >= m->nfuncs) fail(l, "bad method function");
+	for (uint32_t i = funcs_from; i < m->nfuncs && !l->failed; i++)
+		for (uint32_t k = 0; k < m->funcs[i].ninlines; k++)
+			if (m->funcs[i].inlines[k].func >= m->nfuncs) fail(l, "bad inlined function");
+}
+
+ak_module *ak_module_load(const uint8_t *p, size_t n, char *err, size_t errcap) {
+	loader L = {{p, n, 0, false}, err, errcap, false}, *l = &L;
+	if (n < 8 || memcmp(p, "AKBC", 4) != 0) {
+		fail(l, "not a module");
+		return NULL;
+	}
+	l->r.off = 4;
+	uint32_t version = ak_read_u32(&l->r);
+	if (version != AK_BC_VERSION) {
+		snprintf(err, errcap, "bytecode: version %u, want %d", version, AK_BC_VERSION);
+		return NULL;
+	}
+	ak_module *m = ak_alloc(sizeof *m);
+	m->rc = 1;
+	m->nints = count(l, 8);
+	m->ints = ak_alloc(sizeof(int64_t) * (m->nints ? m->nints : 1));
+	for (uint32_t i = 0; i < m->nints; i++) m->ints[i] = (int64_t)ak_read_u64(&l->r);
+	m->nfloats = count(l, 8);
+	m->floats = ak_alloc(sizeof(double) * (m->nfloats ? m->nfloats : 1));
+	for (uint32_t i = 0; i < m->nfloats; i++) m->floats[i] = ak_read_f64(&l->r);
+	m->nstrings = count(l, 4);
+	m->strings = ak_alloc(sizeof(ak_str *) * (m->nstrings ? m->nstrings : 1));
+	// Constants are immortal: reading them costs no reference counting,
+	// and spawn's threads share them. A module is freed only once nothing
+	// of what ran it is left (on a reload, after the old views went and
+	// kept state was copied into the new module's values).
+	for (uint32_t i = 0; i < m->nstrings; i++) {
+		m->strings[i] = rstr(l);
+		ak_make_immortal(m->strings[i]);
+	}
+
+	// Shapes refer to each other by index: allocate them all first.
+	m->nshapes = count(l, 4);
+	m->shapes = ak_alloc(sizeof(ak_vm_shape) * (m->nshapes ? m->nshapes : 1));
+#if AK_VM_DEBUGGER
+	m->shapep = ak_alloc(sizeof(ak_shape *) * (m->nshapes ? m->nshapes : 1));
+	for (uint32_t i = 0; i < m->nshapes; i++) m->shapep[i] = &m->shapes[i].s;
+#endif
+	ak_shape_call = shape_call;  // what rt calls a type's own ==, hash and JSON through
+	read_shapes(m, l, 0, m->nshapes);
+
+	m->nfuncs = count(l, 8);
+	m->funcs = ak_alloc(sizeof(ak_func) * (m->nfuncs ? m->nfuncs : 1));
+	read_funcs(m, l, 0, m->nfuncs);
+
+	m->nbuiltins = count(l, 4);
+	m->builtins = ak_alloc(sizeof(ak_builtin_fn) * (m->nbuiltins ? m->nbuiltins : 1));
+	read_builtins(m, l, 0, m->nbuiltins);
 	uint32_t ng;
 	m->gkinds = rkinds(l, &ng);
 	m->nglobals = ng;
@@ -370,16 +410,17 @@ ak_module *ak_module_load(const uint8_t *p, size_t n, char *err, size_t errcap) 
 	if (!l->failed && m->main >= (int32_t)m->nfuncs) fail(l, "bad main function");
 	for (uint32_t i = 0; i < m->ntests && !l->failed; i++)
 		if (m->tests[i].func >= m->nfuncs) fail(l, "bad test function");
-	for (uint32_t i = 0; i < m->nshapes && !l->failed; i++)
-		for (uint32_t k = 0; k < m->shapes[i].nmethods; k++)
-			if (m->shapes[i].methods[k].func >= m->nfuncs) fail(l, "bad method function");
-	for (uint32_t i = 0; i < m->nfuncs && !l->failed; i++)
-		for (uint32_t k = 0; k < m->funcs[i].ninlines; k++)
-			if (m->funcs[i].inlines[k].func >= m->nfuncs) fail(l, "bad inlined function");
+	check_funcs(m, l, 0, 0);
 	if (l->failed) {
 		ak_module_release(m);
 		return NULL;
 	}
+#if AK_VM_DEBUGGER
+	m->globals0 = m->nglobals;
+	uint64_t h = 14695981039346656037ull;  // FNV-1a, as lang/bytecode's Hash
+	for (size_t i = 0; i < n; i++) h = (h ^ p[i]) * 1099511628211ull;
+	m->hash = h;
+#endif
 	return m;
 }
 
@@ -403,12 +444,26 @@ void ak_module_release(ak_module *m) {
 
 static void module_free(void *ctx) {
 	ak_module *m = ctx;
-	for (uint32_t i = 0; i < m->nglobals; i++) ak_release_val(m->globals[i], (ak_kind)m->gkinds[i]);
-	ak_free(m->globals);
+	// An extension's own parts are from these on; below them, its
+	// base's (its functions copies of them).
+	uint32_t own_funcs = 0, own_shapes = 0, own_strings = 0;
+	bool ext = false;
+#if AK_VM_DEBUGGER
+	if (m->base) {
+		ext = true;
+		own_funcs = m->own_funcs, own_shapes = m->own_shapes, own_strings = m->own_strings;
+	}
+#endif
+	if (!ext) {
+		for (uint32_t i = 0; i < m->nglobals; i++) ak_release_val(m->globals[i], (ak_kind)m->gkinds[i]);
+		ak_free(m->globals);
+		ak_free(m->gkinds);
+	}
 	ak_frozen_free(&m->frozen);
-	ak_free(m->gkinds);
 	for (uint32_t i = 0; i < m->nfuncs; i++) {
 		ak_func *f = &m->funcs[i];
+		ak_vm_dbg_forget(f);
+		if (i < own_funcs) continue;
 		ak_release(f->name);
 		ak_release(f->file);
 		ak_free(f->kinds);
@@ -423,10 +478,9 @@ static void module_free(void *ctx) {
 			ak_release(f->locals[k].desc);
 		}
 		ak_free(f->locals);
-		ak_vm_dbg_forget(f);
 	}
 	ak_free(m->funcs);
-	for (uint32_t i = 0; i < m->nshapes; i++) {
+	for (uint32_t i = own_shapes; i < m->nshapes; i++) {
 		ak_vm_shape *vs = &m->shapes[i];
 		ak_free(vs->kinds);
 		ak_free((void *)vs->shapes);
@@ -455,7 +509,7 @@ static void module_free(void *ctx) {
 	ak_free(m->shapes);
 	for (uint32_t i = 0; i < m->names.len; i++) ak_release(m->names.data[i]);
 	ak_vec_free(&m->names);
-	for (uint32_t i = 0; i < m->nstrings; i++) ak_free(m->strings[i]);
+	for (uint32_t i = own_strings; i < m->nstrings; i++) ak_free(m->strings[i]);
 	ak_free(m->strings);
 	ak_free(m->ints);
 	ak_free(m->floats);
@@ -466,8 +520,155 @@ static void module_free(void *ctx) {
 		ak_free(m->tests[i].params);
 	}
 	ak_free(m->tests);
+#if AK_VM_DEBUGGER
+	ak_free(m->shapep);
+	if (m->base) {
+		ak_module *b = m->base;
+		for (ak_module **p = &b->exts; *p; p = &(*p)->next_ext) {
+			if (*p == m) {
+				*p = m->next_ext;
+				break;
+			}
+		}
+		ak_module_release(b);
+	}
+#endif
 	ak_free(m);
 }
+
+#if AK_VM_DEBUGGER
+// grow_globals gives b (a module) n globals, the ones past its own of
+// kinds (from kinds[first]), and its extensions alive the same.
+static void grow_globals(ak_module *b, uint32_t n, const uint8_t *kinds, uint32_t first) {
+	if (n <= b->nglobals) return;
+	b->globals = ak_realloc(b->globals, sizeof(ak_val) * n);
+	b->gkinds = ak_realloc(b->gkinds, n);
+	for (uint32_t i = b->nglobals; i < n; i++) {
+		b->globals[i] = (ak_val){0};
+		b->gkinds[i] = kinds[i - first];
+	}
+	b->nglobals = n;
+	for (ak_module *x = b->exts; x; x = x->next_ext) {
+		x->globals = b->globals;
+		x->gkinds = b->gkinds;
+		x->nglobals = n;
+	}
+}
+
+ak_module *ak_module_extend(ak_module *b, const uint8_t *p, size_t n, char *err, size_t errcap) {
+	loader L = {{p, n, 0, false}, err, errcap, false}, *l = &L;
+	if (n < 8 || memcmp(p, "AKBX", 4) != 0) {
+		fail(l, "not an extension");
+		return NULL;
+	}
+	l->r.off = 4;
+	uint32_t version = ak_read_u32(&l->r);
+	if (version != AK_BC_VERSION) {
+		snprintf(err, errcap, "bytecode: version %u, want %d", version, AK_BC_VERSION);
+		return NULL;
+	}
+	uint64_t base = ak_read_u64(&l->r);
+	uint32_t nints = ak_read_u32(&l->r), nfloats = ak_read_u32(&l->r), nstrings = ak_read_u32(&l->r), nshapes = ak_read_u32(&l->r);
+	uint32_t nfuncs = ak_read_u32(&l->r), nbuiltins = ak_read_u32(&l->r), nglobals = ak_read_u32(&l->r);
+	if (l->r.err) {
+		fail(l, "truncated extension");
+		return NULL;
+	}
+	if (b->base || base != b->hash || nints != b->nints || nfloats != b->nfloats || nstrings != b->nstrings || nshapes != b->nshapes ||
+	    nfuncs != b->nfuncs || nbuiltins != b->nbuiltins || nglobals != b->globals0) {
+		fail(l, "an extension of another module");
+		return NULL;
+	}
+	ak_module *m = ak_alloc(sizeof *m);
+	m->rc = 1;
+	m->base = b;
+	ak_module_retain(b);
+	m->hash = b->hash;
+	m->app = m->main = -1;
+	m->tests = ak_alloc(sizeof(*m->tests));
+
+	uint32_t k = count(l, 8);
+	m->nints = nints + k;
+	m->ints = ak_alloc(sizeof(int64_t) * (m->nints ? m->nints : 1));
+	if (nints) memcpy(m->ints, b->ints, sizeof(int64_t) * nints);
+	for (uint32_t i = nints; i < m->nints; i++) m->ints[i] = (int64_t)ak_read_u64(&l->r);
+	k = count(l, 8);
+	m->nfloats = nfloats + k;
+	m->floats = ak_alloc(sizeof(double) * (m->nfloats ? m->nfloats : 1));
+	if (nfloats) memcpy(m->floats, b->floats, sizeof(double) * nfloats);
+	for (uint32_t i = nfloats; i < m->nfloats; i++) m->floats[i] = ak_read_f64(&l->r);
+	k = count(l, 4);
+	m->nstrings = nstrings + k;
+	m->own_strings = nstrings;
+	m->strings = ak_alloc(sizeof(ak_str *) * (m->nstrings ? m->nstrings : 1));
+	if (nstrings) memcpy(m->strings, b->strings, sizeof(ak_str *) * nstrings);
+	for (uint32_t i = nstrings; i < m->nstrings; i++) {
+		m->strings[i] = rstr(l);
+		ak_make_immortal(m->strings[i]);
+	}
+
+	k = count(l, 4);
+	m->nshapes = nshapes + k;
+	m->own_shapes = nshapes;
+	m->shapes = ak_alloc(sizeof(ak_vm_shape) * (m->nshapes ? m->nshapes : 1));
+	m->shapep = ak_alloc(sizeof(ak_shape *) * (m->nshapes ? m->nshapes : 1));
+	for (uint32_t i = 0; i < m->nshapes; i++) m->shapep[i] = i < nshapes ? b->shapep[i] : &m->shapes[i].s;
+	read_shapes(m, l, nshapes, m->nshapes);
+
+	k = count(l, 8);
+	m->nfuncs = nfuncs + k;
+	m->own_funcs = nfuncs;
+	m->funcs = ak_alloc(sizeof(ak_func) * (m->nfuncs ? m->nfuncs : 1));
+	for (uint32_t i = 0; i < nfuncs; i++) {
+		// The base's, run as the extension's: what they call and make is
+		// its (the expressions' closures hold it).
+		m->funcs[i] = b->funcs[i];
+		m->funcs[i].mod = m;
+		m->funcs[i].dbg = NULL;
+	}
+	read_funcs(m, l, nfuncs, m->nfuncs);
+
+	k = count(l, 4);
+	m->nbuiltins = nbuiltins + k;
+	m->builtins = ak_alloc(sizeof(ak_builtin_fn) * (m->nbuiltins ? m->nbuiltins : 1));
+	if (nbuiltins) memcpy(m->builtins, b->builtins, sizeof(ak_builtin_fn) * nbuiltins);
+	read_builtins(m, l, nbuiltins, k);
+	uint32_t ng;
+	uint8_t *gk = rkinds(l, &ng);
+	uint32_t ninits = count(l, 8);
+	uint32_t *inits = ak_alloc(sizeof(uint32_t) * 2 * (ninits ? ninits : 1));
+	for (uint32_t i = 0; i < 2 * ninits; i++) inits[i] = ak_read_u32(&l->r);
+	if (l->r.err) fail(l, "truncated extension");
+	check_funcs(m, l, nshapes, nfuncs);
+	for (uint32_t i = 0; i < ninits && !l->failed; i++)
+		if (inits[2 * i + 1] < nfuncs || inits[2 * i + 1] >= m->nfuncs || inits[2 * i] < nglobals || inits[2 * i] > nglobals + ng) fail(l, "bad init");
+	uint32_t had = b->nglobals;
+	if (!l->failed) grow_globals(b, nglobals + ng, gk, nglobals);
+	ak_free(gk);
+	m->globals = b->globals;
+	m->gkinds = b->gkinds;
+	m->nglobals = b->nglobals;
+	m->next_ext = b->exts;
+	b->exts = m;
+	// The inits of the globals it's the first to have.
+	for (uint32_t i = 0; i < ninits && !l->failed; i++) {
+		if (inits[2 * i] < had) continue;
+		ak_vm_call(&m->funcs[inits[2 * i + 1]], NULL, 0);
+		if (ak_error_pending()) {
+			void *e = ak_error_take();
+			snprintf(err, errcap, "an expression's constants: %s", ak_error_message(e)->data);
+			ak_release(e);
+			l->failed = true;
+		}
+	}
+	ak_free(inits);
+	if (l->failed) {
+		ak_module_release(m);
+		return NULL;
+	}
+	return m;
+}
+#endif
 
 uint32_t ak_module_nfuncs(const ak_module *m) { return m->nfuncs; }
 const ak_func *ak_module_func(const ak_module *m, uint32_t i) { return i < m->nfuncs ? &m->funcs[i] : NULL; }
@@ -501,11 +702,11 @@ const char *ak_module_test_param(const ak_module *m, uint32_t i, uint32_t k, con
 
 const ak_shape *ak_module_shape_named(const ak_module *m, const char *name) {
 	for (uint32_t i = 0; i < m->nshapes; i++)
-		if (strcmp(m->shapes[i].s.name, name) == 0) return &m->shapes[i].s;
+		if (strcmp(AK_MOD_SHAPE(m, i)->name, name) == 0) return AK_MOD_SHAPE(m, i);
 	return NULL;
 }
 
-const ak_shape *ak_module_shape(const ak_module *m, uint32_t i) { return i < m->nshapes ? &m->shapes[i].s : NULL; }
+const ak_shape *ak_module_shape(const ak_module *m, uint32_t i) { return i < m->nshapes ? AK_MOD_SHAPE(m, i) : NULL; }
 const char *ak_func_name(const ak_func *f) { return f->name->data; }
 bool ak_func_async(const ak_func *f) { return f->flags & AK_F_ASYNC; }
 

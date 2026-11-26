@@ -301,6 +301,8 @@ bool ak_effect_stale(const ak_effect *e) { return (e->node.flags & (AK_F_DIRTY |
 
 ak_effect *ak_current_effect(void) { return g->effect; }
 
+void *ak_effect_ctx(const ak_effect *e, void (*run)(void *ctx)) { return e && e->fn.run == run ? e->ctx : NULL; }
+
 // Tracking and batching.
 
 void *ak_untrack_begin(void) {

@@ -416,6 +416,23 @@ first, as a `return` runs a function's.
   let's memo, an accessor) and its type's descriptor (`Desc`: rt/json.h's,
   a duration `d` and a color `c`). The optimizer drops them: its passes
   move values between registers and instructions, and renumber them.
+- What the debugger evaluates in a paused frame (a breakpoint's
+  condition or log message, an editor's watch: lang/compile's
+  Evaluator) is a function of its own, after the module's: the
+  expression checked where the frame's code is (`check.CheckEval`: its
+  file's imports, its package's names, the frame's locals in scope at
+  its pc as parameters, a method's `self` with its fields by their
+  names, a component's env with its members), lowered with the
+  program's lowering, which goes on after the module (`ir.LowerEval`).
+  What it needs that the module hasn't (a generic's instantiation, a
+  type, a constant it hoists, made by an init of its own) is lowered
+  after the module's too, into a copy of its tables: the module's
+  `bytecode.Extension`, whose tables continue the module's, sent to the
+  player, which builds the two into one (core/src/vm/load.c's
+  `ak_module_extend`: the module's types and globals shared). An
+  expression that would give the module's own types more (a type used
+  as an interface the app never converts it to: methods on its shape)
+  is refused, and the lowering starts again from the module.
 - A local fn (`fn walk(…)` in a block) is a function of its own; the
   fns declared one after another in a block are a group, which shares
   one list of captures (the outer locals its fns use, and those the
@@ -716,7 +733,12 @@ interpreter's frames.
 - `defer { }` protects the rest of its block: its code is emitted at the
   block's end, before each return, break or continue that leaves it,
   and in a handler that runs it and THROWs the error on.
-- Handlers are listed innermost first.
+- Handlers are listed innermost first. One whose code always throws
+  the error on (a `defer`'s, the other cleanups `fb.protect` makes, a
+  test's) is marked `Rethrows` (bytecode.Handler's, the target's top
+  bit): it doesn't catch, so the debugger, asked to stop where an error
+  nothing catches is thrown, looks past it (core/src/vm/debug.c's
+  `caught`).
 - A test's body is in a handler that rethrows a user error as a runtime
   error of its message, so the runner (which reads runtime errors'
   messages) reports it.

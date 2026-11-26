@@ -167,6 +167,9 @@ static void deliver(void *ctx) {
 		// Held as it arrived (session's), so that what was paused got
 		// here: the new module's code stops where it should.
 		ak_dbg_hold(false);
+		// What the debugger built of the module going (its
+		// expressions') goes with it.
+		ak_dbg_forget_extensions();
 		if (reload_fn) reload_fn(f->p, f->len, f->kind == AK_DEV_RESTART);
 	} else if (frame_fn) {
 		frame_fn(f->kind, f->p, f->len);
@@ -180,15 +183,70 @@ static void debug_sink(int event, uint32_t seq, const char *json, size_t len) {
 	switch (event) {
 	case AK_DBG_STOPPED: ak_dev_send(AK_DEV_DEBUG_STOPPED, json, len); break;
 	case AK_DBG_CONTINUED: ak_dev_send(AK_DEV_DEBUG_CONTINUED, NULL, 0); break;
-	case AK_DBG_VARIABLES: {
+	case AK_DBG_VARIABLES:
+	case AK_DBG_RESULT: {
 		uint8_t *p = ak_alloc(len + 4);
 		p[0] = (uint8_t)seq, p[1] = (uint8_t)(seq >> 8), p[2] = (uint8_t)(seq >> 16), p[3] = (uint8_t)(seq >> 24);
 		memcpy(p + 4, json, len);
-		ak_dev_send(AK_DEV_DEBUG_VALUES, p, len + 4);
+		ak_dev_send(event == AK_DBG_RESULT ? AK_DEV_DEBUG_RESULT : AK_DEV_DEBUG_VALUES, p, len + 4);
 		ak_free(p);
 		break;
 	}
+	case AK_DBG_LOG: ak_dev_send(AK_DEV_DEBUG_LOG, json, len); break;
 	}
+}
+
+// debug_breakpoints reads a debug-breakpoints frame (dev.h) and sets
+// its file's breakpoints.
+static void debug_breakpoints(ak_reader *r) {
+	ak_span file = ak_read_str(r);
+	uint32_t count = ak_read_u32(r);
+	if (r->err || count > (r->len - r->off) / 18) return;
+	ak_dbg_bp *bps = ak_alloc(sizeof(ak_dbg_bp) * (count ? count : 1));
+	uint32_t got = 0;
+	for (; got < count && !r->err; got++) {
+		ak_dbg_bp *b = &bps[got];
+		b->line = ak_read_u32(r);
+		b->key = ak_read_u32(r);
+		b->flags = ak_read_u8(r);
+		b->hit_op = ak_read_u8(r);
+		b->hit_n = ak_read_u32(r);
+		uint32_t nc = ak_read_u32(r);
+		if (r->err || nc > (r->len - r->off) / 28) {
+			r->err = true;
+			break;
+		}
+		ak_dbg_code *code = ak_alloc(sizeof(ak_dbg_code) * (nc ? nc : 1));
+		b->code = code;
+		for (uint32_t c = 0; c < nc && !r->err; c++) {
+			ak_dbg_code *k = &code[c];
+			k->base = ak_read_u64(r);
+			k->func = ak_read_u32(r);
+			k->cond = ak_read_u32(r);
+			k->log = ak_read_u32(r);
+			uint32_t np = ak_read_u32(r);
+			if (r->err || np > (r->len - r->off) / 4) {
+				r->err = true;
+				break;
+			}
+			uint32_t *params = ak_alloc(sizeof(uint32_t) * (np ? np : 1));
+			for (uint32_t i = 0; i < np; i++) params[i] = ak_read_u32(r);
+			k->params = params;
+			k->nparams = np;
+			ak_span e = ak_read_str(r);
+			if (e.len) {
+				k->error = e.p;
+				k->elen = e.len;
+			}
+			b->ncode = c + 1;
+		}
+	}
+	if (!r->err) ak_dbg_set_breakpoints(file.p, file.len, bps, count);
+	for (uint32_t i = 0; i < got && i < count; i++) {
+		for (uint32_t c = 0; c < bps[i].ncode; c++) ak_free((void *)bps[i].code[c].params);
+		ak_free((void *)bps[i].code);
+	}
+	ak_free(bps);
 }
 
 // debug_frame hands a debugger's frame to the debugger, on the
@@ -196,14 +254,21 @@ static void debug_sink(int event, uint32_t seq, const char *json, size_t len) {
 static void debug_frame(uint8_t kind, const uint8_t *p, size_t n) {
 	ak_reader r = {p, n, 0, false};
 	switch (kind) {
-	case AK_DEV_DEBUG_BREAKPOINTS: {
-		ak_span file = ak_read_str(&r);
-		uint32_t count = ak_read_u32(&r);
-		if (r.err || count > (n - r.off) / 4) break;
-		uint32_t *lines = ak_alloc(sizeof(uint32_t) * (count ? count : 1));
-		for (uint32_t i = 0; i < count; i++) lines[i] = ak_read_u32(&r);
-		ak_dbg_set_breakpoints(file.p, file.len, lines, count);
-		ak_free(lines);
+	case AK_DEV_DEBUG_BREAKPOINTS: debug_breakpoints(&r); break;
+	case AK_DEV_DEBUG_EXTEND: ak_dbg_extend(p, n); break;
+	case AK_DEV_DEBUG_EXCEPTIONS:
+		if (n >= 1) ak_dbg_exceptions(p[0]);
+		break;
+	case AK_DEV_DEBUG_EVALUATE: {
+		uint32_t seq = ak_read_u32(&r), frame = ak_read_u32(&r);
+		uint64_t base = ak_read_u64(&r);
+		uint32_t func = ak_read_u32(&r), np = ak_read_u32(&r);
+		if (r.err || np > (n - r.off) / 4) break;
+		uint32_t *params = ak_alloc(sizeof(uint32_t) * (np ? np : 1));
+		for (uint32_t i = 0; i < np; i++) params[i] = ak_read_u32(&r);
+		ak_span desc = ak_read_str(&r);
+		if (!r.err) ak_dbg_evaluate(seq, frame, base, func, params, np, desc.p, desc.len);
+		ak_free(params);
 		break;
 	}
 	case AK_DEV_DEBUG_COMMAND:
@@ -266,6 +331,9 @@ static void session(sock_t s) {
 		case AK_DEV_DEBUG_COMMAND:
 		case AK_DEV_DEBUG_VARIABLES:
 		case AK_DEV_DEBUG_RESET:
+		case AK_DEV_DEBUG_EXTEND:
+		case AK_DEV_DEBUG_EXCEPTIONS:
+		case AK_DEV_DEBUG_EVALUATE:
 			debug_frame(h[4], p, n - 1);
 			ak_free(p);
 			break;

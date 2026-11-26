@@ -11,14 +11,17 @@ package core_test
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/lang/bytecode"
 	"github.com/egoist/asuka/lang/compile"
 )
 
@@ -111,8 +114,64 @@ func compileModules(t *testing.T, dir string) string {
 		if err := os.WriteFile(filepath.Join(out, strings.TrimSuffix(name, ".asuka")+".akb"), res.Module.Encode(), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		if spec, err := os.ReadFile(strings.TrimSuffix(p, ".asuka") + ".evals"); err == nil {
+			compileEvals(t, res.Module, string(spec), filepath.Join(out, strings.TrimSuffix(name, ".asuka")))
+		}
 	}
 	return out
+}
+
+// compileEvals compiles a module's <name>.evals, the expressions a C test
+// evaluates in its frames, as asuka dev's debugger does: into stem.akx,
+// the module's extension, and stem.evals, a line an expression: its
+// name, the frame's function and pc, the extension's function, the
+// locals it takes, and its value's descriptor.
+func compileEvals(t *testing.T, m *bytecode.Module, spec, stem string) {
+	e := m.Evaluator.(*compile.Evaluator)
+	var out strings.Builder
+	var ext []byte
+	for _, line := range strings.Split(spec, "\n") {
+		if line = strings.TrimSpace(line); line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		f := strings.SplitN(line, " ", 5)
+		if len(f) < 5 {
+			t.Fatalf("evals: %q", line)
+		}
+		want, _ := strconv.Atoi(f[2])
+		fn, pc := -1, uint32(0)
+		for i, d := range m.Funcs {
+			if d.Name != f[1] {
+				continue
+			}
+			for _, l := range d.Lines {
+				if int(l.Line) == want {
+					fn, pc = i, l.PC
+					break
+				}
+			}
+		}
+		if fn < 0 {
+			t.Fatalf("evals: no %s at line %d", f[1], want)
+		}
+		mode := map[string]compile.EvalMode{"value": compile.EvalValue, "cond": compile.EvalCond, "log": compile.EvalLog}[f[3]]
+		fr, err := e.Compile(uint32(fn), pc, f[4], mode)
+		if err != nil {
+			t.Fatalf("evals: %s: %v", f[0], err)
+		}
+		ext = fr.Ext
+		fmt.Fprintf(&out, "%s %d %d %d %s %d", f[0], fn, pc, fr.Func, fr.Desc, len(fr.Params))
+		for _, p := range fr.Params {
+			fmt.Fprintf(&out, " %d", p)
+		}
+		out.WriteString("\n")
+	}
+	if err := os.WriteFile(stem+".akx", ext, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stem+".evals", []byte(out.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // threadTests are the C tests that run threads of their own (the

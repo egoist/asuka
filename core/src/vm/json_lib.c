@@ -8,8 +8,8 @@ static ak_module *running(void) { return ak_vm_running_module(); }
 static const ak_shape *shape(void *ctx, const char *name, size_t n) {
 	ak_module *m = ctx;
 	for (uint32_t i = 0; m && i < m->nshapes; i++) {
-		const char *s = m->shapes[i].s.name;
-		if (strlen(s) == n && memcmp(s, name, n) == 0) return &m->shapes[i].s;
+		const ak_shape *sh = AK_MOD_SHAPE(m, i);
+		if (strlen(sh->name) == n && memcmp(sh->name, name, n) == 0) return sh;
 	}
 	return NULL;
 }

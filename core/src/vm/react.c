@@ -721,6 +721,30 @@ bool ak_vm_dbg_peek(void *p, ak_val *v, ak_kind *k) {
 	}
 }
 
+bool ak_vm_dbg_read(void *p, ak_val *v, ak_kind *k) {
+	const ak_obj *o = p;
+	void *tok = ak_untrack_begin();
+	switch (o->tag) {
+	case AK_TAG_CELL:
+		*k = (ak_kind)((const cell *)p)->kind;
+		*v = ak_vm_cell_get(p, false);
+		break;
+	case AK_TAG_MEMO:
+		*k = (ak_kind)((const memo *)p)->kind;
+		*v = ak_vm_memo_get(p);
+		break;
+	case AK_TAG_ACC:
+		*k = (ak_kind)((const acc *)p)->kind;
+		*v = ak_vm_acc_get(p);
+		break;
+	default:
+		ak_untrack_end(tok);
+		return false;
+	}
+	ak_untrack_end(tok);
+	return !ak_error_pending();
+}
+
 static ak_val model_get(void *m);
 static ak_val apath_read(apath *ap, ak_kind k, const uint8_t *p, uint32_t n, const ak_val *args);
 
@@ -1127,6 +1151,11 @@ static bool declared_effect(const ak_closure *c) {
 	if (c->invoke != ak_vm_closure_invoke) return false;
 	const char *name = ak_func_name(c->fn), *last = strrchr(name, '/');
 	return strcmp(last ? last + 1 : name, "effect") == 0;
+}
+
+ak_closure *ak_vm_effect_closure(ak_effect *e) {
+	effect_ctx *x = ak_effect_ctx(e, effect_run);
+	return x ? x->c : NULL;
 }
 
 void ak_vm_effect(ak_closure *c, bool render) {

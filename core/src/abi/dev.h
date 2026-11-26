@@ -25,8 +25,14 @@
 //                    each: asuka test --gui's; answered with automated)
 //                 17 debug-breakpoints (a u32-length string, the file as
 //                    the module's functions name it, then u32 n and n
-//                    u32 lines: the file's breakpoints, which replace
-//                    those it had; n 0: none)
+//                    breakpoints, which replace those it had (n 0:
+//                    none): u32 line, u32 key, u8 flags, u8 hit op, u32
+//                    hit n (vm/debug.h's ak_dbg_bp), u32 m and m codes:
+//                    u64 the module's hash, u32 its function, u32 the
+//                    condition's function, u32 the log message's
+//                    (0xFFFFFFFF: none; the extension's), u32 k and k
+//                    u32 locals they take, a u32-length string, why it
+//                    didn't compile ("": it did))
 //                 18 debug-command (u8: 1 continue, 2 step over, 3 step
 //                    in, 4 step out, 5 pause: vm/debug.h's AK_DBG_*)
 //                 19 debug-variables (u32 its number, u32 a frame of the
@@ -36,6 +42,16 @@
 //                    level; answered with debug-values)
 //                 23 debug-reset (the debugger detached: no breakpoints,
 //                    no step, and a paused app goes on)
+//                 30 debug-extend (an extension of a module, lang/
+//                    bytecode's Extension: the functions the
+//                    breakpoints' code and evaluations name)
+//                 31 debug-exceptions (u8: the errors that stop the app,
+//                    1 uncaught, 2 all: AK_DBG_EXC_*)
+//                 32 debug-evaluate (u32 its number, u32 a frame of the
+//                    stop's, u64 the module's hash, u32 the extension's
+//                    function, u32 n and n u32 locals it takes, a
+//                    u32-length string: the value's descriptor;
+//                    answered with debug-result)
 //                  2 ping, answered with a ping by the connection's own
 //                    thread, while the app runs or is paused
 //   player → CLI: 16 automated (u32 the automate's number, then each
@@ -60,9 +76,13 @@
 //                 21 debug-continued (the app runs again)
 //                 22 debug-values (u32 a debug-variables' number, then
 //                    JSON: the children of the value it named)
+//                 33 debug-result (u32 a debug-evaluate's number, then
+//                    JSON: the value, or why not)
+//                 34 debug-log (JSON: a logpoint's message, or why a
+//                    breakpoint's code failed)
 //                  2 ping (a ping's answer)
 //
-// The debugger's frames (17 to 23) are read and answered on the
+// The debugger's frames (17 to 23, 30 to 34) are read and answered on the
 // connection's own thread, not posted to the main thread: while the app
 // is paused at a breakpoint, its main thread waits for them (vm/debug.h).
 // A module or a restart that arrives while it's paused lets it go on
@@ -98,6 +118,11 @@ enum {
 	AK_DEV_DEBUG_CONTINUED = 21,
 	AK_DEV_DEBUG_VALUES = 22,
 	AK_DEV_DEBUG_RESET = 23,
+	AK_DEV_DEBUG_EXTEND = 30,
+	AK_DEV_DEBUG_EXCEPTIONS = 31,
+	AK_DEV_DEBUG_EVALUATE = 32,
+	AK_DEV_DEBUG_RESULT = 33,
+	AK_DEV_DEBUG_LOG = 34,
 };
 
 // A reloaded frame's flags.

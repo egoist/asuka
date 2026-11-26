@@ -58,4 +58,37 @@ fn values() -> int {
 fn main() {
   let _ = run()
   let _ = values()
+  let _ = caughtOne()
+  let _ = try? uncaughtOne()
+  let _ = divideBy(1)
+}
+
+// Errors (debug_exceptions): one caught where it's thrown, one a defer
+// throws on to C, one an instruction throws.
+enum Oops: Error {
+  bad(code: int)
+}
+
+fn fail(n: int) throws -> int {
+  let doubled = n * 2
+  throw Oops.bad(code: doubled)
+}
+
+fn caughtOne() -> int {
+  let r = try fail(1) catch { -1 }
+  return r
+}
+
+fn uncaughtOne() throws -> int {
+  var cleaned = 0
+  defer { cleaned += 1 }
+  return try fail(2)
+}
+
+fn divide(a: int, b: int) -> int {
+  return a / b
+}
+
+fn divideBy(b: int) -> int {
+  return divide(10, b)
 }

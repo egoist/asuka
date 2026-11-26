@@ -25,10 +25,23 @@ static ak_cond cv;  // the paused main thread waits on it
 static bool cv_ready;
 static ak_dbg_sink sink;
 
+// A breakpoint's code for a function (ak_dbg_code), and a breakpoint
+// (ak_dbg_bp) with how many times it was hit: copies of what was set.
+typedef struct {
+	uint64_t base;
+	uint32_t func, cond, log, nparams;
+	uint32_t *params;
+	char *error;  // NULL: none
+} bpcode;
+typedef struct {
+	uint32_t line, key, hit_n, hits, ncode;
+	uint8_t flags, hit_op;
+	bpcode *code;
+} bpent;
 typedef struct {
 	char *file;
 	size_t flen;
-	uint32_t *lines;
+	bpent *bps;
 	uint32_t n;
 } bpfile;
 static bpfile *bps;
@@ -36,16 +49,33 @@ static uint32_t nbps;
 static _Atomic uint32_t bp_count;  // the breakpoints set, every file's
 static _Atomic uint32_t bp_gen = 1;  // changes with them: functions resolve them again
 static _Atomic int pause_req, step_on, held;
+_Atomic int ak_dbg_exc;
 
 static bool paused;
 static int resume;  // the command the paused main thread goes on with (0: none yet)
 
+// What the paused main thread is asked: a value's children, an
+// evaluation.
+enum { REQ_VARIABLES, REQ_EVALUATE };
 typedef struct vreq {
 	struct vreq *next;
+	int kind;
 	uint32_t seq, frame, start, count, npath;
-	uint32_t path[];
+	uint64_t base;  // an evaluation's: its module, its function (start), its descriptor
+	char *desc;
+	uint32_t path[];  // a value's path; an evaluation's parameters
 } vreq;
 static vreq *vq, *vq_tail;
+
+// The extensions the CLI sent, the latest of each module's (a few
+// modules': the one running, the one coming).
+#define MAX_EXTS 4
+static struct {
+	uint64_t base;
+	uint8_t *p;
+	size_t n;
+} exts[MAX_EXTS];
+static uint32_t next_ext;
 
 static void lock(void) {
 	ak_mutex_lock(&mu);
@@ -87,6 +117,28 @@ static struct {
 // frame's instruction about to run.
 static ak_co *stop_co;
 static uint32_t stop_pc;
+
+// While the debugger runs code of the CLI's (a condition, a log
+// message, an evaluation) or an error's message: nothing stops.
+static int evaluating;
+// The error the app last stopped at: an error stops it once (a defer
+// throws it on; a call's frame sees it again as it unwinds).
+static void *exc_last;
+// The extension built (ak_module_extend) of the module running, from
+// the bytes of xlen kept.
+static ak_module *xmod;
+static size_t xlen;
+
+// What the stop's evaluations made, for their children (ak_dbg_variables
+// with AK_DBG_RESULT_FRAME): held until it goes on.
+typedef struct {
+	ak_val v;
+	ak_kind k;
+	char *desc;
+	ak_module *mod;
+} result;
+static result *results;
+static uint32_t nresults, cresults;
 
 struct ak_dbg_fn {
 	uint32_t gen;  // bp_gen when resolved
@@ -144,7 +196,7 @@ static struct ak_dbg_fn *resolve(ak_func *f) {
 			const ak_str *file = code_file(f, ln->pc);
 			if (file->len != bf->flen || memcmp(file->data, bf->file, bf->flen) != 0) continue;
 			for (uint32_t k = 0; k < bf->n; k++) {
-				if (bf->lines[k] != ln->line || ln->pc >= f->ncode) continue;
+				if (bf->bps[k].line != ln->line || ln->pc >= f->ncode) continue;
 				d->bits[ln->pc >> 6] |= (uint64_t)1 << (ln->pc & 63);
 				d->any = true;
 			}
@@ -154,7 +206,7 @@ static struct ak_dbg_fn *resolve(ak_func *f) {
 	return d;
 }
 
-static void stop(ak_co *co, uint32_t pc, const char *reason);
+static void stop(ak_co *co, uint32_t pc, const char *reason, const ak_buf *exc);
 
 // again reports whether a breakpoint at pc is further along the line the
 // frame last stopped at.
@@ -185,24 +237,27 @@ static bool step_stops(ak_co *co, const ak_frame *fr, uint32_t pc) {
 	return co == step_co && depth <= step_depth;
 }
 
+static bool hit(ak_co *co, ak_frame *fr, uint32_t pc);
+
 void ak_dbg_hook(ak_co *co, uint32_t pc) {
-	if (!ak_signal_on_main_thread() || atomic_load_explicit(&held, memory_order_relaxed)) return;
+	if (evaluating || !ak_signal_on_main_thread() || atomic_load_explicit(&held, memory_order_relaxed)) return;
 	ak_frame *fr = &co->frames[co->nframes - 1];
 	if (atomic_load_explicit(&pause_req, memory_order_relaxed)) {
-		stop(co, pc, "pause");
+		stop(co, pc, "pause", NULL);
 		return;
 	}
 	if (atomic_load_explicit(&bp_count, memory_order_relaxed)) {
 		ak_func *f = (ak_func *)fr->fn;
 		struct ak_dbg_fn *d = f->dbg;
 		if (!d || d->gen != atomic_load_explicit(&bp_gen, memory_order_acquire)) d = resolve(f);
-		if (d->any && (d->bits[pc >> 6] >> (pc & 63) & 1) && !again(co, fr, pc)) {
-			stop(co, pc, "breakpoint");
+		if (d->any && (d->bits[pc >> 6] >> (pc & 63) & 1) && !again(co, fr, pc) && hit(co, fr, pc)) {
+			stop(co, pc, "breakpoint", NULL);
 			return;
 		}
+		fr = &co->frames[co->nframes - 1];  // what its code ran may have moved the frames
 	}
 	if (step && !atomic_load_explicit(&step_on, memory_order_relaxed)) step = 0;  // reset
-	if (step && step_stops(co, fr, pc)) stop(co, pc, "step");
+	if (step && step_stops(co, fr, pc)) stop(co, pc, "step", NULL);
 }
 
 // ---- Values, as the language writes them ----
@@ -872,6 +927,7 @@ static uint32_t stop_frames(vframe *out, uint32_t cap, uint32_t *total) {
 		const ak_frame *fr = &co->frames[i];
 		const ak_func *f = fr->fn;
 		if (f->resume) continue;  // compiled to C: no pc of its own
+		if (f->mod->base && f->index >= f->mod->own_funcs) continue;  // the debugger's own (an evaluation's)
 		uint32_t pc = i == co->nframes - 1 ? stop_pc : (fr->pc ? fr->pc - 1 : 0);
 		uint32_t line = line_at(f, pc);
 		for (uint32_t k = 0; k < f->ninlines; k++) {
@@ -907,8 +963,8 @@ static uint32_t frame_locals(const vframe *vf, uint32_t *idx, uint32_t cap) {
 	return n;
 }
 
-static void local_value(const vframe *vf, const ak_local *lc, ak_val *v, ak_kind *k) {
-	const ak_val *R = stop_co->regs + vf->fr->base;
+static void local_value(ak_co *co, const vframe *vf, const ak_local *lc, ak_val *v, ak_kind *k) {
+	const ak_val *R = co->regs + vf->fr->base;
 	*v = R[lc->reg];
 	*k = (ak_kind)vf->fn->kinds[lc->reg];
 	if (lc->via == AK_LOCAL_BOX && *k == AK_K_REF && v->p && ((const ak_obj *)v->p)->tag == AK_TAG_BOX) {
@@ -920,12 +976,19 @@ static void local_value(const vframe *vf, const ak_local *lc, ak_val *v, ak_kind
 
 #define MAX_LOCALS 512
 
-static void write_stopped(ak_buf *b, const char *reason) {
+// base_of is the module m extends, or m.
+static ak_module *base_of(ak_module *m) { return m->base ? m->base : m; }
+
+static void write_stopped(ak_buf *b, const char *reason, const ak_buf *exc) {
 	vframe *fs = ak_alloc(sizeof(vframe) * MAX_FRAMES);
 	uint32_t *idx = ak_alloc(sizeof(uint32_t) * MAX_LOCALS);
 	uint32_t total, n = stop_frames(fs, MAX_FRAMES, &total);
 	ak_buf_put(b, "{\"reason\":", 10);
 	jcstr(b, reason);
+	if (exc) {
+		ak_buf_put(b, ",\"exception\":", 13);
+		ak_buf_put(b, exc->data, exc->len);
+	}
 	ak_buf_printf(b, ",\"totalFrames\":%u,\"frames\":[", total);
 	for (uint32_t i = 0; i < n; i++) {
 		const vframe *vf = &fs[i];
@@ -940,11 +1003,17 @@ static void write_stopped(ak_buf *b, const char *reason) {
 			const ak_local *lc = &vf->fn->locals[idx[j]];
 			ak_val v;
 			ak_kind k;
-			local_value(vf, lc, &v, &k);
+			local_value(stop_co, vf, lc, &v, &k);
 			if (j) ak_buf_u8(b, ',');
 			var_json(b, vf->fn->mod, lc->name->data, lc->name->len, v, k, lc->desc->data);
 		}
-		ak_buf_put(b, "]}", 2);
+		ak_buf_u8(b, ']');
+		if (vf->fr) {
+			// Where it is, for what the CLI compiles to evaluate there:
+			// its module, its function and pc.
+			ak_buf_printf(b, ",\"module\":\"%016llx\",\"func\":%u,\"pc\":%u", (unsigned long long)base_of(vf->fn->mod)->hash, vf->fn->index, vf->pc);
+		}
+		ak_buf_u8(b, '}');
 	}
 	ak_buf_put(b, "]}", 2);
 	ak_free(idx);
@@ -958,22 +1027,34 @@ static void answer(const vreq *r, ak_buf *b) {
 	uint32_t *idx = ak_alloc(sizeof(uint32_t) * MAX_LOCALS);
 	uint32_t total, n = stop_frames(fs, MAX_FRAMES, &total);
 	const char *err = NULL;
-	if (r->frame >= n || r->npath == 0) {
-		err = "no such frame";
-		goto done;
+	ak_module *mod = NULL;
+	ak_val v = {0};
+	ak_kind k = AK_K_VOID;
+	const char *d = "-";
+	if (r->frame & AK_DBG_RESULT_FRAME) {
+		// An evaluation's value.
+		uint32_t i = r->frame & ~AK_DBG_RESULT_FRAME;
+		if (i >= nresults || r->npath == 0 || r->path[0] != 0) {
+			err = "no such value";
+			goto done;
+		}
+		mod = results[i].mod, v = results[i].v, k = results[i].k, d = results[i].desc;
+	} else {
+		if (r->frame >= n || r->npath == 0) {
+			err = "no such frame";
+			goto done;
+		}
+		const vframe *vf = &fs[r->frame];
+		uint32_t nl = frame_locals(vf, idx, MAX_LOCALS);
+		if (r->path[0] >= nl) {
+			err = "no such variable";
+			goto done;
+		}
+		mod = vf->fn->mod;
+		const ak_local *lc = &vf->fn->locals[idx[r->path[0]]];
+		local_value(stop_co, vf, lc, &v, &k);
+		d = lc->desc->data;
 	}
-	const vframe *vf = &fs[r->frame];
-	uint32_t nl = frame_locals(vf, idx, MAX_LOCALS);
-	if (r->path[0] >= nl) {
-		err = "no such variable";
-		goto done;
-	}
-	ak_module *mod = vf->fn->mod;
-	const ak_local *lc = &vf->fn->locals[idx[r->path[0]]];
-	ak_val v;
-	ak_kind k;
-	local_value(vf, lc, &v, &k);
-	const char *d = lc->desc->data;
 	for (uint32_t p = 1; p < r->npath; p++) {
 		if (r->path[p] >= nchildren(v, k, d)) {
 			err = "no such variable";
@@ -1005,9 +1086,392 @@ done:
 	ak_free(fs);
 }
 
+// ---- Running the CLI's code ----
+
+// extension is the extension of m (a module) that the CLI sent, built
+// (NULL, err saying why, when there's none or it doesn't fit).
+static ak_module *extension(ak_module *m, char *err, size_t errcap) {
+	uint8_t *p = NULL;
+	size_t n = 0;
+	lock();
+	for (uint32_t i = 0; i < MAX_EXTS; i++) {
+		if (exts[i].p && exts[i].base == m->hash) {
+			n = exts[i].n;
+			if (!(xmod && xmod->base == m && xlen == n)) {
+				p = ak_alloc(n);
+				memcpy(p, exts[i].p, n);
+			}
+			break;
+		}
+	}
+	unlock();
+	if (!n) {
+		snprintf(err, errcap, "the app's code changed since: evaluate it again");
+		return NULL;
+	}
+	if (!p) return xmod;
+	ak_module *x = ak_module_extend(m, p, n, err, errcap);
+	ak_free(p);
+	if (!x) return NULL;
+	if (xmod) ak_module_release(xmod);
+	xmod = x;
+	xlen = n;
+	return x;
+}
+
+void ak_dbg_forget_extensions(void) {
+	if (xmod) ak_module_release(xmod);
+	xmod = NULL;
+	xlen = 0;
+}
+
+// run_code calls function fn of module base's extension in vf (a frame
+// of co's), its arguments vf's locals params: its result (owned) and
+// kind, or false with why in err (an error it threw: its message).
+static bool run_code(ak_co *co, const vframe *vf, uint64_t base, uint32_t fn, const uint32_t *params, uint32_t np, ak_val *out, ak_kind *kout,
+                     char *err, size_t errcap) {
+	if (!vf->fr) {
+		snprintf(err, errcap, "this frame's locals aren't known");
+		return false;
+	}
+	ak_module *m = base_of(vf->fn->mod);
+	if (m->hash != base) {
+		snprintf(err, errcap, "the app's code changed since: evaluate it again");
+		return false;
+	}
+	ak_module *x = extension(m, err, errcap);
+	if (!x) return false;
+	if (fn < x->own_funcs || fn >= x->nfuncs || x->funcs[fn].nparams != np) {
+		snprintf(err, errcap, "the app's code changed since: evaluate it again");
+		return false;
+	}
+	const ak_func *g = &x->funcs[fn];
+	ak_val *args = ak_alloc(sizeof(ak_val) * (np ? np : 1));
+	bool *owned = ak_alloc(np ? np : 1);
+	bool ok = true;
+	evaluating++;
+	for (uint32_t i = 0; i < np && ok; i++) {
+		const ak_func *f = vf->fn;
+		if (params[i] >= f->nlocals) {
+			snprintf(err, errcap, "the app's code changed since: evaluate it again");
+			ok = false;
+			break;
+		}
+		const ak_local *lc = &f->locals[params[i]];
+		if (vf->pc < lc->from || vf->pc >= lc->to) {
+			snprintf(err, errcap, "%s has no value here", lc->name->data);
+			ok = false;
+			break;
+		}
+		ak_val v = {0};
+		ak_kind k = AK_K_VOID;
+		local_value(co, vf, lc, &v, &k);
+		if (lc->via == AK_LOCAL_SIGNAL && k == AK_K_REF && v.p) {
+			uint8_t tag = ((const ak_obj *)v.p)->tag;
+			if (tag == AK_TAG_CELL || tag == AK_TAG_MEMO || tag == AK_TAG_ACC) {
+				if (!ak_vm_dbg_read(v.p, &v, &k)) {
+					void *e = ak_error_pending() ? ak_error_take() : NULL;
+					ak_str *msg = e ? ak_vm_error_text(e) : NULL;
+					snprintf(err, errcap, "%s: %s", lc->name->data, msg ? msg->data : "it can't be read");
+					if (msg) ak_release(msg);
+					if (e) ak_release(e);
+					ok = false;
+					break;
+				}
+				owned[i] = true;
+			}
+		}
+		if (k != (ak_kind)g->kinds[i]) {
+			if (owned[i]) ak_release_val(v, k);
+			owned[i] = false;
+			snprintf(err, errcap, "the app's code changed since: evaluate it again");
+			ok = false;
+			break;
+		}
+		args[i] = v;
+	}
+	ak_val r = {0};
+	if (ok) {
+		// Untracked: what it reads isn't the paused computation's.
+		void *tok = ak_untrack_begin();
+		r = ak_vm_call(g, args, np);
+		ak_untrack_end(tok);
+		if (ak_error_pending()) {
+			void *e = ak_error_take();
+			ak_str *msg = ak_vm_error_text(e);
+			snprintf(err, errcap, "%s", msg->data);
+			ak_release(msg);
+			ak_release(e);
+			ok = false;
+		}
+	}
+	for (uint32_t i = 0; i < np; i++)
+		if (owned[i]) ak_release_val(args[i], (ak_kind)g->kinds[i]);
+	evaluating--;
+	ak_free(owned);
+	ak_free(args);
+	if (!ok) return false;
+	*out = r;
+	*kout = (ak_kind)g->ret;
+	return true;
+}
+
+// log_line tells the CLI a logpoint's text, or (error) why a
+// breakpoint's code failed.
+static void log_line(const ak_str *file, uint32_t line, const char *text, size_t n, bool error) {
+	lock();
+	ak_dbg_sink s = sink;
+	unlock();
+	if (!s) return;
+	ak_buf b = {0};
+	ak_buf_put(&b, "{\"file\":", 8);
+	jstr(&b, file->data, file->len);
+	ak_buf_printf(&b, ",\"line\":%u,\"%s\":", line, error ? "error" : "text");
+	jstr(&b, text, n);
+	ak_buf_u8(&b, '}');
+	s(AK_DBG_LOG, 0, (const char *)b.data, b.len);
+	ak_buf_free(&b);
+}
+
+static bool hit_ok(uint8_t op, uint32_t n, uint32_t hits) {
+	switch (op) {
+	case AK_DBG_HIT_EQ: return hits == n;
+	case AK_DBG_HIT_GE: return hits >= n;
+	case AK_DBG_HIT_GT: return hits > n;
+	case AK_DBG_HIT_LE: return hits <= n;
+	case AK_DBG_HIT_LT: return hits < n;
+	case AK_DBG_HIT_MOD: return n == 0 || hits % n == 0;
+	default: return true;
+	}
+}
+
+// find_bp is file's breakpoint at line (mu held), or NULL.
+static bpent *find_bp(const ak_str *file, uint32_t line) {
+	for (uint32_t b = 0; b < nbps; b++) {
+		bpfile *bf = &bps[b];
+		if (file->len != bf->flen || memcmp(file->data, bf->file, bf->flen) != 0) continue;
+		for (uint32_t k = 0; k < bf->n; k++)
+			if (bf->bps[k].line == line) return &bf->bps[k];
+	}
+	return NULL;
+}
+
+// hit decides whether the breakpoint the top frame of co reached at pc
+// stops: its condition holds and its hit count says so, and it isn't a
+// logpoint (which logs). A breakpoint whose code failed stops, saying
+// why.
+static bool hit(ak_co *co, ak_frame *fr, uint32_t pc) {
+	const ak_func *f = fr->fn;
+	if (f->mod->base && f->index >= f->mod->own_funcs) return false;  // an evaluation's own code
+	uint32_t line = line_at(f, pc);
+	const ak_str *file = code_file(f, pc);
+	// Further along the line, it's the same hit (a call's arguments on
+	// the lines below it, then the call).
+	last.valid = true;
+	last.co = co;
+	last.fn = f;
+	last.depth = co->nframes;
+	last.base = fr->base;
+	last.line = line;
+	last.pc = pc;
+	ak_module *m = base_of(f->mod);
+	uint8_t flags = 0, op = 0;
+	uint32_t n = 0, cond = AK_DBG_NONE, logf = AK_DBG_NONE, np = 0;
+	uint32_t *params = NULL;
+	char *error = NULL;
+	bool found = false;
+	lock();
+	bpent *bp = find_bp(file, line);
+	if (bp) {
+		flags = bp->flags, op = bp->hit_op, n = bp->hit_n;
+		for (uint32_t i = 0; i < bp->ncode && !found; i++) {
+			const bpcode *c = &bp->code[i];
+			if (c->base != m->hash || c->func != f->index) continue;
+			found = true;
+			cond = c->cond, logf = c->log, np = c->nparams;
+			params = ak_alloc(sizeof(uint32_t) * (np ? np : 1));
+			if (np) memcpy(params, c->params, sizeof(uint32_t) * np);
+			if (c->error) {
+				error = ak_alloc(strlen(c->error) + 1);
+				strcpy(error, c->error);
+			}
+		}
+	}
+	unlock();
+	if (!bp) return true;
+	bool code = flags & (AK_DBG_BP_COND | AK_DBG_BP_LOG);
+	bool stops = true;
+	vframe vf = {f, f, fr, pc, line};
+	char err[512];
+	if (code && !found) {
+		stops = false;  // compiled for another module: the one coming
+		goto out;
+	}
+	if (error) {
+		log_line(file, line, error, strlen(error), true);
+		goto out;
+	}
+	if ((flags & AK_DBG_BP_COND) && cond != AK_DBG_NONE) {
+		ak_val v = {0};
+		ak_kind k = AK_K_VOID;
+		if (!run_code(co, &vf, m->hash, cond, params, np, &v, &k, err, sizeof err)) {
+			ak_buf b = {0};
+			ak_buf_printf(&b, "the breakpoint's condition: %s", err);
+			log_line(file, line, (const char *)b.data, b.len, true);
+			ak_buf_free(&b);
+			goto out;
+		}
+		if (!v.i) {
+			stops = false;
+			goto out;
+		}
+	}
+	uint32_t hits = 0;
+	lock();
+	if ((bp = find_bp(file, line))) hits = ++bp->hits;
+	unlock();
+	if (!hit_ok(op, n, hits)) {
+		stops = false;
+		goto out;
+	}
+	if ((flags & AK_DBG_BP_LOG) && logf != AK_DBG_NONE) {
+		ak_val v = {0};
+		ak_kind k = AK_K_VOID;
+		if (!run_code(co, &vf, m->hash, logf, params, np, &v, &k, err, sizeof err)) {
+			ak_buf b = {0};
+			ak_buf_printf(&b, "the log message: %s", err);
+			log_line(file, line, (const char *)b.data, b.len, true);
+			ak_buf_free(&b);
+		} else {
+			const ak_str *t = v.p;
+			log_line(file, line, t ? t->data : "", t ? t->len : 0, false);
+			ak_release_val(v, k);
+		}
+		stops = false;
+	}
+out:
+	ak_free(params);
+	ak_free(error);
+	return stops;
+}
+
+// ---- Errors ----
+
+static bool frame_catches(const ak_func *f, uint32_t pc) {
+	for (uint32_t i = 0; i < f->nhandlers; i++)
+		if (pc >= f->handlers[i].start && pc < f->handlers[i].end && !f->handlers[i].rethrows) return true;
+	return false;
+}
+
+// waiter is a task awaiting f, or NULL.
+static ak_task *waiter(const ak_future *f) { return ak_future_waiter(f, ak_vm_task_resume); }
+
+// caught reports whether the app catches the error pending as it
+// unwinds co's top frame at pc (skip_top: not that frame's handlers): a
+// handler in the frames it unwinds, past the builtins' calls (C that
+// lets it go on); the catcher of the effect whose run it ends, or of
+// the owner of the handler's call it ends (a Boundary); for a task's,
+// what awaits it, or whoever looked for it.
+static bool caught(ak_co *co, uint32_t pc, bool skip_top) {
+	ak_effect *eff = ak_current_effect();
+	ak_closure *ec = eff ? ak_vm_effect_closure(eff) : NULL;
+	for (int guard = 0; co && guard < 64; guard++) {
+		for (uint32_t i = co->nframes; i-- > 0;) {
+			const ak_frame *fr = &co->frames[i];
+			bool top = i == co->nframes - 1;
+			uint32_t at = top ? pc : co->frames[i + 1].boundary ? (fr->pc ? fr->pc - 1 : 0) : co->frames[i + 1].callpc;
+			if (!fr->fn->resume && !(top && skip_top) && frame_catches(fr->fn, at)) return true;
+			if (fr->boundary && ec && fr->clos == ec) return ak_owner_catches(ak_effect_owner(eff));
+		}
+		ak_task *t = co->task;
+		if (!t) return ak_owner_catches(ak_current_owner());
+		ak_task *w = t->fut ? waiter(t->fut) : NULL;
+		if (!w) return (t->fut && t->fut->seen) || ak_owner_catches(t->owner);
+		co = &w->co;
+		pc = co->nframes ? co->frames[co->nframes - 1].pc : 0;  // its AWAIT
+		skip_top = false;
+		ec = NULL;
+	}
+	return false;
+}
+
+void ak_dbg_thrown(ak_co *co, uint32_t pc, bool skip_top) {
+	void *err = ak_pending_error;
+	if (!err || evaluating || ak_is_cancel(err) || err == exc_last || !ak_signal_on_main_thread() || atomic_load(&held)) return;
+	int filters = atomic_load_explicit(&ak_dbg_exc, memory_order_relaxed);
+	bool uncaught = !caught(co, pc, skip_top);
+	if (!uncaught && !(filters & AK_DBG_EXC_ALL)) return;
+	if (uncaught && !(filters & (AK_DBG_EXC_ALL | AK_DBG_EXC_UNCAUGHT))) return;
+	// Out of the way while it's paused: what's evaluated runs with no
+	// error pending.
+	void *e = ak_error_take();
+	if (exc_last) ak_release(exc_last);
+	exc_last = ak_retain(e);
+	ak_buf t = {0}, x = {0};
+	value_type(&t, (ak_val){.p = e}, AK_K_REF, "-");
+	evaluating++;
+	ak_str *msg = ak_vm_error_text(e);
+	evaluating--;
+	ak_buf_put(&x, "{\"type\":", 8);
+	jstr(&x, (const char *)t.data, t.len);
+	ak_buf_put(&x, ",\"message\":", 11);
+	jstr(&x, msg->data, msg->len);
+	ak_buf_printf(&x, ",\"uncaught\":%s}", uncaught ? "true" : "false");
+	ak_release(msg);
+	ak_buf_free(&t);
+	stop(co, pc, "exception", &x);
+	ak_buf_free(&x);
+	ak_throw(e);  // pending again, as it was
+}
+
 // ---- Stopping ----
 
-static void stop(ak_co *co, uint32_t pc, const char *reason) {
+// evaluate answers an evaluation the paused main thread is asked.
+static void evaluate(const vreq *r, ak_buf *b) {
+	vframe *fs = ak_alloc(sizeof(vframe) * MAX_FRAMES);
+	uint32_t total, n = stop_frames(fs, MAX_FRAMES, &total);
+	char err[512];
+	ak_val v = {0};
+	ak_kind k = AK_K_VOID;
+	if (r->frame >= n) {
+		snprintf(err, sizeof err, "no such frame");
+	} else if (run_code(stop_co, &fs[r->frame], r->base, r->start, r->path, r->npath, &v, &k, err, sizeof err)) {
+		if (nresults == cresults) {
+			cresults = cresults ? cresults * 2 : 8;
+			results = ak_realloc(results, sizeof(result) * cresults);
+		}
+		ak_module *mod = base_of(fs[r->frame].fn->mod);
+		ak_module_retain(mod);
+		results[nresults] = (result){v, k, r->desc, mod};
+		((vreq *)r)->desc = NULL;  // the result's now
+		ak_buf_put(b, "{\"result\":", 10);
+		var_json(b, mod, "", 0, v, k, results[nresults].desc);
+		ak_buf_printf(b, ",\"ref\":%u}", nresults);
+		nresults++;
+		ak_free(fs);
+		return;
+	}
+	ak_buf_put(b, "{\"error\":", 9);
+	jcstr(b, err);
+	ak_buf_u8(b, '}');
+	ak_free(fs);
+}
+
+static void free_results(void) {
+	for (uint32_t i = 0; i < nresults; i++) {
+		ak_release_val(results[i].v, results[i].k);
+		ak_free(results[i].desc);
+		ak_module_release(results[i].mod);
+	}
+	nresults = 0;
+}
+
+static void free_req(vreq *r) {
+	ak_free(r->desc);
+	ak_free(r);
+}
+
+static void stop(ak_co *co, uint32_t pc, const char *reason, const ak_buf *exc) {
 	const ak_frame *fr = &co->frames[co->nframes - 1];
 	lock();
 	ak_dbg_sink s = sink;
@@ -1038,7 +1502,7 @@ static void stop(ak_co *co, uint32_t pc, const char *reason) {
 	last.pc = pc;
 
 	ak_buf j = {0};
-	write_stopped(&j, reason);
+	write_stopped(&j, reason, exc);
 	s(AK_DBG_STOPPED, 0, (const char *)j.data, j.len);
 	ak_buf_free(&j);
 
@@ -1058,10 +1522,15 @@ static void stop(ak_co *co, uint32_t pc, const char *reason) {
 			ak_dbg_sink rs = sink;
 			unlock();
 			ak_buf a = {0};
-			answer(r, &a);
-			rs(AK_DBG_VARIABLES, r->seq, (const char *)a.data, a.len);
+			if (r->kind == REQ_EVALUATE) {
+				evaluate(r, &a);
+				rs(AK_DBG_RESULT, r->seq, (const char *)a.data, a.len);
+			} else {
+				answer(r, &a);
+				rs(AK_DBG_VARIABLES, r->seq, (const char *)a.data, a.len);
+			}
 			ak_buf_free(&a);
-			ak_free(r);
+			free_req(r);
 			lock();
 			continue;
 		}
@@ -1078,6 +1547,9 @@ static void stop(ak_co *co, uint32_t pc, const char *reason) {
 	update_on();
 	s = sink;
 	unlock();
+	free_results();
+	// What it evaluated may have moved the coroutine's frames.
+	fr = &co->frames[co->nframes - 1];
 	if (stepping) {
 		step = cmd;
 		step_co = co;
@@ -1102,9 +1574,18 @@ void ak_dbg_set_sink(ak_dbg_sink s) {
 	unlock();
 }
 
+static void free_bpent(bpent *e) {
+	for (uint32_t i = 0; i < e->ncode; i++) {
+		ak_free(e->code[i].params);
+		ak_free(e->code[i].error);
+	}
+	ak_free(e->code);
+}
+
 static void free_bpfile(bpfile *b) {
 	ak_free(b->file);
-	ak_free(b->lines);
+	for (uint32_t i = 0; i < b->n; i++) free_bpent(&b->bps[i]);
+	ak_free(b->bps);
 }
 
 static void count_bps(void) {
@@ -1115,7 +1596,7 @@ static void count_bps(void) {
 	update_on();
 }
 
-void ak_dbg_set_breakpoints(const char *file, size_t flen, const uint32_t *lines, uint32_t n) {
+void ak_dbg_set_breakpoints(const char *file, size_t flen, const ak_dbg_bp *set, uint32_t n) {
 	lock();
 	bpfile *b = NULL;
 	for (uint32_t i = 0; i < nbps && !b; i++)
@@ -1127,17 +1608,41 @@ void ak_dbg_set_breakpoints(const char *file, size_t flen, const uint32_t *lines
 		memcpy(b->file, file, flen);
 		b->file[flen] = 0;
 		b->flen = flen;
-		b->lines = NULL;
+		b->bps = NULL;
 		b->n = 0;
 	}
 	if (b) {
-		ak_free(b->lines);
-		b->lines = NULL;
+		bpent *had = b->bps;
+		uint32_t nhad = b->n;
+		b->bps = NULL;
 		b->n = n;
 		if (n) {
-			b->lines = ak_alloc(sizeof(uint32_t) * n);
-			memcpy(b->lines, lines, sizeof(uint32_t) * n);
-		} else {
+			b->bps = ak_alloc(sizeof(bpent) * n);
+			for (uint32_t i = 0; i < n; i++) {
+				const ak_dbg_bp *s = &set[i];
+				bpent *e = &b->bps[i];
+				*e = (bpent){.line = s->line, .key = s->key, .hit_n = s->hit_n, .flags = s->flags, .hit_op = s->hit_op, .ncode = s->ncode};
+				// The same breakpoint set again keeps its count.
+				for (uint32_t k = 0; k < nhad; k++)
+					if (had[k].line == s->line && had[k].key == s->key) e->hits = had[k].hits;
+				e->code = ak_alloc(sizeof(bpcode) * (s->ncode ? s->ncode : 1));
+				for (uint32_t c = 0; c < s->ncode; c++) {
+					const ak_dbg_code *sc = &s->code[c];
+					bpcode *bc = &e->code[c];
+					*bc = (bpcode){.base = sc->base, .func = sc->func, .cond = sc->cond, .log = sc->log, .nparams = sc->nparams};
+					bc->params = ak_alloc(sizeof(uint32_t) * (sc->nparams ? sc->nparams : 1));
+					if (sc->nparams) memcpy(bc->params, sc->params, sizeof(uint32_t) * sc->nparams);
+					if (sc->error) {
+						bc->error = ak_alloc(sc->elen + 1);
+						memcpy(bc->error, sc->error, sc->elen);
+						bc->error[sc->elen] = 0;
+					}
+				}
+			}
+		}
+		for (uint32_t k = 0; k < nhad; k++) free_bpent(&had[k]);
+		ak_free(had);
+		if (!n) {
 			free_bpfile(b);
 			*b = bps[--nbps];
 		}
@@ -1145,6 +1650,29 @@ void ak_dbg_set_breakpoints(const char *file, size_t flen, const uint32_t *lines
 	count_bps();
 	unlock();
 }
+
+void ak_dbg_extend(const uint8_t *p, size_t n) {
+	if (n < 16 || memcmp(p, "AKBX", 4) != 0) return;
+	uint64_t base = 0;
+	for (int i = 0; i < 8; i++) base |= (uint64_t)p[8 + i] << (8 * i);
+	lock();
+	uint32_t slot = MAX_EXTS;
+	for (uint32_t i = 0; i < MAX_EXTS && slot == MAX_EXTS; i++)
+		if (exts[i].p && exts[i].base == base) slot = i;
+	if (slot < MAX_EXTS && exts[slot].n >= n) {
+		unlock();
+		return;  // it has as much already (each has every one before it)
+	}
+	if (slot == MAX_EXTS) slot = next_ext++ % MAX_EXTS;
+	ak_free(exts[slot].p);
+	exts[slot].base = base;
+	exts[slot].p = ak_alloc(n);
+	memcpy(exts[slot].p, p, n);
+	exts[slot].n = n;
+	unlock();
+}
+
+void ak_dbg_exceptions(int filters) { atomic_store(&ak_dbg_exc, filters & (AK_DBG_EXC_UNCAUGHT | AK_DBG_EXC_ALL)); }
 
 void ak_dbg_command(int cmd) {
 	lock();
@@ -1160,6 +1688,14 @@ void ak_dbg_command(int cmd) {
 	unlock();
 }
 
+// queue hands the paused main thread r (mu held).
+static void queue(vreq *r) {
+	if (vq_tail) vq_tail->next = r;
+	else vq = r;
+	vq_tail = r;
+	ak_cond_broadcast(&cv);
+}
+
 void ak_dbg_variables(uint32_t seq, uint32_t frame, const uint32_t *path, uint32_t npath, uint32_t start, uint32_t count) {
 	lock();
 	if (!paused || !sink) {
@@ -1170,12 +1706,28 @@ void ak_dbg_variables(uint32_t seq, uint32_t frame, const uint32_t *path, uint32
 		return;
 	}
 	vreq *r = ak_alloc(sizeof *r + sizeof(uint32_t) * (npath ? npath : 1));
-	*r = (vreq){.seq = seq, .frame = frame, .start = start, .count = count, .npath = npath};
+	*r = (vreq){.kind = REQ_VARIABLES, .seq = seq, .frame = frame, .start = start, .count = count, .npath = npath};
 	if (npath) memcpy(r->path, path, sizeof(uint32_t) * npath);
-	if (vq_tail) vq_tail->next = r;
-	else vq = r;
-	vq_tail = r;
-	ak_cond_broadcast(&cv);
+	queue(r);
+	unlock();
+}
+
+void ak_dbg_evaluate(uint32_t seq, uint32_t frame, uint64_t base, uint32_t func, const uint32_t *params, uint32_t np, const char *desc, size_t dlen) {
+	lock();
+	if (!paused || !sink) {
+		ak_dbg_sink s = sink;
+		unlock();
+		static const char err[] = "{\"error\":\"not paused\"}";
+		if (s) s(AK_DBG_RESULT, seq, err, sizeof err - 1);
+		return;
+	}
+	vreq *r = ak_alloc(sizeof *r + sizeof(uint32_t) * (np ? np : 1));
+	*r = (vreq){.kind = REQ_EVALUATE, .seq = seq, .frame = frame, .start = func, .npath = np, .base = base};
+	if (np) memcpy(r->path, params, sizeof(uint32_t) * np);
+	r->desc = ak_alloc(dlen + 1);
+	memcpy(r->desc, desc, dlen);
+	r->desc[dlen] = 0;
+	queue(r);
 	unlock();
 }
 
@@ -1201,6 +1753,7 @@ void ak_dbg_reset(void) {
 	nbps = 0;
 	atomic_store(&pause_req, 0);
 	atomic_store(&step_on, 0);
+	atomic_store(&ak_dbg_exc, 0);
 	count_bps();
 	if (paused) {
 		resume = AK_DBG_CONTINUE;
@@ -1208,9 +1761,14 @@ void ak_dbg_reset(void) {
 	}
 	for (vreq *r = vq, *next; r; r = next) {
 		next = r->next;
-		ak_free(r);
+		free_req(r);
 	}
 	vq = vq_tail = NULL;
+	for (uint32_t i = 0; i < MAX_EXTS; i++) {
+		ak_free(exts[i].p);
+		exts[i].p = NULL;
+		exts[i].n = 0;
+	}
 	unlock();
 }
 
@@ -1218,12 +1776,29 @@ void ak_dbg_reset(void) {
 
 bool ak_dbg_available(void) { return false; }
 void ak_dbg_set_sink(ak_dbg_sink sink) { AK_UNUSED(sink); }
-void ak_dbg_set_breakpoints(const char *file, size_t flen, const uint32_t *lines, uint32_t n) {
+void ak_dbg_set_breakpoints(const char *file, size_t flen, const ak_dbg_bp *bps, uint32_t n) {
 	AK_UNUSED(file);
 	AK_UNUSED(flen);
-	AK_UNUSED(lines);
+	AK_UNUSED(bps);
 	AK_UNUSED(n);
 }
+void ak_dbg_extend(const uint8_t *ext, size_t n) {
+	AK_UNUSED(ext);
+	AK_UNUSED(n);
+}
+void ak_dbg_exceptions(int filters) { AK_UNUSED(filters); }
+void ak_dbg_evaluate(uint32_t seq, uint32_t frame, uint64_t base, uint32_t func, const uint32_t *params, uint32_t np, const char *desc, size_t dlen) {
+	AK_UNUSED(seq);
+	AK_UNUSED(frame);
+	AK_UNUSED(base);
+	AK_UNUSED(func);
+	AK_UNUSED(params);
+	AK_UNUSED(np);
+	AK_UNUSED(desc);
+	AK_UNUSED(dlen);
+}
+void ak_dbg_forget_extensions(void) {}
+
 void ak_dbg_command(int cmd) { AK_UNUSED(cmd); }
 void ak_dbg_variables(uint32_t seq, uint32_t frame, const uint32_t *path, uint32_t npath, uint32_t start, uint32_t count) {
 	AK_UNUSED(seq);

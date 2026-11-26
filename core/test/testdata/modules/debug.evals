@@ -1,0 +1,11 @@
+# What debug_test.c evaluates in debug.asuka's frames, compiled as asuka
+# dev's debugger compiles them (core_test.go's compileModules): a name,
+# the function and line of the frame, value, cond or log, the source.
+sum add 20 value a * 10 + b
+swapped run 31 value Point(x: p.y, y: p.x)
+names run 31 value names.map(n => n + "!")
+zero add 20 value a / (b - b)
+iseq run 31 cond i == 2
+isbad run 31 cond i / (i - i) == 0
+logi run 31 log i is {i}, total {total}
+count values 55 value count * 100

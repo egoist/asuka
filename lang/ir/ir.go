@@ -9,6 +9,7 @@ package ir
 
 import (
 	"github.com/egoist/asuka/lang/bytecode"
+	"github.com/egoist/asuka/lang/check"
 )
 
 // A Label is a place in a function's code; jumps and handlers name it.
@@ -25,6 +26,9 @@ type Instr struct {
 // A Handler catches errors raised in [Start, End) at Target.
 type Handler struct {
 	Start, End, Target Label
+	// Rethrows: its code always throws the error on (a defer's, a
+	// cleanup's): bytecode.Handler's.
+	Rethrows bool
 }
 
 // A Func is a lowered function.
@@ -72,6 +76,15 @@ type Local struct {
 	Via        uint8 // bytecode.LocalValue, LocalBox, LocalSignal
 	Desc       string
 	Start, End int
+	// Type is the name's type (its function's type parameters
+	// substituted), what an expression the debugger evaluates in the
+	// frame sees it as; nil for one it can't name (a component's env).
+	// Not encoded.
+	Type check.Type
+	// Env is the component or store whose env the local is (its
+	// "self"), whose members an expression evaluated in the frame sees
+	// by their names.
+	Env *check.TypeName
 }
 
 // NewLabel makes a label, not placed yet.
@@ -124,6 +137,9 @@ type Program struct {
 	// mutNames: the names of the types' mut fns (CALLI of one may write
 	// its receiver's register back).
 	mutNames map[string]bool
+	// l is the lowering that made it, kept for what the debugger
+	// compiles into the program later (eval.go).
+	l *Lowerer
 }
 
 func itoa(i int) string {
@@ -195,7 +211,7 @@ func (f *Func) encode() bytecode.FuncDef {
 		Ret: f.Ret, Flags: f.Flags, Code: a.Code, Lines: lines,
 	}
 	for _, h := range f.Handlers {
-		def.Handlers = append(def.Handlers, bytecode.Handler{Start: uint32(at(h.Start)), End: uint32(at(h.End)), Target: uint32(at(h.Target))})
+		def.Handlers = append(def.Handlers, bytecode.Handler{Start: uint32(at(h.Start)), End: uint32(at(h.End)), Target: uint32(at(h.Target)), Rethrows: h.Rethrows})
 	}
 	for _, in := range f.Inlines {
 		if s, e := at(in.Start), at(in.End); s < e {

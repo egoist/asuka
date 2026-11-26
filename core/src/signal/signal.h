@@ -174,6 +174,9 @@ bool ak_effect_stale(const ak_effect *e);
 // ak_current_effect is the effect running now, tracking or not (NULL:
 // none).
 ak_effect *ak_current_effect(void);
+// ak_effect_ctx is the ctx e runs with, when it runs run (NULL
+// otherwise): what made it (the VM's effects: their closure).
+void *ak_effect_ctx(const ak_effect *e, void (*run)(void *ctx));
 
 // Tracking and batching.
 
@@ -245,6 +248,9 @@ void ak_owner_retain(ak_owner *o);
 void ak_owner_release(ak_owner *o);
 // ak_current_owner is the owner new computations would belong to.
 ak_owner *ak_current_owner(void);
+// ak_owner_catches reports whether an error raised under o has a catcher
+// to go to (a Boundary's), not the default handler.
+bool ak_owner_catches(const ak_owner *o);
 // ak_with_owner runs fn with o as the current owner, untracked.
 void ak_with_owner(ak_owner *o, void (*fn)(void *ctx), void *ctx);
 // ak_with_owner_tracked runs fn with o as the current owner, the running

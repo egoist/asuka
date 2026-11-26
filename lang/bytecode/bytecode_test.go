@@ -27,7 +27,7 @@ func TestRoundTrip(t *testing.T) {
 	a.Emit(Byname["RET"], 0)
 	a.PatchJump(j, len(a.Code))
 	a.Emit(Byname["RET0"])
-	m.Funcs = []FuncDef{{Name: "f", File: "a.asuka", NParams: 1, Kinds: []Kind{KInt}, Flags: FThrows, Code: a.Code, Handlers: []Handler{{0, 3, 5}}, Lines: []Line{{0, 1}},
+	m.Funcs = []FuncDef{{Name: "f", File: "a.asuka", NParams: 1, Kinds: []Kind{KInt}, Flags: FThrows, Code: a.Code, Handlers: []Handler{{0, 3, 5, false}, {1, 2, 7, true}}, Lines: []Line{{0, 1}},
 		Locals: []Local{{Name: "x", Reg: 0, Via: LocalValue, Desc: "i", From: 0, To: 9}, {Name: "s", Reg: 0, Via: LocalBox, Desc: "?s", From: 3, To: 5}}}}
 	got, err := Decode(m.Encode())
 	if err != nil {
@@ -76,4 +76,26 @@ func TestWideOperands(t *testing.T) {
 		}
 	}()
 	a.Emit(Byname["MOV"], 70000, 0)
+}
+
+// An extension round-trips: its base's sizes, its tables' parts, its
+// inits.
+func TestExtensionRoundTrip(t *testing.T) {
+	x := &Extension{Base: Hash([]byte("module")), NInts: 1, NFloats: 2, NStrings: 3, NShapes: 4, NFuncs: 5, NBuiltins: 6, NGlobals: 7,
+		Ints: []int64{-9}, Floats: []float64{2.5}, Strings: []string{"eval"}, Shapes: []ShapeDef{{Name: "(int,int)", Fields: []Field{{"0", KInt, -1}, {"1", KInt, -1}}}},
+		Funcs:    []FuncDef{{Name: "eval", File: "app.asuka", NParams: 1, Kinds: []Kind{KInt}, Ret: KInt, Flags: FThrows, Code: []uint16{uint16(Byname["RET"]), 0}}},
+		Builtins: []string{"str.len"}, Globals: []Kind{KRef}, Inits: []ExtInit{{First: 7, Func: 6}}}
+	got, err := DecodeExtension(x.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, x) {
+		t.Fatalf("round trip:\n got %+v\nwant %+v", got, x)
+	}
+	if _, err := DecodeExtension((&Module{App: -1, Main: -1}).Encode()); err == nil {
+		t.Fatal("a module isn't an extension")
+	}
+	if Hash([]byte("module")) == Hash([]byte("modulf")) {
+		t.Fatal("hash")
+	}
 }

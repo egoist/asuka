@@ -1453,7 +1453,7 @@ func (b *fb) protect(body func(), onError func(e int)) {
 	onError(e)
 	b.emit(op("THROW"), e)
 	b.f.Place(after)
-	b.f.Handlers = append(b.f.Handlers, Handler{start, end, target})
+	b.f.Handlers = append(b.f.Handlers, Handler{Start: start, End: end, Target: target, Rethrows: true})
 }
 
 // classify sorts a caught error: a user error (an enum, ECASE > 0), a
@@ -1533,7 +1533,7 @@ func (b *fb) catchRegion(catches []*syntax.CatchClause, body func(), clause func
 	b.emit(op("THROW"), e)
 	b.release(mark)
 	b.f.Place(after)
-	b.f.Handlers = append(b.f.Handlers, Handler{start, end, target})
+	b.f.Handlers = append(b.f.Handlers, Handler{Start: start, End: end, Target: target})
 }
 
 // catchExpr is x catch … { … }: x's value, or the value of the clause
@@ -1581,7 +1581,7 @@ func (b *fb) tryOptional(e *syntax.UnaryExpr, dst int) int {
 	b.f.Place(cancel)
 	b.emit(op("THROW"), ev)
 	b.f.Place(after)
-	b.f.Handlers = append(b.f.Handlers, Handler{start, end, target})
+	b.f.Handlers = append(b.f.Handlers, Handler{Start: start, End: end, Target: target})
 	return r
 }
 

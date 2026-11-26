@@ -521,7 +521,9 @@ func (b *fb) noteLocal(v *check.Var, r int) {
 	case v.Kind == check.RowItem, v.Kind == check.ViewMemo, b.l.prog.AccessorVar(v), v.Kind == check.StyleLocal && b.l.styleMemo[v]:
 		via = bc.LocalSignal
 	}
-	b.localOf[v] = b.addLocal(name, r, via, b.l.debugDesc(b.subst.Apply(v.Type)))
+	t := b.subst.Apply(v.Type)
+	b.localOf[v] = b.addLocal(name, r, via, b.l.debugDesc(t))
+	b.f.Locals[b.localOf[v]].Type = t
 }
 
 // addLocal records a name the debugger shows, in r from the next
@@ -540,7 +542,8 @@ func (b *fb) addLocal(name string, r int, via uint8, desc string) int {
 // debugger: a struct of its members, each shown as what it holds now.
 func (b *fb) noteEnv() {
 	if b.l.opts.Locals && b.envReg >= 0 {
-		b.addLocal("self", b.envReg, bc.LocalValue, "-")
+		i := b.addLocal("self", b.envReg, bc.LocalValue, "-")
+		b.f.Locals[i].Env = b.comp
 	}
 }
 
@@ -557,7 +560,9 @@ func (b *fb) noteMembers(order []*check.Member) {
 		}
 		// A state's cell, a let's memo, a parameter's accessor: what it
 		// holds (the debugger shows any other value as it is).
-		b.addLocal(m.Name(), r, bc.LocalSignal, b.l.debugDesc(b.subst.Apply(m.Type)))
+		t := b.subst.Apply(m.Type)
+		i := b.addLocal(m.Name(), r, bc.LocalSignal, b.l.debugDesc(t))
+		b.f.Locals[i].Type = t
 	}
 }
 

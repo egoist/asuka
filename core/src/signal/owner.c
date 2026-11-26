@@ -158,6 +158,8 @@ ak_owner *ak_root(void (*fn)(void *ctx, ak_owner *root), void *ctx) {
 
 ak_owner *ak_current_owner(void) { return g->owner; }
 
+bool ak_owner_catches(const ak_owner *o) { return o && o->catcher; }
+
 void ak_with_owner(ak_owner *o, void (*fn)(void *ctx), void *ctx) {
 	ak_owner *prev_owner = g->owner;
 	ak_comp *prev_sub = g->active;

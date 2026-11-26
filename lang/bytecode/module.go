@@ -10,7 +10,7 @@ import (
 // Magic starts every module; Version changes with the format.
 const (
 	Magic   = "AKBC"
-	Version = 9
+	Version = 10
 )
 
 // Kind is how a value is stored (core/src/rt/rt.h's ak_kind).
@@ -72,7 +72,15 @@ type ShapeDef struct {
 type Handler struct {
 	Start, End uint32 // [Start, End) in words
 	Target     uint32
+	// Rethrows: the handler always throws the error on once it's run
+	// (a defer's, a cleanup's), so it doesn't catch it: the debugger's
+	// "uncaught" looks past it. Encoded as Target's top bit.
+	Rethrows bool
 }
+
+// handlerRethrows is the bit of an encoded handler's target that says
+// Rethrows.
+const handlerRethrows = 1 << 31
 
 // Line maps code from PC on to a source line.
 type Line struct {
@@ -190,6 +198,12 @@ type Module struct {
 	// when it has none. It isn't encoded: the CLI compiles it into the
 	// core's build, which the module's ffi.* builtins are then in.
 	C *C
+
+	// Evaluator compiles expressions to evaluate in the module's frames
+	// as it runs (asuka dev's debugger): lang/compile's *Evaluator, kept
+	// with a module compiled for development (not optimized); nil
+	// otherwise. Not encoded.
+	Evaluator any
 }
 
 // C is a module's C: the glue lang/cffi generated for its extern
@@ -253,66 +267,12 @@ func (m *Module) Encode() []byte {
 		w.str(s)
 	}
 	w.u32(uint32(len(m.Shapes)))
-	for _, s := range m.Shapes {
-		w.str(s.Name)
-		w.fields(s.Fields)
-		w.u32(uint32(len(s.Cases)))
-		for _, c := range s.Cases {
-			w.str(c.Name)
-			w.fields(c.Fields)
-		}
-		if s.IsError {
-			w.u8(1)
-		} else {
-			w.u8(0)
-		}
-		names := sortedKeys(s.Methods)
-		w.u32(uint32(len(names)))
-		for _, n := range names {
-			w.str(n)
-			w.u32(s.Methods[n])
-		}
+	for i := range m.Shapes {
+		w.shape(&m.Shapes[i])
 	}
 	w.u32(uint32(len(m.Funcs)))
-	for _, f := range m.Funcs {
-		w.str(f.Name)
-		w.str(f.File)
-		w.u16(f.NParams)
-		w.kinds(f.Kinds)
-		w.kinds(f.CapKinds)
-		w.u8(uint8(f.Ret))
-		w.u8(f.Flags)
-		w.u32(uint32(len(f.Code)))
-		for _, c := range f.Code {
-			w.u16(c)
-		}
-		w.u32(uint32(len(f.Handlers)))
-		for _, h := range f.Handlers {
-			w.u32(h.Start)
-			w.u32(h.End)
-			w.u32(h.Target)
-		}
-		w.u32(uint32(len(f.Lines)))
-		for _, l := range f.Lines {
-			w.u32(l.PC)
-			w.u32(l.Line)
-		}
-		w.u32(uint32(len(f.Inlines)))
-		for _, in := range f.Inlines {
-			w.u32(in.Start)
-			w.u32(in.End)
-			w.u32(in.Func)
-			w.u32(in.Line)
-		}
-		w.u32(uint32(len(f.Locals)))
-		for _, l := range f.Locals {
-			w.str(l.Name)
-			w.u16(l.Reg)
-			w.u8(l.Via)
-			w.str(l.Desc)
-			w.u32(l.From)
-			w.u32(l.To)
-		}
+	for i := range m.Funcs {
+		w.funcDef(&m.Funcs[i])
 	}
 	w.u32(uint32(len(m.Builtins)))
 	for _, b := range m.Builtins {
@@ -340,6 +300,72 @@ func (m *Module) Encode() []byte {
 	return w.b
 }
 
+func (w *writer) shape(s *ShapeDef) {
+	w.str(s.Name)
+	w.fields(s.Fields)
+	w.u32(uint32(len(s.Cases)))
+	for _, c := range s.Cases {
+		w.str(c.Name)
+		w.fields(c.Fields)
+	}
+	if s.IsError {
+		w.u8(1)
+	} else {
+		w.u8(0)
+	}
+	names := sortedKeys(s.Methods)
+	w.u32(uint32(len(names)))
+	for _, n := range names {
+		w.str(n)
+		w.u32(s.Methods[n])
+	}
+}
+
+func (w *writer) funcDef(f *FuncDef) {
+	w.str(f.Name)
+	w.str(f.File)
+	w.u16(f.NParams)
+	w.kinds(f.Kinds)
+	w.kinds(f.CapKinds)
+	w.u8(uint8(f.Ret))
+	w.u8(f.Flags)
+	w.u32(uint32(len(f.Code)))
+	for _, c := range f.Code {
+		w.u16(c)
+	}
+	w.u32(uint32(len(f.Handlers)))
+	for _, h := range f.Handlers {
+		w.u32(h.Start)
+		w.u32(h.End)
+		t := h.Target
+		if h.Rethrows {
+			t |= handlerRethrows
+		}
+		w.u32(t)
+	}
+	w.u32(uint32(len(f.Lines)))
+	for _, l := range f.Lines {
+		w.u32(l.PC)
+		w.u32(l.Line)
+	}
+	w.u32(uint32(len(f.Inlines)))
+	for _, in := range f.Inlines {
+		w.u32(in.Start)
+		w.u32(in.End)
+		w.u32(in.Func)
+		w.u32(in.Line)
+	}
+	w.u32(uint32(len(f.Locals)))
+	for _, l := range f.Locals {
+		w.str(l.Name)
+		w.u16(l.Reg)
+		w.u8(l.Via)
+		w.str(l.Desc)
+		w.u32(l.From)
+		w.u32(l.To)
+	}
+}
+
 // Decode reads a module Encode wrote.
 func Decode(b []byte) (*Module, error) {
 	r := &reader{b: b}
@@ -360,38 +386,10 @@ func Decode(b []byte) (*Module, error) {
 		m.Strings = append(m.Strings, r.str())
 	}
 	for n := r.u32(); n > 0 && r.err == nil; n-- {
-		s := ShapeDef{Name: r.str(), Fields: r.fields()}
-		for c := r.u32(); c > 0 && r.err == nil; c-- {
-			s.Cases = append(s.Cases, Case{Name: r.str(), Fields: r.fields()})
-		}
-		s.IsError = r.u8() == 1
-		if k := r.u32(); k > 0 {
-			s.Methods = map[string]uint32{}
-			for ; k > 0 && r.err == nil; k-- {
-				name := r.str()
-				s.Methods[name] = r.u32()
-			}
-		}
-		m.Shapes = append(m.Shapes, s)
+		m.Shapes = append(m.Shapes, r.shape())
 	}
 	for n := r.u32(); n > 0 && r.err == nil; n-- {
-		f := FuncDef{Name: r.str(), File: r.str(), NParams: r.u16(), Kinds: r.kinds(), CapKinds: r.kinds(), Ret: Kind(r.u8()), Flags: r.u8()}
-		for c := r.u32(); c > 0 && r.err == nil; c-- {
-			f.Code = append(f.Code, r.u16())
-		}
-		for c := r.u32(); c > 0 && r.err == nil; c-- {
-			f.Handlers = append(f.Handlers, Handler{r.u32(), r.u32(), r.u32()})
-		}
-		for c := r.u32(); c > 0 && r.err == nil; c-- {
-			f.Lines = append(f.Lines, Line{r.u32(), r.u32()})
-		}
-		for c := r.u32(); c > 0 && r.err == nil; c-- {
-			f.Inlines = append(f.Inlines, Inline{r.u32(), r.u32(), r.u32(), r.u32()})
-		}
-		for c := r.u32(); c > 0 && r.err == nil; c-- {
-			f.Locals = append(f.Locals, Local{Name: r.str(), Reg: r.u16(), Via: r.u8(), Desc: r.str(), From: r.u32(), To: r.u32()})
-		}
-		m.Funcs = append(m.Funcs, f)
+		m.Funcs = append(m.Funcs, r.funcDef())
 	}
 	for n := r.u32(); n > 0 && r.err == nil; n-- {
 		m.Builtins = append(m.Builtins, r.str())
@@ -412,6 +410,44 @@ func Decode(b []byte) (*Module, error) {
 		return nil, r.err
 	}
 	return m, nil
+}
+
+func (r *reader) shape() ShapeDef {
+	s := ShapeDef{Name: r.str(), Fields: r.fields()}
+	for c := r.u32(); c > 0 && r.err == nil; c-- {
+		s.Cases = append(s.Cases, Case{Name: r.str(), Fields: r.fields()})
+	}
+	s.IsError = r.u8() == 1
+	if k := r.u32(); k > 0 {
+		s.Methods = map[string]uint32{}
+		for ; k > 0 && r.err == nil; k-- {
+			name := r.str()
+			s.Methods[name] = r.u32()
+		}
+	}
+	return s
+}
+
+func (r *reader) funcDef() FuncDef {
+	f := FuncDef{Name: r.str(), File: r.str(), NParams: r.u16(), Kinds: r.kinds(), CapKinds: r.kinds(), Ret: Kind(r.u8()), Flags: r.u8()}
+	for c := r.u32(); c > 0 && r.err == nil; c-- {
+		f.Code = append(f.Code, r.u16())
+	}
+	for c := r.u32(); c > 0 && r.err == nil; c-- {
+		h := Handler{Start: r.u32(), End: r.u32(), Target: r.u32()}
+		h.Rethrows, h.Target = h.Target&handlerRethrows != 0, h.Target&^handlerRethrows
+		f.Handlers = append(f.Handlers, h)
+	}
+	for c := r.u32(); c > 0 && r.err == nil; c-- {
+		f.Lines = append(f.Lines, Line{r.u32(), r.u32()})
+	}
+	for c := r.u32(); c > 0 && r.err == nil; c-- {
+		f.Inlines = append(f.Inlines, Inline{r.u32(), r.u32(), r.u32(), r.u32()})
+	}
+	for c := r.u32(); c > 0 && r.err == nil; c-- {
+		f.Locals = append(f.Locals, Local{Name: r.str(), Reg: r.u16(), Via: r.u8(), Desc: r.str(), From: r.u32(), To: r.u32()})
+	}
+	return f
 }
 
 type writer struct{ b []byte }
