@@ -5,7 +5,7 @@ what's in an image, photos and files, previewing, printing and PDFs, the
 mail and message composers, location, notifications and push, sound, Now Playing and recording,
 the network's state, the shared library, work in the background, shares
 from other apps, JavaScript, sign-in and biometrics, the screen, maps,
-the stores' services, and crash reports.
+the stores' services, ads, and crash reports.
 This page covers each package: what it does, its API, the permissions it
 brings and how it behaves on each platform.
 
@@ -3098,6 +3098,126 @@ component Steps {
   `HealthError.notAllowed`.
 - The Mac, Windows, Linux and the web have no health store:
   `available()` is false and the calls throw `HealthError.notAvailable`.
+
+## Ads: platform/ads
+
+`platform/ads` shows Google's ads (AdMob) on iOS and Android: banners
+among the app's views, and full-screen ads loaded ahead and shown at a
+pause. The app's AdMob app IDs go in [asuka.toml's
+`[ads]`](asuka-toml.md#ads); a build for iOS or Android without its
+platform's fails, saying so.
+
+```asuka check
+import platform/ads
+
+let rewardUnit = ads.testUnit(.rewarded)
+
+component Game {
+  state coins = 0
+  state ready = false
+  state note = ""
+
+  task {
+    do {
+      let c = try await ads.consent()
+      if c.canRequestAds {
+        try await ads.start()
+        ready = true
+      }
+    } catch e {
+      note = e.message
+      ready = ads.currentConsent().canRequestAds
+    }
+  }
+
+  Column {
+    gap: 12
+    grow: 1
+    Text("{coins} coins")
+    Text(note)
+    Button("Watch an ad for 10 coins") {
+      disabled: !ready
+      on press {
+        do {
+          let ad = try await ads.rewarded(rewardUnit)
+          if let r = try await ad.show() {
+            coins += r.amount
+          }
+        } catch e {
+          note = e.message
+        }
+      }
+    }
+    View { grow: 1 }
+    if ready {
+      ads.Banner(ads.testUnit(.banner)) {
+        on error(message) { note = message }
+      }
+    }
+  }
+}
+```
+
+- **Consent first.** Where the law asks for it (the EEA, the UK,
+  Switzerland, some US states), Google wants the user's consent before
+  ads. `ads.consent()` gathers it with Google's User Messaging Platform:
+  it shows the form you set up in AdMob's Privacy & messaging when
+  consent is required and not given yet, and its `Consent` says whether
+  ads may be requested (`canRequestAds`). Call it each time the app
+  starts, before loading ads. When `privacyOptionsRequired`, the app
+  offers the form again from its settings: `ads.privacyOptions()`.
+  `ConsentOptions(debugGeography: .eea)` shows the form anywhere, for
+  testing on a simulator or emulator.
+- **Tracking.** On iOS, App Tracking Transparency's prompt is
+  `platform/tracking`'s: ask it after consent, before the first ad. A
+  user who says no still gets ads, not personalized ones.
+- **Banners.** `ads.Banner(unit)` is Google's anchored adaptive banner:
+  as wide as it's laid out, as tall as Google picks for that width.
+  `size:` takes a fixed one (`.banner`, 320×50; `.mediumRectangle`,
+  300×250; `.largeBanner`, `.fullBanner`, `.leaderboard`). Its events
+  say when an ad shows (`loaded`), why none does (`error`), and when
+  the user taps it (`click`, `open`, `close`). Place it at the top or the
+  bottom of a screen, clear of what the user taps.
+- **Full-screen ads.** `ads.interstitial(unit)`, `ads.rewarded(unit)`,
+  `ads.rewardedInterstitial(unit)` and `ads.appOpen(unit)` load one;
+  `show()` shows it over the app and returns once the user closes it,
+  with the `Reward` (its type and amount, as the ad unit says in AdMob)
+  when it's a rewarded ad watched through, else `none`. An ad shows once,
+  and expires after an hour (an app open ad, four): load it shortly
+  before it's needed. For server-side verification of rewards, the
+  `Request`'s `userId` and `customData` go to your server in Google's
+  callback.
+- **Settings.** `ads.configure(Settings(...))` sets what every request
+  takes: `testDevices`, the `age` the ads are for (`.child`, `.teen`),
+  the `maxRating`, `personalized: false`, and video ads' `muted` and
+  `volume`.
+- **Test ads.** `ads.testUnit(format)` is Google's test ad unit for the
+  format on the platform the app runs on: it always has an ad, labeled
+  as a test. Use them while developing, with Google's sample app IDs in
+  `[ads]`; tapping real ads of your own can close your AdMob account.
+  Simulators and emulators get test ads anyway; a phone does once its ID
+  (the SDK logs it as it loads an ad) is in `testDevices`.
+- **Errors.** Loading throws `AdsError.noFill` when there's no ad,
+  `.network`, `.invalidRequest` for a wrong unit or app ID, and showing
+  an ad twice throws `.alreadyShown`.
+- **Elsewhere.** The Mac, Windows, Linux and the web have no AdMob:
+  `ads.available()` is false, a Banner shows nothing, `consent()` says
+  ads may not be requested, and loading throws `AdsError.notAvailable`.
+
+In a test, `ads.fake()` gives the package a `FakeAds`: ads fill at once,
+a rewarded one gives its `reward` when the user `watches`, and the test
+reads what was `loaded` and `shown` (`noFill`, `unavailable` and
+`consent` change the answers).
+
+```asuka
+import platform/ads
+
+test "a reward" {
+  let f = ads.fake()
+  let ad = try await ads.rewarded("unit")
+  expect(try await ad.show() == f.reward)
+}
+```
 
 ## Editing images and video frames: platform/imageedit
 

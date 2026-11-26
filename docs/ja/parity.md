@@ -145,6 +145,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 年齢層 | Declared Age Range | `expo-age-range` | ✓ `platform/agerange`（Declared Age Range、Play Age Signals） |
 | センサー | Core Motion | `expo-sensors` | ✓ `platform/sensors`（加速度計、ジャイロスコープ、磁力計、デバイスモーション、気圧計、照度、歩数計。どこでも同じ軸と単位。Core Motion、SensorManager、Linux では iio-sensor-proxy の照度と向き、Generic Sensor API。Mac と Windows にはない） |
 | ヘルスケアデータ | HealthKit | コミュニティ製（`react-native-health`、Flutter の `health`） | ✓ `platform/health`（HealthKit、Health Connect：歩数、距離、エネルギー、心拍数、睡眠、体重など。サンプル、合計、書き込み） |
+| 広告（AdMob） | Google Mobile Ads SDK | `react-native-google-mobile-ads`、Flutter の `google_mobile_ads` | ✓ `platform/ads`（アダプティブと固定サイズのバナー。インタースティシャル、リワード、リワード インタースティシャル、アプリ起動広告。Google の User Messaging Platform による同意。リクエストの設定。Google のテスト用広告ユニット。iOS と Android。テスト用の `ads.fake()`） |
 | NFC タグ | Core NFC | `react-native-nfc-manager` | ✓ `platform/nfc`（NDEF の読み書き、読み取り専用のタグ、タグの ID、生のコマンド。iOS のシート、Android のリーダーモード、アプリを開くタグ。Android の Chrome の Web NFC。デスクトップにはない）（[NFC タグ](nfc.md)） |
 | Bluetooth LE | Core Bluetooth | コミュニティ製（`react-native-ble-plx`） | ✓ `platform/bluetooth`（スキャン、接続、サービス、読み取り、書き込み、通知。アドバタイズと GATT サーバー。バックグラウンドのスキャンと状態の復元。Core Bluetooth、Android の BLE、WinRT のもの、BlueZ。Chromium の Web Bluetooth のデバイス選択画面で、ペリフェラルの役割はない）（[Bluetooth](bluetooth.md)） |
 | 画像の編集 | Core Graphics、ImageIO | `expo-image-manipulator` | ✓ `platform/imageedit`（リサイズ、切り抜き、回転、反転、塗りつぶし、モザイク。HEIC を読み、JPEG か PNG で書き出し、向きを正す。Image I/O、Android の `Bitmap`、WIC、GdkPixbuf、canvas） |

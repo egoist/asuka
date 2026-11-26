@@ -382,8 +382,9 @@ let package = Package(
 
 It's yours: its dependencies, targets, resources, C targets and
 binary targets are SwiftPM's, as in any package. Asuka builds it with
-the app and its other native packages, links it into the app, and
-embeds the dynamic frameworks and resource bundles it makes. `asuka`
+the app and its other native packages, links it into the app (static
+binary frameworks whole, as a vendor's SDK expects), and embeds the
+dynamic frameworks and resource bundles it makes. `asuka`
 (the product `Asuka`) is the library the generated code builds on; a
 build uses the copy that comes with your `asuka`, so it always matches
 the app's Asuka. The `platforms`

@@ -1,6 +1,6 @@
 # デバイスとサービス
 
-Asuka のパッケージを使うと、ビューの外にあるデバイスの機能も扱えます。カメラ、バーコードや QR コード、画像に写っているものの認識、写真とファイル、プレビュー、印刷と PDF、メールとメッセージの作成画面、位置情報、通知とプッシュ通知、サウンド、再生中の情報（Now Playing）と録音、ネットワークの状態、写真やファイルのライブラリへの保存、バックグラウンドでの処理、ほかのアプリからの共有、JavaScript、サインインと生体認証、画面、地図、ストアのサービス、クラッシュレポートです。このページでは、パッケージごとに何ができるか、その API、必要になる権限、プラットフォームごとの動作を説明します。
+Asuka のパッケージを使うと、ビューの外にあるデバイスの機能も扱えます。カメラ、バーコードや QR コード、画像に写っているものの認識、写真とファイル、プレビュー、印刷と PDF、メールとメッセージの作成画面、位置情報、通知とプッシュ通知、サウンド、再生中の情報（Now Playing）と録音、ネットワークの状態、写真やファイルのライブラリへの保存、バックグラウンドでの処理、ほかのアプリからの共有、JavaScript、サインインと生体認証、画面、地図、ストアのサービス、広告、クラッシュレポートです。このページでは、パッケージごとに何ができるか、その API、必要になる権限、プラットフォームごとの動作を説明します。
 
 どのパッケージも、すべてのプラットフォームで同じ API を持ちます。iOS と Android ではほぼすべての機能が使えます。macOS、Windows、Linux では、Asuka が各パッケージをデスクトップ自身のサービスで実装し、ブラウザーでは Web の API で実装します。プラットフォームに対応する機能がない場合、パッケージはその機能を持たないスマートフォンと同じように振る舞います。つまり、パッケージの `notAvailable` エラーになるか、足りないものを示すエラーになるか、何もしない呼び出しになります。各パッケージの節では、何ができるか、各プラットフォームが何を使ってそれを実現しているかを説明します。さらに、各デスクトップとブラウザーにはそれぞれ専用の節があり（[Mac の場合](#mac-の場合)、[Windows の場合](#windows-の場合)、[Linux の場合](#linux-の場合)、[ブラウザーの場合](#ブラウザーの場合)）、そこで必要な設定と、iOS や Android との違いを表にまとめています。
 
@@ -2103,6 +2103,82 @@ component Steps {
 - iOS は読み取りを許可されたかどうかをアプリに伝えません。許可されていない種類は、サンプルがないものとして読めます。パッケージをインポートすると、アプリに HealthKit の機能（リリースのプロファイルに必要です）と利用目的の説明文が加わります（`[ios.usage]` で独自の文にできます）。
 - Android には Health Connect が必要です。Android 14 からは組み込みで、Android 9 から 13 ではユーザーがインストールするアプリです（それより前にはありません）。Google Play は健康に関する権限一つひとつに理由を求めるので、アプリは読み書きする種類とプライバシーポリシーを [asuka.toml の `[health]`](asuka-toml.md) に書きます。書いていない種類を求めると `HealthError.notAllowed` を投げます。
 - Mac、Windows、Linux、Web にはヘルスケアデータがなく、`available()` は false で、呼び出しは `HealthError.notAvailable` を投げます。
+
+## 広告：platform/ads
+
+`platform/ads` は、iOS と Android で Google の広告（AdMob）を表示します。アプリのビューの間に置くバナー広告と、あらかじめ読み込んでおき区切りのよいところで表示する全画面広告があります。アプリの AdMob アプリ ID は [asuka.toml の `[ads]`](asuka-toml.md#ads) に書きます。iOS や Android 向けのビルドでそのプラットフォームの ID がないと、理由を示してビルドが失敗します。
+
+```asuka check
+import platform/ads
+
+let rewardUnit = ads.testUnit(.rewarded)
+
+component Game {
+  state coins = 0
+  state ready = false
+  state note = ""
+
+  task {
+    do {
+      let c = try await ads.consent()
+      if c.canRequestAds {
+        try await ads.start()
+        ready = true
+      }
+    } catch e {
+      note = e.message
+      ready = ads.currentConsent().canRequestAds
+    }
+  }
+
+  Column {
+    gap: 12
+    grow: 1
+    Text("{coins} coins")
+    Text(note)
+    Button("Watch an ad for 10 coins") {
+      disabled: !ready
+      on press {
+        do {
+          let ad = try await ads.rewarded(rewardUnit)
+          if let r = try await ad.show() {
+            coins += r.amount
+          }
+        } catch e {
+          note = e.message
+        }
+      }
+    }
+    View { grow: 1 }
+    if ready {
+      ads.Banner(ads.testUnit(.banner)) {
+        on error(message) { note = message }
+      }
+    }
+  }
+}
+```
+
+- **まず同意を得る。** 法律で求められる地域（欧州経済領域、英国、スイス、米国の一部の州）では、Google は広告の前にユーザーの同意を得ることを求めています。`ads.consent()` は Google の User Messaging Platform で同意を集めます。同意が必要でまだ得られていなければ、AdMob の「プライバシーとメッセージ」で用意したフォームを表示し、返ってくる `Consent` で広告をリクエストしてよいか（`canRequestAds`）がわかります。アプリを起動するたび、広告を読み込む前に呼んでください。`privacyOptionsRequired` が true のときは、アプリの設定画面からフォームをもう一度開けるようにします（`ads.privacyOptions()`）。シミュレーターやエミュレーターで試すときは、`ConsentOptions(debugGeography: .eea)` でどこでもフォームを表示できます。
+- **トラッキングの許可。** iOS の App Tracking Transparency のプロンプトは `platform/tracking` の役目です。同意を得たあと、最初の広告の前に表示してください。ユーザーが許可しなくても広告は表示されますが、パーソナライズされなくなります。
+- **バナー。** `ads.Banner(unit)` は Google のアンカー アダプティブ バナーです。幅はレイアウトで決まった幅になり、高さはその幅に合わせて Google が決めます。`size:` で固定サイズも選べます（`.banner` は 320×50、`.mediumRectangle` は 300×250、ほかに `.largeBanner`、`.fullBanner`、`.leaderboard`）。イベントで、広告が表示されたこと（`loaded`）、表示されない理由（`error`）、ユーザーがタップしたこと（`click`、`open`、`close`）がわかります。画面の上端か下端に置き、ユーザーがよくタップする場所から離してください。
+- **全画面広告。** `ads.interstitial(unit)`、`ads.rewarded(unit)`、`ads.rewardedInterstitial(unit)`、`ads.appOpen(unit)` で広告を一つ読み込みます。`show()` はそれをアプリの上に表示し、ユーザーが閉じると戻ります。最後まで見たリワード広告なら `Reward`（AdMob の広告ユニットで設定した種類と量）を、それ以外は `none` を返します。広告は一度しか表示できず、1 時間で期限が切れます（アプリ起動広告は 4 時間）。必要になる少し前に読み込んでください。報酬をサーバー側で検証するなら、`Request` の `userId` と `customData` が Google のコールバックでサーバーに届きます。
+- **設定。** `ads.configure(Settings(...))` で、以降のすべてのリクエストに付く内容を決めます。`testDevices`、広告の対象年齢 `age`（`.child`、`.teen`）、`maxRating`、`personalized: false`、動画広告の `muted` と `volume` です。
+- **テスト広告。** `ads.testUnit(format)` は、実行中のプラットフォームでその形式に使える Google のテスト用広告ユニットです。常に広告があり、テスト広告であることが表示されます。開発中はこれと、`[ads]` に書いた Google のサンプルアプリ ID を使ってください。自分の本物の広告をタップすると、AdMob アカウントが停止されることがあります。シミュレーターとエミュレーターには常にテスト広告が届きます。実機では、その ID（広告の読み込み時に SDK がログに出します）を `testDevices` に加えてください。
+- **エラー。** 広告がないと読み込みは `AdsError.noFill` を投げます。ネットワークの問題は `.network`、広告ユニットやアプリ ID の誤りは `.invalidRequest`、同じ広告を 2 回表示すると `.alreadyShown` です。
+- **ほかのプラットフォーム。** Mac、Windows、Linux、Web には AdMob がありません。`ads.available()` は false で、Banner は何も表示せず、`consent()` は広告をリクエストできないと答え、広告の読み込みは `AdsError.notAvailable` を投げます。
+
+テストでは、`ads.fake()` がパッケージに `FakeAds` を渡します。広告はすぐに読み込まれ、ユーザーがリワード広告を最後まで見ると（`watches`）その `reward` がもらえ、テストは読み込まれた広告（`loaded`）と表示された広告（`shown`）を確認できます。`noFill`、`unavailable`、`consent` を変えると結果が変わります。
+
+```asuka
+import platform/ads
+
+test "a reward" {
+  let f = ads.fake()
+  let ad = try await ads.rewarded("unit")
+  expect(try await ad.show() == f.reward)
+}
+```
 
 ## 画像と動画フレームの編集：platform/imageedit
 

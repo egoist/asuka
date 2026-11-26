@@ -1,0 +1,3 @@
+name = "platform/ads"
+version = "0.1.0"
+description = "Google's ads (AdMob): banners, interstitial and rewarded ads, and the consent they need"

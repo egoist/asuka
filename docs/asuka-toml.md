@@ -99,6 +99,7 @@ These apply on every platform the key means something on.
 | `web` | table | | The web build's. See [web](#web). |
 | `bluetooth` | table | | What an app of `platform/bluetooth` asks beyond the package's needs: the background, the location from scans. See [bluetooth](#bluetooth). |
 | `health` | table | | What an Android app of `platform/health` reads and writes in Health Connect, and its privacy policy. See [health](#health). |
+| `ads` | table | | The AdMob app IDs of an app of `platform/ads`. See [ads](#ads). |
 | `bin` | tables | none | The project's programs: command-line tools in directories of their own, built into the desktop apps. See [bin](#bin). |
 
 A Windows build needs nothing beyond these: its signing certificate is
@@ -475,6 +476,29 @@ privacyPolicy = "https://example.com/privacy"
 Health Connect is built into Android 14 and later; on Android 9 to 13
 it's an app from Google Play, and without it `health.available()` is
 false. See [Health data](device.md#health-data-platformhealth).
+
+## ads
+
+The AdMob app IDs of an app that imports `platform/ads`, from each app's
+settings in AdMob: Google Mobile Ads reads its platform's as the app
+starts, and a build for iOS or Android without it fails. The app gets
+Google's SKAdNetwork identifiers in its Info.plist too, so that installs
+its ads lead to are counted on iOS.
+
+```toml
+[ads]
+ios = "ca-app-pub-3940256099942544~1458002511"
+android = "ca-app-pub-3940256099942544~3347511713"
+```
+
+| Key | Type | Default | What it is |
+|---|---|---|---|
+| `ios` | string | none | The iOS app's AdMob app ID, `ca-app-pub-…~…` (not an ad unit's, with a `/`). |
+| `android` | string | none | The Android app's, likewise. |
+| `skAdNetworks` | strings | none | More ad networks' SKAdNetwork identifiers (`"abcd1234.skadnetwork"`), for ads from other networks through AdMob's mediation, beside Google's. |
+
+The IDs above are Google's sample apps', for development with its test
+ads (`ads.testUnit`). See [Ads](device.md#ads-platformads).
 
 ## c
 

@@ -85,6 +85,7 @@ github = "you/notes"
 | `web` | テーブル | | Web のビルドの設定です。[web](#web) を参照してください。 |
 | `bluetooth` | テーブル | | `platform/bluetooth` を使うアプリが、パッケージに必要なもの以上に求めるものです。バックグラウンドと、スキャンによる位置情報を指定します。[bluetooth](#bluetooth) を参照してください。 |
 | `health` | テーブル | | `platform/health` を使う Android アプリが Health Connect で読み書きするデータと、アプリのプライバシーポリシーです。[health](#health) を参照してください。 |
+| `ads` | テーブル | | `platform/ads` を使うアプリの AdMob アプリ ID です。[ads](#ads) を参照してください。 |
 | `bin` | テーブル | なし | プロジェクトのプログラムです。それぞれ専用のディレクトリにあるコマンドラインツールで、デスクトップアプリに組み込まれます。[bin](#bin) を参照してください。 |
 
 Windows のビルドに必要なのはこれだけです。署名の証明書は環境変数で渡します（[配布](shipping.md#windows)を参照）。
@@ -414,6 +415,24 @@ privacyPolicy = "https://example.com/privacy"
 | `privacyPolicy` | 文字列 | なし | アプリのプライバシーポリシーの http または https の URL です。`read` か `write` を指定するときは必須です。Health Connect の権限の画面とシステムの設定からリンクされ、ブラウザで開きます。 |
 
 Health Connect は Android 14 以降に組み込まれています。Android 9 から 13 では Google Play のアプリで、入っていなければ `health.available()` は false です。[ヘルスケアデータ](device.md#ヘルスケアデータplatformhealth)を参照してください。
+
+## ads
+
+`platform/ads` をインポートしたアプリの AdMob アプリ ID で、AdMob の各アプリの設定で確認できます。Google Mobile Ads はアプリの起動時にそのプラットフォームの ID を読み込み、iOS や Android 向けのビルドでこれがないとビルドは失敗します。アプリの Info.plist には Google の SKAdNetwork 識別子も加わり、iOS で広告経由のインストールが計測されるようになります。
+
+```toml
+[ads]
+ios = "ca-app-pub-3940256099942544~1458002511"
+android = "ca-app-pub-3940256099942544~3347511713"
+```
+
+| キー | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `ios` | 文字列 | なし | iOS アプリの AdMob アプリ ID で、`ca-app-pub-…~…` の形です（`/` を含む広告ユニットの ID ではありません）。 |
+| `android` | 文字列 | なし | Android アプリの ID で、書き方は同じです。 |
+| `skAdNetworks` | 文字列の配列 | なし | Google のもののほかに加える広告ネットワークの SKAdNetwork 識別子（`"abcd1234.skadnetwork"`）です。AdMob のメディエーションでほかのネットワークの広告を表示するときに使います。 |
+
+上の ID は Google のサンプルアプリのもので、開発中にテスト広告（`ads.testUnit`）と組み合わせて使います。[広告](device.md#広告platformads)を参照してください。
 
 ## c
 

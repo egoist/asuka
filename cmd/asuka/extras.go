@@ -76,6 +76,8 @@ func (c *appConfig) plistExtras() map[string]any {
 		m["UILaunchScreen"] = ls
 		m["AsukaSplash"] = true
 	}
+	// platform/ads's app ID and SKAdNetwork identifiers.
+	c.adsPlist(m)
 	// The app's plugins' (pluginNeeds): their arrays join the packages',
 	// and the rest go where nothing else set the key.
 	for k, v := range c.nativePlist {

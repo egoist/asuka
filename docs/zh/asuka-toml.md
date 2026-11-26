@@ -83,6 +83,7 @@ github = "you/notes"
 | `web` | 表 | | Web 构建的配置。见 [web](#web)。 |
 | `bluetooth` | 表 | | 使用 `platform/bluetooth` 的应用在包本身所需之外的额外声明：后台运行、通过扫描定位。见 [bluetooth](#bluetooth)。 |
 | `health` | 表 | | 使用 `platform/health` 的 Android 应用在 Health Connect 中读写哪些数据，以及应用的隐私政策。见 [health](#health)。 |
+| `ads` | 表 | | 使用 `platform/ads` 的应用的 AdMob 应用 ID。见 [ads](#ads)。 |
 | `bin` | 表 | 无 | 项目自带的程序：放在各自目录里的命令行工具，会构建进桌面应用。见 [bin](#bin)。 |
 
 Windows 构建只需要上面这些键；它的签名证书通过环境变量提供（见[打包与发布](shipping.md#windows)）。
@@ -412,6 +413,24 @@ privacyPolicy = "https://example.com/privacy"
 | `privacyPolicy` | 字符串 | 无 | 应用的隐私政策，一个 http 或 https 网址。设置了 `read` 或 `write` 时必填：Health Connect 的权限页面和系统设置会链接到它，在浏览器中打开。 |
 
 Android 14 及以上内置了 Health Connect；Android 9 到 13 上它是 Google Play 里的一个应用，没有安装时 `health.available()` 为 false。见[健康数据](device.md#健康数据platformhealth)。
+
+## ads
+
+导入了 `platform/ads` 的应用的 AdMob 应用 ID，可以在 AdMob 中各个应用的设置里找到。Google Mobile Ads 会在应用启动时读取对应平台的 ID；为 iOS 或 Android 构建时如果没有它，构建会失败。应用的 Info.plist 里还会加上 Google 的 SKAdNetwork 标识符，这样在 iOS 上由广告带来的安装才能被统计。
+
+```toml
+[ads]
+ios = "ca-app-pub-3940256099942544~1458002511"
+android = "ca-app-pub-3940256099942544~3347511713"
+```
+
+| 键 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `ios` | 字符串 | 无 | iOS 应用的 AdMob 应用 ID，形如 `ca-app-pub-…~…`（不是带 `/` 的广告单元 ID）。 |
+| `android` | 字符串 | 无 | Android 应用的 ID，写法同上。 |
+| `skAdNetworks` | 字符串数组 | 无 | 除 Google 之外，其他广告网络的 SKAdNetwork 标识符（`"abcd1234.skadnetwork"`），用于通过 AdMob 中介展示其他广告网络的广告。 |
+
+上面的 ID 是 Google 示例应用的，供开发时配合测试广告（`ads.testUnit`）使用。见[广告](device.md#广告platformads)。
 
 ## c
 

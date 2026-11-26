@@ -119,6 +119,13 @@ func nativeFor(app *asukaApp, platform string) ([]nativePackage, error) {
 				continue
 			}
 		}
+		// Google Mobile Ads ends an app without its app ID as it starts:
+		// a build without asuka.toml's says so instead.
+		if p.path == adsPkg && (platform == "ios" || platform == "android") && app.cfg != nil {
+			if err := app.cfg.adsCheck(platform); err != nil {
+				return nil, err
+			}
+		}
 		out = append(out, p)
 	}
 	return out, nil

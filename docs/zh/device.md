@@ -1,6 +1,6 @@
 # 设备与服务
 
-Asuka 提供了一系列包，让应用用上视图之外的设备能力：相机、条码、图像内容识别、照片和文件、文件预览、打印和 PDF、邮件和短信编辑界面、定位、通知和推送、声音、正在播放（Now Playing）和录音、网络状态、共享的媒体库、后台任务、接收其他应用的分享、JavaScript、登录和生物识别、屏幕、地图、应用商店提供的服务，以及崩溃报告。本页逐一介绍这些包：它们能做什么、API 怎么用、会给应用带来哪些权限，以及在各个平台上的表现。
+Asuka 提供了一系列包，让应用用上视图之外的设备能力：相机、条码、图像内容识别、照片和文件、文件预览、打印和 PDF、邮件和短信编辑界面、定位、通知和推送、声音、正在播放（Now Playing）和录音、网络状态、共享的媒体库、后台任务、接收其他应用的分享、JavaScript、登录和生物识别、屏幕、地图、应用商店提供的服务、广告，以及崩溃报告。本页逐一介绍这些包：它们能做什么、API 怎么用、会给应用带来哪些权限，以及在各个平台上的表现。
 
 每个包在所有平台上都是同一套 API，iOS 和 Android 几乎支持其中的全部功能。在 macOS、Windows 和 Linux 上，Asuka 会用桌面系统自己的服务来实现各个包；在浏览器中则用 Web API。如果某个平台根本没有对应的能力，包的表现就和在一台缺少该功能的手机上一样：返回这个包的 `notAvailable` 错误，返回一个说明缺了什么的错误，或者调用了也什么都不做。每个包的小节都会说明它能做什么、在各平台上分别靠什么实现。每个桌面平台和浏览器也各有专门的一节（[在 Mac 上](#在-mac-上)、[在 Windows 上](#在-windows-上)、[在 Linux 上](#在-linux-上)、[在浏览器中](#在浏览器中)），介绍应用在那里需要做哪些配置，并用一张表列出它与 iOS 和 Android 的不同之处。
 
@@ -2103,6 +2103,82 @@ component Steps {
 - iOS 不会告诉应用它能否读取：用户没有允许的种类读出来就是没有样本。导入这个包后，应用会带上 HealthKit 能力（发布版的描述文件需要它）和用途说明（可以在 `[ios.usage]` 里写你自己的）。
 - Android 需要 Health Connect：Android 14 起内置，Android 9 到 13 需要用户安装它的应用（更早的版本没有）。Google Play 要求说明每一项健康权限的用途，所以应用要在 [asuka.toml 的 `[health]`](asuka-toml.md) 里列出它读写的种类和隐私政策；请求没有列出的种类会抛出 `HealthError.notAllowed`。
 - Mac、Windows、Linux 和 Web 上没有健康数据：`available()` 为 false，调用会抛出 `HealthError.notAvailable`。
+
+## 广告：platform/ads
+
+`platform/ads` 在 iOS 和 Android 上展示 Google 的广告（AdMob）：一种是放在应用视图之间的横幅广告，另一种是提前加载、在合适的停顿时展示的全屏广告。应用的 AdMob 应用 ID 写在 [asuka.toml 的 `[ads]`](asuka-toml.md#ads) 里；为 iOS 或 Android 构建时，如果缺少对应平台的 ID，构建会失败并说明原因。
+
+```asuka check
+import platform/ads
+
+let rewardUnit = ads.testUnit(.rewarded)
+
+component Game {
+  state coins = 0
+  state ready = false
+  state note = ""
+
+  task {
+    do {
+      let c = try await ads.consent()
+      if c.canRequestAds {
+        try await ads.start()
+        ready = true
+      }
+    } catch e {
+      note = e.message
+      ready = ads.currentConsent().canRequestAds
+    }
+  }
+
+  Column {
+    gap: 12
+    grow: 1
+    Text("{coins} coins")
+    Text(note)
+    Button("Watch an ad for 10 coins") {
+      disabled: !ready
+      on press {
+        do {
+          let ad = try await ads.rewarded(rewardUnit)
+          if let r = try await ad.show() {
+            coins += r.amount
+          }
+        } catch e {
+          note = e.message
+        }
+      }
+    }
+    View { grow: 1 }
+    if ready {
+      ads.Banner(ads.testUnit(.banner)) {
+        on error(message) { note = message }
+      }
+    }
+  }
+}
+```
+
+- **先征得同意。** 在法律有要求的地区（欧洲经济区、英国、瑞士以及美国的部分州），Google 要求先取得用户的同意再展示广告。`ads.consent()` 通过 Google 的 User Messaging Platform 收集同意：如果需要同意而用户还没有给出，它会弹出你在 AdMob 的“隐私权和消息”中配置的表单；返回的 `Consent` 说明现在能否请求广告（`canRequestAds`）。每次应用启动、加载广告之前都调用一次。当 `privacyOptionsRequired` 为 true 时，应用要在设置里提供重新打开表单的入口：`ads.privacyOptions()`。在模拟器上测试时，可以用 `ConsentOptions(debugGeography: .eea)` 让表单在任何地区都弹出。
+- **跟踪授权。** iOS 上 App Tracking Transparency 的提示由 `platform/tracking` 负责：在征得同意之后、展示第一条广告之前请求它。用户拒绝后仍然会看到广告，只是不再是个性化广告。
+- **横幅广告。** `ads.Banner(unit)` 是 Google 的锚定自适应横幅：宽度等于布局给它的宽度，高度由 Google 根据这个宽度决定。`size:` 可以改用固定尺寸（`.banner` 即 320×50，`.mediumRectangle` 即 300×250，还有 `.largeBanner`、`.fullBanner`、`.leaderboard`）。它的事件会告诉你广告何时展示（`loaded`）、为什么没有广告（`error`），以及用户何时点击了它（`click`、`open`、`close`）。把它放在页面的顶部或底部，不要挨着用户常点的地方。
+- **全屏广告。** `ads.interstitial(unit)`、`ads.rewarded(unit)`、`ads.rewardedInterstitial(unit)` 和 `ads.appOpen(unit)` 用来加载一条广告；`show()` 把它覆盖在应用上展示，等用户关闭后返回：如果是看完了的激励广告，返回 `Reward`（类型和数量，以 AdMob 中广告单元的设置为准），否则返回 `none`。一条广告只能展示一次，并且一小时后过期（开屏广告是四小时），所以请在需要之前不久再加载。如果要在服务器端验证奖励，`Request` 的 `userId` 和 `customData` 会随 Google 的回调发到你的服务器。
+- **设置。** `ads.configure(Settings(...))` 设定之后每个请求都会带上的内容：`testDevices`、广告面向的年龄段 `age`（`.child`、`.teen`）、`maxRating`、`personalized: false`，以及视频广告的 `muted` 和 `volume`。
+- **测试广告。** `ads.testUnit(format)` 是 Google 为当前平台、该格式提供的测试广告单元：它总有广告可展示，并标明是测试广告。开发时用它们，并在 `[ads]` 中填写 Google 的示例应用 ID；点击自己的真实广告可能导致 AdMob 账号被封。模拟器总是收到测试广告；真机则要把它的 ID（SDK 加载广告时会打印在日志里）加进 `testDevices`。
+- **错误。** 没有广告可展示时，加载会抛出 `AdsError.noFill`；网络问题是 `.network`，广告单元或应用 ID 不对是 `.invalidRequest`；同一条广告展示两次会抛出 `.alreadyShown`。
+- **其他平台。** Mac、Windows、Linux 和 Web 上没有 AdMob：`ads.available()` 为 false，Banner 什么也不显示，`consent()` 表示不能请求广告，加载广告会抛出 `AdsError.notAvailable`。
+
+在测试中，`ads.fake()` 会给这个包换上一个 `FakeAds`：广告立即加载成功，用户看完（`watches`）激励广告时会得到它的 `reward`，测试可以读取加载过（`loaded`）和展示过（`shown`）的广告；改变 `noFill`、`unavailable` 和 `consent` 可以得到不同的结果。
+
+```asuka
+import platform/ads
+
+test "a reward" {
+  let f = ads.fake()
+  let ad = try await ads.rewarded("unit")
+  expect(try await ad.show() == f.reward)
+}
+```
 
 ## 编辑图片和视频帧：platform/imageedit
 

@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -58,7 +60,11 @@ type swiftPackageOutput struct {
 	forceLoad  []string // modules' static libraries, linked whole
 	archives   []string
 	frameworks []string
-	bundles    []string
+	// static are binary targets' static frameworks (Google Mobile Ads'):
+	// linked whole, as Xcode with -ObjC, and not embedded; their privacy
+	// manifests go in the app in bundles of their own.
+	static  []string
+	bundles []string
 }
 
 // swiftPlatform is a Package.swift's platforms for platform.
@@ -211,7 +217,11 @@ func (b *swiftBuild) build() (*swiftPackageOutput, error) {
 			case ".a":
 				out.archives = append(out.archives, p)
 			case ".framework":
-				out.frameworks = append(out.frameworks, p)
+				if staticFramework(p) {
+					out.static = append(out.static, p)
+				} else {
+					out.frameworks = append(out.frameworks, p)
+				}
 			case ".bundle":
 				out.bundles = append(out.bundles, p)
 			}
@@ -240,10 +250,50 @@ func (o *swiftPackageOutput) linkFlags() []string {
 	for _, a := range o.forceLoad {
 		flags = append(flags, "-Xlinker", "-force_load", "-Xlinker", a)
 	}
-	if len(o.frameworks) > 0 {
+	for _, f := range o.static {
+		flags = append(flags, "-Xlinker", "-force_load", "-Xlinker", frameworkBinary(f))
+	}
+	if len(o.frameworks)+len(o.static) > 0 {
 		flags = append(flags, "-F", o.products, "-F", filepath.Join(o.products, "PackageFrameworks"))
 	}
 	return flags
+}
+
+// frameworkBinary is a framework's binary: Name.framework/Name.
+func frameworkBinary(fw string) string {
+	return filepath.Join(fw, strings.TrimSuffix(filepath.Base(fw), ".framework"))
+}
+
+// staticFramework reports whether fw's binary is a static library (an
+// archive, or a universal file of archives) rather than a dynamic one.
+func staticFramework(fw string) bool {
+	f, err := os.Open(frameworkBinary(fw))
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	head := make([]byte, 8)
+	if _, err := io.ReadFull(f, head); err != nil {
+		return false
+	}
+	if string(head) == "!<arch>\n" {
+		return true
+	}
+	// A universal file (big endian fat_header): its first slice's.
+	if binary.BigEndian.Uint32(head) != 0xcafebabe || binary.BigEndian.Uint32(head[4:]) == 0 {
+		return false
+	}
+	arch := make([]byte, 20) // fat_arch: cputype, cpusubtype, offset, size, align
+	if _, err := io.ReadFull(f, arch); err != nil {
+		return false
+	}
+	if _, err := f.Seek(int64(binary.BigEndian.Uint32(arch[8:])), io.SeekStart); err != nil {
+		return false
+	}
+	if _, err := io.ReadFull(f, head); err != nil {
+		return false
+	}
+	return string(head) == "!<arch>\n"
 }
 
 // embed copies the build's frameworks into frameworks and its resource
@@ -263,6 +313,35 @@ func (o *swiftPackageOutput) embed(frameworks, resources string) error {
 		dst := filepath.Join(resources, filepath.Base(r))
 		os.RemoveAll(dst)
 		if err := copyTree(r, dst); err != nil {
+			return err
+		}
+	}
+	// A static framework's privacy manifest, which App Store Connect reads
+	// of the SDKs an app links, in a resource bundle as a static library's
+	// is.
+	for _, f := range o.static {
+		manifest, err := os.ReadFile(filepath.Join(f, "PrivacyInfo.xcprivacy"))
+		if os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		name := strings.TrimSuffix(filepath.Base(f), ".framework")
+		dst := filepath.Join(resources, name+"_Privacy.bundle")
+		os.RemoveAll(dst)
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			return err
+		}
+		info := plist(map[string]any{
+			"CFBundleIdentifier":            "dev.asuka.privacy." + idPart.ReplaceAllString(name, "-"),
+			"CFBundleName":                  name + "_Privacy",
+			"CFBundlePackageType":           "BNDL",
+			"CFBundleInfoDictionaryVersion": "6.0",
+		})
+		if err := os.WriteFile(filepath.Join(dst, "Info.plist"), []byte(info), 0o644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dst, "PrivacyInfo.xcprivacy"), manifest, 0o644); err != nil {
 			return err
 		}
 	}

@@ -1,0 +1,487 @@
+// Package platform/ads shows Google's ads (AdMob) on iOS and Android, as
+// Flutter's google_mobile_ads and React Native's
+// react-native-google-mobile-ads do: banners in the app's screens
+// (Banner), and full-screen ads, loaded ahead and shown at a pause
+// (interstitial, rewarded, rewardedInterstitial, appOpen).
+//
+//   let c = try await ads.consent()
+//   if c.canRequestAds {
+//     try await ads.start()
+//     let ad = try await ads.rewarded(unit)
+//     if let r = try await ad.show() { coins += r.amount }
+//   }
+//
+// Google wants the user's consent first where the law asks for it (the
+// EEA, the UK, Switzerland, some US states): consent() gathers it with
+// Google's User Messaging Platform, which shows the form set up in
+// AdMob's Privacy & messaging, and says whether ads may be requested.
+// Where it's required, the app offers the form again from its settings
+// (privacyOptions). On iOS, App Tracking Transparency's prompt is
+// platform/tracking's: ask it after consent, before the first ad.
+//
+// The app's AdMob app IDs go in asuka.toml's [ads] (ios, android); a
+// build without the one for its platform fails. Google's test ads
+// (testUnit, and the sample app IDs) are for development: a real ad
+// clicked by its own developer can close the AdMob account.
+//
+// The Mac, Windows, Linux and the web have no AdMob: available() is
+// false, a Banner shows nothing, and loading an ad throws notAvailable.
+//
+// Tests drive a fake: ads.fake() is a FakeAds whose ads always fill, and
+// whose user watches a rewarded ad to the end unless the test says.
+
+/// An ad's format.
+pub enum Format {
+  /// A rectangle in the app's screen (Banner).
+  banner
+  /// A full-screen ad, shown at a natural pause (between levels, after a
+  /// task is done).
+  interstitial
+  /// A full-screen ad the user chooses to watch for a reward.
+  rewarded
+  /// A full-screen ad that rewards the user without asking first: say
+  /// what it gives, and let them skip it, before it shows.
+  rewardedInterstitial
+  /// A full-screen ad shown as the app opens or comes back.
+  appOpen
+}
+
+/// A banner's size.
+pub enum BannerSize {
+  /// Anchored adaptive: as wide as the banner is laid out, as tall as
+  /// Google picks for that width and the device (50 to 90 points on a
+  /// phone). Google's recommendation, for a banner at the top or the
+  /// bottom of the screen.
+  adaptive
+  /// 320×50.
+  banner
+  /// 320×100.
+  largeBanner
+  /// 300×250.
+  mediumRectangle
+  /// 468×60, for tablets.
+  fullBanner
+  /// 728×90, for tablets.
+  leaderboard
+}
+
+/// What the app says of an ad request.
+pub struct Request {
+  /// Words about what the screen shows, for more relevant ads.
+  keywords: [string] = []
+  /// The URL of what the screen shows, for more relevant ads (a web page
+  /// with the same content).
+  contentURL: string = ""
+  /// Rewarded formats: the user the reward is for, in Google's callback
+  /// to the app's server (server-side verification).
+  userId: string = ""
+  /// Rewarded formats: what else the app's server gets in the callback.
+  customData: string = ""
+}
+
+/// The most mature content ads may have.
+pub enum Rating {
+  /// AdMob's setting for the app.
+  any
+  /// For all audiences.
+  general
+  /// For most audiences, with parental guidance.
+  parentalGuidance
+  /// For teens and older.
+  teen
+  /// For adults.
+  matureAudience
+}
+
+/// The age the ads are treated for.
+pub enum Age {
+  /// Said nowhere: as AdMob's settings for the app say.
+  unspecified
+  /// Under 13 (COPPA), or the age of consent where the user lives.
+  child
+  /// A teen.
+  teen
+}
+
+/// What every ad request after configure() takes.
+pub struct Settings {
+  /// Devices that get test ads: the IDs the SDK logs as it loads an ad
+  /// on them ("To get test ads on this device, set..."). Simulators and
+  /// emulators get them anyway.
+  testDevices: [string] = []
+  /// Who the ads are for: children (COPPA) and teens get ads, and data
+  /// handling, fit for their age.
+  age: Age = .unspecified
+  maxRating: Rating = .any
+  /// Personalized ads: false asks for none (ads from what the screen
+  /// shows, not the user's history); none leaves it to the consent and
+  /// AdMob's settings.
+  personalized: bool? = none
+  /// Video ads play muted.
+  muted: bool = false
+  /// Video ads' volume, from 0 to 1, relative to the app's.
+  volume: float = 1
+}
+
+/// Whether the user's consent was gathered (Google's User Messaging
+/// Platform).
+pub enum ConsentStatus {
+  /// Not known yet: consent() hasn't answered.
+  unknown
+  /// The user's region needs none.
+  notRequired
+  /// It's required and not gathered yet (the form wasn't answered).
+  required
+  /// The user answered the form.
+  obtained
+}
+
+/// The user's consent, as Google's User Messaging Platform says.
+pub struct Consent {
+  status: ConsentStatus = .unknown
+  /// Ads may be requested: consent was given, or isn't needed. When it's
+  /// false, don't load ads.
+  canRequestAds: bool = false
+  /// The user must be able to change their answer: the app shows an
+  /// entry in its settings that calls privacyOptions().
+  privacyOptionsRequired: bool = false
+}
+
+/// Where consent() acts as if the device were, for testing the form.
+pub enum DebugGeography {
+  /// Where it is.
+  disabled
+  /// In the European Economic Area (the form shows).
+  eea
+  /// In a US state with a privacy law.
+  regulatedUSState
+  /// Elsewhere (no form).
+  other
+}
+
+/// How consent() asks.
+pub struct ConsentOptions {
+  /// The user is under the age of consent: no form, no personalized ads.
+  underAgeOfConsent: bool = false
+  /// Testing: where it acts as if the device were (only on testDevices,
+  /// and simulators and emulators).
+  debugGeography: DebugGeography = .disabled
+  /// Testing: the devices debugGeography applies to, the hashed IDs the
+  /// User Messaging Platform logs.
+  testDevices: [string] = []
+}
+
+/// What a rewarded ad gave, as its ad unit says in AdMob.
+pub struct Reward {
+  /// What it gives ("coins").
+  type: string = ""
+  amount: int = 0
+}
+
+/// Why an ad doesn't load or show.
+pub enum AdsError: Error {
+  /// ads: no ads on this platform
+  notAvailable
+  /// ads: no ad to show now
+  noFill
+  /// ads: no network
+  network
+  /// ads: invalid request (check the ad unit ID and the app ID)
+  invalidRequest
+  /// ads: this ad was already shown (load another)
+  alreadyShown
+
+  /// The error's text: "ads: " and what went wrong, as each case's
+  /// comment says.
+  fn message() -> string = match self {
+    .notAvailable => "ads: no ads on this platform"
+    .noFill => "ads: no ad to show now"
+    .network => "ads: no network"
+    .invalidRequest => "ads: invalid request (check the ad unit ID and the app ID)"
+    .alreadyShown => "ads: this ad was already shown (load another)"
+  }
+}
+
+/// A full-screen ad, loaded (interstitial, rewarded...): show it once.
+/// An ad kept too long expires (an hour; an app open ad, four): load it
+/// shortly before it's needed.
+pub struct FullScreenAd {
+  format: Format = .interstitial
+  /// The ad unit it came from.
+  unit: string = ""
+  private loaded: Loaded? = none
+
+  /// Shows the ad over the app, and returns once the user closes it:
+  /// the reward it gave (a rewarded format the user watched through),
+  /// else none. An ad shows once: load another for the next time.
+  async fn show() throws -> Reward? {
+    if let l = loaded {
+      return try await l.show()
+    }
+    if let f = faked {
+      return f.showed(self)
+    }
+    throw AdsError.notAvailable
+  }
+}
+
+/// A banner ad from the ad unit: Google's adaptive banner by default, as
+/// wide as it's laid out. Place it at the top or the bottom of a screen,
+/// clear of what the user taps.
+pub native component Banner(unit: string) {
+  prop size: BannerSize = .adaptive
+  prop request: Request = Request()
+  /// An ad is shown (each one, as it refreshes).
+  event loaded
+  /// Why no ad shows (no fill, no network, a wrong unit).
+  event error(message: string)
+  /// The ad was seen.
+  event impression
+  /// The user tapped the ad.
+  event click
+  /// The ad opened something over the app (its page).
+  event open
+  /// What the ad opened was closed.
+  event close
+}
+
+// ---------------------------------------------------------------------
+// The platform's
+
+/// Google's Mobile Ads SDK and its User Messaging Platform.
+native interface Mobile {
+  /// Starts the SDK, once: later calls return at once.
+  async fn start()
+  fn configure(settings: Settings)
+  /// Asks for the consent information, and shows the form when it's
+  /// required: the consent then.
+  async fn consent(options: ConsentOptions) -> Consent
+  /// The consent now, without asking.
+  fn currentConsent() -> Consent
+  /// Shows the privacy options form: the consent once it's closed.
+  async fn privacyOptions() -> Consent
+  fn resetConsent()
+  /// Loads a full-screen ad.
+  async fn load(format: Format, unit: string, request: Request) -> Loaded
+}
+
+/// A full-screen ad, loaded.
+native interface Loaded {
+  /// Shows it; once it's closed, the reward it gave (none: none earned).
+  async fn show() -> Reward?
+  fn close()
+}
+
+// Made once; none where the platform has no AdMob.
+let mobile = try? Mobile()
+
+state faked: FakeAds? = none
+
+fn made() throws -> Mobile {
+  if let m = mobile {
+    return m
+  }
+  throw AdsError.notAvailable
+}
+
+/// Whether the platform shows ads: iOS and Android.
+pub fn available() -> bool {
+  if let f = faked {
+    return !f.unavailable
+  }
+  if let _ = mobile {
+    return true
+  }
+  return false
+}
+
+/// Starts Google's SDK: call it once consent() says ads may be requested,
+/// before loading the first ad. Later calls return at once. Where there
+/// are no ads, it does nothing.
+pub async fn start() throws {
+  if let f = faked {
+    f.started = true
+    return
+  }
+  if let m = mobile {
+    try await m.start()
+  }
+}
+
+/// Sets what every ad request after takes: test devices, the audience,
+/// the content's rating, video ads' sound. Where there are no ads, it
+/// does nothing.
+pub fn configure(settings: Settings) {
+  if let f = faked {
+    f.settings = settings
+    return
+  }
+  if let m = mobile {
+    try? m.configure(settings: settings)
+  }
+}
+
+/// Gathers the user's consent: asks Google's User Messaging Platform
+/// what the user's region requires, shows its form when consent is
+/// required and not given yet, and returns the consent then. Call it as
+/// the app starts, each time, before loading ads; load them only when
+/// canRequestAds. It throws when it can't ask (no network, or the app
+/// has no message set up in AdMob's Privacy & messaging), and then ads
+/// may still be requested if an earlier answer allows it
+/// (currentConsent). Where there are no ads: not required, and no ads.
+pub async fn consent(options: ConsentOptions = ConsentOptions()) throws -> Consent {
+  if let f = faked {
+    f.asked += 1
+    return f.consent
+  }
+  if let m = mobile {
+    return try await m.consent(options: options)
+  }
+  return Consent(status: .notRequired)
+}
+
+/// The consent as last gathered (kept from the app's last run), without
+/// asking.
+pub fn currentConsent() -> Consent {
+  if let f = faked {
+    return f.consent
+  }
+  if let m = mobile {
+    if let c = try? m.currentConsent() {
+      return c
+    }
+  }
+  return Consent(status: .notRequired)
+}
+
+/// Shows the form where the user changes their answer, for the app's
+/// settings when currentConsent().privacyOptionsRequired; the consent
+/// once it's closed.
+pub async fn privacyOptions() throws -> Consent {
+  if let f = faked {
+    f.privacyShown += 1
+    return f.consent
+  }
+  return try await made().privacyOptions()
+}
+
+/// Forgets the user's answer, so consent() asks again: for testing.
+pub fn resetConsent() {
+  if let f = faked {
+    f.consent = Consent()
+    return
+  }
+  if let m = mobile {
+    try? m.resetConsent()
+  }
+}
+
+async fn load(format: Format, unit: string, request: Request) throws -> FullScreenAd {
+  if let f = faked {
+    try f.load(format, unit)
+    return FullScreenAd(format: format, unit: unit)
+  }
+  let l = try await made().load(format: format, unit: unit, request: request)
+  return FullScreenAd(format: format, unit: unit, loaded: l)
+}
+
+/// Loads an interstitial ad from the ad unit, to show at the next pause.
+pub async fn interstitial(unit: string, request: Request = Request()) throws -> FullScreenAd {
+  return try await load(.interstitial, unit, request)
+}
+
+/// Loads a rewarded ad from the ad unit: show it when the user asks for
+/// the reward, which show() returns if they watch it through.
+pub async fn rewarded(unit: string, request: Request = Request()) throws -> FullScreenAd {
+  return try await load(.rewarded, unit, request)
+}
+
+/// Loads a rewarded interstitial ad from the ad unit: before it shows,
+/// say what it gives and let the user skip it.
+pub async fn rewardedInterstitial(unit: string, request: Request = Request()) throws -> FullScreenAd {
+  return try await load(.rewardedInterstitial, unit, request)
+}
+
+/// Loads an app open ad from the ad unit, to show as the app opens or
+/// comes back to the foreground.
+pub async fn appOpen(unit: string, request: Request = Request()) throws -> FullScreenAd {
+  return try await load(.appOpen, unit, request)
+}
+
+/// Google's test ad unit for the format on this platform: it always has
+/// an ad, labeled as a test, which can be tapped without harm. Use it
+/// while developing, with Google's sample app ID in asuka.toml's [ads],
+/// and the app's own units in a release.
+pub fn testUnit(format: Format) -> string {
+  if @platform == .android {
+    return match format {
+      .banner => "ca-app-pub-3940256099942544/9214589741"
+      .interstitial => "ca-app-pub-3940256099942544/1033173712"
+      .rewarded => "ca-app-pub-3940256099942544/5224354917"
+      .rewardedInterstitial => "ca-app-pub-3940256099942544/5354046379"
+      .appOpen => "ca-app-pub-3940256099942544/9257395921"
+    }
+  }
+  return match format {
+    .banner => "ca-app-pub-3940256099942544/2435281174"
+    .interstitial => "ca-app-pub-3940256099942544/4411468910"
+    .rewarded => "ca-app-pub-3940256099942544/1712485313"
+    .rewardedInterstitial => "ca-app-pub-3940256099942544/6978759866"
+    .appOpen => "ca-app-pub-3940256099942544/5575463023"
+  }
+}
+
+// ---------------------------------------------------------------------
+// Testing
+
+/// The fake ads fake() makes, which a test sets and reads.
+pub store FakeAds {
+  /// No ads: available() is false and loading throws notAvailable.
+  pub state unavailable = false
+  /// No ad to give: loading throws noFill.
+  pub state noFill = false
+  /// What consent() answers.
+  pub state consent: Consent = Consent(status: .notRequired, canRequestAds: true)
+  /// The user watches a rewarded ad through: show() gives reward.
+  pub state watches = true
+  /// What a rewarded ad gives.
+  pub state reward: Reward = Reward(type: "coins", amount: 10)
+  /// start() was called.
+  pub state started = false
+  /// What configure() set.
+  pub state settings: Settings = Settings()
+  /// How many times consent() asked.
+  pub state asked = 0
+  /// How many times privacyOptions() showed its form.
+  pub state privacyShown = 0
+  /// The ad units of the ads loaded, in order.
+  pub state loaded: [string] = []
+  /// The ad units of the ads shown, in order.
+  pub state shown: [string] = []
+
+  fn load(format: Format, unit: string) throws {
+    if unavailable {
+      throw AdsError.notAvailable
+    }
+    if noFill {
+      throw AdsError.noFill
+    }
+    loaded.push(unit)
+  }
+
+  fn showed(ad: FullScreenAd) -> Reward? {
+    shown.push(ad.unit)
+    if watches && (ad.format == .rewarded || ad.format == .rewardedInterstitial) {
+      return reward
+    }
+    return none
+  }
+}
+
+/// Fakes the ads for an app's tests: they fill at once, and show() returns
+/// as if the user closed the ad (a rewarded one watched through).
+pub fn fake() -> FakeAds {
+  let f = FakeAds()
+  faked = f
+  return f
+}

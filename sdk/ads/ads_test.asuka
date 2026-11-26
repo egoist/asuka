@@ -1,0 +1,49 @@
+test "no platform: no ads, no consent needed, loading fails" {
+  expect(!available())
+  try await start()
+  let c = try await consent()
+  expect(c.status == .notRequired && !c.canRequestAds)
+  var said = ""
+  do {
+    let _ = try await interstitial(testUnit(.interstitial))
+  } catch AdsError.notAvailable {
+    said = "notAvailable"
+  }
+  expect(said == "notAvailable")
+}
+
+test "the fake: ads fill, a rewarded one watched through rewards" {
+  let f = fake()
+  expect(available())
+  let c = try await consent()
+  expect(c.canRequestAds && f.asked == 1)
+  try await start()
+  expect(f.started)
+  configure(Settings(maxRating: .teen))
+  expect(f.settings.maxRating == .teen)
+
+  let i = try await interstitial("unit/1")
+  expect(try await i.show() == none)
+  let r = try await rewarded("unit/2")
+  expect(try await r.show() == Reward(type: "coins", amount: 10))
+  f.watches = false
+  let early = try await rewarded("unit/3")
+  expect(try await early.show() == none)
+  expect(f.loaded == ["unit/1", "unit/2", "unit/3"])
+  expect(f.shown == ["unit/1", "unit/2", "unit/3"])
+
+  f.noFill = true
+  var said = ""
+  do {
+    let _ = try await appOpen("unit/4")
+  } catch AdsError.noFill {
+    said = "noFill"
+  }
+  expect(said == "noFill")
+}
+
+test "Google's test units, one a format" {
+  let units = [Format.banner, .interstitial, .rewarded, .rewardedInterstitial, .appOpen].map(testUnit)
+  expect(units.all(u => u.hasPrefix("ca-app-pub-3940256099942544/")))
+  expect(Set(units).count() == 5)
+}
