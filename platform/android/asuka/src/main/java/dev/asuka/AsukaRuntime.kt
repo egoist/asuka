@@ -1075,6 +1075,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         val b = Math.round((y + height) * d)
         n.targetX = l
         n.targetY = t
+        alignContentInset(n, x, y, width, height, l, t, r, b)
         val v = n.outer
         if (v is AsukaCell) {
             if (v.rowHeight != b - t) {

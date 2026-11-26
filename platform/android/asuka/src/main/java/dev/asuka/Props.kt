@@ -642,6 +642,32 @@ fun AsukaRuntime.applyContentInset(n: AsukaNode) {
     }
 }
 
+/**
+ * The view's padding again for its frame (x, y, width, height in dp; l, t,
+ * r, b its edges in px): each inner edge rounded to the pixel grid as the
+ * frame's are, not each side's width on its own. 12dp at 2.625 is 31.5px:
+ * rounded alone, 32 a side, 64 in all, where the frame's width, the text's
+ * plus 24dp rounded as one, has 63; the text, a pixel short, wrapped its
+ * last letter out of sight. Rounded as edges, the content's width is the
+ * frame's less the insets' to the pixel: the text's own.
+ */
+fun AsukaRuntime.alignContentInset(n: AsukaNode, x: Float, y: Float, width: Float, height: Float, l: Int, t: Int, r: Int, b: Int) {
+    val ci = n.contentInset ?: return
+    val base = n.basePadding ?: return
+    val v = n.view
+    if (v !is TextView && v !is android.widget.ImageView) return
+    val d = density
+    val pl = Math.round((x + ci[3]) * d) - l
+    val pt = Math.round((y + ci[0]) * d) - t
+    val pr = r - Math.round((x + width - ci[1]) * d)
+    val pb = b - Math.round((y + height - ci[2]) * d)
+    if (pl < 0 || pt < 0 || pr < 0 || pb < 0) return
+    val want = intArrayOf(base[0] + pl, base[1] + pt, base[2] + pr, base[3] + pb)
+    if (v.paddingLeft != want[0] || v.paddingTop != want[1] || v.paddingRight != want[2] || v.paddingBottom != want[3]) {
+        v.setPadding(want[0], want[1], want[2], want[3])
+    }
+}
+
 /** The padding ContentInset added to a view, in px (horizontal, vertical): what its measurement leaves out. */
 private fun AsukaRuntime.insetPx(n: AsukaNode): Pair<Int, Int> {
     val ci = n.contentInset ?: return 0 to 0
