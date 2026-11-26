@@ -410,6 +410,17 @@ static void dev_frame(uint8_t kind, const uint8_t *p, size_t n) {
 		break;
 	}
 	case AK_DEV_HIGHLIGHT: ak_ui_highlight((ak_span){(const char *)p, (uint32_t)n}); break;
+	case AK_DEV_AUTOMATE: {
+		// asuka test --gui's commands: their answers, under the same number.
+		uint32_t seq = ak_read_u32(&r);
+		if (r.err) break;
+		ak_buf b = {0};
+		ak_buf_u32(&b, seq);
+		ak_ui_automate((ak_span){(const char *)p + 4, (uint32_t)(n - 4)}, &b);
+		ak_dev_send(AK_DEV_AUTOMATED, b.data, b.len);
+		ak_buf_free(&b);
+		break;
+	}
 	}
 }
 

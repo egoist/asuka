@@ -808,6 +808,7 @@ func devIOSDevice(app *asukaApp, o *devOptions, d *iosDevice, stop <-chan os.Sig
 		}()
 		return nil
 	}
+	loop.flows = o.flows
 	return loop.run(devPlayer{
 		launch: launch,
 		stop: func() {

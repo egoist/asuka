@@ -576,6 +576,7 @@ func devIOS(dir string, o *devOptions, stop <-chan os.Signal) error {
 	if err != nil {
 		return err
 	}
+	loop.flows = o.flows
 	return loop.run(simulatorPlayer(app, tc, work, sim, loop), stop, o.once)
 }
 

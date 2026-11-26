@@ -330,6 +330,7 @@ func devWeb(dir string, o *devOptions, stop <-chan os.Signal) error {
 		nativeWatch = append(nativeWatch, newWebWatcher(d))
 	}
 	opened := false
+	var stopChrome func()
 	launch := func() error {
 		if opened {
 			// The app's settings, assets, scripts or C changed: the page
@@ -345,6 +346,15 @@ func devWeb(dir string, o *devOptions, stop <-chan os.Signal) error {
 			return nil
 		}
 		opened = true
+		if len(o.flows) > 0 {
+			// asuka test --gui: a headless Chrome of its own.
+			quit, err := headlessChrome(url)
+			if err != nil {
+				return err
+			}
+			stopChrome = quit
+			return nil
+		}
 		if !o.noOpen {
 			openBrowser(url)
 		}
@@ -361,7 +371,12 @@ func devWeb(dir string, o *devOptions, stop <-chan os.Signal) error {
 			}
 		}
 	}()
-	return loop.run(devPlayer{launch: launch}, stop, o.once)
+	loop.flows = o.flows
+	return loop.run(devPlayer{launch: launch, stop: func() {
+		if stopChrome != nil {
+			stopChrome()
+		}
+	}}, stop, o.once)
 }
 
 // newWebDev makes asuka dev's web server for app: the player (the core
@@ -400,6 +415,18 @@ func newWebDev(app *asukaApp, work string) (*devServer, *devLoop, error) {
 		s.mu.Unlock()
 		s.send("module", stamp)
 	})
+	// The automation's commands go to the page by its events; it answers
+	// at /__asuka/automated.
+	loop.automation.send = func(seq uint32, commands string) bool {
+		s.mu.Lock()
+		n := len(s.clients)
+		s.mu.Unlock()
+		if n == 0 {
+			return false
+		}
+		s.send("automate", strconv.FormatUint(uint64(seq), 10)+"\n"+commands)
+		return true
+	}
 	// The inspector asks the pages for their views by their events; each
 	// answers at /__asuka/tree.
 	loop.inspector.askers = append(loop.inspector.askers, func() int {
@@ -610,6 +637,10 @@ func (s *devServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				c <- d
 			}
 		}
+	case p == "/__asuka/automated" && r.Method == http.MethodPost:
+		// The page's core's answers to the automation's commands.
+		b, _ := io.ReadAll(io.LimitReader(r.Body, 16<<20))
+		s.loop.automation.answeredFrame(b)
 	case p == "/__asuka/tree" && r.Method == http.MethodPost:
 		// A page's views (its core's AK_DEV_TREE), for the inspector: page
 		// is the page's own id, name its browser.

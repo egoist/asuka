@@ -426,6 +426,11 @@ typedef struct ak_back ak_back;
 ak_back *ak_back_new(void (*fallback)(void *ctx), void *ctx);  // fallback NULL: the root's
 void ak_back_attach(ak_back *b, ak_view *e);  // the view its Back events come to
 void ak_back_run(ak_back *b);
+uint32_t ak_nav_screens(ak_view *stack);  // a Stack's screens (0: not one)
+bool ak_nav_pop_top(ak_view *stack);      // its top screen off, as its back button does
+// ak_ui_dispatch_event delivers an event to its view, as one the host
+// sent does (ak_ui_dispatch's, decoded).
+void ak_ui_dispatch_event(const ak_event *ev);
 void ak_back_release(ak_back *b);
 // ak_root_event takes the root view's events: Back, the main window's.
 void ak_root_event(ak_view *e, const ak_event *ev);

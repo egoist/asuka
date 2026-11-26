@@ -619,13 +619,17 @@ void ak_ui_dispatch(const uint8_t *buf, size_t len) {
 		return;
 	}
 	if (ak_ext_dispatch(&ev)) return;  // a frame, a call's result, a URL, a share (ui_ext.h)
-	ak_view *e = ak_view_of(ev.id);
+	ak_ui_dispatch_event(&ev);
+}
+
+void ak_ui_dispatch_event(const ak_event *ev) {
+	ak_view *e = ak_view_of(ev->id);
 	if (!e || e->dead) return;
 	ak_retain(e);
 	ak_batch_begin();
 	// The events every view may have (interaction states, gestures, keys,
 	// drags), then its class's.
-	if (!ak_ix_event(e, &ev) && e->cls->event) e->cls->event(e, &ev);
+	if (!ak_ix_event(e, ev) && e->cls->event) e->cls->event(e, ev);
 	flush_after();
 	ak_release(e);
 }

@@ -547,6 +547,21 @@ static void stack_remove(ak_view *stack, uint32_t i) {
 	ak_release(en.screen);
 }
 
+// ak_nav_screens is how many screens a Stack holds (0: not a Stack).
+uint32_t ak_nav_screens(ak_view *stack) {
+	if (!stack || stack->el != AK_EL_STACK || stack->dead || !stack->impl) return 0;
+	return ((stack_t *)stack->impl)->screens.len;
+}
+
+// ak_nav_pop_top takes a Stack's top screen off, as its back button does
+// (asuka dev's automation's back): false if it has one screen or none.
+bool ak_nav_pop_top(ak_view *stack) {
+	if (ak_nav_screens(stack) < 2) return false;
+	stack_t *st = stack->impl;
+	stack_remove(stack, st->screens.len - 1);
+	return true;
+}
+
 // Its screens go with what made it.
 static void stack_dispose(void *ctx) {
 	ak_view *e = ctx;

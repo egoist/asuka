@@ -185,7 +185,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | テスト | XCTest、Jest と React Native Testing Library | ✓ `asuka test`：`test` ブロック。アプリをデバイスなしでマウントし（`mount`、`app.tap`、`app.expect`）、デバイスのパッケージにはフェイクがある（[テスト](testing.md)） |
 | リリースビルドと署名 | Xcode、EAS Build | ✓ `asuka build`：アプリを事前にコンパイルする。`.ipa`、`.aab`、署名と公証を済ませた `.app`（または Mac App Store 用の `.pkg`）、署名済みの `.exe` を含む Windows のフォルダー、`.tar.gz` と Flatpak のマニフェストを含む Linux のインストールプレフィックス、静的サイト（[配布](shipping.md)） |
 | ストアへのアップロード | Xcode、EAS Submit | ✓ `asuka publish`：TestFlight、App Review、Google Play のトラック。Mac App Store と Mac の TestFlight。デスクトップのビルドと署名付きのアップデート |
-| GUI のテスト | XCUITest、Detox、Maestro | ◐ デスクトップアプリの操作手順とスナップショット（`ASUKA_SCRIPT`、`ASUKA_SNAPSHOT`、`ASUKA_DUMP`）。Linux の CI では Xvfb 上で動く。Asuka 自身の GUI テストはシミュレーター、エミュレーター、ヘッドレス Chrome でサンプルを操作するが、アプリ向けのランナーはまだない |
+| GUI のテスト | XCUITest、Detox、Maestro | ✓ `asuka test --gui`：アプリのフロー（`flows/*.flow`：`tap Add`、`type hello`、`see Count: 1`、`back`）を、シミュレーター、エミュレーター、スマートフォン、ヘッドレス Chrome、このコンピューターで実行する（[GUI テスト](testing.md#gui-テストフロー)）。デスクトップアプリの操作手順とスナップショットも（`ASUKA_SCRIPT`、`ASUKA_SNAPSHOT`） |
 | ベンチマーク | Instruments | ✓ `bench/`（SwiftUI、Compose との比較） |
 | 既存のアプリへの組み込み | ブラウンフィールド（React Native のもの） | ✓ `asuka build --platform ios --xcframework`、`asuka build --platform android --aar` |
 | OTA アップデート | EAS Update | ✗（リリースビルドにはアプリがコンパイルされて組み込まれています） |
@@ -241,4 +241,4 @@ MyGo にあって Asuka にまだないものは次のとおりです。書類�
 
 ## 未対応のもの
 
-アプリでの需要が高い順に、エンティティを持つ App Intents（ショートカットのパラメーターはまだ値だけで、アプリ自身のデータは扱えません）、アプリ独自のレイアウトのウィジェット（いまはテンプレートが一つだけです）、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）、シミュレーターやエミュレーターでのアプリの GUI テストです。Windows と Linux では Lottie（`lottie.View` は空の領域になります）、Windows と Linux では音声のテキスト化が未対応です。Windows では画面の `zoomFrom`（代わりにプッシュがスライドします。Linux は libadwaita のナビゲーションと同じくスライドします。GNOME にはズームのトランジションがありません）が未対応です。
+アプリでの需要が高い順に、エンティティを持つ App Intents（ショートカットのパラメーターはまだ値だけで、アプリ自身のデータは扱えません）、アプリ独自のレイアウトのウィジェット（いまはテンプレートが一つだけです）、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）です。Windows と Linux では Lottie（`lottie.View` は空の領域になります）、Windows と Linux では音声のテキスト化が未対応です。Windows では画面の `zoomFrom`（代わりにプッシュがスライドします。Linux は libadwaita のナビゲーションと同じくスライドします。GNOME にはズームのトランジションがありません）が未対応です。

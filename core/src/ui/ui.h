@@ -134,6 +134,10 @@ void ak_ui_inspect(ak_buf *out);
 // ak_ui_inspect's tree (its indexes from the roots, joined by dots),
 // or no view (an empty path, or one no view is at).
 void ak_ui_highlight(ak_span path);
+// ak_ui_automate runs asuka dev's automation's commands (a line each:
+// tap, type, submit, back, see, notsee, dump) against the app's views,
+// and writes each one's answer to out (automate.c).
+void ak_ui_automate(ak_span commands, ak_buf *out);
 // ak_dev_overlay_clear_app forgets the app's errors: a new module loads.
 void ak_dev_overlay_clear_app(void);
 // ak_dev_overlay_set_reload sets what Reload does: the app starts again,

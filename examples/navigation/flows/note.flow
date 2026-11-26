@@ -1,0 +1,12 @@
+# A message's note: written in a sheet, shown on its screen, gone back from.
+tap Message 20
+see No note yet.
+tap Add a note
+see Save
+type hello
+tap Save
+see Note: hello
+notsee Save
+back
+see Message 19
+notsee Note: hello

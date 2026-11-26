@@ -254,6 +254,7 @@ type devOptions struct {
 	verbose   bool
 	lang, dir string
 	bin       string // a program of asuka.toml's [bin.<name>]
+	flows     []flow // asuka test --gui's: run once it's loaded, then stop
 }
 
 func devFlags(o *devOptions) *flagSet {
@@ -305,13 +306,18 @@ func cmdDev(args []string) error {
 			return errors.New("pick a platform: asuka dev --platform ios|android|web <dir>")
 		}
 	}
+	return devOn(dir, &o, stop)
+}
+
+// devOn runs the app on o's platform's player, as asuka dev does.
+func devOn(dir string, o *devOptions, stop chan os.Signal) error {
 	switch o.platform {
 	case platformWeb:
-		return devWeb(dir, &o, stop)
+		return devWeb(dir, o, stop)
 	case platformMac, platformWindows, platformLinux:
-		return devDesktop(dir, &o, stop, o.platform)
+		return devDesktop(dir, o, stop, o.platform)
 	case platformAndroid:
-		return devAndroid(dir, &o, stop)
+		return devAndroid(dir, o, stop)
 	}
-	return devIOS(dir, &o, stop)
+	return devIOS(dir, o, stop)
 }

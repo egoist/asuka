@@ -1,0 +1,7 @@
+# Each flow starts the app afresh: no note is left from the last.
+tap Message 20
+see No note yet.
+tap Write a Reply
+see To: Linus
+tap Cancel
+notsee To: Linus

@@ -185,7 +185,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 测试 | XCTest、Jest 加 React Native Testing Library | ✓ `asuka test`：`test` 块，应用无需设备即可挂载（`mount`、`app.tap`、`app.expect`），设备相关的包都有测试替身（见[测试](testing.md)） |
 | 发布构建和签名 | Xcode、EAS Build | ✓ `asuka build`：应用预先编译；生成 `.ipa`、`.aab`、经过签名和公证的 `.app`（或 Mac App Store 用的 `.pkg`）、包含已签名 `.exe` 的 Windows 文件夹、附带 `.tar.gz` 和 Flatpak 清单的 Linux 安装前缀、静态网站（见[发布](shipping.md)） |
 | 上传到应用商店 | Xcode、EAS Submit | ✓ `asuka publish`：TestFlight、App 审核、Google Play 的各个发布轨道；Mac App Store 和 Mac 的 TestFlight；桌面构建及其签名更新 |
-| GUI 测试 | XCUITest、Detox、Maestro | ◐ 桌面应用可以执行操作步骤并截图（`ASUKA_SCRIPT`、`ASUKA_SNAPSHOT`、`ASUKA_DUMP`），在 Linux 的 CI 里可以跑在 Xvfb 下；Asuka 自己的 GUI 测试会在 iOS 模拟器、Android 模拟器和无头 Chrome 里驱动示例，但应用还没有可用的运行器 |
+| GUI 测试 | XCUITest、Detox、Maestro | ✓ `asuka test --gui`：在 iOS 模拟器、Android 模拟器、手机、无头 Chrome 或这台电脑上运行应用的流程（`flows/*.flow`：`tap Add`、`type hello`、`see Count: 1`、`back`）（见[GUI 测试](testing.md#gui-测试流程)）；桌面应用也可以执行操作步骤并截图（`ASUKA_SCRIPT`、`ASUKA_SNAPSHOT`） |
 | 基准测试 | Instruments | ✓ `bench/`（与 SwiftUI 和 Compose 对比） |
 | 嵌入现有应用 | brownfield（React Native 的方案） | ✓ `asuka build --platform ios --xcframework`、`asuka build --platform android --aar` |
 | OTA 更新 | EAS Update | ✗（发布版本里应用已经编译进去了） |
@@ -241,4 +241,4 @@ MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览�
 
 ## 尚未支持
 
-按应用最常缺少的程度排序：带实体的 App Intents（快捷方式的参数目前只能是值，还不能是应用自己的数据）、应用自定义布局的小组件（目前只有一种模板）、OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了），以及在模拟器上对应用做 GUI 测试。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Windows 和 Linux 上的语音转文字。Windows 上页面的 `zoomFrom`（推入时改为滑入；Linux 按 libadwaita 导航的方式滑入，GNOME 没有缩放过渡）。
+按应用最常缺少的程度排序：带实体的 App Intents（快捷方式的参数目前只能是值，还不能是应用自己的数据）、应用自定义布局的小组件（目前只有一种模板），以及 OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了）。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Windows 和 Linux 上的语音转文字。Windows 上页面的 `zoomFrom`（推入时改为滑入；Linux 按 libadwaita 导航的方式滑入，GNOME 没有缩放过渡）。

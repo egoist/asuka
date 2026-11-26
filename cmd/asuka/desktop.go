@@ -201,6 +201,7 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 		fmt.Printf("asuka: the player built and started in %.1fs\n", time.Since(start).Seconds())
 		return nil
 	}
+	loop.flows = o.flows
 	return loop.run(devPlayer{
 		launch: launch,
 		stop:   func() { proc.stop() },

@@ -204,7 +204,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Tests | XCTest, Jest with React Native Testing Library | ✓ `asuka test`: `test` blocks, the app mounted with no device (`mount`, `app.tap`, `app.expect`), fakes for the device's packages ([Testing](testing.md)) |
 | Release builds and signing | Xcode, EAS Build | ✓ `asuka build`: the app compiled ahead of time; an `.ipa`, an `.aab`, an `.app` signed and notarized (or a Mac App Store `.pkg`), a Windows folder with its `.exe` signed, a Linux install prefix with a `.tar.gz` and a Flatpak manifest, a static site ([Shipping](shipping.md)) |
 | Uploading to the stores | Xcode, EAS Submit | ✓ `asuka publish`: TestFlight, App Review, Google Play's tracks; the Mac App Store and a Mac's TestFlight; a desktop build and its signed update |
-| GUI tests | XCUITest, Detox, Maestro | ◐ a desktop app's steps and snapshots (`ASUKA_SCRIPT`, `ASUKA_SNAPSHOT`, `ASUKA_DUMP`), under Xvfb in CI on Linux; Asuka's own GUI tests drive its examples on the simulator, an emulator and headless Chrome, but an app has no runner for them yet |
+| GUI tests | XCUITest, Detox, Maestro | ✓ `asuka test --gui`: the app's flows (`flows/*.flow`: `tap Add`, `type hello`, `see Count: 1`, `back`) on the simulator, an emulator, a phone, headless Chrome or this computer ([GUI tests](testing.md#gui-tests-flows)); a desktop app's steps and snapshots too (`ASUKA_SCRIPT`, `ASUKA_SNAPSHOT`) |
 | Benchmarks | Instruments | ✓ `bench/` (against SwiftUI and Compose) |
 | Embedding in an existing app | brownfield (React Native's) | ✓ `asuka build --platform ios --xcframework`, `asuka build --platform android --aar` |
 | Over-the-air updates | EAS Update | ✗ (a release has the app compiled into it) |
@@ -273,10 +273,9 @@ mouse through all of it, or none).
 ## Not yet
 
 In order of what apps miss most: App Intents with entities (a
-shortcut's parameters are values, not the app's own things yet), widgets of the app's own layout (one
-template for now), over-the-air updates (EAS Update's: a release has the
-app compiled into it), and GUI tests of an app on the simulator and the
-emulator. On Windows and Linux, Lottie (`lottie.View` is an empty box).
+shortcut's parameters are values, not the app's own things yet), widgets
+of the app's own layout (one template for now), and over-the-air updates
+(EAS Update's: a release has the app compiled into it). On Windows and Linux, Lottie (`lottie.View` is an empty box).
 On Windows and Linux, speech to text. On Windows, a screen's `zoomFrom`
 (a push slides instead; Linux slides as libadwaita's navigation does,
 GNOME having no zoom).

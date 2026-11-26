@@ -155,7 +155,7 @@ function devClient(url) {
   let host = null, core = null, trapped = null;
   const report = (r, first, restarted) => fetch(base + "reloaded", { method: "POST", body: JSON.stringify({ First: first, Restarted: restarted, Kept: r.kept, Micros: r.micros }) }).catch(() => {});
   // asuka dev's frames for the core (core/src/abi/dev.h's kinds), held until it's there.
-  const Frame = { Reloaded: 5, Uncaught: 8, Source: 9, Failed: 10, Fixed: 11, Inspect: 12, Tree: 13, Highlight: 14 };
+  const Frame = { Reloaded: 5, Uncaught: 8, Source: 9, Failed: 10, Fixed: 11, Inspect: 12, Tree: 13, Highlight: 14, Automate: 15, Automated: 16 };
   let held = [];
   const frame = (kind, bytes) => {
     if (core?.frame) core.frame(kind, bytes);
@@ -167,6 +167,10 @@ function devClient(url) {
     if (kind === Frame.Reloaded && bytes.length >= 8) {
       const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       report({ kept: v.getUint32(0, true), micros: v.getUint32(4, true) }, false, (bytes[8] & 1) !== 0);
+      return;
+    }
+    if (kind === Frame.Automated) {
+      fetch(base + "automated", { method: "POST", body: bytes }).catch(() => {});
       return;
     }
     if (kind === Frame.Tree) {
@@ -219,6 +223,16 @@ function devClient(url) {
   events.addEventListener("fixed", () => frame(Frame.Fixed, new Uint8Array(0)));
   // The inspector asks for the app's views: the core answers with a tree frame.
   events.addEventListener("inspect", () => core?.frame && frame(Frame.Inspect, new Uint8Array(0)));
+  // asuka test --gui's steps ("<number>\n<commands>"): the core runs them, and answers.
+  events.addEventListener("automate", (e) => {
+    const i = e.data.indexOf("\n");
+    const seq = Number(e.data.slice(0, i));
+    const cmds = new TextEncoder().encode(e.data.slice(i + 1));
+    const b = new Uint8Array(4 + cmds.length);
+    new DataView(b.buffer).setUint32(0, seq, true);
+    b.set(cmds, 4);
+    if (core?.frame) frame(Frame.Automate, b);
+  });
   // It selected a view ("<page> <path>"; no path: none): the core highlights it.
   events.addEventListener("highlight", (e) => {
     const [to, path = ""] = e.data.split(" ");

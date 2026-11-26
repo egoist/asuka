@@ -57,6 +57,11 @@ type devLoop struct {
 	// inspectorURL.
 	inspector    *inspector
 	inspectorURL string
+	// automation runs the core's automation on the player; flows, when
+	// set, are run once the app has loaded (asuka test --gui), then the
+	// loop ends.
+	automation *automation
+	flows      []flow
 	// firstLoad is closed when a player first reports the app loaded;
 	// playerErr gets what a player reports going wrong (--once's).
 	firstLoad     chan struct{}
@@ -76,11 +81,12 @@ type devReload struct {
 // waited on: the players get the first that does.
 func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	d := &devLoop{app: app, out: os.Stdout, platform: app.platform.Or(), loaded: map[*devserver.Player]bool{}, reloads: make(chan devReload, 16),
-		firstLoad: make(chan struct{}), playerErr: make(chan string, 1), inspector: newInspector()}
+		firstLoad: make(chan struct{}), playerErr: make(chan string, 1), inspector: newInspector(), automation: newAutomation()}
 	srv, err := devserver.Listen(addr, devserver.Events{
 		Hello: func(p *devserver.Player, b []byte) {
 			fmt.Fprintf(d.out, "asuka: %s connected\n", playerName(b))
 		},
+		Automated: func(p *devserver.Player, seq uint32, answers string) { d.automation.answered(seq, answers) },
 		Tree: func(p *devserver.Player, tree []byte) {
 			d.inspector.put(fmt.Sprintf("%p", p), playerName(p.Info), tree, false, func(path string) { p.Highlight(path) })
 		},
@@ -116,6 +122,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	}
 	d.srv = srv
 	d.inspector.askers = append(d.inspector.askers, srv.Inspect)
+	d.automation.send = d.nativeAutomation(srv)
 	if url, err := d.inspector.listen(); err == nil {
 		d.inspectorURL = url
 		fmt.Fprintf(d.out, "asuka: the inspector (the app's views): %s\n", url)
@@ -386,6 +393,24 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 	var done <-chan struct{}
 	if p.done != nil {
 		done = p.done()
+	}
+	if len(d.flows) > 0 {
+		// asuka test --gui: the flows once it's loaded, then the player stops.
+		defer func() {
+			if p.stop != nil {
+				p.stop()
+			}
+		}()
+		select {
+		case <-d.firstLoad:
+			return d.runFlows(d.flows)
+		case msg := <-d.playerErr:
+			return fmt.Errorf("the app didn't start: %s", msg)
+		case <-done:
+			return errors.New("the app quit before it loaded")
+		case <-stop:
+			return nil
+		}
 	}
 	if once {
 		select {

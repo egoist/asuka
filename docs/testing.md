@@ -410,6 +410,8 @@ see your app on the platforms:
 
 - `asuka dev --platform ios|android|web` runs it on the simulator, an
   emulator or a phone, or in a browser, and reloads it as you save.
+- `asuka test --gui` runs the app's flows there, a user's steps
+  through it: see [GUI tests](#gui-tests-flows).
 - On a desktop, `ASUKA_SNAPSHOT=out.png` writes the window to a PNG
   once it has shown, without taking the focus, then quits
   (`ASUKA_DUMP=1` writes its view tree beside it). `ASUKA_SCRIPT`
@@ -417,3 +419,50 @@ see your app on the platforms:
   see [Development](development.md#snapshots-and-scripts).
 - On Linux, under Xvfb (`xvfb-run -a dbus-run-session`), that works
   with no display, in CI.
+
+## GUI tests: flows
+
+A flow is a user's steps through the app, run on a platform's player:
+the simulator, an emulator, a phone, headless Chrome, or this computer.
+Each is a file in the app's `flows` folder, with one step a line:
+
+```
+# flows/note.flow: a message's note, written in a sheet.
+tap Message 20
+see No note yet.
+tap Add a note
+type hello
+tap Save
+see Note: hello
+back
+notsee Note: hello
+```
+
+`asuka test --gui` runs them as `asuka dev` runs the app, each from a
+fresh start with every `state` at its initial value, and says how each
+went:
+
+```
+asuka test --gui --platform ios       # the simulator (--device picks one)
+asuka test --gui --platform android   # an emulator or a phone
+asuka test --gui --platform web       # headless Chrome
+asuka test --gui                      # this computer
+```
+
+| Step | What it does |
+|---|---|
+| `tap <text>` | Presses what shows the text: a button, a toggle, a view that takes presses (a row), or a text field, which then takes what's typed. |
+| `type <text>` | Types into the text field tapped last (else the first one), as the user's typing does. |
+| `submit` | Presses return in that field. |
+| `back` | Goes back from the top screen, as its back button does. |
+| `see <text>` | Something on the screen shows the text, all of it or as part of a longer one. |
+| `notsee <text>` | Nothing on the screen shows it. |
+| `wait <time>` | Waits (`500ms`, `2s`). |
+
+A step that fails is tried again until it passes or `--timeout` (10s)
+runs out, since the app may still be loading or waiting on the network.
+Then the flow fails, with the step's line and what the screen shows. A
+screen under the top one doesn't count as showing. `--run text` runs
+only the flows whose names contain the text. The steps go through
+Asuka's own views, as the platform's events would come, so a flow runs
+the same everywhere, and what it shows is the platform's widgets.

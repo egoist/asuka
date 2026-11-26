@@ -27,7 +27,8 @@ var jsonOut bool
 // host built for this computer).
 func cmdTest(args []string) error {
 	var pattern, platform, benchtime, compare, seed, fuzztime string
-	var release bool
+	var release, gui bool
+	var device, timeout string
 	tr := &testRun{}
 	jsonOut = false
 	fs := newFlagSet("test", "[dir]")
@@ -36,7 +37,8 @@ func cmdTest(args []string) error {
 		"fake host: the app's views as a phone would show them, measured and laid out, driven by\n" +
 		"tap, type and expect; and those of its programs (asuka.toml's [bin.<name>]). A test with\n" +
 		"parameters is a property test, run with generated inputs; a bench runs once here, and is\n" +
-		"timed with --bench."
+		"timed with --bench. With --gui, it runs the app's flows (flows/*.flow: tap Add, see Count: 1)\n" +
+		"on a platform's player instead: the simulator, an emulator, headless Chrome or this computer."
 	fs.String(&pattern, "run", 0, "", "run only the tests (and benches) whose names contain `text`")
 	platformFlag(fs, &platform, []string{platformIOS, platformAndroid, platformMac, platformWindows, platformLinux, platformWeb},
 		"the `platform` the tests are compiled for (its packages' files for it, @platform) and the fake host says it is: ios (the default), android, mac, windows, linux or web")
@@ -53,8 +55,14 @@ func cmdTest(args []string) error {
 	fs.Bool(&tr.cover, "cover", 0, "measure the lines and branches of the package's code the tests run: a summary per file")
 	fs.String(&tr.lcov, "cover-lcov", 0, "", "write the coverage to `file` in lcov's format, for editors and CI (--cover)")
 	fs.String(&tr.html, "cover-html", 0, "", "write the coverage to `file` as a page: the source, what ran and what didn't (--cover)")
+	fs.Bool(&gui, "gui", 0, "run the app's flows (flows/*.flow) on the --platform's player, as asuka dev runs it (default: this computer; ios: the simulator, android: an emulator, web: headless Chrome), instead of its test blocks")
+	fs.String(&device, "device", 'd', "", "--gui: the simulator, emulator or device to run on, as asuka dev's --device")
+	fs.String(&timeout, "timeout", 0, "10s", "--gui: how long a step is tried before its flow fails (`time`)")
 	if err := fs.parse(args); err != nil {
 		return err
+	}
+	if gui {
+		return testGUI(fs.Arg(0), platform, device, pattern, timeout)
 	}
 	tr.pattern, tr.platform = pattern, platform
 	// Tests run a development build, as asuka dev's; benches time what a

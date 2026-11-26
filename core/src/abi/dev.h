@@ -21,7 +21,12 @@
 //                 14 highlight (the inspector selected a view: its path,
 //                    its indexes from the tree's roots joined by dots,
 //                    "0.2.1"; empty: none, the highlight goes)
-//   player → CLI:  3 log (u8 fd: 1 out, 2 err; then the text)
+//                 15 automate (u32 its number, then commands, a line
+//                    each: asuka test --gui's; answered with automated)
+//   player → CLI: 16 automated (u32 the automate's number, then each
+//                    command's answer: a line, ok or error: why, or the
+//                    texts a dump says)
+//                  3 log (u8 fd: 1 out, 2 err; then the text)
 //                  4 hello (JSON: the platform, the device)
 //                  5 reloaded (u32 state cells kept, u32 microseconds,
 //                    u8 flags: AK_DEV_RESTARTED for a restart's)
@@ -57,6 +62,8 @@ enum {
 	AK_DEV_INSPECT = 12,
 	AK_DEV_TREE = 13,
 	AK_DEV_HIGHLIGHT = 14,
+	AK_DEV_AUTOMATE = 15,
+	AK_DEV_AUTOMATED = 16,
 };
 
 // A reloaded frame's flags.

@@ -39,6 +39,11 @@ const (
 	// KindHighlight has a player highlight the view at a path in its tree
 	// (its indexes from the roots, joined by dots; empty: none).
 	KindHighlight = 14
+	// KindAutomate has a player run automation commands (u32 a number,
+	// then a line each); it answers with KindAutomated (the number, then
+	// each command's answer).
+	KindAutomate  = 15
+	KindAutomated = 16
 )
 
 // A reloaded frame's flags.
@@ -128,7 +133,9 @@ type Events struct {
 	Uncaught func(p *Player, u Uncaught)
 	// Tree is told of a player's views, as JSON, answering Inspect.
 	Tree func(p *Player, tree []byte)
-	Gone func(p *Player, err error)
+	// Automated is told of the answers to Automate's commands.
+	Automated func(p *Player, seq uint32, answers string)
+	Gone      func(p *Player, err error)
 }
 
 // Server serves players. A module is a platform's: what players of
@@ -141,6 +148,7 @@ type Server struct {
 	modules map[target.Platform][]byte
 	failed  map[target.Platform]Failure // a platform's build that failed, until Fixed
 	ps      map[*Player]bool
+	conns   uint64 // players that connected
 }
 
 // Player is a connected player.
@@ -152,6 +160,7 @@ type Player struct {
 	// said hello.
 	Platform target.Platform
 	hello    bool
+	seq      uint64 // the order it connected in
 }
 
 // Listen serves on addr (":0" picks a port).
@@ -271,6 +280,12 @@ func (s *Server) Fixed(platform target.Platform) {
 // Source answers an uncaught error p reported (seq, its number): the
 // lines of the app's source where it went wrong, and its stack as the
 // overlay shows it.
+// Automate has the player run automation commands, a line each; it
+// answers with Events.Automated, under seq.
+func (p *Player) Automate(seq uint32, commands string) error {
+	return p.send(KindAutomate, append(binary.LittleEndian.AppendUint32(nil, seq), commands...))
+}
+
 // Highlight has the player highlight the view at path in the tree it
 // last gave ("0.2.1"), or none ("").
 func (p *Player) Highlight(path string) error { return p.send(KindHighlight, []byte(path)) }
@@ -281,6 +296,19 @@ func (p *Player) Source(seq uint32, source, details string) error {
 
 // Inspect asks every player that said hello for its views (Events.Tree
 // hears them); how many it asked.
+// First is the first player that said hello (none: nil).
+func (s *Server) First() *Player {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var first *Player
+	for p := range s.ps {
+		if p.hello && (first == nil || p.seq < first.seq) {
+			first = p
+		}
+	}
+	return first
+}
+
 func (s *Server) Inspect() int {
 	s.mu.Lock()
 	var ps []*Player
@@ -319,6 +347,8 @@ func (s *Server) Serve(c net.Conn) {
 	}
 	p := &Player{conn: c}
 	s.mu.Lock()
+	s.conns++
+	p.seq = s.conns
 	s.ps[p] = true
 	s.mu.Unlock()
 	s.serve(p)
@@ -404,6 +434,10 @@ func (p *Player) read(s *Server) error {
 		case KindUncaught:
 			if u, ok := DecodeUncaught(b); ok && ev.Uncaught != nil {
 				ev.Uncaught(p, u)
+			}
+		case KindAutomated:
+			if ev.Automated != nil && len(b) >= 4 {
+				ev.Automated(p, binary.LittleEndian.Uint32(b), string(b[4:]))
 			}
 		case KindTree:
 			if ev.Tree != nil {

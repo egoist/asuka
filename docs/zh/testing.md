@@ -303,5 +303,43 @@ test "archiving removes the row" {
 `asuka test` 测试的是应用的行为：显示什么，以及用户操作时会发生什么。每个平台如何绘制它，是平台自己的事。要在各平台上查看你的应用：
 
 - `asuka dev --platform ios|android|web` 会在 iOS 模拟器、Android 模拟器、手机或浏览器中运行应用，并在保存时重新加载。
+- `asuka test --gui` 会在那里运行应用的流程，也就是用户在应用里的一连串操作：参见[GUI 测试](#gui-测试流程)。
 - 在桌面端，`ASUKA_SNAPSHOT=out.png` 会在窗口显示后把它保存为 PNG，不抢占焦点，然后退出（`ASUKA_DUMP=1` 还会在旁边写出视图树）。`ASUKA_SCRIPT` 会先执行一些步骤（`tap:Add`、`type:hello`）：参见[开发](development.md#快照与脚本)。
 - 在 Linux 上，在 Xvfb 下（`xvfb-run -a dbus-run-session`）运行，就能在没有显示器的环境（比如 CI）中做到这一点。
+
+## GUI 测试：流程
+
+流程（flow）是用户在应用里的一连串操作，在某个平台的开发 App 上运行：iOS 模拟器、Android 模拟器、手机、无头 Chrome，或者这台电脑。每个流程是应用 `flows` 目录下的一个文件，每行一步：
+
+```
+# flows/note.flow：在表单里给一条消息写备注。
+tap Message 20
+see No note yet.
+tap Add a note
+type hello
+tap Save
+see Note: hello
+back
+notsee Note: hello
+```
+
+`asuka test --gui` 像 `asuka dev` 那样运行应用来执行这些流程，每个流程都从头开始，所有 `state` 都是初始值，并报告每个流程的结果：
+
+```
+asuka test --gui --platform ios       # iOS 模拟器（用 --device 选择）
+asuka test --gui --platform android   # Android 模拟器或手机
+asuka test --gui --platform web       # 无头 Chrome
+asuka test --gui                      # 这台电脑
+```
+
+| 步骤 | 作用 |
+|---|---|
+| `tap <text>` | 按下显示这段文字的东西：按钮、开关、可以按的视图（比如一行），或者文本框，之后输入的内容会进入这个文本框。 |
+| `type <text>` | 像用户打字那样，在最后点过的文本框里输入（没有的话就是第一个文本框）。 |
+| `submit` | 在那个文本框里按回车。 |
+| `back` | 像返回按钮那样，从最上面的页面返回。 |
+| `see <text>` | 屏幕上有东西显示这段文字，可以是完整的，也可以是更长文字的一部分。 |
+| `notsee <text>` | 屏幕上没有东西显示它。 |
+| `wait <time>` | 等待（`500ms`、`2s`）。 |
+
+失败的步骤会一直重试，直到通过或超过 `--timeout`（10s），因为应用可能还在加载，或在等网络。超时后流程失败，并报告该步骤所在的行和屏幕上显示的内容。被最上面的页面挡住的页面不算在显示。`--run text` 只运行名字里包含这段文字的流程。这些步骤经过 Asuka 自己的视图，就像平台的事件传来时那样，所以流程在每个平台上的运行方式都一样，而显示出来的是平台的控件。

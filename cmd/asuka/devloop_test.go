@@ -412,23 +412,6 @@ func webDev(t *testing.T, dir string) (*devLoop, func(commands string) string) {
 }
 
 // chromePath is Chrome's (or Chromium's) executable, "" if there's none.
-func chromePath() string {
-	if p := os.Getenv("ASUKA_CHROME"); p != "" {
-		return p
-	}
-	for _, p := range []string{"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium"} {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	for _, n := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"} {
-		if p, err := exec.LookPath(n); err == nil {
-			return p
-		}
-	}
-	return ""
-}
-
 // asuka dev's error overlay on this Mac: an error the app didn't catch
 // shows over the player's window, in AppKit's views, with the lines where
 // it was thrown and the stack, and Dismiss goes back to the app as it was;

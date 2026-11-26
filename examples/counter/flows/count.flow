@@ -1,0 +1,8 @@
+# Counting up, then back to zero.
+see Count: 0
+tap Add
+tap Add
+see Count: 2
+tap Reset
+see Count: 0
+notsee Count: 2

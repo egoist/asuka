@@ -406,6 +406,7 @@ func devAndroid(dir string, o *devOptions, stop <-chan os.Signal) error {
 	if err != nil {
 		return err
 	}
+	loop.flows = o.flows
 	return loop.run(p, stop, o.once)
 }
 

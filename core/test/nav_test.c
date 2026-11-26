@@ -964,6 +964,63 @@ TEST(inspector_tree) {
 	ak_release(open_cell);
 }
 
+// asuka dev's automation (asuka test --gui): commands against the views
+// as the core has them, each answered.
+static ak_val field_screen(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *s = ak_ui_new(AK_EL_SCREEN);
+	set_str(s, AK_KEY_SCREEN_TITLE, "Form");
+	ak_view *fld = ak_ui_new(AK_EL_TEXT_FIELD);
+	set_str(fld, AK_KEY_TEXT_FIELD_PLACEHOLDER, "Name");
+	add(s, fld);
+	return (ak_val){.p = s};
+}
+
+static const char *automate(const char *cmds, ak_buf *out) {
+	ak_buf_reset(out);
+	ak_ui_automate(ak_cstr(cmds), out);
+	ak_buf_u8(out, 0);
+	return (const char *)out->data;
+}
+
+TEST(automation) {
+	ticks = cell_int(0);
+	ak_uitest *a = mount(stack_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *stack = nth(a, AK_KIND_STACK, 0);
+	REQUIRE(stack);
+	ak_buf out = {0};
+	CHECK(strcmp(automate("see Open\ntap Open", &out), "ok\nok\n") == 0);
+	ak_uitest_settle(a);
+	CHECK_EQ_INT(stack->children.len, 2);
+	CHECK(strcmp(automate("see tick\nnotsee Nope\ndump", &out), "ok\nok\ntick 0\nBack\nHome\nOpen\n") == 0 ||
+	      strstr(automate("dump", &out), "tick 0\n") != NULL);
+	// back takes the top screen off, as its back button does.
+	CHECK(strcmp(automate("back", &out), "ok\n") == 0);
+	ak_uitest_settle(a);
+	CHECK_EQ_INT(stack->children.len, 1);
+	CHECK(strcmp(automate("back\ntap Nope\nnotsee Open\nfly away", &out),
+	             "error: no screen to go back from\n"
+	             "error: nothing shows \"Nope\"\n"
+	             "error: \"Open\" shows\n"
+	             "error: no command fly (tap, type, submit, back, see, notsee, dump)\n") == 0);
+	done(a);
+
+	// type: into the field, which shows it.
+	a = mount(field_screen, NULL);
+	f = ak_uitest_host(a);
+	CHECK(strcmp(automate("type Ada", &out), "ok\n") == 0);
+	ak_uitest_settle(a);
+	ak_fake_view *fld = nth(a, AK_KIND_TEXT_FIELD, 0);
+	REQUIRE(fld);
+	CHECK(span_is(ak_fake_string(fld, AK_PROP_TEXT_FIELD_VALUE), "Ada"));
+	CHECK(strcmp(automate("submit", &out), "ok\n") == 0);
+	done(a);
+	ak_buf_free(&out);
+	ak_release(ticks);
+	AK_UNUSED(f);
+}
+
 // ---- Popover (popover_test.go) ----
 
 static ak_val pop_content(ak_closure *c, ak_val *a, uint32_t n) {
