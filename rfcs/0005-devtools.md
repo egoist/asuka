@@ -193,16 +193,19 @@ how to use it.
 - **What it costs.** The debugger is compiled into development builds
   only (`AK_DEBUG`, the players' core); a release build's interpreter
   is the same machine code as without it. In a development build the
-  interpreter dispatches through one of two tables, its instructions'
-  own or, while the debugger wants to see each instruction
-  (breakpoints, a step, a pause), one whose every entry is the hook,
-  and decides which as a frame is entered or left and a jump is taken:
-  nothing is checked per instruction. Measured on bench/vm's programs,
-  unoptimized as asuka dev compiles them, with nothing set: 2.5% (a
-  string-heavy one) to 19% (a tight loop of array writes) more
-  instructions retired, one more per instruction dispatched (the
-  table's base is a variable), with cycles within the machine's noise
-  (0 to 5%).
+  interpreter's loop is made twice (core/src/vm/interp_loop.h): a copy
+  that dispatches as a release build's does, and one that calls the
+  hook before each instruction, run while the debugger wants to see
+  each one (breakpoints, a step, a pause). The first asks the flag as
+  a frame is entered or left and as a jump is taken, and when it's set
+  leaves for the other, its frame resuming where it was; the other
+  leaves the same way once it's clear. Nothing is checked per
+  instruction. Measured on bench/vm's programs with nothing set (both
+  at -O2), the core with the debugger retires 2 to 7% more instructions
+  than without (the checks at calls, returns and jumps). (A first
+  version kept one loop and switched its dispatch table, a variable:
+  11 to 35% more, the table's base in a register of its own and the
+  instructions' dispatches merged into one.)
 
 The protocol (`core/src/abi/dev.h`, `internal/devserver/debug.go`):
 the CLI sends a file's breakpoints (17: they replace the file's), a

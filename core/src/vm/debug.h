@@ -15,10 +15,11 @@
 // It's compiled into development builds only (AK_DEBUG: a player's core;
 // and the tests'), and not for the web, whose page can't wait on the
 // main thread for a command. A release build's interpreter has no hook.
-// In a development build, the interpreter dispatches through a table
-// whose every entry is the hook while ak_dbg_on is set (breakpoints, a
-// step, a pause), and asks the flag only as a frame is entered or left
-// and a jump is taken (interp.c): nothing per instruction.
+// In a development build, the interpreter runs a copy of its loop that
+// calls the hook before each instruction while ak_dbg_on is set
+// (breakpoints, a step, a pause), and its own otherwise, which asks the
+// flag only as a frame is entered or left and a jump is taken
+// (interp.c): nothing per instruction.
 //
 // Breakpoints are kept by file and line and resolved against each
 // function's line table as it first runs with them (the lines of the

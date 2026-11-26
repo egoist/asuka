@@ -206,6 +206,10 @@ typedef struct ak_co {
 	// and how deep they call each other directly in C (ak_op_acall).
 	uintptr_t lim;
 	uint32_t adepth;
+	// The thread's pending error's slot (ak_error_slot), which the
+	// interpreter reads after each call: set as lim is, for a run, and
+	// once for a thread's main coroutine (call_sync).
+	void *const *err;
 } ak_co;
 
 // ak_vm_untrack_begin stops tracking reads (UNTRACK), saving the running
@@ -235,6 +239,10 @@ extern AK_TLS ak_co ak_vm_main;
 // suspends (true): the run loop (run.c). Frames of functions compiled to
 // C run their bodies; interpreted frames run on the interpreter.
 bool ak_vm_run(ak_co *co, ak_val *out);
+// ak_vm_run_here is ak_vm_run of the coroutine running now on this
+// thread (ak_vm_cur's: a call from C nested in a run of it, or the
+// thread's main one), whose lim and err are this thread's already.
+bool ak_vm_run_here(ak_co *co, ak_val *out);
 // ak_vm_interp interprets co from its top frame, an interpreted
 // function's, until a boundary frame returns (AK_RUN_RET, as
 // ak_vm_run's), the coroutine suspends (AK_RUN_SUSPEND), or the top frame

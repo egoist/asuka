@@ -49,11 +49,18 @@ static bool threw(ak_co *co, bool boundary, uint32_t callpc) {
 bool ak_vm_run(ak_co *co, ak_val *out) {
 	ak_co *prev = cur_co();
 	ak_vm_cur = co;
-	// The C stack's limit its compiled functions read is this run's
-	// thread's: a task may resume on another thread than the last run's
-	// (a program's main queue, drained by libdispatch's threads), whose
-	// stack is elsewhere.
+	// The C stack's limit its compiled functions read, and the pending
+	// error's slot the interpreter reads, are this run's thread's: a task
+	// may resume on another thread than the last run's (a program's main
+	// queue, drained by libdispatch's threads), whose stack is elsewhere.
 	co->lim = 0;
+	co->err = ak_error_slot();
+	bool suspended = ak_vm_run_here(co, out);
+	ak_vm_cur = prev;
+	return suspended;
+}
+
+bool ak_vm_run_here(ak_co *co, ak_val *out) {
 	bool suspended = false;
 	for (;;) {
 		ak_frame *fr = &co->frames[co->nframes - 1];
@@ -89,6 +96,5 @@ bool ak_vm_run(ak_co *co, ak_val *out) {
 			break;
 		}
 	}
-	ak_vm_cur = prev;
 	return suspended;
 }
