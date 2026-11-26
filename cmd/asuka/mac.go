@@ -78,6 +78,16 @@ func macRunner(verbose bool) func(dir string, env []string, cmd string, args ...
 // returns the executable's name, in Contents/MacOS.
 func writeMacBundle(app *asukaApp, bundle, work string, release bool, run func(dir string, env []string, cmd string, args ...string) error) (string, error) {
 	name := app.displayName()
+	// The least macOS it runs on: the host's, or a native package's later
+	// one (swiftMinimum).
+	natives, err := nativeFor(app, "macos")
+	if err != nil {
+		return "", err
+	}
+	minimum, err := swiftMinimum(natives, "macos")
+	if err != nil {
+		return "", err
+	}
 	os.RemoveAll(bundle)
 	contents := filepath.Join(bundle, "Contents")
 	res := filepath.Join(contents, "Resources")
@@ -96,7 +106,7 @@ func writeMacBundle(app *asukaApp, bundle, work string, release bool, run func(d
 		"CFBundleShortVersionString":           app.cfg.Version,
 		"CFBundleVersion":                      strconv.Itoa(app.cfg.Build),
 		"CFBundleInfoDictionaryVersion":        "6.0",
-		"LSMinimumSystemVersion":               macMin,
+		"LSMinimumSystemVersion":               minimum,
 		"NSHighResolutionCapable":              true,
 		"NSPrincipalClass":                     "NSApplication",
 		"NSSupportsAutomaticGraphicsSwitching": true,

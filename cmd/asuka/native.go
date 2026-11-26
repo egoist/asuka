@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/asuka/internal/cachedir"
@@ -311,6 +312,59 @@ type swiftInfo struct {
 	// its own (swiftModules): Swift alone, depending on the host's only,
 	// with no resources or settings. Nil: xcodebuild builds it.
 	Module *swiftModuleInfo `json:"module,omitempty"`
+	// Its minimum versions, as its platforms say ("" where they don't).
+	IOS   string `json:"ios"`
+	MacOS string `json:"macos"`
+}
+
+// swiftMinimum is the least version of platform ("ios", "macos") an
+// app runs on with natives' Swift: the host's, or a package's higher
+// one. The app's own Package.swift and Info.plist say it, so a package
+// that needs a later system (a camera's, macOS 13) builds into the app.
+func swiftMinimum(natives []nativePackage, platform string) (string, error) {
+	min := iosMin
+	if platform == "macos" {
+		min = macMin
+	}
+	for _, p := range natives {
+		if !nativegen.HasPlatform(p.dir, "swift") {
+			continue
+		}
+		info, err := swiftPackageInfo(p.dir)
+		if err != nil {
+			return "", err
+		}
+		v := info.IOS
+		if platform == "macos" {
+			v = info.MacOS
+		}
+		if versionLess(min, v) {
+			min = v
+		}
+	}
+	return min, nil
+}
+
+// versionLess reports whether dotted version a is below b (11.0 < 13.0,
+// 13 < 13.1); an empty b is below everything.
+func versionLess(a, b string) bool {
+	if b == "" {
+		return false
+	}
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < max(len(as), len(bs)); i++ {
+		var x, y int
+		if i < len(as) {
+			x, _ = strconv.Atoi(as[i])
+		}
+		if i < len(bs) {
+			y, _ = strconv.Atoi(bs[i])
+		}
+		if x != y {
+			return x < y
+		}
+	}
+	return false
 }
 
 // swiftModuleInfo is a package's target that swiftModules compiles.
@@ -334,7 +388,7 @@ func swiftPackageInfo(dir string) (swiftInfo, error) {
 		return swiftInfo{}, err
 	}
 	sum := sha256.Sum256(manifest)
-	cache := cachedir.Path("swiftpm", "2-"+hex.EncodeToString(sum[:])[:16]+".json")
+	cache := cachedir.Path("swiftpm", "3-"+hex.EncodeToString(sum[:])[:16]+".json")
 	var info swiftInfo
 	if b, err := os.ReadFile(cache); err == nil && json.Unmarshal(b, &info) == nil {
 		return info, nil
@@ -382,9 +436,9 @@ func swiftPackageInfo(dir string) (swiftInfo, error) {
 	for _, p := range dump.Platforms {
 		switch p.PlatformName {
 		case "ios":
-			mod.IOS = p.Version
+			mod.IOS, info.IOS = p.Version, p.Version
 		case "macos":
-			mod.MacOS = p.Version
+			mod.MacOS, info.MacOS = p.Version, p.Version
 		}
 		if p.PlatformName == "ios" || p.PlatformName == "macos" {
 			info.Platforms = append(info.Platforms, p.PlatformName)

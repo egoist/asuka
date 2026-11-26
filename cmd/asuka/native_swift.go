@@ -100,6 +100,14 @@ let package = Package(
 // rootManifest is the app's package: it depends on the host's and on each
 // native package's library products.
 func (b *swiftBuild) rootManifest() (string, error) {
+	min, err := swiftMinimum(b.natives, b.platform)
+	if err != nil {
+		return "", err
+	}
+	platform := fmt.Sprintf(".iOS(%q)", min)
+	if b.platform != "ios" {
+		platform = fmt.Sprintf(".macOS(%q)", min)
+	}
 	var deps, products []string
 	seen := map[string]string{"asuka": "the host"}
 	for _, p := range b.natives {
@@ -134,7 +142,7 @@ let package = Package(
         .target(name: "AsukaApp", dependencies: [.product(name: "Asuka", package: "asuka"), %s]),
     ]
 )
-`, swiftPlatform(b.platform), strings.Join(deps, "\n"), strings.Join(products, ", ")), nil
+`, platform, strings.Join(deps, "\n"), strings.Join(products, ", ")), nil
 }
 
 // build builds the host's Swift and the native packages': as modules,
