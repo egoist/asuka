@@ -276,7 +276,7 @@ entities (shortcuts take none yet), widgets of the app's own layout (one
 template for now), over-the-air updates (EAS Update's: a release has the
 app compiled into it), and GUI tests of an app on the simulator and the
 emulator. On Windows and Linux, Lottie (`lottie.View` is an empty box).
-On Linux and the web, speech to text. On Windows and Linux: a screen's
-`zoomFrom` (a push slides instead); on the Mac, Windows, Linux and the
-web, beginning a list's selection with a gesture. And uploading to the Mac App Store with
+On Linux and the web, speech to text. On Windows, a screen's `zoomFrom`
+(a push slides instead; Linux slides as libadwaita's navigation does,
+GNOME having no zoom). And uploading to the Mac App Store with
 `asuka publish` (upload the `.pkg` with Transporter).

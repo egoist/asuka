@@ -239,4 +239,4 @@ MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览�
 
 ## 尚未支持
 
-按应用最常缺少的程度排序：带参数和实体的 App Intents（快捷指令目前还不能带参数）、应用自定义布局的小组件（目前只有一种模板）、OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了），以及在模拟器上对应用做 GUI 测试。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Linux 和 Web 上的语音转文字。Windows 和 Linux 上页面的 `zoomFrom`（推入时改为滑入）；Mac、Windows、Linux 和 Web 上用手势开始列表选择。还有用 `asuka publish` 上传到 Mac App Store（请用 Transporter 上传 `.pkg`）。
+按应用最常缺少的程度排序：带参数和实体的 App Intents（快捷指令目前还不能带参数）、应用自定义布局的小组件（目前只有一种模板）、OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了），以及在模拟器上对应用做 GUI 测试。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Linux 和 Web 上的语音转文字。Windows 上页面的 `zoomFrom`（推入时改为滑入；Linux 按 libadwaita 导航的方式滑入，GNOME 没有缩放过渡）。还有用 `asuka publish` 上传到 Mac App Store（请用 Transporter 上传 `.pkg`）。

@@ -651,12 +651,19 @@ void wh_list_scroll_to(node *n, uint32_t index) {
 }
 
 // wh_select_click toggles the selection of the row n is in, if it's in a
-// selecting list; false: it isn't.
+// selecting list; false: it isn't. Ctrl on a row of a list that isn't
+// selecting begins selecting there (RowSelectBegin), as Ctrl-click
+// selects many in Explorer, when the row listens.
 bool wh_select_click(node *n) {
 	for (node *p = n; p; p = p->parent) {
 		wh_cell *c = p->cell;
 		if (!c) continue;
-		if (!c->l->selecting || c->header) return false;
+		if (c->header) return false;
+		if (!c->l->selecting) {
+			if (GetKeyState(VK_CONTROL) >= 0 || !node_listening(c->n, AK_EVENT_ROW_SELECT_BEGIN)) return false;
+			wh_emit(c->n, &(ak_event){.kind = AK_EVENT_ROW_SELECT_BEGIN});
+			return true;
+		}
 		c->selected = !c->selected;
 		InvalidateRect(c->rv->n->hwnd, NULL, FALSE);
 		wh_emit_bool(c->n, AK_EVENT_ROW_SELECTED, c->selected);

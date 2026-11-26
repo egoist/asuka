@@ -1301,7 +1301,7 @@ component Mailbox {
 | | iOS | Android | macOS、Windows、Linux | Web |
 |---|---|---|---|---|
 | 选择控件 | UIKit 编辑模式下的圆圈 | 行末尾的 Material 复选框 | 高亮整行（使用强调色对应的选中颜色；Windows 上是 WinUI 列表的胶囊形指示条） | 行起始边的圆圈，选中时填上对勾，整行着色 |
-| `on selectBegin` | 双指在行上拖动，并继续选中拖过的行 | 长按（同 Gmail） | — | — |
+| `on selectBegin` | 双指在行上拖动，并继续选中拖过的行 | 长按（同 Gmail） | Mac 上按住 ⌘ 点按，Windows 和 Linux 上按住 Ctrl 点按（同访达、资源管理器） | 按住 ⌘ 点按（非 Apple 系统上按住 Ctrl）；触摸屏上长按 |
 | 屏幕阅读器 | 每一行都可选择 | 每一行是一个复选框，以行的文字作为标签 | — | 每一行标明是否选中（`aria-selected`） |
 
 ### 网格

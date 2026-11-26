@@ -1790,7 +1790,7 @@ component Mailbox {
 | | iOS | Android | macOS, Windows, Linux | Web |
 |---|---|---|---|---|
 | The control | UIKit's edit mode circles | a Material checkbox at the row's end | the row highlighted (the accent's selection color; a WinUI list's pill on Windows) | a circle at the row's leading edge that fills with a checkmark, the row tinted |
-| `on selectBegin` | a two-finger pan over rows, which goes on to select the rows it crosses | a long press (Gmail's) | — | — |
+| `on selectBegin` | a two-finger pan over rows, which goes on to select the rows it crosses | a long press (Gmail's) | a ⌘-click on the Mac, a Ctrl-click on Windows and Linux (Finder's, Explorer's) | a ⌘-click (Ctrl-click off Apple's systems); a long press on a touch screen |
 | Screen readers | each row selectable | each row a checkbox, its text the label | — | each row selected or not (`aria-selected`) |
 
 ### Grids

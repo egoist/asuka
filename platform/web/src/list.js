@@ -10,6 +10,10 @@
 import { Event, Events, Command, Reader, KindProp as P, Prop } from "./ops.js";
 import { own } from "./views.js";
 import { decodeActions } from "./host.js";
+import { apple } from "./keys.js";
+
+const longPressMs = 500; // a touch held this long on a row begins selecting (Android's)
+const pressSlop = 10; // points a touch moves before it's a scroll, not a long press
 
 const KindRow = 0xfff0, KindCell = 0xfff1;
 const cardGap = 0; // an inset grouped list's rows touch, as one card
@@ -510,6 +514,21 @@ class List {
     const row = { el, cells: [], row: -1, pinned: false };
     el.addEventListener("click", (e) => this.rowClicked(row, e));
     el.addEventListener("contextmenu", (e) => this.rowMenu(row, e));
+    // A touch held on a row begins selecting, as Android's long press.
+    let hold = null;
+    const cancel = () => { clearTimeout(hold?.t); hold = null; };
+    el.addEventListener("pointerdown", (e) => {
+      cancel();
+      if (e.pointerType !== "touch" || this.selecting || row.header) return;
+      hold = { x: e.clientX, y: e.clientY, t: setTimeout(() => {
+        hold = null;
+        const c = this.cellAt(row, e.target);
+        if (c && this.beginSelecting(c)) row.swallowClick = true;
+      }, longPressMs) };
+    });
+    el.addEventListener("pointermove", (e) => { if (hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > pressSlop) cancel(); });
+    el.addEventListener("pointerup", cancel);
+    el.addEventListener("pointercancel", cancel);
     return row;
   }
 
@@ -603,11 +622,44 @@ class List {
   }
 
   rowClicked(rv, e) {
-    if (!this.selecting || rv.header) return;
-    const c = rv.cells.find((c) => c.n.el.contains(e.target)) || rv.cells[0];
+    if (rv.swallowClick) {
+      // The click a long press that began selecting ends with.
+      rv.swallowClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    }
+    if (rv.header) return;
+    const c = this.cellAt(rv, e.target);
     if (!c) return;
+    if (!this.selecting) {
+      // ⌘-click (Ctrl-click off Apple's) begins selecting at the row, as
+      // a desktop list's: when its row asks to hear of it.
+      if ((apple() ? e.metaKey : e.ctrlKey) && this.beginSelecting(c)) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+      return;
+    }
     e.stopPropagation();
     this.h.dispatch(Events.rowSelected(c.n.id, !c.selected));
+  }
+
+  /** cellAt is the row's cell target is in, else its first. */
+  cellAt(rv, target) {
+    return rv.cells.find((c) => c.n.el.contains(target)) || rv.cells[0];
+  }
+
+  /**
+   * beginSelecting tells c's row that the user began selecting there
+   * (RowSelectBegin), if it listens, as the other hosts do: the app's on
+   * selectBegin turns selecting on (and may choose the row). False when
+   * it doesn't listen.
+   */
+  beginSelecting(c) {
+    if (!c.n.listening(Event.RowSelectBegin)) return false;
+    this.h.dispatch(Events.rowSelectBegin(c.n.id));
+    return true;
   }
 
   /** rowMenu: a row's swipe actions are its context menu on the web, as on the desktop hosts. */

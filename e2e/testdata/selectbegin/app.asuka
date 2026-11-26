@@ -1,0 +1,38 @@
+// Select Begin is a list whose rows begin selecting (e2e's
+// TestSelectBeginWeb): ⌘-click (Ctrl-click) on the desktop and the web,
+// a long press on touch; the app selects the row begun on first.
+
+component Messages {
+  state selecting = false
+  state chosen: [int] = []
+
+  Column {
+    grow: 1
+    Text("selecting {selecting}, chosen {chosen}")
+    List {
+      grow: 1
+      selecting: selecting
+      for i in 1..<6 key i {
+        Row {
+          padding: [12, 20]
+          selected: chosen.contains(i)
+          on select(on) {
+            if on { chosen.push(i) } else { chosen.removeWhere(x => x == i) }
+          }
+          on selectBegin {
+            selecting = true
+            chosen.push(i)
+          }
+          Text("Message {i}")
+        }
+      }
+    }
+  }
+}
+
+app { Messages() }
+
+test "the list" {
+  let app = mount(Messages())
+  app.expect("selecting false, chosen []")
+}

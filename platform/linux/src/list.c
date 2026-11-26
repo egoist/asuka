@@ -359,16 +359,23 @@ static void select_row(cell *c) {
 	lx_emit(c->n, (ak_event){.kind = AK_EVENT_ROW_SELECTED, .b = c->selected});
 }
 
+// begins is whether a press on c with state held begins selecting
+// there: Ctrl on a row of a list that isn't selecting, as a GNOME list's
+// Ctrl-click selects many, when the row listens (RowSelectBegin).
+static bool begins(cell *c, GdkModifierType state) {
+	return !c->l->selecting && !c->header && (state & GDK_CONTROL_MASK) && listening(c->n, AK_EVENT_ROW_SELECT_BEGIN);
+}
+
 static void on_cell_pressed(GtkGestureClick *g, int count, double x, double y, gpointer data) {
 	(void)count;
 	(void)x;
 	(void)y;
 	cell *c = data;
-	if (c->l->selecting && !c->header) gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_CLAIMED);
+	if ((c->l->selecting && !c->header) || begins(c, gtk_event_controller_get_current_event_state((GtkEventController *)g)))
+		gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_CLAIMED);
 }
 
 static void on_cell_released(GtkGestureClick *g, int count, double x, double y, gpointer data) {
-	(void)g;
 	(void)count;
 	(void)x;
 	(void)y;
@@ -376,6 +383,10 @@ static void on_cell_released(GtkGestureClick *g, int count, double x, double y, 
 	if (c->l->selecting && !c->header) {
 		lx_enter_begin();
 		select_row(c);
+		lx_enter_end();
+	} else if (begins(c, gtk_event_controller_get_current_event_state((GtkEventController *)g))) {
+		lx_enter_begin();
+		lx_emit(c->n, (ak_event){.kind = AK_EVENT_ROW_SELECT_BEGIN});
 		lx_enter_end();
 	}
 }
@@ -1119,7 +1130,7 @@ static bool cell_listen(node *n, ak_event_kind e) {
 		listen_row_menu(n->ext);
 		return true;
 	}
-	return e == AK_EVENT_ROW_SELECTED;  // the cell's selection click
+	return e == AK_EVENT_ROW_SELECTED || e == AK_EVENT_ROW_SELECT_BEGIN;  // the cell's selection click, and Ctrl's
 }
 
 // ---- Drawing ----
