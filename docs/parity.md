@@ -63,7 +63,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Color picker | `ColorPicker` | community | ✓ `ColorPicker` (`UIColorWell`; on Android, which has none, a Material dialog of a palette, with opacity; `NSColorWell`, Windows' color dialog, `GtkColorDialogButton`, `<input type="color">`) |
 | Icons | SF Symbols | `@expo/vector-icons` | ✓ `Symbol` (SF Symbols on iOS and the Mac; for the same names, Material Symbols on Android and the web, Segoe Fluent Icons on Windows, the icon theme's or Material Symbols on Linux: a curated set); SVG icons drawn as vectors with `std/svg` |
 | Images (remote, cached, placeholders) | `AsyncImage` | `expo-image` | ✓ `Image` (`placeholder`, `blurHash` and `thumbHash` placeholders, a fading `transition`; cached in memory, and on disk on iOS and Android; each platform's decoders: ImageIO, `ImageDecoder`, `NSImage`, WIC, GDK's loaders, the browser's, so WebP, HEIC and AVIF where the platform reads them; animated GIF, APNG and WebP play everywhere, `animated`; SVG on the Mac, Linux and the web) |
-| Lottie animations | community (lottie-ios) | `lottie-react-native` | ◐ `std/lottie`'s `lottie.View` (lottie-ios, lottie-android, lottie-web: JSON and dotLottie, `playing`, `loop`, `speed`, `progress` read and written, `segment`, `marker`, keypath `overrides`); nothing yet on Windows and Linux, where it's an empty box |
+| Lottie animations | community (lottie-ios) | `lottie-react-native` | ✓ `std/lottie`'s `lottie.View` (lottie-ios, lottie-android, lottie-web: JSON and dotLottie, `playing`, `loop`, `speed`, `progress` read and written, `segment`, `marker`, keypath `overrides`); on Windows and Linux Asuka's own player on a `Canvas`: shapes, gradients, trim paths, repeaters, stars, precompositions and alpha mattes, not masks, images or text |
 | Video | `VideoPlayer` | `expo-video` | ✓ `Video` (AVKit on iOS and the Mac, Media3 on Android, a `<video>` in WebView2 on Windows, `GtkVideo` (GStreamer) on Linux, `<video>` on the web) |
 | Web content | `WKWebView` | `react-native-webview` | ✓ `WebView` (`WKWebView` on iOS and the Mac, Android's `WebView`, WebView2 on Windows, WebKitGTK on Linux: a URL or HTML, messages both ways, scripts before the page's (`preload`), blocked requests, its state and history, downloads, new windows, each request, a script's value, `webview.cookies(url)`; on the web an `<iframe>`, all of it for the app's own site); `platform/js` runs JavaScript off screen |
 | Maps | `Map` | `expo-maps` | ✓ `platform/maps`'s `maps.View` (MapKit on iOS and the Mac, Google Maps on Android, OpenStreetMap's tiles on Windows, Linux (libshumate) and the web: a region, markers, the user's location, presses) |
@@ -275,5 +275,5 @@ mouse through all of it, or none).
 
 In order of what apps miss most: widgets of the app's own layout (one
 template for now), and over-the-air updates
-(EAS Update's: a release has the app compiled into it). On Windows and Linux, Lottie (`lottie.View` is an empty box).
+(EAS Update's: a release has the app compiled into it).
 On Windows and Linux, speech to text.

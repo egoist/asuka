@@ -1241,7 +1241,12 @@ func (c *Checker) TakesStyle(t *TypeName) bool {
 	}
 	if comp.styled == 0 {
 		comp.styled = -1 // while it's worked out: a cycle doesn't
-		if r := c.rootComponent(t); r != nil && c.TakesStyle(r) {
+		rs := c.rootComponents(t)
+		ok := len(rs) > 0
+		for _, r := range rs {
+			ok = ok && c.TakesStyle(r)
+		}
+		if ok {
 			comp.styled = 1
 		}
 	}
@@ -1251,31 +1256,113 @@ func (c *Checker) TakesStyle(t *TypeName) bool {
 // rootComponent is the element or component a component's body shows,
 // when its views are that one call.
 func (c *Checker) rootComponent(t *TypeName) *TypeName {
+	if rs := c.rootComponents(t); len(rs) == 1 {
+		return rs[0]
+	}
+	return nil
+}
+
+// rootComponents are what a component's body shows when it's one call,
+// or an if on @platform or @debug whose branches each are, as a build
+// compiles one of them: each branch's. Nil when it shows anything else.
+func (c *Checker) rootComponents(t *TypeName) []*TypeName {
 	comp := t.Comp
 	if comp.Store || comp.Screen || comp.Body == nil || comp.Ctx == nil {
 		return nil
 	}
-	var call *syntax.CallExpr
-	for _, it := range comp.Body.Items {
+	calls := rootCalls(comp.Body.Items)
+	var out []*TypeName
+	for _, call := range calls {
+		r := c.calledComponent(comp, call)
+		if r == nil {
+			return nil
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// rootCalls is the one call items show: each branch's of an if on
+// @platform or @debug that picks one per build. Nil when they show none,
+// or more than one, or anything else.
+func rootCalls(items []syntax.Item) []*syntax.CallExpr {
+	var out []*syntax.CallExpr
+	views := 0
+	for _, it := range items {
 		switch it := it.(type) {
 		case *syntax.PropDecl, *syntax.EventDecl, *syntax.StateDecl, *syntax.LetDecl, *syntax.UseDecl,
 			*syntax.FuncDecl, *syntax.VariantDecl, *syntax.ProvideDecl, *syntax.TaskDecl, *syntax.EffectDecl, *syntax.CleanupStmt, *syntax.BadItem:
 		case *syntax.ExprStmt:
-			if call != nil {
-				return nil
-			}
+			views++
 			e, ok := unparen(it.X).(*syntax.CallExpr)
 			if !ok {
 				return nil
 			}
-			call = e
+			out = append(out, e)
+		case *syntax.IfStmt:
+			views++
+			cs := buildIfCalls(it)
+			if cs == nil {
+				return nil
+			}
+			out = append(out, cs...)
 		default:
 			return nil
 		}
 	}
-	if call == nil {
+	if views != 1 {
 		return nil
 	}
+	return out
+}
+
+// buildIfCalls is each branch's one call of an if that a build decides
+// (its condition only @platform's and @debug's comparisons), with an
+// else; nil otherwise.
+func buildIfCalls(s *syntax.IfStmt) []*syntax.CallExpr {
+	if s.Else == nil || !buildCond(s.Cond) {
+		return nil
+	}
+	then := rootCalls(s.Then.Items)
+	if then == nil {
+		return nil
+	}
+	var rest []*syntax.CallExpr
+	switch e := s.Else.(type) {
+	case *syntax.IfStmt:
+		rest = buildIfCalls(e)
+	case *syntax.Block:
+		rest = rootCalls(e.Items)
+	}
+	if rest == nil {
+		return nil
+	}
+	return append(then, rest...)
+}
+
+// buildCond reports whether e is decided as the program compiles:
+// @debug, a comparison of @platform with a case, and !, && and || of
+// them.
+func buildCond(e syntax.Expr) bool {
+	switch x := unparen(e).(type) {
+	case *syntax.AtExpr:
+		return x.Name == "debug"
+	case *syntax.UnaryExpr:
+		return x.Op == syntax.NOT && buildCond(x.X)
+	case *syntax.BinaryExpr:
+		switch x.Op {
+		case syntax.LAND, syntax.LOR:
+			return buildCond(x.X) && buildCond(x.Y)
+		case syntax.EQL, syntax.NEQ:
+			return IsPlatformConst(x.X) || IsPlatformConst(x.Y)
+		}
+	}
+	return false
+}
+
+// calledComponent is the element or component call calls, in comp's
+// scope.
+func (c *Checker) calledComponent(comp *Component, call *syntax.CallExpr) *TypeName {
 	var o Object
 	switch f := call.Fun.(type) {
 	case *syntax.Ident:

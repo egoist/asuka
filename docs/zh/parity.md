@@ -44,7 +44,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 颜色选择器 | `ColorPicker` | 社区方案 | ✓ `ColorPicker`（`UIColorWell`；Android 没有系统颜色选择器，所以用一个带调色板的 Material 对话框，支持不透明度；`NSColorWell`、Windows 的颜色对话框、`GtkColorDialogButton`、`<input type="color">`） |
 | 图标 | SF Symbols | `@expo/vector-icons` | ✓ `Symbol`（iOS 和 Mac 上用 SF Symbols；同样的名字在 Android 和 Web 上对应 Material Symbols，在 Windows 上对应 Segoe Fluent Icons，在 Linux 上对应图标主题里的图标或 Material Symbols：这些平台支持的是一组精选图标）；SVG 图标用 `std/svg` 以矢量方式绘制 |
 | 图片（远程加载、缓存、占位图） | `AsyncImage` | `expo-image` | ✓ `Image`（`placeholder`，BlurHash 和 ThumbHash 占位图（`blurHash`、`thumbHash`），淡入的 `transition`；在内存里缓存，iOS 和 Android 上还会缓存到磁盘；解码用各平台自己的解码器：ImageIO、`ImageDecoder`、`NSImage`、WIC、GDK 的加载器、浏览器，所以平台能读的 WebP、HEIC 和 AVIF 都能显示；动图 GIF、APNG 和 WebP 在所有平台上都能播放，用 `animated` 控制；SVG 在 Mac、Linux 和 Web 上可用） |
-| Lottie 动画 | 社区方案（lottie-ios） | `lottie-react-native` | ◐ `std/lottie` 的 `lottie.View`（lottie-ios、lottie-android、lottie-web：JSON 和 dotLottie，`playing`、`loop`、`speed`，可读可写的 `progress`，`segment`、`marker`，按 keypath 的 `overrides`）；Windows 和 Linux 上暂不支持，只显示一个空白区域 |
+| Lottie 动画 | 社区方案（lottie-ios） | `lottie-react-native` | ✓ `std/lottie` 的 `lottie.View`（lottie-ios、lottie-android、lottie-web：JSON 和 dotLottie，`playing`、`loop`、`speed`，可读可写的 `progress`，`segment`、`marker`，按 keypath 的 `overrides`）；在 Windows 和 Linux 上是 Asuka 自己在 `Canvas` 上的播放器：形状、渐变、修剪路径、中继器、星形、预合成和 Alpha 遮罩，不支持蒙版、图片和文字 |
 | 视频 | `VideoPlayer` | `expo-video` | ✓ `Video`（iOS 和 Mac 上用 AVKit，Android 上用 Media3，Windows 上是 WebView2 里的 `<video>`，Linux 上是 `GtkVideo`（GStreamer），Web 上用 `<video>`） |
 | 网页内容 | `WKWebView` | `react-native-webview` | ✓ `WebView`（iOS 和 Mac 上用 `WKWebView`，Android 的 `WebView`，Windows 上用 WebView2，Linux 上用 WebKitGTK：加载 URL 或 HTML，双向传递消息，在页面脚本之前运行脚本（`preload`），拦截请求，页面状态和历史记录，下载，新窗口，每一个请求，脚本的返回值，`webview.cookies(url)`；Web 上是 `<iframe>`，以上功能只对应用自己站点的页面完全可用）；`platform/js` 可以在屏幕外运行 JavaScript |
 | 地图 | `Map` | `expo-maps` | ✓ `platform/maps` 的 `maps.View`（iOS 和 Mac 上用 MapKit，Android 上用 Google Maps，Windows、Linux（libshumate）和 Web 上用 OpenStreetMap 的瓦片：区域、标记、用户位置、点按） |
@@ -242,4 +242,4 @@ MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览�
 
 ## 尚未支持
 
-按应用最常缺少的程度排序：应用自定义布局的小组件（目前只有一种模板），以及 OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了）。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Windows 和 Linux 上的语音转文字。
+按应用最常缺少的程度排序：应用自定义布局的小组件（目前只有一种模板），以及 OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了）。Windows 和 Linux 上的语音转文字。

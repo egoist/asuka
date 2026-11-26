@@ -42,7 +42,7 @@ import kotlin.math.sqrt
 private val loader = Executors.newFixedThreadPool(2)
 private val main = Handler(Looper.getMainLooper())
 
-private class LottiePlayer(private val events: ViewEvents) : View {
+private class LottiePlayer(private val events: PlayerEvents) : Player {
     private val lottie = object : LottieAnimationView(events.context) {
         // The overrides' colors follow night mode.
         override fun onConfigurationChanged(c: Configuration) {
@@ -405,4 +405,4 @@ private fun ease(curve: Long, damping: Double, x: Double, seconds: Double): Doub
     }
 }
 
-fun makeView(events: ViewEvents): View = LottiePlayer(events)
+fun makePlayer(events: PlayerEvents): Player = LottiePlayer(events)

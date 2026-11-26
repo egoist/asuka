@@ -186,7 +186,7 @@ const fits = ["xMidYMid meet", "xMidYMid slice", "none", "xMidYMid meet"];
 
 const fitModes = { [Fit.contain]: 0, [Fit.cover]: 1, [Fit.stretch]: 2, [Fit.center]: 3 };
 
-export function makeView(events) {
+export function makePlayer(events) {
   const el = document.createElement("div");
   el.style.cssText = "position:relative;overflow:hidden";
   let source = "", data = null, animationId = "", mode = 0, loop = false;

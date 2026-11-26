@@ -1,0 +1,96 @@
+import std/archive
+import std/math
+
+// A document: 100×50 at 30 fps, frames 0 to 60, one shape layer whose
+// opacity eases from 0 at frame 0 to 100 at frame 30 (linear), then holds
+// at 40 from frame 40, and a marker.
+let doc = """
+\{"v":"5.7.0","fr":30,"ip":0,"op":60,"w":100,"h":50,
+ "markers":[\{"cm":"intro","tm":10,"dr":20}],
+ "layers":[\{"ty":4,"nm":"box","ind":1,"ip":0,"op":60,"st":0,
+   "ks":\{"o":\{"a":1,"k":[
+     \{"t":0,"s":[0],"o":\{"x":[0],"y":[0]},"i":\{"x":[1],"y":[1]}},
+     \{"t":30,"s":[100],"h":1},
+     \{"t":40,"s":[40]}]}},
+   "shapes":[\{"ty":"rc","nm":"r","p":\{"a":0,"k":[50,25]},"s":\{"a":0,"k":[20,10]},"r":\{"a":0,"k":0}},
+     \{"ty":"fl","nm":"f","c":\{"a":0,"k":[1,0,0,1]},"o":\{"a":0,"k":100}}]}]}
+"""
+
+fn near(a: float, b: float) -> bool = abs(a - b) < 1e-3
+
+test "a document's size, frames, layers and markers" {
+  let a = try readAnim(doc)
+  expect(a.w == 100 && a.h == 50 && a.fr == 30 && a.ip == 0 && a.op == 60)
+  expect(a.layers.count() == 1)
+  expect(a.layers[0].name == "box" && a.layers[0].items.count() == 2)
+  expect(a.markers.count() == 1 && a.markers[0].name == "intro")
+}
+
+test "what isn't an animation says so" {
+  var said = ""
+  do {
+    let a = try readAnim(r#"{"w":1}"#)
+    said = "read {a.w}"
+  } catch e {
+    said = e.message
+  }
+  expect(said == "not a Lottie animation (no layers)")
+}
+
+test "keyframes: eased, then held" {
+  let a = try readAnim(doc)
+  let o = a.layers[0].tf.opacity
+  expect(near(at1(o, -5), 0))
+  expect(near(at1(o, 15), 50))
+  expect(near(at1(o, 30), 100))
+  expect(near(at1(o, 39), 100))
+  expect(near(at1(o, 50), 40))
+}
+
+test "easing: After Effects' cubic Bézier" {
+  expect(ease(0.42, 0, 0.58, 1, 0) == 0)
+  expect(ease(0.42, 0, 0.58, 1, 1) == 1)
+  expect(near(ease(0.42, 0, 0.58, 1, 0.5), 0.5))
+  // Ease in: slow at first.
+  expect(ease(0.42, 0, 1, 1, 0.25) < 0.25)
+  expect(near(ease(0.3, 0.3, 0.7, 0.7, 0.2), 0.2))
+}
+
+test "a trim path keeps the part asked for" {
+  let segs = [line(0, 0, 100, 0, true)]
+  let half = trimmed(segs, 0.25, 0.75)
+  expect(half.count() > 0)
+  expect(near(half[0].x0, 25))
+  expect(near(half[half.count() - 1].x, 75))
+  // Past the end, it wraps to the start: two pieces.
+  let wrap = trimmed(segs, 0.75, 1.25)
+  expect(near(wrap[0].x0, 75))
+  expect(near(wrap[wrap.count() - 1].x, 25))
+  expect(wrap.filter(s => s.start).count() == 2)
+  expect(trimmed(segs, 0, 1).count() > 0)
+}
+
+test "a matrix times its inverse is the identity" {
+  let tf = Transform(position: Prop(value: [10, 20]), scale: Prop(value: [200, 50]), rotation: Prop(value: [30]))
+  let m = matrixOf(tf, 0)
+  let i = times(m, inverse(m))
+  expect(near(i.a, 1) && near(i.b, 0) && near(i.c, 0) && near(i.d, 1) && near(i.tx, 0) && near(i.ty, 0))
+}
+
+test "what plays: a marker's frames, a segment's, or all of them" {
+  let a = try readAnim(doc)
+  expect(rangeOf(a, Segment(), "intro") == (10.0, 30.0))
+  expect(rangeOf(a, Segment(from: 5, to: 15), "") == (5.0, 15.0))
+  expect(rangeOf(a, Segment(), "missing") == (0.0, 60.0))
+}
+
+test "a dotLottie's animation: the one asked for, or the manifest's first" {
+  let z = try archive.encode([
+    archive.File(name: "manifest.json", data: r#"{"animations":[{"id":"b"}]}"#.bytes()),
+    archive.File(name: "animations/a.json", data: "A".bytes()),
+    archive.File(name: "animations/b.json", data: "B".bytes()),
+  ])
+  expect(try dotLottie(z, "") == "B")
+  expect(try dotLottie(z, "a") == "A")
+  expect(try dotLottie(z, "zzz") == "A")
+}

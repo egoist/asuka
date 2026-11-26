@@ -42,6 +42,33 @@ component Pair {
   Text("b")
 }
 
+// One element on each platform: an if on @platform picks it as the
+// program compiles, so the caller's style goes on it.
+component PerPlatform {
+  if @platform == .windows || @platform == .linux {
+    Text("a")
+  } else {
+    View {}
+  }
+}
+
+// An if decided as the app runs, or one without an else, shows one
+// element or another, or none.
+component Either {
+  state on = false
+  if on {
+    Text("a")
+  } else {
+    View {}
+  }
+}
+
+component OnlyOne {
+  if @platform == .iOS {
+    Text("a")
+  }
+}
+
 component Probe {
   prop style = 1 // ERROR "style is the style list every element takes"
   state on = false
@@ -63,6 +90,9 @@ component Probe {
     View { style card } // ERROR "write style: card: an element applies styles with the style: prop"
     View { pressed { style: withVariant } } // ERROR "style withVariant holds variants"
     Pair() { style: card } // ERROR "Pair doesn't take the style props: a component takes them when its body is one element"
+    PerPlatform() { style: card; width: 20 }
+    Either() { style: card } // ERROR "Either doesn't take the style props"
+    OnlyOne() { style: card } // ERROR "OnlyOne doesn't take the style props"
     Text("x") { style: [if on { card } else if k > 1 { chip(.red) }] }
   }
 }

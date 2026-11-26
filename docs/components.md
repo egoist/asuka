@@ -34,7 +34,7 @@ query`. See [Concepts](concepts.md).
 | `ProgressRing` | drawn as SwiftUI's circular gauge; `UIActivityIndicatorView` without a value | `CircularProgressIndicator` | `NSProgressIndicator`, spinning, at 16 and 32 points; drawn in its style at other sizes or in a `color` | Fluent's `ProgressRing`, drawn | drawn in GNOME's style; `AdwSpinner` without a value | an SVG ring |
 | `Activity` | `UIActivityIndicatorView` | `CircularProgressIndicator` | `NSProgressIndicator`, spinning | Fluent's progress ring, drawn | `AdwSpinner` (`GtkSpinner` before libadwaita 1.6) | a spinner, drawn |
 | `Image` | `UIImageView` | `ImageView` | `NSImageView` | drawn with GDI+ | drawn from GDK textures | `<img>` |
-| `lottie.View` | lottie-ios | lottie-android | lottie-ios | nothing yet (an empty box) | nothing yet (an empty box) | lottie-web |
+| `lottie.View` | lottie-ios | lottie-android | lottie-ios | Asuka's on a `Canvas` | Asuka's on a `Canvas` | lottie-web |
 
 | `Symbol` | SF Symbols | Material Symbols | SF Symbols | Segoe Fluent Icons | the icon theme's, else Material Symbols | Material Symbols |
 | `Video` | `AVPlayerViewController` | Media3's player | `AVPlayerView` | a `<video>` in WebView2 | `GtkVideo` (GStreamer) | `<video>` |
@@ -894,8 +894,10 @@ ratio. `seek` takes seconds from the start.
 `std/lottie` plays Lottie animations (After Effects animations
 exported as Lottie JSON, `.json`, or as dotLottie, `.lottie`) with each
 platform's own player: lottie-ios on iOS and the Mac, lottie-android on
-Android, lottie-web on the web. Windows and Linux have no player to call
-yet: there the view is an empty box.
+Android, lottie-web on the web. Windows and Linux have no player of
+their own, so Asuka plays it there on a `Canvas`: shapes, gradients,
+trim paths, repeaters, stars, precompositions and alpha mattes. Masks,
+the other mattes, images and text aren't drawn there.
 
 ```asuka
 import std/lottie

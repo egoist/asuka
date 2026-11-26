@@ -63,6 +63,20 @@ component Card(title: string) {
 Card("Plan") { padding: 8; width: 240 }   // padding 为 8，radius 为 12
 ```
 
+主体是一个基于 `@platform`（或 `@debug`）、带 `else` 的 `if`，并且每个分支都是一个元素的组件也一样：每次构建只编译其中一个分支，调用方的样式就落在它上面。
+
+```asuka
+component Player(source: string) {
+  if @platform == .windows || @platform == .linux {
+    CanvasPlayer(source)
+  } else {
+    NativePlayer(source)
+  }
+}
+
+Player("intro.json") { width: 200 }
+```
+
 ## 组件声明的变体
 
 只显示一个元素的组件，可以给自己的状态起名字，交给调用方去设置样式：`variant name = condition`，一个像 `let` 一样随时保持最新的 bool。调用方在代码块里写 `name { … }`，条件成立时，里面的样式属性就叠加到那个元素上，就像 `View` 被按下时叠加 `pressed { … }` 一样：

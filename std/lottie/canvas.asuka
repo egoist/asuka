@@ -1,0 +1,1023 @@
+// A Lottie player drawn on a Canvas, for the platforms with no Lottie
+// player of their own (Windows and Linux, where View plays with it). The
+// document is read once into the model below; each frame, its layers'
+// properties are evaluated at the frame's time and drawn: shape layers
+// (groups, rectangles, ellipses, paths, fills, strokes, gradients, trim
+// paths, their transforms), solids, precompositions and null parents,
+// with keyframes eased as After Effects' cubic Béziers, held ones too.
+// An alpha track matte clips to its layer's shapes; masks, the other
+// mattes, images, text and effects aren't drawn.
+
+import std/archive
+import std/fs
+import std/http
+import std/json
+import std/math
+
+// ---- The model ----
+
+/// A property: its value, or its keyframes. A value is a list of floats:
+/// a number, a point, a color, or a path flattened (closed, count, then
+/// each vertex's x, y, in tangent's, out tangent's).
+struct Prop {
+  value: [float] = []
+  keys: [Key] = []
+}
+
+struct Key {
+  t: float
+  s: [float] = []
+  e: [float] = []
+  // The easing out of it (o) and into the next (i), x and y from 0 to 1.
+  ox: float = 0
+  oy: float = 0
+  ix: float = 1
+  iy: float = 1
+  hold: bool = false
+}
+
+struct Transform {
+  anchor: Prop = Prop()
+  position: Prop = Prop()
+  // A position split into x and y.
+  px: Prop? = none
+  py: Prop? = none
+  scale: Prop = Prop(value: [100, 100])
+  rotation: Prop = Prop()
+  opacity: Prop = Prop(value: [100])
+}
+
+struct Stop {
+  count: int = 0
+  colors: Prop = Prop()
+}
+
+enum Item {
+  group(name: string, items: [Item], tf: Transform)
+  rect(name: string, p: Prop, s: Prop, r: Prop)
+  ellipse(name: string, p: Prop, s: Prop)
+  path(name: string, shape: Prop)
+  fill(name: string, color: Prop, opacity: Prop, evenOdd: bool)
+  stroke(name: string, color: Prop, opacity: Prop, width: Prop, cap: LineCap, join: LineJoin)
+  gradient(name: string, stroke: bool, stops: Stop, start: Prop, end: Prop, radial: bool, opacity: Prop, width: Prop, cap: LineCap, join: LineJoin)
+  trim(start: Prop, end: Prop, offset: Prop)
+  // A star (points and two radii) or a polygon (sides and a radius).
+  star(name: string, p: Prop, points: Prop, inner: Prop, outer: Prop, rotation: Prop, polygon: bool)
+  // The items before it, drawn copies times, each one step of tf further.
+  repeater(copies: Prop, offset: Prop, tf: Transform, startOpacity: Prop, endOpacity: Prop)
+  other
+}
+
+struct Layer {
+  name: string = ""
+  ind: int = -1
+  parent: int = -1
+  kind: int = 4
+  ip: float = 0
+  op: float = 0
+  st: float = 0
+  sr: float = 1
+  tf: Transform = Transform()
+  items: [Item] = []
+  ref: string = ""
+  w: float = 0
+  h: float = 0
+  color: [float] = []
+  hidden: bool = false
+  // A track matte's own layer (td): it shapes the layer under it, which
+  // isn't drawn through it here, and isn't drawn itself.
+  matte: bool = false
+  // Its track matte (tt): 1 the layer above's alpha, which clips it here.
+  mattedBy: int = 0
+}
+
+/// A document read: its size, frames, layers and precompositions.
+struct Anim {
+  w: float = 0
+  h: float = 0
+  fr: float = 30
+  ip: float = 0
+  op: float = 0
+  layers: [Layer] = []
+  comps: [string: [Layer]] = [:]
+  markers: [Marker] = []
+}
+
+// ---- Reading ----
+
+fn num(v: json.Value?, d: float = 0) -> float = v?.asFloat() ?? d
+
+fn str(v: json.Value?) -> string = v?.asString() ?? ""
+
+fn floats(v: json.Value?) -> [float] {
+  if let x = v { return floatsOf(x) }
+  return []
+}
+
+fn floatsOf(x: json.Value) -> [float] {
+  if let n = x.asFloat() { return [n] }
+  if let a = x.asArray() {
+    // A path's value: [ {i, o, v, c} ].
+    if let first = a.first(), first.get("v") != none { return shapeOf(first) }
+    return a.map(e => e.asFloat() ?? 0)
+  }
+  if x.get("v") != none { return shapeOf(x) }
+  return []
+}
+
+/// A path's vertices flattened: closed, count, then x, y, in, out.
+fn shapeOf(v: json.Value) -> [float] {
+  let vs = v.get("v")?.asArray() ?? []
+  let ins = v.get("i")?.asArray() ?? []
+  let outs = v.get("o")?.asArray() ?? []
+  var out: [float] = [if v.get("c")?.asBool() ?? false { 1 } else { 0 }, float(vs.count())]
+  for (j, p) in vs.enumerated() {
+    let i = ins.get(j)
+    let o = outs.get(j)
+    out.push(num(p.at(0)))
+    out.push(num(p.at(1)))
+    out.push(num(i?.at(0)))
+    out.push(num(i?.at(1)))
+    out.push(num(o?.at(0)))
+    out.push(num(o?.at(1)))
+  }
+  return out
+}
+
+fn first(v: json.Value?, d: float) -> float {
+  if let x = v {
+    if let n = x.asFloat() { return n }
+    return num(x.at(0), d)
+  }
+  return d
+}
+
+fn propOf(v: json.Value?, d: [float] = []) -> Prop {
+  if let x = v { return propFrom(x, d) }
+  return Prop(value: d)
+}
+
+fn propFrom(x: json.Value, d: [float]) -> Prop {
+  let k = x.get("k")
+  if let a = k?.asArray(), let f = a.first(), f.get("t") != none {
+    var keys: [Key] = []
+    for e in a {
+      keys.push(Key(t: num(e.get("t")), s: floats(e.get("s")), e: floats(e.get("e")),
+        ox: first(e.get("o")?.get("x"), 0), oy: first(e.get("o")?.get("y"), 0),
+        ix: first(e.get("i")?.get("x"), 1), iy: first(e.get("i")?.get("y"), 1),
+        hold: num(e.get("h")) == 1))
+    }
+    return Prop(keys: keys)
+  }
+  let value = floats(k)
+  return Prop(value: if value.isEmpty() { d } else { value })
+}
+
+fn transformOf(v: json.Value?) -> Transform {
+  if let x = v { return transformFrom(x) }
+  return Transform()
+}
+
+fn transformFrom(x: json.Value) -> Transform {
+  let p = x.get("p")
+  let split = p?.get("s")?.asBool() ?? false
+  return Transform(
+    anchor: propOf(x.get("a"), [0, 0]),
+    position: propOf(p, [0, 0]),
+    px: if split { propOf(p?.get("x"), [0]) } else { none },
+    py: if split { propOf(p?.get("y"), [0]) } else { none },
+    scale: propOf(x.get("s"), [100, 100]),
+    rotation: propOf(x.get("r") ?? x.get("rz"), [0]),
+    opacity: propOf(x.get("o"), [100]),
+  )
+}
+
+fn capOf(n: float) -> LineCap = if n == 2 { .round } else if n == 3 { .square } else { .butt }
+
+fn joinOf(n: float) -> LineJoin = if n == 2 { .round } else if n == 3 { .bevel } else { .miter }
+
+fn itemsOf(v: json.Value?) -> [Item] {
+  var out: [Item] = []
+  for x in v?.asArray() ?? [] {
+    if x.get("hd")?.asBool() ?? false { continue }
+    let name = str(x.get("nm"))
+    let it: Item = match str(x.get("ty")) {
+      "gr" => {
+        let kids = x.get("it")?.asArray() ?? []
+        var tf = Transform()
+        for k in kids {
+          if str(k.get("ty")) == "tr" { tf = transformOf(k) }
+        }
+        .group(name: name, items: itemsOf(x.get("it")), tf: tf)
+      }
+      "rc" => .rect(name: name, p: propOf(x.get("p"), [0, 0]), s: propOf(x.get("s"), [0, 0]), r: propOf(x.get("r"), [0]))
+      "el" => .ellipse(name: name, p: propOf(x.get("p"), [0, 0]), s: propOf(x.get("s"), [0, 0]))
+      "sh" => .path(name: name, shape: propOf(x.get("ks")))
+      "fl" => .fill(name: name, color: propOf(x.get("c"), [0, 0, 0, 1]), opacity: propOf(x.get("o"), [100]), evenOdd: num(x.get("r"), 1) == 2)
+      "st" => .stroke(name: name, color: propOf(x.get("c"), [0, 0, 0, 1]), opacity: propOf(x.get("o"), [100]), width: propOf(x.get("w"), [1]),
+        cap: capOf(num(x.get("lc"), 1)), join: joinOf(num(x.get("lj"), 1)))
+      "gf" | "gs" => .gradient(name: name, stroke: str(x.get("ty")) == "gs",
+        stops: Stop(count: int(num(x.get("g")?.get("p"))), colors: propOf(x.get("g")?.get("k"))),
+        start: propOf(x.get("s"), [0, 0]), end: propOf(x.get("e"), [0, 0]), radial: num(x.get("t"), 1) == 2,
+        opacity: propOf(x.get("o"), [100]), width: propOf(x.get("w"), [1]),
+        cap: capOf(num(x.get("lc"), 1)), join: joinOf(num(x.get("lj"), 1)))
+      "tm" => .trim(start: propOf(x.get("s"), [0]), end: propOf(x.get("e"), [100]), offset: propOf(x.get("o"), [0]))
+      "sr" => .star(name: name, p: propOf(x.get("p"), [0, 0]), points: propOf(x.get("pt"), [5]), inner: propOf(x.get("ir"), [0]),
+        outer: propOf(x.get("or"), [0]), rotation: propOf(x.get("r"), [0]), polygon: num(x.get("sy"), 1) == 2)
+      "rp" => .repeater(copies: propOf(x.get("c"), [1]), offset: propOf(x.get("o"), [0]), tf: transformOf(x.get("tr")),
+        startOpacity: propOf(x.get("tr")?.get("so"), [100]), endOpacity: propOf(x.get("tr")?.get("eo"), [100]))
+      _ => .other
+    }
+    out.push(it)
+  }
+  return out
+}
+
+fn layersOf(v: json.Value?) -> [Layer] {
+  var out: [Layer] = []
+  for x in v?.asArray() ?? [] {
+    let color = Color.parse(str(x.get("sc")))
+    out.push(Layer(
+      name: str(x.get("nm")), ind: int(num(x.get("ind"), -1)), parent: int(num(x.get("parent"), -1)),
+      kind: int(num(x.get("ty"), 4)), ip: num(x.get("ip")), op: num(x.get("op"), 1e9), st: num(x.get("st")),
+      sr: num(x.get("sr"), 1), tf: transformOf(x.get("ks")), items: itemsOf(x.get("shapes")), ref: str(x.get("refId")),
+      w: num(x.get("w"), num(x.get("sw"))), h: num(x.get("h"), num(x.get("sh"))),
+      color: [], hidden: x.get("hd")?.asBool() ?? false, matte: num(x.get("td")) == 1, mattedBy: int(num(x.get("tt"))),
+    ))
+    if let c = color {
+      out[out.count() - 1].color = channels(c)
+    }
+  }
+  return out
+}
+
+/// A color's channels from 0 to 1 (its hex's).
+fn channels(c: Color) -> [float] {
+  let h = c.hex()
+  let n = h.trimPrefix("#").toInt(radix: 16) ?? 0
+  return [float((n >> 16) & 255) / 255, float((n >> 8) & 255) / 255, float(n & 255) / 255, 1]
+}
+
+/// The animation text says, or an error saying why it isn't one.
+fn readAnim(text: string) throws -> Anim {
+  let v = try json.parse(text)
+  if v.get("layers") == none {
+    throw Error("not a Lottie animation (no layers)")
+  }
+  var comps: [string: [Layer]] = [:]
+  for a in v.get("assets")?.asArray() ?? [] {
+    if a.get("layers") != none {
+      comps[str(a.get("id"))] = layersOf(a.get("layers"))
+    }
+  }
+  var markers: [Marker] = []
+  for m in v.get("markers")?.asArray() ?? [] {
+    markers.push(Marker(name: str(m.get("cm")), start: num(m.get("tm")), duration: num(m.get("dr"))))
+  }
+  return Anim(w: num(v.get("w")), h: num(v.get("h")), fr: num(v.get("fr"), 30), ip: num(v.get("ip")), op: num(v.get("op")),
+    layers: layersOf(v.get("layers")), comps: comps, markers: markers)
+}
+
+// ---- Evaluating ----
+
+/// The y of the cubic Bézier from (0, 0) to (1, 1) through (x1, y1) and
+/// (x2, y2) at x: After Effects' easing.
+fn ease(x1: float, y1: float, x2: float, y2: float, x: float) -> float {
+  if x <= 0 { return 0 }
+  if x >= 1 { return 1 }
+  if x1 == y1 && x2 == y2 { return x }
+  let bx = (u: float) => 3 * (1 - u) * (1 - u) * u * x1 + 3 * (1 - u) * u * u * x2 + u * u * u
+  var lo = 0.0
+  var hi = 1.0
+  var u = x
+  for _ in 0..<24 {
+    let v = bx(u)
+    if abs(v - x) < 1e-5 { break }
+    if v < x { lo = u } else { hi = u }
+    u = (lo + hi) / 2
+  }
+  return 3 * (1 - u) * (1 - u) * u * y1 + 3 * (1 - u) * u * u * y2 + u * u * u
+}
+
+fn lerp(a: [float], b: [float], u: float) -> [float] {
+  if a.count() != b.count() { return if u < 1 { a } else { b } }
+  var out: [float] = []
+  for i in 0..<a.count() { out.push(a[i] + (b[i] - a[i]) * u) }
+  return out
+}
+
+/// p at frame t.
+fn at(p: Prop, t: float) -> [float] {
+  let k = p.keys
+  if k.isEmpty() { return p.value }
+  if t <= k[0].t { return k[0].s }
+  for i in 0..<k.count() - 1 {
+    let a = k[i]
+    let b = k[i + 1]
+    if t < b.t {
+      if a.hold { return a.s }
+      let end = if a.e.isEmpty() { b.s } else { a.e }
+      if b.t <= a.t { return end }
+      return lerp(a.s, end, ease(a.ox, a.oy, a.ix, a.iy, (t - a.t) / (b.t - a.t)))
+    }
+  }
+  let last = k[k.count() - 1]
+  if !last.s.isEmpty() { return last.s }
+  if k.count() > 1 {
+    let prev = k[k.count() - 2]
+    return if prev.e.isEmpty() { prev.s } else { prev.e }
+  }
+  return []
+}
+
+fn at1(p: Prop, t: float, d: float = 0) -> float = at(p, t).get(0) ?? d
+
+/// An affine matrix: x' = a x + c y + tx, y' = b x + d y + ty.
+struct Matrix {
+  a: float = 1
+  b: float = 0
+  c: float = 0
+  d: float = 1
+  tx: float = 0
+  ty: float = 0
+}
+
+/// m then n: n applied after m.
+fn times(m: Matrix, n: Matrix) -> Matrix = Matrix(
+  a: n.a * m.a + n.c * m.b, b: n.b * m.a + n.d * m.b,
+  c: n.a * m.c + n.c * m.d, d: n.b * m.c + n.d * m.d,
+  tx: n.a * m.tx + n.c * m.ty + n.tx, ty: n.b * m.tx + n.d * m.ty + n.ty,
+)
+
+/// tf at t: translate(position) · rotate · scale · translate(-anchor).
+fn matrixOf(tf: Transform, t: float) -> Matrix {
+  let a = at(tf.anchor, t)
+  let s = at(tf.scale, t)
+  var px = at(tf.position, t).get(0) ?? 0
+  var py = at(tf.position, t).get(1) ?? 0
+  if let x = tf.px { px = at1(x, t) }
+  if let y = tf.py { py = at1(y, t) }
+  let r = at1(tf.rotation, t) * math.pi / 180
+  let sx = (s.get(0) ?? 100) / 100
+  let sy = (s.get(1) ?? 100) / 100
+  let cs = math.cos(r)
+  let sn = math.sin(r)
+  let ax = a.get(0) ?? 0
+  let ay = a.get(1) ?? 0
+  // rotate(scale(p - anchor)) + position
+  return Matrix(a: cs * sx, b: sn * sx, c: -sn * sy, d: cs * sy,
+    tx: px - (cs * sx * ax - sn * sy * ay), ty: py - (sn * sx * ax + cs * sy * ay))
+}
+
+// ---- Drawing ----
+
+/// What draws a frame: the document, the overrides, light or dark.
+struct Scene {
+  anim: Anim
+  overrides: [Override] = []
+  dark: bool = false
+}
+
+/// A path's segments: each a cubic from (x0, y0) through two controls
+/// to (x, y), and whether a new figure starts with it.
+struct Seg {
+  x0: float
+  y0: float
+  c1x: float
+  c1y: float
+  c2x: float
+  c2y: float
+  x: float
+  y: float
+  start: bool
+  closes: bool
+}
+
+fn cubicSegs(v: [float]) -> [Seg] {
+  if v.count() < 2 { return [] }
+  let closed = v[0] == 1
+  let n = int(v[1])
+  if n < 1 || v.count() < 2 + n * 6 { return [] }
+  var out: [Seg] = []
+  let last = if closed { n } else { n - 1 }
+  for j in 0..<last {
+    let a = 2 + (j % n) * 6
+    let b = 2 + ((j + 1) % n) * 6
+    out.push(Seg(x0: v[a], y0: v[a + 1], c1x: v[a] + v[a + 4], c1y: v[a + 1] + v[a + 5], c2x: v[b] + v[b + 2], c2y: v[b + 1] + v[b + 3],
+      x: v[b], y: v[b + 1], start: j == 0, closes: closed && j == last - 1))
+  }
+  if out.isEmpty() {
+    out.push(Seg(x0: v[2], y0: v[3], c1x: v[2], c1y: v[3], c2x: v[2], c2y: v[3], x: v[2], y: v[3], start: true, closes: false))
+  }
+  return out
+}
+
+// Lottie's own constant for a circle's quarter as a cubic.
+let kappa = 0.5519150244935105
+
+fn rectSegs(p: [float], s: [float], r: float) -> [Seg] {
+  let cx = p.get(0) ?? 0
+  let cy = p.get(1) ?? 0
+  let w = s.get(0) ?? 0
+  let h = s.get(1) ?? 0
+  let x0 = cx - w / 2
+  let y0 = cy - h / 2
+  let rr = min(r, min(w, h) / 2)
+  if rr <= 0 {
+    return closedPoly([[x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h], [x0, y0]])
+  }
+  let k = rr * (1 - kappa)
+  // Clockwise from the top right corner's start, as After Effects draws.
+  return [
+    line(x0 + w - rr, y0, x0 + w - rr, y0, true),
+    Seg(x0: x0 + w - rr, y0: y0, c1x: x0 + w - k, c1y: y0, c2x: x0 + w, c2y: y0 + k, x: x0 + w, y: y0 + rr, start: false, closes: false),
+    line(x0 + w, y0 + rr, x0 + w, y0 + h - rr, false),
+    Seg(x0: x0 + w, y0: y0 + h - rr, c1x: x0 + w, c1y: y0 + h - k, c2x: x0 + w - k, c2y: y0 + h, x: x0 + w - rr, y: y0 + h, start: false, closes: false),
+    line(x0 + w - rr, y0 + h, x0 + rr, y0 + h, false),
+    Seg(x0: x0 + rr, y0: y0 + h, c1x: x0 + k, c1y: y0 + h, c2x: x0, c2y: y0 + h - k, x: x0, y: y0 + h - rr, start: false, closes: false),
+    line(x0, y0 + h - rr, x0, y0 + rr, false),
+    Seg(x0: x0, y0: y0 + rr, c1x: x0, c1y: y0 + k, c2x: x0 + k, c2y: y0, x: x0 + rr, y: y0, start: false, closes: false),
+    Seg(x0: x0 + rr, y0: y0, c1x: x0 + rr, c1y: y0, c2x: x0 + w - rr, c2y: y0, x: x0 + w - rr, y: y0, start: false, closes: true),
+  ]
+}
+
+fn line(x0: float, y0: float, x: float, y: float, start: bool) -> Seg = Seg(x0: x0, y0: y0, c1x: x0, c1y: y0, c2x: x, c2y: y, x: x, y: y, start: start, closes: false)
+
+fn closedPoly(ps: [[float]]) -> [Seg] {
+  var out: [Seg] = []
+  let n = ps.count()
+  for i in 0..<n {
+    let a = ps[(i + n - 1) % n]
+    let b = ps[i]
+    var s = line(a[0], a[1], b[0], b[1], i == 0)
+    s.closes = i == n - 1
+    out.push(s)
+  }
+  return out
+}
+
+fn ellipseSegs(p: [float], s: [float]) -> [Seg] {
+  let cx = p.get(0) ?? 0
+  let cy = p.get(1) ?? 0
+  let rx = (s.get(0) ?? 0) / 2
+  let ry = (s.get(1) ?? 0) / 2
+  let kx = rx * kappa
+  let ky = ry * kappa
+  // From the top, clockwise.
+  return [
+    Seg(x0: cx, y0: cy - ry, c1x: cx + kx, c1y: cy - ry, c2x: cx + rx, c2y: cy - ky, x: cx + rx, y: cy, start: true, closes: false),
+    Seg(x0: cx + rx, y0: cy, c1x: cx + rx, c1y: cy + ky, c2x: cx + kx, c2y: cy + ry, x: cx, y: cy + ry, start: false, closes: false),
+    Seg(x0: cx, y0: cy + ry, c1x: cx - kx, c1y: cy + ry, c2x: cx - rx, c2y: cy + ky, x: cx - rx, y: cy, start: false, closes: false),
+    Seg(x0: cx - rx, y0: cy, c1x: cx - rx, c1y: cy - ky, c2x: cx - kx, c2y: cy - ry, x: cx, y: cy - ry, start: false, closes: true),
+  ]
+}
+
+fn starSegs(p: [float], points: float, inner: float, outer: float, rotation: float, polygon: bool) -> [Seg] {
+  let n = max(3, int(points + 0.5))
+  let cx = p.get(0) ?? 0
+  let cy = p.get(1) ?? 0
+  let count = if polygon { n } else { n * 2 }
+  var ps: [[float]] = []
+  for k in 0..<count {
+    // From straight up, clockwise.
+    let a = (rotation - 90) * math.pi / 180 + float(k) * 2 * math.pi / float(count)
+    let r = if polygon || k % 2 == 0 { outer } else { inner }
+    ps.push([cx + r * math.cos(a), cy + r * math.sin(a)])
+  }
+  return closedPoly(ps)
+}
+
+fn bez(s: Seg, u: float) -> (float, float) {
+  let v = 1 - u
+  let x = v * v * v * s.x0 + 3 * v * v * u * s.c1x + 3 * v * u * u * s.c2x + u * u * u * s.x
+  let y = v * v * v * s.y0 + 3 * v * v * u * s.c1y + 3 * v * u * u * s.c2y + u * u * u * s.y
+  return (x, y)
+}
+
+let steps = 16
+
+/// segs trimmed to the part from a to b (fractions of their length, a
+/// wrapping past 1), as straight pieces: a trim path's.
+fn trimmed(segs: [Seg], a: float, b: float) -> [Seg] {
+  var pts: [(float, float)] = []
+  var lens: [float] = [0]
+  var starts: [bool] = []
+  for s in segs {
+    for k in 0..steps {
+      if k == 0 && !s.start && !pts.isEmpty() { continue }
+      pts.push(bez(s, float(k) / float(steps)))
+      starts.push(k == 0)
+      if pts.count() > 1 {
+        let p = pts[pts.count() - 2]
+        let q = pts[pts.count() - 1]
+        let d = if k == 0 { 0.0 } else { math.sqrt((q.0 - p.0) * (q.0 - p.0) + (q.1 - p.1) * (q.1 - p.1)) }
+        lens.push(lens[lens.count() - 1] + d)
+      }
+    }
+  }
+  let total = lens[lens.count() - 1]
+  if total <= 0 || pts.count() < 2 { return [] }
+  var ranges: [(float, float)] = []
+  if b - a >= 1 {
+    ranges = [(0, 1)]
+  } else {
+    let s = a - a.floor()
+    let e = s + (b - a)
+    if e <= 1 { ranges = [(s, e)] } else { ranges = [(s, 1), (0, e - 1)] }
+  }
+  var out: [Seg] = []
+  for (ra, rb) in ranges {
+    let from = ra * total
+    let to = rb * total
+    var started = false
+    for i in 1..<pts.count() {
+      if starts[i] { continue }
+      let l0 = lens[i - 1]
+      let l1 = lens[i]
+      if l1 < from || l0 > to || l1 <= l0 { continue }
+      let p = pts[i - 1]
+      let q = pts[i]
+      let u0 = max(0, (from - l0) / (l1 - l0))
+      let u1 = min(1, (to - l0) / (l1 - l0))
+      let x0 = p.0 + (q.0 - p.0) * u0
+      let y0 = p.1 + (q.1 - p.1) * u0
+      let x1 = p.0 + (q.0 - p.0) * u1
+      let y1 = p.1 + (q.1 - p.1) * u1
+      out.push(line(x0, y0, x1, y1, !started))
+      started = true
+    }
+  }
+  return out
+}
+
+fn build(g: Graphics, segs: [Seg]) -> Path {
+  var p = g.path()
+  for s in segs {
+    if s.start { p = p.move(s.x0, s.y0) }
+    p = p.cubic(s.c1x, s.c1y, s.c2x, s.c2y, s.x, s.y)
+    if s.closes { p = p.close() }
+  }
+  return p
+}
+
+/// A keypath's pattern matches names (a layer's, its groups', an
+/// item's) when its parts do from the start: * any one name, ** any
+/// number. It names what's under it, so it may end before the names do.
+fn matches(pattern: [string], names: [string], p: int = 0, n: int = 0) -> bool {
+  if p >= pattern.count() { return true }
+  if pattern[p] == "**" {
+    for i in n..names.count() {
+      if matches(pattern, names, p: p + 1, n: i) { return true }
+    }
+    return false
+  }
+  if n >= names.count() { return false }
+  if pattern[p] != "*" && pattern[p] != names[n] { return false }
+  return matches(pattern, names, p: p + 1, n: n + 1)
+}
+
+fn override(scene: Scene, kind: OverrideKind, names: [string]) -> Override? {
+  for o in scene.overrides {
+    if o.kind == kind && matches(o.keypath.split("."), names) { return o }
+  }
+  return none
+}
+
+fn colorOf(v: [float], alpha: float) -> Color {
+  var r = v.get(0) ?? 0
+  var g = v.get(1) ?? 0
+  var b = v.get(2) ?? 0
+  if r > 1 || g > 1 || b > 1 {
+    r = r / 255
+    g = g / 255
+    b = b / 255
+  }
+  let a = (v.get(3) ?? 1) * alpha
+  return Color.rgb(int(clamp(r) * 255 + 0.5), int(clamp(g) * 255 + 0.5), int(clamp(b) * 255 + 0.5), alpha: clamp(a))
+}
+
+fn clamp(x: float) -> float = min(1, max(0, x))
+
+/// What a group's shapes are, as they're drawn: the shapes before a paint
+/// are what it paints, trimmed by the trims after them.
+struct Geometry {
+  segs: [Seg]
+  index: int
+}
+
+fn drawItems(g: Graphics, scene: Scene, items: [Item], t: float, alpha: float, names: [string]) {
+  // A repeater draws the items before it its copies' times; those after
+  // it, under them, once.
+  for (k, it) in items.enumerated() {
+    match it {
+      .repeater(copies, offset, tf, so, eo) => {
+        var before: [Item] = []
+        var after: [Item] = []
+        for (j, x) in items.enumerated() {
+          if j < k { before.push(x) } else if j > k { after.push(x) }
+        }
+        drawItems(g, scene, after, t, alpha, names)
+        let n = max(0, int(at1(copies, t, 1) + 0.5))
+        let off = at1(offset, t)
+        let s0 = at1(so, t, 100) / 100
+        let s1 = at1(eo, t, 100) / 100
+        let step = matrixOf(tf, t)
+        for c in 0..<n {
+          // Copy c: the repeater's transform c + offset times.
+          var m = Matrix()
+          let times_ = int(float(c) + off)
+          for _ in 0..<max(0, times_) { m = times(m, step) }
+          let u = if n > 1 { float(c) / float(n - 1) } else { 0.0 }
+          g.save()
+          g.transform(m.a, m.b, m.c, m.d, m.tx, m.ty)
+          drawItems(g, scene, before, t, alpha * (s0 + (s1 - s0) * u), names)
+          g.restore()
+        }
+        return
+      }
+      _ => {}
+    }
+  }
+  var geo: [Geometry] = []
+  var trims: [(int, float, float)] = []
+  // What a trim takes: the shapes before it.
+  for (i, it) in items.enumerated() {
+    match it {
+      .trim(s, e, o) => {
+        let a = at1(s, t) / 100
+        let b = at1(e, t, 100) / 100
+        let off = at1(o, t) / 360
+        trims.push((i, min(a, b) + off, max(a, b) + off))
+      }
+      _ => {}
+    }
+  }
+  for (i, it) in items.enumerated() {
+    var segs: [Seg] = []
+    match it {
+      .rect(_, p, s, r) => segs = rectSegs(at(p, t), at(s, t), at1(r, t))
+      .ellipse(_, p, s) => segs = ellipseSegs(at(p, t), at(s, t))
+      .path(_, shape) => segs = cubicSegs(at(shape, t))
+      .star(_, p, points, inner, outer, rotation, polygon) => segs = starSegs(at(p, t), at1(points, t, 5), at1(inner, t), at1(outer, t), at1(rotation, t), polygon)
+      _ => {}
+    }
+    if segs.isEmpty() { continue }
+    for (ti, a, b) in trims {
+      if ti > i { segs = trimmed(segs, a, b) }
+    }
+    geo.push(Geometry(segs: segs, index: i))
+  }
+  // Drawn from the last item to the first: the first is on top.
+  var i = items.count() - 1
+  while i >= 0 {
+    let it = items[i]
+    match it {
+      .group(name, kids, tf) => {
+        let m = matrixOf(tf, t)
+        var a = alpha * at1(tf.opacity, t, 100) / 100
+        let path = names + [name]
+        if let o = override(scene, .opacity, path) { a = alpha * o.value }
+        g.save()
+        g.transform(m.a, m.b, m.c, m.d, m.tx, m.ty)
+        drawItems(g, scene, kids, t, a, path)
+        g.restore()
+      }
+      .fill(name, color, opacity, evenOdd) => {
+        let a = alpha * at1(opacity, t, 100) / 100
+        let c = if let o = override(scene, .color, names + [name]) { (if scene.dark { o.dark } else { o.light }).opacity(a) } else { colorOf(at(color, t), a) }
+        let path = buildAll(g, geo, i)
+        g.save()
+        g.evenOdd(evenOdd)
+        g.fill(path, c)
+        g.restore()
+      }
+      .stroke(name, color, opacity, width, cap, join) => {
+        let a = alpha * at1(opacity, t, 100) / 100
+        let c = if let o = override(scene, .color, names + [name]) { (if scene.dark { o.dark } else { o.light }).opacity(a) } else { colorOf(at(color, t), a) }
+        var w = at1(width, t, 1)
+        if let o = override(scene, .strokeWidth, names + [name]) { w = o.value }
+        if w > 0 { g.stroke(buildAll(g, geo, i), c, StrokeStyle(width: w, cap: cap, join: join)) }
+      }
+      .gradient(name, stroke, stops, start, end, radial, opacity, width, cap, join) => {
+        let a = alpha * at1(opacity, t, 100) / 100
+        let (colors, locs) = gradientStops(stops, t, a)
+        let s = at(start, t)
+        let e = at(end, t)
+        let sx = s.get(0) ?? 0
+        let sy = s.get(1) ?? 0
+        let ex = e.get(0) ?? 0
+        let ey = e.get(1) ?? 0
+        let path = buildAll(g, geo, i)
+        if radial {
+          let gr = RadialGradient(colors: colors, locations: locs, centerX: sx, centerY: sy, radius: math.sqrt((ex - sx) * (ex - sx) + (ey - sy) * (ey - sy)))
+          if stroke { g.stroke(path, gr, StrokeStyle(width: at1(width, t, 1), cap: cap, join: join)) } else { g.fill(path, gr) }
+        } else {
+          let gr = LinearGradient(colors: colors, locations: locs, startX: sx, startY: sy, endX: ex, endY: ey)
+          if stroke { g.stroke(path, gr, StrokeStyle(width: at1(width, t, 1), cap: cap, join: join)) } else { g.fill(path, gr) }
+        }
+      }
+      _ => {}
+    }
+    i -= 1
+  }
+}
+
+/// The shapes before index, in one path.
+fn buildAll(g: Graphics, geo: [Geometry], index: int) -> Path {
+  var segs: [Seg] = []
+  for x in geo {
+    if x.index < index { segs = segs + x.segs }
+  }
+  return build(g, segs)
+}
+
+/// A gradient's colors and their places at t: count stops of a position
+/// and a color, then maybe the alphas' (a position and an alpha each).
+fn gradientStops(stops: Stop, t: float, alpha: float) -> ([Color], [float]) {
+  let v = at(stops.colors, t)
+  var colors: [Color] = []
+  var locs: [float] = []
+  let n = stops.count
+  for k in 0..<n {
+    if v.count() < k * 4 + 4 { break }
+    var a = alpha
+    let ai = n * 4 + k * 2 + 1
+    if v.count() > ai { a = alpha * v[ai] }
+    locs.push(v[k * 4])
+    colors.push(colorOf([v[k * 4 + 1], v[k * 4 + 2], v[k * 4 + 3], 1], a))
+  }
+  if colors.isEmpty() { colors = [Color.rgb(0, 0, 0, alpha: alpha)] }
+  return (colors, locs)
+}
+
+/// A layer's matrix, its parents' first.
+fn layerMatrix(l: Layer, all: [Layer], t: float, depth: int = 0) -> Matrix {
+  let own = matrixOf(l.tf, (t - l.st) / l.sr)
+  if l.parent < 0 || depth > 32 { return own }
+  for p in all {
+    if p.ind == l.parent { return times(own, layerMatrix(p, all, t, depth: depth + 1)) }
+  }
+  return own
+}
+
+fn apply(m: Matrix, x: float, y: float) -> (float, float) = (m.a * x + m.c * y + m.tx, m.b * x + m.d * y + m.ty)
+
+fn moved(s: Seg, m: Matrix) -> Seg {
+  let (x0, y0) = apply(m, s.x0, s.y0)
+  let (c1x, c1y) = apply(m, s.c1x, s.c1y)
+  let (c2x, c2y) = apply(m, s.c2x, s.c2y)
+  let (x, y) = apply(m, s.x, s.y)
+  return Seg(x0: x0, y0: y0, c1x: c1x, c1y: c1y, c2x: c2x, c2y: c2y, x: x, y: y, start: s.start, closes: s.closes)
+}
+
+/// The shapes items draw, in their layer's space (their groups'
+/// transforms applied): a matte's, which clips.
+fn shapesOf(items: [Item], t: float, m: Matrix) -> [Seg] {
+  var out: [Seg] = []
+  for it in items {
+    var segs: [Seg] = []
+    match it {
+      .group(_, kids, tf) => out = out + shapesOf(kids, t, times(matrixOf(tf, t), m))
+      .rect(_, p, s, r) => segs = rectSegs(at(p, t), at(s, t), at1(r, t))
+      .ellipse(_, p, s) => segs = ellipseSegs(at(p, t), at(s, t))
+      .path(_, shape) => segs = cubicSegs(at(shape, t))
+      .star(_, p, points, inner, outer, rotation, polygon) => segs = starSegs(at(p, t), at1(points, t, 5), at1(inner, t), at1(outer, t), at1(rotation, t), polygon)
+      _ => {}
+    }
+    for x in segs { out.push(moved(x, m)) }
+  }
+  return out
+}
+
+/// m's inverse (the identity when it has none).
+fn inverse(m: Matrix) -> Matrix {
+  let det = m.a * m.d - m.b * m.c
+  if abs(det) < 1e-12 { return Matrix() }
+  let a = m.d / det
+  let b = -m.b / det
+  let c = -m.c / det
+  let d = m.a / det
+  return Matrix(a: a, b: b, c: c, d: d, tx: -(a * m.tx + c * m.ty), ty: -(b * m.tx + d * m.ty))
+}
+
+fn drawLayers(g: Graphics, scene: Scene, layers: [Layer], t: float, alpha: float, depth: int = 0) {
+  if depth > 16 { return }
+  var i = layers.count() - 1
+  while i >= 0 {
+    let l = layers[i]
+    i -= 1
+    if l.hidden || l.matte || l.kind == 3 || t < l.ip || t >= l.op { continue }
+    let local = (t - l.st) / l.sr
+    var a = alpha * at1(l.tf.opacity, local, 100) / 100
+    if let o = override(scene, .opacity, [l.name]) { a = alpha * o.value }
+    if a <= 0 { continue }
+    let m = layerMatrix(l, layers, t)
+    g.save()
+    // An alpha matte: the layer above's shapes clip it (their alpha
+    // isn't, as a clip has none).
+    if l.mattedBy == 1 && i >= 0 && layers[i].matte {
+      let mt = layers[i]
+      let mm = layerMatrix(mt, layers, t)
+      g.transform(mm.a, mm.b, mm.c, mm.d, mm.tx, mm.ty)
+      g.clip(build(g, shapesOf(mt.items, (t - mt.st) / mt.sr, Matrix())))
+      let r = times(m, inverse(mm))
+      g.transform(r.a, r.b, r.c, r.d, r.tx, r.ty)
+    } else {
+      g.transform(m.a, m.b, m.c, m.d, m.tx, m.ty)
+    }
+    match l.kind {
+      4 => drawItems(g, scene, l.items, local, a, [l.name])
+      1 => if !l.color.isEmpty() { g.fill(g.path().rect(0, 0, l.w, l.h), colorOf(l.color, a)) }
+      0 => if let comp = scene.anim.comps[l.ref] {
+        if l.w > 0 && l.h > 0 { g.clip(g.path().rect(0, 0, l.w, l.h)) }
+        drawLayers(g, scene, comp, local, a, depth: depth + 1)
+      }
+      _ => {}
+    }
+    g.restore()
+  }
+}
+
+/// Draws scene at frame t, fit into the canvas as fit says.
+fn drawFrame(g: Graphics, scene: Scene, t: float, fit: Fit) {
+  let an = scene.anim
+  if an.w <= 0 || an.h <= 0 { return }
+  var sx = g.width / an.w
+  var sy = g.height / an.h
+  match fit {
+    .contain => {
+      sx = min(sx, sy)
+      sy = sx
+    }
+    .cover => {
+      sx = max(sx, sy)
+      sy = sx
+    }
+    .center => {
+      sx = 1
+      sy = 1
+    }
+    .stretch => {}
+  }
+  g.save()
+  g.clip(g.path().rect(0, 0, g.width, g.height))
+  g.translate((g.width - an.w * sx) / 2, (g.height - an.h * sy) / 2)
+  g.scale(sx, sy)
+  drawLayers(g, scene, an.layers, t, 1)
+  g.restore()
+}
+
+// ---- The player ----
+
+/// The document's text: data, else source's (an http(s) URL, a file's
+/// path, or one of the app's assets); a dotLottie (a zip) gives its
+/// animation of that id, or its first.
+async fn documentText(source: string, data: bytes, animation: string) throws -> string {
+  var b = data
+  if b.isEmpty() {
+    if source.hasPrefix("http://") || source.hasPrefix("https://") {
+      let r = try await http.get(source)
+      if r.status < 200 || r.status > 299 {
+        throw Error("{source}: HTTP {r.status}")
+      }
+      b = r.body
+    } else if source.hasPrefix("/") || source.hasPrefix("file://") {
+      let path = source.trimPrefix("file://")
+      b = try await spawn { try fs.read(path) }
+    } else {
+      b = try await fs.readAsset(source)
+    }
+  }
+  if b.count() > 1 && b[0] == 0x50 && b[1] == 0x4b {
+    return try dotLottie(b, animation)
+  }
+  return b.string()
+}
+
+/// A dotLottie's animation: animations/<id>.json, the manifest's first
+/// when id is empty.
+fn dotLottie(b: bytes, id: string) throws -> string {
+  let files = try archive.decode(b)
+  var want = id
+  if want.isEmpty() {
+    for f in files {
+      if f.name == "manifest.json" {
+        let m = try json.parse(f.data.string())
+        want = m.get("animations")?.at(0)?.get("id")?.asString() ?? ""
+      }
+    }
+  }
+  var firstJSON: string? = none
+  for f in files {
+    if f.name.hasPrefix("animations/") && f.name.hasSuffix(".json") {
+      if f.name == "animations/{want}.json" { return f.data.string() }
+      if firstJSON == none { firstJSON = f.data.string() }
+    }
+  }
+  if let j = firstJSON { return j }
+  throw Error("no animation in the dotLottie file")
+}
+
+/// The frames it plays: a marker's, the segment's, or all of them.
+fn rangeOf(a: Anim, segment: Segment, marker: string) -> (float, float) {
+  if !marker.isEmpty() {
+    for m in a.markers {
+      if m.name == marker { return (m.start, m.start + max(m.duration, 0)) }
+    }
+  }
+  if segment.to > segment.from { return (segment.from, segment.to) }
+  return (a.ip, a.op)
+}
+
+/// lottie.View where the platform has no Lottie player (Windows and
+/// Linux): the document drawn on a Canvas, frame by frame.
+component CanvasPlayer(source: string) {
+  prop data: bytes = bytes()
+  prop animation: string = ""
+  prop fit: Fit = .contain
+  prop playing: bool = true
+  event playingChange(playing: bool)
+  prop loop: bool = false
+  prop speed: float = 1
+  prop progress: float = -1
+  event progressChange(progress: float)
+  prop segment: Segment = Segment()
+  prop marker: string = ""
+  prop overrides: [Override] = []
+  event complete
+  event loaded(info: Info)
+  event error(message: string)
+
+  state anim: Anim? = none
+  state frame = 0.0
+  // The progress it reported last: a caller's that differs moves it.
+  state reported = -1.0
+
+  task(source, data, animation) {
+    do {
+      let a = try readAnim(try await documentText(source, data, animation))
+      anim = a
+      let (from, _) = rangeOf(a, segment, marker)
+      frame = if progress >= 0 { a.ip + progress * (a.op - a.ip) } else { from }
+      emit loaded(Info(width: a.w, height: a.h, start: a.ip, end: a.op, frameRate: a.fr, markers: a.markers))
+    } catch e {
+      emit error(e.message)
+    }
+  }
+
+  // Progress set from outside: it goes there.
+  effect {
+    if let a = anim {
+      if progress >= 0 && abs(progress - reported) > 0.000001 && a.op > a.ip {
+        frame = a.ip + clamp(progress) * (a.op - a.ip)
+      }
+    }
+  }
+
+  task(playing, anim, speed, loop, segment, marker) {
+    if !playing { return }
+    if let a = anim {
+      let (from, to) = rangeOf(a, segment, marker)
+      if to <= from { return }
+      // At the range's end (not looping): from its start again.
+      if speed >= 0 && frame >= to - 0.001 { frame = from }
+      if speed < 0 && frame <= from + 0.001 { frame = to }
+      var last: Duration? = none
+      for await t in frames() {
+        if let l = last {
+          var f = frame + (t - l).seconds() * a.fr * speed
+          var ended = false
+          if f >= to || f < from {
+            if loop {
+              let span = to - from
+              f = from + ((f - from) % span + span) % span
+            } else {
+              f = if speed >= 0 { to } else { from }
+              ended = true
+            }
+          }
+          frame = f
+          let p = if a.op > a.ip { (f - a.ip) / (a.op - a.ip) } else { 0.0 }
+          reported = p
+          progress = p
+          if ended {
+            playing = false
+            emit complete
+            return
+          }
+        }
+        last = t
+      }
+    }
+  }
+
+  let a = anim
+  Canvas(g => {
+    if let an = anim {
+      drawFrame(g, Scene(anim: an, overrides: overrides, dark: environment().dark), min(frame, an.op - 0.001), fit)
+    }
+  }) {
+    width: if let x = a { x.w } else { 0 }
+    aspectRatio: if let x = a { if x.h > 0 { x.w / x.h } else { 1 } } else { 1 }
+  }
+}

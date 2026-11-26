@@ -83,6 +83,22 @@ component Card(title: string) {
 Card("Plan") { padding: 8; width: 240 }   // padding 8, radius 12
 ```
 
+So does one whose body is an `if` on `@platform` (or `@debug`) with an
+`else`, each branch one element: a build compiles one of them, and the
+caller's style goes on it.
+
+```asuka
+component Player(source: string) {
+  if @platform == .windows || @platform == .linux {
+    CanvasPlayer(source)
+  } else {
+    NativePlayer(source)
+  }
+}
+
+Player("intro.json") { width: 200 }
+```
+
 ## Variants a component declares
 
 A component that shows one element can name its states for its caller

@@ -150,9 +150,12 @@ static GpPen *pen(reader *r, ARGB c, GpBrush *br) {
 	if (nd > (r->n - r->i) / 4) nd = (uint32_t)((r->n - r->i) / 4);
 	float *dash = wh_alloc((nd ? nd : 1) * sizeof *dash);
 	for (uint32_t j = 0; j < nd; j++) dash[j] = f32(r);
+	// In world units: its width scales with what the canvas's transform
+	// scales (a scaled drawing's strokes as Core Graphics' and a browser
+	// canvas's do); a pixel's wouldn't.
 	GpPen *p = NULL;
-	if (br) GdipCreatePen2(br, w * r->k, UnitPixel, &p);
-	else GdipCreatePen1(c, w * r->k, UnitPixel, &p);
+	if (br) GdipCreatePen2(br, w * r->k, UnitWorld, &p);
+	else GdipCreatePen1(c, w * r->k, UnitWorld, &p);
 	if (p) wh_style_pen(p, cap > 2 ? 2 : cap, join > 2 ? 2 : join, dash, nd, phase, w);
 	free(dash);
 	return p;

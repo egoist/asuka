@@ -22,7 +22,7 @@
 | `ProgressRing` | 仿照 SwiftUI 的圆形仪表绘制；没有值时是 `UIActivityIndicatorView` | `CircularProgressIndicator` | 16 和 32 点时是旋转样式的 `NSProgressIndicator`；其他尺寸或设置了 `color` 时，按它的样式自行绘制 | 自行绘制的 Fluent `ProgressRing` | 按 GNOME 的样式绘制；没有值时是 `AdwSpinner` | SVG 圆环 |
 | `Activity` | `UIActivityIndicatorView` | `CircularProgressIndicator` | 旋转样式的 `NSProgressIndicator` | 自行绘制的 Fluent 进度环 | `AdwSpinner`（libadwaita 1.6 之前为 `GtkSpinner`） | 自行绘制的加载指示器 |
 | `Image` | `UIImageView` | `ImageView` | `NSImageView` | 用 GDI+ 绘制 | 用 GDK 纹理绘制 | `<img>` |
-| `lottie.View` | lottie-ios | lottie-android | lottie-ios | 暂不支持（一个空的框） | 暂不支持（一个空的框） | lottie-web |
+| `lottie.View` | lottie-ios | lottie-android | lottie-ios | Asuka 自己在 `Canvas` 上的播放器 | Asuka 自己在 `Canvas` 上的播放器 | lottie-web |
 | `Symbol` | SF Symbols | Material Symbols | SF Symbols | Segoe Fluent Icons | 图标主题中的图标，没有则用 Material Symbols | Material Symbols |
 | `Video` | `AVPlayerViewController` | Media3 的播放器 | `AVPlayerView` | WebView2 中的 `<video>` | `GtkVideo`（GStreamer） | `<video>` |
 | `WebView` | `WKWebView` | `WebView` | `WKWebView` | WebView2 | `WebKitWebView`（WebKitGTK 6.0） | `<iframe>` |
@@ -663,7 +663,7 @@ component Clip {
 
 ## Lottie 动画
 
-`std/lottie` 用各平台自己的播放器播放 Lottie 动画（从 After Effects 导出的 Lottie JSON `.json` 或 dotLottie `.lottie`）：iOS 和 Mac 上是 lottie-ios，Android 上是 lottie-android，Web 上是 lottie-web。Windows 和 Linux 目前还没有可调用的播放器，在那里这个视图是一个空的框。
+`std/lottie` 用各平台自己的播放器播放 Lottie 动画（从 After Effects 导出的 Lottie JSON `.json` 或 dotLottie `.lottie`）：iOS 和 Mac 上是 lottie-ios，Android 上是 lottie-android，Web 上是 lottie-web。Windows 和 Linux 没有自己的播放器，所以 Asuka 在那里用 `Canvas` 播放：形状、渐变、修剪路径、中继器、星形、预合成和 Alpha 遮罩；蒙版、其他遮罩、图片和文字在那里不会绘制。
 
 ```asuka
 import std/lottie

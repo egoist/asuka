@@ -14,9 +14,9 @@ import UIKit
 import AppKit
 #endif
 
-@MainActor final class LottiePlayer: View, AsukaDestroying {
+@MainActor final class LottiePlayer: Player, AsukaDestroying {
     let animationView: LottieAnimationView
-    let events: ViewEvents
+    let events: PlayerEvents
     var view: AsukaPlatformView { animationView }
 
     private var source = ""
@@ -45,7 +45,7 @@ import AppKit
         var damping: Double
     }
 
-    init(_ events: ViewEvents) {
+    init(_ events: PlayerEvents) {
         self.events = events
         // Reduce Motion is the Go side's to follow (std/lottie).
         animationView = LottieAnimationView(animation: nil, configuration: LottieConfiguration(reducedMotionOption: .standardMotion))
@@ -434,4 +434,4 @@ func lottieColor(_ v: Int) -> LottieColor {
     return LottieColor(r: Double(r), g: Double(g), b: Double(b), a: Double(a))
 }
 
-@MainActor func makeView(_ events: ViewEvents) -> any View { LottiePlayer(events) }
+@MainActor func makePlayer(_ events: PlayerEvents) -> any Player { LottiePlayer(events) }

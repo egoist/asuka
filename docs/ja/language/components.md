@@ -63,6 +63,20 @@ component Card(title: string) {
 Card("Plan") { padding: 8; width: 240 }   // padding は 8、radius は 12
 ```
 
+本体が `@platform`（または `@debug`）による `else` 付きの `if` で、どの分岐も要素ひとつのコンポーネントも同じです。ビルドごとにどれかひとつの分岐だけがコンパイルされ、呼び出し側のスタイルはそれに付きます。
+
+```asuka
+component Player(source: string) {
+  if @platform == .windows || @platform == .linux {
+    CanvasPlayer(source)
+  } else {
+    NativePlayer(source)
+  }
+}
+
+Player("intro.json") { width: 200 }
+```
+
 ## コンポーネントが宣言するバリアント
 
 要素を一つだけ表示するコンポーネントは、自分の状態に名前を付けて、呼び出し側がスタイルを当てられるようにできます。`variant name = condition` と書くと、`let` と同じように常に最新に保たれる bool になります。呼び出し側はブロックに `name { … }` と書き、条件が成り立つあいだ、そのスタイルプロパティがその要素に重ねられます。`View` が押されているあいだ `pressed { … }` が重ねられるのと同じです。

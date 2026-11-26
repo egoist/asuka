@@ -1,6 +1,7 @@
 // Package std/lottie plays Lottie animations (Bodymovin's JSON, and
 // dotLottie files) with each platform's own player: lottie-ios on iOS and
-// macOS, lottie-android, lottie-web. Its source is an asset of the app's,
+// macOS, lottie-android, lottie-web; Windows and Linux draw them on a
+// Canvas. Its source is an asset of the app's,
 // a file's path, or an http(s) URL.
 //
 //   state playing = true
@@ -15,8 +16,9 @@
 //     on complete { done = true }
 //   }
 //
-// Windows and Linux have no Lottie player of their own: there it shows
-// nothing (its box is empty).
+// Windows and Linux have no Lottie player of their own: there the
+// animation is drawn on a Canvas (its shapes, gradients, trim paths,
+// precompositions; not its masks, mattes, images or text).
 
 /// A range of an animation's frames.
 pub struct Segment {
@@ -90,7 +92,77 @@ pub enum Fit {
 }
 
 /// A Lottie animation. Without a size of its style, it takes its own.
-pub native component View(source: string) {
+pub component View(source: string) {
+  /// The animation's bytes, when there's no source.
+  prop data: bytes = bytes()
+  /// A dotLottie's animation, by its id ("": its first).
+  prop animation: string = ""
+  prop fit: Fit = .contain
+  /// It plays (from where it is; from the range's start once it's at its
+  /// end); false pauses it there. It becomes false once it plays through
+  /// (not looping): bind it to follow.
+  prop playing: bool = true
+  /// It plays the range again and again.
+  prop loop: bool = false
+  /// Its frame rate's scale; negative plays it backwards.
+  prop speed: float = 1
+  /// Where it is, from 0 to 1 of the whole animation: set, it moves there
+  /// (playing goes on from there); bound, it follows it as it plays. Below
+  /// 0: none (it doesn't move).
+  prop progress: float = -1
+  /// The range it plays (to <= from: the whole animation).
+  prop segment: Segment = Segment()
+  /// A marker's range it plays, by name; it wins over segment.
+  prop marker: string = ""
+  prop overrides: [Override] = []
+  event playingChange(playing: bool)
+  event progressChange(progress: float)
+  /// It reached the range's end, not looping.
+  event complete
+  event loaded(info: Info)
+  /// It can't load the animation.
+  event error(message: string)
+
+  // Windows and Linux have no Lottie player: there it's drawn on a
+  // Canvas (canvas.asuka).
+  if @platform == .windows || @platform == .linux {
+    CanvasPlayer(source) {
+      data: data
+      animation: animation
+      fit: fit
+      bind playing: playing
+      loop: loop
+      speed: speed
+      bind progress: progress
+      segment: segment
+      marker: marker
+      overrides: overrides
+      on complete { emit complete }
+      on loaded(info) { emit loaded(info) }
+      on error(message) { emit error(message) }
+    }
+  } else {
+    Player(source) {
+      data: data
+      animation: animation
+      fit: fit
+      bind playing: playing
+      loop: loop
+      speed: speed
+      bind progress: progress
+      segment: segment
+      marker: marker
+      overrides: overrides
+      on complete { emit complete }
+      on loaded(info) { emit loaded(info) }
+      on error(message) { emit error(message) }
+    }
+  }
+}
+
+/// The platform's Lottie player (lottie-ios, lottie-android, lottie-web),
+/// which View shows where there's one.
+native component Player(source: string) {
   /// The animation's bytes, when there's no source.
   prop data: bytes = bytes()
   /// A dotLottie's animation, by its id ("": its first).

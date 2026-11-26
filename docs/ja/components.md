@@ -22,7 +22,7 @@
 | `ProgressRing` | SwiftUI の円形ゲージに倣って描画。値がなければ `UIActivityIndicatorView` | `CircularProgressIndicator` | 16 ポイントと 32 ポイントでは spinning スタイルの `NSProgressIndicator`。それ以外のサイズや `color` の指定時は、そのスタイルに倣って描画 | Fluent の `ProgressRing` に倣って描画 | GNOME のスタイルで描画。値がなければ `AdwSpinner` | SVG のリング |
 | `Activity` | `UIActivityIndicatorView` | `CircularProgressIndicator` | spinning スタイルの `NSProgressIndicator` | Fluent のプログレスリングに倣って描画 | `AdwSpinner`（libadwaita 1.6 より前は `GtkSpinner`） | 描画したスピナー |
 | `Image` | `UIImageView` | `ImageView` | `NSImageView` | GDI+ で描画 | GDK のテクスチャから描画 | `<img>` |
-| `lottie.View` | lottie-ios | lottie-android | lottie-ios | まだなし（空のボックス） | まだなし（空のボックス） | lottie-web |
+| `lottie.View` | lottie-ios | lottie-android | lottie-ios | Asuka 自身の `Canvas` 上のプレーヤー | Asuka 自身の `Canvas` 上のプレーヤー | lottie-web |
 | `Symbol` | SF Symbols | Material Symbols | SF Symbols | Segoe Fluent Icons | アイコンテーマのもの。なければ Material Symbols | Material Symbols |
 | `Video` | `AVPlayerViewController` | Media3 のプレイヤー | `AVPlayerView` | WebView2 内の `<video>` | `GtkVideo`（GStreamer） | `<video>` |
 | `WebView` | `WKWebView` | `WebView` | `WKWebView` | WebView2 | `WebKitWebView`（WebKitGTK 6.0） | `<iframe>` |
@@ -663,7 +663,7 @@ component Clip {
 
 ## Lottie アニメーション
 
-`std/lottie` は Lottie アニメーション（After Effects から Lottie JSON `.json` または dotLottie `.lottie` として書き出したもの）を、各プラットフォーム自身のプレーヤーで再生します。iOS と Mac では lottie-ios、Android では lottie-android、Web では lottie-web です。Windows と Linux には呼び出せるプレーヤーがまだないので、そこではビューは空のボックスになります。
+`std/lottie` は Lottie アニメーション（After Effects から Lottie JSON `.json` または dotLottie `.lottie` として書き出したもの）を、各プラットフォーム自身のプレーヤーで再生します。iOS と Mac では lottie-ios、Android では lottie-android、Web では lottie-web です。Windows と Linux には独自のプレーヤーがないので、そこでは Asuka が `Canvas` 上で再生します。シェイプ、グラデーション、トリムパス、リピーター、スター、プリコンポジション、アルファマットを描き、マスク、ほかのマット、画像、テキストは描きません。
 
 ```asuka
 import std/lottie
