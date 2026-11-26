@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -58,7 +60,7 @@ func TestWidgetSwift(t *testing.T) {
 	}
 	c.Shortcuts = []shortcutConfig{{ID: "newNote", Title: "New Note", URL: "notes://new", Phrases: []string{"New note in ${app}"}}}
 	s = c.shortcutsSwift()
-	for _, want := range []string{"struct AsukaShortcut_newNote: AppIntent", `"url": "notes://new"`,
+	for _, want := range []string{"struct AsukaShortcut_newNote: AppIntent", `let url = "notes://new"`,
 		`phrases: ["New note in \(.applicationName)"]`, `systemImageName: "app.badge"`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("no %q in\n%s", want, s)
@@ -159,5 +161,159 @@ func TestLiveActivityExtension(t *testing.T) {
 		if !exists(exe) {
 			t.Fatalf("no %s", exe)
 		}
+	}
+}
+
+// A shortcut's params: what Siri and the Shortcuts app ask for, each
+// filling its {name} in the URL; an options param is an AppEnum a phrase
+// can name. Android's launcher opens the URL with their defaults.
+func TestShortcutParams(t *testing.T) {
+	dir := t.TempDir()
+	toml := `id = "com.example.todo"
+scheme = "todo"
+
+[[shortcuts]]
+id = "addTask"
+title = "Add Task"
+url = "todo://add?title={title}&list={list}&due={days}&done={done}&weight={weight}"
+phrases = ["Add a task in ${app}", "Add a ${list} task in ${app}"]
+
+[[shortcuts.params]]
+name = "title"
+title = "Title"
+prompt = "What's the task?"
+
+[[shortcuts.params]]
+name = "list"
+title = "List"
+type = "options"
+options = [{value = "work", title = "Work"}, {value = "home"}]
+default = "home"
+
+[[shortcuts.params]]
+name = "days"
+type = "int"
+default = 3
+
+[[shortcuts.params]]
+name = "done"
+type = "bool"
+optional = true
+
+[[shortcuts.params]]
+name = "weight"
+type = "float"
+default = 2
+`
+	os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte(toml), 0o644)
+	c, err := loadConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := c.Shortcuts[0]
+	if got := s.staticURL(); got != "todo://add?title=&list=home&due=3&done=&weight=2" {
+		t.Errorf("the launcher's URL: %s", got)
+	}
+	if p := s.Params[1].Options[1]; p.Title != "home" {
+		t.Errorf("an option's title defaults to its value: %+v", p)
+	}
+	sw := c.shortcutsSwift()
+	for _, want := range []string{
+		"enum AsukaShortcut_addTask_list: String, AppEnum",
+		`case o0 = "work"`,
+		`.o0: DisplayRepresentation(title: "Work")`,
+		`@Parameter(title: "Title", requestValueDialog: IntentDialog("What's the task?"))` + "\n    var title: String\n",
+		`@Parameter(title: "List", default: .o1)` + "\n    var list: AsukaShortcut_addTask_list\n",
+		`@Parameter(title: "days", default: 3)` + "\n    var days: Int\n",
+		"var done: Bool?\n",
+		`@Parameter(title: "weight", default: 2)` + "\n    var weight: Double\n",
+		`url = url.replacingOccurrences(of: "{list}", with: asukaEscape(list.rawValue))`,
+		`url = url.replacingOccurrences(of: "{done}", with: asukaEscape(done.map { String(describing: $0) } ?? ""))`,
+		`"Add a \(\.$list) task in \(.applicationName)"`,
+	} {
+		if !strings.Contains(sw, want) {
+			t.Errorf("no %q in\n%s", want, sw)
+		}
+	}
+	res := t.TempDir()
+	if err := c.androidShortcutRes(res); err != nil {
+		t.Fatal(err)
+	}
+	if x, _ := os.ReadFile(filepath.Join(res, "xml", "asuka_shortcuts.xml")); !strings.Contains(string(x), `android:data="todo://add?title=&amp;list=home&amp;due=3&amp;done=&amp;weight=2"`) {
+		t.Errorf("android:\n%s", x)
+	}
+	for _, bad := range []string{
+		`{name = "x"}`,                       // not in the url
+		`{name = "title", type = "date"}`,    // no such type
+		`{name = "title", type = "options"}`, // no options
+		`{name = "title", default = 3}`,      // not a string
+		`{name = "title", type = "int", default = 1.5}`,
+		`{name = "title", type = "options", options = [{value = "a"}], default = "b"}`,
+		`{name = "title"}, {name = "title"}`, // twice
+		`{name = "app"}`,
+	} {
+		os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte("[[shortcuts]]\nid = \"a\"\ntitle = \"A\"\nurl = \"x://a?t={title}\"\nparams = ["+bad+"]\n"), 0o644)
+		if _, err := loadConfig(dir); err == nil {
+			t.Errorf("no error for params %s", bad)
+		}
+	}
+	for _, bad := range []string{
+		"url = \"x://a?t={nope}\"", // a placeholder no param is
+		"url = \"x://a?t={title}\"\nphrases = [\"Do ${title} in ${app}\"]", // a string param in a phrase
+	} {
+		os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte("[[shortcuts]]\nid = \"a\"\ntitle = \"A\"\n"+bad+"\nparams = [{name = \"title\"}]\n"), 0o644)
+		if _, err := loadConfig(dir); err == nil {
+			t.Errorf("no error for %s", bad)
+		}
+	}
+	// What Xcode makes of it: the intents compile, and their metadata,
+	// which Siri reads, has the params.
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	tc, err := newIOSToolchain(false)
+	if err != nil {
+		t.Skip(err)
+	}
+	work := t.TempDir()
+	obj, src, consts, err := tc.buildShortcuts(work, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists(obj) {
+		t.Fatal("no object")
+	}
+	bundle := filepath.Join(work, "App.app")
+	os.MkdirAll(bundle, 0o755)
+	if err := tc.shortcutsMetadata(work, bundle, src, consts); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := os.ReadFile(filepath.Join(bundle, "Metadata.appintents", "extract.actionsdata"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var md struct {
+		Actions map[string]struct {
+			Parameters []struct {
+				Name       string
+				IsOptional bool
+			}
+		}
+		Enums []json.RawMessage
+	}
+	if err := json.Unmarshal(meta, &md); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	optional := map[string]bool{}
+	for _, p := range md.Actions["AsukaShortcut_addTask"].Parameters {
+		names = append(names, p.Name)
+		optional[p.Name] = p.IsOptional
+	}
+	if strings.Join(names, ",") != "title,list,days,done,weight" || optional["title"] || !optional["done"] {
+		t.Errorf("the metadata's params: %v, optional %v", names, optional)
+	}
+	if !strings.Contains(string(meta), "AsukaShortcut_addTask_list") {
+		t.Error("the metadata has no options enum")
 	}
 }

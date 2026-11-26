@@ -151,7 +151,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 日历 | EventKit、EventKitUI | `expo-calendar` | ✓ `platform/calendar`（事件编辑界面不需要权限；读取日历和事件需要权限；EventKit、Calendar Provider） |
 | 主屏幕小组件 | WidgetKit | `expo-widgets` | ✓ `platform/widget` 和 `asuka.toml` 的 `widgets`（每种尺寸一个模板，iOS 上还有锁屏小组件；时间线、倒计时、点按打开 URL；iOS 和 Android） |
 | 实时活动 | ActivityKit | `expo-live-activity` | ✓ `platform/liveactivity`（iOS：锁屏和灵动岛；Android 16 的 Live Update；倒计时、进度、提醒，以及供服务端推送更新用的推送 token） |
-| App Intents、快捷指令 | App Intents、App Shortcuts | — | ✓ `asuka.toml` 的 `shortcuts`（iOS：带 Siri 短语的 App Shortcuts，出现在聚焦搜索和快捷指令里；Android：启动器快捷方式） |
+| App Intents、快捷指令 | App Intents、App Shortcuts | — | ✓ `asuka.toml` 的 `shortcuts`（iOS：带 Siri 短语的 App Shortcuts，出现在聚焦搜索和快捷指令里，可以带参数：文字、数字、开关，以及短语里可以引用的选项；Android：启动器快捷方式）；还不支持应用实体 |
 | 自定义字体 | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`、`Font(family:)` |
 | 生命周期 | `scenePhase` | AppState | ✓ `onLifecycle` |
 | 启动画面 | `UILaunchScreen` | `expo-splash-screen` | ✓ `asuka.toml` 的 `splash`；`platform/splash` 可以在应用加载期间保持它显示 |
@@ -241,4 +241,4 @@ MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览�
 
 ## 尚未支持
 
-按应用最常缺少的程度排序：带参数和实体的 App Intents（快捷指令目前还不能带参数）、应用自定义布局的小组件（目前只有一种模板）、OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了），以及在模拟器上对应用做 GUI 测试。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Linux 和 Web 上的语音转文字。Windows 上页面的 `zoomFrom`（推入时改为滑入；Linux 按 libadwaita 导航的方式滑入，GNOME 没有缩放过渡）。
+按应用最常缺少的程度排序：带实体的 App Intents（快捷方式的参数目前只能是值，还不能是应用自己的数据）、应用自定义布局的小组件（目前只有一种模板）、OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了），以及在模拟器上对应用做 GUI 测试。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Linux 和 Web 上的语音转文字。Windows 上页面的 `zoomFrom`（推入时改为滑入；Linux 按 libadwaita 导航的方式滑入，GNOME 没有缩放过渡）。

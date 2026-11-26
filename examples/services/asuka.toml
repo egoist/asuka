@@ -30,6 +30,22 @@ url = "asukaservices://speak"
 symbol = "bell"
 phrases = ["Say hello with ${app}"]
 
+# A shortcut with a parameter: Siri asks which greeting, or hears it in
+# the phrase ("Say goodbye with Services"); it fills {words} in the URL.
+[[shortcuts]]
+id = "say"
+title = "Say"
+url = "asukaservices://say?words={words}"
+symbol = "text.bubble"
+phrases = ["Say ${words} with ${app}", "Say something with ${app}"]
+
+[[shortcuts.params]]
+name = "words"
+title = "Greeting"
+type = "options"
+options = [{ value = "Hello from Asuka", title = "hello" }, { value = "Goodbye from Asuka", title = "goodbye" }]
+prompt = "Which greeting?"
+
 [[shortcuts]]
 id = "openMap"
 title = "Open the Map"

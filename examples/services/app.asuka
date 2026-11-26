@@ -31,6 +31,7 @@ import platform/speech
 import platform/splash
 import std/math
 import std/time
+import std/url
 import platform/tracking
 import platform/widget
 
@@ -59,6 +60,10 @@ app {
   on openURL(u) {
     status = "Opened with {u}"
     if u == "asukaservices://speak" { try? await speech.speak("Hello from Asuka") }
+    // The Say shortcut's: what it says is its parameter's.
+    if let p = url.parse(u), p.host == "say", let words = p.query("words") {
+      try? await speech.speak(words)
+    }
   }
 
   Stack { Services() }

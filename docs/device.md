@@ -3050,6 +3050,42 @@ Apple Development identity (`asuka.toml`'s team's): App Intents only run
 in an app with a team. Without one, the build is signed ad hoc, and the
 CLI says the shortcuts won't run.
 
+### Parameters
+
+A shortcut's `params` are what Siri and the Shortcuts app ask for. Each
+fills its `{name}` in the URL, escaped:
+
+```toml
+[[shortcuts]]
+id = "addTask"
+title = "Add Task"
+url = "todo://add?title={title}&list={list}"
+phrases = ["Add a task in ${app}", "Add a ${list} task in ${app}"]
+
+[[shortcuts.params]]
+name = "title"
+title = "Title"
+prompt = "What's the task?"
+
+[[shortcuts.params]]
+name = "list"
+title = "List"
+type = "options"
+options = [{ value = "work", title = "Work" }, { value = "home", title = "Home" }]
+default = "home"
+```
+
+"Add a task in Todo" asks *What's the task?* and opens
+`todo://add?title=Buy%20milk&list=home`; "Add a work task in Todo" goes
+straight to the title. A param's `type` is `string` (the default), `int`,
+`float`, `bool` or `options`. Siri asks for one with no `default` unless
+it's `optional`, which leaves its place in the URL empty. A phrase can
+name an `options` param (`${list}`): Siri hears each option's title.
+Other types can't be in a phrase, since Siri can't hear just any text.
+In the Shortcuts app, every param is a field of the action. On Android,
+the launcher's shortcut opens the URL with each param's default, or
+empty.
+
 ## Haptics: device.haptic
 
 `device.haptic(kind)` plays haptic feedback

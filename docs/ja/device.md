@@ -2026,6 +2026,32 @@ iOS では App Shortcuts になります。Siri がそのフレーズ（それ�
 
 シミュレーター向けのビルドは、Xcode と同じように、キーチェーンにある（`asuka.toml` で指定したチームの）Apple Development の証明書で署名されます。App Intents は、チームのあるアプリでしか動かないためです。証明書がなければビルドはアドホック署名になり、CLI はショートカットが動かないことを知らせます。
 
+### パラメーター
+
+ショートカットの `params` は、Siri と「ショートカット」App がユーザーに尋ねる値です。それぞれの値はエスケープされて、URL の `{name}` に入ります。
+
+```toml
+[[shortcuts]]
+id = "addTask"
+title = "Add Task"
+url = "todo://add?title={title}&list={list}"
+phrases = ["Add a task in ${app}", "Add a ${list} task in ${app}"]
+
+[[shortcuts.params]]
+name = "title"
+title = "Title"
+prompt = "What's the task?"
+
+[[shortcuts.params]]
+name = "list"
+title = "List"
+type = "options"
+options = [{ value = "work", title = "Work" }, { value = "home", title = "Home" }]
+default = "home"
+```
+
+「Add a task in Todo」と言うと Siri が *What's the task?* と尋ね、`todo://add?title=Buy%20milk&list=home` を開きます。「Add a work task in Todo」と言えば、タイトルだけを尋ねます。パラメーターの `type` は `string`（デフォルト）、`int`、`float`、`bool`、`options` のいずれかです。`default` のないパラメーターは Siri が尋ねます。ただし `optional` なら尋ねず、URL のその部分は空になります。フレーズには `options` のパラメーター（`${list}`）を入れられ、Siri は各選択肢のタイトルを聞き取ります。それ以外の型はフレーズに入れられません。Siri は任意のテキストを聞き取れないためです。「ショートカット」App では、どのパラメーターもアクションの項目になります。Android では、ランチャーのショートカットは各パラメーターのデフォルト値（なければ空）を入れた URL を開きます。
+
 ## 触覚フィードバック：device.haptic
 
 `device.haptic(kind)` は触覚フィードバックを再生します（iOS では UIFeedbackGenerator、Android では `performHapticFeedback`）。種類は `device.Haptic` の `.selection`、`.light`、`.medium`、`.heavy`、`.success`、`.warning`、`.error` のいずれかです。Mac ではトラックパッドのフィードバックを再生します（感圧タッチトラックパッドで、`.selection` では整列、それ以外ではレベル変更のフィードバック）。ブラウザーでは、可能な環境（Android の Chrome）で振動します。Windows と Linux には触覚フィードバックがないので、何もしません。

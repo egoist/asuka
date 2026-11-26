@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"html"
 	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -61,12 +63,139 @@ type shortcutConfig struct {
 	// Symbol is an SF Symbol name, as ui.Symbol takes it.
 	Symbol string `json:"symbol"`
 	// Phrases are what Siri hears, each with ${app}, the app's name
-	// (default: "<title> in ${app}"). iOS.
+	// (default: "<title> in ${app}"), and maybe an options parameter's
+	// ${name}. iOS.
 	Phrases []string `json:"phrases"`
+	// Params are what the shortcut asks for (Siri, the Shortcuts app),
+	// each filling its {name} in URL. iOS; Android's launcher opens URL
+	// with their defaults.
+	Params []shortcutParam `json:"params"`
+}
+
+// shortcutParam is a value a shortcut takes.
+//
+//	[[shortcuts.params]]
+//	name = "title"
+//	title = "Title"
+//	type = "string"
+//	prompt = "What's the task?"
+type shortcutParam struct {
+	// Name is its {name} in the URL: letters, digits and _.
+	Name string `json:"name"`
+	// Title is what the Shortcuts app labels it (default: Name).
+	Title string `json:"title"`
+	// Type is string, int, float, bool or options (one of Options).
+	Type string `json:"type"`
+	// Prompt is what Siri asks for it with (default: the system's).
+	Prompt string `json:"prompt"`
+	// Optional: it can be left out (empty in the URL). A param with a
+	// Default is never asked for.
+	Optional bool `json:"optional"`
+	// Default is its value when it isn't given, of its type.
+	Default any `json:"default"`
+	// Options are an options param's values, and their titles.
+	Options []shortcutOption `json:"options"`
+}
+
+type shortcutOption struct {
+	Value string `json:"value"`
+	Title string `json:"title"`
+}
+
+var shortcutParamTypes = []string{"string", "int", "float", "bool", "options"}
+
+// defaultText is p's default as the URL has it ("": none).
+func (p shortcutParam) defaultText() string {
+	switch v := p.Default.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case bool:
+		return strconv.FormatBool(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case float64:
+		return strconv.FormatFloat(v, 'g', -1, 64)
+	}
+	return fmt.Sprint(p.Default)
+}
+
+// checkParam checks a shortcut's param, filling in defaults.
+func (s *shortcutConfig) checkParam(p *shortcutParam, seen map[string]bool) error {
+	if !identifier.MatchString(p.Name) {
+		return fmt.Errorf("shortcut %s: param name %q (want letters, digits and _, a letter first)", s.ID, p.Name)
+	}
+	if seen[p.Name] || p.Name == "app" {
+		return fmt.Errorf("shortcut %s: param %q twice, or named app (${app} is the app's name)", s.ID, p.Name)
+	}
+	seen[p.Name] = true
+	if p.Title == "" {
+		p.Title = p.Name
+	}
+	if p.Type == "" {
+		p.Type = "string"
+	}
+	if !slices.Contains(shortcutParamTypes, p.Type) {
+		return fmt.Errorf("shortcut %s: param %s's type %q (want %s)", s.ID, p.Name, p.Type, strings.Join(shortcutParamTypes, ", "))
+	}
+	if !strings.Contains(s.URL, "{"+p.Name+"}") {
+		return fmt.Errorf("shortcut %s: param %s isn't in its url (put {%s} where its value goes)", s.ID, p.Name, p.Name)
+	}
+	if (p.Type == "options") != (len(p.Options) > 0) {
+		return fmt.Errorf("shortcut %s: param %s: options are an options param's, which has at least one", s.ID, p.Name)
+	}
+	values := map[string]bool{}
+	for i := range p.Options {
+		o := &p.Options[i]
+		if o.Value == "" || values[o.Value] {
+			return fmt.Errorf("shortcut %s: param %s: option %q (want a value, each its own)", s.ID, p.Name, o.Value)
+		}
+		values[o.Value] = true
+		if o.Title == "" {
+			o.Title = o.Value
+		}
+	}
+	if p.Default == nil {
+		return nil
+	}
+	ok := false
+	switch v := p.Default.(type) {
+	case string:
+		ok = p.Type == "string" || p.Type == "options" && values[v]
+	case bool:
+		ok = p.Type == "bool"
+	case float64: // asuka.toml's numbers come as JSON's
+		ok = p.Type == "float" || p.Type == "int" && v == math.Trunc(v) && math.Abs(v) < 1<<53
+		if ok && p.Type == "int" {
+			p.Default = int64(v)
+		}
+	case int64:
+		ok = p.Type == "int" || p.Type == "float"
+		if p.Type == "float" {
+			p.Default = float64(v)
+		}
+	}
+	if !ok {
+		return fmt.Errorf("shortcut %s: param %s: default %v isn't a %s's (an options param's: one of its values)", s.ID, p.Name, p.Default, p.Type)
+	}
+	return nil
+}
+
+// staticURL is URL with each param's default in its place (empty without
+// one), as a launcher that asks for nothing opens it.
+func (s shortcutConfig) staticURL() string {
+	u := s.URL
+	for _, p := range s.Params {
+		u = strings.ReplaceAll(u, "{"+p.Name+"}", url.QueryEscape(p.defaultText()))
+	}
+	return u
 }
 
 var (
 	identifier  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
+	placeholder = regexp.MustCompile(`\{([A-Za-z][A-Za-z0-9_]*)\}`)
+	phraseParam = regexp.MustCompile(`\$\{([A-Za-z][A-Za-z0-9_]*)\}`)
 	widgetSizes = []string{"small", "medium", "large", "extraLarge", "circular", "rectangular", "inline"}
 )
 
@@ -110,8 +239,19 @@ func (c *appConfig) checkWidgets() error {
 		if s.Title == "" {
 			return fmt.Errorf("shortcut %s: no title", s.ID)
 		}
-		if u, err := url.Parse(s.URL); err != nil || u.Scheme == "" {
+		if u, err := url.Parse(s.staticURL()); err != nil || u.Scheme == "" {
 			return fmt.Errorf("shortcut %s: url %q (want one the app opens: its scheme's, or a link's)", s.ID, s.URL)
+		}
+		params := map[string]bool{}
+		for j := range s.Params {
+			if err := s.checkParam(&s.Params[j], params); err != nil {
+				return err
+			}
+		}
+		for _, m := range placeholder.FindAllStringSubmatch(s.URL, -1) {
+			if !params[m[1]] {
+				return fmt.Errorf("shortcut %s: url %q has {%s}, which no param is", s.ID, s.URL, m[1])
+			}
 		}
 		if len(s.Phrases) == 0 {
 			s.Phrases = []string{s.Title + " in ${app}"}
@@ -119,6 +259,15 @@ func (c *appConfig) checkWidgets() error {
 		for _, p := range s.Phrases {
 			if strings.Count(p, "${app}") != 1 {
 				return fmt.Errorf("shortcut %s: phrase %q (want the app's name in it once: ${app})", s.ID, p)
+			}
+			for _, m := range phraseParam.FindAllStringSubmatch(p, -1) {
+				if m[1] == "app" {
+					continue
+				}
+				i := slices.IndexFunc(s.Params, func(q shortcutParam) bool { return q.Name == m[1] })
+				if i < 0 || s.Params[i].Type != "options" {
+					return fmt.Errorf("shortcut %s: phrase %q has ${%s}, which isn't an options param (Siri hears an option's title; it can't hear any text)", s.ID, p, m[1])
+				}
 			}
 		}
 	}
@@ -395,27 +544,84 @@ const constProtocols = `["AnyResolverProviding","AppEntity","AppEnum","AppExtens
 func (c *appConfig) shortcutsSwift() string {
 	var b strings.Builder
 	b.WriteString("// Generated by the Asuka CLI from asuka.toml's shortcuts.\nimport AppIntents\nimport Foundation\n\n")
-	for _, s := range c.Shortcuts {
-		fmt.Fprintf(&b, `struct AsukaShortcut_%s: AppIntent {
-    static let title: LocalizedStringResource = %s
-    static let openAppWhenRun: Bool = true
-
-    @MainActor
-    func perform() async throws -> some IntentResult {
-        NotificationCenter.default.post(name: Notification.Name("AsukaOpenURL"), object: nil, userInfo: ["url": %s])
-        return .result()
-    }
+	b.WriteString(`/// A value as a URL takes it: none of its own delimiters left.
+private func asukaEscape(_ s: String) -> String {
+    var allowed = CharacterSet.urlQueryAllowed
+    allowed.remove(charactersIn: "&=+?#/")
+    return s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s
 }
 
-`, s.ID, swiftString(s.Title), swiftString(s.URL))
+`)
+	for _, s := range c.Shortcuts {
+		for _, p := range s.Params {
+			if p.Type != "options" {
+				continue
+			}
+			fmt.Fprintf(&b, "enum AsukaShortcut_%s_%s: String, AppEnum {\n", s.ID, p.Name)
+			for i, o := range p.Options {
+				fmt.Fprintf(&b, "    case o%d = %s\n", i, swiftString(o.Value))
+			}
+			fmt.Fprintf(&b, "    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: %s)\n", swiftString(p.Title))
+			b.WriteString("    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [\n")
+			for i, o := range p.Options {
+				fmt.Fprintf(&b, "        .o%d: DisplayRepresentation(title: %s),\n", i, swiftString(o.Title))
+			}
+			b.WriteString("    ]\n}\n\n")
+		}
+		fmt.Fprintf(&b, "struct AsukaShortcut_%s: AppIntent {\n    static let title: LocalizedStringResource = %s\n    static let openAppWhenRun: Bool = true\n", s.ID, swiftString(s.Title))
+		for _, p := range s.Params {
+			typ := map[string]string{"string": "String", "int": "Int", "float": "Double", "bool": "Bool"}[p.Type]
+			if p.Type == "options" {
+				typ = fmt.Sprintf("AsukaShortcut_%s_%s", s.ID, p.Name)
+			}
+			args := "title: " + swiftString(p.Title)
+			if p.Default != nil {
+				def := p.defaultText()
+				switch p.Type {
+				case "string":
+					def = swiftString(def)
+				case "options":
+					def = fmt.Sprintf(".o%d", slices.IndexFunc(p.Options, func(o shortcutOption) bool { return o.Value == def }))
+				}
+				args += ", default: " + def
+			} else if p.Optional {
+				typ += "?"
+			}
+			if p.Prompt != "" {
+				args += ", requestValueDialog: IntentDialog(" + swiftString(p.Prompt) + ")"
+			}
+			fmt.Fprintf(&b, "    @Parameter(%s)\n    var %s: %s\n", args, p.Name, typ)
+		}
+		b.WriteString("\n    @MainActor\n    func perform() async throws -> some IntentResult {\n")
+		decl := "var"
+		if len(s.Params) == 0 {
+			decl = "let"
+		}
+		fmt.Fprintf(&b, "        %s url = %s\n", decl, swiftString(s.URL))
+		for _, p := range s.Params {
+			val := "String(describing: " + p.Name + ")"
+			if p.Type == "options" {
+				val = p.Name + ".rawValue"
+			}
+			if p.Default == nil && p.Optional {
+				val = p.Name + ".map { String(describing: $0) } ?? \"\""
+				if p.Type == "options" {
+					val = p.Name + "?.rawValue ?? \"\""
+				}
+			}
+			fmt.Fprintf(&b, "        url = url.replacingOccurrences(of: %s, with: asukaEscape(%s))\n", swiftString("{"+p.Name+"}"), val)
+		}
+		b.WriteString("        NotificationCenter.default.post(name: Notification.Name(\"AsukaOpenURL\"), object: nil, userInfo: [\"url\": url])\n        return .result()\n    }\n}\n\n")
 	}
 	b.WriteString("struct AsukaAppShortcuts: AppShortcutsProvider {\n    static var appShortcuts: [AppShortcut] {\n")
 	for _, s := range c.Shortcuts {
 		var phrases []string
 		for _, p := range s.Phrases {
-			// ${app}: the app's name, as AppShortcutPhrase interpolates it.
-			lit := swiftString(p)
-			phrases = append(phrases, strings.Replace(lit, "${app}", `\(.applicationName)`, 1))
+			// ${app}: the app's name, as AppShortcutPhrase interpolates it;
+			// ${name}: an options param, which Siri hears as its titles.
+			lit := strings.Replace(swiftString(p), "${app}", `\(.applicationName)`, 1)
+			lit = phraseParam.ReplaceAllString(lit, `\(\.$$${1})`)
+			phrases = append(phrases, lit)
 		}
 		symbol := s.Symbol
 		if symbol == "" {
@@ -761,7 +967,7 @@ func (c *appConfig) androidShortcutRes(res string) error {
             android:targetClass="dev.asuka.AsukaActivity"
             android:data="%[4]s" />
     </shortcut>
-`, s.ID, icon, html.EscapeString(pkg), html.EscapeString(s.URL), rn)
+`, s.ID, icon, html.EscapeString(pkg), html.EscapeString(s.staticURL()), rn)
 		fmt.Fprintf(&strs, "    <string name=\"asuka_shortcut_%s\">%s</string>\n", rn, xmlText(s.Title))
 	}
 	xml.WriteString("</shortcuts>\n")
