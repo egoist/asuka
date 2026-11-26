@@ -9,10 +9,11 @@ asuka dev [flags] [dir]                     # このコンピューター：macO
 asuka dev --platform ios [flags] [dir]       # iOS シミュレーター
 asuka dev --platform ios --device iphone [dir]  # 接続している iPhone（または iPad）
 asuka dev --platform android [flags] [dir]   # Android のエミュレーターまたは実機
+asuka dev --platform ios,android [dir]       # 両方のスマートフォンで同時に
 asuka dev --platform web [flags] [dir]       # ブラウザー
 ```
 
-`--platform` には `ios`、`android`、`mac`、`windows`、`linux`、`web` のいずれかを指定します。`asuka build` でも同じように使えます。省略すると、今使っているコンピューター向けにアプリを実行（またはビルド）します。一回の実行で扱えるプラットフォームは一つだけです。二つのプラットフォームで動かすなら、ターミナルを二つ開いてください。実行されるのは開発ビルドで、[`@debug`](language/control-flow.md#開発ビルド向けのコード) は true です。
+`--platform` には `ios`、`android`、`mac`、`windows`、`linux`、`web` のいずれかを指定します。`asuka build` でも同じように使えます。省略すると、今使っているコンピューター向けにアプリを実行（またはビルド）します。`ios,android` を指定すると、起動中の iOS シミュレーターと最初の Android 実機またはエミュレーターで同時にアプリを実行します。保存するたびに両方がそれぞれのプラットフォーム向けのビルドで再読み込みされ、設定、アセット、ネイティブコードを変更すると両方が起動し直します。それ以外の組み合わせでは、ターミナルを二つ開いてください。実行されるのは開発ビルドで、[`@debug`](language/control-flow.md#開発ビルド向けのコード) は true です。
 
 `dir` はアプリのディレクトリで、デフォルトはカレントディレクトリです。ここにはアプリの `.asuka` ファイル（そのうち一つに `app` ブロックがあります）と `asuka.toml` を置きます。フラグは次のとおりです。
 

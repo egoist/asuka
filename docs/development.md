@@ -14,13 +14,17 @@ asuka dev [flags] [dir]                     # this computer: macOS, Windows or L
 asuka dev --platform ios [flags] [dir]       # the iOS simulator
 asuka dev --platform ios --device iphone [dir]  # the iPhone (or iPad) plugged in
 asuka dev --platform android [flags] [dir]   # an Android emulator or phone
+asuka dev --platform ios,android [dir]       # both phones at once
 asuka dev --platform web [flags] [dir]       # your browser
 ```
 
 `--platform` is one of `ios`, `android`, `mac`, `windows`, `linux` and
 `web`; `asuka build` takes it likewise. Without it, the app runs (or
-builds) for the computer you're on. One platform per run: run two
-terminals for two. What it runs is a development build:
+builds) for the computer you're on. `ios,android` runs the app on the
+booted simulator and the first Android device or emulator at once: each
+save reloads both, each with its platform's build, and changing the
+settings, assets or native code launches both again. Another pair of
+platforms takes two terminals. What it runs is a development build:
 [`@debug`](language/control-flow.md#code-for-development-builds) is
 true.
 

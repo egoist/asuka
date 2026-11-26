@@ -9,10 +9,11 @@ asuka dev [flags] [dir]                     # 当前电脑：macOS、Windows 或
 asuka dev --platform ios [flags] [dir]       # iOS 模拟器
 asuka dev --platform ios --device iphone [dir]  # 连接着的 iPhone（或 iPad）
 asuka dev --platform android [flags] [dir]   # Android 模拟器或手机
+asuka dev --platform ios,android [dir]       # 同时在两种手机上运行
 asuka dev --platform web [flags] [dir]       # 浏览器
 ```
 
-`--platform` 可以是 `ios`、`android`、`mac`、`windows`、`linux` 和 `web` 之一；`asuka build` 也接受同样的参数。不指定时，应用会为你当前使用的电脑运行（或构建）。每次只能运行一个平台：要同时跑两个平台，就开两个终端。它运行的是开发构建：[`@debug`](language/control-flow.md#开发构建的代码) 为 true。
+`--platform` 可以是 `ios`、`android`、`mac`、`windows`、`linux` 和 `web` 之一；`asuka build` 也接受同样的参数。不指定时，应用会为你当前使用的电脑运行（或构建）。`ios,android` 会同时在已启动的 iOS 模拟器和第一台 Android 设备或模拟器上运行应用：每次保存，两边都会重新加载，各用自己平台的构建；改动设置、资源或原生代码时，两边都会重新启动。其他平台组合则需要开两个终端。它运行的是开发构建：[`@debug`](language/control-flow.md#开发构建的代码) 为 true。
 
 `dir` 是应用所在的目录，默认是当前目录，里面有应用的 `.asuka` 文件（其中一个包含 `app` 块）和它的 `asuka.toml`。可用的参数有：
 

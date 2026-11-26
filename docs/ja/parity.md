@@ -186,7 +186,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | ライブリロード、状態の保持 | プレビュー、Fast Refresh | ✓ `asuka dev`：開発用アプリが、保存するたびに数ミリ秒で新しいものに入れ替え、すべての `state` を保つ。スマートフォン、デスクトップ、ブラウザーのどれでも（[開発](development.md)） |
 | ビューの調査 | Xcode のビューデバッガー、React Native DevTools、Flutter DevTools | ✓ `asuka dev` のインスペクター：実行中のアプリのビューをブラウザーにツリーで表示し（要素、テキスト、frame）、ポインターを合わせたビューをデバイス上でハイライトする（[開発](development.md#インスペクター)） |
 | 開発環境の確認 | Expo の doctor、`flutter doctor` | ✓ `asuka doctor`：このコンピューターが各プラットフォーム向けに何をビルドできるか、残りに何をインストールすればよいか |
-| スマートフォンでの実行 | Xcode の Run、Expo の開発ビルド | ✓ `asuka dev --platform ios` または `android`：シミュレーター、エミュレーター、Android のスマートフォン（`adb reverse`）、USB か Wi-Fi でつないだ iPhone（`--device iphone`、自分のチームで署名） |
+| スマートフォンでの実行 | Xcode の Run、Expo の開発ビルド | ✓ `asuka dev --platform ios`、`android`、または両方同時（`ios,android`）：シミュレーター、エミュレーター、Android のスマートフォン（`adb reverse`）、USB か Wi-Fi でつないだ iPhone（`--device iphone`、自分のチームで署名） |
 | テスト | XCTest、Jest と React Native Testing Library | ✓ `asuka test`：`test` ブロック。アプリをデバイスなしでマウントし（`mount`、`app.tap`、`app.expect`）、デバイスのパッケージにはフェイクがある（[テスト](testing.md)） |
 | リリースビルドと署名 | Xcode、EAS Build | ✓ `asuka build`：アプリを事前にコンパイルする。`.ipa`、`.aab`、署名と公証を済ませた `.app`（または Mac App Store 用の `.pkg`）、署名済みの `.exe` を含む Windows のフォルダー、`.tar.gz` と Flatpak のマニフェストを含む Linux のインストールプレフィックス、静的サイト（[配布](shipping.md)） |
 | ストアへのアップロード | Xcode、EAS Submit | ✓ `asuka publish`：TestFlight、App Review、Google Play のトラック。Mac App Store と Mac の TestFlight。デスクトップのビルドと署名付きのアップデート |
