@@ -409,6 +409,7 @@ static void dev_frame(uint8_t kind, const uint8_t *p, size_t n) {
 		ak_buf_free(&b);
 		break;
 	}
+	case AK_DEV_HIGHLIGHT: ak_ui_highlight((ak_span){(const char *)p, (uint32_t)n}); break;
 	}
 }
 

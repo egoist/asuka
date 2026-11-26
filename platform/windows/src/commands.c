@@ -225,5 +225,11 @@ void wh_command(node *n, uint16_t cmd, const uint8_t *args, size_t len) {
 	case AK_CMD_DEV_ERROR_CLEAR:
 		wh_dev_error_clear();
 		break;
+	case AK_CMD_DEV_HIGHLIGHT:
+		wh_dev_highlight(n, args, len);
+		break;
+	case AK_CMD_DEV_HIGHLIGHT_CLEAR:
+		wh_dev_highlight_clear();
+		break;
 	}
 }

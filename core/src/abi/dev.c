@@ -210,7 +210,8 @@ static void session(sock_t s) {
 		case AK_DEV_SOURCE:
 		case AK_DEV_FAILED:
 		case AK_DEV_FIXED:
-		case AK_DEV_INSPECT: {
+		case AK_DEV_INSPECT:
+		case AK_DEV_HIGHLIGHT: {
 			frame_t *f = ak_alloc(sizeof *f);
 			f->p = p;
 			f->len = n - 1;

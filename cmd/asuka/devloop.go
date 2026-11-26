@@ -53,8 +53,10 @@ type devLoop struct {
 	stale    bool
 	// reloads receives each reload a player reports (tests).
 	reloads chan devReload
-	// inspector serves the app's views to the inspector's page.
-	inspector *inspector
+	// inspector serves the app's views to the inspector's page, at
+	// inspectorURL.
+	inspector    *inspector
+	inspectorURL string
 	// firstLoad is closed when a player first reports the app loaded;
 	// playerErr gets what a player reports going wrong (--once's).
 	firstLoad     chan struct{}
@@ -80,7 +82,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 			fmt.Fprintf(d.out, "asuka: %s connected\n", playerName(b))
 		},
 		Tree: func(p *devserver.Player, tree []byte) {
-			d.inspector.put(fmt.Sprintf("%p", p), playerName(p.Info), tree, false)
+			d.inspector.put(fmt.Sprintf("%p", p), playerName(p.Info), tree, false, func(path string) { p.Highlight(path) })
 		},
 		Need: func(p *devserver.Player, platform target.Platform) { d.compileFor(platform) },
 		Log: func(p *devserver.Player, stderr bool, text []byte) {
@@ -115,6 +117,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	d.srv = srv
 	d.inspector.askers = append(d.inspector.askers, srv.Inspect)
 	if url, err := d.inspector.listen(); err == nil {
+		d.inspectorURL = url
 		fmt.Fprintf(d.out, "asuka: the inspector (the app's views): %s\n", url)
 	}
 	d.compile()
@@ -402,7 +405,7 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 	keys, restore := devKeys()
 	defer restore()
 	if keys != nil {
-		fmt.Fprintln(d.out, "asuka: watching for changes (r: restart, Ctrl-C: stop)")
+		fmt.Fprintln(d.out, "asuka: watching for changes (r: restart, i: the inspector, Ctrl-C: stop)")
 	} else {
 		fmt.Fprintln(d.out, "asuka: watching for changes (Ctrl-C to stop)")
 	}
@@ -411,8 +414,13 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 	for {
 		select {
 		case k := <-keys:
-			if k == 'r' || k == 'R' {
+			switch k {
+			case 'r', 'R':
 				d.restart()
+			case 'i', 'I':
+				if d.inspectorURL != "" {
+					openBrowser(d.inspectorURL)
+				}
 			}
 		case <-stop:
 			if p.stop != nil {

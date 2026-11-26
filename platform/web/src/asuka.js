@@ -155,7 +155,7 @@ function devClient(url) {
   let host = null, core = null, trapped = null;
   const report = (r, first, restarted) => fetch(base + "reloaded", { method: "POST", body: JSON.stringify({ First: first, Restarted: restarted, Kept: r.kept, Micros: r.micros }) }).catch(() => {});
   // asuka dev's frames for the core (core/src/abi/dev.h's kinds), held until it's there.
-  const Frame = { Reloaded: 5, Uncaught: 8, Source: 9, Failed: 10, Fixed: 11, Inspect: 12, Tree: 13 };
+  const Frame = { Reloaded: 5, Uncaught: 8, Source: 9, Failed: 10, Fixed: 11, Inspect: 12, Tree: 13, Highlight: 14 };
   let held = [];
   const frame = (kind, bytes) => {
     if (core?.frame) core.frame(kind, bytes);
@@ -219,6 +219,11 @@ function devClient(url) {
   events.addEventListener("fixed", () => frame(Frame.Fixed, new Uint8Array(0)));
   // The inspector asks for the app's views: the core answers with a tree frame.
   events.addEventListener("inspect", () => core?.frame && frame(Frame.Inspect, new Uint8Array(0)));
+  // It selected a view ("<page> <path>"; no path: none): the core highlights it.
+  events.addEventListener("highlight", (e) => {
+    const [to, path = ""] = e.data.split(" ");
+    if (to === page && core?.frame) frame(Frame.Highlight, new TextEncoder().encode(path));
+  });
   // GUI tests' commands (e2e/), as the mobile hosts' debug builds take them.
   events.addEventListener("automation", async (e) => {
     const { id, commands } = JSON.parse(e.data);

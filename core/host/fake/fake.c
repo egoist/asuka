@@ -675,6 +675,17 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 			if (f->dev_error_on != v->id) { fail(f, "DevErrorClear to %u, which shows no error overlay", v->id); return; }
 			f->dev_error_on = 0;
 			return;
+		case AK_CMD_DEV_HIGHLIGHT: {
+			if (op->value.s.len != 16) { fail(f, "DevHighlight: %u bytes of arguments, want 16", op->value.s.len); return; }
+			ak_reader r = {(const uint8_t *)op->value.s.p, op->value.s.len, 0, false};
+			for (int i = 0; i < 4; i++) f->highlight[i] = ak_read_f32(&r);
+			f->highlight_on = v->id;
+			return;
+		}
+		case AK_CMD_DEV_HIGHLIGHT_CLEAR:
+			if (!v->root) { fail(f, "DevHighlightClear to %u, not the root", v->id); return; }
+			f->highlight_on = 0;
+			return;
 		case AK_CMD_FOCUS:
 			if (ak_fake_takes_focus(v)) focus_to(f, v, f->keyboard, true);
 			break;

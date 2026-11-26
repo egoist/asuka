@@ -258,10 +258,12 @@ print there too.
 asuka: the inspector (the app's views): http://127.0.0.1:52817/
 ```
 
-Open it in a browser on the same computer to see the running app's
+Open it in a browser on the same computer (or press **i** in the
+terminal `asuka dev` runs in) to see the running app's
 views as a tree: each one's element, its text, and its frame in its
-parent. Click a view to see its details, fold the parts you don't need,
-or filter by an element or a text. The tree follows the app every second
+parent. Point at a view, or click it, and the app highlights it on the
+device; the click shows its details too, and Escape lets it go. Fold the
+parts you don't need, or filter by an element or a text. The tree follows the app every second
 (turn off Live to keep one still). With several devices connected
 (an iPhone and an emulator), pick one at the top. Sheets, popovers and
 other windows are trees of their own, after the app's, and a list's

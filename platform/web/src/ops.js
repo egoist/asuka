@@ -253,6 +253,8 @@ export const Command = Object.freeze({
   Quit: 37,
   DevError: 38,
   DevErrorClear: 39,
+  DevHighlight: 40,
+  DevHighlightClear: 41,
 });
 
 export const Role = Object.freeze({ None: 0, Button: 1, Header: 2, Image: 3, Link: 4, Text: 5, Search: 6, Checkbox: 7, Radio: 8, RadioGroup: 9, Switch: 10, Tab: 11, TabList: 12, TabPanel: 13, Slider: 14, SpinButton: 15, ProgressBar: 16, Meter: 17, Menu: 18, MenuBar: 19, MenuItem: 20, MenuItemCheckbox: 21, MenuItemRadio: 22, Listbox: 23, Option: 24, ComboBox: 25, Dialog: 26, AlertDialog: 27, Tooltip: 28, Group: 29, Separator: 30, Toolbar: 31, Status: 32 });

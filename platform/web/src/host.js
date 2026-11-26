@@ -26,7 +26,7 @@ import * as text from "./text.js";
 import { redrawCanvases } from "./draw.js";
 import { Focus } from "./focus.js";
 import { Overlays } from "./overlay.js";
-import { DevErrors } from "./deverror.js";
+import { DevErrors, showHighlight, hideHighlight } from "./deverror.js";
 import * as a11y from "./a11y.js";
 
 const NaN32 = NaN;
@@ -873,6 +873,14 @@ export class Host {
         break;
       case Command.DevErrorClear:
         this.devErrors.clear();
+        break;
+      case Command.DevHighlight: {
+        const v = new DataView(args.buffer, args.byteOffset, args.byteLength);
+        showHighlight(this.container, n.el, [0, 4, 8, 12].map((o) => v.getFloat32(o, true)));
+        break;
+      }
+      case Command.DevHighlightClear:
+        hideHighlight(this.container);
         break;
       case Command.Frames:
         this.motion.frames(args[0] !== 0, n);

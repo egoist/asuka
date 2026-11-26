@@ -130,6 +130,10 @@ void ak_dev_overlay_fixed(void);
 // inspector shows them (inspect.c): {"roots":[{"el", "id", "text",
 // "text2", "frame", "kids"}, ...]}.
 void ak_ui_inspect(ak_buf *out);
+// ak_ui_highlight has the host highlight the view at path in
+// ak_ui_inspect's tree (its indexes from the roots, joined by dots),
+// or no view (an empty path, or one no view is at).
+void ak_ui_highlight(ak_span path);
 // ak_dev_overlay_clear_app forgets the app's errors: a new module loads.
 void ak_dev_overlay_clear_app(void);
 // ak_dev_overlay_set_reload sets what Reload does: the app starts again,

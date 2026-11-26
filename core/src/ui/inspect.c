@@ -5,7 +5,9 @@
 // window's), and a List's cells are its children, though neither is a
 // child of the view it shows in.
 #include "ui/ui_ext.h"
+#include "rt/sched.h"
 
+#include <math.h>
 #include <stdio.h>
 
 // json_str writes s as a JSON string.
@@ -67,17 +69,138 @@ static void view_json(walk *w, ak_view *e) {
 	ak_buf_put(b, "]}", 2);
 }
 
+// root_at is the tree's i'th root: the root's element, then the
+// providers of no parent (sheets', popovers', windows' contents).
+static ak_view *root_at(ak_ui_root *r, uint32_t i) {
+	if (!r) return NULL;
+	if (r->el && !r->el->dead) {
+		if (i == 0) return r->el;
+		i--;
+	}
+	for (uint32_t j = 0; j < r->provs.len; j++) {
+		ak_view *v = r->provs.data[j];
+		if (v && !v->dead && !v->parent && v != r->el && i-- == 0) return v;
+	}
+	return NULL;
+}
+
 void ak_ui_inspect(ak_buf *out) {
 	ak_ui_root *r = ak_ui.root;
 	ak_buf_put(out, "{\"roots\":[", 10);
 	walk w = {out, true, 0};
-	if (r) {
-		view_json(&w, r->el);
-		// Sheets', popovers' and windows' contents: providers of no parent.
-		for (uint32_t i = 0; i < r->provs.len; i++) {
-			ak_view *v = r->provs.data[i];
-			if (v && !v->dead && !v->parent && v != r->el) view_json(&w, v);
-		}
+	for (uint32_t i = 0;; i++) {
+		ak_view *v = root_at(r, i);
+		if (!v) break;
+		view_json(&w, v);
 	}
 	ak_buf_put(out, "]}", 2);
+}
+
+// The i'th child as the tree has them: its children that aren't dead,
+// then a List's cells.
+typedef struct {
+	uint32_t i;
+	ak_view *found;
+} nth;
+
+static void cell_nth(ak_view *c, void *ctx) {
+	nth *n = ctx;
+	if (n->found || !c || c->dead) return;
+	if (n->i == 0) n->found = c;
+	else n->i--;
+}
+
+static ak_view *kid_at(ak_view *e, uint32_t i) {
+	for (uint32_t j = 0; j < e->kids.len; j++) {
+		ak_view *k = e->kids.data[j];
+		if (k && !k->dead && i-- == 0) return k;
+	}
+	nth n = {i, NULL};
+	if (e->kind == AK_KIND_LIST && e->el == AK_EL_LIST) ak_list_each_cell(e, cell_nth, &n);
+	return n.found;
+}
+
+// What the highlight last showed: a view's id and the rect in it.
+static struct {
+	bool on;
+	ak_id id;
+	float rect[4];
+	bool posted;
+} H;
+
+static void highlight_flush(void *ctx) {
+	AK_UNUSED(ctx);
+	H.posted = false;
+	ak_ui_flush();
+}
+
+static void highlight_clear(ak_ui_root *r) {
+	if (!H.on) return;
+	H.on = false;
+	if (r && r->el && !r->disposed) ak_batch_command(r->batch, r->el->id, AK_CMD_DEV_HIGHLIGHT_CLEAR, NULL, 0);
+}
+
+void ak_ui_highlight(ak_span path) {
+	ak_ui_root *r = ak_ui.root;
+	ak_view *v = NULL;
+	if (path.len) {
+		// "0.2.1": a root's index, then a child's at each level.
+		uint32_t i = 0;
+		bool digits = false, first = true;
+		for (uint32_t k = 0; k <= path.len; k++) {
+			char c = k < path.len ? path.p[k] : '.';
+			if (c >= '0' && c <= '9' && i < 100000000) {
+				i = i * 10 + (uint32_t)(c - '0');
+				digits = true;
+			} else if (c == '.' && digits) {
+				v = first ? root_at(r, i) : kid_at(v, i);
+				if (!v) break;
+				first = false;
+				i = 0;
+				digits = false;
+			} else {
+				v = NULL;
+				break;
+			}
+		}
+	}
+	// The view with a native view it's in, and where in it: a view without
+	// one of its own (a layout's) is laid out in the nearest that has.
+	ak_view *a = v;
+	float rect[4] = {0, 0, -1, -1};
+	if (v && !v->real) {
+		if (!v->box) {
+			a = NULL;  // a fragment: no box of its own
+		} else {
+			ak_lframe fr = ak_lnode_frame(v->box);
+			rect[0] = fr.x, rect[1] = fr.y, rect[2] = fr.w, rect[3] = fr.h;
+			for (a = v->parent; a && !a->real; a = a->parent) {
+				if (a->box) {
+					ak_lframe pf = ak_lnode_frame(a->box);
+					rect[0] += pf.x;
+					rect[1] += pf.y;
+				}
+			}
+		}
+	} else if (v && !isnan(v->sent[2])) {
+		// Its own bounds; a view the host sizes (a screen, a sheet) has
+		// none sent: -1, the bounds the host gave it.
+		rect[2] = v->sent[2];
+		rect[3] = v->sent[3];
+	}
+	if (!a || a->dead || !a->real || !a->id || !a->r || a->r->disposed) {
+		highlight_clear(r);
+	} else if (!H.on || H.id != a->id || memcmp(H.rect, rect, sizeof rect) != 0) {
+		H.on = true;
+		H.id = a->id;
+		memcpy(H.rect, rect, sizeof rect);
+		ak_buf args = {0};
+		for (int k = 0; k < 4; k++) ak_buf_f32(&args, rect[k]);
+		ak_batch_command(a->r->batch, a->id, AK_CMD_DEV_HIGHLIGHT, args.data, args.len);
+		ak_buf_free(&args);
+	}
+	if (!H.posted) {
+		H.posted = true;
+		ak_post(highlight_flush, NULL);
+	}
 }

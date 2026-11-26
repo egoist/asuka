@@ -920,6 +920,46 @@ TEST(inspector_tree) {
 	CHECK_EQ_INT(depth, 0);
 	CHECK_EQ_INT(least, 0);
 	ak_buf_free(&b);
+
+	// The highlight: over the view a path names, in the view with a native
+	// view it's laid out in; none for a path no view is at.
+	ak_fake_view *top = one(a, AK_KIND_TEXT, "at the top");
+	REQUIRE(top);
+	ak_ui_highlight(AK_STR("0"));
+	ak_uitest_settle(a);
+	CHECK_EQ_INT(f->highlight_on, ak_fake_root(f)->id);
+	ak_ui_highlight(AK_STR("1"));  // the sheet's content, the second root
+	ak_uitest_settle(a);
+	CHECK(f->highlight_on != 0);
+	ak_fake_view *hv = ak_fake_view_of(f, f->highlight_on);
+	REQUIRE(hv);
+	CHECK(f->highlight[2] > 0 || f->highlight[2] == -1);
+	// Each step down from the sheet's root to its first text: a path that
+	// names it lands on it, or on the view it's laid out in, with its rect.
+	char path[64] = "1";
+	bool found = false;
+	for (int depth2 = 0; depth2 < 12 && !found; depth2++) {
+		strcat(path, ".0");
+		ak_ui_highlight((ak_span){path, (uint32_t)strlen(path)});
+		ak_uitest_settle(a);
+		if (!f->highlight_on) break;
+		if (f->highlight_on == top->id) {
+			found = true;
+			CHECK(f->highlight[0] == 0 && f->highlight[1] == 0);
+			CHECK(f->highlight[2] == top->frame[2] && f->highlight[3] == top->frame[3]);
+		}
+	}
+	CHECK(found);
+	ak_ui_highlight(AK_STR("9.9"));
+	ak_uitest_settle(a);
+	CHECK_EQ_INT(f->highlight_on, 0);
+	ak_ui_highlight(AK_STR("0"));
+	ak_ui_highlight(AK_STR(""));
+	ak_uitest_settle(a);
+	CHECK_EQ_INT(f->highlight_on, 0);
+	ak_ui_highlight(AK_STR("x"));  // nonsense: none
+	ak_uitest_settle(a);
+	CHECK_EQ_INT(f->highlight_on, 0);
 	done(a);
 	ak_release(open_cell);
 }

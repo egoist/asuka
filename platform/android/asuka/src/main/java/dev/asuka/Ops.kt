@@ -518,6 +518,8 @@ object AsukaCommand {
     const val QUIT = 37
     const val DEV_ERROR = 38
     const val DEV_ERROR_CLEAR = 39
+    const val DEV_HIGHLIGHT = 40
+    const val DEV_HIGHLIGHT_CLEAR = 41
 }
 
 object AsukaRole {

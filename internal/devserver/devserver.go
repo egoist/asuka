@@ -36,6 +36,9 @@ const (
 	// (JSON: core/src/ui/inspect.c's).
 	KindInspect = 12
 	KindTree    = 13
+	// KindHighlight has a player highlight the view at a path in its tree
+	// (its indexes from the roots, joined by dots; empty: none).
+	KindHighlight = 14
 )
 
 // A reloaded frame's flags.
@@ -268,6 +271,10 @@ func (s *Server) Fixed(platform target.Platform) {
 // Source answers an uncaught error p reported (seq, its number): the
 // lines of the app's source where it went wrong, and its stack as the
 // overlay shows it.
+// Highlight has the player highlight the view at path in the tree it
+// last gave ("0.2.1"), or none ("").
+func (p *Player) Highlight(path string) error { return p.send(KindHighlight, []byte(path)) }
+
 func (p *Player) Source(seq uint32, source, details string) error {
 	return p.send(KindSource, EncodeSource(seq, source, details))
 }

@@ -768,3 +768,102 @@ void wh_dev_error_print(HDC dc, RECT win) {
 	DeleteObject(bmp);
 	DeleteDC(mem);
 }
+
+// ---- asuka dev's inspector's highlight (DevHighlight, DevHighlightClear) ----
+//
+// A translucent box over the view the inspector selected: a layered popup
+// the view's top-level window owns (so it's over it, its sheets' and
+// popovers' windows too once raised), its pixels' alpha its own
+// (UpdateLayeredWindow), and transparent to the mouse (WS_EX_TRANSPARENT),
+// so the app under it takes every click.
+
+#define HL_CLASS L"AsukaDevHighlight"
+
+static HWND hl_win;
+
+static LRESULT CALLBACK hl_proc(HWND hwnd, UINT m, WPARAM wp, LPARAM lp) {
+	if (m == WM_NCHITTEST) return HTTRANSPARENT;
+	if (m == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+	return DefWindowProcW(hwnd, m, wp, lp);
+}
+
+void wh_dev_highlight_clear(void) {
+	if (hl_win) DestroyWindow(hl_win);
+	hl_win = NULL;
+}
+
+void wh_dev_highlight(node *n, const uint8_t *args, size_t len) {
+	wh_dev_highlight_clear();
+	if (!n || len < 16) return;
+	float r[4];
+	memcpy(r, args, sizeof r);  // f32s, little-endian: the wire's, and Windows'
+	// A view drawn in its parent's window: its rect in the nearest that has one.
+	while (n && !n->hwnd) {
+		if (r[2] < 0 || r[3] < 0) r[0] = r[1] = 0, r[2] = n->frame[2], r[3] = n->frame[3];
+		r[0] += n->frame[0];
+		r[1] += n->frame[1];
+		n = n->parent;
+	}
+	if (!n || !IsWindowVisible(n->hwnd)) return;
+	float k = (float)wh_dpi(n->hwnd) / 96;
+	RECT cr;
+	GetClientRect(n->hwnd, &cr);
+	POINT at = {0, 0};
+	int w = cr.right, h = cr.bottom;
+	if (r[2] >= 0 && r[3] >= 0) {
+		at.x = (int)lroundf(r[0] * k);
+		at.y = (int)lroundf(r[1] * k);
+		w = (int)lroundf(r[2] * k);
+		h = (int)lroundf(r[3] * k);
+	}
+	if (w <= 0 || h <= 0) return;
+	ClientToScreen(n->hwnd, &at);
+	static bool registered;
+	HINSTANCE inst = GetModuleHandleW(NULL);
+	if (!registered) {
+		WNDCLASSEXW wc = {sizeof wc};
+		wc.lpfnWndProc = hl_proc;
+		wc.hInstance = inst;
+		wc.lpszClassName = HL_CLASS;
+		RegisterClassExW(&wc);
+		registered = true;
+	}
+	HWND top = GetAncestor(n->hwnd, GA_ROOT);
+	hl_win = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, HL_CLASS, L"", WS_POPUP,
+	                         at.x, at.y, w, h, top, NULL, inst, NULL);
+	if (!hl_win) return;
+	// Its pixels, premultiplied BGRA: the system's blue, a fill at 18%
+	// and a solid outline a point wide.
+	BITMAPINFO bi = {0};
+	bi.bmiHeader.biSize = sizeof bi.bmiHeader;
+	bi.bmiHeader.biWidth = w;
+	bi.bmiHeader.biHeight = -h;
+	bi.bmiHeader.biPlanes = 1;
+	bi.bmiHeader.biBitCount = 32;
+	bi.bmiHeader.biCompression = BI_RGB;
+	HDC sdc = GetDC(NULL), mdc = CreateCompatibleDC(sdc);
+	void *bits = NULL;
+	HBITMAP bm = CreateDIBSection(mdc, &bi, DIB_RGB_COLORS, &bits, NULL, 0);
+	if (bm && bits) {
+		uint32_t *px = bits;
+		int bw = k >= 1.5f ? (int)lroundf(k) : 1;
+		uint32_t fill_a = 46, line = 0xFF0A84FFu;
+		uint32_t fill = (fill_a << 24) | ((0x0A * fill_a / 255) << 16) | ((0x84 * fill_a / 255) << 8) | (0xFF * fill_a / 255);
+		for (int y = 0; y < h; y++) {
+			for (int x = 0; x < w; x++) {
+				bool edge = x < bw || y < bw || x >= w - bw || y >= h - bw;
+				px[(size_t)y * (size_t)w + (size_t)x] = edge ? line : fill;
+			}
+		}
+		HGDIOBJ old = SelectObject(mdc, bm);
+		POINT src = {0, 0};
+		SIZE size = {w, h};
+		BLENDFUNCTION bf = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+		UpdateLayeredWindow(hl_win, sdc, &at, &size, mdc, &src, 0, &bf, ULW_ALPHA);
+		SelectObject(mdc, old);
+		DeleteObject(bm);
+	}
+	DeleteDC(mdc);
+	ReleaseDC(NULL, sdc);
+	ShowWindow(hl_win, SW_SHOWNOACTIVATE);
+}

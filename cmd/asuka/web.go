@@ -615,7 +615,10 @@ func (s *devServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if n := r.URL.Query().Get("name"); n != "" {
 			name += " (" + n + ")"
 		}
-		s.loop.inspector.put("web:"+r.URL.Query().Get("page"), name, b, true)
+		page := r.URL.Query().Get("page")
+		s.loop.inspector.put("web:"+page, name, b, true, func(path string) {
+			s.send("highlight", page+" "+path)
+		})
 	case p == "/__asuka/uncaught" && r.Method == http.MethodPost:
 		// An error the app didn't catch (an uncaught frame's payload): it's
 		// printed, and the answer is its source frame's payload.

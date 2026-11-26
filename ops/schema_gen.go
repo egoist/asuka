@@ -806,9 +806,13 @@ const (
 	CmdDevError CommandID = 38
 	// CmdDevErrorClear: sent to the root: the host removes the overlay DevError shows (the error was dismissed or fixed, the app reloaded, or the root is about to go).
 	CmdDevErrorClear CommandID = 39
+	// CmdDevHighlight: args: f32 x, y, width, height (a rect in the view's coordinates, points from its top left: the view's own bounds, or a part of it that a view without a native view of its own takes); sent to a view, only under asuka dev, as its inspector selects a view: the host shows a highlight over that rect (a translucent fill and an outline, in front of everything in the view's window, not taking any touch or click), and removes the one it showed before.
+	CmdDevHighlight CommandID = 40
+	// CmdDevHighlightClear: sent to the root: the host removes the highlight DevHighlight shows.
+	CmdDevHighlightClear CommandID = 41
 )
 
-var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear"}
+var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear", "DevHighlight", "DevHighlightClear"}
 
 func (c CommandID) String() string {
 	if int(c) < len(commandNames) && c > 0 {

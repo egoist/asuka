@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -123,7 +126,7 @@ func TestDevDesktop(t *testing.T) {
 
 // inspects asks the players for their views, as the inspector's page
 // does, and wants one player, called name, whose tree has each of want.
-func inspects(t *testing.T, loop *devLoop, name string, want ...string) {
+func inspects(t *testing.T, loop *devLoop, name string, want ...string) []inspectorPlayer {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	loop.inspector.ServeHTTP(rec, httptest.NewRequest("GET", "/tree", nil))
@@ -145,6 +148,41 @@ func inspects(t *testing.T, loop *devLoop, name string, want ...string) {
 	if !strings.Contains(rec.Body.String(), "<title>Asuka Inspector</title>") {
 		t.Fatalf("the inspector's page: %s", rec.Body.String())
 	}
+	return got.Players
+}
+
+// treePath is the path of the view in an inspector's tree that shows
+// text ("0.1.0"), and its size ("120x20"), as the page sends it.
+func treePath(t *testing.T, tree []byte, text string) (string, string) {
+	t.Helper()
+	type view struct {
+		Text  string
+		Frame []float64
+		Kids  []json.RawMessage
+	}
+	var find func(raw json.RawMessage, path string) (string, string)
+	find = func(raw json.RawMessage, path string) (string, string) {
+		var v view
+		json.Unmarshal(raw, &v)
+		if v.Text == text && len(v.Frame) == 4 {
+			return path, fmt.Sprintf("%dx%d", int(math.Round(v.Frame[2])), int(math.Round(v.Frame[3])))
+		}
+		for i, k := range v.Kids {
+			if p, s := find(k, path+"."+strconv.Itoa(i)); p != "" {
+				return p, s
+			}
+		}
+		return "", ""
+	}
+	var roots struct{ Roots []json.RawMessage }
+	json.Unmarshal(tree, &roots)
+	for i, r := range roots.Roots {
+		if p, s := find(r, strconv.Itoa(i)); p != "" {
+			return p, s
+		}
+	}
+	t.Fatalf("no view shows %q in %s", text, tree)
+	return "", ""
 }
 
 // The dev loop on the web: the page runs the player (the core as
@@ -157,7 +195,28 @@ func TestDevWeb(t *testing.T) {
 	if got := automate("tap Add\ndump"); !strings.Contains(got, "Count: 1") {
 		t.Fatalf("after tapping Add, the page shows:\n%s", got)
 	}
-	inspects(t, loop, "Web (Chrome)", `"text":"Count: 1"`)
+	players := inspects(t, loop, "Web (Chrome)", `"text":"Count: 1"`)
+	// The inspector's highlight: over the text it names, in the page.
+	path, size := treePath(t, players[0].Tree, "Count: 1")
+	rec := httptest.NewRecorder()
+	loop.inspector.ServeHTTP(rec, httptest.NewRequest("POST", "/highlight?key="+url.QueryEscape(players[0].Key)+"&path="+path, nil))
+	if rec.Code != 200 {
+		t.Fatalf("highlight: %d %s", rec.Code, rec.Body.String())
+	}
+	got := ""
+	for i := 0; i < 100 && got != size; i++ {
+		got = strings.TrimSpace(automate("highlighted"))
+	}
+	if got != size {
+		t.Fatalf("the highlight is %s, want %s (the text's)", got, size)
+	}
+	loop.inspector.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/highlight?key="+url.QueryEscape(players[0].Key)+"&path=", nil))
+	for i := 0; i < 100 && got != "none"; i++ {
+		got = strings.TrimSpace(automate("highlighted"))
+	}
+	if got != "none" {
+		t.Fatalf("after the highlight's cleared, it's %s", got)
+	}
 	useCounter(t, "Total: ")
 	if !loop.compile() {
 		t.Fatal("didn't compile")

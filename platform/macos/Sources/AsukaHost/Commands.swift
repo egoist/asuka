@@ -57,6 +57,10 @@ import AsukaOps
             devError(n, args) // DevError.swift: asuka dev's overlay
         case .devErrorClear:
             devErrorClear()
+        case .devHighlight:
+            devHighlight(n.view, args) // DevHighlight.swift
+        case .devHighlightClear:
+            devHighlightClear()
         case .replace:
             n.nav?.instant = true
         case .a11yFocus:

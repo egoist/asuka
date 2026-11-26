@@ -18,6 +18,9 @@
 //                 11 fixed (the app builds again)
 //                 12 inspect (asuka dev's inspector asks for the views:
 //                    answered with a tree)
+//                 14 highlight (the inspector selected a view: its path,
+//                    its indexes from the tree's roots joined by dots,
+//                    "0.2.1"; empty: none, the highlight goes)
 //   player → CLI:  3 log (u8 fd: 1 out, 2 err; then the text)
 //                  4 hello (JSON: the platform, the device)
 //                  5 reloaded (u32 state cells kept, u32 microseconds,
@@ -53,6 +56,7 @@ enum {
 	AK_DEV_FIXED = 11,
 	AK_DEV_INSPECT = 12,
 	AK_DEV_TREE = 13,
+	AK_DEV_HIGHLIGHT = 14,
 };
 
 // A reloaded frame's flags.

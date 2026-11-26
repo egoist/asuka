@@ -183,6 +183,10 @@ struct ak_fake {
 	// none) and its arguments.
 	ak_id dev_error_on;
 	ak_buf dev_error;
+	// asuka dev's inspector's highlight (DevHighlight): the view it's
+	// over (0: none) and the rect in it.
+	ak_id highlight_on;
+	float highlight[4];
 };
 
 ak_fake *ak_fake_new(void);

@@ -746,6 +746,8 @@ void lx_crash_start(void);
 // deverror.c: asuka dev's error overlay (DevError, DevErrorClear)
 void lx_dev_error(node *n, ak_span args);
 void lx_dev_error_clear(void);
+void lx_dev_highlight(node *n, ak_span args);  // asuka dev's inspector's (view.c)
+void lx_dev_highlight_clear(void);
 void lx_dev_error_raise(void);
 void lx_dev_error_resized(win *w);
 void lx_dev_error_closing(win *w);

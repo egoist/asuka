@@ -47,14 +47,17 @@ type inspected struct {
 	web bool
 	// order keeps the players in the order they first answered.
 	order int
+	// highlight has the player highlight the view at a path ("": none).
+	highlight func(path string)
 }
 
 func newInspector() *inspector {
 	return &inspector{trees: map[string]*inspected{}, answered: make(chan struct{}, 64)}
 }
 
-// put keeps a player's tree (key: the player), which answers an ask.
-func (in *inspector) put(key, name string, tree []byte, web bool) {
+// put keeps a player's tree (key: the player), which answers an ask;
+// highlight shows a view of it on the player.
+func (in *inspector) put(key, name string, tree []byte, web bool, highlight func(path string)) {
 	if !json.Valid(tree) {
 		return
 	}
@@ -64,7 +67,7 @@ func (in *inspector) put(key, name string, tree []byte, web bool) {
 		t = &inspected{order: len(in.trees)}
 		in.trees[key] = t
 	}
-	t.name, t.tree, t.at, t.web = name, append(json.RawMessage(nil), tree...), time.Now(), web
+	t.name, t.tree, t.at, t.web, t.highlight = name, append(json.RawMessage(nil), tree...), time.Now(), web, highlight
 	in.mu.Unlock()
 	select {
 	case in.answered <- struct{}{}:
@@ -80,6 +83,7 @@ func (in *inspector) forget(key string) {
 }
 
 type inspectorPlayer struct {
+	Key  string          `json:"key"`
 	Name string          `json:"name"`
 	Tree json.RawMessage `json:"tree"`
 }
@@ -111,19 +115,17 @@ func (in *inspector) ask(wait time.Duration) []inspectorPlayer {
 	}
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	var ts []*inspected
+	out := []inspectorPlayer{}
+	order := map[string]int{}
 	for k, t := range in.trees {
 		if t.web && t.at.Before(start) {
 			delete(in.trees, k)
 			continue
 		}
-		ts = append(ts, t)
+		out = append(out, inspectorPlayer{k, t.name, t.tree})
+		order[k] = t.order
 	}
-	sort.Slice(ts, func(i, j int) bool { return ts[i].order < ts[j].order })
-	out := []inspectorPlayer{}
-	for _, t := range ts {
-		out = append(out, inspectorPlayer{t.name, t.tree})
-	}
+	sort.Slice(out, func(i, j int) bool { return order[out[i].Key] < order[out[j].Key] })
 	return out
 }
 
@@ -150,6 +152,25 @@ func (in *inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(struct {
 			Players []inspectorPlayer `json:"players"`
 		}{in.ask(inspectWait)})
+	case "/highlight":
+		// The page selected a view (path "": none) of a player (key).
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST", http.StatusMethodNotAllowed)
+			return
+		}
+		q := r.URL.Query()
+		in.mu.Lock()
+		t := in.trees[q.Get("key")]
+		var h func(string)
+		if t != nil {
+			h = t.highlight
+		}
+		in.mu.Unlock()
+		if h == nil {
+			http.NotFound(w, r)
+			return
+		}
+		h(q.Get("path"))
 	default:
 		http.NotFound(w, r)
 	}

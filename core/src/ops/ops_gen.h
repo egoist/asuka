@@ -818,7 +818,11 @@ enum {
 	AK_CMD_DEV_ERROR = 38,
 	// sent to the root: the host removes the overlay DevError shows (the error was dismissed or fixed, the app reloaded, or the root is about to go)
 	AK_CMD_DEV_ERROR_CLEAR = 39,
-	AK_CMD_COUNT = 40,
+	// args: f32 x, y, width, height (a rect in the view's coordinates, points from its top left: the view's own bounds, or a part of it that a view without a native view of its own takes); sent to a view, only under asuka dev, as its inspector selects a view: the host shows a highlight over that rect (a translucent fill and an outline, in front of everything in the view's window, not taking any touch or click), and removes the one it showed before
+	AK_CMD_DEV_HIGHLIGHT = 40,
+	// sent to the root: the host removes the highlight DevHighlight shows
+	AK_CMD_DEV_HIGHLIGHT_CLEAR = 41,
+	AK_CMD_COUNT = 42,
 };
 
 // Enums, by their index in ak_enums.

@@ -976,6 +976,10 @@ final class AsukaTextField: UITextField {
             showDevError(id, args)
         case .devErrorClear:
             clearDevError()
+        case .devHighlight:
+            showDevHighlight(n.view, args)
+        case .devHighlightClear:
+            clearDevHighlight()
         case .announce:
             UIAccessibility.post(notification: .announcement, argument: String(decoding: args, as: UTF8.self))
         case .replace:

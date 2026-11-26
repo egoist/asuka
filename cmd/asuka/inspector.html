@@ -45,7 +45,22 @@
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
-let players = [], selected = null, folded = new Set(), busy = false;
+let players = [], selected = null, hovered = null, folded = new Set(), busy = false;
+// The view the app highlights: the row under the pointer, else the one
+// selected; sent again at each refresh (the core sends the host only a change).
+let lit = { key: "", path: "" };
+function highlight() {
+  const p = current();
+  const want = { key: p ? p.key : "", path: p ? (hovered ?? selected ?? "") : "" };
+  if (lit.key && lit.key !== want.key) post(lit.key, "");
+  // Nothing to show that's already not shown: nothing to send.
+  if (want.key && (want.path || lit.path || lit.key !== want.key)) post(want.key, want.path);
+  lit = want;
+}
+function post(key, path) {
+  fetch(`highlight?key=${encodeURIComponent(key)}&path=${encodeURIComponent(path)}`, { method: "POST" }).catch(() => {});
+}
+const current = () => players[$("player").selectedIndex] || players[0];
 
 // path is a view's place in its tree (its indexes from the root), which
 // stays the same from one refresh to the next while the views do.
@@ -62,7 +77,7 @@ function rows(node, path, depth, out, filter) {
 }
 
 function render() {
-  const p = players[$("player").selectedIndex] || players[0];
+  const p = current();
   const tree = $("tree");
   tree.textContent = "";
   if (!p) { tree.innerHTML = '<p class="empty">No app is connected: run it with asuka dev.</p>'; return; }
@@ -83,7 +98,8 @@ function render() {
     d.append(tw, el);
     if (r.node.text) { const t = document.createElement("span"); t.className = "tx"; t.textContent = JSON.stringify(r.node.text); d.append(t); }
     if (r.node.frame) { const f = document.createElement("span"); f.className = "fr"; f.textContent = r.node.frame.map((v) => Math.round(v * 10) / 10).join(" "); d.append(f); }
-    d.onclick = () => { selected = r.path; render(); };
+    d.onclick = () => { selected = r.path; render(); highlight(); };
+    d.onmouseenter = () => { hovered = r.path; highlight(); };
     tree.append(d);
   }
   const sel = all.find((r) => r.path === selected);
@@ -121,6 +137,7 @@ async function refresh() {
     }
     if (before) $("player").value = before;
     $("player").hidden = players.length < 2;
+    highlight();
     $("status").textContent = players.length ? `${players.length} app${players.length > 1 ? "s" : ""} · ${new Date().toLocaleTimeString()}` : "waiting for the app";
     render();
   } catch (e) {
@@ -132,7 +149,14 @@ async function refresh() {
 
 $("refresh").onclick = refresh;
 $("filter").oninput = render;
-$("player").onchange = render;
+$("player").onchange = () => { selected = hovered = null; render(); highlight(); };
+$("tree").onmouseleave = () => { hovered = null; highlight(); };
+// Escape: nothing selected, nothing highlighted.
+addEventListener("keydown", (e) => { if (e.key === "Escape") { selected = hovered = null; render(); highlight(); } });
+// The page closing takes its highlight along.
+addEventListener("pagehide", () => {
+  if (lit.key) navigator.sendBeacon(`highlight?key=${encodeURIComponent(lit.key)}&path=`);
+});
 setInterval(() => { if ($("live").checked && !document.hidden) refresh(); }, 1000);
 refresh();
 </script>

@@ -108,6 +108,8 @@ bool wh_dev_error_key(MSG *m);
 bool wh_dev_error_primary(HWND ctl);
 bool wh_dev_error_showing(void);
 bool wh_dev_error_tap(const wchar_t *text);
+void wh_dev_highlight(node *n, const uint8_t *args, size_t len);  // asuka dev's inspector's
+void wh_dev_highlight_clear(void);
 void wh_dev_error_dump(ak_buf *b);
 void wh_dev_error_print(HDC dc, RECT win);
 

@@ -36,6 +36,12 @@ export async function run(h, commands) {
       case "tab": tab(arg); break;
       case "choose": choose(arg); break;
       case "dump": out = texts(h).join("\n") + "\n"; break;
+      case "highlighted": {
+        // asuka dev's inspector's highlight: its size, or none.
+        const d = h.container.querySelector(":scope > .asuka-highlight");
+        out = d ? `${Math.round(d.offsetWidth)}x${Math.round(d.offsetHeight)}\n` : "none\n";
+        break;
+      }
       case "reload":
         // A relaunch: what the app keeps (its files, its language) stays,
         // its signals start again (not a dev reload, which keeps them).

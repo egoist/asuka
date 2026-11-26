@@ -58,6 +58,7 @@ void lx_view_set_node(GtkWidget *w, node *n) { *(node **)((char *)w + node_offse
 bool lx_is_view(gpointer w) { return w && g_type_check_instance_is_a((GTypeInstance *)w, lx_view_type); }
 
 void lx_snapshot_view(GtkWidget *w, GtkSnapshot *snap);
+static void snapshot_highlight(node *n, GtkSnapshot *snap, graphene_rect_t bounds);
 void lx_allocate_view(GtkWidget *w, int width, int height);
 
 static void view_snapshot(GtkWidget *w, GtkSnapshot *snap) { lx_snapshot_view(w, snap); }
@@ -338,4 +339,48 @@ void lx_snapshot_view(GtkWidget *w, GtkSnapshot *snap) {
 		GdkRGBA cs[4] = {c, c, c, c};
 		gtk_snapshot_append_border(snap, &rr, bw, cs);
 	}
+	snapshot_highlight(n, snap, bounds);
+}
+
+// ---- asuka dev's inspector's highlight (DevHighlight, DevHighlightClear) ----
+//
+// A translucent box over the view the inspector selected, drawn by the
+// view itself after its children (over its control too), so it takes no
+// clicks; held by the view's ID, so a view that goes takes it along.
+
+static struct {
+	ak_id id;
+	GtkWidget *widget;  // referenced: queued to draw again as it goes
+	float rect[4];      // in the view, points; a width below 0: all of it
+} HL;
+
+void lx_dev_highlight_clear(void) {
+	if (HL.widget) {
+		gtk_widget_queue_draw(HL.widget);
+		g_object_unref(HL.widget);
+	}
+	HL.widget = NULL;
+	HL.id = 0;
+}
+
+void lx_dev_highlight(node *n, ak_span args) {
+	lx_dev_highlight_clear();
+	if (!n || !n->widget || args.len < 16) return;
+	ak_reader r = {(const uint8_t *)args.p, args.len, 0, false};
+	for (int i = 0; i < 4; i++) HL.rect[i] = ak_read_f32(&r);
+	HL.id = n->id;
+	HL.widget = g_object_ref(n->widget);
+	gtk_widget_queue_draw(n->widget);
+}
+
+static void snapshot_highlight(node *n, GtkSnapshot *snap, graphene_rect_t bounds) {
+	if (!HL.id || n->id != HL.id) return;
+	graphene_rect_t b = bounds;
+	if (HL.rect[2] >= 0 && HL.rect[3] >= 0) b = (graphene_rect_t){{HL.rect[0], HL.rect[1]}, {HL.rect[2], HL.rect[3]}};
+	GdkRGBA fill = {10 / 255.0f, 132 / 255.0f, 1, 0.18f}, line = {10 / 255.0f, 132 / 255.0f, 1, 1};
+	gtk_snapshot_append_color(snap, &fill, &b);
+	GskRoundedRect rr = rounded(b, 0);
+	float bw[4] = {1, 1, 1, 1};
+	GdkRGBA cs[4] = {line, line, line, line};
+	gtk_snapshot_append_border(snap, &rr, bw, cs);
 }

@@ -97,3 +97,34 @@ export class DevErrors {
     hideDevError(this.h.container);
   }
 }
+
+/**
+ * showHighlight shows asuka dev's inspector's highlight (DevHighlight)
+ * over a rect of el (x, y, width, height from its top left; a width below
+ * 0: all of it), in the top layer so it's over the app's dialogs too, and
+ * taking no clicks. It replaces the one it showed before.
+ */
+export function showHighlight(container, el, rect) {
+  hideHighlight(container);
+  if (!el?.getBoundingClientRect) return;
+  const b = el.getBoundingClientRect();
+  let [x, y, w, h] = rect;
+  if (w < 0 || h < 0) [x, y, w, h] = [0, 0, b.width, b.height];
+  const d = document.createElement("div");
+  d.className = "asuka-highlight";
+  d.setAttribute("aria-hidden", "true");
+  d.popover = "manual";
+  Object.assign(d.style, {
+    position: "fixed", inset: "auto", margin: "0", padding: "0", boxSizing: "border-box",
+    left: `${b.left + x}px`, top: `${b.top + y}px`, width: `${w}px`, height: `${h}px`,
+    background: "rgba(10, 132, 255, 0.18)", border: "1px solid rgb(10, 132, 255)",
+    pointerEvents: "none", overflow: "visible",
+  });
+  container.append(d);
+  try { d.showPopover(); } catch { d.style.zIndex = "2147483647"; }
+}
+
+/** hideHighlight removes the highlight showHighlight shows, if any. */
+export function hideHighlight(container) {
+  container.querySelector(":scope > .asuka-highlight")?.remove();
+}
