@@ -340,6 +340,7 @@ import AsukaOps
             switch p {
             case AsukaProp.View.dropAccept: setDropAccept(n, v.data)
             case AsukaProp.View.dragItems: setDragItems(n, v.data)
+            case AsukaProp.View.takesClicks: setTakesClicks(n, v.bool)
             default: break
             }
         case .image, .symbol:

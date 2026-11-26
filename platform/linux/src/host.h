@@ -206,6 +206,7 @@ typedef struct {
 	bool placed;  // put at its X, Y or centered once (not a panel or flyout)
 	double placed_w, placed_h;
 	bool through, region_set, clock_hook, on_top, states_set, hooked;
+	AK_VEC(float) region;  // the input region's rects as last set: x, y, width, height in the window (points)
 	GtkEventController *keys;  // a panel's or flyout's Escape
 	guint dismiss_src;
 	bool held;   // lost the keyboard to a window over it, which keeps it open
@@ -724,6 +725,7 @@ void lx_set_flyout(win *w, ak_span b);
 void lx_drop_desk(win *w);
 void lx_fit_window(win *w, float x, float y);
 void lx_set_click_through(win *w, bool on);
+void lx_set_takes_clicks(node *n, bool on);
 void lx_set_on_top(win *w, bool on);
 bool lx_on_top(win *w);
 void lx_move_to(win *w, float x, float y);

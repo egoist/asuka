@@ -90,6 +90,9 @@ struct AsukaFlyout: Equatable {
 
 /// A window's options' and state's (winctl, flyouts).
 @MainActor final class AsukaWinShell {
+    /// It lets the mouse through (but over its views that take clicks:
+    /// ClickRegion.swift).
+    var through = false
     /// As last reported.
     var state = AsukaWindowState()
     var stateSent = false
@@ -169,7 +172,7 @@ extension AsukaWindowConfig {
             floatingChrome(x)
             x.shell.placed = c.flags.contains(.positioned) || c.flags.contains(.centered)
         }
-        if c.flags.contains(.clickThrough) { w.ignoresMouseEvents = true }
+        if c.flags.contains(.clickThrough) { setClickThrough(x, true) }
         if c.titleBar == .hidden && !c.floating {
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
@@ -463,7 +466,7 @@ extension AsukaWindowConfig {
         case .fit:
             fit(x, px, py)
         case .clickThrough, .notClickThrough:
-            w.ignoresMouseEvents = a == .clickThrough
+            setClickThrough(x, a == .clickThrough)
         case .position:
             setTopLeft(w, CGFloat(px), CGFloat(py))
             x.shell.placed = true
@@ -499,7 +502,7 @@ extension AsukaWindowConfig {
             s.flags |= AsukaWindowState.maximized
         }
         if w.level.rawValue > 0 { s.flags |= AsukaWindowState.onTop }
-        if w.ignoresMouseEvents { s.flags |= AsukaWindowState.clickThrough }
+        if x.shell.through { s.flags |= AsukaWindowState.clickThrough }
         return s
     }
 

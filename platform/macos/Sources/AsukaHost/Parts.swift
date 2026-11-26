@@ -5,7 +5,8 @@
 // The parts, and their files' prefixes:
 //   - nav: navigation and windows (Stack, Screen, Tabs, SplitView, Sheet,
 //     Alert, Popover, Snackbar, Window, toolbars, menus, transitions,
-//     matched views, window options and state, panels and flyouts)
+//     matched views, window options and state, panels and flyouts, the
+//     views a click-through window still takes the mouse over)
 //   - list: lists, refresh, paging and page dots (List, PageControl)
 //   - text: rich text, rich and multiline fields, selection, keys
 //   - visual: images, symbols, shapes, canvases, shaders, progress rings,

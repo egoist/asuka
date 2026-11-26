@@ -218,7 +218,7 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 | 浮出窗口：挂在托盘图标下的窗口 | 由应用把无边框 `BrowserWindow` 放到 `tray.getBounds()` 的位置 | 浮出窗口 | ✓ `Window` 的 `flyout`，挂在 `tray.anchor(id)` 或其窗口的某个矩形上：在显示器范围内定位并自动翻转，点击别处或按 Escape 关闭，上面可以再弹出模态对话框（Linux 上只有 X11 能定位） |
 | 启动器面板 | `type: 'panel'`（macOS） | 面板 | ✓ `Window` 的 `panel`：浮在所有应用和空间之上，在 Mac 上获得键盘输入但不激活应用，按 Escape 或点击别处关闭（Linux 的 Wayland 下，有 gtk4-layer-shell 时是 layer-shell 表面） |
 | 窗口大小随内容变化 | 由应用调用 `setContentSize` | `FitContent` | ✓ `fitContent`：Asuka 的布局会随内容变化调整窗口大小 |
-| 鼠标穿透窗口 | `setIgnoreMouseEvents` | `SetIgnoreMouseEvents`、`SetInputRegion` | ✓ `clickThrough`、`w.setClickThrough(on)`（整个窗口） |
+| 鼠标穿透窗口 | `setIgnoreMouseEvents` | `SetIgnoreMouseEvents`、`SetInputRegion` | ✓ `clickThrough`、`w.setClickThrough(on)`，以及仍然接收鼠标的视图上的 `takesClicks` |
 | 列出已安装的应用（给启动器用） | 无 | `InstalledApps`、`FileIcon`、`LaunchApp` | ✓ `platform/apps` 的 `list`、`search`、`icon`、`open` |
 | 全局快捷键 | `globalShortcut` | 全局快捷键 | ✓ `platform/hotkey` 的 `hotkey.Hotkey`（Carbon 的热键；`RegisterHotKey`；X11 的按键抓取或 Wayland 的 GlobalShortcuts portal） |
 | 打开、保存和选择文件夹对话框 | `dialog.showOpenDialog`、`showSaveDialog` | 对话框 | ✓ `platform/dialog` 的 `open`、`save`、`chooseFolder`、`chooseFolders`（Mac 上以表单形式附在窗口上，Windows 的通用文件对话框，GTK 的文件对话框或 portal；Web 上用 File System Access 选择器或文件输入框；手机上只有 `open`） |
@@ -238,7 +238,7 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 | 正在播放和媒体键 | （无：只能在页面里用 `navigator.mediaSession`） | 正在播放 | ✓ `platform/nowplaying`（`MPNowPlayingInfoCenter`；窗口的 SystemMediaTransportControls；一个 MPRIS 播放器） |
 | 自动更新：签名的版本、增量更新、Sparkle 式窗口 | `autoUpdater`（Squirrel）、electron-updater | 更新器及其插件 | ✓ `platform/update`（`update.UpdateWindow`、`update.AppMenu()`、`checkForUpdates`、`check`、`install`、`relaunch`；Ed25519 签名、增量更新、更新渠道；GitHub releases、S3 存储桶或任意 HTTPS 目录，或者你自己的服务器；`asuka publish --platform mac\|windows\|linux`）；由系统包管理器、Flatpak 或应用商店安装的应用通过它们更新；Web 上刷新页面即可 |
 
-MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览所有版本”）和锁定；以及鼠标穿透窗口方面的输入区域（窗口里仍然接收点击的那部分：Asuka 的窗口要么整个穿透，要么完全不穿透）。
+MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览所有版本”）和锁定。
 
 ## 尚未支持
 

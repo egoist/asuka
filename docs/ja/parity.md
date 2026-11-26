@@ -218,7 +218,7 @@ Web ビューのアプリは、HTML と CSS で書いたとおりに、どのシ
 | フライアウト：トレイアイコンから垂れ下がるウィンドウ | アプリが `tray.getBounds()` の位置に置くフレームなしの `BrowserWindow` | フライアウト | ✓ `Window` の `flyout`。`tray.anchor(id)` か、ウィンドウ内の矩形から垂れ下がる：ディスプレイに収まるように配置・反転し、ほかの場所のクリックか Escape で閉じ、上にモーダルダイアログも出せる（Linux では X11 の場合のみ配置） |
 | ランチャー用のパネル | `type: 'panel'`（macOS） | パネル | ✓ `Window` の `panel`：すべてのアプリと操作スペースの上に浮かび、Mac ではアプリをアクティブにせずにキーボード入力を受け、Escape かほかの場所のクリックで閉じる（Linux の Wayland では、gtk4-layer-shell があれば layer-shell のサーフェス） |
 | コンテンツに合わせたウィンドウのサイズ | アプリが `setContentSize` を呼ぶ | `FitContent` | ✓ `fitContent`：コンテンツが変わると、Asuka のレイアウトがウィンドウのサイズを決める |
-| クリックを透過するウィンドウ | `setIgnoreMouseEvents` | `SetIgnoreMouseEvents`、`SetInputRegion` | ✓ `clickThrough`、`w.setClickThrough(on)`（ウィンドウ全体） |
+| クリックを透過するウィンドウ | `setIgnoreMouseEvents` | `SetIgnoreMouseEvents`、`SetInputRegion` | ✓ `clickThrough`、`w.setClickThrough(on)`、そしてマウスを受け取り続けるビューの `takesClicks` |
 | ランチャー向けのインストール済みアプリ | なし | `InstalledApps`、`FileIcon`、`LaunchApp` | ✓ `platform/apps` の `list`、`search`、`icon`、`open` |
 | グローバルショートカット | `globalShortcut` | グローバルショートカット | ✓ `platform/hotkey` の `hotkey.Hotkey`（Carbon のホットキー、`RegisterHotKey`、X11 のグラブまたは Wayland の GlobalShortcuts ポータル） |
 | 開く、保存、フォルダーのダイアログ | `dialog.showOpenDialog`、`showSaveDialog` | ダイアログ | ✓ `platform/dialog` の `open`、`save`、`chooseFolder`、`chooseFolders`（Mac ではシート、Windows のコモンアイテムダイアログ、GTK のファイルダイアログまたはポータル。Web では File System Access のピッカーかファイル入力。スマートフォンでは `open` のみ） |
@@ -238,7 +238,7 @@ Web ビューのアプリは、HTML と CSS で書いたとおりに、どのシ
 | 再生中の情報とメディアキー | （なし：ページ内の `navigator.mediaSession`） | Now Playing | ✓ `platform/nowplaying`（`MPNowPlayingInfoCenter`、ウィンドウの SystemMediaTransportControls、MPRIS のプレイヤー） |
 | 自動アップデート：署名付きのリリース、差分、Sparkle のウィンドウ | `autoUpdater`（Squirrel）、electron-updater | アップデーターとそのプラグイン | ✓ `platform/update`（`update.UpdateWindow`、`update.AppMenu()`、`checkForUpdates`、`check`、`install`、`relaunch`。Ed25519 の署名、差分アップデート、チャンネル。GitHub のリリース、S3 のバケット、任意の HTTPS のディレクトリ、独自のサーバー。`asuka publish --platform mac\|windows\|linux`）。システムのパッケージ、Flatpak、ストアでインストールしたアプリは、それらを通じてアップデートする。Web は再読み込み |
 
-MyGo にあって Asuka にまだないものは次のとおりです。書類については、バージョン（Mac の「すべてのバージョンをブラウズ」）とロック。クリックを透過するウィンドウについては、入力領域（ウィンドウのうち、クリックを受け付け続ける部分）の指定です。Asuka のウィンドウは、マウスをウィンドウ全体で透過させるか、まったく透過させないかのどちらかです。
+MyGo にあって Asuka にまだないものは、書類のバージョン（Mac の「すべてのバージョンをブラウズ」）とロックです。
 
 ## 未対応のもの
 

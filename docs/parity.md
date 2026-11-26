@@ -246,7 +246,7 @@ Windows and Linux unless the row says otherwise.
 | Flyouts: a window hanging from a tray icon | a frameless `BrowserWindow` placed at `tray.getBounds()` by the app | flyouts | ✓ a `Window`'s `flyout`, hanging from `tray.anchor(id)` or a rectangle of its window: placed and flipped in the display, closed by a click elsewhere or Escape, a modal dialog over it (Linux: placed under X11 only) |
 | Panels for launchers | `type: 'panel'` (macOS) | panels | ✓ a `Window`'s `panel`: floating over every app and Space, the keyboard without activating the app on a Mac, closed by Escape or a click elsewhere (Linux under Wayland: a layer-shell surface where gtk4-layer-shell is there) |
 | Windows sized to their content | `setContentSize` by the app | `FitContent` | ✓ `fitContent`: Asuka's layout sizes the window as its content changes |
-| Click-through windows | `setIgnoreMouseEvents` | `SetIgnoreMouseEvents`, `SetInputRegion` | ✓ `clickThrough`, `w.setClickThrough(on)` (the whole window) |
+| Click-through windows | `setIgnoreMouseEvents` | `SetIgnoreMouseEvents`, `SetInputRegion` | ✓ `clickThrough`, `w.setClickThrough(on)`, and `takesClicks` on the views that still take the mouse |
 | The apps installed, for a launcher | none | `InstalledApps`, `FileIcon`, `LaunchApp` | ✓ `platform/apps`'s `list`, `search`, `icon`, `open` |
 | Global shortcuts | `globalShortcut` | global shortcuts | ✓ `platform/hotkey`'s `hotkey.Hotkey` (Carbon's hot keys; `RegisterHotKey`; X11 grabs or Wayland's GlobalShortcuts portal) |
 | Open, save and folder dialogs | `dialog.showOpenDialog`, `showSaveDialog` | dialogs | ✓ `platform/dialog`'s `open`, `save`, `chooseFolder`, `chooseFolders` (sheets on the Mac, the common item dialogs, GTK's file dialog or the portal; the web: the File System Access pickers or the file input; phones: `open` only) |
@@ -267,9 +267,7 @@ Windows and Linux unless the row says otherwise.
 | Auto-updates: signed releases, deltas, Sparkle's window | `autoUpdater` (Squirrel), electron-updater | the updater, its plugin | ✓ `platform/update` (`update.UpdateWindow`, `update.AppMenu()`, `checkForUpdates`, `check`, `install`, `relaunch`; Ed25519 signatures, delta updates, channels; GitHub releases, an S3 bucket or any HTTPS directory, a server of yours; `asuka publish --platform mac\|windows\|linux`); apps the system's packages, Flatpak or a store installed update through them; the web reloads |
 
 Not yet, of what MyGo has: of its documents, versions (a Mac's Browse
-All Versions) and locking; and of its click-through windows, an input
-region (the parts of a window that still take clicks: Asuka's let the
-mouse through all of it, or none).
+All Versions) and locking.
 
 ## Not yet
 

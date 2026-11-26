@@ -102,7 +102,7 @@ export const Prop = Object.freeze({
 
 /** Each kind's own props, from 64. */
 export const KindProp = Object.freeze({
-  View: Object.freeze({ DropAccept: 64, DragItems: 65 }),
+  View: Object.freeze({ DropAccept: 64, DragItems: 65, TakesClicks: 66 }),
   Text: Object.freeze({ Text: 64 }),
   Button: Object.freeze({ Title: 64, Variant: 65, Icon: 66 }),
   TextField: Object.freeze({ Value: 64, Placeholder: 65, Keyboard: 66, ReturnKey: 67, Secure: 68, Autocapitalize: 69, Autocorrect: 70, ContentType: 71, Multiline: 72, Plain: 73, Selection: 74, Rich: 75, PasteTypes: 76, Accessory: 77 }),

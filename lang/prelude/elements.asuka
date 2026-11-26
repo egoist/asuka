@@ -135,6 +135,8 @@ native component View() {
   prop restoreFocus: bool
   /// once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)
   prop autofocus: bool
+  /// in a click-through window (clickThrough), the mouse over it still goes to it: clicks, hover and the wheel, not to what's behind (a HUD's close button)
+  prop takesClicks: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -202,6 +204,8 @@ native component Row() {
   prop restoreFocus: bool
   /// once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)
   prop autofocus: bool
+  /// in a click-through window (clickThrough), the mouse over it still goes to it: clicks, hover and the wheel, not to what's behind (a HUD's close button)
+  prop takesClicks: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -269,6 +273,8 @@ native component Column() {
   prop restoreFocus: bool
   /// once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)
   prop autofocus: bool
+  /// in a click-through window (clickThrough), the mouse over it still goes to it: clicks, hover and the wheel, not to what's behind (a HUD's close button)
+  prop takesClicks: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -336,6 +342,8 @@ native component SafeArea() {
   prop restoreFocus: bool
   /// once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)
   prop autofocus: bool
+  /// in a click-through window (clickThrough), the mouse over it still goes to it: clicks, hover and the wheel, not to what's behind (a HUD's close button)
+  prop takesClicks: bool
   /// a tap on it
   event press
   /// a press held on it

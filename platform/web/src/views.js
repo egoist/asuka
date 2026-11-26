@@ -74,6 +74,9 @@ const view = {
         n.dragItems = decodeDragItems(v);
         n.el.draggable = !!n.dragItems?.length;
         break;
+      case P.View.TakesClicks:
+        n.el.classList.toggle("asuka-takes-clicks", !!v);
+        break;
     }
   },
   measure() { return [0, 0]; },

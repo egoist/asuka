@@ -69,6 +69,7 @@ SYM(GIO, GMenu *, g_menu_new, (void))
 // ---- cairo ----
 SYM(CAIRO, cairo_region_t *, cairo_region_create, (void))
 SYM(CAIRO, void, cairo_region_destroy, (cairo_region_t *region))
+SYM(CAIRO, cairo_status_t, cairo_region_union_rectangle, (cairo_region_t *dst, const cairo_rectangle_int_t *rectangle))
 
 // ---- Pango ----
 SYM(PANGO, PangoAttrList *, pango_attr_list_new, (void))

@@ -217,6 +217,8 @@ enum {
 	AK_PROP_VIEW_DROP_ACCEPT = 64,
 	// the view can be dragged (a long press, then a move, on touch screens; a move with the button down, past the system's drag distance, with a mouse), carrying these items: u32 count, per item u8 ShareKind, string text (a text, a link's URL), string path (a file), string name, string MIME type, u8 flags (1: it carries an app's value, which only the app's own drops get; other apps get its text, link or file, if it has one). Empty: not draggable. Dragging reports Dragging
 	AK_PROP_VIEW_DRAG_ITEMS = 65,
+	// in a click-through window (WindowFlags' click-through, WindowAction ClickThrough), the mouse over the view still goes to it, not to what's behind: the host hit-tests these views as the mouse moves (macOS, Windows) or makes them the window's input region (Linux), or gives them pointer events (the web); phones ignore it
+	AK_PROP_VIEW_TAKES_CLICKS = 66,
 };
 
 // Text props.

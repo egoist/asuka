@@ -1,6 +1,7 @@
 package windows_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,4 +95,49 @@ func TestKeysOut(t *testing.T) {
 	)
 	shows(t, d["list"], "a row's field", []string{"Log: row1-r list-j window-k"})
 	shows(t, d["sheet"], "a sheet's field", []string{"Log: row1-r list-j window-k sheet-s window-k"})
+}
+
+// A click-through window's views that still take the mouse (takesClicks):
+// where they show, which the window takes the mouse over.
+func TestClickRegion(t *testing.T) {
+	w := onWindows(t)
+	local, guest := w.job(t)
+	buildApp(t, w, `
+app { Root() }
+component Root {
+  state open = true
+  Column {
+    padding: 20
+    Text("main")
+    Window {
+      bind open: open
+      title: "HUD"
+      clickThrough: true
+      width: 200
+      height: 100
+      Column {
+        padding: 10
+        Text("CPU 12%")
+        View {
+          takesClicks: true
+          width: 60
+          height: 30
+          margin: [10, 0, 0, 20]
+          Text("Hide")
+        }
+      }
+    }
+  }
+}
+`, local)
+	d := script(t, w, local, guest, "app.exe", "wait:1500ms", "snap:hud")
+	dump := d["hud"]
+	i := strings.Index(dump, "click region ")
+	if i < 0 {
+		t.Fatalf("no click region:\n%s", dump)
+	}
+	var x, y, cw, ch float64
+	if _, err := fmt.Sscanf(dump[i:], "click region %g %g %g %g", &x, &y, &cw, &ch); err != nil || x != 30 || cw != 60 || ch != 30 || y < 30 {
+		t.Fatalf("click region %v %v %v %v (%v): want one at x 30, 60×30, below the text:\n%s", x, y, cw, ch, err, dump)
+	}
 }

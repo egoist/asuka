@@ -186,6 +186,7 @@ var containerKeys = []Key{
 	{Name: "trapFocus", Type: "bool", Doc: "while the keyboard's focus is in it, Tab and Shift+Tab cycle among the focusable views inside it: a dialog's"},
 	{Name: "restoreFocus", Type: "bool", Doc: "when it goes, the keyboard's focus goes back to the view that had it when it came, if that view still shows"},
 	{Name: "autofocus", Type: "bool", Doc: "once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)"},
+	{Name: "takesClicks", Type: "bool", Doc: "in a click-through window (clickThrough), the mouse over it still goes to it: clicks, hover and the wheel, not to what's behind (a HUD's close button)"},
 }
 
 // containerEvents are what View, Row, Column and SafeArea report: a

@@ -231,7 +231,7 @@ component Apps {
 
 ## クリックスルーウィンドウ
 
-`clickThrough: true`（または `w.setClickThrough(true)`）を指定すると、マウス操作がウィンドウを素通りして、その背後にあるもの（ほかのアプリのウィンドウやデスクトップ）に届きます。`transparent` と `alwaysOnTop` を組み合わせれば、オーバーレイ、HUD、デスクトップマスコットなどを作れます。`w.clickThrough` でこの状態を読め、読んだバインディングは追従します。有効なあいだ、ウィンドウはクリックもホバーもホイールも一切受け取りません。ユーザーに操作させたいときは無効にしてください。
+`clickThrough: true`（または `w.setClickThrough(true)`）を指定すると、マウス操作がウィンドウを素通りして、その背後にあるもの（ほかのアプリのウィンドウやデスクトップ）に届きます。`transparent` と `alwaysOnTop` を組み合わせれば、オーバーレイ、HUD、デスクトップマスコットなどを作れます。`w.clickThrough` でこの状態を読め、読んだバインディングは追従します。有効なあいだ、ウィンドウはクリックもホバーもホイールも受け取りません。ただし `takesClicks: true` を指定したビューの上は例外で、HUD のボタンやユーザーがドラッグするマスコットなどに使えます。ウィンドウ全体を操作させたいときは無効にしてください。
 
 ```asuka
 state hud = true
@@ -249,11 +249,18 @@ app {
 }
 
 component Meters {
-  Text("CPU 12%")
+  Row {
+    gap: 8; align: .center
+    Text("CPU 12%")
+    View {
+      takesClicks: true
+      Button("Hide") { on press { hud = false } }
+    }
+  }
 }
 ```
 
-実装は、Mac では `ignoresMouseEvents`、Windows では `WS_EX_TRANSPARENT` を付けたレイヤードウィンドウ、Linux では空の入力領域（`gdk_surface_set_input_region`）です。Web では、ページ内のウィンドウがクリックをページに通します。ブラウザーの外までクリックを通す方法はありません。
+実装は、Mac では `ignoresMouseEvents`、Windows では `WS_EX_TRANSPARENT` を付けたレイヤードウィンドウ、Linux ではクリックを受け取るビューだけからなる入力領域（`gdk_surface_set_input_region`）です。Mac と Windows では、マウスがそれらのビューの上に来たときにウィンドウがマウスを受け取ります。Web では、ページ内のウィンドウがクリックをページに通します。ブラウザーの外までクリックを通す方法はありません。
 
 ## ファイルダイアログ
 

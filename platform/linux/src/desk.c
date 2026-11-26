@@ -463,6 +463,67 @@ void lx_center(win *w) {
 }
 
 // ---- Click-through ----
+//
+// A click-through window's input region is empty, but for its views that
+// take clicks (TakesClicks): their bounds, clipped by what they're in (a
+// scroll view's), set again after each paint (GTK sets its own region as
+// it allocates), so it follows layout and scrolling.
+
+static AK_VEC(ak_id) takers;  // the views that take clicks
+
+void lx_set_takes_clicks(node *n, bool on) {
+	for (size_t i = 0; i < takers.len; i++)
+		if (takers.data[i] == n->id) {
+			if (on) return;
+			takers.data[i] = takers.data[--takers.len];
+			break;
+		}
+	if (on) ak_vec_push(&takers, n->id);
+	if (n->win) {
+		if (n->win->desk.through) gtk_widget_queue_draw((GtkWidget *)n->win->window);
+	} else {
+		for (node *p = n->parent; p; p = p->parent)
+			if (p->win) {
+				if (p->win->desk.through) gtk_widget_queue_draw((GtkWidget *)p->win->window);
+				break;
+			}
+	}
+}
+
+static void intersect(graphene_rect_t *a, const graphene_rect_t *b) {
+	float x0 = a->origin.x > b->origin.x ? a->origin.x : b->origin.x;
+	float y0 = a->origin.y > b->origin.y ? a->origin.y : b->origin.y;
+	float x1 = a->origin.x + a->size.width < b->origin.x + b->size.width ? a->origin.x + a->size.width : b->origin.x + b->size.width;
+	float y1 = a->origin.y + a->size.height < b->origin.y + b->size.height ? a->origin.y + a->size.height : b->origin.y + b->size.height;
+	a->origin.x = x0, a->origin.y = y0;
+	a->size.width = x1 > x0 ? x1 - x0 : 0, a->size.height = y1 > y0 ? y1 - y0 : 0;
+}
+
+// input_region is the window's views that take clicks, in its surface's
+// coordinates: what it takes the mouse over.
+static cairo_region_t *input_region(win *w) {
+	cairo_region_t *r = cairo_region_create();
+	w->desk.region.len = 0;
+	GtkWidget *top = (GtkWidget *)w->window;
+	double sx = 0, sy = 0;
+	gtk_native_get_surface_transform((GtkNative *)w->window, &sx, &sy);
+	for (size_t i = 0; i < takers.len; i++) {
+		node *n = node_get(takers.data[i]);
+		if (!n || n->dead || !n->widget || !gtk_widget_get_mapped(n->widget) || gtk_widget_get_root(n->widget) != (GtkRoot *)w->window) continue;
+		graphene_rect_t b;
+		if (!gtk_widget_compute_bounds(n->widget, top, &b)) continue;
+		for (GtkWidget *p = gtk_widget_get_parent(n->widget); p && p != top; p = gtk_widget_get_parent(p)) {
+			graphene_rect_t pb;
+			if (gtk_widget_compute_bounds(p, top, &pb)) intersect(&b, &pb);
+		}
+		if (b.size.width <= 0 || b.size.height <= 0) continue;
+		cairo_rectangle_int_t ri = {(int)floor(b.origin.x + sx), (int)floor(b.origin.y + sy), (int)ceil(b.size.width), (int)ceil(b.size.height)};
+		cairo_region_union_rectangle(r, &ri);
+		float f[4] = {b.origin.x, b.origin.y, b.size.width, b.size.height};
+		for (int j = 0; j < 4; j++) ak_vec_push(&w->desk.region, f[j]);
+	}
+	return r;
+}
 
 static void apply_click_through(win *w);
 
@@ -478,7 +539,7 @@ static void apply_click_through(win *w) {
 	GdkSurface *s = gtk_native_get_surface((GtkNative *)w->window);
 	if (!s) return;  // set as it maps
 	if (d->through) {
-		cairo_region_t *r = cairo_region_create();
+		cairo_region_t *r = input_region(w);
 		gdk_surface_set_input_region(s, r);
 		cairo_region_destroy(r);
 		d->region_set = true;

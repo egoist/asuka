@@ -47,6 +47,8 @@ struct wh_wctl {
 	// A panel, a flyout, a window sized to its content (flyout.c).
 	float fit[2];
 	bool fitted, wait_fit, show_pending, show_activate, app_placed, dismiss_pending;
+
+	bool through;  // it lets the mouse through (but over its views that take clicks)
 };
 
 #define CAPTION_HEIGHT 32
@@ -102,6 +104,12 @@ bool wh_frameless(const wh_wctl *c);
 DWORD wh_ex_style(wh_wctl *c);
 void wh_configure_frameless(wh_wctl *c);
 void wh_set_click_through(wh_wctl *c, bool on);
+void wh_apply_click_through(wh_wctl *c, bool on);
+// clickregion.c
+void wh_click_region_update(void);
+void wh_click_region_tick(void);
+void wh_set_takes_clicks(node *n, bool on);
+void wh_click_region_dump(ak_buf *b, HWND top);
 bool wh_click_through(HWND hwnd);
 void wh_before_show(wh_wctl *c);
 void wh_fit_window(wh_wctl *c, float w, float h);

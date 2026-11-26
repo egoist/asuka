@@ -231,7 +231,7 @@ component Apps {
 
 ## 鼠标穿透窗口
 
-`clickThrough: true`（或 `w.setClickThrough(true)`）让鼠标穿过窗口，作用到它背后的东西上，比如另一个应用的窗口或桌面。它适合做悬浮层、HUD 或桌面宠物，通常再配上 `transparent` 和 `alwaysOnTop`。读取 `w.clickThrough` 可以跟随它的状态。开启期间，窗口完全不接收点击、悬停和滚轮事件；要让用户操作窗口，就把它关掉。
+`clickThrough: true`（或 `w.setClickThrough(true)`）让鼠标穿过窗口，作用到它背后的东西上，比如另一个应用的窗口或桌面。它适合做悬浮层、HUD 或桌面宠物，通常再配上 `transparent` 和 `alwaysOnTop`。读取 `w.clickThrough` 可以跟随它的状态。开启期间，窗口不接收点击、悬停和滚轮事件，只有设置了 `takesClicks: true` 的视图上方例外，比如 HUD 上的按钮、用户可以拖动的宠物。要让用户操作整个窗口，就把它关掉。
 
 ```asuka
 state hud = true
@@ -249,11 +249,18 @@ app {
 }
 
 component Meters {
-  Text("CPU 12%")
+  Row {
+    gap: 8; align: .center
+    Text("CPU 12%")
+    View {
+      takesClicks: true
+      Button("Hide") { on press { hud = false } }
+    }
+  }
 }
 ```
 
-它在 Mac 上是 `ignoresMouseEvents`，在 Windows 上是带 `WS_EX_TRANSPARENT` 的分层窗口，在 Linux 上是一个空的输入区域（`gdk_surface_set_input_region`）。在 Web 上，页面中的窗口会让点击穿透到页面上；但没有办法让点击穿出浏览器。
+它在 Mac 上是 `ignoresMouseEvents`，在 Windows 上是带 `WS_EX_TRANSPARENT` 的分层窗口，在 Linux 上是一个输入区域（`gdk_surface_set_input_region`），其中只有接收点击的视图；在 Mac 和 Windows 上，鼠标移到这些视图上方时，窗口就会接收鼠标。在 Web 上，页面中的窗口会让点击穿透到页面上；但没有办法让点击穿出浏览器。
 
 ## 文件对话框
 

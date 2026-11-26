@@ -361,8 +361,9 @@ Phones and the web throw `apps.AppsError.unsupported`.
 mouse go through a window to what's behind it, another app's window or
 the desktop: an overlay, a HUD, a desktop pet, made `transparent` and
 `alwaysOnTop`. `w.clickThrough` reads it, followed. The window
-takes no clicks, hover or wheel at all while it's on; switch it off to
-let the user use it.
+takes no clicks, hover or wheel while it's on, but over its views with
+`takesClicks: true`: a HUD's button, a pet the user drags. Switch it off
+to let the user use all of it.
 
 ```asuka
 state hud = true
@@ -380,14 +381,23 @@ app {
 }
 
 component Meters {
-  Text("CPU 12%")
+  Row {
+    gap: 8; align: .center
+    Text("CPU 12%")
+    View {
+      takesClicks: true
+      Button("Hide") { on press { hud = false } }
+    }
+  }
 }
 ```
 
 It's `ignoresMouseEvents` on a Mac, a layered `WS_EX_TRANSPARENT`
-window on Windows and an empty input region on Linux
-(`gdk_surface_set_input_region`). On the web a window in the page lets
-clicks through to the page; nothing lets them out of the browser.
+window on Windows and an input region on Linux
+(`gdk_surface_set_input_region`) that's empty but for the views that
+take clicks; on a Mac and Windows the window takes the mouse as it moves
+over one of them. On the web a window in the page lets clicks through
+to the page; nothing lets them out of the browser.
 
 ## File dialogs
 

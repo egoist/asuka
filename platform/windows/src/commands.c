@@ -48,6 +48,7 @@ void wh_tick(void) {
 
 void wh_msg_timer(WPARAM id) {
 	if (id == TIMER_SCRIPT) wh_automation_timer();
+	else if (id == TIMER_CLICKS) wh_click_region_tick();
 	else if (id == TIMER_ROUTES) {
 		KillTimer(H.msg_win, TIMER_ROUTES);
 		wh_flush_routes();

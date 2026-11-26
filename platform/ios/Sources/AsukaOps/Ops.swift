@@ -145,6 +145,7 @@ public enum AsukaProp {
     public enum View {
         public static let dropAccept: UInt16 = 64
         public static let dragItems: UInt16 = 65
+        public static let takesClicks: UInt16 = 66
     }
 
     public enum Text {

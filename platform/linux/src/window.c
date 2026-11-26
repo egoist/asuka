@@ -310,6 +310,7 @@ void lx_free_win(win *w) {
 		}
 	if (H.active_win == w) H.active_win = NULL;
 	lx_dev_error_closing(w);
+	ak_vec_free(&w->desk.region);
 	// Its memory stays: signals of its window may still come as GTK
 	// finishes destroying it, and nodes may name it; it's small.
 }

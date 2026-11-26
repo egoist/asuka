@@ -552,6 +552,13 @@ void lx_dump_node(node *n, int depth, ak_buf *b) {
 		quote(b, n->title);
 	}
 	ak_buf_u8(b, '\n');
+	// A click-through window's input region: its views that take clicks.
+	if (n->win && n->win->desk.through && n == (n->win->node ? n->win->node : n->win->root))
+		for (size_t i = 0; i + 3 < n->win->desk.region.len; i += 4) {
+			for (int d = 0; d <= depth; d++) ak_buf_put(b, "  ", 2);
+			const float *r = n->win->desk.region.data + i;
+			ak_buf_printf(b, "click region %.0f %.0f %.0f %.0f\n", r[0], r[1], r[2], r[3]);
+		}
 	for (uint32_t i = 0; i < n->children.len; i++) lx_dump_node(n->children.data[i], depth + 1, b);
 	for (size_t i = 0; i < lx_area_count; i++)
 		if (lx_areas[i]->dump) lx_areas[i]->dump(n, depth, b);

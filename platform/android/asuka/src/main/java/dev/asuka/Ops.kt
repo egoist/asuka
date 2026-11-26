@@ -148,6 +148,7 @@ object AsukaProp {
     object View {
         const val DROP_ACCEPT = 64
         const val DRAG_ITEMS = 65
+        const val TAKES_CLICKS = 66
     }
 
     object Text {

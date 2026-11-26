@@ -518,6 +518,7 @@ enum {
 	TIMER_SNACK = 9,
 	TIMER_ROUTES = 10,
 	TIMER_SCRIPT = 11,
+	TIMER_CLICKS = 12,  // a click-through window's views that take clicks (clickregion.c)
 };
 
 void wh_register_classes(void);

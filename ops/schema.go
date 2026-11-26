@@ -138,6 +138,7 @@ var Schema = SchemaDef{
 		{Name: "View", Props: []PropDef{
 			{Name: "DropAccept", Type: TBytes, Doc: "the view takes drops: u32 count, then u32-length MIME type patterns (text/plain, image/*, */*; an app's own types, for its drags within the app), case-insensitive. A drag with an item whose type matches one is reported with DragOver while it's over the view, and dropping it with Drop. Empty: no drops"},
 			{Name: "DragItems", Type: TBytes, Doc: "the view can be dragged (a long press, then a move, on touch screens; a move with the button down, past the system's drag distance, with a mouse), carrying these items: u32 count, per item u8 ShareKind, string text (a text, a link's URL), string path (a file), string name, string MIME type, u8 flags (1: it carries an app's value, which only the app's own drops get; other apps get its text, link or file, if it has one). Empty: not draggable. Dragging reports Dragging"},
+			{Name: "TakesClicks", Type: TBool, Doc: "in a click-through window (WindowFlags' click-through, WindowAction ClickThrough), the mouse over the view still goes to it, not to what's behind: the host hit-tests these views as the mouse moves (macOS, Windows) or makes them the window's input region (Linux), or gives them pointer events (the web); phones ignore it"},
 		}, Doc: "a plain container"},
 		{Name: "Text", Props: []PropDef{
 			{Name: "Text", Type: TString},

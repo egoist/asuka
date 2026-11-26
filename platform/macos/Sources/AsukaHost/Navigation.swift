@@ -1236,6 +1236,8 @@ final class AsukaSheetWindow: NSWindow {
         d["canBecomeMain"] = nw.canBecomeMain
         d["collectionBehavior"] = nw.collectionBehavior.rawValue
         d["ignoresMouse"] = nw.ignoresMouseEvents
+        d["clickThrough"] = w.shell.through
+        d["clickRegion"] = clickRegion(w).map { [Double($0.minX), Double($0.minY), Double($0.width), Double($0.height)] }
         d["hasShadow"] = nw.hasShadow
         d["excludedFromWindowsMenu"] = nw.isExcludedFromWindowsMenu
         d["titlebarTransparent"] = nw.titlebarAppearsTransparent

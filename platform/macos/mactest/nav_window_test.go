@@ -379,6 +379,50 @@ func TestNavClickThrough(t *testing.T) {
 	a.Until(func(tr *Tree) bool { return tr.Window("HUD").Props["ignoresMouse"] == false })
 }
 
+// A click-through window's views that still take the mouse (takesClicks):
+// the window lets the mouse through but over them.
+func TestNavClickRegion(t *testing.T) {
+	a := Run(t, `
+		app { Root() }
+		component Root {
+		  state open = true
+		  Column {
+		    padding: 20
+		    Text("main")
+		    Window {
+		      bind open: open
+		      title: "HUD"
+		      clickThrough: true
+		      width: 200
+		      height: 100
+		      Column {
+		        padding: 10
+		        Text("CPU 12%")
+		        View {
+		          takesClicks: true
+		          width: 60
+		          height: 30
+		          margin: [10, 0, 0, 20]
+		          Text("Hide")
+		        }
+		      }
+		    }
+		  }
+		}
+	`)
+	tr := a.Until(func(tr *Tree) bool {
+		w := tr.Window("HUD")
+		r, _ := w.Props["clickRegion"].([]any)
+		return w != nil && len(r) == 1
+	})
+	w := tr.Window("HUD")
+	r := w.Props["clickRegion"].([]any)[0].([]any)
+	got := []float64{r[0].(float64), r[2].(float64), r[3].(float64)}
+	if w.Props["clickThrough"] != true || got[0] != 30 || got[1] != 60 || got[2] != 30 || r[1].(float64) < 30 {
+		t.Fatalf("click-through %v, region %v: want one rect at x 30, 60×30, below the text", w.Props["clickThrough"], r)
+	}
+}
+
 // A window that shows a document: the dot in its close button while it's
 // edited, its file in the title bar (a document Window's edited and file).
 func TestNavDocumentWindow(t *testing.T) {

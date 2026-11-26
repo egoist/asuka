@@ -236,6 +236,7 @@ char *wh_dump(size_t *len) {
 		wstr_free(&w);
 		ak_buf_put(&b, ":\n", 2);
 		walk(&b, H.wins[i], 1);
+		wh_click_region_dump(&b, wh_nav_window(H.wins[i]));
 	}
 	HMENU bar = GetMenu(H.window);
 	if (bar) {

@@ -562,3 +562,49 @@ app { Numbers() }
 	d := scriptEnv(t, dir, exe, []string{"LC_ALL=en_DK.utf8", "LANG=en_DK.utf8"})
 	shows(t, d["end"], "in en_DK", []string{"read 2.5", "fixed 2.50", "sum 0.30000000000000004"})
 }
+
+// A click-through window's views that still take the mouse (takesClicks):
+// the window's input region is theirs.
+func TestClickRegion(t *testing.T) {
+	onLinux(t)
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "app")
+	buildApp(t, `
+app { Root() }
+component Root {
+  state open = true
+  Column {
+    padding: 20
+    Text("main")
+    Window {
+      bind open: open
+      title: "HUD"
+      clickThrough: true
+      width: 200
+      height: 100
+      Column {
+        padding: 10
+        Text("CPU 12%")
+        View {
+          takesClicks: true
+          width: 60
+          height: 30
+          margin: [10, 0, 0, 20]
+          Text("Hide")
+        }
+      }
+    }
+  }
+}
+`, exe)
+	d := script(t, dir, exe, "wait:1s", "snap:hud")
+	dump := d["hud"]
+	i := strings.Index(dump, "click region ")
+	if i < 0 {
+		t.Fatalf("no click region:\n%s", dump)
+	}
+	var x, y, w, h float64
+	if _, err := fmt.Sscanf(dump[i:], "click region %g %g %g %g", &x, &y, &w, &h); err != nil || w != 60 || h != 30 || x < 30 || y < 30 {
+		t.Fatalf("click region %v %v %v %v (%v): want one 60×30, at x 30 or past the window's own inset, below the text:\n%s", x, y, w, h, err, dump)
+	}
+}

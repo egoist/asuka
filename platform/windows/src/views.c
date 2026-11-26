@@ -235,6 +235,8 @@ void wh_set_own(node *n, uint16_t p, const ak_value *v) {
 				n->drag_items = NULL;
 				n->drag_items_len = 0;
 			}
+		} else if (p == AK_PROP_VIEW_TAKES_CLICKS) {
+			wh_set_takes_clicks(n, v->i != 0);
 		}
 		break;
 	case AK_KIND_TEXT:

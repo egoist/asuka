@@ -61,7 +61,18 @@ void wh_configure_frameless(wh_wctl *c) {
 
 #define THROUGH (WS_EX_LAYERED | WS_EX_TRANSPARENT)
 
+// wh_set_click_through lets the mouse through the window, or not; where
+// it has views that take clicks, it takes the mouse over them
+// (clickregion.c).
 void wh_set_click_through(wh_wctl *c, bool on) {
+	c->through = on;
+	wh_apply_click_through(c, on);
+	wh_click_region_update();
+}
+
+// wh_apply_click_through makes the window let the mouse through, or not,
+// as it is now.
+void wh_apply_click_through(wh_wctl *c, bool on) {
 	LONG_PTR ex = GetWindowLongPtrW(c->hwnd, GWL_EXSTYLE);
 	if (on == ((ex & THROUGH) == THROUGH)) return;
 	if (on) {
@@ -73,7 +84,10 @@ void wh_set_click_through(wh_wctl *c, bool on) {
 	RedrawWindow(c->hwnd, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
 }
 
-bool wh_click_through(HWND hwnd) { return (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & THROUGH) == THROUGH; }
+bool wh_click_through(HWND hwnd) {
+	wh_wctl *c = wh_ctl_of(hwnd);
+	return c ? c->through : (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & THROUGH) == THROUGH;
+}
 
 static void content_size(wh_wctl *c, float *w, float *h) {
 	if (c->fitted) {
