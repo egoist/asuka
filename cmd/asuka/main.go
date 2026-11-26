@@ -253,6 +253,7 @@ type devOptions struct {
 	once      bool
 	verbose   bool
 	lang, dir string
+	debugPort int    // the debug adapter's port (0: 8791, else a free one)
 	bin       string // a program of asuka.toml's [bin.<name>]
 	flows     []flow // asuka test --gui's: run once it's loaded, then stop
 }
@@ -273,6 +274,7 @@ func devFlags(o *devOptions) *flagSet {
 	fs.Bool(&o.once, "once", 0, "build and launch the app, and return once it runs (it keeps running), without watching for changes")
 	fs.String(&o.lang, "lang", 0, "", "show this `language` for this run, as de or zh-Hans, or a pseudo locale: en-XA (accented, a third longer) or ar-XB (right to left)")
 	fs.String(&o.dir, "dir", 0, "", "lay the app out in this `direction` for this run, rtl or ltr, whatever its language")
+	fs.Int(&o.debugPort, "debug-port", 0, 0, "the `port` on this computer an editor's debugger attaches to (the Debug Adapter Protocol; default 8791, or a free one); not on the web")
 	fs.Bool(&o.verbose, "verbose", 'v', "print the commands asuka runs")
 	return fs
 }
@@ -296,12 +298,18 @@ func cmdDev(args []string) error {
 		dir = fs.Arg(0)
 	}
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	// SIGHUP: its terminal closed (an editor's, which started it to
+	// debug the app): it stops the player as Ctrl-C does.
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	if o.bin != "" || (o.platform == "" && isProgramDir(dir)) {
 		return devProgram(dir, o.bin, progArgs, stop)
 	}
 	// An app reloads as it's saved: compiled as quickly as it can be.
 	appbuild.DevNoOptimize = true
+	if o.debugPort < 0 || o.debugPort > 65535 {
+		return fmt.Errorf("--debug-port %d: a port, 1 to 65535", o.debugPort)
+	}
+	devDebugPort = o.debugPort
 	if o.platform == "" {
 		if o.platform = thisComputer(); o.platform == "" {
 			return errors.New("pick a platform: asuka dev --platform ios|android|web <dir>")

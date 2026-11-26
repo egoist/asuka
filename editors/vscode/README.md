@@ -1,8 +1,8 @@
 # Asuka for Visual Studio Code
 
 Support for the [Asuka language](../../docs/language.md): highlighting,
-and everything that needs the compiler from its language server,
-`asuka lsp`.
+everything that needs the compiler from its language server, `asuka
+lsp`, and the debugger of the apps `asuka dev` runs.
 
 - **Diagnostics** as you type: the checker's errors, with what would fix
   them, for the package being edited and the packages that import it.
@@ -35,6 +35,26 @@ code --install-extension asuka-0.1.0.vsix
 
 Or, to work on the extension, open this directory in VS Code and press
 F5 (Run Extension) after `npm install`.
+
+## Debugging
+
+The extension debugs the app `asuka dev` runs, on whatever it runs on
+(the iOS simulator or an iPhone, Android, this computer; not the web):
+breakpoints in `.asuka` files, stepping, the stack and its variables.
+`asuka dev` is the debug adapter: it listens on `127.0.0.1:8791` (or
+the port it prints, or `--debug-port`'s). In **Run and Debug**, add a
+configuration:
+
+- **Asuka: Run and Debug** (`"request": "launch"`) runs `asuka dev` for
+  the app (`app`, the workspace by default; `platform`, `device`,
+  `args`) in a terminal, attaches once it runs, and stops it when the
+  session ends.
+- **Asuka: Attach to asuka dev** (`"request": "attach"`) attaches to an
+  `asuka dev` already running, on `port` (8791).
+
+With no `launch.json`, F5 in an `.asuka` file runs and debugs the
+workspace's app on this computer. See [the
+debugger](../../docs/development.md#the-debugger) for what it does.
 
 ## Settings
 

@@ -454,6 +454,12 @@ func androidPlayer(app *asukaApp, tc *androidToolchain, work, serial string, loo
 		if err := tc.pushAssets(app, work, serial, pkg); err != nil {
 			return err
 		}
+		// Started as an app being debugged (am set-debug-app, for this
+		// start only), as Android Studio's debugger starts one: paused at
+		// a breakpoint of asuka dev's debugger, its main thread doesn't
+		// answer input, which the system then doesn't take for an app
+		// not responding (no ANR dialog, no kill).
+		tc.run(work, nil, tc.adb, "-s", serial, "shell", "am", "set-debug-app", pkg)
 		if err := tc.run(work, nil, tc.adb, "-s", serial, "shell", "am", "start", "-W", "-n", pkg+"/dev.asuka.AsukaActivity"); err != nil {
 			return err
 		}

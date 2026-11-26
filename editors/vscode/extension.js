@@ -1,7 +1,8 @@
-// The Asuka extension: the language's grammar and settings, and the
+// The Asuka extension: the language's grammar and settings, the
 // language server, `asuka lsp`, for everything that needs the compiler
 // (diagnostics, completion, hover, go to definition, references,
-// rename, formatting, symbols, signature help, semantic tokens).
+// rename, formatting, symbols, signature help, semantic tokens), and the
+// debugger, `asuka dev`'s (debug.js).
 //
 // Plain JavaScript, no build step: VS Code loads this file as it is.
 
@@ -11,14 +12,15 @@ const path = require("path");
 const os = require("os");
 const vscode = require("vscode");
 const { LanguageClient, TransportKind, State } = require("vscode-languageclient/node");
+const debug = require("./debug");
 
 /** @type {LanguageClient | undefined} */
 let client;
 /** @type {vscode.OutputChannel | undefined} */
 let output;
 
-/** The command the server runs as: asuka.server.path, resolved. */
-function serverCommand() {
+/** The asuka command: asuka.server.path, resolved. */
+function asukaCommand() {
   const cfg = vscode.workspace.getConfiguration("asuka");
   let cmd = (cfg.get("server.path") || "asuka").trim();
   if (cmd.startsWith("~/")) {
@@ -31,8 +33,14 @@ function serverCommand() {
       cmd = path.join(folder.uri.fsPath, cmd);
     }
   }
+  return cmd;
+}
+
+/** The command the server runs as. */
+function serverCommand() {
+  const cfg = vscode.workspace.getConfiguration("asuka");
   const args = ["lsp", ...(cfg.get("server.args") || [])];
-  return { cmd, args };
+  return { cmd: asukaCommand(), args };
 }
 
 async function start() {
@@ -96,6 +104,7 @@ async function restart() {
 /** @param {vscode.ExtensionContext} context */
 async function activate(context) {
   output = vscode.window.createOutputChannel("Asuka");
+  debug.register(context, asukaCommand);
   context.subscriptions.push(
     output,
     vscode.commands.registerCommand("asuka.restartServer", restart),

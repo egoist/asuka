@@ -141,8 +141,11 @@ views, so it shows even when the app's tree is the thing that's broken.
 
 The app's code runs on the core's bytecode VM in asuka dev's player (on
 a phone, the simulator, the emulator, a desktop), so the debugger is
-the VM's own (`core/src/vm/debug.c`), not Delve. Built so far: the
-engine, the debug info it reads, and its frames on the dev connection.
+the VM's own (`core/src/vm/debug.c`), not Delve. Built: the engine,
+the debug info it reads, its frames on the dev connection, asuka dev's
+DAP adapter (`internal/dap`) and the VS Code extension's debugger
+(`editors/vscode/debug.js`); docs/development.md's "The debugger" says
+how to use it.
 
 - **Debug info.** The bytecode already has each function's line table
   (and the inlined bodies', whose lines are their own files'). lang/ir
@@ -217,22 +220,72 @@ drive a player; `Events.Stopped`, `Continued` and `Values` hear it; and
 without code to the next that has, in the function it's in, as an
 editor shows it.
 
-The next step is the editor's side:
+The editor's side, as built:
 
-- **A DAP adapter in asuka dev**, at one address that lasts as long as
-  asuka dev does, whatever reloads: `setBreakpoints` through
-  `ResolveBreakpoints` (the lines it verified, moved) and
-  `Server.SetBreakpoints`; a thread per player; `stackTrace`, `scopes`
-  and `variables` from the stop and `Player.Variables` (a
-  `variablesReference` per path); `continue`, `next`, `stepIn`,
-  `stepOut` and `pause` as commands; `disconnect` as a reset. Files are
-  the module's names for them: the sources' absolute paths, an
-  editor's own.
-- **Editors.** The VS Code extension contributes the debugger (an
-  `attach` configuration to asuka dev's address); asuka dev prints it,
-  and the address for others.
-- **The player's paused state**: dimming the app under a banner,
-  "Paused in the debugger", drawn by each host as the error overlay is.
+- **A DAP adapter in asuka dev** (`internal/dap`), on 127.0.0.1:8791
+  (another asuka dev has it: a free port; `--debug-port` names one),
+  printed with the inspector's address and lasting as long as asuka dev
+  does, whatever reloads; not for the web, whose loop has no debugger.
+  One editor at a time: one that connects takes over (the other hears
+  `terminated`, and the players are reset). `launch` is `attach`: the
+  app is asuka dev's, running already. It declares honestly what it
+  does: `configurationDone`, nothing else optional (no conditions, hit
+  counts, logpoints, evaluation, `setVariable`, exception filters,
+  `terminate`); `evaluate` fails, saying so.
+- **Breakpoints** are the adapter's, by the editor's path: each is
+  resolved (`ResolveBreakpoints`) in every platform's module that
+  compiled last, the loop's first, and the union of the lines resolved
+  is what `Server.SetBreakpoints` sends; a file whose breakpoints don't
+  change isn't sent again. A line without code is answered moved, one
+  in no module's code unverified ("pending"). Each compile resolves them
+  again before its module goes out (`Compiled`), and a breakpoint whose
+  line moved, or that gained or lost code, is a `breakpoint` event. The
+  editor's path is matched to the module's spelling of the same file (a
+  symbolic link's, a letter's case on macOS and Windows), and frames
+  report the file by the editor's spelling.
+- **Threads** are players, one per connection, named as asuka dev names
+  them ("iOS (iPhone 17)"); `thread` events as they come and go. Each
+  stops and goes on by itself (`allThreadsStopped` false); `continue`,
+  `next`, `stepIn`, `stepOut` and `pause` are the thread's player's
+  commands. A stop before `configurationDone` is told as it's done.
+- **The stack** is the stop's frames (`stackTrace` pages through them),
+  a frame's one scope its locals, straight from the stop; a local with
+  children is a `variablesReference` to its path, whose `variables` ask
+  the player (`Player.Variables`) and wait for its answer, the player's
+  going or the session's ending, with no timer: a player that isn't
+  paused answers at once. An array's and a set's children are
+  `indexedVariables`, asked a page at a time; the rest `named`. A
+  thread's references go as it goes on. A `variables` is answered on a
+  goroutine of its own, so a `continue` meanwhile isn't kept waiting.
+- **Output**: the players' logs and their uncaught errors, as `output`
+  events; asuka dev ending is `terminated`. An editor gone without
+  `disconnect` is a `disconnect`: `Server.DebugReset`.
+- **Editors.** The VS Code extension contributes the `asuka` debugger:
+  breakpoints in `.asuka` files, an `attach` configuration (`port`,
+  8791) and a `launch` one, which runs `asuka dev --debug-port <a free
+  port>` in a terminal, attaches once the port answers (a progress
+  notification, cancellable; asuka dev ending first fails it), and
+  sends the terminal Ctrl-C when the session ends (asuka dev stops on
+  SIGHUP too, its terminal closed). Other editors attach to the port.
+- **The players are development builds** (`AK_DEBUG`: every player's
+  core, the simulator's, a phone's, an emulator's, the desktops'), so
+  each has the engine; the web's has none.
+- **Android**: a paused main thread doesn't answer input, which after
+  5 s the system takes for an app not responding. asuka dev starts the
+  player as an app being debugged (`am set-debug-app`, for that start
+  only, as Android Studio's debugger does): the system's ANR state
+  dump still runs, but the ANR dialog and kill don't (the activity
+  manager skips a process being debugged). On one emulator image
+  (Android 17's preview, MyGo_Pixel), that dump itself crashed the
+  system server (a null display in its camera compatibility policy's
+  dump): the system's bug, which any app's ANR there hits.
+- **Not built: the player's paused state** (dimming the app under a
+  banner, "Paused in the debugger", with Continue). The paused main
+  thread is the one that draws and takes touches: a host can't draw a
+  banner, or have its button pressed, until it goes on. It would need
+  each host to run its event loop nested while paused (a new call in
+  the ABI, the hosts' own, as a modal dialog's loop), which isn't worth
+  it while the editor shows the stop. Later, if at all.
 - Later: conditional breakpoints and logpoints, stopping where an error
   nothing catches is thrown, evaluating an expression in a frame.
 
@@ -346,9 +399,9 @@ Each is useful on its own, in this order:
 
 1. **The error overlay**: panics and builds that fail, with the source
    and Reload; `DevError` in every host.
-2. **The debugger**: the VM's (built: the debug info, the engine, the
-   dev connection's frames), then asuka dev's DAP adapter, the editors'
-   configurations and the player's paused state.
+2. **The debugger** (built): the VM's (the debug info, the engine, the
+   dev connection's frames), asuka dev's DAP adapter and VS Code's
+   configurations. Not built: the player's paused state.
 3. **The inspector**: the tree, props, style, frames, where each view
    was made, highlight and pick, opening the source in an editor.
 4. **Signals and flushes**: the Updates tab and the device's update

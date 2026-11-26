@@ -38,6 +38,8 @@ flags:
   `--dir rtl` lays any app out right to left. See
   [Languages](i18n.md).
 - `--once`: launch the app once, without watching for changes.
+- `--debug-port`: the port your editor's debugger attaches to (see
+  [The debugger](#the-debugger)).
 - `-v`: print the commands Asuka runs.
 
 On a phone:
@@ -274,6 +276,92 @@ parts you don't need, or filter by an element or a text. The tree follows the ap
 other windows are trees of their own, after the app's, and a list's
 cells are its children.
 
+## The debugger
+
+`asuka dev` has a debugger. Set a breakpoint in an `.asuka` file and the
+app stops there on the device it runs on (the simulator, an iPhone, an
+emulator or Android phone, your Mac, PC or Linux machine); your editor
+shows the calls that led there and each one's variables, and steps
+through the code from there. Editors attach to it by the Debug Adapter
+Protocol (DAP), at the address `asuka dev` prints:
+
+```
+asuka: the debugger (an editor's, by DAP): 127.0.0.1:8791
+```
+
+The port is 8791, unless another `asuka dev` has it (then it's a free
+one) or `--debug-port` names another.
+
+In **VS Code**, the extension in `editors/vscode` (see
+[Editors](#editors)) adds two configurations to `launch.json`. **Asuka:
+Run and Debug** runs `asuka dev` for the app in a terminal and attaches
+once the app runs; `platform`, `device` and `args` say where and how,
+and stopping the debugger stops `asuka dev`. **Asuka: Attach to asuka
+dev** attaches to an `asuka dev` you started, on its `port`. With no
+`launch.json`, F5 in an `.asuka` file runs and debugs the workspace's
+app on this computer.
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    { "type": "asuka", "request": "launch", "name": "Asuka: Run and Debug", "app": "${workspaceFolder}", "platform": "ios" },
+    { "type": "asuka", "request": "attach", "name": "Asuka: Attach to asuka dev", "port": 8791 }
+  ]
+}
+```
+
+**Other editors** whose DAP client can attach to a debug adapter at an
+address (a server on a TCP port) use the same port, with an `attach`
+request (`launch` does the same: it attaches to the `asuka dev` that's
+running). In Neovim, with nvim-dap:
+
+```lua
+local dap = require("dap")
+dap.adapters.asuka = { type = "server", host = "127.0.0.1", port = 8791 }
+dap.configurations.asuka = {
+  { type = "asuka", request = "attach", name = "Attach to asuka dev" },
+}
+```
+
+What it does:
+
+- **Breakpoints** by line, in the app's files and its packages'. One on
+  a line without code moves to the next line that has some, as the
+  editor shows. They stay set as you save and as the app launches
+  again; one in a file the app doesn't use yet waits until it does.
+- **Where it stopped**: the stack, and each frame's variables (its
+  parameters, `let`s and `var`s, `self`, a component's `state`s as they
+  are now), written as Asuka writes them, with a struct's fields, an
+  enum's payload and the items of an array, a map or a set to expand.
+- **Continue, step over, step into, step out and pause.** A pause stops
+  the app the next time it runs code (a tap, a timer): an idle app runs
+  none.
+- **Each device is a thread**: under `asuka dev --platform ios,android`
+  the iPhone and the emulator stop and go on each by itself.
+- The app's output, in the editor's debug console.
+- A save while the app is paused lets it go on, and the new code it
+  loads stops at the breakpoints.
+
+While the app is paused, its main thread waits, as it does in Xcode's or
+Android Studio's debugger: the app doesn't draw or answer touches, and a
+desktop system may say its window isn't responding. On Android, `asuka
+dev` starts the app as one being debugged, so the system doesn't take
+the pause for an app that isn't responding.
+
+Not yet:
+
+- Conditional breakpoints, logpoints, evaluating an expression (watches,
+  the debug console), changing a value, or stopping where an error
+  nothing catches is thrown.
+- The web (`--platform web`): a page can't wait on its main thread while
+  the app is paused.
+- Code a `spawn` runs on a worker doesn't stop.
+- The device shows nothing while the app is paused: the editor does.
+- One editor at a time: another that attaches takes over.
+
+Only development builds have the debugger; a release build has none.
+
 ## Errors and their codes
 
 Every error and warning has a code, the name of the rule it reports a
@@ -318,8 +406,9 @@ semantic highlighting for `.asuka` files. It checks the package being
 edited with your unsaved changes, and the packages that import it.
 
 For VS Code, the extension is in `editors/vscode`: it adds the
-language's highlighting and runs `asuka lsp`, the `asuka` on your `PATH`
-or the one `asuka.server.path` names.
+language's highlighting, runs `asuka lsp` (the `asuka` on your `PATH`
+or the one `asuka.server.path` names), and debugs the app `asuka dev`
+runs ([The debugger](#the-debugger)).
 
 ```sh
 cd editors/vscode

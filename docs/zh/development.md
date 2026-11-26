@@ -20,6 +20,7 @@ asuka dev --platform web [flags] [dir]       # 浏览器
 - `--platform`：见上文。
 - `--lang`：本次运行使用某种语言（如 `de`、`zh-Hans`），或者使用伪区域设置：`en-XA`（带重音符号且更长）或 `ar-XB`（从右到左）。`--dir rtl` 可以让任何应用按从右到左布局。参见 [多语言](i18n.md)。
 - `--once`：只启动一次应用，不监听文件变化。
+- `--debug-port`：编辑器的调试器连接的端口（见[调试器](#调试器)）。
 - `-v`：打印 Asuka 执行的命令。
 
 在手机上还有：
@@ -118,6 +119,59 @@ asuka: the inspector (the app's views): http://127.0.0.1:52817/
 
 在同一台电脑的浏览器中打开它（或在运行 `asuka dev` 的终端里按 **i**），就能以树的形式查看正在运行的应用的视图：每个视图的元素、文字，以及它在父视图中的 frame。把指针移到一个视图上或点击它，应用会在设备上把它高亮出来；点击还会显示它的详情，按 Escape 则取消选择。可以折叠不需要的部分，也可以按元素或文字筛选。这棵树每秒跟随应用更新一次（关掉 Live 可让它保持不动）。同时连接了多台设备时（例如一台 iPhone 和一个模拟器），可以在顶部选择其中一台。表单（sheet）、弹出框和其他窗口各自是一棵树，排在应用的树之后；列表的单元格则是列表的子视图。
 
+## 调试器
+
+`asuka dev` 自带调试器。在 `.asuka` 文件里设一个断点，应用运行到那里就会在它所在的设备上停下（模拟器、iPhone、Android 模拟器或手机、你的 Mac、PC 或 Linux 电脑）；编辑器会显示是哪些调用一路走到这里的，以及每一层的变量，你还可以从这里开始单步执行。编辑器通过调试适配器协议（Debug Adapter Protocol，DAP）连接到 `asuka dev` 打印出的地址：
+
+```
+asuka: the debugger (an editor's, by DAP): 127.0.0.1:8791
+```
+
+端口默认是 8791；如果已被另一个 `asuka dev` 占用，就换一个空闲的端口，也可以用 `--debug-port` 指定。
+
+在 **VS Code** 中，`editors/vscode` 里的扩展（见[编辑器](#编辑器)）会在 `launch.json` 中加入两种配置。**Asuka: Run and Debug** 会在终端里为应用运行 `asuka dev`，等应用跑起来后连接上去；`platform`、`device` 和 `args` 决定在哪里、以什么方式运行，停止调试时 `asuka dev` 也会随之停止。**Asuka: Attach to asuka dev** 则连接到你自己启动的 `asuka dev`，用的是它的 `port`。没有 `launch.json` 时，在 `.asuka` 文件中按 F5，就会在当前电脑上运行并调试工作区里的应用。
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    { "type": "asuka", "request": "launch", "name": "Asuka: Run and Debug", "app": "${workspaceFolder}", "platform": "ios" },
+    { "type": "asuka", "request": "attach", "name": "Asuka: Attach to asuka dev", "port": 8791 }
+  ]
+}
+```
+
+**其他编辑器**只要它的 DAP 客户端能连接到某个地址上的调试适配器（监听 TCP 端口的服务），就可以用同一个端口，发送 `attach` 请求（`launch` 的效果一样：连接到正在运行的 `asuka dev`）。在 Neovim 中使用 nvim-dap：
+
+```lua
+local dap = require("dap")
+dap.adapters.asuka = { type = "server", host = "127.0.0.1", port = 8791 }
+dap.configurations.asuka = {
+  { type = "asuka", request = "attach", name = "Attach to asuka dev" },
+}
+```
+
+它能做的事：
+
+- **断点**按行设置，可以设在应用自己的文件里，也可以设在它所用的包里。设在没有代码的行上时，断点会移到下一行有代码的地方，编辑器里也会显示出来。保存文件、应用重新启动之后，断点依然有效；设在应用暂时没用到的文件里的断点，会等到应用用上那个文件时才生效。
+- **停下的位置**：调用栈，以及每一层的变量（参数、`let` 和 `var`、`self`、组件当前的各个 `state`），按 Asuka 的写法显示；结构体的字段、枚举的关联值，以及数组、map 和 set 的元素都可以展开查看。
+- **继续、单步跳过、单步进入、单步跳出和暂停。** 暂停会让应用在下一次运行代码时停下（一次点击、一个定时器）；空闲的应用不运行任何代码。
+- **每台设备是一个线程**：在 `asuka dev --platform ios,android` 下，iPhone 和模拟器各自停下、各自继续。
+- 应用的输出会显示在编辑器的调试控制台里。
+- 应用暂停时保存文件，应用会继续运行，并在加载的新代码中照样在断点处停下。
+
+应用暂停时，它的主线程在等待，就像在 Xcode 或 Android Studio 的调试器里一样：应用不会重绘，也不响应触摸，桌面系统可能会提示它的窗口没有响应。在 Android 上，`asuka dev` 会以“正在被调试”的方式启动应用，所以系统不会把这种暂停当成应用无响应。
+
+暂时还不支持：
+
+- 条件断点、日志点、对表达式求值（监视、调试控制台）、修改变量的值，以及在没人捕获的错误被抛出时停下。
+- Web（`--platform web`）：应用暂停时，页面无法让主线程停下来等待。
+- `spawn` 在 worker 上运行的代码不会停下。
+- 应用暂停时，设备上不会有任何提示，只有编辑器里能看到。
+- 同一时间只能连接一个编辑器：后连接的会接管。
+
+只有开发构建带有调试器，发布构建里没有。
+
 ## 错误及其代码
 
 每个错误和警告都有一个代码，也就是它所报告的那条规则的名称。终端会把代码连同帮助（如果有的话）和代码的页面一起显示：
@@ -138,7 +192,7 @@ app.asuka:14:9: error[write-in-binding]: can't assign to count here
 
 `asuka lsp` 是 Asuka 的语言服务器，为 `.asuka` 文件提供：输入时的诊断、补全、带 `///` 文档的悬停提示、跳转到定义、查找引用、重命名、格式化（与 `asuka fmt` 相同）、符号、签名帮助和语义高亮。它会带着你尚未保存的修改检查正在编辑的包，以及导入它的包。
 
-VS Code 的扩展在 `editors/vscode` 中：它为这门语言加上语法高亮，并运行 `asuka lsp`（使用 `PATH` 中的 `asuka`，或 `asuka.server.path` 指定的那个）。
+VS Code 的扩展在 `editors/vscode` 中：它为这门语言加上语法高亮，运行 `asuka lsp`（使用 `PATH` 中的 `asuka`，或 `asuka.server.path` 指定的那个），还能调试 `asuka dev` 运行的应用（见[调试器](#调试器)）。
 
 ```sh
 cd editors/vscode

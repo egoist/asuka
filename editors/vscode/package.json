@@ -1,7 +1,7 @@
 {
   "name": "asuka",
   "displayName": "Asuka",
-  "description": "The Asuka language: diagnostics, completion, hover, go to definition, references, rename and formatting, from asuka lsp.",
+  "description": "The Asuka language: diagnostics, completion, hover, go to definition, references, rename and formatting, from asuka lsp; and the debugger of the apps asuka dev runs.",
   "version": "0.1.0",
   "publisher": "asuka",
   "license": "MIT",
@@ -17,17 +17,21 @@
   "categories": [
     "Programming Languages",
     "Formatters",
-    "Linters"
+    "Linters",
+    "Debuggers"
   ],
   "keywords": [
     "asuka",
     "ui",
-    "lsp"
+    "lsp",
+    "debug"
   ],
   "main": "./extension.js",
   "activationEvents": [
     "onLanguage:asuka",
-    "workspaceContains:**/asuka.toml"
+    "workspaceContains:**/asuka.toml",
+    "onDebugResolve:asuka",
+    "onDebugInitialConfigurations"
   ],
   "contributes": {
     "languages": [
@@ -48,6 +52,120 @@
         "language": "asuka",
         "scopeName": "source.asuka",
         "path": "./syntaxes/asuka.tmLanguage.json"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "asuka"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "asuka",
+        "label": "Asuka",
+        "languages": [
+          "asuka"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "app": {
+                "type": "string",
+                "default": "${workspaceFolder}",
+                "description": "The app's directory (its asuka.toml's)."
+              },
+              "platform": {
+                "type": "string",
+                "enum": [
+                  "mac",
+                  "windows",
+                  "linux",
+                  "ios",
+                  "android",
+                  "ios,android"
+                ],
+                "description": "Where asuka dev runs the app (asuka dev --platform): this computer by default. Not the web, which has no debugger."
+              },
+              "device": {
+                "type": "string",
+                "description": "asuka dev --device: a simulator's or an iPhone's name, an adb serial or an AVD's name."
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "More arguments for asuka dev, such as [\"--lang\", \"de\"]."
+              },
+              "port": {
+                "type": "number",
+                "description": "The port the debugger listens on (asuka dev --debug-port): by default a free one."
+              }
+            }
+          },
+          "attach": {
+            "properties": {
+              "port": {
+                "type": "number",
+                "default": 8791,
+                "description": "The port asuka dev's debugger listens on, as asuka dev prints it: 8791 unless another asuka dev had it, or --debug-port said."
+              },
+              "host": {
+                "type": "string",
+                "default": "127.0.0.1",
+                "description": "The computer asuka dev runs on: this one."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "asuka",
+            "request": "launch",
+            "name": "Asuka: Run and Debug",
+            "app": "${workspaceFolder}"
+          },
+          {
+            "type": "asuka",
+            "request": "attach",
+            "name": "Asuka: Attach to asuka dev",
+            "port": 8791
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Asuka: Run and Debug",
+            "description": "Run the app with asuka dev and debug it",
+            "body": {
+              "type": "asuka",
+              "request": "launch",
+              "name": "Asuka: Run and Debug",
+              "app": "^\"\\${workspaceFolder}\""
+            }
+          },
+          {
+            "label": "Asuka: Run and Debug on iOS",
+            "description": "Run the app on the iOS simulator and debug it",
+            "body": {
+              "type": "asuka",
+              "request": "launch",
+              "name": "Asuka: Run and Debug (iOS)",
+              "app": "^\"\\${workspaceFolder}\"",
+              "platform": "ios"
+            }
+          },
+          {
+            "label": "Asuka: Attach to asuka dev",
+            "description": "Debug the app an asuka dev already runs",
+            "body": {
+              "type": "asuka",
+              "request": "attach",
+              "name": "Asuka: Attach to asuka dev",
+              "port": 8791
+            }
+          }
+        ]
       }
     ],
     "configuration": {

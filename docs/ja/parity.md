@@ -189,6 +189,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 |---|---|---|
 | ライブリロード、状態の保持 | プレビュー、Fast Refresh | ✓ `asuka dev`：開発用アプリが、保存するたびに数ミリ秒で新しいものに入れ替え、すべての `state` を保つ。スマートフォン、デスクトップ、ブラウザーのどれでも（[開発](development.md)） |
 | ビューの調査 | Xcode のビューデバッガー、React Native DevTools、Flutter DevTools | ✓ `asuka dev` のインスペクター：実行中のアプリのビューをブラウザーにツリーで表示し（要素、テキスト、frame）、ポインターを合わせたビューをデバイス上でハイライトする（[開発](development.md#インスペクター)） |
+| デバッガー | Xcode の LLDB、Android Studio のデバッガー、React Native DevTools（Hermes） | ✓ `asuka dev` のデバッガー：アプリの `.asuka` ファイルのブレークポイント、ステップ実行、コールスタックと各フレームの変数。シミュレーター、iPhone、Android、Mac、Windows、Linux で使え（Web は除く）、VS Code や DAP クライアントを持つエディターから操作する（[開発](development.md#デバッガー)） |
 | 開発環境の確認 | Expo の doctor、`flutter doctor` | ✓ `asuka doctor`：このコンピューターが各プラットフォーム向けに何をビルドできるか、残りに何をインストールすればよいか |
 | スマートフォンでの実行 | Xcode の Run、Expo の開発ビルド | ✓ `asuka dev --platform ios`、`android`、または両方同時（`ios,android`）：シミュレーター、エミュレーター、Android のスマートフォン（`adb reverse`）、USB か Wi-Fi でつないだ iPhone（`--device iphone`、自分のチームで署名） |
 | テスト | XCTest、Jest と React Native Testing Library | ✓ `asuka test`：`test` ブロック。アプリをデバイスなしでマウントし（`mount`、`app.tap`、`app.expect`）、デバイスのパッケージにはフェイクがある（[テスト](testing.md)） |

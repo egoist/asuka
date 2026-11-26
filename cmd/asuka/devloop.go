@@ -5,14 +5,27 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/egoist/asuka/internal/dap"
 	"github.com/egoist/asuka/internal/devserver"
+	"github.com/egoist/asuka/lang/bytecode"
 	"github.com/egoist/asuka/lang/target"
 )
+
+// devDebugPort is where asuka dev's debug adapter listens for an
+// editor's debugger (--debug-port): 0, devDebugDefault's (another
+// asuka dev has it: a free port); -1, none (the loops of asuka test
+// --gui and the tests).
+var devDebugPort = -1
+
+// devDebugDefault is the debug adapter's port when --debug-port doesn't
+// say: the one the VS Code extension's attach configuration has.
+const devDebugDefault = 8791
 
 // devLoop is asuka dev's side of an app's players (a host built for
 // development, running the C core without an app: the simulator's, an
@@ -57,6 +70,12 @@ type devLoop struct {
 	// inspectorURL.
 	inspector    *inspector
 	inspectorURL string
+	// debugger is the debug adapter an editor attaches to (nil: none,
+	// the web's, whose page can't stop); mods are the modules it
+	// resolves breakpoints in, the last that compiled for each platform
+	// (under mu).
+	debugger *dap.Server
+	mods     map[target.Platform]*bytecode.Module
 	// automation runs the core's automation on the player; flows, when
 	// set, are run once the app has loaded (asuka test --gui), then the
 	// loop ends.
@@ -81,11 +100,20 @@ type devReload struct {
 // waited on: the players get the first that does.
 func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	d := &devLoop{app: app, out: os.Stdout, platform: app.platform.Or(), loaded: map[*devserver.Player]bool{}, reloads: make(chan devReload, 16),
-		firstLoad: make(chan struct{}), playerErr: make(chan string, 1), inspector: newInspector(), automation: newAutomation()}
+		firstLoad: make(chan struct{}), playerErr: make(chan string, 1), inspector: newInspector(), automation: newAutomation(),
+		mods: map[target.Platform]*bytecode.Module{}}
+	if devDebugPort >= 0 && d.platform != target.Web {
+		// Before the players' events, which it hears from the first.
+		d.debugger = dap.New(dap.Options{Resolve: d.resolveBreakpoints, Files: d.sourceFiles, Root: app.dir})
+	}
 	srv, err := devserver.Listen(addr, devserver.Events{
 		Hello: func(p *devserver.Player, b []byte) {
 			fmt.Fprintf(d.out, "asuka: %s connected\n", playerName(b))
+			d.debugger.Hello(p, playerName(b))
 		},
+		Stopped:   func(p *devserver.Player, st devserver.Stop) { d.debugger.Stopped(p, st) },
+		Continued: func(p *devserver.Player) { d.debugger.Continued(p) },
+		Values:    func(p *devserver.Player, seq uint32, v devserver.Variables) { d.debugger.Values(p, seq, v) },
 		Automated: func(p *devserver.Player, seq uint32, answers string) { d.automation.answered(seq, answers) },
 		Tree: func(p *devserver.Player, tree []byte) {
 			d.inspector.put(fmt.Sprintf("%p", p), playerName(p.Info), tree, false, func(path string) { p.Highlight(path) })
@@ -97,6 +125,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 				w = os.Stderr
 			}
 			w.Write(text)
+			d.debugger.Output(p, stderr, string(text))
 		},
 		Reloaded: func(p *devserver.Player, kept, micros uint32, restarted bool) {
 			d.report(p, false, restarted, kept, micros)
@@ -109,18 +138,31 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 		Uncaught: func(p *devserver.Player, u devserver.Uncaught) {
 			source, details := d.uncaught(u)
 			p.Source(u.Seq, source, details)
+			msg := "error: " + u.Message + "\n"
+			if details = strings.TrimRight(details, "\n"); details != "" {
+				msg += indent(details, "    ") + "\n"
+			}
+			d.debugger.Output(p, true, msg)
 		},
 		Gone: func(p *devserver.Player, err error) {
 			d.mu.Lock()
 			delete(d.loaded, p)
 			d.mu.Unlock()
 			d.inspector.forget(fmt.Sprintf("%p", p))
+			d.debugger.Gone(p)
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
 	d.srv = srv
+	if d.debugger != nil {
+		d.debugger.Dev = srv
+		if err := d.listenDebugger(devDebugPort); err != nil {
+			srv.Close()
+			return nil, err
+		}
+	}
 	d.inspector.askers = append(d.inspector.askers, srv.Inspect)
 	d.automation.send = d.nativeAutomation(srv)
 	if url, err := d.inspector.listen(); err == nil {
@@ -129,6 +171,81 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	}
 	d.compile()
 	return d, nil
+}
+
+// listenDebugger has the debug adapter listen on this computer's port
+// (0: devDebugDefault's, else a free one, when another asuka dev has
+// it), and prints where.
+func (d *devLoop) listenDebugger(port int) error {
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	if port == 0 {
+		addr = fmt.Sprintf("127.0.0.1:%d", devDebugDefault)
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil && port == 0 {
+		ln, err = net.Listen("tcp", "127.0.0.1:0")
+	}
+	if err != nil {
+		return fmt.Errorf("the debugger's port: %w", err)
+	}
+	d.debugger.ListenOn(ln)
+	fmt.Fprintf(d.out, "asuka: the debugger (an editor's, by DAP): %s\n", ln.Addr())
+	return nil
+}
+
+// resolveBreakpoints is where each of lines of file stops in the app's
+// modules: the loop's platform's first, then the others' (a file only
+// one platform's build has: tray_linux.asuka).
+func (d *devLoop) resolveBreakpoints(file string, lines []int) []int {
+	d.mu.Lock()
+	mods := make([]*bytecode.Module, 0, len(d.mods))
+	if m := d.mods[d.platform]; m != nil {
+		mods = append(mods, m)
+	}
+	for p, m := range d.mods {
+		if p != d.platform {
+			mods = append(mods, m)
+		}
+	}
+	d.mu.Unlock()
+	out := make([]int, len(lines))
+	for _, m := range mods {
+		for i, l := range devserver.ResolveBreakpoints(m, file, lines) {
+			if out[i] == 0 {
+				out[i] = l
+			}
+		}
+	}
+	return out
+}
+
+// sourceFiles are the files the app's modules' functions are in.
+func (d *devLoop) sourceFiles() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	seen := map[string]bool{}
+	var files []string
+	for _, m := range d.mods {
+		for i := range m.Funcs {
+			if f := m.Funcs[i].File; f != "" && !seen[f] {
+				seen[f] = true
+				files = append(files, f)
+			}
+		}
+	}
+	return files
+}
+
+// compiled notes the module that compiled for platform: the debugger's
+// breakpoints are resolved in it again, before the players get it.
+func (d *devLoop) compiled(platform target.Platform, m *bytecode.Module) {
+	if d.debugger == nil {
+		return
+	}
+	d.mu.Lock()
+	d.mods[platform] = m
+	d.mu.Unlock()
+	d.debugger.Compiled()
 }
 
 // uncaught prints an error a player's app didn't catch, and returns what
@@ -198,6 +315,7 @@ func (d *devLoop) port() int { return d.srv.Port() }
 
 // close disconnects every player.
 func (d *devLoop) close() {
+	d.debugger.Close()
 	d.srv.Close()
 	d.inspector.close()
 }
@@ -258,6 +376,7 @@ func (d *devLoop) compile() bool {
 	}
 	d.srv.Fixed(d.platform)
 	d.srv.Fixed("")
+	d.compiled(d.platform, m)
 	b := m.Encode()
 	d.mu.Lock()
 	d.module = b
@@ -334,6 +453,7 @@ func (d *devLoop) compileOther(platform target.Platform, shown map[string]bool) 
 		return
 	}
 	d.srv.Fixed(platform)
+	d.compiled(platform, m)
 	d.srv.Send(platform, m.Encode())
 }
 
