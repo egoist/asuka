@@ -1,5 +1,5 @@
-// Menu Click puts a menu on a medication's view, opened by a click
-// (e2e's TestMenuClickWeb), and shows the action chosen from it.
+// Menu Click puts a menu on a medication's view, opened by a click or a
+// tap (e2e's TestMenuClickWeb), and shows the action chosen from it.
 
 component Medications {
   state chosen = "nothing yet"
