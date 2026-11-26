@@ -277,6 +277,4 @@ In order of what apps miss most: App Intents with entities (a
 shortcut's parameters are values, not the app's own things yet), widgets
 of the app's own layout (one template for now), and over-the-air updates
 (EAS Update's: a release has the app compiled into it). On Windows and Linux, Lottie (`lottie.View` is an empty box).
-On Windows and Linux, speech to text. On Windows, a screen's `zoomFrom`
-(a push slides instead; Linux slides as libadwaita's navigation does,
-GNOME having no zoom).
+On Windows and Linux, speech to text.

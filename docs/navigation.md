@@ -86,7 +86,8 @@ do, and it belongs to the innermost stack on screen (in tabs, the shown
 tab's): its back button, its top screen's title, bar buttons and search
 field. On a Mac that's the window's toolbar and title; on Linux the
 window's `AdwHeaderBar`. Pushes and pops slide on macOS, Linux and the
-web; on Windows, screens change without a transition.
+web; on Windows a pushed screen comes in as WinUI's do, up from a little
+below and fading in, and goes back out the same way.
 
 A stack fills the space it's given. Each screen is an
 [owner](concepts.md): popping it, by code or by the user's back gesture,
@@ -313,8 +314,10 @@ On iOS this is the system's zoom transition (iOS 18 and later; before
 that, the screen pushes as usual). Android does its own zoom, and
 popping with the predictive back gesture goes back into the view. The
 web and the Mac zoom too: the screen grows from the view's place,
-clipped to it, and shrinks back into it as it's popped. Windows and
-Linux push and pop as usual.
+clipped to it, and shrinks back into it as it's popped. Windows zooms
+as WinUI's drill-in does, the screen growing out of the view's place
+and shrinking back into it. Linux pushes and pops as usual, as GNOME
+has no zoom.
 [`examples/gallery`](../examples/gallery)'s photo grid does this.
 
 ## Back

@@ -3,6 +3,7 @@
 //   - A Stack shows its top Screen under a header bar of its own: a back
 //     button (Alt+Left too) while there's a screen to go back to, the
 //     screen's title, its bar buttons on the right and its search field.
+//     Its pushes and pops are animated as WinUI's (transition.c).
 //   - Tabs are a bar of tabs on top (WinUI's top NavigationView: an icon
 //     and a title each, an accent pill under the selected one).
 //   - A Sheet is a modal window over the window it's declared in (its
@@ -171,7 +172,10 @@ bool wh_insert_nav(node *p, node *c, uint32_t index) {
 	wh_adopt(p, c);
 	SetWindowPos(c->hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 	if (p->kind == AK_KIND_STACK) {
-		if (top && wh_top_screen(p) == c) ShowWindow(top->hwnd, SW_HIDE);
+		if (top && wh_top_screen(p) == c) {
+			wh_transition_begin(p, top, c, true);  // a push: the screen comes in
+			ShowWindow(top->hwnd, SW_HIDE);
+		}
 		if (wh_top_screen(p) != c) ShowWindow(c->hwnd, SW_HIDE);
 	} else {
 		if ((int)i != p->selected) ShowWindow(c->hwnd, SW_HIDE);
@@ -184,6 +188,10 @@ bool wh_insert_nav(node *p, node *c, uint32_t index) {
 
 bool wh_remove_nav(node *p, node *c) {
 	if (p->kind != AK_KIND_STACK && p->kind != AK_KIND_TABS) return false;
+	// A pop of the top screen: it goes out, onto the one under it.
+	bool under = false;
+	for (uint32_t i = 0; i < p->nkids && !under; i++) under = p->kids[i] != c && p->kids[i]->kind == AK_KIND_SCREEN && !p->kids[i]->dead && !p->kids[i]->dying;
+	if (p->kind == AK_KIND_STACK && under && c->hwnd && IsWindowVisible(c->hwnd)) wh_transition_begin(p, c, c, false);
 	if (c->hwnd) {
 		ShowWindow(c->hwnd, SW_HIDE);
 		SetParent(c->hwnd, H.park);
@@ -259,6 +267,8 @@ void wh_nav_free(node *n) {
 	n->nav = NULL;
 	if (n->kind == AK_KIND_STACK || n->kind == AK_KIND_TABS) forget_host_node(v->bar);
 	if (n->kind == KIND_HEADER) forget_host_node(v->field);
+	if (n->kind == AK_KIND_STACK) wh_transition_end(n);
+	free(v->zoom_from);
 	wstr_free(&v->search);
 	wstr_free(&v->search_text);
 	free(v->buttons);
@@ -382,6 +392,10 @@ void wh_set_nav_prop(node *n, uint16_t p, const ak_value *v) {
 		case AK_PROP_SCREEN_TOOLBAR: actions_decode(&n->nav->toolbar, b, v->s.len); break;
 		case AK_PROP_SCREEN_PRIMARY: actions_decode(&n->nav->primary, b, v->s.len); break;
 		case AK_PROP_SCREEN_BACK_GESTURE: n->nav->back_gesture = v->i != 0; break;
+		case AK_PROP_SCREEN_ZOOM_FROM:
+			free(n->nav->zoom_from);
+			n->nav->zoom_from = v->s.len ? wh_strndup(v->s.p, v->s.len) : NULL;
+			return;
 		case AK_PROP_SCREEN_ICON:
 			free(n->icon);
 			n->icon = wh_strndup(v->s.p, v->s.len);

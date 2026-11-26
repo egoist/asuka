@@ -20,6 +20,7 @@ struct wh_nav {
 
 	// Screen.
 	bool back_gesture;
+	char *zoom_from;  // the shared key of the view below it zooms out of ("": none)
 	wstr search, search_text;
 
 	// Stack, Tabs: the bar above the screens.
@@ -79,6 +80,10 @@ struct wh_nav {
 #define CMD_BAR_HEIGHT 48
 
 node *wh_top_screen(node *stack);
+// transition.c: a stack's push and pop, animated (WinUI's entrance and
+// drill-in); end stops one running in stack (NULL: any).
+void wh_transition_begin(node *stack, node *shown, node *screen, bool push);
+void wh_transition_end(node *stack);
 uint32_t wh_live_screens(node *stack);
 void wh_show_screens(node *p);
 void wh_update_header(node *stack);

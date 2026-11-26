@@ -242,4 +242,4 @@ MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览�
 
 ## 尚未支持
 
-按应用最常缺少的程度排序：带实体的 App Intents（快捷方式的参数目前只能是值，还不能是应用自己的数据）、应用自定义布局的小组件（目前只有一种模板），以及 OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了）。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Windows 和 Linux 上的语音转文字。Windows 上页面的 `zoomFrom`（推入时改为滑入；Linux 按 libadwaita 导航的方式滑入，GNOME 没有缩放过渡）。
+按应用最常缺少的程度排序：带实体的 App Intents（快捷方式的参数目前只能是值，还不能是应用自己的数据）、应用自定义布局的小组件（目前只有一种模板），以及 OTA 更新（EAS Update 那样的；发布版本里应用已经编译进去了）。Windows 和 Linux 上的 Lottie（`lottie.View` 只是一个空白区域）。Windows 和 Linux 上的语音转文字。
