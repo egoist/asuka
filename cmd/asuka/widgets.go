@@ -420,7 +420,7 @@ func (t *iosToolchain) widgetEntitlements(work string, cfg *appConfig) ([]string
 	if !strings.HasSuffix(t.target, "-simulator") {
 		return nil, "", nil
 	}
-	m := map[string]any{"application-identifier": "ASUKASIMULA." + cfg.widgetID()}
+	m := map[string]any{"application-identifier": simulatorTeam + "." + cfg.widgetID()}
 	if g := cfg.appGroup(); g != "" {
 		m["com.apple.security.application-groups"] = []string{g}
 	}

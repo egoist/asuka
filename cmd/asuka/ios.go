@@ -457,13 +457,21 @@ func (t *iosToolchain) link(app *asukaApp, work, hostObj, lib string) (string, e
 	return bundle, t.run(work, nil, "codesign", "--force", "--sign", sign, bundle)
 }
 
+// simulatorTeam is the team ID a simulator build's app identifiers start
+// with, as a signed app's do with its team's. It has a team ID's shape,
+// ten characters: the system takes the app's bundle ID from its app
+// identifier by dropping those ten and the dot, and so finds the app's
+// name (healthd: HealthKit's sheet and the app's samples' source; with
+// any other prefix they name the app by its executable, "AsukaApp").
+const simulatorTeam = "ASUKASIMUL"
+
 // simulatorEntitlements are the linker flags that give a simulator build
 // the entitlements the keychain wants (an app identifier and its access
 // group; without them SecItemAdd fails with errSecMissingEntitlement, and
 // platform/secure with it). As Xcode does: in the binary's __entitlements
 // section, for an ad hoc signature can't carry them.
 func simulatorEntitlements(work string, cfg *appConfig) ([]string, error) {
-	id := "ASUKASIMULA." + cfg.ID // a team ID's shape: ten characters
+	id := simulatorTeam + "." + cfg.ID
 	ent := filepath.Join(work, "simulator.entitlements")
 	m := map[string]any{
 		"application-identifier": id,
@@ -476,7 +484,7 @@ func simulatorEntitlements(work string, cfg *appConfig) ([]string, error) {
 		m["com.apple.security.application-groups"] = []string{g}
 	}
 	for k, v := range cfg.entitlements {
-		m[k] = iCloudTeam(v, firstOf(cfg.IOS.Team, "ASUKASIMULA"))
+		m[k] = iCloudTeam(v, firstOf(cfg.IOS.Team, simulatorTeam))
 	}
 	if cfg.IOS.StoreKit != "" {
 		// storekitd takes a StoreKit configuration only for an app

@@ -30,8 +30,8 @@ func (t *iosToolchain) notificationEntitlements(work string, cfg *appConfig) ([]
 		return nil, nil
 	}
 	m := map[string]any{
-		"application-identifier": "ASUKASIMULA." + cfg.notificationID(),
-		"keychain-access-groups": []string{"ASUKASIMULA." + cfg.ID},
+		"application-identifier": simulatorTeam + "." + cfg.notificationID(),
+		"keychain-access-groups": []string{simulatorTeam + "." + cfg.ID},
 	}
 	if g := cfg.appGroup(); g != "" {
 		m["com.apple.security.application-groups"] = []string{g}

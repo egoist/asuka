@@ -93,7 +93,7 @@ func TestICloudPlistAndSimulator(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(filepath.Join(work, "simulator.entitlements"))
-	if !strings.Contains(string(b), "<string>ASUKASIMULA.dev.asuka.notes</string>") || !strings.Contains(string(b), "<string>CloudDocuments</string>") {
+	if !strings.Contains(string(b), "<string>"+simulatorTeam+".dev.asuka.notes</string>") || !strings.Contains(string(b), "<string>CloudDocuments</string>") {
 		t.Errorf("simulator entitlements:\n%s", b)
 	}
 	c.IOS.Team = "ABCDE12345"
@@ -216,5 +216,23 @@ func TestConversationsByUse(t *testing.T) {
 	plainNote := usesApp(t, "import platform/notify\nimport @test/sync\n\nasync fn say() {\n  try? await notify.show(notify.Notification(title: \"hi\"))\n}\n"+tail, "")
 	if fl := usedFeatures(plainNote, plainNote.cfg); slices.Contains(fl, "ASUKA_CONVERSATIONS") {
 		t.Errorf("a notification without a sender: %v", fl)
+	}
+}
+
+// A simulator build's app identifier is its team's ID and its bundle ID,
+// as a signed app's: the team's a team ID's shape (ten characters, upper
+// case and digits), or the system doesn't find the app by it (HealthKit
+// names it by its executable).
+func TestSimulatorAppIdentifier(t *testing.T) {
+	if len(simulatorTeam) != 10 || strings.Trim(simulatorTeam, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") != "" {
+		t.Fatalf("%q isn't a team ID's shape", simulatorTeam)
+	}
+	work := t.TempDir()
+	if _, err := simulatorEntitlements(work, &appConfig{ID: "dev.asuka.health"}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(work, "simulator.entitlements"))
+	if want := "<key>application-identifier</key><string>" + simulatorTeam + ".dev.asuka.health</string>"; !strings.Contains(strings.Join(strings.Fields(string(b)), ""), want) {
+		t.Errorf("simulator entitlements:\n%s", b)
 	}
 }

@@ -42,11 +42,11 @@ func (t *iosToolchain) shareEntitlements(work string, cfg *appConfig) ([]string,
 		return nil, "", nil
 	}
 	m := map[string]any{
-		"application-identifier":                "ASUKASIMULA." + cfg.shareID(),
+		"application-identifier":                simulatorTeam + "." + cfg.shareID(),
 		"com.apple.security.application-groups": []string{g},
 	}
 	if cfg.shareSheet {
-		m["keychain-access-groups"] = []string{"ASUKASIMULA." + cfg.ID}
+		m["keychain-access-groups"] = []string{simulatorTeam + "." + cfg.ID}
 	}
 	ent := plist(m)
 	path := filepath.Join(work, "share.entitlements")
