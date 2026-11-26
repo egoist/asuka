@@ -198,10 +198,12 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | | Xcode / Expo | Asuka |
 |---|---|---|
 | Live reload, keeping state | previews, Fast Refresh | ✓ `asuka dev`: the player swaps in each save in milliseconds, keeping every `state`, on the phones, the desktops and in the browser ([Development](development.md)) |
+| Inspecting the views | Xcode's view debugger, React Native DevTools, Flutter DevTools | ✓ `asuka dev`'s inspector: the running app's views as a tree in a browser (element, text, frame), the one pointed at highlighted on the device ([Development](development.md#the-inspector)) |
+| Checking the setup | Expo's doctor, `flutter doctor` | ✓ `asuka doctor`: what this computer can build for each platform, and what to install for the rest |
 | Running on a phone | Xcode's Run, Expo's dev builds | ✓ `asuka dev --platform ios` or `android`: the simulator, an emulator, an Android phone (`adb reverse`), an iPhone by USB or Wi-Fi (`--device iphone`, signed by your team) |
 | Tests | XCTest, Jest with React Native Testing Library | ✓ `asuka test`: `test` blocks, the app mounted with no device (`mount`, `app.tap`, `app.expect`), fakes for the device's packages ([Testing](testing.md)) |
 | Release builds and signing | Xcode, EAS Build | ✓ `asuka build`: the app compiled ahead of time; an `.ipa`, an `.aab`, an `.app` signed and notarized (or a Mac App Store `.pkg`), a Windows folder with its `.exe` signed, a Linux install prefix with a `.tar.gz` and a Flatpak manifest, a static site ([Shipping](shipping.md)) |
-| Uploading to the stores | Xcode, EAS Submit | ✓ `asuka publish`: TestFlight, App Review, Google Play's tracks; a desktop build and its signed update; not the Mac App Store yet |
+| Uploading to the stores | Xcode, EAS Submit | ✓ `asuka publish`: TestFlight, App Review, Google Play's tracks; the Mac App Store and a Mac's TestFlight; a desktop build and its signed update |
 | GUI tests | XCUITest, Detox, Maestro | ◐ a desktop app's steps and snapshots (`ASUKA_SCRIPT`, `ASUKA_SNAPSHOT`, `ASUKA_DUMP`), under Xvfb in CI on Linux; Asuka's own GUI tests drive its examples on the simulator, an emulator and headless Chrome, but an app has no runner for them yet |
 | Benchmarks | Instruments | ✓ `bench/` (against SwiftUI and Compose) |
 | Embedding in an existing app | brownfield (React Native's) | ✓ `asuka build --platform ios --xcframework`, `asuka build --platform android --aar` |
@@ -264,10 +266,9 @@ Windows and Linux unless the row says otherwise.
 | Auto-updates: signed releases, deltas, Sparkle's window | `autoUpdater` (Squirrel), electron-updater | the updater, its plugin | ✓ `platform/update` (`update.UpdateWindow`, `update.AppMenu()`, `checkForUpdates`, `check`, `install`, `relaunch`; Ed25519 signatures, delta updates, channels; GitHub releases, an S3 bucket or any HTTPS directory, a server of yours; `asuka publish --platform mac\|windows\|linux`); apps the system's packages, Flatpak or a store installed update through them; the web reloads |
 
 Not yet, of what MyGo has: of its documents, versions (a Mac's Browse
-All Versions) and locking; of its click-through windows, an input
+All Versions) and locking; and of its click-through windows, an input
 region (the parts of a window that still take clicks: Asuka's let the
-mouse through all of it, or none); and of its directories, the
-platform's config, cache and log folders.
+mouse through all of it, or none).
 
 ## Not yet
 

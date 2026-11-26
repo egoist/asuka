@@ -179,10 +179,12 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | | Xcode / Expo | Asuka |
 |---|---|---|
 | 实时重载并保留状态 | 预览、Fast Refresh | ✓ `asuka dev`：开发 App 在每次保存后几毫秒内换上新版本，并保留所有 `state`；手机、桌面和浏览器都是如此（见[开发](development.md)） |
+| 检查视图 | Xcode 的视图调试器、React Native DevTools、Flutter DevTools | ✓ `asuka dev` 的检查器：在浏览器中以树的形式显示正在运行的应用的视图（元素、文字、frame），指针指向的视图会在设备上高亮（见[开发](development.md#检查器)） |
+| 检查开发环境 | Expo 的 doctor、`flutter doctor` | ✓ `asuka doctor`：这台电脑能为每个平台构建什么，以及其余的还需要安装什么 |
 | 在手机上运行 | Xcode 的 Run、Expo 的开发构建 | ✓ `asuka dev --platform ios` 或 `android`：iOS 模拟器、Android 模拟器、Android 手机（`adb reverse`），以及通过 USB 或 Wi-Fi 连接的 iPhone（`--device iphone`，由你的团队签名） |
 | 测试 | XCTest、Jest 加 React Native Testing Library | ✓ `asuka test`：`test` 块，应用无需设备即可挂载（`mount`、`app.tap`、`app.expect`），设备相关的包都有测试替身（见[测试](testing.md)） |
 | 发布构建和签名 | Xcode、EAS Build | ✓ `asuka build`：应用预先编译；生成 `.ipa`、`.aab`、经过签名和公证的 `.app`（或 Mac App Store 用的 `.pkg`）、包含已签名 `.exe` 的 Windows 文件夹、附带 `.tar.gz` 和 Flatpak 清单的 Linux 安装前缀、静态网站（见[发布](shipping.md)） |
-| 上传到应用商店 | Xcode、EAS Submit | ✓ `asuka publish`：TestFlight、App 审核、Google Play 的各个发布轨道；桌面构建及其签名更新；暂不支持 Mac App Store |
+| 上传到应用商店 | Xcode、EAS Submit | ✓ `asuka publish`：TestFlight、App 审核、Google Play 的各个发布轨道；Mac App Store 和 Mac 的 TestFlight；桌面构建及其签名更新 |
 | GUI 测试 | XCUITest、Detox、Maestro | ◐ 桌面应用可以执行操作步骤并截图（`ASUKA_SCRIPT`、`ASUKA_SNAPSHOT`、`ASUKA_DUMP`），在 Linux 的 CI 里可以跑在 Xvfb 下；Asuka 自己的 GUI 测试会在 iOS 模拟器、Android 模拟器和无头 Chrome 里驱动示例，但应用还没有可用的运行器 |
 | 基准测试 | Instruments | ✓ `bench/`（与 SwiftUI 和 Compose 对比） |
 | 嵌入现有应用 | brownfield（React Native 的方案） | ✓ `asuka build --platform ios --xcframework`、`asuka build --platform android --aar` |
@@ -235,7 +237,7 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 | 正在播放和媒体键 | （无：只能在页面里用 `navigator.mediaSession`） | 正在播放 | ✓ `platform/nowplaying`（`MPNowPlayingInfoCenter`；窗口的 SystemMediaTransportControls；一个 MPRIS 播放器） |
 | 自动更新：签名的版本、增量更新、Sparkle 式窗口 | `autoUpdater`（Squirrel）、electron-updater | 更新器及其插件 | ✓ `platform/update`（`update.UpdateWindow`、`update.AppMenu()`、`checkForUpdates`、`check`、`install`、`relaunch`；Ed25519 签名、增量更新、更新渠道；GitHub releases、S3 存储桶或任意 HTTPS 目录，或者你自己的服务器；`asuka publish --platform mac\|windows\|linux`）；由系统包管理器、Flatpak 或应用商店安装的应用通过它们更新；Web 上刷新页面即可 |
 
-MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览所有版本”）和锁定；鼠标穿透窗口方面的输入区域（窗口里仍然接收点击的那部分：Asuka 的窗口要么整个穿透，要么完全不穿透）；以及目录方面平台的配置、缓存和日志目录。
+MyGo 有而 Asuka 还没有的：文档方面的版本管理（Mac 的“浏览所有版本”）和锁定；以及鼠标穿透窗口方面的输入区域（窗口里仍然接收点击的那部分：Asuka 的窗口要么整个穿透，要么完全不穿透）。
 
 ## 尚未支持
 
