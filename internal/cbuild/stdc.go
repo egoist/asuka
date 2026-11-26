@@ -15,8 +15,8 @@ import (
 // CPlatform is the [c.<platform>] table (pkgs.CPlatforms) a target reads.
 func (t Target) CPlatform() string {
 	switch t.OS {
-	case "ios", "ios-simulator":
-		return "ios"
+	case "ios", "ios-simulator", "tvos", "tvos-simulator":
+		return "ios" // tvOS is iOS's C: its [c.ios]
 	case "darwin":
 		return "macos"
 	case "wasm":
@@ -104,7 +104,7 @@ func StdC(dir string, t Target, embedded bool) (Unit, []string, error) {
 			link = append(link, "-l"+l)
 		}
 	}
-	if t.OS == "ios" || t.OS == "ios-simulator" || t.OS == "darwin" {
+	if t.Apple() {
 		for _, fw := range s.Frameworks {
 			link = append(link, "-framework", fw)
 		}

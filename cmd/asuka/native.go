@@ -103,7 +103,7 @@ func nativeFor(app *asukaApp, platform string) ([]nativePackage, error) {
 	var out []nativePackage
 	for _, p := range ps {
 		switch platform {
-		case "ios", "macos":
+		case "ios", "tvos", "macos":
 			if !nativegen.HasPlatform(p.dir, "swift") {
 				continue
 			}
@@ -321,6 +321,7 @@ type swiftInfo struct {
 	Module *swiftModuleInfo `json:"module,omitempty"`
 	// Its minimum versions, as its platforms say ("" where they don't).
 	IOS   string `json:"ios"`
+	TVOS  string `json:"tvos"`
 	MacOS string `json:"macos"`
 }
 
@@ -329,10 +330,7 @@ type swiftInfo struct {
 // one. The app's own Package.swift and Info.plist say it, so a package
 // that needs a later system (a camera's, macOS 13) builds into the app.
 func swiftMinimum(natives []nativePackage, platform string) (string, error) {
-	min := iosMin
-	if platform == "macos" {
-		min = macMin
-	}
+	min := map[string]string{"ios": iosMin, "tvos": tvosMin, "macos": macMin}[platform]
 	for _, p := range natives {
 		if !nativegen.HasPlatform(p.dir, "swift") {
 			continue
@@ -341,10 +339,7 @@ func swiftMinimum(natives []nativePackage, platform string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		v := info.IOS
-		if platform == "macos" {
-			v = info.MacOS
-		}
+		v := map[string]string{"ios": info.IOS, "tvos": info.TVOS, "macos": info.MacOS}[platform]
 		if versionLess(min, v) {
 			min = v
 		}
@@ -379,6 +374,7 @@ type swiftModuleInfo struct {
 	Name   string `json:"name"`
 	Path   string `json:"path"` // its directory in the package
 	IOS    string `json:"ios"`  // its minimum versions ("" for the app's)
+	TVOS   string `json:"tvos"`
 	MacOS  string `json:"macos"`
 	Swift6 bool   `json:"swift6"` // tools version 6: Swift 6's language mode
 }
@@ -395,7 +391,7 @@ func swiftPackageInfo(dir string) (swiftInfo, error) {
 		return swiftInfo{}, err
 	}
 	sum := sha256.Sum256(manifest)
-	cache := cachedir.Path("swiftpm", "3-"+hex.EncodeToString(sum[:])[:16]+".json")
+	cache := cachedir.Path("swiftpm", "4-"+hex.EncodeToString(sum[:])[:16]+".json")
 	var info swiftInfo
 	if b, err := os.ReadFile(cache); err == nil && json.Unmarshal(b, &info) == nil {
 		return info, nil
@@ -444,10 +440,12 @@ func swiftPackageInfo(dir string) (swiftInfo, error) {
 		switch p.PlatformName {
 		case "ios":
 			mod.IOS, info.IOS = p.Version, p.Version
+		case "tvos":
+			mod.TVOS, info.TVOS = p.Version, p.Version
 		case "macos":
 			mod.MacOS, info.MacOS = p.Version, p.Version
 		}
-		if p.PlatformName == "ios" || p.PlatformName == "macos" {
+		if p.PlatformName == "ios" || p.PlatformName == "tvos" || p.PlatformName == "macos" {
 			info.Platforms = append(info.Platforms, p.PlatformName)
 		}
 	}
@@ -512,7 +510,7 @@ func swiftPackageInfo(dir string) (swiftInfo, error) {
 // arrays joining what others add, the rest where nothing else set the
 // key; and their entitlements (iOS.entitlements, macOS.entitlements).
 func (c *appConfig) nativeNeeds(ps []nativePackage, platform string) error {
-	ent := map[string]string{"ios": "iOS.entitlements", "macos": "macOS.entitlements"}[platform]
+	ent := map[string]string{"ios": "iOS.entitlements", "tvos": "tvOS.entitlements", "macos": "macOS.entitlements"}[platform]
 	for _, p := range ps {
 		if m, err := readPlistDict(filepath.Join(p.dir, "Info.plist")); err != nil {
 			return err
@@ -599,7 +597,7 @@ func nativeDirsOf(ps []nativePackage, platform string) []string {
 	var out []string
 	for _, p := range ps {
 		switch platform {
-		case "ios", "macos":
+		case "ios", "tvos", "macos":
 			out = append(out, filepath.Join(p.dir, nativegen.SwiftDir), filepath.Join(p.dir, "Package.swift"))
 		default:
 			out = append(out, filepath.Join(p.dir, platform))

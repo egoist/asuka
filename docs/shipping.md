@@ -269,6 +269,11 @@ architecture. `asuka publish --platform android` makes it and uploads it to Goog
 to install directly (`adb install dist/<Name>.apk`): for testing a
 release build, or for an app given out other than through a store.
 
+**TVs**: with `asuka.toml`'s `[tv]` `android = true` the Android build is
+an Android TV app too, the same `.aab` for phones and TVs. `asuka build
+--platform tvos` makes the Apple TV app, an `.ipa` signed with a tvOS
+profile, in `dist/tvos`. See [TVs](tv.md).
+
 ## Publishing
 
 `asuka publish` makes the release build, as `asuka build` does, and

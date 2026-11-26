@@ -403,6 +403,26 @@ The Android build's.
 
 See [Shipping](shipping.md#android).
 
+## tv
+
+What the TVs' builds take: Android TV's declaration, and the TV
+launchers' image of the app.
+
+```toml
+[tv]
+android = true
+banner = "banner.png"
+```
+
+| Key | Type | Default | What it is |
+|---|---|---|---|
+| `android` | boolean | `false` | The Android build is an Android TV (and Google TV) app too: the TV launcher's intent, touch and the Leanback library not required, so Google Play offers it to TVs, and the banner. |
+| `banner` | path | made from `icon` | A landscape PNG (16:9, 1920 × 1080 or larger), the TV launchers' image of the app: Android TV's banner (320 × 180), Apple TV's icon and top shelf, each cut to its shape from the middle. Without it, the icon in the middle of `background`. |
+| `background` | color | the icon's corner's | `"#rrggbb"`: what a banner made from the icon has behind it, the back layer of Apple TV's icon. |
+
+An Apple TV build (`asuka build --platform tvos`) needs no key: it's
+the iOS app's, signed with a tvOS profile. See [TVs](tv.md).
+
 ## linux
 
 What a Linux build's desktop file and AppStream metainfo say of the

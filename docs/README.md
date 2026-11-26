@@ -120,6 +120,8 @@ the Android SDK and NDK) and a C compiler (the system's, or Zig).
   of their devices, and the app's documents in iCloud Drive: listed,
   read and written, downloaded and evicted, their conflicts resolved, on
   iOS and macOS.
+- [TVs](tv.md): Apple TV and Android TV: the remote's focus, Back
+  and Play/Pause, the controls a TV has, and building for each.
 - [The desktop](desktop.md): tray icons and the Dock menu, apps in the
   background, global shortcuts, file dialogs and the file manager,
   opening files, one instance, quitting, recent documents, starting at

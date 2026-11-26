@@ -159,7 +159,7 @@ struct AsukaA11yState {
             view.accessibilityValue = nil
             n.a11y.setsValue = false
         }
-        if #available(iOS 18.0, *) {
+        if #available(iOS 18.0, tvOS 18.0, *) {
             switch a.expanded {
             case .expanded: view.accessibilityExpandedStatus = .expanded
             case .collapsed: view.accessibilityExpandedStatus = .collapsed

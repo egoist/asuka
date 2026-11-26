@@ -577,6 +577,7 @@ final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
             let g = AsukaPanRecognizer(target: self, action: #selector(panned(_:)))
             g.delegate = gestureDelegate
             v.addGestureRecognizer(g)
+        #if !os(tvOS) // a remote neither pinches nor rotates
         case .pinch:
             let g = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
             g.delegate = gestureDelegate
@@ -585,6 +586,7 @@ final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
             let g = UIRotationGestureRecognizer(target: self, action: #selector(rotated(_:)))
             g.delegate = gestureDelegate
             v.addGestureRecognizer(g)
+        #endif
         case .swipe:
             for d: UISwipeGestureRecognizer.Direction in [.right, .left, .up, .down] {
                 let g = UISwipeGestureRecognizer(target: self, action: #selector(swiped(_:)))
@@ -623,6 +625,7 @@ final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
         emit(id, .pan) { AsukaEvents.pan(id, e) }
     }
 
+    #if !os(tvOS)
     @objc func pinched(_ g: UIPinchGestureRecognizer) {
         guard let v = g.view, let id = nodeID(of: v), let s = gestureState(g) else { return }
         var e = AsukaGesture()
@@ -644,6 +647,7 @@ final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
         e.velocityX = Float(g.velocity)
         emit(id, .rotate) { AsukaEvents.rotate(id, e) }
     }
+    #endif
 
     @objc func swiped(_ g: UISwipeGestureRecognizer) {
         guard g.state == .ended, let id = nodeID(of: g.view) else { return }

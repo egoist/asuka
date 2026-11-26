@@ -257,6 +257,11 @@ func androidRes(c *appConfig, res string) (bool, error) {
 	} else if ok {
 		wrote = true
 	}
+	if ok, err := androidTVRes(c, res); err != nil {
+		return false, err
+	} else if ok {
+		wrote = true
+	}
 	if c.Android.GoogleServices != "" && (slices.Contains(c.androidModules, "push") || c.analyticsOn) {
 		values, err := firebaseValues(c.Android.GoogleServices, c.ID)
 		if err != nil {

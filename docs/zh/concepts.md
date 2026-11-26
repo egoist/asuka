@@ -286,6 +286,7 @@ let landscape = environment().width > environment().height
 - `widthClass`、`heightClass`：窗口在每个方向上给应用留出了多少空间，按平台的分类方式表示为 `.compact`、`.medium` 或 `.expanded`。如果要决定是否在内容旁边放一个侧边栏，或者在列表旁边显示详情，应该根据它们来判断，而不是自己定一个宽度阈值。iOS 上报的是 UIKit 的尺寸类别，只有 compact 和 regular 两种（regular 对应 expanded）；Android 上报的是 Material 的窗口尺寸类别。macOS、Windows、Linux 和 Web 会根据窗口尺寸套用 Material 的划分。
 - `locale`、`languages`、`timeZone`：用户的区域格式、用户能阅读的语言，以及用户的时区。大多数应用通过[文案目录和格式化函数](i18n.md)间接使用它们。
 - `platform`：应用所运行的系统：`.iOS`、`.android`、`.macOS`、`.windows`、`.linux` 或 `.web`。
+- `tv`：应用是否运行在电视上（Apple TV，此时 `platform` 是 `.iOS`；以及 Android TV），由遥控器移动焦点来操作，而不是触摸。见[电视](tv.md)。
 
 语义颜色和字体会自动跟随深色模式和文字大小变化；它们覆盖不到的部分，再去读取环境信息。
 

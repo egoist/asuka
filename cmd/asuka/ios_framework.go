@@ -84,10 +84,7 @@ func (t *iosToolchain) linkApp(work, bundle string, cfg *appConfig, hostObj, lib
 	if err := os.Chmod(bin, 0o755); err != nil {
 		return "", err
 	}
-	platform := "iPhoneOS"
-	if !t.device() {
-		platform = "iPhoneSimulator"
-	}
+	platform := t.bundlePlatform()
 	info := plist(map[string]any{
 		"CFBundleIdentifier":            cfg.ID + "." + fwName,
 		"CFBundleExecutable":            fwName,
@@ -98,7 +95,7 @@ func (t *iosToolchain) linkApp(work, bundle string, cfg *appConfig, hostObj, lib
 		"CFBundleShortVersionString":    firstOf(cfg.Version, "1.0"),
 		"CFBundleVersion":               strconv.Itoa(max(cfg.Build, 1)),
 		"CFBundleSupportedPlatforms":    []string{platform},
-		"MinimumOSVersion":              iosMin,
+		"MinimumOSVersion":              t.minOS(),
 	})
 	if err := os.WriteFile(filepath.Join(fw, "Info.plist"), []byte(info), 0o644); err != nil {
 		return "", err
@@ -151,4 +148,4 @@ func (t *iosToolchain) signFrameworks(work, bundle, identity string) error {
 	return nil
 }
 
-func (t *iosToolchain) device() bool { return t.sdkName == "iphoneos" }
+func (t *iosToolchain) device() bool { return t.sdkName == "iphoneos" || t.sdkName == "appletvos" }

@@ -5,7 +5,7 @@ import MachO
 // Its own framework, loaded at launch if linked: only in an app that
 // reads its crash reports (crash.Reports, crash.OnReport; see the CLI's
 // iosFeatures).
-#if ASUKA_CRASH
+#if ASUKA_CRASH && !os(tvOS) // MetricKit: not on a TV
 import MetricKit
 #endif
 #if canImport(CAsuka)
@@ -46,7 +46,7 @@ enum AsukaCrash {
             AsukaCrash.record(e)
             AsukaCrash.previous?(e)
         }
-        #if ASUKA_CRASH
+        #if ASUKA_CRASH && !os(tvOS)
         // The app's process gets the diagnostics, its share extension's too.
         if !Bundle.main.bundlePath.hasSuffix(".appex") {
             MXMetricManager.shared.add(AsukaMetricSubscriber.shared)
@@ -138,7 +138,7 @@ enum AsukaCrash {
     }
 }
 
-#if ASUKA_CRASH
+#if ASUKA_CRASH && !os(tvOS) // MetricKit: not on a TV
 /// MetricKit's subscriber: each diagnostic payload iOS delivers (on a
 /// launch after what it's of) goes in the inbox, and the core hears of it
 /// (asuka_crash_notify: crash.reports() reads it).

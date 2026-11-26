@@ -176,11 +176,18 @@ final class AsukaDatePickerView: UIView {
     func setMaterial(_ m: AsukaMaterial) {
         let style: UIBlurEffect.Style?
         switch m {
+        #if os(tvOS)
+        // tvOS's blurs, which follow light and dark: regular, and a
+        // denser prominent.
+        case .ultraThin, .thin, .regular: style = .regular
+        case .thick, .bar: style = .prominent
+        #else
         case .ultraThin: style = .systemUltraThinMaterial
         case .thin: style = .systemThinMaterial
         case .regular: style = .systemMaterial
         case .thick: style = .systemThickMaterial
         case .bar: style = .systemChromeMaterial
+        #endif
         default: style = nil
         }
         guard let style else {

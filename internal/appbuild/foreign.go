@@ -40,7 +40,7 @@ func Foreign(c *bytecode.C, t cbuild.Target) (*cbuild.Foreign, error) {
 		}
 	}
 	platform := t.CPlatform()
-	apple := t.OS == "ios" || t.OS == "ios-simulator" || t.OS == "darwin"
+	apple := t.Apple()
 	seen := map[string]bool{}
 	link := func(args ...string) {
 		k := strings.Join(args, " ")

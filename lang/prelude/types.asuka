@@ -299,6 +299,7 @@ struct Environment {
   languages: string = "" // BCP 47 tags, most preferred first, joined by commas
   firstWeekday: int = 0  // 1 Sunday to 7 Saturday; 0 unknown
   hourCycle: int = 0     // 12 or 24; 0 unknown
+  tv: bool = false       // a TV (Apple TV, Android TV), driven by a remote's focus
 }
 
 // ---- Interaction ----
@@ -341,7 +342,8 @@ enum SwipeDirection {
 /// A key a view takes while the keyboard's focus is in it, and what it
 /// does. key is a character ("d", any case) or a named key (up, down,
 /// left, right, escape, enter, tab, space, delete, home, end, pageup,
-/// pagedown, f1...); with a modifier, a shortcut: its bools, or mods.
+/// pagedown, f1..., playpause: a TV remote's); with a modifier, a
+/// shortcut: its bools, or mods.
 /// primary is ⌘ on Apple platforms and Ctrl elsewhere.
 ///
 ///   keys: [Shortcut(key: "down", run: () => { sel += 1 }), Shortcut(key: "d", primary: true, run: duplicate)]

@@ -59,7 +59,11 @@ enum AsukaShare {
     /// string UTI, string title, u32 count, then the paths; answers once
     /// the sheet is gone.
     @MainActor static func methods(_ rt: AsukaRuntime) -> [String: AsukaModuleMethod] {
-        ["files": { [weak rt] args, reply in
+        #if os(tvOS)
+        // A TV has no share sheet.
+        return ["files": { _, reply in reply(.failure(AsukaModuleError("tvOS has no share sheet"))) }]
+        #else
+        return ["files": { [weak rt] args, reply in
             guard args.count >= 20 else { return reply(.failure(AsukaModuleError("bad arguments"))) }
             let (from, mime, uti, title, paths) = args.withUnsafeBytes { b -> (UInt32, String, String, String, [String]) in
                 var r = AsukaReader(b)
@@ -91,6 +95,7 @@ enum AsukaShare {
             }
             top.present(vc, animated: true)
         }]
+        #endif
     }
 
     /// The file under a name its type goes with: as it is if its
@@ -115,6 +120,7 @@ enum AsukaShare {
 
     /// A file on the sheet, with its type (for the activities that ask)
     /// and the title as a mail's subject.
+    #if !os(tvOS)
     final class FileItem: NSObject, UIActivityItemSource {
         let url: URL, type: UTType?, subject: String
         init(_ url: URL, type: UTType?, subject: String) {
@@ -129,5 +135,6 @@ enum AsukaShare {
         }
         func activityViewController(_ c: UIActivityViewController, subjectForActivityType t: UIActivity.ActivityType?) -> String { subject }
     }
+    #endif
 }
 #endif

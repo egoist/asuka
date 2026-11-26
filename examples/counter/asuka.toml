@@ -4,3 +4,6 @@ version = "1.0.0"
 build = 1
 icon = "icon.png"
 orientations = ["portrait"]
+
+[tv]
+android = true # Android TV too (tvOS: asuka build --platform tvos)

@@ -88,6 +88,9 @@ let asukaAssets: URL? = {
     var direction = AsukaLayoutDirection.inherit
     /// Its Keys prop's keys, as key commands (KeyCommands.swift).
     var keyCommands: [UIKeyCommand] = []
+    /// tvOS: its Keys' names a remote's press matches (no modifiers; ""
+    /// for a key with some), by the key's index.
+    var remoteKeys: [String] = []
     /// NoFocusRing, and the view's focus effect before it was set.
     var noFocusRing = false
     var ownFocusEffect: UIFocusEffect??
@@ -182,6 +185,11 @@ final class AsukaContainerView: UIView {
 
     override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
         super.didUpdateFocus(in: context, with: coordinator)
+        #if os(tvOS)
+        // tvOS's focus effect, which a view of the app's draws itself (TV.swift).
+        if context.nextFocusedView === self { asukaLift(true, coordinator) }
+        else if context.previouslyFocusedView === self { asukaLift(false, coordinator) }
+        #endif
         AsukaRuntime.shared.focusSystemMoved(context)
     }
 
@@ -387,6 +395,12 @@ final class AsukaTextField: UITextField {
     var related = Set<UInt32>()
     /// The nodes with Keys.
     var keyed = Set<UInt32>()
+    /// tvOS: the remote's last move a view's Keys took, and when (TV.swift).
+    var remoteMove: (name: String, at: CFTimeInterval)?
+    /// The root's ui.OnBack: on tvOS, Menu at the root sends it Back, and
+    /// whether the core then let it go on (BackExit).
+    var rootInterceptsBack = false
+    var backExitAsked = false
     /// Buttons with a glass variant (roundGlass).
     var glassButtons = Set<ObjectIdentifier>()
     weak var controller: AsukaViewController?
@@ -641,7 +655,9 @@ final class AsukaTextField: UITextField {
             // container controller. Never by autoresizing.
             if kind == .stack || kind == .tabs || kind == .split { v.autoresizingMask = [] }
             let node = AsukaNode(id: id, kind: kind, view: v)
+            #if !os(tvOS)
             vc?.navigationItem.largeTitleDisplayMode = .never // Screen.LargeTitle asks for it
+            #endif
             node.vc = vc
             nodes[id] = node
             adoptDirection(node)
@@ -985,7 +1001,9 @@ final class AsukaTextField: UITextField {
         case .replace:
             (n.vc as? AsukaStackController)?.instant = true
         case .backExit:
-            break // iOS has no back to leave the app with
+            // iOS has no back to leave the app with; tvOS's Menu at the
+            // root goes on to the Home screen (rootBack).
+            backExitAsked = true
         case .a11yFocus:
             // After this batch's frames, so VoiceOver finds the view where it shows.
             DispatchQueue.main.async { [weak v = n.view] in
@@ -993,6 +1011,9 @@ final class AsukaTextField: UITextField {
                 UIAccessibility.post(notification: .screenChanged, argument: v)
             }
         case .share:
+            #if os(tvOS)
+            print("asuka: tvOS has no share sheet")
+            #else
             let s = String(decoding: args, as: UTF8.self)
             // A URL is shared as one (a link preview, Safari's actions).
             let item: Any = URL(string: s).flatMap { $0.scheme != nil && $0.host != nil ? $0 : nil } ?? s
@@ -1004,6 +1025,7 @@ final class AsukaTextField: UITextField {
                 pop.permittedArrowDirections = []
             }
             top.present(vc, animated: true)
+            #endif
         case .scrollTo:
             guard args.count >= 5 else { return }
             var r = AsukaReader(args)

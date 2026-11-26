@@ -53,7 +53,39 @@ final class AsukaPressRecognizer: UIGestureRecognizer {
     override init(target: Any?, action: Selector?) {
         super.init(target: target, action: action)
         AsukaInteraction.observeApp()
+        #if os(tvOS)
+        // A remote's touches move the focus; its Select presses what has
+        // it (pressesBegan).
+        allowedTouchTypes = []
+        allowedPressTypes = [NSNumber(value: UIPress.PressType.select.rawValue)]
+        #endif
     }
+
+    #if os(tvOS)
+    /// The remote's Select, while the view has the focus: pressed as it
+    /// goes down, Press as it comes up.
+    private weak var press: UIPress?
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        guard press == nil, let p = presses.first(where: { $0.type == .select }), let v = view, v.isFocused else {
+            for p in presses { ignore(p, for: event) }
+            return
+        }
+        press = p
+        shown = true
+        set(true)
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        guard let p = press, presses.contains(p) else { return }
+        state = view?.window != nil ? .ended : .failed
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        guard let p = press, presses.contains(p) else { return }
+        state = .failed
+    }
+    #endif
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         if touch != nil {
@@ -115,6 +147,9 @@ final class AsukaPressRecognizer: UIGestureRecognizer {
         delay?.cancel()
         delay = nil
         touch = nil
+        #if os(tvOS)
+        press = nil
+        #endif
         start = nil
         shown = false
         inside = false
@@ -136,7 +171,12 @@ final class AsukaPressRecognizer: UIGestureRecognizer {
     /// Press.
     func cancel() {
         endUnpress()
-        guard touch != nil else { return }
+        #if os(tvOS)
+        let tracking = touch != nil || press != nil
+        #else
+        let tracking = touch != nil
+        #endif
+        guard tracking else { return }
         isEnabled = false // the documented way to cancel a recognizer
         isEnabled = true
         set(false)
@@ -307,12 +347,14 @@ enum AsukaInteraction {
         NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
                 AsukaPressRecognizer.cancelAll()
+                #if !os(tvOS)
                 for n in AsukaRuntime.shared.nodes.values {
                     for case let g as UIHoverGestureRecognizer in n.view.gestureRecognizers ?? [] where g.state == .began || g.state == .changed {
                         g.isEnabled = false
                         g.isEnabled = true
                     }
                 }
+                #endif
             }
         }
     }
@@ -503,13 +545,16 @@ enum AsukaInteraction {
     }
 
     func installHover(_ n: AsukaNode) {
+        #if !os(tvOS) // no pointer
         if n.view.gestureRecognizers?.contains(where: { $0 is UIHoverGestureRecognizer }) == true { return }
         let g = UIHoverGestureRecognizer(target: self, action: #selector(hovered(_:)))
         g.delegate = AsukaHoverDelegate.shared
         n.view.addGestureRecognizer(g)
         AsukaInteraction.observeApp()
+        #endif
     }
 
+    #if !os(tvOS)
     @objc func hovered(_ g: UIHoverGestureRecognizer) {
         guard let id = nodeID(of: g.view) else { return }
         switch g.state {
@@ -518,6 +563,7 @@ enum AsukaInteraction {
         default: break
         }
     }
+    #endif
 
     /// A View left the window or was hidden: its press is cancelled and
     /// it isn't hovered.
@@ -528,6 +574,7 @@ enum AsukaInteraction {
     }
 
     func setDropAccept(_ n: AsukaNode, _ v: AsukaValue) {
+        #if !os(tvOS) // no drag and drop
         guard case .bytes(let b) = v else { return }
         n.dropAccept = AsukaInteraction.decodeStrings(b)
         if n.dropAccept.isEmpty {
@@ -538,9 +585,11 @@ enum AsukaInteraction {
             n.view.addInteraction(i)
             n.dropInteraction = i
         }
+        #endif
     }
 
     func setDragItems(_ n: AsukaNode, _ v: AsukaValue) {
+        #if !os(tvOS)
         guard case .bytes(let b) = v else { return }
         n.dragItems = AsukaInteraction.decodeDragItems(b)
         if n.dragItems.isEmpty {
@@ -555,8 +604,11 @@ enum AsukaInteraction {
         for case let g as AsukaLongPressRecognizer in n.view.gestureRecognizers ?? [] {
             g.isEnabled = n.dragInteraction == nil
         }
+        #endif
     }
 }
+
+#if !os(tvOS)
 
 /// Every View's drags (DragItems): the items for other apps and, in the
 /// session's local context, its view's ID for the app's own drops.
@@ -741,4 +793,5 @@ private final class Loads: @unchecked Sendable {
         }
     }
 }
+#endif
 #endif

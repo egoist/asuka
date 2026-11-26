@@ -63,10 +63,7 @@ func (b *swiftBuild) modules() (out *swiftPackageOutput, ok bool, err error) {
 	if err != nil {
 		return nil, false, err
 	}
-	hostMin := iosMin
-	if b.platform == "macos" {
-		hostMin = macMin
-	}
+	hostMin := map[string]string{"ios": iosMin, "tvos": tvosMin, "macos": macMin}[b.platform]
 	pre := b.prebuiltSwift()
 	var host swiftLib
 	if lib, ok := pre.module("Asuka@" + b.variant); ok {
@@ -100,10 +97,7 @@ func (b *swiftBuild) modules() (out *swiftPackageOutput, ok bool, err error) {
 				errs[i] = fmt.Errorf("%s: %v", p.path, err)
 				return
 			}
-			min := mod.IOS
-			if b.platform == "macos" {
-				min = mod.MacOS
-			}
+			min := map[string]string{"ios": mod.IOS, "tvos": mod.TVOS, "macos": mod.MacOS}[b.platform]
 			if min == "" {
 				min = hostMin
 			}
@@ -152,18 +146,18 @@ func (b *swiftBuild) moduleTriple() string {
 	switch {
 	case b.platform == "macos":
 		return b.arch + "-apple-macos"
-	case b.sdkName == "iphonesimulator":
-		return b.arch + "-apple-ios-simulator"
+	case strings.HasSuffix(b.sdkName, "simulator"):
+		return b.arch + "-apple-" + b.platform + "-simulator"
 	}
-	return b.arch + "-apple-ios"
+	return b.arch + "-apple-" + b.platform
 }
 
 // target is swiftc's -target for a module of minimum version min.
 func (b *swiftBuild) target(min string) string {
 	t := b.arch + "-apple-macos" + min
-	if b.platform == "ios" {
-		t = b.arch + "-apple-ios" + min
-		if b.sdkName == "iphonesimulator" {
+	if b.platform == "ios" || b.platform == "tvos" {
+		t = b.arch + "-apple-" + b.platform + min
+		if strings.HasSuffix(b.sdkName, "simulator") {
 			t += "-simulator"
 		}
 	}
@@ -294,7 +288,7 @@ func (b *swiftBuild) moduleIn(sdk string, m swiftModule, host swiftLib, out stri
 // prebuiltSwift is the CLI's prebuilt modules for b's target and
 // configuration, when this swiftc can read them.
 func (b *swiftBuild) prebuiltSwift() prebuiltSwift {
-	target := map[string]string{"iphoneos": "ios", "iphonesimulator": "ios-simulator", "macosx": "darwin"}[b.sdkName]
+	target := map[string]string{"iphoneos": "ios", "iphonesimulator": "ios-simulator", "appletvos": "tvos", "appletvsimulator": "tvos-simulator", "macosx": "darwin"}[b.sdkName]
 	arch := map[string]string{"arm64": "arm64", "x86_64": "amd64"}[b.arch]
 	return prebuiltSwift{target: target + "-" + arch, config: map[bool]string{true: "release", false: "dev"}[b.release], triple: b.moduleTriple()}
 }

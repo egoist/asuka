@@ -648,7 +648,7 @@ component Search {
 }
 ```
 
-一个按键可以是一个字符，也可以是一个具名按键（`enter`、`escape`、`tab`、`space`、`delete`、`backspace`、`up`、`down`、`left`、`right`、`home`、`end`、`pageup`、`pagedown`、`f1` 到 `f12`），修饰键必须与给定的完全一致：`Shortcut(key: "d", primary: true, run: …)`、`Shortcut(key: "up", alt: true, run: …)`。按住不放会重复触发。不带修饰键的字符会截走视图内输入框的输入，所以请给它加上修饰键，或者把它放在没有输入框的地方。
+一个按键可以是一个字符，也可以是一个具名按键（`enter`、`escape`、`tab`、`space`、`delete`、`backspace`、`up`、`down`、`left`、`right`、`home`、`end`、`pageup`、`pagedown`、`f1` 到 `f12`，以及电视遥控器的播放/暂停键 `playpause`：见[电视](tv.md#遥控器)），修饰键必须与给定的完全一致：`Shortcut(key: "d", primary: true, run: …)`、`Shortcut(key: "up", alt: true, run: …)`。按住不放会重复触发。不带修饰键的字符会截走视图内输入框的输入，所以请给它加上修饰键，或者把它放在没有输入框的地方。
 
 在组件体里调用 `useKeys([…])`，给窗口设置它自己的按键：按键最后才会到达这里；而在没有任何东西获得焦点时，则最先到达这里，比如游戏的方向键或查看器的空格键。它们的生命周期跟随调用它的那个组件。
 

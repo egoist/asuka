@@ -17,11 +17,17 @@ const (
 	platformWindows = "windows"
 	platformWeb     = "web"
 	platformLinux   = "linux"
+	// tvOS: an Apple TV, the iOS host built with tvOS's SDK (tv.go). Its
+	// app compiles as iOS's (@platform is .iOS; environment().tv says).
+	platformTVOS = "tvos"
 )
 
 // langPlatform is the platform a --platform name compiles for (mac:
 // macos): its packages' files for it, what @platform is.
 func langPlatform(name string) target.Platform {
+	if name == platformTVOS {
+		return target.IOS
+	}
 	p, _ := target.Parse(name)
 	return p
 }

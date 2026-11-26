@@ -73,6 +73,11 @@ open class AsukaActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, runtime.back)
         // The keyboard's focus moving in the window: FocusChange (Focus.kt).
         frame.viewTreeObserver.addOnGlobalFocusChangeListener { old, new -> if (runtime.activity === this) runtime.focusMoved(old, new) }
+        // A TV's focus shows from across the room (Focus.kt's tvLift).
+        if (isTV(resources.configuration)) frame.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+            tvLift(old, false)
+            tvLift(new, true) // and what else was lifted, down
+        }
 
         ViewCompat.setOnApplyWindowInsetsListener(frame) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
@@ -225,6 +230,7 @@ open class AsukaActivity : AppCompatActivity() {
             reduceMotion = !animatorsEnabled(this),
             screenReader = a11y.isTouchExplorationEnabled,
             widthClass = widthClass(size[0] / d), heightClass = heightClass(size[1] / d),
+            tv = isTV(c),
             locale = runtime.region.locale,
             languages = runtime.region.languages,
             firstWeekday = runtime.region.firstWeekday,

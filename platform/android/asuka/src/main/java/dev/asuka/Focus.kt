@@ -18,6 +18,47 @@ import java.util.IdentityHashMap
  * Press: clickable, so FOCUSABLE_AUTO) and an adjustable one already are.
  */
 
+/** The views a TV's focus lifted (tvLift), and their scale before it. */
+private val lifts = java.util.WeakHashMap<View, FloatArray>()
+
+/**
+ * On a TV (Android TV, Google TV) the view the D-pad comes to grows a
+ * little and rises (its shadow), over its own focused state (a ripple's
+ * focused layer, a button's), as Leanback's and Google TV's cards do:
+ * from across the room, the focus must show. A wide view grows less. A
+ * text field (its caret and underline show it) and a view with
+ * NoFocusRing (the app draws its focusVisible style) don't.
+ */
+fun tvLift(v: View?, on: Boolean) {
+    if (on) {
+        // What else is lifted lost the focus, whether or not it was told
+        // (a screen that covered it took the focus from its hidden view).
+        for (o in lifts.keys.toList()) if (o !== v) tvLift(o, false)
+    }
+    if (v == null || v is EditText) return
+    if (on && ((v as? AsukaContainer)?.noFocusRing == true || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !v.defaultFocusHighlightEnabled))) return
+    val d = v.resources.displayMetrics.density
+    val base = lifts[v]
+    if (on == (base != null)) return
+    v.animate().cancel()
+    val (sx, sy, z) = if (on) {
+        lifts[v] = floatArrayOf(v.scaleX, v.scaleY)
+        val k = if (v.width > 600 * d) 1.03f else 1.08f
+        Triple(v.scaleX * k, v.scaleY * k, 6 * d)
+    } else {
+        lifts.remove(v)
+        Triple(base!![0], base[1], 0f)
+    }
+    if (!v.isShown) {
+        // Gone from view (its screen covered): no animation would run.
+        v.scaleX = sx
+        v.scaleY = sy
+        v.translationZ = z
+        return
+    }
+    v.animate().scaleX(sx).scaleY(sy).translationZ(z).setDuration(150).start()
+}
+
 /** FocusChange's value for a view taking the focus: 2 from the keyboard (not in touch mode), else 1. */
 fun focusHow(touchMode: Boolean): Long = if (touchMode) 1L else 2L
 

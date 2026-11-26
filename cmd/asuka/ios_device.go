@@ -293,6 +293,9 @@ func (o *buildOptions) pickProfile(team, id, want string) (*profile, error) {
 	if o.dev != nil {
 		return o.dev.signer.profile(id)
 	}
+	if o.platform == platformTVOS {
+		return pickProfileOn(team, id, want, o.distribution, "", "tvOS")
+	}
 	return pickProfile(team, id, want, o.distribution)
 }
 

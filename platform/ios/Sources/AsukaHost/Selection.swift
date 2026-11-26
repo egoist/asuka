@@ -75,16 +75,20 @@ final class AsukaSelectionInput: UIView, UITextInput, UIGestureRecognizerDelegat
     private var selection = AsukaTextRange(0, 0)
     weak var inputDelegate: UITextInputDelegate?
     lazy var tokenizer: UITextInputTokenizer = UITextInputStringTokenizer(textInput: self)
+    #if !os(tvOS) // a TV selects no text: the area shows its texts
     private var interaction: UITextInteraction!
+    #endif
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
         accessibilityElementsHidden = true
         isAccessibilityElement = false
+        #if !os(tvOS)
         interaction = UITextInteraction(for: .nonEditable)
         interaction.textInput = self
         addInteraction(interaction)
+        #endif
         let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
         tap.delegate = self
         addGestureRecognizer(tap)

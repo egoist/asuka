@@ -138,7 +138,7 @@ static bool env_same(const ak_environment *a, const ak_environment *b) {
 	return a->width == b->width && a->height == b->height && a->safe_top == b->safe_top && a->safe_right == b->safe_right &&
 	       a->safe_bottom == b->safe_bottom && a->safe_left == b->safe_left && a->keyboard == b->keyboard && a->scale == b->scale &&
 	       a->font_scale == b->font_scale && a->dark == b->dark && a->reduce_motion == b->reduce_motion &&
-	       a->screen_reader == b->screen_reader && a->platform == b->platform && a->width_class == b->width_class &&
+	       a->screen_reader == b->screen_reader && a->tv == b->tv && a->platform == b->platform && a->width_class == b->width_class &&
 	       a->height_class == b->height_class && ak_span_eq(a->locale, b->locale) && ak_span_eq(a->time_zone, b->time_zone) &&
 	       ak_span_eq(a->languages, b->languages) && a->first_weekday == b->first_weekday && a->hour_cycle == b->hour_cycle;
 }

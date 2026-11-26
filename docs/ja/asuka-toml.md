@@ -354,6 +354,24 @@ Android のビルドの設定です。
 
 [配布](shipping.md#android)を参照してください。
 
+## tv
+
+テレビ向けのビルドの設定です。Android TV 用の宣言と、テレビのランチャーに表示するアプリの画像を指定します。
+
+```toml
+[tv]
+android = true
+banner = "banner.png"
+```
+
+| キー | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `android` | 真偽値 | `false` | Android のビルドを Android TV（と Google TV）のアプリにもします。テレビのランチャーの intent を加え、タッチスクリーンと Leanback ライブラリを必須にせず（これで Google Play がテレビにも配信します）、バナーを付けます。 |
+| `banner` | パス | `icon` から作成 | 横長の PNG（16:9、1920 × 1080 以上）で、テレビのランチャーに表示されるアプリの画像です。Android TV のバナー（320 × 180）、Apple TV のアイコンとトップシェルフに使い、それぞれの形に中央から切り出します。指定しなければ、`background` の色の中央にアイコンを置いたものになります。 |
+| `background` | 色 | アイコンの隅の色 | `"#rrggbb"`。アイコンから作るバナーの背景色で、Apple TV のアイコンの背面レイヤーにもなります。 |
+
+Apple TV のビルド（`asuka build --platform tvos`）にはキーは要りません。iOS のアプリを tvOS のプロファイルで署名したものです。[テレビ](tv.md)を参照してください。
+
 ## linux
 
 Linux のビルドが、デスクトップファイルと AppStream の metainfo に書き出すアプリの情報です。ランチャー、ソフトウェアセンター、Flathub に表示されます。Flathub とソフトウェアセンターは、概要、説明、ライセンス、開発者を求めます。

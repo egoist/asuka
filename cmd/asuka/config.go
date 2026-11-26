@@ -190,6 +190,11 @@ type appConfig struct {
 	} `json:"splash"`
 	// Widgets are the app's home screen widgets (platform/widget fills them).
 	Widgets []widgetConfig `json:"widgets"`
+	// TV is what the TVs' builds take (tv.go): Android TV's declaration,
+	// the TV launchers' banner.
+	TV tvConfig `json:"tv"`
+	// tvToldDropped: a tvOS build said what it leaves out (dropTVExtensions).
+	tvToldDropped bool
 	// I18n says where the app's catalogs are, when they aren't in locales.
 	I18n *i18nConfig `json:"i18n"`
 	// Updates are a desktop app's (platform/update, updates.go): the public
@@ -446,6 +451,9 @@ func loadConfig(dir string) (*appConfig, error) {
 	}
 	if err := c.ShareTarget.check(); err != nil {
 		return nil, fmt.Errorf("asuka.toml: shareTarget: %v", err)
+	}
+	if err := c.checkTV(dir); err != nil {
+		return nil, err
 	}
 	if err := c.NFC.check(); err != nil {
 		return nil, fmt.Errorf("asuka.toml: nfc: %v", err)
@@ -758,7 +766,8 @@ func (c *appConfig) androidManifest(debug bool) string {
 	for _, x := range c.androidTop {
 		b.WriteString("    " + x + "\n")
 	}
-	b.WriteString("    <application")
+	b.WriteString(c.androidTVFeatures())
+	b.WriteString("    <application" + c.androidTVBanner())
 	if c.androidHasLocales() {
 		b.WriteString(" android:localeConfig=\"@xml/asuka_locales_config\"")
 	}
@@ -792,6 +801,9 @@ func (c *appConfig) androidManifest(debug bool) string {
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 `)
+	} else if c.TV.Android {
+		// The TV launcher's entry (Android TV, Google TV).
+		b.WriteString(androidTVLauncher)
 	}
 	filter := func(verify bool, data string) {
 		v := ""
@@ -905,6 +917,9 @@ func (c *appConfig) androidIconAliases() string {
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 `)
+		if c.TV.Android {
+			b.WriteString(androidTVLauncher)
+		}
 		if len(c.Shortcuts) > 0 {
 			b.WriteString("            <meta-data android:name=\"android.app.shortcuts\" android:resource=\"@xml/asuka_shortcuts\" />\n")
 		}

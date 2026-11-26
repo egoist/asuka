@@ -26,9 +26,11 @@ class AsukaScreenController: UIViewController {
 
     override func loadView() { view = content }
 
+    #if !os(tvOS) // a TV has no status bar
     // platform/screen's status bar, when this screen is presented full screen.
     override var preferredStatusBarStyle: UIStatusBarStyle { AsukaScreen.statusBarStyle }
     override var prefersStatusBarHidden: Bool { AsukaScreen.statusBarHidden }
+    #endif
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -82,8 +84,25 @@ class AsukaScreenController: UIViewController {
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if AsukaRuntime.shared.focusedKey(presses) { return }
+        #if os(tvOS)
+        if AsukaRuntime.shared.remotePressBegan(presses) || remoteMenu(presses) { return }
+        #endif
         super.pressesBegan(presses, with: event)
     }
+
+    #if os(tvOS)
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if AsukaRuntime.shared.remotePressTaken(presses) { return }
+        super.pressesEnded(presses, with: event)
+    }
+
+    // The remote's swipes and clicks that move the focus, which a view's
+    // Keys take first (TV.swift).
+    override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+        if AsukaRuntime.shared.remoteFocusMove(context) { return false }
+        return super.shouldUpdateFocus(in: context)
+    }
+    #endif
 
     func report(force: Bool = false) {
         let rt = AsukaRuntime.shared
@@ -120,6 +139,10 @@ final class AsukaSheetController: AsukaScreenController, UIAdaptivePresentationC
 /// A Popover's content: a popover on every size class (an iPhone's too,
 /// as SwiftUI's popover with its compact adaptation turned off), as big as
 /// the core laid its content out, pointing at its anchor.
+#if os(tvOS)
+/// tvOS has no popovers: a Popover's content is presented as a sheet is.
+protocol UIPopoverPresentationControllerDelegate: UIAdaptivePresentationControllerDelegate {}
+#endif
 final class AsukaPopoverController: AsukaScreenController, UIPopoverPresentationControllerDelegate {
     var anchor: UInt32 = 0
     var size = CGSize.zero {
@@ -174,9 +197,11 @@ final class AsukaStackController: UINavigationController, UINavigationController
     override func viewDidLoad() {
         super.viewDidLoad()
         delegate = self
+        #if !os(tvOS) // the remote's Menu goes back
         interactivePopGestureRecognizer?.delegate = self
         if #available(iOS 26.0, *) { interactiveContentPopGestureRecognizer?.delegate = self }
         navigationBar.prefersLargeTitles = true // each screen's largeTitleDisplayMode decides
+        #endif
     }
 
     func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
@@ -189,6 +214,7 @@ final class AsukaStackController: UINavigationController, UINavigationController
     /// sliding with a push or a pop; an interactive pop that's cancelled
     /// puts it back as it was.
     func navigationController(_ nav: UINavigationController, willShow vc: UIViewController, animated: Bool) {
+        #if !os(tvOS) // no toolbar: a screen's are in its navigation bar
         setToolbarHidden(vc.toolbarItems?.isEmpty ?? true, animated: animated)
         hideTabBar(for: vc, animated: animated)
         transitionCoordinator?.notifyWhenInteractionChanges { [weak self] ctx in
@@ -196,15 +222,18 @@ final class AsukaStackController: UINavigationController, UINavigationController
             self.setToolbarHidden(from.toolbarItems?.isEmpty ?? true, animated: true)
             self.hideTabBar(for: from, animated: true)
         }
+        #endif
     }
 
     /// The top screen's toolbar items changed, or it was pushed: the
     /// toolbar shows while it has some.
     func showToolbar() {
+        #if !os(tvOS)
         guard transitionCoordinator == nil, let top = topViewController else { return }
         let hidden = top.toolbarItems?.isEmpty ?? true
         if hidden != isToolbarHidden { setToolbarHidden(hidden, animated: view.window != nil) }
         hideTabBar(for: top, animated: view.window != nil)
+        #endif
     }
 
     /// Whether this stack hid its tabs' tab bar.
@@ -217,7 +246,7 @@ final class AsukaStackController: UINavigationController, UINavigationController
     /// alone sits beside the tab bar. Before iOS 18 the toolbar stays above
     /// the tab bar, as UIKit stacks them.
     func hideTabBar(for vc: UIViewController, animated: Bool) {
-        guard #available(iOS 18.0, *), let tabs = tabBarController else { return }
+        guard #available(iOS 18.0, tvOS 18.0, *), let tabs = tabBarController else { return }
         let hide = vc !== viewControllers.first && !((vc as? AsukaScreenController)?.toolbar.isEmpty ?? true)
         guard hide != hidTabBar else { return }
         hidTabBar = hide
@@ -227,7 +256,7 @@ final class AsukaStackController: UINavigationController, UINavigationController
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         // Going away (a split's detail replaced): the tab bar comes back.
-        if #available(iOS 18.0, *), hidTabBar, isMovingFromParent || isBeingDismissed {
+        if #available(iOS 18.0, tvOS 18.0, *), hidTabBar, isMovingFromParent || isBeingDismissed {
             hidTabBar = false
             tabBarController?.setTabBarHidden(false, animated: animated)
         }
@@ -371,6 +400,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         e.screenReader = UIAccessibility.isVoiceOverRunning
         e.widthClass = t.horizontalSizeClass.asuka
         e.heightClass = t.verticalSizeClass.asuka
+        e.tv = t.userInterfaceIdiom == .tv
         e.setLanguages()
         return e
     }
@@ -450,7 +480,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             p.children.insert(c, at: i)
             c.parent = p
             if i == nav.viewControllers.count {
-                if #available(iOS 18, *), let key = c.zoomFrom, i > 0 {
+                if #available(iOS 18, tvOS 18, *), let key = c.zoomFrom, i > 0 {
                     // Zooms out of the view with the key on the screen
                     // below, and into it as it's popped (asked each time).
                     // A list's cells aren't in the tree: then the view
@@ -565,6 +595,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             // The style before the presentation controller is first asked
             // for: it's made for the style it has then.
             s.modalPresentationStyle = s.fullScreen ? .fullScreen : .automatic
+            #if !os(tvOS) // a TV's sheets cover the screen, without detents
             if !s.fullScreen, let sheet = s.sheetPresentationController {
                 var ds: [UISheetPresentationController.Detent] = []
                 if s.detents & 1 != 0 { ds.append(.medium()) }
@@ -572,11 +603,16 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
                 sheet.detents = ds
                 sheet.prefersGrabberVisible = s.grabber
             }
+            #endif
             s.presentationController?.delegate = s
             top.present(s, animated: true)
         case .popover:
             guard let p = n.vc as? AsukaPopoverController, let top = topController,
                   let anchor = nodes[p.anchor]?.view, anchor.window != nil else { return }
+            #if os(tvOS)
+            p.modalPresentationStyle = .automatic
+            p.presentationController?.delegate = p
+            #else
             p.modalPresentationStyle = .popover
             p.preferredContentSize = p.size
             if let pc = p.popoverPresentationController {
@@ -584,6 +620,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
                 pc.sourceRect = anchor.bounds
                 pc.delegate = p
             }
+            #endif
             top.present(p, animated: true)
         case .alert:
             guard let top = topController else { return }
@@ -603,11 +640,13 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             if a.preferredStyle == .alert && !n.alertFields.isEmpty {
                 addFields(n, to: a)
             }
+            #if !os(tvOS)
             if let pop = a.popoverPresentationController, let v = top.view {
                 pop.sourceView = v
                 pop.sourceRect = CGRect(x: v.bounds.midX, y: v.bounds.midY, width: 0, height: 0)
                 pop.permittedArrowDirections = []
             }
+            #endif
             n.vc = a
             top.present(a, animated: true)
         case .snackbar:
@@ -739,13 +778,16 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         case .screen:
             guard let vc = n.vc as? AsukaScreenController else { return }
             vc.interceptsBack = on
+            #if !os(tvOS) // the remote's Menu asks the core (remotePressBegan)
             vc.navigationItem.backAction = on ? UIAction { [weak self] _ in
                 self?.emit(id, .back) { AsukaEvents.back(id) }
             } : nil
+            #endif
         case .sheet, .popover:
             n.vc?.isModalInPresentation = on
+            (n.vc as? AsukaScreenController)?.interceptsBack = on // tvOS's Menu
         default:
-            break
+            if n.id == rootID { rootInterceptsBack = on }
         }
     }
 
@@ -756,7 +798,9 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             n.vc?.title = v.string
             n.vc?.tabBarItem.accessibilityLabel = v.string // it keeps the first title otherwise
         case (.screen, AsukaProp.Screen.largeTitle):
+            #if !os(tvOS)
             n.vc?.navigationItem.largeTitleDisplayMode = v.bool ? .always : .never
+            #endif
         case (.screen, AsukaProp.Screen.icon):
             n.vc?.tabBarItem.image = UIImage(systemName: v.string)
         case (.screen, AsukaProp.Screen.badge):
@@ -767,10 +811,17 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             let s = n.search ?? AsukaSearch(id: n.id, runtime: self)
             n.search = s
             s.controller.searchBar.placeholder = v.string
+            #if os(tvOS)
+            // tvOS's navigation items have no search: the field is the
+            // bar's title, and Select on it opens the keyboard.
+            vc.navigationItem.titleView = s.controller.searchBar
+            #else
             vc.navigationItem.searchController = s.controller
             vc.navigationItem.hidesSearchBarWhenScrolling = false
+            #endif
             vc.definesPresentationContext = true
         case (.screen, AsukaProp.Screen.searchButton):
+            #if !os(tvOS)
             guard let vc = n.vc, v.bool else { return }
             if #available(iOS 26.0, *) {
                 vc.navigationItem.preferredSearchBarPlacement = .integratedButton
@@ -779,6 +830,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             } else {
                 vc.navigationItem.hidesSearchBarWhenScrolling = true
             }
+            #endif
         case (.screen, AsukaProp.Screen.searchText):
             n.search?.setText(v.string)
         case (.screen, AsukaProp.Screen.zoomFrom):
@@ -858,6 +910,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             (n.view as? AsukaSnackbarView)?.action = v.string
         case (.snackbar, AsukaProp.Snackbar.duration):
             (n.view as? AsukaSnackbarView)?.duration = v.enumValue
+        #if !os(tvOS) // no pull to refresh with a remote
         case (.scroll, AsukaProp.Scroll.refreshable), (.list, AsukaProp.List.refreshable):
             guard let s = n.view as? UIScrollView else { return }
             if v.bool {
@@ -871,6 +924,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         case (.scroll, AsukaProp.Scroll.refreshing), (.list, AsukaProp.List.refreshing):
             guard let rc = (n.view as? UIScrollView)?.refreshControl else { return }
             if v.bool { rc.beginRefreshing() } else { rc.endRefreshing() }
+        #endif
         case (.list, AsukaProp.List.columns):
             n.list?.setGrid(columns: Int(v.int), gap: n.list?.gap ?? 0)
         case (.list, AsukaProp.List.gap):
@@ -905,15 +959,22 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         if let p = vc.primary {
             items.append(.flexibleSpace())
             let item = barButton(p, for: id, base: AsukaActions.primaryBase)
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, tvOS 26.0, *) {
                 item.style = .prominent
             } else {
                 item.style = .done
             }
             items.append(item)
         }
+        #if os(tvOS)
+        // A TV's navigation bar has no toolbar under it: the toolbar's
+        // buttons lead its bar, where a back button would be (Menu goes
+        // back).
+        vc.navigationItem.leftBarButtonItems = items.filter { $0.title != nil || $0.image != nil }
+        #else
         vc.setToolbarItems(items, animated: vc.view.window != nil)
         (vc.navigationController as? AsukaStackController)?.showToolbar()
+        #endif
     }
 
     /// A bar button of an action: its icon, else its title (VoiceOver reads
@@ -937,6 +998,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
     }
 
     func haptic(_ kind: Int32) {
+        #if !os(tvOS) // a remote doesn't vibrate
         switch AsukaHaptic(rawValue: kind) {
         case .selection: UISelectionFeedbackGenerator().selectionChanged()
         case .light: UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -947,6 +1009,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         case .error: UINotificationFeedbackGenerator().notificationOccurred(.error)
         default: break
         }
+        #endif
     }
 }
 
@@ -960,17 +1023,23 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
     /// A search button's screen: its large title makes way for the field while
     /// it's open, as nothing else moves it.
     weak var titled: UIViewController?
+    #if !os(tvOS)
     private var titleMode: UINavigationItem.LargeTitleDisplayMode?
+    #endif
 
     func willPresentSearchController(_ c: UISearchController) {
+        #if !os(tvOS)
         guard let item = titled?.navigationItem else { return }
         titleMode = item.largeTitleDisplayMode
         item.largeTitleDisplayMode = .never
+        #endif
     }
 
     func willDismissSearchController(_ c: UISearchController) {
+        #if !os(tvOS)
         if let m = titleMode { titled?.navigationItem.largeTitleDisplayMode = m }
         titleMode = nil
+        #endif
     }
 
     init(id: UInt32, runtime: AsukaRuntime) {

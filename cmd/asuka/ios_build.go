@@ -33,6 +33,12 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 	if o.simulator {
 		sdkName = "iphonesimulator"
 	}
+	// tvOS: the same, with its SDK (tv.go), without the extensions it
+	// has none of.
+	if o.platform == platformTVOS {
+		sdkName = map[bool]string{true: "appletvsimulator", false: "appletvos"}[o.simulator]
+		cfg.dropTVExtensions()
+	}
 	tc, err := newIOSToolchainFor(sdkName, o.verbose)
 	if err != nil {
 		return err
@@ -73,6 +79,9 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 		}
 	}
 	fmt.Printf("asuka: building %s %s (%d) for %s\n", cfg.Name, cfg.Version, cfg.Build, map[bool]string{true: "the simulator", false: "devices"}[o.simulator])
+	if tc.tv() {
+		fmt.Println("asuka: (tvOS: an Apple TV app)")
+	}
 	if err := generateNatives(app); err != nil {
 		return err
 	}
@@ -105,6 +114,9 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 	hostObj, err := tc.buildHost(work, app, features)
 	if err != nil {
 		return err
+	}
+	if tc.tv() {
+		cfg.dropTVExtensions() // what the features asked for
 	}
 	// The widget extension of an app with Live Activities and no widgets,
 	// likewise known once its features are.
@@ -177,11 +189,12 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 	if err := os.WriteFile(infoPath, []byte(plist(info)), 0o644); err != nil {
 		return err
 	}
-	if cfg.Icon == "" && o.dev == nil {
+	icon := cfg.Icon != "" || tc.tv() && cfg.TV.Banner != ""
+	if !icon && o.dev == nil {
 		fmt.Println("asuka: no icon in asuka.toml; the App Store needs one (1024×1024 PNG)")
 	}
-	if cfg.Icon != "" || cfg.splashOn() {
-		if err := tc.compileAssets(cfg, work, bundle, infoPath, cfg.Icon != ""); err != nil {
+	if icon || cfg.splashOn() {
+		if err := tc.compileAssets(cfg, work, bundle, infoPath, icon); err != nil {
 			return err
 		}
 	}
@@ -296,7 +309,9 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 		fmt.Println("asuka:", dsyms, "(its symbols: upload them to your crash service; the .ipa has them for App Store Connect)")
 	}
 	fmt.Printf("asuka: %s in %.0fs\n", ipa, time.Since(start).Seconds())
-	if prof.kind == "app-store" {
+	if prof.kind == "app-store" && tc.tv() {
+		fmt.Println("asuka: upload it to App Store Connect with Transporter, as an Apple TV app")
+	} else if prof.kind == "app-store" {
 		fmt.Println("asuka: asuka publish --platform ios builds and uploads it to App Store Connect (or upload this one: asuka publish --platform ios --file " + ipa + ")")
 	}
 	return nil
@@ -311,18 +326,7 @@ func safeName(s string) string {
 }
 
 func newIOSToolchainFor(sdkName string, verbose bool) (*iosToolchain, error) {
-	if sdkName == "iphonesimulator" {
-		return newIOSToolchain(verbose)
-	}
-	sdk, err := output("xcrun", "--sdk", sdkName, "--show-sdk-path")
-	if err != nil {
-		return nil, fmt.Errorf("no iOS SDK (install Xcode): %v", err)
-	}
-	clang, err := output("xcrun", "--sdk", sdkName, "--find", "clang")
-	if err != nil {
-		return nil, err
-	}
-	return &iosToolchain{sdk: sdk, sdkName: sdkName, clang: clang, target: "arm64-apple-ios" + iosMin, goarch: "arm64", verbose: verbose}, nil
+	return newAppleToolchain(sdkName, verbose)
 }
 
 // infoPlist is a release build's Info.plist, with the build keys App
@@ -334,10 +338,7 @@ func (t *iosToolchain) infoPlist(cfg *appConfig, simulator bool) (map[string]any
 	}
 	sdkBuild, _ := output("xcrun", "--sdk", t.sdkName, "--show-sdk-build-version")
 	xcode, xcodeBuild := xcodeVersion()
-	platform := "iPhoneOS"
-	if simulator {
-		platform = "iPhoneSimulator"
-	}
+	platform := t.bundlePlatform()
 	var orient []string
 	if cfg.allows("portrait") {
 		orient = append(orient, "UIInterfaceOrientationPortrait")
@@ -383,6 +384,9 @@ func (t *iosToolchain) infoPlist(cfg *appConfig, simulator bool) (map[string]any
 	}
 	if o := cfg.ipadOrientations(); o != nil {
 		m["UISupportedInterfaceOrientations~ipad"] = o
+	}
+	if t.tv() {
+		t.tvInfo(m)
 	}
 	if t := cfg.urlTypes(true); t != nil {
 		m["CFBundleURLTypes"] = t
@@ -438,14 +442,27 @@ func xcodeVersion() (string, string) {
 // icon from asuka.toml's icon, if icon, and the splash's image and color)
 // into the bundle, merging the icon keys into Info.plist.
 func (t *iosToolchain) compileAssets(cfg *appConfig, work, bundle, infoPath string, icon bool) error {
-	cat, err := writeAssetCatalog(cfg, work, icon)
+	cat, err := writeAssetCatalog(cfg, work, icon && !t.tv())
 	if err != nil {
 		return err
 	}
 	partial := filepath.Join(work, "assets-info.plist")
 	args := []string{"actool", "--compile", bundle, "--platform", t.sdkName,
-		"--minimum-deployment-target", iosMin, "--target-device", "iphone"}
-	if icon {
+		"--minimum-deployment-target", t.minOS()}
+	if t.tv() {
+		// Apple TV's icon (a layered image, made of the icon or tv.banner)
+		// and top shelf images.
+		args = append(args, "--target-device", "tv")
+		if icon {
+			if err := cfg.writeTVBrandAssets(cat); err != nil {
+				return err
+			}
+			args = append(args, "--app-icon", tvBrandAssets)
+		}
+	} else {
+		args = append(args, "--target-device", "iphone")
+	}
+	if icon && !t.tv() {
 		args = append(args, "--app-icon", "AppIcon")
 		// Info.plist's CFBundleAlternateIcons, which setAlternateIconName
 		// picks from.
@@ -453,7 +470,7 @@ func (t *iosToolchain) compileAssets(cfg *appConfig, work, bundle, infoPath stri
 			args = append(args, "--alternate-app-icon", name)
 		}
 	}
-	if slices.Contains(cfg.iosDevices(), 2) {
+	if !t.tv() && slices.Contains(cfg.iosDevices(), 2) {
 		args = append(args, "--target-device", "ipad") // the iPad's icon sizes, CFBundleIcons~ipad
 	}
 	args = append(args, "--output-partial-info-plist", partial, "--output-format", "human-readable-text", cat)
@@ -497,6 +514,16 @@ type profile struct {
 	devices                       []string // the UDIDs a development or ad hoc one installs on
 	identity                      string   // the SHA-1 of the keychain identity that signs with it
 	identityName                  string
+	platforms                     []string // what it's for: iOS, tvOS, visionOS...
+}
+
+// forPlatform reports whether the profile signs apps for platform (iOS,
+// tvOS): a profile that doesn't say is iOS's.
+func (p *profile) forPlatform(platform string) bool {
+	if len(p.platforms) == 0 {
+		return platform == "iOS"
+	}
+	return slices.Contains(p.platforms, platform)
 }
 
 func profileDirs() []string {
@@ -525,6 +552,9 @@ func readProfile(path string) (*profile, error) {
 		return strings.TrimSpace(string(out))
 	}
 	p := &profile{path: path, name: get("Name"), uuid: get("UUID"), team: get("TeamIdentifier.0"), appID: get("Entitlements.application-identifier")}
+	if js, err := exec.Command("plutil", "-extract", "Platform", "json", "-o", "-", tmp.Name()).Output(); err == nil {
+		json.Unmarshal(js, &p.platforms)
+	}
 	p.expires, _ = time.Parse(time.RFC3339, get("ExpirationDate"))
 	switch {
 	case get("ProvisionsAllDevices") == "true":
@@ -590,6 +620,11 @@ func pickProfile(team, id, want, distribution string) (*profile, error) {
 // pickProfileFor is pickProfile for a profile that installs on the
 // device udid too (if not "").
 func pickProfileFor(team, id, want, distribution, udid string) (*profile, error) {
+	return pickProfileOn(team, id, want, distribution, udid, "iOS")
+}
+
+// pickProfileOn is pickProfileFor for a platform's apps (iOS, tvOS).
+func pickProfileOn(team, id, want, distribution, udid, platform string) (*profile, error) {
 	ids := identities()
 	var all []*profile
 	for _, d := range profileDirs() {
@@ -617,6 +652,12 @@ func pickProfileFor(team, id, want, distribution, udid string) (*profile, error)
 		}
 		score := p.matches(team, id)
 		if score == 0 {
+			continue
+		}
+		if !p.forPlatform(platform) {
+			if want != "" {
+				near = append(near, fmt.Sprintf("%q (%s's, not %s's)", p.name, strings.Join(p.platforms, ", "), platform))
+			}
 			continue
 		}
 		if p.kind != distribution && want == "" {
@@ -648,6 +689,9 @@ func pickProfileFor(team, id, want, distribution, udid string) (*profile, error)
 		return best, nil
 	}
 	msg := fmt.Sprintf("no %s provisioning profile for %s", distribution, id)
+	if platform != "iOS" {
+		msg = fmt.Sprintf("no %s %s provisioning profile for %s", platform, distribution, id)
+	}
 	if len(near) > 0 {
 		sort.Strings(near)
 		msg += "; close ones: " + strings.Join(near, ", ")

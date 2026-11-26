@@ -180,6 +180,10 @@ import AsukaOps
     /// The Tab and Shift-Tab key commands of a FocusTrap, while the focus
     /// is in one.
     func trapCommands() -> [UIKeyCommand] {
+        #if os(tvOS)
+        // A remote has no Tab: the trap's focus guide keeps the focus in.
+        return []
+        #else
         guard trap(around: currentFocus) != nil else { return [] }
         return [false, true].map { back in
             let c = UIKeyCommand(title: "", action: #selector(AsukaViewController.asukaTab(_:)), input: "\t",
@@ -187,6 +191,7 @@ import AsukaOps
             c.wantsPriorityOverSystemBehavior = true
             return c
         }
+        #endif
     }
 
     /// A key went down with the focus on a view of the app's, which none
@@ -236,7 +241,9 @@ import AsukaOps
     func setFocusTrap(_ n: AsukaNode, _ on: Bool) {
         guard let c = n.view as? AsukaContainerView else { return }
         c.focusTrap = on
+        #if !os(tvOS)
         c.focusGroupIdentifier = on ? "dev.asuka.trap.\(n.id)" : nil
+        #endif
     }
 }
 

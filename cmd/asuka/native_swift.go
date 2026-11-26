@@ -35,8 +35,8 @@ import (
 // swiftBuild builds an app's Swift as packages.
 type swiftBuild struct {
 	dir      string // where its packages and build go
-	platform string // ios, macos
-	sdkName  string // iphoneos, iphonesimulator, macosx
+	platform string // ios, tvos, macos
+	sdkName  string // iphoneos, iphonesimulator, appletvos, appletvsimulator, macosx
 	arch     string // swiftc's: arm64, x86_64
 	release  bool
 	defines  []string // the host's compilation conditions
@@ -70,10 +70,19 @@ type swiftPackageOutput struct {
 
 // swiftPlatform is a Package.swift's platforms for platform.
 func swiftPlatform(platform string) string {
-	if platform == "ios" {
-		return fmt.Sprintf(".iOS(%q)", iosMin)
+	return swiftPlatformAt(platform, map[string]string{"ios": iosMin, "tvos": tvosMin, "macos": macMin}[platform])
+}
+
+// swiftPlatformAt is Package.swift's platform at a minimum version:
+// .iOS("16.0"), .tvOS("17.0"), .macOS("11.0").
+func swiftPlatformAt(platform, min string) string {
+	switch platform {
+	case "ios":
+		return fmt.Sprintf(".iOS(%q)", min)
+	case "tvos":
+		return fmt.Sprintf(".tvOS(%q)", min)
 	}
-	return fmt.Sprintf(".macOS(%q)", macMin)
+	return fmt.Sprintf(".macOS(%q)", min)
 }
 
 // hostManifest is the asuka package's Package.swift: the host's Swift as
@@ -111,10 +120,7 @@ func (b *swiftBuild) rootManifest() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	platform := fmt.Sprintf(".iOS(%q)", min)
-	if b.platform != "ios" {
-		platform = fmt.Sprintf(".macOS(%q)", min)
-	}
+	platform := swiftPlatformAt(b.platform, min)
 	var deps, products []string
 	seen := map[string]string{"asuka": "the host"}
 	for _, p := range b.natives {
@@ -191,7 +197,8 @@ func (b *swiftBuild) build() (*swiftPackageOutput, error) {
 	if b.release {
 		config = "Release"
 	}
-	dest := map[string]string{"iphoneos": "generic/platform=iOS", "iphonesimulator": "generic/platform=iOS Simulator", "macosx": "generic/platform=macOS"}[b.sdkName]
+	dest := map[string]string{"iphoneos": "generic/platform=iOS", "iphonesimulator": "generic/platform=iOS Simulator",
+		"appletvos": "generic/platform=tvOS", "appletvsimulator": "generic/platform=tvOS Simulator", "macosx": "generic/platform=macOS"}[b.sdkName]
 	derived := filepath.Join(b.dir, "build")
 	products := filepath.Join(derived, "Build", "Products", config)
 	if b.sdkName != "macosx" {

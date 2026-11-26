@@ -209,7 +209,9 @@ platform](packages.md#files-for-one-platform).
 
 `environment().platform` is the platform a view runs on, as the system
 says it (and as a test's `mount(…, platform:)` does): it's tracked, for
-views. What to build for a platform is `@platform`'s.
+views. What to build for a platform is `@platform`'s. An Apple TV app
+is built from the iOS app (`@platform` is `.iOS` there): a TV is
+`environment().tv`'s to tell ([TVs](../tv.md)).
 
 ## Code for development builds
 

@@ -108,6 +108,12 @@ func (e doctorEnv) doctorIOS() []doctorCheck {
 	} else {
 		cs = append(cs, doctorCheck{Name: "a simulator", OK: true, Detail: fmt.Sprintf("%d iPhone simulators", n), Optional: true})
 	}
+	// Apple TV (asuka dev --platform tvos): tvOS's SDK, and a simulator runtime.
+	if _, err := e.output("xcrun", "--sdk", "appletvsimulator", "--show-sdk-path"); err != nil || !strings.Contains(sims, "Apple TV") {
+		cs = append(cs, doctorCheck{Name: "Apple TV", Optional: true, Fix: "install Xcode's tvOS platform (Xcode › Settings › Components, or xcodebuild -downloadPlatform tvOS) for asuka dev --platform tvos"})
+	} else {
+		cs = append(cs, doctorCheck{Name: "Apple TV", OK: true, Detail: "tvOS's SDK and simulator", Optional: true})
+	}
 	ids, _ := e.output("security", "find-identity", "-v", "-p", "codesigning")
 	if strings.Contains(ids, "Apple Development") || strings.Contains(ids, "Apple Distribution") || strings.Contains(ids, "iPhone") {
 		cs = append(cs, doctorCheck{Name: "a signing identity", OK: true, Detail: "for iPhones and the App Store", Optional: true})

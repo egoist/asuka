@@ -14,7 +14,8 @@ import (
 
 // Target is what the core is built for.
 type Target struct {
-	// OS: darwin, ios, ios-simulator, android, linux, windows, wasm.
+	// OS: darwin, ios, ios-simulator, tvos, tvos-simulator, android,
+	// linux, windows, wasm.
 	OS string
 	// Arch: arm64, amd64, arm, 386; wasm32 for wasm.
 	Arch string
@@ -22,14 +23,26 @@ type Target struct {
 
 func (t Target) String() string { return t.OS + "-" + t.Arch }
 
+// Apple reports whether t is one of Apple's systems (Xcode's SDKs):
+// macOS, iOS, tvOS, their simulators.
+func (t Target) Apple() bool {
+	switch t.OS {
+	case "darwin", "ios", "ios-simulator", "tvos", "tvos-simulator":
+		return true
+	}
+	return false
+}
+
 // Host is the computer's own target.
 func Host() Target {
 	return Target{OS: runtime.GOOS, Arch: runtime.GOARCH}
 }
 
-// Minimum versions (DESIGN.md: iOS 16, Android API 33, macOS 11).
+// Minimum versions (DESIGN.md: iOS 16, Android API 33, macOS 11; tvOS
+// 17, the Apple TV's iOS 16 counterpart with UIKit's menus on buttons).
 const (
 	IOSMin     = "16.0"
+	TVOSMin    = "17.0"
 	MacOSMin   = "11.0"
 	AndroidAPI = "24"
 	// LinuxGlibc is the glibc Zig builds Linux's C against: what it calls
@@ -38,6 +51,26 @@ const (
 	// Ubuntu 18.10, RHEL 8 on; GTK 4.14 needs far newer).
 	LinuxGlibc = "2.28"
 )
+
+// appleToolchain is Xcode's clang for an SDK (iphoneos, appletvsimulator...)
+// and its target triple.
+func appleToolchain(t Target, sdk, triple string) (*Toolchain, error) {
+	root, err := output("xcrun", "--sdk", sdk, "--show-sdk-path")
+	if err != nil {
+		return nil, fmt.Errorf("cbuild: Xcode's %s SDK: %v (install Xcode)", sdk, err)
+	}
+	clang, err := output("xcrun", "--sdk", sdk, "--find", "clang")
+	if err != nil {
+		return nil, err
+	}
+	return &Toolchain{
+		Target: t,
+		CC:     Compiler{Path: clang},
+		Flags:  []string{"-target", triple, "-isysroot", root},
+		AR:     []string{"xcrun", "libtool", "-static", "-o"},
+		Shared: []string{"-dynamiclib"},
+	}, nil
+}
 
 // clangArch is an architecture's name in target triples.
 func clangArch(arch string) string {
@@ -86,21 +119,18 @@ func ForTarget(t Target) (*Toolchain, error) {
 			sdk = "iphonesimulator"
 			triple = clangArchApple(t.Arch) + "-apple-ios" + IOSMin + "-simulator"
 		}
-		root, err := output("xcrun", "--sdk", sdk, "--show-sdk-path")
-		if err != nil {
-			return nil, fmt.Errorf("cbuild: Xcode's %s SDK: %v (install Xcode)", sdk, err)
+		return appleToolchain(t, sdk, triple)
+	case "tvos", "tvos-simulator":
+		if runtime.GOOS != "darwin" {
+			return nil, fmt.Errorf("cbuild: building for tvOS needs a Mac with Xcode")
 		}
-		clang, err := output("xcrun", "--sdk", sdk, "--find", "clang")
-		if err != nil {
-			return nil, err
+		sdk := "appletvos"
+		triple := "arm64-apple-tvos" + TVOSMin
+		if t.OS == "tvos-simulator" {
+			sdk = "appletvsimulator"
+			triple = clangArchApple(t.Arch) + "-apple-tvos" + TVOSMin + "-simulator"
 		}
-		return &Toolchain{
-			Target: t,
-			CC:     Compiler{Path: clang},
-			Flags:  []string{"-target", triple, "-isysroot", root},
-			AR:     []string{"xcrun", "libtool", "-static", "-o"},
-			Shared: []string{"-dynamiclib"},
-		}, nil
+		return appleToolchain(t, sdk, triple)
 	case "android":
 		sys := androidsdk.Local()
 		ndk, bin, err := sys.NDK(sys.SDK())
@@ -344,7 +374,7 @@ func deadStrip(t Target) []string {
 		// Its symbols stay for Gradle, which strips what it packages and
 		// keeps them for crash reports (native-debug-symbols.zip).
 		return []string{"-Wl,--gc-sections"}
-	case "darwin", "ios", "ios-simulator":
+	case "darwin", "ios", "ios-simulator", "tvos", "tvos-simulator":
 		return []string{"-Wl,-dead_strip", "-Wl,-x"}
 	case "windows":
 		return []string{"-s"}

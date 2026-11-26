@@ -352,6 +352,24 @@ Android 构建的配置。
 
 见[打包与发布](shipping.md#android)。
 
+## tv
+
+电视构建的配置：Android TV 的声明，以及电视启动器上显示的应用图片。
+
+```toml
+[tv]
+android = true
+banner = "banner.png"
+```
+
+| 键 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `android` | 布尔值 | `false` | Android 构建同时也是 Android TV（以及 Google TV）应用：带有电视启动器的 intent，声明不需要触摸屏和 Leanback 库（于是 Google Play 会把它提供给电视），并带有横幅。 |
+| `banner` | 路径 | 由 `icon` 生成 | 一张横向的 PNG（16:9，1920 × 1080 或更大），作为电视启动器上的应用图片：Android TV 的横幅（320 × 180）、Apple TV 的图标和顶部栏图片，各自从中间裁成所需的形状。不设置时，使用放在 `background` 颜色中间的图标。 |
+| `background` | 颜色 | 图标角落的颜色 | `"#rrggbb"`：由图标生成的横幅背后的颜色，也是 Apple TV 图标的背景层。 |
+
+Apple TV 构建（`asuka build --platform tvos`）不需要任何键：它就是 iOS 应用，用 tvOS 描述文件签名。见[电视](tv.md)。
+
 ## linux
 
 Linux 构建的 desktop 文件和 AppStream metainfo 对应用的描述，也就是启动器、软件中心和 Flathub 显示的内容。Flathub 和软件中心要求提供摘要、描述、许可证和开发者。

@@ -789,7 +789,8 @@ component Search {
 
 A key is a character or a named key (`enter`, `escape`, `tab`, `space`,
 `delete`, `backspace`, `up`, `down`, `left`, `right`, `home`, `end`,
-`pageup`, `pagedown`, `f1` to `f12`), with exactly the modifiers given:
+`pageup`, `pagedown`, `f1` to `f12`, and `playpause`, a TV remote's
+Play/Pause: see [TVs](tv.md#the-remote)), with exactly the modifiers given:
 `Shortcut(key: "d", primary: true, run: …)`, `Shortcut(key: "up", alt:
 true, run: …)`. Held, it repeats. A
 character with no modifiers takes typing from a field inside the view,

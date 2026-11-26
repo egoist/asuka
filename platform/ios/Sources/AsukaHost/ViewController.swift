@@ -26,8 +26,10 @@ public final class AsukaViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         let nc = NotificationCenter.default
+        #if !os(tvOS) // a TV's keyboard covers the screen: nothing moves for it
         nc.addObserver(self, selector: #selector(keyboardWillChange(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         nc.addObserver(self, selector: #selector(keyboardWillChange(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
+        #endif
         nc.addObserver(self, selector: #selector(contentSizeChanged), name: UIContentSizeCategory.didChangeNotification, object: nil)
         nc.addObserver(self, selector: #selector(contentSizeChanged), name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil)
         nc.addObserver(self, selector: #selector(contentSizeChanged), name: UIAccessibility.voiceOverStatusDidChangeNotification, object: nil)
@@ -50,6 +52,7 @@ public final class AsukaViewController: UIViewController {
                 vc.followTextSize()
             }
         }
+        #if !os(tvOS)
         keyboardTracker.isHidden = true
         keyboardTracker.isUserInteractionEnabled = false
         keyboardTracker.translatesAutoresizingMaskIntoConstraints = false
@@ -61,18 +64,21 @@ public final class AsukaViewController: UIViewController {
             keyboardTracker.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             keyboardTracker.topAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
         ])
+        #endif
         let rt = AsukaRuntime.shared
         rt.scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
         sendEnvironment()
         rt.start(self)
     }
 
+    #if !os(tvOS) // a TV neither rotates nor has a status bar
     // platform/screen's lock and status bar.
     public override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         AsukaScreen.lock ?? super.supportedInterfaceOrientations
     }
     public override var preferredStatusBarStyle: UIStatusBarStyle { AsukaScreen.statusBarStyle }
     public override var prefersStatusBarHidden: Bool { AsukaScreen.statusBarHidden }
+    #endif
 
     // A hardware keyboard's keys: the Keys of the views the keyboard's
     // focus is in (KeyCommands.swift). UIKit asks the responder chain, from the
@@ -96,8 +102,27 @@ public final class AsukaViewController: UIViewController {
 
     public override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if AsukaRuntime.shared.focusedKey(presses) { return }
+        #if os(tvOS)
+        if AsukaRuntime.shared.remotePressBegan(presses) { return }
+        // Menu with nothing to go back to: the root's ui.OnBack, else
+        // tvOS's own (the Home screen).
+        if presses.first?.type == .menu, AsukaRuntime.shared.rootBack(presses) { return }
+        #endif
         super.pressesBegan(presses, with: event)
     }
+
+    #if os(tvOS)
+    public override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if AsukaRuntime.shared.remotePressTaken(presses) { return }
+        super.pressesEnded(presses, with: event)
+    }
+
+    // The remote's moves, which a view's Keys take first (TV.swift).
+    public override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+        if AsukaRuntime.shared.remoteFocusMove(context) { return false }
+        return super.shouldUpdateFocus(in: context)
+    }
+    #endif
 
     func mount(_ v: UIView) {
         root?.removeFromSuperview()
@@ -135,6 +160,9 @@ public final class AsukaViewController: UIViewController {
     /// changes agree with it once their animation is set up. While the
     /// keyboard is held (fieldFocus), the guide isn't followed.
     private func trackKeyboard() -> Bool {
+        #if os(tvOS)
+        return false
+        #else
         guard view.window != nil, !keyboardHeld else { return false }
         var h = keyboardTracker.frame.height
         if #unavailable(iOS 17.0) {
@@ -145,6 +173,7 @@ public final class AsukaViewController: UIViewController {
         guard abs(h - keyboard) > 0.5 else { return false }
         setKeyboardEnd(height: h)
         return true
+        #endif
     }
 
     public override func viewSafeAreaInsetsDidChange() {
@@ -200,6 +229,7 @@ public final class AsukaViewController: UIViewController {
         keyboard = max(0, view.bounds.maxY - frame.minY)
     }
 
+    #if !os(tvOS)
     @objc func keyboardWillChange(_ note: Notification) {
         let info = note.userInfo ?? [:]
         if note.name == UIResponder.keyboardWillHideNotification {
@@ -220,6 +250,7 @@ public final class AsukaViewController: UIViewController {
             AsukaRuntime.shared.revealFocused()
         }
     }
+    #endif
 
     /// A field takes the focus: become is its becomeFirstResponder.
     ///
@@ -297,6 +328,7 @@ public final class AsukaViewController: UIViewController {
         e.screenReader = UIAccessibility.isVoiceOverRunning
         e.widthClass = traitCollection.horizontalSizeClass.asuka
         e.heightClass = traitCollection.verticalSizeClass.asuka
+        e.tv = traitCollection.userInterfaceIdiom == .tv
         e.setLanguages()
         guard e != lastEnv, e.width > 0 else { return }
         lastEnv = e

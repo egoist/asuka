@@ -398,6 +398,9 @@ Its fields:
   [their catalogs and formats](i18n.md).
 - `platform`: the system the app runs on: `.iOS`, `.android`, `.macOS`,
   `.windows`, `.linux` or `.web`.
+- `tv`: the app runs on a TV (Apple TV, where `platform` is `.iOS`;
+  Android TV), driven by a remote's focus rather than touch. See
+  [TVs](tv.md).
 
 Semantic colors and fonts follow dark mode and the text size on their
 own; read the environment for what they don't cover.

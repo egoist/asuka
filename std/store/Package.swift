@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "StoreNative",
-    platforms: [.iOS("16.0"), .macOS("11.0")],
+    platforms: [.iOS("16.0"), .tvOS("17.0"), .macOS("11.0")],
     products: [.library(name: "StoreNative", targets: ["StoreNative"])],
     dependencies: [
         .package(url: "https://github.com/egoist/asuka", from: "0.1.0"),

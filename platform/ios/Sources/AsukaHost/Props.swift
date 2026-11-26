@@ -58,7 +58,11 @@ func semanticColor(_ c: AsukaSemanticColor?) -> UIColor? {
 
 func uiTextStyle(_ v: Int32) -> UIFont.TextStyle {
     switch AsukaTextStyle(rawValue: v) {
+    #if os(tvOS)
+    case .largeTitle: return .title1 // tvOS's largest
+    #else
     case .largeTitle: return .largeTitle
+    #endif
     case .title: return .title1
     case .title2: return .title2
     case .title3: return .title3
@@ -391,9 +395,12 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         case AsukaProp.interceptBack:
             setInterceptBack(n, v.bool)
         case AsukaProp.tooltip:
-            // Shown by the pointer (iPadOS, an iPhone app on a Mac).
+            // Shown by the pointer (iPadOS, an iPhone app on a Mac); a
+            // TV has none.
+            #if !os(tvOS)
             for i in n.view.interactions where i is UIToolTipInteraction { n.view.removeInteraction(i) }
             if !v.string.isEmpty { n.view.addInteraction(UIToolTipInteraction(defaultToolTip: v.string)) }
+            #endif
         case AsukaProp.keys:
             setKeys(n, v)
         case AsukaProp.menuTrigger:
@@ -455,7 +462,7 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             case .gray: c = .gray()
             case .bordered: c = .bordered()
             case .glass, .glassProminent:
-                if #available(iOS 26.0, *) {
+                if #available(iOS 26.0, tvOS 26.0, *) {
                     c = variant == .glass ? .glass() : .prominentGlass()
                 } else {
                     c = variant == .glass ? .gray() : .filled()
@@ -490,7 +497,11 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             (n.view as? UITextField)?.placeholder = v.string
             (n.view as? AsukaTextView)?.placeholder = v.string
         case (.textField, AsukaProp.TextField.multiline):
+            // tvOS's text views don't edit: its fields take a line, typed
+            // on the full-screen keyboard.
+            #if !os(tvOS)
             if v.bool { makeMultiline(n) }
+            #endif
         case (.textField, AsukaProp.TextField.selection):
             if case .bytes(let b) = v, b.count >= 8 {
                 var r = AsukaReader(b)
@@ -682,7 +693,7 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
 /// A scroll view's top edge effect under a bar (iOS 26): 0 automatic,
 /// 1 soft, 2 hard.
 @MainActor func asukaEdgeEffect(_ s: UIScrollView, _ effect: Int32) {
-    guard #available(iOS 26.0, *) else { return }
+    guard #available(iOS 26.0, tvOS 26.0, *) else { return }
     s.topEdgeEffect.style = effect == 2 ? .hard : effect == 1 ? .soft : .automatic
 }
 #endif

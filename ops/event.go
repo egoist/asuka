@@ -11,7 +11,7 @@ import (
 //
 // Wire format: f32 width, height, safe top, right, bottom, left,
 // keyboard, scale, font scale; u8 flags (1 dark, 2 reduce motion, bits
-// 2-4 the Platform, 32 a screen reader); u8 size classes (bits 0-1 the width's, 2-3 the
+// 2-4 the Platform, 32 a screen reader, 64 a TV); u8 size classes (bits 0-1 the width's, 2-3 the
 // height's); string locale; string time zone.
 type Environment struct {
 	Width, Height                            float32
@@ -22,6 +22,7 @@ type Environment struct {
 	Dark                                     bool
 	ReduceMotion                             bool // the user asked for less motion (iOS's Reduce Motion; Android's animations off)
 	ScreenReader                             bool // a screen reader is on (VoiceOver, TalkBack, Narrator)
+	TV                                       bool // a TV (Apple TV, Android TV), driven by a remote's focus rather than touch
 	Platform                                 Platform
 	// WidthClass and HeightClass are the platform's size classes for
 	// the window: UIKit's (compact; regular, reported as SizeClassExpanded)
@@ -190,6 +191,9 @@ func AppendEvent(buf []byte, e *Event) []byte {
 		if v.ScreenReader {
 			d |= 32
 		}
+		if v.TV {
+			d |= 64
+		}
 		buf = append(buf, d, byte(v.WidthClass&3)|byte(v.HeightClass&3)<<2)
 		buf = le.AppendUint32(buf, uint32(len(v.Locale)))
 		buf = append(buf, v.Locale...)
@@ -233,7 +237,7 @@ func DecodeEvent(data []byte) (Event, error) {
 			*f = r.f32()
 		}
 		f := r.u8()
-		v.Dark, v.ReduceMotion, v.ScreenReader, v.Platform = f&1 != 0, f&2 != 0, f&32 != 0, Platform(f>>2&7)
+		v.Dark, v.ReduceMotion, v.ScreenReader, v.TV, v.Platform = f&1 != 0, f&2 != 0, f&32 != 0, f&64 != 0, Platform(f>>2&7)
 		c := r.u8()
 		v.WidthClass, v.HeightClass = SizeClass(c&3), SizeClass(c>>2&3)
 		v.Locale = string(r.bytes())

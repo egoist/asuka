@@ -754,12 +754,17 @@ fun AsukaRuntime.environment(v: View, keyboardPx: Int? = null): AsukaEnvironment
         reduceMotion = !animatorsEnabled(app),
         screenReader = (app.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager).isTouchExplorationEnabled,
         widthClass = widthClass(win.width / d), heightClass = heightClass(win.height / d),
+        tv = isTV(c),
         locale = region.locale,
         languages = region.languages,
         firstWeekday = region.firstWeekday,
         hourCycle = region.hourCycle,
     )
 }
+
+/** Whether the app runs on a TV (Android TV, Google TV): its remote's D-pad moves the focus, nothing touches. */
+fun isTV(c: android.content.res.Configuration) =
+    c.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
 
 /** Material's window width class (as ops.SizeClass: 1 compact, 2 medium, 3 expanded) of a width in dp. */
 fun widthClass(dp: Float) = if (dp < 600f) 1 else if (dp < 840f) 2 else 3

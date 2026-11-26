@@ -648,7 +648,7 @@ component Search {
 }
 ```
 
-キーは文字か名前付きのキー（`enter`、`escape`、`tab`、`space`、`delete`、`backspace`、`up`、`down`、`left`、`right`、`home`、`end`、`pageup`、`pagedown`、`f1` から `f12`）で、指定した修飾キーと完全に一致したときだけ反応します（`Shortcut(key: "d", primary: true, run: …)`、`Shortcut(key: "up", alt: true, run: …)`）。押し続けるとリピートします。修飾キーなしの文字を登録すると、ビューの中にあるフィールドへの入力を横取りしてしまいます。そのため修飾キーを付けるか、フィールドのない場所に置いてください。
+キーは文字か名前付きのキー（`enter`、`escape`、`tab`、`space`、`delete`、`backspace`、`up`、`down`、`left`、`right`、`home`、`end`、`pageup`、`pagedown`、`f1` から `f12`、それにテレビのリモコンの再生／一時停止ボタン `playpause`。[テレビ](tv.md#リモコン)を参照）で、指定した修飾キーと完全に一致したときだけ反応します（`Shortcut(key: "d", primary: true, run: …)`、`Shortcut(key: "up", alt: true, run: …)`）。押し続けるとリピートします。修飾キーなしの文字を登録すると、ビューの中にあるフィールドへの入力を横取りしてしまいます。そのため修飾キーを付けるか、フィールドのない場所に置いてください。
 
 コンポーネントの本体で `useKeys([…])` を呼ぶと、ウィンドウ独自のキーを登録します。キーが最後に届く先であり、何にもフォーカスがないときは最初に届く先になります。ゲームの矢印キーやビューアーの Space キーなどに使います。登録したキーは、それを呼んだコンポーネントと一緒に破棄されます。
 

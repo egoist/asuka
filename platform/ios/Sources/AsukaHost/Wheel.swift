@@ -4,6 +4,7 @@ import UIKit
 import AsukaOps
 #endif
 
+#if !os(tvOS) // tvOS's is a menu button (TV.swift)
 /// A Wheel: a UIPickerView of one component, its rows the core's items.
 final class AsukaWheelView: UIPickerView, UIPickerViewDataSource, UIPickerViewDelegate {
     var items: [String] = [] { didSet { reloadAllComponents() } }
@@ -22,6 +23,7 @@ final class AsukaWheelView: UIPickerView, UIPickerViewDataSource, UIPickerViewDe
     func pickerView(_ p: UIPickerView, titleForRow row: Int, forComponent c: Int) -> String? { items[row] }
     func pickerView(_ p: UIPickerView, didSelectRow row: Int, inComponent c: Int) { picked?(row) }
 }
+#endif
 
 @MainActor extension AsukaRuntime {
     func makeWheel(_ id: UInt32) -> UIView {

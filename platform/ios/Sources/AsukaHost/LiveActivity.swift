@@ -157,7 +157,7 @@ import ActivityKit
                 self.follow(a)
             }
         }
-        if #available(iOS 17.2, *) {
+        if #available(iOS 17.2, tvOS 17.2, *) {
             Task { @MainActor [weak self] in
                 for await t in Activity<AsukaActivityAttributes>.pushToStartTokenUpdates {
                     self?.deliver("pushToStartToken", token: t.map { String(format: "%02x", $0) }.joined())

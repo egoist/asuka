@@ -245,7 +245,7 @@ uint8_t ak_height_class_of(float h);
 //
 // Wire format: f32 width, height, safe top, right, bottom, left,
 // keyboard, scale, font scale; u8 flags (1 dark, 2 reduce motion, bits
-// 2-4 the platform, 32 a screen reader); u8 size classes (bits 0-1 the
+// 2-4 the platform, 32 a screen reader, 64 a TV); u8 size classes (bits 0-1 the
 // width's, 2-3 the height's); string locale; string time zone; string
 // languages; u8 first weekday; u8 hour cycle.
 typedef struct {
@@ -255,6 +255,7 @@ typedef struct {
 	float scale;       // pixels per point
 	float font_scale;  // 1 is the default
 	bool dark, reduce_motion, screen_reader;
+	bool tv;                           // a TV, driven by a remote's focus (Apple TV, Android TV)
 	uint8_t platform;                  // AK_PLATFORM_*
 	uint8_t width_class, height_class;  // AK_SIZE_CLASS_*
 	ak_span locale;     // the user's regional formats: BCP 47, or POSIX with keywords

@@ -192,6 +192,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | デバッガー | Xcode の LLDB、Android Studio のデバッガー、React Native DevTools（Hermes） | ✓ `asuka dev` のデバッガー：アプリの `.asuka` ファイルのブレークポイント（条件、ヒット回数、ログポイントつき）、誰も捕まえないエラーが投げられた場所での停止、ステップ実行、コールスタックと各フレームの変数、一時停止中のフレームでの式の評価。シミュレーター、iPhone、Android、Mac、Windows、Linux で使え（Web は除く）、VS Code や DAP クライアントを持つエディターから操作する（[開発](development.md#デバッガー)） |
 | 開発環境の確認 | Expo の doctor、`flutter doctor` | ✓ `asuka doctor`：このコンピューターが各プラットフォーム向けに何をビルドできるか、残りに何をインストールすればよいか |
 | スマートフォンでの実行 | Xcode の Run、Expo の開発ビルド | ✓ `asuka dev --platform ios`、`android`、または両方同時（`ios,android`）：シミュレーター、エミュレーター、Android のスマートフォン（`adb reverse`）、USB か Wi-Fi でつないだ iPhone（`--device iphone`、自分のチームで署名） |
+| テレビでの実行 | SwiftUI の tvOS ターゲット、react-native-tvos、Expo の TV 用 config plugin | ✓ `asuka dev --platform tvos` と `asuka build --platform tvos`（Apple TV：tvOS の UIKit で動く iOS のホスト）、`asuka.toml` の `[tv]` の `android`（Android TV）。アプリのビューの上で動くプラットフォームのフォーカスエンジン、リモコンの戻るボタンと再生／一時停止ボタン、`environment().tv`（[テレビ](tv.md)） |
 | テスト | XCTest、Jest と React Native Testing Library | ✓ `asuka test`：`test` ブロック。アプリをデバイスなしでマウントし（`mount`、`app.tap`、`app.expect`）、デバイスのパッケージにはフェイクがある（[テスト](testing.md)） |
 | リリースビルドと署名 | Xcode、EAS Build | ✓ `asuka build`：アプリを事前にコンパイルする。`.ipa`、`.aab`、署名と公証を済ませた `.app`（または Mac App Store 用の `.pkg`）、署名済みの `.exe` を含む Windows のフォルダー、`.tar.gz` と Flatpak のマニフェストを含む Linux のインストールプレフィックス、静的サイト（[配布](shipping.md)） |
 | ストアへのアップロード | Xcode、EAS Submit | ✓ `asuka publish`：TestFlight、App Review、Google Play のトラック。Mac App Store と Mac の TestFlight。デスクトップのビルドと署名付きのアップデート |

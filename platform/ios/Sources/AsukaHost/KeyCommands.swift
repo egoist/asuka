@@ -26,6 +26,10 @@ extension AsukaNode {
     /// Its Keys as key commands, in the Keys prop's order: the key's
     /// index is its command's.
     func setKeys(_ keys: [AsukaKey]) {
+        #if os(tvOS)
+        // A remote's presses, which are no key commands (TV.swift).
+        remoteKeys = keys.map { $0.mods == 0 ? $0.name : "" }
+        #else
         let id = id
         keyCommands = keys.enumerated().compactMap { i, k in
             guard let input = uiKeyInput(k.name) else { return nil }
@@ -40,6 +44,7 @@ extension AsukaNode {
             if #available(iOS 26.0, *) { c.repeatBehavior = .repeatable }
             return c
         }
+        #endif
     }
 }
 
@@ -171,7 +176,7 @@ extension AsukaRuntime {
         let keys: [AsukaKey]
         if case .bytes(let b) = v { keys = AsukaKeys.decode(b) } else { keys = [] }
         n.setKeys(keys)
-        if n.keyCommands.isEmpty { keyed.remove(n.id) } else { keyed.insert(n.id) }
+        if n.keyCommands.isEmpty && n.remoteKeys.allSatisfy(\.isEmpty) { keyed.remove(n.id) } else { keyed.insert(n.id) }
     }
 }
 #endif

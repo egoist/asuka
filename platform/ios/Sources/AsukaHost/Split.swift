@@ -52,8 +52,10 @@ final class AsukaSidebarController: UICollectionViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        #if !os(tvOS)
         navigationItem.largeTitleDisplayMode = .always
         navigationController?.navigationBar.prefersLargeTitles = true
+        #endif
         collectionView.register(UICollectionViewListCell.self, forCellWithReuseIdentifier: "item")
         collectionView.register(UICollectionViewListCell.self, forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader, withReuseIdentifier: "header")
         restyle()
@@ -61,7 +63,9 @@ final class AsukaSidebarController: UICollectionViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        #if !os(tvOS)
         navigationController?.navigationBar.prefersLargeTitles = true
+        #endif
         // Back at the list on an iPhone: nothing stays highlighted.
         if collapsed, let ip = collectionView.indexPathsForSelectedItems?.first {
             collectionView.deselectItem(at: ip, animated: animated)
@@ -72,7 +76,12 @@ final class AsukaSidebarController: UICollectionViewController {
         guard isViewLoaded else { return }
         let compact = collapsed
         collectionView.collectionViewLayout = UICollectionViewCompositionalLayout { [weak self] i, env in
+            #if os(tvOS)
+            // tvOS's split views are side by side: its grouped list.
+            var c = UICollectionLayoutListConfiguration(appearance: .grouped)
+            #else
             var c = UICollectionLayoutListConfiguration(appearance: compact ? .insetGrouped : .sidebar)
+            #endif
             let titled = !(self?.sections[safe: i]?.title.isEmpty ?? true)
             c.headerMode = titled ? .supplementary : .none
             return NSCollectionLayoutSection.list(using: c, layoutEnvironment: env)
@@ -167,8 +176,12 @@ final class AsukaSidebarController: UICollectionViewController {
     }
 
     private func configureHeader(_ h: UICollectionViewListCell, _ section: Int) {
+        #if os(tvOS)
+        var c = UIListContentConfiguration.groupedHeader()
+        #else
         var c = UIListContentConfiguration.sidebarHeader()
         if collapsed { c = .groupedHeader() }
+        #endif
         c.text = sections[section].title
         h.contentConfiguration = c
     }

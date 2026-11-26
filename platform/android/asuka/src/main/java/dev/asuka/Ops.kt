@@ -996,6 +996,8 @@ data class AsukaEnvironment(
     val dark: Boolean = false,
     val reduceMotion: Boolean = false,
     val screenReader: Boolean = false,
+    /** A TV (Android TV, Google TV), driven by a remote's D-pad rather than touch. */
+    val tv: Boolean = false,
     /** ops.Platform: this host's, Android. */
     val platform: Int = 2,
     /** ops.SizeClass: 1 compact, 2 medium, 3 expanded; 0 unspecified. */
@@ -1029,7 +1031,7 @@ class AsukaWriter {
     fun header(id: Int, kind: Int) { u32(id); u16(kind) }
     fun environment(e: AsukaEnvironment) {
         for (f in floatArrayOf(e.width, e.height, e.safeTop, e.safeRight, e.safeBottom, e.safeLeft, e.keyboard, e.scale, e.fontScale)) f32(f)
-        u8((if (e.dark) 1 else 0) or (if (e.reduceMotion) 2 else 0) or ((e.platform and 3) shl 2) or (if (e.screenReader) 32 else 0))
+        u8((if (e.dark) 1 else 0) or (if (e.reduceMotion) 2 else 0) or ((e.platform and 7) shl 2) or (if (e.screenReader) 32 else 0) or (if (e.tv) 64 else 0))
         u8((e.widthClass and 3) or ((e.heightClass and 3) shl 2))
         string(e.locale)
         string(e.timeZone)

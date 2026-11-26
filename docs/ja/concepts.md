@@ -286,6 +286,7 @@ let landscape = environment().width > environment().height
 - `widthClass`、`heightClass`：ウィンドウがアプリに与えている広さを、軸ごとにプラットフォームの分類で表したもの。値は `.compact`、`.medium`、`.expanded` のいずれかです。コンテンツの横にサイドバーを置いたり、リストの横に詳細を並べたりするときは、独自に決めた幅ではなく、これらの値で分岐してください。iOS では UIKit のサイズクラス（compact か regular で、regular は expanded として扱います）を、Android では Material のウィンドウサイズクラスを返します。macOS、Windows、Linux、Web では、ウィンドウのサイズから Material の分類を求めます。
 - `locale`、`languages`、`timeZone`：ユーザーの地域の書式、ユーザーが読める言語、そしてタイムゾーン。ほとんどのアプリは、[カタログとフォーマット](i18n.md)を通してこれらを使います。
 - `platform`：アプリが動いているシステム。`.iOS`、`.android`、`.macOS`、`.windows`、`.linux`、`.web` のいずれかです。
+- `tv`：アプリがテレビで動いているかどうか（Apple TV。このとき `platform` は `.iOS` です。それと Android TV）。タッチではなく、リモコンでフォーカスを動かして操作します。[テレビ](tv.md)を参照してください。
 
 セマンティックカラーとフォントは、ダークモードと文字サイズに自動で追従します。それらでまかなえない部分は、環境を読んで対応してください。
 

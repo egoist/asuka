@@ -236,6 +236,10 @@ devicectl list devices` lists them).
   back, and a player opened again from the home screen finds it. If the
   player doesn't connect, Asuka says what to check.
 
+**A TV**: `asuka dev --platform tvos` runs the app on an Apple TV
+simulator, and `asuka dev --platform android --device <name>` on an
+Android TV emulator or a TV that adb reaches: see [TVs](tv.md).
+
 **A phone's browser**: `asuka dev --platform web --lan` serves the app to
 your network, and prints the addresses to open, the first as a QR code
 for the phone's camera.

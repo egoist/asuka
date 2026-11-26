@@ -89,6 +89,8 @@ object AsukaKeys {
             KeyEvent.KEYCODE_MOVE_END -> return "end"
             KeyEvent.KEYCODE_PAGE_UP -> return "pageup"
             KeyEvent.KEYCODE_PAGE_DOWN -> return "pagedown"
+            // A remote's (a TV's) or a keyboard's play/pause.
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> return "playpause"
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DPAD_CENTER -> return null
         }
         if (keyCode in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12) return "f" + (keyCode - KeyEvent.KEYCODE_F1 + 1)

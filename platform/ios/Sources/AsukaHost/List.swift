@@ -70,8 +70,10 @@ final class AsukaWeakList {
     /// The first item's index of each section shown (one section: [0]).
     private var starts = [0]
     private var hasSections = false
+    #if !os(tvOS) // no swipe actions on a TV
     private var swipes: UICollectionLayoutListConfiguration.SwipeActionsConfigurationProvider!
     private var leadingSwipes: UICollectionLayoutListConfiguration.SwipeActionsConfigurationProvider!
+    #endif
 
     // Anchored at the bottom: whether it's at its end (and stays there),
     // the room added above rows that don't fill it, and a scroll to the
@@ -90,6 +92,7 @@ final class AsukaWeakList {
         let box = AsukaWeakList()
         collection = AsukaListView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         super.init()
+        #if !os(tvOS)
         // A row's swipe actions are its cell's (the core sends them as it binds it).
         swipes = { [weak runtime] path in
             guard let runtime, let list = box.list else { return nil }
@@ -99,6 +102,7 @@ final class AsukaWeakList {
             guard let runtime, let list = box.list else { return nil }
             return list.swipeConfiguration(runtime, path, leading: true)
         }
+        #endif
         box.list = self
         collection.owner = self
         collection.delegate = self
@@ -161,6 +165,7 @@ final class AsukaWeakList {
         return IndexPath(item: i - starts[s], section: s)
     }
 
+    #if !os(tvOS)
     private func swipeConfiguration(_ runtime: AsukaRuntime, _ path: IndexPath, leading: Bool) -> UISwipeActionsConfiguration? {
         guard !editing, let cell = collection.cellForItem(at: path) as? AsukaListCell,
               let n = runtime.nodes[cell.asukaID] else { return nil }
@@ -180,6 +185,7 @@ final class AsukaWeakList {
         }
         return UISwipeActionsConfiguration(actions: actions)
     }
+    #endif
 
     func update(_ ids: [Int64], sections: [(start: Int, id: Int64)]) { pending = (ids, sections) }
 
@@ -188,11 +194,13 @@ final class AsukaWeakList {
     /// The list layout's configuration, in an appearance.
     private func config(_ appearance: UICollectionLayoutListConfiguration.Appearance) -> UICollectionLayoutListConfiguration {
         var config = UICollectionLayoutListConfiguration(appearance: appearance)
-        config.showsSeparators = self.appearance != .bare
         if self.appearance == .bare { config.backgroundColor = .clear }
         config.headerMode = hasSections ? .supplementary : .none
+        #if !os(tvOS)
+        config.showsSeparators = self.appearance != .bare
         config.trailingSwipeActionsConfigurationProvider = swipes
         config.leadingSwipeActionsConfigurationProvider = leadingSwipes
+        #endif
         return config
     }
 
@@ -229,7 +237,11 @@ final class AsukaWeakList {
                 return section
             }
         } else {
+            #if os(tvOS)
+            let config = config(appearance == .insetGrouped ? .grouped : .plain) // tvOS's grouped rows are inset
+            #else
             let config = config(appearance == .insetGrouped ? .insetGrouped : .plain)
+            #endif
             let grouped = appearance == .insetGrouped, inset = inset
             layout = UICollectionViewCompositionalLayout { _, env in
                 let section = NSCollectionLayoutSection.list(using: config, layoutEnvironment: env)
@@ -314,7 +326,7 @@ final class AsukaWeakList {
     /// it away). Only that one: the effect's region (which takes touches)
     /// reaches as far down as its elements do.
     private func pinEdgeElements() {
-        guard #available(iOS 26.0, *), hasSections else { return }
+        guard #available(iOS 26.0, tvOS 26.0, *), hasSections else { return }
         let top = collection.contentOffset.y + collection.adjustedContentInset.top
         let pin = appearance != .insetGrouped
         for case let c as AsukaListCell in collection.visibleSupplementaryViews(ofKind: UICollectionView.elementKindSectionHeader) {
@@ -534,6 +546,7 @@ final class AsukaWeakList {
         runtime?.emit(id, .rowSelected) { AsukaEvents.rowSelected(id, v) }
     }
 
+    #if !os(tvOS)
     /// A two-finger pan over rows selects them: while selecting, or to
     /// begin selecting when the app asks to hear of it.
     func collectionView(_ cv: UICollectionView, shouldBeginMultipleSelectionInteractionAt p: IndexPath) -> Bool {
@@ -554,6 +567,7 @@ final class AsukaWeakList {
             self.applyEditing(false)
         }
     }
+    #endif
 
     /// Tells the core how much room the selection control takes from the
     /// rows (the core lays them out at the width they have).

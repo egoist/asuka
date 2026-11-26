@@ -47,17 +47,70 @@ type iosToolchain struct {
 }
 
 func newIOSToolchain(verbose bool) (*iosToolchain, error) {
-	sdk, err := output("xcrun", "--sdk", "iphonesimulator", "--show-sdk-path")
+	return newAppleToolchain("iphonesimulator", verbose)
+}
+
+// newAppleToolchain is the toolchain for one of the SDKs the iOS host
+// builds with: iphoneos, iphonesimulator, and tvOS's appletvos and
+// appletvsimulator (the same host, its tvOS parts: docs/tv.md).
+func newAppleToolchain(sdkName string, verbose bool) (*iosToolchain, error) {
+	t := &iosToolchain{sdkName: sdkName, goarch: "arm64", verbose: verbose}
+	sdk, err := output("xcrun", "--sdk", sdkName, "--show-sdk-path")
 	if err != nil {
-		return nil, fmt.Errorf("no iOS simulator SDK (install Xcode): %v", err)
+		return nil, fmt.Errorf("no %s SDK (install Xcode%s): %v", t.sdkTitle(), map[bool]string{true: " and its tvOS platform: xcodebuild -downloadPlatform tvOS", false: ""}[t.tv()], err)
 	}
-	clang, err := output("xcrun", "--sdk", "iphonesimulator", "--find", "clang")
+	clang, err := output("xcrun", "--sdk", sdkName, "--find", "clang")
 	if err != nil {
 		return nil, err
 	}
+	t.sdk, t.clang = sdk, clang
 	// Apple silicon's simulator: the Macs Asuka develops on.
-	arch, goarch := "arm64", "arm64"
-	return &iosToolchain{sdk: sdk, sdkName: "iphonesimulator", clang: clang, target: arch + "-apple-ios" + iosMin + "-simulator", goarch: goarch, verbose: verbose}, nil
+	t.target = "arm64-apple-" + t.swiftPlatform() + t.minOS()
+	if !t.device() {
+		t.target += "-simulator"
+	}
+	return t, nil
+}
+
+// tv reports whether the toolchain builds for tvOS (an Apple TV, or its
+// simulator).
+func (t *iosToolchain) tv() bool { return strings.HasPrefix(t.sdkName, "appletv") }
+
+// minOS is the system the app needs at least: iOS's, or tvOS's.
+func (t *iosToolchain) minOS() string {
+	if t.tv() {
+		return tvosMin
+	}
+	return iosMin
+}
+
+// swiftPlatform is the platform as Package.swift and native packages
+// name it, and as a target triple has it: ios, tvos.
+func (t *iosToolchain) swiftPlatform() string {
+	if t.tv() {
+		return "tvos"
+	}
+	return "ios"
+}
+
+// bundlePlatform is Info.plist's CFBundleSupportedPlatforms: iPhoneOS,
+// iPhoneSimulator, AppleTVOS, AppleTVSimulator.
+func (t *iosToolchain) bundlePlatform() string {
+	return map[string]string{"iphoneos": "iPhoneOS", "iphonesimulator": "iPhoneSimulator", "appletvos": "AppleTVOS", "appletvsimulator": "AppleTVSimulator"}[t.sdkName]
+}
+
+// sdkTitle is the SDK as Xcode names it.
+func (t *iosToolchain) sdkTitle() string {
+	return map[string]string{"iphoneos": "iOS", "iphonesimulator": "iOS simulator", "appletvos": "tvOS", "appletvsimulator": "tvOS simulator"}[t.sdkName]
+}
+
+// devices are Info.plist's UIDeviceFamily: an Apple TV's (3), or the
+// app's iPhone and iPad.
+func (t *iosToolchain) devices(c *appConfig) []int {
+	if t.tv() {
+		return []int{3}
+	}
+	return c.iosDevices()
 }
 
 func output(name string, args ...string) (string, error) {
@@ -104,18 +157,18 @@ func (t *iosToolchain) buildHost(work string, app *asukaApp, features []string) 
 	if app != nil {
 		// The app's native packages' Swift; what they need goes in its
 		// Info.plist.
-		ns, err := nativeFor(app, "ios")
+		ns, err := nativeFor(app, t.swiftPlatform())
 		if err != nil {
 			return "", err
 		}
 		if len(ns) > 0 {
-			if err := app.cfg.nativeNeeds(ns, "ios"); err != nil {
+			if err := app.cfg.nativeNeeds(ns, t.swiftPlatform()); err != nil {
 				return "", err
 			}
 		}
 		natives = ns
 	}
-	return t.buildHostPackage(work, natives, features)
+	return t.buildHostPackage(work, natives, t.hostFeatures(features))
 }
 
 // iosHostVariant names the host's variant a release prebuilds for
@@ -144,7 +197,7 @@ func (t *iosToolchain) buildHostPackage(work string, natives []nativePackage, fe
 	if err != nil {
 		return "", err
 	}
-	b := &swiftBuild{dir: filepath.Join(work, "swift-"+t.sdkName), platform: "ios", sdkName: t.sdkName,
+	b := &swiftBuild{dir: filepath.Join(work, "swift-"+t.sdkName), platform: t.swiftPlatform(), sdkName: t.sdkName,
 		arch: macSwiftArch(t.goarch), release: t.release, defines: features, variant: iosHostVariant(features),
 		host: host, cAsuka: cAsuka, natives: natives, run: t.run}
 	out, err := b.build()
@@ -228,9 +281,9 @@ func playerFeatures(app *asukaApp, cfg *appConfig) []string {
 // player), with the C the app's externs call (m's, or for a player c,
 // the last compile's).
 func (t *iosToolchain) buildCore(work string, m *bytecode.Module, c *bytecode.C) (string, error) {
-	target := cbuild.Target{OS: "ios", Arch: "arm64"}
-	if t.sdkName == "iphonesimulator" {
-		target = cbuild.Target{OS: "ios-simulator", Arch: t.goarch}
+	target := cbuild.Target{OS: t.swiftPlatform(), Arch: "arm64"}
+	if !t.device() {
+		target = cbuild.Target{OS: t.swiftPlatform() + "-simulator", Arch: t.goarch}
 	}
 	if m != nil {
 		c = m.C
@@ -260,6 +313,9 @@ func (t *iosToolchain) embedPackages(bundle string) error {
 }
 
 func (t *iosToolchain) link(app *asukaApp, work, hostObj, lib string) (string, error) {
+	if t.tv() {
+		return t.linkTV(app, work, hostObj, lib)
+	}
 	bundle := filepath.Join(work, app.name+".app")
 	os.RemoveAll(bundle)
 	if err := os.MkdirAll(bundle, 0o755); err != nil {

@@ -1,4 +1,4 @@
-#if canImport(UIKit)
+#if canImport(UIKit) && !os(tvOS)
 import UIKit
 
 /// What platform/screen sets of the app's screen: the orientation lock and
@@ -42,5 +42,15 @@ import UIKit
             vc = c.presentedViewController
         }
     }
+}
+#endif
+
+#if os(tvOS)
+import UIKit
+
+/// tvOS: a TV neither rotates nor shows a status bar.
+@MainActor public enum AsukaScreen {
+    public static func setLock(_ o: Int, _ runtime: AsukaRuntime? = nil) {}
+    public static func setBars(style: Int, hideStatus: Bool, _ runtime: AsukaRuntime? = nil) {}
 }
 #endif

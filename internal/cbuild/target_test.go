@@ -42,6 +42,14 @@ func TestLibIOSSimulator(t *testing.T) {
 	build(t, Target{"ios", "arm64"}, Static, "libasuka.a")
 }
 
+func TestLibTVOS(t *testing.T) {
+	if _, err := exec.LookPath("xcrun"); err != nil {
+		t.Skip("no Xcode")
+	}
+	build(t, Target{"tvos-simulator", runtime.GOARCH}, Static, "libasuka.a")
+	build(t, Target{"tvos", "arm64"}, Static, "libasuka.a")
+}
+
 func TestLibAndroid(t *testing.T) {
 	build(t, Target{"android", "arm64"}, Shared, "libasuka.so")
 }
@@ -77,6 +85,8 @@ func TestCTarget(t *testing.T) {
 	}{
 		{Target{OS: "ios", Arch: "arm64"}, "ios", "ios-arm64"},
 		{Target{OS: "ios-simulator", Arch: "amd64"}, "ios", "ios-simulator-x64"},
+		{Target{OS: "tvos", Arch: "arm64"}, "ios", "tvos-arm64"},
+		{Target{OS: "tvos-simulator", Arch: "arm64"}, "ios", "tvos-simulator-arm64"},
 		{Target{OS: "darwin", Arch: "arm64"}, "macos", "macos-arm64"},
 		{Target{OS: "android", Arch: "arm"}, "android", "android-arm"},
 		{Target{OS: "linux", Arch: "amd64"}, "linux", "linux-x64"},

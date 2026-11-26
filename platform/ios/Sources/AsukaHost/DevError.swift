@@ -237,7 +237,7 @@ final class AsukaDevErrorController: UIViewController {
 
     private func style(_ b: UIButton, _ title: String, primary: Bool) {
         var c: UIButton.Configuration
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, tvOS 26.0, *) {
             c = primary ? .prominentGlass() : .glass()
         } else {
             c = primary ? .filled() : .gray()

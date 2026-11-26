@@ -40,13 +40,17 @@ final class AsukaSnackbarView: UIView {
 
     init(nodeID: UInt32) {
         self.nodeID = nodeID
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, tvOS 26.0, *) {
             let glass = UIGlassEffect(style: .regular)
             glass.isInteractive = true
             background = UIVisualEffectView(effect: glass)
             background.cornerConfiguration = .capsule()
         } else {
+            #if os(tvOS)
+            background = UIVisualEffectView(effect: UIBlurEffect(style: .regular))
+            #else
             background = UIVisualEffectView(effect: UIBlurEffect(style: .systemThickMaterial))
+            #endif
             background.layer.cornerCurve = .continuous
             background.clipsToBounds = true
         }
@@ -172,7 +176,11 @@ final class AsukaSnackbarView: UIView {
         host.addSubview(self)
         let side = widthAnchor.constraint(lessThanOrEqualTo: host.safeAreaLayoutGuide.widthAnchor, constant: -32)
         let readable = widthAnchor.constraint(lessThanOrEqualToConstant: 560)
+        #if os(tvOS)
+        let keyboard = bottomAnchor.constraint(lessThanOrEqualTo: host.bottomAnchor, constant: -12) // a TV's keyboard covers the screen
+        #else
         let keyboard = bottomAnchor.constraint(lessThanOrEqualTo: host.keyboardLayoutGuide.topAnchor, constant: -12)
+        #endif
         let bars = bottomAnchor.constraint(lessThanOrEqualTo: host.safeAreaLayoutGuide.bottomAnchor, constant: -12)
         let low = bottomAnchor.constraint(equalTo: host.bottomAnchor)
         low.priority = .defaultLow // as low as the bars and the keyboard let it
@@ -243,7 +251,9 @@ final class AsukaSnackbarView: UIView {
                 return
             }
             if let n = vc as? UINavigationController {
+                #if !os(tvOS)
                 if !n.isToolbarHidden { out.append(n.toolbar) }
+                #endif
                 if let top = n.topViewController { visit(top) }
                 return
             }

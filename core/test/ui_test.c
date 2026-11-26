@@ -1580,7 +1580,7 @@ static ak_val env_text(ak_closure *c, ak_val *a, uint32_t n) {
 	ak_val e = ak_ui_environment_value();
 	const ak_struct *s = e.p;
 	char b[64];
-	snprintf(b, sizeof b, "%gx%g %s", s->f[0].f, s->f[1].f, s->f[9].i ? "dark" : "light");
+	snprintf(b, sizeof b, "%gx%g %s%s", s->f[0].f, s->f[1].f, s->f[9].i ? "dark" : "light", s->f[20].i ? " tv" : "");
 	ak_release(e.p);
 	return (ak_val){.p = ak_str_c(b)};
 }
@@ -1605,6 +1605,11 @@ TEST(environment_follows_the_host) {
 	ak_environment got;
 	ak_ui_environment(&got);
 	CHECK_EQ_INT(got.width_class, AK_SIZE_CLASS_EXPANDED);  // Material's, from 844 points
+	// A TV (Apple TV, Android TV): environment().tv.
+	env.tv = true;
+	env.width = 1920, env.height = 1080;
+	ak_fake_set_environment(f, &env);
+	CHECK(ak_uitest_expect(a, AK_STR("1920x1080 dark tv"), &err));
 	ak_buf_free(&err);
 	done(a);
 }
