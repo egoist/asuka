@@ -2017,6 +2017,45 @@ test "lying face up" {
 }
 ```
 
+## 健康数据：platform/health
+
+`platform/health` 在用户允许的前提下读写用户的健康数据：iOS 上是 HealthKit，Android 上是 Health Connect。`health.request(read:, write:)` 请求读写哪些种类（`.steps`、`.distance`、`.activeEnergy`、`.floors`、`.heartRate`、`.restingHeartRate`、`.oxygenSaturation`、`.respiratoryRate`、`.weight`、`.height`、`.bodyFat`、`.water`、`.sleep`、`.mindfulness`），`health.samples(kind, from:, to:, limit:)` 按从新到旧读取某一种类的样本，`health.total` 对可以累加的种类求和（手机和手表都记录到的不会重复计算），`health.write` 写入一条。
+
+```asuka check
+import platform/health
+import std/time
+
+component Steps {
+  state steps = 0.0
+  state note = ""
+
+  Column {
+    gap: 8
+    Text("{steps.fixed(0)} steps today")
+    Text(note)
+  }
+
+  task {
+    if !health.available() {
+      note = "No health data on this device"
+      return
+    }
+    do {
+      if try await health.request(read: [.steps]) {
+        steps = try await health.total(.steps, from: time.now().startOfDay(), to: time.now())
+      }
+    } catch e {
+      note = e.message
+    }
+  }
+}
+```
+
+- 每个种类都有自己的单位：米、千卡、每分钟心跳次数、千克、升；比例则是 0 到 1（血氧饱和度、体脂率）。一次睡眠或一次正念练习是一个值为 1 的样本，时长由开始和结束时间表示。
+- iOS 不会告诉应用它能否读取：用户没有允许的种类读出来就是没有样本。导入这个包后，应用会带上 HealthKit 能力（发布版的描述文件需要它）和用途说明（可以在 `[ios.usage]` 里写你自己的）。
+- Android 需要 Health Connect：Android 14 起内置，Android 9 到 13 需要用户安装它的应用（更早的版本没有）。Google Play 要求说明每一项健康权限的用途，所以应用要在 [asuka.toml 的 `[health]`](asuka-toml.md) 里列出它读写的种类和隐私政策；请求没有列出的种类会抛出 `HealthError.notAllowed`。
+- Mac、Windows、Linux 和 Web 上没有健康数据：`available()` 为 false，调用会抛出 `HealthError.notAvailable`。
+
 ## 编辑图片和视频帧：platform/imageedit
 
 `imageedit.edit(source, actions)` 用平台自带的编解码器编辑图片，并写成 JPEG 或 PNG：它能读取相机和照片选择器给出的格式（HEIC、JPEG、PNG、WebP ……），并按照方向信息把图片摆正，适合用来上传、缓存或交给 `Image` 显示。操作按顺序执行：`.resize(width, height)`（某一边写 0 就保持比例）、`.crop(x, y, width, height)`、`.rotate(degrees)`、`.flipHorizontal`、`.flipVertical`、`.fill(...)`（填充纯色，原来的内容就彻底没有了）和 `.pixelate(...)`。`imageedit.size(source)` 读取图片尺寸；`imageedit.videoFrame(source, at:)` 把视频的某一帧取成图片。

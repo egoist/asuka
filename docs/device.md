@@ -2982,6 +2982,65 @@ test "lying face up" {
 }
 ```
 
+## Health data: platform/health
+
+`platform/health` reads and writes the user's health data, with their
+permission: HealthKit on iOS, Health Connect on Android.
+`health.request(read:, write:)` asks for kinds (`.steps`, `.distance`,
+`.activeEnergy`, `.floors`, `.heartRate`, `.restingHeartRate`,
+`.oxygenSaturation`, `.respiratoryRate`, `.weight`, `.height`,
+`.bodyFat`, `.water`, `.sleep`, `.mindfulness`), `health.samples(kind,
+from:, to:, limit:)` reads a kind's samples newest first, `health.total`
+adds up the kinds that add up (without counting twice what a phone and a
+watch both recorded), and `health.write` saves one.
+
+```asuka check
+import platform/health
+import std/time
+
+component Steps {
+  state steps = 0.0
+  state note = ""
+
+  Column {
+    gap: 8
+    Text("{steps.fixed(0)} steps today")
+    Text(note)
+  }
+
+  task {
+    if !health.available() {
+      note = "No health data on this device"
+      return
+    }
+    do {
+      if try await health.request(read: [.steps]) {
+        steps = try await health.total(.steps, from: time.now().startOfDay(), to: time.now())
+      }
+    } catch e {
+      note = e.message
+    }
+  }
+}
+```
+
+- Each kind has its unit: meters, kilocalories, beats a minute,
+  kilograms, liters; fractions from 0 to 1 (oxygen saturation, body
+  fat). A sleep or a mindful session is a sample with the value 1, its
+  start and end saying how long.
+- iOS doesn't tell an app whether it may read: a kind the user didn't
+  allow reads as no samples. Importing the package gives the app the
+  HealthKit capability (a release's profile needs it) and the purpose
+  strings (set your own in `[ios.usage]`).
+- Android needs Health Connect: built in from Android 14, an app the
+  user installs on Android 9 to 13 (before, there's none). Google Play wants
+  each health permission justified, so the app lists the kinds it reads
+  and writes, and its privacy policy, in [asuka.toml's
+  `[health]`](asuka-toml.md); asking for one it didn't list throws
+  `HealthError.notAllowed`.
+- The Mac, Windows, Linux and the web have no health store:
+  `available()` is false and the calls throw `HealthError.notAvailable`.
+
 ## Editing images and video frames: platform/imageedit
 
 `imageedit.edit(source, actions)` edits an image with the platform's own

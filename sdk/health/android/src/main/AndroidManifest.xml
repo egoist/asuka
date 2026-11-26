@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- platform/health: Health Connect. Its client needs Android 8; the
+     package checks the version before it makes one (makeStore), so the app
+     keeps Android 7. Health Connect's permissions are the app's, from
+     asuka.toml's [health] read and write, as is its privacy policy (the
+     meta-data platform.health.privacyPolicy), which the rationale activity
+     opens. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-sdk tools:overrideLibrary="androidx.health.connect.client" />
+    <queries>
+        <!-- Health Connect's app, on Android 13 and before. -->
+        <package android:name="com.google.android.apps.healthdata" />
+        <!-- The apps that write to Health Connect, whose names samples' sources are. -->
+        <intent>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+            <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+        </intent>
+    </queries>
+    <application>
+        <!-- Why the app asks: Health Connect's permission screen links to it
+             (Android 13 and before), and asks for none without it. -->
+        <activity
+            android:name="platform.health.HealthRationaleActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <!-- Android 14 and later: the same, from the system's settings. -->
+        <activity-alias
+            android:name="platform.health.ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity="platform.health.HealthRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+    </application>
+</manifest>

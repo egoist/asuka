@@ -82,6 +82,7 @@ github = "you/notes"
 | `linux` | 表 | | Linux 构建对应用的描述。见 [linux](#linux)。 |
 | `web` | 表 | | Web 构建的配置。见 [web](#web)。 |
 | `bluetooth` | 表 | | 使用 `platform/bluetooth` 的应用在包本身所需之外的额外声明：后台运行、通过扫描定位。见 [bluetooth](#bluetooth)。 |
+| `health` | 表 | | 使用 `platform/health` 的 Android 应用在 Health Connect 中读写哪些数据，以及应用的隐私政策。见 [health](#health)。 |
 | `bin` | 表 | 无 | 项目自带的程序：放在各自目录里的命令行工具，会构建进桌面应用。见 [bin](#bin)。 |
 
 Windows 构建只需要上面这些键；它的签名证书通过环境变量提供（见[打包与发布](shipping.md#windows)）。
@@ -392,6 +393,25 @@ location = false
 | `location` | 布尔值 | `false` | 应用会通过扫描确定用户的位置（比如信标）：Android 的 `BLUETOOTH_SCAN` 不再带 `neverForLocation`，`bluetooth.request()` 也会一并请求位置权限（iOS：`NSLocationWhenInUseUsageDescription`）。 |
 
 见[蓝牙](bluetooth.md#构建时添加的内容)。
+
+## health
+
+导入了 `platform/health` 的应用在 Android 上要在 Health Connect 中读写哪些数据：这里列出的每种数据都会给应用加上对应的权限（`android.permission.health.READ_STEPS`、`WRITE_STEPS`）。这个包本身不声明这些权限，因为 Google Play 要求应用为声明的每一项健康权限说明理由。请求没有列出的数据时，`health.request()` 会抛出 `HealthError.notAllowed`。iOS 不需要这些：HealthKit 可以请求任何一种数据。
+
+```toml
+[health]
+read = ["steps", "heartRate", "sleep"]
+write = ["steps"]
+privacyPolicy = "https://example.com/privacy"
+```
+
+| 键 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `read` | 字符串数组 | 无 | 应用要读取的数据，用 `health.Kind` 的名字：`steps`、`distance`、`activeEnergy`、`floors`、`heartRate`、`restingHeartRate`、`oxygenSaturation`、`respiratoryRate`、`weight`、`height`、`bodyFat`、`water`、`sleep`、`mindfulness`。 |
+| `write` | 字符串数组 | 无 | 应用要写入的数据，写法同上。 |
+| `privacyPolicy` | 字符串 | 无 | 应用的隐私政策，一个 http 或 https 网址。设置了 `read` 或 `write` 时必填：Health Connect 的权限页面和系统设置会链接到它，在浏览器中打开。 |
+
+Android 14 及以上内置了 Health Connect；Android 9 到 13 上它是 Google Play 里的一个应用，没有安装时 `health.available()` 为 false。见[健康数据](device.md#健康数据platformhealth)。
 
 ## c
 

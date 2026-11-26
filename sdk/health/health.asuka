@@ -1,0 +1,159 @@
+// Package platform/health reads and writes the user's health data, with
+// their permission: HealthKit on iOS, Health Connect on Android, as
+// Flutter's health plugin and React Native's do. Elsewhere (the Mac,
+// Windows, Linux, the web) there's no store: available() is false and
+// the calls throw HealthError.notAvailable.
+//
+//   if try await health.request(read: [.steps, .heartRate]) {
+//     let today = try await health.total(.steps, from: time.now().startOfDay(), to: time.now())
+//   }
+//
+// The app says why it asks in asuka.toml (iOS: [ios.usage]'s
+// NSHealthShareUsageDescription and NSHealthUpdateUsageDescription,
+// which importing the package gives; Android: a privacy policy URL,
+// health.privacyPolicy, which Health Connect's permission screen links
+// to). Health Connect is built into Android 14 and later, and an app the
+// user installs on Android 9 to 13; before, there's none.
+
+import std/time
+
+/// What's measured, and its unit.
+pub enum Kind {
+  /// Steps taken, a count.
+  steps
+  /// Distance walked or run, in meters.
+  distance
+  /// Energy burned by activity, in kilocalories.
+  activeEnergy
+  /// Flights of stairs climbed, a count.
+  floors
+  /// Heart rate, in beats a minute.
+  heartRate
+  /// Heart rate at rest, in beats a minute.
+  restingHeartRate
+  /// Blood oxygen saturation, from 0 to 1.
+  oxygenSaturation
+  /// Breaths a minute.
+  respiratoryRate
+  /// Body weight, in kilograms.
+  weight
+  /// Height, in meters.
+  height
+  /// Body fat, from 0 to 1.
+  bodyFat
+  /// Water drunk, in liters.
+  water
+  /// Time asleep: a sample a period, its value 1 (its start and end say
+  /// how long).
+  sleep
+  /// Mindful minutes: a sample a session, its value 1.
+  mindfulness
+}
+
+/// A measurement: its value in its kind's unit, over [start, end] (an
+/// instant's are the same), and the app or device that recorded it.
+pub struct Sample {
+  kind: Kind
+  value: float
+  start: time.Time
+  end: time.Time
+  /// The app or device that wrote it ("Health", "Pixel Watch"); "" where
+  /// the platform doesn't say.
+  source: string = ""
+}
+
+/// Why health data can't be read or written.
+pub enum HealthError: Error {
+  /// No health store here: the Mac, Windows, Linux, the web, an iPad
+  /// without Health, Android without Health Connect (Android 8 and
+  /// before; 9 to 13 without its app installed).
+  notAvailable
+  /// The user didn't allow it, or (Android) the app didn't list the kind
+  /// in asuka.toml's [health].
+  notAllowed
+
+  /// The error's text.
+  fn message() -> string = match self {
+    .notAvailable => "health: there's no health store on this device"
+    .notAllowed => "health: not allowed (the user said no, or on Android the kind isn't in asuka.toml's [health])"
+  }
+}
+
+/// The platform's health store.
+native interface Store {
+  /// Whether there's a store here.
+  fn available() -> bool
+  /// Asks to read read's kinds and write write's (their names); whether
+  /// the question was shown and answered (iOS doesn't say what was
+  /// allowed to read).
+  async fn request(read: [string], write: [string]) -> bool
+  /// kind's samples in [from, to] (unix milliseconds), newest first, up
+  /// to limit (0: all).
+  async fn samples(kind: string, from: int, to: int, limit: int) -> [NativeSample]
+  /// kind's total over [from, to], for kinds that add up (steps,
+  /// distance, energy, floors, water), without counting a step twice
+  /// when two devices recorded it.
+  async fn total(kind: string, from: int, to: int) -> float
+  /// Writes a sample.
+  async fn write(kind: string, value: float, from: int, to: int)
+}
+
+/// A sample as the platform gives it: times in unix milliseconds.
+struct NativeSample {
+  value: float
+  start: int
+  end: int
+  source: string = ""
+}
+
+// Made once; none where the platform has no code for it.
+let store = try? Store()
+
+fn made() throws -> Store {
+  if let s = store {
+    if (try? s.available()) ?? false {
+      return s
+    }
+  }
+  throw HealthError.notAvailable
+}
+
+fn millis(t: time.Time) -> int = t.unixMilli()
+
+fn nameOf(k: Kind) -> string = "{k}"
+
+/// Whether the device has a health store the app can ask for.
+pub fn available() -> bool {
+  if let s = store {
+    return (try? s.available()) ?? false
+  }
+  return false
+}
+
+/// Asks the user to let the app read read's kinds and write write's
+/// (the system's sheet, once: asking again for kinds already answered
+/// shows nothing). Returns whether it was answered; iOS doesn't tell an
+/// app whether it may read (a kind it may not reads as no samples).
+pub async fn request(read: [Kind] = [], write: [Kind] = []) throws -> bool {
+  return try await made().request(read: read.map(nameOf), write: write.map(nameOf))
+}
+
+/// kind's samples between from and to, newest first: up to limit (0:
+/// all of them).
+pub async fn samples(kind: Kind, from: time.Time, to: time.Time, limit: int = 0) throws -> [Sample] {
+  let ns = try await made().samples(kind: nameOf(kind), from: millis(from), to: millis(to), limit: limit)
+  return ns.map(n => Sample(kind: kind, value: n.value, start: time.unixMilli(n.start), end: time.unixMilli(n.end), source: n.source))
+}
+
+/// kind's total between from and to, for the kinds that add up: steps,
+/// distance, activeEnergy, floors, water (the platform's own sum, which
+/// counts once what a phone and a watch both recorded).
+pub async fn total(kind: Kind, from: time.Time, to: time.Time) throws -> float {
+  return try await made().total(kind: nameOf(kind), from: millis(from), to: millis(to))
+}
+
+/// Writes a sample of kind: value over [start, end] (end left out: an
+/// instant, a weight's).
+pub async fn write(kind: Kind, value: float, start: time.Time, end: time.Time? = none) throws {
+  try await made().write(kind: nameOf(kind), value: value, from: millis(start), to: millis(end ?? start))
+}

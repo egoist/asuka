@@ -84,6 +84,7 @@ github = "you/notes"
 | `linux` | テーブル | | Linux のビルドがアプリについて書き出す情報です。[linux](#linux) を参照してください。 |
 | `web` | テーブル | | Web のビルドの設定です。[web](#web) を参照してください。 |
 | `bluetooth` | テーブル | | `platform/bluetooth` を使うアプリが、パッケージに必要なもの以上に求めるものです。バックグラウンドと、スキャンによる位置情報を指定します。[bluetooth](#bluetooth) を参照してください。 |
+| `health` | テーブル | | `platform/health` を使う Android アプリが Health Connect で読み書きするデータと、アプリのプライバシーポリシーです。[health](#health) を参照してください。 |
 | `bin` | テーブル | なし | プロジェクトのプログラムです。それぞれ専用のディレクトリにあるコマンドラインツールで、デスクトップアプリに組み込まれます。[bin](#bin) を参照してください。 |
 
 Windows のビルドに必要なのはこれだけです。署名の証明書は環境変数で渡します（[配布](shipping.md#windows)を参照）。
@@ -394,6 +395,25 @@ location = false
 | `location` | 真偽値 | `false` | アプリがスキャン（ビーコン）からユーザーの居場所を割り出す場合に指定します。Android の `BLUETOOTH_SCAN` に `neverForLocation` を付けず、`bluetooth.request()` は位置情報の権限も求めるようになります（iOS：`NSLocationWhenInUseUsageDescription`）。 |
 
 [Bluetooth](bluetooth.md#ビルドが加えるもの)を参照してください。
+
+## health
+
+`platform/health` をインポートしたアプリが、Android の Health Connect で読み書きするデータです。ここに挙げた種類ごとに、その権限（`android.permission.health.READ_STEPS`、`WRITE_STEPS`）がアプリに加わります。Google Play は宣言した健康データの権限ひとつひとつについて理由の説明を求めるため、パッケージ自身はこれらの権限を宣言しません。挙げていない種類を求めると、`health.request()` は `HealthError.notAllowed` を投げます。iOS ではどれも不要です。HealthKit はどの種類でも求められます。
+
+```toml
+[health]
+read = ["steps", "heartRate", "sleep"]
+write = ["steps"]
+privacyPolicy = "https://example.com/privacy"
+```
+
+| キー | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `read` | 文字列の配列 | なし | アプリが読み取る種類で、`health.Kind` の名前で書きます：`steps`、`distance`、`activeEnergy`、`floors`、`heartRate`、`restingHeartRate`、`oxygenSaturation`、`respiratoryRate`、`weight`、`height`、`bodyFat`、`water`、`sleep`、`mindfulness`。 |
+| `write` | 文字列の配列 | なし | アプリが書き込む種類で、書き方は同じです。 |
+| `privacyPolicy` | 文字列 | なし | アプリのプライバシーポリシーの http または https の URL です。`read` か `write` を指定するときは必須です。Health Connect の権限の画面とシステムの設定からリンクされ、ブラウザで開きます。 |
+
+Health Connect は Android 14 以降に組み込まれています。Android 9 から 13 では Google Play のアプリで、入っていなければ `health.available()` は false です。[ヘルスケアデータ](device.md#ヘルスケアデータplatformhealth)を参照してください。
 
 ## c
 

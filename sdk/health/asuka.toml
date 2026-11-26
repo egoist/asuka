@@ -1,0 +1,9 @@
+name = "platform/health"
+version = "0.1.0"
+description = "Health data: HealthKit on iOS, Health Connect on Android"
+
+# HealthKit: the capability (a release's profile must have it) and why
+# the app reads and writes (set your own in asuka.toml's [ios.usage]).
+[ios]
+entitlements = { "com.apple.developer.healthkit" = true }
+usage = { NSHealthShareUsageDescription = "To show your health data in the app.", NSHealthUpdateUsageDescription = "To save what you record to Health." }

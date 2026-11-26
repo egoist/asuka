@@ -98,6 +98,7 @@ These apply on every platform the key means something on.
 | `linux` | table | | What a Linux build says of the app. See [linux](#linux). |
 | `web` | table | | The web build's. See [web](#web). |
 | `bluetooth` | table | | What an app of `platform/bluetooth` asks beyond the package's needs: the background, the location from scans. See [bluetooth](#bluetooth). |
+| `health` | table | | What an Android app of `platform/health` reads and writes in Health Connect, and its privacy policy. See [health](#health). |
 | `bin` | tables | none | The project's programs: command-line tools in directories of their own, built into the desktop apps. See [bin](#bin). |
 
 A Windows build needs nothing beyond these: its signing certificate is
@@ -447,6 +448,33 @@ location = false
 | `location` | boolean | `false` | The app finds where the user is from its scans (beacons): Android's `BLUETOOTH_SCAN` without `neverForLocation`, and the location permission `bluetooth.request()` then asks for too (iOS: `NSLocationWhenInUseUsageDescription`). |
 
 See [Bluetooth](bluetooth.md#what-the-build-adds).
+
+## health
+
+What an app that imports `platform/health` reads and writes on Android,
+in Health Connect: each kind listed gives the app that kind's permission
+(`android.permission.health.READ_STEPS`, `WRITE_STEPS`), which the
+package doesn't declare itself, since Google Play asks an app to justify
+each health permission it declares. `health.request()` throws
+`HealthError.notAllowed` for a kind that isn't listed. iOS needs none of
+it: HealthKit asks for any kind.
+
+```toml
+[health]
+read = ["steps", "heartRate", "sleep"]
+write = ["steps"]
+privacyPolicy = "https://example.com/privacy"
+```
+
+| Key | Type | Default | What it is |
+|---|---|---|---|
+| `read` | strings | none | The kinds the app reads, by `health.Kind`'s names: `steps`, `distance`, `activeEnergy`, `floors`, `heartRate`, `restingHeartRate`, `oxygenSaturation`, `respiratoryRate`, `weight`, `height`, `bodyFat`, `water`, `sleep`, `mindfulness`. |
+| `write` | strings | none | The kinds the app writes, likewise. |
+| `privacyPolicy` | string | none | The app's privacy policy, an http or https URL, needed with `read` or `write`: Health Connect's permission screen and the system's settings link to it, and it opens in the browser. |
+
+Health Connect is built into Android 14 and later; on Android 9 to 13
+it's an app from Google Play, and without it `health.available()` is
+false. See [Health data](device.md#health-data-platformhealth).
 
 ## c
 

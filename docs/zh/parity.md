@@ -143,6 +143,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 应用完整性 | App Attest | `expo-app-integrity` | ✓ `platform/integrity`（App Attest、Play Integrity） |
 | 年龄段 | Declared Age Range | `expo-age-range` | ✓ `platform/agerange`（Declared Age Range、Play Age Signals） |
 | 传感器 | Core Motion | `expo-sensors` | ✓ `platform/sensors`（加速度计、陀螺仪、磁力计、设备运动、气压计、光线、计步器；所有平台坐标轴和单位一致；Core Motion、SensorManager、Linux 上 iio-sensor-proxy 提供的光线和方向、Generic Sensor API；Mac 和 Windows 不支持） |
+| 健康数据 | HealthKit | 社区方案（`react-native-health`、Flutter 的 `health`） | ✓ `platform/health`（HealthKit、Health Connect：步数、距离、能量、心率、睡眠、体重等；样本、合计、写入） |
 | NFC 标签 | Core NFC | `react-native-nfc-manager` | ✓ `platform/nfc`（读写 NDEF，只读标签，标签 ID，原始命令；iOS 的系统面板，Android 的读卡器模式，可以打开应用的标签；Android 上 Chrome 的 Web NFC；桌面端不支持）（见 [NFC 标签](nfc.md)） |
 | 低功耗蓝牙 | Core Bluetooth | 社区方案（`react-native-ble-plx`） | ✓ `platform/bluetooth`（扫描、连接、服务、读、写、通知；广播和 GATT 服务端；后台扫描和状态恢复；Core Bluetooth、Android 的 BLE、WinRT、BlueZ；Chromium 里 Web Bluetooth 的设备选择器，不支持外设角色）（见[蓝牙](bluetooth.md)） |
 | 图片编辑 | Core Graphics、ImageIO | `expo-image-manipulator` | ✓ `platform/imageedit`（缩放、裁剪、旋转、翻转、填充、像素化；读入 HEIC，输出 JPEG 或 PNG，方向自动摆正；Image I/O、Android 的 `Bitmap`、WIC、GdkPixbuf、canvas） |

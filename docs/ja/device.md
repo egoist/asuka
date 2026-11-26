@@ -2017,6 +2017,45 @@ test "lying face up" {
 }
 ```
 
+## ヘルスケアデータ：platform/health
+
+`platform/health` は、ユーザーの許可を得て、ヘルスケアデータを読み書きします。iOS では HealthKit、Android では Health Connect を使います。`health.request(read:, write:)` は種類（`.steps`、`.distance`、`.activeEnergy`、`.floors`、`.heartRate`、`.restingHeartRate`、`.oxygenSaturation`、`.respiratoryRate`、`.weight`、`.height`、`.bodyFat`、`.water`、`.sleep`、`.mindfulness`）の読み書きを求め、`health.samples(kind, from:, to:, limit:)` はある種類のサンプルを新しい順に読み、`health.total` は合計できる種類を合計し（スマートフォンとウォッチの両方が記録したものを二重に数えません）、`health.write` は一つ保存します。
+
+```asuka check
+import platform/health
+import std/time
+
+component Steps {
+  state steps = 0.0
+  state note = ""
+
+  Column {
+    gap: 8
+    Text("{steps.fixed(0)} steps today")
+    Text(note)
+  }
+
+  task {
+    if !health.available() {
+      note = "No health data on this device"
+      return
+    }
+    do {
+      if try await health.request(read: [.steps]) {
+        steps = try await health.total(.steps, from: time.now().startOfDay(), to: time.now())
+      }
+    } catch e {
+      note = e.message
+    }
+  }
+}
+```
+
+- 種類ごとに単位があります。メートル、キロカロリー、1 分あたりの心拍数、キログラム、リットル、そして 0 から 1 の割合（血中酸素ウェルネス、体脂肪率）です。睡眠やマインドフルネスのセッションは値が 1 のサンプルで、開始と終了で長さを表します。
+- iOS は読み取りを許可されたかどうかをアプリに伝えません。許可されていない種類は、サンプルがないものとして読めます。パッケージをインポートすると、アプリに HealthKit の機能（リリースのプロファイルに必要です）と利用目的の説明文が加わります（`[ios.usage]` で独自の文にできます）。
+- Android には Health Connect が必要です。Android 14 からは組み込みで、Android 9 から 13 ではユーザーがインストールするアプリです（それより前にはありません）。Google Play は健康に関する権限一つひとつに理由を求めるので、アプリは読み書きする種類とプライバシーポリシーを [asuka.toml の `[health]`](asuka-toml.md) に書きます。書いていない種類を求めると `HealthError.notAllowed` を投げます。
+- Mac、Windows、Linux、Web にはヘルスケアデータがなく、`available()` は false で、呼び出しは `HealthError.notAvailable` を投げます。
+
 ## 画像と動画フレームの編集：platform/imageedit
 
 `imageedit.edit(source, actions)` はプラットフォーム自身のコーデックで画像を編集し、JPEG か PNG で書き出します。カメラや写真ピッカーが返すもの（HEIC、JPEG、PNG、WebP など）を読み、向きの情報どおりに正しい向きに直すので、アップロードやキャッシュ、`Image` に向いています。アクションは順に実行されます。`.resize(width, height)`（片方を 0 にすると縦横比を保ちます）、`.crop(x, y, width, height)`、`.rotate(degrees)`、`.flipHorizontal`、`.flipVertical`、`.fill(...)`（単色で塗りつぶし、元の内容は消えます）、`.pixelate(...)` です。`imageedit.size(source)` は画像のサイズを読み、`imageedit.videoFrame(source, at:)` は動画のフレームを画像として取り出します。

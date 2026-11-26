@@ -317,6 +317,9 @@ type appConfig struct {
 		// out of them.
 		Location bool `json:"location"`
 	} `json:"bluetooth"`
+	// Health is what an app of platform/health asks of Android's Health
+	// Connect: the kinds it reads and writes, its privacy policy (health.go).
+	Health healthConfig `json:"health"`
 	// Web is what a web build needs (cmd/asuka/web.go).
 	Web struct {
 		// VapidPublicKey is the app server's VAPID public key (base64url, an
@@ -432,6 +435,9 @@ func loadConfig(dir string) (*appConfig, error) {
 	}
 	if err := c.NFC.check(); err != nil {
 		return nil, fmt.Errorf("asuka.toml: nfc: %v", err)
+	}
+	if err := c.Health.check(); err != nil {
+		return nil, fmt.Errorf("asuka.toml: health: %v", err)
 	}
 	if _, err := c.updates(); err != nil {
 		return nil, err
@@ -556,12 +562,13 @@ const bluetoothPackage = "platform/bluetooth"
 
 // permissionsFor adds what the app's own asuka.toml asks of the
 // packages deps (the program's imports, by import path) beyond their
-// manifests (depManifests): Apple Pay's merchant IDs, the nfc and
-// bluetooth tables. nil deps: every package's (the player runs any app).
+// manifests (depManifests): Apple Pay's merchant IDs, the nfc,
+// bluetooth and health tables. nil deps: every package's (the player runs any app).
 // Run after depManifests, whose permissions these change.
 func (c *appConfig) permissionsFor(deps []string) {
 	c.payEntitlement(deps)
 	c.addNFC(deps)
+	c.healthExtras(deps)
 	if deps == nil || slices.Contains(deps, bluetoothPackage) {
 		c.bluetoothExtras()
 	}
