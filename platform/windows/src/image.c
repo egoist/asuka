@@ -192,8 +192,23 @@ static char *errorf(const char *fmt, ...) {
 	return wh_strdup(buf);
 }
 
-// http_get fetches a URL (redirects followed) into *out: NULL, or why not.
+// images_dir is where images fetched over http(s) are kept across
+// launches: the app's caches' asuka-images (dsk_image_cache_*).
+static const char *images_dir(void) {
+	static char *dir;
+	static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
+	BOOL pending;
+	if (InitOnceBeginInitialize(&once, 0, &pending, NULL) && pending) {
+		dir = dsk_join(asuka_desktop_cache_dir(), "asuka-images");
+		InitOnceComplete(&once, 0, NULL);
+	}
+	return dir;
+}
+
+// http_get fetches a URL (redirects followed) into *out, from the disk's
+// cache if it's there, keeping it there if it may: NULL, or why not.
 static char *http_get(const char *url, uint8_t **out, size_t *len) {
+	if ((*out = dsk_image_cache_read(images_dir(), url, len))) return NULL;
 	asuka_response r;
 	asuka_error e = {0};
 	if (!asuka_fetch("GET", url, NULL, 0, NULL, 0, 0, NULL, &r, &e)) {
@@ -207,6 +222,10 @@ static char *http_get(const char *url, uint8_t **out, size_t *len) {
 		asuka_response_free(&r);
 		return err;
 	}
+	const char *cc = NULL;
+	for (size_t i = 0; i < r.nheaders; i++)
+		if (!strcmp(r.names[i], "cache-control")) cc = r.values[i];
+	if (dsk_image_cache_storable(url, cc)) dsk_image_cache_write(images_dir(), url, r.body.data, r.body.len);
 	*out = r.body.data, *len = r.body.len;
 	r.body.data = NULL;
 	asuka_response_free(&r);

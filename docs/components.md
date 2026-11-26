@@ -668,9 +668,10 @@ readers read it as a progress indicator with its percentage.
 ## Images
 
 `Image` shows a picture. The platform loads and decodes it off the
-main thread, and caches it in memory. iOS and Android keep an image that
-came over http(s) on disk too, across launches; the desktops keep
-it in memory only, and a browser in its own cache.
+main thread, and caches it in memory. One that came over http(s) is
+kept on disk too, across launches (up to 256 MB in the app's caches,
+the least recently used going first), unless its response says
+`no-store`; a browser keeps it in its own cache.
 
 ```asuka
 struct Photo {

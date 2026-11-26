@@ -12,6 +12,8 @@
 // frame on GLib timeouts while it isn't Paused.
 #include "host.h"
 
+#include <stdatomic.h>
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -145,10 +147,25 @@ static bool still(void *ctx, const uint8_t *data, size_t n, uint8_t **rgba, int 
 	return true;
 }
 
-// read_source reads an image's bytes: an http(s) URL with libsoup, a
+// images_dir is where images fetched over http(s) are kept across
+// launches: the app's caches' asuka-images (dsk_image_cache_*).
+static const char *images_dir(void) {
+	static _Atomic(char *) dir;
+	char *d = atomic_load(&dir);
+	if (d) return d;
+	char *made = dsk_join(lx_cache_dir(), "asuka-images"), *none = NULL;
+	if (!atomic_compare_exchange_strong(&dir, &none, made)) free(made);  // another thread's first
+	return atomic_load(&dir);
+}
+
+// read_source reads an image's bytes: an http(s) URL with libsoup (from
+// the disk's cache when it's there, kept there when it may be), a
 // file:// URL or a path, an asset's (relative to the assets). Any thread.
 static GBytes *read_source(const char *src, char **err) {
 	if (!strncmp(src, "http://", 7) || !strncmp(src, "https://", 8)) {
+		size_t kept = 0;
+		uint8_t *cached = dsk_image_cache_read(images_dir(), src, &kept);
+		if (cached) return g_bytes_new_take(cached, kept);
 		if (!soup_session_new) {
 			*err = g_strdup_printf("%s: libsoup isn't installed to fetch it", src);
 			return NULL;
@@ -165,6 +182,12 @@ static GBytes *read_source(const char *src, char **err) {
 			*err = g_strdup_printf("%s: %u %s", src, status, m ? S(soup_message_get_reason_phrase(m)) : "");
 			if (b) g_bytes_unref(b);
 			b = NULL;
+		} else if (b) {
+			SoupMessageHeaders *hdrs = soup_message_get_response_headers(m);
+			const char *cc = hdrs ? soup_message_headers_get_one(hdrs, "Cache-Control") : NULL;
+			gsize n = 0;
+			const uint8_t *data = g_bytes_get_data(b, &n);
+			if (dsk_image_cache_storable(src, cc)) dsk_image_cache_write(images_dir(), src, data, n);
 		}
 		if (m) g_object_unref(m);
 		g_object_unref(s);

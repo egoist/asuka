@@ -10,6 +10,7 @@
 // ImageIO's CGAnimateImageDataWithBlock, which times and loops it as the
 // file says, while it isn't Paused.
 import AppKit
+import CryptoKit
 import ImageIO
 #if canImport(AsukaOps)
 import AsukaOps
@@ -111,18 +112,28 @@ enum AsukaImageLoader {
                 finish(.failure(AsukaModuleError("can't decode \(src)")))
                 return
             }
-            URLSession.shared.dataTask(with: url) { data, resp, err in
-                if let err {
-                    finish(.failure(err))
+            // Kept across launches, as iOS's are (AsukaDiskCache).
+            let disk = AsukaDiskCache.images
+            queue.async {
+                if let d = disk.read(src), case .success = decode(d, src) {
+                    finish(.success(d))
                     return
                 }
-                if let h = resp as? HTTPURLResponse, h.statusCode / 100 != 2 {
-                    let status = "\(h.statusCode) " + HTTPURLResponse.localizedString(forStatusCode: h.statusCode)
-                    finish(.failure(AsukaModuleError("\(src): \(status)")))
-                    return
-                }
-                finish(.success(data ?? Data()))
-            }.resume()
+                URLSession.shared.dataTask(with: url) { data, resp, err in
+                    if let err {
+                        finish(.failure(err))
+                        return
+                    }
+                    if let h = resp as? HTTPURLResponse, h.statusCode / 100 != 2 {
+                        let status = "\(h.statusCode) " + HTTPURLResponse.localizedString(forStatusCode: h.statusCode)
+                        finish(.failure(AsukaModuleError("\(src): \(status)")))
+                        return
+                    }
+                    let d = data ?? Data()
+                    if let h = resp as? HTTPURLResponse, !d.isEmpty, AsukaDiskCache.storable(url, h) { disk.write(src, d) }
+                    finish(.success(d))
+                }.resume()
+            }
             return
         }
         queue.async {
@@ -518,5 +529,78 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
             j["template"] = iv.image?.isTemplate ?? false
         }
         d["image"] = j
+    }
+}
+
+/// Files kept across launches in the app's caches (ASUKA_CACHE, else
+/// Caches/<its ID>), the least recently used going first past a limit:
+/// iOS's AsukaDiskCache, for images fetched over http(s).
+final class AsukaDiskCache: @unchecked Sendable {
+    /// Images fetched over http(s), up to 256 MB.
+    static let images = AsukaDiskCache("asuka-images", limit: 256 << 20)
+
+    let dir: URL
+    let limit: Int
+    private let lock = NSLock()
+    private var trimming = false
+
+    init(_ name: String, limit: Int) {
+        let env = ProcessInfo.processInfo.environment["ASUKA_CACHE"] ?? ""
+        let base: URL
+        if !env.isEmpty {
+            base = URL(fileURLWithPath: env, isDirectory: true)
+        } else {
+            var app = Bundle.main.bundleIdentifier ?? ""
+            if app.isEmpty { app = "asuka" }
+            base = (FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)).appendingPathComponent(app, isDirectory: true)
+        }
+        dir = base.appendingPathComponent(name, isDirectory: true)
+        self.limit = limit
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+
+    private func file(_ key: String) -> URL {
+        dir.appendingPathComponent(SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined())
+    }
+
+    func read(_ key: String) -> Data? {
+        let f = file(key)
+        guard let d = try? Data(contentsOf: f) else { return nil }
+        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: f.path) // used now
+        return d
+    }
+
+    func write(_ key: String, _ data: Data) {
+        try? data.write(to: file(key), options: .atomic)
+        lock.lock()
+        let start = !trimming
+        trimming = true
+        lock.unlock()
+        // Once a launch, after it has written: what's past the limit goes.
+        if start { DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) { self.trim() } }
+    }
+
+    func trim() {
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys) else { return }
+        var list = files.compactMap { f -> (URL, Int, Date)? in
+            guard let v = try? f.resourceValues(forKeys: Set(keys)) else { return nil }
+            return (f, v.fileSize ?? 0, v.contentModificationDate ?? .distantPast)
+        }
+        var total = list.reduce(0) { $0 + $1.1 }
+        list.sort { $0.2 < $1.2 }
+        for (f, size, _) in list where total > limit {
+            try? FileManager.default.removeItem(at: f)
+            total -= size
+        }
+    }
+
+    /// Whether a response may be kept: not one that says not to, nor one
+    /// from this machine (asuka dev's assets, which change).
+    static func storable(_ url: URL, _ resp: HTTPURLResponse) -> Bool {
+        if let cc = resp.value(forHTTPHeaderField: "Cache-Control")?.lowercased(), cc.contains("no-store") { return false }
+        let h = url.host ?? ""
+        return !(h == "localhost" || h == "127.0.0.1" || h == "::1")
     }
 }

@@ -158,6 +158,27 @@ func writeAnimations(t *testing.T, dir string) {
 	}
 }
 
+// TestImageCache runs the images' cache's C (src/imagecache.c) on a
+// directory of its own: what's written reads back, names shared by two
+// URLs miss, the least recently used go past the limit.
+func TestImageCache(t *testing.T) {
+	cc, err := cbuild.Find()
+	if err != nil {
+		t.Skip(err)
+	}
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "imagecache_test")
+	args := append(append([]string{}, cc.Args...), cbuild.Flags...)
+	args = append(args, "-Iinclude", "-g", "-fsanitize=address,undefined", "-fno-sanitize-recover=undefined", "src/imagecache.c", "src/files.c", "test/imagecache_test.c", "-o", exe)
+	if out, err := exec.Command(cc.Path, args...).CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	out, err := exec.Command(exe, filepath.Join(dir, "cache")).CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "ok") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
 // TestAnim decodes GIFs with the C (src/animimage.c) and plays them, frame by
 // frame, as internal/animimage does in Go: their canvases the same.
 func TestAnim(t *testing.T) {
