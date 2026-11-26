@@ -1,0 +1,48 @@
+import std/json
+import std/time
+
+fn entries(kind: string, es: [Entry]) throws -> [json.Value] {
+  let v = try json.parse(wire(kind, es))
+  return v.get("entries")?.asArray() ?? []
+}
+
+test "the template's entry, in time order" {
+  let later = time.unix(2000)
+  let es = try entries("energy", [
+    Entry(title: "Later", at: later),
+    Entry(title: "Now", value: "72%", progress: 0.72, showProgress: true, until: time.unix(1000)),
+  ])
+  expect(es.count() == 2)
+  expect(es[0].get("title")?.asString() == "Now")
+  expect(es[0].get("untilMs")?.asInt() == 1000000)
+  expect(es[0].get("layout")?.isNull() ?? true)
+  expect(es[1].get("atMs")?.asInt() == 2000000)
+}
+
+test "a layout's nodes and modifiers on the wire" {
+  let l = column([
+    row([symbol("bolt.fill", size: 14, color: .yellow), text("Energy", font: .caption.bold(), color: #7c3aed)]),
+    spacer(min: 4),
+    text("72%", font: Font(size: 34, weight: .bold), lines: 1, align: .end),
+    progress(0.72, color: .green).frame(height: 6),
+    timer(until: time.unix(60), font: .headline),
+  ], spacing: 6, align: .stretch).padding([8, 12]).background(.secondaryBackground, radius: 12).link("app://energy")
+  let es = try entries("energy", [Entry(layout: l, sizes: [.small: gauge(0.5, label: "50").fill()])])
+  let n = es[0].get("layout")
+  expect(n?.get("t")?.asString() == "column")
+  expect(n?.get("spacing")?.asFloat() == 6.0 && n?.get("align")?.asString() == "stretch")
+  expect(n?.get("pt")?.asFloat() == 8.0 && n?.get("ps")?.asFloat() == 12.0 && n?.get("pe")?.asFloat() == 12.0)
+  expect(n?.get("bg")?.asString() == ".secondaryBackground" && n?.get("radius")?.asFloat() == 12.0)
+  expect(n?.get("url")?.asString() == "app://energy")
+  let c = n?.get("c")?.asArray() ?? []
+  expect(c.map(x => x.get("t")?.asString() ?? "") == ["row", "spacer", "text", "progress", "timer"])
+  let r = c[0].get("c")?.asArray() ?? []
+  expect(r[0].get("name")?.asString() == "bolt.fill" && r[0].get("color")?.asString() == ".yellow")
+  expect(r[1].get("style")?.asString() == "caption" && r[1].get("weight")?.asString() == "bold" && r[1].get("color")?.asString() == "#7c3aed")
+  expect(c[1].get("size")?.asFloat() == 4.0)
+  expect(c[2].get("size")?.asFloat() == 34.0 && c[2].get("lines")?.asInt() == 1 && c[2].get("textAlign")?.asString() == "end")
+  expect(c[3].get("h")?.asFloat() == 6.0 && c[3].get("value")?.asFloat() == 0.72)
+  expect(c[4].get("untilMs")?.asInt() == 60000 && c[4].get("style")?.asString() == "headline")
+  let small = es[0].get("sizes")?.get("small")
+  expect(small?.get("t")?.asString() == "gauge" && small?.get("text")?.asString() == "50" && small?.get("fill")?.asBool() == true)
+}

@@ -150,7 +150,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 読み上げ | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech`（キュー、声、ピッチ、速度、一時停止。AVSpeechSynthesizer、TextToSpeech、SAPI、Speech Dispatcher、`speechSynthesis`） |
 | 連絡先 | Contacts、ContactsUI | `expo-contacts` | ✓ `platform/contacts`（`pick()` と新規連絡先の画面は許可なしで、アドレス帳は許可を得て） |
 | カレンダー | EventKit、EventKitUI | `expo-calendar` | ✓ `platform/calendar`（イベントの編集画面は許可なしで、カレンダーとイベントは許可を得て。EventKit、Calendar Provider） |
-| ホーム画面ウィジェット | WidgetKit | `expo-widgets` | ✓ `platform/widget` と `asuka.toml` の `widgets`（すべてのサイズに一つのテンプレート、iOS ではロック画面のものも。タイムライン、カウントダウン、URL を開くタップ。iOS と Android） |
+| ホーム画面ウィジェット | WidgetKit | `expo-widgets` | ✓ `platform/widget` と `asuka.toml` の `widgets`（すべてのサイズに一つのテンプレート、iOS ではロック画面のものも。またはアプリ独自のレイアウト：列、行、重ね、テキスト、シンボル、画像、プログレス、ゲージ、タイマー、リンク。タイムライン、カウントダウン、URL を開くタップ。iOS と Android） |
 | ライブアクティビティ | ActivityKit | `expo-live-activity` | ✓ `platform/liveactivity`（iOS：ロック画面と Dynamic Island。Android 16 の Live Update。カウントダウン、進捗、アラート、サーバーからの更新のためのプッシュトークン） |
 | App Intents、ショートカット | App Intents、App Shortcuts | — | ✓ `asuka.toml` の `shortcuts`（iOS：Siri のフレーズ付きの App Shortcuts で、Spotlight とショートカットに出る。パラメーターはテキスト、数値、スイッチ、選択肢、アプリ自身のデータ（`platform/shortcuts` のエンティティ）で、選択肢とエンティティはフレーズに入れられる。Android：ランチャーのショートカットで、データ一つにつき一つ） |
 | カスタムフォント | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`、`Font(family:)` |
@@ -242,4 +242,4 @@ MyGo にあって Asuka にまだないものは次のとおりです。書類�
 
 ## 未対応のもの
 
-アプリでの需要が高い順に、アプリ独自のレイアウトのウィジェット（いまはテンプレートが一つだけです）、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）です。Linux では音声のテキスト化が未対応です。
+アプリでの需要が高いものとして、OTA アップデート（EAS Update のようなもの。リリースビルドにはアプリがコンパイルされて組み込まれています）があります。Linux では音声のテキスト化が未対応です。

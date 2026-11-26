@@ -1,0 +1,188 @@
+// A widget's own layout: what the app draws in place of Entry's template,
+// as a tree the platform's widget system lays out and draws (WidgetKit's
+// SwiftUI on iOS, an App Widget's RemoteViews on Android), since a widget
+// isn't the app running: it's what the app last set, shown by the home
+// screen.
+
+import platform/host
+import std/time
+
+/// A part of a widget's layout: a column, a row, layers, text, a symbol,
+/// an image, a progress bar, a gauge, a timer or a spacer, made by this
+/// package's functions, with its modifiers (padding, background, frame,
+/// fill, link, opacity).
+///
+///   widget.column([
+///     widget.row([widget.symbol("bolt.fill", color: .yellow), widget.text("Energy", font: .caption.bold())]),
+///     widget.spacer(),
+///     widget.text("72%", font: Font(size: 34, weight: .bold)),
+///     widget.progress(0.72, color: .green),
+///   ], spacing: 6)
+pub struct Layout {
+  private node: Node
+
+  /// Space around it, inside its background.
+  fn padding(edges: Edges) -> Layout {
+    var n = node
+    n.pt = edges.top
+    n.pb = edges.bottom
+    n.ps = if edges.start > 0 { edges.start } else { edges.left }
+    n.pe = if edges.end > 0 { edges.end } else { edges.right }
+    return Layout(node: n)
+  }
+
+  /// A color behind it (.clear: none), its corners rounded by radius, and
+  /// its content's (an image's).
+  fn background(color: Color, radius: float = 0) -> Layout {
+    var n = node
+    n.bg = color.hex()
+    n.radius = radius
+    return Layout(node: n)
+  }
+
+  /// Its size, in points (0: its own).
+  fn frame(width: float = 0, height: float = 0) -> Layout {
+    var n = node
+    n.w = width
+    n.h = height
+    return Layout(node: n)
+  }
+
+  /// It takes the space its column or row has left (shared with the
+  /// others that fill), and its layers' width and height.
+  fn fill() -> Layout {
+    var n = node
+    n.fill = true
+    return Layout(node: n)
+  }
+
+  /// What the app opens when it's tapped (ui.onOpenURL): one widget can
+  /// have several. iOS's small widgets open one: the entry's url.
+  fn link(url: string) -> Layout {
+    var n = node
+    n.url = url
+    return Layout(node: n)
+  }
+
+  /// Drawn at a times its opacity (0 to 1).
+  fn opacity(a: float) -> Layout {
+    var n = node
+    n.opacity = a
+    return Layout(node: n)
+  }
+}
+
+/// A layout on the wire: one kind of node, its fields as it takes them.
+struct Node {
+  t: string
+  c: [Node] = []
+  spacing: float = 0
+  // A column's and a row's cross axis; layers' horizontal and vertical.
+  align: string = ""
+  valign: string = ""
+  text: string = ""
+  style: string = ""
+  size: float = 0
+  weight: string = ""
+  color: string = ""
+  lines: int = 0
+  textAlign: string = ""
+  name: string = ""
+  mode: string = ""
+  value: float = 0
+  untilMs: int = 0
+  pt: float = 0
+  pb: float = 0
+  ps: float = 0
+  pe: float = 0
+  bg: string = ""
+  radius: float = 0
+  w: float = 0
+  h: float = 0
+  fill: bool = false
+  url: string = ""
+  opacity: float = 1
+}
+
+fn alignName(a: Align) -> string = match a {
+  .start => "start"
+  .end => "end"
+  .stretch => "stretch"
+  _ => "center"
+}
+
+fn colorName(c: Color?) -> string = c?.hex() ?? ""
+
+fn styled(n: Node, font: Font) -> Node {
+  var o = n
+  o.style = "{font.style}"
+  o.size = font.size
+  o.weight = "{font.weight}"
+  return o
+}
+
+fn kids(ls: [Layout]) -> [Node] = ls.map(l => l.node)
+
+/// l's node, for the entries' wire.
+fn nodeOf(l: Layout) -> Node = l.node
+
+/// Its children one above the other, spacing points apart, lined up on
+/// align (.start: the leading edge).
+pub fn column(children: [Layout], spacing: float = 4, align: Align = .start) -> Layout =
+  Layout(node: Node(t: "column", c: kids(children), spacing: spacing, align: alignName(align)))
+
+/// Its children side by side, spacing points apart, lined up on align.
+pub fn row(children: [Layout], spacing: float = 4, align: Align = .center) -> Layout =
+  Layout(node: Node(t: "row", c: kids(children), spacing: spacing, align: alignName(align)))
+
+/// Its children on top of one another, the last on top, each placed at
+/// x and y in the layers' box (the largest of them).
+pub fn layers(children: [Layout], x: Align = .center, y: Align = .center) -> Layout =
+  Layout(node: Node(t: "layers", c: kids(children), align: alignName(x), valign: alignName(y)))
+
+/// Text: its font (the platform's text styles scale with the user's text
+/// size), its color (none: the label's), at most lines lines (0: as many
+/// as fit).
+pub fn text(s: string, font: Font = .body, color: Color? = none, lines: int = 0, align: TextAlign = .start) -> Layout =
+  Layout(node: styled(Node(t: "text", text: s, color: colorName(color), lines: lines, textAlign: "{align}"), font))
+
+/// An SF Symbol (iOS), the Material symbol for it on Android, size points
+/// tall (0: the text's).
+pub fn symbol(name: string, size: float = 0, color: Color? = none) -> Layout =
+  Layout(node: Node(t: "symbol", name: name, size: size, color: colorName(color)))
+
+/// One of the images setImage keeps, as mode fits it in its frame (give
+/// it a frame or fill: an image has no size of its own here).
+pub fn image(name: string, mode: ImageMode = .fill) -> Layout = Layout(node: Node(t: "image", name: name, mode: "{mode}"))
+
+/// A bar filled to value (0 to 1).
+pub fn progress(value: float, color: Color? = none) -> Layout =
+  Layout(node: Node(t: "progress", value: value, color: colorName(color)))
+
+/// A ring filled to value (0 to 1), label in it.
+pub fn gauge(value: float, label: string = "", color: Color? = none) -> Layout =
+  Layout(node: Node(t: "gauge", value: value, text: label, color: colorName(color)))
+
+/// A count down to until, and up from it once it's passed, ticking on its
+/// own while the app sleeps.
+pub fn timer(until: time.Time, font: Font = .body, color: Color? = none) -> Layout =
+  Layout(node: styled(Node(t: "timer", untilMs: until.unixMilli(), color: colorName(color)), font))
+
+/// Space that grows to push what's after it to the end of its column or
+/// row, at least min points.
+pub fn spacer(min: float = 0) -> Layout = Layout(node: Node(t: "spacer", size: min))
+
+/// A line between parts of a column or a row.
+pub fn divider() -> Layout = Layout(node: Node(t: "divider"))
+
+/// Keeps an image (PNG or JPEG data) for the widgets' image(name), where
+/// the widgets read it (iOS: the App Group's container). Setting a name
+/// again replaces it.
+pub fn setImage(name: string, data: bytes) {
+  host.send("widget", "image", name.bytes().concat(bytes([0])).concat(data))
+}
+
+/// Deletes an image setImage kept.
+pub fn removeImage(name: string) {
+  host.send("widget", "image", name.bytes())
+}

@@ -2040,9 +2040,44 @@ fn showToday(meeting: time.Time) {
 }
 ```
 
-小组件会用平台的模板显示它的 `Entry`，并按尺寸排版：`title`（带上 `symbol`，以 `tint` 着色）、大号的 `value`、`body`、`progress` 进度条、到 `until`（一个 `time.Time`）为止的实时倒计时，以及 `caption`。在应用设置新的内容之前，它会一直显示当前内容，不管应用是否在运行；点按小组件会用它的 `url` 打开应用（由应用的 `openURL` 事件接收）。`widget.setAll(kind, entries)` 中的条目各自带上 `at`，就构成了一条时间线：每个条目从各自的时间开始显示。`widget.clear(kind)` 用来清空小组件。
+小组件会用平台的模板（或者下面所说的应用自己的布局）显示它的 `Entry`，并按尺寸排版：`title`（带上 `symbol`，以 `tint` 着色）、大号的 `value`、`body`、`progress` 进度条、到 `until`（一个 `time.Time`）为止的实时倒计时，以及 `caption`。在应用设置新的内容之前，它会一直显示当前内容，不管应用是否在运行；点按小组件会用它的 `url` 打开应用（由应用的 `openURL` 事件接收）。`widget.setAll(kind, entries)` 中的条目各自带上 `at`，就构成了一条时间线：每个条目从各自的时间开始显示。`widget.clear(kind)` 用来清空小组件。
 
 尺寸有 `small`、`medium`、`large`，以及 iOS 的 `extraLarge`（iPad）和锁屏上的 `circular`、`rectangular`、`inline`。iOS：CLI 会把一个 WidgetKit 扩展构建进应用，并让它与应用共享一个 App Group（发布构建需要开启 App Groups 功能，还需要为扩展的 ID，即应用的 ID 加上 `.widgets`，准备一个描述文件）。Android：每种小组件对应一个 App Widget，使用 Material You 配色，尺寸按启动器的网格单元计算。桌面端和 Web 没有小组件：`widget.set` 在这些平台上什么也不做。
+
+### 应用自己的布局
+
+`Entry` 的 `layout` 让小组件按应用自己的布局来画，取代模板。它是一棵由小组件能显示的部件组成的树，由平台来排版和绘制（iOS 扩展里是 SwiftUI 的视图，Android 上是 App Widget 的视图）：小组件是主屏幕根据应用最后设置的内容画出来的，而不是由运行中的应用画的。`sizes` 可以为某个尺寸单独指定一个布局。
+
+```asuka check
+import std/fs
+import std/time
+import platform/widget
+
+fn energy(now: time.Time) -> widget.Layout = widget.row([
+  widget.image("cover").frame(width: 56, height: 56).background(.clear, radius: 12),
+  widget.column([
+    widget.row([widget.symbol("bolt.fill", size: 13, color: .orange), widget.text("Energy", font: .caption.bold())]),
+    widget.text("72%", font: Font(size: 30, weight: .bold), lines: 1),
+    widget.progress(0.72, color: .orange),
+    widget.text("Updated {now.format("HH:mm")}", font: .caption2, color: .secondaryLabel),
+  ], spacing: 4, align: .stretch).fill(),
+], spacing: 12)
+
+async fn showEnergy() throws {
+  widget.setImage("cover", try await fs.readAsset("cover.png"))
+  let now = time.now()
+  widget.set("energy", widget.Entry(url: "myapp://energy", layout: energy(now), sizes: [
+    .small: widget.column([
+      widget.text("Energy", font: .caption.bold()),
+      widget.spacer(),
+      widget.gauge(0.72, label: "72", color: .orange),
+      widget.timer(until: now + 25min, font: .footnote),
+    ]),
+  ]))
+}
+```
+
+部件有：`column`、`row`（各自带 `spacing` 和 `align`）和 `layers`（一层叠在另一层上，按 `x` 和 `y` 摆放）；`text`（一个 `Font`、一个 `Color`，最多 `lines` 行）；`symbol`（一个 SF Symbol，在 Android 上是对应的 Material 符号）；`image`（`widget.setImage` 保存的图片，存放在小组件能读到的地方）；`progress`（进度条）和 `gauge`（带标签的圆环）；`timer`（倒数到某个时间，过了之后再正向计时，小组件休眠时也会走）；`spacer` 和 `divider`。每个部件都可以加上 `padding`、`background`（一种颜色，可以带圆角）、`frame`（以点为单位的尺寸）、`fill`（占满所在列或行剩下的空间）、`link`（点按小组件的这一部分时应用打开的 URL；iOS 的小尺寸小组件只会打开条目的 `url`）和 `opacity`。语义颜色（`.label`、`.secondaryLabel`、`.accent` 等）跟随主屏幕的浅色或深色模式；文字样式跟随用户设置的文字大小。
 
 ## 实时活动：platform/liveactivity
 

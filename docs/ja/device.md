@@ -2040,9 +2040,44 @@ fn showToday(meeting: time.Time) {
 }
 ```
 
-ウィジェットは、プラットフォームのテンプレートを使い、サイズに合わせたレイアウトで `Entry` を表示します。表示されるのは、`title`（`symbol` 付きで、`tint` の色）、大きな `value`、`body`、`progress` バー、`until`（`time.Time`）までリアルタイムで進むカウントダウン、`caption` です。アプリが別のエントリーを設定するまで、アプリが動いているかどうかにかかわらず表示され続けます。タップすると、その `url` でアプリが開きます（アプリの `openURL` で受け取ります）。`widget.setAll(kind, entries)` に、それぞれ `at` を持つエントリーを渡すとタイムラインになり、各エントリーはその時刻から表示されます。`widget.clear(kind)` でウィジェットを空にします。
+ウィジェットは、プラットフォームのテンプレート（または後述のアプリ独自のレイアウト）を使い、サイズに合わせたレイアウトで `Entry` を表示します。表示されるのは、`title`（`symbol` 付きで、`tint` の色）、大きな `value`、`body`、`progress` バー、`until`（`time.Time`）までリアルタイムで進むカウントダウン、`caption` です。アプリが別のエントリーを設定するまで、アプリが動いているかどうかにかかわらず表示され続けます。タップすると、その `url` でアプリが開きます（アプリの `openURL` で受け取ります）。`widget.setAll(kind, entries)` に、それぞれ `at` を持つエントリーを渡すとタイムラインになり、各エントリーはその時刻から表示されます。`widget.clear(kind)` でウィジェットを空にします。
 
 サイズは `small`、`medium`、`large`、そして iOS の `extraLarge`（iPad）と、ロック画面の `circular`、`rectangular`、`inline` です。iOS では、CLI がアプリに組み込む WidgetKit 拡張機能になり、アプリと App Group を共有します。リリースビルドには App Groups ケイパビリティと、拡張機能の ID（アプリの ID に `.widgets` を付けたもの）のプロビジョニングプロファイルが必要です。Android では、種類ごとに一つの App Widget になり、Material You の色を使い、ランチャーのセルに合わせたサイズになります。デスクトップと Web にはウィジェットがないので、`widget.set` は何もしません。
+
+### アプリ独自のレイアウト
+
+`Entry` の `layout` を使うと、テンプレートの代わりにアプリが決めたレイアウトでウィジェットを描きます。ウィジェットに表示できる部品のツリーで、プラットフォームがレイアウトして描画します（iOS の拡張では SwiftUI のビュー、Android では App Widget のビュー）。ウィジェットは動いているアプリが描くのではなく、アプリが最後に設定した内容をホーム画面が描くからです。`sizes` で、サイズごとに専用のレイアウトを指定できます。
+
+```asuka check
+import std/fs
+import std/time
+import platform/widget
+
+fn energy(now: time.Time) -> widget.Layout = widget.row([
+  widget.image("cover").frame(width: 56, height: 56).background(.clear, radius: 12),
+  widget.column([
+    widget.row([widget.symbol("bolt.fill", size: 13, color: .orange), widget.text("Energy", font: .caption.bold())]),
+    widget.text("72%", font: Font(size: 30, weight: .bold), lines: 1),
+    widget.progress(0.72, color: .orange),
+    widget.text("Updated {now.format("HH:mm")}", font: .caption2, color: .secondaryLabel),
+  ], spacing: 4, align: .stretch).fill(),
+], spacing: 12)
+
+async fn showEnergy() throws {
+  widget.setImage("cover", try await fs.readAsset("cover.png"))
+  let now = time.now()
+  widget.set("energy", widget.Entry(url: "myapp://energy", layout: energy(now), sizes: [
+    .small: widget.column([
+      widget.text("Energy", font: .caption.bold()),
+      widget.spacer(),
+      widget.gauge(0.72, label: "72", color: .orange),
+      widget.timer(until: now + 25min, font: .footnote),
+    ]),
+  ]))
+}
+```
+
+部品は次のとおりです。`column` と `row`（それぞれ `spacing` と `align` を持ちます）、`layers`（重ねて表示し、`x` と `y` で配置します）。`text`（`Font` と `Color`、最大 `lines` 行）。`symbol`（SF Symbol。Android では対応する Material のシンボル）。`image`（`widget.setImage` が保存した画像。ウィジェットが読める場所に置かれます）。`progress`（バー）と `gauge`（ラベル付きのリング）。`timer`（ある時刻までのカウントダウンで、過ぎるとそこからカウントアップします。ウィジェットがスリープしていても進みます）。`spacer` と `divider`。どの部品にも `padding`、`background`（色。角を丸められます）、`frame`（ポイント単位のサイズ）、`fill`（列や行の残りのスペースを占めます）、`link`（ウィジェットのその部分をタップしたときにアプリが開く URL。iOS の小さいウィジェットはエントリーの `url` だけを開きます）、`opacity` を付けられます。セマンティックカラー（`.label`、`.secondaryLabel`、`.accent` など）はホーム画面のライトモードとダークモードに従い、テキストスタイルはユーザーの文字サイズに従います。
 
 ## ライブアクティビティ：platform/liveactivity
 

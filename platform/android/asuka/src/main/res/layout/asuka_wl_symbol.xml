@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- platform/widget's Layout: a symbol (WidgetLayout.kt adds and sets it). -->
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/asuka_wl"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:importantForAccessibility="no"
+    android:scaleType="fitCenter"
+    android:adjustViewBounds="true" />

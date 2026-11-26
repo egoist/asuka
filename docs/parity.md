@@ -169,7 +169,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Text to speech | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech` (a queue, voices, pitch, rate, pause; AVSpeechSynthesizer, TextToSpeech, SAPI, Speech Dispatcher, `speechSynthesis`) |
 | Contacts | Contacts, ContactsUI | `expo-contacts` | ✓ `platform/contacts` (`pick()` and the new contact form without permission; the address book with it) |
 | Calendars | EventKit, EventKitUI | `expo-calendar` | ✓ `platform/calendar` (the event form without permission; calendars and events with it; EventKit, the Calendar Provider) |
-| Home screen widgets | WidgetKit | `expo-widgets` | ✓ `platform/widget` and `asuka.toml`'s `widgets` (a template in every size, the lock screen's on iOS; timelines, countdowns, taps with a URL; iOS and Android) |
+| Home screen widgets | WidgetKit | `expo-widgets` | ✓ `platform/widget` and `asuka.toml`'s `widgets` (a template in every size, the lock screen's on iOS, or the app's own layout: columns, rows, layers, text, symbols, images, progress, gauges, timers, links; timelines, countdowns, taps with a URL; iOS and Android) |
 | Live Activities | ActivityKit | `expo-live-activity` | ✓ `platform/liveactivity` (iOS: the lock screen and the Dynamic Island; Android 16's Live Updates; countdowns, progress, alerts, push tokens for a server's updates) |
 | App Intents, shortcuts | App Intents, App Shortcuts | — | ✓ `asuka.toml`'s `shortcuts` (iOS: App Shortcuts with Siri phrases, in Spotlight and Shortcuts, and parameters: text, numbers, switches, options, and the app's own things (`platform/shortcuts`' entities), which a phrase can name; Android: launcher shortcuts, one for each of those things) |
 | Custom fonts | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`, `Font(family:)` |
@@ -273,7 +273,6 @@ mouse through all of it, or none).
 
 ## Not yet
 
-In order of what apps miss most: widgets of the app's own layout (one
-template for now), and over-the-air updates
+In order of what apps miss most: over-the-air updates
 (EAS Update's: a release has the app compiled into it).
 On Linux, speech to text.

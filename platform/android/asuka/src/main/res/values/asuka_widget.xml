@@ -7,4 +7,9 @@
     <color name="asuka_widget_on_surface_variant">#FF49454F</color>
     <color name="asuka_widget_accent">#FF6750A4</color>
     <dimen name="asuka_widget_radius">16dp</dimen>
+    <color name="asuka_widget_surface_container">#FFF3EDF7</color>
+    <color name="asuka_widget_outline">#FF79747E</color>
+    <color name="asuka_widget_outline_variant">#FFCAC4D0</color>
+    <color name="asuka_widget_on_accent">#FFFFFFFF</color>
+    <color name="asuka_widget_track">@color/asuka_widget_outline_variant</color>
 </resources>

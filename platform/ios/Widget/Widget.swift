@@ -2,7 +2,8 @@
 // the one place Asuka's iOS host uses it. It runs no Go: the app's Go code
 // sets each kind's entries (platform/widget), which the app keeps in the App
 // Group's defaults (AsukaAppGroup) for this extension to show with one
-// template, laid out for each size. The CLI compiles this with the app's
+// template, laid out for each size, or as the app's own layout says
+// (Layout.swift). The CLI compiles this with the app's
 // kinds (Kinds.swift: a WidgetBundle of AsukaKindWidget<...>).
 import SwiftUI
 import WidgetKit
@@ -23,8 +24,11 @@ struct AsukaWidgetEntry: TimelineEntry, Decodable {
     var showProgress = false
     var until: Date?
     var placeholder = false
+    /// The app's own layout (platform/widget's Layout), and the sizes'.
+    var layout: AsukaNode?
+    var sizes: [String: AsukaNode] = [:]
 
-    enum CodingKeys: String, CodingKey { case title, value, body, caption, symbol, url, tint, progress, showProgress, untilMs, atMs }
+    enum CodingKeys: String, CodingKey { case title, value, body, caption, symbol, url, tint, progress, showProgress, untilMs, atMs, layout, sizes }
 
     init() {}
 
@@ -41,6 +45,8 @@ struct AsukaWidgetEntry: TimelineEntry, Decodable {
         showProgress = try c.decodeIfPresent(Bool.self, forKey: .showProgress) ?? false
         if let ms = try c.decodeIfPresent(Double.self, forKey: .untilMs) { until = Date(timeIntervalSince1970: ms / 1000) }
         if let ms = try c.decodeIfPresent(Double.self, forKey: .atMs) { date = Date(timeIntervalSince1970: ms / 1000) }
+        layout = try? c.decodeIfPresent(AsukaNode.self, forKey: .layout)
+        sizes = (try? c.decodeIfPresent([String: AsukaNode].self, forKey: .sizes)) ?? [:]
     }
 
     /// The gallery's and the redacted placeholder's: the widget's name.
@@ -143,10 +149,16 @@ struct AsukaWidgetView: View {
     }
 
     var body: some View {
-        content
-            .redacted(reason: entry.placeholder ? .placeholder : [])
-            .widgetURL(URL(string: entry.url))
-            .modifier(AsukaWidgetBackground())
+        if let node = entry.sizes[family.asukaSize] ?? entry.layout {
+            AsukaLayoutRoot(node: node, accent: tint)
+                .redacted(reason: entry.placeholder ? .placeholder : [])
+                .widgetURL(URL(string: entry.url))
+        } else {
+            content
+                .redacted(reason: entry.placeholder ? .placeholder : [])
+                .widgetURL(URL(string: entry.url))
+                .modifier(AsukaWidgetBackground())
+        }
     }
 
     @ViewBuilder var content: some View {

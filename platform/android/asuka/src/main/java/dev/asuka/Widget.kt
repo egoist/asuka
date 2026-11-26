@@ -24,8 +24,9 @@ import org.json.JSONObject
  * kind in its meta-data (dev.asuka.widget.kind). It shows the kind's
  * entries, which platform/widget's "set" keeps in the app's preferences: the
  * one whose time has come, laid out for the widget's size (small, medium,
- * large, as responsive layouts), and wakes for the next one, and for a
- * countdown's end, with an alarm.
+ * large, as responsive layouts) by the template or the app's own layout
+ * (WidgetLayout.kt), and wakes for the next one, and for a countdown's
+ * end, with an alarm.
  */
 open class AsukaWidgetProvider(private val kind: String, private val sizes: String) : AppWidgetProvider() {
     override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
@@ -110,6 +111,13 @@ object AsukaWidgets {
             v.setOnClickPendingIntent(R.id.asuka_widget_root, open(ctx, kind, ""))
             return v
         }
+        // The app's own layout, for this size or every size.
+        val node = e.optJSONObject("sizes")?.optJSONObject(size) ?: e.optJSONObject("layout")
+        if (node != null) {
+            val lv = AsukaWidgetLayout.render(ctx, node) { widgetOpen(ctx, "asuka.widget.$kind", it) }
+            if (node.optString("url").isEmpty()) lv.setOnClickPendingIntent(R.id.asuka_wl, open(ctx, kind, e.optString("url")))
+            return lv
+        }
         text(R.id.asuka_widget_title, e.optString("title"))
         text(R.id.asuka_widget_value, e.optString("value"))
         text(R.id.asuka_widget_body, e.optString("body"))
@@ -155,9 +163,14 @@ object AsukaWidgets {
     /** Keeps kind's entries and updates its widgets. */
     fun set(ctx: Context, kind: String, entries: JSONArray) {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(kind, entries.toString()).apply()
+        update(ctx, kind)
+    }
+
+    /** Updates kind's widgets (null: every kind's). */
+    fun update(ctx: Context, kind: String?) {
         val mgr = AppWidgetManager.getInstance(ctx)
         for (p in mgr.getInstalledProvidersForPackage(ctx.packageName, null)) {
-            if (kindOf(ctx, p.provider) != kind) continue
+            if (kind != null && kindOf(ctx, p.provider) != kind) continue
             val ids = mgr.getAppWidgetIds(p.provider)
             ctx.sendBroadcast(Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).setComponent(p.provider)
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids))
@@ -165,7 +178,30 @@ object AsukaWidgets {
     }
 }
 
-/** platform/widget's module: "set" (JSON: kind, entries). */
+/**
+ * Keeps an image for the widgets' layouts (a name, a 0 byte, its data; the
+ * name alone deletes it), no larger than the screen's width, which is
+ * what a widget's bitmaps may take.
+ */
+private fun keepWidgetImage(ctx: Context, args: ByteArray) {
+    val zero = args.indexOf(0.toByte()).let { if (it < 0) args.size else it }
+    val file = AsukaWidgetLayout.imageFile(ctx, String(args, 0, zero, Charsets.UTF_8))
+    if (zero == args.size) {
+        file.delete()
+    } else {
+        var b = android.graphics.BitmapFactory.decodeByteArray(args, zero + 1, args.size - zero - 1) ?: throw Exception("widget: not an image")
+        val most = ctx.resources.displayMetrics.widthPixels
+        val k = most.toFloat() / maxOf(b.width, b.height)
+        if (k < 1) b = android.graphics.Bitmap.createScaledBitmap(b, (b.width * k).toInt().coerceAtLeast(1), (b.height * k).toInt().coerceAtLeast(1), true)
+        file.parentFile?.mkdirs()
+        val tmp = java.io.File(file.path + ".tmp")
+        tmp.outputStream().use { b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        if (!tmp.renameTo(file)) throw Exception("widget: can't keep the image")
+    }
+    AsukaWidgets.update(ctx, null)
+}
+
+/** platform/widget's module: "set" (JSON: kind, entries), "image". */
 fun AsukaRuntime.widgetMethods(): Map<String, AsukaModuleMethod> = mapOf(
     "set" to { args, reply ->
         val o = runCatching { JSONObject(String(args, Charsets.UTF_8)) }.getOrNull()
@@ -174,5 +210,8 @@ fun AsukaRuntime.widgetMethods(): Map<String, AsukaModuleMethod> = mapOf(
             AsukaWidgets.set(app, o.getString("kind"), o.optJSONArray("entries") ?: JSONArray())
             reply(Result.success(ByteArray(0)))
         }
+    },
+    "image" to { args, reply ->
+        Thread { reply(runCatching { keepWidgetImage(app, args); ByteArray(0) }) }.start()
     },
 )

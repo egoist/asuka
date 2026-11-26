@@ -35,6 +35,7 @@ import std/url
 import platform/tracking
 import platform/transcribe
 import platform/widget
+import std/fs
 
 /// What the last service said: the app's, as notifications and links
 /// that open the app say something too.
@@ -86,6 +87,18 @@ component Heading(title: string) {
     margin: Edges(top: 8)
   }
 }
+
+/// The energy widget in the app's own layout: the cover, the title, the
+/// value and its bar (a ring on the lock screen).
+fn energyLayout(at: time.Time) -> widget.Layout = widget.row([
+  widget.image("cover").frame(width: 56, height: 56).background(.clear, radius: 12),
+  widget.column([
+    widget.row([widget.symbol("bolt.fill", size: 13, color: .orange), widget.text("Energy", font: .caption.bold(), color: .secondaryLabel)], spacing: 4),
+    widget.text("72%", font: Font(size: 30, weight: .bold), lines: 1),
+    widget.progress(0.72, color: .orange),
+    widget.text("Moving well · {at.format("HH:mm")}", font: .caption2, color: .secondaryLabel, lines: 1),
+  ], spacing: 4, align: .stretch).fill(),
+], spacing: 12)
 
 /// Runs a service (it waits on the platform) and shows what it says.
 async fn run(work: async fn() throws -> string) {
@@ -424,6 +437,24 @@ screen Services {
             url: "asukaservices://speak",
           ))
           status = "Widget updated"
+        }
+      }
+      Item("Use the widget's own layout") {
+        on press {
+          await run(() => {
+            widget.setImage("cover", try await fs.readAsset("cover.png"))
+            let now = time.now()
+            widget.set("energy", widget.Entry(url: "asukaservices://speak", layout: energyLayout(at: now), sizes: [
+              .small: widget.column([
+                widget.row([widget.symbol("bolt.fill", size: 13, color: .orange), widget.text("Energy", font: .caption.bold(), color: .secondaryLabel)], spacing: 4),
+                widget.spacer(),
+                widget.gauge(0.72, label: "72", color: .orange),
+                widget.timer(until: now + 25min, font: .footnote),
+              ], spacing: 4),
+              .circular: widget.gauge(0.72, label: "72"),
+            ]))
+            return "Widget layout set"
+          })
         }
       }
       Item("Start a live activity") {

@@ -31,6 +31,24 @@ pub struct Entry {
   url: string = ""
   /// When it shows (none: now).
   at: time.Time? = none
+  /// The app's own layout, drawn in place of the template (whose fields
+  /// above it doesn't show, but url's): at every size, but those sizes
+  /// has its own for.
+  layout: Layout? = none
+  sizes: [Size: Layout] = [:]
+}
+
+/// A size a widget comes in (asuka.toml's widgets' sizes).
+pub enum Size {
+  small
+  medium
+  large
+  /// iPad's.
+  extraLarge
+  /// The lock screen's (iOS).
+  circular
+  rectangular
+  inline
 }
 
 struct Wire {
@@ -45,6 +63,8 @@ struct Wire {
   atMs: int
   tint: string
   url: string
+  layout: Node?
+  sizes: [string: Node]
 }
 
 struct Set {
@@ -52,14 +72,25 @@ struct Set {
   entries: [Wire]
 }
 
+fn sizesOf(m: [Size: Layout]) -> [string: Node] {
+  var out: [string: Node] = [:]
+  for (k, v) in m { out["{k}"] = nodeOf(v) }
+  return out
+}
+
 /// Sets what the kind of widget shows: e now.
 pub fn set(kind: string, e: Entry) = setAll(kind, [e])
 
 /// Sets the kind's entries, each from its time.
-pub fn setAll(kind: string, entries: [Entry]) {
+pub fn setAll(kind: string, entries: [Entry]) = host.send("widget", "set", wire(kind, entries).bytes())
+
+/// What set sends the host: the kind and its entries, in time order, as
+/// JSON.
+fn wire(kind: string, entries: [Entry]) -> string {
   let es = entries.sorted((a, b) => (a.at?.unixMilli() ?? 0) < (b.at?.unixMilli() ?? 0)).map(e => Wire(title: e.title, value: e.value, body: e.body, caption: e.caption,
-    symbol: e.symbol, progress: e.progress, showProgress: e.showProgress, untilMs: e.until?.unixMilli() ?? 0, atMs: e.at?.unixMilli() ?? 0, tint: e.tint, url: e.url))
-  host.send("widget", "set", json.encode(Set(kind: kind, entries: es)).bytes())
+    symbol: e.symbol, progress: e.progress, showProgress: e.showProgress, untilMs: e.until?.unixMilli() ?? 0, atMs: e.at?.unixMilli() ?? 0, tint: e.tint, url: e.url,
+    layout: if let l = e.layout { nodeOf(l) } else { none }, sizes: sizesOf(e.sizes)))
+  return json.encode(Set(kind: kind, entries: es))
 }
 
 /// Clears what the kind of widget shows.

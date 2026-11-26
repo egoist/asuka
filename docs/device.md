@@ -3024,8 +3024,8 @@ fn showToday(meeting: time.Time) {
 }
 ```
 
-A widget shows its `Entry` with the platform's template, laid out for
-its size: the `title` (with its `symbol`, in the `tint`), a large `value`,
+A widget shows its `Entry` with the platform's template (or the app's
+own layout, below), laid out for its size: the `title` (with its `symbol`, in the `tint`), a large `value`,
 the `body`, a `progress` bar, a live countdown to `until` (a
 `time.Time`), a `caption`. It keeps showing it until the app sets
 another, whether or not the app runs; tapping it opens the app with its
@@ -3040,6 +3040,58 @@ extension the CLI builds into the app, sharing an App Group with it
 extension's ID, the app's plus `.widgets`). Android: an App Widget for
 each kind, Material You colors, sized to the launcher's cells. The
 desktops and the web have none: `widget.set` does nothing there.
+
+### The app's own layout
+
+An `Entry`'s `layout` draws the widget as the app lays it out, in
+place of the template: a tree of the parts a widget can show, which the
+platform lays out and draws (SwiftUI's views in the iOS extension, an
+App Widget's views on Android), since a widget is drawn by the home
+screen from what the app last set, not by the app running. `sizes`
+gives a size a layout of its own.
+
+```asuka check
+import std/fs
+import std/time
+import platform/widget
+
+fn energy(now: time.Time) -> widget.Layout = widget.row([
+  widget.image("cover").frame(width: 56, height: 56).background(.clear, radius: 12),
+  widget.column([
+    widget.row([widget.symbol("bolt.fill", size: 13, color: .orange), widget.text("Energy", font: .caption.bold())]),
+    widget.text("72%", font: Font(size: 30, weight: .bold), lines: 1),
+    widget.progress(0.72, color: .orange),
+    widget.text("Updated {now.format("HH:mm")}", font: .caption2, color: .secondaryLabel),
+  ], spacing: 4, align: .stretch).fill(),
+], spacing: 12)
+
+async fn showEnergy() throws {
+  widget.setImage("cover", try await fs.readAsset("cover.png"))
+  let now = time.now()
+  widget.set("energy", widget.Entry(url: "myapp://energy", layout: energy(now), sizes: [
+    .small: widget.column([
+      widget.text("Energy", font: .caption.bold()),
+      widget.spacer(),
+      widget.gauge(0.72, label: "72", color: .orange),
+      widget.timer(until: now + 25min, font: .footnote),
+    ]),
+  ]))
+}
+```
+
+The parts: `column`, `row` (each with its `spacing` and `align`) and
+`layers` (on top of one another, placed at `x` and `y`); `text` (a
+`Font`, a `Color`, at most `lines` lines); `symbol` (an SF Symbol, the
+Material symbol for it on Android); `image` (one `widget.setImage` keeps,
+where the widget reads it); `progress` (a bar) and `gauge` (a ring with
+its label); `timer` (counting down to a time, and up from it, as the
+widget sleeps); `spacer` and `divider`. Each takes `padding`,
+`background` (a color, its corners rounded), `frame` (a size in points),
+`fill` (the space its column or row has left), `link` (a URL the app
+opens, a part of the widget tapped; iOS's small widgets open the
+entry's `url` only) and `opacity`. Semantic colors (`.label`,
+`.secondaryLabel`, `.accent`...) follow the home screen's light or dark
+mode; a text style follows the user's text size.
 
 ## Live activities: platform/liveactivity
 
