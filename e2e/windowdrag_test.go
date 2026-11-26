@@ -12,7 +12,8 @@ import (
 // back to where it pressed, leaves it as wide as it was, the corner
 // under the pointer: the drag follows where the pointer is, not each
 // step it takes. Its title dragged with the right button doesn't move it,
-// and a cancelled touch on it ends its drag.
+// a cancelled touch on it ends its drag, and a second finger pressed on
+// it while one drags it doesn't take the drag over.
 func TestWindowDragWeb(t *testing.T) {
 	browser := chrome()
 	if browser == "" {
@@ -84,7 +85,8 @@ func TestWindowDragWeb(t *testing.T) {
 	}
 
 	// A touch on its title that the browser cancels ends the drag: the
-	// mouse moving over the title after it doesn't move the panel.
+	// mouse moving over the title after it doesn't move the panel, and a
+	// drag with the mouse then moves it as far as the mouse goes.
 	win, bar = rect(""), rect(".asuka-window-bar")
 	x, y := bar[0]+40, bar[1]+bar[3]/2
 	var r struct{}
@@ -100,5 +102,30 @@ func TestWindowDragWeb(t *testing.T) {
 	mouse("mouseMoved", x+60, y, "none")
 	if got := rect(""); got[0] != win[0] || got[1] != win[1] {
 		t.Errorf("after a cancelled touch on its title, the mouse moving over it moved it from %v, %v to %v, %v", win[0], win[1], got[0], got[1])
+	}
+	drag("left", x+60, y, 30, 0, false)
+	if got := rect(""); got[0] != win[0]+30 || got[1] != win[1] {
+		t.Errorf("after a cancelled touch on its title, a mouse drag of 30 points right moved it from %v, %v to %v, %v", win[0], win[1], got[0], got[1])
+	}
+
+	// One finger drags the title 40 points right; a second finger presses
+	// the title 100 points right of the first meanwhile. The panel moves
+	// with the first finger alone.
+	win, bar = rect(""), rect(".asuka-window-bar")
+	x, y = bar[0]+40, bar[1]+bar[3]/2
+	b := map[string]any{"id": 1, "x": x + 100, "y": y}
+	for _, ev := range []map[string]any{
+		{"type": "touchStart", "touchPoints": []map[string]any{{"id": 0, "x": x, "y": y}}},
+		{"type": "touchMove", "touchPoints": []map[string]any{{"id": 0, "x": x + 20, "y": y}}},
+		{"type": "touchStart", "touchPoints": []map[string]any{{"id": 0, "x": x + 20, "y": y}, b}},
+		{"type": "touchMove", "touchPoints": []map[string]any{{"id": 0, "x": x + 40, "y": y}, b}},
+		{"type": "touchEnd", "touchPoints": []map[string]any{}},
+	} {
+		if err := d.call("Input.dispatchTouchEvent", ev, &r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := rect(""); got[0] != win[0]+40 || got[1] != win[1] {
+		t.Errorf("dragged 40 points right by one finger with a second pressed, it moved from %v, %v to %v, %v, want %v, %v", win[0], win[1], got[0], got[1], win[0]+40, win[1])
 	}
 }
