@@ -1,0 +1,34 @@
+// Menu Click puts a menu on a medication's view, opened by a click
+// (e2e's TestMenuClickWeb), and shows the action chosen from it.
+
+component Medications {
+  state chosen = "nothing yet"
+
+  Column {
+    grow: 1
+    padding: 24
+    gap: 12
+    Menu {
+      actions: [
+        .button(title: "Refill", run: () => { chosen = "Refill" }),
+        .button(title: "Hold", run: () => { chosen = "Hold" }),
+        .button(title: "Stop", role: .destructive, run: () => { chosen = "Stop" }),
+      ]
+      View {
+        padding: 16
+        background: .secondaryBackground
+        Text("Metformin 500 mg")
+      }
+    }
+    Text("Chosen: {chosen}")
+  }
+}
+
+app { Medications() }
+
+test "the view's menu chooses an action" {
+  let app = mount(Medications())
+  app.tap("Metformin 500 mg")
+  app.tap("Hold")
+  app.expect("Chosen: Hold")
+}
