@@ -385,8 +385,8 @@ category = "audio"
 
 | 键 | 类型 | 默认值 | 含义 |
 |---|---|---|---|
-| `category` | 字符串 | 无 | 应用在车上的类别：`audio`、`communication`、`charging`、`parking` 或 `fueling`（CarPlay 和 Android Auto 都有），`quickFood` 或 `drivingTask`（仅 CarPlay），`pointOfInterest`、`iot` 或 `weather`（仅 Android Auto）。不设置时，应用不会显示在汽车上。 |
-| `minCarApiLevel` | 整数 | `1` | 应用的模板在 Android Auto 上需要的 Car App API 等级，1 到 7（标签页需要 6）。 |
+| `category` | 字符串 | 无 | 应用在车上的类别：`audio`、`navigation`（自己绘制地图：CarPlay 的地图 entitlement，Android Auto 在车机画面上绘制的权限）、`communication`、`charging`、`parking` 或 `fueling`（CarPlay 和 Android Auto 都有），`quickFood` 或 `drivingTask`（仅 CarPlay），`pointOfInterest`、`iot` 或 `weather`（仅 Android Auto）。不设置时，应用不会显示在汽车上。 |
+| `minCarApiLevel` | 整数 | `1` | 应用的模板在 Android Auto 上需要的 Car App API 等级，1 到 7（标签页需要 6，导航应用的提醒需要 5）。 |
 
 CarPlay 的 entitlement 需要向 Apple 申请；签名构建的描述文件缺少该类别的 entitlement 时会提示。详见[车机屏幕](car.md#类别asukatoml-的-car)。
 
@@ -408,8 +408,10 @@ Linux 构建的 desktop 文件、AppStream metainfo 和软件包对应用的描�
 | `maintainer` | 字符串 | `developer` | `.deb` 和 `.rpm` 中写明的维护者：`"Name <email>"`。 |
 | `debDepends` | 字符串数组 | 无 | `.deb` 额外依赖的软件包，按 Debian 的语法书写：`"libfoo1 (>= 1.2)"`、`"a \| b"`。 |
 | `rpmRequires` | 字符串数组 | 无 | `.rpm` 额外依赖的软件包，按 RPM 的语法书写：`"foo >= 1.2"`、`"(a or b)"`。 |
+| `signingKey` | 路径 | 无 | 用来签名 `.rpm` 以及 apt 和 dnf 软件源的 OpenPGP 私钥（`asuka linux keygen` 生成的 `asuka-linux.key`；`~/` 表示主目录），供在你自己的电脑上构建时使用。`ASUKA_LINUX_GPG_KEY`（密钥本身或它的路径）会覆盖它；密钥加密过时，用 `ASUKA_LINUX_GPG_PASSPHRASE` 解密。 |
+| `repository` | 表 | 无 | `asuka publish --platform linux` 把 `.deb` 和 `.rpm` 写入的 apt 和 dnf 软件源：`url` 是提供它的 HTTPS 地址（写进 `.repo` 文件和用户要运行的命令里）；`s3` 是提供它的存储桶（`bucket`、`prefix`、`region`、`endpoint`、`pathStyle`，和 `updates.s3` 一样），或者用 `dir` 指定一个目录。`--repo` 可以改写写入位置。 |
 
-见[打包与发布](shipping.md#linux)。
+见[打包与发布](shipping.md#linux)和[签名的软件包与软件源](shipping.md#签名的软件包与软件源)。
 
 ## windows
 

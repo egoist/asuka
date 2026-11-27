@@ -8,7 +8,7 @@
 | `android` | `<Name>.aab`（アップロード鍵で署名済み） | JDK、Android SDK、NDK があればどのシステムでも | Google Play（`asuka publish`） |
 | `mac` | `darwin-<arch>/`：`<Name>.app` とその `.zip`、`.dmg`（Apple シリコン向け。`--arch amd64` で Intel 向け）、または `.pkg`（`--appstore`） | Xcode のコマンドラインツールのある Mac | 署名・公証済みの `.dmg` か `.zip`、Mac App Store |
 | `windows` | `windows-<arch>/`：`<Name>/`（`.exe` とそのアセット）、インストーラー（`-setup.exe`）、フォルダーの `.zip`、`.msix`（`--package msix`） | clang のある Windows、または Zig のあるどのシステムでも | インストーラー、`.zip`。MSIX は Microsoft Store での配布、またはサイドロード |
-| `linux` | `linux-<arch>/`：インストールプレフィックス、`.tar.gz`、`.deb`、`.rpm`、AppImage、Flatpak マニフェスト | C コンパイラーのある Linux、または Zig のあるどのシステムでも | `.deb`、`.rpm`、AppImage、`.tar.gz`、Flatpak |
+| `linux` | `linux-<arch>/`：インストールプレフィックス、`.tar.gz`、`.deb`、`.rpm`（自分の OpenPGP 鍵で署名）、AppImage、Flatpak マニフェスト | C コンパイラーのある Linux、または Zig のあるどのシステムでも | `.deb`、`.rpm`、AppImage、`.tar.gz`、Flatpak。apt と dnf のリポジトリ（`asuka publish --repo`） |
 | `web` | `web/`（静的サイト） | Zig のあるどのシステムでも | 任意の Web サーバーや CDN |
 
 `--platform` を省略すると、Mac、Windows PC、Linux マシンでは、そのコンピューター向けにビルドします。ビルドにはプラットフォームのコンパイラーを使います（Apple のプラットフォームでは Xcode のもの、Android では NDK のもの、Windows と Linux ではシステムのもの）。[Zig](https://ziglang.org/download) は、Web 向けにビルドするときと、ほかのシステムから Windows と Linux 向けにビルドするときに使います（`ASUKA_CC=zig` を指定すると、どこでも Zig を使います）。デスクトップのビルドの中身は[デスクトップ](desktop.md#デスクトップアプリの構成)を参照してください。
@@ -263,14 +263,14 @@ asuka build --platform linux --arch arm64   # amd64 または arm64
   ```
 
 - `my-notes-<version>-linux-<arch>.tar.gz`：配布用に、そのフォルダーをまとめたもの
-- `my-notes-<version>-linux-<arch>.deb`（Debian と Ubuntu 向け）と `my-notes-<version>-linux-<arch>.rpm`（Fedora 向け）：そのフォルダーを、システム標準のアプリと同じように `/usr` の下にインストールするパッケージ。アプリがディストリビューションに求めるもの、つまり GTK 4.14、libadwaita 1.5、libsoup、実行ファイルのビルド対象の glibc、そしてアプリのパッケージが開くライブラリ（`WebView` なら WebKitGTK、`platform/pdf` なら Poppler、音声と動画なら GStreamer など）も、パッケージマネージャーがあわせてインストールします。デスクトップファイル、アイコン、MIME タイプのキャッシュは、システム側のトリガーが更新します。プレリリースのバージョンは正式リリースより前に並びます（`1.3.0-beta.1` は `1.3.0~beta.1` になります）。
+- `my-notes-<version>-linux-<arch>.deb`（Debian と Ubuntu 向け）と `my-notes-<version>-linux-<arch>.rpm`（Fedora 向け）：そのフォルダーを、システム標準のアプリと同じように `/usr` の下にインストールするパッケージ。アプリがディストリビューションに求めるもの、つまり GTK 4.14、libadwaita 1.5、libsoup、実行ファイルのビルド対象の glibc、そしてアプリのパッケージが開くライブラリ（`WebView` なら WebKitGTK、`platform/pdf` なら Poppler、音声と動画なら GStreamer など）も、パッケージマネージャーがあわせてインストールします。デスクトップファイル、アイコン、MIME タイプのキャッシュは、システム側のトリガーが更新します。プレリリースのバージョンは正式リリースより前に並びます（`1.3.0-beta.1` は `1.3.0~beta.1` になります）。OpenPGP 鍵があれば（[後述](#署名付きパッケージとリポジトリ)）、`.rpm` には `rpm --addsign` と同じ形で署名が入ります。
 
   ```sh
   sudo apt install ./my-notes-1.0-linux-amd64.deb
   sudo dnf install ./my-notes-1.0-linux-amd64.rpm
   ```
 
-- `my-notes-<version>-linux-<arch>.AppImage`：アプリを 1 つのファイルにまとめたもの。ダウンロードしてそのまま実行できます。GTK 4.14 と libadwaita 1.5 は含まれないので、それらのあるディストリビューションが必要です。デスクトップファイルとアイコンは、AppImage のツールやランチャーが見つけられる場所に置かれます。FUSE のない環境（コンテナーなど）では `--appimage-extract-and-run` を付けて実行します。[AppImage ランタイム](https://github.com/AppImage/type2-runtime)を使って作られ、ランタイムは初回に一度だけダウンロードされてビルドキャッシュに入り、チェックサムが検証されます。オフラインでビルドするには、手元の `runtime-x86_64` または `runtime-aarch64` を `ASUKA_APPIMAGE_RUNTIME` に指定します。
+- `my-notes-<version>-linux-<arch>.AppImage`：アプリを 1 つのファイルにまとめたもの。ダウンロードしてそのまま実行できます。GTK 4.14 と libadwaita 1.5 は含まれないので、それらのあるディストリビューションが必要です。デスクトップファイルとアイコンは、AppImage のツールやランチャーが見つけられる場所に置かれます。FUSE のない環境（コンテナーなど）では `--appimage-extract-and-run` を付けて実行します。[アップデート](#自動アップデート)を設定していれば、`.tar.gz` のプレフィックスと同じように自分自身を更新します。また、AppImageUpdate、appimageupdatetool、AppImageLauncher が読むアップデート情報も持っています（`--appimage-updateinformation` で表示できます）。指す先は GitHub の最新リリースの `.zsync`、または `url` の下のもので、`asuka build` がアップデートの隣に書き出します。[AppImage ランタイム](https://github.com/AppImage/type2-runtime)を使って作られ、ランタイムは初回に一度だけダウンロードされてビルドキャッシュに入り、チェックサムが検証されます。オフラインでビルドするには、手元の `runtime-x86_64` または `runtime-aarch64` を `ASUKA_APPIMAGE_RUNTIME` に指定します。
 - `<id>.yml`：そのフォルダー（`bin`、`share`）を GNOME ランタイム上でパッケージにする [Flatpak](https://flatpak.org) のマニフェスト
 
   ```sh
@@ -283,7 +283,7 @@ asuka build --platform linux --arch arm64   # amd64 または arm64
 
 `--package deb,appimage` のように指定すると、`tar.gz`、`deb`、`rpm`、`appimage`、`flatpak`（マニフェスト）のうち一部だけを作ります。`asuka.toml` の `linux.packages` を書けば、すべてのビルドで同じ指定になります。[自動アップデート](#自動アップデート)を設定したビルドは、どちらにしてもアップデートのアーカイブである `.tar.gz` を書き出します。どの形式も `asuka build` 自身がどのシステムからでも書き出すので、`dpkg`、`rpmbuild`、`mksquashfs` は要りません。
 
-`.deb`、`.rpm`、Flatpak、AppImage でインストールされたアプリは、それらの仕組みで更新され、アプリ自身は更新しません（`update.unsupported()` は `.managed`）。自分自身を更新するのは、ユーザーのプレフィックスに展開した `.tar.gz` のほうです。
+`.deb`、`.rpm`、Flatpak でインストールされたアプリは、それらの仕組みで更新され、アプリ自身は更新しません（`update.unsupported()` は `.managed`）。自分自身を更新するのは、ユーザーのプレフィックスに展開した `.tar.gz` と、ユーザーが書き込めるフォルダーに置いた AppImage です。
 
 デスクトップファイル、metainfo、パッケージに書く内容は、`asuka.toml` で指定します。
 
@@ -307,6 +307,57 @@ rpmRequires = ["foo >= 1.2"]
 ```
 
 `categories` は [freedesktop.org のカテゴリ](https://specifications.freedesktop.org/menu-spec/latest/category-registry.html)から選びます（デフォルトは `Utility`。`.deb` のセクションもこれに従います）。`license` は SPDX 式です。Flathub とソフトウェアセンターは、summary、description、license、developer を求めます。`maintainer` は `.deb` と `.rpm` に書かれる保守担当者です（デフォルトは `developer`）。`debDepends` と `rpmRequires` には、それらが追加で依存するパッケージを、それぞれの書式で書きます（どちらか一方でよいものは、`.deb` では `a | b`、`.rpm` では `(a or b)`）。
+
+### 署名付きパッケージとリポジトリ
+
+ユーザーが apt や dnf のリポジトリを一度追加すれば、以降のバージョンはシステムのアップデート（`apt upgrade`、`dnf upgrade`、ソフトウェアセンター）と一緒に届き、あなたの鍵で検証されます。まず署名に使う OpenPGP 鍵（RSA 4096）を一度だけ作ります。
+
+```sh
+asuka linux keygen --uid "Example Inc. <dev@example.com>"
+```
+
+秘密鍵 `asuka-linux.key` と公開鍵 `asuka-linux.asc` が、設定ディレクトリの `asuka/linux-keys` に書き出されます（`--out` で別の場所にできます）。アップデートの鍵と同じく、秘密鍵はリポジトリに入れず、パスワードマネージャーと CI のシークレットに保管してください。ユーザーのシステムはこの鍵を一度信頼するだけなので、リポジトリを別の鍵で署名することはありません。CI でのビルドでは `ASUKA_LINUX_GPG_KEY` に鍵（またはそのファイルのパス）を、パスフレーズがあれば `ASUKA_LINUX_GPG_PASSPHRASE` に渡します（鍵を作るときにこれを設定しておくと、鍵が暗号化されます）。自分のマシンでは `linux.signingKey` に鍵のパスを書きます。
+
+```toml
+[linux]
+signingKey = "~/.config/asuka/linux-keys/asuka-linux.key"
+
+[linux.repository]
+url = "https://packages.example.com/notes"   # 配信する場所
+s3 = { bucket = "packages", prefix = "notes", endpoint = "https://<account>.r2.cloudflarestorage.com" }
+```
+
+鍵があれば、`asuka build` が `.rpm` に署名します。そのうえで `asuka publish --platform linux` を実行すると、`.deb` と `.rpm` が `linux.repository` のリポジトリ（その `s3` バケット、または `dir` で指定したディレクトリ）か、`--repo` で指定した先（ディレクトリ、または `s3://bucket/prefix`）に署名付きで書き込まれます。リポジトリにあった既存のバージョンは残ります。`updates` があれば、アップデートはこれまでどおり `updates` の指定先に公開されます。
+
+```sh
+asuka publish --platform linux --repo ../packages
+asuka publish --platform linux --arch arm64 --repo s3://packages/notes
+```
+
+リポジトリの中身は、すべて `asuka publish` 自身が Go で書き出します。
+
+- `key.asc` と `key.gpg`：公開鍵。ASCII 形式とバイナリ形式です。
+- `deb/`：apt のリポジトリ。`dists/stable/InRelease`（と `Release`、`Release.gpg`）、アーキテクチャーごとの `Packages`、そして `pool/` の下のパッケージです。
+- `rpm/stable/`：dnf のリポジトリ。署名付きの `repodata/repomd.xml`（署名は `repomd.xml.asc`）とそこから参照されるファイル、`Packages/` の下のパッケージです。`rpm/notes.repo` は、このリポジトリの dnf の設定ファイルです。
+
+プレリリースは、そのチャンネルのスイートとリポジトリ（`beta` と `rpm/notes-beta.repo`）に入ります。ベータ版のユーザーは、それを `stable` と並べて追加します。アーキテクチャーは一つずつ順番に公開してください。それぞれが前回書き込んだ内容に追加していきます。S3 バケットでは、インデックスはキャッシュされない設定で配信されます。認証情報には `s3:GetObject`、`s3:PutObject`、`s3:DeleteObject`、`s3:ListBucket` の権限が必要です（`s3:ListBucket` がないと、まだ存在しないファイルに対して S3 が 403 を返します）。ディレクトリは Web サーバーや CDN から HTTPS で配信してください。
+
+ユーザーが最初に一度だけ実行するコマンドです（`asuka publish` があなたの `url` を入れて表示します）。Debian と Ubuntu では次のとおりです。
+
+```sh
+curl -fsSL https://packages.example.com/notes/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/notes.gpg
+echo "deb [signed-by=/etc/apt/keyrings/notes.gpg] https://packages.example.com/notes/deb stable main" | sudo tee /etc/apt/sources.list.d/notes.list
+sudo apt update && sudo apt install notes
+```
+
+Fedora では次のとおりです（`gpgcheck` と `repo_gpgcheck` は有効です。dnf はパッケージとリポジトリのメタデータを検証し、最初に一度だけ鍵を信頼するかどうかを尋ねます）。
+
+```sh
+sudo dnf config-manager addrepo --from-repofile=https://packages.example.com/notes/rpm/notes.repo
+sudo dnf install notes
+```
+
+（Fedora 41 より前は `sudo dnf config-manager --add-repo …` です。）ダウンロードした `.rpm` は、`rpm -K` で rpm が信頼する鍵と照合できます（先に `sudo rpm --import https://packages.example.com/notes/key.asc`）。
 
 ## Web
 
@@ -408,7 +459,7 @@ component UpdateBanner {
 }
 ```
 
-`await update.unsupported()` は、アプリが自分自身を更新できない理由を返し、更新できるときは none を返します。更新できないのは、開発ビルドや `updates` のないビルド（`.notConfigured`）、システムのパッケージ（`.deb`、`.rpm`）・Flatpak・Snap・AppImage・Mac App Store・Microsoft Store でインストールされたアプリ（`.managed`。更新はそれらが行います）、ディスクイメージから直接、またはダウンロードした場所から実行されていて macOS に App Translocation されている Mac アプリ（`.translocated`。ユーザーが「アプリケーション」フォルダーに移動する必要があります）、ユーザーが書き込めないフォルダーにあるアプリ（`.notWritable`）、そしてスマートフォン（`.notAvailable`）です。こうした場合、ウィンドウはバックグラウンドでは確認せず、ユーザーが確認したときにその理由を伝えます。
+`await update.unsupported()` は、アプリが自分自身を更新できない理由を返し、更新できるときは none を返します。更新できないのは、開発ビルドや `updates` のないビルド（`.notConfigured`）、システムのパッケージ（`.deb`、`.rpm`）・Flatpak・Snap・Mac App Store・Microsoft Store でインストールされたアプリ（`.managed`。更新はそれらが行います）、ディスクイメージから直接、またはダウンロードした場所から実行されていて macOS に App Translocation されている Mac アプリ（`.translocated`。ユーザーが「アプリケーション」フォルダーに移動する必要があります）、ユーザーが書き込めないフォルダーにあるアプリ（`.notWritable`）、そしてスマートフォン（`.notAvailable`）です。こうした場合、ウィンドウはバックグラウンドでは確認せず、ユーザーが確認したときにその理由を伝えます。
 
 `update.setChannel("beta")` を呼ぶと、ベータ版を選んだユーザーに向けて、そのチャンネルのプレリリースも提示します。バージョンのチャンネルは、プレリリース部分の英字です（`1.4.0-beta.2` なら `beta`）。`"*"` を指定すると、すべてのプレリリースを受け取ります。正式リリースはどのチャンネルでも提示されます。`update.setFeed(url)` を使うと、`asuka.toml` とは別のフィード（ユーザーのアカウントごとに選んだものなど）を読みます。マニフェストの URL、GitHub のリリース、または `{target}`、`{version}`、`{channel}` を含むサーバーの URL を指定できます。その場合も、署名はいつもどおり検証されます。`update.compareVersions(a, b)` は、アップデーターと同じ規則でバージョンを比較します。
 
@@ -422,6 +473,7 @@ Web ではインストールするものはありません。`check()` はブラ
 
 - `notes-1.2.0-<target>.tar.gz`：インストールされた状態のアプリをまとめて署名したもの（SHA-256 に対する Ed25519 署名）。中身は、Mac ではバンドル、Windows ではフォルダーの中身で、Linux ではビルドの `.tar.gz` そのものです。ターゲットは `darwin-arm64`、`darwin-amd64`、`windows-amd64`、`windows-arm64`、`linux-amd64`、`linux-arm64` です。
 - 以前に公開したバージョンからの差分アップデート（`notes-1.1.0-to-1.2.0-<target>.delta`）。ビルドは、公開済みのマニフェストが示す場所から以前のバージョンを（署名を確かめながら）ダウンロードし、変わった部分を書き出します。内容は、インストール済みのアプリから移動またはコピーするファイル、変更されたファイルの bsdiff パッチ、そして残りのファイルです。アプリは自分のバージョンからの差分だけをダウンロードし、それが失敗したとき（インストール後にアプリが変更されていた場合）はアーカイブ全体をダウンロードします。最初のバージョンには差分はありません。
+- Linux では、ビルドした AppImage も署名付きで入ります。AppImage から実行しているアプリは、アーカイブの代わりにこれをまるごとダウンロードします（マニフェストの `appimage`）。AppImageUpdate 用の `.zsync` も入ります。GitHub ではバージョン付きの名前（`notes-1.2.0-linux-amd64.AppImage.zsync`。AppImage は最新リリースの中からこれを探します）、`url` ではバージョンなしの名前（`notes-linux-amd64.AppImage.zsync`、チャンネルのものは `notes-linux-amd64-beta.AppImage.zsync`）で、マニフェストと一緒に最後にアップロードされます。独自の `tagPrefix` を使う場合、リポジトリの最新リリースは別のもの（CLI など）のことがあるので、AppImage にアップデート情報は入りません。
 - `update-<target>.json`：マニフェスト。バージョン、リリースノート、日付、アーカイブと差分の URL・サイズ・署名、そして以前のバージョン（次の差分を作るため）を含みます。プレリリースのマニフェストは `update-<target>-beta.json` で、そのチャンネルのアプリだけが読みます。
 
 秘密鍵がなければ、アプリをビルドするだけでアップデート用のファイルは書き出さず、その旨を表示します。`--version 1.2.0` を指定すると、`asuka.toml` とは別のバージョンとしてビルドします（CI ではタグからバージョンを取ります）。Windows のフォルダーと Linux のプレフィックスには `.asuka-files` も入ります。これはそのバージョンがインストールするファイルの一覧です。アップデートの際に、次のバージョンにはもうないファイルを削除し、それ以外のファイルには一切手を付けないために使います。
@@ -472,7 +524,7 @@ feed = "https://api.example.com/updates?target={target}&version={version}&channe
 
 - macOS：新しいバンドルは検証されたうえで（コード署名が有効で、実行中のアプリと同じチームと識別子であることを確かめ、検疫属性を取り除きます）、アプリが終了するまでその隣で待機します。アプリがどのように終了しても、ヘルパーが古いバンドルを新しいバンドルに置き換えます。アプリが再起動を求めていた場合は Launch Services でアプリを開くので、Dock のアイコンは一つのままです。アプリのフォルダーは、ユーザーが書き込めるものである必要があります。管理者なら `/Applications`、または `~/Applications` です。
 - Windows：アプリの実行中にフォルダーの中身が置き換えられます。各ファイルはまず名前を変えて脇に退避し、一つでも置き換えられなければすべて元に戻します。実行中の `.exe` は名前を変え（Windows はこれを許可しています）、次回の起動時に削除します。フォルダーはユーザーのもの（`Program Files` ではない場所）である必要があります。インストーラーがインストールしたもの（`%LOCALAPPDATA%\Programs\<Name>`）か、ユーザーのプロファイル内に展開した `.zip` です。更新後は、「インストールされているアプリ」に更新先のバージョンが表示されます。MSIX は、Microsoft Store かアプリ インストーラーを通じて更新されます。
-- Linux：tarball のプレフィックス（`~/.local` など）にある、そのアプリのファイルだけ（`bin/notes`、`share/notes/`、デスクトップファイル、アイコン、metainfo、MIME タイプ）を一つずつリネームで置き換え、そのあとデスクトップのキャッシュを更新します（`update-desktop-database`、`update-mime-database`）。Flatpak、Snap、ディストリビューションのパッケージ、AppImage はそれぞれの仕組みで更新されるため、その場合アプリは自分自身を更新しません。
+- Linux：tarball のプレフィックス（`~/.local` など）にある、そのアプリのファイルだけ（`bin/notes`、`share/notes/`、デスクトップファイル、アイコン、metainfo、MIME タイプ）を一つずつリネームで置き換え、そのあとデスクトップのキャッシュを更新します（`update-desktop-database`、`update-mime-database`）。AppImage では、新しい AppImage をその隣にダウンロードして検証し、リネームで元のファイルと置き換えます（ユーザーが付けた名前のまま。`~/Applications` のように、ユーザーが書き込めるフォルダーにあることが条件です）。再起動すると新しい AppImage が起動し、元の AppImage が展開して実行されていた（`--appimage-extract-and-run`）なら、新しいものも展開して実行されます。Flatpak、Snap、ディストリビューションのパッケージはそれぞれの仕組みで更新されるため、その場合アプリは自分自身を更新しません。
 
 ### スマートフォン：アプリのコードのアップデート
 
@@ -770,6 +822,19 @@ Windows と Linux のジョブでは次のようにします。
 ```
 
 最後に下書きを公開すると（`gh release edit v1.2.0 --draft=false`、またはリリースのページから）、インストール済みのアプリがそのバージョンに更新されます。release ジョブのタグは、`tagPrefix` にバージョンを続けたもの（`v1.2.0`）です。`--version` でビルドのバージョンをタグのバージョンに合わせるので、`asuka.toml` のバージョンを上げる必要はありません。差分は公開済みのリリースをもとに作られ、ランナーがそのリリースをダウンロードします（`GH_TOKEN` があると、GitHub API のリクエスト数の制限が緩和されます。`tagPrefix` を使う場合は GitHub API を使います）。
+
+`.rpm` に署名して [apt と dnf のリポジトリ](#署名付きパッケージとリポジトリ)に書き込む Linux のジョブには、OpenPGP 鍵（`gh secret set ASUKA_LINUX_GPG_KEY < asuka-linux.key`）とバケットの認証情報も渡します。
+
+```yaml
+        env:
+          ASUKA_LINUX_GPG_KEY: ${{ secrets.ASUKA_LINUX_GPG_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          for a in amd64 arm64; do
+            asuka publish --platform linux --arch $a --draft --version "${GITHUB_REF_NAME#v}"
+          done
+```
 
 ## 言語
 

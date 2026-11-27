@@ -183,9 +183,21 @@ func buildLinux(app *asukaApp, o *buildOptions) error {
 			return err
 		}
 	}
+	// The AppImage says where AppImageUpdate finds its next version.
+	b.appImageInfo, b.appImageZsync = appImageUpdate(u, exe, app.cfg.Version, target)
+	made, err := writeLinuxPackages(app, o, pkgs, out, exe, arch, b.appImageInfo)
+	if err != nil {
+		return err
+	}
 	if u != nil || o.publishing {
-		// The tarball is the update's archive.
+		// The tarball is the update's archive; an AppImage, what apps run
+		// from one replace it with.
 		b.tarball = tgz
+		for _, f := range made {
+			if filepath.Ext(f) == ".AppImage" {
+				b.appImage = f
+			}
+		}
 		if _, err := writeUpdates(app, o.out, b, o.publishing); err != nil {
 			return err
 		}
@@ -197,10 +209,6 @@ func buildLinux(app *asukaApp, o *buildOptions) error {
 		}
 	} else {
 		os.Remove(tgz) // only the update's
-	}
-	made, err := writeLinuxPackages(app, o, pkgs, out, exe, arch)
-	if err != nil {
-		return err
 	}
 	for _, f := range made {
 		switch filepath.Ext(f) {

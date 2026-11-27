@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -41,17 +42,17 @@ type s3Config struct {
 	PathStyle *bool `json:"pathStyle"`
 }
 
-func (s *s3Config) validate() error {
+func (s *s3Config) validate(name string) error {
 	if s.Bucket == "" {
-		return errors.New("updates.s3 needs a bucket")
+		return errors.New(name + " needs a bucket")
 	}
 	if s.Endpoint != "" {
 		u, err := url.Parse(s.Endpoint)
 		switch {
 		case err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "":
-			return fmt.Errorf("updates.s3.endpoint %q is not an http(s) URL", s.Endpoint)
+			return fmt.Errorf("%s.endpoint %q is not an http(s) URL", name, s.Endpoint)
 		case strings.Trim(u.Path, "/") != "" || u.RawQuery != "":
-			return fmt.Errorf("updates.s3.endpoint %q has a path: the endpoint is the service's, and bucket names the bucket", s.Endpoint)
+			return fmt.Errorf("%s.endpoint %q has a path: the endpoint is the service's, and bucket names the bucket", name, s.Endpoint)
 		}
 	}
 	return nil
@@ -77,7 +78,7 @@ func newS3Client(s *s3Config) (*s3Client, error) {
 		sessionToken: os.Getenv("AWS_SESSION_TOKEN"),
 	}
 	if c.accessKey == "" || c.secretKey == "" {
-		return nil, errors.New("uploading to updates.s3 needs the credentials in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
+		return nil, errors.New("uploading to S3 needs the credentials in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
 	}
 	if s.PathStyle != nil {
 		c.pathStyle = *s.PathStyle
@@ -118,17 +119,50 @@ func (c *s3Client) put(key, path string, header http.Header) error {
 	if err != nil {
 		return err
 	}
-	var body io.Reader = http.NoBody // an empty body of known length
-	if size > 0 {
-		body = io.NewSectionReader(f, 0, size)
+	_, err = c.do(http.MethodPut, key, io.NewSectionReader(f, 0, size), size, hex.EncodeToString(sum.Sum(nil)), header)
+	return err
+}
+
+// putData uploads data to key, with the headers of header.
+func (c *s3Client) putData(key string, data []byte, header http.Header) error {
+	sum := sha256.Sum256(data)
+	_, err := c.do(http.MethodPut, key, bytes.NewReader(data), int64(len(data)), hex.EncodeToString(sum[:]), header)
+	return err
+}
+
+// errNoObject is get's when the bucket has no object of the key.
+var errNoObject = errors.New("no such object")
+
+// get downloads the object of key: errNoObject when there's none.
+func (c *s3Client) get(key string) ([]byte, error) {
+	return c.do(http.MethodGet, key, nil, 0, emptySHA256, nil)
+}
+
+// remove deletes the object of key (none is no error).
+func (c *s3Client) remove(key string) error {
+	_, err := c.do(http.MethodDelete, key, nil, 0, emptySHA256, nil)
+	if errors.Is(err, errNoObject) {
+		return nil
 	}
-	req, err := http.NewRequest(http.MethodPut, c.objectURL(key), body)
+	return err
+}
+
+// emptySHA256 is an empty payload's digest.
+const emptySHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+// do sends a request for key's object, signed, with the size bytes of
+// body (of the SHA-256 payloadHash), and returns a GET's body.
+func (c *s3Client) do(method, key string, body io.Reader, size int64, payloadHash string, header http.Header) ([]byte, error) {
+	if body == nil || size == 0 {
+		body = http.NoBody // an empty body of known length
+	}
+	req, err := http.NewRequest(method, c.objectURL(key), body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.ContentLength = size
 	maps.Copy(req.Header, header)
-	c.sign(req, hex.EncodeToString(sum.Sum(nil)), time.Now())
+	c.sign(req, payloadHash, time.Now())
 	req.Header.Set("User-Agent", "asuka")
 	// S3 redirects requests for another region, which must not be followed
 	// as a GET.
@@ -137,23 +171,39 @@ func (c *s3Client) put(key, path string, header http.Header) error {
 	}}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 == 2 {
-		return nil
+		if method != http.MethodGet {
+			return nil, nil
+		}
+		return io.ReadAll(io.LimitReader(resp.Body, 1<<30))
+	}
+	what := map[string]string{http.MethodGet: "downloading", http.MethodDelete: "deleting"}[method]
+	if what == "" {
+		what = "uploading to"
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%s s3://%s/%s: %w", what, c.bucket, key, errNoObject)
 	}
 	msg := resp.Status
 	// S3 describes errors in XML.
 	var e struct{ Code, Message string }
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if xml.Unmarshal(data, &e) == nil && e.Code != "" {
+		if e.Code == "NoSuchKey" {
+			return nil, fmt.Errorf("%s s3://%s/%s: %w", what, c.bucket, key, errNoObject)
+		}
 		msg += ": " + e.Code + ": " + e.Message
 	}
 	if region := resp.Header.Get("X-Amz-Bucket-Region"); region != "" && region != c.region {
-		msg += " (the bucket is in " + region + ": set updates.s3.region)"
+		msg += " (the bucket is in " + region + ": set its s3.region)"
 	}
-	return fmt.Errorf("uploading to s3://%s/%s: %s", c.bucket, key, msg)
+	if resp.StatusCode == http.StatusForbidden && method == http.MethodGet {
+		msg += " (S3 answers 403 for an object that isn't there without the s3:ListBucket permission)"
+	}
+	return nil, fmt.Errorf("%s s3://%s/%s: %s", what, c.bucket, key, msg)
 }
 
 // sign signs req, which has no query, with AWS Signature Version 4 for S3,

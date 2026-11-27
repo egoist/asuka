@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -103,6 +106,35 @@ func TestUpdateFeeds(t *testing.T) {
 		}
 		if got := c.u.fileURL("1.2.0", "notes-1.2.0-linux-amd64.tar.gz"); got != c.file {
 			t.Errorf("file: %s, want %s", got, c.file)
+		}
+	}
+}
+
+// The update information an AppImage carries for AppImageUpdate, and the
+// .zsync it names.
+func TestAppImageUpdateInfo(t *testing.T) {
+	for _, c := range []struct {
+		u           *updatesConfig
+		version     string
+		info, zsync string
+	}{
+		{&updatesConfig{GitHub: "me/notes", TagPrefix: "v"}, "1.2.0",
+			"gh-releases-zsync|me|notes|latest|notes-*-linux-amd64.AppImage.zsync", "notes-1.2.0-linux-amd64.AppImage.zsync"},
+		// A prerelease follows the newest release of all: a beta, or the
+		// release after it.
+		{&updatesConfig{GitHub: "me/notes", TagPrefix: "v"}, "1.3.0-beta.1",
+			"gh-releases-zsync|me|notes|latest-all|notes-*-linux-amd64.AppImage.zsync", "notes-1.3.0-beta.1-linux-amd64.AppImage.zsync"},
+		// The repository's latest release may be another's.
+		{&updatesConfig{GitHub: "me/notes", TagPrefix: "desktop-v"}, "1.2.0", "", ""},
+		{&updatesConfig{URL: "https://dl.example.com/notes/"}, "1.2.0",
+			"zsync|https://dl.example.com/notes/notes-linux-amd64.AppImage.zsync", "notes-linux-amd64.AppImage.zsync"},
+		{&updatesConfig{URL: "https://dl.example.com/notes"}, "1.3.0-beta.1",
+			"zsync|https://dl.example.com/notes/notes-linux-amd64-beta.AppImage.zsync", "notes-linux-amd64-beta.AppImage.zsync"},
+		{nil, "1.2.0", "", ""},
+	} {
+		info, zsync := appImageUpdate(c.u, "notes", c.version, "linux-amd64")
+		if info != c.info || zsync != c.zsync {
+			t.Errorf("%+v %s: %q %q, want %q %q", c.u, c.version, info, zsync, c.info, c.zsync)
 		}
 	}
 }
@@ -220,6 +252,10 @@ func TestWriteUpdates(t *testing.T) {
 					if err := tarGz(b.root, b.tarball); err != nil {
 						t.Fatal(err)
 					}
+					// And its AppImage.
+					b.appImage = filepath.Join(b.dir, "notes-"+version+"-"+target+".AppImage")
+					writeFiles(t, b.dir, map[string]string{filepath.Base(b.appImage): "an AppImage of " + version})
+					b.appImageInfo, b.appImageZsync = appImageUpdate(app.cfg.Updates, "notes", version, target)
 				case iupdate.Bundle:
 					b.dir = out
 					b.root = filepath.Join(out, "Notes.app")
@@ -264,6 +300,28 @@ func TestWriteUpdates(t *testing.T) {
 				list, _ := os.ReadFile(filepath.Join(b.root, "share/notes", iupdate.FileList))
 				if want := "bin/notes\nshare/applications/com.example.notes.desktop\nshare/notes/assets/a.txt\n"; string(list) != want {
 					t.Errorf("the prefix's list: %q", list)
+				}
+				// The AppImage, signed as the archive is, which apps run from
+				// one take whole; its .zsync, for AppImageUpdate, named for
+				// no version, which goes with the manifests.
+				dir := filepath.Dir(manifestPath)
+				a := m.AppImage
+				image, _ := os.ReadFile(filepath.Join(dir, "notes-1.0.1-test-target.AppImage"))
+				sum := sha256.Sum256(image)
+				key, _ := iupdate.ParsePublicKey(pub)
+				if a == nil || a.URL != srv.URL+"/notes/notes-1.0.1-test-target.AppImage" || a.Size != int64(len(image)) || iupdate.Verify(key, sum[:], a.Signature) != nil {
+					t.Errorf("the manifest's AppImage: %+v", a)
+				}
+				if b.appImageInfo != "zsync|"+srv.URL+"/notes/notes-test-target.AppImage.zsync" {
+					t.Errorf("the update information: %q", b.appImageInfo)
+				}
+				z, _ := os.ReadFile(filepath.Join(dir, "notes-test-target.AppImage.zsync"))
+				if !bytes.HasPrefix(z, []byte("zsync: 0.6.2\nFilename: notes-1.0.1-test-target.AppImage\n")) || !bytes.Contains(z, []byte("\nURL: "+a.URL+"\n")) || !bytes.Contains(z, []byte(fmt.Sprintf("\nLength: %d\n", len(image)))) {
+					t.Errorf("the .zsync:\n%s", z)
+				}
+				files, manifests, err := updateFiles(dir, "notes", "1.0.1", target)
+				if err != nil || !slices.Contains(files, filepath.Join(dir, "notes-1.0.1-test-target.AppImage")) || len(manifests) != 2 || filepath.Base(manifests[1]) != "notes-test-target.AppImage.zsync" {
+					t.Errorf("updateFiles: %v %v %v", files, manifests, err)
 				}
 			}
 		})

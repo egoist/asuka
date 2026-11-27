@@ -298,3 +298,46 @@ test "a download is cancelled with the window" {
   app.expect("Notes idle")
   expect((try await host.log()).canceled == 1)
 }
+
+test "an AppImage downloads the version's AppImage beside itself, and the host puts it in place" {
+  let app = mount(Notes())
+  let host = try await installed()
+  await app.idle()
+  // As Linux's host finds an app run from ~/Applications/notes.AppImage.
+  let dir = path(["Applications"])
+  let file = fs.join([dir, "notes.AppImage"])
+  write(file, "the 1.0.0 AppImage".bytes())
+  let image = "the 1.1.0 AppImage".bytes()
+  write(path(["feed", "notes.AppImage"]), image)
+  let archive = try encoding.base64Decode(archive64)
+  var m = update.Manifest(version: "1.1.0", url: "{base}/app.tar.gz", size: archive.count(), signature: sign(archive), deltas: [update.ManifestDelta(from: "1.0.0", url: "{base}/app.delta", size: 10, signature: "c2ln")])
+  m.appimage = update.ManifestFile(url: "{base}/notes.AppImage", size: image.count(), signature: sign(image))
+  write(path(["feed", "appimage.json"]), json.encode(m).bytes())
+  let key = encoding.base64Encode(crypto.ed25519PublicKey(seed))
+  let _ = try await update.fakeHost(update.FakeApp(version: "1.0.0", name: "Notes", feed: "{base}/appimage.json", key: key, kind: "appimage", root: file, exe: file, work: dir))
+  try await host.serve(update.Served(url: "{base}/appimage.json", file: path(["feed", "appimage.json"])))
+  try await host.serve(update.Served(url: "{base}/notes.AppImage", file: path(["feed", "notes.AppImage"])))
+  let r = (try await update.check())!
+  // Not the delta, which is the prefix's: the AppImage, whole.
+  expect(r.size == image.count(), "{r.size}")
+  try await r.install()
+  let log = try await host.log()
+  expect(log.downloads == ["{base}/appimage.json", "{base}/notes.AppImage"], "{log.downloads}")
+  let staged = log.installed[0]
+  expect(fs.dir(staged) == dir && fs.base(staged).hasPrefix(".notes.AppImage.asuka-update-"), staged)
+  expect(read(staged) == "the 1.1.0 AppImage")
+  // A version without an AppImage is nothing it can take.
+  write(path(["feed", "appimage.json"]), json.encode(update.Manifest(version: "1.2.0", url: "{base}/app.tar.gz", size: 10, signature: "c2ln")).bytes())
+  expect((try await update.check()).isNone())
+  // One not signed with the app's key is never installed.
+  m.appimage = update.ManifestFile(url: "{base}/notes.AppImage", size: image.count(), signature: encoding.base64Encode(crypto.ed25519Sign(crypto.sha256("another key".bytes()), crypto.sha256(image))))
+  write(path(["feed", "appimage.json"]), json.encode(m).bytes())
+  do {
+    try await (try await update.check())!.install()
+    expect(false, "installed")
+  } catch e {
+    expect(e.message.contains("not signed"), e.message)
+  }
+  expect((try await host.log()).installed.count() == 1)
+  app.expect("Notes idle")
+}

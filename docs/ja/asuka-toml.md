@@ -387,8 +387,8 @@ category = "audio"
 
 | キー | 型 | デフォルト | 内容 |
 |---|---|---|---|
-| `category` | 文字列 | なし | アプリの車での種類：`audio`、`communication`、`charging`、`parking`、`fueling`（CarPlay と Android Auto の両方）、`quickFood`、`drivingTask`（CarPlay のみ）、`pointOfInterest`、`iot`、`weather`（Android Auto のみ）。指定しないと、アプリは車に表示されません。 |
-| `minCarApiLevel` | 整数 | `1` | アプリのテンプレートが Android Auto で必要とする Car App API のレベル（1 から 7。タブには 6 が必要）。 |
+| `category` | 文字列 | なし | アプリの車での種類：`audio`、`navigation`（自前の地図：CarPlay の地図用 entitlement、Android Auto の車の画面に描く権限）、`communication`、`charging`、`parking`、`fueling`（CarPlay と Android Auto の両方）、`quickFood`、`drivingTask`（CarPlay のみ）、`pointOfInterest`、`iot`、`weather`（Android Auto のみ）。指定しないと、アプリは車に表示されません。 |
+| `minCarApiLevel` | 整数 | `1` | アプリのテンプレートが Android Auto で必要とする Car App API のレベル（1 から 7。タブには 6、ナビゲーションアプリのアラートには 5 が必要）。 |
 
 CarPlay の entitlement は Apple に申請して付与してもらいます。署名付きビルドのプロファイルにそのカテゴリのものがないと、その旨が表示されます。詳しくは[車の画面](car.md#カテゴリasukatoml-の-car)を参照してください。
 
@@ -410,8 +410,10 @@ Linux のビルドが、デスクトップファイル、AppStream の metainfo�
 | `maintainer` | 文字列 | `developer` | `.deb` と `.rpm` に書かれる保守担当者です（`"Name <email>"`）。 |
 | `debDepends` | 文字列の配列 | なし | `.deb` が追加で依存するパッケージです。Debian の書式で書きます（`"libfoo1 (>= 1.2)"`、`"a \| b"`）。 |
 | `rpmRequires` | 文字列の配列 | なし | `.rpm` が追加で依存するパッケージです。RPM の書式で書きます（`"foo >= 1.2"`、`"(a or b)"`）。 |
+| `signingKey` | パス | なし | `.rpm` と apt・dnf のリポジトリに署名する OpenPGP の秘密鍵（`asuka linux keygen` が作る `asuka-linux.key`。`~/` はホームディレクトリ）です。自分のマシンでビルドするときに使います。`ASUKA_LINUX_GPG_KEY`（鍵そのもの、またはそのパス）が優先され、暗号化された鍵は `ASUKA_LINUX_GPG_PASSPHRASE` で復号します。 |
+| `repository` | テーブル | なし | `asuka publish --platform linux` が `.deb` と `.rpm` を書き込む apt と dnf のリポジトリです。`url` はそれを配信する HTTPS の URL（`.repo` ファイルとユーザーが実行するコマンドに入ります）、`s3` はそれを配信するバケット（`bucket`、`prefix`、`region`、`endpoint`、`pathStyle`。`updates.s3` と同じ）、または `dir` でディレクトリを指定します。書き込み先は `--repo` で上書きできます。 |
 
-[配布](shipping.md#linux)を参照してください。
+[配布](shipping.md#linux)と[署名付きパッケージとリポジトリ](shipping.md#署名付きパッケージとリポジトリ)を参照してください。
 
 ## windows
 

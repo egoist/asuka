@@ -137,7 +137,7 @@ go test ./platform/desktop                       # the C the Windows and Linux h
 xvfb-run -a dbus-run-session go test ./platform/linux  # the Linux host: apps built and driven in real GTK windows (GTK 4.14, libadwaita 1.5)
 go run ./cmd/asuka dev examples/counter            # Linux (on Linux, no --platform: linux): the app and its GTK host in one process, rerun on save
 go run ./cmd/asuka build --platform linux examples/counter    # an install prefix, a .tar.gz, a .deb, an .rpm, an AppImage and a Flatpak manifest; from any system (--package deb,rpm: some)
-go test ./internal/distpkg                       # the .deb, .rpm, SquashFS/AppImage, .DS_Store and MSIX writers, read back
+go test ./internal/distpkg                       # the .deb, .rpm (signed), SquashFS/AppImage, .zsync, apt and dnf repository metadata, .DS_Store and MSIX writers, read back
 go run platform/linux/gen_symbols.go             # the Linux host's fallback symbols, from the web host's
 go test -tags e2e ./e2e -run Linux               # GUI tests: the examples under Xvfb (Linux)
 $env:ASUKA_SNAPSHOT='c.png'; $env:ASUKA_DUMP='1'; $env:ASUKA_SCRIPT='tap:Add'; .\examples\counter\dist\windows-amd64\Counter\Counter.exe  # Windows (PowerShell): steps, then the window as a PNG and its view tree
@@ -147,8 +147,10 @@ go test -tags e2e ./e2e -run Web                  # GUI tests: the examples in h
 go test ./platform/macos -run StdSwift; go test ./cmd/asuka -run StdAndroidViews; go test -tags e2e ./e2e -run StdWebViews; go test ./platform/windows -run StdViews  # std and sdk packages' views driven on macOS and the iOS simulator, a device, Chrome, Windows (Linux: TestStdUnits)
 go test ./cmd/asuka -run StdAndroidUnits    # std packages' Kotlin unit tests (android/src/test) on this computer's JVM, no device; internal/testserver serves std/http's and std/websocket's
 go run ./cmd/asuka update keygen                  # the key pair that signs desktop apps' updates (asuka.toml's updates)
+go run ./cmd/asuka linux keygen --uid "Name <email>"  # the OpenPGP key that signs a Linux app's .rpm and its apt and dnf repository (ASUKA_LINUX_GPG_KEY)
+go run ./cmd/asuka publish --platform linux --repo /tmp/repo examples/counter  # the .deb and the .rpm into a signed apt and dnf repository (a directory, s3://bucket/prefix)
 go run ./cmd/asuka publish --platform linux examples/counter  # a desktop build and its signed update, uploaded (GitHub, S3)
-go test -tags e2e ./e2e -run Updater               # a desktop app updates itself and relaunches (macOS; Linux under xvfb-run)
+go test -tags e2e ./e2e -run Updater               # a desktop app updates itself and relaunches (macOS; Linux under xvfb-run: the prefix, and the AppImage extracted and, with /dev/fuse, mounted)
 go test ./platform/windows -run Updater           # likewise on Windows (a PC, or the VM; the feed served in Windows)
 ```
 

@@ -333,6 +333,14 @@ type appConfig struct {
 		// what the app's packages need.
 		DebDepends  []string `json:"debDepends"`
 		RPMRequires []string `json:"rpmRequires"`
+		// SigningKey is the path of the OpenPGP secret key (asuka linux
+		// keygen) that signs the .rpm and the repository (~/ the home
+		// directory); ASUKA_LINUX_GPG_KEY, the key itself or its path,
+		// overrides it, and ASUKA_LINUX_GPG_PASSPHRASE decrypts it.
+		SigningKey string `json:"signingKey"`
+		// Repository is the apt and dnf repository asuka publish --platform
+		// linux writes the .deb and the .rpm into (linux_repo.go).
+		Repository *linuxRepository `json:"repository"`
 	} `json:"linux"`
 	// Windows is what a Windows build's installer and MSIX say of the app.
 	Windows struct {

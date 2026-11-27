@@ -3262,14 +3262,18 @@ How the Linux host maps Asuka (`platform/linux`, C17):
   then `ASUKA_SNAPSHOT=file.png` renders each window to a PNG
   (`ASUKA_DUMP=1`: the view tree beside it) and quits.
 - The update module (Updates): `info` from where the executable started
-  (an install prefix: `bin/<exe>` with `share/<exe>/`; Flatpak, Snap,
-  AppImage and the system's prefixes managed), `download` and `next`
+  (an install prefix: `bin/<exe>` with `share/<exe>/`; an AppImage,
+  `$APPIMAGE` when the executable is in `$APPDIR`; Flatpak, Snap and the
+  system's prefixes managed), `download` and `next`
   through libsoup (a long poll answered as the progress moves by 1%, 64
   KB while the size is unknown), `cancel`, and `install`, which swaps the
   prefix's files and links for the staged tree's (`.asuka-files` naming
   them), puts back what it moved if a rename fails, and runs the
-  desktop's cache tools. `relaunch()` starts the executable at the path
-  it started from with `ASUKA_RELAUNCH_WAIT`, which the new process waits
+  desktop's cache tools; an AppImage's `install` renames the new
+  AppImage, downloaded beside it, over the file. `relaunch()` starts the
+  executable at the path it started from (an AppImage's file, extracted
+  again with `APPIMAGE_EXTRACT_AND_RUN` when this launch was: its
+  `$APPDIR` is no mount) with `ASUKA_RELAUNCH_WAIT`, which the new process waits
   on before it takes the single instance; at launch the host removes the
   `.asuka-update-*` and `.*.old-*` an update left.
 - Tests (`go test ./platform/linux`) build apps (testdata/*.asuka) into
@@ -4265,12 +4269,14 @@ over files, as its `native fn`s; the host does what only it can.
     `kind` is `bundle` (macOS: `root` the .app), `folder` (Windows: the
     folder holding the .exe and its assets, with `.asuka-files`) or
     `prefix` (Linux: `root` the prefix of `bin/<exe>` and
-    `share/<exe>/`); `exe` the running executable, links resolved (on
+    `share/<exe>/`) or `appimage` (Linux: `root` and `exe` the AppImage
+    file, `work` its directory; the package downloads the manifest's
+    `appimage`, whole, in place of the archive); `exe` the running executable, links resolved (on
     Linux, the path it started from: `/proc` names the replaced file);
     `work` where updates are made, on root's volume (a bundle's parent,
     the folder, `share/<exe>`). Not installable, `reason` says why:
     `notConfigured` (no feed or key), `managed` (the Mac App Store's
-    receipt, MSIX's `WindowsApps`, Flatpak, Snap, AppImage, `/usr`),
+    receipt, MSIX's `WindowsApps`, Flatpak, Snap, `/usr`),
     `translocated` (App Translocation), `notWritable` (a probe in `work`,
     and the bundle's own entry, can't be made), `notInstalled` (not a
     layout `asuka build` makes); `message` in words.
@@ -4306,11 +4312,15 @@ over files, as its `native fn`s; the host does what only it can.
     running `.exe` is renamed aside (Windows lets it) and removed at the
     next launch. Linux then runs the desktop's cache tools
     (`update-desktop-database`, `update-mime-database`,
-    `gtk4-update-icon-cache`). internal/update's install.go and bundle.go
-    at bf1839e2 are the Go reference.
+    `gtk4-update-icon-cache`). An AppImage's `staged` is the new AppImage
+    beside it (`.<name>.asuka-update-*`): checked to be one (an ELF with
+    `AI\x02`), given the old file's permissions, synced and renamed over
+    it (the running one's mount keeps the old inode). internal/update's
+    install.go and bundle.go at bf1839e2 are the Go reference.
   - At launch the host removes what an update left: a bundle's
-    `.<Name>.app.update-*` whose helper isn't running, and elsewhere
-    `.asuka-update-*` and the `.*.old-*` set aside.
+    `.<Name>.app.update-*` whose helper isn't running, an AppImage's
+    `.<name>.asuka-update-*` beside it, and elsewhere `.asuka-update-*`
+    and the `.*.old-*` set aside.
   - `relaunch()` (the Quit command's relaunch) quits as `quit()` does and,
     once the quit goes on, starts the app after this process exits: on
     the Mac the staged update's helper opens the new bundle (or a

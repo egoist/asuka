@@ -38,6 +38,7 @@ type publishOptions struct {
 	rollout      float64
 	draft        bool
 	cancelReview bool
+	repo         string
 }
 
 func publishFlags(o *publishOptions) *flagSet {
@@ -62,6 +63,7 @@ func publishFlags(o *publishOptions) *flagSet {
 	fs.Float(&o.rollout, "rollout", 0, 0, "Android: roll the release out to this `fraction` of users, as 0.1, raised later in the Play Console (default: all)")
 	fs.Bool(&o.update, "update", 0, "iOS, tvOS, Android: an over-the-air update of the app's code, not a store build: uploaded where asuka.toml's updates say, for the platform's installed builds whose native side it fits")
 	fs.Bool(&o.draft, "draft", 0, "Android: a draft release, to roll out in the Play Console; mac, windows, linux on GitHub: upload to a draft release, which you publish once every platform is there (default: published)")
+	fs.String(&o.repo, "repo", 0, "", "linux: write the .deb and the .rpm into an apt and a dnf repository, signed with the Linux key (ASUKA_LINUX_GPG_KEY), keeping the versions it has: a `directory`, or s3://bucket/prefix (default: asuka.toml's linux.repository)")
 	fs.Bool(&o.cancelReview, "cancel-review", 0, "Android: if the app has changes in review, cancel that review and send them with this release (default: stop)")
 	fs.String(&o.profile, "profile", 0, "", "iOS, tvOS: a provisioning `profile`'s path, name or UUID (default: asuka.toml's, else the best match installed)")
 	fs.String(&o.out, "out", 'o', "", "the output `directory` of the build (default: dist in the app's directory)")
@@ -150,6 +152,11 @@ func (o *publishOptions) check(set map[string]bool) error {
 			}
 		}
 		return nil
+	}
+	if o.platform != platformLinux {
+		if err := only("linux", "repo"); err != nil {
+			return err
+		}
 	}
 	if desktopPlatform(o.platform) && !ios {
 		// The release notes are the changelog's; the rest is the stores'.

@@ -25,7 +25,8 @@ struct HostInfo {
   name: string = ""
   feed: string = ""
   key: string = ""
-  /// bundle (macOS), folder (Windows), prefix (Linux).
+  /// bundle (macOS), folder (Windows), prefix (Linux), appimage (Linux:
+  /// root and exe are the AppImage file, work its directory).
   kind: string = ""
   root: string = ""
   exe: string = ""
@@ -345,6 +346,23 @@ struct InstallArgs {
   staged: string
 }
 
+// installAppImage downloads the version's AppImage beside the running one
+// (i.root, the AppImage file: i.work is its directory), named as the
+// host's cleaning of leftovers finds it, checks its signature, and hands
+// it to the host, which puts it in the running one's place.
+async fn installAppImage(i: HostInfo, m: Manifest, key: bytes, progress: fn(int, int)) throws {
+  let a = m.appimage ?? ManifestFile()
+  if a.url.isEmpty() { throw UpdateError.failed(reason: "the update has no AppImage") }
+  let path = fs.join([i.work, ".{fs.base(i.root)}.asuka-update-{crypto.uuid().slice(0, 8)}"])
+  var staged = false
+  defer {
+    if !staged { try? fs.remove(path) }
+  }
+  try await downloadSigned(a.url, a.size, a.signature, key, path, progress)
+  let _ = try await host.call("update", "install", json.encode(InstallArgs(staged: path)).bytes())
+  staged = true
+}
+
 // installManifest installs the version of m in place of the running one,
 // current: from its delta from current when there's one, else (or when
 // the delta fails) from its archive.
@@ -352,6 +370,10 @@ async fn installManifest(m: Manifest, current: string, progress: fn(int, int)) t
   let i = try await installable()
   let key = (try? encoding.base64Decode(i.key.trim())) ?? bytes()
   if key.count() != 32 { throw UpdateError.failed(reason: "invalid update public key") }
+  if i.kind == "appimage" {
+    try await installAppImage(i, m, key, progress)
+    return
+  }
   let work = workDir(i)
   try await spawn { try fs.mkdirAll(work) }
   var staged = false

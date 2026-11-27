@@ -237,7 +237,7 @@ func rpmOwns(exe string) func(dir string) bool {
 
 // writeLinuxPackages writes the .deb, the .rpm and the AppImage of the
 // prefix that pkgs asks for, beside it, and returns the files.
-func writeLinuxPackages(app *asukaApp, o *buildOptions, pkgs map[string]bool, prefix, exe, arch string) ([]string, error) {
+func writeLinuxPackages(app *asukaApp, o *buildOptions, pkgs map[string]bool, prefix, exe, arch, updateInfo string) ([]string, error) {
 	var written []string
 	if pkgs[pkgDeb] || pkgs[pkgRPM] {
 		p, err := linuxPackage(app, prefix, exe, arch)
@@ -255,15 +255,27 @@ func writeLinuxPackages(app *asukaApp, o *buildOptions, pkgs map[string]bool, pr
 		}
 		if pkgs[pkgRPM] {
 			p.Depends, p.Recommends = linuxDeps(app, glibc, false)
+			// Signed with the Linux key, when there's one (a repository's
+			// packages must be: dnf checks them).
+			key, err := linuxSigningKey(app)
+			if err != nil {
+				return nil, err
+			}
+			if key != nil {
+				p.Signer = key
+			}
 			f := releaseFile(app, o, "linux", arch, ".rpm")
 			if err := distpkg.WriteRPM(p, rpmOwns(exe), f); err != nil {
 				return nil, err
+			}
+			if key != nil {
+				fmt.Printf("asuka: %s: signed with the key %s (%s)\n", filepath.Base(f), key.Fingerprint(), key.UserID())
 			}
 			written = append(written, f)
 		}
 	}
 	if pkgs[pkgAppImage] {
-		f, err := writeAppImage(app, o, prefix, exe, arch)
+		f, err := writeAppImage(app, o, prefix, exe, arch, updateInfo)
 		if err != nil {
 			return nil, err
 		}
@@ -285,7 +297,7 @@ exec "$HERE/usr/bin/` + exe + `" "$@"
 // writeAppImage writes the AppImage of the prefix: its AppDir is the
 // prefix in usr/, with AppRun, the desktop file and the icon at its root
 // (where the AppImage tools and desktops' integrations find them).
-func writeAppImage(app *asukaApp, o *buildOptions, prefix, exe, arch string) (string, error) {
+func writeAppImage(app *asukaApp, o *buildOptions, prefix, exe, arch, updateInfo string) (string, error) {
 	rt, err := distpkg.Runtime(arch)
 	if err != nil {
 		return "", err
@@ -313,7 +325,7 @@ func writeAppImage(app *asukaApp, o *buildOptions, prefix, exe, arch string) (st
 		)
 	}
 	f := releaseFile(app, o, "linux", arch, ".AppImage")
-	if err := distpkg.WriteAppImage(&distpkg.AppImage{Runtime: rt, Files: files}, f); err != nil {
+	if err := distpkg.WriteAppImage(&distpkg.AppImage{Runtime: rt, Files: files, UpdateInfo: updateInfo}, f); err != nil {
 		return "", err
 	}
 	return f, nil

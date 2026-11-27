@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/ed25519"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoist/asuka/internal/distpkg"
 	iupdate "github.com/egoist/asuka/internal/update"
 )
 
@@ -117,7 +119,7 @@ func (u *updatesConfig) validate() error {
 		if u.URL == "" {
 			return errors.New("updates.s3 needs url, the HTTPS URL that serves the bucket's files")
 		}
-		if err := u.S3.validate(); err != nil {
+		if err := u.S3.validate("updates.s3"); err != nil {
 			return err
 		}
 	}
@@ -254,6 +256,11 @@ type updateBuild struct {
 	// root is the app's tree a delta is made of: the bundle, the folder,
 	// the prefix.
 	root string
+	// appImage is a Linux build's AppImage, which apps run from one
+	// update to (the manifest's appimage), "" when the build made none;
+	// appImageInfo, the update information in it, and appImageZsync, the
+	// name of the .zsync it points at, for AppImageUpdate (appImageUpdate).
+	appImage, appImageInfo, appImageZsync string
 }
 
 // writeFileList writes the FileList of a Windows folder or a Linux
@@ -332,6 +339,11 @@ func writeUpdates(app *asukaApp, out string, b updateBuild, required bool) ([]st
 	name := slug + "-" + version + "-" + b.target + ".tar.gz"
 	archive := filepath.Join(dir, name)
 	os.Remove(archive)
+	// An AppImage of a build before and its .zsync, which this one may not
+	// make.
+	for _, n := range []string{slug + "-" + version + "-" + b.target + ".AppImage", slug + "-" + version + "-" + b.target + ".AppImage.zsync", appImageZsyncName(slug, version, b.target)} {
+		os.Remove(filepath.Join(dir, n))
+	}
 	var size int64
 	var sig string
 	if b.tarball != "" {
@@ -356,6 +368,13 @@ func writeUpdates(app *asukaApp, out string, b updateBuild, required bool) ([]st
 		Signature: sig,
 	}
 	written := []string{archive}
+	if b.appImage != "" {
+		files, err := writeAppImageUpdate(u, key, dir, version, b, &m)
+		if err != nil {
+			return nil, err
+		}
+		written = append(written, files...)
+	}
 	if n := u.deltas(); n > 0 {
 		deltas, err := writeDeltas(u, key, slug, version, dir, b, &m, n)
 		if err != nil {
@@ -371,6 +390,69 @@ func writeUpdates(app *asukaApp, out string, b updateBuild, required bool) ([]st
 	written = append(written, manifest)
 	fmt.Printf("asuka: %s: the update of %s for %s (%s), and its manifest %s\n", filepath.Join(dir, name), version, b.target, formatBytes(size), filepath.Base(manifest))
 	return written, nil
+}
+
+// writeAppImageUpdate puts the build's AppImage in dir, signed in m (what
+// an app run from an AppImage replaces it with), and its .zsync, which
+// AppImageUpdate finds through the update information in the AppImage
+// (appImageUpdate). It returns the files written.
+func writeAppImageUpdate(u *updatesConfig, key ed25519.PrivateKey, dir, version string, b updateBuild, m *iupdate.Manifest) ([]string, error) {
+	name := filepath.Base(b.appImage)
+	dst := filepath.Join(dir, name)
+	os.Remove(dst)
+	if err := linkOrCopy(b.appImage, dst); err != nil {
+		return nil, err
+	}
+	size, sig, err := signFile(dst, key)
+	if err != nil {
+		return nil, err
+	}
+	link := u.fileURL(version, name)
+	m.AppImage = &iupdate.Asset{URL: link, Size: size, Signature: sig}
+	written := []string{dst}
+	if b.appImageZsync != "" {
+		f, err := os.Open(dst)
+		if err != nil {
+			return nil, err
+		}
+		var z bytes.Buffer
+		err = distpkg.WriteZsync(&z, f, size, distpkg.ZsyncInfo{Filename: name, URL: link, MTime: time.Now()})
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+		p := filepath.Join(dir, b.appImageZsync)
+		if err := os.WriteFile(p, z.Bytes(), 0o644); err != nil {
+			return nil, err
+		}
+		written = append(written, p)
+	}
+	return written, nil
+}
+
+// appImageUpdate is the update information an AppImage of version for
+// target carries for AppImageUpdate and appimageupdatetool, and the name
+// of the .zsync it points at: with GitHub, the latest release's (the
+// newest of all for a prerelease, as its channel takes releases too);
+// with url, its channel's .zsync there, named for no version. None ("")
+// without updates, or with a tagPrefix of the app's own, as the
+// repository's latest release is then another's.
+func appImageUpdate(u *updatesConfig, slug, version, target string) (info, zsync string) {
+	channel := iupdate.Channel(version)
+	switch {
+	case u == nil || u.tagged():
+		return "", ""
+	case u.GitHub != "":
+		owner, repo, _ := strings.Cut(u.GitHub, "/")
+		release := "latest"
+		if channel != "" {
+			release = "latest-all"
+		}
+		return "gh-releases-zsync|" + owner + "|" + repo + "|" + release + "|" + slug + "-*-" + target + ".AppImage.zsync",
+			slug + "-" + version + "-" + target + ".AppImage.zsync"
+	}
+	zsync = appImageZsyncName(slug, version, target)
+	return "zsync|" + strings.TrimSuffix(u.URL, "/") + "/" + url.PathEscape(zsync), zsync
 }
 
 // writeSigned writes a file with write, and returns its size and its

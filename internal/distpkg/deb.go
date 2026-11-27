@@ -34,6 +34,17 @@ type Package struct {
 	Files []File
 	// Time dates the files and the build.
 	Time time.Time
+	// Signer, when there's one, signs the .rpm (its OpenPGP signature,
+	// as rpm --addsign makes it).
+	Signer Signer
+}
+
+// A Signer makes OpenPGP signatures: a key (gpgsign.Key).
+type Signer interface {
+	// Sign is a detached binary signature of data.
+	Sign(data []byte) ([]byte, error)
+	// DSA reports whether the key is a DSA key.
+	DSA() bool
 }
 
 // DebVersion is version as Debian compares it: a prerelease's "-" is a

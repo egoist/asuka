@@ -6,9 +6,11 @@
 //   - info: where and how the app is installed. Linux's layout is an
 //     install prefix (asuka build's tarball): bin/<exe> and share/<exe>/
 //     (its assets and .asuka-files), with the desktop entry, icons,
-//     metainfo and MIME types beside other programs'. Flatpak, Snap,
-//     AppImage and the system's prefixes are managed; anything else isn't
-//     installed as asuka build installs.
+//     metainfo and MIME types beside other programs'; or an AppImage
+//     (kind appimage: the file $APPIMAGE, which the runtime mounted or
+//     extracted at $APPDIR, where the executable is). Flatpak, Snap and
+//     the system's prefixes are managed; anything else isn't installed as
+//     asuka build installs.
 //   - download {url, to} → {id}, then next {id}: a long poll of its
 //     progress, answered as it moves by 1% (64 KB while the size is
 //     unknown) or ends; cancel {id}. libsoup (GIO's proxy, redirects
@@ -22,9 +24,15 @@
 //     finishes it by relaunching (relaunch(): the Quit command's flag),
 //     which starts the executable at the path it started from, with
 //     ASUKA_RELAUNCH_WAIT.
+//   - install {staged} of an AppImage: the new AppImage, downloaded and
+//     verified beside the running one (.<name>.asuka-update-*), takes its
+//     place by a rename (the running one's mount keeps the old file open),
+//     with its permissions. Relaunching starts $APPIMAGE, the new file,
+//     extracted again (APPIMAGE_EXTRACT_AND_RUN) when this one was.
 //
 // At launch what an update left (.asuka-update-* work directories, the
-// .*.old-* set aside) goes. internal/update's install.go and files.go at
+// .*.old-* set aside; an AppImage's .<name>.asuka-update-* downloads)
+// goes. internal/update's install.go and files.go at
 // bf1839e2 are the Go reference.
 #include "host.h"
 
@@ -46,12 +54,45 @@
 // ---- Where the app is ----
 
 static char *launch_exe;  // the executable as the app started: /proc names a replaced one "(deleted)"
+static char *appimage;    // the AppImage the app runs from ($APPIMAGE, real), NULL for none
+static bool extracted;    // and it was extracted, not mounted (--appimage-extract-and-run)
 
-static const char *relaunch_exe(void) { return launch_exe; }
+// relaunch_exe is what relaunching starts: the AppImage, the file an
+// update replaced, as the runtime starts it (its environment for this
+// launch's mount taken off), else the executable.
+static const char *relaunch_exe(void) {
+	if (!appimage) return launch_exe;
+	const char *dir = getenv("APPDIR");
+	const char *data = getenv("XDG_DATA_DIRS");
+	if (dir && *dir && data) {
+		// AppRun put the mount's share first: the next launch puts its own.
+		ak_buf kept = {0};
+		gchar **parts = g_strsplit(data, ":", -1);
+		size_t n = strlen(dir);
+		for (gchar **p = parts; *p; p++) {
+			if (!**p || (!strncmp(*p, dir, n) && ((*p)[n] == '/' || !(*p)[n]))) continue;
+			if (kept.len) ak_buf_u8(&kept, ':');
+			ak_buf_put(&kept, *p, strlen(*p));
+		}
+		if (kept.len) {
+			ak_buf_u8(&kept, 0);
+			setenv("XDG_DATA_DIRS", (const char *)kept.data, 1);
+		} else {
+			unsetenv("XDG_DATA_DIRS");
+		}
+		g_strfreev(parts);
+		ak_buf_free(&kept);
+	}
+	const char *const gone[] = {"APPIMAGE", "APPDIR", "ARGV0", "OWD"};
+	for (size_t i = 0; i < AK_LEN(gone); i++) unsetenv(gone[i]);
+	if (extracted) setenv("APPIMAGE_EXTRACT_AND_RUN", "1", 1);
+	return appimage;
+}
 
 typedef struct {
-	char *root, *exe, *work, *list;  // list: the FileList's path in root
+	char *root, *exe, *work, *list;  // list: the FileList's path in root (a prefix's)
 	const char *reason;              // NULL: installable
+	bool appimage;                   // root and exe: the AppImage; work: its directory
 } install_t;
 
 static void install_free(install_t *in) {
@@ -70,7 +111,7 @@ static bool is_dir(const char *p) {
 // itself.
 static install_t locate(void) {
 	install_t in = {0};
-	const char *env[] = {"FLATPAK_ID", "SNAP", "APPIMAGE"};
+	const char *env[] = {"FLATPAK_ID", "SNAP"};
 	for (size_t i = 0; i < AK_LEN(env); i++) {
 		const char *v = getenv(env[i]);
 		if (v && *v) in.reason = "managed";
@@ -78,6 +119,14 @@ static install_t locate(void) {
 	struct stat st;
 	if (stat("/.flatpak-info", &st) == 0) in.reason = "managed";
 	if (in.reason) return in;
+	if (appimage) {
+		// The AppImage file, replaced in its directory.
+		in.appimage = true;
+		in.root = str_dup(ak_cstr(appimage));
+		in.exe = str_dup(ak_cstr(appimage));
+		in.work = dsk_dir(appimage);
+		return in;
+	}
 	if (!launch_exe) {
 		in.reason = "notInstalled";
 		return in;
@@ -165,7 +214,7 @@ static void u_info(ak_span args, reply *r) {
 	put(&w, "name", H.app_name);
 	put(&w, "feed", H.cfg.update_feed);
 	put(&w, "key", H.cfg.update_key);
-	put(&w, "kind", "prefix");
+	put(&w, "kind", in.appimage ? "appimage" : "prefix");
 	put(&w, "root", in.root);
 	put(&w, "exe", in.exe ? in.exe : launch_exe);
 	put(&w, "work", in.work);
@@ -608,9 +657,56 @@ static void refresh_caches(const char *root) {
 	free(icons);
 }
 
+// staged_name reports whether name is a download of an update of the
+// AppImage named base: .<base>.asuka-update-<id>.
+static bool staged_name(const char *name, const char *base) {
+	size_t n = strlen(base);
+	return name[0] == '.' && !strncmp(name + 1, base, n) && g_str_has_prefix(name + 1 + n, WORK_PREFIX);
+}
+
+// swap_appimage puts the AppImage staged (beside it, verified) in the
+// running one's place: executable as the old one is, written out, then
+// renamed over it; false with what went wrong.
+static bool swap_appimage(const install_t *in, const char *staged, char **err) {
+	struct stat old, st;
+	char *dir = dsk_dir(staged);
+	bool beside = !strcmp(dir, in->work) && staged_name(dsk_base(staged), dsk_base(in->root));
+	free(dir);
+	if (!beside || lstat(staged, &st) != 0 || !S_ISREG(st.st_mode)) {
+		*err = g_strdup("update.install: the staged AppImage isn't beside the running one");
+		return false;
+	}
+	// An AppImage: an ELF whose header says AI, type 2.
+	unsigned char head[11] = {0};
+	int fd = open(staged, O_RDWR | O_CLOEXEC);
+	bool ok = fd >= 0 && pread(fd, head, sizeof head, 0) == (ssize_t)sizeof head && !memcmp(head, "\x7f" "ELF", 4) && !memcmp(head + 8, "AI\x02", 3);
+	if (!ok) {
+		*err = g_strdup(fd < 0 ? g_strerror(errno) : "the update isn't an AppImage");
+	} else {
+		mode_t mode = (stat(in->root, &old) == 0 ? old.st_mode : 0755) & 07777;
+		if (fchmod(fd, mode | 0100) != 0 || fsync(fd) != 0) {
+			*err = g_strdup_printf("%s: %s", staged, g_strerror(errno));
+			ok = false;
+		}
+	}
+	if (fd >= 0) close(fd);
+	if (ok && rename(staged, in->root) != 0) {
+		*err = g_strdup_printf("replacing %s: %s", in->root, g_strerror(errno));
+		ok = false;
+	}
+	if (ok) {
+		int d = open(in->work, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+		if (d >= 0) {
+			fsync(d);  // the rename, kept
+			close(d);
+		}
+	}
+	return ok;
+}
+
 // install: {staged}: a directory in work, the new version's prefix tree,
 // which the package has verified; what's left of it goes once it's in
-// place.
+// place. An AppImage's: the new AppImage file.
 static void u_install(ak_span args, reply *r) {
 	dsk_json *j = dsk_json_parse(args.p, args.len);
 	const char *staged = dsk_json_str(j, "staged", "");
@@ -619,6 +715,8 @@ static void u_install(ak_span args, reply *r) {
 	char real[PATH_MAX], work[PATH_MAX];
 	if (in.reason) {
 		err = g_strdup(reason_words(in.reason));
+	} else if (in.appimage) {
+		if (swap_appimage(&in, staged, &err)) lx_log("update: %s replaced", in.root);
 	} else if (!*staged || !realpath(staged, real) || !realpath(in.work, work) || strncmp(real, work, strlen(work)) || real[strlen(work)] != '/') {
 		err = g_strdup("update.install: the staged update isn't in the app's work directory");
 	} else if (swap(&in, real, &err)) {
@@ -642,6 +740,20 @@ static void clean_leftovers(void) {
 		install_free(&in);
 		return;
 	}
+	if (in.appimage) {
+		// Its downloads that weren't put in place (the app quit first);
+		// other AppImages' beside it stay.
+		DIR *d = opendir(in.work);
+		struct dirent *e;
+		strs gone = {0};
+		while (d && (e = readdir(d)))
+			if (staged_name(e->d_name, dsk_base(in.root))) ak_vec_push(&gone, dsk_join(in.work, e->d_name));
+		if (d) closedir(d);
+		for (uint32_t k = 0; k < gone.len; k++) rm_rf(gone.data[k]);
+		strs_free(&gone);
+		install_free(&in);
+		return;
+	}
 	char *bin = dsk_dir(in.exe);
 	const char *dirs[] = {bin, in.root, in.work};
 	for (size_t i = 0; i < AK_LEN(dirs); i++) {
@@ -659,6 +771,26 @@ static void clean_leftovers(void) {
 	install_free(&in);
 }
 
+// find_appimage finds the AppImage the app runs from: $APPIMAGE, a file,
+// when the executable is in $APPDIR, where the runtime mounted or
+// extracted it (another AppImage's environment, which a program it
+// started inherits, isn't this app's).
+static void find_appimage(void) {
+	const char *file = getenv("APPIMAGE"), *dir = getenv("APPDIR");
+	if (!file || !*file || !dir || !*dir || !launch_exe) return;
+	char f[PATH_MAX], d[PATH_MAX], exe[PATH_MAX];
+	struct stat st, dst, parent;
+	if (!realpath(file, f) || !realpath(dir, d) || !realpath(launch_exe, exe)) return;
+	size_t n = strlen(d);
+	if (strncmp(exe, d, n) || exe[n] != '/' || stat(f, &st) != 0 || !S_ISREG(st.st_mode)) return;
+	appimage = str_dup(ak_cstr(f));
+	// Mounted, the runtime's directory is another file system's root;
+	// extracted, a directory of the temporary one's.
+	char *up = dsk_dir(d);
+	extracted = stat(d, &dst) == 0 && stat(up, &parent) == 0 && dst.st_dev == parent.st_dev;
+	free(up);
+}
+
 // lx_update_start notes the executable as the app starts (what relaunch
 // starts, an update having replaced the file /proc names), waits for the
 // process that relaunched it (ASUKA_RELAUNCH_WAIT) to end, and removes
@@ -670,6 +802,7 @@ void lx_update_start(void) {
 		const char *del = " (deleted)";
 		if (n > strlen(del) && !strcmp(launch_exe + n - strlen(del), del)) launch_exe[n - strlen(del)] = 0;
 	}
+	find_appimage();
 	lx_relaunch_exe = relaunch_exe;
 	const char *wait = getenv("ASUKA_RELAUNCH_WAIT");
 	if (wait && *wait) {

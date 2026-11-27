@@ -17,7 +17,7 @@ GitHub's releases or an S3 bucket (see [Updates](#updates)).
 | `android` | `<Name>.aab`, signed with your upload key | any system with a JDK, the Android SDK and the NDK | Google Play (`asuka publish`) |
 | `mac` | `darwin-<arch>/`: `<Name>.app`, its `.zip` and a `.dmg` (Apple silicon; `--arch amd64`: Intel); or a `.pkg` (`--appstore`) | a Mac with Xcode's command line tools | the `.dmg` or the `.zip`, signed and notarized; the Mac App Store |
 | `windows` | `windows-<arch>/`: `<Name>/`, the `.exe` and its assets, an installer (`-setup.exe`), its `.zip`, and an `.msix` (`--package msix`) | Windows with clang, or any system with Zig | the installer, the `.zip`; the MSIX in the Microsoft Store, or sideloaded |
-| `linux` | `linux-<arch>/`: an install prefix, a `.tar.gz`, a `.deb`, an `.rpm`, an AppImage, a Flatpak manifest | Linux with a C compiler, or any system with Zig | the `.deb`, the `.rpm`, the AppImage, the `.tar.gz`, a Flatpak |
+| `linux` | `linux-<arch>/`: an install prefix, a `.tar.gz`, a `.deb`, an `.rpm` (signed with your OpenPGP key), an AppImage, a Flatpak manifest | Linux with a C compiler, or any system with Zig | the `.deb`, the `.rpm`, the AppImage, the `.tar.gz`, a Flatpak; an apt and a dnf repository (`asuka publish --repo`) |
 | `web` | `web/`, a static site | any system with Zig | any web server or CDN |
 
 Without `--platform`, on a Mac, a Windows PC or a Linux machine, it
@@ -615,7 +615,9 @@ C compiler on Linux, with Zig elsewhere. In `dist/linux-amd64`
   for a `WebView`, Poppler for `platform/pdf`, GStreamer for audio and
   video...). The desktop's caches of its desktop file, icons and MIME
   types are updated by the system's own triggers. A prerelease's
-  version comes before its release's (`1.3.0-beta.1` is `1.3.0~beta.1`):
+  version comes before its release's (`1.3.0-beta.1` is `1.3.0~beta.1`).
+  With your OpenPGP key ([below](#signed-packages-and-repositories)),
+  the `.rpm` is signed, as `rpm --addsign` signs one:
 
   ```sh
   sudo apt install ./my-notes-1.0-linux-amd64.deb
@@ -626,7 +628,12 @@ C compiler on Linux, with Zig elsewhere. In `dist/linux-amd64`
   download and run, on a distribution with GTK 4.14 and libadwaita 1.5
   (they aren't in it): its desktop file and icon are where AppImage's
   tools and launchers find them. Where FUSE isn't (a container), run it
-  with `--appimage-extract-and-run`. It's made with the [AppImage
+  with `--appimage-extract-and-run`. With [updates](#updates) it
+  updates itself as the `.tar.gz`'s prefix does, and carries the update
+  information that AppImageUpdate, appimageupdatetool and
+  AppImageLauncher read (`--appimage-updateinformation` prints it): the
+  latest GitHub release's `.zsync`, or `url`'s, which `asuka build`
+  writes beside the update. It's made with the [AppImage
   runtime](https://github.com/AppImage/type2-runtime), downloaded once
   into the build cache and checked; to build offline, set
   `ASUKA_APPIMAGE_RUNTIME` to a `runtime-x86_64` or `runtime-aarch64`
@@ -654,10 +661,10 @@ parts or more, none starting with a digit.
 way. Each is written by `asuka build` itself, from any system: no
 `dpkg`, `rpmbuild` or `mksquashfs` needed.
 
-An app the `.deb`, the `.rpm`, Flatpak or an AppImage installed is
-updated by them, not by itself (`update.unsupported()` is `.managed`):
-the `.tar.gz` unpacked into a prefix of the user's is the one that
-updates itself.
+An app the `.deb`, the `.rpm` or Flatpak installed is updated by them,
+not by itself (`update.unsupported()` is `.managed`): the `.tar.gz`
+unpacked into a prefix of the user's and the AppImage, in a folder the
+user can write, are the ones that update themselves.
 
 What the desktop file, metainfo and packages say, in `asuka.toml`:
 
@@ -687,6 +694,87 @@ description, license and developer. `maintainer` is who the `.deb` and
 `.rpm` say maintains them (`developer` by default); `debDepends` and
 `rpmRequires` are more packages they depend on, in each one's syntax
 (`a | b` is either, in a `.deb`; `(a or b)` in an `.rpm`).
+
+### Signed packages and repositories
+
+Users who add your apt or dnf repository once get each version with the
+system's updates (`apt upgrade`, `dnf upgrade`, the software center),
+checked against your key. Make the OpenPGP key (RSA 4096) that signs
+them, once:
+
+```sh
+asuka linux keygen --uid "Example Inc. <dev@example.com>"
+```
+
+It writes `asuka-linux.key`, the secret key, and `asuka-linux.asc`, the
+public key, to `asuka/linux-keys` in your configuration directory
+(`--out` chooses another). Keep the secret out of the repository, as the
+update key: in a password manager, and in CI's secrets. Users' systems
+trust the key once: a repository is never signed with another.
+`ASUKA_LINUX_GPG_KEY` is the key (or its file's path) for builds in CI,
+`ASUKA_LINUX_GPG_PASSPHRASE` its passphrase when it has one (set as the
+key is made, it encrypts it); `linux.signingKey` is its path on your
+machine:
+
+```toml
+[linux]
+signingKey = "~/.config/asuka/linux-keys/asuka-linux.key"
+
+[linux.repository]
+url = "https://packages.example.com/notes"   # where it's served
+s3 = { bucket = "packages", prefix = "notes", endpoint = "https://<account>.r2.cloudflarestorage.com" }
+```
+
+With the key, `asuka build` signs the `.rpm`. `asuka publish --platform
+linux` then writes the `.deb` and the `.rpm` into the repository that
+`linux.repository` names (its `s3` bucket, or a directory, `dir`), or
+`--repo` (a directory, or `s3://bucket/prefix`), signed, keeping the
+versions it has; the update goes where `updates` says, as before, when
+there are `updates`:
+
+```sh
+asuka publish --platform linux --repo ../packages
+asuka publish --platform linux --arch arm64 --repo s3://packages/notes
+```
+
+In it, all written by `asuka publish` itself, in Go:
+
+- `key.asc` and `key.gpg`, the public key, armored and binary;
+- `deb/`, the apt repository: `dists/stable/InRelease` (and `Release`,
+  `Release.gpg`), each architecture's `Packages`, the packages in
+  `pool/`;
+- `rpm/stable/`, the dnf repository: `repodata/repomd.xml`, signed
+  (`repomd.xml.asc`), the files it names, the packages in `Packages/`;
+  and `rpm/notes.repo`, dnf's configuration of it.
+
+A prerelease goes to its channel's suite and repository (`beta`, and
+`rpm/notes-beta.repo`), which the beta's users add beside `stable`.
+Publish one architecture after the other: each adds to what the last
+wrote. In an S3 bucket the indexes are served uncached; the credentials need
+`s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` and `s3:ListBucket`
+(without which S3 answers 403 for a file that isn't there yet). Serve
+the directory over HTTPS from a web server or CDN.
+
+What users run, once (`asuka publish` prints it with your `url`). On
+Debian and Ubuntu:
+
+```sh
+curl -fsSL https://packages.example.com/notes/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/notes.gpg
+echo "deb [signed-by=/etc/apt/keyrings/notes.gpg] https://packages.example.com/notes/deb stable main" | sudo tee /etc/apt/sources.list.d/notes.list
+sudo apt update && sudo apt install notes
+```
+
+On Fedora (`gpgcheck` and `repo_gpgcheck` on: dnf checks the packages
+and the repository's metadata, and asks to trust the key once):
+
+```sh
+sudo dnf config-manager addrepo --from-repofile=https://packages.example.com/notes/rpm/notes.repo
+sudo dnf install notes
+```
+
+(`sudo dnf config-manager --add-repo …` before Fedora 41.) `rpm -K`
+checks a downloaded `.rpm` against the keys rpm trusts (`sudo rpm
+--import https://packages.example.com/notes/key.asc`).
 
 ## The web
 
@@ -835,8 +923,8 @@ component UpdateBanner {
 `await update.unsupported()` says why the app can't update itself, or
 none when it can: a development build or one without `updates`
 (`.notConfigured`), an app the system's packages (the `.deb`, the
-`.rpm`), Flatpak, Snap, an AppImage, the Mac App Store or the Microsoft
-Store installed (`.managed`: they update it), a Mac app run from its
+`.rpm`), Flatpak, Snap, the Mac App Store or the Microsoft Store
+installed (`.managed`: they update it), a Mac app run from its
 disk image or from where it was downloaded, which macOS translocates
 (`.translocated`: the user moves it to Applications), a folder the user
 can't write (`.notWritable`), a phone (`.notAvailable`). The window
@@ -876,6 +964,15 @@ With `updates` and the secret key, `asuka build --platform mac`,
   patches of those that changed, the rest. Apps download only the delta
   of their version, and the whole archive when it fails (the app was
   changed since it was installed). A first version has none.
+- on Linux, the build's AppImage too, signed, which an app run from an
+  AppImage downloads whole in place of the archive (the manifest's
+  `appimage`), and its `.zsync` for AppImageUpdate: named for the
+  version on GitHub (`notes-1.2.0-linux-amd64.AppImage.zsync`, which
+  the AppImage finds in the latest release), for none with `url`
+  (`notes-linux-amd64.AppImage.zsync`, a channel's
+  `notes-linux-amd64-beta.AppImage.zsync`), which goes up with the
+  manifests. With a `tagPrefix` of your own the AppImage carries no
+  update information: the repository's latest release is another's.
 - `update-<target>.json`, the manifest: the version, its release notes,
   the date, the archive's and deltas' URLs, sizes and signatures, and
   the versions before (for the next deltas). A prerelease's is
@@ -967,9 +1064,13 @@ The signatures are the ones `asuka build` made: the server only chooses.
 - Linux: the tarball's prefix, such as `~/.local`: the app's files alone
   (`bin/notes`, `share/notes/`, its desktop file, icons, metainfo and MIME
   types), each by a rename, then the desktop's caches
-  (`update-desktop-database`, `update-mime-database`). A Flatpak, a Snap,
-  a distribution's package or an AppImage updates through its own
-  channel: there the app doesn't update itself.
+  (`update-desktop-database`, `update-mime-database`). An AppImage: the
+  new one, downloaded beside it and checked, takes its file's place by a
+  rename (whatever the user named it, in a folder they can write, as
+  `~/Applications`), and relaunching starts it, extracted again when the
+  running one was (`--appimage-extract-and-run`). A Flatpak, a Snap or a
+  distribution's package updates through its own channel: there the app
+  doesn't update itself.
 
 ### Phones: updates of the app's code
 
@@ -1397,6 +1498,22 @@ is `tagPrefix` and the version (`v1.2.0`); `--version` makes the build's
 the tag's, so `asuka.toml`'s needn't be bumped. Deltas start from the
 published release, which the runners download (`GH_TOKEN` lifts the
 GitHub API's limit on requests, which a `tagPrefix` uses).
+
+A Linux job that signs the `.rpm` and writes the [apt and dnf
+repository](#signed-packages-and-repositories) takes the OpenPGP key
+too (`gh secret set ASUKA_LINUX_GPG_KEY < asuka-linux.key`), and the
+bucket's credentials:
+
+```yaml
+        env:
+          ASUKA_LINUX_GPG_KEY: ${{ secrets.ASUKA_LINUX_GPG_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          for a in amd64 arm64; do
+            asuka publish --platform linux --arch $a --draft --version "${GITHUB_REF_NAME#v}"
+          done
+```
 
 ## Languages
 

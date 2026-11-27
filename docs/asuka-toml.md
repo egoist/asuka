@@ -446,8 +446,8 @@ category = "audio"
 
 | Key | Type | Default | What it is |
 |---|---|---|---|
-| `category` | string | none | What the app is on a car: `audio`, `communication`, `charging`, `parking` or `fueling` (CarPlay and Android Auto), `quickFood` or `drivingTask` (CarPlay only), `pointOfInterest`, `iot` or `weather` (Android Auto only). Without it, the app doesn't show on cars. |
-| `minCarApiLevel` | integer | `1` | The Car App API level the app's templates need on Android Auto, 1 to 7 (tabs: 6). |
+| `category` | string | none | What the app is on a car: `audio`, `navigation` (its own map: CarPlay's maps entitlement, Android Auto's permissions to draw on the car's screen), `communication`, `charging`, `parking` or `fueling` (CarPlay and Android Auto), `quickFood` or `drivingTask` (CarPlay only), `pointOfInterest`, `iot` or `weather` (Android Auto only). Without it, the app doesn't show on cars. |
+| `minCarApiLevel` | integer | `1` | The Car App API level the app's templates need on Android Auto, 1 to 7 (tabs: 6; a navigation app's alerts: 5). |
 
 Apple grants CarPlay's entitlements on request; a signed build whose
 profile lacks the category's says so. See [Car screens](car.md#categories-asukatomls-car).
@@ -473,8 +473,11 @@ developer.
 | `maintainer` | string | `developer` | Who the `.deb` and the `.rpm` say maintains them: `"Name <email>"`. |
 | `debDepends` | strings | none | More packages the `.deb` depends on, in Debian's syntax: `"libfoo1 (>= 1.2)"`, `"a \| b"`. |
 | `rpmRequires` | strings | none | More packages the `.rpm` requires, in RPM's: `"foo >= 1.2"`, `"(a or b)"`. |
+| `signingKey` | path | none | The OpenPGP secret key (`asuka linux keygen`'s `asuka-linux.key`; `~/` the home directory) that signs the `.rpm` and the apt and dnf repository, for builds on your machine. `ASUKA_LINUX_GPG_KEY` (the key, or its path) overrides it; `ASUKA_LINUX_GPG_PASSPHRASE` decrypts an encrypted one. |
+| `repository` | table | none | The apt and dnf repository `asuka publish --platform linux` writes the `.deb` and the `.rpm` into: `url`, the HTTPS URL that serves it (in the `.repo` file and the lines users run); `s3`, the bucket that serves it (`bucket`, `prefix`, `region`, `endpoint`, `pathStyle`, as `updates.s3`), or `dir`, a directory. `--repo` overrides where. |
 
-See [Shipping](shipping.md#linux).
+See [Shipping](shipping.md#linux) and [Signed packages and
+repositories](shipping.md#signed-packages-and-repositories).
 
 ## windows
 

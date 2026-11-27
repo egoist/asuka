@@ -579,9 +579,9 @@ directory, or a server of yours), and `asuka publish --platform mac`
 (`windows`, `linux`) builds, signs and uploads them
 ([Shipping](shipping.md#updates)). The app downloads and puts the
 update in place: a Mac app's new bundle waits for it to quit; Windows and
-Linux replace the app's files while it runs. An app that the system's
-packages (a `.deb`, an `.rpm`), Flatpak, Snap, an AppImage, an MSIX or an
-app store installed is updated by them:
+Linux replace the app's files while it runs (an AppImage, its file). An
+app that the system's packages (a `.deb`, an `.rpm`), Flatpak, Snap, an
+MSIX or an app store installed is updated by them:
 `await update.unsupported()` says so, and phones answer `.notAvailable`.
 On the web, a page older than the site offers to reload.
 

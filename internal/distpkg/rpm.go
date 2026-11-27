@@ -40,6 +40,8 @@ const (
 // The signature's tags.
 const (
 	sigHeaderSignatures = 62
+	sigDSA              = 267 // an OpenPGP signature of the header: a DSA key's
+	sigRSA              = 268 // any other key's (RSA, EdDSA), as rpmsign files it
 	sigSHA1             = 269
 	sigSHA256           = 273
 	sigSize             = 1000
@@ -348,6 +350,19 @@ func WriteRPM(p *Package, owns func(dir string) bool, file string) error {
 	sig.int32s(sigSize, int32(len(main)+payload.Len()))
 	sig.bin(sigMD5, both.Sum(nil))
 	sig.int32s(sigPayloadSize, int32(cw.n))
+	if p.Signer != nil {
+		// rpm --addsign's v4 signature: the header's, which seals the
+		// payload through its digest.
+		s, err := p.Signer.Sign(main)
+		if err != nil {
+			return fmt.Errorf("distpkg: signing the RPM: %w", err)
+		}
+		tag := uint32(sigRSA)
+		if p.Signer.DSA() {
+			tag = sigDSA
+		}
+		sig.bin(tag, s)
+	}
 	signature := sig.encode(sigHeaderSignatures)
 	if pad := len(signature) % 8; pad != 0 {
 		signature = append(signature, make([]byte, 8-pad)...)

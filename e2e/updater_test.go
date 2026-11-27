@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"net/http"
@@ -82,8 +83,9 @@ func (f *updateFeed) downloaded() string {
 // (a "selfupdate" file in its directory, ASUKA_DATA), waits for it to
 // quit (it relaunches), then for the relaunched one's report, and
 // returns the reports. Every desktop host has the update module
-// (DESIGN.md, "Updates").
-func runUpdater(t *testing.T, exe string) string {
+// (DESIGN.md, "Updates"). args are its arguments, env more of its
+// environment.
+func runUpdater(t *testing.T, exe string, args []string, env ...string) string {
 	data := t.TempDir()
 	if err := os.WriteFile(filepath.Join(data, "selfupdate"), nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -97,8 +99,8 @@ func runUpdater(t *testing.T, exe string) string {
 		t.Fatal(err)
 	}
 	defer logf.Close()
-	app := exec.Command(exe)
-	app.Env = append(os.Environ(), "ASUKA_DATA="+data)
+	app := exec.Command(exe, args...)
+	app.Env = append(append(os.Environ(), "ASUKA_DATA="+data), env...)
 	app.Stdout, app.Stderr = logf, logf
 	if err := app.Start(); err != nil {
 		t.Fatal(err)
@@ -187,7 +189,7 @@ func TestUpdaterMac(t *testing.T) {
 	installed := filepath.Join(apps, "Updater.app")
 	run(t, "ditto", filepath.Join(vol, "Updater.app"), installed)
 	run(t, "hdiutil", "detach", vol)
-	runUpdater(t, filepath.Join(installed, "Contents", "MacOS", "Updater"))
+	runUpdater(t, filepath.Join(installed, "Contents", "MacOS", "Updater"), nil)
 
 	if v := strings.TrimSpace(run(t, "/usr/libexec/PlistBuddy", "-c", "Print :CFBundleShortVersionString", filepath.Join(installed, "Contents", "Info.plist"))); v != "1.0.1" {
 		t.Errorf("the installed bundle is %s", v)
@@ -221,7 +223,7 @@ func TestUpdaterLinux(t *testing.T) {
 	os.MkdirAll(filepath.Join(prefix, "bin"), 0o755)
 	os.WriteFile(filepath.Join(prefix, "bin", "other"), []byte("another program"), 0o755)
 	run(t, "tar", "-xzf", filepath.Join(v100, "linux-"+arch, "updater-1.0.0-linux-"+arch+".tar.gz"), "--strip-components=1", "-C", prefix)
-	runUpdater(t, filepath.Join(prefix, "bin", "updater"))
+	runUpdater(t, filepath.Join(prefix, "bin", "updater"), nil)
 
 	if b, _ := os.ReadFile(filepath.Join(prefix, "bin", "other")); string(b) != "another program" {
 		t.Error("the update touched another program of the prefix")
@@ -236,4 +238,85 @@ func TestUpdaterLinux(t *testing.T) {
 	if left, _ := filepath.Glob(filepath.Join(prefix, "share", "updater", ".asuka-update-*")); len(left) > 0 {
 		t.Errorf("left %v", left)
 	}
+}
+
+// TestUpdaterLinuxAppImage does it with the Linux build's AppImage, run
+// from a folder of the user's as ~/Applications is: 1.0.0 downloads
+// 1.0.1's AppImage (the manifest's appimage, signed), which takes its
+// file's place, and the relaunched AppImage says it's 1.0.1. Each way the
+// runtime runs it: extracted (--appimage-extract-and-run, where there's
+// no FUSE, as in a container), and mounted, where FUSE is.
+//
+//	xvfb-run -a dbus-run-session go test -tags e2e ./e2e -run TestUpdaterLinuxAppImage
+func TestUpdaterLinuxAppImage(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux")
+	}
+	f := newUpdateFeed(t)
+	arch := runtime.GOARCH
+	v100 := f.build(t, "linux", "1.0.0")
+	v101 := f.build(t, "linux", "1.0.1")
+	name := "updater-1.0.0-linux-" + arch + ".AppImage"
+	want, err := os.ReadFile(filepath.Join(v101, "linux-"+arch, "updater-1.0.1-linux-"+arch+".AppImage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// AppImageUpdate's information, in the runtime's .upd_info: the feed's
+	// .zsync, beside the manifest.
+	out, _ := exec.Command(filepath.Join(v100, "linux-"+arch, name), "--appimage-updateinformation").Output()
+	if got := strings.TrimSpace(string(out)); !strings.HasPrefix(got, "zsync|http://") || !strings.HasSuffix(got, "/updater-linux-"+arch+".AppImage.zsync") {
+		t.Errorf("the update information: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(f.dir, "updater-linux-"+arch+".AppImage.zsync")); err != nil {
+		t.Error(err)
+	}
+	// Extracted, by the flag (which the runtime keeps from the app): the
+	// relaunch must ask for it again. The runtime extracts into TMPDIR,
+	// and with NO_CLEANUP leaves each launch's there.
+	type mode struct {
+		name      string
+		args      []string
+		extracted int
+	}
+	modes := []mode{{"extracted", []string{"--appimage-extract-and-run"}, 2}}
+	if _, err := os.Stat("/dev/fuse"); err == nil && (lookPath("fusermount3") || lookPath("fusermount")) {
+		modes = append(modes, mode{"mounted", nil, 0})
+	} else {
+		t.Log("no FUSE here (/dev/fuse, fusermount3): the AppImage runs extracted only")
+	}
+	for _, m := range modes {
+		t.Run(m.name, func(t *testing.T) {
+			apps, tmp := t.TempDir(), t.TempDir()
+			os.WriteFile(filepath.Join(apps, "another.AppImage"), []byte("another app"), 0o755)
+			file := filepath.Join(apps, "Updater.AppImage") // named as the user likes
+			run(t, "cp", filepath.Join(v100, "linux-"+arch, name), file)
+			before := f.downloaded()
+			runUpdater(t, file, m.args, "TMPDIR="+tmp, "NO_CLEANUP=1")
+			if got, _ := filepath.Glob(filepath.Join(tmp, "appimage_extracted_*")); len(got) != m.extracted {
+				t.Errorf("extracted %d times, want %d: %v", len(got), m.extracted, got)
+			}
+			got, _ := os.ReadFile(file)
+			if !bytes.Equal(got, want) {
+				t.Errorf("the AppImage isn't 1.0.1's (%d bytes, want %d)", len(got), len(want))
+			}
+			if st, _ := os.Stat(file); st == nil || st.Mode().Perm()&0o111 == 0 {
+				t.Error("the new AppImage isn't executable")
+			}
+			if got := strings.TrimPrefix(f.downloaded(), before); !strings.Contains(got, "updater-1.0.1-linux-"+arch+".AppImage") || strings.Contains(got, ".delta") || strings.Contains(got, ".tar.gz") {
+				t.Errorf("downloaded %v, want the AppImage alone", got)
+			}
+			// Nothing left beside it, and the other AppImage untouched.
+			if left, _ := filepath.Glob(filepath.Join(apps, ".*")); len(left) > 0 {
+				t.Errorf("left %v", left)
+			}
+			if b, _ := os.ReadFile(filepath.Join(apps, "another.AppImage")); string(b) != "another app" {
+				t.Error("the update touched another AppImage")
+			}
+		})
+	}
+}
+
+func lookPath(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
 }

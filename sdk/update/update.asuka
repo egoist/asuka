@@ -94,7 +94,8 @@ pub struct Release {
   /// When it was built, in RFC 3339 ("" if the feed doesn't say).
   date: string = ""
   /// What install() downloads: the delta from the running version when
-  /// there's one, else the whole archive.
+  /// there's one, else the whole archive (for an app run as an AppImage,
+  /// the new AppImage).
   size: int = 0
   /// The feed's manifest of it.
   manifest: Manifest = Manifest()
@@ -211,7 +212,13 @@ pub async fn check() throws -> Release? {
   }
   if compareVersions(m.version, i.version) <= 0 || !onChannel(m.version, followed) { return none }
   var size = m.size
-  if let d = m.deltaFrom(i.version) {
+  if i.kind == "appimage" {
+    // An AppImage takes the version's AppImage, whole: a version made
+    // without one is nothing it can install.
+    let a = m.appimage ?? ManifestFile()
+    if a.url.isEmpty() || a.signature.isEmpty() || a.size <= 0 { return none }
+    size = a.size
+  } else if let d = m.deltaFrom(i.version) {
     if d.size > 0 { size = d.size }
   }
   return Release(version: m.version, notes: m.notes, date: m.date, size: size, manifest: m, current: i.version)
@@ -581,7 +588,8 @@ pub struct FakeApp {
   feed: string = ""
   /// The update public key, base64 (32 bytes).
   key: string = ""
-  /// bundle, folder or prefix, as the host found the app installed.
+  /// bundle, folder, prefix or appimage, as the host found the app
+  /// installed.
   kind: string = "folder"
   root: string = ""
   exe: string = ""

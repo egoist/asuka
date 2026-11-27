@@ -30,6 +30,10 @@ pub struct Manifest {
   /// it was made, in seconds since 1970). Its url is its module's.
   fingerprint: string = ""
   update: int = 0
+  /// A Linux build's AppImage, signed as the archive is: what an app run
+  /// from an AppImage replaces that file with (none when the version has
+  /// none).
+  appimage: ManifestFile? = none
 
   /// The delta from version from, if the manifest has one.
   fn deltaFrom(from: string) -> ManifestDelta? = deltas.find(d => d.from == from)
@@ -38,6 +42,14 @@ pub struct Manifest {
 /// A delta from version from, signed as the archive is.
 pub struct ManifestDelta {
   from: string = ""
+  url: string = ""
+  size: int = 0
+  signature: string = ""
+}
+
+/// A file of the version besides its archive: its URL, size, and the
+/// Ed25519 signature (base64) of its SHA-256.
+pub struct ManifestFile {
   url: string = ""
   size: int = 0
   signature: string = ""

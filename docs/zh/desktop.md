@@ -374,7 +374,7 @@ app {
 }
 ```
 
-`asuka update keygen` 生成密钥对；`asuka.toml` 中的 `updates` 指定发布的位置（GitHub Releases、S3 存储桶、任意 HTTPS 目录，或者你自己的服务器）；`asuka publish --platform mac`（或 `windows`、`linux`）负责构建、签名和上传（见[发布](shipping.md#自动更新)）。下载更新和把它放到位由应用自己完成：Mac 应用的新 bundle 会等应用退出后再替换；Windows 和 Linux 则在应用运行时就替换它的文件。通过系统软件包（`.deb`、`.rpm`）、Flatpak、Snap、AppImage、MSIX 或应用商店安装的应用由它们负责更新，`await update.unsupported()` 会反映这一点；手机上返回 `.notAvailable`。在 Web 上，如果页面比网站上的版本旧，会提示用户重新加载。
+`asuka update keygen` 生成密钥对；`asuka.toml` 中的 `updates` 指定发布的位置（GitHub Releases、S3 存储桶、任意 HTTPS 目录，或者你自己的服务器）；`asuka publish --platform mac`（或 `windows`、`linux`）负责构建、签名和上传（见[发布](shipping.md#自动更新)）。下载更新和把它放到位由应用自己完成：Mac 应用的新 bundle 会等应用退出后再替换；Windows 和 Linux 则在应用运行时就替换它的文件（AppImage 替换的是 AppImage 文件本身）。通过系统软件包（`.deb`、`.rpm`）、Flatpak、Snap、MSIX 或应用商店安装的应用由它们负责更新，`await update.unsupported()` 会反映这一点；手机上返回 `.notAvailable`。在 Web 上，如果页面比网站上的版本旧，会提示用户重新加载。
 
 ## 最近使用的文档
 

@@ -48,6 +48,17 @@ type Manifest struct {
 	// time, in seconds since 1970). Its URL is the update's module.
 	Fingerprint string `json:"fingerprint,omitempty"`
 	Update      int64  `json:"update,omitempty"`
+	// AppImage is a Linux build's AppImage, signed as the archive is: an
+	// app run from an AppImage replaces that file with it, as the app
+	// run from the tarball's prefix takes the archive.
+	AppImage *Asset `json:"appimage,omitempty"`
+}
+
+// Asset is a file of the version besides its archive.
+type Asset struct {
+	URL       string `json:"url"`
+	Size      int64  `json:"size"`
+	Signature string `json:"signature"`
 }
 
 // Delta is a delta update of the app of version From, signed like the

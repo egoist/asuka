@@ -374,7 +374,7 @@ app {
 }
 ```
 
-鍵ペアは `asuka update keygen` で作ります。リリースの公開先（GitHub のリリース、S3 バケットや任意の HTTPS ディレクトリ、または自前のサーバー）は `asuka.toml` の `updates` で指定し、`asuka publish --platform mac`（`windows`、`linux`）でビルド、署名、アップロードを行います（[配布](shipping.md#自動アップデート)）。ダウンロードとアップデートの配置はアプリ自身が行います。Mac アプリの新しいバンドルは、アプリが終了するのを待ってから置き換わります。Windows と Linux では、実行中にアプリのファイルを置き換えます。システムのパッケージ（`.deb`、`.rpm`）、Flatpak、Snap、AppImage、MSIX、アプリストアからインストールされたアプリは、それらによって更新されます。そのことは `await update.unsupported()` でわかり、スマートフォンでは `.notAvailable` が返ります。Web では、サイトより古いページがリロードを促します。
+鍵ペアは `asuka update keygen` で作ります。リリースの公開先（GitHub のリリース、S3 バケットや任意の HTTPS ディレクトリ、または自前のサーバー）は `asuka.toml` の `updates` で指定し、`asuka publish --platform mac`（`windows`、`linux`）でビルド、署名、アップロードを行います（[配布](shipping.md#自動アップデート)）。ダウンロードとアップデートの配置はアプリ自身が行います。Mac アプリの新しいバンドルは、アプリが終了するのを待ってから置き換わります。Windows と Linux では、実行中にアプリのファイルを置き換えます（AppImage なら、その AppImage ファイルそのものを）。システムのパッケージ（`.deb`、`.rpm`）、Flatpak、Snap、MSIX、アプリストアからインストールされたアプリは、それらによって更新されます。そのことは `await update.unsupported()` でわかり、スマートフォンでは `.notAvailable` が返ります。Web では、サイトより古いページがリロードを促します。
 
 ## 最近使ったドキュメント
 
