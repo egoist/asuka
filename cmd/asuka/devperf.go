@@ -80,21 +80,25 @@ func (p *devProfiles) put(key, name string, data []byte) (save bool) {
 }
 
 // wait waits for a recording of key's that came after since, at most d.
+// The timer says it's over itself, under the lock: a deadline the waiter
+// computed could be a little after the timer fired, and the waiter, woken
+// before it, would wait again with nothing left to wake it.
 func (p *devProfiles) wait(key string, since time.Time, d time.Duration) *gotProfile {
+	over := false
 	deadline := time.AfterFunc(d, func() {
 		p.mu.Lock()
+		over = true
 		p.cond.Broadcast()
 		p.mu.Unlock()
 	})
 	defer deadline.Stop()
-	end := time.Now().Add(d)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for {
 		if g := p.got[key]; g != nil && !g.at.Before(since) {
 			return g
 		}
-		if !time.Now().Before(end) {
+		if over {
 			return nil
 		}
 		p.cond.Wait()
