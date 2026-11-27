@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // A release's crashes are symbolicated with its dSYMs: the debug
@@ -27,7 +28,13 @@ func (t *iosToolchain) dsym(work, bin, name string) error {
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return err
 	}
-	if err := t.run(work, nil, "xcrun", "dsymutil", bin, "-o", out); err != nil {
+	// Named relative to work: the dSYM records the path it was given
+	// (its relocations' binary-path), which is this computer's cache.
+	path := bin
+	if rel, err := filepath.Rel(work, bin); err == nil && !strings.HasPrefix(rel, "..") {
+		path = rel
+	}
+	if err := t.run(work, nil, "xcrun", "dsymutil", path, "-o", out); err != nil {
 		return err
 	}
 	return t.run(work, nil, "xcrun", "strip", "-S", "-x", bin)
@@ -42,7 +49,7 @@ func (t *iosToolchain) cacheSymbols(exe string) error {
 	os.RemoveAll(exe + ".tmp.dSYM") // swiftc's own, for its output's name
 	dsym := exe + ".dSYM"
 	os.RemoveAll(dsym)
-	if err := t.run(filepath.Dir(exe), nil, "xcrun", "dsymutil", exe, "-o", dsym); err != nil {
+	if err := t.run(filepath.Dir(exe), nil, "xcrun", "dsymutil", filepath.Base(exe), "-o", dsym); err != nil {
 		return err
 	}
 	return t.run(filepath.Dir(exe), nil, "xcrun", "strip", "-S", "-x", exe)

@@ -109,5 +109,5 @@ func Musl(arch string) (*Toolchain, error) {
 		return nil, err
 	}
 	return &Toolchain{Target: Target{OS: "linux", Arch: arch}, CC: z, Flags: []string{"-target", clangArch(arch) + "-linux-musl"},
-		AR: []string{z.Path, "ar", "rcs"}, Musl: true}, nil
+		AR: []string{z.Path, "ar", "rcsD"}, Musl: true}, nil
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/egoist/asuka/internal/cachedir"
 	"github.com/egoist/asuka/internal/ccache"
 	"github.com/egoist/asuka/internal/prebuilt"
 )
@@ -194,7 +195,7 @@ func (b *swiftBuild) moduleIn(sdk string, m swiftModule, host swiftLib, out stri
 		lang = "6"
 	}
 	triple := b.moduleTriple()
-	parts := []string{"swift-module-2", swiftcVersion(), sdk, swiftSDKVersion(b.sdkName), target, lang, m.name, strings.Join(opt, " "), strings.Join(m.defines, " "), host.dir}
+	parts := []string{"swift-module-3", swiftcVersion(), sdk, swiftSDKVersion(b.sdkName), target, lang, m.name, strings.Join(opt, " "), strings.Join(m.defines, " "), host.dir}
 	for _, n := range slices.Sorted(maps.Keys(m.sources)) {
 		parts = append(parts, n, string(m.sources[n]))
 	}
@@ -225,7 +226,11 @@ func (b *swiftBuild) moduleIn(sdk string, m swiftModule, host swiftLib, out stri
 		if err := os.WriteFile(p, m.sources[n], 0o644); err != nil {
 			return swiftLib{}, err
 		}
-		files = append(files, p)
+		// Named relative to the directory swiftc runs in: what the code
+		// says of its files (#filePath's length, which a closure's check
+		// passes even where the path's mapped) is then the same wherever
+		// the cache and this directory are (reproducible builds).
+		files = append(files, filepath.Join("src", filepath.FromSlash(n)))
 	}
 	inc := filepath.Join(tmp, "CAsuka")
 	for n, data := range m.headers {
@@ -254,7 +259,14 @@ func (b *swiftBuild) moduleIn(sdk string, m swiftModule, host swiftLib, out stri
 		"-parse-as-library", "-wmo", "-enable-library-evolution", "-c", "-o", obj,
 		"-emit-module", "-emit-module-path", filepath.Join(mod, triple+".swiftmodule"),
 		"-emit-module-interface-path", filepath.Join(mod, triple+".swiftinterface"),
-		"-module-cache-path", moduleCache()}
+		"-module-cache-path", moduleCache(),
+		// The directory it's compiled in, and the cache, named as the
+		// same wherever they are (its name is this process's, the cache's
+		// this user's) in #filePath and debug information, as cbuild's
+		// compiles name them: the directory's map both before and after
+		// the cache's (it's in the cache), as swiftc takes the last map
+		// that matches a path and its Clang the first.
+		"-file-prefix-map", tmp + "=" + m.name, "-file-prefix-map", cachedir.Root() + "=asuka-cache", "-file-prefix-map", tmp + "=" + m.name}
 	args = append(args, opt...)
 	for _, d := range m.defines {
 		args = append(args, "-D", d)
@@ -267,7 +279,7 @@ func (b *swiftBuild) moduleIn(sdk string, m swiftModule, host swiftLib, out stri
 	if err := b.run(tmp, nil, "xcrun", append(args, files...)...); err != nil {
 		return swiftLib{}, err
 	}
-	if err := b.run(tmp, nil, "xcrun", "libtool", "-static", "-o", filepath.Join(tmp, "lib"+m.name+".a"), obj); err != nil {
+	if err := b.run(tmp, nil, "xcrun", "libtool", "-static", "-D", "-o", filepath.Join(tmp, "lib"+m.name+".a"), obj); err != nil {
 		return swiftLib{}, err
 	}
 	os.Remove(obj)

@@ -594,6 +594,24 @@ sentry-cli upload-proguard --org ORG --project PROJECT dist/Notes-mapping.txt
 
 请保留每个发布版本的符号，因为崩溃只能用它所在构建的符号来符号化。崩溃报告本身的说明见[设备](device.md#崩溃报告platformcrash)。
 
+## 可复现构建
+
+发布构建是可复现的：同样的源码，用同一版本的 Asuka 和同样的编译器（Xcode、Android NDK、Zig、系统自带的 C 编译器）构建，在每个平台上得到的字节都完全相同，不管是哪台电脑构建、项目和 checkout 放在哪里、什么时候构建。因此，更新的增量包里只有真正改动的部分（AppImage 的、桌面应用的、手机上应用代码的更新），任何人也都能验证一个发布版本确实由它的源码构建而来：重新构建一次，比较结果即可。
+
+发布构建里记录的文件名是项目里的写法（`app.asuka`、`std/http/http.asuka`），而不是它们在构建机器上的路径，错误的调用栈里显示的也是这种写法。构建中需要写日期的地方（`.tar.gz`、`.deb`、`.rpm`、AppImage 和 `.zip` 里的文件，Linux 应用 metainfo 里的 release，Web 的 `version.json`，手机构建判断代码更新新旧时用的时间）都按照 [reproducible-builds.org](https://reproducible-builds.org/docs/source-date-epoch/) 的约定，取 `SOURCE_DATE_EPOCH`（自 1970 年起的秒数）。没有设置时，取应用所在 git 仓库最后一次提交的时间；不在仓库里时，取应用文件中最新的修改时间；无论如何都不会是构建运行的时间。如果是在没有仓库的源码上构建（比如某个标签的归档），请设置它：
+
+```sh
+SOURCE_DATE_EPOCH=1767225600 asuka build --platform linux
+sha256sum dist/linux-amd64/*.deb    # 不管在哪里构建这个版本，结果都一样
+```
+
+每次构建仍会不同的，是那些记录了生成时间、构建无法自行决定的内容：
+
+- **Apple 的签名。** 用证书签名（`.ipa`、用你的 Apple Development 证书签名的模拟器构建、用 Developer ID 签名的 Mac 应用）会记下签名的时间，公证还会加上 Apple 的票据。临时签名（不带 `--sign` 的 Mac 构建）不含时间。要比较签过名的二进制文件，可以先复制一份，用 `codesign --remove-signature` 去掉签名再比较。
+- **Mac 的 `.dmg`。** `hdiutil` 每次都会给磁盘映像一个新的标识符和它自己的日期。旁边的 `.zip` 是可复现的。
+- **Windows 的签名**，由时间戳服务器加盖时间戳（`ASUKA_WINDOWS_TIMESTAMP`）。
+- **Linux 的 OpenPGP 签名**：签名的 `.rpm` 和 AppImage，以及 apt 和 dnf 软件源的元数据，都记录了签名的时间。
+
 ## 发布之前
 
 正式发布之前，请先在用户实际使用的环境里运行一遍发布构建：

@@ -248,6 +248,11 @@ func (c Compiler) Link(objs []string, exe string, extra []string) error {
 
 func (c Compiler) run(args []string) error {
 	cmd := exec.Command(c.Path, args...)
+	// Apple's linker writes each object's time in a debug map (N_OSO),
+	// which a dSYM is made from: 0 instead, as Xcode has it, so that a
+	// link is the same whenever its objects were made (reproducible
+	// builds, repro.go). Nothing else reads it.
+	cmd.Env = append(os.Environ(), "ZERO_AR_DATE=1")
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {

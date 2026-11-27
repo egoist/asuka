@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/internal/distpkg"
 	iupdate "github.com/egoist/asuka/internal/update"
 	"github.com/egoist/asuka/lang/bytecode"
 	"github.com/egoist/asuka/lang/target"
@@ -208,7 +209,7 @@ func (a *asukaApp) otaUpdates(platform string, m *bytecode.Module) (*appbuild.Up
 		return nil, err
 	}
 	return &appbuild.Updates{Fingerprint: fp, Feed: u.feed(otaTarget(platform, fp)), Key: strings.TrimSpace(u.PublicKey),
-		Version: a.cfg.Version, Built: time.Now().Unix()}, nil
+		Version: a.cfg.Version, Built: distpkg.Epoch().Unix()}, nil
 }
 
 // writeOTAUpdate writes, in out/updates, an over-the-air update of the

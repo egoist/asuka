@@ -94,8 +94,12 @@ func (b *macBuild) executable(exe, arch string, m *bytecode.Module) error {
 		// concurrency) the copy in Frameworks; packages' frameworks there.
 		"-Xlinker", "-rpath", "-Xlinker", "/usr/lib/swift",
 		"-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks")
+	args = append(args, appleLinkRepro()...) // the same objects, the same binary (repro.go)
 	if b.release {
-		args = append(args, "-Xlinker", "-dead_strip")
+		// Without a debug map (-S): it would name the objects in this
+		// computer's cache, which a release's users don't have, and make
+		// its bytes this cache's (reproducible builds).
+		args = append(args, "-Xlinker", "-dead_strip", "-Xlinker", "-S")
 	}
 	args = append(args, pkgs.linkFlags()...)
 	if err := b.run(b.work, nil, "xcrun", args...); err != nil {

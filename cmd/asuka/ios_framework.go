@@ -37,9 +37,9 @@ _ = UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, "AsukaAppDe
 // ents are the executable's linker flags for its entitlements (the
 // simulator's).
 func (t *iosToolchain) linkApp(work, bundle string, cfg *appConfig, hostObj, lib string, ents []string) (code string, err error) {
-	strip := []string{}
+	strip := appleLinkRepro() // the same objects, the same binary (repro.go)
 	if t.release {
-		strip = []string{"-Xlinker", "-dead_strip"}
+		strip = append(strip, "-Xlinker", "-dead_strip")
 	}
 	exe := filepath.Join(bundle, appExe)
 	// The shortcuts' App Intents: in the executable, their metadata in the bundle.
@@ -132,6 +132,7 @@ func (t *iosToolchain) linkExtension(work, bin, name string, ents []string) (str
 		"-Xlinker", "-e", "-Xlinker", "_NSExtensionMain", "-Xlinker", "-application_extension",
 		"-Xlinker", "-rpath", "-Xlinker", "@executable_path/../../Frameworks",
 		"-framework", "UIKit", "-framework", "Foundation"}
+	args = append(args, appleLinkRepro()...)
 	return exe, t.run(work, nil, "xcrun", append(args, ents...)...)
 }
 

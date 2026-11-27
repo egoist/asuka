@@ -114,7 +114,7 @@ func TestObjectCacheSharedAcrossCheckouts(t *testing.T) {
 	saved := roots
 	defer func() { roots = saved }()
 	compile := func(repo string) Object {
-		roots = []pathRoot{{repo, "$REPO"}, {cache, "$CACHE"}}
+		roots = []pathRoot{{repo, "$REPO", ""}, {cache, "$CACHE", "asuka-cache/"}}
 		d := filepath.Join(repo, "core", "src")
 		o, err := cc.CompileCached([]string{filepath.Join(d, "x.c")}, []string{"-I" + filepath.Join(repo, "core", "include")})
 		if err != nil {
@@ -195,7 +195,7 @@ func TestKeyPaths(t *testing.T) {
 	rootsOnce.Do(func() {}) // computed below for this test's cache
 	saved := roots
 	defer func() { roots = saved }()
-	roots = []pathRoot{{filepath.Join("/", "w", "repo"), "$REPO"}, {root, "$CACHE"}}
+	roots = []pathRoot{{filepath.Join("/", "w", "repo"), "$REPO", ""}, {root, "$CACHE", "asuka-cache/"}}
 	p := filepath.Join("/", "w", "repo", "core", "src", "a.h")
 	if k := keyPath("-I" + filepath.Dir(p)); k != "-I$REPO/core/src" {
 		t.Errorf("keyPath = %q", k)
@@ -208,7 +208,7 @@ func TestKeyPaths(t *testing.T) {
 	}
 	// A checkout at /src has /src/core/src: the root is where the path
 	// starts, not every directory of its name.
-	roots = []pathRoot{{filepath.Join("/", "src"), "$REPO"}, {root, "$CACHE"}}
+	roots = []pathRoot{{filepath.Join("/", "src"), "$REPO", ""}, {root, "$CACHE", "asuka-cache/"}}
 	p = filepath.Join("/", "src", "core", "src", "base", "base.h")
 	if k := keyPath(p); k != "$REPO/core/src/base/base.h" || realPath(k) != p {
 		t.Errorf("keyPath(%s) = %s, back %s", p, k, realPath(k))

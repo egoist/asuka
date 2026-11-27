@@ -323,18 +323,20 @@ func (tc *Toolchain) link(objs []string, as []archiveRef, ld []string, out strin
 		return err
 	}
 	args := append(append([]string{}, objs...), tc.archiveArgs(as)...)
-	tmp := ccache.TmpName(out)
-	if err := tc.CC.Link(args, tmp, ld); err != nil {
-		os.Remove(tmp)
+	// Linked under out's own name, in a directory of its own: a linker
+	// writes the name it's given in what it makes (Apple's in its
+	// signature's identifier, lld a Windows executable's PDB's), so a
+	// name of this process's would make every link's bytes its own.
+	dir := ccache.TmpName(out)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	// lld's PDB beside a Windows executable, which nothing reads.
-	os.Remove(strings.TrimSuffix(tmp, filepath.Ext(tmp)) + ".pdb")
-	if err := os.Rename(tmp, out); err != nil {
-		os.Remove(tmp)
+	defer os.RemoveAll(dir) // with lld's PDB beside a Windows executable, which nothing reads
+	tmp := filepath.Join(dir, filepath.Base(out))
+	if err := tc.CC.Link(args, tmp, append(append([]string{}, ld...), tc.reproLink()...)); err != nil {
 		return err
 	}
-	return nil
+	return os.Rename(tmp, out)
 }
 
 // splitHot is srcs without the files hot names (by their base names), and

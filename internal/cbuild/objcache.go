@@ -32,9 +32,12 @@ import (
 // still hash the same; else the source is compiled, and its object (c/o)
 // keyed by the first key and its headers'.
 //
-// Paths under the repository (a checkout's) or the cache are written
-// relative to them in keys and manifests, so another checkout's build
-// finds what this one compiled.
+// Paths under the repository (a checkout's), the cache or the app's
+// project are written relative to them in keys and manifests, so another
+// checkout's build finds what this one compiled; and every compile is
+// told to write them so in what it makes (prefixMaps: __FILE__, debug
+// information), so that what it finds is what it would have compiled
+// itself, byte for byte.
 
 // manifestEntries is how many objects a manifest keeps (each a version
 // of the headers the source includes), newest first.
@@ -82,25 +85,54 @@ func (c Compiler) Identity() string {
 
 // ---- Paths in keys ----
 
-type pathRoot struct{ dir, label string }
+// pathRoot is a directory whose paths keys write as label/..., and
+// compiles as mapped... (prefixMaps).
+type pathRoot struct{ dir, label, mapped string }
 
 var (
+	rootsMu   sync.Mutex
 	rootsOnce sync.Once
 	roots     []pathRoot
+	project   string
 )
 
 // pathRoots are the directories whose paths keys write relative to them:
 // the repository's (when the CLI runs from a checkout, or a test from
-// one) and the cache's, longest first.
+// one), the cache's and the project's (SetProject), longest first.
 func pathRoots() []pathRoot {
+	rootsMu.Lock()
+	defer rootsMu.Unlock()
 	rootsOnce.Do(func() {
 		if r := RepoRoot(); r != "" {
-			roots = append(roots, pathRoot{r, "$REPO"})
+			roots = append(roots, pathRoot{r, "$REPO", ""})
 		}
-		roots = append(roots, pathRoot{cachedir.Root(), "$CACHE"})
-		sort.Slice(roots, func(i, j int) bool { return len(roots[i].dir) > len(roots[j].dir) })
+		roots = append(roots, pathRoot{cachedir.Root(), "$CACHE", "asuka-cache/"})
+		if project != "" {
+			roots = append(roots, pathRoot{project, "$PROJECT", ""})
+		}
+		sort.SliceStable(roots, func(i, j int) bool { return len(roots[i].dir) > len(roots[j].dir) })
 	})
 	return roots
+}
+
+// SetProject names the app's (or program's) directory, whose C (its
+// [c], its own native packages') a build compiles: its paths are written
+// relative to it, in keys and in what the compiles make, as the
+// repository's are. The CLI calls it once it knows its project, before
+// it builds.
+func SetProject(dir string) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return
+	}
+	rootsMu.Lock()
+	defer rootsMu.Unlock()
+	if abs == project {
+		return
+	}
+	project = abs
+	rootsOnce = sync.Once{}
+	roots = nil
 }
 
 // RepoRoot is the repository's directory when the CLI runs from a
@@ -354,7 +386,7 @@ func (c Compiler) CompileCached(srcs, flags []string) ([]Object, error) {
 
 // setPath is the set's file for these sources, "" when one doesn't hash.
 func (c Compiler) setPath(id string, srcs, flags []string, h *hashes) string {
-	parts := []string{"c-objects-1", id}
+	parts := []string{"c-objects-2", id}
 	for _, f := range flags {
 		parts = append(parts, keyPath(f))
 	}
@@ -454,7 +486,7 @@ func (c Compiler) object1(id, src string, flags []string, h *hashes) (Object, ma
 	for _, f := range flags {
 		nf = append(nf, keyPath(f))
 	}
-	first := ccache.Key("c-object-1", id, strings.Join(nf, "\x00"), keyPath(filepath.Dir(src)), sum)
+	first := ccache.Key("c-object-2", id, strings.Join(nf, "\x00"), keyPath(filepath.Dir(src)), sum)
 	manifest := ccache.Sharded("c", "m", first, "")
 	entries := readManifest(manifest)
 	for _, e := range entries {
@@ -482,7 +514,7 @@ func (c Compiler) object1(id, src string, flags []string, h *hashes) (Object, ma
 	tmp := ccache.TmpName(filepath.Join(tmpDir, first[:16]+".o"))
 	dep := tmp + ".d"
 	defer os.Remove(dep)
-	args := append(append([]string{}, c.Args...), flags...)
+	args := append(append(append([]string{}, c.Args...), flags...), c.prefixMaps()...)
 	args = append(args, "-MMD", "-MF", dep, "-c", src, "-o", tmp)
 	if err := c.run(args); err != nil {
 		os.Remove(tmp)
@@ -660,7 +692,7 @@ func (tc *Toolchain) archivesArchives() bool {
 // archive's into a directory of its own), for an archiver that takes
 // only objects.
 func (tc *Toolchain) extract(archives []string, dir string) ([]string, error) {
-	tool := tc.AR[:len(tc.AR)-1] // ar, without its "rcs"
+	tool := tc.AR[:len(tc.AR)-1] // ar, without its "rcsD"
 	var objs []string
 	for i, a := range archives {
 		abs, err := filepath.Abs(a)

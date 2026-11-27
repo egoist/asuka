@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Manifest describes the latest version of an app for one target
@@ -248,6 +249,13 @@ func compareFields(a, b string) int {
 // WriteArchive writes the entries of dir (files, directories and symbolic
 // links, with their permissions) as a gzip compressed tar archive.
 func WriteArchive(w io.Writer, dir string, entries []string) error {
+	return WriteArchiveAt(w, dir, entries, time.Time{})
+}
+
+// WriteArchiveAt is WriteArchive with every entry dated mtime (a build's
+// sources' time: the same archive from the same files, whenever they
+// were written), or with zero, its file's time.
+func WriteArchiveAt(w io.Writer, dir string, entries []string, mtime time.Time) error {
 	gz, err := gzip.NewWriterLevel(w, gzip.BestCompression)
 	if err != nil {
 		return err
@@ -281,6 +289,9 @@ func WriteArchive(w io.Writer, dir string, entries []string) error {
 				hdr.Name += "/"
 			}
 			hdr.Uid, hdr.Gid, hdr.Uname, hdr.Gname = 0, 0, "", ""
+			if !mtime.IsZero() {
+				hdr.ModTime, hdr.AccessTime, hdr.ChangeTime = mtime, time.Time{}, time.Time{}
+			}
 			if err := tw.WriteHeader(hdr); err != nil {
 				return err
 			}

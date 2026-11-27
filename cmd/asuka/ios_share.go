@@ -77,7 +77,7 @@ func (t *iosToolchain) buildShare(work string, cfg *appConfig, fw string) (strin
 	}
 	opt := []string{"-Onone", "-D", "DEBUG"}
 	if t.release {
-		opt = []string{"-O", "-g", "-Xlinker", "-dead_strip"}
+		opt = append([]string{"-O", "-g", "-Xlinker", "-dead_strip"}, appleLinkRepro()...)
 	}
 	// With the extension-safe APIs only.
 	args := append([]string{"swiftc", "-target", t.target, "-sdk", t.sdk, "-swift-version", "5",

@@ -1949,8 +1949,21 @@ its flags, its directory and its bytes; under it a manifest (`c/m`)
 lists the objects compiled from it (`c/o`), each with the headers that
 compile included (the compiler's `-MMD` depfile) and their hashes, and a
 lookup takes the one whose headers all still hash the same. Paths under
-the checkout or the cache are written relative to them, so another
-worktree's build hits what this one compiled. The core is the same for
+the checkout, the cache or the app's project are written relative to
+them, so another worktree's build hits what this one compiled; and every
+compile writes them so in the object too (`-ffile-prefix-map`, the
+compile's directory `.`), so what it hits is what it would have
+compiled, byte for byte. That makes builds reproducible
+(docs/shipping.md): with archives undated (`ar D`, `libtool -D`), each
+link named as its output (a linker writes the name), Windows'
+executables stamped by their contents (`/Brepro`), Apple's links
+`-reproducible` with the small Objective-C stubs (the fast ones' GOT
+slots are laid out differently from one link to the next), Swift
+compiled with its sources relative and its directory mapped, a
+release's module naming its files as the project has them, and what a
+build dates dated by `SOURCE_DATE_EPOCH` (else the app's last commit,
+else its newest file). `internal/cbuild`'s `TestReproducible` builds the
+core in two checkouts with two caches and compares. The core is the same for
 every app: what used to differ by `-D` (an app compiled in, its externs'
 glue, the std packages' C it imports) is `core/link/link.c`'s, compiled
 per link (`ak_link_app`, `ak_link_ffi`, `ak_link_sqlite`, which name the

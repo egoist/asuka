@@ -13,6 +13,7 @@ import (
 
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/appconfig"
+	"github.com/egoist/asuka/internal/cbuild"
 	"github.com/egoist/asuka/internal/filetype"
 	"github.com/egoist/asuka/lang/bytecode"
 	"github.com/egoist/asuka/lang/check"
@@ -105,6 +106,9 @@ func loadApp(dir, platform string) (*asukaApp, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Its C's paths are written relative to it in what's compiled: a
+	// build's bytes are the same wherever it's made (repro.go).
+	cbuild.SetProject(proj.Dir)
 	// The catalogs: the compiler checks them (and tr's calls of them),
 	// as each compile does.
 	app := &asukaApp{dir: proj.Dir, name: filepath.Base(proj.Dir), bundleID: cfg.ID, cfg: cfg, proj: proj, platform: langPlatform(platform)}

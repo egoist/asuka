@@ -140,6 +140,7 @@ func (t *iosToolchain) buildEmbedded(work string, app *asukaApp, lib string, fea
 		"-I", filepath.Join(src, "Sources", "CAsuka", "include"),
 		"-o", bin, lib, "-framework", "UIKit", "-framework", "Foundation", "-lresolv",
 		"-Xlinker", "-install_name", "-Xlinker", "@rpath/" + embedModule + ".framework/" + embedModule}
+	args = append(args, appleLinkRepro()...)
 	for _, f := range features {
 		args = append(args, "-D", f)
 	}

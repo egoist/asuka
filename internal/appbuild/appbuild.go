@@ -82,9 +82,11 @@ func (p *Project) CompileCover(platform target.Platform) (*bytecode.Module, *ir.
 
 func compileDirWith(dir string, platform target.Platform, cover, tests bool) (*bytecode.Module, *ir.Cover, *Uses, []check.Diagnostic, error) {
 	// Imports resolve through the project's asuka.lock (compile.Dir's
-	// own), which Load made ready.
+	// own), which Load made ready. A release's files are the program's
+	// (app.asuka, std/time/time.asuka), not where this computer has them:
+	// its bytes are the same wherever it's built.
 	res, err := compile.Dir(dir, &compile.Options{Platform: platform, Lang: DevLang, Direction: DevDirection, Project: binRoot(dir), Cover: cover, NoOptimize: DevNoOptimize, Debug: Debug, NoTests: !tests,
-		PreviewTests: tests && PreviewTests})
+		PreviewTests: tests && PreviewTests, TrimPaths: !Debug && !cover})
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}

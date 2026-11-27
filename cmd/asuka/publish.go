@@ -89,14 +89,14 @@ func cmdPublish(args []string) error {
 		if !otaPlatform(o.platform) {
 			return errors.New("--update is iOS's, tvOS's and Android's: a desktop app's update is published with each build")
 		}
-		app, err := loadApp(dir, o.platform)
+		app, err := loadRelease(dir, o.platform)
 		if err != nil {
 			return err
 		}
 		return publishOTA(app, &o)
 	}
 	if desktopPlatform(o.platform) && !(o.platform == platformMac && o.appStore) {
-		app, err := loadApp(dir, o.platform)
+		app, err := loadRelease(dir, o.platform)
 		if err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ func cmdPublish(args []string) error {
 	if err != nil {
 		return err
 	}
-	app, err := loadApp(dir, o.platform)
+	app, err := loadRelease(dir, o.platform)
 	if err != nil {
 		return err
 	}

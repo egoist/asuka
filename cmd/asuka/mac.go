@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/asuka/internal/appconfig"
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/internal/distpkg"
 	iupdate "github.com/egoist/asuka/internal/update"
 	"github.com/egoist/asuka/lang/target"
 )
@@ -65,7 +66,10 @@ func macRunner(verbose bool) func(dir string, env []string, cmd string, args ...
 		}
 		c := exec.Command(cmd, args...)
 		c.Dir = dir
-		c.Env = append(os.Environ(), env...)
+		// Apple's tools date no object they record (a debug map's, an
+		// archive's members), as Xcode has them: a build's bytes are the
+		// same whenever its objects were made (repro.go).
+		c.Env = append(append(os.Environ(), "ZERO_AR_DATE=1"), env...)
 		out, err := c.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("%s failed: %v\n%s", cmd, err, out)
@@ -367,7 +371,13 @@ func buildMac(app *asukaApp, o *buildOptions) error {
 			// and Macs.
 			zip := releaseFile(app, o, "darwin", arch, ".zip")
 			os.Remove(zip)
-			if err := run(dir, nil, "ditto", "-c", "-k", "--keepParent", bundle, zip); err != nil {
+			// Its files dated by its sources and their times written in
+			// UTC (a .zip's are local times): the same .zip from the same
+			// sources, wherever and whenever it's made (repro.go).
+			if err := stampTree(bundle, distpkg.Epoch()); err != nil {
+				return err
+			}
+			if err := run(dir, []string{"TZ=UTC"}, "ditto", "-c", "-k", "--keepParent", bundle, zip); err != nil {
 				return err
 			}
 			fmt.Printf("asuka: %s\n", zip)

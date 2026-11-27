@@ -17,6 +17,7 @@ import (
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/appconfig"
 	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/internal/distpkg"
 	iupdate "github.com/egoist/asuka/internal/update"
 	"github.com/egoist/asuka/lang/target"
 )
@@ -269,7 +270,7 @@ func writeLinuxShare(app *asukaApp, out, exe string) error {
 	}
 	files := map[string]string{
 		filepath.Join(share, "applications", id+".desktop"):  desktopEntry(app, exe, icon),
-		filepath.Join(share, "metainfo", id+".metainfo.xml"): metainfo(app, icon, time.Now()),
+		filepath.Join(share, "metainfo", id+".metainfo.xml"): metainfo(app, icon, distpkg.Epoch()),
 	}
 	// asuka.toml's fileTypes: the MIME types the app defines, for
 	// shared-mime-info (named for the app's ID, as Flatpak exports it),
@@ -518,6 +519,8 @@ func tarGz(dir, file string) error {
 		}
 		h.Name = filepath.ToSlash(rel)
 		h.Uid, h.Gid, h.Uname, h.Gname = 0, 0, "", ""
+		// Dated by the build's sources, not by when it ran (repro.go).
+		h.ModTime, h.AccessTime, h.ChangeTime = distpkg.Epoch(), time.Time{}, time.Time{}
 		if info.IsDir() {
 			h.Name += "/"
 			h.Mode = 0o755

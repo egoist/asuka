@@ -91,6 +91,13 @@ type Options struct {
 	// runtime's calls rather than as loops (lang/ir's seqfuse.go): what
 	// the tests compare the loops with. ASUKA_OPT_SKIP=fuse too.
 	NoFuse bool
+	// TrimPaths writes the module's functions' files (what an error's
+	// trace says, lang/cgen compiles in) as the program's own, not where
+	// they were on the computer that built it: the root package's
+	// relative to the project (app.asuka), an imported package's under
+	// its import path (std/time/time.asuka). A release's (asuka build),
+	// so that its bytes are the same wherever it's built (docs/shipping.md).
+	TrimPaths bool
 
 	// disk keeps what the compilations of one DirPlatforms read: each
 	// platform's reads the same directories and files.
@@ -605,6 +612,9 @@ func (l *loader) compile(root *unit) *Result {
 		p.Optimize()
 	}
 	res.Module = p.Encode()
+	if l.opts.TrimPaths {
+		l.trimPaths(root, vdir, res.Module)
+	}
 	if !optimize {
 		// Its frames' locals are named: the debugger evaluates
 		// expressions in them.
@@ -624,6 +634,41 @@ func (l *loader) compile(root *unit) *Result {
 		}
 	}
 	return res
+}
+
+// trimPaths writes m's functions' files as Options.TrimPaths says: a
+// package's directory as its import path (the root's: its directory
+// relative to project, the directory of the project the program is of).
+func (l *loader) trimPaths(root *unit, project string, m *bytecode.Module) {
+	dirs := map[string]string{}
+	for _, u := range l.units {
+		label := u.path
+		if label == "" && u == root {
+			if rel, err := filepath.Rel(project, u.dir); err == nil && !strings.HasPrefix(rel, "..") {
+				label = filepath.ToSlash(rel)
+			}
+		}
+		if label == "" {
+			label = filepath.Base(u.dir)
+		}
+		if label == "." {
+			label = ""
+		} else {
+			label += "/"
+		}
+		dirs[u.dir] = label
+	}
+	for i := range m.Funcs {
+		f := m.Funcs[i].File
+		if f == "" {
+			continue
+		}
+		if label, ok := dirs[filepath.Dir(f)]; ok {
+			m.Funcs[i].File = label + filepath.Base(f)
+		} else if filepath.IsAbs(f) {
+			m.Funcs[i].File = filepath.Base(f)
+		}
+	}
 }
 
 // stdCDirs are the directories of the std and sdk packages the program

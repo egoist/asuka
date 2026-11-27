@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestCompare(t *testing.T) {
@@ -99,6 +100,27 @@ func TestArchive(t *testing.T) {
 		if link, err := os.Readlink(filepath.Join(dst, "App.app/Contents/Resources/link")); err != nil || link != "data/a.txt" {
 			t.Errorf("link = %q, %v", link, err)
 		}
+	}
+	// Dated, the same files make the same archive whenever they were
+	// written: a desktop update's delta is what changed (reproducible
+	// builds).
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var a, b bytes.Buffer
+	if err := WriteArchiveAt(&a, src, []string{"App.app"}, at); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Hour)
+	filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
+		if err == nil && info.Mode()&os.ModeSymlink == 0 {
+			os.Chtimes(p, later, later)
+		}
+		return nil
+	})
+	if err := WriteArchiveAt(&b, src, []string{"App.app"}, at); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a.Bytes(), b.Bytes()) {
+		t.Error("the same files, dated, made two archives")
 	}
 }
 

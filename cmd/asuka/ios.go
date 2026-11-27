@@ -127,7 +127,7 @@ func output(name string, args ...string) (string, error) {
 func (t *iosToolchain) run(dir string, env []string, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(append(os.Environ(), "ZERO_AR_DATE=1"), env...) // no object dated, as Xcode has it (repro.go)
 	if t.verbose {
 		fmt.Fprintln(os.Stderr, "+", strings.Join(append(env, append([]string{name}, args...)...), " "))
 	}

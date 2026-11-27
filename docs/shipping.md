@@ -1227,6 +1227,51 @@ Keep each release's symbols: a crash is symbolicated with those of the
 build it happened in. See [Device](device.md#crash-reports-platformcrash)
 for the reports themselves.
 
+## Reproducible builds
+
+A release build is reproducible: the same sources, built with the same
+version of Asuka and the same compilers (Xcode, the Android NDK, Zig,
+your system's C compiler), make the same bytes on every platform,
+whichever computer builds them, wherever the project and its checkout
+are, and whenever. So an update's delta holds only what changed (an
+AppImage's, a desktop app's, a phone's update of the app's code), and
+anyone can check that a release is what its sources make: build them
+again and compare.
+
+A release names its files as the project has them (`app.asuka`,
+`std/http/http.asuka`), not where they were on the computer that built
+it: that's what its errors' traces say. And what a build dates (the
+files in its `.tar.gz`, `.deb`, `.rpm`, AppImage and `.zip`, a Linux
+app's release in its metainfo, the web's `version.json`, the time a
+phone build takes updates of its code from) is dated by
+`SOURCE_DATE_EPOCH`, in seconds since 1970, as
+[reproducible-builds.org](https://reproducible-builds.org/docs/source-date-epoch/)
+has it. Without it, the build takes the time of the last commit of the
+git repository the app is in, else the newest modification time of the
+app's files; never the time it ran. Set it when you build from sources
+without their repository (an archive of a tag):
+
+```sh
+SOURCE_DATE_EPOCH=1767225600 asuka build --platform linux
+sha256sum dist/linux-amd64/*.deb    # the same wherever this version is built
+```
+
+What isn't the same from one build to the next is what records when it
+was made, which a build can't choose:
+
+- **Apple's signatures.** A signature with a certificate (an `.ipa`, a
+  simulator build signed with your Apple Development certificate, a Mac
+  app with Developer ID) records when it was made, and notarization adds
+  Apple's ticket. An ad hoc signature (a Mac build's without `--sign`)
+  has no time. To compare signed binaries, compare copies with their
+  signatures removed (`codesign --remove-signature`).
+- **The Mac's `.dmg`.** `hdiutil` gives each disk image a new identifier
+  and its own dates. The `.zip` beside it is reproducible.
+- **Windows' signatures**, timestamped by a server
+  (`ASUKA_WINDOWS_TIMESTAMP`).
+- **Linux's OpenPGP signatures** of a signed `.rpm` and AppImage, and of
+  an apt or dnf repository's metadata, which are dated when they're made.
+
 ## Before you release
 
 Run the release build where your users will, before you release it:

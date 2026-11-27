@@ -357,7 +357,7 @@ func writeUpdates(app *asukaApp, out string, b updateBuild, required bool) ([]st
 		size, sig, err = signFile(archive, key)
 	} else {
 		size, sig, err = writeSigned(archive, key, func(w io.Writer) error {
-			return iupdate.WriteArchive(w, b.dir, b.entries)
+			return iupdate.WriteArchiveAt(w, b.dir, b.entries, distpkg.Epoch())
 		})
 	}
 	if err != nil {
@@ -366,7 +366,7 @@ func writeUpdates(app *asukaApp, out string, b updateBuild, required bool) ([]st
 	m := iupdate.Manifest{
 		Version:   version,
 		Notes:     notes,
-		Date:      time.Now().UTC().Format(time.RFC3339),
+		Date:      distpkg.Epoch().Format(time.RFC3339),
 		URL:       u.fileURL(version, name),
 		Size:      size,
 		Signature: sig,
@@ -420,7 +420,7 @@ func writeAppImageUpdate(u *updatesConfig, key ed25519.PrivateKey, dir, version 
 			return nil, err
 		}
 		var z bytes.Buffer
-		err = distpkg.WriteZsync(&z, f, size, distpkg.ZsyncInfo{Filename: name, URL: link, MTime: time.Now()})
+		err = distpkg.WriteZsync(&z, f, size, distpkg.ZsyncInfo{Filename: name, URL: link, MTime: distpkg.Epoch()})
 		f.Close()
 		if err != nil {
 			return nil, err
@@ -807,7 +807,7 @@ it can ship code to your users.`
 // versionFile is the web's version.json (platform/update on the web): the
 // version built, and its release notes.
 func versionFile(app *asukaApp) []byte {
-	v := map[string]string{"version": app.cfg.Version, "build": strconv.Itoa(app.cfg.Build), "date": time.Now().UTC().Format(time.RFC3339)}
+	v := map[string]string{"version": app.cfg.Version, "build": strconv.Itoa(app.cfg.Build), "date": distpkg.Epoch().Format(time.RFC3339)}
 	if u, err := app.cfg.updates(); err == nil && u != nil {
 		if notes, err := u.releaseNotes(app.dir, app.cfg.Version); err == nil && notes != "" {
 			v["notes"] = notes

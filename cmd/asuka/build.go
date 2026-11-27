@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/egoist/asuka/internal/appbuild"
+	"github.com/egoist/asuka/internal/cbuild"
+	"github.com/egoist/asuka/internal/distpkg"
 	iupdate "github.com/egoist/asuka/internal/update"
 )
 
@@ -111,6 +113,8 @@ func cmdBuild(args []string) error {
 		if err != nil {
 			return err
 		}
+		cbuild.SetProject(proj.Dir)
+		setSourceDateEpoch(proj.Dir)
 		if o.bin != "" {
 			if proj, err = proj.Bin(o.bin); err != nil {
 				return err
@@ -126,7 +130,7 @@ func cmdBuild(args []string) error {
 	if len(o.packages) > 0 && !desktopPlatform(o.platform) {
 		return errors.New("--package is for --platform mac, windows or linux")
 	}
-	app, err := loadApp(dir, o.platform)
+	app, err := loadRelease(dir, o.platform)
 	if err != nil {
 		return err
 	}
@@ -278,6 +282,7 @@ func zipDir(dir, out string) error {
 			return err
 		}
 		h.Name = filepath.ToSlash(rel)
+		h.Modified = distpkg.Epoch() // the sources', not when the build ran (repro.go)
 		if d.IsDir() {
 			h.Name += "/"
 			_, err = zw.CreateHeader(h)

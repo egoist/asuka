@@ -443,7 +443,7 @@ func (t *iosToolchain) buildWidgets(work string, cfg *appConfig) (string, error)
 	}
 	opt := []string{"-Onone", "-D", "DEBUG"}
 	if t.release {
-		opt = []string{"-O", "-g", "-Xlinker", "-dead_strip"}
+		opt = append([]string{"-O", "-g", "-Xlinker", "-dead_strip"}, appleLinkRepro()...)
 	}
 	// An extension, with the extension-safe APIs only. Its entry point is
 	// NSExtensionMain, as Xcode links one (the @main WidgetBundle's main

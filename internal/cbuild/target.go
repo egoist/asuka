@@ -67,7 +67,7 @@ func appleToolchain(t Target, sdk, triple string) (*Toolchain, error) {
 		Target: t,
 		CC:     Compiler{Path: clang},
 		Flags:  []string{"-target", triple, "-isysroot", root},
-		AR:     []string{"xcrun", "libtool", "-static", "-o"},
+		AR:     []string{"xcrun", "libtool", "-static", "-D", "-o"},
 		Shared: []string{"-dynamiclib"},
 	}, nil
 }
@@ -147,7 +147,7 @@ func ForTarget(t Target) (*Toolchain, error) {
 			Target: t,
 			CC:     Compiler{Path: clang},
 			Flags:  []string{"--target=" + triple + AndroidAPI, "-fPIC"},
-			AR:     []string{filepath.Join(bin, sys.Exe("llvm-ar")), "rcs"},
+			AR:     []string{filepath.Join(bin, sys.Exe("llvm-ar")), "rcsD"},
 			Shared: []string{"-shared", "-Wl,-z,max-page-size=16384", "-llog"},
 		}, nil
 	case "wasm":
@@ -159,7 +159,7 @@ func ForTarget(t Target) (*Toolchain, error) {
 			Target: t,
 			CC:     z,
 			Flags:  []string{"-target", "wasm32-wasi", "-mbulk-memory"},
-			AR:     []string{z.Path, "ar", "rcs"},
+			AR:     []string{z.Path, "ar", "rcsD"},
 			Shared: []string{"-Wl,--no-entry", "-Wl,--export-dynamic", "-mexec-model=reactor"},
 		}, nil
 	}
@@ -174,14 +174,14 @@ func ForTarget(t Target) (*Toolchain, error) {
 		switch t.OS {
 		case "darwin":
 			tc.Flags = []string{"-arch", clangArchApple(t.Arch), "-mmacosx-version-min=" + MacOSMin}
-			tc.AR = []string{"xcrun", "libtool", "-static", "-o"}
+			tc.AR = []string{"xcrun", "libtool", "-static", "-D", "-o"}
 			tc.Shared = []string{"-dynamiclib", "-install_name", "@rpath/libasuka.dylib"}
 		case "windows":
-			tc.AR = []string{"llvm-ar", "rcs"}
+			tc.AR = []string{"llvm-ar", "rcsD"}
 			tc.Shared = []string{"-shared"}
 		default:
 			tc.Flags = []string{"-fPIC"}
-			tc.AR = []string{"ar", "rcs"}
+			tc.AR = []string{"ar", "rcsD"}
 			tc.Shared = []string{"-shared"}
 		}
 		if tc.CC.IsGCC() {
@@ -197,7 +197,7 @@ func ForTarget(t Target) (*Toolchain, error) {
 	if triple == "" {
 		return nil, fmt.Errorf("cbuild: no toolchain for %s", t)
 	}
-	tc := &Toolchain{Target: t, CC: z, Flags: []string{"-target", clangArch(t.Arch) + "-" + triple}, AR: []string{z.Path, "ar", "rcs"}, Shared: []string{"-shared"}}
+	tc := &Toolchain{Target: t, CC: z, Flags: []string{"-target", clangArch(t.Arch) + "-" + triple}, AR: []string{z.Path, "ar", "rcsD"}, Shared: []string{"-shared"}}
 	if t.OS == "linux" {
 		tc.Flags = append(tc.Flags, "-fPIC")
 	}
