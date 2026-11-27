@@ -571,6 +571,7 @@ TEST(appimage_delta) {
 	uint8_t *got = slurp(path_in(made, "new.AppImage"), &n), *want = slurp(D "new.AppImage", &want_n);
 	CHECK(got && want && n == want_n && memcmp(got, want, n) == 0);
 	free(got);
+	free(want);
 	CHECK(exists(path_in(made, "new.AppImage")));
 	CHECK(!exists(path_in(made, "new.AppImage.old")) && !exists(path_in(made, "new.AppImage.new")));
 
