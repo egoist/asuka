@@ -1246,24 +1246,27 @@ void ak_ui_scroll_to_end(ak_view *v, bool animated) {
 }
 
 // ak_ui_scroll_to_item scrolls a List's item i (its index among its
-// items) into view.
+// items) into view. Like ak_ui_scroll_to, at the flush's end: an item
+// just added is there.
 void ak_ui_scroll_to_item(ak_view *v, int64_t i, bool animated) {
 	if (!v || v->dead || v->kind != AK_KIND_LIST || i < 0 || i > UINT32_MAX) return;
 	uint8_t args[5];
 	uint32_t u = (uint32_t)i;
 	memcpy(args, &u, 4);
 	args[4] = animated ? 1 : 0;
-	ak_batch_command(v->r->batch, v->id, AK_CMD_SCROLL_TO, args, sizeof args);
+	ak_root_scroll(v, AK_CMD_SCROLL_TO, args, sizeof args);
 }
 
 // ak_ui_scroll_to scrolls a Scroll or List to the content offset x, y
 // (points from its content's top left, as its scroll event reports; past
-// the end is the end).
+// the end is the end). It's sent as the flush ends, after the frames:
+// it scrolls what the writes before it made (a row just added, content
+// that grew), which the host has by then.
 void ak_ui_scroll_to(ak_view *v, float x, float y, bool animated) {
 	if (!v || v->dead || (v->kind != AK_KIND_SCROLL && v->kind != AK_KIND_LIST)) return;
 	uint8_t args[9];
 	memcpy(args, &x, 4);
 	memcpy(args + 4, &y, 4);
 	args[8] = animated ? 1 : 0;
-	ak_batch_command(v->r->batch, v->id, AK_CMD_SCROLL_TO_OFFSET, args, sizeof args);
+	ak_root_scroll(v, AK_CMD_SCROLL_TO_OFFSET, args, sizeof args);
 }

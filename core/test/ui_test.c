@@ -1041,6 +1041,49 @@ TEST(list_end_reached) {
 	ak_release(items);
 }
 
+// The last recorded command c's index (-1: none).
+static int64_t last_command(ak_fake *f, ak_cmd c) {
+	ak_fake_index_vec cmds = {0};
+	ak_fake_commands(f, c, &cmds);
+	int64_t i = cmds.len ? (int64_t)cmds.data[cmds.len - 1] : -1;
+	ak_vec_free(&cmds);
+	return i;
+}
+
+// A scroll asked for after a write (a chat's `messages.push(m)` then
+// `list.scrollToEnd()`) scrolls to what the write made: it's sent after
+// the list's update, so the host scrolls to the new end, and to an item
+// just added, not to what it showed before.
+TEST(list_scroll_follows_the_writes_before_it) {
+	items = cell_ref(todos(5));
+	ak_uitest *a = mount(list_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *list = nth(a, AK_KIND_LIST, 0);
+	REQUIRE(list);
+	ak_view *l = ak_view_of(list->id);
+	ak_fake_reset(f);
+	ak_batch_begin();
+	write_p(items, todos(6));
+	ak_ui_scroll_to_end(l, true);
+	ak_ui_scroll_to_item(l, 5, false);
+	ak_batch_end();
+	ak_ui_flush();
+	int64_t update = last_command(f, AK_CMD_LIST_UPDATE), end = last_command(f, AK_CMD_SCROLL_TO_OFFSET),
+	        item = last_command(f, AK_CMD_SCROLL_TO);
+	CHECK(update >= 0 && end > update && item > end);  // in the order asked, after the update
+	CHECK_EQ_INT(ak_fake_list_count(f, list), 6);
+	// No write before it: it's sent all the same, at the flush.
+	ak_fake_reset(f);
+	ak_ui_scroll_to_item(l, 0, false);
+	CHECK_EQ_INT(last_command(f, AK_CMD_SCROLL_TO), -1);
+	ak_ui_flush();
+	CHECK(last_command(f, AK_CMD_SCROLL_TO) >= 0);
+	// One asked for as the app goes goes with it (nothing held: ASan).
+	ak_ui_scroll_to_end(l, false);
+	done(a);
+	ak_release(items);
+}
+
 // ---- Steady state and memory (TestSteadyStateFlushAllocatesNothing, TestDisposeDestroysEverything) ----
 
 static ak_str *labels[2];

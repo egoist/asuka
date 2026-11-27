@@ -76,7 +76,8 @@ import AsukaOps
         case .scrollToOffset:
             guard args.count >= 9 else { return }
             let b = Array(args)
-            scrollToOffset(n, CGFloat(b.f32(0)), CGFloat(b.f32(4)), b[8] != 0)
+            // A list's own: it knows its end, and whether it stays there.
+            if let l = n.list { l.scrollToOffset(CGFloat(b.f32(4)), b[8] != 0) } else { scrollToOffset(n, CGFloat(b.f32(0)), CGFloat(b.f32(4)), b[8] != 0) }
         case .accent:
             guard args.count >= 8 else { return }
             setAccent(Array(args).u64(0))

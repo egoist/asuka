@@ -181,6 +181,14 @@ uint32_t ak_mkey_hash(const ak_mkey *k);
 
 typedef AK_VEC(ak_view *) ak_view_vec;
 
+// A scroll asked for (ScrollTo, ScrollToOffset), sent once the flush has
+// sent the frames (root.c's scrolls).
+typedef struct {
+	ak_view *v;  // held
+	ak_cmd cmd;
+	uint8_t n, args[9];
+} ak_scroll_cmd;
+
 struct ak_ui_root {
 	uint32_t rc;  // its views, and being mounted
 	ak_host host;
@@ -201,6 +209,7 @@ struct ak_ui_root {
 	ak_view_vec sync_q;  // views whose class syncs at the flush
 	ak_view_vec shown;   // sheets, alerts and snackbars presented, held until they go
 	ak_view_vec pagers;  // paging Scrolls: their pages follow their size
+	AK_VEC(ak_scroll_cmd) scroll_q;  // scrolls, after the frames: to what the writes before them made
 	struct ak_back *back;  // the root's going back (OnBack outside screens and sheets)
 	AK_VEC(ak_lnode *) boxbuf;
 	ak_mcache measures;
@@ -330,6 +339,7 @@ ak_ui_root *ak_ui_current(void);
 void ak_root_retain(ak_ui_root *r);
 void ak_root_release(ak_ui_root *r);
 void ak_root_flush(ak_ui_root *r);
+void ak_root_scroll(ak_view *v, ak_cmd cmd, const uint8_t *args, uint8_t n);
 void ak_root_apply(ak_ui_root *r);
 float ak_view_scale(const ak_view *e);
 // ak_with_root makes r the root views are made for while fn runs.

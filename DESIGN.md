@@ -1227,6 +1227,14 @@ thread, the data source calls straight in:
   (likewise after the call returns) and dispatches item ranges and moves
   to the RecyclerView adapter. Bound rows whose item changed are updated
   in place by the core.
+- A Ref's scrolls (`scrollTo`, `scrollToEnd`, `scrollToItem`: the
+  `ScrollToOffset` and `ScrollTo` commands) are sent as the flush ends,
+  after its frames, not when they're asked for: they act on what the
+  writes before them made (`messages.push(m)` then
+  `list.scrollToEnd()` scrolls to the new message, its `ListUpdate`
+  sent first). A list anchored at its bottom scrolled to its end stays
+  stuck there, and an animated scroll to it ends at the end as it is
+  then (rows measured, the keyboard come up, while it ran).
 - Cells are views the host makes; their IDs have the high bit set. A
   cell's `SetFrame` carries the row's height.
 - Sections (a `Section` in the `List`) follow the item IDs in the same

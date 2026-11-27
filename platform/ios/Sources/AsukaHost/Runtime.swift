@@ -1078,8 +1078,7 @@ final class AsukaTextField: UITextField {
             let maxX = max(-i.left, s.contentSize.width - s.bounds.width + i.right)
             let maxY = max(-i.top, s.contentSize.height - s.bounds.height + i.bottom)
             let to = CGPoint(x: min(max(x - i.left, -i.left), maxX), y: min(max(y - i.top, -i.top), maxY))
-            s.setContentOffset(to, animated: r.u8() != 0)
-            n.list?.scrolled(toY: to.y)
+            if let l = n.list { l.scroll(to: to, animated: r.u8() != 0) } else { s.setContentOffset(to, animated: r.u8() != 0) }
         case .openURL:
             if let url = URL(string: String(decoding: args, as: UTF8.self)) { UIApplication.shared.open(url) }
         case .accent:

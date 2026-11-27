@@ -80,6 +80,7 @@ void ak_root_release(ak_ui_root *r) {
 	ak_vec_free(&r->sync_q);
 	ak_vec_free(&r->shown);
 	ak_vec_free(&r->pagers);
+	ak_vec_free(&r->scroll_q);
 	ak_vec_free(&r->boxbuf);
 	ak_lpass_free(&r->pass);
 	ak_mcache_free(&r->measures);
@@ -331,6 +332,8 @@ void ak_ui_unmount(void) {
 	release_all(&r->sync_q);
 	release_all(&r->shown);
 	release_all(&r->pagers);
+	for (uint32_t i = 0; i < r->scroll_q.len; i++) ak_release(r->scroll_q.data[i].v);
+	ak_vec_free(&r->scroll_q);
 	ak_menus_free(r);
 	if (r->back) {
 		ak_back_release(r->back);
@@ -487,6 +490,27 @@ static void root_layout(ak_ui_root *r) {
 
 static void report_layouts(ak_ui_root *r);
 
+// scrolls sends the scrolls asked for since the last flush, after its
+// frames: a scroll asked for after a write acts on what the write made
+// (`messages.push(m)` then `list.scrollToEnd()`: the list's new end, its
+// ListUpdate sent first; a Scroll's content laid out), not on what the
+// host showed before.
+static void scrolls(ak_ui_root *r) {
+	for (uint32_t i = 0; i < r->scroll_q.len; i++) {
+		ak_scroll_cmd *c = &r->scroll_q.data[i];
+		if (!c->v->dead && c->v->real) ak_batch_command(r->batch, c->v->id, c->cmd, c->args, c->n);
+		ak_release(c->v);
+	}
+	r->scroll_q.len = 0;
+}
+
+// ak_root_scroll queues a scroll of v for the flush (scrolls).
+void ak_root_scroll(ak_view *v, ak_cmd cmd, const uint8_t *args, uint8_t n) {
+	ak_scroll_cmd c = {.v = ak_retain(v), .cmd = cmd, .n = n};
+	memcpy(c.args, args, n < sizeof c.args ? n : sizeof c.args);
+	ak_vec_push(&v->r->scroll_q, c);
+}
+
 void ak_root_flush(ak_ui_root *r) {
 	if (!r) return;
 	ak_perf_flush_begin();
@@ -524,6 +548,7 @@ void ak_root_flush(ak_ui_root *r) {
 	}
 	r->frame_q.len = 0;
 	if (frames) ak_anim_frames(r, false);
+	scrolls(r);
 	ak_anim_flushed(r);
 	ak_perf_phase(r, AK_PERF_FRAMES);
 	ak_root_apply(r);

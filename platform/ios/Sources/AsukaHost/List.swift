@@ -76,8 +76,8 @@ final class AsukaWeakList {
     #endif
 
     // Anchored at the bottom: whether it's at its end (and stays there),
-    // the room added above rows that don't fill it, and a scroll to the
-    // end under way, which layout leaves alone.
+    // the room added above rows that don't fill it, and an animated scroll
+    // to the end under way, which layout leaves alone (it ends at the end).
     private var bottom = false
     private var stuck = true
     private var extraTop: CGFloat = 0
@@ -358,27 +358,62 @@ final class AsukaWeakList {
         if bottom && !willDecelerate { stuck = atEnd }
     }
 
-    func scrollViewDidEndScrollingAnimation(_ s: UIScrollView) {
+    func scrollViewWillBeginDragging(_ s: UIScrollView) {
+        // The user takes over: UIKit stops a scroll under way (and doesn't
+        // say it ended), and where they leave the list decides.
         scrollingToEnd = false
-        if bottom { stuck = atEnd }
+    }
+
+    func scrollViewDidEndScrollingAnimation(_ s: UIScrollView) {
+        let toEnd = scrollingToEnd
+        scrollingToEnd = false
+        guard bottom else { return }
+        if toEnd {
+            // A scroll to the end ends at the end as it is now: rows
+            // measured as they came into view, or the list shorter (the
+            // keyboard came up), while it ran moved it. Layout goes there.
+            stuck = true
+            collection.setNeedsLayout()
+        } else {
+            stuck = atEnd
+        }
     }
 
     func scrollViewDidScrollToTop(_ s: UIScrollView) {
         if bottom { stuck = atEnd }
     }
 
-    /// Scrolls item i into view, at the top.
+    /// Scrolls item i into view, at the top; a list anchored at its
+    /// bottom, to its last item: to its end.
     func scroll(to i: Int, animated: Bool) {
         applyPending()
         guard let p = path(of: i) else { return }
-        if bottom { stuck = i == collection.numberOfItemsTotal - 1 }
-        collection.scrollToItem(at: p, at: i == collection.numberOfItemsTotal - 1 && bottom ? .bottom : .top, animated: animated)
+        if bottom && i == collection.numberOfItemsTotal - 1 {
+            collection.layoutIfNeeded()
+            scroll(to: CGPoint(x: collection.contentOffset.x, y: maxOffsetY), animated: animated)
+            return
+        }
+        if bottom { stuck = false }
+        scrollingToEnd = false
+        collection.scrollToItem(at: p, at: .top, animated: animated)
     }
 
-    /// Scrolls to an offset the core gives (from the content's start):
-    /// to the end, a list anchored at its bottom stays there again.
-    func scrolled(toY y: CGFloat) {
-        if bottom { stuck = y >= maxOffsetY - 1 }
+    /// Scrolls to an offset the core gives (from the content's start,
+    /// clamped to what it scrolls). To the end, a list anchored at its
+    /// bottom stays there again, and an animated scroll ends at its end
+    /// as it is then (scrollViewDidEndScrollingAnimation).
+    func scroll(to p: CGPoint, animated: Bool) {
+        let end = bottom && p.y >= maxOffsetY - 1
+        if bottom { stuck = end }
+        let to = end ? CGPoint(x: p.x, y: maxOffsetY) : p
+        let o = collection.contentOffset
+        // Already there: nothing to animate. UIKit would still run an
+        // animation of no distance, setting the offset it started at as
+        // layout keeps the list at its end, and its own end would decide
+        // whether the list is.
+        guard abs(to.x - o.x) > 0.5 || abs(to.y - o.y) > 0.5 else { return }
+        scrollingToEnd = animated && end
+        collection.setContentOffset(to, animated: animated)
     }
 
     // MARK: Updates

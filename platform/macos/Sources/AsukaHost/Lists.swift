@@ -474,18 +474,33 @@ struct AsukaListRow {
         }
     }
 
+    /// The offset of the list's end.
+    var endY: CGFloat { max((tops.last ?? 0) - visible.height, 0) }
+
     /// Scrolls to the list's end.
     func toEnd(_ animated: Bool) {
-        let vb = visible
-        let end = max((tops.last ?? 0) - vb.height, 0)
-        if end != vb.minY { setOffset(end, animated) }
+        let end = endY
+        if end != visible.minY { setOffset(end, animated) }
+    }
+
+    /// Scrolls to an offset the core gives (ScrollToOffset), as far as it
+    /// scrolls: to the end, a list anchored at its bottom stays there.
+    func scrollToOffset(_ y: CGFloat, _ animated: Bool) {
+        flush()
+        let end = endY
+        if bottom { stuck = y >= end - 1 }
+        let to = min(max(y, 0), end)
+        if to != visible.minY { setOffset(to, animated) }
     }
 
     /// Scrolls the list itself (not the user): what it shows doesn't move a
-    /// list anchored at its bottom off its end, or back, until it's done.
+    /// list anchored at its bottom off its end, or back, until it's done. A
+    /// scroll to the end ends at the end as it is then (rows measured, or
+    /// the list resized, as it ran).
     func setOffset(_ y: CGFloat, _ animated: Bool) {
         guard let n else { return }
         let x = visible.minX
+        let atTheEnd = y >= endY - 1
         settling = true
         if !animated {
             rt.scrollToOffset(n, x, y, false)
@@ -500,7 +515,12 @@ struct AsukaListRow {
                 guard let self else { return }
                 self.settling = false
                 // Not a list gone while it scrolled (its screen closed).
-                if self.bottom, let n = self.n, self.rt.alive(n) { self.stuck = self.atEnd }
+                guard self.bottom, let n = self.n, self.rt.alive(n) else { return }
+                if atTheEnd && self.stuck {
+                    self.toEnd(false)
+                } else {
+                    self.stuck = self.atEnd
+                }
             }
         })
     }
