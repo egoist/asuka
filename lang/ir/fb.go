@@ -24,6 +24,10 @@ type fb struct {
 	subst check.Subst
 	line  int32
 	node  syntax.Node // what's being lowered (at's), for an error found as it's emitted
+	// pinLine: while above 0, at keeps the line: a default's code,
+	// lowered into the call that leaves its argument out, is at the
+	// call's line (its own is its declaration's, maybe another file's).
+	pinLine int
 	// tooBig: the function was said to need more than the bytecode holds
 	// (registers, an operand), once.
 	tooBig bool
@@ -159,10 +163,26 @@ func (b *fb) jmp(l Label) { b.f.Emit(b.line, op("JMP"), int(l)) }
 func (b *fb) at(n syntax.Node) {
 	if n != nil {
 		b.node, b.l.lastNode = n, n
-		if line := b.l.line(n); line > 0 {
-			b.line = line
+		if b.pinLine > 0 {
+			return
+		}
+		// A line is the function's file's: code from another file in
+		// it (a default's) keeps the line it's at, or a breakpoint on
+		// that line of this file would stop there.
+		if f := b.l.fset.File(n.Range().Start); f != nil && (b.f.File == "" || f.Name() == b.f.File) {
+			if line := f.Position(n.Range().Start).Line; line > 0 {
+				b.line = int32(line)
+			}
 		}
 	}
+}
+
+// defaultValue lowers a default (a parameter's, a field's, a prop's) for
+// a call that leaves its argument out: at the call's line.
+func (b *fb) defaultValue(e syntax.Expr, dst int) int {
+	b.pinLine++
+	defer func() { b.pinLine-- }()
+	return b.value(e, dst)
 }
 
 // ---------------------------------------------------------------------

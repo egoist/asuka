@@ -134,7 +134,7 @@ func (b *fb) args(call *check.Call, subst check.Subst) []int {
 			if i < len(call.Params) && call.Params[i].Default != nil {
 				saved := b.subst
 				b.subst = subst
-				vals = append(vals, b.value(call.Params[i].Default, -1))
+				vals = append(vals, b.defaultValue(call.Params[i].Default, -1))
 				b.subst = saved
 				continue
 			}
