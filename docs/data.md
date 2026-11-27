@@ -15,6 +15,7 @@ Each package keeps its data where the platform's own apps keep theirs:
 | | `std/storage` (and `std/store`) | `std/sqlite`'s databases, by a plain name |
 |---|---|---|
 | iOS | UserDefaults | Application Support, in the app's container |
+| Apple TV | UserDefaults | the app's caches, which tvOS may clear while the app isn't running ([TVs](tv.md#apple-tv)) |
 | macOS | UserDefaults | `~/Library/Application Support/<bundle ID>` |
 | Android | SharedPreferences | the app's files directory |
 | Windows | `store.json` in `%LOCALAPPDATA%\<name>` | `%LOCALAPPDATA%\<name>` |

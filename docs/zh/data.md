@@ -9,6 +9,7 @@
 | | `std/storage`（以及 `std/store`） | `std/sqlite` 用普通名字打开的数据库 |
 |---|---|---|
 | iOS | UserDefaults | 应用容器里的 Application Support |
+| Apple TV | UserDefaults | 应用的缓存目录，tvOS 可能会在应用没有运行时清掉它（[电视](tv.md#apple-tv)） |
 | macOS | UserDefaults | `~/Library/Application Support/<bundle ID>` |
 | Android | SharedPreferences | 应用的 files 目录 |
 | Windows | `%LOCALAPPDATA%\<name>` 里的 `store.json` | `%LOCALAPPDATA%\<name>` |

@@ -199,9 +199,10 @@ func names(paths []string) string {
 	return strings.Join(n, ", ")
 }
 
-// publishOTA writes an over-the-air update of a phone app's code and
-// uploads it where asuka.toml's updates say: the module, then its
-// manifest, which installed builds of its fingerprint read.
+// publishOTA writes an over-the-air update of a phone's or an Apple TV's
+// app's code and uploads it where asuka.toml's updates say: the module,
+// then its manifest, which installed builds of the platform and its
+// fingerprint read.
 func publishOTA(app *asukaApp, o *publishOptions) error {
 	u, err := app.cfg.updates()
 	if err != nil {
@@ -229,6 +230,9 @@ func publishOTA(app *asukaApp, o *publishOptions) error {
 	}
 	if b.out == "" {
 		b.out = filepath.Join(app.dir, "dist")
+		if b.platform == platformTVOS {
+			b.out = filepath.Join(b.out, "tvos") // as asuka build's
+		}
 	}
 	file, manifest, err := writeOTAUpdate(app, b.platform, b.out)
 	if err != nil {

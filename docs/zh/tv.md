@@ -11,6 +11,7 @@ asuka dev --platform tvos .                # 在 Apple TV 模拟器上运行，�
 asuka build --platform tvos --simulator .  # 用于模拟器的发布版 .app
 asuka build --platform tvos .              # 用于 Apple TV 设备的 .ipa，位于 dist/tvos
 asuka publish --platform tvos .            # 构建并上传到 TestFlight
+asuka publish --platform tvos --update .   # 通过无线方式发布应用代码的更新
 ```
 
 `asuka dev --platform tvos` 会在 Apple TV 模拟器上运行应用：优先使用已经启动的那台，否则启动一台 Apple TV 4K（用 `--device` 可以指定其他模拟器）。tvOS 模拟器随 Xcode 的 tvOS 平台一起安装：在 Xcode › Settings › Components 中安装，或者运行 `xcodebuild -downloadPlatform tvOS`。在模拟器里，方向键就是遥控器的方向键，Return 是中间的确认键，Escape 是 Menu（返回）键；选择 Window › Show Apple TV Remote 可以显示遥控器本身。
@@ -18,6 +19,10 @@ asuka publish --platform tvos .            # 构建并上传到 TestFlight
 `asuka build --platform tvos` 会用该应用 ID 对应的 tvOS 描述文件签名（可以用 `--profile` 指定；默认是 App Store 描述文件，也可以用 `--distribution` 选择），就像 iOS 构建使用 iOS 描述文件一样。iPhone 应用的描述文件不能给 Apple TV 应用签名，所以要先在 developer.apple.com 上另建一个（Profiles › + › tvOS）。应用要求 tvOS 17 及以上。
 
 `asuka publish --platform tvos` 会构建 `.ipa` 并上传到 App Store Connect，和 `--platform ios` 一样，使用同一个密钥和同样的选项（`--groups`、`--review`、`--notes`、`--file`），见[发布到应用商店](shipping.md#发布到应用商店)。Apple TV 应用是 iPhone 应用那条记录下的一个平台，共用 bundle ID 和 App 内购买项目：请先在 App Store Connect 中给这条记录加上 tvOS（在应用页面选择 Add Platform › tvOS）。
+
+在两次商店发布之间，Apple TV 应用也能像手机应用一样通过无线方式更新代码（[应用代码的更新](shipping.md#手机应用代码的更新)）：在 `asuka.toml` 中配置了 `[updates]` 的构建会用 `platform/update` 检查更新，`asuka publish --platform tvos --update` 会为应用代码签名，并上传到 `[updates]` 指定的位置（`asuka build --platform tvos --update` 则把它写到 `dist/tvos/updates`，供你自己的服务器使用）。Apple TV 的更新和 iPhone 的更新是分开的：Apple TV 构建有自己的一套原生部分（宿主部件更少，只包含为 tvOS 编译的包），所以一个更新要么为 iPhone 而做，要么为 Apple TV 而做，各自只接收自己的。一处改动要同时发给两者，就分别用 `--platform ios` 和 `--platform tvos` 发布。Android TV 接收的是 Android 应用的更新，因为它们是同一个构建。
+
+Apple TV 应用只能把文件保存在缓存目录里：tvOS 不给应用提供 Application Support 和 Documents，而且可能在应用没有运行时清掉缓存。所以在 Apple TV 上，`fs.appDir()`、`std/sqlite` 的数据库和下载的更新都放在那里；需要长期保存的东西应该放进 `std/storage`（小数据）、iCloud（`platform/icloud`）或服务器。
 
 Apple TV 上的应用图标是 5:3 的分层图像：Asuka 用 `asuka.toml` 的 `icon` 生成它，把图标放在其角落颜色的背景中间，两层分开，这样焦点移到图标上时 tvOS 会让它们倾斜出视差效果。顶部栏（top shelf）的图片（应用图标在主屏幕第一排时，显示在它上方的图片）也用同样的方式生成。`[tv]` 的 `banner` 可以为两者提供你自己的图片，`background` 则指定图标背后的颜色（[asuka.toml](asuka-toml.md#tv)）。
 
@@ -137,6 +142,7 @@ component Shelf(items: [string]) {
 | `platform/push` | 有设备令牌；推送只会设置角标，或者作为数据交给应用（`received`），不会有被点开的推送 |
 | `platform/screen` | 电视的屏幕；没有可设置的亮度 |
 | `platform/secure` | 钥匙串；`protected` 的机密会得到 `SecureError.notAvailable`：Apple TV 没有密码、面容 ID 或触控 ID |
+| `platform/update` | 和 iPhone 上一样，通过无线方式更新应用代码，接收的是 Apple TV 构建自己的更新（[见上文](#apple-tv)） |
 
 其余的包因为 tvOS 缺少相应能力，不会为 tvOS 构建：`platform/ads`（Google 的广告 SDK 不支持 tvOS）、`agerange`、`biometric`（`check` 会告诉你没有生物识别）、`calendar`、`camera` 和 `record`（Apple TV 自己没有摄像头和麦克风）、`compose`、`contacts`、`dialog`、`health`、`liveactivity`、`nfc`、`pay`、`pdf`、`photos`、`preview`、`print`、`review`（tvOS 没有评分提示）、`scan`、`sensors`、`sharesheet`、`shortcuts`、`transcribe`、`webauth`、`webview` 和 `widget`；还有桌面专用的包（`tray`、`dock`、`hotkey` 等），这一点和 iPhone 一样。调用它们会抛出 `unsupported`，或者回答没有这项功能（`biometric.check`）。
 

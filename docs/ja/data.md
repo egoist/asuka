@@ -9,6 +9,7 @@
 | | `std/storage`（と `std/store`） | `std/sqlite` で名前だけを指定して開いたデータベース |
 |---|---|---|
 | iOS | UserDefaults | アプリのコンテナー内の Application Support |
+| Apple TV | UserDefaults | アプリのキャッシュ。アプリが動いていないあいだに tvOS が消すことがあります（[テレビ](tv.md#apple-tv)） |
 | macOS | UserDefaults | `~/Library/Application Support/<bundle ID>` |
 | Android | SharedPreferences | アプリの files ディレクトリ |
 | Windows | `%LOCALAPPDATA%\<name>` 内の `store.json` | `%LOCALAPPDATA%\<name>` |

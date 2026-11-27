@@ -844,8 +844,8 @@ The signatures are the ones `asuka build` made: the server only chooses.
 
 ### Phones: updates of the app's code
 
-Between store releases a phone app takes updates of its code over the
-air, as Expo's updates do: its Asuka code, which the core's VM runs in
+Between store releases a phone app (and an Apple TV app) takes updates
+of its code over the air, as Expo's updates do: its Asuka code, which the core's VM runs in
 place of the code compiled into the build, signed with the same key as
 desktop updates. A build made with asuka.toml's `[updates]` takes them:
 
@@ -854,11 +854,23 @@ asuka build --platform ios --update      # in dist/updates: the update, signed, 
 asuka publish --platform ios --update    # built, and uploaded where [updates] says
 ```
 
+`--platform android` makes Android's, which Android TV takes too (it's
+the same build), and `--platform tvos` Apple TV's, in `dist/tvos/updates`.
+Each platform's updates are its own: an update is made for one
+platform's builds, its manifest is named for it
+(`update-tvos-<fingerprint>.json`), and an iPhone never takes an Apple
+TV's update, nor an Apple TV an iPhone's. Publish one for each platform
+the change is for.
+
 An update fits only the builds whose native side it was made against:
-their *fingerprint*, of the CLI's version, the native code of the
-packages the app imports and its own, the builtins the build links, its
-assets and asuka.toml (but for its version and build). An update that
-needs more (a new native package or asset, a permission) is for the next
+their *fingerprint*, of the CLI's version, the platform, the parts of
+the host the build has (a `Video`'s player, a `WebView`'s WebKit: those
+the app shows), the native code of the packages the app imports and its
+own, the builtins the build links, its assets and asuka.toml (but for
+its version and build). An Apple TV build's differs from the iPhone
+build's: its host has fewer parts, and only the packages that list tvOS
+are built into it. An update that needs more (a new native package or
+asset, a permission, an element the build doesn't show) is for the next
 store build: its manifest names a fingerprint no installed build has,
 and it reaches none.
 
@@ -869,7 +881,9 @@ window on a phone. `update.check()`, `Release.install()` and `relaunch()`
 runs (`1.4.0+1764150000`: the update's number after the `+`). A launch of
 an update that ends in its first seconds twice in a row, as a crash at
 startup does, goes back to the build's code, and that update isn't taken
-again.
+again. On Apple TV, the update is kept in the app's caches, which tvOS
+may clear while the app isn't running: the app then runs the build's
+code until it downloads the update again.
 
 An update's code runs some times slower than compiled code (its own
 logic: layout, signals and the views stay native) until the next store

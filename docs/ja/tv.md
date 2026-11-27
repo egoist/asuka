@@ -11,6 +11,7 @@ asuka dev --platform tvos .                # Apple TV シミュレーターで�
 asuka build --platform tvos --simulator .  # シミュレーター用のリリース .app
 asuka build --platform tvos .              # Apple TV 実機用の .ipa（dist/tvos に出力）
 asuka publish --platform tvos .            # ビルドして TestFlight にアップロード
+asuka publish --platform tvos --update .   # アプリのコードのアップデートを無線で配信
 ```
 
 `asuka dev --platform tvos` は、Apple TV シミュレーターでアプリを動かします。起動中のものがあればそれを、なければ Apple TV 4K のシミュレーターを起動して使います（`--device` でほかのものを指定できます）。tvOS シミュレーターは Xcode の tvOS プラットフォームと一緒にインストールされます。Xcode › Settings › Components から入れるか、`xcodebuild -downloadPlatform tvOS` を実行してください。シミュレーターでは、矢印キーがリモコンの方向ボタン、Return が中央のボタン、Escape が Menu（戻る）ボタンになります。Window › Show Apple TV Remote でリモコンそのものも表示できます。
@@ -18,6 +19,10 @@ asuka publish --platform tvos .            # ビルドして TestFlight にア�
 `asuka build --platform tvos` は、iOS のビルドが iOS のプロビジョニングプロファイルで署名するのと同じように、アプリの ID に対応する tvOS のプロビジョニングプロファイルで署名します（`--profile` で選べます。デフォルトは App Store 用で、`--distribution` でも選べます）。iPhone アプリのプロファイルでは Apple TV アプリに署名できないので、developer.apple.com で tvOS 用のものを作ってください（Profiles › + › tvOS）。tvOS 17 以降で動きます。
 
 `asuka publish --platform tvos` は、`--platform ios` と同じように `.ipa` をビルドして App Store Connect にアップロードします。キーもオプション（`--groups`、`--review`、`--notes`、`--file`）も同じです（[ストアへの公開](shipping.md#ストアへの公開)）。Apple TV アプリは iPhone アプリと同じレコードのプラットフォームの一つで、バンドル ID と App 内課金を共有します。先に App Store Connect でそのレコードに tvOS を追加してください（アプリのページで Add Platform › tvOS）。
+
+ストアのリリースのあいだ、Apple TV のアプリもスマートフォンのアプリと同じように、コードを無線で更新できます（[アプリのコードのアップデート](shipping.md#スマートフォンアプリのコードのアップデート)）。`asuka.toml` に `[updates]` を書いて作ったビルドは `platform/update` でアップデートを確認し、`asuka publish --platform tvos --update` はアプリのコードに署名して `[updates]` の指定先にアップロードします（`asuka build --platform tvos --update` は、独自のサーバー向けに `dist/tvos/updates` に書き出します）。Apple TV のアップデートは iPhone のものとは別です。Apple TV のビルドは独自のネイティブ部分（少ないホストの部品と、tvOS 向けにビルドされたパッケージだけ）を持つので、アップデートはどちらか一方のために作られ、それぞれ自分のものだけを受け取ります。変更を両方に届けるには、`--platform ios` と `--platform tvos` でそれぞれ公開してください。Android TV は同じビルドなので、Android アプリのアップデートを受け取ります。
+
+Apple TV のアプリがファイルを保存できるのはキャッシュだけです。tvOS はアプリに Application Support も Documents も用意しておらず、アプリが動いていないあいだにキャッシュを消すことがあります。そのため Apple TV では、`fs.appDir()`、`std/sqlite` のデータベース、ダウンロードしたアップデートはそこに置かれます。残しておく必要があるものは `std/storage`（小さな値）、iCloud（`platform/icloud`）、またはサーバーに保存してください。
 
 Apple TV でのアプリのアイコンは 5:3 のレイヤー画像です。Asuka は `asuka.toml` の `icon` からこれを作ります。アイコンを、その隅の色で塗った背景の中央に置き、二つのレイヤーに分けるので、フォーカスがアイコンに来ると tvOS がそれらを傾けて視差効果を出します。トップシェルフの画像（アプリのアイコンがホーム画面の最上段にあるとき、その上に表示される画像）も同じように作ります。`[tv]` の `banner` で両方に自分の画像を使え、`background` でアイコンの後ろの色を指定できます（[asuka.toml](asuka-toml.md#tv)）。
 
@@ -137,6 +142,7 @@ component Shelf(items: [string]) {
 | `platform/push` | デバイスのトークンが取れます。プッシュはバッジを付けるか、データとしてアプリに届き（`received`）、開かれるものはありません |
 | `platform/screen` | テレビの画面です。設定できる明るさはありません |
 | `platform/secure` | キーチェーン。`protected` のシークレットは `SecureError.notAvailable` になります。Apple TV にはパスコードも Face ID も Touch ID もないからです |
+| `platform/update` | iPhone と同じく、アプリのコードを無線で更新します。受け取るのは Apple TV のビルド自身のアップデートです（[前述](#apple-tv)） |
 
 ほかのパッケージは、tvOS にないものを使うため tvOS 向けにはビルドされません。`platform/ads`（Google の広告 SDK は tvOS に対応していません）、`agerange`、`biometric`（`check` はないと答えます）、`calendar`、`camera` と `record`（Apple TV 自体にはカメラもマイクもありません）、`compose`、`contacts`、`dialog`、`health`、`liveactivity`、`nfc`、`pay`、`pdf`、`photos`、`preview`、`print`、`review`（tvOS には評価のプロンプトがありません）、`scan`、`sensors`、`sharesheet`、`shortcuts`、`transcribe`、`webauth`、`webview`、`widget`、それにデスクトップ用のもの（`tray`、`dock`、`hotkey` など）は iPhone と同じです。これらを呼ぶと `unsupported` を投げるか、ないと答えます（`biometric.check`）。
 

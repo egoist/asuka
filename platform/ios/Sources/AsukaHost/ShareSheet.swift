@@ -97,9 +97,15 @@ enum AsukaShared {
     /// The directory the app keeps its files in (std/fs's appDir):
     /// Application Support, the App Group's when the app has extensions
     /// that run it. The first time the app runs with them, what it kept
-    /// in its own moves there.
+    /// in its own moves there. On Apple TV, Caches: tvOS lets an app
+    /// write nowhere else (Application Support and Documents can't be
+    /// made or written on a device, though the simulator allows them),
+    /// and may clear it while the app isn't running.
     static func appDir() -> URL? {
         let fm = FileManager.default
+        #if os(tvOS) // no extensions, so no App Group
+        return fm.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("asuka-app", isDirectory: true)
+        #else
         let own = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         guard let g = group, let c = fm.containerURL(forSecurityApplicationGroupIdentifier: g) else { return own }
         let shared = c.appendingPathComponent("Library/Application Support", isDirectory: true)
@@ -108,6 +114,7 @@ enum AsukaShared {
             try? fm.moveItem(at: own, to: shared)
         }
         return shared
+        #endif
     }
 }
 #endif

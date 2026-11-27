@@ -19,6 +19,7 @@ asuka dev --platform tvos .                # an Apple TV simulator, reloaded on 
 asuka build --platform tvos --simulator .  # a release .app for the simulator
 asuka build --platform tvos .              # an .ipa for Apple TVs, in dist/tvos
 asuka publish --platform tvos .            # built and uploaded to TestFlight
+asuka publish --platform tvos --update .   # an update of the app's code, over the air
 ```
 
 `asuka dev --platform tvos` runs the app on an Apple TV simulator: the
@@ -42,6 +43,26 @@ Store Connect, as `--platform ios` does, with the same key and options
 the iPhone app's record, with its bundle ID and in-app purchases: add
 tvOS to the record in App Store Connect first (the app's page, Add
 Platform › tvOS).
+
+Between store releases the Apple TV app takes updates of its code over
+the air, as a phone app does ([Updates of the app's
+code](shipping.md#phones-updates-of-the-apps-code)): a build made with
+`asuka.toml`'s `[updates]` checks for them with `platform/update`, and
+`asuka publish --platform tvos --update` signs the app's code and
+uploads it where `[updates]` says (`asuka build --platform tvos
+--update` writes it in `dist/tvos/updates`, for a server of your own).
+An Apple TV's updates are apart from an iPhone's: an Apple TV build has
+a native side of its own (fewer parts of the host, only the packages
+built for tvOS), so an update is made for one or the other, and each
+takes only its own; publish a change for both with `--platform ios` and
+`--platform tvos`. Android TV takes the Android app's updates, as it's
+the same build.
+
+An Apple TV app can keep files in its caches alone: tvOS gives apps no
+Application Support or Documents, and may clear the caches while the
+app isn't running. So on Apple TV `fs.appDir()`, `std/sqlite`'s
+databases and downloaded updates are there, and what must last belongs
+in `std/storage` (small values), iCloud (`platform/icloud`) or a server.
 
 The app's icon on Apple TV is a layered image, 5 by 3: Asuka makes it
 from `asuka.toml`'s `icon`, the icon in the middle of its corner's
@@ -207,6 +228,7 @@ tvOS has run there, some with less than on a phone:
 | `platform/push` | the device's token; a push sets the badge or reaches the app as data (`received`), and none is opened |
 | `platform/screen` | the TV's screen; no brightness to set |
 | `platform/secure` | the keychain; a `protected` secret is `SecureError.notAvailable`: an Apple TV has no passcode, Face ID or Touch ID |
+| `platform/update` | updates of the app's code over the air, as on an iPhone, the Apple TV build's own ([above](#apple-tv)) |
 
 The others aren't built for tvOS, for what it lacks: `platform/ads`
 (Google's ads SDK has no tvOS), `agerange`, `biometric` (`check` says

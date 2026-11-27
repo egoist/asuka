@@ -74,6 +74,12 @@ func (t *iosToolchain) hostFeatures(features []string) []string {
 	if !t.tv() {
 		return features
 	}
+	return tvFeatures(features)
+}
+
+// tvFeatures are those of features a tvOS build has (tvHostFlags'),
+// what its over-the-air updates' fingerprint has too.
+func tvFeatures(features []string) []string {
 	var out []string
 	for _, f := range features {
 		if slices.Contains(tvHostFlags, f) {

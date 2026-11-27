@@ -19,21 +19,35 @@ import (
 	iupdate "github.com/egoist/asuka/internal/update"
 	"github.com/egoist/asuka/lang/bytecode"
 	"github.com/egoist/asuka/lang/target"
+	androidHost "github.com/egoist/asuka/platform/android"
+	iosHost "github.com/egoist/asuka/platform/ios"
 )
 
-// Over-the-air updates of phone apps (RFC 0006): a release built with
-// asuka.toml's [updates] carries its fingerprint, the feed and the public
-// key (appbuild.Updates); asuka publish --update makes an update of the
-// app's code, signed, for the builds of its fingerprint, and uploads it
-// beside the desktop updates.
+// Over-the-air updates of phone and Apple TV apps (RFC 0006): a release
+// built with asuka.toml's [updates] carries its fingerprint, the feed and
+// the public key (appbuild.Updates); asuka publish --update makes an
+// update of the app's code, signed, for the builds of its fingerprint,
+// and uploads it beside the desktop updates. Each platform (ios, tvos,
+// android) has updates of its own: the platform is in the fingerprint
+// and names the manifest (otaTarget), so an iPhone never takes an Apple
+// TV's update, nor an Apple TV an iPhone's.
 
-// otaFingerprint is what a phone build's native side gives the app's
-// code, hashed: an update made against another fingerprint isn't run. It
-// covers the CLI (its version; a development CLI's core sources), the
-// platform, the bytecode's format, the tables of builtins the build links
-// (the module's), the app's externs, the native code of the packages it
-// imports and the app's own (its ios/ and android/ folders), its assets,
-// and asuka.toml but for its version and build.
+// otaPlatform reports whether platform's builds take over-the-air
+// updates.
+func otaPlatform(platform string) bool {
+	return platform == platformIOS || platform == platformTVOS || platform == platformAndroid
+}
+
+// otaFingerprint is what a build's native side gives the app's code,
+// hashed: an update made against another fingerprint isn't run. It
+// covers the CLI (its version; a development CLI's core and host
+// sources), the platform, the host's parts the build has (its flags: an
+// Apple TV's are fewer than an iPhone's), the bytecode's format, the
+// tables of builtins the build links (the module's), the app's externs,
+// the native code of the packages it imports (their Package.swift too,
+// whose platforms say which are built for tvOS) and the app's own (its
+// ios/ and android/ folders), its assets, and asuka.toml but for its
+// version and build.
 func (a *asukaApp) otaFingerprint(platform string, m *bytecode.Module) (string, error) {
 	h := sha256.New()
 	put := func(k, v string) { io.WriteString(h, k+"\x00"+v+"\x00") }
@@ -46,8 +60,25 @@ func (a *asukaApp) otaFingerprint(platform string, m *bytecode.Module) (string, 
 				}
 			}
 		}
+		// The host's sources, which a released CLI's version stands for.
+		var host fs.FS = iosHost.Files
+		if platform == platformAndroid {
+			host = androidHost.Files
+		}
+		if err := hashFS(h, host); err != nil {
+			return "", err
+		}
 	}
 	put("platform", platform)
+	// The host's parts the build has: those of the elements the app shows
+	// (a Video's player, a WebView's WebKit) and of its packages' and
+	// their members' manifests (ios.hostFlags), which an update that
+	// starts to use one needs; on tvOS those it has (tvFeatures).
+	features := usedFeatures(a, a.cfg)
+	if platform == platformTVOS {
+		features = tvFeatures(features)
+	}
+	put("host", strings.Join(features, ","))
 	put("bytecode", fmtInt(bytecode.Version))
 	// The tables of builtins the build links: whole, by their prefix
 	// (link.c's AK_USES_FS for fs.join), so an update may call another of
@@ -93,6 +124,11 @@ func (a *asukaApp) otaFingerprint(platform string, m *bytecode.Module) (string, 
 	}
 	cfg := *a.cfg
 	cfg.Version, cfg.Build = "", 0
+	if platform == platformTVOS {
+		// What a tvOS build goes without (dropTVExtensions, which the
+		// build has done by the time it asks, and an update hasn't).
+		cfg.Widgets, cfg.Shortcuts = nil, nil
+	}
 	toml, err := json.Marshal(cfg)
 	if err != nil {
 		return "", err
@@ -139,12 +175,29 @@ func hashTree(h io.Writer, dir string, keep func(rel string) bool) error {
 	})
 }
 
-// otaTarget names a phone's updates of a fingerprint in the feed:
-// update-<platform>-<its first 16 digits>.json.
+// hashFS writes fsys's files into h: their paths and contents, in order.
+func hashFS(h io.Writer, fsys fs.FS) error {
+	return fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			return err
+		}
+		io.WriteString(h, p+"\x00")
+		_, err = h.Write(b)
+		return err
+	})
+}
+
+// otaTarget names a platform's updates of a fingerprint in the feed:
+// update-<platform>-<its first 16 digits>.json, the platform ios, tvos
+// or android (platform/update's otaPlatform names the same at run time).
 func otaTarget(platform, fingerprint string) string { return platform + "-" + fingerprint[:16] }
 
-// otaUpdates are what a phone release of m takes updates with, or nil
-// when asuka.toml has no [updates].
+// otaUpdates are what a release of m for platform (ios, tvos, android)
+// takes updates with, or nil when asuka.toml has no [updates].
 func (a *asukaApp) otaUpdates(platform string, m *bytecode.Module) (*appbuild.Updates, error) {
 	u, err := a.cfg.updates()
 	if err != nil || u == nil {
@@ -161,7 +214,8 @@ func (a *asukaApp) otaUpdates(platform string, m *bytecode.Module) (*appbuild.Up
 // writeOTAUpdate writes, in out/updates, an over-the-air update of the
 // app's code for the platform's builds of its fingerprint: the module,
 // signed, and its manifest (update-<platform>-<fingerprint>.json). It
-// returns the module's file and the manifest's.
+// returns the module's file and the manifest's. tvOS's is iOS's code
+// (Apple TV runs a build of the iOS app) against tvOS's fingerprint.
 func writeOTAUpdate(app *asukaApp, platform, out string) (file, manifest string, err error) {
 	u, err := app.cfg.updates()
 	if err != nil {
@@ -181,7 +235,10 @@ func writeOTAUpdate(app *asukaApp, platform, out string) (file, manifest string,
 	if !iupdate.ValidVersion(version) {
 		return "", "", fmt.Errorf("asuka.toml: version %q isn't one updates compare (1.2.0, 1.3.0-beta.1)", version)
 	}
-	tp := target.IOS
+	if !otaPlatform(platform) {
+		return "", "", fmt.Errorf("over-the-air updates are iOS's, tvOS's and Android's, not %s's", platform)
+	}
+	tp := target.IOS // tvOS's too: the iOS app's code
 	if platform == platformAndroid {
 		tp = target.Android
 	}

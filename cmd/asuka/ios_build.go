@@ -94,7 +94,8 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 			return err
 		}
 		features = usedFeatures(app, cfg)
-		if tc.updates, err = app.otaUpdates("ios", m); err != nil {
+		// tvOS's updates are its own: another fingerprint, another feed.
+		if tc.updates, err = app.otaUpdates(map[bool]string{true: platformTVOS, false: platformIOS}[tc.tv()], m); err != nil {
 			return err
 		}
 	} else {

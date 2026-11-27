@@ -67,7 +67,9 @@ pub struct Entry {
 /// The app's own directory, kept across launches (and in backups) and
 /// not shown to the user: Application Support on iOS and macOS, the
 /// app's files on Android, the user's data directory on Windows and
-/// Linux. It may not exist yet: mkdirAll makes it.
+/// Linux. On Apple TV it's in the app's caches, the only place tvOS lets
+/// an app write, which tvOS may clear while the app isn't running. It
+/// may not exist yet: mkdirAll makes it.
 pub native fn appDir() -> string
 
 /// Where the app keeps its settings, kept across launches: on Windows

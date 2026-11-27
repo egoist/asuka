@@ -56,7 +56,7 @@ func buildFlags(o *buildOptions) *flagSet {
 	fs.String(&o.base, "base", 0, "", "web: the `path` the site is served at, \"/app/\" for https://example.com/app/ (default: asuka.toml's web.base, else \"/\")")
 	fs.String(&o.arch, "arch", 0, "", "the Mac: arm64 or amd64 (Intel; default: arm64); Linux: amd64 or arm64 (default: this machine's, else amd64); Windows: amd64 or arm64 (default: amd64, which runs on Windows on Arm too)")
 	fs.Bool(&o.apk, "apk", 0, "Android: a signed release .apk with every ABI, to install with adb install (testing, sideloading), instead of the .aab for Google Play")
-	fs.Bool(&o.update, "update", 0, "iOS, Android: an over-the-air update of the app's code instead of a build, in dist/updates: its module, signed, and its manifest, for the builds whose native side it fits (asuka.toml's updates)")
+	fs.Bool(&o.update, "update", 0, "iOS, tvOS, Android: an over-the-air update of the app's code instead of a build, in dist/updates (tvOS's in dist/tvos/updates): its module, signed, and its manifest, for the platform's builds whose native side it fits (asuka.toml's updates)")
 	fs.Bool(&o.aar, "aar", 0, "Android: an .aar, the app to embed in an app made in Android Studio (start dev.asuka.AsukaActivity)")
 	fs.String(&o.distribution, "distribution", 0, "app-store", "iOS: app-store, ad-hoc or development")
 	fs.String(&o.profile, "profile", 0, "", "iOS and macOS: a provisioning `profile`'s path, name or UUID (default: asuka.toml's (macOS: or ASUKA_MAC_PROFILE), else the best match installed; macOS: only for an app whose packages need one: push, Sign in with Apple, App Attest)")
@@ -124,12 +124,12 @@ func cmdBuild(args []string) error {
 	if err := os.MkdirAll(o.out, 0o755); err != nil {
 		return err
 	}
-	if o.platform == platformTVOS && (o.update || o.xcframework) {
-		return errors.New("--update and --xcframework are iOS's: a tvOS build is an app")
+	if o.platform == platformTVOS && o.xcframework {
+		return errors.New("--xcframework is iOS's: a tvOS build is an app")
 	}
 	if o.update {
-		if o.platform != platformIOS && o.platform != platformAndroid {
-			return errors.New("--update is iOS's and Android's: a desktop build writes its update itself")
+		if !otaPlatform(o.platform) {
+			return errors.New("--update is iOS's, tvOS's and Android's: a desktop build writes its update itself")
 		}
 		_, _, err := writeOTAUpdate(app, o.platform, o.out)
 		return err

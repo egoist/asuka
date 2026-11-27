@@ -8,7 +8,14 @@ final class AppPlace: Place {
         // asuka dev's runs keep their files apart from the installed app's.
         if let d = ProcessInfo.processInfo.environment["ASUKA_DATA"], !d.isEmpty { return d }
         let fm = FileManager.default
+        #if os(tvOS)
+        // tvOS lets an app write in Caches alone: the app's directory
+        // there (the host's appDir).
+        guard var url = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else { return "" }
+        url.appendPathComponent("asuka-app", isDirectory: true)
+        #else
         guard var url = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return "" }
+        #endif
         #if os(macOS)
         // A Mac's Application Support is shared by the user's apps.
         url.appendPathComponent(Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName)

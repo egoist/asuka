@@ -70,6 +70,10 @@ What `asuka publish --update` (a phone's platform) makes:
   carries the one it was made against. They must be equal: an update
   that needs a new native package, a builtin the build didn't link, or
   a new asset is for the next store build, and `asuka publish` says so.
+  (Since 2026-11-27: the host's parts the build has, its flags, are in
+  it too, and Apple TV, a build of the iOS app, is a platform of its
+  own, `tvos`: its host has fewer parts and only the packages that list
+  tvOS, so an iPhone and an Apple TV never take each other's updates.)
 - **Its manifest**, beside it in the feed:
   `update-<platform>-<fingerprint>.json` (with `-<channel>` for a
   prerelease channel), the desktop manifest's fields: the update's

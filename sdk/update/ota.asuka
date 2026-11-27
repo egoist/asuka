@@ -1,11 +1,12 @@
-// Over-the-air updates of a phone app's code (RFC 0006): a release built
-// with asuka.toml's [updates] knows its fingerprint (what its native side
-// gives code), the feed and the public key; check() reads the manifest of
-// its platform and fingerprint (update-<platform>-<fingerprint>.json), a
-// Release's install() downloads the update's module into Updates in the
-// app's directory, checks its signature and puts it in place, and the
-// core runs it at the next launch (or now: relaunch()), going back to
-// the build's code if a launch of it crashes.
+// Over-the-air updates of a phone's or an Apple TV's app's code (RFC
+// 0006): a release built with asuka.toml's [updates] knows its
+// fingerprint (what its native side gives code), the feed and the public
+// key; check() reads the manifest of its platform and fingerprint
+// (update-<platform>-<fingerprint>.json), a Release's install() downloads
+// the update's module into Updates in the app's directory, checks its
+// signature and puts it in place, and the core runs it at the next launch
+// (or now: relaunch()), going back to the build's code if a launch of it
+// crashes.
 
 import std/encoding
 import std/fs
@@ -36,8 +37,15 @@ fn ota() -> Ota? {
   return Ota(fingerprint: l[0], feed: l[1], key: l[2], running: l[3], version: l[4], built: l[5].toInt() ?? 0)
 }
 
-/// The platform's name in the feed's files.
-fn otaPlatform() -> string = if environment().platform == .android { "android" } else { "ios" }
+/// The platform's name in the feed's files, as asuka build names its
+/// builds': android (Android TV's too: the one Android build), tvos (an
+/// Apple TV, a build of the iOS app with a native side of its own) or
+/// ios.
+fn otaPlatform() -> string {
+  let env = environment()
+  if env.platform == .android { return "android" }
+  return if env.tv { "tvos" } else { "ios" }
+}
 
 /// The number of an update's version ("1.4.0+1764150000": 1764150000; 0:
 /// none).
