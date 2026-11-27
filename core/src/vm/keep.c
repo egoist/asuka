@@ -530,11 +530,20 @@ void ak_keep_start(void) {
 	ak_vm_keep_add = keep_add;
 }
 
+static bool holding;  // ak_keep_hold's
+
+void ak_keep_hold(bool hold) { holding = hold; }
+
 void ak_keep_save(void) {
 	nsaved = 0;
 	uint32_t n = 0;
 	for (uint32_t i = 0; i < entries.len; i++) {
 		entry *e = &entries.data[i];
+		if (!e->cell && holding) {
+			// Held (a preview showed): the app's, for when it's back.
+			entries.data[n++] = *e;
+			continue;
+		}
 		if (!e->cell) {
 			// No live cell: what it saved at an earlier reload and no cell
 			// took since goes (a state whose initializer was edited, then

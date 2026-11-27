@@ -182,6 +182,38 @@ TEST(reload_drops_what_no_cell_took) {
 	ak_keep_stop();
 }
 
+// While asuka dev shows a preview (ak_keep_hold), the app's values wait
+// for it, through the preview's reloads: the app comes back as it was.
+TEST(reload_holds_the_app_while_a_preview_shows) {
+	ak_keep_start();
+	ak_keep_use(find, NULL);
+	ak_str *app = ak_str_c("Counter.count#0"), *pv = ak_str_c("preview \"Zero\".n#0");
+	ak_val c = ak_vm_cell_new((ak_val){.i = 0}, AK_K_INT, app);
+	ak_vm_cell_set(c.p, (ak_val){.i = 3});
+
+	// The preview, then a reload of it: the app's 3 isn't taken, and held.
+	ak_keep_hold(false);
+	ak_keep_save();
+	ak_release(c.p);
+	for (int i = 0; i < 2; i++) {
+		ak_keep_use(find, NULL);
+		c = ak_vm_cell_new((ak_val){.i = 0}, AK_K_INT, pv);
+		ak_keep_hold(true);
+		ak_keep_save();
+		ak_release(c.p);
+	}
+	// The app again.
+	ak_keep_use(find, NULL);
+	c = ak_vm_cell_new((ak_val){.i = 0}, AK_K_INT, app);
+	CHECK_EQ_INT(cell_int(c), 3);
+	ak_keep_hold(false);
+
+	ak_release(c.p);
+	ak_release(app);
+	ak_release(pv);
+	ak_keep_stop();
+}
+
 // A follow (rfcs/0012) made with a key: a reload keeps its value as a
 // write, which stands until what it follows changes.
 static struct {

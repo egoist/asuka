@@ -88,6 +88,9 @@
 //	                        short, 2 narrow), numeric: bool               string (tracked)
 //	i18n.autonym           tag: string                                    string
 //	i18n.force              lang: string, dir: string ("rtl", "ltr", "")   - (asuka dev's --lang, --dir)
+//	ui.preview              name: string ("": none), scheme: int
+//	                        (ColorScheme), fontScale: float, lang: string,
+//	                        dir: string, width: float, height: float      - (a preview's init: preview.c)
 //
 // canvas.* and path.*, a Canvas's Graphics and Path, are canvas.c's.
 #include "ui/ui_ext.h"
@@ -531,6 +534,7 @@ static ak_val b_autonym(ak_val *a, uint32_t n) {
 
 void ak_canvas_builtins_init(void);
 void ak_accent_builtins_init(void);
+void ak_preview_builtins_init(void);
 
 void ak_ui_ext_builtins_init(void);
 
@@ -572,4 +576,5 @@ void ak_ui_ext_builtins_init(void) {
 	for (size_t i = 0; i < AK_LEN(t); i++) ak_builtin_register(t[i].name, t[i].fn);
 	ak_canvas_builtins_init();
 	ak_accent_builtins_init();
+	ak_preview_builtins_init();
 }

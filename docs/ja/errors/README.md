@@ -87,6 +87,7 @@ Asuka が報告するエラーと警告には、すべてコードがありま�
 - [pattern-type](pattern-type.md): 値の型に一致しえないパターン。
 - [peek-untracked](peek-untracked.md): 何も追従しない場所での `peek`。
 - [plural-categories](plural-categories.md): 複数形や select のカテゴリーが言語のものと合わないメッセージ。
+- [preview-setting](preview-setting.md): プレビューが持たない設定、またはそのまま書かれていない値。
 - [prop-not-assignable](prop-not-assignable.md): コンポーネントが代入できない prop に代入している。
 - [prop-or-argument](prop-or-argument.md): パラメーター、プロパティ、イベント、子が置き場所を間違えている。
 - [recursive-definition](recursive-definition.md): 自分自身で定義された値やスタイル。

@@ -509,6 +509,20 @@ type BenchDecl struct {
 	Body *Block
 }
 
+// A PreviewDecl is preview "name" { view body }: a view shown as it is,
+// in place of the app, when asuka dev is asked to (and rendered by asuka
+// test --previews), with Settings, when written, for how it's shown:
+// preview "Dark" (dark: true, fontScale: 1.5) { … }. Its body is a
+// component's, without props or events. "preview" is a keyword only
+// here: before a string at a file's top level.
+type PreviewDecl struct {
+	Span
+	Trivia
+	Name     *StringLit
+	Settings *ArgList // nil: none
+	Body     *Block
+}
+
 // A BadDecl is a declaration that didn't parse.
 type BadDecl struct {
 	Span
@@ -533,6 +547,7 @@ func (*LetDecl) declNode()        {}
 func (*AppDecl) declNode()        {}
 func (*TestDecl) declNode()       {}
 func (*BenchDecl) declNode()      {}
+func (*PreviewDecl) declNode()    {}
 func (*BadDecl) declNode()        {}
 
 // ---------------------------------------------------------------------

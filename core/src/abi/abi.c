@@ -202,8 +202,11 @@ static int start_module(ak_module *m, bool mount, bool fresh, char **err) {
 	if (keeping) {
 		if (fresh)
 			ak_keep_discard();
-		else
+		else {
+			// From a preview (asuka dev's), the app's state waits for it.
+			ak_keep_hold(ak_preview_active());
 			ak_keep_save();
+		}
 	}
 	ak_ui_unmount();
 	if (module_owner) ak_owner_dispose(module_owner);
@@ -214,7 +217,9 @@ static int start_module(ak_module *m, bool mount, bool fresh, char **err) {
 	if (keeping) ak_keep_use(shape_named, m);
 	if (ak_module_nfuncs(m)) {
 		ak_owner *o = module_owner = ak_root_new();
+		ak_preview_begin();
 		ak_with_owner(o, run_init, (void *)ak_module_func(m, ak_module_init(m)));
+		ak_preview_end();
 		if (ak_error_pending()) {
 			void *e = ak_error_take();
 			snprintf(msg, sizeof msg, "asuka: init: %s", ak_error_message(e)->data);

@@ -283,3 +283,47 @@ cleanup { drafts.save(draft) }          // コンポーネントがなくなる�
 cleanup はクロージャーです。その実行のローカル変数が見え、await も throw もできません（オーナーがなくなる途中で実行され、そのあとの cleanup も実行されなければならないからです。エラーは `try?` か `do { } catch { }` で受け止めます）。読んだものには追従しません。読む状態は、cleanup が実行されたときの値です。エフェクトが次に実行される前なら、それはエフェクトが追従しているものが変わったあとの値なので、`cleanup { chat.leave(roomId) }` は新しい部屋から抜けてしまいます。その実行の値は `let` に取っておきます。そうしないとコンパイラーが警告します（[cleanup-reads-what-it-follows](../errors/cleanup-reads-what-it-follows.md)）。cleanup が書き込んだものは、そのエフェクトの書き込みとして扱われます。
 
 ハンドラー、関数、タスク、テストには書けません。タスクは始めたものを `defer` で戻します。`defer` はタスクが終わるかキャンセルされるときに実行されます。ハンドラーと関数には、cleanup を実行する自分のオーナーがありません。
+
+## プレビュー
+
+```asuka check
+component Badge(count: int) {
+  prop label = "unread"
+
+  Row {
+    gap: 6
+    Text("{count}") { font: .headline }
+    Text(label) { color: .secondaryLabel }
+  }
+}
+
+preview "Badge" { Badge(3) }
+
+preview "Counting, in Arabic, dark" (lang: "ar", dark: true, width: 320, height: 200) {
+  state count = 0
+
+  Column {
+    gap: 12
+    Badge(count) { label: "messages" }
+    Button("Add") { on press { count += 1 } }
+  }
+}
+```
+
+`preview "Name" { … }` はプレビューを宣言します。コンポーネントを単独で、見たい状態と設定で表示するもので、`asuka dev` がアプリの代わりにデバイスに表示します（[プレビュー](../development.md#プレビュー)）。Xcode での SwiftUI の `#Preview` と同じ役割です。アプリやパッケージのどの `.asuka` ファイルでも、テストファイルでも、トップレベルに書けます。`preview` がキーワードになるのはその位置、名前の文字列の前だけで、ほかの場所では普通の名前です（`let preview = 3`）。
+
+本体はコンポーネントと同じビューの本体です。`state`（操作できるプレビューのため）、`let`、`fn`、`use`、`provide`（表示するコンポーネントが使うストア。[ストア](stores.md)を参照）、エフェクトとタスク、そして表示するビューを書けます。prop とイベントは持てません。渡すものがないからです（[misplaced-declaration](../errors/misplaced-declaration.md)）。名前は書いたままの文字列で、補間は使えません。プレビューは `pub` にできません。
+
+名前のあとの括弧に書く設定で、表示のしかたを決めます。
+
+| 設定 | 意味 | 省略したとき |
+|---|---|---|
+| `dark: true` | ダーク。`false` ならライト | システムの設定 |
+| `fontScale: 1.5` | 文字の大きさ。デフォルトの何倍かで、0.5 から 4 まで | ユーザーの設定 |
+| `lang: "ar"` | 言語タグ。`asuka dev --lang` と同じもので（[多言語対応](../i18n.md)）、疑似ロケールの `en-XA` と `ar-XB` も使える | ユーザーの言語 |
+| `rtl: true` | 右から左。`false` なら左から右 | 言語の書字方向 |
+| `width: 390`、`height: 844` | フレームのサイズ（ポイント、1 から 10000）。どのプラットフォームでも、プレビューはそのサイズのフレームでウィンドウの中央にレイアウトされる。片方だけなら、その辺だけを決める | ウィンドウのサイズ |
+
+どの設定の値も、プログラムが計算する値ではなく、書いたままの値にします（[preview-setting](../errors/preview-setting.md)）。
+
+プレビューはほかのコードと同じようにチェックされます。`asuka check`、エディター、`asuka test` がチェックし、`asuka fmt` がフォーマットします。ただしテストと同じく、ビルドには含まれません。`asuka build`、`asuka dev` が実行するアプリ、このパッケージをインポートするパッケージには、プレビューも、プレビューだけが使うものもありません。`asuka test --previews` は各プレビューをテストとして実行し、表示内容をスナップショットと比べます（[プレビューをテストとして使う](../testing.md#プレビューをテストとして使う)）。

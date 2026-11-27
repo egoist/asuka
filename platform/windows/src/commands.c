@@ -26,6 +26,14 @@ void wh_set_color_scheme(int s) {
 	}
 }
 
+// wh_set_dev_font_scale shows the app's text as if the user's text size
+// were s (0: the user's again), for asuka dev's preview: the environment
+// reports it, and the views take their fonts at it.
+void wh_set_dev_font_scale(float s) {
+	H.dev_font_scale = s > 0 ? s : 0;
+	wh_environment_changed();
+}
+
 // ---- Frames: Frame about each display refresh (a 16 ms timer: Win32 has
 // no vsync callback for a window) while it's on ----
 
@@ -216,6 +224,9 @@ void wh_command(node *n, uint16_t cmd, const uint8_t *args, size_t len) {
 		break;
 	case AK_CMD_COLOR_SCHEME:
 		if (len > 0) wh_set_color_scheme(args[0]);
+		break;
+	case AK_CMD_DEV_FONT_SCALE:
+		if (len >= 4) wh_set_dev_font_scale(wh_f32(args));
 		break;
 	case AK_CMD_QUIT:
 		wh_quit(len > 0 && (args[0] & 1));

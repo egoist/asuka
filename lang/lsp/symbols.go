@@ -183,6 +183,8 @@ func (sb *symbolBuilder) decl(d syntax.Node) (DocumentSymbol, bool) {
 			name = "bench " + strings.Join(d.Name.Segments, "")
 		}
 		return sb.sym(name, symFunction, "", d, nil), true
+	case *syntax.PreviewDecl:
+		return sb.sym("preview "+previewName(d), symFunction, "", d, nil), true
 	}
 	return DocumentSymbol{}, false
 }

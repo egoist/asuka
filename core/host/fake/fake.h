@@ -192,6 +192,9 @@ struct ak_fake {
 	ak_id dev_perf_on;
 	ak_buf dev_perf;
 	uint32_t dev_perfs;
+	// DevFontScale's text size (0: the user's, f->env's own), which the
+	// environment it reports says.
+	float dev_font_scale, user_font_scale;
 	// Whether the root asked for frames (Frames): what the display sends
 	// while it's on (ak_fake_display_frame).
 	bool frames;

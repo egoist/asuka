@@ -232,3 +232,55 @@ fn f() {
               (identifier))
             (integer_literal)))
         (block)))))
+
+================================================================================
+Previews
+================================================================================
+
+preview "Counter" {
+  Text("Hi")
+}
+
+preview "Dark, large text" (dark: true, fontScale: 1.5) {
+  Counter()
+}
+
+fn f() {
+  let preview = 3
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (preview_declaration
+    (string_literal
+      (string_content))
+    (block
+      (call_expression
+        (identifier)
+        (arguments
+          (argument
+            (string_literal
+              (string_content)))))))
+  (preview_declaration
+    (string_literal
+      (string_content))
+    (arguments
+      (argument
+        (identifier)
+        (boolean_literal))
+      (argument
+        (identifier)
+        (float_literal)))
+    (block
+      (call_expression
+        (identifier)
+        (arguments))))
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (let_declaration
+        (binding_pattern
+          (identifier))
+        (integer_literal)))))

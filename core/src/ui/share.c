@@ -26,9 +26,9 @@ void ak_ui_haptic(int64_t kind) {
 }
 // ak_ui_color_scheme shows the app light or dark whatever the system's
 // setting, or follows it again (AK_COLOR_SCHEME_*).
+// A preview's (asuka dev's) shows over it until the app comes back.
 void ak_ui_color_scheme(int64_t scheme) {
-	uint8_t k = (uint8_t)scheme;
-	if (scheme >= 0 && scheme < AK_COLOR_SCHEME_COUNT) root_command(AK_CMD_COLOR_SCHEME, &k, 1);
+	if (scheme >= 0 && scheme < AK_COLOR_SCHEME_COUNT) ak_preview_color_scheme((int)scheme);
 }
 // ak_ui_copy puts text on the clipboard.
 void ak_ui_copy(ak_str *text) { str_command(AK_CMD_COPY, text); }
@@ -539,6 +539,7 @@ void ak_accent_mounted(ak_ui_root *r);
 void ak_ext_mounted(ak_ui_root *r) {
 	ak_accent_mounted(r);  // Accent comes before Locale
 	ak_locale_mounted(r);
+	ak_preview_mounted(r);
 }
 
 void ak_ext_environment(ak_ui_root *r) { ak_locale_environment(r); }

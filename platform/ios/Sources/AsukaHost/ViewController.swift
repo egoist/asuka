@@ -137,6 +137,7 @@ public final class AsukaViewController: UIViewController {
         if let c = AsukaRuntime.shared.accent { view.window?.tintColor = c }
         if AsukaRuntime.shared.colorScheme != .unspecified { view.window?.overrideUserInterfaceStyle = AsukaRuntime.shared.colorScheme }
         if let w = view.window { AsukaRuntime.shared.setWindowDirection(w) }
+        if let w = view.window { AsukaRuntime.shared.applyContentSize(w) }
     }
 
     public override func viewDidAppear(_ animated: Bool) {
@@ -192,7 +193,7 @@ public final class AsukaViewController: UIViewController {
     /// size), or a second at most.
     @objc func contentSizeChanged() {
         DispatchQueue.main.async {
-            let app = UIApplication.shared.preferredContentSizeCategory
+            let app = asukaContentSize
             if self.traitCollection.preferredContentSizeCategory == app {
                 self.followTextSize()
                 return

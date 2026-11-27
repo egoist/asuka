@@ -346,7 +346,7 @@ func (fc *fileCtx) enclosingElement(path []syntax.Node) (tn *check.TypeName, sty
 			return nil, false
 		case *syntax.StyleDecl:
 			return fc.styleType(), true
-		case *syntax.LambdaExpr, *syntax.FuncDecl, *syntax.ComponentDecl, *syntax.ScreenDecl, *syntax.StoreDecl, *syntax.WorkerDecl, *syntax.AppDecl, *syntax.TestDecl, *syntax.BenchDecl:
+		case *syntax.LambdaExpr, *syntax.FuncDecl, *syntax.ComponentDecl, *syntax.ScreenDecl, *syntax.StoreDecl, *syntax.WorkerDecl, *syntax.AppDecl, *syntax.TestDecl, *syntax.BenchDecl, *syntax.PreviewDecl:
 			return nil, false
 		}
 	}
@@ -586,6 +586,16 @@ func memberObj(m *check.Member) check.Object {
 func (fc *fileCtx) declType(n syntax.Node) *check.TypeName {
 	var name *syntax.Ident
 	switch d := n.(type) {
+	case *syntax.PreviewDecl:
+		// A preview's body is a component of no name's.
+		if fc.pkg != nil {
+			for _, pv := range fc.pkg.Previews {
+				if pv.Decl == d {
+					return pv.Comp
+				}
+			}
+		}
+		return nil
 	case *syntax.StructDecl:
 		name = d.Name
 	case *syntax.EnumDecl:

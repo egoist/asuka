@@ -357,6 +357,11 @@ func (c *Checker) checkFiles(p *Package, files []*syntax.SourceFile, imports map
 			c.importDecl(fs, imp, imports)
 		}
 		for _, d := range f.Decls {
+			if pd, ok := d.(*syntax.PreviewDecl); ok {
+				// A preview is a component no name declares (preview.go).
+				c.collectPreview(p, pd, fs)
+				continue
+			}
 			if sd, ok := d.(*syntax.ShaderDecl); ok {
 				// A shader is a component (shaderlang.go).
 				d = c.shaderComponent(sd)
@@ -402,6 +407,7 @@ func (c *Checker) checkFiles(p *Package, files []*syntax.SourceFile, imports map
 	for _, t := range p.Tests {
 		c.testBody(t)
 	}
+	c.previewChecks(p)
 	if p.App != nil {
 		c.appBody(p)
 	}

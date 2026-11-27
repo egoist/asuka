@@ -193,6 +193,9 @@ type Player struct {
 	// perf and recording are its overlay's and its recording's, as asuka
 	// dev last turned them (under wmu).
 	perf, recording bool
+	// own is the module it shows instead of its platform's (a preview's:
+	// SendTo), nil for none (under the server's mu).
+	own []byte
 }
 
 // Listen serves on addr (":0" picks a port).
@@ -262,10 +265,42 @@ func (s *Server) Send(platform target.Platform, module []byte) {
 	defer s.mu.Unlock()
 	s.modules[platform] = module
 	for p := range s.ps {
-		if p.hello && p.Platform == platform {
+		if p.hello && p.Platform == platform && p.own == nil {
 			p.send(KindModule, module)
 		}
 	}
+}
+
+// SendTo has p show module instead of its platform's (a preview's, which
+// Send's builds don't replace), sending it now; nil: its platform's
+// again. A player that hasn't said hello gets it as it does.
+func (s *Server) SendTo(p *Player, module []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p.own = module
+	if !p.hello {
+		return
+	}
+	if module == nil {
+		module = s.modules[p.Platform]
+	}
+	if module != nil {
+		p.send(KindModule, module)
+	}
+}
+
+// List is the players that said hello, in the order they connected.
+func (s *Server) List() []*Player {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*Player
+	for p := range s.ps {
+		if p.hello {
+			out = append(out, p)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].seq < out[j].seq })
+	return out
 }
 
 // Restart sends every player its platform's module to restart with: it
@@ -274,7 +309,11 @@ func (s *Server) Restart() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for p := range s.ps {
-		if m := s.modules[p.Platform]; p.hello && m != nil {
+		m := s.modules[p.Platform]
+		if p.own != nil {
+			m = p.own
+		}
+		if p.hello && m != nil {
 			p.send(KindRestart, m)
 		}
 	}
@@ -421,6 +460,9 @@ func (s *Server) hello(p *Player, b []byte) {
 	// starts.
 	s.sendBreakpoints(p)
 	m := s.modules[platform]
+	if p.own != nil {
+		m = p.own // a preview's, which asuka dev chose as it said hello
+	}
 	if m != nil {
 		p.send(KindModule, m)
 	}

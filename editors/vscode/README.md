@@ -1,8 +1,9 @@
 # Asuka for Visual Studio Code
 
-Support for the [Asuka language](../../docs/language.md): highlighting,
+Support for the [Asuka language](../../docs/language/README.md): highlighting,
 everything that needs the compiler from its language server, `asuka
-lsp`, and the debugger of the apps `asuka dev` runs.
+lsp`, previews of components shown by `asuka dev`, and the debugger of
+the apps `asuka dev` runs.
 
 - **Diagnostics** as you type: the checker's errors, with what would fix
   them, for the package being edited and the packages that import it.
@@ -19,6 +20,12 @@ lsp`, and the debugger of the apps `asuka dev` runs.
 - **Formatting** (`asuka fmt`'s), on save by default.
 - **Outline**, **workspace symbols**, **signature help** and **semantic
   highlighting**.
+- **Previews**: **▶ Preview** above each `preview` block (a code lens)
+  shows it on the devices of the `asuka dev` running that file's app, in
+  place of the app; **Asuka: Show the App** goes back. `asuka dev` runs
+  in a terminal, and the extension finds it by the app's directory; with
+  none running, it says to start it. See
+  [Previews](../../docs/development.md#previews).
 
 ## Install
 
@@ -67,8 +74,10 @@ debugger](../../docs/development.md#the-debugger) for what it does.
 | `asuka.server.args` | `[]` | More arguments for `asuka lsp`: `--verbose` logs to the Asuka output channel. |
 | `asuka.trace.server` | `off` | `messages` or `verbose` traces LSP's messages in the Asuka output channel. |
 
-Commands: **Asuka: Restart Language Server** (after rebuilding `asuka`)
-and **Asuka: Show Language Server Output**.
+Commands: **Asuka: Show Preview** (the preview at the cursor, as ▶
+Preview does), **Asuka: Show the App**, **Asuka: Restart Language
+Server** (after rebuilding `asuka`) and **Asuka: Show Language Server
+Output**.
 
 ## Other editors
 

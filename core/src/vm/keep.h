@@ -37,6 +37,10 @@ void ak_keep_save(void);
 void ak_keep_discard(void);
 void ak_keep_use(ak_keep_shape_fn find, void *ctx);
 void ak_keep_stop(void);
+// ak_keep_hold, set, has ak_keep_save keep what an earlier save kept
+// that no cell took since, rather than dropping it: while asuka dev shows
+// a preview, the app's state waits for the app to come back.
+void ak_keep_hold(bool hold);
 // How many values ak_keep_save saved, and how many cells found theirs
 // since ak_keep_use: for the dev loop's report.
 uint32_t ak_keep_saved(void);

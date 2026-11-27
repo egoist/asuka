@@ -809,6 +809,14 @@ export class Host {
         color.applyScheme(this);
         this.sendEnvironment();
         break;
+      case Command.DevFontScale: {
+        // asuka dev's preview's text size: the root's font size, which
+        // the texts' rem sizes follow and env reports (0: the browser's).
+        const s = new DataView(args.buffer, args.byteOffset, args.byteLength).getFloat32(0, true);
+        document.documentElement.style.fontSize = s > 0 ? 16 * s + "px" : "";
+        this.sendEnvironment();
+        break;
+      }
       case Command.Locale: {
         this.rtl = (args[0] & 1) !== 0;
         this.locale = new TextDecoder().decode(args.subarray(1));

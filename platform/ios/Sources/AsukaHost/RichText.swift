@@ -474,7 +474,7 @@ final class AsukaRichTextView: UIView {
     /// soon as the size changes, before UIKit hands the view its new
     /// traits, and what it measures must be what's drawn.
     var traits: UITraitCollection {
-        UITraitCollection(traitsFrom: [traitCollection, UITraitCollection(preferredContentSizeCategory: UIApplication.shared.preferredContentSizeCategory)])
+        UITraitCollection(traitsFrom: [traitCollection, UITraitCollection(preferredContentSizeCategory: asukaContentSize)])
     }
 
     private func layoutsNow(_ width: CGFloat) -> [AsukaParagraphLayout] {

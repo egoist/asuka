@@ -251,6 +251,10 @@ func (s *server) request(method string, raw json.RawMessage) (any, error) {
 		return withParams(raw, s.workspaceSymbol)
 	case "textDocument/semanticTokens/full":
 		return withParams(raw, s.semanticTokens)
+	case "textDocument/codeLens":
+		return withParams(raw, s.codeLens)
+	case "workspace/executeCommand":
+		return withParams(raw, s.executeCommand)
 	}
 	return nil, &rpcError{Code: codeMethodNotFound, Message: "no method " + method}
 }
@@ -368,7 +372,9 @@ func (s *server) initialize(p *InitializeParams) *InitializeResult {
 			Legend: SemanticTokensLegend{TokenTypes: tokenTypes, TokenModifiers: tokenModifiers},
 			Full:   true,
 		},
-		Workspace: &WorkspaceServerCapabity{},
+		CodeLensProvider:       &CodeLensOptions{},
+		ExecuteCommandProvider: &ExecuteCommandOptions{Commands: []string{cmdShowPreview, cmdShowApp}},
+		Workspace:              &WorkspaceServerCapabity{},
 	}
 	caps.Workspace.WorkspaceFolders.Supported = true
 	caps.Workspace.WorkspaceFolders.ChangeNotifications = true

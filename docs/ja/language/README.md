@@ -64,6 +64,6 @@ try type use var while worker`
 
 `mut`、`extend`、`worker` は 0.2.7 から、`reload` は 0.2.9 からキーワードです。これらを名前に使っていた箇所はエラーになり、名前を変えるよう示されます。
 
-`shader`（[シェーダー](../components.md#シェーダー)の宣言）、`at`（ルート付きの画面のパターン）、`static`（型の関数：`static fn`）、`variant`（コンポーネントのバリアント）は、その位置でだけキーワードで、ほかの場所では普通の名前です。
+`shader`（[シェーダー](../components.md#シェーダー)の宣言）、`at`（ルート付きの画面のパターン）、`static`（型の関数：`static fn`）、`variant`（コンポーネントのバリアント）、`preview`（[プレビュー](components.md#プレビュー)。トップレベルで、名前の文字列の前）は、その位置でだけキーワードで、ほかの場所では普通の名前です。
 
 `load` のあとに呼び出しが続くときは [load](async.md#読み込むデータ) キーワードです（`load api.user(id)`、または `load (api.user(id))`）。括弧の中に要素が複数あり、少なくとも 1 つが呼び出しのときも同じです（`load (api.user(id), api.posts(id))`、[まとめた load](async.md#いっしょに届く-load)）。括弧の中がそれ以外のとき（`load()`、`load(id)`）は、`load` という名前の関数の呼び出しです。`reload` のあとに名前が続くときは [reload](async.md#変更が触れたものを読み込み直す) キーワードです（`reload api.notes(id)`、`reload api.notes`）。`(` が続くときは、`reload` という名前の関数の呼び出しです。

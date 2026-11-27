@@ -3,8 +3,8 @@
 `asuka dev` runs an app and reloads it as you save: on the iOS simulator
 or an iPhone, an Android emulator or phone, your Mac, PC or Linux
 machine, or your browser. This page covers the player it runs, what a
-reload keeps, devices, assets and logs, editors, and the problems you
-may meet. To test an app's interface with no device or display, see
+reload keeps, devices, assets and logs, previews, editors, and the
+problems you may meet. To test an app's interface with no device or display, see
 [Testing](testing.md).
 
 ## asuka dev
@@ -56,6 +56,13 @@ On a phone:
 In a browser: `--port`, `--lan` (serve to your network, for a phone's
 browser) and `--no-open`; see [the
 web](web.md#asuka-dev---platform-web).
+
+While it runs, its terminal takes keys: **r** starts the app over
+([What a reload keeps](#what-a-reload-keeps)), **i** opens [the
+inspector](#the-inspector), **v** lists the app's
+[previews](#previews) (a digit shows one, **0** the app again), **p**
+shows [the performance overlay](#the-overlay), **t** records [a
+profile](#recording-a-profile), and Ctrl-C stops.
 
 ## The player
 
@@ -279,6 +286,70 @@ parts you don't need, or filter by an element or a text. The tree follows the ap
 (an iPhone and an emulator), pick one at the top. Sheets, popovers and
 other windows are trees of their own, after the app's, and a list's
 cells are its children.
+
+Its other tabs are **Performance** ([Performance](#performance)) and
+**Previews**, the app's previews, to show one on the devices in place
+of the app ([Previews](#previews)).
+
+## Previews
+
+A preview shows a component on its own, in the states and settings you
+want to see it in, beside the code that makes it: Asuka's take on
+SwiftUI's `#Preview`, Flutter's widget previewer and Storybook. It's a
+`preview` block in any of the app's or a package's `.asuka` files:
+
+```asuka
+preview "Counter" { Counter() }
+
+preview "Dark, large text" (dark: true, fontScale: 1.5) { Counter() }
+
+preview "Right to left, small" (rtl: true, width: 320, height: 240) { Counter() }
+```
+
+Its body is a view body like a component's (with its own `state`, the
+stores it `provide`s), and its settings say how it's shown: dark or
+light, the text size, the language and its direction, a frame's size.
+See [Previews](language/components.md#previews) in the language
+reference.
+
+`asuka dev` shows a preview on the devices it runs the app on, in place
+of the app. In its terminal, press **v** to list the app's previews,
+numbered, each with its settings and where it's written:
+
+```
+asuka: the app's previews (press a number to show one, 0: the app):
+  1  Counter  app.asuka:38
+  2  Dark, large text (dark: true, fontScale: 1.5)  app.asuka:40
+  3  Right to left, small (rtl: true, width: 320, height: 240)  app.asuka:42
+```
+
+A digit, 1 to 9, shows that one on every device; **0** or Escape goes
+back to the app. In the inspector ([The inspector](#the-inspector)),
+the **Previews** tab lists them likewise: click one to show it, and
+**Show the app** (or Escape) goes back. With several devices connected,
+**On every device** (checked by default) shows it on all of them;
+unchecked, only on the device picked in the menu at the top.
+
+The device shows the preview with its settings applied: in dark or
+light, at its text size, in its language and direction, and, with a
+`width` or `height`, laid out in a frame of that size in the middle of
+the window. Each save reloads it as it reloads the app, keeping its
+state ([What a reload keeps](#what-a-reload-keeps)). A preview you
+rename goes on showing; one you delete goes back to the app. Back to
+the app, its state is as it was before the preview. A device that
+connects while a preview shows on every device shows it too; on the
+web, the page shows it.
+
+In an editor, **▶ Preview** above each preview block shows it on the
+devices of the `asuka dev` running that file's app ([Editors](#editors)).
+With none running, the editor says to start `asuka dev` in the app's
+directory.
+
+Previews aren't part of a build: `asuka build` and the app `asuka dev`
+runs have none of them, nor what only they use. `asuka test --previews`
+runs each one as a test, comparing what it shows with its snapshot, so
+the previews you look at are regression tests too ([Previews as
+tests](testing.md#previews-as-tests)).
 
 ## The debugger
 
@@ -557,8 +628,8 @@ edited with your unsaved changes, and the packages that import it.
 
 For VS Code, the extension is in `editors/vscode`: it adds the
 language's highlighting, runs `asuka lsp` (the `asuka` on your `PATH`
-or the one `asuka.server.path` names), and debugs the app `asuka dev`
-runs ([The debugger](#the-debugger)).
+or the one `asuka.server.path` names), shows previews, and debugs the
+app `asuka dev` runs ([The debugger](#the-debugger)).
 
 ```sh
 cd editors/vscode
@@ -585,6 +656,14 @@ directory; Zed builds it with Rust, from [rustup](https://rustup.rs).
   }
 }
 ```
+
+The language server shows **▶ Preview** above each `preview` block, a
+code lens, in VS Code and any editor that shows them: clicking it has
+the `asuka dev` running that file's app show the preview on its devices
+([Previews](#previews)). The editor finds it by the app's directory;
+with none running, it says to start `asuka dev` there. In VS Code, the
+command **Asuka: Show the App** goes back to the app (and **Asuka: Show
+Preview**, the lens's, shows the preview at the cursor).
 
 Any editor with an LSP client can use it too: run `asuka lsp`, which
 speaks LSP 3.17 over standard input and output, for `.asuka` files,

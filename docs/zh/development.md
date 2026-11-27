@@ -1,6 +1,6 @@
 # 开发
 
-`asuka dev` 会运行你的应用，并在你保存时重新加载。它可以运行在 iOS 模拟器或 iPhone、Android 模拟器或手机、你的 Mac、PC 或 Linux 电脑上，也可以运行在浏览器里。本页介绍它运行的开发 App、重载时会保留什么，以及设备、资源和日志、编辑器和你可能遇到的问题。如果想在没有设备或显示器的情况下测试应用界面，请看[测试](testing.md)。
+`asuka dev` 会运行你的应用，并在你保存时重新加载。它可以运行在 iOS 模拟器或 iPhone、Android 模拟器或手机、你的 Mac、PC 或 Linux 电脑上，也可以运行在浏览器里。本页介绍它运行的开发 App、重载时会保留什么，以及设备、资源和日志、预览、编辑器和你可能遇到的问题。如果想在没有设备或显示器的情况下测试应用界面，请看[测试](testing.md)。
 
 ## asuka dev
 
@@ -29,6 +29,8 @@ asuka dev --platform web [flags] [dir]       # 浏览器
 - `--team`：在 iPhone 上运行时，为开发 App 签名的 Apple 开发者团队。
 
 在浏览器中还有 `--port`、`--lan`（向局域网提供服务，供手机浏览器访问）和 `--no-open`，详见 [Web](web.md#asuka-dev---platform-web)。
+
+`asuka dev` 运行时，可以在它的终端里按键：**r** 让应用从头开始（见[重载时会保留什么](#重载时会保留什么)），**i** 打开[检查器](#检查器)，**v** 列出应用的[预览](#预览)（按数字显示其中一个，按 **0** 回到应用），**p** 显示[性能浮层](#性能浮层)，**t** 录制[性能记录](#录制性能记录)，Ctrl-C 停止运行。
 
 ## 开发 App
 
@@ -120,6 +122,39 @@ asuka: the inspector (the app's views): http://127.0.0.1:52817/
 ```
 
 在同一台电脑的浏览器中打开它（或在运行 `asuka dev` 的终端里按 **i**），就能以树的形式查看正在运行的应用的视图：每个视图的元素、文字，以及它在父视图中的 frame。把指针移到一个视图上或点击它，应用会在设备上把它高亮出来；点击还会显示它的详情，按 Escape 则取消选择。可以折叠不需要的部分，也可以按元素或文字筛选。这棵树每秒跟随应用更新一次（关掉 Live 可让它保持不动）。同时连接了多台设备时（例如一台 iPhone 和一个模拟器），可以在顶部选择其中一台。表单（sheet）、弹出框和其他窗口各自是一棵树，排在应用的树之后；列表的单元格则是列表的子视图。
+
+检查器还有另外两个标签页：**Performance**（见[性能](#性能)）和 **Previews**。后者列出应用的预览，可以让设备显示其中一个来代替应用（见[预览](#预览)）。
+
+## 预览
+
+预览让你单独查看一个组件：在你想看的状态和设置下显示它，而且就写在实现它的代码旁边。它相当于 Asuka 版的 SwiftUI `#Preview`、Flutter 的 widget previewer 和 Storybook。预览是一个 `preview` 块，可以写在应用或包的任何 `.asuka` 文件里：
+
+```asuka
+preview "Counter" { Counter() }
+
+preview "Dark, large text" (dark: true, fontScale: 1.5) { Counter() }
+
+preview "Right to left, small" (rtl: true, width: 320, height: 240) { Counter() }
+```
+
+它的主体和组件一样是视图主体（可以有自己的 `state`，也可以 `provide` 它用到的 store），设置则决定怎样显示它：深色还是浅色、文字大小、语言和书写方向、frame 的尺寸。详见语言参考中的[预览](language/components.md#预览)。
+
+`asuka dev` 会在运行应用的设备上显示预览，代替应用本身。在它的终端里按 **v**，会列出应用的所有预览，带有编号、各自的设置和所在位置：
+
+```
+asuka: the app's previews (press a number to show one, 0: the app):
+  1  Counter  app.asuka:38
+  2  Dark, large text (dark: true, fontScale: 1.5)  app.asuka:40
+  3  Right to left, small (rtl: true, width: 320, height: 240)  app.asuka:42
+```
+
+按数字 1 到 9，就会在每台设备上显示对应的预览；按 **0** 或 Escape 回到应用。在检查器（见[检查器](#检查器)）的 **Previews** 标签页里也能看到同样的列表：点击一个预览就会显示它，**Show the app**（或 Escape）回到应用。同时连接了多台设备时，勾选 **On every device**（默认勾选）会在所有设备上显示；取消勾选，则只在顶部菜单里选中的那台设备上显示。
+
+设备会按预览的设置来显示它：深色或浅色、它的文字大小、它的语言和书写方向；如果设了 `width` 或 `height`，它会在窗口正中、按这个尺寸的 frame 布局。每次保存，预览都会像应用一样重新加载，并保留它的状态（见[重载时会保留什么](#重载时会保留什么)）。给预览改名后，它会继续显示；删掉它，设备就回到应用。回到应用时，应用的状态和显示预览之前一样。在所有设备上显示预览期间新连接的设备，也会显示这个预览；在 Web 上，由页面来显示它。
+
+在编辑器里，每个预览块上方都有 **▶ Preview**，点击后，运行这个文件所属应用的 `asuka dev` 会在它的设备上显示这个预览（见[编辑器](#编辑器)）。如果没有在运行的 `asuka dev`，编辑器会提示你在应用的目录里启动它。
+
+预览不属于构建：`asuka build` 和 `asuka dev` 运行的应用里都没有预览，也没有只被预览用到的东西。`asuka test --previews` 会把每个预览当作测试运行，把它显示的内容和快照比较，所以你平时查看的预览同时也是回归测试（见[把预览当作测试](testing.md#把预览当作测试)）。
 
 ## 调试器
 
@@ -259,7 +294,7 @@ app.asuka:14:9: error[write-in-binding]: can't assign to count here
 
 `asuka lsp` 是 Asuka 的语言服务器，为 `.asuka` 文件提供：输入时的诊断、补全、带 `///` 文档的悬停提示、跳转到定义、查找引用、重命名、格式化（与 `asuka fmt` 相同）、符号、签名帮助和语义高亮。它会带着你尚未保存的修改检查正在编辑的包，以及导入它的包。
 
-VS Code 的扩展在 `editors/vscode` 中：它为这门语言加上语法高亮，运行 `asuka lsp`（使用 `PATH` 中的 `asuka`，或 `asuka.server.path` 指定的那个），还能调试 `asuka dev` 运行的应用（见[调试器](#调试器)）。
+VS Code 的扩展在 `editors/vscode` 中：它为这门语言加上语法高亮，运行 `asuka lsp`（使用 `PATH` 中的 `asuka`，或 `asuka.server.path` 指定的那个），能显示预览，还能调试 `asuka dev` 运行的应用（见[调试器](#调试器)）。
 
 ```sh
 cd editors/vscode
@@ -279,6 +314,8 @@ Zed 的扩展在 `editors/zed` 中：借助 Asuka 的 tree-sitter 语法（`edit
   }
 }
 ```
+
+语言服务器会在每个 `preview` 块上方显示 **▶ Preview**，这是一个 code lens，VS Code 和其他能显示 code lens 的编辑器都会显示它。点击它，运行这个文件所属应用的 `asuka dev` 就会在它的设备上显示这个预览（见[预览](#预览)）。编辑器按应用的目录找到对应的 `asuka dev`；没有在运行的，就会提示你在那里启动 `asuka dev`。在 VS Code 里，命令 **Asuka: Show the App** 回到应用（**Asuka: Show Preview** 是 code lens 执行的命令，显示光标所在的预览）。
 
 任何带 LSP 客户端的编辑器也都能使用它：运行 `asuka lsp`，它通过标准输入和输出使用 LSP 3.17，处理 `.asuka` 文件，以 `asuka.toml` 所在的目录为根。`editors/vscode` 的 README 里有 Neovim 和 Helix 的设置，它们的语法高亮可以使用 `editors/tree-sitter-asuka` 这份 tree-sitter 语法。
 

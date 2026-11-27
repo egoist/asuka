@@ -206,6 +206,12 @@ func Walk(v Visitor, n Node) {
 	case *BenchDecl:
 		walk(n.Name)
 		walk(n.Body)
+	case *PreviewDecl:
+		walk(n.Name)
+		if n.Settings != nil {
+			walk(n.Settings)
+		}
+		walk(n.Body)
 	case *MeasureStmt:
 		walk(n.Body)
 	case *BadDecl:

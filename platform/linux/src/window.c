@@ -223,8 +223,8 @@ static void on_setting(GObject *s, GParamSpec *ps, gpointer data) {
 	(void)data;
 	free(H.base.family);
 	H.base = lx_system_font();
-	H.font_scale = lx_text_scale();
-	lx_env_changed();
+	H.font_scale = H.dev_font_scale > 0 ? H.dev_font_scale : lx_text_scale();
+	lx_fonts_changed();
 }
 
 // lx_watch_settings follows the desktop's settings: dark style,

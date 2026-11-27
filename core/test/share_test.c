@@ -142,6 +142,88 @@ TEST(accent) {
 	done(a);
 }
 
+// A preview's module (asuka dev's: ui.preview, in its init) shows dark
+// over the app's own color scheme, in its text size (DevFontScale) and
+// direction, in a frame of its size in the middle of the window; a
+// module whose init says nothing (the app, again) shows as the app does:
+// the app's color scheme back, the host's own text size, no frame.
+static void preview(int64_t scheme, double font, const char *lang, const char *dir, double w, double h) {
+	ak_val a[7] = {{.p = ak_str_c("Dark")}, {.i = scheme}, {.f = font}, {.p = ak_str_c(lang)}, {.p = ak_str_c(dir)}, {.f = w}, {.f = h}};
+	ak_builtin_find("ui.preview")(a, 7);
+	ak_release(a[0].p);
+	ak_release(a[3].p);
+	ak_release(a[4].p);
+}
+
+static ak_val row_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *row = ak_ui_new(AK_EL_ROW);
+	add(row, text("A"));
+	add(row, text("B"));
+	return (ak_val){.p = row};
+}
+
+// A preview right to left after the app left to right (asuka dev's
+// reloads, the direction changed while no root was mounted): its row
+// mirrored, in its frame; the app again, left to right.
+TEST(preview_rtl_after_the_app) {
+	ak_uitest *a = mount(row_app, NULL);
+	CHECK(one(a, AK_KIND_TEXT, "A")->frame[0] < one(a, AK_KIND_TEXT, "B")->frame[0]);
+	done(a);
+	ak_preview_begin();
+	preview(AK_COLOR_SCHEME_SYSTEM, 0, "", "rtl", 200, 100);
+	ak_preview_end();
+	a = mount(row_app, NULL);
+	CHECK(one(a, AK_KIND_TEXT, "A")->frame[0] > one(a, AK_KIND_TEXT, "B")->frame[0]);
+	done(a);
+	ak_preview_begin();
+	ak_preview_end();
+	a = mount(row_app, NULL);
+	CHECK(one(a, AK_KIND_TEXT, "A")->frame[0] < one(a, AK_KIND_TEXT, "B")->frame[0]);
+	done(a);
+}
+
+TEST(preview) {
+	ak_ui_color_scheme(AK_COLOR_SCHEME_LIGHT);  // the app's own (setColorScheme)
+	ak_preview_begin();
+	preview(AK_COLOR_SCHEME_DARK, 1.5, "", "rtl", 200, 100);
+	ak_preview_end();
+	CHECK(ak_preview_active());
+	ak_uitest *a = mount(plain_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_span s = cmd_args(f, AK_CMD_COLOR_SCHEME, NULL);
+	CHECK(s.len == 1 && s.p[0] == AK_COLOR_SCHEME_DARK);
+	s = cmd_args(f, AK_CMD_DEV_FONT_SCALE, NULL);
+	float fs = 0;
+	if (s.len == 4) memcpy(&fs, s.p, 4);
+	CHECK(s.len == 4 && fs == 1.5f);
+	CHECK(ak_locale_rtl());
+	ak_str *path = ak_ui_path();  // its views' paths start with its name
+	CHECK(ak_span_eqc(ak_span_str(path), "Dark#0"));
+	ak_release(path);
+	// The frame is the layout's alone: its column, in its place.
+	check_frame(one(a, AK_KIND_TEXT, "Saved")->parent, 95, 372, 200, 100);
+	ak_release(target);
+	done(a);
+	// The app again.
+	ak_preview_begin();
+	ak_preview_end();
+	CHECK(!ak_preview_active());
+	a = mount(plain_app, NULL);
+	f = ak_uitest_host(a);
+	s = cmd_args(f, AK_CMD_COLOR_SCHEME, NULL);
+	CHECK(s.len == 1 && s.p[0] == AK_COLOR_SCHEME_LIGHT);
+	ak_fake_index_vec cmds = {0};
+	ak_fake_commands(f, AK_CMD_DEV_FONT_SCALE, &cmds);
+	CHECK_EQ_INT(cmds.len, 0);  // the host's own, which it never left (a new host)
+	ak_vec_free(&cmds);
+	CHECK(!ak_locale_rtl());
+	check_frame(one(a, AK_KIND_TEXT, "Saved")->parent, 0, 0, 390, 844);
+	ak_release(target);
+	done(a);
+	ak_ui_color_scheme(AK_COLOR_SCHEME_SYSTEM);
+}
+
 // ---- Calls ----
 
 static bool answer(void *ctx, ak_span module, ak_span method, ak_span args, ak_buf *out) {

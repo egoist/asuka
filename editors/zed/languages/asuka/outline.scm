@@ -126,3 +126,7 @@
 (bench_declaration
   "bench" @context
   name: (_) @name) @item
+
+(preview_declaration
+  "preview" @context
+  name: (_) @name) @item

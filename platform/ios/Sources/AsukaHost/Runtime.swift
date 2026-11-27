@@ -358,6 +358,9 @@ final class AsukaTextField: UITextField {
     var accent: UIColor?
     /// The app's appearance (the ColorScheme command's): the windows' override.
     var colorScheme = UIUserInterfaceStyle.unspecified
+    /// The text size asuka dev's preview shows (the DevFontScale
+    /// command's), nil for the user's: the windows' override.
+    var contentSize: UIContentSizeCategory?
     /// The app's direction (the Locale command's).
     lazy var rtl = systemRTL
     /// Views coming in with a transition in the batch being applied.
@@ -900,6 +903,36 @@ final class AsukaTextField: UITextField {
         controller?.view.window?.overrideUserInterfaceStyle = colorScheme
     }
 
+    /// Shows the app's text as if the user's text size were scale times
+    /// the default (0: the user's again): the content size category
+    /// nearest it, over the windows' traits, which UIKit's controls
+    /// follow and asukaContentSize gives the host's fonts. The texts take
+    /// it and the core measures them, as when the user changes it.
+    func setDevFontScale(_ scale: Float) {
+        contentSize = scale > 0 ? nearestContentSize(CGFloat(scale)) : nil
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for w in scene.windows { applyContentSize(w) }
+        }
+        if let w = controller?.view.window { applyContentSize(w) }
+        AsukaLayoutCache.shared.clear()
+        for n in nodes.values { (n.view as? AsukaRichTextView)?.invalidate() }
+        if #available(iOS 17.0, *) {
+            controller?.contentSizeChanged()
+        } else {
+            controller?.followTextSize() // no window's traits take it
+        }
+    }
+
+    /// The window's traits with the preview's text size, or the user's.
+    func applyContentSize(_ w: UIWindow) {
+        guard #available(iOS 17.0, *) else { return }
+        if let c = contentSize {
+            w.traitOverrides.preferredContentSizeCategory = c
+        } else if w.traitOverrides.contains(UITraitPreferredContentSizeCategory.self) {
+            w.traitOverrides.remove(UITraitPreferredContentSizeCategory.self)
+        }
+    }
+
     public func listen(_ id: UInt32, event: UInt16) {
         guard let n = nodes[id] else { return }
         n.listens.insert(event)
@@ -1066,6 +1099,10 @@ final class AsukaTextField: UITextField {
         case .colorScheme:
             guard let v = args.first else { return }
             setColorScheme(AsukaColorScheme(rawValue: Int32(v)) ?? .system)
+        case .devFontScale:
+            guard args.count >= 4 else { return }
+            var r = AsukaReader(args)
+            setDevFontScale(r.f32())
         case .listUpdate:
             var r = AsukaReader(args)
             let count = Int(r.u32())

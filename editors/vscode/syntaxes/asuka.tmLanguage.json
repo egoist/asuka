@@ -500,9 +500,9 @@
           "match": "\\btest\\b(?=\\s*(?:r?\\\"))"
         },
         {
-          "comment": "bench is a keyword only before its name, a string; measure only before a block",
+          "comment": "bench and preview are keywords only before their names, strings; measure only before a block",
           "name": "storage.type.asuka",
-          "match": "^\\s*bench\\b(?=\\s*(?:r?\\\"))|\\bmeasure\\b(?=\\s*\\{)"
+          "match": "^\\s*(?:bench|preview)\\b(?=\\s*(?:r?\\\"))|\\bmeasure\\b(?=\\s*\\{)"
         },
         {
           "name": "storage.modifier.asuka",

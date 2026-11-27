@@ -28,7 +28,7 @@ const SOFT_KEYWORDS = [
 // Words that are keywords only in one production; names elsewhere.
 const CONTEXTUAL = [
   'shader', 'at', 'static', 'variant', 'cleanup', 'with', 'release', 'private',
-  'bench', 'measure',
+  'bench', 'measure', 'preview',
 ];
 
 const PREC = {
@@ -359,6 +359,7 @@ module.exports = grammar({
       $.app_declaration,
       $.test_declaration,
       $.bench_declaration,
+      $.preview_declaration,
       $.struct_declaration,
       $.enum_declaration,
       $.interface_declaration,
@@ -427,6 +428,14 @@ module.exports = grammar({
     ),
 
     bench_declaration: $ => seq('bench', field('name', $._string), field('body', $.block)),
+
+    // preview "Dark" (dark: true) { … }: a view shown in the editor.
+    preview_declaration: $ => seq(
+      'preview',
+      field('name', $._string),
+      optional(field('settings', $.arguments)),
+      field('body', $.block),
+    ),
 
     struct_declaration: $ => seq(
       optional($.visibility),

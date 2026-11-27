@@ -75,8 +75,9 @@ try type use var while worker`
 
 `shader` (a [shader](../components.md#shaders)'s declaration), `at` (a
 routed screen's pattern), `static` (a type's function: `static fn`) and
-`variant` (a component's variant) are keywords only there: elsewhere
-they're names.
+`variant` (a component's variant) and `preview` (a
+[preview](components.md#previews), at the top level before its name's
+string) are keywords only there: elsewhere they're names.
 
 `load` followed by a call is the [load](async.md#data-that-loads)
 keyword's (`load api.user(id)`, or `load (api.user(id))`), and so are

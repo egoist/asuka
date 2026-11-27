@@ -51,6 +51,7 @@ func cmdTest(args []string) error {
 	fs.Int(&tr.cases, "cases", 0, 100, "how many generated inputs (`n`) each property test tries")
 	fs.Bool(&tr.fuzz, "fuzz", 0, "fuzz the property tests instead of running the tests: new inputs until --fuzztime, those that reach new code kept and changed; a failing one is shrunk and saved in testdata/fuzz, which every run then tries")
 	fs.String(&fuzztime, "fuzztime", 0, "10s", "how long to fuzz each property test (`time`), or how many inputs (10000x)")
+	fs.Bool(&appbuild.PreviewTests, "previews", 0, "run the package's previews (preview \"name\" { … }) as tests too: each is mounted and what it shows compared with its snapshot, in testdata/snapshots, as expectSnapshot's")
 	fs.Bool(&tr.update, "update", 'u', "write the snapshots that differ from what the tests show, and remove those no test takes")
 	fs.Bool(&tr.cover, "cover", 0, "measure the lines and branches of the package's code the tests run: a summary per file")
 	fs.String(&tr.lcov, "cover-lcov", 0, "", "write the coverage to `file` in lcov's format, for editors and CI (--cover)")

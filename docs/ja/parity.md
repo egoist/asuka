@@ -189,6 +189,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | | Xcode / Expo | Asuka |
 |---|---|---|
 | ライブリロード、状態の保持 | プレビュー、Fast Refresh | ✓ `asuka dev`：開発用アプリが、保存するたびに数ミリ秒で新しいものに入れ替え、すべての `state` を保つ。スマートフォン、デスクトップ、ブラウザーのどれでも（[開発](development.md)） |
+| プレビュー | SwiftUI の `#Preview`（Xcode のキャンバス）、Storybook for React Native、Flutter の widget previewer | ✓ コードのそばに書く `preview "Name" (settings) { … }`：`asuka dev` がアプリの代わりにデバイスに表示し（ターミナル、インスペクター、エディターの ▶ Preview から）、設定（ダーク、文字の大きさ、言語と書字方向、フレームのサイズ）を反映する。編集するとリロードされ、状態は保たれる。`asuka test --previews` は各プレビューの表示内容をスナップショットと比べる（[開発](development.md#プレビュー)） |
 | ビューの調査 | Xcode のビューデバッガー、React Native DevTools、Flutter DevTools | ✓ `asuka dev` のインスペクター：実行中のアプリのビューをブラウザーにツリーで表示し（要素、テキスト、frame）、ポインターを合わせたビューをデバイス上でハイライトする（[開発](development.md#インスペクター)） |
 | デバッガー | Xcode の LLDB、Android Studio のデバッガー、React Native DevTools（Hermes） | ✓ `asuka dev` のデバッガー：アプリの `.asuka` ファイルのブレークポイント（条件、ヒット回数、ログポイントつき）、誰も捕まえないエラーが投げられた場所での停止、ステップ実行、コールスタックと各フレームの変数、一時停止中のフレームでの式の評価。シミュレーター、iPhone、Android、Mac、Windows、Linux で使え（Web は除く）、VS Code や DAP クライアントを持つエディターから操作する（[開発](development.md#デバッガー)） |
 | パフォーマンス | Xcode の Instruments、React Native の Perf Monitor と DevTools のプロファイラー、Flutter のパフォーマンスオーバーレイと DevTools | ✓ `asuka dev` のツール：すべてのプラットフォームでアプリに重ねるオーバーレイ（毎秒のフレーム数とドロップ、フラッシュ、最後のフラッシュのフェーズごとの時間、メモリ）と、インスペクターやターミナルから記録するプロファイル。フラッシュごとのフェーズと仕事量、ドロップしたフレーム、Web 以外ではアプリの関数のサンプリング。ページにはタイムライン、時間を使った関数、フレームグラフがあり、Perfetto と speedscope 向けに書き出せる（[開発](development.md#パフォーマンス)） |

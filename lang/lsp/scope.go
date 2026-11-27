@@ -144,7 +144,7 @@ func (fc *fileCtx) namesAt(path []syntax.Node, pos syntax.Pos) []scoped {
 			if within(n.Body) {
 				addPattern(n.Pattern)
 			}
-		case *syntax.ComponentDecl, *syntax.ScreenDecl, *syntax.StoreDecl, *syntax.WorkerDecl:
+		case *syntax.ComponentDecl, *syntax.ScreenDecl, *syntax.StoreDecl, *syntax.WorkerDecl, *syntax.PreviewDecl:
 			if tn := fc.declType(n); tn != nil && tn.Comp != nil {
 				for _, m := range tn.Comp.Order {
 					add(scoped{name: m.Name(), obj: m, owner: tn, depth: 1})

@@ -814,9 +814,11 @@ const (
 	CmdDevHighlightClear CommandID = 41
 	// CmdDevPerf: args: the overlay's text, UTF-8 (lines separated by \n; empty: none); sent to the root, only under asuka dev, while its performance overlay is on, as its numbers change (twice a second): the host shows the text in a small box of its own views over the top end corner of the main window's safe area (monospaced, light on a translucent dark background, in front of everything, its screens, sheets and alerts, not taking any touch or click, not read by a screen reader), replacing what it showed; empty, it removes the box.
 	CmdDevPerf CommandID = 42
+	// CmdDevFontScale: args: f32 the text size, as a multiple of the default (0: the user's again); sent to the root, only under asuka dev, as it shows a preview whose fontScale says one, and with 0 as it stops: the host shows the app's text as if the user's text size were it (iOS: the windows' preferred content size category nearest it; Android: the configuration's font scale; macOS, Windows, Linux and the web: their fonts scaled by it), and reports it as the Environment's FontScale, so the core measures the text again.
+	CmdDevFontScale CommandID = 43
 )
 
-var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear", "DevHighlight", "DevHighlightClear", "DevPerf"}
+var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear", "DevHighlight", "DevHighlightClear", "DevPerf", "DevFontScale"}
 
 func (c CommandID) String() string {
 	if int(c) < len(commandNames) && c > 0 {

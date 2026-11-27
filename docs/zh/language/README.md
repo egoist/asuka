@@ -64,6 +64,6 @@ try type use var while worker`
 
 `mut`、`extend` 和 `worker` 从 0.2.7 起是关键字，`reload` 从 0.2.9 起是关键字：以前用它们作名字的地方会报错，并提示你改名。
 
-`shader`（[着色器](../components.md#着色器)的声明）、`at`（带路由的屏幕的模式）、`static`（类型的函数：`static fn`）和 `variant`（组件的变体）只在那个位置是关键字，在别处都是普通的名字。
+`shader`（[着色器](../components.md#着色器)的声明）、`at`（带路由的屏幕的模式）、`static`（类型的函数：`static fn`）、`variant`（组件的变体）和 `preview`（[预览](components.md#预览)，位于顶层、名称字符串之前）只在那个位置是关键字，在别处都是普通的名字。
 
 `load` 后面跟一个调用时，它是 [load](async.md#需要加载的数据) 关键字（`load api.user(id)`，或 `load (api.user(id))`），括号里有几个元素、其中至少一个是调用时也是（`load (api.user(id), api.posts(id))`，[一组 load](async.md#一起到达的-load)）；后面跟的括号里是别的内容时（`load()`、`load(id)`），它调用的是名为 `load` 的函数。`reload` 后面跟一个名字时，它是 [reload](async.md#重新加载改动影响到的数据) 关键字（`reload api.notes(id)`、`reload api.notes`）；后面跟 `(` 时，它调用的是名为 `reload` 的函数。

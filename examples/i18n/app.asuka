@@ -138,6 +138,17 @@ screen Settings {
   }
 }
 
+// The inbox in each of the app's languages, side by side with the app:
+// asuka dev shows a preview in place of the app (its inspector's
+// Previews tab, ▶ Preview in an editor).
+preview "Inbox" { Stack { Inbox() } }
+
+preview "Inbox in Arabic" (lang: "ar") { Stack { Inbox() } }
+
+preview "Inbox in German, dark" (lang: "de", dark: true) { Stack { Inbox() } }
+
+preview "Settings, pseudo locale" (lang: "en-XA") { Stack { Settings() } }
+
 test "plurals follow the count" {
   let app = mount(Stack { Inbox() })
   app.expect("Hello, Ada!", "3 unread messages")

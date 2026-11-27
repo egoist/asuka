@@ -699,6 +699,20 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 			f->dev_perf_on = op->value.s.len ? v->id : 0;
 			f->dev_perfs++;
 			return;
+		case AK_CMD_DEV_FONT_SCALE: {
+			if (!v->root) { fail(f, "DevFontScale to %u, not the root", v->id); return; }
+			if (op->value.s.len != 4) { fail(f, "DevFontScale: %u bytes of arguments, want 4", op->value.s.len); return; }
+			ak_reader r = {(const uint8_t *)op->value.s.p, op->value.s.len, 0, false};
+			float s = ak_read_f32(&r);
+			if (!f->dev_font_scale) f->user_font_scale = f->env.font_scale;
+			f->dev_font_scale = s;
+			// The text size it shows, as a host reports it.
+			ak_environment e = f->env;
+			e.font_scale = s > 0 ? s : f->user_font_scale;
+			ak_fake_post_event(f, &(ak_event){.id = v->id, .kind = AK_EVENT_ENVIRONMENT, .env = e});
+			f->env = e;
+			return;
+		}
 		case AK_CMD_FRAMES:
 			if (!v->root) { fail(f, "Frames to %u, not the root", v->id); return; }
 			f->frames = op->value.s.len && op->value.s.p[0];

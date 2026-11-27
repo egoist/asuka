@@ -657,7 +657,7 @@ func (c *completer) context(path []syntax.Node) (blockKind, *check.TypeName) {
 				}
 				return stmtBlock, nil // withTimeout(5s) { … }
 			}
-		case *syntax.ComponentDecl, *syntax.ScreenDecl:
+		case *syntax.ComponentDecl, *syntax.ScreenDecl, *syntax.PreviewDecl:
 			return componentBody, nil
 		case *syntax.StoreDecl:
 			return storeBody, nil
@@ -685,7 +685,7 @@ func inEffect(path []syntax.Node) bool {
 		case *syntax.EffectDecl:
 			return true
 		case *syntax.FuncDecl, *syntax.LambdaExpr, *syntax.OnHandler, *syntax.TaskDecl, *syntax.TestDecl, *syntax.BenchDecl,
-			*syntax.DeferStmt, *syntax.CleanupStmt, *syntax.SpawnExpr, *syntax.ComponentDecl, *syntax.ScreenDecl, *syntax.StoreDecl, *syntax.AppDecl:
+			*syntax.DeferStmt, *syntax.CleanupStmt, *syntax.SpawnExpr, *syntax.ComponentDecl, *syntax.ScreenDecl, *syntax.StoreDecl, *syntax.AppDecl, *syntax.PreviewDecl:
 			return false
 		}
 	}
@@ -700,7 +700,7 @@ func atItemStart(before string) bool {
 }
 
 var (
-	topKeywords       = []string{"component", "screen", "store", "worker", "struct", "enum", "interface", "fn", "async", "type", "style", "state", "let", "app", "test", "bench", "import", "pub", "native", "extern", "extend"}
+	topKeywords       = []string{"component", "screen", "store", "worker", "struct", "enum", "interface", "fn", "async", "type", "style", "state", "let", "app", "test", "bench", "preview", "import", "pub", "native", "extern", "extend"}
 	componentKeywords = []string{"prop", "event", "state", "let", "use", "provide", "fn", "async", "task", "effect", "cleanup", "pub"}
 	viewKeywords      = []string{"if", "for", "match"}
 	stmtKeywords      = []string{"let", "var", "if", "for", "while", "match", "return", "throw", "break", "continue", "defer", "do", "emit", "try", "await"}

@@ -1,8 +1,9 @@
 // The Asuka extension: the language's grammar and settings, the
 // language server, `asuka lsp`, for everything that needs the compiler
 // (diagnostics, completion, hover, go to definition, references,
-// rename, formatting, symbols, signature help, semantic tokens), and the
-// debugger, `asuka dev`'s (debug.js).
+// rename, formatting, symbols, signature help, semantic tokens, the ▶
+// Preview lens over each preview block), and the debugger, `asuka
+// dev`'s (debug.js).
 //
 // Plain JavaScript, no build step: VS Code loads this file as it is.
 
@@ -101,6 +102,26 @@ async function restart() {
   await start();
 }
 
+/**
+ * Has the asuka dev that runs the active file's app show the preview at
+ * the cursor (app: the app again), through the language server's command,
+ * as the ▶ Preview lens does.
+ * @param {boolean} app
+ */
+async function showPreview(app) {
+  const ed = vscode.window.activeTextEditor;
+  if (!client || !ed || ed.document.languageId !== "asuka") {
+    vscode.window.showInformationMessage("Asuka: open an .asuka file of the app first.");
+    return;
+  }
+  const file = ed.document.uri.fsPath;
+  const line = ed.selection.active.line + 1;
+  await client.sendRequest("workspace/executeCommand", {
+    command: app ? "asuka.preview.showApp" : "asuka.preview.show",
+    arguments: [app ? { file } : { file, line }],
+  });
+}
+
 /** @param {vscode.ExtensionContext} context */
 async function activate(context) {
   output = vscode.window.createOutputChannel("Asuka");
@@ -109,6 +130,8 @@ async function activate(context) {
     output,
     vscode.commands.registerCommand("asuka.restartServer", restart),
     vscode.commands.registerCommand("asuka.showOutput", () => output.show(true)),
+    vscode.commands.registerCommand("asuka.showPreview", () => showPreview(false)),
+    vscode.commands.registerCommand("asuka.showApp", () => showPreview(true)),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("asuka.server")) {
         restart();

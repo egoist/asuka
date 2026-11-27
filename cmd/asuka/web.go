@@ -413,6 +413,7 @@ func newWebDev(app *asukaApp, work string) (*devServer, *devLoop, error) {
 		return nil, nil, err
 	}
 	s.loop = loop
+	loop.webLoop = true
 	s.stamp = strconv.FormatInt(time.Now().UnixNano(), 36)
 	s.moduleStamp = s.stamp
 	loop.mu.Lock()
@@ -612,7 +613,7 @@ func (s *devServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/wasm")
 		http.ServeFile(w, r, s.wasm)
 	case p == "/__asuka/app.akb":
-		m := s.loop.current()
+		m := s.loop.webModule()
 		if m == nil {
 			http.Error(w, "the app hasn't compiled", http.StatusServiceUnavailable)
 			return

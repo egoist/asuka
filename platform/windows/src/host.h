@@ -429,6 +429,7 @@ typedef struct {
 
 	uint8_t key_ups[256];  // keys a view took: their letting go goes nowhere
 	int scheme;  // ASUKA_COLOR_SCHEME, or the Appearance command: 0 the system's, 1 light, 2 dark
+	float dev_font_scale;  // asuka dev's preview's text size (DevFontScale): 0 the user's
 } wh_host;
 
 extern wh_host H;

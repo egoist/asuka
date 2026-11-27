@@ -176,7 +176,8 @@ struct AsukaWindowConfig: Equatable {
     /// The window's environment: its content's size, its display's scale,
     /// dark mode, Reduce Motion, the locale, languages and formats, and the
     /// time zone. A Mac has no safe area or keyboard over the window, and
-    /// no text size setting; a hidden title bar's strip is its SafeTop.
+    /// no text size setting (its FontScale is asuka dev's preview's, or
+    /// 1); a hidden title bar's strip is its SafeTop.
     func environment(_ w: AsukaWin) -> AsukaEnvironment {
         var e = AsukaEnvironment()
         let b = w.content.bounds
@@ -185,7 +186,7 @@ struct AsukaWindowConfig: Equatable {
         e.safeTop = safeTop(w)
         let scale = w.window.backingScaleFactor
         e.scale = Float(scale > 0 ? scale : 2)
-        e.fontScale = 1
+        e.fontScale = Float(previewFontScale)
         e.dark = isDark(w.window)
         let ws = NSWorkspace.shared
         e.reduceMotion = ws.accessibilityDisplayShouldReduceMotion

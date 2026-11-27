@@ -522,6 +522,7 @@ object AsukaCommand {
     const val DEV_HIGHLIGHT = 40
     const val DEV_HIGHLIGHT_CLEAR = 41
     const val DEV_PERF = 42
+    const val DEV_FONT_SCALE = 43
 }
 
 object AsukaRole {

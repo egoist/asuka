@@ -149,6 +149,8 @@ component Greeting(name: string) {
 }
 
 app { Greeting("Ana") { excited: true } }
+
+preview "Greeting, dark" (dark: true) { Greeting("Ana") }
 ```
 
 A component's header takes its parameters; its block holds its props,
@@ -157,6 +159,9 @@ and only that: no diffing. A state made from what changes
 (`state draft = name`) follows it until it's written; `peek(name)`
 reads it once. `bind` makes a two-way binding, `on press`
 handles an event, and `if` and `for` decide which views there are.
+A `preview` is a component shown on its own, in the settings it names:
+`asuka dev` shows it on the device in place of the app, and builds leave
+it out.
 [Components](https://asuka.egoist.dev/docs/language/components), [Stores](https://asuka.egoist.dev/docs/language/stores) for
 state several components share.
 
@@ -2173,6 +2178,69 @@ Handlers, functions, tasks and tests don't take one: a task undoes what
 it started with `defer`, which runs as it ends or is cancelled, and a
 handler or a function has no owner of its own to run it.
 
+#### Previews
+
+```asuka
+component Badge(count: int) {
+  prop label = "unread"
+
+  Row {
+    gap: 6
+    Text("{count}") { font: .headline }
+    Text(label) { color: .secondaryLabel }
+  }
+}
+
+preview "Badge" { Badge(3) }
+
+preview "Counting, in Arabic, dark" (lang: "ar", dark: true, width: 320, height: 200) {
+  state count = 0
+
+  Column {
+    gap: 12
+    Badge(count) { label: "messages" }
+    Button("Add") { on press { count += 1 } }
+  }
+}
+```
+
+`preview "Name" { … }` is a preview: components shown on their own, in
+the states and settings you want to see them in, which `asuka dev`
+shows on the device in place of the app ([Previews](https://asuka.egoist.dev/docs/development#previews)),
+as SwiftUI's `#Preview` does in Xcode. It goes at the top level of any
+`.asuka` file of an app or a package, a test file's too. `preview` is a
+keyword only there, before the name's string; elsewhere it's a name
+(`let preview = 3`).
+
+Its body is a view body like a component's: it may declare `state` (a
+preview to interact with), `let`s, `fn`s, `use`, `provide` (the stores
+the components it shows use, [Stores](https://asuka.egoist.dev/docs/language/stores)), effects and tasks,
+and the views it shows. It has no props or events, since nothing would
+give them ([misplaced-declaration](https://asuka.egoist.dev/docs/errors/misplaced-declaration)).
+Its name is a string as it's written, without interpolations, and a
+preview can't be `pub`.
+
+Settings, in parentheses after the name, say how it's shown:
+
+| Setting | What it is | Left out |
+|---|---|---|
+| `dark: true` | dark; `false`: light | the system's |
+| `fontScale: 1.5` | the text size, a multiple of the default, from 0.5 to 4 | the user's |
+| `lang: "ar"` | a language tag, as `asuka dev --lang` takes ([Languages](https://asuka.egoist.dev/docs/i18n)), the pseudo locales `en-XA` and `ar-XB` too | the user's languages |
+| `rtl: true` | right to left; `false`: left to right | the language's direction |
+| `width: 390`, `height: 844` | a frame's size, in points, from 1 to 10000: the preview is laid out in a frame of that size in the middle of the window, on every platform; one alone sets that side only | the window's |
+
+Each is a value written as it is, not one the program computes
+([preview-setting](https://asuka.egoist.dev/docs/errors/preview-setting)).
+
+A preview is checked like any code, by `asuka check`, an editor and
+`asuka test`, and `asuka fmt` formats it; but, as with tests, it isn't
+part of a build: `asuka build`, the app `asuka dev` runs and a package
+that imports this one have no previews, nor what only they use.
+`asuka test --previews` runs each one as a test, comparing what it
+shows with its snapshot ([Previews as
+tests](https://asuka.egoist.dev/docs/testing#previews-as-tests)).
+
 ### Stores
 
 A store is state with the functions that change it, shared by the views
@@ -3237,7 +3305,8 @@ end in `_test.asuka` (`parser_test.asuka`; `tray_linux_test.asuka` for
 one platform). A test file's declarations and imports, its fixtures and
 helpers, are part of the package only when its own tests run (`asuka
 test`, `asuka check`, an editor): a build has none of them, nor any
-test block, and a package that imports this one never sees them. So a
+`test`, `bench` or `preview` block ([Previews](https://asuka.egoist.dev/docs/language/components#previews)),
+and a package that imports this one never sees them. So a
 test file may import what only its tests need without that coming with
 the app.
 
@@ -3360,6 +3429,7 @@ bench "fib 20" {
 - pattern-type: a pattern that can't match the value's type. Write a pattern of the value's type: `1`, not `"one"`, for an int.
 - peek-untracked: `peek` where nothing is followed. Read the value itself.
 - plural-categories: a plural or select message whose categories don't match its language's. Write the language's categories, as the message lists them.
+- preview-setting: a preview's setting it doesn't take, or not a value written as it is. Name a setting the preview takes, and write its value as a literal: `(dark: true, fontScale: 1.5, lang: "ar")`.
 - prop-not-assignable: a component assigns a prop it can't. Declare `event openChange(open: bool)` to assign it, or keep state of the component's own.
 - prop-or-argument: a parameter, a prop, an event or children given in the wrong place. Move it to its place: `Badge(3) { compact: true; on tap { … } }`.
 - recursive-definition: a value or a style defined in terms of itself. Break the cycle: compute one from values that don't read it back.

@@ -62,6 +62,7 @@ void wh_pop_up_actions(node *target, HWND anchor, node *at, const actions *a, in
 bool wh_animate_frame(node *n, const float f[4]);
 void wh_set_accent(ak_color c);
 void wh_set_color_scheme(int s);
+void wh_set_dev_font_scale(float s);
 
 // ---- window.c / winctl.c / titlebar.c / placement.c ----
 void wh_listen_window(node *n);

@@ -1,7 +1,7 @@
 {
   "name": "asuka",
   "displayName": "Asuka",
-  "description": "The Asuka language: diagnostics, completion, hover, go to definition, references, rename and formatting, from asuka lsp; and the debugger of the apps asuka dev runs.",
+  "description": "The Asuka language: diagnostics, completion, hover, go to definition, references, rename and formatting, from asuka lsp; previews of components shown by asuka dev (▶ Preview); and the debugger of the apps asuka dev runs.",
   "version": "0.1.0",
   "publisher": "asuka",
   "license": "MIT",
@@ -206,6 +206,18 @@
         "command": "asuka.showOutput",
         "title": "Show Language Server Output",
         "category": "Asuka"
+      },
+      {
+        "command": "asuka.showPreview",
+        "title": "Show Preview",
+        "category": "Asuka",
+        "enablement": "editorLangId == asuka"
+      },
+      {
+        "command": "asuka.showApp",
+        "title": "Show the App",
+        "category": "Asuka",
+        "enablement": "editorLangId == asuka"
       }
     ],
     "configurationDefaults": {

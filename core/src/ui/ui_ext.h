@@ -236,6 +236,18 @@ void ak_ext_layout(ak_ui_root *r, ak_lpass *p);
 bool ak_ext_dispatch(const ak_event *ev);
 // ak_ext_mounted runs once a root's view is made (its locale).
 void ak_ext_mounted(ak_ui_root *r);
+// A preview's showing (preview.c): its color scheme and text size told to
+// a root's host as it mounts; its frame around the root's view; whether
+// one runs.
+void ak_preview_host(void);
+void ak_preview_mounted(ak_ui_root *r);
+ak_view *ak_preview_wrap(ak_ui_root *r, ak_view *v);
+void ak_preview_enter(void);
+void ak_preview_color_scheme(int scheme);
+// ak_ui_preview_locale shows lang (a tag; NULL or "": none) laid out in
+// dir ("rtl", "ltr"; NULL or "": the language's) over the app's and asuka
+// dev's choices (locale.c), while a preview shows.
+void ak_ui_preview_locale(ak_str *lang, ak_str *dir);
 // ak_ext_environment hears of the environment the host reported.
 void ak_ext_environment(ak_ui_root *r);
 // ak_ext_unmount runs as a root is disposed: the calls its host won't

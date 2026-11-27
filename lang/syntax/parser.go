@@ -623,6 +623,16 @@ func (p *parser) benchAhead() bool {
 	return next == STRING || next == STRING_HEAD
 }
 
+// previewAhead reports whether preview "name" starts here: "preview" is
+// a keyword only before a string, at a file's top level.
+func (p *parser) previewAhead() bool {
+	if p.tok != IDENT || p.lit != "preview" {
+		return false
+	}
+	next := p.peek(1)
+	return next == STRING || next == STRING_HEAD
+}
+
 // declAhead reports whether a declaration that can't be in a block
 // starts here, at the start of a line: a component, a struct, … in
 // column 1 inside a block means the block's } is missing, and the
@@ -653,7 +663,7 @@ func (p *parser) declAhead() bool {
 	case TYPE:
 		return isIdentTok(next)
 	case IDENT:
-		return tok == p.tok && p.benchAhead()
+		return tok == p.tok && (p.benchAhead() || p.previewAhead())
 	}
 	return false
 }
@@ -744,6 +754,8 @@ func describeNode(n Node) string {
 		return "test"
 	case *BenchDecl:
 		return "bench"
+	case *PreviewDecl:
+		return "preview"
 	case *MeasureStmt:
 		return "measure"
 	case *Field:
@@ -909,6 +921,20 @@ func (p *parser) parseDecl() Decl {
 		p.inBench = in
 		setSpan(b, p.span(start))
 		return b
+	}
+	if p.previewAhead() {
+		// preview "name" (settings) { … }: "preview" is a keyword only here.
+		if pub.IsValid() {
+			p.error(pub, diag.InvalidModifier, "a preview can't be pub: asuka dev shows it, nothing imports it")
+		}
+		p.next()
+		d := &PreviewDecl{Name: p.parseString()}
+		if p.tok == LPAREN {
+			d.Settings = p.parseArgs()
+		}
+		d.Body = p.parseBlock()
+		setSpan(d, p.span(start))
+		return d
 	}
 	if p.tok == IDENT && p.lit == "shader" && p.peek(1) == IDENT {
 		// shader Name { … }: "shader" is a keyword only here.
@@ -1178,6 +1204,8 @@ func setSpan(n Node, s Span) {
 	case *TestDecl:
 		n.Span = s
 	case *BenchDecl:
+		n.Span = s
+	case *PreviewDecl:
 		n.Span = s
 	case *PropDecl:
 		n.Span = s

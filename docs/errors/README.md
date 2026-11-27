@@ -87,6 +87,7 @@ Every error and warning Asuka reports has a code: a stable name, said in the ter
 - [pattern-type](pattern-type.md): A pattern that can't match the value's type.
 - [peek-untracked](peek-untracked.md): `peek` where nothing is followed.
 - [plural-categories](plural-categories.md): A plural or select message whose categories don't match its language's.
+- [preview-setting](preview-setting.md): A preview's setting it doesn't take, or not a value written as it is.
 - [prop-not-assignable](prop-not-assignable.md): A component assigns a prop it can't.
 - [prop-or-argument](prop-or-argument.md): A parameter, a prop, an event or children given in the wrong place.
 - [recursive-definition](recursive-definition.md): A value or a style defined in terms of itself.

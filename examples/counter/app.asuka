@@ -32,6 +32,15 @@ component Counter {
 
 app { Counter() }
 
+// Previews: asuka dev shows one in place of the app (v in its terminal,
+// the inspector's Previews tab, ▶ Preview in an editor), and reloads it
+// as you edit; asuka test --previews checks what each shows.
+preview "Counter" { Counter() }
+
+preview "Dark, large text" (dark: true, fontScale: 1.5) { Counter() }
+
+preview "Right to left, small" (rtl: true, width: 320, height: 240) { Counter() }
+
 test "counts, and says when it's a lot" {
   let app = mount(Counter())
   app.expect("Count: 0")

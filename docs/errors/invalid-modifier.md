@@ -6,7 +6,7 @@ An error the compiler reports: the program doesn't build until it's fixed.
 
 ## Why
 
-A `mut fn` changes the value it's called on, so a store's fns (which change its state as they are) and a static fn (which has no value) don't take it, and it can't be `async`. A worker's fns don't await, a C function isn't generic, async or throwing, and a test isn't `pub`.
+A `mut fn` changes the value it's called on, so a store's fns (which change its state as they are) and a static fn (which has no value) don't take it, and it can't be `async`. A worker's fns don't await, a C function isn't generic, async or throwing, and a test or a preview isn't `pub`.
 
 ## How to fix
 

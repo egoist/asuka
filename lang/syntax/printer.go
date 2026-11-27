@@ -1008,6 +1008,15 @@ func (p *printer) node(n Node) {
 		p.expr(n.Name)
 		p.write(" ")
 		p.block(n.Body)
+	case *PreviewDecl:
+		p.write("preview ")
+		p.expr(n.Name)
+		p.write(" ")
+		if n.Settings != nil {
+			p.args(n.Settings)
+			p.write(" ")
+		}
+		p.block(n.Body)
 	case *TypeParam:
 		p.typeParam(n)
 	case *Param:

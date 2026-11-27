@@ -23,7 +23,7 @@ final class AsukaSymbolView: UIImageView {
 
     func refresh() {
         guard !name.isEmpty else { image = nil; return }
-        let traits = UITraitCollection(traitsFrom: [traitCollection, UITraitCollection(preferredContentSizeCategory: UIApplication.shared.preferredContentSizeCategory)])
+        let traits = UITraitCollection(traitsFrom: [traitCollection, UITraitCollection(preferredContentSizeCategory: asukaContentSize)])
         var font = UIFont.preferredFont(forTextStyle: .body)
         traits.performAsCurrent { font = node?.font ?? .preferredFont(forTextStyle: .body, compatibleWith: traits) }
         image = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(font: font, scale: .medium))

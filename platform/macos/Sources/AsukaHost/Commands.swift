@@ -97,6 +97,9 @@ import AsukaOps
         case .colorScheme:
             guard args.count > 0 else { return }
             setColorScheme(AsukaColorScheme(rawValue: Int32(args[0])) ?? .system)
+        case .devFontScale:
+            guard args.count >= 4 else { return }
+            setFontScale(CGFloat(Array(args).f32(0)))
         case .quit:
             AsukaShell.shared.quit(Array(args))
         case .shareClose, .backExit:
@@ -119,6 +122,19 @@ import AsukaOps
         case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
         default: NSApp.appearance = nil
         }
+    }
+
+    /// Shows the app's text scale times the system's size (0: the
+    /// system's again), for asuka dev's preview: the texts take their
+    /// fonts at it, and the environment reports it, so the core measures
+    /// them again.
+    func setFontScale(_ scale: CGFloat) {
+        let s = scale > 0 ? scale : 1
+        guard s != previewFontScale else { return }
+        previewFontScale = s
+        for n in nodes.values { applyFont(n) }
+        environmentChanged()
+        for w in wins.values { windowContentResized(w) }
     }
 
     /// Scrolls a Scroll or a List to x, y from its content's start, as far

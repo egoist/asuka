@@ -364,9 +364,32 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
 /// of one, the app's (which followTextSize gives the labels there).
 @MainActor func asukaFontScale(of view: UIView) -> Float {
     var category = view.traitCollection.preferredContentSizeCategory
-    if view.window == nil || category == .unspecified { category = UIApplication.shared.preferredContentSizeCategory }
-    let size = UITraitCollection(preferredContentSizeCategory: category)
-    return Float(UIFontMetrics.default.scaledValue(for: 17, compatibleWith: size) / 17)
+    if view.window == nil || category == .unspecified { category = asukaContentSize }
+    if #unavailable(iOS 17.0) {
+        if let c = AsukaRuntime.shared.contentSize { category = c } // no window's traits take it
+    }
+    return Float(contentSizeScale(category))
+}
+
+/// The app's text size: asuka dev's preview's (DevFontScale), or the
+/// user's.
+@MainActor var asukaContentSize: UIContentSizeCategory {
+    AsukaRuntime.shared.contentSize ?? UIApplication.shared.preferredContentSizeCategory
+}
+
+/// A content size category's text size, as a multiple of the default's.
+@MainActor func contentSizeScale(_ c: UIContentSizeCategory) -> CGFloat {
+    UIFontMetrics.default.scaledValue(for: 17, compatibleWith: UITraitCollection(preferredContentSizeCategory: c)) / 17
+}
+
+/// The content size category whose text size is nearest scale.
+@MainActor func nearestContentSize(_ scale: CGFloat) -> UIContentSizeCategory {
+    let all: [UIContentSizeCategory] = [
+        .extraSmall, .small, .medium, .large, .extraLarge, .extraExtraLarge, .extraExtraExtraLarge,
+        .accessibilityMedium, .accessibilityLarge, .accessibilityExtraLarge,
+        .accessibilityExtraExtraLarge, .accessibilityExtraExtraExtraLarge,
+    ]
+    return all.min { abs(contentSizeScale($0) - scale) < abs(contentSizeScale($1) - scale) } ?? .large
 }
 
 @MainActor extension AsukaRuntime {

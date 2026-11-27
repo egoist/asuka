@@ -189,6 +189,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | | Xcode / Expo | Asuka |
 |---|---|---|
 | 实时重载并保留状态 | 预览、Fast Refresh | ✓ `asuka dev`：开发 App 在每次保存后几毫秒内换上新版本，并保留所有 `state`；手机、桌面和浏览器都是如此（见[开发](development.md)） |
+| 预览 | SwiftUI 的 `#Preview`（Xcode 的画布）、Storybook for React Native、Flutter 的 widget previewer | ✓ 写在代码旁边的 `preview "Name" (settings) { … }`：`asuka dev` 在设备上用它代替应用来显示（从终端、检查器或编辑器里的 ▶ Preview 打开），按它的设置显示（深色、文字大小、语言和书写方向、frame 的尺寸），编辑时随之重载并保留状态；`asuka test --previews` 把每个预览显示的内容和快照比较（见[开发](development.md#预览)） |
 | 检查视图 | Xcode 的视图调试器、React Native DevTools、Flutter DevTools | ✓ `asuka dev` 的检查器：在浏览器中以树的形式显示正在运行的应用的视图（元素、文字、frame），指针指向的视图会在设备上高亮（见[开发](development.md#检查器)） |
 | 调试器 | Xcode 的 LLDB、Android Studio 的调试器、React Native DevTools（Hermes） | ✓ `asuka dev` 自带：在应用的 `.asuka` 文件里设断点（可加条件、命中次数，或作为日志点）、在没有被捕获的错误抛出处停下、单步执行、查看调用栈和每一层的变量、在暂停的那一层里对表达式求值，支持模拟器、iPhone、Android、Mac、Windows 和 Linux（不支持 Web），可以用 VS Code 或任何带 DAP 客户端的编辑器（见[开发](development.md#调试器)） |
 | 性能 | Xcode 的 Instruments、React Native 的 Perf Monitor 和 DevTools 性能分析器、Flutter 的性能浮层和 DevTools | ✓ `asuka dev` 自带：所有平台上都有叠在应用上方的浮层（每秒帧数和掉帧、刷新次数、上一次刷新各阶段的耗时、内存），还可以在检查器或终端里录制性能记录：每次刷新的各阶段耗时和工作量、掉帧，以及（Web 除外）对应用函数的采样；页面里有时间线、耗时最多的函数和火焰图，并可导出到 Perfetto 和 speedscope（见[开发](development.md#性能)） |

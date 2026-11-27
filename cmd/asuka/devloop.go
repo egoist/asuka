@@ -93,6 +93,12 @@ type devLoop struct {
 	firstLoad     chan struct{}
 	firstLoadOnce sync.Once
 	playerErr     chan string
+	// prev is what the players show of the app's previews (devpreview.go);
+	// webLoop: the players are the web's pages (web.go's).
+	prev    devPreviews
+	webLoop bool
+	// forget takes the loop out of the registry editors find it by.
+	forget func()
 }
 
 // devReload is a player's report of a module it loaded.
@@ -118,6 +124,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 		Hello: func(p *devserver.Player, b []byte) {
 			fmt.Fprintf(d.out, "asuka: %s connected\n", playerName(b))
 			d.debugger.Hello(p, playerName(b))
+			d.previewHello(p, b)
 		},
 		Stopped:   func(p *devserver.Player, st devserver.Stop) { d.debugger.Stopped(p, st) },
 		Continued: func(p *devserver.Player) { d.debugger.Continued(p) },
@@ -167,6 +174,7 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 			d.mu.Unlock()
 			d.inspector.forget(playerKey(p))
 			d.debugger.Gone(p)
+			d.previewGone(p)
 		},
 	})
 	if err != nil {
@@ -183,9 +191,26 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 	d.inspector.askers = append(d.inspector.askers, srv.Inspect)
 	d.perfAll = append(d.perfAll, nativePerfAll(srv))
 	d.automation.send = d.nativeAutomation(srv)
+	d.inspector.previews = d.previewsAnswer
+	d.inspector.showPreview = func(file, name string, line int, key string) error {
+		if file == "" {
+			d.showPreview(nil, key)
+			return nil
+		}
+		sel, err := d.findPreview(file, name, line)
+		if err != nil {
+			return err
+		}
+		d.showPreview(sel, key)
+		return nil
+	}
+	d.forget = func() {}
 	if url, err := d.inspector.listen(); err == nil {
 		d.inspectorURL = url
 		fmt.Fprintf(d.out, "asuka: the inspector (the app's views): %s\n", url)
+		if forget, err := devserver.Register(app.dir, url); err == nil {
+			d.forget = forget
+		}
 	}
 	d.compile()
 	return d, nil
@@ -339,6 +364,7 @@ func (d *devLoop) port() int { return d.srv.Port() }
 
 // close disconnects every player.
 func (d *devLoop) close() {
+	d.forget()
 	d.debugger.Close()
 	d.srv.Close()
 	d.inspector.close()
@@ -433,11 +459,24 @@ func (d *devLoop) compile() bool {
 	}
 	d.srv.Send(d.platform, b)
 	d.srv.Send("", b) // players whose platform asuka doesn't know
+	d.mu.Lock()
+	webPreview := d.prev.web != nil // the pages get the preview's (sendPreviews)
+	d.mu.Unlock()
 	for _, f := range fs {
-		f(b)
+		if !webPreview {
+			f(b)
+		}
 	}
 	fmt.Fprintf(d.out, "asuka: compiled in %s\n", msText(float64(time.Since(start).Microseconds())/1000))
 	return true
+}
+
+// rebuild compiles the app after a save, and the previews the players
+// show.
+func (d *devLoop) rebuild() bool {
+	ok := d.compile()
+	d.sendPreviews(nil, false)
+	return ok
 }
 
 // restart has every player load the app's last module that compiled
@@ -593,7 +632,7 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 	keys, restore := devKeys()
 	defer restore()
 	if keys != nil {
-		fmt.Fprintln(d.out, "asuka: watching for changes (r: restart, i: the inspector, p: the performance overlay, t: record a profile, Ctrl-C: stop)")
+		fmt.Fprintln(d.out, "asuka: watching for changes (r: restart, i: the inspector, v: the previews, p: the performance overlay, t: record a profile, Ctrl-C: stop)")
 	} else {
 		fmt.Fprintln(d.out, "asuka: watching for changes (Ctrl-C to stop)")
 	}
@@ -613,6 +652,14 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 				d.togglePerfOverlay()
 			case 't', 'T':
 				d.toggleRecording()
+			case 'v', 'V':
+				d.printPreviews()
+			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+				d.previewKey(k)
+			case 0x1b: // Escape: back to the app
+				if d.previewing() {
+					d.showPreview(nil, "")
+				}
 			}
 		case <-stop:
 			if p.stop != nil {
@@ -635,7 +682,7 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 				// The compile's uses are what the app needs (refresh takes
 				// them, not a compile of its own).
 				if src {
-					d.compile()
+					d.rebuild()
 				}
 				d.app.refresh()
 				watchEmbeds(w, d.app.used())
@@ -648,7 +695,7 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 				continue
 			}
 			if src {
-				d.compile()
+				d.rebuild()
 				d.app.refresh()
 				watchEmbeds(w, d.app.used())
 				if d.isStale() {

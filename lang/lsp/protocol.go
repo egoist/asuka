@@ -96,6 +96,8 @@ type ServerCapabilities struct {
 	RenameProvider             *RenameOptions           `json:"renameProvider,omitempty"`
 	CodeActionProvider         *CodeActionOptions       `json:"codeActionProvider,omitempty"`
 	SemanticTokensProvider     *SemanticTokensOptions   `json:"semanticTokensProvider,omitempty"`
+	CodeLensProvider           *CodeLensOptions         `json:"codeLensProvider,omitempty"`
+	ExecuteCommandProvider     *ExecuteCommandOptions   `json:"executeCommandProvider,omitempty"`
 	Workspace                  *WorkspaceServerCapabity `json:"workspace,omitempty"`
 }
 
@@ -265,8 +267,36 @@ type CompletionItemLabelDetails struct {
 }
 
 type Command struct {
-	Title   string `json:"title"`
-	Command string `json:"command"`
+	Title     string `json:"title"`
+	Command   string `json:"command"`
+	Arguments []any  `json:"arguments,omitempty"`
+}
+
+type CodeLensParams struct {
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+}
+
+type CodeLens struct {
+	Range   Range    `json:"range"`
+	Command *Command `json:"command,omitempty"`
+}
+
+type CodeLensOptions struct {
+	ResolveProvider bool `json:"resolveProvider"`
+}
+
+type ExecuteCommandParams struct {
+	Command   string            `json:"command"`
+	Arguments []json.RawMessage `json:"arguments,omitempty"`
+}
+
+type ExecuteCommandOptions struct {
+	Commands []string `json:"commands"`
+}
+
+type ShowMessageParams struct {
+	Type    int    `json:"type"` // 1 error, 2 warning, 3 info, 4 log
+	Message string `json:"message"`
 }
 
 // The CompletionItemKinds the server uses.

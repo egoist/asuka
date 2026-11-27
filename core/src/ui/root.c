@@ -200,6 +200,7 @@ void ak_accent_host(void);
 void ak_ui_init(const ak_host *host) {
 	ak_ui.host = *host;
 	ak_accent_host();
+	ak_preview_host();
 	if (ak_ui.inited) return;
 	ak_ui.inited = true;
 	ak_signal_set_after_flush(after_flush, NULL);
@@ -262,12 +263,17 @@ static void mount_fn(void *ctx, ak_owner *root) {
 	ak_ui_root *prev = ak_ui.cur;
 	ak_ui.cur = r;
 	r->el = ak_view_new(r, &cls_root, 0, true);
+	// Its layout style again, now it's the root: the direction it says is
+	// the app's (ak_view_ldir), which may have changed while no root was
+	// mounted (a reload's init: a preview's, setLocale's).
+	ak_style_relayout(r->el);
 	ak_batch_set_root(r->batch, r->el->id);
 	ak_ext_mounted(r);
 	ak_dev_overlay_mounted(r);
 	ak_perf_mounted(r);
 	ak_path_reset();
-	ak_view *v = ak_ui_build(r, m->build, NULL, 0);
+	ak_preview_enter();
+	ak_view *v = ak_preview_wrap(r, ak_ui_build(r, m->build, NULL, 0));
 	if (v) {
 		v->fill = true;
 		ak_style_relayout(v);

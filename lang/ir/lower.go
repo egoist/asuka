@@ -95,6 +95,12 @@ type Options struct {
 	// Cover names the files whose statements count their runs, for
 	// asuka test --cover (cover.go); none: nothing is counted.
 	Cover []string
+	// Preview, when set, is the module's app: a preview's build, which
+	// asuka dev shows in place of the app (preview.go).
+	Preview *check.Preview
+	// PreviewTests makes each of the root package's previews a test that
+	// compares what it shows with its snapshot (asuka test --previews).
+	PreviewTests bool
 	// Locals records the names of each function's parameters and
 	// locals, and the registers that hold them, for the debugger
 	// (Func.Locals, bytecode.Local): a build the optimizer won't change
@@ -157,7 +163,9 @@ func (l *Lowerer) lower() {
 	l.mod.Init = uint32(init.idx)
 	l.initBody(init)
 	root := l.prog.Root
-	if root != nil && root.App != nil {
+	if pv := l.opts.Preview; pv != nil {
+		l.lowerPreviewApp(pv)
+	} else if root != nil && root.App != nil {
 		app := l.newFunc("app", l.fileOf(root.App), 0, bc.KRef)
 		l.mod.App = int32(app.idx)
 		app.ctx = l.info.Ctxs[root.App]
@@ -166,6 +174,11 @@ func (l *Lowerer) lower() {
 	if root != nil {
 		for _, t := range root.Tests {
 			l.lowerTest(t)
+		}
+		if l.opts.PreviewTests {
+			for _, pv := range root.Previews {
+				l.lowerPreviewTest(pv)
+			}
 		}
 		if m := l.prog.Main; m != nil {
 			l.mod.Main = int32(l.funcIndex(m, nil, nil))
@@ -739,6 +752,9 @@ func (l *Lowerer) initBody(b *fb) {
 	// The case-name tables the lowering asks for as it goes are made by
 	// a function init calls first; its body is written at the end.
 	l.stringsFn = l.newFunc("init.strings", "", 0, bc.KVoid)
+	// A preview's settings first: the language it shows is what the
+	// catalog and the memos read.
+	l.previewInit(b)
 	// The catalog first: what init's memos say may read the language.
 	if l.opts.Lang != "" || l.opts.Direction != "" {
 		mark := b.mark()

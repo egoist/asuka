@@ -220,16 +220,40 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         restyleAll(true)
     }
 
-    /** config in the app's color scheme: night or not, as the app asked, or as the system is. */
+    /**
+     * config in the app's color scheme (night or not, as the app asked, or
+     * as the system is), and at asuka dev's preview's font scale, if it
+     * shows one.
+     */
     fun schemed(config: android.content.res.Configuration): android.content.res.Configuration {
         val night = when (colorScheme) {
             AsukaColorScheme.LIGHT -> android.content.res.Configuration.UI_MODE_NIGHT_NO
             AsukaColorScheme.DARK -> android.content.res.Configuration.UI_MODE_NIGHT_YES
-            else -> return config
+            else -> -1
         }
+        val scale = previewFontScale
+        if (night < 0 && scale <= 0f) return config
         return android.content.res.Configuration(config).apply {
-            uiMode = (uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or night
+            if (night >= 0) uiMode = (uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or night
+            if (scale > 0f) fontScale = scale
         }
+    }
+
+    /** asuka dev's preview's font scale (the DevFontScale command's); 0: the user's. */
+    private var previewFontScale = 0f
+
+    /**
+     * Shows the app's text as if the user's font scale were s (0: the
+     * user's again), for asuka dev's preview: the configuration the views
+     * are made with has it, and the same path as a change of the user's
+     * makes those that show text again and reports it.
+     */
+    private fun setDevFontScale(s: Float) {
+        val scale = if (s > 0f) s else 0f
+        if (scale == previewFontScale) return
+        previewFontScale = scale
+        val a = activity
+        if (a != null) a.fontScaleChanged() else configurationChanged(app.resources.configuration)
     }
 
     /** Whether config, in the app's color scheme, is dark. */
@@ -1175,6 +1199,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
                 setAccent(if (c != 0L) color(c) else null, flags and 1 != 0)
             }
             AsukaCommand.COLOR_SCHEME -> if (args.remaining() > 0) setColorScheme(args.get().toInt())
+            AsukaCommand.DEV_FONT_SCALE -> if (args.remaining() >= 4) setDevFontScale(args.float)
             AsukaCommand.LOCALE -> {
                 if (args.remaining() < 1) return
                 val flags = args.get().toInt()

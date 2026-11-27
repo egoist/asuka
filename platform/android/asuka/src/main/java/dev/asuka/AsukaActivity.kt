@@ -41,20 +41,21 @@ open class AsukaActivity : AppCompatActivity() {
     override fun getResources(): Resources = shownResources ?: super.getResources()
     override fun getTheme(): Resources.Theme = shownTheme ?: super.getTheme()
 
-    /** The language the app shows changed, or this Activity's configuration did. */
+    /** The language the app shows changed, or this Activity's configuration did, or asuka dev's preview's font scale. */
     fun localeChanged() {
         shownResources = null
         shownTheme = null
-        val shown = runtime.shownLocale ?: return
+        val shown = runtime.shownLocale
         val own = super.getResources().configuration
         val config = runtime.localized(runtime.schemed(own))
         // en shown on an en-US system is what the Activity has already.
-        val same = own.locales[0].let { it.language == shown.language && it.script == shown.script }
-        if (!same || config.layoutDirection != own.layoutDirection) {
+        val same = shown == null || own.locales[0].let { it.language == shown.language && it.script == shown.script }
+        if (!same || config.layoutDirection != own.layoutDirection || config.fontScale != own.fontScale) {
             val r = createConfigurationContext(config).resources
             shownResources = r
             shownTheme = r.newTheme().apply { applyStyle(themeRes, true) }
         }
+        if (shown == null) return
         val direction = if (runtime.rtl) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
         if (::frame.isInitialized) frame.layoutDirection = direction
         window?.decorView?.layoutDirection = direction
@@ -251,6 +252,9 @@ open class AsukaActivity : AppCompatActivity() {
 
     /** The app's color scheme changed (ui.SetColorScheme). */
     fun schemeChanged() = configured(resources.configuration)
+
+    /** asuka dev's preview's font scale changed (DevFontScale): the Activity's own configuration, at it. */
+    fun fontScaleChanged() = configured(super.getResources().configuration)
 
     private fun configured(config: Configuration) {
         edgeToEdge() // status bar icons follow dark mode

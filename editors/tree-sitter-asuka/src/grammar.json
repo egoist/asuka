@@ -270,6 +270,10 @@
             {
               "type": "STRING",
               "value": "measure"
+            },
+            {
+              "type": "STRING",
+              "value": "preview"
             }
           ]
         },
@@ -671,6 +675,10 @@
         {
           "type": "SYMBOL",
           "name": "bench_declaration"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "preview_declaration"
         },
         {
           "type": "SYMBOL",
@@ -1133,6 +1141,47 @@
             "type": "SYMBOL",
             "name": "_string"
           }
+        },
+        {
+          "type": "FIELD",
+          "name": "body",
+          "content": {
+            "type": "SYMBOL",
+            "name": "block"
+          }
+        }
+      ]
+    },
+    "preview_declaration": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "preview"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_string"
+          }
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "settings",
+              "content": {
+                "type": "SYMBOL",
+                "name": "arguments"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
         },
         {
           "type": "FIELD",

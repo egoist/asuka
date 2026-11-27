@@ -37,7 +37,12 @@
   dd { margin: 0; word-break: break-word; font-family: ui-monospace, Menlo, monospace; }
   .empty { color: var(--dim); padding: 16px; }
   #perf { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); grid-template-rows: auto auto minmax(120px, auto) minmax(0, 1fr); min-height: 0; }
-  #perf[hidden], main[hidden] { display: none; }
+  #perf[hidden], main[hidden], #previews[hidden] { display: none; }
+  #previews { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #pv-list td, #pv-list th { text-align: left; }
+  #pv-list tbody tr { cursor: pointer; }
+  #pv-list .shown { color: var(--accent); font-weight: 600; }
+  #pv-list code, #previews .empty code { font-family: ui-monospace, Menlo, monospace; }
   .bar { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   #record.on { color: var(--bad); border-color: var(--bad); }
   #summary { grid-column: 1 / -1; padding: 6px 12px; color: var(--dim); }
@@ -75,6 +80,7 @@
   <div class="tabs" role="tablist">
     <button role="tab" id="tab-views" aria-selected="true" aria-controls="views">Views</button>
     <button role="tab" id="tab-perf" aria-selected="false" aria-controls="perf">Performance</button>
+    <button role="tab" id="tab-previews" aria-selected="false" aria-controls="previews">Previews</button>
   </div>
   <select id="player" aria-label="Device"></select>
   <input id="filter" type="search" placeholder="Filter by element or text" aria-label="Filter">
@@ -109,6 +115,14 @@
     <div class="pane" id="pane-flushes" hidden></div>
   </div>
   <div id="pdetail"><p class="empty">Select a flush or a function.</p></div>
+</section>
+<section id="previews" hidden>
+  <div class="bar">
+    <button id="show-app" title="The app again, its state as it was (Escape, or 0 in asuka dev's terminal)">Show the app</button>
+    <label id="pv-all-label" title="Show a preview on every device connected, or only on the one picked above"><input id="pv-all" type="checkbox" checked> On every device</label>
+    <span id="pvstatus"></span>
+  </div>
+  <div class="pane" id="pv-list"></div>
 </section>
 <div id="tip" hidden></div>
 <script>
@@ -231,8 +245,11 @@ function setTab(t) {
   tab = t;
   $("tab-views").setAttribute("aria-selected", t === "views");
   $("tab-perf").setAttribute("aria-selected", t === "perf");
+  $("tab-previews").setAttribute("aria-selected", t === "previews");
   $("views").hidden = t !== "views";
   $("perf").hidden = t !== "perf";
+  $("previews").hidden = t !== "previews";
+  if (t === "previews") loadPreviews();
   for (const id of ["filter", "refresh", "live-label"]) $(id).hidden = t !== "views";
   highlight();
   if (t === "perf") { perfControls(); loadLast(); requestAnimationFrame(drawAll); }
@@ -241,17 +258,88 @@ function setTab(t) {
 
 $("tab-views").onclick = () => setTab("views");
 $("tab-perf").onclick = () => setTab("perf");
+$("tab-previews").onclick = () => setTab("previews");
 $("refresh").onclick = () => refresh(true);
 $("filter").oninput = render;
-$("player").onchange = () => { selected = hovered = null; render(); highlight(); perfControls(); loadLast(); };
+$("player").onchange = () => { selected = hovered = null; render(); highlight(); perfControls(); loadLast(); renderPreviews(); };
 $("tree").onmouseleave = () => { hovered = null; highlight(); };
 // Escape: nothing selected, nothing highlighted.
-addEventListener("keydown", (e) => { if (e.key === "Escape") { selected = hovered = null; render(); highlight(); } });
+// In the Previews tab, back to the app.
+addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (tab === "previews") { showPreview(null); return; }
+  selected = hovered = null; render(); highlight();
+});
 // The page closing takes its highlight along.
 addEventListener("pagehide", () => {
   if (lit.key) navigator.sendBeacon(`highlight?key=${encodeURIComponent(lit.key)}&path=`);
 });
-setInterval(() => { if (!document.hidden && (tab === "perf" || $("live").checked)) refresh(); }, 1000);
+setInterval(() => {
+  if (document.hidden) return;
+  if (tab === "previews") { refresh(false); loadPreviews(); return; }
+  if (tab === "perf" || $("live").checked) refresh();
+}, 1000);
+
+// ---- Previews ----
+
+// The app's previews (preview "name" { … } in its files), and what each
+// device shows: clicking one shows it in place of the app, on every
+// device or the one picked; edits reload it, keeping its state.
+let previews = null;
+async function loadPreviews() {
+  try {
+    const res = await fetch("previews", { cache: "no-store" });
+    previews = await res.json();
+  } catch (e) {
+    $("pvstatus").textContent = "asuka dev isn't answering: " + e.message;
+    return;
+  }
+  renderPreviews();
+}
+// shownOn is what a device shows (null: the app); the web's pages share one.
+function shownOn(p) {
+  if (!previews || !p) return null;
+  return previews.shown[p.key.startsWith("web:") ? "web" : p.key] || null;
+}
+function renderPreviews() {
+  const el = $("pv-list");
+  $("pv-all-label").hidden = players.length < 2;
+  if (!previews) return;
+  const shown = shownOn(current());
+  $("show-app").disabled = !Object.keys(previews.shown).length;
+  $("pvstatus").textContent = previews.error ? previews.error : shown ? `Showing “${shown.name}”` : players.length ? "Showing the app" : "waiting for the app";
+  if (!previews.previews.length) {
+    el.innerHTML = '<p class="empty">The app has no previews. Write one in any of its files, and save: <code>preview "Name" { … }</code>.</p>';
+    return;
+  }
+  el.innerHTML = '<table><thead><tr><th class="name">Preview</th><th class="name">Settings</th><th class="name">Where</th></tr></thead><tbody></tbody></table>';
+  const tb = el.querySelector("tbody");
+  for (const pv of previews.previews) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td class="name"></td><td class="name"></td><td class="where"></td>';
+    const on = shown && shown.file === pv.file && shown.name === pv.name;
+    tr.cells[0].textContent = (on ? "▶ " : "") + pv.name;
+    if (on) { tr.className = "sel"; tr.cells[0].classList.add("shown"); }
+    tr.cells[1].textContent = pv.settings || "";
+    tr.cells[2].textContent = `${pv.path}:${pv.line}`;
+    tr.title = "Show it on the device";
+    tr.onclick = () => showPreview(pv);
+    tb.append(tr);
+  }
+}
+async function showPreview(pv) {
+  const key = $("pv-all").checked || players.length < 2 ? "" : (current()?.key || "");
+  const q = new URLSearchParams({ key });
+  if (pv) { q.set("file", pv.file); q.set("name", pv.name); }
+  try {
+    const res = await fetch("preview?" + q, { method: "POST" });
+    if (!res.ok) $("pvstatus").textContent = await res.text();
+  } catch (e) {
+    $("pvstatus").textContent = "asuka dev isn't answering: " + e.message;
+  }
+  loadPreviews();
+}
+$("show-app").onclick = () => showPreview(null);
 
 // ---- Performance ----
 
@@ -783,7 +871,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
 
 let startTab = "views";
 try { startTab = localStorage.getItem("asuka-inspector-tab") || "views"; } catch {}
-refresh(true).then(() => setTab(startTab === "perf" ? "perf" : "views"));
+refresh(true).then(() => setTab(["perf", "previews"].includes(startTab) ? startTab : "views"));
 renderTop();
 renderFlushes();
 </script>

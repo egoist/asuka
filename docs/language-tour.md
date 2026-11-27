@@ -135,6 +135,8 @@ component Greeting(name: string) {
 }
 
 app { Greeting("Ana") { excited: true } }
+
+preview "Greeting, dark" (dark: true) { Greeting("Ana") }
 ```
 
 A component's header takes its parameters; its block holds its props,
@@ -143,6 +145,9 @@ and only that: no diffing. A state made from what changes
 (`state draft = name`) follows it until it's written; `peek(name)`
 reads it once. `bind` makes a two-way binding, `on press`
 handles an event, and `if` and `for` decide which views there are.
+A `preview` is a component shown on its own, in the settings it names:
+`asuka dev` shows it on the device in place of the app, and builds leave
+it out.
 [Components](language/components.md), [Stores](language/stores.md) for
 state several components share.
 

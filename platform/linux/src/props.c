@@ -490,9 +490,14 @@ void lx_style_button(node *n) {
 		break;
 	}
 	// The button's label takes the node's font and color, when it sets
-	// them.
+	// them or asuka dev's preview shows a text size; otherwise the
+	// style's.
 	GtkWidget *l = lx_button_label((GtkWidget *)b);
-	if (l && (n->color || n->font_size > 0 || n->text_style || n->font_weight || !str_empty(n->font_family))) lx_set_label_attrs(n, l);
+	if (!l) return;
+	if (n->color || n->font_size > 0 || n->text_style || n->font_weight || !str_empty(n->font_family) || H.dev_font_scale > 0)
+		lx_set_label_attrs(n, l);
+	else
+		gtk_label_set_attributes((GtkLabel *)l, NULL);
 }
 
 // ---- Each kind's own props ----

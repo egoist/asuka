@@ -22,6 +22,7 @@ test "Add counts" {
 ```sh
 asuka test                    # このディレクトリのアプリまたはパッケージ
 asuka test --run Add          # 名前に Add を含むテスト
+asuka test --previews         # プレビューも実行し、それぞれをスナップショットと比べる
 asuka test path/to/app
 ```
 
@@ -201,6 +202,27 @@ FAIL the list shows today's todos (todos.asuka:12)
 ```
 
 `asuka test --update`（`-u`）は、代わりにテストが示したものを書き込みます。すべてのテストが実行されて成功したときは、どのテストも使わなくなったスナップショットも削除します。CI（`CI` が設定されている環境）では、まだ保存されていないスナップショットは書き込まれず、テストが失敗します。プロパティテストではスナップショットを使えません。生成したすべての値で実行されるからです。
+
+### プレビューをテストとして使う
+
+`asuka test --previews` は、パッケージのプレビュー（[プレビュー](language/components.md#プレビュー)）もテストとして実行します。テストの名前は `preview` とプレビューの名前です。プレビューは設定どおりに（その言語と書字方向で、そのフレームの中に）マウントされ、表示内容が `expectSnapshot` と同じようにスナップショットと比べられます。初回の実行で `testdata/snapshots/` に書き込まれ、`--update` で書き直され、CI ではスナップショットがないとテストが失敗します。つまり、`asuka dev` で見ているプレビューがそのまま回帰テストにもなります。たとえば次のプレビューの場合、
+
+```asuka
+preview "Right to left, small" (rtl: true, width: 320, height: 240) { Counter() }
+```
+
+スナップショットは次のようになります。
+
+```
+snapshot "preview Right to left, small 1"
+  View 0,0 390x844
+    View 35,302 320x240
+      Text 128,86.67 64x20 "Count: 0"
+      Button 158,122.67 64x44 "Reset"
+      Button 98,122.67 48x44 "Add"
+```
+
+`dark` と `fontScale` はスナップショットを変えません。`asuka test` の画面には色がなく、テキストは 1 文字あたり固定の幅で測られるからです。
 
 ## ベンチマーク
 

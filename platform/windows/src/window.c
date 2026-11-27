@@ -269,10 +269,11 @@ static LRESULT window_message(UINT m, WPARAM wp, LPARAM lp, bool *handled) {
 }
 
 // wh_environment is the main window's: its client area's size, its DPI
-// as the scale, the text size, dark mode, animations (Reduce Motion), the
-// time zone, the user's languages and regional formats. A desktop window
-// has no keyboard over it, and no safe area but a hidden title bar's
-// strip at the top, where its caption buttons are (SafeTop).
+// as the scale, the text size (asuka dev's preview's, over the user's),
+// dark mode, animations (Reduce Motion), the time zone, the user's
+// languages and regional formats. A desktop window has no keyboard over
+// it, and no safe area but a hidden title bar's strip at the top, where
+// its caption buttons are (SafeTop).
 void wh_environment(wh_env *out) {
 	memset(out, 0, sizeof *out);
 	RECT r;
@@ -281,7 +282,7 @@ void wh_environment(wh_env *out) {
 	e->width = wh_pt(NULL, r.right), e->height = wh_pt(NULL, r.bottom);
 	e->safe_top = wh_safe_top(H.main_ctl);
 	e->scale = H.scale;
-	e->font_scale = wh_text_scale();
+	e->font_scale = H.dev_font_scale > 0 ? H.dev_font_scale : wh_text_scale();
 	e->dark = H.dark;
 	BOOL anim = TRUE, reader = FALSE;
 	SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &anim, 0);

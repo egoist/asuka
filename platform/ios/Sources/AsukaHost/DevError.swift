@@ -90,6 +90,7 @@ extension AsukaRuntime {
                 ?? scenes.first
             o = AsukaDevErrorOverlay(root: root, scene: scene, appWindow: app)
             o.window.overrideUserInterfaceStyle = colorScheme
+            applyContentSize(o.window)
             o.window.tintColor = accent
             o.window.semanticContentAttribute = rtl ? .forceRightToLeft : .forceLeftToRight
             o.controller.act = { [weak self, weak o] action in

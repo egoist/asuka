@@ -134,7 +134,7 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
     var font: UIFont {
         let style = uiTextStyle(textStyle)
         let metrics = UIFontMetrics(forTextStyle: style)
-        let size = UITraitCollection(preferredContentSizeCategory: UIApplication.shared.preferredContentSizeCategory)
+        let size = UITraitCollection(preferredContentSizeCategory: asukaContentSize)
         if !fontFamily.isEmpty {
             let base = fontSize > 0 ? CGFloat(fontSize)
                 : UIFont.preferredFont(forTextStyle: style, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)).pointSize

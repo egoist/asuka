@@ -44,7 +44,9 @@ type Package struct {
 	Funcs   []*Function // top-level functions
 	Types   []*TypeName // declared types
 	Tests   []*Test
-	Exts    []*Extension // its extend declarations
+	// Previews are its preview blocks (preview.go).
+	Previews []*Preview
+	Exts     []*Extension // its extend declarations
 	App     *syntax.AppDecl
 	Imports []*Package
 

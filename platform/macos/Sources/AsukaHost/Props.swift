@@ -526,9 +526,11 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
     /// The NSFont for a node's text props.
     func font(_ n: AsukaNode) -> NSFont { font(style: n.textStyle, weight: n.fontWeight, size: n.fontSize, family: n.fontFamily) }
 
-    func font(style: Int32, weight: Int32, size: Float, family: String) -> NSFont {
-        let base = styleFont(style)
-        let pt = size > 0 ? CGFloat(size) : base.pointSize
+    /// A text's font: scaled by asuka dev's preview's text size
+    /// (previewFontScale), unless it's a canvas's, which draws at its own sizes.
+    func font(style: Int32, weight: Int32, size: Float, family: String, scaled: Bool = true) -> NSFont {
+        let base = scaled ? styleFont(style) : unscaledStyleFont(style)
+        let pt = size > 0 ? CGFloat(size) * (scaled ? previewFontScale : 1) : base.pointSize
         if !family.isEmpty, let f = familyFont(family, pt, weight) { return f }
         if weight > 0, Int(weight) < asukaWeights.count {
             return NSFont.systemFont(ofSize: pt, weight: NSFont.Weight(asukaWeights[Int(weight)]))
@@ -601,12 +603,32 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
 /// NSFont.Weight's values for Asuka's weights.
 let asukaWeights: [CGFloat] = [0, -0.8, -0.6, -0.4, 0, 0.23, 0.3, 0.4, 0.56, 0.62]
 
+/// The text size asuka dev's preview shows (the DevFontScale command's),
+/// as a multiple of the system's: 1 but in a preview that says one. A Mac
+/// has no text size setting.
+@MainActor var previewFontScale: CGFloat = 1 {
+    didSet { styleFonts = [:] }
+}
+
 private var styleFonts: [Int32: NSFont] = [:]
 
-/// The system font of a text style (macOS's sizes: body 13).
+/// The system font of a text style (macOS's sizes: body 13), at the
+/// preview's text size.
 @MainActor func styleFont(_ style: Int32) -> NSFont {
     let s = style <= 0 || style > 11 ? AsukaTextStyle.body.rawValue : style
     if let f = styleFonts[s] { return f }
+    let base = unscaledStyleFont(s)
+    let f = previewFontScale == 1 ? base : NSFont(descriptor: base.fontDescriptor, size: base.pointSize * previewFontScale) ?? base
+    styleFonts[s] = f
+    return f
+}
+
+private var unscaledStyleFonts: [Int32: NSFont] = [:]
+
+/// The system font of a text style, at the system's size.
+@MainActor func unscaledStyleFont(_ style: Int32) -> NSFont {
+    let s = style <= 0 || style > 11 ? AsukaTextStyle.body.rawValue : style
+    if let f = unscaledStyleFonts[s] { return f }
     let ts: NSFont.TextStyle
     switch AsukaTextStyle(rawValue: s) {
     case .largeTitle: ts = .largeTitle
@@ -622,6 +644,6 @@ private var styleFonts: [Int32: NSFont] = [:]
     default: ts = .body
     }
     let f = NSFont.preferredFont(forTextStyle: ts, options: [:])
-    styleFonts[s] = f
+    unscaledStyleFonts[s] = f
     return f
 }

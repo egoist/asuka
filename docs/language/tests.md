@@ -36,7 +36,8 @@ end in `_test.asuka` (`parser_test.asuka`; `tray_linux_test.asuka` for
 one platform). A test file's declarations and imports, its fixtures and
 helpers, are part of the package only when its own tests run (`asuka
 test`, `asuka check`, an editor): a build has none of them, nor any
-test block, and a package that imports this one never sees them. So a
+`test`, `bench` or `preview` block ([Previews](components.md#previews)),
+and a package that imports this one never sees them. So a
 test file may import what only its tests need without that coming with
 the app.
 

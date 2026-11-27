@@ -42,10 +42,14 @@ static struct {
 // ---- Tags ----
 
 static char forced_dir[4];  // ak_ui_force_locale's direction ("rtl", "ltr"), or ""
+// A preview's (ak_ui_preview_locale), over the rest while it shows.
+static char preview_dir[4];
+static ak_str *preview_lang;
 
-// forced_direction is asuka dev's --dir (ak_ui_force_locale) or
-// ASUKA_DIRECTION's ("rtl" or "ltr"), or NULL.
+// forced_direction is a preview's, asuka dev's --dir (ak_ui_force_locale)
+// or ASUKA_DIRECTION's ("rtl" or "ltr"), or NULL.
 static const char *forced_direction(void) {
+	if (preview_dir[0]) return preview_dir;
 	if (forced_dir[0]) return forced_dir;
 	const char *d = getenv("ASUKA_DIRECTION");
 	return d && (strcmp(d, "rtl") == 0 || strcmp(d, "ltr") == 0) ? d : NULL;
@@ -126,7 +130,7 @@ static void update(void) {
 	load();
 	ak_arr *pref = preferred_of();
 	ak_arr *sup = supported();
-	ak_str *loc = ak_i18n_resolve(L.override, pref, sup);
+	ak_str *loc = ak_i18n_resolve(preview_lang ? preview_lang : L.override, pref, sup);
 	ak_release(sup);
 	bool rtl = rtl_of(loc);
 	// The regional formats: the environment's, what it doesn't say from
@@ -259,6 +263,26 @@ void ak_ui_force_locale(ak_str *lang, ak_str *dir) {
 			ak_release(n);
 		}
 	}
+	if (L.shown) update();
+}
+
+void ak_ui_preview_locale(ak_str *lang, ak_str *dir) {
+	load();
+	char d[4] = {0};
+	if (dir && (ak_span_eqc(ak_span_str(dir), "rtl") || ak_span_eqc(ak_span_str(dir), "ltr"))) memcpy(d, dir->data, 3);
+	ak_str *n = lang && lang->len ? ak_i18n_normalize(ak_span_str(lang)) : NULL;
+	if (n && !n->len) {
+		ak_release(n);
+		n = NULL;
+	}
+	bool same = memcmp(d, preview_dir, 4) == 0 && (n ? preview_lang && ak_str_eq(n, preview_lang) : !preview_lang);
+	if (same) {
+		ak_release(n);
+		return;
+	}
+	memcpy(preview_dir, d, 4);
+	ak_release(preview_lang);
+	preview_lang = n;
 	if (L.shown) update();
 }
 

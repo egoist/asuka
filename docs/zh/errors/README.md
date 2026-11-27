@@ -87,6 +87,7 @@ Asuka 报告的每个错误和警告都有一个代码：一个稳定的名称�
 - [pattern-type](pattern-type.md): 与值的类型不可能匹配的模式。
 - [peek-untracked](peek-untracked.md): 在不跟随任何东西的地方使用了 `peek`。
 - [plural-categories](plural-categories.md): 复数或选择消息的类别与语言的类别不符。
+- [preview-setting](preview-setting.md): 预览的设置项不存在，或者它的值不是直接写出来的。
 - [prop-not-assignable](prop-not-assignable.md): 组件给不能赋值的 prop 赋了值。
 - [prop-or-argument](prop-or-argument.md): 参数、属性、事件或子视图放错了位置。
 - [recursive-definition](recursive-definition.md): 用自己来定义自己的值或样式。

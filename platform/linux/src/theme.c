@@ -238,6 +238,14 @@ float lx_text_scale(void) {
 	return (float)dpi / 1024 / 96;
 }
 
+// lx_set_dev_font_scale shows the app's text as if the desktop's text
+// scaling were s (0: the desktop's again), for asuka dev's preview.
+void lx_set_dev_font_scale(float s) {
+	H.dev_font_scale = s > 0 ? s : 0;
+	H.font_scale = s > 0 ? s : lx_text_scale();
+	lx_fonts_changed();
+}
+
 void lx_load_theme(void) {
 	if (!str_empty(H.cfg.accent)) H.accent = lx_parse_accent(H.cfg.accent);
 	H.dark = adw_style_manager_get_dark(adw_style_manager_get_default());
@@ -387,6 +395,14 @@ static void redraw(node *n, void *ctx) {
 }
 
 void lx_each_node(void (*f)(node *n, void *ctx), void *ctx);
+
+// lx_fonts_changed follows a new text scaling or font: each text takes
+// its font, and the environment reports it, so the core measures them
+// again.
+void lx_fonts_changed(void) {
+	lx_each_node(redraw, NULL);
+	lx_env_changed();
+}
 
 void lx_theme_changed(void) {
 	lx_read_palette(H.main->content);

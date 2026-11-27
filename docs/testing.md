@@ -24,6 +24,7 @@ test "Add counts" {
 ```sh
 asuka test                    # the app or package in this directory
 asuka test --run Add          # the tests whose names contain Add
+asuka test --previews         # the previews too, each compared with its snapshot
 asuka test path/to/app
 ```
 
@@ -275,6 +276,35 @@ when every test ran and passed, removes the snapshots no test takes any
 more. In CI (where `CI` is set), a snapshot that isn't stored yet fails
 the test rather than being written. A property test can't take a
 snapshot: it runs with every value it generates.
+
+### Previews as tests
+
+`asuka test --previews` runs the package's previews
+([Previews](language/components.md#previews)) as tests too, each one
+named `preview` and its name. It's mounted as its settings say (in its
+language and direction, in its frame) and what it shows is compared
+with its snapshot, as `expectSnapshot`'s is: written the first time, in
+`testdata/snapshots/`, rewritten by `--update`, and in CI a missing one
+fails. So the previews you look at in `asuka dev` are regression tests
+too. For this preview:
+
+```asuka
+preview "Right to left, small" (rtl: true, width: 320, height: 240) { Counter() }
+```
+
+the snapshot is:
+
+```
+snapshot "preview Right to left, small 1"
+  View 0,0 390x844
+    View 35,302 320x240
+      Text 128,86.67 64x20 "Count: 0"
+      Button 158,122.67 64x44 "Reset"
+      Button 98,122.67 48x44 "Add"
+```
+
+`dark` and `fontScale` don't change it: the screen `asuka test` shows
+has no colors and measures text at a fixed width per character.
 
 ## Benchmarks
 

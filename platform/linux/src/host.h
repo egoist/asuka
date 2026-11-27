@@ -316,6 +316,7 @@ typedef struct {
 	char *app_name, *app_id;
 	base_font base;
 	float font_scale;
+	float dev_font_scale;  // asuka dev's preview's text size (DevFontScale): 0 the desktop's
 	GtkCssProvider *css;
 
 	char *locale;
@@ -438,6 +439,8 @@ void lx_theme_changed(void);
 void lx_font(node *n, float *size, int *weight);
 base_font lx_system_font(void);
 float lx_text_scale(void);
+void lx_set_dev_font_scale(float s);
+void lx_fonts_changed(void);
 ak_color lx_parse_accent(const char *s);
 const char *lx_custom_family(const char *name);
 static inline uint16_t u16c(float f) { return (uint16_t)(fminf(fmaxf(f, 0), 1) * 65535 + 0.5f); }

@@ -657,7 +657,8 @@ fields that aren't made yet.`,
 		Why: `A ` + "`mut fn`" + ` changes the value it's called on, so a store's fns (which
 change its state as they are) and a static fn (which has no value) don't
 take it, and it can't be ` + "`async`" + `. A worker's fns don't await, a C
-function isn't generic, async or throwing, and a test isn't ` + "`pub`" + `.`,
+function isn't generic, async or throwing, and a test or a preview isn't
+` + "`pub`" + `.`,
 		Fix:   "Drop the modifier the message names.",
 		Wrong: "store Counter {\n  state n = 0\n  pub mut fn bump() { n += 1 }\n}\n",
 		Right: "store Counter {\n  state n = 0\n  pub fn bump() { n += 1 }\n}\n",
@@ -1170,6 +1171,20 @@ default: it gets each generated value.`,
 		Fix:     "Write the snapshot as a string literal, or leave it out (`expectInlineSnapshot(value)`) and let `asuka test` write it on its first run.",
 		Wrong:   "fn total() -> int = 42\n\ntest \"total\" {\n  let want = \"42\"\n  expectInlineSnapshot(total(), want)\n}\n",
 		Right:   "fn total() -> int = 42\n\ntest \"total\" {\n  expectInlineSnapshot(total(), \"42\")\n}\n",
+	})
+
+	PreviewSetting = def(Code{
+		Name:    "preview-setting",
+		Summary: "a preview's setting it doesn't take, or not a value written as it is",
+		Why: `A preview's settings say how ` + "`asuka dev`" + ` shows it: ` + "`dark`" + ` (a bool), ` + "`fontScale`" + `
+(the text size, a multiple of the default, from 0.5 to 4), ` + "`lang`" + ` (a
+language tag), ` + "`rtl`" + ` (a bool) and ` + "`width`" + ` and ` + "`height`" + ` (a frame's size, in
+points). The player applies them before the preview's code runs, so each
+is a value written as it is, not one the program computes; and a preview
+is listed by its name, a string without interpolations.`,
+		Fix:   "Name a setting the preview takes, and write its value as a literal: `(dark: true, fontScale: 1.5, lang: \"ar\")`.",
+		Wrong: "component Card {\n  Text(\"Hi\")\n}\n\nlet big = 1.5\n\npreview \"Large text\" (fontScale: big, theme: .dark) {\n  Card()\n}\n",
+		Right: "component Card {\n  Text(\"Hi\")\n}\n\npreview \"Large text, dark\" (fontScale: 1.5, dark: true) {\n  Card()\n}\n",
 	})
 
 	NotCType = def(Code{

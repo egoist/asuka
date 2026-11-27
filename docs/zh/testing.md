@@ -22,6 +22,7 @@ test "Add counts" {
 ```sh
 asuka test                    # 当前目录下的应用或包
 asuka test --run Add          # 名称中包含 Add 的测试
+asuka test --previews         # 预览也作为测试运行，各自与快照比较
 asuka test path/to/app
 ```
 
@@ -201,6 +202,27 @@ FAIL the list shows today's todos (todos.asuka:12)
 ```
 
 `asuka test --update`（`-u`）会改为写入测试当前显示的内容；如果所有测试都运行并通过了，还会删除不再被任何测试使用的快照。在 CI 中（设置了 `CI` 环境变量时），尚未保存的快照不会被写入，而是让测试失败。属性测试不能使用快照，因为它要用生成的每个值运行。
+
+### 把预览当作测试
+
+`asuka test --previews` 会把包里的预览（见[预览](language/components.md#预览)）也当作测试运行，每个测试的名称是 `preview` 加上预览的名称。预览会按它的设置挂载（使用它的语言和书写方向，放在它的 frame 里），然后像 `expectSnapshot` 那样，把它显示的内容和快照比较：第一次运行时写入 `testdata/snapshots/`，`--update` 会重写它，在 CI 中缺少快照会让测试失败。这样，你在 `asuka dev` 里查看的预览同时也是回归测试。比如这个预览：
+
+```asuka
+preview "Right to left, small" (rtl: true, width: 320, height: 240) { Counter() }
+```
+
+它的快照是：
+
+```
+snapshot "preview Right to left, small 1"
+  View 0,0 390x844
+    View 35,302 320x240
+      Text 128,86.67 64x20 "Count: 0"
+      Button 158,122.67 64x44 "Reset"
+      Button 98,122.67 48x44 "Add"
+```
+
+`dark` 和 `fontScale` 不会改变快照：`asuka test` 的屏幕没有颜色，并且按每个字符固定的宽度来测量文字。
 
 ## 基准测试
 

@@ -203,7 +203,7 @@ final class AsukaCanvasView: NSView {
                 let n = min(u32(), b.count - i)
                 let s = String(decoding: b[i..<i + n], as: UTF8.self)
                 i += n
-                let fnt = font(style: 0, weight: max(weight, AsukaFontWeight.regular.rawValue), size: Float(size), family: "")
+                let fnt = font(style: 0, weight: max(weight, AsukaFontWeight.regular.rawValue), size: Float(size), family: "", scaled: false)
                 let str = NSAttributedString(string: s, attributes: [.font: fnt, .foregroundColor: col ?? NSColor.labelColor])
                 let w = str.size().width
                 switch align {

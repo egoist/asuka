@@ -116,9 +116,11 @@ component Greeting(name: string) {
 }
 
 app { Greeting("Ana") { excited: true } }
+
+preview "Greeting, dark" (dark: true) { Greeting("Ana") }
 ```
 
-コンポーネントのヘッダーは引数を受け取り、ブロックには prop、状態、ビューが入ります。状態が変わると、それを読んでいるところだけが更新され、差分の計算はありません。変わるものから作った状態（`state draft = name`）は、書き込まれるまでそれに追従します。`peek(name)` は一度だけ読みます。`bind` は双方向バインディング、`on press` はイベントの処理で、`if` と `for` がどのビューがあるかを決めます。[コンポーネント](language/components.md)を参照してください。複数のコンポーネントで共有する状態は [ストア](language/stores.md) です。
+コンポーネントのヘッダーは引数を受け取り、ブロックには prop、状態、ビューが入ります。状態が変わると、それを読んでいるところだけが更新され、差分の計算はありません。変わるものから作った状態（`state draft = name`）は、書き込まれるまでそれに追従します。`peek(name)` は一度だけ読みます。`bind` は双方向バインディング、`on press` はイベントの処理で、`if` と `for` がどのビューがあるかを決めます。`preview` はコンポーネントを単独で、指定した設定で表示するものです。`asuka dev` がアプリの代わりにデバイスに表示し、ビルドには含まれません。[コンポーネント](language/components.md)を参照してください。複数のコンポーネントで共有する状態は [ストア](language/stores.md) です。
 
 ## 非同期処理とエラー
 

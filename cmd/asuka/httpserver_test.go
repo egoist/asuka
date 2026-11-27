@@ -291,7 +291,7 @@ both: 200 hello
 insecure: 200 hello
 mutual, none shown: refused
 mutual: 200 hello
-stream: 200 ["line 1","line 2","line 3"]
+stream: 200 ["line 1", "line 2", "line 3"]
 download: 200 hello
 bad: a client certificate needs its key (key:)
 again: refused untrusted

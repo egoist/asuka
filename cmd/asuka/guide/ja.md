@@ -130,9 +130,11 @@ component Greeting(name: string) {
 }
 
 app { Greeting("Ana") { excited: true } }
+
+preview "Greeting, dark" (dark: true) { Greeting("Ana") }
 ```
 
-コンポーネントのヘッダーは引数を受け取り、ブロックには prop、状態、ビューが入ります。状態が変わると、それを読んでいるところだけが更新され、差分の計算はありません。変わるものから作った状態（`state draft = name`）は、書き込まれるまでそれに追従します。`peek(name)` は一度だけ読みます。`bind` は双方向バインディング、`on press` はイベントの処理で、`if` と `for` がどのビューがあるかを決めます。[コンポーネント](https://asuka.egoist.dev/ja/docs/language/components)を参照してください。複数のコンポーネントで共有する状態は [ストア](https://asuka.egoist.dev/ja/docs/language/stores) です。
+コンポーネントのヘッダーは引数を受け取り、ブロックには prop、状態、ビューが入ります。状態が変わると、それを読んでいるところだけが更新され、差分の計算はありません。変わるものから作った状態（`state draft = name`）は、書き込まれるまでそれに追従します。`peek(name)` は一度だけ読みます。`bind` は双方向バインディング、`on press` はイベントの処理で、`if` と `for` がどのビューがあるかを決めます。`preview` はコンポーネントを単独で、指定した設定で表示するものです。`asuka dev` がアプリの代わりにデバイスに表示し、ビルドには含まれません。[コンポーネント](https://asuka.egoist.dev/ja/docs/language/components)を参照してください。複数のコンポーネントで共有する状態は [ストア](https://asuka.egoist.dev/ja/docs/language/stores) です。
 
 #### 非同期処理とエラー
 
@@ -1496,6 +1498,50 @@ cleanup はクロージャーです。その実行のローカル変数が見え
 
 ハンドラー、関数、タスク、テストには書けません。タスクは始めたものを `defer` で戻します。`defer` はタスクが終わるかキャンセルされるときに実行されます。ハンドラーと関数には、cleanup を実行する自分のオーナーがありません。
 
+#### プレビュー
+
+```asuka
+component Badge(count: int) {
+  prop label = "unread"
+
+  Row {
+    gap: 6
+    Text("{count}") { font: .headline }
+    Text(label) { color: .secondaryLabel }
+  }
+}
+
+preview "Badge" { Badge(3) }
+
+preview "Counting, in Arabic, dark" (lang: "ar", dark: true, width: 320, height: 200) {
+  state count = 0
+
+  Column {
+    gap: 12
+    Badge(count) { label: "messages" }
+    Button("Add") { on press { count += 1 } }
+  }
+}
+```
+
+`preview "Name" { … }` はプレビューを宣言します。コンポーネントを単独で、見たい状態と設定で表示するもので、`asuka dev` がアプリの代わりにデバイスに表示します（[プレビュー](https://asuka.egoist.dev/ja/docs/development#プレビュー)）。Xcode での SwiftUI の `#Preview` と同じ役割です。アプリやパッケージのどの `.asuka` ファイルでも、テストファイルでも、トップレベルに書けます。`preview` がキーワードになるのはその位置、名前の文字列の前だけで、ほかの場所では普通の名前です（`let preview = 3`）。
+
+本体はコンポーネントと同じビューの本体です。`state`（操作できるプレビューのため）、`let`、`fn`、`use`、`provide`（表示するコンポーネントが使うストア。[ストア](https://asuka.egoist.dev/ja/docs/language/stores)を参照）、エフェクトとタスク、そして表示するビューを書けます。prop とイベントは持てません。渡すものがないからです（[misplaced-declaration](https://asuka.egoist.dev/ja/docs/errors/misplaced-declaration)）。名前は書いたままの文字列で、補間は使えません。プレビューは `pub` にできません。
+
+名前のあとの括弧に書く設定で、表示のしかたを決めます。
+
+| 設定 | 意味 | 省略したとき |
+|---|---|---|
+| `dark: true` | ダーク。`false` ならライト | システムの設定 |
+| `fontScale: 1.5` | 文字の大きさ。デフォルトの何倍かで、0.5 から 4 まで | ユーザーの設定 |
+| `lang: "ar"` | 言語タグ。`asuka dev --lang` と同じもので（[多言語対応](https://asuka.egoist.dev/ja/docs/i18n)）、疑似ロケールの `en-XA` と `ar-XB` も使える | ユーザーの言語 |
+| `rtl: true` | 右から左。`false` なら左から右 | 言語の書字方向 |
+| `width: 390`、`height: 844` | フレームのサイズ（ポイント、1 から 10000）。どのプラットフォームでも、プレビューはそのサイズのフレームでウィンドウの中央にレイアウトされる。片方だけなら、その辺だけを決める | ウィンドウのサイズ |
+
+どの設定の値も、プログラムが計算する値ではなく、書いたままの値にします（[preview-setting](https://asuka.egoist.dev/ja/docs/errors/preview-setting)）。
+
+プレビューはほかのコードと同じようにチェックされます。`asuka check`、エディター、`asuka test` がチェックし、`asuka fmt` がフォーマットします。ただしテストと同じく、ビルドには含まれません。`asuka build`、`asuka dev` が実行するアプリ、このパッケージをインポートするパッケージには、プレビューも、プレビューだけが使うものもありません。`asuka test --previews` は各プレビューをテストとして実行し、表示内容をスナップショットと比べます（[プレビューをテストとして使う](https://asuka.egoist.dev/ja/docs/testing#プレビューをテストとして使う)）。
+
 ### ストア
 
 ストアは、状態とそれを変更する関数をまとめたもので、それを使うビューのあいだで共有されます。
@@ -2258,7 +2304,7 @@ test "archiving removes the row" {
 
 `asuka test` は、パッケージのテストをデバイスなしで実行します。プラットフォームと同じようにビューをレイアウトし、テキストは 1 文字あたり固定の幅で測ります。また、時間はほかに実行できるものが何もないときにしか進みません（テストの中の `sleep(5s)` には時間がかかりません）。`mount` はアプリを返すので、それを操作して確かめます（`tap`、`longPress`、`type(_, into:)`、`submit`、`toggle`、`slide`、`select`、`swipe(_, action:)`、`refresh`、`scrollTo`、`back`、`dismiss`、`pickDate`、`pickColor`、`expect`、`expectNo`、`texts()`、`disabled(text)`、`until`、`waitFor`、`idle`）。`in(.navigationBar)`、`in(.sidebar)`、`nextTo(label)` で、テキストが指すものを絞り込めます。ルーターがあれば、`mount(…, at: "/inbox/1")`、`href`、`history()`、`goBack()`、`goForward()` も使えます。詳しくは[テスト](https://asuka.egoist.dev/ja/docs/testing)を参照してください。
 
-テストはどのファイルにも書けますが、パッケージの**テストファイル**にも書けます。ファイル名が `_test.asuka` で終わるものです（`parser_test.asuka`。1 つのプラットフォーム用なら `tray_linux_test.asuka`）。テストファイルの宣言とインポート（テスト用のデータやヘルパー）は、そのパッケージ自身のテストを実行するとき（`asuka test`、`asuka check`、エディター）にだけパッケージの一部になります。ビルドにはそれらもテストブロックも含まれず、このパッケージをインポートするほかのパッケージからも見えません。そのため、テストにしか要らないパッケージをテストファイルでインポートしても、アプリには入りません。
+テストはどのファイルにも書けますが、パッケージの**テストファイル**にも書けます。ファイル名が `_test.asuka` で終わるものです（`parser_test.asuka`。1 つのプラットフォーム用なら `tray_linux_test.asuka`）。テストファイルの宣言とインポート（テスト用のデータやヘルパー）は、そのパッケージ自身のテストを実行するとき（`asuka test`、`asuka check`、エディター）にだけパッケージの一部になります。ビルドにはそれらも、`test`、`bench`、`preview` のブロック（[プレビュー](https://asuka.egoist.dev/ja/docs/language/components#プレビュー)）も含まれず、このパッケージをインポートするほかのパッケージからも見えません。そのため、テストにしか要らないパッケージをテストファイルでインポートしても、アプリには入りません。
 
 パラメーターのあるテストはプロパティテストで、`asuka test` がパラメーターの値を生成して実行します。失敗した入力は、まだ失敗するいちばん単純なものに縮小されます。`bench "name" { … }` はベンチマークで、`asuka test --bench` が計測します。その中の `measure { … }` が計測される部分で、準備のあとに書きます。`keep(x)` は、結果が最適化で省かれないようにします。`expectSnapshot(value)` と `expectInlineSnapshot(value, "…")` は、値を出力したものをスナップショットと比べます。スナップショットは `asuka test` が書き込みます。
 
@@ -2373,6 +2419,7 @@ bench "fib 20" {
 - pattern-type: 値の型に一致しえないパターン. 値と同じ型のパターンを書きます。
 - peek-untracked: 何も追従しない場所での `peek`. 値そのものを読みます。
 - plural-categories: 複数形や select のカテゴリーが言語のものと合わないメッセージ. メッセージが挙げるとおり、その言語のカテゴリーを書きます。
+- preview-setting: プレビューが持たない設定、またはそのまま書かれていない値. プレビューが持つ設定を書き、値をリテラルで書きます：`(dark: true, fontScale: 1.5, lang: "ar")`。
 - prop-not-assignable: コンポーネントが代入できない prop に代入している. `event openChange(open: bool)` を宣言してから代入するか、コンポーネント自身の状態を持ちます。
 - prop-or-argument: パラメーター、プロパティ、イベント、子が置き場所を間違えている. それぞれの場所に移します（`Badge(3) { compact: true; on tap { … } }`）。
 - recursive-definition: 自分自身で定義された値やスタイル. 循環を断ちます。

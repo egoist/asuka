@@ -3816,6 +3816,46 @@
     }
   },
   {
+    "type": "preview_declaration",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "block",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "raw_string_literal",
+            "named": true
+          },
+          {
+            "type": "string_literal",
+            "named": true
+          }
+        ]
+      },
+      "settings": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "arguments",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "prop_declaration",
     "named": true,
     "fields": {
@@ -4185,6 +4225,10 @@
         },
         {
           "type": "let_declaration",
+          "named": true
+        },
+        {
+          "type": "preview_declaration",
           "named": true
         },
         {
@@ -5472,6 +5516,10 @@
   },
   {
     "type": "on",
+    "named": false
+  },
+  {
+    "type": "preview",
     "named": false
   },
   {

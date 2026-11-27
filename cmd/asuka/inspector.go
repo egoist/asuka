@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,11 @@ type inspector struct {
 	srv      *http.Server
 	// profiles are the players' recordings.
 	profiles *devProfiles
+	// previews lists the app's previews, and what each player shows;
+	// showPreview shows one (file "": the app) on the player of key (""
+	// every player). Set by the loop (devpreview.go).
+	previews    func() previewsAnswer
+	showPreview func(file, name string, line int, key string) error
 }
 
 // inspected is a player's views, as its core said them.
@@ -210,6 +216,33 @@ func (in *inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h(q.Get("path"))
+	case "/previews":
+		// The app's previews (its Previews tab, an editor's language
+		// server), and what each player shows.
+		if in.previews == nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(in.previews())
+	case "/preview":
+		// Show a preview (file, its name or a line in it) on a player
+		// (key; "": every one), or the app (no file).
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST", http.StatusMethodNotAllowed)
+			return
+		}
+		if in.showPreview == nil {
+			http.NotFound(w, r)
+			return
+		}
+		q := r.URL.Query()
+		line, _ := strconv.Atoi(q.Get("line"))
+		if err := in.showPreview(q.Get("file"), q.Get("name"), line, q.Get("key")); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	case "/perf/overlay", "/perf/record", "/perf/stop":
 		if r.Method != http.MethodPost {
 			http.Error(w, "POST", http.StatusMethodNotAllowed)

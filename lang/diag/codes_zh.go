@@ -291,7 +291,7 @@ var zh = map[string]Text{
 	},
 	"invalid-modifier": {
 		"在不适用的地方写了 `pub`、`mut`、`async`、`throws` 或类型参数",
-		"`mut fn` 修改的是调用它的那个值，所以 store 的 fn（它们本来就能修改 store 的状态）和 static fn（没有值）都不需要它，它也不能是 `async`。worker 的 fn 不等待，C 函数不能是泛型、async 或会抛错的，测试也不能是 `pub`。",
+		"`mut fn` 修改的是调用它的那个值，所以 store 的 fn（它们本来就能修改 store 的状态）和 static fn（没有值）都不需要它，它也不能是 `async`。worker 的 fn 不等待，C 函数不能是泛型、async 或会抛错的，测试和预览也不能是 `pub`。",
 		"去掉消息里指出的那个修饰符。",
 	},
 	"fn-body": {
@@ -499,6 +499,11 @@ var zh = map[string]Text{
 		"内联快照不是直接写在调用里的字符串",
 		"`expectInlineSnapshot(value, \"…\")` 把值打印出来的结果和调用里的字符串比较；值变了的时候，`asuka test --update` 会改写源代码里的这个字符串。程序算出来的字符串、带插值的字符串，都不是 update 能改写的文本。",
 		"把快照写成字符串字面量，或者干脆省略（`expectInlineSnapshot(value)`），让 `asuka test` 在第一次运行时写上。",
+	},
+	"preview-setting": {
+		"预览的设置项不存在，或者它的值不是直接写出来的",
+		"预览的设置项决定 `asuka dev` 怎样显示它：`dark`（bool）、`fontScale`（文字大小，默认大小的倍数，0.5 到 4）、`lang`（语言标签）、`rtl`（bool），以及 `width` 和 `height`（框的尺寸，单位是点）。播放器在预览的代码运行之前就应用这些设置，所以每个值都要直接写出来，不能是程序算出来的；预览按名字列出，名字是不带插值的字符串。",
+		"写预览支持的设置项，并把值写成字面量：`(dark: true, fontScale: 1.5, lang: \"ar\")`。",
 	},
 	"not-c-type": {
 		"无法传给 C 的类型",

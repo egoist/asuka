@@ -283,3 +283,47 @@ effect 主体里的 `cleanup { … }` 会在 effect 下一次运行之前、以�
 cleanup 是一个闭包：它能看到这次运行的局部变量；它不能 await，也不能抛出错误（它在 owner 消失的过程中运行，后面的 cleanup 还得接着运行；用 `try?` 或 `do { } catch { }` 处理错误）；它读取的东西不会被跟随。它读到的状态是它运行那一刻的值。在 effect 再次运行之前，那已经是 effect 跟随的东西变化之后了，所以 `cleanup { chat.leave(roomId) }` 离开的会是新房间：要把这次运行的值存进 `let`，否则编译器会给出警告（[cleanup-reads-what-it-follows](../errors/cleanup-reads-what-it-follows.md)）。它写入的东西算作它所在 effect 的写入。
 
 处理函数、函数、task 和测试里不能写 cleanup：task 用 `defer` 撤销它启动的东西，`defer` 会在 task 结束或被取消时运行；处理函数和函数没有自己的 owner 来运行它。
+
+## 预览
+
+```asuka check
+component Badge(count: int) {
+  prop label = "unread"
+
+  Row {
+    gap: 6
+    Text("{count}") { font: .headline }
+    Text(label) { color: .secondaryLabel }
+  }
+}
+
+preview "Badge" { Badge(3) }
+
+preview "Counting, in Arabic, dark" (lang: "ar", dark: true, width: 320, height: 200) {
+  state count = 0
+
+  Column {
+    gap: 12
+    Badge(count) { label: "messages" }
+    Button("Add") { on press { count += 1 } }
+  }
+}
+```
+
+`preview "Name" { … }` 声明一个预览：单独显示若干组件，处在你想看的状态和设置下。`asuka dev` 会在设备上用它代替应用来显示（见[预览](../development.md#预览)），就像 SwiftUI 的 `#Preview` 在 Xcode 里那样。预览写在应用或包的任何 `.asuka` 文件的顶层，测试文件也可以。`preview` 只在那个位置、名称字符串之前才是关键字；在别处它是普通的名字（`let preview = 3`）。
+
+它的主体和组件一样是视图主体：可以声明 `state`（用于可以交互的预览）、`let`、`fn`、`use`、`provide`（它显示的组件要用到的 store，见 [Store](stores.md)）、effect 和 task，以及它要显示的视图。它没有 prop，也没有事件，因为没有谁会传给它（[misplaced-declaration](../errors/misplaced-declaration.md)）。它的名称是一个按原样写出的字符串，不能有插值；预览也不能是 `pub` 的。
+
+名称后面括号里的设置决定怎样显示它：
+
+| 设置 | 含义 | 省略时 |
+|---|---|---|
+| `dark: true` | 深色；`false`：浅色 | 跟随系统 |
+| `fontScale: 1.5` | 文字大小，默认大小的倍数，从 0.5 到 4 | 用户的设置 |
+| `lang: "ar"` | 语言标签，与 `asuka dev --lang` 接受的相同（见[多语言](../i18n.md)），也包括伪区域设置 `en-XA` 和 `ar-XB` | 用户的语言 |
+| `rtl: true` | 从右到左；`false`：从左到右 | 跟随语言的书写方向 |
+| `width: 390`、`height: 844` | frame 的尺寸，单位是点，从 1 到 10000：在每个平台上，预览都会在窗口正中、按这个尺寸的 frame 布局；只写一个时只限定那一边 | 窗口的尺寸 |
+
+每个设置的值都必须按原样写出，不能是程序算出来的值（[preview-setting](../errors/preview-setting.md)）。
+
+预览和其他代码一样会被检查：`asuka check`、编辑器和 `asuka test` 都会检查它，`asuka fmt` 也会格式化它。但和测试一样，它不属于构建：`asuka build`、`asuka dev` 运行的应用，以及导入这个包的其他包里都没有预览，也没有只被预览用到的东西。`asuka test --previews` 会把每个预览当作测试运行，把它显示的内容和快照比较（见[把预览当作测试](../testing.md#把预览当作测试)）。

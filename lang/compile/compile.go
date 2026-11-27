@@ -77,6 +77,16 @@ type Options struct {
 	// root package's are part of it (asuka test, asuka check, an
 	// editor's); an imported package's never are.
 	NoTests bool
+	// Preview, when set, builds the preview it names as the module's app,
+	// in place of the app block (asuka dev's, when it's asked to show
+	// one): the package's other previews, and its tests and benches, are
+	// left out, as a build's are, and its file is part of it even when
+	// it's a test file.
+	Preview *PreviewRef
+	// PreviewTests makes each of the root package's previews a test of a
+	// test build, which compares what it shows with its snapshot (asuka
+	// test --previews).
+	PreviewTests bool
 	// NoFuse lowers Seq pipelines and arrays' closure methods as the
 	// runtime's calls rather than as loops (lang/ir's seqfuse.go): what
 	// the tests compare the loops with. ASUKA_OPT_SKIP=fuse too.
@@ -202,6 +212,9 @@ type loader struct {
 	// platform has both of (dupNames), which the checker would report
 	// again.
 	twice map[syntax.Position]bool
+	// preview is the preview Options.Preview names, once its file is
+	// read (nil: none found).
+	preview *syntax.PreviewDecl
 }
 
 // Dir compiles the package in dir.
@@ -333,8 +346,10 @@ func (l *loader) loadSources(path, id, dir string, files map[string][]byte) *uni
 	}
 	sort.Strings(names)
 	platform := l.opts.Platform.Or()
+	root := len(l.units) == 1
 	for _, n := range names {
-		if !tests && IsTestFile(n) {
+		previewFile := root && l.opts.Preview.inFile(n, dir)
+		if !tests && IsTestFile(n) && !previewFile {
 			continue // a test build's only, and only its root package's
 		}
 		if ps, _ := target.FileSuffix(n); ps != nil {
@@ -352,7 +367,14 @@ func (l *loader) loadSources(path, id, dir string, files map[string][]byte) *uni
 			l.diags = append(l.diags, check.FromSyntax(e))
 		}
 		if !tests {
-			dropTests(f)
+			var keep *syntax.PreviewDecl
+			if previewFile {
+				keep = l.opts.Preview.find(f)
+				if keep != nil {
+					l.preview = keep
+				}
+			}
+			dropTests(f, keep)
 		}
 		u.files = append(u.files, f)
 	}
@@ -432,9 +454,10 @@ func IsTestFile(name string) bool {
 	return strings.HasSuffix(name, "_test.asuka")
 }
 
-// dropTests takes a file's test and bench blocks out of it: a build's
-// packages have none, nor what only they use.
-func dropTests(f *syntax.SourceFile) {
+// dropTests takes a file's test, bench and preview blocks out of it
+// (but keep, a preview's build's preview): a build's packages have none,
+// nor what only they use.
+func dropTests(f *syntax.SourceFile, keep *syntax.PreviewDecl) {
 	if f == nil {
 		return
 	}
@@ -443,6 +466,10 @@ func dropTests(f *syntax.SourceFile) {
 		switch d.(type) {
 		case *syntax.TestDecl, *syntax.BenchDecl:
 			continue
+		case *syntax.PreviewDecl:
+			if d != syntax.Decl(keep) {
+				continue
+			}
 		}
 		f.Decls[n] = d
 		n++
@@ -550,11 +577,25 @@ func (l *loader) compile(root *unit) *Result {
 			}
 		}
 	}
+	var preview *check.Preview
+	if l.opts.Preview != nil {
+		for _, pv := range root.pkg.Previews {
+			if pv.Decl == l.preview {
+				preview = pv
+			}
+		}
+		if preview == nil {
+			pos := syntax.Position{Filename: l.opts.Preview.File, Line: max(l.opts.Preview.Line, 1), Column: 1}
+			res.Diags = append(res.Diags, check.NewDiagnostic(pos, pos, diag.UndefinedName, "no preview %q in %s", l.opts.Preview.Name, filepath.Base(l.opts.Preview.File)))
+			return res
+		}
+	}
 	optimize := !l.opts.NoOptimize && !l.opts.Cover && os.Getenv("ASUKA_OPT") != "0"
 	// Code the optimizer leaves alone names its locals for the debugger
 	// (asuka dev's): the optimizer's passes move values between
 	// registers, so its code has none.
-	p, diags := ir.Lower(prog, &ir.Options{Platform: string(l.opts.Platform.Or()), Debug: l.opts.Debug, Version: projectVersion(vdir), Lang: l.opts.Lang, Direction: l.opts.Direction, Accent: accent, AccentFlags: accentFlags, Cover: cover, NoFuse: l.opts.NoFuse, Locals: !optimize})
+	p, diags := ir.Lower(prog, &ir.Options{Platform: string(l.opts.Platform.Or()), Debug: l.opts.Debug, Version: projectVersion(vdir), Lang: l.opts.Lang, Direction: l.opts.Direction, Accent: accent, AccentFlags: accentFlags, Cover: cover, NoFuse: l.opts.NoFuse, Locals: !optimize,
+		Preview: preview, PreviewTests: l.opts.PreviewTests})
 	res.Diags = append(res.Diags, diags...)
 	if len(res.Diags) > 0 {
 		return res

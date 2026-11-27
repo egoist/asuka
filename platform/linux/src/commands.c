@@ -130,6 +130,9 @@ void lx_command(node *n, ak_cmd c, ak_span args) {
 			adw_style_manager_set_color_scheme(adw_style_manager_get_default(), scheme);
 		}
 		return;
+	case AK_CMD_DEV_FONT_SCALE:
+		if (args.len >= 4) lx_set_dev_font_scale(ak_read_f32(&r));
+		return;
 	case AK_CMD_QUIT:
 		lx_quit_command(args);
 		return;

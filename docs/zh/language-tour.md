@@ -116,9 +116,11 @@ component Greeting(name: string) {
 }
 
 app { Greeting("Ana") { excited: true } }
+
+preview "Greeting, dark" (dark: true) { Greeting("Ana") }
 ```
 
-组件的头部接收参数；它的代码块里是 prop、状态和视图。状态变化时，只有读取它的地方会更新，不做任何 diff。由会变化的内容得来的状态（`state draft = name`）在被写入之前会一直跟随它；`peek(name)` 只读取一次。`bind` 建立双向绑定，`on press` 处理事件，`if` 和 `for` 决定有哪些视图。见[组件](language/components.md)；多个组件共享的状态见 [Store](language/stores.md)。
+组件的头部接收参数；它的代码块里是 prop、状态和视图。状态变化时，只有读取它的地方会更新，不做任何 diff。由会变化的内容得来的状态（`state draft = name`）在被写入之前会一直跟随它；`peek(name)` 只读取一次。`bind` 建立双向绑定，`on press` 处理事件，`if` 和 `for` 决定有哪些视图。`preview` 单独显示一个组件，使用它写明的设置：`asuka dev` 会在设备上用它代替应用来显示，构建则不包含它。见[组件](language/components.md)；多个组件共享的状态见 [Store](language/stores.md)。
 
 ## 异步与错误
 
