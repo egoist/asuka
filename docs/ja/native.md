@@ -449,6 +449,13 @@ battery_Battery *battery_make_Battery(asuka_error *err) {
   libraries = []
   ```
 - **Flatpak にないシステムのライブラリ**：パッケージの Linux の C が実行時に開く（`asuka_linux_load`）ライブラリのうち、GNOME ランタイムにないものは、パッケージのモジュールが Flatpak にビルドします。`linux.flatpakModules` に、マニフェストのモジュールを一つずつ YAML で（`name:` の行から）書き、アプリより先にビルドされます（platform/pdf は Poppler をこうしてビルドします）。
+- **ディストリビューションのパッケージが必要とするシステムのライブラリ**：パッケージの Linux の C が開くライブラリは、アプリの `.deb` や `.rpm` が依存するパッケージになり、パッケージマネージャーがあわせてインストールします。パッケージの `linux.deb` と `linux.rpm` に、Debian と Fedora それぞれの書式でパッケージ名を書きます（`"libpoppler-glib8t64 | libpoppler-glib8"`、`"poppler-glib"`）。あるとよいもの（コーデックやモデル）は `linux.debRecommends` と `linux.rpmRecommends` に書きます。
+
+  ```toml
+  [linux]
+  deb = ["libshumate-1.0-1"]
+  rpm = ["libshumate"]
+  ```
 - **パッケージ自身のライブラリ**：パッケージがビルドに使う C のライブラリ（パーサー、デコーダー）は、手を加えずに `desktop/third_party/<名前>/` に置き、ライセンスとバージョンを添えます。パッケージ自身のファイルがそのソースを取り込む（`#include "third_party/<名前>/<名前>.c"`）ので、パッケージの C と一緒にコンパイルされ、変更すればアプリもビルドし直されます。
 
 macOS では、パッケージの Swift（`Package.swift`）が動き、C は動きません。

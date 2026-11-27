@@ -377,14 +377,17 @@ See [Shipping](shipping.md#ios).
 
 ## mac
 
-What a Mac build signs the app with; its team is `ios.team`.
+What a Mac build signs the app with, and hands it out in; its team is
+`ios.team`.
 
 | Key | Type | Default | What it is |
 |---|---|---|---|
 | `profile` | string | `ASUKA_MAC_PROFILE`, else, for an app that needs one, the best match installed | A Developer ID (or development) provisioning profile's path, name or UUID, which push, Sign in with Apple, App Attest and Apple Pay need. |
 | `appStoreProfile` | string | the best match installed | A Mac App Store profile, for `--appstore`. |
+| `packages` | strings | `["zip", "dmg"]` | What a build hands the app out in: `zip`, the app zipped; `dmg`, a disk image. |
 
-`--profile` and `ASUKA_MAC_PROFILE` override them. See
+`--profile` and `ASUKA_MAC_PROFILE` override the profiles, `--package`
+the packages. See
 [Shipping](shipping.md#macos).
 
 ## android
@@ -448,9 +451,10 @@ profile lacks the category's says so. See [Car screens](car.md#categories-asukat
 
 ## linux
 
-What a Linux build's desktop file and AppStream metainfo say of the
-app: what launchers, software centers and Flathub show. Flathub and the
-software centers want the summary, description, license and developer.
+What a Linux build's desktop file, AppStream metainfo and packages say
+of the app: what launchers, software centers and Flathub show. Flathub
+and the software centers want the summary, description, license and
+developer.
 
 | Key | Type | Default | What it is |
 |---|---|---|---|
@@ -462,6 +466,10 @@ software centers want the summary, description, license and developer.
 | `developer` | string | none | The developer's name. |
 | `homepage` | string | none | The app's web page. |
 | `flatpakRuntime` | string | a recent one | The GNOME runtime's version the Flatpak manifest asks for, 46 or later. |
+| `packages` | strings | all | What a build hands the app out in: `tar.gz`, `deb`, `rpm`, `appimage` and `flatpak` (the manifest). `--package` overrides it. |
+| `maintainer` | string | `developer` | Who the `.deb` and the `.rpm` say maintains them: `"Name <email>"`. |
+| `debDepends` | strings | none | More packages the `.deb` depends on, in Debian's syntax: `"libfoo1 (>= 1.2)"`, `"a \| b"`. |
+| `rpmRequires` | strings | none | More packages the `.rpm` requires, in RPM's: `"foo >= 1.2"`, `"(a or b)"`. |
 
 See [Shipping](shipping.md#linux).
 

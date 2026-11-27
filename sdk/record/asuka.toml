@@ -15,3 +15,8 @@ libraries = ["winmm", "advapi32", "ole32"]
 # to it.
 [linux]
 flatpak = ["--socket=pulseaudio"]
+# GStreamer, and its codecs: what a .deb or an .rpm of the app depends on.
+deb = ["gstreamer1.0-plugins-base"]
+debRecommends = ["gstreamer1.0-plugins-good", "gstreamer1.0-libav"]
+rpm = ["gstreamer1-plugins-base"]
+rpmRecommends = ["gstreamer1-plugins-good", "gstreamer1-plugin-libav"]

@@ -137,23 +137,56 @@ func runUpdater(t *testing.T, exe string) string {
 	return got
 }
 
+// runOnce runs the app at exe as runUpdater does, where it can't update
+// itself: it reports why and quits. It returns its report.
+func runOnce(t *testing.T, exe string) string {
+	data := t.TempDir()
+	if err := os.WriteFile(filepath.Join(data, "selfupdate"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	app := exec.Command(exe)
+	app.Env = append(os.Environ(), "ASUKA_DATA="+data)
+	done := make(chan []byte, 1)
+	go func() {
+		out, _ := app.CombinedOutput()
+		done <- out
+	}()
+	select {
+	case <-done:
+	case <-time.After(within):
+		app.Process.Kill()
+		t.Fatalf("%s didn't quit", exe)
+	}
+	b, _ := os.ReadFile(filepath.Join(data, "report"))
+	return string(b)
+}
+
 // TestUpdaterMac builds e2e/testdata/updater at 1.0.0 and at 1.0.1 with
 // asuka build, signing the updates with a key of the test's and publishing
-// them on a feed of its own (httptest); runs 1.0.0 from an Applications
-// folder, which checks, downloads the delta from 1.0.0, installs and
-// relaunches: the bundle is then 1.0.1's, its code signature valid, and
-// the relaunched app says it's 1.0.1.
+// them on a feed of its own (httptest); installs 1.0.0 as a download is,
+// from its disk image to an Applications folder (run from the image, it
+// can't update itself: a read-only copy), and runs it, which checks,
+// downloads the delta from 1.0.0, installs and relaunches: the bundle is
+// then 1.0.1's, its code signature valid, and the relaunched app says
+// it's 1.0.1.
 func TestUpdaterMac(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS")
 	}
 	f := newUpdateFeed(t)
-	v100 := filepath.Join(f.build(t, "mac", "1.0.0"), "darwin-arm64", "Updater.app")
+	dmg := filepath.Join(f.build(t, "mac", "1.0.0"), "darwin-arm64", "updater-1.0.0-darwin-arm64.dmg")
 	f.build(t, "mac", "1.0.1") // its delta from the published 1.0.0
 
+	vol := t.TempDir()
+	run(t, "hdiutil", "attach", dmg, "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", vol)
+	defer exec.Command("hdiutil", "detach", "-force", vol).Run()
+	if got := runOnce(t, filepath.Join(vol, "Updater.app", "Contents", "MacOS", "Updater")); !strings.Contains(got, "read-only copy") {
+		t.Errorf("run from its disk image, the app reported:\n%s", got)
+	}
 	apps := t.TempDir()
 	installed := filepath.Join(apps, "Updater.app")
-	run(t, "ditto", v100, installed)
+	run(t, "ditto", filepath.Join(vol, "Updater.app"), installed)
+	run(t, "hdiutil", "detach", vol)
 	runUpdater(t, filepath.Join(installed, "Contents", "MacOS", "Updater"))
 
 	if v := strings.TrimSpace(run(t, "/usr/libexec/PlistBuddy", "-c", "Print :CFBundleShortVersionString", filepath.Join(installed, "Contents", "Info.plist"))); v != "1.0.1" {

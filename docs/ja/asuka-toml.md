@@ -329,14 +329,15 @@ purposes = ["AppFunctionality"]
 
 ## mac
 
-Mac のビルドがアプリの署名に使うものです。チームは `ios.team` です。
+Mac のビルドがアプリの署名と配布に使うものです。チームは `ios.team` です。
 
 | キー | 型 | デフォルト | 説明 |
 |---|---|---|---|
 | `profile` | 文字列 | `ASUKA_MAC_PROFILE`。なければ、プロファイルが必要なアプリではインストール済みのうち最も合うもの | Developer ID（または開発用）のプロビジョニングプロファイルのパス、名前、UUID です。プッシュ通知、Sign in with Apple、App Attest に必要です。 |
 | `appStoreProfile` | 文字列 | インストール済みのうち最も合うもの | `--appstore` で使う Mac App Store のプロファイルです。 |
+| `packages` | 文字列の配列 | `["zip", "dmg"]` | ビルドがアプリを配布する形式です。`zip` は zip にしたアプリ、`dmg` はディスクイメージです。 |
 
-`--profile` と `ASUKA_MAC_PROFILE` で上書きできます。[配布](shipping.md#macos)を参照してください。
+プロファイルは `--profile` と `ASUKA_MAC_PROFILE` で、形式は `--package` で上書きできます。[配布](shipping.md#macos)を参照してください。
 
 ## android
 
@@ -390,7 +391,7 @@ CarPlay の entitlement は Apple に申請して付与してもらいます。�
 
 ## linux
 
-Linux のビルドが、デスクトップファイルと AppStream の metainfo に書き出すアプリの情報です。ランチャー、ソフトウェアセンター、Flathub に表示されます。Flathub とソフトウェアセンターは、概要、説明、ライセンス、開発者を求めます。
+Linux のビルドが、デスクトップファイル、AppStream の metainfo、パッケージに書き出すアプリの情報です。ランチャー、ソフトウェアセンター、Flathub に表示されます。Flathub とソフトウェアセンターは、概要、説明、ライセンス、開発者を求めます。
 
 | キー | 型 | デフォルト | 説明 |
 |---|---|---|---|
@@ -402,6 +403,10 @@ Linux のビルドが、デスクトップファイルと AppStream の metainfo
 | `developer` | 文字列 | なし | 開発者の名前です。 |
 | `homepage` | 文字列 | なし | アプリの Web ページです。 |
 | `flatpakRuntime` | 文字列 | 最近のもの | Flatpak のマニフェストが要求する GNOME ランタイムのバージョンで、46 以降です。 |
+| `packages` | 文字列の配列 | すべて | ビルドがアプリを配布する形式です。`tar.gz`、`deb`、`rpm`、`appimage`、`flatpak`（マニフェスト）から選びます。`--package` で上書きできます。 |
+| `maintainer` | 文字列 | `developer` | `.deb` と `.rpm` に書かれる保守担当者です（`"Name <email>"`）。 |
+| `debDepends` | 文字列の配列 | なし | `.deb` が追加で依存するパッケージです。Debian の書式で書きます（`"libfoo1 (>= 1.2)"`、`"a \| b"`）。 |
+| `rpmRequires` | 文字列の配列 | なし | `.rpm` が追加で依存するパッケージです。RPM の書式で書きます（`"foo >= 1.2"`、`"(a or b)"`）。 |
 
 [配布](shipping.md#linux)を参照してください。
 

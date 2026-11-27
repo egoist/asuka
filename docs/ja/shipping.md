@@ -6,9 +6,9 @@
 |---|---|---|---|
 | `ios` | `<Name>.ipa`（App Store 向けに署名済み） | Xcode のある Mac | TestFlight、App Store（`asuka publish`） |
 | `android` | `<Name>.aab`（アップロード鍵で署名済み） | JDK、Android SDK、NDK があればどのシステムでも | Google Play（`asuka publish`） |
-| `mac` | `darwin-<arch>/`：`<Name>.app` とその `.zip`（Apple シリコン向け。`--arch amd64` で Intel 向け）、または `.pkg`（`--appstore`） | Xcode のコマンドラインツールのある Mac | 署名・公証済みのダウンロード、Mac App Store |
+| `mac` | `darwin-<arch>/`：`<Name>.app` とその `.zip`、`.dmg`（Apple シリコン向け。`--arch amd64` で Intel 向け）、または `.pkg`（`--appstore`） | Xcode のコマンドラインツールのある Mac | 署名・公証済みの `.dmg` か `.zip`、Mac App Store |
 | `windows` | `windows-<arch>/`：`<Name>/`（`.exe` とそのアセット）とその `.zip` | clang のある Windows、または Zig のあるどのシステムでも | zip、または独自のインストーラーや MSIX |
-| `linux` | `linux-<arch>/`：インストールプレフィックス、`.tar.gz`、Flatpak マニフェスト | C コンパイラーのある Linux、または Zig のあるどのシステムでも | `.tar.gz`、Flatpak |
+| `linux` | `linux-<arch>/`：インストールプレフィックス、`.tar.gz`、`.deb`、`.rpm`、AppImage、Flatpak マニフェスト | C コンパイラーのある Linux、または Zig のあるどのシステムでも | `.deb`、`.rpm`、AppImage、`.tar.gz`、Flatpak |
 | `web` | `web/`（静的サイト） | Zig のあるどのシステムでも | 任意の Web サーバーや CDN |
 
 `--platform` を省略すると、Mac、Windows PC、Linux マシンでは、そのコンピューター向けにビルドします。ビルドにはプラットフォームのコンパイラーを使います（Apple のプラットフォームでは Xcode のもの、Android では NDK のもの、Windows と Linux ではシステムのもの）。[Zig](https://ziglang.org/download) は、Web 向けにビルドするときと、ほかのシステムから Windows と Linux 向けにビルドするときに使います（`ASUKA_CC=zig` を指定すると、どこでも Zig を使います）。デスクトップのビルドの中身は[デスクトップ](desktop.md#デスクトップアプリの構成)を参照してください。
@@ -52,15 +52,15 @@ keyAlias = "upload"
   icon = "note.png"
   ```
 
-  `extensions` は必須です。`name` のデフォルトは、最初の拡張子を大文字にして「Document」を付けたものです。`mimeTypes` と `uti` のデフォルトは、Asuka が知っている拡張子（md、txt、json、csv、pdf、png、jpg など）であれば、各システムでの呼び名になります。それ以外の拡張子では、アプリ独自の型 `application/x-<app>-<ext>` と `<id>.<ext>` になります。この型は Mac と iOS ではエクスポートされ、Linux では shared-mime-info に定義され、アプリがそのファイルのデフォルトアプリになります。`conformsTo` は、エクスポートまたはインポートする型が準拠する UTI です（デフォルトは `public.data`、`public.content`）。`role` は `editor`（デフォルト）または `viewer` です。`icon` は正方形の PNG で、Mac、Windows、Linux でそのファイルのアイコンになります。宣言のしかたはプラットフォームごとに異なります。Mac と iOS では Info.plist（`CFBundleDocumentTypes`。iOS ではドキュメントをその場で開きます）に、Android ではインテントフィルターとして宣言します。Windows ではアプリが起動時にユーザー単位で登録します（型ごとの ProgID、拡張子の `OpenWithProgids`、`.exe` に埋め込んだアイコン）。Linux ではデスクトップファイルの `MimeType` と `share/mime/packages/<id>.xml` に書かれます（`.tar.gz` を展開したあとは `update-mime-database` と `update-desktop-database` を実行してください。パッケージマネージャーや Flatpak なら自動で実行されます）。Web ではマニフェストの `file_handlers` に書かれます（Chromium でインストールしたアプリが対象です）。
+  `extensions` は必須です。`name` のデフォルトは、最初の拡張子を大文字にして「Document」を付けたものです。`mimeTypes` と `uti` のデフォルトは、Asuka が知っている拡張子（md、txt、json、csv、pdf、png、jpg など）であれば、各システムでの呼び名になります。それ以外の拡張子では、アプリ独自の型 `application/x-<app>-<ext>` と `<id>.<ext>` になります。この型は Mac と iOS ではエクスポートされ、Linux では shared-mime-info に定義され、アプリがそのファイルのデフォルトアプリになります。`conformsTo` は、エクスポートまたはインポートする型が準拠する UTI です（デフォルトは `public.data`、`public.content`）。`role` は `editor`（デフォルト）または `viewer` です。`icon` は正方形の PNG で、Mac、Windows、Linux でそのファイルのアイコンになります。宣言のしかたはプラットフォームごとに異なります。Mac と iOS では Info.plist（`CFBundleDocumentTypes`。iOS ではドキュメントをその場で開きます）に、Android ではインテントフィルターとして宣言します。Windows ではアプリが起動時にユーザー単位で登録します（型ごとの ProgID、拡張子の `OpenWithProgids`、`.exe` に埋め込んだアイコン）。Linux ではデスクトップファイルの `MimeType` と `share/mime/packages/<id>.xml` に書かれます（`.tar.gz` を展開したあとは `update-mime-database` と `update-desktop-database` を実行してください。`.deb`、`.rpm`、Flatpak なら自動で実行されます）。Web ではマニフェストの `file_handlers` に書かれます（Chromium でインストールしたアプリが対象です）。
 - `singleInstance` はデフォルトで `true` です。Windows と Linux では、`id` のあるアプリは一つしか起動しません。二回目に起動したアプリは、引数を実行中のアプリに渡して（`onSecondInstance`、ファイルは `onOpenFiles` に届きます）終了します。`false` にすると、起動した回数だけアプリが立ち上がります。Mac では、どちらの場合もアプリは一つしか起動しません。
 
 プラットフォームごとのキーは次のとおりです。
 
 - `ios.*` は iOS ビルドの設定です（[iOS](#ios)）。`ios.team` は Mac ビルドのチームにもなり、`ios.usage` の利用目的の説明文は Mac の Info.plist にも入ります。
 - `android.*` は Android ビルドの設定です（[Android](#android)）。
-- `mac.profile` は Mac ビルドのプロビジョニングプロファイル、`mac.appStoreProfile` は Mac App Store 向けのプロビジョニングプロファイルです。[macOS](#macos) を参照してください。
-- `linux.*` は、Linux ビルドのデスクトップファイルと AppStream metainfo に書かれる内容です。[Linux](#linux) を参照してください。
+- `mac.profile` は Mac ビルドのプロビジョニングプロファイル、`mac.appStoreProfile` は Mac App Store 向けのプロビジョニングプロファイルです。`mac.packages` は配布に使う形式です。[macOS](#macos) を参照してください。
+- `linux.*` は、Linux ビルドのデスクトップファイル、AppStream metainfo、パッケージに書かれる内容と、作るパッケージの種類です。[Linux](#linux) を参照してください。
 - `web.vapidPublicKey` はアプリサーバーの VAPID 公開鍵で、Web で `platform/push` を使うとき（Web Push）に必要です（[Web](web.md#platformpushweb-push) を参照）。
 - Windows ビルドには、上のキー以外に必要なものはありません。署名用の証明書は環境変数で渡します（[Windows](#windows)）。
 
@@ -175,6 +175,13 @@ asuka build --platform mac
 
 このコマンドは、Mac 上で `dist/darwin-arm64/<Name>.app` を作ります。Apple シリコン搭載の Mac 向けで、macOS 11 以降に対応しています。隣には配布用の `<name>-<version>-darwin-arm64.zip` も作られます（Apple のツールと同じ方法で圧縮され、署名と公証が保たれます）。`--arch amd64` を付けると、代わりに Intel Mac 向けを別のビルドとして `dist/darwin-amd64` に作ります（両方に対応してサイズが倍になるユニバーサルアプリにはしません）。ビルドごとにファイル名が異なるので、1 つのリリースに並べて置けます。アプリには実行ファイルと、アプリの設定（`Contents/Resources/asuka-app.json`）、Info.plist、アイコン、言語、アセットを含み、アドホック署名されています。つまり、自分の Mac で動かせる状態です。アプリがインポートしたパッケージは、iOS と同じく `ios.usage` から利用目的の説明文を追加します（位置情報の説明文は、Mac では `NSLocationWhenInUseUsageDescription` から取った `NSLocationUsageDescription` になります）。あわせて、それに必要な hardened runtime のエンタイトルメント（`com.apple.security.device.camera`、`...audio-input`、`...personal-information.location` など）も追加します。これがないと、Developer ID で署名したアプリは、カメラ、マイク、ユーザーのデータへのアクセスを拒否されます。アプリのネイティブパッケージの Swift は、ビルドするアーキテクチャ向けに実行ファイルへコンパイルされます（[ネイティブコード](native.md)を参照）。`std/sqlite` を使うアプリでは、SQLite も実行ファイルに組み込まれます（[ライブラリ](data.md#ライブラリ)）。
 
+`.zip` の隣には、アプリのディスクイメージ `<name>-<version>-darwin-arm64.dmg` も作られます。Mac アプリのダウンロードとしてはこれが一般的な形です。開くとアプリと「アプリケーション」フォルダーが並んだウィンドウが表示され、アプリをフォルダーにドラッグすればインストールできます。ディスクイメージのアイコンはアプリのアイコンです。LZFSE で圧縮され、アプリと同じ ID で署名されます。`--notarize` を付ければ、こちらも公証とステープルが行われます。ディスクイメージから直接起動したアプリは自分自身を更新できません（`update.unsupported()` は `.translocated`）。「アプリケーション」フォルダーにドラッグしたあとなら更新できます。`--package dmg` でディスクイメージだけを、`--package zip` で `.zip` だけを作ります。`asuka.toml` の `mac.packages` を書けば、すべてのビルドで同じ指定になります。
+
+```toml
+[mac]
+packages = ["dmg"]   # デフォルトは "zip" と "dmg"
+```
+
 Mac App Store 以外でほかの人に配布するには、Developer ID で署名し、Apple に公証してもらいます。これで Gatekeeper がアプリを開けるようになります。
 
 ```sh
@@ -182,7 +189,7 @@ xcrun notarytool store-credentials asuka   # 初回のみ：Apple ID、チーム
 asuka build --platform mac --sign "Developer ID Application: Your Name (TEAMID)" --notarize asuka
 ```
 
-`--notarize` は、署名したアプリを Apple の公証サービスに送り、結果を待ちます（たいていは数分です）。却下された場合はサービスのログを表示します。最後にチケットをアプリにステープルするので、オフラインでも開けます。CI では `--notarize env` を指定すると、キーチェーンのプロファイルの代わりに、環境変数の `ASUKA_APPLE_ID`、`ASUKA_APPLE_PASSWORD`（App 用パスワード）、`ASUKA_TEAM_ID` を使います。
+`--notarize` は、署名したアプリを Apple の公証サービスに送り、結果を待ちます（たいていは数分です）。却下された場合はサービスのログを表示します。最後にチケットをアプリにステープルするので、オフラインでも開けます。続いて、同じ ID で署名したディスクイメージにも同じことを行います。CI では `--notarize env` を指定すると、キーチェーンのプロファイルの代わりに、環境変数の `ASUKA_APPLE_ID`、`ASUKA_APPLE_PASSWORD`（App 用パスワード）、`ASUKA_TEAM_ID` を使います。
 
 プッシュ通知（`platform/push`）、Sign in with Apple（`platform/appleauth`）、App Attest（`platform/integrity`）、iCloud（`platform/icloud`）には、プロビジョニングプロファイルでしか付与されないエンタイトルメントが必要です。developer.apple.com（Profiles）で、それらのケイパビリティを有効にしたアプリの ID に対して macOS の Developer ID プロファイルを作成し、ダウンロードしてください。
 
@@ -236,6 +243,14 @@ asuka build --platform linux --arch arm64   # amd64 または arm64
   ```
 
 - `my-notes-<version>-linux-<arch>.tar.gz`：配布用に、そのフォルダーをまとめたもの
+- `my-notes-<version>-linux-<arch>.deb`（Debian と Ubuntu 向け）と `my-notes-<version>-linux-<arch>.rpm`（Fedora 向け）：そのフォルダーを、システム標準のアプリと同じように `/usr` の下にインストールするパッケージ。アプリがディストリビューションに求めるもの、つまり GTK 4.14、libadwaita 1.5、libsoup、実行ファイルのビルド対象の glibc、そしてアプリのパッケージが開くライブラリ（`WebView` なら WebKitGTK、`platform/pdf` なら Poppler、音声と動画なら GStreamer など）も、パッケージマネージャーがあわせてインストールします。デスクトップファイル、アイコン、MIME タイプのキャッシュは、システム側のトリガーが更新します。プレリリースのバージョンは正式リリースより前に並びます（`1.3.0-beta.1` は `1.3.0~beta.1` になります）。
+
+  ```sh
+  sudo apt install ./my-notes-1.0-linux-amd64.deb
+  sudo dnf install ./my-notes-1.0-linux-amd64.rpm
+  ```
+
+- `my-notes-<version>-linux-<arch>.AppImage`：アプリを 1 つのファイルにまとめたもの。ダウンロードしてそのまま実行できます。GTK 4.14 と libadwaita 1.5 は含まれないので、それらのあるディストリビューションが必要です。デスクトップファイルとアイコンは、AppImage のツールやランチャーが見つけられる場所に置かれます。FUSE のない環境（コンテナーなど）では `--appimage-extract-and-run` を付けて実行します。[AppImage ランタイム](https://github.com/AppImage/type2-runtime)を使って作られ、ランタイムは初回に一度だけダウンロードされてビルドキャッシュに入り、チェックサムが検証されます。オフラインでビルドするには、手元の `runtime-x86_64` または `runtime-aarch64` を `ASUKA_APPIMAGE_RUNTIME` に指定します。
 - `<id>.yml`：そのフォルダー（`bin`、`share`）を GNOME ランタイム上でパッケージにする [Flatpak](https://flatpak.org) のマニフェスト
 
   ```sh
@@ -246,7 +261,11 @@ asuka build --platform linux --arch arm64   # amd64 または arm64
 
 アプリを動かす環境には、GTK 4.14 と libadwaita 1.5 以降が必要です（GNOME ランタイム 46 以降に含まれています）。アプリの ID は application ID でもあり、デスクトップファイル、アイコン、D-Bus 名（二回目に起動すると、最初に起動したアプリのウィンドウが表示されます）、データディレクトリ（`~/.local/share/<id>`）の名前になります。ID は英字、数字、`_`、`-` だけからなり、二つ以上の部分に分かれていて、どの部分も数字で始まってはいけません。
 
-デスクトップファイルと metainfo に書く内容は、`asuka.toml` で指定します。
+`--package deb,appimage` のように指定すると、`tar.gz`、`deb`、`rpm`、`appimage`、`flatpak`（マニフェスト）のうち一部だけを作ります。`asuka.toml` の `linux.packages` を書けば、すべてのビルドで同じ指定になります。[自動アップデート](#自動アップデート)を設定したビルドは、どちらにしてもアップデートのアーカイブである `.tar.gz` を書き出します。どの形式も `asuka build` 自身がどのシステムからでも書き出すので、`dpkg`、`rpmbuild`、`mksquashfs` は要りません。
+
+`.deb`、`.rpm`、Flatpak、AppImage でインストールされたアプリは、それらの仕組みで更新され、アプリ自身は更新しません（`update.unsupported()` は `.managed`）。自分自身を更新するのは、ユーザーのプレフィックスに展開した `.tar.gz` のほうです。
+
+デスクトップファイル、metainfo、パッケージに書く内容は、`asuka.toml` で指定します。
 
 ```toml
 [linux]
@@ -261,9 +280,13 @@ license = "MIT"
 developer = "Example Inc."
 homepage = "https://example.com"
 flatpakRuntime = "50"
+packages = ["tar.gz", "deb", "rpm", "appimage", "flatpak"]   # デフォルトはすべて
+maintainer = "Example Inc. <dev@example.com>"
+debDepends = ["libfoo1 (>= 1.2)"]
+rpmRequires = ["foo >= 1.2"]
 ```
 
-`categories` は [freedesktop.org のカテゴリ](https://specifications.freedesktop.org/menu-spec/latest/category-registry.html)から選びます（デフォルトは `Utility`）。`license` は SPDX 式です。Flathub とソフトウェアセンターは、summary、description、license、developer を求めます。
+`categories` は [freedesktop.org のカテゴリ](https://specifications.freedesktop.org/menu-spec/latest/category-registry.html)から選びます（デフォルトは `Utility`。`.deb` のセクションもこれに従います）。`license` は SPDX 式です。Flathub とソフトウェアセンターは、summary、description、license、developer を求めます。`maintainer` は `.deb` と `.rpm` に書かれる保守担当者です（デフォルトは `developer`）。`debDepends` と `rpmRequires` には、それらが追加で依存するパッケージを、それぞれの書式で書きます（どちらか一方でよいものは、`.deb` では `a | b`、`.rpm` では `(a or b)`）。
 
 ## Web
 
@@ -365,7 +388,7 @@ component UpdateBanner {
 }
 ```
 
-`await update.unsupported()` は、アプリが自分自身を更新できない理由を返し、更新できるときは none を返します。更新できないのは、開発ビルドや `updates` のないビルド（`.notConfigured`）、システムのパッケージ・Flatpak・Snap・Mac App Store・Microsoft Store でインストールされたアプリ（`.managed`。更新はそれらが行います）、ダウンロードした場所から実行されていて macOS に App Translocation されている Mac アプリ（`.translocated`。ユーザーが「アプリケーション」フォルダーに移動する必要があります）、ユーザーが書き込めないフォルダーにあるアプリ（`.notWritable`）、そしてスマートフォン（`.notAvailable`）です。こうした場合、ウィンドウはバックグラウンドでは確認せず、ユーザーが確認したときにその理由を伝えます。
+`await update.unsupported()` は、アプリが自分自身を更新できない理由を返し、更新できるときは none を返します。更新できないのは、開発ビルドや `updates` のないビルド（`.notConfigured`）、システムのパッケージ（`.deb`、`.rpm`）・Flatpak・Snap・AppImage・Mac App Store・Microsoft Store でインストールされたアプリ（`.managed`。更新はそれらが行います）、ディスクイメージから直接、またはダウンロードした場所から実行されていて macOS に App Translocation されている Mac アプリ（`.translocated`。ユーザーが「アプリケーション」フォルダーに移動する必要があります）、ユーザーが書き込めないフォルダーにあるアプリ（`.notWritable`）、そしてスマートフォン（`.notAvailable`）です。こうした場合、ウィンドウはバックグラウンドでは確認せず、ユーザーが確認したときにその理由を伝えます。
 
 `update.setChannel("beta")` を呼ぶと、ベータ版を選んだユーザーに向けて、そのチャンネルのプレリリースも提示します。バージョンのチャンネルは、プレリリース部分の英字です（`1.4.0-beta.2` なら `beta`）。`"*"` を指定すると、すべてのプレリリースを受け取ります。正式リリースはどのチャンネルでも提示されます。`update.setFeed(url)` を使うと、`asuka.toml` とは別のフィード（ユーザーのアカウントごとに選んだものなど）を読みます。マニフェストの URL、GitHub のリリース、または `{target}`、`{version}`、`{channel}` を含むサーバーの URL を指定できます。その場合も、署名はいつもどおり検証されます。`update.compareVersions(a, b)` は、アップデーターと同じ規則でバージョンを比較します。
 
@@ -383,7 +406,7 @@ Web ではインストールするものはありません。`check()` はブラ
 
 秘密鍵がなければ、アプリをビルドするだけでアップデート用のファイルは書き出さず、その旨を表示します。`--version 1.2.0` を指定すると、`asuka.toml` とは別のバージョンとしてビルドします（CI ではタグからバージョンを取ります）。Windows のフォルダーと Linux のプレフィックスには `.asuka-files` も入ります。これはそのバージョンがインストールするファイルの一覧です。アップデートの際に、次のバージョンにはもうないファイルを削除し、それ以外のファイルには一切手を付けないために使います。
 
-`asuka publish` はビルドしてから、これらをアップロードします。マニフェストは最後にアップロードするので、ファイルがまだ揃っていないマニフェストをアプリが読むことはありません。
+`asuka publish` はビルドしてから、これらを配布用のパッケージ（Mac の `.zip` と `.dmg`、Linux の `.deb`、`.rpm`、AppImage。Linux の `.tar.gz` はアップデートのアーカイブそのものです）と一緒にアップロードします。マニフェストは最後にアップロードするので、ファイルがまだ揃っていないマニフェストをアプリが読むことはありません。
 
 ```sh
 asuka publish --platform mac --sign "Developer ID Application: …" --notarize asuka
@@ -504,8 +527,8 @@ sentry-cli upload-proguard --org ORG --project PROJECT dist/Notes-mapping.txt
 リリースする前に、ユーザーが使うのと同じ環境でリリースビルドを動かしてみてください。
 
 - スマートフォン：iOS は `--distribution development` でビルドしたもの、Android は Play の内部テストトラックから入れたもの（`asuka publish --platform android --track internal`）です。後者では、Play が `.aab` から作る APK がインストールされます。TestFlight と Play の内部テストでは、シミュレーターでは確かめられないことも確認できます。
-- Mac：署名・公証済みの `.app` を、別の Mac でダウンロードして試します（Gatekeeper が確認するのはダウンロードしたものです）。`spctl --assess --type execute -vv Notes.app` で、Gatekeeper がどう判断するかがわかります。
-- Windows と Linux：フォルダー、または `.tar.gz` や Flatpak を、そのアプリを一度も入れたことのないマシンで試します（Linux では GTK 4.14 と libadwaita 1.5 以降のあるマシン）。
+- Mac：署名・公証済みの `.dmg` を別の Mac でダウンロードし、アプリを「アプリケーション」フォルダーにドラッグして試します（Gatekeeper が確認するのはダウンロードしたものです）。`spctl --assess --type execute -vv Notes.app` で、Gatekeeper がどう判断するかがわかります。
+- Windows と Linux：フォルダー、Linux では `.deb`、`.rpm`、AppImage、`.tar.gz`、Flatpak を、そのアプリを一度も入れたことのないマシンで試します（Linux では GTK 4.14 と libadwaita 1.5 以降のあるマシン）。
 - Web：ビルドしたサイトを HTTPS で配信し、サポートする各ブラウザーで試します。
 
 ## CI での配布
@@ -666,7 +689,7 @@ CLI は自分のバージョンの Asuka でアプリをビルドするため、
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip --clobber
+        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip dist/*/*.dmg --clobber
 
   windows-linux:
     needs: release
@@ -699,7 +722,7 @@ CLI は自分のバージョンの Asuka でアプリをビルドするため、
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip dist/*/*.tar.gz --clobber
+        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip dist/*/*.tar.gz dist/*/*.deb dist/*/*.rpm dist/*/*.AppImage --clobber
 ```
 
 これらのジョブが使うシークレットは次のとおりです。`MAC_CERTIFICATE` は Developer ID Application 証明書とその秘密鍵（`.p12`）、`MAC_CERTIFICATE_PASSWORD` はそのパスワードです。`APPLE_ID`、`APPLE_APP_PASSWORD`（account.apple.com で発行する App 用パスワード）、`APPLE_TEAM_ID` は公証サービスに使います。`WINDOWS_CERTIFICATE` はコード署名証明書（`.pfx`）、`WINDOWS_CERTIFICATE_PASSWORD` はそのパスワードです。どのビルドも、自分専用のディレクトリ（`dist/darwin-arm64`、`dist/windows-amd64`、`dist/linux-arm64`）にファイルを作ります。ファイル名にはアプリ名、バージョン、プラットフォーム、アーキテクチャが入るので、リリースにすべて並べて置けます。Linux の各ビルドの Flatpak マニフェストは、それぞれ自分のビルドをパッケージします。

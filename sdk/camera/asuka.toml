@@ -8,3 +8,11 @@ NSMicrophoneUsageDescription = "The microphone records a video's sound."
 
 [android]
 permissions = ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"]
+
+# GStreamer, its codecs and PipeWire's source (the camera portal's): what
+# a .deb or an .rpm of the app depends on.
+[linux]
+deb = ["gstreamer1.0-plugins-base"]
+debRecommends = ["gstreamer1.0-plugins-good", "gstreamer1.0-pipewire"]
+rpm = ["gstreamer1-plugins-base"]
+rpmRecommends = ["gstreamer1-plugins-good", "pipewire-gstreamer"]

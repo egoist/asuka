@@ -15,9 +15,9 @@ GitHub's releases or an S3 bucket (see [Updates](#updates)).
 |---|---|---|---|
 | `ios` | `<Name>.ipa`, signed for the App Store | a Mac with Xcode | TestFlight, the App Store (`asuka publish`) |
 | `android` | `<Name>.aab`, signed with your upload key | any system with a JDK, the Android SDK and the NDK | Google Play (`asuka publish`) |
-| `mac` | `darwin-<arch>/`: `<Name>.app` and its `.zip` (Apple silicon; `--arch amd64`: Intel); or a `.pkg` (`--appstore`) | a Mac with Xcode's command line tools | a download, signed and notarized; the Mac App Store |
+| `mac` | `darwin-<arch>/`: `<Name>.app`, its `.zip` and a `.dmg` (Apple silicon; `--arch amd64`: Intel); or a `.pkg` (`--appstore`) | a Mac with Xcode's command line tools | the `.dmg` or the `.zip`, signed and notarized; the Mac App Store |
 | `windows` | `windows-<arch>/`: `<Name>/`, the `.exe` and its assets, and its `.zip` | Windows with clang, or any system with Zig | the zip, or an installer or MSIX of yours |
-| `linux` | `linux-<arch>/`: an install prefix, a `.tar.gz`, a Flatpak manifest | Linux with a C compiler, or any system with Zig | the `.tar.gz`, a Flatpak |
+| `linux` | `linux-<arch>/`: an install prefix, a `.tar.gz`, a `.deb`, an `.rpm`, an AppImage, a Flatpak manifest | Linux with a C compiler, or any system with Zig | the `.deb`, the `.rpm`, the AppImage, the `.tar.gz`, a Flatpak |
 | `web` | `web/`, a static site | any system with Zig | any web server or CDN |
 
 Without `--platform`, on a Mac, a Windows PC or a Linux machine, it
@@ -111,8 +111,8 @@ them all, with their types and defaults. These apply on every platform:
   app starts (a ProgID per type, the extensions' `OpenWithProgids`, the
   icons in the `.exe`), Linux in the desktop file's `MimeType` and
   `share/mime/packages/<id>.xml` (run `update-mime-database` and
-  `update-desktop-database` after unpacking the `.tar.gz`; a package
-  manager and Flatpak do it), the web in the manifest's
+  `update-desktop-database` after unpacking the `.tar.gz`; the `.deb`,
+  the `.rpm` and Flatpak have them run), the web in the manifest's
   `file_handlers` (an installed app, in Chromium).
 - `singleInstance`, `true` by default: on Windows and Linux an app with
   an `id` runs once, a second launch handing its arguments to the
@@ -127,9 +127,10 @@ Platform by platform:
   Info.plist as well.
 - `android.*` is the Android build's ([Android](#android)).
 - `mac.profile` is a Mac build's provisioning profile, and
-  `mac.appStoreProfile` the Mac App Store's: see [macOS](#macos).
-- `linux.*` is what a Linux build's desktop file and AppStream metainfo
-  say: see [Linux](#linux).
+  `mac.appStoreProfile` the Mac App Store's; `mac.packages`, what it's
+  handed out in: see [macOS](#macos).
+- `linux.*` is what a Linux build's desktop file, AppStream metainfo and
+  packages say, and which packages it makes: see [Linux](#linux).
 - `web.vapidPublicKey` is the app server's VAPID public key, for
   `platform/push` on the web (Web Push; see
   [the web](web.md#platformpush-web-push)).
@@ -399,6 +400,21 @@ compiled into its executable, for the build's architecture (see
 compiled into its executable too
 ([The library](data.md#the-library)).
 
+Beside the `.zip` is `<name>-<version>-darwin-arm64.dmg`, a disk image
+of the app, which is how a Mac app is usually downloaded: it opens to a
+window with the app and the Applications folder side by side, to drag
+one onto the other, and its icon is the app's. It's compressed (LZFSE),
+signed as the app is, and with `--notarize` notarized and stapled too.
+An app run from the disk image itself can't update itself
+(`update.unsupported()` is `.translocated`): dragged to Applications,
+it can. `--package dmg` makes the disk image alone, `--package zip` the
+`.zip`; `asuka.toml`'s `mac.packages` says the same for every build:
+
+```toml
+[mac]
+packages = ["dmg"]   # "zip" and "dmg" by default
+```
+
 To give it to others outside the Mac App Store, sign it with your
 Developer ID and have Apple notarize it, so Gatekeeper opens it:
 
@@ -409,7 +425,8 @@ asuka build --platform mac --sign "Developer ID Application: Your Name (TEAMID)"
 
 `--notarize` sends the signed app to Apple's notary service, waits for
 its verdict (a few minutes, usually), prints the service's log if it's
-rejected, and staples the ticket to the app, so it opens offline too.
+rejected, and staples the ticket to the app, so it opens offline too;
+then the disk image, signed with the same identity, likewise.
 In CI, `--notarize env` takes `ASUKA_APPLE_ID`, `ASUKA_APPLE_PASSWORD` (an
 app-specific password) and `ASUKA_TEAM_ID` from the environment instead
 of a keychain profile.
@@ -526,6 +543,31 @@ C compiler on Linux, with Zig elsewhere. In `dist/linux-amd64`
   ```
 
 - `my-notes-<version>-linux-<arch>.tar.gz`, that folder, to hand out.
+- `my-notes-<version>-linux-<arch>.deb`, for Debian and Ubuntu, and
+  `my-notes-<version>-linux-<arch>.rpm`, for Fedora: the folder
+  installed under `/usr`, as the system's own apps are, which the
+  package manager installs with what the app needs from the
+  distribution: GTK 4.14, libadwaita 1.5, libsoup and the glibc its
+  executable was built for, and what the app's packages open (WebKitGTK
+  for a `WebView`, Poppler for `platform/pdf`, GStreamer for audio and
+  video...). The desktop's caches of its desktop file, icons and MIME
+  types are updated by the system's own triggers. A prerelease's
+  version comes before its release's (`1.3.0-beta.1` is `1.3.0~beta.1`):
+
+  ```sh
+  sudo apt install ./my-notes-1.0-linux-amd64.deb
+  sudo dnf install ./my-notes-1.0-linux-amd64.rpm
+  ```
+
+- `my-notes-<version>-linux-<arch>.AppImage`, the app in one file, to
+  download and run, on a distribution with GTK 4.14 and libadwaita 1.5
+  (they aren't in it): its desktop file and icon are where AppImage's
+  tools and launchers find them. Where FUSE isn't (a container), run it
+  with `--appimage-extract-and-run`. It's made with the [AppImage
+  runtime](https://github.com/AppImage/type2-runtime), downloaded once
+  into the build cache and checked; to build offline, set
+  `ASUKA_APPIMAGE_RUNTIME` to a `runtime-x86_64` or `runtime-aarch64`
+  of yours.
 - `<id>.yml`, a [Flatpak](https://flatpak.org) manifest that packages
   that folder (its `bin` and `share`) on the GNOME runtime:
 
@@ -542,7 +584,19 @@ shows the first's window), and its data directory
 (`~/.local/share/<id>`); it must be letters, digits, `_` and `-`, in two
 parts or more, none starting with a digit.
 
-What the desktop file and metainfo say, in `asuka.toml`:
+`--package deb,appimage` makes some of them alone, of `tar.gz`, `deb`,
+`rpm`, `appimage` and `flatpak` (the manifest); `asuka.toml`'s
+`linux.packages` says the same for every build. A build with
+[updates](#updates) writes the update's archive, the `.tar.gz`, either
+way. Each is written by `asuka build` itself, from any system: no
+`dpkg`, `rpmbuild` or `mksquashfs` needed.
+
+An app the `.deb`, the `.rpm`, Flatpak or an AppImage installed is
+updated by them, not by itself (`update.unsupported()` is `.managed`):
+the `.tar.gz` unpacked into a prefix of the user's is the one that
+updates itself.
+
+What the desktop file, metainfo and packages say, in `asuka.toml`:
 
 ```toml
 [linux]
@@ -557,11 +611,19 @@ license = "MIT"
 developer = "Example Inc."
 homepage = "https://example.com"
 flatpakRuntime = "50"
+packages = ["tar.gz", "deb", "rpm", "appimage", "flatpak"]   # all by default
+maintainer = "Example Inc. <dev@example.com>"
+debDepends = ["libfoo1 (>= 1.2)"]
+rpmRequires = ["foo >= 1.2"]
 ```
 
 `categories` are [freedesktop.org's](https://specifications.freedesktop.org/menu-spec/latest/category-registry.html)
-(`Utility` by default); `license` is an SPDX expression; Flathub and
-software centers want the summary, description, license and developer.
+(`Utility` by default; the `.deb`'s section follows them); `license` is
+an SPDX expression; Flathub and software centers want the summary,
+description, license and developer. `maintainer` is who the `.deb` and
+`.rpm` say maintains them (`developer` by default); `debDepends` and
+`rpmRequires` are more packages they depend on, in each one's syntax
+(`a | b` is either, in a `.deb`; `(a or b)` in an `.rpm`).
 
 ## The web
 
@@ -709,9 +771,10 @@ component UpdateBanner {
 
 `await update.unsupported()` says why the app can't update itself, or
 none when it can: a development build or one without `updates`
-(`.notConfigured`), an app the system's packages, Flatpak, Snap, the Mac
-App Store or the Microsoft Store installed (`.managed`: they update it),
-a Mac app run from where it was downloaded, which macOS translocates
+(`.notConfigured`), an app the system's packages (the `.deb`, the
+`.rpm`), Flatpak, Snap, an AppImage, the Mac App Store or the Microsoft
+Store installed (`.managed`: they update it), a Mac app run from its
+disk image or from where it was downloaded, which macOS translocates
 (`.translocated`: the user moves it to Applications), a folder the user
 can't write (`.notWritable`), a phone (`.notAvailable`). The window
 never checks in the background then, and says why when the user checks.
@@ -761,8 +824,10 @@ it from the tag). A Windows folder and a Linux prefix also get
 `.asuka-files`, the list of what the version installs, so that its
 update removes what the next one no longer has, and nothing of yours.
 
-`asuka publish` builds and uploads them, the manifests last, so no app
-reads a manifest whose files aren't there yet:
+`asuka publish` builds and uploads them, with the build's packages to
+hand out (the Mac's `.zip` and `.dmg`; Linux's `.deb`, `.rpm` and
+AppImage, its `.tar.gz` being the update's archive), the manifests last,
+so no app reads a manifest whose files aren't there yet:
 
 ```sh
 asuka publish --platform mac --sign "Developer ID Application: …" --notarize asuka
@@ -990,12 +1055,13 @@ Run the release build where your users will, before you release it:
   --platform android --track internal`), which installs the APK Play makes
   from the `.aab`. TestFlight and a Play internal test also check what a
   simulator can't.
-- On the Mac: the signed, notarized `.app`, downloaded on another Mac
-  (a download is what Gatekeeper checks); `spctl --assess --type execute
-  -vv Notes.app` says what Gatekeeper will make of it.
-- On Windows and Linux: the folder, or the `.tar.gz` or Flatpak, on a
-  machine that has never had the app (Linux: with GTK 4.14 and
-  libadwaita 1.5 or later).
+- On the Mac: the signed, notarized `.dmg`, downloaded on another Mac
+  (a download is what Gatekeeper checks), the app dragged to
+  Applications; `spctl --assess --type execute -vv Notes.app` says what
+  Gatekeeper will make of it.
+- On Windows and Linux: the folder, or on Linux the `.deb`, `.rpm`,
+  AppImage, `.tar.gz` or Flatpak, on a machine that has never had the app
+  (Linux: with GTK 4.14 and libadwaita 1.5 or later).
 - On the web: the built site served over HTTPS, in each browser you
   support.
 
@@ -1187,7 +1253,7 @@ are named after `asuka.toml`'s `name`.)
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip --clobber
+        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip dist/*/*.dmg --clobber
 
   windows-linux:
     needs: release
@@ -1220,7 +1286,7 @@ are named after `asuka.toml`'s `name`.)
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip dist/*/*.tar.gz --clobber
+        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip dist/*/*.tar.gz dist/*/*.deb dist/*/*.rpm dist/*/*.AppImage --clobber
 ```
 
 Their secrets: `MAC_CERTIFICATE`, your Developer ID Application

@@ -11,3 +11,9 @@ permissions = ["android.permission.READ_CONTACTS"]
 # The host's contacts module (Contacts, ContactsUI).
 [ios]
 hostFlags = ["ASUKA_CONTACTS"]
+
+# Evolution Data Server, the desktop's address book: what a .deb or an
+# .rpm of the app depends on.
+[linux]
+deb = ["evolution-data-server"]
+rpm = ["evolution-data-server"]

@@ -327,14 +327,15 @@ purposes = ["AppFunctionality"]
 
 ## mac
 
-Mac 构建签名所用的描述文件；团队取自 `ios.team`。
+Mac 构建签名所用的描述文件，以及分发时的打包形式；团队取自 `ios.team`。
 
 | 键 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `profile` | 字符串 | `ASUKA_MAC_PROFILE`；没有时，如果应用需要，用已安装的最佳匹配 | Developer ID（或开发用）描述文件的路径、名称或 UUID，推送、通过 Apple 登录、App Attest 和 Apple Pay 都需要它。 |
 | `appStoreProfile` | 字符串 | 已安装的最佳匹配 | Mac App Store 的描述文件，用于 `--appstore`。 |
+| `packages` | 字符串数组 | `["zip", "dmg"]` | 构建用哪些形式分发应用：`zip` 是压缩好的应用，`dmg` 是磁盘映像。 |
 
-`--profile` 和 `ASUKA_MAC_PROFILE` 会覆盖它们。见[打包与发布](shipping.md#macos)。
+`--profile` 和 `ASUKA_MAC_PROFILE` 会覆盖描述文件，`--package` 会覆盖打包形式。见[打包与发布](shipping.md#macos)。
 
 ## android
 
@@ -388,7 +389,7 @@ CarPlay 的 entitlement 需要向 Apple 申请；签名构建的描述文件缺�
 
 ## linux
 
-Linux 构建的 desktop 文件和 AppStream metainfo 对应用的描述，也就是启动器、软件中心和 Flathub 显示的内容。Flathub 和软件中心要求提供摘要、描述、许可证和开发者。
+Linux 构建的 desktop 文件、AppStream metainfo 和软件包对应用的描述，也就是启动器、软件中心和 Flathub 显示的内容。Flathub 和软件中心要求提供摘要、描述、许可证和开发者。
 
 | 键 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -400,6 +401,10 @@ Linux 构建的 desktop 文件和 AppStream metainfo 对应用的描述，也就
 | `developer` | 字符串 | 无 | 开发者的名称。 |
 | `homepage` | 字符串 | 无 | 应用的网页。 |
 | `flatpakRuntime` | 字符串 | 一个较新的版本 | Flatpak manifest 所要求的 GNOME 运行时版本，46 或更高。 |
+| `packages` | 字符串数组 | 全部 | 构建用哪些形式分发应用：`tar.gz`、`deb`、`rpm`、`appimage` 和 `flatpak`（清单）。`--package` 会覆盖它。 |
+| `maintainer` | 字符串 | `developer` | `.deb` 和 `.rpm` 中写明的维护者：`"Name <email>"`。 |
+| `debDepends` | 字符串数组 | 无 | `.deb` 额外依赖的软件包，按 Debian 的语法书写：`"libfoo1 (>= 1.2)"`、`"a \| b"`。 |
+| `rpmRequires` | 字符串数组 | 无 | `.rpm` 额外依赖的软件包，按 RPM 的语法书写：`"foo >= 1.2"`、`"(a or b)"`。 |
 
 见[打包与发布](shipping.md#linux)。
 

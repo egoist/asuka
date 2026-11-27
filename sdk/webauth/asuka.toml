@@ -1,3 +1,8 @@
 name = "platform/webauth"
 version = "0.1.0"
 description = "Signing in on the web in the system's own sign-in sheet: OAuth's redirect"
+
+# WebKitGTK, which it opens: what a .deb or an .rpm of the app depends on.
+[linux]
+deb = ["libwebkitgtk-6.0-4"]
+rpm = ["webkitgtk6.0"]

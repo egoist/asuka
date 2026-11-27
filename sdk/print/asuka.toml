@@ -1,3 +1,8 @@
 name = "platform/print"
 version = "0.1.0"
 description = "The system's print dialog, and PDFs made from HTML"
+
+# WebKitGTK, which it opens: what a .deb or an .rpm of the app depends on.
+[linux]
+deb = ["libwebkitgtk-6.0-4"]
+rpm = ["webkitgtk6.0"]

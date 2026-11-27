@@ -14,3 +14,9 @@ permissions = ["android.permission.READ_CALENDAR", "android.permission.WRITE_CAL
 # The host's calendar module (EventKit).
 [ios]
 hostFlags = ["ASUKA_CALENDAR"]
+
+# Evolution Data Server, the desktop's calendars: what a .deb or an .rpm
+# of the app depends on.
+[linux]
+deb = ["evolution-data-server"]
+rpm = ["evolution-data-server"]

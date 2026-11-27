@@ -1,3 +1,9 @@
 name = "platform/imageedit"
 version = "0.1.0"
 description = "Images edited and frames taken from videos, with the platform's own codecs"
+
+# GStreamer, which decodes a video's frames: what a .deb or an .rpm of the
+# app does better with.
+[linux]
+debRecommends = ["gstreamer1.0-plugins-base", "gstreamer1.0-plugins-good"]
+rpmRecommends = ["gstreamer1-plugins-base", "gstreamer1-plugins-good"]

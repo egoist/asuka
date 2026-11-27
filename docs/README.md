@@ -149,8 +149,9 @@ the Android SDK and NDK) and a C compiler (the system's, or Zig).
   device or display: tap, type and check what the screen shows, and
   time that moves only when the app waits.
 - [Shipping](shipping.md): builds for the App Store and Google Play, a
-  signed and notarized Mac app, a Windows folder, a Linux archive and
-  Flatpak manifest, desktop apps' signed updates, and what
+  signed and notarized Mac app and its disk image, a Windows folder,
+  Linux's `.deb`, `.rpm`, AppImage, archive and Flatpak manifest,
+  desktop apps' signed updates, and what
   `asuka.toml` says of the app.
 - [The web](web.md): the same app in a browser, as WebAssembly and the
   page's DOM; `asuka dev --platform web`, a static site to deploy,

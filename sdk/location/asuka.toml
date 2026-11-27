@@ -47,3 +47,11 @@ launch = "AsukaLocationLaunch"
 [uses.monitor.android]
 permissions = ["android.permission.RECEIVE_BOOT_COMPLETED"]
 application = ['<receiver android:name="platform.location.LocationReceiver" android:exported="false"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter></receiver>']
+
+# geocode-glib, which it opens, and GeoClue where there's no portal: what
+# a .deb or an .rpm of the app depends on.
+[linux]
+deb = ["libgeocode-glib-2-0"]
+debRecommends = ["geoclue-2.0"]
+rpm = ["geocode-glib"]
+rpmRecommends = ["geoclue2"]

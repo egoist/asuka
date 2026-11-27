@@ -86,6 +86,15 @@ type manifestNeeds struct {
 		// (Poppler): each one module of the manifest, in YAML, from its
 		// name: line.
 		FlatpakModules []string `json:"flatpakModules"`
+		// Deb and RPM are the system packages a .deb and an .rpm of an
+		// app depend on for a library the package opens (Debian's and
+		// Ubuntu's names, "libfoo1 | libfoo0"; Fedora's, "(foo or
+		// bar)"); DebRecommends and RPMRecommends, those it does better
+		// with (a codec, a model).
+		Deb           []string `json:"deb"`
+		DebRecommends []string `json:"debRecommends"`
+		RPM           []string `json:"rpm"`
+		RPMRecommends []string `json:"rpmRecommends"`
 	} `json:"linux"`
 }
 
@@ -244,6 +253,10 @@ func (c *appConfig) addNeeds(m *manifestNeeds) error {
 	add(&c.androidModules, m.Android.HostModules...)
 	add(&c.flatpakArgs, m.Linux.Flatpak...)
 	add(&c.flatpakModules, m.Linux.FlatpakModules...)
+	add(&c.debDepends, m.Linux.Deb...)
+	add(&c.debRecommends, m.Linux.DebRecommends...)
+	add(&c.rpmRequires, m.Linux.RPM...)
+	add(&c.rpmRecommends, m.Linux.RPMRecommends...)
 	return nil
 }
 

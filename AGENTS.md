@@ -126,7 +126,7 @@ go run ./cmd/asuka build --platform android examples/counter           # an .aab
 go run ./cmd/asuka publish --platform ios --groups Friends examples/counter  # build and upload to TestFlight (ASUKA_ASC_KEY_ID, ASUKA_ASC_ISSUER_ID, ASUKA_ASC_KEY)
 go run ./cmd/asuka publish --platform android --track internal examples/counter  # build and upload to Google Play (ASUKA_PLAY_SERVICE_ACCOUNT)
 go run ./cmd/asuka dev examples/counter            # macOS (on a Mac, no --platform: mac): the player (the Swift host and the core) loads the bytecode asuka dev sends
-go run ./cmd/asuka build examples/counter          # likewise: a universal .app (--sign "Developer ID Application: ..."; default ad hoc)
+go run ./cmd/asuka build examples/counter          # likewise: an .app, its .zip and a .dmg (--sign "Developer ID Application: ..."; default ad hoc)
 go test ./platform/macos/mactest                 # the macOS host: Asuka apps on the Mac player, driven and read through its automation (ASUKA_COMMANDS: the view tree as JSON)
 swift test --package-path platform/macos         # the macOS host's Swift unit tests and its decoder against the golden files
 ASUKA_SNAPSHOT=/tmp/c.png ASUKA_DUMP=1 ASUKA_SCRIPT="tap:Add" "dist/darwin-arm64/Counter.app/Contents/MacOS/Counter"  # macOS: steps, then the window as a PNG (the window server's) and its view tree, then quit
@@ -136,7 +136,8 @@ go test ./platform/windows                       # the Windows host (C), its app
 go test ./platform/desktop                       # the C the Windows and Linux hosts share, on this computer (ASan, UBSan)
 xvfb-run -a dbus-run-session go test ./platform/linux  # the Linux host: apps built and driven in real GTK windows (GTK 4.14, libadwaita 1.5)
 go run ./cmd/asuka dev examples/counter            # Linux (on Linux, no --platform: linux): the app and its GTK host in one process, rerun on save
-go run ./cmd/asuka build --platform linux examples/counter    # an install prefix, a .tar.gz and a Flatpak manifest; from any system
+go run ./cmd/asuka build --platform linux examples/counter    # an install prefix, a .tar.gz, a .deb, an .rpm, an AppImage and a Flatpak manifest; from any system (--package deb,rpm: some)
+go test ./internal/distpkg                       # the .deb, .rpm, SquashFS/AppImage and .DS_Store writers, read back
 go run platform/linux/gen_symbols.go             # the Linux host's fallback symbols, from the web host's
 go test -tags e2e ./e2e -run Linux               # GUI tests: the examples under Xvfb (Linux)
 $env:ASUKA_SNAPSHOT='c.png'; $env:ASUKA_DUMP='1'; $env:ASUKA_SCRIPT='tap:Add'; .\examples\counter\dist\windows-amd64\Counter\Counter.exe  # Windows (PowerShell): steps, then the window as a PNG and its view tree

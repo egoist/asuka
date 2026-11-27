@@ -1,3 +1,8 @@
 name = "platform/maps"
 version = "0.1.0"
 description = "A map: Apple Maps, Google Maps, OpenStreetMap, with markers and the region the app moves it to"
+
+# libshumate, which it opens: what a .deb or an .rpm of the app depends on.
+[linux]
+deb = ["libshumate-1.0-1"]
+rpm = ["libshumate"]

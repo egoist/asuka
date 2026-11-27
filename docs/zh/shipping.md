@@ -6,9 +6,9 @@
 |---|---|---|---|
 | `ios` | `<Name>.ipa`，已为 App Store 签名 | 装有 Xcode 的 Mac | TestFlight、App Store（`asuka publish`） |
 | `android` | `<Name>.aab`，用你的上传密钥签名 | 装有 JDK、Android SDK 和 NDK 的任意系统 | Google Play（`asuka publish`） |
-| `mac` | `darwin-<arch>/`：`<Name>.app` 及其 `.zip`（Apple 芯片；`--arch amd64`：Intel）；或 `.pkg`（`--appstore`） | 装有 Xcode 命令行工具的 Mac | 签名并公证后供用户下载；Mac App Store |
+| `mac` | `darwin-<arch>/`：`<Name>.app` 及其 `.zip` 和 `.dmg`（Apple 芯片；`--arch amd64`：Intel）；或 `.pkg`（`--appstore`） | 装有 Xcode 命令行工具的 Mac | 签名并公证后的 `.dmg` 或 `.zip`；Mac App Store |
 | `windows` | `windows-<arch>/`：`<Name>/`（内含 `.exe` 及其资源）及其 `.zip` | 装有 clang 的 Windows，或装有 Zig 的任意系统 | zip 压缩包，或你自己制作的安装程序、MSIX |
-| `linux` | `linux-<arch>/`：一个安装前缀目录、一个 `.tar.gz`、一份 Flatpak 清单 | 装有 C 编译器的 Linux，或装有 Zig 的任意系统 | `.tar.gz`、Flatpak |
+| `linux` | `linux-<arch>/`：一个安装前缀目录、一个 `.tar.gz`、一个 `.deb`、一个 `.rpm`、一个 AppImage、一份 Flatpak 清单 | 装有 C 编译器的 Linux，或装有 Zig 的任意系统 | `.deb`、`.rpm`、AppImage、`.tar.gz`、Flatpak |
 | `web` | `web/`，一个静态网站 | 装有 Zig 的任意系统 | 任意 Web 服务器或 CDN |
 
 不加 `--platform` 时，在 Mac、Windows PC 或 Linux 机器上会为当前这台电脑构建。构建使用平台的编译器（Apple 平台用 Xcode 的，Android 用 NDK 的，Windows 和 Linux 用系统的）；[Zig](https://ziglang.org/download) 用来为 Web 构建，以及在其他系统上为 Windows 和 Linux 构建（设置 `ASUKA_CC=zig` 则在所有地方都用它）。桌面构建里有什么，见[桌面端](desktop.md#桌面应用是怎么构成的)。
@@ -52,15 +52,15 @@ keyAlias = "upload"
   icon = "note.png"
   ```
 
-  `extensions` 是必填项；`name` 默认是第一个扩展名的大写形式加上 "Document"。对于 Asuka 认识的扩展名（md、txt、json、csv、pdf、png、jpg……），`mimeTypes` 和 `uti` 默认采用系统对它的叫法；其他扩展名则视为应用自有的类型：`application/x-<app>-<ext>` 和 `<id>.<ext>`，在 Mac 和 iOS 上会被导出（exported），在 Linux 上会为 shared-mime-info 定义，并且应用会成为这类文件的默认打开方式。`conformsTo` 是导出或导入的类型所遵循的 UTI（默认 `public.data`、`public.content`）；`role` 取 `editor`（默认）或 `viewer`；`icon` 是一张正方形 PNG，在 Mac、Windows 和 Linux 上用作这类文件的图标。各平台的声明方式如下：Mac 和 iOS 写在 Info.plist 中（`CFBundleDocumentTypes`，iOS 上支持原地打开文档）；Android 声明为 intent filter；Windows 在应用启动时为当前用户注册（每种类型一个 ProgID，扩展名的 `OpenWithProgids`，图标打包在 `.exe` 中）；Linux 写在 desktop 文件的 `MimeType` 和 `share/mime/packages/<id>.xml` 中（解压 `.tar.gz` 后需要运行 `update-mime-database` 和 `update-desktop-database`，包管理器和 Flatpak 会自动完成这一步）；Web 写在 manifest 的 `file_handlers` 中（仅限 Chromium 里已安装的应用）。
+  `extensions` 是必填项；`name` 默认是第一个扩展名的大写形式加上 "Document"。对于 Asuka 认识的扩展名（md、txt、json、csv、pdf、png、jpg……），`mimeTypes` 和 `uti` 默认采用系统对它的叫法；其他扩展名则视为应用自有的类型：`application/x-<app>-<ext>` 和 `<id>.<ext>`，在 Mac 和 iOS 上会被导出（exported），在 Linux 上会为 shared-mime-info 定义，并且应用会成为这类文件的默认打开方式。`conformsTo` 是导出或导入的类型所遵循的 UTI（默认 `public.data`、`public.content`）；`role` 取 `editor`（默认）或 `viewer`；`icon` 是一张正方形 PNG，在 Mac、Windows 和 Linux 上用作这类文件的图标。各平台的声明方式如下：Mac 和 iOS 写在 Info.plist 中（`CFBundleDocumentTypes`，iOS 上支持原地打开文档）；Android 声明为 intent filter；Windows 在应用启动时为当前用户注册（每种类型一个 ProgID，扩展名的 `OpenWithProgids`，图标打包在 `.exe` 中）；Linux 写在 desktop 文件的 `MimeType` 和 `share/mime/packages/<id>.xml` 中（解压 `.tar.gz` 后需要运行 `update-mime-database` 和 `update-desktop-database`；`.deb`、`.rpm` 和 Flatpak 会自动完成这一步）；Web 写在 manifest 的 `file_handlers` 中（仅限 Chromium 里已安装的应用）。
 - `singleInstance` 默认为 `true`：在 Windows 和 Linux 上，设置了 `id` 的应用只会运行一个实例。再次启动时，新进程会把参数交给正在运行的实例（由 `onSecondInstance` 接收，其中的文件交给 `onOpenFiles`），然后自行退出。设为 `false` 则每启动一次就运行一个新实例。Mac 上则无论如何都只运行一个实例。
 
 按平台划分的键：
 
 - `ios.*` 用于 iOS 构建（见 [iOS](#ios)）；`ios.team` 同时也是 Mac 构建所用的团队，`ios.usage` 里的用途说明也会写进 Mac 的 Info.plist。
 - `android.*` 用于 Android 构建（见 [Android](#android)）。
-- `mac.profile` 是 Mac 构建的描述文件（provisioning profile），`mac.appStoreProfile` 是 Mac App Store 构建的描述文件，详见 [macOS](#macos)。
-- `linux.*` 决定 Linux 构建的 desktop 文件和 AppStream metainfo 的内容，详见 [Linux](#linux)。
+- `mac.profile` 是 Mac 构建的描述文件（provisioning profile），`mac.appStoreProfile` 是 Mac App Store 构建的描述文件；`mac.packages` 决定用哪些形式分发，详见 [macOS](#macos)。
+- `linux.*` 决定 Linux 构建的 desktop 文件、AppStream metainfo 和软件包的内容，以及生成哪些软件包，详见 [Linux](#linux)。
 - `web.vapidPublicKey` 是应用服务器的 VAPID 公钥，供 Web 上的 `platform/push` 使用（即 Web Push，见 [Web](web.md#platformpushweb-push)）。
 - Windows 构建只需要上面那些通用的键；它的签名证书通过环境变量提供（见 [Windows](#windows)）。
 
@@ -175,6 +175,13 @@ asuka build --platform mac
 
 这条命令在 Mac 上生成 `dist/darwin-arm64/<Name>.app`：一个面向 Apple 芯片 Mac 的应用，要求 macOS 11 及以上；旁边还有 `<name>-<version>-darwin-arm64.zip`，即用于分发的应用（按 Apple 工具的方式压缩，保留签名和公证）。加上 `--arch amd64` 则在 `dist/darwin-amd64` 中生成面向 Intel Mac 的版本，这是单独的一次构建（不会合成一个同时支持两者、体积翻倍的通用应用）。每次构建的文件名都各不相同，因此可以并排放进同一个 Release。应用里有它的可执行文件、应用的设置（`Contents/Resources/asuka-app.json`）、Info.plist、图标、语言和资源，采用临时签名（ad hoc），可以在你自己的 Mac 上运行。和 iOS 一样，应用导入的包会从 `ios.usage` 中带上它们的用途说明（定位的用途说明在 Mac 上是 `NSLocationUsageDescription`，取自 `NSLocationWhenInUseUsageDescription`），以及强化运行时（hardened runtime）所需的对应 entitlement（`com.apple.security.device.camera`、`...audio-input`、`...personal-information.location` 等）。缺少这些 entitlement，用 Developer ID 签名的应用就无法访问相机、麦克风或用户数据。应用的原生包的 Swift 会针对这次构建的架构编译进可执行文件（见[原生代码](native.md)）。使用了 `std/sqlite` 的应用，SQLite 也会编译进可执行文件（见[库文件](data.md#库文件)）。
 
+`.zip` 旁边还有 `<name>-<version>-darwin-arm64.dmg`，即应用的磁盘映像，这也是 Mac 应用最常见的下载形式：打开后是一个窗口，应用和“应用程序”文件夹并排摆着，把前者拖到后者上即可安装；映像的图标就是应用的图标。它经过压缩（LZFSE），和应用用同一个身份签名；加上 `--notarize` 时，它也会被公证并装订票据。直接在磁盘映像里运行的应用无法自我更新（`update.unsupported()` 返回 `.translocated`），拖到“应用程序”文件夹之后就可以了。`--package dmg` 只生成磁盘映像，`--package zip` 只生成 `.zip`；`asuka.toml` 的 `mac.packages` 对每次构建都起同样的作用：
+
+```toml
+[mac]
+packages = ["dmg"]   # 默认是 "zip" 和 "dmg"
+```
+
 要在 Mac App Store 之外分发给别人，需要用你的 Developer ID 签名，再交给 Apple 公证，这样 Gatekeeper 才会放行：
 
 ```sh
@@ -182,7 +189,7 @@ xcrun notarytool store-credentials asuka   # 只需一次：填入你的 Apple I
 asuka build --platform mac --sign "Developer ID Application: Your Name (TEAMID)" --notarize asuka
 ```
 
-`--notarize` 会把签好名的应用发给 Apple 的公证服务并等待结果（通常几分钟）。如果被拒，它会打印公证服务返回的日志；通过后，它会把公证票据装订（staple）到应用上，这样离线时也能打开。在 CI 中，`--notarize env` 会从环境变量中读取 `ASUKA_APPLE_ID`、`ASUKA_APPLE_PASSWORD`（App 专用密码）和 `ASUKA_TEAM_ID`，而不是使用钥匙串中保存的配置。
+`--notarize` 会把签好名的应用发给 Apple 的公证服务并等待结果（通常几分钟）。如果被拒，它会打印公证服务返回的日志；通过后，它会把公证票据装订（staple）到应用上，这样离线时也能打开；接着对用同一身份签名的磁盘映像做同样的处理。在 CI 中，`--notarize env` 会从环境变量中读取 `ASUKA_APPLE_ID`、`ASUKA_APPLE_PASSWORD`（App 专用密码）和 `ASUKA_TEAM_ID`，而不是使用钥匙串中保存的配置。
 
 推送（`platform/push`）、通过 Apple 登录（`platform/appleauth`）、App Attest（`platform/integrity`）和 iCloud（`platform/icloud`）所需的 entitlement 只有描述文件才能授予。在 developer.apple.com 的 Profiles 中，为应用的 ID 创建一个 macOS Developer ID 描述文件（该 ID 需要开启上述能力），然后下载下来：
 
@@ -236,6 +243,14 @@ Linux 构建可以在任何系统上完成，构建时不需要安装 GTK（应�
   ```
 
 - `my-notes-<version>-linux-<arch>.tar.gz`：上面那个文件夹的压缩包，用于分发。
+- `my-notes-<version>-linux-<arch>.deb`（用于 Debian 和 Ubuntu）和 `my-notes-<version>-linux-<arch>.rpm`（用于 Fedora）：把上面那个文件夹像系统自带的应用一样装到 `/usr` 下。包管理器会一并装上应用需要的发行版组件：GTK 4.14、libadwaita 1.5、libsoup、可执行文件构建时所针对的 glibc，以及应用的包要打开的库（`WebView` 用的 WebKitGTK、`platform/pdf` 用的 Poppler、音视频用的 GStreamer 等）。desktop 文件、图标和 MIME 类型的桌面缓存由系统自己的触发器（trigger）刷新。预发布版本排在正式版本之前（`1.3.0-beta.1` 会写成 `1.3.0~beta.1`）：
+
+  ```sh
+  sudo apt install ./my-notes-1.0-linux-amd64.deb
+  sudo dnf install ./my-notes-1.0-linux-amd64.rpm
+  ```
+
+- `my-notes-<version>-linux-<arch>.AppImage`：单个文件形式的应用，下载后直接运行即可，要求发行版自带 GTK 4.14 和 libadwaita 1.5（AppImage 里不包含它们）；desktop 文件和图标放在 AppImage 工具和启动器能找到的位置。在没有 FUSE 的环境（比如容器）里，可以加上 `--appimage-extract-and-run` 运行。它用 [AppImage 运行时](https://github.com/AppImage/type2-runtime)制作，运行时只下载一次，放进构建缓存并校验；要离线构建，把 `ASUKA_APPIMAGE_RUNTIME` 设为你自己的 `runtime-x86_64` 或 `runtime-aarch64` 即可。
 - `<id>.yml`：一份 [Flatpak](https://flatpak.org) 清单，基于 GNOME 运行时打包上面那个文件夹（其中的 `bin` 和 `share`）：
 
   ```sh
@@ -246,7 +261,11 @@ Linux 构建可以在任何系统上完成，构建时不需要安装 GTK（应�
 
 运行应用的机器需要 GTK 4.14 和 libadwaita 1.5 或更高版本（GNOME 运行时 46 及以上都满足）。应用的 ID 就是它的 application ID：desktop 文件、图标、D-Bus 名称（再次启动时会显示第一个实例的窗口）以及数据目录（`~/.local/share/<id>`）都以它命名。ID 只能包含字母、数字、`_` 和 `-`，至少要有两段，并且每一段都不能以数字开头。
 
-desktop 文件和 metainfo 的内容在 `asuka.toml` 中设置：
+`--package deb,appimage` 只生成其中几种，可选 `tar.gz`、`deb`、`rpm`、`appimage` 和 `flatpak`（清单）；`asuka.toml` 的 `linux.packages` 对每次构建都起同样的作用。配置了[自动更新](#自动更新)的构建无论如何都会写出更新包，也就是那个 `.tar.gz`。这些格式都由 `asuka build` 自己写出，在任何系统上都可以，不需要 `dpkg`、`rpmbuild` 或 `mksquashfs`。
+
+通过 `.deb`、`.rpm`、Flatpak 或 AppImage 安装的应用由它们负责更新，应用不会自我更新（`update.unsupported()` 返回 `.managed`）；能自我更新的是解压到用户自己前缀下的 `.tar.gz`。
+
+desktop 文件、metainfo 和软件包的内容在 `asuka.toml` 中设置：
 
 ```toml
 [linux]
@@ -261,9 +280,13 @@ license = "MIT"
 developer = "Example Inc."
 homepage = "https://example.com"
 flatpakRuntime = "50"
+packages = ["tar.gz", "deb", "rpm", "appimage", "flatpak"]   # 默认全部生成
+maintainer = "Example Inc. <dev@example.com>"
+debDepends = ["libfoo1 (>= 1.2)"]
+rpmRequires = ["foo >= 1.2"]
 ```
 
-`categories` 取自 [freedesktop.org 的分类表](https://specifications.freedesktop.org/menu-spec/latest/category-registry.html)（默认 `Utility`）；`license` 是一个 SPDX 表达式。Flathub 和软件中心都要求提供简介（summary）、描述、许可证和开发者。
+`categories` 取自 [freedesktop.org 的分类表](https://specifications.freedesktop.org/menu-spec/latest/category-registry.html)（默认 `Utility`；`.deb` 的 section 也据此确定）；`license` 是一个 SPDX 表达式。Flathub 和软件中心都要求提供简介（summary）、描述、许可证和开发者。`maintainer` 是 `.deb` 和 `.rpm` 中写明的维护者（默认取 `developer`）；`debDepends` 和 `rpmRequires` 是它们额外依赖的软件包，按各自的语法书写（`.deb` 里 `a | b` 表示二者任一，`.rpm` 里写作 `(a or b)`）。
 
 ## Web
 
@@ -365,7 +388,7 @@ component UpdateBanner {
 }
 ```
 
-`await update.unsupported()` 会告诉你应用为什么不能自我更新；能更新时返回 none。不能更新的情况有：开发构建，或者没有配置 `updates` 的构建（`.notConfigured`）；由系统包管理器、Flatpak、Snap、Mac App Store 或 Microsoft Store 安装的应用（`.managed`：由它们负责更新）；直接在下载位置运行、被 macOS 做了路径随机化（translocation）的 Mac 应用（`.translocated`：需要用户把它移到“应用程序”文件夹）；所在文件夹用户没有写权限（`.notWritable`）；在手机上（`.notAvailable`）。遇到这些情况，窗口不会在后台检查，用户手动检查时则会说明原因。
+`await update.unsupported()` 会告诉你应用为什么不能自我更新；能更新时返回 none。不能更新的情况有：开发构建，或者没有配置 `updates` 的构建（`.notConfigured`）；由系统包管理器（`.deb`、`.rpm`）、Flatpak、Snap、AppImage、Mac App Store 或 Microsoft Store 安装的应用（`.managed`：由它们负责更新）；直接在磁盘映像里运行，或在下载位置运行、被 macOS 做了路径随机化（translocation）的 Mac 应用（`.translocated`：需要用户把它移到“应用程序”文件夹）；所在文件夹用户没有写权限（`.notWritable`）；在手机上（`.notAvailable`）。遇到这些情况，窗口不会在后台检查，用户手动检查时则会说明原因。
 
 `update.setChannel("beta")` 让应用也接收某个渠道的预发布版本，适合那些选择加入 beta 的用户。一个版本属于哪个渠道，取决于其预发布标识中的字母部分（`1.4.0-beta.2` 属于 `beta`）；`"*"` 表示接收所有预发布版本。正式版本在每个渠道都会推送。`update.setFeed(url)` 让应用读取 `asuka.toml` 之外的另一个更新源（比如按用户账号选定的）：可以是清单的 URL、GitHub Releases，或者带有 `{target}`、`{version}` 和 `{channel}` 的服务器 URL；签名验证照常进行。`update.compareVersions(a, b)` 按更新器的规则比较两个版本。
 
@@ -383,7 +406,7 @@ component UpdateBanner {
 
 没有私钥时，构建只生成应用本身，不写任何更新文件，并会提示这一点。`--version 1.2.0` 可以构建与 `asuka.toml` 中不同的版本（CI 会从标签中取版本号）。Windows 的文件夹和 Linux 的前缀中还会多出一个 `.asuka-files`，列出这个版本安装了哪些文件。这样下次更新时，就能删掉新版本中已不再需要的文件，同时不会碰你自己放进去的任何文件。
 
-`asuka publish` 会构建并上传这些文件，清单最后上传，确保应用读到清单时，清单里引用的文件都已经就位：
+`asuka publish` 会构建并上传这些文件，连同这次构建用于分发的安装包（Mac 的 `.zip` 和 `.dmg`；Linux 的 `.deb`、`.rpm` 和 AppImage，它的 `.tar.gz` 本身就是更新包）。清单最后上传，确保应用读到清单时，清单里引用的文件都已经就位：
 
 ```sh
 asuka publish --platform mac --sign "Developer ID Application: …" --notarize asuka
@@ -504,8 +527,8 @@ sentry-cli upload-proguard --org ORG --project PROJECT dist/Notes-mapping.txt
 正式发布之前，请先在用户实际使用的环境里运行一遍发布构建：
 
 - 在手机上：iOS 用 `--distribution development` 构建；Android 用 Play 内部测试轨道上的构建（`asuka publish --platform android --track internal`），这样安装的就是 Play 根据 `.aab` 生成的 APK。TestFlight 和 Play 内部测试还能发现模拟器上发现不了的问题。
-- 在 Mac 上：在另一台 Mac 上下载签名并公证过的 `.app` 来运行（Gatekeeper 检查的正是下载来的文件）；`spctl --assess --type execute -vv Notes.app` 可以告诉你 Gatekeeper 会如何判定它。
-- 在 Windows 和 Linux 上：在一台从未装过这个应用的机器上运行文件夹，或者 `.tar.gz`、Flatpak（Linux 需要 GTK 4.14 和 libadwaita 1.5 或更高版本）。
+- 在 Mac 上：在另一台 Mac 上下载签名并公证过的 `.dmg`，把应用拖到“应用程序”文件夹后运行（Gatekeeper 检查的正是下载来的文件）；`spctl --assess --type execute -vv Notes.app` 可以告诉你 Gatekeeper 会如何判定它。
+- 在 Windows 和 Linux 上：在一台从未装过这个应用的机器上运行文件夹，Linux 上则是 `.deb`、`.rpm`、AppImage、`.tar.gz` 或 Flatpak（Linux 需要 GTK 4.14 和 libadwaita 1.5 或更高版本）。
 - 在 Web 上：通过 HTTPS 提供构建好的网站，并在你支持的每个浏览器中测试。
 
 ## 在 CI 中
@@ -666,7 +689,7 @@ CLI 用它自带的那个版本的 Asuka 构建应用，所以安装的 CLI 版�
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip --clobber
+        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip dist/*/*.dmg --clobber
 
   windows-linux:
     needs: release
@@ -699,7 +722,7 @@ CLI 用它自带的那个版本的 Asuka 构建应用，所以安装的 CLI 版�
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip dist/*/*.tar.gz --clobber
+        run: gh release upload "$GITHUB_REF_NAME" dist/*/*.zip dist/*/*.tar.gz dist/*/*.deb dist/*/*.rpm dist/*/*.AppImage --clobber
 ```
 
 它们需要的 secrets：`MAC_CERTIFICATE` 是你的 Developer ID Application 证书及其私钥（一个 `.p12`），`MAC_CERTIFICATE_PASSWORD` 是它的密码；`APPLE_ID`、`APPLE_APP_PASSWORD`（App 专用密码，在 account.apple.com 生成）和 `APPLE_TEAM_ID` 供公证服务使用；`WINDOWS_CERTIFICATE` 是代码签名证书（一个 `.pfx`），`WINDOWS_CERTIFICATE_PASSWORD` 是它的密码。每次构建都把文件放在自己的目录里（`dist/darwin-arm64`、`dist/windows-amd64`、`dist/linux-arm64`），文件名包含应用名、版本、平台和架构，所以 Release 可以把它们全部并排收下；每次 Linux 构建的 Flatpak 清单打包的都是它自己的那一份。

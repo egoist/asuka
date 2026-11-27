@@ -4,3 +4,9 @@ description = "Text read aloud with the platform's voices"
 
 [windows]
 libraries = ["ole32", "advapi32"]
+
+# Speech Dispatcher, the desktop's voices: what a .deb or an .rpm of the
+# app does better with.
+[linux]
+debRecommends = ["speech-dispatcher"]
+rpmRecommends = ["speech-dispatcher"]

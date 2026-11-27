@@ -1,3 +1,8 @@
 name = "platform/js"
 version = "0.1.0"
 description = "JavaScript run off screen, in the platform's own engine"
+
+# JavaScriptCore, which it opens: what a .deb or an .rpm of the app depends on.
+[linux]
+deb = ["libjavascriptcoregtk-6.0-1"]
+rpm = ["javascriptcoregtk6.0"]

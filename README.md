@@ -50,7 +50,8 @@ app { Counter() }
   or Linux machine.
 - **`asuka build`**: the app compiled to C and built with the core: a
   signed `.ipa` for the App Store, an `.aab` for Google Play, a Mac
-  `.app` (Apple silicon, or Intel), a Windows folder, a Linux prefix with a `.tar.gz` and a
+  `.app` (Apple silicon, or Intel) with its `.dmg`, a Windows folder, a
+  Linux prefix as a `.deb`, an `.rpm`, an AppImage, a `.tar.gz` and a
   Flatpak manifest, and a static site with the core as WebAssembly;
   **`asuka publish`** uploads them, numbered after the store's last
   build, to TestFlight (its groups, App Review) or a Play track.

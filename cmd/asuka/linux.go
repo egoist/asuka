@@ -41,7 +41,9 @@ import (
 // its plugins' libraries in lib/<exe>, where the core finds them
 // likewise; the desktop file, icons and AppStream metainfo named
 // for the app's ID, as desktops and software centers look them up; a
-// .tar.gz of it, to unpack into ~/.local or /usr/local; and a Flatpak
+// .tar.gz of it, to unpack into ~/.local or /usr/local; a .deb and an
+// .rpm that install it under /usr, depending on the distribution's GTK;
+// an AppImage of it (packages.go: each written in Go); and a Flatpak
 // manifest that packages it, for flatpak-builder.
 
 // flatpakRuntime is the GNOME runtime the Flatpak manifest asks for
@@ -129,6 +131,10 @@ func buildLinux(app *asukaApp, o *buildOptions) error {
 	if !gAppIDValid(app.bundleID) {
 		return fmt.Errorf("asuka.toml: id %q isn't a valid application ID on Linux: letters, digits, _ and -, in two parts or more, none starting with a digit (com.example.notes)", app.bundleID)
 	}
+	pkgs, err := packagesFor(o, app.cfg.Linux.Packages, linuxPackages, "linux")
+	if err != nil {
+		return err
+	}
 	exe := linuxExe(app)
 	base := desktopDir(o, "linux", arch)
 	out := filepath.Join(base, exe)
@@ -164,9 +170,18 @@ func buildLinux(app *asukaApp, o *buildOptions) error {
 			return err
 		}
 	}
+	// What a build before made that this one doesn't goes.
+	manifest := filepath.Join(base, app.bundleID+".yml")
+	removeUnmade(app, o, "linux", arch, map[string]string{pkgTarGz: ".tar.gz", pkgDeb: ".deb", pkgRPM: ".rpm", pkgAppImage: ".AppImage"}, pkgs)
+	if !pkgs[pkgFlatpak] {
+		os.Remove(manifest)
+	}
+	fmt.Printf("asuka: %s (linux/%s; it needs GTK 4.14 and libadwaita 1.5 or later)\n", filepath.Join(out, "bin", exe), arch)
 	tgz := releaseFile(app, o, "linux", arch, ".tar.gz")
-	if err := tarGz(out, tgz); err != nil {
-		return err
+	if pkgs[pkgTarGz] || u != nil || o.publishing {
+		if err := tarGz(out, tgz); err != nil {
+			return err
+		}
 	}
 	if u != nil || o.publishing {
 		// The tarball is the update's archive.
@@ -175,16 +190,34 @@ func buildLinux(app *asukaApp, o *buildOptions) error {
 			return err
 		}
 	}
-	manifest := filepath.Join(base, app.bundleID+".yml")
-	if err := os.WriteFile(manifest, []byte(flatpakManifest(app, exe)), 0o644); err != nil {
+	if pkgs[pkgTarGz] {
+		fmt.Printf("asuka: %s, to install: tar -xzf %s --strip-components=1 -C ~/.local\n", tgz, filepath.Base(tgz))
+		if mimePackage(app.cfg.fileTypes()) != "" {
+			fmt.Println("asuka: then update-mime-database ~/.local/share/mime and update-desktop-database ~/.local/share/applications, for its file types (a package manager and Flatpak do it themselves)")
+		}
+	} else {
+		os.Remove(tgz) // only the update's
+	}
+	made, err := writeLinuxPackages(app, o, pkgs, out, exe, arch)
+	if err != nil {
 		return err
 	}
-	fmt.Printf("asuka: %s (linux/%s; it needs GTK 4.14 and libadwaita 1.5 or later)\n", filepath.Join(out, "bin", exe), arch)
-	fmt.Printf("asuka: %s, to install: tar -xzf %s --strip-components=1 -C ~/.local\n", tgz, filepath.Base(tgz))
-	if mimePackage(app.cfg.fileTypes()) != "" {
-		fmt.Println("asuka: then update-mime-database ~/.local/share/mime and update-desktop-database ~/.local/share/applications, for its file types (a package manager and Flatpak do it themselves)")
+	for _, f := range made {
+		switch filepath.Ext(f) {
+		case ".deb":
+			fmt.Printf("asuka: %s, for Debian and Ubuntu: sudo apt install ./%s\n", f, filepath.Base(f))
+		case ".rpm":
+			fmt.Printf("asuka: %s, for Fedora: sudo dnf install ./%s\n", f, filepath.Base(f))
+		case ".AppImage":
+			fmt.Printf("asuka: %s, an AppImage: run it\n", f)
+		}
 	}
-	fmt.Printf("asuka: %s, a Flatpak: flatpak-builder --user --install --force-clean build %s\n", manifest, filepath.Base(manifest))
+	if pkgs[pkgFlatpak] {
+		if err := os.WriteFile(manifest, []byte(flatpakManifest(app, exe)), 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("asuka: %s, a Flatpak: flatpak-builder --user --install --force-clean build %s\n", manifest, filepath.Base(manifest))
+	}
 	l := app.cfg.Linux
 	if l.Summary == "" || l.Description == "" || l.License == "" || l.Developer == "" {
 		fmt.Println("asuka: software centers and Flathub want linux.summary, description, license and developer in asuka.toml (the AppStream metainfo's)")

@@ -34,8 +34,9 @@ import (
 // Info.plist, icon and assets, signed (ad hoc unless --sign names an
 // identity), with its provisioning profile
 // (Contents/embedded.provisionprofile) and the entitlements the app's
-// packages need of it (mac_profile.go); with --appstore, sandboxed, in a
-// .pkg for the Mac App Store.
+// packages need of it (mac_profile.go), handed out as a .zip and a .dmg
+// (mac_dmg.go); with --appstore, sandboxed, in a .pkg for the Mac App
+// Store.
 
 const macMin = "11.0"
 
@@ -355,14 +356,34 @@ func buildMac(app *asukaApp, o *buildOptions) error {
 	}
 	fmt.Printf("asuka: %s\n", bundle)
 	if !o.appStore {
-		// The app to hand out: zipped as Apple's tools do (its signature
-		// and stapled ticket kept), named for its version and Macs.
-		zip := releaseFile(app, o, "darwin", arch, ".zip")
-		os.Remove(zip)
-		if err := run(dir, nil, "ditto", "-c", "-k", "--keepParent", bundle, zip); err != nil {
+		pkgs, err := packagesFor(o, app.cfg.Mac.Packages, macPackages, "mac")
+		if err != nil {
 			return err
 		}
-		fmt.Printf("asuka: %s\n", zip)
+		removeUnmade(app, o, "darwin", arch, map[string]string{pkgZip: ".zip", pkgDMG: ".dmg"}, pkgs)
+		if pkgs[pkgZip] {
+			// The app to hand out: zipped as Apple's tools do (its
+			// signature and stapled ticket kept), named for its version
+			// and Macs.
+			zip := releaseFile(app, o, "darwin", arch, ".zip")
+			os.Remove(zip)
+			if err := run(dir, nil, "ditto", "-c", "-k", "--keepParent", bundle, zip); err != nil {
+				return err
+			}
+			fmt.Printf("asuka: %s\n", zip)
+		}
+		if pkgs[pkgDMG] {
+			dmg := releaseFile(app, o, "darwin", arch, ".dmg")
+			if err := macDMG(app, bundle, dmg, identity, work, run); err != nil {
+				return err
+			}
+			if o.notarize != "" {
+				if err := notarize(work, dmg, o.notarize, o.verbose); err != nil {
+					return err
+				}
+			}
+			fmt.Printf("asuka: %s, a disk image: the app and the Applications folder, to drag it to\n", dmg)
+		}
 	}
 	if !o.appStore {
 		// The update files, of the app as notarized and stapled.
@@ -461,23 +482,28 @@ func macPackage(app *asukaApp, bundle string, prof *macProfile, identity, pkg st
 	return pkg, nil
 }
 
-// notarize sends the signed app to Apple's notary service, waits for its
-// verdict, and staples the ticket to the app, so Gatekeeper opens it
-// offline too. profile is notarytool's keychain profile, or "env" for an
-// Apple ID's app-specific password from the environment (CI).
+// notarize sends the signed app (a bundle, or a disk image of it) to
+// Apple's notary service, waits for its verdict, and staples the ticket
+// to it, so Gatekeeper opens it offline too. profile is notarytool's
+// keychain profile, or "env" for an Apple ID's app-specific password from
+// the environment (CI).
 func notarize(work, bundle, profile string, verbose bool) error {
-	zip := filepath.Join(work, "notarize.zip")
-	os.Remove(zip)
-	if out, err := exec.Command("ditto", "-c", "-k", "--keepParent", bundle, zip).CombinedOutput(); err != nil {
-		return fmt.Errorf("ditto failed: %v\n%s", err, out)
+	submit := bundle
+	if filepath.Ext(bundle) == ".app" {
+		// A bundle goes zipped; a disk image as it is.
+		submit = filepath.Join(work, "notarize.zip")
+		os.Remove(submit)
+		if out, err := exec.Command("ditto", "-c", "-k", "--keepParent", bundle, submit).CombinedOutput(); err != nil {
+			return fmt.Errorf("ditto failed: %v\n%s", err, out)
+		}
+		defer os.Remove(submit)
 	}
-	defer os.Remove(zip)
 	creds, err := notaryCredentials(profile, os.Getenv)
 	if err != nil {
 		return err
 	}
-	fmt.Println("asuka: notarizing (Apple's notary service; usually a few minutes)...")
-	args := append([]string{"notarytool", "submit", zip, "--wait", "--output-format", "json"}, creds...)
+	fmt.Printf("asuka: notarizing %s (Apple's notary service; usually a few minutes)...\n", filepath.Base(bundle))
+	args := append([]string{"notarytool", "submit", submit, "--wait", "--output-format", "json"}, creds...)
 	if verbose {
 		fmt.Println("+ xcrun", strings.Join(redacted(args), " "))
 	}

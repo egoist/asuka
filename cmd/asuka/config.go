@@ -126,6 +126,9 @@ type appConfig struct {
 		// for --appstore.
 		Profile         string `json:"profile"`
 		AppStoreProfile string `json:"appStoreProfile"`
+		// Packages are what a build hands the app out in: "zip" and "dmg"
+		// (default both; --package overrides it).
+		Packages []string `json:"packages"`
 	} `json:"mac"`
 	// Accent is the app's accent color, "#rrggbb" or "#rrggbbaa": the
 	// tint color on iOS; on Android, the seed of the Material 3 color
@@ -279,6 +282,11 @@ type appConfig struct {
 	// flatpakModules are the modules the Flatpak builds before the app
 	// (the packages' manifests' linux.flatpakModules), each in YAML.
 	flatpakModules []string
+	// debDepends, debRecommends, rpmRequires and rpmRecommends are the
+	// system packages the .deb and the .rpm depend on for the app's
+	// packages (their manifests' linux.deb, linux.debRecommends,
+	// linux.rpm and linux.rpmRecommends).
+	debDepends, debRecommends, rpmRequires, rpmRecommends []string
 	// What the app's native packages' Swift needs (their Info.plist and
 	// entitlements, nativeNeeds): Info.plist's keys, and what each of
 	// their entitlements is for.
@@ -312,6 +320,19 @@ type appConfig struct {
 		// FlatpakRuntime is the GNOME runtime's version the Flatpak manifest
 		// asks for (default: a recent one; 46 or later).
 		FlatpakRuntime string `json:"flatpakRuntime"`
+		// Packages are what a build hands the app out in: "tar.gz",
+		// "deb", "rpm", "appimage" and "flatpak" (the manifest); default
+		// all of them (--package overrides it).
+		Packages []string `json:"packages"`
+		// Maintainer is who the .deb and .rpm say maintains them, "Name
+		// <email>" (default: Developer).
+		Maintainer string `json:"maintainer"`
+		// DebDepends and RPMRequires are more packages the .deb and the
+		// .rpm depend on, in each one's syntax ("libfoo1 (>= 1.2)", "a |
+		// b"; "foo >= 1.2", "(a or b)"), beyond GTK's, libadwaita's and
+		// what the app's packages need.
+		DebDepends  []string `json:"debDepends"`
+		RPMRequires []string `json:"rpmRequires"`
 	} `json:"linux"`
 	// Bluetooth is what an app of platform/bluetooth asks of the
 	// platforms beyond what importing the package gives (docs/bluetooth.md).

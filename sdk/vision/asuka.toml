@@ -1,3 +1,11 @@
 name = "platform/vision"
 version = "0.1.0"
 description = "Text, faces and codes found in an image, on the device"
+
+# Tesseract, which it opens, and its English data: what a .deb or an .rpm
+# of the app depends on.
+[linux]
+deb = ["libtesseract5 | libtesseract4"]
+debRecommends = ["tesseract-ocr-eng"]
+rpm = ["tesseract-libs"]
+rpmRecommends = ["tesseract-langpack-eng"]

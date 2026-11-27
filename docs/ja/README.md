@@ -78,7 +78,7 @@ Asuka は、アプリのコンポーネントと状態、レイアウト（CSS �
 - [ネイティブコード](native.md)：ネイティブパッケージ。Asuka で宣言し、各プラットフォームのプロジェクトで実装する型付きのモジュールとビュー（iOS と macOS は Swift、Android は Kotlin、Web は JavaScript、Windows と Linux は C）
 - [開発](development.md)：各プラットフォームでの `asuka dev` の詳細、デバイス、エディター、よくある問題
 - [テスト](testing.md)：デバイスもディスプレイも使わない、`test` ブロックでのアプリの UI のテスト。タップや入力と画面の表示内容の確認、アプリが待つときにだけ進む時間
-- [配布](shipping.md)：App Store と Google Play 向けのビルド、署名・公証済みの Mac アプリ、Windows 向けのフォルダー、Linux のアーカイブと Flatpak マニフェスト、デスクトップアプリの署名付きアップデート、`asuka.toml` に記述するアプリの情報
+- [配布](shipping.md)：App Store と Google Play 向けのビルド、署名・公証済みの Mac アプリとそのディスクイメージ、Windows 向けのフォルダー、Linux の `.deb`、`.rpm`、AppImage、アーカイブ、Flatpak マニフェスト、デスクトップアプリの署名付きアップデート、`asuka.toml` に記述するアプリの情報
 - [Web](web.md)：同じアプリを WebAssembly とページの DOM でブラウザーで動かす仕組み、`asuka dev --platform web`、デプロイできる静的サイト、ほかのページへの埋め込み、まだできないこと
 
 ## リファレンス

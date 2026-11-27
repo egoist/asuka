@@ -14,6 +14,8 @@ Mac では、アプリは iOS アプリと同じく `Name.app` の中の 1 つ�
 | Windows（フォルダー） | `Name.exe` | `asuka-app.json`（その隣） |
 | Linux（インストールプレフィックス） | `bin/<exe>` | `share/<exe>/asuka-app.json` |
 
+`asuka build` は、それぞれをユーザーがインストールする形で配布用にまとめます。Mac ではアプリを `.dmg` と `.zip` に、Windows ではフォルダーを `.zip` に、Linux ではプレフィックスを `.deb`、`.rpm`、AppImage、`.tar.gz`、Flatpak マニフェストにします（[配布](shipping.md)を参照）。
+
 `asuka dev` では、代わりに開発用アプリの中でアプリを動かし、保存のたびにその変更を読み込みます（[開発](development.md#デスクトップでの実行)を参照）。
 
 ## トレイアイコンと Dock メニュー
@@ -372,7 +374,7 @@ app {
 }
 ```
 
-鍵ペアは `asuka update keygen` で作ります。リリースの公開先（GitHub のリリース、S3 バケットや任意の HTTPS ディレクトリ、または自前のサーバー）は `asuka.toml` の `updates` で指定し、`asuka publish --platform mac`（`windows`、`linux`）でビルド、署名、アップロードを行います（[配布](shipping.md#自動アップデート)）。ダウンロードとアップデートの配置はアプリ自身が行います。Mac アプリの新しいバンドルは、アプリが終了するのを待ってから置き換わります。Windows と Linux では、実行中にアプリのファイルを置き換えます。システムのパッケージ、Flatpak、Snap、アプリストアからインストールされたアプリは、それらによって更新されます。そのことは `await update.unsupported()` でわかり、スマートフォンでは `.notAvailable` が返ります。Web では、サイトより古いページがリロードを促します。
+鍵ペアは `asuka update keygen` で作ります。リリースの公開先（GitHub のリリース、S3 バケットや任意の HTTPS ディレクトリ、または自前のサーバー）は `asuka.toml` の `updates` で指定し、`asuka publish --platform mac`（`windows`、`linux`）でビルド、署名、アップロードを行います（[配布](shipping.md#自動アップデート)）。ダウンロードとアップデートの配置はアプリ自身が行います。Mac アプリの新しいバンドルは、アプリが終了するのを待ってから置き換わります。Windows と Linux では、実行中にアプリのファイルを置き換えます。システムのパッケージ（`.deb`、`.rpm`）、Flatpak、Snap、AppImage、アプリストアからインストールされたアプリは、それらによって更新されます。そのことは `await update.unsupported()` でわかり、スマートフォンでは `.notAvailable` が返ります。Web では、サイトより古いページがリロードを促します。
 
 ## 最近使ったドキュメント
 

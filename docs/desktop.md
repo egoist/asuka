@@ -36,6 +36,11 @@ version, accent, URL scheme, file types, updates):
 | Windows (a folder) | `Name.exe` | `asuka-app.json`, beside it |
 | Linux (a prefix) | `bin/<exe>` | `share/<exe>/asuka-app.json` |
 
+`asuka build` hands each one out as users install it: the Mac's app in
+a `.dmg` and a `.zip`; Windows' folder in a `.zip`; Linux's prefix as a
+`.deb`, an `.rpm`, an AppImage, a `.tar.gz` and a Flatpak manifest (see
+[Shipping](shipping.md)).
+
 `asuka dev` runs the app in a player instead, which takes each save as
 you make it (see [Development](development.md#on-the-desktop)).
 
@@ -574,7 +579,8 @@ directory, or a server of yours), and `asuka publish --platform mac`
 ([Shipping](shipping.md#updates)). The app downloads and puts the
 update in place: a Mac app's new bundle waits for it to quit; Windows and
 Linux replace the app's files while it runs. An app that the system's
-packages, Flatpak, Snap or an app store installed is updated by them:
+packages (a `.deb`, an `.rpm`), Flatpak, Snap, an AppImage or an app
+store installed is updated by them:
 `await update.unsupported()` says so, and phones answer `.notAvailable`.
 On the web, a page older than the site offers to reload.
 

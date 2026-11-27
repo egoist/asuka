@@ -37,3 +37,7 @@ sources:
     url: https://poppler.freedesktop.org/poppler-26.11.0.tar.xz
     sha256: 41c32680160addf5a8dd7a830e4869c01e9f6bee1abb91e44fabd1ba9d7828fb
 ''']
+# Poppler, which it opens: what a .deb or an .rpm of the app depends on
+# (Debian 13 and Ubuntu 24.04 name it for 64-bit time).
+deb = ["libpoppler-glib8t64 | libpoppler-glib8"]
+rpm = ["poppler-glib"]

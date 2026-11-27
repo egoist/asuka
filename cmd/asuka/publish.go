@@ -44,11 +44,12 @@ func publishFlags(o *publishOptions) *flagSet {
 	fs := newFlagSet("publish", "[dir]")
 	fs.about = "Makes a release build of the app and uploads it to App Store Connect or Google Play; a desktop app's, with its update, to asuka.toml's updates (GitHub's releases, an S3 bucket)."
 	platformFlag(fs, &o.platform, []string{platformIOS, platformTVOS, platformAndroid, platformMac, platformWindows, platformLinux},
-		"the `platform` whose store to upload to: ios, App Store Connect (TestFlight and the App Store); tvos, likewise, as the app's Apple TV platform; android, Google Play; mac, windows or linux, the update files where asuka.toml's updates say (installed apps update to it)")
+		"the `platform` whose store to upload to: ios, App Store Connect (TestFlight and the App Store); tvos, likewise, as the app's Apple TV platform; android, Google Play; mac, windows or linux, the update files where asuka.toml's updates say (installed apps update to it), with the packages to hand out (the Mac's .zip and .dmg; Linux's .tar.gz, .deb, .rpm and AppImage)")
 	fs.String(&o.sign, "sign", 0, "", "macOS: a signing `identity`, e.g. \"Developer ID Application: ...\" (default: ad hoc)")
 	fs.String(&o.notarize, "notarize", 0, "", "macOS: notarize the app and staple the ticket: a notarytool keychain `profile`, or \"env\"")
 	fs.Bool(&o.appStore, "appstore", 0, "macOS: upload to App Store Connect for the Mac App Store and TestFlight, as iOS does (--groups, --review, --notes), a .pkg asuka build --appstore makes, in place of the update files")
-	fs.String(&o.arch, "arch", 0, "", "Linux and Windows: amd64 or arm64")
+	fs.String(&o.arch, "arch", 0, "", "the Mac: arm64 or amd64 (Intel); Linux and Windows: amd64 or arm64")
+	packageFlag(fs, &o.packages)
 	fs.String(&o.version, "version", 0, "", "the `version` to build, in place of asuka.toml's (as CI takes it from the tag)")
 	fs.String(&o.file, "file", 0, "", "upload this .ipa (tvOS's for --platform tvos), .aab or (macOS, --appstore) .pkg from asuka build instead of building one")
 	fs.Int(&o.build, "build", 0, 0, "the build `number` (default: one more than the store's highest, at least asuka.toml's build)")
@@ -156,16 +157,23 @@ func (o *publishOptions) check(set map[string]bool) error {
 			return err
 		}
 		if o.platform != platformMac {
-			return only("mac", "sign", "notarize")
+			if err := only("mac", "sign", "notarize"); err != nil {
+				return err
+			}
 		}
-		return only("linux or windows", "arch")
+		if o.platform == platformWindows {
+			return only("mac or linux", "package")
+		}
+		return nil
 	}
 	if o.platform == platformMac {
 		// What a Mac App Store build takes; it's signed by its profile.
-		if err := only("mac without --appstore", "sign", "notarize", "draft"); err != nil {
+		if err := only("mac without --appstore", "sign", "notarize", "draft", "package"); err != nil {
 			return err
 		}
 	} else if err := only("mac, windows or linux", "sign", "notarize", "arch", "version"); err != nil {
+		return err
+	} else if err := only("mac or linux", "package"); err != nil {
 		return err
 	}
 	if ios {

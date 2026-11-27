@@ -8,3 +8,8 @@ usage = { NSFaceIDUsageDescription = "To unlock what you keep protected." }
 
 [windows]
 libraries = ["advapi32", "bcrypt", "ole32"]
+
+# libsecret, which it opens: what a .deb or an .rpm of the app depends on.
+[linux]
+deb = ["libsecret-1-0"]
+rpm = ["libsecret"]

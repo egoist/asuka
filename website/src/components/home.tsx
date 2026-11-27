@@ -157,7 +157,7 @@ const en: Copy = {
       },
       {
         title: "Ready to ship",
-        text: "asuka build makes a signed .ipa for the App Store, an .aab for Google Play, a notarized Mac app, a signed Windows .exe, a Linux archive and Flatpak manifest, and a static site.",
+        text: "asuka build makes a signed .ipa for the App Store, an .aab for Google Play, a notarized Mac app and its .dmg, a signed Windows .exe, Linux's .deb, .rpm, AppImage and Flatpak manifest, and a static site.",
         href: "/docs/shipping",
       },
     ],
@@ -284,7 +284,7 @@ const zh: Copy = {
       },
       {
         title: "随时上架",
-        text: "asuka build 能打出提交 App Store 的签名 .ipa、提交 Google Play 的 .aab、经过公证的 Mac 应用、签名的 Windows .exe、Linux 压缩包与 Flatpak 清单，还有静态网站。",
+        text: "asuka build 能打出提交 App Store 的签名 .ipa、提交 Google Play 的 .aab、经过公证的 Mac 应用及其 .dmg、签名的 Windows .exe、Linux 的 .deb、.rpm、AppImage 与 Flatpak 清单，还有静态网站。",
         href: "/zh/docs/shipping",
       },
     ],
@@ -417,7 +417,7 @@ const ja: Copy = {
       },
       {
         title: "すぐにリリース",
-        text: "asuka build は、App Store 向けの署名済み .ipa、Google Play 向けの .aab、公証済みの Mac アプリ、署名済みの Windows .exe、Linux のアーカイブと Flatpak マニフェスト、そして静的サイトを作ります。",
+        text: "asuka build は、App Store 向けの署名済み .ipa、Google Play 向けの .aab、公証済みの Mac アプリとその .dmg、署名済みの Windows .exe、Linux の .deb、.rpm、AppImage と Flatpak マニフェスト、そして静的サイトを作ります。",
         href: "/ja/docs/shipping",
       },
     ],

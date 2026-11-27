@@ -301,6 +301,34 @@ func TestBuildLinux(t *testing.T) {
 				t.Errorf("%s: the tarball has %v, not %s", arch, names, want)
 			}
 		}
+		// The packages to hand out beside it, each named as the tarball is.
+		release := filepath.Join(out, "linux-"+arch, "sqliteapp-"+app.cfg.Version+"-linux-"+arch)
+		c := debControl(t, release+".deb")
+		for _, want := range []string{"Package: sqliteapp\n", "Architecture: " + arch + "\n", "Depends: libc6 (>= 2.", "libgtk-4-1 (>= 4.14), libadwaita-1-0 (>= 1.5)"} {
+			if !strings.Contains(c, want) {
+				t.Errorf("%s: the .deb's control file lacks %q:\n%s", arch, want, c)
+			}
+		}
+		rpm, err := os.ReadFile(release + ".rpm")
+		if err != nil || !strings.HasPrefix(string(rpm), "\xed\xab\xee\xdb") {
+			t.Errorf("%s: the .rpm: %v", arch, err)
+		}
+		ai, err := os.Stat(release + ".AppImage")
+		if err != nil || ai.Mode().Perm()&0o111 == 0 {
+			t.Errorf("%s: the AppImage: %v", arch, err)
+		}
+		// --package makes some: the others a build before made go.
+		if err := buildLinux(app, &buildOptions{out: out, arch: arch, packages: []string{"deb"}}); err != nil {
+			t.Fatal(err)
+		}
+		for ext, want := range map[string]bool{".deb": true, ".rpm": false, ".AppImage": false, ".tar.gz": false} {
+			if fileExists(release+ext) != want {
+				t.Errorf("%s: with --package deb, %s there: %v", arch, ext, !want)
+			}
+		}
+		if fileExists(filepath.Join(out, "linux-"+arch, app.bundleID+".yml")) {
+			t.Errorf("%s: with --package deb, the Flatpak manifest", arch)
+		}
 	}
 }
 

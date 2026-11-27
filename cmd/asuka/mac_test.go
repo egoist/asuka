@@ -86,10 +86,12 @@ func TestBuildMac(t *testing.T) {
 	}
 	bundle := filepath.Join(out, "darwin-arm64", app.displayName()+".app")
 	bin := filepath.Join(bundle, "Contents", "MacOS", sanitizeExe(app.displayName()))
-	// What to hand out: the app zipped, its name each build's own.
+	// What to hand out: the app zipped, and a disk image of it, their
+	// names each build's own.
 	if _, err := os.Stat(filepath.Join(out, "darwin-arm64", "sqliteapp-"+app.cfg.Version+"-darwin-arm64.zip")); err != nil {
 		t.Error(err)
 	}
+	checkDMG(t, filepath.Join(out, "darwin-arm64", "sqliteapp-"+app.cfg.Version+"-darwin-arm64.dmg"), app.displayName()+".app")
 	if archs, err := exec.Command("lipo", "-archs", bin).Output(); err != nil || strings.TrimSpace(string(archs)) != "arm64" {
 		t.Errorf("the executable: %q %v, want arm64's alone", archs, err)
 	}
@@ -130,6 +132,41 @@ func TestBuildMac(t *testing.T) {
 	dump, err := os.ReadFile(snap + ".txt")
 	if err != nil || !strings.Contains(string(dump), `"Count: 1"`) || !strings.Contains(string(dump), `window "sqliteapp"`) {
 		t.Fatalf("after tapping Add, the window shows (%v):\n%s", err, dump)
+	}
+}
+
+// checkDMG checks a build's disk image: it verifies, and opens to the
+// app (its signature intact), the Applications folder to drag it to and
+// the window's layout.
+func checkDMG(t *testing.T, dmg, app string) {
+	t.Helper()
+	if b, err := exec.Command("hdiutil", "verify", dmg).CombinedOutput(); err != nil {
+		t.Fatalf("hdiutil verify: %v\n%s", err, b)
+	}
+	if b, _ := exec.Command("hdiutil", "imageinfo", dmg).CombinedOutput(); !strings.Contains(string(b), "ULFO") {
+		t.Errorf("the image isn't LZFSE's:\n%s", b)
+	}
+	vol := t.TempDir()
+	if b, err := exec.Command("hdiutil", "attach", dmg, "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", vol).CombinedOutput(); err != nil {
+		t.Fatalf("hdiutil attach: %v\n%s", err, b)
+	}
+	defer exec.Command("hdiutil", "detach", "-force", vol).Run()
+	if l, err := os.Readlink(filepath.Join(vol, "Applications")); err != nil || l != "/Applications" {
+		t.Errorf("Applications: %q %v", l, err)
+	}
+	if b, err := exec.Command("codesign", "--verify", "--deep", "--strict", filepath.Join(vol, app)).CombinedOutput(); err != nil {
+		t.Errorf("the app in the image: %v\n%s", err, b)
+	}
+	if _, err := os.Stat(filepath.Join(vol, ".DS_Store")); err != nil {
+		t.Error(err)
+	}
+	// The volume's icon is the app's, where it has one.
+	_, icon := os.Stat(filepath.Join(vol, app, "Contents", "Resources", "AppIcon.icns"))
+	if _, err := os.Stat(filepath.Join(vol, ".VolumeIcon.icns")); (err == nil) != (icon == nil) {
+		t.Errorf("the volume's icon: %v, the app's: %v", err, icon)
+	}
+	if _, err := os.Stat(filepath.Join(vol, ".fseventsd")); err == nil {
+		t.Error("the image has .fseventsd")
 	}
 }
 

@@ -63,28 +63,25 @@ func publishDesktop(app *asukaApp, o *publishOptions) error {
 	if err := os.MkdirAll(b.out, 0o755); err != nil {
 		return err
 	}
-	var target string
+	var target, goos, arch string
 	switch b.platform {
 	case platformMac:
-		arch, aerr := macArch(b.arch)
-		if aerr != nil {
-			return aerr
+		if arch, err = macArch(b.arch); err != nil {
+			return err
 		}
-		target = macTarget(arch)
+		goos, target = "darwin", macTarget(arch)
 		err = buildMac(app, &b)
 	case platformWindows:
-		arch, aerr := windowsArch(b.arch)
-		if aerr != nil {
-			return aerr
+		if arch, err = windowsArch(b.arch); err != nil {
+			return err
 		}
-		target = "windows-" + arch
+		goos, target = "windows", "windows-"+arch
 		err = buildWindows(app, &b)
 	case platformLinux:
-		arch, aerr := linuxArch(b.arch)
-		if aerr != nil {
-			return aerr
+		if arch, err = linuxArch(b.arch); err != nil {
+			return err
 		}
-		target = "linux-" + arch
+		goos, target = "linux", "linux-"+arch
 		err = buildLinux(app, &b)
 	}
 	if err != nil {
@@ -94,6 +91,9 @@ func publishDesktop(app *asukaApp, o *publishOptions) error {
 	if err != nil {
 		return err
 	}
+	// The packages to hand out go with the update: the .zip and .dmg, the
+	// .deb, .rpm and AppImage (Linux's .tar.gz is the update's archive).
+	files = append(releaseAssets(app, &b, goos, arch), files...)
 	if bucket != nil {
 		return publishS3(bucket, u, files, manifests)
 	}
@@ -180,7 +180,7 @@ func publishS3(bucket *s3Client, u *updatesConfig, files, manifests []string) er
 			header.Set("Cache-Control", "no-cache")
 			header.Set("Content-Type", "application/json")
 		} else {
-			header.Set("Content-Type", "application/octet-stream")
+			header.Set("Content-Type", assetType(name))
 		}
 		if err := bucket.put(bucket.key(name), f, header); err != nil {
 			return err
@@ -189,6 +189,24 @@ func publishS3(bucket *s3Client, u *updatesConfig, files, manifests []string) er
 	}
 	fmt.Printf("asuka: uploaded to s3://%s/%s, which %s serves: installed apps update to it\n", bucket.bucket, bucket.prefix, u.URL)
 	return nil
+}
+
+// assetType is a release file's media type, as browsers and package
+// managers take a download.
+func assetType(name string) string {
+	switch filepath.Ext(name) {
+	case ".deb":
+		return "application/vnd.debian.binary-package"
+	case ".rpm":
+		return "application/x-rpm"
+	case ".AppImage":
+		return "application/vnd.appimage"
+	case ".dmg":
+		return "application/x-apple-diskimage"
+	case ".zip":
+		return "application/zip"
+	}
+	return "application/octet-stream"
 }
 
 func names(paths []string) string {

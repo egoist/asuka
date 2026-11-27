@@ -99,8 +99,9 @@ enum AsukaUpdateError: LocalizedError {
 
     /// The bundle the app runs from, as internal/update's Locate finds it:
     /// its executable's links resolved, Name.app/Contents/MacOS/<exe>; not
-    /// one App Translocation runs from a read-only copy of, nor the Mac
-    /// App Store's (its receipt), which updates it.
+    /// one App Translocation runs from a read-only copy of or one run from
+    /// its disk image, nor the Mac App Store's (its receipt), which updates
+    /// it.
     nonisolated static func locate() throws -> (bundle: String, exe: String) {
         guard var exe = Bundle.main.executablePath, !exe.isEmpty else { throw AsukaUpdateError.notInstalled }
         exe = (exe as NSString).resolvingSymlinksInPath
@@ -108,6 +109,10 @@ enum AsukaUpdateError: LocalizedError {
         let bundle = ((macos as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
         guard bundle.hasSuffix(".app"), (macos as NSString).lastPathComponent == "MacOS" else { throw AsukaUpdateError.notInstalled }
         if bundle.contains("/AppTranslocation/") { throw AsukaUpdateError.translocated }
+        // Run from its disk image, a read-only volume: the user drags it
+        // to Applications first, as from a translocated copy.
+        var vol = statfs()
+        if statfs(bundle, &vol) == 0, vol.f_flags & UInt32(MNT_RDONLY) != 0 { throw AsukaUpdateError.translocated }
         if FileManager.default.fileExists(atPath: bundle + "/Contents/_MASReceipt") { throw AsukaUpdateError.managed }
         return (bundle, exe)
     }
