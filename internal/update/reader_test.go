@@ -16,6 +16,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/egoist/asuka/internal/distpkg"
 )
 
 // The reader of what this package writes, as the Go updater had it (the
@@ -222,6 +224,10 @@ func applyFile(e deltaEntry, data *io.SectionReader, oldRoot, newRoot *os.Root) 
 			err = fmt.Errorf("%s is not a file", e.From)
 		case e.Data == 0:
 			_, err = io.Copy(out, src)
+		case e.Blocks == blocksZlib8:
+			err = patchBlocks(out, e.Size, src, info.Size(), data, e.Data)
+		case e.Blocks != "":
+			err = errDamagedPatch
 		default:
 			err = Patch(out, e.Size, src, info.Size(), data, e.Data)
 		}
@@ -236,6 +242,91 @@ func applyFile(e deltaEntry, data *io.SectionReader, oldRoot, newRoot *os.Root) 
 	if err == nil {
 		err = newRoot.Chmod(filepath.FromSlash(e.Path), fs.FileMode(e.Mode).Perm())
 	}
+	return err
+}
+
+// patchBlocks writes to w the file of size bytes that the patch of
+// patchSize bytes in patch makes of old, its blocks decompressed (an
+// entry's Blocks "zlib8", blocks.go), as the core does: old expanded by
+// the old blocks' map, patched, and the new blocks compressed again.
+func patchBlocks(w io.Writer, size int64, old io.ReaderAt, oldSize int64, patch io.ReaderAt, patchSize int64) error {
+	head := make([]byte, min(patchSize, 1<<20))
+	if _, err := patch.ReadAt(head, 0); err != nil {
+		return errDamagedPatch
+	}
+	r := bytes.NewReader(head)
+	newSize, err := binary.ReadUvarint(r)
+	if err != nil || newSize > 2*maxDiff {
+		return errDamagedPatch
+	}
+	readMap := func(limit int64) ([]distpkg.ImageBlock, error) {
+		n, err := binary.ReadUvarint(r)
+		if err != nil || n > uint64(limit) {
+			return nil, errDamagedPatch
+		}
+		var blocks []distpkg.ImageBlock
+		end := int64(0)
+		for range n {
+			var v [3]uint64
+			for i := range v {
+				if v[i], err = binary.ReadUvarint(r); err != nil || v[i] > uint64(limit) {
+					return nil, errDamagedPatch
+				}
+			}
+			k := distpkg.ImageBlock{Off: end + int64(v[0]), Len: int64(v[1]), Size: int64(v[2])}
+			if k.Off+k.Len > limit || k.Len == 0 || k.Size > maxBlock {
+				return nil, errDamagedPatch
+			}
+			blocks = append(blocks, k)
+			end = k.Off + k.Len
+		}
+		return blocks, nil
+	}
+	oldBlocks, err := readMap(oldSize)
+	if err != nil {
+		return err
+	}
+	newBlocks, err := readMap(size)
+	if err != nil {
+		return err
+	}
+	start := int64(len(head) - r.Len())
+	f := make([]byte, oldSize)
+	if _, err := old.ReadAt(f, 0); err != nil {
+		return err
+	}
+	oldX, err := expand(f, oldBlocks)
+	if err != nil {
+		return errDamagedPatch
+	}
+	var newX bytes.Buffer
+	if err := Patch(&newX, int64(newSize), bytes.NewReader(oldX), int64(len(oldX)), io.NewSectionReader(patch, start, patchSize-start), patchSize-start); err != nil {
+		return err
+	}
+	// The new file: x's bytes between the blocks as they are, each block
+	// compressed again.
+	x := newX.Bytes()
+	pos, fileEnd := int64(0), int64(0) // in x, in the file
+
+	for _, k := range newBlocks {
+		gap := k.Off - fileEnd
+		if pos+gap+k.Size > int64(len(x)) {
+			return errDamagedPatch
+		}
+		if _, err := w.Write(x[pos : pos+gap]); err != nil {
+			return err
+		}
+		z := distpkg.Zlib8(x[pos+gap : pos+gap+k.Size])
+		if int64(len(z)) != k.Len {
+			return errDamagedPatch
+		}
+		if _, err := w.Write(z); err != nil {
+			return err
+		}
+		pos += gap + k.Size
+		fileEnd = k.Off + k.Len
+	}
+	_, err = w.Write(x[pos:])
 	return err
 }
 

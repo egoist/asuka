@@ -1960,10 +1960,16 @@ executables stamped by their contents (`/Brepro`), Apple's links
 `-reproducible` with the small Objective-C stubs (the fast ones' GOT
 slots are laid out differently from one link to the next), Swift
 compiled with its sources relative and its directory mapped, a
-release's module naming its files as the project has them, and what a
+release's module naming its files as the project has them, its
+packages checked in one order (each package's imports by path, as Go
+initializes them: their init and their functions' and globals' numbers
+follow it), and what a
 build dates dated by `SOURCE_DATE_EPOCH` (else the app's last commit,
 else its newest file). `internal/cbuild`'s `TestReproducible` builds the
-core in two checkouts with two caches and compares. The core is the same for
+core in two checkouts with two caches and compares; `internal/appbuild`'s
+`TestReleaseModuleSameEachCompile` compiles an app of many imports ten
+times, and cmd/asuka's `TestLinuxReleaseReproducible` builds an app's
+Linux release twice and compares every package. The core is the same for
 every app: what used to differ by `-D` (an app compiled in, its externs'
 glue, the std packages' C it imports) is `core/link/link.c`'s, compiled
 per link (`ak_link_app`, `ak_link_ffi`, `ak_link_sqlite`, which name the
@@ -4249,7 +4255,15 @@ over files, as its `native fn`s; the host does what only it can.
   `sha512`), `extract` (gzip and tar
   read as streams: ustar, PAX and GNU names, files, directories, links),
   `deltaIndex`, `deltaStart` and `deltaFile` (a file inflated, copied or
-  bspatched; DEFLATE pulled from three sections of the delta at once),
+  bspatched; DEFLATE pulled from three sections of the delta at once;
+  an AppImage's, its entry's `blocks` "zlib8", bspatched with its
+  SquashFS's blocks decompressed: the old AppImage expanded by the old
+  blocks' map beside the file being made, patched, and each new block
+  compressed again by flate.c at level 8, which must make its length:
+  the AppImage was built with distpkg.Zlib8, flate.c's level 8 in Go
+  byte for byte (TestZlib8MatchesCore), so the file made is the one
+  signed; a change to the app's code then costs its own patch, not every
+  compressed block after it),
   `makeDir`, `makeLink`. Nothing is written through a link or out of
   the tree (a path whose parent is a link or a file is refused; a link's
   target, read from where it is, stays inside). Tested under ASan with

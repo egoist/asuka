@@ -71,6 +71,12 @@ static void spit(const char *path, const void *p, size_t n) {
 	fclose(f);
 }
 
+static bool exists(const char *path) {
+	FILE *f = fopen(path, "rb");
+	if (f) fclose(f);
+	return f != NULL;
+}
+
 static void unhex(const char *s, uint8_t *out, size_t n) {
 	for (size_t i = 0; i < n; i++) {
 		unsigned v;
@@ -505,7 +511,7 @@ static bool apply(const char *delta, const char *old, const char *out) {
 	ok = ok && p;
 	for (p = p ? strchr(p, '{') : NULL; ok && p; p = strchr(p + 1, '{')) {
 		const char *end = strchr(p, '}');
-		char path[512] = "", link[512] = "", from[512] = "", sha[80] = "";
+		char path[512] = "", link[512] = "", from[512] = "", sha[80] = "", blocks[16] = "";
 		field_str(p, end, "path", path, sizeof path);
 		if (strstr(p, "\"dir\":true") && strstr(p, "\"dir\":true") < end) {
 			ok = call("update.makeDir", (ak_val[]){S(out), S(path)}, 2, 3).i;
@@ -514,8 +520,9 @@ static bool apply(const char *delta, const char *old, const char *out) {
 		} else {
 			field_str(p, end, "from", from, sizeof from);
 			field_str(p, end, "sha256", sha, sizeof sha);
+			field_str(p, end, "blocks", blocks, sizeof blocks);
 			int64_t data = field_int(p, end, "data"), size = field_int(p, end, "size"), mode = field_int(p, end, "mode");
-			ok = call("update.deltaFile", (ak_val[]){S(delta), I(offset), I(data), S(old), S(from), S(out), S(path), I(size), S(sha), I(mode)}, 10, 1 | 8 | 16 | 32 | 64 | 256).i;
+			ok = call("update.deltaFile", (ak_val[]){S(delta), I(offset), I(data), S(old), S(from), S(out), S(path), I(size), S(sha), I(mode), S(blocks)}, 11, 1 | 8 | 16 | 32 | 64 | 256 | 1024).i;
 			offset += data;
 		}
 	}
@@ -550,8 +557,68 @@ TEST(delta) {
 	ak_free(dir);
 }
 
+// An AppImage's delta, of its blocks decompressed (internal/update's
+// blocks.go): the AppImage it makes, its blocks compressed again, is the
+// new one byte for byte, and nothing's left beside it. On an AppImage
+// that changed since (a byte in a block), or with a patch cut short, it
+// fails, and leaves nothing either.
+TEST(appimage_delta) {
+	char *dir = ak_fs_temp_dir();
+	char *made = keep(path_in(dir, "made"));
+	REQUIRE(call("update.makeDir", (ak_val[]){S(dir), S("made")}, 2, 3).i);
+	if (!apply(D "appimage.delta", "testdata/update", made)) T_FAIL("the AppImage's delta failed: %s", failure());
+	size_t n, want_n;
+	uint8_t *got = slurp(path_in(made, "new.AppImage"), &n), *want = slurp(D "new.AppImage", &want_n);
+	CHECK(got && want && n == want_n && memcmp(got, want, n) == 0);
+	free(got);
+	CHECK(exists(path_in(made, "new.AppImage")));
+	CHECK(!exists(path_in(made, "new.AppImage.old")) && !exists(path_in(made, "new.AppImage.new")));
+
+	// The old AppImage changed: a byte near its middle, in its code's
+	// blocks.
+	char *old = keep(path_in(dir, "old"));
+	REQUIRE(call("update.makeDir", (ak_val[]){S(dir), S("old")}, 2, 3).i);
+	uint8_t *img = slurp(D "old.AppImage", &n);
+	img[n / 2] ^= 0x40;
+	spit(path_in(old, "old.AppImage"), img, n);
+	free(img);
+	CHECK(call("update.makeDir", (ak_val[]){S(dir), S("made2")}, 2, 3).i);
+	CHECK(!apply(D "appimage.delta", old, path_in(dir, "made2")));
+	CHECK_EQ_STR(failure(), "the delta update made new.AppImage wrong");
+	CHECK(!exists(path_in(dir, "made2/new.AppImage.old")) && !exists(path_in(dir, "made2/new.AppImage.new")));
+
+	// The delta cut short, in its blocks' map and in its patch.
+	size_t dn;
+	uint8_t *d = slurp(D "appimage.delta", &dn);
+	int64_t start = call("update.deltaStart", (ak_val[]){S(D "appimage.delta")}, 1, 1).i;
+	ak_str *index = call("update.deltaIndex", (ak_val[]){S(D "appimage.delta")}, 1, 1).p;
+	char sha[80] = "";
+	REQUIRE(index && field_str(index->data, index->data + index->len, "sha256", sha, sizeof sha));
+	int64_t size = field_int(index->data, index->data + index->len, "size");
+	ak_release(index);
+	char *cut = keep(path_in(dir, "cut.delta"));
+	int64_t data = (int64_t)dn - start;
+	for (int64_t keep_n = 1; keep_n < data; keep_n += data / 7 + 1) {
+		spit(cut, d, (size_t)(start + keep_n));
+		char name[32];
+		snprintf(name, sizeof name, "cut%lld", (long long)keep_n);
+		CHECK(!call("update.deltaFile", (ak_val[]){S(cut), I(start), I(keep_n), S("testdata/update"), S("old.AppImage"), S(dir), S(name), I(size), S(sha), I(0755), S("zlib8")}, 11, 1 | 8 | 16 | 32 | 64 | 256 | 1024).i);
+		char other[64];
+		snprintf(other, sizeof other, "%s.old", name);
+		CHECK(!exists(path_in(dir, other)));
+		snprintf(other, sizeof other, "%s.new", name);
+		CHECK(!exists(path_in(dir, other)));
+	}
+	free(d);
+	// Blocks of another kind than the core compresses.
+	CHECK(!call("update.deltaFile", (ak_val[]){S(D "appimage.delta"), I(start), I(data), S("testdata/update"), S("old.AppImage"), S(dir), S("other"), I(size), S(sha), I(0755), S("zstd")}, 11, 1 | 8 | 16 | 32 | 64 | 256 | 1024).i);
+	CHECK_EQ_STR(failure(), "damaged delta update");
+	ak_fs_remove_tree(dir);
+	ak_free(dir);
+}
+
 static bool patch_file(const char *patch, int64_t len, const char *out_dir, int64_t size, const char *sha) {
-	return call("update.deltaFile", (ak_val[]){S(patch), I(0), I(len), S("testdata/update"), S("old.bin"), S(out_dir), S("new.bin"), I(size), S(sha), I(0644)}, 10, 1 | 8 | 16 | 32 | 64 | 256).i;
+	return call("update.deltaFile", (ak_val[]){S(patch), I(0), I(len), S("testdata/update"), S("old.bin"), S(out_dir), S("new.bin"), I(size), S(sha), I(0644), S("")}, 11, 1 | 8 | 16 | 32 | 64 | 256 | 1024).i;
 }
 
 TEST(bsdiff) {

@@ -54,3 +54,43 @@ func TestReleaseModuleNamesNoPaths(t *testing.T) {
 		t.Fatal("a development build's C lost its functions' paths")
 	}
 }
+
+// An app compiles to the same program every time: its packages are
+// checked in one order (their imports by path), not a map's, so their
+// init, and their functions' and globals' numbers, don't change from one
+// build to the next. Two builds of the same app made two executables
+// once, and the AppImage's delta from one version to the next was most
+// of the AppImage (e2e's TestUpdaterLinuxAppImage).
+func TestReleaseModuleSameEachCompile(t *testing.T) {
+	dir := t.TempDir()
+	// Many imports, each with imports of its own: a map's order would
+	// differ from one compile to the next almost always.
+	src := ""
+	for _, p := range []string{"std/time", "std/fs", "std/url", "std/json", "std/storage", "std/regex", "std/encoding", "std/markdown", "std/html", "std/store", "std/crypto", "platform/update"} {
+		src += "import " + p + "\n"
+	}
+	src += "\napp { Text(\"a\") }\n"
+	if err := os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var first []byte
+	for i := 0; i < 10; i++ {
+		p, err := Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, diags, err := p.Compile(target.Linux)
+		if err != nil || len(diags) > 0 {
+			t.Fatal(err, diags)
+		}
+		c, err := cgen.Generate(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first == nil {
+			first = c
+		} else if !bytes.Equal(c, first) {
+			t.Fatalf("compile %d made another program than the first", i+1)
+		}
+	}
+}

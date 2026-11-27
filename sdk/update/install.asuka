@@ -212,7 +212,7 @@ native fn verifyFile(path: string, publicKey: bytes, signature: bytes) -> bool
 native fn extract(archive: string, dir: string) -> bool
 native fn deltaIndex(delta: string) -> string?
 native fn deltaStart(delta: string) -> int
-native fn deltaFile(delta: string, offset: int, length: int, oldDir: string, from: string, newDir: string, path: string, size: int, sha256: string, mode: int) -> bool
+native fn deltaFile(delta: string, offset: int, length: int, oldDir: string, from: string, newDir: string, path: string, size: int, sha256: string, mode: int, blocks: string) -> bool
 native fn makeDir(root: string, path: string) -> bool
 native fn makeLink(root: string, path: string, target: string) -> bool
 native fn validPath(path: string) -> bool
@@ -233,6 +233,9 @@ struct DeltaEntry {
   sha256: string = ""
   from: string = ""
   data: int = 0
+  // How the blocks of a file patched with them decompressed are
+  // compressed again ("zlib8": an AppImage's), else "".
+  blocks: string = ""
 
   fn isFile() -> bool = !dir && link.isEmpty()
 }
@@ -279,7 +282,7 @@ fn applyDelta(delta: string, size: int, from: string, to: string, oldDir: string
     } else if !e.link.isEmpty() {
       ok = makeLink(newDir, e.path, e.link)
     } else {
-      ok = deltaFile(delta, offset, e.data, oldDir, e.from, newDir, e.path, e.size, e.sha256, e.mode)
+      ok = deltaFile(delta, offset, e.data, oldDir, e.from, newDir, e.path, e.size, e.sha256, e.mode, e.blocks)
       offset += e.data
     }
     if !ok { throw UpdateError.failed(reason: failure()) }
@@ -311,7 +314,7 @@ fn applyFileDelta(delta: string, size: int, from: string, to: string, oldFile: s
   }
   if fs.exists(newFile) { throw UpdateError.failed(reason: "{newFile}: already exists") }
   let src = if e.from.isEmpty() { "" } else { fs.base(oldFile) }
-  if !deltaFile(delta, start, e.data, fs.dir(oldFile), src, fs.dir(newFile), fs.base(newFile), e.size, e.sha256, e.mode) {
+  if !deltaFile(delta, start, e.data, fs.dir(oldFile), src, fs.dir(newFile), fs.base(newFile), e.size, e.sha256, e.mode, e.blocks) {
     throw UpdateError.failed(reason: failure())
   }
 }

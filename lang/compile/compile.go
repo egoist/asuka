@@ -7,9 +7,11 @@ package compile
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	pathpkg "path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -535,7 +537,12 @@ func (l *loader) compile(root *unit) *Result {
 		}
 		u.state = 1
 		imports := map[string]*check.Package{}
-		for ip, dep := range u.imports {
+		// Its imports by path, as Go initializes packages: the order the
+		// packages are checked in is the program's (its packages' init,
+		// its functions' and globals' numbers), and a build's bytes are
+		// the same each time only if that order is.
+		for _, ip := range slices.Sorted(maps.Keys(u.imports)) {
+			dep := u.imports[ip]
 			if dep == nil {
 				imports[ip] = nil
 				continue

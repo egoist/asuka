@@ -68,8 +68,14 @@ func newUpdateFeed(t *testing.T) *updateFeed {
 // build, and publishes its update files on the feed, the manifest last.
 // It returns the build's directory.
 func (f *updateFeed) build(t *testing.T, platform, version string) string {
+	return f.buildApp(t, platform, version, "e2e/testdata/updater")
+}
+
+// buildApp is build of the app in dir (a copy of e2e/testdata/updater,
+// changed).
+func (f *updateFeed) buildApp(t *testing.T, platform, version, dir string) string {
 	out := filepath.Join(t.TempDir(), "dist")
-	c := exec.Command("go", "run", "./cmd/asuka", "build", "--platform", platform, "--version", version, "-o", out, "e2e/testdata/updater")
+	c := exec.Command("go", "run", "./cmd/asuka", "build", "--platform", platform, "--version", version, "-o", out, dir)
 	c.Dir, c.Env = root(t), f.env
 	b, err := c.CombinedOutput()
 	if err != nil {
@@ -266,8 +272,9 @@ func TestUpdaterLinux(t *testing.T) {
 	}
 }
 
-// TestUpdaterLinuxAppImage does it with the Linux build's AppImage, run
-// from a folder of the user's as ~/Applications is: 1.0.0 downloads
+// TestUpdaterLinuxAppImage does it with the Linux build's AppImage (1.0.1's
+// code changed), run from a folder of the user's as ~/Applications is:
+// 1.0.0 downloads
 // the delta of 1.0.1's AppImage from its own (the manifest's appimage,
 // signed), makes 1.0.1's AppImage of its file with it, which takes the
 // file's place, and the relaunched AppImage says it's 1.0.1; far fewer
@@ -296,7 +303,18 @@ func TestUpdaterLinuxAppImage(t *testing.T) {
 	}
 	arch := runtime.GOARCH
 	v100 := f.build(t, "linux", "1.0.0")
-	v101 := f.build(t, "linux", "1.0.1")
+	// 1.0.1's code changed, as a new version's does: what follows the
+	// change in its executable moves.
+	changed := filepath.Join(t.TempDir(), "updater")
+	if err := os.CopyFS(changed, os.DirFS(filepath.Join(root(t), "e2e", "testdata", "updater"))); err != nil {
+		t.Fatal(err)
+	}
+	src, _ := os.ReadFile(filepath.Join(changed, "updater.asuka"))
+	if !bytes.Contains(src, []byte(`"up to date"`)) {
+		t.Fatal(`updater.asuka doesn't report "up to date"`)
+	}
+	os.WriteFile(filepath.Join(changed, "updater.asuka"), bytes.Replace(src, []byte(`"up to date"`), []byte(`"up to date, as of this version"`), 1), 0o644)
+	v101 := f.buildApp(t, "linux", "1.0.1", changed)
 	name := "updater-1.0.0-linux-" + arch + ".AppImage"
 	want, err := os.ReadFile(filepath.Join(v101, "linux-"+arch, "updater-1.0.1-linux-"+arch+".AppImage"))
 	if err != nil {
@@ -360,7 +378,10 @@ func TestUpdaterLinuxAppImage(t *testing.T) {
 			if got := strings.TrimPrefix(f.downloaded(), before); !strings.Contains(got, "updater-1.0.0-to-1.0.1-linux-"+arch+".AppImage.delta") || strings.Contains(got, "updater-1.0.1-linux-"+arch+".AppImage ") || strings.HasSuffix(got, "updater-1.0.1-linux-"+arch+".AppImage") || strings.Contains(got, ".tar.gz") {
 				t.Errorf("downloaded %v, want the AppImage's delta alone", got)
 			}
-			if n := f.served() - sent; n*4 > int64(len(want)) {
+			// The delta is of the AppImages' blocks decompressed: about
+			// as large as the executable's own patch, though its code
+			// moved what follows the change.
+			if n := f.served() - sent; n*20 > int64(len(want)) {
 				t.Errorf("downloaded %d bytes, of an AppImage of %d: the delta should be far smaller", n, len(want))
 			} else {
 				t.Logf("downloaded %d bytes for an AppImage of %d", n, len(want))

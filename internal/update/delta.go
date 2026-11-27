@@ -53,7 +53,16 @@ type deltaEntry struct {
 	// with its Data. Without From, Data is the file, compressed.
 	From string `json:"from,omitzero"`
 	Data int64  `json:"data,omitzero"`
+	// Blocks, on a patch of a file whose compressed blocks it patches
+	// decompressed (an AppImage's: WriteFileDelta), is how the new file's
+	// blocks are compressed again: "zlib8", zlib at level 8 as the core
+	// compresses (distpkg.Zlib8). Its Data is then the blocks' map
+	// (blockMap) and the patch.
+	Blocks string `json:"blocks,omitzero"`
 }
+
+// blocksZlib8 is deltaEntry.Blocks for blocks that are distpkg.Zlib8's.
+const blocksZlib8 = "zlib8"
 
 // maxDiff is the size of the largest files that deltas patch: making the
 // patch takes about ten times as much memory. Larger files that changed
@@ -183,6 +192,14 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 // applies it to the file it runs from, whatever its name, and checks the
 // file it makes against the index's size and SHA-256. Files larger than
 // deltas patch (256 MB) have none.
+//
+// Two AppImages are patched with their SquashFS's blocks decompressed
+// (blockPatch): a change to the app's executable moves the bytes after
+// it, which changes every compressed block from there on, but not the
+// decompressed bytes. The updater decompresses its AppImage's blocks,
+// patches that, and compresses the new AppImage's blocks again as the
+// AppImage was built (distpkg.Zlib8): byte for byte the AppImage that
+// was signed.
 func WriteFileDelta(w io.Writer, from, to, oldFile, newFile string) error {
 	info, err := os.Stat(newFile)
 	if err != nil {
@@ -210,8 +227,13 @@ func WriteFileDelta(w io.Writer, from, to, oldFile, newFile string) error {
 	e := deltaEntry{Path: filepath.Base(newFile), Mode: uint32(info.Mode().Perm()), Size: int64(len(b)), SHA256: hex.EncodeToString(sum[:]), From: filepath.Base(oldFile)}
 	var blob []byte
 	if sha256.Sum256(prev) != sum {
-		blob = Diff(prev, b)
+		if blob = blockPatch(prev, b); blob != nil {
+			e.Blocks = blocksZlib8
+		} else {
+			blob = Diff(prev, b)
+		}
 		if whole := deflate(b); len(whole) <= len(blob) {
+			e.Blocks = ""
 			e.From, blob = "", whole
 		}
 		e.Data = int64(len(blob))

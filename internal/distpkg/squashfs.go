@@ -2,7 +2,6 @@ package distpkg
 
 import (
 	"bytes"
-	"compress/zlib"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -104,14 +103,10 @@ func (m *metaWriter) flush() {
 	m.cur.Reset()
 }
 
-// compress is data, zlib-compressed (SquashFS's "gzip").
-func compress(data []byte) []byte {
-	var b bytes.Buffer
-	zw, _ := zlib.NewWriterLevel(&b, zlib.BestCompression)
-	zw.Write(data)
-	zw.Close()
-	return b.Bytes()
-}
+// compress is data, zlib-compressed (SquashFS's "gzip") as the core
+// compresses it (Zlib8): an app that makes the image of a delta of its
+// blocks decompressed compresses them again to these bytes.
+func compress(data []byte) []byte { return Zlib8(data) }
 
 // WriteSquashFS writes files (absolute paths, their directories made
 // where they have no entry) as a SquashFS image to w, every entry owned

@@ -13,9 +13,10 @@
 //	update.deltaIndex(delta) -> string?    the delta's index (JSON)
 //	update.deltaStart(delta) -> int        where its files' data starts
 //	update.deltaFile(delta, offset, length, oldDir, from, newDir, path,
-//	                 size, sha256, mode) -> bool
+//	                 size, sha256, mode, blocks) -> bool
 //	    one file of the new app: its data inflated (no from), from's
-//	    copied (no data) or patched (bsdiff), checked against its size
+//	    copied (no data) or patched (bsdiff; blocks "zlib8": with its
+//	    blocks decompressed, an AppImage's), checked against its size
 //	    and SHA-256 (hex)
 //	update.makeDir(root, path) / makeLink(root, path, target) -> bool
 //	update.validPath(path) -> bool         a path inside a tree: a/b, no ..
@@ -33,6 +34,8 @@
 #endif
 #include "std/std.h"
 #include "abi/ota.h"
+#include "std/compress.h"
+#include "std/flate.h"
 
 #include <errno.h>
 #include <stdarg.h>
@@ -893,6 +896,228 @@ static int patch(sink *s, int64_t size, FILE *old, int64_t old_size, const char 
 	return r;
 }
 
+// ---- Patches of blocks decompressed (blocks.go) ----
+//
+// An AppImage's delta patches the AppImages with their SquashFS's blocks
+// decompressed (an entry's blocks "zlib8"): the patch's data is the new
+// file's size expanded, the old file's blocks and the new file's (each
+// its distance from the block before, its length, its size
+// decompressed), then a bsdiff patch of the old file expanded into the
+// new one. The old file is expanded (each block, a zlib stream,
+// decompressed in its place) into a file beside the one being made,
+// patched into another, and the new file made of that: the bytes between
+// its blocks as they are, each block compressed again at level 8 as
+// compress.c frames zlib, which must make its length: the very bytes the
+// AppImage was built with (distpkg.Zlib8 is this compressor's, in Go).
+
+typedef struct {
+	int64_t off, len, size;
+} block;
+
+enum { MAX_BLOCK = 1 << 20 };
+
+// A reader of a section of a file, for the maps' uvarints.
+typedef struct {
+	FILE *f;
+	int64_t left;
+} section;
+
+static bool section_uvarint(section *s, uint64_t *v) {
+	uint64_t x = 0;
+	for (int i = 0; i < 10 && s->left > 0; i++) {
+		int b = getc(s->f);
+		s->left--;
+		if (b == EOF || (i == 9 && b > 1)) return false;
+		x |= (uint64_t)(b & 0x7f) << (7 * i);
+		if (b < 0x80) {
+			*v = x;
+			return true;
+		}
+	}
+	return false;
+}
+
+// read_map reads a map of blocks inside a file of limit bytes; false when
+// it's damaged.
+static bool read_map(section *s, int64_t limit, block **out, size_t *n) {
+	uint64_t count;
+	*out = NULL, *n = 0;
+	if (!section_uvarint(s, &count) || count > (uint64_t)limit / 2) return false;
+	block *b = count ? ak_alloc(sizeof *b * (size_t)count) : NULL;
+	int64_t end = 0;
+	for (uint64_t i = 0; i < count; i++) {
+		uint64_t gap, len, size;
+		if (!section_uvarint(s, &gap) || !section_uvarint(s, &len) || !section_uvarint(s, &size) || gap > (uint64_t)(limit - end) ||
+		    len == 0 || len > (uint64_t)(limit - end) - gap || size > MAX_BLOCK) {
+			ak_free(b);
+			return false;
+		}
+		b[i] = (block){end + (int64_t)gap, (int64_t)len, (int64_t)size};
+		end = b[i].off + b[i].len;
+	}
+	*out = b, *n = (size_t)count;
+	return true;
+}
+
+// copy_bytes copies n bytes from in (where it is) to out.
+static bool copy_bytes(FILE *in, FILE *out, sink *s, int64_t n) {
+	uint8_t buf[16384];
+	while (n > 0) {
+		size_t k = n < (int64_t)sizeof buf ? (size_t)n : sizeof buf;
+		if (fread(buf, 1, k, in) != k) return false;
+		if (s ? !sink_write(s, buf, k) : fwrite(buf, 1, k, out) != k) return false;
+		n -= (int64_t)k;
+	}
+	return true;
+}
+
+// expand_old writes old (old_size bytes) with its blocks decompressed to
+// out: PATCH_DAMAGED when a block isn't a zlib stream of its size.
+static int expand_old(FILE *old, int64_t old_size, const block *b, size_t n, FILE *out) {
+	uint8_t *in = ak_alloc(MAX_BLOCK + 64), *dec = ak_alloc(MAX_BLOCK + AK_FL_OUT_SLACK);
+	int64_t pos = 0;
+	int r = PATCH_OK;
+	if (fseek(old, 0, SEEK_SET) != 0) r = PATCH_FAILED;
+	for (size_t i = 0; i < n && r == PATCH_OK; i++) {
+		if (b[i].len > MAX_BLOCK + 64 || b[i].off + b[i].len > old_size) {
+			r = PATCH_DAMAGED;
+			break;
+		}
+		if (!copy_bytes(old, out, NULL, b[i].off - pos) || fread(in, 1, (size_t)b[i].len, old) != (size_t)b[i].len) {
+			r = PATCH_FAILED;
+			break;
+		}
+		ak_cz_src src = {.mem = in, .len = (size_t)b[i].len};
+		ak_cz_inflate *z = ak_cz_inflate_new(&src, AK_CZ_ZLIB, b[i].size);
+		int64_t got = ak_cz_inflate_into(z, dec, (size_t)b[i].size + AK_FL_OUT_SLACK);
+		ak_cz_inflate_free(z);
+		if (got != b[i].size) {
+			r = PATCH_DAMAGED;
+			break;
+		}
+		if (fwrite(dec, 1, (size_t)got, out) != (size_t)got) r = PATCH_FAILED;
+		pos = b[i].off + b[i].len;
+	}
+	if (r == PATCH_OK && !copy_bytes(old, out, NULL, old_size - pos)) r = PATCH_FAILED;
+	ak_free(in);
+	ak_free(dec);
+	return r;
+}
+
+typedef struct {
+	uint8_t *p;
+	size_t n, cap;
+} membuf;
+
+static bool mem_put(void *user, const uint8_t *p, size_t n) {
+	membuf *m = user;
+	if (m->n + n > m->cap) {
+		m->cap = (m->n + n) * 2;
+		m->p = ak_realloc(m->p, m->cap);
+	}
+	memcpy(m->p + m->n, p, n);
+	m->n += n;
+	return true;
+}
+
+// compress_new writes to s the file that in (expanded, its size bytes)
+// makes: what's between the blocks as it is, each block compressed again.
+static int compress_new(FILE *in, int64_t size, const block *b, size_t n, sink *s) {
+	uint8_t *raw = ak_alloc(MAX_BLOCK);
+	membuf m = {0};
+	int64_t pos = 0, used = 0;  // in the file made, in in
+	int r = PATCH_OK;
+	for (size_t i = 0; i < n && r == PATCH_OK; i++) {
+		int64_t gap = b[i].off - pos;
+		if (used + gap + b[i].size > size) {
+			r = PATCH_DAMAGED;
+			break;
+		}
+		if (!copy_bytes(in, NULL, s, gap) || fread(raw, 1, (size_t)b[i].size, in) != (size_t)b[i].size) {
+			r = s->too_long ? PATCH_DAMAGED : PATCH_FAILED;
+			break;
+		}
+		m.n = 0;
+		uint8_t head[2] = {0x78, 0xDA};  // a 32 KB window, level 8 (compress.c's FLEVEL)
+		mem_put(&m, head, 2);
+		ak_deflater *d = ak_deflater_new(8, mem_put, &m);
+		ak_deflater_write(d, raw, (size_t)b[i].size);
+		ak_deflater_finish(d);
+		ak_deflater_free(d);
+		uint32_t a = ak_adler32(1, raw, (size_t)b[i].size);
+		uint8_t tail[4] = {(uint8_t)(a >> 24), (uint8_t)(a >> 16), (uint8_t)(a >> 8), (uint8_t)a};
+		mem_put(&m, tail, 4);
+		if ((int64_t)m.n != b[i].len) {
+			r = PATCH_DAMAGED;
+			break;
+		}
+		if (!sink_write(s, m.p, m.n)) r = s->too_long ? PATCH_DAMAGED : PATCH_FAILED;
+		pos = b[i].off + b[i].len;
+		used += gap + b[i].size;
+	}
+	if (r == PATCH_OK && !copy_bytes(in, NULL, s, size - used)) r = s->too_long ? PATCH_DAMAGED : PATCH_FAILED;
+	ak_free(raw);
+	ak_free(m.p);
+	return r;
+}
+
+// patch_blocks writes to s the file of size bytes that the patch at
+// [off, off+len) of patch_path makes of old (old_size bytes), their
+// blocks decompressed; work is the file being made, beside which it
+// expands the old file and patches it.
+static int patch_blocks(sink *s, int64_t size, FILE *old, int64_t old_size, const char *patch_path, int64_t off, int64_t len, const char *work) {
+	FILE *pf = ak_update_fopen(patch_path, "rb");
+	if (!pf) return PATCH_FAILED;
+	section sec = {pf, len};
+	uint64_t new_x = 0;
+	block *ob = NULL, *nb = NULL;
+	size_t on = 0, nn = 0;
+	int r = PATCH_OK;
+	if (off > 0x7fffffff || fseek(pf, (long)off, SEEK_SET) != 0) r = PATCH_FAILED;
+	else if (!section_uvarint(&sec, &new_x) || new_x > ((uint64_t)1 << 40) || !read_map(&sec, old_size, &ob, &on) || !read_map(&sec, size, &nb, &nn))
+		r = PATCH_DAMAGED;
+	fclose(pf);
+	// What the maps say the files expand to.
+	int64_t old_x = old_size, made = (int64_t)new_x;
+	for (size_t i = 0; i < on; i++) old_x += ob[i].size - ob[i].len;
+	for (size_t i = 0; i < nn; i++) made += nb[i].len - nb[i].size;
+	if (r == PATCH_OK && made != size) r = PATCH_DAMAGED;
+	size_t wl = strlen(work);
+	char *old_path = ak_alloc(wl + 8), *new_path = ak_alloc(wl + 8);
+	memcpy(old_path, work, wl), memcpy(old_path + wl, ".old", 5);
+	memcpy(new_path, work, wl), memcpy(new_path + wl, ".new", 5);
+	FILE *ox = NULL, *nx = NULL;
+	bool made_old = false, made_new = false;  // what to remove at the end
+	if (r == PATCH_OK && !(made_old = (ox = create(old_path, 0600, true)) != NULL)) r = PATCH_FAILED;
+	if (r == PATCH_OK) r = expand_old(old, old_size, ob, on, ox);
+	if (ox && fclose(ox) != 0 && r == PATCH_OK) r = PATCH_FAILED;
+	ox = NULL;
+	if (r == PATCH_OK && !(ox = ak_update_fopen(old_path, "rb"))) r = PATCH_FAILED;
+	if (r == PATCH_OK && !(made_new = (nx = create(new_path, 0600, true)) != NULL)) r = PATCH_FAILED;
+	if (r == PATCH_OK) {
+		sink xs = {.f = nx, .left = (int64_t)new_x};
+		ak_sha256_init(&xs.h);
+		int64_t start = (int64_t)(len - sec.left);
+		r = patch(&xs, (int64_t)new_x, ox, old_x, patch_path, off + start, len - start);
+		if (r == PATCH_OK && xs.left != 0) r = PATCH_DAMAGED;
+	}
+	if (ox) fclose(ox);
+	if (nx && fclose(nx) != 0 && r == PATCH_OK) r = PATCH_FAILED;
+	nx = NULL;
+	if (r == PATCH_OK) {
+		if (!(nx = ak_update_fopen(new_path, "rb"))) r = PATCH_FAILED;
+		else r = compress_new(nx, (int64_t)new_x, nb, nn, s);
+		if (nx) fclose(nx);
+	}
+	if (made_old) ak_cz_remove(old_path);
+	if (made_new) ak_cz_remove(new_path);
+	ak_free(old_path);
+	ak_free(new_path);
+	ak_free(ob);
+	ak_free(nb);
+	return r;
+}
+
 static void hex32(const uint8_t *p, char out[65]) {
 	static const char digits[] = "0123456789abcdef";
 	for (int i = 0; i < 32; i++) out[2 * i] = digits[p[i] >> 4], out[2 * i + 1] = digits[p[i] & 15];
@@ -900,15 +1125,16 @@ static void hex32(const uint8_t *p, char out[65]) {
 }
 
 // deltaFile(delta, offset, length, oldDir, from, newDir, path, size,
-// sha256, mode): delta.go's applyFile.
+// sha256, mode, blocks): delta.go's applyFile.
 static ak_val delta_file_fn(ak_val *args, uint32_t n) {
 	AK_UNUSED(n);
 	const char *delta = STR(0)->data, *old_dir = STR(3)->data, *from = STR(4)->data, *new_dir = STR(5)->data, *rel = STR(6)->data;
 	int64_t offset = args[1].i, length = args[2].i, size = args[7].i;
-	const char *want = STR(8)->data;
+	const char *want = STR(8)->data, *blocks = STR(10)->data;
 	unsigned mode = (unsigned)args[9].i & 0777;
 	why[0] = 0;
-	if (!ak_update_valid_path(rel, STR(6)->len) || (STR(4)->len && !ak_update_valid_path(from, STR(4)->len)) || offset < 0 || length < 0 || size < 0) {
+	if (!ak_update_valid_path(rel, STR(6)->len) || (STR(4)->len && !ak_update_valid_path(from, STR(4)->len)) || offset < 0 || length < 0 || size < 0 ||
+	    (blocks[0] && (strcmp(blocks, "zlib8") != 0 || !STR(4)->len || length == 0))) {
 		failf("damaged delta update");
 		return (ak_val){.i = 0};
 	}
@@ -948,6 +1174,8 @@ static ak_val delta_file_fn(ak_val *args, uint32_t n) {
 			while (r == PATCH_OK && (got = fread(buf, 1, sizeof buf, src)) > 0)
 				if (!sink_write(&s, buf, got)) r = s.too_long ? PATCH_DAMAGED : PATCH_FAILED;
 			if (ferror(src)) r = PATCH_FAILED;
+		} else if (blocks[0]) {
+			r = patch_blocks(&s, size, src, old_size, delta, offset, length, out_path);
 		} else {
 			r = patch(&s, size, src, old_size, delta, offset, length);
 		}

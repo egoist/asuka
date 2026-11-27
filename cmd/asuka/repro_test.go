@@ -6,8 +6,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
+
+	"github.com/egoist/asuka/internal/appbuild"
+	"github.com/egoist/asuka/internal/cbuild"
+	iupdate "github.com/egoist/asuka/internal/update"
 )
 
 // A build is dated by its sources (repro.go): SOURCE_DATE_EPOCH, else the
@@ -87,6 +92,80 @@ func TestArchivesReproducible(t *testing.T) {
 		if !f.Modified.Equal(time.Unix(1700000000, 0)) {
 			t.Errorf("%s dated %v", f.Name, f.Modified)
 		}
+	}
+}
+
+// A Linux release is the same bytes from one build to the next, from
+// another directory too: its executable, its .tar.gz, .deb, .rpm and
+// AppImage. The next version's AppImage delta (what an app run from the
+// AppImage downloads) is about as small as its executable's own patch,
+// though its code moved what follows the change: it's of the AppImages'
+// blocks decompressed. Two builds of e2e/testdata/updater once made two
+// programs (a map's order), and e2e's TestUpdaterLinuxAppImage then
+// downloaded most of the AppImage.
+func TestLinuxReleaseReproducible(t *testing.T) {
+	arch := runtime.GOARCH
+	needDesktopBuild(t, cbuild.Target{OS: "linux", Arch: arch})
+	// As a process of its own runs asuka build: commands other tests ran
+	// in this one (asuka dev, asuka test --gui) leave a development
+	// build's settings, whose program names the files of the directory it
+	// was built in and isn't optimized.
+	oldDebug, oldNoOpt := appbuild.Debug, appbuild.DevNoOptimize
+	appbuild.DevNoOptimize = false
+	t.Cleanup(func() { appbuild.Debug, appbuild.DevNoOptimize = oldDebug, oldNoOpt })
+	t.Setenv("SOURCE_DATE_EPOCH", "1700000000")
+	t.Setenv("ASUKA_UPDATE_URL", "")
+	t.Setenv("ASUKA_UPDATE_PUBLIC_KEY", "")
+	src := filepath.Join("..", "..", "e2e", "testdata", "updater")
+	build := func(version, change string) string {
+		t.Helper()
+		dir := filepath.Join(t.TempDir(), "updater")
+		if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
+			t.Fatal(err)
+		}
+		if change != "" {
+			p := filepath.Join(dir, "updater.asuka")
+			b, _ := os.ReadFile(p)
+			if !bytes.Contains(b, []byte(`"up to date"`)) {
+				t.Fatal("updater.asuka doesn't report \"up to date\"")
+			}
+			os.WriteFile(p, bytes.Replace(b, []byte(`"up to date"`), []byte(change), 1), 0o644)
+		}
+		out := t.TempDir()
+		if err := cmdBuild([]string{"--platform", "linux", "--arch", arch, "--version", version, "-o", out, dir}); err != nil {
+			t.Fatal(err)
+		}
+		return filepath.Join(out, "linux-"+arch)
+	}
+	a, b := build("1.0.0", ""), build("1.0.0", "")
+	exe := filepath.Join("updater", "bin", "updater")
+	for _, name := range []string{exe, "updater-1.0.0-linux-" + arch + ".tar.gz", "updater-1.0.0-linux-" + arch + ".deb", "updater-1.0.0-linux-" + arch + ".rpm", "updater-1.0.0-linux-" + arch + ".AppImage"} {
+		x, err := os.ReadFile(filepath.Join(a, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if y, _ := os.ReadFile(filepath.Join(b, name)); !bytes.Equal(x, y) {
+			t.Errorf("two builds of the app made two %s", name)
+		}
+	}
+
+	c := build("1.0.1", `"up to date, as of this version"`)
+	oldImage := filepath.Join(a, "updater-1.0.0-linux-"+arch+".AppImage")
+	newImage := filepath.Join(c, "updater-1.0.1-linux-"+arch+".AppImage")
+	var delta bytes.Buffer
+	if err := iupdate.WriteFileDelta(&delta, "1.0.0", "1.0.1", oldImage, newImage); err != nil {
+		t.Fatal(err)
+	}
+	oldExe, _ := os.ReadFile(filepath.Join(a, exe))
+	newExe, _ := os.ReadFile(filepath.Join(c, exe))
+	if bytes.Equal(oldExe, newExe) {
+		t.Fatal("the change didn't change the executable")
+	}
+	image, _ := os.ReadFile(newImage)
+	patch := len(iupdate.Diff(oldExe, newExe))
+	t.Logf("the AppImage's delta: %d bytes, of an AppImage of %d; the executable's patch %d", delta.Len(), len(image), patch)
+	if delta.Len() > 2*patch+16<<10 || delta.Len()*10 > len(image) {
+		t.Errorf("the AppImage's delta is %d bytes, of an AppImage of %d: the executable's own patch is %d", delta.Len(), len(image), patch)
 	}
 }
 

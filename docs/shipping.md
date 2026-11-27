@@ -990,7 +990,10 @@ With `updates` and the secret key, `asuka build --platform mac`,
   (`notes-1.1.0-to-1.2.0-linux-amd64.AppImage.delta`): the app makes
   the new AppImage of its own file with its version's delta, checks it
   against the AppImage's signature, and downloads the AppImage whole
-  when that fails; and its `.zsync` for AppImageUpdate: named for the
+  when that fails (the delta patches the AppImages' contents
+  decompressed: a change to your code makes it about as large as the
+  archive's delta, not the rest of the AppImage after the change); and
+  its `.zsync` for AppImageUpdate: named for the
   version on GitHub (`notes-1.2.0-linux-amd64.AppImage.zsync`, which
   the AppImage finds in the latest release), for none with `url`
   (`notes-linux-amd64.AppImage.zsync`, a channel's

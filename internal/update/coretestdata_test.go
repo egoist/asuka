@@ -133,6 +133,17 @@ func TestCoreTestdata(t *testing.T) {
 	must(WriteDelta(&delta, "1.0.0", "1.1.0", oldDir, newDir, nil))
 	must(os.WriteFile(filepath.Join(out, "old-to-new.delta"), delta.Bytes(), 0o644))
 
+	// Two versions of an AppImage, and the delta that patches them with
+	// their blocks decompressed (blocks.go): the core compresses the
+	// blocks it makes again, to the new AppImage's bytes.
+	oldImage, newImage := testAppImages(t, out)
+	delta.Reset()
+	must(WriteFileDelta(&delta, "1.0.0", "1.1.0", oldImage, newImage))
+	if readIndex(t, delta.Bytes()).Entries[0].Blocks != blocksZlib8 {
+		t.Fatal("the AppImage's delta isn't of its blocks")
+	}
+	must(os.WriteFile(filepath.Join(out, "appimage.delta"), delta.Bytes(), 0o644))
+
 	// Archives an updater must refuse, written by hand: a path out of the
 	// app, a link out of it, and a link that leads a later entry out
 	// through another link (p -> ., then p/q -> .., then p/q/x).
