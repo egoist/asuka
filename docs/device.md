@@ -19,6 +19,7 @@ what each platform does it with. Each desktop and the browser also has a
 section of its own ([On a Mac](#on-a-mac), [On Windows](#on-windows),
 [On Linux](#on-linux), [In a browser](#in-a-browser)): what an app needs
 set up there, and a table of where it differs from iOS and Android.
+Apple Watch has one too ([On Apple Watch](#on-apple-watch)).
 
 ## Permissions and purpose strings
 
@@ -293,6 +294,37 @@ and its service worker for notifications and Web Push.
 | `platform/analytics` | gtag.js, loaded from Google, for `asuka.toml`'s web stream; collection off is gtag's own switch, kept in `localStorage` |
 | `platform/splash` | `hold` and `hide` do nothing |
 | `onShare`, shortcuts | iOS and Android only |
+
+## On Apple Watch
+
+A watch app is built from the iOS app's code ([Apple Watch](watch.md)),
+so it's given the same purpose strings and entitlements as the iPhone
+app: Push's `aps-environment`, HealthKit, Sign in with Apple. Its
+provisioning profile, for `<id>.watchkitapp`, must have their
+capabilities, as the iPhone app's does.
+
+The packages work on the watch as on iOS, through the same frameworks
+(Core Location, HealthKit, StoreKit, AVFoundation, MediaPlayer,
+UserNotifications, AuthenticationServices, LocalAuthentication, the
+Keychain, Network), except where a watch differs:
+
+| Package | On Apple Watch |
+| --- | --- |
+| `platform/device` | `info`: `model` `"Apple Watch"`, `system` `"watchOS"`. A watch has no browser, pickers or clipboard: `browse`, `pickPhotos` and `pickFiles` throw unsupported, the clipboard is empty, `copy` and `share` do nothing. `keepAwake` does nothing (the screen sleeps as the wrist comes down) and `openSettings` returns false. `openURL` opens what the watch can (a phone number, a map) |
+| `device.haptic` | The watch's taps on the wrist: a click for `.selection` and `.light`, a firmer tap for `.medium` and `.heavy`, its success, retry and failure taps for `.success`, `.warning` and `.error` |
+| `platform/secure` | The watch's keychain. Reading a protected secret asks nothing while the watch is unlocked on the wrist, else asks for its passcode |
+| `platform/biometric` | No Face ID or Touch ID: `check` says `.none`, with the passcode; `authenticate` passes while the watch is unlocked on the wrist, else asks for the passcode; `noPasscode` throws `notAvailable` |
+| `platform/health` | HealthKit on the watch: what the watch measured, and the recent days of the iPhone's data, not all its history |
+| `platform/location` | Background updates go on while the app runs (`significant` ones are coarse updates), but the watch monitors no regions and starts no app for an event: the package computes regions from the positions (`supported()`'s `regions` and `relaunch` are false). `openSettings` throws `LocationError.unavailable` |
+| `platform/audio`, `platform/speech` | The watch's speaker, or the Bluetooth headphones it's connected to |
+| `platform/nowplaying` | The watch's Now Playing, and the Digital Crown's volume |
+| `platform/purchase` | StoreKit 2; the watch confirms a purchase in its own sheet. It has no subscriptions, refund or offer code sheets: `manageSubscriptions`, `requestRefund` and `redeemCode` throw unsupported |
+| `platform/appleauth` | The watch's Sign in with Apple sheet and SwiftUI's button (`.automatic` is white, on the watch's black) |
+| `platform/notify` | Notifications as on an iPhone, with their actions, replies and messages. A watch app has no badge: `setBadge` does nothing |
+| `platform/push` | APNs, the watch app's own token, alerts and data messages; no `rewrite` (a watch app has no Notification Service Extension) |
+| `platform/crash` | The core's fatal errors and uncaught exceptions; no MetricKit diagnostics |
+| `platform/analytics` | Not on the watch (Firebase's Analytics has no watchOS SDK): `available()` is false and nothing is sent |
+| The others | Not built for the watch: their calls throw `unsupported`, as on any platform without them |
 
 ## The camera: platform/camera
 
@@ -3475,7 +3507,9 @@ with its `at`, is a timeline: each shows from its time.
 `widget.clear(kind)` empties it.
 
 Sizes: `small`, `medium`, `large`, and iOS's `extraLarge` (iPad) and
-lock screen `circular`, `rectangular` and `inline`. iOS: a WidgetKit
+lock screen `circular`, `rectangular` and `inline`. On Apple Watch those
+three, and the watch's `corner`, are complications, which the watch app
+sets ([Complications](watch.md#complications)). iOS: a WidgetKit
 extension the CLI builds into the app, sharing an App Group with it
 (a release needs the App Groups capability, and a profile for the
 extension's ID, the app's plus `.widgets`). Android: an App Widget for

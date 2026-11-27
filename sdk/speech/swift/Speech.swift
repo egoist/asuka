@@ -1,4 +1,5 @@
-// platform/speech on iOS and macOS: AVSpeechSynthesizer. On iOS, while it
+// platform/speech on iOS and macOS: AVSpeechSynthesizer. On iOS (and Apple
+// TV and Apple Watch), while it
 // speaks the audio session plays (with the silent switch on) and ducks
 // other apps, unless the app set it up to play itself; after, it goes
 // back.
@@ -9,7 +10,7 @@ import Foundation
     static let shared = SpeechSynth()
     private let synth = AVSpeechSynthesizer()
     private var waiting: [ObjectIdentifier: CheckedContinuation<Void, Error>] = [:]
-    #if os(iOS) || os(tvOS)
+    #if !os(macOS)
     private var session: (AVAudioSession.Category, AVAudioSession.CategoryOptions)? // what it was, if this set it
     #endif
 
@@ -57,7 +58,7 @@ import Foundation
     func resume() { synth.continueSpeaking() }
     var speaking: Bool { synth.isSpeaking || synth.isPaused || !waiting.isEmpty }
 
-    #if os(iOS) || os(tvOS)
+    #if !os(macOS)
     /// Plays through the silent switch, ducking others, while it speaks,
     /// unless the app's session already plays (platform/audio's).
     private func claimSession() {

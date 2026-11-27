@@ -10,6 +10,7 @@ Asuka のアプリは Apple Watch でも、ウォッチ純正のコントロー�
 asuka dev --platform watchos .                # ウォッチのシミュレーターで実行し、保存のたびに再読み込み
 asuka build --platform watchos --simulator .  # シミュレーター用のリリース .app
 asuka build --platform watchos .              # ウォッチ単体アプリの .ipa（dist/watchos に出力）
+asuka publish --platform watchos .            # ビルドして App Store Connect にアップロード（TestFlight 用）
 ```
 
 `asuka dev --platform watchos` は、Apple Watch のシミュレーターでアプリを動かします。起動中のものがあればそれを、なければ最新の Apple Watch Series のシミュレーターを使い、一台もなければ作って起動します（`--device` でほかのものを指定できます）。保存するとスマートフォンと同じように、状態を保ったまま再読み込みされます。ウォッチのシミュレーターは Xcode の watchOS プラットフォームと一緒にインストールされます。Xcode › Settings › Components から入れるか、`xcodebuild -downloadPlatform watchOS` を実行してください。シミュレーターでは、マウスのホイールやトラックパッドでのスクロールが Digital Crown を回す操作になります。
@@ -18,11 +19,93 @@ asuka build --platform watchos .              # ウォッチ単体アプリの .
 
 ## ビルドと公開
 
-`asuka build --platform watchos` は、ウォッチ単体で動くアプリを作ります。ウォッチの App Store からインストールでき、iPhone のアプリがなくても動きます（watchOS 10 以降）。実行ファイルは watchOS 10 が動くすべての Apple Watch、つまり Series 4 以降で動きます。`dist/watchos` の `.ipa` は、App Store Connect がウォッチ単体アプリとして受け付ける形です。ウォッチのアプリを、それを運ぶためだけの小さな iPhone アプリに入れたもので、この iPhone アプリがスマートフォンに表示されることはありません。
+`asuka build --platform watchos` は、ウォッチ単体で動くアプリを作ります。ウォッチの App Store からインストールでき、iPhone のアプリがなくても動きます（watchOS 10 以降）。実行ファイルは watchOS 10 が動くすべての Apple Watch、つまり Series 4 以降で動きます。`dist/watchos` の `.ipa` は、App Store Connect がウォッチ単体アプリとして受け付ける形です。ウォッチのアプリを、それを運ぶためだけの小さな iPhone アプリに入れたもので、この iPhone アプリがスマートフォンに表示されることはありません。（iPhone アプリがウォッチのアプリを運ぶ場合は、iPhone アプリと一緒にビルドされます。[iPhone アプリと一緒に](#iphone-アプリと一緒に)を参照してください。）
 
-署名には、チームのプロビジョニングプロファイルが二つ必要です。一つはウォッチのアプリ用の watchOS のプロファイルで、その ID はアプリの ID に `.watchkitapp` を付けたものです（`dev.asuka.counter.watchkitapp` など）。もう一つはアプリの ID そのもの、つまり App Store Connect のレコードの ID 用の iOS のプロファイルです。どちらも developer.apple.com で作ってください（Profiles › +）。デフォルトは App Store 配布用で、`--distribution` でも選べます。ウォッチのアプリのプロファイルは `--profile` か `asuka.toml` の `[watch]` の `profile` で（[asuka.toml](asuka-toml.md#watch)）、iPhone アプリのものは `ios.profile` で選べます。`.ipa` は Transporter でアップロードします。
+署名には、チームのプロビジョニングプロファイルが二つ必要です。一つはウォッチのアプリ用の watchOS のプロファイルで、その ID はアプリの ID に `.watchkitapp` を付けたものです（`dev.asuka.counter.watchkitapp` など）。もう一つはアプリの ID そのもの、つまり App Store Connect のレコードの ID 用の iOS のプロファイルです。どちらも developer.apple.com で作ってください（Profiles › +）。デフォルトは App Store 配布用で、`--distribution` でも選べます。ウォッチのアプリのプロファイルは `--profile` か `asuka.toml` の `[watch]` の `profile` で（[asuka.toml](asuka-toml.md#watch)）、iPhone アプリのものは `ios.profile` で選べます。
+
+`asuka publish --platform watchos` は、このビルドを作って App Store Connect にアップロードします。`--platform ios` が iPhone アプリをアップロードするのと同じで（[ストアへの公開](shipping.md#ストアへの公開)）、オプションも同じです。`--groups` で TestFlight のグループに配り、`--notes` で新しい内容を書き、`--review` で App 審査に提出し、`--no-wait` でアップロードが済んだところで終わり、`--file` で前にビルドした `.ipa` をアップロードします。ウォッチ単体アプリは App Store Connect では iOS アプリのレコードです（iPhone アプリと同じように、アプリの ID で作ってください）。ビルド、バージョン、審査はそのレコードの iOS プラットフォームのもので、App Store はウォッチにだけそれを提供します。
 
 アプリのアイコンは `asuka.toml` の `icon` で、ウォッチはこれを円形に表示します。大事なものはアイコンの中央に置いてください。
+
+## アプリのコードのアップデート
+
+App Store のリリースのあいだ、ウォッチのアプリもスマートフォンのアプリと同じように、コードを無線で更新できます（[アプリのコードのアップデート](shipping.md#スマートフォンアプリのコードのアップデート)）。`asuka.toml` の `[updates]` を付けてビルドし、ウォッチのビルド向けにアップデートを公開します。
+
+```sh
+asuka build --platform watchos --update      # dist/watchos/updates に、署名したアップデートとそのマニフェストを書き出す
+asuka publish --platform watchos --update    # 作って、[updates] の指定先にアップロードする
+```
+
+ウォッチのアップデートは独立しています。ウォッチのビルドのフィンガープリントはウォッチ自身のネイティブ部分（そのホストと、watchOS 向けにビルドされたパッケージ）から計算され、ウォッチの `platform/update` はフィードの `update-watchos-<フィンガープリント>.json` を読むので、iPhone とウォッチが互いのアップデートを受け取ることはありません。変更を届けたいプラットフォームごとに公開してください。アップデートはアプリのディレクトリ（Application Support）に保存され、あるアップデートの起動が 2 回続けて最初の数秒で終わると、スマートフォンと同じくビルド自身のコードに戻ります。
+
+## iPhone アプリと一緒に
+
+iPhone アプリとそのウォッチのアプリの両方を持つアプリは、`asuka.toml` にそう書きます。
+
+```toml
+[watch]
+companion = true
+```
+
+すると `asuka build --platform ios` は同じコードからウォッチのアプリもビルドし、iPhone アプリの `Watch` フォルダに入れます。`.ipa` も App Store Connect のレコードも一つで、`asuka publish --platform ios` が両方をアップロードします。iPhone アプリをインストールすると、ペアリングしたウォッチにウォッチのアプリが提案されます。ウォッチのアプリはウォッチの App Store から単独でもインストールでき、iPhone が近くになくても動きます。実機向けのビルドは、iPhone アプリのプロファイルとは別に、`<id>.watchkitapp` の watchOS のプロファイル（`[watch]` の `profile`、または最も合うもの）で署名します。`asuka build --platform watchos --simulator` は、これまでどおりシミュレーター用にウォッチのアプリだけをビルドします。
+
+二つのアプリは `platform/companion`（Apple の WatchConnectivity）でやりとりします。どちら側でも呼び出しは同じで、iPhone では相手がウォッチのアプリ、ウォッチでは相手が iPhone アプリです。
+
+```asuka check
+import platform/companion
+
+component Score {
+  state score = 0
+  state said = ""
+
+  // What the other app sends; a message that waits gets an answer.
+  task {
+    for await m in companion.messages() {
+      said = m.text
+      if m.wantsReply { companion.reply(m, text: "{score}") }
+    }
+  }
+
+  Column {
+    Text("Theirs: {companion.context()}")
+    Text(said)
+    Button("Point") {
+      on press {
+        score += 1
+        // The latest state, for the other app whenever it next runs.
+        try? companion.setContext("{score}")
+        // A message now, if the other app can answer.
+        if companion.reachable() {
+          said = (try? await companion.send("point")) ?? ""
+        }
+      }
+    }
+  }
+}
+```
+
+- `companion.status()`（追跡されます）は、相手がいるかどうかを表します。`paired`、`installed`、そして今メッセージに答えられるかどうかの `reachable` です。`available()` と `reachable()` はその短縮形です。
+- `send(text)` は相手にメッセージを送り（相手に届く状態である必要があります）、相手の `reply` を返します。`queue(text)` は相手が次に動いたときのためにメッセージを残し、このアプリが終了したあとでも順番どおりに届けます。`messages()` はその両方を読み、最初に読む前に届いていたものも含みます。
+- `setContext(text)` は、こちら側の最新の状態を相手のために保存し、相手は `context()`（追跡されます）でそれを読みます。届くのは最新のものだけです。
+- `sendFile(path, metadata:)` はファイルをバックグラウンドで送ります。`files()` は届いたファイルを返し、それらはアプリのディレクトリに移されています。
+
+メッセージはテキストです。運ぶ内容は `std/json` でエンコードしてください。相手のいない端末（iPad、Android、デスクトップ）では `available()` は false で、呼び出しは `CompanionError.unavailable` を投げます。テストでは `companion.fake()` で偽の相手を入れられます。シミュレーターで二つを一緒に試すには、ウォッチのシミュレーターと iPhone のシミュレーターをペアリングし（`xcrun simctl pair`、両方とも起動した状態で）、それぞれのアプリのシミュレーター用ビルドをインストールします。
+
+## コンプリケーション
+
+ウォッチのウィジェットはコンプリケーションです。文字盤にも、スマートスタックにも表示されます。`asuka.toml` の `widgets` のうち、ウォッチにあるサイズのもので、`circular`、`rectangular`、`inline`（iPhone ではロック画面のサイズ）と、ウォッチ独自の `corner` です。
+
+```toml
+[[widgets]]
+kind = "steps"
+name = "Steps"
+description = "Today's steps"
+sizes = ["small", "circular", "rectangular", "corner"]
+```
+
+ウォッチのアプリは、iPhone アプリがウィジェットを埋めるのと同じように `platform/widget` で中身を埋めます。ウォッチのアプリのコードで `widget.set("steps", widget.Entry(...))` を呼ぶと、ウォッチの文字盤に表示されます。`corner` は `symbol` と `value`、または `progress` のゲージを、画面の縁に沿って曲げて表示します。アプリ独自のレイアウト（`layout`、`sizes[.corner]`）はどのサイズでも描けます。ウォッチのサイズを持たない種類は iPhone だけのもので、`corner` はウォッチだけのものです。
+
+CLI はウォッチのウィジェット拡張機能（WidgetKit のもので、ID は `<ウォッチのアプリの ID>.widgets`）をウォッチのアプリに組み込み、両者で App Group を共有します。実機向けのビルドはそれを `<id>.watchkitapp.widgets` の watchOS のプロファイル（`[watch]` の `widgetProfile`、または最も合うもの）で署名します。どちらのプロファイルにも App Groups ケイパビリティが必要です。
 
 ## ウォッチに表示されるもの
 
@@ -73,7 +156,7 @@ component Today(steps: int, goal: int) {
 
 標準ライブラリのパッケージはウォッチでも動きます。ネイティブコードを持つものも、呼び出す機能が watchOS にあれば動きます。`std/http`（URLSession）、`std/sqlite`、`std/store` です。`std/websocket` は動きません。watchOS は音声のストリーミング以外で、アプリが WebSocket などの直接の接続を使うことを許さないため、ウォッチでは `unsupported` を投げます。
 
-プラットフォーム SDK のうち、`platform/device` の `haptic` は手首をタップし（選択ではクリック、それ以外はウォッチの成功・再試行・失敗の触覚）、`openURL` はウォッチが開けるもの（電話番号、地図）を開きます。プラットフォーム SDK のほかのパッケージはまだウォッチ向けにビルドされず、呼び出すと、その機能を持たないほかのプラットフォームと同じく `unsupported` を投げます。`environment().watch` を確認して、ウォッチでは使わないようにしてください。
+プラットフォーム SDK のうち、ウォッチにそのサービスがあるパッケージはウォッチ向けにビルドされます。`platform/device`（端末の情報、手首への触覚、`openURL`）、`secure`、`biometric`、`health`、`location`、`audio`、`speech`、`nowplaying`、`network`、`purchase`、`appleauth`、`notify`、`push`、`crash`、`widget`（コンプリケーション）、`companion` です。それぞれが iPhone とどう違うかは [Apple Watch の場合](device.md#apple-watch-の場合)にあります。ほかのパッケージはウォッチでは、その機能を持たないほかのプラットフォームと同じく `unsupported` を投げます。`environment().watch` を確認して、ウォッチでは使わないようにしてください。
 
 ## watchOS のネイティブパッケージ
 

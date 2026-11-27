@@ -1,5 +1,10 @@
 #if canImport(UIKit) && (ASUKA_NOTIFY || ASUKA_PUSH || ASUKA_NOTIFICATION_SERVICE) // platform/notify, platform/push (see the CLI's iosFeatures)
+// The iOS host's, and the same file in the watch's (platform/watchos).
+#if os(watchOS)
+import Foundation
+#else
 import UIKit
+#endif
 import UserNotifications
 import UniformTypeIdentifiers
 #if ASUKA_CONVERSATIONS
@@ -47,6 +52,7 @@ import Intents
 /// tvOS has the badge alone: "request" asks for it, "badge" sets it, and
 /// "schedule" is unsupported (a TV shows no notifications); there's
 /// nothing showing to list or remove, no categories, and no responses.
+/// watchOS has all but the badge: an app on the watch has none.
 @MainActor final class AsukaNotifyCenter: NSObject, UNUserNotificationCenterDelegate {
     static let shared = AsukaNotifyCenter()
     private let categoriesKey = "asuka.notify.categories"
@@ -147,8 +153,12 @@ import Intents
                 reply(.success(Data()))
             },
             "badge": { args, reply in
+                #if os(watchOS)
+                reply(.success(Data())) // no badge on the watch
+                #else
                 let n = args.count >= 4 ? Int(args.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self).littleEndian }) : 0
                 center.setBadgeCount(n) { error in reply(error.map { .failure($0) } ?? .success(Data())) }
+                #endif
             },
             "showing": { _, reply in
                 center.getDeliveredNotifications { ns in

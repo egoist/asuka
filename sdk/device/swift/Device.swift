@@ -2,12 +2,15 @@
 // browser (SFSafariViewController; the Mac's browser), PHPicker and the
 // document picker (NSOpenPanel on the Mac), the pasteboard. Apple TV has
 // no browser, pickers or clipboard: those say unsupported, or nothing's
-// there.
+// there. Nor has Apple Watch (WatchKit's device for the rest), whose
+// screen sleeps as the wrist comes down: keepAwake does nothing there.
 import Foundation
 import UniformTypeIdentifiers
 import Asuka
 #if os(tvOS)
 import UIKit
+#elseif os(watchOS)
+import WatchKit
 #elseif canImport(UIKit)
 import UIKit
 import SafariServices
@@ -22,7 +25,13 @@ final class SystemDevice: Platform {
         let app = b["CFBundleShortVersionString"] as? String ?? ""
         let build = b["CFBundleVersion"] as? String ?? ""
         let (source, installed, updated) = Self.install()
-        #if canImport(UIKit)
+        #if os(watchOS)
+        return await MainActor.run {
+            let d = WKInterfaceDevice.current()
+            return NativeInfo(model: d.model, system: "watchOS", systemVersion: d.systemVersion, appVersion: app, build: build,
+                              source: source, installedMs: installed, updatedMs: updated)
+        }
+        #elseif canImport(UIKit)
         return await MainActor.run {
             NativeInfo(model: UIDevice.current.model, system: Self.systemName, systemVersion: UIDevice.current.systemVersion, appVersion: app, build: build,
                        source: source, installedMs: installed, updatedMs: updated)
@@ -35,7 +44,7 @@ final class SystemDevice: Platform {
         #endif
     }
 
-    #if canImport(UIKit)
+    #if canImport(UIKit) && !os(watchOS)
     /// The system's name: "iOS" (iPadOS's too), "tvOS".
     @MainActor static var systemName: String {
         #if os(tvOS)
@@ -97,6 +106,8 @@ final class SystemDevice: Platform {
         }
         #if os(tvOS)
         throw AsukaNativeError.unsupported("device: tvOS has no web browser")
+        #elseif os(watchOS)
+        throw AsukaNativeError.unsupported("device: watchOS has no web browser")
         #elseif canImport(UIKit)
         try await MainActor.run {
             guard let top = AsukaNative.presenter else { throw Self.error("device: no screen to show it on") }
@@ -111,6 +122,8 @@ final class SystemDevice: Platform {
     func pickPhotos(max: Int) async throws -> [String] {
         #if os(tvOS)
         throw AsukaNativeError.unsupported("device: tvOS has no photo picker")
+        #elseif os(watchOS)
+        throw AsukaNativeError.unsupported("device: watchOS has no photo picker")
         #elseif canImport(UIKit)
         let results: [PHPickerResult] = try await MainActor.run {
             guard let top = AsukaNative.presenter else { throw Self.error("device: no screen to show it on") }
@@ -125,6 +138,8 @@ final class SystemDevice: Platform {
     func pickFiles(types: [String], multiple: Bool) async throws -> [File] {
         #if os(tvOS)
         throw AsukaNativeError.unsupported("device: tvOS has no document picker")
+        #elseif os(watchOS)
+        throw AsukaNativeError.unsupported("device: watchOS has no document picker")
         #else
         var uts = types.compactMap(Self.utType)
         if uts.isEmpty || uts.contains(.item) { uts = [.item] }
@@ -141,8 +156,8 @@ final class SystemDevice: Platform {
     }
 
     func clipboardText() async throws -> String? {
-        #if os(tvOS)
-        return nil // tvOS has no clipboard
+        #if os(tvOS) || os(watchOS)
+        return nil // tvOS and watchOS have no clipboard
         #else
         return await MainActor.run {
             #if canImport(UIKit)
@@ -157,7 +172,7 @@ final class SystemDevice: Platform {
     func clipboardHas() async throws -> ClipboardKinds { await MainActor.run { Self.kinds() } }
 
     @MainActor static func kinds() -> ClipboardKinds {
-        #if os(tvOS)
+        #if os(tvOS) || os(watchOS)
         return ClipboardKinds(text: false, image: false, url: false, html: false)
         #elseif canImport(UIKit)
         let pb = UIPasteboard.general
@@ -181,7 +196,7 @@ final class SystemDevice: Platform {
     static let webArchive = "Apple Web Archive pasteboard type"
 
     func clipboardHTML() async throws -> String? {
-        #if os(tvOS)
+        #if os(tvOS) || os(watchOS)
         return nil
         #else
         return await MainActor.run {
@@ -204,6 +219,7 @@ final class SystemDevice: Platform {
         #endif
     }
 
+    #if !os(watchOS)
     /// A rich type's data as HTML: HTML as it is (UTF-8; UTF-16 with its
     /// mark; else Windows' Latin 1), a web archive's main page, RTF and
     /// RTFD converted.
@@ -229,10 +245,11 @@ final class SystemDevice: Platform {
             return String(data: out, encoding: .utf8)
         }
     }
+    #endif
 
     func copyHTML(html: String, text: String) async throws {
-        #if os(tvOS)
-        throw AsukaNativeError.unsupported("device: tvOS has no clipboard")
+        #if os(tvOS) || os(watchOS)
+        throw AsukaNativeError.unsupported("device: this system has no clipboard")
         #else
         await MainActor.run {
             #if canImport(UIKit)
@@ -249,7 +266,7 @@ final class SystemDevice: Platform {
     }
 
     func clipboardImage() async throws -> String? {
-        #if os(tvOS)
+        #if os(tvOS) || os(watchOS)
         return nil
         #else
         // The image as it was copied (its bytes, not a re-encoding), in the
@@ -282,8 +299,8 @@ final class SystemDevice: Platform {
     }
 
     func copyImage(path: String) async throws {
-        #if os(tvOS)
-        throw AsukaNativeError.unsupported("device: tvOS has no clipboard")
+        #if os(tvOS) || os(watchOS)
+        throw AsukaNativeError.unsupported("device: this system has no clipboard")
         #else
         let url = URL(fileURLWithPath: path)
         guard let data = try? Data(contentsOf: url) else { throw Self.error("device: no file at \(path)") }
@@ -315,8 +332,8 @@ final class SystemDevice: Platform {
     }
 
     func watchClipboard(changed: @escaping (ClipboardKinds) -> Void) async throws {
-        #if os(tvOS)
-        return // nothing changes: tvOS has no clipboard
+        #if os(tvOS) || os(watchOS)
+        return // nothing changes: no clipboard
         #else
         let w = await MainActor.run { ClipboardWatch(changed) }
         defer { Task { @MainActor in w.stop() } }
@@ -327,7 +344,10 @@ final class SystemDevice: Platform {
     }
 
     @MainActor func keepAwake(on: Bool) throws {
-        #if canImport(UIKit)
+        #if os(watchOS)
+        // The watch's screen sleeps as the wrist comes down, whatever an app says.
+        throw AsukaNativeError.unsupported("device: watchOS keeps no screen on")
+        #elseif canImport(UIKit)
         UIApplication.shared.isIdleTimerDisabled = on
         #else
         if on, Self.awake == nil {
@@ -340,7 +360,9 @@ final class SystemDevice: Platform {
     }
 
     @MainActor func openSettings() throws -> Bool {
-        #if canImport(UIKit)
+        #if os(watchOS)
+        return false // the watch's Settings have no page for an app
+        #elseif canImport(UIKit)
         // The app's own page: its permissions, notifications and language.
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return false }
         UIApplication.shared.open(url)
@@ -392,7 +414,7 @@ final class SystemDevice: Platform {
         return out
     }
 
-    #if canImport(UIKit) && !os(tvOS)
+    #if canImport(UIKit) && !os(tvOS) && !os(watchOS)
     /// Copies the picked images to files (the picker's are temporary).
     static func copy(_ results: [PHPickerResult]) async -> [String] {
         guard let dir = try? cacheDir("asuka-photos") else { return [] }
@@ -434,7 +456,7 @@ final class SystemDevice: Platform {
     static func error(_ m: String) -> Error { NSError(domain: "device", code: 0, userInfo: [NSLocalizedDescriptionKey: m]) }
 }
 
-#if !os(tvOS)
+#if !os(tvOS) && !os(watchOS)
 /// Watches the pasteboard: iOS says when it changes (and the app coming
 /// back may bring another app's copy); the Mac doesn't, so its change
 /// count is read twice a second.
@@ -481,7 +503,7 @@ final class SystemDevice: Platform {
 }
 #endif
 
-#if os(tvOS)
+#if os(tvOS) || os(watchOS)
 #elseif canImport(UIKit)
 extension UIViewController {
     /// PHPicker over this controller, for up to max images: what's picked.

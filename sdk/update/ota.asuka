@@ -1,5 +1,5 @@
-// Over-the-air updates of a phone's or an Apple TV's app's code (RFC
-// 0006): a release built with asuka.toml's [updates] knows its
+// Over-the-air updates of a phone's, an Apple TV's or an Apple Watch's
+// app's code (RFC 0006): a release built with asuka.toml's [updates] knows its
 // fingerprint (what its native side gives code), the feed and the public
 // key; check() reads the manifest of its platform and fingerprint
 // (update-<platform>-<fingerprint>.json), a Release's install() downloads
@@ -39,11 +39,12 @@ fn ota() -> Ota? {
 
 /// The platform's name in the feed's files, as asuka build names its
 /// builds': android (Android TV's too: the one Android build), tvos (an
-/// Apple TV, a build of the iOS app with a native side of its own) or
-/// ios.
+/// Apple TV) and watchos (an Apple Watch), each a build of the iOS app
+/// with a native side of its own, or ios.
 fn otaPlatform() -> string {
   let env = environment()
   if env.platform == .android { return "android" }
+  if env.watch { return "watchos" }
   return if env.tv { "tvos" } else { "ios" }
 }
 

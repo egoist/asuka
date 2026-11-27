@@ -60,7 +60,7 @@ func buildFlags(o *buildOptions) *flagSet {
 	fs.String(&o.arch, "arch", 0, "", "the Mac: arm64 or amd64 (Intel; default: arm64); Linux: amd64 or arm64 (default: this machine's, else amd64); Windows: amd64 or arm64 (default: amd64, which runs on Windows on Arm too)")
 	packageFlag(fs, &o.packages)
 	fs.Bool(&o.apk, "apk", 0, "Android: a signed release .apk with every ABI, to install with adb install (testing, sideloading), instead of the .aab for Google Play")
-	fs.Bool(&o.update, "update", 0, "iOS, tvOS, Android: an over-the-air update of the app's code instead of a build, in dist/updates (tvOS's in dist/tvos/updates): its module, signed, and its manifest, for the platform's builds whose native side it fits (asuka.toml's updates)")
+	fs.Bool(&o.update, "update", 0, "iOS, tvOS, watchOS, Android: an over-the-air update of the app's code instead of a build, in dist/updates (tvOS's in dist/tvos/updates, watchOS's in dist/watchos/updates): its module, signed, and its manifest, for the platform's builds whose native side it fits (asuka.toml's updates)")
 	fs.Bool(&o.aar, "aar", 0, "Android: an .aar, the app to embed in an app made in Android Studio (start dev.asuka.AsukaActivity)")
 	fs.String(&o.distribution, "distribution", 0, "app-store", "iOS: app-store, ad-hoc or development")
 	fs.String(&o.profile, "profile", 0, "", "iOS and macOS: a provisioning `profile`'s path, name or UUID (default: asuka.toml's (macOS: or ASUKA_MAC_PROFILE), else the best match installed; macOS: only for an app whose packages need one: push, Sign in with Apple, App Attest)")
@@ -149,12 +149,9 @@ func cmdBuild(args []string) error {
 	if (o.platform == platformTVOS || o.platform == platformWatchOS) && o.xcframework {
 		return fmt.Errorf("--xcframework is iOS's: a %s build is an app", o.platform)
 	}
-	if o.platform == platformWatchOS && o.update {
-		return errors.New("--update is iOS's, tvOS's and Android's: a watch app updates through the App Store")
-	}
 	if o.update {
 		if !otaPlatform(o.platform) {
-			return errors.New("--update is iOS's, tvOS's and Android's: a desktop build writes its update itself")
+			return errors.New("--update is iOS's, tvOS's, watchOS's and Android's: a desktop build writes its update itself")
 		}
 		_, _, err := writeOTAUpdate(app, o.platform, o.out)
 		return err

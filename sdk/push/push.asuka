@@ -14,7 +14,9 @@
 //
 // Each platform's host does it as its apps do, through platform/host. On
 // Apple TV a push shows no alert: it sets the badge, or reaches the app as
-// data (received); none is opened.
+// data (received); none is opened. Apple Watch registers with APNs as an
+// iPhone does (a watch-only app's own token), without rewrite: the watch
+// has no Notification Service Extension of the app's.
 
 import platform/host
 import std/json

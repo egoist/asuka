@@ -1,6 +1,8 @@
 // Package platform/health reads and writes the user's health data, with
-// their permission: HealthKit on iOS, Health Connect on Android, as
-// Flutter's health plugin and React Native's do. Elsewhere (the Mac,
+// their permission: HealthKit on iOS and Apple Watch (whose store holds
+// what the watch measured and the iPhone's recent days, not all its
+// history), Health Connect on Android, as Flutter's health plugin and
+// React Native's do. Elsewhere (the Mac,
 // Windows, Linux, the web) there's no store: available() is false and
 // the calls throw HealthError.notAvailable.
 //

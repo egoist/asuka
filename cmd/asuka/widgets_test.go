@@ -50,7 +50,7 @@ func TestWidgetSwift(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		c.Widgets = append(c.Widgets, widgetConfig{Kind: "k" + string(rune('a'+i)), Name: `Name "quoted"`, Sizes: []string{"small", "circular"}})
 	}
-	s := c.widgetKindsSwift()
+	s := c.widgetKindsSwift(false)
 	// Twelve: two nested bundles, the main one holding them.
 	for _, want := range []string{`forKey: "Name \"quoted\"", value: "Name \"quoted\""`, "[.systemSmall, .accessoryCircular]",
 		"struct AsukaWidgets0_1: WidgetBundle", "AsukaWidgets0_0().body", "@main\nstruct AsukaWidgets: WidgetBundle"} {
@@ -137,7 +137,7 @@ func TestLiveActivityExtension(t *testing.T) {
 	if info := c.widgetInfo(nil); info["AsukaAppGroup"] != nil {
 		t.Errorf("the extension's Info.plist names an App Group: %v", info)
 	}
-	if s := c.widgetKindsSwift(); !strings.Contains(s, "        AsukaLiveActivityBundle().body\n") {
+	if s := c.widgetKindsSwift(false); !strings.Contains(s, "        AsukaLiveActivityBundle().body\n") {
 		t.Errorf("no Live Activities in\n%s", s)
 	}
 	if _, err := exec.LookPath("xcrun"); err != nil {

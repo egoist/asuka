@@ -1,10 +1,12 @@
 // platform/health on iOS: HealthKit. Each kind is a HealthKit type and
 // its unit (one table, Kinds); queries run on HealthKit's own queue and
 // are awaited through continuations, so nothing blocks the main thread.
-// The Mac (and an iPad without Health) has no store: notAvailable.
+// The Mac (and an iPad without Health) has no store: notAvailable. Apple
+// Watch's HealthKit is the watch's own store: what it measured, and
+// the recent days of what the iPhone has.
 import Foundation
 import Asuka
-#if os(iOS)
+#if os(iOS) || os(watchOS)
 import HealthKit
 
 /// A kind as HealthKit has it: a quantity type and its unit, or a

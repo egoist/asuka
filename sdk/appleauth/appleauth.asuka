@@ -7,7 +7,8 @@
 //     on press { let c = try await appleauth.signIn(scopes: [.fullName, .email]) }
 //   }
 //
-// It's iOS's and macOS's: elsewhere available() is false, signIn throws
+// It's Apple's (iOS, macOS, Apple TV, Apple Watch: the watch's sheet and
+// SwiftUI's button): elsewhere available() is false, signIn throws
 // notAvailable and the button shows nothing (sign in with Apple there on
 // the web, through platform/webauth). An app that imports it is given the
 // Sign in with Apple entitlement; its App ID needs the capability

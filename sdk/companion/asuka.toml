@@ -1,0 +1,3 @@
+name = "platform/companion"
+version = "0.1.0"
+description = "An iPhone app and its Apple Watch app talking: messages, queued messages, the latest state, files"

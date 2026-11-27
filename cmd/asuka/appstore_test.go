@@ -616,7 +616,7 @@ func TestReadIPAInfo(t *testing.T) {
 	writeIPA(t, ipa, map[string]any{"CFBundleIdentifier": "com.x.y", "CFBundleShortVersionString": "2.0", "CFBundleVersion": "17",
 		"CFBundleIcons": map[string]any{"CFBundlePrimaryIcon": map[string]any{"CFBundleIconName": "AppIcon"}}, "Z": "z"})
 	info, err := readIPAInfo(ipa)
-	if err != nil || info != (ipaInfo{"com.x.y", "2.0", "17", ""}) {
+	if err != nil || info != (ipaInfo{id: "com.x.y", version: "2.0", build: "17"}) {
 		t.Fatalf("%+v %v", info, err)
 	}
 	writeIPA(t, ipa, map[string]any{"CFBundleIdentifier": "com.x.y"})
@@ -701,7 +701,7 @@ func TestReadPkgInfo(t *testing.T) {
 	}
 	for _, p := range []string{component, product} {
 		info, err := readPkgInfo(p)
-		if err != nil || info != (ipaInfo{"com.example.notes", "1.2", "9", ""}) {
+		if err != nil || info != (ipaInfo{id: "com.example.notes", version: "1.2", build: "9"}) {
 			t.Errorf("%s: %+v, %v", filepath.Base(p), info, err)
 		}
 	}

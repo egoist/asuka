@@ -123,7 +123,7 @@ ASUKA_KEYSTORE_PASSWORD=... asuka build --platform android
 
 **电视**：在 `asuka.toml` 的 `[tv]` 中设置 `android = true` 后，Android 构建同时也是 Android TV 应用，手机和电视共用同一个 `.aab`。`asuka build --platform tvos` 会生成 Apple TV 应用：一个用 tvOS 描述文件签名的 `.ipa`，位于 `dist/tvos`；`asuka publish --platform tvos` 则负责上传它（见[发布到应用商店](#发布到应用商店)）。见[电视](tv.md)。
 
-**Apple Watch**：`asuka build --platform watchos` 会生成一个独立手表应用：位于 `dist/watchos` 的 `.ipa`，用 watchOS 描述文件签名（携带它的小 iPhone 应用则用 iOS 描述文件签名），再用 Transporter 上传。见 [Apple Watch](watch.md)。
+**Apple Watch**：`asuka build --platform watchos` 会生成一个独立手表应用：位于 `dist/watchos` 的 `.ipa`，用 watchOS 描述文件签名（携带它的小 iPhone 应用则用 iOS 描述文件签名），`asuka publish --platform watchos` 会把它上传（见[发布到应用商店](#发布到应用商店)）。如果在 `asuka.toml` 的 `[watch]` 中写了 `companion = true`，手表应用就改由 iPhone 应用携带：`asuka build --platform ios` 会把两者构建进同一个 `.ipa`。见 [Apple Watch](watch.md)。
 
 ## 发布到应用商店
 
@@ -530,16 +530,16 @@ feed = "https://api.example.com/updates?target={target}&version={version}&channe
 
 ### 手机：应用代码的更新
 
-在两次商店发布之间，手机应用（以及 Apple TV 应用）可以像 Expo 的更新那样，通过无线方式更新它的代码：更新的是应用的 Asuka 代码，由核心的虚拟机代替编译进构建里的代码来运行，并用与桌面更新相同的密钥签名。在 asuka.toml 中配置了 `[updates]` 的构建会接收这些更新：
+在两次商店发布之间，手机应用（以及 Apple TV 和 Apple Watch 应用）可以像 Expo 的更新那样，通过无线方式更新它的代码：更新的是应用的 Asuka 代码，由核心的虚拟机代替编译进构建里的代码来运行，并用与桌面更新相同的密钥签名。在 asuka.toml 中配置了 `[updates]` 的构建会接收这些更新：
 
 ```sh
 asuka build --platform ios --update      # 写入 dist/updates：签名后的更新及其清单
 asuka publish --platform ios --update    # 生成更新，并上传到 [updates] 指定的位置
 ```
 
-`--platform android` 生成 Android 的更新，Android TV 也会接收（它们是同一个构建）；`--platform tvos` 生成 Apple TV 的更新，放在 `dist/tvos/updates`。每个平台的更新各自独立：一个更新只为一个平台的构建而做，清单也以该平台命名（`update-tvos-<指纹>.json`），所以 iPhone 永远不会接收 Apple TV 的更新，Apple TV 也不会接收 iPhone 的。一处改动要发到哪些平台，就为每个平台各发布一次。
+`--platform android` 生成 Android 的更新，Android TV 也会接收（它们是同一个构建）；`--platform tvos` 生成 Apple TV 的更新，放在 `dist/tvos/updates`；`--platform watchos` 生成 Apple Watch 的更新，放在 `dist/watchos/updates`。每个平台的更新各自独立：一个更新只为一个平台的构建而做，清单也以该平台命名（`update-tvos-<指纹>.json`），所以 iPhone 永远不会接收 Apple TV 或手表的更新，它们也不会接收 iPhone 的。一处改动要发到哪些平台，就为每个平台各发布一次。
 
-一个更新只适用于它所依据的那些原生部分相同的构建，也就是它们的*指纹*：由 CLI 的版本、平台、构建所包含的宿主部件（`Video` 的播放器、`WebView` 的 WebKit，即应用实际显示的那些）、应用导入的包和应用自身的原生代码、构建链接的内置函数、应用的资源以及 asuka.toml（版本号和构建号除外）计算得出。Apple TV 构建的指纹和 iPhone 构建的不同：它的宿主部件更少，而且只有声明支持 tvOS 的包才会被编译进去。需要更多东西的更新（新的原生包或资源、新的权限、构建里没有显示过的元素）要留给下一次商店构建：它的清单写的是一个没有任何已安装构建拥有的指纹，因此不会发给任何设备。
+一个更新只适用于它所依据的那些原生部分相同的构建，也就是它们的*指纹*：由 CLI 的版本、平台、构建所包含的宿主部件（`Video` 的播放器、`WebView` 的 WebKit，即应用实际显示的那些）、应用导入的包和应用自身的原生代码、构建链接的内置函数、应用的资源以及 asuka.toml（版本号和构建号除外）计算得出。Apple TV 构建的指纹和 iPhone 构建的不同：它的宿主部件更少，而且只有声明支持 tvOS 的包才会被编译进去；手表构建也是如此，它的宿主是手表自己的。需要更多东西的更新（新的原生包或资源、新的权限、构建里没有显示过的元素）要留给下一次商店构建：它的清单写的是一个没有任何已安装构建拥有的指纹，因此不会发给任何设备。
 
 在应用里，`update.UpdateWindow()` 会在启动后不久检查一次，之后每天检查一次，下载找到的更新，下次启动时运行；手机上不会显示窗口。`update.check()`、`Release.install()` 和 `relaunch()`（立即运行）可以手动完成这些步骤，`update.version()` 返回当前运行的版本（`1.4.0+1764150000`：`+` 后面是更新的编号）。如果一个更新连续两次在启动后的最初几秒内结束（启动时崩溃就是这样），应用会回到构建自带的代码，并且不再接收这个更新。在 Apple TV 上，更新保存在应用的缓存目录里，tvOS 可能会在应用没有运行时清掉它：这时应用会运行构建自带的代码，直到再次下载到这个更新。
 

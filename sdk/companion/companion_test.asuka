@@ -1,0 +1,68 @@
+test "no companion: unavailable, and the calls say so" {
+  expect(!available())
+  expect(!reachable())
+  var said = ""
+  do {
+    let _ = try await send("hi")
+  } catch e {
+    said = e.message
+  }
+  expect(said == "companion: not available")
+  var queued = ""
+  do {
+    try queue("later")
+  } catch e {
+    queued = e.message
+  }
+  expect(queued == "companion: not available")
+}
+
+test "a fake companion answers, keeps what's sent, and delivers" {
+  let other = fake()
+  other.answer = "pong"
+  expect(available() && reachable())
+  expect(try await send("ping") == "pong")
+  try queue("one")
+  try queue("two")
+  try setContext("score 3")
+  try sendFile(path: "/tmp/a.json", metadata: "day")
+  expect(other.sent == ["ping"])
+  expect(other.queued == ["one", "two"])
+  expect(other.sentContext == "score 3")
+  expect(other.files.count() == 1 && other.files[0].metadata == "day")
+
+  let id = other.deliver("hello", wantsReply: true)
+  for await m in messages() {
+    expect(m.text == "hello" && m.wantsReply)
+    reply(m, text: "hi back")
+    break
+  }
+  expect(other.replies[id] == "hi back")
+
+  other.context = "theirs"
+  expect(context() == "theirs")
+}
+
+test "out of reach: send throws notReachable; queue still goes" {
+  let other = fake()
+  other.status = Status(supported: true, paired: true, installed: true, reachable: false)
+  var said = ""
+  do {
+    let _ = try await send("now?")
+  } catch CompanionError.notReachable {
+    said = "notReachable"
+  }
+  expect(said == "notReachable")
+  try queue("later")
+  expect(other.queued == ["later"])
+
+  other.status = Status(supported: true, paired: true, installed: false)
+  expect(!available())
+  var missing = ""
+  do {
+    try setContext("x")
+  } catch e {
+    missing = e.message
+  }
+  expect(missing == "companion: the other app isn't installed")
+}

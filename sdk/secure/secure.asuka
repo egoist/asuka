@@ -57,7 +57,8 @@ fn made() throws -> Keychain {
 
 /// Keeps value as key's, encrypted by the platform, replacing what was
 /// there. protected: reading it asks the user to prove it's them first
-/// (Face ID or Touch ID, or the passcode, on iOS and the Mac; the
+/// (Face ID or Touch ID, or the passcode, on iOS and the Mac; on Apple
+/// Watch, the watch unlocked on the wrist, else its passcode; the
 /// fingerprint, face or screen lock on Android; Windows Hello); where the
 /// device can't ask (no passcode, nothing enrolled, Linux, the web), it
 /// throws SecureError.notAvailable and keeps nothing.

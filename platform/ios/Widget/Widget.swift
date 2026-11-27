@@ -133,11 +133,11 @@ struct AsukaWidgetView: View {
     }
 
     var bodyLines: Int {
-        switch family {
-        case .systemSmall: return entry.value.isEmpty ? 4 : 2
-        case .systemMedium: return entry.value.isEmpty ? 4 : 3
-        case .systemLarge: return 10
-        case .systemExtraLarge: return 12
+        switch family.asukaSize {
+        case "small": return entry.value.isEmpty ? 4 : 2
+        case "medium": return entry.value.isEmpty ? 4 : 3
+        case "large": return 10
+        case "extraLarge": return 12
         default: return 1
         }
     }
@@ -163,6 +163,26 @@ struct AsukaWidgetView: View {
 
     @ViewBuilder var content: some View {
         switch family {
+        #if os(watchOS)
+        case .accessoryCorner:
+            // The watch face's corner: the symbol, and the value (or a gauge
+            // of the progress) curved along the edge.
+            Image(systemName: entry.symbol.isEmpty ? "circle.fill" : entry.symbol)
+                .font(.title3)
+                .widgetAccentable()
+                .widgetLabel {
+                    if entry.showProgress {
+                        Gauge(value: min(max(entry.progress, 0), 1)) {
+                            Text(entry.title)
+                        } currentValueLabel: {
+                            Text(entry.value)
+                        }
+                        .tint(tint)
+                    } else {
+                        Text(entry.value.isEmpty ? entry.title : entry.value)
+                    }
+                }
+        #endif
         case .accessoryInline:
             // One line: the symbol, then the value or the title.
             Label(entry.value.isEmpty ? entry.title : "\(entry.title) \(entry.value)", systemImage: entry.symbol.isEmpty ? "circle.fill" : entry.symbol)
@@ -209,7 +229,7 @@ struct AsukaWidgetView: View {
                 Spacer(minLength: 0)
                 if !entry.value.isEmpty {
                     Text(entry.value)
-                        .font(.system(size: family == .systemSmall ? 32 : 40, weight: .bold, design: .rounded))
+                        .font(.system(size: family.asukaSize == "small" ? 32 : 40, weight: .bold, design: .rounded))
                         .minimumScaleFactor(0.4)
                         .lineLimit(1)
                 }
@@ -238,11 +258,11 @@ struct AsukaWidgetBackground: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(iOS 17.0, *) {
-            content.containerBackground(for: .widget) { Color(.systemBackground) }
+            content.containerBackground(for: .widget) { AsukaLayout.background }
         } else if family == .accessoryCircular || family == .accessoryRectangular || family == .accessoryInline {
             content
         } else {
-            content.padding().background(Color(.systemBackground))
+            content.padding().background(AsukaLayout.background)
         }
     }
 }

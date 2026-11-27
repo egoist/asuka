@@ -12,6 +12,10 @@
 // crossings()). The system starts the app for their events, without a
 // screen: read updates() and crossings() as the app starts, in a task of
 // the app's root, so the events it was started for find a reader.
+// Apple Watch keeps background updates coming while the app runs (no
+// significant changes: those are coarse updates there), but monitors no
+// regions and starts no app for an event: the package computes the
+// regions from the positions, and openSettings throws unavailable.
 //
 // Tests drive a fake: location.fake() gives the package a FakeLocation
 // (what the user answers, where the device is, the regions it crosses).

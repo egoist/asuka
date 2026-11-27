@@ -13,6 +13,9 @@
 //   }
 //
 // Linux has none: check answers .none and authenticate notAvailable.
+// Apple Watch has no biometry: check answers .none with its passcode, and
+// authenticate passes while the watch is unlocked on the wrist, else asks
+// for the passcode (noPasscode: notAvailable).
 
 /// The biometry a device has.
 pub enum Kind {

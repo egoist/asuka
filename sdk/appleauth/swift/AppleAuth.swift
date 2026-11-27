@@ -1,11 +1,14 @@
 // platform/appleauth on iOS and macOS: AuthenticationServices' Apple ID
 // provider and its controller (the system's sheet), and
 // ASAuthorizationAppleIDButton, made again when its type or variant
-// changes (they're fixed at init).
+// changes (they're fixed at init). Apple Watch has the sheet, presented
+// without an anchor, and SwiftUI's SignInWithAppleButton.
 import Foundation
 import AuthenticationServices
 import Asuka
-#if canImport(UIKit)
+#if os(watchOS)
+import SwiftUI
+#elseif canImport(UIKit)
 import UIKit
 #else
 import AppKit
@@ -37,8 +40,15 @@ final class AppleIDProvider: Provider {
     }
 }
 
+#if os(watchOS)
+/// What the sheets' owner is: the watch's sheet has no anchor.
+typealias SheetsDelegate = ASAuthorizationControllerDelegate
+#else
+typealias SheetsDelegate = ASAuthorizationControllerDelegate & ASAuthorizationControllerPresentationContextProviding
+#endif
+
 /// The sheets shown, each its controller's.
-@MainActor final class Sheets: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+@MainActor final class Sheets: NSObject, SheetsDelegate {
     static let shared = Sheets()
     private var pending: [ObjectIdentifier: (ASAuthorizationController, (Result<Credential, Error>) -> Void)] = [:]
 
@@ -52,11 +62,14 @@ final class AppleIDProvider: Provider {
         if !state.isEmpty { req.state = state }
         let c = ASAuthorizationController(authorizationRequests: [req])
         c.delegate = self
+        #if !os(watchOS) // the watch's sheet is the whole screen's
         c.presentationContextProvider = self
+        #endif
         pending[ObjectIdentifier(c)] = (c, done)
         c.performRequests()
     }
 
+    #if !os(watchOS)
     nonisolated func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
         MainActor.assumeIsolated {
             #if canImport(UIKit)
@@ -67,6 +80,7 @@ final class AppleIDProvider: Provider {
             #endif
         }
     }
+    #endif
 
     nonisolated func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
         MainActor.assumeIsolated {
@@ -96,6 +110,33 @@ final class AppleIDProvider: Provider {
     }
 }
 
+#if os(watchOS)
+/// The button: SwiftUI's Sign in with Apple, drawn as Apple draws it; a tap
+/// is the component's press, whose handler signs in (signIn's sheet).
+@MainActor final class AppleSignInButton: SignInButton {
+    let events: SignInButtonEvents
+    private var type = ButtonType.signIn, variant = ButtonVariant.automatic
+    private var radius: Double = -1
+
+    init(_ events: SignInButtonEvents) { self.events = events }
+
+    var view: AsukaPlatformView {
+        let t: SignInWithAppleButton.Label = type == .continueWithApple ? .continue : type == .signUp ? .signUp : .signIn
+        // Automatic: white, on the watch's black.
+        let s: SignInWithAppleButton.Style = variant == .black ? .black : variant == .whiteOutline ? .whiteOutline : .white
+        let events = self.events
+        let b = SignInWithAppleButton(t, onRequest: { _ in }, onCompletion: { _ in })
+            .signInWithAppleButtonStyle(s)
+            .allowsHitTesting(false)
+        let shaped: AnyView = radius >= 0 ? AnyView(b.clipShape(RoundedRectangle(cornerRadius: radius))) : AnyView(b)
+        return AnyView(shaped.contentShape(Rectangle()).onTapGesture { events.press() })
+    }
+
+    func setType(_ value: ButtonType) { type = value }
+    func setVariant(_ value: ButtonVariant) { variant = value }
+    func setCornerRadius(_ value: Double) { radius = value }
+}
+#else
 /// The button: Apple's, in a box that holds it (it's made again as its
 /// type, its variant or, for automatic, the appearance changes).
 @MainActor final class AppleSignInButton: SignInButton {
@@ -182,6 +223,7 @@ final class Box: AsukaPlatformView {
     override var fittingSize: NSSize { NSSize(width: 200, height: 32) }
     #endif
 }
+#endif
 
 func makeProvider() throws -> any Provider { AppleIDProvider() }
 

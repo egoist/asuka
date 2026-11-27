@@ -69,7 +69,7 @@ github = "you/notes"
 | `fileTypes` | 表数组 | 无 | 应用能打开的文件类型。见 [fileTypes](#filetypes)。 |
 | `shareTarget` | `true` 或表 | 关闭 | 让应用出现在其他应用的分享面板里，仅限 iOS 和 Android。见 [shareTarget](#sharetarget)。 |
 | `splash` | 表 | 无 | 启动屏，仅限 iOS 和 Android。见 [splash](#splash)。 |
-| `widgets` | 表数组 | 无 | 主屏幕小组件，仅限 iOS 和 Android。见 [widgets](#widgets)。 |
+| `widgets` | 表数组 | 无 | iOS 和 Android 的主屏幕小组件，以及 Apple Watch 的复杂功能。见 [widgets](#widgets)。 |
 | `shortcuts` | 表数组 | 无 | 提供给 Siri、聚焦搜索和启动器的快捷操作，仅限 iOS 和 Android。见 [shortcuts](#shortcuts)。 |
 | `nfc` | 表 | 无 | `platform/nfc` 读写标签所需的配置：iOS 的 AID 和 FeliCa 系统代码，以及在 Android 上能打开应用的标签。见 [nfc](#nfc)。 |
 | `background` | 布尔值 | `false` | 在桌面端让应用常驻托盘：启动时不打开窗口，没有窗口时也继续运行；在 Mac 上从启动起就不显示程序坞（Dock）图标（`LSUIElement`）。见[后台应用](desktop.md#后台应用)。 |
@@ -160,7 +160,7 @@ darkBackground = "#1B2440"
 
 ## widgets
 
-应用的主屏幕小组件，仅限 iOS 和 Android；由应用调用 `widget.set` 填充内容。
+应用在 iOS 和 Android 上的主屏幕小组件，以及 Apple Watch 上的复杂功能；由应用调用 `widget.set` 填充内容。
 
 ```toml
 [[widgets]]
@@ -175,7 +175,7 @@ sizes = ["small", "medium", "rectangular"]
 | `kind` | 字符串 | 必填 | 小组件的名字，供 `widget.Set` 使用：只能包含字母、数字和 `_`，以字母开头，且不能重复。 |
 | `name` | 字符串 | 同 `kind` | 小组件库里显示的名称。 |
 | `description` | 字符串 | 无 | 小组件库里显示的描述。 |
-| `sizes` | 字符串数组 | `["small", "medium"]` | `small`、`medium`、`large`，以及 iOS 的 `extraLarge`（iPad）和锁屏上的 `circular`、`rectangular`、`inline`。 |
+| `sizes` | 字符串数组 | `["small", "medium"]` | `small`、`medium`、`large`，以及 iOS 的 `extraLarge`（iPad）和锁屏上的 `circular`、`rectangular`、`inline`；后三种同时也是 Apple Watch 的复杂功能，手表还有自己的 `corner`。 |
 
 在 iOS 上，小组件是一个扩展，有自己的 bundle ID（应用的 ID 加上 `.widgets`），发布构建用 `ios.widgetProfile` 为它签名。见[主屏幕小组件](device.md#主屏幕小组件platformwidget)。
 
@@ -380,12 +380,15 @@ Apple Watch 构建（`asuka build --platform watchos`）的配置。
 
 ```toml
 [watch]
+companion = true
 profile = "Counter Watch"
 ```
 
 | 键 | 类型 | 默认值 | 含义 |
 |---|---|---|---|
-| `profile` | 字符串 | 已安装的最匹配的那个 | 手表应用的描述文件：名称、UUID 或路径，应为应用 ID 加上 `.watchkitapp` 的 watchOS 描述文件。`--profile` 会覆盖它；携带手表应用的 iPhone 应用用的是 `ios.profile`。 |
+| `companion` | 布尔值 | `false` | 由 iPhone 应用携带手表应用：`asuka build --platform ios` 会把两者构建进同一个 `.ipa`，它们通过 `platform/companion` 通信。不设置时，`asuka build --platform watchos` 生成的是独立手表应用。 |
+| `profile` | 字符串 | 已安装的最匹配的那个 | 手表应用的描述文件：名称、UUID 或路径，应为应用 ID 加上 `.watchkitapp` 的 watchOS 描述文件。对独立手表应用，`--profile` 会覆盖它；携带手表应用的 iPhone 应用用的是 `ios.profile`。 |
+| `widgetProfile` | 字符串 | 已安装的最匹配的那个 | 手表的小组件扩展（即它的复杂功能）的描述文件，对应 ID `<id>.watchkitapp.widgets`。 |
 
 见 [Apple Watch](watch.md)。
 

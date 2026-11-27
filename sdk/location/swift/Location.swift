@@ -8,12 +8,19 @@
 //
 // Apple TV allows when in use only, and gives one position at a time
 // (requestLocation): no background updates or regions (the package
-// computes those from the positions), and a watch asks again every few
-// minutes, for a TV that stays where it is.
+// computes those from the positions), and positions() asks again every
+// few minutes, for a TV that stays where it is.
+//
+// Apple Watch has updates in the background (the location background
+// mode, while the app runs) but no significant changes, regions or
+// relaunches: significant updates are coarse ones, and the package
+// computes the regions from the positions.
 import Foundation
 import CoreLocation
 import Asuka
-#if canImport(UIKit)
+#if os(watchOS)
+import WatchKit
+#elseif canImport(UIKit)
 import UIKit
 #else
 import AppKit
@@ -65,7 +72,9 @@ final class CoreLocator: Locator {
     }
 
     @MainActor func openSettings() throws {
-        #if canImport(UIKit)
+        #if os(watchOS)
+        throw LocationError.unavailable // the watch's Settings have no page for an app
+        #elseif canImport(UIKit)
         if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
         #else
         if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") { NSWorkspace.shared.open(u) }
@@ -75,6 +84,8 @@ final class CoreLocator: Locator {
     func support() throws -> Support {
         #if os(tvOS)
         return Support(updates: false, regions: false, maxRegions: 0, maxRadius: 0, dwell: false, relaunch: false)
+        #elseif os(watchOS)
+        return Support(updates: true, regions: false, maxRegions: 0, maxRadius: 0, dwell: false, relaunch: false)
         #else
         let regions = CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self)
         #if os(iOS)
@@ -169,12 +180,17 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
         fg.desiredAccuracy = kCLLocationAccuracyBest
         bg.delegate = self
         refreshServices()
-        #if canImport(UIKit)
+        #if canImport(UIKit) || os(watchOS)
         let nc = NotificationCenter.default
-        nc.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in
+        #if os(watchOS)
+        let resign = WKApplication.willResignActiveNotification, active = WKApplication.didBecomeActiveNotification
+        #else
+        let resign = UIApplication.willResignActiveNotification, active = UIApplication.didBecomeActiveNotification
+        #endif
+        nc.addObserver(forName: resign, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { Hub.shared.resigned = true }
         }
-        nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+        nc.addObserver(forName: active, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
                 let h = Hub.shared
                 h.refreshServices()
@@ -190,7 +206,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
 
     // MARK: What the user allowed
 
-    #if os(tvOS)
+    #if os(tvOS) || os(watchOS)
     var maxRadius: Double { 0 }
     #else
     var maxRadius: Double { bg.maximumRegionMonitoringDistance }
@@ -214,7 +230,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
         case .notDetermined: level = .notAsked
         case .denied: level = .denied
         case .restricted: level = .restricted
-        #if os(iOS)
+        #if !os(macOS)
         case .authorizedWhenInUse: level = .whenInUse
         #endif
         case .authorizedAlways: level = .always
@@ -270,12 +286,12 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
                     done(self.authorization)
                 }
             }
-            #if os(iOS) || os(tvOS)
+            #if os(iOS) || os(tvOS) || os(watchOS)
             access.requestWhenInUseAuthorization()
             #else
             access.requestAlwaysAuthorization()
             #endif
-        #if os(iOS)
+        #if os(iOS) || os(watchOS)
         case .authorizedWhenInUse where always:
             waitForAnswer { [unowned self] in done(self.authorization) }
             access.requestAlwaysAuthorization()
@@ -367,7 +383,29 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
     }
 
     private func apply(_ o: Updates) {
-        #if !os(tvOS)
+        #if os(watchOS)
+        bg.stopUpdatingLocation()
+        // No significant changes on the watch: coarse updates, every 500
+        // meters or so, as theirs come.
+        let accuracy = o.significant ? .low : o.accuracy
+        switch accuracy {
+        case .navigation: bg.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        case .balanced: bg.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        case .low: bg.desiredAccuracy = kCLLocationAccuracyKilometer
+        case .passive: bg.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+        default: bg.desiredAccuracy = kCLLocationAccuracyBest
+        }
+        bg.distanceFilter = o.significant ? 500 : o.distance > 0 ? o.distance : kCLDistanceFilterNone
+        switch o.activity {
+        case .automotive: bg.activityType = .automotiveNavigation
+        case .otherNavigation: bg.activityType = .otherNavigation
+        case .fitness: bg.activityType = .fitness
+        case .airborne: bg.activityType = .airborne
+        default: bg.activityType = .other
+        }
+        bg.allowsBackgroundLocationUpdates = true
+        bg.startUpdatingLocation()
+        #elseif !os(tvOS)
         bg.stopUpdatingLocation()
         bg.stopMonitoringSignificantLocationChanges()
         if o.significant {
@@ -400,7 +438,9 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
 
     func stopUpdates() {
         defaults.removeObject(forKey: "asuka.location.updates")
-        #if !os(tvOS)
+        #if os(watchOS)
+        bg.stopUpdatingLocation()
+        #elseif !os(tvOS)
         bg.stopUpdatingLocation()
         bg.stopMonitoringSignificantLocationChanges()
         #endif
@@ -409,7 +449,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
     // MARK: Regions
 
     func monitor(_ r: Region) throws {
-        #if os(tvOS)
+        #if os(tvOS) || os(watchOS)
         throw LocationError.unavailable
         #else
         #if os(iOS)
@@ -434,7 +474,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
     }
 
     func stopMonitoring(_ which: (String) -> Bool) {
-        #if !os(tvOS)
+        #if !os(tvOS) && !os(watchOS)
         var saved = defaults.dictionary(forKey: "asuka.location.regions") as? [String: [String: Any]] ?? [:]
         for r in bg.monitoredRegions where which(r.identifier) {
             bg.stopMonitoring(for: r)
@@ -445,7 +485,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
     }
 
     var monitored: [Region] {
-        #if os(tvOS)
+        #if os(tvOS) || os(watchOS)
         return []
         #else
         let saved = defaults.dictionary(forKey: "asuka.location.regions") as? [String: [String: Any]] ?? [:]
@@ -568,7 +608,7 @@ func onMain<T>(_ body: @MainActor () -> T) -> T {
         add(e)
     }
 
-    #if !os(tvOS)
+    #if !os(tvOS) && !os(watchOS)
     nonisolated func locationManager(_ m: CLLocationManager, didEnterRegion region: CLRegion) {
         MainActor.assumeIsolated { crossed(region, .enter) }
     }

@@ -39,6 +39,15 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 		sdkName = map[bool]string{true: "appletvsimulator", false: "appletvos"}[o.simulator]
 		cfg.dropTVExtensions()
 	}
+	// The watch app the iPhone app carries ([watch] companion), built from
+	// the config as asuka.toml has it, before the iPhone build adds its
+	// packages' needs.
+	var watchApp *asukaApp
+	if cfg.Watch.Companion && o.platform != platformTVOS && o.dev == nil {
+		w := *app
+		w.cfg = cfg.clone()
+		watchApp = &w
+	}
 	tc, err := newIOSToolchainFor(sdkName, o.verbose)
 	if err != nil {
 		return err
@@ -55,7 +64,7 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 	// Sign first: no point building for a profile that isn't there. The
 	// share extension has a bundle ID, and so a profile, of its own (a
 	// wildcard one can serve both), from the app's team.
-	var prof, shareProf, widgetProf, notificationProf *profile
+	var prof, shareProf, widgetProf, notificationProf, watchProf *profile
 	if !o.simulator {
 		want := o.profile
 		if want == "" {
@@ -71,11 +80,16 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 			}
 			fmt.Printf("asuka: signing the share extension with %q\n", shareProf.name)
 		}
-		if len(cfg.Widgets) > 0 {
+		if len(cfg.iosWidgets()) > 0 {
 			if widgetProf, err = o.pickProfile(prof.team, cfg.widgetID(), cfg.IOS.WidgetProfile); err != nil {
 				return fmt.Errorf("the widget extension (asuka.toml's widgets): %v", err)
 			}
 			fmt.Printf("asuka: signing the widget extension with %q\n", widgetProf.name)
+		}
+		if watchApp != nil {
+			if watchProf, err = pickWatchProfile(cfg, prof.team, cfg.Watch.Profile, o.distribution); err != nil {
+				return err
+			}
 		}
 	}
 	fmt.Printf("asuka: building %s %s (%d) for %s\n", cfg.Name, cfg.Version, cfg.Build, map[bool]string{true: "the simulator", false: "devices"}[o.simulator])
@@ -262,6 +276,12 @@ func buildIOS(app *asukaApp, o *buildOptions) error {
 			err = widgetProf.sign(tc, work, appex, cfg.widgetID(), nil, cfg.appGroup(), "", nil)
 		}
 		if err != nil {
+			return err
+		}
+	}
+	// The watch app, signed before the app, whose signature seals it.
+	if watchApp != nil {
+		if err := embedCompanionWatch(watchApp, o.simulator, watchProf, o.verbose, work, bundle); err != nil {
 			return err
 		}
 	}

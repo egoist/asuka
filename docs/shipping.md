@@ -278,8 +278,11 @@ profile, in `dist/tvos`, and `asuka publish --platform tvos` uploads it
 
 **Apple Watch**: `asuka build --platform watchos` makes a watch-only
 app, an `.ipa` in `dist/watchos` signed with a watchOS profile (and an
-iOS one for the small iPhone app that carries it), for Transporter to
-upload. See [Apple Watch](watch.md).
+iOS one for the small iPhone app that carries it), and `asuka publish
+--platform watchos` uploads it (see [Publishing](#publishing)). With
+`asuka.toml`'s `[watch]` `companion = true`, the iPhone app carries its
+watch app instead: `asuka build --platform ios` builds both into one
+`.ipa`. See [Apple Watch](watch.md).
 
 ## Publishing
 
@@ -1115,8 +1118,8 @@ The signatures are the ones `asuka build` made: the server only chooses.
 
 ### Phones: updates of the app's code
 
-Between store releases a phone app (and an Apple TV app) takes updates
-of its code over the air, as Expo's updates do: its Asuka code, which the core's VM runs in
+Between store releases a phone app (and an Apple TV or Apple Watch app)
+takes updates of its code over the air, as Expo's updates do: its Asuka code, which the core's VM runs in
 place of the code compiled into the build, signed with the same key as
 desktop updates. A build made with asuka.toml's `[updates]` takes them:
 
@@ -1126,12 +1129,13 @@ asuka publish --platform ios --update    # built, and uploaded where [updates] s
 ```
 
 `--platform android` makes Android's, which Android TV takes too (it's
-the same build), and `--platform tvos` Apple TV's, in `dist/tvos/updates`.
+the same build), `--platform tvos` Apple TV's, in `dist/tvos/updates`,
+and `--platform watchos` Apple Watch's, in `dist/watchos/updates`.
 Each platform's updates are its own: an update is made for one
 platform's builds, its manifest is named for it
 (`update-tvos-<fingerprint>.json`), and an iPhone never takes an Apple
-TV's update, nor an Apple TV an iPhone's. Publish one for each platform
-the change is for.
+TV's or a watch's update, nor they an iPhone's. Publish one for each
+platform the change is for.
 
 An update fits only the builds whose native side it was made against:
 their *fingerprint*, of the CLI's version, the platform, the parts of
@@ -1140,7 +1144,7 @@ the app shows), the native code of the packages the app imports and its
 own, the builtins the build links, its assets and asuka.toml (but for
 its version and build). An Apple TV build's differs from the iPhone
 build's: its host has fewer parts, and only the packages that list tvOS
-are built into it. An update that needs more (a new native package or
+are built into it; a watch build's likewise, its host the watch's own. An update that needs more (a new native package or
 asset, a permission, an element the build doesn't show) is for the next
 store build: its manifest names a fingerprint no installed build has,
 and it reaches none.

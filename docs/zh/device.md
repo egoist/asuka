@@ -2,7 +2,7 @@
 
 Asuka 提供了一系列包，让应用用上视图之外的设备能力：相机、条码、图像内容识别、照片和文件、文件预览、打印和 PDF、邮件和短信编辑界面、定位、通知和推送、声音、正在播放（Now Playing）和录音、网络状态、共享的媒体库、后台任务、接收其他应用的分享、JavaScript、登录和生物识别、屏幕、地图、应用商店提供的服务、广告、崩溃报告，以及数据分析。本页逐一介绍这些包：它们能做什么、API 怎么用、会给应用带来哪些权限，以及在各个平台上的表现。
 
-每个包在所有平台上都是同一套 API，iOS 和 Android 几乎支持其中的全部功能。在 macOS、Windows 和 Linux 上，Asuka 会用桌面系统自己的服务来实现各个包；在浏览器中则用 Web API。如果某个平台根本没有对应的能力，包的表现就和在一台缺少该功能的手机上一样：返回这个包的 `notAvailable` 错误，返回一个说明缺了什么的错误，或者调用了也什么都不做。每个包的小节都会说明它能做什么、在各平台上分别靠什么实现。每个桌面平台和浏览器也各有专门的一节（[在 Mac 上](#在-mac-上)、[在 Windows 上](#在-windows-上)、[在 Linux 上](#在-linux-上)、[在浏览器中](#在浏览器中)），介绍应用在那里需要做哪些配置，并用一张表列出它与 iOS 和 Android 的不同之处。
+每个包在所有平台上都是同一套 API，iOS 和 Android 几乎支持其中的全部功能。在 macOS、Windows 和 Linux 上，Asuka 会用桌面系统自己的服务来实现各个包；在浏览器中则用 Web API。如果某个平台根本没有对应的能力，包的表现就和在一台缺少该功能的手机上一样：返回这个包的 `notAvailable` 错误，返回一个说明缺了什么的错误，或者调用了也什么都不做。每个包的小节都会说明它能做什么、在各平台上分别靠什么实现。每个桌面平台和浏览器也各有专门的一节（[在 Mac 上](#在-mac-上)、[在 Windows 上](#在-windows-上)、[在 Linux 上](#在-linux-上)、[在浏览器中](#在浏览器中)），介绍应用在那里需要做哪些配置，并用一张表列出它与 iOS 和 Android 的不同之处。Apple Watch 也有专门的一节（[在 Apple Watch 上](#在-apple-watch-上)）。
 
 ## 权限与用途说明
 
@@ -213,6 +213,30 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/analytics` | 从 Google 加载的 gtag.js，发送到 `asuka.toml` 里的 Web 数据流；关闭数据收集用的是 gtag 自己的开关，并保存在 `localStorage` 里 |
 | `platform/splash` | `hold` 和 `hide` 什么也不做 |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android |
+
+## 在 Apple Watch 上
+
+手表应用由 iOS 应用的代码构建而成（见 [Apple Watch](watch.md)），所以它拿到的用途说明和 entitlement 与 iPhone 应用相同：推送的 `aps-environment`、HealthKit、通过 Apple 登录等。手表应用的描述文件（对应 `<id>.watchkitapp`）必须和 iPhone 应用的一样，开启这些功能。
+
+这些包在手表上的工作方式与 iOS 相同，用的也是同一套框架（Core Location、HealthKit、StoreKit、AVFoundation、MediaPlayer、UserNotifications、AuthenticationServices、LocalAuthentication、钥匙串、Network），只有下面这些手表与之不同的地方例外：
+
+| 包 | 在 Apple Watch 上 |
+| --- | --- |
+| `platform/device` | `info`：`model` 为 `"Apple Watch"`，`system` 为 `"watchOS"`。手表没有浏览器、选择器和剪贴板：`browse`、`pickPhotos` 和 `pickFiles` 会抛出 unsupported，剪贴板始终为空，`copy` 和 `share` 什么也不做。`keepAwake` 什么也不做（手腕放下时屏幕就会熄灭），`openSettings` 返回 false。`openURL` 能打开手表能处理的链接（电话号码、地图） |
+| `device.haptic` | 手表在手腕上的触感：`.selection` 和 `.light` 是一次轻点，`.medium` 和 `.heavy` 是更重一些的轻敲，`.success`、`.warning` 和 `.error` 分别是手表的成功、重试和失败触感 |
+| `platform/secure` | 使用手表的钥匙串。读取受保护的密钥时，如果手表戴在手腕上且已解锁，就不会询问任何东西，否则会要求输入手表的密码 |
+| `platform/biometric` | 没有面容 ID 和触控 ID：`check` 返回 `.none`，并报告有密码；手表戴在手腕上且已解锁时，`authenticate` 直接通过，否则要求输入密码；`noPasscode` 会抛出 `notAvailable` |
+| `platform/health` | 手表上的 HealthKit：包括手表自己测得的数据，以及 iPhone 最近几天的数据，而不是全部历史记录 |
+| `platform/location` | 应用运行期间，后台定位更新会持续进行（`significant` 更新会变成粗略的更新），但手表不会监测区域，也不会为了某个事件启动应用：区域由这个包根据位置计算（`supported()` 的 `regions` 和 `relaunch` 均为 false）。`openSettings` 会抛出 `LocationError.unavailable` |
+| `platform/audio`、`platform/speech` | 通过手表的扬声器播放，或者通过连接的蓝牙耳机 |
+| `platform/nowplaying` | 手表的“正在播放”，以及用数码表冠调节音量 |
+| `platform/purchase` | StoreKit 2；购买由手表在自己的面板中确认。手表没有订阅管理、退款和优惠码面板：`manageSubscriptions`、`requestRefund` 和 `redeemCode` 会抛出 unsupported |
+| `platform/appleauth` | 手表的“通过 Apple 登录”面板和 SwiftUI 的按钮（`.automatic` 在手表的黑色背景上显示为白色） |
+| `platform/notify` | 和在 iPhone 上一样显示通知，包括操作、回复和消息。手表应用没有角标：`setBadge` 什么也不做 |
+| `platform/push` | 使用 APNs，手表应用有自己的 token，支持提醒推送和数据消息；不支持 `rewrite`（手表应用没有 Notification Service Extension） |
+| `platform/crash` | 核心的致命错误和未捕获的异常；没有 MetricKit 的诊断信息 |
+| `platform/analytics` | 不支持手表（Firebase 的 Analytics 没有 watchOS SDK）：`available()` 为 false，什么也不会发送 |
+| 其他包 | 没有为手表构建：调用它们会抛出 `unsupported`，和在任何缺少对应能力的平台上一样 |
 
 ## 相机：platform/camera
 
@@ -2361,7 +2385,7 @@ fn showToday(meeting: time.Time) {
 
 小组件会用平台的模板（或者下面所说的应用自己的布局）显示它的 `Entry`，并按尺寸排版：`title`（带上 `symbol`，以 `tint` 着色）、大号的 `value`、`body`、`progress` 进度条、到 `until`（一个 `time.Time`）为止的实时倒计时，以及 `caption`。在应用设置新的内容之前，它会一直显示当前内容，不管应用是否在运行；点按小组件会用它的 `url` 打开应用（由应用的 `openURL` 事件接收）。`widget.setAll(kind, entries)` 中的条目各自带上 `at`，就构成了一条时间线：每个条目从各自的时间开始显示。`widget.clear(kind)` 用来清空小组件。
 
-尺寸有 `small`、`medium`、`large`，以及 iOS 的 `extraLarge`（iPad）和锁屏上的 `circular`、`rectangular`、`inline`。iOS：CLI 会把一个 WidgetKit 扩展构建进应用，并让它与应用共享一个 App Group（发布构建需要开启 App Groups 功能，还需要为扩展的 ID，即应用的 ID 加上 `.widgets`，准备一个描述文件）。Android：每种小组件对应一个 App Widget，使用 Material You 配色，尺寸按启动器的网格单元计算。桌面端和 Web 没有小组件：`widget.set` 在这些平台上什么也不做。
+尺寸有 `small`、`medium`、`large`，以及 iOS 的 `extraLarge`（iPad）和锁屏上的 `circular`、`rectangular`、`inline`。在 Apple Watch 上，后三种加上手表的 `corner` 就是复杂功能，由手表应用来设置（[复杂功能](watch.md#复杂功能)）。iOS：CLI 会把一个 WidgetKit 扩展构建进应用，并让它与应用共享一个 App Group（发布构建需要开启 App Groups 功能，还需要为扩展的 ID，即应用的 ID 加上 `.widgets`，准备一个描述文件）。Android：每种小组件对应一个 App Widget，使用 Material You 配色，尺寸按启动器的网格单元计算。桌面端和 Web 没有小组件：`widget.set` 在这些平台上什么也不做。
 
 ### 应用自己的布局
 

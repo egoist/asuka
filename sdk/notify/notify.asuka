@@ -13,7 +13,9 @@
 // UserNotifications, Android's notifications, Windows' toasts, Linux's
 // desktop notifications, the browser's), through platform/host. Apple TV
 // shows none: request asks for the app's badge, setBadge sets it, and
-// schedule and show throw unsupported.
+// schedule and show throw unsupported. Apple Watch shows them as an
+// iPhone does, with their actions and replies, but an app there has no
+// badge: setBadge does nothing.
 //
 //   if try await notify.request() {
 //     try await notify.schedule(notify.Notification(title: "Tea", body: "It's ready", after: 4min))

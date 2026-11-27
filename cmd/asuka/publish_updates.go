@@ -325,8 +325,8 @@ func publishOTA(app *asukaApp, o *publishOptions) error {
 	}
 	if b.out == "" {
 		b.out = filepath.Join(app.dir, "dist")
-		if b.platform == platformTVOS {
-			b.out = filepath.Join(b.out, "tvos") // as asuka build's
+		if b.platform == platformTVOS || b.platform == platformWatchOS {
+			b.out = filepath.Join(b.out, b.platform) // as asuka build's
 		}
 	}
 	file, manifest, err := writeOTAUpdate(app, b.platform, b.out)

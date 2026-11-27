@@ -2,7 +2,7 @@
 
 Asuka のパッケージを使うと、ビューの外にあるデバイスの機能も扱えます。カメラ、バーコードや QR コード、画像に写っているものの認識、写真とファイル、プレビュー、印刷と PDF、メールとメッセージの作成画面、位置情報、通知とプッシュ通知、サウンド、再生中の情報（Now Playing）と録音、ネットワークの状態、写真やファイルのライブラリへの保存、バックグラウンドでの処理、ほかのアプリからの共有、JavaScript、サインインと生体認証、画面、地図、ストアのサービス、広告、クラッシュレポート、アナリティクスです。このページでは、パッケージごとに何ができるか、その API、必要になる権限、プラットフォームごとの動作を説明します。
 
-どのパッケージも、すべてのプラットフォームで同じ API を持ちます。iOS と Android ではほぼすべての機能が使えます。macOS、Windows、Linux では、Asuka が各パッケージをデスクトップ自身のサービスで実装し、ブラウザーでは Web の API で実装します。プラットフォームに対応する機能がない場合、パッケージはその機能を持たないスマートフォンと同じように振る舞います。つまり、パッケージの `notAvailable` エラーになるか、足りないものを示すエラーになるか、何もしない呼び出しになります。各パッケージの節では、何ができるか、各プラットフォームが何を使ってそれを実現しているかを説明します。さらに、各デスクトップとブラウザーにはそれぞれ専用の節があり（[Mac の場合](#mac-の場合)、[Windows の場合](#windows-の場合)、[Linux の場合](#linux-の場合)、[ブラウザーの場合](#ブラウザーの場合)）、そこで必要な設定と、iOS や Android との違いを表にまとめています。
+どのパッケージも、すべてのプラットフォームで同じ API を持ちます。iOS と Android ではほぼすべての機能が使えます。macOS、Windows、Linux では、Asuka が各パッケージをデスクトップ自身のサービスで実装し、ブラウザーでは Web の API で実装します。プラットフォームに対応する機能がない場合、パッケージはその機能を持たないスマートフォンと同じように振る舞います。つまり、パッケージの `notAvailable` エラーになるか、足りないものを示すエラーになるか、何もしない呼び出しになります。各パッケージの節では、何ができるか、各プラットフォームが何を使ってそれを実現しているかを説明します。さらに、各デスクトップとブラウザーにはそれぞれ専用の節があり（[Mac の場合](#mac-の場合)、[Windows の場合](#windows-の場合)、[Linux の場合](#linux-の場合)、[ブラウザーの場合](#ブラウザーの場合)）、そこで必要な設定と、iOS や Android との違いを表にまとめています。Apple Watch にも専用の節があります（[Apple Watch の場合](#apple-watch-の場合)）。
 
 ## 権限と利用目的の説明文
 
@@ -213,6 +213,30 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/analytics` | Google から読み込む gtag.js で、`asuka.toml` の Web ストリームに送ります。収集のオフは gtag 自身のスイッチで、`localStorage` に保存されます |
 | `platform/splash` | `hold` と `hide` は何もしません |
 | `onShare`、ショートカット | iOS と Android だけです |
+
+## Apple Watch の場合
+
+ウォッチアプリは iOS アプリのコードからビルドされるので（[Apple Watch](watch.md) を参照）、iPhone アプリと同じ利用目的の説明文とエンタイトルメント（プッシュ通知の `aps-environment`、HealthKit、Sign in with Apple）が与えられます。ウォッチアプリのプロビジョニングプロファイル（`<id>.watchkitapp` 用）にも、iPhone アプリのものと同じく、それらのケイパビリティが必要です。
+
+ウォッチでも各パッケージは iOS と同じフレームワーク（Core Location、HealthKit、StoreKit、AVFoundation、MediaPlayer、UserNotifications、AuthenticationServices、LocalAuthentication、キーチェーン、Network）を通じて、iOS と同じように動きます。ウォッチで異なる点は次のとおりです。
+
+| パッケージ | Apple Watch の場合 |
+| --- | --- |
+| `platform/device` | `info`：`model` は `"Apple Watch"`、`system` は `"watchOS"`。ウォッチにはブラウザー、ピッカー、クリップボードがないので、`browse`、`pickPhotos`、`pickFiles` は unsupported を投げ、クリップボードは常に空で、`copy` と `share` は何もしません。`keepAwake` は何もせず（手首を下ろすと画面が消えます）、`openSettings` は false を返します。`openURL` はウォッチが扱えるもの（電話番号、地図）を開きます |
+| `device.haptic` | ウォッチが手首に伝える触覚です。`.selection` と `.light` はクリック、`.medium` と `.heavy` はそれより強めのタップ、`.success`、`.warning`、`.error` はウォッチの成功、再試行、失敗のタップです |
+| `platform/secure` | ウォッチのキーチェーンです。保護されたシークレットを読むとき、ウォッチが手首に着けられてロック解除されていれば何も尋ねず、そうでなければウォッチのパスコードを求めます |
+| `platform/biometric` | Face ID も Touch ID もありません。`check` は `.none` とパスコードの有無を返します。`authenticate` は、ウォッチが手首に着けられてロック解除されていればそのまま通り、そうでなければパスコードを求めます。`noPasscode` は `notAvailable` を投げます |
+| `platform/health` | ウォッチの HealthKit です。ウォッチが計測したデータと、iPhone のデータのうち直近の数日分があり、すべての履歴があるわけではありません |
+| `platform/location` | バックグラウンドでの更新は、アプリが動いているあいだ続きます（`significant` の更新は粗い精度の更新になります）。ただし、ウォッチはリージョンを監視せず、イベントのためにアプリを起動することもありません。リージョンはパッケージが位置から計算します（`supported()` の `regions` と `relaunch` は false）。`openSettings` は `LocationError.unavailable` を投げます |
+| `platform/audio`、`platform/speech` | ウォッチのスピーカー、または接続している Bluetooth ヘッドフォンで再生します |
+| `platform/nowplaying` | ウォッチの「再生中」と、Digital Crown での音量調整です |
+| `platform/purchase` | StoreKit 2 です。購入はウォッチ自身のシートで確定します。サブスクリプションの管理、返金、オファーコードのシートはないので、`manageSubscriptions`、`requestRefund`、`redeemCode` は unsupported を投げます |
+| `platform/appleauth` | ウォッチの Sign in with Apple のシートと、SwiftUI のボタンです（`.automatic` は、ウォッチの黒い背景に映える白になります） |
+| `platform/notify` | iPhone と同じように、アクション、返信、メッセージを含めて通知を表示します。ウォッチアプリにはバッジがないので、`setBadge` は何もしません |
+| `platform/push` | APNs です。ウォッチアプリ自身のトークンで、アラートとデータメッセージを受け取ります。`rewrite` はありません（ウォッチアプリには Notification Service Extension がありません） |
+| `platform/crash` | コアの致命的なエラーと、捕捉されなかった例外を扱います。MetricKit の診断情報はありません |
+| `platform/analytics` | ウォッチでは使えません（Firebase の Analytics には watchOS 用の SDK がありません）。`available()` は false で、何も送信されません |
+| そのほかのパッケージ | ウォッチ向けにはビルドされません。呼び出すと、その機能を持たないプラットフォームと同じく `unsupported` を投げます |
 
 ## カメラ：platform/camera
 
@@ -2361,7 +2385,7 @@ fn showToday(meeting: time.Time) {
 
 ウィジェットは、プラットフォームのテンプレート（または後述のアプリ独自のレイアウト）を使い、サイズに合わせたレイアウトで `Entry` を表示します。表示されるのは、`title`（`symbol` 付きで、`tint` の色）、大きな `value`、`body`、`progress` バー、`until`（`time.Time`）までリアルタイムで進むカウントダウン、`caption` です。アプリが別のエントリーを設定するまで、アプリが動いているかどうかにかかわらず表示され続けます。タップすると、その `url` でアプリが開きます（アプリの `openURL` で受け取ります）。`widget.setAll(kind, entries)` に、それぞれ `at` を持つエントリーを渡すとタイムラインになり、各エントリーはその時刻から表示されます。`widget.clear(kind)` でウィジェットを空にします。
 
-サイズは `small`、`medium`、`large`、そして iOS の `extraLarge`（iPad）と、ロック画面の `circular`、`rectangular`、`inline` です。iOS では、CLI がアプリに組み込む WidgetKit 拡張機能になり、アプリと App Group を共有します。リリースビルドには App Groups ケイパビリティと、拡張機能の ID（アプリの ID に `.widgets` を付けたもの）のプロビジョニングプロファイルが必要です。Android では、種類ごとに一つの App Widget になり、Material You の色を使い、ランチャーのセルに合わせたサイズになります。デスクトップと Web にはウィジェットがないので、`widget.set` は何もしません。
+サイズは `small`、`medium`、`large`、そして iOS の `extraLarge`（iPad）と、ロック画面の `circular`、`rectangular`、`inline` です。Apple Watch では、この三つとウォッチの `corner` がコンプリケーションになり、ウォッチのアプリが設定します（[コンプリケーション](watch.md#コンプリケーション)）。iOS では、CLI がアプリに組み込む WidgetKit 拡張機能になり、アプリと App Group を共有します。リリースビルドには App Groups ケイパビリティと、拡張機能の ID（アプリの ID に `.widgets` を付けたもの）のプロビジョニングプロファイルが必要です。Android では、種類ごとに一つの App Widget になり、Material You の色を使い、ランチャーのセルに合わせたサイズになります。デスクトップと Web にはウィジェットがないので、`widget.set` は何もしません。
 
 ### アプリ独自のレイアウト
 

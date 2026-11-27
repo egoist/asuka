@@ -85,7 +85,7 @@ These apply on every platform the key means something on.
 | `fileTypes` | array of tables | none | The kinds of files the app opens. See [fileTypes](#filetypes). |
 | `shareTarget` | `true` or table | off | The app in other apps' share sheets, on iOS and Android. See [shareTarget](#sharetarget). |
 | `splash` | table | none | The launch screen, on iOS and Android. See [splash](#splash). |
-| `widgets` | array of tables | none | Home screen widgets, on iOS and Android. See [widgets](#widgets). |
+| `widgets` | array of tables | none | Home screen widgets, on iOS and Android, and Apple Watch's complications. See [widgets](#widgets). |
 | `shortcuts` | array of tables | none | Actions for Siri, Spotlight and the launcher, on iOS and Android. See [shortcuts](#shortcuts). |
 | `nfc` | table | none | What `platform/nfc`'s tags need: iOS's AIDs and FeliCa system codes, the tags that open the app on Android. See [nfc](#nfc). |
 | `background` | boolean | `false` | On the desktop, an app that lives in the tray: no window at launch, kept running with none, and on the Mac no Dock icon from launch (`LSUIElement`). See [Apps in the background](desktop.md#apps-in-the-background). |
@@ -194,8 +194,8 @@ See [The launch screen](device.md#the-launch-screen-platformsplash).
 
 ## widgets
 
-The app's home screen widgets, on iOS and Android; `widget.set` fills
-them from the app.
+The app's home screen widgets, on iOS and Android, and Apple Watch's
+complications; `widget.set` fills them from the app.
 
 ```toml
 [[widgets]]
@@ -210,7 +210,7 @@ sizes = ["small", "medium", "rectangular"]
 | `kind` | string | required | The widget's name for `widget.Set`: letters, digits and `_`, a letter first, each widget's its own. |
 | `name` | string | `kind` | What the widget gallery calls it. |
 | `description` | string | none | What the widget gallery says of it. |
-| `sizes` | strings | `["small", "medium"]` | `small`, `medium`, `large`, and iOS's `extraLarge` (iPad) and lock screen `circular`, `rectangular` and `inline`. |
+| `sizes` | strings | `["small", "medium"]` | `small`, `medium`, `large`, and iOS's `extraLarge` (iPad) and lock screen `circular`, `rectangular` and `inline`, which are Apple Watch's complications too, with the watch's `corner`. |
 
 On iOS the widgets are an extension with its own bundle ID (the app's
 plus `.widgets`), which a release signs with `ios.widgetProfile`. See
@@ -435,12 +435,15 @@ What the Apple Watch's build takes (`asuka build --platform watchos`).
 
 ```toml
 [watch]
+companion = true
 profile = "Counter Watch"
 ```
 
 | Key | Type | Default | What it is |
 |---|---|---|---|
-| `profile` | string | the best match installed | The watch app's provisioning profile: its name, UUID or path, a watchOS one for the app's ID with `.watchkitapp`. `--profile` overrides it; `ios.profile` is the iPhone app's that carries it. |
+| `companion` | boolean | `false` | The iPhone app carries the watch app: `asuka build --platform ios` builds both into one `.ipa`, and they talk with `platform/companion`. Without it, `asuka build --platform watchos` makes a watch-only app. |
+| `profile` | string | the best match installed | The watch app's provisioning profile: its name, UUID or path, a watchOS one for the app's ID with `.watchkitapp`. `--profile` overrides it for a watch-only app; `ios.profile` is the iPhone app's that carries it. |
+| `widgetProfile` | string | the best match installed | The watch's widget extension's (its complications'), for the ID `<id>.watchkitapp.widgets`. |
 
 See [Apple Watch](watch.md).
 

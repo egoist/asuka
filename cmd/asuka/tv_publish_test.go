@@ -146,7 +146,7 @@ func TestPublishTVOSFile(t *testing.T) {
 		t.Fatalf("an Apple TV's .ipa for iOS: %v", err)
 	}
 	// One that doesn't say what it was built with goes up as given.
-	if err := checkIPAPlatform("x.ipa", "", "TV_OS"); err != nil {
+	if err := checkIPAPlatform("x.ipa", ipaInfo{}, "tvos"); err != nil {
 		t.Fatal(err)
 	}
 }

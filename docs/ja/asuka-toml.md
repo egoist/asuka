@@ -71,7 +71,7 @@ github = "you/notes"
 | `fileTypes` | テーブルの配列 | なし | アプリが開くファイルの種類です。[fileTypes](#filetypes) を参照してください。 |
 | `shareTarget` | `true` またはテーブル | オフ | iOS と Android で、ほかのアプリの共有シートにアプリを表示します。[shareTarget](#sharetarget) を参照してください。 |
 | `splash` | テーブル | なし | iOS と Android の起動画面です。[splash](#splash) を参照してください。 |
-| `widgets` | テーブルの配列 | なし | iOS と Android のホーム画面ウィジェットです。[widgets](#widgets) を参照してください。 |
+| `widgets` | テーブルの配列 | なし | iOS と Android のホーム画面ウィジェットと、Apple Watch のコンプリケーションです。[widgets](#widgets) を参照してください。 |
 | `shortcuts` | テーブルの配列 | なし | iOS と Android で、Siri、Spotlight、ランチャーに出すアクションです。[shortcuts](#shortcuts) を参照してください。 |
 | `nfc` | テーブル | なし | `platform/nfc` のタグに必要なものです。iOS の AID と FeliCa のシステムコード、Android でアプリを開くタグを指定します。[nfc](#nfc) を参照してください。 |
 | `background` | 真偽値 | `false` | デスクトップで、トレイに常駐するアプリにします。起動時にウィンドウを開かず、ウィンドウがなくても動き続け、Mac では起動時から Dock にアイコンを出しません（`LSUIElement`）。[バックグラウンドのアプリ](desktop.md#バックグラウンドで動くアプリ)を参照してください。 |
@@ -162,7 +162,7 @@ darkBackground = "#1B2440"
 
 ## widgets
 
-iOS と Android でのアプリのホーム画面ウィジェットです。中身はアプリから `widget.set` で埋めます。
+iOS と Android でのアプリのホーム画面ウィジェットと、Apple Watch のコンプリケーションです。中身はアプリから `widget.set` で埋めます。
 
 ```toml
 [[widgets]]
@@ -177,7 +177,7 @@ sizes = ["small", "medium", "rectangular"]
 | `kind` | 文字列 | 必須 | `widget.Set` で使うウィジェットの名前です。英字、数字、`_` を使い、先頭は英字にします。ウィジェットごとに異なる名前にします。 |
 | `name` | 文字列 | `kind` | ウィジェットギャラリーに表示される名前です。 |
 | `description` | 文字列 | なし | ウィジェットギャラリーに表示される説明です。 |
-| `sizes` | 文字列の配列 | `["small", "medium"]` | `small`、`medium`、`large`、そして iOS の `extraLarge`（iPad）と、ロック画面の `circular`、`rectangular`、`inline`。 |
+| `sizes` | 文字列の配列 | `["small", "medium"]` | `small`、`medium`、`large`、そして iOS の `extraLarge`（iPad）と、ロック画面の `circular`、`rectangular`、`inline`。この三つは Apple Watch のコンプリケーションでもあり、ウォッチにはさらに `corner` があります。 |
 
 iOS では、ウィジェットは独自の bundle ID（アプリの ID に `.widgets` を付けたもの）を持つ拡張機能になり、リリースでは `ios.widgetProfile` で署名します。[ホーム画面ウィジェット](device.md#ホーム画面ウィジェットplatformwidget)を参照してください。
 
@@ -382,12 +382,15 @@ Apple Watch のビルド（`asuka build --platform watchos`）の設定です。
 
 ```toml
 [watch]
+companion = true
 profile = "Counter Watch"
 ```
 
 | キー | 型 | デフォルト | 内容 |
 |---|---|---|---|
-| `profile` | 文字列 | インストール済みで最も合うもの | ウォッチのアプリのプロビジョニングプロファイル。名前、UUID、パスのいずれかで、アプリの ID に `.watchkitapp` を付けたものの watchOS 用プロファイルです。`--profile` が優先されます。ウォッチのアプリを運ぶ iPhone アプリのものは `ios.profile` です。 |
+| `companion` | 真偽値 | `false` | iPhone アプリがウォッチのアプリを運びます。`asuka build --platform ios` が両方を一つの `.ipa` にビルドし、二つは `platform/companion` でやりとりします。指定しないと、`asuka build --platform watchos` はウォッチ単体のアプリを作ります。 |
+| `profile` | 文字列 | インストール済みで最も合うもの | ウォッチのアプリのプロビジョニングプロファイル。名前、UUID、パスのいずれかで、アプリの ID に `.watchkitapp` を付けたものの watchOS 用プロファイルです。ウォッチ単体のアプリでは `--profile` が優先されます。ウォッチのアプリを運ぶ iPhone アプリのものは `ios.profile` です。 |
+| `widgetProfile` | 文字列 | インストール済みで最も合うもの | ウォッチのウィジェット拡張機能（コンプリケーション）のもので、ID は `<id>.watchkitapp.widgets` です。 |
 
 [Apple Watch](watch.md) を参照してください。
 

@@ -1,8 +1,10 @@
 // Package platform/widget sets what the app's widgets show: iOS's WidgetKit
 // widgets (an extension the CLI adds for asuka.toml's widgets, drawn from
-// Entry), Android's App Widgets. A kind is one of asuka.toml's widgets;
-// its entries show in turn, each from its time. The desktops and the web
-// have no widgets: set does nothing there.
+// Entry), Apple Watch's complications (the widgets' circular,
+// rectangular, inline and corner sizes, set by the watch app), Android's
+// App Widgets. A kind is one of asuka.toml's widgets; its entries show in
+// turn, each from its time. The desktops and the web have no widgets: set
+// does nothing there.
 //
 //   widget.set("energy", widget.Entry(title: "Energy", value: "72%", progress: 0.72, showProgress: true))
 
@@ -45,10 +47,12 @@ pub enum Size {
   large
   /// iPad's.
   extraLarge
-  /// The lock screen's (iOS).
+  /// The lock screen's (iOS), and Apple Watch's complications.
   circular
   rectangular
   inline
+  /// A watch face's corner (Apple Watch).
+  corner
 }
 
 struct Wire {

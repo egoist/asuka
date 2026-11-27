@@ -15,15 +15,17 @@
 // The pickers need no permission: PHPicker and the document picker on
 // iOS, the Photo Picker and the storage picker on Android, the system's
 // open dialog on desktops, the browser's file picker. What they give are
-// copies in the app's caches, the app's to keep or move.
+// copies in the app's caches, the app's to keep or move. Apple TV and
+// Apple Watch have no browser, pickers or clipboard: browse and the
+// pickers throw unsupported there, and the clipboard is empty.
 
 import std/time
 
 /// The device and the app.
 pub struct Info {
-  /// "iPhone", "Apple TV", "Pixel 9", "Mac", "PC".
+  /// "iPhone", "Apple TV", "Apple Watch", "Pixel 9", "Mac", "PC".
   model: string = ""
-  /// "iOS", "tvOS", "Android", "macOS", "Windows", "Linux".
+  /// "iOS", "tvOS", "watchOS", "Android", "macOS", "Windows", "Linux".
   system: string = ""
   /// "26.0", "16".
   systemVersion: string = ""
@@ -161,7 +163,8 @@ pub native fn openURL(url: string)
 /// on what they once said no to (the camera, notifications, location):
 /// the app's Settings page on iOS, its App info on Android; on a Mac and
 /// Windows, which have no page for an app, Privacy & Security. Returns
-/// false where there's nothing to open (Linux, the web, asuka test).
+/// false where there's nothing to open (Apple Watch, Linux, the web,
+/// asuka test).
 pub fn openSettings() -> bool {
   if let p = platform {
     return (try? p.openSettings()) ?? false
@@ -332,7 +335,8 @@ pub fn clipboardChanges() -> Stream<ClipboardKinds> = Stream(send => {
 })
 
 /// Keeps the screen on (the system's idle timer off) while on is true: a
-/// video, a recipe, a navigation screen.
+/// video, a recipe, a navigation screen. Apple Watch's screen sleeps as
+/// the wrist comes down whatever the app says: it does nothing there.
 pub fn keepAwake(on: bool) {
   if let p = platform {
     try? p.keepAwake(on: on)

@@ -1,6 +1,7 @@
 // platform/audio on iOS and macOS: an AVPlayer a sound. On iOS it plays with
 // the silent switch on (the playback category), as a music or game app's
-// sound does.
+// sound does. On Apple Watch it plays through the watch's speaker, or the
+// Bluetooth headphones it's connected to.
 import Asuka
 import AVFoundation
 import Foundation
@@ -42,7 +43,7 @@ import Foundation
     }
 
     func play() throws {
-        #if os(iOS) || os(tvOS)
+        #if !os(macOS)
         // Heard with the silent switch on, as a music or game app's sound.
         try? AVAudioSession.sharedInstance().setCategory(.playback)
         try? AVAudioSession.sharedInstance().setActive(true)

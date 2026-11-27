@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,28 +23,30 @@ import (
 	"github.com/egoist/asuka/lang/target"
 	androidHost "github.com/egoist/asuka/platform/android"
 	iosHost "github.com/egoist/asuka/platform/ios"
+	watchHost "github.com/egoist/asuka/platform/watchos"
 )
 
-// Over-the-air updates of phone and Apple TV apps (RFC 0006): a release
+// Over-the-air updates of phone, Apple TV and Apple Watch apps (RFC 0006): a release
 // built with asuka.toml's [updates] carries its fingerprint, the feed and
 // the public key (appbuild.Updates); asuka publish --update makes an
 // update of the app's code, signed, for the builds of its fingerprint,
 // and uploads it beside the desktop updates. Each platform (ios, tvos,
-// android) has updates of its own: the platform is in the fingerprint
-// and names the manifest (otaTarget), so an iPhone never takes an Apple
-// TV's update, nor an Apple TV an iPhone's.
+// watchos, android) has updates of its own: the platform is in the
+// fingerprint and names the manifest (otaTarget), so an iPhone never
+// takes an Apple TV's or a watch's update, nor they an iPhone's.
 
 // otaPlatform reports whether platform's builds take over-the-air
 // updates.
 func otaPlatform(platform string) bool {
-	return platform == platformIOS || platform == platformTVOS || platform == platformAndroid
+	return platform == platformIOS || platform == platformTVOS || platform == platformWatchOS || platform == platformAndroid
 }
 
 // otaFingerprint is what a build's native side gives the app's code,
 // hashed: an update made against another fingerprint isn't run. It
 // covers the CLI (its version; a development CLI's core and host
 // sources), the platform, the host's parts the build has (its flags: an
-// Apple TV's are fewer than an iPhone's), the bytecode's format, the
+// Apple TV's and a watch's are fewer than an iPhone's), the
+// bytecode's format, the
 // tables of builtins the build links (the module's), the app's externs,
 // the native code of the packages it imports (their Package.swift too,
 // whose platforms say which are built for tvOS) and the app's own (its
@@ -63,8 +66,11 @@ func (a *asukaApp) otaFingerprint(platform string, m *bytecode.Module) (string, 
 		}
 		// The host's sources, which a released CLI's version stands for.
 		var host fs.FS = iosHost.Files
-		if platform == platformAndroid {
+		switch platform {
+		case platformAndroid:
 			host = androidHost.Files
+		case platformWatchOS:
+			host = watchHost.Files // the watch's own (SwiftUI's)
 		}
 		if err := hashFS(h, host); err != nil {
 			return "", err
@@ -76,8 +82,11 @@ func (a *asukaApp) otaFingerprint(platform string, m *bytecode.Module) (string, 
 	// their members' manifests (ios.hostFlags), which an update that
 	// starts to use one needs; on tvOS those it has (tvFeatures).
 	features := usedFeatures(a, a.cfg)
-	if platform == platformTVOS {
+	switch platform {
+	case platformTVOS:
 		features = tvFeatures(features)
+	case platformWatchOS:
+		features = watchFeatures(features) // the watch's host's (hostFeatures)
 	}
 	put("host", strings.Join(features, ","))
 	put("bytecode", fmtInt(bytecode.Version))
@@ -125,10 +134,17 @@ func (a *asukaApp) otaFingerprint(platform string, m *bytecode.Module) (string, 
 	}
 	cfg := *a.cfg
 	cfg.Version, cfg.Build = "", 0
-	if platform == platformTVOS {
+	switch platform {
+	case platformTVOS:
 		// What a tvOS build goes without (dropTVExtensions, which the
 		// build has done by the time it asks, and an update hasn't).
 		cfg.Widgets, cfg.Shortcuts = nil, nil
+	case platformWatchOS:
+		// Likewise what a watch build goes without (dropWatchExtensions),
+		// said by the build, not here.
+		cfg.entitlements = maps.Clone(cfg.entitlements)
+		cfg.tvToldDropped = true
+		cfg.dropWatchExtensions()
 	}
 	toml, err := json.Marshal(cfg)
 	if err != nil {
@@ -193,11 +209,12 @@ func hashFS(h io.Writer, fsys fs.FS) error {
 }
 
 // otaTarget names a platform's updates of a fingerprint in the feed:
-// update-<platform>-<its first 16 digits>.json, the platform ios, tvos
-// or android (platform/update's otaPlatform names the same at run time).
+// update-<platform>-<its first 16 digits>.json, the platform ios, tvos,
+// watchos or android (platform/update's otaPlatform names the same at run
+// time).
 func otaTarget(platform, fingerprint string) string { return platform + "-" + fingerprint[:16] }
 
-// otaUpdates are what a release of m for platform (ios, tvos, android)
+// otaUpdates are what a release of m for platform (ios, tvos, watchos, android)
 // takes updates with, or nil when asuka.toml has no [updates].
 func (a *asukaApp) otaUpdates(platform string, m *bytecode.Module) (*appbuild.Updates, error) {
 	u, err := a.cfg.updates()
@@ -215,8 +232,9 @@ func (a *asukaApp) otaUpdates(platform string, m *bytecode.Module) (*appbuild.Up
 // writeOTAUpdate writes, in out/updates, an over-the-air update of the
 // app's code for the platform's builds of its fingerprint: the module,
 // signed, and its manifest (update-<platform>-<fingerprint>.json). It
-// returns the module's file and the manifest's. tvOS's is iOS's code
-// (Apple TV runs a build of the iOS app) against tvOS's fingerprint.
+// returns the module's file and the manifest's. tvOS's and watchOS's are
+// iOS's code (Apple TV and Apple Watch run builds of the iOS app) against
+// their own fingerprints.
 func writeOTAUpdate(app *asukaApp, platform, out string) (file, manifest string, err error) {
 	u, err := app.cfg.updates()
 	if err != nil {
@@ -237,9 +255,9 @@ func writeOTAUpdate(app *asukaApp, platform, out string) (file, manifest string,
 		return "", "", fmt.Errorf("asuka.toml: version %q isn't one updates compare (1.2.0, 1.3.0-beta.1)", version)
 	}
 	if !otaPlatform(platform) {
-		return "", "", fmt.Errorf("over-the-air updates are iOS's, tvOS's and Android's, not %s's", platform)
+		return "", "", fmt.Errorf("over-the-air updates are iOS's, tvOS's, watchOS's and Android's, not %s's", platform)
 	}
-	tp := target.IOS // tvOS's too: the iOS app's code
+	tp := target.IOS // tvOS's and watchOS's too: the iOS app's code
 	if platform == platformAndroid {
 		tp = target.Android
 	}

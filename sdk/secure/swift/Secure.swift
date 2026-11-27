@@ -6,7 +6,9 @@
 // up until the user proves it's them; the device must have a passcode.
 // Apple TV's keychain keeps secrets as an iPhone's does, but it has no
 // passcode, Face ID or Touch ID to protect one with: a protected secret
-// is SecureError.notAvailable there.
+// is SecureError.notAvailable there. Apple Watch's has its passcode: a
+// protected secret asks for nothing while the watch is unlocked on the
+// wrist (wrist detection), else for the passcode.
 import Foundation
 #if !os(tvOS)
 import LocalAuthentication
@@ -76,8 +78,25 @@ final class SecKeychain: Keychain {
                 if attrs?[kSecAttrAccessControl as String] != nil, !prompt.isEmpty {
                     let ctx = LAContext()
                     do {
+                        #if os(watchOS)
+                        // On the wrist and unlocked: it's them, asked nothing.
+                        if (try? await ctx.evaluatePolicy(.deviceOwnerAuthenticationWithWristDetection, localizedReason: prompt)) == nil {
+                            _ = try await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: prompt)
+                        }
+                        #else
                         _ = try await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: prompt)
+                        #endif
                     } catch let e as LAError {
+                        #if os(watchOS)
+                        switch e.code {
+                        case .passcodeNotSet:
+                            throw SecureError.notAvailable
+                        case .userCancel, .appCancel, .systemCancel, .authenticationFailed, .userFallback:
+                            throw SecureError.cancelled
+                        default:
+                            throw e
+                        }
+                        #else
                         switch e.code {
                         case .passcodeNotSet, .biometryNotAvailable, .biometryNotEnrolled:
                             throw SecureError.notAvailable
@@ -86,6 +105,7 @@ final class SecKeychain: Keychain {
                         default:
                             throw e
                         }
+                        #endif
                     }
                     q[kSecUseAuthenticationContext as String] = ctx
                 }

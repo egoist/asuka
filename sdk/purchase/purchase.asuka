@@ -627,7 +627,8 @@ pub async fn statuses(group: string) throws -> [SubscriptionStatus] {
 }
 
 /// Shows the store's page of the user's subscriptions, and answers once
-/// it's closed.
+/// it's closed. Apple TV and Apple Watch have none: it throws unsupported
+/// there.
 pub async fn manageSubscriptions(productId: string = "") throws {
   if let f = faked {
     if f.unavailable {
@@ -645,7 +646,8 @@ pub async fn manageSubscriptions(productId: string = "") throws {
 
 /// Shows Apple's refund request sheet for t, and says whether the user
 /// asked for one (events() gives t revoked if Apple refunds). Apple's
-/// alone: elsewhere it throws notAvailable.
+/// alone: elsewhere it throws notAvailable (unsupported on Apple TV and
+/// Apple Watch, which have no refund sheet).
 pub async fn requestRefund(t: Transaction) throws -> bool {
   if let f = faked {
     f.refunds.push(t.id)
@@ -658,7 +660,8 @@ pub async fn requestRefund(t: Transaction) throws -> bool {
 }
 
 /// Shows the store's sheet for an offer code (Apple's), or Play's redeem
-/// page. What it bought comes through events().
+/// page. What it bought comes through events(). Apple TV and Apple Watch
+/// have no such sheet: it throws unsupported there.
 pub async fn redeemCode() throws {
   if let f = faked {
     f.redeems += 1

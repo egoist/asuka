@@ -79,6 +79,10 @@ struct AsukaDevError: Equatable {
     var rootEnv: AsukaEnvironment?
     /// Pixels per point.
     var scale: CGFloat = 2
+    /// The modules ui.Call reaches (Modules.swift).
+    let modules = AsukaModules()
+    /// URLs the app was opened with before its root was (a notification's).
+    var pendingURLs: [URL] = []
 
     // MARK: Starting
 
@@ -94,6 +98,13 @@ struct AsukaDevError: Equatable {
         if let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             dir.path.withCString { asuka_set_app_dir($0) }
         }
+        #if os(watchOS)
+        // Before the app's init, in the app's directory: its crashes are kept.
+        AsukaCrash.start()
+        #endif
+        #if ASUKA_NOTIFY || ASUKA_PUSH
+        AsukaNotifyCenter.shared.install() // platform/push's too
+        #endif
         #if DEBUG
         AsukaAutomation.start()
         #endif
@@ -142,6 +153,18 @@ struct AsukaDevError: Equatable {
             asuka_start(&cb)
             runApp()
         }
+    }
+
+    /// Starts the core without a screen, if it hasn't started: the system
+    /// launched the app for a notification's action. The root goes on
+    /// screen if the scene comes.
+    public func startHeadless() { start() }
+
+    /// The app was opened with url (a notification's): the core's
+    /// ui.OnOpenURL handlers get it, once its root is there.
+    public func openURL(_ url: URL) {
+        guard started, rootID != 0 else { pendingURLs.append(url); return }
+        send(AsukaEvents.incomingURL(rootID, url.absoluteString))
     }
 
     private func runApp() {
@@ -384,6 +407,9 @@ struct AsukaDevError: Equatable {
         rootID = id
         rootEnv = nil
         scene.root = n
+        let urls = pendingURLs
+        pendingURLs = []
+        for u in urls { openURL(u) }
     }
 
     public func setProp(_ id: UInt32, prop: UInt16, value v: AsukaValue) {
@@ -482,27 +508,6 @@ struct AsukaDevError: Equatable {
         }
         WKInterfaceDevice.current().play(t)
         #endif
-    }
-
-    /// ui.Call: the host's modules (none on the watch but the assets'):
-    /// an answer, so the call doesn't wait.
-    private func call(_ root: UInt32, _ args: UnsafeRawBufferPointer) {
-        guard args.count >= 12 else { return }
-        var r = AsukaReader(args)
-        let id = r.u32()
-        let module = r.string(), method = r.string()
-        let payload = Data(bytes: r.p, count: r.end - r.p)
-        var out = [UInt8]()
-        withUnsafeBytes(of: id.littleEndian) { out.append(contentsOf: $0) }
-        if module == "assets", method == "read", let url = AsukaAssets.url(String(decoding: payload, as: UTF8.self)), let data = try? Data(contentsOf: url) {
-            out.append(1)
-            out.append(contentsOf: data)
-        } else {
-            out.append(0)
-            out.append(contentsOf: Array("the watch has no \(module).\(method)".utf8))
-        }
-        let bytes = out
-        DispatchQueue.main.async { [weak self] in self?.send(AsukaEvents.result(root, bytes)) }
     }
 
     // MARK: Presenting

@@ -1,0 +1,356 @@
+// Package platform/companion is an iPhone app and its Apple Watch app
+// talking to each other (asuka.toml's [watch] companion builds the watch
+// app into the iPhone app): messages while both run, messages queued for
+// when the other app runs, the latest state each side keeps for the
+// other, and files. The same calls work on both sides: on the iPhone the
+// companion is the watch app, on the watch the iPhone app. Apple's
+// WatchConnectivity carries them.
+//
+//   // On the watch: ask the phone, which answers at once if it's near.
+//   let reply = try await companion.send("today")
+//
+//   // On the phone: answer each message.
+//   task {
+//     for await m in companion.messages() {
+//       if m.wantsReply { companion.reply(m, text: today()) }
+//     }
+//   }
+//
+// Messages are text: encode what they carry (std/json). Elsewhere (and on
+// an iPhone with no watch paired) available() is false and the calls
+// throw CompanionError.unavailable.
+//
+// Tests drive a fake: companion.fake() is the other side.
+
+import std/fs
+
+/// Whether, and how, the other app can be reached.
+pub struct Status {
+  /// The device can talk to a companion at all (an iPhone, an Apple
+  /// Watch).
+  supported: bool = false
+  /// On the iPhone, a watch is paired with it; on the watch, it's paired
+  /// with an iPhone.
+  paired: bool = false
+  /// The other app is installed: the watch app on the paired watch, or
+  /// the iPhone app on the phone.
+  installed: bool = false
+  /// The other app runs now and can answer a send: on the watch, the
+  /// iPhone app is in reach (iOS wakes it for a message); on the iPhone,
+  /// the watch app is in front.
+  reachable: bool = false
+}
+
+/// A message from the other app.
+pub struct Message {
+  /// Which it is, for reply.
+  id: int = 0
+  text: string = ""
+  /// The sender waits for an answer: reply to it (soon: the system gives
+  /// up after a few seconds).
+  wantsReply: bool = false
+  /// It was queued (queue), not sent while both ran.
+  queued: bool = false
+}
+
+/// A file the other app sent, moved into the app's directory.
+pub struct File {
+  /// Where it is now: fs.appDir()'s Companion folder.
+  path: string = ""
+  /// What the sender said of it.
+  metadata: string = ""
+}
+
+/// The companion's errors.
+pub enum CompanionError: Error {
+  /// companion: not available
+  unavailable
+  /// companion: the other app isn't installed
+  notInstalled
+  /// companion: the other app can't be reached now
+  notReachable
+
+  /// The error's text: "companion: " and what went wrong, as each case's
+  /// comment says.
+  fn message() -> string = match self {
+    .unavailable => "companion: not available"
+    .notInstalled => "companion: the other app isn't installed"
+    .notReachable => "companion: the other app can't be reached now"
+  }
+}
+
+/// The platform's session with the companion (WatchConnectivity's).
+native interface Session {
+  /// Starts the session (WatchConnectivity's activation), files that come
+  /// moved into filesDir.
+  fn start(filesDir: string)
+  fn status() -> Status
+  /// Calls changed with the status each time it changes, until the task
+  /// is cancelled.
+  async fn watch(changed: fn(Status))
+  /// Calls received with each message, until the task is cancelled; those
+  /// that came while none listened first.
+  async fn messages(received: fn(Message))
+  /// Answers the message id.
+  fn reply(id: int, text: string)
+  /// Sends text and waits for the answer; throws notReachable.
+  async fn send(text: string) -> string
+  /// Queues text, delivered in order once the other app runs.
+  fn queue(text: string)
+  /// Keeps text as this side's latest state for the other app.
+  fn setContext(text: string)
+  /// The other app's latest state ("": none yet).
+  fn context() -> string
+  /// Calls changed with the other app's state each time it comes, until
+  /// the task is cancelled.
+  async fn contexts(changed: fn(string))
+  /// Sends the file at path, in the background.
+  fn sendFile(path: string, metadata: string)
+  /// Calls received with each file that comes, until the task is
+  /// cancelled; those that came while none listened first.
+  async fn files(received: fn(File))
+}
+
+let session = open()
+
+fn open() -> Session? {
+  if let s = try? Session() {
+    try? s.start(filesDir: filesDir())
+    return s
+  }
+  return none
+}
+
+state faked: FakeCompanion? = none
+
+fn current() -> Status {
+  if let f = faked {
+    return f.status
+  }
+  if let s = session {
+    return (try? s.status()) ?? Status()
+  }
+  return Status()
+}
+
+fn statusChanges() -> Stream<Status> = Stream(send => {
+  if let f = faked {
+    send(f.status)
+    return
+  }
+  if let s = session {
+    try await s.watch(changed: st => send(st))
+  } else {
+    send(Status())
+  }
+})
+
+let followed = live(current(), statusChanges)
+
+/// The companion's status, tracked: read in a binding, it follows the
+/// pairing and the other app while it's read.
+pub fn status() -> Status = followed()
+
+/// Whether the other app is there to talk to: a companion is supported,
+/// paired, and has the other app installed.
+pub fn available() -> bool {
+  let s = status()
+  return s.supported && s.paired && s.installed
+}
+
+/// Whether the other app can answer a send now.
+pub fn reachable() -> bool = status().reachable
+
+fn check(needReach: bool) throws {
+  let s = current()
+  if !s.supported || !s.paired {
+    throw CompanionError.unavailable
+  }
+  if !s.installed {
+    throw CompanionError.notInstalled
+  }
+  if needReach && !s.reachable {
+    throw CompanionError.notReachable
+  }
+}
+
+/// Sends text to the other app, which must be reachable, and returns its
+/// reply ("" if it answers with none). Throws notReachable when it isn't
+/// (queue it instead), unavailable or notInstalled.
+pub async fn send(text: string) throws -> string {
+  if let f = faked {
+    try check(true)
+    f.sent = f.sent + [text]
+    return f.reply(text)
+  }
+  if let s = session {
+    try check(true)
+    return try await s.send(text: text)
+  }
+  throw CompanionError.unavailable
+}
+
+/// Queues text for the other app, delivered in order once it runs (now,
+/// if it does): what must arrive, not what's urgent.
+pub fn queue(text: string) throws {
+  if let f = faked {
+    try check(false)
+    f.queued = f.queued + [text]
+    return
+  }
+  if let s = session {
+    try check(false)
+    try s.queue(text: text)
+    return
+  }
+  throw CompanionError.unavailable
+}
+
+/// Keeps text as this side's latest state for the other app, which gets
+/// the newest only (context() there), when it next runs: a score, the
+/// settings.
+pub fn setContext(text: string) throws {
+  if let f = faked {
+    try check(false)
+    f.sentContext = text
+    return
+  }
+  if let s = session {
+    try check(false)
+    try s.setContext(text: text)
+    return
+  }
+  throw CompanionError.unavailable
+}
+
+fn currentContext() -> string {
+  if let f = faked {
+    return f.context
+  }
+  if let s = session {
+    return (try? s.context()) ?? ""
+  }
+  return ""
+}
+
+fn contextChanges() -> Stream<string> = Stream(send => {
+  if let f = faked {
+    send(f.context)
+    return
+  }
+  if let s = session {
+    try await s.contexts(changed: c => send(c))
+  }
+})
+
+let followedContext = live(currentContext(), contextChanges)
+
+/// The other app's latest state (its setContext; "" before it sets one),
+/// tracked: read in a binding, it follows each that comes.
+pub fn context() -> string = followedContext()
+
+/// The messages the other app sends and queues, as they come; those that
+/// came before the stream was read first. One reader at a time.
+pub fn messages() -> Stream<Message> = Stream(send => {
+  if let f = faked {
+    for m in f.inbox {
+      send(m)
+    }
+    f.inbox = []
+    return
+  }
+  if let s = session {
+    try await s.messages(received: m => send(m))
+  }
+})
+
+/// Answers m, which wantsReply, with text: the sender's send returns it.
+pub fn reply(m: Message, text: string) {
+  if let f = faked {
+    f.replies[m.id] = text
+    return
+  }
+  if let s = session {
+    try? s.reply(id: m.id, text: text)
+  }
+}
+
+/// Sends the file at path to the other app, in the background, with
+/// metadata (what it is, for the other side); it arrives when the other
+/// app runs, even after this one quits.
+pub fn sendFile(path: string, metadata: string = "") throws {
+  if let f = faked {
+    try check(false)
+    f.files = f.files + [File(path: path, metadata: metadata)]
+    return
+  }
+  if let s = session {
+    try check(false)
+    try s.sendFile(path: path, metadata: metadata)
+    return
+  }
+  throw CompanionError.unavailable
+}
+
+/// The files the other app sends, as they come (moved into the app's
+/// directory: keep them, or delete them once read); those that came
+/// before the stream was read first. One reader at a time.
+pub fn files() -> Stream<File> = Stream(send => {
+  if faked.isSome() {
+    return
+  }
+  if let s = session {
+    try await s.files(received: f => send(f))
+  }
+})
+
+/// The folder received files go in.
+pub fn filesDir() -> string = fs.join([fs.appDir(), "Companion"])
+
+// ---------------------------------------------------------------------
+// Testing
+
+/// The other app, as a test drives it: fake() installs one, paired,
+/// installed and reachable.
+///
+///   let watch = companion.fake()
+///   watch.answer = "ok"
+///   watch.deliver("hello")
+pub store FakeCompanion {
+  /// What status() answers.
+  pub state status = Status(supported: true, paired: true, installed: true, reachable: true)
+  /// What the other app answers each send with.
+  pub state answer = ""
+  /// What was sent, in order.
+  pub state sent: [string] = []
+  /// What was queued, in order.
+  pub state queued: [string] = []
+  /// What was last set as the context.
+  pub state sentContext = ""
+  /// The files sent, in order.
+  pub state files: [File] = []
+  /// The other app's context: context() answers it.
+  pub state context = ""
+  /// The messages waiting for messages() to read.
+  pub state inbox: [Message] = []
+  /// The replies given, by message id.
+  pub state replies: [int: string] = [:]
+  state next = 0
+
+  fn reply(text: string) -> string = answer
+
+  /// The other app sends text (wantsReply: and waits for an answer, which
+  /// replies has once given); messages() reads it.
+  pub fn deliver(text: string, wantsReply: bool = false) -> int {
+    next += 1
+    inbox = inbox + [Message(id: next, text: text, wantsReply: wantsReply)]
+    return next
+  }
+}
+
+/// Installs a fake companion for a test.
+pub fn fake() -> FakeCompanion {
+  let f = FakeCompanion()
+  faked = f
+  return f
+}

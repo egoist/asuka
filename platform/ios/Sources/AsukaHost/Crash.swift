@@ -1,11 +1,16 @@
 #if canImport(UIKit)
+// The iOS host's, and the same file in the watch's (platform/watchos).
+#if os(watchOS)
+import WatchKit
+#else
 import UIKit
+#endif
 import Darwin
 import MachO
 // Its own framework, loaded at launch if linked: only in an app that
 // reads its crash reports (crash.Reports, crash.OnReport; see the CLI's
 // iosFeatures).
-#if ASUKA_CRASH && !os(tvOS) // MetricKit: not on a TV
+#if ASUKA_CRASH && !os(tvOS) && !os(watchOS) // MetricKit: not on a TV or a watch
 import MetricKit
 #endif
 #if canImport(CAsuka)
@@ -22,7 +27,8 @@ import MetricKit
 ///   addresses and the binaries they're in, for symbolicating;
 /// - MetricKit's diagnostics (crashes of every kind, hangs, CPU and disk
 ///   exceptions, slow launches), which iOS delivers on a later launch:
-///   inbox/metrickit-<UUID>.json, the payload's JSON as it is.
+///   inbox/metrickit-<UUID>.json, the payload's JSON as it is (not on
+///   Apple TV or Apple Watch, which have no MetricKit).
 ///
 /// Nothing's installed if the app doesn't read its crash reports (the core
 /// says so: asuka_crash_start answers "").
@@ -46,7 +52,7 @@ enum AsukaCrash {
             AsukaCrash.record(e)
             AsukaCrash.previous?(e)
         }
-        #if ASUKA_CRASH && !os(tvOS)
+        #if ASUKA_CRASH && !os(tvOS) && !os(watchOS)
         // The app's process gets the diagnostics, its share extension's too.
         if !Bundle.main.bundlePath.hasSuffix(".appex") {
             MXMetricManager.shared.add(AsukaMetricSubscriber.shared)
@@ -57,10 +63,15 @@ enum AsukaCrash {
     /// The device and the app, as JSON for asuka_crash_start.
     private static func infoJSON() -> String {
         let info = Bundle.main.infoDictionary ?? [:]
+        #if os(watchOS)
+        let system = "watchOS", version = WKInterfaceDevice.current().systemVersion
+        #else
+        let system = UIDevice.current.systemName, version = UIDevice.current.systemVersion
+        #endif
         let d: [String: String] = [
             "model": modelIdentifier(),
-            "system": UIDevice.current.systemName,
-            "systemVersion": UIDevice.current.systemVersion,
+            "system": system,
+            "systemVersion": version,
             "appVersion": info["CFBundleShortVersionString"] as? String ?? "",
             "build": info["CFBundleVersion"] as? String ?? "",
         ]
@@ -112,11 +123,17 @@ enum AsukaCrash {
         return f
     }
 
-    /// The Mach-O image's UUID (its LC_UUID), as dSYMs and MetricKit say it.
+    /// The Mach-O image's UUID (its LC_UUID), as dSYMs and MetricKit say it:
+    /// a 64-bit image's, or a 32-bit one's (a watch's arm64_32).
     private static func imageUUID(_ base: UnsafeMutableRawPointer) -> String? {
-        let header = base.assumingMemoryBound(to: mach_header_64.self)
-        guard header.pointee.magic == MH_MAGIC_64 else { return nil }
-        var cmd = UnsafeRawPointer(base) + MemoryLayout<mach_header_64>.size
+        let header = base.assumingMemoryBound(to: mach_header.self)
+        let size: Int
+        switch header.pointee.magic {
+        case MH_MAGIC_64: size = MemoryLayout<mach_header_64>.size
+        case MH_MAGIC: size = MemoryLayout<mach_header>.size
+        default: return nil
+        }
+        var cmd = UnsafeRawPointer(base) + size
         for _ in 0..<header.pointee.ncmds {
             let lc = cmd.assumingMemoryBound(to: load_command.self).pointee
             if lc.cmd == UInt32(LC_UUID) {
@@ -138,7 +155,7 @@ enum AsukaCrash {
     }
 }
 
-#if ASUKA_CRASH && !os(tvOS) // MetricKit: not on a TV
+#if ASUKA_CRASH && !os(tvOS) && !os(watchOS) // MetricKit: not on a TV or a watch
 /// MetricKit's subscriber: each diagnostic payload iOS delivers (on a
 /// launch after what it's of) goes in the inbox, and the core hears of it
 /// (asuka_crash_notify: crash.reports() reads it).

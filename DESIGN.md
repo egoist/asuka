@@ -1680,6 +1680,16 @@ flush. What makes SwiftUI a target rather than a second reconciler:
   32-bit pointers), Series 9 and later arm64; a device build is both,
   lipo'd. `go test ./core -run TestCWatchOS` builds the core and its C
   tests for arm64_32 with -Werror.
+- **The host's modules** are the iOS host's the watch has (Modules.swift,
+  ui.Call's registry): `notify` and the crash record's native side are
+  the iOS host's own files (Notify.swift, Crash.swift: the same file in
+  both, `#if os(watchOS)` where the watch differs: no badge, no
+  MetricKit, a 32-bit Mach-O's UUID), `push` the watch's (WKApplication's
+  registration; the app's delegate, `@WKApplicationDelegateAdaptor`,
+  takes the token and data messages). They're built as iOS's are, for
+  the apps whose packages ask (`ASUKA_NOTIFY`, `ASUKA_PUSH`,
+  `ASUKA_CONVERSATIONS`); a module the watch lacks answers "not
+  available on Apple Watch", which packages take as unsupported.
 
 The CLI builds it as iOS's (cmd/asuka/watchos.go): the host's Swift as
 the module Asuka with the app's native packages that list watchOS (or no

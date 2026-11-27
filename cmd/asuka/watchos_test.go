@@ -12,8 +12,8 @@ import (
 )
 
 // watchOS's toolchain: its SDKs' triples, platforms and minimum, its own
-// host with no optional parts, and its Swift modules' targets (a watch's
-// arm64_32 too).
+// host with notifications and pushes its only optional parts, and its
+// Swift modules' targets (a watch's arm64_32 too).
 func TestWatchOSToolchain(t *testing.T) {
 	for _, c := range []struct {
 		sdk, platform, bundle string
@@ -29,8 +29,8 @@ func TestWatchOSToolchain(t *testing.T) {
 		if !slices.Equal(tc.devices(&appConfig{}), []int{4}) {
 			t.Errorf("%s: UIDeviceFamily %v", c.sdk, tc.devices(&appConfig{}))
 		}
-		if got := tc.hostFeatures([]string{"ASUKA_NOTIFY", "ASUKA_VIDEO"}); got != nil {
-			t.Errorf("%s: the watch's host has no optional parts, got %v", c.sdk, got)
+		if got := tc.hostFeatures([]string{"ASUKA_CRASH", "ASUKA_NOTIFY", "ASUKA_PUSH", "ASUKA_VIDEO"}); !slices.Equal(got, []string{"ASUKA_NOTIFY", "ASUKA_PUSH"}) {
+			t.Errorf("%s: the watch's host's optional parts are notifications and pushes, got %v", c.sdk, got)
 		}
 	}
 	if (&iosToolchain{sdkName: "iphoneos"}).watch() {
@@ -103,7 +103,7 @@ func TestWatchInfo(t *testing.T) {
 		t.Skip("no watchOS SDK")
 	}
 	cfg := &appConfig{ID: "dev.asuka.counter", Version: "1.2.0", Build: 7}
-	m, err := tc.watchInfo(cfg, watchBundleID(cfg.ID), "Counter", cfg.ID)
+	m, err := tc.watchInfo(cfg, watchBundleID(cfg.ID), "Counter", cfg.ID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestWatchDeviceBuild(t *testing.T) {
 	work := t.TempDir()
 	bundle := filepath.Join(work, "Counter.app")
 	exe := filepath.Join(bundle, appExe)
-	tc, err := linkWatchExe(app, m, work, "watchos", exe, false)
+	tc, err := linkWatchExe(app, m, nil, work, "watchos", exe, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -68,17 +68,33 @@ func (c *appConfig) checkTV(dir string) error {
 // and the packages that call them throw unsupported there.
 var tvHostFlags = []string{"ASUKA_CRASH", "ASUKA_ICLOUD", "ASUKA_LIBRARY", "ASUKA_NOTIFY", "ASUKA_PERIODIC", "ASUKA_PUSH", "ASUKA_SHADER", "ASUKA_VIDEO"}
 
+// watchHostFlags are the iOS host's optional parts the watch's host has
+// too (platform/watchos: notifications, communication ones too, and
+// pushes); the watch's crash record needs no flag (it has no MetricKit).
+var watchHostFlags = []string{"ASUKA_CONVERSATIONS", "ASUKA_NOTIFY", "ASUKA_PUSH"}
+
 // hostFeatures are the host's flags a build of t has of features: all
-// of them on iOS, tvOS's on a TV, none on a watch (its host has no
-// optional parts).
+// of them on iOS, tvOS's on a TV, the watch's on a watch.
 func (t *iosToolchain) hostFeatures(features []string) []string {
 	if t.watch() {
-		return nil
+		return watchFeatures(features)
 	}
 	if !t.tv() {
 		return features
 	}
 	return tvFeatures(features)
+}
+
+// watchFeatures are those of features a watch build has
+// (watchHostFlags'), what its over-the-air updates' fingerprint has too.
+func watchFeatures(features []string) []string {
+	var out []string
+	for _, f := range features {
+		if slices.Contains(watchHostFlags, f) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // tvFeatures are those of features a tvOS build has (tvHostFlags'),

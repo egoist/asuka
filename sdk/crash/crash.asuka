@@ -20,7 +20,8 @@
 // Where: everywhere a host keeps the runs' record: the core keeps it
 // (core/src/std/crash.c: its own fatal errors, with what the host saw:
 // uncaught exceptions, fatal signals in native code, MetricKit's
-// diagnostics, how Android's runs ended, uncaught JavaScript errors). Where none
+// diagnostics (an iPhone's and a Mac's: Apple TV and Apple Watch have no
+// MetricKit), how Android's runs ended, uncaught JavaScript errors). Where none
 // keeps it (asuka test), reports ends empty and the rest does nothing.
 
 import std/json

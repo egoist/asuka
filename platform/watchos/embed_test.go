@@ -10,10 +10,13 @@ import (
 
 // The Swift the watch's host shares with the iOS host is the same file in
 // both: the ops decoder (go generate ./ops writes each copy of Ops.swift),
-// its hand-written parts, and typed native modules' runtime.
+// its hand-written parts, typed native modules' runtime, platform/notify's
+// module and the crash record's native side.
 func TestSwiftShared(t *testing.T) {
 	for _, p := range []string{
 		"Sources/AsukaHost/NativeModules.swift",
+		"Sources/AsukaHost/Notify.swift",
+		"Sources/AsukaHost/Crash.swift",
 		"Sources/AsukaOps/Ops.swift",
 		"Sources/AsukaOps/Actions.swift",
 		"Sources/AsukaOps/AlertFields.swift",

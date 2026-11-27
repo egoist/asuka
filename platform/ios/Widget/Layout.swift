@@ -41,10 +41,14 @@ struct AsukaNode: Decodable {
 extension WidgetFamily {
     var asukaSize: String {
         switch self {
+        #if os(watchOS)
+        case .accessoryCorner: return "corner"
+        #else
         case .systemSmall: return "small"
         case .systemMedium: return "medium"
         case .systemLarge: return "large"
         case .systemExtraLarge: return "extraLarge"
+        #endif
         case .accessoryCircular: return "circular"
         case .accessoryRectangular: return "rectangular"
         case .accessoryInline: return "inline"
@@ -54,6 +58,15 @@ extension WidgetFamily {
 }
 
 enum AsukaLayout {
+    /// The widget's own background: the system's (a watch's is black).
+    static var background: Color {
+        #if os(watchOS)
+        return .black
+        #else
+        return Color(uiColor: .systemBackground)
+        #endif
+    }
+
     /// A color on the wire: "#rrggbb(aa)", or a semantic one's name
     /// (".label"), which follows dark mode; nil: none.
     static func color(_ s: String, accent: Color) -> Color? {
@@ -61,12 +74,19 @@ enum AsukaLayout {
         case "": return nil
         case ".label": return .primary
         case ".secondaryLabel": return .secondary
+        #if os(watchOS) // the watch is dark, without UIKit's semantic colors
+        case ".tertiaryLabel": return .white.opacity(0.3)
+        case ".background", ".groupedBackground": return background
+        case ".secondaryBackground", ".secondaryGroupedBackground": return Color(white: 0.13)
+        case ".separator": return .white.opacity(0.2)
+        #else
         case ".tertiaryLabel": return Color(uiColor: .tertiaryLabel)
         case ".background": return Color(uiColor: .systemBackground)
         case ".secondaryBackground": return Color(uiColor: .secondarySystemBackground)
         case ".groupedBackground": return Color(uiColor: .systemGroupedBackground)
         case ".secondaryGroupedBackground": return Color(uiColor: .secondarySystemGroupedBackground)
         case ".separator": return Color(uiColor: .separator)
+        #endif
         case ".accent": return accent
         case ".onAccent": return .white
         case ".clear": return .clear
@@ -275,7 +295,7 @@ struct AsukaLayoutRoot: View {
         let bg = AsukaLayout.color(n.bg, accent: accent)
         n.bg = ""
         n.fill = true
-        let view = AsukaLayoutView(node: n, axis: nil, links: family != .systemSmall && family != .accessoryCircular && family != .accessoryInline,
+        let view = AsukaLayoutView(node: n, axis: nil, links: !["small", "circular", "inline", "corner"].contains(family.asukaSize),
                                    accent: accent)
         return view.modifier(AsukaLayoutBackground(color: bg))
     }
@@ -287,11 +307,11 @@ struct AsukaLayoutBackground: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(iOS 17.0, *) {
-            content.containerBackground(for: .widget) { color ?? Color(.systemBackground) }
+            content.containerBackground(for: .widget) { color ?? AsukaLayout.background }
         } else if family == .accessoryCircular || family == .accessoryRectangular || family == .accessoryInline {
             content
         } else {
-            content.padding().background(color ?? Color(.systemBackground))
+            content.padding().background(color ?? AsukaLayout.background)
         }
     }
 }

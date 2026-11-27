@@ -5,7 +5,8 @@
 // audio session plays: the session is put in the playback category (the
 // package gives the app the audio background mode, so it plays on with
 // the screen locked). Apple TV's Now Playing (Control Center, the Siri
-// Remote's buttons) is the same center's.
+// Remote's buttons) is the same center's, and Apple Watch's (its Now
+// Playing app and the Smart Stack, the Digital Crown's volume).
 import Asuka
 import AVFoundation
 import Foundation
@@ -56,6 +57,9 @@ typealias PlatformImage = NSImage
             // plays.
             try? AVAudioSession.sharedInstance().setCategory(.playback)
             UIApplication.shared.beginReceivingRemoteControlEvents()
+            #elseif os(watchOS)
+            // The watch shows the Now Playing of the app whose session plays.
+            try? AVAudioSession.sharedInstance().setCategory(.playback)
             #endif
             for (cmd, c) in remoteCommands() {
                 cmd.addTarget { [weak self] event in
