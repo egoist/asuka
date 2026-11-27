@@ -1,6 +1,6 @@
 // Images and symbols. An Image is an AsukaImageView (an NSImageView,
 // layer-backed when it needs to be): the image at its mode's scaling (Fill,
-// which NSImageView can't do, is its layer's contents, cropped); a tint is
+// which NSImageView can't do, is a sublayer's contents, cropped); a tint is
 // the color, the image a template. Its placeholder (the core's decoded hash,
 // else the Placeholder image) is a sublayer over the view's content, in its
 // own mode's gravity (a tint is its color, masked by it); the image's
@@ -38,6 +38,10 @@ import AsukaOps
     var paused = false
     /// The placeholder's sublayer.
     var layer: CALayer?
+    /// A filled image's sublayer, under the placeholder's: not the view's
+    /// own layer, whose contents NSImageView sets itself as it redraws
+    /// (a frame arriving after the load cleared the image).
+    var fill: CALayer?
     /// The image shown, and an animated one's file.
     var image: NSImage?
     var anim: Data?
@@ -226,7 +230,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
             x.frame = 0
             x.image = nil
             iv.image = nil
-            if iv.wantsLayer { iv.layer?.contents = nil }
+            x.fill?.contents = nil
             showPlaceholder(n)
             loadImage(n, x.source, placeholder: false)
         case AsukaProp.Image.placeholder:
@@ -305,7 +309,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
     }
 
     /// Shows img in n's view at its mode: NSImageView can't fill, so a
-    /// filled image is the layer's contents, cropped.
+    /// filled image is a sublayer's contents (x.fill), cropped.
     func showImage(_ n: AsukaNode, _ img: NSImage?) {
         guard let x = n.image, let iv = n.view as? NSImageView else { return }
         x.image = img
@@ -313,12 +317,23 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
         case .fill:
             iv.imageScaling = .scaleProportionallyUpOrDown
             iv.image = nil
-            guard let l = layer(n) else { return }
+            guard let parent = layer(n) else { return }
             CATransaction.begin()
             if !animating { CATransaction.setDisableActions(true) }
+            let l: CALayer
+            if let f = x.fill {
+                l = f
+            } else {
+                l = CALayer()
+                l.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+                parent.insertSublayer(l, at: 0)
+                x.fill = l
+            }
+            l.frame = parent.bounds
             l.contents = img
             l.contentsGravity = .resizeAspectFill
             l.masksToBounds = true
+            parent.masksToBounds = true
             CATransaction.commit()
             return
         case .stretch:
@@ -328,7 +343,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
         default:
             iv.imageScaling = .scaleProportionallyUpOrDown
         }
-        if iv.wantsLayer { iv.layer?.contents = nil }
+        x.fill?.contents = nil
         var shown = img
         if let img, n.color != 0, !img.isTemplate {
             // A tint is the color, the image a template: a copy (it shares
@@ -521,7 +536,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
         if let iv = n.view as? NSImageView {
             j["viewImage"] = iv.image != nil
             j["scaling"] = iv.imageScaling.rawValue
-            j["layerContents"] = iv.layer?.contents != nil
+            j["layerContents"] = x.fill?.contents != nil
             // Core Animation keeps a transition under kCATransition, whatever
             // the key it was added with.
             if let a = iv.layer?.animation(forKey: kCATransition) { j["arrival"] = a.duration }
