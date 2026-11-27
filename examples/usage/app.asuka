@@ -278,5 +278,5 @@ test "a demo account" {
   app.expect("Claude", "This week")
   app.expectNo("Follow your plan's limits")
   app.tap("Claude")
-  app.expect("Usage", "Forecast", "On the home screen")
+  app.expect("USAGE", "FORECAST", "ON THE HOME SCREEN")
 }
