@@ -144,8 +144,7 @@ func msixManifest(app *asukaApp, exe, goarch string) string {
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0"/>
   </Dependencies>
-  <Resources>
-    <Resource Language="en-us"/>
+  <Resources>%s
   </Resources>
   <Applications>
     <Application Id="App" Executable="%s" EntryPoint="Windows.FullTrustApplication">
@@ -161,7 +160,27 @@ func msixManifest(app *asukaApp, exe, goarch string) string {
   </Capabilities>
 </Package>
 `, msixXML(msixIdentityName(app)), msixXML(msixPublisher(app)), msixVersion(app), msixArch(goarch),
-		name, msixXML(windowsPublisher(app)), msixXML(exe), name, desc, ext.String())
+		name, msixXML(windowsPublisher(app)), msixResources(app), msixXML(exe), name, desc, ext.String())
+}
+
+// msixResources are the manifest's languages: its catalogs', the source's
+// first (the package's default), which the Store lists the app in and
+// Windows offers it in; English without catalogs. The package has no
+// resources.pri (makepri's), so its names aren't translated: Start and
+// Installed apps show asuka.toml's name, as they do the installer's app.
+func msixResources(app *asukaApp) string {
+	langs, source, _ := app.cfg.catalogStrings()
+	if len(langs) == 0 {
+		langs, source = []string{"en-us"}, "en-us"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n    <Resource Language=\"%s\"/>", msixXML(source))
+	for _, l := range langs {
+		if l != source {
+			fmt.Fprintf(&b, "\n    <Resource Language=\"%s\"/>", msixXML(l))
+		}
+	}
+	return b.String()
 }
 
 // msixAssocName is a file type association's name: its extension, lower

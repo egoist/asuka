@@ -75,7 +75,8 @@ func uninstallerName(app *asukaApp) string {
 }
 
 // installerConfig is what the installer and the uninstaller say of the
-// app (their CONFIG resource): lines of key=value.
+// app (their CONFIG resource): lines of key=value, and name.<tag>= its
+// name in each language of its catalogs' that names it.
 func installerConfig(app *asukaApp, exe string) []byte {
 	aumid := windowsAUMID(app)
 	id := app.bundleID
@@ -112,6 +113,14 @@ func installerConfig(app *asukaApp, exe string) []byte {
 		{"desktop", desktop},
 	} {
 		b.WriteString(kv[0] + "=" + clean(kv[1]) + "\n")
+	}
+	// The app's name in its catalogs' languages (asuka.appName), which
+	// the dialogs say it as in the user's.
+	langs, _, byLang := app.cfg.catalogStrings()
+	for _, tag := range langs {
+		if n := strings.TrimSpace(byLang[tag]["appName"]); n != "" {
+			b.WriteString("name." + tag + "=" + clean(n) + "\n")
+		}
 	}
 	return []byte(b.String())
 }

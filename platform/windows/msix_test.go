@@ -39,6 +39,14 @@ func TestMSIX(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(app, "asuka.toml"), toml, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// In English, German, Traditional Chinese and Arabic: the manifest's
+	// languages.
+	os.MkdirAll(filepath.Join(app, "locales"), 0o755)
+	for tag, name := range map[string]string{"en": "Counter", "de": "Zähler", "zh-Hant": "計數器", "ar": "العداد"} {
+		if err := os.WriteFile(filepath.Join(app, "locales", tag+".json"), []byte(`{"asuka.appName": "`+name+`"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	pfx := guest + `\test.pfx`
 	thumb := w.ps(t, `$c = New-SelfSignedCertificate -Type Custom -Subject 'CN=Asuka MSIX Test' -KeyUsage DigitalSignature -CertStoreLocation 'Cert:\CurrentUser\My' -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
 Export-PfxCertificate -Cert $c -FilePath '`+pfx+`' -Password (ConvertTo-SecureString -String 'asuka' -Force -AsPlainText) | Out-Null
@@ -70,6 +78,7 @@ try {
   Add-AppxPackage -Path "$env:TEMP\asuka-test.msix"
   $p = Get-AppxPackage -Name 'dev.asuka.msixtest'
   "installed $($p.PackageFamilyName) $($p.Version) $($p.SignatureKind)"
+  "languages $(@((Get-AppxPackageManifest -Package $p.PackageFullName).Package.Resources.Resource | ForEach-Object { $_.Language }) -join ',')"
   Start-Process 'asukamsixtest://hello'
   for ($i = 0; $i -lt 40; $i++) {
     $run = Get-Process | Where-Object { $_.Path -like '*\WindowsApps\dev.asuka.msixtest_*\Counter.exe' }
@@ -88,7 +97,7 @@ try {
 		t.Fatalf("%v\n%s", err, res)
 	}
 	t.Logf("%s", res)
-	for _, want := range []string{"installed dev.asuka.msixtest_", " 1.0.0.0 Developer", `running C:\Program Files\WindowsApps\dev.asuka.msixtest_1.0.0.0_`, "removed 0"} {
+	for _, want := range []string{"installed dev.asuka.msixtest_", " 1.0.0.0 Developer", "languages en,ar,de,zh-Hant", `running C:\Program Files\WindowsApps\dev.asuka.msixtest_1.0.0.0_`, "removed 0"} {
 		if !strings.Contains(res, want) {
 			t.Errorf("no %q:\n%s", want, res)
 		}

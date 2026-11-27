@@ -14,7 +14,7 @@ import (
 	"unicode"
 )
 
-var updateWords = flag.Bool("update-words", false, "rewrite sdk/update/words.asuka from the catalogs")
+var updateWords = flag.Bool("update-words", false, "rewrite the copies of the catalogs' words (sdk/update/words.asuka, sdk/camera/desktop/camera_words.c, platform/windows/installer/words.h)")
 
 // updateKeys are the words of platform/update's window, in Asuka's catalogs.
 var updateKeys = []string{

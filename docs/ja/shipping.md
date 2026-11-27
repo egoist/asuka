@@ -7,7 +7,7 @@
 | `ios` | `<Name>.ipa`（App Store 向けに署名済み） | Xcode のある Mac | TestFlight、App Store（`asuka publish`） |
 | `android` | `<Name>.aab`（アップロード鍵で署名済み） | JDK、Android SDK、NDK があればどのシステムでも | Google Play（`asuka publish`） |
 | `mac` | `darwin-<arch>/`：`<Name>.app` とその `.zip`、`.dmg`（Apple シリコン向け。`--arch amd64` で Intel 向け）、または `.pkg`（`--appstore`） | Xcode のコマンドラインツールのある Mac | 署名・公証済みの `.dmg` か `.zip`、Mac App Store |
-| `windows` | `windows-<arch>/`：`<Name>/`（`.exe` とそのアセット）、インストーラー（`-setup.exe`）、その `.zip`、`.msix`（`--package msix`） | clang のある Windows、または Zig のあるどのシステムでも | インストーラー、`.zip`。MSIX は Microsoft Store で、またはサイドロードで |
+| `windows` | `windows-<arch>/`：`<Name>/`（`.exe` とそのアセット）、インストーラー（`-setup.exe`）、フォルダーの `.zip`、`.msix`（`--package msix`） | clang のある Windows、または Zig のあるどのシステムでも | インストーラー、`.zip`。MSIX は Microsoft Store での配布、またはサイドロード |
 | `linux` | `linux-<arch>/`：インストールプレフィックス、`.tar.gz`、`.deb`、`.rpm`、AppImage、Flatpak マニフェスト | C コンパイラーのある Linux、または Zig のあるどのシステムでも | `.deb`、`.rpm`、AppImage、`.tar.gz`、Flatpak |
 | `web` | `web/`（静的サイト） | Zig のあるどのシステムでも | 任意の Web サーバーや CDN |
 
@@ -208,15 +208,15 @@ asuka build --platform windows               # x64。Arm 版 Windows ではエ�
 asuka build --platform windows --arch arm64  # Arm の PC でネイティブに動きます
 ```
 
-このコマンドは、`dist/windows-amd64/<Name>`（Arm 向けは `windows-arm64`）というフォルダーを作ります。`<Name>.exe` がアプリそのものです（Windows では clang、どのシステムでも Zig で、アーキテクチャに合わせてビルドされます）。その隣には、アプリの設定 `asuka-app.json` とアプリのアセットが置かれます。`std/sqlite` を使うアプリでは、SQLite が `.exe` に組み込まれます。`.exe` は GUI プログラム（コンソールウィンドウを開きません）で、リソースがリンクされています。Windows が使う各サイズのアイコン、バージョン情報（`version` と `build`）、そしてコモンコントロール 6、モニターごとの DPI 対応、UTF-8 を要求する、Windows 10 と 11 向けのマニフェストです。このマニフェストは、アプリを開いたユーザーの権限でアプリを実行させます（名前がどうであれ、管理者権限は求めません）。ディレクトリに独自のリソースのオブジェクトファイル（COFF の `.syso`、`rsrc_windows_amd64.syso`）を置いたアプリでは、代わりにそのリソースが使われます。
+このコマンドは、`dist/windows-amd64/<Name>`（Arm 向けは `windows-arm64`）というフォルダーを作ります。`<Name>.exe` がアプリそのものです（Windows では clang、どのシステムでも Zig で、アーキテクチャに合わせてビルドされます）。その隣には、アプリの設定 `asuka-app.json` とアプリのアセットが置かれます。`std/sqlite` を使うアプリでは、SQLite が `.exe` に組み込まれます。`.exe` は GUI プログラム（コンソールウィンドウを開きません）で、リソースがリンクされています。Windows が使う各サイズのアイコン、バージョン情報（`version` と `build`）、そしてコモンコントロール 6、モニターごとの DPI 対応、UTF-8 を要求する、Windows 10 と 11 向けのマニフェストです。このマニフェストにより、アプリは開いたユーザーの権限で動きます（名前がどうであれ、管理者権限を求めることはありません）。ディレクトリに独自のリソースのオブジェクトファイル（COFF の `.syso`、`rsrc_windows_amd64.syso`）を置いたアプリでは、代わりにそのリソースが使われます。
 
-フォルダーの隣には、配布用のパッケージが electron-builder と同じ形で置かれます。どれも `asuka build` がどのシステムからでも作ります（NSIS、WiX、Windows SDK は不要です）。
+フォルダーの隣には、electron-builder が作るのと同じ種類の配布用パッケージが置かれます。どれも `asuka build` がどのシステムからでも作れます（NSIS、WiX、Windows SDK は不要です）。
 
-- `<name>-<version>-windows-amd64-setup.exe`：インストーラーです。いまの Windows アプリの多くと同じく、ワンクリックでインストールできます。実行したユーザーのために、管理者権限なしで、何も尋ねずに `%LOCALAPPDATA%\Programs\<Name>`（アプリが[自分自身を更新](#自動アップデート)できる場所）にインストールし、「スタート」メニューにショートカットを置きます。また、「設定」の「インストールされているアプリ」に、バージョン、発行元、サイズ、アンインストーラーとともに登録します。そのあとアプリを開きます。もう一度（新しいバージョンのものを）実行すると、アプリをその場で更新します。アプリが開いていれば、確認したうえで先に閉じ、前のバージョンにあって今回のバージョンにないものは削除します。アンインストーラーはアプリのフォルダーにある `Uninstall <Name>.exe` で、アプリ、ショートカット、アプリが登録したもの（URL スキーム、ファイルの種類、通知の登録）を取り除きます。アプリが保存したデータは残ります。スクリプトや IT 部門向けに、どちらも `/S` でサイレント実行でき（このときインストーラーはアプリを開きません）、インストーラーは `/D=<folder>` で別のフォルダーにインストールできます。NSIS のインストーラーと同じです。
+- `<name>-<version>-windows-amd64-setup.exe`：インストーラーです。いまの Windows アプリの多くと同じく、ワンクリックでインストールできます。実行したユーザーだけのために、管理者権限なしで、何も尋ねずに `%LOCALAPPDATA%\Programs\<Name>`（アプリが[自分自身を更新](#自動アップデート)できる場所）にインストールし、「スタート」メニューにショートカットを置きます。また、「設定」の「インストールされているアプリ」に、バージョン、発行元、サイズ、アンインストーラーとともに登録します。そのあとアプリを開きます。もう一度（新しいバージョンのものを）実行すると、アプリをその場で更新します。アプリが開いていれば、確認したうえで先に閉じます。前のバージョンにあって今回のバージョンにないものは削除します。アンインストーラーはアプリのフォルダーにある `Uninstall <Name>.exe` で、アプリ、ショートカット、アプリが登録したもの（URL スキーム、ファイルの種類、通知の登録）を取り除きます。アプリが保存したデータは残ります。スクリプトや IT 部門向けに、NSIS のインストーラーと同じく、どちらも `/S` を付けるとサイレントに実行でき（このときインストーラーはアプリを開きません）、インストーラーは `/D=<folder>` で別のフォルダーにインストールできます。どちらもユーザーの Windows の表示言語で表示されます。Asuka が翻訳されている言語ならどれでもよく、それ以外は英語になり、アラビア語とヘブライ語では右から左に表示されます。アプリの名前は、アプリの言語のうちユーザーにいちばん合うもので、カタログの `asuka.appName` を使います（[システムが表示するもの](i18n.md#システムが表示するもの)）。`/LANG=de` で別の言語を指定できます。「スタート」メニューと「インストールされているアプリ」に表示されるのはアプリの `name` で、アプリ自身が作るショートカットと同じです。
 - `<name>-<version>-windows-amd64.zip`：フォルダーを zip にしたもので、どこにでも展開できます。ポータブル版で、ユーザーが書き込める場所にあれば、これも自分自身を更新します。
-- `<name>-<version>-windows-amd64.msix`：`--package msix` を付けたときに作られます。アプリをパッケージにしたもので、[Microsoft Store](https://partner.microsoft.com/dashboard) での配布とサイドロード（`Add-AppxPackage`、アプリ インストーラー、Intune）に使います。マニフェストでは、アプリを完全信頼（full trust）のデスクトップアプリとして宣言し、タイルの画像（`icon` から作ったもの）、URL スキーム、ファイルの種類、通知のアクティベーターも宣言します。パッケージ化されたアプリは、これらを実行時に登録できないためです。Store は署名されていないパッケージを受け付け、Store 側で署名します。`windows.identityName` と `windows.publisherId` を Partner Center の「製品 ID」（Product identity）に表示される値にして、アップロードしてください。サイドロードする場合は、`.exe` と同じように（下記）署名します。証明書のサブジェクトは `windows.publisherId`（既定では `CN=` と `windows.publisher`）で、その PC が信頼している証明書である必要があります。MSIX のインストール、更新、削除は Windows が行い、アプリ自身は更新しません（`update.unsupported()` は `.managed`）。
+- `<name>-<version>-windows-amd64.msix`：`--package msix` を付けたときに作られます。アプリをパッケージにしたもので、[Microsoft Store](https://partner.microsoft.com/dashboard) での配布とサイドロード（`Add-AppxPackage`、アプリ インストーラー、Intune）に使います。マニフェストでは、アプリを完全信頼（full trust）のデスクトップアプリとして宣言し、タイルの画像（`icon` から作ったもの）、URL スキーム、ファイルの種類、通知のアクティベーターも宣言します。パッケージ化されたアプリは、これらを実行時に登録できないためです。カタログの言語も宣言し（ソース言語が先頭、カタログがなければ英語）、Microsoft Store はそれをアプリの対応言語として表示します。ただし、マニフェストのアプリ名は翻訳されません。翻訳には `resources.pri` が必要ですが、ビルドはこれを作らないため、「スタート」メニューと「インストールされているアプリ」にはアプリの `name` が表示されます。Microsoft Store は署名されていないパッケージを受け付け、Store 側で署名します。`windows.identityName` と `windows.publisherId` をパートナー センターの「製品 ID」に表示される値にして、アップロードしてください。サイドロードする場合は、`.exe` と同じように署名します（後述）。証明書は、サブジェクトが `windows.publisherId`（既定では `CN=` と `windows.publisher`）で、その PC が信頼しているものである必要があります。MSIX のインストール、更新、削除は Windows が行い、アプリ自身は更新しません（`update.unsupported()` は `.managed`）。
 
-`--package installer,msix` のように指定すると、`zip`、`installer`、`msix` のうち指定したものだけを作ります。`asuka.toml` の `windows.packages` は、同じことをすべてのビルドに対して指定します。既定ではインストーラーと `.zip` です。
+`--package installer,msix` のように指定すると、`zip`、`installer`、`msix` のうち指定したものだけを作ります。`asuka.toml` の `windows.packages` に書くと、同じ指定がすべてのビルドに適用されます。既定ではインストーラーと `.zip` です。
 
 ```toml
 [windows]
@@ -231,7 +231,7 @@ SmartScreen が発行元を認識できるように、`.pfx` 形式でエクス�
 ASUKA_WINDOWS_CERT=cert.pfx ASUKA_WINDOWS_CERT_PASSWORD=... asuka build --platform windows
 ```
 
-ビルドは SHA-256 で署名し、証明書の期限が切れたあとも署名が有効であり続けるよう、署名にタイムスタンプを付けます。タイムスタンプには、最初に応答した RFC 3161 サーバーを使います。候補は `ASUKA_WINDOWS_TIMESTAMP` に指定したサーバー（カンマ区切りのリスト）で、指定がなければ DigiCert、Sectigo、GlobalSign のサーバーです。どれも応答しなければ、ビルドはその旨を表示して失敗します。`ASUKA_WINDOWS_TIMESTAMP=none` にすると、タイムスタンプなしで署名します（その場合、署名は証明書の期限とともに無効になります）。署名には、Windows では `signtool`（Windows SDK のもの。`PATH` にあればそれを、なければインストール済みの最新のものを使います）、それ以外のシステムでは `osslsigncode`（`brew install osslsigncode`、`apt install osslsigncode`）を使います。`ASUKA_WINDOWS_CERT` がなければ、`.exe` は署名されません。ハードウェアトークンやクラウドサービス（Azure Trusted Signing、キーコンテナー）にある証明書では、それぞれのツールで署名します。`ASUKA_WINDOWS_SIGN_COMMAND` にそのツールのコマンドを、ファイルが入る位置を `%1` にして指定すると、ビルドは署名するファイルごとに、代わりにそのコマンドを実行します。
+ビルドは SHA-256 で署名し、証明書の期限が切れたあとも署名が有効であり続けるよう、署名にタイムスタンプを付けます。タイムスタンプには、最初に応答した RFC 3161 サーバーを使います。候補は `ASUKA_WINDOWS_TIMESTAMP` に指定したサーバー（カンマ区切りのリスト）で、指定がなければ DigiCert、Sectigo、GlobalSign のサーバーです。どれも応答しなければ、ビルドはその旨を表示して失敗します。`ASUKA_WINDOWS_TIMESTAMP=none` にすると、タイムスタンプなしで署名します（その場合、署名は証明書の期限とともに無効になります）。署名には、Windows では `signtool`（Windows SDK のもの。`PATH` にあればそれを、なければインストール済みの最新のものを使います）、それ以外のシステムでは `osslsigncode`（`brew install osslsigncode`、`apt install osslsigncode`）を使います。`ASUKA_WINDOWS_CERT` がなければ、`.exe` は署名されません。ハードウェアトークンやクラウドサービス（Azure Trusted Signing、キー コンテナー）にある証明書では、それぞれのツールで署名します。`ASUKA_WINDOWS_SIGN_COMMAND` にそのツールのコマンドを指定し、ファイルのパスが入る位置に `%1` と書くと、ビルドは自分で署名する代わりに、署名するファイルごとにそのコマンドを実行します。
 
 ```sh
 ASUKA_WINDOWS_SIGN_COMMAND='AzureSignTool sign -kvu https://vault.vault.azure.net -kvc cert -kvm -tr http://timestamp.digicert.com -td sha256 %1' \
@@ -471,7 +471,7 @@ feed = "https://api.example.com/updates?target={target}&version={version}&channe
 ### 各プラットフォームでの更新の仕組み
 
 - macOS：新しいバンドルは検証されたうえで（コード署名が有効で、実行中のアプリと同じチームと識別子であることを確かめ、検疫属性を取り除きます）、アプリが終了するまでその隣で待機します。アプリがどのように終了しても、ヘルパーが古いバンドルを新しいバンドルに置き換えます。アプリが再起動を求めていた場合は Launch Services でアプリを開くので、Dock のアイコンは一つのままです。アプリのフォルダーは、ユーザーが書き込めるものである必要があります。管理者なら `/Applications`、または `~/Applications` です。
-- Windows：アプリの実行中にフォルダーの中身が置き換えられます。各ファイルはまず名前を変えて脇に退避し、一つでも置き換えられなければすべて元に戻します。実行中の `.exe` は名前を変え（Windows はこれを許可しています）、次回の起動時に削除します。フォルダーはユーザーのもの（`Program Files` ではない場所）である必要があります。インストーラーがインストールしたもの（`%LOCALAPPDATA%\Programs\<Name>`）か、ユーザーのプロファイル内に展開した `.zip` です。更新後は、「インストールされているアプリ」に更新先のバージョンが表示されます。MSIX は、Store かアプリ インストーラーを通じて更新されます。
+- Windows：アプリの実行中にフォルダーの中身が置き換えられます。各ファイルはまず名前を変えて脇に退避し、一つでも置き換えられなければすべて元に戻します。実行中の `.exe` は名前を変え（Windows はこれを許可しています）、次回の起動時に削除します。フォルダーはユーザーのもの（`Program Files` ではない場所）である必要があります。インストーラーがインストールしたもの（`%LOCALAPPDATA%\Programs\<Name>`）か、ユーザーのプロファイル内に展開した `.zip` です。更新後は、「インストールされているアプリ」に更新先のバージョンが表示されます。MSIX は、Microsoft Store かアプリ インストーラーを通じて更新されます。
 - Linux：tarball のプレフィックス（`~/.local` など）にある、そのアプリのファイルだけ（`bin/notes`、`share/notes/`、デスクトップファイル、アイコン、metainfo、MIME タイプ）を一つずつリネームで置き換え、そのあとデスクトップのキャッシュを更新します（`update-desktop-database`、`update-mime-database`）。Flatpak、Snap、ディストリビューションのパッケージ、AppImage はそれぞれの仕組みで更新されるため、その場合アプリは自分自身を更新しません。
 
 ### スマートフォン：アプリのコードのアップデート

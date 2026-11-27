@@ -373,9 +373,43 @@ func TestWindowsPackageManifests(t *testing.T) {
 	if err := xml.Unmarshal([]byte(m), &doc); err != nil || doc.XMLName.Local != "Package" {
 		t.Errorf("the manifest isn't a Package: %v", err)
 	}
+	if !strings.Contains(m, `<Resource Language="en-us"/>`) {
+		t.Errorf("an app without catalogs isn't in English:\n%s", m)
+	}
 	// The Store's identity, as Partner Center gives it.
 	cfg.Windows.IdentityName, cfg.Windows.PublisherID = "12345Example.Notes", "CN=8A3C5E1B-0000-4000-8000-000000000000"
 	if m := msixManifest(app, "My Notes.exe", "amd64"); !strings.Contains(m, `<Identity Name="12345Example.Notes" Publisher="CN=8A3C5E1B-0000-4000-8000-000000000000" Version="1.4.2.0" ProcessorArchitecture="x64"/>`) {
 		t.Errorf("the Store's identity:\n%s", m)
+	}
+}
+
+// An app with catalogs: the installer says its name in the user's
+// language (asuka.appName), and the MSIX declares its languages, the
+// source's first.
+func TestWindowsPackageLanguages(t *testing.T) {
+	dir := appWithCatalogs(t, "name = \"Notes\"\nid = \"com.example.notes\"\nversion = \"1.0.0\"", map[string]string{
+		"locales/en.json":      `{"a": "A", "asuka.appName": "Notes"}`,
+		"locales/de.json":      `{"a": "Ä", "asuka.appName": "Notizen"}`,
+		"locales/zh-Hant.json": `{"a": "甲", "asuka.appName": "筆記"}`,
+		"locales/ar.json":      `{"a": "أ"}`,
+	})
+	c, err := loadConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &asukaApp{name: "notes", bundleID: c.ID, cfg: c}
+	conf := string(installerConfig(app, "Notes.exe"))
+	for _, want := range []string{"name=Notes\n", "name.en=Notes\n", "name.de=Notizen\n", "name.zh-Hant=筆記\n"} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("no %q in the installer's config:\n%s", want, conf)
+		}
+	}
+	if strings.Contains(conf, "name.ar=") {
+		t.Errorf("a language that doesn't name the app names it:\n%s", conf)
+	}
+	m := msixManifest(app, "Notes.exe", "arm64")
+	want := "<Resources>\n    <Resource Language=\"en\"/>\n    <Resource Language=\"ar\"/>\n    <Resource Language=\"de\"/>\n    <Resource Language=\"zh-Hant\"/>\n  </Resources>"
+	if !strings.Contains(m, want) {
+		t.Errorf("the MSIX's languages, want\n%s\nin:\n%s", want, m)
 	}
 }

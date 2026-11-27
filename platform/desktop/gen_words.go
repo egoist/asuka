@@ -1,7 +1,10 @@
 //go:build ignore
 
 // gen_words writes src/words_gen.c: Asuka's own words (internal/l10n's
-// catalogs) as C tables, for the C desktop hosts.
+// catalogs) as C tables, for the C desktop hosts. The Windows
+// installer's (the keys installer*) aren't the hosts': its table is
+// platform/windows/installer/words.h (internal/l10n's
+// TestInstallerWords).
 //
 //	go run gen_words.go   (go generate ./platform/desktop)
 package main
@@ -40,7 +43,9 @@ func main() {
 		tags = append(tags, tag)
 		langs[tag] = m
 		for k := range m {
-			keySet[k] = true
+			if !strings.HasPrefix(k, "installer") {
+				keySet[k] = true
+			}
 		}
 	}
 	var keys []string

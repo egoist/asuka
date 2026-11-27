@@ -226,7 +226,7 @@ component Apps {
 | | 場所 | ID | アイコン | 起動 |
 |---|---|---|---|---|
 | macOS | `/Applications`、`/System/Applications`、`~/Applications` と、それぞれの一つ下のフォルダー、そして Finder | bundle identifier | ワークスペースが返すそのアプリのアイコン | `NSWorkspace` |
-| Windows | スタートメニューのアプリ（シェルの Applications フォルダー）。パッケージアプリも含む | AppUserModelID | シェルが返すそのアプリの画像 | シェル |
+| Windows | 「スタート」メニューのアプリ（シェルの Applications フォルダー）。パッケージアプリも含む | AppUserModelID | シェルが返すそのアプリの画像 | シェル |
 | Linux | メニューに表示されるデスクトップエントリー（XDG のほか、Flatpak と Snap のものも含む）。`OnlyShowIn`、`NoDisplay`、`TryExec` で判定する | デスクトップファイル ID | テーマから取得したエントリーのアイコン | GIO（ディスプレイの起動コンテキスト付き） |
 
 スマートフォンと Web では `apps.AppsError.unsupported` を投げます。

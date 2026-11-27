@@ -505,7 +505,13 @@ or Windows SDK):
   scheme, its file types, its notifications'); what the app saved, its
   data, stays. For scripts and IT departments both take `/S`, silently
   (the installer doesn't open the app then), and the installer
-  `/D=<folder>` for another folder, as NSIS's do.
+  `/D=<folder>` for another folder, as NSIS's do. Both speak the user's
+  Windows display language, any of those Asuka is translated to
+  (English otherwise; right to left in Arabic and Hebrew), and call the
+  app by its catalogs' `asuka.appName` in the language of the app's that
+  the user reads best ([What the system shows](i18n.md#what-the-system-shows));
+  `/LANG=de` picks another language. The Start menu and Installed apps
+  show the app's `name`, as its own shortcut does.
 - `<name>-<version>-windows-amd64.zip`, the folder zipped, to unzip
   anywhere: a portable copy, which updates itself too where the user
   can write.
@@ -515,7 +521,11 @@ or Windows SDK):
   manifest declares the app as a full-trust desktop app, its tiles'
   images (from the `icon`), its URL scheme, its file types and its
   notifications' activator, which a packaged app can't register as it
-  runs. The Store takes it unsigned and signs it: set `windows.identityName`
+  runs, and the catalogs' languages (the source language first; English
+  without catalogs), which the Store lists the app in. Its name isn't
+  translated there: that takes a `resources.pri`, which the build
+  doesn't write, so Start and Installed apps show the app's `name`.
+  The Store takes it unsigned and signs it: set `windows.identityName`
   and `windows.publisherId` to what Partner Center says (Product
   identity), and upload it. To sideload it, it's signed as the `.exe` is
   (below), by a certificate whose subject is `windows.publisherId`

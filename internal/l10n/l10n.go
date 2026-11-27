@@ -1,7 +1,8 @@
 // Package l10n holds Asuka's own words: the few that hosts' platforms don't
 // supply where Asuka shows them (an alert's only button, a search field's
 // placeholder, a desktop back button), in the languages it is translated
-// to. They are a library's catalog of the namespace asuka (see
+// to; and the Windows installer's (the keys installer*, which only
+// platform/windows/installer/words.h carries). They are a library's catalog of the namespace asuka (see
 // i18n.NewLibraryCatalog): an app changes them, or gives them its other
 // languages, with keys "asuka.<key>" in its own catalogs, as "asuka.ok" in
 // its de.json. A language they lack says English.

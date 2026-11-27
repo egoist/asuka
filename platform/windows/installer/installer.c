@@ -20,9 +20,19 @@
 // Unpacked into a folder beside the install first, so a broken payload
 // or a full disk leaves the install as it was.
 //
-//   Setup.exe [/S] [/D=dir]   /S: silently (no dialog, the app not opened);
-//                             /D=: the folder (the last argument, NSIS's)
-//   Uninstall.exe [/S]
+// Both speak the user's language: the first of their Windows display
+// languages that Asuka's words are in (internal/l10n's catalogs, words.h),
+// else English, right to left where it's written so; the app's name in
+// them is its catalogs' (asuka.appName) in the language of the app's that
+// those languages match best, else asuka.toml's. What they log is
+// English.
+//
+//   Setup.exe [/S] [/LANG=tag] [/D=dir]
+//                             /S: silently (no dialog, the app not opened);
+//                             /LANG=: speak this language (de, zh-Hant)
+//                             instead; /D=: the folder (the last argument,
+//                             NSIS's)
+//   Uninstall.exe [/S] [/LANG=tag]
 //
 // Exit codes: 0 done, 1 failed, 2 canceled.
 #ifndef UNICODE
@@ -49,8 +59,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+#include <wctype.h>
 
 #include "std/flate.h"
+#include "words.h"
 
 #define LEN(a) (sizeof(a) / sizeof((a)[0]))
 #define RES_CONFIG 1
@@ -138,9 +150,211 @@ static wchar_t *wfmt(const wchar_t *f, ...) {
 	return o;
 }
 
+// ---- The language it speaks ----
+
+static wchar_t **langs;  // the user's languages, best first (or /LANG='s)
+static size_t nlangs;
+static const wchar_t *forced_lang;  // /LANG=
+static wchar_t *word_tags[LEN(word_langs)];  // word_langs' tags, wide
+static int lang, english;  // word_langs' index of the language spoken, and of English's
+static const wchar_t *locale;  // the user's language that chose it ("de-AT"), for the system's messages
+static bool rtl;  // it's written right to left
+
+static wchar_t lower(wchar_t c) {
+	if (c == L'_') return L'-';
+	return c >= L'A' && c <= L'Z' ? (wchar_t)(c + 32) : c;
+}
+
+// tag_is reports whether a's first n characters are the tag b, case and
+// _ for - apart.
+static bool tag_is(const wchar_t *a, size_t n, const wchar_t *b) {
+	size_t i = 0;
+	for (; i < n && b[i]; i++)
+		if (lower(a[i]) != lower(b[i])) return false;
+	return i == n && !b[i];
+}
+
+static size_t base_len(const wchar_t *t) { return wcscspn(t, L"-_"); }
+
+// zh_script is 0 for a tag that isn't Chinese, else 1 for Simplified and
+// 2 for Traditional: by its script, else its region (zh-TW, zh-HK, zh-MO).
+static int zh_script(const wchar_t *t, size_t n) {
+	size_t b = base_len(t);
+	if (b > n || !tag_is(t, b, L"zh")) return 0;
+	for (size_t i = b; i < n;) {
+		i++;
+		size_t e = i;
+		while (e < n && t[e] != L'-' && t[e] != L'_') e++;
+		if (tag_is(t + i, e - i, L"Hans")) return 1;
+		if (tag_is(t + i, e - i, L"Hant") || tag_is(t + i, e - i, L"TW") || tag_is(t + i, e - i, L"HK") || tag_is(t + i, e - i, L"MO")) return 2;
+		i = e;
+	}
+	return 1;
+}
+
+// match is the index of the tag of tags (a catalog's languages) that a
+// user's language loc best matches, or -1: the tag itself; Chinese by its
+// script; else the language (pt for pt-BR, nb for no), or one of its
+// regions'.
+static int match(const wchar_t *loc, wchar_t *const *tags, size_t n) {
+	size_t ln = wcscspn(loc, L".@");
+	for (size_t i = 0; i < n; i++)
+		if (tag_is(loc, ln, tags[i])) return (int)i;
+	int z = zh_script(loc, ln);
+	if (z) {
+		for (size_t i = 0; i < n; i++)
+			if (zh_script(tags[i], wcslen(tags[i])) == z) return (int)i;
+		return -1;
+	}
+	size_t b = base_len(loc);
+	if (b > ln) b = ln;
+	wchar_t base[16];
+	if (b >= LEN(base)) return -1;
+	for (size_t i = 0; i < b; i++) base[i] = lower(loc[i]);
+	base[b] = 0;
+	static const wchar_t *const aliases[][2] = {{L"iw", L"he"}, {L"no", L"nb"}, {L"nn", L"nb"}, {L"tl", L"fil"}, {L"in", L"id"}};
+	for (size_t i = 0; i < LEN(aliases); i++)
+		if (!wcscmp(base, aliases[i][0])) wcscpy(base, aliases[i][1]);
+	for (size_t i = 0; i < n; i++)
+		if (tag_is(base, wcslen(base), tags[i])) return (int)i;
+	for (size_t i = 0; i < n; i++)
+		if (tag_is(tags[i], base_len(tags[i]), base)) return (int)i;
+	return -1;
+}
+
+static bool is_rtl(const wchar_t *tag) {
+	static const wchar_t *const scripts[] = {L"ar", L"fa", L"he", L"iw", L"ur", L"ps", L"sd", L"ug", L"yi", L"dv", L"ckb"};
+	for (size_t i = 0; i < LEN(scripts); i++)
+		if (tag_is(tag, base_len(tag), scripts[i])) return true;
+	return false;
+}
+
+// pick_language finds the user's languages (Settings' display language
+// first, then the others they prefer), or takes /LANG='s, and the first
+// Asuka's words are in.
+static void pick_language(void) {
+	for (size_t i = 0; i < LEN(word_langs); i++) {
+		word_tags[i] = wide(word_langs[i].tag, -1);
+		if (!strcmp(word_langs[i].tag, "en")) english = (int)i;
+	}
+	lang = english;
+	langs = xalloc(16 * sizeof *langs);
+	if (forced_lang && *forced_lang) langs[nlangs++] = wdup(forced_lang);
+	else {
+		ULONG count = 0, size = 0;
+		if (GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &count, NULL, &size) && size) {
+			wchar_t *buf = xalloc(size * sizeof *buf);
+			if (GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &count, buf, &size))
+				for (wchar_t *p = buf; *p && nlangs < 16; p += wcslen(p) + 1) langs[nlangs++] = wdup(p);
+			free(buf);
+		}
+		wchar_t name[LOCALE_NAME_MAX_LENGTH];
+		if (!nlangs && GetUserDefaultLocaleName(name, LEN(name))) langs[nlangs++] = wdup(name);
+	}
+	for (size_t i = 0; i < nlangs; i++) {
+		int m = match(langs[i], word_tags, LEN(word_tags));
+		if (m >= 0) {
+			lang = m, locale = langs[i];
+			break;
+		}
+	}
+	rtl = is_rtl(word_tags[lang]);
+}
+
+#define END ((const wchar_t *)NULL)
+
+// rtl_char reports whether c is a letter of a script written right to
+// left (Hebrew, Arabic, Syriac, Thaana, N'Ko and their presentation
+// forms): a strong right-to-left character.
+static bool rtl_char(wchar_t c) {
+	return (c >= 0x0590 && c <= 0x08FF) || (c >= 0xFB1D && c <= 0xFDFF) || (c >= 0xFE70 && c <= 0xFEFE);
+}
+
+// first_rtl reports whether s's first strong character (a letter) is
+// right to left.
+static bool first_rtl(const wchar_t *s) {
+	for (; s && *s; s++) {
+		if (rtl_char(*s)) return true;
+		if ((*s >= L'A' && *s <= L'Z') || (*s >= L'a' && *s <= L'z') || (*s >= 0xC0 && iswalpha(*s))) return false;
+	}
+	return false;
+}
+
+// vwordf is a word of the language l (word_langs' index; English's
+// where it has none), its placeholders filled from the pairs of names
+// and values in ap, up to an END. The bidirectional isolates the
+// catalogs put around a placeholder (Hebrew's FSI and PDI) become the
+// embeddings they stand for (LRE or RLE by the value's first strong
+// character, and PDF): the task dialog's text, GDI's, draws isolates as
+// boxes.
+static wchar_t *vwordf(int l, int key, va_list ap) {
+	const char *s = word_langs[l].w[key];
+	if (!s) s = word_langs[english].w[key];
+	const wchar_t *names[8], *values[8];
+	size_t nv = 0;
+	for (const wchar_t *k; nv < LEN(names) && (k = va_arg(ap, const wchar_t *));) {
+		names[nv] = k;
+		values[nv++] = va_arg(ap, const wchar_t *);
+	}
+	// In a right-to-left language a left-to-right value (a path) isn't
+	// broken before a backslash (a zero-width no-break space there: GDI draws U+2060, the word joiner, as a dot): the next line
+	// would start with it, a neutral, and set it right to left.
+	bool joined = is_rtl(word_tags[l]);
+	wchar_t *w = wide(s ? s : "", -1), *out = NULL;
+	for (int pass = 0; pass < 2; pass++) {
+		size_t at = 0;
+		for (const wchar_t *p = w; *p;) {
+			const wchar_t *end = *p == L'{' ? wcschr(p, L'}') : NULL;
+			const wchar_t *v = NULL;
+			for (size_t i = 0; end && i < nv; i++)
+				if (wcslen(names[i]) == (size_t)(end - p - 1) && !wcsncmp(names[i], p + 1, (size_t)(end - p - 1))) v = values[i];
+			if (v) {
+				bool join = joined && !first_rtl(v);
+				for (const wchar_t *q = v; *q; q++) {
+					if (join && *q == L'\\') {
+						if (out) out[at] = 0xFEFF;
+						at++;
+					}
+					if (out) out[at] = *q;
+					at++;
+				}
+				p = end + 1;
+				continue;
+			}
+			wchar_t c = *p;
+			if (c == 0x2066) c = 0x202A;       // LRI: LRE
+			else if (c == 0x2067) c = 0x202B;  // RLI: RLE
+			else if (c == 0x2069) c = 0x202C;  // PDI: PDF
+			else if (c == 0x2068) {
+				// FSI: by what follows, the placeholder's value if it's one.
+				const wchar_t *next = p + 1, *e = *next == L'{' ? wcschr(next, L'}') : NULL, *after = next;
+				for (size_t i = 0; e && i < nv; i++)
+					if (wcslen(names[i]) == (size_t)(e - next - 1) && !wcsncmp(names[i], next + 1, (size_t)(e - next - 1))) after = values[i];
+				c = first_rtl(after) ? 0x202B : 0x202A;
+			}
+			if (out) out[at] = c;
+			at++, p++;
+		}
+		if (out) out[at] = 0;
+		else out = xalloc((at + 1) * sizeof *out);
+	}
+	free(w);
+	return out;
+}
+
+// T is a word in the language spoken: T(W_INSTALLING, L"app", name, END).
+static wchar_t *T(int key, ...) {
+	va_list ap;
+	va_start(ap, key);
+	wchar_t *s = vwordf(lang, key, ap);
+	va_end(ap);
+	return s;
+}
+
 // ---- What the app is (CONFIG) ----
 
 typedef struct {
+	wchar_t *shown;      // its name as the dialogs say it, in their language
 	wchar_t *name;       // as people see it: the Start menu's, Installed apps'
 	wchar_t *version;    // shown in Installed apps
 	wchar_t *publisher;  // likewise ("" for none)
@@ -183,6 +397,33 @@ static const uint8_t *resource(int id, DWORD *size) {
 	return LockResource(g);
 }
 
+// shown_name is the app's name in the language of its catalogs' (the
+// lines name.<tag>=, their asuka.appName) that the user's languages
+// match first, else its own.
+static wchar_t *shown_name(const char *text, size_t n) {
+	wchar_t *tags[64], *names[64];
+	size_t k = 0;
+	for (size_t i = 0; i < n;) {
+		size_t e = i;
+		while (e < n && text[e] != '\n') e++;
+		const char *eq = memchr(text + i, '=', e - i);
+		if (k < LEN(tags) && eq && e - i > 5 && !memcmp(text + i, "name.", 5)) {
+			size_t ve = e;
+			if (ve > (size_t)(eq - text) + 1 && text[ve - 1] == '\r') ve--;
+			tags[k] = wide(text + i + 5, (int)(eq - text - (ptrdiff_t)i - 5));
+			names[k++] = wide(eq + 1, (int)(ve - (size_t)(eq + 1 - text)));
+		}
+		i = e + 1;
+	}
+	wchar_t *shown = NULL;
+	for (size_t i = 0; !shown && i < nlangs; i++) {
+		int m = match(langs[i], tags, k);
+		if (m >= 0 && *names[m]) shown = wdup(names[m]);
+	}
+	for (size_t i = 0; i < k; i++) free(tags[i]), free(names[i]);
+	return shown ? shown : wdup(C.name);
+}
+
 static bool read_config(void) {
 	DWORD n = 0;
 	const char *t = (const char *)resource(RES_CONFIG, &n);
@@ -203,6 +444,7 @@ static bool read_config(void) {
 	wchar_t *d = field(t, n, "desktop");
 	C.desktop = !wcscmp(d, L"1");
 	free(d);
+	C.shown = shown_name(t, n);
 	return *C.name && *C.id && *C.exe && *C.folder;
 }
 
@@ -235,23 +477,36 @@ static void say(const wchar_t *f, ...) {
 	free(u);
 }
 
-// fail says what went wrong (with the system's message for err, if any),
-// once: the first failure is the one shown.
-static bool fail(DWORD err, const wchar_t *f, ...) {
-	wchar_t what[768];
-	va_list ap;
-	va_start(ap, f);
-	_vsnwprintf(what, LEN(what) - 1, f, ap);
+// system_message is the system's message for err in the language l
+// (a LANGID; the system's own where it has none of l's).
+static void system_message(DWORD err, DWORD l, wchar_t *out, size_t cap) {
+	*out = 0;
+	DWORD flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
+	if (!FormatMessageW(flags, NULL, err, l, out, (DWORD)cap, NULL) && l) FormatMessageW(flags, NULL, err, 0, out, (DWORD)cap, NULL);
+	size_t n = wcslen(out);
+	while (n && (out[n - 1] == L'\n' || out[n - 1] == L'\r' || out[n - 1] == L' ')) out[--n] = 0;
+}
+
+// fail says what went wrong: the word key with its pairs of names and
+// values, up to an END (and the system's message for err, if any), once,
+// in the language spoken (the first failure is the one shown); in the
+// log in English, with note.
+static bool fail(DWORD err, const wchar_t *note, int key, ...) {
+	va_list ap, aq;
+	va_start(ap, key);
+	va_copy(aq, ap);
+	wchar_t *en = vwordf(english, key, ap), *here = vwordf(lang, key, aq);
+	va_end(aq);
 	va_end(ap);
-	what[LEN(what) - 1] = 0;
-	wchar_t sys[256] = L"";
+	wchar_t sys_en[256] = L"", sys[256] = L"";
 	if (err) {
-		FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, 0, sys, LEN(sys), NULL);
-		size_t n = wcslen(sys);
-		while (n && (sys[n - 1] == L'\n' || sys[n - 1] == L'\r' || sys[n - 1] == L'.')) sys[--n] = 0;
+		system_message(err, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), sys_en, LEN(sys_en));
+		LCID lcid = locale ? LocaleNameToLCID(locale, 0) : 0;
+		system_message(err, lcid ? LANGIDFROMLCID(lcid) : 0, sys, LEN(sys));
 	}
-	say(L"error: %ls%ls%ls", what, *sys ? L": " : L"", sys);
-	if (!*failure) _snwprintf(failure, LEN(failure) - 1, L"%ls%ls%ls.", what, *sys ? L": " : L"", sys);
+	say(L"error: %ls%ls%ls%ls%ls%ls", en, note ? L" (" : L"", note ? note : L"", note ? L")" : L"", *sys_en ? L" " : L"", sys_en);
+	if (!*failure) _snwprintf(failure, LEN(failure) - 1, L"%ls%ls%ls", here, *sys ? L"\n" : L"", sys);
+	free(en), free(here);
 	return false;
 }
 
@@ -467,28 +722,28 @@ static bool read_archive(const uint8_t *z, size_t n, archive *a) {
 		}
 		if (i == stop) break;
 	}
-	if (eocd == SIZE_MAX) return fail(0, L"The installer is damaged (no archive in it)");
+	if (eocd == SIZE_MAX) return fail(0, L"no archive in it", W_DAMAGED, END);
 	uint16_t count = le16(z + eocd + 10);
 	uint32_t cd = le32(z + eocd + 16);
-	if (cd >= n) return fail(0, L"The installer is damaged (its archive's directory)");
+	if (cd >= n) return fail(0, L"its archive's directory", W_DAMAGED, END);
 	a->v = xalloc(sizeof(entry) * (count ? count : 1));
 	size_t at = cd;
 	for (uint16_t i = 0; i < count; i++) {
-		if (at + 46 > n || le32(z + at) != 0x02014b50) return fail(0, L"The installer is damaged (an entry)");
+		if (at + 46 > n || le32(z + at) != 0x02014b50) return fail(0, L"an entry", W_DAMAGED, END);
 		uint16_t method = le16(z + at + 10), nl = le16(z + at + 28), xl = le16(z + at + 30), cl = le16(z + at + 32);
 		uint32_t crc = le32(z + at + 16), csize = le32(z + at + 20), usize = le32(z + at + 24), local = le32(z + at + 42);
-		if (at + 46 + nl > n || local + 30 > n) return fail(0, L"The installer is damaged (an entry)");
+		if (at + 46 + nl > n || local + 30 > n) return fail(0, L"an entry", W_DAMAGED, END);
 		const char *name = (const char *)z + at + 46;
 		size_t lnl = le16(z + local + 26), lxl = le16(z + local + 28);
 		size_t data = local + 30 + lnl + lxl;
-		if (data + csize > n || (method != 0 && method != 8)) return fail(0, L"The installer is damaged (an entry's data)");
+		if (data + csize > n || (method != 0 && method != 8)) return fail(0, L"an entry's data", W_DAMAGED, END);
 		entry *e = &a->v[a->n];
 		e->path = wide(name, nl);
 		for (wchar_t *c = e->path; *c; c++)
 			if (*c == L'/') *c = L'\\';
 		size_t pl = wcslen(e->path);
 		if (pl && e->path[pl - 1] == L'\\') e->dir = true, e->path[pl - 1] = 0;
-		if (!safe_path(e->path)) return fail(0, L"The installer is damaged (a path outside the folder: %ls)", e->path);
+		if (!safe_path(e->path)) return fail(0, e->path, W_DAMAGED, END);  // a path outside the folder
 		e->method = method, e->crc = crc, e->csize = csize, e->usize = usize, e->data = z + data;
 		a->total += usize;
 		a->n++;
@@ -506,26 +761,28 @@ static bool write_all(HANDLE h, const uint8_t *p, size_t n) {
 	return true;
 }
 
-// extract writes the entry under dir, checking its CRC.
-static bool extract(const entry *e, const wchar_t *dir, uint64_t *done, uint64_t total) {
-	wchar_t *p = wjoin(dir, e->path);
+// extract writes the entry under dir, checking its CRC. What fails is
+// said of it where it goes, under shown (the folder the user installs
+// into: dir is a folder beside it).
+static bool extract(const entry *e, const wchar_t *dir, const wchar_t *shown, uint64_t *done, uint64_t total) {
+	wchar_t *p = wjoin(dir, e->path), *where = wjoin(shown, e->path);
 	bool ok = false;
 	if (e->dir) {
-		ok = make_dirs(p) || fail(GetLastError(), L"Can't make the folder %ls", p);
-		free(p);
+		ok = make_dirs(p) || fail(GetLastError(), p, W_CANT_WRITE, L"path", where, END);
+		free(p), free(where);
 		return ok;
 	}
 	wchar_t *d = parent_of(p);
 	if (!make_dirs(d)) {
-		fail(GetLastError(), L"Can't make the folder %ls", d);
-		free(d), free(p);
+		fail(GetLastError(), d, W_CANT_WRITE, L"path", where, END);
+		free(d), free(p), free(where);
 		return false;
 	}
 	free(d);
 	HANDLE h = CreateFileW(p, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (h == INVALID_HANDLE_VALUE) {
-		fail(GetLastError(), L"Can't write %ls", p);
-		free(p);
+		fail(GetLastError(), p, W_CANT_WRITE, L"path", where, END);
+		free(p), free(where);
 		return false;
 	}
 	uint32_t crc = 0;
@@ -534,7 +791,7 @@ static bool extract(const entry *e, const wchar_t *dir, uint64_t *done, uint64_t
 		crc = crc32_of(0, e->data, e->csize);
 		*done += e->usize;
 		progress(*done, total);
-		if (!ok) fail(GetLastError(), L"Can't write %ls", p);
+		if (!ok) fail(GetLastError(), p, W_CANT_WRITE, L"path", where, END);
 	} else {
 		// Inflated a piece at a time: what's made written out, the last
 		// 32 KB kept for the matches that look back into it.
@@ -549,12 +806,12 @@ static bool extract(const entry *e, const wchar_t *dir, uint64_t *done, uint64_t
 		for (;;) {
 			int r = ak_inflater_run(inf, &io);
 			if (r == AK_FL_CORRUPT || r == AK_FL_NEED_INPUT) {
-				ok = fail(0, L"The installer is damaged (%ls)", e->path);
+				ok = fail(0, e->path, W_DAMAGED, END);
 				break;
 			}
 			size_t n = io.pos - written;
 			if (n && !write_all(h, out + written, n)) {
-				ok = fail(GetLastError(), L"Can't write %ls", p);
+				ok = fail(GetLastError(), p, W_CANT_WRITE, L"path", where, END);
 				break;
 			}
 			crc = crc32_of(crc, out + written, n);
@@ -573,12 +830,12 @@ static bool extract(const entry *e, const wchar_t *dir, uint64_t *done, uint64_t
 		}
 		ak_inflater_free(inf);
 		free(out);
-		if (ok && made != e->usize) ok = fail(0, L"The installer is damaged (%ls's size)", e->path);
+		if (ok && made != e->usize) ok = fail(0, e->path, W_DAMAGED, END);  // its size
 	}
 	CloseHandle(h);
-	if (ok && crc != e->crc) ok = fail(0, L"The installer is damaged (%ls's checksum)", e->path);
+	if (ok && crc != e->crc) ok = fail(0, e->path, W_DAMAGED, END);  // its checksum
 	if (!ok) DeleteFileW(p);
-	free(p);
+	free(p), free(where);
 	return ok;
 }
 
@@ -633,7 +890,7 @@ static BOOL CALLBACK close_window(HWND w, LPARAM pid) {
 
 
 
-static int ask(const wchar_t *instruction, const wchar_t *content, const wchar_t *yes, TASKDIALOG_COMMON_BUTTON_FLAGS common);
+static int ask(const wchar_t *instruction, const wchar_t *content, const wchar_t *yes);
 
 // may_close asks the user whether the app, open from dir, may be closed
 // (unless silent, or it isn't open).
@@ -641,10 +898,9 @@ static bool may_close(const wchar_t *dir) {
 	pid_list l = running(dir);
 	free(l.pids);
 	if (silent || !l.n) return true;
-	wchar_t *what = wfmt(L"%ls is open", C.name);
-	wchar_t *why = wdup(L"Setup closes it to go on: what it hasn't saved may be lost.");
-	int r = ask(what, why, L"Close it", TDCBF_CANCEL_BUTTON);
-	free(what), free(why);
+	wchar_t *what = T(W_APP_OPEN, L"app", C.shown, END), *why = T(W_APP_OPEN_DETAIL, END), *yes = T(W_CLOSE_APP, L"app", C.shown, END);
+	int r = ask(what, why, yes);
+	free(what), free(why), free(yes);
 	if (r == IDOK) return true;
 	InterlockedExchange(&canceled, 1);
 	return false;
@@ -667,7 +923,7 @@ static bool close_app(const wchar_t *dir) {
 		if (!hs[i]) continue;
 		if (WaitForSingleObject(hs[i], 10000) != WAIT_OBJECT_0) {
 			TerminateProcess(hs[i], 1);
-			if (WaitForSingleObject(hs[i], 5000) != WAIT_OBJECT_0) ok = fail(0, L"%ls didn't close", C.name);
+			if (WaitForSingleObject(hs[i], 5000) != WAIT_OBJECT_0) ok = fail(0, NULL, W_DIDNT_CLOSE, L"app", C.shown, END);
 		}
 		CloseHandle(hs[i]);
 	}
@@ -721,7 +977,7 @@ static bool register_app(const wchar_t *dir) {
 	HKEY k;
 	LSTATUS s = RegCreateKeyExW(HKEY_CURRENT_USER, key, 0, NULL, 0, KEY_WRITE, NULL, &k, NULL);
 	free(key);
-	if (s != ERROR_SUCCESS) return fail((DWORD)s, L"Can't list the app in Installed apps");
+	if (s != ERROR_SUCCESS) return fail((DWORD)s, L"its Uninstall key", W_CANT_REGISTER, L"app", C.shown, END);
 	wchar_t *exe = wjoin(dir, C.exe), *un = wjoin(dir, C.uninstaller);
 	wchar_t *icon = wfmt(L"\"%ls\",0", exe), *cmd = wfmt(L"\"%ls\"", un), *quiet = wfmt(L"\"%ls\" /S", un);
 	SYSTEMTIME t;
@@ -821,33 +1077,45 @@ static PCWSTR app_icon(void) {
 	return FindResourceW(NULL, MAKEINTRESOURCEW(1), MAKEINTRESOURCEW(14)) ? MAKEINTRESOURCEW(1) : NULL;  // RT_GROUP_ICON
 }
 
-static int ask(const wchar_t *instruction, const wchar_t *content, const wchar_t *yes, TASKDIALOG_COMMON_BUTTON_FLAGS common) {
-	TASKDIALOG_BUTTON b = {IDOK, yes};
+// dialog_config is a task dialog's, in the language spoken: right to
+// left where it's written so; its buttons are the installer's (Cancel and
+// Close in its language, not the system's).
+static TASKDIALOGCONFIG dialog_config(TASKDIALOG_FLAGS flags) {
 	TASKDIALOGCONFIG tc = {sizeof tc};
 	tc.hInstance = GetModuleHandleW(NULL);
-	tc.dwFlags = TDF_POSITION_RELATIVE_TO_WINDOW | TDF_SIZE_TO_CONTENT;
-	tc.pszWindowTitle = C.name;
+	tc.dwFlags = flags | TDF_SIZE_TO_CONTENT | TDF_ALLOW_DIALOG_CANCELLATION | (rtl ? TDF_RTL_LAYOUT : 0);
+	tc.pszWindowTitle = C.shown;
 	tc.pszMainIcon = app_icon();
+	return tc;
+}
+
+// ask asks the user whether to do what yes says: IDOK if so, else
+// IDCANCEL.
+static int ask(const wchar_t *instruction, const wchar_t *content, const wchar_t *yes) {
+	wchar_t *cancel = T(W_CANCEL, END);
+	TASKDIALOG_BUTTON b[] = {{IDOK, yes}, {IDCANCEL, cancel}};
+	TASKDIALOGCONFIG tc = dialog_config(TDF_POSITION_RELATIVE_TO_WINDOW);
 	tc.pszMainInstruction = instruction;
 	tc.pszContent = content;
-	tc.cButtons = 1, tc.pButtons = &b;
-	tc.dwCommonButtons = common;
+	tc.cButtons = LEN(b), tc.pButtons = b;
 	int r = IDCANCEL;
 	TaskDialogIndirect(&tc, &r, NULL, NULL);
+	free(cancel);
 	return r;
 }
 
-static void show_error(const wchar_t *instruction) {
+// show_error says what failed (the word key, of the app), and why.
+static void show_error(int key) {
 	if (silent) return;
-	TASKDIALOGCONFIG tc = {sizeof tc};
-	tc.hInstance = GetModuleHandleW(NULL);
-	tc.dwFlags = TDF_SIZE_TO_CONTENT;
-	tc.pszWindowTitle = C.name;
+	wchar_t *what = T(key, L"app", C.shown, END), *close = T(W_CLOSE, END), *other = T(W_ERROR, END);
+	TASKDIALOG_BUTTON b = {IDCANCEL, close};
+	TASKDIALOGCONFIG tc = dialog_config(0);
 	tc.pszMainIcon = TD_ERROR_ICON;
-	tc.pszMainInstruction = instruction;
-	tc.pszContent = *failure ? failure : L"Something went wrong.";
-	tc.dwCommonButtons = TDCBF_CLOSE_BUTTON;
+	tc.pszMainInstruction = what;
+	tc.pszContent = *failure ? failure : other;
+	tc.cButtons = 1, tc.pButtons = &b;
 	TaskDialogIndirect(&tc, NULL, NULL, NULL);
+	free(what), free(close), free(other);
 }
 
 typedef bool (*job_fn)(void *);
@@ -879,7 +1147,7 @@ static HRESULT CALLBACK job_dialog(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, LO
 		SendMessageW(hwnd, TDM_SET_PROGRESS_BAR_RANGE, 0, MAKELPARAM(0, 1000));
 		j->thread = CreateThread(NULL, 0, job_thread, j, 0, NULL);
 		if (!j->thread) {
-			j->ok = fail(GetLastError(), L"Can't start");
+			j->ok = fail(GetLastError(), L"no thread", W_ERROR, END);
 			j->done = 1;
 			return S_OK;
 		}
@@ -904,17 +1172,16 @@ static HRESULT CALLBACK job_dialog(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, LO
 static bool run(job_fn fn, void *arg, const wchar_t *what, const wchar_t *detail) {
 	if (silent) return fn(arg);
 	job j = {fn, arg, false, 0, NULL};
-	TASKDIALOGCONFIG tc = {sizeof tc};
-	tc.hInstance = GetModuleHandleW(NULL);
-	tc.dwFlags = TDF_SHOW_PROGRESS_BAR | TDF_SIZE_TO_CONTENT;
-	tc.pszWindowTitle = C.name;
-	tc.pszMainIcon = app_icon();
+	wchar_t *cancel = T(W_CANCEL, END);
+	TASKDIALOG_BUTTON b = {IDCANCEL, cancel};
+	TASKDIALOGCONFIG tc = dialog_config(TDF_SHOW_PROGRESS_BAR);
 	tc.pszMainInstruction = what;
 	tc.pszContent = detail;
-	tc.dwCommonButtons = TDCBF_CANCEL_BUTTON;
+	tc.cButtons = 1, tc.pButtons = &b;
 	tc.pfCallback = job_dialog;
 	tc.lpCallbackData = (LONG_PTR)&j;
 	HRESULT hr = TaskDialogIndirect(&tc, NULL, NULL, NULL);
+	free(cancel);
 	if (j.thread) {
 		WaitForSingleObject(j.thread, INFINITE);
 		CloseHandle(j.thread);
@@ -946,7 +1213,7 @@ static bool do_install(void *p) {
 	if (canceled) return false;
 	wchar_t *parent = parent_of(in->dir);
 	if (!make_dirs(parent)) {
-		fail(GetLastError(), L"Can't make the folder %ls", parent);
+		fail(GetLastError(), L"making the folder", W_CANT_WRITE, L"path", parent, END);
 		free(parent);
 		return false;
 	}
@@ -954,11 +1221,11 @@ static bool do_install(void *p) {
 	wchar_t *stage = wfmt(L"%ls\\.%ls.asuka-install-%lu", parent, C.folder, GetCurrentProcessId());
 	free(parent);
 	remove_all(stage);
-	bool ok = make_dirs(stage) || fail(GetLastError(), L"Can't make the folder %ls", stage);
+	bool ok = make_dirs(stage) || fail(GetLastError(), stage, W_CANT_WRITE, L"path", in->dir, END);
 	uint64_t done = 0;
 	for (size_t i = 0; ok && i < in->a.n; i++) {
 		if (canceled) ok = false;
-		else ok = extract(&in->a.v[i], stage, &done, in->a.total);
+		else ok = extract(&in->a.v[i], stage, in->dir, &done, in->a.total);
 	}
 	if (!ok) {
 		remove_all(stage);
@@ -977,7 +1244,7 @@ static bool do_install(void *p) {
 	// From here the install changes: what the version before installed
 	// and this one lacks, put aside; each unit's old self put aside,
 	// the new moved in. The asides go when the app starts, or now.
-	ok = make_dirs(in->dir) || fail(GetLastError(), L"Can't make the folder %ls", in->dir);
+	ok = make_dirs(in->dir) || fail(GetLastError(), L"making the folder", W_CANT_WRITE, L"path", in->dir, END);
 	names old = read_list(in->dir), asides = {0};
 	for (size_t i = 0; ok && i < old.n; i++) {
 		if (names_has(&units, old.v[i])) continue;
@@ -997,11 +1264,11 @@ static bool do_install(void *p) {
 			remove_all(aside);
 			if (MoveFileExW(to, aside, 0)) names_add(&asides, aside);
 			else {
-				ok = fail(GetLastError(), L"Can't replace %ls", to);
+				ok = fail(GetLastError(), L"putting it aside", W_CANT_REPLACE, L"path", to, END);
 				free(aside);
 			}
 		}
-		if (ok && !MoveFileExW(from, to, MOVEFILE_COPY_ALLOWED)) ok = fail(GetLastError(), L"Can't move %ls into place", units.v[i]);
+		if (ok && !MoveFileExW(from, to, MOVEFILE_COPY_ALLOWED)) ok = fail(GetLastError(), L"moving it into place", W_CANT_REPLACE, L"path", to, END);
 		free(from), free(to);
 	}
 	for (size_t i = 0; i < asides.n; i++) remove_all(asides.v[i]);
@@ -1014,7 +1281,11 @@ static bool do_install(void *p) {
 		names list = {0};
 		for (size_t i = 0; i < units.n; i++)
 			if (_wcsicmp(units.v[i], FILE_LIST) && _wcsicmp(units.v[i], C.uninstaller)) names_add(&list, wdup(units.v[i]));
-		if (!write_list(in->dir, &list)) ok = fail(GetLastError(), L"Can't write the app's file list");
+		if (!write_list(in->dir, &list)) {
+			wchar_t *p = wjoin(in->dir, FILE_LIST);
+			ok = fail(GetLastError(), L"the app's file list", W_CANT_WRITE, L"path", p, END);
+			free(p);
+		}
 		names_free(&list);
 	}
 	names_free(&units);
@@ -1082,19 +1353,19 @@ static wchar_t *full_path(const wchar_t *p) {
 static int installer(const uint8_t *z, DWORD n, const wchar_t *dir) {
 	install in = {0};
 	if (!read_archive(z, n, &in.a)) {
-		show_error(L"The installer can't be read");
+		show_error(W_INSTALL_FAILED);
 		return 1;
 	}
 	in.dir = dir ? full_path(dir) : default_dir(&in.update);
 	if (!in.dir) {
-		fail(0, L"No folder to install into");
-		show_error(L"The app couldn't be installed");
+		fail(0, L"no folder to install into", W_ERROR, END);
+		show_error(W_INSTALL_FAILED);
 		return 1;
 	}
 	if (dir) in.update = exists(in.dir);
 	if (!may_close(in.dir)) return 2;
-	wchar_t *what = wfmt(L"Installing %ls", C.name);
-	wchar_t *detail = wfmt(L"Version %ls, into %ls", C.version, in.dir);
+	wchar_t *what = T(W_INSTALLING, L"app", C.shown, END);
+	wchar_t *detail = T(W_INSTALLING_DETAIL, L"version", C.version, L"publisher", *C.publisher ? C.publisher : C.shown, L"folder", in.dir, END);
 	bool ok = run(do_install, &in, what, detail);
 	free(what), free(detail);
 	if (!ok) {
@@ -1102,7 +1373,7 @@ static int installer(const uint8_t *z, DWORD n, const wchar_t *dir) {
 			say(L"canceled");
 			return 2;
 		}
-		show_error(L"The app couldn't be installed");
+		show_error(W_INSTALL_FAILED);
 		return 1;
 	}
 	if (!silent) open_app(in.dir);
@@ -1186,7 +1457,7 @@ static bool do_uninstall(void *p) {
 	bool ok = true;
 	for (size_t i = 0; i < list.n; i++) {
 		wchar_t *p = wjoin(u->dir, list.v[i]);
-		if (!remove_all(p) && exists(p)) ok = fail(GetLastError(), L"Can't remove %ls", p);
+		if (!remove_all(p) && exists(p)) ok = fail(GetLastError(), NULL, W_CANT_REMOVE, L"path", p, END);
 		free(p);
 		progress(++done, list.n + 1);
 	}
@@ -1237,9 +1508,9 @@ static int relaunch_from_temp(const wchar_t *self, const wchar_t *dir) {
 	HANDLE done = CreateEventW(&sa, TRUE, FALSE, NULL);
 	HANDLE me = NULL;
 	DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &me, SYNCHRONIZE, TRUE, 0);
-	wchar_t *cmd = wfmt(L"\"%ls\" %ls--from=\"%ls\" --done=%llu --parent=%llu%ls%ls%ls", copy, silent ? L"/S " : L"", dir,
+	wchar_t *cmd = wfmt(L"\"%ls\" %ls--from=\"%ls\" --done=%llu --parent=%llu%ls%ls%ls%ls%ls%ls", copy, silent ? L"/S " : L"", dir,
 		(unsigned long long)(uintptr_t)done, (unsigned long long)(uintptr_t)me, log_path ? L" \"/LOG=" : L"", log_path ? log_path : L"",
-		log_path ? L"\"" : L"");
+		log_path ? L"\"" : L"", forced_lang ? L" \"/LANG=" : L"", forced_lang ? forced_lang : L"", forced_lang ? L"\"" : L"");
 	STARTUPINFOW si = {sizeof si};
 	PROCESS_INFORMATION pi;
 	BOOL started = CreateProcessW(copy, cmd, NULL, NULL, TRUE, 0, NULL, tmp, &si, &pi);
@@ -1282,10 +1553,10 @@ static int uninstaller(const wchar_t *self, const wchar_t *from, HANDLE done, HA
 		// Run from the folder: confirm, then hand over to a copy.
 		wchar_t *dir = parent_of(self);
 		if (!silent) {
-			wchar_t *what = wfmt(L"Uninstall %ls?", C.name);
-			wchar_t *why = wfmt(L"%ls and its files in %ls are removed. What you made with it, and its settings, stay.", C.name, dir);
-			int r = ask(what, why, L"Uninstall", TDCBF_CANCEL_BUTTON);
-			free(what), free(why);
+			wchar_t *what = T(W_UNINSTALL_ASK, L"app", C.shown, END), *yes = T(W_UNINSTALL, END);
+			wchar_t *why = T(W_UNINSTALL_ASK_DETAIL, L"app", C.shown, L"folder", dir, END);
+			int r = ask(what, why, yes);
+			free(what), free(why), free(yes);
 			if (r != IDOK) return 2;
 		}
 		int code = relaunch_from_temp(self, dir);
@@ -1296,7 +1567,7 @@ static int uninstaller(const wchar_t *self, const wchar_t *from, HANDLE done, HA
 		u.dir = full_path(from);
 		u.self = wjoin(u.dir, C.uninstaller);
 	}
-	wchar_t *what = wfmt(L"Uninstalling %ls", C.name);
+	wchar_t *what = T(W_UNINSTALLING, L"app", C.shown, END);
 	bool ok = run(do_uninstall, &u, what, u.dir);
 	free(what);
 	if (ok && done) {
@@ -1309,7 +1580,7 @@ static int uninstaller(const wchar_t *self, const wchar_t *from, HANDLE done, HA
 		}
 	}
 	if (from) remove_later(self);
-	if (!ok && !canceled) show_error(L"The app couldn't be uninstalled");
+	if (!ok && !canceled) show_error(W_UNINSTALL_FAILED);
 	return ok ? 0 : canceled ? 2 : 1;
 }
 
@@ -1321,10 +1592,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show) {
 	CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 	INITCOMMONCONTROLSEX icc = {sizeof icc, ICC_PROGRESS_CLASS};
 	InitCommonControlsEx(&icc);
-	if (!read_config()) {
-		MessageBoxW(NULL, L"The installer is damaged (it says nothing of the app).", L"Setup", MB_ICONERROR);
-		return 1;
-	}
 	int argc = 0;
 	wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 	const wchar_t *dir = NULL, *from = NULL;
@@ -1334,6 +1601,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show) {
 		if (!_wcsicmp(a, L"/S") || !_wcsicmp(a, L"--silent")) silent = true;
 		else if (!_wcsnicmp(a, L"/D=", 3)) dir = a + 3;
 		else if (!_wcsnicmp(a, L"/LOG=", 5)) log_path = wdup(a + 5);
+		else if (!_wcsnicmp(a, L"/LANG=", 6)) forced_lang = a + 6;
 		else if (!wcsncmp(a, L"--from=", 7)) from = a + 7;
 		else if (!wcsncmp(a, L"--done=", 7)) done = (HANDLE)(uintptr_t)_wcstoui64(a + 7, NULL, 10);
 		else if (!wcsncmp(a, L"--parent=", 9)) parent = (HANDLE)(uintptr_t)_wcstoui64(a + 9, NULL, 10);
@@ -1343,6 +1611,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show) {
 		const wchar_t *d = wcsstr(GetCommandLineW(), L" /D=");
 		if (d) dir = d + 4;
 	}
+	pick_language();
+	if (!read_config()) {
+		wchar_t *what = T(W_DAMAGED, END);
+		MessageBoxW(NULL, what, NULL, MB_ICONERROR | (rtl ? MB_RTLREADING | MB_RIGHT : 0));
+		free(what);
+		return 1;
+	}
+	say(L"speaking %ls (%ls), the app as %ls", word_tags[lang], locale ? locale : L"no language of the user's", C.shown);
 	wchar_t self[MAX_PATH * 4];
 	GetModuleFileNameW(NULL, self, LEN(self));
 	DWORD n = 0;
