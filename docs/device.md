@@ -4030,7 +4030,9 @@ consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "de
   while offline). A session ends after 30 minutes without an event. A
   screen is a page view, titled with its name, at
   `app://<the app's ID>/<name>`. Nothing is sent while analytics storage
-  is denied.
+  is denied. `asuka.toml`'s `analytics.endpoint` sends them to a
+  collector of yours instead of GA's, such as a server-side tagging
+  server's.
 
 A platform without its settings sends nothing: `available()` is false
 there, the calls do nothing, and `asuka dev` and `asuka build` say

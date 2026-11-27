@@ -42,6 +42,9 @@ summary = "Write things down"
 categories = ["Office"]
 license = "MIT"
 
+[windows]
+publisher = "Example Inc."
+
 [updates]
 publicKey = "…"
 github = "you/notes"
@@ -408,6 +411,21 @@ Linux 构建的 desktop 文件、AppStream metainfo 和软件包对应用的描�
 
 见[打包与发布](shipping.md#linux)。
 
+## windows
+
+Windows 构建的安装程序和 MSIX 对应用的描述，以及用哪些形式分发应用。
+
+| 键 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `packages` | 字符串数组 | `["zip", "installer"]` | 构建用哪些形式分发应用：`zip`，压缩好的应用文件夹；`installer`，为当前用户安装应用的安装程序 `.exe`；`msix`，用于 Microsoft Store 和旁加载的包。`--package` 会覆盖它。 |
+| `publisher` | 字符串 | 应用的名称 | 应用的发布者，显示在“已安装的应用”和 Microsoft Store 中。 |
+| `homepage` | 字符串 | 无 | 应用的网页，显示在“已安装的应用”中。 |
+| `desktopShortcut` | 布尔值 | `false` | 除了开始菜单的快捷方式，安装程序还在桌面上放一个快捷方式。 |
+| `identityName` | 字符串 | 应用的 `id` | MSIX 包的名称：上架 Microsoft Store 时，填合作伙伴中心里的 Package/Identity/Name。 |
+| `publisherId` | 字符串 | `"CN="` 加上 `publisher` | MSIX 包的发布者，也就是为它签名的证书的主题（`"CN=Example Inc., O=Example Inc., C=US"`）：上架 Microsoft Store 时，填合作伙伴中心里的 Package/Identity/Publisher。 |
+
+见[打包与发布](shipping.md#windows)。
+
 ## web
 
 Web 构建的配置。
@@ -489,6 +507,7 @@ consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "de
 |---|---|---|---|
 | `measurementId` | 字符串 | 无 | GA4 Web 数据流的衡量 ID（`G-…`，即 Firebase Web 应用的 `measurementId`），供 Web 和桌面端使用。 |
 | `apiSecret` | 字符串 | 无 | 这个数据流的 Measurement Protocol API 密钥（在“管理 > 数据流”中创建），供 Windows 和 Linux 使用；永远不会出现在网页里。可用 `ASUKA_ANALYTICS_API_SECRET` 覆盖。 |
+| `endpoint` | 字符串 | GA 的，`https://www.google-analytics.com/mp/collect` | Windows 和 Linux 把事件发到哪里：你自己的 Measurement Protocol 收集端，比如服务器端代码植入服务器的（`https://sgtm.example.com/mp/collect`）。 |
 | `enabled` | 布尔值 | `true` | 设为 `false` 时数据收集一开始是关闭的，直到应用调用 `analytics.setEnabled(true)`：对应 Firebase 的 `FIREBASE_ANALYTICS_COLLECTION_ENABLED` 和 `firebase_analytics_collection_enabled`。 |
 | `consent` | 表 | 同意 | 意见征求模式的初始值，每项为 `"granted"` 或 `"denied"`：`analyticsStorage`、`adStorage`、`adUserData`、`adPersonalization`。 |
 

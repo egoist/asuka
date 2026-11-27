@@ -121,10 +121,10 @@ var GCCFlags = []string{"-Wno-format-truncation"}
 // pointer with, as Go keeps its g in R28. The core needn't be: x28 is
 // callee-saved, so it keeps its own across its calls into the app, and
 // the app's ways in set and restore it. Without them the app's C passes
-// the limit as an argument, as on amd64. Windows on ARM64 takes the
-// argument too: there the app's code found x28 not holding the limit
-// (every app threw a stack overflow at its first component, its stack
-// nearly empty), when Zig still dropped the reservation (below).
+// the limit as an argument, as on amd64. Windows on ARM64 is as the
+// others: x28 is callee-saved there too (x18 is the one the system
+// keeps); its apps threw a stack overflow at their first component only
+// while Zig dropped the reservation (below).
 //
 // Zig's cc drops -ffixed-x28: it hands clang every feature of the CPU it
 // targets, reserve-x28 off among them, after the flag's +reserve-x28, so
@@ -136,7 +136,7 @@ var GCCFlags = []string{"-Wno-format-truncation"}
 // TestAppFlagsReserveX28 compiles code that wants every register with
 // each compiler and checks.
 func AppFlags(cc Compiler, t Target) []string {
-	if t.Arch != "arm64" || t.OS == "windows" {
+	if t.Arch != "arm64" {
 		return nil
 	}
 	if cc.IsZig() {

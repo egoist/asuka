@@ -197,7 +197,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 在手机上运行 | Xcode 的 Run、Expo 的开发构建 | ✓ `asuka dev --platform ios`、`android`，或两者同时（`ios,android`）：iOS 模拟器、Android 模拟器、Android 手机（`adb reverse`），以及通过 USB 或 Wi-Fi 连接的 iPhone（`--device iphone`，由你的团队签名） |
 | 在电视上运行 | SwiftUI 的 tvOS target；react-native-tvos、Expo 的 TV 配置插件 | ✓ `asuka dev --platform tvos` 和 `asuka build --platform tvos`（Apple TV：运行在 tvOS UIKit 上的 iOS 宿主），`asuka.toml` 中 `[tv]` 的 `android`（Android TV）；平台的焦点引擎作用于应用的视图，遥控器的返回键和播放/暂停键，`environment().tv`（[电视](tv.md)） |
 | 测试 | XCTest、Jest 加 React Native Testing Library | ✓ `asuka test`：`test` 块，应用无需设备即可挂载（`mount`、`app.tap`、`app.expect`），设备相关的包都有测试替身（见[测试](testing.md)） |
-| 发布构建和签名 | Xcode、EAS Build | ✓ `asuka build`：应用预先编译；生成 `.ipa`、`.aab`、经过签名和公证的 `.app` 及其 `.dmg` 和 `.zip`（或 Mac App Store 用的 `.pkg`）、包含已签名 `.exe` 的 Windows 文件夹、附带 `.deb`、`.rpm`、AppImage、`.tar.gz` 和 Flatpak 清单的 Linux 安装前缀、静态网站（见[发布](shipping.md)） |
+| 发布构建和签名 | Xcode、EAS Build | ✓ `asuka build`：应用预先编译；生成 `.ipa`、`.aab`、经过签名和公证的 `.app` 及其 `.dmg` 和 `.zip`（或 Mac App Store 用的 `.pkg`）、包含已签名 `.exe` 的 Windows 文件夹及其安装程序、`.zip` 和 MSIX、附带 `.deb`、`.rpm`、AppImage、`.tar.gz` 和 Flatpak 清单的 Linux 安装前缀、静态网站（见[发布](shipping.md)） |
 | 上传到应用商店 | Xcode、EAS Submit | ✓ `asuka publish`：TestFlight、App 审核、Google Play 的各个发布轨道；Mac App Store 和 Mac 的 TestFlight；桌面构建及其签名更新 |
 | GUI 测试 | XCUITest、Detox、Maestro | ✓ `asuka test --gui`：在 iOS 模拟器、Android 模拟器、手机、无头 Chrome 或这台电脑上运行应用的流程（`flows/*.flow`：`tap Add`、`type hello`、`see Count: 1`、`back`）（见[GUI 测试](testing.md#gui-测试流程)）；桌面应用也可以执行操作步骤并截图（`ASUKA_SCRIPT`、`ASUKA_SNAPSHOT`） |
 | 基准测试 | Instruments | ✓ `bench/`（与 SwiftUI 和 Compose 对比） |
@@ -213,7 +213,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 平台 | Mac、Windows、Linux | Mac、Windows、Linux；iOS 和 Android（Tauri 2） | Mac、Windows、Linux | Windows、Mac（配合 React Native 的 iOS 和 Android） | Mac、Windows、Linux、iOS、Android、Web |
 | 界面由什么呈现 | Chromium 里的 HTML 和 CSS | 系统 web view（WKWebView、WebView2、WebKitGTK）里的 HTML 和 CSS | 系统 web view 里的 HTML 和 CSS | 平台的原生视图 | 平台的原生控件：AppKit；Win32 和通用控件，按 Windows 11 的样子绘制；GTK 4 和 libadwaita |
 | 应用使用的语言 | JavaScript（页面之外还有 Node.js） | Rust，加上页面里的 JavaScript | Go，加上页面里的 JavaScript | JavaScript | Asuka（原生包里还可以有 Swift、C 或 JavaScript） |
-| 分发形式 | electron-builder：`.dmg`、`.pkg`、`.zip`；NSIS、MSI、AppX；`.deb`、`.rpm`、AppImage、Snap、Flatpak | `.app`、`.dmg`；MSI、NSIS；`.deb`、`.rpm`、AppImage | `.app`；NSIS；一个二进制文件 | Xcode 的归档；MSIX | `asuka build`：附带 `.dmg` 和 `.zip` 并经过签名和公证的 `.app`，或 Mac App Store 的 `.pkg`；文件夹及其 `.zip`；`.deb`、`.rpm`、AppImage、`.tar.gz`、Flatpak 清单，都在任意系统上用 Go 写出 |
+| 分发形式 | electron-builder：`.dmg`、`.pkg`、`.zip`；NSIS、MSI、AppX；`.deb`、`.rpm`、AppImage、Snap、Flatpak | `.app`、`.dmg`；MSI、NSIS；`.deb`、`.rpm`、AppImage | `.app`；NSIS；一个二进制文件 | Xcode 的归档；MSIX | `asuka build`：附带 `.dmg` 和 `.zip` 并经过签名和公证的 `.app`，或 Mac App Store 的 `.pkg`；按用户安装的安装程序（`.exe`）、`.zip`、用于 Microsoft Store 和旁加载的 MSIX；`.deb`、`.rpm`、AppImage、`.tar.gz`、Flatpak 清单，都在任意系统上用 Go 写出 |
 | 随应用分发的内容 | Chromium 和 Node.js | 应用的二进制文件（web view 用系统自带的） | 应用的二进制文件（同上） | 一个 JavaScript 引擎和 React Native 的运行时 | 一个可执行文件，即预先编译好的应用；Linux 上的 GTK 4 和 libadwaita 由系统提供；除非应用显示了 `WebView`，否则不带 web view |
 
 web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 呈现，并且能用上 Web 生态里的各种库。Asuka 应用则和各平台的原生应用看起来一样（不设置任何样式的应用，在 Mac 上就是一个 Mac 应用，在 Linux 上就是一个 GNOME 应用，在 Windows 上就是一个 Windows 11 应用），也能获得它们的无障碍支持、文本输入和菜单，同时所有平台共用同一套布局引擎。`asuka build` 在任何系统上都能构建 Windows 和 Linux 版本（借助 Zig，不需要安装 GTK）；Mac 版本则需要一台装了 Xcode 的 Mac。

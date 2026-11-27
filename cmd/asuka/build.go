@@ -30,7 +30,7 @@ type buildOptions struct {
 	apk          bool     // Android: a release .apk to install directly
 	update       bool     // iOS and Android: an over-the-air update of the app's code, not a build
 	arch         string   // the Mac, Linux and Windows: amd64 or arm64
-	packages     []string // the Mac, Linux: the packages to make (--package)
+	packages     []string // the Mac, Windows, Linux: the packages to make (--package)
 	verbose      bool
 	version      string // asuka.toml's version, for this build
 	publishing   bool   // asuka publish: the update files are required
@@ -49,7 +49,7 @@ func buildFlags(o *buildOptions) *flagSet {
 	fs.String(&o.bin, "bin", 0, "", "build the `program` asuka.toml's [bin.<name>] names, instead of the app")
 	fs.String(&o.target, "target", 0, "", "a program's `os-arch`: darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, windows-amd64 or windows-arm64 (default: this computer's; another needs Zig)")
 	platformFlag(fs, &o.platform, []string{platformIOS, platformAndroid, platformMac, platformWindows, platformLinux, platformWeb, platformTVOS},
-		"the `platform` to build for: ios, an .ipa for the App Store (or --distribution); tvos, an Apple TV's .ipa in dist/tvos (--simulator: an .app for its simulator); android, an .aab for Google Play (a TV's too with asuka.toml's tv.android); mac, an .app, its .zip and a .dmg in dist/darwin-<arch> (Apple silicon's; --arch amd64: Intel's); windows, a folder in dist/windows-<arch> with the .exe (its icon and version built in) and its assets, and its .zip; linux, a folder in dist/linux-<arch> laid out to install (the executable, its desktop file, icons, metainfo and assets), a .tar.gz of it, a .deb, an .rpm, an AppImage and a Flatpak manifest; web, a static site (the core and the app as WebAssembly, and the web host) in dist/web. Default on macOS, Windows and Linux: this computer's")
+		"the `platform` to build for: ios, an .ipa for the App Store (or --distribution); tvos, an Apple TV's .ipa in dist/tvos (--simulator: an .app for its simulator); android, an .aab for Google Play (a TV's too with asuka.toml's tv.android); mac, an .app, its .zip and a .dmg in dist/darwin-<arch> (Apple silicon's; --arch amd64: Intel's); windows, a folder in dist/windows-<arch> with the .exe (its icon and version built in) and its assets, its .zip and an installer (a per-user setup .exe), and with --package msix an .msix; linux, a folder in dist/linux-<arch> laid out to install (the executable, its desktop file, icons, metainfo and assets), a .tar.gz of it, a .deb, an .rpm, an AppImage and a Flatpak manifest; web, a static site (the core and the app as WebAssembly, and the web host) in dist/web. Default on macOS, Windows and Linux: this computer's")
 	fs.String(&o.sign, "sign", 0, "", "macOS: a signing `identity`, e.g. \"Developer ID Application: ...\" (default: ad hoc)")
 	fs.String(&o.notarize, "notarize", 0, "", "macOS: notarize the signed app and staple the ticket: a notarytool keychain `profile` (xcrun notarytool store-credentials), or \"env\" for ASUKA_APPLE_ID, ASUKA_APPLE_PASSWORD (app-specific) and ASUKA_TEAM_ID")
 	fs.Bool(&o.simulator, "simulator", 0, "iOS, tvOS: a release .app for the simulator instead (not signed for devices)")
@@ -69,10 +69,10 @@ func buildFlags(o *buildOptions) *flagSet {
 	return fs
 }
 
-// packageFlag is --package: the packages a Mac or Linux build makes,
+// packageFlag is --package: the packages a desktop build makes,
 // comma separated or the flag given again.
 func packageFlag(fs *flagSet, p *[]string) {
-	fs.Func("package", 0, "the Mac: the `packages` to make of zip and dmg; Linux: of tar.gz, deb, rpm, appimage and flatpak (its manifest); comma separated (default: asuka.toml's mac.packages or linux.packages, else all)", func(s string) error {
+	fs.Func("package", 0, "the Mac: the `packages` to make of zip and dmg; Windows: of zip, installer (a per-user setup .exe) and msix; Linux: of tar.gz, deb, rpm, appimage and flatpak (its manifest); comma separated (default: asuka.toml's mac.packages, windows.packages or linux.packages, else all but Windows' msix)", func(s string) error {
 		for _, x := range strings.Split(s, ",") {
 			if x = strings.TrimSpace(x); x != "" {
 				*p = append(*p, x)
@@ -123,8 +123,8 @@ func cmdBuild(args []string) error {
 			return errors.New("usage: asuka build --platform ios|android|mac|windows|linux|web [flags] [dir]")
 		}
 	}
-	if len(o.packages) > 0 && o.platform != platformMac && o.platform != platformLinux {
-		return errors.New("--package is for --platform mac or linux")
+	if len(o.packages) > 0 && !desktopPlatform(o.platform) {
+		return errors.New("--package is for --platform mac, windows or linux")
 	}
 	app, err := loadApp(dir, o.platform)
 	if err != nil {

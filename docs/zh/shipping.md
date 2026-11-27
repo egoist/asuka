@@ -7,7 +7,7 @@
 | `ios` | `<Name>.ipa`，已为 App Store 签名 | 装有 Xcode 的 Mac | TestFlight、App Store（`asuka publish`） |
 | `android` | `<Name>.aab`，用你的上传密钥签名 | 装有 JDK、Android SDK 和 NDK 的任意系统 | Google Play（`asuka publish`） |
 | `mac` | `darwin-<arch>/`：`<Name>.app` 及其 `.zip` 和 `.dmg`（Apple 芯片；`--arch amd64`：Intel）；或 `.pkg`（`--appstore`） | 装有 Xcode 命令行工具的 Mac | 签名并公证后的 `.dmg` 或 `.zip`；Mac App Store |
-| `windows` | `windows-<arch>/`：`<Name>/`（内含 `.exe` 及其资源）及其 `.zip` | 装有 clang 的 Windows，或装有 Zig 的任意系统 | zip 压缩包，或你自己制作的安装程序、MSIX |
+| `windows` | `windows-<arch>/`：`<Name>/`（内含 `.exe` 及其资源）、安装程序（`-setup.exe`）、它的 `.zip`，以及一个 `.msix`（`--package msix`） | 装有 clang 的 Windows，或装有 Zig 的任意系统 | 安装程序、`.zip`；MSIX 可上架 Microsoft Store，也可旁加载（sideload） |
 | `linux` | `linux-<arch>/`：一个安装前缀目录、一个 `.tar.gz`、一个 `.deb`、一个 `.rpm`、一个 AppImage、一份 Flatpak 清单 | 装有 C 编译器的 Linux，或装有 Zig 的任意系统 | `.deb`、`.rpm`、AppImage、`.tar.gz`、Flatpak |
 | `web` | `web/`，一个静态网站 | 装有 Zig 的任意系统 | 任意 Web 服务器或 CDN |
 
@@ -208,15 +208,35 @@ asuka build --platform windows               # x64，Windows on Arm 上以模拟
 asuka build --platform windows --arch arm64  # 在 Arm PC 上原生运行
 ```
 
-这会生成一个文件夹 `dist/windows-amd64/<Name>`（Arm 版为 `windows-arm64`）：`<Name>.exe` 就是应用本身，在 Windows 上由 clang、在任意系统上由 Zig 为对应架构构建；旁边的 `asuka-app.json` 是应用的设置；然后是应用的资源。使用了 `std/sqlite` 的应用，SQLite 编译在 `.exe` 里。`.exe` 是一个 GUI 程序（不会弹出控制台窗口），链接进了各种资源：Windows 所需各尺寸的图标、版本信息（来自 `version` 和 `build`），以及一份面向 Windows 10 和 11 的清单（manifest），声明使用通用控件 6、支持每显示器 DPI 感知和 UTF-8。如果应用目录里有自己的资源目标文件（COFF 格式的 `.syso`，如 `rsrc_windows_amd64.syso`），就改用其中的资源。文件夹旁边是 `<name>-<version>-windows-amd64.zip`，即压缩好的文件夹，可直接分发；也可以把文件夹打包成安装程序、MSIX。
+这会生成一个文件夹 `dist/windows-amd64/<Name>`（Arm 版为 `windows-arm64`）：`<Name>.exe` 就是应用本身，在 Windows 上由 clang、在任意系统上由 Zig 为对应架构构建；旁边的 `asuka-app.json` 是应用的设置；然后是应用的资源。使用了 `std/sqlite` 的应用，SQLite 编译在 `.exe` 里。`.exe` 是一个 GUI 程序（不会弹出控制台窗口），链接进了各种资源：Windows 所需各尺寸的图标、版本信息（来自 `version` 和 `build`），以及一份面向 Windows 10 和 11 的清单（manifest），声明使用通用控件 6、支持每显示器 DPI 感知和 UTF-8，并让程序以打开它的用户身份运行（不需要管理员权限，不管程序叫什么名字）。如果应用目录里有自己的资源目标文件（COFF 格式的 `.syso`，如 `rsrc_windows_amd64.syso`），就改用其中的资源。
 
-为了让 SmartScreen 知道这个 `.exe` 出自谁手，要用导出为 `.pfx` 的代码签名证书给它签名：
+文件夹旁边是用于分发的安装包，和 electron-builder 生成的一样。它们都由 `asuka build` 在任意系统上构建，不需要 NSIS、WiX 或 Windows SDK：
+
+- `<name>-<version>-windows-amd64-setup.exe`：安装程序，一键安装，如今大多数 Windows 应用都是这样安装的。它为运行它的用户安装应用，不需要管理员权限，也不问任何问题，装到 `%LOCALAPPDATA%\Programs\<Name>`（应用在这里可以[自我更新](#自动更新)），在开始菜单里放一个快捷方式，并在“设置”的“已安装的应用”里列出应用，附带版本、发布者、大小和卸载程序；装好后打开应用。再次运行（新版本的安装程序）会就地更新应用：如果应用正开着，会先询问并关闭它，然后删掉旧版本有、新版本没有的文件。卸载程序是应用文件夹里的 `Uninstall <Name>.exe`，它会移除应用、快捷方式以及应用注册过的东西（URL scheme、文件类型、通知的注册）；应用保存的数据会保留。供脚本和 IT 部门使用时，两者都接受 `/S` 静默运行（这时安装程序不会打开应用），安装程序还接受 `/D=<folder>` 指定另一个安装文件夹，和 NSIS 的安装程序一样。
+- `<name>-<version>-windows-amd64.zip`：压缩好的文件夹，解压到哪里都能用。这是便携版，放在用户有写权限的位置时也能自我更新。
+- `<name>-<version>-windows-amd64.msix`：加上 `--package msix` 时生成。它把应用打成一个包，用于上架 [Microsoft Store](https://partner.microsoft.com/dashboard) 或旁加载（`Add-AppxPackage`、应用安装程序（App Installer）、Intune）。它的清单把应用声明为完全信任（full-trust）的桌面应用，并声明磁贴图片（由 `icon` 生成）、URL scheme、文件类型和通知的激活器，因为打包的应用无法在运行时注册这些。Microsoft Store 接受未签名的包，由它来签名：把 `windows.identityName` 和 `windows.publisherId` 设为合作伙伴中心（Partner Center）“产品标识”里给出的值，然后上传即可。要旁加载的话，它和 `.exe` 一样签名（见下文），所用证书的主题必须是 `windows.publisherId`（默认是 `CN=` 加上 `windows.publisher`），且这台 PC 信任该证书。MSIX 由 Windows 负责安装、更新和卸载，应用不会自我更新（`update.unsupported()` 返回 `.managed`）。
+
+`--package installer,msix` 只生成其中几种（可选 `zip`、`installer` 和 `msix`）；`asuka.toml` 的 `windows.packages` 则为每次构建指定同样的内容。默认生成安装程序和 `.zip`：
+
+```toml
+[windows]
+packages = ["installer", "zip", "msix"]
+publisher = "Example Inc."
+homepage = "https://example.com"
+```
+
+为了让 SmartScreen 知道应用出自谁手，要用导出为 `.pfx` 的代码签名证书给它签名：构建会为 `.exe`、安装程序及其卸载程序，以及 MSIX 签名。
 
 ```sh
 ASUKA_WINDOWS_CERT=cert.pfx ASUKA_WINDOWS_CERT_PASSWORD=... asuka build --platform windows
 ```
 
-构建会用 SHA-256 签名，并为签名加盖时间戳，这样证书过期后签名依然有效。时间戳取自第一个响应的 RFC 3161 服务器：先尝试 `ASUKA_WINDOWS_TIMESTAMP` 中列出的服务器（逗号分隔），没有设置的话依次尝试 DigiCert、Sectigo 和 GlobalSign。如果都没有响应，构建会失败并说明原因；设置 `ASUKA_WINDOWS_TIMESTAMP=none` 则不加时间戳（这样签名会随证书一起失效）。在 Windows 上用 `signtool` 签名（来自 Windows SDK；优先用 `PATH` 中的，否则用已安装的最新版本），在其他系统上用 `osslsigncode`（`brew install osslsigncode`、`apt install osslsigncode`）。不设置 `ASUKA_WINDOWS_CERT` 时，`.exe` 不会被签名。如果证书存放在硬件令牌或云服务（Azure Trusted Signing）中，就要用它们自己的工具签名：构建完成后，用那个工具为文件夹中的 `.exe` 签名。
+构建会用 SHA-256 签名，并为签名加盖时间戳，这样证书过期后签名依然有效。时间戳取自第一个响应的 RFC 3161 服务器：先尝试 `ASUKA_WINDOWS_TIMESTAMP` 中列出的服务器（逗号分隔），没有设置的话依次尝试 DigiCert、Sectigo 和 GlobalSign。如果都没有响应，构建会失败并说明原因；设置 `ASUKA_WINDOWS_TIMESTAMP=none` 则不加时间戳（这样签名会随证书一起失效）。在 Windows 上用 `signtool` 签名（来自 Windows SDK；优先用 `PATH` 中的，否则用已安装的最新版本），在其他系统上用 `osslsigncode`（`brew install osslsigncode`、`apt install osslsigncode`）。不设置 `ASUKA_WINDOWS_CERT` 时，`.exe` 不会被签名。如果证书存放在硬件令牌或云服务（Azure Trusted Signing、密钥保管库）中，就要用它们自己的工具签名：把 `ASUKA_WINDOWS_SIGN_COMMAND` 设为那个工具的命令，用 `%1` 表示要签名的文件，构建就会改为对每个要签名的文件运行这条命令：
+
+```sh
+ASUKA_WINDOWS_SIGN_COMMAND='AzureSignTool sign -kvu https://vault.vault.azure.net -kvc cert -kvm -tr http://timestamp.digicert.com -td sha256 %1' \
+  asuka build --platform windows
+```
 
 会显示通知的应用（`platform/notify`）第一次运行时，会在用户的开始菜单里创建一个快捷方式，因为 Windows 要求应用有快捷方式才能发送 toast 通知。快捷方式的 AppUserModelID 取 `asuka.toml` 的 `id`（没有的话就根据应用名称生成一个）。
 
@@ -406,7 +426,7 @@ component UpdateBanner {
 
 没有私钥时，构建只生成应用本身，不写任何更新文件，并会提示这一点。`--version 1.2.0` 可以构建与 `asuka.toml` 中不同的版本（CI 会从标签中取版本号）。Windows 的文件夹和 Linux 的前缀中还会多出一个 `.asuka-files`，列出这个版本安装了哪些文件。这样下次更新时，就能删掉新版本中已不再需要的文件，同时不会碰你自己放进去的任何文件。
 
-`asuka publish` 会构建并上传这些文件，连同这次构建用于分发的安装包（Mac 的 `.zip` 和 `.dmg`；Linux 的 `.deb`、`.rpm` 和 AppImage，它的 `.tar.gz` 本身就是更新包）。清单最后上传，确保应用读到清单时，清单里引用的文件都已经就位：
+`asuka publish` 会构建并上传这些文件，连同这次构建用于分发的安装包（Mac 的 `.zip` 和 `.dmg`；Windows 的安装程序、`.zip` 和 `.msix`；Linux 的 `.deb`、`.rpm` 和 AppImage，它的 `.tar.gz` 本身就是更新包）。清单最后上传，确保应用读到清单时，清单里引用的文件都已经就位：
 
 ```sh
 asuka publish --platform mac --sign "Developer ID Application: …" --notarize asuka
@@ -451,7 +471,7 @@ feed = "https://api.example.com/updates?target={target}&version={version}&channe
 ### 各平台如何完成更新
 
 - macOS：新的应用包会先经过检查（代码签名有效，与正在运行的应用属于同一团队且标识符相同，并去掉隔离属性），然后放在应用旁边，等应用退出——不管以什么方式退出。随后由一个辅助进程把它换到旧应用的位置；如果应用请求了重新启动，就通过 Launch Services 打开新版本，这样程序坞（Dock）里只会保留一个图标。应用所在的文件夹必须是用户可写的：管理员用户可以放在 `/Applications`，否则放在 `~/Applications`。
-- Windows：在应用运行期间替换文件夹中的各项内容。每一项都先重命名挪到一边，只要有一项替换不了，就全部恢复原状；正在运行的 `.exe` 会被重命名（Windows 允许这样做），并在下次启动时删除。文件夹必须属于当前用户（不能放在 `Program Files` 下）：要么解压在用户目录中，要么由安装程序按用户安装（`%LOCALAPPDATA%\Programs`）。MSIX 包则通过 Microsoft Store 或应用安装程序（App Installer）更新。
+- Windows：在应用运行期间替换文件夹中的各项内容。每一项都先重命名挪到一边，只要有一项替换不了，就全部恢复原状；正在运行的 `.exe` 会被重命名（Windows 允许这样做），并在下次启动时删除。文件夹必须属于当前用户（不能放在 `Program Files` 下）：要么是安装程序装的（`%LOCALAPPDATA%\Programs\<Name>`），要么是解压在用户目录中的 `.zip`；更新后，“已安装的应用”里显示的就是更新到的版本。MSIX 则通过 Microsoft Store 或应用安装程序（App Installer）更新。
 - Linux：在 tar 包解压到的前缀（例如 `~/.local`）中，只替换应用自己的文件（`bin/notes`、`share/notes/`、desktop 文件、图标、metainfo 和 MIME 类型），每个文件都通过重命名替换，然后刷新桌面缓存（`update-desktop-database`、`update-mime-database`）。Flatpak、Snap、发行版的软件包或 AppImage 则通过各自的渠道更新，这时应用不会自我更新。
 
 ### 手机：应用代码的更新

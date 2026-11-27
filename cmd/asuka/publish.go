@@ -44,7 +44,7 @@ func publishFlags(o *publishOptions) *flagSet {
 	fs := newFlagSet("publish", "[dir]")
 	fs.about = "Makes a release build of the app and uploads it to App Store Connect or Google Play; a desktop app's, with its update, to asuka.toml's updates (GitHub's releases, an S3 bucket)."
 	platformFlag(fs, &o.platform, []string{platformIOS, platformTVOS, platformAndroid, platformMac, platformWindows, platformLinux},
-		"the `platform` whose store to upload to: ios, App Store Connect (TestFlight and the App Store); tvos, likewise, as the app's Apple TV platform; android, Google Play; mac, windows or linux, the update files where asuka.toml's updates say (installed apps update to it), with the packages to hand out (the Mac's .zip and .dmg; Linux's .tar.gz, .deb, .rpm and AppImage)")
+		"the `platform` whose store to upload to: ios, App Store Connect (TestFlight and the App Store); tvos, likewise, as the app's Apple TV platform; android, Google Play; mac, windows or linux, the update files where asuka.toml's updates say (installed apps update to it), with the packages to hand out (the Mac's .zip and .dmg; Windows' .zip, installer and .msix; Linux's .tar.gz, .deb, .rpm and AppImage)")
 	fs.String(&o.sign, "sign", 0, "", "macOS: a signing `identity`, e.g. \"Developer ID Application: ...\" (default: ad hoc)")
 	fs.String(&o.notarize, "notarize", 0, "", "macOS: notarize the app and staple the ticket: a notarytool keychain `profile`, or \"env\"")
 	fs.Bool(&o.appStore, "appstore", 0, "macOS: upload to App Store Connect for the Mac App Store and TestFlight, as iOS does (--groups, --review, --notes), a .pkg asuka build --appstore makes, in place of the update files")
@@ -161,9 +161,6 @@ func (o *publishOptions) check(set map[string]bool) error {
 				return err
 			}
 		}
-		if o.platform == platformWindows {
-			return only("mac or linux", "package")
-		}
 		return nil
 	}
 	if o.platform == platformMac {
@@ -171,9 +168,7 @@ func (o *publishOptions) check(set map[string]bool) error {
 		if err := only("mac without --appstore", "sign", "notarize", "draft", "package"); err != nil {
 			return err
 		}
-	} else if err := only("mac, windows or linux", "sign", "notarize", "arch", "version"); err != nil {
-		return err
-	} else if err := only("mac or linux", "package"); err != nil {
+	} else if err := only("mac, windows or linux", "sign", "notarize", "arch", "version", "package"); err != nil {
 		return err
 	}
 	if ios {

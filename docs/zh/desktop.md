@@ -14,7 +14,7 @@
 | Windows（一个文件夹） | `Name.exe` | `asuka-app.json`，与它放在一起 |
 | Linux（一个安装前缀） | `bin/<exe>` | `share/<exe>/asuka-app.json` |
 
-`asuka build` 会按用户安装应用的方式打包：Mac 上是放进 `.dmg` 和 `.zip` 的应用；Windows 上是装在 `.zip` 里的文件夹；Linux 上是以 `.deb`、`.rpm`、AppImage、`.tar.gz` 和 Flatpak 清单形式分发的前缀（参见[打包与发布](shipping.md)）。
+`asuka build` 会按用户安装应用的方式打包：Mac 上是放进 `.dmg` 和 `.zip` 的应用；Windows 上是放进安装程序、`.zip` 和 MSIX 的文件夹；Linux 上是以 `.deb`、`.rpm`、AppImage、`.tar.gz` 和 Flatpak 清单形式分发的前缀（参见[打包与发布](shipping.md)）。
 
 `asuka dev` 则在开发 App 中运行应用，每次保存都会立即生效（参见[开发](development.md#在桌面端)）。
 
@@ -374,7 +374,7 @@ app {
 }
 ```
 
-`asuka update keygen` 生成密钥对；`asuka.toml` 中的 `updates` 指定发布的位置（GitHub Releases、S3 存储桶、任意 HTTPS 目录，或者你自己的服务器）；`asuka publish --platform mac`（或 `windows`、`linux`）负责构建、签名和上传（见[发布](shipping.md#自动更新)）。下载更新和把它放到位由应用自己完成：Mac 应用的新 bundle 会等应用退出后再替换；Windows 和 Linux 则在应用运行时就替换它的文件。通过系统软件包（`.deb`、`.rpm`）、Flatpak、Snap、AppImage 或应用商店安装的应用由它们负责更新，`await update.unsupported()` 会反映这一点；手机上返回 `.notAvailable`。在 Web 上，如果页面比网站上的版本旧，会提示用户重新加载。
+`asuka update keygen` 生成密钥对；`asuka.toml` 中的 `updates` 指定发布的位置（GitHub Releases、S3 存储桶、任意 HTTPS 目录，或者你自己的服务器）；`asuka publish --platform mac`（或 `windows`、`linux`）负责构建、签名和上传（见[发布](shipping.md#自动更新)）。下载更新和把它放到位由应用自己完成：Mac 应用的新 bundle 会等应用退出后再替换；Windows 和 Linux 则在应用运行时就替换它的文件。通过系统软件包（`.deb`、`.rpm`）、Flatpak、Snap、AppImage、MSIX 或应用商店安装的应用由它们负责更新，`await update.unsupported()` 会反映这一点；手机上返回 `.notAvailable`。在 Web 上，如果页面比网站上的版本旧，会提示用户重新加载。
 
 ## 最近使用的文档
 

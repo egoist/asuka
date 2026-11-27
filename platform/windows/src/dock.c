@@ -115,7 +115,10 @@ const wh_module_def wh_dock_module = {"dock", dock_methods};
 
 // ---- The badge ----
 
-static bool packaged(void) {
+// wh_packaged reports whether the app runs from a package (an MSIX: the
+// Store's, App Installer's, Add-AppxPackage's): it has a package identity
+// (GetCurrentPackageFullName, Windows 8's, looked up).
+bool wh_packaged(void) {
 	UINT32 n = 0;
 	typedef LONG(WINAPI * name_fn)(UINT32 *, PWSTR);
 	static name_fn f;
@@ -240,7 +243,7 @@ static bool taskbar_badge(int n) {
 
 bool wh_set_badge_count(int n) {
 	dock.badge = n;
-	if (packaged()) return package_badge(n);
+	if (wh_packaged()) return package_badge(n);
 	button_created();
 	return taskbar_badge(n);
 }
@@ -248,7 +251,7 @@ bool wh_set_badge_count(int n) {
 // wh_badge_message sets the overlay again when the taskbar button's made
 // again (the window shown, Explorer restarted).
 void wh_badge_message(UINT m) {
-	if (dock.button_msg && m == dock.button_msg && dock.badge > 0 && !packaged()) taskbar_badge(dock.badge);
+	if (dock.button_msg && m == dock.button_msg && dock.badge > 0 && !wh_packaged()) taskbar_badge(dock.badge);
 }
 
 // wh_dock_message sets the progress again on a new taskbar button.

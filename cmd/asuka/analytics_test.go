@@ -68,6 +68,12 @@ apiSecret = "s3cret"`: "apiSecret",
 		`[analytics]
 measurementId = "G-ABC"
 consent = { adStorage = "no" }`: "consent.adStorage",
+		`[analytics]
+measurementId = "G-ABC"
+endpoint = "sgtm.example.com/mp/collect"`: "endpoint",
+		`[analytics]
+measurementId = "G-ABC"
+endpoint = "https://sgtm.example.com/mp/collect?measurement_id=G-ABC"`: "endpoint",
 	} {
 		write(bad)
 		if _, err := loadConfig(dir); err == nil || !strings.Contains(err.Error(), "asuka.toml: analytics: "+want) {
@@ -224,9 +230,13 @@ func TestAnalyticsSettings(t *testing.T) {
 		t.Errorf("the web's: %v", web)
 	}
 	t.Setenv(analyticsSecretEnv, "env")
+	c.Analytics.Endpoint = "https://sgtm.example.com/mp/collect"
 	desk := c.analyticsSettings(platformWindows, true)
-	if desk["analytics.apiSecret"] != "env" || desk["analytics.debug"] != "true" {
+	if desk["analytics.apiSecret"] != "env" || desk["analytics.debug"] != "true" || desk["analytics.endpoint"] != "https://sgtm.example.com/mp/collect" {
 		t.Errorf("the desktop's: %v", desk)
+	}
+	if web := c.analyticsSettings(platformWeb, false); web["analytics.endpoint"] != "" {
+		t.Errorf("the web's (gtag.js's): %v", web)
 	}
 
 	app := &asukaApp{name: "notes", cfg: c}

@@ -7,7 +7,8 @@ package windows
 
 import "embed"
 
-// Sources holds src.
+// Sources holds src, and installer: the installer and uninstaller of an
+// app (internal/appbuild's WindowsInstaller).
 //
-//go:embed src
+//go:embed src installer
 var Sources embed.FS

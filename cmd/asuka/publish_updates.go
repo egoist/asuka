@@ -91,8 +91,9 @@ func publishDesktop(app *asukaApp, o *publishOptions) error {
 	if err != nil {
 		return err
 	}
-	// The packages to hand out go with the update: the .zip and .dmg, the
-	// .deb, .rpm and AppImage (Linux's .tar.gz is the update's archive).
+	// The packages to hand out go with the update: the .zip and .dmg; the
+	// .zip, installer and .msix; the .deb, .rpm and AppImage (Linux's
+	// .tar.gz is the update's archive).
 	files = append(releaseAssets(app, &b, goos, arch), files...)
 	if bucket != nil {
 		return publishS3(bucket, u, files, manifests)
@@ -205,6 +206,10 @@ func assetType(name string) string {
 		return "application/x-apple-diskimage"
 	case ".zip":
 		return "application/zip"
+	case ".exe":
+		return "application/vnd.microsoft.portable-executable"
+	case ".msix":
+		return "application/msix"
 	}
 	return "application/octet-stream"
 }

@@ -18,17 +18,6 @@ import (
 // package's .syso files into the executable. (From MyGo's.) goarch is
 // the build's: amd64 or arm64.
 func winresSyso(app *asukaApp, goarch string) ([]byte, error) {
-	machine, relocation := uint16(0x8664), uint16(0x0003) // amd64, IMAGE_REL_AMD64_ADDR32NB
-	if goarch == "arm64" {
-		machine, relocation = 0xAA64, 0x0002 // IMAGE_REL_ARM64_ADDR32NB
-	}
-	const (
-		rtIcon      = 3
-		rtGroupIcon = 14
-		rtVersion   = 16
-		rtManifest  = 24
-		langEnUS    = 0x0409
-	)
 	res := map[uint16]map[uint16][]byte{
 		rtVersion:  {1: versionInfo(app)},
 		rtManifest: {1: []byte(windowsManifest(app))},
@@ -90,7 +79,53 @@ func winresSyso(app *asukaApp, goarch string) ([]byte, error) {
 		}
 		res[rtGroupIcon][uint16(fileTypeIconID(i))] = iconGroup(res[rtIcon], images, sizes)
 	}
+	return coffResources(goarch, res), nil
+}
 
+// Resource types (winuser.h's RT_*).
+const (
+	rtIcon      = 3
+	rtRCData    = 10
+	rtGroupIcon = 14
+	rtVersion   = 16
+	rtManifest  = 24
+)
+
+// installerSyso is the resources of a Windows app's installer (and,
+// without a payload, its uninstaller: platform/windows/installer): the
+// app's icon, a manifest that runs it as the user who opens it (no
+// administrator's rights: it installs for that user) with the common
+// controls 6 (its task dialogs), its version information, and its
+// RCDATA: config (1), what it says of the app, and payload (2), the zip
+// of the app's folder.
+func installerSyso(app *asukaApp, goarch, description, exe string, config, payload []byte) ([]byte, error) {
+	res := map[uint16]map[uint16][]byte{
+		rtVersion:  {1: versionInfoFor(app, description, exe)},
+		rtManifest: {1: []byte(windowsManifest(app))},
+		rtRCData:   {1: config},
+	}
+	if payload != nil {
+		res[rtRCData][2] = payload
+	}
+	if app.cfg != nil && app.cfg.Icon != "" {
+		images, sizes, err := iconImages(app.cfg.Icon)
+		if err != nil {
+			return nil, fmt.Errorf("icon: %w", err)
+		}
+		res[rtIcon] = map[uint16][]byte{}
+		res[rtGroupIcon] = map[uint16][]byte{1: iconGroup(res[rtIcon], images, sizes)}
+	}
+	return coffResources(goarch, res), nil
+}
+
+// coffResources is a COFF object for goarch with the resources res
+// (by type, then ID), in US English.
+func coffResources(goarch string, res map[uint16]map[uint16][]byte) []byte {
+	machine, relocation := uint16(0x8664), uint16(0x0003) // amd64, IMAGE_REL_AMD64_ADDR32NB
+	if goarch == "arm64" {
+		machine, relocation = 0xAA64, 0x0002 // IMAGE_REL_ARM64_ADDR32NB
+	}
+	const langEnUS = 0x0409
 	// The resource section: three levels of directories (type, id,
 	// language), the data entries, then the data. Directory entries point
 	// to subdirectories by section offset; data entries hold relative
@@ -175,7 +210,7 @@ func winresSyso(app *asukaApp, goarch string) ([]byte, error) {
 	binary.Write(&out, le, uint16(0)) // Type
 	out.Write([]byte{3, 0})           // IMAGE_SYM_CLASS_STATIC, no aux symbols
 	binary.Write(&out, le, uint32(4))
-	return out.Bytes(), nil
+	return out.Bytes()
 }
 
 // iconImages are the icon at the sizes Windows asks for (the taskbar, the
@@ -228,6 +263,11 @@ func windowsVersion(app *asukaApp) [4]uint16 {
 	return out
 }
 
+// windowsManifest is the app's manifest: common controls 6, per-monitor
+// DPI awareness, UTF-8, Windows 10 and 11, and run as the user who opens
+// it (asInvoker): without it Windows guesses that a program named like
+// an installer (Update, Setup, Install...) wants an administrator, and
+// won't start it unless one says yes.
 func windowsManifest(app *asukaApp) string {
 	v := windowsVersion(app)
 	name := strings.Map(func(r rune) rune {
@@ -244,6 +284,13 @@ func windowsManifest(app *asukaApp) string {
       <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
     </dependentAssembly>
   </dependency>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
@@ -263,6 +310,12 @@ func windowsManifest(app *asukaApp) string {
 // versionInfo encodes a VS_VERSIONINFO resource: the app's name and
 // version, in US English and Unicode (040904b0).
 func versionInfo(app *asukaApp) []byte {
+	return versionInfoFor(app, app.displayName(), sanitizeExe(app.displayName())+".exe")
+}
+
+// versionInfoFor is versionInfo for another of the app's executables
+// (its installer): its description and file name.
+func versionInfoFor(app *asukaApp, description, exe string) []byte {
 	v := windowsVersion(app)
 	fixed := make([]byte, 52)
 	le := binary.LittleEndian
@@ -276,11 +329,10 @@ func versionInfo(app *asukaApp) []byte {
 	le.PutUint32(fixed[36:], 1)          // dwFileType: VFT_APP
 
 	name := app.displayName()
-	exe := sanitizeExe(name) + ".exe"
 	version := fmt.Sprintf("%d.%d.%d.%d", v[0], v[1], v[2], v[3])
 	var table []verNode
 	for _, s := range [][2]string{
-		{"FileDescription", name},
+		{"FileDescription", description},
 		{"FileVersion", version},
 		{"InternalName", exe},
 		{"OriginalFilename", exe},

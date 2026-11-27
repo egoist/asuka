@@ -118,6 +118,11 @@ void wh_dev_error_print(HDC dc, RECT win);
 void wh_dev_perf(const uint8_t *args, size_t len);
 void wh_dev_perf_follow(void);
 void wh_dev_perf_dump(ak_buf *b);
+void wh_dev_perf_print(HDC dc, RECT win);
+// wh_packaged reports whether the app runs from a package (an MSIX), with
+// a package identity: Windows installs and updates it, and its manifest
+// declares what an unpackaged app registers as it runs (dock.c).
+bool wh_packaged(void);
 
 // ---- focus.c: the keyboard's focus, Tab (RFC 0010) ----
 void wh_focus_start(void);

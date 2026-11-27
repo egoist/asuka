@@ -87,12 +87,35 @@ var buildFailure = func() devserver.Failure {
 // dumps by snap's name, and "end"'s.
 func devPlayer(t *testing.T, w *windows, exe, src string, env map[string]string, steps ...string) map[string]string {
 	t.Helper()
-	res := compile.Files(map[string][]byte{"app.asuka": []byte(src)}, &compile.Options{Platform: "windows"})
+	return devPlayerWith(t, w, exe, src, env, nil, steps...)
+}
+
+// devHooks are what a test does as the player goes: Loaded, once it
+// first loaded the app, with dir, the job's directory (where its
+// snapshots go), and flag, which writes a file of the job's that
+// waitfor:<name> waits for. Direction is the app's, as asuka dev's --dir
+// builds it ("rtl"). Dir is the job's directory, after the run.
+type devHooks struct {
+	Loaded    func(p *devserver.Player, dir string, flag func(name string))
+	Direction string
+	// Preview is the preview to build in the app's place (asuka dev's
+	// preview), none for the app.
+	Preview *compile.PreviewRef
+	Dir     string
+}
+
+func devPlayerWith(t *testing.T, w *windows, exe, src string, env map[string]string, hooks *devHooks, steps ...string) map[string]string {
+	t.Helper()
+	if hooks == nil {
+		hooks = &devHooks{}
+	}
+	res := compile.Files(map[string][]byte{"app.asuka": []byte(src)}, &compile.Options{Platform: "windows", Direction: hooks.Direction, Preview: hooks.Preview, Debug: hooks.Preview != nil, NoTests: hooks.Preview != nil})
 	if err := res.Err(); err != nil {
 		t.Fatalf("the app doesn't compile:\n%v", err)
 	}
 	local, guest := w.job(t)
 	flag := func(name string) { os.WriteFile(filepath.Join(local, name), []byte("1"), 0o644) }
+	hooks.Dir = local
 	var mu sync.Mutex
 	var log strings.Builder
 	var reloads, uncaught int
@@ -109,6 +132,9 @@ func devPlayer(t *testing.T, w *windows, exe, src string, env map[string]string,
 			first := reloads == 1
 			mu.Unlock()
 			if first {
+				if hooks.Loaded != nil {
+					hooks.Loaded(p, local, flag)
+				}
 				flag("loaded")
 			}
 			if restarted {

@@ -1,6 +1,7 @@
 // platform/analytics on Windows and Linux: GA4's Measurement Protocol
 // (mp.h), for the web stream whose measurement ID and API secret are
-// asuka.toml's analytics.measurementId and apiSecret (the app's settings).
+// asuka.toml's analytics.measurementId and apiSecret, and its endpoint
+// (the app's settings).
 // Without them there's no Collector: the package sends nothing.
 //
 // The process has one client (the package makes its Collector once, as
@@ -80,7 +81,9 @@ analytics_Collector *analytics_make_Collector(asuka_error *err) {
 #else
 		char *path = asuka_sprintf("%s/asuka-analytics", asuka_desktop_data_dir());
 #endif
+		const char *endpoint = asuka_desktop_app_setting("analytics.endpoint");
 		mp_config c = {
+			.endpoint = *endpoint ? endpoint : NULL,
 			.measurement_id = mid,
 			.api_secret = secret,
 			.path = path,

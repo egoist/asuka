@@ -131,13 +131,13 @@ go test ./platform/macos/mactest                 # the macOS host: Asuka apps on
 swift test --package-path platform/macos         # the macOS host's Swift unit tests and its decoder against the golden files
 ASUKA_SNAPSHOT=/tmp/c.png ASUKA_DUMP=1 ASUKA_SCRIPT="tap:Add" "dist/darwin-arm64/Counter.app/Contents/MacOS/Counter"  # macOS: steps, then the window as a PNG (the window server's) and its view tree, then quit
 go run ./cmd/asuka dev examples/counter            # Windows (on a PC, no --platform: windows): the app and its Win32 host in one process, rerun on save
-go run ./cmd/asuka build --platform windows examples/counter  # a folder: the .exe (icon, manifest, version) and its assets; from any system
-go test ./platform/windows                       # the Windows host (C), its apps built with Zig and driven in Windows (on Windows, or the swiftvm VM ASUKA_WINDOWS_VM names: "Windows Fresh")
+go run ./cmd/asuka build --platform windows examples/counter  # a folder: the .exe (icon, manifest, version) and its assets, a per-user installer and a .zip (--package msix: an MSIX); from any system
+go test ./platform/windows                       # the Windows host (C), its apps built with Zig and driven in Windows (on Windows, or the swiftvm VM ASUKA_WINDOWS_VM names: "Windows Fresh"; ASUKA_WINDOWS_ARCH=amd64: x64's); TestInstaller, TestMSIX: the packages installed and removed
 go test ./platform/desktop                       # the C the Windows and Linux hosts share, on this computer (ASan, UBSan)
 xvfb-run -a dbus-run-session go test ./platform/linux  # the Linux host: apps built and driven in real GTK windows (GTK 4.14, libadwaita 1.5)
 go run ./cmd/asuka dev examples/counter            # Linux (on Linux, no --platform: linux): the app and its GTK host in one process, rerun on save
 go run ./cmd/asuka build --platform linux examples/counter    # an install prefix, a .tar.gz, a .deb, an .rpm, an AppImage and a Flatpak manifest; from any system (--package deb,rpm: some)
-go test ./internal/distpkg                       # the .deb, .rpm, SquashFS/AppImage and .DS_Store writers, read back
+go test ./internal/distpkg                       # the .deb, .rpm, SquashFS/AppImage, .DS_Store and MSIX writers, read back
 go run platform/linux/gen_symbols.go             # the Linux host's fallback symbols, from the web host's
 go test -tags e2e ./e2e -run Linux               # GUI tests: the examples under Xvfb (Linux)
 $env:ASUKA_SNAPSHOT='c.png'; $env:ASUKA_DUMP='1'; $env:ASUKA_SCRIPT='tap:Add'; .\examples\counter\dist\windows-amd64\Counter\Counter.exe  # Windows (PowerShell): steps, then the window as a PNG and its view tree

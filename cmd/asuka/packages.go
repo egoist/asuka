@@ -15,29 +15,40 @@ import (
 )
 
 // The packages a desktop build hands the app out in, besides the app
-// itself: on the Mac its .zip and a .dmg; on Linux a .tar.gz of the
-// prefix, a .deb, an .rpm, an AppImage and a Flatpak manifest, each
-// written in Go (internal/distpkg), from any system. --package picks
-// some, else asuka.toml's mac.packages or linux.packages, else all.
+// itself: on the Mac its .zip and a .dmg; on Windows the folder's .zip,
+// an installer (windows_installer.go) and an MSIX (windows_msix.go); on
+// Linux a .tar.gz of the prefix, a .deb, an .rpm, an AppImage and a
+// Flatpak manifest, each written in Go (internal/distpkg) or built with
+// Zig, from any system. --package picks some, else asuka.toml's
+// mac.packages, windows.packages or linux.packages, else the platform's
+// defaults: all but the MSIX, which is for the Store and sideloading,
+// and wants the app's package identity.
 
 // The packages, as --package and asuka.toml name them.
 const (
-	pkgZip      = "zip"
-	pkgDMG      = "dmg"
-	pkgTarGz    = "tar.gz"
-	pkgDeb      = "deb"
-	pkgRPM      = "rpm"
-	pkgAppImage = "appimage"
-	pkgFlatpak  = "flatpak"
+	pkgZip       = "zip"
+	pkgDMG       = "dmg"
+	pkgTarGz     = "tar.gz"
+	pkgDeb       = "deb"
+	pkgRPM       = "rpm"
+	pkgAppImage  = "appimage"
+	pkgFlatpak   = "flatpak"
+	pkgInstaller = "installer"
+	pkgMSIX      = "msix"
 )
 
 var (
-	macPackages   = []string{pkgZip, pkgDMG}
-	linuxPackages = []string{pkgTarGz, pkgDeb, pkgRPM, pkgAppImage, pkgFlatpak}
+	macPackages     = []string{pkgZip, pkgDMG}
+	linuxPackages   = []string{pkgTarGz, pkgDeb, pkgRPM, pkgAppImage, pkgFlatpak}
+	windowsPackages = []string{pkgZip, pkgInstaller, pkgMSIX}
+	// defaultPackages are a platform's packages when nothing picks them,
+	// if not all.
+	defaultPackages = map[string][]string{"windows": {pkgZip, pkgInstaller}}
 )
 
 // packagesFor is the set of packages a build makes, of all (a platform's):
-// --package's (o.packages), else configured (asuka.toml's), else all.
+// --package's (o.packages), else configured (asuka.toml's), else the
+// platform's defaults (defaultPackages; all).
 func packagesFor(o *buildOptions, configured, all []string, platform string) (map[string]bool, error) {
 	from, where := o.packages, "--package"
 	if len(from) == 0 {
@@ -45,6 +56,9 @@ func packagesFor(o *buildOptions, configured, all []string, platform string) (ma
 	}
 	if len(from) == 0 {
 		from = all
+		if d := defaultPackages[platform]; d != nil {
+			from = d
+		}
 	}
 	set := map[string]bool{}
 	for _, p := range from {
@@ -52,6 +66,10 @@ func packagesFor(o *buildOptions, configured, all []string, platform string) (ma
 		switch p {
 		case "tgz", "tarball":
 			p = pkgTarGz
+		case "setup", "exe", "nsis":
+			p = pkgInstaller
+		case "appx":
+			p = pkgMSIX
 		}
 		if !slices.Contains(all, p) {
 			return nil, fmt.Errorf("%s: %q isn't a %s package (%s)", where, p, platform, strings.Join(all, ", "))
@@ -302,13 +320,16 @@ func writeAppImage(app *asukaApp, o *buildOptions, prefix, exe, arch string) (st
 }
 
 // releaseAssets are the files of a desktop build to hand out beside its
-// update (the zip and the .dmg; the .deb, .rpm and AppImage), which asuka
-// publish uploads with it: those the build made.
+// update (the zip and the .dmg; the zip, installer and .msix; the .deb,
+// .rpm and AppImage), which asuka publish uploads with it: those the
+// build made.
 func releaseAssets(app *asukaApp, o *buildOptions, platform, arch string) []string {
 	var exts []string
 	switch platform {
 	case "darwin":
 		exts = []string{".zip", ".dmg"}
+	case "windows":
+		exts = []string{".zip", "-setup.exe", ".msix"}
 	case "linux":
 		// Its .tar.gz is the update's archive, which goes anyway.
 		exts = []string{".deb", ".rpm", ".AppImage"}

@@ -16,7 +16,7 @@ GitHub's releases or an S3 bucket (see [Updates](#updates)).
 | `ios` | `<Name>.ipa`, signed for the App Store | a Mac with Xcode | TestFlight, the App Store (`asuka publish`) |
 | `android` | `<Name>.aab`, signed with your upload key | any system with a JDK, the Android SDK and the NDK | Google Play (`asuka publish`) |
 | `mac` | `darwin-<arch>/`: `<Name>.app`, its `.zip` and a `.dmg` (Apple silicon; `--arch amd64`: Intel); or a `.pkg` (`--appstore`) | a Mac with Xcode's command line tools | the `.dmg` or the `.zip`, signed and notarized; the Mac App Store |
-| `windows` | `windows-<arch>/`: `<Name>/`, the `.exe` and its assets, and its `.zip` | Windows with clang, or any system with Zig | the zip, or an installer or MSIX of yours |
+| `windows` | `windows-<arch>/`: `<Name>/`, the `.exe` and its assets, an installer (`-setup.exe`), its `.zip`, and an `.msix` (`--package msix`) | Windows with clang, or any system with Zig | the installer, the `.zip`; the MSIX in the Microsoft Store, or sideloaded |
 | `linux` | `linux-<arch>/`: an install prefix, a `.tar.gz`, a `.deb`, an `.rpm`, an AppImage, a Flatpak manifest | Linux with a C compiler, or any system with Zig | the `.deb`, the `.rpm`, the AppImage, the `.tar.gz`, a Flatpak |
 | `web` | `web/`, a static site | any system with Zig | any web server or CDN |
 
@@ -483,13 +483,60 @@ architecture by clang on Windows or by Zig on any system); beside it
 program (no console window) with its resources linked in: the icon at Windows's sizes, its version
 information (`version` and `build`), and a manifest that asks for the
 common controls 6, per-monitor DPI awareness and UTF-8, for Windows 10
-and 11. An app with a resource object of its own in its directory (a
-COFF `.syso`, `rsrc_windows_amd64.syso`) has its own resources instead. Beside
-the folder is `<name>-<version>-windows-amd64.zip`, the folder zipped, to
-hand out; or package the folder (an installer, MSIX).
+and 11, and runs it as the user who opens it (no administrator's
+rights, whatever its name). An app with a resource object of its own in its directory (a
+COFF `.syso`, `rsrc_windows_amd64.syso`) has its own resources instead.
 
-Sign the `.exe`, so SmartScreen knows who it's from, with a code signing
-certificate exported as a `.pfx`:
+Beside the folder are the packages to hand out, as electron-builder
+makes them, each built by `asuka build` from any system (no NSIS, WiX
+or Windows SDK):
+
+- `<name>-<version>-windows-amd64-setup.exe`, the installer: one click,
+  as most Windows apps install now. It installs the app for the user
+  who runs it, with no administrator's rights and no questions, into
+  `%LOCALAPPDATA%\Programs\<Name>` (where the app can
+  [update itself](#updates)), with a shortcut in the Start menu, and
+  lists it in Settings' Installed apps with its version, publisher, size
+  and an uninstaller; then it opens the app. Run again (a newer
+  version's), it updates the app in place, closing it first if it's
+  open (it asks), and removes what the version before had and this one
+  hasn't. The uninstaller, `Uninstall <Name>.exe` in the app's folder,
+  takes away the app, its shortcuts and what it registered (its URL
+  scheme, its file types, its notifications'); what the app saved, its
+  data, stays. For scripts and IT departments both take `/S`, silently
+  (the installer doesn't open the app then), and the installer
+  `/D=<folder>` for another folder, as NSIS's do.
+- `<name>-<version>-windows-amd64.zip`, the folder zipped, to unzip
+  anywhere: a portable copy, which updates itself too where the user
+  can write.
+- `<name>-<version>-windows-amd64.msix`, with `--package msix`: the app
+  as a package, for the [Microsoft Store](https://partner.microsoft.com/dashboard)
+  and for sideloading (`Add-AppxPackage`, App Installer, Intune). Its
+  manifest declares the app as a full-trust desktop app, its tiles'
+  images (from the `icon`), its URL scheme, its file types and its
+  notifications' activator, which a packaged app can't register as it
+  runs. The Store takes it unsigned and signs it: set `windows.identityName`
+  and `windows.publisherId` to what Partner Center says (Product
+  identity), and upload it. To sideload it, it's signed as the `.exe` is
+  (below), by a certificate whose subject is `windows.publisherId`
+  (`CN=` and `windows.publisher` by default) and which the PC trusts.
+  Windows installs, updates and removes an MSIX; the app doesn't update
+  itself (`update.unsupported()` is `.managed`).
+
+`--package installer,msix` makes some of them, of `zip`, `installer`
+and `msix`; `asuka.toml`'s `windows.packages` says the same for every
+build. By default it's the installer and the `.zip`:
+
+```toml
+[windows]
+packages = ["installer", "zip", "msix"]
+publisher = "Example Inc."
+homepage = "https://example.com"
+```
+
+Sign the app, so SmartScreen knows who it's from, with a code signing
+certificate exported as a `.pfx`: the build signs the `.exe`, the
+installer and its uninstaller, and the MSIX.
 
 ```sh
 ASUKA_WINDOWS_CERT=cert.pfx ASUKA_WINDOWS_CERT_PASSWORD=... asuka build --platform windows
@@ -505,8 +552,14 @@ Windows (the Windows SDK's; on the `PATH`, else the newest installed),
 with `osslsigncode` elsewhere (`brew install osslsigncode`, `apt install
 osslsigncode`). Without `ASUKA_WINDOWS_CERT` the `.exe` isn't signed. A
 certificate on a hardware token or in a cloud service (Azure Trusted
-Signing) signs through its own tool: sign the `.exe` in the folder with
-it after the build.
+Signing, a key vault) signs through its own tool: set
+`ASUKA_WINDOWS_SIGN_COMMAND` to its command, `%1` where the file goes,
+and the build runs it for each file to sign instead:
+
+```sh
+ASUKA_WINDOWS_SIGN_COMMAND='AzureSignTool sign -kvu https://vault.vault.azure.net -kvc cert -kvm -tr http://timestamp.digicert.com -td sha256 %1' \
+  asuka build --platform windows
+```
 
 An app that shows notifications (`platform/notify`) is given a shortcut in the
 user's Start menu the first time, which Windows needs for an app's
@@ -825,8 +878,9 @@ it from the tag). A Windows folder and a Linux prefix also get
 update removes what the next one no longer has, and nothing of yours.
 
 `asuka publish` builds and uploads them, with the build's packages to
-hand out (the Mac's `.zip` and `.dmg`; Linux's `.deb`, `.rpm` and
-AppImage, its `.tar.gz` being the update's archive), the manifests last,
+hand out (the Mac's `.zip` and `.dmg`; Windows' installer, `.zip` and
+`.msix`; Linux's `.deb`, `.rpm` and AppImage, its `.tar.gz` being the
+update's archive), the manifests last,
 so no app reads a manifest whose files aren't there yet:
 
 ```sh
@@ -896,10 +950,10 @@ The signatures are the ones `asuka build` made: the server only chooses.
 - Windows: the folder's entries are replaced while the app runs, each
   renamed aside first and everything put back if one can't be; the
   running `.exe` is renamed (Windows lets it), and removed at the next
-  launch. The folder must be the user's (not `Program Files`): unzipped
-  in their profile, or an installer's per-user install
-  (`%LOCALAPPDATA%\Programs`). MSIX packages update through the Store or
-  App Installer.
+  launch. The folder must be the user's (not `Program Files`): the
+  installer's (`%LOCALAPPDATA%\Programs\<Name>`), or the `.zip` unzipped
+  in their profile; Installed apps then shows the version the app
+  updated to. An MSIX updates through the Store or App Installer.
 - Linux: the tarball's prefix, such as `~/.local`: the app's files alone
   (`bin/notes`, `share/notes/`, its desktop file, icons, metainfo and MIME
   types), each by a rename, then the desktop's caches

@@ -58,6 +58,9 @@ summary = "Write things down"
 categories = ["Office"]
 license = "MIT"
 
+[windows]
+publisher = "Example Inc."
+
 [updates]
 publicKey = "…"
 github = "you/notes"
@@ -473,6 +476,22 @@ developer.
 
 See [Shipping](shipping.md#linux).
 
+## windows
+
+What a Windows build's installer and MSIX say of the app, and what it
+hands the app out in.
+
+| Key | Type | Default | What it is |
+|---|---|---|---|
+| `packages` | strings | `["zip", "installer"]` | What a build hands the app out in: `zip`, the app's folder zipped; `installer`, a setup `.exe` that installs it for the user; `msix`, a package for the Microsoft Store and sideloading. `--package` overrides it. |
+| `publisher` | string | the app's name | Who makes the app, as Installed apps and the Store show it. |
+| `homepage` | string | none | The app's web page, in Installed apps. |
+| `desktopShortcut` | boolean | `false` | The installer puts a shortcut on the desktop too, beside the Start menu's. |
+| `identityName` | string | the app's `id` | The MSIX package's name: for the Store, Partner Center's Package/Identity/Name. |
+| `publisherId` | string | `"CN="` and `publisher` | The MSIX package's publisher, the subject of the certificate it's signed with (`"CN=Example Inc., O=Example Inc., C=US"`): for the Store, Partner Center's Package/Identity/Publisher. |
+
+See [Shipping](shipping.md#windows).
+
 ## web
 
 The web build's.
@@ -575,6 +594,7 @@ consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "de
 |---|---|---|---|
 | `measurementId` | string | none | A GA4 web stream's measurement ID (`G-…`; a Firebase web app's `measurementId`), for the web and the desktops. |
 | `apiSecret` | string | none | A Measurement Protocol API secret of that stream (Admin, Data streams), for Windows and Linux; never on a web page. `ASUKA_ANALYTICS_API_SECRET` overrides it. |
+| `endpoint` | string | GA's, `https://www.google-analytics.com/mp/collect` | Where Windows and Linux send their events: a Measurement Protocol collector of yours, such as a server-side tagging server's (`https://sgtm.example.com/mp/collect`). |
 | `enabled` | boolean | `true` | `false` starts collection off, until the app calls `analytics.setEnabled(true)`: Firebase's `FIREBASE_ANALYTICS_COLLECTION_ENABLED` and `firebase_analytics_collection_enabled`. |
 | `consent` | table | granted | Consent Mode's defaults, `"granted"` or `"denied"` each: `analyticsStorage`, `adStorage`, `adUserData`, `adPersonalization`. |
 

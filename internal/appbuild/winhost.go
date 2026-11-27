@@ -38,7 +38,12 @@ type WindowsOptions struct {
 	// Console makes it a console program (the player, tests: asuka dev
 	// reads its output); else a GUI program with no console window.
 	Console bool
-	Debug   bool
+	// Debug builds the dev configuration (assertions, symbols, less
+	// optimized: cbuild.ConfigFlags), with what's for development only
+	// in the core: the performance overlay and recordings (AK_PERF), the
+	// profiler. asuka dev's player (no App, no Tests) is always one, as
+	// Linux's is (DesktopExe).
+	Debug bool
 	// Tests are a test program's C sources (platform/windows/test), with
 	// the host in place of its main.
 	Tests []string
@@ -80,7 +85,7 @@ func WindowsHost(t cbuild.Target, o WindowsOptions, out string) error {
 	unit := windowsHostUnit(core, win, dsk, embedded)
 	host := unit.Sources
 	hostFlags := []string{"-I" + filepath.Join(win, "src"), "-I" + filepath.Join(dsk, "include"), "-DUNICODE", "-D_UNICODE"}
-	eo := cbuild.ExeOptions{Debug: o.Debug}
+	eo := cbuild.ExeOptions{Debug: o.Debug || len(o.App) == 0 && len(o.Tests) == 0}
 	if eo.Foreign, err = Foreign(o.C, t); err != nil {
 		return err
 	}
@@ -133,12 +138,7 @@ func WindowsHost(t cbuild.Target, o WindowsOptions, out string) error {
 		eo.Objects = append(eo.Objects, o.Resources)
 	}
 	if mingw(tc) {
-		eo.Link = append(eo.Link, "-municode")
-		if o.Console {
-			eo.Link = append(eo.Link, "-mconsole")
-		} else {
-			eo.Link = append(eo.Link, "-mwindows")
-		}
+		eo.Link = append(eo.Link, "-municode", subsystem(o.Console))
 	} else if o.Console {
 		eo.Link = append(eo.Link, "-Wl,/subsystem:console")
 	} else {
@@ -149,6 +149,17 @@ func WindowsHost(t cbuild.Target, o WindowsOptions, out string) error {
 		eo.Link = append(eo.Link, o.Native.Libs...)
 	}
 	return tc.ExeWith(core, eo, out)
+}
+
+// subsystem is the MinGW linker's flag for a console program or a GUI
+// one: the linker's own, which Zig's cc passes on (it drops gcc's
+// -mwindows and -mconsole, and the program was a console one, a console
+// window opening with it).
+func subsystem(console bool) string {
+	if console {
+		return "-Wl,--subsystem,console"
+	}
+	return "-Wl,--subsystem,windows"
 }
 
 // mingw reports whether tc builds against MinGW-w64 (Zig's Windows target,

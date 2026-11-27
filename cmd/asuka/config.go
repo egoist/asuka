@@ -334,6 +334,28 @@ type appConfig struct {
 		DebDepends  []string `json:"debDepends"`
 		RPMRequires []string `json:"rpmRequires"`
 	} `json:"linux"`
+	// Windows is what a Windows build's installer and MSIX say of the app.
+	Windows struct {
+		// Packages are what a build hands the app out in: "zip",
+		// "installer" (a per-user setup .exe) and "msix" (for the
+		// Microsoft Store and sideloading); default zip and installer
+		// (--package overrides it).
+		Packages []string `json:"packages"`
+		// Publisher is who makes the app, as Installed apps and the
+		// Store show it (default: the app's name); Homepage, its web page.
+		Publisher string `json:"publisher"`
+		Homepage  string `json:"homepage"`
+		// DesktopShortcut: the installer puts a shortcut on the desktop
+		// too, beside the Start menu's (default false).
+		DesktopShortcut bool `json:"desktopShortcut"`
+		// IdentityName and PublisherID are the MSIX package's identity:
+		// its name (default: the app's ID) and its publisher, the subject
+		// of the certificate it's signed with ("CN=Example Inc., O=Example
+		// Inc., C=US"; default "CN=" and Publisher). For the Store, Partner
+		// Center's Package/Identity/Name and Package/Identity/Publisher.
+		IdentityName string `json:"identityName"`
+		PublisherID  string `json:"publisherId"`
+	} `json:"windows"`
 	// Bluetooth is what an app of platform/bluetooth asks of the
 	// platforms beyond what importing the package gives (docs/bluetooth.md).
 	Bluetooth struct {

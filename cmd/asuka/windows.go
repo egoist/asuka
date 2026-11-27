@@ -56,6 +56,10 @@ func buildWindows(app *asukaApp, o *buildOptions) error {
 	if err != nil {
 		return err
 	}
+	pkgs, err := packagesFor(o, app.cfg.Windows.Packages, windowsPackages, "windows")
+	if err != nil {
+		return err
+	}
 	name := app.displayName()
 	exe := sanitizeExe(name) + ".exe"
 	out := filepath.Join(desktopDir(o, "windows", goarch), sanitizeExe(name))
@@ -132,17 +136,36 @@ func buildWindows(app *asukaApp, o *buildOptions) error {
 		_, err := writeUpdates(app, o.out, updateBuild{}, true)
 		return err
 	}
-	// The folder to hand out, zipped, named for its version and
-	// architecture.
-	zip := releaseFile(app, o, "windows", goarch, ".zip")
-	if err := zipDir(out, zip); err != nil {
-		return err
+	// What a build before made that this one doesn't goes.
+	removeUnmade(app, o, "windows", goarch, map[string]string{pkgZip: ".zip", pkgInstaller: "-setup.exe", pkgMSIX: ".msix"}, pkgs)
+	if pkgs[pkgZip] {
+		// The folder, zipped, named for its version and architecture.
+		zip := releaseFile(app, o, "windows", goarch, ".zip")
+		if err := zipDir(out, zip); err != nil {
+			return err
+		}
+		fmt.Printf("asuka: %s\n", zip)
 	}
-	fmt.Printf("asuka: %s\n", zip)
-	if signed {
-		fmt.Println("asuka: the folder is the app, its .exe signed: hand out the .zip, or package the folder (an installer, MSIX)")
-	} else {
-		fmt.Println("asuka: the folder is the app: hand out the .zip, or package the folder (an installer, MSIX); set ASUKA_WINDOWS_CERT and ASUKA_WINDOWS_CERT_PASSWORD to sign the .exe and keep SmartScreen quiet")
+	if pkgs[pkgInstaller] {
+		setup, err := writeWindowsInstaller(app, o, out, exe, goarch)
+		if err != nil {
+			return fmt.Errorf("the installer: %w", err)
+		}
+		fmt.Printf("asuka: %s (installs for the user: %%LOCALAPPDATA%%\\Programs\\%s)\n", setup, sanitizeExe(name))
+	}
+	if pkgs[pkgMSIX] {
+		msix, err := writeMSIX(app, o, out, exe, goarch)
+		if err != nil {
+			return fmt.Errorf("the MSIX: %w", err)
+		}
+		if signed {
+			fmt.Printf("asuka: %s (%s, signed: its certificate's subject must be %s)\n", msix, msixIdentityName(app), msixPublisher(app))
+		} else {
+			fmt.Printf("asuka: %s (%s, %s; not signed: for the Microsoft Store, which signs it)\n", msix, msixIdentityName(app), msixPublisher(app))
+		}
+	}
+	if !signed {
+		fmt.Println("asuka: set ASUKA_WINDOWS_CERT and ASUKA_WINDOWS_CERT_PASSWORD to sign the .exe and the packages, and keep SmartScreen quiet")
 	}
 	return nil
 }
@@ -214,6 +237,9 @@ func timestampServers(env string) []string {
 // Windows SDK's) on Windows, osslsigncode elsewhere. Without a
 // certificate it leaves exe unsigned.
 func signWindows(exe, name string, verbose bool) (bool, error) {
+	if cmd := strings.TrimSpace(os.Getenv("ASUKA_WINDOWS_SIGN_COMMAND")); cmd != "" {
+		return true, signWithCommand(cmd, exe, verbose)
+	}
 	cert := os.Getenv("ASUKA_WINDOWS_CERT")
 	if cert == "" {
 		return false, nil
@@ -268,6 +294,33 @@ func signWindows(exe, name string, verbose bool) (bool, error) {
 	}
 	return false, fmt.Errorf("signing %s: no timestamp server answered (%s): check the network, or set ASUKA_WINDOWS_TIMESTAMP to other RFC 3161 servers (comma-separated), or to none to sign without a timestamp (the signature then ends when the certificate does)",
 		filepath.Base(exe), strings.Join(failed, ", "))
+}
+
+// signWithCommand signs file with ASUKA_WINDOWS_SIGN_COMMAND, a command
+// of the user's (a hardware token's tool, Azure Trusted Signing's,
+// AzureSignTool), %1 in it the file's quoted path, run by the system's
+// shell (cmd on Windows, sh elsewhere): what electron-builder's custom
+// sign and Tauri's signCommand do.
+func signWithCommand(command, file string, verbose bool) error {
+	if !strings.Contains(command, "%1") {
+		return errors.New(`ASUKA_WINDOWS_SIGN_COMMAND has no %1, where the file to sign goes ("signtool sign /sha1 … /fd SHA256 %1")`)
+	}
+	var c *exec.Cmd
+	if runtime.GOOS == "windows" {
+		line := strings.ReplaceAll(command, "%1", `"`+file+`"`)
+		c = exec.Command("cmd.exe")
+		c.SysProcAttr = cmdLine("/d /s /c \"" + line + "\"")
+	} else {
+		c = exec.Command("sh", "-c", strings.ReplaceAll(command, "%1", `"$1"`), "sign", file)
+	}
+	if verbose {
+		fmt.Println("+", strings.ReplaceAll(command, "%1", file))
+	}
+	if b, err := c.CombinedOutput(); err != nil {
+		return fmt.Errorf("signing %s with ASUKA_WINDOWS_SIGN_COMMAND failed: %v\n%s", filepath.Base(file), err, b)
+	}
+	fmt.Printf("asuka: signed %s (ASUKA_WINDOWS_SIGN_COMMAND)\n", filepath.Base(file))
+	return nil
 }
 
 // timestampFailed reports whether a signer's output says the timestamp

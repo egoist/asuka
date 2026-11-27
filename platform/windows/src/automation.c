@@ -63,7 +63,23 @@ static void write_window_png(HWND hwnd, const char *path) {
 	HBITMAP bmp = dib(dc, w, h, &px);
 	HGDIOBJ old = SelectObject(dc, bmp);
 	PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT);
-	if (hwnd == H.window) wh_dev_error_print(dc, r);  // asuka dev's error overlay, over it
+	if (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
+		// A mirrored window comes out of PrintWindow mirrored again (its
+		// caption buttons on the right, its text backwards): turned back,
+		// as the screen shows it.
+		GdiFlush();
+		for (int y = 0; y < h; y++) {
+			uint32_t *row = (uint32_t *)px + (size_t)y * (size_t)w;
+			for (int a = 0, b = w - 1; a < b; a++, b--) {
+				uint32_t t = row[a];
+				row[a] = row[b], row[b] = t;
+			}
+		}
+	}
+	if (hwnd == H.window) {
+		wh_dev_error_print(dc, r);  // asuka dev's error overlay, over it
+		wh_dev_perf_print(dc, r);   // and its performance overlay, over all
+	}
 	GdiFlush();
 	int x0 = vis.left - r.left, y0 = vis.top - r.top, vw = vis.right - vis.left, vh = vis.bottom - vis.top;
 	if (x0 < 0 || y0 < 0 || x0 + vw > w || y0 + vh > h || vw <= 0 || vh <= 0) x0 = y0 = 0, vw = w, vh = h;

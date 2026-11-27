@@ -326,7 +326,10 @@ static bool ensure(const wchar_t *key, const wchar_t *name, const wchar_t *value
 }
 
 static void register_scheme(const wchar_t *exe) {
-	if (!H.config.scheme || not_itself()) return;
+	// A packaged app's manifest declares its scheme and file types:
+	// what it would write is its package's own registry, which nothing
+	// else reads.
+	if (!H.config.scheme || not_itself() || wh_packaged()) return;
 	wchar_t *scheme = wh_wide(H.config.scheme, (int)strlen(H.config.scheme));
 	wchar_t key[512], sub[600], v[MAX_PATH * 4 + 32];
 	swprintf(key, WH_LEN(key), L"Software\\Classes\\%ls", scheme);
@@ -386,7 +389,7 @@ static void prog_id(char *out, const char *ext) {
 }
 
 static void register_file_types(const wchar_t *exe) {
-	if (!H.config.file_types || not_itself()) return;
+	if (!H.config.file_types || not_itself() || wh_packaged()) return;
 	size_t n = strlen(H.config.file_types);
 	uint8_t *raw = wh_alloc(n);
 	long len = base64url(H.config.file_types, raw);

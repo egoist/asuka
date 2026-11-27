@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,6 +25,7 @@ import (
 //	[analytics]
 //	measurementId = "G-XXXXXXXXXX"
 //	apiSecret = "…"                      # Windows and Linux
+//	endpoint = "https://sgtm.example.com/mp/collect"  # Windows and Linux (default: GA's)
 //	enabled = false                      # until the app calls setEnabled(true)
 //	consent = { adStorage = "denied", adUserData = "denied" }
 
@@ -43,6 +45,11 @@ type analyticsConfig struct {
 	// APISecret is a Measurement Protocol API secret of that stream (the
 	// desktops'; never the web's, whose page anyone reads).
 	APISecret string `json:"apiSecret"`
+	// Endpoint is where Windows and Linux send their events: a
+	// Measurement Protocol collector's URL, a server-side tagging
+	// server's ("https://sgtm.example.com/mp/collect"; default GA's,
+	// https://www.google-analytics.com/mp/collect).
+	Endpoint string `json:"endpoint"`
 	// Enabled false starts collection off, until the app turns it on
 	// (setEnabled): Firebase's analytics_collection_enabled.
 	Enabled *bool `json:"enabled"`
@@ -77,6 +84,12 @@ func (a *analyticsConfig) check() error {
 	}
 	if a.APISecret != "" && a.MeasurementID == "" {
 		return errors.New("apiSecret: the Measurement Protocol's secret is its stream's: say the stream's measurementId too")
+	}
+	if e := a.Endpoint; e != "" {
+		u, err := url.Parse(e)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("endpoint %q (want a collector's URL, https://sgtm.example.com/mp/collect, without a query)", e)
+		}
 	}
 	for _, c := range a.consents() {
 		if c.value != "" && c.value != "granted" && c.value != "denied" {
@@ -154,6 +167,9 @@ func (c *appConfig) analyticsSettings(platform string, dev bool) map[string]stri
 	if platform != platformWeb {
 		if secret := a.apiSecret(); secret != "" {
 			s["analytics.apiSecret"] = secret
+		}
+		if a.Endpoint != "" {
+			s["analytics.endpoint"] = a.Endpoint
 		}
 	}
 	if a.Enabled != nil && !*a.Enabled {

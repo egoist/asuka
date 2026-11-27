@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"debug/pe"
 	"encoding/binary"
+	"encoding/xml"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -230,6 +231,23 @@ func TestBuildWindows(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(out, "windows-"+arch, "sqliteapp-"+app.cfg.Version+"-windows-"+arch+".zip")); err != nil {
 			t.Error(err)
 		}
+		// Its installer, by default: a GUI program for the architecture,
+		// the app in its resources.
+		setup := filepath.Join(out, "windows-"+arch, "sqliteapp-"+app.cfg.Version+"-windows-"+arch+"-setup.exe")
+		if f, err := pe.Open(setup); err != nil {
+			t.Error(err)
+		} else {
+			if f.Machine != machine || subsystem(f) != pe.IMAGE_SUBSYSTEM_WINDOWS_GUI {
+				t.Errorf("%s: the installer's machine %#x, subsystem %d", arch, f.Machine, subsystem(f))
+			}
+			if r := f.Section(".rsrc"); r == nil || r.Size < 100_000 {
+				t.Errorf("%s: the installer hasn't the app in its resources", arch)
+			}
+			f.Close()
+		}
+		if _, err := os.Stat(filepath.Join(out, "windows-"+arch, "sqliteapp-"+app.cfg.Version+"-windows-"+arch+".msix")); err == nil {
+			t.Errorf("%s: an MSIX nobody asked for", arch)
+		}
 		entries, _ := os.ReadDir(dir)
 		var names []string
 		for _, e := range entries {
@@ -247,6 +265,10 @@ func TestBuildWindows(t *testing.T) {
 			if f.Machine != machine {
 				t.Errorf("%s: %s's machine is %#x", arch, n, f.Machine)
 			}
+			// A GUI program: no console window opens with it.
+			if sub := subsystem(f); sub != pe.IMAGE_SUBSYSTEM_WINDOWS_GUI {
+				t.Errorf("%s: %s's subsystem is %d, not a GUI program's", arch, n, sub)
+			}
 			if n == "sqliteapp.exe" && f.Section(".rsrc") == nil {
 				t.Errorf("%s: the executable has no resources (its icon, manifest, version)", arch)
 			}
@@ -263,5 +285,97 @@ func TestBuildWindows(t *testing.T) {
 	}
 	if m, _ := filepath.Glob(filepath.Join(app.dir, "*.syso")); len(m) > 0 {
 		t.Errorf("left in the app: %v", m)
+	}
+}
+
+// subsystem is an executable's subsystem.
+func subsystem(f *pe.File) uint16 {
+	switch h := f.OptionalHeader.(type) {
+	case *pe.OptionalHeader64:
+		return h.Subsystem
+	case *pe.OptionalHeader32:
+		return h.Subsystem
+	}
+	return 0
+}
+
+// ASUKA_WINDOWS_SIGN_COMMAND signs with a tool of the user's: %1 is the
+// file, whose path may have spaces; a command without %1 is refused.
+func TestSignWindowsCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh's quoting")
+	}
+	dir := filepath.Join(t.TempDir(), "My App")
+	os.MkdirAll(dir, 0o755)
+	exe := filepath.Join(dir, "My App.exe")
+	os.WriteFile(exe, []byte("MZ"), 0o644)
+	t.Setenv("ASUKA_WINDOWS_CERT", "")
+	t.Setenv("ASUKA_WINDOWS_SIGN_COMMAND", `printf signed >> %1`)
+	if signed, err := signWindows(exe, "My App", false); !signed || err != nil {
+		t.Fatalf("%v %v", signed, err)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "MZsigned" {
+		t.Errorf("the command wrote %q", b)
+	}
+	t.Setenv("ASUKA_WINDOWS_SIGN_COMMAND", `false`)
+	if _, err := signWindows(exe, "My App", false); err == nil || !strings.Contains(err.Error(), "%1") {
+		t.Errorf("no %%1: %v", err)
+	}
+}
+
+// A Windows app's manifest runs it as its user (asInvoker): one named
+// like an installer would ask for an administrator otherwise.
+func TestWindowsManifest(t *testing.T) {
+	m := windowsManifest(&asukaApp{name: "update-probe", bundleID: "dev.asuka.updateprobe", cfg: &appConfig{Name: "Update Probe", Version: "1.2.3"}})
+	for _, want := range []string{`<requestedExecutionLevel level="asInvoker" uiAccess="false"/>`, `Microsoft.Windows.Common-Controls`, `PerMonitorV2`, `version="1.2.3.1"`} {
+		if !strings.Contains(m, want) {
+			t.Errorf("no %s in:\n%s", want, m)
+		}
+	}
+}
+
+// What the installer says of the app (its CONFIG), and the MSIX's
+// manifest: the app's identity, its scheme and file types, its toasts'
+// activator, as the host registers them when it isn't packaged.
+func TestWindowsPackageManifests(t *testing.T) {
+	cfg := &appConfig{Name: "My Notes", ID: "com.example.notes", Version: "1.4.2", Build: 7, Scheme: "notes",
+		FileTypes: []fileTypeConfig{{Name: "Note", Extensions: []string{"note", "NOTE2"}}}}
+	cfg.Windows.Publisher = "Example Inc."
+	cfg.Windows.Homepage = "https://example.com"
+	app := &asukaApp{name: "notes", bundleID: cfg.ID, cfg: cfg}
+	clsid := toastActivatorCLSID("com.example.notes")
+	if len(clsid) != 38 || clsid[0] != '{' || clsid[15] != '5' {
+		t.Errorf("the activator's CLSID %s isn't a name-based (version 5) UUID", clsid)
+	}
+	conf := string(installerConfig(app, "My Notes.exe"))
+	for _, want := range []string{"name=My Notes\n", "version=1.4.2\n", "publisher=Example Inc.\n", "id=com.example.notes\n", "aumid=com.example.notes\n",
+		"exe=My Notes.exe\n", "folder=My Notes\n", "uninstaller=Uninstall My Notes.exe\n", "homepage=https://example.com\n", "scheme=notes\n",
+		"progids=com.example.notes.note\n", "exts=.note;.note2\n", "activator=" + clsid + "\n", "desktop=0\n"} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("no %q in the installer's config:\n%s", want, conf)
+		}
+	}
+	m := msixManifest(app, "My Notes.exe", "arm64")
+	for _, want := range []string{
+		`<Identity Name="com.example.notes" Publisher="CN=Example Inc." Version="1.4.2.0" ProcessorArchitecture="arm64"/>`,
+		`<PublisherDisplayName>Example Inc.</PublisherDisplayName>`,
+		`<Application Id="App" Executable="My Notes.exe" EntryPoint="Windows.FullTrustApplication">`,
+		`<uap:Protocol Name="notes">`,
+		`<uap:FileTypeAssociation Name="note">`, `<uap:FileType>.note</uap:FileType>`, `<uap:FileType>.note2</uap:FileType>`,
+		`<com:Class Id="` + strings.Trim(clsid, "{}") + `"`, `ToastActivatorCLSID="` + strings.Trim(clsid, "{}") + `"`,
+		`<rescap:Capability Name="runFullTrust"/>`,
+	} {
+		if !strings.Contains(m, want) {
+			t.Errorf("no %s in the MSIX's manifest:\n%s", want, m)
+		}
+	}
+	var doc struct{ XMLName xml.Name }
+	if err := xml.Unmarshal([]byte(m), &doc); err != nil || doc.XMLName.Local != "Package" {
+		t.Errorf("the manifest isn't a Package: %v", err)
+	}
+	// The Store's identity, as Partner Center gives it.
+	cfg.Windows.IdentityName, cfg.Windows.PublisherID = "12345Example.Notes", "CN=8A3C5E1B-0000-4000-8000-000000000000"
+	if m := msixManifest(app, "My Notes.exe", "amd64"); !strings.Contains(m, `<Identity Name="12345Example.Notes" Publisher="CN=8A3C5E1B-0000-4000-8000-000000000000" Version="1.4.2.0" ProcessorArchitecture="x64"/>`) {
+		t.Errorf("the Store's identity:\n%s", m)
 	}
 }

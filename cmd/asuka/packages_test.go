@@ -16,7 +16,7 @@ import (
 func TestPackagesFor(t *testing.T) {
 	all := func(m map[string]bool) []string {
 		var out []string
-		for _, p := range linuxPackages {
+		for _, p := range append(append([]string{pkgZip, pkgDMG}, linuxPackages...), pkgInstaller, pkgMSIX) {
 			if m[p] {
 				out = append(out, p)
 			}
@@ -42,6 +42,16 @@ func TestPackagesFor(t *testing.T) {
 	}
 	if _, err := packagesFor(&buildOptions{packages: []string{"deb"}}, nil, macPackages, "mac"); err == nil || !strings.Contains(err.Error(), "--package") {
 		t.Errorf("a Linux package for the Mac: %v", err)
+	}
+	// Windows: the zip and the installer, unless the MSIX is asked for
+	// (setup and appx are their other names).
+	got, _ = packagesFor(&buildOptions{}, nil, windowsPackages, "windows")
+	if !slices.Equal(all(got), []string{pkgZip, pkgInstaller}) {
+		t.Errorf("Windows' default: %v", got)
+	}
+	got, _ = packagesFor(&buildOptions{packages: []string{"setup", "appx"}}, nil, windowsPackages, "windows")
+	if !slices.Equal(all(got), []string{pkgInstaller, pkgMSIX}) {
+		t.Errorf("Windows' --package: %v", got)
 	}
 
 	// --package takes a list, or itself again.

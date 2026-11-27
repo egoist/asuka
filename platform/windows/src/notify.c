@@ -190,6 +190,23 @@ out:
 	return ok;
 }
 
+// toast_app_id is the app ID toasts are shown for: the package's
+// (PackageFamilyName!App, GetCurrentApplicationUserModelId) when the app
+// is packaged, whose manifest declares its activator; else its own
+// (wh_app_user_model_id), which its Start menu shortcut carries.
+static const char *toast_app_id(void) {
+	static char *id;
+	if (id) return id;
+	if (wh_packaged()) {
+		typedef LONG(WINAPI * id_fn)(UINT32 *, PWSTR);
+		id_fn f = (id_fn)(void *)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetCurrentApplicationUserModelId");
+		wchar_t w[130];  // APPLICATION_USER_MODEL_ID_MAX_LENGTH
+		UINT32 n = WH_LEN(w);
+		if (f && f(&n, w) == ERROR_SUCCESS) return id = wh_utf8(w, -1, NULL);
+	}
+	return id = wh_strdup(wh_app_user_model_id());
+}
+
 // ---- The activator ----
 
 // NOTIFICATION_USER_INPUT_DATA: what the user typed in a toast's input.
@@ -337,31 +354,36 @@ static void write_icon_png(HICON icon, int size, const wchar_t *path) {
 // activator): NULL with *err.
 static void *toasts(char **err) {
 	if (nt.notifier) return nt.notifier;
-	const char *id = wh_app_user_model_id();
+	const char *id = toast_app_id();
 	wchar_t *aumid = wh_wide(id, -1);
 	wchar_t exe[MAX_PATH * 4];
 	GetModuleFileNameW(NULL, exe, WH_LEN(exe));
 	wchar_t *icon = NULL;
-	if (wh_app_icon()) {
+	// A packaged app is registered already: its package's manifest names
+	// it, its icon and its activator.
+	bool packaged = wh_packaged();
+	if (wh_app_icon() && !packaged) {
 		char *p = wh_cache_path("asuka-notify-icon.png");
 		icon = wh_wide(p, -1);
 		free(p);
 		write_icon_png(wh_app_icon(), 64, icon);
 	}
 	char *e = NULL;
-	if (!start_shortcut(aumid, exe, &e)) {
+	if (!packaged && !start_shortcut(aumid, exe, &e)) {
 		*err = wh_alloc(strlen(e) + 32);
 		sprintf(*err, "platform/notify: %s", e);
 		free(e), free(aumid), free(icon);
 		return NULL;
 	}
-	wchar_t idkey[600];
-	swprintf(idkey, WH_LEN(idkey), L"Software\\Classes\\AppUserModelId\\%ls", aumid);
-	reg_set(idkey, L"DisplayName", H.app_namew ? H.app_namew : L"Asuka");
-	if (icon && GetFileAttributesW(icon) != INVALID_FILE_ATTRIBUTES) reg_set(idkey, L"IconUri", icon);
+	if (!packaged) {
+		wchar_t idkey[600];
+		swprintf(idkey, WH_LEN(idkey), L"Software\\Classes\\AppUserModelId\\%ls", aumid);
+		reg_set(idkey, L"DisplayName", H.app_namew ? H.app_namew : L"Asuka");
+		if (icon && GetFileAttributesW(icon) != INVALID_FILE_ATTRIBUTES) reg_set(idkey, L"IconUri", icon);
+		SetCurrentProcessExplicitAppUserModelID(aumid);
+	}
 	free(icon);
-	SetCurrentProcessExplicitAppUserModelID(aumid);
-	if (!register_activator(aumid, exe)) {
+	if (!packaged && !register_activator(aumid, exe)) {
 		*err = wh_strdup("platform/notify: couldn't register the toasts' activator");
 		free(aumid);
 		return NULL;
@@ -486,7 +508,7 @@ static void *history(void) {
 static void remove_toast(const char *id) {
 	void *h = history();
 	if (!h) return;
-	HSTRING tag = asuka_hstring(id), group = asuka_hstring(TOAST_GROUP), app = asuka_hstring(wh_app_user_model_id());
+	HSTRING tag = asuka_hstring(id), group = asuka_hstring(TOAST_GROUP), app = asuka_hstring(toast_app_id());
 	typedef HRESULT(STDMETHODCALLTYPE * remove_fn)(void *, HSTRING, HSTRING, HSTRING);
 	ASUKA_SLOT(h, 8, remove_fn)(h, tag, group, app);  // RemoveGroupedTagWithId
 	asuka_hstring_free(tag), asuka_hstring_free(group), asuka_hstring_free(app);
@@ -1095,7 +1117,7 @@ static bool showing(shown **out, uint32_t *count) {
 	void *h2 = h ? asuka_com_query(h, &IID_ToastHistory2) : NULL;
 	asuka_com_release(h);
 	if (!h2) return false;
-	HSTRING app = asuka_hstring(wh_app_user_model_id());
+	HSTRING app = asuka_hstring(toast_app_id());
 	void *list = NULL;
 	typedef HRESULT(STDMETHODCALLTYPE * hist_fn)(void *, HSTRING, void **);
 	HRESULT hr = ASUKA_SLOT(h2, 7, hist_fn)(h2, app, &list);  // GetHistoryWithId
@@ -1232,7 +1254,7 @@ static void m_remove_all(wh_reply *r, const uint8_t *a, size_t n) {
 	if (!with(r)) return;
 	void *h = history();
 	if (h) {
-		HSTRING app = asuka_hstring(wh_app_user_model_id());
+		HSTRING app = asuka_hstring(toast_app_id());
 		typedef HRESULT(STDMETHODCALLTYPE * clear_fn)(void *, HSTRING);
 		ASUKA_SLOT(h, 12, clear_fn)(h, app);  // ClearWithId
 		asuka_hstring_free(app);

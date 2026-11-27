@@ -121,7 +121,7 @@ static void m_info(wh_reply *r, const uint8_t *a, size_t n) {
 	low[dl_] = L'\\', low[dl_ + 1] = 0;
 	if (!c->update_feed || !*c->update_feed || !c->update_key || !*c->update_key) {
 		reason = "notConfigured", message = "updates aren't set up for this app (asuka.toml's updates: a feed and a key)";
-	} else if (wcsstr(low, L"\\windowsapps\\")) {
+	} else if (wh_packaged() || wcsstr(low, L"\\windowsapps\\")) {
 		reason = "managed", message = "a package manager or an app store installed the app, and updates it";  // MSIX: the Store, App Installer
 	} else if (!has_file_list(dir)) {
 		reason = "notInstalled", message = "the app isn't in a folder asuka build made (its .asuka-files)";
@@ -724,9 +724,34 @@ void wh_relaunch_wait(void) {
 	CloseHandle(p);
 }
 
+// installed_entry keeps the app's entry in Installed apps (its
+// installer's: HKCU's Uninstall key named for its ID) saying the version
+// that runs, when the entry is the app in dir's (its InstallLocation): an
+// update replaced the version the installer wrote there.
+static void installed_entry(const wchar_t *dir) {
+	const char *version = H.config.version;
+	if (!version || !*version || wh_packaged()) return;
+	wchar_t *id = wh_wide(wh_app_user_model_id(), -1);
+	wchar_t key[600];
+	swprintf(key, WH_LEN(key), L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\%ls", id);
+	free(id);
+	wchar_t *where = wh_reg_string(HKEY_CURRENT_USER, key, L"InstallLocation");
+	wchar_t *have = where ? wh_reg_string(HKEY_CURRENT_USER, key, L"DisplayVersion") : NULL;
+	wchar_t *want = wh_wide(version, -1);
+	if (where && !_wcsicmp(where, dir) && (!have || wcscmp(have, want))) {
+		HKEY k;
+		if (RegOpenKeyExW(HKEY_CURRENT_USER, key, 0, KEY_SET_VALUE, &k) == ERROR_SUCCESS) {
+			RegSetValueExW(k, L"DisplayVersion", 0, REG_SZ, (const BYTE *)want, (DWORD)((wcslen(want) + 1) * sizeof(wchar_t)));
+			RegCloseKey(k);
+		}
+	}
+	free(where), free(have), free(want);
+}
+
 // wh_update_clean removes what an update left in the app's folder: the
 // .exe and entries it put aside (.*.old-*), and the work directories of
-// updates that were stopped (.asuka-update-*). Once the app runs alone.
+// updates that were stopped (.asuka-update-*); and keeps the app's entry
+// in Installed apps saying its version. Once the app runs alone.
 void wh_update_clean(void) {
 	wchar_t *exe = exe_path(), *dir = dir_of(exe);
 	const wchar_t *pats[] = {L".*.old-*", L"" WORK_PREFIX L"*"};
@@ -744,5 +769,6 @@ void wh_update_clean(void) {
 		} while (FindNextFileW(h, &fd));
 		FindClose(h);
 	}
+	installed_entry(dir);
 	free(exe), free(dir);
 }

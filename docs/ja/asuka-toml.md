@@ -44,6 +44,9 @@ summary = "Write things down"
 categories = ["Office"]
 license = "MIT"
 
+[windows]
+publisher = "Example Inc."
+
 [updates]
 publicKey = "…"
 github = "you/notes"
@@ -410,6 +413,21 @@ Linux のビルドが、デスクトップファイル、AppStream の metainfo�
 
 [配布](shipping.md#linux)を参照してください。
 
+## windows
+
+Windows のビルドが、インストーラーと MSIX に書き出すアプリの情報と、アプリを配布する形式です。
+
+| キー | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `packages` | 文字列の配列 | `["zip", "installer"]` | ビルドがアプリを配布する形式です。`zip` はアプリのフォルダーを zip にしたもの、`installer` はユーザーにアプリをインストールするセットアップ用の `.exe`、`msix` は Microsoft Store とサイドロード用のパッケージです。`--package` で上書きできます。 |
+| `publisher` | 文字列 | アプリの名前 | アプリの発行元で、「インストールされているアプリ」と Store に表示されます。 |
+| `homepage` | 文字列 | なし | アプリの Web ページで、「インストールされているアプリ」に表示されます。 |
+| `desktopShortcut` | 真偽値 | `false` | インストーラーが「スタート」メニューのショートカットに加えて、デスクトップにもショートカットを置きます。 |
+| `identityName` | 文字列 | アプリの `id` | MSIX パッケージの名前です。Store に出すときは、Partner Center の Package/Identity/Name にします。 |
+| `publisherId` | 文字列 | `"CN="` と `publisher` | MSIX パッケージの発行元で、署名に使う証明書のサブジェクトです（`"CN=Example Inc., O=Example Inc., C=US"`）。Store に出すときは、Partner Center の Package/Identity/Publisher にします。 |
+
+[配布](shipping.md#windows)を参照してください。
+
 ## web
 
 Web のビルドの設定です。
@@ -491,6 +509,7 @@ consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "de
 |---|---|---|---|
 | `measurementId` | 文字列 | なし | GA4 の Web ストリームの測定 ID（`G-…`。Firebase の Web アプリの `measurementId`）で、Web とデスクトップで使います。 |
 | `apiSecret` | 文字列 | なし | そのストリームの Measurement Protocol API シークレット（「管理 > データストリーム」で作成）で、Windows と Linux で使います。Web ページには決して載りません。`ASUKA_ANALYTICS_API_SECRET` で上書きできます。 |
+| `endpoint` | 文字列 | GA のもの（`https://www.google-analytics.com/mp/collect`） | Windows と Linux がイベントを送る先です。サーバーサイド タグ設定のサーバーのもの（`https://sgtm.example.com/mp/collect`）など、独自の Measurement Protocol のコレクターを指定します。 |
 | `enabled` | 真偽値 | `true` | `false` にすると、アプリが `analytics.setEnabled(true)` を呼ぶまで収集をオフで始めます。Firebase の `FIREBASE_ANALYTICS_COLLECTION_ENABLED` と `firebase_analytics_collection_enabled` にあたります。 |
 | `consent` | テーブル | 許可 | 同意モードの初期値で、それぞれ `"granted"` か `"denied"` です：`analyticsStorage`、`adStorage`、`adUserData`、`adPersonalization`。 |
 

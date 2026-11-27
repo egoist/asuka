@@ -36,7 +36,7 @@ func TestAppFlagsReserveX28(t *testing.T) {
 	if err := os.WriteFile(src, []byte(pressure), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	targets := []Target{{"linux", "arm64"}, {"darwin", "arm64"}, {"ios", "arm64"}, {"android", "arm64"}}
+	targets := []Target{{"linux", "arm64"}, {"darwin", "arm64"}, {"windows", "arm64"}, {"ios", "arm64"}, {"android", "arm64"}}
 	for _, zig := range []bool{false, true} {
 		for _, tg := range targets {
 			name := tg.String()
