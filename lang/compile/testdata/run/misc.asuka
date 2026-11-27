@@ -126,11 +126,11 @@ test "optional calls" {
 // Output:
 // 11 [5] o!
 // 1 [] o
-// [[1,2,9],[30,4]]
+// [[1, 2, 9], [30, 4]]
 // ok nested changes
-// ann 2 [[0,0],[0,1]]
+// ann 2 [[0, 0], [0, 1]]
 // ok state changes in place
-// [0,10,20]
+// [0, 10, 20]
 // 2
 // <a<b
 // ok captures in loops

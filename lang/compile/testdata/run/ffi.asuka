@@ -238,9 +238,9 @@ test "kept callbacks" {
 // 42
 // ok structs
 // 3
-// [0,10,20]
+// [0, 10, 20]
 // 10
-// ["hi","there","you.","(end)."]
+// ["hi", "there", "you.", "(end)."]
 // false
 // true
 // true
@@ -248,8 +248,8 @@ test "kept callbacks" {
 // caught: index 1 out of range (length 0)
 // 2
 // ok a callback that fails
-// [1,2]
-// [1,2]
-// [1,2,7]
-// [1,2,7]
+// [1, 2]
+// [1, 2]
+// [1, 2, 7]
+// [1, 2, 7]
 // ok kept callbacks

@@ -99,14 +99,14 @@ test "patterns through optionals" {
 // z
 // -1
 // ok elements
-// (1,"a","red")
-// t is (1,"a","red")
-// [(1,"x"),(2,"y")]
-// ((1,2),[true])
-// (1,"z")
-// {"pair":(1,"one")}
-// {1:"a",2:"b"}
-// {"green":[1,2]}
+// (1, "a", .red)
+// t is (1, "a", .red)
+// [(1, "x"), (2, "y")]
+// ((1, 2), [true])
+// (1, "z")
+// Hold(pair: (1, "one"))
+// [1: "a", 2: "b"]
+// [.green: [1, 2]]
 // ok printed
 // a 1 x
 // b is none

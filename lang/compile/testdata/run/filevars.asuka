@@ -79,10 +79,10 @@ test "optionals and a throw in the middle of a change" {
 }
 
 // Output:
-// 2 ["a","b"] 5 10
+// 2 ["a", "b"] 5 10
 // 6 3
 // ok read and written by functions
-// {"x":6,"tags":["t"]}
+// P(x: 6, tags: ["t"])
 // 10000 9999
 // 23416728348467685 79
 // 10
@@ -90,5 +90,5 @@ test "optionals and a throw in the middle of a change" {
 // true
 // 4
 // true ["kept"]
-// ["x","y"]
+// ["x", "y"]
 // ok optionals and a throw in the middle of a change

@@ -113,12 +113,12 @@ test "an error on the way" {
 // ok read in place
 // ka+to,to+ra,ra+chi,chi+suyuq,suyuq+ka,ka+to
 // ka*chi*,to*suyuq*,ra*ka*,chi*to*,suyuq*ra*,ka*chi*
-// {"ka=0":0,"to=1":1,"ra=2":2,"chi=3":3,"suyuq=4":4,"ka=5":5}
+// ["ka=0": 0, "to=1": 1, "ra=2": 2, "chi=3": 3, "suyuq=4": 4, "ka=5": 5]
 // ka~suyuq~,to~ka~,ra~to~,chi~ra~,suyuq~chi~ ka~suyuq~
 // chi/ka/3 suyuq/to/4
 // 2
 // ok escaping
-// [6,6,7]
+// [6, 6, 7]
 // ok captured
 // 29 62 true 62
 // 30 63 true 63

@@ -127,7 +127,7 @@ test "errors" {
 }
 
 // Output:
-// ["a","b"]
+// ["a", "b"]
 // 10
 // c: 12
 // 9
@@ -138,14 +138,14 @@ test "errors" {
 // 25
 // -1
 // ok functions
-// ["large","small"]
+// [.large, .small]
 // ok several constraints
 // [dot] 3
 // 5
-// ["one","two"]
+// ["one", "two"]
 // ok types
 // 7
-// ["c","s"]
+// ["c", "s"]
 // ok an interface as T
 // error: bad 7
 // ok errors

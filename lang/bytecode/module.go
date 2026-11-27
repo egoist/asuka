@@ -44,7 +44,10 @@ const NoShape = -1
 
 // Field is a struct's field or an enum case's payload field. Its Name
 // may carry its type's JSON descriptor after a NUL ("title\x00s"; see
-// core/src/rt/json.h), which the runtime reads to decode and encode it.
+// core/src/rt/json.h), which the runtime reads to decode and encode it,
+// and after another how the language writes its values when that's
+// other than JSON's ("wait\x00i\x00d": a duration; core/src/vm/literal.h),
+// empty when it isn't ("title\x00s\x00").
 type Field struct {
 	Name  string
 	Kind  Kind

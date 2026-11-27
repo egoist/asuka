@@ -35,21 +35,21 @@ test "without case" {
 }
 
 // Output:
-// (12,12,5)
-// [3,8,18,3,2]
+// (12, 12, 5)
+// [3, 8, 18, 3, 2]
 // []
 // ok grapheme clusters
-// ("STRASSE","Ǆ","FI")
+// ("STRASSE", "Ǆ", "FI")
 // σας και οδος.
 // 8
-// ("HELLO, 世界","hello, 世界")
+// ("HELLO, 世界", "hello, 世界")
 // ok upper and lower case
-// ("strasse","σασ","ffi")
-// (true,false,true)
-// (true,false,false)
-// (true,false,true)
-// (1,-1,0)
-// ["Alice","Zoë","alice","bob","zoe","Émile","émile"]
-// ["Alice","alice","bob","zoe","Zoë","émile","Émile"]
-// ["bob","alice","émile","zoë","zoe"]
+// ("strasse", "σασ", "ffi")
+// (true, false, true)
+// (true, false, false)
+// (true, false, true)
+// (1, -1, 0)
+// ["Alice", "Zoë", "alice", "bob", "zoe", "Émile", "émile"]
+// ["Alice", "alice", "bob", "zoe", "Zoë", "émile", "Émile"]
+// ["bob", "alice", "émile", "zoë", "zoe"]
 // ok without case

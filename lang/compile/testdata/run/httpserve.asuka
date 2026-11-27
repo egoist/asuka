@@ -169,7 +169,7 @@ test "a port that's taken" {
 // Method Not Allowed
 // Not Found 404
 // ok a JSON API
-// GET /a%20b q=fish & chips all=["1","2"] ua=test/1 body= local=true
+// GET /a%20b q=fish & chips all=["1", "2"] ua=test/1 body= local=true
 // PUT /up q=- all=[] ua=- body=x y local=true
 // HTTP/1.1 200 OK
 // Content-Type: text/plain; charset=utf-8
@@ -206,8 +206,8 @@ test "a port that's taken" {
 // line 2
 // line 3
 // ok streams and events
-// closed, and ran ["the feed's defer","the slow handler's defer"]
-// ["feed","slow"] true true
+// closed, and ran ["the feed's defer", "the slow handler's defer"]
+// ["feed", "slow"] true true
 // ok closing cancels what's running, its defers run
 // true: the port is in use
 // can't listen at 127.0.0.1:70000: a port is 0 to 65535

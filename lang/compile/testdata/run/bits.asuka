@@ -108,7 +108,7 @@ test "a byte out of range throws" {
 // -1
 // ok precedence
 // 28
-// [1,16,3]
+// [1, 16, 3]
 // ok compound assignments
 // 0
 // -9223372036854775808

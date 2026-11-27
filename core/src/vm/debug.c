@@ -5,6 +5,7 @@
 #include "signal/signal.h"
 #include "rt/unicode.h"
 #include "vm/prof.h"
+#include "vm/literal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -267,105 +268,18 @@ void ak_dbg_hook(ak_co *co, uint32_t pc) {
 	if (step && step_stops(co, fr, pc)) stop(co, pc, "step", NULL);
 }
 
-// ---- Values, as the language writes them ----
+// ---- Values, as the language writes them (literal.h) ----
 
-// The most a value's text is (bytes), and its parts' nesting: past them,
-// "…".
-#define SHOW_MAX 200
-#define SHOW_DEPTH 3
-#define SHOW_ITEMS 10   // an array's, a map's, a set's items shown
-#define SHOW_STR 120    // a string's bytes shown
 #define MAX_FRAMES 128  // a stop's frames
 #define MAX_CHILDREN 1000
 
-typedef struct {
-	ak_buf *b;
-	size_t limit;
-	ak_module *mod;  // the frame's: its shapes' field descriptors, its enums' cases
-} shower;
-
-static void put(shower *s, const char *p) { ak_buf_put(s->b, p, strlen(p)); }
-static bool full(const shower *s) { return s->b->len >= s->limit; }
-
-static ak_kind desc_kind(const char *d) {
-	switch (*d) {
-	case 'i':
-	case 'e':
-	case 'd':
-	case 'c':
-	case 'r':
-	case 'n':
-		return AK_K_INT;
-	case 'f':
-		return AK_K_FLOAT;
-	case 'b':
-		return AK_K_BOOL;
-	default:
-		return AK_K_REF;
-	}
+// peel reads through what holds a value: a state's cell, a let's memo,
+// an accessor (what they hold now, if they can say without running
+// code), and an optional that isn't none (its value, its descriptor's).
+static void peel(ak_val *v, ak_kind *k, const char **d) {
+	ak_lit s = {.peek = true};
+	ak_lit_peel(&s, v, k, d);
 }
-
-// dend is past the descriptor at d.
-static const char *dend(const char *d) {
-	for (;;) {
-		switch (*d) {
-		case '?':
-		case '[':
-		case '{':
-		case '<':
-			d++;
-			continue;
-		case 'S':
-		case 'E':
-		case 'J':
-		case 'e': {
-			const char *q = strchr(d, ';');
-			return q ? q + 1 : d + strlen(d);
-		}
-		case 'n':
-			return d[1] ? d + 2 : d + 1;
-		case 'm':
-			return dend(dend(d + 1));
-		case '\0':
-			return d;
-		default:
-			return d + 1;
-		}
-	}
-}
-
-// type_name writes a type's name without its packages' paths
-// ("./model.Todo" is Todo, "Box<std/time.Date>" Box<Date>), n bytes of it.
-static void type_name(ak_buf *b, const char *name, size_t n) {
-	const char *seg = name, *end = name + n;
-	for (const char *p = name;; p++) {
-		char c = p < end ? *p : 0;
-		if (c == '<' || c == '>' || c == ',' || c == '(' || c == ')' || c == '?' || c == '[' || c == ']' || c == ' ' || c == ':' || c == 0) {
-			const char *dot = NULL;
-			for (const char *q = seg; q < p; q++)
-				if (*q == '.') dot = q;
-			const char *from = dot ? dot + 1 : seg;
-			ak_buf_put(b, from, (size_t)(p - from));
-			if (!c) return;
-			ak_buf_put(b, p, 1);
-			seg = p + 1;
-		}
-	}
-}
-
-// own_shape reports whether sh is one of the module's (whose fields'
-// names carry their descriptors: load.c's rname).
-static bool own_shape(const ak_module *m, const ak_shape *sh) {
-	return m && m->nshapes && (const void *)sh >= (const void *)&m->shapes[0] && (const void *)sh < (const void *)&m->shapes[m->nshapes];
-}
-
-static const char *name_desc(const shower *s, const ak_shape *sh, const char *name) {
-	if (!name || !own_shape(s->mod, sh)) return "-";
-	const char *d = name + strlen(name) + 1;
-	return *d ? d : "-";
-}
-
-static void peel(ak_val *v, ak_kind *k, const char **d);
 
 // show_type writes the type the descriptor d says (true), or nothing
 // (false: it says none, or a tuple, whose value says).
@@ -405,7 +319,7 @@ static bool show_type(ak_buf *b, const char *d) {
 		ak_buf_u8(b, '[');
 		if (!show_type(b, d + 1)) ak_buf_put(b, "_", 1);
 		ak_buf_put(b, ": ", 2);
-		if (!show_type(b, dend(d + 1))) ak_buf_put(b, "_", 1);
+		if (!show_type(b, ak_lit_desc_end(d + 1))) ak_buf_put(b, "_", 1);
 		ak_buf_u8(b, ']');
 		return true;
 	case 'S':
@@ -413,7 +327,7 @@ static bool show_type(ak_buf *b, const char *d) {
 	case 'J':
 	case 'e': {
 		const char *q = strchr(d, ';');
-		type_name(b, d + 1, q ? (size_t)(q - d - 1) : strlen(d + 1));
+		ak_lit_type_name(b, d + 1, q ? (size_t)(q - d - 1) : strlen(d + 1));
 		return true;
 	}
 	default:
@@ -444,12 +358,12 @@ static void value_type(ak_buf *b, ak_val v, ak_kind k, const char *d) {
 		case AK_TAG_MAP: t = ak_map_is_set((const ak_map *)o) ? "Set" : "map"; break;
 		case AK_TAG_STRUCT: {
 			const char *n = ((const ak_struct *)o)->shape->name;
-			type_name(b, n, strlen(n));
+			ak_lit_type_name(b, n, strlen(n));
 			return;
 		}
 		case AK_TAG_ENUM: {
 			const char *n = ((const ak_enum *)o)->shape->name;
-			type_name(b, n, strlen(n));
+			ak_lit_type_name(b, n, strlen(n));
 			return;
 		}
 		case AK_TAG_CLOSURE: t = "fn"; break;
@@ -466,307 +380,14 @@ static void value_type(ak_buf *b, ak_val v, ak_kind k, const char *d) {
 	ak_buf_put(b, t, strlen(t));
 }
 
-// peel reads through what holds a value: a state's cell, a let's memo,
-// an accessor (what they hold now, if they can say without running
-// code), and an optional that isn't none (its value, its descriptor's).
-static void peel(ak_val *v, ak_kind *k, const char **d) {
-	for (int guard = 0; guard < 16; guard++) {
-		if (**d == '?' && *k != AK_K_REF) {
-			(*d)++;
-			continue;
-		}
-		if (*k != AK_K_REF || !v->p) return;
-		const ak_obj *o = v->p;
-		if (o->tag == AK_TAG_CELL || o->tag == AK_TAG_MEMO || o->tag == AK_TAG_ACC) {
-			ak_val pv;
-			ak_kind pk;
-			if (!ak_vm_dbg_peek(v->p, &pv, &pk)) return;
-			*v = pv;
-			*k = pk;
-			continue;
-		}
-		if (**d == '?') {
-			(*d)++;
-			if (desc_kind(*d) != AK_K_REF && o->tag == AK_TAG_BOX) {
-				*k = (ak_kind)o->aux;
-				*v = ((const ak_box *)o)->v;
-			}
-			continue;
-		}
-		if (o->tag == AK_TAG_BOX && desc_kind(*d) == AK_K_REF && **d != 'J') {
-			// An optional scalar whose type the descriptor doesn't say.
-			*k = (ak_kind)o->aux;
-			*v = ((const ak_box *)o)->v;
-			continue;
-		}
-		return;
-	}
-}
-
-static void show(shower *s, ak_val v, ak_kind k, const char *d, int depth);
-
-static void show_float(shower *s, double f) {
-	if (f != f) {
-		put(s, "nan");
-		return;
-	}
-	if (isinf(f)) {
-		put(s, f > 0 ? "inf" : "-inf");
-		return;
-	}
-	ak_strb t = {0};
-	ak_strb_float(&t, f);
-	ak_buf *tb = ak_strb_buf(&t);
-	ak_buf_put(s->b, tb->data, tb->len);
-	if (!memchr(tb->data, '.', tb->len) && !memchr(tb->data, 'e', tb->len)) put(s, ".0");
-	ak_strb_free(&t);
-}
-
-static void show_duration(shower *s, int64_t ns) {
-	static const struct {
-		int64_t n;
-		const char *unit;
-	} units[] = {{3600000000000LL, "h"}, {60000000000LL, "min"}, {1000000000LL, "s"}, {1000000LL, "ms"}, {1000LL, "us"}};
-	if (ns == 0) {
-		put(s, "0s");
-		return;
-	}
-	for (size_t i = 0; i < sizeof units / sizeof *units; i++) {
-		if (ns % units[i].n == 0) {
-			ak_buf_printf(s->b, "%lld%s", (long long)(ns / units[i].n), units[i].unit);
-			return;
-		}
-	}
-	ak_buf_printf(s->b, "%lldns", (long long)ns);
-}
-
-static void show_int(shower *s, int64_t i, const char *d) {
-	switch (*d) {
-	case 'd':
-		show_duration(s, i);
-		return;
-	case 'c': {
-		ak_builtin_fn hex = ak_builtin_find("color.hex");
-		if (hex) {
-			ak_val arg = {.i = i}, r = hex(&arg, 1);
-			if (ak_error_pending()) ak_release(ak_error_take());
-			if (r.p) {
-				ak_buf_put(s->b, ((ak_str *)r.p)->data, ((ak_str *)r.p)->len);
-				ak_release(r.p);
-				return;
-			}
-		}
-		break;
-	}
-	case 'r': {
-		char u[4];
-		size_t n = i >= 0 && i <= 0x10FFFF ? ak_utf8_encode((uint32_t)i, u) : 0;
-		ak_buf_u8(s->b, '\'');
-		if (i == '\n') put(s, "\\n");
-		else if (i == '\t') put(s, "\\t");
-		else if (i == '\'' || i == '\\') ak_buf_printf(s->b, "\\%c", (char)i);
-		else ak_buf_put(s->b, u, n);
-		ak_buf_u8(s->b, '\'');
-		return;
-	}
-	case 'n':
-		if (d[1] == '7') {
-			ak_buf_printf(s->b, "%llu", (unsigned long long)i);
-			return;
-		}
-		break;
-	case 'e': {
-		const char *q = strchr(d, ';');
-		ak_json_types t;
-		const char *const *cases;
-		uint32_t n;
-		if (s->mod && q) {
-			ak_vm_module_json_types(s->mod, &t);
-			if (t.cases(t.ctx, d + 1, (size_t)(q - d - 1), &cases, &n) && i >= 0 && (uint64_t)i < n) {
-				ak_buf_printf(s->b, ".%s", cases[i]);
-				return;
-			}
-		}
-		break;
-	}
-	}
-	ak_buf_printf(s->b, "%lld", (long long)i);
-}
-
-static void show_str(shower *s, const char *p, size_t n) {
-	ak_buf_u8(s->b, '"');
-	size_t shown = n > SHOW_STR ? SHOW_STR : n;
-	while (shown < n && shown > 0 && ((unsigned char)p[shown] & 0xC0) == 0x80) shown--;  // a whole character
-	for (size_t i = 0; i < shown; i++) {
-		unsigned char c = (unsigned char)p[i];
-		switch (c) {
-		case '"': put(s, "\\\""); break;
-		case '\\': put(s, "\\\\"); break;
-		case '\n': put(s, "\\n"); break;
-		case '\t': put(s, "\\t"); break;
-		case '\r': put(s, "\\r"); break;
-		default:
-			if (c < 0x20 || c == 0x7f) ak_buf_printf(s->b, "\\u{%x}", c);
-			else ak_buf_u8(s->b, c);
-		}
-	}
-	if (shown < n) put(s, "…");
-	ak_buf_u8(s->b, '"');
-}
-
-// show_fields writes a struct's fields or an enum case's payload: name: v,
-// or v alone where the name is a position ("0").
-static void show_fields(shower *s, const ak_val *f, uint16_t n, const uint8_t *kinds, const char *const *names, const ak_shape *sh, int depth) {
-	bool first = true;
-	for (uint16_t i = 0; i < n; i++) {
-		const char *name = names ? names[i] : NULL;
-		if (name && name[0] == '$') continue;  // the lowering's own (a component's owner)
-		if (!first) put(s, ", ");
-		first = false;
-		if (full(s)) {
-			put(s, "…");
-			return;
-		}
-		if (name && *name && !(name[0] >= '0' && name[0] <= '9')) ak_buf_printf(s->b, "%s: ", name);
-		show(s, f[i], (ak_kind)kinds[i], name_desc(s, sh, name), depth + 1);
-	}
-}
-
-static void map_descs(const char *d, const char **kd, const char **vd) {
-	*kd = *vd = "-";
-	if (*d == '{') *kd = "s", *vd = d + 1;
-	else if (*d == 'm') *kd = d + 1, *vd = dend(d + 1);
-	else if (*d == '<') *kd = d + 1;
-}
-
-static void show(shower *s, ak_val v, ak_kind k, const char *d, int depth) {
-	peel(&v, &k, &d);
-	switch (k) {
-	case AK_K_INT: show_int(s, v.i, d); return;
-	case AK_K_FLOAT: show_float(s, v.f); return;
-	case AK_K_BOOL: put(s, v.i ? "true" : "false"); return;
-	case AK_K_VOID: put(s, "()"); return;
-	default: break;
-	}
-	const ak_obj *o = v.p;
-	if (!o) {
-		put(s, "none");
-		return;
-	}
-	if (depth > SHOW_DEPTH && o->tag != AK_TAG_STR && o->tag != AK_TAG_BOX) {
-		put(s, "…");
-		return;
-	}
-	switch (o->tag) {
-	case AK_TAG_STR: {
-		const ak_str *str = v.p;
-		show_str(s, str->data, str->len);
-		return;
-	}
-	case AK_TAG_BYTES:
-		ak_buf_printf(s->b, "<%u bytes>", ((const ak_bytes *)o)->len);
-		return;
-	case AK_TAG_ARR: {
-		const ak_arr *a = v.p;
-		const char *ed = *d == '[' ? d + 1 : "-";
-		ak_kind ek = (ak_kind)(ak_arr_kind(a) & 0xf);
-		put(s, "[");
-		for (uint32_t i = 0; i < a->len; i++) {
-			if (i) put(s, ", ");
-			if (i >= SHOW_ITEMS || full(s)) {
-				put(s, "…");
-				break;
-			}
-			show(s, ak_arr_get(a, i), ek, ed, depth + 1);
-		}
-		put(s, "]");
-		return;
-	}
-	case AK_TAG_MAP: {
-		const ak_map *m = v.p;
-		const char *kd, *vd;
-		map_descs(d, &kd, &vd);
-		ak_kind kk = (ak_kind)(m->h.aux & 0xf), vk = (ak_kind)(m->h.aux >> 4);
-		bool set = ak_map_is_set(m);
-		put(s, set ? "Set([" : "[");
-		uint32_t shown = 0;
-		for (uint32_t i = 0; i < m->len; i++) {
-			if (m->dead[i]) continue;
-			if (shown) put(s, ", ");
-			if (shown >= SHOW_ITEMS || full(s)) {
-				put(s, "…");
-				break;
-			}
-			show(s, m->keys[i], kk, kd, depth + 1);
-			if (!set) {
-				put(s, ": ");
-				show(s, m->vals[i], vk, vd, depth + 1);
-			}
-			shown++;
-		}
-		if (!set && !m->live) put(s, ":");
-		put(s, set ? "])" : "]");
-		return;
-	}
-	case AK_TAG_STRUCT: {
-		const ak_struct *st = v.p;
-		const ak_shape *sh = st->shape;
-		bool tuple = sh->name[0] == '(';
-		if (!tuple) type_name(s->b, sh->name, strlen(sh->name));
-		put(s, "(");
-		show_fields(s, st->f, sh->nfields, sh->kinds, sh->names, sh, depth);
-		put(s, ")");
-		return;
-	}
-	case AK_TAG_ENUM: {
-		const ak_enum *e = v.p;
-		const ak_shape *sh = e->shape;
-		uint16_t c = ak_enum_case(e);
-		if (c >= sh->ncases) {
-			put(s, "<enum>");
-			return;
-		}
-		const ak_case *cs = &sh->cases[c];
-		ak_buf_printf(s->b, ".%s", cs->name);
-		if (cs->nfields) {
-			put(s, "(");
-			show_fields(s, e->f, cs->nfields, cs->kinds, cs->names, sh, depth);
-			put(s, ")");
-		}
-		return;
-	}
-	case AK_TAG_BOX:
-		show(s, ((const ak_box *)o)->v, (ak_kind)o->aux, "-", depth);
-		return;
-	case AK_TAG_CLOSURE: {
-		const ak_closure *c = v.p;
-		if (c->invoke == ak_vm_closure_invoke) ak_buf_printf(s->b, "fn %s", ((const ak_func *)c->fn)->name->data);
-		else put(s, "fn");
-		return;
-	}
-	case AK_TAG_CELL:
-	case AK_TAG_MEMO:
-	case AK_TAG_ACC: put(s, "<not computed>"); return;
-	case AK_TAG_TASK: put(s, "<task>"); return;
-	case AK_TAG_VIEW: put(s, "<view>"); return;
-	case AK_TAG_STORE: put(s, "<store>"); return;
-	case AK_TAG_TREE: ak_buf_printf(s->b, "<%lld entries>", (long long)((const ak_tree *)o)->count); return;
-	case AK_TAG_NATIVE: put(s, "<native object>"); return;
-	default: put(s, "<object>"); return;
-	}
-}
-
-// show_value writes v's text into b, cut short past SHOW_MAX bytes.
+// show_value writes v's text into b, cut short past AK_LIT_MAX bytes:
+// what it holds now, read without running the app's code.
 static void show_value(ak_buf *b, ak_module *mod, ak_val v, ak_kind k, const char *d) {
-	shower s = {b, b->len + SHOW_MAX, mod};
 	size_t start = b->len;
-	show(&s, v, k, d, 0);
-	if (b->len - start > SHOW_MAX) {
-		size_t cut = start + SHOW_MAX;
-		while (cut > start && (b->data[cut] & 0xC0) == 0x80) cut--;
-		b->len = cut;
-		ak_buf_put(b, "…", strlen("…"));
-	}
+	ak_lit s = ak_lit_short(b, mod);
+	s.peek = true;
+	ak_lit_write(&s, v, k, d);
+	ak_lit_cut(b, start);
 }
 
 // ---- Children ----
@@ -805,7 +426,6 @@ static uint32_t nchildren(ak_val v, ak_kind k, const char *d) {
 static void child_at(ak_module *mod, ak_val v, ak_kind k, const char *d, uint32_t i, child *c) {
 	peel(&v, &k, &d);
 	const ak_obj *o = v.p;
-	shower s = {&c->name, (size_t)-1, mod};
 	c->v = (ak_val){0};
 	c->k = AK_K_REF;
 	c->d = "-";
@@ -817,11 +437,11 @@ static void child_at(ak_module *mod, ak_val v, ak_kind k, const char *d, uint32_
 			const char *name = sh->names ? sh->names[f] : NULL;
 			if (name && name[0] == '$') continue;
 			if (i--) continue;
-			if (name) put(&s, name);
+			if (name) ak_buf_put(&c->name, name, strlen(name));
 			else ak_buf_printf(&c->name, "%u", f);
 			c->v = st->f[f];
 			c->k = (ak_kind)sh->kinds[f];
-			c->d = name_desc(&s, sh, name);
+			c->d = ak_lit_field_desc(sh, name);
 			return;
 		}
 		return;
@@ -831,11 +451,11 @@ static void child_at(ak_module *mod, ak_val v, ak_kind k, const char *d, uint32_
 		const ak_shape *sh = e->shape;
 		const ak_case *cs = &sh->cases[ak_enum_case(e)];
 		const char *name = cs->names ? cs->names[i] : NULL;
-		if (name && *name) put(&s, name);
+		if (name && *name) ak_buf_put(&c->name, name, strlen(name));
 		else ak_buf_printf(&c->name, "%u", i);
 		c->v = e->f[i];
 		c->k = (ak_kind)cs->kinds[i];
-		c->d = name_desc(&s, sh, name);
+		c->d = ak_lit_field_desc(sh, name);
 		return;
 	}
 	case AK_TAG_ARR: {
@@ -849,7 +469,7 @@ static void child_at(ak_module *mod, ak_val v, ak_kind k, const char *d, uint32_
 	case AK_TAG_MAP: {
 		const ak_map *m = v.p;
 		const char *kd, *vd;
-		map_descs(d, &kd, &vd);
+		ak_lit_map_descs(d, &kd, &vd);
 		uint32_t at = 0;
 		for (; at < m->len; at++)
 			if (!m->dead[at] && !i--) break;

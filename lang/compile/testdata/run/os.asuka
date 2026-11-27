@@ -140,7 +140,7 @@ test "a writer: in order with print, what it holds written as main ends" {
 //
 // ok stdin
 // 1
-// error: Bad.nope
+// error: Bad.nope(why: "no")
 //
 // ok an error main throws: 1, and its message on stderr
 // 4

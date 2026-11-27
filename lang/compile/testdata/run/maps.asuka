@@ -76,20 +76,20 @@ test "if let of a read" {
 // 3
 // 31
 // 0
-// ["ann","bob","cy"]
-// [31,25,41]
+// ["ann", "bob", "cy"]
+// [31, 25, 41]
 // ann=31
 // cy=41
-// {"a":3,"b":1,"c":1}
+// ["a": 3, "b": 1, "c": 1]
 // two
 // 2
 // ok maps
-// {"a":2,"b":1} one ? dark light 1.5
+// ["a": 2, "b": 1] one ? dark light 1.5
 // 9 2 9
 // 2 2 1
 // ok a read with a default
 // a 1
 // no z
 // x!
-// 44 [1,2] {"k":[]}
+// 44 [1, 2] ["k": []]
 // ok if let of a read

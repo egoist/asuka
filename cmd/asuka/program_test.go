@@ -136,7 +136,7 @@ fn main() throws {
 			t.Error("the executable lacks std/os's os.args")
 		}
 	}
-	check("a b", exec.Command(exe, "a", "b"), 0, `args: ["a","b"]`, "")
+	check("a b", exec.Command(exe, "a", "b"), 0, `args: ["a", "b"]`, "")
 	check("exit 5", exec.Command(exe, "5"), 5, "", "")
 	check("fail", exec.Command(exe, "fail"), 1, "", "error: E.bad\n    main (main.asuka:")
 
@@ -163,7 +163,7 @@ fn main() throws {
 			}
 			f.Close()
 			if dockerImage("asuka-linux-test") {
-				check("linux", exec.Command("docker", "run", "--rm", "-v", filepath.Dir(exe)+":/w", "asuka-linux-test", "/w/greet", "x", "y"), 0, `args: ["x","y"]`, "")
+				check("linux", exec.Command("docker", "run", "--rm", "-v", filepath.Dir(exe)+":/w", "asuka-linux-test", "/w/greet", "x", "y"), 0, `args: ["x", "y"]`, "")
 				check("linux exit", exec.Command("docker", "run", "--rm", "-v", filepath.Dir(exe)+":/w", "asuka-linux-test", "/w/greet", "7"), 7, "", "")
 			}
 		} else {

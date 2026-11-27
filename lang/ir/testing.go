@@ -126,32 +126,5 @@ func (b *fb) snapshotText(x syntax.Expr) int {
 	if r, ok := b.ownDescription(v, t); ok {
 		return r // its own text
 	}
-	return b.callB("test.show", bc.KRef, v, b.kstr(b.showDesc(t)))
-}
-
-// showDesc is t's JSON descriptor (rt/json.h), with a duration said as
-// one ("d") and a color as one ("c") where they're not a struct's or an
-// enum's: test.show prints them as the language writes them.
-func (b *fb) showDesc(t check.Type) string {
-	switch x := t.(type) {
-	case *check.Basic:
-		switch x {
-		case check.Duration:
-			return "d"
-		case check.Color:
-			return "c"
-		}
-	case *check.Optional:
-		return "?" + b.showDesc(x.Elem)
-	case *check.Array:
-		return "[" + b.showDesc(x.Elem)
-	case *check.Set:
-		return "<" + b.showDesc(x.Elem)
-	case *check.Map:
-		if x.Key != check.String {
-			return "m" + b.showDesc(x.Key) + b.showDesc(x.Elem)
-		}
-		return "{" + b.showDesc(x.Elem)
-	}
-	return b.l.desc(t)
+	return b.callB("test.show", bc.KRef, v, b.kstr(b.l.showDesc(t)))
 }

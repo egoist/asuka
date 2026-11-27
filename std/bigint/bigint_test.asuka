@@ -42,7 +42,7 @@ test "ordered, hashed and printed" {
   let seen: Set<BigInt> = [BigInt.of(10).pow(20), BigInt.parse("100000000000000000000")!]
   expect(seen.count() == 1)
   expect("{BigInt.of(2).pow(64)}" == "18446744073709551616")
-  expect("{[BigInt.of(-1), BigInt.one]}" == "[-1,1]")
+  expect("{[BigInt.of(-1), BigInt.one]}" == "[-1, 1]")
 }
 
 test "number theory" {

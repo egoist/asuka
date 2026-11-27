@@ -90,7 +90,7 @@ test "durations from text" {
 // UTC: Mon 13:00 UTC Z
 // 14:00 GMT+1 +01:00
 // UTC
-// {"named":["Asia/Calcutta"]}
+// named(name: "Asia/Calcutta")
 // 2026f
 // ok converting between zones
 // 2026-03-08 01:59:59 EST
@@ -98,7 +98,7 @@ test "durations from text" {
 // 2026-03-08T03:30:00-04:00
 // 2026-11-01T01:30:00-04:00
 // 2026-11-01T01:30:00-05:00
-// 82800000ms
+// 23h
 // 2026-03-08T12:00:00-04:00
 // +11:00 AEDT
 // +10:00 AEST
@@ -111,9 +111,9 @@ test "durations from text" {
 // true
 // time: no time zone is named Europe/Pariss in the tz database (2026f): an IANA name, like America/New_York
 // true
-// ["Africa/Abidjan","Africa/Accra","Africa/Addis_Ababa"]
+// ["Africa/Abidjan", "Africa/Accra", "Africa/Addis_Ababa"]
 // ok unknown names
-// {"named":["Europe/Paris"]}
+// named(name: "Europe/Paris")
 // 2026-07-14T21:00:00+02:00[Europe/Paris]
 // time: 2026-07-14T21:00:00+01:00[Europe/Paris]'s offset isn't Europe/Paris's then (+02:00)
 // time: 2026-07-14T21:00:00Z[!u-ca=hebrew] has a critical annotation it doesn't know ([!u-ca=hebrew])

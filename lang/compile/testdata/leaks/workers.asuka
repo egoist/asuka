@@ -92,7 +92,7 @@ async fn slowly() -> string {
 // Output:
 // 1
 // 2
-// ["a","b"]
+// ["a", "b"]
 // missing 2
 // home: 0 entries, 4 changes
 // ok calls carry values over and back

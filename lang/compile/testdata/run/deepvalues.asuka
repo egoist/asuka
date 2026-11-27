@@ -105,10 +105,11 @@ test "frozen" {
 
 test "printed" {
   let s = "{list(depth, 0)}"
-  // 12 characters a link, its numbers' digits, and "empty".
+  // 9 characters a link (the first's no dot), its numbers' digits, and
+  // ".empty".
   print(s.count())
-  print(s.hasPrefix("\{\"cons\":[999999,\{\"cons\":[999998,"))
-  print(s.hasSuffix("\{\"cons\":[1,\{\"cons\":[0,\"empty\"]}]}" + "]}".repeat(depth - 2)))
+  print(s.hasPrefix("cons(999999, .cons(999998, "))
+  print(s.hasSuffix(".cons(1, .cons(0, .empty))" + ")".repeat(depth - 2)))
 }
 
 // Output:
@@ -129,7 +130,7 @@ test "printed" {
 // 1000000
 // true
 // ok frozen
-// 17888897
+// 14888895
 // true
 // true
 // ok printed

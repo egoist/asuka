@@ -92,15 +92,15 @@ test "a negative limit" {
 }
 
 // Output:
-// [2,4,6,8]
-// [2,4,6,8]
-// ["A","B"]
+// [2, 4, 6, 8]
+// [2, 4, 6, 8]
+// ["A", "B"]
 // []
 // void 1
 // void 2
 // ok each item's result, in order
 // 7 3
-// [30,10,20] 1
+// [30, 10, 20] 1
 // ok at most limit at once
 // defer 2
 // defer 1
@@ -113,6 +113,6 @@ test "a negative limit" {
 // crawl 4 stopped
 // crawl 3 stopped
 // ok its owner going cancels it
-// ["a","b"] 6
+// ["a", "b"] 6
 // ok calls that return arrays are the calls form
 // FAIL a negative limit: all's limit is -1: it must be 0 (no limit) or more

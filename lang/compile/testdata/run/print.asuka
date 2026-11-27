@@ -40,7 +40,7 @@ test "eprint goes to stderr" {
 }
 
 // Output:
-// a 1 2.5 true green {"x":1,"y":2} [1,2] none
+// a 1 2.5 true green P(x: 1, y: 2) [1, 2] none
 //
 // x, y
 // no line then the rest

@@ -47,8 +47,13 @@ closure that mustn't throw. It works with `try await`, and with `throw`
 as a value: `let user = cache[id] ?? throw MailError.missing(id)`.
 
 An error's `message` is its `message` field, its `fn message() ->
-string`, or its type's and case's name. `Error("…")` makes an error of a
-message. A `catch` never sees a task's cancellation: it goes on to the
+string`, or the error as it's written: its type's and case's names and
+its payload, each value as interpolation writes what's inside another
+(`CountError.tooMany(limit: 2)`, `ParseError(line: 3, text: "x")`,
+`MailError.offline`), as the debugger shows it, cut short as the
+debugger cuts a value (past 200 bytes, a string past 120, a list past
+10 items, parts nested deeper than 3: `…`). It's made when it's read.
+`Error("…")` makes an error of a message. A `catch` never sees a task's cancellation: it goes on to the
 task's end, running the `defer`s on its way.
 
 An `Error` is matched by an error type's cases too, as a `catch` takes

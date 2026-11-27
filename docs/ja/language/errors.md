@@ -37,7 +37,7 @@ try save(draft) catch { failed = true }   // 文として使う：値は要ら�
 
 節は `do` のものと同じです（`catch`、`catch e`、`catch e: ParseError`、`catch MailError.server(code)`）。複数を続けて書くことができ、エラーを受け取った最初の節が実行されます。どの節も受け取らなかったエラーはそのまま先へ投げられるので、`try` と同じく、囲んでいる関数に `throws` が必要です。すべてのエラーを受け取る節があれば、式全体がエラーを投げなくなるので、`try` を置けない場所でも使えます。たとえばコンポーネントの `let`（`let port = try parsePort(text) catch { 80 }` は `text` が変わるたびに更新されます）や、エラーを投げてはいけないクロージャの中です。`try await` とも、値としての `throw` とも組み合わせられます（`let user = cache[id] ?? throw MailError.missing(id)`）。
 
-エラーの `message` は、`message` フィールド、`fn message() -> string`、または型とケースの名前です。`Error("…")` はメッセージからエラーを作ります。タスクのキャンセルは `catch` では捕まりません。キャンセルはタスクの最後まで進み、その途中で `defer` を実行していきます。
+エラーの `message` は、`message` フィールド、`fn message() -> string`、またはそのエラーを言語での書き方で書いたものです。型の名前、ケースの名前、ペイロードからなり、各値は埋め込みが値の中身を書くのと同じように書かれます（`CountError.tooMany(limit: 2)`、`ParseError(line: 3, text: "x")`、`MailError.offline`）。デバッガーの表示と同じで、デバッガーと同じように長すぎる部分は `…` で切り詰められます（200 バイトを超えた部分、120 バイトを超える文字列、10 項目を超えるリスト、3 段より深い入れ子）。メッセージは読まれたときに作られます。`Error("…")` はメッセージからエラーを作ります。タスクのキャンセルは `catch` では捕まりません。キャンセルはタスクの最後まで進み、その途中で `defer` を実行していきます。
 
 `Error` は、`catch` と同じように、エラー型のケースでも照合できます：`match e { MailError.offline => …; MailError.status(code) => …; _ => e.message }`（`Error` はどんなエラーでもありうるので、`_` で終えます）。
 

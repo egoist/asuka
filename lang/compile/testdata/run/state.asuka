@@ -103,8 +103,8 @@ test "a closure reads state the builtin it's passed to changes" {
 // 7 6
 // 8
 // ok a store's state from its memo
-// [1,2,3]
-// [2,3]
-// [1,2]
-// [3,2]
+// [1, 2, 3]
+// [2, 3]
+// [1, 2]
+// [3, 2]
 // ok a closure reads state the builtin it's passed to changes

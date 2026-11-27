@@ -45,11 +45,11 @@ test "closures two deep" {
 }
 
 // Output:
-// [3,3]
-// ["a","a"]
+// [3, 3]
+// ["a", "a"]
 // 4
 // y 2
-// [1,2]
+// [1, 2]
 // ok generic chains
 // 11
 // 22

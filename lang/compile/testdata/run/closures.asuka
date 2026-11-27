@@ -93,12 +93,12 @@ test "functions as values" {
 // ok captures
 // m is 5
 // hi ab
-// ["one","two","three"]
+// ["one", "two", "three"]
 // ok shared vars
 // spawned before
 // after
 // 22
 // ok spawn copies
-// [3,20,102]
+// [3, 20, 102]
 // -4
 // ok functions as values

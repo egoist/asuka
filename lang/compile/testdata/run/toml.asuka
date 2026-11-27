@@ -93,7 +93,7 @@ test "errors" {
 // demo 2024 safe 2026-11-19T08:30:00.5Z none
 // serde: 1.0 ["derive"] false
 // tokio: 1 [] true
-// ["Ann","Bo"]
+// ["Ann", "Bo"]
 // {"points":[[1,2],[3.5]],"when":"07:30:00"}
 // ok decode
 // name = "demo"

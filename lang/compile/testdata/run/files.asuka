@@ -110,7 +110,7 @@ test "files" {
 // false
 // true
 // true
-// ["/src/a.ts","/src/ui/b.tsx"]
+// ["/src/a.ts", "/src/ui/b.tsx"]
 // 755
 // run.sh
 // ["link.sh"]

@@ -394,9 +394,44 @@ func (l *Lowerer) addShape(key string, t check.Type) int {
 }
 
 // field is a shape's field: its name, with its JSON descriptor after a
-// NUL, its kind and its shape.
+// NUL and, after another, how the language writes it when that's
+// otherwise (a duration, a color: showDesc; empty when it isn't, so the
+// loader keeps the name as it is), its kind and its shape.
 func (l *Lowerer) field(name string, t check.Type) bc.Field {
-	return bc.Field{Name: name + "\x00" + l.desc(t), Kind: l.kind(t), Shape: int32(l.shape(check.Unopt(t)))}
+	d := l.desc(t)
+	name += "\x00" + d + "\x00"
+	if sd := l.showDesc(t); sd != d {
+		name += sd
+	}
+	return bc.Field{Name: name, Kind: l.kind(t), Shape: int32(l.shape(check.Unopt(t)))}
+}
+
+// showDesc is t's JSON descriptor (rt/json.h), with a duration said as
+// one ("d") and a color as one ("c") where they're not a struct's or an
+// enum's (whose fields' names say theirs: field): how the language
+// writes its values (core/src/vm/literal.c, a snapshot's test.show).
+func (l *Lowerer) showDesc(t check.Type) string {
+	switch x := t.(type) {
+	case *check.Basic:
+		switch x {
+		case check.Duration:
+			return "d"
+		case check.Color:
+			return "c"
+		}
+	case *check.Optional:
+		return "?" + l.showDesc(x.Elem)
+	case *check.Array:
+		return "[" + l.showDesc(x.Elem)
+	case *check.Set:
+		return "<" + l.showDesc(x.Elem)
+	case *check.Map:
+		if x.Key != check.String {
+			return "m" + l.showDesc(x.Key) + l.showDesc(x.Elem)
+		}
+		return "{" + l.showDesc(x.Elem)
+	}
+	return l.desc(t)
 }
 
 // desc is t's JSON descriptor (core/src/rt/json.h).
@@ -499,7 +534,10 @@ func (l *Lowerer) errorMethods(shape int, t *check.Named) {
 }
 
 // messageFunc is an error type's message: its message field, its
-// message method, or its type's (and case's) name.
+// message method, or the error as the language writes it: its type's
+// name, its case's and its payload (error.text, core/src/vm/literal.c),
+// built as it's read. An enum none of whose cases has a payload, and a
+// struct of no fields, is its names alone (an array of them, frozen).
 func (l *Lowerer) messageFunc(t *check.Named) int {
 	key := "message|" + l.typeKey(t)
 	if i, ok := l.funcs[key]; ok {
@@ -520,11 +558,23 @@ func (l *Lowerer) messageFunc(t *check.Named) int {
 			b.emit(op("RET"), out)
 			return b.idx
 		}
-		b.emit(op("KSTR"), out, l.str(t.Obj.Name()))
+		if len(t.Obj.Fields) == 0 {
+			b.emit(op("KSTR"), out, l.str(t.Obj.Name()))
+		} else {
+			b.callBTo("error.text", out, 0)
+		}
 		b.emit(op("RET"), out)
 		return b.idx
 	}
-	// An enum: Type.case.
+	for _, k := range t.Obj.Cases {
+		if len(k.Params) > 0 {
+			// Type.case(payload)
+			b.callBTo("error.text", out, 0)
+			b.emit(op("RET"), out)
+			return b.idx
+		}
+	}
+	// Type.case
 	c := b.newReg(bc.KInt)
 	b.emit(op("ECASE"), c, 0)
 	names := l.frozenStrings(func() []string {

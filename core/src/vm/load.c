@@ -123,13 +123,19 @@ typedef struct {
 } rfield;
 
 // rname reads a field's name, which may carry its JSON descriptor after a
-// NUL ("title\0s": bytecode.Field): one that doesn't gets an empty one,
-// so that what reads a field's descriptor past its name's NUL
-// (ak_json_field_desc, the debugger's) reads within the string.
+// NUL, and after another how the language writes it when that's other
+// than JSON's ("title\0s\0", "wait\0i\0d": bytecode.Field, as lang/ir
+// writes every one): one without them gets empty ones, so that what
+// reads a field's descriptors past its name's NUL (ak_json_field_desc,
+// ak_lit_field_desc) reads within the string.
 static ak_str *rname(loader *l) {
 	ak_str *s = rstr(l);
-	if (memchr(s->data, 0, s->len)) return s;
-	ak_str *t = ak_str_new(s->data, s->len + 1);  // its NUL, then the string's own
+	const char *nul = memchr(s->data, 0, s->len);
+	if (nul && memchr(nul + 1, 0, s->len - (size_t)(nul + 1 - s->data))) return s;
+	size_t n = s->len + (nul ? 1 : 2);
+	ak_str *t = ak_str_new(NULL, n);  // its NULs, then the string's own
+	memcpy(t->data, s->data, s->len);
+	memset(t->data + s->len, 0, n - s->len);
 	ak_release(s);
 	return t;
 }
@@ -230,6 +236,7 @@ static void read_shapes(ak_module *m, loader *l, uint32_t from, uint32_t to) {
 		}
 		vs->s.cases = vs->cases;
 		vs->s.is_error = ak_read_u8(&l->r) == 1;
+		vs->s.lits = true;
 		vs->nmethods = count(l, 8);
 		vs->methods = ak_alloc(sizeof(ak_method) * (vs->nmethods ? vs->nmethods : 1));
 		for (uint32_t k = 0; k < vs->nmethods; k++) {

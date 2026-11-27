@@ -117,7 +117,7 @@ test "tickers" {
 // 2026-01-01T00:00:00Z
 // thursday
 // 00:01:30
-// 90000ms
+// 90s
 // 90
 // ok the test's clock
 // 2024 2 29 13 5 9 thursday
@@ -165,18 +165,18 @@ test "tickers" {
 // time: nope isn't an RFC 3339 time from 1678 to 2261 (2006-01-02T15:04:05Z)
 // ok parsing
 // 1.5
-// 120000ms
-// 60000ms
+// 2min
+// 1min
 // -120
-// 60000ms
+// 1min
 // 1500000
 // 90000
 // 2
 // ok durations
 // 1971-01-01
 // ok values only, in spawn
-// [10000000000,20000000000,30000000000]
-// 90000ms
-// 150000ms
+// [10s, 20s, 30s]
+// 90s
+// 150s
 // 2
 // ok tickers

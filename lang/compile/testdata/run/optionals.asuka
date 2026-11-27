@@ -91,9 +91,9 @@ test "a branch's value made the optional its if or match is" {
 // ok optionals
 // FAIL unwrap none: unwrapped none (optionals.asuka:60)
 // [200]
-// [null,200]
+// [none, 200]
 // none 8
 // none 1.5 6.5
 // true none
-// [200,255]
+// [200, 255]
 // ok a branch's value made the optional its if or match is

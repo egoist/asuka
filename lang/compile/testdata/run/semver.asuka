@@ -35,8 +35,8 @@ test "ranges" {
 }
 
 // Output:
-// 1.4.0 ["beta","2"] ["build","7"] 1.4.0-beta.2+build.7 true
-// ["0.9.12","1.0.0-alpha","1.0.0-alpha.1","1.0.0-beta.2","1.0.0-beta.11","1.0.0-rc.1","1.0.0","1.9.0","1.10.0","2.0.0"]
+// 1.4.0 ["beta", "2"] ["build", "7"] 1.4.0-beta.2+build.7 true
+// ["0.9.12", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.9.0", "1.10.0", "2.0.0"]
 // 2.0.0 1.4.0 1.4.0
 // semver: "1.2" isn't a version: a version is major.minor.patch
 // semver: "01.2.3" isn't a version: 01 has a leading zero
@@ -52,9 +52,9 @@ test "ranges" {
 // >=1.0, <2: >=1.0.0 <2.0.0-0
 // *: *
 // <0: <0.0.0-0
-// ["1.2.0","1.9.3"]
+// ["1.2.0", "1.9.3"]
 // 1.9.3 1.2.0
 // v1.3.0
-// (false,true,true)
+// (false, true, true)
 // semver: "^1.x.2" isn't a range: "1.x.2": a number after an x
 // ok ranges

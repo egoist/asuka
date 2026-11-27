@@ -277,6 +277,9 @@ struct ak_shape {
 	uint16_t ncases;   // enums with payloads
 	const ak_case *cases;
 	bool is_error;     // declared `: Error`; field 0 is message when it has one
+	// lits: its fields' names carry, after their JSON descriptors, how the
+	// language writes them (a module's: vm/load.c's rname, vm/literal.c).
+	bool lits;
 	void *singletons;  // runtime: payloadless cases of a payload enum (ak_enum **)
 	// What the type says itself (lang/check's Own): 1 << AK_HOOK_* for
 	// each of its own ==, hash, text and JSON, which ak_shape_call calls;

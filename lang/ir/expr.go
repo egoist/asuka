@@ -823,16 +823,8 @@ func (b *fb) describe(v int, t check.Type) int {
 		b.emit(op("TOSTR"), r, v, int(bc.KU64Text))
 		return r
 	case check.Duration:
-		// In milliseconds: 300ms.
-		ms := b.temp(bc.KInt)
-		k := b.konst(1_000_000)
-		b.emit(op("DIVI"), ms, v, k)
-		s := b.temp(bc.KRef)
-		b.emit(op("TOSTR"), s, ms, int(bc.KInt))
-		unit := b.kstr("ms")
-		r := b.temp(bc.KRef)
-		b.emit(op("CONCAT"), r, s, unit)
-		return r
+		// As it's written: 300ms, 2s, 1min.
+		return b.callB("show.text", bc.KRef, v, b.kstr("d"))
 	}
 	switch x := t.(type) {
 	case *check.Optional:
@@ -863,14 +855,14 @@ func (b *fb) describe(v int, t check.Type) int {
 			return b.errorMessage(v, x)
 		}
 	}
-	// The rest as JSON.
-	d := b.l.desc(t)
-	if strings.Contains(d, "-") {
+	// The rest as the language writes it (show.text, core/src/vm/
+	// literal.c): Point(x: 1, y: 2), circle(radius: 1.5), [1, 2],
+	// ["a": 1]. A function, which has no text, as its type.
+	d := b.l.showDesc(t)
+	if d == "-" {
 		return b.kstr("<" + t.String() + ">")
 	}
-	ds := b.kstr(d)
-	z := b.konst(0)
-	return b.callB("json.encode", bc.KRef, v, ds, z)
+	return b.callB("show.text", bc.KRef, v, b.kstr(d))
 }
 
 func (b *fb) isErrorIface(n *check.Named) bool {

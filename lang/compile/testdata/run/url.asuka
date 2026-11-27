@@ -58,7 +58,7 @@ test "escaping" {
 // Output:
 // https user:pw Example.com 8443 /a/b%20c q=asuka+lang&x=1&q=two top
 // asuka lang
-// ["asuka lang","two"]
+// ["asuka lang", "two"]
 // none
 // https://user:pw@Example.com:8443/a/b%20c?q=asuka+lang&x=1&q=two#top
 // ::1 80 http://[::1]:80/
@@ -118,6 +118,6 @@ test "escaping" {
 // a=1;
 // b=;
 // c=x=y;
-// 1|a b!|["a b!",""]||eq
+// 1|a b!|["a b!", ""]||eq
 // true
 // ok escaping

@@ -47,7 +47,7 @@ test "a started program's lines, its input, its code" {
 // 2 false no rule
 // make exited with 2: no rule
 // not found: hg
-// [["git","status","--short"],["git","branch","--show-current"],["make"],["make"],["hg"]]
+// [["git", "status", "--short"], ["git", "branch", "--show-current"], ["make"], ["make"], ["hg"]]
 // ok run answers from the fake, and says what ran
 // a
 // b

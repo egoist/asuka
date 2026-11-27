@@ -411,14 +411,21 @@ quotes' line) and holds `"` and `""` as they are; `r"""…"""` is a raw
 one.
 A value that isn't a number, a bool or a string shows as text: its
 type's own `description()` when it has one
-([Declarations](https://asuka.egoist.dev/docs/language/declarations#equality-hashing-text-and-json)), an enum's
-case by its name, an optional as `none` or its value, an error as its
-message, a color as it's written (`#0a84ff`, `.accent`), a duration in
-milliseconds (`1500ms`), the rest as JSON. What JSON can't hold is
-written in the same way: a tuple as its elements in parentheses, each as
-an array's are (`(1,"a","red")`), and a map whose keys aren't strings
-with each key as it's written (`{1:"a"}`); a function, which has no
-text, as its type (`<fn(int) -> int>`).
+([Declarations](https://asuka.egoist.dev/docs/language/declarations#equality-hashing-text-and-json)), an
+optional as `none` or its value, an error as its message, an enum's case
+by its name and its payload (`green`, `circle(radius: 1.5)`), and the
+rest as the language writes it, as Swift prints a value: a color and a
+duration as they're written (`#0a84ff`, `.accent`, `1500ms`, `2s`), a
+struct by its type's name and its fields (`Point(x: 1, y: 2)`), a tuple,
+an array, a map and a set as their literals (`(1, "a")`, `[1, 2]`,
+`["a": 1]`, `[:]`, `Set([1, 2])`), bytes by their count (`<3 bytes>`).
+What's inside them is written as in code: a string quoted, with its
+escapes (`"say \"hi\" \{x}"`), a float with its point (`2.0`), a char
+quoted (`'a'`), an enum's case with its dot (`.red`), `none`; a part
+whose type has its own `description()` as that, one with its own
+`toJSON()` as what that gives. It's the whole value, however long and
+deep (`json.encode` writes one as JSON). A function, which has no text,
+shows as its type (`<fn(int) -> int>`; inside another value, `<fn>`).
 
 An interpolation may say how it's written after a colon, as Python
 and Rust do: `"{price:>8.2f}"`. The format is
@@ -2694,8 +2701,13 @@ closure that mustn't throw. It works with `try await`, and with `throw`
 as a value: `let user = cache[id] ?? throw MailError.missing(id)`.
 
 An error's `message` is its `message` field, its `fn message() ->
-string`, or its type's and case's name. `Error("…")` makes an error of a
-message. A `catch` never sees a task's cancellation: it goes on to the
+string`, or the error as it's written: its type's and case's names and
+its payload, each value as interpolation writes what's inside another
+(`CountError.tooMany(limit: 2)`, `ParseError(line: 3, text: "x")`,
+`MailError.offline`), as the debugger shows it, cut short as the
+debugger cuts a value (past 200 bytes, a string past 120, a list past
+10 items, parts nested deeper than 3: `…`). It's made when it's read.
+`Error("…")` makes an error of a message. A `catch` never sees a task's cancellation: it goes on to the
 task's end, running the `defer`s on its way.
 
 An `Error` is matched by an error type's cases too, as a `catch` takes

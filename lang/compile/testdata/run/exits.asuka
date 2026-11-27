@@ -230,8 +230,8 @@ fn later2(n: int) throws -> int {
 // only 2
 // nothing
 // nothing
-// [6,5,4]
-// [2,1]
+// [6, 5, 4]
+// [2, 1]
 // chain 1 2
 // ok condition chains
 // 443
@@ -245,7 +245,7 @@ fn later2(n: int) throws -> int {
 // 20
 // -1
 // true
-// [2,0,6]
+// [2, 0, 6]
 // negative
 // 5
 // ok catch as a value

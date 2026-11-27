@@ -80,21 +80,21 @@ test "the built-in ones" {
 // true
 // false
 // large
-// ["small","medium","large"]
-// ["small","large"]
+// [.small, .medium, .large]
+// [.small, .large]
 // true
-// ["low","high","high"]
+// [Level.low, Level.high, Level.high]
 // ok enums without payloads
-// {"major":2,"minor":0}
-// [{"major":1,"minor":2},{"major":1,"minor":5},{"major":2,"minor":0}]
-// {"major":1,"minor":2}
+// Version(major: 2, minor: 0)
+// [Version(major: 1, minor: 2), Version(major: 1, minor: 5), Version(major: 2, minor: 0)]
+// Version(major: 1, minor: 2)
 // true
 // true
-// [{"num":[1]},{"num":[3]},{"face":["a"]},{"face":["k"]}]
+// [.num(1), .num(3), .face("a"), .face("k")]
 // true
 // 5
 // ok compare methods
 // 9
-// ["a","b"]
+// ["a", "b"]
 // true
 // ok the built-in ones

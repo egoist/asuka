@@ -67,5 +67,5 @@ func TestSelectBeginWeb(t *testing.T) {
 	if err := pageClick(d, x, y); err != nil {
 		t.Fatal(err)
 	}
-	waitText(t, d, "selecting true, chosen [3,5]")
+	waitText(t, d, "selecting true, chosen [3, 5]")
 }

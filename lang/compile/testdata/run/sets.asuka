@@ -121,16 +121,16 @@ test "spawn" {
 // true
 // false
 // false
-// ["go","c","rust"]
+// Set(["go", "c", "rust"])
 // true
 // true
 // ok literals and methods
-// [3,2,0,1]
+// [3, 2, 0, 1]
 // 8
 // ok iteration is in insertion order
-// [1,2,3,4,5]
-// [3,4]
-// [1,2]
+// Set([1, 2, 3, 4, 5])
+// Set([3, 4])
+// Set([1, 2])
 // true
 // false
 // true
@@ -140,18 +140,18 @@ test "spawn" {
 // false
 // 2
 // false
-// ["mon","wed"]
+// Set([.mon, .wed])
 // 1
 // ok equality and values
-// [5,6]
+// Set([5, 6])
 // 0
 // ok Set() of an array
-// [4,2]
+// Set([4, 2])
 // 3
 // ok state
 // {"name":"ada","tags":["math","code"]}
 // true
-// [3,1]
+// Set([3, 1])
 // ok json
 // 4
 // true

@@ -31,5 +31,5 @@ test "a type's members see the file's imports" {
 // 100
 // 250
 // 3
-// {"circle":[1]}
+// circle(r: 1.0)
 // ok a type's members see the file's imports

@@ -53,14 +53,14 @@ test "a closure sharing the var sees it as it was during the change" {
 }
 
 // Output:
-// [[1,9],[3,4,5]] [1,2] [[1,2],[3,4]]
+// [[1, 9], [3, 4, 5]] [1, 2] [[1, 2], [3, 4]]
 // ok nested elements
-// [1] [1,2] [7,2] [1,2,3] ab
+// [1] [1, 2] [7, 2] [1, 2, 3] ab
 // ok fields
 // index 5 out of range (length 1)
-// [[1,2],[3]]
+// [[1, 2], [3]]
 // caught
 // [4]
 // ok a change that throws
-// [[1,2]] 2
+// [[1, 2]] 2
 // ok a closure sharing the var sees it as it was during the change

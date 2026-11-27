@@ -1,0 +1,107 @@
+// An error's default message (no message field, no message method): the
+// error as the language writes it, its type's name, its case's and its
+// payload, cut short past a length; and values interpolated as the
+// language writes them.
+
+enum CountError: Error {
+  empty
+  tooMany(limit: int)
+  odd(name: string, wait: Duration, tint: Color, ratio: float, ok: bool, last: int?)
+}
+
+enum Shape {
+  circle(radius: float)
+  rect(w: float, h: float)
+}
+
+enum Light { red, green }
+
+struct ParseError: Error {
+  line: int
+  text: string
+}
+
+struct Blank: Error {}
+
+enum Wrap: Error {
+  failed(cause: Error)
+  many(xs: [int])
+  shaped(Shape, Light)
+  long(text: string)
+}
+
+struct Point {
+  x: int
+  y: int
+}
+
+struct Timer {
+  after: Duration
+  light: Light
+  shape: Shape
+  tags: [string]
+  counts: [string: int]
+  note: string?
+}
+
+test "an error's default message" {
+  print(CountError.tooMany(limit: 2).message)
+  let e: Error = CountError.tooMany(limit: 2)
+  print("{e}")
+  print(e.message)
+  print(CountError.empty.message)
+  print(CountError.odd(name: "a\"b\{c}\n", wait: 1500ms, tint: #ff0000, ratio: 2, ok: true, last: none).message)
+  print(ParseError(line: 3, text: "x").message)
+  print(Blank().message)
+  print(Wrap.failed(cause: ParseError(line: 1, text: "y")).message)
+  print(Wrap.failed(cause: CountError.empty).message)
+  print(Wrap.failed(cause: Error("plain")).message)
+  print(Wrap.shaped(.circle(radius: 1), .green).message)
+  print(Wrap.many(xs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]).message)
+  let m = Wrap.long(text: "abcdefghij".repeat(20)).message
+  print(m.count(), m.hasSuffix("…\")"), m.hasPrefix("Wrap.long(text: \"abcdefghij"))
+  do {
+    throw CountError.tooMany(limit: 9)
+  } catch e {
+    print("caught {e.message}")
+  }
+}
+
+test "values as the language writes them" {
+  print(Point(x: 1, y: 2))
+  print("{Shape.circle(radius: 1.5)} {Shape.rect(w: 1, h: 2)}")
+  print([1, 2], ["a": 1], [Light.red], Light.green, [1.5, 2])
+  print(Timer(after: 2s, light: .red, shape: .circle(radius: 2), tags: ["a"], counts: [:], note: none))
+  print((1, "a"), 2s, 1500ms, 90s, 0s, [5s])
+  let s: Set<int> = [1, 2]
+  print(s, [s])
+  let p: Point? = Point(x: 3, y: 4)
+  print(p, [p, none])
+  print("{Shape.circle(radius: 1):>22}|")
+}
+
+// Output:
+// CountError.tooMany(limit: 2)
+// CountError.tooMany(limit: 2)
+// CountError.tooMany(limit: 2)
+// CountError.empty
+// CountError.odd(name: "a\"b\{c}\n", wait: 1500ms, tint: #ff0000, ratio: 2.0, ok: true, last: none)
+// ParseError(line: 3, text: "x")
+// Blank
+// Wrap.failed(cause: ParseError(line: 1, text: "y"))
+// Wrap.failed(cause: CountError.empty)
+// Wrap.failed(cause: Error("plain"))
+// Wrap.shaped(.circle(radius: 1.0), .green)
+// Wrap.many(xs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, …])
+// 140 true true
+// caught CountError.tooMany(limit: 9)
+// ok an error's default message
+// Point(x: 1, y: 2)
+// circle(radius: 1.5) rect(w: 1.0, h: 2.0)
+// [1, 2] ["a": 1] [.red] green [1.5, 2.0]
+// Timer(after: 2s, light: .red, shape: .circle(radius: 2.0), tags: ["a"], counts: [:], note: none)
+// (1, "a") 2s 1500ms 90s 0s [5s]
+// Set([1, 2]) [Set([1, 2])]
+// Point(x: 3, y: 4) [Point(x: 3, y: 4), none]
+//    circle(radius: 1.0)|
+// ok values as the language writes them

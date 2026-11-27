@@ -55,15 +55,15 @@ test "keys, sets and JSON" {
 // 2 2 1
 // ok a string's chars
 // a A ж 97 世 😀 ' \
-// true true true ["a","b","c"]
+// true true true ['a', 'b', 'c']
 // true true true true true true
 // true true ß SS xyz
 // vowel digit letter space other
 // true
 // ok literals, methods and conversions
-// {"b":1,"a":3,"n":2} 4
+// ['b': 1, 'a': 3, 'n': 2] 4
 // {"c":"é","more":["x","\n"]}
-// z ["1","🙂"]
+// z ['1', '🙂']
 // true
 // {"inline":"testdata/run/chars.asuka","test":"keys, sets and JSON","line":50,"col":3,"where":"chars.asuka:50","status":"ok"}
 // ok keys, sets and JSON

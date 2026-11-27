@@ -114,7 +114,7 @@ test "an uncaught overflow fails" {
 // m is -9223372036854775808
 // ok compound assignment throws, and leaves the var
 // integer overflow
-// 0ms
+// 0s
 // ok durations overflow too
 // -9223372036854775808
 // 9223372036854775807

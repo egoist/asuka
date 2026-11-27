@@ -106,15 +106,15 @@ test "a split's pieces, kept and let go of" {
 }
 
 // Output:
-// 100 1000 ["j2950","j2951","j2952","j2953"] job 955 100
+// 100 1000 ["j2950", "j2951", "j2952", "j2953"] job 955 100
 // 250 500 252 500
 // 9 23
-// [2,1,0]
+// [2, 1, 0]
 // ok maps of every kind, copied and walked
 // 99 5 100
 // 2 0
 // ok a field, a mut fn and state, left as they were
 // 1 ? ? 300
 // ok an order that raises
-// 3001 ["w5","w2","w2"] 3000 ["a","bb","ccc"]
+// 3001 ["w5", "w2", "w2"] 3000 ["a", "bb", "ccc"]
 // ok a split's pieces, kept and let go of

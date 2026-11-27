@@ -109,7 +109,7 @@ test "conversions and formats" {
 // 16.12
 // €16.12
 // 2.4
-// (false,true)
+// (false, true)
 // ok the RFC's example
 // 19.99: 19.99 1999 -2
 // -0.5: -0.5 -5 -1
@@ -248,12 +248,12 @@ test "conversions and formats" {
 // -100 -1.5 -1.5 0 0.001 0.001 9.99 10 100
 // 7
 // a
-// (true,true,true,true)
+// (true, true, true, true)
 // ok order, equality and hashing
-// (2,-2,1000)
+// (2, -2, 1000)
 // 0.1
 // integer overflow
-// ("3.2",-1,true)
+// ("3.2", -1, true)
 // 1,234,567.891
 // $1,234.50
 // ¥1,235

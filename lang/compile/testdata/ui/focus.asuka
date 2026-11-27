@@ -26,7 +26,7 @@ app { Search() }
 
 test "bind focused follows the keyboard, and takes it" {
   let app = mount(Search())
-  app.expect("Not typing", "[1,2] [4,5] 5 []")
+  app.expect("Not typing", "[1, 2] [4, 5] 5 []")
   app.tap("Search")
   app.expect("Typing")
   app.tap("Done")

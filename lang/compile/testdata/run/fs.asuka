@@ -189,9 +189,9 @@ test "walk" {
 // true
 // true
 // ok the user's directories
-// [true,true,true]
-// ["config","cache","logs"]
-// [true,true,true]
+// [true, true, true]
+// ["config", "cache", "logs"]
+// [true, true, true]
 // ok the app's directories
 // .git .git true 0
 // .git/HEAD HEAD false 3
@@ -200,9 +200,9 @@ test "walk" {
 // b/c.txt c.txt false 1
 // b/d d true 0
 // b/d/e.txt e.txt false 3
-// [".git","a.txt","b","b/c.txt","b/d"]
-// ["a.txt","c.txt","e.txt"]
-// [true,true,true]
+// [".git", "a.txt", "b", "b/c.txt", "b/d"]
+// ["a.txt", "c.txt", "e.txt"]
+// [true, true, true]
 // true
 // not found: nope
 // not a directory: a.txt

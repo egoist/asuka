@@ -94,7 +94,7 @@ test "extracting, and refusing what lands outside" {
 //   true
 // ok round trips
 // café.txt 2001-2-3 4:5:6
-// ["ok.txt","../evil.txt"]
+// ["ok.txt", "../evil.txt"]
 // ok what Python made
 // a
 // a

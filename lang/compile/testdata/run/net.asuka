@@ -108,8 +108,8 @@ test "errors" {
 }
 
 // Output:
-// ["hello true","5 ASUKA","3 NET","closed"]
-// ["hello true","3 TCP","closed"]
+// ["hello true", "5 ASUKA", "3 NET", "closed"]
+// ["hello true", "3 TCP", "closed"]
 // ok a line server
 // 9: a message
 // none

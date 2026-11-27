@@ -68,10 +68,10 @@ test "mistakes" {
 }
 
 // Output:
-// ["Name","Qty","Price","Unit","Organic","Tags"]
-// ["Apples, red","3","1.25","kg","yes","[\"fruit\"]"]
-// ["Soap","10","0.5","pcs","","[]"]
-// [["a","b"],["multi\nline","q\"q"]]
+// ["Name", "Qty", "Price", "Unit", "Organic", "Tags"]
+// ["Apples, red", "3", "1.25", "kg", "yes", "[\"fruit\"]"]
+// ["Soap", "10", "0.5", "pcs", "", "[]"]
+// [["a", "b"], ["multi\nline", "q\"q"]]
 // ok rows
 // Apples, red: 3 kg at 1.25, organic true, ["fruit"]
 // Soap: 10 pcs at 0.5, organic none, []

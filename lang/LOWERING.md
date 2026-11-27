@@ -707,9 +707,14 @@ interpreter's frames.
   (EQ) `error(error.message(e))`, the error made of its own message; the
   cancellation doesn't.
 - Every error shape has two methods CALLI calls: `__etype`, an id of its
-  type, and `message` (its `message` field, its `fn message() ->
-  string`, or its type's and case's name). `e.message` on an `Error` is
-  CALLI `message` for a user error, `error.message` for a runtime one.
+  type, and `message`: its `message` field, its `fn message() ->
+  string`, or the error as the language writes it, `CALLB error.text`
+  of it (core/src/vm/literal.c: its type's name, its case's, its
+  payload, cut short as the debugger cuts a value), made as it's read;
+  an enum none of whose cases has a payload, or a struct of no fields,
+  is its names alone (`Type.case`, an array of them frozen in a global:
+  no string made). `e.message` on an `Error` is CALLI `message` for a
+  user error, `error.message` for a runtime one.
 - A `do { } catch` is a handler range over the `do` block. Its code,
   placed after the range (so a THROW from it goes to the handlers
   around, not to its own), CATCHes the error, rethrows the cancellation
@@ -917,12 +922,20 @@ what's missing back as patterns for the message.
 interpolations (KSTR), and each value: ints, floats and bools as they
 are (INTERP prints them), strings as they are, and the rest as text: a
 payloadless enum by its case's name (an array of the names, frozen in a
-global), a `Duration` in milliseconds (`300ms`), an optional as `none`
-or its value, an error as its message, anything else as its JSON
-(`json.encode` with its descriptor): a tuple's is `(` (its elements by
-its shape's field descriptors, `(1,"a")`) and a map's from other than
-strings `m` K V (each key as it's written, `{1:"a"}`), descriptors only
-print writes. `print(x)` prints the same text. A part with a format
+global), an optional as `none` or its value, an error as its message,
+anything else as the language writes it, `CALLB show.text` of it and
+its descriptor (`showDesc`: JSON's, with a duration's `d` and a color's
+`c`; a tuple's `(`, a map's from other than strings `m` K V). show.text
+(core/src/vm/literal.c, the debugger's writer too) writes `Point(x: 1,
+y: 2)`, `circle(radius: 1.5)` (a case without its dot at the top),
+`[1, 2]`, `["a": 1]`, `Set([1])`, `2s`, a part's own description or
+toJSON's value, all of it: it keeps the parts it's in on a stack of its
+own, as json.c's encoder does, so a value nests however deep. What's
+inside a struct or an enum is written by its fields' descriptors: a
+shape's field name is followed by its JSON descriptor and, after
+another NUL, how the language writes it when that's otherwise (a
+duration, a color: `wait\0i\0d`; empty else, `title\0s\0`), which
+the loader marks its shapes as having (`lits`). `print(x)` prints the same text. A part with a format
 (`{x:>8.2f}`) is the value itself, its kind in INTERP's kinds flagged
 (0x80) and followed by the format's length and text: INTERP writes it
 by the format (rt/lib.c's ak_strb_fmt), no string of its own.
@@ -1803,7 +1816,8 @@ network's `.json()` lower to the builtins `json.decode(text, desc)` and
 `json.encode(value, desc, indent)`, where desc is T's descriptor
 (core/src/rt/json.h) as a string constant. For the runtime to read and
 write a struct's fields by name, each field's name in its shape carries
-its descriptor after a NUL (`"title\x00s"`, `"tags\x00[s"`), and the same
+its descriptor after a NUL (`"title\x00s\x00"`, `"tags\x00[s\x00"`:
+the second NUL's is how values as text write it, above), and the same
 for enum cases' labelled payloads; a payloadless enum JSON reads or
 writes gets a shape of its name whose cases name its values.
 

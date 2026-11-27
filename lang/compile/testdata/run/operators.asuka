@@ -110,26 +110,26 @@ test "compound assignment" {
 // Output:
 // 249 51 true false true true
 // ok a struct's operators
-// 5400000ms 01:00 true false true
+// 90min 01:00 true false true
 // ok time's
-// 45000ms 180000ms 3 22500ms
+// 45s 3min 3 22500ms
 // ok durations and floats
 // 25
-// {"x":6,"y":8}
-// {"x":1,"y":2}
-// {"x":1,"y":0}
-// {"x":-3,"y":-4}
-// {"x":-18,"y":-24}
+// Vec(x: 6, y: 8)
+// Vec(x: 1, y: 2)
+// Vec(x: 1, y: 0)
+// Vec(x: -3, y: -4)
+// Vec(x: -18, y: -24)
 // minus
 // plus
 // minus
 // 4/6
 // 4/12
 // ok binary and unary
-// {"x":50,"y":70}
-// {"x":16,"y":23}
-// {"x":0,"y":3}
-// {"at":{"x":3,"y":6},"path":[{"x":1,"y":1},{"x":1,"y":1}]}
-// {"x":2,"y":1}
+// Vec(x: 50, y: 70)
+// Vec(x: 16, y: 23)
+// Vec(x: 0, y: 3)
+// Grid(at: Vec(x: 3, y: 6), path: [Vec(x: 1, y: 1), Vec(x: 1, y: 1)])
+// Vec(x: 2, y: 1)
 // 1/10
 // ok compound assignment

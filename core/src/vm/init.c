@@ -38,6 +38,8 @@ void ak_vm_init(void) {
 	ak_ffi_init();
 	ak_vm_builtins_init();
 	ak_vm_json_init();
+	extern void ak_vm_literal_init(void);
+	ak_vm_literal_init();
 	extern void ak_vm_bench_init(void);
 	ak_vm_bench_init();
 	extern void ak_vm_each_init(void);

@@ -87,12 +87,12 @@ test "JSON" {
 // true 1 true
 // ok equality and hashing
 // $12.05 $12.05 ○1.5
-// [{"square":[2]}]
+// [□2]
 // {"inline":"testdata/run/ownmethods.asuka","test":"text","line":66,"col":3,"where":"ownmethods.asuka:66","status":"ok"}
 // {"inline":"testdata/run/ownmethods.asuka","test":"text","line":67,"col":3,"where":"ownmethods.asuka:67","status":"ok"}
 // ok text
 // [150,150] {"k":150} {"total":150,"bags":[[1,2]]}
-// [1,2]
-// 99 [1]
+// [1, 2]
+// 99 [$0.01]
 // negative: -5
 // ok JSON

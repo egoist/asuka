@@ -154,7 +154,7 @@ test "commands" {
 }
 
 // Output:
-// v=false f=false t=true j=4 l=low r=0.5 x=[] label=none dest=out src=["a","b"]
+// v=false f=false t=true j=4 l=low r=0.5 x=[] label=none dest=out src=["a", "b"]
 // ok defaults, and arguments in order
 // v=true f=false t=false j=8 l=veryHigh r=0.25 x=[] label=none dest=out src=[]
 // v=false f=true t=false j=4 l=low r=0.5 x=[] label=none dest=out src=[]
@@ -162,9 +162,9 @@ test "commands" {
 // v=true f=true t=true j=8 l=low r=0.5 x=[] label=none dest=out src=[]
 // v=true f=false t=true j=2 l=low r=0.5 x=[] label=none dest=out src=[]
 // ok short options: grouped switches, a value after or joined
-// v=false f=false t=true j=4 l=low r=0.5 x=["*.o","*.tmp"] label=nightly dest=out src=["a"]
+// v=false f=false t=true j=4 l=low r=0.5 x=["*.o", "*.tmp"] label=nightly dest=out src=["a"]
 // ok repeated, optional
-// v=false f=false t=true j=4 l=low r=0.5 x=[] label=none dest=out src=["-v","--jobs"]
+// v=false f=false t=true j=4 l=low r=0.5 x=[] label=none dest=out src=["-v", "--jobs"]
 // ok -- ends the options
 // usage: unknown option --jbos (did you mean --jobs?)
 // usage: --level: medium isn't one of low, high, very-high
@@ -200,7 +200,7 @@ test "commands" {
 //   -h, --help                        Show this help.
 // true
 // ok help
-// add q=false f=true ["a","b"]
+// add q=false f=true ["a", "b"]
 // status q=true
 // add-remote origin https://example.com/r
 // usage: unknown command stauts (did you mean status?) | Usage: vc [options] <command>
@@ -230,5 +230,5 @@ test "commands" {
 // Options:
 //   -f, --force  Adds ignored files too.
 //   -h, --help   Show this help.
-// "status"
+// status
 // ok commands

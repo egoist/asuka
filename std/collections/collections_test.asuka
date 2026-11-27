@@ -175,7 +175,7 @@ test "compared, hashed, printed and written by their contents" {
   let a = Heap.of([3, 1, 2], by: (x, y) => x < y)
   let b = Heap.max([2, 3, 1])
   expect(a == b && Set([a, b]).count() == 1 && a != Heap.min([1, 2]))
-  expect("{a}" == "[1,2,3]" && json.encode(b) == "[3,2,1]")
+  expect("{a}" == "[1, 2, 3]" && json.encode(b) == "[3,2,1]")
   let h: Heap<int> = try json.decode("[5, 1, 4]")
   expect(h.peek() == 1 && h.count() == 3)
 
@@ -186,7 +186,7 @@ test "compared, hashed, printed and written by their contents" {
   n.set("al", 7)
   n.set("bo", 3)
   expect(m == n && [m: 1][n] == 1)
-  expect(json.encode(m) == r#"{"al":7,"bo":3}"# && "{m}" == r#"{"al":7,"bo":3}"#)
+  expect(json.encode(m) == r#"{"al":7,"bo":3}"# && "{m}" == r#"["al": 7, "bo": 3]"#)
   let back: SortedMap<string, int> = try json.decode(r#"{"b": 2, "a": 1}"#)
   expect(back.first()! == ("a", 1))
 

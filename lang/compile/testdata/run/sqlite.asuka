@@ -112,10 +112,10 @@ test "statements in order" {
   print(texts)
 }
 // Output:
-// [{"id":1,"text":"Milk","done":false},{"id":2,"text":"Eggs","done":true}]
+// [Note(id: 1, text: "Milk", done: false), Note(id: 2, text: "Eggs", done: true)]
 // [1]
 // ["Eggs"]
-// [{"id":1,"kind":"todo","tags":["a","b"],"note":null,"score":2}]
+// [Tagged(id: 1, kind: .todo, tags: ["a", "b"], note: none, score: 2.0)]
 // sqlite: no such table: nowhere (1)
 // ok queries
 // true
@@ -127,5 +127,5 @@ test "statements in order" {
 // sqlite: the database is closed
 // sqlite: the database is closed
 // ok closed connections
-// ["First","Second"]
+// ["First", "Second"]
 // ok statements in order

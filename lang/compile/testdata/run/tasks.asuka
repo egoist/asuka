@@ -74,7 +74,7 @@ test "with a timeout" {
 // Output:
 // 3
 // ok async closures
-// [2,6]
+// [2, 6]
 // 10
 // ok tasks as values
 // n=6

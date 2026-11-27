@@ -731,8 +731,8 @@ static void ignore_error(void *ctx, void *err) {
 
 // Errors: with uncaught set, the app stops where an error nothing
 // catches is thrown (a defer, which throws it on, doesn't), once; with
-// all, at every one. The stop has the error, and the frames as they
-// were.
+// all, at every one. The stop has the error (its type, its message),
+// and the frames as they were.
 TEST(debug_exceptions) {
 	ak_module *m = load();
 	if (!m) return;
@@ -747,8 +747,8 @@ TEST(debug_exceptions) {
 	REQUIRE(nstops == 1);
 	const char *s = stops[0];
 	if (getenv("T_VERBOSE")) fprintf(stderr, "%s\n", s);
-	CHECK_HAS(s, "{\"reason\":\"exception\",\"exception\":{\"type\":\"Oops\",");
-	CHECK_HAS(s, "\"uncaught\":true}");
+	// Its message, as it says none: the error as it's written.
+	CHECK_HAS(s, "{\"reason\":\"exception\",\"exception\":{\"type\":\"Oops\",\"message\":\"Oops.bad(code: 4)\",\"uncaught\":true}");
 	CHECK(top_is(s, "fail"));
 	CHECK_EQ_INT(top_line(s), 74);
 	CHECK_HAS(s, "{\"name\":\"doubled\",\"type\":\"int\",\"value\":\"4\"}");

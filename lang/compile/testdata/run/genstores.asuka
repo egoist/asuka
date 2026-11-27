@@ -33,6 +33,6 @@ test "generic stores" {
 // Output:
 // count: 2
 // points: [{"x":1,"y":2},{"x":3,"y":4}]
-// ["ab","ab"]
-// [1.5,1.5]
+// ["ab", "ab"]
+// [1.5, 1.5]
 // ok generic stores

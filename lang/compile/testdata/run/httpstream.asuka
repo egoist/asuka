@@ -66,9 +66,9 @@ test "the whole body" {
 // <café>
 // <naïve>
 // ok lines, however the pieces split them
-// message|first||0ms
+// message|first||0s
 // price|1
-// 2|7|0ms
+// 2|7|0s
 // message|no space|7|1500ms
 // message|||1500ms
 // ok server-sent events

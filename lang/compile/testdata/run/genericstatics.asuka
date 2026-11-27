@@ -37,10 +37,10 @@ test "a generic extension's static fn" {
 }
 
 // Output:
-// [1,2] 0 0 10 [1.5] u
-// ["x","x"] 2
+// [1, 2] 0 0 10 [1.5] u
+// ["x", "x"] 2
 // ["p"]
 // 0 10 [7]
 // ok statics of a generic struct
-// ["a","b"] [1,2,3] ["y","z"]
+// ["a", "b"] [1, 2, 3] ["y", "z"]
 // ok a generic extension's static fn

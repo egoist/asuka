@@ -111,12 +111,12 @@ test "trimming, splitting, finding" {
 // a+b+c-d
 // a-b-c-d
 // a/b/c/d
-// ["k","v=w"]
+// ["k", "v=w"]
 // ["a,b,c"]
 // []
-// ["h","é","llo"]
-// ["the","quick","brown","fox"]
-// ["one","two","","three"]
+// ["h", "é", "llo"]
+// ["the", "quick", "brown", "fox"]
+// ["one", "two", "", "three"]
 // 3
 // -1
 // 6

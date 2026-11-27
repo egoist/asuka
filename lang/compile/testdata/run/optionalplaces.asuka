@@ -152,7 +152,7 @@ test "elements through ?." {
 // ok mut fns through ?.
 // true 1
 // 3 1 3
-// ["one","two"]
+// ["one", "two"]
 // 7
 // 2 1 1
 // true
@@ -161,6 +161,6 @@ test "elements through ?." {
 // ok a store's state
 // true false
 // ok if var
-// (3,"b")
-// ["a!","c"] a!
+// (3, "b")
+// ["a!", "c"] a!
 // ok elements through ?.

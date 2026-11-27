@@ -316,7 +316,7 @@ func TestWebWorkers(t *testing.T) {
 	want := `1
 2
 55 5050
-["a","b"]
+["a", "b"]
 missing 9
 home library: 2 entries
 home library 6

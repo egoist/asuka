@@ -62,7 +62,7 @@ test "a mistake says where" {
 // true
 // true
 // true
-// 7 members: ["name","n","big","f","ok","none","nested"]
+// 7 members: ["name", "n", "big", "f", "ok", "none", "nested"]
 // 1
 // 2
 // -3

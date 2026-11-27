@@ -118,12 +118,12 @@ test "a store's worker" {
 }
 
 // Output:
-// [1,2]
+// [1, 2]
 // []
 // 3 words, 2 adds
 // ok calls run in order, values in and out
 // 15 20
-// counter from 10: [15,20]
+// counter from 10: [15, 20]
 // 9
 // 2
 // ok parameters, lets and private fns
