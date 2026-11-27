@@ -193,8 +193,14 @@ async fn downloadSigned(u: string, size: int, signature: string, key: bytes, pat
   if size <= 0 || size > 1_073_741_824 { throw UpdateError.failed(reason: "invalid size {size}") }
   let status = try await download(u, path, progress)
   if status != 200 { throw UpdateError.failed(reason: "GET {u}: {status}") }
+  try await checkSigned(path, size, signature, key, "downloaded")
+}
+
+// checkSigned checks a file's size and its signature with the app's key
+// (what the file is, in the error: "downloaded", "made").
+async fn checkSigned(path: string, size: int, signature: string, key: bytes, what: string) throws {
   let got = (try await spawn { try fs.stat(path) }).size
-  if got != size { throw UpdateError.failed(reason: "downloaded {got} bytes, want {size}") }
+  if got != size { throw UpdateError.failed(reason: "{what} {got} bytes, want {size}") }
   let sig = (try? encoding.base64Decode(signature)) ?? bytes()
   let ok = await spawn { verifyFile(path, key, sig) }
   if !ok { throw UpdateError.notSigned }
@@ -280,6 +286,36 @@ fn applyDelta(delta: string, size: int, from: string, to: string, oldDir: string
   }
 }
 
+// applyFileDelta makes newFile, which must not exist, the file that the
+// delta of size bytes makes of oldFile (an AppImage's delta, made by
+// internal/update's WriteFileDelta): it must update version from to
+// version to, with one file, of its index's size and SHA-256, whatever
+// the files are named. Blocking: in spawn.
+fn applyFileDelta(delta: string, size: int, from: string, to: string, oldFile: string, newFile: string) throws {
+  let text = deltaIndex(delta) ?? ""
+  if text.isEmpty() { throw UpdateError.failed(reason: failure()) }
+  var index = DeltaIndex()
+  do {
+    index = try json.decode<DeltaIndex>(text)
+  } catch {
+    throw damaged()
+  }
+  if index.from != from || index.version != to {
+    throw UpdateError.failed(reason: "the delta updates {index.from} to {index.version}, not {from} to {to}")
+  }
+  let start = deltaStart(delta)
+  if index.entries.count() != 1 || start < 0 { throw damaged() }
+  let e = index.entries[0]
+  if !e.isFile() || e.size <= 0 || e.data < 0 || e.data != size - start || (e.from.isEmpty() && e.data == 0) {
+    throw damaged()
+  }
+  if fs.exists(newFile) { throw UpdateError.failed(reason: "{newFile}: already exists") }
+  let src = if e.from.isEmpty() { "" } else { fs.base(oldFile) }
+  if !deltaFile(delta, start, e.data, fs.dir(oldFile), src, fs.dir(newFile), fs.base(newFile), e.size, e.sha256, e.mode) {
+    throw UpdateError.failed(reason: failure())
+  }
+}
+
 fn unpack(archive: string, dir: string) throws {
   if !extract(archive, dir) { throw UpdateError.failed(reason: failure()) }
 }
@@ -346,11 +382,13 @@ struct InstallArgs {
   staged: string
 }
 
-// installAppImage downloads the version's AppImage beside the running one
+// installAppImage makes the version's AppImage beside the running one
 // (i.root, the AppImage file: i.work is its directory), named as the
-// host's cleaning of leftovers finds it, checks its signature, and hands
+// host's cleaning of leftovers finds it: from its delta from the running
+// version's AppImage when there's one, else (or when the delta fails: the
+// file changed since) downloaded whole; checks its signature, and hands
 // it to the host, which puts it in the running one's place.
-async fn installAppImage(i: HostInfo, m: Manifest, key: bytes, progress: fn(int, int)) throws {
+async fn installAppImage(i: HostInfo, m: Manifest, current: string, key: bytes, progress: fn(int, int)) throws {
   let a = m.appimage ?? ManifestFile()
   if a.url.isEmpty() { throw UpdateError.failed(reason: "the update has no AppImage") }
   let path = fs.join([i.work, ".{fs.base(i.root)}.asuka-update-{crypto.uuid().slice(0, 8)}"])
@@ -358,7 +396,26 @@ async fn installAppImage(i: HostInfo, m: Manifest, key: bytes, progress: fn(int,
   defer {
     if !staged { try? fs.remove(path) }
   }
-  try await downloadSigned(a.url, a.size, a.signature, key, path, progress)
+  var made = false
+  if let d = a.deltaFrom(current) {
+    let deltaPath = "{path}.delta"
+    do {
+      try await downloadSigned(d.url, d.size, d.signature, key, deltaPath, progress)
+      let old = i.root
+      let version = m.version
+      try await spawn { try applyFileDelta(deltaPath, d.size, d.from, version, old, path) }
+      // The AppImage made is the version's: its size and signature.
+      try await checkSigned(path, a.size, a.signature, key, "made")
+      made = true
+    } catch e {
+      print("asuka: update: downloading the whole AppImage, as its delta failed: {messageOf(e)}")
+      try? await spawn { try fs.remove(path) }
+    }
+    try? await spawn { try fs.remove(deltaPath) }
+  }
+  if !made {
+    try await downloadSigned(a.url, a.size, a.signature, key, path, progress)
+  }
   let _ = try await host.call("update", "install", json.encode(InstallArgs(staged: path)).bytes())
   staged = true
 }
@@ -371,7 +428,7 @@ async fn installManifest(m: Manifest, current: string, progress: fn(int, int)) t
   let key = (try? encoding.base64Decode(i.key.trim())) ?? bytes()
   if key.count() != 32 { throw UpdateError.failed(reason: "invalid update public key") }
   if i.kind == "appimage" {
-    try await installAppImage(i, m, key, progress)
+    try await installAppImage(i, m, current, key, progress)
     return
   }
   let work = workDir(i)

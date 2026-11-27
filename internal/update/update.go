@@ -50,7 +50,9 @@ type Manifest struct {
 	Update      int64  `json:"update,omitempty"`
 	// AppImage is a Linux build's AppImage, signed as the archive is: an
 	// app run from an AppImage replaces that file with it, as the app
-	// run from the tarball's prefix takes the archive.
+	// run from the tarball's prefix takes the archive; its deltas from
+	// the AppImages of earlier versions, the file made from the running
+	// one (WriteFileDelta).
 	AppImage *Asset `json:"appimage,omitempty"`
 }
 
@@ -59,6 +61,8 @@ type Asset struct {
 	URL       string `json:"url"`
 	Size      int64  `json:"size"`
 	Signature string `json:"signature"`
+	// Deltas make it of an earlier version's, with smaller downloads.
+	Deltas []Delta `json:"deltas,omitempty"`
 }
 
 // Delta is a delta update of the app of version From, signed like the
@@ -76,6 +80,9 @@ type Archive struct {
 	URL       string `json:"url"`
 	Size      int64  `json:"size"`
 	Signature string `json:"signature"`
+	// AppImage is the version's AppImage (no deltas), which the next
+	// version's AppImage deltas are made from.
+	AppImage *Asset `json:"appimage,omitempty"`
 }
 
 // ManifestName is the file name of the manifest of target on channel:

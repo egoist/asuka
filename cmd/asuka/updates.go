@@ -344,6 +344,10 @@ func writeUpdates(app *asukaApp, out string, b updateBuild, required bool) ([]st
 	for _, n := range []string{slug + "-" + version + "-" + b.target + ".AppImage", slug + "-" + version + "-" + b.target + ".AppImage.zsync", appImageZsyncName(slug, version, b.target)} {
 		os.Remove(filepath.Join(dir, n))
 	}
+	stale, _ := filepath.Glob(filepath.Join(dir, slug+"-*-to-"+version+"-"+b.target+".AppImage.delta"))
+	for _, p := range stale {
+		os.Remove(p)
+	}
 	var size int64
 	var sig string
 	if b.tarball != "" {
@@ -522,7 +526,11 @@ func writeDeltas(u *updatesConfig, key ed25519.PrivateKey, slug, version, dir st
 		return nil, nil
 	}
 	var bases []iupdate.Archive
-	for _, a := range append([]iupdate.Archive{{Version: published.Version, URL: published.URL, Size: published.Size, Signature: published.Signature}}, published.Previous...) {
+	latest := iupdate.Archive{Version: published.Version, URL: published.URL, Size: published.Size, Signature: published.Signature}
+	if a := published.AppImage; a != nil {
+		latest.AppImage = &iupdate.Asset{URL: a.URL, Size: a.Size, Signature: a.Signature} // its deltas aren't the next's
+	}
+	for _, a := range append([]iupdate.Archive{latest}, published.Previous...) {
 		if iupdate.Compare(a.Version, version) < 0 && !slices.ContainsFunc(bases, func(x iupdate.Archive) bool { return x.Version == a.Version }) {
 			bases = append(bases, a)
 		}
@@ -558,7 +566,56 @@ func writeDeltas(u *updatesConfig, key ed25519.PrivateKey, slug, version, dir st
 		files = append(files, path)
 		fmt.Printf("asuka: the delta update from %s for %s: %s, instead of %s\n", base.Version, b.target, formatBytes(d.Size), formatBytes(m.Size))
 	}
+	// The AppImage's, from the AppImages of the same versions: an app run
+	// from one makes the new AppImage of its own file.
+	if m.AppImage != nil {
+		newFile := filepath.Join(dir, filepath.Base(b.appImage))
+		for i, base := range bases {
+			if base.AppImage == nil {
+				continue
+			}
+			name := slug + "-" + base.Version + "-to-" + version + "-" + b.target + ".AppImage.delta"
+			path := filepath.Join(dir, name)
+			old := filepath.Join(work, "appimage-"+strconv.Itoa(i), slug+"-"+base.Version+"-"+b.target+".AppImage")
+			d, err := writeAppImageDelta(key, base, old, path, version, newFile)
+			switch {
+			case err != nil:
+				os.Remove(path)
+				fmt.Printf("asuka: no AppImage delta from %s for %s: %v\n", base.Version, b.target, err)
+				continue
+			case d.Size >= m.AppImage.Size:
+				os.Remove(path)
+				fmt.Printf("asuka: no AppImage delta from %s for %s: it's no smaller than the AppImage\n", base.Version, b.target)
+				continue
+			}
+			d.URL = u.fileURL(version, name)
+			m.AppImage.Deltas = append(m.AppImage.Deltas, d)
+			files = append(files, path)
+			fmt.Printf("asuka: the AppImage's delta from %s for %s: %s, instead of %s\n", base.Version, b.target, formatBytes(d.Size), formatBytes(m.AppImage.Size))
+		}
+	}
 	return files, nil
+}
+
+// writeAppImageDelta downloads base's AppImage to oldFile (named as it
+// was published: the delta names the file it patches), checks that it's
+// signed with key, and writes the delta from it to the AppImage newFile
+// at path.
+func writeAppImageDelta(key ed25519.PrivateKey, base iupdate.Archive, oldFile, path, version, newFile string) (iupdate.Delta, error) {
+	if err := os.MkdirAll(filepath.Dir(oldFile), 0o755); err != nil {
+		return iupdate.Delta{}, err
+	}
+	a := base.AppImage
+	if err := fetchSigned(a.URL, a.Size, a.Signature, key.Public().(ed25519.PublicKey), oldFile); err != nil {
+		return iupdate.Delta{}, err
+	}
+	size, sig, err := writeSigned(path, key, func(w io.Writer) error {
+		return iupdate.WriteFileDelta(w, base.Version, version, oldFile, newFile)
+	})
+	if err != nil {
+		return iupdate.Delta{}, err
+	}
+	return iupdate.Delta{From: base.Version, Size: size, Signature: sig}, nil
 }
 
 // writeDelta downloads base's archive into work, checks that it's signed

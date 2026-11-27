@@ -159,6 +159,8 @@ func updateFiles(dir, slug, version, target string) (files, manifests []string, 
 	files = append(files, archive)
 	deltas, _ := filepath.Glob(filepath.Join(dir, slug+"-*-to-"+version+"-"+target+".delta"))
 	files = append(files, deltas...)
+	deltas, _ = filepath.Glob(filepath.Join(dir, slug+"-*-to-"+version+"-"+target+".AppImage.delta"))
+	files = append(files, deltas...)
 	// A Linux build's AppImage and its .zsync (GitHub's, named for the
 	// version); the .zsync of updates.url, named for none, which
 	// AppImageUpdate reads as apps read the manifest, goes with it.

@@ -2,11 +2,16 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -236,42 +241,100 @@ func TestPublishRepoFlag(t *testing.T) {
 	}
 }
 
+// fakeS3 is an S3 bucket of the test's: GET (with an ETag), PUT (If-Match
+// and If-None-Match: 412 when the object isn't that one), DELETE, and
+// ListObjectsV2; the requests signed.
+type fakeS3 struct {
+	mu        sync.Mutex
+	objects   map[string][]byte
+	cache     map[string]string // Cache-Control
+	modified  map[string]time.Time
+	conflicts int // PUTs refused by their condition
+	srv       *httptest.Server
+}
+
+func newFakeS3(t *testing.T) *fakeS3 {
+	f := &fakeS3{objects: map[string][]byte{}, cache: map[string]string{}, modified: map[string]time.Time{}}
+	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+func etagOf(b []byte) string {
+	sum := sha256.Sum256(b)
+	return `"` + hex.EncodeToString(sum[:16]) + `"`
+}
+
+func (f *fakeS3) serve(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasPrefix(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256 ") {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	noKey := func() {
+		w.WriteHeader(http.StatusNotFound)
+		io.WriteString(w, "<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>")
+	}
+	switch r.Method {
+	case http.MethodPut:
+		b, _ := io.ReadAll(r.Body)
+		old, exists := f.objects[r.URL.Path]
+		if m := r.Header.Get("If-Match"); m != "" && (!exists || m != etagOf(old)) {
+			f.conflicts++
+			if !exists {
+				noKey()
+				return
+			}
+			w.WriteHeader(http.StatusPreconditionFailed)
+			io.WriteString(w, "<Error><Code>PreconditionFailed</Code><Message>At least one of the pre-conditions you specified did not hold</Message></Error>")
+			return
+		}
+		if r.Header.Get("If-None-Match") == "*" && exists {
+			f.conflicts++
+			w.WriteHeader(http.StatusPreconditionFailed)
+			io.WriteString(w, "<Error><Code>PreconditionFailed</Code><Message>At least one of the pre-conditions you specified did not hold</Message></Error>")
+			return
+		}
+		f.objects[r.URL.Path], f.cache[r.URL.Path], f.modified[r.URL.Path] = b, r.Header.Get("Cache-Control"), time.Now()
+		w.Header().Set("ETag", etagOf(b))
+	case http.MethodGet:
+		if r.URL.Query().Get("list-type") == "2" {
+			prefix := strings.TrimSuffix(r.URL.Path, "/") + "/" + r.URL.Query().Get("prefix")
+			var b strings.Builder
+			b.WriteString("<ListBucketResult>")
+			for _, k := range slices.Sorted(maps.Keys(f.objects)) {
+				if strings.HasPrefix(k, prefix) {
+					fmt.Fprintf(&b, "<Contents><Key>%s</Key><LastModified>%s</LastModified></Contents>", strings.TrimPrefix(k, strings.TrimSuffix(r.URL.Path, "/")+"/"), f.modified[k].UTC().Format("2006-01-02T15:04:05.000Z"))
+				}
+			}
+			b.WriteString("<IsTruncated>false</IsTruncated></ListBucketResult>")
+			io.WriteString(w, b.String())
+			return
+		}
+		b, ok := f.objects[r.URL.Path]
+		if !ok {
+			noKey()
+			return
+		}
+		w.Header().Set("ETag", etagOf(b))
+		w.Write(b)
+	case http.MethodDelete:
+		delete(f.objects, r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 // The repository in an S3 bucket (a fake of the test's): read back to add
-// the next version, the indexes uncached, what repomd.xml replaced
-// deleted.
+// the next version, the indexes uncached, kept by hash, what repomd.xml
+// replaced deleted.
 func TestPublishLinuxRepoS3(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "id")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret")
 	keys := testLinuxKeys(t)
-	var mu sync.Mutex
-	objects, cache := map[string][]byte{}, map[string]string{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		if !strings.HasPrefix(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256 ") {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-		switch r.Method {
-		case http.MethodPut:
-			b, _ := io.ReadAll(r.Body)
-			objects[r.URL.Path], cache[r.URL.Path] = b, r.Header.Get("Cache-Control")
-		case http.MethodGet:
-			b, ok := objects[r.URL.Path]
-			if !ok {
-				w.WriteHeader(http.StatusNotFound)
-				io.WriteString(w, "<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>")
-				return
-			}
-			w.Write(b)
-		case http.MethodDelete:
-			delete(objects, r.URL.Path)
-			w.WriteHeader(http.StatusNoContent)
-		}
-	}))
-	defer srv.Close()
+	f := newFakeS3(t)
 	app := &asukaApp{dir: t.TempDir(), name: "notes", bundleID: "com.example.notes", cfg: &appConfig{Name: "Notes"}}
-	app.cfg.Linux.Repository = &linuxRepository{URL: "https://packages.example.com/notes", S3: &s3Config{Bucket: "pkgs", Prefix: "notes", Endpoint: srv.URL}}
+	app.cfg.Linux.Repository = &linuxRepository{URL: "https://packages.example.com/notes", S3: &s3Config{Bucket: "pkgs", Prefix: "notes", Endpoint: f.srv.URL}}
 	store, err := linuxRepoStore(app, "")
 	if err != nil {
 		t.Fatal(err)
@@ -283,10 +346,12 @@ func TestPublishLinuxRepoS3(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	objects, cache := f.objects, f.cache
 	const root = "/pkgs/notes/"
 	if ss := distpkg.ParseStanzas(string(objects[root+"deb/dists/stable/main/binary-amd64/Packages"])); len(ss) != 2 {
 		t.Errorf("Packages has %d", len(ss))
 	}
+	checkAptSuite(t, func(p string) []byte { return objects[root+p] }, keys[0], "stable", map[string]int{"amd64": 2})
 	m, err := distpkg.ReadYumMetadata(objects[root+"rpm/stable/repodata/repomd.xml"], func(href string) ([]byte, error) {
 		if b, ok := objects[root+"rpm/stable/"+href]; ok {
 			return b, nil
@@ -312,5 +377,205 @@ func TestPublishLinuxRepoS3(t *testing.T) {
 	}
 	if cache[root+"deb/pool/main/n/notes/notes_1.0.0_amd64.deb"] != "" {
 		t.Error("a package is uncached")
+	}
+	// The first version's by-hash indexes stay a day: a client may have
+	// read the Release that names them.
+	var byHash int
+	for k := range objects {
+		if strings.Contains(k, "/by-hash/") {
+			byHash++
+		}
+	}
+	if byHash != 8 {
+		t.Errorf("%d by-hash indexes, want both versions' Packages and Packages.gz, by SHA-256 and SHA-512", byHash)
+	}
+}
+
+// checkAptSuite checks the apt suite read reads: InRelease signed with
+// key, Release.gpg Release's signature, Release InRelease's text (with
+// Acquire-By-Hash), each index at its name and in by-hash what Release
+// says, and each architecture with its count of packages.
+func checkAptSuite(t *testing.T, read func(path string) []byte, key *gpgsign.Key, suite string, want map[string]int) {
+	t.Helper()
+	pub, _ := key.ArmoredPublic()
+	dists := "deb/dists/" + suite + "/"
+	text, err := gpgsign.VerifyClearSigned(pub, read(dists+"InRelease"))
+	if err != nil {
+		t.Fatalf("InRelease: %v", err)
+	}
+	release := read(dists + "Release")
+	if !bytes.Equal(bytes.TrimSpace(text), bytes.TrimSpace(release)) {
+		t.Errorf("Release isn't InRelease's text:\n%s\n---\n%s", release, text)
+	}
+	if err := gpgsign.Verify(pub, release, read(dists+"Release.gpg")); err != nil {
+		t.Errorf("Release.gpg: %v", err)
+	}
+	r := distpkg.ParseStanzas(string(text))[0]
+	if r.Get("Acquire-By-Hash") != "yes" {
+		t.Errorf("Release:\n%s", text)
+	}
+	files := distpkg.ReleaseFiles(r)
+	for p, f := range files {
+		if len(f.ByHash(p)) != 2 {
+			t.Errorf("Release names %s without its SHA-256 and SHA-512", p)
+		}
+		for _, at := range append([]string{p}, f.ByHash(p)...) {
+			b := read(dists + at)
+			if sum := sha256.Sum256(b); hex.EncodeToString(sum[:]) != f.SHA256 || int64(len(b)) != f.Size {
+				t.Errorf("%s isn't the %s Release names", at, p)
+			}
+		}
+	}
+	var archs []string
+	for a, n := range want {
+		archs = append(archs, a)
+		if got := len(distpkg.ParseStanzas(string(read(dists + "main/binary-" + a + "/Packages")))); got != n {
+			t.Errorf("%s has %d packages, want %d", a, got, n)
+		}
+	}
+	slices.Sort(archs)
+	if got := r.Get("Architectures"); got != strings.Join(archs, " ") {
+		t.Errorf("Architectures: %q, want %v", got, archs)
+	}
+}
+
+// racingStore is a store whose first write of what names a repository's
+// indexes (InRelease, repomd.xml) another publish precedes: it runs race,
+// a whole publish, first.
+type racingStore struct {
+	repoStore
+	race    func()
+	started map[string]bool
+}
+
+func (s *racingStore) writeIf(name string, data []byte, tag string, mutable bool) error {
+	if (strings.HasSuffix(name, "/InRelease") || strings.HasSuffix(name, "/repomd.xml")) && !s.started[name] {
+		s.started[name] = true
+		s.race()
+	}
+	return s.repoStore.writeIf(name, data, tag, mutable)
+}
+
+// Two architectures published at once, into a directory and into an S3
+// bucket: one's InRelease and repomd.xml are written by the other after
+// it read them, so its own write is refused (412: If-Match), and it reads
+// them again and adds to them: both architectures' packages are in the
+// indexes, every index is the one the signed InRelease names, and
+// repomd.xml.asc signs the repomd.xml that has both. Then four publishes
+// at once, in goroutines: none is lost.
+func TestPublishLinuxRepoAtOnce(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "id")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret")
+	keys := testLinuxKeys(t)
+	for _, kind := range []string{"dir", "s3"} {
+		t.Run(kind, func(t *testing.T) {
+			app := &asukaApp{dir: t.TempDir(), name: "notes", bundleID: "com.example.notes", cfg: &appConfig{Name: "Notes", Version: "1.0.0"}}
+			app.cfg.Linux.Repository = &linuxRepository{URL: "https://packages.example.com/notes"}
+			var read func(string) []byte
+			var conflicts func() int
+			var store repoStore
+			if kind == "dir" {
+				dir := t.TempDir()
+				store = dirStore{dir}
+				read = func(p string) []byte { b, _ := os.ReadFile(filepath.Join(dir, p)); return b }
+				conflicts = func() int { return -1 }
+			} else {
+				f := newFakeS3(t)
+				c, err := newS3Client(&s3Config{Bucket: "pkgs", Prefix: "notes", Endpoint: f.srv.URL})
+				if err != nil {
+					t.Fatal(err)
+				}
+				store = s3Store{c}
+				read = func(p string) []byte { f.mu.Lock(); defer f.mu.Unlock(); return f.objects["/pkgs/notes/"+p] }
+				conflicts = func() int { f.mu.Lock(); defer f.mu.Unlock(); return f.conflicts }
+			}
+			armDeb, armRPM := testLinuxPackages(t, keys[0], "1.0.0", "arm64")
+			amdDeb, amdRPM := testLinuxPackages(t, keys[0], "1.0.0", "amd64")
+			racing := &racingStore{repoStore: store, started: map[string]bool{}, race: func() {
+				// The other architecture's publish, whole, between this
+				// one's read and its write.
+				if err := publishLinuxRepo(app, store, keys[0], []string{armDeb}, []string{armRPM}); err != nil {
+					t.Error(err)
+				}
+			}}
+			if err := publishLinuxRepo(app, racing, keys[0], []string{amdDeb}, []string{amdRPM}); err != nil {
+				t.Fatal(err)
+			}
+			if n := conflicts(); n == 0 {
+				t.Error("no write was refused: the race didn't happen")
+			}
+			checkAptSuite(t, read, keys[0], "stable", map[string]int{"amd64": 1, "arm64": 1})
+			pub, _ := keys[0].ArmoredPublic()
+			repomd := read("rpm/stable/repodata/repomd.xml")
+			if err := gpgsign.Verify(pub, repomd, read("rpm/stable/repodata/repomd.xml.asc")); err != nil {
+				t.Errorf("repomd.xml.asc: %v", err)
+			}
+			m, err := distpkg.ReadYumMetadata(repomd, func(href string) ([]byte, error) {
+				if b := read("rpm/stable/" + href); b != nil {
+					return b, nil
+				}
+				return nil, os.ErrNotExist
+			})
+			if err != nil || len(m.Packages) != 2 {
+				t.Fatalf("the dnf repository: %v %v", m, err)
+			}
+			// And at once for real: four publishes in goroutines, each
+			// architecture's next version and a beta.
+			var wg sync.WaitGroup
+			for _, v := range [][2]string{{"1.1.0", "amd64"}, {"1.1.0", "arm64"}, {"1.2.0", "amd64"}, {"1.2.0", "arm64"}} {
+				deb, rpm := testLinuxPackages(t, keys[0], v[0], v[1])
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					a := *app
+					cfg := *app.cfg
+					cfg.Version = v[0]
+					a.cfg = &cfg
+					if err := publishLinuxRepo(&a, store, keys[0], []string{deb}, []string{rpm}); err != nil {
+						t.Error(err)
+					}
+				}()
+			}
+			wg.Wait()
+			checkAptSuite(t, read, keys[0], "stable", map[string]int{"amd64": 3, "arm64": 3})
+			repomd = read("rpm/stable/repodata/repomd.xml")
+			if err := gpgsign.Verify(pub, repomd, read("rpm/stable/repodata/repomd.xml.asc")); err != nil {
+				t.Errorf("repomd.xml.asc: %v", err)
+			}
+			if m, err := distpkg.ReadYumMetadata(repomd, func(href string) ([]byte, error) { return read("rpm/stable/" + href), nil }); err != nil || len(m.Packages) != 6 {
+				t.Errorf("the dnf repository after: %v %v", m, err)
+			}
+		})
+	}
+}
+
+// The suite's by-hash indexes no Release names go a day after they were
+// written; those its Release or the one before names, and younger ones
+// (a publish at once may be about to name them), stay.
+func TestPruneByHash(t *testing.T) {
+	dir := t.TempDir()
+	store := dirStore{dir}
+	dists := "deb/dists/stable/"
+	rel := func(sums ...string) []byte {
+		text := "Suite: stable\nSHA256:\n"
+		for i, s := range sums {
+			text += fmt.Sprintf(" %s %8d main/binary-amd64/Packages%s\n", s, 10, []string{"", ".gz"}[i%2])
+		}
+		return []byte(text)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	files := map[string]time.Time{"aaaa": old, "bbbb": old, "cccc": old, "dddd": time.Now()}
+	for sum, mtime := range files {
+		p := filepath.Join(dir, filepath.FromSlash(dists+distpkg.ByHashPath("main/binary-amd64/Packages", sum)))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(sum), 0o644)
+		os.Chtimes(p, mtime, mtime)
+	}
+	pruneByHash(store, dists, time.Now(), rel("aaaa"), rel("bbbb"))
+	for sum, want := range map[string]bool{"aaaa": true, "bbbb": true, "cccc": false, "dddd": true} {
+		_, err := os.Stat(filepath.Join(dir, filepath.FromSlash(dists+distpkg.ByHashPath("main/binary-amd64/Packages", sum))))
+		if (err == nil) != want {
+			t.Errorf("%s: kept %v, want %v", sum, err == nil, want)
+		}
 	}
 }

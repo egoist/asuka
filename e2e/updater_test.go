@@ -16,6 +16,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/egoist/asuka/internal/distpkg"
+	"github.com/egoist/asuka/internal/gpgsign"
 )
 
 // updateFeed is a feed of the test's own (httptest), the keys its updates
@@ -25,6 +28,22 @@ type updateFeed struct {
 	env  []string
 	mu   sync.Mutex
 	gets []string
+	sent int64 // the bytes of the files it served
+}
+
+// countingWriter counts what a response's body sends.
+type countingWriter struct {
+	http.ResponseWriter
+	n  *int64
+	mu *sync.Mutex
+}
+
+func (w countingWriter) Write(b []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(b)
+	w.mu.Lock()
+	*w.n += int64(n)
+	w.mu.Unlock()
+	return n, err
 }
 
 func newUpdateFeed(t *testing.T) *updateFeed {
@@ -34,7 +53,7 @@ func newUpdateFeed(t *testing.T) *updateFeed {
 		f.mu.Lock()
 		f.gets = append(f.gets, r.URL.Path)
 		f.mu.Unlock()
-		http.FileServer(http.Dir(f.dir)).ServeHTTP(w, r)
+		http.FileServer(http.Dir(f.dir)).ServeHTTP(countingWriter{w, &f.sent, &f.mu}, r)
 	}))
 	t.Cleanup(srv.Close)
 	f.env = append(os.Environ(),
@@ -77,6 +96,13 @@ func (f *updateFeed) downloaded() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return strings.Join(f.gets, " ")
+}
+
+// served is how many bytes of files the feed has served.
+func (f *updateFeed) served() int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.sent
 }
 
 // runUpdater runs the installed app's executable in its self-update mode
@@ -242,10 +268,13 @@ func TestUpdaterLinux(t *testing.T) {
 
 // TestUpdaterLinuxAppImage does it with the Linux build's AppImage, run
 // from a folder of the user's as ~/Applications is: 1.0.0 downloads
-// 1.0.1's AppImage (the manifest's appimage, signed), which takes its
-// file's place, and the relaunched AppImage says it's 1.0.1. Each way the
-// runtime runs it: extracted (--appimage-extract-and-run, where there's
-// no FUSE, as in a container), and mounted, where FUSE is.
+// the delta of 1.0.1's AppImage from its own (the manifest's appimage,
+// signed), makes 1.0.1's AppImage of its file with it, which takes the
+// file's place, and the relaunched AppImage says it's 1.0.1; far fewer
+// bytes come down than the AppImage has. Each way the runtime runs it:
+// extracted (--appimage-extract-and-run, where there's no FUSE, as in a
+// container), and mounted, where FUSE is. Both AppImages are signed with
+// the build's OpenPGP key, as appimagetool --sign signs one.
 //
 //	xvfb-run -a dbus-run-session go test -tags e2e ./e2e -run TestUpdaterLinuxAppImage
 func TestUpdaterLinuxAppImage(t *testing.T) {
@@ -253,6 +282,18 @@ func TestUpdaterLinuxAppImage(t *testing.T) {
 		t.Skip("Linux")
 	}
 	f := newUpdateFeed(t)
+	// The AppImages signed with a key of the test's.
+	keys := t.TempDir()
+	c := exec.Command("go", "run", "./cmd/asuka", "linux", "keygen", "--uid", "Updater <dev@example.com>", "--out", keys)
+	c.Dir = root(t)
+	if b, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("asuka linux keygen: %v\n%s", err, b)
+	}
+	f.env = append(f.env, "ASUKA_LINUX_GPG_KEY="+filepath.Join(keys, "asuka-linux.key"))
+	pub, err := os.ReadFile(filepath.Join(keys, "asuka-linux.asc"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	arch := runtime.GOARCH
 	v100 := f.build(t, "linux", "1.0.0")
 	v101 := f.build(t, "linux", "1.0.1")
@@ -260,6 +301,20 @@ func TestUpdaterLinuxAppImage(t *testing.T) {
 	want, err := os.ReadFile(filepath.Join(v101, "linux-"+arch, "updater-1.0.1-linux-"+arch+".AppImage"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, v := range []string{"1.0.0", "1.0.1"} {
+		dir := map[string]string{"1.0.0": v100, "1.0.1": v101}[v]
+		b, err := os.ReadFile(filepath.Join(dir, "linux-"+arch, "updater-"+v+"-linux-"+arch+".AppImage"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest, sig, key, err := distpkg.AppImageSignature(b)
+		if err != nil || len(sig) == 0 || !bytes.Equal(bytes.TrimSpace(key), bytes.TrimSpace(pub)) {
+			t.Fatalf("%s's AppImage isn't signed with the key: %v", v, err)
+		}
+		if err := gpgsign.Verify(pub, []byte(digest), sig); err != nil {
+			t.Errorf("%s's AppImage's signature: %v", v, err)
+		}
 	}
 	// AppImageUpdate's information, in the runtime's .upd_info: the feed's
 	// .zsync, beside the manifest.
@@ -290,7 +345,7 @@ func TestUpdaterLinuxAppImage(t *testing.T) {
 			os.WriteFile(filepath.Join(apps, "another.AppImage"), []byte("another app"), 0o755)
 			file := filepath.Join(apps, "Updater.AppImage") // named as the user likes
 			run(t, "cp", filepath.Join(v100, "linux-"+arch, name), file)
-			before := f.downloaded()
+			before, sent := f.downloaded(), f.served()
 			runUpdater(t, file, m.args, "TMPDIR="+tmp, "NO_CLEANUP=1")
 			if got, _ := filepath.Glob(filepath.Join(tmp, "appimage_extracted_*")); len(got) != m.extracted {
 				t.Errorf("extracted %d times, want %d: %v", len(got), m.extracted, got)
@@ -302,8 +357,13 @@ func TestUpdaterLinuxAppImage(t *testing.T) {
 			if st, _ := os.Stat(file); st == nil || st.Mode().Perm()&0o111 == 0 {
 				t.Error("the new AppImage isn't executable")
 			}
-			if got := strings.TrimPrefix(f.downloaded(), before); !strings.Contains(got, "updater-1.0.1-linux-"+arch+".AppImage") || strings.Contains(got, ".delta") || strings.Contains(got, ".tar.gz") {
-				t.Errorf("downloaded %v, want the AppImage alone", got)
+			if got := strings.TrimPrefix(f.downloaded(), before); !strings.Contains(got, "updater-1.0.0-to-1.0.1-linux-"+arch+".AppImage.delta") || strings.Contains(got, "updater-1.0.1-linux-"+arch+".AppImage ") || strings.HasSuffix(got, "updater-1.0.1-linux-"+arch+".AppImage") || strings.Contains(got, ".tar.gz") {
+				t.Errorf("downloaded %v, want the AppImage's delta alone", got)
+			}
+			if n := f.served() - sent; n*4 > int64(len(want)) {
+				t.Errorf("downloaded %d bytes, of an AppImage of %d: the delta should be far smaller", n, len(want))
+			} else {
+				t.Logf("downloaded %d bytes for an AppImage of %d", n, len(want))
 			}
 			// Nothing left beside it, and the other AppImage untouched.
 			if left, _ := filepath.Glob(filepath.Join(apps, ".*")); len(left) > 0 {

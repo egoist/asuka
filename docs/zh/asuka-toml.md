@@ -281,7 +281,7 @@ github = "you/notes"
 | `tagPrefix` | 字符串 | `"v"` | release 标签的前缀。换成其他前缀（如 `"desktop-v"`）后，仓库的最新 release 可以属于别的项目：应用会通过 GitHub API 找到带有这个前缀的最新 release。 |
 | `url` | 字符串 | | 代替 `github`：一个提供这些文件的 HTTPS 目录（S3 或 R2 存储桶、CDN）；应用读取 `<url>/update-<target>.json`。 |
 | `feed` | 字符串 | 无 | 你自己的 HTTPS 服务器，应用改为向它询问更新；URL 中可以包含 `{target}`、`{version}` 和 `{channel}`。它需要配合 `url` 使用，文件放在 `url` 那里。 |
-| `s3` | 表 | 无 | 为 `url` 提供文件的存储桶，`asuka publish` 会上传到这里：`bucket`（必填）、`prefix`（桶内目录，默认为根目录）、`region`（默认取 `AWS_REGION`，其次 `AWS_DEFAULT_REGION`，否则为 `us-east-1`）、`endpoint`（R2、MinIO 等的地址，默认是 Amazon S3）、`pathStyle`（默认在设置了 `endpoint` 或桶名含点时启用）。 |
+| `s3` | 表 | 无 | 为 `url` 提供文件的存储桶，`asuka publish` 会上传到这里：`bucket`（必填）、`prefix`（桶内目录，默认为根目录）、`region`（默认取 `AWS_REGION`，其次 `AWS_DEFAULT_REGION`，否则为 `us-east-1`）、`endpoint`（R2、MinIO 等的地址，默认取 `AWS_ENDPOINT_URL_S3`，其次 `AWS_ENDPOINT_URL`，否则是 Amazon S3）、`pathStyle`（默认在设置了 `endpoint` 或桶名含点时启用）。 |
 | `privateKey` | 路径 | 无 | 私钥的路径，用于在你自己的机器上构建（`~/` 表示主目录）。 |
 | `changelog` | 路径 | 存在时为 `CHANGELOG.md` | 一个 Markdown 文件，其中 `## 1.2.0` 一节就是发布说明。 |
 | `deltas` | 整数 | `3` | 为之前的多少个版本生成增量更新（只下载有变化的部分）；`0` 表示不生成。 |
@@ -408,7 +408,7 @@ Linux 构建的 desktop 文件、AppStream metainfo 和软件包对应用的描�
 | `maintainer` | 字符串 | `developer` | `.deb` 和 `.rpm` 中写明的维护者：`"Name <email>"`。 |
 | `debDepends` | 字符串数组 | 无 | `.deb` 额外依赖的软件包，按 Debian 的语法书写：`"libfoo1 (>= 1.2)"`、`"a \| b"`。 |
 | `rpmRequires` | 字符串数组 | 无 | `.rpm` 额外依赖的软件包，按 RPM 的语法书写：`"foo >= 1.2"`、`"(a or b)"`。 |
-| `signingKey` | 路径 | 无 | 用来签名 `.rpm` 以及 apt 和 dnf 软件源的 OpenPGP 私钥（`asuka linux keygen` 生成的 `asuka-linux.key`；`~/` 表示主目录），供在你自己的电脑上构建时使用。`ASUKA_LINUX_GPG_KEY`（密钥本身或它的路径）会覆盖它；密钥加密过时，用 `ASUKA_LINUX_GPG_PASSPHRASE` 解密。 |
+| `signingKey` | 路径 | 无 | 用来签名 `.rpm`、AppImage（和 `appimagetool --sign` 的签法一样）以及 apt 和 dnf 软件源的 OpenPGP 私钥（`asuka linux keygen` 生成的 `asuka-linux.key`；`~/` 表示主目录），供在你自己的电脑上构建时使用。`ASUKA_LINUX_GPG_KEY`（密钥本身或它的路径）会覆盖它；密钥加密过时，用 `ASUKA_LINUX_GPG_PASSPHRASE` 解密。 |
 | `repository` | 表 | 无 | `asuka publish --platform linux` 把 `.deb` 和 `.rpm` 写入的 apt 和 dnf 软件源：`url` 是提供它的 HTTPS 地址（写进 `.repo` 文件和用户要运行的命令里）；`s3` 是提供它的存储桶（`bucket`、`prefix`、`region`、`endpoint`、`pathStyle`，和 `updates.s3` 一样），或者用 `dir` 指定一个目录。`--repo` 可以改写写入位置。 |
 
 见[打包与发布](shipping.md#linux)和[签名的软件包与软件源](shipping.md#签名的软件包与软件源)。

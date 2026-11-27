@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -26,7 +27,9 @@ import (
 // platform/update on the fake host, its downloads and signatures checked and
 // its deltas applied by the C core. The new version's tree it stages is
 // the build's. With the archive alone (the installed app changed, so its
-// delta fails) it's the same; with another key, nothing is installed.
+// delta fails) it's the same; with another key, nothing is installed. An
+// app run from an AppImage (Linux's build with one) stages the new
+// AppImage, made from its own by the AppImage's delta, else downloaded.
 func TestUpdatesVerifiedByCore(t *testing.T) {
 	if _, err := cbuild.Find(); err != nil {
 		t.Skip(err)
@@ -48,8 +51,9 @@ func TestUpdatesVerifiedByCore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, kind := range []iupdate.Kind{iupdate.Folder, iupdate.Prefix, iupdate.Bundle} {
-		kindName := map[iupdate.Kind]string{iupdate.Folder: "windows", iupdate.Prefix: "linux", iupdate.Bundle: "mac"}[kind]
+	for _, kindName := range []string{"windows", "linux", "mac", "appimage"} {
+		kind := map[string]iupdate.Kind{"windows": iupdate.Folder, "linux": iupdate.Prefix, "mac": iupdate.Bundle, "appimage": iupdate.Prefix}[kindName]
+		appImage := kindName == "appimage"
 		t.Run(kindName, func(t *testing.T) {
 			published := t.TempDir()
 			srv := httptest.NewServer(http.FileServer(http.Dir(published)))
@@ -87,6 +91,10 @@ func TestUpdatesVerifiedByCore(t *testing.T) {
 					if err := tarGz(b.root, b.tarball); err != nil {
 						t.Fatal(err)
 					}
+					if appImage {
+						b.appImage = filepath.Join(b.dir, "notes-"+version+"-"+target+".AppImage")
+						writeFiles(t, b.dir, map[string]string{filepath.Base(b.appImage): "\x7fELF an AppImage of " + code(version)})
+					}
 				case iupdate.Bundle:
 					b.dir = out
 					b.root = filepath.Join(out, "Notes.app")
@@ -112,20 +120,35 @@ func TestUpdatesVerifiedByCore(t *testing.T) {
 			if err := json.Unmarshal(data, &m); err != nil || m.Version != "1.0.1" || len(m.Deltas) != 1 {
 				t.Fatalf("the manifest: %+v, %v", m, err)
 			}
+			if appImage && (m.AppImage == nil || len(m.AppImage.Deltas) != 1) {
+				t.Fatalf("the manifest's AppImage: %+v", m.AppImage)
+			}
 
 			// installAs runs platform/update in an app of version 1.0.0 installed in
 			// a copy of the first build (changed, if asked), with key: it returns
 			// what the program printed, and the tree it staged.
 			installAs := func(t *testing.T, key string, changed bool) (string, string) {
 				root := filepath.Join(t.TempDir(), filepath.Base(old.root))
-				if err := os.CopyFS(root, os.DirFS(old.root)); err != nil {
+				if appImage {
+					// The AppImage, as the user named it.
+					root = filepath.Join(t.TempDir(), "Notes.AppImage")
+					b, err := os.ReadFile(old.appImage)
+					if err == nil {
+						err = os.WriteFile(root, b, 0o755)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+				} else if err := os.CopyFS(root, os.DirFS(old.root)); err != nil {
 					t.Fatal(err)
 				}
 				exe, work, kindText := filepath.Join(root, "Notes.exe"), root, "folder"
-				switch kind {
-				case iupdate.Prefix:
+				switch {
+				case appImage:
+					exe, work, kindText = root, filepath.Dir(root), "appimage"
+				case kind == iupdate.Prefix:
 					exe, work, kindText = filepath.Join(root, "bin", "notes"), filepath.Join(root, "share", "notes"), "prefix"
-				case iupdate.Bundle:
+				case kind == iupdate.Bundle:
 					exe, work, kindText = filepath.Join(root, "Contents", "MacOS", "Notes"), filepath.Dir(root), "bundle"
 				}
 				if changed {
@@ -177,25 +200,41 @@ func TestUpdatesVerifiedByCore(t *testing.T) {
 				}
 				return out, staged
 			}
-			want := readFiles(t, nw.root)
+			// check checks the tree (the AppImage) staged.
+			check := func(t *testing.T, staged string) {
+				if appImage {
+					got, _ := os.ReadFile(staged)
+					want, _ := os.ReadFile(nw.appImage)
+					if !bytes.Equal(got, want) || !strings.HasPrefix(filepath.Base(staged), ".Notes.AppImage.asuka-update-") {
+						t.Errorf("staged %s, %d bytes: not 1.0.1's AppImage (%d)", staged, len(got), len(want))
+					}
+					if left, _ := filepath.Glob(staged + ".delta"); len(left) > 0 {
+						t.Errorf("left the delta: %v", left)
+					}
+					return
+				}
+				if got, want := readFiles(t, staged), readFiles(t, nw.root); !maps.Equal(got, want) {
+					t.Errorf("staged %v, want %v", slices.Sorted(maps.Keys(got)), slices.Sorted(maps.Keys(want)))
+				}
+			}
+			deltaSize := m.Deltas[0].Size
+			if appImage {
+				deltaSize = m.AppImage.Deltas[0].Size
+			}
 
 			t.Run("delta", func(t *testing.T) {
 				out, staged := installAs(t, pub, false)
-				if !strings.Contains(out, "release 1.0.1 "+strconv.FormatInt(m.Deltas[0].Size, 10)+"\n") || !strings.Contains(out, "downloads 2\n") || staged == "" {
+				if !strings.Contains(out, "release 1.0.1 "+strconv.FormatInt(deltaSize, 10)+"\n") || !strings.Contains(out, "downloads 2\n") || staged == "" {
 					t.Fatalf("the delta's install:\n%s", out)
 				}
-				if got := readFiles(t, staged); !maps.Equal(got, want) {
-					t.Errorf("staged %v, want %v", slices.Sorted(maps.Keys(got)), slices.Sorted(maps.Keys(want)))
-				}
+				check(t, staged)
 			})
 			t.Run("archive", func(t *testing.T) {
 				out, staged := installAs(t, pub, true)
 				if !strings.Contains(out, "downloads 3\n") || staged == "" {
 					t.Fatalf("the archive's install:\n%s", out)
 				}
-				if got := readFiles(t, staged); !maps.Equal(got, want) {
-					t.Errorf("staged %v, want %v", slices.Sorted(maps.Keys(got)), slices.Sorted(maps.Keys(want)))
-				}
+				check(t, staged)
 			})
 			t.Run("another key", func(t *testing.T) {
 				other, _ := testKeys(t)

@@ -193,6 +193,18 @@ func (k *Key) SignArmored(data []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// SignArmoredText is a detached armored signature of text, in text mode
+// (a canonical text document's: what appimagetool --sign makes of an
+// AppImage's digest).
+func (k *Key) SignArmoredText(text []byte) ([]byte, error) {
+	var b bytes.Buffer
+	if err := openpgp.ArmoredDetachSignText(&b, k.e, bytes.NewReader(text), config(time.Now())); err != nil {
+		return nil, err
+	}
+	b.WriteByte('\n')
+	return b.Bytes(), nil
+}
+
 // ClearSign is text clearsigned (InRelease).
 func (k *Key) ClearSign(text []byte) ([]byte, error) {
 	var b bytes.Buffer

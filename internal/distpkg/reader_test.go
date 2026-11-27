@@ -154,10 +154,34 @@ func readSquashFS(t *testing.T, img []byte) map[string]sqEntry {
 const fakeUpdOffset = 64
 
 // fakeRuntime is an ELF as the AppImage runtime is to WriteAppImage: AI
-// and 2 in its identification, a .upd_info section of updSize bytes, and
-// nothing after its section headers.
+// and 2 in its identification, a .upd_info section of updSize bytes, the
+// .sha256_sig (1024 bytes) and .sig_key (8192) the runtime has after it,
+// and nothing after its section headers.
 func fakeRuntime(updSize int) []byte {
-	shstr := []byte("\x00.upd_info\x00.shstrtab\x00")
+	return fakeRuntimeSections(updSize, 1024, 8192)
+}
+
+// fakeRuntimeSections is fakeRuntime with sections of those sizes (none
+// for 0).
+func fakeRuntimeSections(updSize, sigSize, keySize int) []byte {
+	type section struct {
+		name string
+		size int
+	}
+	var secs []section
+	for _, s := range []section{{".upd_info", updSize}, {".sha256_sig", sigSize}, {".sig_key", keySize}} {
+		if s.size > 0 {
+			secs = append(secs, s)
+		}
+	}
+	shstr := []byte{0}
+	names := make([]int, len(secs))
+	for i, s := range secs {
+		names[i] = len(shstr)
+		shstr = append(append(shstr, s.name...), 0)
+	}
+	strName := len(shstr)
+	shstr = append(shstr, ".shstrtab\x00"...)
 	var b bytes.Buffer
 	hdr := make([]byte, 64)
 	copy(hdr, []byte{0x7f, 'E', 'L', 'F', 2, 1, 1, 0, 'A', 'I', 2})
@@ -165,14 +189,18 @@ func fakeRuntime(updSize int) []byte {
 	le.PutUint16(hdr[16:], 2)  // an executable
 	le.PutUint16(hdr[18:], 62) // x86-64
 	le.PutUint32(hdr[20:], 1)
-	shoff := 64 + updSize + len(shstr)
+	data := 0
+	for _, s := range secs {
+		data += s.size
+	}
+	shoff := 64 + data + len(shstr)
 	le.PutUint64(hdr[40:], uint64(shoff))
-	le.PutUint16(hdr[52:], 64) // the header's size
-	le.PutUint16(hdr[58:], 64) // a section header's
-	le.PutUint16(hdr[60:], 3)  // sections
-	le.PutUint16(hdr[62:], 2)  // .shstrtab's index
+	le.PutUint16(hdr[52:], 64)                  // the header's size
+	le.PutUint16(hdr[58:], 64)                  // a section header's
+	le.PutUint16(hdr[60:], uint16(len(secs)+2)) // sections
+	le.PutUint16(hdr[62:], uint16(len(secs)+1)) // .shstrtab's index
 	b.Write(hdr)
-	b.Write(make([]byte, updSize))
+	b.Write(make([]byte, data))
 	b.Write(shstr)
 	sh := func(name, typ uint32, off, size int) {
 		s := make([]byte, 64)
@@ -184,7 +212,11 @@ func fakeRuntime(updSize int) []byte {
 		b.Write(s)
 	}
 	sh(0, 0, 0, 0)
-	sh(1, 1, 64, updSize)             // .upd_info: PROGBITS
-	sh(11, 3, 64+updSize, len(shstr)) // .shstrtab
+	off := 64
+	for i, s := range secs {
+		sh(uint32(names[i]), 1, off, s.size) // PROGBITS
+		off += s.size
+	}
+	sh(uint32(strName), 3, off, len(shstr)) // .shstrtab
 	return b.Bytes()
 }

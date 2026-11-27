@@ -327,7 +327,7 @@ github = "you/notes"
 | `tagPrefix` | string | `"v"` | The releases' tags' prefix. Another, as `"desktop-v"`, lets the repository's latest release be another's: apps then find the newest tagged with it through the GitHub API. |
 | `url` | string | | Instead of `github`: an HTTPS directory that serves the files (an S3 or R2 bucket, a CDN); apps read `<url>/update-<target>.json`. |
 | `feed` | string | none | An HTTPS server of yours that apps ask instead, its URL with `{target}`, `{version}` and `{channel}`. It needs `url`, where the files are. |
-| `s3` | table | none | The bucket that serves `url`, which `asuka publish` uploads to: `bucket` (required), `prefix` (its directory; default its root), `region` (default `AWS_REGION`, else `AWS_DEFAULT_REGION`, else `us-east-1`), `endpoint` (R2's, MinIO's; default Amazon S3), `pathStyle` (default: with `endpoint`, or a bucket name with dots). |
+| `s3` | table | none | The bucket that serves `url`, which `asuka publish` uploads to: `bucket` (required), `prefix` (its directory; default its root), `region` (default `AWS_REGION`, else `AWS_DEFAULT_REGION`, else `us-east-1`), `endpoint` (R2's, MinIO's; default `AWS_ENDPOINT_URL_S3`, else `AWS_ENDPOINT_URL`, else Amazon S3), `pathStyle` (default: with `endpoint`, or a bucket name with dots). |
 | `privateKey` | path | none | The secret key's path, for builds on your machine (`~/` is the home directory). |
 | `changelog` | path | `CHANGELOG.md`, when there is one | A Markdown file whose `## 1.2.0` section is the release notes. |
 | `deltas` | integer | `3` | How many versions before get a delta update, a download of what changed alone; `0`, none. |
@@ -473,7 +473,7 @@ developer.
 | `maintainer` | string | `developer` | Who the `.deb` and the `.rpm` say maintains them: `"Name <email>"`. |
 | `debDepends` | strings | none | More packages the `.deb` depends on, in Debian's syntax: `"libfoo1 (>= 1.2)"`, `"a \| b"`. |
 | `rpmRequires` | strings | none | More packages the `.rpm` requires, in RPM's: `"foo >= 1.2"`, `"(a or b)"`. |
-| `signingKey` | path | none | The OpenPGP secret key (`asuka linux keygen`'s `asuka-linux.key`; `~/` the home directory) that signs the `.rpm` and the apt and dnf repository, for builds on your machine. `ASUKA_LINUX_GPG_KEY` (the key, or its path) overrides it; `ASUKA_LINUX_GPG_PASSPHRASE` decrypts an encrypted one. |
+| `signingKey` | path | none | The OpenPGP secret key (`asuka linux keygen`'s `asuka-linux.key`; `~/` the home directory) that signs the `.rpm`, the AppImage (as `appimagetool --sign` does) and the apt and dnf repository, for builds on your machine. `ASUKA_LINUX_GPG_KEY` (the key, or its path) overrides it; `ASUKA_LINUX_GPG_PASSPHRASE` decrypts an encrypted one. |
 | `repository` | table | none | The apt and dnf repository `asuka publish --platform linux` writes the `.deb` and the `.rpm` into: `url`, the HTTPS URL that serves it (in the `.repo` file and the lines users run); `s3`, the bucket that serves it (`bucket`, `prefix`, `region`, `endpoint`, `pathStyle`, as `updates.s3`), or `dir`, a directory. `--repo` overrides where. |
 
 See [Shipping](shipping.md#linux) and [Signed packages and

@@ -3278,7 +3278,8 @@ How the Linux host maps Asuka (`platform/linux`, C17):
   prefix's files and links for the staged tree's (`.asuka-files` naming
   them), puts back what it moved if a rename fails, and runs the
   desktop's cache tools; an AppImage's `install` renames the new
-  AppImage, downloaded beside it, over the file. `relaunch()` starts the
+  AppImage, made beside it (from its delta, else downloaded), over the
+  file. `relaunch()` starts the
   executable at the path it started from (an AppImage's file, extracted
   again with `APPIMAGE_EXTRACT_AND_RUN` when this launch was: its
   `$APPDIR` is no mount) with `ASUKA_RELAUNCH_WAIT`, which the new process waits
@@ -4278,8 +4279,12 @@ over files, as its `native fn`s; the host does what only it can.
     folder holding the .exe and its assets, with `.asuka-files`) or
     `prefix` (Linux: `root` the prefix of `bin/<exe>` and
     `share/<exe>/`) or `appimage` (Linux: `root` and `exe` the AppImage
-    file, `work` its directory; the package downloads the manifest's
-    `appimage`, whole, in place of the archive); `exe` the running executable, links resolved (on
+    file, `work` its directory; the package takes the manifest's
+    `appimage` in place of the archive: its delta from the running
+    version, when it has one, applied to the AppImage's own file (a
+    delta of one file, internal/update's WriteFileDelta, by the core's
+    `update.deltaFile`) and the file made checked against the
+    AppImage's size and signature, else the AppImage downloaded whole); `exe` the running executable, links resolved (on
     Linux, the path it started from: `/proc` names the replaced file);
     `work` where updates are made, on root's volume (a bundle's parent,
     the folder, `share/<exe>`). Not installable, `reason` says why:

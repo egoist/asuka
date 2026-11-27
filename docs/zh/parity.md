@@ -213,7 +213,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 平台 | Mac、Windows、Linux | Mac、Windows、Linux；iOS 和 Android（Tauri 2） | Mac、Windows、Linux | Windows、Mac（配合 React Native 的 iOS 和 Android） | Mac、Windows、Linux、iOS、Android、Web |
 | 界面由什么呈现 | Chromium 里的 HTML 和 CSS | 系统 web view（WKWebView、WebView2、WebKitGTK）里的 HTML 和 CSS | 系统 web view 里的 HTML 和 CSS | 平台的原生视图 | 平台的原生控件：AppKit；Win32 和通用控件，按 Windows 11 的样子绘制；GTK 4 和 libadwaita |
 | 应用使用的语言 | JavaScript（页面之外还有 Node.js） | Rust，加上页面里的 JavaScript | Go，加上页面里的 JavaScript | JavaScript | Asuka（原生包里还可以有 Swift、C 或 JavaScript） |
-| 分发形式 | electron-builder：`.dmg`、`.pkg`、`.zip`；NSIS、MSI、AppX；`.deb`、`.rpm`、AppImage、Snap、Flatpak | `.app`、`.dmg`；MSI、NSIS；`.deb`、`.rpm`、AppImage | `.app`；NSIS；一个二进制文件 | Xcode 的归档；MSIX | `asuka build`：附带 `.dmg` 和 `.zip` 并经过签名和公证的 `.app`，或 Mac App Store 的 `.pkg`；按用户安装的安装程序（`.exe`）、`.zip`、用于 Microsoft Store 和旁加载的 MSIX；`.deb`、`.rpm`（已签名）、AppImage、`.tar.gz`、Flatpak 清单，都在任意系统上用 Go 写出；还有签名的 apt 和 dnf 软件源，`asuka publish --repo` 会把每个版本加进去 |
+| 分发形式 | electron-builder：`.dmg`、`.pkg`、`.zip`；NSIS、MSI、AppX；`.deb`、`.rpm`、AppImage、Snap、Flatpak | `.app`、`.dmg`；MSI、NSIS；`.deb`、`.rpm`、AppImage | `.app`；NSIS；一个二进制文件 | Xcode 的归档；MSIX | `asuka build`：附带 `.dmg` 和 `.zip` 并经过签名和公证的 `.app`，或 Mac App Store 的 `.pkg`；按用户安装的安装程序（`.exe`）、`.zip`、用于 Microsoft Store 和旁加载的 MSIX；`.deb`、`.rpm` 和 AppImage（已签名）、`.tar.gz`、Flatpak 清单，都在任意系统上用 Go 写出；还有签名的 apt 和 dnf 软件源，`asuka publish --repo` 会把每个版本加进去 |
 | 随应用分发的内容 | Chromium 和 Node.js | 应用的二进制文件（web view 用系统自带的） | 应用的二进制文件（同上） | 一个 JavaScript 引擎和 React Native 的运行时 | 一个可执行文件，即预先编译好的应用；Linux 上的 GTK 4 和 libadwaita 由系统提供；除非应用显示了 `WebView`，否则不带 web view |
 
 web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 呈现，并且能用上 Web 生态里的各种库。Asuka 应用则和各平台的原生应用看起来一样（不设置任何样式的应用，在 Mac 上就是一个 Mac 应用，在 Linux 上就是一个 GNOME 应用，在 Windows 上就是一个 Windows 11 应用），也能获得它们的无障碍支持、文本输入和菜单，同时所有平台共用同一套布局引擎。`asuka build` 在任何系统上都能构建 Windows 和 Linux 版本（借助 Zig，不需要安装 GTK）；Mac 版本则需要一台装了 Xcode 的 Mac。
@@ -251,7 +251,7 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 | 应用图标上的进度和提醒 | `setProgressBar`、`flashFrame`、`dock.bounce` | Dock 和任务栏 | ✓ `dock.setProgress`、`dock.requestAttention`（Linux：支持 Unity 启动器 API 的 dock） |
 | 强调色、增强对比度、降低透明度 | `systemPreferences` | 强调色和辅助功能设置 | ✓ `platform/appearance`（Linux 上没有降低透明度） |
 | 正在播放和媒体键 | （无：只能在页面里用 `navigator.mediaSession`） | 正在播放 | ✓ `platform/nowplaying`（`MPNowPlayingInfoCenter`；窗口的 SystemMediaTransportControls；一个 MPRIS 播放器） |
-| 自动更新：签名的版本、增量更新、Sparkle 式窗口 | `autoUpdater`（Squirrel）、electron-updater | 更新器及其插件 | ✓ `platform/update`（`update.UpdateWindow`、`update.AppMenu()`、`checkForUpdates`、`check`、`install`、`relaunch`；Ed25519 签名、增量更新、更新渠道；GitHub releases、S3 存储桶或任意 HTTPS 目录，或者你自己的服务器；`asuka publish --platform mac\|windows\|linux`）；AppImage 会替换自己的文件，并带有 AppImageUpdate 读取的更新信息（一个 `.zsync`）；由系统包管理器、Flatpak 或应用商店安装的应用通过它们更新；Web 上刷新页面即可 |
+| 自动更新：签名的版本、增量更新、Sparkle 式窗口 | `autoUpdater`（Squirrel）、electron-updater | 更新器及其插件 | ✓ `platform/update`（`update.UpdateWindow`、`update.AppMenu()`、`checkForUpdates`、`check`、`install`、`relaunch`；Ed25519 签名、增量更新、更新渠道；GitHub releases、S3 存储桶或任意 HTTPS 目录，或者你自己的服务器；`asuka publish --platform mac\|windows\|linux`）；AppImage 会用由增量做出的新文件替换自己的文件，并带有 AppImageUpdate 读取的更新信息（一个 `.zsync`）；由系统包管理器、Flatpak 或应用商店安装的应用通过它们更新；Web 上刷新页面即可 |
 
 ## 尚未支持
 

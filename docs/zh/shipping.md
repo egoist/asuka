@@ -270,7 +270,7 @@ Linux 构建可以在任何系统上完成，构建时不需要安装 GTK（应�
   sudo dnf install ./my-notes-1.0-linux-amd64.rpm
   ```
 
-- `my-notes-<version>-linux-<arch>.AppImage`：单个文件形式的应用，下载后直接运行即可，要求发行版自带 GTK 4.14 和 libadwaita 1.5（AppImage 里不包含它们）；desktop 文件和图标放在 AppImage 工具和启动器能找到的位置。在没有 FUSE 的环境（比如容器）里，可以加上 `--appimage-extract-and-run` 运行。配置了[自动更新](#自动更新)时，它会像 `.tar.gz` 的前缀一样自我更新，并且带有 AppImageUpdate、appimageupdatetool 和 AppImageLauncher 读取的更新信息（`--appimage-updateinformation` 会打印出来）：指向最新 GitHub release 里的 `.zsync`，或者 `url` 下的那个，由 `asuka build` 写在更新包旁边。它用 [AppImage 运行时](https://github.com/AppImage/type2-runtime)制作，运行时只下载一次，放进构建缓存并校验；要离线构建，把 `ASUKA_APPIMAGE_RUNTIME` 设为你自己的 `runtime-x86_64` 或 `runtime-aarch64` 即可。
+- `my-notes-<version>-linux-<arch>.AppImage`：单个文件形式的应用，下载后直接运行即可，要求发行版自带 GTK 4.14 和 libadwaita 1.5（AppImage 里不包含它们）；desktop 文件和图标放在 AppImage 工具和启动器能找到的位置。在没有 FUSE 的环境（比如容器）里，可以加上 `--appimage-extract-and-run` 运行。配置了[自动更新](#自动更新)时，它会像 `.tar.gz` 的前缀一样自我更新，并且带有 AppImageUpdate、appimageupdatetool 和 AppImageLauncher 读取的更新信息（`--appimage-updateinformation` 会打印出来）：指向最新 GitHub release 里的 `.zsync`，或者 `url` 下的那个，由 `asuka build` 写在更新包旁边。有你的 OpenPGP 密钥时，它会像 `appimagetool --sign` 那样签名：签名和公钥放在运行时的几个段里，AppImageUpdate 和 appimageupdatetool 会校验：一旦签过名，用别的密钥签名或者没有签名的更新都会被拒绝。它用 [AppImage 运行时](https://github.com/AppImage/type2-runtime)制作，运行时只下载一次，放进构建缓存并校验；要离线构建，把 `ASUKA_APPIMAGE_RUNTIME` 设为你自己的 `runtime-x86_64` 或 `runtime-aarch64` 即可。
 - `<id>.yml`：一份 [Flatpak](https://flatpak.org) 清单，基于 GNOME 运行时打包上面那个文件夹（其中的 `bin` 和 `share`）：
 
   ```sh
@@ -327,7 +327,7 @@ url = "https://packages.example.com/notes"   # 软件源对外提供的地址
 s3 = { bucket = "packages", prefix = "notes", endpoint = "https://<account>.r2.cloudflarestorage.com" }
 ```
 
-有了密钥，`asuka build` 会给 `.rpm` 签名。接着 `asuka publish --platform linux` 把 `.deb` 和 `.rpm` 写进 `linux.repository` 指定的软件源（它的 `s3` 存储桶，或者用 `dir` 指定的目录），也可以用 `--repo` 指定（一个目录，或 `s3://bucket/prefix`）。写入的内容都会签名，软件源里已有的版本会保留；如果配置了 `updates`，更新包照常发布到 `updates` 指定的位置：
+有了密钥，`asuka build` 会给 `.rpm` 和 AppImage 签名。接着 `asuka publish --platform linux` 把 `.deb` 和 `.rpm` 写进 `linux.repository` 指定的软件源（它的 `s3` 存储桶，或者用 `dir` 指定的目录），也可以用 `--repo` 指定（一个目录，或 `s3://bucket/prefix`）。写入的内容都会签名，软件源里已有的版本会保留；如果配置了 `updates`，更新包照常发布到 `updates` 指定的位置：
 
 ```sh
 asuka publish --platform linux --repo ../packages
@@ -337,10 +337,10 @@ asuka publish --platform linux --arch arm64 --repo s3://packages/notes
 软件源里的内容全部由 `asuka publish` 自己用 Go 写出：
 
 - `key.asc` 和 `key.gpg`：公钥，分别是 ASCII 封装和二进制格式；
-- `deb/`：apt 软件源，包括 `dists/stable/InRelease`（以及 `Release`、`Release.gpg`）、每个架构的 `Packages`，软件包放在 `pool/` 下；
+- `deb/`：apt 软件源，包括 `dists/stable/InRelease`（以及 `Release`、`Release.gpg`）、每个架构的 `Packages`（也按摘要另存一份，即 `by-hash`，apt 从那里获取，所以它读到的索引一定和它读到的 `InRelease` 是同一个版本），软件包放在 `pool/` 下；
 - `rpm/stable/`：dnf 软件源，包括签过名的 `repodata/repomd.xml`（签名在 `repomd.xml.asc`）和它引用的文件，软件包放在 `Packages/` 下；另有 `rpm/notes.repo`，是这个软件源的 dnf 配置。
 
-预发布版本会进入它所属渠道的 suite 和软件源（`beta`，以及 `rpm/notes-beta.repo`），测试版用户把它和 `stable` 一起添加即可。各个架构请依次发布：每次发布都是在上一次写入的内容上追加。放在 S3 存储桶里时，索引文件以不缓存的方式提供；所用凭据需要 `s3:GetObject`、`s3:PutObject`、`s3:DeleteObject` 和 `s3:ListBucket` 权限（没有 `s3:ListBucket` 时，S3 对尚不存在的文件会返回 403）。用 Web 服务器或 CDN 通过 HTTPS 提供这个目录。
+预发布版本会进入它所属渠道的 suite 和软件源（`beta`，以及 `rpm/notes-beta.repo`），测试版用户把它和 `stable` 一起添加即可。每次发布都在其他发布写入的内容上追加，各个架构也可以同时发布（比如每个架构一个 CI 任务）：只有当 `InRelease` 和 `repomd.xml` 仍是这次发布读到的那一份时才会写入（S3、R2 和 MinIO 的条件写入；目录则用锁文件），否则重新读取后再追加。放在 S3 存储桶里时，索引文件以不缓存的方式提供（R2、MinIO 等兼容服务用 `s3.endpoint` 或 `AWS_ENDPOINT_URL` 指定地址）；所用凭据需要 `s3:GetObject`、`s3:PutObject`、`s3:DeleteObject` 和 `s3:ListBucket` 权限（没有 `s3:ListBucket` 时，S3 对尚不存在的文件会返回 403，发布会就此停下）。用 Web 服务器或 CDN 通过 HTTPS 提供这个目录。
 
 用户只需执行一次以下命令（`asuka publish` 会用你的 `url` 打印出来）。在 Debian 和 Ubuntu 上：
 
@@ -473,7 +473,7 @@ component UpdateBanner {
 
 - `notes-1.2.0-<target>.tar.gz`：安装后形态的应用，已签名（对其 SHA-256 做 Ed25519 签名）。在 Mac 上是应用包（bundle），在 Windows 上是文件夹里的全部内容，在 Linux 上就是构建出的那个 `.tar.gz`。target 有 `darwin-arm64`、`darwin-amd64`、`windows-amd64`、`windows-arm64`、`linux-amd64` 和 `linux-arm64` 几种。
 - 从之前已发布的版本到当前版本的增量更新，命名为 `notes-1.1.0-to-1.2.0-<target>.delta`。构建时会按已发布清单中记录的位置下载旧版本（同时验证签名），然后写出差异：哪些文件可以直接从已安装的应用中移动或复制，改动过的文件的 bsdiff 补丁，以及其余文件的完整内容。应用只会下载针对自己当前版本的增量包；如果增量更新失败（比如应用在安装后被改动过），就改为下载完整的归档。第一个版本没有增量包。
-- 在 Linux 上还有构建出的 AppImage，同样已签名：从 AppImage 运行的应用会下载它整个文件，代替归档（清单里的 `appimage`）；以及供 AppImageUpdate 使用的 `.zsync`。用 GitHub 时它以版本命名（`notes-1.2.0-linux-amd64.AppImage.zsync`，AppImage 会在最新的 release 里找它）；用 `url` 时它不带版本号（`notes-linux-amd64.AppImage.zsync`，某个渠道的是 `notes-linux-amd64-beta.AppImage.zsync`），和清单一起最后上传。如果用了你自己的 `tagPrefix`，AppImage 里不写更新信息，因为这个仓库的最新 release 可能是别的东西（比如 CLI）的。
+- 在 Linux 上还有构建出的 AppImage，同样已签名：从 AppImage 运行的应用用它代替归档（清单里的 `appimage`），它还带有相对之前发布版本的 AppImage 的增量（`notes-1.1.0-to-1.2.0-linux-amd64.AppImage.delta`）：应用用自己版本对应的增量，从自身的文件做出新的 AppImage，再用 AppImage 的签名校验，失败时才下载完整的 AppImage；以及供 AppImageUpdate 使用的 `.zsync`。用 GitHub 时它以版本命名（`notes-1.2.0-linux-amd64.AppImage.zsync`，AppImage 会在最新的 release 里找它）；用 `url` 时它不带版本号（`notes-linux-amd64.AppImage.zsync`，某个渠道的是 `notes-linux-amd64-beta.AppImage.zsync`），和清单一起最后上传。如果用了你自己的 `tagPrefix`，AppImage 里不写更新信息，因为这个仓库的最新 release 可能是别的东西（比如 CLI）的。
 - `update-<target>.json`：清单，包含版本号、版本说明、日期，归档和各增量包的 URL、大小和签名，以及之前的各个版本（用于生成下一次的增量包）。预发布版本的清单是 `update-<target>-beta.json`，只有处在该渠道的应用才会读取。
 
 没有私钥时，构建只生成应用本身，不写任何更新文件，并会提示这一点。`--version 1.2.0` 可以构建与 `asuka.toml` 中不同的版本（CI 会从标签中取版本号）。Windows 的文件夹和 Linux 的前缀中还会多出一个 `.asuka-files`，列出这个版本安装了哪些文件。这样下次更新时，就能删掉新版本中已不再需要的文件，同时不会碰你自己放进去的任何文件。
@@ -488,7 +488,7 @@ asuka publish --platform linux --draft
 ```
 
 - 配置了 `github` 时，上传到该版本标签（`v1.2.0`）对应的 Release，需要先登录 [GitHub CLI](https://cli.github.com)（`gh auth login`，或者设置 `GH_TOKEN`）。如果 Release 还不存在，会先创建为草稿，再发布；预发布版本会以 prerelease 的形式发布，使用自定义的 `tagPrefix` 时则不会被标记为最新（latest）。`--draft` 让 Release 保持草稿状态，等所有平台都上传完再发布（`gh release edit v1.2.0 --draft=false`），因为应用只会检查最新的已发布 Release。
-- 配置了 `s3` 时，上传到存储桶，清单会带上 `Cache-Control: no-cache`（因为清单的文件名在各个版本之间保持不变）。凭据取自 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`（以及 `AWS_SESSION_TOKEN`），区域依次取 `s3.region`、`AWS_REGION` 或 `us-east-1`（R2 也接受这个值）。不需要其他任何工具。
+- 配置了 `s3` 时，上传到存储桶，清单会带上 `Cache-Control: no-cache`（因为清单的文件名在各个版本之间保持不变）。凭据取自 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`（以及 `AWS_SESSION_TOKEN`），区域依次取 `s3.region`、`AWS_REGION` 或 `us-east-1`（R2 也接受这个值）；R2、MinIO 等兼容服务的地址用 `s3.endpoint`（或 `AWS_ENDPOINT_URL`）指定。不需要其他任何工具。
 - 只配置了 `url` 时，需要你自己把 `dist/updates` 上传过去，同样要最后上传清单，并保留之前版本的文件。
 
 ### 自建更新服务器
@@ -524,7 +524,7 @@ feed = "https://api.example.com/updates?target={target}&version={version}&channe
 
 - macOS：新的应用包会先经过检查（代码签名有效，与正在运行的应用属于同一团队且标识符相同，并去掉隔离属性），然后放在应用旁边，等应用退出——不管以什么方式退出。随后由一个辅助进程把它换到旧应用的位置；如果应用请求了重新启动，就通过 Launch Services 打开新版本，这样程序坞（Dock）里只会保留一个图标。应用所在的文件夹必须是用户可写的：管理员用户可以放在 `/Applications`，否则放在 `~/Applications`。
 - Windows：在应用运行期间替换文件夹中的各项内容。每一项都先重命名挪到一边，只要有一项替换不了，就全部恢复原状；正在运行的 `.exe` 会被重命名（Windows 允许这样做），并在下次启动时删除。文件夹必须属于当前用户（不能放在 `Program Files` 下）：要么是安装程序装的（`%LOCALAPPDATA%\Programs\<Name>`），要么是解压在用户目录中的 `.zip`；更新后，“已安装的应用”里显示的就是更新后的版本。MSIX 则通过 Microsoft Store 或应用安装程序更新。
-- Linux：在 tar 包解压到的前缀（例如 `~/.local`）中，只替换应用自己的文件（`bin/notes`、`share/notes/`、desktop 文件、图标、metainfo 和 MIME 类型），每个文件都通过重命名替换，然后刷新桌面缓存（`update-desktop-database`、`update-mime-database`）。AppImage：新的 AppImage 先下载到它旁边并校验，再通过重命名替换原来的文件（无论用户给它起了什么名字，只要放在用户可写的文件夹里，比如 `~/Applications`）；重启时运行新的 AppImage，如果原来是解压运行的（`--appimage-extract-and-run`），新的也会解压运行。Flatpak、Snap 或发行版的软件包则通过各自的渠道更新，这时应用不会自我更新。
+- Linux：在 tar 包解压到的前缀（例如 `~/.local`）中，只替换应用自己的文件（`bin/notes`、`share/notes/`、desktop 文件、图标、metainfo 和 MIME 类型），每个文件都通过重命名替换，然后刷新桌面缓存（`update-desktop-database`、`update-mime-database`）。AppImage：新的 AppImage 先在它旁边由增量做出（或者下载）并校验，再通过重命名替换原来的文件（无论用户给它起了什么名字，只要放在用户可写的文件夹里，比如 `~/Applications`）；重启时运行新的 AppImage，如果原来是解压运行的（`--appimage-extract-and-run`），新的也会解压运行。Flatpak、Snap 或发行版的软件包则通过各自的渠道更新，这时应用不会自我更新。
 
 ### 手机：应用代码的更新
 
@@ -823,7 +823,7 @@ Windows 和 Linux 的任务中则改为：
 
 最后发布草稿（运行 `gh release edit v1.2.0 --draft=false`，或者在 Release 页面上操作），已安装的应用就会更新到这个版本。release 任务使用的标签由 `tagPrefix` 加版本号组成（`v1.2.0`）；`--version` 让构建的版本与标签保持一致，所以不必去改 `asuka.toml` 里的版本号。增量包以已发布的 Release 为基准生成，runner 会下载它（`GH_TOKEN` 可以放宽 GitHub API 的请求频率限制，使用 `tagPrefix` 时会用到这个 API）。
 
-如果 Linux 任务要给 `.rpm` 签名并写入 [apt 和 dnf 软件源](#签名的软件包与软件源)，它还需要 OpenPGP 密钥（`gh secret set ASUKA_LINUX_GPG_KEY < asuka-linux.key`）和存储桶的凭据：
+如果 Linux 任务要给 `.rpm` 和 AppImage 签名并写入 [apt 和 dnf 软件源](#签名的软件包与软件源)，它还需要 OpenPGP 密钥（`gh secret set ASUKA_LINUX_GPG_KEY < asuka-linux.key`）和存储桶的凭据：
 
 ```yaml
         env:

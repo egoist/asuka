@@ -3,8 +3,11 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +35,63 @@ func TestS3Signature(t *testing.T) {
 		"Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd"
 	if got := req.Header.Get("Authorization"); got != want {
 		t.Errorf("Authorization:\n%s\nwant\n%s", got, want)
+	}
+}
+
+// TestS3ConditionalWrites writes to a real bucket, ASUKA_TEST_S3's
+// (endpoint and bucket: http://127.0.0.1:9000/pkgs, with AWS_ACCESS_KEY_ID
+// and AWS_SECRET_ACCESS_KEY): a write if there's none, then refused when
+// there is; a write if it's still the version read, then refused once
+// another changed it; a deleted one's too; a listing, page after page.
+func TestS3ConditionalWrites(t *testing.T) {
+	s := os.Getenv("ASUKA_TEST_S3")
+	if s == "" {
+		t.Skip("set ASUKA_TEST_S3 to an S3 endpoint and bucket (http://127.0.0.1:9000/pkgs), and its credentials")
+	}
+	i := strings.LastIndex(s, "/")
+	prefix := fmt.Sprintf("conditional-%d", time.Now().UnixNano())
+	c, err := newS3Client(&s3Config{Endpoint: s[:i], Bucket: s[i+1:], Prefix: prefix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := c.key("InRelease")
+	if err := c.putDataIf(key, []byte("one"), "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.putDataIf(key, []byte("two"), "", nil); !errors.Is(err, errConflict) {
+		t.Errorf("a write if there's none, when there is: %v", err)
+	}
+	b, tag, err := c.getTagged(key)
+	if err != nil || string(b) != "one" || tag == "" || tag == untagged {
+		t.Fatalf("%q %q %v", b, tag, err)
+	}
+	if err := c.putDataIf(key, []byte("three"), tag, nil); err != nil {
+		t.Errorf("a write of the version read: %v", err)
+	}
+	if err := c.putDataIf(key, []byte("four"), tag, nil); !errors.Is(err, errConflict) {
+		t.Errorf("a write of a version another replaced: %v", err)
+	}
+	if b, _ := c.get(key); string(b) != "three" {
+		t.Errorf("the object is %q", b)
+	}
+	_, tag, _ = c.getTagged(key)
+	if err := c.remove(key); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.putDataIf(key, []byte("five"), tag, nil); !errors.Is(err, errConflict) {
+		t.Errorf("a write of a version since deleted: %v", err)
+	}
+	for i := range 3 {
+		if err := c.putData(c.key(fmt.Sprintf("dir/f%d", i)), []byte("x"), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	objs, err := c.list(c.key("dir/"))
+	if err != nil || len(objs) != 3 || objs[0].Key != c.key("dir/f0") || objs[0].LastModified.IsZero() {
+		t.Errorf("the listing: %+v %v", objs, err)
+	}
+	for _, o := range objs {
+		c.remove(o.Key)
 	}
 }
 

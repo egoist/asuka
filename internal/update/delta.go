@@ -173,6 +173,59 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 		}
 	}
 
+	return writeDeltaData(w, index, data)
+}
+
+// WriteFileDelta writes the delta that turns the file oldFile, of version
+// from, into newFile, of version to: a delta of one file (an AppImage's),
+// named as newFile is, a bsdiff patch of oldFile (its From, named as
+// oldFile is), else newFile compressed when that's smaller. The updater
+// applies it to the file it runs from, whatever its name, and checks the
+// file it makes against the index's size and SHA-256. Files larger than
+// deltas patch (256 MB) have none.
+func WriteFileDelta(w io.Writer, from, to, oldFile, newFile string) error {
+	info, err := os.Stat(newFile)
+	if err != nil {
+		return err
+	}
+	oldInfo, err := os.Stat(oldFile)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || !oldInfo.Mode().IsRegular() {
+		return fmt.Errorf("a delta of %s from %s: not files", newFile, oldFile)
+	}
+	if info.Size() > maxDiff || oldInfo.Size() > maxDiff {
+		return fmt.Errorf("%s is larger than deltas patch (%d MB)", filepath.Base(newFile), maxDiff>>20)
+	}
+	b, err := os.ReadFile(newFile)
+	if err != nil {
+		return err
+	}
+	prev, err := os.ReadFile(oldFile)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(b)
+	e := deltaEntry{Path: filepath.Base(newFile), Mode: uint32(info.Mode().Perm()), Size: int64(len(b)), SHA256: hex.EncodeToString(sum[:]), From: filepath.Base(oldFile)}
+	var blob []byte
+	if sha256.Sum256(prev) != sum {
+		blob = Diff(prev, b)
+		if whole := deflate(b); len(whole) <= len(blob) {
+			e.From, blob = "", whole
+		}
+		e.Data = int64(len(blob))
+	}
+	index := deltaIndex{From: from, Version: to, Entries: []deltaEntry{e}}
+	var data [][]byte
+	if blob != nil {
+		data = append(data, blob)
+	}
+	return writeDeltaData(w, index, data)
+}
+
+// writeDeltaData writes a delta: its magic, its index, its files' data.
+func writeDeltaData(w io.Writer, index deltaIndex, data [][]byte) error {
 	js, err := json.Marshal(index)
 	if err != nil {
 		return err

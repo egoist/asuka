@@ -2,6 +2,10 @@ package update
 
 import (
 	"bytes"
+	"compress/flate"
+	"encoding/binary"
+	"encoding/json"
+	"io"
 	"io/fs"
 	"maps"
 	"math/rand/v2"
@@ -200,6 +204,95 @@ func TestDeltaStapledTicket(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A file's delta (an AppImage's): one entry, the new file named as it
+// is, a patch of the old one, which a delta applied as the updater does
+// (the old file in its directory, under its name) turns into the new
+// file, much smaller than it; the same file, a copy; files that share
+// nothing, the new one compressed.
+func TestFileDelta(t *testing.T) {
+	r := rand.New(rand.NewPCG(1, 2))
+	old := make([]byte, 600_000)
+	for i := range old {
+		old[i] = byte(r.Uint32())
+	}
+	// The next version: a part changed, a part inserted, the rest moved.
+	nw := slices.Concat(old[:200_000], []byte("a new feature"), old[200_000:400_000], bytes.Repeat([]byte{7}, 5000), old[401_000:])
+	nw[300_000] ^= 0xff
+	unrelated := make([]byte, 50_000)
+	for i := range unrelated {
+		unrelated[i] = byte(r.Uint32())
+	}
+	for _, tc := range []struct {
+		name     string
+		old, new []byte
+		from     bool // the entry patches or copies the old file
+		smaller  int  // the delta is less than the new file divided by it
+	}{
+		{"patched", old, nw, true, 50},
+		{"same", old, old, true, 1000},
+		{"unrelated", old, unrelated, false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			oldFile, newFile := filepath.Join(dir, "notes-1.0.0-linux-amd64.AppImage"), filepath.Join(dir, "notes-1.1.0-linux-amd64.AppImage")
+			os.WriteFile(oldFile, tc.old, 0o755)
+			os.WriteFile(newFile, tc.new, 0o755)
+			var delta bytes.Buffer
+			if err := WriteFileDelta(&delta, "1.0.0", "1.1.0", oldFile, newFile); err != nil {
+				t.Fatal(err)
+			}
+			if tc.smaller > 0 && delta.Len()*tc.smaller > len(tc.new) {
+				t.Errorf("the delta is %d bytes, of a file of %d", delta.Len(), len(tc.new))
+			}
+			index := readIndex(t, delta.Bytes())
+			if len(index.Entries) != 1 {
+				t.Fatalf("%d entries", len(index.Entries))
+			}
+			e := index.Entries[0]
+			if e.Path != filepath.Base(newFile) || e.Size != int64(len(tc.new)) || e.Mode != 0o755 || (e.From == filepath.Base(oldFile)) != tc.from {
+				t.Errorf("the entry: %+v", e)
+			}
+			// As the updater applies it: the running AppImage, under any
+			// name, beside it.
+			installed := t.TempDir()
+			os.WriteFile(filepath.Join(installed, filepath.Base(oldFile)), tc.old, 0o755)
+			out := filepath.Join(t.TempDir(), "new")
+			if err := ApplyDelta(bytes.NewReader(delta.Bytes()), int64(delta.Len()), "1.0.0", "1.1.0", installed, out); err != nil {
+				t.Fatal(err)
+			}
+			if got, _ := os.ReadFile(filepath.Join(out, filepath.Base(newFile))); !bytes.Equal(got, tc.new) {
+				t.Errorf("applying the delta made %d bytes, not the new file", len(got))
+			}
+		})
+	}
+	big := filepath.Join(t.TempDir(), "big")
+	f, _ := os.Create(big)
+	f.Truncate(maxDiff + 1)
+	f.Close()
+	if err := WriteFileDelta(io.Discard, "1", "2", big, big); err == nil || !strings.Contains(err.Error(), "larger") {
+		t.Errorf("a file larger than deltas patch: %v", err)
+	}
+}
+
+// readIndex reads a delta's index.
+func readIndex(t *testing.T, d []byte) deltaIndex {
+	t.Helper()
+	if !bytes.HasPrefix(d, []byte(deltaMagic)) {
+		t.Fatal("no magic")
+	}
+	n, k := binary.Uvarint(d[len(deltaMagic):])
+	start := len(deltaMagic) + k
+	js, err := io.ReadAll(flate.NewReader(bytes.NewReader(d[start : start+int(n)])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index deltaIndex
+	if err := json.Unmarshal(js, &index); err != nil {
+		t.Fatal(err)
+	}
+	return index
 }
 
 func FuzzApplyDelta(f *testing.F) {

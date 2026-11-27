@@ -128,6 +128,25 @@ type AppImage struct {
 	UpdateInfo string
 	// Time dates its files.
 	Time time.Time
+	// Signer, when there's one, signs it as appimagetool --sign does
+	// (AppImageSigner).
+	Signer AppImageSigner
+}
+
+// An AppImageSigner signs an AppImage: an OpenPGP key (gpgsign.Key).
+//
+// An AppImage is signed as appimagetool --sign signs one, and as
+// AppImageUpdate (its validate, appimageupdatetool) checks it: the
+// SHA-256 of the whole file with its runtime's .sha256_sig and .sig_key
+// sections zeroed, in lower case hex, is what's signed (a detached,
+// armored, text mode OpenPGP signature); the signature goes in
+// .sha256_sig, the armored public key in .sig_key.
+type AppImageSigner interface {
+	// SignArmoredText is a detached armored signature of text, in text
+	// mode.
+	SignArmoredText(text []byte) ([]byte, error)
+	// ArmoredPublic is the public key, armored.
+	ArmoredPublic() ([]byte, error)
 }
 
 // WriteAppImage writes a as an executable AppImage at file.
@@ -144,8 +163,14 @@ func WriteAppImage(a *AppImage, file string) error {
 	if err := WriteSquashFS(&img, a.Files, mtime); err != nil {
 		return err
 	}
+	b := append(append(make([]byte, 0, len(rt)+img.Len()), rt...), img.Bytes()...) // rt may be a.Runtime
+	if a.Signer != nil {
+		if err := signAppImage(b, a.Signer); err != nil {
+			return err
+		}
+	}
 	tmp := file + ".tmp"
-	if err := os.WriteFile(tmp, append(rt, img.Bytes()...), 0o755); err != nil {
+	if err := os.WriteFile(tmp, b, 0o755); err != nil {
 		os.Remove(tmp)
 		return err
 	}
@@ -195,4 +220,126 @@ func elfEnd(b []byte, f *elf.File) int64 {
 		return int64(bo.Uint32(b[0x20:])) + int64(bo.Uint16(b[0x2e:]))*int64(bo.Uint16(b[0x30:]))
 	}
 	return -1
+}
+
+// The runtime's sections an AppImage's signature and its key go in.
+const (
+	appImageSigSection = ".sha256_sig"
+	appImageKeySection = ".sig_key"
+)
+
+// span is a section's bytes in the file: [off, off+size).
+type span struct{ off, size int64 }
+
+// appImageSection is where the named section of the AppImage b's runtime
+// is.
+func appImageSection(b []byte, name string) (span, error) {
+	f, err := elf.NewFile(bytes.NewReader(b))
+	if err != nil {
+		return span{}, fmt.Errorf("the AppImage runtime isn't an ELF: %w", err)
+	}
+	defer f.Close()
+	s := f.Section(name)
+	if s == nil || s.Type == elf.SHT_NOBITS || s.Size == 0 {
+		return span{}, fmt.Errorf("the AppImage runtime has no %s section", name)
+	}
+	if s.Offset+s.Size > uint64(len(b)) {
+		return span{}, fmt.Errorf("the AppImage runtime's %s section is past its end", name)
+	}
+	return span{int64(s.Offset), int64(s.Size)}, nil
+}
+
+// AppImageDigest is what an AppImage's signature signs: the SHA-256 of
+// b, the AppImage, with its .sha256_sig and .sig_key sections as zeros,
+// in lower case hex.
+func AppImageDigest(b []byte) (string, error) {
+	sig, err := appImageSection(b, appImageSigSection)
+	if err != nil {
+		return "", err
+	}
+	key, err := appImageSection(b, appImageKeySection)
+	if err != nil {
+		return "", err
+	}
+	spans := []span{sig, key}
+	if key.off < sig.off {
+		spans = []span{key, sig}
+	}
+	if spans[0].off+spans[0].size > spans[1].off {
+		return "", errors.New("the AppImage runtime's signature sections overlap")
+	}
+	h := sha256.New()
+	zeros := make([]byte, 4096)
+	pos := int64(0)
+	for _, s := range spans {
+		h.Write(b[pos:s.off])
+		for n := s.size; n > 0; n -= min(n, int64(len(zeros))) {
+			h.Write(zeros[:min(n, int64(len(zeros)))])
+		}
+		pos = s.off + s.size
+	}
+	h.Write(b[pos:])
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// signAppImage signs the AppImage b in place: its digest's signature and
+// the public key in their sections, each followed by a zero byte at
+// least, where the tools stop reading.
+func signAppImage(b []byte, signer AppImageSigner) error {
+	sig, err := appImageSection(b, appImageSigSection)
+	if err != nil {
+		return err
+	}
+	key, err := appImageSection(b, appImageKeySection)
+	if err != nil {
+		return err
+	}
+	clear(b[sig.off : sig.off+sig.size])
+	clear(b[key.off : key.off+key.size])
+	digest, err := AppImageDigest(b)
+	if err != nil {
+		return err
+	}
+	s, err := signer.SignArmoredText([]byte(digest))
+	if err != nil {
+		return fmt.Errorf("signing the AppImage: %w", err)
+	}
+	pub, err := signer.ArmoredPublic()
+	if err != nil {
+		return err
+	}
+	if int64(len(s)) >= sig.size {
+		return fmt.Errorf("the AppImage's signature is %d bytes; its runtime's %s has room for %d", len(s), appImageSigSection, sig.size-1)
+	}
+	if int64(len(pub)) >= key.size {
+		return fmt.Errorf("the AppImage's public key is %d bytes; its runtime's %s has room for %d", len(pub), appImageKeySection, key.size-1)
+	}
+	copy(b[sig.off:], s)
+	copy(b[key.off:], pub)
+	return nil
+}
+
+// AppImageSignature is the signature and the public key in the AppImage
+// b, each as AppImageUpdate reads it (up to its section's first zero
+// byte: none when it isn't signed), and the digest they sign.
+func AppImageSignature(b []byte) (digest string, sig, key []byte, err error) {
+	read := func(name string) ([]byte, error) {
+		s, err := appImageSection(b, name)
+		if err != nil {
+			return nil, err
+		}
+		v := b[s.off : s.off+s.size]
+		if i := bytes.IndexByte(v, 0); i >= 0 {
+			v = v[:i]
+		}
+		return v, nil
+	}
+	if sig, err = read(appImageSigSection); err != nil {
+		return "", nil, nil, err
+	}
+	if key, err = read(appImageKeySection); err != nil {
+		return "", nil, nil, err
+	}
+	digest, err = AppImageDigest(b)
+	return digest, sig, key, err
 }

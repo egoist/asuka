@@ -95,7 +95,8 @@ pub struct Release {
   date: string = ""
   /// What install() downloads: the delta from the running version when
   /// there's one, else the whole archive (for an app run as an AppImage,
-  /// the new AppImage).
+  /// the new AppImage's delta from the running one's, else the new
+  /// AppImage).
   size: int = 0
   /// The feed's manifest of it.
   manifest: Manifest = Manifest()
@@ -213,11 +214,15 @@ pub async fn check() throws -> Release? {
   if compareVersions(m.version, i.version) <= 0 || !onChannel(m.version, followed) { return none }
   var size = m.size
   if i.kind == "appimage" {
-    // An AppImage takes the version's AppImage, whole: a version made
-    // without one is nothing it can install.
+    // An AppImage takes the version's AppImage, made from its own by
+    // its delta when there's one: a version made without one is nothing
+    // it can install.
     let a = m.appimage ?? ManifestFile()
     if a.url.isEmpty() || a.signature.isEmpty() || a.size <= 0 { return none }
     size = a.size
+    if let d = a.deltaFrom(i.version) {
+      if d.size > 0 { size = d.size }
+    }
   } else if let d = m.deltaFrom(i.version) {
     if d.size > 0 { size = d.size }
   }

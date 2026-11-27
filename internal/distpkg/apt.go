@@ -242,6 +242,73 @@ type AptRelease struct {
 	// Files are the suite's indexes, by their path in dists/<suite>
 	// (main/binary-amd64/Packages...).
 	Files map[string][]byte
+	// AcquireByHash says the indexes are also at their digests
+	// (ByHashPaths), where apt then fetches them: a Release and the
+	// indexes it names can't be of different versions of the suite.
+	AcquireByHash bool
+}
+
+// ByHashPath is where an index at path (main/binary-amd64/Packages) is
+// kept by its SHA-256 (hex), as a Release with Acquire-By-Hash has it:
+// main/binary-amd64/by-hash/SHA256/<sum>.
+func ByHashPath(index, sum string) string { return byHash(index, "SHA256", sum) }
+
+func byHash(index, hash, sum string) string {
+	return path.Join(path.Dir(index), "by-hash", hash, sum)
+}
+
+// ByHashPaths are where the index at path with data is kept by its
+// digests: by its SHA-256, and by its SHA-512, the strongest a Release
+// names, which apt fetches.
+func ByHashPaths(index string, data []byte) []string {
+	a, b := sha256.Sum256(data), sha512.Sum512(data)
+	return []string{byHash(index, "SHA256", hex.EncodeToString(a[:])), byHash(index, "SHA512", hex.EncodeToString(b[:]))}
+}
+
+// ReleaseFiles are the indexes a Release names, by their path: their
+// size and digests (its SHA256 and SHA512 fields).
+func ReleaseFiles(release *Stanza) map[string]ReleaseFile {
+	out := map[string]ReleaseFile{}
+	for _, field := range []string{"SHA256", "SHA512"} {
+		for _, line := range strings.Split(release.Get(field), "\n") {
+			f := strings.Fields(line)
+			if len(f) != 3 {
+				continue
+			}
+			n, err := strconv.ParseInt(f[1], 10, 64)
+			if err != nil {
+				continue
+			}
+			r := out[f[2]]
+			r.Size = n
+			if field == "SHA256" {
+				r.SHA256 = f[0]
+			} else {
+				r.SHA512 = f[0]
+			}
+			out[f[2]] = r
+		}
+	}
+	return out
+}
+
+// A ReleaseFile is an index a Release names.
+type ReleaseFile struct {
+	SHA256, SHA512 string
+	Size           int64
+}
+
+// ByHash are where the index at path is kept by its digests, as
+// ByHashPaths has them.
+func (f ReleaseFile) ByHash(index string) []string {
+	var out []string
+	if f.SHA256 != "" {
+		out = append(out, byHash(index, "SHA256", f.SHA256))
+	}
+	if f.SHA512 != "" {
+		out = append(out, byHash(index, "SHA512", f.SHA512))
+	}
+	return out
 }
 
 // Architectures are those the release's indexes are of.
@@ -274,6 +341,9 @@ func (r *AptRelease) Text() []byte {
 	field("Architectures", strings.Join(r.Architectures(), " "))
 	field("Components", strings.Join(r.Components, " "))
 	field("Description", oneLine(r.Description))
+	if r.AcquireByHash {
+		field("Acquire-By-Hash", "yes")
+	}
 	var paths []string
 	for p := range r.Files {
 		paths = append(paths, p)

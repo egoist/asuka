@@ -283,7 +283,7 @@ github = "you/notes"
 | `tagPrefix` | 文字列 | `"v"` | リリースのタグの接頭辞です。`"desktop-v"` のように別の接頭辞にすると、リポジトリの最新リリースが別のもののリリースであってもかまいません。その場合、アプリは GitHub API を通じて、この接頭辞のタグを持つ最新のリリースを探します。 |
 | `url` | 文字列 | | `github` の代わりに、ファイルを配信する HTTPS のディレクトリ（S3 や R2 のバケット、CDN）を指定します。アプリは `<url>/update-<target>.json` を読みます。 |
 | `feed` | 文字列 | なし | アプリが代わりに問い合わせる独自の HTTPS サーバーで、`{target}`、`{version}`、`{channel}` を含む URL で指定します。ファイルの置き場所として `url` も必要です。 |
-| `s3` | テーブル | なし | `url` を配信するバケットで（`[updates.s3]`）、`asuka publish` がここにアップロードします。`bucket`（必須）、`prefix`（ディレクトリ。デフォルトはバケットのルート）、`region`（デフォルトは `AWS_REGION`、なければ `AWS_DEFAULT_REGION`、それもなければ `us-east-1`）、`endpoint`（R2 や MinIO のもの。デフォルトは Amazon S3）、`pathStyle`（デフォルトでは、`endpoint` を指定したとき、またはバケット名にドットを含むときに有効）を指定します。 |
+| `s3` | テーブル | なし | `url` を配信するバケットで（`[updates.s3]`）、`asuka publish` がここにアップロードします。`bucket`（必須）、`prefix`（ディレクトリ。デフォルトはバケットのルート）、`region`（デフォルトは `AWS_REGION`、なければ `AWS_DEFAULT_REGION`、それもなければ `us-east-1`）、`endpoint`（R2 や MinIO のもの。デフォルトは `AWS_ENDPOINT_URL_S3`、なければ `AWS_ENDPOINT_URL`、それもなければ Amazon S3）、`pathStyle`（デフォルトでは、`endpoint` を指定したとき、またはバケット名にドットを含むときに有効）を指定します。 |
 | `privateKey` | パス | なし | 秘密鍵のパスで、自分のマシンでビルドするときに使います（`~/` はホームディレクトリです）。 |
 | `changelog` | パス | `CHANGELOG.md`（あれば） | Markdown のファイルで、その `## 1.2.0` のセクションがリリースノートになります。 |
 | `deltas` | 整数 | `3` | 差分アップデート（変更された部分だけをダウンロードするアップデート）を提供する、さかのぼるバージョンの数です。`0` なら提供しません。 |
@@ -410,7 +410,7 @@ Linux のビルドが、デスクトップファイル、AppStream の metainfo�
 | `maintainer` | 文字列 | `developer` | `.deb` と `.rpm` に書かれる保守担当者です（`"Name <email>"`）。 |
 | `debDepends` | 文字列の配列 | なし | `.deb` が追加で依存するパッケージです。Debian の書式で書きます（`"libfoo1 (>= 1.2)"`、`"a \| b"`）。 |
 | `rpmRequires` | 文字列の配列 | なし | `.rpm` が追加で依存するパッケージです。RPM の書式で書きます（`"foo >= 1.2"`、`"(a or b)"`）。 |
-| `signingKey` | パス | なし | `.rpm` と apt・dnf のリポジトリに署名する OpenPGP の秘密鍵（`asuka linux keygen` が作る `asuka-linux.key`。`~/` はホームディレクトリ）です。自分のマシンでビルドするときに使います。`ASUKA_LINUX_GPG_KEY`（鍵そのもの、またはそのパス）が優先され、暗号化された鍵は `ASUKA_LINUX_GPG_PASSPHRASE` で復号します。 |
+| `signingKey` | パス | なし | `.rpm`、AppImage（`appimagetool --sign` と同じ方式）、apt・dnf のリポジトリに署名する OpenPGP の秘密鍵（`asuka linux keygen` が作る `asuka-linux.key`。`~/` はホームディレクトリ）です。自分のマシンでビルドするときに使います。`ASUKA_LINUX_GPG_KEY`（鍵そのもの、またはそのパス）が優先され、暗号化された鍵は `ASUKA_LINUX_GPG_PASSPHRASE` で復号します。 |
 | `repository` | テーブル | なし | `asuka publish --platform linux` が `.deb` と `.rpm` を書き込む apt と dnf のリポジトリです。`url` はそれを配信する HTTPS の URL（`.repo` ファイルとユーザーが実行するコマンドに入ります）、`s3` はそれを配信するバケット（`bucket`、`prefix`、`region`、`endpoint`、`pathStyle`。`updates.s3` と同じ）、または `dir` でディレクトリを指定します。書き込み先は `--repo` で上書きできます。 |
 
 [配布](shipping.md#linux)と[署名付きパッケージとリポジトリ](shipping.md#署名付きパッケージとリポジトリ)を参照してください。

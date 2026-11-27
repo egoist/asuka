@@ -53,6 +53,12 @@ pub struct ManifestFile {
   url: string = ""
   size: int = 0
   signature: string = ""
+  /// Smaller downloads that make it of an earlier version's (an
+  /// AppImage's, of the one the app runs from).
+  deltas: [ManifestDelta] = []
+
+  /// The delta from version from, if the file has one.
+  fn deltaFrom(from: string) -> ManifestDelta? = deltas.find(d => d.from == from)
 }
 
 /// An earlier version's archive.
@@ -61,6 +67,9 @@ pub struct ManifestArchive {
   url: string = ""
   size: int = 0
   signature: string = ""
+  /// Its AppImage, which the next version's AppImage deltas are made
+  /// from (none when it had none).
+  appimage: ManifestFile? = none
 }
 
 // ---- Versions ----

@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoist/asuka/internal/ccache"
 	"github.com/egoist/asuka/internal/distpkg"
 	"github.com/egoist/asuka/internal/gpgsign"
 	iupdate "github.com/egoist/asuka/internal/update"
@@ -175,16 +179,34 @@ func cmpOr(xs ...string) string {
 }
 
 // A repoStore is where a repository's files are: a directory, or an S3
-// bucket.
+// bucket. Publishes may write it at once (each architecture's, from CI's
+// jobs): what names the indexes (InRelease, repomd.xml) is written only
+// if it's still the one read (writeIf), else read again, and the indexes
+// are kept by their digests, so that no publish undoes another's.
 type repoStore interface {
 	// read reads a file (fs.ErrNotExist when it isn't there).
 	read(name string) ([]byte, error)
+	// readTagged reads a file and its version's tag (an ETag), which
+	// writeIf takes.
+	readTagged(name string) ([]byte, string, error)
 	// write writes one; an index (mutable) is served uncached.
 	write(name string, data []byte, mutable bool) error
+	// writeIf writes a file if it's still at the version tag, or for "",
+	// if it isn't there: errConflict when another publish wrote it since.
+	writeIf(name string, data []byte, tag string, mutable bool) error
 	// upload copies the file at path there.
 	upload(name, path string) error
 	remove(name string) error
+	// list lists the files under dir ("deb/dists/stable/"), and when each
+	// was written.
+	list(dir string) ([]storedFile, error)
 	String() string
+}
+
+// A storedFile is a file a repoStore lists.
+type storedFile struct {
+	name     string
+	modified time.Time
 }
 
 type dirStore struct{ root string }
@@ -193,16 +215,96 @@ func (d dirStore) path(name string) string { return filepath.Join(d.root, filepa
 
 func (d dirStore) read(name string) ([]byte, error) { return os.ReadFile(d.path(name)) }
 
+// A directory's tags are its files' digests.
+func (d dirStore) readTagged(name string) ([]byte, string, error) {
+	b, err := d.read(name)
+	if err != nil {
+		return nil, "", err
+	}
+	sum := sha256.Sum256(b)
+	return b, hex.EncodeToString(sum[:]), nil
+}
+
 func (d dirStore) write(name string, data []byte, _ bool) error {
 	p := d.path(name)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	tmp := p + ".tmp"
+	tmp := ccache.TmpName(p)
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, p)
+	if err := os.Rename(tmp, p); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// writeIf compares and writes under a lock file beside the file, made
+// with O_EXCL: publishes on this computer, or on others sharing the
+// directory, take turns.
+func (d dirStore) writeIf(name string, data []byte, tag string, mutable bool) error {
+	p := d.path(name)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	lock := p + ".lock"
+	for i := 0; ; i++ {
+		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			f.Close()
+			break
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+		// A lock older than a minute is a publish's that died.
+		if st, err := os.Stat(lock); err == nil && time.Since(st.ModTime()) > time.Minute {
+			os.Remove(lock)
+			continue
+		}
+		if i >= 600 {
+			return fmt.Errorf("%s: locked for a minute (remove it if no publish is running)", lock)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	defer os.Remove(lock)
+	_, cur, err := d.readTagged(name)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		cur = ""
+	case err != nil:
+		return err
+	}
+	if cur != tag {
+		return fmt.Errorf("%s: %w", p, errConflict)
+	}
+	return d.write(name, data, mutable)
+}
+
+func (d dirStore) list(dir string) ([]storedFile, error) {
+	var out []storedFile
+	err := filepath.WalkDir(d.path(dir), func(p string, e fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if !e.Type().IsRegular() {
+			return nil
+		}
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(d.root, p)
+		out = append(out, storedFile{filepath.ToSlash(rel), info.ModTime()})
+		return nil
+	})
+	return out, err
 }
 
 func (d dirStore) upload(name, src string) error {
@@ -226,11 +328,16 @@ func (d dirStore) String() string { return d.root }
 type s3Store struct{ c *s3Client }
 
 func (s s3Store) read(name string) ([]byte, error) {
-	b, err := s.c.get(s.c.key(name))
-	if errors.Is(err, errNoObject) {
-		return nil, fs.ErrNotExist
-	}
+	b, _, err := s.readTagged(name)
 	return b, err
+}
+
+func (s s3Store) readTagged(name string) ([]byte, string, error) {
+	b, tag, err := s.c.getTagged(s.c.key(name))
+	if errors.Is(err, errNoObject) {
+		return nil, "", fs.ErrNotExist
+	}
+	return b, tag, err
 }
 
 func (s s3Store) header(name string, mutable bool) http.Header {
@@ -246,11 +353,31 @@ func (s s3Store) write(name string, data []byte, mutable bool) error {
 	return s.c.putData(s.c.key(name), data, s.header(name, mutable))
 }
 
+func (s s3Store) writeIf(name string, data []byte, tag string, mutable bool) error {
+	return s.c.putDataIf(s.c.key(name), data, tag, s.header(name, mutable))
+}
+
 func (s s3Store) upload(name, src string) error {
 	return s.c.put(s.c.key(name), src, s.header(name, false))
 }
 
 func (s s3Store) remove(name string) error { return s.c.remove(s.c.key(name)) }
+
+func (s s3Store) list(dir string) ([]storedFile, error) {
+	objs, err := s.c.list(s.c.key(dir))
+	if err != nil {
+		return nil, err
+	}
+	var out []storedFile
+	for _, o := range objs {
+		name := o.Key
+		if s.c.prefix != "" {
+			name = strings.TrimPrefix(name, s.c.prefix+"/")
+		}
+		out = append(out, storedFile{name, o.LastModified})
+	}
+	return out, nil
+}
 
 func (s s3Store) String() string { return "s3://" + s.c.bucket + "/" + s.c.prefix }
 
@@ -284,11 +411,9 @@ func linuxRepoStore(app *asukaApp, flag string) (repoStore, error) {
 		bucket, prefix, _ := strings.Cut(strings.TrimPrefix(flag, "s3://"), "/")
 		s := &s3Config{Bucket: bucket, Prefix: prefix}
 		if r != nil && r.S3 != nil {
-			// The bucket's region and endpoint, asuka.toml's.
+			// The bucket's region and endpoint, asuka.toml's (else the
+			// environment's: AWS_ENDPOINT_URL).
 			s.Region, s.Endpoint, s.PathStyle = r.S3.Region, r.S3.Endpoint, r.S3.PathStyle
-		}
-		if s.Endpoint == "" {
-			s.Endpoint = cmpOr(os.Getenv("AWS_ENDPOINT_URL_S3"), os.Getenv("AWS_ENDPOINT_URL"))
 		}
 		if err := s.validate("--repo"); err != nil {
 			return nil, err
@@ -336,8 +461,9 @@ func repoSuite(version string) string {
 
 // publishLinuxRepo writes the .deb and .rpm packages into the repository
 // of store, signed with key: the packages first, their indexes, then what
-// names the indexes (Release, InRelease; repomd.xml), so that no client
-// reads an index whose packages aren't there.
+// names the indexes (InRelease; repomd.xml), so that no client reads an
+// index whose packages aren't there. Publishes may run at once (each
+// architecture's): each adds to what the others wrote.
 func publishLinuxRepo(app *asukaApp, store repoStore, key *gpgsign.Key, debs, rpms []string) error {
 	now := time.Now().UTC()
 	suite := repoSuite(app.cfg.Version)
@@ -350,23 +476,32 @@ func publishLinuxRepo(app *asukaApp, store repoStore, key *gpgsign.Key, debs, rp
 	if err != nil {
 		return err
 	}
-	if old, err := store.read("key.asc"); err == nil {
-		k, err := gpgsign.ParsePublic(old)
-		if err != nil {
-			return fmt.Errorf("%s's key.asc: %w", store, err)
+	for {
+		old, err := store.read("key.asc")
+		if err == nil {
+			k, err := gpgsign.ParsePublic(old)
+			if err != nil {
+				return fmt.Errorf("%s's key.asc: %w", store, err)
+			}
+			if k != key.Fingerprint() {
+				return fmt.Errorf("%s is signed with the key %s, not %s, which users' systems don't trust: sign with that key (ASUKA_LINUX_GPG_KEY), or publish to another repository", store, k, key.Fingerprint())
+			}
+			break
 		}
-		if k != key.Fingerprint() {
-			return fmt.Errorf("%s is signed with the key %s, not %s, which users' systems don't trust: sign with that key (ASUKA_LINUX_GPG_KEY), or publish to another repository", store, k, key.Fingerprint())
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
 		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	} else {
-		if err := store.write("key.asc", pubArmored, true); err != nil {
+		// A new repository: its key, once (another publish's at once is
+		// checked as above).
+		if err := store.writeIf("key.asc", pubArmored, "", true); errors.Is(err, errConflict) {
+			continue
+		} else if err != nil {
 			return err
 		}
 		if err := store.write("key.gpg", pub, true); err != nil {
 			return err
 		}
+		break
 	}
 	if len(debs) > 0 {
 		if err := publishApt(app, store, key, suite, debs, now); err != nil {
@@ -382,100 +517,235 @@ func publishLinuxRepo(app *asukaApp, store repoStore, key *gpgsign.Key, debs, rp
 	return nil
 }
 
+// repoAttempts is how many times a publish reads the repository again
+// when another changed it as it wrote.
+const repoAttempts = 30
+
+// repoRetry runs try until it doesn't conflict with another publish
+// (errConflict), waiting a moment more each time; what changed is named
+// in the message.
+func repoRetry(what string, try func() error) error {
+	for attempt := 1; ; attempt++ {
+		err := try()
+		if !errors.Is(err, errConflict) {
+			return err
+		}
+		if attempt == repoAttempts {
+			return fmt.Errorf("%s kept changing as this publish wrote it (%d tries): %w", what, attempt, err)
+		}
+		fmt.Printf("asuka: %s changed as this publish wrote it (another publish?): reading it again\n", what)
+		time.Sleep(time.Duration(min(attempt, 10)) * time.Duration(100+rand.IntN(200)) * time.Millisecond)
+	}
+}
+
+// byHashAge is how long the indexes no Release names any more stay in
+// by-hash, for clients that read the Release before.
+const byHashAge = 24 * time.Hour
+
 // publishApt adds the .deb packages to the suite of the apt repository in
-// deb/.
+// deb/: their indexes kept by their digests (Acquire-By-Hash), which the
+// suite's InRelease, written only if it's still the one read, names;
+// then Release, Release.gpg and the indexes at their names, as of the
+// latest InRelease.
 func publishApt(app *asukaApp, store repoStore, key *gpgsign.Key, suite string, debs []string, now time.Time) error {
 	dists := "deb/dists/" + suite + "/"
-	indexes := map[string]string{} // arch → Packages
+	pub, err := key.ArmoredPublic()
+	if err != nil {
+		return err
+	}
+	var stanzas []*distpkg.Stanza
 	for _, d := range debs {
 		s, err := distpkg.DebStanza(d)
 		if err != nil {
 			return err
 		}
-		arch := s.Get("Architecture")
 		if err := store.upload("deb/"+s.Get("Filename"), d); err != nil {
 			return err
 		}
 		fmt.Printf("asuka: uploaded %s to %s/deb/%s\n", filepath.Base(d), store, s.Get("Filename"))
-		if _, ok := indexes[arch]; !ok {
-			b, err := store.read(dists + "main/binary-" + arch + "/Packages")
-			if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return err
-			}
-			indexes[arch] = string(b)
-		}
-		indexes[arch] = distpkg.AddPackage(indexes[arch], s)
+		stanzas = append(stanzas, s)
 	}
-	// The suite's other architectures, as they are.
-	if old, err := store.read(dists + "Release"); err == nil {
-		for _, s := range distpkg.ParseStanzas(string(old)) {
-			for _, a := range strings.Fields(s.Get("Architectures")) {
-				if _, ok := indexes[a]; ok {
-					continue
-				}
-				b, err := store.read(dists + "main/binary-" + a + "/Packages")
+	var rel *distpkg.AptRelease
+	var replaced []byte // the Release this one replaced
+	err = repoRetry(fmt.Sprintf("%s/%sInRelease", store, dists), func() error {
+		signed, tag, err := store.readTagged(dists + "InRelease")
+		indexes := map[string]string{} // arch → Packages
+		replaced = nil
+		switch {
+		case err == nil:
+			text, err := gpgsign.VerifyClearSigned(pub, signed)
+			if err != nil {
+				return fmt.Errorf("%s/%sInRelease isn't signed with the key: %w", store, dists, err)
+			}
+			replaced = text
+			old := distpkg.ParseStanzas(string(text))
+			if len(old) == 0 {
+				return fmt.Errorf("%s/%sInRelease is empty", store, dists)
+			}
+			files := distpkg.ReleaseFiles(old[0])
+			// The suite's architectures, their indexes as this Release
+			// has them.
+			for _, a := range strings.Fields(old[0].Get("Architectures")) {
+				b, err := readAptIndex(store, dists, "main/binary-"+a+"/Packages", files)
 				if err != nil {
-					return fmt.Errorf("%s/%s's Release lists %s, whose Packages is gone: %w", store, dists, a, err)
+					return err
 				}
 				indexes[a] = string(b)
 			}
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	rel := &distpkg.AptRelease{
-		Origin: app.displayName(), Label: app.displayName(), Suite: suite, Codename: suite,
-		Description: app.displayName() + " for Debian and Ubuntu", Date: now, Components: []string{"main"},
-		Files: map[string][]byte{},
-	}
-	for a, text := range indexes {
-		p := "main/binary-" + a + "/Packages"
-		rel.Files[p] = []byte(text)
-		rel.Files[p+".gz"] = distpkg.Gzip([]byte(text))
-	}
-	for _, p := range slices.Sorted(maps.Keys(rel.Files)) {
-		if err := store.write(dists+p, rel.Files[p], true); err != nil {
+		case errors.Is(err, fs.ErrNotExist):
+			tag = ""
+		default:
 			return err
 		}
-	}
-	release := rel.Text()
-	detached, err := key.SignArmored(release)
+		for _, s := range stanzas {
+			a := s.Get("Architecture")
+			indexes[a] = distpkg.AddPackage(indexes[a], s)
+		}
+		rel = &distpkg.AptRelease{
+			Origin: app.displayName(), Label: app.displayName(), Suite: suite, Codename: suite,
+			Description: app.displayName() + " for Debian and Ubuntu", Date: now, Components: []string{"main"},
+			Files: map[string][]byte{}, AcquireByHash: true,
+		}
+		for a, text := range indexes {
+			p := "main/binary-" + a + "/Packages"
+			rel.Files[p] = []byte(text)
+			rel.Files[p+".gz"] = distpkg.Gzip([]byte(text))
+		}
+		// The indexes by their digests: each Release's stay as they are.
+		for _, p := range slices.Sorted(maps.Keys(rel.Files)) {
+			for _, at := range distpkg.ByHashPaths(p, rel.Files[p]) {
+				if err := store.write(dists+at, rel.Files[p], false); err != nil {
+					return err
+				}
+			}
+		}
+		inline, err := key.ClearSign(rel.Text())
+		if err != nil {
+			return err
+		}
+		return store.writeIf(dists+"InRelease", inline, tag, true)
+	})
 	if err != nil {
 		return err
 	}
-	inline, err := key.ClearSign(release)
+	current, err := syncApt(store, key, pub, dists)
 	if err != nil {
 		return err
 	}
-	for _, f := range []struct {
-		name string
-		data []byte
-	}{{"Release", release}, {"Release.gpg", detached}, {"InRelease", inline}} {
-		if err := store.write(dists+f.name, f.data, true); err != nil {
-			return err
-		}
-	}
+	pruneByHash(store, dists, now, current, replaced)
 	fmt.Printf("asuka: %s/%s: the apt suite %s, signed (%s)\n", store, strings.TrimSuffix(dists, "/"), suite, strings.Join(rel.Architectures(), ", "))
 	return nil
 }
 
+// readAptIndex is the index at path of the suite in dists, as its Release
+// names it in files: from by-hash, else (a suite written before by-hash)
+// at its name. errConflict when that's another's: a publish is writing.
+func readAptIndex(store repoStore, dists, path string, files map[string]distpkg.ReleaseFile) ([]byte, error) {
+	f, ok := files[path]
+	if !ok {
+		return nil, fmt.Errorf("%s/%sInRelease names no %s", store, dists, path)
+	}
+	for _, p := range []string{distpkg.ByHashPath(path, f.SHA256), path} {
+		b, err := store.read(dists + p)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if sum := sha256.Sum256(b); hex.EncodeToString(sum[:]) == f.SHA256 {
+			return b, nil
+		}
+	}
+	return nil, fmt.Errorf("%s/%s%s isn't the one InRelease names: %w", store, dists, path, errConflict)
+}
+
+// syncApt writes the suite's Release, Release.gpg and indexes at their
+// names (for clients that don't fetch by hash) as its InRelease has them,
+// until InRelease stays the one they were written from: another publish
+// that wrote it since writes them too. It returns that Release.
+func syncApt(store repoStore, key *gpgsign.Key, pub []byte, dists string) ([]byte, error) {
+	for range repoAttempts {
+		signed, tag, err := store.readTagged(dists + "InRelease")
+		if err != nil {
+			return nil, err
+		}
+		text, err := gpgsign.VerifyClearSigned(pub, signed)
+		if err != nil {
+			return nil, fmt.Errorf("%s/%sInRelease isn't signed with the key: %w", store, dists, err)
+		}
+		if !bytes.HasSuffix(text, []byte("\n")) {
+			text = append(text, '\n')
+		}
+		st := distpkg.ParseStanzas(string(text))
+		if len(st) == 0 {
+			return nil, fmt.Errorf("%s/%sInRelease is empty", store, dists)
+		}
+		files := distpkg.ReleaseFiles(st[0])
+		for _, p := range slices.Sorted(maps.Keys(files)) {
+			b, err := store.read(dists + distpkg.ByHashPath(p, files[p].SHA256))
+			if err != nil {
+				return nil, fmt.Errorf("%s/%sInRelease names %s, which by-hash doesn't have: %w", store, dists, p, err)
+			}
+			if err := store.write(dists+p, b, true); err != nil {
+				return nil, err
+			}
+		}
+		detached, err := key.SignArmored(text)
+		if err != nil {
+			return nil, err
+		}
+		if err := store.write(dists+"Release", text, true); err != nil {
+			return nil, err
+		}
+		if err := store.write(dists+"Release.gpg", detached, true); err != nil {
+			return nil, err
+		}
+		if _, latest, err := store.readTagged(dists + "InRelease"); err != nil || latest == tag {
+			return text, err
+		}
+	}
+	return nil, fmt.Errorf("%s/%sInRelease kept changing as this publish wrote its Release", store, dists)
+}
+
+// pruneByHash removes the suite's by-hash indexes that neither its
+// Release nor the one before (replaced) names, once byHashAge has passed
+// since they were written: what a publish at once just wrote, and what a
+// client that read the Release before fetches, stay. Without a listing
+// (S3 without s3:ListBucket) they all stay.
+func pruneByHash(store repoStore, dists string, now time.Time, current, replaced []byte) {
+	named := map[string]bool{}
+	for _, text := range [][]byte{current, replaced} {
+		if st := distpkg.ParseStanzas(string(text)); len(st) > 0 {
+			for p, f := range distpkg.ReleaseFiles(st[0]) {
+				for _, at := range f.ByHash(p) {
+					named[dists+at] = true
+				}
+			}
+		}
+	}
+	files, err := store.list(dists + "main/")
+	if err != nil {
+		fmt.Printf("asuka: keeping the old by-hash indexes of %s/%s: %v\n", store, strings.TrimSuffix(dists, "/"), err)
+		return
+	}
+	for _, f := range files {
+		if !strings.Contains(f.name, "/by-hash/") || named[f.name] || now.Sub(f.modified) < byHashAge {
+			continue
+		}
+		if err := store.remove(f.name); err != nil {
+			fmt.Printf("asuka: leaving %s: %v\n", f.name, err)
+		}
+	}
+}
+
 // publishDnf adds the .rpm packages, which must be signed, to the dnf
-// repository rpm/<suite>.
+// repository rpm/<suite>: its metadata files (named by their digests),
+// then repomd.xml, written only if it's still the one read, then its
+// signature, as of the latest repomd.xml.
 func publishDnf(app *asukaApp, store repoStore, key *gpgsign.Key, suite string, rpms []string, now time.Time) error {
 	root := "rpm/" + suite + "/"
-	m := &distpkg.YumMetadata{}
-	var before []string // the metadata files the repository had
-	if repomd, err := store.read(root + "repodata/repomd.xml"); err == nil {
-		if m, err = distpkg.ReadYumMetadata(repomd, func(href string) ([]byte, error) { return store.read(root + href) }); err != nil {
-			return fmt.Errorf("%s/%srepodata: %w", store, root, err)
-		}
-		data, _ := distpkg.ParseRepomd(repomd)
-		for _, d := range data {
-			before = append(before, d.Location.Href)
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
+	var pkgs []*distpkg.YumPackage
 	for _, r := range rpms {
 		info, err := distpkg.ReadRPM(r)
 		if err != nil {
@@ -492,30 +762,86 @@ func publishDnf(app *asukaApp, store repoStore, key *gpgsign.Key, suite string, 
 			return err
 		}
 		fmt.Printf("asuka: uploaded %s to %s/%s%s\n", filepath.Base(r), store, root, href)
-		m.Add(distpkg.NewYumPackage(info, href, now))
+		pkgs = append(pkgs, distpkg.NewYumPackage(info, href, now))
 	}
-	files, err := m.Files(now)
-	if err != nil {
-		return err
-	}
-	for _, p := range slices.Sorted(maps.Keys(files.Files)) {
-		if err := store.write(root+p, files.Files[p], false); err != nil {
+	var m *distpkg.YumMetadata
+	var before []string // the metadata files the repomd.xml replaced names
+	err := repoRetry(fmt.Sprintf("%s/%srepodata/repomd.xml", store, root), func() error {
+		m, before = &distpkg.YumMetadata{}, nil
+		repomd, tag, err := store.readTagged(root + "repodata/repomd.xml")
+		switch {
+		case err == nil:
+			m, err = distpkg.ReadYumMetadata(repomd, func(href string) ([]byte, error) {
+				b, err := store.read(root + href)
+				if errors.Is(err, fs.ErrNotExist) {
+					// Removed as another publish replaced this repomd.xml.
+					return nil, fmt.Errorf("%s/%s%s: %w", store, root, href, errConflict)
+				}
+				return b, err
+			})
+			if err != nil {
+				if errors.Is(err, errConflict) {
+					return err
+				}
+				return fmt.Errorf("%s/%srepodata: %w", store, root, err)
+			}
+			data, _ := distpkg.ParseRepomd(repomd)
+			for _, d := range data {
+				before = append(before, d.Location.Href)
+			}
+		case errors.Is(err, fs.ErrNotExist):
+			tag = ""
+		default:
 			return err
 		}
-	}
-	sig, err := key.SignArmored(files.Repomd)
+		for _, p := range pkgs {
+			m.Add(p)
+		}
+		files, err := m.Files(now)
+		if err != nil {
+			return err
+		}
+		for _, p := range slices.Sorted(maps.Keys(files.Files)) {
+			if err := store.write(root+p, files.Files[p], false); err != nil {
+				return err
+			}
+		}
+		return store.writeIf(root+"repodata/repomd.xml", files.Repomd, tag, true)
+	})
 	if err != nil {
 		return err
 	}
-	if err := store.write(root+"repodata/repomd.xml.asc", sig, true); err != nil {
-		return err
-	}
-	if err := store.write(root+"repodata/repomd.xml", files.Repomd, true); err != nil {
-		return err
+	// Its signature, of the latest repomd.xml: another publish that wrote
+	// it since signs it too.
+	var current []string
+	for i := 0; ; i++ {
+		repomd, tag, err := store.readTagged(root + "repodata/repomd.xml")
+		if err != nil {
+			return err
+		}
+		sig, err := key.SignArmored(repomd)
+		if err != nil {
+			return err
+		}
+		if err := store.write(root+"repodata/repomd.xml.asc", sig, true); err != nil {
+			return err
+		}
+		if _, latest, err := store.readTagged(root + "repodata/repomd.xml"); err != nil {
+			return err
+		} else if latest == tag {
+			data, _ := distpkg.ParseRepomd(repomd)
+			for _, d := range data {
+				current = append(current, d.Location.Href)
+			}
+			break
+		}
+		if i == repoAttempts {
+			return fmt.Errorf("%s/%srepodata/repomd.xml kept changing as this publish signed it", store, root)
+		}
 	}
 	// What the metadata replaced goes, as createrepo_c removes it.
 	for _, href := range before {
-		if _, ok := files.Files[href]; !ok && strings.HasPrefix(href, "repodata/") && !strings.Contains(href, "..") {
+		if !slices.Contains(current, href) && strings.HasPrefix(href, "repodata/") && !strings.Contains(href, "..") {
 			if err := store.remove(root + href); err != nil {
 				fmt.Printf("asuka: leaving %s%s: %v\n", root, href, err)
 			}

@@ -254,7 +254,7 @@ func TestWriteUpdates(t *testing.T) {
 					}
 					// And its AppImage.
 					b.appImage = filepath.Join(b.dir, "notes-"+version+"-"+target+".AppImage")
-					writeFiles(t, b.dir, map[string]string{filepath.Base(b.appImage): "an AppImage of " + version})
+					writeFiles(t, b.dir, map[string]string{filepath.Base(b.appImage): "an AppImage of " + code(version)})
 					b.appImageInfo, b.appImageZsync = appImageUpdate(app.cfg.Updates, "notes", version, target)
 				case iupdate.Bundle:
 					b.dir = out
@@ -310,7 +310,19 @@ func TestWriteUpdates(t *testing.T) {
 				sum := sha256.Sum256(image)
 				key, _ := iupdate.ParsePublicKey(pub)
 				if a == nil || a.URL != srv.URL+"/notes/notes-1.0.1-test-target.AppImage" || a.Size != int64(len(image)) || iupdate.Verify(key, sum[:], a.Signature) != nil {
-					t.Errorf("the manifest's AppImage: %+v", a)
+					t.Fatalf("the manifest's AppImage: %+v", a)
+				}
+				// Its delta from 1.0.0's AppImage, signed, much smaller; 1.0.0's
+				// AppImage in the versions before, for the next one's.
+				if len(a.Deltas) != 1 || a.Deltas[0].From != "1.0.0" || a.Deltas[0].URL != srv.URL+"/notes/notes-1.0.0-to-1.0.1-test-target.AppImage.delta" || a.Deltas[0].Size*4 > a.Size {
+					t.Errorf("the AppImage's deltas: %+v (the AppImage: %d bytes)", a.Deltas, a.Size)
+				}
+				delta, _ := os.ReadFile(filepath.Join(dir, "notes-1.0.0-to-1.0.1-test-target.AppImage.delta"))
+				if dsum := sha256.Sum256(delta); len(a.Deltas) == 0 || int64(len(delta)) != a.Deltas[0].Size || iupdate.Verify(key, dsum[:], a.Deltas[0].Signature) != nil {
+					t.Error("the AppImage's delta isn't the one the manifest signs")
+				}
+				if p := m.Previous[0].AppImage; p == nil || p.URL != srv.URL+"/notes/notes-1.0.0-test-target.AppImage" || len(p.Deltas) != 0 {
+					t.Errorf("the version before's AppImage: %+v", p)
 				}
 				if b.appImageInfo != "zsync|"+srv.URL+"/notes/notes-test-target.AppImage.zsync" {
 					t.Errorf("the update information: %q", b.appImageInfo)
@@ -320,7 +332,8 @@ func TestWriteUpdates(t *testing.T) {
 					t.Errorf("the .zsync:\n%s", z)
 				}
 				files, manifests, err := updateFiles(dir, "notes", "1.0.1", target)
-				if err != nil || !slices.Contains(files, filepath.Join(dir, "notes-1.0.1-test-target.AppImage")) || len(manifests) != 2 || filepath.Base(manifests[1]) != "notes-test-target.AppImage.zsync" {
+				if err != nil || !slices.Contains(files, filepath.Join(dir, "notes-1.0.1-test-target.AppImage")) || !slices.Contains(files, filepath.Join(dir, "notes-1.0.0-to-1.0.1-test-target.AppImage.delta")) ||
+					len(manifests) != 2 || filepath.Base(manifests[1]) != "notes-test-target.AppImage.zsync" {
 					t.Errorf("updateFiles: %v %v %v", files, manifests, err)
 				}
 			}

@@ -24,10 +24,11 @@
 //     finishes it by relaunching (relaunch(): the Quit command's flag),
 //     which starts the executable at the path it started from, with
 //     ASUKA_RELAUNCH_WAIT.
-//   - install {staged} of an AppImage: the new AppImage, downloaded and
-//     verified beside the running one (.<name>.asuka-update-*), takes its
-//     place by a rename (the running one's mount keeps the old file open),
-//     with its permissions. Relaunching starts $APPIMAGE, the new file,
+//   - install {staged} of an AppImage: the new AppImage, which the
+//     package made from its delta (or downloaded) beside the running one
+//     and verified (.<name>.asuka-update-*; the delta, with .delta after),
+//     takes its place by a rename (the running one's mount keeps the old
+//     file open), with its permissions. Relaunching starts $APPIMAGE, the new file,
 //     extracted again (APPIMAGE_EXTRACT_AND_RUN) when this one was.
 //
 // At launch what an update left (.asuka-update-* work directories, the

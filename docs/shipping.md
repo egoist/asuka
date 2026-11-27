@@ -633,7 +633,11 @@ C compiler on Linux, with Zig elsewhere. In `dist/linux-amd64`
   information that AppImageUpdate, appimageupdatetool and
   AppImageLauncher read (`--appimage-updateinformation` prints it): the
   latest GitHub release's `.zsync`, or `url`'s, which `asuka build`
-  writes beside the update. It's made with the [AppImage
+  writes beside the update. With your OpenPGP key it's signed as
+  `appimagetool --sign` signs one, the signature and the public key in
+  the runtime's sections, which AppImageUpdate and appimageupdatetool
+  check: once signed, an update signed with another key, or not at
+  all, is refused. It's made with the [AppImage
   runtime](https://github.com/AppImage/type2-runtime), downloaded once
   into the build cache and checked; to build offline, set
   `ASUKA_APPIMAGE_RUNTIME` to a `runtime-x86_64` or `runtime-aarch64`
@@ -725,7 +729,7 @@ url = "https://packages.example.com/notes"   # where it's served
 s3 = { bucket = "packages", prefix = "notes", endpoint = "https://<account>.r2.cloudflarestorage.com" }
 ```
 
-With the key, `asuka build` signs the `.rpm`. `asuka publish --platform
+With the key, `asuka build` signs the `.rpm` and the AppImage. `asuka publish --platform
 linux` then writes the `.deb` and the `.rpm` into the repository that
 `linux.repository` names (its `s3` bucket, or a directory, `dir`), or
 `--repo` (a directory, or `s3://bucket/prefix`), signed, keeping the
@@ -741,7 +745,9 @@ In it, all written by `asuka publish` itself, in Go:
 
 - `key.asc` and `key.gpg`, the public key, armored and binary;
 - `deb/`, the apt repository: `dists/stable/InRelease` (and `Release`,
-  `Release.gpg`), each architecture's `Packages`, the packages in
+  `Release.gpg`), each architecture's `Packages`, kept by their digests
+  too (`by-hash`, where apt fetches them, so it never reads an index
+  of another version than the `InRelease` it read), the packages in
   `pool/`;
 - `rpm/stable/`, the dnf repository: `repodata/repomd.xml`, signed
   (`repomd.xml.asc`), the files it names, the packages in `Packages/`;
@@ -749,11 +755,16 @@ In it, all written by `asuka publish` itself, in Go:
 
 A prerelease goes to its channel's suite and repository (`beta`, and
 `rpm/notes-beta.repo`), which the beta's users add beside `stable`.
-Publish one architecture after the other: each adds to what the last
-wrote. In an S3 bucket the indexes are served uncached; the credentials need
-`s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` and `s3:ListBucket`
-(without which S3 answers 403 for a file that isn't there yet). Serve
-the directory over HTTPS from a web server or CDN.
+Each publish adds to what the others wrote, and architectures may
+publish at once (a CI job each): `InRelease` and `repomd.xml` are
+written only if they're still the ones the publish read (S3's, R2's
+and MinIO's conditional writes; in a directory, a lock file), else read
+again and added to. In an S3 bucket the indexes are served uncached
+(`s3.endpoint`, or `AWS_ENDPOINT_URL`, for R2, MinIO and other
+compatible services); the credentials need `s3:GetObject`,
+`s3:PutObject`, `s3:DeleteObject` and `s3:ListBucket` (without which
+S3 answers 403 for a file that isn't there yet, and the publish stops
+there). Serve the directory over HTTPS from a web server or CDN.
 
 What users run, once (`asuka publish` prints it with your `url`). On
 Debian and Ubuntu:
@@ -965,8 +976,12 @@ With `updates` and the secret key, `asuka build --platform mac`,
   of their version, and the whole archive when it fails (the app was
   changed since it was installed). A first version has none.
 - on Linux, the build's AppImage too, signed, which an app run from an
-  AppImage downloads whole in place of the archive (the manifest's
-  `appimage`), and its `.zsync` for AppImageUpdate: named for the
+  AppImage takes in place of the archive (the manifest's `appimage`),
+  with its deltas from the AppImages of the versions published before
+  (`notes-1.1.0-to-1.2.0-linux-amd64.AppImage.delta`): the app makes
+  the new AppImage of its own file with its version's delta, checks it
+  against the AppImage's signature, and downloads the AppImage whole
+  when that fails; and its `.zsync` for AppImageUpdate: named for the
   version on GitHub (`notes-1.2.0-linux-amd64.AppImage.zsync`, which
   the AppImage finds in the latest release), for none with `url`
   (`notes-linux-amd64.AppImage.zsync`, a channel's
@@ -1008,7 +1023,8 @@ asuka publish --platform linux --draft
   (their names stay from version to version), with
   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (and `AWS_SESSION_TOKEN`),
   the region from `s3.region`, `AWS_REGION` or `us-east-1` (which R2
-  takes). No other tool.
+  takes), and for R2, MinIO and other compatible services their
+  `s3.endpoint` (or `AWS_ENDPOINT_URL`). No other tool.
 - With `url` alone, upload `dist/updates` there yourself, the manifests
   last, and keep the earlier versions' files.
 
@@ -1065,8 +1081,8 @@ The signatures are the ones `asuka build` made: the server only chooses.
   (`bin/notes`, `share/notes/`, its desktop file, icons, metainfo and MIME
   types), each by a rename, then the desktop's caches
   (`update-desktop-database`, `update-mime-database`). An AppImage: the
-  new one, downloaded beside it and checked, takes its file's place by a
-  rename (whatever the user named it, in a folder they can write, as
+  new one, made beside it from its delta (or downloaded) and checked,
+  takes its file's place by a rename (whatever the user named it, in a folder they can write, as
   `~/Applications`), and relaunching starts it, extracted again when the
   running one was (`--appimage-extract-and-run`). A Flatpak, a Snap or a
   distribution's package updates through its own channel: there the app
@@ -1499,7 +1515,7 @@ the tag's, so `asuka.toml`'s needn't be bumped. Deltas start from the
 published release, which the runners download (`GH_TOKEN` lifts the
 GitHub API's limit on requests, which a `tagPrefix` uses).
 
-A Linux job that signs the `.rpm` and writes the [apt and dnf
+A Linux job that signs the `.rpm` and the AppImage and writes the [apt and dnf
 repository](#signed-packages-and-repositories) takes the OpenPGP key
 too (`gh secret set ASUKA_LINUX_GPG_KEY < asuka-linux.key`), and the
 bucket's credentials:

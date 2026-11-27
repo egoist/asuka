@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
 	"github.com/egoist/asuka/internal/gpgsign"
 )
 
@@ -331,4 +333,108 @@ func TestAptIndexes(t *testing.T) {
 	if !bytes.Equal(gunzip(t, Gzip([]byte(text))), []byte(text)) || !bytes.Equal(Gzip([]byte(text)), Gzip([]byte(text))) {
 		t.Error("Gzip isn't the same bytes each time")
 	}
+}
+
+// A signed AppImage, as appimagetool --sign signs one: .sha256_sig holds
+// an armored text signature of the file's SHA-256 (hex) with both
+// sections zeroed, which the public key in .sig_key verifies; the rest
+// of the runtime, its update information and the image are as unsigned;
+// a byte changed anywhere outside the two sections fails the check.
+func TestAppImageSigned(t *testing.T) {
+	key := testKey(t)
+	dir := t.TempDir()
+	a := &AppImage{
+		Runtime:    fakeRuntime(1024),
+		Files:      append(testFiles(), File{Path: "/AppRun", Mode: 0o755, Data: []byte("#!/bin/sh\n")}),
+		UpdateInfo: "zsync|https://example.com/notes-x86_64.AppImage.zsync",
+		Time:       time.Unix(1_700_000_000, 0),
+	}
+	plain := filepath.Join(dir, "plain.AppImage")
+	if err := WriteAppImage(a, plain); err != nil {
+		t.Fatal(err)
+	}
+	unsigned, _ := os.ReadFile(plain)
+	if _, sig, k, err := AppImageSignature(unsigned); err != nil || len(sig) != 0 || len(k) != 0 {
+		t.Fatalf("unsigned: %q %q %v", sig, k, err)
+	}
+	a.Signer = key
+	file := filepath.Join(dir, "Notes.AppImage")
+	if err := WriteAppImage(a, file); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(file)
+	if !bytes.Equal(a.Runtime, fakeRuntime(1024)) {
+		t.Error("signing changed the runtime it was given")
+	}
+	digest, sig, pub, err := AppImageSignature(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want, _ := AppImageDigest(unsigned); digest != want || len(digest) != 64 || strings.ToLower(digest) != digest {
+		t.Errorf("the digest %s, want the unsigned file's %s", digest, want)
+	}
+	sum := sha256.Sum256(unsigned) // the sections are zeros there
+	if digest != hex.EncodeToString(sum[:]) {
+		t.Error("the digest isn't the SHA-256 of the file with its sections zeroed")
+	}
+	if !bytes.HasPrefix(sig, []byte("-----BEGIN PGP SIGNATURE-----")) || !bytes.HasPrefix(pub, []byte("-----BEGIN PGP PUBLIC KEY BLOCK-----")) {
+		t.Fatalf("the sections: %q, %q", sig, pub)
+	}
+	if fp, err := gpgsign.ParsePublic(pub); err != nil || fp != key.Fingerprint() {
+		t.Errorf(".sig_key: %s %v", fp, err)
+	}
+	if err := gpgsign.Verify(pub, []byte(digest), sig); err != nil {
+		t.Errorf("the signature: %v", err)
+	}
+	if typ := signatureType(t, sig); typ != 0x01 {
+		t.Errorf("signature type %#x, want a text document's (0x01), as gpgme's text mode makes", typ)
+	}
+	// Only the two sections differ from the unsigned AppImage.
+	if len(b) != len(unsigned) {
+		t.Fatalf("%d bytes, unsigned %d", len(b), len(unsigned))
+	}
+	sigSec, _ := appImageSection(b, ".sha256_sig")
+	keySec, _ := appImageSection(b, ".sig_key")
+	for i := range b {
+		in := func(s span) bool { return int64(i) >= s.off && int64(i) < s.off+s.size }
+		if b[i] != unsigned[i] && !in(sigSec) && !in(keySec) {
+			t.Fatalf("byte %d changed outside the signature's sections", i)
+		}
+	}
+	// Tampered: a byte of the image, or of the update information.
+	for _, at := range []int{len(b) - 10, fakeUpdOffset} {
+		bad := bytes.Clone(b)
+		bad[at] ^= 1
+		d, s, k, _ := AppImageSignature(bad)
+		if gpgsign.Verify(k, []byte(d), s) == nil {
+			t.Errorf("a byte changed at %d: the signature still verifies", at)
+		}
+	}
+	// A runtime without the sections can't be signed.
+	a.Runtime = fakeRuntimeSections(1024, 0, 0)
+	if err := WriteAppImage(a, file); err == nil || !strings.Contains(err.Error(), ".sha256_sig") {
+		t.Errorf("no .sha256_sig: %v", err)
+	}
+	a.Runtime = fakeRuntimeSections(1024, 1024, 512)
+	if err := WriteAppImage(a, file); err == nil || !strings.Contains(err.Error(), "room") {
+		t.Errorf("a .sig_key too small: %v", err)
+	}
+}
+
+// signatureType is an armored signature's type.
+func signatureType(t *testing.T, armored []byte) packet.SignatureType {
+	t.Helper()
+	blk, err := armor.Decode(bytes.NewReader(armored))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := packet.Read(blk.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig, ok := p.(*packet.Signature)
+	if !ok {
+		t.Fatalf("a %T", p)
+	}
+	return sig.SigType
 }
