@@ -115,20 +115,34 @@ func (c Compiler) TargetsGlibc() bool {
 var GCCFlags = []string{"-Wno-format-truncation"}
 
 // AppFlags are what the C an app compiles to (lang/cgen's app.c, and
-// what's compiled with it) is compiled with for t beyond the core's: on
-// arm64, x28 reserved for the thread's stack limit (core/src/vm/ops.h's
-// AK_CG_X28), which compiled code compares the stack pointer with, as Go
-// keeps its g in R28. The core needn't be: x28 is callee-saved, so it
-// keeps its own across its calls into the app, and the app's ways in set
-// and restore it. Without them the app's C passes the limit as an
-// argument, as on amd64. Windows on ARM64 takes the argument too: there
-// the app's code found x28 not holding the limit (every app threw a
-// stack overflow at its first component, its stack nearly empty).
-func AppFlags(t Target) []string {
-	if t.Arch == "arm64" && t.OS != "windows" {
-		return []string{"-ffixed-x28", "-DAK_CG_X28"}
+// what's compiled with it) is compiled with by cc for t beyond the
+// core's: on arm64, x28 reserved for the thread's stack limit
+// (core/src/vm/ops.h's AK_CG_X28), which compiled code compares the stack
+// pointer with, as Go keeps its g in R28. The core needn't be: x28 is
+// callee-saved, so it keeps its own across its calls into the app, and
+// the app's ways in set and restore it. Without them the app's C passes
+// the limit as an argument, as on amd64. Windows on ARM64 takes the
+// argument too: there the app's code found x28 not holding the limit
+// (every app threw a stack overflow at its first component, its stack
+// nearly empty), when Zig still dropped the reservation (below).
+//
+// Zig's cc drops -ffixed-x28: it hands clang every feature of the CPU it
+// targets, reserve-x28 off among them, after the flag's +reserve-x28, so
+// x28 stays a register the app's code allocates, and the ways in, which
+// write it behind the compiler's back, overwrite what it holds there (a
+// call's status: a Linux arm64 app built on a Mac resumed a finished
+// task and crashed). With Zig the reservation is a feature of the CPU
+// named: the baseline it targets anyway, plus reserve_x28.
+// TestAppFlagsReserveX28 compiles code that wants every register with
+// each compiler and checks.
+func AppFlags(cc Compiler, t Target) []string {
+	if t.Arch != "arm64" || t.OS == "windows" {
+		return nil
 	}
-	return nil
+	if cc.IsZig() {
+		return []string{"-mcpu=baseline+reserve_x28", "-DAK_CG_X28"}
+	}
+	return []string{"-ffixed-x28", "-DAK_CG_X28"}
 }
 
 // Flags are the flags every file of the core is compiled with.
@@ -345,7 +359,7 @@ func RunnerFor(core string, o RunnerOptions) (string, error) {
 	}
 	lflags := append(append([]string{}, flags...), linkDefines(len(o.Extra) > 0, f.glue(), f.libs(), o.Builtins)...)
 	if len(o.Extra) > 0 {
-		lflags = append(lflags, AppFlags(Host())...)
+		lflags = append(lflags, AppFlags(cc, Host())...)
 	}
 	if f != nil {
 		link = append(link, f.Link...)

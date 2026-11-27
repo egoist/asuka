@@ -624,10 +624,12 @@ static inline bool ak_cg_stack_low(uintptr_t lim) {
 }
 
 // The thread's stack limit in compiled code. On arm64 the app's C is
-// compiled with x28 reserved (-ffixed-x28 -DAK_CG_X28: cbuild.AppFlags),
-// as Go keeps its g in a register of its own: every way into the app's C
-// from the core (fN, fN_c, an async body's fN) sets x28 to the thread's
-// limit and puts back the core's (x28 is callee-saved: the core keeps
+// compiled with x28 reserved (-ffixed-x28, Zig's -mcpu=...+reserve_x28,
+// and -DAK_CG_X28: cbuild.AppFlags; unreserved, the asm below overwrites
+// what the compiler keeps there), as Go keeps its g in a register of its
+// own: every way into the app's C from the core (fN, fN_c, an async
+// body's fN) sets x28 to the thread's limit and puts back the core's
+// (x28 is callee-saved: the core keeps
 // its own across its calls into the app, and the app's across the
 // core's), so a check is one compare of the stack pointer with it (cmp
 // sp, x28) and a direct body takes no limit: no register of a recursing

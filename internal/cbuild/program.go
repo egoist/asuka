@@ -50,7 +50,7 @@ func (tc *Toolchain) ProgramExe(core string, o ProgramOptions, out string) error
 	if o.Foreign.glue() {
 		srcs = append(srcs, o.Foreign.Glue)
 	}
-	more, err := tc.CC.CompileCached(srcs, append(append([]string{}, flags...), AppFlags(tc.Target)...))
+	more, err := tc.CC.CompileCached(srcs, append(append([]string{}, flags...), AppFlags(tc.CC, tc.Target)...))
 	if err != nil {
 		return err
 	}

@@ -509,7 +509,8 @@ the C is written, from the bytecode's kinds.
   starts, as Go's prologue does: the C stack past the thread's limit is
   a stack overflow (ak_cg_overflow), the error a register's test. On
   arm64 the limit is in x28, which the app's C is compiled without
-  (cbuild.AppFlags: `-ffixed-x28`), as Go keeps its g in R28: the check
+  (cbuild.AppFlags: `-ffixed-x28`; Zig, which drops that flag, takes
+  `-mcpu=baseline+reserve_x28`), as Go keeps its g in R28: the check
   is `cmp sp, x28; b.lo`, and no register of a recursing function's
   holds the limit, no call passes it; each way in from the core (fN,
   fN_c, an async body's fN) sets x28 and puts the core's back (it's
