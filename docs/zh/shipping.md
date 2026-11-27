@@ -340,7 +340,7 @@ asuka publish --platform linux --arch arm64 --repo s3://packages/notes
 - `deb/`：apt 软件源，包括 `dists/stable/InRelease`（以及 `Release`、`Release.gpg`）、每个架构的 `Packages`（也按摘要另存一份，即 `by-hash`，apt 从那里获取，所以它读到的索引一定和它读到的 `InRelease` 是同一个版本），软件包放在 `pool/` 下；
 - `rpm/stable/`：dnf 软件源，包括签过名的 `repodata/repomd.xml`（签名在 `repomd.xml.asc`）和它引用的文件，软件包放在 `Packages/` 下；另有 `rpm/notes.repo`，是这个软件源的 dnf 配置。
 
-预发布版本会进入它所属渠道的 suite 和软件源（`beta`，以及 `rpm/notes-beta.repo`），测试版用户把它和 `stable` 一起添加即可。每次发布都在其他发布写入的内容上追加，各个架构也可以同时发布（比如每个架构一个 CI 任务）：只有当 `InRelease` 和 `repomd.xml` 仍是这次发布读到的那一份时才会写入（S3、R2 和 MinIO 的条件写入；目录则用锁文件），否则重新读取后再追加。放在 S3 存储桶里时，索引文件以不缓存的方式提供（R2、MinIO 等兼容服务用 `s3.endpoint` 或 `AWS_ENDPOINT_URL` 指定地址）；所用凭据需要 `s3:GetObject`、`s3:PutObject`、`s3:DeleteObject` 和 `s3:ListBucket` 权限（没有 `s3:ListBucket` 时，S3 对尚不存在的文件会返回 403，发布会就此停下）。用 Web 服务器或 CDN 通过 HTTPS 提供这个目录。
+预发布版本会进入它所属渠道的 suite 和软件源（`beta`，以及 `rpm/notes-beta.repo`），测试版用户把它和 `stable` 一起添加即可。每次发布都在其他发布写入的内容上追加，各个架构也可以同时发布（比如每个架构一个 CI 任务）：只有当 `InRelease` 和 `repomd.xml` 仍是这次发布读到的那一份时才会写入（S3、R2、MinIO 和 RustFS 的条件写入，即 `If-Match` 和 `If-None-Match`；目录则用锁文件），否则重新读取后再追加。如果某个服务忽略这两个请求头，同一时刻发布的两个版本可能会丢掉一个：在这类服务上请逐个发布。放在 S3 存储桶里时，索引文件以不缓存的方式提供（R2、MinIO、RustFS 等兼容服务用 `s3.endpoint` 或 `AWS_ENDPOINT_URL` 指定地址）；所用凭据需要 `s3:GetObject`、`s3:PutObject`、`s3:DeleteObject` 和 `s3:ListBucket` 权限（没有 `s3:ListBucket` 时，S3 对尚不存在的文件会返回 403，发布会就此停下；MinIO 和 RustFS 则返回 404，发布会继续，只是无法列出的旧索引会保留下来）。用 Web 服务器或 CDN 通过 HTTPS 提供这个目录。
 
 用户只需执行一次以下命令（`asuka publish` 会用你的 `url` 打印出来）。在 Debian 和 Ubuntu 上：
 
@@ -396,7 +396,7 @@ github = "you/notes"
 | `tagPrefix` | Release 标签的前缀（默认 `v`）。换成别的前缀（如 `desktop-v`）后，仓库的最新 Release 就可以留给别的产品（比如一个 CLI）：应用会改为通过 GitHub API 查找带有该前缀的最新 Release |
 | `url` | 代替 `github`：一个提供这些文件的 HTTPS 目录（S3 或 R2 存储桶、CDN、你自己的服务器）；应用读取 `url/update-<target>.json` |
 | `feed` | 你自己的服务器，应用改为向它询问更新（文件仍然放在 `url`）：见[自建更新服务器](#自建更新服务器) |
-| `s3` | 提供 `url` 的存储桶，`asuka publish` 会上传到这里：`bucket`、`prefix`（所在目录）、`region`、`endpoint`（R2、MinIO 的端点；默认是 Amazon S3）、`pathStyle` |
+| `s3` | 提供 `url` 的存储桶，`asuka publish` 会上传到这里：`bucket`、`prefix`（所在目录）、`region`、`endpoint`（R2、MinIO、RustFS 的端点；默认是 Amazon S3）、`pathStyle` |
 | `privateKey` | 私钥的路径（`~/` 表示主目录），在你自己的机器上构建时使用 |
 | `changelog` | 一个 Markdown 文件，其中的 `## 1.2.0`（或 Keep a Changelog 格式的 `## [1.2.0] - 2026-11-13`）小节就是版本说明；默认是 `CHANGELOG.md`（如果存在），此时它必须包含当前版本的小节 |
 | `deltas` | 为之前的多少个版本生成增量包（默认 3；0 表示不生成） |
@@ -488,7 +488,7 @@ asuka publish --platform linux --draft
 ```
 
 - 配置了 `github` 时，上传到该版本标签（`v1.2.0`）对应的 Release，需要先登录 [GitHub CLI](https://cli.github.com)（`gh auth login`，或者设置 `GH_TOKEN`）。如果 Release 还不存在，会先创建为草稿，再发布；预发布版本会以 prerelease 的形式发布，使用自定义的 `tagPrefix` 时则不会被标记为最新（latest）。`--draft` 让 Release 保持草稿状态，等所有平台都上传完再发布（`gh release edit v1.2.0 --draft=false`），因为应用只会检查最新的已发布 Release。
-- 配置了 `s3` 时，上传到存储桶，清单会带上 `Cache-Control: no-cache`（因为清单的文件名在各个版本之间保持不变）。凭据取自 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`（以及 `AWS_SESSION_TOKEN`），区域依次取 `s3.region`、`AWS_REGION` 或 `us-east-1`（R2 也接受这个值）；R2、MinIO 等兼容服务的地址用 `s3.endpoint`（或 `AWS_ENDPOINT_URL`）指定。不需要其他任何工具。
+- 配置了 `s3` 时，上传到存储桶，清单会带上 `Cache-Control: no-cache`（因为清单的文件名在各个版本之间保持不变）。凭据取自 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`（以及 `AWS_SESSION_TOKEN`），区域依次取 `s3.region`、`AWS_REGION` 或 `us-east-1`（R2 也接受这个值）；R2、MinIO、RustFS 等兼容服务的地址用 `s3.endpoint`（或 `AWS_ENDPOINT_URL`）指定，桶名写在 URL 的路径里（`pathStyle`，设置了 endpoint 时默认如此；MinIO 和 RustFS 在没有配置自己的域名时只接受这种形式）。不需要其他任何工具。
 - 只配置了 `url` 时，需要你自己把 `dist/updates` 上传过去，同样要最后上传清单，并保留之前版本的文件。
 
 ### 自建更新服务器

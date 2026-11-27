@@ -151,7 +151,7 @@ go run ./cmd/asuka linux keygen --uid "Name <email>"  # the OpenPGP key that sig
 go run ./cmd/asuka publish --platform linux --repo /tmp/repo examples/counter  # the .deb and the .rpm into a signed apt and dnf repository (a directory, s3://bucket/prefix)
 go run ./cmd/asuka publish --platform linux examples/counter  # a desktop build and its signed update, uploaded (GitHub, S3)
 go test -tags e2e ./e2e -run Updater               # a desktop app updates itself and relaunches (macOS; Linux under xvfb-run: the prefix, and the AppImage extracted and, with /dev/fuse, mounted; each from its delta)
-ASUKA_E2E_S3=http://127.0.0.1:9000/pkgs go test -tags e2e ./e2e -run PublishLinuxS3  # asuka publish --platform linux to a real S3 server (MinIO, AWS_ACCESS_KEY_ID...): updates and the apt/dnf repository, two publishes at once; ASUKA_TEST_S3 likewise for go test ./cmd/asuka -run S3ConditionalWrites
+xvfb-run -a dbus-run-session go test -tags e2e ./e2e -run PublishLinuxS3  # asuka publish --platform linux to RustFS, started in Docker (internal/s3test; ASUKA_E2E_S3=http://host:port/bucket and AWS_ACCESS_KEY_ID...: any S3 server): updates and the apt/dnf repository, two publishes at once, apt and dnf installing from it in Debian and Fedora containers; go test ./cmd/asuka -run S3ConditionalWrites likewise (ASUKA_TEST_S3)
 go test ./platform/windows -run Updater           # likewise on Windows (a PC, or the VM; the feed served in Windows)
 ```
 

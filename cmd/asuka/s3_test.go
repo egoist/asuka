@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/egoist/asuka/internal/s3test"
 )
 
 // TestS3Signature signs the PUT Object example of the Signature Version 4
@@ -38,19 +39,21 @@ func TestS3Signature(t *testing.T) {
 	}
 }
 
-// TestS3ConditionalWrites writes to a real bucket, ASUKA_TEST_S3's
+// TestS3ConditionalWrites writes to a real bucket: ASUKA_TEST_S3's
 // (endpoint and bucket: http://127.0.0.1:9000/pkgs, with AWS_ACCESS_KEY_ID
-// and AWS_SECRET_ACCESS_KEY): a write if there's none, then refused when
-// there is; a write if it's still the version read, then refused once
-// another changed it; a deleted one's too; a listing, page after page.
+// and AWS_SECRET_ACCESS_KEY), else RustFS's in Docker (internal/s3test): a
+// write if there's none, then refused when there is; a write if it's
+// still the version read, then refused once another changed it; a deleted
+// one's too; a listing, page after page. Without s3:ListBucket, a listing
+// is refused saying so, and what isn't there is either missing (404) or
+// forbidden (403, as Amazon S3 answers), saying why.
 func TestS3ConditionalWrites(t *testing.T) {
-	s := os.Getenv("ASUKA_TEST_S3")
-	if s == "" {
-		t.Skip("set ASUKA_TEST_S3 to an S3 endpoint and bucket (http://127.0.0.1:9000/pkgs), and its credentials")
-	}
-	i := strings.LastIndex(s, "/")
+	srv := s3test.Start(t, "ASUKA_TEST_S3")
+	t.Setenv("AWS_ACCESS_KEY_ID", srv.Key.AccessKey)
+	t.Setenv("AWS_SECRET_ACCESS_KEY", srv.Key.SecretKey)
+	t.Setenv("AWS_SESSION_TOKEN", srv.Key.SessionToken)
 	prefix := fmt.Sprintf("conditional-%d", time.Now().UnixNano())
-	c, err := newS3Client(&s3Config{Endpoint: s[:i], Bucket: s[i+1:], Prefix: prefix})
+	c, err := newS3Client(&s3Config{Endpoint: srv.Endpoint, Bucket: srv.Bucket, Prefix: prefix})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,14 +84,42 @@ func TestS3ConditionalWrites(t *testing.T) {
 	if err := c.putDataIf(key, []byte("five"), tag, nil); !errors.Is(err, errConflict) {
 		t.Errorf("a write of a version since deleted: %v", err)
 	}
-	for i := range 3 {
+	if _, err := c.get(key); !errors.Is(err, errNoObject) {
+		t.Errorf("a deleted object: %v", err)
+	}
+	c.maxKeys = 2 // pages of two
+	for i := range 5 {
 		if err := c.putData(c.key(fmt.Sprintf("dir/f%d", i)), []byte("x"), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	objs, err := c.list(c.key("dir/"))
-	if err != nil || len(objs) != 3 || objs[0].Key != c.key("dir/f0") || objs[0].LastModified.IsZero() {
+	if err != nil || len(objs) != 5 || objs[0].Key != c.key("dir/f0") || objs[4].Key != c.key("dir/f4") || objs[0].LastModified.IsZero() {
 		t.Errorf("the listing: %+v %v", objs, err)
+	}
+
+	if srv.NoList != nil {
+		t.Setenv("AWS_ACCESS_KEY_ID", srv.NoList.AccessKey)
+		t.Setenv("AWS_SECRET_ACCESS_KEY", srv.NoList.SecretKey)
+		t.Setenv("AWS_SESSION_TOKEN", srv.NoList.SessionToken)
+		nolist, err := newS3Client(&s3Config{Endpoint: srv.Endpoint, Bucket: srv.Bucket, Prefix: prefix})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b, err := nolist.get(c.key("dir/f0")); err != nil || string(b) != "x" {
+			t.Errorf("without s3:ListBucket, an object: %q %v", b, err)
+		}
+		if _, err := nolist.list(c.key("dir/")); err == nil || !strings.Contains(err.Error(), "403") || !strings.Contains(err.Error(), "s3:ListBucket") {
+			t.Errorf("without s3:ListBucket, a listing: %v", err)
+		}
+		switch _, err := nolist.get(c.key("missing")); {
+		case errors.Is(err, errNoObject):
+			t.Log("without s3:ListBucket, what isn't there: 404")
+		case err != nil && strings.Contains(err.Error(), "403") && strings.Contains(err.Error(), "s3:ListBucket"):
+			t.Log("without s3:ListBucket, what isn't there: 403")
+		default:
+			t.Errorf("without s3:ListBucket, what isn't there: %v", err)
+		}
 	}
 	for _, o := range objs {
 		c.remove(o.Key)

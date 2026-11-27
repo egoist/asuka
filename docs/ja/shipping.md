@@ -340,7 +340,7 @@ asuka publish --platform linux --arch arm64 --repo s3://packages/notes
 - `deb/`：apt のリポジトリ。`dists/stable/InRelease`（と `Release`、`Release.gpg`）、アーキテクチャーごとの `Packages`（ダイジェストごとにも保存され（`by-hash`）、apt はそこから取得するので、読んだ `InRelease` と違うバージョンのインデックスを読むことはありません）、そして `pool/` の下のパッケージです。
 - `rpm/stable/`：dnf のリポジトリ。署名付きの `repodata/repomd.xml`（署名は `repomd.xml.asc`）とそこから参照されるファイル、`Packages/` の下のパッケージです。`rpm/notes.repo` は、このリポジトリの dnf の設定ファイルです。
 
-プレリリースは、そのチャンネルのスイートとリポジトリ（`beta` と `rpm/notes-beta.repo`）に入ります。ベータ版のユーザーは、それを `stable` と並べて追加します。公開はそれぞれ、ほかの公開が書き込んだ内容に追加していくので、アーキテクチャーごとに同時に公開してもかまいません（CI のジョブを分けるなど）。`InRelease` と `repomd.xml` は、その公開が読んだときのままである場合にだけ書き込まれ（S3、R2、MinIO の条件付き書き込み。ディレクトリではロックファイル）、そうでなければ読み直してから追加します。S3 バケットでは、インデックスはキャッシュされない設定で配信されます（R2、MinIO などの互換サービスは `s3.endpoint` か `AWS_ENDPOINT_URL` でエンドポイントを指定します）。認証情報には `s3:GetObject`、`s3:PutObject`、`s3:DeleteObject`、`s3:ListBucket` の権限が必要です（`s3:ListBucket` がないと、まだ存在しないファイルに対して S3 が 403 を返し、公開はそこで止まります）。ディレクトリは Web サーバーや CDN から HTTPS で配信してください。
+プレリリースは、そのチャンネルのスイートとリポジトリ（`beta` と `rpm/notes-beta.repo`）に入ります。ベータ版のユーザーは、それを `stable` と並べて追加します。公開はそれぞれ、ほかの公開が書き込んだ内容に追加していくので、アーキテクチャーごとに同時に公開してもかまいません（CI のジョブを分けるなど）。`InRelease` と `repomd.xml` は、その公開が読んだときのままである場合にだけ書き込まれ（S3、R2、MinIO、RustFS の条件付き書き込み、つまり `If-Match` と `If-None-Match`。ディレクトリではロックファイル）、そうでなければ読み直してから追加します。これらのヘッダーを無視するサービスでは、同時に公開した 2 つのバージョンのどちらかが失われることがあるので、1 つずつ公開してください。S3 バケットでは、インデックスはキャッシュされない設定で配信されます（R2、MinIO、RustFS などの互換サービスは `s3.endpoint` か `AWS_ENDPOINT_URL` でエンドポイントを指定します）。認証情報には `s3:GetObject`、`s3:PutObject`、`s3:DeleteObject`、`s3:ListBucket` の権限が必要です（`s3:ListBucket` がないと、まだ存在しないファイルに対して S3 が 403 を返し、公開はそこで止まります。MinIO と RustFS は 404 を返すので公開は続きますが、一覧を取得できない古いインデックスは残ります）。ディレクトリは Web サーバーや CDN から HTTPS で配信してください。
 
 ユーザーが最初に一度だけ実行するコマンドです（`asuka publish` があなたの `url` を入れて表示します）。Debian と Ubuntu では次のとおりです。
 
@@ -396,7 +396,7 @@ github = "you/notes"
 | `tagPrefix` | リリースのタグの接頭辞（デフォルトは `v`）。`desktop-v` のように別の接頭辞にすると、リポジトリの最新リリースを別のもの（CLI など）のリリースにできます。その場合アプリは、GitHub API でこの接頭辞の付いた最新のリリースを探します |
 | `url` | `github` の代わりに指定する、ファイルを配信する HTTPS のディレクトリ（S3 や R2 のバケット、CDN、自分のサーバー）。アプリは `url/update-<target>.json` を読みます |
 | `feed` | アプリが代わりに問い合わせる自分のサーバー（ファイルの置き場所は `url` で指定）。[独自のアップデートサーバー](#独自のアップデートサーバー)を参照 |
-| `s3` | `url` を配信するバケットで、`asuka publish` のアップロード先：`bucket`、`prefix`（バケット内のディレクトリ）、`region`、`endpoint`（R2 や MinIO のもの。デフォルトは Amazon S3）、`pathStyle` |
+| `s3` | `url` を配信するバケットで、`asuka publish` のアップロード先：`bucket`、`prefix`（バケット内のディレクトリ）、`region`、`endpoint`（R2、MinIO、RustFS のもの。デフォルトは Amazon S3）、`pathStyle` |
 | `privateKey` | 秘密鍵のパス（`~/` はホームディレクトリ）。自分のマシンでビルドするときに使います |
 | `changelog` | Markdown ファイル。その `## 1.2.0`（または Keep a Changelog 形式の `## [1.2.0] - 2026-11-13`）セクションがリリースノートになります。デフォルトは `CHANGELOG.md` で、このファイルがある場合は、そのバージョンのセクションが必要です |
 | `deltas` | 何バージョン前まで差分を作るか（デフォルトは 3、0 なら作りません） |
@@ -488,7 +488,7 @@ asuka publish --platform linux --draft
 ```
 
 - `github` の場合は、そのバージョンのタグ（`v1.2.0`）のリリースにアップロードします。[GitHub CLI](https://cli.github.com) にサインインしている必要があります（`gh auth login` または `GH_TOKEN`）。リリースがなければ下書きとして作り、そのあと公開します。プレリリースのバージョンならプレリリースとして公開し、独自の `tagPrefix` を使っている場合は最新リリース（latest）にはしません。`--draft` を指定すると下書きのまま残るので、すべてのプラットフォームが揃ってから公開できます（`gh release edit v1.2.0 --draft=false`）。アプリが確認するのは、公開済みの最新リリースです。
-- `s3` の場合は、バケットにアップロードします。マニフェストは名前がバージョン間で変わらないので、`Cache-Control: no-cache` を付けます。認証には `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`（と `AWS_SESSION_TOKEN`）を使い、リージョンは `s3.region`、`AWS_REGION`、どちらもなければ `us-east-1`（R2 はこれを受け付けます）です。R2、MinIO などの互換サービスでは、その `s3.endpoint`（または `AWS_ENDPOINT_URL`）を指定します。ほかのツールは必要ありません。
+- `s3` の場合は、バケットにアップロードします。マニフェストは名前がバージョン間で変わらないので、`Cache-Control: no-cache` を付けます。認証には `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`（と `AWS_SESSION_TOKEN`）を使い、リージョンは `s3.region`、`AWS_REGION`、どちらもなければ `us-east-1`（R2 はこれを受け付けます）です。R2、MinIO、RustFS などの互換サービスでは、その `s3.endpoint`（または `AWS_ENDPOINT_URL`）を指定し、バケット名は URL のパスに入ります（`pathStyle`。エンドポイントを指定したときのデフォルトで、MinIO と RustFS は独自のドメインを設定していなければこの形式にしか応じません）。ほかのツールは必要ありません。
 - `url` だけの場合は、`dist/updates` を自分でそこにアップロードしてください。マニフェストは最後にアップロードし、以前のバージョンのファイルも残しておきます。
 
 ### 独自のアップデートサーバー

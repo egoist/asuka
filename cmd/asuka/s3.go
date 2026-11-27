@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"cmp"
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/xml"
@@ -14,16 +13,18 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"slices"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/egoist/asuka/internal/sigv4"
 )
 
-// Uploads to Amazon S3 and compatible services, such as Cloudflare R2 and
-// MinIO, in pure Go: objects are put with a single request signed with
-// AWS Signature Version 4; a repository's indexes with conditional writes
-// (If-Match, If-None-Match), so that publishes at once don't undo each
-// other's.
+// Uploads to Amazon S3 and compatible services, such as Cloudflare R2,
+// MinIO and RustFS, in pure Go: objects are put with a single request
+// signed with AWS Signature Version 4 (internal/sigv4); a repository's
+// indexes with conditional writes (If-Match, If-None-Match), so that
+// publishes at once don't undo each other's.
 
 // S3 is a bucket of Amazon S3, or of a compatible service such as
 // Cloudflare R2. The credentials come from AWS_ACCESS_KEY_ID,
@@ -68,6 +69,7 @@ type s3Client struct {
 	pathStyle              bool
 	accessKey, secretKey   string
 	sessionToken           string
+	maxKeys                int // a listing's page (default the service's, 1000)
 }
 
 func newS3Client(s *s3Config) (*s3Client, error) {
@@ -107,9 +109,9 @@ func (c *s3Client) key(name string) string {
 
 // objectURL returns the URL of the object of key.
 func (c *s3Client) objectURL(key string) string {
-	host, path := c.endpoint.Host, "/"+s3Escape(key)
+	host, path := c.endpoint.Host, "/"+sigv4.EscapePath(key)
 	if c.pathStyle {
-		path = "/" + s3Escape(c.bucket) + path
+		path = "/" + sigv4.EscapePath(c.bucket) + path
 	} else {
 		host = c.bucket + "." + host
 	}
@@ -141,7 +143,8 @@ func (c *s3Client) putData(key string, data []byte, header http.Header) error {
 
 // putDataIf uploads data to key if the object is still the one of the
 // ETag etag, or, for "", if there's none: errConflict when another
-// request changed it since (S3, R2 and MinIO's conditional writes).
+// request changed it since (the conditional writes of S3, R2, MinIO and
+// RustFS).
 func (c *s3Client) putDataIf(key string, data []byte, etag string, header http.Header) error {
 	h := header.Clone()
 	if h == nil {
@@ -213,6 +216,9 @@ func (c *s3Client) list(prefix string) ([]s3Object, error) {
 		if token != "" {
 			q.Set("continuation-token", token)
 		}
+		if c.maxKeys > 0 {
+			q.Set("max-keys", strconv.Itoa(c.maxKeys))
+		}
 		b, _, err := c.do(http.MethodGet, "", q, nil, 0, emptySHA256, nil)
 		if err != nil {
 			return nil, err
@@ -239,7 +245,7 @@ func (c *s3Client) list(prefix string) ([]s3Object, error) {
 }
 
 // emptySHA256 is an empty payload's digest.
-const emptySHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+const emptySHA256 = sigv4.EmptySHA256
 
 // do sends a request for key's object (the bucket's, with query, for
 // key ""), signed, with the size bytes of body (of the SHA-256
@@ -250,7 +256,7 @@ func (c *s3Client) do(method, key string, query url.Values, body io.Reader, size
 	}
 	u := c.objectURL(key)
 	if len(query) > 0 {
-		u += "?" + s3Query(query)
+		u += "?" + sigv4.Query(query)
 	}
 	req, err := http.NewRequest(method, u, body)
 	if err != nil {
@@ -314,72 +320,5 @@ func (c *s3Client) do(method, key string, query url.Values, body io.Reader, size
 // sign signs req with AWS Signature Version 4 for S3, its query and
 // headers with the host, and a payload of the SHA-256 payloadHash.
 func (c *s3Client) sign(req *http.Request, payloadHash string, t time.Time) {
-	t = t.UTC()
-	date, amzDate := t.Format("20060102"), t.Format("20060102T150405Z")
-	req.Header.Set("X-Amz-Date", amzDate)
-	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
-	if c.sessionToken != "" {
-		req.Header.Set("X-Amz-Security-Token", c.sessionToken)
-	}
-	headers := map[string]string{"host": cmp.Or(req.Host, req.URL.Host)}
-	for name, values := range req.Header {
-		trimmed := make([]string, len(values))
-		for i, v := range values {
-			trimmed[i] = strings.Join(strings.Fields(v), " ")
-		}
-		headers[strings.ToLower(name)] = strings.Join(trimmed, ",")
-	}
-	names := slices.Sorted(maps.Keys(headers))
-	var canonical strings.Builder
-	for _, name := range names {
-		canonical.WriteString(name + ":" + headers[name] + "\n")
-	}
-	signed := strings.Join(names, ";")
-	request := req.Method + "\n" + req.URL.EscapedPath() + "\n" + s3Query(req.URL.Query()) + "\n" + canonical.String() + "\n" + signed + "\n" + payloadHash
-	scope := date + "/" + c.region + "/s3/aws4_request"
-	hash := sha256.Sum256([]byte(request))
-	key := hmacSHA256([]byte("AWS4"+c.secretKey), date)
-	for _, s := range []string{c.region, "s3", "aws4_request"} {
-		key = hmacSHA256(key, s)
-	}
-	signature := hmacSHA256(key, "AWS4-HMAC-SHA256\n"+amzDate+"\n"+scope+"\n"+hex.EncodeToString(hash[:]))
-	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+c.accessKey+"/"+scope+
-		", SignedHeaders="+signed+", Signature="+hex.EncodeToString(signature))
-}
-
-func hmacSHA256(key []byte, data string) []byte {
-	h := hmac.New(sha256.New, key)
-	h.Write([]byte(data))
-	return h.Sum(nil)
-}
-
-// s3Query is a query as Signature Version 4 has it canonical: its names
-// sorted, names and values escaped as s3Escape does, "/" too.
-func s3Query(q url.Values) string {
-	var parts []string
-	for _, k := range slices.Sorted(maps.Keys(q)) {
-		vs := slices.Clone(q[k])
-		slices.Sort(vs)
-		for _, v := range vs {
-			parts = append(parts, escape(k, "-._~")+"="+escape(v, "-._~"))
-		}
-	}
-	return strings.Join(parts, "&")
-}
-
-// s3Escape escapes a key for the path of a URL as Signature Version 4
-// wants it: every byte but letters, digits, "-._~" and "/".
-func s3Escape(s string) string { return escape(s, "-._~/") }
-
-// escape escapes every byte of s but letters, digits and keep's.
-func escape(s, keep string) string {
-	var b strings.Builder
-	for i := range len(s) {
-		if ch := s[i]; 'A' <= ch && ch <= 'Z' || 'a' <= ch && ch <= 'z' || '0' <= ch && ch <= '9' || strings.IndexByte(keep, ch) >= 0 {
-			b.WriteByte(ch)
-		} else {
-			fmt.Fprintf(&b, "%%%02X", ch)
-		}
-	}
-	return b.String()
+	sigv4.Sign(req, sigv4.Key{AccessKey: c.accessKey, SecretKey: c.secretKey, SessionToken: c.sessionToken}, c.region, "s3", payloadHash, t)
 }

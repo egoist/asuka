@@ -766,14 +766,19 @@ A prerelease goes to its channel's suite and repository (`beta`, and
 `rpm/notes-beta.repo`), which the beta's users add beside `stable`.
 Each publish adds to what the others wrote, and architectures may
 publish at once (a CI job each): `InRelease` and `repomd.xml` are
-written only if they're still the ones the publish read (S3's, R2's
-and MinIO's conditional writes; in a directory, a lock file), else read
-again and added to. In an S3 bucket the indexes are served uncached
-(`s3.endpoint`, or `AWS_ENDPOINT_URL`, for R2, MinIO and other
-compatible services); the credentials need `s3:GetObject`,
-`s3:PutObject`, `s3:DeleteObject` and `s3:ListBucket` (without which
-S3 answers 403 for a file that isn't there yet, and the publish stops
-there). Serve the directory over HTTPS from a web server or CDN.
+written only if they're still the ones the publish read (S3's, R2's,
+MinIO's and RustFS's conditional writes, `If-Match` and
+`If-None-Match`; in a directory, a lock file), else read again and
+added to. A service that ignores those headers can lose one of two
+versions published at the same moment: publish to it one at a time.
+In an S3 bucket the indexes are served uncached (`s3.endpoint`, or
+`AWS_ENDPOINT_URL`, for R2, MinIO, RustFS and other compatible
+services); the credentials need `s3:GetObject`, `s3:PutObject`,
+`s3:DeleteObject` and `s3:ListBucket` (without which S3 answers 403
+for a file that isn't there yet, and the publish stops there; MinIO
+and RustFS answer 404, and the publish goes on but keeps the old
+indexes it can't list). Serve the directory over HTTPS from a web
+server or CDN.
 
 What users run, once (`asuka publish` prints it with your `url`). On
 Debian and Ubuntu:
@@ -854,7 +859,7 @@ github = "you/notes"
 | `tagPrefix` | the releases' tags' prefix (default `v`); another, as `desktop-v`, lets the repository's latest release be another's (a CLI's): apps then find the newest release tagged with it through the GitHub API |
 | `url` | instead of `github`: an HTTPS directory that serves the files (an S3 or R2 bucket, a CDN, your server); apps read `url/update-<target>.json` |
 | `feed` | a server of yours that apps ask instead (with `url`, where the files are): see [your own server](#your-own-update-server) |
-| `s3` | the bucket that serves `url`, which `asuka publish` uploads to: `bucket`, `prefix` (its directory), `region`, `endpoint` (R2's, MinIO's; default Amazon S3), `pathStyle` |
+| `s3` | the bucket that serves `url`, which `asuka publish` uploads to: `bucket`, `prefix` (its directory), `region`, `endpoint` (R2's, MinIO's, RustFS's; default Amazon S3), `pathStyle` |
 | `privateKey` | the secret key's path (`~/` the home directory), for builds on your machine |
 | `changelog` | a Markdown file whose `## 1.2.0` (or Keep a Changelog's `## [1.2.0] - 2026-11-13`) section is the release notes; default `CHANGELOG.md`, when there is one, which must then have the version's section |
 | `deltas` | how many versions before get a delta (default 3; 0: none) |
@@ -1035,8 +1040,11 @@ asuka publish --platform linux --draft
   (their names stay from version to version), with
   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (and `AWS_SESSION_TOKEN`),
   the region from `s3.region`, `AWS_REGION` or `us-east-1` (which R2
-  takes), and for R2, MinIO and other compatible services their
-  `s3.endpoint` (or `AWS_ENDPOINT_URL`). No other tool.
+  takes), and for R2, MinIO, RustFS and other compatible services their
+  `s3.endpoint` (or `AWS_ENDPOINT_URL`), the bucket named in the path
+  of its URLs (`pathStyle`, the default with an endpoint, and the only
+  form MinIO and RustFS answer without a domain of their own
+  configured). No other tool.
 - With `url` alone, upload `dist/updates` there yourself, the manifests
   last, and keep the earlier versions' files.
 

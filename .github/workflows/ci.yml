@@ -66,7 +66,11 @@ jobs:
       - name: the Linux host, driving real GTK widgets
         run: xvfb-run -a dbus-run-session go test ./platform/linux
       - name: GUI tests, the examples on GTK
-        run: xvfb-run -a -s '-screen 0 1400x1000x24' dbus-run-session go test -tags e2e -timeout 60m ./e2e -run Linux -v
+        run: xvfb-run -a -s '-screen 0 1400x1000x24' dbus-run-session go test -tags e2e -timeout 60m ./e2e -run Linux -skip PublishLinuxS3 -v
+      # The test starts RustFS itself (internal/s3test), and Debian and
+      # Fedora containers in its network.
+      - name: asuka publish to S3 (RustFS, in Docker); apt and dnf install and upgrade from it
+        run: xvfb-run -a dbus-run-session go test -tags e2e -timeout 30m ./e2e -run PublishLinuxS3 -v
       - name: a release builds
         run: go run ./cmd/asuka build --platform linux examples/counter && tar -tzf examples/counter/dist/linux-amd64/counter-*.tar.gz
   # GUI tests: the examples on a simulator and an emulator, driven

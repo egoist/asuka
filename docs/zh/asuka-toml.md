@@ -281,7 +281,7 @@ github = "you/notes"
 | `tagPrefix` | 字符串 | `"v"` | release 标签的前缀。换成其他前缀（如 `"desktop-v"`）后，仓库的最新 release 可以属于别的项目：应用会通过 GitHub API 找到带有这个前缀的最新 release。 |
 | `url` | 字符串 | | 代替 `github`：一个提供这些文件的 HTTPS 目录（S3 或 R2 存储桶、CDN）；应用读取 `<url>/update-<target>.json`。 |
 | `feed` | 字符串 | 无 | 你自己的 HTTPS 服务器，应用改为向它询问更新；URL 中可以包含 `{target}`、`{version}` 和 `{channel}`。它需要配合 `url` 使用，文件放在 `url` 那里。 |
-| `s3` | 表 | 无 | 为 `url` 提供文件的存储桶，`asuka publish` 会上传到这里：`bucket`（必填）、`prefix`（桶内目录，默认为根目录）、`region`（默认取 `AWS_REGION`，其次 `AWS_DEFAULT_REGION`，否则为 `us-east-1`）、`endpoint`（R2、MinIO 等的地址，默认取 `AWS_ENDPOINT_URL_S3`，其次 `AWS_ENDPOINT_URL`，否则是 Amazon S3）、`pathStyle`（默认在设置了 `endpoint` 或桶名含点时启用）。 |
+| `s3` | 表 | 无 | 为 `url` 提供文件的存储桶，`asuka publish` 会上传到这里：`bucket`（必填）、`prefix`（桶内目录，默认为根目录）、`region`（默认取 `AWS_REGION`，其次 `AWS_DEFAULT_REGION`，否则为 `us-east-1`）、`endpoint`（R2、MinIO、RustFS 等的地址，默认取 `AWS_ENDPOINT_URL_S3`，其次 `AWS_ENDPOINT_URL`，否则是 Amazon S3）、`pathStyle`（默认在设置了 `endpoint` 或桶名含点时启用）。 |
 | `privateKey` | 路径 | 无 | 私钥的路径，用于在你自己的机器上构建（`~/` 表示主目录）。 |
 | `changelog` | 路径 | 存在时为 `CHANGELOG.md` | 一个 Markdown 文件，其中 `## 1.2.0` 一节就是发布说明。 |
 | `deltas` | 整数 | `3` | 为之前的多少个版本生成增量更新（只下载有变化的部分）；`0` 表示不生成。 |
