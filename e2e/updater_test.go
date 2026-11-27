@@ -360,6 +360,10 @@ func TestUpdaterLinuxAppImage(t *testing.T) {
 	for _, m := range modes {
 		t.Run(m.name, func(t *testing.T) {
 			apps, tmp := t.TempDir(), t.TempDir()
+			// Mounted, the runtime's FUSE mount is in TMPDIR until the
+			// relaunched app's runtime unmounts it as it ends: wait for
+			// that before the directories go (cleanups run last first).
+			t.Cleanup(func() { unmountUnder(t, tmp) })
 			os.WriteFile(filepath.Join(apps, "another.AppImage"), []byte("another app"), 0o755)
 			file := filepath.Join(apps, "Updater.AppImage") // named as the user likes
 			run(t, "cp", filepath.Join(v100, "linux-"+arch, name), file)
@@ -394,6 +398,34 @@ func TestUpdaterLinuxAppImage(t *testing.T) {
 				t.Error("the update touched another AppImage")
 			}
 		})
+	}
+}
+
+// unmountUnder waits until no mount is under dir (an AppImage's runtime
+// unmounts its own as its app ends), and unmounts what's left after
+// that's had its time.
+func unmountUnder(t *testing.T, dir string) {
+	mounts := func() []string {
+		b, _ := os.ReadFile("/proc/mounts")
+		var under []string
+		for _, line := range strings.Split(string(b), "\n") {
+			if f := strings.Fields(line); len(f) > 1 && strings.HasPrefix(f[1], dir+"/") {
+				under = append(under, f[1])
+			}
+		}
+		return under
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for len(mounts()) > 0 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	for _, m := range mounts() {
+		t.Logf("still mounted at the end: %s", m)
+		for _, fm := range []string{"fusermount3", "fusermount"} {
+			if lookPath(fm) && exec.Command(fm, "-u", "-z", m).Run() == nil {
+				break
+			}
+		}
 	}
 }
 
