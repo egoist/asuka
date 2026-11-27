@@ -43,8 +43,9 @@ struct AsukaWidgetEntry: TimelineEntry, Decodable {
         tint = try c.decodeIfPresent(String.self, forKey: .tint) ?? ""
         progress = try c.decodeIfPresent(Double.self, forKey: .progress) ?? 0
         showProgress = try c.decodeIfPresent(Bool.self, forKey: .showProgress) ?? false
-        if let ms = try c.decodeIfPresent(Double.self, forKey: .untilMs) { until = Date(timeIntervalSince1970: ms / 1000) }
-        if let ms = try c.decodeIfPresent(Double.self, forKey: .atMs) { date = Date(timeIntervalSince1970: ms / 1000) }
+        // 0 is none (platform/widget's Wire): no count down, shown now.
+        if let ms = try c.decodeIfPresent(Double.self, forKey: .untilMs), ms > 0 { until = Date(timeIntervalSince1970: ms / 1000) }
+        if let ms = try c.decodeIfPresent(Double.self, forKey: .atMs), ms > 0 { date = Date(timeIntervalSince1970: ms / 1000) }
         layout = try? c.decodeIfPresent(AsukaNode.self, forKey: .layout)
         sizes = (try? c.decodeIfPresent([String: AsukaNode].self, forKey: .sizes)) ?? [:]
     }

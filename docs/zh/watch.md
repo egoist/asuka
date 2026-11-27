@@ -89,7 +89,7 @@ component Score {
 - `setContext(text)` 为对方保存这一端的最新状态，对方用 `context()`（会被追踪）读取：只有最新的一份会送到。
 - `sendFile(path, metadata:)` 在后台发送文件；`files()` 给出收到的文件，它们已被移到应用的目录里。
 
-消息是文本：要传的内容请用 `std/json` 编码。在没有配对设备的环境里（iPad、Android、桌面端），`available()` 为 false，调用会抛出 `CompanionError.unavailable`；测试中可以用 `companion.fake()` 装一个假的对方。要在模拟器上同时试用两个应用，先把一台手表模拟器和一台 iPhone 模拟器配对（`xcrun simctl pair`，两台都要启动），再分别安装两个应用的模拟器构建。
+消息是文本：要传的内容请用 `std/json` 编码。在没有配对设备的环境里（iPad、Android、桌面端），`available()` 为 false，调用会抛出 `CompanionError.unavailable`；测试中可以用 `companion.fake()` 装一个假的对方。要在模拟器上同时试用两个应用，先把一台手表模拟器和一台 iPhone 模拟器配对（`xcrun simctl pair <手表> <iPhone>`），启动两台，再分别安装两个应用的模拟器构建：iPhone 应用装到 iPhone 上，它的手表应用（在 iPhone 应用的 `Watch` 文件夹里）装到手表上。模拟器之间能传消息和上下文，但传不了 `queue` 的消息和 `sendFile` 的文件：这两项请在真机手表和 iPhone 上试。
 
 ## 复杂功能
 

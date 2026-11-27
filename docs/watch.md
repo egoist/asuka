@@ -162,9 +162,12 @@ Messages are text: encode what they carry with `std/json`. On a device
 without a companion (an iPad, Android, the desktops) `available()` is
 false and the calls throw `CompanionError.unavailable`; tests install a
 fake other app with `companion.fake()`. To try the two together on the
-simulators, pair a watch simulator with an iPhone simulator
-(`xcrun simctl pair`, with both booted) and install each
-app's simulator build.
+simulators, pair a watch simulator with an iPhone simulator (`xcrun
+simctl pair <watch> <iPhone>`), boot both, and install each app's
+simulator build: the iPhone app on the iPhone, and its watch app (in
+the iPhone app's `Watch` folder) on the watch. The simulators carry
+messages and the context, but not `queue`'s messages or `sendFile`'s
+files: try those on a watch and an iPhone.
 
 ## Complications
 

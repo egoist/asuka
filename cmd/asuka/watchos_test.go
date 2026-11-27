@@ -93,7 +93,7 @@ func TestWatchConfig(t *testing.T) {
 }
 
 // A watch app's Info.plist: a SwiftUI app (WKApplication), independent
-// (WKWatchOnly), the watch's family and minimum, its companion's ID.
+// (WKWatchOnly, naming no companion), the watch's family and minimum.
 func TestWatchInfo(t *testing.T) {
 	if _, err := exec.LookPath("xcrun"); err != nil {
 		t.Skip("no Xcode")
@@ -103,13 +103,13 @@ func TestWatchInfo(t *testing.T) {
 		t.Skip("no watchOS SDK")
 	}
 	cfg := &appConfig{ID: "dev.asuka.counter", Version: "1.2.0", Build: 7}
-	m, err := tc.watchInfo(cfg, watchBundleID(cfg.ID), "Counter", cfg.ID, true)
+	m, err := tc.watchInfo(cfg, watchBundleID(cfg.ID), "Counter", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]any{
 		"CFBundleIdentifier": "dev.asuka.counter.watchkitapp", "WKApplication": true, "WKWatchOnly": true,
-		"WKCompanionAppBundleIdentifier": "dev.asuka.counter", "MinimumOSVersion": watchosMin, "CFBundleExecutable": appExe,
+		"MinimumOSVersion": watchosMin, "CFBundleExecutable": appExe,
 		"CFBundleShortVersionString": "1.2.0", "CFBundleVersion": "7", "DTPlatformName": "watchos",
 	}
 	for k, v := range want {
@@ -119,6 +119,10 @@ func TestWatchInfo(t *testing.T) {
 	}
 	if !slices.Equal(m["UIDeviceFamily"].([]int), []int{4}) || !slices.Equal(m["CFBundleSupportedPlatforms"].([]string), []string{"WatchOS"}) {
 		t.Errorf("family %v, platforms %v", m["UIDeviceFamily"], m["CFBundleSupportedPlatforms"])
+	}
+	// watchOS refuses to install a watch-only app that names a companion.
+	if _, ok := m["WKCompanionAppBundleIdentifier"]; ok {
+		t.Error("a watch-only app names a companion")
 	}
 	if _, ok := m["NSAppTransportSecurity"]; ok {
 		t.Error("a device's release reaches no asuka dev on the loopback")

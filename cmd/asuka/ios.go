@@ -695,6 +695,13 @@ func devIOS(dir string, o *devOptions, stop <-chan os.Signal) error {
 // when it changed, launched connected to the loop.
 func simulatorPlayer(app *asukaApp, tc *iosToolchain, work string, sim *simDevice, loop *devLoop) devPlayer {
 	installed := ""
+	// The player's ID: the app's, a watch app's on a watch (linkWatch).
+	id := func() string {
+		if tc.watch() {
+			return watchBundleID(app.bundleID)
+		}
+		return app.bundleID
+	}
 	launch := func() error {
 		start := time.Now()
 		bundle, err := tc.buildPlayer(app, work)
@@ -709,12 +716,12 @@ func simulatorPlayer(app *asukaApp, tc *iosToolchain, work string, sim *simDevic
 			fmt.Printf("asuka: the player built and installed in %.1fs\n", time.Since(start).Seconds())
 		}
 		// Its environment: SIMCTL_CHILD_ names are the app's.
-		env := append(app.cfg.storeKitLaunchEnv(), fmt.Sprintf("SIMCTL_CHILD_ASUKA_DEV=127.0.0.1:%d", loop.port()))
-		return tc.run(work, env, "xcrun", "simctl", "launch", "--terminate-running-process", sim.UDID, app.bundleID)
+		env := append(app.cfg.storeKitLaunchEnv(tc.bundlePlatform()), fmt.Sprintf("SIMCTL_CHILD_ASUKA_DEV=127.0.0.1:%d", loop.port()))
+		return tc.run(work, env, "xcrun", "simctl", "launch", "--terminate-running-process", sim.UDID, id())
 	}
 	return devPlayer{
 		launch: launch,
-		stop:   func() { exec.Command("xcrun", "simctl", "terminate", sim.UDID, app.bundleID).Run() },
+		stop:   func() { exec.Command("xcrun", "simctl", "terminate", sim.UDID, id()).Run() },
 	}
 }
 

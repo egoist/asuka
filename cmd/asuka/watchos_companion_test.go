@@ -26,7 +26,7 @@ func TestWatchCompanionInfo(t *testing.T) {
 		t.Skip("no watchOS SDK")
 	}
 	tc := &iosToolchain{sdkName: "watchos"}
-	m, err := tc.watchInfo(cfg, watchBundleID(cfg.ID), "Pair", cfg.ID, false)
+	m, err := tc.watchInfo(cfg, watchBundleID(cfg.ID), "Pair", cfg.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestWatchCompanionInfo(t *testing.T) {
 		t.Error("an App Group without complications")
 	}
 	cfg.Widgets = []widgetConfig{{Kind: "steps", Sizes: []string{"circular"}}}
-	if m, _ = tc.watchInfo(cfg, watchBundleID(cfg.ID), "Pair", cfg.ID, true); m["AsukaAppGroup"] != "group.dev.asuka.pair" || m["WKWatchOnly"] != true {
+	if m, _ = tc.watchInfo(cfg, watchBundleID(cfg.ID), "Pair", ""); m["AsukaAppGroup"] != "group.dev.asuka.pair" || m["WKWatchOnly"] != true || m["WKCompanionAppBundleIdentifier"] != nil {
 		t.Errorf("a watch-only app with complications: %v", m)
 	}
 }

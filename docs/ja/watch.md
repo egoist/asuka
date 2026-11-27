@@ -89,7 +89,7 @@ component Score {
 - `setContext(text)` は、こちら側の最新の状態を相手のために保存し、相手は `context()`（追跡されます）でそれを読みます。届くのは最新のものだけです。
 - `sendFile(path, metadata:)` はファイルをバックグラウンドで送ります。`files()` は届いたファイルを返し、それらはアプリのディレクトリに移されています。
 
-メッセージはテキストです。運ぶ内容は `std/json` でエンコードしてください。相手のいない端末（iPad、Android、デスクトップ）では `available()` は false で、呼び出しは `CompanionError.unavailable` を投げます。テストでは `companion.fake()` で偽の相手を入れられます。シミュレーターで二つを一緒に試すには、ウォッチのシミュレーターと iPhone のシミュレーターをペアリングし（`xcrun simctl pair`、両方とも起動した状態で）、それぞれのアプリのシミュレーター用ビルドをインストールします。
+メッセージはテキストです。運ぶ内容は `std/json` でエンコードしてください。相手のいない端末（iPad、Android、デスクトップ）では `available()` は false で、呼び出しは `CompanionError.unavailable` を投げます。テストでは `companion.fake()` で偽の相手を入れられます。シミュレーターで二つを一緒に試すには、ウォッチのシミュレーターと iPhone のシミュレーターをペアリングし（`xcrun simctl pair <ウォッチ> <iPhone>`）、両方を起動して、それぞれのアプリのシミュレーター用ビルドをインストールします。iPhone アプリは iPhone に、そのウォッチアプリ（iPhone アプリの `Watch` フォルダーの中）はウォッチに入れます。シミュレーター同士ではメッセージとコンテキストは届きますが、`queue` のメッセージと `sendFile` のファイルは届きません。この二つは実機のウォッチと iPhone で試してください。
 
 ## コンプリケーション
 

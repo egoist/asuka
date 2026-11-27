@@ -386,6 +386,9 @@ struct AsukaDevError: Equatable {
         n.frame = f
         n.placed = true
         touch(n)
+        // A Scroll's content: its frame is how far the scroll view
+        // scrolls, which the Scroll's view sizes (AsukaScrollView).
+        if let p = n.parent, p.kind == .scroll { touch(p) }
         // A list's row: its height is the row's.
         if let l = n.cellOf { l.rowResized(n) }
     }

@@ -107,10 +107,11 @@ func (c *appConfig) clone() *appConfig {
 }
 
 // watchInfo is a watch app's Info.plist: id its bundle ID, companion the
-// iOS app's ID it's paired with ("" for none), watchOnly whether it's a
-// watch-only app (its iOS app the stub that carries it) or its iPhone
-// app's ([watch] companion), which still runs without the iPhone app.
-func (t *iosToolchain) watchInfo(cfg *appConfig, id, name string, companion string, watchOnly bool) (map[string]any, error) {
+// ID of the iPhone app it's paired with ([watch] companion), which it
+// still runs without; "" for a watch-only app (on a watch, its iOS app
+// the stub that carries it), which names no companion: watchOS refuses
+// to install an app that's both.
+func (t *iosToolchain) watchInfo(cfg *appConfig, id, name, companion string) (map[string]any, error) {
 	sdkVersion, err := output("xcrun", "--sdk", t.sdkName, "--show-sdk-version")
 	if err != nil {
 		return nil, err
@@ -141,15 +142,13 @@ func (t *iosToolchain) watchInfo(cfg *appConfig, id, name string, companion stri
 		"DTXcodeBuild":      xcodeBuild,
 		"DTCompiler":        "com.apple.compilers.llvm.clang.1_0",
 	}
-	if companion != "" {
-		m["WKCompanionAppBundleIdentifier"] = companion
-	}
-	if watchOnly {
+	if companion == "" {
 		// An independent app: it installs and runs without an iPhone app.
 		m["WKWatchOnly"] = true
 	} else {
 		// Its iPhone app's, which installs on its own from the watch's
 		// App Store too, and runs without the iPhone app near.
+		m["WKCompanionAppBundleIdentifier"] = companion
 		m["WKRunsIndependentlyOfCompanionApp"] = true
 	}
 	if g := cfg.appGroup(); g != "" {
@@ -238,7 +237,13 @@ func (t *iosToolchain) linkWatch(app *asukaApp, work, hostObj, lib string) (stri
 	if _, err := t.linkApp(work, bundle, cfg, hostObj, lib, ents); err != nil {
 		return "", err
 	}
-	if err := t.finishWatch(app, work, bundle, app.bundleID, ""); err != nil {
+	// Watch-only, its ID a watch app's (StoreKit takes the App Store's
+	// app as the watch app's ID without .watchkitapp).
+	if err := t.finishWatch(app, work, bundle, watchBundleID(app.bundleID), ""); err != nil {
+		return "", err
+	}
+	// asuka dev sells from ios.storekit on the watch too.
+	if err := cfg.copyStoreKit(bundle); err != nil {
 		return "", err
 	}
 	sign := simulatorIdentity(cfg.IOS.Team)
@@ -259,7 +264,7 @@ func (t *iosToolchain) finishWatch(app *asukaApp, work, bundle, id, companion st
 	if err := copyDir(filepath.Join(app.dir, "assets"), filepath.Join(bundle, "assets")); err != nil {
 		return err
 	}
-	info, err := t.watchInfo(cfg, id, app.displayName(), companion, !cfg.Watch.Companion)
+	info, err := t.watchInfo(cfg, id, app.displayName(), companion)
 	if err != nil {
 		return err
 	}
@@ -363,10 +368,11 @@ type watchBuilt struct {
 // makeWatchApp makes a release build of the watch app, signed: for the
 // watch simulator, or (prof its watchOS profile) for watches. Its config
 // is a copy of the app's, so what it goes without and what its packages
-// ask of it stay the watch's. A watch-only app's ID is <id>.watchkitapp
-// on a watch (the record's, <id>, its stub's) and <id> on the simulator,
-// where it has no stub; a companion's ([watch] companion) is
-// <id>.watchkitapp on both, paired with the iPhone app's.
+// ask of it stay the watch's. Its ID is <id>.watchkitapp, as Xcode names
+// a watch app (StoreKit finds the app's record, <id>, as the watch app's
+// ID without .watchkitapp): a watch-only app's names no companion (on a
+// watch, <id> is its stub's), a companion's ([watch] companion) is paired
+// with the iPhone app's, <id>.
 func makeWatchApp(app *asukaApp, simulator bool, prof *profile, verbose bool) (*watchBuilt, error) {
 	wapp := *app
 	wapp.cfg = app.cfg.clone()
@@ -414,9 +420,9 @@ func makeWatchApp(app *asukaApp, simulator bool, prof *profile, verbose bool) (*
 	if err := os.WriteFile(filepath.Join(bundle, "PrivacyInfo.xcprivacy"), manifest, 0o644); err != nil {
 		return nil, err
 	}
-	id, companion := watchBundleID(cfg.ID), cfg.ID
-	if simulator && !cfg.Watch.Companion {
-		id, companion = cfg.ID, ""
+	id, companion := watchBundleID(cfg.ID), ""
+	if cfg.Watch.Companion {
+		companion = cfg.ID
 	}
 	if err := tc.finishWatch(app, work, bundle, id, companion); err != nil {
 		return nil, err
@@ -481,7 +487,7 @@ func embedWatchWidgets(app *asukaApp, sdkName, work, bundle, id string, prof *pr
 	if err := tc.run(work, nil, "xcrun", append([]string{"lipo", "-create", "-output", exe}, exes...)...); err != nil {
 		return err
 	}
-	appInfo, err := tc.watchInfo(cfg, id, app.displayName(), "", true)
+	appInfo, err := tc.watchInfo(cfg, id, app.displayName(), "")
 	if err != nil {
 		return err
 	}

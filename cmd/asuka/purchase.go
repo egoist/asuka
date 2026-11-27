@@ -22,8 +22,10 @@ const storeKitName = "AsukaStoreKit.storekit"
 // ios.storekit with: StoreKitTest's session loads XCTest as the system's
 // (/System/Library/Frameworks), which the simulator has only from Xcode,
 // found as a test run finds it (DYLD_FRAMEWORK_PATH: Xcode's frameworks
-// for the simulator). nil without the file, or without Xcode's.
-func (c *appConfig) storeKitLaunchEnv() []string {
+// for the simulator's platform, platform: "iPhoneSimulator",
+// "AppleTVSimulator", "WatchSimulator"). nil without the file, or without
+// Xcode's.
+func (c *appConfig) storeKitLaunchEnv(platform string) []string {
 	if c.IOS.StoreKit == "" {
 		return nil
 	}
@@ -31,7 +33,7 @@ func (c *appConfig) storeKitLaunchEnv() []string {
 	if err != nil {
 		return nil
 	}
-	lib := filepath.Join(strings.TrimSpace(string(dev)), "Platforms", "iPhoneSimulator.platform", "Developer", "Library")
+	lib := filepath.Join(strings.TrimSpace(string(dev)), "Platforms", platform+".platform", "Developer", "Library")
 	if _, err := os.Stat(filepath.Join(lib, "Frameworks", "XCTest.framework", "XCTest")); err != nil {
 		return nil
 	}
