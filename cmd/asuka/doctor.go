@@ -114,6 +114,14 @@ func (e doctorEnv) doctorIOS() []doctorCheck {
 	} else {
 		cs = append(cs, doctorCheck{Name: "Apple TV", OK: true, Detail: "tvOS's SDK and simulator", Optional: true})
 	}
+	// Apple Watch (asuka dev --platform watchos): watchOS's SDK, and its
+	// simulator's runtime (asuka dev makes a watch of it when there's none).
+	runtimes, _ := e.output("xcrun", "simctl", "list", "runtimes")
+	if _, err := e.output("xcrun", "--sdk", "watchsimulator", "--show-sdk-path"); err != nil || !strings.Contains(runtimes, "watchOS") {
+		cs = append(cs, doctorCheck{Name: "Apple Watch", Optional: true, Fix: "install Xcode's watchOS platform (Xcode › Settings › Components, or xcodebuild -downloadPlatform watchOS) for asuka dev --platform watchos"})
+	} else {
+		cs = append(cs, doctorCheck{Name: "Apple Watch", OK: true, Detail: "watchOS's SDK and simulator", Optional: true})
+	}
 	ids, _ := e.output("security", "find-identity", "-v", "-p", "codesigning")
 	if strings.Contains(ids, "Apple Development") || strings.Contains(ids, "Apple Distribution") || strings.Contains(ids, "iPhone") {
 		cs = append(cs, doctorCheck{Name: "a signing identity", OK: true, Detail: "for iPhones and the App Store", Optional: true})

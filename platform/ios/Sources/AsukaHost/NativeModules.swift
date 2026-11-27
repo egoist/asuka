@@ -1,15 +1,20 @@
 // Typed native modules (//asuka:native) and views (//asuka:view): what
 // the Swift that asuka native generates for a package calls, and what the
 // host's transport calls (the core's calls, from any thread). The same file
-// is in the iOS host and the Mac's runtime (platform/macos), which a test
-// keeps equal.
+// is in the iOS host, the Mac's runtime (platform/macos) and the watch's
+// (platform/watchos), which tests keep equal.
 //
 // The wire format is core/src/native's: values in declaration order,
 // little-endian.
 
 import Foundation
 import UniformTypeIdentifiers
-#if canImport(UIKit)
+#if os(watchOS)
+import SwiftUI
+/// The platform's view: UIView on iOS, NSView on the Mac, a SwiftUI view
+/// on the watch (whose host is SwiftUI's).
+public typealias AsukaPlatformView = AnyView
+#elseif canImport(UIKit)
 import UIKit
 /// The platform's view: UIView on iOS, NSView on the Mac.
 public typealias AsukaPlatformView = UIView
@@ -19,7 +24,11 @@ import AppKit
 public typealias AsukaPlatformView = NSView
 #endif
 
-#if canImport(UIKit)
+#if os(watchOS)
+/// The platform's color: UIColor on iOS, NSColor on the Mac, SwiftUI's
+/// Color on the watch.
+public typealias AsukaPlatformColor = Color
+#elseif canImport(UIKit)
 /// The platform's color: UIColor on iOS, NSColor on the Mac.
 public typealias AsukaPlatformColor = UIColor
 #else
@@ -27,7 +36,10 @@ public typealias AsukaPlatformColor = UIColor
 public typealias AsukaPlatformColor = NSColor
 #endif
 
-#if canImport(UIKit)
+#if os(watchOS)
+// The watch has no controllers to present over: a package's Swift
+// presents with SwiftUI's own (a sheet of the app's).
+#elseif canImport(UIKit)
 /// Where a package's Swift presents a controller of its own (a picker,
 /// the system's camera): the frontmost controller of the app's key
 /// window.
@@ -60,7 +72,7 @@ public enum AsukaAssets {
             if let u = b.resourceURL?.appendingPathComponent("assets"), FileManager.default.fileExists(atPath: u.path) { return u }
         }
         if let d = ProcessInfo.processInfo.environment["ASUKA_ASSETS"], !d.isEmpty { return URL(fileURLWithPath: d) }
-        #if canImport(UIKit)
+        #if canImport(UIKit) || os(watchOS)
         return Bundle.main.resourceURL?.appendingPathComponent("assets")
         #else
         return URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("assets")
@@ -85,7 +97,9 @@ public enum AsukaColors {
         let lo = UInt32(truncatingIfNeeded: u)
         switch u >> 32 {
         case 2:
-            #if canImport(UIKit)
+            #if os(watchOS)
+            return Color(.sRGB, red: Double((lo >> 24) & 0xff) / 255, green: Double((lo >> 16) & 0xff) / 255, blue: Double((lo >> 8) & 0xff) / 255, opacity: Double(lo & 0xff) / 255)
+            #elseif canImport(UIKit)
             return UIColor(red: CGFloat((lo >> 24) & 0xff) / 255, green: CGFloat((lo >> 16) & 0xff) / 255, blue: CGFloat((lo >> 8) & 0xff) / 255, alpha: CGFloat(lo & 0xff) / 255)
             #else
             return NSColor(srgbRed: CGFloat((lo >> 24) & 0xff) / 255, green: CGFloat((lo >> 16) & 0xff) / 255, blue: CGFloat((lo >> 8) & 0xff) / 255, alpha: CGFloat(lo & 0xff) / 255)
@@ -94,14 +108,23 @@ public enum AsukaColors {
             guard let c = semantic(Int(lo & 0xffff)) else { return nil }
             // Its opacity is in bits 24-31, as transparency.
             let a = 255 - CGFloat((lo >> 24) & 0xff)
+            #if os(watchOS)
+            return a == 255 ? c : c.opacity(a / 255)
+            #else
             return a == 255 ? c : c.withAlphaComponent(a / 255)
+            #endif
         default:
             return nil
         }
     }
 
     static func semantic(_ i: Int) -> AsukaPlatformColor? {
-        #if canImport(UIKit)
+        #if os(watchOS)
+        // The watch's: light text on black.
+        let t: [AsukaPlatformColor?] = [nil, .primary, .secondary, Color.white.opacity(0.4), .black, Color(white: 0.11),
+            .black, Color.white.opacity(0.2), .accentColor, .red, .orange, .yellow, .green, .blue,
+            .purple, .pink, .gray, .clear, Color(white: 0.11), .white]
+        #elseif canImport(UIKit)
         let t: [AsukaPlatformColor?] = [nil, .label, .secondaryLabel, .tertiaryLabel, .systemBackground, .secondarySystemBackground,
             .systemGroupedBackground, .separator, .tintColor, .systemRed, .systemOrange, .systemYellow, .systemGreen, .systemBlue,
             .systemPurple, .systemPink, .systemGray, .clear, .secondarySystemGroupedBackground, .white]
@@ -114,9 +137,10 @@ public enum AsukaColors {
     }
 }
 
-// Where the host has views: iOS (UIKit), and the Mac's runtime (which has
-// no AsukaOps); not the iOS host's package built for the Mac (swift test,
-// for its decoder's tests: AsukaOps is a module of its own there).
+// Where the host has views: iOS (UIKit), the watch (SwiftUI) and the Mac's
+// runtime (which has no AsukaOps); not the iOS host's package built for
+// the Mac (swift test, for its decoder's tests: AsukaOps is a module of
+// its own there).
 #if canImport(UIKit) || !canImport(AsukaOps)
 
 /// Encodes values (core/src/native's writer).
@@ -592,7 +616,9 @@ public enum AsukaNative {
 
 // What a package's Swift presents over, or attaches a sheet to.
 extension AsukaNative {
-    #if canImport(UIKit)
+    #if os(watchOS)
+    // The watch's app has one screen, SwiftUI's: nothing to present over.
+    #elseif canImport(UIKit)
     /// The app's window: its foreground scene's key window.
     @MainActor public static var window: UIWindow? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

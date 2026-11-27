@@ -401,6 +401,9 @@ Its fields:
 - `tv`: the app runs on a TV (Apple TV, where `platform` is `.iOS`;
   Android TV), driven by a remote's focus rather than touch. See
   [TVs](tv.md).
+- `watch`: the app runs on a watch (Apple Watch, where `platform` is
+  `.iOS`): a small screen, glanced at, the Digital Crown. See [Apple
+  Watch](watch.md).
 
 Semantic colors and fonts follow dark mode and the text size on their
 own; read the environment for what they don't cover.

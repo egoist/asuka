@@ -22,15 +22,15 @@ static bool mounting;
 static const uint8_t env_kinds[] = {
 	AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT,
 	AK_K_BOOL, AK_K_BOOL, AK_K_BOOL, AK_K_INT, AK_K_INT, AK_K_INT, AK_K_REF, AK_K_REF, AK_K_REF, AK_K_INT, AK_K_INT,
-	AK_K_BOOL,
+	AK_K_BOOL, AK_K_BOOL,
 };
 static const char *const env_names[] = {
 	"width", "height", "safeTop", "safeRight", "safeBottom", "safeLeft", "keyboard", "scale", "fontScale",
 	"dark", "reduceMotion", "screenReader", "platform", "widthClass", "heightClass", "locale", "timeZone", "languages",
-	"firstWeekday", "hourCycle", "tv",
+	"firstWeekday", "hourCycle", "tv", "watch",
 };
-static const ak_shape *const no_shapes[21];
-const ak_shape ak_ui_shape_environment = {"Environment", 21, env_kinds, no_shapes, env_names, 0, NULL, false, NULL};
+static const ak_shape *const no_shapes[22];
+const ak_shape ak_ui_shape_environment = {"Environment", 22, env_kinds, no_shapes, env_names, 0, NULL, false, NULL};
 
 static const uint8_t range_kinds[] = {AK_K_INT, AK_K_INT};
 static const char *const range_names[] = {"start", "end"};
@@ -118,7 +118,7 @@ static bool env_same(const ak_environment *a, const ak_environment *b) {
 	return a->width == b->width && a->height == b->height && a->safe_top == b->safe_top && a->safe_right == b->safe_right &&
 	       a->safe_bottom == b->safe_bottom && a->safe_left == b->safe_left && a->keyboard == b->keyboard &&
 	       a->scale == b->scale && a->font_scale == b->font_scale && a->dark == b->dark && a->reduce_motion == b->reduce_motion &&
-	       a->screen_reader == b->screen_reader && a->tv == b->tv && a->platform == b->platform && a->width_class == b->width_class &&
+	       a->screen_reader == b->screen_reader && a->tv == b->tv && a->watch == b->watch && a->platform == b->platform && a->width_class == b->width_class &&
 	       a->height_class == b->height_class && ak_span_eq(a->locale, b->locale) && ak_span_eq(a->time_zone, b->time_zone) &&
 	       ak_span_eq(a->languages, b->languages) && a->first_weekday == b->first_weekday && a->hour_cycle == b->hour_cycle;
 }
@@ -186,6 +186,7 @@ static ak_val env_value(bool whole) {
 	s->f[17].p = ak_str_new(e.languages.p, e.languages.len);
 	s->f[18].i = e.first_weekday, s->f[19].i = e.hour_cycle;
 	s->f[20].i = e.tv;
+	s->f[21].i = e.watch;
 	return (ak_val){.p = s};
 }
 

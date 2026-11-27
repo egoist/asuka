@@ -14,20 +14,21 @@ import (
 
 // Target is what the core is built for.
 type Target struct {
-	// OS: darwin, ios, ios-simulator, tvos, tvos-simulator, android,
-	// linux, windows, wasm.
+	// OS: darwin, ios, ios-simulator, tvos, tvos-simulator, watchos,
+	// watchos-simulator, android, linux, windows, wasm.
 	OS string
-	// Arch: arm64, amd64, arm, 386; wasm32 for wasm.
+	// Arch: arm64, amd64, arm, 386; arm64_32 for an Apple Watch's
+	// (ILP32: 64-bit registers, 32-bit pointers); wasm32 for wasm.
 	Arch string
 }
 
 func (t Target) String() string { return t.OS + "-" + t.Arch }
 
 // Apple reports whether t is one of Apple's systems (Xcode's SDKs):
-// macOS, iOS, tvOS, their simulators.
+// macOS, iOS, tvOS, watchOS, their simulators.
 func (t Target) Apple() bool {
 	switch t.OS {
-	case "darwin", "ios", "ios-simulator", "tvos", "tvos-simulator":
+	case "darwin", "ios", "ios-simulator", "tvos", "tvos-simulator", "watchos", "watchos-simulator":
 		return true
 	}
 	return false
@@ -39,10 +40,13 @@ func Host() Target {
 }
 
 // Minimum versions (DESIGN.md: iOS 16, Android API 33, macOS 11; tvOS
-// 17, the Apple TV's iOS 16 counterpart with UIKit's menus on buttons).
+// 17, the Apple TV's iOS 16 counterpart with UIKit's menus on buttons;
+// watchOS 10, the first with SwiftUI's Observation, which the watch's
+// host is written with, and Xcode's recommended one).
 const (
 	IOSMin     = "16.0"
 	TVOSMin    = "17.0"
+	WatchOSMin = "10.0"
 	MacOSMin   = "11.0"
 	AndroidAPI = "24"
 	// LinuxGlibc is the glibc Zig builds Linux's C against: what it calls
@@ -131,6 +135,19 @@ func ForTarget(t Target) (*Toolchain, error) {
 			triple = clangArchApple(t.Arch) + "-apple-tvos" + TVOSMin + "-simulator"
 		}
 		return appleToolchain(t, sdk, triple)
+	case "watchos", "watchos-simulator":
+		if runtime.GOOS != "darwin" {
+			return nil, fmt.Errorf("cbuild: building for watchOS needs a Mac with Xcode")
+		}
+		// A watch is arm64_32 (Series 4 to 8, SE, Ultra 1) or arm64 (Series
+		// 9 and later, Ultra 2 and later): a device build is both, lipo'd.
+		sdk := "watchos"
+		triple := clangArchApple(t.Arch) + "-apple-watchos" + WatchOSMin
+		if t.OS == "watchos-simulator" {
+			sdk = "watchsimulator"
+			triple += "-simulator"
+		}
+		return appleToolchain(t, sdk, triple)
 	case "android":
 		sys := androidsdk.Local()
 		ndk, bin, err := sys.NDK(sys.SDK())
@@ -205,8 +222,11 @@ func ForTarget(t Target) (*Toolchain, error) {
 }
 
 func clangArchApple(arch string) string {
-	if arch == "amd64" {
+	switch arch {
+	case "amd64":
 		return "x86_64"
+	case "arm64_32":
+		return "arm64_32"
 	}
 	return "arm64"
 }
@@ -374,7 +394,7 @@ func deadStrip(t Target) []string {
 		// Its symbols stay for Gradle, which strips what it packages and
 		// keeps them for crash reports (native-debug-symbols.zip).
 		return []string{"-Wl,--gc-sections"}
-	case "darwin", "ios", "ios-simulator", "tvos", "tvos-simulator":
+	case "darwin", "ios", "ios-simulator", "tvos", "tvos-simulator", "watchos", "watchos-simulator":
 		return []string{"-Wl,-dead_strip", "-Wl,-x"}
 	case "windows":
 		return []string{"-s"}

@@ -1623,7 +1623,7 @@ static ak_val env_text(ak_closure *c, ak_val *a, uint32_t n) {
 	ak_val e = ak_ui_environment_value();
 	const ak_struct *s = e.p;
 	char b[64];
-	snprintf(b, sizeof b, "%gx%g %s%s", s->f[0].f, s->f[1].f, s->f[9].i ? "dark" : "light", s->f[20].i ? " tv" : "");
+	snprintf(b, sizeof b, "%gx%g %s%s%s", s->f[0].f, s->f[1].f, s->f[9].i ? "dark" : "light", s->f[20].i ? " tv" : "", s->f[21].i ? " watch" : "");
 	ak_release(e.p);
 	return (ak_val){.p = ak_str_c(b)};
 }
@@ -1653,6 +1653,11 @@ TEST(environment_follows_the_host) {
 	env.width = 1920, env.height = 1080;
 	ak_fake_set_environment(f, &env);
 	CHECK(ak_uitest_expect(a, AK_STR("1920x1080 dark tv"), &err));
+	// A watch (Apple Watch): environment().watch.
+	env.tv = false, env.watch = true;
+	env.width = 205, env.height = 251;
+	ak_fake_set_environment(f, &env);
+	CHECK(ak_uitest_expect(a, AK_STR("205x251 dark watch"), &err));
 	ak_buf_free(&err);
 	done(a);
 }

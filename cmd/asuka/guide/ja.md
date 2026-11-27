@@ -1187,7 +1187,7 @@ component Toolbar {
 
 これは `if` とその `else if`、`match @platform`（`@platform` が `.unknown` になることはないので、`.unknown` を扱う必要はありません）、`@platform` の比較に対する `&&`、`||`、`!`、そしてビューの中の `if` に当てはまります。ビューの中の `if` では、もう一方の分岐のビューは作られることすらありません。ただし、どのプラットフォーム向けにビルドしても、すべての分岐がチェックされます。プラットフォームの API はどのプラットフォームでも同じ宣言なので、Linux 向けの分岐にある誤りは、iOS 向けにビルドするときもエラーになります。あるプラットフォーム専用の宣言は、専用のファイルに分けたほうがわかりやすいことがよくあります。[特定のプラットフォーム向けのファイル](https://asuka.egoist.dev/ja/docs/language/packages#特定のプラットフォーム向けのファイル)を参照してください。
 
-`environment().platform` は、ビューが動いているプラットフォームをシステムが伝えるものです（テストでは `mount(…, platform:)` が伝えます）。ビューのために追跡されます。プラットフォームごとにどのコードをビルドするかは `@platform` で決めます。Apple TV のアプリは iOS のアプリからビルドされるので、そこでの `@platform` は `.iOS` です。テレビかどうかは `environment().tv` で判断します（[テレビ](https://asuka.egoist.dev/ja/docs/tv)）。
+`environment().platform` は、ビューが動いているプラットフォームをシステムが伝えるものです（テストでは `mount(…, platform:)` が伝えます）。ビューのために追跡されます。プラットフォームごとにどのコードをビルドするかは `@platform` で決めます。Apple TV のアプリは iOS のアプリからビルドされるので、そこでの `@platform` は `.iOS` です。テレビかどうかは `environment().tv` で判断します（[テレビ](https://asuka.egoist.dev/ja/docs/tv)）。Apple Watch のアプリも同じで、ウォッチかどうかは `environment().watch` で判断します（[Apple Watch](https://asuka.egoist.dev/ja/docs/watch)）。
 
 #### 開発ビルド向けのコード
 

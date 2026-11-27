@@ -19,6 +19,7 @@ import (
 	"github.com/egoist/asuka/internal/cbuild"
 	"github.com/egoist/asuka/lang/bytecode"
 	iosHost "github.com/egoist/asuka/platform/ios"
+	watchHost "github.com/egoist/asuka/platform/watchos"
 )
 
 // iOS: the Swift host (platform/ios, compiled once and cached) linked
@@ -52,12 +53,23 @@ func newIOSToolchain(verbose bool) (*iosToolchain, error) {
 
 // newAppleToolchain is the toolchain for one of the SDKs the iOS host
 // builds with: iphoneos, iphonesimulator, and tvOS's appletvos and
-// appletvsimulator (the same host, its tvOS parts: docs/tv.md).
+// appletvsimulator (the same host, its tvOS parts: docs/tv.md); and
+// watchOS's watchos and watchsimulator, the watch's own host's
+// (platform/watchos: docs/watch.md).
 func newAppleToolchain(sdkName string, verbose bool) (*iosToolchain, error) {
-	t := &iosToolchain{sdkName: sdkName, goarch: "arm64", verbose: verbose}
+	return newAppleToolchainFor(sdkName, "arm64", verbose)
+}
+
+// newAppleToolchainFor is newAppleToolchain for an architecture: arm64
+// (Apple silicon's simulators, iPhones, Apple TVs, a recent watch), or a
+// watch's arm64_32.
+func newAppleToolchainFor(sdkName, arch string, verbose bool) (*iosToolchain, error) {
+	t := &iosToolchain{sdkName: sdkName, goarch: arch, verbose: verbose}
 	sdk, err := output("xcrun", "--sdk", sdkName, "--show-sdk-path")
 	if err != nil {
-		return nil, fmt.Errorf("no %s SDK (install Xcode%s): %v", t.sdkTitle(), map[bool]string{true: " and its tvOS platform: xcodebuild -downloadPlatform tvOS", false: ""}[t.tv()], err)
+		hint := map[string]string{"appletvos": " and its tvOS platform: xcodebuild -downloadPlatform tvOS", "appletvsimulator": " and its tvOS platform: xcodebuild -downloadPlatform tvOS",
+			"watchos": " and its watchOS platform: xcodebuild -downloadPlatform watchOS", "watchsimulator": " and its watchOS platform: xcodebuild -downloadPlatform watchOS"}[sdkName]
+		return nil, fmt.Errorf("no %s SDK (install Xcode%s): %v", t.sdkTitle(), hint, err)
 	}
 	clang, err := output("xcrun", "--sdk", sdkName, "--find", "clang")
 	if err != nil {
@@ -65,7 +77,7 @@ func newAppleToolchain(sdkName string, verbose bool) (*iosToolchain, error) {
 	}
 	t.sdk, t.clang = sdk, clang
 	// Apple silicon's simulator: the Macs Asuka develops on.
-	t.target = "arm64-apple-" + t.swiftPlatform() + t.minOS()
+	t.target = macSwiftArch(arch) + "-apple-" + t.swiftPlatform() + t.minOS()
 	if !t.device() {
 		t.target += "-simulator"
 	}
@@ -76,39 +88,54 @@ func newAppleToolchain(sdkName string, verbose bool) (*iosToolchain, error) {
 // simulator).
 func (t *iosToolchain) tv() bool { return strings.HasPrefix(t.sdkName, "appletv") }
 
-// minOS is the system the app needs at least: iOS's, or tvOS's.
+// watch reports whether the toolchain builds for watchOS (an Apple Watch,
+// or its simulator): the watch's host, not the iOS host.
+func (t *iosToolchain) watch() bool { return strings.HasPrefix(t.sdkName, "watch") }
+
+// minOS is the system the app needs at least: iOS's, tvOS's or watchOS's.
 func (t *iosToolchain) minOS() string {
 	if t.tv() {
 		return tvosMin
+	}
+	if t.watch() {
+		return watchosMin
 	}
 	return iosMin
 }
 
 // swiftPlatform is the platform as Package.swift and native packages
-// name it, and as a target triple has it: ios, tvos.
+// name it, and as a target triple has it: ios, tvos, watchos.
 func (t *iosToolchain) swiftPlatform() string {
 	if t.tv() {
 		return "tvos"
+	}
+	if t.watch() {
+		return "watchos"
 	}
 	return "ios"
 }
 
 // bundlePlatform is Info.plist's CFBundleSupportedPlatforms: iPhoneOS,
-// iPhoneSimulator, AppleTVOS, AppleTVSimulator.
+// iPhoneSimulator, AppleTVOS, AppleTVSimulator, WatchOS, WatchSimulator.
 func (t *iosToolchain) bundlePlatform() string {
-	return map[string]string{"iphoneos": "iPhoneOS", "iphonesimulator": "iPhoneSimulator", "appletvos": "AppleTVOS", "appletvsimulator": "AppleTVSimulator"}[t.sdkName]
+	return map[string]string{"iphoneos": "iPhoneOS", "iphonesimulator": "iPhoneSimulator", "appletvos": "AppleTVOS", "appletvsimulator": "AppleTVSimulator",
+		"watchos": "WatchOS", "watchsimulator": "WatchSimulator"}[t.sdkName]
 }
 
 // sdkTitle is the SDK as Xcode names it.
 func (t *iosToolchain) sdkTitle() string {
-	return map[string]string{"iphoneos": "iOS", "iphonesimulator": "iOS simulator", "appletvos": "tvOS", "appletvsimulator": "tvOS simulator"}[t.sdkName]
+	return map[string]string{"iphoneos": "iOS", "iphonesimulator": "iOS simulator", "appletvos": "tvOS", "appletvsimulator": "tvOS simulator",
+		"watchos": "watchOS", "watchsimulator": "watchOS simulator"}[t.sdkName]
 }
 
-// devices are Info.plist's UIDeviceFamily: an Apple TV's (3), or the
-// app's iPhone and iPad.
+// devices are Info.plist's UIDeviceFamily: an Apple TV's (3), a watch's
+// (4), or the app's iPhone and iPad.
 func (t *iosToolchain) devices(c *appConfig) []int {
 	if t.tv() {
 		return []int{3}
+	}
+	if t.watch() {
+		return []int{4}
 	}
 	return c.iosDevices()
 }
@@ -189,16 +216,28 @@ func iosHostVariant(features []string) string {
 // (static libraries, frameworks, resource bundles) is t.packages, which
 // linkApp links and embedPackages puts in the app.
 func (t *iosToolchain) buildHostPackage(work string, natives []nativePackage, features []string) (string, error) {
-	host, err := swiftSources(iosHost.Files, "Sources/AsukaHost", "Sources/AsukaOps", "App")
+	files, variant := fs.FS(iosHost.Files), iosHostVariant(features)
+	if t.watch() {
+		// The watch's own host (SwiftUI), its own variant: none prebuilt.
+		files, variant = watchHost.Files, ""
+	}
+	host, err := swiftSources(files, "Sources/AsukaHost", "Sources/AsukaOps", "App")
 	if err != nil {
 		return "", err
 	}
-	cAsuka, err := filesUnder(iosHost.Files, "Sources/CAsuka")
+	cAsuka, err := filesUnder(files, "Sources/CAsuka")
 	if err != nil {
 		return "", err
 	}
-	b := &swiftBuild{dir: filepath.Join(work, "swift-"+t.sdkName), platform: t.swiftPlatform(), sdkName: t.sdkName,
-		arch: macSwiftArch(t.goarch), release: t.release, defines: features, variant: iosHostVariant(features),
+	if t.watch() {
+		delete(cAsuka, "stubs.c") // the package's tests' stand-ins for the core
+	}
+	dir := filepath.Join(work, "swift-"+t.sdkName)
+	if t.goarch != "arm64" {
+		dir += "-" + t.goarch // a watch's arm64_32, built beside its arm64
+	}
+	b := &swiftBuild{dir: dir, platform: t.swiftPlatform(), sdkName: t.sdkName,
+		arch: macSwiftArch(t.goarch), release: t.release, defines: features, variant: variant,
 		host: host, cAsuka: cAsuka, natives: natives, run: t.run}
 	out, err := b.build()
 	if err != nil {
@@ -281,7 +320,7 @@ func playerFeatures(app *asukaApp, cfg *appConfig) []string {
 // player), with the C the app's externs call (m's, or for a player c,
 // the last compile's).
 func (t *iosToolchain) buildCore(work string, m *bytecode.Module, c *bytecode.C) (string, error) {
-	target := cbuild.Target{OS: t.swiftPlatform(), Arch: "arm64"}
+	target := cbuild.Target{OS: t.swiftPlatform(), Arch: t.goarch}
 	if !t.device() {
 		target = cbuild.Target{OS: t.swiftPlatform() + "-simulator", Arch: t.goarch}
 	}
@@ -315,6 +354,9 @@ func (t *iosToolchain) embedPackages(bundle string) error {
 func (t *iosToolchain) link(app *asukaApp, work, hostObj, lib string) (string, error) {
 	if t.tv() {
 		return t.linkTV(app, work, hostObj, lib)
+	}
+	if t.watch() {
+		return t.linkWatch(app, work, hostObj, lib)
 	}
 	bundle := filepath.Join(work, app.name+".app")
 	os.RemoveAll(bundle)

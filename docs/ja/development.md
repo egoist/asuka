@@ -103,6 +103,8 @@ Asuka は、アプリのディレクトリとそのローカルの依存関係�
 
 **テレビ**：`asuka dev --platform tvos` は Apple TV シミュレーターで、`asuka dev --platform android --device <名前>` は Android TV のエミュレーターか adb でつながるテレビでアプリを動かします。[テレビ](tv.md)を参照してください。
 
+**ウォッチ**：`asuka dev --platform watchos` は Apple Watch のシミュレーターでアプリを動かします。[Apple Watch](watch.md) を参照してください。
+
 **スマートフォンのブラウザー**：`asuka dev --platform web --lan` でアプリをネットワーク上に配信すると、開くべきアドレスが表示されます。最初のアドレスは QR コードでも表示されるので、スマートフォンのカメラで読み取れます。
 
 ## アセット

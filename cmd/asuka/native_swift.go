@@ -35,8 +35,8 @@ import (
 // swiftBuild builds an app's Swift as packages.
 type swiftBuild struct {
 	dir      string // where its packages and build go
-	platform string // ios, tvos, macos
-	sdkName  string // iphoneos, iphonesimulator, appletvos, appletvsimulator, macosx
+	platform string // ios, tvos, watchos, macos
+	sdkName  string // iphoneos, iphonesimulator, appletvos, appletvsimulator, watchos, watchsimulator, macosx
 	arch     string // swiftc's: arm64, x86_64
 	release  bool
 	defines  []string // the host's compilation conditions
@@ -70,7 +70,7 @@ type swiftPackageOutput struct {
 
 // swiftPlatform is a Package.swift's platforms for platform.
 func swiftPlatform(platform string) string {
-	return swiftPlatformAt(platform, map[string]string{"ios": iosMin, "tvos": tvosMin, "macos": macMin}[platform])
+	return swiftPlatformAt(platform, map[string]string{"ios": iosMin, "tvos": tvosMin, "watchos": watchosMin, "macos": macMin}[platform])
 }
 
 // swiftPlatformAt is Package.swift's platform at a minimum version:
@@ -81,6 +81,8 @@ func swiftPlatformAt(platform, min string) string {
 		return fmt.Sprintf(".iOS(%q)", min)
 	case "tvos":
 		return fmt.Sprintf(".tvOS(%q)", min)
+	case "watchos":
+		return fmt.Sprintf(".watchOS(%q)", min)
 	}
 	return fmt.Sprintf(".macOS(%q)", min)
 }
@@ -198,7 +200,8 @@ func (b *swiftBuild) build() (*swiftPackageOutput, error) {
 		config = "Release"
 	}
 	dest := map[string]string{"iphoneos": "generic/platform=iOS", "iphonesimulator": "generic/platform=iOS Simulator",
-		"appletvos": "generic/platform=tvOS", "appletvsimulator": "generic/platform=tvOS Simulator", "macosx": "generic/platform=macOS"}[b.sdkName]
+		"appletvos": "generic/platform=tvOS", "appletvsimulator": "generic/platform=tvOS Simulator",
+		"watchos": "generic/platform=watchOS", "watchsimulator": "generic/platform=watchOS Simulator", "macosx": "generic/platform=macOS"}[b.sdkName]
 	derived := filepath.Join(b.dir, "build")
 	products := filepath.Join(derived, "Build", "Products", config)
 	if b.sdkName != "macosx" {

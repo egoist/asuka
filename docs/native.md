@@ -392,7 +392,9 @@ the package declares count: an app built for an older iOS or macOS
 fails with what the package needs, and a package that lists only one of
 them (`platforms: [.iOS("16.0")]`) is built only for that one. An Apple
 TV build takes a package that names tvOS (`.tvOS("17.0")`): see
-[TVs](tv.md#native-packages-on-tvos).
+[TVs](tv.md#native-packages-on-tvos); an Apple Watch build one that
+names watchOS (`.watchOS("10.0")`), whose views are SwiftUI's: see
+[Apple Watch](watch.md#native-packages-on-watchos).
 
 To edit it in Xcode, open `Package.swift`. Xcode resolves `asuka` from
 its URL, so the generated code and yours type-check there as they do in

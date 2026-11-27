@@ -376,6 +376,21 @@ banner = "banner.png"
 
 Apple TV のビルド（`asuka build --platform tvos`）にはキーは要りません。iOS のアプリを tvOS のプロファイルで署名したものです。[テレビ](tv.md)を参照してください。
 
+## watch
+
+Apple Watch のビルド（`asuka build --platform watchos`）の設定です。
+
+```toml
+[watch]
+profile = "Counter Watch"
+```
+
+| キー | 型 | デフォルト | 内容 |
+|---|---|---|---|
+| `profile` | 文字列 | インストール済みで最も合うもの | ウォッチのアプリのプロビジョニングプロファイル。名前、UUID、パスのいずれかで、アプリの ID に `.watchkitapp` を付けたものの watchOS 用プロファイルです。`--profile` が優先されます。ウォッチのアプリを運ぶ iPhone アプリのものは `ios.profile` です。 |
+
+[Apple Watch](watch.md) を参照してください。
+
 ## car
 
 `platform/car` をインポートしたアプリが、車の画面で何であるかを指定します。カテゴリによって、どの車に表示されるか、どのテンプレートを使えるか、各プラットフォームのビルドに何が加わるかが決まります。iOS ではそのカテゴリの CarPlay の entitlement と CarPlay シーン、Android では Car App Library のサービスとそのカテゴリ、`automotive_app_desc.xml`、Car App API のレベル（オーディオアプリではメディアブラウザー）です。このパッケージをインポートしていないアプリには何もしません。

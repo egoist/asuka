@@ -143,7 +143,7 @@ component Toolbar {
 
 这适用于 `if` 及其 `else if`、`match @platform`（它不必覆盖 `.unknown`，因为 `@platform` 不会是这个值）、对 `@platform` 的比较做的 `&&`、`||` 和 `!`，以及视图中的 `if`：另一个分支的视图根本不会被创建。不过无论为哪个平台构建，每个分支都会被检查：平台的 API 在每个平台上都是同样的声明，所以 Linux 分支里的错误，在为 iOS 构建时同样会报出来。如果是某个平台专有的声明，单独放在一个文件里通常更清楚，见[特定平台的文件](packages.md#特定平台的文件)。
 
-`environment().platform` 是视图运行所在的平台，由系统给出（测试里由 `mount(…, platform:)` 给出）。它是被追踪的，供视图使用。要决定为某个平台构建哪些代码，用 `@platform`。Apple TV 应用由 iOS 应用构建而成（在那里 `@platform` 是 `.iOS`）：是不是电视要看 `environment().tv`（[电视](../tv.md)）。
+`environment().platform` 是视图运行所在的平台，由系统给出（测试里由 `mount(…, platform:)` 给出）。它是被追踪的，供视图使用。要决定为某个平台构建哪些代码，用 `@platform`。Apple TV 应用由 iOS 应用构建而成（在那里 `@platform` 是 `.iOS`）：是不是电视要看 `environment().tv`（[电视](../tv.md)）。Apple Watch 应用也一样，是不是手表要看 `environment().watch`（[Apple Watch](../watch.md)）。
 
 ## 开发构建的代码
 

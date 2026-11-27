@@ -264,7 +264,7 @@ static uint32_t golden_events(ak_event *evs) {
 	evs[n++] = (ak_event){.id = 1, .kind = AK_EVENT_LIFECYCLE, .i = AK_LIFECYCLE_BACKGROUND};
 	evs[n++] = (ak_event){.id = 1, .kind = AK_EVENT_ENVIRONMENT, .env = {
 		.width = 402, .height = 874, .safe_top = 62, .safe_bottom = 34, .keyboard = 336,
-		.scale = 3, .font_scale = 1.25f, .dark = true, .reduce_motion = true, .screen_reader = true, .tv = true, .platform = AK_PLATFORM_IOS,
+		.scale = 3, .font_scale = 1.25f, .dark = true, .reduce_motion = true, .screen_reader = true, .tv = true, .watch = true, .platform = AK_PLATFORM_IOS,
 		.width_class = AK_SIZE_CLASS_COMPACT, .height_class = AK_SIZE_CLASS_EXPANDED, .locale = AK_STR("en_US"),
 		.time_zone = AK_STR("Asia/Shanghai"), .languages = AK_STR("en-US,zh-Hans"), .first_weekday = 2, .hour_cycle = 24,
 	}};
@@ -281,7 +281,7 @@ static bool event_eq(const ak_event *a, const ak_event *b) {
 	       x->safe_top == y->safe_top && x->safe_right == y->safe_right && x->safe_bottom == y->safe_bottom &&
 	       x->safe_left == y->safe_left && x->keyboard == y->keyboard && x->scale == y->scale &&
 	       x->font_scale == y->font_scale && x->dark == y->dark && x->reduce_motion == y->reduce_motion &&
-	       x->screen_reader == y->screen_reader && x->tv == y->tv && x->platform == y->platform && x->width_class == y->width_class &&
+	       x->screen_reader == y->screen_reader && x->tv == y->tv && x->watch == y->watch && x->platform == y->platform && x->width_class == y->width_class &&
 	       x->height_class == y->height_class && ak_span_eq(x->locale, y->locale) && ak_span_eq(x->time_zone, y->time_zone) &&
 	       ak_span_eq(x->languages, y->languages) && x->first_weekday == y->first_weekday && x->hour_cycle == y->hour_cycle &&
 	       memcmp(&a->g, &b->g, sizeof a->g) == 0;

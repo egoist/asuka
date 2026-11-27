@@ -50,6 +50,17 @@ func TestLibTVOS(t *testing.T) {
 	build(t, Target{"tvos", "arm64"}, Static, "libasuka.a")
 }
 
+// TestLibWatchOS builds the core for the watch's simulator and both of a
+// watch's architectures: arm64_32's 32-bit pointers, with -Werror.
+func TestLibWatchOS(t *testing.T) {
+	if _, err := exec.LookPath("xcrun"); err != nil {
+		t.Skip("no Xcode")
+	}
+	build(t, Target{"watchos-simulator", "arm64"}, Static, "libasuka.a")
+	build(t, Target{"watchos", "arm64_32"}, Static, "libasuka.a")
+	build(t, Target{"watchos", "arm64"}, Static, "libasuka.a")
+}
+
 func TestLibAndroid(t *testing.T) {
 	build(t, Target{"android", "arm64"}, Shared, "libasuka.so")
 }

@@ -374,6 +374,21 @@ banner = "banner.png"
 
 Apple TV 构建（`asuka build --platform tvos`）不需要任何键：它就是 iOS 应用，用 tvOS 描述文件签名。见[电视](tv.md)。
 
+## watch
+
+Apple Watch 构建（`asuka build --platform watchos`）的配置。
+
+```toml
+[watch]
+profile = "Counter Watch"
+```
+
+| 键 | 类型 | 默认值 | 含义 |
+|---|---|---|---|
+| `profile` | 字符串 | 已安装的最匹配的那个 | 手表应用的描述文件：名称、UUID 或路径，应为应用 ID 加上 `.watchkitapp` 的 watchOS 描述文件。`--profile` 会覆盖它；携带手表应用的 iPhone 应用用的是 `ios.profile`。 |
+
+见 [Apple Watch](watch.md)。
+
 ## car
 
 导入了 `platform/car` 的应用在车机屏幕上属于哪一类。类别决定了哪些汽车会显示它、它能用哪些模板，以及每个平台的构建要加上什么：iOS 上是该类别的 CarPlay entitlement 和一个 CarPlay 场景；Android 上是 Car App Library 的服务及其类别、`automotive_app_desc.xml` 和 Car App API 等级（音频应用则是一个媒体浏览服务）。没有导入这个包的应用不受它影响。

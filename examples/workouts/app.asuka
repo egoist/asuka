@@ -1,0 +1,127 @@
+// Workouts is a small app made for the wrist: a List of workouts in a
+// Stack (the Digital Crown scrolls it), a screen pushed for the one
+// tapped, with a Stepper, a Toggle and a Slider, and an alert. It runs on
+// phones too; on a watch, environment().watch is true.
+//
+//   asuka dev --platform watchos examples/workouts
+//   asuka dev --platform ios examples/workouts
+
+struct Workout {
+  id: int
+  name: string
+  icon: string
+  minutes: int
+  done: int = 0
+}
+
+/// The workouts, which the screens share.
+store Plan {
+  state workouts = [
+    Workout(id: 1, name: "Run", icon: "figure.run", minutes: 30),
+    Workout(id: 2, name: "Walk", icon: "figure.walk", minutes: 45),
+    Workout(id: 3, name: "Cycle", icon: "figure.outdoor.cycle", minutes: 60),
+    Workout(id: 4, name: "Swim", icon: "figure.pool.swim", minutes: 20),
+    Workout(id: 5, name: "Yoga", icon: "figure.yoga", minutes: 15),
+    Workout(id: 6, name: "Row", icon: "figure.rower", minutes: 25),
+    Workout(id: 7, name: "Hike", icon: "figure.hiking", minutes: 90),
+    Workout(id: 8, name: "Dance", icon: "figure.dance", minutes: 40),
+  ]
+
+  fn find(id: int) -> Workout? = workouts.find(w => w.id == id)
+
+  fn set(id: int, minutes: int) {
+    if let i = workouts.index(w => w.id == id) { workouts[i].minutes = minutes }
+  }
+
+  fn finish(id: int) {
+    if let i = workouts.index(w => w.id == id) { workouts[i].done += 1 }
+  }
+}
+
+app {
+  provide Plan()
+  Stack { Workouts() }
+}
+
+screen Workouts {
+  use plan: Plan
+
+  title: "Workouts"
+
+  List {
+    for w in plan.workouts key w.id {
+      Row {
+        align: .center
+        gap: 10
+        padding: [10, 12]
+        on press { push(Detail(id: w.id)) }
+        Symbol(w.icon) {
+          font: .title3
+          color: .green
+        }
+        Column {
+          grow: 1
+          gap: 2
+          Text(w.name) { font: .headline }
+          Text(if w.done > 0 { "{w.minutes} min · done {w.done}×" } else { "{w.minutes} min" }) {
+            font: .footnote
+            color: .secondaryLabel
+          }
+        }
+      }
+    }
+  }
+}
+
+screen Detail(id: int) {
+  use plan: Plan
+  state haptics = true
+  state effort = 0.5
+
+  let w = plan.find(id)
+
+  title: w?.name ?? "Workout"
+
+  Scroll {
+    Column {
+      gap: 10
+      padding: [4, 8, 12, 8]
+      if let w = w {
+        Text("{w.minutes} minutes") { font: .title2.bold() }
+        Stepper {
+          value: float(w.minutes)
+          min: 5
+          max: 180
+          step: 5
+          on change(v) { plan.set(id, minutes: int(v)) }
+        }
+        Row {
+          align: .center
+          Text("Haptics") { grow: 1 }
+          Toggle {
+            bind on: haptics
+            title: "Haptics"
+          }
+        }
+        Text("Effort") { color: .secondaryLabel }
+        Slider { bind value: effort }
+        Button("Finish") {
+          variant: .filled
+          on press {
+            plan.finish(id)
+            alert("Well done", message: "{w.name}: {w.minutes} minutes.")
+          }
+        }
+      }
+    }
+  }
+}
+
+test "pushes a workout and finishes it" {
+  let app = mount(Stack { Workouts() }, provide: [Plan()])
+  app.expect("Run", "30 min")
+  app.tap("Run")
+  app.expect("30 minutes")
+  app.tap("Finish")
+  app.expect("Well done")
+}

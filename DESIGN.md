@@ -35,6 +35,7 @@ large audience before 1.0.
 | Core ↔ native contract | Batched mount operations (`ops`), encoded once per batch | One crossing per batch, the same stream in process and over a socket. |
 | Layout | Our own engine (core/src/layout): CSS block, flexbox and grid, checked against Chrome, measured by the host | One layout for every platform, with the semantics web and React Native developers know. |
 | iOS host | Swift + UIKit, the core linked as a static library | UIKit subclasses and delegates are trivial in Swift. Not SwiftUI: it is a second reconciler. |
+| Watch host | Swift + SwiftUI (platform/watchos), the core linked in, as iOS's | The one SwiftUI host: watchOS has no UIKit views and WatchKit's interface objects are deprecated. SwiftUI is kept from reconciling: a batch publishes once, every view sits at the core's frame ([Apple Watch](#apple-watch-swiftui-over-the-core)). |
 | Android host | Kotlin + Android Views (Material Components 3), the core a shared library through JNI | Views are imperative targets for mount ops. Not Compose (a second reconciler, measuring only in its own pass). |
 | macOS host | Swift + AppKit (platform/macos), the core linked in, as iOS's | AppKit subclasses and delegates are Swift's to write; no Go at run time (RFC 0008). Not SwiftUI. |
 | Windows and Linux hosts | C, in process (Win32; GTK 4 and libadwaita), the core and the app linked in (platform/windows, platform/linux) | They are hosts behind the ops wire like the others; their cost is the platforms' calls. No Go at run time; no cgo. |
@@ -64,6 +65,7 @@ abi/                    asuka.h: what hosts call
 ─────────────────────────────────────────────────────────────  asuka.h
 platform/ios (Swift)   platform/android (Kotlin)   platform/web (JavaScript)
 platform/macos (Swift)   platform/windows, platform/linux (C, the core linked in)   platform/desktop (C they share)
+platform/watchos (Swift on SwiftUI: Apple Watch)
 core/host/fake          tests: records ops, measures text at 8 points a character
 ```
 
@@ -1624,6 +1626,73 @@ fatal errors and the inbox become reports with the context of the run
 they were in, each once, kept until the app deletes them; what the
 system reports again of a crash already reported is left out.
 
+### Apple Watch: SwiftUI over the core
+
+Apple TV is the iOS host built with tvOS's SDK. Apple Watch can't be:
+watchOS has no UIKit views (UIKit there is fonts, colors and images),
+and WatchKit's interface objects are deprecated. So the watch has a host
+of its own, `platform/watchos`, in SwiftUI, the one exception to "not
+SwiftUI": the same core, the same `asuka.h`, the same two crossings per
+flush. What makes SwiftUI a target rather than a second reconciler:
+
+- **A node store, published once per batch** (Node.swift). One
+  `@Observable` object per node, its props plain fields SwiftUI doesn't
+  observe (`@ObservationIgnored`), written as the batch is decoded
+  (AsukaOps, the iOS decoder's copy). Each op marks its node changed;
+  the batch's end bumps each changed node's one observed field, `rev`,
+  once (inside `withAnimation` for what changed between AnimateBegin
+  and AnimateEnd). Only those nodes' views run their bodies.
+- **The core's frames, never SwiftUI's layout.** A container is a
+  `ZStack(alignment: .topLeading)` of its children, each `.frame`d to
+  its size and `.offset` to its origin in the container's coordinates;
+  a text is drawn `fixedSize` vertically in its frame, so it never
+  truncates where the core measured it whole. Navigators are SwiftUI's
+  (NavigationStack with the stack's screens as its path, a vertical page
+  TabView, sheets, alerts), and screens and sheets are environment
+  providers as on the other hosts: each reports the size SwiftUI gives
+  its content (a GeometryReader), and the core lays it out at it. A
+  user's pop sets the path shorter: Popped for each screen gone.
+- **Measuring without views.** The core's `measure` is synchronous, on
+  the main thread, inside its layout. Texts are measured with CoreText
+  (`CTFramesetterSuggestFrameSizeWithConstraints`, min-content the
+  widest word) in the very CTFont the view draws with (`Font(ctFont)`):
+  the system font, from `UIFont.preferredFont` at the watch's Dynamic
+  Type size, so a line breaks where it was measured. Controls (Button,
+  Toggle, Slider, Stepper, TextField, Picker, progress, Symbol, a
+  package's SwiftUI view) are measured by SwiftUI itself: the view the
+  host draws for the node, laid out by an `ImageRenderer` at the
+  proposed width (its ideal width for max-content). That's the watch's
+  own metrics for every control, watch size and text size, not a table;
+  it costs a render, which the core's shared measure cache pays once per
+  content. Sizes round up to the pixel, as iOS's do.
+- **Lists** are a lazy stack in a ScrollView (the Digital Crown scrolls
+  any ScrollView): a row binds a cell the host makes (`asuka_list_bind`)
+  as SwiftUI shows it and unbinds it as it goes, the cell kept for the
+  next row; its height is the cell's frame. Rows sit on the watch's
+  platters unless the list is `.bare`.
+- **Events** go back on the main thread through one `enter`, as on iOS:
+  what SwiftUI raises while the core is applying waits for it to return.
+- **The environment** is the watch's: dark, `watch` (a bit of the
+  Environment event, as `tv` is), `platform` iOS's, as Apple TV's: a
+  watch app is the iOS app's code (`@platform` `.iOS`), so packages'
+  iOS files and branches work, and `environment().watch` tells.
+- **The core is 32-bit clean**: most watches are arm64_32 (aarch64 with
+  32-bit pointers), Series 9 and later arm64; a device build is both,
+  lipo'd. `go test ./core -run TestCWatchOS` builds the core and its C
+  tests for arm64_32 with -Werror.
+
+The CLI builds it as iOS's (cmd/asuka/watchos.go): the host's Swift as
+the module Asuka with the app's native packages that list watchOS (or no
+platform), the core for watchsimulator or both of a watch's
+architectures. `asuka dev --platform watchos` runs the player on a watch
+simulator (a device can't open asuka dev's socket: watchOS allows apps
+only URLSession). `asuka build --platform watchos` is a watch-only app
+(`WKApplication`, `WKWatchOnly`, ID `<id>.watchkitapp`) inside Xcode's
+watch-only stub (an iPhone app that never launches,
+`ITSWatchOnlyContainer`, the iPhone platform's stub executable), the
+`.ipa` App Store Connect takes, signed with a watchOS and an iOS
+profile.
+
 ## CLI (`cmd/asuka`)
 
 ```
@@ -1631,6 +1700,8 @@ asuka new [--bin | --lib [--native]] <dir>  an app, a program (fn main), or a li
 asuka dev --platform ios|android <dir>       build, run, rebuild and restart on save
 asuka build --platform ios|android <dir>     a release build for the stores
 asuka publish --platform ios|android <dir>   the release build, uploaded: TestFlight, App Review; a Play track
+asuka dev --platform watchos <dir>           an Apple Watch simulator: the watch's player (SwiftUI's host), reloaded on save
+asuka build --platform watchos <dir>         a watch-only app's .ipa (arm64_32 and arm64), signed with a watchOS and an iOS profile; --simulator: an .app
 asuka dev --platform mac <dir>               build and run on this Mac, rerun on save
 asuka build --platform mac <dir>             an .app for Apple silicon (--arch amd64: Intel), signed (--sign; default ad hoc), its profile embedded (--profile); --appstore: a .pkg
 asuka dev --platform windows <dir>           build and run on this PC, rerun on save

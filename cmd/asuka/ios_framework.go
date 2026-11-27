@@ -62,8 +62,13 @@ func (t *iosToolchain) linkApp(work, bundle string, cfg *appConfig, hostObj, lib
 		pkgs = append(pkgs, "-Xlinker", "-rpath", "-Xlinker", "@executable_path/Frameworks")
 	}
 	if !cfg.sharedLayout() {
-		args := append([]string{"swiftc", "-target", t.target, "-sdk", t.sdk, hostObj, lib,
-			"-o", exe, "-framework", "UIKit", "-framework", "Foundation", "-lresolv"}, strip...)
+		ui := []string{"-framework", "UIKit"}
+		if t.watch() {
+			ui = []string{"-framework", "SwiftUI", "-framework", "WatchKit"} // the watch's host
+		}
+		args := append(append([]string{"swiftc", "-target", t.target, "-sdk", t.sdk, hostObj, lib,
+			"-o", exe}, ui...), "-framework", "Foundation", "-lresolv")
+		args = append(args, strip...)
 		args = append(append(append(args, pkgs...), extra...), t.cLink...)
 		return exe, t.run(work, nil, "xcrun", append(args, ents...)...)
 	}
@@ -149,4 +154,6 @@ func (t *iosToolchain) signFrameworks(work, bundle, identity string) error {
 	return nil
 }
 
-func (t *iosToolchain) device() bool { return t.sdkName == "iphoneos" || t.sdkName == "appletvos" }
+func (t *iosToolchain) device() bool {
+	return t.sdkName == "iphoneos" || t.sdkName == "appletvos" || t.sdkName == "watchos"
+}

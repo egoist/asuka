@@ -599,9 +599,11 @@ static inline void ak_op_exit(ak_val *R, const uint8_t *kinds, uint16_t n, int k
 // needs none, a recursion's base case, makes none).
 static inline uintptr_t ak_cg_sp(void) {
 #if defined(__aarch64__) && (defined(__GNUC__) || defined(__clang__))
-	uintptr_t sp;
+	// Read as the register it is, 64 bits (arm64_32's pointers, an
+	// Apple Watch's, are 32: the stack's in its low 4 GB).
+	uint64_t sp;
 	__asm__("mov %0, sp" : "=r"(sp));
-	return sp;
+	return (uintptr_t)sp;
 #elif defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
 	uintptr_t sp;
 	__asm__("mov %%rsp, %0" : "=r"(sp));

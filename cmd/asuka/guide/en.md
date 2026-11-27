@@ -1734,7 +1734,9 @@ platform](https://asuka.egoist.dev/docs/language/packages#files-for-one-platform
 says it (and as a test's `mount(…, platform:)` does): it's tracked, for
 views. What to build for a platform is `@platform`'s. An Apple TV app
 is built from the iOS app (`@platform` is `.iOS` there): a TV is
-`environment().tv`'s to tell ([TVs](https://asuka.egoist.dev/docs/tv)).
+`environment().tv`'s to tell ([TVs](https://asuka.egoist.dev/docs/tv)); an Apple Watch app
+too, and a watch is `environment().watch`'s ([Apple
+Watch](https://asuka.egoist.dev/docs/watch)).
 
 #### Code for development builds
 

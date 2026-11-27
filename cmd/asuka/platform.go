@@ -20,12 +20,16 @@ const (
 	// tvOS: an Apple TV, the iOS host built with tvOS's SDK (tv.go). Its
 	// app compiles as iOS's (@platform is .iOS; environment().tv says).
 	platformTVOS = "tvos"
+	// watchOS: an Apple Watch, the watch's own host (SwiftUI's:
+	// platform/watchos, watchos.go). Its app compiles as iOS's too, as an
+	// Apple TV's does (@platform is .iOS; environment().watch says).
+	platformWatchOS = "watchos"
 )
 
 // langPlatform is the platform a --platform name compiles for (mac:
 // macos): its packages' files for it, what @platform is.
 func langPlatform(name string) target.Platform {
-	if name == platformTVOS {
+	if name == platformTVOS || name == platformWatchOS {
 		return target.IOS
 	}
 	p, _ := target.Parse(name)

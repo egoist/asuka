@@ -276,6 +276,11 @@ an Android TV app too, the same `.aab` for phones and TVs. `asuka build
 profile, in `dist/tvos`, and `asuka publish --platform tvos` uploads it
 (see [Publishing](#publishing)). See [TVs](tv.md).
 
+**Apple Watch**: `asuka build --platform watchos` makes a watch-only
+app, an `.ipa` in `dist/watchos` signed with a watchOS profile (and an
+iOS one for the small iPhone app that carries it), for Transporter to
+upload. See [Apple Watch](watch.md).
+
 ## Publishing
 
 `asuka publish` makes the release build, as `asuka build` does, and

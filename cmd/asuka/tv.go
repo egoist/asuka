@@ -69,8 +69,12 @@ func (c *appConfig) checkTV(dir string) error {
 var tvHostFlags = []string{"ASUKA_CRASH", "ASUKA_ICLOUD", "ASUKA_LIBRARY", "ASUKA_NOTIFY", "ASUKA_PERIODIC", "ASUKA_PUSH", "ASUKA_SHADER", "ASUKA_VIDEO"}
 
 // hostFeatures are the host's flags a build of t has of features: all
-// of them on iOS, tvOS's on a TV.
+// of them on iOS, tvOS's on a TV, none on a watch (its host has no
+// optional parts).
 func (t *iosToolchain) hostFeatures(features []string) []string {
+	if t.watch() {
+		return nil
+	}
 	if !t.tv() {
 		return features
 	}

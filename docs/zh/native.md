@@ -276,7 +276,7 @@ let package = Package(
 )
 ```
 
-这个包完全由你掌控：它的依赖、target、资源、C target 和二进制 target 都是标准的 SwiftPM 写法，和任何 Swift 包一样。Asuka 会把它和应用以及应用的其他原生包一起构建，链接进应用（静态的二进制框架会整个链接进去，这正是厂商 SDK 所要求的），并把生成的动态框架和资源包嵌入应用。`asuka`（产品名为 `Asuka`）是生成的代码所依赖的库；构建时使用的是你的 `asuka` 自带的那份，所以它总是与应用的 Asuka 版本一致。包中声明的 `platforms` 会真正起作用：如果应用的目标 iOS 或 macOS 版本更低，构建会失败并说明这个包的要求；只列出其中一个平台的包（`platforms: [.iOS("16.0")]`）只会为那个平台构建。Apple TV 的构建只包含列出了 tvOS（`.tvOS("17.0")`）的包：见[电视](tv.md#tvos-上的原生包)。
+这个包完全由你掌控：它的依赖、target、资源、C target 和二进制 target 都是标准的 SwiftPM 写法，和任何 Swift 包一样。Asuka 会把它和应用以及应用的其他原生包一起构建，链接进应用（静态的二进制框架会整个链接进去，这正是厂商 SDK 所要求的），并把生成的动态框架和资源包嵌入应用。`asuka`（产品名为 `Asuka`）是生成的代码所依赖的库；构建时使用的是你的 `asuka` 自带的那份，所以它总是与应用的 Asuka 版本一致。包中声明的 `platforms` 会真正起作用：如果应用的目标 iOS 或 macOS 版本更低，构建会失败并说明这个包的要求；只列出其中一个平台的包（`platforms: [.iOS("16.0")]`）只会为那个平台构建。Apple TV 的构建只包含列出了 tvOS（`.tvOS("17.0")`）的包：见[电视](tv.md#tvos-上的原生包)；Apple Watch 的构建只包含列出了 watchOS（`.watchOS("10.0")`）的包，而且它的视图是 SwiftUI 的：见 [Apple Watch](watch.md#watchos-上的原生包)。
 
 要在 Xcode 中编辑它，打开 `Package.swift` 即可。Xcode 会从 URL 解析 `asuka`，所以生成的代码和你的代码在 Xcode 里的类型检查结果和构建时一致。
 

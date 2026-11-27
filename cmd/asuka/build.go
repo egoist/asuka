@@ -50,11 +50,11 @@ func buildFlags(o *buildOptions) *flagSet {
 		"(fn main, or --bin), an executable for this computer (or --target's)."
 	fs.String(&o.bin, "bin", 0, "", "build the `program` asuka.toml's [bin.<name>] names, instead of the app")
 	fs.String(&o.target, "target", 0, "", "a program's `os-arch`: darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, windows-amd64 or windows-arm64 (default: this computer's; another needs Zig)")
-	platformFlag(fs, &o.platform, []string{platformIOS, platformAndroid, platformMac, platformWindows, platformLinux, platformWeb, platformTVOS},
-		"the `platform` to build for: ios, an .ipa for the App Store (or --distribution); tvos, an Apple TV's .ipa in dist/tvos (--simulator: an .app for its simulator); android, an .aab for Google Play (a TV's too with asuka.toml's tv.android); mac, an .app, its .zip and a .dmg in dist/darwin-<arch> (Apple silicon's; --arch amd64: Intel's); windows, a folder in dist/windows-<arch> with the .exe (its icon and version built in) and its assets, its .zip and an installer (a per-user setup .exe), and with --package msix an .msix; linux, a folder in dist/linux-<arch> laid out to install (the executable, its desktop file, icons, metainfo and assets), a .tar.gz of it, a .deb, an .rpm, an AppImage and a Flatpak manifest; web, a static site (the core and the app as WebAssembly, and the web host) in dist/web. Default on macOS, Windows and Linux: this computer's")
+	platformFlag(fs, &o.platform, []string{platformIOS, platformAndroid, platformMac, platformWindows, platformLinux, platformWeb, platformTVOS, platformWatchOS},
+		"the `platform` to build for: ios, an .ipa for the App Store (or --distribution); tvos, an Apple TV's .ipa in dist/tvos (--simulator: an .app for its simulator); watchos, an Apple Watch app's .ipa in dist/watchos, a watch-only app (--simulator: an .app for its simulator); android, an .aab for Google Play (a TV's too with asuka.toml's tv.android); mac, an .app, its .zip and a .dmg in dist/darwin-<arch> (Apple silicon's; --arch amd64: Intel's); windows, a folder in dist/windows-<arch> with the .exe (its icon and version built in) and its assets, its .zip and an installer (a per-user setup .exe), and with --package msix an .msix; linux, a folder in dist/linux-<arch> laid out to install (the executable, its desktop file, icons, metainfo and assets), a .tar.gz of it, a .deb, an .rpm, an AppImage and a Flatpak manifest; web, a static site (the core and the app as WebAssembly, and the web host) in dist/web. Default on macOS, Windows and Linux: this computer's")
 	fs.String(&o.sign, "sign", 0, "", "macOS: a signing `identity`, e.g. \"Developer ID Application: ...\" (default: ad hoc)")
 	fs.String(&o.notarize, "notarize", 0, "", "macOS: notarize the signed app and staple the ticket: a notarytool keychain `profile` (xcrun notarytool store-credentials), or \"env\" for ASUKA_APPLE_ID, ASUKA_APPLE_PASSWORD (app-specific) and ASUKA_TEAM_ID")
-	fs.Bool(&o.simulator, "simulator", 0, "iOS, tvOS: a release .app for the simulator instead (not signed for devices)")
+	fs.Bool(&o.simulator, "simulator", 0, "iOS, tvOS, watchOS: a release .app for the simulator instead (not signed for devices)")
 	fs.Bool(&o.xcframework, "xcframework", 0, "iOS: AsukaApp.xcframework, the app to embed in an app made in Xcode (import AsukaApp; AsukaViewController())")
 	fs.String(&o.base, "base", 0, "", "web: the `path` the site is served at, \"/app/\" for https://example.com/app/ (default: asuka.toml's web.base, else \"/\")")
 	fs.String(&o.arch, "arch", 0, "", "the Mac: arm64 or amd64 (Intel; default: arm64); Linux: amd64 or arm64 (default: this machine's, else amd64); Windows: amd64 or arm64 (default: amd64, which runs on Windows on Arm too)")
@@ -139,15 +139,18 @@ func cmdBuild(args []string) error {
 	}
 	if o.out == "" {
 		o.out = filepath.Join(app.dir, "dist")
-		if o.platform == platformTVOS {
-			o.out = filepath.Join(o.out, "tvos") // beside iOS's .ipa, of the same name
+		if o.platform == platformTVOS || o.platform == platformWatchOS {
+			o.out = filepath.Join(o.out, o.platform) // beside iOS's .ipa, of the same name
 		}
 	}
 	if err := os.MkdirAll(o.out, 0o755); err != nil {
 		return err
 	}
-	if o.platform == platformTVOS && o.xcframework {
-		return errors.New("--xcframework is iOS's: a tvOS build is an app")
+	if (o.platform == platformTVOS || o.platform == platformWatchOS) && o.xcframework {
+		return fmt.Errorf("--xcframework is iOS's: a %s build is an app", o.platform)
+	}
+	if o.platform == platformWatchOS && o.update {
+		return errors.New("--update is iOS's, tvOS's and Android's: a watch app updates through the App Store")
 	}
 	if o.update {
 		if !otaPlatform(o.platform) {
@@ -164,6 +167,8 @@ func cmdBuild(args []string) error {
 		return buildIOS(app, &o)
 	case platformTVOS:
 		return buildIOS(app, &o) // tvOS's SDK (buildIOS)
+	case platformWatchOS:
+		return buildWatch(app, &o)
 	case platformMac:
 		return buildMac(app, &o)
 	case platformWindows:

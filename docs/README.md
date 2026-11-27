@@ -122,6 +122,9 @@ the Android SDK and NDK) and a C compiler (the system's, or Zig).
   iOS and macOS.
 - [TVs](tv.md): Apple TV and Android TV: the remote's focus, Back
   and Play/Pause, the controls a TV has, and building for each.
+- [Apple Watch](watch.md): the app on the wrist: the watch's controls
+  and navigation, the Digital Crown, a watch-only app, and adapting to
+  the wrist.
 - [Car screens](car.md): the app on CarPlay and Android Auto, as
   the platforms' templates: lists, grids, tabs, places and Now Playing,
   the app's category, and testing.

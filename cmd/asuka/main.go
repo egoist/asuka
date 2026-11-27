@@ -266,9 +266,9 @@ func devFlags(o *devOptions) *flagSet {
 	fs.about = "Runs the app, and runs it again with each change you save. A program (fn main,\n" +
 		"or --bin) runs on the VM with the arguments after --, again with each change."
 	fs.String(&o.bin, "bin", 0, "", "run the `program` asuka.toml's [bin.<name>] names, instead of the app")
-	platformFlag(fs, &o.platform, []string{platformIOS, platformAndroid, platformMac, platformWindows, platformLinux, platformWeb, platformTVOS,
+	platformFlag(fs, &o.platform, []string{platformIOS, platformAndroid, platformMac, platformWindows, platformLinux, platformWeb, platformTVOS, platformWatchOS,
 		platformIOS + "," + platformAndroid, platformAndroid + "," + platformIOS},
-		"the `platform` to run on: ios (the simulator, or an iPhone with --device), android (a device or emulator, a TV's too), tvos (an Apple TV simulator), ios,android (both phones at once, each save on each), mac (this Mac), windows (this PC), linux (this Linux machine, or ASUKA_LINUX_RUN's), or web (the browser: the core as WebAssembly, the views the page's DOM); default on macOS, Windows and Linux: this computer")
+		"the `platform` to run on: ios (the simulator, or an iPhone with --device), android (a device or emulator, a TV's too), tvos (an Apple TV simulator), watchos (an Apple Watch simulator), ios,android (both phones at once, each save on each), mac (this Mac), windows (this PC), linux (this Linux machine, or ASUKA_LINUX_RUN's), or web (the browser: the core as WebAssembly, the views the page's DOM); default on macOS, Windows and Linux: this computer")
 	fs.Int(&o.port, "port", 0, 0, "web: the dev server's `port` (default 8790, or a free one)")
 	fs.Bool(&o.lan, "lan", 0, "web: serve to this network too (a phone's browser), not only this machine")
 	fs.Bool(&o.noOpen, "no-open", 0, "web: don't open the page in the browser")
@@ -338,6 +338,8 @@ func devOn(dir string, o *devOptions, stop chan os.Signal) error {
 		return devAndroid(dir, o, stop)
 	case platformTVOS:
 		return devTVOS(dir, o, stop)
+	case platformWatchOS:
+		return devWatchOS(dir, o, stop)
 	}
 	return devIOS(dir, o, stop)
 }

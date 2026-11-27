@@ -828,7 +828,9 @@ static AK_VEC(kv) values;
 static bool fg;
 static _Atomic int64_t version;
 
-#if defined(__aarch64__) || defined(__arm64__)
+#if (defined(__aarch64__) || defined(__arm64__)) && defined(__ILP32__)
+#define ARCH "arm64_32" // an Apple Watch's: its own slice of the executable
+#elif defined(__aarch64__) || defined(__arm64__)
 #define ARCH "arm64"
 #elif defined(__x86_64__)
 #define ARCH "amd64"

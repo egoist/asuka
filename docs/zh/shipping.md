@@ -123,6 +123,8 @@ ASUKA_KEYSTORE_PASSWORD=... asuka build --platform android
 
 **电视**：在 `asuka.toml` 的 `[tv]` 中设置 `android = true` 后，Android 构建同时也是 Android TV 应用，手机和电视共用同一个 `.aab`。`asuka build --platform tvos` 会生成 Apple TV 应用：一个用 tvOS 描述文件签名的 `.ipa`，位于 `dist/tvos`；`asuka publish --platform tvos` 则负责上传它（见[发布到应用商店](#发布到应用商店)）。见[电视](tv.md)。
 
+**Apple Watch**：`asuka build --platform watchos` 会生成一个独立手表应用：位于 `dist/watchos` 的 `.ipa`，用 watchOS 描述文件签名（携带它的小 iPhone 应用则用 iOS 描述文件签名），再用 Transporter 上传。见 [Apple Watch](watch.md)。
+
 ## 发布到应用商店
 
 `asuka publish` 会像 `asuka build` 一样制作发布构建，然后通过商店的 API 上传。动手之前，它会先向商店确认那些可能导致失败的条件：应用是否存在、密钥是否有权上传、该版本是否还接受新构建、TestFlight 群组是否存在。这样就不会白白构建一个注定传不上去的包。每个构建的编号都是商店中现有最大编号加一（且不小于 `asuka.toml` 中的 `build`），所以两次发布之间不需要手动递增。如果想指定编号，可以用 `--build 42`。

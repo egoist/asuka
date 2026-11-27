@@ -603,6 +603,7 @@ void ak_event_append(ak_buf *b, const ak_event *e) {
 		if (v->reduce_motion) d |= 2;
 		if (v->screen_reader) d |= 32;
 		if (v->tv) d |= 64;
+		if (v->watch) d |= 128;
 		ak_buf_u8(b, d);
 		ak_buf_u8(b, (uint8_t)((v->width_class & 3) | (v->height_class & 3) << 2));
 		ak_buf_wstr(b, v->locale);
@@ -648,6 +649,7 @@ int ak_event_decode(const uint8_t *data, size_t len, ak_event *e) {
 		v->reduce_motion = f & 2;
 		v->screen_reader = f & 32;
 		v->tv = f & 64;
+		v->watch = f & 128;
 		v->platform = f >> 2 & 7;
 		uint8_t c = ak_read_u8(&r);
 		v->width_class = c & 3;

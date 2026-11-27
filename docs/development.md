@@ -247,6 +247,9 @@ devicectl list devices` lists them).
 simulator, and `asuka dev --platform android --device <name>` on an
 Android TV emulator or a TV that adb reaches: see [TVs](tv.md).
 
+**A watch**: `asuka dev --platform watchos` runs the app on an Apple
+Watch simulator: see [Apple Watch](watch.md).
+
 **A phone's browser**: `asuka dev --platform web --lan` serves the app to
 your network, and prints the addresses to open, the first as a QR code
 for the phone's camera.

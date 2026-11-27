@@ -103,6 +103,8 @@ Asuka 会监听应用所在的目录及其本地依赖（`asuka.toml` 中的 `fi
 
 **电视**：`asuka dev --platform tvos` 会在 Apple TV 模拟器上运行应用，`asuka dev --platform android --device <名称>` 则会在 Android TV 模拟器或 adb 能连上的电视上运行：见[电视](tv.md)。
 
+**手表**：`asuka dev --platform watchos` 会在 Apple Watch 模拟器上运行应用：见 [Apple Watch](watch.md)。
+
 **手机浏览器**：`asuka dev --platform web --lan` 会向局域网提供应用，并打印可以打开的地址，第一个还附有二维码，用手机相机扫一下即可。
 
 ## 资源

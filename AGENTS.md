@@ -11,7 +11,9 @@ on AppKit, the core linked in, as iOS's), the Windows host
 on GTK 4 and libadwaita, opened with dlopen), those two each linked with
 the core and the app into one executable and sharing C in
 `platform/desktop`, and the web (`platform/web`, the DOM from
-JavaScript, the core as WebAssembly). The packages the CLI carries are
+JavaScript, the core as WebAssembly). Apple TV is the iOS host built
+for tvOS; Apple Watch has a host of its own (`platform/watchos`, Swift
+on SwiftUI, the core linked in). The packages the CLI carries are
 the standard library (`std/<name>`, the language's own, the same
 everywhere: in `std/`) and the platform SDK (`platform/<name>`, what
 wraps a device, an OS service or a store: in `sdk/`); no other package
@@ -39,11 +41,16 @@ Work milestone by milestone, in order.
   kind of native view, its keys and events in `lang/prelude/elements.go`
   (`go generate ./lang/prelude`), its behavior in `core/src/ui`, and its
   view in every host (the C fake host first, then iOS and Android, then
-  macOS, Windows, Linux and the web).
+  macOS, Windows, Linux and the web, and the watch's where watchOS has
+  it).
 - **C:** C17, `-Wall -Wextra -Werror`, internal symbols `ak_`, the ABI
   `asuka_`; tests under ASan and UBSan (`go test ./core`).
 - **Nothing phone-only in the core's data structures**: no single global
   root, no assumption that the screen size never changes.
+- **32-bit clean.** The core and its tests build for an Apple Watch's
+  arm64_32 (`__aarch64__` with 32-bit pointers) and wasm32 and armv7:
+  no pointer stored in a 64-bit register's place, no `uintptr_t` read
+  as 64 bits (`go test ./core -run TestCWatchOS`).
 - **Main thread.** The core, every host call and every state write run
   on the platform's main thread. Other threads reach it with `ak_post`;
   `spawn` runs values-only work on workers. Never block the main thread.
@@ -94,6 +101,8 @@ go test ./ops -update               # after changing the wire format: refresh go
 go test ./platform/macos/mactest -run Conformance  # what the macOS host draws for the style props, measured (package conformance; go generate ./conformance writes its app)
 go test -tags e2e ./e2e -run Conformance # likewise on the simulator, the emulator and headless Chrome (ASUKA_CONFORMANCE_OUT=dir: the captures)
 swift test --package-path platform/ios # the Swift decoder against the golden files (macOS)
+swift test --package-path platform/watchos # the watch host's node store, measuring and lists, on this Mac
+go test ./core -run TestCWatchOS      # the core and its C tests built for a watch's arm64_32 (-Werror); ASUKA_WATCH_SIM=<udid>: run on a booted watch simulator too
 node --test platform/web                # the JavaScript decoder, likewise
 go test ./std                            # std packages' Swift run on this Mac (std/http's URLSession download)
 (cd platform/android && ./gradlew :asuka:testDebugUnitTest)  # the Kotlin decoder, likewise (ANDROID_HOME set)
@@ -114,6 +123,9 @@ go run ./cmd/asuka dev --platform ios --lang ar examples/i18n  # a language for 
 go run ./cmd/asuka dev --platform ios examples/counter       # iOS simulator (Xcode): the player (the core without an app) loads the bytecode asuka dev sends
 go run ./cmd/asuka dev --platform android examples/counter   # Android emulator (SDK + NDK), likewise
 go run ./cmd/asuka dev --platform ios --once examples/counter # build the player, launch it once with the app, without watching
+go run ./cmd/asuka dev --platform watchos examples/workouts  # an Apple Watch simulator (one; made if none): the watch's SwiftUI host and the player
+go run ./cmd/asuka build --platform watchos examples/counter  # a watch-only app's .ipa (arm64_32 and arm64; --simulator: an .app)
+xcrun simctl spawn <watch> notifyutil -p dev.asuka.automation   # drive the watch's player: commands in its data container's tmp/asuka-commands.txt (platform/watchos Automation.swift)
 go run ./cmd/asuka run file.asuka                # one file: its test blocks, then what its app shows (fake host)
 go run ./cmd/asuka new --bin /tmp/greet          # a program (fn main): asuka.toml, main.asuka
 go run ./cmd/asuka run examples/notes -- add Hi  # a program's main on the VM (here [bin.notes]), the arguments after --
@@ -174,7 +186,17 @@ go test ./platform/windows -run Updater           # likewise on Windows (a PC, o
   spacing, so the core parses it (md4c) and each host only styles the
   runs with its own text widget. Decide per feature; don't share by
   default.
-- Swift host: UIKit only, no SwiftUI. Kotlin host: Android Views and
+- Swift host: UIKit only, no SwiftUI. The one exception is the watch
+  (approved): watchOS has no UIKit views and WatchKit's interface
+  objects are deprecated, so the watch host (`platform/watchos`) is
+  SwiftUI, driven by the same core and contract. It keeps SwiftUI from
+  reconciling: its node store (Node.swift) publishes once per batch,
+  each view drawn at the core's frame (`.frame` and `.offset` in a
+  ZStack), never laid out by SwiftUI; it measures text with CoreText and
+  controls with SwiftUI's own layout of the view it draws. SwiftUI stays
+  out of platform/ios and platform/macos; UIKit views stay out of
+  platform/watchos (its tests check). Its decoder is iOS's (`go generate
+  ./ops` writes its copy). Kotlin host: Android Views and
   Material Components, no Compose. macOS host: Swift on AppKit only
   (`platform/macos`), no SwiftUI, the core linked in; its decoder is
   iOS's (Sources/AsukaOps, `go generate ./ops` writes both); its parts
@@ -215,5 +237,5 @@ go test ./platform/windows -run Updater           # likewise on Windows (a PC, o
   or core/src/native's wire means regenerating every native package in
   the repo (`asuka native generate` in each: std's and sdk's packages,
   the examples', the tests' testdata) and the platforms' runtimes
-  (NativeModules.swift, kept identical in platform/ios and
-  platform/macos; NativeModules.kt; native.js).
+  (NativeModules.swift, kept identical in platform/ios,
+  platform/macos and platform/watchos; NativeModules.kt; native.js).

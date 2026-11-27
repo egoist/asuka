@@ -15,8 +15,8 @@ import (
 // CPlatform is the [c.<platform>] table (pkgs.CPlatforms) a target reads.
 func (t Target) CPlatform() string {
 	switch t.OS {
-	case "ios", "ios-simulator", "tvos", "tvos-simulator":
-		return "ios" // tvOS is iOS's C: its [c.ios]
+	case "ios", "ios-simulator", "tvos", "tvos-simulator", "watchos", "watchos-simulator":
+		return "ios" // tvOS's and watchOS's C is iOS's: its [c.ios]
 	case "darwin":
 		return "macos"
 	case "wasm":

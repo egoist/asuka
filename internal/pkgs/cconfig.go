@@ -60,6 +60,7 @@ func (p *Paths) UnmarshalJSON(b []byte) error {
 var CTargets = []string{
 	"ios-arm64", "ios-simulator-arm64", "ios-simulator-x64", "ios-simulator",
 	"tvos-arm64", "tvos-simulator-arm64",
+	"watchos-arm64_32", "watchos-arm64", "watchos-simulator-arm64",
 	"macos-arm64", "macos-x64", "macos",
 	"android-arm64", "android-arm", "android-x64",
 	"linux-x64", "linux-arm64",

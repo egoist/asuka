@@ -205,7 +205,7 @@ type archiveRef struct {
 func (tc *Toolchain) archiveArgs(as []archiveRef) []string {
 	var out []string
 	switch tc.Target.OS {
-	case "darwin", "ios", "ios-simulator", "tvos", "tvos-simulator":
+	case "darwin", "ios", "ios-simulator", "tvos", "tvos-simulator", "watchos", "watchos-simulator":
 		for _, a := range as {
 			if a.whole {
 				out = append(out, "-Wl,-force_load,"+a.path)

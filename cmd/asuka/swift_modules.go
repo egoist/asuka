@@ -64,7 +64,7 @@ func (b *swiftBuild) modules() (out *swiftPackageOutput, ok bool, err error) {
 	if err != nil {
 		return nil, false, err
 	}
-	hostMin := map[string]string{"ios": iosMin, "tvos": tvosMin, "macos": macMin}[b.platform]
+	hostMin := map[string]string{"ios": iosMin, "tvos": tvosMin, "watchos": watchosMin, "macos": macMin}[b.platform]
 	pre := b.prebuiltSwift()
 	var host swiftLib
 	if lib, ok := pre.module("Asuka@" + b.variant); ok {
@@ -98,7 +98,7 @@ func (b *swiftBuild) modules() (out *swiftPackageOutput, ok bool, err error) {
 				errs[i] = fmt.Errorf("%s: %v", p.path, err)
 				return
 			}
-			min := map[string]string{"ios": mod.IOS, "tvos": mod.TVOS, "macos": mod.MacOS}[b.platform]
+			min := map[string]string{"ios": mod.IOS, "tvos": mod.TVOS, "watchos": mod.WatchOS, "macos": mod.MacOS}[b.platform]
 			if min == "" {
 				min = hostMin
 			}
@@ -156,7 +156,7 @@ func (b *swiftBuild) moduleTriple() string {
 // target is swiftc's -target for a module of minimum version min.
 func (b *swiftBuild) target(min string) string {
 	t := b.arch + "-apple-macos" + min
-	if b.platform == "ios" || b.platform == "tvos" {
+	if b.platform == "ios" || b.platform == "tvos" || b.platform == "watchos" {
 		t = b.arch + "-apple-" + b.platform + min
 		if strings.HasSuffix(b.sdkName, "simulator") {
 			t += "-simulator"
@@ -300,8 +300,9 @@ func (b *swiftBuild) moduleIn(sdk string, m swiftModule, host swiftLib, out stri
 // prebuiltSwift is the CLI's prebuilt modules for b's target and
 // configuration, when this swiftc can read them.
 func (b *swiftBuild) prebuiltSwift() prebuiltSwift {
-	target := map[string]string{"iphoneos": "ios", "iphonesimulator": "ios-simulator", "appletvos": "tvos", "appletvsimulator": "tvos-simulator", "macosx": "darwin"}[b.sdkName]
-	arch := map[string]string{"arm64": "arm64", "x86_64": "amd64"}[b.arch]
+	target := map[string]string{"iphoneos": "ios", "iphonesimulator": "ios-simulator", "appletvos": "tvos", "appletvsimulator": "tvos-simulator",
+		"watchos": "watchos", "watchsimulator": "watchos-simulator", "macosx": "darwin"}[b.sdkName]
+	arch := map[string]string{"arm64": "arm64", "x86_64": "amd64", "arm64_32": "arm64_32"}[b.arch]
 	return prebuiltSwift{target: target + "-" + arch, config: map[bool]string{true: "release", false: "dev"}[b.release], triple: b.moduleTriple()}
 }
 

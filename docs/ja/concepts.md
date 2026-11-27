@@ -287,6 +287,7 @@ let landscape = environment().width > environment().height
 - `locale`、`languages`、`timeZone`：ユーザーの地域の書式、ユーザーが読める言語、そしてタイムゾーン。ほとんどのアプリは、[カタログとフォーマット](i18n.md)を通してこれらを使います。
 - `platform`：アプリが動いているシステム。`.iOS`、`.android`、`.macOS`、`.windows`、`.linux`、`.web` のいずれかです。
 - `tv`：アプリがテレビで動いているかどうか（Apple TV。このとき `platform` は `.iOS` です。それと Android TV）。タッチではなく、リモコンでフォーカスを動かして操作します。[テレビ](tv.md)を参照してください。
+- `watch`：アプリがウォッチで動いているかどうか（Apple Watch。このとき `platform` は `.iOS` です）。画面は小さく、ちらっと見るもので、Digital Crown があります。[Apple Watch](watch.md) を参照してください。
 
 セマンティックカラーとフォントは、ダークモードと文字サイズに自動で追従します。それらでまかなえない部分は、環境を読んで対応してください。
 

@@ -1,0 +1,6 @@
+name = "Workouts"
+id = "dev.asuka.workouts"
+version = "1.0.0"
+build = 1
+icon = "icon.png"
+orientations = ["portrait"]

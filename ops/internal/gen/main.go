@@ -1,7 +1,8 @@
 // Command gen writes the code generated from ops.Schema: the Go
 // constants (ops/schema_gen.go) and the Swift decoder and event encoder
-// (platform/ios/Sources/AsukaOps/Ops.swift, and its copy for the Mac's host
-// in platform/macos) and the Kotlin decoder and event
+// (platform/ios/Sources/AsukaOps/Ops.swift, and its copies for the Mac's
+// host in platform/macos and the watch's in platform/watchos) and the
+// Kotlin decoder and event
 // encoder (platform/android/asuka/src/main/java/dev/asuka/Ops.kt) and the
 // JavaScript decoder and event encoder of the web host
 // (platform/web/src/ops.js) and the C core's numbers and name tables
@@ -30,11 +31,13 @@ func main() {
 	}
 	s := ops.Schema
 	write(filepath.Join(".", "schema_gen.go"), goFile(s), true)
-	// One Swift decoder, for the iOS host and the Mac's (platform/macos's
-	// copy, which its package builds from: SwiftPM takes no sources from
-	// outside a package).
-	write(filepath.Join(root, "platform", "ios", "Sources", "AsukaOps", "Ops.swift"), swiftFile(s), false)
-	write(filepath.Join(root, "platform", "macos", "Sources", "AsukaOps", "Ops.swift"), swiftFile(s), false)
+	// One Swift decoder, for the iOS host, the Mac's and the watch's
+	// (platform/macos's and platform/watchos's copies, which their
+	// packages build from: SwiftPM takes no sources from outside a
+	// package).
+	for _, host := range []string{"ios", "macos", "watchos"} {
+		write(filepath.Join(root, "platform", host, "Sources", "AsukaOps", "Ops.swift"), swiftFile(s), false)
+	}
 	write(filepath.Join(root, "platform", "android", "asuka", "src", "main", "java", "dev", "asuka", "Ops.kt"), kotlinFile(s), false)
 	write(filepath.Join(root, "platform", "web", "src", "ops.js"), jsFile(s), false)
 	write(filepath.Join(root, "core", "src", "ops", "ops_gen.h"), cHeader(s), false)
@@ -408,6 +411,8 @@ public struct AsukaEnvironment: Equatable {
     public var screenReader = false
     /// A TV (Apple TV), driven by a remote's focus rather than touch.
     public var tv = false
+    /// A watch (Apple Watch): a small screen, the Digital Crown.
+    public var watch = false
     /// ops.Platform: this host's, iOS.
     public var platform: UInt8 = 1
     /// ops.SizeClass: 1 compact, 3 expanded (UIKit's regular); 0 unspecified.
@@ -435,7 +440,7 @@ public struct AsukaWriter {
     public mutating func header(_ id: UInt32, _ kind: UInt16) { u32(id); u16(kind) }
     public mutating func environment(_ e: AsukaEnvironment) {
         for f in [e.width, e.height, e.safeTop, e.safeRight, e.safeBottom, e.safeLeft, e.keyboard, e.scale, e.fontScale] { f32(f) }
-        u8((e.dark ? 1 : 0) | (e.reduceMotion ? 2 : 0) | (e.platform & 7) << 2 | (e.screenReader ? 32 : 0) | (e.tv ? 64 : 0))
+        u8((e.dark ? 1 : 0) | (e.reduceMotion ? 2 : 0) | (e.platform & 7) << 2 | (e.screenReader ? 32 : 0) | (e.tv ? 64 : 0) | (e.watch ? 128 : 0))
         u8((e.widthClass & 3) | (e.heightClass & 3) << 2)
         string(e.locale)
         string(e.timeZone)
@@ -649,6 +654,8 @@ data class AsukaEnvironment(
     val screenReader: Boolean = false,
     /** A TV (Android TV, Google TV), driven by a remote's D-pad rather than touch. */
     val tv: Boolean = false,
+    /** A watch (Wear OS: not yet a host of Asuka's). */
+    val watch: Boolean = false,
     /** ops.Platform: this host's, Android. */
     val platform: Int = 2,
     /** ops.SizeClass: 1 compact, 2 medium, 3 expanded; 0 unspecified. */
@@ -682,7 +689,7 @@ class AsukaWriter {
     fun header(id: Int, kind: Int) { u32(id); u16(kind) }
     fun environment(e: AsukaEnvironment) {
         for (f in floatArrayOf(e.width, e.height, e.safeTop, e.safeRight, e.safeBottom, e.safeLeft, e.keyboard, e.scale, e.fontScale)) f32(f)
-        u8((if (e.dark) 1 else 0) or (if (e.reduceMotion) 2 else 0) or ((e.platform and 7) shl 2) or (if (e.screenReader) 32 else 0) or (if (e.tv) 64 else 0))
+        u8((if (e.dark) 1 else 0) or (if (e.reduceMotion) 2 else 0) or ((e.platform and 7) shl 2) or (if (e.screenReader) 32 else 0) or (if (e.tv) 64 else 0) or (if (e.watch) 128 else 0))
         u8((e.widthClass and 3) or ((e.heightClass and 3) shl 2))
         string(e.locale)
         string(e.timeZone)

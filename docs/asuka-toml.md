@@ -429,6 +429,21 @@ banner = "banner.png"
 An Apple TV build (`asuka build --platform tvos`) needs no key: it's
 the iOS app's, signed with a tvOS profile. See [TVs](tv.md).
 
+## watch
+
+What the Apple Watch's build takes (`asuka build --platform watchos`).
+
+```toml
+[watch]
+profile = "Counter Watch"
+```
+
+| Key | Type | Default | What it is |
+|---|---|---|---|
+| `profile` | string | the best match installed | The watch app's provisioning profile: its name, UUID or path, a watchOS one for the app's ID with `.watchkitapp`. `--profile` overrides it; `ios.profile` is the iPhone app's that carries it. |
+
+See [Apple Watch](watch.md).
+
 ## car
 
 What an app that imports `platform/car` is on a car's screen. The

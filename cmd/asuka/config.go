@@ -196,7 +196,10 @@ type appConfig struct {
 	// TV is what the TVs' builds take (tv.go): Android TV's declaration,
 	// the TV launchers' banner.
 	TV tvConfig `json:"tv"`
-	// tvToldDropped: a tvOS build said what it leaves out (dropTVExtensions).
+	// Watch is what the Apple Watch's build takes (watchos.go): its profile.
+	Watch watchConfig `json:"watch"`
+	// tvToldDropped: a tvOS or watchOS build said what it leaves out
+	// (dropTVExtensions, dropWatchExtensions).
 	tvToldDropped bool
 	// I18n says where the app's catalogs are, when they aren't in locales.
 	I18n *i18nConfig `json:"i18n"`
