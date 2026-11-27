@@ -469,6 +469,10 @@ func TestAdapter(t *testing.T) {
 	if ev := js(cl.event("thread")); ev != norm(`{"reason":"started","threadId":2}`) {
 		t.Fatal(ev)
 	}
+	// The console says so, after the attach's waiting for one.
+	if out := cl.event("output"); out["category"] != "console" || out["output"] != "macOS connected.\n" {
+		t.Fatal(out)
+	}
 	if _, lines := p2.breakpoints(); !reflect.DeepEqual(lines, []int{13, 14, 30}) {
 		t.Fatal(lines)
 	}

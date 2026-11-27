@@ -131,11 +131,17 @@ func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
 		Profile: func(p *devserver.Player, b []byte) { d.gotProfile(playerKey(p), playerName(p.Info), b) },
 		Need:    func(p *devserver.Player, platform target.Platform) { d.compileFor(platform) },
 		Log: func(p *devserver.Player, stderr bool, text []byte) {
-			w := os.Stdout
-			if stderr {
-				w = os.Stderr
+			// A player on this computer is a process of asuka dev's,
+			// which wrote it to the terminal already (the player sends
+			// what it writes and writes it where it went:
+			// core/src/abi/dev.c).
+			if !desktopPlayer(p.Info) {
+				w := os.Stdout
+				if stderr {
+					w = os.Stderr
+				}
+				w.Write(text)
 			}
-			w.Write(text)
 			d.debugger.Output(p, stderr, string(text))
 		},
 		Reloaded: func(p *devserver.Player, kept, micros uint32, restarted bool) {
@@ -339,6 +345,15 @@ func (d *devLoop) close() {
 }
 
 // playerName is who a player is, from its hello: "iOS (iPhone 17)".
+// desktopPlayer reports whether a player is this computer's (a Mac's,
+// a PC's, a Linux machine's), asuka dev's own process, sharing its
+// standard output.
+func desktopPlayer(hello []byte) bool {
+	var h struct{ Device string }
+	json.Unmarshal(hello, &h)
+	return h.Device == "desktop"
+}
+
 func playerName(hello []byte) string {
 	var h struct{ Platform, Device string }
 	json.Unmarshal(hello, &h)

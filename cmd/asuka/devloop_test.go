@@ -512,3 +512,21 @@ func TestDevDesktopErrorOverlay(t *testing.T) {
 		t.Fatalf("after Reload, the window shows:\n%s\n%s", got, out.String())
 	}
 }
+
+// A player on this computer is asuka dev's own process, which writes
+// what the app prints to asuka dev's terminal itself: asuka dev doesn't
+// write it again. A phone's goes to the terminal through asuka dev.
+func TestDesktopPlayer(t *testing.T) {
+	for hello, want := range map[string]bool{
+		`{"platform":"darwin","device":"desktop","os":"15.0"}`: true,
+		`{"platform":"windows","device":"desktop"}`:            true,
+		`{"platform":"linux","device":"desktop"}`:              true,
+		`{"platform":"ios","device":"iPhone 16"}`:              false,
+		`{"platform":"android","device":"emulator-5554"}`:      false,
+		`{"platform":"web"}`:                                   false,
+	} {
+		if got := desktopPlayer([]byte(hello)); got != want {
+			t.Errorf("%s: %v, want %v", hello, got, want)
+		}
+	}
+}

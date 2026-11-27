@@ -243,6 +243,8 @@ func (s *Server) Hello(p *devserver.Player, name string) {
 	t := &thread{id: s.nextThread, p: p, name: name, gone: make(chan struct{})}
 	s.threads[p] = t
 	s.eventLocked("thread", map[string]any{"reason": "started", "threadId": t.id})
+	// The console said it waits for a player when it attached.
+	s.eventLocked("output", map[string]any{"category": "console", "output": name + " connected.\n"})
 }
 
 // Gone notes a player that disconnected.
