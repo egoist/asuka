@@ -3,8 +3,12 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"image"
+	"image/draw"
 	"image/png"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/asuka/internal/distpkg"
@@ -72,15 +76,148 @@ func msixVersion(app *asukaApp) string {
 	return fmt.Sprintf("%d.%d.%d.0", v[0], v[1], v[2])
 }
 
-// msixAssets are the tiles' and the Store's images, from the icon (each
-// at 4x: Windows scales them down), by their paths in the package.
-var msixAssets = []struct {
-	path string
-	size int
+// An MSIX's images (the tiles', the taskbar's, Start's, the Store's)
+// are made from the icon, each at every scale Windows draws them at
+// (Assets\Square150x150Logo.scale-200.png), and the app's icon at the
+// sizes the shell asks for (Square44x44Logo.targetsize-24.png), plated
+// (on a tile's color, in Start's list) and unplated (as it is, on the
+// taskbar, in the title bar, in Explorer: altform-unplated): its
+// resources.pri (a package resource index, distpkg.WritePRI) lists them
+// as the candidates of Assets\Square44x44Logo.png and the other names
+// the manifest gives, and Windows picks the one for the display. The
+// PRI also has the app's name and description in each of its catalogs'
+// languages (asuka.appName, asuka.appDescription), which the manifest
+// names as ms-resource:AppName: Start, the taskbar, Installed apps and
+// the Store say them in the user's language.
+
+// msixScales are the scales Windows has images at: 100% to 400%.
+var msixScales = []int{100, 125, 150, 200, 400}
+
+// msixTargetSizes are the sizes the shell asks the app's icon at.
+var msixTargetSizes = []int{16, 24, 32, 48, 256}
+
+// msixLogos are the manifest's images, by name, at 100%.
+var msixLogos = []struct {
+	name string
+	w, h int
 }{
-	{"Assets/Square44x44Logo.png", 176},
-	{"Assets/Square150x150Logo.png", 600},
-	{"Assets/StoreLogo.png", 200},
+	{"Square150x150Logo", 150, 150},
+	{"Square44x44Logo", 44, 44},
+	{"StoreLogo", 50, 50},
+	{"Wide310x150Logo", 310, 150},
+}
+
+// An msixAsset is one of the images: its file in the package, its size,
+// and its qualifiers in the PRI.
+type msixAsset struct {
+	logo, file string
+	w, h       int
+	qualifiers []distpkg.PRIQualifier
+}
+
+// msixAssets are the images, by their files' names, as makepri indexes
+// them.
+func msixAssets() []msixAsset {
+	var out []msixAsset
+	for _, l := range msixLogos {
+		for _, s := range msixScales {
+			out = append(out, msixAsset{l.name, fmt.Sprintf("%s.scale-%d.png", l.name, s), (l.w*s + 50) / 100, (l.h*s + 50) / 100,
+				[]distpkg.PRIQualifier{{Type: distpkg.PRIScale, Value: strconv.Itoa(s)}}})
+		}
+		if l.name != "Square44x44Logo" {
+			continue
+		}
+		for _, t := range msixTargetSizes {
+			ts := distpkg.PRIQualifier{Type: distpkg.PRITargetSize, Value: strconv.Itoa(t)}
+			out = append(out, msixAsset{l.name, fmt.Sprintf("%s.targetsize-%d.png", l.name, t), t, t, []distpkg.PRIQualifier{ts}},
+				msixAsset{l.name, fmt.Sprintf("%s.targetsize-%d_altform-unplated.png", l.name, t), t, t,
+					[]distpkg.PRIQualifier{ts, {Type: distpkg.PRIAlternateForm, Value: "unplated"}}})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToUpper(out[i].file) < strings.ToUpper(out[j].file) })
+	return out
+}
+
+// msixImage draws an asset from the icon at a size (nil: no icon, the
+// image transparent): a square's the icon, a wide tile's the icon at its
+// height, in the middle.
+func msixImage(icon func(side int) *image.NRGBA, a msixAsset) []byte {
+	img := image.NewNRGBA(image.Rect(0, 0, a.w, a.h))
+	if icon != nil {
+		side := min(a.w, a.h)
+		at := image.Pt((a.w-side)/2, (a.h-side)/2)
+		draw.Draw(img, image.Rectangle{at, at.Add(image.Pt(side, side))}, icon(side), image.Point{}, draw.Src)
+	}
+	var b bytes.Buffer
+	png.Encode(&b, img)
+	return b.Bytes()
+}
+
+// msixStrings are the manifest's words in each of the catalogs'
+// languages, the source's first, a language that doesn't say one saying
+// the source's (and the source asuka.toml's): the app's name and its
+// description. They're nil without catalogs.
+func msixStrings(app *asukaApp) (langs []string, byLang map[string][2]string) {
+	all, source, cat := app.cfg.catalogStrings()
+	if len(all) == 0 {
+		return nil, nil
+	}
+	name, desc := app.displayName(), app.displayName()
+	if d := strings.TrimSpace(app.cfg.Linux.Summary); d != "" {
+		desc = d
+	}
+	pick := func(lang, key, def string) string {
+		if v := strings.TrimSpace(cat[lang][key]); v != "" {
+			return v
+		}
+		if v := strings.TrimSpace(cat[source][key]); v != "" {
+			return v
+		}
+		return def
+	}
+	byLang = map[string][2]string{}
+	langs = []string{source}
+	for _, l := range all {
+		if l != source {
+			langs = append(langs, l)
+		}
+	}
+	for _, l := range langs {
+		byLang[l] = [2]string{pick(l, "appName", name), pick(l, "appDescription", desc)}
+	}
+	return langs, byLang
+}
+
+// msixPRI is the package's resources.pri: its images' candidates, and its
+// words' in each language, as makepri indexes a folder of Assets and
+// Strings\<language>\Resources.resw.
+func msixPRI(app *asukaApp) ([]byte, error) {
+	p := &distpkg.PRI{Name: msixIdentityName(app), DefaultLanguage: "en-us"}
+	byLogo := map[string]int{}
+	for _, a := range msixAssets() {
+		key := "Files/Assets/" + a.logo + ".png"
+		i, ok := byLogo[key]
+		if !ok {
+			i = len(p.Resources)
+			byLogo[key] = i
+			p.Resources = append(p.Resources, distpkg.PRIResource{Name: key})
+		}
+		p.Resources[i].Candidates = append(p.Resources[i].Candidates, distpkg.PRICandidate{Qualifiers: a.qualifiers, Value: `Assets\` + a.file, Path: true})
+	}
+	langs, words := msixStrings(app)
+	if len(langs) > 0 {
+		p.DefaultLanguage = langs[0]
+		sorted := append([]string(nil), langs...)
+		sort.Slice(sorted, func(i, j int) bool { return strings.ToUpper(sorted[i]) < strings.ToUpper(sorted[j]) })
+		for k, key := range []string{"AppName", "Description"} {
+			r := distpkg.PRIResource{Name: "Resources/" + key}
+			for _, l := range sorted {
+				r.Candidates = append(r.Candidates, distpkg.PRICandidate{Qualifiers: []distpkg.PRIQualifier{{Type: distpkg.PRILanguage, Value: l}}, Value: words[l][k]})
+			}
+			p.Resources = append(p.Resources, r)
+		}
+	}
+	return distpkg.WritePRI(p)
 }
 
 func msixManifest(app *asukaApp, exe, goarch string) string {
@@ -88,6 +225,11 @@ func msixManifest(app *asukaApp, exe, goarch string) string {
 	desc := name
 	if d := strings.TrimSpace(app.cfg.Linux.Summary); d != "" {
 		desc = msixXML(d)
+	}
+	// In the user's language, from the PRI, with catalogs.
+	plain := name
+	if langs, _ := msixStrings(app); len(langs) > 0 {
+		name, desc = "ms-resource:AppName", "ms-resource:Description"
 	}
 	var ext strings.Builder
 	if s := app.cfg.Scheme; s != "" {
@@ -126,7 +268,7 @@ func msixManifest(app *asukaApp, exe, goarch string) string {
         </com:Extension>
         <desktop:Extension Category="windows.toastNotificationActivation">
           <desktop:ToastNotificationActivation ToastActivatorCLSID="%s"/>
-        </desktop:Extension>`, msixXML(exe), name, clsid, name, clsid)
+        </desktop:Extension>`, msixXML(exe), plain, clsid, plain, clsid)
 	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -149,7 +291,9 @@ func msixManifest(app *asukaApp, exe, goarch string) string {
   <Applications>
     <Application Id="App" Executable="%s" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements DisplayName="%s" Description="%s" BackgroundColor="transparent"
-        Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png"/>
+        Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png"/>
+      </uap:VisualElements>
       <Extensions>%s
       </Extensions>
     </Application>
@@ -165,20 +309,16 @@ func msixManifest(app *asukaApp, exe, goarch string) string {
 
 // msixResources are the manifest's languages: its catalogs', the source's
 // first (the package's default), which the Store lists the app in and
-// Windows offers it in; English without catalogs. The package has no
-// resources.pri (makepri's), so its names aren't translated: Start and
-// Installed apps show asuka.toml's name, as they do the installer's app.
+// Windows offers it in, and in which the PRI has its name; English
+// without catalogs.
 func msixResources(app *asukaApp) string {
-	langs, source, _ := app.cfg.catalogStrings()
+	langs, _ := msixStrings(app)
 	if len(langs) == 0 {
-		langs, source = []string{"en-us"}, "en-us"
+		langs = []string{"en-us"}
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n    <Resource Language=\"%s\"/>", msixXML(source))
 	for _, l := range langs {
-		if l != source {
-			fmt.Fprintf(&b, "\n    <Resource Language=\"%s\"/>", msixXML(l))
-		}
+		fmt.Fprintf(&b, "\n    <Resource Language=\"%s\"/>", msixXML(l))
 	}
 	return b.String()
 }
@@ -217,23 +357,29 @@ func writeMSIX(app *asukaApp, o *buildOptions, dir, exe, goarch string) (string,
 		f.Path = strings.TrimPrefix(f.Path, "/")
 		out = append(out, f)
 	}
+	// The icon at each size, once (a size is several images').
+	var icon func(int) *image.NRGBA
 	if app.cfg.Icon != "" {
-		img, err := loadIcon(app.cfg.Icon)
+		src, err := loadIcon(app.cfg.Icon)
 		if err != nil {
 			return "", fmt.Errorf("icon: %w", err)
 		}
-		for _, a := range msixAssets {
-			var b bytes.Buffer
-			if err := png.Encode(&b, resize(img, a.size)); err != nil {
-				return "", err
+		sized := map[int]*image.NRGBA{}
+		icon = func(side int) *image.NRGBA {
+			if sized[side] == nil {
+				sized[side] = resize(src, side)
 			}
-			out = append(out, distpkg.File{Path: a.path, Data: b.Bytes()})
-		}
-	} else {
-		for _, a := range msixAssets {
-			out = append(out, distpkg.File{Path: a.path, Data: blankPNG(a.size)})
+			return sized[side]
 		}
 	}
+	for _, a := range msixAssets() {
+		out = append(out, distpkg.File{Path: "Assets/" + a.file, Data: msixImage(icon, a)})
+	}
+	pri, err := msixPRI(app)
+	if err != nil {
+		return "", err
+	}
+	out = append(out, distpkg.File{Path: "resources.pri", Data: pri})
 	file := releaseFile(app, o, "windows", goarch, ".msix")
 	os.Remove(file)
 	if err := distpkg.WriteMSIX(&distpkg.MSIX{Manifest: []byte(msixManifest(app, exe, goarch)), Files: out}, file); err != nil {
@@ -244,11 +390,4 @@ func writeMSIX(app *asukaApp, o *buildOptions, dir, exe, goarch string) (string,
 		return "", err
 	}
 	return file, nil
-}
-
-// blankPNG is a transparent square PNG: an app with no icon's tiles.
-func blankPNG(size int) []byte {
-	var b bytes.Buffer
-	png.Encode(&b, resize(nil, size))
-	return b.Bytes()
 }

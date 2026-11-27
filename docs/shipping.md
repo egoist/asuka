@@ -519,12 +519,21 @@ or Windows SDK):
   as a package, for the [Microsoft Store](https://partner.microsoft.com/dashboard)
   and for sideloading (`Add-AppxPackage`, App Installer, Intune). Its
   manifest declares the app as a full-trust desktop app, its tiles'
-  images (from the `icon`), its URL scheme, its file types and its
-  notifications' activator, which a packaged app can't register as it
-  runs, and the catalogs' languages (the source language first; English
-  without catalogs), which the Store lists the app in. Its name isn't
-  translated there: that takes a `resources.pri`, which the build
-  doesn't write, so Start and Installed apps show the app's `name`.
+  images, its URL scheme, its file types and its notifications'
+  activator, which a packaged app can't register as it runs, and the
+  catalogs' languages (the source language first; English without
+  catalogs), which the Store lists the app in. The images are made from
+  the `icon` at every scale Windows draws them at (100% to 400%), and
+  at the sizes the taskbar, Start, the title bar and File Explorer ask
+  for, with no plate behind the icon, so the taskbar shows it as it is,
+  sharp on any display. With catalogs, the app's name and description
+  are its `asuka.appName` and `asuka.appDescription` in each language
+  (the source language's where one doesn't say them, else `name` and
+  `linux.summary`): Start, the taskbar, Installed apps and the Store
+  show them in the user's Windows language, in the source language
+  when the app isn't in the user's. The package's `resources.pri`, which
+  the build writes as the Windows SDK's `makepri` does, holds them and
+  the images.
   The Store takes it unsigned and signs it: set `windows.identityName`
   and `windows.publisherId` to what Partner Center says (Product
   identity), and upload it. To sideload it, it's signed as the `.exe` is

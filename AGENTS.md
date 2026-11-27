@@ -137,7 +137,7 @@ go test ./platform/desktop                       # the C the Windows and Linux h
 xvfb-run -a dbus-run-session go test ./platform/linux  # the Linux host: apps built and driven in real GTK windows (GTK 4.14, libadwaita 1.5)
 go run ./cmd/asuka dev examples/counter            # Linux (on Linux, no --platform: linux): the app and its GTK host in one process, rerun on save
 go run ./cmd/asuka build --platform linux examples/counter    # an install prefix, a .tar.gz, a .deb, an .rpm, an AppImage and a Flatpak manifest; from any system (--package deb,rpm: some)
-go test ./internal/distpkg                       # the .deb, .rpm (signed), SquashFS/AppImage, .zsync, apt and dnf repository metadata, .DS_Store and MSIX writers, read back
+go test ./internal/distpkg                       # the .deb, .rpm (signed), SquashFS/AppImage, .zsync, apt and dnf repository metadata, .DS_Store, MSIX and PRI (resources.pri: makepri's output, byte for byte) writers, read back
 go run platform/linux/gen_symbols.go             # the Linux host's fallback symbols, from the web host's
 go test -tags e2e ./e2e -run Linux               # GUI tests: the examples under Xvfb (Linux)
 $env:ASUKA_SNAPSHOT='c.png'; $env:ASUKA_DUMP='1'; $env:ASUKA_SCRIPT='tap:Add'; .\examples\counter\dist\windows-amd64\Counter\Counter.exe  # Windows (PowerShell): steps, then the window as a PNG and its view tree

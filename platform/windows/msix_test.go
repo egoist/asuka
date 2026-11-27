@@ -13,7 +13,12 @@ import (
 // TrustedPeople store) through ASUKA_WINDOWS_CERT, as a developer
 // sideloads: Add-AppxPackage installs it, its app runs from WindowsApps
 // and its URL scheme (the manifest's) opens it, Remove-AppxPackage takes
-// it away. Off Windows the build signs with osslsigncode.
+// it away. Off Windows the build signs with osslsigncode. Its name is its
+// resources.pri's, in each language: SHLoadIndirectString resolves the
+// manifest's ms-resource:AppName through the PRI as the shell does (Start,
+// the taskbar, Installed apps), for the thread's UI languages, and a
+// language the app isn't in gets the source's; its images, the icon at
+// the shell's sizes (targetsize-24, unplated on the taskbar).
 func TestMSIX(t *testing.T) {
 	w := onWindows(t)
 	zig(t)
@@ -40,10 +45,15 @@ func TestMSIX(t *testing.T) {
 		t.Fatal(err)
 	}
 	// In English, German, Traditional Chinese and Arabic: the manifest's
-	// languages.
+	// languages, the app's name in each, its description in two.
 	os.MkdirAll(filepath.Join(app, "locales"), 0o755)
-	for tag, name := range map[string]string{"en": "Counter", "de": "Zähler", "zh-Hant": "計數器", "ar": "العداد"} {
-		if err := os.WriteFile(filepath.Join(app, "locales", tag+".json"), []byte(`{"asuka.appName": "`+name+`"}`), 0o644); err != nil {
+	for tag, cat := range map[string]string{
+		"en":      `{"asuka.appName": "Counter", "asuka.appDescription": "Counts taps"}`,
+		"de":      `{"asuka.appName": "Zähler", "asuka.appDescription": "Zählt Tipps"}`,
+		"zh-Hant": `{"asuka.appName": "計數器"}`,
+		"ar":      `{"asuka.appName": "العداد"}`,
+	} {
+		if err := os.WriteFile(filepath.Join(app, "locales", tag+".json"), []byte(cat), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -69,6 +79,30 @@ $c.Thumbprint`)
 		t.Fatal(err)
 	}
 
+	// What the shell shows of the package, through its PRI: its name and
+	// description in the user's languages, its icon's file.
+	os.WriteFile(filepath.Join(local, "names.ps1"), []byte(`param([string]$package, [string]$lang)
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class AsukaRes {
+  [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+  static extern int SHLoadIndirectString(string src, StringBuilder buf, int cch, IntPtr reserved);
+  public static string Load(string src) {
+    var b = new StringBuilder(1024);
+    int hr = SHLoadIndirectString(src, b, b.Capacity, IntPtr.Zero);
+    return hr == 0 ? b.ToString() : "error 0x" + hr.ToString("x8");
+  }
+}
+'@
+$res = "@{${package}?ms-resource://dev.asuka.msixtest/"
+$line = "$lang $([AsukaRes]::Load($res + 'Resources/AppName}')) / $([AsukaRes]::Load($res + 'Resources/Description}'))"
+$line += " | $(@(Get-StartApps | Where-Object { $_.AppID -like 'dev.asuka.msixtest_*' } | ForEach-Object { $_.Name }) -join ',')"
+$line += " | $([AsukaRes]::Load($res + 'Files/Assets/Square44x44Logo.png}'))"
+Add-Content -Encoding UTF8 names.txt $line
+`), 0o644)
+
 	// In the signed-in session: deploying a package over the agent's is
 	// denied.
 	script := filepath.Join(local, "msix.ps1")
@@ -78,7 +112,20 @@ try {
   Add-AppxPackage -Path "$env:TEMP\asuka-test.msix"
   $p = Get-AppxPackage -Name 'dev.asuka.msixtest'
   "installed $($p.PackageFamilyName) $($p.Version) $($p.SignatureKind)"
-  "languages $(@((Get-AppxPackageManifest -Package $p.PackageFullName).Package.Resources.Resource | ForEach-Object { $_.Language }) -join ',')"
+  $m = (Get-AppxPackageManifest -Package $p.PackageFullName).Package
+  "languages $(@($m.Resources.Resource | ForEach-Object { $_.Language }) -join ',')"
+  "display name $($m.Properties.DisplayName)"
+  # Each language as the user's only one, resolved in a process of its
+  # own (MRT reads the user's languages as a process starts).
+  $saved = Get-WinUserLanguageList
+  try {
+    foreach ($l in 'en-US', 'de-DE', 'zh-TW', 'ar-SA', 'ja-JP') {
+      Set-WinUserLanguageList -LanguageList (New-WinUserLanguageList $l) -Force -WarningAction SilentlyContinue
+      & powershell.exe -NoProfile -ExecutionPolicy Bypass -File names.ps1 $p.PackageFullName $l
+    }
+  } finally {
+    Set-WinUserLanguageList -LanguageList $saved -Force -WarningAction SilentlyContinue
+  }
   Start-Process 'asukamsixtest://hello'
   for ($i = 0; $i -lt 40; $i++) {
     $run = Get-Process | Where-Object { $_.Path -like '*\WindowsApps\dev.asuka.msixtest_*\Counter.exe' }
@@ -97,9 +144,24 @@ try {
 		t.Fatalf("%v\n%s", err, res)
 	}
 	t.Logf("%s", res)
-	for _, want := range []string{"installed dev.asuka.msixtest_", " 1.0.0.0 Developer", "languages en,ar,de,zh-Hant", `running C:\Program Files\WindowsApps\dev.asuka.msixtest_1.0.0.0_`, "removed 0"} {
+	for _, want := range []string{"installed dev.asuka.msixtest_", " 1.0.0.0 Developer", "languages en,ar,de,zh-Hant", "display name ms-resource:AppName", `running C:\Program Files\WindowsApps\dev.asuka.msixtest_1.0.0.0_`, "removed 0"} {
 		if !strings.Contains(res, want) {
 			t.Errorf("no %q:\n%s", want, res)
+		}
+	}
+	b, err := os.ReadFile(filepath.Join(local, "names.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := strings.ReplaceAll(strings.TrimPrefix(string(b), "\ufeff"), "\r\n", "\n")
+	t.Logf("%s", names)
+	for _, want := range []string{
+		"en-US Counter / Counts taps | Counter | ", "de-DE Zähler / Zählt Tipps | Zähler | ", "zh-TW 計數器 / Counts taps | 計數器 | ", "ar-SA العداد / Counts taps | العداد | ",
+		"ja-JP Counter / Counts taps | Counter | ", // a language the app isn't in: the source's
+		`\Assets\Square44x44Logo.scale-100.png`,
+	} {
+		if !strings.Contains(names, want) {
+			t.Errorf("no %q in the names the PRI gives:\n%s", want, names)
 		}
 	}
 }
