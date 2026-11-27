@@ -156,3 +156,124 @@ test "nowPlaying" {
   await app.idle()
   expect(c.title() == "Now Playing")
 }
+
+// A navigation app: routes to choose, then guidance over the map, the
+// car's own end of the trip, alerts.
+component Drive {
+  state guiding = false
+  state alerted = ""
+  state closer: (fn())? = none
+
+  let here = Coordinate(lat: 35.6812, lng: 139.7671)
+  let office = Coordinate(lat: 35.6858, lng: 139.7745)
+
+  fn preview() -> Preview? {
+    if guiding {
+      return none
+    }
+    return Preview(destination: "Office", at: office, routes: [
+      Route(title: "Fastest", distance: 1200, time: 300s, path: [here, office], run: () => { guiding = true }),
+      Route(title: "Quiet", detail: "No tolls", distance: 1500, time: 420s, path: [here, office], run: () => { guiding = true }),
+    ])
+  }
+
+  fn trip() -> Trip? {
+    if !guiding {
+      return none
+    }
+    return Trip(destination: "Office", maneuvers: [
+      Maneuver(instruction: "Turn right onto Main St", turn: .right, distance: 120),
+      Maneuver(instruction: "Arrive at Office", turn: .arrive, distance: 900),
+    ], distance: 1200, time: 300s, stop: () => { guiding = false })
+  }
+
+  Screen {
+    root: .navigation(
+      map: Map(position: here, route: if guiding { [here, office] } else { [] }, markers: [Marker(at: office, title: "Office")]),
+      preview: preview(),
+      trip: trip(),
+      actions: if guiding { [.button(title: "End", run: () => { guiding = false })] } else { [] },
+    )
+  }
+
+  Column {
+    Text(if guiding { "Guiding" } else { "Choosing" })
+    Text("Alert: {alerted}")
+    Button("Warn") {
+      on press {
+        closer = alert(title: "Traffic ahead", detail: "10 min slower", actions: [.button(title: "Reroute", run: () => { alerted = "rerouted" })], onDismiss: () => { alerted = "dismissed" })
+      }
+    }
+    Button("Close") {
+      on press {
+        if let f = closer {
+          f()
+        }
+      }
+    }
+  }
+}
+
+test "a navigation map: routes to choose, then guidance" {
+  let c = fake()
+  let app = mount(Drive())
+  await app.idle()
+  expect(c.title() == "Office")
+  expect(c.texts() == ["Fastest", "Quiet"])
+  if let m = c.map() {
+    expect(m.route.isEmpty())
+    expect(m.markers.map(x => x.title) == ["Office"])
+    expect(m.follow && m.zoom == 15)
+  } else {
+    expect(false)
+  }
+  try c.select("Quiet")
+  await app.idle()
+  app.expect("Guiding")
+  expect(c.texts() == ["Turn right onto Main St", "Arrive at Office", "End"])
+  expect((c.map()?.route.count() ?? 0) == 2)
+  // The car ends the trip: its stop runs.
+  try c.endTrip()
+  await app.idle()
+  app.expect("Choosing")
+  var noTrip = false
+  do {
+    try c.endTrip()
+  } catch {
+    noTrip = true
+  }
+  expect(noTrip)
+  // The app's own End.
+  try c.select("Fastest")
+  await app.idle()
+  try c.select("End")
+  await app.idle()
+  app.expect("Choosing")
+}
+
+test "alerts over the map: a button, its time up, taken away" {
+  let c = fake()
+  let app = mount(Drive())
+  await app.idle()
+  expect(c.alert() == [])
+  app.tap("Warn")
+  await app.idle()
+  expect(c.alert() == ["Traffic ahead", "10 min slower", "Reroute"])
+  try c.select("Reroute")
+  await app.idle()
+  app.expect("Alert: rerouted")
+  expect(c.alert() == [])
+  app.tap("Warn")
+  await app.idle()
+  c.dismissAlert()
+  await app.idle()
+  app.expect("Alert: dismissed")
+  // The function alert returns takes it away: its onDismiss runs.
+  app.tap("Warn")
+  await app.idle()
+  expect(c.alert().count() == 3)
+  app.tap("Close")
+  await app.idle()
+  expect(c.alert() == [])
+  app.expect("Alert: dismissed")
+}

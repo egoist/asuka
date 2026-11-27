@@ -22,14 +22,20 @@
 // screen shows the app.
 //
 // A car shows only the apps of the categories its platform allows
-// (asuka.toml's [car]: audio, communication, EV charging, parking,
-// fueling, quick food ordering, driving tasks; on Android Auto points of
-// interest, the Internet of things, weather), and CarPlay apps need
-// Apple's entitlement for theirs. On the other platforms, and with no
-// [car], nothing shows, and connected is false.
+// (asuka.toml's [car]: audio, navigation, communication, EV charging,
+// parking, fueling, quick food ordering, driving tasks; on Android Auto
+// points of interest, the Internet of things, weather), and CarPlay apps
+// need Apple's entitlement for theirs. On the other platforms, and with
+// no [car], nothing shows, and connected is false.
 //
 // An audio app's player is platform/nowplaying's: push .nowPlaying to
 // show it, with its controls, which run the NowPlaying's handlers.
+//
+// A navigation app's root is .navigation: a map that fills the car's
+// screen, whose state the app gives as values (where it looks, the car's
+// position, the route, markers) and the platform draws, with the trip's
+// turn-by-turn guidance over it, routes to choose before a trip, and
+// alerts (alert). The app routes; the platform shows.
 
 /// A row of a list, or a cell of a grid.
 pub struct Item {
@@ -88,6 +94,145 @@ pub struct Tab {
   content: Template
 }
 
+/// A place on Earth, in degrees.
+pub struct Coordinate {
+  lat: float = 0
+  lng: float = 0
+}
+
+/// A pin on a navigation map.
+pub struct Marker {
+  at: Coordinate
+  /// Its label, beside it.
+  title: string = ""
+  /// Tints it; none: the platform's red.
+  color: Color? = none
+}
+
+/// What a navigation map shows, as values: the platform draws it (Apple
+/// Maps on CarPlay; on Android Auto, map tiles drawn on the car's screen)
+/// and follows them as they change.
+///
+/// The driver can move and zoom it with the car's controls: it shows
+/// where they moved it, with a button that comes back, until the app
+/// moves it (a center or a zoom of its own) or the driver comes back.
+pub struct Map {
+  /// Where it looks, when it doesn't follow the car (follow off, or no
+  /// position).
+  center: Coordinate = Coordinate()
+  /// How near, as web maps' zoom levels: 0 the world, 10 a city, 15
+  /// streets, 18 buildings.
+  zoom: float = 15
+  /// Where the car is (the app's, from platform/location), drawn as a
+  /// puck; none: not known.
+  position: Coordinate? = none
+  /// Which way the car heads, in degrees clockwise from north. While the
+  /// map follows the car, it turns so that the heading is up.
+  heading: float? = none
+  /// Whether the map keeps position in the middle of what the car shows.
+  follow: bool = true
+  /// The route ahead, a line through these points.
+  route: [Coordinate] = []
+  markers: [Marker] = []
+  /// Night's colors (true), day's (false), or the car's (none: CarPlay's
+  /// and Android Auto's, which follow the headlights).
+  night: bool? = none
+  /// The map's tiles on Android Auto, a URL with {z}, {x} and {y}
+  /// ("https://tiles.example.com/{z}/{x}/{y}.png"); "": OpenStreetMap's.
+  /// On CarPlay "" is Apple Maps, and a URL draws its tiles instead.
+  tiles: string = ""
+}
+
+/// How a maneuver turns: the platform draws its arrow.
+pub enum Turn {
+  /// Setting out.
+  depart
+  straight
+  slightLeft
+  left
+  sharpLeft
+  slightRight
+  right
+  sharpRight
+  uTurn
+  keepLeft
+  keepRight
+  merge
+  /// Off a highway, to the left.
+  exitLeft
+  exitRight
+  /// Around a roundabout, out at the maneuver's exit.
+  roundabout
+  ferry
+  /// The destination, ahead.
+  arrive
+  arriveLeft
+  arriveRight
+}
+
+/// What the driver does next on a route.
+pub struct Maneuver {
+  /// What's said of it: "Turn right onto Main St".
+  instruction: string
+  turn: Turn = .straight
+  /// The road it takes the driver onto.
+  road: string = ""
+  /// How far it is from the car, in meters (the first's shrinks as the
+  /// car drives).
+  distance: float = 0
+  /// How long it takes to reach it.
+  time: Duration = 0s
+  /// A roundabout's exit, 1 the first.
+  exit: int = 0
+}
+
+/// A trip under way: guidance over the map, while it's set.
+pub struct Trip {
+  /// Where it goes: the destination's name.
+  destination: string = ""
+  /// The maneuvers ahead, the next first: the car shows it, and the one
+  /// after it.
+  maneuvers: [Maneuver] = []
+  /// What's left to the destination: its meters and its time (the car
+  /// says when it arrives from it).
+  distance: float = 0
+  time: Duration = 0s
+  /// A new route is being found: the car says so instead of the
+  /// maneuvers.
+  rerouting: bool = false
+  /// What the car's own end of the trip does (another app started
+  /// navigating, the driver ended it from the car): the app stops
+  /// guiding.
+  stop: (async fn())? = none
+}
+
+/// A route to choose before a trip.
+pub struct Route {
+  /// What sets it apart: "Fastest", "Via I-80".
+  title: string
+  /// A line more: "Tolls", "3 min slower".
+  detail: string = ""
+  /// Its length in meters, and how long it takes.
+  distance: float = 0
+  time: Duration = 0s
+  /// Its line on the map, drawn while it's the one highlighted.
+  path: [Coordinate] = []
+  /// What starting it does: the app starts guiding (it sets the trip).
+  run: (async fn())? = none
+}
+
+/// Routes to a destination, to choose one: the car lists them over the
+/// map, draws the highlighted one, and starts the one chosen.
+pub struct Preview {
+  /// The destination's name, and where it is.
+  destination: string
+  at: Coordinate = Coordinate()
+  routes: [Route] = []
+  /// The start button's title ("": the platform's; an arrow on Android
+  /// Auto).
+  start: string = ""
+}
+
 /// What a car's screen shows. A field left out is its zero:
 /// .list(title: "Recent", items: recent) has no sections and no actions.
 /// actions are the template's buttons (.button(title:, icon:, run:); a
@@ -116,6 +261,14 @@ pub enum Template {
   /// What plays, and its controls: platform/nowplaying's NowPlaying.
   /// CPNowPlayingTemplate; on Android Auto, its own player.
   nowPlaying
+  /// A navigation app's map, which fills the car's screen (the root's,
+  /// with asuka.toml's [car] category "navigation"): map, drawn by the
+  /// platform with its zoom, pan and recenter buttons; preview's routes
+  /// to choose from; trip's guidance while it's set; actions in its bar.
+  /// CPMapTemplate over Apple Maps; Android's NavigationTemplate (and
+  /// RoutePreviewNavigationTemplate) over map tiles drawn on the car's
+  /// screen.
+  navigation(map: Map, preview: Preview?, trip: Trip?, actions: [Action])
 }
 
 // ---- What the platforms get ----
@@ -129,6 +282,7 @@ enum Kind {
   message
   places
   nowPlaying
+  navigation
 }
 
 /// An item as the platforms get it: run is its handler's number (0:
@@ -169,6 +323,43 @@ struct ShownPlace {
   distance: float = -1
 }
 
+/// A trip as the platforms get it: stop is its handler's number.
+struct ShownTrip {
+  destination: string = ""
+  maneuvers: [Maneuver] = []
+  distance: float = 0
+  time: Duration = 0s
+  rerouting: bool = false
+  stop: int = 0
+}
+
+/// A route as the platforms get it: run is its start's number.
+struct ShownRoute {
+  run: int = 0
+  title: string = ""
+  detail: string = ""
+  distance: float = 0
+  time: Duration = 0s
+  path: [Coordinate] = []
+}
+
+struct ShownPreview {
+  destination: string = ""
+  at: Coordinate = Coordinate()
+  routes: [ShownRoute] = []
+  start: string = ""
+}
+
+/// An alert over the navigation map: id names it, for answered.
+struct ShownAlert {
+  id: int = 0
+  title: string = ""
+  detail: string = ""
+  symbol: string = ""
+  actions: [ShownAction] = []
+  duration: Duration = 10s
+}
+
 /// A template as the platforms get it. id is its place on the stack's:
 /// the same while it's there (the platform changes it in place), 1 the
 /// root's, 0 a tab's.
@@ -184,6 +375,10 @@ struct Shown {
   actions: [ShownAction] = []
   places: [ShownPlace] = []
   tabs: [Shown] = []
+  /// A navigation template's: its map, the routes to choose, the trip.
+  map: Map? = none
+  preview: ShownPreview? = none
+  trip: ShownTrip? = none
 }
 
 /// The car's screen: CarPlay's interface controller, Android Auto's
@@ -197,10 +392,17 @@ native interface Head {
   /// Calls connected with whether a car's screen shows the app, at once
   /// and as one comes and goes, until the task is cancelled.
   async fn connections(connected: fn(bool))
-  /// Calls chose with the number of what the user chose, and back with
-  /// how many templates are left when the car's back button took one
-  /// away, until the task is cancelled.
-  async fn events(chose: fn(int), back: fn(int))
+  /// Shows an alert over the navigation map (a new one replaces the one
+  /// showing).
+  fn alert(alert: ShownAlert)
+  /// Takes the alert id away, if it shows.
+  fn dismiss(id: int)
+  /// Calls chose with the number of what the user chose, back with how
+  /// many templates are left when the car's back button took one away,
+  /// and answered with an alert's id as it goes, and the number (its
+  /// ShownAction's run) of the button chosen on it (-1: it went without
+  /// one), until the task is cancelled.
+  async fn events(chose: fn(int), back: fn(int), answered: fn(int, int))
 }
 
 // Made once; none where no car shows the app (not iOS or Android, or no
@@ -387,6 +589,34 @@ struct Encoder {
       .nowPlaying => {
         return Shown(id: id, kind: .nowPlaying)
       }
+      .navigation(map, preview, trip, acts) => {
+        // Its title is where it goes: the trip's destination, else the
+        // preview's.
+        var title = ""
+        var shownPreview: ShownPreview? = none
+        if let pv = preview {
+          var rs: [ShownRoute] = []
+          for r in pv.routes {
+            var run = 0
+            if let f = r.run {
+              run = number(.button(title: r.title, run: f))
+            }
+            rs.push(ShownRoute(run: run, title: r.title, detail: r.detail, distance: r.distance, time: r.time, path: r.path))
+          }
+          shownPreview = ShownPreview(destination: pv.destination, at: pv.at, routes: rs, start: pv.start)
+          title = pv.destination
+        }
+        var shownTrip: ShownTrip? = none
+        if let t = trip {
+          var stop = 0
+          if let f = t.stop {
+            stop = number(.button(title: t.destination, run: f))
+          }
+          shownTrip = ShownTrip(destination: t.destination, maneuvers: t.maneuvers, distance: t.distance, time: t.time, rerouting: t.rerouting, stop: stop)
+          title = t.destination
+        }
+        return Shown(id: id, kind: .navigation, title: title, actions: actions(acts), map: map, preview: shownPreview, trip: shownTrip)
+      }
     }
   }
 }
@@ -416,6 +646,80 @@ fn send(shown: [Shown], handlers: [Action]) {
   sentShown = shown
   if let h = head {
     try? h.show(shown)
+  }
+}
+
+// The alert showing: what it shows (its id), its buttons' handlers (by
+// their numbers), and what its going without one does.
+state alertSerial = 0
+state alerting: ShownAlert? = none
+state alertRuns: [Action] = []
+state alertGone: (fn())? = none
+
+/// Shows an alert over a navigation app's map now, as a navigation app
+/// says what's ahead (traffic, a speed camera, a faster route): title, a
+/// detail under it, a symbol, and its buttons (actions, two at most: a
+/// .button's title, role and run; none: an OK). It goes after duration,
+/// or when the driver chooses a button, which runs its run; going
+/// without one runs onDismiss. A new one replaces the one showing. It
+/// returns a function that takes it away. CPNavigationAlert on CarPlay;
+/// Android Auto's Alert (Car App API level 5; before, a toast of its
+/// title).
+pub fn alert(title: string, detail: string = "", symbol: string = "", actions: [Action] = [], duration: Duration = 10s, onDismiss: (fn())? = none) -> fn() {
+  if let a = alerting {
+    dismissAlert(a.id)
+  }
+  alertSerial += 1
+  let id = alertSerial
+  var e = Encoder()
+  let buttons = e.actions(actions)
+  let shown = ShownAlert(id: id, title: title, detail: detail, symbol: symbol, actions: buttons.prefix(2), duration: duration)
+  alerting = shown
+  alertRuns = e.runs
+  alertGone = onDismiss
+  if faked.isNone() {
+    if let h = head {
+      try? h.alert(shown)
+    }
+  }
+  return () => dismissAlert(id)
+}
+
+/// Takes alert id away, if it shows: it went without a button.
+fn dismissAlert(id: int) {
+  if let a = alerting {
+    if a.id == id {
+      if faked.isNone() {
+        if let h = head {
+          try? h.dismiss(id)
+        }
+      }
+      answered(id, -1)
+    }
+  }
+}
+
+/// Alert id went: with its button n chosen (0: one that runs nothing),
+/// or without one (-1).
+fn answered(id: int, n: int) {
+  if let a = alerting {
+    if a.id != id {
+      return
+    }
+  } else {
+    return
+  }
+  let runs = alertRuns
+  let gone = alertGone
+  alerting = none
+  alertRuns = []
+  alertGone = none
+  if n >= 1 && n <= runs.count() {
+    runAction(runs[n - 1])
+  } else if n < 0 {
+    if let g = gone {
+      g()
+    }
   }
 }
 
@@ -452,7 +756,7 @@ pub component Screen {
       }
     }
     if let h = head {
-      try? await h.events(chose: n => choose(n), back: left => wentBack(left))
+      try? await h.events(chose: n => choose(n), back: left => wentBack(left), answered: (id, n) => answered(id, n))
     } else {
       await never()
     }
@@ -504,7 +808,9 @@ pub store FakeCar {
 
   /// What the template on top shows, in order: its rows' and its cells'
   /// titles (a tab bar's first tab's), its fields as "title: detail", its
-  /// places', its message, its buttons'; "Now Playing" for .nowPlaying.
+  /// places', a navigation map's routes' and its trip's maneuvers'
+  /// instructions, its message, its buttons'; "Now Playing" for
+  /// .nowPlaying.
   pub fn texts() -> [string] {
     if let s = shown.last() {
       return textsOf(if s.kind == .tabs { s.tabs.first() ?? s } else { s })
@@ -517,6 +823,15 @@ pub store FakeCar {
   /// starts what it runs. It throws when nothing there has that title
   /// and runs something (a disabled one doesn't).
   pub fn select(title: string) throws {
+    // An alert showing is over the template: its buttons first.
+    if let a = alerting {
+      for b in a.actions {
+        if b.title == title && b.enabled {
+          answered(a.id, b.run)
+          return
+        }
+      }
+    }
     if let s = shown.last() {
       let n = runOf(s, title)
       if n > 0 {
@@ -533,6 +848,48 @@ pub store FakeCar {
     if shown.count() > 1 {
       wentBack(shown.count() - 1)
     }
+  }
+
+  /// The navigation map the root shows (none: the root isn't
+  /// .navigation), as the app gave it.
+  pub fn map() -> Map? = if let s = shown.first() { s.map } else { none }
+
+  /// What the alert showing says: its title, its detail, its buttons'
+  /// titles ([]: none shows).
+  pub fn alert() -> [string] {
+    if let a = alerting {
+      var out = [a.title]
+      if !a.detail.isEmpty() {
+        out.push(a.detail)
+      }
+      for b in a.actions {
+        out.push(b.title)
+      }
+      return out
+    }
+    return []
+  }
+
+  /// The alert showing goes without a button, as when its time is up:
+  /// its onDismiss runs.
+  pub fn dismissAlert() {
+    if let a = alerting {
+      answered(a.id, -1)
+    }
+  }
+
+  /// The car ends the trip, as when another app starts navigating: the
+  /// trip's stop runs. It throws when no trip shows.
+  pub fn endTrip() throws {
+    if let s = shown.first() {
+      if let t = s.trip {
+        if t.stop > 0 {
+          choose(t.stop)
+        }
+        return
+      }
+    }
+    throw Error("car: no trip under way")
   }
 }
 
@@ -556,6 +913,16 @@ fn textsOf(s: Shown) -> [string] {
   }
   for p in s.places {
     out.push(p.title)
+  }
+  if let pv = s.preview {
+    for r in pv.routes {
+      out.push(r.title)
+    }
+  }
+  if let t = s.trip {
+    for m in t.maneuvers {
+      out.push(m.instruction)
+    }
   }
   if !s.text.isEmpty() && s.kind == .message {
     out.push(s.text)
@@ -581,6 +948,13 @@ fn runOf(s: Shown, title: string) -> int {
   for p in s.places {
     if p.title == title && p.run > 0 {
       return p.run
+    }
+  }
+  if let pv = s.preview {
+    for r in pv.routes {
+      if r.title == title && r.run > 0 {
+        return r.run
+      }
     }
   }
   for a in s.actions {

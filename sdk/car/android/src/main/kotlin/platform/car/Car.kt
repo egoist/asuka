@@ -36,6 +36,7 @@ internal object CarHub : Head {
     private val connectedWatchers = ArrayList<(Boolean) -> kotlin.Unit>()
     private val choseWatchers = ArrayList<(Long) -> kotlin.Unit>()
     private val backWatchers = ArrayList<(Long) -> kotlin.Unit>()
+    private val answeredWatchers = ArrayList<(Long, Long) -> kotlin.Unit>()
     private val shownListeners = ArrayList<() -> kotlin.Unit>()
 
     /** The templated app's session, while a car shows it. */
@@ -65,6 +66,20 @@ internal object CarHub : Head {
         if (n > 0) for (w in choseWatchers.toList()) w(n)
     }
 
+    /** Alert id went, with its button n chosen (-1: without one). */
+    fun answered(id: Long, n: Long) {
+        for (w in answeredWatchers.toList()) w(id, n)
+    }
+
+    override fun alert(alert: ShownAlert) {
+        val s = session
+        if (s != null) s.alert(alert) else answered(alert.id, -1)
+    }
+
+    override fun dismiss(id: Long) {
+        session?.dismiss(id)
+    }
+
     /** The car took templates away: left are left. */
     fun back(left: Int) {
         for (w in backWatchers.toList()) w(left.toLong())
@@ -92,8 +107,8 @@ internal object CarHub : Head {
         }
     }
 
-    override suspend fun events(chose: (Long) -> kotlin.Unit, back: (Long) -> kotlin.Unit) {
-        val stop = withContext(Dispatchers.Main) { listen(chose, back) }
+    override suspend fun events(chose: (Long) -> kotlin.Unit, back: (Long) -> kotlin.Unit, answered: (Long, Long) -> kotlin.Unit) {
+        val stop = withContext(Dispatchers.Main) { listen(chose, back, answered) }
         try {
             awaitCancellation()
         } finally {
@@ -102,12 +117,14 @@ internal object CarHub : Head {
     }
 
     /** Hears what the driver chooses and the car's back button, until the function it returns is called. Main thread. */
-    internal fun listen(chose: (Long) -> kotlin.Unit, back: (Long) -> kotlin.Unit): () -> kotlin.Unit {
+    internal fun listen(chose: (Long) -> kotlin.Unit, back: (Long) -> kotlin.Unit, answered: (Long, Long) -> kotlin.Unit = { _, _ -> }): () -> kotlin.Unit {
         choseWatchers.add(chose)
         backWatchers.add(back)
+        answeredWatchers.add(answered)
         return {
             choseWatchers.remove(chose)
             backWatchers.remove(back)
+            answeredWatchers.remove(answered)
         }
     }
 

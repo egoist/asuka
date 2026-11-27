@@ -1,0 +1,13 @@
+name = "Car Navigation"
+id = "dev.asuka.carnav"
+version = "1.0.0"
+build = 1
+icon = "icon.png"
+accent = "#1A73E8"
+
+# A navigation app on a car's screen: CarPlay's maps entitlement (Apple
+# grants it on request; a simulator build has it anyway), Android Auto's
+# navigation category, its map drawn on the car's surface. Alerts need
+# Car App API level 5 (before, a toast).
+[car]
+category = "navigation"

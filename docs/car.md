@@ -4,10 +4,10 @@ An app shows on a car's screen through `platform/car`: CarPlay on iOS,
 Android Auto on Android. A car's screen doesn't show the app's views.
 The driver's eyes belong on the road, so each platform shows only its
 own templates (lists, grids, tabs, facts, a message, places on a map,
-a player) and draws them as the car wants: its size, its knob or touch
-screen, its day and night look. The app describes the templates as
-values and says what choosing their rows does; the platform does the
-rest.
+a player, a navigation app's map) and draws them as the car wants: its
+size, its knob or touch screen, its day and night look. The app
+describes the templates as values and says what choosing their rows
+does; the platform does the rest.
 
 ```asuka check
 import platform/car
@@ -99,6 +99,7 @@ the last one mounted shows.
 | `.message(title:, text:, symbol:, actions:)` | A message, with buttons | `CPInformationTemplate` | `MessageTemplate` |
 | `.places(title:, places:)` | Places on a map, listed beside it | `CPPointOfInterestTemplate` | `PlaceListMapTemplate` |
 | `.nowPlaying` | What plays, with its controls | `CPNowPlayingTemplate` | Android Auto's own player |
+| `.navigation(map:, preview:, trip:, actions:)` | A navigation app's map, with routes to choose or a trip's guidance ([Navigation apps](#navigation-apps)) | `CPMapTemplate` over Apple Maps | `NavigationTemplate`, `RoutePreviewNavigationTemplate`, over a map drawn on the car's screen |
 
 A field left out is its zero, as an `Action`'s are: `.list(title:
 "Recent", items: recent)` has no sections and no buttons. A car shows
@@ -157,6 +158,161 @@ Info, message and places templates have no place in a media browser.
 
 `examples/car` is an audio app on CarPlay and Android Auto.
 
+## Navigation apps
+
+A navigation app's car screen is its map, which fills the screen, with
+the platform's guidance over it. Its root is `.navigation`, and its
+category `navigation`. The app gives what the map shows as values, and
+the platform draws it. The app routes: it says where the car is, the
+route ahead and the turns on it, and the platform shows them. Asuka
+doesn't find routes.
+
+```asuka check
+import platform/car
+
+let home = car.Coordinate(lat: 35.6812, lng: 139.7671)
+let office = car.Coordinate(lat: 35.6858, lng: 139.7745)
+let path = [home, car.Coordinate(lat: 35.6830, lng: 139.7700), office]
+
+component Drive {
+  state guiding = false
+  state position = home
+
+  fn preview() -> car.Preview? {
+    if guiding {
+      return none
+    }
+    return car.Preview(destination: "Office", at: office, routes: [
+      car.Route(title: "Fastest", distance: 1200, time: 5min, path: path, run: () => { guiding = true }),
+    ])
+  }
+
+  fn trip() -> car.Trip? {
+    if !guiding {
+      return none
+    }
+    return car.Trip(
+      destination: "Office",
+      maneuvers: [car.Maneuver(instruction: "Turn right onto Main St", turn: .right, distance: 120)],
+      distance: 1200,
+      time: 5min,
+      stop: () => { guiding = false },
+    )
+  }
+
+  car.Screen {
+    root: .navigation(
+      map: car.Map(position: position, heading: 45, route: if guiding { path } else { [] }, markers: [car.Marker(at: office, title: "Office")]),
+      preview: preview(),
+      trip: trip(),
+      actions: if guiding { [.button(title: "End", run: () => { guiding = false })] } else { [] },
+    )
+  }
+
+  Text(if guiding { "Guiding" } else { "Choosing a route" })
+}
+
+app { Drive() }
+```
+
+```toml
+[car]
+category = "navigation"
+```
+
+### The map
+
+A `car.Map` is what the map shows:
+
+| Field | What it is |
+|---|---|
+| `position` | Where the car is (from `platform/location`), drawn as a puck. |
+| `heading` | Which way the car heads, in degrees from north. |
+| `follow` | Whether the map keeps the car in the middle (default `true`), turned so that its heading is up. |
+| `center` | Where the map looks when it doesn't follow the car. |
+| `zoom` | How near, as web maps' zoom levels: 10 a city, 15 streets (default), 18 buildings. |
+| `route` | The route ahead, a line through its points. |
+| `markers` | Pins (`car.Marker(at:, title:, color:)`). |
+| `night` | `true` night's colors, `false` day's; left out, the car's, which follow its headlights. |
+| `tiles` | The map's tiles, a URL with `{z}`, `{x}` and `{y}`: on Android Auto, OpenStreetMap's by default; on CarPlay, Apple Maps by default, and a URL's tiles instead. |
+
+The car sits in the middle of what the guidance leaves visible. The
+platform gives the map its buttons: zoom in and out, pan (CarPlay's pan
+arrows, Android Auto's pan mode and its touch screen's drag and pinch),
+and recenter. Once the driver moves the map it stays where they took
+it, and recenter brings it back, or the app's own move does (another
+`center`, `zoom` or `follow`). `actions` are the app's buttons beside
+the map (two on each side of CarPlay's bar; four in Android Auto's
+action strip).
+
+On CarPlay the map is Apple Maps (MapKit), in the CarPlay window under
+the `CPMapTemplate`. Android Auto has no map view for the car's screen,
+so `platform/car` draws one there: map tiles (OpenStreetMap's, kept on
+the device for a week and attributed on the map, as its tile policy
+asks), the route, the pins and the car, darkened at night. For an app
+with many users, use a tile server of your own or a provider's
+(`tiles:`): OpenStreetMap's servers are for light use.
+
+### Routes to choose
+
+`preview` shows routes to a destination over the map before a trip: a
+`car.Preview(destination:, at:, routes:, start:)`, each route a
+`car.Route(title:, detail:, distance:, time:, path:, run:)`. The car
+lists them, draws the one the driver highlights, and runs its `run`
+when the driver starts it; the app then sets `trip`. `start` is the
+start button's title (left out: CarPlay's own; on Android Auto, the
+route's title with an arrow). CarPlay shows them as `CPTrip`'s route
+choices, Android Auto as a `RoutePreviewNavigationTemplate`.
+
+### Guidance
+
+While `trip` is set, the car guides the driver: a
+`car.Trip(destination:, maneuvers:, distance:, time:, rerouting:,
+stop:)`. Its `maneuvers` are the turns ahead, the next first, each a
+`car.Maneuver(instruction:, turn:, road:, distance:, time:, exit:)`:
+what's said ("Turn right onto Main St"), its arrow (`turn`: `.left`,
+`.slightRight`, `.uTurn`, `.roundabout` with its `exit`, `.arrive` and
+the rest), and how far and how long until it. `distance` and `time` are
+what's left to the destination; the car says when the car arrives.
+Update them as the car drives: the platform changes what shows in
+place.
+
+- `rerouting: true` says a new route is coming, instead of the turns.
+- `stop` runs when the car ends the trip itself: another navigation app
+  started, or the driver ended it from the car. Stop guiding then
+  (`trip` none).
+
+On CarPlay a trip is a `CPNavigationSession` (its `CPManeuver`s and
+`CPTravelEstimates`, the instrument cluster's too); on Android Auto, a
+`NavigationTemplate`'s routing info and travel estimate, and the trip
+the `NavigationManager` tells the car.
+
+### Alerts
+
+`car.alert` shows an alert over the map now, as navigation apps say
+what's ahead:
+
+```asuka
+let close = car.alert(
+  title: "Traffic ahead",
+  detail: "10 min slower",
+  symbol: "exclamationmark.triangle",
+  actions: [.button(title: "Reroute", run: () => reroute())],
+  duration: 8s,
+  onDismiss: () => {},
+)
+```
+
+It goes when its time is up, or when the driver chooses a button, which
+runs its `run`; going without one runs `onDismiss`. Two buttons at most;
+none, an OK. A new alert replaces the one showing, and the function
+`car.alert` returns takes it away. CarPlay shows a `CPNavigationAlert`;
+Android Auto an `Alert` (Car App API level 5; before, a toast of the
+title).
+
+`examples/navigation-car` drives a simulated car through Tokyo with
+guidance, on CarPlay and Android Auto.
+
 ## Categories: asuka.toml's [car]
 
 A car shows only the apps of the categories its platform allows, each
@@ -166,6 +322,7 @@ with its own templates, and Apple and Google review each app's category.
 | `category` | CarPlay | Android Auto |
 |---|---|---|
 | `audio` | Audio (`com.apple.developer.carplay-audio`) | Media: a media browser |
+| `navigation` | Navigation (`com.apple.developer.carplay-maps`) | Navigation |
 | `communication` | Communication | Messaging |
 | `charging` | EV charging | Points of interest |
 | `parking` | Parking | Points of interest |
@@ -177,8 +334,7 @@ with its own templates, and Apple and Google review each app's category.
 | `weather` | (none) | Weather |
 
 `minCarApiLevel` is the Car App API level the app's templates need on
-Android Auto (default 1; tabs need 6). Navigation apps draw their own
-map on the car's screen, which `platform/car` doesn't do.
+Android Auto (default 1; tabs need 6, a navigation app's alerts 5).
 
 What each platform needs follows from the category:
 
@@ -189,7 +345,10 @@ What each platform needs follows from the category:
   signed build without it says so. A simulator build has it anyway.
 - **Android**: the Car App Library's `CarAppService` with the
   category, Android Auto's `automotive_app_desc.xml`, and the Car App
-  API level (an audio app's: its media browser instead). A debug build
+  API level (an audio app's: its media browser instead). A navigation
+  app asks too for the permissions to draw on the car's screen and use
+  the navigation templates (`androidx.car.app.ACCESS_SURFACE`,
+  `androidx.car.app.NAVIGATION_TEMPLATES`). A debug build
   shows on any car host, the Desktop Head Unit's too; a release, on the
   car hosts Google lists. Google Play reviews an app's car category
   before it reaches cars.
@@ -207,11 +366,13 @@ doesn't build.
   one for an iPhone connected to the Mac.
 - **Android Auto**: the Desktop Head Unit (the Android SDK's
   `extras;google;auto`) shows a car's screen on the computer for a
-  phone or emulator with the Android Auto app: in Android Auto's
-  settings, tap its version ten times for its developer settings, turn
-  on Unknown sources (an app not from Google Play) and start the head
-  unit server, then `adb forward tcp:5277 tcp:5277` and run
-  `desktop-head-unit`.
+  phone with the Android Auto app (the emulator's system images don't
+  have it, so use a phone): in Android Auto's settings, tap its version
+  ten times for its developer settings, turn on Unknown sources (an app
+  not from Google Play) and start the head unit server, then
+  `adb forward tcp:5277 tcp:5277` and run `desktop-head-unit`. A
+  navigation app's map shows there too; the head unit's touch screen
+  pans and pinches it.
 
 ## Testing
 
@@ -240,9 +401,18 @@ test "reserving a charger" {
 - `c.titles()` are the titles of the templates shown, the root first;
   `c.title()` the top one's.
 - `c.texts()` is what the top template shows: its rows', cells' and
-  places' titles, its fields as `"title: detail"`, its message, its
+  places' titles, its fields as `"title: detail"`, a navigation map's
+  routes' titles and its trip's instructions, its message, its
   buttons'.
 - `c.select(title)` chooses what has that title on the top template
   (on a tab bar, a tab's), and throws when nothing there does, or it's
   disabled.
 - `c.back()` is the car's back button.
+- `c.map()` is the navigation map the root shows, as the app gave it
+  (none: the root isn't `.navigation`).
+- `c.alert()` is what the alert showing says: its title, its detail,
+  its buttons' titles (`[]`: none). `c.select(title)` chooses its
+  buttons first, and `c.dismissAlert()` lets it go without one, as when
+  its time is up.
+- `c.endTrip()` is the car ending the trip itself: the trip's `stop`
+  runs.

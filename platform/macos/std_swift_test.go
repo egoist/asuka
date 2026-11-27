@@ -50,12 +50,11 @@ func TestStdSwift(t *testing.T) {
 			}
 			srcs, _ := filepath.Glob(filepath.Join(pkg, nativegen.SwiftDir, "*.swift"))
 			mod := strings.ToUpper(name[:1]) + name[1:] + "Native"
-			// The macOS the package says it needs.
-			macos := "11"
+			// The macOS the package says it needs, where it says it builds
+			// there (platform/car is iOS's alone: CarPlay).
 			if m := regexp.MustCompile(`\.macOS\("([0-9.]+)"\)`).FindStringSubmatch(string(manifest)); m != nil {
-				macos = m[1]
+				swiftc(t, append([]string{"-target", arch + "-apple-macos" + m[1], "-module-name", mod, "-I", mac, "-I", filepath.Join("Sources", "CAsuka", "include"), "-wmo", "-c", "-o", filepath.Join(dir, name+".o")}, srcs...)...)
 			}
-			swiftc(t, append([]string{"-target", arch + "-apple-macos" + macos, "-module-name", mod, "-I", mac, "-I", filepath.Join("Sources", "CAsuka", "include"), "-wmo", "-c", "-o", filepath.Join(dir, name+".o")}, srcs...)...)
 			// iOS where the package says it builds there (std/watch is
 			// the Mac's alone).
 			if simSDK != "" && strings.Contains(string(manifest), ".iOS(") {
@@ -210,7 +209,11 @@ func TestStdSwiftViews(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		manifest, _ := os.ReadFile(filepath.Join(pkg, "Package.swift"))
 		t.Run(name+"/macos", func(t *testing.T) {
+			if !strings.Contains(string(manifest), ".macOS(") {
+				t.Skip("the package builds for iOS alone")
+			}
 			exe := filepath.Join(dir, name+"-macos")
 			args := []string{"-target", arch + "-apple-macos13", "-module-name", mod, "-I", mac, "-I", filepath.Join("Sources", "CAsuka", "include"), "-wmo", filepath.Join(mac, "Asuka.o"), "-o", exe}
 			swiftc(t, append(append(args, hostLink(t, dir, "darwin")...), srcs...)...)

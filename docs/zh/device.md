@@ -2506,7 +2506,7 @@ fn offer(notes: [Note]) {
 
 ## 车机屏幕：platform/car
 
-`platform/car` 把应用显示在汽车的屏幕上，也就是 CarPlay 和 Android Auto：显示的不是应用的视图，而是平台的模板（列表、网格、标签页、信息、地图上的地点、正在播放），用值来描述，跟随应用的状态，并说明选中其中的行时做什么。`asuka.toml` 的 `[car]` 说明应用的类别，CLI 据此加上 CarPlay 的 entitlement 和场景，以及 Android Auto 的服务。详见[车机屏幕](car.md)。
+`platform/car` 把应用显示在汽车的屏幕上，也就是 CarPlay 和 Android Auto：显示的不是应用的视图，而是平台的模板（列表、网格、标签页、信息、地图上的地点、正在播放、导航应用的地图及其导航提示），用值来描述，跟随应用的状态，并说明选中其中的行时做什么。`asuka.toml` 的 `[car]` 说明应用的类别，CLI 据此加上 CarPlay 的 entitlement 和场景，以及 Android Auto 的服务。详见[车机屏幕](car.md)。
 
 ```asuka check
 import platform/car

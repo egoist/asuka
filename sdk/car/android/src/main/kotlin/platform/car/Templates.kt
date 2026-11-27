@@ -3,7 +3,8 @@
 // A stack shown changes the screens on the car: the ones it has keep
 // (their templates made again, which the car takes as a refresh), the
 // ones gone are popped, the new ones pushed. The car's back button pops
-// one, and Asuka hears how many are left.
+// one, and Asuka hears how many are left. A navigation app's root is its
+// map, drawn on the car's surface (Navigation.kt, CarMap.kt).
 package platform.car
 
 import android.content.Intent
@@ -60,10 +61,15 @@ class AsukaCarService : CarAppService() {
 class AsukaCarSession : Session() {
     private val screens = ArrayList<TemplateScreen>()
 
+    /** A navigation app's map, trip and alerts, once its root is .navigation. */
+    internal var navigator: CarNavigator? = null
+        private set
+
     override fun onCreateScreen(intent: Intent): Screen {
         CarHub.start(carContext)
         lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
             override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) {
+                navigator?.end()
                 if (CarHub.session === this@AsukaCarSession) CarHub.session = null
             }
         })
@@ -93,11 +99,32 @@ class AsukaCarSession : Session() {
 
     private fun placeholder() = Shown(id = 1, kind = Kind.LIST, title = carContext.applicationInfo.loadLabel(carContext.packageManager).toString())
 
+    /** Shows an alert over the map (none: it's gone at once). */
+    internal fun alert(a: ShownAlert) {
+        val n = navigator
+        if (n != null) n.present(a) else CarHub.answered(a.id, -1)
+    }
+
+    internal fun dismiss(id: Long) {
+        navigator?.dismiss(id)
+    }
+
     /** Shows Asuka's stack: the screens kept are made again, the ones gone popped, the new ones pushed. */
     fun render() {
         val sm = carContext.getCarService(androidx.car.app.ScreenManager::class.java)
         if (screens.isEmpty()) return
         val want = CarHub.stack.ifEmpty { listOf(placeholder()) }
+        val was = navigator
+        if (want[0].kind == Kind.NAVIGATION) {
+            val n = navigator ?: CarNavigator(carContext).also {
+                navigator = it
+                // The driver moved the map, or came back: the recenter action follows.
+                it.map.moved = { screens.firstOrNull()?.invalidate() }
+            }
+            n.follow(want[0])
+            if (n !== was) screens[0].invalidate() // its template now has the trip
+
+        }
         screens[0].update(want[0])
         var i = 1
         while (i < screens.size && i < want.size && screens[i].shown.id == want[i].id && screens[i].shown.kind == want[i].kind) {
@@ -184,6 +211,7 @@ class TemplateScreen(context: CarContext, shown: Shown) : Screen(context) {
             for (a in s.actions.take(2)) addAction(action(a))
         }.build()
         Kind.PLACES -> if (inTab) list(s.copy(sections = listOf(ShownSection(items = s.places.map { ShownItem(run = it.run, title = it.title, detail = it.detail) }))), true) else places(s)
+        Kind.NAVIGATION -> if (inTab) list(s, true) else navigationTemplate(s, if (root) CarHub.session?.navigator else null, root)
         Kind.NOW_PLAYING -> MessageTemplate.Builder(carContext.applicationInfo.loadLabel(carContext.packageManager)).setHeaderAction(Action.BACK).build()
         else -> list(s, inTab)
     }
@@ -239,16 +267,7 @@ class TemplateScreen(context: CarContext, shown: Shown) : Screen(context) {
         setItemList(list.build())
     }.build()
 
-    /** meters, in the units of the car's country: miles where roads are signed in them. */
-    private fun distance(meters: Double): Distance {
-        val miles = carContext.resources.configuration.locales[0].country in setOf("US", "GB", "LR", "MM")
-        return when {
-            miles && meters < 300 -> Distance.create(meters / 0.3048, Distance.UNIT_FEET)
-            miles -> Distance.create(meters / 1609.344, Distance.UNIT_MILES)
-            meters < 1000 -> Distance.create(meters, Distance.UNIT_METERS)
-            else -> Distance.create(meters / 1000, Distance.UNIT_KILOMETERS)
-        }
-    }
+    private fun distance(meters: Double): Distance = carDistance(carContext, meters)
 
     private fun tabs(s: Shown): Template {
         val tabs = s.tabs
@@ -283,7 +302,7 @@ class TemplateScreen(context: CarContext, shown: Shown) : Screen(context) {
         return b.build()
     }
 
-    private fun action(a: ShownAction): Action = Action.Builder().apply {
+    internal fun action(a: ShownAction): Action = Action.Builder().apply {
         val sym = if (a.symbol.isNotEmpty()) CarImages.symbol(carContext, a.symbol) else null
         if (a.title.isNotEmpty() || sym == null) setTitle(a.title.ifEmpty { " " })
         if (sym != null) setIcon(icon(sym, tint = true))

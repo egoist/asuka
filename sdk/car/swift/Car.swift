@@ -6,6 +6,9 @@
 // changing in place the ones it shows (by their ids), pushing the ones
 // it doesn't and popping the ones gone. What the driver chooses goes back
 // as its handler's number; the car's back button, as how many are left.
+// A navigation app's scene comes with the CarPlay window too, whose root
+// view controller is the map under its CPMapTemplate (Navigation.swift,
+// CarMap.swift).
 import Asuka
 import CarPlay
 import Foundation
@@ -20,6 +23,15 @@ public final class AsukaCarSceneDelegate: UIResponder, CPTemplateApplicationScen
     }
 
     public func templateApplicationScene(_ scene: CPTemplateApplicationScene, didDisconnectInterfaceController controller: CPInterfaceController) {
+        MainActor.assumeIsolated { CarHub.shared.disconnect(controller) }
+    }
+
+    // A navigation app's (the maps entitlement): the window its map draws in.
+    public func templateApplicationScene(_ scene: CPTemplateApplicationScene, didConnect controller: CPInterfaceController, to window: CPWindow) {
+        MainActor.assumeIsolated { CarHub.shared.connect(controller, window: window) }
+    }
+
+    public func templateApplicationScene(_ scene: CPTemplateApplicationScene, didDisconnect controller: CPInterfaceController, from window: CPWindow) {
         MainActor.assumeIsolated { CarHub.shared.disconnect(controller) }
     }
 }
@@ -39,6 +51,12 @@ private struct Entry {
     private var connectedWatchers: [UUID: (Bool) -> Void] = [:]
     private var choseWatchers: [UUID: (Int) -> Void] = [:]
     private var backWatchers: [UUID: (Int) -> Void] = [:]
+    private var answeredWatchers: [UUID: (Int, Int) -> Void] = [:]
+    /// A navigation app's: the CarPlay window, its map, and the root's
+    /// map template.
+    private var window: CPWindow?
+    private(set) lazy var mapController = CarMapController()
+    private(set) var nav: CarNavigation?
     private var images: [String: UIImage] = [:]
     private var loading: Set<String> = []
     // The places shown, by their template, for its delegate.
@@ -53,10 +71,16 @@ private struct Entry {
 
     // MARK: The scene
 
-    func connect(_ c: CPInterfaceController) {
+    func connect(_ c: CPInterfaceController, window w: CPWindow? = nil) {
         controller = c
         c.delegate = self
         entries = []
+        nav = nil
+        window = w
+        if let w {
+            mapController = CarMapController()
+            w.rootViewController = mapController
+        }
         // The car launched the app: its code starts now, without a screen
         // on the phone (a window scene that comes later shows it).
         AsukaRuntime.shared.startHeadless()
@@ -69,6 +93,9 @@ private struct Entry {
         controller = nil
         entries = []
         placeRuns = [:]
+        nav = nil
+        window?.rootViewController = nil
+        window = nil
         for w in connectedWatchers.values { w(false) }
     }
 
@@ -89,13 +116,28 @@ private struct Entry {
         }
     }
 
-    func events(chose: @escaping (Int) -> Void, back: @escaping (Int) -> Void) async throws {
+    func alert(alert: ShownAlert) throws {
+        if let n = nav, controller != nil {
+            n.present(alert)
+        } else {
+            // No map to show it over: it goes at once.
+            answered(alert.id, -1)
+        }
+    }
+
+    func dismiss(id: Int) throws {
+        nav?.dismissAlert(id)
+    }
+
+    func events(chose: @escaping (Int) -> Void, back: @escaping (Int) -> Void, answered: @escaping (Int, Int) -> Void) async throws {
         let id = UUID()
         choseWatchers[id] = chose
         backWatchers[id] = back
+        answeredWatchers[id] = answered
         defer {
             choseWatchers[id] = nil
             backWatchers[id] = nil
+            answeredWatchers[id] = nil
         }
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 3_600_000_000_000)
@@ -105,6 +147,10 @@ private struct Entry {
     private func chose(_ n: Int) {
         guard n > 0 else { return }
         for w in choseWatchers.values { w(n) }
+    }
+
+    private func answered(_ id: Int, _ n: Int) {
+        for w in answeredWatchers.values { w(id, n) }
     }
 
     // MARK: Showing
@@ -121,8 +167,9 @@ private struct Entry {
         guard let c = controller else { return }
         var want = stack
         if want.isEmpty || want[0].kind == .nowPlaying {
-            // Nothing yet (the app's Screen isn't mounted): its name, until it is.
-            want = [Shown(id: 1, kind: .list, title: appName)] + want.dropFirst()
+            // Nothing yet (the app's Screen isn't mounted): its name, until
+            // it is; a navigation app's map (its root must be one).
+            want = [window != nil ? Shown(id: 1, kind: .navigation) : Shown(id: 1, kind: .list, title: appName)] + want.dropFirst()
         }
         if let root = entries.first, compatible(root.shown, want[0]), update(root.template, root.shown, want[0]) {
             entries[0].shown = want[0]
@@ -202,6 +249,10 @@ private struct Entry {
             p.title = now.title
             p.setPointsOfInterest(points(now, p), selectedIndex: NSNotFound)
             return true
+        case (let m as CPMapTemplate, .navigation):
+            guard let n = nav, n.template === m else { return false }
+            n.update(now)
+            return true
         case (_, .nowPlaying):
             return true
         default:
@@ -237,6 +288,13 @@ private struct Entry {
             return p
         case .nowPlaying:
             return CPNowPlayingTemplate.shared
+        case .navigation where s.id == 1:
+            let n = CarNavigation(s, map: mapController, chose: { [weak self] in self?.chose($0) }, answered: { [weak self] in self?.answered($0, $1) })
+            nav = n
+            return n.template
+        case .navigation:
+            // A map goes at the root only.
+            return CPListTemplate(title: s.title, sections: [])
         default:
             let l = CPListTemplate(title: s.title, sections: sections(s))
             l.trailingNavigationBarButtons = barButtons(s.actions)
@@ -248,7 +306,7 @@ private struct Entry {
     /// A tab bar's tab: its template, with the tab's title and symbol.
     private func tab(_ s: Shown) -> CPTemplate {
         var inner = s
-        if inner.kind == .tabs || inner.kind == .nowPlaying { inner.kind = .list } // a tab bar holds neither
+        if inner.kind == .tabs || inner.kind == .nowPlaying || inner.kind == .navigation { inner.kind = .list } // a tab bar holds neither
         let t = make(inner)
         t.tabTitle = s.text
         t.tabImage = UIImage(systemName: s.symbol.isEmpty ? "circle" : s.symbol)

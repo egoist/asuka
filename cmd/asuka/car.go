@@ -18,7 +18,10 @@ import (
 // the category's intent filter (an audio app's, its MediaBrowserService:
 // Android Auto shows media apps with its own player), the
 // automotive_app_desc.xml that says what the app uses, and the Car App
-// API level its templates need.
+// API level its templates need. A navigation app draws its own map on
+// the car's screen: CarPlay's maps entitlement, and on Android the
+// permissions to draw on the car's surface and use the navigation
+// templates.
 
 // carPkg is platform/car's import path.
 const carPkg = "platform/car"
@@ -48,13 +51,16 @@ type carCategory struct {
 	ios, android string
 }
 
-// carCategories are [car]'s categories. EV charging and parking are
+// carCategories are [car]'s categories. Navigation is a map the app
+// draws (CarPlay's maps entitlement, Android Auto's NAVIGATION). EV
+// charging and parking are
 // Android Auto's points of interest (its own charging and parking
 // categories are deprecated for POI); quick food ordering and driving
 // tasks are CarPlay's only, and the Internet of things, weather and
 // points of interest in general Android Auto's only.
 var carCategories = map[string]carCategory{
 	"audio":           {"audio", "media"},
+	"navigation":      {"maps", "NAVIGATION"},
 	"communication":   {"communication", "MESSAGING"},
 	"charging":        {"charging", "POI"},
 	"parking":         {"parking", "POI"},
@@ -79,9 +85,6 @@ func (k *carConfig) check() error {
 				names = append(names, n)
 			}
 			sort.Strings(names)
-			if k.Category == "navigation" {
-				return fmt.Errorf("category navigation: a navigation app draws its own map on the car's screen, which platform/car doesn't do (want one of %s)", strings.Join(names, ", "))
-			}
 			return fmt.Errorf("category %q (want one of %s)", k.Category, strings.Join(names, ", "))
 		}
 	}
@@ -126,12 +129,23 @@ func (c *appConfig) carExtras(deps []string) {
 		c.carScene = true
 	}
 	c.carAndroid = carCategories[c.Car.Category].android
+	if c.carAndroid == "NAVIGATION" {
+		// Its map, drawn on the car's surface, under the navigation
+		// templates.
+		for _, p := range carNavigationPermissions {
+			c.addPermission(p)
+		}
+	}
 	for _, x := range c.carApplication() {
 		if !slices.Contains(c.androidApp, x) {
 			c.androidApp = append(c.androidApp, x)
 		}
 	}
 }
+
+// carNavigationPermissions are what an Android Auto navigation app asks
+// for: its navigation templates, and the car's surface to draw its map on.
+var carNavigationPermissions = []string{"androidx.car.app.NAVIGATION_TEMPLATES", "androidx.car.app.ACCESS_SURFACE"}
 
 // carSceneDelegate is platform/car's CarPlay scene delegate, by its
 // Objective-C name (sdk/car/swift/Car.swift).

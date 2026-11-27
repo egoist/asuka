@@ -126,6 +126,44 @@ func TestCarTemplates(t *testing.T) {
 	}
 }
 
+// A navigation app: CarPlay's maps entitlement and its scene; on
+// Android, the CarAppService with the NAVIGATION category and the
+// permissions for its map on the car's surface and its templates, once
+// each however often it's asked.
+func TestCarNavigation(t *testing.T) {
+	c := carApp(t, "[car]\ncategory = \"navigation\"\nminCarApiLevel = 5\n", "car")
+	if c.entitlements["com.apple.developer.carplay-maps"] != true {
+		t.Errorf("entitlements: %v", c.entitlements)
+	}
+	if !strings.Contains(c.entitlementsFor["com.apple.developer.carplay-maps"], "CarPlay's navigation apps") {
+		t.Errorf("what the entitlement is for: %q", c.entitlementsFor["com.apple.developer.carplay-maps"])
+	}
+	if !strings.Contains(plistKeys(c.plistExtras()), "<string>AsukaCarSceneDelegate</string>") {
+		t.Error("no CarPlay scene")
+	}
+	c.permissionsFor([]string{carPkg})
+	m := c.androidManifest(false)
+	for _, want := range []string{
+		`<service android:name="platform.car.AsukaCarService" android:exported="true">`,
+		`<category android:name="androidx.car.app.category.NAVIGATION" />`,
+		`<uses-permission android:name="androidx.car.app.NAVIGATION_TEMPLATES" />`,
+		`<uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />`,
+		`<meta-data android:name="androidx.car.app.minCarApiLevel" android:value="5" />`,
+	} {
+		if strings.Count(m, want) != 1 {
+			t.Errorf("the manifest has %d of %s:\n%s", strings.Count(m, want), want, m)
+		}
+	}
+	if !strings.Contains(c.automotiveAppDesc(), `<uses name="template" />`) {
+		t.Error(c.automotiveAppDesc())
+	}
+	// Another category asks for neither permission.
+	c = carApp(t, "[car]\ncategory = \"parking\"\n", "car")
+	if m := c.androidManifest(false); strings.Contains(m, "ACCESS_SURFACE") || strings.Contains(m, "NAVIGATION_TEMPLATES") {
+		t.Errorf("a parking app draws no map:\n%s", m)
+	}
+}
+
 // A category one platform has no apps of: the other gets nothing.
 func TestCarOnePlatform(t *testing.T) {
 	c := carApp(t, "[car]\ncategory = \"quickFood\"\n", "car")
@@ -172,7 +210,6 @@ func TestCarOff(t *testing.T) {
 func TestCarConfigErrors(t *testing.T) {
 	for toml, want := range map[string]string{
 		"[car]\ncategory = \"music\"\n":                     `category "music" (want one of audio, charging,`,
-		"[car]\ncategory = \"navigation\"\n":                "draws its own map",
 		"[car]\ncategory = \"audio\"\nminCarApiLevel = 9\n": "minCarApiLevel 9 (want 1 to 7)",
 	} {
 		dir := t.TempDir()

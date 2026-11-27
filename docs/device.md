@@ -3710,7 +3710,7 @@ the same URL. [`examples/notes`](../examples/notes) does this.
 
 `platform/car` shows the app on a car's screen, CarPlay's and Android
 Auto's: not its views, but the platforms' templates (lists, grids,
-tabs, facts, places on a map, Now Playing), described as values that
+tabs, facts, places on a map, Now Playing, a navigation app's map with its guidance), described as values that
 follow the app's state, with what choosing their rows does.
 `asuka.toml`'s `[car]` says the app's category, from which the CLI adds
 the CarPlay entitlement and scene and Android Auto's service. See [Car

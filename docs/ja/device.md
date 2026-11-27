@@ -2506,7 +2506,7 @@ fn offer(notes: [Note]) {
 
 ## 車の画面：platform/car
 
-`platform/car` はアプリを車の画面、つまり CarPlay と Android Auto に表示します。表示されるのはアプリのビューではなくプラットフォームのテンプレート（リスト、グリッド、タブ、情報、地図上の場所、再生中の表示）で、値として記述し、アプリの状態に追従させ、行を選んだときに何をするかを指定します。`asuka.toml` の `[car]` にアプリのカテゴリを書くと、CLI がそこから CarPlay の entitlement とシーン、Android Auto のサービスを追加します。詳しくは[車の画面](car.md)を参照してください。
+`platform/car` はアプリを車の画面、つまり CarPlay と Android Auto に表示します。表示されるのはアプリのビューではなくプラットフォームのテンプレート（リスト、グリッド、タブ、情報、地図上の場所、再生中の表示、ナビゲーションアプリの地図とその案内）で、値として記述し、アプリの状態に追従させ、行を選んだときに何をするかを指定します。`asuka.toml` の `[car]` にアプリのカテゴリを書くと、CLI がそこから CarPlay の entitlement とシーン、Android Auto のサービスを追加します。詳しくは[車の画面](car.md)を参照してください。
 
 ```asuka check
 import platform/car

@@ -1,0 +1,297 @@
+// Car Navigation drives a simulated car through Tokyo on a car's screen
+// (platform/car's .navigation): CarPlay draws Apple Maps under its map
+// template, Android Auto a map of OpenStreetMap's tiles on the car's
+// screen, and the app gives what they show as values: where the car is
+// and which way it heads, the route, the destination's pin. Choose a
+// destination, then a route, and the car drives it with turn-by-turn
+// guidance, a speed camera's alert on the way. The app routes (here,
+// routes made up of a few points); the platform shows.
+//
+//   asuka dev --platform ios examples/navigation-car      # Xcode's CarPlay Simulator, for an iPhone
+//   asuka dev --platform android examples/navigation-car  # Android Auto's Desktop Head Unit
+
+import platform/car
+import std/math
+
+struct Destination {
+  name: string
+  detail: string
+  at: car.Coordinate
+  /// The routes there: each a title and the points it goes through.
+  routes: [(string, [car.Coordinate])]
+}
+
+let start = car.Coordinate(lat: 35.6812, lng: 139.7671)
+
+let destinations = [
+  Destination(name: "Ginza", detail: "Shopping street", at: car.Coordinate(lat: 35.6717, lng: 139.7650), routes: [
+    ("Fastest", [start, car.Coordinate(lat: 35.6790, lng: 139.7690), car.Coordinate(lat: 35.6745, lng: 139.7690), car.Coordinate(lat: 35.6717, lng: 139.7650)]),
+    ("Quiet streets", [start, car.Coordinate(lat: 35.6812, lng: 139.7625), car.Coordinate(lat: 35.6740, lng: 139.7625), car.Coordinate(lat: 35.6717, lng: 139.7650)]),
+  ]),
+  Destination(name: "Akihabara", detail: "Electric Town", at: car.Coordinate(lat: 35.6984, lng: 139.7731), routes: [
+    ("Fastest", [start, car.Coordinate(lat: 35.6880, lng: 139.7700), car.Coordinate(lat: 35.6950, lng: 139.7700), car.Coordinate(lat: 35.6984, lng: 139.7731)]),
+  ]),
+]
+
+/// About how far apart two places are, in meters (near enough each other
+/// for a flat map).
+fn meters(a: car.Coordinate, b: car.Coordinate) -> float {
+  let dx = (b.lng - a.lng) * math.cos(a.lat * math.pi / 180) * 111320
+  let dy = (b.lat - a.lat) * 110540
+  return math.sqrt(dx * dx + dy * dy)
+}
+
+/// The heading from a to b, in degrees clockwise from north.
+fn heading(a: car.Coordinate, b: car.Coordinate) -> float {
+  let dx = (b.lng - a.lng) * math.cos(a.lat * math.pi / 180)
+  let dy = b.lat - a.lat
+  let h = math.atan2(dx, dy) * 180 / math.pi
+  return if h < 0 { h + 360 } else { h }
+}
+
+fn length(path: [car.Coordinate]) -> float {
+  var total = 0.0
+  for i in 1..<path.count() {
+    total += meters(path[i - 1], path[i])
+  }
+  return total
+}
+
+/// The turn at path's point i: left or right, by how its legs bend.
+fn turnAt(path: [car.Coordinate], i: int) -> car.Turn {
+  var d = heading(path[i], path[i + 1]) - heading(path[i - 1], path[i])
+  if d > 180 {
+    d -= 360
+  }
+  if d < -180 {
+    d += 360
+  }
+  if d > 120 {
+    return .sharpRight
+  }
+  if d > 30 {
+    return .right
+  }
+  if d < -120 {
+    return .sharpLeft
+  }
+  if d < -30 {
+    return .left
+  }
+  return .straight
+}
+
+// The car drives at 50 km/h.
+let speed = 14.0
+
+component Navigation {
+  state chosen: Destination? = none
+  state routeIndex = 0
+  state driving = false
+  state traveled = 0.0
+  state warned = false
+  state arrived = false
+  // Paused, the car goes only as far as Skip takes it.
+  state paused = false
+
+  let path = if let d = chosen { d.routes[routeIndex].1 } else { [start] }
+  let total = length(path)
+
+  /// Where the car is on the path, the leg it's on, and its heading.
+  fn where() -> (car.Coordinate, int, float) {
+    var left = traveled
+    for i in 1..<path.count() {
+      let leg = meters(path[i - 1], path[i])
+      if left <= leg {
+        let f = if leg > 0 { left / leg } else { 0.0 }
+        let a = path[i - 1]
+        let b = path[i]
+        return (car.Coordinate(lat: a.lat + (b.lat - a.lat) * f, lng: a.lng + (b.lng - a.lng) * f), i, heading(a, b))
+      }
+      left -= leg
+    }
+    let n = path.count()
+    return (path[n - 1], n - 1, if n > 1 { heading(path[n - 2], path[n - 1]) } else { 0.0 })
+  }
+
+  fn go(i: int) {
+    routeIndex = i
+    traveled = 0
+    warned = false
+    arrived = false
+    driving = true
+  }
+
+  fn stop() {
+    driving = false
+    chosen = none
+    traveled = 0
+  }
+
+  /// The car drives on by m meters: an alert halfway, and at the end it's there.
+  fn drive(m: float) {
+    traveled = min(traveled + m, total)
+    if !warned && traveled >= total / 2 {
+      warned = true
+      car.alert(title: "Speed camera ahead", detail: "Limit 40 km/h", symbol: "exclamationmark.triangle", duration: 6s)
+    }
+    if traveled >= total {
+      arrived = true
+    }
+  }
+
+  fn maneuvers(name: string) -> [car.Maneuver] {
+    let (_, leg, _) = where()
+    var out: [car.Maneuver] = []
+    var ahead = 0.0
+    for i in leg..<path.count() {
+      ahead += if i == leg { meters(where().0, path[i]) } else { meters(path[i - 1], path[i]) }
+      if i == path.count() - 1 {
+        out.push(car.Maneuver(instruction: "Arrive at {name}", turn: .arrive, distance: ahead, time: (ahead / speed) * 1s))
+      } else {
+        let t = turnAt(path, i)
+        if t != .straight {
+          out.push(car.Maneuver(instruction: if t == .right || t == .sharpRight { "Turn right" } else { "Turn left" }, turn: t, distance: ahead, time: (ahead / speed) * 1s))
+        }
+      }
+    }
+    return out
+  }
+
+  fn preview() -> car.Preview? {
+    if let d = chosen {
+      if !driving {
+        var routes: [car.Route] = []
+        for (i, r) in d.routes.enumerated() {
+          let len = length(r.1)
+          routes.push(car.Route(title: r.0, detail: d.detail, distance: len, time: (len / speed) * 1s, path: r.1, run: () => go(i)))
+        }
+        return car.Preview(destination: d.name, at: d.at, routes: routes)
+      }
+    }
+    return none
+  }
+
+  fn trip() -> car.Trip? {
+    if let d = chosen {
+      if driving {
+        let left = total - traveled
+        return car.Trip(destination: d.name, maneuvers: maneuvers(d.name), distance: left, time: (left / speed) * 1s, stop: () => stop())
+      }
+    }
+    return none
+  }
+
+  fn places() -> car.Template = .list(
+    title: "Where to?",
+    items: destinations.map(d => car.Item(title: d.name, detail: d.detail, symbol: "mappin", run: () => {
+      chosen = d
+      routeIndex = 0
+      car.popToRoot()
+    })),
+  )
+
+  fn actions() -> [Action] {
+    if driving {
+      return [.button(title: "End", icon: "xmark", run: () => stop())]
+    }
+    if chosen.isSome() {
+      return [.button(title: "Cancel", run: () => { chosen = none })]
+    }
+    return [.button(title: "Where to?", icon: "magnifyingglass", run: () => car.push(() => places()))]
+  }
+
+  // The car drives on, a second at a time, while it's guided.
+  task(driving, paused) {
+    while driving && !paused && !arrived {
+      await sleep(1s)
+      drive(speed)
+    }
+  }
+
+  let here = where()
+
+  car.Screen {
+    root: .navigation(
+      map: car.Map(
+        center: start,
+        zoom: 16,
+        position: here.0,
+        heading: here.2,
+        follow: true,
+        route: if driving { path } else { [] },
+        markers: if let d = chosen { [car.Marker(at: d.at, title: d.name)] } else { [] },
+      ),
+      preview: preview(),
+      trip: trip(),
+      actions: actions(),
+    )
+  }
+
+  SafeArea {
+    padding: 24
+    gap: 12
+    Text("Car Navigation") { font: .title }
+    Text(if car.connected() { "On the car's screen" } else { "Connect a car: CarPlay or Android Auto" })
+    if let d = chosen {
+      Text(if arrived { "Arrived at {d.name}" } else if driving { "Driving to {d.name}: {math.round((total - traveled) / 10) * 10} m to go" } else { "Choosing a route to {d.name}" })
+      if !driving {
+        Button("Start the fastest route") { on press { go(0) } }
+      }
+      Button(if paused { "Drive on" } else { "Pause" }) { on press { paused = !paused } }
+      if driving {
+        Button("Skip 200 m") { on press { drive(200) } }
+        Button("End") { on press { stop() } }
+      }
+    } else {
+      for d in destinations {
+        Button("Go to {d.name}") { on press { chosen = d } }
+      }
+    }
+  }
+}
+
+app { Navigation() }
+
+test "choose a destination and a route on the car, then drive it" {
+  let c = car.fake()
+  let app = mount(Navigation())
+  c.connect()
+  await app.idle()
+  expect(c.texts() == ["Where to?"])
+  try c.select("Where to?")
+  await app.idle()
+  expect(c.titles() == ["", "Where to?"])
+  try c.select("Ginza")
+  await app.idle()
+  // The car drives only as the test says.
+  app.tap("Pause")
+  // The preview: its routes over the map, the pin at Ginza.
+  expect(c.titles() == ["Ginza"])
+  expect(c.texts() == ["Fastest", "Quiet streets", "Cancel"])
+  expect((c.map()?.markers.count() ?? 0) == 1)
+  try c.select("Quiet streets")
+  await app.idle()
+  // Guided: the turns ahead, the route drawn, the car followed.
+  expect(c.texts() == ["Turn left", "Turn left", "Arrive at Ginza", "End"])
+  if let m = c.map() {
+    expect(m.route.count() == 4 && m.follow)
+  }
+  // Halfway (the route's about 1.5 km): the speed camera's alert.
+  for _ in 0..<4 {
+    app.tap("Skip 200 m")
+  }
+  await app.idle()
+  expect(c.alert().first() == "Speed camera ahead")
+  c.dismissAlert()
+  for _ in 0..<6 {
+    app.tap("Skip 200 m")
+  }
+  await app.idle()
+  app.expect("Arrived at Ginza")
+  expect(c.texts() == ["Arrive at Ginza", "End"])
+  // The car ends the trip.
+  try c.endTrip()
+  await app.idle()
+  expect(c.texts() == ["Where to?"])
+}
