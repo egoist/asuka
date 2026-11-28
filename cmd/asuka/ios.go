@@ -424,6 +424,8 @@ func (t *iosToolchain) link(app *asukaApp, work, hostObj, lib string) (string, e
 		urls += "<key>UISupportedInterfaceOrientations~ipad</key><array><string>" + strings.Join(o, "</string><string>") + "</string></array>\n"
 	}
 	urls += app.cfg.plistLocalizationKeys()
+	// asuka.toml's ios.infoPlist, as a release has it.
+	urls += plistKeys(app.cfg.IOS.InfoPlist)
 	plist := fmt.Sprintf(infoPlist, app.bundleID, app.displayName(), app.displayName(), iosMin, devices, urls)
 	if err := os.WriteFile(filepath.Join(bundle, "Info.plist"), []byte(plist), 0o644); err != nil {
 		return "", err
@@ -527,6 +529,10 @@ func simulatorEntitlements(work string, cfg *appConfig) ([]string, error) {
 	}
 	for k, v := range cfg.entitlements {
 		m[k] = iCloudTeam(v, firstOf(cfg.IOS.Team, simulatorTeam))
+	}
+	// asuka.toml's own, with the simulator's team as the app's.
+	if err := mergeEntitlements(m, cfg.IOS.Entitlements, simulatorTeam); err != nil {
+		return nil, err
 	}
 	if cfg.IOS.StoreKit != "" {
 		// storekitd takes a StoreKit configuration only for an app

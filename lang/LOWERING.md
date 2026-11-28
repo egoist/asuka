@@ -166,7 +166,12 @@ same on every platform, and lowered as the constant case of the
 compile's platform (ir.Options.Platform; KSMALL, an int enum). `@debug`
 is checked as a `bool` and lowered as the compile's ir.Options.Debug
 (KSMALL 0 or 1): true for asuka dev, run and test (appbuild.Debug), false
-for build, publish and benches. Lowering folds what they decide
+for build, publish and benches. `@define("KEY", default)` (an AtExpr with
+Args) is checked against the build's values (check.Define: asuka.toml's
+`[defines]`, the variant's over them, compile.Options.Defines over
+those; compile's projectDefines), its value in Info.Defines, and lowered
+as that constant (KSTR, an int, KFLOAT, KSMALL); a bool's folds as
+`@debug` does. Lowering folds what they decide
 (lang/ir/fold.go) and lowers only what's taken:
 
 | Source | Lowered |

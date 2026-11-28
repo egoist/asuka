@@ -98,6 +98,7 @@ func (c *appConfig) clone() *appConfig {
 	d.entitlementsFor = maps.Clone(c.entitlementsFor)
 	d.IOS.Usage = maps.Clone(c.IOS.Usage)
 	d.IOS.InfoPlist = maps.Clone(c.IOS.InfoPlist)
+	d.IOS.Entitlements = maps.Clone(c.IOS.Entitlements)
 	d.iosTrue = slices.Clone(c.iosTrue)
 	d.hostFlags = slices.Clone(c.hostFlags)
 	d.derived = slices.Clone(c.derived)

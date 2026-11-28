@@ -13,7 +13,7 @@ import (
 
 	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/pkgs"
-	"github.com/egoist/asuka/internal/toml"
+	"github.com/egoist/asuka/lang/check"
 )
 
 // appConfig is an app's asuka.toml: what the stores and the platforms need
@@ -48,13 +48,30 @@ type appConfig struct {
 	// builds uploaded, and must grow with each (default 1).
 	Version string `json:"version"`
 	Build   int    `json:"build"`
-	// Icon is a square PNG, 1024×1024, without transparency for iOS.
-	Icon string `json:"icon"`
+	// Icon is a square PNG, 1024×1024, without transparency for iOS:
+	// asuka.toml's icon, or its icon.image (IconSpec).
+	Icon string `json:"-"`
+	// IconSpec is asuka.toml's icon: a PNG's path, or a table of the
+	// image and its layers and appearances (iconConfig).
+	IconSpec iconConfig `json:"icon"`
 	// AlternateIcons are the other icons the app may show
 	// (platform/appicon's set), by name: square PNGs, as Icon.
 	AlternateIcons map[string]string `json:"alternateIcons"`
 	// Orientations: portrait, landscape (default both).
 	Orientations []string `json:"orientations"`
+	// IDSuffix and VersionSuffix are a variant's ([variant.<name>]): added
+	// to the ID (".staging": com.example.notes.staging), and to the
+	// version Android shows (its versionName: "1.2.0-staging"; the other
+	// platforms' versions are numbers their stores and updates compare).
+	IDSuffix      string `json:"idSuffix"`
+	VersionSuffix string `json:"versionSuffix"`
+	// Defines are the build's constants, which the program reads with
+	// @define (the compiler reads them itself, with the variant's and
+	// --define's over them): strings, integers, floats and booleans.
+	Defines map[string]any `json:"defines"`
+	// variant is the variant the app is built as (--variant,
+	// ASUKA_VARIANT), "" none.
+	variant string
 	// C is the C the app's extern declarations call ([c], docs/c.md):
 	// internal/appbuild reads it (and each dependency's) as it builds.
 	C   pkgs.CConfig `json:"c"`
@@ -76,8 +93,12 @@ type appConfig struct {
 		// Usage are the purpose strings for protected resources
 		// (NSCameraUsageDescription, ...).
 		Usage map[string]string `json:"usage"`
-		// InfoPlist adds string keys to Info.plist.
-		InfoPlist map[string]string `json:"infoPlist"`
+		// InfoPlist adds keys to Info.plist, over Asuka's: any TOML value,
+		// as its plist type (plistDict).
+		InfoPlist plistDict `json:"infoPlist"`
+		// Entitlements are the app's own, merged with those its packages
+		// need (App Groups, keychain sharing, associated domains...).
+		Entitlements plistDict `json:"entitlements"`
 		// LocationPurposes are the reasons location.RequestPrecise shows,
 		// by the purpose key it's given (Info.plist's
 		// NSLocationTemporaryUsageDescriptionDictionary; default: "default",
@@ -130,6 +151,9 @@ type appConfig struct {
 		// Packages are what a build hands the app out in: "zip" and "dmg"
 		// (default both; --package overrides it).
 		Packages []string `json:"packages"`
+		// InfoPlist and Entitlements are the Mac's, as ios's are iOS's.
+		InfoPlist    plistDict `json:"infoPlist"`
+		Entitlements plistDict `json:"entitlements"`
 	} `json:"mac"`
 	// Accent is the app's accent color, "#rrggbb" or "#rrggbbaa": the
 	// tint color on iOS; on Android, the seed of the Material 3 color
@@ -438,6 +462,9 @@ type appConfig struct {
 		// account asuka publish uploads with (ASUKA_PLAY_SERVICE_ACCOUNT, the
 		// path or the JSON, overrides it).
 		ServiceAccount string `json:"serviceAccount"`
+		// Manifest is what the app adds to its AndroidManifest.xml beyond
+		// Asuka's (androidManifestConfig).
+		Manifest androidManifestConfig `json:"manifest"`
 	} `json:"android"`
 }
 
@@ -445,7 +472,9 @@ var (
 	idPart   = regexp.MustCompile(`[^A-Za-z0-9]+`)
 	hexColor = regexp.MustCompile(`^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
 	scheme   = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*$`)
-	domain   = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$`)
+	// appIDSuffix is what a variant's idSuffix may be: a bundle ID's parts.
+	appIDSuffix = regexp.MustCompile(`^(\.[A-Za-z][A-Za-z0-9-]*)+$`)
+	domain      = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$`)
 )
 
 // configFile is an app's manifest, in its directory.
@@ -456,15 +485,13 @@ func loadConfig(dir string) (*appConfig, error) {
 	c := &appConfig{}
 	data, err := os.ReadFile(filepath.Join(dir, configFile))
 	if err == nil {
-		if err := toml.Unmarshal(data, c); err != nil {
-			var te *toml.Error
-			if errors.As(err, &te) {
-				return nil, fmt.Errorf("%s:%v", configFile, err) // asuka.toml:3:9: what
-			}
-			return nil, fmt.Errorf("%s: %v", configFile, err)
+		if err := readConfig(data, c, appVariant); err != nil {
+			return nil, err
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
+	} else if appVariant != "" {
+		return nil, fmt.Errorf("--variant %s: %s has no %s, whose [variant.%s] it would be", appVariant, dir, configFile, appVariant)
 	}
 	c.useI18nDefaults(dir)
 	base := filepath.Base(dir)
@@ -473,6 +500,25 @@ func loadConfig(dir string) (*appConfig, error) {
 	}
 	if c.ID == "" {
 		c.ID = "dev.asuka." + strings.Trim(strings.ToLower(idPart.ReplaceAllString(base, "-")), "-")
+	}
+	if c.IDSuffix != "" {
+		if !appIDSuffix.MatchString(c.IDSuffix) {
+			return nil, fmt.Errorf("asuka.toml: idSuffix %q (want a dot and letters, digits and -, as .staging)", c.IDSuffix)
+		}
+		c.ID += c.IDSuffix
+	}
+	if strings.ContainsAny(c.VersionSuffix, " \t\n\"'<>&") {
+		return nil, fmt.Errorf("asuka.toml: versionSuffix %q (want letters, digits and - . +, as -staging)", c.VersionSuffix)
+	}
+	for k, v := range c.Defines {
+		if !check.DefineKey.MatchString(k) {
+			return nil, fmt.Errorf("asuka.toml: defines: %q isn't a constant's name: letters, digits and _, not starting with a digit", k)
+		}
+		switch v.(type) {
+		case string, bool, float64:
+		default:
+			return nil, fmt.Errorf("asuka.toml: defines: %s is a %T: a define is a string, a number or a boolean", k, v)
+		}
 	}
 	if c.Version == "" {
 		c.Version = "1.0"
@@ -533,15 +579,19 @@ func loadConfig(dir string) (*appConfig, error) {
 	if err := c.Ads.check(); err != nil {
 		return nil, fmt.Errorf("asuka.toml: ads: %v", err)
 	}
+	if err := c.Android.Manifest.check(); err != nil {
+		return nil, err
+	}
 	if err := c.Analytics.check(); err != nil {
 		return nil, fmt.Errorf("asuka.toml: analytics: %v", err)
 	}
 	if _, err := c.updates(); err != nil {
 		return nil, err
 	}
-	if c.Icon != "" && !filepath.IsAbs(c.Icon) {
-		c.Icon = filepath.Join(dir, c.Icon)
+	if err := c.IconSpec.resolve(dir); err != nil {
+		return nil, err
 	}
+	c.Icon = c.IconSpec.Image
 	if len(c.AlternateIcons) > 0 && c.Icon == "" {
 		return nil, errors.New("asuka.toml: alternateIcons: the app needs its own icon too (icon)")
 	}
@@ -833,7 +883,8 @@ func (c *appConfig) androidManifest(debug bool) string {
 	// With alternate icons the launcher's entries are activity aliases,
 	// one an icon (androidIconAliases): the activity's own leaves.
 	aliases := len(c.AlternateIcons) > 0
-	if aliases {
+	am := &c.Android.Manifest
+	if aliases || am.usesTools() {
 		b.WriteString("<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" xmlns:tools=\"http://schemas.android.com/tools\">\n")
 	} else {
 		b.WriteString("<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">\n")
@@ -852,30 +903,39 @@ func (c *appConfig) androidManifest(debug bool) string {
 	for _, x := range c.androidTop {
 		b.WriteString("    " + x + "\n")
 	}
+	// asuka.toml's android.manifest.top.
+	for _, x := range am.Top {
+		b.WriteString("    " + strings.TrimSpace(x) + "\n")
+	}
 	b.WriteString(c.androidTVFeatures())
-	b.WriteString("    <application" + c.androidTVBanner())
+	var appAttrs [][2]string
+	if c.androidTVBanner() != "" {
+		appAttrs = append(appAttrs, [2]string{"android:banner", "@drawable/asuka_tv_banner"})
+	}
 	if c.androidHasLocales() {
-		b.WriteString(" android:localeConfig=\"@xml/asuka_locales_config\"")
+		appAttrs = append(appAttrs, [2]string{"android:localeConfig", "@xml/asuka_locales_config"})
 	}
 	// The host's network security: the system's authorities and Let's
 	// Encrypt's roots, which Android 7.0 lacks; asuka dev's player also
 	// loads the app over cleartext HTTP.
 	if debug {
-		b.WriteString(" android:usesCleartextTraffic=\"true\" android:networkSecurityConfig=\"@xml/asuka_network_security_debug\"")
+		appAttrs = append(appAttrs, [2]string{"android:usesCleartextTraffic", "true"}, [2]string{"android:networkSecurityConfig", "@xml/asuka_network_security_debug"})
 	} else {
-		b.WriteString(" android:networkSecurityConfig=\"@xml/asuka_network_security\"")
+		appAttrs = append(appAttrs, [2]string{"android:networkSecurityConfig", "@xml/asuka_network_security"})
 	}
-	b.WriteString(">\n")
+	// asuka.toml's android.manifest.applicationAttributes, over these.
+	b.WriteString("    <application" + manifestAttrs(appAttrs, am.ApplicationAttributes) + ">\n")
 	// The Maps SDK's key (platform/maps, platform/maps), which it reads from the manifest.
 	if c.Android.MapsKey != "" && c.mapsKey {
 		fmt.Fprintf(&b, "        <meta-data android:name=\"com.google.android.geo.API_KEY\" android:value=\"%s\" />\n", html.EscapeString(c.Android.MapsKey))
 	}
 	// The splash's theme (androidRes), which AsukaActivity leaves as it starts.
-	theme := ""
+	actAttrs := [][2]string{{"android:name", "dev.asuka.AsukaActivity"}, {"android:exported", "true"}}
 	if c.splashOn() {
-		theme = ` android:theme="@style/Theme.Asuka.Splash"`
+		actAttrs = append(actAttrs, [2]string{"android:theme", "@style/Theme.Asuka.Splash"})
 	}
-	fmt.Fprintf(&b, "        <activity android:name=\"dev.asuka.AsukaActivity\" android:exported=\"true\"%s>\n", theme)
+	// asuka.toml's android.manifest.activityAttributes, over these.
+	fmt.Fprintf(&b, "        <activity%s>\n", manifestAttrs(actAttrs, am.ActivityAttributes))
 	// asuka.toml's shortcuts: the launcher's (androidShortcutRes), on
 	// the aliases when they're the launcher's entries.
 	if len(c.Shortcuts) > 0 && !aliases {
@@ -918,6 +978,10 @@ func (c *appConfig) androidManifest(debug bool) string {
 	b.WriteString(fileTypeFilters(c.fileTypes()))
 	// platform/nfc's tags that open the app (asuka.toml's nfc).
 	b.WriteString(c.nfcFilters())
+	// asuka.toml's android.manifest.activity.
+	for _, x := range am.Activity {
+		b.WriteString("            " + strings.TrimSpace(x) + "\n")
+	}
 	b.WriteString("        </activity>\n")
 	if aliases {
 		b.WriteString(c.androidIconAliases())
@@ -930,6 +994,10 @@ func (c *appConfig) androidManifest(debug bool) string {
 	}
 	for _, x := range c.androidApp {
 		b.WriteString("        " + x + "\n")
+	}
+	// asuka.toml's android.manifest.application.
+	for _, x := range am.Application {
+		b.WriteString("        " + strings.TrimSpace(x) + "\n")
 	}
 	// The packages' launch code: a provider, made as the process starts.
 	if len(c.androidLaunch) > 0 {

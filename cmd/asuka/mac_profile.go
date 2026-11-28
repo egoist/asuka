@@ -321,6 +321,16 @@ func macEntitlements(cfg *appConfig, prof *macProfile, appStore bool) (map[strin
 		ents["com.apple.security.files.user-selected.read-write"] = true
 	}
 	if prof == nil {
+		// asuka.toml's own, those a signature without a profile may have
+		// (the sandbox's, the hardened runtime's).
+		for k := range cfg.Mac.Entitlements {
+			if profileGranted(k) {
+				return nil, fmt.Errorf("asuka.toml: mac.entitlements: %s needs a provisioning profile that grants it (mac.profile, ASUKA_MAC_PROFILE)", k)
+			}
+		}
+		if err := mergeEntitlements(ents, cfg.Mac.Entitlements, ""); err != nil {
+			return nil, err
+		}
 		return ents, nil
 	}
 	ents["com.apple.application-identifier"] = prof.team + "." + cfg.ID // a wildcard profile's becomes the app's
@@ -357,6 +367,20 @@ func macEntitlements(cfg *appConfig, prof *macProfile, appStore bool) (map[strin
 		if v, ok := prof.entitlements["com.apple.security.get-task-allow"]; ok {
 			ents["com.apple.security.get-task-allow"] = plistEntitlement(v)
 		}
+	}
+	// asuka.toml's own, which the profile must have.
+	var lacking []string
+	for k := range cfg.Mac.Entitlements {
+		if _, ok := prof.entitlements[k]; !ok && profileGranted(k) {
+			lacking = append(lacking, k)
+		}
+	}
+	if len(lacking) > 0 {
+		sort.Strings(lacking)
+		return nil, fmt.Errorf("the profile %q lacks %s, which asuka.toml's mac.entitlements has: turn the capabilities on for %s at developer.apple.com (Identifiers), then make the profile again", prof.name, strings.Join(lacking, ", "), cfg.ID)
+	}
+	if err := mergeEntitlements(ents, cfg.Mac.Entitlements, prof.team); err != nil {
+		return nil, err
 	}
 	return ents, nil
 }

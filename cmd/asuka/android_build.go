@@ -3,11 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
-	"image/color"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/egoist/asuka/internal/appbuild"
@@ -95,7 +93,7 @@ and give its password in ASUKA_KEYSTORE_PASSWORD (and ASUKA_KEY_PASSWORD if the 
 	}
 	args := []string{task,
 		"-PasukaApplicationId=" + androidPackage(cfg.ID), "-PasukaAppName=" + cfg.androidLabel(),
-		"-PasukaVersionCode=" + strconv.Itoa(cfg.Build), "-PasukaVersionName=" + cfg.Version,
+		"-PasukaVersionCode=" + strconv.Itoa(cfg.Build), "-PasukaVersionName=" + cfg.Version + cfg.VersionSuffix,
 		"-PasukaIcon=" + icon, "-PasukaJniLibs=" + jni, "-PasukaRes=" + res, "-PasukaManifest=" + manifest,
 		"-PasukaKeystore=" + keystore, "-PasukaKeyAlias=" + alias, "-PasukaNdkVersion=" + filepath.Base(tc.ndk)}
 	args = append(args, cfg.gradleProps()...)
@@ -154,81 +152,6 @@ func firstOf(vs ...string) string {
 		}
 	}
 	return ""
-}
-
-// androidIcons writes the launcher icons: the app's (asuka.toml's icon,
-// ic_launcher) and its alternates' (ic_launcher_<name>, each an activity
-// alias's: androidManifest).
-func androidIcons(cfg *appConfig, res string) error {
-	if err := androidIcon(cfg.Icon, res, "ic_launcher"); err != nil {
-		return err
-	}
-	for _, name := range cfg.alternateIconNames() {
-		if err := androidIcon(cfg.AlternateIcons[name], res, androidIconRes(name)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// androidIconRes is an alternate icon's resource name: lower case, as
-// resource names are.
-func androidIconRes(name string) string { return "ic_launcher_" + strings.ToLower(name) }
-
-// androidIcon writes a launcher icon named name: a legacy icon per
-// density and an adaptive one (Android 8+), whose foreground is the icon
-// inside the safe zone and whose background is the icon's corner color.
-func androidIcon(path, res, name string) error {
-	icon, err := loadIcon(path)
-	if err != nil {
-		return err
-	}
-	densities := []struct {
-		dir   string
-		scale float64
-	}{{"mdpi", 1}, {"hdpi", 1.5}, {"xhdpi", 2}, {"xxhdpi", 3}, {"xxxhdpi", 4}}
-	for _, d := range densities {
-		dir := filepath.Join(res, "mipmap-"+d.dir)
-		if err := writePNG(filepath.Join(dir, name+".png"), resize(icon, int(48*d.scale))); err != nil {
-			return err
-		}
-		// 108dp, the icon in the middle 72dp (the mask shows at least that).
-		canvas := int(108 * d.scale)
-		fg := newNRGBA(canvas)
-		inner := resize(icon, int(72*d.scale))
-		off := (canvas - inner.Bounds().Dx()) / 2
-		for y := 0; y < inner.Bounds().Dy(); y++ {
-			for x := 0; x < inner.Bounds().Dx(); x++ {
-				fg.SetNRGBA(x+off, y+off, inner.NRGBAAt(x, y))
-			}
-		}
-		if err := writePNG(filepath.Join(dir, name+"_foreground.png"), fg); err != nil {
-			return err
-		}
-	}
-	bg := icon.NRGBAAt(0, 0)
-	if bg.A < 255 {
-		bg = color.NRGBA{255, 255, 255, 255}
-	}
-	values := filepath.Join(res, "values")
-	os.MkdirAll(values, 0o755)
-	bgName := "asuka_icon_background"
-	if name != "ic_launcher" {
-		bgName = "asuka_" + name + "_background"
-	}
-	if err := os.WriteFile(filepath.Join(values, "asuka_"+name+".xml"), []byte(fmt.Sprintf(`<resources>
-    <color name="%s">#%02X%02X%02X</color>
-</resources>
-`, bgName, bg.R, bg.G, bg.B)), 0o644); err != nil {
-		return err
-	}
-	anydpi := filepath.Join(res, "mipmap-anydpi-v26")
-	os.MkdirAll(anydpi, 0o755)
-	return os.WriteFile(filepath.Join(anydpi, name+".xml"), []byte(fmt.Sprintf(`<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/%s" />
-    <foreground android:drawable="@mipmap/%s_foreground" />
-</adaptive-icon>
-`, bgName, name)), 0o644)
 }
 
 // buildAndroidLibs builds the C core with the app compiled in as a shared

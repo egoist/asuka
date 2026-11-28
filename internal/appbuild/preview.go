@@ -30,7 +30,7 @@ func (p *Project) CompilePreview(platform target.Platform, ref compile.PreviewRe
 		}
 	}
 	res, err := compile.Dir(dir, &compile.Options{Platform: platform.Or(), Lang: DevLang, Direction: DevDirection, Project: project,
-		NoOptimize: DevNoOptimize, Debug: Debug, NoTests: true, Preview: &ref})
+		NoOptimize: DevNoOptimize, Debug: Debug, Variant: Variant, Defines: Defines, NoTests: true, Preview: &ref})
 	if err != nil {
 		return nil, "", nil, err
 	}

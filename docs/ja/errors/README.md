@@ -34,6 +34,7 @@ Asuka が報告するエラーと警告には、すべてコードがありま�
 - [invalid-conformance](invalid-conformance.md): 型が宣言する、または型パラメーターが求めるものが interface ではない。
 - [invalid-constant](invalid-constant.md): コンパイル時に作られる値が、リテラルでないか解析できない。
 - [invalid-declaration](invalid-declaration.md): 置かれた場所が受け付けない形で書かれた宣言。
+- [invalid-define](invalid-define.md): ビルドがその型の値を与えていない `@define`。
 - [invalid-entry](invalid-entry.md): 実行のされ方と違う形で宣言されたプログラムの `fn main`。
 - [invalid-extension](invalid-extension.md): 拡張できないものの `extend`、または受け付けない形の `extend`。
 - [invalid-extern](invalid-extern.md): C が裏付けられない extern 宣言。

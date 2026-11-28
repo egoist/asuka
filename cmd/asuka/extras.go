@@ -171,16 +171,11 @@ func writeAssetCatalog(c *appConfig, work string, icon bool) (string, error) {
 			sets[name] = p
 		}
 		for name, p := range sets {
-			img, err := loadIcon(p)
-			if err != nil {
-				return "", err
+			var dark, tinted string
+			if name == "AppIcon" {
+				dark, tinted = c.IconSpec.Dark, c.IconSpec.Tinted
 			}
-			set := filepath.Join(cat, name+".appiconset")
-			if err := writePNG(filepath.Join(set, "icon.png"), opaque(resize(img, 1024))); err != nil {
-				return "", err
-			}
-			contents := `{"images":[{"filename":"icon.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"asuka","version":1}}`
-			if err := os.WriteFile(filepath.Join(set, "Contents.json"), []byte(contents), 0o644); err != nil {
+			if err := writeAppIconSet(filepath.Join(cat, name+".appiconset"), p, dark, tinted); err != nil {
 				return "", err
 			}
 		}
@@ -221,6 +216,51 @@ func writeAssetCatalog(c *appConfig, work string, icon bool) (string, error) {
 	set := filepath.Join(cat, "AsukaSplashBackground.colorset")
 	os.MkdirAll(set, 0o755)
 	return cat, os.WriteFile(filepath.Join(set, "Contents.json"), js, 0o644)
+}
+
+// writeAppIconSet writes an iOS app icon set: the icon (opaque, as the
+// App Store wants it), and iOS 18's dark and tinted appearances of it
+// when given (dark keeps its transparency, iOS draws its own background
+// behind it; tinted is made grayscale, which iOS tints). Without them iOS
+// makes its own from the icon.
+func writeAppIconSet(set, icon, dark, tinted string) error {
+	img, err := loadIcon(icon)
+	if err != nil {
+		return err
+	}
+	if err := writePNG(filepath.Join(set, "icon.png"), opaque(resize(img, 1024))); err != nil {
+		return err
+	}
+	entry := func(file, appearance string) map[string]any {
+		m := map[string]any{"filename": file, "idiom": "universal", "platform": "ios", "size": "1024x1024"}
+		if appearance != "" {
+			m["appearances"] = []any{map[string]any{"appearance": "luminosity", "value": appearance}}
+		}
+		return m
+	}
+	images := []any{entry("icon.png", "")}
+	if dark != "" {
+		d, err := loadIcon(dark)
+		if err != nil {
+			return err
+		}
+		if err := writePNG(filepath.Join(set, "icon-dark.png"), resize(d, 1024)); err != nil {
+			return err
+		}
+		images = append(images, entry("icon-dark.png", "dark"))
+	}
+	if tinted != "" {
+		t, err := loadIcon(tinted)
+		if err != nil {
+			return err
+		}
+		if err := writePNG(filepath.Join(set, "icon-tinted.png"), grayscale(resize(t, 1024))); err != nil {
+			return err
+		}
+		images = append(images, entry("icon-tinted.png", "tinted"))
+	}
+	js, _ := json.Marshal(map[string]any{"images": images, "info": map[string]any{"author": "asuka", "version": 1}})
+	return os.WriteFile(filepath.Join(set, "Contents.json"), js, 0o644)
 }
 
 // rgb reads "#rrggbb".

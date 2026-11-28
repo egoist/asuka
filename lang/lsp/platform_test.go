@@ -90,7 +90,27 @@ func TestPlatformFiles(t *testing.T) {
 		t.Errorf("completion: %q", l)
 	}
 	items = complete(t, c, uri, &version, text+"let y = @de\n", text+"let y = @de|")
-	if l := labels(items); len(l) != 1 || l[0] != "debug" {
+	if l := labels(items); len(l) != 2 || l[0] != "debug" || l[1] != "define" {
 		t.Errorf("@debug's completion: %q", l)
+	}
+}
+
+// @define's hover: its type and the build's value (asuka.toml's).
+func TestDefineHover(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "asuka.toml"), []byte("[defines]\nAPI_URL = \"https://api.example.com\"\n"), 0o644)
+	main := filepath.Join(root, "main.asuka")
+	os.WriteFile(main, []byte("fn api() -> string = @define(\"API_URL\")\n\nfn port() -> int = @define(\"PORT\", 8080)\n"), 0o644)
+	c := newClient(t, root)
+	uri, text := c.open(main)
+	c.waitDiags(uri, noDiags)
+	var h *Hover
+	p := tdp(uri, posAt(t, text, "@def|ine(\"API"))
+	if err := c.call("textDocument/hover", &p, &h); err != nil || h == nil || !strings.Contains(h.Contents.Value, `@define: string = "https://api.example.com"`) {
+		t.Errorf("hover: %v %+v", err, h)
+	}
+	p = tdp(uri, posAt(t, text, "@def|ine(\"PORT"))
+	if err := c.call("textDocument/hover", &p, &h); err != nil || h == nil || !strings.Contains(h.Contents.Value, "@define: int = 8080") {
+		t.Errorf("hover: %v %+v", err, h)
 	}
 }

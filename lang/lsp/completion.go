@@ -117,7 +117,7 @@ func (c *completer) run() {
 	}
 	before := string(src[lineStart:c.start])
 	if c.start > 0 && src[c.start-1] == '@' {
-		// @platform and @debug, the compile-time constants.
+		// @platform, @debug and @define, the compile-time constants.
 		if strings.HasPrefix("platform", c.prefix) {
 			c.add(CompletionItem{Label: "platform", Kind: 21, Detail: "@platform: Platform",
 				Documentation: &MarkupContent{Kind: "markdown", Value: platformDoc(fc.st.platform)}}, prioMember)
@@ -125,6 +125,10 @@ func (c *completer) run() {
 		if strings.HasPrefix("debug", c.prefix) {
 			c.add(CompletionItem{Label: "debug", Kind: 21, Detail: "@debug: bool",
 				Documentation: &MarkupContent{Kind: "markdown", Value: debugDoc}}, prioMember)
+		}
+		if strings.HasPrefix("define", c.prefix) {
+			c.add(CompletionItem{Label: "define", Kind: 21, Detail: "@define(\"KEY\")",
+				Documentation: &MarkupContent{Kind: "markdown", Value: defineDoc}}, prioMember)
 		}
 		return
 	}

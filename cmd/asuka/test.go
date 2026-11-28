@@ -59,7 +59,11 @@ func cmdTest(args []string) error {
 	fs.Bool(&gui, "gui", 0, "run the app's flows (flows/*.flow) on the --platform's player, as asuka dev runs it (default: this computer; ios: the simulator, android: an emulator, web: headless Chrome), instead of its test blocks")
 	fs.String(&device, "device", 'd', "", "--gui: the simulator, emulator or device to run on, as asuka dev's --device")
 	fs.String(&timeout, "timeout", 0, "10s", "--gui: how long a step is tried before its flow fails (`time`)")
+	variantFlags(fs)
 	if err := fs.parse(args); err != nil {
+		return err
+	}
+	if err := useVariant(); err != nil {
 		return err
 	}
 	if gui {
@@ -293,7 +297,11 @@ func cmdRun(args []string) error {
 	fs.String(&bin, "bin", 0, "", "the `program` to run: one of asuka.toml's [bin.<name>] (needed when there are several)")
 	fs.String(&pattern, "run", 0, "", "run only the tests whose names contain `text`")
 	fs.Bool(&release, "release", 0, "compile it as a release build is: @debug is false (it's true by default, as under asuka dev)")
+	variantFlags(fs)
 	if err := fs.parse(args); err != nil {
+		return err
+	}
+	if err := useVariant(); err != nil {
 		return err
 	}
 	appbuild.Debug = !release

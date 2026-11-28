@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/lang/compile"
 	"github.com/egoist/asuka/lang/diag"
 	"github.com/egoist/asuka/lang/target"
@@ -30,7 +31,11 @@ func cmdCheck(args []string) error {
 	platformFlag(fs, &platform, []string{platformIOS, platformAndroid, platformMac, platformWindows, platformLinux, platformWeb},
 		"check for this `platform` only: ios, android, mac, windows, linux or web (default: every one)")
 	fs.Bool(&jsonOut, "json", 0, "write each diagnostic as JSON, one object per line on stdout: code, severity, file, range, message, help, url (and platforms, when not every one's)")
+	variantFlags(fs)
 	if err := fs.parse(args); err != nil {
+		return err
+	}
+	if err := useVariant(); err != nil {
 		return err
 	}
 	dir := "."
@@ -41,7 +46,7 @@ func cmdCheck(args []string) error {
 	if platform != "" {
 		ps = []target.Platform{langPlatform(platform)}
 	}
-	res, err := compile.DirPlatforms(dir, nil, ps)
+	res, err := compile.DirPlatforms(dir, &compile.Options{Variant: appbuild.Variant, Defines: appbuild.Defines}, ps)
 	if err != nil {
 		return err
 	}

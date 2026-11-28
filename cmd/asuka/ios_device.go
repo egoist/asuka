@@ -347,6 +347,8 @@ func (s *devSigner) wants(id string) map[string]any {
 	for k, v := range s.cfg.entitlements {
 		m[k] = v
 	}
+	// asuka.toml's own, with the team's prefix.
+	mergeEntitlements(m, s.cfg.IOS.Entitlements, s.team)
 	return m
 }
 

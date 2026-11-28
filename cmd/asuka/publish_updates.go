@@ -80,7 +80,7 @@ func publishDesktop(app *asukaApp, o *publishOptions) error {
 		return err
 	}
 	if b.out == "" {
-		b.out = filepath.Join(app.dir, "dist")
+		b.out = variantOut(filepath.Join(app.dir, "dist"))
 	}
 	if err := os.MkdirAll(b.out, 0o755); err != nil {
 		return err
@@ -324,7 +324,7 @@ func publishOTA(app *asukaApp, o *publishOptions) error {
 		return err
 	}
 	if b.out == "" {
-		b.out = filepath.Join(app.dir, "dist")
+		b.out = variantOut(filepath.Join(app.dir, "dist"))
 		if b.platform == platformTVOS || b.platform == platformWatchOS {
 			b.out = filepath.Join(b.out, b.platform) // as asuka build's
 		}

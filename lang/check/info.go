@@ -87,6 +87,9 @@ type Info struct {
 	EmbedPaths map[EmbedPath]bool
 	// Shaders: shader declarations' programs, compiled (shaderlang.go).
 	Shaders map[*syntax.CallExpr][]byte
+	// Defines: each @define's value, the build's or its default (a
+	// string, an int64, a float64 or a bool, of its type; define.go).
+	Defines map[*syntax.AtExpr]any
 
 	// ImplicitSelf: a bare call or name in a method's body that's self's
 	// method or property (a built-in one, or an extension's): the
@@ -133,6 +136,7 @@ func newInfo() *Info {
 		Binds:          map[*syntax.OnHandler][]*Var{},
 		Trailing:       map[*syntax.CallExpr]*syntax.LambdaExpr{},
 		Shaders:        map[*syntax.CallExpr][]byte{},
+		Defines:        map[*syntax.AtExpr]any{},
 		SlotCalls:      map[*syntax.SlotItem]*syntax.CallExpr{},
 		ImplicitSelf:   map[syntax.Expr]syntax.Expr{},
 		ExtImpls:       map[string]*Function{},

@@ -167,3 +167,37 @@ component About {
 `!@debug` 同样会被折叠，它和 `@platform` 的比较用 `&&`、`||` 组合起来也一样。如果走到的分支会直接返回，它后面的代码也会被去掉：写了 `if !@debug { return cached }` 之后，这个块剩下的部分不会出现在发布构建里。`@platform` 的分支也是如此。每次构建都会检查两个分支，所以你在开发分支里工作时，发布分支不会在你看不到的地方悄悄坏掉。
 
 测试和 `asuka dev` 一样是开发构建：`asuka test --release` 会让 `@debug` 为 false 来运行测试，和应用发布时一致；对程序来说，`asuka run --release` 也是如此。基准测试（`asuka test --bench`）测的是发布构建运行的代码，`@debug` 为 false。
+
+## 构建给出的值
+
+`@define("KEY")` 是构建交给程序的值，同样是常量：服务器的地址、在某个构建里打开而在另一个构建里关闭的功能、应用用于某项服务的公开密钥。构建从 `asuka.toml` 的 [`[defines]`](../asuka-toml.md#defines) 里取值，构建所用的[变体](../asuka-toml.md#variants)（`--variant staging`）里的值覆盖它们，命令行上的 `--define KEY=VALUE` 又覆盖前两者：
+
+```toml
+[defines]
+API_URL = "https://api.example.com"
+ANALYTICS = true
+
+[variant.staging.defines]
+API_URL = "https://staging.example.com"
+ANALYTICS = false
+```
+
+它的类型就是它在 `asuka.toml` 里的值的类型：字符串、`int`、`float` 或 `bool`。只由 `--define` 给出的键是字符串；`asuka.toml` 里已有的键沿用那里的类型（`PORT = 8080` 时，`--define PORT=9000` 是 `int`）。构建没有给出的键会报错，所以拼错的键在编译时就会被发现。带默认值的写法 `@define("KEY", default)` 在构建没有给出值时取默认值，值的类型由默认值决定：默认值是字面量，可以是字符串、数字或 bool，构建给出的值必须是这个类型（`--define` 的文本会按这个类型读取：对 `@define("RETRIES", 3)` 来说，`--define RETRIES=5` 就是 `int` 5）。
+
+```asuka check
+let server = @define("API_URL", "https://api.example.com")
+let retries = @define("RETRIES", 3)
+
+component Settings {
+  Column {
+    Text("Talking to {server}, {retries} tries")
+    if @define("ANALYTICS", true) {
+      Text("Usage statistics are on")
+    }
+  }
+}
+```
+
+`bool` 类型的值和 `@debug` 一样会被折叠，无论是在 `if` 里，还是用 `!`、`&&`、`||` 组合：构建不走的分支不会进入构建。键是字符串字面量，由字母、数字和 `_` 组成，以字母或 `_` 开头。
+
+构建给出的值会编译进应用，拿到应用的人都能读出来。绝不要用它传递机密：服务器的 API 密钥、签名密钥、密码。服务器地址、功能开关，或者本来就是公开的密钥（客户端 ID、统计服务的衡量 ID、可公开的 publishable key）都没问题；必须保密的东西留在你的服务器上，由应用去请求。

@@ -525,6 +525,11 @@ var zh = map[string]Text{
 		"`embed.text(path)` 等函数在编译时把文件读进应用：路径必须是字符串字面量，相对于包所在的目录，并且在目录之内。",
 		"修正路径，或者把文件加到包里。",
 	},
+	"invalid-define": {
+		"构建没有给出对应类型的值的 `@define`",
+		"`@define(\"KEY\")` 是构建在编译时交给程序的值：来自 asuka.toml 的 `[defines]`、某个变体的 `[defines]`，或者 `--define KEY=VALUE`。键是由字母、数字和 `_` 组成的字符串字面量；后面可以跟一个默认值，同样是字面量，构建没有给出值时就用它，它也决定了这个值的类型，构建给出的值必须是这个类型。",
+		"在 asuka.toml 的 `[defines]` 里（或者用 `--define`）给这个键一个值，或者写上默认值：`@define(\"API_URL\", \"https://example.com\")`。",
+	},
 	"invalid-route": {
 		"页面的地址，或者路由无法完成的导航",
 		"带路由的页面，其模式是字符串字面量，里面的 `:name` 就是它的参数，类型必须是地址能表达的（int、float、bool、string、枚举的 case）。导航到某个页面时，必须恰好有一条到它的路由。",

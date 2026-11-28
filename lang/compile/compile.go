@@ -5,6 +5,8 @@
 package compile
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -65,6 +67,16 @@ type Options struct {
 	// Debug compiles a development build (asuka dev, run and test):
 	// what @debug is. Without it, @debug is false, as in a release.
 	Debug bool
+	// Variant is the asuka.toml variant the program is built as
+	// ([variant.<name>], asuka --variant): its keys are the manifest's
+	// over its own, for what the compiler reads of it (version, accent,
+	// defines). "": none, the manifest as it is.
+	Variant string
+	// Defines are the build's constants given on the command line
+	// (--define KEY=VALUE), over asuka.toml's [defines]: what @define
+	// reads. Their values are text, which takes the type the program
+	// reads them as.
+	Defines map[string]string
 	// Cover counts the runs of the root package's statements (asuka
 	// test --cover): Result.IR.Cover says where its counters are.
 	Cover bool
@@ -505,6 +517,18 @@ func retired(ip string) string {
 func (l *loader) compile(root *unit) *Result {
 	c := check.NewChecker(l.fset)
 	res := &Result{Fset: l.fset, Platform: l.opts.Platform.Or(), PlatformFiles: l.platformFiles}
+	vdir := root.dir
+	if l.opts.Project != "" {
+		vdir = l.opts.Project
+	}
+	// The build's values (@define): asuka.toml's, the variant's and
+	// --define's, before any package is checked.
+	defines, err := projectDefines(vdir, l.opts.Variant, l.opts.Defines)
+	if err != nil {
+		pos := syntax.Position{Filename: filepath.Join(vdir, "asuka.toml"), Line: 1, Column: 1}
+		l.diags = append(l.diags, check.NewDiagnostic(pos, pos, diag.InvalidProject, "%s", err.Error()))
+	}
+	c.SetDefines(defines)
 	// The app's catalogs, before any package is checked: tr is theirs.
 	dates := false
 	for _, u := range l.units {
@@ -573,15 +597,11 @@ func (l *loader) compile(root *unit) *Result {
 	if len(res.Diags) > 0 || l.opts.CheckOnly {
 		return res
 	}
-	accent, accentFlags, err := appAccent(root.dir)
+	accent, accentFlags, err := appAccent(root.dir, l.opts.Variant)
 	if err != nil {
 		pos := syntax.Position{Filename: filepath.Join(root.dir, "asuka.toml"), Line: 1, Column: 1}
 		res.Diags = append(res.Diags, check.NewDiagnostic(pos, pos, diag.InvalidProject, "%s", err.Error()))
 		return res
-	}
-	vdir := root.dir
-	if l.opts.Project != "" {
-		vdir = l.opts.Project
 	}
 	var cover []string
 	if l.opts.Cover {
@@ -608,7 +628,7 @@ func (l *loader) compile(root *unit) *Result {
 	// Code the optimizer leaves alone names its locals for the debugger
 	// (asuka dev's): the optimizer's passes move values between
 	// registers, so its code has none.
-	p, diags := ir.Lower(prog, &ir.Options{Platform: string(l.opts.Platform.Or()), Debug: l.opts.Debug, Version: projectVersion(vdir), Lang: l.opts.Lang, Direction: l.opts.Direction, Accent: accent, AccentFlags: accentFlags, Cover: cover, NoFuse: l.opts.NoFuse, Locals: !optimize,
+	p, diags := ir.Lower(prog, &ir.Options{Platform: string(l.opts.Platform.Or()), Debug: l.opts.Debug, Version: projectVersion(vdir, l.opts.Variant), Lang: l.opts.Lang, Direction: l.opts.Direction, Accent: accent, AccentFlags: accentFlags, Cover: cover, NoFuse: l.opts.NoFuse, Locals: !optimize,
 		Preview: preview, PreviewTests: l.opts.PreviewTests})
 	res.Diags = append(res.Diags, diags...)
 	if len(res.Diags) > 0 {
@@ -730,39 +750,148 @@ func hasExterns(p *check.Package) bool {
 // colors where the system has them). The module's init gives them to the
 // core, which sends them to the host as the app mounts, so asuka dev's
 // player shows each app's.
-// projectVersion is asuka.toml's version in dir ("" for none).
-func projectVersion(dir string) string {
-	if dir == "" || strings.HasPrefix(dir, "pkg:") {
-		return ""
-	}
-	b, err := os.ReadFile(filepath.Join(dir, "asuka.toml"))
-	if err != nil {
-		return ""
-	}
+// projectVersion is asuka.toml's version in dir ("" for none), the
+// variant's over it.
+func projectVersion(dir, variant string) string {
 	var m struct {
 		Version string `json:"version"`
 	}
-	if toml.Unmarshal(b, &m) != nil {
+	if ok, err := readManifest(dir, variant, &m); !ok || err != nil {
 		return ""
 	}
 	return m.Version
 }
 
-func appAccent(dir string) (uint64, uint8, error) {
+// readManifest reads dir's asuka.toml into v, with the variant's table
+// ([variant.<name>]) over it: false when dir has none (a package of the
+// standard library's, a file's).
+func readManifest(dir, variant string, v any) (bool, error) {
 	if dir == "" || strings.HasPrefix(dir, "pkg:") {
-		return 0, 0, nil
+		return false, nil
 	}
 	b, err := os.ReadFile(filepath.Join(dir, "asuka.toml"))
 	if err != nil {
-		return 0, 0, nil
+		return false, nil
 	}
+	if err := toml.UnmarshalOverlay(b, v, "variant", variant); err != nil {
+		var te *toml.Error
+		if errors.As(err, &te) {
+			return true, fmt.Errorf("asuka.toml:%v", err)
+		}
+		return true, fmt.Errorf("asuka.toml: %v", err)
+	}
+	return true, nil
+}
+
+// defineValues are asuka.toml's [defines], their numbers as written.
+type defineValues map[string]any
+
+func (d *defineValues) UnmarshalJSON(b []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		return err
+	}
+	*d = defineValues(m)
+	return nil
+}
+
+// projectDefines are the build's values for @define: dir's asuka.toml's
+// [defines], the variant's over them, and the command line's (text,
+// whose type is what the program reads them as) over those.
+func projectDefines(dir, variant string, cli map[string]string) (map[string]check.Define, error) {
+	out := map[string]check.Define{}
+	var m struct {
+		Defines defineValues `json:"defines"`
+	}
+	_, err := readManifest(dir, variant, &m)
+	for _, k := range slices.Sorted(maps.Keys(m.Defines)) {
+		if !check.DefineKey.MatchString(k) {
+			return out, fmt.Errorf("asuka.toml: defines: %q isn't a key a define can have: letters, digits and _, a letter or _ first", k)
+		}
+		var v any
+		switch x := m.Defines[k].(type) {
+		case string, bool:
+			v = x
+		case json.Number:
+			if n, err := x.Int64(); err == nil && !strings.ContainsAny(x.String(), ".eE") {
+				v = n
+			} else if f, err := x.Float64(); err == nil {
+				v = f
+			}
+		}
+		if v == nil {
+			return out, fmt.Errorf("asuka.toml: defines: %s is %s: a define is a string, an integer, a float or a boolean", k, describeJSON(m.Defines[k]))
+		}
+		out[k] = check.Define{Value: v}
+	}
+	for _, k := range slices.Sorted(maps.Keys(cli)) {
+		v := cli[k]
+		if !check.DefineKey.MatchString(k) {
+			return out, fmt.Errorf("--define %s: a key is letters, digits and _, a letter or _ first", k)
+		}
+		have, ok := out[k]
+		if !ok {
+			out[k] = check.Define{Value: v, Text: true}
+			continue
+		}
+		// One asuka.toml has: its type.
+		var x any
+		var perr error
+		what := ""
+		switch have.Value.(type) {
+		case int64:
+			what = "an integer"
+			if n, e := strconv.ParseInt(v, 0, 64); e == nil {
+				x = n
+			} else {
+				perr = e
+			}
+		case float64:
+			what = "a number"
+			if f, e := strconv.ParseFloat(v, 64); e == nil {
+				x = f
+			} else {
+				perr = e
+			}
+		case bool:
+			what = "true or false"
+			if b, e := strconv.ParseBool(v); e == nil {
+				x = b
+			} else {
+				perr = e
+			}
+		default:
+			x = v
+		}
+		if perr != nil {
+			return out, fmt.Errorf("--define %s=%s: asuka.toml's %s is %s, and %q isn't", k, v, k, what, v)
+		}
+		out[k] = check.Define{Value: x}
+	}
+	return out, err
+}
+
+// describeJSON is what a decoded value is, as a message says it.
+func describeJSON(v any) string {
+	switch v.(type) {
+	case []any:
+		return "an array"
+	case map[string]any:
+		return "a table"
+	}
+	return "none of those"
+}
+
+func appAccent(dir, variant string) (uint64, uint8, error) {
 	var m struct {
 		Accent  string `json:"accent"`
 		Android struct {
 			DynamicColor bool `json:"dynamicColor"`
 		} `json:"android"`
 	}
-	if toml.Unmarshal(b, &m) != nil {
+	if ok, err := readManifest(dir, variant, &m); !ok || err != nil {
 		return 0, 0, nil // the CLI reports the manifest's own errors
 	}
 	var flags uint8

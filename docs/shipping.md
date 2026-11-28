@@ -67,7 +67,9 @@ them all, with their types and defaults. These apply on every platform:
   the launcher's on Android, an `.icns` on the Mac, an `.ico` in the
   `.exe` on Windows, the hicolor theme's from 16 to 512 pixels on
   Linux, the web manifest's, the favicon and iOS's home screen icon on
-  the web.
+  the web. An `[icon]` table gives Android's adaptive icon its own
+  layers and its themed icon (Android 13), and iOS its dark and tinted
+  icons (iOS 18): see [icon](asuka-toml.md#icon).
 - `accent` is the app's accent color, `"#rrggbb"`: the tint on iOS, the
   seed of the Material 3 color scheme on Android, the color of `Accent`,
   filled buttons and links on the Mac (AppKit's own controls keep the
@@ -166,9 +168,12 @@ These are for the phones and tablets:
   Maps Platform API key, for `platform/maps`.
 - `ios.usage` gives the purpose strings of protected resources
   (`NSCameraUsageDescription`...; the Mac's too), and `ios.infoPlist` adds keys to
-  Info.plist; `ios.backgroundModes` adds to `UIBackgroundModes` (`"audio"`,
-  to record and play with the screen locked); `android.permissions` adds
-  permissions.
+  Info.plist, of any type; `ios.entitlements` adds entitlements (App
+  Groups, keychain sharing, associated domains); `ios.backgroundModes`
+  adds to `UIBackgroundModes` (`"audio"`, to record and play with the
+  screen locked); `android.permissions` adds permissions, and
+  `android.manifest` elements and attributes to the manifest. See
+  [ios](asuka-toml.md#ios) and [android](asuka-toml.md#android).
 
 The packages an app imports give it the permissions and purpose strings
 they need: `platform/camera` the camera's, `platform/location` the location's.
@@ -179,6 +184,68 @@ Declared Age Range for `platform/agerange`, iCloud with its containers for
 `platform/icloud`): turn it on at
 developer.apple.com, then make the profile again. `asuka build --platform ios` (and
 `--platform mac`) says which a profile lacks.
+
+## Variants and build constants
+
+One app often ships as several: a development build that talks to a
+staging server, a beta for testers, the release. Each is a
+[variant](asuka-toml.md#variants) in `asuka.toml`, a `[variant.<name>]`
+table of the keys it changes, and a build with `--variant <name>` is
+that one:
+
+```toml
+name = "Notes"
+id = "com.example.notes"
+icon = "icon.png"
+
+[defines]
+API_URL = "https://api.example.com"
+
+[variant.staging]
+name = "Notes Staging"
+idSuffix = ".staging"
+icon = "icons/staging.png"
+
+[variant.staging.defines]
+API_URL = "https://staging.example.com"
+
+[variant.staging.ios]
+profile = "Notes Staging App Store"
+```
+
+```sh
+asuka build --platform ios --variant staging      # dist/staging/Notes Staging.ipa
+asuka publish --platform android --variant staging --track internal
+asuka build --platform ios                        # the release, the file's own keys
+```
+
+A variant with its own ID (`idSuffix`, or an `id`) is an app of its own:
+it installs beside the others, each with its icon and name on the home
+screen, and keeps its own data. The stores take it as another app too:
+make it its own app in App Store Connect and Google Play, its own App
+ID and provisioning profile (`ios.profile` in its table), and its own
+Firebase app. Its builds go in `dist/<name>`, apart from the others'.
+In CI, `ASUKA_VARIANT=staging` names the variant for every command of a
+job.
+
+`--variant` isn't `--profile`. `asuka build --profile` names an iOS or
+Mac provisioning profile, which signs the build; a variant is the app
+built another way, and its table can name its profile with the rest.
+
+The program reads its build's constants with
+[`@define`](language/control-flow.md#values-from-the-build): asuka.toml's
+[`[defines]`](asuka-toml.md#defines), the variant's over them, and
+`--define KEY=VALUE` over those, for one build:
+
+```sh
+asuka build --platform android --define API_URL=https://pr-42.example.com
+```
+
+They're compiled into the app, which anyone can take apart: a server's
+address or a public key belongs there, a secret doesn't. A secret the
+build itself needs (a signing key, an upload key's password) is given in
+[the environment](asuka-toml.md#the-environment); one the app would need
+stays on your server, which it asks.
 
 ## iOS
 

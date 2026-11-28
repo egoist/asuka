@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/asuka/internal/appbuild"
@@ -68,6 +69,7 @@ func buildFlags(o *buildOptions) *flagSet {
 	fs.String(&o.out, "out", 'o', "", "the output `directory` (default: dist in the app's directory)")
 	fs.String(&o.version, "version", 0, "", "the `version` to build, in place of asuka.toml's (as CI takes it from the tag: 1.2.0, 1.3.0-beta.1)")
 	fs.Bool(&o.verbose, "verbose", 'v', "print the commands asuka runs")
+	variantFlags(fs)
 	return fs
 }
 
@@ -104,6 +106,9 @@ func cmdBuild(args []string) error {
 		return err
 	}
 	appbuild.Debug = false // a release: @debug is false
+	if err := useVariant(); err != nil {
+		return err
+	}
 	dir := "."
 	if fs.Arg(0) != "" {
 		dir = fs.Arg(0)
@@ -138,7 +143,7 @@ func cmdBuild(args []string) error {
 		return err
 	}
 	if o.out == "" {
-		o.out = filepath.Join(app.dir, "dist")
+		o.out = variantOut(filepath.Join(app.dir, "dist"))
 		if o.platform == platformTVOS || o.platform == platformWatchOS {
 			o.out = filepath.Join(o.out, o.platform) // beside iOS's .ipa, of the same name
 		}
@@ -181,8 +186,8 @@ func cmdBuild(args []string) error {
 	return buildAndroid(app, &o)
 }
 
-// plist writes an XML property list of strings, bools, ints, string
-// lists and nested dicts.
+// plist writes an XML property list of strings, bools, integers, reals,
+// arrays and nested dicts.
 func plist(m map[string]any) string {
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>
@@ -235,6 +240,12 @@ func writePlist(b *strings.Builder, v any, depth int) {
 		}
 	case int:
 		fmt.Fprintf(b, "%s<integer>%d</integer>\n", ind, x)
+	case int64:
+		fmt.Fprintf(b, "%s<integer>%d</integer>\n", ind, x)
+	case float64:
+		fmt.Fprintf(b, "%s<real>%s</real>\n", ind, strconv.FormatFloat(x, 'g', -1, 64))
+	case plistDict:
+		writePlist(b, map[string]any(x), depth)
 	default:
 		fmt.Fprintf(b, "%s<string>%s</string>\n", ind, html.EscapeString(fmt.Sprint(x)))
 	}

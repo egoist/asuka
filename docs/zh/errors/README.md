@@ -34,6 +34,7 @@ Asuka 报告的每个错误和警告都有一个代码：一个稳定的名称�
 - [invalid-conformance](invalid-conformance.md): 类型声明的、或类型参数要求的东西不是 interface。
 - [invalid-constant](invalid-constant.md): 编译时生成的值不是字面量，或者无法解析。
 - [invalid-declaration](invalid-declaration.md): 声明的写法不被它所在的位置接受。
+- [invalid-define](invalid-define.md): 构建没有给出对应类型的值的 `@define`。
 - [invalid-entry](invalid-entry.md): 程序的 `fn main` 声明方式与它的运行方式不符。
 - [invalid-extension](invalid-extension.md): `extend` 了不能扩展的东西，或者写法不对。
 - [invalid-extern](invalid-extern.md): C 无法支撑的 extern 声明。

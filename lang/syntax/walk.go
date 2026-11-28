@@ -340,7 +340,11 @@ func Walk(v Visitor, n Node) {
 	case *BadItem:
 
 	// Expressions.
-	case *Ident, *BasicLit, *BoolLit, *NoneLit, *SelfExpr, *AtExpr, *BadExpr, *FormatSpec:
+	case *AtExpr:
+		if n.Args != nil {
+			walk(n.Args)
+		}
+	case *Ident, *BasicLit, *BoolLit, *NoneLit, *SelfExpr, *BadExpr, *FormatSpec:
 	case *StringLit:
 		for i, x := range n.Interps {
 			walk(x)

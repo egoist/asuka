@@ -3054,7 +3054,13 @@ func (p *parser) parsePrimary() Expr {
 		}
 		name := p.lit
 		p.next()
-		return &AtExpr{Name: name, Span: p.span(start)}
+		x := &AtExpr{Name: name}
+		// @define("KEY"): its arguments, right after its name.
+		if p.tok == LPAREN && p.pos == p.prevEnd {
+			x.Args = p.parseArgs()
+		}
+		x.Span = p.span(start)
+		return x
 	case PERIOD:
 		p.next()
 		if (p.tok == INT || p.tok == FLOAT || p.tok == DURATION || p.tok == LENGTH) && p.pos == p.prevEnd {

@@ -9,8 +9,9 @@ import (
 )
 
 // Folding: @platform is a constant, the platform the program is
-// compiled for (Options.Platform), and @debug another, whether it's a
-// development build (Options.Debug). A condition they decide is folded
+// compiled for (Options.Platform), @debug another, whether it's a
+// development build (Options.Debug), and a bool @define a third, the
+// build's (the checker's Info.Defines). A condition they decide is folded
 // (@platform == .linux, @debug, !, && and || of such, true and false),
 // and only the branch it takes is lowered: an if's, an else if's, a
 // match's arm of @platform, a view's if. The other branches were
@@ -72,6 +73,9 @@ func (l *Lowerer) fold(e syntax.Expr) folded {
 	case *syntax.AtExpr:
 		if check.IsDebugConst(x) {
 			return folded{known: true, val: l.opts.Debug}
+		}
+		if v, ok := l.info.Defines[x].(bool); ok {
+			return folded{known: true, val: v}
 		}
 	case *syntax.UnaryExpr:
 		if x.Op == syntax.NOT {
@@ -302,11 +306,32 @@ func (l *Lowerer) mayMatchCase(p syntax.Pattern, name string) bool {
 	return true
 }
 
-// atValue is a compile-time constant as a value: @platform's case, or
-// @debug's bool.
+// atValue is a compile-time constant as a value: @platform's case,
+// @debug's bool, or a @define's value (the checker's: the build's, or
+// its default).
 func (b *fb) atValue(e *syntax.AtExpr, dst int) int {
 	if check.IsDebugConst(e) {
 		return b.constBool(b.l.opts.Debug, dst)
+	}
+	if e.Name == "define" {
+		switch v := b.l.info.Defines[e].(type) {
+		case bool:
+			return b.constBool(v, dst)
+		case string:
+			r := b.out(dst, bytecode.KRef)
+			b.emit(op("KSTR"), r, b.l.str(v))
+			return r
+		case int64:
+			r := b.out(dst, bytecode.KInt)
+			b.loadInt(r, v)
+			return r
+		case float64:
+			r := b.out(dst, bytecode.KFloat)
+			b.emit(op("KFLOAT"), r, b.l.floatConst(v))
+			return r
+		}
+		b.l.errorf(e, diag.InternalError, "internal: @define has no value")
+		return b.valueReg(-1, bytecode.KInt)
 	}
 	return b.platformValue(e, dst)
 }

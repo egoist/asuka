@@ -68,6 +68,7 @@ func publishFlags(o *publishOptions) *flagSet {
 	fs.String(&o.profile, "profile", 0, "", "iOS, tvOS, watchOS (the watch app's): a provisioning `profile`'s path, name or UUID (default: asuka.toml's, else the best match installed)")
 	fs.String(&o.out, "out", 'o', "", "the output `directory` of the build (default: dist in the app's directory)")
 	fs.Bool(&o.verbose, "verbose", 'v', "print the commands asuka runs and its requests to the store")
+	variantFlags(fs)
 	return fs
 }
 
@@ -78,6 +79,9 @@ func cmdPublish(args []string) error {
 		return err
 	}
 	appbuild.Debug = false // a release: @debug is false
+	if err := useVariant(); err != nil {
+		return err
+	}
 	dir := "."
 	if fs.Arg(0) != "" {
 		dir = fs.Arg(0)
@@ -230,7 +234,7 @@ func (o *publishOptions) check(set map[string]bool) error {
 // buildForStore makes the release build the store takes: its path.
 func buildForStore(app *asukaApp, o *buildOptions) (string, error) {
 	if o.out == "" {
-		o.out = filepath.Join(app.dir, "dist")
+		o.out = variantOut(filepath.Join(app.dir, "dist"))
 		if o.platform == platformTVOS || o.platform == platformWatchOS {
 			o.out = filepath.Join(o.out, o.platform) // as asuka build's: beside iOS's .ipa, of the same name
 		}

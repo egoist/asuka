@@ -34,6 +34,7 @@ Every error and warning Asuka reports has a code: a stable name, said in the ter
 - [invalid-conformance](invalid-conformance.md): A type declares, or a type parameter needs, what isn't an interface.
 - [invalid-constant](invalid-constant.md): A value made when the app compiles that isn't a literal, or doesn't parse.
 - [invalid-declaration](invalid-declaration.md): A declaration written in a form its place doesn't take.
+- [invalid-define](invalid-define.md): A `@define` the build gives no value of its type for.
 - [invalid-entry](invalid-entry.md): A program's `fn main` declared otherwise than it runs.
 - [invalid-extension](invalid-extension.md): An `extend` of what can't be extended, or in a form it doesn't take.
 - [invalid-extern](invalid-extern.md): An extern declaration C can't stand behind.

@@ -60,6 +60,14 @@ var PreviewTests bool
 // test (but its benches) set it; asuka build and publish don't.
 var Debug bool
 
+// Variant and Defines are asuka --variant's and --define's (ASUKA_VARIANT):
+// the asuka.toml variant the app is built as, and the build's constants
+// over asuka.toml's [defines] (compile.Options').
+var (
+	Variant string
+	Defines map[string]string
+)
+
 // Warnings receives what's worth saying that doesn't stop a build (the
 // catalogs' missing translations), "file:line:col: warning: message".
 var Warnings io.Writer = os.Stderr
@@ -85,7 +93,7 @@ func compileDirWith(dir string, platform target.Platform, cover, tests bool) (*b
 	// own), which Load made ready. A release's files are the program's
 	// (app.asuka, std/time/time.asuka), not where this computer has them:
 	// its bytes are the same wherever it's built.
-	res, err := compile.Dir(dir, &compile.Options{Platform: platform, Lang: DevLang, Direction: DevDirection, Project: binRoot(dir), Cover: cover, NoOptimize: DevNoOptimize, Debug: Debug, NoTests: !tests,
+	res, err := compile.Dir(dir, &compile.Options{Platform: platform, Lang: DevLang, Direction: DevDirection, Project: binRoot(dir), Cover: cover, NoOptimize: DevNoOptimize, Debug: Debug, Variant: Variant, Defines: Defines, NoTests: !tests,
 		PreviewTests: tests && PreviewTests, TrimPaths: !Debug && !cover})
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -481,7 +489,7 @@ func (p *Project) check(platform target.Platform) *Uses {
 		}
 		dir = tmp
 	}
-	res, err := compile.Dir(dir, &compile.Options{Platform: platform, CheckOnly: true, NoCatalogs: true, NoTests: true})
+	res, err := compile.Dir(dir, &compile.Options{Platform: platform, CheckOnly: true, NoCatalogs: true, NoTests: true, Variant: Variant, Defines: Defines})
 	if err != nil || res.Program == nil {
 		return u
 	}

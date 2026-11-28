@@ -38,7 +38,7 @@ fn branches() {
   }
 }
 
-fn unknownConst() -> bool = @os == .linux // ERROR "no compile-time constant @os: there's @platform, the platform the app is compiled for, and @debug"
+fn unknownConst() -> bool = @os == .linux // ERROR "no compile-time constant @os: there's @platform, the platform the app is compiled for, @debug, whether it's a development build, and @define"
 
 // @debug: whether it's a development build, a bool. Its branches are
 // checked too, whichever it is.
@@ -61,3 +61,16 @@ fn notACase() -> bool = @platform == .linuxx // ERROR "Platform has no case or c
 fn assigned() {
   @platform = .linux // ERROR "can't assign"
 }
+
+// @define: a value the build gives (none here, there's no asuka.toml),
+// or its default, whose type is its own.
+let api: string = @define("API_URL", "https://example.com")
+let port: int = @define("PORT", 8080)
+let ratio: float = @define("RATIO", 1)
+let neg = @define("NEG", -2) + 1
+let unset = @define("API_URL") // ERROR "the build defines no API_URL"
+let typed: int = @define("NAME", "x") // ERROR "string"
+let keyed = @define(api) // ERROR "a string literal"
+let bare = @define // ERROR "@define takes the key"
+let computed = @define("X", port) // ERROR "a literal"
+let tooMany = @define("X", 1, 2) // ERROR "a key and maybe a default"

@@ -88,7 +88,7 @@ func (c *Checker) expr1(e syntax.Expr, want Type) Type {
 		c.useVar(c.ctx.Self, e)
 		return c.ctx.Self.Type
 	case *syntax.AtExpr:
-		return c.atExpr(e)
+		return c.atExpr(e, want)
 	case *syntax.ImplicitMember:
 		return c.implicitMember(e, want)
 	case *syntax.MemberExpr:
@@ -2557,10 +2557,18 @@ func implicitRoot(x syntax.Expr) bool {
 func IsConstNumber(e syntax.Expr) bool { return constNumber(e) }
 
 // atExpr checks a compile-time constant: @platform, the platform the
-// program is compiled for (a Platform), and @debug, whether it's a
-// development build (a bool). Their values aren't the checker's: every
+// program is compiled for (a Platform), @debug, whether it's a
+// development build (a bool), and @define, a value the build gives
+// (define.go). Their values aren't the checker's: every
 // branch is checked whatever they are, and lowering folds them.
-func (c *Checker) atExpr(e *syntax.AtExpr) Type {
+func (c *Checker) atExpr(e *syntax.AtExpr, want Type) Type {
+	if e.Name == "define" {
+		return c.defineExpr(e, want)
+	}
+	if e.Args != nil && (e.Name == "platform" || e.Name == "debug") {
+		c.errorf(e.Args, diag.NotCallable, "@%s is a value, not a function: it takes no arguments", e.Name)
+		return Invalid
+	}
 	switch e.Name {
 	case "platform":
 		pt := c.prelude.Scope.LookupLocal("Platform").(*TypeName)
@@ -2569,7 +2577,12 @@ func (c *Checker) atExpr(e *syntax.AtExpr) Type {
 	case "debug":
 		return Bool
 	}
-	c.errorf(e, diag.UndefinedName, "no compile-time constant @%s: there's @platform, the platform the app is compiled for, and @debug, whether it's a development build", e.Name)
+	if e.Args != nil {
+		for _, a := range e.Args.List {
+			c.expr(a.Value, nil)
+		}
+	}
+	c.errorf(e, diag.UndefinedName, "no compile-time constant @%s: there's @platform, the platform the app is compiled for, @debug, whether it's a development build, and @define(\"KEY\"), a value the build gives", e.Name)
 	return Invalid
 }
 

@@ -35,7 +35,7 @@ keyAlias = "upload"
 - `name` 是应用的名称：显示在图标下方和 Mac 的菜单栏里，也是 Windows 上的窗口标题、Linux 启动器里显示的名字以及网页的标题。构建产物的文件名也取自它（`Notes.app`、`Notes.exe`）。默认使用目录名。
 - `id` 在 iOS 和 Mac 上是 bundle ID；在 Android 和 Linux 上是 application ID（Linux 的 desktop 文件、图标和 D-Bus 名称都用它）；在 Windows 上是 AppUserModelID（通知要用到它）。默认是 `dev.asuka.<directory>`。
 - `version` 是用户看到的版本号（默认 `1.0`）；`build` 是已上传构建的序号，每次上传都必须递增（默认 1）。不过 `asuka publish` 会自动把每个构建编号为商店中现有最大编号之后的下一个，所以 `build` 只是起始值。在 Windows 上，二者组成 `.exe` 的文件版本（版本 1.2、构建 7 对应 `1.2.0.7`）；在 Linux 上则是 metainfo 中的 release。
-- `icon` 是一张 1024×1024 的正方形 PNG，用于 iOS 时不能有透明区域。每个平台的构建会自动生成该平台需要的各种尺寸：iOS 上是 asset catalog，Android 上是启动器图标，Mac 上是 `.icns`，Windows 上是嵌入 `.exe` 的 `.ico`，Linux 上是 hicolor 主题下 16 到 512 像素的各尺寸图标，Web 上则是 manifest 中的图标、favicon 以及 iOS 主屏幕图标。
+- `icon` 是一张 1024×1024 的正方形 PNG，用于 iOS 时不能有透明区域。每个平台的构建会自动生成该平台需要的各种尺寸：iOS 上是 asset catalog，Android 上是启动器图标，Mac 上是 `.icns`，Windows 上是嵌入 `.exe` 的 `.ico`，Linux 上是 hicolor 主题下 16 到 512 像素的各尺寸图标，Web 上则是 manifest 中的图标、favicon 以及 iOS 主屏幕图标。写成 `[icon]` 表时，还能为 Android 的自适应图标提供单独的图层和主题图标（Android 13），为 iOS 提供深色和着色图标（iOS 18）：见 [icon](asuka-toml.md#icon)。
 - `accent` 是应用的强调色，格式为 `"#rrggbb"`。它在 iOS 上是 tint 色；在 Android 上是 Material 3 配色方案的种子色；在 Mac 上是 `Accent`、填充按钮和链接的颜色（AppKit 自带的控件仍然使用用户选择的强调色）；在 Windows 上代替系统强调色，作为控件的强调色；在 Linux 上是 libadwaita 的强调色；在 Web 上是页面的强调色以及 manifest 的 `theme_color`。不设置时，各平台使用各自的默认强调色。
 - `scheme` 让应用可以通过 `myapp://` 这样的 URL 打开，支持 iOS、Android、Mac（`CFBundleURLTypes`）、Linux（desktop 文件中的 `x-scheme-handler`）和 Windows（应用启动时在 `HKEY_CURRENT_USER\Software\Classes` 下为当前用户注册）。`links` 则让指向你自己域名的 https 链接也能打开应用（即 universal links 和 App Links，仅限 iOS 和 Android）。这些 URL 都由 `onOpenURL` 接收。
 - `fileTypes` 是应用能打开的文件类型，打开的文件由 `onOpenFiles` 接收：
@@ -72,9 +72,51 @@ keyAlias = "upload"
 - `splash` 是启动屏：`{image = "logo.png", size = 96, background = "#ffffff", darkBackground = "#000000"}`（见[设备](device.md#启动屏platformsplash)）。
 - `widgets` 是应用的主屏幕小组件，`shortcuts` 是应用提供给 Siri、Spotlight 和启动器的快捷操作（见[设备](device.md#主屏幕小组件platformwidget)）。小组件扩展有自己的 bundle ID（应用的 ID 加上 `.widgets`）：发布时也要为它准备描述文件，可以用 `ios.widgetProfile` 指定。
 - `android.googleServices` 是 Firebase 项目的 `google-services.json`，供 `platform/push` 使用；`android.mapsKey` 是 Google Maps Platform 的 API 密钥，供 `platform/maps` 使用。
-- `ios.usage` 提供访问受保护资源时的用途说明（`NSCameraUsageDescription` 等，Mac 也会用到）；`ios.infoPlist` 向 Info.plist 添加任意键；`ios.backgroundModes` 向 `UIBackgroundModes` 追加条目（例如 `"audio"`，用于锁屏时录音和播放）；`android.permissions` 用来添加权限。
+- `ios.usage` 提供访问受保护资源时的用途说明（`NSCameraUsageDescription` 等，Mac 也会用到）；`ios.infoPlist` 向 Info.plist 添加任意类型的键；`ios.entitlements` 添加 entitlements（App Groups、钥匙串共享、关联域名）；`ios.backgroundModes` 向 `UIBackgroundModes` 追加条目（例如 `"audio"`，用于锁屏时录音和播放）；`android.permissions` 用来添加权限，`android.manifest` 则向清单添加元素和属性。见 [ios](asuka-toml.md#ios) 和 [android](asuka-toml.md#android)。
 
 应用导入的包会自动带上它们需要的权限和用途说明：`platform/camera` 带上相机的，`platform/location` 带上定位的。不过默认的说明比较笼统，最好在 `ios.usage` 里写上你自己的。有些包还要求在 App ID 上开启相应的能力（capability）：`platform/push` 需要 Push Notifications，`platform/appleauth` 需要 Sign in with Apple，`platform/integrity` 需要 App Attest，`platform/agerange` 需要 Declared Age Range，`platform/icloud` 需要 iCloud 及其容器。在 developer.apple.com 上开启之后，重新生成描述文件即可。`asuka build --platform ios`（以及 `--platform mac`）会告诉你描述文件缺了哪些能力。
+
+## 变体与构建常量
+
+一个应用往往要发布成好几个版本：连接 staging 服务器的开发版、给测试者的 beta 版，还有正式版。每个版本都是 `asuka.toml` 里的一个[变体](asuka-toml.md#variants)，也就是一张 `[variant.<name>]` 表，里面只写它要改的键；用 `--variant <name>` 构建出来的就是那个版本：
+
+```toml
+name = "Notes"
+id = "com.example.notes"
+icon = "icon.png"
+
+[defines]
+API_URL = "https://api.example.com"
+
+[variant.staging]
+name = "Notes Staging"
+idSuffix = ".staging"
+icon = "icons/staging.png"
+
+[variant.staging.defines]
+API_URL = "https://staging.example.com"
+
+[variant.staging.ios]
+profile = "Notes Staging App Store"
+```
+
+```sh
+asuka build --platform ios --variant staging      # dist/staging/Notes Staging.ipa
+asuka publish --platform android --variant staging --track internal
+asuka build --platform ios                        # 正式版，使用文件本身的键
+```
+
+拥有自己 ID 的变体（`idSuffix`，或者单独写的 `id`）就是一个独立的应用：它和其他变体并排安装，主屏幕上各有各的图标和名称，数据也各自独立。应用商店同样把它当作另一个应用：你需要在 App Store Connect 和 Google Play 里为它单独建一个应用，准备它自己的 App ID 和描述文件（在它的表里写 `ios.profile`），以及它自己的 Firebase 应用。它的构建产物放在 `dist/<name>` 里，和其他变体分开。在 CI 中，`ASUKA_VARIANT=staging` 可以为一个任务里的所有命令指定变体。
+
+`--variant` 不是 `--profile`。`asuka build --profile` 指定的是用来给构建签名的 iOS 或 Mac 描述文件；变体则是同一个应用的另一种构建方式，它的表里可以连同其他设置一起写上自己的描述文件。
+
+程序用 [`@define`](language/control-flow.md#构建给出的值) 读取构建给出的常量：先是 asuka.toml 的 [`[defines]`](asuka-toml.md#defines)，变体的值覆盖在它之上，单次构建的 `--define KEY=VALUE` 又覆盖在这两者之上：
+
+```sh
+asuka build --platform android --define API_URL=https://pr-42.example.com
+```
+
+这些常量会被编译进应用，而任何人都可以拆开应用查看：服务器地址或公开的密钥可以放进去，机密不行。构建本身需要的机密（签名密钥、上传密钥的密码）通过[环境变量](asuka-toml.md#环境变量)提供；应用需要的机密则留在你的服务器上，由应用去请求。
 
 ## iOS
 

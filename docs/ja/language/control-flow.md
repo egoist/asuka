@@ -167,3 +167,37 @@ component About {
 `!@debug` も畳み込まれ、`@platform` の比較と `&&`、`||` で組み合わせた場合も同じです。通る側の分岐が return するなら、その後ろのコードも含まれません。`if !@debug { return cached }` と書けば、ブロックの残りはリリースビルドに入りません。`@platform` の分岐でも同じです。どのビルドでも両方の分岐がチェックされるので、開発ビルドの側で作業しているあいだに、リリースビルドの側が知らないうちに壊れることはありません。
 
 テストは `asuka dev` と同じく開発ビルドです。`asuka test --release` を付けると、出荷するアプリと同じく `@debug` を false にしてテストを実行します。プログラムなら `asuka run --release` も同様です。ベンチマーク（`asuka test --bench`）はリリースビルドが実行するものを計測するので、`@debug` は false です。
+
+## ビルドが与える値
+
+`@define("KEY")` は、ビルドがプログラムに与える値で、これも定数です。サーバーのアドレス、あるビルドではオンで別のビルドではオフになる機能、あるサービス向けのアプリの公開キーなどに使います。ビルドは値を `asuka.toml` の [`[defines]`](../asuka-toml.md#defines) から取り、ビルドする[バリアント](../asuka-toml.md#variants)（`--variant staging`）の値がそれを上書きし、コマンドラインの `--define KEY=VALUE` がさらにその上を上書きします。
+
+```toml
+[defines]
+API_URL = "https://api.example.com"
+ANALYTICS = true
+
+[variant.staging.defines]
+API_URL = "https://staging.example.com"
+ANALYTICS = false
+```
+
+型は `asuka.toml` での値の型で、文字列、`int`、`float`、`bool` のいずれかです。`--define` だけが与えるキーは文字列になり、`asuka.toml` にあるキーはそこでの型を引き継ぎます（`PORT = 8080` なら `--define PORT=9000` は `int` です）。ビルドが与えないキーはエラーになるので、キーの書き間違いはコンパイル時に見つかります。既定値付きの `@define("KEY", default)` は、ビルドが値を与えないときは既定値になり、値の型は既定値の型です。既定値は文字列、数値、bool のリテラルで、ビルドが与える値もその型でなければなりません（`--define` のテキストはその型として読まれます。`@define("RETRIES", 3)` に対して `--define RETRIES=5` は `int` の 5 です）。
+
+```asuka check
+let server = @define("API_URL", "https://api.example.com")
+let retries = @define("RETRIES", 3)
+
+component Settings {
+  Column {
+    Text("Talking to {server}, {retries} tries")
+    if @define("ANALYTICS", true) {
+      Text("Usage statistics are on")
+    }
+  }
+}
+```
+
+`bool` の値は `@debug` と同じように、`if` の中でも `!`、`&&`、`||` と組み合わせても畳み込まれます。ビルドが通らない側の分岐はビルドに含まれません。キーは英字、数字、`_` からなる文字列リテラルで、先頭は英字か `_` です。
+
+ビルドが与える値はアプリにコンパイルされ、アプリを持っている人なら誰でも読み出せます。秘密の値は決して渡さないでください。サーバーの API シークレット、署名鍵、パスワードなどです。サーバーのアドレス、機能のスイッチ、もともと公開してよいキー（クライアント ID、アナリティクスの測定 ID、publishable key）なら問題ありません。秘密にすべきものはサーバーに置き、アプリはそこに問い合わせます。

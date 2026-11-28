@@ -1212,6 +1212,40 @@ component About {
 
 テストは `asuka dev` と同じく開発ビルドです。`asuka test --release` を付けると、出荷するアプリと同じく `@debug` を false にしてテストを実行します。プログラムなら `asuka run --release` も同様です。ベンチマーク（`asuka test --bench`）はリリースビルドが実行するものを計測するので、`@debug` は false です。
 
+#### ビルドが与える値
+
+`@define("KEY")` は、ビルドがプログラムに与える値で、これも定数です。サーバーのアドレス、あるビルドではオンで別のビルドではオフになる機能、あるサービス向けのアプリの公開キーなどに使います。ビルドは値を `asuka.toml` の [`[defines]`](https://asuka.egoist.dev/ja/docs/asuka-toml#defines) から取り、ビルドする[バリアント](https://asuka.egoist.dev/ja/docs/asuka-toml#variants)（`--variant staging`）の値がそれを上書きし、コマンドラインの `--define KEY=VALUE` がさらにその上を上書きします。
+
+```toml
+[defines]
+API_URL = "https://api.example.com"
+ANALYTICS = true
+
+[variant.staging.defines]
+API_URL = "https://staging.example.com"
+ANALYTICS = false
+```
+
+型は `asuka.toml` での値の型で、文字列、`int`、`float`、`bool` のいずれかです。`--define` だけが与えるキーは文字列になり、`asuka.toml` にあるキーはそこでの型を引き継ぎます（`PORT = 8080` なら `--define PORT=9000` は `int` です）。ビルドが与えないキーはエラーになるので、キーの書き間違いはコンパイル時に見つかります。既定値付きの `@define("KEY", default)` は、ビルドが値を与えないときは既定値になり、値の型は既定値の型です。既定値は文字列、数値、bool のリテラルで、ビルドが与える値もその型でなければなりません（`--define` のテキストはその型として読まれます。`@define("RETRIES", 3)` に対して `--define RETRIES=5` は `int` の 5 です）。
+
+```asuka
+let server = @define("API_URL", "https://api.example.com")
+let retries = @define("RETRIES", 3)
+
+component Settings {
+  Column {
+    Text("Talking to {server}, {retries} tries")
+    if @define("ANALYTICS", true) {
+      Text("Usage statistics are on")
+    }
+  }
+}
+```
+
+`bool` の値は `@debug` と同じように、`if` の中でも `!`、`&&`、`||` と組み合わせても畳み込まれます。ビルドが通らない側の分岐はビルドに含まれません。キーは英字、数字、`_` からなる文字列リテラルで、先頭は英字か `_` です。
+
+ビルドが与える値はアプリにコンパイルされ、アプリを持っている人なら誰でも読み出せます。秘密の値は決して渡さないでください。サーバーの API シークレット、署名鍵、パスワードなどです。サーバーのアドレス、機能のスイッチ、もともと公開してよいキー（クライアント ID、アナリティクスの測定 ID、publishable key）なら問題ありません。秘密にすべきものはサーバーに置き、アプリはそこに問い合わせます。
+
 ### コンポーネント
 
 コンポーネントは UI の部品です。パラメーターはヘッダーで宣言し、それ以外はすべて本体に書きます。
@@ -2362,6 +2396,7 @@ bench "fib 20" {
 - invalid-conformance: 型が宣言する、または型パラメーターが求めるものが interface ではない. そこに interface を書くか、外します。
 - invalid-constant: コンパイル時に作られる値が、リテラルでないか解析できない. リテラルそのものを渡し、解析できないとメッセージが示す部分を直します。
 - invalid-declaration: 置かれた場所が受け付けない形で書かれた宣言. その場所の形で書きます。
+- invalid-define: ビルドがその型の値を与えていない `@define`. asuka.toml の `[defines]`（または `--define`）でキーに値を与えるか、既定値を書きます：`@define("API_URL", "https://example.com")`。
 - invalid-entry: 実行のされ方と違う形で宣言されたプログラムの `fn main`. `fn main() { … }` と宣言し、引数は std/os で読みます。
 - invalid-extension: 拡張できないものの `extend`、または受け付けない形の `extend`. 名前のある型を拡張するか、代わりに関数を宣言します。
 - invalid-extern: C が裏付けられない extern 宣言. 解放する関数を `extern fn close(x: T)` と宣言し、ほかは C のとおりに宣言します。

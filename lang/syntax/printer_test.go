@@ -206,6 +206,7 @@ func TestFormatCases(t *testing.T) {
 		// A % length before (, [ or . keeps its space: 0%() is 0 % ().
 		{"let n = 0% () + 5% [1] + 5% .a + 5%?.a + 5%!", "let n = 0% () + 5% [1] + 5% .a + 5%?.a + 5%!\n"},
 		{"let d = @platform==.linux||( @platform != .web )", "let d = @platform == .linux || (@platform != .web)\n"},
+		{"let u = @define( \"API_URL\" ,\"x\" )", "let u = @define(\"API_URL\", \"x\")\n"},
 		{"fn f() { match p { Point( x :0 ,y )=>1 } }", "fn f() { match p { Point(x: 0, y) => 1 } }\n"},
 		{"fn f() { match s { c :Circle=>1; _ :  ui.Square => 2 } }", "fn f() { match s { c: Circle => 1, _: ui.Square => 2 } }\n"},
 		{"fn f() { if let c :Circle=s, let x : int? = c.r { } }", "fn f() { if let c: Circle = s, let x: int? = c.r {} }\n"},

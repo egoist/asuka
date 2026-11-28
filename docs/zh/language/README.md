@@ -32,7 +32,7 @@ app { Counter() }
 - [值与类型](types.md)：值与类型、运算符、内置方法、值语义
 - [声明](declarations.md)：let、var、state 等声明；结构体与枚举；私有的声明
 - [函数与闭包](functions.md)：函数与闭包；接口与泛型
-- [控制流](control-flow.md)：if、match、循环与模式；特定平台的代码（@platform）与开发构建的代码（@debug）
+- [控制流](control-flow.md)：if、match、循环与模式；特定平台的代码（@platform）与开发构建的代码（@debug）；构建给出的值（@define）
 - [组件](components.md)：组件：组件体、处理函数、双向绑定、视图列表、effect 与 task
 - [Store](stores.md)：在使用它的组件之间共享的状态
 - [异步](async.md)：异步函数、task、流、spawn；需要加载的数据

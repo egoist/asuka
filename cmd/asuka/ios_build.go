@@ -833,6 +833,17 @@ func (p *profile) sign(t *iosToolchain, work, bundle, id string, domains []strin
 			return err
 		}
 	}
+	// asuka.toml's own (the app's, not an extension's), which the
+	// profile must grant.
+	if need != nil && id == need.ID && len(need.IOS.Entitlements) > 0 {
+		have, err := profileEntitlements(p.path)
+		if err != nil {
+			return err
+		}
+		if err := signEntitlements(t, work, ent, need.IOS.Entitlements, have, p.team, p.name, id); err != nil {
+			return err
+		}
+	}
 	if err := t.run(work, nil, "codesign", "--force", "--sign", p.identity, "--entitlements", ent,
 		"--generate-entitlement-der", bundle); err != nil {
 		return err

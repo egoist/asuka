@@ -32,6 +32,9 @@ type Checker struct {
 	pkgs     []*Package
 	std      map[string]*Package
 
+	// defines are the build's constants, by key (@define; SetDefines).
+	defines map[string]Define
+
 	// While checking a package.
 	pkg        *Package
 	fileScopes map[syntax.Node]*Scope // a declaration's file's scope

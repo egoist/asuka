@@ -237,7 +237,12 @@ func (a *asukaApp) hostConfig(platform, target string, updates bool) appconfig.C
 // workDir is the app's directory for platform's builds in the user's
 // cache.
 func workDir(app *asukaApp, platform string) (string, error) {
-	sum := sha256.Sum256([]byte(app.dir))
+	key := app.dir
+	if app.cfg != nil && app.cfg.variant != "" {
+		// Each variant's builds are kept apart: another ID, icon, name.
+		key += "\x00" + app.cfg.variant
+	}
+	sum := sha256.Sum256([]byte(key))
 	dir := filepath.Join(cachedir.Root(), app.name+"-"+hex.EncodeToString(sum[:])[:8], platform)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err

@@ -911,11 +911,14 @@ type SelfExpr struct {
 }
 
 // An AtExpr is a compile-time constant: @platform, the platform the
-// program is compiled for, or @debug, whether it's a development build.
-// Name is what follows the @ ("platform").
+// program is compiled for, @debug, whether it's a development build, or
+// @define("KEY", default), a value the build gives (asuka.toml's
+// [defines], --define). Name is what follows the @ ("platform"); Args,
+// the arguments in parentheses right after it (nil for none).
 type AtExpr struct {
 	Span
 	Name string
+	Args *ArgList
 }
 
 // An ImplicitMember is .name: a member of the type that's expected

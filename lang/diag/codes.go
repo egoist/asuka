@@ -1231,6 +1231,20 @@ it.`,
 		Right: "-- app.asuka --\nimport std/embed\n\nlet terms = embed.text(\"terms.md\")\n-- terms.md --\n# Terms\n",
 	})
 
+	InvalidDefine = def(Code{
+		Name:    "invalid-define",
+		Summary: "a `@define` the build gives no value of its type for",
+		Why: `` + "`@define(\"KEY\")`" + ` is a value the build gives the program as it compiles:
+asuka.toml's ` + "`[defines]`" + `, a variant's, or ` + "`--define KEY=VALUE`" + `. Its key is a
+string literal of letters, digits and ` + "`_`" + `; a default after it, a literal
+too, is its value when the build gives none, and says its type, which
+the build's value must have.`,
+		Fix: `Give the key a value in asuka.toml's ` + "`[defines]`" + ` (or with ` + "`--define`" + `), or
+write a default: ` + "`@define(\"API_URL\", \"https://example.com\")`" + `.`,
+		Wrong: "-- app.asuka --\nlet server = @define(\"API_URL\")\n",
+		Right: "-- asuka.toml --\n[defines]\nAPI_URL = \"https://api.example.com\"\n-- app.asuka --\nlet server = @define(\"API_URL\")\n",
+	})
+
 	InvalidRoute = def(Code{
 		Name:    "invalid-route",
 		Summary: "a screen's address or a navigation the routes can't make",

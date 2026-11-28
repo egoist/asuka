@@ -60,7 +60,7 @@ github = "you/notes"
 | `id` | 字符串 | `dev.asuka.<directory>` | 在 iOS 和 Mac 上是 bundle ID；在 Android 和 Linux 上是 application ID（Linux 的 desktop 文件、图标、D-Bus 名称和数据目录都用它）；在 Windows 上是 AppUserModelID。请在第一次发布之前改好：应用商店和系统都靠它识别应用。在 Linux 上它只能包含字母、数字、`_` 和 `-`，至少分两段，每段都不能以数字开头。 |
 | `version` | 字符串 | `1.0` | 用户看到的版本号。 |
 | `build` | 整数 | `1` | 构建编号，每次上传都必须递增。`asuka publish` 会自动把构建编号为商店中现有最大编号的下一个，所以这里只是起始值。Windows 上 `.exe` 的文件版本由 `version` 和 `build` 组成（`1.2.0.7`）。 |
-| `icon` | 路径 | 无，使用平台的通用图标 | 一张 1024×1024 的正方形 PNG，用于 iOS 时不能有透明区域。每个平台的构建会自动生成该平台需要的各种尺寸。上架 App Store 必须提供。 |
+| `icon` | 路径或表 | 无，使用平台的通用图标 | 一张 1024×1024 的正方形 PNG，用于 iOS 时不能有透明区域。每个平台的构建会自动生成该平台需要的各种尺寸。上架 App Store 必须提供。写成表时，还可以提供 Android 自适应图标和主题图标的图层，以及 iOS 的深色和着色图标：见 [icon](#icon)。 |
 | `alternateIcons` | 表 | 无 | 应用可以换用的其他图标，按名字列出：`dark = "icons/dark.png"`，和 `icon` 一样是正方形 PNG。名字只能包含字母和数字，并以字母开头。用 `platform/appicon` 在它们之间切换（[应用图标](device.md#应用图标platformappicon)）。 |
 | `accent` | 颜色 | 平台默认 | `"#rrggbb"` 或 `"#rrggbbaa"`。在 iOS 上是 tint 色；在 Android 上是 Material 3 配色方案的种子色；在 Mac 上是 `Accent`、填充按钮和链接的颜色（AppKit 自带的控件仍然使用用户选择的颜色）；在 Windows 上是控件的强调色，在 Linux 上是 libadwaita 的强调色；在 Web 上是页面的强调色以及 manifest 的 `theme_color`。 |
 | `orientations` | 字符串数组 | 两者都支持 | `"portrait"`、`"landscape"`：应用在手机上支持的方向。iPad 上总是支持全部四个方向，因为分屏浏览和台前调度要求如此；Android 16 在平板和折叠屏设备上也会忽略这项设置。 |
@@ -89,8 +89,97 @@ github = "you/notes"
 | `ads` | 表 | | 使用 `platform/ads` 的应用的 AdMob 应用 ID。见 [ads](#ads)。 |
 | `analytics` | 表 | | 供 `platform/analytics` 使用的 Google Analytics 设置：Web 和桌面端发送到哪个 Web 数据流，以及数据收集和意见征求的初始状态。见 [analytics](#analytics)。 |
 | `bin` | 表 | 无 | 项目自带的程序：放在各自目录里的命令行工具，会构建进桌面应用。见 [bin](#bin)。 |
+| `defines` | 表 | 无 | 构建时交给程序的常量，程序用 `@define("KEY")` 读取，比如服务器地址、功能开关。见 [defines](#defines)。 |
+| `variant` | 表 | 无 | 应用的变体：同一个应用的另一种构建方式（dev、staging、prod），各自有自己的 ID、名称、图标和 defines。写成 `[variant.<name>]`，覆盖在文件其余部分之上。见 [variants](#variants)。 |
 
 Windows 构建只需要上面这些键；它的签名证书通过环境变量提供（见[打包与发布](shipping.md#windows)）。
+
+## icon
+
+对所有平台来说，写 `icon = "icon.png"` 就够了：每个平台的构建都从这张图生成所需的尺寸，Android 的自适应图标则是把这张图放在中间，背景用它角上的颜色填充。如果想按各平台设计规范的要求提供更多素材，可以把 `icon` 写成表：
+
+```toml
+[icon]
+image = "icon.png"
+foreground = "icon-foreground.png"
+background = "#1B2440"
+monochrome = "icon-monochrome.png"
+dark = "icon-dark.png"
+tinted = "icon-tinted.png"
+```
+
+| 键 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `image` | 路径 | 必填 | 图标本身，和 `icon = "…"` 的写法相同：一张 1024×1024 的正方形 PNG，用于 iOS 时不能有透明区域。Mac、Windows、Linux 和 Web 只用这张图，Android 8 之前的图标也是。 |
+| `foreground` | 路径 | `image` 居中放置 | Android 自适应图标的前景层（Android 8 及以上）：一张正方形 PNG，表示 108dp 的整个图层，logo 以外的部分透明。启动器会把它裁成自己的形状（圆形、圆角方形）并可能移动它，至少显示中间的 72dp，中间的 66dp 则始终可见，所以 logo 要放在这个范围内。 |
+| `background` | 颜色或路径 | `image` 角上的颜色 | 自适应图标的背景层：`"#rrggbb"`，或者和 `foreground` 一样表示整个图层的正方形 PNG。需要同时提供 `foreground`。 |
+| `monochrome` | 路径 | 无 | Android 13 的主题图标：一张和 `foreground` 一样表示整个图层的正方形 PNG。用户开启主题图标后，启动器会用壁纸的颜色绘制它的形状（即它的 alpha 通道）。没有它时，开启了主题图标的启动器会原样显示图标。 |
+| `dark` | 路径 | 由 iOS 生成 | iOS 18 深色模式下的图标：一张 1024×1024 的正方形 PNG，logo 放在透明背景上，iOS 会在背后填上它的深色渐变。 |
+| `tinted` | 路径 | 由 iOS 生成 | iOS 18 的着色图标：一张 1024×1024 的正方形 PNG，背景透明。构建时会把它转成灰度，再由 iOS 用用户选的颜色着色。 |
+
+各个图层都是整个图层的图像，所以最好在同一块 1024×1024 的画板上制作，让 logo 在每张图里的位置一致。如果 `foreground` 或 `monochrome` 没有透明区域，构建会给出警告，因为启动器会把它显示成一个方块。`alternateIcons` 每项只接受一张图，不支持图层。见[打包与发布](shipping.md#asukatoml)。
+
+## variants
+
+变体（variant）是同一个应用的另一种构建：比如开发版、staging 版和正式版，每个都有自己的 ID、名称、图标和 defines，可以同时装在一台手机上。每个变体是一张 `[variant.<name>]` 表，里面写的是 `asuka.toml` 的键；用 `--variant <name>` 构建时，这些键会覆盖文件其余部分的同名键：
+
+```toml
+name = "Notes"
+id = "com.example.notes"
+icon = "icon.png"
+
+[defines]
+API_URL = "https://api.example.com"
+
+[variant.dev]
+name = "Notes Dev"
+idSuffix = ".dev"
+versionSuffix = "-dev"
+icon = "icons/dev.png"
+
+[variant.dev.defines]
+API_URL = "https://staging.example.com"
+
+[variant.dev.ios]
+profile = "Notes Dev"
+```
+
+```sh
+asuka dev --variant dev                        # Notes Dev，com.example.notes.dev
+asuka build --platform android --variant dev   # 它的 .aab，在 dist/dev 里
+asuka publish --platform ios                   # 文件本身的配置：Notes
+```
+
+表会逐个键地合并，一直深入到最里层：上面的 `[variant.dev.ios]` 设置了描述文件，同时保留文件里的 `ios.team`。其他类型的值，不论是字符串、数组还是表数组（`[[widgets]]`），都会整个替换文件里的值。变体的名称只能包含字母、数字、`-` 和 `_`。除了文件里的键，变体还可以写：
+
+| 键 | 类型 | 说明 |
+|---|---|---|
+| `idSuffix` | 字符串 | 追加到 `id` 后面：`".dev"` 会得到 `com.example.notes.dev`。也可以直接给变体写一个自己的 `id`。 |
+| `versionSuffix` | 字符串 | 追加到 Android 显示的版本号后面（它的 `versionName`，如 `1.2.0-dev`）。其他平台的版本号仍然是 `version`：App Store 和桌面端的自动更新会把它当作数字比较。 |
+
+`dependencies`、`bin`、`c` 和 `i18n` 属于整个项目，每次构建都一样，变体不能修改它们；变体里也不能再嵌套变体。
+
+`asuka dev`、`build`、`publish`、`run`、`test` 和 `check` 都接受 `--variant`；没有给出时，由 `ASUKA_VARIANT` 指定（适合 CI 任务）。两者都没有时，构建使用文件本身的配置，不属于任何变体。编译器也会读取变体：变体里的 `version`、`accent` 和 `defines` 就是程序看到的值。
+
+变体的构建产物放在 `dist/<name>` 里（如 `dist/dev/Notes Dev.ipa`），并且与其他变体分开构建，彼此不会覆盖。拥有自己 ID 的变体，在系统和应用商店看来就是另一个应用：手机会把它和其他变体并排安装，数据也各自独立；App Store Connect 和 Google Play 需要为它单独建一个应用，iOS 需要一个对应它 ID 的描述文件（在变体里写 `ios.profile`），Firebase 也需要它自己的配置文件（`ios.googleServices`、`android.googleServices`）。和文件使用同一个 ID 的变体，安装时会替换掉已安装的那个应用。
+
+`--variant` 不是 `--profile`：`asuka build --profile` 和 `publish --profile` 指定的是描述文件，作用和 `ios.profile` 一样；而变体可以在自己的表里连同其他设置一起指定描述文件。见[变体与构建常量](shipping.md#变体与构建常量)。
+
+## defines
+
+构建时交给程序的常量：字符串、整数、浮点数和布尔值，按名称给出。名称由字母、数字和 `_` 组成，不能以数字开头。
+
+```toml
+[defines]
+API_URL = "https://api.example.com"
+SENTRY_DSN = "https://public@o1.ingest.sentry.io/2"
+RETRIES = 3
+ANALYTICS = true
+```
+
+应用用 `@define("API_URL")` 读取它们。它在编译时就是常量，类型就是值的类型；`@define("RETRIES", 3)` 则带一个默认值，用于构建可能不提供的键。变体的 `[variant.<name>.defines]` 可以替换其中一部分；`--define KEY=VALUE`（`dev`、`build`、`publish`、`run`、`test` 和 `check` 都支持，每个键写一次）可以在单次构建中替换任意一个：它的值会取这个键在这里的类型，这张表里没有的键则是字符串。见[构建给出的值](language/control-flow.md#构建给出的值)。
+
+defines 会被编译进应用，任何拿到应用的人都能读出来。千万不要把机密放进去：服务器的 API 密钥、签名密钥、密码都不行。服务器地址、开关，或者本来就公开的密钥（client ID、publishable key、统计用的 measurement ID）都没问题；机密应该留在你的服务器上，构建本身需要的机密则放在[环境变量](#环境变量)里。
 
 ## fileTypes
 
@@ -300,7 +389,8 @@ iOS 构建的配置。`team` 同时也是 Mac 构建所用的团队，`usage` �
 | `widgetProfile` | 字符串 | 已安装的最佳匹配 | 小组件扩展（`widgets`）的描述文件，对应 ID `<id>.widgets`。 |
 | `notificationProfile` | 字符串 | 已安装的最佳匹配 | Notification Service Extension（`push.Rewrite`）的描述文件，对应 ID `<id>.notification`。 |
 | `usage` | 表 | 各个包自带的说明 | 受保护资源的用途说明，以 Info.plist 的键为键，写在 `[ios.usage]` 中：`NSCameraUsageDescription = "To scan your receipts."`。应用导入的包会提供通用的说明，最好写上你自己的。 |
-| `infoPlist` | 表 | 无 | 添加到 Info.plist 的字符串键。 |
+| `infoPlist` | 表 | 无 | 添加到 Info.plist 的键，会覆盖 Asuka 写入的同名键：可以是任意 TOML 值，按对应的 plist 类型写入（见下文）。 |
+| `entitlements` | 表 | 无 | 应用自己的 entitlements，与它的包所需的 entitlements 并存：App Groups、钥匙串共享、关联域名等（见下文）。 |
 | `backgroundModes` | 字符串数组 | 无 | 添加到 Info.plist 的 `UIBackgroundModes`：`"audio"` 可以在锁屏时继续录音和播放。 |
 | `iphoneOnly` | 布尔值 | `false` | 不支持 iPad：应用在 iPad 上作为 iPhone 应用运行，窗口是手机大小。 |
 | `storekit` | 字符串 | 无 | StoreKit 配置文件（Xcode 的 `.storekit`）。`asuka dev` 的模拟器构建会像 Xcode 的 scheme 那样，用它来售卖商品：见[应用内购买](purchases.md#测试购买)。 |
@@ -326,6 +416,22 @@ purposes = ["AppFunctionality"]
 | `tracking` | 布尔值 | 是否用于追踪用户。 |
 | `purposes` | 字符串数组 | `"AppFunctionality"` 即 `NSPrivacyCollectedDataTypePurposeAppFunctionality`。 |
 
+`infoPlist` 和 `entitlements` 接受任意 TOML 值，并按对应的 plist 类型写入：字符串写成 `<string>`，整数写成 `<integer>`，浮点数写成 `<real>`，布尔值写成 `<true/>` 或 `<false/>`，数组写成 `<array>`，表写成 `<dict>`（日期写成它的 RFC 3339 字符串）。
+
+```toml
+[ios.infoPlist]
+UIFileSharingEnabled = true
+LSApplicationQueriesSchemes = ["comgooglemaps", "waze"]
+NSAppTransportSecurity = { NSExceptionDomains = { "example.local" = { NSExceptionAllowsInsecureHTTPLoads = true } } }
+
+[ios.entitlements]
+"com.apple.security.application-groups" = ["group.com.example.notes.shared"]
+"keychain-access-groups" = ["$(AppIdentifierPrefix)com.example.shared"]
+"com.apple.developer.associated-domains" = ["webcredentials:example.com"]
+```
+
+数组类型的 entitlement 会与 Asuka 给应用的数组合并（`links` 对应的 `applinks:` 域名、包所用的 App Group 和钥匙串组）；其他类型的值则替换 Asuka 的值。和 Xcode 的 entitlements 文件一样，`$(AppIdentifierPrefix)` 和 `$(TeamIdentifierPrefix)` 会替换成团队 ID 加一个点。它们只属于应用本身，不会加到扩展上。模拟器构建会原样带上它们；签名构建则要求描述文件授予其中的每一项（在 developer.apple.com 上为 App ID 开启对应的能力），否则构建会停下来，并列出缺少的项。
+
 见[打包与发布](shipping.md#ios)。
 
 ## mac
@@ -337,6 +443,8 @@ Mac 构建签名所用的描述文件，以及分发时的打包形式；团队�
 | `profile` | 字符串 | `ASUKA_MAC_PROFILE`；没有时，如果应用需要，用已安装的最佳匹配 | Developer ID（或开发用）描述文件的路径、名称或 UUID，推送、通过 Apple 登录、App Attest 和 Apple Pay 都需要它。 |
 | `appStoreProfile` | 字符串 | 已安装的最佳匹配 | Mac App Store 的描述文件，用于 `--appstore`。 |
 | `packages` | 字符串数组 | `["zip", "dmg"]` | 构建用哪些形式分发应用：`zip` 是压缩好的应用，`dmg` 是磁盘映像。 |
+| `infoPlist` | 表 | 无 | 添加到 Mac 应用 Info.plist 的键，会覆盖 Asuka 写入的同名键，写法和 `ios.infoPlist` 相同。 |
+| `entitlements` | 表 | 无 | Mac 应用自己的 entitlements，写法和 `ios.entitlements` 相同：App Sandbox 和 hardened runtime 的 entitlements（如 `com.apple.security.cs.allow-jit`）任何构建都能用；需要描述文件授予的（`com.apple.developer.…`、`keychain-access-groups`）只有设置了 `profile` 时才能用。 |
 
 `--profile` 和 `ASUKA_MAC_PROFILE` 会覆盖描述文件，`--package` 会覆盖打包形式。见[打包与发布](shipping.md#macos)。
 
@@ -353,6 +461,33 @@ Android 构建的配置。
 | `googleServices` | 路径 | 无 | Firebase 项目的 `google-services.json`，供 `platform/push` 和 `platform/analytics` 使用。 |
 | `mapsKey` | 字符串 | 无 | Google Maps Platform 的 API 密钥（Maps SDK for Android），供 `platform/maps` 使用。 |
 | `serviceAccount` | 路径 | 无 | `asuka publish` 上传到 Google Play 时使用的 Google Cloud 服务账号的 JSON 密钥。不要把它放进仓库。 |
+| `manifest` | 表 | 无 | 在 Asuka 生成的内容之外，应用要加到 `AndroidManifest.xml` 里的东西（见下文）。 |
+
+`manifest` 用来写这里没有对应键的东西：某个库要求的 `<meta-data>`、声明应用会打开哪些应用的 `<queries>`、应用 activity 上的某个属性。其中的元素是 XML，构建读取时会逐个检查：必须是完整的元素，只能用 `android:` 和 `tools:` 命名空间，而且不能是清单自己的 `<manifest>` 或 `<application>`。
+
+```toml
+[android.manifest]
+top = ['<queries><package android:name="com.google.android.apps.maps" /></queries>']
+application = ['<meta-data android:name="com.example.sdk.KEY" android:value="pk_live_123" />']
+activity = ["""
+<intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <data android:mimeType="text/x-notes" />
+</intent-filter>"""]
+applicationAttributes = { "android:largeHeap" = "true" }
+activityAttributes = { "android:windowSoftInputMode" = "adjustPan" }
+```
+
+| 键 | 类型 | 说明 |
+|---|---|---|
+| `top` | 字符串数组 | 放在 `<manifest>` 里的元素：`<uses-feature>`、`<queries>`、`<permission>`。 |
+| `application` | 字符串数组 | 放在 `<application>` 里的元素：`<meta-data>`、`<service>`、`<receiver>`、`<provider>`、`<activity>`。 |
+| `activity` | 字符串数组 | 放在应用 activity 里的元素：`<intent-filter>`、`<meta-data>`。 |
+| `applicationAttributes` | 表 | `<application>` 的属性，按带前缀的名称给出（`"android:largeHeap"`），会覆盖 Asuka 和宿主的同名属性：每一个都会写进 `tools:replace`。 |
+| `activityAttributes` | 表 | 应用 activity 的属性，规则同上（`android:name` 除外）。 |
+
+权限请写在 `permissions` 里，它会和包所需的权限合并。
 
 见[打包与发布](shipping.md#android)。
 
@@ -629,6 +764,7 @@ output = "index/target/{target}/release/notes-index{exe}"
 
 | 变量 | 说明 |
 |---|---|
+| `ASUKA_VARIANT` | 没有 `--variant` 时，构建所用的[变体](#variants)。 |
 | `ASUKA_KEYSTORE`、`ASUKA_KEY_ALIAS` | 覆盖 `android.keystore` 和 `android.keyAlias`。 |
 | `ASUKA_KEYSTORE_PASSWORD`、`ASUKA_KEY_PASSWORD` | keystore 的密码，以及与之不同时密钥的密码。 |
 | `ASUKA_ASC_KEY_ID`、`ASUKA_ASC_ISSUER_ID`、`ASUKA_ASC_KEY` | 覆盖 `ios.appStoreConnect`；`ASUKA_ASC_KEY` 是 `.p8` 文件的路径或其内容。 |

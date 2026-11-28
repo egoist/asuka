@@ -96,3 +96,25 @@ func writePNG(path string, img image.Image) error {
 }
 
 func newNRGBA(size int) *image.NRGBA { return image.NewNRGBA(image.Rect(0, 0, size, size)) }
+
+// hasTransparency reports whether any of img's pixels isn't opaque.
+func hasTransparency(img *image.NRGBA) bool {
+	for i := 3; i < len(img.Pix); i += 4 {
+		if img.Pix[i] < 255 {
+			return true
+		}
+	}
+	return false
+}
+
+// grayscale is img's luminance (Rec. 709), its alpha kept: what iOS's
+// tinted icon wants, which it tints with the user's color.
+func grayscale(img *image.NRGBA) *image.NRGBA {
+	dst := image.NewNRGBA(img.Bounds())
+	for i := 0; i < len(img.Pix); i += 4 {
+		r, g, b := float64(img.Pix[i]), float64(img.Pix[i+1]), float64(img.Pix[i+2])
+		l := uint8(math.Round(0.2126*r + 0.7152*g + 0.0722*b))
+		dst.Pix[i], dst.Pix[i+1], dst.Pix[i+2], dst.Pix[i+3] = l, l, l, img.Pix[i+3]
+	}
+	return dst
+}

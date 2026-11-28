@@ -40,8 +40,13 @@ func (s *server) semanticTokens(p *SemanticTokensParams) (*SemanticTokens, error
 	var toks []semToken
 	walkPaths(fc.file, func(path []syntax.Node) {
 		if a, ok := path[len(path)-1].(*syntax.AtExpr); ok {
-			// @platform, @debug: constants the compiler gives.
-			toks = append(toks, semToken{start: fc.offset(a.Start), end: fc.offset(a.End), typ: tokenType("macro"), mods: modReadonly | modDefaultLibrary})
+			// @platform, @debug, @define: constants the compiler gives (a
+			// @define's arguments are tokens of their own).
+			end := fc.offset(a.End)
+			if a.Args != nil {
+				end = fc.offset(a.Start) + 1 + len(a.Name)
+			}
+			toks = append(toks, semToken{start: fc.offset(a.Start), end: end, typ: tokenType("macro"), mods: modReadonly | modDefaultLibrary})
 			return
 		}
 		id, ok := path[len(path)-1].(*syntax.Ident)

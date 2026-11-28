@@ -189,6 +189,10 @@ func writeMacBundle(app *asukaApp, bundle, work string, release bool, run func(d
 	if err := app.cfg.writeLprojs(res); err != nil {
 		return "", err
 	}
+	// asuka.toml's mac.infoPlist, over all of it.
+	for k, v := range app.cfg.Mac.InfoPlist {
+		info[k] = v
+	}
 	if err := os.WriteFile(filepath.Join(contents, "Info.plist"), []byte(plist(info)), 0o644); err != nil {
 		return "", err
 	}

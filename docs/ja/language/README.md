@@ -32,7 +32,7 @@ app { Counter() }
 - [値と型](types.md)：値と型、演算子、組み込みメソッド、値のセマンティクス
 - [宣言](declarations.md)：let、var、state などの宣言。構造体と列挙型。非公開の宣言
 - [関数とクロージャ](functions.md)：関数とクロージャ。インターフェースとジェネリクス
-- [制御フロー](control-flow.md)：if、match、ループとパターン。特定のプラットフォーム向けのコード（@platform）と開発ビルド向けのコード（@debug）
+- [制御フロー](control-flow.md)：if、match、ループとパターン。特定のプラットフォーム向けのコード（@platform）と開発ビルド向けのコード（@debug）。ビルドが与える値（@define）
 - [コンポーネント](components.md)：コンポーネント：本体、ハンドラー、双方向バインディング、ビューのリスト、effect と task
 - [ストア](stores.md)：使うコンポーネントの間で共有する状態
 - [非同期処理](async.md)：非同期関数、task、ストリーム、spawn。読み込むデータ

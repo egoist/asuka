@@ -76,7 +76,7 @@ These apply on every platform the key means something on.
 | `id` | string | `dev.asuka.<directory>` | The bundle ID on iOS and the Mac, the application ID on Android and Linux (its desktop file, icon, D-Bus name and data directory), the AppUserModelID on Windows. Change it before the first release: the stores and the systems know the app by it. On Linux it must be letters, digits, `_` and `-`, in two parts or more, none starting with a digit. |
 | `version` | string | `1.0` | The version users see. |
 | `build` | integer | `1` | The build's number, which must grow with each upload. `asuka publish` numbers a build one above the store's highest itself, so this is only where it starts. Windows's file version is `version` and `build` together (`1.2.0.7`). |
-| `icon` | path | none: the platform's generic icon | A square PNG, 1024×1024, without transparency for iOS. Each build makes the sizes its platform wants. The App Store needs one. |
+| `icon` | path or table | none: the platform's generic icon | A square PNG, 1024×1024, without transparency for iOS. Each build makes the sizes its platform wants. The App Store needs one. A table adds Android's adaptive and themed icon layers and iOS's dark and tinted icons: see [icon](#icon). |
 | `alternateIcons` | table | none | Other icons the app may show instead of its own, by name: `dark = "icons/dark.png"`, square PNGs as `icon`. Names are letters and digits, starting with a letter. `platform/appicon` switches between them ([The app's icon](device.md#the-apps-icon-platformappicon)). |
 | `accent` | color | the platform's | `"#rrggbb"` or `"#rrggbbaa"`: the tint on iOS, the seed of the Material 3 color scheme on Android, the color of `Accent`, filled buttons and links on the Mac (AppKit's own controls keep the user's), the controls' accent on Windows and libadwaita's on Linux, the page's and the manifest's `theme_color` on the web. |
 | `orientations` | strings | both | `"portrait"`, `"landscape"`: the orientations the app takes on a phone. iPads take all four, as Split View and Stage Manager need, and Android 16 ignores it on tablets and foldables. |
@@ -105,9 +105,141 @@ These apply on every platform the key means something on.
 | `ads` | table | | The AdMob app IDs of an app of `platform/ads`. See [ads](#ads). |
 | `analytics` | table | | Google Analytics for `platform/analytics`: the web stream the web and the desktops send to, and what collection and consent start as. See [analytics](#analytics). |
 | `bin` | tables | none | The project's programs: command-line tools in directories of their own, built into the desktop apps. See [bin](#bin). |
+| `defines` | table | none | Constants the build gives the program, which it reads with `@define("KEY")`: a server's address, a feature's switch. See [defines](#defines). |
+| `variant` | tables | none | The app's variants, each the app built another way (dev, staging, prod), with its own ID, name, icon and defines: `[variant.<name>]`, over the rest of the file. See [variants](#variants). |
 
 A Windows build needs nothing beyond these: its signing certificate is
 given in the environment (see [Shipping](shipping.md#windows)).
+
+## icon
+
+`icon = "icon.png"` is enough for every platform: each build makes the
+sizes it wants from it, and Android's adaptive icon is that image in
+the middle of its corner's color. A table gives the platforms more to
+draw the icon with, as their design guidelines ask:
+
+```toml
+[icon]
+image = "icon.png"
+foreground = "icon-foreground.png"
+background = "#1B2440"
+monochrome = "icon-monochrome.png"
+dark = "icon-dark.png"
+tinted = "icon-tinted.png"
+```
+
+| Key | Type | Default | What it is |
+|---|---|---|---|
+| `image` | path | required | The icon, as `icon = "…"` gives it: a square PNG, 1024×1024, opaque for iOS. The Mac, Windows, Linux and the web take it alone, and so do Android's icons before Android 8. |
+| `foreground` | path | `image`, in the middle | Android's adaptive icon's front layer (Android 8 and later): a square PNG of the whole layer, 108dp, transparent around the logo. Launchers cut it to their shape (a circle, a squircle) and move it, showing at least the middle 72dp, and the middle 66dp always: keep the logo inside that. |
+| `background` | color or path | `image`'s corner's color | The adaptive icon's back layer: `"#rrggbb"`, or a square PNG of the whole layer as `foreground`. It needs `foreground`. |
+| `monochrome` | path | none | Android 13's themed icon: a square PNG of the whole layer, as `foreground`, whose shape (its alpha) the launcher draws in the colors of the user's wallpaper when they turn themed icons on. Without it, a themed launcher shows the icon as it is. |
+| `dark` | path | made by iOS | iOS 18's icon in dark mode: a square PNG, 1024×1024, the logo on a transparent background, which iOS fills with its dark gradient. |
+| `tinted` | path | made by iOS | iOS 18's tinted icon: a square PNG, 1024×1024, on a transparent background, which the build makes grayscale and iOS tints with the color the user picks. |
+
+The layers are images of their whole layer, so make them from the same
+1024×1024 artboard: the logo at the same place in each. The build warns
+of a `foreground` or a `monochrome` without transparency, which launchers
+would show as a square. `alternateIcons` take an image each, without
+layers. See [Shipping](shipping.md#asukatoml).
+
+## variants
+
+A variant is the app built another way: a development, a staging and a
+production build of one app, each with its own ID, name, icon and
+defines, which a phone keeps side by side. Each is a `[variant.<name>]`
+table of `asuka.toml`'s keys, which a build with `--variant <name>`
+takes over the rest of the file:
+
+```toml
+name = "Notes"
+id = "com.example.notes"
+icon = "icon.png"
+
+[defines]
+API_URL = "https://api.example.com"
+
+[variant.dev]
+name = "Notes Dev"
+idSuffix = ".dev"
+versionSuffix = "-dev"
+icon = "icons/dev.png"
+
+[variant.dev.defines]
+API_URL = "https://staging.example.com"
+
+[variant.dev.ios]
+profile = "Notes Dev"
+```
+
+```sh
+asuka dev --variant dev                        # Notes Dev, com.example.notes.dev
+asuka build --platform android --variant dev   # its .aab, in dist/dev
+asuka publish --platform ios                   # the file's own: Notes
+```
+
+Tables merge key by key, all the way down: `[variant.dev.ios]` above
+sets the profile and keeps the file's `ios.team`. Any other value, a
+string, an array or an array of tables (`[[widgets]]`), replaces the
+file's. A variant's name is letters, digits, `-` and `_`. Besides the
+file's keys, a variant may say:
+
+| Key | Type | What it is |
+|---|---|---|
+| `idSuffix` | string | Added to `id`: `".dev"` makes `com.example.notes.dev`. Or give the variant its own `id`. |
+| `versionSuffix` | string | Added to the version Android shows (its `versionName`, `1.2.0-dev`). The other platforms' versions stay `version`: the App Store and the desktops' updates compare them as numbers. |
+
+A variant can't change `dependencies`, `bin`, `c` or `i18n`, which are
+the project's for every build, and has no variants of its own.
+
+`asuka dev`, `build`, `publish`, `run`, `test` and `check` take
+`--variant`, and `ASUKA_VARIANT` names one for them when it's not given
+(CI's jobs). Without either, the build is the file's, no variant's. The
+compiler reads the variant too: its `version`, `accent` and `defines`
+are the program's.
+
+A variant's builds go in `dist/<name>` (`dist/dev/Notes Dev.ipa`), and
+it's built apart from the others, so one doesn't replace another's. One
+with its own ID is another app to the systems and the stores: the phone
+installs it beside the others, with its own data; App Store Connect and
+Google Play need an app of its own for it, iOS a provisioning profile
+for its ID (`ios.profile` in the variant), and Firebase its own files
+(`ios.googleServices`, `android.googleServices`). A variant with the
+file's ID replaces the app it's installed over.
+
+`--variant` isn't `--profile`: `asuka build --profile` and `publish
+--profile` name a provisioning profile, as `ios.profile` does, and a
+variant sets that with the rest. See [Variants](shipping.md#variants-and-build-constants).
+
+## defines
+
+The constants the build gives the program: strings, integers, floats
+and booleans, by name, letters, digits and `_`, not starting with a
+digit.
+
+```toml
+[defines]
+API_URL = "https://api.example.com"
+SENTRY_DSN = "https://public@o1.ingest.sentry.io/2"
+RETRIES = 3
+ANALYTICS = true
+```
+
+The app reads each with `@define("API_URL")`, a constant as the app
+compiles, of its value's type; `@define("RETRIES", 3)` gives a default,
+for a key the build may not give. A variant's `[variant.<name>.defines]`
+replaces some of them, and `--define KEY=VALUE` (on `dev`, `build`,
+`publish`, `run`, `test` and `check`, again for each) replaces any for
+one build: its value takes the type the key has here, and is a string
+for a key this table hasn't. See [Values from the
+build](language/control-flow.md#values-from-the-build).
+
+The defines are compiled into the app, and anyone who has the app can
+read them. Never put a secret in them: a server's API secret, a signing
+key, a password. A server's address, a switch, or a key that's meant to
+be public (a client ID, a publishable key, an analytics measurement ID)
+is fine; a secret stays on your server, and the build's own secrets in
+[the environment](#the-environment).
 
 ## fileTypes
 
@@ -348,7 +480,8 @@ purpose strings go in the Mac's Info.plist as well.
 | `widgetProfile` | string | the best match installed | The widget extension's (`widgets`), for the ID `<id>.widgets`. |
 | `notificationProfile` | string | the best match installed | The Notification Service Extension's (`push.Rewrite`), for the ID `<id>.notification`. |
 | `usage` | table | the packages' own | Purpose strings of protected resources, by Info.plist key: `NSCameraUsageDescription = "To scan your receipts."` under `[ios.usage]`. The packages the app imports give generic ones; write your own. |
-| `infoPlist` | table | none | String keys added to Info.plist. |
+| `infoPlist` | table | none | Keys added to Info.plist, over Asuka's: any TOML value, as its plist type (see below). |
+| `entitlements` | table | none | The app's own entitlements, beside those its packages need: App Groups, keychain sharing, associated domains... (see below). |
 | `backgroundModes` | strings | none | Added to Info.plist's `UIBackgroundModes`: `"audio"`, to record and play with the screen locked. |
 | `iphoneOnly` | boolean | `false` | Leaves iPad out: the app runs there as an iPhone app, in a phone-sized window. |
 | `googleServices` | path | none | The Firebase project's `GoogleService-Info.plist`, for `platform/analytics`: the iOS and Mac builds carry it. It must be an Apple app's of the app's `id`. |
@@ -376,6 +509,32 @@ purposes = ["AppFunctionality"]
 | `tracking` | boolean | Used to track them. |
 | `purposes` | strings | `"AppFunctionality"` is `NSPrivacyCollectedDataTypePurposeAppFunctionality`. |
 
+`infoPlist` and `entitlements` take any TOML value, written as its plist
+type: a string is a `<string>`, an integer an `<integer>`, a float a
+`<real>`, a boolean `<true/>` or `<false/>`, an array an `<array>` and a
+table a `<dict>` (a date is its RFC 3339 string).
+
+```toml
+[ios.infoPlist]
+UIFileSharingEnabled = true
+LSApplicationQueriesSchemes = ["comgooglemaps", "waze"]
+NSAppTransportSecurity = { NSExceptionDomains = { "example.local" = { NSExceptionAllowsInsecureHTTPLoads = true } } }
+
+[ios.entitlements]
+"com.apple.security.application-groups" = ["group.com.example.notes.shared"]
+"keychain-access-groups" = ["$(AppIdentifierPrefix)com.example.shared"]
+"com.apple.developer.associated-domains" = ["webcredentials:example.com"]
+```
+
+An entitlement's array joins the one Asuka gives the app (the links'
+`applinks:` domains, its packages' App Group and keychain group); any
+other value replaces Asuka's. `$(AppIdentifierPrefix)` and
+`$(TeamIdentifierPrefix)`, as in Xcode's entitlements files, are the
+team's ID and a dot. They're the app's own, not its extensions'. A
+simulator build has them as they are; a signed one only with a profile
+that grants each (the App ID's capabilities at developer.apple.com), and
+the build stops, naming those it lacks.
+
 See [Shipping](shipping.md#ios).
 
 ## mac
@@ -388,6 +547,8 @@ What a Mac build signs the app with, and hands it out in; its team is
 | `profile` | string | `ASUKA_MAC_PROFILE`, else, for an app that needs one, the best match installed | A Developer ID (or development) provisioning profile's path, name or UUID, which push, Sign in with Apple, App Attest and Apple Pay need. |
 | `appStoreProfile` | string | the best match installed | A Mac App Store profile, for `--appstore`. |
 | `packages` | strings | `["zip", "dmg"]` | What a build hands the app out in: `zip`, the app zipped; `dmg`, a disk image. |
+| `infoPlist` | table | none | Keys added to the Mac app's Info.plist, over Asuka's, as `ios.infoPlist`'s. |
+| `entitlements` | table | none | The Mac app's own entitlements, as `ios.entitlements`'s: the App Sandbox's and the hardened runtime's (`com.apple.security.cs.allow-jit`) for any build; those a profile grants (`com.apple.developer.…`, `keychain-access-groups`) only with `profile`. |
 
 `--profile` and `ASUKA_MAC_PROFILE` override the profiles, `--package`
 the packages. See
@@ -406,6 +567,37 @@ The Android build's.
 | `googleServices` | path | none | The Firebase project's `google-services.json`, for `platform/push` and `platform/analytics`. |
 | `mapsKey` | string | none | A Google Maps Platform API key (Maps SDK for Android), for `platform/maps`. |
 | `serviceAccount` | path | none | The Google Cloud service account's JSON key `asuka publish` uploads to Google Play with. Keep it out of the repository. |
+| `manifest` | table | none | What the app adds to its `AndroidManifest.xml` beyond what Asuka writes (see below). |
+
+`manifest` is for what no key here says: a library's `<meta-data>`, a
+`<queries>` for the apps the app opens, an attribute of the app's
+activity. Its elements are XML, each checked as the build reads it:
+whole elements in the `android:` and `tools:` namespaces, not the
+manifest's own `<manifest>` or `<application>`.
+
+```toml
+[android.manifest]
+top = ['<queries><package android:name="com.google.android.apps.maps" /></queries>']
+application = ['<meta-data android:name="com.example.sdk.KEY" android:value="pk_live_123" />']
+activity = ["""
+<intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <data android:mimeType="text/x-notes" />
+</intent-filter>"""]
+applicationAttributes = { "android:largeHeap" = "true" }
+activityAttributes = { "android:windowSoftInputMode" = "adjustPan" }
+```
+
+| Key | Type | What it is |
+|---|---|---|
+| `top` | strings | Elements in `<manifest>`: `<uses-feature>`, `<queries>`, `<permission>`. |
+| `application` | strings | Elements in `<application>`: `<meta-data>`, `<service>`, `<receiver>`, `<provider>`, `<activity>`. |
+| `activity` | strings | Elements in the app's activity: `<intent-filter>`, `<meta-data>`. |
+| `applicationAttributes` | table | Attributes of `<application>`, by name with its prefix (`"android:largeHeap"`), over Asuka's and the host's: each is named in `tools:replace`. |
+| `activityAttributes` | table | Attributes of the app's activity, likewise (not `android:name`). |
+
+Permissions go in `permissions`, which the packages' join.
 
 See [Shipping](shipping.md#android).
 
@@ -757,6 +949,7 @@ CI does from its secrets. These also override the keys they name.
 
 | Variable | What it is |
 |---|---|
+| `ASUKA_VARIANT` | The [variant](#variants) a build is, when `--variant` doesn't say. |
 | `ASUKA_KEYSTORE`, `ASUKA_KEY_ALIAS` | Over `android.keystore` and `android.keyAlias`. |
 | `ASUKA_KEYSTORE_PASSWORD`, `ASUKA_KEY_PASSWORD` | The keystore's password, and the key's when it differs. |
 | `ASUKA_ASC_KEY_ID`, `ASUKA_ASC_ISSUER_ID`, `ASUKA_ASC_KEY` | Over `ios.appStoreConnect`; `ASUKA_ASC_KEY` is the `.p8`'s path or its text. |

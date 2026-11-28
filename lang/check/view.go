@@ -1341,12 +1341,12 @@ func buildIfCalls(s *syntax.IfStmt) []*syntax.CallExpr {
 }
 
 // buildCond reports whether e is decided as the program compiles:
-// @debug, a comparison of @platform with a case, and !, && and || of
-// them.
+// @debug, a @define (a bool's), a comparison of @platform with a case,
+// and !, && and || of them.
 func buildCond(e syntax.Expr) bool {
 	switch x := unparen(e).(type) {
 	case *syntax.AtExpr:
-		return x.Name == "debug"
+		return x.Name == "debug" || x.Name == "define"
 	case *syntax.UnaryExpr:
 		return x.Op == syntax.NOT && buildCond(x.X)
 	case *syntax.BinaryExpr:

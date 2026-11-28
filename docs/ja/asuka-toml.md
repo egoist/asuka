@@ -62,7 +62,7 @@ github = "you/notes"
 | `id` | 文字列 | `dev.asuka.<directory>` | iOS と Mac では bundle ID、Android と Linux では application ID（Linux ではデスクトップファイル、アイコン、D-Bus の名前、データディレクトリに使われます）、Windows では AppUserModelID です。最初のリリースの前に変えてください。ストアとシステムはこの ID でアプリを識別します。Linux では英字、数字、`_`、`-` だけを使い、二つ以上の部分からなり、どの部分も数字で始まってはいけません。 |
 | `version` | 文字列 | `1.0` | ユーザーに見えるバージョンです。 |
 | `build` | 整数 | `1` | ビルド番号で、アップロードのたびに大きくする必要があります。`asuka publish` はストアにある最大の番号に 1 を足した番号を自動で付けるので、この値は開始の番号にすぎません。Windows のファイルバージョンは `version` と `build` を合わせたもの（`1.2.0.7`）になります。 |
-| `icon` | パス | なし（プラットフォームの汎用アイコン） | 1024×1024 の正方形の PNG です。iOS 向けには透明部分を含めないでください。ビルドごとに、そのプラットフォームが必要とするサイズが作られます。App Store に出すには必須です。 |
+| `icon` | パスまたはテーブル | なし（プラットフォームの汎用アイコン） | 1024×1024 の正方形の PNG です。iOS 向けには透明部分を含めないでください。ビルドごとに、そのプラットフォームが必要とするサイズが作られます。App Store に出すには必須です。テーブルにすると、Android のアダプティブアイコンとテーマアイコンのレイヤー、iOS のダークアイコンと色合いアイコンも指定できます。[icon](#icon) を参照してください。 |
 | `alternateIcons` | テーブル | なし | アプリが自分のアイコンの代わりに表示できるほかのアイコンを、名前ごとに指定します：`dark = "icons/dark.png"`。`icon` と同じく正方形の PNG です。名前は英字と数字で、英字で始めます。切り替えは `platform/appicon` で行います（[アプリのアイコン](device.md#アプリのアイコンplatformappicon)）。 |
 | `accent` | 色 | プラットフォームの色 | `"#rrggbb"` または `"#rrggbbaa"`。iOS では tint、Android では Material 3 のカラースキームのシード、Mac では `Accent`、塗りつぶしのボタン、リンクの色（AppKit 自身のコントロールはユーザーの設定した色のまま）、Windows ではコントロールのアクセントカラー、Linux では libadwaita のアクセントカラー、Web ではページとマニフェストの `theme_color` になります。 |
 | `orientations` | 文字列の配列 | 両方 | `"portrait"`、`"landscape"`。スマートフォンでアプリが対応する画面の向きです。iPad では Split View とステージマネージャに必要なので、四つの向きすべてに対応します。Android 16 では、タブレットと折りたたみ端末でこの指定は無視されます。 |
@@ -91,8 +91,97 @@ github = "you/notes"
 | `ads` | テーブル | | `platform/ads` を使うアプリの AdMob アプリ ID です。[ads](#ads) を参照してください。 |
 | `analytics` | テーブル | | `platform/analytics` で使う Google Analytics の設定です。Web とデスクトップが送る Web ストリームと、収集と同意の初期状態です。[analytics](#analytics) を参照してください。 |
 | `bin` | テーブル | なし | プロジェクトのプログラムです。それぞれ専用のディレクトリにあるコマンドラインツールで、デスクトップアプリに組み込まれます。[bin](#bin) を参照してください。 |
+| `defines` | テーブル | なし | ビルドがプログラムに渡す定数で、プログラムは `@define("KEY")` で読みます。サーバーのアドレスや機能のオン・オフなどに使います。[defines](#defines) を参照してください。 |
+| `variant` | テーブル | なし | アプリのバリアントです。同じアプリを別の形でビルドしたもの（dev、staging、prod）で、それぞれが独自の ID、名前、アイコン、defines を持ちます。`[variant.<name>]` と書き、ファイルのほかの部分に上書きします。[variants](#variants) を参照してください。 |
 
 Windows のビルドに必要なのはこれだけです。署名の証明書は環境変数で渡します（[配布](shipping.md#windows)を参照）。
+
+## icon
+
+どのプラットフォームでも `icon = "icon.png"` だけで足ります。各ビルドがこの画像から必要なサイズを作り、Android のアダプティブアイコンは、この画像を中央に置いて背景を画像の隅の色で塗ったものになります。各プラットフォームのデザインガイドラインに沿って素材を個別に用意したい場合は、`icon` をテーブルにします。
+
+```toml
+[icon]
+image = "icon.png"
+foreground = "icon-foreground.png"
+background = "#1B2440"
+monochrome = "icon-monochrome.png"
+dark = "icon-dark.png"
+tinted = "icon-tinted.png"
+```
+
+| キー | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `image` | パス | 必須 | アイコンそのもので、`icon = "…"` で指定するものと同じです。1024×1024 の正方形の PNG で、iOS 向けには透明部分を含めません。Mac、Windows、Linux、Web はこの画像だけを使い、Android 8 より前の Android のアイコンもこの画像から作られます。 |
+| `foreground` | パス | `image` を中央に配置 | Android のアダプティブアイコンの前景レイヤー（Android 8 以降）です。108dp のレイヤー全体を表す正方形の PNG で、ロゴ以外の部分は透明にします。ランチャーはこれを独自の形（円、角丸の正方形）に切り抜いたり動かしたりし、少なくとも中央の 72dp を表示します。中央の 66dp は常に見えるので、ロゴはその中に収めてください。 |
+| `background` | 色またはパス | `image` の隅の色 | アダプティブアイコンの背景レイヤーです。`"#rrggbb"`、または `foreground` と同じくレイヤー全体を表す正方形の PNG を指定します。`foreground` も必要です。 |
+| `monochrome` | パス | なし | Android 13 のテーマアイコンです。`foreground` と同じくレイヤー全体を表す正方形の PNG で、ユーザーがテーマアイコンをオンにすると、ランチャーはその形（アルファ）を壁紙の色で描きます。指定しない場合、テーマアイコンをオンにしたランチャーでもアイコンはそのまま表示されます。 |
+| `dark` | パス | iOS が作るもの | iOS 18 のダークモードでのアイコンです。1024×1024 の正方形の PNG で、ロゴを透明な背景の上に置きます。背景には iOS が独自の暗いグラデーションを敷きます。 |
+| `tinted` | パス | iOS が作るもの | iOS 18 の色合い（tinted）アイコンです。背景が透明な 1024×1024 の正方形の PNG で、ビルドがグレースケールにし、iOS がユーザーの選んだ色で着色します。 |
+
+レイヤーはどれもレイヤー全体の画像なので、同じ 1024×1024 のアートボードから書き出し、どの画像でもロゴを同じ位置に置くようにしてください。`foreground` や `monochrome` に透明部分がないと、ランチャーでは四角く表示されてしまうため、ビルドが警告します。`alternateIcons` はそれぞれ画像 1 枚だけを受け取り、レイヤーには対応していません。[配布](shipping.md#asukatoml)を参照してください。
+
+## variants
+
+バリアント（variant）は、同じアプリを別の形でビルドしたものです。たとえば開発版、ステージング版、本番版で、それぞれが独自の ID、名前、アイコン、defines を持ち、1 台のスマートフォンに並べてインストールできます。バリアントは `[variant.<name>]` のテーブルで、中には `asuka.toml` のキーを書きます。`--variant <name>` でビルドすると、これらのキーがファイルのほかの部分の同じキーに上書きされます。
+
+```toml
+name = "Notes"
+id = "com.example.notes"
+icon = "icon.png"
+
+[defines]
+API_URL = "https://api.example.com"
+
+[variant.dev]
+name = "Notes Dev"
+idSuffix = ".dev"
+versionSuffix = "-dev"
+icon = "icons/dev.png"
+
+[variant.dev.defines]
+API_URL = "https://staging.example.com"
+
+[variant.dev.ios]
+profile = "Notes Dev"
+```
+
+```sh
+asuka dev --variant dev                        # Notes Dev、com.example.notes.dev
+asuka build --platform android --variant dev   # その .aab が dist/dev に
+asuka publish --platform ios                   # ファイルそのままの設定：Notes
+```
+
+テーブルはキーごとに、いちばん奥まで再帰的にマージされます。上の `[variant.dev.ios]` はプロファイルを指定しつつ、ファイルの `ios.team` はそのまま残します。それ以外の値（文字列、配列、`[[widgets]]` のようなテーブルの配列）は、ファイルの値を丸ごと置き換えます。バリアントの名前に使えるのは英数字、`-`、`_` です。ファイルのキーに加えて、バリアントには次のキーも書けます。
+
+| キー | 型 | 説明 |
+|---|---|---|
+| `idSuffix` | 文字列 | `id` の後ろに付けます。`".dev"` なら `com.example.notes.dev` になります。バリアントに独自の `id` を書いてもかまいません。 |
+| `versionSuffix` | 文字列 | Android が表示するバージョン（`versionName`。`1.2.0-dev` など）の後ろに付けます。ほかのプラットフォームのバージョンは `version` のままです。App Store とデスクトップのアップデートは、バージョンを数値として比べるからです。 |
+
+`dependencies`、`bin`、`c`、`i18n` はプロジェクト全体のもので、どのビルドでも同じなので、バリアントでは変更できません。バリアントの中にさらにバリアントを入れることもできません。
+
+`asuka dev`、`build`、`publish`、`run`、`test`、`check` は `--variant` を受け取ります。指定がなければ `ASUKA_VARIANT` が使われます（CI のジョブ向けです）。どちらもなければ、どのバリアントでもない、ファイルそのままの設定でビルドします。コンパイラーもバリアントを読むので、バリアントの `version`、`accent`、`defines` がプログラムから見える値になります。
+
+バリアントのビルドは `dist/<name>`（`dist/dev/Notes Dev.ipa` など）に置かれ、ほかのバリアントとは別々にビルドされるので、互いを上書きしません。独自の ID を持つバリアントは、システムやストアから見れば別のアプリです。スマートフォンにはほかのバリアントと並んでインストールされ、データも別々です。App Store Connect と Google Play ではそのバリアント用のアプリを別に作る必要があり、iOS ではその ID のプロビジョニングプロファイル（バリアントに `ios.profile` を書きます）、Firebase では専用の設定ファイル（`ios.googleServices`、`android.googleServices`）が必要です。ファイルと同じ ID のバリアントは、インストールすると既存のアプリを置き換えます。
+
+`--variant` は `--profile` とは別物です。`asuka build --profile` と `publish --profile` が指定するのは、`ios.profile` と同じくプロビジョニングプロファイルです。バリアントは、自分のテーブルの中でほかの設定と一緒にプロファイルを指定できます。[バリアントとビルド定数](shipping.md#バリアントとビルド定数)を参照してください。
+
+## defines
+
+ビルドがプログラムに渡す定数です。文字列、整数、浮動小数点数、真偽値を名前ごとに指定します。名前は英数字と `_` で、数字では始められません。
+
+```toml
+[defines]
+API_URL = "https://api.example.com"
+SENTRY_DSN = "https://public@o1.ingest.sentry.io/2"
+RETRIES = 3
+ANALYTICS = true
+```
+
+アプリはそれぞれを `@define("API_URL")` で読みます。これはコンパイル時に決まる定数で、型は値の型です。`@define("RETRIES", 3)` のようにデフォルト値を付ければ、ビルドが渡さないかもしれないキーにも使えます。バリアントの `[variant.<name>.defines]` は一部を置き換え、`--define KEY=VALUE`（`dev`、`build`、`publish`、`run`、`test`、`check` で使え、キーごとに繰り返します）は 1 回のビルドに限ってどれでも置き換えます。その値はこのテーブルでのキーの型になり、このテーブルにないキーなら文字列になります。[ビルドが与える値](language/control-flow.md#ビルドが与える値)を参照してください。
+
+defines はアプリにコンパイルされるので、アプリを手に入れた人なら誰でも読めます。秘密の情報は決して入れないでください。サーバーの API シークレット、署名鍵、パスワードは不可です。サーバーのアドレス、スイッチ、もともと公開してよいキー（クライアント ID、publishable key、アナリティクスの測定 ID）なら問題ありません。秘密はサーバー側に置き、ビルド自体が使う秘密は[環境変数](#環境変数)で渡します。
 
 ## fileTypes
 
@@ -302,7 +391,8 @@ iOS のビルドの設定です。`team` は Mac のビルドのチームにも�
 | `widgetProfile` | 文字列 | インストール済みのうち最も合うもの | ウィジェット拡張機能（`widgets`）のプロファイルで、ID `<id>.widgets` 用です。 |
 | `notificationProfile` | 文字列 | インストール済みのうち最も合うもの | Notification Service Extension（`push.Rewrite`）のプロファイルで、ID `<id>.notification` 用です。 |
 | `usage` | テーブル | 各パッケージのもの | 保護されたリソースの利用目的の文字列を、Info.plist のキーごとに指定します（`[ios.usage]` に `NSCameraUsageDescription = "To scan your receipts."`）。アプリがインポートするパッケージが汎用的な文字列を用意していますが、自分で書いてください。 |
-| `infoPlist` | テーブル | なし | Info.plist に追加する文字列のキーです。 |
+| `infoPlist` | テーブル | なし | Info.plist に追加するキーで、Asuka が書く同じキーより優先されます。どんな TOML の値でも書け、対応する plist の型になります（下記参照）。 |
+| `entitlements` | テーブル | なし | アプリ独自のエンタイトルメントで、パッケージが必要とするものと一緒に使われます。App Groups、キーチェーン共有、Associated Domains などです（下記参照）。 |
 | `backgroundModes` | 文字列の配列 | なし | Info.plist の `UIBackgroundModes` に追加します。`"audio"` を指定すると、画面がロックされていても録音と再生ができます。 |
 | `iphoneOnly` | 真偽値 | `false` | iPad を対象から外します。iPad ではアプリは iPhone アプリとして、スマートフォンサイズのウィンドウで動きます。 |
 | `storekit` | 文字列 | なし | StoreKit の構成ファイル（Xcode の `.storekit`）です。Xcode のスキームと同じように、`asuka dev` のシミュレーター向けビルドはこのファイルの商品を販売します。[アプリ内課金](purchases.md#購入のテスト)を参照してください。 |
@@ -328,6 +418,22 @@ purposes = ["AppFunctionality"]
 | `tracking` | 真偽値 | ユーザーのトラッキングに使われるかどうか。 |
 | `purposes` | 文字列の配列 | `"AppFunctionality"` は `NSPrivacyCollectedDataTypePurposeAppFunctionality` を表します。 |
 
+`infoPlist` と `entitlements` にはどんな TOML の値でも書け、対応する plist の型で書き出されます。文字列は `<string>`、整数は `<integer>`、浮動小数点数は `<real>`、真偽値は `<true/>` か `<false/>`、配列は `<array>`、テーブルは `<dict>` になります（日付は RFC 3339 の文字列になります）。
+
+```toml
+[ios.infoPlist]
+UIFileSharingEnabled = true
+LSApplicationQueriesSchemes = ["comgooglemaps", "waze"]
+NSAppTransportSecurity = { NSExceptionDomains = { "example.local" = { NSExceptionAllowsInsecureHTTPLoads = true } } }
+
+[ios.entitlements]
+"com.apple.security.application-groups" = ["group.com.example.notes.shared"]
+"keychain-access-groups" = ["$(AppIdentifierPrefix)com.example.shared"]
+"com.apple.developer.associated-domains" = ["webcredentials:example.com"]
+```
+
+配列のエンタイトルメントは、Asuka がアプリに与える配列（`links` の `applinks:` ドメイン、パッケージの App Group とキーチェーングループ）に追加されます。それ以外の値は Asuka の値を置き換えます。Xcode のエンタイトルメントファイルと同じく、`$(AppIdentifierPrefix)` と `$(TeamIdentifierPrefix)` はチーム ID とドットに置き換わります。これらはアプリ本体のもので、拡張機能には付きません。シミュレーター向けのビルドにはそのまま入ります。署名付きのビルドでは、それぞれを許可するプロファイル（developer.apple.com で App ID のケイパビリティを有効にしたもの）が必要で、足りないものがあればビルドはそれを挙げて止まります。
+
 [配布](shipping.md#ios)を参照してください。
 
 ## mac
@@ -339,6 +445,8 @@ Mac のビルドがアプリの署名と配布に使うものです。チーム�
 | `profile` | 文字列 | `ASUKA_MAC_PROFILE`。なければ、プロファイルが必要なアプリではインストール済みのうち最も合うもの | Developer ID（または開発用）のプロビジョニングプロファイルのパス、名前、UUID です。プッシュ通知、Sign in with Apple、App Attest に必要です。 |
 | `appStoreProfile` | 文字列 | インストール済みのうち最も合うもの | `--appstore` で使う Mac App Store のプロファイルです。 |
 | `packages` | 文字列の配列 | `["zip", "dmg"]` | ビルドがアプリを配布する形式です。`zip` は zip にしたアプリ、`dmg` はディスクイメージです。 |
+| `infoPlist` | テーブル | なし | Mac アプリの Info.plist に追加するキーで、Asuka が書く同じキーより優先されます。書き方は `ios.infoPlist` と同じです。 |
+| `entitlements` | テーブル | なし | Mac アプリ独自のエンタイトルメントで、書き方は `ios.entitlements` と同じです。App Sandbox や hardened runtime のもの（`com.apple.security.cs.allow-jit` など）はどのビルドでも使えます。プロファイルが許可するもの（`com.apple.developer.…`、`keychain-access-groups`）は `profile` があるときだけ使えます。 |
 
 プロファイルは `--profile` と `ASUKA_MAC_PROFILE` で、形式は `--package` で上書きできます。[配布](shipping.md#macos)を参照してください。
 
@@ -355,6 +463,33 @@ Android のビルドの設定です。
 | `googleServices` | パス | なし | `platform/push` と `platform/analytics` で使う、Firebase プロジェクトの `google-services.json` です。 |
 | `mapsKey` | 文字列 | なし | `platform/maps` で使う、Google Maps Platform の API キー（Maps SDK for Android）です。 |
 | `serviceAccount` | パス | なし | `asuka publish` が Google Play へのアップロードに使う、Google Cloud のサービスアカウントの JSON キーです。リポジトリには入れないでください。 |
+| `manifest` | テーブル | なし | Asuka が書く内容に加えて、アプリが `AndroidManifest.xml` に足すものです（下記参照）。 |
+
+`manifest` は、ここにキーがないものを書くためのものです。ライブラリが求める `<meta-data>`、アプリが開くほかのアプリを宣言する `<queries>`、アプリの Activity の属性などです。要素は XML で書き、ビルドが読み込むときに一つずつ検査します。完全な要素であること、`android:` と `tools:` の名前空間だけを使うこと、マニフェスト自身の `<manifest>` や `<application>` ではないことが条件です。
+
+```toml
+[android.manifest]
+top = ['<queries><package android:name="com.google.android.apps.maps" /></queries>']
+application = ['<meta-data android:name="com.example.sdk.KEY" android:value="pk_live_123" />']
+activity = ["""
+<intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <data android:mimeType="text/x-notes" />
+</intent-filter>"""]
+applicationAttributes = { "android:largeHeap" = "true" }
+activityAttributes = { "android:windowSoftInputMode" = "adjustPan" }
+```
+
+| キー | 型 | 説明 |
+|---|---|---|
+| `top` | 文字列の配列 | `<manifest>` の中に置く要素です。`<uses-feature>`、`<queries>`、`<permission>` など。 |
+| `application` | 文字列の配列 | `<application>` の中に置く要素です。`<meta-data>`、`<service>`、`<receiver>`、`<provider>`、`<activity>` など。 |
+| `activity` | 文字列の配列 | アプリの Activity の中に置く要素です。`<intent-filter>`、`<meta-data>` など。 |
+| `applicationAttributes` | テーブル | `<application>` の属性を、接頭辞付きの名前（`"android:largeHeap"`）で指定します。Asuka とホストの同じ属性より優先され、それぞれ `tools:replace` に書かれます。 |
+| `activityAttributes` | テーブル | アプリの Activity の属性で、同じ規則です（`android:name` は除きます）。 |
+
+パーミッションは `permissions` に書いてください。パッケージが必要とするものと合わせて使われます。
 
 [配布](shipping.md#android)を参照してください。
 
@@ -631,6 +766,7 @@ output = "index/target/{target}/release/notes-index{exe}"
 
 | 変数 | 説明 |
 |---|---|
+| `ASUKA_VARIANT` | `--variant` がないときに、ビルドに使う[バリアント](#variants)です。 |
 | `ASUKA_KEYSTORE`、`ASUKA_KEY_ALIAS` | `android.keystore` と `android.keyAlias` を上書きします。 |
 | `ASUKA_KEYSTORE_PASSWORD`、`ASUKA_KEY_PASSWORD` | キーストアのパスワードと、それと異なる場合の鍵のパスワードです。 |
 | `ASUKA_ASC_KEY_ID`、`ASUKA_ASC_ISSUER_ID`、`ASUKA_ASC_KEY` | `ios.appStoreConnect` を上書きします。`ASUKA_ASC_KEY` は `.p8` のパスかその中身です。 |

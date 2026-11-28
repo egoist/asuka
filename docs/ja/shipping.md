@@ -35,7 +35,7 @@ keyAlias = "upload"
 - `name` はアプリの名前です。アイコンの下、Mac のメニューバー、Windows のウィンドウのタイトル、Linux のランチャー、Web ページのタイトルに表示されます。ビルドされるファイルの名前にもなります（`Notes.app`、`Notes.exe`）。デフォルトはディレクトリの名前です。
 - `id` は、iOS と Mac では bundle ID、Android と Linux では application ID（Linux ではデスクトップファイル、アイコン、D-Bus 名に使われます）、Windows では AppUserModelID（トースト通知に使われます）になります。デフォルトは `dev.asuka.<directory>` です。
 - `version` はユーザーに見えるバージョンです（デフォルトは `1.0`）。`build` はアップロードしたビルドの通し番号で、ビルドのたびに増やす必要があります（デフォルトは 1）。ただし `asuka publish` は、各ビルドにストア上の最大の番号に続く番号を自動で付けるので、`build` は番号の始まりを決めるだけです。Windows では二つを合わせて `.exe` のファイルバージョンになり（バージョン 1.2、ビルド 7 なら `1.2.0.7`）、Linux では metainfo の release になります。
-- `icon` は 1024×1024 の正方形の PNG で、iOS 向けには透過のないものにします。各ビルドは、プラットフォームが必要とするサイズを作ります。iOS ではアセットカタログ、Android ではランチャーアイコン、Mac では `.icns`、Windows では `.exe` に埋め込む `.ico`、Linux では hicolor テーマの 16〜512 ピクセルのアイコン、Web では Web マニフェストのアイコン、favicon、iOS のホーム画面アイコンです。
+- `icon` は 1024×1024 の正方形の PNG で、iOS 向けには透過のないものにします。各ビルドは、プラットフォームが必要とするサイズを作ります。iOS ではアセットカタログ、Android ではランチャーアイコン、Mac では `.icns`、Windows では `.exe` に埋め込む `.ico`、Linux では hicolor テーマの 16〜512 ピクセルのアイコン、Web では Web マニフェストのアイコン、favicon、iOS のホーム画面アイコンです。`[icon]` テーブルにすると、Android のアダプティブアイコンに専用のレイヤーとテーマアイコン（Android 13）を、iOS にダークアイコンと色合いアイコン（iOS 18）を用意できます。[icon](asuka-toml.md#icon) を参照してください。
 - `accent` はアプリのアクセントカラーで、`"#rrggbb"` の形式で指定します。iOS では tint、Android では Material 3 のカラースキームのシード、Mac では `Accent`、塗りつぶしボタン、リンクの色（AppKit 自身のコントロールはユーザーが選んだアクセントカラーのままです）、Windows ではシステムのアクセントカラーに代わるコントロールのアクセント、Linux では libadwaita のアクセント、Web ではページのアクセントとマニフェストの `theme_color` になります。指定しなければ、各プラットフォーム自身のアクセントカラーになります。
 - `scheme` を指定すると、`myapp://` の URL でアプリが開くようになります。対象は iOS、Android、Mac（`CFBundleURLTypes`）、Linux（デスクトップファイルの `x-scheme-handler`）、Windows（アプリが起動時に `HKEY_CURRENT_USER\Software\Classes` にユーザー単位で登録します）です。`links` を指定すると、自分のドメインへの https リンクでアプリが開きます（ユニバーサルリンク、App Links。iOS と Android）。どちらも `onOpenURL` で受け取ります。
 - `fileTypes` はアプリが開くファイルの種類で、そのファイルは `onOpenFiles` で受け取ります。
@@ -72,9 +72,51 @@ keyAlias = "upload"
 - `splash` は起動画面です。`[splash]` のテーブルに `image = "logo.png"`、`size = 96`、`background = "#ffffff"`、`darkBackground = "#000000"` のように指定します（[デバイスとサービス](device.md#起動画面platformsplash)を参照）。
 - `widgets` はアプリのホーム画面ウィジェット、`shortcuts` は Siri、Spotlight、ランチャー向けのアクションです（[デバイスとサービス](device.md#ホーム画面ウィジェットplatformwidget)を参照）。ウィジェット拡張機能は独自の bundle ID（アプリの ID に `.widgets` を付けたもの）を持ちます。そのためリリースにはこの拡張機能用のプロファイルも必要で、`ios.widgetProfile` で指定できます。
 - `android.googleServices` は、`platform/push` に使う Firebase プロジェクトの `google-services.json` です。`android.mapsKey` は、`platform/maps` に使う Google Maps Platform の API キーです。
-- `ios.usage` は保護されたリソースの利用目的の説明文（`NSCameraUsageDescription` など。Mac のものも含みます）を指定し、`ios.infoPlist` は Info.plist にキーを追加します。`ios.backgroundModes` は `UIBackgroundModes` に値を追加します（`"audio"` なら、画面がロックされていても録音・再生できます）。`android.permissions` はパーミッションを追加します。
+- `ios.usage` は保護されたリソースの利用目的の説明文（`NSCameraUsageDescription` など。Mac のものも含みます）を指定し、`ios.infoPlist` は Info.plist にどんな型のキーでも追加し、`ios.entitlements` はエンタイトルメント（App Groups、キーチェーン共有、Associated Domains）を追加します。`ios.backgroundModes` は `UIBackgroundModes` に値を追加します（`"audio"` なら、画面がロックされていても録音・再生できます）。`android.permissions` はパーミッションを、`android.manifest` はマニフェストに要素と属性を追加します。[ios](asuka-toml.md#ios) と [android](asuka-toml.md#android) を参照してください。
 
 アプリがインポートしたパッケージは、自分に必要なパーミッションと利用目的の説明文をアプリに追加します。`platform/camera` ならカメラ、`platform/location` なら位置情報のものです。ただしデフォルトの説明文は汎用的なので、`ios.usage` に自分の言葉で書いてください。パッケージによっては、App ID のケイパビリティも必要です（`platform/push` には Push Notifications、`platform/appleauth` には Sign in with Apple、`platform/integrity` には App Attest、`platform/agerange` には Declared Age Range、`platform/icloud` には iCloud とそのコンテナー）。developer.apple.com でケイパビリティを有効にしてから、プロファイルを作り直してください。プロファイルに足りないケイパビリティは、`asuka build --platform ios`（と `--platform mac`）が教えてくれます。
+
+## バリアントとビルド定数
+
+一つのアプリを何通りかの形で出すことはよくあります。ステージングのサーバーにつなぐ開発版、テスター向けのベータ版、そしてリリース版です。それぞれが `asuka.toml` の[バリアント](asuka-toml.md#variants)、つまり変えるキーだけを書いた `[variant.<name>]` のテーブルで、`--variant <name>` でビルドするとその版になります。
+
+```toml
+name = "Notes"
+id = "com.example.notes"
+icon = "icon.png"
+
+[defines]
+API_URL = "https://api.example.com"
+
+[variant.staging]
+name = "Notes Staging"
+idSuffix = ".staging"
+icon = "icons/staging.png"
+
+[variant.staging.defines]
+API_URL = "https://staging.example.com"
+
+[variant.staging.ios]
+profile = "Notes Staging App Store"
+```
+
+```sh
+asuka build --platform ios --variant staging      # dist/staging/Notes Staging.ipa
+asuka publish --platform android --variant staging --track internal
+asuka build --platform ios                        # リリース版。ファイルそのままのキー
+```
+
+独自の ID（`idSuffix` か、別に書いた `id`）を持つバリアントは、独立したアプリになります。ほかのバリアントと並んでインストールされ、ホーム画面にはそれぞれのアイコンと名前が並び、データも別々です。ストアにとっても別のアプリなので、App Store Connect と Google Play でそのバリアント用のアプリを作り、専用の App ID とプロビジョニングプロファイル（テーブルに `ios.profile` を書きます）、専用の Firebase アプリを用意してください。ビルドは `dist/<name>` に置かれ、ほかのバリアントのものとは分かれます。CI では `ASUKA_VARIANT=staging` で、ジョブのすべてのコマンドにバリアントを指定できます。
+
+`--variant` は `--profile` とは別物です。`asuka build --profile` が指定するのは、ビルドに署名する iOS や Mac のプロビジョニングプロファイルです。バリアントはアプリを別の形でビルドしたもので、そのテーブルの中でほかの設定と一緒にプロファイルも指定できます。
+
+プログラムは、ビルドが与える定数を [`@define`](language/control-flow.md#ビルドが与える値) で読みます。asuka.toml の [`[defines]`](asuka-toml.md#defines) に、バリアントの値が上書きされ、さらに 1 回のビルドに限って `--define KEY=VALUE` が上書きされます。
+
+```sh
+asuka build --platform android --define API_URL=https://pr-42.example.com
+```
+
+これらの定数はアプリにコンパイルされ、アプリは誰でも分解できます。サーバーのアドレスや公開してよいキーは入れてかまいませんが、秘密は入れないでください。ビルド自体が必要とする秘密（署名鍵、アップロード鍵のパスワード）は[環境変数](asuka-toml.md#環境変数)で渡し、アプリが必要とする秘密はサーバーに置いて、アプリからそこに問い合わせます。
 
 ## iOS
 

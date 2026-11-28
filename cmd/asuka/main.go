@@ -279,6 +279,7 @@ func devFlags(o *devOptions) *flagSet {
 	fs.String(&o.dir, "dir", 0, "", "lay the app out in this `direction` for this run, rtl or ltr, whatever its language")
 	fs.Int(&o.debugPort, "debug-port", 0, 0, "the `port` on this computer an editor's debugger attaches to (the Debug Adapter Protocol; default 8791, or a free one); not on the web")
 	fs.Bool(&o.verbose, "verbose", 'v', "print the commands asuka runs")
+	variantFlags(fs)
 	return fs
 }
 
@@ -296,6 +297,9 @@ func cmdDev(args []string) error {
 		return err
 	}
 	appbuild.Debug = true
+	if err := useVariant(); err != nil {
+		return err
+	}
 	dir := "."
 	if fs.Arg(0) != "" {
 		dir = fs.Arg(0)

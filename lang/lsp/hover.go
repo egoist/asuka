@@ -1,8 +1,10 @@
 package lsp
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/asuka/lang/check"
@@ -117,6 +119,19 @@ func (fc *fileCtx) exprHover(path []syntax.Node) (*Hover, error) {
 				return &Hover{Contents: markdown("@platform: Platform", platformDoc(fc.st.platform)), Range: &rg}, nil
 			case "debug":
 				return &Hover{Contents: markdown("@debug: bool", debugDoc), Range: &rg}, nil
+			case "define":
+				code := "@define"
+				if t := fc.info.Types[e]; t != nil && !check.IsInvalid(t) {
+					code += ": " + typeStr(t)
+					switch v := fc.info.Defines[e].(type) {
+					case string:
+						code += " = " + strconv.Quote(v)
+					case nil:
+					default:
+						code += fmt.Sprintf(" = %v", v)
+					}
+				}
+				return &Hover{Contents: markdown(code, defineDoc), Range: &rg}, nil
 			}
 			return nil, nil
 		}
@@ -299,6 +314,10 @@ func typeNameOf(t check.Type) *check.TypeName {
 // debugDoc is @debug's hover.
 const debugDoc = "Whether the app is a development build, a constant: true under `asuka dev`, `asuka run` and `asuka test`, false in what `asuka build` and `asuka publish` make. " +
 	"Every branch is checked; the one a build doesn't take isn't part of it."
+
+const defineDoc = "A value the build gives, a constant: asuka.toml's `[defines]`, a variant's (`--variant`), or `--define KEY=VALUE`; " +
+	"with a default, `@define(\"KEY\", default)`, the default when the build gives none, and its type. A bool's `if` keeps only the branch the build takes. " +
+	"It's compiled into the app: never a secret."
 
 // platformDoc is @platform's hover: what it is, and the platform the
 // editor checks the file for (whose files it reads).

@@ -1773,6 +1773,62 @@ Tests are a development build, as `asuka dev`'s is: `asuka test
 `asuka run --release` for a program. Benches (`asuka test --bench`)
 time what a release runs, with `@debug` false.
 
+#### Values from the build
+
+`@define("KEY")` is a value the build gives the program, a constant
+too: a server's address, a feature that's on in one build and off in
+another, the app's public key for a service. The build takes it from
+`asuka.toml`'s [`[defines]`](https://asuka.egoist.dev/docs/asuka-toml#defines), with the
+[variant](https://asuka.egoist.dev/docs/asuka-toml#variants) it's built as (`--variant
+staging`) over them, and `--define KEY=VALUE` on the command line over
+those:
+
+```toml
+[defines]
+API_URL = "https://api.example.com"
+ANALYTICS = true
+
+[variant.staging.defines]
+API_URL = "https://staging.example.com"
+ANALYTICS = false
+```
+
+Its type is its value's in `asuka.toml`: a string, an `int`, a `float`
+or a `bool`; a key only `--define` gives is a string, and one
+`asuka.toml` has takes its type there (`--define PORT=9000` for `PORT =
+8080` is an `int`). A key the build doesn't give is an error, so a
+misspelled one is found as the app compiles. With a default,
+`@define("KEY", default)`, the default is the value when the build gives
+none, and its type is the value's: a literal, a string, a number or a
+bool, which a value the build gives must have (text from `--define` is
+read as it: `--define RETRIES=5` for `@define("RETRIES", 3)` is the
+`int` 5).
+
+```asuka
+let server = @define("API_URL", "https://api.example.com")
+let retries = @define("RETRIES", 3)
+
+component Settings {
+  Column {
+    Text("Talking to {server}, {retries} tries")
+    if @define("ANALYTICS", true) {
+      Text("Usage statistics are on")
+    }
+  }
+}
+```
+
+A `bool`'s folds as `@debug` does, in an `if` and with `!`, `&&` and
+`||`: the branch the build doesn't take is no part of it. The key is a
+string literal of letters, digits and `_`, a letter or `_` first.
+
+A value from the build is compiled into the app, and anyone who has the
+app can read it. Never give it a secret: a server's API secret, a
+signing key, a password. A server's address, a feature's switch or a
+key that's meant to be public (a client ID, an analytics measurement
+ID, a publishable key) is fine; what must stay secret stays on your
+server, which the app asks.
+
 ### Components
 
 A component is a piece of interface, declared with its parameters in
@@ -3375,6 +3431,7 @@ bench "fib 20" {
 - invalid-conformance: a type declares, or a type parameter needs, what isn't an interface. Name an interface there, or drop it.
 - invalid-constant: a value made when the app compiles that isn't a literal, or doesn't parse. Pass the literal itself, and fix what the message says doesn't parse.
 - invalid-declaration: a declaration written in a form its place doesn't take. Write it in the place's form: `let name = value` for a type's constant, a `static fn` for one that needs the type's parameters.
+- invalid-define: a `@define` the build gives no value of its type for. Give the key a value in asuka.toml's `[defines]` (or with `--define`), or write a default: `@define("API_URL", "https://example.com")`.
 - invalid-entry: a program's `fn main` declared otherwise than it runs. Declare `fn main() { … }`, and read the arguments with std/os.
 - invalid-extension: an `extend` of what can't be extended, or in a form it doesn't take. Extend a named type, or declare a function instead.
 - invalid-extern: an extern declaration C can't stand behind. Declare the release function `extern fn close(x: T)`, and the rest as C has it.

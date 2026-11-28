@@ -1212,6 +1212,40 @@ component About {
 
 测试和 `asuka dev` 一样是开发构建：`asuka test --release` 会让 `@debug` 为 false 来运行测试，和应用发布时一致；对程序来说，`asuka run --release` 也是如此。基准测试（`asuka test --bench`）测的是发布构建运行的代码，`@debug` 为 false。
 
+#### 构建给出的值
+
+`@define("KEY")` 是构建交给程序的值，同样是常量：服务器的地址、在某个构建里打开而在另一个构建里关闭的功能、应用用于某项服务的公开密钥。构建从 `asuka.toml` 的 [`[defines]`](https://asuka.egoist.dev/zh/docs/asuka-toml#defines) 里取值，构建所用的[变体](https://asuka.egoist.dev/zh/docs/asuka-toml#variants)（`--variant staging`）里的值覆盖它们，命令行上的 `--define KEY=VALUE` 又覆盖前两者：
+
+```toml
+[defines]
+API_URL = "https://api.example.com"
+ANALYTICS = true
+
+[variant.staging.defines]
+API_URL = "https://staging.example.com"
+ANALYTICS = false
+```
+
+它的类型就是它在 `asuka.toml` 里的值的类型：字符串、`int`、`float` 或 `bool`。只由 `--define` 给出的键是字符串；`asuka.toml` 里已有的键沿用那里的类型（`PORT = 8080` 时，`--define PORT=9000` 是 `int`）。构建没有给出的键会报错，所以拼错的键在编译时就会被发现。带默认值的写法 `@define("KEY", default)` 在构建没有给出值时取默认值，值的类型由默认值决定：默认值是字面量，可以是字符串、数字或 bool，构建给出的值必须是这个类型（`--define` 的文本会按这个类型读取：对 `@define("RETRIES", 3)` 来说，`--define RETRIES=5` 就是 `int` 5）。
+
+```asuka
+let server = @define("API_URL", "https://api.example.com")
+let retries = @define("RETRIES", 3)
+
+component Settings {
+  Column {
+    Text("Talking to {server}, {retries} tries")
+    if @define("ANALYTICS", true) {
+      Text("Usage statistics are on")
+    }
+  }
+}
+```
+
+`bool` 类型的值和 `@debug` 一样会被折叠，无论是在 `if` 里，还是用 `!`、`&&`、`||` 组合：构建不走的分支不会进入构建。键是字符串字面量，由字母、数字和 `_` 组成，以字母或 `_` 开头。
+
+构建给出的值会编译进应用，拿到应用的人都能读出来。绝不要用它传递机密：服务器的 API 密钥、签名密钥、密码。服务器地址、功能开关，或者本来就是公开的密钥（客户端 ID、统计服务的衡量 ID、可公开的 publishable key）都没问题；必须保密的东西留在你的服务器上，由应用去请求。
+
 ### 组件
 
 组件是界面中的一块，参数在头部声明，其余所有内容都写在主体里：
@@ -2362,6 +2396,7 @@ bench "fib 20" {
 - invalid-conformance: 类型声明的、或类型参数要求的东西不是 interface. 在那里写一个 interface，或者去掉它。
 - invalid-constant: 编译时生成的值不是字面量，或者无法解析. 直接传入字面量，并修正消息指出的无法解析的部分。
 - invalid-declaration: 声明的写法不被它所在的位置接受. 按这个位置的写法来写：类型的常量用 `let name = value`，需要类型参数的就写成 `static fn`。
+- invalid-define: 构建没有给出对应类型的值的 `@define`. 在 asuka.toml 的 `[defines]` 里（或者用 `--define`）给这个键一个值，或者写上默认值：`@define("API_URL", "https://example.com")`。
 - invalid-entry: 程序的 `fn main` 声明方式与它的运行方式不符. 声明 `fn main() { … }`，并通过 std/os 读取参数。
 - invalid-extension: `extend` 了不能扩展的东西，或者写法不对. 扩展一个有名字的类型，或者改为声明一个函数。
 - invalid-extern: C 无法支撑的 extern 声明. 把释放函数声明为 `extern fn close(x: T)`，其余部分照 C 的样子声明。
