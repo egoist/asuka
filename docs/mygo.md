@@ -82,7 +82,11 @@ Use Asuka when:
 - the app is for phones today, or for phones, desktops and the web from
   one code base;
 - it should look and work as each platform's apps do: its controls, its
-  text input, its accessibility, its navigation.
+  text input, its accessibility, its navigation;
+- or it should have one look of its own on every platform, made of
+  `std/base`'s components and still the platform's views underneath,
+  so text input and accessibility stay the platform's ([Your own
+  look](custom-ui.md)).
 
 Use MyGo when:
 

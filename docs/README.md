@@ -57,6 +57,14 @@ Mac window's toolbar with its back button, or libadwaita's navigation
 view. So an app that sets no style looks as the platform's apps do, and
 gets their accessibility, text input and scrolling as they have them.
 
+An app with a design of its own can have one look everywhere instead.
+`std/base`'s components (a select, a menu, a dialog, a switch, tabs, a
+slider...) have behavior and no look: they handle their state, the
+keyboard and the focus, and screen readers, and show only what the app
+styles. They look the same on a phone, a desktop and in a browser. One
+screen can mix them with the platform's controls ([Your own
+look](custom-ui.md)).
+
 While you work, `asuka dev` runs the app on the simulator, an emulator
 or a phone, on your computer, or in your browser. A save reaches the
 app in milliseconds, and the app keeps its state and its screens. A
@@ -89,6 +97,10 @@ the Android SDK and NDK) and a C compiler (the system's, or Zig).
   text, shadows and gradients.
 - [Components](components.md): text, buttons, inputs, images, lists,
   video, web views and drawing.
+- [Your own look](custom-ui.md): one look on every platform with
+  `std/base`'s components, styled by the app: selects, menus, dialogs,
+  switches, tabs, sliders, forms and toasts, with the keyboard, focus
+  and screen readers handled.
 - [Navigation](navigation.md): stacks, tabs, sheets, alerts and menus,
   windows and the menu bar, links into the app, and shares from other
   apps.

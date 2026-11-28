@@ -83,7 +83,7 @@ fn send() {}
 
 Windows 一列是 UI Automation 的控件类型，Linux 一列是 GTK 的无障碍角色，Web 一列是 ARIA 角色。可按压的 `View` 本来就是按钮。在 iOS 和 macOS 上，设置了 `role` 的视图会成为一个独立的元素，所以也要给它加上 `label`，否则屏幕阅读器只会读出它的角色。
 
-用视图搭建的控件（见[自定义外观](components.md#自定义外观)）应设置与它本身相符的角色，各平台会把它当作自己的同类控件来朗读：复选框在 UIKit 上是切换按钮，在 Android 上是 `CheckBox`，在 macOS 上是 `AXCheckBox`，在 UI Automation 中是 CheckBox，在 GTK 和 ARIA 中是 `checkbox`。
+用视图搭建的控件（见[自定义外观](custom-ui.md)）应设置与它本身相符的角色，各平台会把它当作自己的同类控件来朗读：复选框在 UIKit 上是切换按钮，在 Android 上是 `CheckBox`，在 macOS 上是 `AXCheckBox`，在 UI Automation 中是 CheckBox，在 GTK 和 ARIA 中是 `checkbox`。
 
 | 角色 | 含义 |
 | --- | --- |

@@ -43,6 +43,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | セグメンテッドコントロール | `Picker(.segmented)` | コミュニティ製 | ✓ `Segmented` |
 | 日付と時刻 | `DatePicker` | コミュニティ製 | ✓ `DatePicker`、`time.Picker`（`mode`：日付、時刻、両方。`inline`） |
 | 日付の範囲 | `MultiDatePicker`（複数の日で、範囲ではない） | コミュニティ製 | ✓ `DateRangePicker`、`time.RangePicker`（iOS ではコンパクトな `UIDatePicker` 2 つか `UICalendarView`、Android では Material の日付範囲ピッカー、Mac では `NSDatePicker` の範囲モード、Windows では月カレンダーの範囲選択、Linux では `GtkCalendar`、Web では日付入力 2 つ。`min`、`max`、`inline`） |
+| どのプラットフォームでも同じ見た目：デザインシステムがスタイルを付ける、見た目のないコンポーネント | なし：コントロールごとの `ButtonStyle`、`ToggleStyle` | コミュニティ製（Tamagui、gluestack、React Native Reusables） | ✓ `std/base`：`Select`、`Combobox`、`Menu`、`Dialog`、`Popover`、`Tooltip`、`Tabs`、`Checkbox`、`Switch`、`RadioGroup`、`Slider`、`Field` と `Form`、トーストなど。キーボード、フォーカス、スクリーンリーダーに対応し、アプリの `style` とその状態でスタイルを付ける（[独自の見た目](custom-ui.md)） |
 | チップ（アシスト、サジェスト、フィルター、入力） | なし（カプセル形の `Button`） | コミュニティ製 | ✓ `Chip`（`icon`。`bind selected` でフィルターチップ、`on remove` で入力チップ。Android では Material 3 の `Chip`、ほかではカプセル形のプラットフォームのボタン） |
 | 開閉（ディスクロージャー、エキスパンダー） | `DisclosureGroup` | コミュニティ製 | ✓ `Disclosure`（`bind expanded`。中身は開いたときに作られる。`GtkExpander`、`NSButton` の開閉三角形、`<details>`） |
 | オートコンプリート、コンボボックス | `.searchSuggestions`、`TextField` と `Menu` | コミュニティ製 | ✓ `TextField` の `suggestions`（Asuka がどこでも同じように絞り込む。アプリ自身が絞り込むなら `filterSuggestions: false`）、`dropdown`、`on suggestion`（Material の入力できる exposed dropdown menu、`NSComboBox`、WinUI に倣って描画したリスト、`GtkPopover`、ARIA の combobox） |

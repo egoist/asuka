@@ -1,6 +1,6 @@
 # コンポーネント
 
-コンポーネントは、ビューを表示する宣言です（[言語](language-tour.md) を参照）。このページでは、Asuka が提供する要素を用途ごとにまとめて紹介し、あわせて標準ライブラリの Markdown、SVG、Lottie、グラフ、シェーダーのパッケージも取り上げます。
+コンポーネントは、ビューを表示する宣言です（[言語](language-tour.md) を参照）。このページでは、Asuka が提供する要素を用途ごとにまとめて紹介し、あわせて標準ライブラリの Markdown、SVG、Lottie、グラフ、シェーダーのパッケージも取り上げます。どのプラットフォームでもアプリ独自の見た目にしたいときは、代わりに `std/base` のコンポーネントにスタイルを付けます（[独自の見た目](custom-ui.md)）。
 
 プロパティはどれもバインディングです。値でも、状態を読む式でもよく、ビューはその変化に追従します。ユーザーが変更するコントロール（フィールドやトグル）は `bind` で、ユーザーの変更を書き込む状態を受け取ります（`bind text: query`）。[コンセプト](concepts.md) を参照してください。
 
@@ -1806,72 +1806,7 @@ app { Folders() }
 
 ## 独自の見た目
 
-ここまでの要素は、どれも各プラットフォーム純正のコントロールです。スタイルを付けなければ、アプリはどこでもネイティブな見た目になります。たとえば `Picker` は、iOS ではメニュー、Windows ではドロップダウンです。一方で、アプリに独自のデザインがある場合（ブランドの色、形、動きをすべてのコントロールに、スマートフォンでもブラウザーでも同じように使いたい）や、プラットフォームにないコントロール（コンボボックス、トグルグループ、範囲スライダー）が必要な場合は、`std/base` が見た目を持たず振る舞いだけを持つコンポーネントを提供します。セレクト、メニュー、ダイアログ、チェックボックス、タブ、スライダーなどです。それぞれが状態、キーボードとフォーカス、スクリーンリーダー、そしてウィンドウの上での位置を扱い、表示されるのはアプリがスタイルを付けたものだけです。
-
-```asuka
-import std/base
-
-style field {
-  padding: [8, 12]
-  radius: 8
-  border: 1
-  borderColor: .separator
-  focusVisible { borderColor: .accent; border: 2 }
-}
-
-style menu {
-  padding: 4
-  radius: 10
-  background: .background
-  shadow: Shadow(radius: 12, y: 4)
-}
-
-style option {
-  padding: [6, 10]
-  radius: 6
-}
-
-component FruitPicker {
-  state fruit = ""
-
-  base.Select {
-    bind value: fruit
-    base.SelectTrigger {
-      style: field
-      base.SelectValue { placeholder: "Pick a fruit" }
-    }
-    popup {
-      base.SelectPopup {
-        style: menu
-        for f in ["Apple", "Banana", "Cherry"] key f {
-          base.SelectItem(f) {
-            style: option
-            highlighted { background: .accent.opacity(0.15) }
-            selected { font: .headline }
-            Text(f)
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-コンポーネントは部品の組み合わせです。状態を持つルート（`Select`）と、アプリがその中に並べてスタイルを付ける部品（`SelectTrigger`、`SelectValue`、`SelectPopup`、`SelectItem`）があります。どの部品も `style:` とスタイルのプロパティを受け取り、部品の状態は `pressed { … }` と同じく、アプリがスタイルを付けるバリアントになります。`checked { … }`、`open { … }`、`highlighted { … }`、`selected { … }`、`disabled { … }` です。ルートの値は、バインドされていれば（`bind value: fruit`）呼び出し側のもの、そうでなければルート自身のものです。ポップアップの部品はルートの `popup` スロットに入れ、トリガーの隣に表示されます。`backdrop` はダイアログの後ろのウィンドウを暗くします。
-
-| 分類 | コンポーネント |
-|---|---|
-| アクション | `Button`、`Toggle`、`ToggleGroup`、`Toolbar` |
-| 選択 | `Checkbox`（`CheckboxGroup`）、`Switch`、`RadioGroup` と `Radio`、`Select`、`Listbox`、`Combobox` |
-| 値 | `Slider`、`NumberField`、`Progress`、`Meter` |
-| フォーム | `Field`（ラベル、説明、エラー）、`Input`、`Fieldset`、`Form` |
-| 開閉 | `Collapsible`、`Accordion`、`Tabs` |
-| ポップアップ | `Dialog`、`AlertDialog`、`Popover`、`Tooltip`、`PreviewCard`、`Menu`、`ContextMenu`、`Menubar` |
-| その他 | `Avatar`、`ScrollArea`、`Separator`、トースト（`Toasts`、`ToastViewport`） |
-
-キー操作は、同じ種類のコントロールに対する各プラットフォームの慣習に従います。矢印キーでメニュー、セレクト、ラジオグループの項目を移動し、文字を入力するとその項目へ移ります。Escape でポップアップが閉じ、Android の「戻る」でも閉じます。ポップアップが開くとフォーカスはその中へ移り、閉じるとトリガーに戻ります。すべての部品とそのプロパティ、バリアントは `asuka doc std/base` で確認できます。
-
-プラットフォームのコントロールがロール以上のことをしてくれる場合は、そちらを優先してください。iOS の日付ピッカーのホイール、フィールドの自動入力、共有シートなどです。両者は一つの画面の中で混在できます。
+ここまでの要素は、各プラットフォーム純正のコントロールです。スタイルを付けないアプリはどこでもネイティブの見た目になり、`Picker` は iOS ではメニュー、Windows ではドロップダウンになります。アプリに独自のデザインがあり、スマートフォンでもブラウザーでも同じにしたいとき、あるいはプラットフォームにないコントロール（コンボボックス、トグルグループ、範囲スライダー）が必要なときは、`std/base` が見た目を持たない振る舞いだけを提供します。セレクト、メニュー、ダイアログ、チェックボックス、タブ、スライダーが、状態、キーボードとフォーカス、スクリーンリーダー、ウィンドウの上での位置を扱い、表示するのはアプリが付けたスタイルだけです。詳しくは[独自の見た目](custom-ui.md)にあります。テーマを付けた画面全体の例、パーツとその状態、テーマ、キーボード、テストを扱います。
 
 ### Overlay
 

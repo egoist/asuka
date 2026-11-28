@@ -127,7 +127,7 @@ roles, the web's ARIA roles. A pressable `View` is a button already. A
 view with a `role` is an element of its own on iOS and macOS, so give it
 a `label` too, or it's read as nothing but its role.
 
-A control you build from views (see [Your own look](components.md#your-own-look))
+A control you build from views (see [Your own look](custom-ui.md))
 takes the role of what it is, and each platform reads it as its own
 control of that kind: a checkbox as UIKit's toggle button, Android's
 `CheckBox`, `AXCheckBox`, UI Automation's CheckBox, GTK's and ARIA's

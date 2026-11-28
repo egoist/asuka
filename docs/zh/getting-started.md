@@ -125,7 +125,7 @@ test "Add counts" {
 
 - **状态**就是 `state count = 0`：在视图中读取它（`"{count}"`）会把视图绑定到它上面；写入它（`count += 1`）会更新读取了它的地方，而且只更新那些地方。
 - **组件**声明自己的状态、属性和视图；有东西变化时，组件的主体不会重新运行，重新运行的只有读取了变化内容的那些绑定。
-- **样式**基于 flexbox，以点（pt）为单位：`grow`、`gap`、`padding`、`align`、`justify`，以及外观相关的 `background`、`radius`、`shadow` 等。不设置任何样式的应用，看起来就和该平台上的其他应用一样。
+- **样式**基于 flexbox，以点（pt）为单位：`grow`、`gap`、`padding`、`align`、`justify`，以及外观相关的 `background`、`radius`、`shadow` 等。不设置任何样式的应用，看起来就和该平台上的其他应用一样；有自己设计的应用，则可以用 `std/base` 在所有平台上保持同一种外观（见[自定义外观](custom-ui.md)）。
 - **测试**就是 `test` 块：`asuka test` 不需要设备就能运行它们，并像手机一样对视图进行布局（见[测试](testing.md)）。
 
 同一份代码就是所有平台上的应用。其余内容见 [Asuka 语言](language-tour.md)。
@@ -139,6 +139,7 @@ test "Add counts" {
 
 ## 下一步
 
+- [自定义外观](custom-ui.md)：用 `std/base` 的组件，在所有平台上使用同一套设计。
 - [开发](development.md)：开发循环、设备、日志。
 - [测试](testing.md)：`test` 块和 `asuka test`。
 - [发布](shipping.md)：为 App Store、Google Play、Mac、Windows、Linux 和 Web 构建应用。

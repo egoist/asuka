@@ -83,7 +83,7 @@ fn send() {}
 
 Windows の列は UI Automation のコントロールタイプ、Linux の列は GTK のアクセシブルロール、Web の列は ARIA のロールです。押せる `View` はもともとボタンです。iOS と macOS では、`role` を持つビューはそれ自体が一つの要素になります。そのため `label` も付けてください。付けないと、ロールだけが読み上げられます。
 
-ビューを組み合わせて作ったコントロール（[独自の見た目](components.md#独自の見た目)を参照）には、それが何であるかに合ったロールを付けます。各プラットフォームは、それを自分の同じ種類のコントロールとして読み上げます。たとえばチェックボックスは、UIKit ではトグルボタン、Android では `CheckBox`、macOS では `AXCheckBox`、UI Automation では CheckBox、GTK と ARIA では `checkbox` になります。
+ビューを組み合わせて作ったコントロール（[独自の見た目](custom-ui.md)を参照）には、それが何であるかに合ったロールを付けます。各プラットフォームは、それを自分の同じ種類のコントロールとして読み上げます。たとえばチェックボックスは、UIKit ではトグルボタン、Android では `CheckBox`、macOS では `AXCheckBox`、UI Automation では CheckBox、GTK と ARIA では `checkbox` になります。
 
 | ロール | 意味 |
 | --- | --- |

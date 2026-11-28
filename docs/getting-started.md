@@ -192,7 +192,9 @@ test "Add counts" {
   run again when something changes, only the bindings that read it.
 - **Style** is flexbox, in points: `grow`, `gap`, `padding`, `align`,
   `justify`, and the look (`background`, `radius`, `shadow`...). An app
-  that sets none looks as the platform's apps do.
+  that sets none looks as the platform's apps do; one with a design of
+  its own gets the same look everywhere from `std/base` ([Your own
+  look](custom-ui.md)).
 - **Tests** are `test` blocks: `asuka test` runs them with no device,
   laying the views out as a phone would (see [Testing](testing.md)).
 
@@ -216,6 +218,8 @@ has the rest of it.
 
 ## Next
 
+- [Your own look](custom-ui.md): one design on every platform, with
+  `std/base`'s components.
 - [Development](development.md): the dev loop, devices, logs.
 - [Testing](testing.md): `test` blocks and `asuka test`.
 - [Shipping](shipping.md): builds for the App Store, Google Play, the

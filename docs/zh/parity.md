@@ -43,6 +43,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 分段控件 | `Picker(.segmented)` | 社区方案 | ✓ `Segmented` |
 | 日期和时间 | `DatePicker` | 社区方案 | ✓ `DatePicker`、`time.Picker`（`mode`：日期、时间或两者；`inline`） |
 | 日期范围 | `MultiDatePicker`（多个日期，不是范围） | 社区方案 | ✓ `DateRangePicker`、`time.RangePicker`（iOS 上是两个紧凑型 `UIDatePicker` 或 `UICalendarView`，Android 上是 Material 的日期范围选择器，Mac 上是 `NSDatePicker` 的范围模式，Windows 上是月历的范围选择，Linux 上是 `GtkCalendar`，Web 上是两个日期输入框；`min`、`max`、`inline`） |
+| 在所有平台上用同一种外观：由设计系统设置样式的无样式组件 | 没有：每种控件各有 `ButtonStyle`、`ToggleStyle` | 社区方案（Tamagui、gluestack、React Native Reusables） | ✓ `std/base`：`Select`、`Combobox`、`Menu`、`Dialog`、`Popover`、`Tooltip`、`Tabs`、`Checkbox`、`Switch`、`RadioGroup`、`Slider`、`Field` 和 `Form`、toast 等，键盘、焦点和屏幕阅读器都已处理好，样式由应用的 `style` 及其状态决定（[自定义外观](custom-ui.md)） |
 | 纸片（辅助、建议、筛选、输入） | 没有（用胶囊形的 `Button`） | 社区方案 | ✓ `Chip`（`icon`；`bind selected` 是筛选纸片，`on remove` 是输入纸片；Android 上是 Material 3 的 `Chip`，其他平台是胶囊形的平台按钮） |
 | 展开收起、折叠面板 | `DisclosureGroup` | 社区方案 | ✓ `Disclosure`（`bind expanded`；内容在展开时才构建；`GtkExpander`、`NSButton` 的展开三角、`<details>`） |
 | 自动补全、组合框 | `.searchSuggestions`、`TextField` 加 `Menu` | 社区方案 | ✓ `TextField` 的 `suggestions`（由 Asuka 过滤，各平台一致；也可由应用自己过滤：`filterSuggestions: false`）、`dropdown`、`on suggestion`（Material 可输入的 exposed dropdown menu、`NSComboBox`、绘制成 WinUI 样式的列表、`GtkPopover`、ARIA combobox） |

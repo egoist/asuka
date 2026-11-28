@@ -22,7 +22,9 @@ dark mode and text sizes:
   Asuka's own around them (see [the web](web.md)).
 
 Set only what you mean to change, and prefer the semantic colors and
-fonts below to fixed ones, so the app keeps following the platform.
+fonts below to fixed ones, so the app keeps following the platform. An
+app that should look the same everywhere instead styles `std/base`'s
+components ([Your own look](custom-ui.md)).
 
 ## Style
 

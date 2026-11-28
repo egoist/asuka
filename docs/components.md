@@ -9,7 +9,9 @@ Material 3 on Android, AppKit on macOS, Win32's controls drawn as
 Windows 11's (Fluent) on Windows, GTK 4 and libadwaita on Linux, the
 page's elements in a browser. How views are sized and placed is in
 [Layout](layout.md); screens, tabs and sheets are in
-[Navigation](navigation.md).
+[Navigation](navigation.md). For one look of the app's own on every
+platform, `std/base`'s components take the app's style instead ([Your own
+look](custom-ui.md)).
 
 Every prop is a binding: a value, or an expression of state the view
 follows as it changes. A control the user changes (a field, a toggle)
@@ -2534,93 +2536,14 @@ does.
 
 The elements above are each platform's own controls: an app that sets no
 style looks native everywhere, a `Picker` a menu on iOS and a drop-down
-on Windows. When an app has a design of its own (its brand's colors,
-shapes and motion on every control, the same on a phone and in a
-browser), or needs a control the platforms don't have (a combo box, a
-toggle group, a range slider), `std/base` gives the behavior without a
+on Windows. When an app has a design of its own, the same on a phone and
+in a browser, or needs a control the platforms don't have (a combo box,
+a toggle group, a range slider), `std/base` gives the behavior without a
 look: a select, a menu, a dialog, a checkbox, tabs, a slider. Each
 handles its state, the keyboard and its focus, screen readers, and its
-place over the window; what it shows is only what the app styles.
-
-```asuka
-import std/base
-
-style field {
-  padding: [8, 12]
-  radius: 8
-  border: 1
-  borderColor: .separator
-  focusVisible { borderColor: .accent; border: 2 }
-}
-
-style menu {
-  padding: 4
-  radius: 10
-  background: .background
-  shadow: Shadow(radius: 12, y: 4)
-}
-
-style option {
-  padding: [6, 10]
-  radius: 6
-}
-
-component FruitPicker {
-  state fruit = ""
-
-  base.Select {
-    bind value: fruit
-    base.SelectTrigger {
-      style: field
-      base.SelectValue { placeholder: "Pick a fruit" }
-    }
-    popup {
-      base.SelectPopup {
-        style: menu
-        for f in ["Apple", "Banana", "Cherry"] key f {
-          base.SelectItem(f) {
-            style: option
-            highlighted { background: .accent.opacity(0.15) }
-            selected { font: .headline }
-            Text(f)
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-A component is parts: a root that holds the state (`Select`), and parts
-the app arranges and styles inside it (`SelectTrigger`, `SelectValue`,
-`SelectPopup`, `SelectItem`). Each part takes `style:` and the style
-props, and its states are variants the app styles, as `pressed { … }`
-is: `checked { … }`, `open { … }`, `highlighted { … }`, `selected { … }`,
-`disabled { … }`. A root's value is the caller's when it's bound (`bind
-value: fruit`), its own otherwise. A popup's parts go in its root's
-`popup` slot, which shows them next to the trigger; `backdrop` dims the
-window behind a dialog.
-
-| Group | Components |
-|---|---|
-| Actions | `Button`, `Toggle`, `ToggleGroup`, `Toolbar` |
-| Choices | `Checkbox` (`CheckboxGroup`), `Switch`, `RadioGroup` and `Radio`, `Select`, `Listbox`, `Combobox` |
-| Values | `Slider`, `NumberField`, `Progress`, `Meter` |
-| Forms | `Field` (its label, description and error), `Input`, `Fieldset`, `Form` |
-| Disclosure | `Collapsible`, `Accordion`, `Tabs` |
-| Popups | `Dialog`, `AlertDialog`, `Popover`, `Tooltip`, `PreviewCard`, `Menu`, `ContextMenu`, `Menubar` |
-| Other | `Avatar`, `ScrollArea`, `Separator`, toasts (`Toasts`, `ToastViewport`) |
-
-Their keys follow the platforms' conventions for the same controls:
-arrow keys move through a menu's, a select's or a radio group's items
-and typing jumps to an item, Escape closes a popup and Back on Android
-does too, and the focus goes into a popup as it opens and back to its
-trigger as it closes. `asuka doc std/base` lists every part, its props
-and its variants.
-
-Prefer the platform's control where it does more than its role: iOS's
-date picker's wheels, a field's AutoFill, a share sheet. The two mix on
-one screen.
+place over the window; what it shows is only what the app styles. [Your
+own look](custom-ui.md) covers it: a whole themed screen, the parts and
+their states, themes, the keyboard and testing.
 
 ### Overlay
 

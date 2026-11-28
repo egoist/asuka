@@ -6,7 +6,7 @@ import type { Locale } from "./locales.ts"
 const en = {
   siteTitle: "Asuka — Native widgets in Asuka, on phones, desktops and the web",
   siteDescription:
-    "Build apps in Asuka, a language made for interfaces, with each platform's own widgets on iOS, Android, macOS, Windows, Linux and the web. Each platform shows the app with its own widgets (UIKit, Material 3, AppKit, Win32, GTK 4 and libadwaita, the DOM), updated by fine-grained state, with live reload as you save and release builds for every platform.",
+    "Build apps in Asuka, a language made for interfaces, with each platform's own widgets on iOS, Android, macOS, Windows, Linux and the web. Each platform shows the app with its own widgets (UIKit, Material 3, AppKit, Win32, GTK 4 and libadwaita, the DOM), updated by fine-grained state, with live reload as you save and release builds for every platform. Or give it one look everywhere: std/base's components have the behavior, the keyboard and screen readers, and take the app's style.",
   nav: { docs: "Docs", references: "References", examples: "Examples", releases: "Releases", menu: "Navigation menu", license: "MIT License" },
   reference: {
     language: "Language",
@@ -67,7 +67,7 @@ export type Messages = typeof en
 const zh: Messages = {
   siteTitle: "Asuka — 用 Asuka 写原生控件应用，手机、桌面、Web 全覆盖",
   siteDescription:
-    "用 Asuka——一门专为界面设计的语言——开发应用，在 iOS、Android、macOS、Windows、Linux 和 Web 上使用各平台自己的控件（UIKit、Material 3、AppKit、Win32、GTK 4 与 libadwaita、DOM）。界面采用细粒度更新，保存即重载，每个平台都能直接打出发布构建。",
+    "用 Asuka——一门专为界面设计的语言——开发应用，在 iOS、Android、macOS、Windows、Linux 和 Web 上使用各平台自己的控件（UIKit、Material 3、AppKit、Win32、GTK 4 与 libadwaita、DOM）。界面采用细粒度更新，保存即重载，每个平台都能直接打出发布构建。也可以在所有平台上使用同一种外观：std/base 的组件负责行为、键盘和屏幕阅读器，样式由应用决定。",
   nav: { docs: "文档", references: "参考", examples: "示例", releases: "版本发布", menu: "导航菜单", license: "MIT 许可证" },
   reference: {
     language: "语言",
@@ -126,7 +126,7 @@ const zh: Messages = {
 const ja: Messages = {
   siteTitle: "Asuka — Asuka で書く、ネイティブ UI のアプリ。スマートフォンにも、デスクトップにも、Web にも",
   siteDescription:
-    "インターフェースのための言語 Asuka で書いたアプリを、iOS、Android、macOS、Windows、Linux、Web で、各プラットフォーム純正のウィジェット（UIKit、Material 3、AppKit、Win32、GTK 4 と libadwaita、DOM）で動かせます。画面はきめ細かな状態の更新で必要な部分だけが書き換わり、保存するたびにライブでリロードされます。リリースビルドもすべてのプラットフォーム向けに作れます。",
+    "インターフェースのための言語 Asuka で書いたアプリを、iOS、Android、macOS、Windows、Linux、Web で、各プラットフォーム純正のウィジェット（UIKit、Material 3、AppKit、Win32、GTK 4 と libadwaita、DOM）で動かせます。画面はきめ細かな状態の更新で必要な部分だけが書き換わり、保存するたびにライブでリロードされます。リリースビルドもすべてのプラットフォーム向けに作れます。どこでも同じ見た目にすることもできます。std/base のコンポーネントが振る舞い、キーボード、スクリーンリーダーを受け持ち、スタイルはアプリが付けます。",
   nav: { docs: "ドキュメント", references: "リファレンス", examples: "サンプル", releases: "リリース", menu: "ナビゲーションメニュー", license: "MIT ライセンス" },
   reference: {
     language: "言語",
