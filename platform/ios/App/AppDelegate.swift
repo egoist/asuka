@@ -67,6 +67,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
     #endif
 
+    // A package's background URLSession (std/http's uploads) has events:
+    // the system woke the app, or started it again, for them.
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        AsukaBackgroundSessions.handleEvents(identifier, completionHandler)
+    }
+
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
         AsukaRuntime.shared.lifecycle(.memoryWarning)
     }

@@ -72,6 +72,15 @@ func TestStdUnits(t *testing.T) {
 				t.Fatal(err)
 			}
 			cmd := exec.Command(exe)
+			// On Linux each test has a session bus of its own: one that
+			// stands up a portal of its own (camera's, screen's) can't
+			// find the name taken by what another test woke on the bus
+			// the package's tests share (an app's xdg-desktop-portal).
+			if runtime.GOOS == "linux" {
+				if drs, err := exec.LookPath("dbus-run-session"); err == nil {
+					cmd = exec.Command(drs, "--", exe)
+				}
+			}
 			cmd.Dir = dir
 			cmd.Env = append(os.Environ(), "ASUKA_DATA="+work, noLeaks)
 			out, err := cmd.CombinedOutput()

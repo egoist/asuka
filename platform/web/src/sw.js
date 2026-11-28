@@ -1,12 +1,18 @@
 // The app's service worker: what shows and answers the app's
 // notifications while no page of it is open, or none is in front.
 //
-// The CLI ships it with every web app (asuka build --platform web:
-// sw.<digest>.js beside index.html; asuka dev --platform web: sw.js), as
-// one file: globalThis.asukaApp (the app's name, title, assets and
-// icon), notify-core.js, then this. The page registers it (asuka.js),
-// scoped to the app's directory. It has no fetch handler: the page loads
-// as it would without it.
+// The CLI ships it with every web app (sw.js beside index.html), as one
+// file: globalThis.asukaApp (the app's name, title, assets and icon, and
+// for a build its files: precache), notify-core.js, offline.js, then
+// this. The page registers it (asuka.js), scoped to the app's directory.
+//
+//   - install, activate, fetch: a build's files offline (offline.js says
+//     how): each build a worker of its own (its files' list changes it),
+//     installed in the background, taking over as the app's only page
+//     reloads, once none of the old one is open, or as the app asks
+//     ("skipWaiting": platform/update). A build with offline off
+//     (asuka.toml's web.offline = false) and asuka dev's have no files
+//     listed: no fetch handler, what was kept for offline deleted.
 //
 //   - push: a Web Push message (the payload docs/web.md describes) shows
 //     as a notification. A page of the app that's open is asked first
@@ -153,6 +159,10 @@
   async function onMessage(event) {
     const m = event.data;
     if (!m?.asuka) return;
+    if (m.asuka === "skipWaiting") {
+      await g.skipWaiting?.();
+      return;
+    }
     if (m.asuka === "hello") {
       // A page started: the answers that waited for one.
       for (const item of await core.takePending(st, m.app || name)) event.source?.postMessage(item);
@@ -188,9 +198,40 @@
   };
   g.asukaWorker = { ...handlers, fireDue, show };
 
+  // The build's files offline (none listed: asuka dev's, offline off).
+  const offline = cfg.precache?.files?.length && g.asukaOffline ? g.asukaOffline.create({ manifest: cfg.precache, scope: scope() }) : null;
+
+  // A new version installs its files; it waits for the old one's pages
+  // to go, but for the first version of the app that works offline (an
+  // older worker answers no loads), which takes over at once.
+  async function onInstall() {
+    if (offline) {
+      await offline.install();
+      if (await offline.installed()) return;
+    }
+    await g.skipWaiting?.();
+  }
+
+  async function onActivate() {
+    if (offline) await offline.activate();
+    else await g.asukaOffline?.clear(scope());
+    await g.clients.claim?.();
+    await fireDue();
+  }
+
+  g.asukaWorker.install = onInstall;
+  g.asukaWorker.activate = onActivate;
+  g.asukaWorker.offline = offline;
+
   if (typeof g.registration === "object" && g.registration && typeof g.addEventListener === "function" && g.clients) {
-    g.addEventListener("install", () => g.skipWaiting?.());
-    g.addEventListener("activate", (e) => e.waitUntil(Promise.resolve(g.clients.claim?.()).then(fireDue)));
+    g.addEventListener("install", (e) => e.waitUntil(onInstall()));
+    g.addEventListener("activate", (e) => e.waitUntil(onActivate()));
+    if (offline) {
+      g.addEventListener("fetch", (e) => {
+        const r = offline.respond(e.request);
+        if (r) e.respondWith(r);
+      });
+    }
     for (const [type, f] of Object.entries(handlers)) {
       g.addEventListener(type, (e) => e.waitUntil(f(e).catch((err) => console.error("asuka: service worker:", type, err))));
     }

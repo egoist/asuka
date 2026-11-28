@@ -4,3 +4,11 @@ description = "HTTP requests, through each platform's own client; an HTTP/1.1 se
 
 [windows]
 libraries = ["winhttp", "ws2_32"]
+
+# Background uploads (upload's Background) are WorkManager's on Android,
+# run as foreground work of the data sync type with their progress in a
+# notification: only the apps that use them have its permissions (Google
+# Play asks about a foreground service's).
+[uses.Background.android]
+permissions = ["android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_DATA_SYNC", "android.permission.POST_NOTIFICATIONS"]
+application = ['<service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" />']

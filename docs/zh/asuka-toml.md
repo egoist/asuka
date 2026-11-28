@@ -454,6 +454,7 @@ Web 构建的配置。
 |---|---|---|---|
 | `vapidPublicKey` | 字符串 | 无 | 应用服务器的 VAPID 公钥（base64url），浏览器用它为 `platform/push` 订阅 Web Push。 |
 | `base` | 字符串 | `"/"` | 网站所在的路径（`https://example.com/app/` 就写 `"/app/"`）：页面的 `<base href>`，路由器的 href 就是它下面的页面地址。`asuka build --base` 会覆盖它。见[地址与历史记录](web.md#地址与历史记录)。 |
+| `offline` | 布尔值 | `true` | 由 service worker 保存网站的文件，让应用没有网络也能启动；每次新的构建会在页面重新加载时接管。设为 `false` 则什么都不保存。见[离线](web.md#离线)。 |
 
 见 [Web Push](web.md#platformpushweb-push)。
 

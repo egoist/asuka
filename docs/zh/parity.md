@@ -102,7 +102,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 持久化的小数据 | `@AppStorage` | AsyncStorage | ✓ `std/storage` 的 `storage.Value`、`std/store`（UserDefaults、SharedPreferences、Windows 和 Linux 上的一个文件、`localStorage`） |
 | SQLite | SwiftData / GRDB | `expo-sqlite` | ✓ `std/sqlite`（`migrate`，把行直接解码成 `T` 的 `query<T>`，`exec`，事务，都在主线程之外执行；`watch<T>`：实时查询，读取的表被写入或参数变化时重新运行；每个平台都是同一个 SQLite，浏览器里运行在页面的一个 worker 中）（见[数据](data.md)） |
 | 安全存储 | 钥匙串 | `expo-secure-store` | ✓ `platform/secure`（钥匙串、Android Keystore、凭据管理器、libsecret；Web 上用浏览器不允许导出的密钥加密后存进 IndexedDB，并不是真正的钥匙串）；`protected: true`：要先通过 Face ID、指纹、Windows Hello 或密码验证才能读出，相当于 `requireAuthentication` |
-| 文件、网络 | Foundation | `expo-file-system`、fetch | ✓ `std/fs`；`std/http`（用平台自己的客户端：URLSession、`HttpURLConnection`、WinHTTP、libsoup、`fetch`）、`http.download`、`http.stream` 和服务器发送事件（`http.events`）；`std/websocket` |
+| 文件、网络 | Foundation | `expo-file-system`、fetch | ✓ `std/fs`；`std/http`（用平台自己的客户端：URLSession、`HttpURLConnection`、WinHTTP、libsoup、`fetch`）、`http.download`、`http.upload`（文件、用 `http.multipart` 组成的表单字段和文件、`Stream` 的片段：边读边发，并报告进度；在 iOS、macOS 和 Android 上可以后台传输）、`http.stream` 和服务器发送事件（`http.events`）；`std/websocket` |
 | 照片 | `PhotosPicker` | `expo-image-picker` | ✓ `device.pickPhotos(max:)` |
 | 文档 | `UIDocumentPickerViewController` | `expo-document-picker` | ✓ `device.pickFiles(types:, multiple:)`；桌面端用 `platform/dialog` |
 | 相机 | AVFoundation | `expo-camera` | ✓ `platform/camera`：`camera.take()`（系统相机；在 Mac、Windows 和 Linux 上是一个带实时预览的对话框）、`camera.View`（实时预览，前置或后置）、`capture()`、`record()`（AVFoundation、CameraX、Media Foundation、GStreamer、`getUserMedia`）；`platform/record` 可以录制带声音的视频 |
@@ -111,6 +111,8 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 翻译、复数、地区格式 | String Catalogs、FormatStyle | `expo-localization`、i18next | ✓ 文案目录和 `tr.key(…)`、`std/i18n`（见[多语言](i18n.md)） |
 | 从右到左布局 | `layoutDirection` | `I18nManager` | ✓ 跟随语言自动处理（`start` 和 `end` 会镜像）；对于在所有语言里方向都固定的内容，用 `layoutDirection` |
 | 本地通知 | UserNotifications | `expo-notifications` | ✓ `platform/notify`（立即显示或定时显示，可带图片；iOS 和 macOS 上用 UserNotifications，Android 的通知，Windows 的 toast（带按钮和回复），Linux 的桌面通知；Web 上通过应用的 service worker 实现：应用有页面打开时定时通知会按时显示，否则在下一次打开页面时显示，因为浏览器无法定时显示通知） |
+| 定时与重复通知 | `UNCalendarNotificationTrigger`、`UNTimeIntervalNotificationTrigger`、`getPendingNotificationRequests` | `scheduleNotificationAsync` 的日期、每天、每周、每月、每年和间隔触发器，`getAllScheduledNotificationsAsync`、`cancelAllScheduledNotificationsAsync` | ✓ 通知的 `trigger`（`.at`、`.after`、`.every`、`.daily`、`.weekly`、`.monthly`、`.yearly`）、`notify.pending()`、`cancel`、`cancelAll`；Android 在允许时使用精确闹钟（`exactAllowed`、`requestExact`；否则在几分钟内），重启、更新或时区改变后重新设置。Windows 会提前安排重复通知之后的 64 次，并在应用启动时补上；Web 只在应用有页面打开时显示 |
+| 通知声音、打扰程度、进度 | `UNNotificationSound`、`interruptionLevel`、`relevanceScore` | `sound`、`interruptionLevel`、渠道的声音 | ✓ 通知的 `sound`（iOS、macOS；Android 上是渠道的声音）、`interruption`（`.passive`、`.timeSensitive`、`.critical`：用到它们的应用会带上相应的权利；`request(critical: true)`）、`relevance`；Android 的 `ongoing` 和 `progress`（Windows 的 toast 也支持） |
 | 推送通知 | APNs | `expo-notifications` | ✓ `platform/push`（iOS 和 macOS 上用 APNs，Android 上用 Firebase Cloud Messaging，Web 上用基于 VAPID 的 Web Push：`register()` 获取 token，`received()`、`opened()`） |
 | 通知操作、内联回复 | `UNNotificationCategory`、`UNTextInputNotificationAction` | `setNotificationCategoryAsync` | ✓ `notify.setCategories`、`notify.responses()`（操作和回复；`r.defer()` 让应用保持运行直到处理完；Web 上用 service worker 的通知操作，Chrome 支持时还有内联回复） |
 | 通知分组、正在显示的通知、角标 | `threadIdentifier`、`getDeliveredNotifications`、`setBadgeCount` | `getPresentedNotificationsAsync`、`setBadgeCountAsync` | ✓ 通知的 `thread`（Android 上是一个分组，并维护它的摘要通知）、`notify.showing()`、`remove`、`removeThread`、`setBadge` |
@@ -199,6 +201,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 在手表上运行 | SwiftUI 的 watchOS target；Flutter 和 React Native 都没有（需要另写一个原生手表应用） | ✓ `asuka dev --platform watchos` 和 `asuka build --platform watchos`（Apple Watch：独立手表应用，在同一个核心之上有自己的 SwiftUI 宿主）；手表的控件、导航和数码表冠，`environment().watch`（[Apple Watch](watch.md)） |
 | 测试 | XCTest、Jest 加 React Native Testing Library | ✓ `asuka test`：`test` 块，应用无需设备即可挂载（`mount`、`app.tap`、`app.expect`），设备相关的包都有测试替身（见[测试](testing.md)） |
 | 发布构建和签名 | Xcode、EAS Build | ✓ `asuka build`：应用预先编译；生成 `.ipa`、`.aab`、经过签名和公证的 `.app` 及其 `.dmg` 和 `.zip`（或 Mac App Store 用的 `.pkg`）、包含已签名 `.exe` 的 Windows 文件夹及其安装程序、`.zip` 和 MSIX、附带 `.deb`、`.rpm`（用你的 OpenPGP 密钥签名）、AppImage、`.tar.gz` 和 Flatpak 清单的 Linux 安装前缀、静态网站（见[发布](shipping.md)） |
+| 可安装、能离线使用的 Web 应用 | Expo 的 Web：一个清单，外加自己写的 service worker（Workbox） | ✓ `asuka build --platform web`：生成清单，以及一个保存网站文件的 service worker；每次构建都在后台下载，并在页面重新加载时接管（见[离线](web.md#离线)） |
 | 上传到应用商店 | Xcode、EAS Submit | ✓ `asuka publish`：TestFlight、App 审核、Google Play 的各个发布轨道；Mac App Store 和 Mac 的 TestFlight；桌面构建及其签名更新 |
 | GUI 测试 | XCUITest、Detox、Maestro | ✓ `asuka test --gui`：在 iOS 模拟器、Android 模拟器、手机、无头 Chrome 或这台电脑上运行应用的流程（`flows/*.flow`：`tap Add`、`type hello`、`see Count: 1`、`back`）（见[GUI 测试](testing.md#gui-测试流程)）；桌面应用也可以执行操作步骤并截图（`ASUKA_SCRIPT`、`ASUKA_SNAPSHOT`） |
 | 基准测试 | Instruments | ✓ `bench/`（与 SwiftUI 和 Compose 对比） |

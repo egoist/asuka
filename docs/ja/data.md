@@ -368,6 +368,63 @@ async fn signInBack(authorize: string) throws -> string {
 }
 ```
 
+### アップロード
+
+大きなボディは、メモリに保持せず、読みながら送ります。`http.upload(url, body, progress:)` はボディを送り、応答を待ちます。ボディは `Upload` で、次のものがあります。
+
+- `Upload.file(path, type:)`：ファイル。送りながらディスクから読みます（動画やバックアップなど）。
+- `http.multipart([...])`：ブラウザーが送るのと同じ形のフォーム（`multipart/form-data`）。パーツは並べた順に送られます。パーツには `.field(name, value)`、送りながらディスクから読む `.file(name, path, filename:, type:)`、メモリ上にあるファイルのバイト列の `.data(name, bytes, filename:, type:)` があります。
+- `Upload.stream(pieces, length:, type:)`：`Stream<bytes>` が作る断片。届いた断片をそのつど送り、ネットワークが前の断片を受け取ってから次の断片を求めます。`length` で長さを示さなければ、chunked で送ります。
+- `Upload.data(bytes, type:)`：すでにメモリにあるバイト列。進捗を知りたいときに使います。
+
+`progress` は 1 秒に数回、送ったバイト数と全体のバイト数（長さを示していないストリームでは -1）を渡して呼ばれ、すべて送り終えたときにも一度呼ばれます。メソッドは、`method:` でほかのものを指定しなければ `POST` です。`Content-Type` は、`headers:` で指定しなければボディの type になります。`timeout` は、ネットワークが次のデータを受け取るまで、そのあとは応答が届くまでを待つ最長の時間です。タスクをキャンセルするとアップロードは止まります。ネットワークの失敗はエラーを投げますが、応答はステータスにかかわらず、ボディを読んだうえで返ります。
+
+```asuka check
+import std/http
+
+component VideoUpload(path: string) {
+  state sent = 0
+  state total = -1
+  state problem = ""
+
+  task(path) {
+    do {
+      let form = try http.multipart([.field("title", "Holiday"), .file("video", path, type: "video/mp4")])
+      let r = try await http.upload("https://example.com/videos", form, progress: (n, all) => {
+        sent = n
+        total = all
+      }, background: http.Background(id: "holiday"))
+      if !r.ok() { problem = "HTTP {r.status}" }
+    } catch e {
+      problem = e.message
+    }
+  }
+
+  Column {
+    Progress { value: if total > 0 { sent.float() / total.float() } else { none } }
+    if !problem.isEmpty() { Text(problem) }
+  }
+}
+```
+
+各プラットフォームは自身のクライアントで、ファイルを少しずつ読みながら送ります。iOS と macOS では URLSession、Android では `HttpURLConnection`、Windows と Linux では WinHTTP と libsoup です。ブラウザーでは、アプリのファイルはもともとページのメモリにあるので、`Blob` として送ります。進捗を得るために `XMLHttpRequest` を使います。ストリームは、ブラウザーが送れる場合（Chrome から HTTP/2 か HTTP/3 のサーバーへ送るとき）は fetch のストリーミングボディとして送り、そうでなければすべて集めてから最後に送ります。
+
+`background: http.Background(id:)` を指定すると、ユーザーがアプリを離れても大きなアップロードが続きます。iOS と macOS では、バックグラウンドの `URLSession` が送ります。アプリが中断されているあいだも、システムがアプリを終了したあとも送信は続きます（iOS は、送信が終わるとアプリをバックグラウンドでもう一度起動します）。ただし、アプリスイッチャーからアプリを終了すると、ほかのどのアプリとも同じく送信は取り消されます。Android では WorkManager がフォアグラウンドの処理として送り、進捗を通知に表示します。ネットワークにつながるのを待ち、システムがアプリを終了したあとは送信をやり直します。そのために必要な権限は、コードで `http.Background` を使うアプリにだけ付きます。アプリの実行中は、ほかのアップロードと同じように呼び出しに応答が返ります。待っている呼び出しがないあいだに終わったアップロードは、`http.finishedUploads()` に `id` 付きで一度だけ入ります。アプリの起動時に問い合わせてください。
+
+```asuka
+app {
+  task {
+    for done in (try? await http.finishedUploads()) ?? [] {
+      if done.id == "holiday" { print("uploaded: {done.status} {done.error}") }
+    }
+  }
+
+  Home()
+}
+```
+
+システムのバックグラウンド転送はファイルを送る仕組みなので、ストリームの断片はまず一時ファイルに書き出されます。デスクトップと Web では、アプリが見えていないあいだもリクエストはもともと続くので、`background` を指定しても何も変わりません。
+
 ### 届くそばから読むボディ
 
 時間をかけて届くボディ（言語モデルが書き進める返答、ログ、フィード）は、送られてくるそばから読めます。`http.stream(url, method:, headers:, body:)` はレスポンスのヘッダーが届いた時点で返ります。`status`、`url`、`headers` と、ネットワークが届けた順に断片を流す `body` を持ちます。`lines()` はそれを行ごとのテキストとして、`events()` はサーバー送信イベント（`text/event-stream`。ブラウザーの `EventSource` と同じ読み方で、それぞれ `event`、`data`、`id` を持つ `Event`）として読み、`text()` は全体を読みます。`http.events(url, …)` はその両方をまとめたものです。イベントを要求し（言語モデルの API が返答をストリームするように `POST` でも構いません）、成功でないステータスには `HTTPError.status` を投げます。`reconnect: true` を付けると、`EventSource` と同じようにサーバーの `retry` の後で最後のイベントの ID を送って再接続します。ループを抜けるかタスクが終わるとリクエストは止まります。`timeout` はヘッダー、その後は各断片を待つ最長の時間です。

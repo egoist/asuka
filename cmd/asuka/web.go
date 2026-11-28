@@ -53,8 +53,8 @@ import (
 // static site: the core with the app compiled in, its files named by
 // their content's digest (cache them for good; index.html no-cache),
 // gzipped copies, a web app manifest and its icons, and the app's service
-// worker (webWorker), which shows its notifications and pushes while no
-// page is open.
+// worker (webWorker), which keeps the site's files for the app to start
+// offline, and shows its notifications and pushes while no page is open.
 
 const devWebPort = 8790
 
@@ -248,14 +248,15 @@ func imports(scripts []string) string {
 }
 
 // webWorker is the app's service worker: its settings (globalThis.asukaApp:
-// name, title, assets, icon), then the host's notify-core.js and sw.js,
-// as one classic script (platform/web/src/sw.js says what it does).
+// name, title, assets, icon, and a build's files to keep offline:
+// precache), then the host's notify-core.js, offline.js and sw.js, as one
+// classic script (platform/web/src/sw.js says what it does).
 func webWorker(src fs.FS, settings map[string]any) ([]byte, error) {
 	var b bytes.Buffer
 	st, _ := json.Marshal(settings)
 	b.WriteString("// The app's service worker: Asuka's (platform/web/src/sw.js), with the app's settings.\n")
 	fmt.Fprintf(&b, "globalThis.asukaApp = %s;\n", st)
-	for _, n := range []string{"notify-core.js", "sw.js"} {
+	for _, n := range []string{"notify-core.js", "offline.js", "sw.js"} {
 		f, err := fs.ReadFile(src, n)
 		if err != nil {
 			return nil, fmt.Errorf("the web host's %s: %w", n, err)
@@ -1113,22 +1114,7 @@ func buildWeb(app *asukaApp, o *buildOptions) error {
 	if err := os.WriteFile(filepath.Join(out, "manifest.webmanifest"), mb, 0o644); err != nil {
 		return err
 	}
-	// The app's service worker, beside index.html (its scope is the app's
-	// directory), named by its digest too.
-	settings := map[string]any{"name": app.cfg.ID, "title": name, "assets": "assets"}
-	if icon {
-		settings["icon"] = "icons/icon-192.png"
-	}
-	sw, err := webWorker(src, settings)
-	if err != nil {
-		return err
-	}
-	swSum := sha256.Sum256(sw)
-	swName := "sw." + hex.EncodeToString(swSum[:])[:12] + ".js"
-	if err := writeWeb(filepath.Join(out, swName), sw); err != nil {
-		return err
-	}
-	opts := map[string]any{"name": app.cfg.ID, "title": name, "fonts": fontFiles(app), "version": app.cfg.Version, "build": app.cfg.Build, "serviceWorker": swName}
+	opts := map[string]any{"name": app.cfg.ID, "title": name, "fonts": fontFiles(app), "version": app.cfg.Version, "build": app.cfg.Build, "serviceWorker": webWorkerName}
 	icons, err := webAlternateIcons(app.cfg)
 	if err != nil {
 		return err
@@ -1163,6 +1149,28 @@ func buildWeb(app *asukaApp, o *buildOptions) error {
 	if err := os.WriteFile(filepath.Join(out, "index.html"), []byte(page), 0o644); err != nil {
 		return err
 	}
+	// The app's service worker, beside index.html (its scope is the app's
+	// directory), at the same name from build to build: the browser
+	// checks it for a new one, which the site's files listed in it make
+	// each build's own.
+	settings := map[string]any{"name": app.cfg.ID, "title": name, "assets": "assets"}
+	if icon {
+		settings["icon"] = "icons/icon-192.png"
+	}
+	if app.cfg.webOffline() {
+		pc, err := webPrecache(out, hostDir, wasmName)
+		if err != nil {
+			return err
+		}
+		settings["precache"] = pc
+	}
+	sw, err := webWorker(src, settings)
+	if err != nil {
+		return err
+	}
+	if err := writeWeb(filepath.Join(out, webWorkerName), sw); err != nil {
+		return err
+	}
 	// What platform/update reads for a newer version than the page's.
 	if err := os.WriteFile(filepath.Join(out, "version.json"), versionFile(app), 0o644); err != nil {
 		return err
@@ -1182,22 +1190,80 @@ func buildWeb(app *asukaApp, o *buildOptions) error {
 }
 
 // webHeaders is the site's _headers (Cloudflare's and Netlify's): the
-// page and the manifest fetched again, what's named by its digest cached
-// for good.
+// page, the manifest and the service worker fetched again, what's named
+// by its digest cached for good.
 func webHeaders(base string) string {
 	var b strings.Builder
 	for _, h := range []struct{ path, header string }{
 		{"index.html", "Cache-Control: no-cache"},
 		{"manifest.webmanifest", "Cache-Control: no-cache"},
 		{"version.json", "Cache-Control: no-cache"},
+		{webWorkerName, "Cache-Control: no-cache"},
 		{"asuka/*", "Cache-Control: public, max-age=31536000, immutable"},
 		{"web/*", "Cache-Control: public, max-age=31536000, immutable"},
-		{"sw.*.js", "Cache-Control: public, max-age=31536000, immutable"},
 		{"*.wasm", "Cache-Control: public, max-age=31536000, immutable\n  Content-Type: application/wasm"},
 	} {
 		fmt.Fprintf(&b, "%s%s\n  %s\n", base, h.path, h.header)
 	}
 	return b.String()
+}
+
+// webWorkerName is the app's service worker's file, beside index.html.
+const webWorkerName = "sw.js"
+
+// webPrecacheFile is a file of the site its service worker keeps offline:
+// its path in the site, and a revision: "" for a file named by its
+// digest, else its content's digest.
+type webPrecacheFile [2]string
+
+// webPrecache is what the site's service worker keeps offline (the
+// precache its settings give platform/web/src/offline.js): every file of
+// the site at out but what a server reads (_headers, _redirects), what
+// changes without a build (version.json), the gzipped copies and the
+// worker itself; and the version they make together, which a change to
+// any of them changes. The host's directory and the wasm are named by
+// their digests (hostDir, wasm): their names are their revisions.
+func webPrecache(out, hostDir, wasm string) (map[string]any, error) {
+	var files []webPrecacheFile
+	err := filepath.WalkDir(out, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		r, _ := filepath.Rel(out, p)
+		r = filepath.ToSlash(r)
+		if r != "." && strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		switch {
+		case r == "_headers", r == "_redirects", r == "version.json", r == webWorkerName, strings.HasSuffix(r, ".gz"):
+			return nil
+		case r == wasm, strings.HasPrefix(r, hostDir+"/"):
+			files = append(files, webPrecacheFile{r, ""})
+			return nil
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(b)
+		files = append(files, webPrecacheFile{r, hex.EncodeToString(sum[:])[:16]})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i][0] < files[j][0] })
+	h := sha256.New()
+	for _, f := range files {
+		fmt.Fprintf(h, "%s\x00%s\x00", f[0], f[1])
+	}
+	return map[string]any{"version": hex.EncodeToString(h.Sum(nil))[:16], "files": files}, nil
 }
 
 // webRedirects is the site's _redirects (Netlify's): a path with no file

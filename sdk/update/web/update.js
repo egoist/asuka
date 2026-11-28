@@ -1,10 +1,13 @@
-// platform/update on the web: the browser loads the app's newest files from
-// its server as the page loads, so an update is a reload. asuka build
+// platform/update on the web: an update is a reload. asuka build
 // --platform web writes version.json beside index.html (the version it
 // built, its release notes and when); latest reads it again, past the
-// browser's caches, and the package offers a newer version as a release
-// whose relaunch reloads the page. A development build (asuka dev) has
-// no version to compare: it reloads itself as the app changes.
+// browser's caches and the app's service worker, and the package offers a
+// newer version as a release whose relaunch reloads the page. A build
+// kept offline loads its files from its service worker, so the relaunch
+// has the new build's worker (installed in the background as the browser
+// found it) take over first: the page then loads as the new version. A
+// development build (asuka dev) has no version to compare: it reloads
+// itself as the app changes.
 
 const native = globalThis.asuka.native;
 
@@ -26,7 +29,10 @@ export function makePage() {
     // The app's own files are written as the page goes (fs.js, on
     // pagehide), so a reload keeps them.
     reload() {
-      location.reload();
+      Promise.resolve()
+        .then(() => native.app.takeOver?.())
+        .catch(() => {})
+        .finally(() => location.reload());
     },
   };
 }

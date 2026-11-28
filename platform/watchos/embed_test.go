@@ -17,6 +17,7 @@ func TestSwiftShared(t *testing.T) {
 		"Sources/AsukaHost/NativeModules.swift",
 		"Sources/AsukaHost/Notify.swift",
 		"Sources/AsukaHost/Crash.swift",
+		"Sources/AsukaHost/BackgroundSessions.swift",
 		"Sources/AsukaOps/Ops.swift",
 		"Sources/AsukaOps/Actions.swift",
 		"Sources/AsukaOps/AlertFields.swift",

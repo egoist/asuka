@@ -456,6 +456,7 @@ Web のビルドの設定です。
 |---|---|---|---|
 | `vapidPublicKey` | 文字列 | なし | アプリのサーバーの VAPID 公開鍵（base64url）です。ブラウザーは、`platform/push` の Web Push を購読するときにこれを使います。 |
 | `base` | 文字列 | `"/"` | サイトを配信するパスです（`https://example.com/app/` なら `"/app/"`）。ページの `<base href>` になり、ルーターの href はその下のアドレスになります。`asuka build --base` で上書きできます。[アドレスと履歴](web.md#アドレスと履歴)を参照してください。 |
+| `offline` | 真偽値 | `true` | service worker がサイトのファイルを保持するので、ネットワークがなくてもアプリが起動します。新しいビルドは、ページを読み込み直したときに入れ替わります。`false` にすると何も保持しません。[オフライン](web.md#オフライン)を参照してください。 |
 
 [Web Push](web.md#platformpushweb-push) を参照してください。
 

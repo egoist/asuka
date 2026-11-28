@@ -16,6 +16,18 @@
 //	                  had X-Token, chooses "chat" from the protocols
 //	                  asked for, closes with 4000 "bye" on the text
 //	                  "close please", with 1000 on "close normally"
+//	ANY  /upload      200, JSON {"bytes", "sha256", "type", "length",
+//	                  "chunked", "method"} of the request's body, read as it
+//	                  comes (never held): length is its Content-Length (-1
+//	                  for none), chunked whether it came chunked; ?delay=ms
+//	                  waits that long after each 64 KiB read (a slow
+//	                  network, for progress), ?answer=413 answers that at
+//	                  once, reading nothing
+//	ANY  /multipart   200, JSON {"fields": {name: value}, "files": [{"name",
+//	                  "filename", "type", "bytes", "sha256"}], "type",
+//	                  "length", "chunked"} of a multipart/form-data body,
+//	                  its parts read as they come; 400 with why for one
+//	                  that isn't
 //	GET  /mtls        over TLS (StartTLS, a PKI's certificate): "client:
 //	                  <its name>" for the client's certificate, 403
 //	                  without one
@@ -27,14 +39,17 @@ package testserver
 import (
 	"bufio"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -85,9 +100,96 @@ func Handler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"method": r.Method, "uri": r.RequestURI, "body": string(body), "headers": h})
 	})
+	mux.HandleFunc("/upload", upload)
+	mux.HandleFunc("/multipart", multipartForm)
 	mux.HandleFunc("/ws", serveWebSocket)
 	mux.HandleFunc("/mtls", mtls)
 	return mux
+}
+
+// ---- Uploads ----
+
+// digest reads r to its end a piece at a time (after each 64 KiB read,
+// delay), giving its size and SHA-256.
+func digest(r io.Reader, delay time.Duration) (int64, string, error) {
+	h := sha256.New()
+	buf := make([]byte, 64*1024)
+	var n int64
+	for {
+		k, err := io.ReadFull(r, buf)
+		h.Write(buf[:k])
+		n += int64(k)
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			return n, hex.EncodeToString(h.Sum(nil)), nil
+		}
+		if err != nil {
+			return n, "", err
+		}
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+	}
+}
+
+func chunked(r *http.Request) bool {
+	for _, te := range r.TransferEncoding {
+		if te == "chunked" {
+			return true
+		}
+	}
+	return false
+}
+
+func upload(w http.ResponseWriter, r *http.Request) {
+	if a := r.URL.Query().Get("answer"); a != "" {
+		code, _ := strconv.Atoi(a)
+		w.Header().Set("Connection", "close")
+		w.WriteHeader(code)
+		io.WriteString(w, "refused")
+		return
+	}
+	ms, _ := strconv.Atoi(r.URL.Query().Get("delay"))
+	n, sum, err := digest(r.Body, time.Duration(ms)*time.Millisecond)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"method": r.Method, "bytes": n, "sha256": sum, "type": r.Header.Get("Content-Type"),
+		"length": r.ContentLength, "chunked": chunked(r)})
+}
+
+func multipartForm(w http.ResponseWriter, r *http.Request) {
+	mr, err := r.MultipartReader()
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	fields := map[string]string{}
+	files := []map[string]any{}
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if p.FileName() == "" {
+			b, _ := io.ReadAll(io.LimitReader(p, 1<<20))
+			fields[p.FormName()] = string(b)
+			continue
+		}
+		n, sum, err := digest(p, 0)
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		files = append(files, map[string]any{"name": p.FormName(), "filename": p.FileName(), "type": p.Header.Get("Content-Type"), "bytes": n, "sha256": sum})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"fields": fields, "files": files, "type": r.Header.Get("Content-Type"), "length": r.ContentLength, "chunked": chunked(r)})
 }
 
 // ---- WebSocket (RFC 6455), the server's side ----

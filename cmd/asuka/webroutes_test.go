@@ -30,6 +30,9 @@ func TestWebSiteRewritesAndHeaders(t *testing.T) {
 	if !strings.HasPrefix(h, "/app/index.html\n  Cache-Control: no-cache\n") || !strings.Contains(h, "/app/*.wasm\n  Cache-Control: public, max-age=31536000, immutable\n  Content-Type: application/wasm\n") {
 		t.Fatalf("_headers:\n%s", h)
 	}
+	if !strings.Contains(h, "/app/sw.js\n  Cache-Control: no-cache\n") || strings.Contains(h, "sw.*") {
+		t.Fatalf("the service worker's headers:\n%s", h)
+	}
 	if strings.Contains(webHeaders("/"), "//") {
 		t.Fatalf("_headers:\n%s", webHeaders("/"))
 	}

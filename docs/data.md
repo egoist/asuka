@@ -514,6 +514,99 @@ async fn signInBack(authorize: string) throws -> string {
 }
 ```
 
+### Uploads
+
+A large body goes as it's read, never held in memory:
+`http.upload(url, body, progress:)` sends it and waits for the answer.
+The body is an `Upload`:
+
+- `Upload.file(path, type:)`: a file, read from disk as it's sent (a
+  video, a backup);
+- `http.multipart([...])`: a form as a browser sends one
+  (`multipart/form-data`), its parts in order: `.field(name, value)`,
+  `.file(name, path, filename:, type:)`, read from disk as it's sent,
+  and `.data(name, bytes, filename:, type:)`, a file's bytes in memory;
+- `Upload.stream(pieces, length:, type:)`: the pieces a `Stream<bytes>`
+  makes, each sent as it comes, the next asked for once the network has
+  taken the one before; sent chunked unless `length` says how long it
+  is;
+- `Upload.data(bytes, type:)`: bytes already in memory, for the
+  progress.
+
+`progress` is called with the bytes sent and the whole's (-1 for a
+stream whose length wasn't said) a few times a second, and once when
+it's all sent. The method is `POST` unless `method:` says another, and
+the body's type is its `Content-Type` unless `headers:` say one.
+`timeout` is the longest wait for the network to take more, then for
+the answer; cancelling the task stops it. A network failure throws; an
+answer of any status returns, its body read.
+
+```asuka check
+import std/http
+
+component VideoUpload(path: string) {
+  state sent = 0
+  state total = -1
+  state problem = ""
+
+  task(path) {
+    do {
+      let form = try http.multipart([.field("title", "Holiday"), .file("video", path, type: "video/mp4")])
+      let r = try await http.upload("https://example.com/videos", form, progress: (n, all) => {
+        sent = n
+        total = all
+      }, background: http.Background(id: "holiday"))
+      if !r.ok() { problem = "HTTP {r.status}" }
+    } catch e {
+      problem = e.message
+    }
+  }
+
+  Column {
+    Progress { value: if total > 0 { sent.float() / total.float() } else { none } }
+    if !problem.isEmpty() { Text(problem) }
+  }
+}
+```
+
+Each platform sends it with its own client, reading a file a piece at a
+time: URLSession on iOS and macOS, `HttpURLConnection` on Android,
+WinHTTP and libsoup on Windows and Linux. In a browser the app's files
+are in the page's memory already: they go as a `Blob`, through
+`XMLHttpRequest` for the progress, and a stream as fetch's streamed body
+where the browser can send one (Chrome, to a server on HTTP/2 or 3),
+else gathered and sent at the end.
+
+`background: http.Background(id:)` keeps a large upload going when the
+user leaves the app. On iOS and macOS a background `URLSession` sends
+it: it goes on while the app is suspended, and after the system ends it
+(iOS starts the app again in the background as it finishes); quitting
+the app from the app switcher cancels it, as it does any app's. On
+Android WorkManager sends it, as foreground work with its progress in a
+notification, waits for a network, and starts it again after the
+system ends the app; an app whose code uses `http.Background` has the
+permissions that takes, and only such an app. While the app runs, the
+call answers as any upload does. One that ended while no call waited
+for it is in `http.finishedUploads()` by its `id`, once: ask as the app
+starts.
+
+```asuka
+app {
+  task {
+    for done in (try? await http.finishedUploads()) ?? [] {
+      if done.id == "holiday" { print("uploaded: {done.status} {done.error}") }
+    }
+  }
+
+  Home()
+}
+```
+
+The system's background transfers send files, so a stream's pieces are
+written into a temporary file first. On the desktops and the web a
+request goes on while the app is out of sight anyway: `background`
+changes nothing there.
+
 ### Bodies as they come
 
 A body that comes over time (the reply a language model writes, a log,

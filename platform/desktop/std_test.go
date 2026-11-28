@@ -201,6 +201,7 @@ component Probe {
 app { Probe() }
 `, []string{"host: redirect true 404 200 <p>Signed in</p>", "host: closed true", "host: done"}, nil},
 		{"stream", streamed.source(t, "http.asuka"), hostLines(streamsHTTP), streamed.stopped},
+		{"upload", streamed.source(t, "upload.asuka"), hostLines(streamsUpload), streamed.uploaded},
 		{"websocket", streamed.source(t, "websocket.asuka"), hostLines(streamsWebSocket), nil},
 		{"tls", streamed.source(t, "tls.asuka"), hostLines(streamsTLS), nil},
 		{"monitors", `import platform/network
@@ -824,6 +825,11 @@ app { Probe() }
 			cmd.Env = append(os.Environ(), "ASUKA_DATA="+dir, noLeaks, "WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1") // WebKit's sandbox doesn't start in a container
 			if c.name == "markdown" || c.name == "svg" {
 				cmd.Env = append(cmd.Env, "ASUKA_TEST_WINDOW=1") // shown, so they draw
+			}
+			if c.name == "upload" {
+				// What's freed is freed (ASan keeps 256 MB of it by default):
+				// the memory measured is what the upload holds.
+				cmd.Env = append(cmd.Env, noLeaks+":quarantine_size_mb=4")
 			}
 			var out strings.Builder
 			if c.drive == nil {

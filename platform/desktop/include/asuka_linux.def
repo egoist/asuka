@@ -1347,6 +1347,8 @@ SYM(SOUP, void, soup_message_headers_foreach, (SoupMessageHeaders *hdrs, void (*
 SYM(SOUP, void, soup_message_set_request_body_from_bytes, (SoupMessage *msg, const char *content_type, GBytes *bytes))
 SYM(SOUP, GInputStream *, soup_session_send, (SoupSession *session, SoupMessage *msg, GCancellable *cancellable, GError **error))
 SYM(SOUP, GUri *, soup_message_get_uri, (SoupMessage *msg))
+SYM(SOUP, void, soup_message_set_request_body, (SoupMessage *msg, const char *content_type, GInputStream *stream, gssize content_length))
+SYM(GIO, GInputStream *, g_unix_input_stream_new, (gint fd, gboolean close_fd))
 
 // ---- Native packages: TLS settings on libsoup's messages (tls.c) ----
 SYM(SOUP, void, soup_session_set_tls_database, (SoupSession *session, GTlsDatabase *tls_database))

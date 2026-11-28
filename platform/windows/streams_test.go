@@ -1,6 +1,8 @@
 package windows_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net"
 	"net/http"
 	"os"
@@ -33,6 +35,10 @@ func TestStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := &http.Server{Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		// Not /upload: an upload cancelled, its connection gone from the
+		// VM (netstat shows none), is still served here for 15 s or so,
+		// the VM's network holding this side of it. TestStdLinux checks
+		// that cancelled uploads stop.
 		if r.URL.Path == "/stall" {
 			stalls.Add(1)
 			defer stalls.Add(-1)
@@ -80,6 +86,24 @@ func TestStreams(t *testing.T) {
 			"refused yes",
 			"done",
 		}},
+		{"upload", []string{
+			"made 268435456",
+			"big 200 true true true true true true",
+			"memory true",
+			"slow 200 true true true true",
+			"multipart 200 true true true true true",
+			"chunked 200 true true true true true 1000000 1000000",
+			"sized 200 true true true true",
+			"short true",
+			"early 413 refused",
+			"early stream 413 refused",
+			"early big failed", // WinHTTP sends the body without waiting for the answer to Expect: 100-continue, and fails as the server closes
+			"cancelled file",
+			"cancelled stream",
+			"again 200 true",
+			"finished 0",
+			"done",
+		}},
 		{"tls", []string{
 			"http refused 403 untrusted 403 403",
 			"mutual 200 client: Asuka Test Client",
@@ -99,7 +123,8 @@ func TestStreams(t *testing.T) {
 				`"DONE_FILE"`, `"`+strings.ReplaceAll(done, `\`, `\\`)+`"`,
 				`"TLS_BASE"`, strconv.Quote(tlsBase), `"WSS_BASE"`, strconv.Quote("wss"+strings.TrimPrefix(tlsBase, "https")),
 				`"TLS_CA"`, strconv.Quote(pki.CA), `"TLS_OTHER_CA"`, strconv.Quote(pki.OtherCA),
-				`"TLS_CLIENT_CERT"`, strconv.Quote(pki.ClientCert), `"TLS_CLIENT_KEY"`, strconv.Quote(pki.ClientKey)).Replace(string(b))
+				`"TLS_CLIENT_CERT"`, strconv.Quote(pki.ClientCert), `"TLS_CLIENT_KEY"`, strconv.Quote(pki.ClientKey),
+				`"BIG_SHA"`, strconv.Quote(bigUploadSHA())).Replace(string(b))
 			buildStdApp(t, w, src, local, "http", "websocket")
 			d := script(t, w, local, guest, "app.exe", "waitfor:"+done, "snap:done")
 			t.Logf("%s", d["done"])
@@ -116,6 +141,17 @@ func TestStreams(t *testing.T) {
 			break
 		}
 	}
+}
+
+// bigUploadSHA is the SHA-256 of the file testdata/streams/upload.asuka
+// makes and uploads: "0123456789abcdef" over 256 MiB.
+func bigUploadSHA() string {
+	h := sha256.New()
+	mib := []byte(strings.Repeat("0123456789abcdef", 65536))
+	for i := 0; i < 256; i++ {
+		h.Write(mib)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // buildStdApp is buildApp with the native C of the std packages named

@@ -59,6 +59,8 @@ export async function start(options = {}) {
   // The app's service worker, listened to before the app starts: a tap
   // on a notification may be what opened the page.
   worker.register(options.serviceWorker);
+  // A new build kept offline takes over before the page reloads as it (platform/update).
+  nativeApp.takeOver = () => worker.takeOver();
   // SQLite's worker starts beside the app (std/sqlite), loading its module meanwhile.
   const sqliteWasm = options.sqlite;
   const sqlite = sqliteWasm ? import("./sqlite.js").then((m) => m.load(new URL(sqliteWasm, document.baseURI))) : null;

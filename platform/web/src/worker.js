@@ -79,6 +79,7 @@ export function register(url, nav = globalThis.navigator) {
     .then(() => sw.ready)
     .then((r) => {
       for (const h of hosts) hello(r, appOf(h));
+      checkForUpdates(r);
       return r;
     })
     .catch((e) => {
@@ -86,6 +87,55 @@ export function register(url, nav = globalThis.navigator) {
       return null;
     });
   return registering;
+}
+
+// How often a page left open asks for a new version of the app (a new
+// build's worker), as it comes back into view: the browser asks as a page
+// loads, and not again while it stays open.
+const updateEvery = 60 * 60 * 1000;
+
+function checkForUpdates(r, doc = globalThis.document) {
+  if (!doc?.addEventListener || !r?.update) return;
+  let asked = Date.now();
+  doc.addEventListener("visibilitychange", () => {
+    if (doc.visibilityState !== "visible" || Date.now() - asked < updateEvery) return;
+    asked = Date.now();
+    r.update().catch(() => {});
+  });
+}
+
+/**
+ * takeOver has a new version of the app take over the page before it
+ * loads again (platform/update's relaunch): the browser asks for the
+ * newest worker (a new build's lists other files, offline.js); one
+ * installing is waited for, one installed is told to activate. Resolves
+ * true once it controls the page, false when there's none (or it took
+ * longer than ms): the page's reload loads the newest either way where
+ * nothing's kept offline.
+ */
+export async function takeOver(nav = globalThis.navigator, ms = 30000) {
+  const sw = nav?.serviceWorker;
+  const r = await registration(nav);
+  if (!sw || !r) return false;
+  try {
+    await r.update();
+  } catch {}
+  const deadline = Date.now() + ms;
+  while (r.installing && Date.now() < deadline) {
+    const w = r.installing;
+    await new Promise((resolve) => {
+      const t = setTimeout(resolve, 250);
+      w.addEventListener?.("statechange", () => { clearTimeout(t); resolve(); }, { once: true });
+    });
+  }
+  const w = r.waiting;
+  if (!w) return false;
+  const changed = new Promise((resolve) => {
+    const t = setTimeout(() => resolve(false), Math.max(0, deadline - Date.now()));
+    sw.addEventListener("controllerchange", () => { clearTimeout(t); resolve(true); }, { once: true });
+  });
+  w.postMessage({ asuka: "skipWaiting" });
+  return changed;
 }
 
 /** registration is the app's service worker's registration, or null; an embedding page's own, if it registered one. */

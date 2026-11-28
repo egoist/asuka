@@ -412,6 +412,10 @@ type appConfig struct {
 		// so that its files are found from any route's path, and under
 		// which a Router's hrefs are the page's addresses.
 		Base string `json:"base"`
+		// Offline is whether the site's service worker keeps its files, so
+		// the app starts without a network (default true): false, and the
+		// browser loads them from the server each time.
+		Offline *bool `json:"offline"`
 	} `json:"web"`
 	Android struct {
 		// DynamicColor takes the colors from the user's wallpaper where
@@ -992,3 +996,6 @@ func (c *appConfig) androidIconAliases() string {
 	}
 	return b.String()
 }
+
+// webOffline is asuka.toml's web.offline: true unless it says false.
+func (c *appConfig) webOffline() bool { return c.Web.Offline == nil || *c.Web.Offline }

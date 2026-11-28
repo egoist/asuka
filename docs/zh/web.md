@@ -29,15 +29,36 @@ asuka build --platform web examples/counter     # 生成静态网站，位于 ex
 - `index.html` 和 `manifest.webmanifest`（Web 应用清单，有了它浏览器才会提示安装应用；图标取自 `asuka.toml` 的 `icon`，同时生成 favicon 和 iOS 主屏幕图标）；
 - 应用本身 `asuka.<digest>.wasm`，经过优化并去掉了符号表；
 - Asuka 自己的文件，放在 `asuka/<digest>/` 中（应用导入了 `std/sqlite` 时，还包括 SQLite 的 WebAssembly 模块），以及原生包的脚本；
-- 应用的 service worker `sw.<digest>.js`，与 `index.html` 放在一起（作用域是网站所在的文件夹）：即使没有打开应用的任何页面，它也能显示应用的通知和推送（见 [通知与 Web Push](#通知与-web-push)）；
+- 应用的 service worker `sw.js`，与 `index.html` 放在一起（作用域是网站所在的文件夹）：它会保存网站的文件，让应用没有网络也能启动（见[离线](#离线)）；即使没有打开应用的任何页面，它也能显示应用的通知和推送（见 [通知与 Web Push](#通知与-web-push)）；
 - 应用的 `assets/`；
 - 每个脚本和 wasm 文件的 gzip 压缩副本（`.gz`），供支持预压缩文件的服务器使用；
-- `_headers`，Cloudflare 和 Netlify 会读取它：`index.html` 和清单设为 `no-cache`，以摘要命名的文件则永久缓存；
+- `_headers`，Cloudflare 和 Netlify 会读取它：`index.html`、清单和 `sw.js` 设为 `no-cache`，以摘要命名的文件则永久缓存；
 - `_redirects`，Netlify 会读取它：没有对应文件的路径都返回应用的页面，这样[路由器](#地址与历史记录)的地址才能打开应用。
 
 `index.html` 的 `<base href>` 是网站所在的路径：默认是 `/`，也可以用 `asuka.toml` 的 `web.base` 或 `--base` 指定（`https://example.com/app/` 就写 `"/app/"`）。这样页面无论在它下面的哪个地址打开，都能找到自己的文件，路由器的 href 也就是它下面的页面地址（`/chat/7` 对应 `https://example.com/app/chat/7`）。
 
-这个文件夹可以放在任何 Web 服务器或 CDN 上。以内容摘要命名的文件一旦内容变化，文件名也会跟着变，所以可以放心地永久缓存，只有 `index.html` 需要重新获取。`.wasm` 文件要以 `application/wasm` 类型提供。一个计数器应用约 300 KB WebAssembly，gzip 后 115 KB，另外还有 Asuka 的 JavaScript；应用自己的代码会在此基础上增加体积。
+这个文件夹可以放在任何 Web 服务器或 CDN 上。以内容摘要命名的文件一旦内容变化，文件名也会跟着变，所以可以放心地永久缓存，只有 `index.html`、清单和 `sw.js` 需要重新获取。`.wasm` 文件要以 `application/wasm` 类型提供。一个计数器应用约 300 KB WebAssembly，gzip 后 115 KB，另外还有 Asuka 的 JavaScript；应用自己的代码会在此基础上增加体积。
+
+## 离线
+
+构建出来的网站可以离线使用，就像安装好的应用一样。页面第一次加载时，它的 service worker 会把网站的文件保存到浏览器的存储里：页面、WebAssembly、Asuka 和原生包的脚本、清单、图标，以及应用的 `assets/`。此后，无论从应用的哪个地址打开（包括[路由器](#地址与历史记录)的地址），页面和它的文件都会先从这里加载，而不是先走网络。因此没有网络时应用也能启动，有网络时也启动得更快。应用运行时向网络请求的内容不会被保存：`std/http` 的请求、从 URL 加载的 `Image` 以及 `version.json`，都和没有 worker 时一样直接走网络。
+
+每次构建都会在 worker 里列出自己的文件及其内容摘要，所以新的构建就是一个新的 worker。浏览器会在应用的页面加载时检查有没有新的 worker；一直开着的页面重新回到前台时，Asuka 也会再检查一次（最多每小时一次）。新版本只在后台下载有变化的文件，并且要等所有文件都下载完才能接管：不会出现只有一半文件的版本。之后：
+
+- 应用只开着一个页面时，刷新这个页面就会看到新版本：部署之后，页面的下一次加载会发现新版本并保存它的文件，再下一次加载就会显示它；
+- 旧版本的页面全部关闭后，下一次打开的就是新版本；
+- `platform/update` 的 `relaunch()` 会让新版本立即接管，然后重新加载页面：页面仍在运行旧版本时，`check()` 读到的是新的 `version.json`（见[自动更新](shipping.md#自动更新)）。
+
+只要上一个版本可能还有页面开着，它就会被保留下来（它的代码在运行过程中还会加载自己的其他部分），更早的版本则会被删除。
+
+用 `asuka.toml` 的 `web.offline` 可以关闭离线功能：
+
+```toml
+[web]
+offline = false
+```
+
+这样 worker 什么都不保存，还会删除之前的构建保存过的文件：浏览器每次都从服务器加载网站的文件，按 HTTP 缓存允许的方式缓存。每个打开过一次应用的浏览器都会下载整个 `assets/`，所以不要把大文件（视频、压缩包）放进去，或者关闭离线功能。`asuka dev --platform web` 同样什么都不保存：每次保存都会就地重新加载。
 
 ## 地址与历史记录
 
@@ -142,7 +163,7 @@ Web 应用看到的环境（`environment()`）来自浏览器：
 
 ## 通知与 Web Push
 
-每个 Web 应用都有一个 service worker，由 Asuka 生成（`asuka dev` 下是 `sw.js`，构建产物中是 `sw.<digest>.js`），页面启动时注册，作用域是应用所在的文件夹。它没有 fetch 处理函数，所以页面的加载方式和没有它时完全一样；它负责显示应用的通知和推送，并响应对它们的点击，无论应用是否有页面处于打开状态。浏览器只会为通过 HTTPS 或 `localhost` 提供的页面运行 service worker（`asuka dev` 的地址可以，`--lan` 的地址不行）。
+每个 Web 应用都有一个 service worker，由 Asuka 生成（`sw.js`，与页面放在一起），页面启动时注册，作用域是应用所在的文件夹。除了保存构建出来的文件（见[离线](#离线)），它还负责显示应用的通知和推送，并响应对它们的点击，无论应用是否有页面处于打开状态。浏览器只会为通过 HTTPS 或 `localhost` 提供的页面运行 service worker（`asuka dev` 的地址可以，`--lan` 的地址不行）。
 
 ### platform/notify
 
@@ -161,7 +182,7 @@ Web 应用看到的环境（`environment()`）来自浏览器：
 
 - 已安排的通知保存在应用的存储（Cache Storage，应用的页面和 worker 都能访问）中，而不是保存在页面里。
 - 只要应用有任何一个页面开着，通知就会按时显示：每个页面都为下一条通知设置一个计时器（某个页面安排或取消通知时会告知其他页面），第一个发现通知到期的页面负责显示它，而且只显示一次（通过 Web Lock 保证）。后台页面可能会延迟：浏览器会把隐藏页面的计时器放慢到大约每分钟一次；最晚在页面回到前台时显示。
-- 如果通知到期时没有打开的页面，下一个页面打开时会立刻显示它，此时已经过了预定时间。
+- 如果通知到期时没有打开的页面，下一个页面打开时会立刻显示它，此时已经过了预定时间。重复的通知（`trigger` 为 `.daily` 之类）无论错过了几次，这时都只显示一次，然后继续保留，按设备时钟等到下一次；`notify.pending()` 列出保存的通知，`notify.cancelAll()` 把它们全部删掉。
 - 在那之前，worker 会尽力而为：在没有打开页面的情况下，只要有事件唤醒它，它就会显示已到期的通知。这类事件包括推送、点击，以及 Chrome 的定期后台同步（只要有已安排的通知，页面就会申请它）。但 Chrome 只把定期后台同步授予已安装的应用（添加到主屏幕或从地址栏安装），最多大约每 12 小时运行一次，具体时间由浏览器决定（取决于用户与应用的互动程度、电量和网络），其他浏览器则根本不支持：千万不要依赖它。
 
 如果通知必须在应用关闭时也准时显示，请在那个时间从你的服务器发送推送。
@@ -323,11 +344,11 @@ export function makeSegmented(events) {
 <div id="app" style="width: 390px; height: 700px"></div>
 <script type="module">
   import { start } from "./asuka/<digest>/asuka.js";
-  start({ container: document.getElementById("app"), core: "asuka.<digest>.wasm", name: "com.example.app", serviceWorker: "sw.<digest>.js" });
+  start({ container: document.getElementById("app"), core: "asuka.<digest>.wasm", name: "com.example.app", serviceWorker: "sw.js" });
 </script>
 ```
 
-一个页面上可以运行多个应用，各自放在自己的元素里。`serviceWorker` 用来注册应用的 worker（即构建产物中的 `sw.<digest>.js`，要从它所服务页面所在的文件夹提供）：不传的话，通知就是页面自己的通知，`platform/push` 也无法订阅。使用 `platform/push` 时还要像 `index.html` 那样传入 `vapidPublicKey`；如果想让 `platform/maps` 从你自己的服务器获取瓦片，就传入 `mapTiles`（如 `"https://tiles.example.com/{z}/{x}/{y}.png"`；默认使用 OpenStreetMap 的瓦片）。
+一个页面上可以运行多个应用，各自放在自己的元素里。`serviceWorker` 用来注册应用的 worker（即构建产物中的 `sw.js`，要从它所服务页面所在的文件夹提供）：不传的话，通知就是页面自己的通知，`platform/push` 也无法订阅。要嵌入的应用请用 `web.offline = false` 构建：开启离线时，worker 会用应用自己的页面来响应这个文件夹下各个地址的加载。使用 `platform/push` 时还要像 `index.html` 那样传入 `vapidPublicKey`；如果想让 `platform/maps` 从你自己的服务器获取瓦片，就传入 `mapTiles`（如 `"https://tiles.example.com/{z}/{x}/{y}.png"`；默认使用 OpenStreetMap 的瓦片）。
 
 ## 尚未支持的功能
 

@@ -34,6 +34,8 @@
 //   - Shared C for packages (src/fetch.c, linux.c, windows.c):
 //     asuka_fetch, asuka_desktop_local_file, and asuka_linux.h's and
 //     asuka_windows.h's helpers.
+//   - asuka_request's streamed body (body_read, body_len, body_stop,
+//     sent): an upload read as it's sent, never held whole.
 #ifndef ASUKA_DESKTOP_H
 #define ASUKA_DESKTOP_H
 
@@ -396,6 +398,22 @@ typedef struct {
 	bool (*head)(void *ctx, const asuka_response *r, asuka_error *err);
 	bool (*data)(void *ctx, const void *p, size_t n, asuka_error *err);
 	void *ctx;
+	// A body sent as it's read (a file, a stream's pieces), in place of
+	// body and len, when body_read isn't NULL: it fills buf with up to cap
+	// bytes, *got of them, 0 at the body's end; false fails the request
+	// with what it set in err. It's called on the request's thread, or on
+	// one that feeds the client (libsoup's), one call at a time, never
+	// once asuka_fetch_stream has returned. body_len is the body's length
+	// in bytes, sent as Content-Length; -1 when it isn't known (sent
+	// chunked). body_stop, if set, is called on the request's thread as
+	// the request stops reading the body (it's over: answered, failed or
+	// stopped): a body_read waiting for more returns then (what it returns
+	// is ignored). sent hears the body's progress as the network takes it:
+	// the bytes sent so far, and body_len (on the request's thread).
+	bool (*body_read)(void *ctx, void *buf, size_t cap, size_t *got, asuka_error *err);
+	void (*body_stop)(void *ctx);
+	int64_t body_len;
+	void (*sent)(void *ctx, int64_t sent, int64_t total);
 } asuka_request;
 
 // asuka_fetch_stream makes the request (asuka_fetch's rules: the system's

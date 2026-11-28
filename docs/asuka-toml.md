@@ -521,6 +521,7 @@ The web build's.
 |---|---|---|---|
 | `vapidPublicKey` | string | none | The app server's VAPID public key (base64url), with which the browser subscribes to Web Push for `platform/push`. |
 | `base` | string | `"/"` | The path the site is served at (`"/app/"` for `https://example.com/app/`): the page's `<base href>`, under which a router's hrefs are its addresses. `asuka build --base` overrides it. See [Addresses and history](web.md#addresses-and-history). |
+| `offline` | boolean | `true` | The service worker keeps the site's files, so the app starts without a network, each new build taking over as the page loads again; `false` keeps nothing. See [Offline](web.md#offline). |
 
 See [Web Push](web.md#platformpush-web-push).
 

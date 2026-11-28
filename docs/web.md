@@ -54,15 +54,17 @@ static site in `dist/web`:
 - Asuka's own files in `asuka/<digest>/` (with SQLite's WebAssembly
   module, for an app that imports `std/sqlite`), and its native
   packages' scripts;
-- the app's service worker, `sw.<digest>.js`, beside `index.html` (its
-  scope is the site's folder): it shows the app's notifications and
-  pushes while no page of it is open
+- the app's service worker, `sw.js`, beside `index.html` (its scope is
+  the site's folder): it keeps the site's files, so the app starts
+  without a network ([Offline](#offline)), and shows the app's
+  notifications and pushes while no page of it is open
   ([Notifications and Web Push](#notifications-and-web-push));
 - the app's `assets/`;
 - a gzipped copy of each script and of the wasm (`.gz`), for servers that
   serve precompressed files;
-- `_headers`, which Cloudflare and Netlify read: `index.html` and the
-  manifest `no-cache`, the files named by their digests cached for good;
+- `_headers`, which Cloudflare and Netlify read: `index.html`, the
+  manifest and `sw.js` `no-cache`, the files named by their digests
+  cached for good;
 - `_redirects`, which Netlify reads: a path with no file is the app's
   page, so a [router](#addresses-and-history)'s addresses open the app.
 
@@ -74,10 +76,58 @@ under it, and a router's hrefs are the page's addresses under it
 
 Serve the folder from any web server or CDN: the files named by their
 content's digest change name when they change, so they can be cached for
-good, and only `index.html` must be fetched again. Serve `.wasm` as
+good, and only `index.html`, the manifest and `sw.js` must be fetched
+again. Serve `.wasm` as
 `application/wasm`. A counter is about 300 KB of WebAssembly, 115 KB
 gzipped, with Asuka's JavaScript beside it; an app's own code adds to
 that.
+
+## Offline
+
+A build works offline, as an installed app does. The first time its
+page loads, its service worker keeps the site's files in the browser's
+storage: the page, the WebAssembly, Asuka's scripts and the native
+packages', the manifest, the icons and the app's `assets/`. From then
+on the page and its files load from there before the network, at any
+of the app's addresses (a [router](#addresses-and-history)'s too), so
+the app starts with no network, and sooner with one. What the app asks
+the network for as it runs isn't kept: `std/http`'s requests, an
+`Image` from a URL and `version.json` go to the network as they would
+without a worker.
+
+Each build lists its files in its worker, with their content's digests,
+so a new build is a new worker. The browser looks for one as a page of
+the app loads, and Asuka asks again when a page left open comes back
+into view (at most once an hour). The new version downloads only the
+files that changed, in the background, and only once it has all of them
+can it take over: a version is never half there. Then:
+
+- the app's only page reloading shows the new version: after a deploy,
+  the page's next load finds the new version and keeps its files, and
+  the load after shows it;
+- once no page of the old version is open, the next one opens as the
+  new version;
+- `platform/update`'s `relaunch()` has the new version take over at
+  once, then reloads: `check()` reads the new `version.json` while the
+  page still runs the old version
+  ([Updates](shipping.md#updates)).
+
+The version before is kept while a page of it may still be open (its
+code loads parts of itself as it goes), and the older ones are deleted.
+
+`asuka.toml`'s `web.offline` turns it off:
+
+```toml
+[web]
+offline = false
+```
+
+The worker then keeps nothing, and deletes what an earlier build kept:
+the browser loads the site's files from the server each time, as its
+HTTP cache allows. Every browser that opens the app once downloads all
+of `assets/`, so keep large files (videos, archives) out of it, or
+offline off. `asuka dev --platform web` keeps nothing either: each save
+loads in place.
 
 ## Addresses and history
 
@@ -370,12 +420,11 @@ browser:
 
 ## Notifications and Web Push
 
-Every web app has a service worker, which Asuka writes (`sw.js` under
-`asuka dev`, `sw.<digest>.js` in a build) and the page registers as it
-starts, scoped to the app's folder. It has no fetch handler, so the page
-loads as it would without it; it shows the app's notifications and
-pushes, and answers their clicks, whether or not a page of the app is
-open. A browser runs service workers only for pages served over HTTPS,
+Every web app has a service worker, which Asuka writes (`sw.js`, beside
+the page) and the page registers as it starts, scoped to the app's
+folder. Besides keeping a build's files ([Offline](#offline)), it shows
+the app's notifications and pushes, and answers their clicks, whether
+or not a page of the app is open. A browser runs service workers only for pages served over HTTPS,
 or from `localhost` (`asuka dev`'s, but not `--lan`'s addresses).
 
 ### platform/notify
@@ -430,7 +479,11 @@ event wakes it, not on a timer. So `notify.schedule` does what a browser can:
   pages' timers to about once a minute; it shows when the page comes
   back in front at the latest.
 - One that came due while no page was open shows when the next one
-  opens, at once, with its due time passed.
+  opens, at once, with its due time passed. A repeating one (a
+  `trigger` such as `.daily`) shows once then, however many times it
+  was due, and stays, due at its next time on the device's clock;
+  `notify.pending()` lists what's kept, and `notify.cancelAll()`
+  forgets it.
 - Before that, as a best effort, the worker shows the due ones whenever
   something wakes it with no page open: a push, a click, and Chrome's
   periodic background sync, which the page asks for while anything is
@@ -678,14 +731,16 @@ in it; it then follows the element's size:
 <div id="app" style="width: 390px; height: 700px"></div>
 <script type="module">
   import { start } from "./asuka/<digest>/asuka.js";
-  start({ container: document.getElementById("app"), core: "asuka.<digest>.wasm", name: "com.example.app", serviceWorker: "sw.<digest>.js" });
+  start({ container: document.getElementById("app"), core: "asuka.<digest>.wasm", name: "com.example.app", serviceWorker: "sw.js" });
 </script>
 ```
 
 Several apps can run on one page, each in its element. `serviceWorker`
-registers the app's worker (the build's `sw.<digest>.js`, from the
-folder whose pages it serves): without it, notifications are the page's
-own and `platform/push` can't subscribe. Pass `vapidPublicKey` too for
+registers the app's worker (the build's `sw.js`, from the folder whose
+pages it serves): without it, notifications are the page's own and
+`platform/push` can't subscribe. Build an app you embed with
+`web.offline = false`: kept offline, the worker would answer the loads
+of the folder's addresses with the app's own page. Pass `vapidPublicKey` too for
 `platform/push`, as `index.html` does, and `mapTiles` for `platform/maps`' tiles
 from a server of your own (`"https://tiles.example.com/{z}/{x}/{y}.png"`;
 OpenStreetMap's by default).

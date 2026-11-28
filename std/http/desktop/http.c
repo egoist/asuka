@@ -524,6 +524,475 @@ http_Body *http_make_Body(asuka_error *err) {
 	return NULL;
 }
 
+// ---- Bodies sent as they're read (upload, begin and Sender) ----
+//
+// asuka_fetch_stream reads the body as it sends it (body_read): upload's
+// parts, a file's a piece at a time, never whole; a Sender's pieces, which
+// its writes hand the request through a small queue. Progress is the
+// network's (sent), ten times a second at most, and once all is sent,
+// before the answer. A desktop doesn't suspend an app out of sight: a
+// background upload is one like any other, and none ends unwaited for.
+
+typedef struct {
+	http_fn_int_int fn;
+	int64_t total;  // the body's length, -1 when it isn't known
+	int64_t sent;
+	double reported;  // seconds
+} reporter;
+
+static void on_sent(reporter *p, int64_t sent) {
+	p->sent = sent;
+	double now = seconds();
+	if (now - p->reported > 0.1) {
+		p->reported = now;
+		http_fn_int_int_call(p->fn, sent, p->total);
+	}
+}
+
+// all_sent reports the end: all of the body's n bytes.
+static void all_sent(reporter *p, int64_t n) { http_fn_int_int_call(p->fn, n, p->total >= 0 ? p->total : n); }
+
+static asuka_header *headers_of(http_map_string h) {
+	asuka_header *hs = calloc(h.len ? h.len : 1, sizeof *hs);
+	for (size_t i = 0; i < h.len; i++) hs[i] = (asuka_header){h.keys[i], h.values[i]};
+	return hs;
+}
+
+static int timeout_ms(int64_t ns) {
+	int64_t ms = ns > 0 ? (ns + 999999) / 1000000 : 0;
+	return ms > INT_MAX ? INT_MAX : (int)ms;
+}
+
+static FILE *read_file(const char *path) {
+#ifdef _WIN32
+	wchar_t *w = asuka_wide(path);
+	FILE *f = _wfopen(w, L"rb");
+	free(w);
+	return f;
+#else
+	return fopen(path, "rb");
+#endif
+}
+
+// An upload: its call's arguments (valid until it answers), and where
+// its body's reading is.
+typedef struct {
+	const char *method, *url;
+	http_map_string headers;
+	http_list_Part parts;
+	int64_t length, timeout;
+	const asuka_tls *tls;
+	asuka_call *call;
+	reporter progress;
+	size_t part;  // the part being read
+	size_t off;   // in its bytes
+	FILE *f;      // its file, open
+	int64_t read;
+	bool ended;           // all of it read
+	asuka_writer answer;  // the response's body
+} upload;
+
+static void upload_sent(void *ctx, int64_t sent, int64_t total) {
+	(void)total;
+	on_sent(&((upload *)ctx)->progress, sent);
+}
+
+// parts_read fills buf from the parts in order, a file's from disk as it
+// comes; a body longer or shorter than its length fails (a file grew or
+// shrank since its length was taken).
+static bool parts_read(void *ctx, void *buf, size_t cap, size_t *got, asuka_error *err) {
+	upload *u = ctx;
+	uint8_t *out = buf;
+	size_t n = 0;
+	while (n < cap && u->part < u->parts.len) {
+		http_Part *p = &u->parts.data[u->part];
+		if (p->path && *p->path) {
+			if (!u->f && !(u->f = read_file(p->path))) {
+				asuka_error_failed(err, "http", 0, "upload: can't read %s", p->path);
+				return false;
+			}
+			size_t k = fread(out + n, 1, cap - n, u->f);
+			n += k;
+			if (k == 0) {
+				bool bad = ferror(u->f);
+				fclose(u->f);
+				u->f = NULL;
+				if (bad) {
+					asuka_error_failed(err, "http", 0, "upload: can't read %s", p->path);
+					return false;
+				}
+				u->part++;
+			}
+		} else {
+			size_t k = p->data.len - u->off < cap - n ? p->data.len - u->off : cap - n;
+			if (k) memcpy(out + n, p->data.data + u->off, k);
+			n += k;
+			u->off += k;
+			if (u->off == p->data.len) u->part++, u->off = 0;
+		}
+	}
+	if (u->length >= 0 && u->read + (int64_t)n > u->length) {
+		asuka_error_failed(err, "http", 0, "upload: the body is longer than its length, %lld bytes (a file grew as it was sent)", (long long)u->length);
+		return false;
+	}
+	u->read += (int64_t)n;
+	if (n == 0) {
+		if (u->length >= 0 && u->read < u->length) {
+			asuka_error_failed(err, "http", 0, "upload: the body is %lld bytes, not its length, %lld (a file shrank as it was sent)", (long long)u->read,
+			                   (long long)u->length);
+			return false;
+		}
+		u->ended = true;
+	}
+	*got = n;
+	return true;
+}
+
+static bool upload_data(void *ctx, const void *p, size_t n, asuka_error *err) { return keep(&((upload *)ctx)->answer, p, n, err); }
+
+static void run_upload(void *p) {
+	upload *q = p;
+	asuka_header *hs = headers_of(q->headers);
+	asuka_response r;
+	asuka_error e = {0};
+	asuka_request rq = {.method = q->method, .url = q->url, .headers = hs, .nheaders = q->headers.len, .timeout_ms = timeout_ms(q->timeout),
+	                    .cancel = q->call, .tls = q->tls, .data = upload_data, .body_read = parts_read, .body_len = q->length, .sent = upload_sent, .ctx = q};
+	bool ok = asuka_fetch_stream(&rq, &r, &e);
+	if (q->f) fclose(q->f);
+	if (ok) {
+		if (q->ended) all_sent(&q->progress, q->read);
+		asuka_writer *w = &q->answer;
+		http_Response out = {.status = r.status, .url = r.url, .body = {w->data ? w->data : malloc(1), w->len}};
+		out.headers = (http_map_string){r.names, r.values, r.nheaders};
+		http_Transport_upload_done(q->call, out);  // takes r's strings and the answer's bytes
+	} else {
+		asuka_writer_free(&q->answer);
+		asuka_call_fail(q->call, &e);
+	}
+	free(hs);
+	free(q);
+}
+
+static void upload_(http_Transport *self, const char *method, const char *url, http_map_string headers, http_list_Part parts, int64_t length,
+                    int64_t timeout, http_fn_int_int progress_fn, bool background, const char *id, asuka_call *call) {
+	(void)background, (void)id;  // a desktop doesn't suspend the app: as without
+	upload *q = calloc(1, sizeof *q);
+	*q = (upload){.method = method, .url = url, .headers = headers, .parts = parts, .length = length, .timeout = timeout, .tls = tls_of(self),
+	              .call = call, .progress = {.fn = progress_fn, .total = length}};
+	if (!asuka_desktop_spawn(run_upload, q)) {
+		free(q);
+		asuka_error e = {0};
+		asuka_error_failed(&e, "http", 0, "no thread for the upload");
+		asuka_call_fail(call, &e);
+	}
+}
+
+static void finished_(http_Transport *self, asuka_call *call) {
+	(void)self;
+	http_Transport_finished_done(call, (http_list_FinishedUpload){NULL, 0});  // none: no upload ends unwaited for
+}
+
+// ---- Sender: a body written as it's made ----
+//
+// begin answers with a Sender at once and starts the request on a worker,
+// whose body_read takes the pieces writes queued (a copy of each). A
+// write answers once the queue has room (it holds a little: sender_most),
+// else waits for the request to take what's before it; false once the
+// request no longer reads the body (answered, failed, stopped). finish
+// ends the body and waits for the answer; close() and letting the Sender
+// go abort the request. Freed on the main thread once neither the worker
+// nor the core holds it.
+
+enum { sender_most = 256 * 1024 };
+
+typedef struct {
+	http_Sender base;
+	int refs;  // the worker's and the core's: the main thread's only
+	asuka_abort *abort;
+	// The request, copied: begin's arguments go as it answers.
+	char *method, *url;
+	asuka_header *headers;
+	size_t nheaders;
+	int64_t length;
+	int timeout_ms;
+	const asuka_tls *tls;
+	reporter progress;    // the worker's
+	asuka_writer answer;  // the response's body (the worker's)
+	mutex_t mu;
+	cond_t cv;
+	// Under mu:
+	piece *first, *last;
+	size_t off;   // what's been taken of first
+	size_t queued;
+	int64_t read;  // what the request took
+	asuka_call *writing;    // a write waiting for room
+	asuka_call *finishing;  // finish waiting for the answer
+	bool eof;       // finish: the body ends after the queue
+	bool all;       // the request read the body to its end
+	bool stopped;   // the request reads no more of the body
+	bool closed;    // close(), or let go
+	bool ended;     // the request is over: result or failure
+	bool finished;  // finish was called
+	bool ok;
+	asuka_response result;
+	asuka_error failure;
+} sender;
+
+static void free_sender(sender *s) {
+	free(s->method);
+	free(s->url);
+	for (size_t i = 0; i < s->nheaders; i++) {
+		free((char *)s->headers[i].name);
+		free((char *)s->headers[i].value);
+	}
+	free(s->headers);
+	for (piece *p = s->first, *n; p; p = n) {
+		n = p->next;
+		free(p->b.data);
+		free(p);
+	}
+	asuka_writer_free(&s->answer);
+	asuka_response_free(&s->result);
+	asuka_error_free(&s->failure);
+	asuka_abort_free(s->abort);
+	mu_destroy(&s->mu);
+	cv_destroy(&s->cv);
+	free(s);
+}
+
+// sender_read gives the request the queue's next bytes, waiting for a
+// write (or finish) when it's empty.
+static bool sender_read(void *ctx, void *buf, size_t cap, size_t *got, asuka_error *err) {
+	sender *s = ctx;
+	mu_lock(&s->mu);
+	while (!s->first && !s->eof && !s->closed && !s->stopped) cv_wait(&s->cv, &s->mu);
+	if (s->closed || s->stopped) {
+		mu_unlock(&s->mu);
+		asuka_error_cancelled(err);
+		return false;
+	}
+	size_t n = 0;
+	while (n < cap && s->first) {
+		piece *x = s->first;
+		size_t k = x->b.len - s->off < cap - n ? x->b.len - s->off : cap - n;
+		memcpy((uint8_t *)buf + n, x->b.data + s->off, k);
+		n += k;
+		s->off += k;
+		if (s->off == x->b.len) {
+			s->first = x->next;
+			if (!s->first) s->last = NULL;
+			s->off = 0;
+			free(x->b.data);
+			free(x);
+		}
+	}
+	s->queued -= n;
+	s->read += (int64_t)n;
+	if (n == 0) s->all = true;  // the queue's empty, the body ended
+	asuka_call *c = NULL;
+	if (s->writing && s->queued <= sender_most) c = s->writing, s->writing = NULL;
+	mu_unlock(&s->mu);
+	if (c) http_Sender_write_done(c, true);
+	*got = n;
+	return true;
+}
+
+static void sender_stop(void *ctx) {
+	sender *s = ctx;
+	mu_lock(&s->mu);
+	s->stopped = true;
+	asuka_call *c = s->writing;
+	s->writing = NULL;
+	cv_broadcast(&s->cv);
+	mu_unlock(&s->mu);
+	if (c) http_Sender_write_done(c, false);
+}
+
+static void sender_sent(void *ctx, int64_t sent, int64_t total) {
+	(void)total;
+	on_sent(&((sender *)ctx)->progress, sent);
+}
+
+static bool sender_data(void *ctx, const void *p, size_t n, asuka_error *err) { return keep(&((sender *)ctx)->answer, p, n, err); }
+
+// answer answers finish: the response (taking it), or the failure.
+static void answer(asuka_call *c, bool ok, asuka_response *r, asuka_writer *body, asuka_error *e) {
+	if (!ok) {
+		asuka_call_fail(c, e);
+		return;
+	}
+	http_Response out = {.status = r->status, .url = r->url, .body = {body->data ? body->data : malloc(1), body->len}};
+	out.headers = (http_map_string){r->names, r->values, r->nheaders};
+	*r = (asuka_response){0};
+	*body = (asuka_writer){0};
+	http_Sender_finish_done(c, out);
+}
+
+static void sender_gone(void *p) {
+	sender *s = p;
+	if (--s->refs <= 0) free_sender(s);
+}
+
+static void run_sender(void *p) {
+	sender *s = p;
+	asuka_request rq = {.method = s->method, .url = s->url, .headers = s->headers, .nheaders = s->nheaders, .timeout_ms = s->timeout_ms,
+	                    .abort = s->abort, .tls = s->tls, .data = sender_data, .body_read = sender_read, .body_stop = sender_stop,
+	                    .body_len = s->length, .sent = sender_sent, .ctx = s};
+	asuka_response r;
+	asuka_error e = {0};
+	bool ok = asuka_fetch_stream(&rq, &r, &e);
+	mu_lock(&s->mu);
+	s->ended = true;
+	s->stopped = true;
+	asuka_call *w = s->writing, *f = s->finishing;
+	s->writing = s->finishing = NULL;
+	bool all = s->all;
+	int64_t read = s->read;
+	if (!f) {
+		// No finish waits: kept for it.
+		s->ok = ok;
+		if (ok) s->result = r;
+		else s->failure = e;
+	}
+	mu_unlock(&s->mu);
+	if (w) http_Sender_write_done(w, false);
+	if (ok && all) all_sent(&s->progress, read);
+	if (f) answer(f, ok, &r, &s->answer, &e);
+	asuka_desktop_post(sender_gone, s);
+}
+
+// stop_sender stops the request: close(), let go, finish's task gone.
+static void stop_sender(sender *s) {
+	mu_lock(&s->mu);
+	s->closed = true;
+	asuka_call *c = s->writing;
+	s->writing = NULL;
+	cv_broadcast(&s->cv);
+	mu_unlock(&s->mu);
+	asuka_abort_now(s->abort);
+	if (c) http_Sender_write_done(c, false);
+}
+
+static void cancel_write(void *p) {
+	sender *s = p;
+	mu_lock(&s->mu);
+	asuka_call *c = s->writing;
+	s->writing = NULL;
+	mu_unlock(&s->mu);
+	if (c) {
+		asuka_error e = {0};
+		asuka_error_cancelled(&e);
+		asuka_call_fail(c, &e);
+	}
+}
+
+static void cancel_finish(void *p) { stop_sender(p); }
+
+static void sender_write(http_Sender *self, asuka_bytes data, asuka_call *call) {
+	sender *s = (sender *)self;
+	asuka_call_on_cancel(call, cancel_write, s);  // before the worker can see the call
+	asuka_error e = {0};
+	mu_lock(&s->mu);
+	if (s->stopped || s->closed) {
+		mu_unlock(&s->mu);
+		http_Sender_write_done(call, false);
+		return;
+	}
+	if (s->eof || s->writing) {
+		mu_unlock(&s->mu);
+		asuka_error_failed(&e, "http", 0, s->eof ? "write: the body was finished" : "write: a write is already waiting");
+		asuka_call_fail(call, &e);
+		return;
+	}
+	if (data.len > 0) {
+		piece *x = malloc(sizeof *x);
+		*x = (piece){NULL, asuka_bytes_copy(data.data, data.len)};
+		if (s->last) s->last->next = x;
+		else s->first = x;
+		s->last = x;
+		s->queued += data.len;
+		cv_broadcast(&s->cv);
+	}
+	bool room = s->queued <= sender_most;
+	if (!room) s->writing = call;
+	mu_unlock(&s->mu);
+	if (room) http_Sender_write_done(call, true);
+}
+
+static void sender_finish(http_Sender *self, asuka_call *call) {
+	sender *s = (sender *)self;
+	asuka_call_on_cancel(call, cancel_finish, s);
+	asuka_error e = {0};
+	mu_lock(&s->mu);
+	if (s->finished) {
+		mu_unlock(&s->mu);
+		asuka_error_failed(&e, "http", 0, "finish: it was called already");
+		asuka_call_fail(call, &e);
+		return;
+	}
+	s->finished = true;
+	s->eof = true;
+	cv_broadcast(&s->cv);
+	if (!s->ended) {
+		s->finishing = call;
+		mu_unlock(&s->mu);
+		return;
+	}
+	bool ok = s->ok;
+	asuka_response r = s->result;
+	asuka_error f = s->failure;
+	s->result = (asuka_response){0};
+	s->failure = (asuka_error){0};
+	mu_unlock(&s->mu);
+	answer(call, ok, &r, &s->answer, &f);
+	asuka_response_free(&r);
+}
+
+static void sender_close(http_Sender *self, asuka_error *err) {
+	(void)err;
+	stop_sender((sender *)self);
+}
+
+static void sender_release(http_Sender *self) {
+	sender *s = (sender *)self;
+	stop_sender(s);
+	if (--s->refs <= 0) free_sender(s);
+}
+
+static const http_Sender_vtable sender_vt = {.release = sender_release, .write = sender_write, .finish = sender_finish, .close = sender_close};
+
+static void begin_(http_Transport *self, const char *method, const char *url, http_map_string headers, int64_t length, int64_t timeout,
+                   http_fn_int_int progress_fn, asuka_call *call) {
+	sender *s = calloc(1, sizeof *s);
+	s->base.vt = &sender_vt;
+	s->refs = 2;
+	s->abort = asuka_abort_new();
+	s->method = asuka_strdup(method);
+	s->url = asuka_strdup(url);
+	s->nheaders = headers.len;
+	s->headers = calloc(headers.len ? headers.len : 1, sizeof *s->headers);
+	for (size_t i = 0; i < headers.len; i++) s->headers[i] = (asuka_header){asuka_strdup(headers.keys[i]), asuka_strdup(headers.values[i])};
+	s->length = length;
+	s->timeout_ms = timeout_ms(timeout);
+	s->tls = tls_of(self);
+	s->progress = (reporter){.fn = progress_fn, .total = length};
+	mu_init(&s->mu);
+	cv_init(&s->cv);
+	if (!asuka_desktop_spawn(run_sender, s)) {
+		asuka_error e = {0};
+		asuka_error_failed(&e, "http", 0, "no thread for the request");
+		asuka_call_fail(call, &e);
+		free_sender(s);
+		return;
+	}
+	http_Transport_begin_done(call, &s->base);
+}
+
+http_Sender *http_make_Sender(asuka_error *err) {
+	asuka_error_unsupported(err, "a Sender comes from Transport.begin");
+	return NULL;
+}
+
 // ---- Secured transports: TLS settings, read on a thread ----
 
 static const http_Transport_vtable vt;
@@ -560,7 +1029,8 @@ static void secured_(http_Transport *self, const http_TLS *tls, asuka_call *call
 	}
 }
 
-static const http_Transport_vtable vt = {.send = send_, .download = download_, .open = open_, .secured = secured_};
+static const http_Transport_vtable vt = {
+    .send = send_, .download = download_, .open = open_, .upload = upload_, .begin = begin_, .finished = finished_, .secured = secured_};
 
 // ---- LocalServer: one-shot pages on the loopback, for a redirect ----
 

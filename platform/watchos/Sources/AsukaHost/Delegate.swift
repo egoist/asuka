@@ -3,7 +3,8 @@
 // rather than its scene, as the iOS host's AppDelegate has it. The
 // notification center's delegate is set as the app launches, so the
 // response that launched it is seen; APNs' token and data messages go to
-// platform/push's module.
+// platform/push's module; background URLSessions' events to the package
+// whose session it is.
 
 #if os(watchOS)
 import Foundation
@@ -14,6 +15,22 @@ public final class AsukaWatchDelegate: NSObject, WKApplicationDelegate {
         #if ASUKA_NOTIFY || ASUKA_PUSH
         MainActor.assumeIsolated { AsukaNotifyCenter.shared.install() }
         #endif
+    }
+
+    /// The system's background tasks: a package's background URLSession's
+    /// events (std/http's uploads) go to it, the session's identifier
+    /// naming it (BackgroundSessions.swift); the others are done at once,
+    /// as WatchKit does them for a delegate without this.
+    public func handle(_ backgroundTasks: Set<WKRefreshBackgroundTask>) {
+        for task in backgroundTasks {
+            if let t = task as? WKURLSessionRefreshBackgroundTask {
+                AsukaBackgroundSessions.handleEvents(t.sessionIdentifier) { t.setTaskCompletedWithSnapshot(false) }
+            } else if let t = task as? WKSnapshotRefreshBackgroundTask {
+                t.setTaskCompleted(restoredDefaultState: true, estimatedSnapshotExpiration: .distantFuture, userInfo: nil)
+            } else {
+                task.setTaskCompletedWithSnapshot(false)
+            }
+        }
     }
 
     #if ASUKA_PUSH

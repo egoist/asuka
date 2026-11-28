@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="asuka_http_uploads">上传</string>
+    <string name="asuka_http_uploading">正在上传</string>
+    <string name="asuka_http_progress">%1$s / %2$s</string>
+</resources>

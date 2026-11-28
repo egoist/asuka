@@ -1,0 +1,193 @@
+// std/http's uploads against internal/testserver (BASE: its URL), on
+// the desktops' C: a file of 256 MiB read from disk as it's sent (its
+// bytes and SHA-256 as the server counted them: BIG_SHA; on Linux, the
+// most memory the process takes meanwhile), progress, a multipart form, a
+// stream's pieces chunked and with their length, a stream that made less
+// than it said, answers before the body's sent, and uploads cancelled.
+// Each step is a Text of its own ("#..."); DONE_FILE, if it isn't empty,
+// is written at the end (what a Windows test waits for).
+import std/crypto
+import std/encoding
+import std/fs
+import std/http
+
+let base = "BASE"
+let bigSHA = "BIG_SHA"
+let doneFile = "DONE_FILE"
+
+// progressOK is whether reports go up, never past the whole, the last
+// one all of it.
+fn progressOK(sent: [int], totals: [int], whole: int) -> bool {
+  if sent.isEmpty() {
+    return false
+  }
+  for i in 0..<sent.count() {
+    if (i > 0 && sent[i] < sent[i - 1]) || sent[i] > whole || totals[i] != whole {
+      return false
+    }
+  }
+  return sent[sent.count() - 1] == whole
+}
+
+// peakMemory is the most memory this process has had resident, in bytes
+// (Linux's VmHWM): -1 where the system doesn't say (Windows).
+fn peakMemory() -> int {
+  let status = (try? fs.readText("/proc/self/status")) ?? ""
+  for l in status.lines() {
+    if l.hasPrefix("VmHWM:") {
+      let f = l.fields()
+      if f.count() >= 2 {
+        return (f[1].toInt() ?? -1) * 1024
+      }
+    }
+  }
+  return -1
+}
+
+fn has(json: string, key: string, value: string) -> bool = json.contains("\"{key}\":{value}")
+
+fn sha(b: bytes) -> string = encoding.hexEncode(crypto.sha256(b))
+
+// pieces is n pieces of piece, a pause before each (none for 0ms).
+fn pieces(piece: bytes, n: int, pause: Duration = 0ms) -> Stream<bytes> = Stream<bytes>(send => {
+  for _ in 0..<n {
+    if pause > 0ms {
+      await sleep(pause)
+    }
+    send(piece)
+  }
+})
+
+component Probe {
+  state log: [string] = []
+  Column {
+    for s in log key s {
+      Text("#{s}")
+    }
+  }
+  task {
+    let dir = fs.join([fs.tempDir(), "asuka-upload-test"])
+    defer { try? fs.removeAll(dir) }
+    do {
+      try fs.mkdirAll(dir)
+      // 256 MiB, written a MiB at a time.
+      let big = fs.join([dir, "big.bin"])
+      let mib = "0123456789abcdef".repeat(65536).bytes()
+      let f = try await fs.open(big, mode: .write)
+      for _ in 0..<256 {
+        try await f.write(mib)
+      }
+      try await f.close()
+      log.push("made {(try fs.stat(big)).size}")
+
+      var sent: [int] = []
+      var totals: [int] = []
+      let before = peakMemory()
+      let r = try await http.upload("{base}/upload", try .file(big, type: "video/mp4"), progress: (s, t) => {
+        sent.push(s)
+        totals.push(t)
+      })
+      let grew = peakMemory() - before
+      let j = r.body.string()
+      log.push("big {r.status} {has(j, "bytes", "268435456")} {has(j, "length", "268435456")} {has(j, "sha256", "\"{bigSHA}\"")} {has(j, "type", "\"video/mp4\"")} {has(j, "chunked", "false")} {progressOK(sent, totals, 268435456)}")
+      // Read from disk as it's sent, never held: far less than 256 MiB.
+      log.push("memory {before < 0 || grew < 32 * 1048576}")
+      if before >= 0 {
+        log.push("grew {grew / 1024} KiB")
+      }
+
+      // A slow server: progress as it reads.
+      let sixteen = "abcdefgh".repeat(2097152).bytes()
+      sent = []
+      totals = []
+      let slow = try await http.upload("{base}/upload?delay=2", .data(sixteen), method: "PUT", progress: (s, t) => {
+        sent.push(s)
+        totals.push(t)
+      })
+      let sj = slow.body.string()
+      log.push("slow {slow.status} {has(sj, "method", "\"PUT\"")} {has(sj, "sha256", "\"{sha(sixteen)}\"")} {progressOK(sent, totals, 16777216)} {sent.count() >= 3}")
+
+      // A form: a field, a file from disk, bytes in memory.
+      let small = fs.join([dir, "notes.txt"])
+      let text = "line one\nline two \"quoted\"\n".repeat(1000)
+      try fs.writeText(small, text)
+      let photo = "PNG?".repeat(5000).bytes()
+      let form = try http.multipart([.field("title", "Holiday ü"), .file("notes", small, type: "text/plain"), .data("photo", photo, filename: "a\"b.png", type: "image/png")])
+      sent = []
+      totals = []
+      let m = try await http.upload("{base}/multipart", form, progress: (s, t) => {
+        sent.push(s)
+        totals.push(t)
+      })
+      let mj = m.body.string()
+      log.push("multipart {m.status} {mj.contains("\"fields\":\{\"title\":\"Holiday ü\"\}")} {mj.contains("\"name\":\"notes\"") && mj.contains("\"filename\":\"notes.txt\"") && mj.contains("\"sha256\":\"{sha(text.bytes())}\"")} {mj.contains("\"filename\":\"a%22b.png\"") && mj.contains("\"sha256\":\"{sha(photo)}\"") && mj.contains("\"type\":\"image/png\"")} {has(mj, "chunked", "false")} {progressOK(sent, totals, form.length)}")
+
+      // A stream's pieces: chunked, then with their length.
+      let piece = "0123456789".repeat(10000).bytes()
+      let whole = sha(piece.concat(piece).concat(piece).concat(piece).concat(piece).concat(piece).concat(piece).concat(piece).concat(piece).concat(piece))
+      sent = []
+      totals = []
+      let c = try await http.upload("{base}/upload", .stream(pieces(piece, 10, pause: 10ms)), progress: (s, t) => {
+        sent.push(s)
+        totals.push(t)
+      })
+      let cj = c.body.string()
+      let last = if sent.isEmpty() { [0, 0] } else { [sent[sent.count() - 1], totals[totals.count() - 1]] }
+      log.push("chunked {c.status} {has(cj, "chunked", "true")} {has(cj, "length", "-1")} {has(cj, "bytes", "1000000")} {has(cj, "sha256", "\"{whole}\"")} {has(cj, "type", "\"application/octet-stream\"")} {last[0]} {last[1]}")
+      let l = try await http.upload("{base}/upload", .stream(pieces(piece, 10), length: 1000000, type: "text/plain"))
+      let lj = l.body.string()
+      log.push("sized {l.status} {has(lj, "chunked", "false")} {has(lj, "length", "1000000")} {has(lj, "sha256", "\"{whole}\"")} {has(lj, "type", "\"text/plain\"")}")
+      do {
+        let _ = try await http.upload("{base}/upload", .stream(pieces(piece, 10), length: 2000000))
+        log.push("short sent")
+      } catch e {
+        log.push("short {e.message.contains("not its length")}")
+      }
+
+      // Answers before the body's sent.
+      let early = try await http.upload("{base}/upload?answer=413", .data("x".repeat(1000).bytes()))
+      log.push("early {early.status} {early.body.string()}")
+      let earlyStream = try await http.upload("{base}/upload?answer=413", .stream(pieces(piece, 1)), headers: ["Expect": "100-continue"])
+      log.push("early stream {earlyStream.status} {earlyStream.body.string()}")
+      // More than the server reads before it closes: libsoup waits for its
+      // answer to Expect: 100-continue before it sends; WinHTTP doesn't,
+      // and the connection's gone before it reads the answer.
+      do {
+        let earlyBig = try await http.upload("{base}/upload?answer=413", .data(sixteen), headers: ["Expect": "100-continue"])
+        log.push("early big {earlyBig.status} {earlyBig.body.string()}")
+      } catch e {
+        log.push("early big failed")
+      }
+
+      // Cancelled: a file to a slow server, a stream that waits.
+      do {
+        try await withTimeout(300ms) {
+          let _ = try await http.upload("{base}/upload?delay=50", try .file(big))
+        }
+        log.push("file not cancelled")
+      } catch e {
+        log.push("cancelled file")
+      }
+      do {
+        try await withTimeout(300ms) {
+          let _ = try await http.upload("{base}/upload", .stream(pieces(piece, 1000, pause: 100ms)))
+        }
+        log.push("stream not cancelled")
+      } catch e {
+        log.push("cancelled stream")
+      }
+      let again = try await http.upload("{base}/upload", .data("again".bytes()))
+      log.push("again {again.status} {has(again.body.string(), "bytes", "5")}")
+      let finished = try await http.finishedUploads()
+      log.push("finished {finished.count()}")
+      log.push("done")
+    } catch e {
+      log.push("fail {e.message}")
+    }
+    if !doneFile.isEmpty() {
+      try? fs.writeText(doneFile, "done")
+    }
+  }
+}
+
+app { Probe() }

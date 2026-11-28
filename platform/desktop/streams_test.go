@@ -1,12 +1,15 @@
 package desktop_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,15 +18,17 @@ import (
 )
 
 // streams serves internal/testserver for TestStdLinux's std/http stream,
-// std/websocket and TLS cases (testdata/streams; over HTTPS too, with a
-// test authority's certificate), counting the /stall
+// upload, std/websocket and TLS cases (testdata/streams; over HTTPS too,
+// with a test authority's certificate), counting the /stall and /upload
 // requests still being served: a body that timed out, or whose read was
-// cancelled, has its request stopped.
+// cancelled, has its request stopped, and so does an upload cancelled.
 type streams struct {
 	srv    *httptest.Server
 	tls    *httptest.Server // the same paths over HTTPS, pki's certificate
 	pki    *testserver.PKI
 	stalls atomic.Int32
+	// The /upload and /multipart requests being served.
+	uploads atomic.Int32
 }
 
 func newStreams(t *testing.T) *streams {
@@ -41,6 +46,10 @@ func newStreams(t *testing.T) *streams {
 			s.stalls.Add(1)
 			defer s.stalls.Add(-1)
 		}
+		if r.URL.Path == "/upload" || r.URL.Path == "/multipart" {
+			s.uploads.Add(1)
+			defer s.uploads.Add(-1)
+		}
 		h.ServeHTTP(w, r)
 	}))
 	t.Cleanup(s.srv.Close)
@@ -53,8 +62,38 @@ func (s *streams) source(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.NewReplacer(append([]string{`"BASE"`, `"` + s.srv.URL + `"`, `"WSBASE"`, `"ws` + strings.TrimPrefix(s.srv.URL, "http") + `"`, `"DONE_FILE"`, `""`},
+	return strings.NewReplacer(append([]string{`"BASE"`, `"` + s.srv.URL + `"`, `"WSBASE"`, `"ws` + strings.TrimPrefix(s.srv.URL, "http") + `"`, `"DONE_FILE"`, `""`,
+		`"BIG_SHA"`, strconv.Quote(bigUploadSHA())},
 		tlsPlaceholders(s.tls.URL, s.pki)...)...).Replace(string(b))
+}
+
+// bigUploadSHA is the SHA-256 of the file testdata/streams/upload.asuka
+// makes and uploads: "0123456789abcdef" over 256 MiB.
+var bigUploadSHA = sync.OnceValue(func() string {
+	h := sha256.New()
+	mib := []byte(strings.Repeat("0123456789abcdef", 65536))
+	for i := 0; i < 256; i++ {
+		h.Write(mib)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+})
+
+// uploaded checks, once the upload app is done, that no upload it
+// cancelled is still being served (what it shows says the rest: its
+// memory, measured by the app itself as it uploads).
+func (s *streams) uploaded(t *testing.T, pid int, line string) {
+	if strings.HasPrefix(line, "host: grew") {
+		t.Log(line)
+	}
+	if line != "host: done" {
+		return
+	}
+	for end := time.Now().Add(10 * time.Second); s.uploads.Load() > 0; time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Errorf("%d uploads still served after they were cancelled", s.uploads.Load())
+			return
+		}
+	}
 }
 
 // tlsPlaceholders are testdata/streams/tls.asuka's placeholders and what
@@ -93,6 +132,24 @@ var (
 		"stall timed out true",
 		"cancelled 200",
 		"again one|two|three|",
+		"done",
+	}
+	streamsUpload = []string{
+		"made 268435456",
+		"big 200 true true true true true true",
+		"memory true",
+		"slow 200 true true true true",
+		"multipart 200 true true true true true",
+		"chunked 200 true true true true true 1000000 1000000",
+		"sized 200 true true true true",
+		"short true",
+		"early 413 refused",
+		"early stream 413 refused",
+		"early big 413 refused",
+		"cancelled file",
+		"cancelled stream",
+		"again 200 true",
+		"finished 0",
 		"done",
 	}
 	streamsTLS = []string{

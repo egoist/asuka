@@ -819,8 +819,9 @@ makes a static site in `dist/web`: `index.html`, the app as
 WebAssembly (built by Zig), Asuka's scripts, the app's service worker, its
 assets, a web app manifest with its icons, gzipped copies, and a
 `_headers` file for Cloudflare and Netlify. The files are named by their
-digests, so all but `index.html` and the manifest can be cached for
-good. Serve the folder from any web server or CDN, `.wasm` as
+digests, so all but `index.html`, the manifest and `sw.js` can be cached
+for good; the service worker keeps them, so the app starts offline
+([Offline](web.md#offline)). Serve the folder from any web server or CDN, `.wasm` as
 `application/wasm`, over HTTPS (service workers, Web Push and the secure
 store need it). See [the web](web.md) for what's in it and what a
 browser does differently.
@@ -974,7 +975,8 @@ manifest's URL, GitHub's releases, or a server's URL with `{target}`,
 
 On the web there's nothing to install: `check()` reads the site's
 `version.json` past the browser's caches, and a newer version's
-`relaunch()` reloads the page.
+`relaunch()` has its service worker (which the browser has been
+installing in the background) take over, then reloads the page.
 
 In tests there's no update module, as on a phone, until
 `update.fakeHost(update.FakeApp(…))` makes the test answer as an

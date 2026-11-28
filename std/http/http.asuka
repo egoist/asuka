@@ -11,6 +11,12 @@
 //
 //   try await http.download(url, path, progress: (got, total) => { done = got })
 //
+// And a large body goes from a file (or a form with files, or a Stream's
+// pieces) as it's read, its progress reported too:
+//
+//   let form = try http.multipart([.field("title", "Holiday"), .file("video", path, type: "video/mp4")])
+//   try await http.upload("https://example.com/videos", form, progress: (sent, total) => { done = sent })
+//
 // A body that comes over time (a reply a language model writes, a log)
 // is read as it's sent, in pieces, lines, or server-sent events:
 //
@@ -39,6 +45,7 @@
 
 import std/fs
 import std/json as codec
+import std/random
 
 /// What a request answered.
 pub struct Response {
@@ -78,6 +85,22 @@ native interface Transport {
   /// the longest wait for the head, and for each piece after it. A
   /// network failure throws; an answer of any status returns.
   async fn open(method: string, url: string, headers: [string: string], body: bytes, timeout: Duration) -> Body
+  /// Sends a request whose body is parts, in order (length bytes in all,
+  /// -1 when it isn't known), each file read from disk as it's sent,
+  /// calling progress with the bytes sent and length, a few times a
+  /// second and once all is sent. timeout is the longest wait for the
+  /// network to take more, then for the answer. With background, the
+  /// system's transfer that goes on while the app is out of sight (iOS
+  /// and macOS: a background URLSession; Android: WorkManager), id its
+  /// name in finished; where there's none, as without it.
+  async fn upload(method: string, url: string, headers: [string: string], parts: [Part], length: int, timeout: Duration, progress: fn(int, int), background: bool, id: string) -> Response
+  /// Starts a request whose body is written as it's made (Sender.write):
+  /// length bytes (-1 when it isn't known: sent chunked), progress as
+  /// upload's.
+  async fn begin(method: string, url: string, headers: [string: string], length: int, timeout: Duration, progress: fn(int, int)) -> Sender
+  /// The background uploads that ended while no call waited for them,
+  /// each given once.
+  async fn finished() -> [FinishedUpload]
   /// The client whose connections are made as tls says (one tls has its
   /// fields' defaults changed): the same settings, the same client, its
   /// connections reused, kept apart from the others'. It throws for what
@@ -230,6 +253,247 @@ pub async fn download(url: string, path: string, headers: [string: string] = [:]
   }
   return r
 }
+
+// ---- Bodies sent as they're read: files, streams, forms ----
+
+/// A piece of a request's body: bytes, or the file at path, read from
+/// disk as it's sent.
+struct Part {
+  data: bytes = bytes()
+  path: string = ""
+}
+
+/// A request's body that's sent as it's read, never held whole: a file's
+/// bytes from disk (Upload.file), the pieces a Stream makes
+/// (Upload.stream), a form's fields and files (multipart), or bytes in
+/// memory, for their progress (Upload.data). upload sends it.
+pub struct Upload {
+  private parts: [Part] = []
+  private pieces: Stream<bytes>? = none
+  /// Its length in bytes, sent as Content-Length: -1 when it isn't known
+  /// (a Stream's, unless it was said), the body then sent chunked.
+  length: int = -1
+  /// Its Content-Type, sent unless the headers say one.
+  type: string = "application/octet-stream"
+
+  /// The file at path, read from disk as it's sent (a video, a backup):
+  /// its length is the file's. It throws when there's no file there.
+  static fn file(path: string, type: string = "application/octet-stream") throws -> Upload = Upload(parts: [Part(path: path)], length: (try fs.stat(path)).size, type: type)
+
+  /// The pieces stream makes, each sent as it comes, the network taking
+  /// one before the next is asked for: a recording as it's made, a file
+  /// compressed as it's read. length is the whole's in bytes, -1 when it
+  /// isn't known (sent chunked).
+  static fn stream(pieces: Stream<bytes>, length: int = -1, type: string = "application/octet-stream") -> Upload = Upload(pieces: pieces, length: length, type: type)
+
+  /// Bytes already in memory, sent with upload's progress.
+  static fn data(data: bytes, type: string = "application/octet-stream") -> Upload = Upload(parts: [Part(data: data)], length: data.count(), type: type)
+}
+
+/// A part of a multipart form (multipart): a field's text, or a file's
+/// bytes with its file name and type, read from disk as they're sent or
+/// held in memory.
+pub struct FormPart {
+  /// The form's name for it.
+  name: string
+  private value: bytes = bytes()
+  private path: string = ""
+  private file: bool = false
+  private filename: string = ""
+  private type: string = ""
+
+  /// A field: its name and text.
+  static fn field(name: string, value: string) -> FormPart = FormPart(name: name, value: value.bytes())
+
+  /// The file at path, read from disk as it's sent: filename is the name
+  /// the server's told (path's last one by default), type its
+  /// Content-Type.
+  static fn file(name: string, path: string, filename: string = "", type: string = "application/octet-stream") -> FormPart = FormPart(name: name, path: path, file: true, filename: if filename.isEmpty() { fs.base(path) } else { filename }, type: type)
+
+  /// A file's bytes, in memory: a photo just taken, a text made.
+  static fn data(name: string, data: bytes, filename: string, type: string = "application/octet-stream") -> FormPart = FormPart(name: name, value: data, file: true, filename: filename, type: type)
+}
+
+/// A multipart/form-data body (RFC 7578), as a browser sends a form:
+/// parts in order, fields' text and files' bytes, each file read from
+/// disk as it's sent. Its length is known (the files' sizes and the
+/// parts' heads), so its progress has a total. boundary is the line
+/// between parts, a random one by default. It throws when a file isn't
+/// there.
+///
+///   let form = try http.multipart([.field("title", "Holiday"), .file("video", path, type: "video/mp4")])
+///   let r = try await http.upload("https://example.com/videos", form, progress: (sent, total) => { done = sent })
+pub fn multipart(parts: [FormPart], boundary: string = "") throws -> Upload {
+  let b = if boundary.isEmpty() { randomBoundary() } else { boundary }
+  var out: [Part] = []
+  var pending = bytes()
+  var length = 0
+  for p in parts {
+    var head = "--{b}\r\nContent-Disposition: form-data; name=\"{formEscape(p.name)}\""
+    if p.file {
+      head = head + "; filename=\"{formEscape(p.filename)}\"\r\nContent-Type: {p.type}"
+    }
+    pending = pending.concat("{head}\r\n\r\n".bytes())
+    if p.path.isEmpty() {
+      pending = pending.concat(p.value)
+    } else {
+      length = length + pending.count() + (try fs.stat(p.path)).size
+      out.push(Part(data: pending))
+      out.push(Part(path: p.path))
+      pending = bytes()
+    }
+    pending = pending.concat("\r\n".bytes())
+  }
+  pending = pending.concat("--{b}--\r\n".bytes())
+  length = length + pending.count()
+  out.push(Part(data: pending))
+  return Upload(parts: out, length: length, type: "multipart/form-data; boundary={b}")
+}
+
+// formEscape is a form's name or file name as a browser writes it in a
+// part's head: its quotes and line breaks percent-encoded.
+fn formEscape(s: string) -> string = s.replace("\"", "%22").replace("\r", "%0D").replace("\n", "%0A")
+
+// randomBoundary is a line between a form's parts no file is likely to
+// hold: 24 random letters and digits after "asuka-".
+fn randomBoundary() -> string {
+  let alphabet = "0123456789abcdefghijklmnopqrstuvwxyz".chars()
+  var b = "----asuka-"
+  for _ in 0..<24 {
+    b = b + alphabet[random.int(0, 35)]
+  }
+  return b
+}
+
+/// What a request's body is written to as it's made (a Stream's
+/// pieces): the request goes as it's written.
+native interface Sender {
+  /// Sends the next piece of the body, waiting while the network hasn't
+  /// taken what came before (it holds little): false when the request
+  /// has ended, the server having answered (or the network failed), and
+  /// finish says how.
+  async fn write(piece: bytes) -> bool
+  /// Ends the body and waits for the answer: a network failure throws,
+  /// an answer of any status returns.
+  async fn finish() -> Response
+  /// Stops the request.
+  fn close()
+}
+
+/// What makes an upload a background one (upload's background): its id,
+/// which names it in finishedUploads.
+pub struct Background {
+  /// The upload's name, in finishedUploads: "" for none.
+  id: string = ""
+}
+
+/// A background upload that ended while no call waited for it (the
+/// system ended the app, then started it again to finish): its id
+/// (its Background's), and what the server answered or what went wrong.
+pub struct FinishedUpload {
+  /// The id its Background was given.
+  id: string
+  /// The answer's status: 200, 404...; 0 when it failed.
+  status: int = 0
+  /// The URL it answered from, after redirects.
+  url: string = ""
+  /// The answer's headers, by lower-case name (its body isn't kept).
+  headers: [string: string] = [:]
+  /// What went wrong: "" when the server answered.
+  error: string = ""
+}
+
+/// Sends body to url as it's read (a file from disk, a Stream's pieces,
+/// a form with files: Upload), never holding it whole, and waits for the
+/// answer: a video, a backup, photos in a form. progress, if given, is
+/// called as it goes with the bytes sent and the whole's (-1 when it
+/// isn't known), at most a few times a second, and once all is sent.
+/// timeout is the longest wait for the network to take more, and then
+/// for the answer. A network failure throws; an answer of any status
+/// returns (check ok()). Cancelling the task stops it. The body's type
+/// is its Content-Type unless headers say one. tls is request's.
+///
+///   let r = try await http.upload("https://example.com/videos", try .file(path, type: "video/mp4"), progress: (sent, total) => { done = sent })
+///
+/// With background, a large upload goes on while the app is out of
+/// sight: on iOS and macOS a background URLSession sends it, which goes
+/// on while the app is suspended, and after the system ends it (it
+/// starts the app again in the background as it ends); on Android
+/// WorkManager does, its progress in a notification, again after the
+/// system ends the app (an app that uses Background has Android's
+/// permissions for that foreground work). One that ends while no call
+/// waits for it is in finishedUploads, by its id. A Stream's pieces are
+/// written into a file first (the system sends files only). Elsewhere
+/// (a desktop, the web) an upload goes on while the app is out of sight
+/// anyway: background changes nothing there.
+///
+///   try await http.upload(url, form, background: http.Background(id: "holiday"))
+pub async fn upload(url: string, body: Upload, method: string = "POST", headers: [string: string] = [:], timeout: Duration = 60s, progress: (fn(int, int))? = none, background: Background? = none, tls: TLS? = none) throws -> Response {
+  var h = headers
+  if !has(h, "content-type") {
+    h["content-type"] = body.type
+  }
+  let report = (sent: int, total: int) => {
+    if let p = progress { p(sent, total) }
+  }
+  let t = try await client(tls)
+  let id = if let b = background { b.id } else { "" }
+  if let pieces = body.pieces {
+    if background.isNone() {
+      return try await sendPieces(t, method, url, h, pieces, body.length, timeout, report)
+    }
+    // The system's background transfers send files: the pieces go into
+    // one first, which goes once it's sent.
+    let file = fs.join([fs.tempDir(), "asuka-upload-{randomBoundary().trimPrefix("----")}"])
+    defer { try? fs.remove(file) }
+    let f = try await fs.open(file, mode: .write)
+    do {
+      for await piece in pieces {
+        try await f.write(piece)
+      }
+    } catch e {
+      try? await f.close()
+      throw e
+    }
+    try await f.close()
+    let size = (try fs.stat(file)).size
+    return try await t.upload(method, url, h, [Part(path: file)], size, timeout, report, true, id)
+  }
+  return try await t.upload(method, url, h, body.parts, body.length, timeout, report, !background.isNone(), id)
+}
+
+// sendPieces sends a request whose body is pieces, each written as it
+// comes (Sender), and gives its answer; the server answering before
+// they're all sent stops them. A length said is checked.
+async fn sendPieces(t: Transport, method: string, url: string, headers: [string: string], pieces: Stream<bytes>, length: int, timeout: Duration, report: fn(int, int)) throws -> Response {
+  let s = try await t.begin(method, url, headers, length, timeout, report)
+  defer { try? s.close() }
+  var sent = 0
+  var answered = false
+  for await piece in pieces {
+    if piece.isEmpty() {
+      continue
+    }
+    sent = sent + piece.count()
+    if length >= 0 && sent > length {
+      throw Error("upload: the stream made more than its length, {length} bytes")
+    }
+    if !(try await s.write(piece)) {
+      answered = true
+      break
+    }
+  }
+  if !answered && length >= 0 && sent < length {
+    throw Error("upload: the stream made {sent} bytes, not its length, {length}")
+  }
+  return try await s.finish()
+}
+
+/// The background uploads (upload's Background) that ended while no
+/// call waited for them, since the last time it was asked: each is
+/// given once. Ask as the app starts. None where there are no
+/// background uploads (a desktop, the web).
+pub async fn finishedUploads() throws -> [FinishedUpload] = try await (transport ?? try Transport()).finished()
 
 // ---- Bodies as they come: streams, lines, server-sent events ----
 

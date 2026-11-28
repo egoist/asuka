@@ -121,6 +121,16 @@ func TestBuildWeb(t *testing.T) {
 			t.Error(err)
 		}
 	}
+	// The service worker, at the same name each build, lists the site's
+	// files for offline: the page, the core, the host's.
+	if !bytes.Contains(page, []byte(`"serviceWorker":"sw.js"`)) {
+		t.Errorf("the page doesn't register sw.js:\n%s", page)
+	}
+	if sw, err := os.ReadFile(filepath.Join(site, "sw.js")); err != nil {
+		t.Error(err)
+	} else if !bytes.Contains(sw, []byte(`["`+string(core[1])+`",""]`)) || !regexp.MustCompile(`\["index.html","[0-9a-f]{16}"\]`).Match(sw) || !bytes.Contains(sw, []byte("asukaOffline")) {
+		t.Errorf("sw.js lists no files to keep offline:\n%.2000s", sw)
+	}
 	browser := chromePath()
 	if browser == "" {
 		return

@@ -10,8 +10,10 @@
 #include "asuka_linux.h"
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <strings.h>
 #include <fcntl.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -154,6 +156,68 @@ static void on_cancel(void *p) {
 	ReleaseSRWLockExclusive(&c->mu);
 }
 
+// write_all hands WinHTTP n bytes of the body: false, GetLastError
+// saying why, when the network takes no more.
+static bool write_all(HINTERNET req, const uint8_t *p, size_t n) {
+	while (n > 0) {
+		DWORD k = 0;
+		if (!WinHttpWriteData(req, p, (DWORD)n, &k)) return false;
+		if (k == 0) {
+			SetLastError(ERROR_WINHTTP_CONNECTION_ERROR);
+			return false;
+		}
+		p += k, n -= k;
+	}
+	return true;
+}
+
+// send_body sends a streamed body (body_read) in pieces of 64 KiB, each
+// a chunk of its own when its length isn't known, telling sent as it
+// goes. false when body_read failed (err set, *wrote 0) or when the
+// network took no more (*wrote its error).
+static bool send_body(HINTERNET req, const asuka_request *rq, DWORD *wrote, asuka_error *err) {
+	enum { piece = 64 * 1024, room = 16 };  // room: a chunk's size line before, its CRLF after
+	bool chunked = rq->body_len < 0;
+	uint8_t *buf = malloc(room + piece + 2);
+	int64_t sent = 0;
+	bool ok = true;
+	for (;;) {
+		size_t got = 0;
+		if (!rq->body_read(rq->ctx, buf + room, piece, &got, err)) {
+			if (!err->status) asuka_error_failed(err, "http", 0, "%s: the body couldn't be read", rq->url);
+			ok = false;
+			break;
+		}
+		uint8_t *p = buf + room;
+		size_t n = got;
+		if (chunked) {
+			char size[room];
+			int k = snprintf(size, sizeof size, "%zx\r\n", got);
+			if (got == 0) {
+				memcpy(p, "0\r\n\r\n", 5);
+				n = 5;
+			} else {
+				p -= k;
+				memcpy(p, size, (size_t)k);
+				memcpy(buf + room + got, "\r\n", 2);
+				n = got + (size_t)k + 2;
+			}
+		}
+		if (n > 0 && !write_all(req, p, n)) {
+			*wrote = GetLastError();
+			if (!*wrote) *wrote = ERROR_WINHTTP_CONNECTION_ERROR;
+			ok = false;
+			break;
+		}
+		if (got == 0) break;
+		sent += (int64_t)got;
+		if (rq->sent) rq->sent(rq->ctx, sent, rq->body_len);
+	}
+	if (rq->body_stop) rq->body_stop(rq->ctx);
+	free(buf);
+	return ok;
+}
+
 bool asuka_fetch_stream(const asuka_request *rq, asuka_response *out, asuka_error *err) {
 	asuka_response head = {0};
 	const char *url = rq->url;
@@ -201,9 +265,37 @@ bool asuka_fetch_stream(const asuka_request *rq, asuka_response *out, asuka_erro
 		asuka_error_cancelled(err);
 		goto done;
 	}
-	if (!WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, (void *)rq->body, (DWORD)rq->len, (DWORD)rq->len, 0) ||
-	    !WinHttpReceiveResponse(req, NULL))
+	if (rq->body_read) {
+		// A body sent as it's read: its length said (past a DWORD's, in a
+		// header of ours), or chunked, framed here (WinHTTP sends what
+		// it's given as it is).
+		DWORD total = rq->body_len >= 0 && rq->body_len < 0xFFFFFFFF ? (DWORD)rq->body_len : WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH;
+		char *line = rq->body_len < 0                                       ? asuka_strdup("Transfer-Encoding: chunked")
+		             : total == WINHTTP_IGNORE_REQUEST_TOTAL_LENGTH && rq->body_len > 0 ? asuka_sprintf("Content-Length: %lld", (long long)rq->body_len)
+		                                                                                : NULL;
+		if (line) {
+			wchar_t *w = asuka_wide(line);
+			WinHttpAddRequestHeaders(req, w, (DWORD)-1, WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+			free(w);
+			free(line);
+		}
+		if (!WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, total, 0)) goto fail;
+		DWORD wrote = 0;
+		if (!send_body(req, rq, &wrote, err)) {
+			if (!wrote) goto done;  // body_read failed: err says why
+			// The network took no more: the server may have answered
+			// already (and closed), its answer worth reading.
+			if (stopped(rq) || !WinHttpReceiveResponse(req, NULL)) {
+				SetLastError(wrote);
+				goto fail;
+			}
+		} else if (!WinHttpReceiveResponse(req, NULL)) {
+			goto fail;
+		}
+	} else if (!WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, (void *)rq->body, (DWORD)rq->len, (DWORD)rq->len, 0) ||
+	           !WinHttpReceiveResponse(req, NULL)) {
 		goto fail;
+	}
 	DWORD status = 0, n = sizeof status;
 	WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status, &n, WINHTTP_NO_HEADER_INDEX);
 	head.status = (int)status;
@@ -296,6 +388,117 @@ static void each_header(const char *name, const char *value, gpointer r) { add_h
 
 static void cancel_soup(void *c) { G(g_cancellable_cancel)(c); }
 
+// ---- A body sent as it's read (body_read), on Linux ----
+//
+// libsoup reads a request's body from a GInputStream as it sends it: one
+// end of a socket pair, the other fed by a thread of the body's (body_read
+// may wait: a stream's next piece). The pair holds little, so the feeder
+// waits while the network hasn't taken what it wrote. A body_read that
+// fails cancels the request; once it's over, the feeder's end is shut,
+// which ends a write waiting, and it's joined.
+
+#ifdef MSG_NOSIGNAL
+#define NO_SIGPIPE MSG_NOSIGNAL  // a write to a pair whose reader went fails, raising nothing
+#else
+#define NO_SIGPIPE 0  // SO_NOSIGPIPE says it
+#endif
+
+typedef struct {
+	const asuka_request *rq;
+	int fd;  // the feeder's end
+	GCancellable *c;
+	pthread_t thread;
+	bool started;
+	atomic_bool stopping;  // the request no longer reads the body
+	bool failed;           // body_read failed: err says how (the feeder's, until it's joined)
+	asuka_error err;
+	int64_t sent;  // what libsoup wrote (the request's thread)
+} feed;
+
+static void *feed_run(void *p) {
+	feed *f = p;
+	enum { piece = 64 * 1024 };
+	char *buf = malloc(piece);
+	for (;;) {
+		size_t got = 0;
+		asuka_error e = {0};
+		if (!f->rq->body_read(f->rq->ctx, buf, piece, &got, &e)) {
+			if (!atomic_load(&f->stopping)) {
+				if (!e.status) asuka_error_failed(&e, "http", 0, "%s: the body couldn't be read", f->rq->url);
+				f->err = e;
+				f->failed = true;
+				G(g_cancellable_cancel)(f->c);  // the request fails with err
+			} else {
+				asuka_error_free(&e);
+			}
+			break;
+		}
+		if (got == 0) break;  // its end: libsoup reads EOF
+		for (size_t off = 0; off < got;) {
+			ssize_t k = send(f->fd, buf + off, got - off, NO_SIGPIPE);
+			if (k < 0 && errno == EINTR) continue;
+			if (k <= 0) goto out;  // the request stopped reading
+			off += (size_t)k;
+		}
+	}
+out:
+	shutdown(f->fd, SHUT_WR);
+	free(buf);
+	return NULL;
+}
+
+// wrote_body_data is libsoup's "wrote-body-data": what the network took.
+static void wrote_body_data(SoupMessage *msg, guint n, gpointer p) {
+	(void)msg;
+	feed *f = p;
+	f->sent += n;
+	if (f->rq->sent) f->rq->sent(f->rq->ctx, f->sent, f->rq->body_len);
+}
+
+// feed_start sets msg's body to what the feeder writes, and starts it.
+static bool feed_start(feed *f, SoupMessage *msg, const char *type, asuka_error *err) {
+	int sv[2];
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+		asuka_error_failed(err, "posix", errno, "no socket for the body: %s", strerror(errno));
+		return false;
+	}
+	fcntl(sv[0], F_SETFD, FD_CLOEXEC);
+	fcntl(sv[1], F_SETFD, FD_CLOEXEC);
+#ifdef SO_NOSIGPIPE
+	int on = 1;  // where send has no MSG_NOSIGNAL
+	setsockopt(sv[1], SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+#endif
+	int most = 64 * 1024;  // what the pair holds, about: the progress is the network's
+	setsockopt(sv[1], SOL_SOCKET, SO_SNDBUF, &most, sizeof most);
+	setsockopt(sv[0], SOL_SOCKET, SO_RCVBUF, &most, sizeof most);
+	f->fd = sv[1];
+	GInputStream *in = G(g_unix_input_stream_new)(sv[0], 1);  // closing the stream closes its end
+	G(soup_message_set_request_body)(msg, type ? type : "application/octet-stream", in, f->rq->body_len >= 0 ? (gssize)f->rq->body_len : -1);
+	G(g_object_unref)(in);
+	g_signal_connect(msg, "wrote-body-data", wrote_body_data, f);
+	if (pthread_create(&f->thread, NULL, feed_run, f) != 0) {
+		close(f->fd);
+		f->fd = -1;
+		asuka_error_failed(err, "posix", 0, "no thread for the body");
+		return false;
+	}
+	f->started = true;
+	return true;
+}
+
+// feed_end stops the feeder (body_stop, its end shut) and joins it: once
+// the request is over, or it failed. Again, it does nothing.
+static void feed_end(feed *f) {
+	if (!f->started) return;
+	f->started = false;
+	atomic_store(&f->stopping, true);
+	if (f->rq->body_stop) f->rq->body_stop(f->rq->ctx);
+	shutdown(f->fd, SHUT_RDWR);
+	pthread_join(f->thread, NULL);
+	close(f->fd);
+	f->fd = -1;
+}
+
 bool asuka_fetch_stream(const asuka_request *rq, asuka_response *out, asuka_error *err) {
 	if (out) *out = (asuka_response){0};
 	const char *url = rq->url;
@@ -320,22 +523,29 @@ bool asuka_fetch_stream(const asuka_request *rq, asuka_response *out, asuka_erro
 		if (strcasecmp(rq->headers[i].name, "content-type") == 0) type = rq->headers[i].value;
 		else G(soup_message_headers_append)(h, rq->headers[i].name, rq->headers[i].value);
 	}
-	if (rq->len > 0 || type) {
-		GBytes *b = G(g_bytes_new)(rq->body, rq->len);
-		G(soup_message_set_request_body_from_bytes)(msg, type ? type : "application/octet-stream", b);
-		G(g_bytes_unref)(b);
-	}
 	asuka_response head = {0};
 	bool ok = false;
 	GError *e = NULL;
 	GInputStream *in = NULL;
 	char *buf = NULL;
 	GCancellable *c = G(g_cancellable_new)();
+	feed f = {.rq = rq, .fd = -1, .c = c};
+	if (rq->body_read) {
+		if (!G(g_unix_input_stream_new) || !G(soup_message_set_request_body)) {
+			asuka_error_unsupported(err, "a body sent as it's read needs libsoup 3 and GIO's Unix streams");
+			goto done;
+		}
+	} else if (rq->len > 0 || type) {
+		GBytes *b = G(g_bytes_new)(rq->body, rq->len);
+		G(soup_message_set_request_body_from_bytes)(msg, type ? type : "application/octet-stream", b);
+		G(g_bytes_unref)(b);
+	}
 	if (rq->cancel) asuka_call_on_cancel(rq->cancel, cancel_soup, c);
 	if (!hook(rq->abort, cancel_soup, c)) {
 		asuka_error_cancelled(err);
 		goto done;
 	}
+	if (rq->body_read && !feed_start(&f, msg, type, err)) goto done;
 	in = G(soup_session_send)(s, msg, c, &e);
 	if (!in) goto fail;
 	head.status = (int)G(soup_message_get_status)(msg);
@@ -362,7 +572,13 @@ bool asuka_fetch_stream(const asuka_request *rq, asuka_response *out, asuka_erro
 	ok = true;
 	goto done;
 fail:
-	if (rq->tls && asuka_soup_untrusted(msg)) {
+	feed_end(&f);
+	if (f.failed) {
+		// The body couldn't be read: what body_read said.
+		*err = f.err;
+		f.failed = false;
+		if (e) G(g_error_free)(e);
+	} else if (rq->tls && asuka_soup_untrusted(msg)) {
 		asuka_error_failed(err, "tls", 0, "%s", asuka_soup_untrusted(msg));
 		if (e) G(g_error_free)(e);
 	} else if (stopped(rq)) {
@@ -373,11 +589,18 @@ fail:
 	}
 	e = NULL;
 done:
+	feed_end(&f);
+	if (f.failed) asuka_error_free(&f.err);
+	if (rq->body_read) G(g_signal_handlers_disconnect_matched)(msg, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, &f);
 	// Neither the abort nor the call's cancel runs after these return.
 	unhook(rq->abort);
 	if (rq->cancel) asuka_call_off_cancel(rq->cancel);
 	if (in) {
-		G(g_input_stream_close)(in, NULL, NULL);
+		// The session goes with the request, its connection too: closing
+		// needn't finish the exchange (read what's left of the body, or,
+		// after an answer to Expect: 100-continue, wait for a next one).
+		G(g_cancellable_cancel)(c);
+		G(g_input_stream_close)(in, c, NULL);
 		G(g_object_unref)(in);
 	}
 	free(buf);

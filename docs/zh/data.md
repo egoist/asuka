@@ -368,6 +368,63 @@ async fn signInBack(authorize: string) throws -> string {
 }
 ```
 
+### 上传
+
+大的请求体会边读边发，从不整个放进内存：`http.upload(url, body, progress:)` 负责发送，然后等待响应。请求体是一个 `Upload`：
+
+- `Upload.file(path, type:)`：一个文件，发送时边从磁盘读取边发送（视频、备份）；
+- `http.multipart([...])`：和浏览器提交的一样的表单（`multipart/form-data`），各部分按顺序排列：`.field(name, value)`；`.file(name, path, filename:, type:)`，发送时边从磁盘读取边发送；以及 `.data(name, bytes, filename:, type:)`，内存中的文件字节；
+- `Upload.stream(pieces, length:, type:)`：一个 `Stream<bytes>` 产生的片段，每个片段一到就发送，网络收下上一个之后才会去要下一个；没有用 `length` 说明总长度时，以分块（chunked）方式发送；
+- `Upload.data(bytes, type:)`：已经在内存中的字节，用它是为了报告进度。
+
+`progress` 每秒会被调用几次，参数是已发送的字节数和总字节数（流没有说明长度时总数为 -1），全部发送完时还会再调用一次。方法默认是 `POST`，可以用 `method:` 指定别的；请求体的类型就是 `Content-Type`，除非 `headers:` 另外指定。`timeout` 是等待网络收下更多数据、以及之后等待响应的最长时间；取消 task 就会停止上传。网络故障会抛出错误；无论响应的状态码是什么都会正常返回，响应体也已读取完毕。
+
+```asuka check
+import std/http
+
+component VideoUpload(path: string) {
+  state sent = 0
+  state total = -1
+  state problem = ""
+
+  task(path) {
+    do {
+      let form = try http.multipart([.field("title", "Holiday"), .file("video", path, type: "video/mp4")])
+      let r = try await http.upload("https://example.com/videos", form, progress: (n, all) => {
+        sent = n
+        total = all
+      }, background: http.Background(id: "holiday"))
+      if !r.ok() { problem = "HTTP {r.status}" }
+    } catch e {
+      problem = e.message
+    }
+  }
+
+  Column {
+    Progress { value: if total > 0 { sent.float() / total.float() } else { none } }
+    if !problem.isEmpty() { Text(problem) }
+  }
+}
+```
+
+各平台都用自己的客户端发送，文件每次只读一部分：iOS 和 macOS 上是 URLSession，Android 上是 `HttpURLConnection`，Windows 和 Linux 上分别是 WinHTTP 和 libsoup。在浏览器里，应用的文件本来就在页面的内存中：它们以 `Blob` 的形式通过 `XMLHttpRequest` 发送，以便报告进度；流则在浏览器支持时作为 fetch 的流式请求体发送（Chrome，且服务器使用 HTTP/2 或 HTTP/3），否则先全部收集起来，最后再一起发送。
+
+`background: http.Background(id:)` 让大文件的上传在用户离开应用后继续进行。在 iOS 和 macOS 上由后台 `URLSession` 发送：应用被挂起时它会继续，系统结束应用之后也会继续（上传完成时，iOS 会在后台重新启动应用）；不过用户从应用切换器里退出应用会取消它，任何应用都是如此。在 Android 上由 WorkManager 发送：它作为前台任务运行，进度显示在通知里，会等待网络可用，系统结束应用之后也会重新开始；代码里用到 `http.Background` 的应用会带上为此所需的权限，也只有这样的应用才会带上。应用运行期间，这次调用会像普通上传一样返回。如果上传结束时没有调用在等它，它就会以自己的 `id` 出现在 `http.finishedUploads()` 中，而且只出现一次：在应用启动时查询即可。
+
+```asuka
+app {
+  task {
+    for done in (try? await http.finishedUploads()) ?? [] {
+      if done.id == "holiday" { print("uploaded: {done.status} {done.error}") }
+    }
+  }
+
+  Home()
+}
+```
+
+系统的后台传输只能发送文件，所以流的片段会先写进一个临时文件。在桌面端和 Web 上，应用不在前台时请求本来就会继续，`background` 在那里没有任何作用。
+
 ### 边到边读的响应体
 
 随时间陆续到达的响应体（语言模型逐字写出的回复、日志、信息流）可以边发边读。`http.stream(url, method:, headers:, body:)` 在响应头一到就返回：带有 `status`、`url`、`headers`，以及 `body`——一个按网络送达顺序给出各个片段的流。`lines()` 把它读成一行行文本，`events()` 读成服务器发送事件（`text/event-stream`，读法和浏览器的 `EventSource` 一样：每个都是带 `event`、`data` 和 `id` 的 `Event`），`text()` 读出整个响应体。`http.events(url, …)` 把这两步合在一起：它请求事件（也可以用 `POST`，语言模型的 API 就是这样流式返回回复的），状态码不是成功时抛出 `HTTPError.status`；加上 `reconnect: true`，就会像 `EventSource` 那样按服务器给的 `retry` 重新连接，并带上最后一个事件的 ID。离开循环或任务结束都会停止请求；`timeout` 是等待响应头、之后等待每个片段的最长时间。

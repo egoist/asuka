@@ -367,7 +367,7 @@ sudo dnf install notes
 asuka build --platform web
 ```
 
-このコマンドは `dist/web` に静的サイトを作ります。中身は、`index.html`、WebAssembly にしたアプリ（Zig でビルドされます）、Asuka のスクリプト、アプリの Service Worker、アセット、アイコン付きの Web アプリマニフェスト、gzip で圧縮したコピー、そして Cloudflare と Netlify 向けの `_headers` ファイルです。ファイル名にはダイジェストが付くので、`index.html` とマニフェスト以外は無期限にキャッシュできます。このフォルダーを任意の Web サーバーや CDN から、`.wasm` を `application/wasm` として、HTTPS で配信してください（Service Worker、Web Push、セキュアストアには HTTPS が必要です）。中身の詳細と、ブラウザーでの動作の違いについては [Web](web.md) を参照してください。
+このコマンドは `dist/web` に静的サイトを作ります。中身は、`index.html`、WebAssembly にしたアプリ（Zig でビルドされます）、Asuka のスクリプト、アプリの Service Worker、アセット、アイコン付きの Web アプリマニフェスト、gzip で圧縮したコピー、そして Cloudflare と Netlify 向けの `_headers` ファイルです。ファイル名にはダイジェストが付くので、`index.html`、マニフェスト、`sw.js` 以外は無期限にキャッシュできます。これらのファイルは Service Worker が保持するので、アプリはオフラインでも起動します（[オフライン](web.md#オフライン)）。このフォルダーを任意の Web サーバーや CDN から、`.wasm` を `application/wasm` として、HTTPS で配信してください（Service Worker、Web Push、セキュアストアには HTTPS が必要です）。中身の詳細と、ブラウザーでの動作の違いについては [Web](web.md) を参照してください。
 
 あわせて `version.json` も書き出します。ビルドしたバージョンとそのリリースノート（`CHANGELOG.md` の該当セクション）が入っていて、ページ内の `platform/update` がこれを読みます。サイトより古いページは、再読み込みを提案します（[自動アップデート](#自動アップデート)）。
 
@@ -465,7 +465,7 @@ component UpdateBanner {
 
 `update.setChannel("beta")` を呼ぶと、ベータ版を選んだユーザーに向けて、そのチャンネルのプレリリースも提示します。バージョンのチャンネルは、プレリリース部分の英字です（`1.4.0-beta.2` なら `beta`）。`"*"` を指定すると、すべてのプレリリースを受け取ります。正式リリースはどのチャンネルでも提示されます。`update.setFeed(url)` を使うと、`asuka.toml` とは別のフィード（ユーザーのアカウントごとに選んだものなど）を読みます。マニフェストの URL、GitHub のリリース、または `{target}`、`{version}`、`{channel}` を含むサーバーの URL を指定できます。その場合も、署名はいつもどおり検証されます。`update.compareVersions(a, b)` は、アップデーターと同じ規則でバージョンを比較します。
 
-Web ではインストールするものはありません。`check()` はブラウザーのキャッシュを通さずにサイトの `version.json` を読み、新しいバージョンがあれば `relaunch()` がページを再読み込みします。
+Web ではインストールするものはありません。`check()` はブラウザーのキャッシュを通さずにサイトの `version.json` を読み、新しいバージョンがあれば、`relaunch()` は（ブラウザーがバックグラウンドでインストールしておいた）Service Worker に入れ替えてから、ページを再読み込みします。
 
 テストでは、スマートフォンと同じく update モジュールはありません。`update.fakeHost(update.FakeApp(…))` を呼ぶと、インストール済みのアプリとして応答し、フィードのファイルを返すようになります（`host.serve(update.Served(url:, file:))`）。`host.log()` で、何をダウンロードしてインストールしたかがわかります。
 

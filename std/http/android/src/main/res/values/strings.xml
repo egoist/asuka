@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A background upload's notification (Background.kt). -->
+<resources>
+    <string name="asuka_http_uploads">Uploads</string>
+    <string name="asuka_http_uploading">Uploading</string>
+    <!-- The bytes sent of the whole: "12 MB of 300 MB". -->
+    <string name="asuka_http_progress">%1$s of %2$s</string>
+</resources>

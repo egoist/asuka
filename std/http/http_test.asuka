@@ -1,0 +1,50 @@
+// Upload bodies as the platforms get them: a multipart form's parts (the
+// heads and fields' text as bytes, each file by its path, to be read as
+// it's sent) and its length, a file's, bytes'. (Sending them: each
+// platform's tests, against internal/testserver.)
+
+import std/fs
+
+fn scratch(name: string) throws -> string {
+  let dir = fs.join([fs.tempDir(), "asuka-http-test"])
+  try fs.mkdirAll(dir)
+  return fs.join([dir, name])
+}
+
+test "a multipart form: heads and fields as bytes, files by path, its length" {
+  let file = try scratch("a \"b\".txt")
+  try fs.writeText(file, "hello")
+  let u = try multipart([.field("title", "Holiday"), .file("doc", file, type: "text/plain"), .data("raw", "xy".bytes(), filename: "r\n.bin")], boundary: "B")
+  expect(u.type == "multipart/form-data; boundary=B")
+  expect(u.parts.count() == 3)
+  expect(u.parts[0].path.isEmpty() && u.parts[0].data.string() == "--B\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nHoliday\r\n--B\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"a %22b%22.txt\"\r\nContent-Type: text/plain\r\n\r\n")
+  expect(u.parts[1].path == file && u.parts[1].data.isEmpty())
+  expect(u.parts[2].data.string() == "\r\n--B\r\nContent-Disposition: form-data; name=\"raw\"; filename=\"r%0A.bin\"\r\nContent-Type: application/octet-stream\r\n\r\nxy\r\n--B--\r\n")
+  expect(u.length == u.parts[0].data.count() + 5 + u.parts[2].data.count())
+  // Fields alone: one piece.
+  let f = try multipart([.field("a", "1"), .field("b", "2")], boundary: "B")
+  expect(f.parts.count() == 1 && f.parts[0].data.string() == "--B\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\n1\r\n--B\r\nContent-Disposition: form-data; name=\"b\"\r\n\r\n2\r\n--B--\r\n")
+  expect(f.length == f.parts[0].data.count())
+  // A file that isn't there throws as the form's made.
+  expect((try? multipart([.file("doc", try scratch("none.txt"))])).isNone())
+}
+
+test "a form's boundary is a random one, unless given" {
+  let a = try multipart([])
+  let b = try multipart([])
+  expect(a.type.hasPrefix("multipart/form-data; boundary=----asuka-") && a.type.byteCount() == "multipart/form-data; boundary=".byteCount() + 34)
+  expect(a.type != b.type)
+  expect(a.parts[0].data.string() == "--{a.type.trimPrefix("multipart/form-data; boundary=")}--\r\n")
+}
+
+test "a file's upload is its path and size; bytes' their own; a stream's length as said" {
+  let file = try scratch("video.bin")
+  try fs.write(file, "0123456789".bytes())
+  let u = try Upload.file(file, type: "video/mp4")
+  expect(u.parts.count() == 1 && u.parts[0].path == file && u.length == 10 && u.type == "video/mp4")
+  expect((try? Upload.file(try scratch("none.bin"))).isNone())
+  let d = Upload.data("abc".bytes())
+  expect(d.parts[0].data.string() == "abc" && d.length == 3 && d.type == "application/octet-stream")
+  let s = Upload.stream(Stream<bytes>(send => { send("a".bytes()) }), type: "text/plain")
+  expect(s.length == -1 && s.parts.isEmpty() && !s.pieces.isNone())
+}

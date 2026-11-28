@@ -1,8 +1,10 @@
 // std/http on Android: HttpURLConnection, the platform's own client,
 // on the IO dispatcher; cancelling the call disconnects it. open answers
-// with the head, its body read as it comes (ConnectionBody). A transport
-// secured with TLS settings (TLS.kt) gives its HTTPS connections its
-// policy's socket factory, which the connection pool keeps apart.
+// with the head, its body read as it comes (ConnectionBody); upload and
+// begin send a body as it's read (Upload.kt), a background upload
+// WorkManager's (Background.kt). A transport secured with TLS settings
+// (TLS.kt) gives its HTTPS connections its policy's socket factory,
+// which the connection pool keeps apart.
 package std.http
 
 import dev.asuka.AsukaReleasing
@@ -21,7 +23,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.time.Duration
 
-class ConnectionTransport(private val policy: TLSPolicy? = null) : Transport {
+class ConnectionTransport(private val policy: TLSPolicy? = null, private val tls: TLS? = null) : Transport {
     // A connection to url, its TLS the policy's.
     private fun connection(url: String): HttpURLConnection {
         val c = URL(url).openConnection() as HttpURLConnection
@@ -31,7 +33,23 @@ class ConnectionTransport(private val policy: TLSPolicy? = null) : Transport {
 
     override suspend fun secured(tls: TLS): Transport = withContext(Dispatchers.IO) {
         val p = TLSPolicy.of(tls.ca, tls.trustSystem, tls.certificate, tls.key, tls.insecureSkipVerify)
-        synchronized(secured) { secured.getOrPut(p) { ConnectionTransport(p) } }
+        synchronized(secured) { secured.getOrPut(p) { ConnectionTransport(p, tls) } }
+    }
+
+    // A background upload is WorkManager's where the host has started
+    // (an app); elsewhere (a plain JVM) it's sent as one that isn't.
+    override suspend fun upload(method: String, url: String, headers: Map<String, String>, parts: List<Part>, length: Long, timeout: Duration, progress: (Long, Long) -> kotlin.Unit, background: Boolean, id: String): Response {
+        val ctx = if (background) BackgroundUploads.context else null
+        if (ctx != null) return BackgroundUploads.upload(ctx, tls, method, url, headers, parts, timeout, progress, id)
+        return streamUpload(connection(url), method, headers, parts, length, timeout, progress)
+    }
+
+    override suspend fun begin(method: String, url: String, headers: Map<String, String>, length: Long, timeout: Duration, progress: (Long, Long) -> kotlin.Unit): Sender =
+        beginUpload(connection(url), method, headers, length, timeout, progress)
+
+    override suspend fun finished(): List<FinishedUpload> {
+        val ctx = BackgroundUploads.context ?: return emptyList()
+        return BackgroundUploads.finished(ctx)
     }
 
     companion object {
@@ -110,7 +128,7 @@ class ConnectionTransport(private val policy: TLSPolicy? = null) : Transport {
 
 // The IO dispatcher's threads, for blocking work a call waits for
 // without being on them (so cancelling it ends it at once).
-private val io = Dispatchers.IO.asExecutor()
+internal val io = Dispatchers.IO.asExecutor()
 
 // A response's body as it comes: each read a blocking read into a
 // buffer on the IO dispatcher's threads, which answers with what's in (a

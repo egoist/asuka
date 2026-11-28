@@ -367,7 +367,7 @@ sudo dnf install notes
 asuka build --platform web
 ```
 
-这会在 `dist/web` 中生成一个静态网站，包括：`index.html`、WebAssembly 形式的应用（由 Zig 构建）、Asuka 的脚本、应用的 service worker、应用的资源、带图标的 Web 应用清单（manifest）、gzip 压缩副本，以及供 Cloudflare 和 Netlify 使用的 `_headers` 文件。文件名中带有内容摘要，所以除了 `index.html` 和清单之外，其他文件都可以永久缓存。你可以用任何 Web 服务器或 CDN 托管这个文件夹，但 `.wasm` 必须以 `application/wasm` 类型提供，并且要通过 HTTPS 访问（service worker、Web Push 和安全存储都依赖 HTTPS）。网站里具体有什么、在浏览器中有哪些不同的行为，请参阅 [Web](web.md)。
+这会在 `dist/web` 中生成一个静态网站，包括：`index.html`、WebAssembly 形式的应用（由 Zig 构建）、Asuka 的脚本、应用的 service worker、应用的资源、带图标的 Web 应用清单（manifest）、gzip 压缩副本，以及供 Cloudflare 和 Netlify 使用的 `_headers` 文件。文件名中带有内容摘要，所以除了 `index.html`、清单和 `sw.js` 之外，其他文件都可以永久缓存；service worker 会保存这些文件，让应用离线也能启动（见[离线](web.md#离线)）。你可以用任何 Web 服务器或 CDN 托管这个文件夹，但 `.wasm` 必须以 `application/wasm` 类型提供，并且要通过 HTTPS 访问（service worker、Web Push 和安全存储都依赖 HTTPS）。网站里具体有什么、在浏览器中有哪些不同的行为，请参阅 [Web](web.md)。
 
 它还会写出 `version.json`，记录本次构建的版本及其版本说明（取自 `CHANGELOG.md` 中的对应小节）。页面中的 `platform/update` 会读取它：如果页面比网站上的版本旧，就会提示用户重新加载（见[自动更新](#自动更新)）。
 
@@ -465,7 +465,7 @@ component UpdateBanner {
 
 `update.setChannel("beta")` 让应用也接收某个渠道的预发布版本，适合那些选择加入 beta 的用户。一个版本属于哪个渠道，取决于其预发布标识中的字母部分（`1.4.0-beta.2` 属于 `beta`）；`"*"` 表示接收所有预发布版本。正式版本在每个渠道都会推送。`update.setFeed(url)` 让应用读取 `asuka.toml` 之外的另一个更新源（比如按用户账号选定的）：可以是清单的 URL、GitHub Releases，或者带有 `{target}`、`{version}` 和 `{channel}` 的服务器 URL；签名验证照常进行。`update.compareVersions(a, b)` 按更新器的规则比较两个版本。
 
-在 Web 上没有什么需要安装：`check()` 会绕过浏览器缓存读取网站的 `version.json`，有新版本时 `relaunch()` 会重新加载页面。
+在 Web 上没有什么需要安装：`check()` 会绕过浏览器缓存读取网站的 `version.json`，有新版本时，`relaunch()` 会让它的 service worker（浏览器一直在后台安装它）接管，然后重新加载页面。
 
 在测试中，和手机一样没有 update 模块；`update.fakeHost(update.FakeApp(…))` 会让测试像已安装的应用那样应答，并提供更新源里的文件（`host.serve(update.Served(url:, file:))`）；`host.log()` 会告诉你它下载和安装了什么。
 

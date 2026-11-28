@@ -2,7 +2,8 @@
 // (proxies, trusted certificates, the shared cache and cookies). A
 // transport secured with TLS settings (TLS.swift) has sessions of its own,
 // so its connections aren't another's: their delegates answer the
-// server's trust, and a client certificate when one's asked for.
+// server's trust, and a client certificate when one's asked for. Bodies
+// sent as they're read (upload, begin, background uploads): Upload.swift.
 import Foundation
 import Network
 import Asuka
@@ -14,11 +15,14 @@ final class URLSessionTransport: Transport {
     private let trusted: TrustedSession?
     /// open's session.
     private let streams: Streams
+    /// upload's and begin's session (Upload.swift).
+    let uploads: UploadSession
 
     init(policy: TLSPolicy? = nil) {
         self.policy = policy
         trusted = policy.map { TrustedSession($0) }
         streams = policy.map { Streams(policy: $0) } ?? Streams.shared
+        uploads = policy.map { UploadSession(policy: $0) } ?? UploadSession.shared
     }
 
     private static let lock = NSLock()
@@ -166,7 +170,12 @@ private final class Download: NSObject, URLSessionDownloadDelegate {
     }
 }
 
-func makeTransport() throws -> any Transport { URLSessionTransport() }
+func makeTransport() throws -> any Transport {
+    // Background uploads that were going as the app last ran: their
+    // session again, for what they've done since (Upload.swift).
+    BackgroundUploads.reconnectIfPending()
+    return URLSessionTransport()
+}
 
 func makeBody() throws -> any Body {
     throw AsukaNativeError.unsupported("a body comes from Transport.open")
