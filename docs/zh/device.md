@@ -1,6 +1,6 @@
 # 设备与服务
 
-Asuka 提供了一系列包，让应用用上视图之外的设备能力：相机、条码、图像内容识别、照片和文件、文件预览、打印和 PDF、邮件和短信编辑界面、定位、通知和推送、声音、正在播放（Now Playing）和录音、网络状态、共享的媒体库、后台任务、接收其他应用的分享、JavaScript、登录和生物识别、屏幕、地图、应用商店提供的服务、广告、崩溃报告，以及数据分析。本页逐一介绍这些包：它们能做什么、API 怎么用、会给应用带来哪些权限，以及在各个平台上的表现。
+Asuka 提供了一系列包，让应用用上视图之外的设备能力：相机、条码、图像内容识别、照片和文件、文件预览、打印和 PDF、邮件和短信编辑界面、定位、通知和推送、声音、正在播放（Now Playing）和录音、通话、网络状态、共享的媒体库、后台任务、接收其他应用的分享、JavaScript、登录和生物识别、屏幕、地图、应用商店提供的服务、广告、崩溃报告，以及数据分析。本页逐一介绍这些包：它们能做什么、API 怎么用、会给应用带来哪些权限，以及在各个平台上的表现。
 
 每个包在所有平台上都是同一套 API，iOS 和 Android 几乎支持其中的全部功能。在 macOS、Windows 和 Linux 上，Asuka 会用桌面系统自己的服务来实现各个包；在浏览器中则用 Web API。如果某个平台根本没有对应的能力，包的表现就和在一台缺少该功能的手机上一样：返回这个包的 `notAvailable` 错误，返回一个说明缺了什么的错误，或者调用了也什么都不做。每个包的小节都会说明它能做什么、在各平台上分别靠什么实现。每个桌面平台和浏览器也各有专门的一节（[在 Mac 上](#在-mac-上)、[在 Windows 上](#在-windows-上)、[在 Linux 上](#在-linux-上)、[在浏览器中](#在浏览器中)），介绍应用在那里需要做哪些配置，并用一张表列出它与 iOS 和 Android 的不同之处。Apple Watch 也有专门的一节（[在 Apple Watch 上](#在-apple-watch-上)）。
 
@@ -45,6 +45,7 @@ Asuka 提供了一系列包，让应用用上视图之外的设备能力：相�
 | `platform/compose` | 处理 `mailto:` 和 `smsto:` 的应用的可见性声明（`<queries>`） | `LSApplicationQueriesSchemes` 中的 `mailto` |
 | `platform/nfc` | `NFC`；`uses-feature android.hardware.nfc`（非必需）；`asuka.toml` 中 `nfc` 的过滤器（见 [NFC 标签](nfc.md)） | `NFCReaderUsageDescription`；Core NFC 的 entitlement；`asuka.toml` 中 `nfc` 的 AID 和 FeliCa 系统代码 |
 | `platform/bluetooth` | `BLUETOOTH_SCAN`（`neverForLocation`）、`BLUETOOTH_CONNECT`、`BLUETOOTH_ADVERTISE`；调用了 `backgroundScan` 时还有后台扫描的接收器（见[蓝牙](bluetooth.md#构建时添加的内容)） | `NSBluetoothAlwaysUsageDescription`；声明了 `bluetooth.background` 时还有 `bluetooth-central`、`bluetooth-peripheral`（调用了 `backgroundScan` 时有 `bluetooth-central`），以及创建 iOS 要恢复的管理器的启动类 |
+| `platform/webrtc` | `INTERNET`、`MODIFY_AUDIO_SETTINGS`；调用 `capture` 时还有 `CAMERA` 和 `RECORD_AUDIO` | 调用 `capture` 时为 `NSCameraUsageDescription` 和 `NSMicrophoneUsageDescription` |
 
 `platform/device`、`platform/audio`、`platform/splash`、`platform/imageedit`、`platform/widget`、`platform/js`、`platform/secure`、`platform/preview` 和 `platform/print` 不需要任何权限。
 
@@ -94,6 +95,7 @@ Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.pli
 | `platform/splash` | Mac 应用没有启动屏：`hold` 和 `hide` 什么也不做 |
 | `platform/analytics` | 和 iOS 一样使用 Firebase，用同一个 `GoogleService-Info.plist`（与应用 ID 相同的 Apple 应用） |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android：Mac 应用不会出现在其他应用的分享菜单里，`asuka.toml` 的 `shortcuts` 也不会被添加 |
+| `platform/webrtc` | 与 iOS 一样用 Google 的 WebRTC：通话、视频和数据通道；没有音频会话，所以 `audioRoutes()` 为空，声音由系统决定去向。沙盒构建会得到网络客户端和服务器两项权利（ICE 的连通性检查是双向的） |
 
 ## 在 Windows 上
 
@@ -139,6 +141,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `platform/splash` | Windows 应用没有启动屏：`hold` 和 `hide` 什么也不做 |
 | `platform/analytics` | GA4 的 Measurement Protocol，用 API 密钥发送到 `asuka.toml` 里的 Web 数据流：在主线程之外批量发送，客户端 ID 和尚未发出的事件保存在应用的数据目录里（[数据分析](#数据分析platformanalytics)） |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android |
+| `platform/webrtc` | 只有数据通道，通过 libdatachannel 实现：`datachannel.dll` 放在应用旁边或在 `PATH` 中（缺少时 Peer 的 `error` 会说明）。`capture` 和 `addTrack` 抛出 `unsupported`，对方提供的媒体会被拒绝，`createOffer(iceRestart: true)` 会抛出错误，`stats()` 只给出候选的类型 |
 
 ## 在 Linux 上
 
@@ -178,6 +181,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/analytics` | GA4 的 Measurement Protocol，和 Windows 一样 |
 | `device.haptic` | 桌面设备没有触感反馈：什么也不做 |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android |
+| `platform/webrtc` | 只有数据通道，通过发行版的 libdatachannel 实现（Fedora 和 Arch 有：`.rpm` 会依赖它；Debian 和 Ubuntu 没有，Flatpak 会把它一起构建进去）。`capture` 和 `addTrack` 抛出 `unsupported`，对方提供的媒体会被拒绝，`createOffer(iceRestart: true)` 会抛出错误，`stats()` 只给出候选的类型 |
 
 ## 在浏览器中
 
@@ -217,6 +221,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/analytics` | 从 Google 加载的 gtag.js，发送到 `asuka.toml` 里的 Web 数据流；关闭数据收集用的是 gtag 自己的开关，并保存在 `localStorage` 里 |
 | `platform/splash` | `hold` 和 `hide` 什么也不做 |
 | `onShare`、快捷操作 | 仅限 iOS 和 Android |
+| `platform/webrtc` | 浏览器的 `RTCPeerConnection`、`getUserMedia`，每个 `VideoView` 是一个 `<video>`；对方的声音通过一个 audio 元素播放（受自动播放规则约束：要在用户点按后加入通话）。声音由浏览器决定去向：`audioRoutes()` 为空 |
 
 ## 在 Apple Watch 上
 
@@ -2142,6 +2147,114 @@ component Memo {
 ```
 
 `background: true` 让它在应用不可见时继续录音：在 iOS 上，应用需要在 asuka.toml 的 `ios.backgroundModes` 里加上 `"audio"`；在 Android 上，它是一个前台服务，通知里显示 `title`，并带一个停止按钮。在 iOS 和 Mac 上用的是 AVAudioRecorder，在 Android 和浏览器中是 `MediaRecorder`，在 Windows 上是 Media Foundation，在 Linux 上是 GStreamer。
+
+## 通话和点对点数据：platform/webrtc
+
+`platform/webrtc` 用 WebRTC 实现语音和视频通话，以及点对点的数据通道，模型与浏览器的 `RTCPeerConnection` 一致：双方各建一个 `webrtc.Peer`，加上各自的轨道，再通过应用自己的信令服务器（WebSocket、HTTP 接口，只要能在两边之间传文本就行）交换 offer、answer 和各自的 ICE 候选。`Description.json()` 和 `Candidate.json()` 写出的内容与浏览器的 `JSON.stringify` 相同，`webrtc.parseDescription` 和 `webrtc.parseCandidate` 再把它读回来，所以应用和网页客户端通话，与和自己通话一样简单。
+
+```asuka check
+import platform/webrtc
+import std/json
+import std/websocket
+
+screen Call(room: string) {
+  let peer = webrtc.Peer(webrtc.Config(iceServers: [
+    webrtc.IceServer(urls: ["stun:stun.l.google.com:19302"]),
+    webrtc.IceServer(urls: ["turn:turn.example.com:3478"], username: "user", credential: "secret"),
+  ]))
+  state socket: websocket.WebSocket? = none
+  state media: webrtc.Media? = none
+  state muted = false
+
+  title: room
+
+  task {
+    let m = try await webrtc.capture(video: webrtc.Video(facing: .front))
+    media = m
+    for t in m.tracks() { try peer.addTrack(t) }
+    let ws = try await websocket.connect("wss://signal.example.com/rooms/{room}")
+    socket = ws
+    for await message in ws.messages {
+      if let text = match message { .text(t) => t, .binary(_) => none } {
+        let kind = (try json.parse(text)).get("type")?.asString() ?? ""
+        if kind == "joined" {          // 对方来了：呼叫它
+          let offer = try await peer.createOffer()
+          try await peer.setLocalDescription(offer)
+          try await ws.send(offer.json())
+        } else if kind == "offer" {
+          try await peer.setRemoteDescription(try webrtc.parseDescription(text))
+          let answer = try await peer.createAnswer()
+          try await peer.setLocalDescription(answer)
+          try await ws.send(answer.json())
+        } else if kind == "answer" {
+          try await peer.setRemoteDescription(try webrtc.parseDescription(text))
+        } else {
+          try await peer.addCandidate(try webrtc.parseCandidate(text))
+        }
+      }
+    }
+  }
+
+  // 本端的候选，ICE 一找到就发出去。
+  task {
+    for await c in peer.candidates() {
+      if let ws = socket { try? await ws.send(c.json()) }
+    }
+  }
+
+  Column {
+    grow: 1
+    if let v = peer.remoteTracks.find(t => t.kind == .video) {
+      webrtc.VideoView(v) { grow: 1 }
+    }
+    Text("{peer.connection}")
+    Button(if muted { "Unmute" } else { "Mute" }) {
+      on press {
+        muted = !muted
+        media?.audio?.setEnabled(!muted)
+      }
+    }
+  }
+}
+```
+
+- **Peer** 是一个 store：创建时开始连接，它的 owner（通话界面）消失时或调用 `close()` 时关闭。它的 `connection`、`ice`、`signaling`、`gathering` 状态和 `remoteTracks` 都是状态，视图会跟着它们更新。`createOffer`、`createAnswer`、`setLocalDescription`、`setRemoteDescription` 和 `addCandidate` 就是 RTCPeerConnection 的那几个方法；`createOffer(iceRestart: true)` 可以让失败的连接恢复。`candidates()` 在 ICE 找到本端的候选时逐个给出（trickle ICE），在开始读取之前找到的会先给出。
+- **ICE 服务器**：STUN 用来查出设备的公网地址，TURN 负责中转无法直连的流量（需要它的 `username` 和 `credential`）；`policy: .relay` 只走中转，这样双方都不会知道对方的地址。一个都不配置时，只有在同一个网络里的两端才能互相连上。
+- **媒体**：`webrtc.capture(audio:, video:)` 打开麦克风和摄像头，第一次使用时会请求权限：`Video` 指定用哪个摄像头（`facing`）、`width`、`height` 和 `frameRate`，摄像头会给出最接近的规格；`Audio` 的回声消除、降噪和自动增益默认都开着，正是通话所需要的。`video: none` 就是语音通话。用户拒绝时抛出 `WebRTCError.notAllowed`，没有摄像头或麦克风时抛出 `.noDevice`。轨道的 `setEnabled(false)` 把它静音（发送静音或黑帧），`switchCamera()` 把视频轨道切换到另一个摄像头，无需重新协商，`stop()` 释放设备（`media.stop()` 会释放全部）。
+- **VideoView(track)** 显示一条视频轨道，本端的或对方的都可以，填满它的区域（`fit: .contain` 显示完整画面，留出黑边），`mirror` 用于前置摄像头的本地预览；`on resize(size)` 在视频到来时报告它的尺寸。对方的声音会自动播放。
+- **数据通道**：`peer.channel("chat")` 打开一个通道（在 offer 之前创建，它就包含在 offer 里），对方的 `peer.channels()` 会收到它。`ChannelOptions` 可以让它不保证顺序（`ordered: false`）、部分可靠（`maxRetransmits`、`maxPacketLifeTime`），或者由双方用同一个 `id` 约定好，而不是通过协商告知对方。`Channel` 也是一个 store：有 `state`（变成 `.open` 后就能收发消息）、`send(text)`、`sendBytes`、`messages()`（`.text` 和 `.binary`）、`bufferedAmount()` 和 `close()`。
+- **统计**：`await peer.stats()`：收发的字节数和包数、丢包数、往返时间、可用的发送码率、两端正在使用的候选类型（`host`、`srflx`、`relay`），以及收到的视频的尺寸和帧率。
+- **声音从哪里出来**（在手机上）：`webrtc.audioRoutes()`（听筒、扬声器、耳机、蓝牙）、`audioRoute()` 和 `setAudioRoute(.speaker)`。采集了视频的通话默认用扬声器，语音通话默认用听筒，直到应用另行指定。在其他平台上声音由系统决定去向，没有可选的路由。
+
+应用的测试可以伪造它：`webrtc.fake()` 让测试里的各个 Peer 直接相连，不经过网络。一个 Peer 的 offer 被另一个设为远端描述，它又设置了对方的 answer，两者就连上了；一方加入的轨道会出现在另一方的 `remoteTracks` 里，数据通道在两者之间传递消息。这个伪造对象会记下 `capture` 收到的请求（`captures`）、被静音和停止的轨道，以及音频路由；`allowed = false` 和 `camera = false` 会让 `capture` 抛出错误，`fail(peer)` 让一个连接失败。
+
+```asuka check
+import platform/webrtc
+
+test "two peers connect and chat" {
+  webrtc.fake()
+  let a = webrtc.Peer()
+  let b = webrtc.Peer()
+  let chat = try a.channel("chat")
+  let offer = try await a.createOffer()
+  try await a.setLocalDescription(offer)
+  try await b.setRemoteDescription(offer)
+  let answer = try await b.createAnswer()
+  try await b.setLocalDescription(answer)
+  try await a.setRemoteDescription(answer)
+  expect(a.connection == .connected && chat.state == .open)
+  for await theirs in b.channels() {
+    try chat.send("hello")
+    for await m in theirs.messages() {
+      expect(m == webrtc.Message.text("hello"))
+      break
+    }
+    break
+  }
+}
+```
+
+在 iOS、Mac 和 Android 上用的是 Google 的 WebRTC（WebRTC 框架，以及 Stream 为 Android 构建的版本）；在网页上用的是浏览器自带的 WebRTC。在 Windows 和 Linux 上只有数据通道，通过 libdatachannel 实现，应用在运行时加载它：那里的 `capture` 和 `addTrack` 会抛出 `unsupported` 错误，对方提供的媒体会被拒绝。在 Windows 上，`datachannel.dll` 要放在应用旁边（或者在 `PATH` 中）；在 Linux 上用的是发行版的 `libdatachannel`（Fedora 和 Arch 有：应用的 `.rpm` 会依赖它，Debian 和 Ubuntu 没有），Flatpak 会把它一起构建进去。缺少它时，Peer 的 `error` 会说明需要安装什么。iOS 模拟器没有摄像头：它会发送一个移动的测试图案，在任何平台上用 `Video(pattern: true)` 都能得到同样的效果。[`examples/call`](../../examples/call) 是一个完整的通话示例，包括它的信令服务器。
 
 ## 语音转文字：platform/transcribe
 

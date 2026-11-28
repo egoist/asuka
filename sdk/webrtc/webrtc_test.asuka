@@ -1,0 +1,223 @@
+test "descriptions and candidates, as JSON both ways" {
+  let d = Description(kind: .offer, sdp: "v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n")
+  expect(d.json() == r#"{"sdp":"v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n","type":"offer"}"# || d.json() == r#"{"type":"offer","sdp":"v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n"}"#)
+  expect(try parseDescription(d.json()) == d)
+  // As a browser's JSON.stringify(pc.localDescription) writes it.
+  let a = try parseDescription(r#"{"type":"answer","sdp":"v=0\r\n"}"#)
+  expect(a.kind == .answer && a.sdp == "v=0\r\n")
+  expect(try parseDescription(r#"{"type":"rollback","sdp":""}"#) == Description(kind: .rollback, sdp: ""))
+
+  let c = Candidate(candidate: "candidate:1 1 udp 2122260223 192.0.2.1 50000 typ host", sdpMid: "0", sdpMLineIndex: 0)
+  expect(try parseCandidate(c.json()) == c)
+  let b = try parseCandidate(r#"{"candidate":"candidate:2 1 udp 1 198.51.100.7 9 typ srflx","sdpMid":"1","sdpMLineIndex":1,"usernameFragment":"ab"}"#)
+  expect(b == Candidate(candidate: "candidate:2 1 udp 1 198.51.100.7 9 typ srflx", sdpMid: "1", sdpMLineIndex: 1))
+  // The end of candidates, as a browser says it.
+  expect(try parseCandidate(r#"{"candidate":"","sdpMid":null,"sdpMLineIndex":null}"#) == Candidate(candidate: ""))
+
+  for bad in ["", "nope", r"{}", r#"{"type":"offer"}"#, r#"{"type":"bye","sdp":"v=0"}"#, "[1]"] {
+    var said = ""
+    do {
+      let _ = try parseDescription(bad)
+    } catch WebRTCError.invalid {
+      said = "invalid"
+    }
+    expect(said == "invalid")
+  }
+  var said = ""
+  do {
+    let _ = try parseCandidate(r#"{"sdpMid":"0"}"#)
+  } catch WebRTCError.invalid {
+    said = "invalid"
+  }
+  expect(said == "invalid")
+}
+
+test "no WebRTC here: capture throws, a Peer says why, routes are the system's" {
+  var failed = false
+  do {
+    let _ = try await capture()
+  } catch {
+    failed = true
+  }
+  expect(failed)
+  let p = Peer()
+  expect(p.error?.message == "webrtc: not available here")
+  var said = ""
+  do {
+    let _ = try await p.createOffer()
+  } catch WebRTCError.notAvailable {
+    said = "notAvailable"
+  }
+  expect(said == "notAvailable")
+  expect(audioRoutes() == [])
+  expect(audioRoute() == .speaker)
+  setAudioRoute(.earpiece)
+  p.close()
+  expect(p.connection == .closed)
+}
+
+test "the fake: capture, mute, switch, stop, routes" {
+  let f = fake()
+  let m = try await capture(video: Video(facing: .back, width: 640, height: 480))
+  expect(m.tracks().count() == 2)
+  expect(m.audio!.kind == .audio && m.video!.kind == .video && m.video!.facing == .back)
+  expect(f.captures == [Capture(audio: Audio(), video: Video(facing: .back, width: 640, height: 480))])
+
+  m.audio!.setEnabled(false)
+  expect(f.muted == [m.audio!.id])
+  m.audio!.setEnabled(true)
+  expect(f.muted == [])
+
+  let front = try await m.video!.switchCamera()
+  expect(front.facing == .front && front.id == m.video!.id && f.switches == 1)
+
+  m.stop()
+  expect(f.stopped == [m.audio!.id, m.video!.id])
+
+  let voice = try await capture(video: none)
+  expect(voice.video.isNone() && voice.audio.isSome())
+
+  expect(audioRoutes() == [.earpiece, .speaker])
+  setAudioRoute(.speaker)
+  expect(audioRoute() == .speaker)
+  setAudioRoute(.bluetooth) // not there: nothing
+  expect(audioRoute() == .speaker)
+
+  f.allowed = false
+  var said = ""
+  do {
+    let _ = try await capture()
+  } catch WebRTCError.notAllowed {
+    said = "notAllowed"
+  }
+  expect(said == "notAllowed")
+  f.allowed = true
+  f.camera = false
+  said = ""
+  do {
+    let _ = try await capture()
+  } catch WebRTCError.noDevice {
+    said = "noDevice"
+  }
+  expect(said == "noDevice")
+}
+
+test "the fake: two peers call each other, with media and a channel" {
+  let f = fake()
+  let caller = Peer()
+  let callee = Peer()
+  let media = try await capture()
+  for t in media.tracks() { try caller.addTrack(t) }
+  let chat = try caller.channel("chat", options: ChannelOptions(ordered: false, maxRetransmits: 0))
+  expect(chat.state == .connecting && chat.label == "chat" && !chat.ordered)
+
+  // The signaling: the offer one way, the answer back, candidates both ways.
+  let offer = try await caller.createOffer()
+  try await caller.setLocalDescription(offer)
+  expect(caller.signaling == .haveLocalOffer)
+  try await callee.setRemoteDescription(try parseDescription(offer.json()))
+  expect(callee.signaling == .haveRemoteOffer)
+  let answer = try await callee.createAnswer()
+  expect(answer.kind == .answer)
+  try await callee.setLocalDescription(answer)
+  for await c in callee.candidates() {
+    try await caller.addCandidate(try parseCandidate(c.json()))
+    break
+  }
+  expect(caller.connection == .new)
+  try await caller.setRemoteDescription(answer)
+  for await c in caller.candidates() {
+    try await callee.addCandidate(c)
+    break
+  }
+  expect(f.candidatesAdded(1).count() == 1 && f.candidatesAdded(2).count() == 1)
+
+  expect(caller.connection == .connected && callee.connection == .connected)
+  expect(caller.signaling == .stable && callee.signaling == .stable)
+  expect(caller.gathering == .complete)
+  expect(callee.remoteTracks.map(t => t.kind) == [.audio, .video])
+  expect(callee.remoteTracks.all(t => t.remote))
+  expect(caller.remoteTracks == [])
+  expect(chat.state == .open)
+
+  // The other end of the channel, and messages both ways.
+  var theirs: Channel? = none
+  for await c in callee.channels() {
+    theirs = c
+    break
+  }
+  let other = theirs!
+  expect(other.label == "chat" && other.state == .open && other.id == chat.id)
+  try chat.send("hello")
+  try chat.sendBytes(bytes([1, 2, 3]))
+  var got: [Message] = []
+  for await m in other.messages() {
+    got.push(m)
+    if got.count() == 2 { break }
+  }
+  expect(got == [Message.text("hello"), Message.binary(bytes([1, 2, 3]))])
+  try other.send("hi back")
+  for await m in chat.messages() {
+    expect(m == Message.text("hi back"))
+    break
+  }
+
+  // A channel made once connected opens at once.
+  let late = try callee.channel("late")
+  expect(late.state == .open)
+  for await c in caller.channels() {
+    expect(c.label == "late")
+    break
+  }
+
+  let s = try await caller.stats()
+  expect(s.bytesSent == 1200 && s.localCandidate == "host")
+
+  // Removing a track ends it on the other side.
+  try caller.removeTrack(media.video!)
+  expect(callee.remoteTracks.map(t => t.kind) == [.audio])
+
+  caller.close()
+  expect(caller.connection == .closed)
+  expect(callee.connection == .disconnected && callee.remoteTracks == [])
+  expect(chat.state == .closed && other.state == .closed)
+  var after = ""
+  do {
+    try other.send("anyone?")
+  } catch WebRTCError.notOpen {
+    after = "notOpen"
+  }
+  expect(after == "notOpen")
+  var closed = ""
+  do {
+    let _ = try await caller.createOffer()
+  } catch WebRTCError.closed {
+    closed = "closed"
+  }
+  expect(closed == "closed")
+  // Its streams end once it's closed.
+  for await _ in caller.candidates() {}
+  for await _ in caller.channels() {}
+}
+
+test "the fake: a failed connection, an answer out of turn" {
+  let f = fake()
+  let a = Peer()
+  let b = Peer()
+  var said = ""
+  do {
+    try await a.setLocalDescription(Description(kind: .answer, sdp: "v=0"))
+  } catch e {
+    said = e.message
+  }
+  expect(said.contains("offer"))
+  let offer = try await a.createOffer()
+  try await a.setLocalDescription(offer)
+  try await b.setRemoteDescription(offer)
+  let answer = try await b.createAnswer()
+  try await b.setLocalDescription(answer)
+  try await a.setRemoteDescription(answer)
+  expect(a.connection == .connected)
+  f.fail(1)
+  expect(a.connection == .failed && b.connection == .failed && b.ice == .failed)
+}

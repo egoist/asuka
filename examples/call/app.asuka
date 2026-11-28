@@ -1,0 +1,398 @@
+// Call is a video call between two devices, with platform/webrtc: each
+// joins a room on a signaling server (server/, a WebSocket relay), the
+// first one in calls the second as it comes, and they talk, see each
+// other and chat over a data channel. A message the other side sends is
+// echoed back to it ("re: …"), so each side sees its own come back.
+//
+//   (cd examples/call/server && go run .)           // ws://localhost:8080
+//   asuka dev --platform ios examples/call
+//   asuka dev --platform web examples/call          // a second tab: the other side
+//
+// A link opens a room: call://rooms/<name>, or the web's /rooms/<name>,
+// with ?server=ws://… for another server, video=false for sound only and
+// pattern=true for a test pattern in place of the camera (a device
+// without one, the iOS simulator, sends one anyway). An Android emulator
+// reaches the server on this computer through `adb reverse tcp:8080
+// tcp:8080`.
+
+import platform/webrtc
+import std/json
+import std/websocket
+
+let stun = webrtc.IceServer(urls: ["stun:stun.l.google.com:19302"])
+
+/// One side of a call: its peer, its media and its chat, and what it says
+/// to the other side through send (the signaling server's room).
+store Session(send: async fn(string) throws, stunServer: bool = true) {
+  let peer = webrtc.Peer(webrtc.Config(iceServers: if stunServer { [stun] } else { [] }))
+  pub state media: webrtc.Media? = none
+  pub state chat: webrtc.Channel? = none
+  pub state log: [string] = []
+  pub state status = "Waiting for the other side"
+  pub state stats = ""
+  state chats = 0
+
+  // This side's candidates, to the other as ICE finds them.
+  task {
+    for await c in peer.candidates() {
+      try? await send(c.json())
+    }
+  }
+
+  // The chat the caller opens.
+  task {
+    for await ch in peer.channels() {
+      opened(ch)
+    }
+  }
+
+  task(chats) {
+    if let ch = chat {
+      do {
+        for await m in ch.messages() {
+          match m {
+            .text(t) => { heard(ch, t) }
+            .binary(b) => { log.push("them: {b.count()} bytes") }
+          }
+        }
+      } catch e {
+        log.push(e.message)
+      }
+    }
+  }
+
+  // The camera and the microphone, let go as the call goes (its peer
+  // closes itself).
+  cleanup {
+    if let m = media {
+      m.stop()
+    }
+  }
+
+  fn opened(ch: webrtc.Channel) {
+    chat = ch
+    chats += 1
+  }
+
+  fn heard(ch: webrtc.Channel, text: string) {
+    log.push("them: {text}")
+    if !text.hasPrefix("re: ") {
+      try? ch.send("re: {text}")
+    }
+  }
+
+  /// Starts the microphone and the camera, and sends them.
+  pub async fn start(video: bool, pattern: bool) throws {
+    let m = try await webrtc.capture(video: if video { webrtc.Video(pattern: pattern) } else { none })
+    media = m
+    for t in m.tracks() {
+      try peer.addTrack(t)
+    }
+  }
+
+  /// Calls the other side, which just joined: the chat, and the offer.
+  pub async fn call() throws {
+    opened(try peer.channel("chat"))
+    let offer = try await peer.createOffer()
+    try await peer.setLocalDescription(offer)
+    try await send(offer.json())
+    status = "Calling"
+  }
+
+  /// What the other side (or the server) said.
+  pub async fn received(text: string) throws {
+    let v = try json.parse(text)
+    let kind = v.get("type")?.asString() ?? ""
+    match kind {
+      "joined" => { try await call() }
+      "left" => {
+        // The call's over: its video goes, and the status shows.
+        peer.close()
+        status = "The other side left"
+      }
+      "offer" => {
+        try await peer.setRemoteDescription(try webrtc.parseDescription(text))
+        let answer = try await peer.createAnswer()
+        try await peer.setLocalDescription(answer)
+        try await send(answer.json())
+        status = "Answering"
+      }
+      "answer" => { try await peer.setRemoteDescription(try webrtc.parseDescription(text)) }
+      _ => {
+        if v.get("candidate").isSome() {
+          try await peer.addCandidate(try webrtc.parseCandidate(text))
+        }
+      }
+    }
+  }
+
+  /// Says text on the chat.
+  pub fn say(text: string) {
+    if let ch = chat {
+      do {
+        try ch.send(text)
+        log.push("me: {text}")
+      } catch e {
+        log.push(e.message)
+      }
+    }
+  }
+
+  pub async fn measure() {
+    if let s = try? await peer.stats() {
+      stats = "{s.bytesSent / 1024} KB out, {s.bytesReceived / 1024} KB in, {s.roundTripTime.milliseconds()} ms, {s.localCandidate}/{s.remoteCandidate}"
+      if s.frameWidth > 0 {
+        stats = "{stats}, {s.frameWidth}×{s.frameHeight}"
+      }
+    }
+  }
+
+  pub fn hangUp() {
+    if let m = media {
+      m.stop()
+    }
+    peer.close()
+  }
+}
+
+fn routeName(r: webrtc.AudioRoute) -> string = match r {
+  .earpiece => "Earpiece"
+  .speaker => "Speaker"
+  .headset => "Headset"
+  .bluetooth => "Bluetooth"
+}
+
+/// The call's screen: the other side's video, this side's in a corner,
+/// and the controls.
+screen CallScreen(room: string, server: string = "ws://localhost:8080", video: bool = true, pattern: bool = false) at "rooms/:room" {
+  state socket: websocket.WebSocket? = none
+  state muted = false
+  state cameraOff = false
+  state route = webrtc.audioRoute()
+  state draft = "hello"
+  state front = true
+  let session = Session(async s => {
+    if let ws = socket {
+      try await ws.send(s)
+    }
+  })
+
+  title: room
+
+  task {
+    do {
+      try await session.start(video: video, pattern: pattern)
+      route = webrtc.audioRoute()
+      let ws = try await websocket.connect("{server}/rooms/{room}")
+      socket = ws
+      for await m in ws.messages {
+        match m {
+          .text(t) => {
+            do {
+              try await session.received(t)
+            } catch e {
+              session.log.push(e.message)
+            }
+          }
+          .binary(_) => {}
+        }
+      }
+      session.status = "The server closed the room"
+    } catch e {
+      session.status = e.message
+    }
+  }
+
+  task {
+    while true {
+      await sleep(2s)
+      await session.measure()
+    }
+  }
+
+  cleanup {
+    if let ws = socket {
+      ws.close()
+    }
+  }
+
+  SafeArea {
+    grow: 1
+    gap: 8
+    padding: 12
+    View {
+      grow: 1
+      background: #000000
+      radius: 12
+      if let t = session.peer.remoteTracks.find(t => t.kind == .video) {
+        webrtc.VideoView(t) { grow: 1 }
+      } else {
+        Text(session.status) { color: #ffffff; padding: 16 }
+      }
+      if let m = session.media, let v = m.video {
+        webrtc.VideoView(v) {
+          mirror: front
+          absolute: true
+          right: 12
+          bottom: 12
+          width: 96
+          height: 128
+          radius: 8
+        }
+      }
+    }
+    Text("{session.peer.connection} · ICE {session.peer.ice}") { font: .caption }
+    if !session.stats.isEmpty() {
+      Text(session.stats) { font: .caption }
+    }
+    Row {
+      gap: 8
+      wrap: true
+      Button(if muted { "Unmute" } else { "Mute" }) {
+        on press {
+          muted = !muted
+          if let a = session.media?.audio { a.setEnabled(!muted) }
+        }
+      }
+      if let v = session.media?.video {
+        Button(if cameraOff { "Camera on" } else { "Camera off" }) {
+          on press {
+            cameraOff = !cameraOff
+            v.setEnabled(!cameraOff)
+          }
+        }
+        Button("Switch") {
+          on press {
+            if let s = try? await v.switchCamera() {
+              front = s.facing == .front
+              var m = session.media!
+              m.video = s
+              session.media = m
+            }
+          }
+        }
+      }
+      if webrtc.audioRoutes().count() > 1 {
+        Button(routeName(route)) {
+          on press {
+            let rs = webrtc.audioRoutes()
+            let i = rs.index(r => r == route) ?? -1
+            webrtc.setAudioRoute(rs[(i + 1) % rs.count()])
+            route = webrtc.audioRoute()
+          }
+        }
+      }
+      Button("Hang up") { on press { router.back() } }
+    }
+    Row {
+      gap: 8
+      TextField { bind text: draft; placeholder: "Message"; grow: 1 }
+      Button("Send") {
+        disabled: session.chat?.state != .open
+        on press { session.say(draft) }
+      }
+    }
+    Column {
+      gap: 2
+      for (i, l) in session.log.enumerated() key i {
+        Text(l) { font: .caption }
+      }
+    }
+  }
+}
+
+screen Lobby at "" {
+  state server = "ws://localhost:8080"
+  state room = "asuka"
+  state video = true
+  state pattern = false
+
+  title: "Call"
+
+  Column {
+    gap: 12
+    padding: 16
+    TextField { bind text: server; placeholder: "Signaling server" }
+    TextField { bind text: room; placeholder: "Room" }
+    Toggle { bind on: video; title: "Video" }
+    Toggle { bind on: pattern; title: "Test pattern" }
+    Button("Join") {
+      disabled: room.trim().isEmpty()
+      href: CallScreen(room: room.trim(), server: server.trim(), video: video, pattern: pattern)
+    }
+  }
+}
+
+component Routes {
+  Router(initial: "/") {
+    Route("/", layout: .stack, title: "Call") {
+      Lobby
+      CallScreen
+    }
+  }
+}
+
+app { Routes() }
+
+// ---------------------------------------------------------------------
+// Tests: two sessions in one test, each saying to the other what a
+// signaling server would carry, over the fake WebRTC.
+
+/// A room in memory: what one side sends, the other receives.
+store Line {
+  pub state a: [string] = []
+  pub state b: [string] = []
+}
+
+test "two sides call each other, see each other and chat" {
+  let f = webrtc.fake()
+  let line = Line()
+  let caller = Session(async s => { line.b.push(s) }, stunServer: false)
+  let callee = Session(async s => { line.a.push(s) }, stunServer: false)
+  try await caller.start(video: true, pattern: false)
+  try await callee.start(video: false, pattern: false)
+  expect(f.captures.count() == 2)
+
+  // The server tells the one waiting that the other joined; then each
+  // side hears what the other said, in turn, until there's nothing left.
+  try await caller.received(r#"{"type":"joined"}"#)
+  var rounds = 0
+  while (!line.a.isEmpty() || !line.b.isEmpty()) && rounds < 20 {
+    let toB = line.b
+    line.b = []
+    for m in toB { try await callee.received(m) }
+    let toA = line.a
+    line.a = []
+    for m in toA { try await caller.received(m) }
+    rounds += 1
+    await sleep(10ms)
+  }
+  expect(caller.peer.connection == .connected && callee.peer.connection == .connected)
+  expect(callee.peer.remoteTracks.map(t => t.kind) == [.audio, .video])
+  expect(caller.peer.remoteTracks.map(t => t.kind) == [.audio])
+  expect(caller.chat?.state == .open && callee.chat?.state == .open)
+
+  caller.say("hello")
+  await sleep(50ms)
+  expect(callee.log == ["them: hello"])
+  expect(caller.log == ["me: hello", "them: re: hello"])
+
+  await caller.measure()
+  expect(caller.stats.contains("host/host"))
+
+  caller.hangUp()
+  expect(f.stopped.count() == 2)
+  expect(callee.peer.connection == .disconnected)
+}
+
+test "the lobby opens a call" {
+  webrtc.fake()
+  let app = mount(Routes())
+  app.tap("Join")
+  await app.waitFor("Mute")
+  app.tap("Mute")
+  app.expect("Unmute")
+  app.expect("Earpiece")
+  app.tap("Earpiece")
+  app.expect("Speaker")
+}

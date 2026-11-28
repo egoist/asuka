@@ -2,7 +2,7 @@
 
 Asuka's packages reach what the device has beyond views: the camera, codes,
 what's in an image, photos and files, previewing, printing and PDFs, the
-mail and message composers, location, notifications and push, sound, Now Playing and recording,
+mail and message composers, location, notifications and push, sound, Now Playing and recording, calls,
 the network's state, the shared library, work in the background, shares
 from other apps, JavaScript, sign-in and biometrics, the screen, maps,
 the stores' services, ads, crash reports and analytics.
@@ -67,6 +67,7 @@ web need nothing declared (see each one's section below).
 | `platform/compose` | the visibility of the apps for `mailto:` and `smsto:` (`<queries>`) | `mailto` in `LSApplicationQueriesSchemes` |
 | `platform/nfc` | `NFC`; `uses-feature android.hardware.nfc` (not required); asuka.toml's `nfc` filters ([NFC tags](nfc.md)) | `NFCReaderUsageDescription`; Core NFC's entitlement; asuka.toml's `nfc` AIDs and FeliCa system codes |
 | `platform/bluetooth` | `BLUETOOTH_SCAN` (`neverForLocation`), `BLUETOOTH_CONNECT`, `BLUETOOTH_ADVERTISE`; the background scan's receiver (for `backgroundScan`; see [Bluetooth](bluetooth.md#what-the-build-adds)) | `NSBluetoothAlwaysUsageDescription`; `bluetooth-central`, `bluetooth-peripheral` for `bluetooth.background` (`bluetooth-central` for `backgroundScan`), and the launch class that makes the managers iOS restores |
+| `platform/webrtc` | `INTERNET`, `MODIFY_AUDIO_SETTINGS`; with `capture`, `CAMERA` and `RECORD_AUDIO` | with `capture`, `NSCameraUsageDescription` and `NSMicrophoneUsageDescription` |
 
 `platform/device`, `platform/audio`, `platform/splash`, `platform/imageedit`,
 `platform/widget`, `platform/js`, `platform/secure`, `platform/preview` and
@@ -143,6 +144,7 @@ UserNotifications, AuthenticationServices), except where a Mac differs:
 | `platform/splash` | A Mac app has no launch screen: `hold` and `hide` do nothing |
 | `platform/analytics` | Firebase, as on iOS, with the same `GoogleService-Info.plist` (an Apple app of the app's ID) |
 | `onShare`, shortcuts | iOS and Android only: a Mac app isn't offered in other apps' share menus, and `asuka.toml`'s `shortcuts` aren't added |
+| `platform/webrtc` | Google's WebRTC, as on iOS: calls, video and data channels; no audio session, so `audioRoutes()` is empty and the system routes sound. A sandboxed build is given the network's client and server entitlements (ICE's checks come both ways) |
 
 ## On Windows
 
@@ -196,6 +198,7 @@ device without it:
 | `platform/splash` | A Windows app has no launch screen: `hold` and `hide` do nothing |
 | `platform/analytics` | GA4's Measurement Protocol, to `asuka.toml`'s web stream with its API secret: batched off the main thread, the client ID and what isn't sent yet kept in the app's data directory ([Analytics](#analytics-platformanalytics)) |
 | `onShare`, shortcuts | iOS and Android only |
+| `platform/webrtc` | Data channels only, through libdatachannel: `datachannel.dll` beside the app or on `PATH` (without it, a Peer's `error` says so). `capture` and `addTrack` throw `unsupported`, media the other side offers is declined, `createOffer(iceRestart: true)` throws, and `stats()` gives only the candidates' kinds |
 
 ## On Linux
 
@@ -254,6 +257,7 @@ names what's missing.
 | `platform/analytics` | GA4's Measurement Protocol, as on Windows |
 | `device.haptic` | A desktop has no haptics: it does nothing |
 | `onShare`, shortcuts | iOS and Android only |
+| `platform/webrtc` | Data channels only, through the distribution's libdatachannel (Fedora's and Arch's: an `.rpm` depends on it; Debian and Ubuntu have none, and a Flatpak builds it). `capture` and `addTrack` throw `unsupported`, media the other side offers is declined, `createOffer(iceRestart: true)` throws, and `stats()` gives only the candidates' kinds |
 
 ## In a browser
 
@@ -298,6 +302,7 @@ and its service worker for notifications and Web Push.
 | `platform/analytics` | gtag.js, loaded from Google, for `asuka.toml`'s web stream; collection off is gtag's own switch, kept in `localStorage` |
 | `platform/splash` | `hold` and `hide` do nothing |
 | `onShare`, shortcuts | iOS and Android only |
+| `platform/webrtc` | The browser's `RTCPeerConnection`, `getUserMedia` and a `<video>` per `VideoView`; the other side's sound plays through an audio element (the autoplay rules apply: join from a tap). The browser routes sound: `audioRoutes()` is empty |
 
 ## On Apple Watch
 
@@ -3211,6 +3216,176 @@ component Memo {
 foreground service whose notification says `title`, with a button to
 stop. AVAudioRecorder on iOS and the Mac, `MediaRecorder` on Android and
 in a browser, Media Foundation on Windows, GStreamer on Linux.
+
+## Calls and peer-to-peer data: platform/webrtc
+
+`platform/webrtc` makes voice and video calls and peer-to-peer data
+channels with WebRTC, in the model a browser's `RTCPeerConnection` has:
+each side makes a `webrtc.Peer`, adds its tracks, and the two exchange
+an offer, an answer and their ICE candidates through a signaling
+server of the app's own (a WebSocket, an HTTP API: anything that
+carries text between them). `Description.json()` and
+`Candidate.json()` write what a browser's `JSON.stringify` writes, and
+`webrtc.parseDescription` and `webrtc.parseCandidate` read it back, so
+an app talks to web clients as easily as to its own.
+
+```asuka check
+import platform/webrtc
+import std/json
+import std/websocket
+
+screen Call(room: string) {
+  let peer = webrtc.Peer(webrtc.Config(iceServers: [
+    webrtc.IceServer(urls: ["stun:stun.l.google.com:19302"]),
+    webrtc.IceServer(urls: ["turn:turn.example.com:3478"], username: "user", credential: "secret"),
+  ]))
+  state socket: websocket.WebSocket? = none
+  state media: webrtc.Media? = none
+  state muted = false
+
+  title: room
+
+  task {
+    let m = try await webrtc.capture(video: webrtc.Video(facing: .front))
+    media = m
+    for t in m.tracks() { try peer.addTrack(t) }
+    let ws = try await websocket.connect("wss://signal.example.com/rooms/{room}")
+    socket = ws
+    for await message in ws.messages {
+      if let text = match message { .text(t) => t, .binary(_) => none } {
+        let kind = (try json.parse(text)).get("type")?.asString() ?? ""
+        if kind == "joined" {          // the other side came: call it
+          let offer = try await peer.createOffer()
+          try await peer.setLocalDescription(offer)
+          try await ws.send(offer.json())
+        } else if kind == "offer" {
+          try await peer.setRemoteDescription(try webrtc.parseDescription(text))
+          let answer = try await peer.createAnswer()
+          try await peer.setLocalDescription(answer)
+          try await ws.send(answer.json())
+        } else if kind == "answer" {
+          try await peer.setRemoteDescription(try webrtc.parseDescription(text))
+        } else {
+          try await peer.addCandidate(try webrtc.parseCandidate(text))
+        }
+      }
+    }
+  }
+
+  // This side's candidates, sent as ICE finds them.
+  task {
+    for await c in peer.candidates() {
+      if let ws = socket { try? await ws.send(c.json()) }
+    }
+  }
+
+  Column {
+    grow: 1
+    if let v = peer.remoteTracks.find(t => t.kind == .video) {
+      webrtc.VideoView(v) { grow: 1 }
+    }
+    Text("{peer.connection}")
+    Button(if muted { "Unmute" } else { "Mute" }) {
+      on press {
+        muted = !muted
+        media?.audio?.setEnabled(!muted)
+      }
+    }
+  }
+}
+```
+
+- **A Peer** is a store: it connects as it's made and closes when its
+  owner goes (the call's screen) or at `close()`. Its `connection`,
+  `ice`, `signaling` and `gathering` states and its `remoteTracks` are
+  state, which views follow. `createOffer`, `createAnswer`,
+  `setLocalDescription`, `setRemoteDescription` and `addCandidate` are
+  RTCPeerConnection's; `createOffer(iceRestart: true)` brings a failed
+  connection back. `candidates()` gives this side's candidates as ICE
+  finds them (trickle ICE), those found before it was read first.
+- **ICE servers**: STUN finds a device's public address, TURN relays
+  what can't go directly (with its `username` and `credential`);
+  `policy: .relay` uses only the relay, so neither side learns the
+  other's address. With none, the peers reach each other on one network.
+- **Media**: `webrtc.capture(audio:, video:)` starts the microphone and
+  the camera, asking for them the first time: `Video` says the camera
+  (`facing`), its `width`, `height` and `frameRate`, the camera giving
+  the nearest it has; `Audio`'s echo cancellation, noise suppression
+  and gain control are on, as a call needs. `video: none` makes a voice
+  call. It throws `WebRTCError.notAllowed` when the user said no, and
+  `.noDevice` when there's no camera or microphone. A track's
+  `setEnabled(false)` mutes it (silence, black frames), `switchCamera()`
+  turns a video track to the other camera with no new negotiation, and
+  `stop()` lets the device go (`media.stop()`: all of them).
+- **VideoView(track)** shows a video track, this side's or the other's,
+  filling its box (`fit: .contain` shows all of it, with bars), `mirror`
+  for a front camera's own preview; `on resize(size)` says the video's
+  size as it comes. The other side's sound plays by itself.
+- **Data channels**: `peer.channel("chat")` opens one (made before the
+  offer, it's in it), which the other side's `peer.channels()` gives.
+  `ChannelOptions` makes it unordered (`ordered: false`), partly
+  reliable (`maxRetransmits`, `maxPacketLifeTime`), or agreed by both
+  sides with an `id` instead of announced. A `Channel` is a store too:
+  its `state` (`.open` once messages go), `send(text)`, `sendBytes`,
+  `messages()` (`.text` and `.binary`), `bufferedAmount()` and
+  `close()`.
+- **Stats**: `await peer.stats()`: bytes and packets sent and received,
+  packets lost, the round trip, the bitrate it can send at, the kind of
+  candidate in use on each side (`host`, `srflx`, `relay`), and the
+  received video's size and frame rate.
+- **Where the sound goes**, on a phone: `webrtc.audioRoutes()` (the
+  earpiece, the speaker, a headset, Bluetooth), `audioRoute()` and
+  `setAudioRoute(.speaker)`. A call that captured video plays on the
+  speaker, a voice call in the earpiece, until the app says otherwise.
+  Elsewhere the system routes sound and there are no routes.
+
+The app's tests fake it: `webrtc.fake()` connects the app's peers to
+each other in the test, with no network. A Peer whose offer another
+sets as its remote description, and which sets that one's answer,
+connects to it; tracks one adds are the other's `remoteTracks`, and
+channels carry messages between them. The fake keeps what `capture` was
+asked (`captures`), what was muted and stopped, and the audio route;
+`allowed = false` and `camera = false` make `capture` throw, and
+`fail(peer)` fails a connection.
+
+```asuka check
+import platform/webrtc
+
+test "two peers connect and chat" {
+  webrtc.fake()
+  let a = webrtc.Peer()
+  let b = webrtc.Peer()
+  let chat = try a.channel("chat")
+  let offer = try await a.createOffer()
+  try await a.setLocalDescription(offer)
+  try await b.setRemoteDescription(offer)
+  let answer = try await b.createAnswer()
+  try await b.setLocalDescription(answer)
+  try await a.setRemoteDescription(answer)
+  expect(a.connection == .connected && chat.state == .open)
+  for await theirs in b.channels() {
+    try chat.send("hello")
+    for await m in theirs.messages() {
+      expect(m == webrtc.Message.text("hello"))
+      break
+    }
+    break
+  }
+}
+```
+
+Google's WebRTC on iOS, the Mac and Android (the WebRTC framework, and
+Stream's build of it for Android); the browser's own on the web. On
+Windows and Linux it's data channels only, through libdatachannel,
+which the app opens as it runs: `capture` and `addTrack` throw an
+`unsupported` error there, and media the other side offers is declined.
+On Windows `datachannel.dll` goes beside the app (or on `PATH`); on
+Linux it's the distribution's `libdatachannel` (Fedora's and Arch's: an
+`.rpm` of the app depends on it, Debian and Ubuntu have none), and a
+Flatpak builds it in. Without it, a Peer's `error` says what to install.
+The iOS simulator has no camera: it sends a moving test pattern, as
+`Video(pattern: true)` does anywhere. [`examples/call`](../examples/call)
+is a whole call, with its signaling server.
 
 ## Speech to text: platform/transcribe
 

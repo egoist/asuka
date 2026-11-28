@@ -1,0 +1,47 @@
+name = "platform/webrtc"
+version = "0.1.0"
+description = "Calls and peer-to-peer data with WebRTC: voice, video and data channels"
+
+# Every connection: the network, and (on Android) the call's audio mode
+# and its routes (the speaker, the earpiece, a headset, Bluetooth's SCO
+# before Android 12). A sandboxed Mac app takes incoming connections too
+# (macOS.entitlements): ICE's checks come both ways.
+[android]
+permissions = ["android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE", "android.permission.MODIFY_AUDIO_SETTINGS", "android.permission.BLUETOOTH:30"]
+
+# The camera and the microphone: only an app that captures them.
+[uses.capture.ios]
+usage = { NSCameraUsageDescription = "The camera shows you in a video call.", NSMicrophoneUsageDescription = "The microphone carries your voice in a call." }
+
+[uses.capture.android]
+permissions = ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"]
+
+# Windows and Linux open libdatachannel (data channels only: no video or
+# sound there) as the app runs. On Windows it's datachannel.dll beside the
+# app or on PATH. On Linux it's Fedora's and Arch's libdatachannel
+# (libdatachannel.so.0.24), which an .rpm of the app depends on; Debian
+# and Ubuntu have none. GNOME's Flatpak runtime hasn't it: a Flatpak
+# builds it, without media or WebSockets (its bundled libjuice, usrsctp
+# and plog, the runtime's OpenSSL).
+[linux]
+rpm = ["libdatachannel"]
+flatpakModules = ['''
+name: libdatachannel
+buildsystem: cmake-ninja
+config-opts:
+  - -DCMAKE_BUILD_TYPE=Release
+  - -DCMAKE_INSTALL_LIBDIR=/app/lib
+  - -DNO_MEDIA=ON
+  - -DNO_WEBSOCKET=ON
+  - -DNO_EXAMPLES=ON
+  - -DNO_TESTS=ON
+cleanup:
+  - /include
+  - /lib/cmake
+  - /lib/pkgconfig
+sources:
+  - type: git
+    url: https://github.com/paullouisageneau/libdatachannel.git
+    tag: v0.24.6
+    commit: 6b1e2e620f1e37f0eafeee702eaea0043cb305fd
+''']

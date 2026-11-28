@@ -38,7 +38,7 @@ func TestStdSwift(t *testing.T) {
 		name := filepath.Base(pkg)
 		t.Run(name, func(t *testing.T) {
 			manifest, _ := os.ReadFile(ps)
-			if strings.Count(string(manifest), ".package(") > 1 {
+			if strings.Count(string(manifest), ".package(") > 1 || strings.Contains(string(manifest), ".binaryTarget(") {
 				t.Skip("depends on more than Asuka: SwiftPM resolves it")
 			}
 			p, err := nativegen.LoadAsuka(pkg)

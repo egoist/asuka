@@ -1,6 +1,6 @@
 # デバイスとサービス
 
-Asuka のパッケージを使うと、ビューの外にあるデバイスの機能も扱えます。カメラ、バーコードや QR コード、画像に写っているものの認識、写真とファイル、プレビュー、印刷と PDF、メールとメッセージの作成画面、位置情報、通知とプッシュ通知、サウンド、再生中の情報（Now Playing）と録音、ネットワークの状態、写真やファイルのライブラリへの保存、バックグラウンドでの処理、ほかのアプリからの共有、JavaScript、サインインと生体認証、画面、地図、ストアのサービス、広告、クラッシュレポート、アナリティクスです。このページでは、パッケージごとに何ができるか、その API、必要になる権限、プラットフォームごとの動作を説明します。
+Asuka のパッケージを使うと、ビューの外にあるデバイスの機能も扱えます。カメラ、バーコードや QR コード、画像に写っているものの認識、写真とファイル、プレビュー、印刷と PDF、メールとメッセージの作成画面、位置情報、通知とプッシュ通知、サウンド、再生中の情報（Now Playing）と録音、通話、ネットワークの状態、写真やファイルのライブラリへの保存、バックグラウンドでの処理、ほかのアプリからの共有、JavaScript、サインインと生体認証、画面、地図、ストアのサービス、広告、クラッシュレポート、アナリティクスです。このページでは、パッケージごとに何ができるか、その API、必要になる権限、プラットフォームごとの動作を説明します。
 
 どのパッケージも、すべてのプラットフォームで同じ API を持ちます。iOS と Android ではほぼすべての機能が使えます。macOS、Windows、Linux では、Asuka が各パッケージをデスクトップ自身のサービスで実装し、ブラウザーでは Web の API で実装します。プラットフォームに対応する機能がない場合、パッケージはその機能を持たないスマートフォンと同じように振る舞います。つまり、パッケージの `notAvailable` エラーになるか、足りないものを示すエラーになるか、何もしない呼び出しになります。各パッケージの節では、何ができるか、各プラットフォームが何を使ってそれを実現しているかを説明します。さらに、各デスクトップとブラウザーにはそれぞれ専用の節があり（[Mac の場合](#mac-の場合)、[Windows の場合](#windows-の場合)、[Linux の場合](#linux-の場合)、[ブラウザーの場合](#ブラウザーの場合)）、そこで必要な設定と、iOS や Android との違いを表にまとめています。Apple Watch にも専用の節があります（[Apple Watch の場合](#apple-watch-の場合)）。
 
@@ -45,6 +45,7 @@ Asuka のパッケージを使うと、ビューの外にあるデバイスの�
 | `platform/compose` | `mailto:` と `smsto:` を扱うアプリの可視性（`<queries>`） | `LSApplicationQueriesSchemes` に `mailto` |
 | `platform/nfc` | `NFC`。`uses-feature android.hardware.nfc`（必須ではない）。asuka.toml の `nfc` のフィルター（[NFC タグ](nfc.md)） | `NFCReaderUsageDescription`。Core NFC のエンタイトルメント。asuka.toml の `nfc` の AID と FeliCa のシステムコード |
 | `platform/bluetooth` | `BLUETOOTH_SCAN`（`neverForLocation`）、`BLUETOOTH_CONNECT`、`BLUETOOTH_ADVERTISE`。`backgroundScan` のためのバックグラウンドスキャンのレシーバー（[Bluetooth](bluetooth.md#ビルドが加えるもの) を参照） | `NSBluetoothAlwaysUsageDescription`。`bluetooth.background` のための `bluetooth-central`、`bluetooth-peripheral`（`backgroundScan` には `bluetooth-central`）と、iOS が復元するマネージャーを作る起動クラス |
+| `platform/webrtc` | `INTERNET`、`MODIFY_AUDIO_SETTINGS`。`capture` を使うときは `CAMERA` と `RECORD_AUDIO` も | `capture` を使うときは `NSCameraUsageDescription` と `NSMicrophoneUsageDescription` |
 
 `platform/device`、`platform/audio`、`platform/splash`、`platform/imageedit`、`platform/widget`、`platform/js`、`platform/secure`、`platform/preview`、`platform/print` は何も必要としません。
 
@@ -94,6 +95,7 @@ macOS でも各パッケージは iOS と同じフレームワーク（AVFoundat
 | `platform/splash` | Mac アプリには起動画面がないので、`hold` と `hide` は何もしません |
 | `platform/analytics` | iOS と同じく Firebase を、同じ `GoogleService-Info.plist`（アプリの ID と同じ Apple アプリのもの）で使います |
 | `onShare`、ショートカット | iOS と Android だけです。Mac アプリはほかのアプリの共有メニューに表示されず、`asuka.toml` の `shortcuts` も追加されません |
+| `platform/webrtc` | iOS と同じく Google の WebRTC を使います。通話、ビデオ、データチャネルが使えます。オーディオセッションはないので `audioRoutes()` は空で、音の出力先はシステムが決めます。サンドボックスのビルドには、ネットワークのクライアントとサーバーの両方のエンタイトルメントが付きます（ICE の疎通確認は双方向に行われるため） |
 
 ## Windows の場合
 
@@ -139,6 +141,7 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `platform/splash` | Windows アプリには起動画面がないので、`hold` と `hide` は何もしません |
 | `platform/analytics` | GA4 の Measurement Protocol で、`asuka.toml` の Web ストリームに API シークレットを使って送ります。メインスレッドの外でまとめて送り、クライアント ID と未送信のイベントはアプリのデータディレクトリに保存します（[アナリティクス](#アナリティクスplatformanalytics)） |
 | `onShare`、ショートカット | iOS と Android だけです |
+| `platform/webrtc` | データチャネルだけで、libdatachannel を使います。`datachannel.dll` をアプリと同じ場所か `PATH` の通った場所に置きます（ないときは Peer の `error` がそう伝えます）。`capture` と `addTrack` は `unsupported` を投げ、相手が提示したメディアは断ります。`createOffer(iceRestart: true)` はエラーを投げ、`stats()` は候補の種類だけを返します |
 
 ## Linux の場合
 
@@ -178,6 +181,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/analytics` | Windows と同じく GA4 の Measurement Protocol を使います |
 | `device.haptic` | デスクトップには触覚フィードバックがないので、何もしません |
 | `onShare`、ショートカット | iOS と Android だけです |
+| `platform/webrtc` | データチャネルだけで、ディストリビューションの libdatachannel を使います（Fedora と Arch にあり、`.rpm` はそれに依存します。Debian と Ubuntu にはなく、Flatpak では一緒にビルドされます）。`capture` と `addTrack` は `unsupported` を投げ、相手が提示したメディアは断ります。`createOffer(iceRestart: true)` はエラーを投げ、`stats()` は候補の種類だけを返します |
 
 ## ブラウザーの場合
 
@@ -217,6 +221,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/analytics` | Google から読み込む gtag.js で、`asuka.toml` の Web ストリームに送ります。収集のオフは gtag 自身のスイッチで、`localStorage` に保存されます |
 | `platform/splash` | `hold` と `hide` は何もしません |
 | `onShare`、ショートカット | iOS と Android だけです |
+| `platform/webrtc` | ブラウザーの `RTCPeerConnection` と `getUserMedia` を使い、`VideoView` ごとに `<video>` を使います。相手の音声は audio 要素で再生します（自動再生のルールが適用されるので、タップから通話に参加してください）。音の出力先はブラウザーが決めるので、`audioRoutes()` は空です |
 
 ## Apple Watch の場合
 
@@ -2142,6 +2147,114 @@ component Memo {
 ```
 
 `background: true` にすると、アプリが見えていないときも録音を続けます。iOS ではアプリの asuka.toml の `ios.backgroundModes` に `"audio"` が必要です。Android ではフォアグラウンドサービスになり、その通知に `title` と停止ボタンが表示されます。iOS と Mac では AVAudioRecorder、Android とブラウザーでは `MediaRecorder`、Windows では Media Foundation、Linux では GStreamer を使います。
+
+## 通話とピアツーピアのデータ：platform/webrtc
+
+`platform/webrtc` は WebRTC で音声通話とビデオ通話、それにピアツーピアのデータチャネルを扱います。モデルはブラウザーの `RTCPeerConnection` と同じです。両側がそれぞれ `webrtc.Peer` を作ってトラックを加え、アプリ自身のシグナリングサーバー（WebSocket でも HTTP の API でも、両者のあいだでテキストを運べれば何でもかまいません）を通して、オファー、アンサー、それぞれの ICE 候補をやりとりします。`Description.json()` と `Candidate.json()` はブラウザーの `JSON.stringify` と同じものを書き出し、`webrtc.parseDescription` と `webrtc.parseCandidate` がそれを読み戻します。そのため、Web のクライアントとも自分のアプリ同士と同じように通話できます。
+
+```asuka check
+import platform/webrtc
+import std/json
+import std/websocket
+
+screen Call(room: string) {
+  let peer = webrtc.Peer(webrtc.Config(iceServers: [
+    webrtc.IceServer(urls: ["stun:stun.l.google.com:19302"]),
+    webrtc.IceServer(urls: ["turn:turn.example.com:3478"], username: "user", credential: "secret"),
+  ]))
+  state socket: websocket.WebSocket? = none
+  state media: webrtc.Media? = none
+  state muted = false
+
+  title: room
+
+  task {
+    let m = try await webrtc.capture(video: webrtc.Video(facing: .front))
+    media = m
+    for t in m.tracks() { try peer.addTrack(t) }
+    let ws = try await websocket.connect("wss://signal.example.com/rooms/{room}")
+    socket = ws
+    for await message in ws.messages {
+      if let text = match message { .text(t) => t, .binary(_) => none } {
+        let kind = (try json.parse(text)).get("type")?.asString() ?? ""
+        if kind == "joined" {          // 相手が来たので発信する
+          let offer = try await peer.createOffer()
+          try await peer.setLocalDescription(offer)
+          try await ws.send(offer.json())
+        } else if kind == "offer" {
+          try await peer.setRemoteDescription(try webrtc.parseDescription(text))
+          let answer = try await peer.createAnswer()
+          try await peer.setLocalDescription(answer)
+          try await ws.send(answer.json())
+        } else if kind == "answer" {
+          try await peer.setRemoteDescription(try webrtc.parseDescription(text))
+        } else {
+          try await peer.addCandidate(try webrtc.parseCandidate(text))
+        }
+      }
+    }
+  }
+
+  // こちら側の候補を、ICE が見つけるたびに送る。
+  task {
+    for await c in peer.candidates() {
+      if let ws = socket { try? await ws.send(c.json()) }
+    }
+  }
+
+  Column {
+    grow: 1
+    if let v = peer.remoteTracks.find(t => t.kind == .video) {
+      webrtc.VideoView(v) { grow: 1 }
+    }
+    Text("{peer.connection}")
+    Button(if muted { "Unmute" } else { "Mute" }) {
+      on press {
+        muted = !muted
+        media?.audio?.setEnabled(!muted)
+      }
+    }
+  }
+}
+```
+
+- **Peer** はストアです。作られると接続を始め、オーナー（通話の画面）がなくなるか `close()` を呼ぶと閉じます。`connection`、`ice`、`signaling`、`gathering` の状態と `remoteTracks` はステートなので、ビューはその変化に追従します。`createOffer`、`createAnswer`、`setLocalDescription`、`setRemoteDescription`、`addCandidate` は RTCPeerConnection のものと同じです。`createOffer(iceRestart: true)` で失敗した接続を復帰させられます。`candidates()` は、ICE がこちら側の候補を見つけるたびにそれを渡します（trickle ICE）。読み始める前に見つかったものが先に来ます。
+- **ICE サーバー**：STUN は端末のグローバルアドレスを調べ、TURN は直接届かない通信を中継します（`username` と `credential` が必要です）。`policy: .relay` にすると中継だけを使うので、どちらの側も相手のアドレスを知りません。何も指定しなければ、同じネットワークにいる相手とだけつながります。
+- **メディア**：`webrtc.capture(audio:, video:)` はマイクとカメラを起動し、初回に許可を求めます。`Video` ではカメラ（`facing`）、`width`、`height`、`frameRate` を指定し、カメラはそれに最も近いものを使います。`Audio` のエコーキャンセル、ノイズ抑制、自動ゲイン調整は、通話に必要なとおり最初から有効です。`video: none` にすると音声通話になります。ユーザーが拒否したら `WebRTCError.notAllowed`、カメラやマイクがなければ `.noDevice` を投げます。トラックの `setEnabled(false)` はミュート（無音や黒いフレームを送ります）、`switchCamera()` はビデオトラックをもう一方のカメラに切り替え（再ネゴシエーションは不要です）、`stop()` はデバイスを解放します（`media.stop()` ですべて解放します）。
+- **VideoView(track)** は、こちら側か相手側のビデオトラックを、枠いっぱいに表示します（`fit: .contain` なら黒帯を付けて全体を表示します）。`mirror` は前面カメラの自分のプレビュー用です。`on resize(size)` はビデオが届いたときにそのサイズを知らせます。相手の音声は自動で再生されます。
+- **データチャネル**：`peer.channel("chat")` でチャネルを開きます（オファーの前に作れば、オファーに含まれます）。相手側では `peer.channels()` がそれを渡します。`ChannelOptions` を使うと、順序を保証しない（`ordered: false`）、部分的に信頼できる（`maxRetransmits`、`maxPacketLifeTime`）、あるいは告知せずに両側が同じ `id` で取り決めたチャネルにできます。`Channel` もストアで、`state`（`.open` になるとメッセージが流れます）、`send(text)`、`sendBytes`、`messages()`（`.text` と `.binary`）、`bufferedAmount()`、`close()` があります。
+- **統計**：`await peer.stats()` で、送受信したバイト数とパケット数、失われたパケット数、往復時間、送信に使えるビットレート、それぞれの側で使っている候補の種類（`host`、`srflx`、`relay`）、受信したビデオのサイズとフレームレートがわかります。
+- **音の出力先**（スマートフォン）：`webrtc.audioRoutes()`（受話口、スピーカー、ヘッドセット、Bluetooth）、`audioRoute()`、`setAudioRoute(.speaker)` を使います。ビデオを取り込んだ通話はスピーカーから、音声通話は受話口から鳴ります。アプリが変えるまではそのままです。ほかのプラットフォームでは出力先はシステムが決めるので、選べる出力先はありません。
+
+アプリのテストではフェイクを使えます。`webrtc.fake()` はテストの中の Peer 同士を、ネットワークを使わずにつなぎます。ある Peer のオファーを別の Peer がリモートの記述として設定し、その Peer のアンサーを最初の Peer が設定すれば、両者はつながります。一方が加えたトラックはもう一方の `remoteTracks` になり、データチャネルは両者のあいだでメッセージを運びます。フェイクは `capture` が求められた内容（`captures`）、ミュートや停止されたトラック、音の出力先を記録します。`allowed = false` や `camera = false` にすると `capture` がエラーを投げ、`fail(peer)` は接続を失敗させます。
+
+```asuka check
+import platform/webrtc
+
+test "two peers connect and chat" {
+  webrtc.fake()
+  let a = webrtc.Peer()
+  let b = webrtc.Peer()
+  let chat = try a.channel("chat")
+  let offer = try await a.createOffer()
+  try await a.setLocalDescription(offer)
+  try await b.setRemoteDescription(offer)
+  let answer = try await b.createAnswer()
+  try await b.setLocalDescription(answer)
+  try await a.setRemoteDescription(answer)
+  expect(a.connection == .connected && chat.state == .open)
+  for await theirs in b.channels() {
+    try chat.send("hello")
+    for await m in theirs.messages() {
+      expect(m == webrtc.Message.text("hello"))
+      break
+    }
+    break
+  }
+}
+```
+
+iOS、Mac、Android では Google の WebRTC（WebRTC フレームワークと、Stream が Android 向けにビルドしたもの）を使い、Web ではブラウザー自身の WebRTC を使います。Windows と Linux ではデータチャネルだけで、アプリが実行時に読み込む libdatachannel を使います。そこでは `capture` と `addTrack` が `unsupported` エラーを投げ、相手が提示したメディアは断ります。Windows では `datachannel.dll` をアプリと同じ場所（または `PATH` の通った場所）に置きます。Linux ではディストリビューションの `libdatachannel` を使います（Fedora と Arch にあり、アプリの `.rpm` はそれに依存します。Debian と Ubuntu にはありません）。Flatpak ではそれも一緒にビルドされます。見つからないときは、Peer の `error` が何をインストールすればよいかを伝えます。iOS シミュレーターにはカメラがないので、動くテストパターンを送ります。どのプラットフォームでも `Video(pattern: true)` で同じことができます。[`examples/call`](../../examples/call) はシグナリングサーバーも含めた、通話の完全な例です。
 
 ## 音声の文字起こし：platform/transcribe
 

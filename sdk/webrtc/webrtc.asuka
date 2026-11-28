@@ -1,0 +1,1358 @@
+// Package platform/webrtc makes calls and peer-to-peer connections with
+// WebRTC: voice and video between two devices, and data channels that
+// carry the app's own messages, as RTCPeerConnection does in a browser.
+// Google's WebRTC on iOS, macOS and Android, the browser's own on the
+// web; on Windows and Linux, data channels only (libdatachannel, where
+// it's installed). The app brings the signaling: its own server, over
+// std/websocket or std/http, carries the descriptions and candidates
+// (as JSON) between the two peers.
+//
+//   let media = try await webrtc.capture()          // the microphone and the front camera
+//   let peer = webrtc.Peer(webrtc.Config(iceServers: [webrtc.IceServer(urls: ["stun:stun.l.google.com:19302"])]))
+//   for t in media.tracks() { try peer.addTrack(t) }
+//   let offer = try await peer.createOffer()
+//   try await peer.setLocalDescription(offer)
+//   try await ws.send(offer.json())                  // the other peer answers through the server
+//   for await c in peer.candidates() { try await ws.send(c.json()) }
+//
+//   if let v = peer.remoteTracks.find(t => t.kind == .video) {
+//     webrtc.VideoView(v) { grow: 1 }
+//   }
+//
+// An app that imports it is given the camera's and the microphone's
+// purpose strings (asuka.toml's ios.usage says better). Tests fake it:
+// webrtc.fake() connects the app's peers to each other in the test, and
+// keeps what was captured, muted and routed.
+
+import std/json
+
+// ---------------------------------------------------------------------
+// Configuration
+
+/// A STUN or TURN server, which ICE asks for a way between the peers:
+/// STUN finds a device's public address, TURN relays what can't go
+/// directly.
+pub struct IceServer {
+  /// Its URLs: "stun:stun.l.google.com:19302",
+  /// "turn:turn.example.com:3478?transport=udp", "turns:turn.example.com:443".
+  urls: [string]
+  /// A TURN server's user name.
+  username: string = ""
+  /// A TURN server's password (its credential).
+  credential: string = ""
+}
+
+/// Which of the ways ICE finds a connection may use.
+pub enum IcePolicy {
+  /// Any: the devices' own addresses, STUN's and TURN's.
+  all
+  /// Only a TURN server's relay: neither peer learns the other's address.
+  relay
+}
+
+/// How a Peer connects.
+pub struct Config {
+  /// The STUN and TURN servers; none: only the devices' own addresses,
+  /// which reach each other on one network.
+  iceServers: [IceServer] = []
+  policy: IcePolicy = .all
+}
+
+// ---------------------------------------------------------------------
+// Signaling: descriptions and candidates
+
+/// What a session description is.
+pub enum SdpKind {
+  offer
+  /// An answer that may change still.
+  pranswer
+  answer
+  /// Takes back the last offer this side set.
+  rollback
+}
+
+/// A session description: what a peer offers or answers (its media, its
+/// channels, its keys), which the signaling carries to the other peer.
+pub struct Description {
+  kind: SdpKind
+  /// The SDP itself.
+  sdp: string
+
+  /// As JSON, as a browser's RTCSessionDescription is:
+  /// {"type": "offer", "sdp": "v=0…"}.
+  fn json() -> string = descriptionJSON(self)
+}
+
+/// A way to reach this peer that ICE found (an address and a port, its
+/// own, STUN's or a relay's), which the signaling carries to the other
+/// peer as it's found.
+pub struct Candidate {
+  /// Its line of SDP: "candidate:842163049 1 udp 1677729535 …".
+  candidate: string
+  /// The media section it's for: its mid ("0")…
+  sdpMid: string = ""
+  /// …and its index.
+  sdpMLineIndex: int = 0
+
+  /// As JSON, as a browser's RTCIceCandidate is: {"candidate": "…",
+  /// "sdpMid": "0", "sdpMLineIndex": 0}.
+  fn json() -> string = candidateJSON(self)
+}
+
+/// What reading a description or a candidate, capturing, connecting and
+/// sending fail with.
+pub enum WebRTCError: Error {
+  /// webrtc: not allowed to use the camera or the microphone
+  notAllowed
+  /// webrtc: there's no camera or microphone
+  noDevice
+  /// webrtc: not available here
+  notAvailable
+  /// webrtc: the connection is closed
+  closed
+  /// webrtc: the data channel isn't open
+  notOpen
+  /// webrtc: not a description or a candidate
+  invalid
+
+  /// What it says: its doc's text.
+  fn message() -> string = match self {
+    .notAllowed => "webrtc: not allowed to use the camera or the microphone"
+    .noDevice => "webrtc: there's no camera or microphone"
+    .notAvailable => "webrtc: not available here"
+    .closed => "webrtc: the connection is closed"
+    .notOpen => "webrtc: the data channel isn't open"
+    .invalid => "webrtc: not a description or a candidate"
+  }
+}
+
+fn descriptionJSON(d: Description) -> string = json.encode(["type": "{d.kind}", "sdp": d.sdp])
+
+fn candidateJSON(c: Candidate) -> string {
+  let fields: [string: json.Value] = ["candidate": c.candidate, "sdpMid": c.sdpMid, "sdpMLineIndex": c.sdpMLineIndex]
+  return json.encode(fields)
+}
+
+fn kindOf(s: string) -> SdpKind? = match s {
+  "offer" => .offer
+  "pranswer" => .pranswer
+  "answer" => .answer
+  "rollback" => .rollback
+  _ => none
+}
+
+/// Reads a description from its JSON, as Description.json and a
+/// browser's JSON.stringify(pc.localDescription) write it; anything else
+/// throws invalid.
+pub fn parseDescription(text: string) throws -> Description {
+  let v = (try? json.parse(text)) ?? json.Value.null
+  if let t = v.get("type")?.asString(), let k = kindOf(t) {
+    let sdp = v.get("sdp")?.asString() ?? ""
+    if k == .rollback || !sdp.isEmpty() {
+      return Description(kind: k, sdp: sdp)
+    }
+  }
+  throw WebRTCError.invalid
+}
+
+/// Reads a candidate from its JSON, as Candidate.json and a browser's
+/// JSON.stringify(event.candidate) write it; anything else throws
+/// invalid.
+pub fn parseCandidate(text: string) throws -> Candidate {
+  let v = (try? json.parse(text)) ?? json.Value.null
+  if let c = v.get("candidate")?.asString() {
+    return Candidate(candidate: c, sdpMid: v.get("sdpMid")?.asString() ?? "", sdpMLineIndex: v.get("sdpMLineIndex")?.asInt() ?? 0)
+  }
+  throw WebRTCError.invalid
+}
+
+// ---------------------------------------------------------------------
+// Where a connection is
+
+/// Where a Peer's connection is, as a whole.
+pub enum ConnectionState {
+  new
+  connecting
+  connected
+  /// Lost for now: ICE looks for a way back.
+  disconnected
+  /// Lost: an ICE restart (createOffer(iceRestart: true)) may bring it back.
+  failed
+  closed
+}
+
+/// Where ICE is, finding a way between the peers.
+pub enum IceState {
+  new
+  checking
+  connected
+  completed
+  disconnected
+  failed
+  closed
+}
+
+/// Where the offer and answer are.
+pub enum SignalingState {
+  /// No offer pending: what's set is agreed.
+  stable
+  haveLocalOffer
+  haveRemoteOffer
+  haveLocalPranswer
+  haveRemotePranswer
+  closed
+}
+
+/// Where gathering this peer's candidates is.
+pub enum GatheringState {
+  new
+  gathering
+  complete
+}
+
+// ---------------------------------------------------------------------
+// Media
+
+/// What a track carries.
+pub enum TrackKind {
+  audio
+  video
+}
+
+/// Which camera.
+pub enum Facing {
+  front
+  back
+}
+
+/// The camera's video, as capture asks for it: the camera gives the
+/// nearest it has.
+pub struct Video {
+  facing: Facing = .front
+  width: int = 1280
+  height: int = 720
+  /// Frames a second.
+  frameRate: int = 30
+  /// A moving test pattern instead of the camera, for tests and a
+  /// device with no camera (an iOS simulator gives one in any case).
+  pattern: bool = false
+}
+
+/// The microphone's sound, as capture asks for it: what a call needs,
+/// all on.
+pub struct Audio {
+  /// Takes out the other peer's voice, played on the speaker.
+  echoCancellation: bool = true
+  noiseSuppression: bool = true
+  /// Evens the level out.
+  autoGainControl: bool = true
+}
+
+/// A track of sound or video: this device's (capture's), or the other
+/// peer's (Peer.remoteTracks).
+pub struct Track {
+  /// What tells it from the app's other tracks.
+  id: string = ""
+  kind: TrackKind = .audio
+  /// The other peer's.
+  remote: bool = false
+  /// The camera a local video track is from.
+  facing: Facing = .front
+
+  /// Mutes it (false) or not: a muted microphone sends silence, a muted
+  /// camera black frames, and a muted remote track isn't played or shown.
+  fn setEnabled(on: bool) { enable(self, on) }
+
+  /// Stops a local track: the device it's from (the camera, the
+  /// microphone) is let go. It sends nothing after.
+  fn stop() { stopTrack(self) }
+
+  /// Turns a local video track to the other camera: the track it gives
+  /// (the same, its facing changed). The peers it goes to see the other
+  /// camera, with no new negotiation.
+  async fn switchCamera() throws -> Track = try await switched(self)
+}
+
+/// What capture started: its tracks.
+pub struct Media {
+  audio: Track? = none
+  video: Track? = none
+
+  /// Its tracks, the audio one first: for Peer.addTrack.
+  fn tracks() -> [Track] {
+    var ts: [Track] = []
+    if let a = audio { ts.push(a) }
+    if let v = video { ts.push(v) }
+    return ts
+  }
+
+  /// Stops its tracks.
+  fn stop() {
+    for t in tracks() { t.stop() }
+  }
+}
+
+/// How VideoView fits the video in its box.
+pub enum Fit {
+  /// Fills the box, the video's edges cut off.
+  cover
+  /// The whole video, with bars where the box is wider or taller.
+  contain
+}
+
+/// A video's size, in pixels.
+pub struct VideoSize {
+  width: int
+  height: int
+}
+
+/// Shows a video track, this device's or the other peer's, filling its
+/// box (a native view: its size comes from its style).
+pub native component VideoView(track: Track) {
+  /// Shown mirrored: what a front camera's own preview usually is.
+  prop mirror: bool = false
+  prop fit: Fit = .cover
+  /// The video's size, as its first frame comes, and when it changes.
+  event resize(size: VideoSize)
+}
+
+// ---------------------------------------------------------------------
+// Where sound goes
+
+/// Where a call's sound plays, on a phone.
+pub enum AudioRoute {
+  /// The receiver, held to the ear.
+  earpiece
+  speaker
+  /// Wired headphones or a headset.
+  headset
+  bluetooth
+}
+
+// ---------------------------------------------------------------------
+// Data channels
+
+/// How a data channel delivers its messages.
+pub struct ChannelOptions {
+  /// In the order they were sent; false: as they come.
+  ordered: bool = true
+  /// Sent again at most this many times (a partly reliable channel);
+  /// none: until it arrives.
+  maxRetransmits: int? = none
+  /// Sent again for at most this long; none: until it arrives.
+  maxPacketLifeTime: Duration? = none
+  /// The app's own protocol for it, which the other peer sees.
+  protocol: string = ""
+  /// Agreed by the app on both peers, with this id (each makes it, the
+  /// same), instead of announced to the other peer.
+  id: int? = none
+}
+
+/// Where a data channel is.
+pub enum ChannelState {
+  connecting
+  open
+  closing
+  closed
+}
+
+/// A data channel's message: text, or bytes.
+pub enum Message {
+  text(string)
+  binary(bytes)
+}
+
+// ---------------------------------------------------------------------
+// Stats
+
+/// What a connection has sent and received, and how: the selected
+/// candidate pair's, and its media's.
+pub struct Stats {
+  bytesSent: int = 0
+  bytesReceived: int = 0
+  packetsSent: int = 0
+  packetsReceived: int = 0
+  /// The packets of the other peer's media that never came.
+  packetsLost: int = 0
+  /// The round trip between the peers, as ICE last measured it.
+  roundTripTime: Duration = 0s
+  /// The rate it estimates it can send at, in bits a second (0: not
+  /// known yet).
+  availableOutgoingBitrate: float = 0
+  /// What the candidates in use are: "host", "srflx" (STUN's),
+  /// "prflx" or "relay" (TURN's); "" until they're chosen.
+  localCandidate: string = ""
+  remoteCandidate: string = ""
+  /// The other peer's video, as it's received: its size and frames a
+  /// second (0 for none).
+  frameWidth: int = 0
+  frameHeight: int = 0
+  framesPerSecond: float = 0
+}
+
+// ---------------------------------------------------------------------
+// The platform's side
+
+/// What a connection reports.
+enum EventKind {
+  candidate
+  connection
+  ice
+  signaling
+  gathering
+  track
+  trackEnded
+  channel
+}
+
+/// A data channel, as it is.
+struct ChannelInfo {
+  /// The platform's handle for a channel the other peer opened
+  /// (Connection.remoteChannel's).
+  handle: int = 0
+  label: string = ""
+  ordered: bool = true
+  protocol: string = ""
+  /// Its id (-1 until it has one).
+  id: int = -1
+}
+
+/// What a connection reported: kind says which field is it.
+struct PeerEvent {
+  kind: EventKind
+  candidate: Candidate = Candidate(candidate: "")
+  connection: ConnectionState = .new
+  ice: IceState = .new
+  signaling: SignalingState = .stable
+  gathering: GatheringState = .new
+  track: Track = Track()
+  channel: ChannelInfo = ChannelInfo()
+}
+
+enum ChannelEventKind {
+  open
+  message
+  closing
+  closed
+}
+
+/// What a data channel reported.
+struct ChannelEvent {
+  kind: ChannelEventKind
+  /// A message's: binary says which of text and data.
+  binary: bool = false
+  text: string = ""
+  data: bytes = bytes([])
+}
+
+/// The platform's WebRTC: capture, tracks, connections, the audio route.
+/// @mainThread
+native interface Engine {
+  /// Starts the microphone (audio) and the camera (video), asking for
+  /// them: their tracks.
+  async fn capture(audio: Audio?, video: Video?) -> Media
+  fn setEnabled(track: string, enabled: bool)
+  fn stopTrack(track: string)
+  /// The facing it turned to.
+  async fn switchCamera(track: string) -> Facing
+  fn connect(config: Config) -> Connection
+  fn audioRoutes() -> [AudioRoute]
+  fn audioRoute() -> AudioRoute
+  fn setAudioRoute(route: AudioRoute)
+}
+
+/// An RTCPeerConnection.
+/// @mainThread
+native interface Connection {
+  /// Calls send with what happens, from what happened before it was
+  /// called on, until the task is cancelled or the connection closes.
+  async fn events(send: fn(PeerEvent))
+  fn addTrack(track: string)
+  fn removeTrack(track: string)
+  async fn createOffer(iceRestart: bool) -> Description
+  async fn createAnswer() -> Description
+  async fn setLocal(description: Description)
+  async fn setRemote(description: Description)
+  async fn addCandidate(candidate: Candidate)
+  fn createChannel(label: string, options: ChannelOptions) -> DataChannel
+  /// A channel the other peer opened, by its event's handle.
+  fn remoteChannel(handle: int) -> DataChannel
+  async fn stats() -> Stats
+  fn close()
+}
+
+/// An RTCDataChannel.
+/// @mainThread
+native interface DataChannel {
+  /// Calls send with what happens, until the task is cancelled or the
+  /// channel closes.
+  async fn events(send: fn(ChannelEvent))
+  fn info() -> ChannelInfo
+  /// connecting, open, closing or closed, now.
+  fn state() -> ChannelState
+  fn sendText(text: string)
+  fn sendBytes(data: bytes)
+  /// The bytes sent that haven't gone yet.
+  fn bufferedAmount() -> int
+  fn close()
+}
+
+let engine = try? Engine()
+
+fn platform() throws -> Engine {
+  if let e = engine {
+    return e
+  }
+  return try Engine()
+}
+
+// ---------------------------------------------------------------------
+// Capture and tracks
+
+/// Starts the microphone and the camera, asking for them the first time:
+/// their tracks, to add to a Peer and show in a VideoView. audio: none
+/// leaves the microphone off, video: none the camera. It throws
+/// notAllowed when the user said no, noDevice when there's no camera or
+/// microphone. On a phone, a call's sound plays on the speaker when it
+/// captures video, and in the earpiece when it doesn't (setAudioRoute
+/// changes it).
+pub async fn capture(audio: Audio? = Audio(), video: Video? = Video()) throws -> Media {
+  if let f = faked {
+    return try f.capture(audio, video)
+  }
+  return try await platform().capture(audio, video)
+}
+
+fn enable(t: Track, on: bool) {
+  if let f = faked {
+    f.setEnabled(t, on)
+    return
+  }
+  if let e = engine { try? e.setEnabled(t.id, on) }
+}
+
+fn stopTrack(t: Track) {
+  if let f = faked {
+    if !f.stopped.contains(t.id) { f.stopped.push(t.id) }
+    return
+  }
+  if let e = engine { try? e.stopTrack(t.id) }
+}
+
+async fn switched(t: Track) throws -> Track {
+  var s = t
+  if let f = faked {
+    s.facing = if t.facing == .front { .back } else { .front }
+    f.switches += 1
+    return s
+  }
+  s.facing = try await platform().switchCamera(t.id)
+  return s
+}
+
+/// The audio routes there are now: the earpiece and the speaker on a
+/// phone, and a headset or Bluetooth one when it's connected; none
+/// where the system routes sound itself (a computer, a browser).
+pub fn audioRoutes() -> [AudioRoute] {
+  if let f = faked {
+    return f.routes
+  }
+  if let e = engine {
+    return (try? e.audioRoutes()) ?? []
+  }
+  return []
+}
+
+/// Where a call's sound plays now.
+pub fn audioRoute() -> AudioRoute {
+  if let f = faked {
+    return f.route
+  }
+  if let e = engine {
+    return (try? e.audioRoute()) ?? .speaker
+  }
+  return .speaker
+}
+
+/// Plays a call's sound on route, one of audioRoutes' (Bluetooth's, a
+/// headset's microphone too). Nothing where there's no choice.
+pub fn setAudioRoute(route: AudioRoute) {
+  if let f = faked {
+    if f.routes.contains(route) { f.route = route }
+    return
+  }
+  if let e = engine { try? e.setAudioRoute(route) }
+}
+
+// ---------------------------------------------------------------------
+// Peers
+
+fn connected(config: Config) -> Connection? {
+  if faked.isSome() {
+    return none
+  }
+  if let e = engine {
+    return try? e.connect(config)
+  }
+  return none
+}
+
+/// A connection to another peer: an RTCPeerConnection. It's made as
+/// the Peer is, and closes when its owner goes, or at close(). What it
+/// sends and receives is the tracks added to it and its data channels;
+/// what connects it is the descriptions and candidates the app's
+/// signaling carries.
+pub store Peer(config: Config = Config()) {
+  /// Where the connection is: connected once media and channels flow.
+  pub state connection: ConnectionState = .new
+  /// Where ICE is, finding a way to the other peer.
+  pub state ice: IceState = .new
+  /// Where the offer and answer are.
+  pub state signaling: SignalingState = .stable
+  /// Where gathering this peer's candidates is.
+  pub state gathering: GatheringState = .new
+  /// The other peer's tracks, as they come (and go).
+  pub state remoteTracks: [Track] = []
+  state conn: Connection? = peek(connected(config))
+  /// Why it can't connect: no WebRTC here, or the platform's error.
+  pub state error: Error? = peek(if conn.isNone() && faked.isNone() { WebRTCError.notAvailable } else { none })
+  state fakeId = 0
+  state found: [Candidate] = []
+  state candidateReader: (fn(Candidate?))? = none
+  state opened: [Channel] = []
+  state channelReader: (fn(Channel?))? = none
+  state done = false
+
+  task {
+    if let c = conn {
+      do {
+        try await c.events(send: e => applied(e))
+      } catch e {
+        if !done { error = e }
+      }
+    }
+  }
+
+  cleanup { close() }
+
+  fn applied(e: PeerEvent) {
+    match e.kind {
+      .candidate => {
+        if let r = candidateReader {
+          r(e.candidate)
+        } else {
+          found.push(e.candidate)
+        }
+      }
+      .connection => { connection = e.connection }
+      .ice => { ice = e.ice }
+      .signaling => { signaling = e.signaling }
+      .gathering => { gathering = e.gathering }
+      .track => {
+        if !remoteTracks.any(t => t.id == e.track.id) {
+          remoteTracks.push(e.track)
+        }
+      }
+      .trackEnded => { remoteTracks = remoteTracks.filter(t => t.id != e.track.id) }
+      .channel => {
+        var ch: Channel? = none
+        if let f = faked {
+          ch = fakeChannel(f, e.channel)
+        } else if let c = conn {
+          if let d = try? c.remoteChannel(e.channel.handle) {
+            ch = nativeChannel(d, e.channel)
+          }
+        }
+        if let made = ch {
+          if let r = channelReader {
+            r(made)
+          } else {
+            opened.push(made)
+          }
+        }
+      }
+    }
+  }
+
+  fn live() throws -> Connection {
+    if done {
+      throw WebRTCError.closed
+    }
+    if let c = conn {
+      return c
+    }
+    throw WebRTCError.notAvailable
+  }
+
+  /// The fake, when there's one: the Peer is one of its peers from its
+  /// first call on.
+  fn fakeLive() throws -> FakeWebRTC? {
+    if done {
+      throw WebRTCError.closed
+    }
+    if let f = faked {
+      if fakeId == 0 {
+        fakeId = f.add(e => applied(e))
+      }
+      return f
+    }
+    return none
+  }
+
+  /// Sends track (capture's) to the other peer: it comes there as one of
+  /// its remoteTracks. Added before the offer, it's in it; after, the
+  /// connection needs a new offer and answer.
+  pub fn addTrack(track: Track) throws {
+    if let f = try fakeLive() {
+      f.addTrack(fakeId, track)
+      return
+    }
+    try live().addTrack(track.id)
+  }
+
+  /// Stops sending track to the other peer.
+  pub fn removeTrack(track: Track) throws {
+    if let f = try fakeLive() {
+      f.removeTrack(fakeId, track)
+      return
+    }
+    try live().removeTrack(track.id)
+  }
+
+  /// The offer that starts a connection (the caller's): set it with
+  /// setLocalDescription, and send it to the other peer. iceRestart
+  /// gathers new candidates, to bring a failed connection back.
+  pub async fn createOffer(iceRestart: bool = false) throws -> Description {
+    if let f = try fakeLive() {
+      return f.describe(fakeId, .offer)
+    }
+    return try await live().createOffer(iceRestart)
+  }
+
+  /// The answer to the other peer's offer, once it's set with
+  /// setRemoteDescription: set it with setLocalDescription, and send it
+  /// back.
+  pub async fn createAnswer() throws -> Description {
+    if let f = try fakeLive() {
+      return f.describe(fakeId, .answer)
+    }
+    return try await live().createAnswer()
+  }
+
+  /// Sets this peer's own description, createOffer's or createAnswer's:
+  /// it starts gathering candidates, which candidates() gives.
+  pub async fn setLocalDescription(description: Description) throws {
+    if let f = try fakeLive() {
+      try f.setLocal(fakeId, description)
+      return
+    }
+    try await live().setLocal(description)
+  }
+
+  /// Sets the other peer's description, its offer or its answer, as the
+  /// signaling brought it (parseDescription reads its JSON).
+  pub async fn setRemoteDescription(description: Description) throws {
+    if let f = try fakeLive() {
+      try f.setRemote(fakeId, description)
+      return
+    }
+    try await live().setRemote(description)
+  }
+
+  /// Adds a candidate of the other peer's, as the signaling brought it
+  /// (parseCandidate reads its JSON), once its description is set.
+  pub async fn addCandidate(candidate: Candidate) throws {
+    if let f = try fakeLive() {
+      f.addCandidate(fakeId, candidate)
+      return
+    }
+    try await live().addCandidate(candidate)
+  }
+
+  /// This peer's candidates, as ICE finds them (from setLocalDescription
+  /// on): send each to the other peer. Those found before it was read
+  /// come first. It ends as the Peer closes.
+  pub fn candidates() -> Stream<Candidate> = Stream(send => {
+    let s: Stream<Candidate?> = Stream(inner => {
+      for c in found { inner(c) }
+      found = []
+      if done {
+        inner(none)
+      }
+      candidateReader = c => inner(c)
+      defer { candidateReader = none }
+      await never()
+    })
+    for await c in s {
+      if let x = c {
+        send(x)
+      } else {
+        return
+      }
+    }
+  })
+
+  /// Opens a data channel to the other peer, which its channels() gives
+  /// (unless options.id says both make it). Made before the offer, it's
+  /// in it; after, the connection needs a new offer and answer, unless
+  /// it already has a channel. Its messages go once it's open.
+  pub fn channel(label: string, options: ChannelOptions = ChannelOptions()) throws -> Channel {
+    if let f = try fakeLive() {
+      return fakeChannel(f, f.createChannel(fakeId, label, options))
+    }
+    let d = try live().createChannel(label, options)
+    return nativeChannel(d, (try? d.info()) ?? ChannelInfo(label: label, ordered: options.ordered, protocol: options.protocol))
+  }
+
+  /// The data channels the other peer opens, as they come. It ends as
+  /// the Peer closes.
+  pub fn channels() -> Stream<Channel> = Stream(send => {
+    let s: Stream<Channel?> = Stream(inner => {
+      for c in opened { inner(c) }
+      opened = []
+      if done {
+        inner(none)
+      }
+      channelReader = c => inner(c)
+      defer { channelReader = none }
+      await never()
+    })
+    for await c in s {
+      if let x = c {
+        send(x)
+      } else {
+        return
+      }
+    }
+  })
+
+  /// What the connection has sent and received so far.
+  pub async fn stats() throws -> Stats {
+    if let f = try fakeLive() {
+      return f.statsOf(fakeId)
+    }
+    return try await live().stats()
+  }
+
+  /// Closes the connection: its media and channels stop, the other peer
+  /// sees it disconnect, and candidates() and channels() end.
+  pub fn close() {
+    if done {
+      return
+    }
+    done = true
+    if let f = faked {
+      if fakeId != 0 {
+        f.closePeer(fakeId)
+      }
+    }
+    if let c = conn {
+      try? c.close()
+    }
+    conn = none
+    connection = .closed
+    ice = .closed
+    signaling = .closed
+    remoteTracks = []
+    if let r = candidateReader { r(none) }
+    if let r = channelReader { r(none) }
+  }
+}
+
+/// A data channel: a Peer's (Peer.channel), or the other peer's
+/// (Peer.channels). It closes when its owner goes, at close(), or as its
+/// Peer closes.
+pub store Channel {
+  /// Its name, as the peer that opened it gave it.
+  pub state label: string = ""
+  /// Where it is: messages go once it's open.
+  pub state state: ChannelState = .connecting
+  /// Its id, the same on both peers (-1 until it has one).
+  pub state id: int = -1
+  /// Its messages arrive in the order they were sent.
+  pub state ordered: bool = true
+  /// The app's own protocol for it, as the peer that opened it gave it.
+  pub state protocol: string = ""
+  state native: DataChannel? = none
+  state fakeId = 0
+  state kept: [Message] = []
+  state reader: (fn(Message?))? = none
+  state started = false
+
+  task(started) {
+    if !started {
+      return
+    }
+    if let d = native {
+      try? await d.events(send: e => applied(e))
+      ended()
+    }
+  }
+
+  cleanup { close() }
+
+  fn took(info: ChannelInfo) {
+    label = info.label
+    id = info.id
+    ordered = info.ordered
+    protocol = info.protocol
+  }
+
+  fn applied(e: ChannelEvent) {
+    match e.kind {
+      .open => { state = .open }
+      .closing => { state = .closing }
+      .closed => { ended() }
+      .message => {
+        let m = if e.binary { Message.binary(e.data) } else { Message.text(e.text) }
+        if let r = reader {
+          r(m)
+        } else {
+          kept.push(m)
+        }
+      }
+    }
+  }
+
+  fn ended() {
+    if state == .closed {
+      return
+    }
+    state = .closed
+    if let r = reader { r(none) }
+  }
+
+  /// The messages from the other peer, as they come (those that came
+  /// before it was read first). It ends as the channel closes.
+  pub fn messages() -> Stream<Message> = Stream(send => {
+    let s: Stream<Message?> = Stream(inner => {
+      for m in kept { inner(m) }
+      kept = []
+      if state == .closed {
+        inner(none)
+      }
+      reader = m => inner(m)
+      defer { reader = none }
+      await never()
+    })
+    for await m in s {
+      if let x = m {
+        send(x)
+      } else {
+        return
+      }
+    }
+  })
+
+  fn sending() throws {
+    if state != .open {
+      throw WebRTCError.notOpen
+    }
+  }
+
+  /// Sends a text message; throws notOpen unless it's open.
+  pub fn send(text: string) throws {
+    try sending()
+    if let f = faked, fakeId != 0 {
+      f.deliver(fakeId, ChannelEvent(kind: .message, text: text))
+      return
+    }
+    if let d = native {
+      try d.sendText(text)
+    }
+  }
+
+  /// Sends a binary message; throws notOpen unless it's open.
+  pub fn sendBytes(data: bytes) throws {
+    try sending()
+    if let f = faked, fakeId != 0 {
+      f.deliver(fakeId, ChannelEvent(kind: .message, binary: true, data: data))
+      return
+    }
+    if let d = native {
+      try d.sendBytes(data)
+    }
+  }
+
+  /// The bytes sent that haven't gone yet: to pace a large transfer.
+  pub fn bufferedAmount() -> int {
+    if let d = native {
+      return (try? d.bufferedAmount()) ?? 0
+    }
+    return 0
+  }
+
+  /// Closes the channel, on both peers.
+  pub fn close() {
+    if state == .closed {
+      return
+    }
+    if let f = faked, fakeId != 0 {
+      f.closeChannel(fakeId)
+    }
+    if let d = native {
+      try? d.close()
+    }
+    native = none
+    ended()
+  }
+}
+
+fn nativeChannel(d: DataChannel, info: ChannelInfo) -> Channel {
+  let c = Channel()
+  c.native = d
+  c.took(info)
+  c.state = (try? d.state()) ?? .connecting
+  c.started = true
+  return c
+}
+
+fn fakeChannel(f: FakeWebRTC, info: ChannelInfo) -> Channel {
+  let c = Channel()
+  c.fakeId = info.handle
+  c.took(info)
+  c.state = f.channelState(info.handle)
+  f.listen(info.handle, e => c.applied(e))
+  return c
+}
+
+// ---------------------------------------------------------------------
+// Testing
+
+/// What capture was asked for, as the fake keeps it.
+pub struct Capture {
+  audio: Audio?
+  video: Video?
+}
+
+/// A peer, as the fake keeps it.
+struct FakePeer {
+  sink: fn(PeerEvent)
+  local: Description? = none
+  remote: Description? = none
+  /// The peer it's connected to (0: none).
+  other: int = 0
+  tracks: [Track] = []
+  channels: [int] = []
+  added: [Candidate] = []
+  connected: bool = false
+  closed: bool = false
+}
+
+/// A data channel, as the fake keeps it.
+struct FakeChannel {
+  peer: int
+  info: ChannelInfo
+  /// The other peer's end of it (0: not yet).
+  other: int = 0
+  state: ChannelState = .connecting
+  sink: (fn(ChannelEvent))? = none
+  kept: [ChannelEvent] = []
+}
+
+state faked: FakeWebRTC? = none
+
+/// The fake webrtc.fake() makes, which a test sets and reads. It
+/// connects the app's peers to each other: a Peer whose offer another
+/// sets as its remote description, and which sets that one's answer,
+/// connects to it; tracks added to one are the other's remote tracks,
+/// and channels carry messages between them.
+pub store FakeWebRTC {
+  /// Whether capture may use the camera and the microphone: false, it
+  /// throws notAllowed.
+  pub state allowed = true
+  /// Whether there's a camera: false, capture with video throws
+  /// noDevice.
+  pub state camera = true
+  /// What capture was asked for, in order.
+  pub state captures: [Capture] = []
+  /// The tracks muted (Track.setEnabled(false)), by ID.
+  pub state muted: [string] = []
+  /// The tracks stopped, by ID.
+  pub state stopped: [string] = []
+  /// How many times a camera was switched.
+  pub state switches = 0
+  /// The routes audioRoutes gives, and the one in use.
+  pub state routes: [AudioRoute] = [.earpiece, .speaker]
+  /// The route in use: what audioRoute gives, and setAudioRoute sets.
+  pub state route: AudioRoute = .earpiece
+  /// What stats give.
+  pub state stats = Stats(bytesSent: 1200, bytesReceived: 3400, roundTripTime: 20ms, localCandidate: "host", remoteCandidate: "host")
+  state peers: [int: FakePeer] = [:]
+  state channels: [int: FakeChannel] = [:]
+  state next = 0
+  state nextPeer = 0
+
+  fn number() -> int {
+    next += 1
+    return next
+  }
+
+  fn capture(audio: Audio?, video: Video?) throws -> Media {
+    captures.push(Capture(audio: audio, video: video))
+    if !allowed {
+      throw WebRTCError.notAllowed
+    }
+    if video.isSome() && !camera {
+      throw WebRTCError.noDevice
+    }
+    var m = Media()
+    if audio.isSome() {
+      m.audio = Track(id: "audio-{number()}", kind: .audio)
+    }
+    if let v = video {
+      m.video = Track(id: "video-{number()}", kind: .video, facing: v.facing)
+    }
+    return m
+  }
+
+  fn setEnabled(t: Track, on: bool) {
+    muted = muted.filter(id => id != t.id)
+    if !on { muted.push(t.id) }
+  }
+
+  fn add(sink: fn(PeerEvent)) -> int {
+    nextPeer += 1
+    let id = nextPeer
+    peers[id] = FakePeer(sink: sink)
+    return id
+  }
+
+  fn send(peer: int, e: PeerEvent) {
+    if let p = peers[peer] {
+      if !p.closed { p.sink(e) }
+    }
+  }
+
+  fn addTrack(peer: int, t: Track) {
+    if var p = peers[peer] {
+      if !p.tracks.any(x => x.id == t.id) { p.tracks.push(t) }
+      peers[peer] = p
+      if p.connected {
+        var r = t
+        r.remote = true
+        send(p.other, PeerEvent(kind: .track, track: r))
+      }
+    }
+  }
+
+  fn removeTrack(peer: int, t: Track) {
+    if var p = peers[peer] {
+      p.tracks = p.tracks.filter(x => x.id != t.id)
+      peers[peer] = p
+      if p.connected {
+        send(p.other, PeerEvent(kind: .trackEnded, track: Track(id: t.id, kind: t.kind, remote: true)))
+      }
+    }
+  }
+
+  fn describe(peer: int, kind: SdpKind) -> Description = Description(kind: kind, sdp: "v=0\r\no=- {peer} 1 IN IP4 127.0.0.1\r\ns=asuka-fake\r\nt=0 0\r\n")
+
+  fn peerOf(d: Description) -> int {
+    let parts = d.sdp.split(" ")
+    if parts.count() > 1 && d.sdp.contains("s=asuka-fake") {
+      return parts[1].toInt() ?? 0
+    }
+    return 0
+  }
+
+  fn setLocal(peer: int, d: Description) throws {
+    if var p = peers[peer] {
+      if d.kind == .answer && p.remote.isNone() {
+        throw Error("webrtc: an answer needs the other peer's offer first")
+      }
+      p.local = d
+      peers[peer] = p
+      send(peer, PeerEvent(kind: .signaling, signaling: if d.kind == .offer { .haveLocalOffer } else { .stable }))
+      send(peer, PeerEvent(kind: .gathering, gathering: .gathering))
+      send(peer, PeerEvent(kind: .candidate, candidate: Candidate(candidate: "candidate:{peer} 1 udp 2122260223 192.0.2.{peer % 250 + 1} 50000 typ host", sdpMid: "0")))
+      send(peer, PeerEvent(kind: .gathering, gathering: .complete))
+      joined(peer)
+    }
+  }
+
+  fn setRemote(peer: int, d: Description) throws {
+    let other = peerOf(d)
+    if var p = peers[peer] {
+      if d.kind == .answer && p.local.isNone() {
+        throw Error("webrtc: an answer needs an offer of this peer's first")
+      }
+      p.remote = d
+      p.other = other
+      peers[peer] = p
+      send(peer, PeerEvent(kind: .signaling, signaling: if d.kind == .offer { .haveRemoteOffer } else { .stable }))
+      joined(peer)
+    }
+  }
+
+  fn addCandidate(peer: int, c: Candidate) {
+    if var p = peers[peer] {
+      p.added.push(c)
+      peers[peer] = p
+    }
+  }
+
+  /// The candidates a peer was given (Peer.addCandidate), as a test
+  /// checks the signaling carried them: the peers are numbered from 1, in
+  /// the order they were first used (addTrack, channel, createOffer...).
+  pub fn candidatesAdded(peer: int) -> [Candidate] = peers[peer]?.added ?? []
+
+  /// Connects peer to the other once both have both descriptions.
+  fn joined(peer: int) {
+    if let p = peers[peer], let o = peers[p.other] {
+      if p.connected || p.local.isNone() || p.remote.isNone() || o.local.isNone() || o.remote.isNone() || o.other != peer {
+        return
+      }
+      for id in [peer, p.other] {
+        if var x = peers[id] {
+          x.connected = true
+          peers[id] = x
+        }
+        send(id, PeerEvent(kind: .ice, ice: .checking))
+        send(id, PeerEvent(kind: .connection, connection: .connecting))
+      }
+      for (a, b) in [(peer, p.other), (p.other, peer)] {
+        if let x = peers[a] {
+          for t in x.tracks {
+            var r = t
+            r.remote = true
+            send(b, PeerEvent(kind: .track, track: r))
+          }
+        }
+      }
+      for id in [peer, p.other] {
+        send(id, PeerEvent(kind: .ice, ice: .connected))
+        send(id, PeerEvent(kind: .connection, connection: .connected))
+      }
+      for id in [peer, p.other] {
+        if let x = peers[id] {
+          for c in x.channels { opened(c) }
+        }
+      }
+    }
+  }
+
+  fn createChannel(peer: int, label: string, options: ChannelOptions) -> ChannelInfo {
+    let handle = number()
+    let info = ChannelInfo(handle: handle, label: label, ordered: options.ordered, protocol: options.protocol, id: options.id ?? handle)
+    channels[handle] = FakeChannel(peer: peer, info: info)
+    if var p = peers[peer] {
+      p.channels.push(handle)
+      peers[peer] = p
+      if p.connected { opened(handle) }
+    }
+    return info
+  }
+
+  /// Opens a channel made on a connected peer: its other end is made on
+  /// the other peer (and given to its channels()), and both are open.
+  fn opened(handle: int) {
+    if let c = channels[handle], let p = peers[c.peer] {
+      if c.other != 0 || !p.connected {
+        return
+      }
+      let back = number()
+      var info = c.info
+      info.handle = back
+      channels[back] = FakeChannel(peer: p.other, info: info, other: handle, state: .open)
+      var mine = c
+      mine.other = back
+      mine.state = .open
+      channels[handle] = mine
+      send(p.other, PeerEvent(kind: .channel, channel: info))
+      tell(handle, ChannelEvent(kind: .open))
+    }
+  }
+
+  fn channelState(handle: int) -> ChannelState = channels[handle]?.state ?? .closed
+
+  fn listen(handle: int, sink: fn(ChannelEvent)) {
+    if var c = channels[handle] {
+      c.sink = sink
+      let kept = c.kept
+      c.kept = []
+      channels[handle] = c
+      for e in kept { sink(e) }
+    }
+  }
+
+  fn tell(handle: int, e: ChannelEvent) {
+    if var c = channels[handle] {
+      if let s = c.sink {
+        s(e)
+      } else {
+        c.kept.push(e)
+        channels[handle] = c
+      }
+    }
+  }
+
+  /// A message sent on handle, for its other end.
+  fn deliver(handle: int, e: ChannelEvent) {
+    if let c = channels[handle] {
+      if c.other != 0 { tell(c.other, e) }
+    }
+  }
+
+  fn closeChannel(handle: int) {
+    if let c = channels[handle] {
+      for h in [handle, c.other] {
+        if var x = channels[h] {
+          if x.state != .closed {
+            x.state = .closed
+            channels[h] = x
+            tell(h, ChannelEvent(kind: .closed))
+          }
+        }
+      }
+    }
+  }
+
+  fn closePeer(peer: int) {
+    if var p = peers[peer] {
+      for h in p.channels { closeChannel(h) }
+      for (h, c) in channels {
+        if c.peer == peer { closeChannel(h) }
+      }
+      p.closed = true
+      peers[peer] = p
+      if p.connected {
+        send(p.other, PeerEvent(kind: .ice, ice: .disconnected))
+        send(p.other, PeerEvent(kind: .connection, connection: .disconnected))
+        for t in p.tracks {
+          send(p.other, PeerEvent(kind: .trackEnded, track: Track(id: t.id, kind: t.kind, remote: true)))
+        }
+      }
+    }
+  }
+
+  fn statsOf(peer: int) -> Stats {
+    if let p = peers[peer] {
+      if p.connected {
+        return stats
+      }
+    }
+    return Stats()
+  }
+
+  /// Fails a peer's connection, as a network that went does: both it and
+  /// the peer it's connected to see it fail (numbered as for
+  /// candidatesAdded).
+  pub fn fail(peer: int) {
+    if let p = peers[peer] {
+      for id in [peer, p.other] {
+        send(id, PeerEvent(kind: .ice, ice: .failed))
+        send(id, PeerEvent(kind: .connection, connection: .failed))
+      }
+    }
+  }
+}
+
+/// Fakes WebRTC for an app's tests: capture gives tracks at once (or
+/// throws, as allowed and camera say), and the app's peers connect to
+/// each other in the test, with no network: see FakeWebRTC.
+pub fn fake() -> FakeWebRTC {
+  let f = FakeWebRTC()
+  faked = f
+  return f
+}

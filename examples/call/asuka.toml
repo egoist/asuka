@@ -1,0 +1,6 @@
+name = "Call"
+id = "dev.asuka.call"
+version = "1.0.0"
+build = 1
+orientations = ["portrait", "landscape"]
+scheme = "call"
