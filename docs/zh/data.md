@@ -419,7 +419,7 @@ app {
     }
   }
 
-  Home()
+  Text("Photos")
 }
 ```
 

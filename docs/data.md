@@ -598,7 +598,7 @@ app {
     }
   }
 
-  Home()
+  Text("Photos")
 }
 ```
 
