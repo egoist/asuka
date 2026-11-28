@@ -46,14 +46,12 @@ test "options that aren't WebAuthn's" {
     do {
       let _ = try creation(bad)
       expect(false)
-    } catch PasskeyError.invalidOptions {
-    }
+    } catch PasskeyError.invalidOptions {}
   }
   do {
     let _ = try request(r#"{"challenge": "AAAA"}"#) // no rpId
     expect(false)
-  } catch PasskeyError.invalidOptions {
-  }
+  } catch PasskeyError.invalidOptions {}
 }
 
 test "a registration and a sign-in the server verifies" {
@@ -98,26 +96,22 @@ test "the fake's errors: excluded, none, canceled, not available" {
   do {
     let _ = try await register(again)
     expect(false)
-  } catch PasskeyError.exists {
-  }
+  } catch PasskeyError.exists {}
   do {
     let _ = try await signIn(requestOptions(["AAAA"]))
     expect(false)
-  } catch PasskeyError.noCredentials {
-  }
+  } catch PasskeyError.noCredentials {}
   f.cancel = true
   do {
     let _ = try await signIn(requestOptions([]))
     expect(false)
-  } catch PasskeyError.canceled {
-  }
+  } catch PasskeyError.canceled {}
   f.available = false
   expect(!(await available()))
   do {
     let _ = try await register(creationOptions)
     expect(false)
-  } catch PasskeyError.notAvailable {
-  }
+  } catch PasskeyError.notAvailable {}
 }
 
 test "a platform's own JSON, with what it left out" {
