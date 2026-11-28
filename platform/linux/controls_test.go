@@ -259,7 +259,8 @@ func TestImageOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	red, okRed := bbox(img, func(r, g, b uint32) bool { return r > 200 && g < 60 && b < 60 })
+	// Red as libadwaita has it: #c01c28 in 1.5, #e01b24 in 1.7.
+	red, okRed := bbox(img, func(r, g, b uint32) bool { return r > 160 && g < 60 && b < 60 })
 	if _, green := bbox(img, func(r, g, b uint32) bool { return g > 200 && r < 60 && b < 60 }); green {
 		t.Errorf("green pixels: the tinted pin isn't a template")
 	}
