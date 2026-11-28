@@ -58,8 +58,8 @@ var words = map[string]struct {
 	steps                                   []string
 }{
 	"en": {
-		title: "Asuka, on one page",
-		intro: "This is the Asuka language as the installed CLI compiles it, and how to work with it. Every error and warning has a code; `asuka explain <code>` prints its page.",
+		title:    "Asuka, on one page",
+		intro:    "This is the Asuka language as the installed CLI compiles it, and how to work with it. Every error and warning has a code; `asuka explain <code>` prints its page.",
 		workflow: "Workflow", language: "The language", codes: "Diagnostic codes",
 		steps: []string{
 			"Check: `asuka check --json` (one diagnostic per line, each with a code, its message, its help and its page)",
@@ -70,8 +70,8 @@ var words = map[string]struct {
 		},
 	},
 	"zh": {
-		title: "一页读懂 Asuka",
-		intro: "这是所装 CLI 编译的 Asuka 语言，以及使用它的方式。每个错误和警告都有一个代码；`asuka explain <code>` 会显示它的页面。",
+		title:    "一页读懂 Asuka",
+		intro:    "这是所装 CLI 编译的 Asuka 语言，以及使用它的方式。每个错误和警告都有一个代码；`asuka explain <code>` 会显示它的页面。",
 		workflow: "工作流程", language: "语言", codes: "诊断代码",
 		steps: []string{
 			"检查：`asuka check --json`（每行一条诊断，各带代码、消息、帮助和页面）",
@@ -82,8 +82,8 @@ var words = map[string]struct {
 		},
 	},
 	"ja": {
-		title: "1 ページでわかる Asuka",
-		intro: "インストールした CLI がコンパイルする Asuka 言語と、その使い方です。すべてのエラーと警告にはコードがあり、`asuka explain <code>` でそのページを表示できます。",
+		title:    "1 ページでわかる Asuka",
+		intro:    "インストールした CLI がコンパイルする Asuka 言語と、その使い方です。すべてのエラーと警告にはコードがあり、`asuka explain <code>` でそのページを表示できます。",
 		workflow: "作業の流れ", language: "言語", codes: "診断コード",
 		steps: []string{
 			"検査：`asuka check --json`（1 行に 1 つの診断。それぞれにコード、メッセージ、ヘルプ、ページ）",

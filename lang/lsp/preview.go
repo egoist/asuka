@@ -127,4 +127,3 @@ func showPreview(a previewArgs, app bool) error {
 	}
 	return nil
 }
-

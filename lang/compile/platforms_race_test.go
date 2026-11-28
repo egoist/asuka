@@ -15,7 +15,7 @@ import (
 func TestDirPlatformsMatchesEachPlatformAlone(t *testing.T) {
 	tmp := t.TempDir()
 	files := map[string]string{
-		"app.asuka": "import std/strings\n\ncomponent Home {\n  Text(greeting())\n}\n\napp { Home() }\n\nfn shout(s: string) -> string = strings.toUpper(s)\n",
+		"app.asuka":           "import std/strings\n\ncomponent Home {\n  Text(greeting())\n}\n\napp { Home() }\n\nfn shout(s: string) -> string = strings.toUpper(s)\n",
 		"greet_ios.asuka":     "fn greeting() -> string = \"iPhone\"\n",
 		"greet_android.asuka": "fn greeting() -> string = \"Android\"\n",
 		"greet_desktop.asuka": "fn greeting() -> string = \"desktop\"\n\nfn unused() -> int = \"not an int\"\n",

@@ -58,7 +58,9 @@ func NewPKI(hosts ...string) (*PKI, error) {
 	}
 	p.pool.AddCert(root)
 	p.CA, p.OtherCA = pemOf("CERTIFICATE", root.Raw), pemOf("CERTIFICATE", other.Raw)
-	chain := func(leaf *x509.Certificate) string { return pemOf("CERTIFICATE", leaf.Raw) + pemOf("CERTIFICATE", inter.Raw) }
+	chain := func(leaf *x509.Certificate) string {
+		return pemOf("CERTIFICATE", leaf.Raw) + pemOf("CERTIFICATE", inter.Raw)
+	}
 
 	names, ips := []string{"localhost"}, []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
 	for _, h := range hosts {

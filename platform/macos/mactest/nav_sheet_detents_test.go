@@ -28,7 +28,6 @@ func sheetShows(t *testing.T, a *App, cond func(s *Node, w map[string]any, cw, c
 	return s
 }
 
-
 // A sheet with detents rests at the one it's at (its shortest, at
 // first), its environment and height (on resize) with it; the app's
 // setting it moves the sheet window there, its top edge kept.

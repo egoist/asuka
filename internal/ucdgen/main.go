@@ -18,7 +18,6 @@ package main
 //go:generate go run .
 
 import (
-	"slices"
 	"bufio"
 	"bytes"
 	"crypto/sha256"
@@ -30,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"

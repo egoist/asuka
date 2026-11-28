@@ -606,7 +606,7 @@ func (s *Scanner) digits(ok func(rune) bool) {
 	}
 }
 
-// char scans a char literal at s.ch == '\'': one code point, or an
+// char scans a char literal at s.ch == '\”: one code point, or an
 // escape (\n, \', \u{1F600}), between single quotes. What's more is an
 // error, as is an empty one: a string holds more (or none).
 func (s *Scanner) char(start int) (Pos, Token, string) {

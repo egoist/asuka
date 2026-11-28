@@ -744,7 +744,7 @@ func (g *gen) fn(i int) error {
 	}
 	if untracks > 0 && !g.async {
 		// What its peeks untracked, ended as an error leaves (unwind).
-		g.p("\tvoid *U_[%d] = {0}; uint32_t un_ = 0;\n", untracks)  // zeroed: GCC can't see un_ counts what's set
+		g.p("\tvoid *U_[%d] = {0}; uint32_t un_ = 0;\n", untracks) // zeroed: GCC can't see un_ counts what's set
 	}
 	g.b.WriteString(code)
 	if g.low {

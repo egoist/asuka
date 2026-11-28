@@ -47,8 +47,8 @@ type Package struct {
 	// Previews are its preview blocks (preview.go).
 	Previews []*Preview
 	Exts     []*Extension // its extend declarations
-	App     *syntax.AppDecl
-	Imports []*Package
+	App      *syntax.AppDecl
+	Imports  []*Package
 
 	fileScopes map[*syntax.SourceFile]*Scope
 	// Styles are its styles, by name: another package applies a pub one
