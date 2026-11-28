@@ -105,8 +105,13 @@ import AsukaOps
     @ObservationIgnored weak var cellOf: AsukaWatchList?
     @ObservationIgnored var cellIndex = -1
 
-    /// A Scroll's offset to go to (ScrollToOffset), taken by its view.
-    @ObservationIgnored var scrollTarget: CGPoint?
+    /// A Scroll's or a List's offset to go to (ScrollToOffset), and a
+    /// count of the scrolls asked for, which its view scrolls on as it
+    /// changes (the same offset again too: the end of content that grew).
+    @ObservationIgnored var scrollTarget = CGPoint.zero
+    @ObservationIgnored var scrollRequests = 0
+    /// The requests its view has gone to (one asked for as it's made too).
+    @ObservationIgnored var scrollsDone = 0
     @ObservationIgnored var scrollAnimated = false
 
     init(id: UInt32, kind: AsukaKind?) {

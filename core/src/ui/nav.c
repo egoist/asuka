@@ -633,6 +633,14 @@ ak_view *ak_stack_push(ak_view *stack, ak_closure *build, ak_val *args, uint32_t
 	// the Screen element that adopts them.
 	ak_owner *so = ak_root_under(o ? o : st->owner);
 	ak_prov *pv = ak_prov_new(r);
+	// Above the first, it's as big as the screen under it (as the host
+	// sized that one: under the same bars, in the same safe area) until the
+	// host reports its own, which comes as it's shown: its first layout is
+	// at the size it shows at, not the whole screen's.
+	if (!first) {
+		ak_view *under = st->screens.data[st->screens.len - 1].screen;
+		if (under->prov) ak_prov_follow(pv, under->prov);
+	}
 	ak_back *bk = first ? NULL : ak_back_new(screen_back, NULL);
 	ak_owner_set_context(so, ak_nav_key, stack);
 	ak_owner_set_context(so, ak_env_key, pv);

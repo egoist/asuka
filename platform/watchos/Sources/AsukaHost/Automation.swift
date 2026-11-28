@@ -14,12 +14,15 @@ import AsukaOps
 /// Commands, one per line: `tap <text>` presses the Button, View or
 /// Toggle whose title, text or accessibility label is <text>, as the
 /// user's tap does; `switch <n>` flips the n-th Toggle (from 0, in
-/// creation order); `scroll <rows>` scrolls the first List down to that
-/// row; `alert <title>` presses the alert's button with that title (none:
-/// dismisses it); `back` pops the shown stack's top screen, as its back button
+/// creation order); `scroll <n>` scrolls the first List down to row n,
+/// else the first Scroll n points (`scroll end`: to its end); `alert
+/// <title>` presses the alert's button with that title (none: dismisses
+/// it); `back` pops the shown stack's top screen, as its back button
 /// does; `dump` writes what the screen shows (each text, button title or
 /// accessibility label, a line each, in creation order) to
-/// tmp/asuka-dump.txt.
+/// tmp/asuka-dump.txt; `tree` writes each node shown with its frame (a
+/// screen's or a sheet's: the size and safe area it was reported, as the
+/// core sends such a layout root no frame) to tmp/asuka-tree.txt.
 @MainActor enum AsukaAutomation {
     static var token: Int32 = 0
 
@@ -56,9 +59,20 @@ import AsukaOps
                 rt.emit(n.id, .toggled) { AsukaEvents.toggled(n.id, on) }
                 n.rev &+= 1
             case "scroll":
-                guard let l = shown().first(where: { $0.kind == .list }), let i = Int(arg) else { continue }
-                l.list?.scroll(to: i, animated: true)
-                l.rev &+= 1
+                // The first List shown to row n, else the first Scroll n
+                // points down (`end`: to its end), as the crown scrolls.
+                let views = shown()
+                if let l = views.first(where: { $0.kind == .list }) {
+                    guard let i = Int(arg) else { continue }
+                    l.list?.scroll(to: i, animated: true)
+                    l.rev &+= 1
+                } else if let s = views.first(where: { $0.kind == .scroll }) {
+                    guard let y = arg == "end" ? 1e9 : Double(arg).map({ CGFloat($0) }) else { continue }
+                    s.scrollTarget = CGPoint(x: 0, y: y)
+                    s.scrollAnimated = true
+                    s.scrollRequests &+= 1
+                    s.rev &+= 1
+                }
             case "alert":
                 guard let a = rt.scene.alert else { continue }
                 let b = a.actions.first { $0.title == arg }
@@ -75,8 +89,17 @@ import AsukaOps
                     var p = n.parent
                     while let v = p { depth += 1; p = v.parent }
                     let f = n.frame
-                    var s = String(repeating: "  ", count: depth) + "\(n.kind?.name ?? "Cell") \(n.id) \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))"
-                    if !n.placed { s += " unplaced" }
+                    var s = String(repeating: "  ", count: depth) + "\(n.kind?.name ?? "Cell") \(n.id)"
+                    if let e = n.lastEnv {
+                        // A screen or a sheet: the core sends it no frame
+                        // (SwiftUI places it); the size it was reported.
+                        s += " env \(Int(e.width))x\(Int(e.height)) safe \(Int(e.safeTop)),\(Int(e.safeLeft)),\(Int(e.safeBottom)),\(Int(e.safeRight))"
+                    } else if n.id == rt.rootID, let e = rt.rootEnv {
+                        s += " \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height)) safe \(Int(e.safeTop)),\(Int(e.safeLeft)),\(Int(e.safeBottom)),\(Int(e.safeRight))"
+                    } else {
+                        s += " \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))"
+                        if !n.placed { s += " unplaced" }
+                    }
                     if n.hidden { s += " hidden" }
                     if n.opacity < 1 { s += " opacity \(n.opacity)" }
                     if !n.text.isEmpty { s += " \"\(n.text)\"" }

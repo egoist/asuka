@@ -31,10 +31,20 @@ struct Batch {
         var args = AsukaWriter()
         args.u32(UInt32(items.count))
         for i in items { args.u64(UInt64(bitPattern: i)) }
+        command(id, .listUpdate, args.bytes)
+    }
+    mutating func scrollTo(_ id: UInt32, x: Float, y: Float, animated: Bool) {
+        var args = AsukaWriter()
+        args.f32(x)
+        args.f32(y)
+        args.u8(animated ? 1 : 0)
+        command(id, .scrollToOffset, args.bytes)
+    }
+    mutating func command(_ id: UInt32, _ c: AsukaCommand, _ args: [UInt8]) {
         var w = head(9, id)
-        w.u16(AsukaCommand.listUpdate.rawValue)
-        w.u32(UInt32(args.bytes.count))
-        w.bytes.append(contentsOf: args.bytes)
+        w.u16(c.rawValue)
+        w.u32(UInt32(args.count))
+        w.bytes.append(contentsOf: args)
         ops.append(w.bytes)
     }
 
@@ -122,6 +132,64 @@ struct Batch {
         b2.listUpdate(301, [10, 12])
         apply(b2)
         XCTAssertTrue(list.appear(12, 1) === first)
+    }
+
+    /// The root is reported at the whole screen with the safe area around
+    /// what SwiftUI gives a view inside it (the time, the rounded
+    /// corners), each as it comes: the view over the whole screen ignores
+    /// the safe area, and has none of its own.
+    func testTheRootReportsTheSafeArea() throws {
+        let rt = AsukaRuntime.shared
+        var b = Batch()
+        b.create(501, .view)
+        b.root(501)
+        apply(b)
+        rt.rootSize = .zero
+        rt.reportRoot(safe: EdgeInsets(top: 53, leading: 2, bottom: 36, trailing: 2))
+        XCTAssertNil(rt.rootEnv, "nothing is reported before the root's size")
+        rt.reportRoot(size: CGSize(width: 208, height: 248))
+        var e = try XCTUnwrap(rt.rootEnv)
+        XCTAssertEqual([e.width, e.height], [208, 248])
+        XCTAssertEqual([e.safeTop, e.safeLeft, e.safeBottom, e.safeRight], [53, 2, 36, 2])
+        rt.reportRoot(safe: EdgeInsets(top: 40, leading: 0, bottom: 30, trailing: 0))
+        e = try XCTUnwrap(rt.rootEnv)
+        XCTAssertEqual([e.width, e.height, e.safeTop, e.safeBottom], [208, 248, 40, 30], "a new safe area keeps the size")
+    }
+
+    /// A screen laid out before SwiftUI places it (centered on the
+    /// screen's corner) isn't at its size, and isn't reported.
+    func testAScreenNotPlacedIsNotReported() {
+        XCTAssertFalse(asukaPlaced(CGRect(x: -104, y: -124, width: 208, height: 248)))
+        XCTAssertTrue(asukaPlaced(CGRect(x: 2, y: 62, width: 204, height: 150)))
+        XCTAssertTrue(asukaPlaced(CGRect(x: 210, y: 62, width: 204, height: 150)), "sliding in as it's pushed")
+    }
+
+    /// ScrollToOffset reaches a Scroll's or a List's view as a request it
+    /// scrolls on, each one, the same offset again too (scrolling to the
+    /// end as the content grows).
+    func testScrollToOffsetAsksTheScroll() {
+        let rt = AsukaRuntime.shared
+        var b = Batch()
+        b.create(601, .scroll)
+        b.scrollTo(601, x: 0, y: 300, animated: true)
+        apply(b)
+        let s = rt.nodes[601]!
+        XCTAssertEqual(s.scrollTarget, CGPoint(x: 0, y: 300))
+        XCTAssertTrue(s.scrollAnimated)
+        let asked = s.scrollRequests
+        var b2 = Batch()
+        b2.scrollTo(601, x: 0, y: 300, animated: false)
+        apply(b2)
+        XCTAssertEqual(s.scrollRequests, asked + 1, "the same offset again scrolls again")
+        XCTAssertFalse(s.scrollAnimated)
+        var b3 = Batch()
+        b3.create(602, .list)
+        b3.listUpdate(602, [1, 2])
+        b3.scrollTo(602, x: 0, y: 0, animated: false)
+        apply(b3)
+        let l = rt.nodes[602]!
+        XCTAssertEqual(l.scrollRequests, 1)
+        XCTAssertEqual(l.scrollTarget, .zero)
     }
 }
 

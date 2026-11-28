@@ -77,6 +77,10 @@ struct AsukaDevError: Equatable {
     var nextCellID: UInt32 = 0
     /// The environment last reported for the root.
     var rootEnv: AsukaEnvironment?
+    /// The root's size (the whole screen) and its safe area (the time,
+    /// the rounded corners), as SwiftUI last gave them.
+    var rootSize = CGSize.zero
+    var rootSafe = EdgeInsets()
     /// Pixels per point.
     var scale: CGFloat = 2
     /// The modules ui.Call reaches (Modules.swift).
@@ -265,9 +269,13 @@ struct AsukaDevError: Equatable {
     }
 
     /// Reports the root's size: the whole screen, its safe area inset.
-    func reportRoot(size: CGSize, safe: EdgeInsets) {
-        guard rootID != 0, size.width > 0 else { return }
-        let e = environment(size: size, safe: safe)
+    /// Each is the latest SwiftUI gave (nil: unchanged): the size from a
+    /// view over the whole screen, the safe area from one inside it.
+    func reportRoot(size: CGSize? = nil, safe: EdgeInsets? = nil) {
+        if let size { rootSize = size }
+        if let safe { rootSafe = safe }
+        guard rootID != 0, rootSize.width > 0 else { return }
+        let e = environment(size: rootSize, safe: rootSafe)
         if e == rootEnv { return }
         rootEnv = e
         send(AsukaEvents.environment(rootID, e))
@@ -444,9 +452,10 @@ struct AsukaDevError: Equatable {
         case .scrollToOffset:
             guard args.count >= 9 else { return }
             var r = AsukaReader(args)
+            // A Scroll's or a List's view goes there (AsukaScrollOffsets).
             n.scrollTarget = CGPoint(x: CGFloat(r.f32()), y: CGFloat(r.f32()))
             n.scrollAnimated = r.u8() != 0
-            if let l = n.list, let y = n.scrollTarget?.y { l.scroll(toOffset: y, animated: n.scrollAnimated) }
+            n.scrollRequests &+= 1
             touch(n)
         case .haptic:
             if let k = args.first { haptic(Int32(k)) }

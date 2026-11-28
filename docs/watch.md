@@ -214,7 +214,7 @@ Each element is the watch's own control where watchOS has one:
 | `DatePicker` | the watch's date and time pickers |
 | `Image`, `Symbol` | the image, the SF Symbol |
 | `Progress`, `ProgressRing`, `Activity` | a bar, a ring, a spinner |
-| `Scroll`, `List` | scroll views the Digital Crown scrolls; a `List`'s rows on the watch's platters (`appearance: .bare`: as the app draws them) |
+| `Scroll`, `List` | scroll views the Digital Crown scrolls, their content under the title as it scrolls; a `List`'s rows on the watch's platters (`appearance: .bare`: as the app draws them). A `Ref`'s `scrollTo` and `scrollToEnd`, and a `List`'s `on scroll`, need watchOS 11 (on watchOS 10, only `scrollTo(0, 0)`, to the top) |
 | `Stack` | the watch's navigation: a screen's title at the top, its back button, a swipe from the edge back |
 | `Tabs` | pages the Digital Crown turns, top to bottom |
 | `Sheet`, `Popover` | a sheet over the whole screen, which its close button or a swipe dismisses |

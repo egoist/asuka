@@ -347,6 +347,35 @@ TEST(screen_safe_area_uses_the_screens_environment) {
 	done(a);
 }
 
+// A pushed screen is laid out at the size the host gave the screen under
+// it (below the same bars: a watch's 204 by 150 of its 208 by 248), not
+// the whole screen's, until the host reports its own: its first frames are
+// those it shows with. The host's report then wins.
+TEST(pushed_screen_starts_at_the_size_of_the_one_under_it) {
+	ticks = cell_int(0);
+	ak_uitest *a = mount(stack_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *stack = nth(a, AK_KIND_STACK, 0);
+	REQUIRE(stack && stack->children.len == 1);
+	ak_environment env = f->env;
+	env.width = 204, env.height = 150;
+	ak_fake_dispatch(f, &(ak_event){.id = stack->children.data[0]->id, .kind = AK_EVENT_ENVIRONMENT, .env = env});
+	tap(a, "Open");
+	REQUIRE(stack->children.len == 2);
+	ak_fake_view *detail = stack->children.data[1];
+	CHECK_EQ_F(detail->children.data[0]->frame[2], 204);
+	// Its own size, reported: laid out at it.
+	env.width = 200, env.height = 140;
+	ak_fake_dispatch(f, &(ak_event){.id = detail->id, .kind = AK_EVENT_ENVIRONMENT, .env = env});
+	CHECK_EQ_F(detail->children.data[0]->frame[2], 200);
+	// The screen under it changing no longer moves it.
+	env.width = 180;
+	ak_fake_dispatch(f, &(ak_event){.id = stack->children.data[0]->id, .kind = AK_EVENT_ENVIRONMENT, .env = env});
+	CHECK_EQ_F(detail->children.data[0]->frame[2], 200);
+	done(a);
+	ak_release(ticks);
+}
+
 // ---- A screen's bars (TestScreenActions, TestScreenToolbarAndPrimary, TestScreenMenuButton) ----
 
 static int saved, moved, composed;

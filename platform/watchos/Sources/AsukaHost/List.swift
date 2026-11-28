@@ -42,10 +42,6 @@ import AsukaOps
         scrollTarget = (ids[index], animated)
     }
 
-    func scroll(toOffset y: CGFloat, animated: Bool) {
-        if y <= 0, let first = ids.first { scrollTarget = (first, animated) }
-    }
-
     /// The row of item at index came on screen: the cell that shows it,
     /// bound now if it wasn't.
     func appear(_ item: Int64, _ index: Int) -> AsukaNode? {
@@ -114,6 +110,7 @@ struct AsukaListView: View {
                     }
                 }
             }
+            .modifier(AsukaScrollOffsets(node: node) { if let first = ids.first { proxy.scrollTo(first, anchor: .top) } })
             .onChange(of: node.rev) {
                 guard let t = list?.scrollTarget else { return }
                 list?.scrollTarget = nil

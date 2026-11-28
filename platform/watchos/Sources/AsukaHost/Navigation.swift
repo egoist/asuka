@@ -19,18 +19,28 @@ public struct AsukaRootView: View {
     public var body: some View {
         let rt = AsukaRuntime.shared
         let scene = rt.scene
-        GeometryReader { g in
-            ZStack(alignment: .topLeading) {
-                if let root = scene.root {
-                    AsukaRootNode(node: root)
-                }
+        ZStack(alignment: .topLeading) {
+            // The safe area (the time, the screen's rounded corners): a
+            // view that ignores it has none, so it's read from one inside
+            // it, which SwiftUI gives the insets around it.
+            GeometryReader { s in
+                Color.clear
+                    .onAppear { rt.reportRoot(safe: s.safeAreaInsets) }
+                    .onChange(of: s.safeAreaInsets) { rt.reportRoot(safe: s.safeAreaInsets) }
             }
-            .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
-            .onAppear { rt.reportRoot(size: g.size, safe: g.safeAreaInsets) }
-            .onChange(of: g.size) { rt.reportRoot(size: g.size, safe: g.safeAreaInsets) }
-            .onChange(of: scene.root?.id) { rt.reportRoot(size: g.size, safe: g.safeAreaInsets) }
+            GeometryReader { g in
+                ZStack(alignment: .topLeading) {
+                    if let root = scene.root {
+                        AsukaRootNode(node: root)
+                    }
+                }
+                .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
+                .onAppear { rt.reportRoot(size: g.size) }
+                .onChange(of: g.size) { rt.reportRoot(size: g.size) }
+                .onChange(of: scene.root?.id) { rt.reportRoot() }
+            }
+            .ignoresSafeArea()
         }
-        .ignoresSafeArea()
         .modifier(AsukaSheets(level: 0))
         .modifier(AsukaAlert())
         .overlay { if let e = scene.devError { AsukaDevErrorView(error: e) } }
@@ -128,15 +138,27 @@ struct AsukaProvider: View {
         } else {
             // The area SwiftUI leaves its content (below the bar, inside
             // the screen's rounded corners): a screen's whole, with no
-            // safe area of its own, as a phone's screen under its bar.
+            // safe area of its own, as a phone's screen under its bar. A
+            // pushed screen is laid out once before it's placed, at the
+            // whole stack's size: that isn't its size, and isn't reported
+            // (the core has it at the size of the screen under it).
             GeometryReader { g in
+                let placed = asukaPlaced(g.frame(in: .global))
                 AsukaChildren(node: n)
                     .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
-                    .onAppear { rt.report(n, size: g.size, safe: EdgeInsets()) }
-                    .onChange(of: g.size) { rt.report(n, size: g.size, safe: EdgeInsets()) }
+                    .onAppear { if placed { rt.report(n, size: g.size, safe: EdgeInsets()) } }
+                    .onChange(of: g.size) { if placed { rt.report(n, size: g.size, safe: EdgeInsets()) } }
+                    .onChange(of: placed) { if placed { rt.report(n, size: g.size, safe: EdgeInsets()) } }
             }
         }
     }
+}
+
+/// Whether SwiftUI has placed a view whose frame on the screen is f: it
+/// lays a navigation destination out before it places it, its frame then
+/// centered on the screen's top left corner, where no screen shown is.
+func asukaPlaced(_ f: CGRect) -> Bool {
+    !(f.midX == 0 && f.midY == 0)
 }
 
 /// Tabs: a vertical page TabView, as watchOS 10's apps page (the Digital

@@ -297,18 +297,74 @@ struct AsukaScrollView: View {
             }
             .coordinateSpace(name: space)
             .onPreferenceChange(AsukaOffsetKey.self) { o in
+                // watchOS 10's offsets (AsukaScrollOffsets has later ones').
+                guard !asukaScrollGeometry else { return }
                 rt.emit(n.id, .scrolled) { AsukaEvents.scrolled(n.id, x: Double(-o.x), y: Double(-o.y)) }
             }
-            .onChange(of: n.rev) {
-                guard let t = n.scrollTarget else { return }
-                n.scrollTarget = nil
-                // To the top: SwiftUI's scroll views on watchOS 10 go to a
-                // view, not to an offset.
-                if t.y <= 0 && t.x <= 0 {
-                    if n.scrollAnimated { withAnimation { proxy.scrollTo("top", anchor: .topLeading) } } else { proxy.scrollTo("top", anchor: .topLeading) }
-                }
+            .modifier(AsukaScrollOffsets(node: n) { proxy.scrollTo("top", anchor: .topLeading) })
+        }
+    }
+}
+
+/// Whether scroll views report their geometry and go to an offset
+/// (watchOS 11).
+let asukaScrollGeometry: Bool = {
+    if #available(watchOS 11, macOS 15, *) { return true }
+    return false
+}()
+
+/// A Scroll's or a List's offset: reported as it scrolls (Scrolled), and
+/// gone to as ScrollToOffset says, past the end being the end. From
+/// watchOS 11 with the scroll view's own geometry and position; watchOS
+/// 10's scroll views go to a view, not to an offset, so there it goes to
+/// the top only (toTop), and only a Scroll reports its offset (its
+/// content's place in it).
+struct AsukaScrollOffsets: ViewModifier {
+    let node: AsukaNode
+    let toTop: () -> Void
+
+    func body(content: Content) -> some View {
+        let _ = node.rev // a request comes with a batch
+        if #available(watchOS 11, macOS 15, *) {
+            content.modifier(AsukaScrollPosition(node: node))
+        } else {
+            let n = node
+            content.onChange(of: n.scrollRequests) {
+                n.scrollsDone = n.scrollRequests
+                guard n.scrollTarget.x <= 0, n.scrollTarget.y <= 0 else { return }
+                if n.scrollAnimated { withAnimation { toTop() } } else { toTop() }
             }
         }
+    }
+}
+
+@available(watchOS 11, macOS 15, *)
+struct AsukaScrollPosition: ViewModifier {
+    let node: AsukaNode
+    @State private var position = ScrollPosition()
+
+    func body(content: Content) -> some View {
+        let n = node
+        let _ = n.rev // a request comes with a batch
+        let rt = AsukaRuntime.shared
+        content
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: CGPoint.self) { g in
+                // From its content's top left: the scroll view starts its
+                // content below the navigation bar, inset by as much.
+                CGPoint(x: g.contentOffset.x + g.contentInsets.leading, y: g.contentOffset.y + g.contentInsets.top)
+            } action: { _, o in
+                rt.emit(n.id, .scrolled) { AsukaEvents.scrolled(n.id, x: Double(o.x), y: Double(o.y)) }
+            }
+            .onChange(of: n.scrollRequests, initial: true) {
+                // One asked for as it's made, too: the scroll view goes
+                // there once it's laid out. Past the end, it stops at it.
+                guard n.scrollRequests != n.scrollsDone else { return }
+                n.scrollsDone = n.scrollRequests
+                let t = n.scrollTarget
+                let go = { if n.horizontal { position.scrollTo(x: Swift.max(t.x, 0)) } else { position.scrollTo(y: Swift.max(t.y, 0)) } }
+                if n.scrollAnimated { withAnimation { go() } } else { go() }
+            }
     }
 }
 

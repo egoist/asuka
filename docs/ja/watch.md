@@ -123,7 +123,7 @@ watchOS に対応するコントロールがあれば、それぞれの要素は
 | `DatePicker` | ウォッチの日付と時刻のピッカー |
 | `Image`、`Symbol` | 画像、SF Symbol |
 | `Progress`、`ProgressRing`、`Activity` | バー、リング、インジケーター |
-| `Scroll`、`List` | Digital Crown でスクロールするスクロールビュー。`List` の行はウォッチのプラッターに載ります（`appearance: .bare` ではアプリが描くとおり） |
+| `Scroll`、`List` | Digital Crown でスクロールするスクロールビュー。スクロールすると内容はタイトルの下をくぐります。`List` の行はウォッチのプラッターに載ります（`appearance: .bare` ではアプリが描くとおり）。`Ref` の `scrollTo` と `scrollToEnd`、`List` の `on scroll` には watchOS 11 が必要です（watchOS 10 では先頭に戻る `scrollTo(0, 0)` だけ） |
 | `Stack` | ウォッチのナビゲーション。画面のタイトルが上にあり、戻るボタンと端からのスワイプで戻れます |
 | `Tabs` | Digital Crown で上から下へめくるページ |
 | `Sheet`、`Popover` | 画面全体を覆うシートで、閉じるボタンかスワイプで閉じます |

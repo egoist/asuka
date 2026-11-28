@@ -123,7 +123,7 @@ CLI 会把手表的小组件扩展（WidgetKit 的，ID 为`<手表应用的 ID>
 | `DatePicker` | 手表的日期和时间选择器 |
 | `Image`、`Symbol` | 图片、SF Symbol |
 | `Progress`、`ProgressRing`、`Activity` | 进度条、圆环、加载指示器 |
-| `Scroll`、`List` | 用数码表冠滚动的滚动视图；`List` 的每一行放在手表的圆角底板上（`appearance: .bare` 时按应用自己的样子绘制） |
+| `Scroll`、`List` | 用数码表冠滚动的滚动视图，滚动时内容从标题下方经过；`List` 的每一行放在手表的圆角底板上（`appearance: .bare` 时按应用自己的样子绘制）。`Ref` 的 `scrollTo`、`scrollToEnd` 以及 `List` 的 `on scroll` 需要 watchOS 11（watchOS 10 上只能用 `scrollTo(0, 0)` 回到顶部） |
 | `Stack` | 手表的导航：页面标题在顶部，有返回按钮，从边缘轻扫可以返回 |
 | `Tabs` | 用数码表冠从上到下翻动的页面 |
 | `Sheet`、`Popover` | 覆盖整个屏幕的表单，可以用关闭按钮或轻扫关闭 |

@@ -373,7 +373,9 @@ How the kinds map (ops/schema.go has the wire contract):
   `Environment` (size, safe area, keyboard over them); the core lays each
   out as a separate root, and `SafeArea` inside reads the nearest one.
   A screen under a navigation bar has no top safe area; a page above a
-  tab bar has no bottom one.
+  tab bar has no bottom one. A pushed screen starts at the environment of
+  the screen under it (it follows that one's until the host reports its
+  own), so its first layout is at the size it's shown at.
 - A Screen's **Toolbar** and **Primary** (encoded as menus) are its
   bottom bar and main action, which the host shows as its platform does:
   UINavigationController's toolbar (the primary action its prominent
@@ -1656,8 +1658,16 @@ flush. What makes SwiftUI a target rather than a second reconciler:
   (NavigationStack with the stack's screens as its path, a vertical page
   TabView, sheets, alerts), and screens and sheets are environment
   providers as on the other hosts: each reports the size SwiftUI gives
-  its content (a GeometryReader), and the core lays it out at it. A
-  user's pop sets the path shorter: Popped for each screen gone.
+  its content (a GeometryReader): below the navigation bar and inside the
+  screen's rounded corners, with no safe area of its own (a 46mm watch's
+  204 by 150 of its 208 by 248), and the core lays it out at it. A Scroll
+  or List filling it is SwiftUI's ScrollView, which reaches into the safe
+  area around it as the watch's own do: its content scrolls under the
+  title and to the screen's bottom edge, and stops at its end above the
+  rounded corners. The root is reported at the whole screen with the
+  safe area (the time, the corners) read from a view inside it, a view
+  that ignores the safe area having none. A user's pop sets the path
+  shorter: Popped for each screen gone.
 - **Measuring without views.** The core's `measure` is synchronous, on
   the main thread, inside its layout. Texts are measured with CoreText
   (`CTFramesetterSuggestFrameSizeWithConstraints`, min-content the
@@ -1676,6 +1686,13 @@ flush. What makes SwiftUI a target rather than a second reconciler:
   as SwiftUI shows it and unbinds it as it goes, the cell kept for the
   next row; its height is the cell's frame. Rows sit on the watch's
   platters unless the list is `.bare`.
+- **Scroll offsets** (a Scroll's or a List's Scrolled, ScrollToOffset)
+  are the scroll view's own geometry and `ScrollPosition` from watchOS
+  11, the offset from the content's top left (its content inset under
+  the bar added back), past the end going to the end. watchOS 10's
+  scroll views go to a view, not an offset, and report no geometry: there
+  ScrollToOffset goes to the top only, and a Scroll reports its content's
+  place in it.
 - **Events** go back on the main thread through one `enter`, as on iOS:
   what SwiftUI raises while the core is applying waits for it to return.
 - **The environment** is the watch's: dark, `watch` (a bit of the
