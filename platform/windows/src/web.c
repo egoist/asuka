@@ -621,7 +621,6 @@ static void set_up(wh_web *w, com controller) {
 		free(ops[i].s), free(ops[i].method), free(ops[i].params);
 	}
 	free(ops);
-	if (w->video) load_video(w);
 }
 
 static void controller_made(wh_web *w, uintptr_t a, void *controller) {
@@ -980,12 +979,14 @@ static char *video_config(video *v, size_t *len) {
 	dsk_jw_key(&w, "start"), dsk_jw_num(&w, v->start_at);
 	dsk_jw_key(&w, "iv"), dsk_jw_num(&w, v->interval);
 	dsk_jw_key(&w, "pip"), dsk_jw_bool(&w, v->pip);
+	// null through dsk_jw_json, which counts it as a value: dsk_jw_raw
+	// would leave out the comma before the next key.
 	dsk_jw_key(&w, "sub");
 	if (v->subtitle) dsk_jw_str(&w, v->subtitle);
-	else dsk_jw_raw(&w, "null", 4);
+	else dsk_jw_json(&w, "null", 4);
 	dsk_jw_key(&w, "aud");
 	if (v->audio) dsk_jw_str(&w, v->audio);
-	else dsk_jw_raw(&w, "null", 4);
+	else dsk_jw_json(&w, "null", 4);
 	dsk_jw_key(&w, "files");
 	dsk_jw_arr(&w);
 	for (uint32_t i = 0; i < v->nfiles; i++) dsk_jw_str(&w, v->files[i]);
