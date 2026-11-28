@@ -60,10 +60,10 @@ fn sumX(ps: [P]) -> float {
 
 fn main() { print("{sumX([P(x: 1.0, n: 1, tag: "a")])}") }
 `, "sumX", opt)
-		if !strings.Contains(c, "= AK_REFS(x_)[i_]; }") && !strings.Contains(c, "((ak_struct *)AK_REFS(x_)[i_])->f[0]") {
+		if !strings.Contains(c, "= AK_REFS(x_)[i_].p; }") && !strings.Contains(c, "((ak_struct *)AK_REFS(x_)[i_].p)->f[0]") {
 			t.Errorf("the element isn't borrowed (optimized: %v):\n%s", opt, c)
 		}
-		if strings.Contains(c, "ak_retain((AK_VALS(x_)[i_]).p)") || strings.Contains(c, "ak_retain(AK_REFS(x_)[i_])") {
+		if strings.Contains(c, "ak_retain((AK_VALS(x_)[i_]).p)") || strings.Contains(c, "ak_retain(AK_REFS(x_)[i_].p)") {
 			t.Errorf("the element is retained (optimized: %v):\n%s", opt, c)
 		}
 	}
@@ -98,7 +98,7 @@ fn main() { print("{step([V(x: 1.0, y: 2.0, z: 3.0)]).count()}") }
 			t.Errorf("%s %d times, not %d:\n%s", what, got, n, c)
 		}
 	}
-	if strings.Contains(c, "AK_REFS(x_)[i_] = NULL") {
+	if strings.Contains(c, "AK_REFS(x_)[i_].p = NULL") {
 		t.Errorf("an element is taken out:\n%s", c)
 	}
 }
@@ -120,7 +120,7 @@ fn main() { print("{bump([P(x: 1.0, n: 1, tag: "a")]).count()}") }
 	if !strings.Contains(c, "= s_; }") || !strings.Contains(c, "ak_struct_mut") {
 		t.Errorf("not changed in place:\n%s", c)
 	}
-	if strings.Contains(c, "AK_REFS(x_)[i_] = NULL") {
+	if strings.Contains(c, "AK_REFS(x_)[i_].p = NULL") {
 		t.Errorf("the element is taken out:\n%s", c)
 	}
 }
@@ -139,10 +139,10 @@ fn count(ps: [P]) -> [P] {
 
 fn main() { print("{count([P(x: 1.0, n: 1, tag: "a")]).count()}") }
 `, "count")
-	if !strings.Contains(c, "AK_REFS(x_)[i_] = NULL") {
+	if !strings.Contains(c, "AK_REFS(x_)[i_].p = NULL") {
 		t.Errorf("the element isn't moved out:\n%s", c)
 	}
-	if strings.Contains(c, "ak_retain((AK_VALS(x_)[i_]).p)") || strings.Contains(c, "ak_retain(AK_REFS(x_)[i_])") {
+	if strings.Contains(c, "ak_retain((AK_VALS(x_)[i_]).p)") || strings.Contains(c, "ak_retain(AK_REFS(x_)[i_].p)") {
 		t.Errorf("the element is retained:\n%s", c)
 	}
 }
@@ -305,7 +305,7 @@ fn main() {
 				t.Errorf("twice: an [int]'s element isn't read and written as a value:\n%s", body)
 			}
 		case "move":
-			if !strings.Contains(body, "ak_struct *s_ = AK_REFS(x_)[i_];") || strings.Count(body, "ak_struct_mut") != 1 {
+			if !strings.Contains(body, "ak_struct *s_ = AK_REFS(x_)[i_].p;") || strings.Count(body, "ak_struct_mut") != 1 {
 				t.Errorf("move: the element isn't a pointer made unique once a turn:\n%s", body)
 			}
 		}

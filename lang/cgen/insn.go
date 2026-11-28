@@ -673,8 +673,9 @@ func (g *gen) check(in insn, i int, h string) string {
 // union's member for a char's, which every store may change, so the
 // element's pointer would be read again after each store of a field (a
 // double, an int) through it; read as a pointer, it isn't. A packed
-// array holds no references: this is always a value's slot.
-const elemRef = "AK_REFS(x_)[i_]"
+// array holds no references: this is always a value's slot, 8 bytes
+// where a pointer is 4 too (ak_ref_slot's), never sizeof(void *).
+const elemRef = "AK_REFS(x_)[i_].p"
 
 // elemSlot is the C lvalue of element i_ of the array x_, whose
 // elements are of register r's kind, in an array of values or a packed
@@ -788,8 +789,8 @@ func (g *gen) arrayOp(name string, in insn, h string) bool {
 				g.setref(a[0], "NULL"), g.rp(a[1]), check, g.uniqueArr(a[1]), g.uniqueElem(), a[0])
 		case g.pl.moveOut[g.k]:
 			// Taken out (the next instruction puts none there): moved.
-			g.w("{ ak_arr *x_ = %s; %s %s void *o_ = %s; %s = AK_REFS(x_)[i_]; AK_REFS(x_)[i_] = NULL; ak_release(o_); }",
-				g.rp(a[1]), check, g.uniqueArr(a[1]), g.rp(a[0]), g.rp(a[0]))
+			g.w("{ ak_arr *x_ = %s; %s %s void *o_ = %s; %s = %s; %s = NULL; ak_release(o_); }",
+				g.rp(a[1]), check, g.uniqueArr(a[1]), g.rp(a[0]), g.rp(a[0]), elemRef, elemRef)
 		default:
 			g.w("{ const ak_arr *x_ = %s; %s %s }", g.src(a[1]), check, g.loadElem(a[0]))
 		}
@@ -798,9 +799,9 @@ func (g *gen) arrayOp(name string, in insn, h string) bool {
 		switch {
 		case g.pl.moveIn[g.k]:
 			// Put back and cleared (the next instruction): moved in.
-			set = fmt.Sprintf("void *o_ = AK_REFS(x_)[i_]; AK_REFS(x_)[i_] = %s; %s = NULL; ak_release(o_);", g.rp(a[2]), g.rp(a[2]))
+			set = fmt.Sprintf("void *o_ = %[1]s; %[1]s = %[2]s; %[2]s = NULL; ak_release(o_);", elemRef, g.rp(a[2]))
 		case g.isRef(a[2]):
-			set = fmt.Sprintf("void *o_ = AK_REFS(x_)[i_]; AK_REFS(x_)[i_] = ak_retain(%s); ak_release(o_);", g.rp(a[2]))
+			set = fmt.Sprintf("void *o_ = %[1]s; %[1]s = ak_retain(%[2]s); ak_release(o_);", elemRef, g.rp(a[2]))
 		}
 		g.w("{ ak_arr *x_ = %s; %s %s %s }", g.rp(a[0]), g.check(in, a[1], h), g.uniqueArr(a[0]), set)
 	case "IDXF":

@@ -233,15 +233,27 @@ func (g *gen) onlyDances(ins []insn, h, l, r int, dances []int) bool {
 	return true
 }
 
-// curType is the C type a cursor of elements of kind k points to.
+// curType is the C type a cursor of elements of kind k points to: each
+// a value's size (8 bytes), as the array's slots are, a reference's too
+// (ak_ref_slot, where a pointer is 4 bytes), so the cursor steps a slot
+// at a time and AK_CUR_CLOSE counts slots.
 func curType(k bc.Kind) string {
 	switch k {
 	case bc.KFloat:
 		return "double"
 	case bc.KRef:
-		return "void *"
+		return "ak_ref_slot"
 	}
 	return "int64_t"
+}
+
+// curNext is the C lvalue of the slot cursor c points to, stepping it
+// past: a reference's pointer in its slot.
+func curNext(c *cursor) string {
+	if c.kind == bc.KRef {
+		return fmt.Sprintf("(W%d_++)->p", c.id)
+	}
+	return fmt.Sprintf("*W%d_++", c.id)
 }
 
 // curDecls declares the cursors' locals.
@@ -326,11 +338,11 @@ func (g *gen) curAppend(c *cursor, name string, a []int) {
 		retain = fmt.Sprintf("ak_retain(%s); ", v)
 	}
 	if name == "arr.append_room" {
-		g.w("{ %sAK_CUR_ROOM(W%d_, E%d_); *W%d_++ = %s; }", retain, c.id, c.id, c.id, v)
+		g.w("{ %sAK_CUR_ROOM(W%d_, E%d_); %s = %s; }", retain, c.id, c.id, curNext(c), v)
 		return
 	}
-	g.w("{ %sif (AK_LIKELY(W%d_ != E%d_)) *W%d_++ = %s; else { AK_CUR_CLOSE(%s, W%d_); %s = ak_op_append_slow(%s, (ak_val){.%s = %s}); AK_CUR_OPEN(%s, W%d_, E%d_); } }",
-		retain, c.id, c.id, c.id, v, arr, c.id, arr, arr, member(c.kind), v, arr, c.id, c.id)
+	g.w("{ %sif (AK_LIKELY(W%d_ != E%d_)) %s = %s; else { AK_CUR_CLOSE(%s, W%d_); %s = ak_op_append_slow(%s, (ak_val){.%s = %s}); AK_CUR_OPEN(%s, W%d_, E%d_); } }",
+		retain, c.id, c.id, curNext(c), v, arr, c.id, arr, arr, member(c.kind), v, arr, c.id, c.id)
 }
 
 // stubsC writes the stubs' code.

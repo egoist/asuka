@@ -1,0 +1,186 @@
+// Arrays of references (structs, strings, arrays, enums with payloads,
+// maps): built, read, changed in place and transformed, as release builds
+// compile them to C, which reads an element a value's slot (8 bytes) at a
+// time whatever a pointer's size: on wasm32 and the watch's arm64_32 too
+// (TestRunWasm32), where a map over an array of structs once gave one
+// element of three.
+
+struct Seg {
+  name: string
+  n: int
+}
+
+struct Point {
+  x: float
+  y: float
+}
+
+struct Track {
+  title: string
+  at: Point
+  segs: [Seg]
+  tags: [string]
+}
+
+enum Item {
+  note(text: string)
+  task(text: string, done: bool)
+  sep
+}
+
+fn label(i: Item) -> string = match i {
+  .note(t) => "note {t}"
+  .task(t, d) => "task {t}{if d { "!" } else { "" }}"
+  .sep => "-"
+}
+
+let segs = [Seg(name: "a", n: 1), Seg(name: "b", n: 2), Seg(name: "c", n: 3)]
+
+test "map, filter, sort over structs" {
+  let names = segs.map(s => s.name)
+  print("{names.count()} {names}")
+  print(segs.map(s => s.n))
+  print(segs.map(s => s.n.float() * 1.5))
+  print(segs.map(s => s.n > 1))
+  print(segs.map(s => Seg(name: s.name.upper(), n: s.n * 10)))
+  print(segs.filter(s => s.n != 2).map(s => s.name))
+  print(segs.sorted((p, q) => p.n > q.n).map(s => s.name))
+  var copy = segs
+  copy.sort((p, q) => p.name > q.name)
+  print("{copy.map(s => s.name)} {segs.map(s => s.name)}")
+  print(segs.compactMap(s => if s.n % 2 == 1 { s.name } else { none }))
+  print(segs.flatMap(s => [s.name, "{s.n}"]))
+  print(segs.reduce("", (acc, s) => acc + s.name))
+  print(segs.find(s => s.n == 3)!.name)
+  print(segs.index(s => s.name == "b")!)
+  print(segs.reversed().map(s => s.name))
+  print(segs.enumerated().map(e => "{e.0}{e.1.name}"))
+}
+
+test "many, past the first room" {
+  var big: [Seg] = []
+  for i in 0..<100 { big.push(Seg(name: "s{i}", n: i)) }
+  let odd = big.filter(s => s.n % 2 == 1)
+  print("{odd.count()} {odd.first()!.name} {odd.last()!.name}")
+  let names = big.map(s => s.name)
+  print("{names.count()} {names[0]} {names[50]} {names[99]}")
+  var kept: [string] = []
+  for s in big {
+    if s.n % 10 == 0 { kept.push(s.name) }
+  }
+  print(kept)
+  print(big.map(s => s.name).filter(n => n.hasSuffix("7")).joined(separator: ","))
+}
+
+test "changed in place" {
+  var xs = segs
+  for i in 0..<xs.count() { xs[i].n += 100 }
+  xs[1].name = "B"
+  print(xs.map(s => "{s.name}{s.n}"))
+  print(segs.map(s => "{s.name}{s.n}"))
+  let first = xs[0]
+  xs[0] = xs[2]
+  xs[2] = first
+  print(xs.map(s => s.name))
+  xs.insert(Seg(name: "z", n: 0), at: 1)
+  let gone = xs.removeAt(0)
+  print("{gone.name} {xs.map(s => s.name)}")
+  xs.push(Seg(name: "end", n: -1))
+  print("{xs.count()} {xs.last()!.name} {xs.pop()!.name} {xs.count()}")
+}
+
+test "nested structs" {
+  var t = Track(title: "t", at: Point(x: 1.5, y: -2), segs: segs, tags: ["x", "y"])
+  let tracks = [t, Track(title: "u", at: Point(x: 0, y: 0), segs: [], tags: [])]
+  print(tracks.map(k => k.title))
+  print(tracks.map(k => k.at.x + k.at.y))
+  print(tracks.map(k => k.segs.map(s => s.name)))
+  print(tracks.map(k => k.tags.count()))
+  t.segs[2].name = "C"
+  t.tags.push("z")
+  print("{t.segs.map(s => s.name)} {t.tags} {tracks[0].segs.map(s => s.name)} {tracks[0].tags}")
+  let grid = [["a", "b"], [], ["c"]]
+  print(grid.map(r => r.count()))
+  print(grid.map(r => r.joined()))
+  print(grid.flatMap(r => r))
+}
+
+test "enums with payloads" {
+  let items: [Item] = [.note(text: "hi"), .task(text: "buy", done: true), .sep, .task(text: "call", done: false)]
+  print(items.map(label))
+  print(items.filter(i => match i {
+    .task(_, d) => !d
+    _ => false
+  }).map(label))
+  var copy = items
+  copy[2] = .note(text: "was sep")
+  print("{copy.map(label)} {items.map(label)}")
+  let maybe: [Seg?] = [segs[0], none, segs[2]]
+  print(maybe.map(s => s?.name ?? "none"))
+  print(maybe.compactMap(s => s).map(s => s.n))
+}
+
+test "maps of structs" {
+  var byName: [string: Seg] = [:]
+  for s in segs { byName[s.name] = s }
+  print(byName.keys())
+  print(byName.values().map(s => s.n))
+  byName["b"] = Seg(name: "b2", n: 20)
+  print(byName.values().map(s => s.name))
+  let lists: [string: [Seg]] = ["low": segs.filter(s => s.n < 2), "high": segs.filter(s => s.n >= 2)]
+  print(lists["high"]!.map(s => s.name))
+  print(lists.values().map(l => l.count()))
+  let pairs = segs.map(s => (s.name, s.n))
+  print(pairs.map(p => p.0))
+}
+
+// Output:
+// 3 ["a", "b", "c"]
+// [1, 2, 3]
+// [1.5, 3.0, 4.5]
+// [false, true, true]
+// [Seg(name: "A", n: 10), Seg(name: "B", n: 20), Seg(name: "C", n: 30)]
+// ["a", "c"]
+// ["c", "b", "a"]
+// ["c", "b", "a"] ["a", "b", "c"]
+// ["a", "c"]
+// ["a", "1", "b", "2", "c", "3"]
+// abc
+// c
+// 1
+// ["c", "b", "a"]
+// ["0a", "1b", "2c"]
+// ok map, filter, sort over structs
+// 50 s1 s99
+// 100 s0 s50 s99
+// ["s0", "s10", "s20", "s30", "s40", "s50", "s60", "s70", "s80", "s90"]
+// s7,s17,s27,s37,s47,s57,s67,s77,s87,s97
+// ok many, past the first room
+// ["a101", "B102", "c103"]
+// ["a1", "b2", "c3"]
+// ["c", "B", "a"]
+// c ["z", "B", "a"]
+// 4 end end 3
+// ok changed in place
+// ["t", "u"]
+// [-0.5, 0.0]
+// [["a", "b", "c"], []]
+// [2, 0]
+// ["a", "b", "C"] ["x", "y", "z"] ["a", "b", "c"] ["x", "y"]
+// [2, 0, 1]
+// ["ab", "", "c"]
+// ["a", "b", "c"]
+// ok nested structs
+// ["note hi", "task buy!", "-", "task call"]
+// ["task call"]
+// ["note hi", "task buy!", "note was sep", "task call"] ["note hi", "task buy!", "-", "task call"]
+// ["a", "none", "c"]
+// [1, 3]
+// ok enums with payloads
+// ["a", "b", "c"]
+// [1, 2, 3]
+// ["a", "b2", "c"]
+// ["b", "c"]
+// [1, 2]
+// ["a", "b", "c"]
+// ok maps of structs

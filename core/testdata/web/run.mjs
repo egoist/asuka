@@ -10,7 +10,10 @@
 // providers) is imported before the core starts, as the page imports
 // packages' web/ code.
 //
-//	node run.mjs <platform/web/src> <asuka.wasm> <app.akb> [asqlite.wasm | native.mjs]
+// With "-" for the module, the app is the one compiled into asuka.wasm
+// (a release's, its C: asuka_run starts it).
+//
+//	node run.mjs <platform/web/src> <asuka.wasm> <app.akb | -> [asqlite.wasm | native.mjs]
 import { readFile } from "node:fs/promises";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
@@ -109,4 +112,4 @@ if (asqlite) {
 // The run's crash record (crash.js), the page's side.
 const { Crash } = await import(pathToFileURL(src + "/crash.js"));
 const crash = new Crash({ afterCore: (f) => f() });
-await startCore(host, { wasm: pathToFileURL(wasm), module: pathToFileURL(akb), appDir: dir, log, makeWorker, sqlite, crash });
+await startCore(host, { wasm: pathToFileURL(wasm), module: akb === "-" ? undefined : pathToFileURL(akb), appDir: dir, log, makeWorker, sqlite, crash });

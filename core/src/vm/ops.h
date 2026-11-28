@@ -414,8 +414,22 @@ __attribute__((noinline, unused)) static void ak_op_concat(ak_val *R, uint16_t a
 // anything, so a store of a struct's field through one would have the
 // element's pointer read again), a packed [bool]'s bools
 // (ak_arr_bools). A packed array holds no references.
+//
+// A reference's slot is a value's (8 bytes) wherever a pointer is
+// smaller (wasm32, the watch's arm64_32): its pointer then the rest of
+// the value, so AK_REFS(a)[i].p is element i's pointer at a value's
+// stride, as AK_VALS(a)[i].p is, and a loop's cursor of references
+// (AK_CUR_OPEN) steps a value at a time.
+typedef struct ak_ref_slot {
+	void *p;
+#if UINTPTR_MAX == UINT32_MAX
+	uint32_t rest_;
+#endif
+} ak_ref_slot;
+_Static_assert(sizeof(ak_ref_slot) == sizeof(ak_val), "a reference's slot is a value's");
+_Static_assert(_Alignof(ak_ref_slot) <= _Alignof(ak_val), "a value's slot holds a reference's");
 #define AK_VALS(a) ((ak_val *)(a)->items)
-#define AK_REFS(a) ((void **)(a)->items)
+#define AK_REFS(a) ((ak_ref_slot *)(a)->items)
 #define AK_BOOLS(a) ((bool *)(a)->items)
 
 // ak_op_range throws an index out of arr's range (cold: the checks'
@@ -811,7 +825,8 @@ __attribute__((noinline, cold, unused)) static ak_arr *ak_op_append_slow(ak_arr 
 // A fused loop's write cursor (lang/cgen's cursor.go): where its next
 // append's element goes (w) and where the array's room ends (e), in
 // locals the loop keeps, its count written back (AK_CUR_CLOSE) on the
-// ways out of the loop. The array is the loop's own, of values.
+// ways out of the loop. The array is the loop's own, of values; a
+// cursor points to int64_t, double or ak_ref_slot, each a value's size.
 #define AK_CUR_OPEN(a, w, e) do { \
 		ak_arr *c_ = (a); \
 		AK_OP_OWN_CHECK(c_); \

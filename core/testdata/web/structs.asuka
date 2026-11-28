@@ -1,0 +1,24 @@
+// A release build's app on the web: compiled to C, built into the core's
+// WebAssembly (32-bit pointers, 8-byte values), run by web_node_test.go
+// under Node. A map over an array of structs once gave one element of
+// three there (the C stepped through the array a pointer at a time).
+struct Seg {
+  name: string
+  n: int
+}
+
+let segs = [Seg(name: "a", n: 1), Seg(name: "b", n: 2), Seg(name: "c", n: 3)]
+
+component Main {
+  task {
+    let names = segs.map(s => s.name)
+    print("{names.count()} {names}")
+    print(segs.filter(s => s.n > 1).map(s => s.name))
+    print(segs.sorted((p, q) => p.n > q.n).map(s => "{s.name}{s.n}"))
+    print([1, 2, 3].map(i => i * 2))
+    print("done")
+  }
+  Segmented(segs.map(s => s.name)) {}
+}
+
+app { Main() }

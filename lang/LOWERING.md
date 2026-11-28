@@ -562,10 +562,12 @@ the C is written, from the bytecode's kinds.
   path has, so `b.vx += ...; b.vy += ...` on one element checks once.
   Every element is read and written as its array stores it, through
   one set of helpers (insn.go's elemRef, elemSlot, loadElem, storeElem):
-  a reference (a struct...) as a pointer (AK_REFS), not through the
-  ak_val union (a C compiler takes a union's member for a char's, which
-  every store of a field may change, so the element's pointer would be
-  read again after each); a float as a double; a bool as a [bool]'s
+  a reference (a struct...) as a pointer (AK_REFS(x)[i].p), not through
+  the ak_val union (a C compiler takes a union's member for a char's,
+  which every store of a field may change, so the element's pointer
+  would be read again after each), in a slot a value's size (ops.h's
+  ak_ref_slot: 8 bytes where a pointer is 4 too, wasm32 and arm64_32,
+  never sizeof(void *)); a float as a double; a bool as a [bool]'s
   byte (AK_BOOLS: a [bool] is always packed); an int as a value, or,
   in a function whose code has sized integers (bytecode.FSized: the
   lowering sets it where a type it sees is one or an array of them, and
@@ -629,7 +631,9 @@ the C is written, from the bytecode's kinds.
 - Write cursors (lang/cgen/cursor.go). A fused loop's appends into the
   array it made (arr.append_room, arr.append_own: an array's map,
   filter, compactMap) store through a pointer kept in a C local (W<n>_,
-  with the room's end, E<n>_), opened as the loop is fallen into: each
+  with the room's end, E<n>_; it points to a value's size, an int64_t,
+  a double or a reference's ak_ref_slot, so it steps a slot at a time
+  wherever a pointer is 4 bytes), opened as the loop is fallen into: each
   append read the array's buffer and count and stored the count back,
   which the C compiler can't keep in registers (the element's store may
   alias them, and an overflow check can leave between). A filter's

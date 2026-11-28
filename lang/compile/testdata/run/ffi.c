@@ -17,7 +17,7 @@ float ffi_half(float x) { return x / 2; }
 double ffi_scale(double x, double by) { return x * by; }
 bool ffi_not(bool b) { return !b; }
 
-size_t ffi_len(const char *s) { return strlen(s); }
+uint64_t ffi_len(const char *s) { return strlen(s); }
 const char *ffi_greeting(void) { return "héllo from C"; }
 const char *ffi_maybe(bool some) { return some ? "some" : NULL; }
 bool ffi_is_null(const char *s) { return s == NULL; }

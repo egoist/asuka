@@ -131,6 +131,7 @@ go run ./cmd/asuka new --bin /tmp/greet          # a program (fn main): asuka.to
 go run ./cmd/asuka run examples/notes -- add Hi  # a program's main on the VM (here [bin.notes]), the arguments after --
 go run ./cmd/asuka build --bin notes --target linux-arm64 examples/notes  # a program's executable (another desktop's with Zig)
 go test ./lang/compile -run 'TestPrograms|TestRun/(os|flag|command)'      # programs on the VM and compiled to C; std/os, flag, command
+go test ./lang/compile -run TestRunWasm32       # the conformance suite (testdata/run) on 32-bit pointers: the VM and compiled C in asuka-run.wasm under Node (Zig)
 go test -timeout 30m ./internal/appbuild ./cmd/asuka  # the builds for every target, the dev loop end to end (mac, Chrome, simulator, emulator)
 go test -tags e2e ./e2e -run IOS                 # GUI tests: the examples on the simulator (Android: -run Android, an emulator running)
 go run ./cmd/asuka build --platform ios --simulator examples/counter    # a release build (--platform ios alone: a signed .ipa)

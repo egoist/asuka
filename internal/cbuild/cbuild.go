@@ -286,6 +286,11 @@ type RunnerOptions struct {
 	// Builtins are the ones Extra's app calls (its module's): only the std
 	// packages' tables of them are linked. nil: every table.
 	Builtins []string
+	// Wasm32 builds it for WebAssembly (with Zig, as the web's core is),
+	// a WASI command, asuka-run.wasm, which platform/web/testing/wasi.mjs
+	// runs under Node: the VM and compiled C on 32-bit pointers, as a web
+	// build runs them. No sanitizers there.
+	Wasm32 bool
 }
 
 // testFlags are a test build's (the runner's, a host test's): with
@@ -322,7 +327,23 @@ func RunnerFor(core string, o RunnerOptions) (string, error) {
 	}
 	runner, _ := filepath.Glob(filepath.Join(core, "runner", "*.c"))
 	srcs = append(srcs, runner...)
-	flags, opt, link := testFlags(core, o.Sanitize)
+	flags, opt, link := testFlags(core, o.Sanitize && !o.Wasm32)
+	name := "asuka-run"
+	var target []string // the target's flags (Wasm32's)
+	if o.Wasm32 {
+		tc, err := ForTarget(Target{OS: "wasm", Arch: "wasm32"})
+		if err != nil {
+			return "", err
+		}
+		// A command (main), its imports from the page (module "asuka")
+		// left for the script to give.
+		cc, name, target = tc.CC, "asuka-run.wasm", tc.Flags
+		flags = append(append([]string{}, tc.Flags...), flags...)
+		opt = append(append([]string{}, tc.Flags...), opt...)
+		link = append(append([]string{}, tc.Flags...), "-mexec-model=command", "-lm")
+	} else if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
 	own := len(o.Extra) > 0 || f != nil
 	if own {
 		// core/link/link.c, with what the build has.
@@ -337,10 +358,6 @@ func RunnerFor(core string, o RunnerOptions) (string, error) {
 	objs, err := cc.CompileCached(srcs, flags)
 	if err != nil {
 		return "", err
-	}
-	name := "asuka-run"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
 	}
 	if !own {
 		key := ccache.Key(append([]string{"c-runner-1", cc.Identity(), strings.Join(link, "\x00")}, Keys(objs)...)...)
@@ -363,7 +380,7 @@ func RunnerFor(core string, o RunnerOptions) (string, error) {
 		return "", fmt.Errorf("cbuild: a runner with extra sources needs a directory of the caller's")
 	}
 	lflags := append(append([]string{}, flags...), linkDefines(len(o.Extra) > 0, f.glue(), f.libs(), o.Builtins)...)
-	if len(o.Extra) > 0 {
+	if len(o.Extra) > 0 && !o.Wasm32 {
 		lflags = append(lflags, AppFlags(cc, Host())...)
 	}
 	if f != nil {
@@ -393,7 +410,7 @@ func RunnerFor(core string, o RunnerOptions) (string, error) {
 					return "", fmt.Errorf("cbuild: %s: %v", u.Name, err)
 				}
 			}
-			objs, err := cc.CompileCached(u.Sources, append(append([]string{"-I" + filepath.Join(core, "include")}, u.Flags...), "-O2"))
+			objs, err := cc.CompileCached(u.Sources, append(append(append(append([]string{}, target...), "-I"+filepath.Join(core, "include")), u.Flags...), "-O2"))
 			if err != nil {
 				return "", fmt.Errorf("cbuild: %s: %v", u.Name, err)
 			}

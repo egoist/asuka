@@ -89,6 +89,53 @@ func runWebNode(t *testing.T, src string, opts *compile.Options, extra ...string
 	return string(out)
 }
 
+// A release build's app on the web: compiled to C (lang/cgen) into the
+// core's WebAssembly, as asuka build --platform web makes it, where a
+// pointer is 4 bytes and a value 8: arrays of structs mapped, filtered and
+// sorted whole (a map gave one element of three once).
+func TestWebRelease(t *testing.T) {
+	if testing.Short() {
+		t.Skip("WebAssembly under Node (not -short)")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("no Node")
+	}
+	if _, err := cbuild.ForTarget(cbuild.Target{OS: "wasm", Arch: "wasm32"}); err != nil {
+		t.Skip(err)
+	}
+	b, err := os.ReadFile(filepath.Join("testdata", "web", "structs.asuka"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := compile.Files(map[string][]byte{"structs.asuka": b}, &compile.Options{Platform: target.Web})
+	if err := res.Err(); err != nil {
+		t.Fatal(err)
+	}
+	wasm := filepath.Join(t.TempDir(), "asuka.wasm")
+	if err := appbuild.Lib(cbuild.Target{OS: "wasm", Arch: "wasm32"}, cbuild.Module, res.Module, wasm); err != nil {
+		t.Fatal(err)
+	}
+	web, _ := filepath.Abs(filepath.Join("..", "platform", "web", "src"))
+	cmd := exec.Command(node, "--no-warnings", filepath.Join("testdata", "web", "run.mjs"), web, wasm, "-")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("%v\n%s%s", err, out, stderr.String())
+	}
+	want := `3 ["a", "b", "c"]
+["b", "c"]
+["c3", "b2", "a1"]
+[2, 4, 6]
+(0 jobs on workers)
+done
+`
+	if got := string(out); strings.TrimSpace(got) != strings.TrimSpace(want) {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 // spawn on the web runs on workers, each the same core with the same
 // app: values and errors there and back, the app's files on both sides,
 // several at once, a cancelled one.
