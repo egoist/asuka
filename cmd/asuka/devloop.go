@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/dap"
 	"github.com/egoist/asuka/internal/devserver"
 	"github.com/egoist/asuka/lang/bytecode"
@@ -112,6 +113,12 @@ type devReload struct {
 // compiles the app once. A module that doesn't compile is printed and
 // waited on: the players get the first that does.
 func newDevLoop(app *asukaApp, addr string) (*devLoop, error) {
+	// Its modules are development builds, whoever made the loop: @debug
+	// is true, and their functions keep their files' paths (a release's
+	// are trimmed, app.asuka), which the error overlay reads the lines
+	// where an error was thrown from, and the debugger and the
+	// inspector's editor links open.
+	appbuild.Debug = true
 	d := &devLoop{app: app, out: os.Stdout, platform: app.platform.Or(), loaded: map[*devserver.Player]bool{}, reloads: make(chan devReload, 16),
 		firstLoad: make(chan struct{}), playerErr: make(chan string, 1), inspector: newInspector(), automation: newAutomation(),
 		mods: map[target.Platform]*bytecode.Module{}, profiles: newDevProfiles()}

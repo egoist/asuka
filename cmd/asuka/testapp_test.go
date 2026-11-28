@@ -50,6 +50,10 @@ func useSQLiteCounter(t *testing.T, label string) {
 // deps (package ID → directory), as loadApp reads one.
 func projectApp(t *testing.T, dir string, deps map[string]string) *asukaApp {
 	t.Helper()
+	// A dev loop of it makes development builds (newDevLoop): the tests
+	// after this one get the builds they had.
+	old := appbuild.Debug
+	t.Cleanup(func() { appbuild.Debug = old })
 	app, err := projectAppErr(dir, deps)
 	if err != nil {
 		t.Fatal(err)

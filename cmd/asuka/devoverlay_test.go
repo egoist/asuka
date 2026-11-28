@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/lang/target"
 )
 
@@ -64,6 +65,41 @@ func TestDevOverlayUncaught(t *testing.T) {
 	// No frame of the app's: no source.
 	if source, _ := uncaughtSource(dir, "std.thing (std/thing/thing.asuka:9)"); source != "" {
 		t.Errorf("source %q", source)
+	}
+}
+
+// The dev loop's modules are development builds, whatever asuka's
+// command set: their functions name the app's files where they are, so
+// the overlay of an error a player didn't catch (on any platform: the
+// loop is theirs) shows the lines where it was thrown. A release's
+// trimmed paths (app.asuka) had it show none, silently.
+func TestDevLoopUncaughtSource(t *testing.T) {
+	dir := counterDir(t)
+	os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(boomApp), 0o644)
+	app := projectApp(t, dir, nil)
+	app.platform = target.IOS
+	appbuild.Debug = false // as asuka build leaves it
+	loop, err := newDevLoop(app, "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loop.close()
+	m, _, err := app.compileShown(target.IOS, map[string]bool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := ""
+	for i := range m.Funcs {
+		if m.Funcs[i].Name == "explode" {
+			file = m.Funcs[i].File
+		}
+	}
+	if want := filepath.Join(dir, "app.asuka"); file != want {
+		t.Fatalf("explode's file is %q, want %q", file, want)
+	}
+	source, details := uncaughtSource(dir, "explode ("+file+":12)")
+	if !strings.Contains(source, "> 12 |   throw Error(\"boom at {n}\")") || details != "explode (app.asuka:12)" {
+		t.Errorf("source:\n%s\ndetails:\n%s", source, details)
 	}
 }
 
