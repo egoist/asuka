@@ -8,4 +8,6 @@
     <color name="asuka_widget_outline">@android:color/system_neutral2_400</color>
     <color name="asuka_widget_outline_variant">@android:color/system_neutral2_700</color>
     <color name="asuka_widget_on_accent">@android:color/system_accent1_800</color>
+    <color name="asuka_widget_secondary_container">@android:color/system_accent2_700</color>
+    <color name="asuka_widget_on_secondary_container">@android:color/system_accent2_100</color>
 </resources>

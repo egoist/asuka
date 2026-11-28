@@ -1,0 +1,500 @@
+// Package platform/passkey makes passkeys and signs in with them: WebAuthn,
+// through the platform's own passkeys and its sheet. iOS's and the Mac's
+// AuthenticationServices (iCloud Keychain, or a password manager the user
+// chose), Android's Credential Manager (Google Password Manager, or
+// another provider), Windows' WebAuthn (Windows Hello, a security key, a
+// phone), a browser's navigator.credentials. Linux has none: available()
+// is false there.
+//
+// The app's server makes the options, as for a web page, and checks what
+// comes back: register and signIn take its options' JSON and return the
+// JSON it verifies (WebAuthn Level 3's serialization, base64url).
+//
+//   let options = try await http.post("https://example.com/passkeys/begin")
+//   let credential = try await passkey.register(options.text())
+//   try await http.post("https://example.com/passkeys/finish", body: credential)
+//
+// A passkey belongs to its relying party's domain (rp.id, rpId): an app
+// may use the domains asuka.toml's passkeys name, each serving the files
+// that say the app is theirs (apple-app-site-association's webcredentials,
+// assetlinks.json's get_login_creds).
+//
+// Tests drive a fake: passkey.fake() is an authenticator in the app, whose
+// passkeys a server verifies as it does real ones.
+
+import std/crypto
+import std/encoding
+import std/json
+
+/// How register or signIn ended, when it didn't.
+pub enum PasskeyError: Error {
+  /// passkey: canceled
+  canceled
+  /// passkey: not available
+  notAvailable
+  /// passkey: no passkey for this account
+  noCredentials
+  /// passkey: there's a passkey for this account already
+  exists
+  /// passkey: the app isn't associated with the relying party's domain
+  notAssociated
+  /// passkey: the options aren't WebAuthn's
+  invalidOptions
+
+  /// The error's text: "passkey: " and what went wrong, as each case's
+  /// comment says.
+  fn message() -> string = match self {
+    .canceled => "passkey: canceled"
+    .notAvailable => "passkey: not available"
+    .noCredentials => "passkey: no passkey for this account"
+    .exists => "passkey: there's a passkey for this account already"
+    .notAssociated => "passkey: the app isn't associated with the relying party's domain"
+    .invalidOptions => "passkey: the options aren't WebAuthn's"
+  }
+}
+
+/// What register asks of the platform: the server's options, read.
+struct Creation {
+  /// The options, as WebAuthn's JSON says them (without a publicKey
+  /// around them, the ids in base64url): what Android and the web take.
+  json: string
+  rpId: string
+  rpName: string
+  userId: bytes
+  userName: string
+  userDisplayName: string
+  challenge: bytes
+  /// The COSE algorithms the server takes, in its order (-7: ES256).
+  algorithms: [int]
+  /// The ids of the passkeys the account has already.
+  exclude: [bytes]
+  /// required, preferred or discouraged.
+  residentKey: string
+  userVerification: string
+  attestation: string
+  /// platform, cross-platform or "" (either).
+  attachment: string
+  /// 0: the platform's.
+  timeoutMs: int
+  /// The client data the platform signs where it takes it from the app
+  /// (Windows): webauthn.create's, its origin https:// and the rp's id.
+  clientData: bytes
+}
+
+/// What signIn asks of the platform.
+struct Request {
+  json: string
+  rpId: string
+  challenge: bytes
+  /// The passkeys it may be (none: any of the rp's, the user picks).
+  allow: [bytes]
+  userVerification: string
+  timeoutMs: int
+  clientData: bytes
+}
+
+/// What the platform made or signed: its own JSON (Android, the web), or
+/// its parts.
+struct Response {
+  /// The platform's RegistrationResponseJSON or
+  /// AuthenticationResponseJSON ("": the parts below).
+  json: string = ""
+  /// The credential's id.
+  id: bytes = bytes()
+  clientData: bytes = bytes()
+  /// register's.
+  attestationObject: bytes = bytes()
+  /// signIn's (register's, if the platform gives it).
+  authenticatorData: bytes = bytes()
+  signature: bytes = bytes()
+  userHandle: bytes = bytes()
+  transports: [string] = []
+  /// platform, cross-platform or "".
+  attachment: string = ""
+}
+
+/// The platform's passkeys.
+native interface Authenticator {
+  async fn available() -> bool
+  /// @mainThread
+  async fn register(c: Creation) -> Response
+  /// @mainThread
+  async fn signIn(r: Request) -> Response
+}
+
+// Made once; none where the platform has no passkeys (Linux).
+let authenticator = try? Authenticator()
+
+state faked: FakeAuthenticator? = none
+
+/// Whether the platform makes and uses passkeys here: false on Linux, an
+/// iPhone or a Mac too old for them, Android before 9, a browser without
+/// WebAuthn.
+pub async fn available() -> bool {
+  if let f = faked {
+    return f.available
+  }
+  if let a = authenticator {
+    return (try? await a.available()) ?? false
+  }
+  return false
+}
+
+/// Makes a passkey for the account the server's options name, the
+/// system's sheet asking the user (Face ID, the device's lock): options is
+/// the server's PublicKeyCredentialCreationOptionsJSON (alone, or as
+/// {"publicKey": …}); it returns the RegistrationResponseJSON the server
+/// verifies and keeps the passkey's public key from. It throws
+/// PasskeyError: canceled (the user closed the sheet), exists (one of the
+/// options' excludeCredentials is on this device), notAssociated (the
+/// app isn't the rp's domain's), notAvailable, invalidOptions.
+pub async fn register(options: string) throws -> string {
+  let c = try creation(options)
+  if let f = faked {
+    return registrationJSON(try f.register(c))
+  }
+  let a = authenticator else { throw PasskeyError.notAvailable }
+  return registrationJSON(try await a.register(c))
+}
+
+/// Signs in with one of the user's passkeys: options is the server's
+/// PublicKeyCredentialRequestOptionsJSON (alone, or as {"publicKey": …});
+/// with no allowCredentials, the user picks one of the rp's. It returns
+/// the AuthenticationResponseJSON the server verifies; its userHandle
+/// says whose passkey it is. It throws PasskeyError: canceled,
+/// noCredentials (the device has none for the rp: register one),
+/// notAssociated, notAvailable, invalidOptions.
+pub async fn signIn(options: string) throws -> string {
+  let r = try request(options)
+  if let f = faked {
+    return assertionJSON(try f.signIn(r))
+  }
+  let a = authenticator else { throw PasskeyError.notAvailable }
+  return assertionJSON(try await a.signIn(r))
+}
+
+// ---- The server's options ----
+
+struct RpJSON {
+  id: string = ""
+  name: string = ""
+}
+
+struct UserJSON {
+  id: string = ""
+  name: string = ""
+  displayName: string = ""
+}
+
+struct ParamJSON {
+  type: string = ""
+  alg: int = 0
+}
+
+struct DescriptorJSON {
+  type: string = ""
+  id: string = ""
+}
+
+struct SelectionJSON {
+  authenticatorAttachment: string = ""
+  residentKey: string = ""
+  requireResidentKey: bool = false
+  userVerification: string = ""
+}
+
+struct CreationJSON {
+  rp: RpJSON
+  user: UserJSON
+  challenge: string = ""
+  pubKeyCredParams: [ParamJSON] = []
+  timeout: float = 0
+  excludeCredentials: [DescriptorJSON] = []
+  authenticatorSelection: SelectionJSON? = none
+  attestation: string = ""
+}
+
+struct RequestJSON {
+  challenge: string = ""
+  rpId: string = ""
+  timeout: float = 0
+  allowCredentials: [DescriptorJSON] = []
+  userVerification: string = ""
+}
+
+/// The options' object: the text's, or its publicKey's.
+fn optionsOf(text: string) throws -> [string: json.Value] {
+  let v = try json.parse(text) catch { throw PasskeyError.invalidOptions }
+  let .object(m) = v else { throw PasskeyError.invalidOptions }
+  if let .object(inner) = m["publicKey"] {
+    return inner
+  }
+  return m
+}
+
+/// s, base64 of either alphabet, as bytes; invalidOptions if it isn't.
+fn decoded(s: string) throws -> bytes = try encoding.base64Decode(s) catch { throw PasskeyError.invalidOptions }
+
+/// v with its id (a descriptor's, a user's) in base64url.
+fn withURLId(v: json.Value) throws -> json.Value {
+  let .object(m) = v else { return v }
+  let id = m["id"]?.asString() else { return v }
+  var out = m
+  out["id"] = .string(encoding.base64URLEncode(try decoded(id)))
+  return .object(out)
+}
+
+/// m with its challenge, its user's id and its descriptors' ids in
+/// base64url, as Credential Manager wants them, as JSON.
+fn canonical(m: [string: json.Value], descriptors: string) throws -> string {
+  var out = m
+  if let c = m["challenge"]?.asString() {
+    out["challenge"] = .string(encoding.base64URLEncode(try decoded(c)))
+  }
+  if let u = m["user"] {
+    out["user"] = try withURLId(u)
+  }
+  if let ds = m[descriptors]?.asArray() {
+    var list: [json.Value] = []
+    for d in ds {
+      list.push(try withURLId(d))
+    }
+    out[descriptors] = .array(list)
+  }
+  return json.encode(json.Value.object(out))
+}
+
+/// clientDataJSON as a browser writes it: what the platform signs where
+/// the app gives it (Windows).
+fn clientDataOf(type: string, challenge: bytes, rpId: string) -> bytes {
+  let c = json.Value.object(["type": .string(type), "challenge": .string(encoding.base64URLEncode(challenge)),
+    "origin": .string("https://{rpId}"), "crossOrigin": .bool(false)])
+  return json.encode(c).bytes()
+}
+
+/// register's options, read and checked.
+fn creation(options: string) throws -> Creation {
+  let m = try optionsOf(options)
+  let text = json.encode(json.Value.object(m))
+  let o = try json.decode<CreationJSON>(text) catch { throw PasskeyError.invalidOptions }
+  let challenge = try decoded(o.challenge)
+  let userId = try decoded(o.user.id)
+  if challenge.isEmpty() || userId.isEmpty() || o.rp.id.isEmpty() || o.user.name.isEmpty() {
+    throw PasskeyError.invalidOptions
+  }
+  var algs: [int] = []
+  for p in o.pubKeyCredParams {
+    if p.type == "public-key" {
+      algs.push(p.alg)
+    }
+  }
+  if algs.isEmpty() {
+    algs = [-7, -257] // WebAuthn's default when the server names none
+  }
+  var exclude: [bytes] = []
+  for d in o.excludeCredentials {
+    exclude.push(try decoded(d.id))
+  }
+  let sel = o.authenticatorSelection ?? SelectionJSON()
+  let rk = if !sel.residentKey.isEmpty() { sel.residentKey } else if sel.requireResidentKey { "required" } else { "discouraged" }
+  return Creation(json: try canonical(m, descriptors: "excludeCredentials"), rpId: o.rp.id, rpName: if o.rp.name.isEmpty() { o.rp.id } else { o.rp.name },
+    userId: userId, userName: o.user.name, userDisplayName: if o.user.displayName.isEmpty() { o.user.name } else { o.user.displayName },
+    challenge: challenge, algorithms: algs, exclude: exclude, residentKey: rk,
+    userVerification: if sel.userVerification.isEmpty() { "preferred" } else { sel.userVerification },
+    attestation: if o.attestation.isEmpty() { "none" } else { o.attestation },
+    attachment: sel.authenticatorAttachment, timeoutMs: int(o.timeout),
+    clientData: clientDataOf("webauthn.create", challenge, o.rp.id))
+}
+
+/// signIn's options, read and checked.
+fn request(options: string) throws -> Request {
+  let m = try optionsOf(options)
+  let o = try json.decode<RequestJSON>(json.encode(json.Value.object(m))) catch { throw PasskeyError.invalidOptions }
+  let challenge = try decoded(o.challenge)
+  if challenge.isEmpty() || o.rpId.isEmpty() {
+    throw PasskeyError.invalidOptions
+  }
+  var allow: [bytes] = []
+  for d in o.allowCredentials {
+    allow.push(try decoded(d.id))
+  }
+  return Request(json: try canonical(m, descriptors: "allowCredentials"), rpId: o.rpId, challenge: challenge, allow: allow,
+    userVerification: if o.userVerification.isEmpty() { "preferred" } else { o.userVerification },
+    timeoutMs: int(o.timeout), clientData: clientDataOf("webauthn.get", challenge, o.rpId))
+}
+
+// ---- What the server verifies ----
+
+fn b64(b: bytes) -> json.Value = .string(encoding.base64URLEncode(b))
+
+/// A platform's own JSON, with what WebAuthn's serialization has that it
+/// may leave out: rawId, type, clientExtensionResults.
+fn normalized(text: string) -> string {
+  let .object(m) = (try? json.parse(text)) ?? .null else { return text }
+  var out = m
+  if out["rawId"] == none, let id = m["id"] {
+    out["rawId"] = id
+  }
+  if out["type"] == none {
+    out["type"] = .string("public-key")
+  }
+  if out["clientExtensionResults"] == none {
+    out["clientExtensionResults"] = .object([:])
+  }
+  return json.encode(json.Value.object(out))
+}
+
+/// The credential's top: its ids, type, attachment, extensions' results.
+fn credentialJSON(r: Response, response: [string: json.Value]) -> string {
+  var m: [string: json.Value] = ["id": b64(r.id), "rawId": b64(r.id), "type": .string("public-key"), "response": .object(response)]
+  if !r.attachment.isEmpty() {
+    m["authenticatorAttachment"] = .string(r.attachment)
+  }
+  m["clientExtensionResults"] = .object([:])
+  return json.encode(json.Value.object(m))
+}
+
+/// register's RegistrationResponseJSON: the platform's, or made of its
+/// parts, with the authenticator data, the public key (SPKI, for the
+/// algorithms WebAuthn's JSON has one for) and its algorithm read from
+/// the attestation object.
+fn registrationJSON(r: Response) -> string {
+  if !r.json.isEmpty() {
+    return normalized(r.json)
+  }
+  var resp: [string: json.Value] = ["clientDataJSON": b64(r.clientData), "attestationObject": b64(r.attestationObject)]
+  let data = if !r.authenticatorData.isEmpty() { r.authenticatorData } else { authDataOf(r.attestationObject) ?? bytes() }
+  if !data.isEmpty() {
+    resp["authenticatorData"] = b64(data)
+    if let key = coseKeyOf(data) {
+      if let spki = spkiOf(key) {
+        resp["publicKey"] = b64(spki)
+      }
+      if let alg = key.alg {
+        resp["publicKeyAlgorithm"] = .int(alg)
+      }
+    }
+  }
+  resp["transports"] = .array(r.transports.map(t => json.Value.string(t)))
+  return credentialJSON(r, resp)
+}
+
+/// signIn's AuthenticationResponseJSON.
+fn assertionJSON(r: Response) -> string {
+  if !r.json.isEmpty() {
+    return normalized(r.json)
+  }
+  var resp: [string: json.Value] = ["clientDataJSON": b64(r.clientData), "authenticatorData": b64(r.authenticatorData), "signature": b64(r.signature)]
+  if !r.userHandle.isEmpty() {
+    resp["userHandle"] = b64(r.userHandle)
+  }
+  return credentialJSON(r, resp)
+}
+
+// ---- Tests ----
+
+/// Has register and signIn answer as an authenticator of the app's own
+/// would, for tests: it makes real passkeys (ES256, "none" attestation),
+/// which a server verifies as it does a device's. It holds them until
+/// the app ends.
+///
+///   let f = passkey.fake()
+///   let reg = try await passkey.register(serverOptions)
+///   f.cancel = true   // the user closes the next sheet
+pub fn fake() -> FakeAuthenticator {
+  let f = FakeAuthenticator()
+  faked = f
+  return f
+}
+
+/// A passkey the fake holds.
+pub struct FakePasskey {
+  id: bytes
+  rpId: string
+  userHandle: bytes
+  userName: string
+  key: crypto.PrivateKey
+  signCount: int = 0
+}
+
+/// An authenticator in the app: what register and signIn answer while
+/// it's faked.
+pub store FakeAuthenticator {
+  /// What available() answers; false makes register and signIn throw
+  /// notAvailable.
+  pub state available = true
+  /// The user closes the next sheets.
+  pub state cancel = false
+  /// The passkeys it made, the newest last.
+  pub state passkeys: [FakePasskey] = []
+  /// The sheets shown.
+  pub state shown = 0
+  /// The origin its client data says ("": https:// and the rp's id, as
+  /// iOS's and Windows' say).
+  pub state origin = ""
+
+  fn ask() throws {
+    if !available {
+      throw PasskeyError.notAvailable
+    }
+    shown += 1
+    if cancel {
+      throw PasskeyError.canceled
+    }
+  }
+
+  fn clientData(type: string, challenge: bytes, rpId: string) -> bytes {
+    if origin.isEmpty() {
+      return clientDataOf(type, challenge, rpId)
+    }
+    let c = json.Value.object(["type": .string(type), "challenge": .string(encoding.base64URLEncode(challenge)),
+      "origin": .string(origin), "crossOrigin": .bool(false)])
+    return json.encode(c).bytes()
+  }
+
+  fn register(c: Creation) throws -> Response {
+    try ask()
+    for p in passkeys {
+      if p.rpId == c.rpId && c.exclude.contains(p.id) {
+        throw PasskeyError.exists
+      }
+    }
+    if !c.algorithms.contains(-7) {
+      throw PasskeyError.notAvailable // it makes ES256 keys only
+    }
+    let key = try crypto.newPrivateKey(.ecdsaP256)
+    let id = crypto.randomBytes(16)
+    let point = try key.publicKey().der.slice(26) // SPKI's 0x04 || x || y
+    let cose = cborMap([
+      (cborInt(1), cborInt(2)), (cborInt(3), cborInt(-7)), (cborInt(-1), cborInt(1)),
+      (cborInt(-2), cborBytes(point.slice(1, 33))), (cborInt(-3), cborBytes(point.slice(33))),
+    ])
+    let flags = 0x01 | 0x04 | 0x08 | 0x10 | 0x40 // UP, UV, BE, BS, AT
+    let attested = bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).concat(bytes([id.count() >> 8, id.count() & 0xff])).concat(id).concat(cose)
+    let data = crypto.sha256(c.rpId.bytes()).concat(bytes([flags, 0, 0, 0, 0])).concat(attested)
+    let att = cborMap([(cborText("fmt"), cborText("none")), (cborText("attStmt"), cborMap([])), (cborText("authData"), cborBytes(data))])
+    passkeys.push(FakePasskey(id: id, rpId: c.rpId, userHandle: c.userId, userName: c.userName, key: key))
+    return Response(id: id, clientData: clientData("webauthn.create", c.challenge, c.rpId), attestationObject: att,
+      transports: ["internal", "hybrid"], attachment: "platform")
+  }
+
+  fn signIn(r: Request) throws -> Response {
+    try ask()
+    var found: FakePasskey? = none
+    var at = -1
+    for (i, p) in passkeys.enumerated() {
+      if p.rpId == r.rpId && (r.allow.isEmpty() || r.allow.contains(p.id)) {
+        found = p
+        at = i
+      }
+    }
+    var p = found ?? throw PasskeyError.noCredentials
+    p.signCount += 1
+    passkeys[at] = p
+    let n = p.signCount
+    let data = crypto.sha256(r.rpId.bytes()).concat(bytes([0x01 | 0x04 | 0x08 | 0x10, (n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]))
+    let cd = clientData("webauthn.get", r.challenge, r.rpId)
+    let sig = try crypto.sign(p.key, data.concat(crypto.sha256(cd)), scheme: .ecdsaDER(.sha256))
+    return Response(id: p.id, clientData: cd, authenticatorData: data, signature: sig, userHandle: p.userHandle, attachment: "platform")
+  }
+}

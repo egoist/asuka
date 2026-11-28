@@ -168,7 +168,7 @@ export function modules() {
       done: () => {},
     },
     background: background(),
-    widget: { set: fail("widget.set", "a page has no home screen widgets") },
+    widget: { set: fail("widget.set", "a page has no home screen widgets"), entities: fail("widget.setEntities", "a page has no home screen widgets") },
     liveActivity: {
       enabled: () => new Uint8Array([0]),
       start: () => { throw new Error("not available: a page has no live activities"); },

@@ -1,10 +1,13 @@
-// The widget extension (asuka.json's widgets): WidgetKit's, so SwiftUI's,
-// the one place Asuka's iOS host uses it. It runs no Go: the app's Go code
-// sets each kind's entries (platform/widget), which the app keeps in the App
-// Group's defaults (AsukaAppGroup) for this extension to show with one
-// template, laid out for each size, or as the app's own layout says
-// (Layout.swift). The CLI compiles this with the app's
-// kinds (Kinds.swift: a WidgetBundle of AsukaKindWidget<...>).
+// The widget extension (asuka.toml's widgets): WidgetKit's, so SwiftUI's,
+// the one place Asuka's iOS host uses it. It runs none of the app's code:
+// the app sets each kind's entries (platform/widget), which the app keeps
+// in the App Group's defaults (AsukaAppGroup) for this extension to show
+// with one template, laid out for each size, or as the app's own layout
+// says (Layout.swift); its buttons and toggles run the app's code through
+// an App Intent (Action.swift). The CLI compiles this with the app's kinds
+// (Kinds.swift: a WidgetBundle of AsukaKindWidget<...>, and for a kind
+// with params AsukaConfigurableWidget<..., its configuration intent>).
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -27,6 +30,11 @@ struct AsukaWidgetEntry: TimelineEntry, Decodable {
     /// The app's own layout (platform/widget's Layout), and the sizes'.
     var layout: AsukaNode?
     var sizes: [String: AsukaNode] = [:]
+    /// The widget's kind and configuration (its params' values, and the
+    /// titles platform/widget's param shows), which its actions carry.
+    var kind = ""
+    var config: [String: String] = [:]
+    var titles: [String: String] = [:]
 
     enum CodingKeys: String, CodingKey { case title, value, body, caption, symbol, url, tint, progress, showProgress, untilMs, atMs, layout, sizes }
 
@@ -60,37 +68,46 @@ struct AsukaWidgetEntry: TimelineEntry, Decodable {
     }
 }
 
-/// Reads the kind's entries from the App Group.
-struct AsukaWidgetProvider: TimelineProvider {
+/// A kind's entries from the App Group, for a configuration.
+struct AsukaWidgetEntries {
     let kind: String
     let name: String
 
-    func entries() -> [AsukaWidgetEntry] {
-        guard let group = Bundle.main.object(forInfoDictionaryKey: "AsukaAppGroup") as? String,
-              let data = UserDefaults(suiteName: group)?.data(forKey: "asuka.widget." + kind),
-              let es = try? JSONDecoder().decode([AsukaWidgetEntry].self, from: data) else { return [] }
+    func entries(_ config: [String: String] = [:], _ titles: [String: String] = [:]) -> [AsukaWidgetEntry] {
+        guard let data = AsukaWidgetStore.entries(kind: kind, config: config),
+              var es = try? JSONDecoder().decode([AsukaWidgetEntry].self, from: data) else { return [] }
+        for i in es.indices {
+            es[i].kind = kind
+            es[i].config = config
+            es[i].titles = titles
+        }
         return es
     }
 
-    func placeholder(in context: Context) -> AsukaWidgetEntry { .sample(name) }
-
-    func getSnapshot(in context: Context, completion: @escaping (AsukaWidgetEntry) -> Void) {
-        // The gallery: what it shows now, if the app set anything.
-        completion(current(entries()) ?? .sample(name))
+    func sample(_ config: [String: String] = [:], _ titles: [String: String] = [:]) -> AsukaWidgetEntry {
+        var e = AsukaWidgetEntry.sample(name)
+        e.kind = kind
+        e.config = config
+        e.titles = titles
+        return e
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<AsukaWidgetEntry>) -> Void) {
-        var es = entries()
+    /// The gallery: what it shows now, if the app set anything.
+    func snapshot(_ config: [String: String] = [:], _ titles: [String: String] = [:]) -> AsukaWidgetEntry {
+        current(entries(config, titles)) ?? sample(config, titles)
+    }
+
+    func timeline(_ config: [String: String] = [:], _ titles: [String: String] = [:]) -> Timeline<AsukaWidgetEntry> {
+        var es = entries(config, titles)
         if es.isEmpty {
-            completion(Timeline(entries: [.sample(name)], policy: .never))
-            return
+            return Timeline(entries: [sample(config, titles)], policy: .never)
         }
         // From the one showing now (an entry dated before now shows from now).
         if let now = current(es) {
             es = [now] + es.filter { $0.date > Date.now }
             es[0].date = .now
         }
-        completion(Timeline(entries: es, policy: .never)) // the app reloads it as it sets new entries
+        return Timeline(entries: es, policy: .never) // the app reloads it as it sets new entries
     }
 
     /// The entry whose time has come: the last at or before now (or the first).
@@ -99,10 +116,63 @@ struct AsukaWidgetProvider: TimelineProvider {
     }
 }
 
+/// Reads the kind's entries from the App Group.
+struct AsukaWidgetProvider: TimelineProvider {
+    let source: AsukaWidgetEntries
+
+    func placeholder(in context: Context) -> AsukaWidgetEntry { source.sample() }
+
+    func getSnapshot(in context: Context, completion: @escaping (AsukaWidgetEntry) -> Void) {
+        completion(source.snapshot())
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<AsukaWidgetEntry>) -> Void) {
+        completion(source.timeline())
+    }
+}
+
+/// A kind's configuration intent (Kinds.swift makes one for each kind
+/// with params): its params' values, as platform/widget's configurations
+/// gives them, and the titles param shows.
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, *)
+protocol AsukaWidgetConfiguration: WidgetConfigurationIntent {
+    var asukaValues: [String: String] { get }
+    var asukaTitles: [String: String] { get }
+}
+
+/// Reads the kind's entries for the widget's configuration.
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, *)
+struct AsukaConfiguredProvider<I: AsukaWidgetConfiguration>: AppIntentTimelineProvider {
+    let source: AsukaWidgetEntries
+
+    func placeholder(in context: Context) -> AsukaWidgetEntry { source.sample() }
+
+    func snapshot(for c: I, in context: Context) async -> AsukaWidgetEntry {
+        source.snapshot(c.asukaValues, c.asukaTitles)
+    }
+
+    func timeline(for c: I, in context: Context) async -> Timeline<AsukaWidgetEntry> {
+        source.timeline(c.asukaValues, c.asukaTitles)
+    }
+}
+
+/// One kind of widget with params: configured by the user.
+@available(iOS 17.0, macOS 14.0, watchOS 10.0, *)
+struct AsukaConfigurableWidget<K: AsukaWidgetKind, I: AsukaWidgetConfiguration>: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: K.kind, intent: I.self, provider: AsukaConfiguredProvider<I>(source: AsukaWidgetEntries(kind: K.kind, name: K.name))) { e in
+            AsukaWidgetView(entry: e)
+        }
+        .configurationDisplayName(K.name)
+        .description(K.summary)
+        .supportedFamilies(K.families)
+    }
+}
+
 /// One kind of widget.
 struct AsukaKindWidget<K: AsukaWidgetKind>: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: K.kind, provider: AsukaWidgetProvider(kind: K.kind, name: K.name)) { e in
+        StaticConfiguration(kind: K.kind, provider: AsukaWidgetProvider(source: AsukaWidgetEntries(kind: K.kind, name: K.name))) { e in
             AsukaWidgetView(entry: e)
         }
         .configurationDisplayName(K.name)
@@ -151,7 +221,7 @@ struct AsukaWidgetView: View {
 
     var body: some View {
         if let node = entry.sizes[family.asukaSize] ?? entry.layout {
-            AsukaLayoutRoot(node: node, accent: tint)
+            AsukaLayoutRoot(node: node, accent: tint, context: AsukaWidgetContext(entry))
                 .redacted(reason: entry.placeholder ? .placeholder : [])
                 .widgetURL(URL(string: entry.url))
         } else {

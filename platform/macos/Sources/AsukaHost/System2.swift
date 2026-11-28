@@ -18,7 +18,7 @@ private func notAvailable(_ why: String = "") -> AsukaModuleMethod {
         // platform/widget's: a Mac app from asuka build has no widget
         // extension (WidgetKit's widgets are an extension the iOS build
         // makes), so there are none to give entries to.
-        registerModule("widget", ["set": notAvailable("widgets are iOS's and Android's")])
+        registerModule("widget", ["set": notAvailable("widgets are iOS's and Android's"), "entities": notAvailable("widgets are iOS's and Android's")])
         // platform/liveactivity's: Live Activities are an iPhone's (a Mac
         // shows an iPhone's in its menu bar, through iPhone Mirroring, but
         // no app of its own starts one): none, and nothing to observe.

@@ -186,6 +186,11 @@ type appConfig struct {
 	// universal links (the domain serves apple-app-site-association) and
 	// Android's App Links (assetlinks.json).
 	Links []string `json:"links"`
+	// Passkeys are the relying parties' domains whose passkeys (and saved
+	// passwords) the app uses (passkeys.go): iOS's and the Mac's
+	// webcredentials (the domain serves apple-app-site-association),
+	// Android's Digital Asset Links (assetlinks.json).
+	Passkeys []string `json:"passkeys"`
 	// ShareTarget offers the app in other apps' share sheets (iOS: a
 	// share extension that opens the app; Android: ACTION_SEND and
 	// ACTION_SEND_MULTIPLE intent filters); ui.OnShare gets what's
@@ -547,6 +552,9 @@ func loadConfig(dir string) (*appConfig, error) {
 			return nil, fmt.Errorf("asuka.toml: link domain %q (want a host name, as example.com)", l)
 		}
 	}
+	if err := c.checkPasskeys(); err != nil {
+		return nil, err
+	}
 	for _, r := range c.Bluetooth.Background {
 		if r != "central" && r != "peripheral" {
 			return nil, fmt.Errorf("asuka.toml: bluetooth background %q (want central or peripheral)", r)
@@ -661,8 +669,9 @@ func (c *appConfig) urlTypes(ios bool) []any {
 	return []any{map[string]any{"CFBundleURLName": c.ID, "CFBundleURLSchemes": schemes}}
 }
 
-// associatedDomains is the entitlement for the links (simulator: in the
-// developer mode, which needs no CDN's copy of the association file).
+// associatedDomains is the entitlement for the links and the passkeys'
+// domains (simulator: in the developer mode, which needs no CDN's copy of
+// the association file).
 func (c *appConfig) associatedDomains(simulator bool) []string {
 	var out []string
 	for _, l := range c.Links {
@@ -672,7 +681,7 @@ func (c *appConfig) associatedDomains(simulator bool) []string {
 		}
 		out = append(out, d)
 	}
-	return out
+	return append(out, c.webCredentials(simulator)...)
 }
 
 // androidManifest is the app's manifest, merged over the host's: its

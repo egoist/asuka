@@ -82,6 +82,7 @@ These apply on every platform the key means something on.
 | `orientations` | strings | both | `"portrait"`, `"landscape"`: the orientations the app takes on a phone. iPads take all four, as Split View and Stage Manager need, and Android 16 ignores it on tablets and foldables. |
 | `scheme` | string | none | The app's URL scheme: `notes://` URLs open it, and the app's `on openURL(url)` gets them, on iOS, Android, the Mac, Windows and Linux. Letters, digits, `+`, `-` and `.`, a letter first. See [Deep links](navigation.md#deep-links). |
 | `links` | strings | none | Domains, as `example.com`, whose https links open the app: iOS's universal links and Android's App Links. The domain serves the association file. See [Deep links](navigation.md#deep-links). |
+| `passkeys` | strings | none | The relying parties' domains, as `example.com`, whose passkeys (and saved passwords) the app uses: iOS's and the Mac's `webcredentials:` associated domains. The domain lists the app in its `apple-app-site-association`, and for Android in its `assetlinks.json`. See [Passkeys](device.md#passkeys-platformpasskey). |
 | `fileTypes` | array of tables | none | The kinds of files the app opens. See [fileTypes](#filetypes). |
 | `shareTarget` | `true` or table | off | The app in other apps' share sheets, on iOS and Android. See [shareTarget](#sharetarget). |
 | `splash` | table | none | The launch screen, on iOS and Android. See [splash](#splash). |
@@ -343,10 +344,23 @@ sizes = ["small", "medium", "rectangular"]
 | `name` | string | `kind` | What the widget gallery calls it. |
 | `description` | string | none | What the widget gallery says of it. |
 | `sizes` | strings | `["small", "medium"]` | `small`, `medium`, `large`, and iOS's `extraLarge` (iPad) and lock screen `circular`, `rectangular` and `inline`, which are Apple Watch's complications too, with the watch's `corner`. |
+| `params` | array of tables | none | Makes the widget configurable: what the user picks as they add or edit it. Each has a `name`, `title`, `type` (`string`, `int`, `float`, `bool`, `options`, `entity`), `prompt`, `default`, an `options` param's `options` (`{ value, title }`) and an `entity` param's `entity`, the app's own things of it (`widget.setEntities`). See [Configurable widgets](device.md#configurable-widgets). |
 
 On iOS the widgets are an extension with its own bundle ID (the app's
 plus `.widgets`), which a release signs with `ios.widgetProfile`. See
 [Home screen widgets](device.md#home-screen-widgets-platformwidget).
+
+```toml
+[[widgets]]
+kind = "weather"
+name = "Weather"
+
+[[widgets.params]]
+name = "city"
+title = "City"
+type = "options"
+options = [{ value = "tokyo", title = "Tokyo" }, { value = "paris", title = "Paris" }]
+```
 
 ## shortcuts
 
@@ -527,7 +541,8 @@ NSAppTransportSecurity = { NSExceptionDomains = { "example.local" = { NSExceptio
 ```
 
 An entitlement's array joins the one Asuka gives the app (the links'
-`applinks:` domains, its packages' App Group and keychain group); any
+`applinks:` domains, the passkeys' `webcredentials:` ones, its packages'
+App Group and keychain group); any
 other value replaces Asuka's. `$(AppIdentifierPrefix)` and
 `$(TeamIdentifierPrefix)`, as in Xcode's entitlements files, are the
 team's ID and a dot. They're the app's own, not its extensions'. A

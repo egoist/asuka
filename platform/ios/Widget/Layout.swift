@@ -2,8 +2,9 @@
 // app sends with an entry, drawn here with SwiftUI's views as it says:
 // columns and rows as stacks, layers as a ZStack, text, symbols, images
 // the app kept in the App Group's container, progress bars, gauges,
-// timers, spacers and dividers, with their padding, backgrounds, frames,
-// fill and links.
+// timers, spacers, dividers, buttons, toggles and the configuration's
+// params, with their padding, backgrounds, frames, fill, links and
+// actions.
 import SwiftUI
 import UIKit
 import WidgetKit
@@ -11,16 +12,16 @@ import WidgetKit
 /// A Layout on the wire (platform/widget's Node).
 struct AsukaNode: Decodable {
     var t = "", align = "", valign = "", text = "", style = "", weight = "", color = "", textAlign = ""
-    var name = "", mode = "", bg = "", url = ""
+    var name = "", mode = "", bg = "", url = "", action = "", arg = ""
     var c: [AsukaNode] = []
     var spacing = 0.0, size = 0.0, value = 0.0, untilMs = 0.0
     var pt = 0.0, pb = 0.0, ps = 0.0, pe = 0.0, radius = 0.0, w = 0.0, h = 0.0, opacity = 1.0
     var lines = 0
-    var fill = false
+    var fill = false, on = false
 
     enum CodingKeys: String, CodingKey {
-        case t, align, valign, text, style, weight, color, textAlign, name, mode, bg, url, c, spacing, size, value, untilMs
-        case pt, pb, ps, pe, radius, w, h, opacity, lines, fill
+        case t, align, valign, text, style, weight, color, textAlign, name, mode, bg, url, action, arg, c, spacing, size, value, untilMs
+        case pt, pb, ps, pe, radius, w, h, opacity, lines, fill, on
     }
 
     init(from d: Decoder) throws {
@@ -29,11 +30,40 @@ struct AsukaNode: Decodable {
         func f(_ key: CodingKeys, _ d: Double = 0) -> Double { (try? k.decodeIfPresent(Double.self, forKey: key)) ?? d }
         t = s(.t); align = s(.align); valign = s(.valign); text = s(.text); style = s(.style); weight = s(.weight)
         color = s(.color); textAlign = s(.textAlign); name = s(.name); mode = s(.mode); bg = s(.bg); url = s(.url)
+        action = s(.action); arg = s(.arg)
         c = (try? k.decodeIfPresent([AsukaNode].self, forKey: .c)) ?? []
         spacing = f(.spacing); size = f(.size); value = f(.value); untilMs = f(.untilMs)
         pt = f(.pt); pb = f(.pb); ps = f(.ps); pe = f(.pe); radius = f(.radius); w = f(.w); h = f(.h); opacity = f(.opacity, 1)
         lines = Int(f(.lines))
         fill = (try? k.decodeIfPresent(Bool.self, forKey: .fill)) ?? false
+        on = (try? k.decodeIfPresent(Bool.self, forKey: .on)) ?? false
+    }
+}
+
+/// The widget a layout is drawn in: its kind and configuration, which its
+/// actions carry, and the titles of its params' values.
+struct AsukaWidgetContext {
+    var kind = ""
+    var config: [String: String] = [:]
+    var titles: [String: String] = [:]
+
+    init() {}
+
+    init(_ e: AsukaWidgetEntry) {
+        kind = e.kind
+        config = e.config
+        titles = e.titles
+    }
+
+    /// The configuration as the action intent carries it.
+    var configJSON: String {
+        (try? JSONSerialization.data(withJSONObject: config, options: [.sortedKeys])).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+    }
+
+    /// A toggle's state: what the user set it to, until the app has had
+    /// it, else the app's.
+    func isOn(_ n: AsukaNode) -> Bool {
+        AsukaWidgetStore.toggle(AsukaWidgetStore.toggleKey(kind: kind, config: config, action: n.action, value: n.arg)) ?? n.on
     }
 }
 
@@ -172,11 +202,15 @@ struct AsukaLayoutView: View {
     var links: Bool
     var accent: Color
     var stretch = false  // its column's align is .stretch
+    var ctx = AsukaWidgetContext()
 
     var body: some View {
         let n = node
         let linked = modifiers(content)
-        if links, !n.url.isEmpty, let u = URL(string: n.url) {
+        if !n.action.isEmpty, n.t != "button", n.t != "toggle" {
+            // An action part: the whole of it runs the action.
+            AsukaActionButton(node: n, ctx: ctx, plain: true) { linked }
+        } else if links, !n.url.isEmpty, let u = URL(string: n.url) {
             Link(destination: u) { linked }
         } else {
             linked
@@ -201,7 +235,7 @@ struct AsukaLayoutView: View {
     }
 
     func child(_ c: AsukaNode, _ axis: Axis?, stretch: Bool = false) -> AsukaLayoutView {
-        AsukaLayoutView(node: c, axis: axis, links: links, accent: accent, stretch: stretch)
+        AsukaLayoutView(node: c, axis: axis, links: links, accent: accent, stretch: stretch, ctx: ctx)
     }
 
     var tint: Color? { AsukaLayout.color(node.color, accent: accent) }
@@ -258,6 +292,22 @@ struct AsukaLayoutView: View {
                 .font(AsukaLayout.font(n))
                 .monospacedDigit()
                 .foregroundStyle(tint ?? .primary)
+        case "param":
+            Text(ctx.titles[n.name] ?? "")
+                .font(AsukaLayout.font(n))
+                .foregroundStyle(tint ?? .primary)
+                .lineLimit(n.lines > 0 ? n.lines : nil)
+                .minimumScaleFactor(n.lines == 1 ? 0.5 : 1)
+                .multilineTextAlignment(n.textAlign == "end" ? .trailing : n.textAlign == "center" ? .center : .leading)
+        case "button":
+            // The system's widget button: bordered, in the tint.
+            AsukaActionButton(node: n, ctx: ctx, plain: false) {
+                if n.name.isEmpty { Text(n.text) } else { Label(n.text, systemImage: n.name) }
+            }
+            .tint(tint ?? accent)
+        case "toggle":
+            AsukaToggle(node: n, ctx: ctx)
+                .tint(tint ?? accent)
         case "spacer":
             Spacer(minLength: n.size)
         case "divider":
@@ -265,6 +315,51 @@ struct AsukaLayoutView: View {
         default:
             EmptyView()
         }
+    }
+}
+
+/// A button that runs the node's action (iOS 17's interactive widgets);
+/// before iOS 17, and on the watch, its label alone.
+struct AsukaActionButton<Label: View>: View {
+    let node: AsukaNode
+    let ctx: AsukaWidgetContext
+    let plain: Bool
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        #if os(iOS)
+        if #available(iOS 17.0, *) {
+            let b = Button(intent: AsukaWidgetAction(kind: ctx.kind, action: node.action, value: node.arg, config: ctx.configJSON)) { label() }
+            if plain { b.buttonStyle(.plain) } else { b.buttonStyle(.bordered) }
+        } else {
+            label()
+        }
+        #else
+        label()
+        #endif
+    }
+}
+
+/// A switch that runs the node's action with the state the user sets
+/// (shown at once: the system draws it flipped while the intent runs, and
+/// the App Group keeps it until the app has had it).
+struct AsukaToggle: View {
+    let node: AsukaNode
+    let ctx: AsukaWidgetContext
+
+    var body: some View {
+        let on = ctx.isOn(node)
+        #if os(iOS)
+        if #available(iOS 17.0, *) {
+            Toggle(isOn: on, intent: AsukaWidgetToggle(kind: ctx.kind, action: node.action, arg: node.arg, config: ctx.configJSON)) {
+                Text(node.text)
+            }
+        } else {
+            Toggle(node.text, isOn: .constant(on))
+        }
+        #else
+        Toggle(node.text, isOn: .constant(on))
+        #endif
     }
 }
 
@@ -288,6 +383,7 @@ struct AsukaCorners: ViewModifier {
 struct AsukaLayoutRoot: View {
     let node: AsukaNode
     let accent: Color
+    var context = AsukaWidgetContext()
     @Environment(\.widgetFamily) var family
 
     var body: some View {
@@ -296,7 +392,7 @@ struct AsukaLayoutRoot: View {
         n.bg = ""
         n.fill = true
         let view = AsukaLayoutView(node: n, axis: nil, links: !["small", "circular", "inline", "corner"].contains(family.asukaSize),
-                                   accent: accent)
+                                   accent: accent, ctx: context)
         return view.modifier(AsukaLayoutBackground(color: bg))
     }
 }

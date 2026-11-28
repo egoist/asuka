@@ -30,7 +30,9 @@ import java.io.File
  * space its column or row has left), nested with addView, and set with
  * RemoteViews' setters. Semantic colors are the widget's color resources,
  * which the launcher resolves for its light or dark mode; a layer is
- * placed in a cell (asuka_wl_cell) whose gravity says where.
+ * placed in a cell (asuka_wl_cell) whose gravity says where. A button, a
+ * toggle and an action part send the host's receiver their action
+ * (AsukaWidgetScope.action), for the app's code.
  */
 object AsukaWidgetLayout {
     private const val ID = R.id.asuka_wl
@@ -51,6 +53,9 @@ object AsukaWidgetLayout {
         "gauge" -> if (fill) R.layout.asuka_wl_gauge_fill else R.layout.asuka_wl_gauge
         "timer" -> if (fill) R.layout.asuka_wl_timer_fill else R.layout.asuka_wl_timer
         "divider" -> if (fill) R.layout.asuka_wl_divider_fill else R.layout.asuka_wl_divider
+        "param" -> if (fill) R.layout.asuka_wl_text_fill else R.layout.asuka_wl_text
+        "button" -> if (fill) R.layout.asuka_wl_button_fill else R.layout.asuka_wl_button
+        "toggle" -> if (fill) R.layout.asuka_wl_toggle_fill else R.layout.asuka_wl_toggle
         "spacer" -> R.layout.asuka_wl_spacer_fill
         else -> R.layout.asuka_wl_spacer_fill
     }
@@ -172,10 +177,10 @@ object AsukaWidgetLayout {
      * the widget's background (its own, when it has one), opening url
      * where no part of it has a link of its own.
      */
-    fun render(ctx: Context, root: JSONObject, open: (String) -> PendingIntent): RemoteViews {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return legacyRender(ctx, root, open)
+    fun render(ctx: Context, root: JSONObject, scope: AsukaWidgetScope, open: (String) -> PendingIntent): RemoteViews {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return legacyRender(ctx, root, scope, open)
         val bg = root.optString("bg")
-        val v = node(ctx, root, axis = null, stretch = false, open = open, isRoot = true)
+        val v = node(ctx, root, axis = null, stretch = false, open = open, scope = scope, isRoot = true)
         // A widget's padding (Android's design guidance: 16dp), unless it has its own.
         if (listOf("pt", "pb", "ps", "pe").all { root.optDouble(it, 0.0) <= 0 }) {
             val p = dp(ctx, 16.0)
@@ -194,7 +199,7 @@ object AsukaWidgetLayout {
      * background and padding, and places the root where its own
      * alignment would place what it holds.
      */
-    private fun legacyRender(ctx: Context, root: JSONObject, open: (String) -> PendingIntent): RemoteViews {
+    private fun legacyRender(ctx: Context, root: JSONObject, scope: AsukaWidgetScope, open: (String) -> PendingIntent): RemoteViews {
         val cell = RemoteViews(ctx.packageName, R.layout.asuka_wl_cell)
         if (listOf("pt", "pb", "ps", "pe").all { root.optDouble(it, 0.0) <= 0 }) {
             val p = dp(ctx, 16.0)
@@ -211,12 +216,12 @@ object AsukaWidgetLayout {
             else -> Gravity.TOP or Gravity.START
         })
         cell.removeAllViews(ID)
-        cell.addView(ID, node(ctx, root, axis = null, stretch = false, open = open, isRoot = true))
+        cell.addView(ID, node(ctx, root, axis = null, stretch = false, open = open, scope = scope, isRoot = true))
         return cell
     }
 
     /** axis: its parent's ('v' a column, 'h' a row, null layers or the root). */
-    private fun node(ctx: Context, n: JSONObject, axis: Char?, stretch: Boolean, open: (String) -> PendingIntent, isRoot: Boolean = false): RemoteViews {
+    private fun node(ctx: Context, n: JSONObject, axis: Char?, stretch: Boolean, open: (String) -> PendingIntent, scope: AsukaWidgetScope, isRoot: Boolean = false): RemoteViews {
         val t = n.optString("t")
         val fill = n.optBoolean("fill") && axis != null
         val v = RemoteViews(ctx.packageName, layoutOf(t, n.optString("mode"), fill || t == "spacer" && axis != null))
@@ -234,7 +239,7 @@ object AsukaWidgetLayout {
                 v.removeAllViews(ID)
                 for (i in 0 until (kids?.length() ?: 0)) {
                     val c = kids!!.getJSONObject(i)
-                    val cv = node(ctx, c, if (col) 'v' else 'h', col && a == "stretch", open)
+                    val cv = node(ctx, c, if (col) 'v' else 'h', col && a == "stretch", open, scope)
                     // Before Android 12 a margin can't be set: no spacing.
                     if (i > 0 && spacing > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                         cv.setViewLayoutMargin(ID, if (col) RemoteViews.MARGIN_TOP else RemoteViews.MARGIN_START, spacing.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
@@ -251,17 +256,18 @@ object AsukaWidgetLayout {
                     val cell = RemoteViews(ctx.packageName, R.layout.asuka_wl_cell)
                     cell.setInt(ID, "setGravity", g)
                     cell.removeAllViews(ID)
-                    cell.addView(ID, node(ctx, kids!!.getJSONObject(i), null, false, open))
+                    cell.addView(ID, node(ctx, kids!!.getJSONObject(i), null, false, open, scope))
                     v.addView(ID, cell)
                 }
             }
-            "text", "timer" -> {
+            "text", "timer", "param" -> {
                 val (size, medium) = textStyle(ctx, n.optString("style"))
                 if (n.optDouble("size", 0.0) > 0) v.setTextViewTextSize(ID, TypedValue.COMPLEX_UNIT_SP, n.optDouble("size").toFloat())
                 else v.setTextViewTextSize(ID, TypedValue.COMPLEX_UNIT_PX, size)
                 v.color(ctx, ID, "setTextColor", color ?: Paint.Res(R.color.asuka_widget_on_surface))
-                if (t == "text") {
-                    v.setTextViewText(ID, weighted(n.optString("text"), n.optString("weight"), medium))
+                if (t == "text" || t == "param") {
+                    val text = if (t == "param") scope.titles[n.optString("name")].orEmpty() else n.optString("text")
+                    v.setTextViewText(ID, weighted(text, n.optString("weight"), medium))
                     val lines = n.optInt("lines")
                     if (lines > 0) v.setInt(ID, "setMaxLines", lines)
                     v.setInt(ID, "setGravity", when (n.optString("textAlign")) { "center" -> Gravity.CENTER_HORIZONTAL; "end" -> Gravity.END; else -> Gravity.START })
@@ -306,16 +312,48 @@ object AsukaWidgetLayout {
                     if (axis == 'h') v.setViewLayoutHeight(ID, match, TypedValue.COMPLEX_UNIT_PX) else v.setViewLayoutWidth(ID, match, TypedValue.COMPLEX_UNIT_PX)
                 }
             }
+            "button" -> {
+                v.setTextViewText(R.id.asuka_wl_label, n.optString("text"))
+                val res = symbolDrawables[n.optString("name")] ?: symbolDrawables[n.optString("name").removeSuffix(".fill")]
+                if (res != null) {
+                    v.setViewVisibility(R.id.asuka_wl_icon, View.VISIBLE)
+                    v.setImageViewResource(R.id.asuka_wl_icon, res)
+                    v.setContentDescription(R.id.asuka_wl_icon, null)
+                }
+                color?.let {
+                    v.color(ctx, R.id.asuka_wl_label, "setTextColor", it)
+                    if (res != null) v.color(ctx, R.id.asuka_wl_icon, "setImageTintList", it)
+                }
+                v.setOnClickPendingIntent(ID, scope.action(ctx, n.optString("action"), n.optString("arg"), toggle = false))
+            }
+            "toggle" -> {
+                val action = n.optString("action")
+                val arg = n.optString("arg")
+                val on = AsukaWidgets.toggle(ctx, scope.toggleKey(action, arg)) ?: n.optBoolean("on")
+                val pi = scope.action(ctx, action, arg, toggle = true)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // The platform's switch: it flips as it's tapped, and the
+                    // system tells the receiver the state the user set.
+                    v.setTextViewText(ID, n.optString("text"))
+                    v.setCompoundButtonChecked(ID, on)
+                    v.setOnCheckedChangeResponse(ID, RemoteViews.RemoteResponse.fromPendingIntent(pi))
+                    color?.let { v.color(ctx, ID, "setThumbTintList", it) }
+                } else {
+                    v.setTextViewText(R.id.asuka_wl_label, n.optString("text"))
+                    v.setImageViewResource(R.id.asuka_wl_switch, if (on) R.drawable.asuka_wl_switch_on else R.drawable.asuka_wl_switch_off)
+                    v.setOnClickPendingIntent(ID, pi)
+                }
+            }
             "spacer" -> {
                 val min = dp(ctx, n.optDouble("size", 0.0))
                 if (min > 0) v.setInt(ID, if (axis == 'h') "setMinimumWidth" else "setMinimumHeight", min)
             }
         }
-        modifiers(ctx, v, n, axis, stretch, open, isRoot)
+        modifiers(ctx, v, n, axis, stretch, open, scope, isRoot)
         return v
     }
 
-    private fun modifiers(ctx: Context, v: RemoteViews, n: JSONObject, axis: Char?, stretch: Boolean, open: (String) -> PendingIntent, isRoot: Boolean) {
+    private fun modifiers(ctx: Context, v: RemoteViews, n: JSONObject, axis: Char?, stretch: Boolean, open: (String) -> PendingIntent, scope: AsukaWidgetScope, isRoot: Boolean) {
         val rtl = ctx.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
         val (pt, pb, ps, pe) = listOf("pt", "pb", "ps", "pe").map { dp(ctx, n.optDouble(it, 0.0)) }
         if (pt > 0 || pb > 0 || ps > 0 || pe > 0) v.setViewPadding(ID, if (rtl) pe else ps, pt, if (rtl) ps else pe, pb)
@@ -339,7 +377,11 @@ object AsukaWidgetLayout {
         val opacity = n.optDouble("opacity", 1.0)
         if (opacity < 1) v.setFloat(ID, "setAlpha", opacity.toFloat())
         val url = n.optString("url")
-        if (url.isNotEmpty()) v.setOnClickPendingIntent(ID, open(url))
+        val t = n.optString("t")
+        if (n.optString("action").isNotEmpty() && t != "button" && t != "toggle") {
+            // An action part: tapping it runs the action, without opening the app.
+            v.setOnClickPendingIntent(ID, scope.action(ctx, n.optString("action"), n.optString("arg"), toggle = false))
+        } else if (url.isNotEmpty() && t != "button" && t != "toggle") v.setOnClickPendingIntent(ID, open(url))
     }
 }
 

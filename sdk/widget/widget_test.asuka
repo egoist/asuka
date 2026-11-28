@@ -46,3 +46,64 @@ test "a layout's nodes and modifiers on the wire" {
   let small = es[0].get("sizes")?.get("small")
   expect(small?.get("t")?.asString() == "gauge" && small?.get("text")?.asString() == "50" && small?.get("fill")?.asBool() == true)
 }
+
+test "buttons, toggles, action parts and params on the wire" {
+  let l = column([
+    button("Add", action: "add", symbol: "plus", value: "1", color: .green),
+    toggle(isOn: true, action: "power", title: "Lights", value: "kitchen"),
+    text("Open").action("open", value: "x"),
+    param("room", font: .headline, lines: 1),
+  ])
+  let es = try entries("lights", [Entry(layout: l)])
+  let c = es[0].get("layout")?.get("c")?.asArray() ?? []
+  expect(c.map(x => x.get("t")?.asString() ?? "") == ["button", "toggle", "text", "param"])
+  expect(c[0].get("text")?.asString() == "Add" && c[0].get("name")?.asString() == "plus" && c[0].get("action")?.asString() == "add")
+  expect(c[0].get("arg")?.asString() == "1" && c[0].get("color")?.asString() == ".green")
+  expect(c[1].get("on")?.asBool() == true && c[1].get("action")?.asString() == "power" && c[1].get("arg")?.asString() == "kitchen")
+  expect(c[2].get("action")?.asString() == "open" && c[2].get("arg")?.asString() == "x")
+  expect(c[3].get("name")?.asString() == "room" && c[3].get("style")?.asString() == "headline" && c[3].get("lines")?.asInt() == 1)
+}
+
+test "a configuration's entries on the wire, and clear's" {
+  let v = try json.parse(wire("weather", [Entry(title: "Tokyo")], config: ["city": "tokyo"]))
+  expect(v.get("config")?.get("city")?.asString() == "tokyo")
+  expect(v.get("all")?.asBool() == false)
+  let all = try json.parse(wire("weather", [], all: true))
+  expect(all.get("all")?.asBool() == true && (all.get("entries")?.asArray() ?? []).isEmpty())
+}
+
+test "the fake shows the entries of the configuration that matches the most" {
+  let home = fake()
+  set("weather", Entry(title: "Anywhere"))
+  set("weather", Entry(title: "Tokyo"), config: ["city": "tokyo"])
+  set("weather", Entry(title: "Tokyo in F"), config: ["city": "tokyo", "units": "f"])
+  expect(home.showing("weather")?.title == "Anywhere")
+  expect(home.showing("weather", config: ["city": "tokyo", "units": "c"])?.title == "Tokyo")
+  expect(home.showing("weather", config: ["city": "tokyo", "units": "f"])?.title == "Tokyo in F")
+  expect(home.showing("weather", config: ["city": "paris"])?.title == "Anywhere")
+  clear("weather", config: ["city": "tokyo"])
+  expect(home.showing("weather", config: ["city": "tokyo", "units": "c"])?.title == "Anywhere")
+  clear("weather")
+  expect(home.showing("weather").isNone())
+  home.configured["weather"] = [["city": "tokyo"], ["city": "paris"]]
+  expect(try await configurations("weather") == [["city": "tokyo"], ["city": "paris"]])
+  setEntities("place", [Entity(id: "p1", title: "Home")])
+  expect(home.entities["place"]?.first()?.title == "Home")
+}
+
+test "taps come to actions, those before the first reader too" {
+  let home = fake()
+  home.tap("lights", action: "power", value: "kitchen", isOn: true, config: ["room": "r1"])
+  var got: [Action] = []
+  for await a in actions() {
+    got.push(a)
+    if got.count() == 1 {
+      home.tap("lights", action: "add", value: "2")
+    } else {
+      break
+    }
+  }
+  expect(got[0].kind == "lights" && got[0].id == "power" && got[0].value == "kitchen" && got[0].isOn && got[0].config["room"] == "r1")
+  expect(got[1].id == "add" && got[1].value == "2" && !got[1].isOn)
+  got[0].done() // a fake's: nothing to tell the platform
+}

@@ -154,6 +154,7 @@ Web 应用看到的环境（`environment()`）来自浏览器：
 - `platform/maps`：和 Windows 上一样，由 Asuka 用 OpenStreetMap 的瓦片绘制地图：支持标记及其标注气泡，可以拖动、滚轮、捏合、双击以及用键盘移动地图，并按 OpenStreetMap 的要求显示署名。卫星图和混合图只显示街道图（没有免费的卫星影像）；`showsUser` 在页面获得定位权限后显示用户位置（权限由 `platform/location` 申请，地图本身从不申请）。瓦片按 `tile.openstreetmap.org` 对网页的使用政策获取（只加载屏幕上可见的部分，使用浏览器缓存，带上 Referer）；如果用量很大，可以给 `start` 传入 `mapTiles`（另一个瓦片服务器的 URL，包含 `{z}`、`{x}` 和 `{y}`），见 [嵌入](#嵌入)。
 - `platform/crash`：本次运行的记录保存在应用的文件里，和手机上一样。Asuka 自己的致命错误会写下这份记录并停止页面里的应用，下次启动时上报。未捕获的 JavaScript 错误（Asuka 的，或者某个包的 `web/` 脚本里的）会立即作为 `"exception"` 报告上报，但不算致命错误（页面会继续运行）。每个页面会在 `localStorage` 里标记自己的运行仍然存活，这样应用的其他已打开页面就不会去动它。
 - `platform/biometric`：通过 WebAuthn 使用平台认证器（Touch ID、Face ID、Windows Hello、Android 的屏幕锁定），并要求用户验证：第一次调用 `authenticate` 时会为网站创建一个通行密钥（passkey），以应用名命名。提示框由浏览器提供，所以 `reason` 和 `cancel` 的文字不会显示。
+- `platform/passkey`：使用 `navigator.credentials` 和浏览器自己的面板处理服务器的选项（浏览器支持时用它的 `parseCreationOptionsFromJSON` 解析）；服务器的 `rp.id` 必须是页面所在的站点，或者它的上级域名。
 - `platform/webauth`：使用弹出窗口，回到应用同源的某个页面时即视为完成（自定义 scheme 无法打开页面）。
 - `platform/screen`：`lock`（仅在全屏或已安装的应用中有效）；隐藏系统栏就是进入全屏。
 - `platform/library`：`save` 会下载文件。`platform/contacts`：浏览器支持 Contact Picker 时（Android 上的 Chrome）可以用 `pick`；`add` 会下载一个 vCard 文件，`platform/calendar` 的 `add` 则下载一个 `.ics` 文件。

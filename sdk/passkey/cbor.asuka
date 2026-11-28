@@ -1,0 +1,252 @@
+// CBOR (RFC 8949), as much as WebAuthn's attestation objects and COSE keys
+// use: written for the fake's, read to take a platform's authenticator data
+// and public key apart (iOS's and Windows' give an attestation object
+// only).
+
+/// A CBOR item.
+enum Cbor {
+  int(v: int)
+  bytes(v: bytes)
+  text(v: string)
+  array(items: [Cbor])
+  map(entries: [CborEntry])
+  /// A float, a bool, null: what WebAuthn's keys and objects don't hold.
+  other
+}
+
+struct CborEntry {
+  key: Cbor
+  value: Cbor
+}
+
+/// An item's head: its major type and its argument.
+fn cborHead(major: int, n: int) -> bytes {
+  let m = major << 5
+  if n < 24 {
+    return bytes([m | n])
+  }
+  if n < 0x100 {
+    return bytes([m | 24, n])
+  }
+  if n < 0x10000 {
+    return bytes([m | 25, n >> 8, n & 0xff])
+  }
+  if n < 0x100000000 {
+    return bytes([m | 26, (n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff])
+  }
+  var b = [m | 27]
+  for i in 0..<8 {
+    b.push((n >> (56 - 8 * i)) & 0xff)
+  }
+  return bytes(b)
+}
+
+fn cborInt(v: int) -> bytes = if v >= 0 { cborHead(0, v) } else { cborHead(1, -1 - v) }
+
+fn cborBytes(b: bytes) -> bytes = cborHead(2, b.count()).concat(b)
+
+fn cborText(s: string) -> bytes = cborHead(3, s.byteCount()).concat(s.bytes())
+
+/// A map of the encoded keys and values, in their order (the fake writes
+/// them in CTAP2's canonical order).
+fn cborMap(entries: [(bytes, bytes)]) -> bytes {
+  var out = cborHead(5, entries.count())
+  for (k, v) in entries {
+    out = out.concat(k).concat(v)
+  }
+  return out
+}
+
+/// Reads CBOR items from data, from at.
+struct CborReader {
+  data: bytes
+  at: int = 0
+
+  mut fn byte() throws -> int {
+    let b = data.get(at) ?? throw Error("cbor: it ends early")
+    at += 1
+    return b
+  }
+
+  mut fn arg(info: int) throws -> int {
+    if info < 24 {
+      return info
+    }
+    let n = match info {
+      24 => 1
+      25 => 2
+      26 => 4
+      27 => 8
+      _ => throw Error("cbor: an indefinite length")
+    }
+    var v = 0
+    for _ in 0..<n {
+      v = (v << 8) | try byte()
+    }
+    if v < 0 {
+      throw Error("cbor: a length past int's")
+    }
+    return v
+  }
+
+  mut fn take(n: int) throws -> bytes {
+    if at + n > data.count() {
+      throw Error("cbor: it ends early")
+    }
+    let b = data.slice(at, at + n)
+    at += n
+    return b
+  }
+
+  mut fn item(depth: int = 0) throws -> Cbor {
+    if depth > 16 {
+      throw Error("cbor: nested too deep")
+    }
+    let h = try byte()
+    let major = h >> 5
+    let info = h & 0x1f
+    if major == 7 {
+      // Simple values and floats: skip their bytes.
+      let skip = match info {
+        24 => 1
+        25 => 2
+        26 => 4
+        27 => 8
+        _ => 0
+      }
+      let _ = try take(skip)
+      return .other
+    }
+    let n = try arg(info)
+    return match major {
+      0 => .int(n)
+      1 => .int(-1 - n)
+      2 => .bytes(try take(n))
+      3 => .text(try take(n).string())
+      4 => {
+        var items: [Cbor] = []
+        for _ in 0..<n {
+          items.push(try item(depth + 1))
+        }
+        .array(items)
+      }
+      5 => {
+        var entries: [CborEntry] = []
+        for _ in 0..<n {
+          let k = try item(depth + 1)
+          entries.push(CborEntry(key: k, value: try item(depth + 1)))
+        }
+        .map(entries)
+      }
+      _ => try item(depth + 1) // a tag: its item
+    }
+  }
+}
+
+/// The entry of m whose key is k.
+fn cborGet(m: Cbor, k: Cbor) -> Cbor? {
+  let .map(entries) = m else { return none }
+  for e in entries {
+    if e.key == k {
+      return e.value
+    }
+  }
+  return none
+}
+
+fn cborBytesOf(v: Cbor?) -> bytes {
+  if let .bytes(b) = v {
+    return b
+  }
+  return bytes()
+}
+
+fn cborIntOf(v: Cbor?) -> int? {
+  if let .int(n) = v {
+    return n
+  }
+  return none
+}
+
+/// An attestation object's authenticator data (its authData).
+fn authDataOf(attestationObject: bytes) -> bytes? {
+  var r = CborReader(data: attestationObject)
+  let m = (try? r.item()) ?? .other
+  let .bytes(data) = cborGet(m, .text("authData")) ?? .other else { return none }
+  return data
+}
+
+/// A credential's public key, as COSE says it (RFC 9053).
+struct CoseKey {
+  /// 1: OKP, 2: EC2, 3: RSA.
+  kty: int
+  alg: int?
+  crv: int
+  x: bytes
+  y: bytes
+  n: bytes
+  e: bytes
+}
+
+/// The public key in authenticator data's attested credential data
+/// (none: it has none).
+fn coseKeyOf(authData: bytes) -> CoseKey? {
+  // rpIdHash (32), flags (1), signCount (4), then with AT (0x40):
+  // aaguid (16), the id's length (2), the id, the key.
+  let flags = authData.get(32) ?? 0
+  if flags & 0x40 == 0 || authData.count() < 55 {
+    return none
+  }
+  let idLen = authData[53] << 8 | authData[54]
+  var r = CborReader(data: authData, at: 55 + idLen)
+  let k = (try? r.item()) ?? .other
+  let kty = cborIntOf(cborGet(k, .int(1))) ?? 0
+  if kty == 0 {
+    return none
+  }
+  return CoseKey(kty: kty, alg: cborIntOf(cborGet(k, .int(3))), crv: if kty == 3 { 0 } else { cborIntOf(cborGet(k, .int(-1))) ?? 0 },
+    x: if kty == 3 { bytes() } else { cborBytesOf(cborGet(k, .int(-2))) }, y: cborBytesOf(cborGet(k, .int(-3))),
+    n: if kty == 3 { cborBytesOf(cborGet(k, .int(-1))) } else { bytes() }, e: if kty == 3 { cborBytesOf(cborGet(k, .int(-2))) } else { bytes() })
+}
+
+/// A DER element: its tag, its length, its content.
+fn der(tag: int, content: bytes) -> bytes {
+  let n = content.count()
+  let len = if n < 0x80 { bytes([n]) } else if n < 0x100 { bytes([0x81, n]) } else { bytes([0x82, n >> 8, n & 0xff]) }
+  return bytes([tag]).concat(len).concat(content)
+}
+
+/// A DER INTEGER of an unsigned big-endian number.
+fn derUint(b: bytes) -> bytes {
+  var i = 0
+  while i < b.count() - 1 && b[i] == 0 {
+    i += 1
+  }
+  let v = b.slice(i)
+  return der(0x02, if v[0] & 0x80 != 0 { bytes([0]).concat(v) } else { v })
+}
+
+/// key as X.509's SubjectPublicKeyInfo (DER), as WebAuthn's JSON gives it:
+/// P-256, P-384 and P-521's ECDSA, Ed25519, RSA; none for others.
+fn spkiOf(key: CoseKey) -> bytes? {
+  if key.kty == 2 && key.x.count() > 0 && key.x.count() == key.y.count() {
+    // id-ecPublicKey, and the curve's OID.
+    let curve = match key.crv {
+      1 => bytes([0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07])
+      2 => bytes([0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22])
+      3 => bytes([0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23])
+      _ => return none
+    }
+    let alg = der(0x30, bytes([0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01]).concat(curve))
+    return der(0x30, alg.concat(der(0x03, bytes([0, 0x04]).concat(key.x).concat(key.y))))
+  }
+  if key.kty == 1 && key.crv == 6 && key.x.count() == 32 {
+    return bytes([0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00]).concat(key.x)
+  }
+  if key.kty == 3 && !key.n.isEmpty() && !key.e.isEmpty() {
+    let alg = der(0x30, bytes([0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00]))
+    let rsa = der(0x30, derUint(key.n).concat(derUint(key.e)))
+    return der(0x30, alg.concat(der(0x03, bytes([0]).concat(rsa))))
+  }
+  return none
+}

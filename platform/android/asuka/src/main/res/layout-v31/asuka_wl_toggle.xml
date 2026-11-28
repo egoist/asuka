@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- platform/widget's Layout: a toggle, the platform's switch (Android 12's widgets take one; WidgetLayout.kt adds and sets it). -->
+<Switch xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/asuka_wl"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:minHeight="40dp"
+    android:switchPadding="12dp"
+    android:textColor="@color/asuka_widget_on_surface"
+    android:textSize="14sp" />

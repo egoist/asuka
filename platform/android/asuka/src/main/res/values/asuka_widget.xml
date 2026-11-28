@@ -11,5 +11,7 @@
     <color name="asuka_widget_outline">#FF79747E</color>
     <color name="asuka_widget_outline_variant">#FFCAC4D0</color>
     <color name="asuka_widget_on_accent">#FFFFFFFF</color>
+    <color name="asuka_widget_secondary_container">#FFE8DEF8</color>
+    <color name="asuka_widget_on_secondary_container">#FF4A4458</color>
     <color name="asuka_widget_track">@color/asuka_widget_outline_variant</color>
 </resources>

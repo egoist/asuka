@@ -142,6 +142,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | iCloud：键值存储、iCloud 云盘 | `NSUbiquitousKeyValueStore`、ubiquity 容器、`NSMetadataQuery` | 社区方案（`react-native-cloud-storage`、`expo-icloud-storage`） | ✓ `platform/icloud`（账户状态；`icloud.Value`，存放在 iCloud 的键值存储里；应用在 iCloud 云盘里的文稿，随变化列出，附带下载和上传状态，以协调方式读写，下载、移除本地副本、解决冲突；测试用 `icloud.fake()`；iOS 和 macOS；不支持 CloudKit 数据库） |
 | Apple Pay、Google Pay | PassKit（`PayWithApplePayButton`） | `@stripe/stripe-react-native` 的 Platform Pay、`react-native-payments` | ✓ `platform/pay`（钱包的支付面板和 `PayButton`；交给应用支付服务商的 token；修改配送方式、优惠券和卡片时更新总价；按字段报错；iOS、macOS 和 Safari 上用 Apple Pay，Android 和其他浏览器上用 Google Pay） |
 | 面容 ID、指纹 | LocalAuthentication | `expo-local-authentication` | ✓ `platform/biometric`（LocalAuthentication、BiometricPrompt、Windows Hello；Web 上通过 WebAuthn 使用平台认证器；Linux 不支持） |
+| 通行密钥 | `ASAuthorizationPlatformPublicKeyCredentialProvider` | `react-native-passkey`（社区） | ✓ `platform/passkey`（`register`、`signIn`：传入服务器的 WebAuthn JSON，返回服务器校验的 JSON；AuthenticationServices、Credential Manager、Windows 的 WebAuthn、浏览器的 WebAuthn；`asuka.toml` 的 `passkeys` 域名；测试用的 fake 会生成真正的通行密钥；Linux 不支持） |
 | 应用内购买、订阅 | StoreKit 2 | `expo-iap`、`react-native-iap`、RevenueCat | ✓ `platform/purchase`（带本地化价格和优惠的商品、购买、待处理的付款、从应用启动起的交易流、完成交易、权益、恢复购买、订阅状态、管理订阅/退款/兑换码面板；iOS 和 macOS 上用 StoreKit 2，Play Billing，Microsoft Store，Trusted Web Activity 里的 Digital Goods API；测试用 `purchase.fake()`）（见[应用内购买](purchases.md)） |
 | 应用商店评分 | `requestReview` | `expo-store-review` | ✓ `platform/review`（App Store 的评分弹窗、Play 的应用内评价） |
 | 跟踪权限 | App Tracking Transparency | `expo-tracking-transparency` | ✓ `platform/tracking` |
@@ -163,7 +164,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 文字转语音 | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech`（队列、声音、音调、语速、暂停；AVSpeechSynthesizer、TextToSpeech、SAPI、Speech Dispatcher、`speechSynthesis`） |
 | 通讯录 | Contacts、ContactsUI | `expo-contacts` | ✓ `platform/contacts`（`pick()` 和新建联系人界面不需要权限；访问通讯录需要权限） |
 | 日历 | EventKit、EventKitUI | `expo-calendar` | ✓ `platform/calendar`（事件编辑界面不需要权限；读取日历和事件需要权限；EventKit、Calendar Provider） |
-| 主屏幕小组件 | WidgetKit | `expo-widgets` | ✓ `platform/widget` 和 `asuka.toml` 的 `widgets`（每种尺寸一个模板，iOS 上还有锁屏小组件，或者应用自己的布局：列、行、层、文字、符号、图片、进度条、仪表、计时器、链接；时间线、倒计时、点按打开 URL；iOS 和 Android） |
+| 主屏幕小组件 | WidgetKit | `expo-widgets` | ✓ `platform/widget` 和 `asuka.toml` 的 `widgets`（每种尺寸一个模板，iOS 上还有锁屏小组件，或者应用自己的布局：列、行、层、文字、符号、图片、进度条、仪表、计时器、链接；时间线、倒计时、点按打开 URL；不打开应用就能运行应用代码的按钮和开关，基于 App Intent（iOS 17）和广播；可配置的小组件，参数写在 `asuka.toml` 里，可以是选项或应用自己的东西，对应 iOS 17 的“编辑小组件”和 Android 的配置界面；iOS 和 Android） |
 | 实时活动 | ActivityKit | `expo-live-activity` | ✓ `platform/liveactivity`（iOS：锁屏和灵动岛；Android 16 的 Live Update；倒计时、进度、提醒，以及供服务端推送更新用的推送 token） |
 | App Intents、快捷指令 | App Intents、App Shortcuts | — | ✓ `asuka.toml` 的 `shortcuts`（iOS：带 Siri 短语的 App Shortcuts，出现在聚焦搜索和快捷指令里，可以带参数：文字、数字、开关、选项，以及应用自己的数据（`platform/shortcuts` 的实体），短语里可以引用选项和实体；Android：启动器快捷方式，每项数据一个） |
 | 自定义字体 | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`、`Font(family:)` |

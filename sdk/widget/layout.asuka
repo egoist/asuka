@@ -2,15 +2,17 @@
 // as a tree the platform's widget system lays out and draws (WidgetKit's
 // SwiftUI on iOS, an App Widget's RemoteViews on Android), since a widget
 // isn't the app running: it's what the app last set, shown by the home
-// screen.
+// screen. Its buttons, toggles and action parts run the app's code
+// (actions()) without opening it.
 
 import platform/host
 import std/time
 
 /// A part of a widget's layout: a column, a row, layers, text, a symbol,
-/// an image, a progress bar, a gauge, a timer or a spacer, made by this
-/// package's functions, with its modifiers (padding, background, frame,
-/// fill, link, opacity).
+/// an image, a progress bar, a gauge, a timer, a spacer, a button, a
+/// toggle or a configured param, made by this package's functions, with
+/// its modifiers (padding, background, frame, fill, link, action,
+/// opacity).
 ///
 ///   widget.column([
 ///     widget.row([widget.symbol("bolt.fill", color: .yellow), widget.text("Energy", font: .caption.bold())]),
@@ -64,6 +66,16 @@ pub struct Layout {
     return Layout(node: n)
   }
 
+  /// Tapping it runs the app's action id, with value, without opening the
+  /// app: actions() gets it (iOS 17's interactive widgets, Android's).
+  /// It takes the place of a link; iOS 16 draws it without the action.
+  fn action(id: string, value: string = "") -> Layout {
+    var n = node
+    n.action = id
+    n.arg = value
+    return Layout(node: n)
+  }
+
   /// Drawn at a times its opacity (0 to 1).
   fn opacity(a: float) -> Layout {
     var n = node
@@ -102,6 +114,11 @@ struct Node {
   fill: bool = false
   url: string = ""
   opacity: float = 1
+  // An action part's, a button's and a toggle's: the action, its value,
+  // and a toggle's state.
+  action: string = ""
+  arg: string = ""
+  on: bool = false
 }
 
 fn alignName(a: Align) -> string = match a {
@@ -174,6 +191,31 @@ pub fn spacer(min: float = 0) -> Layout = Layout(node: Node(t: "spacer", size: m
 
 /// A line between parts of a column or a row.
 pub fn divider() -> Layout = Layout(node: Node(t: "divider"))
+
+/// A button, drawn as the platform's widget button (title, and an SF
+/// Symbol before it, the Material symbol for it on Android, in color:
+/// none, the accent), that runs the app's action without opening it:
+/// actions() gets it, with value.
+///
+///   widget.button("Add", action: "add", symbol: "plus", value: "1")
+pub fn button(title: string, action: string, symbol: string = "", value: string = "", color: Color? = none) -> Layout =
+  Layout(node: Node(t: "button", text: title, name: symbol, color: colorName(color), action: action, arg: value))
+
+/// A switch with its title, on as isOn says. Flipping it shows the new
+/// state at once and runs the app's action without opening it: actions()
+/// gets it, its isOn the state the user chose, until the app sets the
+/// widget again.
+///
+///   widget.toggle(isOn: lights, action: "lights", title: "Lights")
+pub fn toggle(isOn: bool, action: string, title: string = "", value: string = "", color: Color? = none) -> Layout =
+  Layout(node: Node(t: "toggle", text: title, color: colorName(color), action: action, arg: value, on: isOn))
+
+/// The widget's configured value of its param name (asuka.toml's
+/// widgets.params), as the user picked it: an option's or an entity's
+/// title, a string, a number (a bool shows nothing). The widget shows it
+/// as soon as it's configured, before the app has set an entry for it.
+pub fn param(name: string, font: Font = .body, color: Color? = none, lines: int = 0, align: TextAlign = .start) -> Layout =
+  Layout(node: styled(Node(t: "param", name: name, color: colorName(color), lines: lines, textAlign: "{align}"), font))
 
 /// Keeps an image (PNG or JPEG data) for the widgets' image(name), where
 /// the widgets read it (iOS: the App Group's container). Setting a name

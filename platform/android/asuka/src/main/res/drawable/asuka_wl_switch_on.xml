@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- platform/widget's Layout: a toggle that's on, before Android 12 (Material 3's switch: the track in the accent, the thumb on it). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="52dp"
+    android:height="32dp"
+    android:viewportWidth="52"
+    android:viewportHeight="32">
+    <path
+        android:fillColor="@color/asuka_widget_accent"
+        android:pathData="M16,0h20a16,16 0,0 1,0 32h-20a16,16 0,0 1,0 -32z" />
+    <path
+        android:fillColor="@color/asuka_widget_on_accent"
+        android:pathData="M36,4a12,12 0,1 1,0 24a12,12 0,1 1,0 -24z" />
+</vector>

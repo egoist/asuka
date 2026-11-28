@@ -142,6 +142,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | iCloud：キー値ストア、iCloud Drive | `NSUbiquitousKeyValueStore`、ユビキティコンテナ、`NSMetadataQuery` | コミュニティ製（`react-native-cloud-storage`、`expo-icloud-storage`） | ✓ `platform/icloud`（アカウント。iCloud のキー値ストアに保存する `icloud.Value`。iCloud Drive にあるアプリの書類を、変化に合わせてダウンロード・アップロードの状態とともに一覧し、協調して読み書きし、ダウンロード、ローカルコピーの削除、競合の解決。テストには `icloud.fake()`。iOS と macOS。CloudKit のデータベースはない） |
 | Apple Pay、Google Pay | PassKit（`PayWithApplePayButton`） | `@stripe/stripe-react-native` の Platform Pay、`react-native-payments` | ✓ `platform/pay`（ウォレットのシートと `PayButton`。アプリの決済代行会社に渡すトークン。配送、クーポン、カードの変更に合わせた合計金額の更新。項目ごとのエラー。iOS、macOS、Safari では Apple Pay、Android とほかのブラウザーでは Google Pay） |
 | Face ID、指紋 | LocalAuthentication | `expo-local-authentication` | ✓ `platform/biometric`（LocalAuthentication、BiometricPrompt、Windows Hello。Web では WebAuthn によるプラットフォームの認証器。Linux にはない） |
+| パスキー | `ASAuthorizationPlatformPublicKeyCredentialProvider` | `react-native-passkey`（コミュニティ） | ✓ `platform/passkey`（`register`、`signIn`。サーバーの WebAuthn の JSON を渡し、サーバーが検証する JSON を受け取る。AuthenticationServices、Credential Manager、Windows の WebAuthn、ブラウザーのもの。`asuka.toml` の `passkeys` のドメイン。テストでは本物のパスキーを作る fake。Linux にはない） |
 | アプリ内課金、サブスクリプション | StoreKit 2 | `expo-iap`、`react-native-iap`、RevenueCat | ✓ `platform/purchase`（ローカライズされた価格とオファー付きの商品、購入、保留中の支払い、アプリの起動時からのトランザクションのストリーム、完了処理、エンタイトルメント、復元、サブスクリプションの状態、管理・返金・オファーコードのシート。iOS と macOS では StoreKit 2、Play Billing、Microsoft Store、Trusted Web Activity の Digital Goods API。テストには `purchase.fake()`）（[アプリ内課金](purchases.md)） |
 | ストアのレビュー | `requestReview` | `expo-store-review` | ✓ `platform/review`（App Store のプロンプト、Play のアプリ内レビュー） |
 | トラッキングの許可 | App Tracking Transparency | `expo-tracking-transparency` | ✓ `platform/tracking` |
@@ -163,7 +164,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 読み上げ | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech`（キュー、声、ピッチ、速度、一時停止。AVSpeechSynthesizer、TextToSpeech、SAPI、Speech Dispatcher、`speechSynthesis`） |
 | 連絡先 | Contacts、ContactsUI | `expo-contacts` | ✓ `platform/contacts`（`pick()` と新規連絡先の画面は許可なしで、アドレス帳は許可を得て） |
 | カレンダー | EventKit、EventKitUI | `expo-calendar` | ✓ `platform/calendar`（イベントの編集画面は許可なしで、カレンダーとイベントは許可を得て。EventKit、Calendar Provider） |
-| ホーム画面ウィジェット | WidgetKit | `expo-widgets` | ✓ `platform/widget` と `asuka.toml` の `widgets`（すべてのサイズに一つのテンプレート、iOS ではロック画面のものも。またはアプリ独自のレイアウト：列、行、重ね、テキスト、シンボル、画像、プログレス、ゲージ、タイマー、リンク。タイムライン、カウントダウン、URL を開くタップ。iOS と Android） |
+| ホーム画面ウィジェット | WidgetKit | `expo-widgets` | ✓ `platform/widget` と `asuka.toml` の `widgets`（すべてのサイズに一つのテンプレート、iOS ではロック画面のものも。またはアプリ独自のレイアウト：列、行、重ね、テキスト、シンボル、画像、プログレス、ゲージ、タイマー、リンク。タイムライン、カウントダウン、URL を開くタップ。アプリを開かずにアプリのコードを実行するボタンとトグル（App Intent（iOS 17）とブロードキャスト）。設定できるウィジェット（パラメーターは `asuka.toml` に書き、選択肢やアプリ自身のものを選べます。iOS 17 の「ウィジェットを編集」と Android の設定画面）。iOS と Android） |
 | ライブアクティビティ | ActivityKit | `expo-live-activity` | ✓ `platform/liveactivity`（iOS：ロック画面と Dynamic Island。Android 16 の Live Update。カウントダウン、進捗、アラート、サーバーからの更新のためのプッシュトークン） |
 | App Intents、ショートカット | App Intents、App Shortcuts | — | ✓ `asuka.toml` の `shortcuts`（iOS：Siri のフレーズ付きの App Shortcuts で、Spotlight とショートカットに出る。パラメーターはテキスト、数値、スイッチ、選択肢、アプリ自身のデータ（`platform/shortcuts` のエンティティ）で、選択肢とエンティティはフレーズに入れられる。Android：ランチャーのショートカットで、データ一つにつき一つ） |
 | カスタムフォント | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`、`Font(family:)` |

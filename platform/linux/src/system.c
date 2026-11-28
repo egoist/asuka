@@ -870,6 +870,7 @@ static const method_t system_methods[] = {
 	{"periodic", "next", pd_next},
 	{"periodic", "done", pd_done},
 	{"widget", "set", widget_set},
+	{"widget", "entities", widget_set},
 	{"liveActivity", "enabled", la_enabled},
 	{"liveActivity", "start", la_none},
 	{"liveActivity", "update", nothing},

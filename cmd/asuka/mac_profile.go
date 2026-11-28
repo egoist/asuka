@@ -66,6 +66,9 @@ func macProfileNeeds(cfg *appConfig) []string {
 			out = append(out, f.what)
 		}
 	}
+	if len(cfg.Passkeys) > 0 {
+		out = append(out, "passkeys (asuka.toml's passkeys: Associated Domains)")
+	}
 	return out
 }
 
@@ -353,6 +356,9 @@ func macEntitlements(cfg *appConfig, prof *macProfile, appStore bool) (map[strin
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("the profile %q lacks %s, which the app's packages need: turn the capabilities on for %s at developer.apple.com (Identifiers), then make the profile again",
 			prof.name, strings.Join(slices.Compact(missing), ", "), cfg.ID)
+	}
+	if err := macPasskeyEntitlements(ents, cfg, prof); err != nil {
+		return nil, err
 	}
 	// iCloud's, as the app uses them (a profile's are wildcards).
 	set, _, err := narrowICloud(prof.entitlements, cfg, prof.team)

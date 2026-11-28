@@ -8,4 +8,6 @@
     <color name="asuka_widget_outline">#FF938F99</color>
     <color name="asuka_widget_outline_variant">#FF49454F</color>
     <color name="asuka_widget_on_accent">#FF381E72</color>
+    <color name="asuka_widget_secondary_container">#FF4A4458</color>
+    <color name="asuka_widget_on_secondary_container">#FFE8DEF8</color>
 </resources>

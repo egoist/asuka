@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- platform/widget's Layout: a toggle that's off, before Android 12 (Material 3's switch: an outlined track, a small thumb). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="52dp"
+    android:height="32dp"
+    android:viewportWidth="52"
+    android:viewportHeight="32">
+    <path
+        android:fillColor="@color/asuka_widget_outline"
+        android:pathData="M16,0h20a16,16 0,0 1,0 32h-20a16,16 0,0 1,0 -32z" />
+    <path
+        android:fillColor="@color/asuka_widget_surface_container"
+        android:pathData="M16,2h20a14,14 0,0 1,0 28h-20a14,14 0,0 1,0 -28z" />
+    <path
+        android:fillColor="@color/asuka_widget_outline"
+        android:pathData="M16,8a8,8 0,1 1,0 16a8,8 0,1 1,0 -16z" />
+</vector>

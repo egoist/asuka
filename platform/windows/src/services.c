@@ -1704,7 +1704,7 @@ static void widget_set(wh_reply *r, const uint8_t *a, size_t n) {
 	wh_reply_fail(r, "not available: widgets are iOS's and Android's");
 }
 
-static const wh_method_def widget_methods[] = {{"set", widget_set}, {NULL, NULL}};
+static const wh_method_def widget_methods[] = {{"set", widget_set}, {"entities", widget_set}, {NULL, NULL}};
 const wh_module_def wh_widget_module = {"widget", widget_methods};
 
 static void la_unavailable(wh_reply *r, const uint8_t *a, size_t n) {

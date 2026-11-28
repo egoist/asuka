@@ -4,9 +4,15 @@
 // rectangular, inline and corner sizes, set by the watch app), Android's
 // App Widgets. A kind is one of asuka.toml's widgets; its entries show in
 // turn, each from its time. The desktops and the web have no widgets: set
-// does nothing there.
+// does nothing there, and actions() gives nothing.
 //
 //   widget.set("energy", widget.Entry(title: "Energy", value: "72%", progress: 0.72, showProgress: true))
+//
+// A widget's buttons and toggles (button, toggle, Layout.action) run the
+// app's code without opening it: actions() is the stream of what the user
+// taps. A kind with params (asuka.toml's widgets.params) is configurable:
+// the user picks its values (iOS's Edit Widget, Android's configuration
+// screen), and the widget shows the entries set for its configuration.
 
 import platform/host
 import std/json
@@ -74,6 +80,9 @@ struct Wire {
 struct Set {
   kind: string
   entries: [Wire]
+  config: [string: string]
+  /// clear's: every configuration's entries go.
+  all: bool = false
 }
 
 fn sizesOf(m: [Size: Layout]) -> [string: Node] {
@@ -82,20 +91,256 @@ fn sizesOf(m: [Size: Layout]) -> [string: Node] {
   return out
 }
 
-/// Sets what the kind of widget shows: e now.
-pub fn set(kind: string, e: Entry) = setAll(kind, [e])
+/// Sets what the kind of widget shows: e now. With config (some of the
+/// kind's params, by name, each value as configurations gives it), it's
+/// what the widgets configured so show: a widget shows the entries set
+/// for the configuration that matches the most of its params (all of the
+/// set's must match), else those set without one.
+pub fn set(kind: string, e: Entry, config: [string: string] = [:]) = setAll(kind, [e], config: config)
 
-/// Sets the kind's entries, each from its time.
-pub fn setAll(kind: string, entries: [Entry]) = host.send("widget", "set", wire(kind, entries).bytes())
+/// Sets the kind's entries, each from its time (for config, as set).
+pub fn setAll(kind: string, entries: [Entry], config: [string: string] = [:]) {
+  if let f = faked {
+    f.set(kind, entries, config)
+    return
+  }
+  host.send("widget", "set", wire(kind, entries, config).bytes())
+}
 
 /// What set sends the host: the kind and its entries, in time order, as
 /// JSON.
-fn wire(kind: string, entries: [Entry]) -> string {
+fn wire(kind: string, entries: [Entry], config: [string: string] = [:], all: bool = false) -> string {
   let es = entries.sorted((a, b) => (a.at?.unixMilli() ?? 0) < (b.at?.unixMilli() ?? 0)).map(e => Wire(title: e.title, value: e.value, body: e.body, caption: e.caption,
     symbol: e.symbol, progress: e.progress, showProgress: e.showProgress, untilMs: e.until?.unixMilli() ?? 0, atMs: e.at?.unixMilli() ?? 0, tint: e.tint, url: e.url,
     layout: if let l = e.layout { nodeOf(l) } else { none }, sizes: sizesOf(e.sizes)))
-  return json.encode(Set(kind: kind, entries: es))
+  return json.encode(Set(kind: kind, entries: es, config: config, all: all))
 }
 
-/// Clears what the kind of widget shows.
-pub fn clear(kind: string) = setAll(kind, [])
+/// Clears what the kind of widget shows: every configuration's entries,
+/// or with config, those set for it.
+pub fn clear(kind: string, config: [string: string]? = none) {
+  if let f = faked {
+    f.clear(kind, config)
+    return
+  }
+  host.send("widget", "set", wire(kind, [], config: config ?? [:], all: config.isNone()).bytes())
+}
+
+// ---------------------------------------------------------------------
+// Actions
+
+/// What the user did with a widget's button, toggle or action part: its
+/// action and value, a toggle's new state, and the widget's kind and
+/// configuration.
+pub struct Action {
+  /// The widget's kind.
+  kind: string = ""
+  /// The button's, the toggle's or the part's action.
+  id: string = ""
+  value: string = ""
+  /// A toggle's state, as the user set it.
+  isOn: bool = false
+  /// The widget's configuration: its params' values, as configurations
+  /// gives them.
+  config: [string: string] = [:]
+  /// When the user tapped it (it may reach the app later: see actions).
+  at: time.Time = time.unix(0)
+  token: string = ""
+
+  /// Says the app is done with it: the system draws the widget again
+  /// then (iOS's intent returns; Android's receiver finishes). Setting the
+  /// kind's entries says it too; else the system's time for it ends it
+  /// (about 25 seconds on iOS, 9 on Android).
+  fn done() {
+    if !token.isEmpty() && faked.isNone() {
+      host.send("widget", "actionDone", token.bytes())
+    }
+  }
+}
+
+struct WireAction {
+  token: string = ""
+  kind: string = ""
+  id: string = ""
+  value: string = ""
+  isOn: bool = false
+  config: [string: string] = [:]
+  atMs: int = 0
+}
+
+/// What the user does with the app's widgets: their buttons, toggles and
+/// action parts, each run without opening the app. The app runs for it
+/// (started without a screen if it isn't running: its root, and the task
+/// that reads this) and doesn't come to the front. One that came before
+/// anything read the stream waits for the first reader, so read it as the
+/// app starts, in a task of its root. When iOS runs an action in the
+/// widget's own process (iOS 16's, or the app can't be launched), it
+/// reaches the app the next time it runs, with its at; the widget shows a
+/// toggle's new state meanwhile.
+pub fn actions() -> Stream<Action> = Stream(give => {
+  if let f = faked {
+    for a in f.pending {
+      give(a)
+    }
+    f.pending = []
+    let id = f.onAction(a => give(a))
+    defer { f.unlisten(id) }
+    await never()
+    return
+  }
+  for await b in host.next("widget", "nextAction") {
+    let w: WireAction? = try? json.decode(b.string())
+    if let x = w {
+      give(Action(kind: x.kind, id: x.id, value: x.value, isOn: x.isOn, config: x.config, at: time.unixMilli(x.atMs), token: x.token))
+    }
+  }
+})
+
+// ---------------------------------------------------------------------
+// Configuration
+
+/// The configurations of the kind's widgets on the home screen (and the
+/// lock screen), one for each: its params, by name, each value as text (an
+/// option's value, an entity's id, a number, "true" or "false"), a
+/// param's default where the user picked none. Set an entry for each
+/// (set's config); or ahead of time, one for each value a param can take,
+/// so that a widget the user configures shows its entry at once.
+pub async fn configurations(kind: string) throws -> [[string: string]] {
+  if let f = faked {
+    return f.configured[kind] ?? []
+  }
+  do {
+    let b = try await host.call("widget", "configurations", kind.bytes())
+    let cs: [[string: string]]? = try? json.decode(b.string())
+    return cs ?? []
+  } catch e {
+    if host.unsupported(e) {
+      return []
+    }
+    throw e
+  }
+}
+
+/// One of the app's things an entity param (asuka.toml's widgets.params,
+/// type "entity") offers: the user picks one by its title as they
+/// configure the widget, and the configuration has its id.
+pub struct Entity {
+  id: string
+  title: string
+  subtitle: string = ""
+}
+
+/// Sets the things of an entity (an entity param's entity in asuka.toml's
+/// widgets.params) the user picks from as they configure a widget: all
+/// of them, replacing those set before. They're kept, read without the
+/// app running.
+pub fn setEntities(entity: string, entities: [Entity]) {
+  if let f = faked {
+    f.entities[entity] = entities
+    return
+  }
+  host.send("widget", "entities", host.str(entity).concat(json.encode(entities).bytes()))
+}
+
+// ---------------------------------------------------------------------
+// Testing
+
+// The fake a test installed (fake()).
+state faked: FakeWidgets? = none
+
+/// The device's widgets, as a test drives them: fake() installs one, and
+/// the package reads it in place of the platform. It keeps what's set and
+/// taps the widgets' buttons and toggles.
+///
+///   let home = widget.fake()
+///   home.tap("lights", action: "power", isOn: true)
+pub store FakeWidgets {
+  /// What's set: each kind's entries, by their configuration's key
+  /// (key).
+  pub state entries: [string: [string: [Entry]]] = [:]
+  /// What configurations answers, by kind.
+  pub state configured: [string: [[string: string]]] = [:]
+  /// What setEntities set, by entity.
+  pub state entities: [string: [Entity]] = [:]
+  /// The actions waiting for actions() to read.
+  pub state pending: [Action] = []
+  state readers: [int: fn(Action)] = [:]
+  state ids = 0
+
+  fn set(kind: string, es: [Entry], config: [string: string]) {
+    var m = entries[kind] ?? [:]
+    m[key(config)] = es
+    entries[kind] = m
+  }
+
+  fn clear(kind: string, config: [string: string]?) {
+    if let c = config {
+      var m = entries[kind] ?? [:]
+      m.remove(key(c))
+      entries[kind] = m
+      return
+    }
+    entries.remove(kind)
+  }
+
+  /// A configuration's key: its params sorted by name, "name=value",
+  /// joined by "&" ("": none).
+  pub fn key(config: [string: string]) -> string = config.keys().sorted().map(k => "{k}={config[k] ?? ""}").joined(separator: "&")
+
+  /// What a widget of the kind configured so shows now: the first entry
+  /// set for the configuration that matches the most of its params, as
+  /// the platform picks it (none: nothing set matches).
+  pub fn showing(kind: string, config: [string: string] = [:]) -> Entry? {
+    var best: [Entry]? = none
+    var most = -1
+    for (k, es) in entries[kind] ?? [:] {
+      var n = 0
+      var ok = true
+      if !k.isEmpty() {
+        for part in k.split("&") {
+          let kv = part.split("=", count: 2)
+          if config[kv[0]] == (kv.get(1) ?? "") {
+            n += 1
+          } else {
+            ok = false
+          }
+        }
+      }
+      if ok && n > most {
+        most = n
+        best = es
+      }
+    }
+    return best?.first()
+  }
+
+  /// The user taps a button or an action part of a widget of the kind,
+  /// or flips its toggle to isOn: actions() gets it.
+  pub fn tap(kind: string, action: string, value: string = "", isOn: bool = false, config: [string: string] = [:]) {
+    let a = Action(kind: kind, id: action, value: value, isOn: isOn, config: config, at: time.now())
+    if readers.isEmpty() {
+      pending = pending + [a]
+      return
+    }
+    for (_, f) in readers {
+      f(a)
+    }
+  }
+
+  fn onAction(f: fn(Action)) -> int {
+    ids += 1
+    readers[ids] = f
+    return ids
+  }
+
+  fn unlisten(id: int) {
+    readers.remove(id)
+  }
+}
+
+/// Installs a fake of the device's widgets for a test (FakeWidgets).
+pub fn fake() -> FakeWidgets {
+  let f = FakeWidgets()
+  faked = f
+  return f
+}

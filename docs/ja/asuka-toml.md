@@ -67,6 +67,7 @@ github = "you/notes"
 | `accent` | 色 | プラットフォームの色 | `"#rrggbb"` または `"#rrggbbaa"`。iOS では tint、Android では Material 3 のカラースキームのシード、Mac では `Accent`、塗りつぶしのボタン、リンクの色（AppKit 自身のコントロールはユーザーの設定した色のまま）、Windows ではコントロールのアクセントカラー、Linux では libadwaita のアクセントカラー、Web ではページとマニフェストの `theme_color` になります。 |
 | `orientations` | 文字列の配列 | 両方 | `"portrait"`、`"landscape"`。スマートフォンでアプリが対応する画面の向きです。iPad では Split View とステージマネージャに必要なので、四つの向きすべてに対応します。Android 16 では、タブレットと折りたたみ端末でこの指定は無視されます。 |
 | `scheme` | 文字列 | なし | アプリの URL スキームです。iOS、Android、Mac、Windows、Linux で、`notes://` の URL がアプリを開き、アプリの `on openURL(url)` がその URL を受け取ります。英字、数字、`+`、`-`、`.` を使い、先頭は英字にします。[ディープリンク](navigation.md#ディープリンク)を参照してください。 |
+| `passkeys` | 文字列の配列 | なし | アプリがパスキー（と保存されたパスワード）を使う、リライングパーティのドメイン（`example.com` など）です。iOS と Mac の `webcredentials:` の関連ドメインになります。ドメイン側は `apple-app-site-association` に、Android 向けには `assetlinks.json` にアプリを載せます。[パスキー](device.md#パスキーplatformpasskey)を参照してください。 |
 | `links` | 文字列の配列 | なし | `example.com` のようなドメインで、その https のリンクがアプリを開きます。iOS のユニバーサルリンクと Android の App Links です。ドメイン側で関連付けのファイルを配信します。[ディープリンク](navigation.md#ディープリンク)を参照してください。 |
 | `fileTypes` | テーブルの配列 | なし | アプリが開くファイルの種類です。[fileTypes](#filetypes) を参照してください。 |
 | `shareTarget` | `true` またはテーブル | オフ | iOS と Android で、ほかのアプリの共有シートにアプリを表示します。[shareTarget](#sharetarget) を参照してください。 |
@@ -267,8 +268,21 @@ sizes = ["small", "medium", "rectangular"]
 | `name` | 文字列 | `kind` | ウィジェットギャラリーに表示される名前です。 |
 | `description` | 文字列 | なし | ウィジェットギャラリーに表示される説明です。 |
 | `sizes` | 文字列の配列 | `["small", "medium"]` | `small`、`medium`、`large`、そして iOS の `extraLarge`（iPad）と、ロック画面の `circular`、`rectangular`、`inline`。この三つは Apple Watch のコンプリケーションでもあり、ウォッチにはさらに `corner` があります。 |
+| `params` | テーブルの配列 | なし | ウィジェットを設定できるようにします。ユーザーが追加や編集のときに選ぶ項目です。それぞれ `name`、`title`、`type`（`string`、`int`、`float`、`bool`、`options`、`entity`）、`prompt`、`default`、`options` 型の `options`（`{ value, title }`）、`entity` 型の `entity`（アプリ自身のもので、`widget.setEntities` で設定します）を持ちます。[設定できるウィジェット](device.md#設定できるウィジェット)を参照してください。 |
 
 iOS では、ウィジェットは独自の bundle ID（アプリの ID に `.widgets` を付けたもの）を持つ拡張機能になり、リリースでは `ios.widgetProfile` で署名します。[ホーム画面ウィジェット](device.md#ホーム画面ウィジェットplatformwidget)を参照してください。
+
+```toml
+[[widgets]]
+kind = "weather"
+name = "Weather"
+
+[[widgets.params]]
+name = "city"
+title = "City"
+type = "options"
+options = [{ value = "tokyo", title = "Tokyo" }, { value = "paris", title = "Paris" }]
+```
 
 ## shortcuts
 
@@ -432,7 +446,7 @@ NSAppTransportSecurity = { NSExceptionDomains = { "example.local" = { NSExceptio
 "com.apple.developer.associated-domains" = ["webcredentials:example.com"]
 ```
 
-配列のエンタイトルメントは、Asuka がアプリに与える配列（`links` の `applinks:` ドメイン、パッケージの App Group とキーチェーングループ）に追加されます。それ以外の値は Asuka の値を置き換えます。Xcode のエンタイトルメントファイルと同じく、`$(AppIdentifierPrefix)` と `$(TeamIdentifierPrefix)` はチーム ID とドットに置き換わります。これらはアプリ本体のもので、拡張機能には付きません。シミュレーター向けのビルドにはそのまま入ります。署名付きのビルドでは、それぞれを許可するプロファイル（developer.apple.com で App ID のケイパビリティを有効にしたもの）が必要で、足りないものがあればビルドはそれを挙げて止まります。
+配列のエンタイトルメントは、Asuka がアプリに与える配列（`links` の `applinks:` ドメイン、`passkeys` の `webcredentials:` ドメイン、パッケージの App Group とキーチェーングループ）に追加されます。それ以外の値は Asuka の値を置き換えます。Xcode のエンタイトルメントファイルと同じく、`$(AppIdentifierPrefix)` と `$(TeamIdentifierPrefix)` はチーム ID とドットに置き換わります。これらはアプリ本体のもので、拡張機能には付きません。シミュレーター向けのビルドにはそのまま入ります。署名付きのビルドでは、それぞれを許可するプロファイル（developer.apple.com で App ID のケイパビリティを有効にしたもの）が必要で、足りないものがあればビルドはそれを挙げて止まります。
 
 [配布](shipping.md#ios)を参照してください。
 

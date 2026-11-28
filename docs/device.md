@@ -46,6 +46,7 @@ web need nothing declared (see each one's section below).
 | `platform/appleauth` | | the Sign in with Apple entitlement |
 | `platform/pay` | Google Pay's library, its API enabled, its callbacks service | the Apple Pay entitlement, with `asuka.toml`'s `applePay.merchantIds` |
 | `platform/biometric` | `USE_BIOMETRIC` | `NSFaceIDUsageDescription` |
+| `platform/passkey` | Credential Manager (Google Play services' below Android 14) | the associated domains entitlement, `webcredentials:` and `asuka.toml`'s `passkeys` |
 | `platform/record` | `RECORD_AUDIO`, `FOREGROUND_SERVICE_MICROPHONE`; a foreground service | `NSMicrophoneUsageDescription` |
 | `platform/nowplaying` | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`; a foreground service | the `audio` background mode |
 | `platform/liveactivity` | `POST_NOTIFICATIONS`, `POST_PROMOTED_NOTIFICATIONS` | `NSSupportsLiveActivities` and the widget extension (for an app that calls it) |
@@ -100,8 +101,8 @@ its Info.plist (location's as `NSLocationUsageDescription` too). Its
 signature has the hardened runtime's entitlements for what they ask
 (camera, microphone, location, contacts, calendars, photos), without
 which a Developer ID build is refused them. Push's `aps-environment`,
-Sign in with Apple, App Attest, Apple Pay and iCloud are entitlements only a provisioning
-profile grants: `asuka build` embeds one for an app that uses them
+Sign in with Apple, App Attest, Apple Pay, iCloud and the passkeys'
+associated domains are entitlements only a provisioning profile grants: `asuka build` embeds one for an app that uses them
 (`asuka.toml`'s `mac.profile`, else `ASUKA_MAC_PROFILE`, else the best
 match installed). Without one, the app builds, the CLI says what won't
 work, and on the Mac registering for pushes and signing in with Apple
@@ -117,13 +118,14 @@ UserNotifications, AuthenticationServices), except where a Mac differs:
 | Package | On a Mac |
 | --- | --- |
 | `platform/device` | `pickPhotos`, `pickMedia` and `pickFiles`: an open panel, a sheet on the window (no permission), copies in the app's caches (`pickMedia`'s `ordered` does nothing). `browse` opens the page in the user's browser. `info`: `model` `"Mac"`, `system` `"macOS"` |
-| `platform/camera` | `take()`: a sheet over the window with a live preview, Take Photo and Cancel (AppKit has no camera screen). `camera.View`'s "back" is the built-in camera (a Mac has no back one), or the one plugged in; scanning codes in it needs macOS 13. Its zoom is digital, in photo mode, up to 4× (the preview scaled, photos and frames cropped to the middle); a Mac has no exposure bias, and the torch, the flash and focusing at a point are there only where the camera has them (an iPhone as a Continuity Camera) |
+| `platform/camera` | `take()`: a sheet over the window with a live preview, Take Photo and Cancel (AppKit has no camera screen). `camera.View`'s "back" is the built-in camera (a Mac has no back one), or the one plugged in; scanning codes in it needs macOS 13. Its zoom is digital, in photo mode, up to 4Ã (the preview scaled, photos and frames cropped to the middle); a Mac has no exposure bias, and the torch, the flash and focusing at a point are there only where the camera has them (an iPhone as a Continuity Camera) |
 | `platform/record` | No audio session: other apps' sound plays on; `background` changes nothing, a Mac app records out of sight anyway |
 | `platform/nowplaying` | `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`, as on iOS: Control Center's and the menu bar's Now Playing, the keyboard's media keys, AirPods. A Mac needs no audio session or background mode |
 | `platform/contacts`, `platform/calendar` | `add` asks in an alert over the window (macOS has no new contact or event screen), then saves, asking for access first |
 | `platform/photos` | PhotoKit, as on iOS: photos and videos, albums, deleting (with the system's question) and changes; a Mac has no limited library: `manageLimited` does nothing |
 | `platform/library` | Photos and videos go to Photos; `.downloads` and `.music` to the user's `~/Downloads` and `~/Music`, in the folder asked |
 | `platform/biometric` | Touch ID's prompt, or the user's password (not with `noPasscode`) |
+| `platform/passkey` | AuthenticationServices' passkeys and security keys, as on iOS (macOS 13). The associated domains need a provisioning profile (above): without one, the Mac refuses the app's passkeys (`notAssociated`) |
 | `platform/push` | APNs, as on iOS. Needs a provisioning profile (above) |
 | `platform/appleauth` | Apple's button and sheet, as on iOS. Needs a provisioning profile (above) |
 | `platform/pay` | Apple Pay's sheet and button, as on iOS: a Mac with Touch ID pays, or one near the user's iPhone or Apple Watch. Needs a provisioning profile (above) |
@@ -135,7 +137,7 @@ UserNotifications, AuthenticationServices), except where a Mac differs:
 | `platform/transcribe` | On the device only; the app's bundle needs its purpose string, which `asuka build` writes |
 | `platform/sensors` | A Mac has no motion sensors: `available` is false, and the streams and `steps` throw `SensorError.notAvailable` |
 | `device.haptic` | The trackpad's feedback (a Force Touch trackpad): an alignment for `.selection`, a level change for the others |
-| `platform/widget`, `platform/liveactivity`, `platform/agerange` | Not on a Mac: `widget.set` does nothing, `liveactivity.start` throws "liveactivity: not available", `agerange.request` `AgeRangeError.notAvailable` |
+| `platform/widget`, `platform/liveactivity`, `platform/agerange` | Not on a Mac: `widget.set` does nothing, `widget.actions()` gives nothing and `configurations` none, `liveactivity.start` throws "liveactivity: not available", `agerange.request` `AgeRangeError.notAvailable` |
 | `platform/purchase` | StoreKit 2, in the app's Swift library, which the build makes for an app that imports the package ([In-app purchases](purchases.md)) |
 | `platform/icloud` | As on iOS, in the app's Swift library. Needs a provisioning profile with iCloud (above): without one, "icloud: not available" ([iCloud](icloud.md)) |
 | `platform/splash` | A Mac app has no launch screen: `hold` and `hide` do nothing |
@@ -160,7 +162,7 @@ device without it:
 | --- | --- |
 | `platform/device` | `pickPhotos`, `pickMedia` and `pickFiles`: the open dialog over the window, copies in the app's caches (`pickMedia`'s `ordered` does nothing; a video's size and length from its MPEG-4 or QuickTime header, else Media Foundation's). `browse` opens the page in the user's browser. The clipboard's images are PNGs. `keepAwake` keeps the display on. `info`: `model` `"PC"`, `system` `"Windows"`, `systemVersion` `"10.0.<build>"` |
 | `platform/secure` | The user's generic credentials in the Credential Manager, named `<app>/<key>` (a value up to 2560 bytes) |
-| `platform/camera` | Media Foundation's capture engine. `take()`: a dialog over the window with a live preview, Take Photo and Cancel (Enter and Escape). `camera.View` picks the camera Windows names front or rear, else the first; with `scan`, it reads codes in four frames a second with Asuka's own reader (as `scan.file` does). Settings' camera switch off: `CameraError.notAllowed`. The camera's own zoom where it has one, else a digital zoom up to 4× in photo mode (the preview, photos and frames cropped; videos are the whole view); a pinch is a touchpad's, a touch screen's, or Ctrl and the wheel. No torch, flash, exposure bias, focus point or `photoQuality`. A camera facing the user shows mirrored, and `mirror` mirrors its photos, videos and frames |
+| `platform/camera` | Media Foundation's capture engine. `take()`: a dialog over the window with a live preview, Take Photo and Cancel (Enter and Escape). `camera.View` picks the camera Windows names front or rear, else the first; with `scan`, it reads codes in four frames a second with Asuka's own reader (as `scan.file` does). Settings' camera switch off: `CameraError.notAllowed`. The camera's own zoom where it has one, else a digital zoom up to 4Ã in photo mode (the preview, photos and frames cropped; videos are the whole view); a pinch is a touchpad's, a touch screen's, or Ctrl and the wheel. No torch, flash, exposure bias, focus point or `photoQuality`. A camera facing the user shows mirrored, and `mirror` mirrors its photos, videos and frames |
 | `platform/record` (video) | H.264 and AAC in MPEG-4 (`.mp4`), the default microphone unless muted |
 | `platform/audio` | MCI (DirectShow's playback); a URL is downloaded to the app's caches first |
 | `platform/record` (sound) | The default microphone, AAC at 44.1 kHz (voice mono, music stereo); `background` changes nothing |
@@ -169,6 +171,7 @@ device without it:
 | `platform/network` | The Network List Manager: Wi-Fi, cellular or a cable; `metered` for a connection with a cost, `constrained` near or over its data limit |
 | `platform/location` | WinRT's Geolocator. `placeName` asks OpenStreetMap's Nominatim (Windows's own geocoder needs a Bing Maps key): one request a second at most, answers kept in the app's caches. Regions: the `GeofenceMonitor`, while the app runs; background updates computed from the positions |
 | `platform/biometric` | Windows Hello's prompt; `check()`'s kind is the sensor's; Hello always offers its PIN, and names its own cancel button |
+| `platform/passkey` | Windows' WebAuthn (webauthn.dll, Windows 10 1903 and later, x64 and ARM64): Windows Hello's passkeys, a security key, a phone's (Windows 11). The client data's origin is `https://` and the `rp.id`; the domain needs no file for the app |
 | `platform/webauth` | A window over the app's with WebView2 in it (the app's web profile; `ephemeral`: a throwaway one) |
 | `platform/js` | A WebView2 that's never shown |
 | `platform/contacts`, `platform/calendar` | Windows gives the contacts and calendars to packaged apps only: `request` says `.denied`; `add` opens a vCard or an event file in the user's contacts or calendar app, and answers false (Windows doesn't say whether it was saved) |
@@ -177,13 +180,13 @@ device without it:
 | `platform/vision` | Windows's OCR, in the languages whose OCR is installed (Settings, Time & language), and its face detector; codes as `platform/scan` reads them |
 | `platform/scan` | Windows has no reader of codes for apps: Asuka's own reads QR codes, Data Matrix, EAN-13 and EAN-8, UPC-A and UPC-E, Code 128 and Code 39 (not Aztec, PDF417, Code 93, Codabar nor ITF) |
 | `platform/imageedit` | Windows's codecs read (HEIC and WebP where their extensions are installed); a video's frame through Media Foundation |
-| `platform/maps` | Windows has no map control for desktop apps (its own needs a Bing Maps key): Asuka draws OpenStreetMap's tiles, downloaded two at a time and kept a week in the app's caches, with "© OpenStreetMap contributors" on the map; drag, the wheel or a pinch, double-click, + and -. `.satellite` and `.hybrid` show the streets (no free imagery), and `showsUser` shows nothing, as on Linux. Lines, shapes, circles, image markers and clusters are drawn by Asuka too; the map turns to the `heading` the app sets (the user can't turn it) and stays flat; a right click is `longPress` |
+| `platform/maps` | Windows has no map control for desktop apps (its own needs a Bing Maps key): Asuka draws OpenStreetMap's tiles, downloaded two at a time and kept a week in the app's caches, with "Â© OpenStreetMap contributors" on the map; drag, the wheel or a pinch, double-click, + and -. `.satellite` and `.hybrid` show the streets (no free imagery), and `showsUser` shows nothing, as on Linux. Lines, shapes, circles, image markers and clusters are drawn by Asuka too; the map turns to the `heading` the app sets (the user can't turn it) and stays flat; a right click is `longPress` |
 | `platform/background` | The task keeps the PC from sleeping; there's no notification, so `update` changes nothing |
 | `platform/periodic` | Timers while the app runs (it isn't launched for them); one that wants power waits while the PC is on its battery |
 | `platform/screen` | `lock`, `setBars` and `setBrightness` do nothing; `preventCapture` leaves the app's windows out of screenshots and recordings; `screenshots()` says nothing |
 | `platform/appicon` | `set` changes the app's windows' and taskbar buttons' icon, and again as it launches; the Start menu and the executable keep the app's own |
 | `platform/tracking` | No prompt: allowed while the advertising ID is on in Settings, else denied |
-| `platform/push`, `platform/widget`, `platform/review`, `platform/integrity` | Packaged (Store) apps' or Apple's and Google's: `push.register` throws, `widget.set` does nothing, `review.request` shows nothing, `integrity.supported()` is false |
+| `platform/push`, `platform/widget`, `platform/review`, `platform/integrity` | Packaged (Store) apps' or Apple's and Google's: `push.register` throws, `widget.set` does nothing (`actions()` gives nothing, `configurations` none), `review.request` shows nothing, `integrity.supported()` is false |
 | `platform/liveactivity` | A phone's: `enabled` is false, `start` throws "liveactivity: not available" |
 | `platform/purchase` | The Microsoft Store, for an app installed from it; otherwise `available()` is false and the rest throw `PurchaseError.notAvailable` ([In-app purchases](purchases.md)) |
 | `platform/pay` | No wallet pays for a Windows app: `available` says `.none`, `pay` throws `PayError.notAvailable`, `PayButton` shows nothing |
@@ -230,7 +233,7 @@ names what's missing.
 | `platform/nowplaying` | An MPRIS player on the session bus, named `org.mpris.MediaPlayer2.<app>.instance<pid>` while something shows: GNOME's and KDE's media controls and lock screens, the media keys, `playerctl`. MPRIS's `Seek` is a skip where the app skips, else a seek; the artwork is a `file://` or http(s) URL |
 | `platform/library` | The user's folders (XDG's Pictures, Videos, Music, Downloads), in the folder asked |
 | `device.shareFiles` | No share sheet: the files are copied to the clipboard, with a toast |
-| `platform/camera`, `platform/record` | The camera portal (it asks the user once; PipeWire's cameras, `gstreamer1.0-pipewire`), else the first Video4Linux camera, through GStreamer. `take()`: a dialog over the window with a live preview, Take Photo and Cancel. `camera.View`: the preview, mirrored, filling its box; front and back are the same camera (a computer's face the user). Videos are MPEG-4 (H.264 from x264 or OpenH264, AAC), else WebM; scanning codes needs GStreamer's `zbar` element. No camera: `CameraError.noCamera`; refused: `.notAllowed`. A Video4Linux camera's own zoom, exposure bias and torch where its driver has them; else (and with PipeWire's cameras) a digital zoom up to 4×, recordings too. A pinch is a touchpad's, a touch screen's, or Ctrl and the wheel. No flash, focus point or `photoQuality` |
+| `platform/camera`, `platform/record` | The camera portal (it asks the user once; PipeWire's cameras, `gstreamer1.0-pipewire`), else the first Video4Linux camera, through GStreamer. `take()`: a dialog over the window with a live preview, Take Photo and Cancel. `camera.View`: the preview, mirrored, filling its box; front and back are the same camera (a computer's face the user). Videos are MPEG-4 (H.264 from x264 or OpenH264, AAC), else WebM; scanning codes needs GStreamer's `zbar` element. No camera: `CameraError.noCamera`; refused: `.notAllowed`. A Video4Linux camera's own zoom, exposure bias and torch where its driver has them; else (and with PipeWire's cameras) a digital zoom up to 4Ã, recordings too. A pinch is a touchpad's, a touch screen's, or Ctrl and the wheel. No flash, focus point or `photoQuality` |
 | `platform/scan`, `platform/vision` | Asuka's own reader reads codes, as on Windows: QR, Data Matrix, EAN, UPC, Code 128, Code 39 (no Aztec, PDF417, Code 93, Codabar or ITF). Tesseract (`libtesseract5` and a language's data) reads text; nothing finds faces: `faces` is empty. `vision.analyze` leaves out the text without Tesseract |
 | `platform/imageedit` | GdkPixbuf's loaders decode (HEIF and WebP where their loaders are installed), upright; Asuka does the actions; video frames from GStreamer |
 | `platform/webauth` | A dialog over the window with a WebKitGTK web view (`ephemeral`: a session of its own); closing it cancels |
@@ -242,10 +245,10 @@ names what's missing.
 | `platform/appicon` | `set` throws `notAvailable`: the launcher shows the desktop file's icon |
 | `platform/sensors` | iio-sensor-proxy (convertibles, tablets): the light sensor, in lux, and the accelerometer's orientation as 1 g along the axis that's up, as it turns. No others: `available` is false, and the streams and `steps` throw `SensorError.notAvailable` |
 | `platform/contacts`, `platform/calendar` | Evolution Data Server's address books and calendars (GNOME Contacts', GNOME Calendar's, the online accounts'): access is `.allowed` (calendars' `.full`) when it has one; `pick` is a dialog of the contacts with a search field; `add` asks, then saves in the default address book or the event's calendar. Without it: contacts' access is `.denied`, calendars' `.writeOnly`; `add` opens a vCard or an iCalendar file in the user's contacts or calendar app, and answers false; `contacts.pick` throws |
-| `platform/photos`' library, `platform/appleauth`, `platform/widget`, `platform/liveactivity` | None on Linux: the library's access is `.denied`; `appleauth.available()` is false and its button shows nothing; `liveactivity.start` "liveactivity: not available"; `widget.set` does nothing. `platform/splash` has nothing to hold |
+| `platform/photos`' library, `platform/appleauth`, `platform/widget`, `platform/liveactivity` | None on Linux: the library's access is `.denied`; `appleauth.available()` is false and its button shows nothing; `liveactivity.start` "liveactivity: not available"; `widget.set` does nothing, and `actions()` gives nothing. `platform/splash` has nothing to hold |
 | `platform/purchase` | No store: `available()` is false, the rest throw `PurchaseError.notAvailable` |
 | `platform/icloud` | No iCloud: "icloud: not available" |
-| `platform/biometric`, `platform/integrity`, `platform/agerange`, `platform/push` | None on Linux: not available, not supported. `platform/review` does nothing; `platform/tracking` answers `.allowed` |
+| `platform/biometric`, `platform/passkey`, `platform/integrity`, `platform/agerange`, `platform/push` | None on Linux: not available, not supported. `platform/review` does nothing; `platform/tracking` answers `.allowed` |
 | `platform/pay` | No wallet pays for a Linux app: `available` says `.none`, `pay` throws `PayError.notAvailable`, `PayButton` shows nothing |
 | `platform/crash` | Asuka's crash output, which has a crash in native code too (a signal in GTK's code, a GLib abort), reported as `"native"`; the system's own record (systemd-coredump, apport) isn't read |
 | `platform/analytics` | GA4's Measurement Protocol, as on Windows |
@@ -265,7 +268,7 @@ and its service worker for notifications and Web Push.
 | --- | --- |
 | `platform/device` | `pickPhotos`, `pickMedia` and `pickFiles`: the browser's file picker, copies in the caches (`pickMedia`'s `ordered` does nothing, and a HEIC outside Safari has no size and isn't scaled). `browse`: a new tab. The clipboard: the app's own copies, and other apps' where the user lets the page read it. `keepAwake`: the Screen Wake Lock. `info` from the user agent (Chromium's client hints give the system's version and an Android phone's model) |
 | `platform/secure` | The values encrypted (AES-GCM) in IndexedDB, with a key the browser won't let out; not a keychain (see [the web](web.md)) |
-| `platform/camera`, `platform/record` | `take()` opens a phone's camera, or a dialog with the live camera and a shutter; `camera.View` is the camera in a `<video>`, with `capture()`, recording, and scanning codes where the browser has `BarcodeDetector`. The camera's own zoom, torch, exposure and focus where its track has them (Chrome on Android), else a digital zoom up to 4× (recordings too, drawn through a canvas); the flash through `ImageCapture` where the camera has one; no `photoQuality`. `maxBytes` stops a recording at the chunk before the limit |
+| `platform/camera`, `platform/record` | `take()` opens a phone's camera, or a dialog with the live camera and a shutter; `camera.View` is the camera in a `<video>`, with `capture()`, recording, and scanning codes where the browser has `BarcodeDetector`. The camera's own zoom, torch, exposure and focus where its track has them (Chrome on Android), else a digital zoom up to 4Ã (recordings too, drawn through a canvas); the flash through `ImageCapture` where the camera has one; no `photoQuality`. `maxBytes` stops a recording at the chunk before the limit |
 | `platform/scan`, `platform/vision` | `BarcodeDetector` reads codes; faces and text only where the browser has them |
 | `platform/imageedit` | A canvas: JPEG or PNG; a remote image needs CORS |
 | `platform/photos` | A page can't read the library: access is `.denied` (`device.pickMedia` picks photos and videos) |
@@ -278,6 +281,7 @@ and its service worker for notifications and Web Push.
 | `platform/speech` | `speechSynthesis`, the browser's voices |
 | `platform/sensors` | The Generic Sensor API (Chrome) or device motion and orientation events (Safari asks on a tap), in Android's axes and units; no barometer or pedometer |
 | `platform/biometric` | The platform's authenticator through WebAuthn (Touch ID, Face ID, Windows Hello, Android's screen lock): the first `authenticate` makes a passkey for the site. The prompt is the browser's: `reason` and `cancel` don't show |
+| `platform/passkey` | WebAuthn's `navigator.credentials`, the browser's sheet: the `rp.id` is the page's site, or a domain it's under (`asuka.toml`'s `passkeys` isn't needed) |
 | `platform/webauth` | A popup, done when it comes back to a page of the app's own origin (a custom scheme can't open a page) |
 | `platform/js` | A hidden, sandboxed frame |
 | `platform/contacts`, `platform/calendar` | `contacts.pick` where the browser has the Contact Picker (Chrome on Android); `add` downloads a vCard or an `.ics` file; reading them isn't on the web |
@@ -324,6 +328,7 @@ Keychain, Network), except where a watch differs:
 | `platform/push` | APNs, the watch app's own token, alerts and data messages; no `rewrite` (a watch app has no Notification Service Extension) |
 | `platform/crash` | The core's fatal errors and uncaught exceptions; no MetricKit diagnostics |
 | `platform/analytics` | Not on the watch (Firebase's Analytics has no watchOS SDK): `available()` is false and nothing is sent |
+| `platform/passkey` | Not on the watch (watchOS has no passkeys of its own): `available()` is false and `register` and `signIn` throw `notAvailable` |
 | The others | Not built for the watch: their calls throw `unsupported`, as on any platform without them |
 
 ## The camera: platform/camera
@@ -420,7 +425,7 @@ does:
   close. A pinch on the view zooms (`pinchToZoom: false` turns that
   off), and `bind zoom:` follows it: the user's pinch writes the state,
   and writing it zooms. Where the back camera has an ultra wide lens the
-  platform reaches through one camera (an iPhone's 0.5×, some Android
+  platform reaches through one camera (an iPhone's 0.5Ã, some Android
   phones), the zoom goes below 1.
 - `torch` lights what the camera sees while it's true; `flash` (`.off`,
   `.on`, `.auto`) is the flash of the photos `capture` takes.
@@ -467,7 +472,7 @@ component Viewfinder {
         Button(if lit { "Light off" } else { "Light" }) { on press { lit = !lit } }
       }
       if info.maxZoom >= 2 {
-        Button("2×") { on press { zoom = if zoom == 2 { 1 } else { 2 } } }
+        Button("2Ã") { on press { zoom = if zoom == 2 { 1 } else { 2 } } }
       }
       Button("Take") { on press { last = try await camera.capture(maxSize: 2048, quality: 0.8) } }
     }
@@ -933,7 +938,7 @@ import platform/webauth
 
 async fn signIn(authorizeURL: string) throws -> string? {
   do {
-    // myapp://…?code=…: exchange the code.
+    // myapp://â¦?code=â¦: exchange the code.
     return try await webauth.open(authorizeURL, callbackScheme: "myapp")
   } catch webauth.WebAuthError.canceled {
     return none // the user closed it
@@ -1433,7 +1438,7 @@ they're `.notAsked` until one comes.
 
 ### Updates in the background
 
-`location.startUpdates(…)` starts updates that go on with the app out of
+`location.startUpdates(â¦)` starts updates that go on with the app out of
 sight, and across launches (on iOS and Android the system starts the app
 for them), until `location.stopUpdates()`. `location.updates()` is their
 stream, of `Batch`es (`positions`, oldest first): read it as the app
@@ -1896,21 +1901,21 @@ count.
 
 | | iOS | Android | macOS | Windows | Linux | Web |
 |---|---|---|---|---|---|---|
-| Show, schedule, cancel | ✓ | ✓ | ✓ | ✓ (toasts) | ✓ (scheduled: a systemd user timer, whether the app runs or not) | ✓ (scheduled: while a page of the app is open) |
-| Repeating (daily, weekly, monthly, yearly, every) | ✓ | ✓ (exact with the permission, else within minutes) | ✓ | ✓ (the next 64 times, scheduled ahead again as the app starts) | ✓ (a systemd timer; without systemd, while the app runs) | while a page of the app is open (missed ones show once as the next opens) |
-| `pending`, `cancelAll` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Kept across a reboot | ✓ | ✓ (set again as the device starts) | ✓ | ✓ | ✓ (systemd's) | not needed (kept in the app's storage) |
-| Sound | ✓ | the channel's (Android 7: the notification's) | ✓ | the system's | the system's | the browser's |
-| Interruption levels, relevance | ✓ (iOS 15) | `.passive`: no sound | ✓ (macOS 12) | `.timeSensitive`, `.critical`: urgent | ignored | ignored |
-| Ongoing, progress | ignored | ✓ | ignored | progress bar | ignored | ignored |
-| Actions, replies | ✓ | ✓ | ✓ | ✓ (five buttons) | actions (a reply opens the app) | buttons where the browser shows them (Chrome, Edge: two); replies where it has inline replies |
-| Background actions | ✓ (about 25 s) | ✓ (about 9 s) | ✓ | ✓ (about 25 s; started for it) | while the app runs | in a page of the app (the worker opens one) |
-| Threads | ✓ | ✓ (a group and its summary) | ✓ | not grouped; `removeThread` | ✓ | not grouped; `removeThread` |
-| Channels | ignored | ✓ | ignored | ignored | ignored | ignored |
-| Conversations | ✓ (communication notifications) | ✓ (MessagingStyle, shortcuts) | plain | plain | plain | plain, the sender's picture its icon |
-| Badge | ✓ | the launcher's | ✓ (the Dock) | the taskbar button's overlay | the launcher API's (Dash to Dock, Plasma) | the installed app's (`navigator.setAppBadge`) |
-| Showing, removing | ✓ | ✓ | ✓ | ✓ (the notification center's) | what the app showed this run | ✓ (the service worker's) |
-| `present` | ✓ | ✓ | ✓ | ✓ (not scheduled ones) | ✓ | ✓ |
+| Show, schedule, cancel | â | â | â | â (toasts) | â (scheduled: a systemd user timer, whether the app runs or not) | â (scheduled: while a page of the app is open) |
+| Repeating (daily, weekly, monthly, yearly, every) | â | â (exact with the permission, else within minutes) | â | â (the next 64 times, scheduled ahead again as the app starts) | â (a systemd timer; without systemd, while the app runs) | while a page of the app is open (missed ones show once as the next opens) |
+| `pending`, `cancelAll` | â | â | â | â | â | â |
+| Kept across a reboot | â | â (set again as the device starts) | â | â | â (systemd's) | not needed (kept in the app's storage) |
+| Sound | â | the channel's (Android 7: the notification's) | â | the system's | the system's | the browser's |
+| Interruption levels, relevance | â (iOS 15) | `.passive`: no sound | â (macOS 12) | `.timeSensitive`, `.critical`: urgent | ignored | ignored |
+| Ongoing, progress | ignored | â | ignored | progress bar | ignored | ignored |
+| Actions, replies | â | â | â | â (five buttons) | actions (a reply opens the app) | buttons where the browser shows them (Chrome, Edge: two); replies where it has inline replies |
+| Background actions | â (about 25 s) | â (about 9 s) | â | â (about 25 s; started for it) | while the app runs | in a page of the app (the worker opens one) |
+| Threads | â | â (a group and its summary) | â | not grouped; `removeThread` | â | not grouped; `removeThread` |
+| Channels | ignored | â | ignored | ignored | ignored | ignored |
+| Conversations | â (communication notifications) | â (MessagingStyle, shortcuts) | plain | plain | plain | plain, the sender's picture its icon |
+| Badge | â | the launcher's | â (the Dock) | the taskbar button's overlay | the launcher API's (Dash to Dock, Plasma) | the installed app's (`navigator.setAppBadge`) |
+| Showing, removing | â | â | â | â (the notification center's) | what the app showed this run | â (the service worker's) |
+| `present` | â | â | â | â (not scheduled ones) | â | â |
 
 **macOS** needs the app's bundle, which `asuka dev` and `asuka build` run it
 from: an executable run on its own has no bundle ID, and its calls
@@ -2122,7 +2127,7 @@ download, an upload, an export the user started, which takes minutes.
 `background.start(title:, text:, progress:, actions:, onAction:)` starts
 a task: the app keeps running, with a notification showing its title,
 text, progress and buttons, until the task's `end()`. `onAction` gets
-the ID of a notification button the user taps. `update(…)` shows new
+the ID of a notification button the user taps. `update(â¦)` shows new
 ones, its progress as it goes. Start a task while the app is on screen,
 as the user asks for the work.
 
@@ -2190,11 +2195,11 @@ without a task.
 
 ## Shares from other apps: onShare
 
-`onShare(items => …)` in a component's body hears what another app
+`onShare(items => â¦)` in a component's body hears what another app
 shares with this one from its share sheet, while the component lives: a
 link from YouTube or a browser, a text from Notes, photos from the
 gallery, a PDF from Files. The app block takes it as an event too, `on
-share(items) { … }`. It's iOS's and Android's: on the desktops and in a
+share(items) { â¦ }`. It's iOS's and Android's: on the desktops and in a
 browser the app isn't offered in other apps' share menus, and nothing
 comes. `asuka.toml`'s `shareTarget` says what the app is offered for:
 
@@ -2996,6 +3001,114 @@ component Lock {
 Linux has no system prompt for the owner: `check` says there's nothing,
 and `authenticate` throws `.notAvailable`.
 
+To sign the user in to the app's server, use passkeys
+([platform/passkey](#passkeys-platformpasskey)): `biometric` only
+confirms it's the device's owner, on the device.
+
+## Passkeys: platform/passkey
+
+A passkey signs the user in without a password: a key pair the device
+makes for the app's server, unlocked with Face ID, a fingerprint or the
+device's lock, and synced by the user's password manager (iCloud
+Keychain, Google Password Manager, another the user picked). It's
+WebAuthn, as on the web: the server makes the options and checks what
+comes back, so a server that offers passkeys to its site offers them to
+the app with the same code.
+
+```asuka check
+import std/http
+import platform/passkey
+
+let server = "https://example.com"
+
+/// Makes a passkey for the account that's signed in.
+async fn addPasskey() throws {
+  let options = try await http.post("{server}/passkeys/register/begin", bytes())
+  let credential = try await passkey.register(options.text())
+  let done = try await http.post("{server}/passkeys/register/finish", credential.bytes())
+  if !done.ok() {
+    throw Error("the server refused the passkey")
+  }
+}
+
+/// Signs in with one of the user's passkeys; the server says whose.
+async fn signIn() throws -> string {
+  let options = try await http.post("{server}/passkeys/login/begin", bytes())
+  do {
+    let assertion = try await passkey.signIn(options.text())
+    return (try await http.post("{server}/passkeys/login/finish", assertion.bytes())).text()
+  } catch passkey.PasskeyError.canceled {
+    return ""
+  }
+}
+```
+
+- `passkey.register(options)` takes the server's
+  `PublicKeyCredentialCreationOptionsJSON`, alone or as
+  `{"publicKey": â¦}` (what libraries such as go-webauthn,
+  SimpleWebAuthn and py_webauthn send), shows the system's sheet, and
+  returns the `RegistrationResponseJSON` the server verifies (WebAuthn
+  Level 3's JSON, base64url without padding): the credential's `id`, its
+  `clientDataJSON` and `attestationObject`, the `authenticatorData`, the
+  `publicKey` (SPKI) and its `publicKeyAlgorithm`, its `transports`.
+- `passkey.signIn(options)` takes the
+  `PublicKeyCredentialRequestOptionsJSON` and returns the
+  `AuthenticationResponseJSON`: `authenticatorData`, `signature` and
+  `userHandle` (whose passkey it is). Without `allowCredentials` the
+  user picks one of theirs for the site.
+- They throw `PasskeyError`: `.canceled` (the user closed the sheet),
+  `.exists` (one of the options' `excludeCredentials` is on the device),
+  `.noCredentials` (none for the site: Android), `.notAssociated` (the
+  site doesn't list the app, below), `.notAvailable`, `.invalidOptions`
+  (not WebAuthn's options, or with no `rp.id`/`rpId`: an app has no page
+  whose site to default to). Cancelling the task closes the sheet.
+- `passkey.available()` says whether the platform has passkeys here:
+  iOS 16 and macOS 13, Android 9, a browser with WebAuthn, Windows 10
+  (1903) and 11.
+
+### The site's domain
+
+A passkey belongs to its relying party's domain (`rp.id`), and the
+platform gives one to an app only if the domain says the app is its
+own. Name the domains in `asuka.toml`:
+
+```toml
+passkeys = ["example.com"]
+```
+
+- **iOS and the Mac**: the build adds the domains to the app's
+  associated domains (`webcredentials:example.com`). The domain serves
+  `https://example.com/.well-known/apple-app-site-association` with the
+  app: `{"webcredentials": {"apps": ["TEAMID.com.example.app"]}}`. A
+  release needs the Associated Domains capability on the App ID; the Mac
+  needs a provisioning profile with it (see [On a Mac](#on-a-mac)).
+  Apple's CDN caches the file: a simulator build asks the domain itself
+  (the developer mode), and so does a development build on a device with
+  Settings âº Developer âº Associated Domains Development on.
+- **Android**: the domain serves
+  `https://example.com/.well-known/assetlinks.json` naming the app's
+  package and its signing certificate's SHA-256 fingerprint, with
+  `delegate_permission/common.get_login_creds` (and `handle_all_urls`
+  for its links). The browser's origin for the app's passkeys is
+  `android:apk-key-hash:` and that fingerprint in base64url: the server
+  must allow it besides `https://example.com`. Credential Manager makes
+  them (Google Play services' below Android 14).
+- **Windows** asks nothing of the domain: Windows Hello makes the
+  passkey for the `rp.id` the server names, and the client data says
+  `https://` and that domain as its origin.
+- **A browser** lets a page use its own site's domain (or one it's
+  under), as for any page.
+
+`passkey.fake()`, in tests, is an authenticator in the app: it makes
+real passkeys (ES256, no attestation) that a server verifies as it does
+a device's, and holds them while the app runs; its `cancel`,
+`available` and `passkeys` say what the user does and what it holds.
+
+Linux has no passkeys of the system's: `available()` is false and
+`register` and `signIn` throw `.notAvailable`. Sign in there on the
+site's own page instead, in [platform/webauth](#signing-in-on-the-web-platformwebauth)'s
+dialog.
+
 ## Recording sound: platform/record
 
 `record.audio()` records the microphone until `record.stopAudio()` (or
@@ -3194,7 +3307,7 @@ component Grab {
 
 | | What it captures |
 | --- | --- |
-| macOS | the display, by ScreenCaptureKit; the first capture asks for Screen Recording (System Settings › Privacy & Security), which a no makes `notAllowed` |
+| macOS | the display, by ScreenCaptureKit; the first capture asks for Screen Recording (System Settings âº Privacy & Security), which a no makes `notAllowed` |
 | Windows | the display's pixels, asking nothing |
 | Linux | the screenshot portal's, which asks the user the first time |
 | Web | a screen or a window the user picks in the browser's picker (call it from a press) |
@@ -3360,7 +3473,7 @@ component Pin {
     bind selected: selected
     markers: [
       maps.Marker(id: "pin", at: at, title: "Meet here", draggable: true),
-      maps.Marker(id: "cafe", at: maps.Coordinate(lat: 48.8606, lng: 2.2978), title: "Café", image: "cafe.png", width: 32, height: 32),
+      maps.Marker(id: "cafe", at: maps.Coordinate(lat: 48.8606, lng: 2.2978), title: "CafÃ©", image: "cafe.png", width: 32, height: 32),
     ]
     grow: 1
     on markerDragEnd(id, place) { at = place }
@@ -3611,7 +3724,7 @@ component Level {
     for await m in sensors.motion(every: 50ms) { roll = m.attitude.roll }
   }
 
-  Text("{(roll * 180 / 3.14159).fixed(0)}°")
+  Text("{(roll * 180 / 3.14159).fixed(0)}Â°")
 }
 ```
 
@@ -3794,8 +3907,8 @@ component Game {
   user who says no still gets ads, not personalized ones.
 - **Banners.** `ads.Banner(unit)` is Google's anchored adaptive banner:
   as wide as it's laid out, as tall as Google picks for that width.
-  `size:` takes a fixed one (`.banner`, 320×50; `.mediumRectangle`,
-  300×250; `.largeBanner`, `.fullBanner`, `.leaderboard`). Its events
+  `size:` takes a fixed one (`.banner`, 320Ã50; `.mediumRectangle`,
+  300Ã250; `.largeBanner`, `.fullBanner`, `.leaderboard`). Its events
   say when an ad shows (`loaded`), why none does (`error`), and when
   the user taps it (`click`, `open`, `close`). Place it at the top or the
   bottom of a screen, clear of what the user taps.
@@ -4126,6 +4239,162 @@ entry's `url` only) and `opacity`. Semantic colors (`.label`,
 `.secondaryLabel`, `.accent`...) follow the home screen's light or dark
 mode; a text style follows the user's text size.
 
+### Buttons and toggles
+
+A layout's `button` and `toggle`, and any part with `.action(id)`, run
+the app's code when they're tapped, without opening the app:
+`widget.actions()` is the stream of what the user taps. Read it in a
+task of the app's root, and set the widget again once the action is
+handled:
+
+```asuka check
+import platform/widget
+import std/store
+
+fn showLights() {
+  let on: bool = store.read("lights", false)
+  widget.set("lights", widget.Entry(layout: widget.column([
+    widget.symbol(if on { "lightbulb.fill" } else { "lightbulb" }, size: 28, color: if on { .yellow } else { .secondaryLabel }),
+    widget.spacer(),
+    widget.toggle(isOn: on, action: "lights", title: "Lights"),
+    widget.button("All off", action: "allOff", symbol: "power"),
+  ])))
+}
+
+component Root {
+  task {
+    showLights()
+    for await a in widget.actions() {
+      match a.id {
+        "lights" => store.write("lights", a.isOn)
+        "allOff" => store.write("lights", false)
+        _ => {}
+      }
+      showLights()
+    }
+  }
+
+  Text("Lights")
+}
+
+app { Root() }
+```
+
+- `widget.button(title, action:, symbol:, value:)` is the platform's
+  widget button: iOS's bordered button, Material 3's tonal button on
+  Android. `.action(id, value:)` makes any part a button of the app's
+  own drawing, in place of its `link`.
+- `widget.toggle(isOn:, action:, title:)` is a switch. It shows the new
+  state as soon as it's tapped, and keeps showing it until the app sets
+  the widget again; the `Action`'s `isOn` is the state the user chose.
+- An `Action` has the widget's `kind`, its `id` and `value`, a toggle's
+  `isOn`, the widget's `config` and `at`, the time of the tap. Setting
+  the kind's entries says the app is done with it, and the widget is
+  drawn again; an action that doesn't change the widget calls
+  `a.done()`.
+- The app runs for it in the background: started without a screen if
+  it isn't running (its root, and the task that reads the stream), and
+  it doesn't come to the front. An action that came before anything read
+  the stream waits for the first reader, so read it as the app starts.
+  The system gives it a little time: about 25 seconds on iOS, 9 on
+  Android.
+
+On iOS a button is an App Intent (iOS 17), which the system runs in the
+app's process, launching the app in the background as Siri's intents do.
+If the system runs it in the widget's own process instead (an iPhone
+that doesn't launch apps in the background then), the action is kept and
+reaches the app the next time it runs, with the time of the tap in its
+`at`; a toggle shows the user's state meanwhile. iOS 16 draws buttons and
+toggles without their actions. Apple Watch's complications have none. On
+Android a button sends the app a broadcast, which starts its code without
+a screen; a toggle is the platform's switch from Android 12, a switch's
+picture before. An app the user has force-stopped (Settings › Force stop)
+gets no actions until it's opened again.
+
+### Configurable widgets
+
+`params` in a widget's `asuka.toml` make it configurable: the user picks
+their values as they add the widget, and can edit them later (iOS's Edit
+Widget, from iOS 17; Android's configuration screen, which Android 12
+lets the user skip: the defaults). A param is typed as a shortcut's
+([Parameters](#parameters)): `string`, `int`, `float`, `bool`, `options`
+(one of its `options`) or `entity` (one of the app's own things, which
+`widget.setEntities` sets).
+
+```toml
+[[widgets]]
+kind = "weather"
+name = "Weather"
+sizes = ["small", "medium"]
+
+[[widgets.params]]
+name = "city"
+title = "City"
+type = "options"
+options = [{ value = "tokyo", title = "Tokyo" }, { value = "paris", title = "Paris" }]
+
+[[widgets.params]]
+name = "place"
+title = "Saved place"
+type = "entity"
+entity = "place"
+```
+
+```asuka check
+import platform/widget
+
+fn showWeather() {
+  widget.setEntities("place", [widget.Entity(id: "home", title: "Home"), widget.Entity(id: "work", title: "Work")])
+  // Ahead of time, one for each city: a widget shows its city's as soon
+  // as the user picks it.
+  for city in ["tokyo", "paris"] {
+    widget.set("weather", widget.Entry(layout: widget.column([
+      widget.param("city", font: .headline),
+      widget.param("place", font: .caption, color: .secondaryLabel),
+      widget.text(if city == "tokyo" { "18Â°" } else { "12Â°" }, font: Font(size: 34, weight: .bold)),
+    ])), config: ["city": city])
+  }
+}
+```
+
+`set`'s `config` says which widgets an entry is for: a widget shows the
+entries set for the configuration that matches the most of its params
+(each of the set's must match), else those set without one. A widget
+the user has just configured shows its entry at once when the app has
+set one for each value ahead of time; `widget.configurations(kind)`
+lists those on the home screen, each param's value as text (an option's
+value, an entity's id, a number, `"true"` or `"false"`, a default where
+the user picked none), for an app that sets only what's in use.
+`widget.param(name)` shows a configured value's title (an option's or an
+entity's title, a string, a number) without the app setting anything.
+An action's `config` is its widget's.
+
+On iOS the settings are an App Intent the extension declares
+(`AppIntentConfiguration`, iOS 17; iOS 16 doesn't offer configurable
+widgets). Apple Watch's complications aren't configurable.
+
+### Testing widgets
+
+`widget.fake()` stands in for the device's widgets in a test:
+`showing(kind, config)` is what a widget so configured shows,
+`tap(kind, action:, value:, isOn:, config:)` sends `actions()` a tap,
+and `configured` is what `configurations` answers.
+
+```asuka check
+import platform/widget
+
+fn showWeather(city: string) {
+  widget.set("weather", widget.Entry(title: city), config: ["city": city])
+}
+
+test "each city has its weather" {
+  let home = widget.fake()
+  showWeather("paris")
+  expect(home.showing("weather", config: ["city": "paris", "place": "home"])?.title == "paris")
+  expect(home.showing("weather", config: ["city": "tokyo"]).isNone())
+}
+```
+
 ## Live activities: platform/liveactivity
 
 A live activity shows what's happening now outside the app, as it
@@ -4412,13 +4681,13 @@ and its `context`. What's reported, as its `kind`, on each platform:
 
 | | iOS | Android | macOS | Windows | Linux | Web |
 |---|---|---|---|---|---|---|
-| `"panic"`: Asuka's own fatal error, with the Asuka code's stack | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `"exception"`: uncaught | NSException (Objective-C, Swift's `NSException`s) | a JVM `Throwable` | — | — | — | an uncaught JavaScript error (not fatal) |
-| `"native"`: a signal, a Mach or Windows exception | MetricKit | the system's tombstone | MetricKit; a fatal signal, Asuka's report | Asuka's report | Asuka's report (a signal in native code) | — |
-| `"hang"` | MetricKit's hangs (not fatal), the watchdog | ANRs, with their traces | MetricKit | — | — | — |
-| `"oom"` | the memory limit, when MetricKit says | low-memory kills | — | — | — | — |
-| `"resource"` | CPU and disk-write exceptions (not fatal) | excessive resource use | MetricKit | — | — | — |
-| `"nonfatal"`: `crash.record(e)` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `"panic"`: Asuka's own fatal error, with the Asuka code's stack | â | â | â | â | â | â |
+| `"exception"`: uncaught | NSException (Objective-C, Swift's `NSException`s) | a JVM `Throwable` | â | â | â | an uncaught JavaScript error (not fatal) |
+| `"native"`: a signal, a Mach or Windows exception | MetricKit | the system's tombstone | MetricKit; a fatal signal, Asuka's report | Asuka's report | Asuka's report (a signal in native code) | â |
+| `"hang"` | MetricKit's hangs (not fatal), the watchdog | ANRs, with their traces | MetricKit | â | â | â |
+| `"oom"` | the memory limit, when MetricKit says | low-memory kills | â | â | â | â |
+| `"resource"` | CPU and disk-write exceptions (not fatal) | excessive resource use | MetricKit | â | â | â |
+| `"nonfatal"`: `crash.record(e)` | â | â | â | â | â | â |
 
 Asuka keeps the record on every platform: its own fatal error is
 written with the Asuka stack as the run ends, and an uncaught exception
@@ -4595,7 +4864,7 @@ googleServices = "GoogleService-Info.plist"   # iOS and the Mac
 googleServices = "google-services.json"
 [analytics]
 measurementId = "G-XXXXXXXXXX"   # the web, Windows and Linux: a web stream's
-apiSecret = "…"                   # Windows and Linux
+apiSecret = "â¦"                   # Windows and Linux
 enabled = false                   # until the app calls setEnabled(true)
 consent = { adStorage = "denied", adUserData = "denied", adPersonalization = "denied" }
 ```

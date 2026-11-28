@@ -405,6 +405,10 @@ browser:
   required: the first `authenticate` makes a passkey for the site, named
   after the app. The prompt is the browser's, so `reason` and `cancel`
   don't show.
+- `platform/passkey`: `navigator.credentials`, the browser's sheet, for the
+  server's options (read by the browser's `parseCreationOptionsFromJSON`
+  where it has it); the server's `rp.id` is the page's site, or a domain
+  it's under.
 - `platform/webauth`: a popup, done when it comes back to a page of the
   app's own origin (a custom scheme can't open a page).
 - `platform/screen`: `lock` (only full screen, or an installed app); hiding

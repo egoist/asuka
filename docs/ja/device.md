@@ -24,6 +24,7 @@ Asuka のパッケージを使うと、ビューの外にあるデバイスの�
 | `platform/appleauth` | | Sign in with Apple のエンタイトルメント |
 | `platform/pay` | Google Pay のライブラリ、その API の有効化、コールバック用のサービス | Apple Pay のエンタイトルメント（`asuka.toml` の `applePay.merchantIds` とともに） |
 | `platform/biometric` | `USE_BIOMETRIC` | `NSFaceIDUsageDescription` |
+| `platform/passkey` | Credential Manager（Android 14 未満では Google Play 開発者サービスのもの） | 関連ドメインのエンタイトルメント。`asuka.toml` の `passkeys` の `webcredentials:` ドメイン |
 | `platform/record` | `RECORD_AUDIO`、`FOREGROUND_SERVICE_MICROPHONE`。フォアグラウンドサービス | `NSMicrophoneUsageDescription` |
 | `platform/nowplaying` | `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`。フォアグラウンドサービス | `audio` バックグラウンドモード |
 | `platform/liveactivity` | `POST_NOTIFICATIONS`、`POST_PROMOTED_NOTIFICATIONS` | `NSSupportsLiveActivities` とウィジェット拡張機能（呼び出すアプリの場合） |
@@ -61,7 +62,7 @@ NSLocationWhenInUseUsageDescription = "To find stores near you."
 
 ## Mac の場合
 
-Mac アプリ（`asuka dev` と `asuka build`）の Info.plist にも同じ利用目的の説明文が入ります（位置情報の説明文は `NSLocationUsageDescription` としても入ります）。アプリの署名には、許可を求める機能（カメラ、マイク、位置情報、連絡先、カレンダー、写真）に対応する Hardened Runtime のエンタイトルメントが含まれます。これがないと、Developer ID で署名したビルドはその機能へのアクセスを拒否されます。プッシュ通知の `aps-environment`、Sign in with Apple、App Attest、Apple Pay、iCloud は、プロビジョニングプロファイルでしか付与されないエンタイトルメントです。これらを使うアプリには、`asuka build` がプロファイルを埋め込みます（`asuka.toml` の `mac.profile`、なければ `ASUKA_MAC_PROFILE`、それもなければインストール済みのプロファイルからもっとも合うもの）。プロファイルがなくてもアプリはビルドでき、CLI が何が動かないかを知らせます。その場合 Mac では、プッシュ通知の登録と Sign in with Apple が失敗し、App Attest は非対応と答えます。`asuka dev` はプロファイルなしでアドホック署名するので、同じことが当てはまります。Mac App Store 向けのビルド（`--appstore`）はサンドボックス化され、ネットワークとユーザーが選んだファイルにアクセスできます。[配布](shipping.md)を参照してください。
+Mac アプリ（`asuka dev` と `asuka build`）の Info.plist にも同じ利用目的の説明文が入ります（位置情報の説明文は `NSLocationUsageDescription` としても入ります）。アプリの署名には、許可を求める機能（カメラ、マイク、位置情報、連絡先、カレンダー、写真）に対応する Hardened Runtime のエンタイトルメントが含まれます。これがないと、Developer ID で署名したビルドはその機能へのアクセスを拒否されます。プッシュ通知の `aps-environment`、Sign in with Apple、App Attest、Apple Pay、iCloud、パスキーの関連ドメインは、プロビジョニングプロファイルでしか付与されないエンタイトルメントです。これらを使うアプリには、`asuka build` がプロファイルを埋め込みます（`asuka.toml` の `mac.profile`、なければ `ASUKA_MAC_PROFILE`、それもなければインストール済みのプロファイルからもっとも合うもの）。プロファイルがなくてもアプリはビルドでき、CLI が何が動かないかを知らせます。その場合 Mac では、プッシュ通知の登録と Sign in with Apple が失敗し、App Attest は非対応と答えます。`asuka dev` はプロファイルなしでアドホック署名するので、同じことが当てはまります。Mac App Store 向けのビルド（`--appstore`）はサンドボックス化され、ネットワークとユーザーが選んだファイルにアクセスできます。[配布](shipping.md)を参照してください。
 
 macOS でも各パッケージは iOS と同じフレームワーク（AVFoundation、PhotoKit、Core Location、MapKit、Vision、Speech、UserNotifications、AuthenticationServices）を通じて、iOS と同じように動きます。Mac で異なる点は次のとおりです。
 
@@ -75,6 +76,7 @@ macOS でも各パッケージは iOS と同じフレームワーク（AVFoundat
 | `platform/photos` | iOS と同じく PhotoKit で、写真と動画、アルバム、削除（システムの確認付き）、ライブラリの変更に対応します。Mac には限定アクセスのライブラリがないので、`manageLimited` は何もしません |
 | `platform/library` | 写真とビデオは「写真」アプリに保存されます。`.downloads` と `.music` は、ユーザーの `~/Downloads` と `~/Music` の中の指定したフォルダーに保存されます |
 | `platform/biometric` | Touch ID のプロンプト、またはユーザーのパスワード（`noPasscode` のときを除く） |
+| `platform/passkey` | iOS と同じく AuthenticationServices のパスキーとセキュリティキー（macOS 13）。関連ドメインにはプロビジョニングプロファイルが必要です（上記）。ないと、Mac はアプリのパスキーを拒否します（`notAssociated`） |
 | `platform/push` | iOS と同じく APNs です。プロビジョニングプロファイルが必要です（上記） |
 | `platform/appleauth` | iOS と同じく Apple のボタンとシートです。プロビジョニングプロファイルが必要です（上記） |
 | `platform/pay` | iOS と同じく Apple Pay のシートとボタンです。Touch ID を備えた Mac か、ユーザーの iPhone や Apple Watch が近くにある Mac で支払えます。プロビジョニングプロファイルが必要です（上記） |
@@ -86,7 +88,7 @@ macOS でも各パッケージは iOS と同じフレームワーク（AVFoundat
 | `platform/transcribe` | デバイス上での認識のみです。アプリのバンドルに利用目的の説明文が必要で、`asuka build` がそれを書き込みます |
 | `platform/sensors` | Mac にはモーションセンサーがありません。`available` は false で、ストリームと `steps` は `SensorError.notAvailable` を投げます |
 | `device.haptic` | トラックパッドのフィードバック（感圧タッチトラックパッド）です。`.selection` では整列（alignment）、それ以外ではレベル変更（level change）のフィードバックになります |
-| `platform/widget`、`platform/liveactivity`、`platform/agerange` | Mac にはありません。`widget.set` は何もせず、`liveactivity.start` は「liveactivity: not available」を、`agerange.request` は `AgeRangeError.notAvailable` を投げます |
+| `platform/widget`、`platform/liveactivity`、`platform/agerange` | Mac にはありません。`widget.set` は何もせず、`widget.actions()` は何も渡さず、`configurations` は空を返します。`liveactivity.start` は「liveactivity: not available」を、`agerange.request` は `AgeRangeError.notAvailable` を投げます |
 | `platform/purchase` | StoreKit 2 を、アプリの Swift ライブラリの中で使います。このライブラリは、パッケージをインポートしたアプリのためにビルドが作ります（[アプリ内課金](purchases.md)） |
 | `platform/icloud` | iOS と同じで、アプリの Swift ライブラリの中で動きます。iCloud を含むプロビジョニングプロファイルが必要です（上記）。ない場合は「icloud: not available」になります（[iCloud](icloud.md)） |
 | `platform/splash` | Mac アプリには起動画面がないので、`hold` と `hide` は何もしません |
@@ -112,6 +114,7 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `platform/network` | Network List Manager を使います。Wi-Fi、モバイルデータ通信、有線のいずれかです。コストのかかる接続は `metered`、データ上限に近いか超えている接続は `constrained` です |
 | `platform/location` | WinRT の Geolocator を使います。`placeName` は OpenStreetMap の Nominatim に問い合わせます（Windows 自身のジオコーダーには Bing Maps のキーが必要なため）。リクエストは最大で毎秒 1 回で、結果はアプリのキャッシュに保存されます。リージョンはアプリの実行中に `GeofenceMonitor` で監視し、バックグラウンドでの更新は位置から計算します |
 | `platform/biometric` | Windows Hello のプロンプトです。`check()` が返す種類はセンサーのものです。Hello は常に PIN の入力も選択肢に出し、キャンセルボタンの名前も Hello 自身が決めます |
+| `platform/passkey` | Windows の WebAuthn（webauthn.dll。Windows 10 1903 以降、x64 と ARM64）です。Windows Hello のパスキー、セキュリティキー、スマートフォンのパスキー（Windows 11）が使えます。クライアントデータの origin は `https://` と `rp.id` です。ドメイン側にアプリ用のファイルは要りません |
 | `platform/webauth` | アプリのウィンドウの上に、WebView2 を入れたウィンドウを開きます（アプリの Web プロファイルを使います。`ephemeral` では使い捨てのプロファイル） |
 | `platform/js` | 一度も表示されない WebView2 |
 | `platform/contacts`、`platform/calendar` | Windows はパッケージ化されたアプリにしか連絡先とカレンダーを渡しません。`request` は `.denied` と答えます。`add` は vCard かイベントのファイルを、ユーザーの連絡先アプリやカレンダーアプリで開き、false を返します（保存されたかどうかを Windows は知らせないため） |
@@ -126,7 +129,7 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `platform/screen` | `lock`、`setBars`、`setBrightness` は何もしません。`preventCapture` はアプリのウィンドウをスクリーンショットと画面録画から除外します。`screenshots()` は何も知らせません |
 | `platform/appicon` | `set` はアプリのウィンドウとタスクバーボタンのアイコンを変え、次の起動時にも変えます。「スタート」メニューと実行ファイルはアプリ自身のアイコンのままです |
 | `platform/tracking` | プロンプトは出ません。「設定」で広告 ID がオンなら許可、オフなら拒否です |
-| `platform/push`、`platform/widget`、`platform/review`、`platform/integrity` | これらはパッケージ化された（ストアの）アプリか、Apple や Google のものです。`push.register` はエラーを投げ、`widget.set` は何もせず、`review.request` は何も表示せず、`integrity.supported()` は false です |
+| `platform/push`、`platform/widget`、`platform/review`、`platform/integrity` | これらはパッケージ化された（ストアの）アプリか、Apple や Google のものです。`push.register` はエラーを投げ、`widget.set` は何もせず（`actions()` は何も渡さず、`configurations` は空です）、`review.request` は何も表示せず、`integrity.supported()` は false です |
 | `platform/liveactivity` | スマートフォンの機能です。`enabled` は false で、`start` は「liveactivity: not available」を投げます |
 | `platform/purchase` | Microsoft Store からインストールしたアプリでは Microsoft Store を使います。それ以外では `available()` は false で、ほかの呼び出しは `PurchaseError.notAvailable` を投げます（[アプリ内課金](purchases.md)） |
 | `platform/pay` | Windows アプリの支払いに使えるウォレットはありません。`available` は `.none` を返し、`pay` は `PayError.notAvailable` を投げ、`PayButton` は何も表示しません |
@@ -166,10 +169,10 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/appicon` | `set` は `notAvailable` を投げます。ランチャーは desktop ファイルのアイコンを表示します |
 | `platform/sensors` | iio-sensor-proxy（2-in-1 PC、タブレット）を使います。照度センサーをルクス単位で、加速度センサーの向きを、上を向いている軸に沿った 1 g として、向きが変わるたびに伝えます。ほかのセンサーはないので、`available` は false で、ストリームと `steps` は `SensorError.notAvailable` を投げます |
 | `platform/contacts`、`platform/calendar` | Evolution Data Server のアドレス帳とカレンダー（GNOME Contacts、GNOME Calendar、オンラインアカウントのもの）を使います。アドレス帳やカレンダーがあれば、アクセスは `.allowed`（カレンダーは `.full`）です。`pick` は検索欄付きの連絡先のダイアログです。`add` は確認してから、既定のアドレス帳またはイベントのカレンダーに保存します。Evolution Data Server がない場合、連絡先のアクセスは `.denied`、カレンダーのアクセスは `.writeOnly` です。`add` は vCard か iCalendar のファイルをユーザーの連絡先アプリやカレンダーアプリで開いて false を返し、`contacts.pick` はエラーを投げます |
-| `platform/photos` のライブラリ、`platform/appleauth`、`platform/widget`、`platform/liveactivity` | Linux にはありません。ライブラリのアクセスは `.denied` です。`appleauth.available()` は false で、そのボタンは何も表示しません。`liveactivity.start` は「liveactivity: not available」を投げます。`widget.set` は何もしません。`platform/splash` には保持しておく起動画面がありません |
+| `platform/photos` のライブラリ、`platform/appleauth`、`platform/widget`、`platform/liveactivity` | Linux にはありません。ライブラリのアクセスは `.denied` です。`appleauth.available()` は false で、そのボタンは何も表示しません。`liveactivity.start` は「liveactivity: not available」を投げます。`widget.set` は何もせず、`actions()` も何も渡しません。`platform/splash` には保持しておく起動画面がありません |
 | `platform/purchase` | ストアはありません。`available()` は false で、ほかの呼び出しは `PurchaseError.notAvailable` を投げます |
 | `platform/icloud` | iCloud はありません。「icloud: not available」になります |
-| `platform/biometric`、`platform/integrity`、`platform/agerange`、`platform/push` | Linux にはありません。利用不可、非対応と答えます。`platform/review` は何もせず、`platform/tracking` は `.allowed` と答えます |
+| `platform/biometric`、`platform/passkey`、`platform/integrity`、`platform/agerange`、`platform/push` | Linux にはありません。利用不可、非対応と答えます。`platform/review` は何もせず、`platform/tracking` は `.allowed` と答えます |
 | `platform/pay` | Linux アプリの支払いに使えるウォレットはありません。`available` は `.none` を返し、`pay` は `PayError.notAvailable` を投げ、`PayButton` は何も表示しません |
 | `platform/crash` | Asuka のクラッシュ出力を使います。ネイティブコードでのクラッシュ（GTK のコードでのシグナル、GLib の abort）もここに含まれ、`"native"` として報告されます。システム自身の記録（systemd-coredump、apport）は読みません |
 | `platform/analytics` | Windows と同じく GA4 の Measurement Protocol を使います |
@@ -197,6 +200,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/speech` | `speechSynthesis` と、ブラウザーの音声を使います |
 | `platform/sensors` | Generic Sensor API（Chrome）か、デバイスのモーションと向きのイベント（Safari ではタップ時に許可を求めます）を、Android の軸と単位で伝えます。気圧計と歩数計はありません |
 | `platform/biometric` | WebAuthn を通じてプラットフォームの認証器（Touch ID、Face ID、Windows Hello、Android の画面ロック）を使います。最初の `authenticate` でそのサイトのパスキーを作ります。プロンプトはブラウザーのものなので、`reason` と `cancel` は表示されません |
+| `platform/passkey` | WebAuthn の `navigator.credentials` で、シートはブラウザーのものです。`rp.id` はページのサイトか、その上位のドメインにします（`asuka.toml` の `passkeys` は要りません） |
 | `platform/webauth` | ポップアップを開き、アプリと同じオリジンのページに戻ってきたら完了です（カスタムスキームではページを開けないため） |
 | `platform/js` | 非表示の、サンドボックス化された frame |
 | `platform/contacts`、`platform/calendar` | `contacts.pick` はブラウザーに Contact Picker がある場合（Android の Chrome）に使えます。`add` は vCard か `.ics` ファイルをダウンロードします。Web では連絡先やカレンダーを読み取れません |
@@ -236,6 +240,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/push` | APNs です。ウォッチアプリ自身のトークンで、アラートとデータメッセージを受け取ります。`rewrite` はありません（ウォッチアプリには Notification Service Extension がありません） |
 | `platform/crash` | コアの致命的なエラーと、捕捉されなかった例外を扱います。MetricKit の診断情報はありません |
 | `platform/analytics` | ウォッチでは使えません（Firebase の Analytics には watchOS 用の SDK がありません）。`available()` は false で、何も送信されません |
+| `platform/passkey` | ウォッチでは使えません（watchOS 自体にパスキーがありません）。`available()` は false で、`register` と `signIn` は `notAvailable` を投げます |
 | そのほかのパッケージ | ウォッチ向けにはビルドされません。呼び出すと、その機能を持たないプラットフォームと同じく `unsupported` を投げます |
 
 ## カメラ：platform/camera
@@ -2020,6 +2025,62 @@ component Lock {
 
 Linux には持ち主を確認するシステムのプロンプトがありません。`check` は何もないと返し、`authenticate` は `.notAvailable` を投げます。
 
+アプリのサーバーにユーザーをサインインさせるには、パスキー（[platform/passkey](#パスキーplatformpasskey)）を使います。`biometric` が確かめるのは、デバイスの上でその人が持ち主であることだけです。
+
+## パスキー：platform/passkey
+
+パスキーを使うと、ユーザーはパスワードなしでサインインできます。デバイスがアプリのサーバー用に作る鍵ペアで、Face ID、指紋、デバイスのロックで解除し、ユーザーのパスワードマネージャー（iCloud キーチェーン、Google パスワードマネージャー、ユーザーが選んだほかのもの）が同期します。中身は Web と同じ WebAuthn です。サーバーがオプションを作り、返ってきたものを検証します。そのため、サイト向けにパスキーを提供しているサーバーは、同じコードのままアプリにもパスキーを提供できます。
+
+```asuka check
+import std/http
+import platform/passkey
+
+let server = "https://example.com"
+
+/// サインイン中のアカウントのパスキーを作ります。
+async fn addPasskey() throws {
+  let options = try await http.post("{server}/passkeys/register/begin", bytes())
+  let credential = try await passkey.register(options.text())
+  let done = try await http.post("{server}/passkeys/register/finish", credential.bytes())
+  if !done.ok() {
+    throw Error("the server refused the passkey")
+  }
+}
+
+/// ユーザーのパスキーの一つでサインインします。誰なのかはサーバーが判断します。
+async fn signIn() throws -> string {
+  let options = try await http.post("{server}/passkeys/login/begin", bytes())
+  do {
+    let assertion = try await passkey.signIn(options.text())
+    return (try await http.post("{server}/passkeys/login/finish", assertion.bytes())).text()
+  } catch passkey.PasskeyError.canceled {
+    return ""
+  }
+}
+```
+
+- `passkey.register(options)` は、サーバーの `PublicKeyCredentialCreationOptionsJSON` を（そのままでも、go-webauthn、SimpleWebAuthn、py_webauthn などのライブラリが送るように `{"publicKey": …}` で包んだものでも）受け取り、システムのシートを表示して、サーバーが検証する `RegistrationResponseJSON`（WebAuthn Level 3 の JSON。パディングなしの base64url）を返します。資格情報の `id`、その `clientDataJSON` と `attestationObject`、`authenticatorData`、`publicKey`（SPKI）とその `publicKeyAlgorithm`、`transports` が入っています。
+- `passkey.signIn(options)` は `PublicKeyCredentialRequestOptionsJSON` を受け取り、`AuthenticationResponseJSON` を返します。`authenticatorData`、`signature`、そして誰のパスキーかを示す `userHandle` が入っています。`allowCredentials` がなければ、ユーザーはそのサイトの自分のパスキーから一つを選びます。
+- 失敗すると `PasskeyError` を投げます。`.canceled`（ユーザーがシートを閉じた）、`.exists`（オプションの `excludeCredentials` のどれかがデバイスにある）、`.noCredentials`（そのサイトのパスキーがない。Android）、`.notAssociated`（サイトがアプリを載せていない。下記）、`.notAvailable`、`.invalidOptions`（WebAuthn のオプションでない、または `rp.id`/`rpId` がない。アプリには既定値にできるページのサイトがありません）です。タスクをキャンセルするとシートが閉じます。
+- `passkey.available()` は、そのプラットフォームでパスキーが使えるかどうかを返します。iOS 16 と macOS 13、Android 9、WebAuthn のあるブラウザー、Windows 10（1903）と 11 で使えます。
+
+### サイトのドメイン
+
+パスキーはリライングパーティのドメイン（`rp.id`）に属し、プラットフォームはそのドメインが自分のアプリだと認めたアプリにだけパスキーを渡します。そのドメインを `asuka.toml` に書きます。
+
+```toml
+passkeys = ["example.com"]
+```
+
+- **iOS と Mac**：ビルドがこれらのドメインをアプリの関連ドメイン（`webcredentials:example.com`）に加えます。ドメイン側は `https://example.com/.well-known/apple-app-site-association` でアプリを載せます：`{"webcredentials": {"apps": ["TEAMID.com.example.app"]}}`。リリースには App ID の Associated Domains ケイパビリティが必要で、Mac ではそれを含むプロビジョニングプロファイルも必要です（[Mac の場合](#mac-の場合)を参照）。このファイルは Apple の CDN がキャッシュします。シミュレーター向けのビルドはドメインに直接取りに行きます（デベロッパーモード）。デバイスで「設定 › デベロッパ › Associated Domains Development」をオンにした開発ビルドも同じです。
+- **Android**：ドメイン側は `https://example.com/.well-known/assetlinks.json` で、アプリのパッケージ名と署名証明書の SHA-256 フィンガープリントを `delegate_permission/common.get_login_creds` 付きで載せます（リンクには `handle_all_urls` も）。アプリのパスキーのクライアントデータの origin は、`android:apk-key-hash:` にそのフィンガープリントを base64url で続けたものです。サーバーは `https://example.com` に加えてこれも受け入れる必要があります。パスキーは Credential Manager が作ります（Android 14 未満では Google Play 開発者サービスのもの）。
+- **Windows** はドメインに何も求めません。Windows Hello は、サーバーが指定した `rp.id` のパスキーを作り、クライアントデータの origin は `https://` とそのドメインになります。
+- **ブラウザー**では、ほかのページと同じく、ページは自分のサイトのドメイン（またはその上位のドメイン）を使えます。
+
+テストでは、`passkey.fake()` がアプリの中の認証器になります。本物のパスキー（ES256、アテステーションなし）を作るので、サーバーはデバイスのものと同じように検証できます。作ったパスキーはアプリが動いているあいだ保持します。`cancel`、`available`、`passkeys` で、ユーザーの操作、使えるかどうか、保持しているパスキーを表します。
+
+Linux にはシステムのパスキーがありません。`available()` は false で、`register` と `signIn` は `.notAvailable` を投げます。Linux では代わりに、[platform/webauth](#web-でのサインインplatformwebauth) のダイアログでサイト自身のページからサインインしてください。
+
 ## 録音：platform/record
 
 `record.audio()` は `record.stopAudio()` を呼ぶまで（または `maxDuration` まで）マイクの音を録音し、ファイルを返します。アプリのキャッシュ（または `path` の場所）にある AAC の MPEG-4 ファイル（.m4a）で、`platform/audio` で再生できます。最初の録音でマイクの許可を求めます。`pauseAudio` と `resumeAudio` で一時停止と再開ができ、`audioStatus()` で今の状態（メーター用の 0 から 1 の `level`、`elapsed`）がわかります。`quality: .music` は声に必要な以上の音質で残します。
@@ -2773,6 +2834,112 @@ async fn showEnergy() throws {
 ```
 
 部品は次のとおりです。`column` と `row`（それぞれ `spacing` と `align` を持ちます）、`layers`（重ねて表示し、`x` と `y` で配置します）。`text`（`Font` と `Color`、最大 `lines` 行）。`symbol`（SF Symbol。Android では対応する Material のシンボル）。`image`（`widget.setImage` が保存した画像。ウィジェットが読める場所に置かれます）。`progress`（バー）と `gauge`（ラベル付きのリング）。`timer`（ある時刻までのカウントダウンで、過ぎるとそこからカウントアップします。ウィジェットがスリープしていても進みます）。`spacer` と `divider`。どの部品にも `padding`、`background`（色。角を丸められます）、`frame`（ポイント単位のサイズ）、`fill`（列や行の残りのスペースを占めます）、`link`（ウィジェットのその部分をタップしたときにアプリが開く URL。iOS の小さいウィジェットはエントリーの `url` だけを開きます）、`opacity` を付けられます。セマンティックカラー（`.label`、`.secondaryLabel`、`.accent` など）はホーム画面のライトモードとダークモードに従い、テキストスタイルはユーザーの文字サイズに従います。
+
+### ボタンとトグル
+
+レイアウトの `button` と `toggle`、そして `.action(id)` を付けた部品は、タップされるとアプリを開かずにアプリのコードを実行します。`widget.actions()` がユーザーのタップのストリームです。アプリのルートのタスクで読み、アクションを処理したらウィジェットを設定し直します。
+
+```asuka check
+import platform/widget
+import std/store
+
+fn showLights() {
+  let on: bool = store.read("lights", false)
+  widget.set("lights", widget.Entry(layout: widget.column([
+    widget.symbol(if on { "lightbulb.fill" } else { "lightbulb" }, size: 28, color: if on { .yellow } else { .secondaryLabel }),
+    widget.spacer(),
+    widget.toggle(isOn: on, action: "lights", title: "Lights"),
+    widget.button("All off", action: "allOff", symbol: "power"),
+  ])))
+}
+
+component Root {
+  task {
+    showLights()
+    for await a in widget.actions() {
+      match a.id {
+        "lights" => store.write("lights", a.isOn)
+        "allOff" => store.write("lights", false)
+        _ => {}
+      }
+      showLights()
+    }
+  }
+
+  Text("Lights")
+}
+
+app { Root() }
+```
+
+- `widget.button(title, action:, symbol:, value:)` はプラットフォームのウィジェット用ボタンです。iOS では枠付きのボタン、Android では Material 3 のトーナルボタンになります。`.action(id, value:)` を付けると、どの部品もアプリが自分で描いたボタンになり、その `link` の代わりになります。
+- `widget.toggle(isOn:, action:, title:)` はスイッチです。タップするとすぐに新しい状態を表示し、アプリがウィジェットを設定し直すまでその状態を保ちます。`Action` の `isOn` はユーザーが選んだ状態です。
+- `Action` には、ウィジェットの `kind`、その `id` と `value`、トグルの `isOn`、ウィジェットの `config`、タップした時刻の `at` があります。その種類のエントリーを設定すると、アプリの処理が終わったことになり、ウィジェットが描き直されます。ウィジェットを変えないアクションでは `a.done()` を呼びます。
+- アプリはそのためにバックグラウンドで動きます。動いていなければ画面なしで起動し（ルートと、ストリームを読むタスク）、前面には出てきません。誰かが読む前に来たアクションは最初の読み手を待つので、アプリの起動時に読んでください。システムが与える時間はわずかで、iOS では約 25 秒、Android では約 9 秒です。
+
+iOS では、ボタンは App Intent（iOS 17）で、システムがアプリのプロセスで実行し、Siri のインテントと同じようにアプリをバックグラウンドで起動します。システムがウィジェット自身のプロセスで実行した場合（その iPhone がそのときアプリをバックグラウンドで起動しない場合）は、アクションは保存され、次にアプリが動いたときに届きます。`at` はタップした時刻です。その間、トグルはユーザーが選んだ状態を表示します。iOS 16 ではボタンとトグルは描かれますが、アクションはありません。Apple Watch のコンプリケーションにはありません。Android では、ボタンはアプリにブロードキャストを送り、画面なしでアプリのコードを起動します。トグルは Android 12 からプラットフォームのスイッチで、それより前はスイッチの画像です。ユーザーが強制停止した（設定 › 強制停止）アプリは、もう一度開かれるまでアクションを受け取りません。
+
+### 設定できるウィジェット
+
+`asuka.toml` のウィジェットに `params` を付けると、ウィジェットを設定できるようになります。ユーザーはウィジェットを追加するときに値を選び、あとから編集できます（iOS 17 からの「ウィジェットを編集」、Android の設定画面。Android 12 ではユーザーが飛ばすこともでき、その場合はデフォルト値になります）。パラメーターの型はショートカットと同じで（[パラメーター](#パラメーター)）、`string`、`int`、`float`、`bool`、`options`（その `options` のどれか）、`entity`（アプリ自身のもので、`widget.setEntities` で設定します）です。
+
+```toml
+[[widgets]]
+kind = "weather"
+name = "Weather"
+sizes = ["small", "medium"]
+
+[[widgets.params]]
+name = "city"
+title = "City"
+type = "options"
+options = [{ value = "tokyo", title = "Tokyo" }, { value = "paris", title = "Paris" }]
+
+[[widgets.params]]
+name = "place"
+title = "Saved place"
+type = "entity"
+entity = "place"
+```
+
+```asuka check
+import platform/widget
+
+fn showWeather() {
+  widget.setEntities("place", [widget.Entity(id: "home", title: "Home"), widget.Entity(id: "work", title: "Work")])
+  // 前もって都市ごとに一つずつ：ユーザーが都市を選んだらすぐに、その都市の内容が表示されます。
+  for city in ["tokyo", "paris"] {
+    widget.set("weather", widget.Entry(layout: widget.column([
+      widget.param("city", font: .headline),
+      widget.param("place", font: .caption, color: .secondaryLabel),
+      widget.text(if city == "tokyo" { "18°" } else { "12°" }, font: Font(size: 34, weight: .bold)),
+    ])), config: ["city": city])
+  }
+}
+```
+
+`set` の `config` は、そのエントリーがどのウィジェットのためのものかを表します。ウィジェットは、自分のパラメーターと最も多く一致する設定のエントリーを表示し（その設定の項目はすべて一致する必要があります）、なければ設定なしで設定されたエントリーを表示します。アプリが値ごとに前もってエントリーを設定しておけば、ユーザーが設定したばかりのウィジェットにすぐその内容が表示されます。`widget.configurations(kind)` はホーム画面にあるその種類のウィジェットの設定を一覧にします。各パラメーターの値はテキストです（選択肢の値、エンティティの id、数値、`"true"` か `"false"`。ユーザーが選んでいないものはデフォルト値）。使われている設定だけを設定するアプリに向いています。`widget.param(name)` は、設定された値のタイトル（選択肢やエンティティのタイトル、文字列、数値）を、アプリが何も設定しなくても表示します。アクションの `config` は、そのウィジェットの設定です。
+
+iOS では、設定は拡張機能が宣言する App Intent です（`AppIntentConfiguration`、iOS 17。iOS 16 では設定できるウィジェットは提供されません）。Apple Watch のコンプリケーションは設定できません。
+
+### ウィジェットのテスト
+
+テストでは、`widget.fake()` がデバイスのウィジェットの代わりになります。`showing(kind, config)` はそのように設定されたウィジェットが表示する内容、`tap(kind, action:, value:, isOn:, config:)` は `actions()` にタップを送り、`configured` は `configurations` の答えです。
+
+```asuka check
+import platform/widget
+
+fn showWeather(city: string) {
+  widget.set("weather", widget.Entry(title: city), config: ["city": city])
+}
+
+test "each city has its weather" {
+  let home = widget.fake()
+  showWeather("paris")
+  expect(home.showing("weather", config: ["city": "paris", "place": "home"])?.title == "paris")
+  expect(home.showing("weather", config: ["city": "tokyo"]).isNone())
+}
+```
 
 ## ライブアクティビティ：platform/liveactivity
 

@@ -14,6 +14,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             guard let s = n.userInfo?["url"] as? String, let u = URL(string: s) else { return }
             MainActor.assumeIsolated { AsukaRuntime.shared.openURL(u) }
         }
+        #if ASUKA_WIDGET
+        // platform/widget: its buttons' and toggles' App Intent, which the
+        // system may launch the app (in the background) to run.
+        AsukaWidgetData.install()
+        #endif
     }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -105,6 +110,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    func sceneWillEnterForeground(_ scene: UIScene) { AsukaRuntime.shared.lifecycle(.foreground) }
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        AsukaRuntime.shared.lifecycle(.foreground)
+        #if ASUKA_WIDGET
+        AsukaWidgetData.shared.drainIfStarted() // what the widgets' extension kept meanwhile
+        #endif
+    }
     func sceneDidEnterBackground(_ scene: UIScene) { AsukaRuntime.shared.lifecycle(.background) }
 }

@@ -1,0 +1,3 @@
+name = "platform/passkey"
+version = "0.1.0"
+description = "Passkeys: WebAuthn's registration and sign-in, with the platform's own passkeys"

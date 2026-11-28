@@ -65,6 +65,7 @@ github = "you/notes"
 | `accent` | 颜色 | 平台默认 | `"#rrggbb"` 或 `"#rrggbbaa"`。在 iOS 上是 tint 色；在 Android 上是 Material 3 配色方案的种子色；在 Mac 上是 `Accent`、填充按钮和链接的颜色（AppKit 自带的控件仍然使用用户选择的颜色）；在 Windows 上是控件的强调色，在 Linux 上是 libadwaita 的强调色；在 Web 上是页面的强调色以及 manifest 的 `theme_color`。 |
 | `orientations` | 字符串数组 | 两者都支持 | `"portrait"`、`"landscape"`：应用在手机上支持的方向。iPad 上总是支持全部四个方向，因为分屏浏览和台前调度要求如此；Android 16 在平板和折叠屏设备上也会忽略这项设置。 |
 | `scheme` | 字符串 | 无 | 应用的 URL scheme：`notes://` 开头的 URL 会打开应用，并由应用的 `on openURL(url)` 接收，支持 iOS、Android、Mac、Windows 和 Linux。只能包含字母、数字、`+`、`-` 和 `.`，并以字母开头。见[深度链接](navigation.md#深度链接)。 |
+| `passkeys` | 字符串数组 | 无 | 依赖方（relying party）的域名，如 `example.com`，应用使用这些域名的通行密钥（以及保存的密码）：即 iOS 和 Mac 的 `webcredentials:` 关联域名。域名需要在 `apple-app-site-association` 中列出应用，Android 则在 `assetlinks.json` 中列出。见[通行密钥](device.md#通行密钥platformpasskey)。 |
 | `links` | 字符串数组 | 无 | 域名，如 `example.com`，指向这些域名的 https 链接会打开应用：即 iOS 的 universal links 和 Android 的 App Links。域名需要提供关联文件。见[深度链接](navigation.md#深度链接)。 |
 | `fileTypes` | 表数组 | 无 | 应用能打开的文件类型。见 [fileTypes](#filetypes)。 |
 | `shareTarget` | `true` 或表 | 关闭 | 让应用出现在其他应用的分享面板里，仅限 iOS 和 Android。见 [shareTarget](#sharetarget)。 |
@@ -265,8 +266,21 @@ sizes = ["small", "medium", "rectangular"]
 | `name` | 字符串 | 同 `kind` | 小组件库里显示的名称。 |
 | `description` | 字符串 | 无 | 小组件库里显示的描述。 |
 | `sizes` | 字符串数组 | `["small", "medium"]` | `small`、`medium`、`large`，以及 iOS 的 `extraLarge`（iPad）和锁屏上的 `circular`、`rectangular`、`inline`；后三种同时也是 Apple Watch 的复杂功能，手表还有自己的 `corner`。 |
+| `params` | 表数组 | 无 | 让小组件可以配置：用户添加或编辑它时选择的设置。每项有 `name`、`title`、`type`（`string`、`int`、`float`、`bool`、`options`、`entity`）、`prompt`、`default`，`options` 类型的 `options`（`{ value, title }`），以及 `entity` 类型的 `entity`，即应用自己的这类东西（由 `widget.setEntities` 设置）。见[可配置的小组件](device.md#可配置的小组件)。 |
 
 在 iOS 上，小组件是一个扩展，有自己的 bundle ID（应用的 ID 加上 `.widgets`），发布构建用 `ios.widgetProfile` 为它签名。见[主屏幕小组件](device.md#主屏幕小组件platformwidget)。
+
+```toml
+[[widgets]]
+kind = "weather"
+name = "Weather"
+
+[[widgets.params]]
+name = "city"
+title = "City"
+type = "options"
+options = [{ value = "tokyo", title = "Tokyo" }, { value = "paris", title = "Paris" }]
+```
 
 ## shortcuts
 
@@ -430,7 +444,7 @@ NSAppTransportSecurity = { NSExceptionDomains = { "example.local" = { NSExceptio
 "com.apple.developer.associated-domains" = ["webcredentials:example.com"]
 ```
 
-数组类型的 entitlement 会与 Asuka 给应用的数组合并（`links` 对应的 `applinks:` 域名、包所用的 App Group 和钥匙串组）；其他类型的值则替换 Asuka 的值。和 Xcode 的 entitlements 文件一样，`$(AppIdentifierPrefix)` 和 `$(TeamIdentifierPrefix)` 会替换成团队 ID 加一个点。它们只属于应用本身，不会加到扩展上。模拟器构建会原样带上它们；签名构建则要求描述文件授予其中的每一项（在 developer.apple.com 上为 App ID 开启对应的能力），否则构建会停下来，并列出缺少的项。
+数组类型的 entitlement 会与 Asuka 给应用的数组合并（`links` 对应的 `applinks:` 域名、`passkeys` 对应的 `webcredentials:` 域名、包所用的 App Group 和钥匙串组）；其他类型的值则替换 Asuka 的值。和 Xcode 的 entitlements 文件一样，`$(AppIdentifierPrefix)` 和 `$(TeamIdentifierPrefix)` 会替换成团队 ID 加一个点。它们只属于应用本身，不会加到扩展上。模拟器构建会原样带上它们；签名构建则要求描述文件授予其中的每一项（在 developer.apple.com 上为 App ID 开启对应的能力），否则构建会停下来，并列出缺少的项。
 
 见[打包与发布](shipping.md#ios)。
 

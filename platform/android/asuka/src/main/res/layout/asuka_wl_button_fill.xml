@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- platform/widget's Layout: a button, taking the space left (WidgetLayout.kt adds and sets it). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/asuka_wl"
+    android:layout_width="wrap_content"
+    android:layout_height="40dp"
+    android:layout_weight="1"
+    android:background="@drawable/asuka_wl_button"
+    android:backgroundTint="@color/asuka_widget_secondary_container"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp">
+
+    <ImageView
+        android:id="@+id/asuka_wl_icon"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginEnd="8dp"
+        android:importantForAccessibility="no"
+        android:scaleType="fitCenter"
+        android:tint="@color/asuka_widget_on_secondary_container"
+        tools:ignore="UseAppTint"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/asuka_wl_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:textColor="@color/asuka_widget_on_secondary_container"
+        android:textSize="14sp" />
+</LinearLayout>

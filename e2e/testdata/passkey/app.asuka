@@ -1,0 +1,50 @@
+// Passkey is the web e2e's app (e2e/passkey_test.go): it registers a
+// passkey and signs in with it against the relying party the field names,
+// each answer on the status line the test reads.
+import std/http
+import platform/passkey
+
+component Passkeys {
+  state server = ""
+  state status = "ready"
+
+  async fn run(work: async fn() throws -> string) {
+    status = "…"
+    do {
+      status = try await work()
+    } catch e {
+      status = e.message
+    }
+  }
+
+  SafeArea {
+    gap: 8
+    padding: 16
+
+    TextField {
+      bind text: server
+      placeholder: "Relying party"
+    }
+    Text("status: {status}")
+    Button("Register") {
+      on press {
+        await run(() => {
+          let o = try await http.post("{server}/register/begin", bytes())
+          let r = try await http.post("{server}/register/finish", (try await passkey.register(o.text())).bytes())
+          return "registered {r.status} {r.text()}"
+        })
+      }
+    }
+    Button("Sign in") {
+      on press {
+        await run(() => {
+          let o = try await http.post("{server}/login/begin", bytes())
+          let r = try await http.post("{server}/login/finish", (try await passkey.signIn(o.text())).bytes())
+          return "signed in {r.status} {r.text()}"
+        })
+      }
+    }
+  }
+}
+
+app { Passkeys() }

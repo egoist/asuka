@@ -154,6 +154,7 @@ Web アプリから見える環境（`environment()`）は、ブラウザーの�
 - `platform/maps`：Windows と同じく、OpenStreetMap のタイルから Asuka が描画する地図です。マーカーとそのコールアウト、ドラッグ、ホイール、ピンチ、ダブルクリック、キーボードによる移動、OpenStreetMap が求める帰属表示に対応します。航空写真と混合の地図は道路地図を表示します（無料の航空写真がないためです）。`showsUser` は、ページに位置情報の許可があればユーザーの現在地を表示します（許可を求めるのは `platform/location` で、地図が求めることはありません）。タイルは、利用ポリシーが Web ページに求めるとおりに `tile.openstreetmap.org` から取得します（画面に表示する分だけを、ブラウザーのキャッシュを使い、Referer 付きで取得します）。大量に使う場合は、`start` に `mapTiles`（`{z}`、`{x}`、`{y}` を含む別のサーバーの URL）を渡してください（[埋め込み](#埋め込み)）。
 - `platform/crash`：その実行の記録は、スマートフォンと同じくアプリのファイルに保存されます。Asuka 自身の致命的なエラーはこの記録を書き込んでページのアプリを止め、次回の起動時に報告されます。キャッチされなかった JavaScript のエラー（Asuka のものか、パッケージの `web/` のスクリプトのもの）は、その場で `"exception"` のレポートになりますが、致命的なものとしては扱われません（ページは動き続けます）。ページは `localStorage` に自分の実行が生きていることを記録するので、アプリのほかの開いているページがその実行に手を出すことはありません。
 - `platform/biometric`：WebAuthn を通じてプラットフォームの認証器（Touch ID、Face ID、Windows Hello、Android の画面ロック）を使い、ユーザー検証を必須にします。最初の `authenticate` で、アプリの名前を付けたサイトのパスキーが作られます。プロンプトはブラウザーのものなので、`reason` と `cancel` のテキストは表示されません。
+- `platform/passkey`：サーバーのオプションを `navigator.credentials` とブラウザーのシートで扱います（ブラウザーに `parseCreationOptionsFromJSON` があればそれで読みます）。サーバーの `rp.id` は、ページのサイトかその上位のドメインにします。
 - `platform/webauth`：ポップアップを使い、アプリと同じオリジンのページに戻ってきた時点で完了します（カスタムスキームではページを開けないためです）。
 - `platform/screen`：`lock` に対応します（全画面表示のとき、またはインストールしたアプリでのみ）。バーを隠すと全画面表示になります。
 - `platform/library`：`save` はファイルをダウンロードします。`platform/contacts`：`pick` は、ブラウザーに Contact Picker がある場合（Android の Chrome）に使えます。`add` は vCard を、`platform/calendar` の `add` は `.ics` ファイルをダウンロードします。

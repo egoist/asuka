@@ -1,0 +1,147 @@
+import std/crypto
+import std/encoding
+import std/json
+
+let creationOptions = r#"{"publicKey": {"rp": {"id": "example.com", "name": "Example"}, "user": {"id": "dXNlci0x", "name": "ana@example.com", "displayName": "Ana"}, "challenge": "q83vEjRWeJA=", "pubKeyCredParams": [{"type": "public-key", "alg": -7}, {"type": "public-key", "alg": -257}], "timeout": 60000, "excludeCredentials": [], "authenticatorSelection": {"residentKey": "required", "userVerification": "required"}, "attestation": "none", "extensions": {"credProps": true}}}"#
+
+fn requestOptions(allow: [string]) -> string {
+  let ids = allow.map(id => json.Value.object(["type": .string("public-key"), "id": .string(id)]))
+  return json.encode(json.Value.object(["challenge": .string("AAECAwQFBgcICQ"), "rpId": .string("example.com"),
+    "allowCredentials": .array(ids), "userVerification": .string("required")]))
+}
+
+fn field(v: json.Value, path: [string]) -> json.Value? {
+  var at: json.Value? = v
+  for k in path {
+    at = at?.get(k)
+  }
+  return at
+}
+
+fn b64Field(v: json.Value, path: [string]) throws -> bytes = try encoding.base64Decode(field(v, path)?.asString() ?? "")
+
+test "the server's options, read: unwrapped, their ids in base64url" {
+  let c = try creation(creationOptions)
+  expect(c.rpId == "example.com" && c.rpName == "Example")
+  expect(c.userId == "user-1".bytes() && c.userName == "ana@example.com" && c.userDisplayName == "Ana")
+  expect(c.challenge.hex() == "abcdef1234567890")
+  expect(c.algorithms == [-7, -257] && c.residentKey == "required" && c.userVerification == "required")
+  expect(c.timeoutMs == 60000 && c.attachment == "")
+  let o = try json.parse(c.json)
+  expect(o.get("publicKey") == none)
+  expect(o.get("challenge")?.asString() == "q83vEjRWeJA")
+  expect(o.get("user")?.get("id")?.asString() == "dXNlci0x")
+  expect(o.get("extensions")?.get("credProps")?.asBool() == true)
+  let cd = try json.parse(c.clientData.string())
+  expect(cd.get("type")?.asString() == "webauthn.create" && cd.get("origin")?.asString() == "https://example.com")
+  expect(cd.get("challenge")?.asString() == "q83vEjRWeJA")
+
+  let r = try request(requestOptions(["AQID"]))
+  expect(r.rpId == "example.com" && r.allow == [bytes([1, 2, 3])] && r.userVerification == "required")
+  expect(try json.parse(r.json).get("challenge")?.asString() == "AAECAwQFBgcICQ")
+}
+
+test "options that aren't WebAuthn's" {
+  for bad in ["", "[]", r#"{"challenge": "AAAA"}"#, r#"{"rp": {"id": "example.com"}, "user": {"id": "AA", "name": "a"}, "challenge": "*"}"#] {
+    do {
+      let _ = try creation(bad)
+      expect(false)
+    } catch PasskeyError.invalidOptions {
+    }
+  }
+  do {
+    let _ = try request(r#"{"challenge": "AAAA"}"#) // no rpId
+    expect(false)
+  } catch PasskeyError.invalidOptions {
+  }
+}
+
+test "a registration and a sign-in the server verifies" {
+  let f = fake()
+  expect(await available())
+  let reg = try json.parse(try await register(creationOptions))
+  expect(f.passkeys.count() == 1 && f.shown == 1)
+  let id = f.passkeys[0].id
+  expect(reg.get("id")?.asString() == encoding.base64URLEncode(id) && reg.get("rawId") == reg.get("id"))
+  expect(reg.get("type")?.asString() == "public-key" && reg.get("authenticatorAttachment")?.asString() == "platform")
+  expect(field(reg, ["response", "publicKeyAlgorithm"])?.asInt() == -7)
+  expect((field(reg, ["response", "transports"])?.asArray() ?? []).count() == 2)
+  expect(reg.get("clientExtensionResults") != none)
+  // The public key the server keeps, as SPKI: the fake's.
+  let spki = try b64Field(reg, ["response", "publicKey"])
+  expect(spki == (try f.passkeys[0].key.publicKey()).der)
+  // The attestation object's authData is the response's.
+  let att = try b64Field(reg, ["response", "attestationObject"])
+  expect(authDataOf(att) == try b64Field(reg, ["response", "authenticatorData"]))
+  let cd = try json.parse((try b64Field(reg, ["response", "clientDataJSON"])).string())
+  expect(cd.get("challenge")?.asString() == "q83vEjRWeJA")
+
+  // A sign-in with it, its signature checked as a server checks it.
+  let a = try json.parse(try await signIn(requestOptions([encoding.base64URLEncode(id)])))
+  expect(a.get("id")?.asString() == encoding.base64URLEncode(id))
+  expect(try b64Field(a, ["response", "userHandle"]) == "user-1".bytes())
+  let data = try b64Field(a, ["response", "authenticatorData"])
+  expect(data.slice(0, 32) == crypto.sha256("example.com".bytes()) && data[36] == 1)
+  let signed = data.concat(crypto.sha256(try b64Field(a, ["response", "clientDataJSON"])))
+  expect(try crypto.verify(try crypto.publicKeyFromDER(spki), signed, try b64Field(a, ["response", "signature"]), scheme: .ecdsaDER(.sha256)))
+  // A discoverable sign-in: no allowCredentials, the rp's passkey.
+  let b = try json.parse(try await signIn(requestOptions([])))
+  expect(b.get("id") == a.get("id"))
+  expect((try b64Field(b, ["response", "authenticatorData"]))[36] == 2)
+}
+
+test "the fake's errors: excluded, none, canceled, not available" {
+  let f = fake()
+  let _ = try await register(creationOptions)
+  let id = encoding.base64URLEncode(f.passkeys[0].id)
+  let again = creationOptions.replace(r#""excludeCredentials": []"#, r#""excludeCredentials": [{"type": "public-key", "id": "THE-ID"}]"#.replace("THE-ID", id))
+  do {
+    let _ = try await register(again)
+    expect(false)
+  } catch PasskeyError.exists {
+  }
+  do {
+    let _ = try await signIn(requestOptions(["AAAA"]))
+    expect(false)
+  } catch PasskeyError.noCredentials {
+  }
+  f.cancel = true
+  do {
+    let _ = try await signIn(requestOptions([]))
+    expect(false)
+  } catch PasskeyError.canceled {
+  }
+  f.available = false
+  expect(!(await available()))
+  do {
+    let _ = try await register(creationOptions)
+    expect(false)
+  } catch PasskeyError.notAvailable {
+  }
+}
+
+test "a platform's own JSON, with what it left out" {
+  let out = try json.parse(registrationJSON(Response(json: r#"{"id": "AQID", "response": {"clientDataJSON": "e30", "attestationObject": "oA"}}"#)))
+  expect(out.get("rawId")?.asString() == "AQID" && out.get("type")?.asString() == "public-key")
+  expect(out.get("clientExtensionResults") == json.Value.object([:]))
+  expect(field(out, ["response", "attestationObject"])?.asString() == "oA")
+  let a = try json.parse(assertionJSON(Response(json: r#"{"id": "AQID", "rawId": "AQID", "type": "public-key", "clientExtensionResults": {"prf": {}}}"#)))
+  expect(a.get("clientExtensionResults")?.get("prf") != none)
+}
+
+test "COSE keys as SPKI: Ed25519, P-384" {
+  let ed = try crypto.newPrivateKey(.ed25519)
+  let edDer = (try ed.publicKey()).der
+  let edKey = CoseKey(kty: 1, alg: -8, crv: 6, x: edDer.slice(12), y: bytes(), n: bytes(), e: bytes())
+  expect(spkiOf(edKey) == edDer)
+  let p384 = try crypto.newPrivateKey(.ecdsaP384)
+  let pDer = (try p384.publicKey()).der
+  let point = pDer.slice(pDer.count() - 97)
+  let pKey = CoseKey(kty: 2, alg: -35, crv: 2, x: point.slice(1, 49), y: point.slice(49), n: bytes(), e: bytes())
+  expect(spkiOf(pKey) == pDer)
+  // The CBOR the fake writes, read back.
+  var r = CborReader(data: cborMap([(cborInt(-2), cborBytes(bytes([1, 2]))), (cborText("fmt"), cborText("none")), (cborInt(300), cborInt(-300))]))
+  let m = try r.item()
+  expect(cborBytesOf(cborGet(m, .int(-2))) == bytes([1, 2]) && cborGet(m, .text("fmt")) == .text("none"))
+  expect(cborIntOf(cborGet(m, .int(300))) == -300)
+}

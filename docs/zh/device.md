@@ -24,6 +24,7 @@ Asuka 提供了一系列包，让应用用上视图之外的设备能力：相�
 | `platform/appleauth` | | 通过 Apple 登录（Sign in with Apple）的 entitlement |
 | `platform/pay` | Google Pay 的库，启用它的 API，以及它的回调服务 | Apple Pay 的 entitlement，带有 `asuka.toml` 的 `applePay.merchantIds` |
 | `platform/biometric` | `USE_BIOMETRIC` | `NSFaceIDUsageDescription` |
+| `platform/passkey` | Credential Manager（Android 14 以下借助 Google Play 服务） | 关联域名 entitlement：`asuka.toml` 中 `passkeys` 的 `webcredentials:` 域名 |
 | `platform/record` | `RECORD_AUDIO`、`FOREGROUND_SERVICE_MICROPHONE`；一个前台服务 | `NSMicrophoneUsageDescription` |
 | `platform/nowplaying` | `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`；一个前台服务 | `audio` 后台模式 |
 | `platform/liveactivity` | `POST_NOTIFICATIONS`、`POST_PROMOTED_NOTIFICATIONS` | `NSSupportsLiveActivities` 和小组件扩展（仅限调用了它的应用） |
@@ -61,7 +62,7 @@ NSLocationWhenInUseUsageDescription = "To find stores near you."
 
 ## 在 Mac 上
 
-Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.plist 里有同样的用途说明（定位的那条还会额外写成 `NSLocationUsageDescription`）。它的签名带有 hardened runtime 为这些请求所需的 entitlement（相机、麦克风、定位、通讯录、日历、照片）；缺了它们，Developer ID 构建的应用就拿不到相应的权限。推送的 `aps-environment`、通过 Apple 登录、App Attest、Apple Pay 和 iCloud 这几项 entitlement 只能由描述文件授予：对于用到它们的应用，`asuka build` 会嵌入一个描述文件（优先取 `asuka.toml` 的 `mac.profile`，其次是 `ASUKA_MAC_PROFILE`，最后是本机已安装的最佳匹配项）。没有描述文件时，应用照样能构建，CLI 会告诉你哪些功能将无法使用：在 Mac 上，注册推送和通过 Apple 登录都会失败，App Attest 会报告不受支持。`asuka dev` 使用 ad hoc 签名，不带描述文件，所以开发时也是同样的情况。Mac App Store 构建（`--appstore`）运行在沙盒中，可以访问网络以及用户选择的文件。详见[打包与发布](shipping.md)。
+Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.plist 里有同样的用途说明（定位的那条还会额外写成 `NSLocationUsageDescription`）。它的签名带有 hardened runtime 为这些请求所需的 entitlement（相机、麦克风、定位、通讯录、日历、照片）；缺了它们，Developer ID 构建的应用就拿不到相应的权限。推送的 `aps-environment`、通过 Apple 登录、App Attest、Apple Pay、iCloud 以及通行密钥所需的关联域名这几项 entitlement 只能由描述文件授予：对于用到它们的应用，`asuka build` 会嵌入一个描述文件（优先取 `asuka.toml` 的 `mac.profile`，其次是 `ASUKA_MAC_PROFILE`，最后是本机已安装的最佳匹配项）。没有描述文件时，应用照样能构建，CLI 会告诉你哪些功能将无法使用：在 Mac 上，注册推送和通过 Apple 登录都会失败，App Attest 会报告不受支持。`asuka dev` 使用 ad hoc 签名，不带描述文件，所以开发时也是同样的情况。Mac App Store 构建（`--appstore`）运行在沙盒中，可以访问网络以及用户选择的文件。详见[打包与发布](shipping.md)。
 
 这些包在 macOS 上的工作方式与 iOS 相同，用的也是同一套框架（AVFoundation、PhotoKit、Core Location、MapKit、Vision、Speech、UserNotifications、AuthenticationServices），只有下面这些 Mac 与之不同的地方例外：
 
@@ -75,6 +76,7 @@ Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.pli
 | `platform/photos` | 和 iOS 一样使用 PhotoKit：照片和视频、相册、删除（会弹出系统的确认框）以及变化；Mac 没有“有限访问”的照片库，所以 `manageLimited` 什么也不做 |
 | `platform/library` | 照片和视频存入“照片”App；`.downloads` 和 `.music` 分别存到用户的 `~/Downloads` 和 `~/Music` 下指定的文件夹 |
 | `platform/biometric` | Touch ID 的提示框，或者输入用户密码（设置了 `noPasscode` 时除外） |
+| `platform/passkey` | 和 iOS 一样使用 AuthenticationServices 的通行密钥和安全密钥（macOS 13）。关联域名需要描述文件（见上文）：没有的话，Mac 会拒绝应用使用通行密钥（`notAssociated`） |
 | `platform/push` | 和 iOS 一样使用 APNs。需要描述文件（见上文） |
 | `platform/appleauth` | 和 iOS 一样，使用 Apple 提供的按钮和面板。需要描述文件（见上文） |
 | `platform/pay` | 和 iOS 一样，使用 Apple Pay 的支付面板和按钮：带触控 ID 的 Mac 可以直接付款，否则用附近的 iPhone 或 Apple Watch 付款。需要描述文件（见上文） |
@@ -86,7 +88,7 @@ Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.pli
 | `platform/transcribe` | 只在本机识别；应用的 bundle 需要它的用途说明，这一项由 `asuka build` 写入 |
 | `platform/sensors` | Mac 没有运动传感器：`available` 为 false，各个流和 `steps` 都会抛出 `SensorError.notAvailable` |
 | `device.haptic` | 触控板的反馈（需要 Force Touch 触控板）：`.selection` 对应“对齐”反馈，其他类型对应“级别变化”反馈 |
-| `platform/widget`、`platform/liveactivity`、`platform/agerange` | Mac 上不支持：`widget.set` 什么也不做，`liveactivity.start` 抛出 "liveactivity: not available"，`agerange.request` 抛出 `AgeRangeError.notAvailable` |
+| `platform/widget`、`platform/liveactivity`、`platform/agerange` | Mac 上不支持：`widget.set` 什么也不做，`widget.actions()` 不会给出任何东西，`configurations` 返回空，`liveactivity.start` 抛出 "liveactivity: not available"，`agerange.request` 抛出 `AgeRangeError.notAvailable` |
 | `platform/purchase` | StoreKit 2，编译进应用的 Swift 库；导入了这个包的应用，构建时会生成这个库（见[应用内购买](purchases.md)） |
 | `platform/icloud` | 和 iOS 一样，编译进应用的 Swift 库。需要带 iCloud 的描述文件（见上文）：没有的话报错 "icloud: not available"（见 [iCloud](icloud.md)） |
 | `platform/splash` | Mac 应用没有启动屏：`hold` 和 `hide` 什么也不做 |
@@ -112,6 +114,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `platform/network` | 网络列表管理器（Network List Manager）：Wi-Fi、蜂窝网络或有线网络；按流量计费的连接为 `metered`，接近或超出流量上限时为 `constrained` |
 | `platform/location` | WinRT 的 Geolocator。`placeName` 查询 OpenStreetMap 的 Nominatim（Windows 自带的地理编码器需要 Bing Maps 密钥）：每秒最多发一次请求，查询结果保存在应用的缓存目录中。区域监控用 `GeofenceMonitor`，仅在应用运行期间有效；后台定位更新根据位置计算 |
 | `platform/biometric` | Windows Hello 的提示框；`check()` 返回的类型就是传感器的类型；Hello 总会提供 PIN 选项，取消按钮的文字也由它自己决定 |
+| `platform/passkey` | Windows 的 WebAuthn（webauthn.dll，Windows 10 1903 及以后，x64 和 ARM64）：Windows Hello 的通行密钥、安全密钥，以及手机上的通行密钥（Windows 11）。客户端数据中的 origin 是 `https://` 加上 `rp.id`；域名不需要为应用提供任何文件 |
 | `platform/webauth` | 在应用窗口之上打开一个内嵌 WebView2 的窗口（使用应用的 Web 配置文件；设置 `ephemeral` 时使用一个用完即弃的配置文件） |
 | `platform/js` | 一个从不显示的 WebView2 |
 | `platform/contacts`、`platform/calendar` | Windows 只向打包（packaged）应用开放通讯录和日历：`request` 返回 `.denied`；`add` 会在用户的联系人或日历应用中打开一个 vCard 或日程文件，并返回 false（Windows 不会告知是否已保存） |
@@ -126,7 +129,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `platform/screen` | `lock`、`setBars` 和 `setBrightness` 什么也不做；`preventCapture` 让应用的窗口不出现在截图和录屏中；`screenshots()` 不会报告任何截图 |
 | `platform/appicon` | `set` 更换应用窗口和任务栏按钮的图标，下次启动时也会换上；开始菜单和可执行文件仍是应用自己的图标 |
 | `platform/tracking` | 没有提示框：“设置”中的广告 ID 开着就是允许，否则就是拒绝 |
-| `platform/push`、`platform/widget`、`platform/review`、`platform/integrity` | 这些能力只属于打包（应用商店）应用，或者依赖 Apple 和 Google 的服务：`push.register` 会抛出错误，`widget.set` 什么也不做，`review.request` 不显示任何东西，`integrity.supported()` 为 false |
+| `platform/push`、`platform/widget`、`platform/review`、`platform/integrity` | 这些能力只属于打包（应用商店）应用，或者依赖 Apple 和 Google 的服务：`push.register` 会抛出错误，`widget.set` 什么也不做（`actions()` 不会给出任何东西，`configurations` 返回空），`review.request` 不显示任何东西，`integrity.supported()` 为 false |
 | `platform/liveactivity` | 这是手机的能力：`enabled` 为 false，`start` 抛出 "liveactivity: not available" |
 | `platform/purchase` | Microsoft Store，仅限从商店安装的应用；否则 `available()` 为 false，其余调用抛出 `PurchaseError.notAvailable`（见[应用内购买](purchases.md)） |
 | `platform/pay` | Windows 上没有能为应用付款的钱包：`available` 返回 `.none`，`pay` 抛出 `PayError.notAvailable`，`PayButton` 什么也不显示 |
@@ -166,10 +169,10 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/appicon` | `set` 抛出 `notAvailable`：启动器显示的是 desktop 文件里的图标 |
 | `platform/sensors` | iio-sensor-proxy（适用于二合一设备、平板）：光线传感器（单位为 lux），以及由加速度计得出的方向，表示为沿朝上那条轴的 1 g，随设备转动而变化。没有其他传感器：`available` 为 false，各个流和 `steps` 都会抛出 `SensorError.notAvailable` |
 | `platform/contacts`、`platform/calendar` | Evolution Data Server 中的通讯录和日历（来自 GNOME 通讯录、GNOME 日历和在线账户）：有它时访问权限为 `.allowed`（日历为 `.full`）；`pick` 是一个带搜索框的联系人对话框；`add` 先确认，再保存到默认通讯录或该日程所属的日历。没有它时：通讯录的访问权限为 `.denied`，日历为 `.writeOnly`；`add` 会在用户的联系人或日历应用中打开一个 vCard 或 iCalendar 文件，并返回 false；`contacts.pick` 会抛出错误 |
-| `platform/photos` 的照片库、`platform/appleauth`、`platform/widget`、`platform/liveactivity` | Linux 上都没有：照片库的访问权限为 `.denied`；`appleauth.available()` 为 false，它的按钮什么也不显示；`liveactivity.start` 抛出 "liveactivity: not available"；`widget.set` 什么也不做。`platform/splash` 也没有启动屏可以保持 |
+| `platform/photos` 的照片库、`platform/appleauth`、`platform/widget`、`platform/liveactivity` | Linux 上都没有：照片库的访问权限为 `.denied`；`appleauth.available()` 为 false，它的按钮什么也不显示；`liveactivity.start` 抛出 "liveactivity: not available"；`widget.set` 什么也不做，`actions()` 也不会给出任何东西。`platform/splash` 也没有启动屏可以保持 |
 | `platform/purchase` | 没有应用商店：`available()` 为 false，其余调用抛出 `PurchaseError.notAvailable` |
 | `platform/icloud` | 没有 iCloud："icloud: not available" |
-| `platform/biometric`、`platform/integrity`、`platform/agerange`、`platform/push` | Linux 上都没有：返回不可用或不受支持。`platform/review` 什么也不做；`platform/tracking` 返回 `.allowed` |
+| `platform/biometric`、`platform/passkey`、`platform/integrity`、`platform/agerange`、`platform/push` | Linux 上都没有：返回不可用或不受支持。`platform/review` 什么也不做；`platform/tracking` 返回 `.allowed` |
 | `platform/pay` | Linux 上没有能为应用付款的钱包：`available` 返回 `.none`，`pay` 抛出 `PayError.notAvailable`，`PayButton` 什么也不显示 |
 | `platform/crash` | Asuka 的崩溃输出，其中也包括原生代码中的崩溃（GTK 代码里收到的信号、GLib 的 abort），这类崩溃报告为 `"native"`；不会读取系统自己的崩溃记录（systemd-coredump、apport） |
 | `platform/analytics` | GA4 的 Measurement Protocol，和 Windows 一样 |
@@ -197,6 +200,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/speech` | `speechSynthesis`，使用浏览器提供的语音 |
 | `platform/sensors` | Generic Sensor API（Chrome），或设备运动和方向事件（Safari 会在用户点按时询问），坐标轴和单位与 Android 一致；没有气压计和计步器 |
 | `platform/biometric` | 通过 WebAuthn 使用平台验证器（Touch ID、Face ID、Windows Hello、Android 的屏幕锁定）：第一次 `authenticate` 会为该站点创建一个通行密钥（passkey）。提示框由浏览器提供，所以 `reason` 和 `cancel` 不会显示 |
+| `platform/passkey` | WebAuthn 的 `navigator.credentials`，界面是浏览器自己的面板：`rp.id` 必须是页面所在的站点，或者它的上级域名（不需要 `asuka.toml` 的 `passkeys`） |
 | `platform/webauth` | 一个弹出窗口，回到与应用同源的页面时即完成（自定义 scheme 无法打开页面） |
 | `platform/js` | 一个隐藏的沙盒 iframe |
 | `platform/contacts`、`platform/calendar` | 浏览器支持 Contact Picker 时（Android 上的 Chrome）可以用 `contacts.pick`；`add` 会下载一个 vCard 或 `.ics` 文件；Web 上无法读取通讯录和日历 |
@@ -236,6 +240,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/push` | 使用 APNs，手表应用有自己的 token，支持提醒推送和数据消息；不支持 `rewrite`（手表应用没有 Notification Service Extension） |
 | `platform/crash` | 核心的致命错误和未捕获的异常；没有 MetricKit 的诊断信息 |
 | `platform/analytics` | 不支持手表（Firebase 的 Analytics 没有 watchOS SDK）：`available()` 为 false，什么也不会发送 |
+| `platform/passkey` | 不支持手表（watchOS 自己没有通行密钥）：`available()` 为 false，`register` 和 `signIn` 抛出 `notAvailable` |
 | 其他包 | 没有为手表构建：调用它们会抛出 `unsupported`，和在任何缺少对应能力的平台上一样 |
 
 ## 相机：platform/camera
@@ -2020,6 +2025,62 @@ component Lock {
 
 Linux 没有用来验证设备主人的系统提示：`check` 会报告什么都没有，`authenticate` 会抛出 `.notAvailable`。
 
+要让用户登录应用的服务器，请使用通行密钥（[platform/passkey](#通行密钥platformpasskey)）：`biometric` 只能在设备本地确认使用者是设备的主人。
+
+## 通行密钥：platform/passkey
+
+通行密钥（passkey）让用户不用密码就能登录：它是设备为应用的服务器生成的一对密钥，用面容 ID、指纹或设备的锁屏解锁，并由用户的密码管理器（iCloud 钥匙串、Google 密码管理工具，或用户自选的其他管理器）同步。它就是 WebAuthn，和网页上一样：服务器生成选项，并校验返回的结果。所以，一个已经为网站提供通行密钥的服务器，用同一套代码就能为应用提供通行密钥。
+
+```asuka check
+import std/http
+import platform/passkey
+
+let server = "https://example.com"
+
+/// 为当前登录的账号创建一个通行密钥。
+async fn addPasskey() throws {
+  let options = try await http.post("{server}/passkeys/register/begin", bytes())
+  let credential = try await passkey.register(options.text())
+  let done = try await http.post("{server}/passkeys/register/finish", credential.bytes())
+  if !done.ok() {
+    throw Error("the server refused the passkey")
+  }
+}
+
+/// 用用户的某个通行密钥登录；是谁由服务器判断。
+async fn signIn() throws -> string {
+  let options = try await http.post("{server}/passkeys/login/begin", bytes())
+  do {
+    let assertion = try await passkey.signIn(options.text())
+    return (try await http.post("{server}/passkeys/login/finish", assertion.bytes())).text()
+  } catch passkey.PasskeyError.canceled {
+    return ""
+  }
+}
+```
+
+- `passkey.register(options)` 接收服务器的 `PublicKeyCredentialCreationOptionsJSON`（可以是它本身，也可以包在 `{"publicKey": …}` 里，go-webauthn、SimpleWebAuthn、py_webauthn 这类库就是这样发送的），显示系统的面板，然后返回服务器要校验的 `RegistrationResponseJSON`（WebAuthn Level 3 定义的 JSON，base64url 编码、不带填充）：凭据的 `id`、它的 `clientDataJSON` 和 `attestationObject`、`authenticatorData`、`publicKey`（SPKI 格式）及其 `publicKeyAlgorithm`，以及 `transports`。
+- `passkey.signIn(options)` 接收 `PublicKeyCredentialRequestOptionsJSON`，返回 `AuthenticationResponseJSON`：`authenticatorData`、`signature` 和 `userHandle`（表明这是谁的通行密钥）。如果没有 `allowCredentials`，用户会从自己在该网站的通行密钥中选一个。
+- 它们会抛出 `PasskeyError`：`.canceled`（用户关闭了面板）、`.exists`（选项的 `excludeCredentials` 中有一个已经在这台设备上）、`.noCredentials`（设备上没有这个网站的通行密钥：Android）、`.notAssociated`（网站没有列出这个应用，见下文）、`.notAvailable`、`.invalidOptions`（不是 WebAuthn 的选项，或者没有 `rp.id`/`rpId`：应用没有可以作为默认值的页面站点）。取消 task 会关闭面板。
+- `passkey.available()` 告诉你当前平台是否支持通行密钥：iOS 16 和 macOS 13、Android 9、支持 WebAuthn 的浏览器、Windows 10（1903）和 Windows 11。
+
+### 网站的域名
+
+通行密钥属于依赖方（relying party）的域名（`rp.id`），只有当这个域名声明应用属于自己时，平台才会把通行密钥交给应用。在 `asuka.toml` 中列出这些域名：
+
+```toml
+passkeys = ["example.com"]
+```
+
+- **iOS 和 Mac**：构建时会把这些域名加入应用的关联域名（`webcredentials:example.com`）。域名需要在 `https://example.com/.well-known/apple-app-site-association` 中列出应用：`{"webcredentials": {"apps": ["TEAMID.com.example.app"]}}`。正式发布需要在 App ID 上开启 Associated Domains 能力；Mac 还需要一个带有该能力的描述文件（见[在 Mac 上](#在-mac-上)）。Apple 的 CDN 会缓存这个文件：模拟器构建会直接向域名请求（开发者模式），在设备上开启“设置 › 开发者 › Associated Domains Development”后的开发构建也是如此。
+- **Android**：域名需要提供 `https://example.com/.well-known/assetlinks.json`，写明应用的包名和签名证书的 SHA-256 指纹，并带上 `delegate_permission/common.get_login_creds`（链接还需要 `handle_all_urls`）。应用的通行密钥在客户端数据中的 origin 是 `android:apk-key-hash:` 加上这个指纹的 base64url 编码：除了 `https://example.com`，服务器也必须接受它。通行密钥由 Credential Manager 创建（Android 14 以下借助 Google Play 服务）。
+- **Windows** 对域名没有任何要求：Windows Hello 会为服务器指定的 `rp.id` 创建通行密钥，客户端数据中的 origin 是 `https://` 加上这个域名。
+- **浏览器**允许页面使用自己站点的域名（或其上级域名），和普通网页一样。
+
+在测试中，`passkey.fake()` 是应用内的一个验证器：它会生成真正的通行密钥（ES256，不带证明），服务器可以像校验设备生成的通行密钥一样校验它们，并在应用运行期间一直保留；它的 `cancel`、`available` 和 `passkeys` 分别模拟用户的操作、表示是否可用，以及它保存的通行密钥。
+
+Linux 系统本身没有通行密钥：`available()` 为 false，`register` 和 `signIn` 会抛出 `.notAvailable`。在 Linux 上，请改为在 [platform/webauth](#网页登录platformwebauth) 的对话框里用网站自己的页面登录。
+
 ## 录音：platform/record
 
 `record.audio()` 录下麦克风的声音，直到调用 `record.stopAudio()`（或到达 `maxDuration`），然后返回文件：应用缓存目录里（或 `path` 指定的位置）的一个 AAC 编码的 MPEG-4 文件（.m4a），可以用 `platform/audio` 播放。第一次录音时会请求麦克风权限。`pauseAudio` 和 `resumeAudio` 暂停和继续；`audioStatus()` 是当前的状态（`level` 从 0 到 1，可以做电平表；`elapsed` 是已录时长）。`quality: .music` 会保留比人声所需更多的细节。
@@ -2773,6 +2834,112 @@ async fn showEnergy() throws {
 ```
 
 部件有：`column`、`row`（各自带 `spacing` 和 `align`）和 `layers`（一层叠在另一层上，按 `x` 和 `y` 摆放）；`text`（一个 `Font`、一个 `Color`，最多 `lines` 行）；`symbol`（一个 SF Symbol，在 Android 上是对应的 Material 符号）；`image`（`widget.setImage` 保存的图片，存放在小组件能读到的地方）；`progress`（进度条）和 `gauge`（带标签的圆环）；`timer`（倒数到某个时间，过了之后再正向计时，小组件休眠时也会走）；`spacer` 和 `divider`。每个部件都可以加上 `padding`、`background`（一种颜色，可以带圆角）、`frame`（以点为单位的尺寸）、`fill`（占满所在列或行剩下的空间）、`link`（点按小组件的这一部分时应用打开的 URL；iOS 的小尺寸小组件只会打开条目的 `url`）和 `opacity`。语义颜色（`.label`、`.secondaryLabel`、`.accent` 等）跟随主屏幕的浅色或深色模式；文字样式跟随用户设置的文字大小。
+
+### 按钮和开关
+
+布局里的 `button`、`toggle`，以及任何加了 `.action(id)` 的部件，被点按时会运行应用的代码，而不会打开应用：`widget.actions()` 就是用户点按的流。在应用根组件的一个任务里读取它，处理完一个动作后再设置一次小组件：
+
+```asuka check
+import platform/widget
+import std/store
+
+fn showLights() {
+  let on: bool = store.read("lights", false)
+  widget.set("lights", widget.Entry(layout: widget.column([
+    widget.symbol(if on { "lightbulb.fill" } else { "lightbulb" }, size: 28, color: if on { .yellow } else { .secondaryLabel }),
+    widget.spacer(),
+    widget.toggle(isOn: on, action: "lights", title: "Lights"),
+    widget.button("All off", action: "allOff", symbol: "power"),
+  ])))
+}
+
+component Root {
+  task {
+    showLights()
+    for await a in widget.actions() {
+      match a.id {
+        "lights" => store.write("lights", a.isOn)
+        "allOff" => store.write("lights", false)
+        _ => {}
+      }
+      showLights()
+    }
+  }
+
+  Text("Lights")
+}
+
+app { Root() }
+```
+
+- `widget.button(title, action:, symbol:, value:)` 是平台自己的小组件按钮：iOS 上是带边框的按钮，Android 上是 Material 3 的色调按钮。`.action(id, value:)` 则把任意部件变成应用自己画的按钮，取代它的 `link`。
+- `widget.toggle(isOn:, action:, title:)` 是一个开关。点按后它立刻显示新的状态，并一直保持，直到应用再次设置小组件；`Action` 的 `isOn` 就是用户选择的状态。
+- 一个 `Action` 带有小组件的 `kind`、它的 `id` 和 `value`、开关的 `isOn`、小组件的 `config`，以及点按的时间 `at`。设置该种类的条目就表示应用处理完了，小组件随之重绘；不改变小组件的动作则调用 `a.done()`。
+- 应用会在后台为它运行：如果应用没有运行，就在没有界面的情况下启动（运行它的根组件，以及读取这个流的任务），并且不会切到前台。在有人读取之前到来的动作会等待第一个读取者，所以要在应用启动时就读取它。系统只给它一点时间：iOS 上大约 25 秒，Android 上大约 9 秒。
+
+在 iOS 上，按钮是一个 App Intent（iOS 17），系统在应用的进程里运行它，像 Siri 的意图一样在后台启动应用。如果系统改在小组件自己的进程里运行它（那台 iPhone 当时不在后台启动应用），这个动作会被保存下来，在应用下次运行时送达，`at` 是点按的时间；在此期间开关会显示用户选择的状态。iOS 16 会画出按钮和开关，但它们没有动作。Apple Watch 的复杂功能没有按钮和开关。在 Android 上，按钮会给应用发一条广播，在没有界面的情况下启动它的代码；从 Android 12 起，开关是平台自己的开关，之前则是一张开关的图片。用户强行停止（设置 › 强行停止）的应用，在再次打开之前收不到任何动作。
+
+### 可配置的小组件
+
+在 `asuka.toml` 里给小组件加上 `params`，它就可以配置：用户添加小组件时选择这些值，之后还可以修改（iOS 17 起的“编辑小组件”；Android 的配置界面，Android 12 允许用户跳过，使用默认值）。参数的类型和快捷方式的一样（[参数](#参数)）：`string`、`int`、`float`、`bool`、`options`（它的 `options` 之一），或 `entity`（应用自己的东西之一，由 `widget.setEntities` 设置）。
+
+```toml
+[[widgets]]
+kind = "weather"
+name = "Weather"
+sizes = ["small", "medium"]
+
+[[widgets.params]]
+name = "city"
+title = "City"
+type = "options"
+options = [{ value = "tokyo", title = "Tokyo" }, { value = "paris", title = "Paris" }]
+
+[[widgets.params]]
+name = "place"
+title = "Saved place"
+type = "entity"
+entity = "place"
+```
+
+```asuka check
+import platform/widget
+
+fn showWeather() {
+  widget.setEntities("place", [widget.Entity(id: "home", title: "Home"), widget.Entity(id: "work", title: "Work")])
+  // 提前为每个城市各设置一份：用户一选好城市，小组件就显示那个城市的内容。
+  for city in ["tokyo", "paris"] {
+    widget.set("weather", widget.Entry(layout: widget.column([
+      widget.param("city", font: .headline),
+      widget.param("place", font: .caption, color: .secondaryLabel),
+      widget.text(if city == "tokyo" { "18°" } else { "12°" }, font: Font(size: 34, weight: .bold)),
+    ])), config: ["city": city])
+  }
+}
+```
+
+`set` 的 `config` 说明条目是给哪些小组件的：小组件显示与它的参数匹配得最多的那份配置所设置的条目（那份配置里的每一项都必须匹配），没有的话就显示不带配置设置的条目。如果应用提前为每个值都设置了条目，用户刚配置好的小组件会立刻显示对应的内容；`widget.configurations(kind)` 列出主屏幕上这类小组件的配置，每个参数的值都是文本（选项的值、实体的 id、数字、`"true"` 或 `"false"`，用户没选的地方是默认值），适合只设置正在使用的配置的应用。`widget.param(name)` 显示所配置的值的标题（选项或实体的标题、字符串、数字），不需要应用设置任何东西。动作的 `config` 就是它所在小组件的配置。
+
+在 iOS 上，这些设置是扩展声明的一个 App Intent（`AppIntentConfiguration`，iOS 17；iOS 16 不提供可配置的小组件）。Apple Watch 的复杂功能不能配置。
+
+### 测试小组件
+
+在测试里，`widget.fake()` 代替设备上的小组件：`showing(kind, config)` 是这样配置的小组件所显示的内容，`tap(kind, action:, value:, isOn:, config:)` 给 `actions()` 发送一次点按，`configured` 是 `configurations` 的回答。
+
+```asuka check
+import platform/widget
+
+fn showWeather(city: string) {
+  widget.set("weather", widget.Entry(title: city), config: ["city": city])
+}
+
+test "each city has its weather" {
+  let home = widget.fake()
+  showWeather("paris")
+  expect(home.showing("weather", config: ["city": "paris", "place": "home"])?.title == "paris")
+  expect(home.showing("weather", config: ["city": "tokyo"]).isNone())
+}
+```
 
 ## 实时活动：platform/liveactivity
 

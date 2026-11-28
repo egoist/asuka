@@ -40,10 +40,15 @@ open class AsukaWidgetProvider(private val kind: String, private val sizes: Stri
         mgr.updateAppWidget(id, views(ctx, mgr, id))
     }
 
+    override fun onDeleted(ctx: Context, ids: IntArray) {
+        for (id in ids) AsukaWidgets.forgetConfig(ctx, id)
+    }
+
     private fun views(ctx: Context, mgr: AppWidgetManager, id: Int): RemoteViews {
-        val entry = AsukaWidgets.current(AsukaWidgets.entries(ctx, kind))
+        val scope = AsukaWidgets.scope(ctx, kind, id, mgr.getAppWidgetInfo(id)?.provider)
+        val entry = AsukaWidgets.current(AsukaWidgets.entries(ctx, kind, scope.config))
         val ss = sizes.split(',')
-        fun layout(size: String) = AsukaWidgets.render(ctx, kind, entry, size)
+        fun layout(size: String) = AsukaWidgets.render(ctx, kind, entry, size, scope)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             // Each size it comes in, from the smallest box that takes it.
             val m = LinkedHashMap<SizeF, RemoteViews>()
@@ -67,7 +72,7 @@ open class AsukaWidgetProvider(private val kind: String, private val sizes: Stri
     /** An alarm for the next entry's time, or a countdown's end: then it updates again. */
     private fun schedule(ctx: Context, ids: IntArray) {
         val now = System.currentTimeMillis()
-        val es = AsukaWidgets.entries(ctx, kind)
+        val es = AsukaWidgets.allEntries(ctx, kind)
         val next = listOfNotNull(
             es.map { it.optLong("atMs") }.filter { it > now }.minOrNull(),
             AsukaWidgets.current(es)?.optLong("untilMs")?.takeIf { it > now },
@@ -84,10 +89,130 @@ open class AsukaWidgetProvider(private val kind: String, private val sizes: Stri
 object AsukaWidgets {
     private const val PREFS = "asuka.widgets"
 
-    fun entries(ctx: Context, kind: String): List<JSONObject> {
-        val s = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(kind, null) ?: return emptyList()
-        val a = runCatching { JSONArray(s) }.getOrNull() ?: return emptyList()
-        return List(a.length()) { a.getJSONObject(it) }.sortedBy { it.optLong("atMs") }
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun list(a: JSONArray?): List<JSONObject> = List(a?.length() ?: 0) { a!!.getJSONObject(it) }.sortedBy { it.optLong("atMs") }
+
+    private fun array(s: String?): JSONArray? = s?.let { runCatching { JSONArray(it) }.getOrNull() }
+
+    /** A configuration as one string: its params, sorted by name. */
+    private fun key(c: JSONObject): String = c.keys().asSequence().sorted().joinToString("\u0002") { it + "\u0001" + c.optString(it) }
+
+    /**
+     * The kind's entries for a configuration: those set for the one that
+     * matches the most of its params (all of the set's must), else those
+     * set without one.
+     */
+    fun entries(ctx: Context, kind: String, config: Map<String, String> = emptyMap()): List<JSONObject> {
+        val p = prefs(ctx)
+        var best = array(p.getString(kind, null))
+        var most = 0
+        val sets = array(p.getString("sets.$kind", null)) ?: JSONArray()
+        for (i in 0 until sets.length()) {
+            val s = sets.getJSONObject(i)
+            val c = s.optJSONObject("config") ?: continue
+            if (c.length() <= most || !c.keys().asSequence().all { config[it] == c.optString(it) }) continue
+            best = s.optJSONArray("entries")
+            most = c.length()
+        }
+        return list(best)
+    }
+
+    /** Every configuration's entries of the kind, for their times. */
+    fun allEntries(ctx: Context, kind: String): List<JSONObject> {
+        val p = prefs(ctx)
+        val out = ArrayList(list(array(p.getString(kind, null))))
+        val sets = array(p.getString("sets.$kind", null)) ?: JSONArray()
+        for (i in 0 until sets.length()) out += list(sets.getJSONObject(i).optJSONArray("entries"))
+        return out
+    }
+
+    /** A widget's configuration: what the user picked (the configuration screen's), its params' defaults for the rest. */
+    fun config(ctx: Context, id: Int, params: List<AsukaWidgetParam>): Map<String, String> {
+        val saved = runCatching { JSONObject(prefs(ctx).getString("config.$id", "{}")!!) }.getOrDefault(JSONObject())
+        return params.associate { it.name to (if (saved.has(it.name)) saved.optString(it.name) else it.default) }
+    }
+
+    fun saveConfig(ctx: Context, id: Int, values: Map<String, String>) {
+        prefs(ctx).edit().putString("config.$id", JSONObject(values as Map<*, *>).toString()).commit()
+    }
+
+    fun forgetConfig(ctx: Context, id: Int) = prefs(ctx).edit().remove("config.$id").apply()
+
+    /** The widget id's scope: its configuration, and the titles of its values. */
+    fun scope(ctx: Context, kind: String, id: Int, provider: ComponentName?): AsukaWidgetScope {
+        val params = provider?.let { AsukaWidgetParam.of(ctx, it) } ?: emptyList()
+        val config = config(ctx, id, params)
+        val titles = params.associate { p ->
+            val v = config[p.name].orEmpty()
+            p.name to when (p.type) {
+                "options" -> p.options.firstOrNull { it.first == v }?.second ?: v
+                "entity" -> entities(ctx, p.entity).firstOrNull { it.optString("id") == v }?.optString("title") ?: ""
+                "bool" -> ""
+                else -> v
+            }
+        }
+        return AsukaWidgetScope(kind, id, config, titles)
+    }
+
+    /** An entity param's things (platform/widget's setEntities): id, title, subtitle. */
+    fun entities(ctx: Context, entity: String): List<JSONObject> {
+        val a = array(prefs(ctx).getString("entities.$entity", null)) ?: return emptyList()
+        return List(a.length()) { a.getJSONObject(it) }
+    }
+
+    fun setEntities(ctx: Context, entity: String, json: String) {
+        prefs(ctx).edit().putString("entities.$entity", json).apply()
+    }
+
+    /** The configurations of the kind's widgets, as platform/widget's configurations gives them. */
+    fun configurations(ctx: Context, kind: String): JSONArray {
+        val out = JSONArray()
+        val mgr = AppWidgetManager.getInstance(ctx)
+        for (p in providers(ctx, mgr)) {
+            if (kindOf(ctx, p.provider) != kind) continue
+            val params = AsukaWidgetParam.of(ctx, p.provider)
+            for (id in mgr.getAppWidgetIds(p.provider)) out.put(JSONObject(config(ctx, id, params) as Map<*, *>))
+        }
+        return out
+    }
+
+    private fun toggles(ctx: Context) = runCatching { JSONObject(prefs(ctx).getString("toggles", "{}")!!) }.getOrDefault(JSONObject())
+
+    /** A toggle's state the user set, until the app has had it. */
+    fun toggle(ctx: Context, key: String): Boolean? = toggles(ctx).optJSONObject(key)?.optBoolean("on")
+
+    fun setToggle(ctx: Context, key: String, kind: String, on: Boolean, token: String) {
+        val ts = toggles(ctx)
+        ts.put(key, JSONObject().put("on", on).put("token", token).put("kind", kind))
+        prefs(ctx).edit().putString("toggles", ts.toString()).commit()
+    }
+
+    /** Forgets the toggles' states drop picks; whether it did any. */
+    fun dropToggles(ctx: Context, drop: (JSONObject) -> Boolean): Boolean {
+        val ts = toggles(ctx)
+        val gone = ts.keys().asSequence().filter { ts.optJSONObject(it)?.let(drop) == true }.toList()
+        if (gone.isEmpty()) return false
+        for (k in gone) ts.remove(k)
+        prefs(ctx).edit().putString("toggles", ts.toString()).commit()
+        return true
+    }
+
+    /** What a toggle shows now: the state the user set, until the app has had it, else the current entry's. */
+    fun isOn(ctx: Context, scope: AsukaWidgetScope, action: String, value: String): Boolean {
+        toggle(ctx, scope.toggleKey(action, value))?.let { return it }
+        val e = current(entries(ctx, scope.kind, scope.config)) ?: return false
+        fun find(n: JSONObject?): Boolean? {
+            if (n == null) return null
+            if (n.optString("t") == "toggle" && n.optString("action") == action && n.optString("arg") == value) return n.optBoolean("on")
+            val c = n.optJSONArray("c") ?: return null
+            for (i in 0 until c.length()) find(c.optJSONObject(i))?.let { return it }
+            return null
+        }
+        find(e.optJSONObject("layout"))?.let { return it }
+        val sizes = e.optJSONObject("sizes") ?: return false
+        for (k in sizes.keys()) find(sizes.optJSONObject(k))?.let { return it }
+        return false
     }
 
     /** The entry whose time has come: the last at or before now (or the first). */
@@ -103,7 +228,7 @@ object AsukaWidgets {
         return ((v and 0xff) shl 24 or (v ushr 8)).toInt()
     }
 
-    fun render(ctx: Context, kind: String, e: JSONObject?, size: String): RemoteViews {
+    fun render(ctx: Context, kind: String, e: JSONObject?, size: String, scope: AsukaWidgetScope = AsukaWidgetScope(kind, 0)): RemoteViews {
         val layout = when (size) { "large" -> R.layout.asuka_widget_large; "medium" -> R.layout.asuka_widget_medium; else -> R.layout.asuka_widget_small }
         val v = RemoteViews(ctx.packageName, layout)
         fun text(id: Int, s: String?) {
@@ -127,7 +252,7 @@ object AsukaWidgets {
         // The app's own layout, for this size or every size.
         val node = e.optJSONObject("sizes")?.optJSONObject(size) ?: e.optJSONObject("layout")
         if (node != null) {
-            val lv = AsukaWidgetLayout.render(ctx, node) { widgetOpen(ctx, "asuka.widget.$kind", it) }
+            val lv = AsukaWidgetLayout.render(ctx, node, scope) { widgetOpen(ctx, "asuka.widget.$kind", it) }
             if (node.optString("url").isEmpty()) lv.setOnClickPendingIntent(R.id.asuka_wl, open(ctx, kind, e.optString("url")))
             return lv
         }
@@ -172,7 +297,7 @@ object AsukaWidgets {
     }
 
     /** The app's widget providers (before Android 8, picked from every app's). */
-    private fun providers(ctx: Context, mgr: AppWidgetManager): List<AppWidgetProviderInfo> =
+    fun providers(ctx: Context, mgr: AppWidgetManager): List<AppWidgetProviderInfo> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) mgr.getInstalledProvidersForPackage(ctx.packageName, null)
         else mgr.installedProviders.filter { it.provider.packageName == ctx.packageName }
 
@@ -181,9 +306,28 @@ object AsukaWidgets {
         ctx.packageManager.getReceiverInfo(provider, PackageManager.GET_META_DATA).metaData?.getString("dev.asuka.widget.kind")
     }.getOrNull()
 
-    /** Keeps kind's entries and updates its widgets. */
-    fun set(ctx: Context, kind: String, entries: JSONArray) {
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(kind, entries.toString()).apply()
+    /**
+     * Keeps kind's entries, for a configuration (config: its params) or for
+     * any (all, with none: every configuration's go), and updates its
+     * widgets; the actions of the kind the app's code has are done.
+     */
+    fun set(ctx: Context, kind: String, entries: JSONArray, config: JSONObject? = null, all: Boolean = false) {
+        val p = prefs(ctx)
+        val ed = p.edit()
+        if (all) ed.remove(kind).remove("sets.$kind")
+        else if (config == null || config.length() == 0) ed.putString(kind, entries.toString())
+        else {
+            val sets = array(p.getString("sets.$kind", null)) ?: JSONArray()
+            val out = JSONArray()
+            for (i in 0 until sets.length()) {
+                val s = sets.getJSONObject(i)
+                if (key(s.optJSONObject("config") ?: JSONObject()) != key(config)) out.put(s)
+            }
+            if (entries.length() > 0) out.put(JSONObject().put("config", config).put("entries", entries))
+            ed.putString("sets.$kind", out.toString())
+        }
+        ed.commit()
+        AsukaWidgetActions.settled(ctx, kind)
         update(ctx, kind)
     }
 
@@ -223,16 +367,25 @@ private fun keepWidgetImage(ctx: Context, args: ByteArray) {
 }
 
 /** platform/widget's module: "set" (JSON: kind, entries), "image". */
-fun AsukaRuntime.widgetMethods(): Map<String, AsukaModuleMethod> = mapOf(
+fun AsukaRuntime.widgetMethods(): Map<String, AsukaModuleMethod> = mapOf<String, AsukaModuleMethod>(
     "set" to { args, reply ->
         val o = runCatching { JSONObject(String(args, Charsets.UTF_8)) }.getOrNull()
         if (o == null) reply(Result.failure(Exception("bad args")))
         else {
-            AsukaWidgets.set(app, o.getString("kind"), o.optJSONArray("entries") ?: JSONArray())
+            AsukaWidgets.set(app, o.getString("kind"), o.optJSONArray("entries") ?: JSONArray(), o.optJSONObject("config"), o.optBoolean("all"))
             reply(Result.success(ByteArray(0)))
         }
     },
     "image" to { args, reply ->
         Thread { reply(runCatching { keepWidgetImage(app, args); ByteArray(0) }) }.start()
     },
-)
+    "configurations" to { args, reply ->
+        reply(Result.success(AsukaWidgets.configurations(app, String(args, Charsets.UTF_8)).toString().toByteArray()))
+    },
+    "entities" to { args, reply ->
+        val b = java.nio.ByteBuffer.wrap(args).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val entity = ByteArray(b.int).also { b.get(it) }.toString(Charsets.UTF_8)
+        AsukaWidgets.setEntities(app, entity, String(args, b.position(), args.size - b.position(), Charsets.UTF_8))
+        reply(Result.success(ByteArray(0)))
+    },
+) + AsukaWidgetActions.methods(app)
