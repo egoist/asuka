@@ -1,0 +1,28 @@
+// PrintHTML is a web e2e's app (e2e/printhtml_test.go): Print prints two
+// pages of markup with print.html, and the line under it says what the
+// dialog answered.
+
+import platform/print
+
+component Printing {
+  state said = "status: ready"
+
+  Column {
+    padding: 12
+    gap: 6
+    Text(said)
+    Button("Print") {
+      on press {
+        said = "status: printing"
+        do {
+          let o = try await print.html("<h1>Page one</h1><h1 style=\"break-before: page\">Page two</h1>", job: "Two pages")
+          said = if o == .cancelled { "status: cancelled" } else { "status: done" }
+        } catch e {
+          said = "status: {e.message}"
+        }
+      }
+    }
+  }
+}
+
+app { Printing() }
