@@ -133,7 +133,9 @@ void lx_measure(node *n, float cw, float ch, float aw, float ah, float *ow, floa
 		break;
 	}
 	case AK_KIND_IMAGE:
-		if (n->texture) {
+		if (lx_image_svg_size(n, &w, &h)) {
+			// An SVG's size, in points.
+		} else if (n->texture) {
 			// One point per pixel, as Loaded reports.
 			w = (float)gdk_texture_get_width(n->texture);
 			h = (float)gdk_texture_get_height(n->texture);

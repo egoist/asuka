@@ -277,7 +277,12 @@ import AsukaOps
         iv.isHidden = vc.isReadyForDisplay
         AsukaImageLoader.shared.load(source) { [weak self] r in
             guard let self, self.posterSource == source, case .success(let img) = r else { return }
-            iv.image = img
+            if let svg = img.asukaSVG {
+                let size = iv.bounds.isEmpty ? svg.size : iv.bounds.size
+                iv.image = UIImage.asukaDraw(svg, size, mode: AsukaImageView.imageMode(iv.contentMode), iv.traitCollection)
+            } else {
+                iv.image = img
+            }
         }
     }
 

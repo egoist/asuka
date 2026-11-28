@@ -267,4 +267,42 @@ JNIEXPORT jstring JNICALL Java_dev_asuka_AsukaNative_devConnect(JNIEnv *e, jclas
 	return result(e, rc, err);
 }
 
+// SVG an Image shows (asuka_svg_*): any thread. svgParse: the document,
+// or null if data isn't SVG; svgSize: its width and height; svgDraw: its
+// Canvas commands in a box, or null.
+JNIEXPORT jbyteArray JNICALL Java_dev_asuka_AsukaNative_svgParse(JNIEnv *e, jclass cls, jbyteArray a) {
+	jsize n = (*e)->GetArrayLength(e, a);
+	jbyte *p = (*e)->GetByteArrayElements(e, a, NULL);
+	uint8_t *out = NULL;
+	size_t m = asuka_svg_parse((const uint8_t *)p, (size_t)n, &out);
+	(*e)->ReleaseByteArrayElements(e, a, p, JNI_ABORT);
+	if (!out) return NULL;
+	jbyteArray r = bytes(e, out, m);
+	asuka_free(out);
+	return r;
+}
+
+JNIEXPORT jfloatArray JNICALL Java_dev_asuka_AsukaNative_svgSize(JNIEnv *e, jclass cls, jbyteArray a) {
+	jsize n = (*e)->GetArrayLength(e, a);
+	jbyte *p = (*e)->GetByteArrayElements(e, a, NULL);
+	float s[2] = {0, 0};
+	asuka_svg_size((const uint8_t *)p, (size_t)n, &s[0], &s[1]);
+	(*e)->ReleaseByteArrayElements(e, a, p, JNI_ABORT);
+	jfloatArray r = (*e)->NewFloatArray(e, 2);
+	(*e)->SetFloatArrayRegion(e, r, 0, 2, s);
+	return r;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_dev_asuka_AsukaNative_svgDraw(JNIEnv *e, jclass cls, jbyteArray a, jfloat w, jfloat h, jint mode, jlong tint) {
+	jsize n = (*e)->GetArrayLength(e, a);
+	jbyte *p = (*e)->GetByteArrayElements(e, a, NULL);
+	uint8_t *out = NULL;
+	size_t m = asuka_svg_draw((const uint8_t *)p, (size_t)n, w, h, (int)mode, 0, (uint64_t)tint, &out);
+	(*e)->ReleaseByteArrayElements(e, a, p, JNI_ABORT);
+	if (!out) return NULL;
+	jbyteArray r = bytes(e, out, m);
+	asuka_free(out);
+	return r;
+}
+
 #endif

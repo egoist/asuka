@@ -1,8 +1,9 @@
 // image.c: images are fetched and decoded off the main thread (GDK's
-// loaders: PNG, JPEG, GIF, WebP, AVIF, HEIF, SVG… where they're
-// installed; http and https by libsoup), kept in memory by source as GDK
-// textures, and drawn by the node's view at its mode, clipped to its
-// corners; Color tints them (a mask). Animated GIFs, APNGs and WebPs play
+// loaders: PNG, JPEG, GIF, WebP, AVIF, HEIF… where they're installed;
+// http and https by libsoup), kept in memory by source as GDK textures,
+// and drawn by the node's view at its mode, clipped to its corners; Color
+// tints them (a mask). SVG is read by the core, as on every platform, and
+// drawn as vectors (its display list, GSK's paths) at the view's size. Animated GIFs, APNGs and WebPs play
 // (platform/desktop's dsk_anim: their frames' pictures by GDK's loaders).
 //
 // An Image's placeholder (the core's decoded hash, else the Placeholder
@@ -24,6 +25,12 @@ struct decoded {
 	int w, h;
 	GdkTexture *texture;
 	dsk_anim *anim;
+	// SVG: the core's document (core/src/ui/svg.c, read the same on every
+	// platform) and its size in points, drawn as vectors at the view's
+	// size; its texture, GDK's, only for what takes a texture.
+	uint8_t *svg;
+	size_t svg_len;
+	float sw, sh;
 	char *err;
 	bool done;
 	// Waiting for it: the nodes (by ID) and whether as a placeholder.
@@ -37,6 +44,13 @@ struct decoded {
 	GBytes *bytes;
 	uint8_t *first;
 };
+
+typedef struct {
+	lx_display *d;
+	float w, h;
+	int32_t mode;
+	bool set;
+} svg_drawn;
 
 struct image_extra {
 	GdkTexture *hash;  // PlaceholderImage's texture
@@ -55,6 +69,10 @@ struct image_extra {
 	bool loaded;
 	double fade_start, fade_dur;
 	guint fade_tick;
+	// The image's and the placeholder's SVG (the cache's), and their
+	// display lists as last drawn: for a box, a mode and a tint.
+	const decoded *svg, *ph_svg;
+	svg_drawn drawn, ph_drawn;
 };
 
 static GHashTable *cache;  // source → decoded
@@ -71,6 +89,7 @@ static image_extra *imx(node *n) {
 
 static void set_placeholder(image_extra *x, GdkTexture *t, bool asset) {
 	x->ph_asset = asset;
+	x->ph_svg = NULL;
 	if (x->ph == t) return;
 	if (x->ph) g_object_unref(x->ph);
 	x->ph = t;
@@ -87,6 +106,8 @@ void lx_release_image(node *n) {
 	if (x->hash) g_object_unref(x->hash);
 	if (x->playing) dsk_anim_player_free(&x->player);
 	free(x->placeholder);
+	lx_display_free(x->drawn.d);
+	lx_display_free(x->ph_drawn.d);
 	free(x);
 	n->imgx = NULL;
 }
@@ -171,6 +192,9 @@ static GBytes *read_source(const char *src, char **err) {
 			return NULL;
 		}
 		SoupSession *s = soup_session_new();
+		// A User-Agent, as std/http's (desktop fetch.c): some servers
+		// (Wikimedia's) refuse a request with none.
+		if (soup_session_set_user_agent) soup_session_set_user_agent(s, "Asuka");
 		SoupMessage *m = soup_message_new("GET", src);
 		GError *e = NULL;
 		GBytes *b = m ? soup_session_send_and_read(s, m, NULL, &e) : NULL;
@@ -224,6 +248,19 @@ static gpointer decode_thread(gpointer data) {
 	}
 	gsize n;
 	const uint8_t *p = g_bytes_get_data(b, &n);
+	// SVG: the core reads it, as every platform does; GDK's texture of it
+	// (librsvg's, where it's installed) only for what wants a texture.
+	uint8_t *doc = NULL;
+	size_t dn = asuka_svg_parse(p, n, &doc);
+	if (dn) {
+		asuka_svg_size(doc, dn, &d->sw, &d->sh);
+		d->svg = doc, d->svg_len = dn;
+		d->w = (int)ceilf(d->sw), d->h = (int)ceilf(d->sh);
+		d->texture = gdk_texture_new_from_bytes(b, NULL);
+		g_bytes_unref(b);
+		g_idle_add_full(0, decoded_main, d, NULL);
+		return NULL;
+	}
 	if (dsk_anim_is_animated(p, n)) {
 		d->anim = dsk_anim_decode(p, n, still, NULL);
 		dsk_anim_player pl;
@@ -376,13 +413,18 @@ static void loaded(node *n, decoded *d, bool placeholder) {
 	}
 	if (placeholder) {
 		set_placeholder(x, d->texture, true);
+		x->ph_svg = d->svg ? d : NULL;
+		x->ph_drawn.set = false;
 		lx_queue_draw(n);
 		return;
 	}
-	set_texture(n, d->texture);
+	x->svg = d->svg ? d : NULL;
+	x->drawn.set = false;
+	set_texture(n, d->svg ? NULL : d->texture);
 	x->loaded = true;
 	arrive(n);
-	lx_emit(n, (ak_event){.kind = AK_EVENT_LOADED, .x = d->w, .y = d->h});
+	lx_queue_draw(n);
+	lx_emit(n, (ak_event){.kind = AK_EVENT_LOADED, .x = d->svg ? d->sw : d->w, .y = d->svg ? d->sh : d->h});
 	if (d->anim) {
 		lx_emit(n, (ak_event){.kind = AK_EVENT_ANIMATED});
 		if (x->playing) dsk_anim_player_free(&x->player);
@@ -469,6 +511,7 @@ void lx_set_image_prop(node *n, ak_prop p, const ak_value *v) {
 		x->frame_gen++;
 		x->fade_gen++;
 		x->fade = 1;
+		x->svg = NULL;
 		set_texture(n, NULL);
 		show_placeholder(n);
 		if (!str_empty(n->source)) fetch(n, n->source, false);
@@ -544,6 +587,43 @@ static void draw_texture(node *n, GtkSnapshot *snap, const graphene_rect_t *b, G
 	if (alpha < 1) gtk_snapshot_pop(snap);
 }
 
+bool lx_image_svg_size(node *n, float *w, float *h) {
+	image_extra *x = n->imgx;
+	if (!x || !x->loaded || !x->svg) return false;
+	*w = x->svg->sw, *h = x->svg->sh;
+	return true;
+}
+
+// draw_svg draws an SVG in the box at a mode and an opacity: the core's
+// commands for it (fitted), read into GSK objects again only when the box
+// or the mode change; a tint (not 0) colors it as a template, the color
+// masked by all its shape, as a texture's.
+static void draw_svg(node *n, GtkSnapshot *snap, const graphene_rect_t *b, const decoded *d, svg_drawn *dr, int32_t mode, float alpha, ak_color tint) {
+	if (alpha <= 0) return;
+	if (!dr->set || dr->w != b->size.width || dr->h != b->size.height || dr->mode != mode) {
+		uint8_t *out = NULL;
+		size_t m = asuka_svg_draw(d->svg, d->svg_len, b->size.width, b->size.height, mode, 0, 0, &out);
+		if (!dr->d) dr->d = lx_display_new();
+		lx_display_set(dr->d, n, out, m);
+		asuka_free(out);
+		*dr = (svg_drawn){dr->d, b->size.width, b->size.height, mode, true};
+	}
+	GdkRGBA c;
+	bool tinted = tint && lx_resolve(tint, &c);
+	if (alpha < 1) gtk_snapshot_push_opacity(snap, alpha);
+	if (tinted) gtk_snapshot_push_mask(snap, GSK_MASK_MODE_ALPHA);
+	gtk_snapshot_save(snap);
+	gtk_snapshot_translate(snap, &b->origin);
+	lx_display_draw(dr->d, snap);
+	gtk_snapshot_restore(snap);
+	if (tinted) {
+		gtk_snapshot_pop(snap);
+		gtk_snapshot_append_color(snap, &c, b);
+		gtk_snapshot_pop(snap);
+	}
+	if (alpha < 1) gtk_snapshot_pop(snap);
+}
+
 // lx_draw_image draws a node's placeholder, then its texture over it
 // (fading in as it arrives), each at its mode, clipped to the view's
 // corners.
@@ -553,10 +633,14 @@ void lx_draw_image(node *n, GtkSnapshot *snap, const graphene_rect_t *b) {
 	GskRoundedRect rr = lx_node_rounded(n, *b);
 	gtk_snapshot_push_rounded_clip(snap, &rr);
 	bool loaded = x && x->loaded;
-	if (x && x->ph && (!loaded || x->fade < 1)) {
+	if (x && x->ph_svg && (!loaded || x->fade < 1)) {
+		int32_t mode = x->ph_mode >= 0 ? x->ph_mode : n->image_mode;
+		draw_svg(n, snap, b, x->ph_svg, &x->ph_drawn, mode, loaded ? 1 - x->fade : 1, x->ph_asset ? n->color : 0);
+	} else if (x && x->ph && (!loaded || x->fade < 1)) {
 		int32_t mode = x->ph_mode >= 0 ? x->ph_mode : n->image_mode;
 		draw_texture(n, snap, b, x->ph, mode, loaded ? 1 - x->fade : 1, x->ph_asset);
 	}
-	if (n->texture && loaded) draw_texture(n, snap, b, n->texture, n->image_mode, x ? x->fade : 1, true);
+	if (x && x->svg && loaded) draw_svg(n, snap, b, x->svg, &x->drawn, n->image_mode, x->fade, n->color);
+	else if (n->texture && loaded) draw_texture(n, snap, b, n->texture, n->image_mode, x ? x->fade : 1, true);
 	gtk_snapshot_pop(snap);
 }

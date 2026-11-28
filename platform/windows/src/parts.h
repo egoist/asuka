@@ -315,6 +315,7 @@ void wh_shape_set_prop(node *n, uint16_t p, const ak_value *v);
 void wh_shape_free(node *n);
 void wh_paint_shape(node *n, gfx g);
 void wh_paint_canvas(node *n, gfx g);
+void wh_replay(gfx g, const uint8_t *b, size_t len, float scale, float alpha);
 void wh_shader_new(node *n);
 void wh_shader_release(node *n);
 void wh_set_shader_prop(node *n, uint16_t p, const ak_value *v);

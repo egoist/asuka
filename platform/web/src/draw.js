@@ -132,8 +132,12 @@ function strokeStyle(n) {
 
 const canvases = new Set();
 
-/** redrawCanvases draws every canvas again (the appearance changed: its semantic colors). */
-export function redrawCanvases(h) { for (const n of canvases) draw(h, n); }
+/** redrawCanvases draws every canvas again (the appearance changed: its semantic colors), and what else drew a display list (an SVG Image). */
+export function redrawCanvases(h) { for (const n of canvases) (n.redraw || draw)(h, n); }
+
+/** watchAppearance has n drawn again by redraw when the appearance changes (unwatchAppearance: no more). */
+export function watchAppearance(n, redraw) { n.redraw = redraw; canvases.add(n); }
+export function unwatchAppearance(n) { canvases.delete(n); }
 
 const canvas = {
   create(h, n) {
@@ -172,13 +176,17 @@ function draw(h, n) {
   g.clearRect(0, 0, pw, ph);
   if (!n.commands) return;
   g.scale(k, k);
-  const r = new Reader(n.commands);
+  replay(h, g, n.commands, getComputedStyle(n.el).fontFamily);
+}
+
+/** replay draws a display list (a Canvas's; an SVG Image's, the core's commands for it: in points) with a 2D context, text in font (a CSS font family). */
+export function replay(h, g, commands, font) {
+  const r = new Reader(commands);
   const path = () => new Path2D(pathData(r.bytes()));
   const col = (v) => color.resolve(h, v, "rgba(0,0,0,0)");
   const alphas = [1];
   const rules = []; // FillRule's, kept with each save
   let rule = "nonzero";
-  const font = getComputedStyle(n.el).fontFamily;
   const stops = () => {
     const ns = r.u32();
     const out = [];

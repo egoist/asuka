@@ -40,7 +40,59 @@ import kotlin.math.abs
  * WebP, AVIF and HEIF sequences: what ImageDecoder animates) keeps its
  * file, which each view plays as an AnimatedImageDrawable of its own.
  */
-class AsukaImage(val bitmap: Bitmap, val width: Int, val height: Int, val animation: ByteArray? = null)
+class AsukaImage(val bitmap: Bitmap, val width: Int, val height: Int, val animation: ByteArray? = null, val svg: ByteArray? = null)
+
+/**
+ * An SVG document the core read (an Image whose source is SVG: read the
+ * same on every platform, core/src/ui/svg.c), as a drawable of its size
+ * (points, in pixels): drawn at its bounds by replaying the core's
+ * commands, so the image view's matrix scales vectors, not pixels. Its
+ * tint (the view's imageTintList) colors all of it.
+ */
+class AsukaSvgDrawable(private val rt: AsukaRuntime, private val doc: ByteArray, private val w: Float, private val h: Float) :
+    android.graphics.drawable.Drawable() {
+    private val replay = AsukaReplay(rt)
+    private var tint: android.content.res.ColorStateList? = null
+    private var opacity = 255
+    private var drawn: ByteBuffer? = null
+    private var drawnFor = Pair(0f, 0f)
+
+    override fun getIntrinsicWidth() = Math.round(w * rt.density)
+    override fun getIntrinsicHeight() = Math.round(h * rt.density)
+
+    override fun draw(canvas: android.graphics.Canvas) {
+        val b = bounds
+        if (b.width() <= 0 || b.height() <= 0) return
+        val pw = b.width() / rt.density
+        val ph = b.height() / rt.density
+        val key = Pair(pw, ph)
+        if (drawn == null || drawnFor != key) {
+            // Stretched to its bounds: the view's scale type made them.
+            drawn = AsukaNative.svgDraw(doc, pw, ph, AsukaImageMode.STRETCH, 0)?.let { ByteBuffer.wrap(it) }
+            drawnFor = key
+        }
+        val cmds = drawn ?: return
+        val t = tint?.getColorForState(state, tint!!.defaultColor)
+        val l = b.left.toFloat()
+        val tp = b.top.toFloat()
+        val save = if (opacity < 255 || t != null) canvas.saveLayerAlpha(l, tp, b.right.toFloat(), b.bottom.toFloat(), opacity)
+            else canvas.save()
+        canvas.translate(l, tp)
+        replay.draw(canvas, cmds)
+        // A tint colors it as a template: the color through all its shape.
+        if (t != null) canvas.drawColor(t, android.graphics.PorterDuff.Mode.SRC_IN)
+        canvas.restoreToCount(save)
+    }
+
+    override fun setTintList(t: android.content.res.ColorStateList?) { tint = t; invalidateSelf() }
+    override fun isStateful() = tint?.isStateful == true
+    override fun onStateChange(state: IntArray): Boolean = tint?.isStateful == true
+    override fun setAlpha(a: Int) { opacity = a; invalidateSelf() }
+    override fun getAlpha() = opacity
+    override fun setColorFilter(f: android.graphics.ColorFilter?) {}
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+}
 
 /**
  * Loads images off the main thread: fetched (http, https; kept on disk,
@@ -49,7 +101,7 @@ class AsukaImage(val bitmap: Bitmap, val width: Int, val height: Int, val animat
  */
 object AsukaImages {
     private val cache = object : LruCache<String, AsukaImage>(maxOf(16 shl 20, (Runtime.getRuntime().maxMemory() / 8).toInt())) {
-        override fun sizeOf(key: String, v: AsukaImage) = v.bitmap.byteCount
+        override fun sizeOf(key: String, v: AsukaImage) = v.bitmap.byteCount + (v.svg?.size ?: 0)
     }
     private val pool = Executors.newFixedThreadPool(3)
     private val main = Handler(Looper.getMainLooper())
@@ -134,6 +186,12 @@ object AsukaImages {
     }
 
     private fun decode(data: ByteArray, maxSide: Int): AsukaImage {
+        // SVG: the core's document, on a pixel that stands in for it (an
+        // AsukaSvgDrawable draws it at the size it's shown).
+        AsukaNative.svgParse(data)?.let { doc ->
+            val s = AsukaNative.svgSize(doc)
+            return AsukaImage(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888), Math.round(s[0]), Math.round(s[1]), svg = doc)
+        }
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(data, 0, data.size, o)
         if (o.outWidth <= 0) return decodeOther(data, maxSide)
@@ -207,7 +265,8 @@ fun AsukaRuntime.loadImage(n: AsukaNode, source: String) {
         if (cur != null && cur.imageSource == source) {
             r.onSuccess { img ->
                 cur.imageLoaded = true
-                iv.show(img.bitmap)
+                val svg = svgDrawable(img)
+                if (svg != null) iv.show(svg) else iv.show(img.bitmap)
                 // One point per pixel, as on the web.
                 emit(id, AsukaEventKind.LOADED) { AsukaEvents.loaded(id, img.width.toDouble(), img.height.toDouble()) }
                 img.animation?.let { data ->
@@ -244,8 +303,30 @@ fun AsukaRuntime.showPlaceholder(n: AsukaNode) {
     AsukaImages.load(app, p) { r ->
         val cur = nodes[id] ?: return@load
         if (cur.imageLoaded || cur.imageHash != null || cur.imagePlaceholder != p) return@load
-        r.onSuccess { iv.placeholder = it.bitmap; iv.placeholderTinted = true }
+        r.onSuccess {
+            val svg = svgDrawable(it)
+            if (svg != null) iv.placeholderSvg = svg else iv.placeholder = it.bitmap
+            iv.placeholderTinted = true
+        }
     }
+}
+
+/** An SVG image's drawable (null: it isn't SVG). */
+fun AsukaRuntime.svgDrawable(img: AsukaImage): AsukaSvgDrawable? {
+    val doc = img.svg ?: return null
+    val s = AsukaNative.svgSize(doc)
+    return AsukaSvgDrawable(this, doc, s[0], s[1])
+}
+
+/** An image as a bitmap: an SVG's drawn at its size, in pixels (a video's poster). */
+fun AsukaRuntime.bitmapOf(img: AsukaImage): Bitmap {
+    val d = svgDrawable(img) ?: return img.bitmap
+    val w = maxOf(1, d.intrinsicWidth)
+    val h = maxOf(1, d.intrinsicHeight)
+    val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    d.setBounds(0, 0, w, h)
+    d.draw(android.graphics.Canvas(b))
+    return b
 }
 
 /** PlaceholderImage's bytes (u32 width, u32 height, RGBA not premultiplied) as a bitmap. */
@@ -274,7 +355,17 @@ fun placeholderBitmap(b: ByteBuffer): Bitmap? {
  */
 class AsukaImageView(context: Context) : androidx.appcompat.widget.AppCompatImageView(context) {
     var placeholder: Bitmap? = null
-        set(v) { field = v; fade?.cancel(); fade = null; placeholderAlpha = 1f; invalidate() }
+        set(v) { field = v; placeholderSvg = null; fade?.cancel(); fade = null; placeholderAlpha = 1f; invalidate() }
+    /** An SVG placeholder, drawn as vectors in its mode. */
+    var placeholderSvg: AsukaSvgDrawable? = null
+        set(v) {
+            field = v
+            if (v != null) {
+                placeholder = null
+                field = v
+            }
+            invalidate()
+        }
     var placeholderTinted = false
         set(v) { field = v; invalidate() }
     /** PlaceholderMode: -1, the image's. */
@@ -302,15 +393,20 @@ class AsukaImageView(context: Context) : androidx.appcompat.widget.AppCompatImag
     }
 
     /** Shows the picture, fading it in over the placeholder (or from nothing). */
-    fun show(b: Bitmap) {
+    fun show(b: Bitmap) = show { setImageBitmap(b) }
+
+    /** Shows an SVG picture (vectors the view's matrix scales), as show does a bitmap. */
+    fun show(d: AsukaSvgDrawable) = show { setImageDrawable(d) }
+
+    private fun show(set: () -> Unit) {
         fade?.cancel()
         val d = when {
             transition < 0 -> 0.0
             transition > 0 -> transition
-            placeholder != null -> resources.getInteger(android.R.integer.config_shortAnimTime) / 1000.0
+            placeholder != null || placeholderSvg != null -> resources.getInteger(android.R.integer.config_shortAnimTime) / 1000.0
             else -> 0.0
         }
-        setImageBitmap(b)
+        set()
         if (d <= 0 || !isAttachedToWindow) {
             imageAlpha = 255
             placeholder = null
@@ -354,7 +450,8 @@ class AsukaImageView(context: Context) : androidx.appcompat.widget.AppCompatImag
 
     override fun onDraw(c: android.graphics.Canvas) {
         val p = placeholder
-        if (p != null && placeholderAlpha > 0f && width > 0 && height > 0) {
+        val ps = placeholderSvg
+        if ((p != null || ps != null) && placeholderAlpha > 0f && width > 0 && height > 0) {
             val mode = if (placeholderMode >= 0) placeholderMode else when (scaleType) {
                 ScaleType.CENTER_CROP -> AsukaImageMode.FILL
                 ScaleType.FIT_XY -> AsukaImageMode.STRETCH
@@ -363,8 +460,8 @@ class AsukaImageView(context: Context) : androidx.appcompat.widget.AppCompatImag
             }
             val w = (width - paddingLeft - paddingRight).toFloat()
             val h = (height - paddingTop - paddingBottom).toFloat()
-            val bw = p.width.toFloat()
-            val bh = p.height.toFloat()
+            val bw = (p?.width ?: ps!!.intrinsicWidth).toFloat()
+            val bh = (p?.height ?: ps!!.intrinsicHeight).toFloat()
             m.reset()
             when (mode) {
                 AsukaImageMode.STRETCH -> m.setScale(w / bw, h / bh)
@@ -382,10 +479,23 @@ class AsukaImageView(context: Context) : androidx.appcompat.widget.AppCompatImag
                 android.graphics.PorterDuffColorFilter(tint.defaultColor, android.graphics.PorterDuff.Mode.SRC_IN) else null
             c.save()
             c.clipRect(paddingLeft, paddingTop, width - paddingRight, height - paddingBottom)
-            c.drawBitmap(p, m, paint)
+            if (p != null) c.drawBitmap(p, m, paint)
+            else if (ps != null) {
+                // Vectors, through the same matrix; tinted as the image is.
+                ps.setTintList(if (placeholderTinted) tint else null)
+                ps.alpha = paint.alpha
+                ps.setBounds(0, 0, ps.intrinsicWidth, ps.intrinsicHeight)
+                c.concat(m)
+                ps.draw(c)
+            }
             c.restore()
         }
+        // A filled picture is cut at the edges (an SVG's vectors, drawn
+        // through the view's matrix, would go past them).
+        c.save()
+        c.clipRect(paddingLeft, paddingTop, width - paddingRight, height - paddingBottom)
         super.onDraw(c)
+        c.restore()
     }
 }
 

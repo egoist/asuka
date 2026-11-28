@@ -752,13 +752,20 @@ Each platform decodes what its own decoders read:
 |---|---|---|
 | iOS | ImageIO: PNG, JPEG, GIF, WebP, HEIC, AVIF | ImageIO's `CGAnimateImageDataWithBlock`, which times and loops it as the file says (HEIF sequences too) |
 | Android | `BitmapFactory`, then `ImageDecoder`: PNG, JPEG, GIF, WebP, HEIF, AVIF | `AnimatedImageDrawable`: GIF and WebP (and AVIF sequences where the system plays them); an APNG shows its first frame |
-| macOS | `NSImage`: PNG, JPEG, GIF, WebP, HEIC, AVIF, SVG | as iOS |
+| macOS | `NSImage`: PNG, JPEG, GIF, WebP, HEIC, AVIF | as iOS |
 | Windows | WIC: PNG, JPEG, GIF, BMP, TIFF, ICO, and WebP, HEIF and AVIF where their codecs are installed (WebP's comes with Windows 11; HEIF needs the HEIF and HEVC Video Extensions, AVIF the AV1 Video Extension) | Asuka, frame after frame; an animated WebP's pictures by WIC's WebP codec |
-| Linux | GDK's loaders: PNG, JPEG, GIF, and WebP, AVIF, HEIF, SVG and JPEG XL as installed | Asuka, frame after frame; an animated WebP's pictures by GDK's WebP loader |
+| Linux | GDK's loaders: PNG, JPEG, GIF, and WebP, AVIF, HEIF and JPEG XL as installed | Asuka, frame after frame; an animated WebP's pictures by GDK's WebP loader |
 | Web | the browser | WebCodecs' `ImageDecoder` on a canvas (AVIF sequences too); where there's none (Safari), the `<img>` itself, which shows its first frame while paused |
 
-An SVG is an image on the Mac, Linux and the web only. For an SVG icon
-on every platform, draw it with [`std/svg`](#svg-icons), as vectors.
+SVG is the exception. The platforms read it differently, and iOS,
+Android and Windows not at all, so Asuka reads it itself, the same on
+every platform: an `Image` whose source is SVG (an `.svg` file, asset
+or URL) is drawn as vectors at the size it shows, sharp at any size and
+scale, and `color` tints it as it does any image. It draws what an
+[`svg.Document`](#svg-documents) does. In a browser, a source named
+`.svg` (or an SVG `data:` URL) is read this way; one on another site
+that doesn't let the page read it (no CORS headers) is the browser's to
+show.
 
 ## Symbols and icons
 
@@ -825,7 +832,8 @@ or height in its style, the view is the SVG's own size; with both, the
 icon is fitted in, its aspect kept. It reads what icon sets use (Lucide,
 Material, Heroicons, Feather): paths, basic shapes, groups, `use`,
 fills, strokes and transforms. It skips text, gradients (painted with
-the icon's color), clipping, masks, filters and `fill-rule="evenodd"`.
+the icon's color), clipping, masks, filters and `fill-rule="evenodd"`;
+for those, show it as an [`svg.Document`](#svg-documents).
 
 `svg.Shape` draws paths the app makes: each `svg.Layer` a `svg.Path`,
 filled (`fill`, fading to `fade` down the box) and stroked (`stroke`,
@@ -848,6 +856,66 @@ component Done {
 
 It's Core Graphics on iOS and macOS, Android's `Canvas`, an `<svg>` in a
 browser, GDI+ on Windows and Cairo on Linux.
+
+### SVG documents
+
+SVG the app gets as it runs (from the network, a file, what the user
+picks or pastes) is an `svg.Document`. Asuka reads it, the same on every
+platform, and each platform draws it with its own vector graphics, as it
+does a `Canvas`. `svg.parse(markup)` reads markup, and throws if it
+isn't SVG; `svg.load(source)` fetches an http(s) URL, a file or an asset
+and reads it off the main thread; `svg.Picture(document)` shows one:
+
+```asuka check
+import std/svg
+
+let heart = r"""<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.2 5.2 3 1.6-1.8 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>"""
+
+component Logos {
+  state logo: svg.Document? = none
+
+  task {
+    logo = try? await svg.load("https://example.com/logo.svg")
+  }
+
+  Row {
+    gap: 12
+    align: .center
+    if let doc = logo {
+      svg.Picture(doc) { width: 160 }
+    }
+    if let doc = try? svg.parse(heart) {
+      svg.Picture(doc) { color: .red; width: 32 }
+    }
+  }
+}
+```
+
+Without a size of its style, a `Picture` is the document's own size (the
+svg's `width` and `height`, else its `viewBox`'s); `fit` places the
+document in its box (`.contain`, `.cover`, `.stretch`, `.center`), and
+the document's `preserveAspectRatio` places its drawing within that.
+`color` is what `currentColor` paints: `.label` by default, so a one-color
+icon follows dark mode. A `Document` is a value, so it can be kept,
+passed on, and read on another thread with `spawn`.
+
+It reads `svg` (nested too), `g`, `a`, `switch`, `defs`, `symbol` and
+`use`; paths and the basic shapes; fills and strokes with their
+opacities, `fill-rule` and `clip-rule` (`evenodd` too), widths, caps,
+joins and dashes; colors (hex, `rgb()`, `hsl()`, names,
+`currentColor`); linear and radial gradients (their units,
+`gradientTransform`, `spreadMethod`, and stops from another's `href`);
+`clipPath`; `opacity`; transforms; `viewBox` and
+`preserveAspectRatio`; `text` and `tspan` in the platform's font (their
+position, size, weight and `text-anchor`); and style, from presentation
+attributes, `style` attributes and `<style>` sheets (type, class and id
+selectors, combined, and descendant and child ones). It doesn't draw
+filters, masks, patterns, markers, embedded images, `textPath` or
+animation, a gradient on text is its first color, and a group's
+`opacity` applies to each thing in it rather than to the group as one
+layer. It never runs a script or fetches anything a document refers to
+outside itself, and a document too big to draw (a million elements, or
+`use`s of `use`s that multiply) is refused rather than drawn for ever.
 
 ## Video
 

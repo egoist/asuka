@@ -21,6 +21,14 @@ object AsukaNative {
     /** Connects to asuka dev, which sends the app's bytecode: null, or what went wrong. */
     @JvmStatic external fun devConnect(host: String, port: Int, hello: String): String?
 
+    // SVG an Image shows, read and drawn by the core (any thread): the
+    // document data holds (null: not SVG), its size in points, and its
+    // Canvas commands in a w by h box fitted by mode (an ImageMode), every
+    // color tint's when tint (the core's color) isn't 0.
+    @JvmStatic external fun svgParse(data: ByteArray): ByteArray?
+    @JvmStatic external fun svgSize(doc: ByteArray): FloatArray
+    @JvmStatic external fun svgDraw(doc: ByteArray, w: Float, h: Float, mode: Int, tint: Long): ByteArray?
+
     /**
      * Starts the app, once the core has: under asuka dev (a debuggable
      * build with files/asuka/dev, host:port, which the CLI writes), the

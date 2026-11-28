@@ -694,6 +694,17 @@ bool lx_measure_more(node *n, float cw, float ch, float aw, float ah, float *ow,
 void lx_set_image_prop(node *n, ak_prop p, const ak_value *v);
 void lx_draw_image(node *n, GtkSnapshot *snap, const graphene_rect_t *b);
 void lx_release_image(node *n);
+// lx_image_svg_size is an Image's size in points when it shows an SVG
+// (which has no texture); false if it doesn't.
+bool lx_image_svg_size(node *n, float *w, float *h);
+// A display list drawn by a view other than a Canvas (an SVG Image's:
+// the core's commands for it), read into GSK objects by lx_display_set (n:
+// the view whose Pango context lays its text out), appended to a snapshot.
+typedef struct lx_display lx_display;
+lx_display *lx_display_new(void);
+void lx_display_set(lx_display *d, node *n, const uint8_t *b, size_t len);
+void lx_display_draw(lx_display *d, GtkSnapshot *snap);
+void lx_display_free(lx_display *d);
 typedef void (*lx_texture_fn)(void *ctx, GdkTexture *t, const char *err);
 void lx_load_texture(const char *src, lx_texture_fn cb, void *ctx);
 void lx_draw_symbol(node *n, GtkSnapshot *snap, const graphene_rect_t *b);

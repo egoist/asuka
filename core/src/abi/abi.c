@@ -21,6 +21,7 @@
 #include "abi/ota.h"
 #include "base/thread.h"
 #include "std/std.h"
+#include "ui/svg.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -634,3 +635,32 @@ void asuka_set_start(const char *href) { ak_router_set_start(href ? ak_cstr(href
 void asuka_native_done(uint64_t call, const uint8_t *p, size_t len) { ak_native_done(call, p, len); }
 
 size_t asuka_native_invoke(uint64_t id, const uint8_t *p, size_t len, uint8_t **out) { return ak_native_invoke(id, p, len, out); }
+
+// SVG documents (ui/svg.h): parsed and drawn by the core, the same on
+// every platform, as the hosts' Images show them. The results are the
+// core's allocator's (asuka_free).
+size_t asuka_svg_parse(const uint8_t *data, size_t len, uint8_t **out) {
+	char err[160];
+	ak_buf b = {0};
+	*out = NULL;
+	if (!data || !ak_svg_parse((const char *)data, len, &b, err)) {
+		ak_buf_free(&b);
+		return 0;
+	}
+	*out = b.data;
+	return b.len;
+}
+
+int asuka_svg_size(const uint8_t *doc, size_t len, float *width, float *height) { return ak_svg_size(doc, len, width, height) ? 0 : -1; }
+
+size_t asuka_svg_draw(const uint8_t *doc, size_t len, float width, float height, int mode, uint64_t current, uint64_t tint, uint8_t **out) {
+	ak_buf b = {0};
+	*out = NULL;
+	if (!current) current = ak_semantic_color(AK_SEMANTIC_COLOR_LABEL);
+	if (!ak_svg_draw(doc, len, &b, width, height, mode, current, tint) || b.len == 0) {
+		ak_buf_free(&b);
+		return 0;
+	}
+	*out = b.data;
+	return b.len;
+}

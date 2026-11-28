@@ -8,7 +8,10 @@
 //     animated one (GIF, APNG, WebP, AVIF) plays: with WebCodecs'
 //     ImageDecoder, on a canvas here, so Paused stops it where it is;
 //     without (Safari), the <img> plays it, and Paused shows its first
-//     frame.
+//     frame. An SVG source (.svg, data:image/svg+xml) is fetched and read
+//     by the core, as every platform reads it, and drawn as vectors on a
+//     canvas at the view's size (its display list); one the page may not
+//     read (another site's, no CORS) is the <img>'s, the browser's.
 //   - Symbol: an SF Symbol name drawn as its Material Symbol (the Android
 //     host's, symbols.js), sized by the text props, colored by Color.
 //   - Video: a <video> with the browser's controls (video.js).
@@ -25,6 +28,7 @@ import * as fs from "./fs.js";
 import { webView } from "./webview.js";
 import { makeVideo } from "./video.js";
 import { decodeStrings } from "./webview-util.js";
+import { replay, watchAppearance, unwatchAppearance } from "./draw.js";
 
 const svgNS = "http://www.w3.org/2000/svg";
 
@@ -102,10 +106,12 @@ const image = {
         n.source = v;
         n.natural = null;
         stopFrames(n);
+        dropSVG(n);
         n.img.style.transition = "none";
         n.img.style.opacity = "0";
         showPlaceholder(h, n);
-        n.img.src = sourceURL(h, v);
+        if (isSVG(v)) loadSVG(h, n, v);
+        else n.img.src = sourceURL(h, v);
         if (!v) n.img.removeAttribute("src");
         break;
       case P.Image.Mode:
@@ -114,6 +120,7 @@ const image = {
         if (n.canvas) n.canvas.style.objectFit = n.img.style.objectFit;
         showPlaceholder(h, n);
         tint(h, n);
+        drawSVG(h, n);
         break;
       case P.Image.Placeholder:
         n.placeholder = v;
@@ -137,11 +144,92 @@ const image = {
         break;
     }
   },
-  color(h, n) { tint(h, n); },
+  color(h, n) { tint(h, n); drawSVG(h, n); },
   label(h, n, v) { n.img.alt = v || ""; },
   measure(h, n) { return n.natural || [0, 0]; },
-  destroy(h, n) { stopFrames(n); },
+  resized(h, n) { drawSVG(h, n); },
+  destroy(h, n) { stopFrames(n); dropSVG(n); },
 };
+
+/** isSVG reports whether a source is SVG by its name: an .svg file's, an SVG data URL. */
+function isSVG(src) {
+  if (!src) return false;
+  if (/^data:image\/svg\+xml[;,]/i.test(src)) return true;
+  return /\.svgz?$/i.test(src.split(/[?#]/)[0]);
+}
+
+/**
+ * loadSVG fetches an SVG source and has the core read it: then it's drawn
+ * on a canvas (drawSVG). What can't be fetched (another site's, without
+ * CORS) or read is the <img>'s to show, as the browser does.
+ */
+async function loadSVG(h, n, src) {
+  const url = sourceURL(h, src);
+  let doc = null;
+  try {
+    const r = await fetch(url);
+    if (r.ok) doc = h.core.svgParse(new Uint8Array(await r.arrayBuffer()));
+  } catch {
+    doc = null;
+  }
+  if (n.source !== src) return;
+  if (!doc) {
+    n.img.src = url;
+    return;
+  }
+  const c = document.createElement("canvas");
+  c.className = "asuka-image-svg";
+  c.style.position = "absolute";
+  c.style.left = c.style.top = "0";
+  c.style.pointerEvents = "none";
+  n.el.appendChild(c);
+  n.svg = { doc, canvas: c };
+  const [w, hh] = h.core.svgSize(doc);
+  n.natural = [w, hh];
+  watchAppearance(n, drawSVG);
+  drawSVG(h, n);
+  c.style.transition = n.img.style.transition;
+  c.style.opacity = "0";
+  arrive(n, c);
+  h.emit(n, Event.Loaded, (id) => Events.loaded(id, w, hh));
+}
+
+/** dropSVG lets go of the SVG an Image showed. */
+function dropSVG(n) {
+  if (!n.svg) return;
+  n.svg.canvas.remove();
+  n.svg = null;
+  unwatchAppearance(n);
+}
+
+/** drawSVG draws an Image's SVG at the view's size and mode, tinted by its Color: the core's commands, replayed. */
+function drawSVG(h, n) {
+  const s = n.svg;
+  if (!s || !n.frame) return;
+  const c = s.canvas, k = window.devicePixelRatio || 1;
+  const w = n.frame[2], hh = n.frame[3];
+  const pw = Math.max(1, Math.round(w * k)), ph = Math.max(1, Math.round(hh * k));
+  if (c.width !== pw) c.width = pw;
+  if (c.height !== ph) c.height = ph;
+  c.style.width = w + "px";
+  c.style.height = hh + "px";
+  const g = c.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, pw, ph);
+  if (w <= 0 || hh <= 0) return;
+  const cmds = h.core.svgDraw(s.doc, w, hh, n.mode, 0);
+  if (!cmds) return;
+  g.scale(k, k);
+  replay(h, g, cmds, getComputedStyle(n.el).fontFamily);
+  // Color tints it as a template: the color through all its shape.
+  const tc = h.css(n.color);
+  if (tc) {
+    g.globalCompositeOperation = "source-in";
+    g.fillStyle = tc;
+    g.fillRect(0, 0, w, hh);
+    g.globalCompositeOperation = "source-over";
+  }
+}
 
 /** hashURL is the core's decoded placeholder (u32 width, u32 height, RGBA) as a data URL. */
 function hashURL(b) {
@@ -173,12 +261,12 @@ function showPlaceholder(h, n) {
 }
 
 /** arrive fades the image in over its placeholder (or from nothing) for Transition. */
-function arrive(n) {
+function arrive(n, el = n.img) {
   const had = !n.ph.hidden && n.ph.style.opacity !== "0";
   let d = n.transition;
   if (d < 0) d = 0;
   else if (d === 0 && had) d = 0.25;
-  const img = n.img.style, ph = n.ph.style;
+  const img = el.style, ph = n.ph.style;
   if (d <= 0 || !n.el.isConnected) {
     img.transition = "none";
     img.opacity = "1";
@@ -317,7 +405,7 @@ function stillFirstFrame(n, paused) {
 function tint(h, n) {
   const c = h.css(n.color);
   const s = n.el.style;
-  if (!c || !n.natural) {
+  if (!c || !n.natural || n.svg) {
     n.img.style.visibility = "";
     s.maskImage = s.webkitMaskImage = "";
     if (!n.background) s.backgroundColor = "";

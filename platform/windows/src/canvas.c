@@ -203,7 +203,13 @@ enum { MAX_SAVED = 64 };
 
 void wh_paint_canvas(node *n, gfx g) {
 	if (!n->canvas || !n->canvas_len) return;
-	reader r = {n->canvas, n->canvas_len, 0, wh_scale_of(n), 1, false};
+	wh_replay(g, n->canvas, n->canvas_len, wh_scale_of(n), 1);
+}
+
+// wh_replay replays a display list (a Canvas's, an SVG Image's: the
+// core's commands, in points) into g, k pixels a point, at an opacity.
+void wh_replay(gfx g, const uint8_t *b, size_t len, float scale, float alpha) {
+	reader r = {b, len, 0, scale, alpha, false};
 	float k = r.k;
 	GraphicsState saved[MAX_SAVED];
 	float alphas[MAX_SAVED];

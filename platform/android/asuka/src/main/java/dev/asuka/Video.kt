@@ -86,7 +86,7 @@ class AsukaVideo(private val rt: AsukaRuntime, private val asukaID: Int) : Frame
     override fun state(payload: ByteArray) = rt.emit(asukaID, AsukaEventKind.VIDEO_STATE) { AsukaEvents.videoState(asukaID, payload) }
     override fun tracks(payload: ByteArray) = rt.emit(asukaID, AsukaEventKind.VIDEO_TRACKS) { AsukaEvents.videoTracks(asukaID, payload) }
     override fun activity(): Activity? = rt.activity
-    override fun image(source: String, done: (Bitmap?) -> Unit) = AsukaImages.load(rt.app, source) { done(it.getOrNull()?.bitmap) }
+    override fun image(source: String, done: (Bitmap?) -> Unit) = AsukaImages.load(rt.app, source) { done(it.getOrNull()?.let { img -> rt.bitmapOf(img) }) }
     override fun assetUri(source: String): android.net.Uri {
         val dev = java.io.File(rt.app.filesDir, "asuka/assets/$source")
         return if (dev.exists()) android.net.Uri.fromFile(dev) else android.net.Uri.parse("asset:///$source")

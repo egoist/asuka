@@ -340,11 +340,44 @@ static void gradient(canvas_cmd *x, GtkSnapshot *snap, float alpha) {
 	gtk_snapshot_pop(snap);
 }
 
+static void display_draw(canvas_view *c, GtkSnapshot *snap);
+
 static bool canvas_draw(node *n, GtkSnapshot *snap, const graphene_rect_t *b) {
 	(void)b;
 	canvas_view *c = canvas_of(n);
 	if (!c) return false;
-	if (!c->cmds.len) return true;
+	display_draw(c, snap);
+	return true;
+}
+
+// ---- Display lists another view draws (an SVG Image's: the core's
+// commands for it) ----
+
+lx_display *lx_display_new(void) {
+	canvas_view *c = calloc(1, sizeof *c);
+	if (!c) abort();
+	return (lx_display *)c;
+}
+
+void lx_display_set(lx_display *d, node *n, const uint8_t *b, size_t len) {
+	canvas_view *c = (canvas_view *)d;
+	clear(c);
+	compile(n, c, b, len);
+}
+
+void lx_display_draw(lx_display *d, GtkSnapshot *snap) { display_draw((canvas_view *)d, snap); }
+
+void lx_display_free(lx_display *d) {
+	canvas_view *c = (canvas_view *)d;
+	if (!c) return;
+	clear(c);
+	ak_vec_free(&c->cmds);
+	ak_vec_free(&c->saves);
+	free(c);
+}
+
+static void display_draw(canvas_view *c, GtkSnapshot *snap) {
+	if (!c->cmds.len) return;
 	gtk_snapshot_save(snap);
 	float alpha = 1;
 	int pushes = 0;
@@ -408,7 +441,6 @@ static bool canvas_draw(node *n, GtkSnapshot *snap, const graphene_rect_t *b) {
 		pushes = c->saves.data[--c->saves.len].pushes;
 	}
 	gtk_snapshot_restore(snap);
-	return true;
 }
 
 const area lx_area_canvas = {

@@ -49,3 +49,27 @@ WEAK void asuka_measure_max(float maxWidth, float maxHeight) {
 	(void)maxWidth;
 	(void)maxHeight;
 }
+WEAK size_t asuka_svg_parse(const uint8_t *data, size_t len, uint8_t **out) {
+	(void)data;
+	(void)len;
+	*out = NULL;
+	return 0;
+}
+WEAK int asuka_svg_size(const uint8_t *doc, size_t len, float *width, float *height) {
+	(void)doc;
+	(void)len;
+	(void)width;
+	(void)height;
+	return -1;
+}
+WEAK size_t asuka_svg_draw(const uint8_t *doc, size_t len, float width, float height, int mode, uint64_t current, uint64_t tint, uint8_t **out) {
+	(void)doc;
+	(void)len;
+	(void)width;
+	(void)height;
+	(void)mode;
+	(void)current;
+	(void)tint;
+	*out = NULL;
+	return 0;
+}

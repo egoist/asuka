@@ -1,5 +1,6 @@
 // canvas.c: Canvas and what it draws with (its Graphics), Path, Shape
-// and Shader.
+// and Shader; std/svg's Document's builtins (svg.read, svg.size,
+// svg.draw: ui/svg.c reads and draws it).
 //
 // A Canvas's draw closure gets a Graphics, a runtime object valid while
 // it runs: each call records a drawing command, in points from the
@@ -14,6 +15,7 @@
 // when it changes and when what they read changes; only a drawing that
 // differs from the last is sent.
 #include "ui/ui_ext.h"
+#include "ui/svg.h"
 
 // ---- Path ----
 
@@ -352,6 +354,50 @@ static ak_val b_color_uniform(ak_val *a, uint32_t n) {
 	return (ak_val){.p = u};
 }
 
+// ---- std/svg's Document (ui/svg.c), to compiled code ----
+
+// svg.read(markup) -> bytes: the document, or a throw saying why not.
+// Any thread (spawn's): it keeps no state.
+static ak_val b_svg_read(ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	const ak_str *s = a[0].p;
+	char err[160];
+	ak_buf b = {0};
+	if (!ak_svg_parse(s ? s->data : "", s ? s->len : 0, &b, err)) {
+		ak_buf_free(&b);
+		ak_throw_msg("svg: %s", err);
+		return none();
+	}
+	ak_bytes *r = ak_bytes_new(b.data, b.len);
+	ak_buf_free(&b);
+	return (ak_val){.p = r};
+}
+
+// svg.size(data) -> [float]: its width and height ([0, 0]: not a
+// document).
+static ak_val b_svg_size(ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	const ak_bytes *d = a[0].p;
+	float w = 0, h = 0;
+	if (d) ak_svg_size(d->data, d->len, &w, &h);
+	ak_arr *v = ak_arr_new(AK_K_FLOAT, NULL, 2);
+	ak_arr_push(&v, fv(w));
+	ak_arr_push(&v, fv(h));
+	return (ak_val){.p = v};
+}
+
+// svg.draw(g, data, fit, color): the document fitted into the canvas (an
+// ImageMode's way), its currentColor color.
+static ak_val b_svg_draw(ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	ak_graphics *g = gfx(a[0].p, "svg.draw");
+	const ak_bytes *d = a[1].p;
+	ak_color c = (ak_color)a[3].i;
+	if (!c) c = ak_semantic_color(AK_SEMANTIC_COLOR_LABEL);
+	if (d) ak_svg_draw(d->data, d->len, &g->b, g->w, g->h, (int)a[2].i, c, 0);
+	return none();
+}
+
 void ak_canvas_builtins_init(void);
 
 void ak_canvas_builtins_init(void) {
@@ -367,6 +413,7 @@ void ak_canvas_builtins_init(void) {
 		{"canvas.text", b_text}, {"canvas.color_uniform", b_color_uniform}, {"path.new", b_path_new}, {"path.move", b_move},
 		{"path.line", b_line}, {"path.quad", b_quad}, {"path.cubic", b_cubic}, {"path.arc", b_arc}, {"path.close", b_close},
 		{"path.rect", b_rect}, {"path.rounded_rect", b_rounded}, {"path.ellipse", b_ellipse},
+		{"svg.read", b_svg_read}, {"svg.size", b_svg_size}, {"svg.draw", b_svg_draw},
 	};
 	for (size_t i = 0; i < AK_LEN(t); i++) ak_builtin_register(t[i].name, t[i].fn);
 }

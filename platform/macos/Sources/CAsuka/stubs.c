@@ -39,3 +39,6 @@ WEAK char *asuka_crash_start(const char *info) { (void)info; return NULL; }
 WEAK void asuka_crash_notify(void) {}
 WEAK void asuka_native_done(uint64_t call, const uint8_t *p, size_t len) { (void)call; (void)p; (void)len; }
 WEAK size_t asuka_native_invoke(uint64_t id, const uint8_t *p, size_t len, uint8_t **out) { (void)id; (void)p; (void)len; *out = NULL; return 0; }
+WEAK size_t asuka_svg_parse(const uint8_t *data, size_t len, uint8_t **out) { (void)data; (void)len; *out = NULL; return 0; }
+WEAK int asuka_svg_size(const uint8_t *doc, size_t len, float *width, float *height) { (void)doc; (void)len; (void)width; (void)height; return -1; }
+WEAK size_t asuka_svg_draw(const uint8_t *doc, size_t len, float width, float height, int mode, uint64_t current, uint64_t tint, uint8_t **out) { (void)doc; (void)len; (void)width; (void)height; (void)mode; (void)current; (void)tint; *out = NULL; return 0; }

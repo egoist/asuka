@@ -1,0 +1,43 @@
+// A Document: read from markup (the core's, core/src/ui/svg.c, whose C
+// tests say what it draws), its size, what it refuses; a Picture, its
+// size the document's unless its style says.
+
+let badge = r"""<svg xmlns="http://www.w3.org/2000/svg" width="48" height="24" viewBox="0 0 2 1">
+  <linearGradient id="g"><stop stop-color="#f00"/><stop offset="1" stop-color="#00f"/></linearGradient>
+  <rect width="2" height="1" rx=".5" fill="url(#g)"/>
+</svg>"""
+
+test "a document's size: its width and height, else its viewBox's" {
+  let a = try parse(badge)
+  expect(a.width == 48 && a.height == 24)
+  expect(!a.data.isEmpty())
+  let b = try parse(r#"<svg viewBox="0 0 10 30"/>"#)
+  expect(b.width == 10 && b.height == 30)
+}
+
+test "what isn't SVG says so" {
+  var said = ""
+  do {
+    let d = try parse("<html><body/></html>")
+    said = "read {d.width}"
+  } catch e {
+    said = e.message
+  }
+  expect(said == "svg: line 1: not an SVG document (its root isn't <svg>)")
+}
+
+test "documents are read on another thread" {
+  let d = try await spawn { try parse(badge) }
+  expect(d.width == 48)
+}
+
+test "a Picture: the document's size, or its style's" {
+  let doc = try parse(badge)
+  let app = mount(Column {
+    Picture(doc)
+    Picture(doc) { width: 96 }
+  })
+  let shown = app.snapshot()
+  expect(shown.contains("Canvas 0,0 48x24"))
+  expect(shown.contains("Canvas 0,24 96x48"))
+}

@@ -178,4 +178,19 @@ ASUKA_API void asuka_crash_notify(void);
 ASUKA_API void asuka_native_done(uint64_t call, const uint8_t *p, size_t len);
 ASUKA_API size_t asuka_native_invoke(uint64_t id, const uint8_t *p, size_t len, uint8_t **out);
 
+// SVG, read and drawn by the core the same on every platform (an Image
+// whose source is SVG): asuka_svg_parse reads data, if it's SVG markup
+// the core reads, into a document; its length, *out the document (free it
+// with asuka_free), or 0 if it isn't one (a PNG's bytes: at once).
+// asuka_svg_size is a document's size in points (0; -1: not a document).
+// asuka_svg_draw is the Canvas commands (ops' Canvas Commands) that draw
+// it in a box of width by height points, fitted by mode (an ImageMode),
+// clipped to the box, its currentColor current (0: the label color) and,
+// with a tint (not 0), every color the tint's at the color's opacity;
+// their length, *out the commands (asuka_free), 0 if there's nothing to
+// draw. Any thread: they keep no state.
+ASUKA_API size_t asuka_svg_parse(const uint8_t *data, size_t len, uint8_t **out);
+ASUKA_API int asuka_svg_size(const uint8_t *doc, size_t len, float *width, float *height);
+ASUKA_API size_t asuka_svg_draw(const uint8_t *doc, size_t len, float width, float height, int mode, uint64_t current, uint64_t tint, uint8_t **out);
+
 #endif

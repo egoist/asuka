@@ -14,6 +14,8 @@
 //	               selectable Text, a rich TextField, its paste types,
 //	               formats and accessory
 //	canvas.c       Canvas and Graphics, Path, Shape, Shader
+//	svg.c          SVG documents read at run time, drawn as a Canvas's
+//	               commands (std/svg's Document, an Image's SVG)
 //	share.c        share, haptics, the clipboard, URLs, announcements,
 //	               native modules' calls (Call and Result), what other
 //	               apps open the app with or share with it

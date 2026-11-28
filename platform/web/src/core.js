@@ -176,6 +176,46 @@ export async function startCore(host, options = {}) {
       }
     },
     saveState: () => null,
+    // SVG an Image shows, read and drawn by the core (core/src/ui/svg.c):
+    // the document bytes hold (null: not SVG), its size in points, and the
+    // commands that draw it in a box of w by h fitted by mode (an
+    // ImageMode), every color tint's when tint (a core color) isn't 0.
+    svgParse: (bytes) => {
+      const out = e.asuka_alloc(4);
+      try {
+        const n = withBytes(bytes, (p, k) => e.asuka_svg_parse(p, k, out));
+        const q = new DataView(memory().buffer).getUint32(out, true);
+        if (!n || !q) return null;
+        const b = new Uint8Array(memory().buffer, q, n).slice();
+        e.asuka_free(q);
+        return b;
+      } finally {
+        e.asuka_free(out);
+      }
+    },
+    svgSize: (doc) => {
+      const out = e.asuka_alloc(8);
+      try {
+        withBytes(doc, (p, k) => e.asuka_svg_size(p, k, out, out + 4));
+        const v = new DataView(memory().buffer);
+        return [v.getFloat32(out, true), v.getFloat32(out + 4, true)];
+      } finally {
+        e.asuka_free(out);
+      }
+    },
+    svgDraw: (doc, w, h, mode, tint) => {
+      const out = e.asuka_alloc(4);
+      try {
+        const n = withBytes(doc, (p, k) => e.asuka_svg_draw(p, k, w, h, mode, 0n, BigInt(tint || 0), out));
+        const q = new DataView(memory().buffer).getUint32(out, true);
+        if (!n || !q) return null;
+        const b = new Uint8Array(memory().buffer, q, n).slice();
+        e.asuka_free(q);
+        return b;
+      } finally {
+        e.asuka_free(out);
+      }
+    },
   };
   host.attach(memory());
   host.connect(core, e.asuka_io());

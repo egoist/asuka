@@ -5,8 +5,48 @@ import CommonCrypto
 #if canImport(AsukaOps)
 import AsukaOps
 #endif
+#if canImport(CAsuka)
+@_implementationOnly import CAsuka
+#endif
 
 // Images
+
+/// An SVG document the core read (an Image whose source is SVG: read the
+/// same on every platform, core/src/ui/svg.c), drawn as a display list
+/// with Core Graphics at the size it's shown.
+final class AsukaSVG: @unchecked Sendable {
+    let doc: [UInt8]
+    let size: CGSize
+
+    /// The document data holds, if it's SVG (any thread).
+    init?(_ data: Data) {
+        #if canImport(CAsuka)
+        var out: UnsafeMutablePointer<UInt8>? = nil
+        let n = data.withUnsafeBytes { b in asuka_svg_parse(b.bindMemory(to: UInt8.self).baseAddress, b.count, &out) }
+        guard n > 0, let out else { return nil }
+        doc = Array(UnsafeBufferPointer(start: out, count: n))
+        asuka_free(out)
+        var w: Float = 0, h: Float = 0
+        _ = asuka_svg_size(doc, doc.count, &w, &h)
+        size = CGSize(width: CGFloat(w), height: CGFloat(h))
+        #else
+        return nil
+        #endif
+    }
+
+    /// Its display list in a box of size, fitted by mode (an ImageMode).
+    func commands(_ size: CGSize, mode: Int32) -> [UInt8] {
+        #if canImport(CAsuka)
+        var out: UnsafeMutablePointer<UInt8>? = nil
+        let n = asuka_svg_draw(doc, doc.count, Float(size.width), Float(size.height), mode, 0, 0, &out)
+        guard n > 0, let out else { return [] }
+        defer { asuka_free(out) }
+        return Array(UnsafeBufferPointer(start: out, count: n))
+        #else
+        return []
+        #endif
+    }
+}
 
 /// Loads images off the main thread: fetched (http, https; kept on disk,
 /// AsukaDiskCache) or read (the app's assets), decoded and prepared for
@@ -67,6 +107,16 @@ final class AsukaImageLoader: @unchecked Sendable {
     }
 
     private static func decode(_ data: Data?) -> Result<UIImage, Error> {
+        // SVG: read by the core, kept as its document on a pixel that
+        // stands in for it (AsukaImageView draws it at the size it shows).
+        if let data, let svg = AsukaSVG(data) {
+            let f = UIGraphicsImageRendererFormat()
+            f.scale = 1
+            f.opaque = false
+            let img = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: f).image { _ in }
+            objc_setAssociatedObject(img, &asukaSVGKey, svg, .OBJC_ASSOCIATION_RETAIN)
+            return .success(img)
+        }
         // One point per pixel, as on the web; decoded now, off the main thread.
         guard let data, let img = UIImage(data: data, scale: 1) else { return .failure(AsukaImageError("can't decode the image")) }
         let shown = img.preparingForDisplay() ?? img
@@ -80,10 +130,26 @@ final class AsukaImageLoader: @unchecked Sendable {
 }
 
 nonisolated(unsafe) private var asukaAnimatedKey = 0
+nonisolated(unsafe) private var asukaSVGKey = 0
 
 extension UIImage {
     /// The file of an animated image the loader decoded (its frames' source).
     var asukaAnimation: Data? { objc_getAssociatedObject(self, &asukaAnimatedKey) as? Data }
+    /// The SVG document a loaded image stands in for.
+    var asukaSVG: AsukaSVG? { objc_getAssociatedObject(self, &asukaSVGKey) as? AsukaSVG }
+    /// Its size in points: an SVG's, else one point per pixel.
+    var asukaNaturalSize: CGSize { asukaSVG?.size ?? CGSize(width: size.width * scale, height: size.height * scale) }
+
+    /// An SVG drawn at size, as an image's mode fits it (the core's
+    /// display list, replayed), its colors resolved in traits.
+    static func asukaDraw(_ svg: AsukaSVG, _ size: CGSize, mode: Int32, _ traits: UITraitCollection) -> UIImage {
+        let cmds = svg.commands(size, mode: mode)
+        let f = UIGraphicsImageRendererFormat(for: traits)
+        f.opaque = false
+        return UIGraphicsImageRenderer(size: size, format: f).image { ctx in
+            AsukaCanvasView.replay(ctx.cgContext, cmds, traits)
+        }
+    }
 
     /// An image of the core's pixels: RGBA, 8 bits each, not premultiplied
     /// (PlaceholderImage: u32 width, u32 height, the pixels).
@@ -117,6 +183,13 @@ final class AsukaImageView: UIImageView {
     private var animation: Data?
     private var frame0 = 0
     private var generation = 0
+    /// An SVG picture (and placeholder): drawn at the size the view
+    /// shows it, again when that, its mode or the appearance changes.
+    private var svg: AsukaSVG?
+    private var placeholderSVG: AsukaSVG?
+    private var svgDrawn: (CGSize, UIView.ContentMode, UIUserInterfaceStyle)?
+    private var placeholderDrawn: (CGSize, UIView.ContentMode, UIUserInterfaceStyle)?
+    private var placeholderTemplate = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -128,12 +201,52 @@ final class AsukaImageView: UIImageView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override var contentMode: UIView.ContentMode { didSet { syncPlaceholderMode() } }
+    override var contentMode: UIView.ContentMode { didSet { syncPlaceholderMode(); drawSVG() } }
     override var tintColor: UIColor! { didSet { placeholderView.tintColor = tintColor } }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         placeholderView.frame = bounds
+        drawSVG()
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        if previous?.userInterfaceStyle != traitCollection.userInterfaceStyle || previous?.displayScale != traitCollection.displayScale {
+            svgDrawn = nil
+            placeholderDrawn = nil
+            drawSVG()
+        }
+    }
+
+    /// The ImageMode a content mode is.
+    static func imageMode(_ m: UIView.ContentMode) -> Int32 {
+        switch m {
+        case .scaleAspectFill: return AsukaImageMode.fill.rawValue
+        case .scaleToFill: return AsukaImageMode.stretch.rawValue
+        case .center: return AsukaImageMode.center.rawValue
+        default: return AsukaImageMode.fit.rawValue
+        }
+    }
+
+    /// Draws the SVG picture and placeholder at the view's size, in its
+    /// mode (the core fits it: the image is the view's size), unless
+    /// they're drawn so already.
+    private func drawSVG() {
+        let size = bounds.size
+        guard size.width > 0, size.height > 0 else { return }
+        let style = traitCollection.userInterfaceStyle
+        if let svg, svgDrawn.map({ $0.0 != size || $0.1 != contentMode || $0.2 != style }) ?? true {
+            svgDrawn = (size, contentMode, style)
+            let img = UIImage.asukaDraw(svg, size, mode: Self.imageMode(contentMode), traitCollection)
+            image = tinted ? img.withRenderingMode(.alwaysTemplate) : img
+        }
+        let pm = placeholderView.contentMode
+        if let svg = placeholderSVG, placeholderDrawn.map({ $0.0 != size || $0.1 != pm || $0.2 != style }) ?? true {
+            placeholderDrawn = (size, pm, style)
+            let img = UIImage.asukaDraw(svg, size, mode: Self.imageMode(pm), traitCollection)
+            placeholderView.image = placeholderTemplate ? img.withRenderingMode(.alwaysTemplate) : img
+        }
     }
 
     private func syncPlaceholderMode() {
@@ -141,6 +254,7 @@ final class AsukaImageView: UIImageView {
         case -1: placeholderView.contentMode = contentMode
         default: placeholderView.contentMode = AsukaImageView.contentMode(placeholderMode)
         }
+        drawSVG()
     }
 
     static func contentMode(_ m: Int32) -> UIView.ContentMode {
@@ -158,14 +272,19 @@ final class AsukaImageView: UIImageView {
     func setPlaceholder(_ img: UIImage?, template: Bool) {
         placeholderView.layer.removeAllAnimations()
         placeholderView.alpha = 1
-        placeholderView.image = template ? img?.withRenderingMode(.alwaysTemplate) : img
+        placeholderSVG = img?.asukaSVG
+        placeholderTemplate = template
+        placeholderDrawn = nil
+        placeholderView.image = placeholderSVG != nil ? nil : template ? img?.withRenderingMode(.alwaysTemplate) : img
         placeholderView.isHidden = img == nil
+        drawSVG()
     }
 
     /// Takes the picture away (a new source is loading).
     func clear() {
         stopFrames()
         animation = nil
+        svg = nil
         image = nil
     }
 
@@ -174,7 +293,14 @@ final class AsukaImageView: UIImageView {
     func show(_ img: UIImage) {
         layer.removeAnimation(forKey: "asuka.image")
         let d = transition < 0 ? 0 : transition > 0 ? transition : showsPlaceholder ? 0.25 : 0
-        image = tinted ? img.withRenderingMode(.alwaysTemplate) : img
+        svg = img.asukaSVG
+        svgDrawn = nil
+        if svg != nil {
+            image = nil
+            drawSVG()
+        } else {
+            image = tinted ? img.withRenderingMode(.alwaysTemplate) : img
+        }
         animation = img.asukaAnimation
         frame0 = 0
         restartFrames()
@@ -604,7 +730,8 @@ final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
                 n.imageLoaded = true
                 iv.tinted = n.color != 0
                 iv.show(img)
-                let w = Double(img.size.width * img.scale), h = Double(img.size.height * img.scale)
+                let s = img.asukaNaturalSize
+                let w = Double(s.width), h = Double(s.height)
                 self.emit(id, .loaded) { AsukaEvents.loaded(id, x: w, y: h) }
                 if img.asukaAnimation != nil { self.emit(id, .animated) { AsukaEvents.animated(id) } }
             case .failure(let e):

@@ -416,6 +416,8 @@ func exportFlags() []string {
 		"asuka_sqlite_done",
 		// platform/crash's record (core/src/std/crash.c)
 		"asuka_crash_start", "asuka_crash_notify", "asuka_crash_where", "asuka_crash_read",
+		// SVG an Image shows (core/src/ui/svg.c)
+		"asuka_svg_parse", "asuka_svg_size", "asuka_svg_draw",
 	} {
 		f = append(f, "-Wl,--export="+name)
 	}

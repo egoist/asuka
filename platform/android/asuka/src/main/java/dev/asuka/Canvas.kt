@@ -15,20 +15,12 @@ import java.nio.ByteOrder
 
 /**
  * A Canvas: its display list (ui.Graphics's commands, in points), replayed
- * on Android's Canvas in onDraw, in pixels. Semantic colors resolve in the
- * theme as it draws. Paths and paints are reused from draw to draw.
+ * on Android's Canvas in onDraw, in pixels (AsukaReplay).
  */
 @SuppressLint("ViewConstructor")
 class AsukaCanvas(private val rt: AsukaRuntime) : View(rt.themed) {
     private var commands: ByteBuffer? = null
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-    private val text = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val paths = ArrayList<Path>()
-    private val alphas = ArrayList<Float>() // the opacity each Save kept
-    private val rules = ArrayList<Boolean>() // and the fill rule (even-odd)
-    private val matrix = android.graphics.Matrix()
-    private val values = FloatArray(9)
+    private val replay = AsukaReplay(rt)
 
     init {
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -43,7 +35,28 @@ class AsukaCanvas(private val rt: AsukaRuntime) : View(rt.themed) {
     }
 
     override fun onDraw(canvas: Canvas) {
-        val r = commands?.duplicate()?.order(ByteOrder.LITTLE_ENDIAN) ?: return
+        commands?.let { replay.draw(canvas, it) }
+    }
+}
+
+/**
+ * Replays a display list (a Canvas's; an SVG Image's, the core's drawing
+ * of it: commands in points) on an Android Canvas, in pixels. Semantic
+ * colors resolve in the theme as it draws. Paths and paints are reused
+ * from draw to draw.
+ */
+class AsukaReplay(private val rt: AsukaRuntime) {
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val paths = ArrayList<Path>()
+    private val alphas = ArrayList<Float>() // the opacity each Save kept
+    private val rules = ArrayList<Boolean>() // and the fill rule (even-odd)
+    private val matrix = android.graphics.Matrix()
+    private val values = FloatArray(9)
+
+    fun draw(canvas: Canvas, commands: ByteBuffer) {
+        val r = commands.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         val d = rt.density
         var used = 0
         var alpha = 1f
@@ -171,7 +184,7 @@ class AsukaCanvas(private val rt: AsukaRuntime) : View(rt.themed) {
                     val align = r.get().toInt()
                     val x = f() * d; val y = f() * d
                     val b = ByteArray(r.int).also { r.get(it) }
-                    text.typeface = AsukaFonts.weighted(context, Typeface.DEFAULT, if (weight > 0) weight else 400, false)
+                    text.typeface = AsukaFonts.weighted(rt.themed, Typeface.DEFAULT, if (weight > 0) weight else 400, false)
                     text.textAlign = when (align) {
                         AsukaTextAlign.CENTER -> Paint.Align.CENTER
                         AsukaTextAlign.END -> Paint.Align.RIGHT

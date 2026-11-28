@@ -1,8 +1,10 @@
-// Package std/svg shows SVG icons with the platform's own vector
-// drawing: Core Graphics, Android's Canvas, the browser's SVG, GDI+ on
-// Windows, Cairo on Linux. An Icon's markup is parsed when the app
-// compiles (into layers of paths: transforms applied, arcs made curves),
-// so nothing is parsed on the device, and nothing is rasterized.
+// Package std/svg shows SVG with the platform's own vector drawing: Core
+// Graphics, Android's Canvas, the browser's canvas, GDI+ on Windows,
+// Cairo on Linux. Nothing is rasterized: it's sharp at any size.
+//
+// SVG the app has when it's written is an Icon: its markup is parsed when
+// the app compiles (into layers of paths: transforms applied, arcs made
+// curves), so nothing is parsed on the device.
 //
 //   let download = svg.Icon(r"""<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/></svg>""")
 //
@@ -12,12 +14,39 @@
 //     color: .accent
 //   }
 //
-// It reads what icon sets use (Lucide, Material, Heroicons, Feather):
-// path, rect, circle, ellipse, line, polyline, polygon, g and use; fill,
-// stroke and their widths, caps, joins and opacities, as attributes or in
-// a style attribute; and transforms. It skips text, gradients (painted
-// with the icon's color), clipping, masks, filters, and fill-rule
-// evenodd.
+// An Icon reads what icon sets use (Lucide, Material, Heroicons,
+// Feather): path, rect, circle, ellipse, line, polyline, polygon, g and
+// use; fill, stroke and their widths, caps, joins and opacities, as
+// attributes or in a style attribute; and transforms. It skips text,
+// gradients (painted with the icon's color), clipping, masks, filters,
+// and fill-rule evenodd.
+//
+// SVG the app gets while it runs (from the network, a file, what the user
+// gives it) is a Document: parse reads markup, load fetches it, Picture
+// shows it. The core reads it, the same on every platform, into the
+// drawing each platform does with its own vector graphics. An Image whose
+// source is SVG is drawn the same way.
+//
+//   state logo: svg.Document? = none
+//   task {
+//     logo = try? await svg.load("https://example.com/logo.svg")
+//   }
+//   if let doc = logo {
+//     svg.Picture(doc) { width: 120 }
+//   }
+//
+// A Document reads more of SVG: everything an Icon does, and nested svg
+// elements, symbols, defs and use, linear and radial gradients (their
+// units, transforms, spread and stops), clipPath, fill-rule and
+// clip-rule evenodd, stroke dashes, opacity, text and tspan (drawn with
+// the platform's font: their position, size, weight and anchor),
+// viewBox and preserveAspectRatio, and style elements (CSS by type,
+// class and id, descendant and child selectors). It doesn't draw filters,
+// masks, patterns, markers, embedded images or animation, and runs no
+// script: nothing outside the document is ever fetched.
+
+import std/fs
+import std/http
 
 /// An SVG icon. Its source is a string literal: the compiler parses it
 /// (a markup it can't read is the compiler's error) into data, what View
@@ -129,3 +158,78 @@ pub struct Layer {
 /// size, so it redraws itself when its box changes, without the app
 /// working it out again. It has no size of its own: give it one.
 pub native component Shape(layers: [Layer]) {}
+
+// ---- Documents: SVG read while the app runs ----
+
+/// An SVG document read while the app runs: parse and load make one,
+/// Picture shows it. It's a value: keep it, pass it, read it on another
+/// thread (spawn).
+pub struct Document {
+  /// What it draws, as the core encodes it (core/src/ui/svg.h).
+  data: bytes = bytes()
+  /// Its size in points when its style gives none: the svg's width and
+  /// height, else its viewBox's.
+  width: float = 0
+  height: float = 0
+}
+
+native fn read(markup: string) throws -> bytes
+native fn size(data: bytes) -> [float]
+native fn draw(g: Graphics, data: bytes, fit: Fit, color: Color)
+
+/// Reads SVG markup into a document. It throws if the markup isn't an
+/// SVG document (its root an svg element), or is one too big to draw.
+///
+///   let doc = try svg.parse(r#"<svg viewBox="0 0 2 2"><circle cx="1" cy="1" r="1" fill="tomato"/></svg>"#)
+pub fn parse(markup: string) throws -> Document {
+  let data = try read(markup)
+  let s = size(data)
+  return Document(data: data, width: s[0], height: s[1])
+}
+
+/// Loads a document from source: an http(s) URL, a file's path (or a
+/// file:// URL), or one of the app's assets; read off the main thread.
+/// It throws if it can't be loaded or isn't SVG.
+pub async fn load(source: string) throws -> Document {
+  var b = bytes()
+  if source.hasPrefix("http://") || source.hasPrefix("https://") {
+    let r = try await http.get(source)
+    if r.status < 200 || r.status > 299 {
+      throw Error("{source}: HTTP {r.status}")
+    }
+    b = r.body
+  } else if source.hasPrefix("/") || source.hasPrefix("file://") {
+    let path = source.trimPrefix("file://")
+    b = try await spawn { try fs.read(path) }
+  } else {
+    b = try await fs.readAsset(source)
+  }
+  let markup = b.string()
+  return try await spawn { try parse(markup) }
+}
+
+/// How a Picture fits its document in its box.
+pub enum Fit {
+  /// All of it, its aspect kept.
+  contain
+  /// Filling the box, its aspect kept, cut at the edges.
+  cover
+  /// Filling the box, stretched.
+  stretch
+  /// At its own size, centered.
+  center
+}
+
+/// A document, drawn in its box: fitted, and within its own size as its
+/// preserveAspectRatio says. Without a size of its style, it takes the
+/// document's.
+pub component Picture(document: Document) {
+  /// What currentColor paints.
+  prop color: Color = .label
+  prop fit: Fit = .contain
+
+  Canvas(g => draw(g, document.data, fit, color)) {
+    width: document.width
+    aspectRatio: if document.height > 0 { document.width / document.height } else { 1 }
+  }
+}

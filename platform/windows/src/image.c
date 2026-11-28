@@ -1,6 +1,7 @@
 // image.c: Image views. Images are fetched and decoded off the main thread
 // by Windows's own codecs (WIC: PNG, JPEG, GIF, BMP, TIFF, ICO, and HEIF,
-// WebP, AVIF and RAW where their extensions are installed), turned upright
+// WebP, AVIF and RAW where their extensions are installed; SVG by the
+// core, as on every platform, drawn as vectors at the view's size), turned upright
 // as their EXIF orientation says, kept in memory by source, and drawn with
 // GDI+ at the view's mode, clipped to its corners. An animated GIF, APNG or
 // WebP (its frames' pictures by WIC's codecs) plays here, frame after frame
@@ -28,6 +29,11 @@ typedef struct decoded {
 	uint8_t *pixels;
 	GpBitmap *bmp;  // made on the main thread, the first time it's shown
 	dsk_anim *anim;
+	// SVG: the core's document (core/src/ui/svg.c, read the same on every
+	// platform) and its size in points, drawn as vectors at the view's size.
+	uint8_t *svg;
+	size_t svg_len;
+	float sw, sh;
 	char *err;
 	struct decoded *next;  // the cache's chain
 } decoded;
@@ -45,6 +51,7 @@ struct wh_image {
 	// The placeholder until the image arrives: an asset's (tinted as the
 	// image is) or the hash's (closed with the view).
 	GpBitmap *ph;
+	const decoded *ph_svg;  // an SVG placeholder (the cache's), in ph's place
 	int pw, phh;
 	GpBitmap *hash;
 	int hw, hh;
@@ -257,6 +264,16 @@ static decoded *decode(const char *src, const char *assets) {
 		free(path);
 	}
 	if (d->err) return d;
+	// SVG: the core reads it, as every platform does.
+	uint8_t *doc = NULL;
+	size_t dn = asuka_svg_parse(data, len, &doc);
+	if (dn) {
+		asuka_svg_size(doc, dn, &d->sw, &d->sh);
+		d->svg = doc, d->svg_len = dn;
+		d->w = (int)ceilf(d->sw), d->h = (int)ceilf(d->sh);
+		free(data);
+		return d;
+	}
 	IWICImagingFactory *f = NULL;
 	CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, &IID_IWICImagingFactory, (void **)&f);
 	if (dsk_anim_is_animated(data, len)) {
@@ -432,7 +449,7 @@ static void fade_step(node *n) {
 	double t = (now_seconds() - im->fade_start) / im->fade_for;
 	if (t >= 1) {
 		im->fade = 1;
-		im->ph = NULL, im->pw = im->phh = 0;
+		im->ph = NULL, im->ph_svg = NULL, im->pw = im->phh = 0;
 		stop_timer(&im->fade_timer);
 	} else {
 		im->fade = (float)t;
@@ -516,6 +533,7 @@ void wh_image_close(node *n) {
 	stop_playing(im);
 	stop_timer(&im->fade_timer);
 	if (im->ph == im->hash) im->ph = NULL;
+	im->ph_svg = NULL;
 	dispose(&im->hash);
 	for (uint32_t i = 0; i < nwaiters;) {
 		if (waiters[i].id == n->id) {
@@ -537,11 +555,11 @@ static void show_placeholder(node *n) {
 	wh_image *im = n->image;
 	if (im->loaded) return;
 	if (im->hash) {
-		im->ph = im->hash, im->pw = im->hw, im->phh = im->hh;
+		im->ph = im->hash, im->ph_svg = NULL, im->pw = im->hw, im->phh = im->hh;
 		wh_redraw(n);
 		return;
 	}
-	im->ph = NULL;
+	im->ph = NULL, im->ph_svg = NULL;
 	wh_redraw(n);
 	if (im->placeholder && *im->placeholder) fetch(n, im->placeholder, true);
 }
@@ -551,10 +569,10 @@ static void arrive(node *n) {
 	wh_image *im = n->image;
 	double d = im->trans;
 	if (d < 0) d = 0;
-	else if (d == 0 && im->ph) d = 0.25;
+	else if (d == 0 && (im->ph || im->ph_svg)) d = 0.25;
 	stop_timer(&im->fade_timer);
 	if (d <= 0 || !n->hwnd || !IsWindowVisible(n->hwnd)) {
-		im->fade = 1, im->ph = NULL;
+		im->fade = 1, im->ph = NULL, im->ph_svg = NULL;
 		return;
 	}
 	im->fade = 0;
@@ -573,9 +591,9 @@ static void arrived(node *n, decoded *d, const char *src, bool placeholder) {
 		if (!placeholder) wh_emit_str(n, AK_EVENT_FAILED, d->err, strlen(d->err));
 		return;
 	}
-	if (!d->bmp) d->bmp = g_bitmap(d->w, d->h, d->pixels);
+	if (!d->bmp && !d->svg) d->bmp = g_bitmap(d->w, d->h, d->pixels);
 	if (placeholder) {
-		im->ph = d->bmp, im->pw = d->w, im->phh = d->h;
+		im->ph = d->bmp, im->ph_svg = d->svg ? d : NULL, im->pw = d->w, im->phh = d->h;
 		wh_redraw(n);
 		return;
 	}
@@ -584,7 +602,7 @@ static void arrived(node *n, decoded *d, const char *src, bool placeholder) {
 	release(im);
 	im->loaded = true;
 	arrive(n);
-	ak_event e = {.kind = AK_EVENT_LOADED, .x = d->w, .y = d->h};
+	ak_event e = {.kind = AK_EVENT_LOADED, .x = d->svg ? d->sw : d->w, .y = d->svg ? d->sh : d->h};
 	wh_emit(n, &e);
 	if (d->anim && dsk_anim_player_init(&im->player, d->anim)) {
 		im->playing = true;
@@ -635,6 +653,7 @@ void wh_set_image_prop(node *n, uint16_t p, const ak_value *v) {
 		break;
 	case AK_PROP_IMAGE_PLACEHOLDER_IMAGE:
 		if (im->ph == im->hash) im->ph = NULL;
+		im->ph_svg = NULL;
 		dispose(&im->hash);
 		im->hash = placeholder_bitmap((const uint8_t *)v->s.p, v->s.len, &im->hw, &im->hh);
 		show_placeholder(n);
@@ -660,7 +679,18 @@ void wh_set_image_prop(node *n, uint16_t p, const ak_value *v) {
 
 void wh_image_size(node *n, float *w, float *h) {
 	wh_image *im = n->image;
-	if (im && im->bmp) *w = (float)im->bw, *h = (float)im->bh;
+	if (im && im->loaded && im->dec && im->dec->svg) *w = im->dec->sw, *h = im->dec->sh;
+	else if (im && im->bmp) *w = (float)im->bw, *h = (float)im->bh;
+}
+
+// paint_svg draws an SVG in the box w×h (pixels) at a mode: the core's
+// commands for it, replayed; its colors the tint's unless tint is 0.
+static void paint_svg(node *n, gfx g, const decoded *d, int32_t mode, float w, float h, float alpha, ak_color tint) {
+	float k = wh_scale_of(n);
+	uint8_t *out = NULL;
+	size_t m = asuka_svg_draw(d->svg, d->svg_len, w / k, h / k, mode, 0, tint, &out);
+	if (m) wh_replay(g, out, m, k, alpha);
+	asuka_free(out);
 }
 
 void wh_image_tint_changed(node *n) {
@@ -730,12 +760,17 @@ void wh_paint_image(node *n, gfx g, float w, float h, float radius) {
 		g_clip_path(g, clip);
 	}
 	float d[4], s[4];
-	if (im->ph && im->pw > 0 && im->phh > 0 && (!im->loaded || im->fade < 1)) {
+	if (im->ph_svg && (!im->loaded || im->fade < 1)) {
+		int32_t mode = im->ph_mode >= 0 ? im->ph_mode : im->mode;
+		paint_svg(n, g, im->ph_svg, mode, w, h, im->loaded ? 1 - im->fade : 1, n->color);
+	} else if (im->ph && im->pw > 0 && im->phh > 0 && (!im->loaded || im->fade < 1)) {
 		int32_t mode = im->ph_mode >= 0 ? im->ph_mode : im->mode;
 		place(n, mode, (float)im->pw, (float)im->phh, w, h, d, s);
 		g_draw_image(g, im->ph, im->loaded ? 1 - im->fade : 1, d[0], d[1], d[2], d[3], s[0], s[1], s[2], s[3]);
 	}
-	if (im->loaded && im->bmp && im->bw > 0 && im->bh > 0) {
+	if (im->loaded && im->dec && im->dec->svg) {
+		paint_svg(n, g, im->dec, im->mode, w, h, im->fade, n->color);
+	} else if (im->loaded && im->bmp && im->bw > 0 && im->bh > 0) {
 		GpBitmap *b = n->color ? tinted(n) : im->bmp;
 		place(n, im->mode, (float)im->bw, (float)im->bh, w, h, d, s);
 		g_draw_image(g, b, im->fade, d[0], d[1], d[2], d[3], s[0], s[1], s[2], s[3]);

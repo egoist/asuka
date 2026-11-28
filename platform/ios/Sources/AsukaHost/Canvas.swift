@@ -27,6 +27,13 @@ final class AsukaCanvasView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext(), !commands.isEmpty else { return }
+        AsukaCanvasView.replay(ctx, commands, traitCollection)
+    }
+
+    /// Replays a display list into ctx (UIKit's current context: text is
+    /// drawn into it), its semantic colors resolved in traitCollection: a
+    /// Canvas's, and an SVG Image's (the core's drawing of it).
+    static func replay(_ ctx: CGContext, _ commands: [UInt8], _ traitCollection: UITraitCollection) {
         commands.withUnsafeBytes { buf in
             var r = AsukaReader(buf)
             // FillRule's even-odd, saved and restored with the state.

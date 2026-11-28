@@ -629,6 +629,11 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             richInvalidate(n)
         case .image, .symbol:
             (v as? NSImageView)?.contentTintColor = c
+            // A tint makes the image a template: one already showing (a
+            // cached one, shown as its source was set) is shown again.
+            if n.kind == .image, let x = n.image, x.loaded, let img = x.image, (c != nil) != (n.view as? NSImageView)?.image?.isTemplate {
+                showImage(n, img)
+            }
         case .progressRing:
             ringColor(n)
         case .activity, .progress:

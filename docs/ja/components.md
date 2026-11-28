@@ -559,12 +559,12 @@ component Pictures(photo: Photo) {
 |---|---|---|
 | iOS | ImageIO：PNG、JPEG、GIF、WebP、HEIC、AVIF | ImageIO の `CGAnimateImageDataWithBlock`。ファイルの指定どおりのタイミングとループで再生します（HEIF のシーケンスも） |
 | Android | `BitmapFactory`、次に `ImageDecoder`：PNG、JPEG、GIF、WebP、HEIF、AVIF | `AnimatedImageDrawable`：GIF と WebP（システムが再生できれば AVIF のシーケンスも）。APNG は最初のフレームを表示します |
-| macOS | `NSImage`：PNG、JPEG、GIF、WebP、HEIC、AVIF、SVG | iOS と同じ |
+| macOS | `NSImage`：PNG、JPEG、GIF、WebP、HEIC、AVIF | iOS と同じ |
 | Windows | WIC：PNG、JPEG、GIF、BMP、TIFF、ICO。コーデックが入っていれば WebP、HEIF、AVIF も（WebP のものは Windows 11 に付属。HEIF には HEIF 画像拡張機能と HEVC ビデオ拡張機能、AVIF には AV1 ビデオ拡張機能が必要） | Asuka がフレームを順に再生。アニメーション WebP の各フレームは WIC の WebP コーデックでデコード |
-| Linux | GDK のローダー：PNG、JPEG、GIF。インストールされていれば WebP、AVIF、HEIF、SVG、JPEG XL も | Asuka がフレームを順に再生。アニメーション WebP の各フレームは GDK の WebP ローダーでデコード |
+| Linux | GDK のローダー：PNG、JPEG、GIF。インストールされていれば WebP、AVIF、HEIF、JPEG XL も | Asuka がフレームを順に再生。アニメーション WebP の各フレームは GDK の WebP ローダーでデコード |
 | Web | ブラウザー | WebCodecs の `ImageDecoder` でキャンバスに描画（AVIF のシーケンスも）。ない場合（Safari）は `<img>` そのもので、一時停止中は最初のフレームを表示します |
 
-SVG を画像として表示できるのは、Mac、Linux、Web だけです。どのプラットフォームでも SVG のアイコンを表示するには、[`std/svg`](#svg-アイコン) でベクターとして描きます。
+SVG は例外です。プラットフォームごとに SVG の読み方が異なり、iOS、Android、Windows はそもそも読めないため、Asuka 自身がどのプラットフォームでも同じように読み込みます。ソースが SVG（`.svg` のファイル、アセット、URL）の `Image` は、表示されるサイズでベクターとして描かれるので、どんなサイズや倍率でもくっきりしています。`color` はほかの画像と同じように色を付けます。描ける内容は [`svg.Document`](#svg-ドキュメント) と同じです。ブラウザーでは、名前が `.svg` で終わるソース（または SVG の `data:` URL）をこの方法で読みます。別のサイトにあり、ページからの読み取りを許していない（CORS ヘッダーがない）SVG は、ブラウザーが表示します。
 
 ## シンボルとアイコン
 
@@ -607,7 +607,7 @@ component DownloadRow {
 }
 ```
 
-`color` は、SVG が `currentColor` で塗る部分と、SVG が塗りを指定していない部分を塗ります。既定はテキストの色 `.label` です。スタイルに幅も高さもなければ、ビューは SVG 自身のサイズになります。両方あれば、縦横比を保ってアイコンがその中に収まります。アイコンセット（Lucide、Material、Heroicons、Feather）が使うもの、つまりパス、基本図形、グループ、`use`、塗り、線、変形を読みます。テキスト、グラデーション（アイコンの色で塗ります）、クリッピング、マスク、フィルター、`fill-rule="evenodd"` は読み飛ばします。
+`color` は、SVG が `currentColor` で塗る部分と、SVG が塗りを指定していない部分を塗ります。既定はテキストの色 `.label` です。スタイルに幅も高さもなければ、ビューは SVG 自身のサイズになります。両方あれば、縦横比を保ってアイコンがその中に収まります。アイコンセット（Lucide、Material、Heroicons、Feather）が使うもの、つまりパス、基本図形、グループ、`use`、塗り、線、変形を読みます。テキスト、グラデーション（アイコンの色で塗ります）、クリッピング、マスク、フィルター、`fill-rule="evenodd"` は読み飛ばします。これらが必要なら、[`svg.Document`](#svg-ドキュメント) として表示します。
 
 `svg.Shape` はアプリが作ったパスを描きます。それぞれの `svg.Layer` は一つの `svg.Path` で、塗り（`fill`。ボックスの下に向かって `fade` へフェード）と線（`stroke`、`width`、`cap`、`join`）を持ちます。`svg.Point` はボックスの左上からのポイント数にボックスのサイズに対する割合を足したものなので、ボックスの大きさが変わっても、アプリが計算し直さなくても形が追従します。
 
@@ -625,6 +625,39 @@ component Done {
 ```
 
 iOS と macOS では Core Graphics、Android では `Canvas`、ブラウザーでは `<svg>`、Windows では GDI+、Linux では Cairo で描きます。
+
+### SVG ドキュメント
+
+アプリが実行中に受け取る SVG（ネットワークやファイルから、あるいはユーザーが選んだり貼り付けたりしたもの）は `svg.Document` です。Asuka がどのプラットフォームでも同じように読み込み、各プラットフォームが `Canvas` と同じく自分のベクター描画で描きます。`svg.parse(markup)` はマークアップを読み込み、SVG でなければエラーを投げます。`svg.load(source)` は http(s) の URL、ファイル、アセットを取得して、メインスレッドの外で読み込みます。表示するのは `svg.Picture(document)` です。
+
+```asuka check
+import std/svg
+
+let heart = r"""<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.2 5.2 3 1.6-1.8 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>"""
+
+component Logos {
+  state logo: svg.Document? = none
+
+  task {
+    logo = try? await svg.load("https://example.com/logo.svg")
+  }
+
+  Row {
+    gap: 12
+    align: .center
+    if let doc = logo {
+      svg.Picture(doc) { width: 160 }
+    }
+    if let doc = try? svg.parse(heart) {
+      svg.Picture(doc) { color: .red; width: 32 }
+    }
+  }
+}
+```
+
+スタイルにサイズがなければ、`Picture` はドキュメント自身のサイズ（svg の `width` と `height`、なければ `viewBox` のもの）になります。`fit` はドキュメントを枠にどう収めるか（`.contain`、`.cover`、`.stretch`、`.center`）を決め、その中での描画の位置はドキュメントの `preserveAspectRatio` が決めます。`color` は `currentColor` で塗る色で、既定は `.label` なので、単色のアイコンはダークモードに追従します。`Document` は値なので、保持したり渡したり、`spawn` で別のスレッドで読み込んだりできます。
+
+読めるのは、`svg`（入れ子も）、`g`、`a`、`switch`、`defs`、`symbol`、`use`、パスと基本図形、塗りと線（それぞれの不透明度、`fill-rule` と `clip-rule`（`evenodd` も）、線の太さ、線端、角、破線）、色（16 進数、`rgb()`、`hsl()`、色名、`currentColor`）、線形グラデーションと放射グラデーション（単位、`gradientTransform`、`spreadMethod`、`href` で別のグラデーションから引き継ぐ色の分岐点）、`clipPath`、`opacity`、変形、`viewBox` と `preserveAspectRatio`、プラットフォームのフォントで描く `text` と `tspan`（位置、サイズ、太さ、`text-anchor`）、そしてスタイル（表現属性、`style` 属性、`<style>` のスタイルシート。型・クラス・id のセレクターとその組み合わせ、子孫セレクターと子セレクター）です。フィルター、マスク、パターン、マーカー、埋め込み画像、`textPath`、アニメーションは描きません。テキストのグラデーションは最初の色になり、グループの `opacity` はグループを一枚のレイヤーとしてではなく、中のそれぞれに適用されます。スクリプトを実行することはなく、ドキュメントが外部を参照していても何も取得しません。描ききれないほど大きなドキュメント（100 万個の要素や、掛け算的に増える `use` の入れ子）は、いつまでも描き続けずに拒否します。
 
 ## 動画
 

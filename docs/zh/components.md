@@ -559,12 +559,12 @@ component Pictures(photo: Photo) {
 |---|---|---|
 | iOS | ImageIO：PNG、JPEG、GIF、WebP、HEIC、AVIF | ImageIO 的 `CGAnimateImageDataWithBlock`，按文件规定的时长和循环次数播放（也支持 HEIF 序列） |
 | Android | 先用 `BitmapFactory`，再用 `ImageDecoder`：PNG、JPEG、GIF、WebP、HEIF、AVIF | `AnimatedImageDrawable`：GIF 和 WebP（系统支持时也包括 AVIF 序列）；APNG 只显示第一帧 |
-| macOS | `NSImage`：PNG、JPEG、GIF、WebP、HEIC、AVIF、SVG | 同 iOS |
+| macOS | `NSImage`：PNG、JPEG、GIF、WebP、HEIC、AVIF | 同 iOS |
 | Windows | WIC：PNG、JPEG、GIF、BMP、TIFF、ICO，以及安装了对应编解码器时的 WebP、HEIF 和 AVIF（WebP 的随 Windows 11 自带；HEIF 需要 HEIF 和 HEVC 视频扩展，AVIF 需要 AV1 视频扩展） | 由 Asuka 逐帧播放；动态 WebP 的每一帧用 WIC 的 WebP 编解码器解码 |
-| Linux | GDK 的加载器：PNG、JPEG、GIF，以及视安装情况而定的 WebP、AVIF、HEIF、SVG 和 JPEG XL | 由 Asuka 逐帧播放；动态 WebP 的每一帧用 GDK 的 WebP 加载器解码 |
+| Linux | GDK 的加载器：PNG、JPEG、GIF，以及视安装情况而定的 WebP、AVIF、HEIF 和 JPEG XL | 由 Asuka 逐帧播放；动态 WebP 的每一帧用 GDK 的 WebP 加载器解码 |
 | Web | 浏览器支持的格式 | 用 WebCodecs 的 `ImageDecoder` 在 canvas 上播放（也支持 AVIF 序列）；没有它的浏览器（Safari）由 `<img>` 自己播放，暂停时显示第一帧 |
 
-只有在 Mac、Linux 和 Web 上，SVG 才能作为图片显示。要在所有平台上显示 SVG 图标，请用 [`std/svg`](#svg-图标) 以矢量方式绘制。
+SVG 是个例外。各平台读 SVG 的方式各不相同，iOS、Android 和 Windows 干脆不支持，所以由 Asuka 自己来读，各平台结果一致：来源是 SVG（`.svg` 文件、资源或 URL）的 `Image` 会按它显示的尺寸以矢量方式绘制，任何尺寸和缩放下都清晰；`color` 和对其他图片一样给它着色。它能画的内容和 [`svg.Document`](#svg-文档) 相同。在浏览器里，名字以 `.svg` 结尾的来源（或 SVG 的 `data:` URL）会这样读取；其他站点上、不允许页面读取（没有 CORS 头）的 SVG 则交给浏览器显示。
 
 ## 符号与图标
 
@@ -607,7 +607,7 @@ component DownloadRow {
 }
 ```
 
-`color` 会画在 SVG 中使用 `currentColor` 的地方，以及 SVG 没有指定填充的地方；默认是文字颜色 `.label`。样式里没有宽高时，视图就是 SVG 自身的尺寸；宽高都给了时，图标会保持比例放进去。它能读懂常见图标集（Lucide、Material、Heroicons、Feather）用到的内容：路径、基本形状、分组、`use`、填充、描边和变换。它会跳过文字、渐变（用图标颜色绘制）、裁剪、蒙版、滤镜和 `fill-rule="evenodd"`。
+`color` 会画在 SVG 中使用 `currentColor` 的地方，以及 SVG 没有指定填充的地方；默认是文字颜色 `.label`。样式里没有宽高时，视图就是 SVG 自身的尺寸；宽高都给了时，图标会保持比例放进去。它能读懂常见图标集（Lucide、Material、Heroicons、Feather）用到的内容：路径、基本形状、分组、`use`、填充、描边和变换。它会跳过文字、渐变（用图标颜色绘制）、裁剪、蒙版、滤镜和 `fill-rule="evenodd"`；需要这些时，把它当作 [`svg.Document`](#svg-文档) 来显示。
 
 `svg.Shape` 画应用自己生成的路径：每个 `svg.Layer` 是一条 `svg.Path`，可以填充（`fill`，沿框往下渐变到 `fade`）和描边（`stroke`、`width`、`cap`、`join`）。`svg.Point` 由相对框左上角的点数加上框尺寸的比例组成，所以框变大变小时形状会跟着变，应用不用重新计算：
 
@@ -625,6 +625,39 @@ component Done {
 ```
 
 在 iOS 和 macOS 上用的是 Core Graphics，在 Android 上是 `Canvas`，在浏览器中是 `<svg>`，在 Windows 上是 GDI+，在 Linux 上是 Cairo。
+
+### SVG 文档
+
+应用在运行时才拿到的 SVG（来自网络、文件，或用户选择、粘贴的内容）是一个 `svg.Document`。它由 Asuka 读取，各平台结果一致，再由各平台像画 `Canvas` 一样用自己的矢量绘图画出来。`svg.parse(markup)` 读取标记，不是 SVG 时会抛出错误；`svg.load(source)` 获取一个 http(s) URL、文件或资源，并在主线程之外读取；`svg.Picture(document)` 负责显示：
+
+```asuka check
+import std/svg
+
+let heart = r"""<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.2 5.2 3 1.6-1.8 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>"""
+
+component Logos {
+  state logo: svg.Document? = none
+
+  task {
+    logo = try? await svg.load("https://example.com/logo.svg")
+  }
+
+  Row {
+    gap: 12
+    align: .center
+    if let doc = logo {
+      svg.Picture(doc) { width: 160 }
+    }
+    if let doc = try? svg.parse(heart) {
+      svg.Picture(doc) { color: .red; width: 32 }
+    }
+  }
+}
+```
+
+样式里没有尺寸时，`Picture` 就是文档自身的尺寸（svg 的 `width` 和 `height`，没有就取 `viewBox` 的）；`fit` 决定文档怎样放进框里（`.contain`、`.cover`、`.stretch`、`.center`），文档自己的 `preserveAspectRatio` 再决定画面在其中的位置。`color` 是 `currentColor` 所画的颜色，默认是 `.label`，所以单色图标会跟随深色模式。`Document` 是一个值，可以保存、传递，也可以用 `spawn` 在别的线程上读取。
+
+它能读懂：`svg`（包括嵌套的）、`g`、`a`、`switch`、`defs`、`symbol` 和 `use`；路径和基本形状；填充和描边及其不透明度、`fill-rule` 和 `clip-rule`（包括 `evenodd`）、线宽、线帽、连接方式和虚线；颜色（十六进制、`rgb()`、`hsl()`、颜色名、`currentColor`）；线性和径向渐变（单位、`gradientTransform`、`spreadMethod`，以及通过 `href` 沿用另一个渐变的色标）；`clipPath`；`opacity`；变换；`viewBox` 和 `preserveAspectRatio`；用平台字体绘制的 `text` 和 `tspan`（位置、字号、字重和 `text-anchor`）；以及样式：表现属性、`style` 属性和 `<style>` 样式表（类型、类和 id 选择器及其组合，以及后代和子元素选择器）。它不画滤镜、蒙版、图案、标记、内嵌图片、`textPath` 和动画；文字上的渐变取第一个颜色；分组的 `opacity` 作用在组里的每一样东西上，而不是把整组当作一层。它从不运行脚本，也不会去获取文档引用的任何外部内容；太大而画不完的文档（上百万个元素，或层层相乘的 `use`）会被拒绝，而不是一直画下去。
 
 ## 视频
 

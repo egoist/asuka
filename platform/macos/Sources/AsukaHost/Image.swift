@@ -15,6 +15,9 @@ import ImageIO
 #if canImport(AsukaOps)
 import AsukaOps
 #endif
+#if canImport(CAsuka)
+@_implementationOnly import CAsuka
+#endif
 
 /// An Image node's: its source and what it shows until and as it arrives.
 @MainActor final class AsukaImageState {
@@ -45,6 +48,10 @@ import AsukaOps
     /// The image shown, and an animated one's file.
     var image: NSImage?
     var anim: Data?
+    /// The image's and the placeholder's SVG documents, when they're SVG:
+    /// a layer showing one (filled, a placeholder) is drawn at its size.
+    var svg: AsukaSVG?
+    var placeholderSVG: AsukaSVG?
     /// The frame the animation is at, and its playback's generation: a
     /// newer one stops the older.
     var frame = 0
@@ -56,10 +63,82 @@ import AsukaOps
     func stopFrames() { gen += 1 }
 }
 
-/// A decoded image (one point per pixel), and an animated one's file.
+/// A decoded image (one point per pixel), and an animated one's file, or
+/// an SVG document's.
 struct AsukaCachedImage {
     let image: NSImage
     let anim: Data?
+    var svg: AsukaSVG? = nil
+}
+
+/// An SVG document the core read (an Image whose source is SVG: read the
+/// same on every platform, core/src/ui/svg.c). Its image draws the core's
+/// display list with Core Graphics at whatever size it's drawn, so an
+/// NSImageView scales vectors, not pixels.
+final class AsukaSVG: @unchecked Sendable {
+    let doc: [UInt8]
+    let size: CGSize
+    /// Drawn at the size the view draws it, in the appearance it draws in.
+    private(set) var image = NSImage()
+
+    /// The document data holds, if it's SVG (any thread).
+    init?(_ data: Data) {
+        #if canImport(CAsuka)
+        var out: UnsafeMutablePointer<UInt8>? = nil
+        let n = data.withUnsafeBytes { b in asuka_svg_parse(b.bindMemory(to: UInt8.self).baseAddress, b.count, &out) }
+        guard n > 0, let out else { return nil }
+        doc = Array(UnsafeBufferPointer(start: out, count: n))
+        asuka_free(out)
+        var w: Float = 0, h: Float = 0
+        _ = asuka_svg_size(doc, doc.count, &w, &h)
+        size = CGSize(width: CGFloat(w), height: CGFloat(h))
+        #else
+        return nil
+        #endif
+        let img = NSImage(size: size, flipped: true) { [weak self] rect in
+            guard let self, let c = NSGraphicsContext.current?.cgContext, Thread.isMainThread else { return false }
+            let cmds = self.commands(rect.size, mode: AsukaImageMode.stretch.rawValue)
+            c.saveGState()
+            c.translateBy(x: rect.minX, y: rect.minY)
+            MainActor.assumeIsolated { AsukaRuntime.shared.replayCanvas(c, cmds) }
+            c.restoreGState()
+            return true
+        }
+        img.cacheMode = .never
+        image = img
+    }
+
+    /// Its display list in a box of size, fitted by mode (an ImageMode).
+    func commands(_ size: CGSize, mode: Int32) -> [UInt8] {
+        #if canImport(CAsuka)
+        var out: UnsafeMutablePointer<UInt8>? = nil
+        let n = asuka_svg_draw(doc, doc.count, Float(size.width), Float(size.height), mode, 0, 0, &out)
+        guard n > 0, let out else { return [] }
+        defer { asuka_free(out) }
+        return Array(UnsafeBufferPointer(start: out, count: n))
+        #else
+        return []
+        #endif
+    }
+
+    /// Drawn in a box of size points by mode, as a layer's contents
+    /// (a filled image's, a placeholder's), at scale pixels a point.
+    @MainActor func contents(_ size: CGSize, mode: Int32, scale: CGFloat, _ n: AsukaNode) -> CGImage? {
+        let w = Int((size.width * scale).rounded(.up)), h = Int((size.height * scale).rounded(.up))
+        guard w > 0, h > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        c.translateBy(x: 0, y: CGFloat(h))
+        c.scaleBy(x: scale, y: -scale)
+        let cmds = commands(size, mode: mode)
+        let ns = NSGraphicsContext(cgContext: c, flipped: true)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = ns
+        AsukaRuntime.shared.withAppearance(n) { AsukaRuntime.shared.replayCanvas(c, cmds) }
+        NSGraphicsContext.restoreGraphicsState()
+        return c.makeImage()
+    }
 }
 
 /// Decoded images in memory, the least recently used going first. On the
@@ -160,8 +239,10 @@ enum AsukaImageLoader {
     }
 
     /// An NSImage sized one point per pixel (PNG, JPEG, GIF, WebP, HEIC,
-    /// AVIF, SVG: what NSImage reads), and an animated one's file.
+    /// AVIF: what NSImage reads), and an animated one's file; SVG the
+    /// core's, as every platform reads it (not AppKit's).
     static func decode(_ data: Data, _ src: String) -> Result<AsukaCachedImage, Error> {
+        if let svg = AsukaSVG(data) { return .success(AsukaCachedImage(image: svg.image, anim: nil, svg: svg)) }
         guard let img = NSImage(data: data) else { return .failure(AsukaModuleError("can't decode \(src)")) }
         if let rep = NSBitmapImageRep(data: data), rep.pixelsWide > 0, rep.pixelsHigh > 0 {
             img.size = CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
@@ -227,6 +308,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
             x.loaded = false
             x.stopFrames()
             x.anim = nil
+            x.svg = nil
             x.frame = 0
             x.image = nil
             iv.image = nil
@@ -235,6 +317,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
             loadImage(n, x.source, placeholder: false)
         case AsukaProp.Image.placeholder:
             x.placeholder = v.string
+            x.placeholderSVG = nil
             showPlaceholder(n)
         case AsukaProp.Image.placeholderImage:
             x.hash = AsukaImageLoader.pixels(v.data)
@@ -278,6 +361,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
         guard let n = nodes[id], let x = n.image, let iv = n.view as? NSImageView else { return }
         if placeholder {
             if !x.loaded, x.placeholder == src, x.hash == nil, case .success(let c) = r {
+                x.placeholderSVG = c.svg
                 setPlaceholderImage(n, c.image, n.color != 0)
             }
             return
@@ -294,6 +378,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
         }
         x.loaded = true
         x.anim = c.anim
+        x.svg = c.svg
         x.frame = 0
         x.framesShown = 0
         // ImageIO plays an animated file (APNG and WebP too), not the view.
@@ -330,7 +415,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
                 x.fill = l
             }
             l.frame = parent.bounds
-            l.contents = img
+            l.contents = layerContents(n, img, x.svg, mode: x.mode, size: parent.bounds.size)
             l.contentsGravity = .resizeAspectFill
             l.masksToBounds = true
             parent.masksToBounds = true
@@ -358,12 +443,33 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
 
     /// n has a new frame: its placeholder's layer fills it.
     func layoutImage(_ n: AsukaNode) {
-        guard let l = n.image?.layer, let parent = l.superlayer else { return }
+        guard let x = n.image else { return }
+        // An SVG a layer shows is drawn again at the layer's new size.
+        if let f = x.fill, let svg = x.svg, f.contents != nil, let parent = f.superlayer {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            f.frame = parent.bounds
+            f.contents = layerContents(n, svg.image, svg, mode: x.mode, size: parent.bounds.size)
+            CATransaction.commit()
+        }
+        guard let l = x.layer, let parent = l.superlayer else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         l.frame = parent.bounds
         l.mask?.frame = l.bounds
+        if let svg = x.placeholderSVG, let shown = x.shown, shown === svg.image {
+            let c = layerContents(n, shown, svg, mode: x.placeholderMode < 0 ? x.mode : x.placeholderMode, size: parent.bounds.size)
+            if let m = l.mask { m.contents = c } else { l.contents = c }
+        }
         CATransaction.commit()
+    }
+
+    /// What a layer shows of img in a box of size: an SVG drawn at that
+    /// size by mode (its gravity then changes nothing), else img.
+    func layerContents(_ n: AsukaNode, _ img: NSImage?, _ svg: AsukaSVG?, mode: Int32, size: CGSize) -> Any? {
+        guard let img, let svg, svg.image === img, size.width > 0, size.height > 0 else { return img }
+        let scale = n.view?.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        return svg.contents(size, mode: mode, scale: scale, n) ?? img
     }
 
     // MARK: Placeholders
@@ -395,13 +501,15 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
         l.removeAllAnimations()
         l.frame = parent.bounds
         l.opacity = 1
-        let g = asukaGravity(x.placeholderMode < 0 ? x.mode : x.placeholderMode)
+        let pm = x.placeholderMode < 0 ? x.mode : x.placeholderMode
+        let g = asukaGravity(pm)
+        let contents = layerContents(n, img, x.placeholderSVG, mode: pm, size: parent.bounds.size)
         if tinted, n.color != 0 {
             // The color, masked by the image.
             let mask = CALayer()
             mask.frame = l.bounds
             mask.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-            mask.contents = img
+            mask.contents = contents
             mask.contentsGravity = g
             l.contents = nil
             l.mask = mask
@@ -409,7 +517,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
         } else {
             l.mask = nil
             l.backgroundColor = nil
-            l.contents = img
+            l.contents = contents
             l.contentsGravity = g
         }
         CATransaction.commit()
