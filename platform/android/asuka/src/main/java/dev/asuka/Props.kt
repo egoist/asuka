@@ -113,12 +113,18 @@ fun AsukaRuntime.applyText(n: AsukaNode) {
         it.invalidateText()
         return
     }
+    (n.view as? AsukaDisclosure)?.let {
+        if (n.fontSize == 0f && n.fontWeight == 0 && n.textStyle == 0 && n.fontFamily.isEmpty() && n.fontTraits == 0) return
+        applyTextStyle(it.title, n.textStyle, n.fontSize, n.fontWeight, n.fontFamily, n.fontTraits)
+        return
+    }
     val tv = n.view as? TextView ?: return
-    if (tv is MaterialButton && n.fontSize == 0f && n.fontWeight == 0 && n.textStyle == 0 && n.fontFamily.isEmpty() &&
+    // A button's and a chip's text appearance are their style's, unless the app sets one.
+    if ((tv is MaterialButton || tv is AsukaChip) && n.fontSize == 0f && n.fontWeight == 0 && n.textStyle == 0 && n.fontFamily.isEmpty() &&
         n.fontTraits == 0 && n.letterSpacing == 0f) return
     applyTextStyle(tv, n.textStyle, n.fontSize, n.fontWeight, n.fontFamily, n.fontTraits)
     applyTextSpacing(n, tv)
-    applyColor(n)
+    if (tv !is AsukaChip) applyColor(n)
 }
 
 /**
@@ -278,6 +284,9 @@ fun AsukaRuntime.applyColor(n: AsukaNode) {
         is AsukaSymbol -> { v.tint = n.color; v.applyTint() }
         is com.google.android.material.progressindicator.LinearProgressIndicator -> if (n.color != 0L) v.setIndicatorColor(color(n.color))
         is MaterialButton -> if (n.color != 0L) v.setTextColor(color(n.color))
+        is AsukaChip -> v.setTint(n.color)
+        is AsukaDateRangePicker -> v.setTint(n.color)
+        is AsukaDisclosure -> v.setTint(n.color)
         is com.google.android.material.checkbox.MaterialCheckBox -> if (n.color != 0L) v.buttonTintList = ColorStateList(
             arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
             intArrayOf(color(n.color), MaterialColors.getColor(themed, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.GRAY)))
@@ -387,6 +396,7 @@ fun AsukaRuntime.propBool(id: Int, prop: Int, v: Boolean) {
                 }
             }
             AsukaKind.TEXT_FIELD -> when (prop) {
+                AsukaProp.TextField.DROPDOWN -> (view as? AsukaSuggestField)?.dropdown = v
                 AsukaProp.TextField.SECURE -> {
                     val e = view as EditText
                     val typeface = e.typeface
@@ -771,7 +781,7 @@ fun AsukaRuntime.measureNode(n: AsukaNode, w: Float, h: Float, aw: Float, ah: Fl
     when {
         !minContent -> {}
         v is EditText -> minW = Math.round(80 * d) // it scrolls its text: it can be narrow
-        v is TextView && v !is MaterialButton -> {
+        v is TextView && v !is MaterialButton && v !is AsukaChip -> { // a chip's title is on one line
             // Min-content: the widest word.
             val p = v.paint
             var widest = 0f

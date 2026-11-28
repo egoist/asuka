@@ -182,6 +182,10 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             t.adjustsFontForContentSizeCategory = !out
             t.placeholderLabel.adjustsFontForContentSizeCategory = !out
             t.font = font
+        case let c as AsukaChipView:
+            c.update()
+        case let d as AsukaDisclosureView where textStyle != 0 || fontSize > 0 || fontWeight != 0 || !fontFamily.isEmpty:
+            d.titleLabel.font = font
         case let b as UIButton where b.configuration?.titleTextAttributesTransformer != nil:
             b.updateConfiguration()
         default:
@@ -213,6 +217,12 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         case let s as AsukaSymbolView:
             s.node = self
             s.refresh()
+        case let c as AsukaChipView:
+            c.update()
+        case let d as AsukaDisclosureView:
+            d.titleLabel.font = f
+            d.titleLabel.adjustsFontForContentSizeCategory = true
+            d.setNeedsLayout()
         case let b as UIButton:
             var c = b.configuration ?? .plain()
             c.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(font: f, scale: .medium)
@@ -248,6 +258,10 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         case let r as AsukaRichTextView:
             r.base.color = color
         case let s as AsukaSymbolView: s.tintColor = c ?? .label
+        case let d as AsukaDisclosureView: d.tint = c // the chevron's; the title stays the label's color
+        case let chip as AsukaChipView:
+            chip.tintColor = c
+            chip.update()
         case let i as AsukaImageView:
             i.tintColor = c
             i.tinted = c != nil
@@ -270,6 +284,11 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         case let f as AsukaTextField: f.contentInset_ = i
         case let t as AsukaTextView: t.contentInset_ = i
         case let r as AsukaRichTextView: r.contentInset_ = i
+        case let d as AsukaDisclosureView: d.contentInset_ = i
+        case let c as AsukaChipView:
+            // Its padding replaces the chip's own; the core adds it (measure).
+            n.buttonInset = i == .zero ? nil : i
+            c.padding = n.buttonInset
         case is UIButton:
             n.buttonInset = i == .zero ? nil : i
             fitButton(n)
@@ -589,6 +608,10 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             (n.view as? AsukaTextView)?.autocorrectionType = a
         case (.textField, AsukaProp.TextField.accessory):
             setAccessory(n, UInt32(truncatingIfNeeded: v.int))
+        case (.textField, AsukaProp.TextField.suggestions):
+            if case .bytes(let b) = v { suggestions(n)?.set(AsukaInteraction.decodeStrings(b)) }
+        case (.textField, AsukaProp.TextField.dropdown):
+            suggestions(n)?.setDropdown(v.bool)
         case (.split, _):
             setSplitProp(n, prop, v)
         case (.overlay, _):
@@ -646,7 +669,8 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             guard let a = n.view as? UIActivityIndicatorView else { return }
             if v.bool { a.startAnimating() } else { a.stopAnimating() }
         default:
-            if !setShapeProp(n, prop, v), !setWheelProp(n, prop, v), !setPickerProp(n, prop, v), !setMediaProp(n, prop, v) { setNavProp(n, prop, v) }
+            if !setShapeProp(n, prop, v), !setWheelProp(n, prop, v), !setPickerProp(n, prop, v), !setChipProp(n, prop, v),
+               !setDateRangeProp(n, prop, v), !setDisclosureProp(n, prop, v), !setMediaProp(n, prop, v) { setNavProp(n, prop, v) }
         }
     }
 
@@ -704,6 +728,11 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             if aw.isFinite { s.width = min(s.width, CGFloat(max(aw, 0))) }
         case let r as AsukaRichTextView:
             s = r.measure(w, aw)
+        case let d as AsukaDisclosureView:
+            // As wide as it's laid out (its chevron at the end); its title's height.
+            let width = w.isNaN ? (aw.isFinite ? CGFloat(max(aw, 0)) : big) : CGFloat(w)
+            s = d.sizeThatFits(CGSize(width: width, height: big))
+            if width < big { s.width = width }
         case is AsukaWheelView:
             // As wide as it's let be; as tall as UIKit makes a wheel.
             s = CGSize(width: w.isNaN ? (aw.isFinite ? CGFloat(max(aw, 0)) : 320) : CGFloat(w), height: 216)

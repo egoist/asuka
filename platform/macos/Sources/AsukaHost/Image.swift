@@ -39,6 +39,9 @@ import AsukaOps
     /// Transition, in seconds.
     var transition: Double = 0
     var paused = false
+    /// Headers sent with the source's request; Cache (AsukaImageCache's).
+    var headers: [String: String] = [:]
+    var cache: Int32 = 0
     /// The placeholder's sublayer.
     var layer: CALayer?
     /// A filled image's sublayer, under the placeholder's: not the view's
@@ -143,8 +146,8 @@ final class AsukaSVG: @unchecked Sendable {
 
 /// Decoded images in memory, the least recently used going first. On the
 /// main thread.
-@MainActor final class AsukaImageCache {
-    static let shared = AsukaImageCache()
+@MainActor final class AsukaImageMemory {
+    static let shared = AsukaImageMemory()
     static let size = 128
     private var byKey: [String: AsukaCachedImage] = [:]
     private var order: [String] = [] // most recent last
@@ -175,15 +178,55 @@ final class AsukaSVG: @unchecked Sendable {
         if let i = order.lastIndex(of: key) { order.remove(at: i) }
         order.append(key)
     }
+
+    /// Forgets every image (Images showing keep theirs).
+    func removeAll() {
+        byKey.removeAll()
+        order.removeAll()
+    }
+}
+
+/// The loads under way that keep what they load in memory, by source and
+/// whether the disk takes it too: another Image of the source, or a
+/// prefetch, waits for the one under way rather than loading it again. On
+/// the main thread.
+@MainActor final class AsukaImageLoads {
+    static let shared = AsukaImageLoads()
+    private var waiting: [String: [(Result<AsukaCachedImage, Error>) -> Void]] = [:]
+
+    /// Loads src into the memory cache (and the disk's, if disk), done
+    /// called with what the cache has once it's there.
+    func load(_ src: String, headers: [String: String], disk: Bool, assets: URL, _ done: @escaping (Result<AsukaCachedImage, Error>) -> Void) {
+        let key = (disk ? "d " : "m ") + src
+        if waiting[key] != nil {
+            waiting[key]?.append(done)
+            return
+        }
+        waiting[key] = [done]
+        AsukaImageLoader.load(src, assets: assets, headers: headers, disk: disk) { r in
+            MainActor.assumeIsolated {
+                var r = r
+                if case .success(let c) = r { r = .success(AsukaImageMemory.shared.put(src, c)) }
+                let all = AsukaImageLoads.shared.waiting.removeValue(forKey: key) ?? []
+                for f in all { f(r) }
+            }
+        }
+    }
 }
 
 /// Reads and decodes images off the main thread.
 enum AsukaImageLoader {
     static let queue = DispatchQueue(label: "asuka.images", qos: .userInitiated, attributes: .concurrent)
+    /// The session of the loads the disk mustn't keep (Cache Memory and
+    /// None): no URL cache.
+    static let ephemeral = URLSession(configuration: .ephemeral)
 
     /// Loads src (an http(s) URL, a file:// URL, a path, or an asset's
-    /// path), decoded; done is called on the main thread.
-    static func load(_ src: String, assets: URL, _ done: @escaping @Sendable (Result<AsukaCachedImage, Error>) -> Void) {
+    /// path), decoded; done is called on the main thread. headers go with
+    /// an http(s) request; disk: the disk cache is read first and keeps
+    /// what's fetched (unless the response says no-store).
+    static func load(_ src: String, assets: URL, headers: [String: String] = [:], disk useDisk: Bool = true,
+                     _ done: @escaping @Sendable (Result<AsukaCachedImage, Error>) -> Void) {
         let finish: @Sendable (Result<Data, Error>) -> Void = { r in
             queue.async {
                 let out = r.flatMap { decode($0, src) }
@@ -197,12 +240,16 @@ enum AsukaImageLoader {
             }
             // Kept across launches, as iOS's are (AsukaDiskCache).
             let disk = AsukaDiskCache.images
+            var req = URLRequest(url: url)
+            for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+            if !useDisk { req.cachePolicy = .reloadIgnoringLocalCacheData }
+            let session = useDisk ? URLSession.shared : ephemeral
             queue.async {
-                if let d = disk.read(src), case .success = decode(d, src) {
+                if useDisk, let d = disk.read(src), case .success = decode(d, src) {
                     finish(.success(d))
                     return
                 }
-                URLSession.shared.dataTask(with: url) { data, resp, err in
+                session.dataTask(with: req) { data, resp, err in
                     if let err {
                         finish(.failure(err))
                         return
@@ -213,7 +260,7 @@ enum AsukaImageLoader {
                         return
                     }
                     let d = data ?? Data()
-                    if let h = resp as? HTTPURLResponse, !d.isEmpty, AsukaDiskCache.storable(url, h) { disk.write(src, d) }
+                    if useDisk, let h = resp as? HTTPURLResponse, !d.isEmpty, AsukaDiskCache.storable(url, h) { disk.write(src, d) }
                     finish(.success(d))
                 }.resume()
             }
@@ -313,6 +360,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
             x.image = nil
             iv.image = nil
             x.fill?.contents = nil
+            x.fill?.mask = nil
             showPlaceholder(n)
             loadImage(n, x.source, placeholder: false)
         case AsukaProp.Image.placeholder:
@@ -327,6 +375,17 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
             if let s = x.shown { setPlaceholderImage(n, s, x.tinted) }
         case AsukaProp.Image.transition:
             x.transition = v.float
+        case AsukaProp.Image.headers:
+            // As Video's: name, value, ... (sent before Source).
+            let s = asukaStrings(v.data)
+            x.headers = [:]
+            var i = 0
+            while i + 1 < s.count {
+                x.headers[s[i]] = s[i + 1]
+                i += 2
+            }
+        case AsukaProp.Image.cache:
+            x.cache = v.enumValue
         case AsukaProp.Image.paused:
             x.paused = v.bool
             if x.paused { x.stopFrames() } else { playFrames(n) }
@@ -341,20 +400,71 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
 
     // MARK: Loading
 
+    /// Loads an Image's source (or its placeholder) as its Cache says:
+    /// Default from memory, else the disk, else the network, kept in both;
+    /// Memory never reading nor writing the disk; None loaded each time.
+    /// Its Headers go with the source's request.
     func loadImage(_ n: AsukaNode, _ src: String, placeholder: Bool) {
         guard !src.isEmpty else { return }
         let id = n.id
-        if let c = AsukaImageCache.shared.get(src) {
+        let mode = AsukaImageCache(rawValue: placeholder ? 0 : n.image?.cache ?? 0) ?? .default
+        let headers = placeholder ? [:] : n.image?.headers ?? [:]
+        if mode == .none {
+            AsukaImageLoader.load(src, assets: assets, headers: headers, disk: false) { r in
+                MainActor.assumeIsolated { AsukaRuntime.shared.imageLoaded(id, src, r, placeholder) }
+            }
+            return
+        }
+        if let c = AsukaImageMemory.shared.get(src) {
             imageLoaded(id, src, .success(c), placeholder)
             return
         }
-        AsukaImageLoader.load(src, assets: assets) { r in
-            MainActor.assumeIsolated {
-                var r = r
-                if case .success(let c) = r { r = .success(AsukaImageCache.shared.put(src, c)) }
-                AsukaRuntime.shared.imageLoaded(id, src, r, placeholder)
-            }
+        AsukaImageLoads.shared.load(src, headers: headers, disk: mode == .default, assets: assets) { r in
+            AsukaRuntime.shared.imageLoaded(id, src, r, placeholder)
         }
+    }
+
+    /// The "image" module: prefetch (u32 n, n u32-length URLs, u32 m, m
+    /// u32-length strings: the headers' names and values in turn) loads
+    /// each into the caches as an Image would, off the main thread, with
+    /// the loads under way; clearCache (u8: 1 the memory cache, 2 the
+    /// disk's) forgets them. Images showing keep what they show.
+    func registerImageModule() {
+        registerModule("image", [
+            "prefetch": { [weak self] args, reply in
+                guard let self else { return reply(.success(Data())) }
+                var r = AsukaByteReader(args)
+                var urls: [String] = []
+                let n = Int(r.u32())
+                while urls.count < n, !r.bad {
+                    let u = r.string()
+                    if !r.bad { urls.append(u) }
+                }
+                var headers: [String: String] = [:]
+                let m = r.atEnd ? 0 : Int(r.u32())
+                var i = 0
+                while i + 1 < m, !r.bad {
+                    let k = r.string(), v = r.string()
+                    if !r.bad { headers[k] = v }
+                    i += 2
+                }
+                for u in urls where !u.isEmpty && AsukaImageMemory.shared.get(u) == nil {
+                    AsukaImageLoads.shared.load(u, headers: headers, disk: true, assets: self.assets) { _ in }
+                }
+                reply(.success(Data()))
+            },
+            "clearCache": { args, reply in
+                let flags = args.first ?? 3
+                if flags & 1 != 0 { AsukaImageMemory.shared.removeAll() }
+                if flags & 2 != 0 {
+                    // The host's files, and what URLSession kept of the
+                    // requests (the Default loads' session).
+                    DispatchQueue.global(qos: .utility).async { AsukaDiskCache.images.removeAll() }
+                    URLCache.shared.removeAllCachedResponses()
+                }
+                reply(.success(Data()))
+            },
+        ])
     }
 
     func imageLoaded(_ id: UInt32, _ src: String, _ r: Result<AsukaCachedImage, Error>, _ placeholder: Bool) {
@@ -415,7 +525,23 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
                 x.fill = l
             }
             l.frame = parent.bounds
-            l.contents = layerContents(n, img, x.svg, mode: x.mode, size: parent.bounds.size)
+            let contents = layerContents(n, img, x.svg, mode: x.mode, size: parent.bounds.size)
+            if n.color != 0, contents != nil {
+                // A tint: the color through the image's alpha, as a
+                // template's (a mask of the image over the color).
+                let m = l.mask ?? CALayer()
+                m.frame = l.bounds
+                m.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+                m.contents = contents
+                m.contentsGravity = .resizeAspectFill
+                l.mask = m
+                l.contents = nil
+                withAppearance(n) { l.backgroundColor = asukaColor(n.color)?.cgColor }
+            } else {
+                l.mask = nil
+                l.backgroundColor = nil
+                l.contents = contents
+            }
             l.contentsGravity = .resizeAspectFill
             l.masksToBounds = true
             parent.masksToBounds = true
@@ -429,6 +555,7 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
             iv.imageScaling = .scaleProportionallyUpOrDown
         }
         x.fill?.contents = nil
+        x.fill?.mask = nil
         var shown = img
         if let img, n.color != 0, !img.isTemplate {
             // A tint is the color, the image a template: a copy (it shares
@@ -445,11 +572,12 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
     func layoutImage(_ n: AsukaNode) {
         guard let x = n.image else { return }
         // An SVG a layer shows is drawn again at the layer's new size.
-        if let f = x.fill, let svg = x.svg, f.contents != nil, let parent = f.superlayer {
+        if let f = x.fill, let svg = x.svg, f.contents != nil || f.mask != nil, let parent = f.superlayer {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             f.frame = parent.bounds
-            f.contents = layerContents(n, svg.image, svg, mode: x.mode, size: parent.bounds.size)
+            let c = layerContents(n, svg.image, svg, mode: x.mode, size: parent.bounds.size)
+            if let m = f.mask { m.frame = f.bounds; m.contents = c } else { f.contents = c }
             CATransaction.commit()
         }
         guard let l = x.layer, let parent = l.superlayer else { return }
@@ -644,7 +772,8 @@ func asukaGravity(_ mode: Int32) -> CALayerContentsGravity {
         if let iv = n.view as? NSImageView {
             j["viewImage"] = iv.image != nil
             j["scaling"] = iv.imageScaling.rawValue
-            j["layerContents"] = x.fill?.contents != nil
+            j["layerContents"] = x.fill?.contents != nil || x.fill?.mask?.contents != nil
+            j["fillTinted"] = x.fill?.mask != nil
             // Core Animation keeps a transition under kCATransition, whatever
             // the key it was added with.
             if let a = iv.layer?.animation(forKey: kCATransition) { j["arrival"] = a.duration }
@@ -702,6 +831,12 @@ final class AsukaDiskCache: @unchecked Sendable {
         lock.unlock()
         // Once a launch, after it has written: what's past the limit goes.
         if start { DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) { self.trim() } }
+    }
+
+    /// Forgets every file (any thread).
+    func removeAll() {
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        for f in files { try? FileManager.default.removeItem(at: f) }
     }
 
     func trim() {

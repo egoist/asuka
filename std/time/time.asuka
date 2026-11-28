@@ -379,3 +379,32 @@ pub component Picker {
     on change(ms) { emit valueChange(unixMilli(ms, zone: zone)) }
   }
 }
+
+/// A range of days, chosen the platform's way: the prelude's
+/// DateRangePicker, of Times (bind start: from; bind end: to). The user's
+/// choice is the start of its first and last days in zone; none, nothing
+/// chosen yet.
+///
+///   time.RangePicker { bind start: from; bind end: to; min: time.now() }
+pub component RangePicker {
+  prop start: Time? = none
+  prop end: Time? = none
+  prop min: Time? = none
+  prop max: Time? = none
+  prop inline = false
+  prop zone: Zone = .local
+  event startChange(start: Time?)
+  event endChange(end: Time?)
+
+  DateRangePicker {
+    start: start?.unixMilli() ?? 0
+    end: end?.unixMilli() ?? 0
+    min: min?.unixMilli() ?? 0
+    max: max?.unixMilli() ?? 0
+    inline: inline
+    on change(s, e) {
+      emit startChange(unixMilli(s, zone: zone).startOfDay())
+      emit endChange(unixMilli(e, zone: zone).startOfDay())
+    }
+  }
+}

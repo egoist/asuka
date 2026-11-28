@@ -315,6 +315,92 @@ textarea.asuka-field { overflow-y: auto; display: block; }
 .asuka-stepper button:hover:not(:disabled) { background: var(--asuka-fill); }
 .asuka-stepper button:disabled { opacity: 0.5; cursor: default; }
 
+/* A date range: its two date inputs, an en dash between. */
+.asuka-date-range { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.asuka-date-dash { color: var(--asuka-secondary-label); }
+
+/* Chips: a pill in the controls' fill; a selected filter chip tinted, a
+   checkmark before its title; a removable chip's x at its end, its own
+   button. The keyboard's ring goes round the whole chip. */
+.asuka-chip {
+  --tint: var(--asuka-accent);
+  display: inline-flex;
+  align-items: stretch;
+  min-height: 32px;
+  border-radius: 999px;
+  background: var(--asuka-fill);
+  color: var(--asuka-label);
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+}
+.asuka-chip:hover { background: var(--asuka-fill-strong); }
+.asuka-chip.asuka-chip-selected { background: color-mix(in srgb, var(--tint) 16%, transparent); color: var(--tint); }
+.asuka-chip.asuka-chip-selected:hover { background: color-mix(in srgb, var(--tint) 24%, transparent); }
+.asuka-chip-main { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; margin: 0; padding: 0 14px; border: none; border-radius: inherit; background: none; color: inherit; font: inherit; cursor: pointer; }
+.asuka-chip-lead { display: flex; flex: none; margin-inline-start: -4px; }
+.asuka-chip-lead[hidden], .asuka-chip-title[hidden] { display: none; }
+.asuka-chip-lead .asuka-symbol, .asuka-chip-remove .asuka-symbol { width: 18px; height: 18px; }
+.asuka-chip-title { overflow: hidden; text-overflow: ellipsis; }
+.asuka-chip-removable .asuka-chip-main { padding-inline-end: 2px; }
+.asuka-chip-remove { display: flex; align-items: center; justify-content: center; flex: none; margin: 0; padding: 0; padding-inline: 4px 8px; border: none; border-radius: inherit; background: none; color: var(--asuka-secondary-label); cursor: pointer; }
+.asuka-chip-remove:hover { color: var(--asuka-label); }
+.asuka-chip-selected .asuka-chip-remove { color: inherit; }
+.asuka-chip-main:active, .asuka-chip-remove:active { opacity: 0.7; }
+.asuka-chip.asuka-chip-disabled { opacity: 0.5; pointer-events: none; }
+.asuka .asuka-chip-main.asuka-control:focus-visible, .asuka .asuka-chip-remove:focus-visible { outline: none; }
+.asuka-chip:has(> .asuka-chip-main:focus-visible) { outline: 2px solid var(--asuka-accent); outline-offset: 2px; }
+@media (forced-colors: active) {
+  .asuka-chip { border: 1px solid ButtonText; }
+  .asuka-chip.asuka-chip-selected { background: Highlight; color: HighlightText; }
+}
+
+/* A disclosure's header: its title, and a chevron at the end that turns
+   down as it opens (mirrored right to left). No marker of the browser's. */
+.asuka-disclosure { display: block; }
+.asuka-disclosure-header { display: flex; align-items: center; gap: 8px; min-height: 44px; list-style: none; color: var(--asuka-label); border-radius: 8px; cursor: pointer; }
+.asuka-disclosure-header::-webkit-details-marker { display: none; }
+.asuka-disclosure-header::marker { content: ""; }
+.asuka-disclosure-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asuka-disclosure-chevron { display: flex; flex: none; width: 1.15em; height: 1.15em; color: var(--tint, var(--asuka-accent)); transition: transform 0.25s ease-in-out; }
+.asuka-disclosure-chevron .asuka-symbol { width: 100%; height: 100%; }
+.asuka-disclosure[open] .asuka-disclosure-chevron { transform: rotate(90deg); }
+.asuka-disclosure-chevron:dir(rtl) { scale: -1 1; }
+
+/* A field's suggestions (combobox.js): a list under it in the menus'
+   look, the option the arrows are on in the accent; Dropdown's chevron at
+   the field's end. */
+.asuka-field-box { --asuka-combo-button: 32px; }
+.asuka-combo-dropdown > .asuka-field { padding-inline-end: var(--asuka-combo-button); }
+.asuka-combo-button { position: absolute; top: 0; bottom: 0; inset-inline-end: 0; width: var(--asuka-combo-button); display: flex; align-items: center; justify-content: center; margin: 0; padding: 0; border: none; border-radius: 9px; background: none; color: var(--asuka-secondary-label); cursor: pointer; }
+.asuka-combo-button .asuka-symbol { width: 20px; height: 20px; transition: transform 0.2s ease-in-out; }
+.asuka-combo-button[aria-expanded="true"] .asuka-symbol { transform: rotate(180deg); }
+.asuka-combo-button:hover { color: var(--asuka-label); }
+.asuka-combo-button:disabled { opacity: 0.5; cursor: default; }
+.asuka-combo-list {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 5px;
+  border: none;
+  border-radius: 12px;
+  background: var(--asuka-card);
+  color: var(--asuka-label);
+  box-shadow: var(--asuka-shadow);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 2147483000; /* without popovers: over the page */
+}
+.asuka-combo-list:not(.asuka-combo-open) { display: none; }
+.asuka-combo-option { padding: 7px 10px; border-radius: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; cursor: pointer; }
+.asuka-combo-option:hover { background: var(--asuka-fill); }
+.asuka-combo-option[aria-selected="true"] { background: var(--asuka-accent); color: var(--asuka-on-accent); }
+@media (forced-colors: active) { .asuka-combo-option[aria-selected="true"] { background: Highlight; color: HighlightText; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .asuka-chip, .asuka-disclosure-chevron, .asuka-combo-button .asuka-symbol { transition: none; }
+}
+
 .asuka-segmented { --tint: var(--asuka-label); display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: var(--asuka-fill); white-space: nowrap; }
 .asuka-segmented button { flex: 1 1 0; padding: 5px 14px; border: none; border-radius: 7px; background: none; font: inherit; color: var(--asuka-label); cursor: pointer; transition: background-color 0.15s; }
 .asuka-segmented button[aria-checked="true"] { background: var(--asuka-card); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), 0 0 0 0.5px rgb(0 0 0 / 0.04); font-weight: 600; }

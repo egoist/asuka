@@ -134,6 +134,7 @@ state units = store.read("units", "metric")
 | [`platform/scan`](platform/scan.md) | `scan.file(path, kinds:)`：画像の中のバーコードと QR コード（[デバイス](device.md)） |
 | [`platform/vision`](platform/vision.md) | `vision.analyze(path, text:, faces:, codes:, languages:)`：画像の中の文字（行ごと、単語ごと）、顔、コードを、それぞれの位置とともにデバイス上で検出します（[デバイス](device.md)） |
 | [`platform/transcribe`](platform/transcribe.md) | `transcribe.check(language)`、`transcribe.file(path, language:)`：録音をデバイス上だけで文字にします（できない場所では `notAvailable`：Web、Linux、古い Android）（[デバイス](device.md)） |
+| [`platform/image`](platform/image.md) | `image.prefetch(urls, headers:)`（表示する前に画像を `Image` のメモリとディスクのキャッシュに読み込む）と `image.clearCache(memory:, disk:)`（[先読みとキャッシュの消去](components.md#先読みとキャッシュの消去)） |
 | [`platform/imageedit`](platform/imageedit.md) | `imageedit.edit(source, actions, format:, quality:)`（リサイズ、切り抜き、回転、反転、塗りつぶし、モザイク）、`imageedit.size`、`imageedit.videoFrame`、`imageedit.Cropper`（切り抜きの手順：枠の中で画像をドラッグとピンチで合わせる）：画像と動画のフレームを JPEG か PNG で書き出します（[デバイス](device.md)） |
 | [`platform/maps`](platform/maps.md) | `maps.View`（`bind region`、`markers`、`mapType`、`showsUser`、`interactive`。`markerPress`、`press`、`regionChange`）：Apple マップ、Google マップ、OpenStreetMap（[デバイス](device.md)） |
 

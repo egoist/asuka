@@ -14,8 +14,17 @@
 // by source and called when it's decoded. The cache, the waiting views
 // and the decoded images are the main thread's; a fetch's thread only
 // posts its result.
-#include "host.h"
-#include "parts.h"
+//
+// An Image's Headers go with its http(s) requests (an authenticated
+// image's); its Cache says where it's kept: Default, decoded in memory
+// and, fetched over http(s), on disk (unless its response says no-store);
+// Memory, in memory, the disk's cache neither read nor written; None,
+// neither: loaded each time it's shown. The caches key by URL alone. A
+// decoded image is counted (the memory cache, each Image showing it), so
+// the "image" module's clearCache lets go of the cache's while what shows
+// keeps it; its prefetch loads URLs into the caches as an Image would,
+// sharing a load in flight.
+#include "modules.h"
 #include "draw.h"
 
 #include <stdarg.h>
@@ -36,6 +45,8 @@ typedef struct decoded {
 	float sw, sh;
 	char *err;
 	struct decoded *next;  // the cache's chain
+	int refs;              // the Images holding it (main thread)
+	bool cached;           // the memory cache has it
 } decoded;
 
 struct wh_image {
@@ -48,8 +59,12 @@ struct wh_image {
 	int bw, bh;
 	GpBitmap *tinted;
 	ak_color tint;
+	int32_t cache;     // ImageCache
+	uint8_t *headers;  // Headers, as the wire has them
+	size_t headers_len;
 	// The placeholder until the image arrives: an asset's (tinted as the
-	// image is) or the hash's (closed with the view).
+	// image is; ph_dec holds it) or the hash's (closed with the view).
+	decoded *ph_dec;
 	GpBitmap *ph;
 	const decoded *ph_svg;  // an SVG placeholder (the cache's), in ph's place
 	int pw, phh;
@@ -212,13 +227,22 @@ static const char *images_dir(void) {
 	return dir;
 }
 
-// http_get fetches a URL (redirects followed) into *out, from the disk's
-// cache if it's there, keeping it there if it may: NULL, or why not.
-static char *http_get(const char *url, uint8_t **out, size_t *len) {
-	if ((*out = dsk_image_cache_read(images_dir(), url, len))) return NULL;
+// http_get fetches a URL (redirects followed) with its headers (u32
+// count, then names and values: Headers' bytes) into *out, from the
+// disk's cache if it's there and disk says so, keeping it there if it
+// may: NULL, or why not.
+static char *http_get(const char *url, const uint8_t *hb, size_t hn, bool disk, uint8_t **out, size_t *len) {
+	if (disk && (*out = dsk_image_cache_read(images_dir(), url, len))) return NULL;
+	char **strs = NULL;
+	uint32_t ns = wh_decode_cstrings(&strs, hb, hn);
+	asuka_header *hs = ns >= 2 ? wh_alloc((ns / 2) * sizeof *hs) : NULL;
+	for (uint32_t i = 0; i + 1 < ns; i += 2) hs[i / 2] = (asuka_header){strs[i], strs[i + 1]};
 	asuka_response r;
 	asuka_error e = {0};
-	if (!asuka_fetch("GET", url, NULL, 0, NULL, 0, 0, NULL, &r, &e)) {
+	bool ok = asuka_fetch("GET", url, hs, ns / 2, NULL, 0, 0, NULL, &r, &e);
+	free(hs);
+	wh_free_cstrings(strs, ns);
+	if (!ok) {
 		char *err = errorf("%s", e.message ? e.message : url);
 		asuka_error_free(&e);
 		return err;
@@ -232,7 +256,7 @@ static char *http_get(const char *url, uint8_t **out, size_t *len) {
 	const char *cc = NULL;
 	for (size_t i = 0; i < r.nheaders; i++)
 		if (!strcmp(r.names[i], "cache-control")) cc = r.values[i];
-	if (dsk_image_cache_storable(url, cc)) dsk_image_cache_write(images_dir(), url, r.body.data, r.body.len);
+	if (disk && dsk_image_cache_storable(url, cc)) dsk_image_cache_write(images_dir(), url, r.body.data, r.body.len);
 	*out = r.body.data, *len = r.body.len;
 	r.body.data = NULL;
 	asuka_response_free(&r);
@@ -244,14 +268,15 @@ static bool absolute(const char *p) {
 }
 
 // decode reads and decodes src: an animation (GIF, APNG, WebP), else a
-// still by WIC.
-static decoded *decode(const char *src, const char *assets) {
+// still by WIC; an http(s) one fetched with headers, through the disk's
+// cache if disk.
+static decoded *decode(const char *src, const char *assets, const uint8_t *headers, size_t headers_len, bool disk) {
 	decoded *d = wh_alloc(sizeof *d);
 	d->src = wh_strdup(src);
 	uint8_t *data = NULL;
 	size_t len = 0;
 	if (!strncmp(src, "http://", 7) || !strncmp(src, "https://", 8)) {
-		d->err = http_get(src, &data, &len);
+		d->err = http_get(src, headers, headers_len, disk, &data, &len);
 	} else {
 		char *path;
 		if (!strncmp(src, "file://", 7)) path = wh_strdup(src + 7);
@@ -317,10 +342,48 @@ typedef struct {
 	char *src;
 	uint32_t id;
 	bool placeholder;
+	int32_t mode;  // the load's ImageCache
 } waiter;
 
 static waiter *waiters;
 static uint32_t nwaiters, capwaiters;
+
+// The loads in flight: a source and its ImageCache each.
+typedef struct {
+	char *src;
+	int32_t mode;
+} flight;
+
+static flight *flights;
+static uint32_t nflights, capflights;
+
+static void decoded_free(decoded *d) {
+	free(d->src);
+	free(d->pixels);
+	if (d->bmp) GdipDisposeImage((GpImage *)d->bmp);
+	if (d->anim) dsk_anim_free(d->anim);
+	if (d->svg) asuka_free(d->svg);
+	free(d->err);
+	free(d);
+}
+
+static void hold(decoded *d) {
+	if (d) d->refs++;
+}
+
+// let_go drops a hold on *p: it goes once nothing holds it and the cache
+// doesn't keep it.
+static void let_go(decoded **p) {
+	decoded *d = *p;
+	*p = NULL;
+	if (d && --d->refs <= 0 && !d->cached) decoded_free(d);
+}
+
+static bool in_flight(const char *src, int32_t mode, bool any_cached) {
+	for (uint32_t i = 0; i < nflights; i++)
+		if (!strcmp(flights[i].src, src) && (flights[i].mode == mode || (any_cached && flights[i].mode != AK_IMAGE_CACHE_NONE))) return true;
+	return false;
+}
 
 static uint64_t hash(const char *s) {
 	uint64_t h = 1469598103934665603ull;
@@ -336,6 +399,9 @@ static decoded *cached(const char *src) {
 
 typedef struct {
 	char *src, *assets;
+	uint8_t *headers;
+	size_t headers_len;
+	int32_t mode;
 	decoded *d;
 } fetch_job;
 
@@ -344,14 +410,25 @@ static void arrived(node *n, decoded *d, const char *src, bool placeholder);
 static void fetched(void *ctx) {
 	fetch_job *j = ctx;
 	decoded *d = j->d;
-	uint64_t k = hash(d->src);
-	d->next = wh_map_get(&cache, k);
-	wh_map_put(&cache, k, d);
+	for (uint32_t i = 0; i < nflights; i++)
+		if (flights[i].mode == j->mode && !strcmp(flights[i].src, j->src)) {
+			free(flights[i].src);
+			flights[i] = flights[--nflights];
+			break;
+		}
+	// Kept in memory but with None (and an error: tried again), once.
+	if (j->mode != AK_IMAGE_CACHE_NONE && !d->err && !cached(d->src)) {
+		uint64_t k = hash(d->src);
+		d->next = wh_map_get(&cache, k);
+		wh_map_put(&cache, k, d);
+		d->cached = true;
+	}
+	hold(d);  // while it's handed out
 	// The views waiting for it, taken first: what they do may wait anew.
 	waiter *ready = NULL;
 	uint32_t nready = 0;
 	for (uint32_t i = 0; i < nwaiters;) {
-		if (!strcmp(waiters[i].src, d->src)) {
+		if (!strcmp(waiters[i].src, d->src) && waiters[i].mode == j->mode) {
 			ready = wh_realloc(ready, (nready + 1) * sizeof *ready);
 			ready[nready++] = waiters[i];
 			waiters[i] = waiters[--nwaiters];
@@ -365,39 +442,39 @@ static void fetched(void *ctx) {
 		free(ready[i].src);
 	}
 	free(ready);
+	let_go(&d);
 	free(j->src);
 	free(j->assets);
+	free(j->headers);
 	free(j);
 }
 
 static DWORD WINAPI fetch_thread(void *ctx) {
 	fetch_job *j = ctx;
 	HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-	j->d = decode(j->src, j->assets);
+	j->d = decode(j->src, j->assets, j->headers, j->headers_len, j->mode == AK_IMAGE_CACHE_DEFAULT);
 	if (SUCCEEDED(hr)) CoUninitialize();
 	wh_post(fetched, j);
 	return 0;
 }
 
-// fetch calls arrived for n on the main thread with src decoded, from the
-// cache or a thread of its own.
-static void fetch(node *n, const char *src, bool placeholder) {
-	decoded *d = cached(src);
-	if (d) {
-		arrived(n, d, src, placeholder);
-		return;
+// start_load loads src on a thread of its own, with the headers, kept as
+// mode says: fetched is called with it on the main thread.
+static void start_load(const char *src, int32_t mode, const uint8_t *headers, size_t headers_len) {
+	if (nflights == capflights) {
+		capflights = capflights ? capflights * 2 : 16;
+		flights = wh_realloc(flights, capflights * sizeof *flights);
 	}
-	bool fetching = false;
-	for (uint32_t i = 0; i < nwaiters && !fetching; i++) fetching = !strcmp(waiters[i].src, src);
-	if (nwaiters == capwaiters) {
-		capwaiters = capwaiters ? capwaiters * 2 : 16;
-		waiters = wh_realloc(waiters, capwaiters * sizeof *waiters);
-	}
-	waiters[nwaiters++] = (waiter){wh_strdup(src), n->id, placeholder};
-	if (fetching) return;
+	flights[nflights++] = (flight){wh_strdup(src), mode};
 	fetch_job *j = wh_alloc(sizeof *j);
 	j->src = wh_strdup(src);
 	j->assets = wh_strdup(H.assets ? H.assets : "assets");
+	j->mode = mode;
+	if (headers_len) {
+		j->headers = wh_alloc(headers_len);
+		memcpy(j->headers, headers, headers_len);
+		j->headers_len = headers_len;
+	}
 	HANDLE t = CreateThread(NULL, 0, fetch_thread, j, 0, NULL);
 	if (t) {
 		CloseHandle(t);
@@ -407,6 +484,26 @@ static void fetch(node *n, const char *src, bool placeholder) {
 		j->d->err = errorf("%s: no thread to fetch it", src);
 		wh_post(fetched, j);
 	}
+}
+
+// fetch calls arrived for n on the main thread with src decoded, from the
+// memory cache (unless its Cache is None) or a load of its own (one in
+// flight for it, if there is), a placeholder's as Default.
+static void fetch(node *n, const char *src, bool placeholder) {
+	wh_image *im = n->image;
+	int32_t mode = placeholder ? AK_IMAGE_CACHE_DEFAULT : im->cache;
+	decoded *d = mode != AK_IMAGE_CACHE_NONE ? cached(src) : NULL;
+	if (d) {
+		arrived(n, d, src, placeholder);
+		return;
+	}
+	if (nwaiters == capwaiters) {
+		capwaiters = capwaiters ? capwaiters * 2 : 16;
+		waiters = wh_realloc(waiters, capwaiters * sizeof *waiters);
+	}
+	waiters[nwaiters++] = (waiter){wh_strdup(src), n->id, placeholder, mode};
+	if (in_flight(src, mode, false)) return;
+	start_load(src, mode, placeholder ? NULL : im->headers, placeholder ? 0 : im->headers_len);
 }
 
 // ---- Timers: the fade and the animation's frames ----
@@ -450,6 +547,7 @@ static void fade_step(node *n) {
 	if (t >= 1) {
 		im->fade = 1;
 		im->ph = NULL, im->ph_svg = NULL, im->pw = im->phh = 0;
+		let_go(&im->ph_dec);
 		stop_timer(&im->fade_timer);
 	} else {
 		im->fade = (float)t;
@@ -534,6 +632,10 @@ void wh_image_close(node *n) {
 	stop_timer(&im->fade_timer);
 	if (im->ph == im->hash) im->ph = NULL;
 	im->ph_svg = NULL;
+	im->ph = NULL;
+	let_go(&im->ph_dec);
+	im->bmp = NULL;
+	let_go(&im->dec);
 	dispose(&im->hash);
 	for (uint32_t i = 0; i < nwaiters;) {
 		if (waiters[i].id == n->id) {
@@ -545,6 +647,7 @@ void wh_image_close(node *n) {
 	}
 	free(im->source);
 	free(im->placeholder);
+	free(im->headers);
 	free(im);
 	n->image = NULL;
 }
@@ -560,6 +663,7 @@ static void show_placeholder(node *n) {
 		return;
 	}
 	im->ph = NULL, im->ph_svg = NULL;
+	let_go(&im->ph_dec);
 	wh_redraw(n);
 	if (im->placeholder && *im->placeholder) fetch(n, im->placeholder, true);
 }
@@ -573,6 +677,7 @@ static void arrive(node *n) {
 	stop_timer(&im->fade_timer);
 	if (d <= 0 || !n->hwnd || !IsWindowVisible(n->hwnd)) {
 		im->fade = 1, im->ph = NULL, im->ph_svg = NULL;
+		let_go(&im->ph_dec);
 		return;
 	}
 	im->fade = 0;
@@ -593,10 +698,15 @@ static void arrived(node *n, decoded *d, const char *src, bool placeholder) {
 	}
 	if (!d->bmp && !d->svg) d->bmp = g_bitmap(d->w, d->h, d->pixels);
 	if (placeholder) {
+		hold(d);
+		let_go(&im->ph_dec);
+		im->ph_dec = d;
 		im->ph = d->bmp, im->ph_svg = d->svg ? d : NULL, im->pw = d->w, im->phh = d->h;
 		wh_redraw(n);
 		return;
 	}
+	hold(d);
+	let_go(&im->dec);
 	im->dec = d;
 	im->bmp = d->bmp, im->bw = d->w, im->bh = d->h;
 	release(im);
@@ -637,9 +747,9 @@ void wh_set_image_prop(node *n, uint16_t p, const ak_value *v) {
 		free(im->source);
 		im->source = wh_strndup(v->s.p, v->s.len);
 		im->loaded = false;
-		im->dec = NULL;
 		stop_playing(im);
 		im->bmp = NULL, im->bw = im->bh = 0;
+		let_go(&im->dec);
 		stop_timer(&im->fade_timer);
 		im->fade = 1;
 		release(im);
@@ -650,6 +760,18 @@ void wh_set_image_prop(node *n, uint16_t p, const ak_value *v) {
 		free(im->placeholder);
 		im->placeholder = wh_strndup(v->s.p, v->s.len);
 		show_placeholder(n);
+		break;
+	case AK_PROP_IMAGE_HEADERS:
+		free(im->headers);
+		im->headers = NULL, im->headers_len = 0;
+		if (v->s.len >= 4 && wh_u32((const uint8_t *)v->s.p) != 0) {
+			im->headers = wh_alloc(v->s.len);
+			memcpy(im->headers, v->s.p, v->s.len);
+			im->headers_len = v->s.len;
+		}
+		break;
+	case AK_PROP_IMAGE_CACHE:
+		im->cache = (int32_t)v->i;
 		break;
 	case AK_PROP_IMAGE_PLACEHOLDER_IMAGE:
 		if (im->ph == im->hash) im->ph = NULL;
@@ -780,3 +902,71 @@ void wh_paint_image(node *n, gfx g, float w, float h, float radius) {
 		GdipDeletePath(clip);
 	}
 }
+
+// ---- The "image" module: prefetch, clearCache ----
+
+// prefetch: u32 n, n u32-length URLs, then the headers (u32 count, names
+// and values in turn): each loaded into the caches as an Image (Default)
+// would, unless it's there or on its way.
+static void m_prefetch(wh_reply *r, const uint8_t *a, size_t n) {
+	size_t at = 0;
+	uint32_t count = n >= 4 ? wh_u32(a) : 0;
+	at = 4;
+	const uint8_t *urls = a + at;
+	size_t ul = 0;
+	for (uint32_t i = 0; i < count && at + 4 <= n; i++) {
+		uint32_t l = wh_u32(a + at);
+		if (at + 4 + l > n) {
+			count = i;
+			break;
+		}
+		at += 4 + l;
+	}
+	ul = at - 4;
+	const uint8_t *headers = at < n ? a + at : NULL;
+	size_t headers_len = at < n ? n - at : 0;
+	size_t k = 0;
+	for (uint32_t i = 0; i < count && k + 4 <= ul; i++) {
+		uint32_t l = wh_u32(urls + k);
+		char *src = wh_strndup((const char *)urls + k + 4, l);
+		k += 4 + l;
+		if (*src && !cached(src) && !in_flight(src, AK_IMAGE_CACHE_DEFAULT, true)) start_load(src, AK_IMAGE_CACHE_DEFAULT, headers, headers_len);
+		free(src);
+	}
+	wh_reply_nil(r);
+}
+
+static void clear_disk(void *ctx) {
+	(void)ctx;
+	dsk_image_cache_trim(images_dir(), 0);  // past a limit of nothing: every file
+}
+
+static void cleared(void *ctx) { (void)ctx; }
+
+// clearCache: u8 flags, 1 the memory cache (what shows keeps what it
+// shows), 2 the disk's.
+static void m_clear(wh_reply *r, const uint8_t *a, size_t n) {
+	uint8_t flags = n ? a[0] : 3;
+	if (flags & 1) {
+		uint32_t i = 0;
+		uint64_t key;
+		void *v;
+		while (wh_map_next(&cache, &i, &key, &v)) {
+			for (decoded *d = v, *next; d; d = next) {
+				next = d->next;
+				d->cached = false;
+				d->next = NULL;
+				if (d->refs <= 0) decoded_free(d);
+			}
+		}
+		free(cache.keys);
+		free(cache.vals);
+		cache = (wh_map){0};
+	}
+	if (flags & 2) wh_off_main(clear_disk, cleared, NULL);
+	wh_reply_nil(r);
+}
+
+static const wh_method_def image_methods[] = {{"prefetch", m_prefetch}, {"clearCache", m_clear}, {NULL, NULL}};
+
+const wh_module_def wh_image_module = {"image", image_methods};

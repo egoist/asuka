@@ -18,6 +18,10 @@
 | `Wheel` | `UIPickerView` | `NumberPicker` | `NSPopUpButton` | ドロップダウンの `COMBOBOX` | `GtkDropDown` | `<select>` |
 | `ColorPicker` | `UIColorWell` | 色見本と Material のダイアログ | `NSColorWell` とカラーパネル | 色見本と色の設定ダイアログ（`ChooseColor`） | `GtkColorDialogButton` | `<input type="color">` |
 | `DatePicker` | `UIDatePicker` | Material のピッカーを開くボタン | `NSDatePicker` | 日付と時刻の選択コントロール（`SysDateTimePick32`） | `GtkCalendar` とスピンボタンを開くボタン | `<input type="date">`、`time`、`datetime-local` |
+| `DateRangePicker` | コンパクトな `UIDatePicker` 2 つ。インラインでは `UICalendarView` | Material の日付範囲ピッカーを開くボタン | `NSDatePicker` 2 つ。インラインでは範囲モードのカレンダー | 日付の選択コントロール 2 つ。インラインでは月のカレンダー | `GtkCalendar` を開くボタン。インラインではカレンダーそのもの | `<input type="date">` 2 つ |
+| `Chip` | カプセル形の `UIButton` | Material の `Chip` | recessed スタイルの `NSButton` | Fluent のトグルボタンをカプセル形に描画 | カプセル形の `GtkButton` または `GtkToggleButton` | `<button>` |
+| `Disclosure` | シェブロン付きの行 | 展開アイコン付きの Material のリスト行 | `NSButton` の開閉三角形 | WinUI の `Expander` のヘッダーを描画 | `GtkExpander` | `<details>` |
+| `suggestions` 付きの `TextField` | フィールドの下のリスト。`dropdown` のシェブロンはメニューを開く | `MaterialAutoCompleteTextView` | `NSComboBox`、またはフィールドの下のリスト | フィールドの下のリスト。WinUI に倣って描画 | `GtkPopover` の中のリスト | ARIA の combobox |
 | `Progress` | `UIProgressView` | `LinearProgressIndicator` | `NSProgressIndicator` | Fluent の見た目で描画 | `GtkProgressBar` | `<progress>` |
 | `ProgressRing` | SwiftUI の円形ゲージに倣って描画。値がなければ `UIActivityIndicatorView` | `CircularProgressIndicator` | 16 ポイントと 32 ポイントでは spinning スタイルの `NSProgressIndicator`。それ以外のサイズや `color` の指定時は、そのスタイルに倣って描画 | Fluent の `ProgressRing` に倣って描画 | GNOME のスタイルで描画。値がなければ `AdwSpinner` | SVG のリング |
 | `Activity` | `UIActivityIndicatorView` | `CircularProgressIndicator` | spinning スタイルの `NSProgressIndicator` | Fluent のプログレスリングに倣って描画 | `AdwSpinner`（libadwaita 1.6 より前は `GtkSpinner`） | 描画したスピナー |
@@ -379,6 +383,36 @@ component NoteField {
 }
 ```
 
+**候補。** `suggestions` を指定すると、フィールドはオートコンプリートになります。ユーザーが入力するにつれて、入力した文字を含む候補をプラットフォームがフィールドの下に並べます。候補を選ぶと（タップ、クリック、または矢印キーと Return）、それがフィールドに入り、`on suggestion(index)` が実行されます。`index` は `suggestions` の中での位置です。`dropdown: true` にすると、フィールドの末尾にすべての候補を並べるボタンが付き、コンボボックスになります。
+
+```asuka
+let cities = ["Amsterdam", "Berlin", "Lisbon", "Paris", "Prague", "Rome"]
+
+component Destination {
+  state city = ""
+  state chosen = ""
+
+  TextField {
+    bind text: city
+    placeholder: "City"
+    suggestions: cities
+    dropdown: true
+    on suggestion(i) { chosen = cities[i] }
+  }
+}
+```
+
+候補の絞り込みは Asuka が行うので、どのプラットフォームでも結果は同じです。入力した文字を含むもの（大文字と小文字は区別しません）が元の順番で残り、フィールドが空のときや、内容が候補のどれかと同じときは、すべてが並びます。`filterSuggestions: false` にすると候補はそのまま並ぶので、アプリが自分で探す候補（入力に合わせた検索結果など）に使えます。その場合は、候補のあるフィールドだとわかるよう、最初から `suggestions` を指定してください（`[]` でもかまいません）。リストはユーザーが入力してから表示され、フィールドにフォーカスが移っただけでは開きません。候補を選ぶか Esc を押すと閉じます。
+
+| | 候補 | `dropdown` |
+|---|---|---|
+| iOS | フィールドの下のリスト。見た目はシステムのメニューと同じ | フィールドの末尾のシェブロン。候補のメニューを開く |
+| Android | `MaterialAutoCompleteTextView` のドロップダウン。フィールド自体はほかのフィールドと同じ | フィールドの末尾の矢印。リストの表示中は上を向く |
+| macOS | フィールドの下のリスト（Safari と同じ） | `NSComboBox` |
+| Windows | フィールドの下のリスト。WinUI の `ComboBox` のリストに倣って描画 | フィールドの末尾のシェブロン（Alt+Down と F4 でも開く） |
+| Linux | フィールドの下の `GtkPopover` の中のリスト | フィールドの末尾のアイコン |
+| Web | ARIA の combobox。`<input>` の下の listbox | 入力欄の後ろのボタン |
+
 `SafeArea` にはキーボードの分の余白が加わるので、その下端に置いたフィールドはキーボードに隠れません。
 
 ## コントロール
@@ -464,7 +498,7 @@ component Settings {
 - **ColorPicker** は、タップするとプラットフォームのピッカーを開く色見本で、選んだ色を `color` として書き込みます。`alpha` で不透明度も選べるようになり、`title` はピッカーの名前です。iOS では `UIColorWell` とシステムのピッカーです。Android にはないので、パレットを並べた Material のダイアログで、`alpha` には不透明度のスライダーが付きます。macOS ではカラーパネルを開く `NSColorWell`、Linux では `GtkColorDialogButton`、ブラウザーでは `<input type="color">` です。Windows のカラーダイアログには不透明度がないので、そこでは `alpha` は何もしません。
 - **DatePicker** は日時を選び、デバイスのタイムゾーンで表示します。`std/time` の `time.Picker` は `time.Time` をバインドします（プレリュードの `DatePicker` がバインドするのは 1970 年からのミリ秒です）。`mode` は `.date`（デフォルト）、`.time`、`.dateTime` のいずれかで、`min` と `max` で範囲を制限します。
 
-  | | コンパクト（デフォルト） | `.section` |
+  | | コンパクト（デフォルト） | `inline: true` |
   |---|---|---|
   | iOS | UIKit のコンパクトな日付ピッカー | カレンダーと時刻をその場に表示（専用のシートに置く場合向け） |
   | Android | 日付と時刻を表示し、Material のピッカーを開くボタン | 同じボタン |
@@ -472,6 +506,102 @@ component Settings {
   | Windows | カレンダーがドロップダウンで開く、日付と時刻の選択コントロール | 月のカレンダー。`.dateTime` ではその下に時刻の選択コントロール（`.time` はコンパクトのまま） |
   | Linux | GTK のカレンダーと、時と分のスピンボタンをポップオーバーで開くボタン | カレンダーとスピンボタンをその場に表示 |
   | Web | `<input type="date">`、`"time"`、`"datetime-local"` | 同じ入力要素 |
+
+### チップ
+
+`Chip` は、Material のチップと同じく、小さな操作、選択肢、または入力済みの項目です。どれになるかは、何を指定したかで決まります。
+
+- **操作**（`icon` があれば Material のアシストチップ、なければサジェストチップ）：`on press`
+- **フィルター**：`bind selected`。押すと状態が切り替わり、選ばれているあいだはチェックマーク（アイコンの位置に表示）と選択中の見た目になります
+- **入力済みの項目**（入力チップ：宛先やタグなど）：`on remove`。末尾に削除ボタンが付きます。キーボードのフォーカスがあるときは Delete か Backspace でも削除でき、スクリーンリーダーには、アプリの言語で名前の付いた削除のアクションが提供されます
+
+```asuka
+let tags = ["Wi-Fi", "Breakfast", "Pool"]
+
+component Filters {
+  state wanted = [true, false, false]
+  state people = ["Ana", "Bo"]
+
+  Column {
+    gap: 12
+    Row {
+      wrap: true
+      gap: 8
+      for i in 0..<tags.count() {
+        Chip(tags[i]) { bind selected: wanted[i] }
+      }
+    }
+    Row {
+      wrap: true
+      gap: 8
+      for p in people key p {
+        Chip(p) {
+          icon: "person"
+          on remove { people = people.filter(x => x != p) }
+        }
+      }
+      Chip("Add") {
+        icon: "plus"
+        on press { people = people + ["Cy"] }
+      }
+    }
+  }
+}
+```
+
+チップは、Material のチップグループと同じように、`wrap` を指定した `Row` に並べます。iOS にはチップがないので、カプセル形の `UIButton` です（ふだんはグレー、選ばれているあいだは色付き）。Android では、種類（アシスト、サジェスト、フィルター、入力）に応じたスタイルの Material 3 の `Chip` です。Mac では recessed スタイルの `NSButton` で、フィルターチップは押された状態を保つボタンです。Windows は Fluent のトグルボタンをカプセル形に描画し、Linux では libadwaita のカプセルスタイルの `GtkButton` か `GtkToggleButton`、Web では `<button>`（フィルターチップは `aria-pressed` 付き）です。スクリーンリーダーは、フィルターチップをオンかオフのトグルボタンとして読み上げます。
+
+### 日付の範囲
+
+`DateRangePicker` は、デバイスのタイムゾーンで日付の範囲を選びます。`bind start` と `bind end` はどちらも 1970 年からのミリ秒です（ユーザーが選ぶと、最初の日と最後の日の午前 0 時。0 はまだ選ばれていないことを表します）。`std/time` の `time.RangePicker` は、これらを `time.Time?` としてバインドします。`min` と `max` で選べる日を限定でき、両端が選ばれると `on change(start, end)` がその範囲を受け取ります。終わりが始まりより前になることはありません。
+
+```asuka
+import std/time
+
+component Stay {
+  state from: time.Time? = none
+  state to: time.Time? = none
+
+  time.RangePicker {
+    bind start: from
+    bind end: to
+    min: time.now()
+  }
+}
+```
+
+| | コンパクト（デフォルト） | `inline: true` |
+|---|---|---|
+| iOS | 開始と終了の、コンパクトな `UIDatePicker` 2 つ | `UICalendarView`。1 回目のタップで範囲が始まり、2 回目で終わる |
+| Android | 範囲を表示し、Material の日付範囲ピッカーを開くボタン | 同じボタン |
+| macOS | `NSDatePicker` 2 つ | 範囲モードの `NSDatePicker` のカレンダー。ドラッグか Shift クリックで日付を選ぶ |
+| Windows | 日付の選択コントロール 2 つ（`SysDateTimePick32`） | 範囲を選べる月のカレンダー（`MCS_MULTISELECT`） |
+| Linux | 範囲を表示し、`GtkCalendar` のポップオーバーを開くボタン。1 回目のクリックで範囲が始まり、2 回目で終わり、範囲の日に印が付く | カレンダーをその場に表示 |
+| Web | `<input type="date">` 2 つ | 同じ入力要素 |
+
+「未選択」を表示できないコントロール（日付の選択コントロール 2 つ）は、まだ何も選ばれていないあいだは今日を表示します。開始を終了より後ろに動かすと、終了もそれに合わせて動きます。
+
+### 開閉
+
+`Disclosure` は、ブロックの中身を表示したり隠したりするヘッダーです。SwiftUI の `DisclosureGroup` や、一般的なエキスパンダーと同じく、タイトルの横にプラットフォームの開閉インジケーターがあり、開くと回転します。`bind expanded` はその状態に従い、書き込めば開閉もできます。バインドしなければユーザーの選択を保ち、最初は閉じています。中身は開いたときに作られ、閉じると状態ごとなくなります。
+
+```asuka
+component Advanced {
+  state open = false
+  state flexible = false
+
+  Disclosure("More options") {
+    bind expanded: open
+    Row {
+      align: .center
+      Text("Flexible dates") { grow: 1 }
+      Toggle { bind on: flexible }
+    }
+  }
+}
+```
+
+`font` と `color` はヘッダーに適用されます。iOS では、末尾に下向きに回るシェブロンの付いた行です。Android では展開アイコン付きの Material のリスト行、Mac ではタイトルの前に `NSButton` の開閉三角形が付きます。Windows は WinUI の `Expander` のヘッダー（末尾にシェブロン）を描画し、Linux では `GtkExpander`、Web では `<details>` とその `<summary>` です。スクリーンリーダーは、展開または折りたたまれたボタンとして読み上げ、キーボードでは Space か Return で開けます。
 
 ## 進行状況とアクティビティ
 
@@ -548,6 +678,9 @@ component Pictures(photo: Photo) {
 - `placeholderMode` は、プレースホルダーを枠にどう収めるかです。`.fit`、`.fill`、`.stretch`、`.center` があり、デフォルトでは画像と同じです。
 - `transition` は、画像が届いたときにフェードインする秒数です。プレースホルダーの上でクロスディゾルブするか、何もないところから現れます。デフォルトでは、プレースホルダーがあるときだけ、プラットフォームの短い時間（0.25 秒。Android では `config_shortAnimTime`）でフェードインします。`-1` ならすぐに表示します。
 - `animated` が true のあいだはアニメーション画像を再生し、false にするとその場で止めます。指定しなければ、ファイルが指定する回数だけ再生します。ただし、ユーザーが動きを減らすよう設定しているとき（「視差効果を減らす」、Android のアニメーションのオフ、`prefers-reduced-motion`）は、最初のフレームを表示します。
+- `headers` は、リクエストと一緒に送る HTTP ヘッダーです。認証が必要な画像に使います（`["Authorization": "Bearer {token}"]`）。キャッシュは画像を URL だけで保持します。ブラウザーでは、ヘッダー付きの画像はページ自身が取得するので、サーバーがそのヘッダーを許可している必要があります（CORS）。
+- `cache` は、読み込んだ画像を保持する場所です。`.default`（メモリ。http(s) で取得したものはディスクにも）、`.memory`（ディスクには書き込まない。他人に見せたくない画像向け）、`.off`（表示するたびに読み込む）。
+- `color` は画像に色をつけます。形と透明な部分はそのままに、その色で塗ります（アイコンやテンプレート画像と同じ）。PNG でも SVG でも同じです。
 - `label` は、スクリーンリーダーに伝える画像の説明です。指定しなければ、画像は装飾として扱われます。
 - `on loaded(width, height)` は読み込みが終わると画像本来のサイズを受け取り、`on error(message)` は読み込めなかったときにメッセージを受け取ります。
 
@@ -565,6 +698,24 @@ component Pictures(photo: Photo) {
 | Web | ブラウザー | WebCodecs の `ImageDecoder` でキャンバスに描画（AVIF のシーケンスも）。ない場合（Safari）は `<img>` そのもので、一時停止中は最初のフレームを表示します |
 
 SVG は例外です。プラットフォームごとに SVG の読み方が異なり、iOS、Android、Windows はそもそも読めないため、Asuka 自身がどのプラットフォームでも同じように読み込みます。ソースが SVG（`.svg` のファイル、アセット、URL）の `Image` は、表示されるサイズでベクターとして描かれるので、どんなサイズや倍率でもくっきりしています。`color` はほかの画像と同じように色を付けます。描ける内容は [`svg.Document`](#svg-ドキュメント) と同じです。ブラウザーでは、名前が `.svg` で終わるソース（または SVG の `data:` URL）をこの方法で読みます。別のサイトにあり、ページからの読み取りを許していない（CORS ヘッダーがない）SVG は、ブラウザーが表示します。
+
+### 先読みとキャッシュの消去
+
+`platform/image` を使うと、画像を表示する前に読み込んでおけるので、その画像の `Image` はすぐに表示されます（次のページのサムネイル、これから開く画面の写真など）。キャッシュを消すこともできます。
+
+```asuka
+import platform/image
+
+fn warmUp(urls: [string], token: string) {
+  image.prefetch(urls, headers: ["Authorization": "Bearer {token}"])
+}
+
+fn signedOut() {
+  image.clearCache()  // memory and disk; clearCache(disk: false): memory alone
+}
+```
+
+`prefetch` は待ちません。`Image` と同じように、バックグラウンドで一つずつ読み込み、メモリのキャッシュに入れます。http(s) で取得したものはディスクのキャッシュにも入れます。`clearCache` は保持している画像を消します。表示中の画像は、表示している内容をそのまま保ちます。ブラウザーは画像を独自の HTTP キャッシュに保持しており、ページからは消せません。そこでの `clearCache` は、ページがメモリに保持している画像と、ヘッダー付きで取得した画像だけを消します。
 
 ## シンボルとアイコン
 

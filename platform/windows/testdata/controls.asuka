@@ -1,0 +1,118 @@
+// The controls of controls_test.go: chips (filter, input, action), a
+// field's suggestions and a combo box's, a date range in two pickers and
+// on a calendar, a disclosure, and pictures tinted, prefetched and
+// uncached.
+import platform/image
+
+let cities = ["Amsterdam", "Athens", "Paris", "Prague", "Rome"]
+let sizes = ["Small", "Medium", "Large"]
+
+fn day(ms: int) -> string {
+  if ms == 0 {
+    return "none"
+  }
+  return "{ms / 86_400_000}"
+}
+
+component Controls {
+  state wanted = [false, true, false]
+  state guests = ["Ana", "Bo", "Cy"]
+  state presses = 0
+  state city = ""
+  state chosen = ""
+  state size = ""
+  state sized = ""
+  state start = 0
+  state end = 0
+  state calStart = 0
+  state calEnd = 0
+  state more = false
+  state loaded = 0
+
+  task { image.prefetch(["pin.png"]) }
+
+  Scroll {
+    grow: 1
+    Column {
+      gap: 10
+      padding: 16
+      Row {
+        wrap: true
+        gap: 8
+        Chip("Wi-Fi") { bind selected: wanted[0] }
+        Chip("Breakfast") { bind selected: wanted[1] }
+        Chip("Pool") { bind selected: wanted[2] }
+      }
+      Text("Wanted: {wanted[0]} {wanted[1]} {wanted[2]}")
+      Row {
+        wrap: true
+        gap: 8
+        for g in guests key g {
+          Chip(g) {
+            icon: "person"
+            on remove { guests = guests.filter(x => x != g) }
+          }
+        }
+        Chip("Add me") {
+          icon: "plus"
+          on press { presses += 1 }
+        }
+      }
+      Text("Guests: {guests.count()} presses: {presses}")
+      TextField {
+        bind text: city
+        placeholder: "Destination"
+        suggestions: cities
+        on suggestion(i) { chosen = cities[i] }
+      }
+      Text("Chosen: {chosen} text: {city}")
+      TextField {
+        bind text: size
+        placeholder: "Size"
+        suggestions: sizes
+        dropdown: true
+        on suggestion(i) { sized = sizes[i] }
+      }
+      Text("Sized: {sized}")
+      DateRangePicker {
+        bind start: start
+        bind end: end
+      }
+      Text("Days: {day(start)} nights: {(end - start) / 86_400_000}")
+      DateRangePicker {
+        inline: true
+        bind start: calStart
+        bind end: calEnd
+      }
+      Text("Calendar: {(calEnd - calStart) / 86_400_000} nights")
+      Disclosure("More options") {
+        bind expanded: more
+        Text("Hidden content")
+      }
+      Text(if more { "Expanded" } else { "Collapsed" })
+      Row {
+        gap: 12
+        align: .center
+        Image("pin.png") {
+          width: 32
+          height: 40
+          color: .accent
+          cache: .off
+          on loaded(w, h) { loaded += 1 }
+        }
+        Image("pin.png") {
+          width: 32
+          height: 40
+          color: .red
+          cache: .memory
+          on loaded(w, h) { loaded += 1 }
+        }
+        Image("pin.png") { width: 32; height: 40 }
+        Button("Clear the image cache") { on press { image.clearCache() } }
+      }
+      Text("Loaded: {loaded}")
+    }
+  }
+}
+
+app { Controls() }

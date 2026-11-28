@@ -35,7 +35,7 @@ import AsukaOps
             s = n.text.isEmpty && n.runs.isEmpty ? .zero : AsukaMeasure.text(n, w, aw)
         case .image:
             s = n.image.map { CGSize(width: CGFloat($0.width) / scale, height: CGFloat($0.height) / scale) } ?? .zero
-        case .button, .toggle, .stepper, .symbol, .activity, .progressRing, .pageControl, .datePicker, .native:
+        case .button, .toggle, .stepper, .symbol, .activity, .progressRing, .pageControl, .datePicker, .native, .chip, .dateRangePicker:
             // Their own width (as wide as their content), at most what's
             // available, and a button at most as wide as it's drawn.
             s = AsukaMeasure.control(n, width: w.isNaN ? nil : CGFloat(w))
@@ -44,7 +44,7 @@ import AsukaOps
             if w.isNaN, s.width > most {
                 s = AsukaMeasure.control(n, width: most)
             }
-        case .slider, .textField, .progress, .segmented, .wheel, .picker:
+        case .slider, .textField, .progress, .segmented, .wheel, .picker, .disclosure:
             // As wide as they're let be (the watch's are the screen's width).
             let width: CGFloat = !w.isNaN ? CGFloat(w) : aw.isFinite ? CGFloat(Swift.max(aw, 0)) : 120
             s = AsukaMeasure.control(n, width: width)

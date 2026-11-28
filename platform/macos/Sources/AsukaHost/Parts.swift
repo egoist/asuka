@@ -10,7 +10,10 @@
 //   - list: lists, moving their rows, refresh, paging and page dots, and
 //     zoomable Scrolls (List, PageControl; ListReorder.swift, Zoom.swift);
 //     tables and outlines (Table, Outline: Tables.swift)
-//   - text: rich text, rich and multiline fields, selection, keys
+//   - text: rich text, rich and multiline fields, selection, keys, a
+//     field's suggestions (Suggestions.swift)
+//   - controls: AppKit's controls (Controls.swift), chips and
+//     disclosures (Chip.swift), date ranges (DateRange.swift)
 //   - visual: images, symbols, shapes, canvases, shaders, progress rings,
 //     video, web views, native views, interaction (press, hover, drag and
 //     drop, gestures), the pointer's shape (Cursor.swift)
@@ -90,6 +93,7 @@ import AsukaOps
         tableJSON(n, &d)
         textJSON(n, &d)
         visualJSON(n, &d)
+        controlsJSON(n, &d)
         cursorJSON(n, &d)
         focusJSON(n, &d)
     }

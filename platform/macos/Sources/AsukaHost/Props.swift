@@ -194,7 +194,7 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             updateClip(n)
         case AsukaProp.a11yLabel:
             n.a11yLabel = v.string
-            let target: NSView = n.textView ?? view
+            let target: NSView = n.textView ?? (view as? AsukaDisclosureView)?.triangle ?? view
             target.setAccessibilityLabel(v.string.isEmpty ? nil : v.string)
             if !v.string.isEmpty && n.kind == .view { view.setAccessibilityElement(true) }
         case AsukaProp.a11yHidden:
@@ -245,6 +245,7 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             updateBox(n)
         case AsukaProp.disabled:
             if let c = view as? NSControl { c.isEnabled = !v.bool }
+            (view as? AsukaCompound)?.setEnabled(!v.bool) // Chip.swift: a date range's pickers, a disclosure's triangle
             if view is NSButton && n.kind == .button { buttonTitle(n) } // a disabled filled button's title: white, or the app's color (Controls.swift)
             if v.bool || n.focus != nil { focusProps(n).disabled = v.bool } // it takes no focus (Focus.swift)
             if n.textView != nil { n.textView?.isEditable = !v.bool }
@@ -613,6 +614,8 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             buttonTitle(n)
         } else if let tv = n.textView {
             tv.font = font(n)
+        } else if let c = v as? AsukaCompound {
+            c.setFont(font(n))
         } else if let c = v as? NSControl {
             c.font = font(n)
             if n.styledLabel || n.kind == .text && styledText(n) { applyStyledText(n) }
@@ -642,6 +645,11 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             }
         case .progressRing:
             ringColor(n)
+        case .chip:
+            // A chip's tint: its fill while it's on (a selected filter chip).
+            (v as? NSButton)?.bezelColor = c
+        case .disclosure, .dateRangePicker:
+            (v as? AsukaCompound)?.setColor(c)
         case .activity, .progress:
             break // AppKit's indicators draw in the accent color; no tint.
         default:

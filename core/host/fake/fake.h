@@ -326,6 +326,16 @@ void ak_fake_flip(ak_fake *f, ak_fake_view *v);  // a Toggle
 void ak_fake_pick_color(ak_fake *f, ak_fake_view *v, ak_color c);
 void ak_fake_slide(ak_fake *f, ak_fake_view *v, double value);
 void ak_fake_pick_date(ak_fake *f, ak_fake_view *v, int64_t ms);  // a DatePicker's, in Unix milliseconds
+// ak_fake_pick_range chooses a DateRangePicker's days (Unix
+// milliseconds of their midnights), reported with RangeChanged.
+void ak_fake_pick_range(ak_fake *f, ak_fake_view *v, int64_t start, int64_t end);
+// ak_fake_remove_chip presses a Removable Chip's remove button (Remove);
+// false, failing the test, for another view. A tap on a filter Chip or
+// a Disclosure flips it and reports Toggled, as their platforms' do.
+bool ak_fake_remove_chip(ak_fake *f, ak_fake_view *v);
+// ak_fake_choose_suggestion chooses a TextField's suggestion (its index
+// in Suggestions): the field shows its text, then reports Suggestion.
+bool ak_fake_choose_suggestion(ak_fake *f, ak_fake_view *v, int64_t index);
 // ak_fake_video_state reports a Video's playback as a player does
 // (VideoState, ops/video.go's): its flags (1 ready, 2 playing, 4
 // buffering, 8 ended, 16 picture in picture, 32 full screen), the time,

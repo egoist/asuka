@@ -532,7 +532,22 @@ void wh_set_field(node *n, uint16_t p, const ak_value *v) {
 	switch (p) {
 	case AK_PROP_TEXT_FIELD_VALUE:
 		wstr_set(&n->text, v->s);
+		if (n->suggest && n->ctl && !n->multiline && !n->rich_text) {
+			// What it shows already (a suggestion chosen, the core's echo):
+			// kept, its cursor where it is.
+			int len = GetWindowTextLengthW(n->ctl);
+			wchar_t *cur = wh_alloc(((size_t)len + 1) * sizeof *cur);
+			GetWindowTextW(n->ctl, cur, len + 1);
+			bool same = len == n->text.n && !wcscmp(cur, wstr_c(&n->text));
+			free(cur);
+			if (same) break;
+		}
 		set_edit_text(n);
+		break;
+	case AK_PROP_TEXT_FIELD_SUGGESTIONS:
+	case AK_PROP_TEXT_FIELD_DROPDOWN:
+		wh_suggest_prop(n, p, v);
+		if (p == AK_PROP_TEXT_FIELD_DROPDOWN) n->host_msg = wh_suggest_dropdown(n) ? wh_suggest_message : NULL;
 		break;
 	case AK_PROP_TEXT_FIELD_PLACEHOLDER:
 		wstr_set(&n->placeholder, v->s);
@@ -594,15 +609,18 @@ void wh_field_command(node *n, HWND ctl, UINT code) {
 		free(s);
 		wh_emit_wstr(n, AK_EVENT_TEXT_CHANGED, n->text.p, n->text.n);
 		wh_rich_edited(n);
+		if (n->suggest && wh_node_of(ctl) == n) wh_suggest_field(n, code);  // typed: its list (suggest.c)
 		break;
 	}
 	case EN_SETFOCUS:
 		n->focused = true;
+		wh_suggest_field(n, code);
 		wh_redraw(n);
 		wh_emit_kind(n, AK_EVENT_FOCUS);
 		break;
 	case EN_KILLFOCUS:
 		n->focused = false;
+		wh_suggest_field(n, code);
 		wh_redraw(n);
 		wh_emit_kind(n, AK_EVENT_BLUR);
 		break;
@@ -625,13 +643,17 @@ void wh_layout_field(node *n) {
 		GetTextMetricsW(dc, &tm);
 		SelectObject(dc, old);
 		int x = n->plain ? 0 : wh_px(n, 10), y = n->plain ? 0 : wh_px(n, 6);
-		int w = wh_maxi(r.right - r.left - 2 * x, 1);
+		// A Dropdown's chevron's column at its end, in the padding's place.
+		int end = wh_suggest_dropdown(n) ? wh_px(n, wh_suggest_end(n)) : x;
+		int left = r.left + (wh_suggest_dropdown(n) && wh_is_rtl(n) ? end : x);
+		int w = wh_maxi(r.right - r.left - x - end, 1);
 		if (n->multiline) {
-			SetWindowPos(n->ctl, NULL, r.left + x, r.top + y, w, wh_maxi(r.bottom - r.top - 2 * y, 1), SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+			SetWindowPos(n->ctl, NULL, left, r.top + y, w, wh_maxi(r.bottom - r.top - 2 * y, 1), SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
 		} else {
 			int lh = tm.tmHeight;
-			SetWindowPos(n->ctl, NULL, r.left + x, r.top + (r.bottom - r.top - lh) / 2, w, lh, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+			SetWindowPos(n->ctl, NULL, left, r.top + (r.bottom - r.top - lh) / 2, w, lh, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
 		}
+		wh_suggest_follow(n);  // its list, under it
 		break;
 	}
 	case AK_KIND_WHEEL:
@@ -640,6 +662,9 @@ void wh_layout_field(node *n) {
 		break;
 	case AK_KIND_DATE_PICKER:
 		wh_layout_date(n, r);
+		break;
+	case AK_KIND_DATE_RANGE_PICKER:
+		wh_layout_range(n, r);
 		break;
 	case AK_KIND_SLIDER:
 		SendMessageW(n->ctl, TBM_SETTHUMBLENGTH, (WPARAM)wh_px(n, 20), 0);

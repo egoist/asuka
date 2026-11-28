@@ -57,6 +57,8 @@ static bool high_contrast(void) {
 	return SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof hc, &hc, 0) && (hc.dwFlags & HCF_HIGHCONTRASTON);
 }
 
+bool wh_high_contrast(void) { return high_contrast(); }
+
 static rgba sys_rgba(int i) {
 	COLORREF c = GetSysColor(i);
 	return (rgba){GetRValue(c), GetGValue(c), GetBValue(c), 255};

@@ -209,6 +209,7 @@ static LRESULT window_message(UINT m, WPARAM wp, LPARAM lp, bool *handled) {
 	if (m == WM_WINDOWPOSCHANGED) {
 		wh_dev_error_follow();
 		wh_dev_perf_follow();
+		wh_suggest_follow(NULL);  // a field's suggestions, under it
 	}
 	r = wh_ctl_message(H.main_ctl, m, wp, lp, &h);
 	if (h) return r;

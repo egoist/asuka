@@ -122,7 +122,13 @@ enum {
 	AK_KIND_TABLE = 40,
 	// a tree of rows (a sidebar's folders, a file tree): the rows shown (the roots, and the children of each expanded row, depth first) are a List's, bound through ListBind into cells the host makes, each with its RowData (its text and symbol) or its views (laid out by the core at the row's width less its indent: the host draws its disclosure and the depth's indentation, and tells the core the room they take with RowInset). Arrow keys move the selection, right and left expand and collapse (the platform's own). Phones get a List instead, of indented rows with a disclosure the core makes
 	AK_KIND_OUTLINE = 41,
-	AK_KIND_COUNT = 42,
+	// a compact element that's an action (an assist chip with an Icon; a suggestion chip without), a choice (Filter) or an entered item (Removable): Material 3's Chip on Android; iOS has none, so a UIButton in the capsule style (gray, tinted while selected); a recessed NSButton on macOS; drawn as Fluent's toggle button, pill shaped, on Windows; a GtkButton or GtkToggleButton in libadwaita's pill style on Linux; a <button> (aria-pressed for a filter chip) on the web. Measured. Press reports an action chip's press
+	AK_KIND_CHIP = 42,
+	// a range of days, chosen the platform's way, in the device's time zone and calendar: two compact UIDatePickers (the start and the end), or an inline UICalendarView, on iOS; a button showing the range that opens Material's date range picker on Android; two NSDatePickers, or NSDatePicker's graphical calendar in its range mode, on macOS; two date pickers (SysDateTimePick32), or a month calendar (MCS_MULTISELECT), on Windows; a button opening a popover of GtkCalendar, the range's days marked, on Linux; two <input type=date> on the web. A host whose control can't show none shows today while Start is 0. Measured. The user's choice is reported with RangeChanged, once both its ends are chosen
+	AK_KIND_DATE_RANGE_PICKER = 43,
+	// a disclosure's header (SwiftUI's DisclosureGroup, an expander): its title and the platform's indicator, which turns as it expands (iOS: the title and a chevron at the end, in a row a list's height; Android: a Material list item's row, an expand icon at the end; macOS: NSButton's disclosure triangle before the title; Windows: drawn as WinUI's Expander header, a chevron at the end; Linux: a GtkExpander without a child, its arrow before its label; the web: <details> and its <summary>). Measured, as wide as it's laid out. Pressing it (Space or Return with the keyboard's focus) reports Toggled, its new state: the host shows it at once, and the core shows or hides the content under it (views of the core's, not the header's children). Screen readers read it as a button, expanded or collapsed
+	AK_KIND_DISCLOSURE = 44,
+	AK_KIND_COUNT = 45,
 };
 
 // Props every kind has.
@@ -289,6 +295,10 @@ enum {
 	AK_PROP_TEXT_FIELD_PASTE_TYPES = 76,
 	// its Accessory's node ID (0: none)
 	AK_PROP_TEXT_FIELD_ACCESSORY = 77,
+	// u32 count, then each suggestion's u32-length text (the core has filtered them by what's typed): an autocomplete's or a combo box's list, shown under the field while it has the keyboard's focus, it isn't empty, and the user has typed since it took the focus or since a choice (MaterialAutoCompleteTextView's drop-down, NSComboBox's list, a suggestion list under a UITextField, a drop-down combo box's, a GtkPopover's list, an ARIA combobox's listbox). Choosing one (a tap, a click, the arrow keys then Return) puts its text in the field, reported with Suggestion and not TextChanged, and closes the list; Escape closes it. Sent (empty, too) before the field is inserted when it has suggestions at all, which a host may make another view for, then again as they change
+	AK_PROP_TEXT_FIELD_SUGGESTIONS = 78,
+	// with Suggestions: a button at the field's end (a chevron; NSComboBox's, a drop-down combo box's) opens the list of the Suggestions as they are, whether or not the user has typed, and closes it: a combo box's. The core sends them all, unfiltered, while the text is empty or is one of them; sent before it's inserted
+	AK_PROP_TEXT_FIELD_DROPDOWN = 79,
 };
 
 // Toggle props.
@@ -439,6 +449,10 @@ enum {
 	AK_PROP_IMAGE_TRANSITION = 69,
 	// an animated image (GIF, APNG, animated WebP, and AVIF and HEIF sequences where the platform decodes them) stops where it is (its first frame, before it has played); unset, it plays, as many times as the file says
 	AK_PROP_IMAGE_PAUSED = 70,
+	// HTTP headers sent with the source's request (an authenticated image's Authorization), as Video's: u32 count, then name and value in turn, u32-length strings (count is twice the headers'). Sent before Source, applying to its loads; the caches keep an image by its URL alone. The web fetches such an image (CORS) rather than letting the <img> load it
+	AK_PROP_IMAGE_HEADERS = 71,
+	// where the image is kept once loaded: Default, in memory (one fetched over http(s) on disk too, unless its response says no-store); Memory, in memory only, never written to disk nor read from it; None, neither: loaded each time it's shown. Sent before Source
+	AK_PROP_IMAGE_CACHE = 72,
 };
 
 // Native props.
@@ -714,6 +728,39 @@ enum {
 	AK_PROP_OUTLINE_ROW_HEIGHT = 67,
 };
 
+// Chip props.
+enum {
+	AK_PROP_CHIP_TITLE = 64,
+	// a symbol (Symbol.Name) before the title: an assist chip's (a selected filter chip's checkmark takes its place, as Material's does)
+	AK_PROP_CHIP_ICON = 65,
+	// a filter chip: pressing it toggles Selected, reported with Toggled (not Press); selected, it shows Material's checkmark and its selected look (iOS: tinted; the desktops and the web: their toggled button's). Screen readers read it as a toggle button, on or off. Sent before it's inserted
+	AK_PROP_CHIP_FILTER = 66,
+	// a filter chip's state
+	AK_PROP_CHIP_SELECTED = 67,
+	// an input chip (an entered item: a recipient, a tag): a remove button at its end (Material's close icon, an x in a circle); it, Delete or Backspace while the chip has the keyboard's focus, and a screen reader's remove action report Remove. The button is named with the platform's word (Material's close icon description; Asuka's word remove elsewhere) and the title. Sent before it's inserted
+	AK_PROP_CHIP_REMOVABLE = 68,
+};
+
+// DateRangePicker props.
+enum {
+	// the first day chosen: an instant in it, in Unix milliseconds (0: none chosen)
+	AK_PROP_DATE_RANGE_PICKER_START = 64,
+	// the last day chosen, as Start (never before it; 0: none)
+	AK_PROP_DATE_RANGE_PICKER_END = 65,
+	// the earliest day the user can choose, as Start (0: none)
+	AK_PROP_DATE_RANGE_PICKER_MIN = 66,
+	// the latest day the user can choose (0: none)
+	AK_PROP_DATE_RANGE_PICKER_MAX = 67,
+	// a calendar in place, the range marked on it (UICalendarView, NSDatePicker's graphical range, a month calendar's multiple selection, GtkCalendar), not a button or fields opening one; sent before it's inserted
+	AK_PROP_DATE_RANGE_PICKER_INLINE = 68,
+};
+
+// Disclosure props.
+enum {
+	AK_PROP_DISCLOSURE_TITLE = 64,
+	AK_PROP_DISCLOSURE_EXPANDED = 65,
+};
+
 // Events.
 enum {
 	AK_EVENT_PRESS = 1,
@@ -864,7 +911,13 @@ enum {
 	AK_EVENT_UNDO = 79,
 	// sent to the root: the system brought back a window the user had left open (an iPad's scene, restored as the app launches), which a Window with this state key showed (its Config's): the core opens the app's Window with that key, if one is closed, as its show() does (its open told true), and the host shows it in that window. A host that sees no Window with the key Present during the event closes the window it brought back
 	AK_EVENT_RESTORE_WINDOW = 80,
-	AK_EVENT_COUNT = 81,
+	// the user asked to remove a Removable Chip: its remove button, Delete or Backspace with the keyboard's focus, a screen reader's remove action
+	AK_EVENT_REMOVE = 81,
+	// the user chose a DateRangePicker's range: X its first day's start, Y its last day's (local midnight, in Unix milliseconds; Y is never before X). Sent once both ends are chosen (a calendar's second tap, Material's dialog's Save; a start chosen after the end moves the end to it)
+	AK_EVENT_RANGE_CHANGED = 82,
+	// the user chose one of a TextField's Suggestions: its index in them as last set. The field shows its text already; the host doesn't report it with TextChanged
+	AK_EVENT_SUGGESTION = 83,
+	AK_EVENT_COUNT = 84,
 };
 
 // Commands.
@@ -1012,7 +1065,8 @@ enum {
 	AK_ENUM_DETENT_KIND = 46,
 	AK_ENUM_CURSOR = 47,
 	AK_ENUM_SELECTION_MODE = 48,
-	AK_ENUM_COUNT = 49,
+	AK_ENUM_IMAGE_CACHE = 49,
+	AK_ENUM_COUNT = 50,
 };
 
 // Role.
@@ -1563,6 +1617,14 @@ enum {
 	AK_SELECTION_MODE_MULTIPLE = 1,
 	AK_SELECTION_MODE_NONE = 2,
 	AK_SELECTION_MODE_COUNT = 3,
+};
+
+// ImageCache.
+enum {
+	AK_IMAGE_CACHE_DEFAULT = 0,
+	AK_IMAGE_CACHE_MEMORY = 1,
+	AK_IMAGE_CACHE_NONE = 2,
+	AK_IMAGE_CACHE_COUNT = 3,
 };
 
 // A prop's name and wire type; enum is its enum's index (AK_ENUM_*) for

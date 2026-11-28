@@ -95,9 +95,12 @@ class AsukaSvgDrawable(private val rt: AsukaRuntime, private val doc: ByteArray,
 }
 
 /**
- * Loads images off the main thread: fetched (http, https; kept on disk,
- * AsukaDiskCache) or read (the app's assets), decoded there (subsampled to
- * the screen's size), then cached in memory.
+ * Loads images off the main thread: fetched (http, https, with an Image's
+ * Headers; kept on disk, AsukaDiskCache) or read (the app's assets, files),
+ * decoded there (subsampled to the screen's size), then cached in memory.
+ * The caches keep an image by its URL alone; an Image's Cache says which
+ * it uses (AsukaImageCache: Default both, Memory memory only, None
+ * neither). Loads of one source at a time are one.
  */
 object AsukaImages {
     private val cache = object : LruCache<String, AsukaImage>(maxOf(16 shl 20, (Runtime.getRuntime().maxMemory() / 8).toInt())) {
@@ -106,12 +109,24 @@ object AsukaImages {
     private val pool = Executors.newFixedThreadPool(3)
     private val main = Handler(Looper.getMainLooper())
     private val waiting = HashMap<String, ArrayList<(Result<AsukaImage>) -> Unit>>() // main thread only
+    private val kept = HashSet<String>() // the loads under way to keep in memory; main thread only
 
     fun cached(source: String): AsukaImage? = cache.get(source)
 
-    /** Calls done on the main thread. */
-    fun load(context: Context, source: String, done: (Result<AsukaImage>) -> Unit) {
-        cached(source)?.let { done(Result.success(it)); return }
+    /** What clearCache forgets: the decoded images in memory; the disk's are AsukaDiskCache.images'. Images showing keep theirs. */
+    fun clearMemory() = cache.evictAll()
+
+    /**
+     * Calls done on the main thread. headers go with an http(s) request;
+     * mode is where the image is looked for and kept (AsukaImageCache).
+     */
+    fun load(context: Context, source: String, done: (Result<AsukaImage>) -> Unit) = load(context, source, emptyMap(), AsukaImageCache.DEFAULT, done)
+
+    fun load(context: Context, source: String, headers: Map<String, String>, mode: Int, done: (Result<AsukaImage>) -> Unit) {
+        if (mode != AsukaImageCache.NONE) {
+            cached(source)?.let { done(Result.success(it)); return }
+            kept.add(source)
+        }
         waiting[source]?.let { it.add(done); return }
         waiting[source] = arrayListOf(done)
         val app = context.applicationContext
@@ -119,24 +134,26 @@ object AsukaImages {
         pool.execute {
             val r = runCatching {
                 if (source.startsWith("http://") || source.startsWith("https://")) {
-                    val disk = AsukaDiskCache.images(app)
-                    disk.read(source)?.let { d -> runCatching { decode(d, maxSide) }.getOrNull() }?.let { return@runCatching it }
-                    val (data, storable) = fetch(source)
-                    decode(data, maxSide).also { if (storable) disk.write(source, data) }
+                    val disk = if (mode == AsukaImageCache.DEFAULT) AsukaDiskCache.images(app) else null
+                    disk?.read(source)?.let { d -> runCatching { decode(d, maxSide) }.getOrNull() }?.let { return@runCatching it }
+                    val (data, storable) = fetch(source, headers)
+                    decode(data, maxSide).also { if (storable) disk?.write(source, data) }
                 } else decode(read(app, source), maxSide)
             }
             main.post {
-                r.getOrNull()?.let { cache.put(source, it) }
+                // Kept in memory if any of the loads joined in it may be.
+                if (kept.remove(source)) r.getOrNull()?.let { cache.put(source, it) }
                 waiting.remove(source)?.forEach { it(r) }
             }
         }
     }
 
     /** An image over http(s), and whether it may be kept on disk: not one its response says not to keep, nor one from this machine (asuka dev's assets, which change). */
-    private fun fetch(source: String): Pair<ByteArray, Boolean> {
+    private fun fetch(source: String, headers: Map<String, String>): Pair<ByteArray, Boolean> {
         val url = URL(source)
         val c = url.openConnection() as HttpURLConnection
         try {
+            for ((k, v) in headers) c.setRequestProperty(k, v)
             c.connectTimeout = 15000
             c.readTimeout = 30000
             if (c.responseCode !in 200..299) error("HTTP ${c.responseCode}")
@@ -282,10 +299,10 @@ fun AsukaRuntime.loadImage(n: AsukaNode, source: String) {
             }
         }
     }
-    val hit = AsukaImages.cached(source)
+    val hit = if (n.imageCache == AsukaImageCache.NONE) null else AsukaImages.cached(source)
     if (hit != null) { iv.placeholder = null; show(Result.success(hit)) } else {
         showPlaceholder(n)
-        AsukaImages.load(app, source, show)
+        AsukaImages.load(app, source, n.imageHeaders, n.imageCache, show)
     }
 }
 
@@ -532,6 +549,11 @@ class AsukaDiskCache(private val dir: File, private val limit: Long) {
         }
     }
 
+    /** Forgets every file (clearCache): off the main thread. */
+    fun clear() {
+        dir.listFiles()?.forEach { it.delete() }
+    }
+
     fun trim() {
         val files = dir.listFiles()?.sortedBy { it.lastModified() } ?: return
         var total = files.sumOf { it.length() }
@@ -548,6 +570,52 @@ class AsukaDiskCache(private val dir: File, private val limit: Long) {
         @Synchronized fun images(ctx: Context): AsukaDiskCache =
             images ?: AsukaDiskCache(File(ctx.cacheDir, "asuka-images"), 256L shl 20).also { images = it }
     }
+}
+
+/** Headers (an Image's, prefetch's): u32 count (twice the headers'), then each name and value, u32-length strings. */
+fun decodeHeaders(v: ByteBuffer): Map<String, String> {
+    val s = decodeStrings(v)
+    return (0 until s.size / 2).associate { s[2 * it] to s[2 * it + 1] }
+}
+
+/**
+ * The host's "image" module (platform/image): "prefetch" (u32 n, n
+ * u32-length URLs, then Headers' bytes) loads each into the caches as an
+ * Image of it would, in the background, joined with the loads under way;
+ * "clearCache" (u8: 1 the memory cache, 2 the disk's) forgets them.
+ * Neither waits: each answers at once.
+ */
+fun AsukaRuntime.imageMethods(): Map<String, AsukaModuleMethod> = mapOf(
+    "prefetch" to { args, reply ->
+        val (urls, headers) = decodePrefetch(ByteBuffer.wrap(args))
+        for (u in urls.distinct()) if (u.isNotEmpty()) AsukaImages.load(app, u, headers, AsukaImageCache.DEFAULT) {}
+        reply(Result.success(ByteArray(0)))
+    },
+    "clearCache" to { args, reply ->
+        val flags = if (args.isNotEmpty()) args[0].toInt() else 3
+        if (flags and 1 != 0) AsukaImages.clearMemory()
+        if (flags and 2 != 0) {
+            val disk = AsukaDiskCache.images(app)
+            Thread { disk.clear() }.start()
+        }
+        reply(Result.success(ByteArray(0)))
+    },
+)
+
+/** prefetch's arguments: u32 n, n u32-length URLs, then the headers as an Image's Headers. Cut short, what's there. */
+fun decodePrefetch(b: ByteBuffer): Pair<List<String>, Map<String, String>> {
+    val r = b.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    val urls = ArrayList<String>()
+    fun str(): String? {
+        if (r.remaining() < 4) return null
+        val n = r.int
+        if (n < 0 || n > r.remaining()) return null
+        return ByteArray(n).also { r.get(it) }.toString(Charsets.UTF_8)
+    }
+    if (r.remaining() < 4) return urls to emptyMap()
+    val n = r.int
+    for (i in 0 until n) urls.add(str() ?: return urls to emptyMap())
+    return urls to (if (r.remaining() >= 4) decodeHeaders(r.slice()) else emptyMap())
 }
 
 fun imageScaleType(mode: Int) = when (mode) {

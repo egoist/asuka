@@ -18,6 +18,10 @@
 | `Wheel` | `UIPickerView` | `NumberPicker` | `NSPopUpButton` | 下拉式 `COMBOBOX` | `GtkDropDown` | `<select>` |
 | `ColorPicker` | `UIColorWell` | 色块加 Material 对话框 | `NSColorWell` 和颜色面板 | 色块加颜色对话框（`ChooseColor`） | `GtkColorDialogButton` | `<input type="color">` |
 | `DatePicker` | `UIDatePicker` | 打开 Material 选择器的按钮 | `NSDatePicker` | 日期时间选择器（`SysDateTimePick32`） | 一个按钮，打开 `GtkCalendar` 和微调按钮 | `<input type="date">`、`time`、`datetime-local` |
+| `DateRangePicker` | 两个紧凑型 `UIDatePicker`；内嵌时为 `UICalendarView` | 一个按钮，打开 Material 的日期范围选择器 | 两个 `NSDatePicker`；内嵌时为它范围模式下的日历 | 两个日期选择器；内嵌时为月历 | 一个按钮，打开 `GtkCalendar`；内嵌时直接显示日历 | 两个 `<input type="date">` |
+| `Chip` | 胶囊形的 `UIButton` | Material 的 `Chip` | recessed 样式的 `NSButton` | 绘制成 Fluent 风格的切换按钮，胶囊形 | 胶囊形的 `GtkButton` 或 `GtkToggleButton` | `<button>` |
+| `Disclosure` | 带 V 形箭头的一行 | 带展开图标的 Material 列表行 | `NSButton` 的展开三角 | 绘制成 WinUI `Expander` 的标题栏 | `GtkExpander` | `<details>` |
+| 带 `suggestions` 的 `TextField` | 输入框下方的列表；`dropdown` 的 V 形箭头打开一个菜单 | `MaterialAutoCompleteTextView` | `NSComboBox`，或输入框下方的列表 | 输入框下方的列表，绘制成 WinUI 的样式 | `GtkPopover` 中的列表 | ARIA combobox |
 | `Progress` | `UIProgressView` | `LinearProgressIndicator` | `NSProgressIndicator` | 绘制成 Fluent 风格 | `GtkProgressBar` | `<progress>` |
 | `ProgressRing` | 仿照 SwiftUI 的圆形仪表绘制；没有值时是 `UIActivityIndicatorView` | `CircularProgressIndicator` | 16 和 32 点时是旋转样式的 `NSProgressIndicator`；其他尺寸或设置了 `color` 时，按它的样式自行绘制 | 自行绘制的 Fluent `ProgressRing` | 按 GNOME 的样式绘制；没有值时是 `AdwSpinner` | SVG 圆环 |
 | `Activity` | `UIActivityIndicatorView` | `CircularProgressIndicator` | 旋转样式的 `NSProgressIndicator` | 自行绘制的 Fluent 进度环 | `AdwSpinner`（libadwaita 1.6 之前为 `GtkSpinner`） | 自行绘制的加载指示器 |
@@ -379,6 +383,36 @@ component NoteField {
 }
 ```
 
+**建议。** 设置 `suggestions` 后，输入框就成了自动补全：用户输入时，平台会在输入框下方列出包含所输入内容的建议；选中其中一项（点按、点击，或用方向键选择后按回车）会把它填进输入框，并运行 `on suggestion(index)`，`index` 是它在 `suggestions` 中的位置。`dropdown: true` 会在输入框末端加一个按钮，列出全部建议，就像组合框那样。
+
+```asuka
+let cities = ["Amsterdam", "Berlin", "Lisbon", "Paris", "Prague", "Rome"]
+
+component Destination {
+  state city = ""
+  state chosen = ""
+
+  TextField {
+    bind text: city
+    placeholder: "City"
+    suggestions: cities
+    dropdown: true
+    on suggestion(i) { chosen = cities[i] }
+  }
+}
+```
+
+建议由 Asuka 来过滤，各平台结果一致：保留包含所输入文字的项（不区分大小写），顺序不变；输入框为空，或内容正好是其中一项时，列出全部。`filterSuggestions: false` 会原样列出它们，适合由应用自己查找的建议（比如边输入边搜索得到的结果）：这时请从一开始就设置 `suggestions`，哪怕是 `[]`，让这个输入框成为一个带建议的输入框。列表在用户输入之后才出现，不会在输入框获得焦点时就弹出；选中一项或按 Esc 后关闭。
+
+| | 建议 | `dropdown` |
+|---|---|---|
+| iOS | 输入框下方的列表，外观与系统菜单一致 | 输入框末端的 V 形箭头，打开列出它们的菜单 |
+| Android | `MaterialAutoCompleteTextView` 的下拉列表，输入框本身和其他输入框一样 | 输入框末端的箭头，列表显示时朝上 |
+| macOS | 输入框下方的列表，与 Safari 的一样 | `NSComboBox` |
+| Windows | 输入框下方的列表，绘制成 WinUI `ComboBox` 列表的样式 | 输入框末端的 V 形箭头（Alt+Down 和 F4 也能打开） |
+| Linux | 输入框下方 `GtkPopover` 中的列表 | 输入框末端的图标 |
+| Web | ARIA combobox：`<input>` 下方的 listbox | 输入框后面的按钮 |
+
 `SafeArea` 会为键盘留出内边距，所以放在它底部的输入框始终位于键盘上方。
 
 ## 控件
@@ -464,7 +498,7 @@ component Settings {
 - **ColorPicker** 是一个色块，点击后打开平台的颜色选择器，选中的结果写入一个 `color`。`alpha` 允许用户选择不透明度，`title` 是选择器的标题。iOS 上是 `UIColorWell` 加系统的颜色选择器；Android 没有颜色选择器，所以是一个列出调色板的 Material 对话框，设置了 `alpha` 时再附带一个不透明度滑块。macOS 上是打开颜色面板的 `NSColorWell`，Linux 上是 `GtkColorDialogButton`，浏览器中是 `<input type="color">`。Windows 的颜色对话框不支持不透明度，因此 `alpha` 在那里不起作用。
 - **DatePicker** 选取一个时刻，按设备所在的时区显示：`std/time` 的 `time.Picker` 绑定一个 `time.Time`（prelude 里的 `DatePicker` 绑定的是自 1970 年起的毫秒数）。`mode` 可以是 `.date`（默认）、`.time` 或 `.dateTime`；`min` 和 `max` 限定可选范围。
 
-  | | 紧凑（默认） | `.section` |
+  | | 紧凑（默认） | `inline: true` |
   |---|---|---|
   | iOS | UIKit 的紧凑型日期选择器 | 直接展开的日历和时间，适合单独放在一个弹出面板里 |
   | Android | 显示日期和时间的按钮，点击后打开 Material 的选择器 | 同样的按钮 |
@@ -472,6 +506,102 @@ component Settings {
   | Windows | 日期时间选择器，日历以下拉方式展开 | 月历；`.dateTime` 时下方再加一个时间选择器（`.time` 仍为紧凑样式） |
   | Linux | 一个按钮，打开包含 GTK 日历以及时、分微调按钮的 popover | 直接展开的日历和微调按钮 |
   | Web | `<input type="date">`、`"time"`、`"datetime-local"` | 同样的输入元素 |
+
+### 纸片
+
+`Chip`（纸片）是一个小巧的操作、选项或已输入的条目，和 Material 的纸片一样。它是哪一种，取决于你给了它什么：
+
+- **操作**（带 `icon` 时是 Material 的辅助纸片，不带时是建议纸片）：`on press`；
+- **筛选**，`bind selected`：按下会切换状态，选中时显示一个对勾（取代图标的位置）和选中的外观；
+- **已输入的条目**（输入纸片：收件人、标签），`on remove`：末端有一个移除按钮。获得键盘焦点时按 Delete 或 Backspace 也能移除它，屏幕阅读器还会提供一个移除操作，用应用的语言命名。
+
+```asuka
+let tags = ["Wi-Fi", "Breakfast", "Pool"]
+
+component Filters {
+  state wanted = [true, false, false]
+  state people = ["Ana", "Bo"]
+
+  Column {
+    gap: 12
+    Row {
+      wrap: true
+      gap: 8
+      for i in 0..<tags.count() {
+        Chip(tags[i]) { bind selected: wanted[i] }
+      }
+    }
+    Row {
+      wrap: true
+      gap: 8
+      for p in people key p {
+        Chip(p) {
+          icon: "person"
+          on remove { people = people.filter(x => x != p) }
+        }
+      }
+      Chip("Add") {
+        icon: "plus"
+        on press { people = people + ["Cy"] }
+      }
+    }
+  }
+}
+```
+
+纸片放在设置了 `wrap` 的 `Row` 里，就像 Material 的纸片组。iOS 没有纸片：它是一个胶囊样式的 `UIButton`，平时是灰色，选中时着色。Android 上是 Material 3 的 `Chip`，样式随种类而定（辅助、建议、筛选、输入）。Mac 上是 recessed 样式的 `NSButton`，筛选纸片是能保持按下状态的那种；Windows 把 Fluent 的切换按钮画成胶囊形；Linux 上是 libadwaita 胶囊样式的 `GtkButton` 或 `GtkToggleButton`；Web 上是 `<button>`，筛选纸片带 `aria-pressed`。屏幕阅读器把筛选纸片读作开或关的切换按钮。
+
+### 日期范围
+
+`DateRangePicker` 选取一段日期，按设备所在的时区：`bind start` 和 `bind end`，都是自 1970 年起的毫秒数（用户选择后是第一天和最后一天的零点；0 表示还没选）。`std/time` 的 `time.RangePicker` 把它们绑定为 `time.Time?`。`min` 和 `max` 限定可选的日期；两端都选好后，`on change(start, end)` 会收到这次选择，结束日期永远不会早于开始日期。
+
+```asuka
+import std/time
+
+component Stay {
+  state from: time.Time? = none
+  state to: time.Time? = none
+
+  time.RangePicker {
+    bind start: from
+    bind end: to
+    min: time.now()
+  }
+}
+```
+
+| | 紧凑（默认） | `inline: true` |
+|---|---|---|
+| iOS | 两个紧凑型 `UIDatePicker`，分别是开始和结束 | `UICalendarView`：点一下开始范围，再点一下结束 |
+| Android | 一个显示范围的按钮，点击后打开 Material 的日期范围选择器 | 同样的按钮 |
+| macOS | 两个 `NSDatePicker` | `NSDatePicker` 范围模式下的日历：拖动或按住 Shift 点击来标出日期 |
+| Windows | 两个日期选择器（`SysDateTimePick32`） | 能选择范围的月历（`MCS_MULTISELECT`） |
+| Linux | 一个显示范围的按钮，打开包含 `GtkCalendar` 的 popover：点一下开始范围，再点一下结束，范围内的日期会被标出 | 直接显示的日历 |
+| Web | 两个 `<input type="date">` | 同样的输入元素 |
+
+不能显示“未选择”的控件（两个日期选择器）在还没选时显示今天；开始日期移到结束日期之后时，结束日期会跟着移过去。
+
+### 展开与收起
+
+`Disclosure` 是一个标题，用来显示或隐藏它块中的内容，和 SwiftUI 的 `DisclosureGroup` 以及常见的折叠面板一样：标题旁边是平台的展开指示符，展开时会转动。`bind expanded` 跟随它的状态，也能用来展开或收起它；不绑定时，它会保留用户的选择，一开始是收起的。内容在展开时才构建，收起时连同它的状态一起移除。
+
+```asuka
+component Advanced {
+  state open = false
+  state flexible = false
+
+  Disclosure("More options") {
+    bind expanded: open
+    Row {
+      align: .center
+      Text("Flexible dates") { grow: 1 }
+      Toggle { bind on: flexible }
+    }
+  }
+}
+```
+
+它的 `font` 和 `color` 作用于标题。iOS 上是一行，末端有一个会向下转的 V 形箭头；Android 上是带展开图标的 Material 列表行；Mac 上是标题前的 `NSButton` 展开三角；Windows 绘制 WinUI 的 `Expander` 标题栏，末端有 V 形箭头；Linux 上是 `GtkExpander`；Web 上是 `<details>` 和它的 `<summary>`。屏幕阅读器把它读作展开或收起的按钮，用键盘时按空格键或回车键即可展开。
 
 ## 进度与加载
 
@@ -548,6 +678,9 @@ component Pictures(photo: Photo) {
 - `placeholderMode` 决定占位图如何填充框：`.fit`、`.fill`、`.stretch`、`.center`；默认和图片本身的方式一样。
 - `transition` 是图片加载完成时淡入所用的秒数：在占位图上交叉淡入，没有占位图时从无到有地淡入。默认只在有占位图时淡入，时长取平台的短动画时长（0.25 秒；Android 上是 `config_shortAnimTime`）；设为 `-1` 则立即显示。
 - `animated` 为 true 时播放动图，为 false 时让它停在当前帧。不设置时，动图会按文件规定的次数播放；但如果用户要求减少动态效果（“减弱动态效果”、Android 关闭动画、`prefers-reduced-motion`），它只显示第一帧。
+- `headers` 是随请求发送的 HTTP 头，用于需要登录的图片（`["Authorization": "Bearer {token}"]`）。缓存只按 URL 保存图片。在浏览器中，带请求头的图片由页面自己去获取，所以服务器必须允许这些请求头（CORS）。
+- `cache` 决定图片加载后存放在哪里：`.default`（内存中；通过 http(s) 获取的还会存到磁盘上）、`.memory`（从不写入磁盘，适合私密的图片）、`.off`（每次显示都重新加载）。
+- `color` 给图片着色：保留它的形状和透明部分，其余填成这个颜色（就像图标或模板图片那样），PNG 和 SVG 都一样。
 - `label` 向屏幕阅读器描述这张图片；不设置时，图片被视为纯装饰。
 - `on loaded(width, height)` 在图片加载完成后收到它的原始尺寸；`on error(message)` 在加载失败时收到错误信息。
 
@@ -565,6 +698,24 @@ component Pictures(photo: Photo) {
 | Web | 浏览器支持的格式 | 用 WebCodecs 的 `ImageDecoder` 在 canvas 上播放（也支持 AVIF 序列）；没有它的浏览器（Safari）由 `<img>` 自己播放，暂停时显示第一帧 |
 
 SVG 是个例外。各平台读 SVG 的方式各不相同，iOS、Android 和 Windows 干脆不支持，所以由 Asuka 自己来读，各平台结果一致：来源是 SVG（`.svg` 文件、资源或 URL）的 `Image` 会按它显示的尺寸以矢量方式绘制，任何尺寸和缩放下都清晰；`color` 和对其他图片一样给它着色。它能画的内容和 [`svg.Document`](#svg-文档) 相同。在浏览器里，名字以 `.svg` 结尾的来源（或 SVG 的 `data:` URL）会这样读取；其他站点上、不允许页面读取（没有 CORS 头）的 SVG 则交给浏览器显示。
+
+### 预先加载和清除缓存
+
+`platform/image` 可以在图片显示之前先把它加载好，这样显示它的 `Image` 能立即显示（比如下一页的缩略图、即将打开的界面上的照片），也可以把缓存清掉。
+
+```asuka
+import platform/image
+
+fn warmUp(urls: [string], token: string) {
+  image.prefetch(urls, headers: ["Authorization": "Bearer {token}"])
+}
+
+fn signedOut() {
+  image.clearCache()  // memory and disk; clearCache(disk: false): memory alone
+}
+```
+
+`prefetch` 不会等待：它在后台逐个加载，和 `Image` 加载的方式一样，放进内存缓存；通过 http(s) 获取的还会放进磁盘缓存。`clearCache` 会清掉缓存的内容；正在显示的图片仍然显示它已有的内容。浏览器把图片存在它自己的 HTTP 缓存里，页面无法清除：在那里，`clearCache` 只会清掉页面保存在内存中的图片，以及它带请求头获取的图片。
 
 ## 符号与图标
 

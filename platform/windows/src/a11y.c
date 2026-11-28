@@ -269,6 +269,10 @@ static bool named_by_texts(const node *n) {
 	return true;
 }
 
+// own_control: a control the host draws itself, a view of the core's
+// that isn't a control in Win32 (chip.c).
+static bool own_control(const node *n) { return n->kind == AK_KIND_CHIP || n->kind == AK_KIND_DISCLOSURE || n->kind == KIND_CHIP_REMOVE; }
+
 // control_type is a view's UIA control type (0: none of its own).
 static LONG control_type(const node *n) {
 	switch (n->a11y_role) {
@@ -297,7 +301,9 @@ static LONG control_type(const node *n) {
 	case AK_ROLE_TOOLBAR: return UIA_ToolBarControlTypeId;
 	case AK_ROLE_STATUS: return UIA_StatusBarControlTypeId;
 	}
-	if (wh_pressable(n)) return UIA_ButtonControlTypeId;
+	// A chip (WinUI's Button or ToggleButton), a disclosure's header
+	// (Expander's toggle), a chip's remove button: buttons.
+	if (wh_pressable(n) || own_control(n)) return UIA_ButtonControlTypeId;
 	if (n->kind == AK_KIND_TEXT) return UIA_TextControlTypeId;
 	if (n->kind == AK_KIND_IMAGE || n->kind == AK_KIND_SYMBOL) return UIA_ImageControlTypeId;
 	if (n->kind == AK_KIND_PROGRESS_RING) return UIA_ProgressBarControlTypeId;  // as WinUI's ring's peer
@@ -339,6 +345,7 @@ static void property(node *n, PROPERTYID id, VARIANT *v) {
 		ak_buf b = {0};
 		if (n->a11y_label.n) ak_buf_put(&b, n->a11y_label.p, (size_t)n->a11y_label.n * sizeof(wchar_t));
 		else if (n->kind == AK_KIND_TEXT && n->text.n) ak_buf_put(&b, n->text.p, (size_t)n->text.n * sizeof(wchar_t));
+		else if (own_control(n) && n->title.n) ak_buf_put(&b, n->title.p, (size_t)n->title.n * sizeof(wchar_t));  // a chip's, a disclosure's title
 		else if ((t = related(n->a11y_labelled_by))) text_of(t, &b);  // its label's text
 		else if (named_by_texts(n)) collect_texts(n, &b);
 		set_buf(v, &b);
@@ -379,14 +386,30 @@ static void property(node *n, PROPERTYID id, VARIANT *v) {
 	case UIA_IsControlElementPropertyId:
 	case UIA_IsContentElementPropertyId:
 		if (a11y_hidden(n)) set_bool(v, false);
-		else if (n->kind == AK_KIND_TEXT || n->kind == AK_KIND_PROGRESS_RING || wh_pressable(n) || n->a11y_label.n || n->focusable ||
+		else if (n->kind == AK_KIND_TEXT || n->kind == AK_KIND_PROGRESS_RING || wh_pressable(n) || own_control(n) || n->a11y_label.n || n->focusable ||
 			(n->a11y_role != AK_ROLE_NONE) || n->has_range || n->a11y_value.n)
 			set_bool(v, true);
 		break;
 	}
 }
 
-static bool invokes(const node *n) { return n->hwnd && !n->disabled && node_listening(n, AK_EVENT_PRESS); }
+static bool invokes(const node *n) {
+	if (own_control(n)) return n->hwnd && wh_own_invokes(n);
+	return n->hwnd && !n->disabled && node_listening(n, AK_EVENT_PRESS);
+}
+
+// checked is a view's toggle state: A11yChecked, or a filter chip's
+// Selected.
+static int32_t checked(const node *n) {
+	if (n->kind == AK_KIND_CHIP && n->chip_filter) return n->on ? AK_A11Y_CHECKED_CHECKED : AK_A11Y_CHECKED_UNCHECKED;
+	return n->a11y_checked;
+}
+
+// expanded is a view's expanded state: A11yExpanded, or a disclosure's.
+static int32_t expanded(const node *n) {
+	if (n->kind == AK_KIND_DISCLOSURE) return n->on ? AK_A11Y_EXPANDED_EXPANDED : AK_A11Y_EXPANDED_COLLAPSED;
+	return n->a11y_expanded;
+}
 
 // range is a view's range for screen readers (A11yRange: min, max, now),
 // or a ProgressRing's value, as a percentage (read only, as WinUI's ring
@@ -406,8 +429,8 @@ static bool radio_role(int32_t r) { return r == AK_ROLE_RADIO || r == AK_ROLE_ME
 
 // toggles: the Toggle pattern (a checkbox, a switch, a checkable item; a
 // view with a checked state but a radio's).
-static bool toggles(const node *n) { return checkable_role(n->a11y_role) || (n->a11y_checked != AK_A11Y_CHECKED_NONE && !radio_role(n->a11y_role)); }
-static bool expands(const node *n) { return n->a11y_expanded != AK_A11Y_EXPANDED_NONE; }
+static bool toggles(const node *n) { return checkable_role(n->a11y_role) || (checked(n) != AK_A11Y_CHECKED_NONE && !radio_role(n->a11y_role)); }
+static bool expands(const node *n) { return expanded(n) != AK_A11Y_EXPANDED_NONE; }
 static bool selects(const node *n) {
 	switch (n->a11y_role) {
 	case AK_ROLE_TAB: case AK_ROLE_OPTION: case AK_ROLE_RADIO: case AK_ROLE_MENU_ITEM_RADIO: return true;
@@ -533,7 +556,7 @@ static ULONG STDMETHODCALLTYPE i_release(IInvokeProvider *t) {
 static HRESULT STDMETHODCALLTYPE i_invoke(IInvokeProvider *t) {
 	node *n = provider_node(((invoker *)t)->p);
 	if (!n || !invokes(n)) return UIA_E_ELEMENTNOTENABLED;
-	wh_press(n, n->hwnd);
+	if (!wh_own_press(n)) wh_press(n, n->hwnd);
 	return S_OK;
 }
 
@@ -679,16 +702,19 @@ static IRangeValueProvider *new_ranger(struct wh_uia *p) {
 		return &x->iface;                                                                                                \
 	}
 
+static bool actable(const node *n) { return own_control(n) ? n->hwnd && !n->disabled : invokes(n); }
+
 static void press_later(void *ctx) {
 	node *n = wh_node((uint32_t)(uintptr_t)ctx);
-	if (n && invokes(n)) wh_press(n, n->hwnd);
+	if (n && actable(n) && !wh_own_press(n)) wh_press(n, n->hwnd);
 }
 
 // act presses n for a pattern's action (Toggle, Expand, Select): the
-// app's view changes its state. The press comes once the screen reader's
-// call has returned, not inside it.
+// app's view changes its state (a filter chip, a disclosure: the host's,
+// at once). The press comes once the screen reader's call has returned,
+// not inside it.
 static HRESULT act(node *n) {
-	if (!n || !invokes(n)) return UIA_E_ELEMENTNOTENABLED;
+	if (!n || !actable(n)) return UIA_E_ELEMENTNOTENABLED;
 	wh_post(press_later, (void *)(uintptr_t)n->id);
 	return S_OK;
 }
@@ -701,8 +727,8 @@ static HRESULT STDMETHODCALLTYPE t_toggle(IToggleProvider *t) { return act(toggl
 static HRESULT STDMETHODCALLTYPE t_state(IToggleProvider *t, enum ToggleState *out) {
 	node *n = toggler_node(t);
 	*out = ToggleState_Off;
-	if (n && n->a11y_checked == AK_A11Y_CHECKED_CHECKED) *out = ToggleState_On;
-	else if (n && n->a11y_checked == AK_A11Y_CHECKED_MIXED) *out = ToggleState_Indeterminate;
+	if (n && checked(n) == AK_A11Y_CHECKED_CHECKED) *out = ToggleState_On;
+	else if (n && checked(n) == AK_A11Y_CHECKED_MIXED) *out = ToggleState_Indeterminate;
 	return S_OK;
 }
 
@@ -715,19 +741,19 @@ PATTERN(expander, IExpandCollapseProvider, iid_expand)
 
 static HRESULT STDMETHODCALLTYPE e_expand(IExpandCollapseProvider *t) {
 	node *n = expander_node(t);
-	if (n && n->a11y_expanded == AK_A11Y_EXPANDED_EXPANDED) return S_OK;
+	if (n && expanded(n) == AK_A11Y_EXPANDED_EXPANDED) return S_OK;
 	return act(n);
 }
 
 static HRESULT STDMETHODCALLTYPE e_collapse(IExpandCollapseProvider *t) {
 	node *n = expander_node(t);
-	if (n && n->a11y_expanded == AK_A11Y_EXPANDED_COLLAPSED) return S_OK;
+	if (n && expanded(n) == AK_A11Y_EXPANDED_COLLAPSED) return S_OK;
 	return act(n);
 }
 
 static HRESULT STDMETHODCALLTYPE e_state(IExpandCollapseProvider *t, enum ExpandCollapseState *out) {
 	node *n = expander_node(t);
-	*out = n && n->a11y_expanded == AK_A11Y_EXPANDED_EXPANDED ? ExpandCollapseState_Expanded : ExpandCollapseState_Collapsed;
+	*out = n && expanded(n) == AK_A11Y_EXPANDED_EXPANDED ? ExpandCollapseState_Expanded : ExpandCollapseState_Collapsed;
 	return S_OK;
 }
 
@@ -877,6 +903,15 @@ static void raise_bool(node *n, PROPERTYID id, bool old, bool now) {
 	set_bool(&o, old);
 	set_bool(&v, now);
 	UiaRaiseAutomationPropertyChangedEvent(&n->uia->iface, id, o, v);
+}
+
+void wh_uia_toggle_changed(node *n, bool was) {
+	raise_i4(n, UIA_ToggleToggleStatePropertyId, was ? ToggleState_On : ToggleState_Off, n->on ? ToggleState_On : ToggleState_Off);
+}
+
+void wh_uia_expand_changed(node *n, bool was) {
+	raise_i4(n, UIA_ExpandCollapseExpandCollapseStatePropertyId, was ? ExpandCollapseState_Expanded : ExpandCollapseState_Collapsed,
+		n->on ? ExpandCollapseState_Expanded : ExpandCollapseState_Collapsed);
 }
 
 // focusable makes a view with actions or adjustable a tab stop: the

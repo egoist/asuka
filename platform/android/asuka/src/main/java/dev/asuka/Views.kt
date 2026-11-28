@@ -67,6 +67,8 @@ class AsukaNode(val id: Int, val kind: Int, var view: View) {
     var keys: List<AsukaKey> = emptyList()
     var pasteTypes: ByteArray? = null // a text field's PasteTypes, to set again on a remade view
     var richBytes: ByteArray? = null // a rich text field's text, likewise
+    /** A text field's Suggestions, as the core sent them last (null: it has none: a plain field). */
+    var suggestions: List<String>? = null
     /** ContentInset (dp: top, right, bottom, left): its padding and border, inside its frame. */
     var contentInset: FloatArray? = null
     /** The view's own padding (a field's background's), under ContentInset's. */
@@ -95,6 +97,9 @@ class AsukaNode(val id: Int, val kind: Int, var view: View) {
     var imageLoaded = false
     var imagePlaceholder = ""
     var imageHash: android.graphics.Bitmap? = null // PlaceholderImage's
+    /** An Image's Headers and Cache (AsukaImageCache), for its Source's loads. */
+    var imageHeaders: Map<String, String> = emptyMap()
+    var imageCache = AsukaImageCache.DEFAULT
     var gestures: AsukaGestures? = null
     var frameAnimator: android.animation.Animator? = null
     var backgroundAnimator: android.animation.Animator? = null

@@ -95,6 +95,41 @@ struct AsukaModuleError: LocalizedError {
             "attention": { _, reply in reply(.success(Data([0, 0, 0, 0]))) },
             "cancelAttention": { _, reply in reply(.success(Data())) },
         ]
+        // platform/image: the watch keeps no decoded images, only what
+        // URLSession's cache keeps of their files: prefetch fetches them
+        // into it (with their headers), clearCache's disk empties it.
+        modules.methods["image"] = [
+            "prefetch": { args, reply in
+                let b = [UInt8](args)
+                var i = 0
+                func u32() -> Int? {
+                    guard b.count - i >= 4 else { return nil }
+                    defer { i += 4 }
+                    return Int(b[i]) | Int(b[i + 1]) << 8 | Int(b[i + 2]) << 16 | Int(b[i + 3]) << 24
+                }
+                func strings() -> [String] {
+                    var out: [String] = []
+                    for _ in 0..<(u32() ?? 0) {
+                        guard let n = u32(), b.count - i >= n else { break }
+                        out.append(String(decoding: b[i..<i + n], as: UTF8.self))
+                        i += n
+                    }
+                    return out
+                }
+                let urls = strings(), h = strings()
+                for u in urls {
+                    guard let url = URL(string: u), url.scheme == "http" || url.scheme == "https" else { continue }
+                    var req = URLRequest(url: url)
+                    for k in stride(from: 0, to: h.count - 1, by: 2) { req.setValue(h[k + 1], forHTTPHeaderField: h[k]) }
+                    URLSession.shared.dataTask(with: req) { _, _, _ in }.resume()
+                }
+                reply(.success(Data()))
+            },
+            "clearCache": { args, reply in
+                if (args.first ?? 3) & 2 != 0 { URLCache.shared.removeAllCachedResponses() }
+                reply(.success(Data()))
+            },
+        ]
         // platform/widget: the complications' entries (WidgetData.swift).
         modules.methods["widget"] = AsukaWidgetData.methods()
         #if ASUKA_PUSH

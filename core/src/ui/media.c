@@ -43,6 +43,7 @@ typedef struct {
 	ak_lsize natural;  // as loaded, one point a pixel
 	bool watching;     // follows Reduce Motion (it said it animates)
 	bool paused;       // as Reduce Motion paused it
+	bool source_due;   // Source waits for the flush, after Headers and Cache
 } image_state;
 
 static ak_lsize natural_measure(void *ctx, ak_lconstraints c) {
@@ -196,10 +197,66 @@ static void send_blurhash(ak_view *e, const ak_str *hash) {
 	send_placeholder(e, blurhash_image(hash, ratio));
 }
 
+// encode_headers appends HTTP headers as the Headers props have them:
+// u32 count (twice the headers'), then each name and value in turn.
+static void encode_headers(ak_buf *w, const ak_map *m) {
+	ak_arr *keys = m ? ak_map_keys(m) : NULL;
+	ak_buf_u32(w, keys ? keys->len * 2 : 0);
+	for (uint32_t i = 0; keys && i < keys->len; i++) {
+		ak_val k = ak_arr_vals(keys)[i], val = {0};
+		ak_map_get(m, k, &val);
+		ak_span ks = ak_span_str(k.p), vs = ak_span_str(val.p);
+		ak_buf_str(w, ks.p, ks.len);
+		ak_buf_str(w, vs.p, vs.len);
+	}
+	ak_release(keys);
+}
+
+// An image's request: its Headers and Cache go before the Source they
+// apply to. They're sent as they change; a Source of an image that has
+// either waits for the flush (sync), so a token and a URL changing
+// together load the new URL with the new token, whichever changed first.
+static bool has_request(const ak_view *e) { return key_val(e, AK_KEY_IMAGE_HEADERS) || key_val(e, AK_KEY_IMAGE_CACHE); }
+
+static void send_headers(ak_view *e) {
+	ak_batch *b = ak_view_batch(e);
+	const ak_val *h = key_val(e, AK_KEY_IMAGE_HEADERS);
+	ak_buf *w = ak_batch_set_bytes_begin(b, e->id, AK_PROP_IMAGE_HEADERS);
+	encode_headers(w, h ? h->p : NULL);
+	ak_batch_set_bytes_end(b);
+}
+
+static void send_source(ak_view *e) {
+	const ak_val *src = key_val(e, AK_KEY_IMAGE_SOURCE);
+	send_str(e, AK_PROP_IMAGE_SOURCE, src ? *src : (ak_val){0});
+}
+
+static void image_sync(ak_view *e) {
+	image_state *s = e->impl;
+	if (!s->source_due) return;
+	s->source_due = false;
+	send_source(e);
+}
+
 static void image_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 	ak_batch *b = ak_view_batch(e);
+	image_state *s = e->impl;
 	switch (key) {
-	case AK_KEY_IMAGE_SOURCE: send_str(e, AK_PROP_IMAGE_SOURCE, v); break;
+	case AK_KEY_IMAGE_SOURCE:
+		if (!e->finalized) break;  // at finalize, after its request
+		if (has_request(e)) {
+			s->source_due = true;
+			ak_view_sync(e);
+		} else {
+			send_str(e, AK_PROP_IMAGE_SOURCE, v);
+		}
+		break;
+	case AK_KEY_IMAGE_HEADERS:
+		if (e->finalized) send_headers(e);
+		break;
+	case AK_KEY_IMAGE_CACHE:
+		if (e->finalized) ak_batch_set_enum(b, e->id, AK_PROP_IMAGE_CACHE, (int32_t)v.i);
+		break;
 	case AK_KEY_IMAGE_MODE:
 		if (prev || v.i) ak_batch_set_enum(b, e->id, AK_PROP_IMAGE_MODE, (int32_t)v.i);
 		break;
@@ -227,6 +284,12 @@ static void image_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 }
 
 static void image_finalize(ak_view *e) {
+	// Its request, then its source.
+	const ak_val *h = key_val(e, AK_KEY_IMAGE_HEADERS);
+	if (h && h->p && ((ak_map *)h->p)->live) send_headers(e);
+	const ak_val *c = key_val(e, AK_KEY_IMAGE_CACHE);
+	if (c && c->i) ak_batch_set_enum(ak_view_batch(e), e->id, AK_PROP_IMAGE_CACHE, (int32_t)c->i);
+	if (key_val(e, AK_KEY_IMAGE_SOURCE)) send_source(e);
 	const ak_val *bh = key_val(e, AK_KEY_IMAGE_BLUR_HASH);
 	if (bh && bh->p && ((ak_str *)bh->p)->len) send_blurhash(e, bh->p);
 	// Without animated, an image that turns out to have frames follows
@@ -279,7 +342,7 @@ static void image_event(ak_view *e, const ak_event *ev) {
 }
 
 const ak_el_class ak_class_image = {.name = "Image", .kind = AK_KIND_IMAGE, .init = image_init, .set = image_set,
-                                    .finalize = image_finalize, .event = image_event, .drop = free_impl};
+                                    .finalize = image_finalize, .event = image_event, .sync = image_sync, .drop = free_impl};
 
 // ---- Video ----
 //
@@ -450,16 +513,7 @@ static void video_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 		const ak_map *m = v.p;
 		if (!prev && (!m || !m->live)) return;
 		ak_buf *w = ak_batch_set_bytes_begin(b, e->id, AK_PROP_VIDEO_HEADERS);
-		ak_arr *keys = m ? ak_map_keys(m) : NULL;
-		ak_buf_u32(w, keys ? keys->len * 2 : 0);
-		for (uint32_t i = 0; keys && i < keys->len; i++) {
-			ak_val k = ak_arr_vals(keys)[i], val = {0};
-			ak_map_get(m, k, &val);
-			ak_span ks = ak_span_str(k.p), vs = ak_span_str(val.p);
-			ak_buf_str(w, ks.p, ks.len);
-			ak_buf_str(w, vs.p, vs.len);
-		}
-		ak_release(keys);
+		encode_headers(w, m);
 		ak_batch_set_bytes_end(b);
 		return;
 	}

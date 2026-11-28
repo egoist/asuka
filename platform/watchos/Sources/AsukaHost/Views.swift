@@ -70,7 +70,8 @@ struct AsukaContent: View {
         case .list:
             AsukaListView(node: node)
         case .text, .richText, .button, .textField, .toggle, .slider, .stepper, .activity, .progress, .progressRing,
-             .symbol, .image, .shape, .segmented, .wheel, .picker, .datePicker, .pageControl, .native:
+             .symbol, .image, .shape, .segmented, .wheel, .picker, .datePicker, .pageControl, .native,
+             .chip, .dateRangePicker, .disclosure:
             AsukaLeaf(node: node)
         case .video, .webView, .canvas, .shader, .colorPicker:
             // What the watch can't show (docs/watch.md): an empty space.
@@ -165,9 +166,18 @@ struct AsukaLeaf: View {
         case .image:
             if let img = n.image {
                 let mode: ContentMode = AsukaImageMode(rawValue: n.mode) == .fill ? .fill : .fit
-                Image(decorative: img, scale: rt.scale)
-                    .resizable()
-                    .aspectRatio(contentMode: mode)
+                if let tint {
+                    // Color tints any image, a raster one too: its alpha in the color.
+                    Image(decorative: img, scale: rt.scale)
+                        .renderingMode(.template)
+                        .resizable()
+                        .aspectRatio(contentMode: mode)
+                        .foregroundStyle(tint)
+                } else {
+                    Image(decorative: img, scale: rt.scale)
+                        .resizable()
+                        .aspectRatio(contentMode: mode)
+                }
             } else {
                 Color.clear
             }
@@ -195,6 +205,28 @@ struct AsukaLeaf: View {
                 rt.emit(n.id, .valueChanged) { AsukaEvents.valueChanged(n.id, ms) }
             }), displayedComponents: dateComponents(n.dateMode))
             .labelsHidden()
+        case .chip:
+            AsukaChip(node: n)
+        case .dateRangePicker:
+            AsukaDateRange(node: n)
+        case .disclosure:
+            // A row's button: the title, and a chevron that turns down as it expands.
+            Button {
+                n.on.toggle() // shown at once; the core shows the content
+                n.rev &+= 1
+                rt.emit(n.id, .toggled) { AsukaEvents.toggled(n.id, n.on) }
+            } label: {
+                HStack {
+                    Text(n.title).font(Font(AsukaFonts.font(of: n)))
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.forward")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(tint ?? .accentColor)
+                        .rotationEffect(.degrees(n.on ? 90 : 0))
+                        .animation(.easeInOut(duration: 0.25), value: n.on)
+                }
+            }
+            .buttonStyle(.plain)
         case .native:
             if let v = n.native?.view { v } else { Color.clear }
         case .pageControl:
@@ -270,6 +302,93 @@ struct AsukaButton: View {
         default:
             b.buttonStyle(.bordered)
         }
+    }
+}
+
+/// A Chip: the watch's bordered capsule button, prominent (and checked)
+/// while a filter chip is selected; a removable one with an x of its own
+/// after it.
+struct AsukaChip: View {
+    let node: AsukaNode
+
+    var body: some View {
+        let _ = node.rev // what it reads of the node is the batch's
+        let n = node
+        let rt = AsukaRuntime.shared
+        let selected = n.filter && n.on
+        let icon = selected ? "checkmark" : n.icon
+        HStack(spacing: 4) {
+            let b = Button {
+                if n.filter {
+                    n.on.toggle() // shown at once; the core sends it back if the app refuses
+                    n.rev &+= 1
+                    rt.emit(n.id, .toggled) { AsukaEvents.toggled(n.id, n.on) }
+                } else {
+                    rt.emit(n.id, .press) { AsukaEvents.press(n.id) }
+                }
+            } label: {
+                if icon.isEmpty {
+                    Text(n.title).font(Font(AsukaFonts.font(of: n)))
+                } else {
+                    Label(n.title, systemImage: icon).font(Font(AsukaFonts.font(of: n)))
+                }
+            }
+            .buttonBorderShape(.capsule)
+            .tint(asukaColor(n.color))
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            if selected {
+                b.buttonStyle(.borderedProminent)
+            } else {
+                b.buttonStyle(.bordered)
+            }
+            if n.removable {
+                Button {
+                    rt.emit(n.id, .remove) { AsukaEvents.remove(n.id) }
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(n.title))
+            }
+        }
+    }
+}
+
+/// A DateRangePicker: the watch's date pickers, the start's over the
+/// end's (none before the start); either changing reports both, a start
+/// past the end moving the end to it.
+struct AsukaDateRange: View {
+    let node: AsukaNode
+
+    var body: some View {
+        let _ = node.rev // what it reads of the node is the batch's
+        let n = node
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let start = n.rangeStart != 0 ? Date(timeIntervalSince1970: n.rangeStart / 1000) : today
+        let end = Swift.max(n.rangeEnd != 0 ? Date(timeIntervalSince1970: n.rangeEnd / 1000) : start, start)
+        let lo = n.min != 0 ? Date(timeIntervalSince1970: n.min / 1000) : Date.distantPast
+        let hi = Swift.max(n.max != 0 ? Date(timeIntervalSince1970: n.max / 1000) : Date.distantFuture, lo)
+        VStack(spacing: 4) {
+            DatePicker("", selection: Binding(get: { start }, set: { d in
+                report(n, d, Swift.max(end, d))
+            }), in: lo...hi, displayedComponents: .date)
+            .labelsHidden()
+            DatePicker("", selection: Binding(get: { end }, set: { d in
+                report(n, Swift.min(start, d), d)
+            }), in: Swift.max(start, lo)...Swift.max(hi, start), displayedComponents: .date)
+            .labelsHidden()
+        }
+    }
+
+    private func report(_ n: AsukaNode, _ s: Date, _ e: Date) {
+        let cal = Calendar.current
+        let x = (cal.startOfDay(for: s).timeIntervalSince1970 * 1000).rounded()
+        let y = (cal.startOfDay(for: e).timeIntervalSince1970 * 1000).rounded()
+        n.rangeStart = x
+        n.rangeEnd = y
+        n.rev &+= 1
+        AsukaRuntime.shared.emit(n.id, .rangeChanged) { AsukaEvents.rangeChanged(n.id, x: x, y: y) }
     }
 }
 

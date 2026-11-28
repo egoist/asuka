@@ -11,6 +11,16 @@
 // arrives, which fades in over it on the widget's frame clock
 // (Transition; 0.25s over a placeholder). An animation plays frame after
 // frame on GLib timeouts while it isn't Paused.
+//
+// Headers go with an http(s) source's request; Cache says where it's
+// kept: Default in memory (the decoded cache, by source) and, fetched over
+// http(s), on disk unless its response says no-store; Memory never reads
+// or writes the disk; None keeps it nowhere (each Image of it loads it
+// again, its own). A decoded image is counted: the cache holds it, and so
+// does each Image showing it (its SVG, its animation), so clearing the
+// cache (the "image" module's clearCache) lets the images showing keep
+// what they show. The module's prefetch loads into the caches as an
+// Image would, joining loads in flight.
 #include "host.h"
 
 #include <stdatomic.h>
@@ -43,6 +53,13 @@ struct decoded {
 	// The worker's: the file's bytes and the first frame's pixels.
 	GBytes *bytes;
 	uint8_t *first;
+	// How it's loaded: the request's headers (Headers' encoding), and
+	// whether the disk's cache is read and written (Cache Default).
+	ak_buf headers;
+	bool disk;
+	// Who holds it: the cache (in it by its source), the Images showing it.
+	bool cached;
+	int refs;
 };
 
 typedef struct {
@@ -73,9 +90,39 @@ struct image_extra {
 	// display lists as last drawn: for a box, a mode and a tint.
 	const decoded *svg, *ph_svg;
 	svg_drawn drawn, ph_drawn;
+	// What it holds: the image and the placeholder it shows.
+	decoded *held, *ph_held;
+	ak_buf headers;  // Headers, for the loads of the sources that follow
+	int32_t cache;   // ImageCache
 };
 
 static GHashTable *cache;  // source → decoded
+
+static void decoded_free(decoded *d) {
+	free(d->src);
+	if (d->texture) g_object_unref(d->texture);
+	if (d->anim) dsk_anim_free(d->anim);
+	asuka_free(d->svg);
+	g_free(d->err);
+	ak_vec_free(&d->waiting);
+	ak_buf_free(&d->headers);
+	free(d);
+}
+
+// release_decoded drops a hold on d: gone when nothing holds it.
+static void release_decoded(decoded *d) {
+	if (!d) return;
+	if (d->refs > 0) d->refs--;
+	if (!d->refs && !d->cached && d->done) decoded_free(d);
+}
+
+static void hold(decoded **slot, decoded *d) {
+	if (*slot == d) return;
+	if (d) d->refs++;
+	decoded *old = *slot;
+	*slot = d;
+	release_decoded(old);
+}
 
 static image_extra *imx(node *n) {
 	if (!n->imgx) {
@@ -108,6 +155,9 @@ void lx_release_image(node *n) {
 	free(x->placeholder);
 	lx_display_free(x->drawn.d);
 	lx_display_free(x->ph_drawn.d);
+	hold(&x->held, NULL);
+	hold(&x->ph_held, NULL);
+	ak_buf_free(&x->headers);
 	free(x);
 	n->imgx = NULL;
 }
@@ -179,13 +229,33 @@ static const char *images_dir(void) {
 	return atomic_load(&dir);
 }
 
-// read_source reads an image's bytes: an http(s) URL with libsoup (from
-// the disk's cache when it's there, kept there when it may be), a
-// file:// URL or a path, an asset's (relative to the assets). Any thread.
-static GBytes *read_source(const char *src, char **err) {
+// add_headers puts Headers' (u32 count, then name and value in turn,
+// u32-length strings) on a request.
+static void add_headers(SoupMessage *m, const ak_buf *h) {
+	if (!m || !h->len || !soup_message_get_request_headers || !soup_message_headers_append) return;
+	SoupMessageHeaders *hd = soup_message_get_request_headers(m);
+	ak_reader r = {h->data, h->len, 0, false};
+	uint32_t count = ak_read_u32(&r);
+	for (uint32_t i = 0; i + 1 < count; i += 2) {
+		uint32_t nl, vl;
+		const uint8_t *name = ak_read_bytes(&r, &nl);
+		const uint8_t *value = ak_read_bytes(&r, &vl);
+		if (r.err) break;
+		char *ns = strndup((const char *)name, nl), *vs = strndup((const char *)value, vl);
+		if (ns && vs && *ns) soup_message_headers_append(hd, ns, vs);
+		free(ns);
+		free(vs);
+	}
+}
+
+// read_source reads an image's bytes: an http(s) URL with libsoup, its
+// request with headers (from the disk's cache when it's there and disk
+// says so, kept there when it may be), a file:// URL or a path, an
+// asset's (relative to the assets). Any thread.
+static GBytes *read_source(const char *src, const ak_buf *headers, bool disk, char **err) {
 	if (!strncmp(src, "http://", 7) || !strncmp(src, "https://", 8)) {
 		size_t kept = 0;
-		uint8_t *cached = dsk_image_cache_read(images_dir(), src, &kept);
+		uint8_t *cached = disk ? dsk_image_cache_read(images_dir(), src, &kept) : NULL;
 		if (cached) return g_bytes_new_take(cached, kept);
 		if (!soup_session_new) {
 			*err = g_strdup_printf("%s: libsoup isn't installed to fetch it", src);
@@ -196,6 +266,7 @@ static GBytes *read_source(const char *src, char **err) {
 		// (Wikimedia's) refuse a request with none.
 		if (soup_session_set_user_agent) soup_session_set_user_agent(s, "Asuka");
 		SoupMessage *m = soup_message_new("GET", src);
+		add_headers(m, headers);
 		GError *e = NULL;
 		GBytes *b = m ? soup_session_send_and_read(s, m, NULL, &e) : NULL;
 		guint status = m ? soup_message_get_status(m) : 0;
@@ -211,7 +282,7 @@ static GBytes *read_source(const char *src, char **err) {
 			const char *cc = hdrs ? soup_message_headers_get_one(hdrs, "Cache-Control") : NULL;
 			gsize n = 0;
 			const uint8_t *data = g_bytes_get_data(b, &n);
-			if (dsk_image_cache_storable(src, cc)) dsk_image_cache_write(images_dir(), src, data, n);
+			if (disk && dsk_image_cache_storable(src, cc)) dsk_image_cache_write(images_dir(), src, data, n);
 		}
 		if (m) g_object_unref(m);
 		g_object_unref(s);
@@ -240,7 +311,7 @@ static gboolean decoded_main(gpointer data);
 static gpointer decode_thread(gpointer data) {
 	decoded *d = data;
 	char *err = NULL;
-	GBytes *b = read_source(d->src, &err);
+	GBytes *b = read_source(d->src, &d->headers, d->disk, &err);
 	if (!b) {
 		d->err = err ? err : g_strdup_printf("%s", "an image that can't be read");
 		g_idle_add_full(0, decoded_main, d, NULL);
@@ -317,14 +388,16 @@ static gboolean decoded_main(gpointer data) {
 	}
 	d->waiting.len = 0;
 	lx_enter_end();
+	if (!d->cached && !d->refs) decoded_free(d);  // kept nowhere, shown by none
 	return 0;
 }
 
-// fetch decodes src (once: then from the cache) for n, or for cb, on a
-// thread.
-static void fetch_for(node *n, const char *src, bool placeholder, lx_texture_fn cb, void *ctx) {
+// fetch_for decodes src (once: then from the cache) for n, or for cb, on
+// a thread, its request with headers (Headers' encoding), kept as mode
+// (ImageCache) says.
+static void fetch_for(node *n, const char *src, bool placeholder, lx_texture_fn cb, void *ctx, ak_span headers, int32_t mode) {
 	if (!cache) cache = g_hash_table_new(g_str_hash, g_str_equal);
-	decoded *d = g_hash_table_lookup(cache, src);
+	decoded *d = mode == AK_IMAGE_CACHE_NONE ? NULL : g_hash_table_lookup(cache, src);
 	if (d && d->done) {
 		if (cb)
 			cb(ctx, d->texture, d->err);
@@ -337,7 +410,12 @@ static void fetch_for(node *n, const char *src, bool placeholder, lx_texture_fn 
 		d = calloc(1, sizeof *d);
 		if (!d) abort();
 		d->src = strdup(src);
-		g_hash_table_insert(cache, d->src, d);
+		ak_buf_put(&d->headers, headers.p, headers.len);
+		d->disk = mode == AK_IMAGE_CACHE_DEFAULT;
+		if (mode != AK_IMAGE_CACHE_NONE) {
+			d->cached = true;
+			g_hash_table_insert(cache, d->src, d);
+		}
 	}
 	ak_vec_reserve(&d->waiting, 1);
 	d->waiting.data[d->waiting.len].id = n ? n->id : 0;
@@ -351,12 +429,20 @@ static void fetch_for(node *n, const char *src, bool placeholder, lx_texture_fn 
 	}
 }
 
-static void fetch(node *n, const char *src, bool placeholder) { fetch_for(n, src, placeholder, NULL, NULL); }
+// fetch loads an Image's source (with its Headers, kept as its Cache
+// says), or its placeholder (as any image).
+static void fetch(node *n, const char *src, bool placeholder) {
+	image_extra *x = n->imgx;
+	if (placeholder || !x)
+		fetch_for(n, src, placeholder, NULL, NULL, (ak_span){0}, AK_IMAGE_CACHE_DEFAULT);
+	else
+		fetch_for(n, src, false, NULL, NULL, ak_strn((const char *)x->headers.data, x->headers.len), x->cache);
+}
 
 // lx_load_texture decodes an image (a URL, a file, an asset) as Images
 // do, from the same cache: cb gets its texture (its first frame, if
 // animated) or the error, on the main thread.
-void lx_load_texture(const char *src, lx_texture_fn cb, void *ctx) { fetch_for(NULL, src, false, cb, ctx); }
+void lx_load_texture(const char *src, lx_texture_fn cb, void *ctx) { fetch_for(NULL, src, false, cb, ctx, (ak_span){0}, AK_IMAGE_CACHE_DEFAULT); }
 
 // ---- Showing ----
 
@@ -413,11 +499,13 @@ static void loaded(node *n, decoded *d, bool placeholder) {
 	}
 	if (placeholder) {
 		set_placeholder(x, d->texture, true);
+		hold(&x->ph_held, d);
 		x->ph_svg = d->svg ? d : NULL;
 		x->ph_drawn.set = false;
 		lx_queue_draw(n);
 		return;
 	}
+	hold(&x->held, d);
 	x->svg = d->svg ? d : NULL;
 	x->drawn.set = false;
 	set_texture(n, d->svg ? NULL : d->texture);
@@ -512,9 +600,17 @@ void lx_set_image_prop(node *n, ak_prop p, const ak_value *v) {
 		x->fade_gen++;
 		x->fade = 1;
 		x->svg = NULL;
+		hold(&x->held, NULL);
 		set_texture(n, NULL);
 		show_placeholder(n);
 		if (!str_empty(n->source)) fetch(n, n->source, false);
+		break;
+	case AK_PROP_IMAGE_HEADERS:
+		ak_buf_reset(&x->headers);
+		ak_buf_put(&x->headers, v->s.p, v->s.len);
+		break;
+	case AK_PROP_IMAGE_CACHE:
+		x->cache = (int32_t)v->i;
 		break;
 	case AK_PROP_IMAGE_PLACEHOLDER:
 		str_set(&x->placeholder, v->s);
@@ -644,3 +740,84 @@ void lx_draw_image(node *n, GtkSnapshot *snap, const graphene_rect_t *b) {
 	else if (n->texture && loaded) draw_texture(n, snap, b, n->texture, n->image_mode, x ? x->fade : 1, true);
 	gtk_snapshot_pop(snap);
 }
+
+// ---- The "image" module: prefetch, clearCache ----
+
+static void prefetched(void *ctx, GdkTexture *t, const char *err) {
+	(void)ctx;
+	(void)t;
+	(void)err;  // an Image of it says why
+}
+
+// prefetch: u32 n, then n u32-length URLs, then the headers (Headers'
+// encoding): each loaded into the caches as an Image of it would be
+// (joining a load in flight), off the main thread.
+static void image_prefetch(ak_span args, reply *r) {
+	ak_reader rd = {(const uint8_t *)args.p, args.len, 0, false};
+	uint32_t n = ak_read_u32(&rd);
+	size_t urls = rd.off;
+	for (uint32_t i = 0; i < n && !rd.err; i++) {
+		uint32_t l;
+		ak_read_bytes(&rd, &l);
+	}
+	if (rd.err) {
+		reply_err(r, "image.prefetch: arguments too short");
+		return;
+	}
+	ak_span headers = ak_strn((const char *)rd.p + rd.off, rd.len - rd.off);
+	rd.off = urls;
+	for (uint32_t i = 0; i < n; i++) {
+		uint32_t l;
+		const uint8_t *u = ak_read_bytes(&rd, &l);
+		char *src = strndup((const char *)u, l);
+		if (src && *src) fetch_for(NULL, src, false, prefetched, NULL, headers, AK_IMAGE_CACHE_DEFAULT);
+		free(src);
+	}
+	reply_ok(r, NULL, 0);
+}
+
+static gpointer clear_disk(gpointer data) {
+	(void)data;
+	dsk_image_cache_trim(images_dir(), 0);  // every file goes
+	return NULL;
+}
+
+typedef AK_VEC(decoded *) decoded_vec;
+
+// forget takes a decoded image out of the cache, unless it's in flight
+// (it lands in the cache), into gone (freed after: its key is its src).
+static gboolean forget(gpointer k, gpointer v, gpointer data) {
+	(void)k;
+	decoded *d = v;
+	if (!d->done) return 0;
+	d->cached = false;
+	ak_vec_push((decoded_vec *)data, d);
+	return 1;
+}
+
+// clearCache: u8 flags, 1 the memory's (the decoded images no Image is
+// loading: those showing keep theirs), 2 the disk's (on a thread).
+static void image_clear(ak_span args, reply *r) {
+	uint8_t flags = args.len ? (uint8_t)args.p[0] : 3;
+	if ((flags & 1) && cache) {
+		decoded_vec gone = {0};
+		g_hash_table_foreach_remove(cache, forget, &gone);
+		for (uint32_t i = 0; i < gone.len; i++)
+			if (!gone.data[i]->refs) decoded_free(gone.data[i]);
+		ak_vec_free(&gone);
+	}
+	if (flags & 2) g_thread_unref(g_thread_new("asuka-image-clear", clear_disk, NULL));
+	reply_ok(r, NULL, 0);
+}
+
+static const method_t image_methods[] = {
+	{"image", "prefetch", image_prefetch},
+	{"image", "clearCache", image_clear},
+};
+
+static void image_modules(void) { lx_register_methods(image_methods, AK_LEN(image_methods)); }
+
+const area lx_area_image = {
+	.name = "image",
+	.modules = image_modules,
+};

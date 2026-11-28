@@ -151,6 +151,8 @@ import AsukaOps
     var web: AsukaWeb? // Web.swift
     var video: AsukaVideo? // Video.swift
     var image: AsukaImageState? // Image.swift
+    var chip: AsukaChipState? // Chip.swift
+    var suggest: AsukaSuggest? // Suggestions.swift: a TextField's suggestions
     var native: AsukaNativeHolder? // Native.swift
     var interaction: AsukaInteraction? // Interaction.swift: hover, press, drag and drop, gestures
     var window: AsukaWin? // Windows.swift: a Window's window

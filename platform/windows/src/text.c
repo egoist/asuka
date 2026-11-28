@@ -160,6 +160,15 @@ void wh_measure_node(node *n, float cw, float ch, float aw, float ah, float *ow,
 	case AK_KIND_DATE_PICKER:
 		wh_measure_date(n, &w, &h);
 		break;
+	case AK_KIND_DATE_RANGE_PICKER:
+		wh_measure_range(n, &w, &h);
+		break;
+	case AK_KIND_CHIP:
+		wh_measure_chip(n, &w, &h);
+		break;
+	case AK_KIND_DISCLOSURE:
+		wh_measure_disclosure(n, cw, &w, &h);
+		break;
 	case AK_KIND_COLOR_PICKER:
 		w = 44, h = 32;
 		break;

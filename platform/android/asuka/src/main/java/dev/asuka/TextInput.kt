@@ -12,7 +12,6 @@ import androidx.appcompat.widget.AppCompatEditText
 import androidx.core.view.ContentInfoCompat
 import androidx.core.view.OnReceiveContentListener
 import androidx.core.view.ViewCompat
-import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import java.io.File
 import java.io.InputStream
 import java.nio.ByteBuffer
@@ -24,7 +23,10 @@ import java.util.UUID
  * the text change that moved it), unless the core is setting it.
  */
 class AsukaEditText(context: Context, private val rt: AsukaRuntime, private val id: Int) : AppCompatEditText(context) {
-    var settingSelection = false
+    private val selection = AsukaSelectionReport(rt, id, this)
+    var settingSelection: Boolean
+        get() = selection.setting
+        set(v) { selection.setting = v }
     /** TextFieldProps.Rich: its text is styled (RichField.kt). */
     var rich = false
     /** A style set at the cursor (Format with no selection): what's typed there next takes it. */
@@ -36,19 +38,16 @@ class AsukaEditText(context: Context, private val rt: AsukaRuntime, private val 
     var changeStart = 0
     var changeCount = 0
     val history = AsukaRichHistory()
-    private var queued = false
-    private var last = -1L
     // EditText's constructor moves the selection before this class's
     // fields are set: until then there's nothing to report it to.
     private var ready = false
 
     init { ready = true }
 
-    // Its Label is TalkBack's hint, as TextInputLayout's is: a content
-    // description would be read in place of what's typed. No label: its placeholder.
+    // Its Label is TalkBack's hint (fieldHint). No label: its placeholder.
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
-        (rt.nodes[id]?.props?.get(AsukaProp.A11Y_LABEL) as? String)?.takeIf { it.isNotEmpty() }?.let { AccessibilityNodeInfoCompat.wrap(info).hintText = it }
+        fieldHint(rt, id, info)
     }
 
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
@@ -60,26 +59,7 @@ class AsukaEditText(context: Context, private val rt: AsukaRuntime, private val 
             pending?.let { if (selStart != it.at || selEnd != it.at) pending = null }
             rt.nodes[id]?.let { rt.reportFormats(it) }
         }
-        if (settingSelection) {
-            last = pack(selStart, selEnd)
-            return
-        }
-        if (queued || rt.nodes[id]?.listens(AsukaEventKind.SELECTION_CHANGED) != true) return
-        queued = true
-        // After the text change that moved it (its watcher reports first).
-        post {
-            queued = false
-            val s = selectionStart.coerceAtLeast(0)
-            val e = selectionEnd.coerceAtLeast(0)
-            val p = pack(s, e)
-            if (p == last) return@post
-            last = p
-            val w = AsukaWriter()
-            w.u32(s)
-            w.u32(e)
-            val b = w.bytes()
-            rt.emit(id, AsukaEventKind.SELECTION_CHANGED) { AsukaEvents.selectionChanged(id, b) }
-        }
+        selection.moved(selStart, selEnd)
     }
 
     // A rich field's undo and redo are its own history's (AsukaRichHistory).
@@ -111,8 +91,6 @@ class AsukaEditText(context: Context, private val rt: AsukaRuntime, private val 
         }
         return super.onKeyShortcut(keyCode, event)
     }
-
-    private fun pack(s: Int, e: Int) = (s.toLong() shl 32) or (e.toLong() and 0xffffffffL)
 }
 
 /** TextFieldProps.Selection: the cursor (or the selection) at UTF-16 offsets, clamped to the text. */
@@ -123,10 +101,13 @@ fun AsukaRuntime.setFieldSelection(n: AsukaNode, v: ByteBuffer) {
     val len = e.text?.length ?: 0
     val s = b.int.coerceIn(0, len)
     val end = b.int.coerceIn(0, len)
-    val r = e as? AsukaEditText
-    r?.settingSelection = true
+    val r = (e as? AsukaSuggestField)?.selection
+    val a = e as? AsukaEditText
+    a?.settingSelection = true
+    r?.setting = true
     e.setSelection(s, end)
-    r?.settingSelection = false
+    a?.settingSelection = false
+    r?.setting = false
 }
 
 /** InsertText: text in place of the selection, as typing (its watcher reports it). */

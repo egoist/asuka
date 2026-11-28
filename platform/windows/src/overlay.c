@@ -320,6 +320,7 @@ void wh_present_overlay(node *n) {
 // window target) to each overlay over the root it's in that it's not on a
 // view of: the topmost first.
 void wh_overlay_pointer_down(HWND target, POINT screen) {
+	wh_suggest_pointer_down(target);  // a field's suggestions, outside them: they close
 	if (!noverlays || !target) return;
 	HWND top = GetAncestor(target, GA_ROOT);
 	uint32_t ids[64];

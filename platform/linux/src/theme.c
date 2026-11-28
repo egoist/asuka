@@ -158,6 +158,16 @@ static const char host_css[] =
 	"button.asuka-tinted:hover { background-color: alpha(@accent_bg_color, 0.2); }\n"
 	"button.asuka-tinted:active { background-color: alpha(@accent_bg_color, 0.3); }\n"
 	"button.asuka-plain { color: @accent_color; }\n"
+	// A chip: libadwaita's pill, chip sized; a removable one's x close to
+	// its end.
+	"button.pill.asuka-chip { min-height: 22px; padding: 4px 14px; border-radius: 9999px; }\n"
+	"button.pill.asuka-chip.asuka-chip-removable { padding-right: 4px; }\n"
+	"button.pill.asuka-chip.asuka-chip-removable:dir(rtl) { padding-right: 14px; padding-left: 4px; }\n"
+	"button.asuka-chip-remove { min-width: 22px; min-height: 22px; padding: 0; margin: -2px 0; }\n"
+	"button.asuka-chip-remove image { -gtk-icon-size: 12px; }\n"
+	// A field's suggestions (suggest.c): the row the arrow keys are on.
+	"listview.asuka-suggestions > row { border-radius: 6px; }\n"
+	"listview.asuka-suggestions > row:selected { background-color: alpha(currentColor, 0.1); }\n"
 	"entry.asuka-plain, text.asuka-plain { background: none; box-shadow: none; outline: none; padding: 0; min-height: 0; }\n"
 	"asuka-view.asuka-focus-ring:focus-visible { outline: 2px solid alpha(@accent_color, 0.5); outline-offset: -2px; }\n"
 	".asuka-no-focus-ring:focus-visible, .asuka-no-focus-ring :focus-visible { outline: none; }\n"

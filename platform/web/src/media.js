@@ -1,7 +1,9 @@
 // Images, symbols, videos and web pages.
 //
 //   - Image: an <img>, decoded off the main thread (decoding="async"),
-//     cached by the browser; Loaded reports its natural size. Color tints
+//     cached by the browser; with Headers or a Cache other than Default,
+//     fetched by the host into an object URL, kept in its memory cache
+//     (imagecache.js). Loaded reports its natural size. Color tints
 //     it, as a template image: the image is the mask of the color. Its
 //     placeholder (an asset, or the core's decoded hash, in its own mode)
 //     is a layer under it until it arrives, fading in (Transition). An
@@ -20,7 +22,8 @@
 //     and talks to the app only if it cooperates, as browsers keep sites
 //     apart.
 
-import { Kind, KindProp as P, Event, Events, Command, Reader, Writer } from "./ops.js";
+import { Kind, KindProp as P, Event, Events, Command, Reader, Writer, ImageCache } from "./ops.js";
+import { imageStore, decodeHeaders, absolute, web, fetches } from "./imagecache.js";
 import { own } from "./views.js";
 import { paths, labels } from "./symbols.js";
 import * as text from "./text.js";
@@ -88,6 +91,10 @@ const image = {
     n.transition = 0;
     n.paused = false;
     n.gen = 0;
+    n.loadGen = 0;
+    n.entry = null; // the host's load it shows (imagecache.js)
+    n.headers = null;
+    n.cache = ImageCache.Default;
     img.addEventListener("load", () => {
       n.natural = [img.naturalWidth, img.naturalHeight];
       n.loadedSrc = img.currentSrc;
@@ -110,9 +117,16 @@ const image = {
         n.img.style.transition = "none";
         n.img.style.opacity = "0";
         showPlaceholder(h, n);
+        letGo(h, n);
         if (isSVG(v)) loadSVG(h, n, v);
-        else n.img.src = sourceURL(h, v);
+        else loadImage(h, n, v);
         if (!v) n.img.removeAttribute("src");
+        break;
+      case P.Image.Headers:
+        n.headers = decodeHeaders(v);
+        break;
+      case P.Image.Cache:
+        n.cache = v;
         break;
       case P.Image.Mode:
         n.mode = v;
@@ -148,8 +162,49 @@ const image = {
   label(h, n, v) { n.img.alt = v || ""; },
   measure(h, n) { return n.natural || [0, 0]; },
   resized(h, n) { drawSVG(h, n); },
-  destroy(h, n) { stopFrames(n); dropSVG(n); },
+  destroy(h, n) { stopFrames(n); dropSVG(n); letGo(h, n); },
 };
+
+/**
+ * loadImage loads an Image's source into its <img>: what memory keeps
+ * (prefetched, or fetched before), else fetched by the host when it has
+ * Headers or a Cache other than Default (imagecache.js), else the <img>'s.
+ */
+function loadImage(h, n, src) {
+  const gen = ++n.loadGen;
+  if (!src) return;
+  const url = sourceURL(h, src);
+  const key = absolute(url);
+  const headers = n.headers || [], cache = n.cache || ImageCache.Default;
+  const store = imageStore(h);
+  const hit = web(key) && cache !== ImageCache.None ? store.cached(key) : null;
+  if (hit) {
+    n.entry = hit;
+    n.img.src = hit.objectURL;
+    return;
+  }
+  if (!fetches(key, headers, cache)) {
+    n.img.src = url;
+    return;
+  }
+  n.img.removeAttribute("src");
+  store.load(key, headers, cache).then((e) => {
+    if (gen !== n.loadGen || n.dying) { store.release(e); return; }
+    n.entry = e;
+    n.img.src = e.objectURL;
+  }, (err) => {
+    if (gen !== n.loadGen) return;
+    // A site of another origin that doesn't allow the headers (CORS) fails here too.
+    h.emit(n, Event.Failed, (id) => Events.failed(id, `the image couldn't load: ${n.source}: ${err?.message || err}`));
+  });
+}
+
+/** letGo lets go of what an Image showed from the host's loads (its object URL), and of a load in flight. */
+function letGo(h, n) {
+  n.loadGen++;
+  if (n.entry) imageStore(h).release(n.entry);
+  n.entry = null;
+}
 
 /** isSVG reports whether a source is SVG by its name: an .svg file's, an SVG data URL. */
 function isSVG(src) {
@@ -167,7 +222,8 @@ async function loadSVG(h, n, src) {
   const url = sourceURL(h, src);
   let doc = null;
   try {
-    const r = await fetch(url);
+    const cache = n.cache === ImageCache.Memory || n.cache === ImageCache.None ? "no-store" : "default";
+    const r = await fetch(url, { headers: n.headers || [], cache });
     if (r.ok) doc = h.core.svgParse(new Uint8Array(await r.arrayBuffer()));
   } catch {
     doc = null;

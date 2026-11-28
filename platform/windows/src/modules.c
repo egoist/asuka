@@ -11,6 +11,7 @@ static const wh_module_def *modules[] = {
 	&wh_update_module, &wh_recent_module, &wh_login_module, &wh_background_module, &wh_contacts_module,
 	&wh_calendar_module, &wh_library_module, &wh_compose_module, &wh_photo_library_module, &wh_push_module,
 	&wh_widget_module, &wh_live_activity_module, &wh_icloud_module, &wh_view_module, &wh_assets_module,
+	&wh_image_module,
 };
 
 

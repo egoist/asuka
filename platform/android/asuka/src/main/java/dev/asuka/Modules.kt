@@ -56,6 +56,7 @@ private fun AsukaRuntime.registerBuiltinModules() {
     modules["web"] = webMethods()
     modules["share"] = shareMethods()
     modules["view"] = captureMethods()
+    modules["image"] = imageMethods() // platform/image: its caches
     // fs.readAsset: an asset's bytes (asuka dev's copy, else the APK's),
     // read off the main thread.
     modules["assets"] = mapOf("read" to { args, reply ->

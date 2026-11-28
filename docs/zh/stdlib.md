@@ -134,6 +134,7 @@ state units = store.read("units", "metric")
 | [`platform/scan`](platform/scan.md) | `scan.file(path, kinds:)`：识别图片里的条形码和二维码（[设备](device.md)） |
 | [`platform/vision`](platform/vision.md) | `vision.analyze(path, text:, faces:, codes:, languages:)`：在设备上识别图片里的文字（逐行、逐词）、人脸和码，以及它们各自的位置（[设备](device.md)） |
 | [`platform/transcribe`](platform/transcribe.md) | `transcribe.check(language)`、`transcribe.file(path, language:)`：把录音转成文字，只在设备上进行（做不到的地方返回 `notAvailable`：Web、Linux、较旧的 Android）（[设备](device.md)） |
+| [`platform/image`](platform/image.md) | `image.prefetch(urls, headers:)`（在图片显示之前，先把它载入 `Image` 的内存和磁盘缓存）和 `image.clearCache(memory:, disk:)`（[预先加载和清除缓存](components.md#预先加载和清除缓存)） |
 | [`platform/imageedit`](platform/imageedit.md) | `imageedit.edit(source, actions, format:, quality:)`（缩放、裁剪、旋转、翻转、填充、像素化）、`imageedit.size`、`imageedit.videoFrame`、`imageedit.Cropper`（裁剪这一步：在取景框里拖动、缩放图片）：处理图片和视频帧，输出 JPEG 或 PNG（[设备](device.md)） |
 | [`platform/maps`](platform/maps.md) | `maps.View`（`bind region`、`markers`、`mapType`、`showsUser`、`interactive`；`markerPress`、`press`、`regionChange`）：Apple 地图、Google 地图、OpenStreetMap（[设备](device.md)） |
 

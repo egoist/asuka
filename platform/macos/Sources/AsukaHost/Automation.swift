@@ -146,6 +146,9 @@ import AsukaOps
             // Tables' (tableheader, tablerow, tabledouble, tablemenu,
             // outlinerow, outlinedisclose, ...): Tables.swift.
             if let r = rt.tableStep(verb, arg) { return r }
+            // Chips', disclosures', date ranges' and suggestions' (rangeset,
+            // suggestpick, chipremove): "" done (Chip.swift).
+            if let r = rt.controlsStep(verb, arg) { return r.isEmpty ? nil : r }
             return "unknown step"
         }
         return nil
@@ -164,7 +167,7 @@ import AsukaOps
         if let r = AsukaDevErrors.shared.tap(text) { return r.isEmpty ? nil : r }
         var found: AsukaNode?
         for n in rt.nodes.values where showing(n) {
-            let match = n.text == text && n.kind != .textField || n.title == text && n.kind == .button
+            let match = n.text == text && n.kind != .textField || n.title == text && (n.kind == .button || n.kind == .chip || n.kind == .disclosure)
                 || n.kind == .textField && n.placeholder == text || n.a11yLabel == text
             if match && (found == nil || n.id > found!.id) { found = n }
         }
@@ -178,6 +181,7 @@ import AsukaOps
                 focus(x)
                 return nil
             }
+            if rt.pressControl(x) { return nil } // a chip, a disclosure (Chip.swift)
             if x.kind == .button || x.kind == .toggle {
                 if x.menu != nil && x.menuTrigger == AsukaMenuTrigger.tap.rawValue { return "\"\(text)\" opens a menu, which would hold the script" }
                 (x.view as? NSButton)?.performClick(nil)
@@ -419,7 +423,7 @@ import AsukaOps
         var lines: [String] = []
         for n in rt.nodes.values.sorted(by: { $0.id < $1.id }) where showing(n) {
             if !n.text.isEmpty { lines.append(n.text) }
-            else if n.kind == .button && !n.title.isEmpty { lines.append(n.title) }
+            else if (n.kind == .button || n.kind == .chip || n.kind == .disclosure) && !n.title.isEmpty { lines.append(n.title) }
             else if !n.a11yLabel.isEmpty { lines.append(n.a11yLabel) }
         }
         lines += AsukaDevErrors.shared.texts() // asuka dev's overlay, over them

@@ -69,6 +69,7 @@ struct AsukaModuleError: LocalizedError {
         #endif
         modules["share"] = AsukaShare.methods(self)
         modules["view"] = AsukaCapture.methods(self)
+        modules["image"] = AsukaImageModule.methods()
         // fs.readAsset: an asset's bytes, read off the main thread.
         modules["assets"] = ["read": { args, reply in
             let name = String(decoding: args, as: UTF8.self)

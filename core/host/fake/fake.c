@@ -1099,6 +1099,27 @@ void ak_fake_measure(ak_fake *f, ak_id id, float width, float height, float avai
 		else if (height == height) w = height;
 		break;
 	case AK_KIND_RICH_TEXT: rich_size(v, width, avail_w, &w, &h); break;
+	case AK_KIND_CHIP: {
+		// Material's: 8pt characters, 16 of padding a side, 18 and 8 for
+		// an icon (a selected filter chip's checkmark), 18 and 8 for the
+		// remove button; 32 tall.
+		w = (float)runes(ak_fake_string(v, AK_PROP_CHIP_TITLE)) * 8 + 32;
+		bool check = ak_fake_bool(v, AK_PROP_CHIP_FILTER) && ak_fake_bool(v, AK_PROP_CHIP_SELECTED);
+		if (check || ak_fake_string(v, AK_PROP_CHIP_ICON).len) w += 26;
+		if (ak_fake_bool(v, AK_PROP_CHIP_REMOVABLE)) w += 26;
+		h = 32;
+		break;
+	}
+	case AK_KIND_DATE_RANGE_PICKER:
+		// Two compact pickers and a dash; inline, a month's calendar.
+		if (ak_fake_bool(v, AK_PROP_DATE_RANGE_PICKER_INLINE)) w = 320, h = 300;
+		else w = 260, h = 34;
+		break;
+	case AK_KIND_DISCLOSURE:
+		// A list row's height; its title, the chevron and the insets.
+		w = (float)runes(ak_fake_string(v, AK_PROP_DISCLOSURE_TITLE)) * 8 + 40;
+		h = 44;
+		break;
 	}
 	AK_UNUSED(avail_h);
 	if (width == width) w = width;
@@ -1143,6 +1164,8 @@ ak_span ak_fake_label(const ak_fake_view *v) {
 	case AK_FAKE_KIND_CELL: return ak_fake_row_cell(v, 0);  // a table's row: its first cell
 	case AK_KIND_TEXT: return ak_fake_string(v, AK_PROP_TEXT_TEXT);
 	case AK_KIND_BUTTON: return ak_fake_string(v, AK_PROP_BUTTON_TITLE);
+	case AK_KIND_CHIP: return ak_fake_string(v, AK_PROP_CHIP_TITLE);
+	case AK_KIND_DISCLOSURE: return ak_fake_string(v, AK_PROP_DISCLOSURE_TITLE);
 	case AK_KIND_NATIVE: {
 		// A native package's view: its component's name (its Type is
 		// "<class>#<name>").
@@ -1383,8 +1406,23 @@ void ak_fake_tap_settle(ak_fake *f) {
 
 static void double_tapped(ak_fake *f, ak_fake_view *v);
 
+// toggled flips a filter chip's or a disclosure's state, as its platform
+// shows it at once, and reports it: true when v is one.
+static bool toggled(ak_fake *f, ak_fake_view *v) {
+	ak_prop p;
+	if (v->kind == AK_KIND_CHIP && ak_fake_bool(v, AK_PROP_CHIP_FILTER)) p = AK_PROP_CHIP_SELECTED;
+	else if (v->kind == AK_KIND_DISCLOSURE) p = AK_PROP_DISCLOSURE_EXPANDED;
+	else return false;
+	if (ak_fake_bool(v, AK_PROP_DISABLED)) return true;
+	bool on = !ak_fake_bool(v, p);
+	set_int(v, p, AK_T_BOOL, on);
+	if (listening(f, v, AK_EVENT_TOGGLED)) ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_TOGGLED, .b = on});
+	return true;
+}
+
 void ak_fake_tap(ak_fake *f, ak_fake_view *v) {
 	if (f->tap_pending && f->tap_pending != v->id) ak_fake_tap_settle(f);  // a tap elsewhere: the first one's press goes
+	if (toggled(f, v)) return;
 	if (ak_fake_listens(v, AK_EVENT_DOUBLE_TAP)) {
 		// Its press waits for a second tap, which would be a double tap.
 		if (f->tap_pending == v->id) {
@@ -1530,6 +1568,36 @@ void ak_fake_flip(ak_fake *f, ak_fake_view *v) {
 	bool on = !ak_fake_bool(v, AK_PROP_TOGGLE_ON);
 	set_int(v, AK_PROP_TOGGLE_ON, AK_T_BOOL, on);
 	if (listening(f, v, AK_EVENT_TOGGLED)) ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_TOGGLED, .b = on});
+}
+
+bool ak_fake_remove_chip(ak_fake *f, ak_fake_view *v) {
+	if (v->kind != AK_KIND_CHIP || !ak_fake_bool(v, AK_PROP_CHIP_REMOVABLE)) {
+		fail(f, "view %u isn't a removable Chip", v->id);
+		return false;
+	}
+	emit(f, v, AK_EVENT_REMOVE);
+	return true;
+}
+
+void ak_fake_pick_range(ak_fake *f, ak_fake_view *v, int64_t start, int64_t end) {
+	set_int(v, AK_PROP_DATE_RANGE_PICKER_START, AK_T_INT, start);
+	set_int(v, AK_PROP_DATE_RANGE_PICKER_END, AK_T_INT, end);
+	if (listening(f, v, AK_EVENT_RANGE_CHANGED)) ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_RANGE_CHANGED, .x = (double)start, .y = (double)end});
+}
+
+bool ak_fake_choose_suggestion(ak_fake *f, ak_fake_view *v, int64_t index) {
+	ak_str_vec list = {0};
+	if (v->kind == AK_KIND_TEXT_FIELD) ak_fake_strings(v, AK_PROP_TEXT_FIELD_SUGGESTIONS, &list);
+	if (index < 0 || index >= list.len) {
+		fail(f, "no suggestion %lld of view %u (it has %u)", (long long)index, v->id, list.len);
+		ak_vec_free(&list);
+		return false;
+	}
+	// The field shows it (not reported as typed), then says it was chosen.
+	set_prop(v, AK_PROP_TEXT_FIELD_VALUE, &(ak_value){.type = AK_T_STRING, .s = list.data[index]});
+	ak_vec_free(&list);
+	emit_int(f, v, AK_EVENT_SUGGESTION, index);
+	return true;
 }
 
 void ak_fake_pick_color(ak_fake *f, ak_fake_view *v, ak_color c) {
@@ -1722,6 +1790,11 @@ bool ak_fake_key(ak_fake *f, ak_fake_view *focused, const char *name, uint8_t mo
 		return false;
 	}
 	if (!had || mods) return false;
+	if ((ak_span_eq(k, ak_cstr("enter")) || ak_span_eq(k, ak_cstr("space"))) && toggled(f, had)) return false;
+	if ((ak_span_eq(k, ak_cstr("delete")) || ak_span_eq(k, ak_cstr("backspace"))) && had->kind == AK_KIND_CHIP && ak_fake_bool(had, AK_PROP_CHIP_REMOVABLE)) {
+		emit(f, had, AK_EVENT_REMOVE);
+		return false;
+	}
 	if ((ak_span_eq(k, ak_cstr("enter")) || ak_span_eq(k, ak_cstr("space"))) && had->kind != AK_KIND_TEXT_FIELD && listening(f, had, AK_EVENT_PRESS)) {
 		emit(f, had, AK_EVENT_PRESS);
 		return false;
@@ -1746,6 +1819,9 @@ bool ak_fake_takes_focus(const ak_fake_view *v) {
 	case AK_KIND_WHEEL:
 	case AK_KIND_COLOR_PICKER:
 	case AK_KIND_DATE_PICKER:
+	case AK_KIND_CHIP:
+	case AK_KIND_DATE_RANGE_PICKER:
+	case AK_KIND_DISCLOSURE:
 		return true;
 	}
 	return ak_fake_bool(v, AK_PROP_FOCUSABLE) || ak_fake_listens(v, AK_EVENT_PRESS) || ak_fake_bool(v, AK_PROP_A11Y_ADJUSTABLE);

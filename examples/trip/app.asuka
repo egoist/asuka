@@ -1,0 +1,170 @@
+// Trip: a form of the controls a booking app has. A destination typed
+// with suggestions (a combo box), the days of the stay (a date range),
+// filter chips for what the stay should have, input chips for who's
+// coming, more options in a disclosure, and pictures loaded with a
+// header, kept out of the disk cache, and tinted.
+//
+//   asuka dev examples/trip
+//   asuka dev --platform android examples/trip
+
+import platform/image
+import std/time
+
+let cities = ["Amsterdam", "Athens", "Barcelona", "Berlin", "Kyoto", "Lisbon", "Osaka", "Paris", "Prague", "Reykjavík", "Rome", "Seoul", "Tokyo", "Vienna"]
+let amenities = ["Wi-Fi", "Breakfast", "Pool", "Parking", "Pets"]
+let photos = ["https://picsum.photos/id/1040/400/300", "https://picsum.photos/id/1043/400/300"]
+
+fn daysText(start: int, end: int) -> string {
+  if start == 0 {
+    return "No dates yet"
+  }
+  let nights = (end - start) / 86_400_000
+  return "{nights} nights"
+}
+
+component Trip {
+  state city = ""
+  state chosen = ""
+  state start = 0
+  state end = 0
+  state wanted = [false, true, false, false, false]
+  state guests = ["Ana", "Bo"]
+  state guest = ""
+  state more = false
+  state flexible = false
+
+  task { image.prefetch(photos) }
+
+  Scroll {
+    grow: 1
+    Column {
+      gap: 16
+      padding: 20
+      Text("Where to?") { font: .headline }
+      TextField {
+        bind text: city
+        placeholder: "Destination"
+        suggestions: cities
+        dropdown: true
+        on suggestion(i) { chosen = cities[i] }
+      }
+      Text(if chosen.isEmpty() { "Type a city" } else { "Going to {chosen}" }) { color: .secondaryLabel }
+
+      Text("When?") { font: .headline }
+      DateRangePicker {
+        bind start: start
+        bind end: end
+        min: time.now().unixMilli()
+      }
+      Text(daysText(start, end)) { color: .secondaryLabel }
+
+      Text("With") { font: .headline }
+      Row {
+        wrap: true
+        gap: 8
+        for i in 0..<amenities.count() {
+          Chip(amenities[i]) { bind selected: wanted[i] }
+        }
+      }
+
+      Text("Who's coming") { font: .headline }
+      Row {
+        wrap: true
+        gap: 8
+        for g in guests key g {
+          Chip(g) {
+            icon: "person"
+            on remove { guests = guests.filter(x => x != g) }
+          }
+        }
+        Chip("Add me") {
+          icon: "plus"
+          on press { guests = guests + ["Me"] }
+        }
+      }
+
+      Disclosure("More options") {
+        bind expanded: more
+        Column {
+          gap: 12
+          padding: [8, 0]
+          Row {
+            align: .center
+            Text("Flexible dates") { grow: 1 }
+            Toggle { bind on: flexible }
+          }
+          TextField {
+            bind text: guest
+            placeholder: "A note for the host"
+          }
+        }
+      }
+
+      Text("Photos") { font: .headline }
+      Row {
+        gap: 12
+        for url in photos {
+          Image(url) {
+            headers: ["Authorization": "Bearer demo"]
+            cache: .memory
+            mode: .fill
+            aspectRatio: 4.0 / 3
+            grow: 1
+            radius: 12
+            clip: true
+          }
+        }
+      }
+      Row {
+        gap: 12
+        align: .center
+        Image("pin.png") {
+          width: 32
+          color: .accent
+        }
+        Image("pin.png") {
+          width: 32
+          color: .red
+        }
+        Button("Clear the image cache") { on press { image.clearCache() } }
+      }
+    }
+  }
+}
+
+app { Trip() }
+
+test "a destination from its suggestions" {
+  let app = mount(Trip())
+  app.type("pa", into: "Destination")
+  app.expectNo("Amsterdam")
+  app.chooseSuggestion("Paris")
+  app.expect("Going to Paris")
+}
+
+test "the days of the stay" {
+  let app = mount(Trip())
+  app.expect("No dates yet")
+  let day = 86_400_000
+  let start = time.now().unixMilli() + day
+  app.pickRange("When?", start, start + 3 * day)
+  app.expect("3 nights")
+}
+
+test "chips choose, remove and add" {
+  let app = mount(Trip())
+  app.tap("Pool")
+  app.remove("Ana")
+  app.expectNo("Ana")
+  app.tap("Add me")
+  app.expect("Me", "Bo")
+}
+
+test "more options open and close" {
+  let app = mount(Trip())
+  app.expectNo("Flexible dates")
+  app.tap("More options")
+  app.expect("Flexible dates")
+  app.tap("More options")
+  app.expectNo("Flexible dates")
+}

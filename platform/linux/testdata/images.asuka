@@ -1,0 +1,72 @@
+// An Image's Headers and Cache, platform/image's prefetch and clearCache,
+// and Color tinting a raster image (controls_test.go's TestImageOptions;
+// IMAGES_BASE is the test's server).
+import platform/image
+
+let base = "IMAGES_BASE"
+
+component Images {
+  state auth = "?"
+  state noauth = "?"
+  state memory = "?"
+  state uncached = "?"
+  state pre = "?"
+  state shown = true
+  state prefetched = false
+
+  Column {
+    gap: 8
+    padding: 16
+    if shown {
+      Row {
+        gap: 8
+        Image("{base}/auth/a.png") {
+          width: 32; height: 32
+          headers: ["Authorization": "Bearer t"]
+          on loaded(w, h) { auth = "loaded {w}" }
+          on error(m) { auth = "failed" }
+        }
+        Image("{base}/auth/b.png") {
+          width: 32; height: 32
+          on loaded(w, h) { noauth = "loaded {w}" }
+          on error(m) { noauth = "failed" }
+        }
+        Image("{base}/memory/m.png") {
+          width: 32; height: 32
+          cache: .memory
+          on loaded(w, h) { memory = "loaded {w}" }
+          on error(m) { memory = "failed" }
+        }
+        Image("{base}/none/n.png") {
+          width: 32; height: 32
+          cache: .off
+          on loaded(w, h) { uncached = "loaded {w}" }
+          on error(m) { uncached = "failed" }
+        }
+      }
+    }
+    if prefetched {
+      Image("{base}/pre/p.png") {
+        width: 32; height: 32
+        on loaded(w, h) { pre = "loaded {w}" }
+        on error(m) { pre = "failed" }
+      }
+    }
+    Image("pin.png") { width: 32; height: 32; color: .red }
+    Text("auth {auth}")
+    Text("noauth {noauth}")
+    Text("memory {memory}")
+    Text("none {uncached}")
+    Text("pre {pre}")
+    Row {
+      gap: 8
+      Button("Hide") { on press { shown = false } }
+      Button("Show") { on press { shown = true } }
+      Button("Prefetch") { on press { image.prefetch(["{base}/pre/p.png"]) } }
+      Button("Prefetched") { on press { prefetched = true } }
+      Button("Clear") { on press { image.clearCache() } }
+    }
+  }
+}
+
+app { Images() }

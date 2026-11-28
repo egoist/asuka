@@ -1,0 +1,73 @@
+// Chips, a field's suggestions, a date range and a disclosure
+// (controls_test.go's TestControls): filter chips toggled, an action
+// chip pressed, input chips removed by their remove buttons and by
+// Delete, a combo box's list typed into, moved in and chosen from, a
+// range of days chosen on a calendar, a disclosure opened and closed.
+
+let cities = ["Amsterdam", "Pamplona", "Paris", "Prague", "Tokyo"]
+
+component Controls {
+  state picked = [false, true]
+  state guests = ["Ana", "Bo"]
+  state pressed = 0
+  state removed = "none"
+  state city = ""
+  state chosen = "none"
+  state start = 0
+  state end = 0
+  state from = 0
+  state to = 0
+  state more = false
+
+  Column {
+    gap: 8
+    padding: 16
+    Row {
+      gap: 8
+      Chip("Wi-Fi") { bind selected: picked[0] }
+      Chip("Pool") { bind selected: picked[1] }
+      Chip("Add") {
+        icon: "plus"
+        on press { pressed += 1 }
+      }
+      for g in guests key g {
+        Chip(g) {
+          icon: "person"
+          on remove {
+            guests = guests.filter(x => x != g)
+            removed = g
+          }
+        }
+      }
+    }
+    Text("chips {picked[0]} {picked[1]} pressed {pressed} removed {removed} guests {guests.count()}")
+    TextField {
+      bind text: city
+      placeholder: "City"
+      suggestions: cities
+      dropdown: true
+      on suggestion(i) { chosen = cities[i] }
+    }
+    Text("chosen {chosen} text {city}")
+    DateRangePicker {
+      label: "Dates"
+      bind start: start
+      bind end: end
+    }
+    Text("range {(end - start) / 86_400_000}")
+    Disclosure("More") {
+      bind expanded: more
+      Text("Inside")
+    }
+    Text("more {more}")
+    DateRangePicker {
+      label: "Calendar"
+      inline: true
+      bind start: from
+      bind end: to
+    }
+    Text("inline {(to - from) / 86_400_000}")
+  }
+}
+
+app { Controls() }

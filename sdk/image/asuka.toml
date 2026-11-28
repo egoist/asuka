@@ -1,0 +1,3 @@
+name = "platform/image"
+version = "0.1.0"
+description = "The Image's caches: prefetching pictures, and clearing them"

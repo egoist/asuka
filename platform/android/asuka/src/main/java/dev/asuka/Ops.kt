@@ -49,6 +49,9 @@ object AsukaKind {
     const val OVERLAY = 39
     const val TABLE = 40
     const val OUTLINE = 41
+    const val CHIP = 42
+    const val DATE_RANGE_PICKER = 43
+    const val DISCLOSURE = 44
 
     fun name(kind: Int): String = when (kind) {
         1 -> "View"
@@ -92,6 +95,9 @@ object AsukaKind {
         39 -> "Overlay"
         40 -> "Table"
         41 -> "Outline"
+        42 -> "Chip"
+        43 -> "DateRangePicker"
+        44 -> "Disclosure"
         else -> "Kind($kind)"
     }
 }
@@ -194,6 +200,8 @@ object AsukaProp {
         const val RICH = 75
         const val PASTE_TYPES = 76
         const val ACCESSORY = 77
+        const val SUGGESTIONS = 78
+        const val DROPDOWN = 79
     }
 
     object Toggle {
@@ -288,6 +296,8 @@ object AsukaProp {
         const val PLACEHOLDER_MODE = 68
         const val TRANSITION = 69
         const val PAUSED = 70
+        const val HEADERS = 71
+        const val CACHE = 72
     }
 
     object Native {
@@ -460,6 +470,27 @@ object AsukaProp {
         const val SELECTION = 66
         const val ROW_HEIGHT = 67
     }
+
+    object Chip {
+        const val TITLE = 64
+        const val ICON = 65
+        const val FILTER = 66
+        const val SELECTED = 67
+        const val REMOVABLE = 68
+    }
+
+    object DateRangePicker {
+        const val START = 64
+        const val END = 65
+        const val MIN = 66
+        const val MAX = 67
+        const val INLINE = 68
+    }
+
+    object Disclosure {
+        const val TITLE = 64
+        const val EXPANDED = 65
+    }
 }
 
 object AsukaEventKind {
@@ -543,6 +574,9 @@ object AsukaEventKind {
     const val EXPAND = 78
     const val UNDO = 79
     const val RESTORE_WINDOW = 80
+    const val REMOVE = 81
+    const val RANGE_CHANGED = 82
+    const val SUGGESTION = 83
 }
 
 object AsukaCommand {
@@ -1046,6 +1080,12 @@ object AsukaSelectionMode {
     const val NONE = 2
 }
 
+object AsukaImageCache {
+    const val DEFAULT = 0
+    const val MEMORY = 1
+    const val NONE = 2
+}
+
 /** Receives decoded ops, in order, on the main thread. */
 interface AsukaOpHandler {
     fun create(id: Int, kind: Int)
@@ -1294,4 +1334,7 @@ object AsukaEvents {
     fun expand(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 78); f64(x); f64(y) }.bytes()
     fun undo(id: Int, v: Long): ByteArray = AsukaWriter().apply { header(id, 79); u64(v) }.bytes()
     fun restoreWindow(id: Int, v: String): ByteArray = AsukaWriter().apply { header(id, 80); string(v) }.bytes()
+    fun remove(id: Int): ByteArray = AsukaWriter().apply { header(id, 81) }.bytes()
+    fun rangeChanged(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 82); f64(x); f64(y) }.bytes()
+    fun suggestion(id: Int, v: Long): ByteArray = AsukaWriter().apply { header(id, 83); u64(v) }.bytes()
 }

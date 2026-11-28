@@ -129,7 +129,7 @@ import AsukaOps
     func takesFocus(_ n: AsukaNode) -> Bool {
         guard !n.view.isHidden else { return false }
         switch n.kind {
-        case .textField, .button, .toggle, .slider, .stepper, .segmented, .picker, .wheel, .colorPicker, .datePicker:
+        case .textField, .button, .toggle, .slider, .stepper, .segmented, .picker, .wheel, .colorPicker, .datePicker, .chip, .dateRangePicker, .disclosure:
             return (n.view as? UIControl)?.isEnabled ?? true
         default:
             guard let c = n.view as? AsukaContainerView else { return false }

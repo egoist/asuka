@@ -49,7 +49,7 @@ final class AsukaDatePickerView: UIView {
 
     /// Its own size: a compact picker asked to fit a size takes all of it.
     override func sizeThatFits(_ size: CGSize) -> CGSize {
-        picker.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+        picker.asukaCompactSize
     }
 
     override func layoutSubviews() {

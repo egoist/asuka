@@ -259,6 +259,9 @@ var Elements = []Element{
 		{Name: "rich", Type: "[Span]", Bind: true, Event: "richChange", Doc: "makes it a text area of styled text: bold, italic, underline, strikethrough, monospaced, links. The user's typing and formatting write it; writing it replaces the text, and text follows its plain text. Inline components are left out. It makes the field multiline"},
 		{Name: "focused", Type: "bool", Bind: true, Event: "focusChange", Doc: "whether it has the keyboard: the user's tapping in and out writes it, and writing it takes the keyboard or gives it up"},
 		{Name: "pasteTypes", Type: "[string]", Doc: "the MIME types (patterns, as \"image/*\") of what on paste takes instead of the text: pasted, or put in by the keyboard (a GIF keyboard's images)"},
+		{Name: "suggestions", Type: "[string]", Doc: "makes it an autocomplete: the texts listed under it as the user types (those that contain what's typed, unless filterSuggestions is false), the platform's (Material's exposed dropdown, NSComboBox's list, a combo box's); choosing one puts it in the field (on suggestion). Set it, [] too, from the start for a field whose suggestions come later (a search's results)"},
+		{Name: "filterSuggestions", Type: "bool", Default: "true", Doc: "lists only the suggestions that contain what's typed, ignoring case (false: all of them, as the app filtered them already)"},
+		{Name: "dropdown", Type: "bool", Doc: "with suggestions: a button at its end lists them all, a combo box's"},
 	}, Events: []Event{
 		{Name: "change", Params: []Param{{"text", "string"}}},
 		{Name: "submit", Doc: "return pressed (not in a multiline field)"},
@@ -269,6 +272,7 @@ var Elements = []Element{
 		{Name: "richChange", Params: []Param{{"rich", "[Span]"}}},
 		{Name: "formats", Params: []Param{{"formats", "TextFormats"}}, Doc: "the styles where the cursor is, or that all the selection has, as they change: a toolbar's buttons show them"},
 		{Name: "paste", Params: []Param{{"items", "[SharedItem]"}}, Doc: "what was pasted of pasteTypes: images and files are the app's own copies, in its caches"},
+		{Name: "suggestion", Params: []Param{{"index", "int"}}, Doc: "the user chose suggestion index (among suggestions): the text is it already"},
 	}, Slots: []Slot{
 		{Name: "accessory", Doc: "a bar on top of the keyboard while the field is focused (a count and Done, formatting buttons): as wide as the window, as tall as its content, built and gone with the field. Desktops don't show it"},
 	}, Doc: "a text field: a line, or lines with multiline"},
@@ -332,6 +336,8 @@ var Elements = []Element{
 		{Name: "thumbHash", Type: "string", Doc: "a ThumbHash (base64) shown until source loads: it keeps its image's aspect ratio and alpha"},
 		{Name: "placeholderMode", Type: "PlaceholderMode", Doc: "how the placeholder fills the box: as the image does, or its own way"},
 		{Name: "animated", Type: "bool?", Doc: "plays an animated image (GIF, APNG, WebP) while true, stops it where it is while false; none: it plays unless the user asked for less motion (Reduce Motion), when it shows its first frame"},
+		{Name: "headers", Type: "[string: string]", Doc: "HTTP headers sent with the source's request: an authenticated image's (\"Authorization\"). The caches keep it by its URL alone"},
+		{Name: "cache", Type: "ImageCache", Doc: "where it's kept once loaded: .default (memory, and disk for http(s)), .memory (never on disk), .off (loaded each time it shows)"},
 	}, Events: []Event{
 		{Name: "loaded", Params: []Param{{"width", "float"}, {"height", "float"}}},
 		{Name: "error", Params: []Param{{"message", "string"}}},
@@ -667,4 +673,30 @@ var Elements = []Element{
 	{Name: "WindowKeys", NoStyle: true, Keys: []Key{
 		{Name: "keys", Type: "[Shortcut]", Doc: "what they run"},
 	}, Doc: "keys of the window it's in while it shows, whatever has the keyboard's focus: the ones no view takes (the last WindowKeys' win)"},
+	{Name: "Chip", Keys: []Key{
+		{Name: "title", Type: "string", Positional: true},
+		{Name: "icon", Type: "string", Doc: "a symbol before its title (see Symbol): an assist chip's"},
+		{Name: "selected", Type: "bool", Bind: true, Event: "change", Doc: "makes it a filter chip: pressing it toggles this, and it shows it's selected (Material's checkmark)"},
+	}, Events: []Event{
+		{Name: "press", Doc: "an action chip pressed (a filter chip changes instead)"},
+		{Name: "change", Params: []Param{{"selected", "bool"}}, Doc: "a filter chip pressed: selected or not now"},
+		{Name: "remove", Doc: "makes it an input chip, an entered item: its remove button (an x at its end), Delete or Backspace while it has the keyboard's focus, or a screen reader's remove action"},
+	}, Doc: "a compact action, choice or entered item (Material's chips: assist, suggestion, filter, input): a capsule button on iOS, the platforms' toggle buttons on the desktops"},
+	{Name: "DateRangePicker", Keys: []Key{
+		{Name: "start", Type: "int", Bind: true, Event: "startChange", Doc: "the first day chosen, in milliseconds since 1970 (the user's choice writes its start, midnight in the device's time zone; 0: none chosen)"},
+		{Name: "end", Type: "int", Bind: true, Event: "endChange", Doc: "the last day chosen (its midnight; never before start)"},
+		{Name: "min", Type: "int", Doc: "the earliest day to choose, in milliseconds since 1970 (0: none)"},
+		{Name: "max", Type: "int", Doc: "the latest day to choose (0: none)"},
+		{Name: "inline", Type: "bool", Doc: "a calendar in place, the range marked on it, not fields or a button opening one"},
+	}, Events: []Event{
+		{Name: "startChange", Params: []Param{{"start", "int"}}},
+		{Name: "endChange", Params: []Param{{"end", "int"}}},
+		{Name: "change", Params: []Param{{"start", "int"}, {"end", "int"}}, Doc: "the user chose a range: its first and last days"},
+	}, Doc: "a range of days, chosen the platform's way (two date pickers, Material's date range picker, a calendar), in the device's time zone (std/time's time.RangePicker binds Times)"},
+	{Name: "Disclosure", Children: true, LazyChildren: true, Keys: []Key{
+		{Name: "title", Type: "string", Positional: true},
+		{Name: "expanded", Type: "bool", Bind: true, Event: "change", Doc: "whether its content shows: pressing its header writes it, and writing it opens or closes it. Unbound, it keeps the user's choice (closed at first)"},
+	}, Events: []Event{
+		{Name: "change", Params: []Param{{"expanded", "bool"}}, Doc: "its header pressed: expanded or not now"},
+	}, Doc: "a header that shows or hides the content in its block (SwiftUI's DisclosureGroup, an expander): the platform's disclosure indicator beside its title. The content is built as it opens and goes as it closes; its font and color are the header's"},
 }

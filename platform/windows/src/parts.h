@@ -164,6 +164,9 @@ void wh_drop_provider(node *n, HWND hwnd);
 void wh_set_accessible_name(HWND hwnd, const wchar_t *name);
 void wh_clear_accessible_name(HWND hwnd);
 void wh_uia_range_changed(node *n, double old, double now);
+// A filter chip toggled, a disclosure expanded or collapsed (was: before).
+void wh_uia_toggle_changed(node *n, bool was);
+void wh_uia_expand_changed(node *n, bool was);
 void wh_a11y_modal_changed(node *n);
 void wh_a11y_forget(node *n);
 void wh_announce(const char *s, size_t len);
@@ -321,6 +324,45 @@ void wh_style_combo_list(node *n);
 rgba wh_combo_list_bg(void);
 rgba wh_combo_list_text(void);
 bool wh_combo_draw_item(node *n, DRAWITEMSTRUCT *d);
+bool wh_high_contrast(void);  // a contrast theme is on
+
+// ---- chip.c: Chip and Disclosure, drawn by the host ----
+void wh_make_chip(node *n);
+void wh_make_disclosure(node *n);
+void wh_set_chip_prop(node *n, uint16_t p, const ak_value *v);
+void wh_set_disclosure_prop(node *n, uint16_t p, const ak_value *v);
+void wh_chip_label(node *n);
+void wh_layout_chip(node *n);
+void wh_measure_chip(node *n, float *w, float *h);
+void wh_measure_disclosure(node *n, float cw, float *w, float *h);
+void wh_paint_chip(node *n, HDC dc, gfx g, RECT r);
+void wh_paint_chip_remove(node *rm, HDC dc, gfx g, RECT r);
+void wh_paint_disclosure(node *n, HDC dc, gfx g, RECT r);
+void wh_own_release(node *n);
+// wh_own_press presses a chip, a disclosure or a chip's remove button as
+// the mouse does (false: not one); wh_own_invokes reports whether UI
+// Automation's Invoke does (an action chip, a remove button).
+bool wh_own_press(node *n);
+bool wh_own_invokes(const node *n);
+void wh_own_dump(node *n, ak_buf *b);
+bool wh_chip_remove_point(const wchar_t *title, HWND *hwnd, LPARAM *lp);
+
+// ---- suggest.c: a TextField's Suggestions, a Dropdown's chevron ----
+void wh_suggest_prop(node *n, uint16_t p, const ak_value *v);
+void wh_suggest_release(node *n);
+bool wh_suggest_dropdown(const node *n);
+void wh_suggest_field(node *n, UINT code);
+void wh_suggest_disabled(node *n);
+bool wh_suggest_key(MSG *m);
+void wh_suggest_pointer_down(HWND target);
+void wh_suggest_follow(node *only);  // NULL: all of them
+LRESULT wh_suggest_message(node *n, UINT m, WPARAM wp, LPARAM lp, bool *handled);
+void wh_paint_dropdown(node *n, HDC dc, gfx g, RECT r);
+float wh_suggest_end(const node *n);
+HWND wh_suggest_popup(void);
+bool wh_suggest_tap(const wchar_t *t);
+bool wh_suggest_chevron(const wchar_t *placeholder);
+void wh_suggest_dump(node *n, ak_buf *b);
 
 // ---- datepicker.c ----
 void wh_make_date_controls(node *n);
@@ -329,6 +371,17 @@ void wh_layout_date(node *n, RECT r);
 void wh_measure_date(node *n, float *w, float *h);
 void wh_theme_date(node *n);
 LRESULT wh_date_notify(node *n, NMHDR *hdr, LPARAM lp, bool *handled);
+// A DateRangePicker's.
+void wh_make_range_controls(node *n);
+void wh_name_range(node *n);
+void wh_set_range_prop(node *n, uint16_t p, const ak_value *v);
+void wh_layout_range(node *n, RECT r);
+void wh_measure_range(node *n, float *w, float *h);
+void wh_paint_range(node *n, HDC dc, gfx g, RECT r);
+LRESULT wh_range_notify(node *n, NMHDR *hdr, LPARAM lp, bool *handled);
+bool wh_range_pick(const char *which, const char *day);
+bool wh_range_click_day(int d);
+void wh_range_dump(node *n, ak_buf *b);
 
 // ---- pager.c: PageControl ----
 void wh_measure_pips(node *n, float *w, float *h);

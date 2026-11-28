@@ -283,6 +283,23 @@ bool ak_field_rich(const ak_view *e);
 // text a rich field sent (its text follows it).
 void ak_field_text_reported(ak_view *e, ak_str *s);
 
+// Chip, DateRangePicker, Disclosure, and a TextField's suggestions
+// (widgets.c). ak_widget_class_of is their classes; ak_chip_filter says a
+// chip is a filter chip, ak_toggled_state what a filter chip or a
+// disclosure's header shows (selected, expanded).
+const ak_el_class *ak_widget_class_of(uint16_t el);
+bool ak_chip_filter(const ak_view *e);
+bool ak_toggled_state(const ak_view *e);
+// A field's suggestions: its state (in its elements.c state, *slot),
+// its keys, its finalize, a change of its text, its Suggestion event.
+typedef struct ak_suggest ak_suggest;
+ak_suggest **ak_field_suggest_slot(ak_view *e);
+void ak_suggest_free(ak_suggest *s);
+bool ak_suggest_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev);
+void ak_suggest_finalize(ak_view *e);
+void ak_suggest_text(ak_view *e);
+bool ak_suggest_event(ak_view *e, const ak_event *ev);
+
 // ---- Shapes the runtime builds (types.asuka's) ----
 
 extern const ak_shape ak_ui_shape_gesture, ak_ui_shape_shared_item, ak_ui_shape_drag_item, ak_ui_shape_drop, ak_ui_shape_span,

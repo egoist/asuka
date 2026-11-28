@@ -50,45 +50,88 @@ final class AsukaSVG: @unchecked Sendable {
 
 /// Loads images off the main thread: fetched (http, https; kept on disk,
 /// AsukaDiskCache) or read (the app's assets), decoded and prepared for
-/// display there, then cached in memory.
+/// display there, then cached in memory. An Image's Cache says where it's
+/// kept: Default, in memory and (fetched, unless no-store) on disk;
+/// Memory, never on disk; None, nowhere,
+/// loaded each time. The caches key by the URL alone; Headers go with the
+/// request.
 final class AsukaImageLoader: @unchecked Sendable {
     static let shared = AsukaImageLoader()
     private let cache = NSCache<NSString, UIImage>()
     private let queue = DispatchQueue(label: "asuka.images", qos: .userInitiated, attributes: .concurrent)
-    private var waiting: [String: [(Result<UIImage, Error>) -> Void]] = [:] // main thread only
+    /// Loads under way, by source and where they keep it: one in flight
+    /// each, whoever asks (an Image, a prefetch). Main thread only.
+    private var waiting: [String: [(Result<UIImage, Error>) -> Void]] = [:]
+    let disk: AsukaDiskCache
+    /// Its fetches: what's on disk is AsukaDiskCache's alone (never
+    /// URLSession's cache too, which Memory and None mustn't write).
+    private let session: URLSession = {
+        let c = URLSessionConfiguration.default
+        c.urlCache = nil
+        c.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: c)
+    }()
 
-    init() { cache.totalCostLimit = 64 << 20 }
+    init(disk: AsukaDiskCache = .images) {
+        self.disk = disk
+        cache.totalCostLimit = 64 << 20
+    }
 
     func cached(_ source: String) -> UIImage? { cache.object(forKey: source as NSString) }
 
+    /// Where a load of policy (an ImageCache) may read and keep the image:
+    /// in memory, on disk (for one fetched over http(s)).
+    static func policy(_ cache: Int32) -> (memory: Bool, disk: Bool) {
+        switch AsukaImageCache(rawValue: cache) {
+        case .memory: return (true, false)
+        case .some(.none): return (false, false)
+        default: return (true, true)
+        }
+    }
+
+    /// Forgets what's kept: the decoded images in memory, the files on
+    /// disk. Images showing keep theirs.
+    func clear(memory: Bool, disk clearDisk: Bool) {
+        if memory { cache.removeAllObjects() }
+        if clearDisk {
+            let d = disk
+            queue.async(flags: .barrier) { d.removeAll() }
+        }
+    }
+
     /// Calls done on the main thread.
-    @MainActor func load(_ source: String, done: @escaping (Result<UIImage, Error>) -> Void) {
-        if let img = cached(source) { done(.success(img)); return }
-        if waiting[source] != nil { waiting[source]!.append(done); return }
-        waiting[source] = [done]
+    @MainActor func load(_ source: String, headers: [String: String] = [:], cache policy: Int32 = 0, done: @escaping (Result<UIImage, Error>) -> Void) {
+        let keep = Self.policy(policy)
+        if keep.memory, let img = cached(source) { done(.success(img)); return }
+        let key = "\(policy):\(source)"
+        if waiting[key] != nil { waiting[key]!.append(done); return }
+        waiting[key] = [done]
         let finish: @Sendable (Result<UIImage, Error>) -> Void = { r in
             DispatchQueue.main.async {
-                if case .success(let img) = r {
+                if keep.memory, case .success(let img) = r {
                     let px = img.size.width * img.size.height * img.scale * img.scale * 4
                     self.cache.setObject(img, forKey: source as NSString, cost: Int(px))
                 }
-                let fs = self.waiting.removeValue(forKey: source) ?? []
+                let fs = self.waiting.removeValue(forKey: key) ?? []
                 for f in fs { f(r) }
             }
         }
         if source.hasPrefix("http://") || source.hasPrefix("https://"), let url = URL(string: source) {
-            let disk = AsukaDiskCache.images
+            let disk = self.disk
+            var req = URLRequest(url: url)
+            for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+            let session = self.session
             queue.async {
-                if let d = disk.read(source), case .success(let img) = Self.decode(d) {
+                if keep.disk, let d = disk.read(source), case .success(let img) = Self.decode(d) {
                     finish(.success(img))
                     return
                 }
-                URLSession.shared.dataTask(with: url) { data, resp, err in
+                session.dataTask(with: req) { data, resp, err in
                     if let err { finish(.failure(err)); return }
                     if let h = resp as? HTTPURLResponse {
                         if !(200..<300).contains(h.statusCode) { finish(.failure(AsukaImageError("HTTP \(h.statusCode)"))); return }
                         let r = Self.decode(data)
-                        if case .success = r, let data, AsukaDiskCache.storable(url, h) { disk.write(source, data) }
+                        if keep.disk, case .success = r, let data, AsukaDiskCache.storable(url, h) { disk.write(source, data) }
                         finish(r)
                         return
                     }
@@ -179,6 +222,9 @@ final class AsukaImageView: UIImageView {
     var placeholderMode: Int32 = -1 { didSet { syncPlaceholderMode() } }
     var transition: Double = 0
     var tinted = false
+    /// Headers and Cache (an ImageCache): for the loads of the sources that follow.
+    var headers: [String: String] = [:]
+    var cachePolicy: Int32 = 0
     var paused = false { didSet { if paused != oldValue { restartFrames() } } }
     private var animation: Data?
     private var frame0 = 0
@@ -386,6 +432,12 @@ final class AsukaDiskCache: @unchecked Sendable {
         if start { DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) { self.trim() } }
     }
 
+    /// Every file it keeps goes.
+    func removeAll() {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        for f in files { try? FileManager.default.removeItem(at: f) }
+    }
+
     func trim() {
         let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
         guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys) else { return }
@@ -407,6 +459,64 @@ final class AsukaDiskCache: @unchecked Sendable {
         if let cc = resp.value(forHTTPHeaderField: "Cache-Control")?.lowercased(), cc.contains("no-store") { return false }
         let h = url.host ?? ""
         return !(h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "10.0.2.2")
+    }
+}
+
+/// Name, value pairs (Headers' strings) as a request's headers.
+func asukaHeaders(_ s: [String]) -> [String: String] {
+    var h: [String: String] = [:]
+    var i = 0
+    while i + 1 < s.count {
+        h[s[i]] = s[i + 1]
+        i += 2
+    }
+    return h
+}
+
+/// The host's "image" module (platform/image): prefetch loads pictures
+/// into the caches as an Image would, clearCache forgets them.
+enum AsukaImageModule {
+    /// prefetch's arguments: u32 n, n u32-length URLs, then u32 m (twice
+    /// the headers) and m u32-length strings, name and value in turn. What
+    /// runs short is left out.
+    static func decodePrefetch(_ d: Data) -> (urls: [String], headers: [String: String]) {
+        let b = [UInt8](d)
+        var i = 0
+        func u32() -> Int? {
+            guard b.count - i >= 4 else { return nil }
+            let v = Int(b[i]) | Int(b[i + 1]) << 8 | Int(b[i + 2]) << 16 | Int(b[i + 3]) << 24
+            i += 4
+            return v
+        }
+        func strings() -> [String] {
+            guard let n = u32() else { return [] }
+            var out: [String] = []
+            for _ in 0..<n {
+                guard let len = u32(), b.count - i >= len else { break }
+                out.append(String(decoding: b[i..<i + len], as: UTF8.self))
+                i += len
+            }
+            return out
+        }
+        let urls = strings()
+        return (urls, asukaHeaders(strings()))
+    }
+
+    @MainActor static func methods(_ loader: AsukaImageLoader = .shared) -> [String: AsukaModuleMethod] {
+        [
+            "prefetch": { args, reply in
+                let (urls, headers) = decodePrefetch(args)
+                MainActor.assumeIsolated {
+                    for u in urls where !u.isEmpty { loader.load(u, headers: headers) { _ in } }
+                }
+                reply(.success(Data()))
+            },
+            "clearCache": { args, reply in
+                let flags = args.first ?? 3
+                loader.clear(memory: flags & 1 != 0, disk: flags & 2 != 0)
+                reply(.success(Data()))
+            },
+        ]
     }
 }
 
@@ -570,6 +680,7 @@ final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
         switch (n.kind, prop) {
         case (.datePicker, AsukaProp.DatePicker.value):
             (n.view as? AsukaDatePickerView)?.picker.date = Date(timeIntervalSince1970: Double(v.int) / 1000)
+            n.view.setNeedsLayout() // the date's text has its own width
         case (.datePicker, AsukaProp.DatePicker.mode):
             guard let d = (n.view as? AsukaDatePickerView)?.picker else { return true }
             switch AsukaDateMode(rawValue: v.enumValue) {
@@ -677,6 +788,11 @@ final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
             (n.view as? AsukaImageView)?.transition = v.float
         case (.image, AsukaProp.Image.paused):
             (n.view as? AsukaImageView)?.paused = v.bool
+        case (.image, AsukaProp.Image.headers):
+            guard case .bytes(let b) = v else { return true }
+            (n.view as? AsukaImageView)?.headers = asukaHeaders(AsukaInteraction.decodeStrings(b))
+        case (.image, AsukaProp.Image.cache):
+            (n.view as? AsukaImageView)?.cachePolicy = v.enumValue
         case (.image, AsukaProp.Image.mode):
             let iv = n.view as! UIImageView
             iv.contentMode = AsukaImageView.contentMode(v.enumValue)
@@ -739,12 +855,12 @@ final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
                 self.emit(id, .failed) { AsukaEvents.failed(id, m) }
             }
         }
-        if let img = AsukaImageLoader.shared.cached(source) {
+        if AsukaImageLoader.policy(iv.cachePolicy).memory, let img = AsukaImageLoader.shared.cached(source) {
             iv.setPlaceholder(nil, template: false)
             show(.success(img))
         } else {
             showPlaceholder(n)
-            AsukaImageLoader.shared.load(source, done: show)
+            AsukaImageLoader.shared.load(source, headers: iv.headers, cache: iv.cachePolicy, done: show)
         }
     }
 

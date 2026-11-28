@@ -142,6 +142,7 @@ enum {
 	KIND_PICTURE,        // a view drawn for another (picture.c)
 	KIND_DEV_ERROR,      // asuka dev's error overlay's buttons (deverror.c)
 	KIND_TABLE_CELL,     // a cell a Table's or Outline's row is bound into (table.c)
+	KIND_CHIP_REMOVE,    // a Removable Chip's remove button (chip.c)
 };
 
 // An item of a menu of actions (a Menu prop, a Screen's bar buttons, an
@@ -192,6 +193,7 @@ typedef struct wh_native wh_native;
 typedef struct wh_field wh_field;  // a Rich TextField's (richfield.c)
 typedef struct wh_uia wh_uia;      // a view's UI Automation provider
 typedef struct wh_table wh_table;  // a Table's or Outline's (table.c)
+typedef struct wh_suggest wh_suggest;  // a TextField's suggestions (suggest.c)
 
 // A transform (Style.Transform): translation in points, scale, rotation
 // in degrees clockwise, around the view's center.
@@ -329,6 +331,15 @@ struct node {
 	double phase;
 	int32_t date_mode;
 	bool date_inline;
+	double date_end;     // a DateRangePicker's End (value is its Start)
+	bool range_anchored; // its inline calendar's first click made, the second to come
+	double range_anchor;
+	// A Chip's: a filter chip (on: Selected), an input chip; a Chip's
+	// remove button (KIND_CHIP_REMOVE) and the chip it's of, each the
+	// other's chip_peer.
+	bool chip_filter, chip_removable;
+	node *chip_peer;
+	wh_suggest *suggest;  // a TextField's with Suggestions
 	bool horizontal;
 	float scroll_x, scroll_y, scroll_end, content_w, content_h;
 	int32_t wheel_acc;
@@ -563,6 +574,7 @@ enum {
 	TIMER_REORDER = 15,      // a list's rows making way for one moved, and its scrolling at an edge
 	TIMER_REORDER_HOLD = 16, // a touch's long press lifting a row
 	TIMER_COMMANDS = 17,     // ASUKA_COMMANDS' file, looked for (automation.c)
+	TIMER_CHEVRON = 18,      // a Disclosure's chevron turning (chip.c)
 };
 
 void wh_register_classes(void);

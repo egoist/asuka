@@ -4,8 +4,7 @@
 // month calendar in place (SysMonthCal32, as WinUI's CalendarView), with a
 // time picker under it for a date and time; a time alone stays the time
 // picker, Windows having no clock to show in place.
-#include "host.h"
-#include "parts.h"
+#include "win.h"
 
 #define TIME_UNDER_GAP 8  // points between the calendar and the time
 
@@ -368,4 +367,374 @@ LRESULT wh_date_notify(node *n, NMHDR *hdr, LPARAM lp, bool *handled) {
 		return 0;
 	}
 	return 0;
+}
+
+// ---- DateRangePicker: two date pickers (the start, an en dash, the
+// end), or a month calendar choosing a range (MCS_MULTISELECT) ----
+//
+// The pickers show the locale's short date; today while a day isn't
+// chosen (they can't show none), nothing reported till the user changes
+// one. Either changing reports both, the first and last days' local
+// midnights: a start moved past the end moves the end to it, an end
+// moved before the start the start. The calendar marks the range; a click
+// on a day starts a range, a second click (or Enter, or Space) on another
+// ends it and reports it, as UICalendarView and Material's range picker
+// do; a drag or a Shift+click chooses one at once. Right to left the start
+// is on the right; the calendar mirrors itself (its window's layout).
+
+#define RANGE_DASH_PAD 8  // points each side of the en dash
+#define RANGE_MAX_DAYS 36600
+
+static const wchar_t en_dash = 0x2013;
+
+static SYSTEMTIME midnight(SYSTEMTIME st) {
+	st.wHour = st.wMinute = st.wSecond = st.wMilliseconds = 0;
+	return st;
+}
+
+static int day_cmp(const SYSTEMTIME *a, const SYSTEMTIME *b) {
+	if (a->wYear != b->wYear) return a->wYear < b->wYear ? -1 : 1;
+	if (a->wMonth != b->wMonth) return a->wMonth < b->wMonth ? -1 : 1;
+	if (a->wDay != b->wDay) return a->wDay < b->wDay ? -1 : 1;
+	return 0;
+}
+
+static SYSTEMTIME range_day(double ms) { return midnight(system_time(ms != 0 ? (int64_t)ms : now_ms())); }
+
+static LRESULT range_calendar_message(HWND hwnd, UINT m, WPARAM w, LPARAM l);
+
+static void apply_range_days(node *n);
+
+static void drop_range_controls(node *n) {
+	HWND cs[2] = {n->ctl, n->ctl2};
+	for (int i = 0; i < 2; i++)
+		if (cs[i]) {
+			wh_unsubclass(cs[i]);
+			wh_unbind(cs[i]);
+			wh_clear_accessible_name(cs[i]);
+			DestroyWindow(cs[i]);
+		}
+	n->ctl = n->ctl2 = NULL;
+}
+
+static HWND range_picker(node *n, int id) {
+	HWND h = CreateWindowExW(0, DATETIMEPICK_CLASSW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_TABSTOP | DTS_SHORTDATEFORMAT, 0, 0, 0, 0, n->hwnd,
+		(HMENU)(INT_PTR)id, GetModuleHandleW(NULL), NULL);
+	if (!h) wh_fail("couldn't make a DateRangePicker's date picker");
+	SendMessageW(h, WM_SETFONT, (WPARAM)wh_node_font(n), 0);
+	SendMessageW(h, WM_UPDATEUISTATE, MAKELONG(UIS_SET, UISF_HIDEFOCUS), 0);
+	wchar_t *date = wh_locale_info(LOCALE_SSHORTDATE);
+	SendMessageW(h, DTM_SETFORMATW, 0, (LPARAM)date);
+	free(date);
+	wh_bind(n, h);
+	return h;
+}
+
+// wh_name_range names the range's controls for screen readers: the
+// pickers "Start date" and "End date" (after its A11yLabel, if it has
+// one), the calendar its A11yLabel.
+void wh_name_range(node *n) {
+	if (!n->ctl) return;
+	if (!n->ctl2) {
+		wh_set_accessible_name(n->ctl, wstr_c(&n->a11y_label));
+		return;
+	}
+	const char *keys[2] = {"startDate", "endDate"};
+	HWND cs[2] = {n->ctl, n->ctl2};
+	for (int i = 0; i < 2; i++) {
+		wchar_t name[600];
+		if (n->a11y_label.n) swprintf(name, WH_LEN(name), L"%ls, %ls", n->a11y_label.p, wh_word(keys[i]));
+		else swprintf(name, WH_LEN(name), L"%ls", wh_word(keys[i]));
+		wh_set_accessible_name(cs[i], name);
+	}
+}
+
+// wh_make_range_controls makes a DateRangePicker's controls for Inline,
+// again when it changes.
+void wh_make_range_controls(node *n) {
+	bool calendar = n->date_inline;
+	if (n->ctl && is_calendar(n->ctl) == calendar) return;
+	drop_range_controls(n);
+	if (calendar) {
+		wh_make_control_in(n, MONTHCAL_CLASSW, WS_TABSTOP | MCS_MULTISELECT | MCS_NOTODAY, 0);
+		SendMessageW(n->ctl, MCM_SETMAXSELCOUNT, RANGE_MAX_DAYS, 0);
+		wh_subclass(n->ctl, range_calendar_message);
+		wh_bind(n, n->ctl);
+	} else {
+		n->ctl = range_picker(n, 1);
+		n->ctl2 = range_picker(n, 2);
+	}
+	n->range_anchored = false;
+	if (n->disabled) {
+		EnableWindow(n->ctl, FALSE);
+		if (n->ctl2) EnableWindow(n->ctl2, FALSE);
+	}
+	wh_name_range(n);
+	wh_theme_control(n);
+	apply_range(n);
+	apply_range_days(n);
+	wh_layout_field(n);
+}
+
+// apply_range_days shows Start and End: the pickers' days, or the
+// calendar's range (today while none is chosen).
+static void apply_range_days(node *n) {
+	if (!n->ctl) return;
+	SYSTEMTIME s = range_day(n->value), e = n->date_end != 0 ? range_day(n->date_end) : s;
+	if (day_cmp(&e, &s) < 0) e = s;
+	if (is_calendar(n->ctl)) {
+		SYSTEMTIME r[2] = {s, e};
+		SendMessageW(n->ctl, MCM_SETSELRANGE, 0, (LPARAM)r);
+		return;
+	}
+	SendMessageW(n->ctl, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&s);
+	if (n->ctl2) SendMessageW(n->ctl2, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&e);
+}
+
+void wh_set_range_prop(node *n, uint16_t p, const ak_value *v) {
+	switch (p) {
+	case AK_PROP_DATE_RANGE_PICKER_START:
+		n->value = (double)v->i;
+		n->range_anchored = false;
+		apply_range_days(n);
+		break;
+	case AK_PROP_DATE_RANGE_PICKER_END:
+		n->date_end = (double)v->i;
+		n->range_anchored = false;
+		apply_range_days(n);
+		break;
+	case AK_PROP_DATE_RANGE_PICKER_MIN:
+	case AK_PROP_DATE_RANGE_PICKER_MAX:
+		if (p == AK_PROP_DATE_RANGE_PICKER_MIN) n->min = (double)v->i;
+		else n->max = (double)v->i;
+		apply_range(n);
+		if (n->ctl && n->ctl2) {
+			// A date picker bounds its own day; the second takes the bounds too.
+			SYSTEMTIME r[2] = {0};
+			WPARAM flags = 0;
+			if (n->min != 0) r[0] = system_time((int64_t)n->min), flags |= GDTR_MIN;
+			if (n->max != 0) r[1] = system_time((int64_t)n->max), flags |= GDTR_MAX;
+			SendMessageW(n->ctl2, DTM_SETRANGE, flags, (LPARAM)r);
+		}
+		break;
+	case AK_PROP_DATE_RANGE_PICKER_INLINE:
+		n->date_inline = v->i != 0;
+		wh_make_range_controls(n);
+		break;
+	}
+}
+
+// report_range sends the range chosen, s to e (local days), and keeps it.
+static void report_range(node *n, SYSTEMTIME s, SYSTEMTIME e) {
+	s = midnight(s), e = midnight(e);
+	if (day_cmp(&e, &s) < 0) {
+		SYSTEMTIME t = s;
+		s = e, e = t;
+	}
+	int64_t a = from_system_time(&s), b = from_system_time(&e);
+	n->value = (double)a, n->date_end = (double)b;
+	ak_event ev = {.kind = AK_EVENT_RANGE_CHANGED, .x = (double)a, .y = (double)b};
+	wh_emit(n, &ev);
+}
+
+// picker_changed follows one of the two pickers: the other moves with it
+// past it, and the range is reported.
+static void picker_changed(node *n, HWND from) {
+	if (!n->ctl || !n->ctl2) return;
+	SYSTEMTIME s, e;
+	if (SendMessageW(n->ctl, DTM_GETSYSTEMTIME, 0, (LPARAM)&s) != GDT_VALID) return;
+	if (SendMessageW(n->ctl2, DTM_GETSYSTEMTIME, 0, (LPARAM)&e) != GDT_VALID) return;
+	s = midnight(s), e = midnight(e);
+	if (day_cmp(&s, &e) > 0) {
+		if (from == n->ctl) {
+			e = s;
+			SendMessageW(n->ctl2, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&e);
+		} else {
+			s = e;
+			SendMessageW(n->ctl, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&s);
+		}
+	}
+	SYSTEMTIME was_s = range_day(n->value), was_e = n->date_end != 0 ? range_day(n->date_end) : was_s;
+	if (n->value != 0 && n->date_end != 0 && !day_cmp(&s, &was_s) && !day_cmp(&e, &was_e)) return;
+	report_range(n, s, e);
+}
+
+// calendar_chose follows a choice on the calendar (a click, a drag,
+// Enter): one day starts a range, or ends the one started; more is a
+// range at once.
+static void calendar_chose(node *n, SYSTEMTIME s, SYSTEMTIME e) {
+	s = midnight(s), e = midnight(e);
+	if (day_cmp(&s, &e) != 0) {
+		n->range_anchored = false;
+		report_range(n, s, e);
+		return;
+	}
+	if (!n->range_anchored) {
+		n->range_anchored = true;
+		n->range_anchor = (double)from_system_time(&s);
+		SYSTEMTIME r[2] = {s, s};
+		SendMessageW(n->ctl, MCM_SETSELRANGE, 0, (LPARAM)r);
+		return;
+	}
+	n->range_anchored = false;
+	SYSTEMTIME a = range_day(n->range_anchor);
+	SYSTEMTIME r[2] = {a, s};
+	if (day_cmp(&s, &a) < 0) r[0] = s, r[1] = a;
+	SendMessageW(n->ctl, MCM_SETSELRANGE, 0, (LPARAM)r);
+	report_range(n, r[0], r[1]);
+}
+
+// range_calendar_message is the range's calendar's subclass: Enter and
+// Space choose the days the arrow keys (Shift with them: more) moved to.
+static LRESULT range_calendar_message(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
+	if (m == WM_GETDLGCODE) return wh_def_subclass(hwnd, m, w, l) | DLGC_WANTALLKEYS;
+	if (m == WM_KEYDOWN && (w == VK_RETURN || w == VK_SPACE)) {
+		node *n = wh_node_of(hwnd);
+		SYSTEMTIME r[2];
+		if (n && !n->disabled && SendMessageW(hwnd, MCM_GETSELRANGE, 0, (LPARAM)r)) calendar_chose(n, r[0], r[1]);
+		return 0;
+	}
+	if (m == WM_CHAR && (w == '\r' || w == ' ')) return 0;
+	return wh_def_subclass(hwnd, m, w, l);
+}
+
+LRESULT wh_range_notify(node *n, NMHDR *hdr, LPARAM lp, bool *handled) {
+	*handled = false;
+	switch (hdr->code) {
+	case DTN_DATETIMECHANGE: {
+		NMDATETIMECHANGE *ch = (NMDATETIMECHANGE *)lp;
+		if (ch->dwFlags == GDT_VALID) picker_changed(n, hdr->hwndFrom);
+		*handled = true;
+		return 0;
+	}
+	case DTN_DROPDOWN:
+		drop_down(hdr->hwndFrom);
+		*handled = true;
+		return 0;
+	case MCN_SELECT: {
+		NMSELCHANGE *sc = (NMSELCHANGE *)lp;
+		calendar_chose(n, sc->stSelStart, sc->stSelEnd);
+		*handled = true;
+		return 0;
+	}
+	}
+	return 0;
+}
+
+static int dash_room(node *n) {
+	HDC dc = H.measure_dc;
+	HGDIOBJ old = SelectObject(dc, wh_node_font(n));
+	int w = wh_text_extent(dc, &en_dash, 1).cx;
+	SelectObject(dc, old);
+	return w + 2 * wh_px(n, RANGE_DASH_PAD);
+}
+
+void wh_measure_range(node *n, float *w, float *h) {
+	*w = 200, *h = 32;
+	if (!n->ctl) return;
+	if (is_calendar(n->ctl)) {
+		RECT r = {0};
+		SendMessageW(n->ctl, MCM_GETMINREQRECT, 0, (LPARAM)&r);
+		*w = wh_pt(n, r.right - r.left), *h = wh_pt(n, r.bottom - r.top);
+		return;
+	}
+	SIZE sz = {0};
+	SendMessageW(n->ctl, DTM_GETIDEALSIZE, 0, (LPARAM)&sz);
+	float one = wh_maxf(wh_pt(n, sz.cx) + 8, 100);
+	*w = 2 * one + wh_pt(n, dash_room(n)), *h = wh_maxf(wh_pt(n, sz.cy), 32);
+}
+
+// wh_layout_range places the calendar filling its view, or the pickers
+// each side of the dash: the start at the leading edge.
+void wh_layout_range(node *n, RECT r) {
+	if (!n->ctl) return;
+	int w = r.right - r.left, h = r.bottom - r.top;
+	UINT f = SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS;
+	if (!n->ctl2) {
+		SetWindowPos(n->ctl, NULL, 0, 0, w, h, f);
+		return;
+	}
+	int gap = dash_room(n), one = wh_maxi((w - gap) / 2, 1);
+	bool rtl = wh_is_rtl(n);
+	SetWindowPos(rtl ? n->ctl2 : n->ctl, NULL, 0, 0, one, h, f);
+	SetWindowPos(rtl ? n->ctl : n->ctl2, NULL, w - one, 0, one, h, f);
+}
+
+// wh_paint_range draws the en dash between the pickers.
+void wh_paint_range(node *n, HDC dc, gfx g, RECT r) {
+	(void)g;
+	if (!dc || !n->ctl2) return;
+	SetBkMode(dc, TRANSPARENT);
+	SetTextColor(dc, rgba_ref(n->disabled ? H.theme.disabled : H.theme.secondary));
+	HGDIOBJ old = SelectObject(dc, wh_node_font(n));
+	DrawTextW(dc, &en_dash, 1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+	SelectObject(dc, old);
+}
+
+// ---- Automation ----
+
+// shown_range is the range picker on screen (the last made) with pickers,
+// or with a calendar.
+static node *shown_range(bool calendar) {
+	node *found = NULL;
+	uint32_t i = 0;
+	void *v;
+	while (wh_map_next(&H.nodes, &i, NULL, &v)) {
+		node *n = v;
+		if (n->kind == AK_KIND_DATE_RANGE_PICKER && n->ctl && is_calendar(n->ctl) == calendar && wh_on_screen(n) && (!found || n->id > found->id)) found = n;
+	}
+	return found;
+}
+
+// wh_range_pick is automation's choice of a day on the range's pickers
+// (which: "start" or "end"; day: YYYY-MM-DD), as the picker reports one
+// (its day, then DTN_DATETIMECHANGE).
+bool wh_range_pick(const char *which, const char *day) {
+	node *n = shown_range(false);
+	int y, mo, d;
+	if (!n || !n->ctl2 || sscanf(day, "%d-%d-%d", &y, &mo, &d) != 3) return false;
+	HWND c = !strcmp(which, "end") ? n->ctl2 : n->ctl;
+	SYSTEMTIME st = {.wYear = (WORD)y, .wMonth = (WORD)mo, .wDay = (WORD)d};
+	SendMessageW(c, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&st);
+	NMDATETIMECHANGE ch = {{c, (UINT_PTR)GetDlgCtrlID(c), DTN_DATETIMECHANGE}, GDT_VALID, st};
+	SendMessageW(GetParent(c), WM_NOTIFY, ch.nmhdr.idFrom, (LPARAM)&ch);
+	return true;
+}
+
+// wh_range_click_day clicks day d of the month the range's calendar
+// shows first, as the mouse does (its cell, by the calendar's grid).
+bool wh_range_click_day(int d) {
+	node *n = shown_range(true);
+	if (!n) return false;
+	MCGRIDINFO mi = {.cbSize = sizeof mi, .dwPart = MCGIP_CALENDAR, .dwFlags = MCGIF_DATE, .iCalendar = 0};
+	if (!SendMessageW(n->ctl, MCM_GETCALENDARGRIDINFO, 0, (LPARAM)&mi)) return false;
+	for (int row = 0; row < 6; row++)
+		for (int col = 0; col < 7; col++) {
+			MCGRIDINFO gi = {.cbSize = sizeof gi, .dwPart = MCGIP_CALENDARCELL, .dwFlags = MCGIF_DATE | MCGIF_RECT, .iCalendar = 0, .iRow = row, .iCol = col};
+			if (!SendMessageW(n->ctl, MCM_GETCALENDARGRIDINFO, 0, (LPARAM)&gi)) continue;
+			// A cell of the month (not the trailing days of its neighbors').
+			if (gi.stStart.wDay != d || gi.stStart.wMonth != mi.stStart.wMonth) continue;
+			LPARAM lp = MAKELPARAM((gi.rc.left + gi.rc.right) / 2, (gi.rc.top + gi.rc.bottom) / 2);
+			SendMessageW(n->ctl, WM_LBUTTONDOWN, MK_LBUTTON, lp);
+			SendMessageW(n->ctl, WM_LBUTTONUP, 0, lp);
+			return true;
+		}
+	return false;
+}
+
+// wh_range_dump adds a range's days to the view tree's line.
+void wh_range_dump(node *n, ak_buf *b) {
+	if (!n->ctl) return;
+	SYSTEMTIME s, e;
+	if (is_calendar(n->ctl)) {
+		SYSTEMTIME r[2];
+		if (!SendMessageW(n->ctl, MCM_GETSELRANGE, 0, (LPARAM)r)) return;
+		s = r[0], e = r[1];
+		ak_buf_printf(b, " calendar");
+	} else {
+		if (SendMessageW(n->ctl, DTM_GETSYSTEMTIME, 0, (LPARAM)&s) != GDT_VALID) return;
+		if (!n->ctl2 || SendMessageW(n->ctl2, DTM_GETSYSTEMTIME, 0, (LPARAM)&e) != GDT_VALID) return;
+	}
+	ak_buf_printf(b, " range=%04d-%02d-%02d..%04d-%02d-%02d", s.wYear, s.wMonth, s.wDay, e.wYear, e.wMonth, e.wDay);
+	if (n->range_anchored) ak_buf_printf(b, " anchored");
 }

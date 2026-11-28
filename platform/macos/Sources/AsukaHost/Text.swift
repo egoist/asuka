@@ -146,10 +146,12 @@ import AsukaOps
         if let tv = n.textView, tv.delegate === AsukaTextDelegate.shared { tv.delegate = nil }
         if let r = n.rich { r.view.delegate = nil }
         selectableReleased(n)
+        if n.suggest != nil { suggestReleased(n) } // Suggestions.swift
     }
 
     func textPlaced(_ n: AsukaNode) {
         if n.rich != nil { placeInlines(n) }
+        if n.suggest != nil { suggestPlaced(n) } // its list follows it
         textStylePlaced(n) // TextStyle.swift: a shrinking text fits its frame
     }
 
@@ -196,6 +198,7 @@ import AsukaOps
             if !n.pasteTypes.isEmpty { j["pasteTypes"] = n.pasteTypes }
             if let f = n.richField { j["formats"] = Int(f.formats); j["link"] = f.link }
             d["field"] = j
+            suggestJSON(n, &d)
         }
         if n.kind == .text, let t = n.view as? NSTextField {
             d["text"] = n.text

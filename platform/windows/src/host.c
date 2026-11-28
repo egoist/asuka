@@ -369,6 +369,8 @@ void wh_release(node *n) {
 		H.cursors--;
 	}
 	if (n->image) wh_image_close(n);
+	if (n->kind == AK_KIND_CHIP || n->kind == AK_KIND_DISCLOSURE) wh_own_release(n);
+	if (n->suggest) wh_suggest_release(n);
 	if (n->shader) wh_shader_release(n);
 	if (n->shape) wh_shape_free(n);
 	if (n->rich) wh_rich_release(n);
@@ -438,10 +440,14 @@ void wh_forget_tree(HWND hwnd) {
 			x->hwnd = NULL;
 		}
 		if (x->ctl == w) {
-			if (x->kind == AK_KIND_PICKER || x->kind == AK_KIND_TEXT_FIELD || x->kind == AK_KIND_TOGGLE) wh_clear_accessible_name(w);
+			if (x->kind == AK_KIND_PICKER || x->kind == AK_KIND_TEXT_FIELD || x->kind == AK_KIND_TOGGLE || x->kind == AK_KIND_DATE_RANGE_PICKER)
+				wh_clear_accessible_name(w);
 			x->ctl = NULL;
 		}
-		if (x->ctl2 == w) x->ctl2 = NULL;
+		if (x->ctl2 == w) {
+			if (x->kind == AK_KIND_DATE_RANGE_PICKER) wh_clear_accessible_name(w);
+			x->ctl2 = NULL;
+		}
 		KillTimer(w, TIMER_LONG_PRESS);
 		KillTimer(w, TIMER_SPIN);
 		KillTimer(w, TIMER_BARS);

@@ -325,6 +325,8 @@ static void shows(const ak_fake_view *v, text_fn f, void *ctx) {
 		break;
 	case AK_KIND_TEXT: ADD(ak_fake_string(v, AK_PROP_TEXT_TEXT)); break;
 	case AK_KIND_BUTTON: ADD(ak_fake_string(v, AK_PROP_BUTTON_TITLE)); break;
+	case AK_KIND_CHIP: ADD(ak_fake_string(v, AK_PROP_CHIP_TITLE)); break;
+	case AK_KIND_DISCLOSURE: ADD(ak_fake_string(v, AK_PROP_DISCLOSURE_TITLE)); break;
 	case AK_KIND_NATIVE: {
 		ADD(ak_fake_label(v));
 		const ak_fake_native *l = ak_fake_native_value(v, "label");
@@ -1225,6 +1227,7 @@ static ak_fake_view *pressable(ak_fake_view *v, bool long_press) {
 		}
 		if (ak_fake_listens(p, AK_EVENT_PRESS) || ak_fake_listens(p, AK_EVENT_PRESS_POINT) || has_menu(p, AK_MENU_TRIGGER_TAP)) return p;
 		if (p->kind == AK_KIND_TOGGLE || p->kind == AK_KIND_TEXT_FIELD) return p;
+		if ((p->kind == AK_KIND_CHIP || p->kind == AK_KIND_DISCLOSURE) && ak_fake_listens(p, AK_EVENT_TOGGLED)) return p;
 		if (p->kind == AK_KIND_NATIVE && ak_fake_listens(p, AK_EVENT_NATIVE)) return p;
 		if (p->kind == AK_KIND_BUTTON && !idle) idle = p;
 		if (p->kind == AK_FAKE_KIND_CELL && ak_fake_listens(p, AK_EVENT_ROW_SELECTED)) return p;
@@ -1353,6 +1356,8 @@ static bool press(ak_uitest *a, ak_fake_view *v, ak_span text, bool long_press, 
 		focus(a, p);
 	} else if (p->kind == AK_KIND_TOGGLE) {
 		ak_fake_flip(a->f, p);
+	} else if ((p->kind == AK_KIND_CHIP && ak_fake_bool(p, AK_PROP_CHIP_FILTER)) || p->kind == AK_KIND_DISCLOSURE) {
+		ak_fake_tap(a->f, p);  // it flips: Toggled
 	} else if (has_menu(p, AK_MENU_TRIGGER_TAP) && (p->kind == AK_KIND_BUTTON || !ak_fake_listens(p, AK_EVENT_PRESS))) {
 		// A button's menu shows instead of its press, as every host's does;
 		// a view's tap menu only when nothing else takes the press.
@@ -1703,6 +1708,64 @@ bool ak_uitest_pick_date(ak_uitest *a, ak_span label, int64_t ms, ak_buf *err) {
 	if (!v) return false;
 	if (disabled_view(v)) return failure(a, err, "the date picker \"%.*s\" is disabled", label);
 	ak_fake_pick_date(a->f, v, ms);
+	return settled(a, err);
+}
+
+// ak_uitest_pick_range chooses the days start to end (Unix
+// milliseconds) in the DateRangePicker label names (as toggle finds it).
+bool ak_uitest_pick_range(ak_uitest *a, ak_span label, int64_t start, int64_t end, ak_buf *err) {
+	ak_fake_view *v = near(a, label, AK_KIND_DATE_RANGE_PICKER, err);
+	if (!v) return false;
+	if (disabled_view(v)) return failure(a, err, "the date range picker \"%.*s\" is disabled", label);
+	ak_fake_pick_range(a->f, v, start, end);
+	return settled(a, err);
+}
+
+// ak_uitest_remove presses the remove button of the input chip showing
+// text.
+bool ak_uitest_remove(ak_uitest *a, ak_span text, ak_buf *err) {
+	ak_fake_view_vec vs = {0};
+	visible_touchable(a, &vs);
+	ak_fake_view *found = NULL;
+	uint32_t n = 0;
+	for (uint32_t i = 0; i < vs.len; i++) {
+		ak_fake_view *v = vs.data[i];
+		if (v->kind != AK_KIND_CHIP || !ak_span_eq(ak_fake_string(v, AK_PROP_CHIP_TITLE), text)) continue;
+		if (a->scope.under && !contains(a, a->scope.under, v)) continue;
+		found = v, n++;
+	}
+	ak_vec_free(&vs);
+	if (n != 1) return failure(a, err, n ? "more than one chip shows \"%.*s\"" : "no chip shows \"%.*s\"", text);
+	if (!ak_fake_bool(found, AK_PROP_CHIP_REMOVABLE)) return failure(a, err, "the chip \"%.*s\" has no remove button (no on remove)", text);
+	if (disabled_view(found)) return failure(a, err, "the chip \"%.*s\" is disabled", text);
+	ak_fake_remove_chip(a->f, found);
+	return settled(a, err);
+}
+
+// ak_uitest_choose_suggestion chooses the suggestion text in the field
+// that lists it now.
+bool ak_uitest_choose_suggestion(ak_uitest *a, ak_span text, ak_buf *err) {
+	ak_fake_view_vec vs = {0};
+	visible_touchable(a, &vs);
+	ak_fake_view *found = NULL;
+	int64_t index = -1;
+	uint32_t n = 0;
+	for (uint32_t i = 0; i < vs.len; i++) {
+		ak_fake_view *v = vs.data[i];
+		if (v->kind != AK_KIND_TEXT_FIELD || (a->scope.under && !contains(a, a->scope.under, v))) continue;
+		ak_str_vec list = {0};
+		ak_fake_strings(v, AK_PROP_TEXT_FIELD_SUGGESTIONS, &list);
+		for (uint32_t j = 0; j < list.len; j++) {
+			if (!ak_span_eq(list.data[j], text)) continue;
+			found = v, index = j, n++;
+			break;
+		}
+		ak_vec_free(&list);
+	}
+	ak_vec_free(&vs);
+	if (n != 1) return failure(a, err, n ? "more than one field suggests \"%.*s\"" : "no field suggests \"%.*s\" (what's typed filters them)", text);
+	if (disabled_view(found)) return failure(a, err, "the field suggesting \"%.*s\" is disabled", text);
+	ak_fake_choose_suggestion(a->f, found, index);
 	return settled(a, err);
 }
 
@@ -2404,6 +2467,24 @@ static ak_val t_pick_date(ak_val *a, uint32_t n) {
 	return done(ak_uitest_pick_date(app, span_of(a[1]), n > 2 ? a[2].i : 0, &err), &err);
 }
 
+static ak_val t_pick_range(ak_val *a, uint32_t n) {
+	ak_uitest *app = app_arg(a, n, "test.pick_range");
+	ak_buf err = {0};
+	return done(ak_uitest_pick_range(app, span_of(a[1]), n > 2 ? a[2].i : 0, n > 3 ? a[3].i : 0, &err), &err);
+}
+
+static ak_val t_remove(ak_val *a, uint32_t n) {
+	ak_uitest *app = app_arg(a, n, "test.remove");
+	ak_buf err = {0};
+	return done(ak_uitest_remove(app, span_of(a[1]), &err), &err);
+}
+
+static ak_val t_choose_suggestion(ak_val *a, uint32_t n) {
+	ak_uitest *app = app_arg(a, n, "test.choose_suggestion");
+	ak_buf err = {0};
+	return done(ak_uitest_choose_suggestion(app, span_of(a[1]), &err), &err);
+}
+
 static ak_val t_select(ak_val *a, uint32_t n) {
 	ak_uitest *app = app_arg(a, n, "test.select");
 	ak_buf err = {0};
@@ -2802,6 +2883,9 @@ void ak_uitest_builtins_init(void) {
 	ak_builtin_register("test.select", t_select);
 	ak_builtin_register("test.pick_color", t_pick_color);
 	ak_builtin_register("test.pick_date", t_pick_date);
+	ak_builtin_register("test.pick_range", t_pick_range);
+	ak_builtin_register("test.remove", t_remove);
+	ak_builtin_register("test.choose_suggestion", t_choose_suggestion);
 	ak_builtin_register("test.swipe", t_swipe);
 	ak_builtin_register("test.double_tap", t_double_tap);
 	ak_builtin_register("test.zoom", t_zoom);

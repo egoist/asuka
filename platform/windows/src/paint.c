@@ -558,6 +558,7 @@ void wh_paint_own(node *n, HWND hwnd, HDC dc, RECT r) {
 	rgba bg;
 	bool has_bg = wh_resolve(n->background, &bg);
 	if (!has_bg && window_kind(n)) bg = wh_bg_in(hwnd), has_bg = true;  // its window's
+	if (n->kind == AK_KIND_CHIP) has_bg = false;  // its pill's fill (chip.c)
 	float a = wh_own_alpha(n);
 	if (a < 1) bg = rgba_alpha(bg, a);
 	if (n->gradient) {
@@ -570,7 +571,8 @@ void wh_paint_own(node *n, HWND hwnd, HDC dc, RECT r) {
 	}
 	paint_shadows(n, hwnd, g);  // its children's, under them
 	if (n->list) wh_paint_list(n, g);  // a lifted row's shadow
-	if (wh_pressable(n) && !n->disabled && (n->hot || n->pressed) && !wh_draws_states(n)) {
+	bool own = n->kind == AK_KIND_CHIP || n->kind == AK_KIND_DISCLOSURE || n->kind == KIND_CHIP_REMOVE;  // their own states (chip.c)
+	if (wh_pressable(n) && !n->disabled && (n->hot || n->pressed) && !wh_draws_states(n) && !own) {
 		rgba c = H.theme.subtle_hot;
 		if (n->pressed) c = H.dark ? H.theme.subtle_pressed : (rgba){0, 0, 0, 0x0C};
 		if (radius > 0) g_fill_corners(g, rgba_argb(c), 0, 0, w, ht, radii);
@@ -589,7 +591,10 @@ void wh_paint_own(node *n, HWND hwnd, HDC dc, RECT r) {
 		if (n->animating) paint_activity(n, g, w, ht);
 		break;
 	case AK_KIND_PROGRESS_RING: paint_progress_ring(n, g, w, ht); break;
-	case AK_KIND_TEXT_FIELD: wh_paint_field(n, g, w, ht); break;
+	case AK_KIND_TEXT_FIELD:
+		wh_paint_field(n, g, w, ht);
+		wh_paint_dropdown(n, NULL, g, r);
+		break;
 	case KIND_HEADER: wh_paint_header(n, NULL, g, r); break;
 	case KIND_COMMAND_BAR: wh_paint_command_bar(n, g, r); break;
 	case KIND_TAB_BAR: wh_paint_tab_bar(n, NULL, g, r); break;
@@ -597,6 +602,10 @@ void wh_paint_own(node *n, HWND hwnd, HDC dc, RECT r) {
 	case KIND_ALERT_WINDOW: wh_paint_alert_dialog(n, g, r); break;
 	case KIND_ROW: wh_paint_row(n, g, w, ht); break;
 	case AK_KIND_SNACKBAR: wh_paint_snack(n, g, w, ht); break;
+	case AK_KIND_CHIP: wh_paint_chip(n, NULL, g, r); break;
+	case KIND_CHIP_REMOVE: wh_paint_chip_remove(n, NULL, g, r); break;
+	case AK_KIND_DISCLOSURE: wh_paint_disclosure(n, NULL, g, r); break;
+	case AK_KIND_DATE_RANGE_PICKER: wh_paint_range(n, NULL, g, r); break;
 	}
 	g_close(g);
 	switch (n->kind) {
@@ -608,12 +617,17 @@ void wh_paint_own(node *n, HWND hwnd, HDC dc, RECT r) {
 	case KIND_TAB_BAR: wh_paint_tab_bar(n, dc, NULL, r); break;
 	case KIND_SIDEBAR: wh_paint_pane(n, dc, NULL, r); break;
 	case AK_KIND_SNACKBAR: wh_paint_snack_text(n, dc); break;
+	case AK_KIND_CHIP: wh_paint_chip(n, dc, NULL, r); break;
+	case KIND_CHIP_REMOVE: wh_paint_chip_remove(n, dc, NULL, r); break;
+	case AK_KIND_DISCLOSURE: wh_paint_disclosure(n, dc, NULL, r); break;
+	case AK_KIND_DATE_RANGE_PICKER: wh_paint_range(n, dc, NULL, r); break;
 	case AK_KIND_TEXT_FIELD:
 		if (n->search_of) wh_paint_search_icon(n, dc, r);
+		wh_paint_dropdown(n, dc, NULL, r);
 		break;
 	}
 	bool takes = wh_pressable(n) || n->focusable || n->adjustable || n->na11y_actions || n->kind == AK_KIND_SEGMENTED;
-	if (n->focused && takes && !n->no_focus_ring && wh_keyboard_cues(hwnd)) {
+	if (n->focused && takes && !own && !n->no_focus_ring && wh_keyboard_cues(hwnd)) {
 		gfx g2 = g_new(dc);
 		wh_focus_ring(n, g2, w, ht, radius);
 		g_close(g2);

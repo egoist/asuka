@@ -47,6 +47,9 @@ static bool is_control(const node *n) {
 	case AK_KIND_WHEEL:
 	case AK_KIND_COLOR_PICKER:
 	case AK_KIND_DATE_PICKER:
+	case AK_KIND_CHIP:
+	case AK_KIND_DATE_RANGE_PICKER:
+	case AK_KIND_DISCLOSURE:
 		return true;
 	}
 	return false;

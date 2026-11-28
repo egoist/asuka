@@ -230,6 +230,12 @@ static void set_field_text(node *n, const char *s) {
 	update_hint(n);
 }
 
+// lx_field_put_text sets the field's text, the cursor at its end, as the
+// app does (no TextChanged): a suggestion chosen (suggest.c).
+void lx_field_put_text(node *n, const char *s) {
+	if (n->field) set_field_text(n, s);
+}
+
 // ---- Rich fields' styles ----
 
 // rich_format is a style's TextFormat bits.
@@ -717,6 +723,7 @@ static void on_changed(gpointer w, node *n) {
 	lx_emit(n, (ak_event){.kind = AK_EVENT_TEXT_CHANGED, .s = ak_cstr(t)});
 	rich_changed(n);
 	report_selection(n);  // a multiline one grows: the core measures it again
+	lx_suggest_typed(n);  // its suggestions show (suggest.c)
 }
 
 static void on_activate(GtkEntry *e, node *n) {
@@ -741,11 +748,13 @@ static void on_mark_set(GtkTextBuffer *buf, GtkTextIter *it, GtkTextMark *mark, 
 
 static void on_focus_enter(GtkEventControllerFocus *c, node *n) {
 	(void)c;
+	lx_suggest_focus(n, true);
 	lx_emit(n, (ak_event){.kind = AK_EVENT_FOCUS});
 }
 
 static void on_focus_leave(GtkEventControllerFocus *c, node *n) {
 	(void)c;
+	lx_suggest_focus(n, false);
 	lx_emit(n, (ak_event){.kind = AK_EVENT_BLUR});
 }
 
@@ -1041,6 +1050,7 @@ void lx_make_field(node *n) {
 	ak_buf_free(&keep);
 	apply_placeholder(n);
 	apply_purpose(n);
+	lx_suggest_attach(n);
 	if (!str_empty(n->a11y_label)) lx_update_a11y(n);
 	if (n->disabled) gtk_widget_set_sensitive(n->widget, 0);
 }

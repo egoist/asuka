@@ -139,6 +139,12 @@ import AsukaOps
             return makeWeb(n)
         case .video:
             return makeVideo(n)
+        case .chip:
+            return makeChip(n) // Chip.swift
+        case .disclosure:
+            return makeDisclosure(n) // Chip.swift
+        case .dateRangePicker:
+            return makeDateRange(n) // DateRange.swift
         default:
             fatalError("asuka: the macOS host can't show \(kind.name)")
         }
@@ -376,6 +382,9 @@ import AsukaOps
         case .native: setNativeProp(n, p, v)
         case .webView: setWebProp(n, p, v)
         case .video: setVideoProp(n, p, v)
+        case .chip: setChipProp(n, p, v)
+        case .disclosure: setDisclosureProp(n, p, v)
+        case .dateRangePicker: setDateRangeProp(n, p, v)
         default:
             setNavProp(n, p, v)
         }
@@ -523,6 +532,10 @@ import AsukaOps
             n.pasteTypes = asukaStrings(v.data)
         case AsukaProp.TextField.rich:
             setRichField(n, v.data)
+        case AsukaProp.TextField.suggestions:
+            setSuggestions(n, v.data) // Suggestions.swift
+        case AsukaProp.TextField.dropdown:
+            setDropdown(n, v.bool)
         case AsukaProp.TextField.autocorrect:
             n.textView?.isAutomaticSpellingCorrectionEnabled = AsukaAutocorrect(rawValue: v.enumValue) != .no
         case AsukaProp.TextField.contentType:
@@ -619,16 +632,20 @@ extension AsukaRuntime: NSTextFieldDelegate {
         n.text = f.stringValue
         let s = n.text
         emit(n, .textChanged) { AsukaEvents.textChanged($0, s) }
+        if n.suggest != nil, alive(n) { suggestTyped(n) } // the core's filtered them (Suggestions.swift)
     }
 
     public func controlTextDidEndEditing(_ note: Notification) {
         guard let f = note.object as? NSView, let n = node(of: f) else { return }
+        if n.suggest != nil { suggestBlurred(n) }
         emit(n, .blur) { AsukaEvents.blur($0) }
     }
 
     /// Return in a field: Submit. Escape in a flyout's or a panel's field
-    /// closes it, as menus close.
+    /// closes it, as menus close. A field's suggestions take the arrow
+    /// keys, Return and Escape while they show (Suggestions.swift).
     public func control(_ control: NSControl, textView: NSTextView, doCommandBy cmd: Selector) -> Bool {
+        if let n = node(of: control), let took = suggestCommand(n, cmd) { return took }
         if cmd == #selector(NSResponder.cancelOperation(_:)), let w = control.window, escapeFloating(w) { return true }
         guard let n = node(of: control) else {
             if let handled = alertFieldCommand(control, cmd) { return handled }

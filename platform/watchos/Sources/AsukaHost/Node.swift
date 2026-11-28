@@ -88,6 +88,16 @@ import AsukaOps
     @ObservationIgnored var source = ""
     @ObservationIgnored var mode: Int32 = 0
     @ObservationIgnored var dateMode: Int32 = 0
+    /// A Chip's Filter and Removable (its Selected is `on`).
+    @ObservationIgnored var filter = false
+    @ObservationIgnored var removable = false
+    /// A DateRangePicker's Start and End (Unix ms; 0: none), its Min and
+    /// Max in `min` and `max`.
+    @ObservationIgnored var rangeStart: Double = 0
+    @ObservationIgnored var rangeEnd: Double = 0
+    /// An Image's Headers and Cache (an ImageCache), for the loads that follow.
+    @ObservationIgnored var headers: [String: String] = [:]
+    @ObservationIgnored var imageCache: Int32 = 0
     /// A Shape's outline, fill and stroke.
     @ObservationIgnored var path: Path?
     @ObservationIgnored var fill: UInt64 = 0

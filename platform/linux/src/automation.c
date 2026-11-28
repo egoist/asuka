@@ -38,6 +38,7 @@ void lx_each_node(void (*f)(node *n, void *ctx), void *ctx);
 bool lx_go_back_front(void);
 void lx_focus_field_by(node *n);
 node *lx_field_of_widget(GtkWidget *w);
+bool lx_chip_activate(node *n);
 
 static char **steps;
 static size_t step_count, step_at;
@@ -58,7 +59,7 @@ static bool mapped(node *n) { return n->widget && gtk_widget_get_mapped(n->widge
 static void find_text(node *n, void *data) {
 	find_ctx *c = data;
 	if (!mapped(n)) return;
-	if (str_eq(n->text, c->text) || (n->kind == AK_KIND_BUTTON && str_eq(n->title, c->text)) || str_eq(n->placeholder, c->text) || str_eq(n->a11y_label, c->text))
+	if (str_eq(n->text, c->text) || ((n->kind == AK_KIND_BUTTON || n->kind == AK_KIND_CHIP || n->kind == AK_KIND_DISCLOSURE) && str_eq(n->title, c->text)) || str_eq(n->placeholder, c->text) || str_eq(n->a11y_label, c->text))
 		if (!c->found || n->id > c->found->id) c->found = n;
 }
 
@@ -74,7 +75,8 @@ static node *find_text_node(const char *text) {
 // tap presses the node, or the nearest one around it that presses.
 static void tap(node *n) {
 	for (node *p = n; p; p = p->parent) {
-		if (p->kind == AK_KIND_BUTTON || p->kind == AK_KIND_TOGGLE) {
+		if (lx_chip_activate(p)) return;  // a chip: its button's click (chip.c)
+		if ((p->kind == AK_KIND_BUTTON || p->kind == AK_KIND_TOGGLE || p->kind == AK_KIND_DISCLOSURE || p->kind == AK_KIND_DATE_RANGE_PICKER) && p->inner) {
 			gtk_widget_activate(p->inner);
 			return;
 		}
@@ -641,13 +643,43 @@ static bool step(const char *s, char *err, size_t errn) {
 
 // ---- Snapshots and the dump ----
 
-// lx_snapshot_window writes a window (its header bar and content) as a
-// PNG, rendered by its own renderer.
+// snapshot_popovers draws the popovers showing in w (a menu, a field's
+// suggestions, a date picker's calendar: surfaces of their own) over the
+// window's snapshot, where they show on screen: each popup's place on its
+// parent's surface, less the window's own offset in its surface (its
+// shadow).
+static void snapshot_popovers(GtkWidget *w, GtkSnapshot *s, double wtx, double wty) {
+	for (GtkWidget *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c)) {
+		if (!gtk_widget_get_mapped(c)) continue;
+		if (AK_IS(c, gtk_popover_get_type) && gdk_popup_get_position_x) {
+			GdkSurface *surf = gtk_native_get_surface((GtkNative *)c);
+			double ptx = 0, pty = 0;
+			gtk_native_get_surface_transform((GtkNative *)c, &ptx, &pty);
+			int pw = gtk_widget_get_width(c), ph = gtk_widget_get_height(c);
+			if (surf && pw > 0 && ph > 0) {
+				graphene_point_t at = {(float)(gdk_popup_get_position_x((GdkPopup *)surf) + ptx - wtx), (float)(gdk_popup_get_position_y((GdkPopup *)surf) + pty - wty)};
+				GdkPaintable *pp = gtk_widget_paintable_new(c);
+				gtk_snapshot_save(s);
+				gtk_snapshot_translate(s, &at);
+				gdk_paintable_snapshot(pp, (GdkSnapshot *)s, pw, ph);
+				gtk_snapshot_restore(s);
+				g_object_unref(pp);
+			}
+		}
+		snapshot_popovers(c, s, wtx, wty);
+	}
+}
+
+// lx_snapshot_window writes a window (its header bar and content, and
+// the popovers showing in it) as a PNG, rendered by its own renderer.
 void lx_snapshot_window(GtkWindow *window, const char *path) {
 	GdkPaintable *paint = gtk_widget_paintable_new((GtkWidget *)window);
 	int width = gtk_widget_get_width((GtkWidget *)window), height = gtk_widget_get_height((GtkWidget *)window);
 	GtkSnapshot *s = gtk_snapshot_new();
 	gdk_paintable_snapshot(paint, (GdkSnapshot *)s, width, height);
+	double wtx = 0, wty = 0;
+	gtk_native_get_surface_transform((GtkNative *)window, &wtx, &wty);
+	snapshot_popovers((GtkWidget *)window, s, wtx, wty);
 	GskRenderNode *nd = gtk_snapshot_free_to_node(s);
 	g_object_unref(paint);
 	if (!nd) return;
@@ -750,10 +782,14 @@ typedef struct {
 	node_vec shown;
 } texts_ctx;
 
+// titled reports whether n shows its title: a button's, a chip's, a
+// disclosure's.
+static bool titled(const node *n) { return n->kind == AK_KIND_BUTTON || n->kind == AK_KIND_CHIP || n->kind == AK_KIND_DISCLOSURE; }
+
 static void screen_text(node *n, void *data) {
 	texts_ctx *c = data;
 	if (!n->widget || n->hidden || !gtk_widget_get_mapped(n->widget)) return;
-	if (!str_empty(n->text) || (n->kind == AK_KIND_BUTTON && !str_empty(n->title)) || !str_empty(n->a11y_label)) ak_vec_push(&c->shown, n);
+	if (!str_empty(n->text) || (titled(n) && !str_empty(n->title)) || !str_empty(n->a11y_label)) ak_vec_push(&c->shown, n);
 }
 
 static int by_id(const void *a, const void *b) {
@@ -772,7 +808,7 @@ static void write_texts(const char *path) {
 	for (uint32_t i = 0; i < c.shown.len; i++) {
 		node *n = c.shown.data[i];
 		const char *t = n->text;
-		if (str_empty(t) && n->kind == AK_KIND_BUTTON) t = n->title;
+		if (str_empty(t) && titled(n)) t = n->title;
 		if (str_empty(t)) t = n->a11y_label;
 		for (const char *p = S(t); *p; p++) ak_buf_u8(&b, *p == '\n' ? ' ' : (uint8_t)*p);
 		ak_buf_u8(&b, '\n');

@@ -358,6 +358,7 @@ struct AsukaDevError: Equatable {
         if kind == .slider { n.max = 1 }
         if kind == .stepper { n.max = 100 }
         if kind == .progress || kind == .progressRing { n.max = 1 }
+        if kind == .dateRangePicker { n.max = 0 } // no bound
         nodes[id] = n
     }
 

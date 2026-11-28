@@ -20,6 +20,8 @@ import * as color from "./color.js";
 import * as fs from "./fs.js";
 import * as rich from "./richfield.js";
 import * as nativeModules from "./native.js";
+import { Combobox } from "./combobox.js";
+import { controlKinds } from "./controls.js";
 
 const enc = new TextEncoder();
 
@@ -425,19 +427,36 @@ const textField = {
       case P.TextField.Accessory:
         n.accessory = v;
         break;
+      case P.TextField.Suggestions:
+        (n.combo ??= new Combobox(h, n)).setItems(decodeStrings(v));
+        break;
+      case P.TextField.Dropdown:
+        (n.combo ??= new Combobox(h, n)).setDropdown(!!v);
+        if (n.inset) textField.inset(h, n);
+        break;
     }
   },
   common(h, n, p, v) { return false; },
-  label(h, n, v) { n.input.setAttribute("aria-label", v); },
+  label(h, n, v) {
+    n.input.setAttribute("aria-label", v);
+    n.combo?.labelChanged();
+  },
   font(h, n) { text.applyFont(h, n, n.input); },
   color(h, n) { n.input.style.color = h.css(n.color); },
   align(h, n) { n.input.style.textAlign = text.align(n.align); },
   disabled(h, n) {
     if (n.richField) n.input.contentEditable = n.disabled ? "false" : "true";
     else n.input.disabled = n.disabled;
+    n.combo?.disabled(n.disabled);
   },
   lines(h, n) { if (n.multiline) h.afterCore(() => fieldResized(h, n)); },
-  inset(h, n) { const v = n.inset; n.input.style.padding = `${v[0]}px ${v[1]}px ${v[2]}px ${v[3]}px`; },
+  inset(h, n) {
+    const v = n.inset;
+    n.input.style.padding = `${v[0]}px ${v[1]}px ${v[2]}px ${v[3]}px`;
+    // Dropdown's button is at the end: the text stops before it.
+    if (n.combo?.button) n.input.style.paddingInlineEnd = `calc(${h.rtl ? v[3] : v[1]}px + var(--asuka-combo-button))`;
+  },
+  destroy(h, n) { n.combo?.destroy(); return false; },
   command(h, n, cmd, args) {
     const el = n.input;
     switch (cmd) {
@@ -501,14 +520,18 @@ function makeField(h, n, input) {
     h.emit(n, Event.TextChanged, (id) => Events.textChanged(id, input.value));
     reportSelection(h, n);
     if (n.multiline) fieldResized(h, n);
+    n.combo?.input();
   });
   input.addEventListener("keydown", (e) => {
+    // Its suggestions' list takes the arrows, Escape, and Enter on an option.
+    if (n.combo?.keydown(e)) return;
     if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229 && !n.multiline) {
       h.emit(n, Event.Submit, Events.submit);
     }
   });
   wireField(h, n, input);
   for (const ev of ["select", "keyup", "pointerup"]) input.addEventListener(ev, () => reportSelection(h, n));
+  n.combo?.attach(input);
 }
 
 /** wireField reports a field's focus and what's pasted into it of its PasteTypes (a rich field's editor too). */
@@ -894,8 +917,10 @@ const datePicker = {
     switch (p) {
       case P.DatePicker.Value: n.value = v; i.value = formatLocal(v, n.mode); break;
       case P.DatePicker.Mode: n.mode = v; i.type = dateTypes[v] || "date"; i.value = formatLocal(n.value, v); break;
-      case P.DatePicker.Min: if (v) i.min = formatLocal(v, n.mode); else i.removeAttribute("min"); break;
-      case P.DatePicker.Max: if (v) i.max = formatLocal(v, n.mode); else i.removeAttribute("max"); break;
+      // Only when it changes: set again as the user types (an app's
+      // time.now(), a new instant each layout), it starts their digits over.
+      case P.DatePicker.Min: setBound(i, "min", v ? formatLocal(v, n.mode) : ""); break;
+      case P.DatePicker.Max: setBound(i, "max", v ? formatLocal(v, n.mode) : ""); break;
     }
   },
   font(h, n) { text.applyFont(h, n, n.input); },
@@ -907,6 +932,12 @@ const datePicker = {
 };
 
 const pad = (x, k = 2) => String(x).padStart(k, "0");
+
+/** setBound sets a date input's min or max ("": none) if it's another. */
+function setBound(i, k, v) {
+  if ((i.getAttribute(k) || "") === v) return;
+  if (v) i.setAttribute(k, v); else i.removeAttribute(k);
+}
 
 /** formatLocal is an instant as a date input shows it, in the device's time zone. */
 function formatLocal(ms, mode) {
@@ -1116,6 +1147,7 @@ export const kinds = {
   [Kind.Overlay]: overlayKind,
   [Kind.Table]: tableKind,
   [Kind.Outline]: outlineKind,
+  ...controlKinds,
   ...navKinds,
   ...mediaKinds,
   ...richKinds,

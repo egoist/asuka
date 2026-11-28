@@ -190,6 +190,8 @@ void wh_say_words(void) {
 	while (wh_map_next(&H.nodes, &i, NULL, &v)) {
 		node *n = v;
 		if (n->kind == AK_KIND_STEPPER) wh_name_stepper(n);
+		else if (n->kind == AK_KIND_DATE_RANGE_PICKER) wh_name_range(n);
+		else if (n->kind == AK_KIND_CHIP) wh_chip_label(n);
 		else wh_nav_say_words(n);
 	}
 }

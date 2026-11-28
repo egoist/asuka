@@ -361,6 +361,12 @@ final class AsukaTextField: UITextField {
             holdsFont = false
             adjustsFontForContentSizeCategory = true
         }
+        if window == nil { suggestions?.hide() }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if suggestions?.isShowing == true { suggestions?.place() }
     }
     /// TextFieldProps.Plain: no border, the text alone.
     var plain = false {
@@ -369,6 +375,8 @@ final class AsukaTextField: UITextField {
     /// TextFieldProps.PasteTypes: content of these types pastes into the
     /// app's OnPaste, not the text.
     var pasteTypes: [String] = []
+    /// Its Suggestions' list, if it has any (Suggestions.swift).
+    var suggestions: AsukaSuggestions?
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if action == #selector(paste(_:)), AsukaPaste.available(pasteTypes) { return true }
@@ -859,6 +867,12 @@ final class AsukaTextField: UITextField {
             // A Window's content, in a scene of its own on an iPad
             // (Windows.swift); an iPhone shows none.
             view = AsukaContainerView()
+        case .chip:
+            view = makeChip(id)
+        case .dateRangePicker:
+            view = makeDateRange(id)
+        case .disclosure:
+            view = makeDisclosure(id)
         default:
             fatalError("asuka: the iOS host can't show \(kind.name) yet")
         }
@@ -1261,6 +1275,7 @@ final class AsukaTextField: UITextField {
 extension AsukaRuntime: UITextFieldDelegate {
     public func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         guard let t = textField as? AsukaTextField else { return true }
+        if t.suggestions?.chooseHighlighted() == true { return false } // Return chose the row the arrow keys are on
         let id = t.asukaID
         emit(id, .submit) { AsukaEvents.submit(id) }
         return false
@@ -1269,6 +1284,7 @@ extension AsukaRuntime: UITextFieldDelegate {
     public func textFieldDidBeginEditing(_ textField: UITextField) {
         guard let t = textField as? AsukaTextField else { return }
         let id = t.asukaID
+        t.suggestions?.began()
         focusMoved(to: id, how: 1) // the field's own Focus, not the view's that had it
         emit(id, .focus) { AsukaEvents.focus(id) }
         revealOnFocus()
@@ -1325,6 +1341,7 @@ extension AsukaRuntime: UITextFieldDelegate {
     public func textFieldDidEndEditing(_ textField: UITextField) {
         guard let t = textField as? AsukaTextField else { return }
         let id = t.asukaID
+        t.suggestions?.ended()
         emit(id, .blur) { AsukaEvents.blur(id) }
     }
 }

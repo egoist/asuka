@@ -126,6 +126,12 @@ function draggableFrom(el, d) {
   return true;
 }
 
+/** fallbackWords are the host's words where the core has none (in English); a catalog's missing word too. */
+const fallbackWords = {
+  back: "Back", ok: "OK", search: "Search", increase: "Increase", decrease: "Decrease", moreOptions: "More options", close: "Close",
+  remove: "Remove", startDate: "Start date", endDate: "End date",
+};
+
 export class Navigation {
   constructor(h) {
     this.h = h;
@@ -143,9 +149,9 @@ export class Navigation {
     const loc = this.h.locale || navigator.language;
     let w = this.words[loc];
     if (!w) {
-      try { w = this.words[loc] = JSON.parse(this.h.core.words(loc)); } catch { w = { back: "Back", ok: "OK", search: "Search", increase: "Increase", decrease: "Decrease", moreOptions: "More options", close: "Close" }; }
+      try { w = this.words[loc] = JSON.parse(this.h.core.words(loc)); } catch { w = fallbackWords; }
     }
-    return w[key] || key;
+    return w[key] || fallbackWords[key] || key;
   }
 
   /** badgeWords says a badge for a screen reader, in the app's language: a count as so many items ("3 items"), other text as it is. */

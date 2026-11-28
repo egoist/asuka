@@ -82,9 +82,15 @@ const (
 	KindTable Kind = 40
 	// KindOutline: a tree of rows (a sidebar's folders, a file tree): the rows shown (the roots, and the children of each expanded row, depth first) are a List's, bound through ListBind into cells the host makes, each with its RowData (its text and symbol) or its views (laid out by the core at the row's width less its indent: the host draws its disclosure and the depth's indentation, and tells the core the room they take with RowInset). Arrow keys move the selection, right and left expand and collapse (the platform's own). Phones get a List instead, of indented rows with a disclosure the core makes.
 	KindOutline Kind = 41
+	// KindChip: a compact element that's an action (an assist chip with an Icon; a suggestion chip without), a choice (Filter) or an entered item (Removable): Material 3's Chip on Android; iOS has none, so a UIButton in the capsule style (gray, tinted while selected); a recessed NSButton on macOS; drawn as Fluent's toggle button, pill shaped, on Windows; a GtkButton or GtkToggleButton in libadwaita's pill style on Linux; a <button> (aria-pressed for a filter chip) on the web. Measured. Press reports an action chip's press.
+	KindChip Kind = 42
+	// KindDateRangePicker: a range of days, chosen the platform's way, in the device's time zone and calendar: two compact UIDatePickers (the start and the end), or an inline UICalendarView, on iOS; a button showing the range that opens Material's date range picker on Android; two NSDatePickers, or NSDatePicker's graphical calendar in its range mode, on macOS; two date pickers (SysDateTimePick32), or a month calendar (MCS_MULTISELECT), on Windows; a button opening a popover of GtkCalendar, the range's days marked, on Linux; two <input type=date> on the web. A host whose control can't show none shows today while Start is 0. Measured. The user's choice is reported with RangeChanged, once both its ends are chosen.
+	KindDateRangePicker Kind = 43
+	// KindDisclosure: a disclosure's header (SwiftUI's DisclosureGroup, an expander): its title and the platform's indicator, which turns as it expands (iOS: the title and a chevron at the end, in a row a list's height; Android: a Material list item's row, an expand icon at the end; macOS: NSButton's disclosure triangle before the title; Windows: drawn as WinUI's Expander header, a chevron at the end; Linux: a GtkExpander without a child, its arrow before its label; the web: <details> and its <summary>). Measured, as wide as it's laid out. Pressing it (Space or Return with the keyboard's focus) reports Toggled, its new state: the host shows it at once, and the core shows or hides the content under it (views of the core's, not the header's children). Screen readers read it as a button, expanded or collapsed.
+	KindDisclosure Kind = 44
 )
 
-var kindNames = [...]string{"", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay", "Table", "Outline"}
+var kindNames = [...]string{"", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay", "Table", "Outline", "Chip", "DateRangePicker", "Disclosure"}
 
 func (k Kind) String() string {
 	if int(k) < len(kindNames) && k > 0 {
@@ -255,6 +261,10 @@ const (
 	PropTextFieldPasteTypes PropID = 76
 	// PropTextFieldAccessory: its Accessory's node ID (0: none).
 	PropTextFieldAccessory PropID = 77
+	// PropTextFieldSuggestions: u32 count, then each suggestion's u32-length text (the core has filtered them by what's typed): an autocomplete's or a combo box's list, shown under the field while it has the keyboard's focus, it isn't empty, and the user has typed since it took the focus or since a choice (MaterialAutoCompleteTextView's drop-down, NSComboBox's list, a suggestion list under a UITextField, a drop-down combo box's, a GtkPopover's list, an ARIA combobox's listbox). Choosing one (a tap, a click, the arrow keys then Return) puts its text in the field, reported with Suggestion and not TextChanged, and closes the list; Escape closes it. Sent (empty, too) before the field is inserted when it has suggestions at all, which a host may make another view for, then again as they change.
+	PropTextFieldSuggestions PropID = 78
+	// PropTextFieldDropdown: with Suggestions: a button at the field's end (a chevron; NSComboBox's, a drop-down combo box's) opens the list of the Suggestions as they are, whether or not the user has typed, and closes it: a combo box's. The core sends them all, unfiltered, while the text is empty or is one of them; sent before it's inserted.
+	PropTextFieldDropdown PropID = 79
 )
 
 // Toggle props.
@@ -405,6 +415,10 @@ const (
 	PropImageTransition PropID = 69
 	// PropImagePaused: an animated image (GIF, APNG, animated WebP, and AVIF and HEIF sequences where the platform decodes them) stops where it is (its first frame, before it has played); unset, it plays, as many times as the file says.
 	PropImagePaused PropID = 70
+	// PropImageHeaders: HTTP headers sent with the source's request (an authenticated image's Authorization), as Video's: u32 count, then name and value in turn, u32-length strings (count is twice the headers'). Sent before Source, applying to its loads; the caches keep an image by its URL alone. The web fetches such an image (CORS) rather than letting the <img> load it.
+	PropImageHeaders PropID = 71
+	// PropImageCache: where the image is kept once loaded: Default, in memory (one fetched over http(s) on disk too, unless its response says no-store); Memory, in memory only, never written to disk nor read from it; None, neither: loaded each time it's shown. Sent before Source.
+	PropImageCache PropID = 72
 )
 
 // Native props.
@@ -680,9 +694,42 @@ const (
 	PropOutlineRowHeight PropID = 67
 )
 
+// Chip props.
+const (
+	PropChipTitle PropID = 64
+	// PropChipIcon: a symbol (Symbol.Name) before the title: an assist chip's (a selected filter chip's checkmark takes its place, as Material's does).
+	PropChipIcon PropID = 65
+	// PropChipFilter: a filter chip: pressing it toggles Selected, reported with Toggled (not Press); selected, it shows Material's checkmark and its selected look (iOS: tinted; the desktops and the web: their toggled button's). Screen readers read it as a toggle button, on or off. Sent before it's inserted.
+	PropChipFilter PropID = 66
+	// PropChipSelected: a filter chip's state.
+	PropChipSelected PropID = 67
+	// PropChipRemovable: an input chip (an entered item: a recipient, a tag): a remove button at its end (Material's close icon, an x in a circle); it, Delete or Backspace while the chip has the keyboard's focus, and a screen reader's remove action report Remove. The button is named with the platform's word (Material's close icon description; Asuka's word remove elsewhere) and the title. Sent before it's inserted.
+	PropChipRemovable PropID = 68
+)
+
+// DateRangePicker props.
+const (
+	// PropDateRangePickerStart: the first day chosen: an instant in it, in Unix milliseconds (0: none chosen).
+	PropDateRangePickerStart PropID = 64
+	// PropDateRangePickerEnd: the last day chosen, as Start (never before it; 0: none).
+	PropDateRangePickerEnd PropID = 65
+	// PropDateRangePickerMin: the earliest day the user can choose, as Start (0: none).
+	PropDateRangePickerMin PropID = 66
+	// PropDateRangePickerMax: the latest day the user can choose (0: none).
+	PropDateRangePickerMax PropID = 67
+	// PropDateRangePickerInline: a calendar in place, the range marked on it (UICalendarView, NSDatePicker's graphical range, a month calendar's multiple selection, GtkCalendar), not a button or fields opening one; sent before it's inserted.
+	PropDateRangePickerInline PropID = 68
+)
+
+// Disclosure props.
+const (
+	PropDisclosureTitle    PropID = 64
+	PropDisclosureExpanded PropID = 65
+)
+
 var commonProps = [...]propInfo{{}, {"Background", TColor}, {"CornerRadius", TFloat}, {"BorderWidth", TFloat}, {"BorderColor", TColor}, {"Opacity", TFloat}, {"Hidden", TBool}, {"Clip", TBool}, {"A11yLabel", TString}, {"A11yHint", TString}, {"A11yRole", TEnum}, {"A11yActions", TBytes}, {"A11yAdjustable", TBool}, {"A11yHidden", TBool}, {"Color", TColor}, {"TextStyle", TEnum}, {"FontSize", TFloat}, {"FontWeight", TEnum}, {"TextAlign", TEnum}, {"LineLimit", TInt}, {"Disabled", TBool}, {"Menu", TBytes}, {"MenuTrigger", TEnum}, {"Transform", TBytes}, {"Shadow", TBytes}, {"Gradient", TBytes}, {"Transition", TBytes}, {"Material", TEnum}, {"FontFamily", TString}, {"SwipeActions", TBytes}, {"LayoutDirection", TEnum}, {"ContentInset", TEdges}, {"LeadingSwipeActions", TBytes}, {"Selected", TBool}, {"Match", TString}, {"InterceptBack", TBool}, {"Tooltip", TString}, {"Keys", TBytes}, {"Focusable", TBool}, {"NoFocusOnPress", TBool}, {"NoFocusRing", TBool}, {"FocusTrap", TBool}, {"A11yChecked", TEnum}, {"A11yExpanded", TEnum}, {"A11ySelected", TBool}, {"A11yValue", TString}, {"A11yRange", TBytes}, {"A11yModal", TBool}, {"A11yControls", TInt}, {"A11yLabelledBy", TInt}, {"A11yDescribedBy", TInt}, {"LetterSpacing", TFloat}, {"LineHeight", TFloat}, {"FontTraits", TInt}, {"TextShadow", TBytes}, {"Truncation", TEnum}, {"MinimumScale", TFloat}, {"CornerRadii", TEdges}, {"BorderWidths", TEdges}, {"BorderStyle", TEnum}, {"Cursor", TEnum}, {"RowData", TBytes}}
 
-var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}, {"TakesClicks", TBool}, {"PanAxis", TEnum}, {"PanMinDistance", TFloat}, {"PanSimultaneous", TBool}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}, {"EdgeEffect", TEnum}, {"MinZoom", TFloat}, {"MaxZoom", TFloat}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"EdgeEffect", TEnum}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}, {"Reorder", TBytes}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TBytes}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}, {"Detent", TInt}, {"Undimmed", TInt}, {"CornerRadius", TFloat}, {"NoDismiss", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}, {"Rate", TFloat}, {"Volume", TFloat}, {"Headers", TBytes}, {"Poster", TString}, {"StartAt", TFloat}, {"TimeInterval", TFloat}, {"Subtitle", TString}, {"AudioTrack", TString}, {"SubtitleFiles", TBytes}, {"PictureInPicture", TBool}, {"AutoPictureInPicture", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}, {{"Root", TInt}, {"Anchor", TInt}, {"Modal", TBool}}, {{"Columns", TBytes}, {"Sort", TBytes}, {"SelectionMode", TEnum}, {"Selection", TBytes}, {"RowHeight", TFloat}, {"ColumnsMovable", TBool}}, {{"Levels", TBytes}, {"SelectionMode", TEnum}, {"Selection", TBytes}, {"RowHeight", TFloat}}}
+var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}, {"TakesClicks", TBool}, {"PanAxis", TEnum}, {"PanMinDistance", TFloat}, {"PanSimultaneous", TBool}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}, {"Suggestions", TBytes}, {"Dropdown", TBool}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}, {"EdgeEffect", TEnum}, {"MinZoom", TFloat}, {"MaxZoom", TFloat}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"EdgeEffect", TEnum}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}, {"Reorder", TBytes}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TBytes}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}, {"Detent", TInt}, {"Undimmed", TInt}, {"CornerRadius", TFloat}, {"NoDismiss", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}, {"Headers", TBytes}, {"Cache", TEnum}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}, {"Rate", TFloat}, {"Volume", TFloat}, {"Headers", TBytes}, {"Poster", TString}, {"StartAt", TFloat}, {"TimeInterval", TFloat}, {"Subtitle", TString}, {"AudioTrack", TString}, {"SubtitleFiles", TBytes}, {"PictureInPicture", TBool}, {"AutoPictureInPicture", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}, {{"Root", TInt}, {"Anchor", TInt}, {"Modal", TBool}}, {{"Columns", TBytes}, {"Sort", TBytes}, {"SelectionMode", TEnum}, {"Selection", TBytes}, {"RowHeight", TFloat}, {"ColumnsMovable", TBool}}, {{"Levels", TBytes}, {"SelectionMode", TEnum}, {"Selection", TBytes}, {"RowHeight", TFloat}}, {{"Title", TString}, {"Icon", TString}, {"Filter", TBool}, {"Selected", TBool}, {"Removable", TBool}}, {{"Start", TInt}, {"End", TInt}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Title", TString}, {"Expanded", TBool}}}
 
 // Events.
 const (
@@ -834,11 +881,17 @@ const (
 	EventUndo EventKind = 79
 	// EventRestoreWindow: sent to the root: the system brought back a window the user had left open (an iPad's scene, restored as the app launches), which a Window with this state key showed (its Config's): the core opens the app's Window with that key, if one is closed, as its show() does (its open told true), and the host shows it in that window. A host that sees no Window with the key Present during the event closes the window it brought back.
 	EventRestoreWindow EventKind = 80
+	// EventRemove: the user asked to remove a Removable Chip: its remove button, Delete or Backspace with the keyboard's focus, a screen reader's remove action.
+	EventRemove EventKind = 81
+	// EventRangeChanged: the user chose a DateRangePicker's range: X its first day's start, Y its last day's (local midnight, in Unix milliseconds; Y is never before X). Sent once both ends are chosen (a calendar's second tap, Material's dialog's Save; a start chosen after the end moves the end to it).
+	EventRangeChanged EventKind = 82
+	// EventSuggestion: the user chose one of a TextField's Suggestions: its index in them as last set. The field shows its text already; the host doesn't report it with TextChanged.
+	EventSuggestion EventKind = 83
 )
 
-var eventNames = [...]string{"", "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint", "DevErrorAction", "VideoState", "VideoTracks", "DoubleTap", "HoverMove", "Zoomed", "Moved", "SheetHeight", "SortBy", "ColumnLayout", "RowsSelected", "Open", "Expand", "Undo", "RestoreWindow"}
+var eventNames = [...]string{"", "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint", "DevErrorAction", "VideoState", "VideoTracks", "DoubleTap", "HoverMove", "Zoomed", "Moved", "SheetHeight", "SortBy", "ColumnLayout", "RowsSelected", "Open", "Expand", "Undo", "RestoreWindow", "Remove", "RangeChanged", "Suggestion"}
 
-var eventPayloads = [...]Payload{0, PNone, PNone, PString, PNone, PNone, PNone, PBool, PFloat, PPoint, PEnvironment, PInt, PInt, PInt, PInt, PNone, PNone, PGesture, PGesture, PGesture, PInt, PPoint, PString, PBytes, PString, PInt, PInt, PNone, PString, PString, PString, PString, PFloat, PBytes, PInt, PBytes, PString, PBytes, PString, PBytes, PBool, PBool, PGesture, PBytes, PBytes, PBytes, PBytes, PBytes, PBool, PNone, PPoint, PInt, PNone, PInt, PBytes, PNone, PInt, PBytes, PBytes, PNone, PBytes, PInt, PString, PPoint, PBytes, PPoint, PInt, PBytes, PBytes, PPoint, PPoint, PFloat, PPoint, PFloat, PInt, PBytes, PBytes, PInt, PPoint, PInt, PString}
+var eventPayloads = [...]Payload{0, PNone, PNone, PString, PNone, PNone, PNone, PBool, PFloat, PPoint, PEnvironment, PInt, PInt, PInt, PInt, PNone, PNone, PGesture, PGesture, PGesture, PInt, PPoint, PString, PBytes, PString, PInt, PInt, PNone, PString, PString, PString, PString, PFloat, PBytes, PInt, PBytes, PString, PBytes, PString, PBytes, PBool, PBool, PGesture, PBytes, PBytes, PBytes, PBytes, PBytes, PBool, PNone, PPoint, PInt, PNone, PInt, PBytes, PNone, PInt, PBytes, PBytes, PNone, PBytes, PInt, PString, PPoint, PBytes, PPoint, PInt, PBytes, PBytes, PPoint, PPoint, PFloat, PPoint, PFloat, PInt, PBytes, PBytes, PInt, PPoint, PInt, PString, PNone, PPoint, PInt}
 
 func (e EventKind) String() string {
 	if int(e) < len(eventNames) && e > 0 {
@@ -1505,4 +1558,12 @@ const (
 	SelectionModeSingle SelectionMode = iota
 	SelectionModeMultiple
 	SelectionModeNone
+)
+
+type ImageCache int32
+
+const (
+	ImageCacheDefault ImageCache = iota
+	ImageCacheMemory
+	ImageCacheNone
 )

@@ -95,6 +95,10 @@ func Cancel(locale string) string { return Catalog.Format(locale, "cancel", nil)
 // on a desktop (macOS, Windows, the web).
 func Close(locale string) string { return Catalog.Format(locale, "close", nil) }
 
+// Remove is the label of an input chip's remove button, and of the
+// screen readers' action that removes it (the desktops, the web).
+func Remove(locale string) string { return Catalog.Format(locale, "remove", nil) }
+
 // TakePhoto says the button that takes a photo (the camera's sheet on
 // the Mac), in locale.
 func TakePhoto(locale string) string { return Catalog.Format(locale, "takePhoto", nil) }

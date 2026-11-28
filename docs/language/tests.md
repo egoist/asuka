@@ -24,7 +24,7 @@ the platforms do, measures text at a fixed width per character, and time
 moves only when nothing else can run (a `sleep(5s)` in a test takes no
 time). `mount` returns the app, to drive and check: `tap`, `longPress`,
 `type(_, into:)`, `submit`, `toggle`, `slide`, `select`, `swipe(_,
-action:)`, `refresh`, `scrollTo`, `back`, `dismiss`, `pickDate`,
+action:)`, `refresh`, `scrollTo`, `back`, `dismiss`, `pickDate`, `pickRange`, `remove`, `chooseSuggestion`,
 `pickColor`, `expect`, `expectNo`, `texts()`, `disabled(text)`,
 `until`, `waitFor`, `idle`; `in(.navigationBar)`, `in(.sidebar)` and
 `nextTo(label)` narrow what a text names; with a router, `mount(…, at:

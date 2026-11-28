@@ -1,0 +1,15 @@
+test "prefetch and clearCache call the host's image module" {
+  let app = mount(Text("Hi"))
+  app.ops()
+  prefetch(["https://example.com/a.png", "b.png"], headers: ["Authorization": "Bearer t"])
+  prefetch([]) // nothing to load: no call
+  clearCache(disk: false)
+  clearCache(memory: false, disk: false) // nothing to clear: no call
+  let ops = app.ops().split("\n").filter(l => !l.isEmpty())
+  expect(ops.count() == 2)
+  // "image", "prefetch", 2 URLs, then 2 strings: a header's name and value.
+  expect(ops[0].contains("05000000696d61676508000000707265666574636802000000"))
+  expect(ops[0].hasSuffix("020000000d000000417574686f72697a6174696f6e080000004265617265722074"))
+  // "image", "clearCache", 1: the memory's.
+  expect(ops[1].hasSuffix("05000000696d6167650a000000636c656172436163686501"))
+}

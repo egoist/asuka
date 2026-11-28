@@ -30,6 +30,10 @@ query`. See [Concepts](concepts.md).
 | `Wheel` | `UIPickerView` | `NumberPicker` | `NSPopUpButton` | a drop-down `COMBOBOX` | `GtkDropDown` | `<select>` |
 | `ColorPicker` | `UIColorWell` | a swatch and a Material dialog | `NSColorWell` and the color panel | a swatch and the color dialog (`ChooseColor`) | `GtkColorDialogButton` | `<input type="color">` |
 | `DatePicker` | `UIDatePicker` | buttons opening Material's pickers | `NSDatePicker` | the date and time picker (`SysDateTimePick32`) | a button opening `GtkCalendar` and spin buttons | `<input type="date">`, `time`, `datetime-local` |
+| `DateRangePicker` | two compact `UIDatePicker`s; inline, `UICalendarView` | a button opening Material's date range picker | two `NSDatePicker`s; inline, its calendar in range mode | two date pickers; inline, a month calendar | a button opening `GtkCalendar`; inline, the calendar | two `<input type="date">` |
+| `Chip` | a capsule `UIButton` | Material's `Chip` | a recessed `NSButton` | drawn as Fluent's toggle button, a pill | a pill `GtkButton` or `GtkToggleButton` | `<button>` |
+| `Disclosure` | a row with a chevron | a Material list row with an expand icon | `NSButton`'s disclosure triangle | drawn as WinUI's `Expander` header | `GtkExpander` | `<details>` |
+| `TextField` with `suggestions` | a list under the field; `dropdown`'s chevron opens a menu | `MaterialAutoCompleteTextView` | `NSComboBox`, or a list under the field | a list under the field, drawn as WinUI's | a list in a `GtkPopover` | an ARIA combobox |
 | `Progress` | `UIProgressView` | `LinearProgressIndicator` | `NSProgressIndicator` | drawn as Fluent's | `GtkProgressBar` | `<progress>` |
 | `ProgressRing` | drawn as SwiftUI's circular gauge; `UIActivityIndicatorView` without a value | `CircularProgressIndicator` | `NSProgressIndicator`, spinning, at 16 and 32 points; drawn in its style at other sizes or in a `color` | Fluent's `ProgressRing`, drawn | drawn in GNOME's style; `AdwSpinner` without a value | an SVG ring |
 | `Activity` | `UIActivityIndicatorView` | `CircularProgressIndicator` | `NSProgressIndicator`, spinning | Fluent's progress ring, drawn | `AdwSpinner` (`GtkSpinner` before libadwaita 1.6) | a spinner, drawn |
@@ -499,6 +503,47 @@ component NoteField {
 }
 ```
 
+**Suggestions.** `suggestions` makes a field an autocomplete: as the user
+types, the platform lists the suggestions that contain what's typed under
+the field, and choosing one (a tap, a click, the arrow keys and Return)
+puts it in the field and runs `on suggestion(index)`, its index in
+`suggestions`. `dropdown: true` adds a button at the field's end that
+lists them all, a combo box's.
+
+```asuka
+let cities = ["Amsterdam", "Berlin", "Lisbon", "Paris", "Prague", "Rome"]
+
+component Destination {
+  state city = ""
+  state chosen = ""
+
+  TextField {
+    bind text: city
+    placeholder: "City"
+    suggestions: cities
+    dropdown: true
+    on suggestion(i) { chosen = cities[i] }
+  }
+}
+```
+
+Asuka filters them, the same on every platform: those that contain the
+text, ignoring case, in their order; all of them while the field is empty
+or holds one of them. `filterSuggestions: false` lists them as they are,
+for suggestions the app finds itself (a search's results as the user
+types): set `suggestions` from the start, `[]` too, so the field is one
+that suggests. The list shows after the user types, not as the field
+takes the focus, and closes after a choice and with Escape.
+
+| | Suggestions | `dropdown` |
+|---|---|---|
+| iOS | a list under the field, in the system's menu look | a chevron at the field's end opening a menu of them |
+| Android | a `MaterialAutoCompleteTextView`'s drop-down, the field otherwise as the others are | an arrow at the field's end, which turns up while the list shows |
+| macOS | a list under the field, as Safari's | an `NSComboBox` |
+| Windows | a list under the field, drawn as WinUI's `ComboBox` list | a chevron at the field's end (Alt+Down and F4 open it too) |
+| Linux | a list in a `GtkPopover` under the field | an icon at the field's end |
+| Web | an ARIA combobox: a listbox under the `<input>` | a button after the input |
+
 A `SafeArea` is padded by the keyboard, so a field at the bottom of one
 stays above it.
 
@@ -625,6 +670,133 @@ component Settings {
   | Linux | a button opening a popover of GTK's calendar and hour and minute spin buttons | the calendar and spin buttons in place |
   | Web | `<input type="date">`, `"time"`, `"datetime-local"` | the same input |
 
+### Chips
+
+A `Chip` is a compact action, choice or entered item, as Material's chips
+are. What it is follows from what you give it:
+
+- an **action** (Material's assist chip with an `icon`, its suggestion chip
+  without): `on press`;
+- a **filter**, `bind selected`: pressing it toggles the state, and a
+  selected chip shows a checkmark (in its icon's place) and its selected
+  look;
+- an **entered item** (an input chip: a recipient, a tag), `on remove`: a
+  remove button at its end. Delete or Backspace while it has the
+  keyboard's focus removes it too, and screen readers offer a remove
+  action, named in the app's language.
+
+```asuka
+let tags = ["Wi-Fi", "Breakfast", "Pool"]
+
+component Filters {
+  state wanted = [true, false, false]
+  state people = ["Ana", "Bo"]
+
+  Column {
+    gap: 12
+    Row {
+      wrap: true
+      gap: 8
+      for i in 0..<tags.count() {
+        Chip(tags[i]) { bind selected: wanted[i] }
+      }
+    }
+    Row {
+      wrap: true
+      gap: 8
+      for p in people key p {
+        Chip(p) {
+          icon: "person"
+          on remove { people = people.filter(x => x != p) }
+        }
+      }
+      Chip("Add") {
+        icon: "plus"
+        on press { people = people + ["Cy"] }
+      }
+    }
+  }
+}
+```
+
+Chips go in a `Row` with `wrap`, as Material's chip groups do. iOS has no
+chip: it's a `UIButton` in the capsule style, gray, tinted while selected.
+Android's is Material 3's `Chip` in the style its kind has (assist,
+suggestion, filter, input). A Mac's is a recessed `NSButton`, a filter
+chip one that stays pushed; Windows draws Fluent's toggle button as a
+pill; Linux's is a `GtkButton` or `GtkToggleButton` in libadwaita's pill
+style; the web's a `<button>`, `aria-pressed` for a filter chip. Screen
+readers read a filter chip as a toggle button, on or off.
+
+### Date ranges
+
+`DateRangePicker` picks a range of days, in the device's time zone:
+`bind start` and `bind end`, milliseconds since 1970 (the first and last
+day's midnight once the user chooses; 0: none chosen yet). `std/time`'s
+`time.RangePicker` binds them as `time.Time?`. `min` and `max` bound
+the days, and `on change(start, end)` hears a choice once both ends are
+chosen; the end is never before the start.
+
+```asuka
+import std/time
+
+component Stay {
+  state from: time.Time? = none
+  state to: time.Time? = none
+
+  time.RangePicker {
+    bind start: from
+    bind end: to
+    min: time.now()
+  }
+}
+```
+
+| | Compact (default) | `inline: true` |
+|---|---|---|
+| iOS | two compact `UIDatePicker`s, the start's and the end's | a `UICalendarView`: a tap starts the range, a second ends it |
+| Android | a button showing the range, opening Material's date range picker | the same button |
+| macOS | two `NSDatePicker`s | `NSDatePicker`'s calendar in its range mode: a drag or a shift-click marks the days |
+| Windows | two date pickers (`SysDateTimePick32`) | a month calendar that selects a range (`MCS_MULTISELECT`) |
+| Linux | a button showing the range, opening a popover of `GtkCalendar`: a click starts the range, a second ends it, its days marked | the calendar in place |
+| Web | two `<input type="date">` | the same inputs |
+
+A control that can't show "none" (two date pickers) shows today while
+nothing is chosen; a start moved past the end takes the end with it.
+
+### Disclosures
+
+`Disclosure` is a header that shows and hides the content in its block,
+as SwiftUI's `DisclosureGroup` and an expander do: the platform's
+disclosure indicator beside its title, which turns as it opens. `bind
+expanded` follows it and opens or closes it; unbound, it keeps the
+user's choice, closed at first. The content is built as it opens and goes
+as it closes (its state with it).
+
+```asuka
+component Advanced {
+  state open = false
+  state flexible = false
+
+  Disclosure("More options") {
+    bind expanded: open
+    Row {
+      align: .center
+      Text("Flexible dates") { grow: 1 }
+      Toggle { bind on: flexible }
+    }
+  }
+}
+```
+
+Its `font` and `color` are its header's. iOS's is a row with a chevron at
+its end, which turns down; Android's a Material list row with an expand
+icon; a Mac's `NSButton`'s disclosure triangle before the title;
+Windows draws WinUI's `Expander` header, a chevron at its end; Linux's is
+a `GtkExpander`; the web's a `<details>` and its `<summary>`. Screen
+readers read it as a button, expanded or collapsed, and Space or Return
+opens it from the keyboard.
+
 ## Progress and activity
 
 `Progress` is a progress bar: its `value` from 0 to 1, or `none` when
@@ -736,6 +908,15 @@ component Pictures(photo: Photo) {
   its file says, unless the user asks for less motion (Reduce Motion,
   Android's animations off, `prefers-reduced-motion`): then it shows its
   first frame.
+- `headers` are HTTP headers sent with its request: an authenticated
+  image's (`["Authorization": "Bearer {token}"]`). The caches keep it by
+  its URL alone. In a browser, an image with headers is fetched by the
+  page, so its server must allow them (CORS).
+- `cache` is where it's kept once loaded: `.default` (in memory, and on
+  disk when it came over http(s)), `.memory` (never written to disk: a
+  private picture), `.off` (loaded each time it shows).
+- `color` tints it: its shape, its transparent parts left as they are, in
+  the color (an icon's, a template image's), PNG and SVG alike.
 - `label` describes it to screen readers; without one, the image is
   decorative.
 - `on loaded(width, height)` gets its natural size once it's loaded;
@@ -766,6 +947,31 @@ scale, and `color` tints it as it does any image. It draws what an
 `.svg` (or an SVG `data:` URL) is read this way; one on another site
 that doesn't let the page read it (no CORS headers) is the browser's to
 show.
+
+### Prefetching and clearing the caches
+
+`platform/image` loads pictures before they show, so an `Image` of one
+shows it at once (the next page's thumbnails, the photos of a screen
+about to open), and forgets them.
+
+```asuka
+import platform/image
+
+fn warmUp(urls: [string], token: string) {
+  image.prefetch(urls, headers: ["Authorization": "Bearer {token}"])
+}
+
+fn signedOut() {
+  image.clearCache()  // memory and disk; clearCache(disk: false): memory alone
+}
+```
+
+`prefetch` doesn't wait: it loads each one in the background, as an
+`Image` would, into the memory cache and, when it came over http(s), the
+disk's. `clearCache` forgets what's kept; an image showing keeps what it
+shows. A browser keeps pictures in its own HTTP cache, which a page can't
+clear: there `clearCache` forgets what the page keeps in memory and what
+it fetched with headers.
 
 ## Symbols and icons
 

@@ -551,13 +551,13 @@ void lx_listen(node *n, ak_event_kind e) {
 	switch (e) {
 	case AK_EVENT_PRESS:
 	case AK_EVENT_PRESSED:
-		if (n->kind == AK_KIND_BUTTON) return;  // clicked
+		if (n->kind == AK_KIND_BUTTON || n->kind == AK_KIND_CHIP) return;  // clicked
 		lx_listen_click(n);
 		if (e == AK_EVENT_PRESS) lx_make_pressable(n);
 		return;
 	case AK_EVENT_PRESS_POINT:
 	case AK_EVENT_DOUBLE_TAP:
-		if (n->kind != AK_KIND_BUTTON) lx_listen_click(n);
+		if (n->kind != AK_KIND_BUTTON && n->kind != AK_KIND_CHIP) lx_listen_click(n);
 		return;
 	case AK_EVENT_KEY_TEXT:
 		lx_listen_key_text(n);

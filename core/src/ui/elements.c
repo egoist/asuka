@@ -75,6 +75,14 @@ ak_event_kind ak_ev_ops(uint16_t ev) {
 	case AK_EV_SEGMENTED_CHANGE:
 	case AK_EV_PICKER_CHANGE:
 		return AK_EVENT_SELECTED;
+	case AK_EV_TEXT_FIELD_SUGGESTION: return AK_EVENT_SUGGESTION;
+	case AK_EV_CHIP_PRESS: return AK_EVENT_PRESS;
+	case AK_EV_CHIP_REMOVE: return AK_EVENT_REMOVE;
+	case AK_EV_CHIP_CHANGE: return AK_EVENT_TOGGLED;
+	case AK_EV_DATE_RANGE_PICKER_START_CHANGE:
+	case AK_EV_DATE_RANGE_PICKER_END_CHANGE:
+	case AK_EV_DATE_RANGE_PICKER_CHANGE:
+		return AK_EVENT_RANGE_CHANGED;
 	case AK_EV_IMAGE_LOADED: return AK_EVENT_LOADED;
 	case AK_EV_IMAGE_ERROR: return AK_EVENT_FAILED;
 	case AK_EV_SCROLL_SCROLL:
@@ -310,6 +318,7 @@ typedef struct {
 	bool sel_known;
 	bool multiline;
 	bool focused;  // as last reported, or asked for
+	ak_suggest *suggest;  // its suggestions' (widgets.c), NULL: none
 } field_state;
 
 static int rune_len(uint8_t c) { return c < 0x80 ? 1 : c < 0xe0 ? 2 : c < 0xf0 ? 3 : 4; }
@@ -348,7 +357,12 @@ static void field_drop(ak_view *e) {
 	field_state *f = e->impl;
 	if (!f) return;
 	ak_release(f->reported);
+	ak_suggest_free(f->suggest);
 	ak_free(f);
+}
+
+ak_suggest **ak_field_suggest_slot(ak_view *e) {
+	return e && e->el == AK_EL_TEXT_FIELD && e->impl ? &((field_state *)e->impl)->suggest : NULL;
 }
 
 static void field_send_selection(ak_view *e, const ak_struct *r) {
@@ -382,6 +396,7 @@ static void field_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 		f->known = true;
 		send_str(e, AK_PROP_TEXT_FIELD_VALUE, v);
 		if (f->multiline) ak_view_remeasure(e);
+		if (f->suggest) ak_suggest_text(e);
 		break;
 	}
 	case AK_KEY_TEXT_FIELD_PLACEHOLDER: send_str(e, AK_PROP_TEXT_FIELD_PLACEHOLDER, v); break;
@@ -423,7 +438,9 @@ static void field_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 			ak_ui_blur(e);
 		}
 		break;
-	default: ak_field_set_ext(e, key, v, prev); break;  // rich.c
+	default:
+		if (!ak_suggest_set(e, key, v, prev)) ak_field_set_ext(e, key, v, prev);  // widgets.c, rich.c
+		break;
 	}
 }
 
@@ -458,11 +475,12 @@ static void field_finalize(ak_view *e) {
 	const ak_val *af = ak_style_get(e, AK_KEY_TEXT_FIELD_AUTOFOCUS);
 	if (af && af->i) e->autofocus = true;  // with its first frame
 	ak_field_finalize_ext(e);
+	ak_suggest_finalize(e);
 }
 
 static void field_event(ak_view *e, const ak_event *ev) {
 	field_state *f = e->impl;
-	if (ak_field_event_ext(e, ev)) return;
+	if (ak_field_event_ext(e, ev) || ak_suggest_event(e, ev)) return;
 	switch (ev->kind) {
 	case AK_EVENT_TEXT_CHANGED: {
 		ak_str *s = ak_str_new(ev->s.p, ev->s.len);
@@ -474,6 +492,7 @@ static void field_event(ak_view *e, const ak_event *ev) {
 		ak_retain(s);
 		ak_view_call(e, AK_EV_TEXT_FIELD_CHANGE, &arg, 1);
 		ak_release(s);
+		if (f->suggest && !e->dead) ak_suggest_text(e);  // what's typed filters them
 		break;
 	}
 	case AK_EVENT_SUBMIT: call0(e, AK_EV_TEXT_FIELD_SUBMIT); break;
@@ -1211,6 +1230,7 @@ const ak_el_class *ak_el_class_of(uint16_t el) {
 		return ak_tbl_class_of(el);
 	}
 	const ak_el_class *c = ak_nav_class_of(el);
+	if (!c) c = ak_widget_class_of(el);
 	if (!c) c = ak_window_class_of(el);
 	if (!c) c = ak_menu_class_of(el);
 	return c ? c : ak_ext_class_of(el);

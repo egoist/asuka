@@ -136,6 +136,16 @@ void wh_snapshot(const char *path) {
 		snprintf(name, sizeof name, "%s.menu.png", base);
 		write_screen_png(r, name);
 	}
+	HWND list = wh_suggest_popup();
+	if (list) {
+		// A field's suggestions, with the window they're over, as the
+		// screen shows them.
+		RECT r, w = wh_frame_bounds(H.window);
+		GetWindowRect(list, &r);
+		UnionRect(&r, &r, &w);
+		snprintf(name, sizeof name, "%s.list.png", base);
+		write_screen_png(r, name);
+	}
 	for (uint32_t i = 0; i < H.nwins; i++) {
 		if (i == 0) snprintf(name, sizeof name, "%s.window.png", base);
 		else snprintf(name, sizeof name, "%s.window%u.png", base, i + 1);
@@ -208,6 +218,9 @@ static void walk(ak_buf *b, node *n, int depth) {
 		ak_buf_put(b, " title=", 7);
 		quote_w(b, &n->title);
 	}
+	if (n->kind == AK_KIND_CHIP || n->kind == AK_KIND_DISCLOSURE) wh_own_dump(n, b);
+	if (n->kind == AK_KIND_DATE_RANGE_PICKER) wh_range_dump(n, b);
+	if (n->suggest) wh_suggest_dump(n, b);
 	if (wh_zoomable(n)) ak_buf_printf(b, " zoom=%.2f offset=%.0f,%.0f", (double)wh_scroll_zoom(n), (double)n->scroll_x, (double)n->scroll_y);
 	ak_buf_u8(b, '\n');
 	for (uint32_t i = 0; i < n->nkids; i++) walk(b, n->kids[i], depth + 1);
@@ -324,7 +337,8 @@ bool wh_on_screen(node *n) {
 static bool wstr_is(const wstr *s, const wchar_t *t) { return s->n && wcscmp(s->p, t) == 0; }
 
 static bool shows(node *n, const wchar_t *t) {
-	return (n->kind != AK_KIND_TEXT_FIELD && wstr_is(&n->text, t)) || (n->kind == AK_KIND_BUTTON && wstr_is(&n->title, t)) ||
+	return (n->kind != AK_KIND_TEXT_FIELD && wstr_is(&n->text, t)) ||
+		((n->kind == AK_KIND_BUTTON || n->kind == AK_KIND_CHIP || n->kind == AK_KIND_DISCLOSURE) && wstr_is(&n->title, t)) ||
 		(n->kind == AK_KIND_TEXT_FIELD && wstr_is(&n->placeholder, t));
 }
 
@@ -618,6 +632,27 @@ static void step(const char *verb, const char *arg) {
 			if ((n->kind == AK_KIND_SCROLL || n->kind == AK_KIND_LIST) && wh_on_screen(n) && (!s || n->id > s->id)) s = n;
 		}
 		if (s) wh_scroll_to_offset(s, 0, y);
+	} else if (!strcmp(verb, "remove")) {
+		// A click on a removable chip's remove button, the chip found by
+		// its title.
+		HWND h;
+		LPARAM lp;
+		if (!wh_chip_remove_point(warg, &h, &lp)) wh_log("automation: no removable chip \"%s\"", arg);
+		else click(h, lp);
+	} else if (!strcmp(verb, "dropdown")) {
+		// A click on a Dropdown field's chevron (the field by its
+		// placeholder; empty: the first).
+		if (!wh_suggest_chevron(warg)) wh_log("automation: no dropdown field \"%s\"", arg);
+	} else if (!strcmp(verb, "pickdate")) {
+		// pickdate:start,2026-12-01: a day chosen on a DateRangePicker's
+		// picker (start or end).
+		char which[8] = {0};
+		const char *comma = strchr(arg, ',');
+		if (comma && comma - arg < (ptrdiff_t)sizeof which) memcpy(which, arg, (size_t)(comma - arg));
+		if (!comma || !wh_range_pick(which, comma + 1)) wh_log("automation: no date range picker for \"%s\"", arg);
+	} else if (!strcmp(verb, "calday")) {
+		// A click on a day of an inline DateRangePicker's calendar.
+		if (!wh_range_click_day(atoi(arg))) wh_log("automation: no calendar day \"%s\"", arg);
 	} else if (!strcmp(verb, "escape")) {
 		if (open_menu_window()) EndMenu();
 		else if (H.nsheets) wh_cancel_sheet(wh_node_of(wh_nav_window(H.sheets[H.nsheets - 1])));

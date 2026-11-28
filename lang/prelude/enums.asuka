@@ -339,3 +339,9 @@ enum SelectionMode {
   multiple
   off
 }
+
+enum ImageCache {
+  default
+  memory
+  off
+}

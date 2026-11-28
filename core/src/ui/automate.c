@@ -193,6 +193,16 @@ static void tap(ak_span arg, ak_buf *out) {
 			ak_buf_put(out, "ok\n", 3);
 			return;
 		}
+		// A filter chip and a disclosure's header flip, as a tap does.
+		bool flips = (e->kind == AK_KIND_CHIP && ak_chip_filter(e)) || e->kind == AK_KIND_DISCLOSURE;
+		if (flips && listens(e, AK_EVENT_TOGGLED)) {
+			bool now = ak_toggled_state(e);
+			ak_prop p = e->kind == AK_KIND_CHIP ? AK_PROP_CHIP_SELECTED : AK_PROP_DISCLOSURE_EXPANDED;
+			if (e->r && !e->r->disposed) ak_batch_set_bool(e->r->batch, e->id, p, !now);
+			ak_ui_dispatch_event(&(ak_event){.id = e->id, .kind = AK_EVENT_TOGGLED, .b = !now});
+			ak_buf_put(out, "ok\n", 3);
+			return;
+		}
 		if (listens(e, AK_EVENT_PRESS)) {
 			send(e, AK_EVENT_PRESS, (ak_span){0});
 			ak_buf_put(out, "ok\n", 3);
@@ -811,6 +821,7 @@ static int selected(ak_view *v, ak_span t) {
 	if (tt.selected >= 0) return tt.selected;
 	for (ak_view *e = v; e; e = outer(e)) {
 		if (e->el == AK_EL_TOGGLE) return key_on(e, AK_KEY_TOGGLE_ON);
+		if ((e->kind == AK_KIND_CHIP && ak_chip_filter(e)) || e->kind == AK_KIND_DISCLOSURE) return ak_toggled_state(e);
 		if (ak_style_get(e, AK_KEY_A11Y_SELECTED)) return key_on(e, AK_KEY_A11Y_SELECTED);
 		uint16_t k = ak_ext_key(e, AK_KEY_VIEW_SELECTED);
 		if (k && ak_style_get(e, k)) return key_on(e, k);

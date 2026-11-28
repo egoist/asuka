@@ -83,6 +83,18 @@ struct AsukaOffer {
             return .zero
         case .pageControl:
             return measureDots(n)
+        case .chip:
+            // Its title, icon (or checkmark) and remove button's room, in
+            // the recessed bezel (Chip.swift).
+            return (v as? NSControl)?.cell?.cellSize ?? v.intrinsicContentSize
+        case .disclosure:
+            // As wide as it's laid out (its title truncates), as tall as its
+            // row.
+            var s = (v as? AsukaDisclosureView)?.fit() ?? .zero
+            if let w = c.finiteWidth, !c.maxContent { s.width = min(s.width, w) }
+            return s
+        case .dateRangePicker:
+            return (v as? AsukaDateRangeView)?.fit() ?? .zero
         case .native:
             var w = c.width, h = c.height
             if w.isNaN, c.availWidth.isFinite { w = c.availWidth }

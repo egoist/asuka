@@ -1130,8 +1130,13 @@ fun AsukaRuntime.setNavProp(n: AsukaNode, prop: Int, v: Any): Boolean {
             AsukaProp.Image.TRANSITION -> (n.view as AsukaImageView).transition = v as Double
             AsukaProp.Image.PAUSED -> (n.view as AsukaImageView).paused = v as Boolean
             AsukaProp.Image.MODE -> (n.view as android.widget.ImageView).scaleType = imageScaleType(v as Int)
+            AsukaProp.Image.HEADERS -> n.imageHeaders = decodeHeaders(v as java.nio.ByteBuffer)
+            AsukaProp.Image.CACHE -> n.imageCache = v as Int
             else -> return false
         }
+        AsukaKind.CHIP -> return setChipProp(n, prop, v)
+        AsukaKind.DATE_RANGE_PICKER -> return setDateRangeProp(n, prop, v)
+        AsukaKind.DISCLOSURE -> return setDisclosureProp(n, prop, v)
         AsukaKind.NATIVE -> return setNativeProp(n, prop, v)
         AsukaKind.PAGE_CONTROL -> (n.view as AsukaPageDots).let {
             when (prop) {

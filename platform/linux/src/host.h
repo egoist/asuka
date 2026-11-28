@@ -83,6 +83,7 @@ typedef struct date_picker date_picker;
 typedef struct dnd_state dnd_state;
 typedef struct a11y_state a11y_state;
 typedef struct search_field search_field;
+typedef struct suggest suggest;
 
 struct node {
 	ak_id id;
@@ -162,6 +163,7 @@ struct node {
 	gint64 pulsed;  // an indeterminate Progress's last pulse (µs)
 
 	field *field;
+	suggest *suggest;  // a TextField's Suggestions (suggest.c)
 	events *events;
 	transition *transition;
 	tween *tw;  // its animation in progress (anim.c)
@@ -668,6 +670,12 @@ void lx_release_field(node *n);
 bool lx_composing(GtkWidget *w);
 void lx_watch_preedit(GtkWidget *w);
 void lx_field_command(node *n, ak_cmd c, ak_span args);
+void lx_field_put_text(node *n, const char *s);
+// suggest.c: a field's suggestions, as its entry is made, typed in and
+// focused.
+void lx_suggest_attach(node *n);
+void lx_suggest_typed(node *n);
+void lx_suggest_focus(node *n, bool in);
 
 // controls.c
 void lx_make_toggle(node *n, bool checkbox);

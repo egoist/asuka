@@ -135,8 +135,12 @@ extension AsukaEnvironment {
             s.keepEnd()
         case let s as AsukaSymbolView:
             s.refresh()
-        case is AsukaDatePickerView:
+        case is AsukaDatePickerView, is AsukaDateRangeView:
             view.setNeedsLayout()
+        case let c as AsukaChipView:
+            c.update() // its insets and the remove button's end
+        case let d as AsukaDisclosureView:
+            d.directionChanged()
         default:
             break
         }

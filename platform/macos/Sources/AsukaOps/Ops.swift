@@ -44,6 +44,9 @@ public enum AsukaKind: UInt16 {
     case overlay = 39
     case table = 40
     case outline = 41
+    case chip = 42
+    case dateRangePicker = 43
+    case disclosure = 44
 
     public var name: String {
         switch self {
@@ -88,6 +91,9 @@ public enum AsukaKind: UInt16 {
         case .overlay: return "Overlay"
         case .table: return "Table"
         case .outline: return "Outline"
+        case .chip: return "Chip"
+        case .dateRangePicker: return "DateRangePicker"
+        case .disclosure: return "Disclosure"
         }
     }
 }
@@ -191,6 +197,8 @@ public enum AsukaProp {
         public static let rich: UInt16 = 75
         public static let pasteTypes: UInt16 = 76
         public static let accessory: UInt16 = 77
+        public static let suggestions: UInt16 = 78
+        public static let dropdown: UInt16 = 79
     }
 
     public enum Toggle {
@@ -285,6 +293,8 @@ public enum AsukaProp {
         public static let placeholderMode: UInt16 = 68
         public static let transition: UInt16 = 69
         public static let paused: UInt16 = 70
+        public static let headers: UInt16 = 71
+        public static let cache: UInt16 = 72
     }
 
     public enum Native {
@@ -457,6 +467,27 @@ public enum AsukaProp {
         public static let selection: UInt16 = 66
         public static let rowHeight: UInt16 = 67
     }
+
+    public enum Chip {
+        public static let title: UInt16 = 64
+        public static let icon: UInt16 = 65
+        public static let filter: UInt16 = 66
+        public static let selected: UInt16 = 67
+        public static let removable: UInt16 = 68
+    }
+
+    public enum DateRangePicker {
+        public static let start: UInt16 = 64
+        public static let end: UInt16 = 65
+        public static let min: UInt16 = 66
+        public static let max: UInt16 = 67
+        public static let inline: UInt16 = 68
+    }
+
+    public enum Disclosure {
+        public static let title: UInt16 = 64
+        public static let expanded: UInt16 = 65
+    }
 }
 
 public enum AsukaEventKind: UInt16 {
@@ -540,6 +571,9 @@ public enum AsukaEventKind: UInt16 {
     case expand = 78
     case undo = 79
     case restoreWindow = 80
+    case remove = 81
+    case rangeChanged = 82
+    case suggestion = 83
 }
 
 public enum AsukaCommand: UInt16 {
@@ -1043,6 +1077,12 @@ public enum AsukaSelectionMode: Int32 {
     case none = 2
 }
 
+public enum AsukaImageCache: Int32 {
+    case `default` = 0
+    case memory = 1
+    case none = 2
+}
+
 /// A prop value. Bytes are valid only during the handler call.
 public enum AsukaValue {
     case bool(Bool)
@@ -1456,5 +1496,14 @@ public enum AsukaEvents {
     }
     public static func restoreWindow(_ id: UInt32, _ v: String) -> [UInt8] {
         var w = AsukaWriter(); w.header(id, 80); w.string(v); return w.bytes
+    }
+    public static func remove(_ id: UInt32) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 81); return w.bytes
+    }
+    public static func rangeChanged(_ id: UInt32, x: Double, y: Double) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 82); w.f64(x); w.f64(y); return w.bytes
+    }
+    public static func suggestion(_ id: UInt32, _ v: Int64) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 83); w.u64(UInt64(bitPattern: v)); return w.bytes
     }
 }

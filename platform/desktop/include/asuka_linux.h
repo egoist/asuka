@@ -117,6 +117,7 @@ typedef struct _GThread GThread;
 typedef gpointer (*GThreadFunc)(gpointer data);
 typedef guint (*GHashFunc)(gconstpointer key);
 typedef gboolean (*GEqualFunc)(gconstpointer a, gconstpointer b);
+typedef gboolean (*GHRFunc)(gpointer key, gpointer value, gpointer user_data);
 typedef struct _SoupSession SoupSession;
 typedef struct _SoupMessage SoupMessage;
 typedef struct _SoupMessageHeaders SoupMessageHeaders;
@@ -596,6 +597,7 @@ typedef struct _GdkRectangle {
 typedef struct _GdkDisplay GdkDisplay;
 typedef struct _GdkMonitor GdkMonitor;
 typedef struct _GdkSurface GdkSurface;
+typedef struct _GdkPopup GdkPopup;
 typedef struct _GdkToplevel GdkToplevel;
 typedef struct _GdkTexture GdkTexture;
 typedef struct _GdkMemoryTexture GdkMemoryTexture;
@@ -800,6 +802,7 @@ typedef GListModel *(*GtkTreeListModelCreateModelFunc)(gpointer item, gpointer u
 typedef struct _GtkColorDialog GtkColorDialog;
 typedef struct _GtkColorDialogButton GtkColorDialogButton;
 typedef struct _GtkCalendar GtkCalendar;
+typedef struct _GtkExpander GtkExpander;
 typedef struct _GtkSpinButton GtkSpinButton;
 typedef struct _GtkPopover GtkPopover;
 typedef struct _GtkPopoverMenu GtkPopoverMenu;
@@ -886,6 +889,7 @@ typedef enum {
 } GtkEventControllerScrollFlags;
 typedef enum { GTK_SIZE_REQUEST_HEIGHT_FOR_WIDTH, GTK_SIZE_REQUEST_WIDTH_FOR_HEIGHT, GTK_SIZE_REQUEST_CONSTANT_SIZE } GtkSizeRequestMode;
 typedef enum { GTK_POS_LEFT, GTK_POS_RIGHT, GTK_POS_TOP, GTK_POS_BOTTOM } GtkPositionType;
+typedef enum { GTK_ENTRY_ICON_PRIMARY, GTK_ENTRY_ICON_SECONDARY } GtkEntryIconPosition;
 typedef enum { GTK_WRAP_NONE, GTK_WRAP_CHAR, GTK_WRAP_WORD, GTK_WRAP_WORD_CHAR } GtkWrapMode;
 typedef enum {
 	GTK_INPUT_PURPOSE_FREE_FORM,

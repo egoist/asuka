@@ -1,0 +1,61 @@
+// Package platform/image is what's around the prelude's Image: its
+// caches. prefetch loads pictures before they show (the next page's
+// thumbnails), so an Image of one shows it at once; clearCache forgets
+// them (a user who signed out, a setting's Clear Cache).
+//
+//   image.prefetch(["https://example.com/a.jpg"], headers: ["Authorization": "Bearer {token}"])
+//   image.clearCache(disk: false)   // memory only
+//
+// Each platform keeps pictures as Image does: decoded in memory, and one
+// fetched over http(s) on disk too (256 MB in the app's caches) unless
+// its response says no-store. A browser keeps them in its own cache,
+// which a page can't clear: on the web clearCache forgets what the page
+// keeps in memory and what it fetched with headers.
+
+import platform/host
+
+/// Loads each of urls (http(s) URLs, assets' paths, files' paths) into
+/// the caches, as an Image of it would, in the background: decoded in
+/// memory, and kept on disk when it came over http(s). headers go with
+/// each request (an authenticated image's). It doesn't wait: a picture
+/// that can't be loaded is left out, and an Image of it says why.
+pub fn prefetch(urls: [string], headers: [string: string] = [:]) {
+  if urls.isEmpty() {
+    return
+  }
+  host.send("image", "prefetch", strings(urls).concat(headerBytes(headers)))
+}
+
+/// Forgets the pictures kept: in memory (the decoded ones), on disk (the
+/// files fetched over http(s)), or both. Images showing keep what they
+/// show; one shown again is loaded again.
+pub fn clearCache(memory: bool = true, disk: bool = true) {
+  var flags = 0
+  if memory {
+    flags += 1
+  }
+  if disk {
+    flags += 2
+  }
+  if flags != 0 {
+    host.send("image", "clearCache", host.u8(flags))
+  }
+}
+
+fn strings(list: [string]) -> bytes {
+  var b = host.u32(list.count())
+  for s in list {
+    b = b.concat(host.str(s))
+  }
+  return b
+}
+
+// headerBytes is as an Image's Headers prop: u32 count (twice the
+// headers'), then each name and value in turn.
+fn headerBytes(headers: [string: string]) -> bytes {
+  var b = host.u32(headers.count() * 2)
+  for (name, value) in headers {
+    b = b.concat(host.str(name)).concat(host.str(value))
+  }
+  return b
+}

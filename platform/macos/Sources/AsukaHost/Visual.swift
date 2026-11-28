@@ -96,6 +96,7 @@ import AsukaOps
         if let r = n.ring { r.restyle(self, n) }
         if n.kind == .canvas { n.view?.needsDisplay = true }
         if let x = n.image, let shown = x.shown { setPlaceholderImage(n, shown, x.tinted) }
+        if let x = n.image, x.fill?.mask != nil { showImage(n, x.image) } // a filled image's tint (Image.swift)
     }
 
     /// n's direction was applied: a symbol mirrors with it.
@@ -160,9 +161,10 @@ import AsukaOps
     }
 
     /// The host's module of this part: "web" (a WebView's script and the
-    /// web views' cookies).
+    /// web views' cookies), "image" (the images' caches: Image.swift).
     func registerVisualModules() {
         registerWebModules()
+        registerImageModule()
         registerCaptureModule() // Capture.swift: a view into an image file
     }
 

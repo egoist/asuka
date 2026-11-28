@@ -95,6 +95,35 @@ import AsukaOps
                     loadImage(n)
                 }
             case AsukaProp.Image.mode: n.mode = v.enumValue
+            case AsukaProp.Image.headers:
+                if case .bytes(let b) = v {
+                    let s = asukaTitles(b)
+                    n.headers = Dictionary(stride(from: 0, to: s.count - 1, by: 2).map { (s[$0], s[$0 + 1]) }) { _, last in last }
+                }
+            case AsukaProp.Image.cache: n.imageCache = v.enumValue
+            default: break
+            }
+        case .chip:
+            switch prop {
+            case AsukaProp.Chip.title: n.title = v.string
+            case AsukaProp.Chip.icon: n.icon = v.string
+            case AsukaProp.Chip.filter: n.filter = v.bool
+            case AsukaProp.Chip.selected: n.on = v.bool
+            case AsukaProp.Chip.removable: n.removable = v.bool
+            default: break
+            }
+        case .dateRangePicker:
+            switch prop {
+            case AsukaProp.DateRangePicker.start: n.rangeStart = Double(v.int)
+            case AsukaProp.DateRangePicker.end: n.rangeEnd = Double(v.int)
+            case AsukaProp.DateRangePicker.min: n.min = Double(v.int)
+            case AsukaProp.DateRangePicker.max: n.max = Double(v.int)
+            default: break // Inline: the watch's pickers are its own, a wheel each
+            }
+        case .disclosure:
+            switch prop {
+            case AsukaProp.Disclosure.title: n.title = v.string
+            case AsukaProp.Disclosure.expanded: n.on = v.bool
             default: break
             }
         case .symbol:
@@ -273,12 +302,25 @@ import AsukaOps
             done(decodeImage(try? Data(contentsOf: url)))
             return
         }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        // Its Headers with the request; Memory and None keep it off the
+        // disk (URLSession's cache), as Image's Cache says.
+        var req = URLRequest(url: url)
+        for (k, v) in n.headers { req.setValue(v, forHTTPHeaderField: k) }
+        let session = n.imageCache == 0 ? URLSession.shared : asukaUncachedSession
+        session.dataTask(with: req) { data, _, _ in
             let img = decodeImage(data)
             DispatchQueue.main.async { MainActor.assumeIsolated { done(img) } }
         }.resume()
     }
 }
+
+/// Fetches whose responses stay off the disk.
+let asukaUncachedSession: URLSession = {
+    let c = URLSessionConfiguration.default
+    c.urlCache = nil
+    c.requestCachePolicy = .reloadIgnoringLocalCacheData
+    return URLSession(configuration: c)
+}()
 
 /// An image's bytes decoded (PNG, JPEG, HEIC...).
 func decodeImage(_ data: Data?) -> CGImage? {

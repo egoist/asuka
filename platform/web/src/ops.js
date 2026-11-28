@@ -43,10 +43,13 @@ export const Kind = Object.freeze({
   Overlay: 39,
   Table: 40,
   Outline: 41,
+  Chip: 42,
+  DateRangePicker: 43,
+  Disclosure: 44,
 });
 
 /** Kind names, by kind. */
-export const kindNames = ["", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay", "Table", "Outline"];
+export const kindNames = ["", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay", "Table", "Outline", "Chip", "DateRangePicker", "Disclosure"];
 
 /** Props every kind has. */
 export const Prop = Object.freeze({
@@ -118,7 +121,7 @@ export const KindProp = Object.freeze({
   View: Object.freeze({ DropAccept: 64, DragItems: 65, TakesClicks: 66, PanAxis: 67, PanMinDistance: 68, PanSimultaneous: 69 }),
   Text: Object.freeze({ Text: 64 }),
   Button: Object.freeze({ Title: 64, Variant: 65, Icon: 66 }),
-  TextField: Object.freeze({ Value: 64, Placeholder: 65, Keyboard: 66, ReturnKey: 67, Secure: 68, Autocapitalize: 69, Autocorrect: 70, ContentType: 71, Multiline: 72, Plain: 73, Selection: 74, Rich: 75, PasteTypes: 76, Accessory: 77 }),
+  TextField: Object.freeze({ Value: 64, Placeholder: 65, Keyboard: 66, ReturnKey: 67, Secure: 68, Autocapitalize: 69, Autocorrect: 70, ContentType: 71, Multiline: 72, Plain: 73, Selection: 74, Rich: 75, PasteTypes: 76, Accessory: 77, Suggestions: 78, Dropdown: 79 }),
   Toggle: Object.freeze({ On: 64, Checkbox: 65 }),
   Slider: Object.freeze({ Value: 64, Min: 65, Max: 66 }),
   Scroll: Object.freeze({ Horizontal: 64, Refreshable: 65, Refreshing: 66, Paging: 67, EdgeEffect: 68, MinZoom: 69, MaxZoom: 70 }),
@@ -129,7 +132,7 @@ export const KindProp = Object.freeze({
   Tabs: Object.freeze({ Selected: 64 }),
   Sheet: Object.freeze({ Detents: 64, Grabber: 65, Window: 66, FullScreen: 67, Routed: 68, Detent: 69, Undimmed: 70, CornerRadius: 71, NoDismiss: 72 }),
   Alert: Object.freeze({ Title: 64, Message: 65, Buttons: 66, Style: 67, Window: 68, Fields: 69 }),
-  Image: Object.freeze({ Source: 64, Mode: 65, Placeholder: 66, PlaceholderImage: 67, PlaceholderMode: 68, Transition: 69, Paused: 70 }),
+  Image: Object.freeze({ Source: 64, Mode: 65, Placeholder: 66, PlaceholderImage: 67, PlaceholderMode: 68, Transition: 69, Paused: 70, Headers: 71, Cache: 72 }),
   Native: Object.freeze({ Type: 64, Prop: 65 }),
   RichText: Object.freeze({ Content: 64, Inlines: 65 }),
   Symbol: Object.freeze({ Name: 64 }),
@@ -155,6 +158,9 @@ export const KindProp = Object.freeze({
   Overlay: Object.freeze({ Root: 64, Anchor: 65, Modal: 66 }),
   Table: Object.freeze({ Columns: 64, Sort: 65, SelectionMode: 66, Selection: 67, RowHeight: 68, ColumnsMovable: 69 }),
   Outline: Object.freeze({ Levels: 64, SelectionMode: 65, Selection: 66, RowHeight: 67 }),
+  Chip: Object.freeze({ Title: 64, Icon: 65, Filter: 66, Selected: 67, Removable: 68 }),
+  DateRangePicker: Object.freeze({ Start: 64, End: 65, Min: 66, Max: 67, Inline: 68 }),
+  Disclosure: Object.freeze({ Title: 64, Expanded: 65 }),
 });
 
 /** Events hosts send. */
@@ -239,6 +245,9 @@ export const Event = Object.freeze({
   Expand: 78,
   Undo: 79,
   RestoreWindow: 80,
+  Remove: 81,
+  RangeChanged: 82,
+  Suggestion: 83,
 });
 
 /** Commands the core sends. */
@@ -340,6 +349,7 @@ export const PanAxis = Object.freeze({ Both: 0, Horizontal: 1, Vertical: 2 });
 export const DetentKind = Object.freeze({ Medium: 0, Large: 1, Fit: 2, Height: 3, Fraction: 4 });
 export const Cursor = Object.freeze({ Auto: 0, Arrow: 1, Pointer: 2, Text: 3, Crosshair: 4, Move: 5, Grab: 6, Grabbing: 7, NotAllowed: 8, Wait: 9, Progress: 10, Help: 11, ContextMenu: 12, Copy: 13, Alias: 14, ResizeHorizontal: 15, ResizeVertical: 16, ResizeDiagonal: 17, ResizeAntiDiagonal: 18, ResizeColumn: 19, ResizeRow: 20, ZoomIn: 21, ZoomOut: 22, Hidden: 23 });
 export const SelectionMode = Object.freeze({ Single: 0, Multiple: 1, None: 2 });
+export const ImageCache = Object.freeze({ Default: 0, Memory: 1, None: 2 });
 
 const utf8 = new TextDecoder();
 const utf8Out = new TextEncoder();
@@ -559,4 +569,7 @@ export const Events = Object.freeze({
   expand: (id, x, y) => new Writer().header(id, 78).f64(x).f64(y).done(),
   undo: (id, v) => new Writer().header(id, 79).i64(v).done(),
   restoreWindow: (id, v) => new Writer().header(id, 80).string(v).done(),
+  remove: (id) => new Writer().header(id, 81).done(),
+  rangeChanged: (id, x, y) => new Writer().header(id, 82).f64(x).f64(y).done(),
+  suggestion: (id, v) => new Writer().header(id, 83).i64(v).done(),
 });

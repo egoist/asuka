@@ -201,6 +201,7 @@ static BOOL WINAPI console_ctrl(DWORD type) {
 // among the controls, as in a dialog.
 bool wh_pre_translate(MSG *m) {
 	if (wh_dev_error_key(m)) return true;  // asuka dev's error overlay's, over all
+	if (wh_suggest_key(m)) return true;  // a field's suggestions showing: the arrows, Enter, Escape
 	if (wh_route_key(m)) return true;  // the views' Keys, first
 	HWND w = wh_key_window(m->hwnd);
 	if (!w) return false;

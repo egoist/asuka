@@ -447,7 +447,7 @@ void wh_destroy_snack(node *n) {
 	leave_snack(n);
 }
 
-bool wh_tap_overlay(const wchar_t *t) { return wh_snack_tap(t) || wh_alert_dialog_tap(t) || wh_pane_tap(t) || wh_combo_tap(t); }
+bool wh_tap_overlay(const wchar_t *t) { return wh_snack_tap(t) || wh_alert_dialog_tap(t) || wh_pane_tap(t) || wh_combo_tap(t) || wh_suggest_tap(t); }
 
 // wh_snack_tap is automation's tap on a snackbar showing: its action's
 // title, or Close.

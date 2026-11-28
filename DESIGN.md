@@ -346,6 +346,10 @@ effect. A style is a set of keys like any other.
 | `Activity` (spinner) | UIActivityIndicatorView | CircularProgressIndicator |
 | `Picker` (a menu of options) | UIButton with a menu (`changesSelectionAsPrimaryAction`) | exposed dropdown menu (TextInputLayout, MaterialAutoCompleteTextView) |
 | `ProgressRing` | drawn (SwiftUI's circular Gauge's look); UIActivityIndicatorView without a value | CircularProgressIndicator |
+| `Chip` | UIButton in the capsule style (UIKit has no chip) | Chip (Material 3: assist, suggestion, filter, input) |
+| `DateRangePicker` | two compact UIDatePickers; UICalendarView inline | a button opening MaterialDatePicker's date range picker |
+| `Disclosure` | a row with a chevron (the header; the core shows its content under it) | a Material list row with an expand icon |
+| `TextField`'s `suggestions` | a suggestion list under the field; a UIMenu for `dropdown` | MaterialAutoCompleteTextView |
 
 An element a host can't show yet is logged by that host with its name,
 so gaps are found, never silently drawn wrong. The fake host
@@ -1285,6 +1289,39 @@ thread, the data source calls straight in:
   the host shows its control, reports the user's choices
   (`RowSelected`), and the room the control takes from the rows
   (`RowInset`), at which the core lays them out again.
+
+### Chips, date ranges, disclosures, suggestions
+
+widgets.c. Each is a control that keeps what the host last reported
+(elements.c's rule), so the user's choice never round trips.
+
+- A `Chip`'s kind comes from what the app gives it, told before it's
+  inserted (a host makes its view by it): `selected` set makes it a
+  filter chip (`Filter`; the host toggles it and reports `Toggled`),
+  `on remove` an input chip (`Removable`; `Remove`). Its variant (filter,
+  selected, removable) keys the measure cache with its title and icon.
+- A `DateRangePicker`'s ends go to the host at the flush (its sync), once
+  both are the app's: the user's range writes start, then end, and the
+  host is told nothing back. `RangeChanged` carries both days' local
+  midnights (Unix milliseconds) as a point's doubles.
+- A `Disclosure` is a column the core lays out: its first kid a header
+  view of its own (kind `Disclosure`, measured, as wide as the column),
+  then, while it's expanded, its content, built from its lazy block under
+  an owner of its own and disposed as it closes. The header's
+  `Toggled` shows or hides the content at once; the element's text keys
+  go to the header.
+- A `TextField`'s `suggestions` are filtered by the core, the same on
+  every platform (contains, by Unicode's case folding; all of them while
+  the text is empty or equals one), and sent only when the list sent
+  changes; the host shows exactly them. A choice is `Suggestion`, its
+  index in what was sent, which the core maps back to the app's and
+  writes as the text (the host doesn't report it as typed).
+
+An `Image`'s `Headers` and `Cache` go before the `Source` they apply to:
+an image with either sends its source at the flush (its sync), after
+them, so a URL and a token that change together load together. The
+hosts' image caches are reached by `platform/image` through their
+built-in "image" module (`prefetch`, `clearCache`).
 
 ### Tables and outlines
 

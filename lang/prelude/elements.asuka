@@ -484,6 +484,12 @@ native component TextField() {
   prop focused: bool
   /// the MIME types (patterns, as "image/*") of what on paste takes instead of the text: pasted, or put in by the keyboard (a GIF keyboard's images)
   prop pasteTypes: [string]
+  /// makes it an autocomplete: the texts listed under it as the user types (those that contain what's typed, unless filterSuggestions is false), the platform's (Material's exposed dropdown, NSComboBox's list, a combo box's); choosing one puts it in the field (on suggestion). Set it, [] too, from the start for a field whose suggestions come later (a search's results)
+  prop suggestions: [string]
+  /// lists only the suggestions that contain what's typed, ignoring case (false: all of them, as the app filtered them already)
+  prop filterSuggestions: bool = true
+  /// with suggestions: a button at its end lists them all, a combo box's
+  prop dropdown: bool
   event change(text: string)
   /// return pressed (not in a multiline field)
   event submit
@@ -497,6 +503,8 @@ native component TextField() {
   event formats(formats: TextFormats)
   /// what was pasted of pasteTypes: images and files are the app's own copies, in its caches
   event paste(items: [SharedItem])
+  /// the user chose suggestion index (among suggestions): the text is it already
+  event suggestion(index: int)
   /// a bar on top of the keyboard while the field is focused (a count and Done, formatting buttons): as wide as the window, as tall as its content, built and gone with the field. Desktops don't show it
   prop accessory: View? = none
 }
@@ -610,6 +618,10 @@ native component Image(source: string) {
   prop placeholderMode: PlaceholderMode
   /// plays an animated image (GIF, APNG, WebP) while true, stops it where it is while false; none: it plays unless the user asked for less motion (Reduce Motion), when it shows its first frame
   prop animated: bool?
+  /// HTTP headers sent with the source's request: an authenticated image's ("Authorization"). The caches keep it by its URL alone
+  prop headers: [string: string]
+  /// where it's kept once loaded: .default (memory, and disk for http(s)), .memory (never on disk), .off (loaded each time it shows)
+  prop cache: ImageCache
   event loaded(width: float, height: float)
   event error(message: string)
 }
@@ -1170,4 +1182,45 @@ native component WindowCloseGuard() {
 native component WindowKeys() {
   /// what they run
   prop keys: [Shortcut]
+}
+
+/// a compact action, choice or entered item (Material's chips: assist, suggestion, filter, input): a capsule button on iOS, the platforms' toggle buttons on the desktops
+native component Chip(title: string) {
+  /// a symbol before its title (see Symbol): an assist chip's
+  prop icon: string
+  /// makes it a filter chip: pressing it toggles this, and it shows it's selected (Material's checkmark)
+  prop selected: bool
+  /// an action chip pressed (a filter chip changes instead)
+  event press
+  /// a filter chip pressed: selected or not now
+  event change(selected: bool)
+  /// makes it an input chip, an entered item: its remove button (an x at its end), Delete or Backspace while it has the keyboard's focus, or a screen reader's remove action
+  event remove
+}
+
+/// a range of days, chosen the platform's way (two date pickers, Material's date range picker, a calendar), in the device's time zone (std/time's time.RangePicker binds Times)
+native component DateRangePicker() {
+  /// the first day chosen, in milliseconds since 1970 (the user's choice writes its start, midnight in the device's time zone; 0: none chosen)
+  prop start: int
+  /// the last day chosen (its midnight; never before start)
+  prop end: int
+  /// the earliest day to choose, in milliseconds since 1970 (0: none)
+  prop min: int
+  /// the latest day to choose (0: none)
+  prop max: int
+  /// a calendar in place, the range marked on it, not fields or a button opening one
+  prop inline: bool
+  event startChange(start: int)
+  event endChange(end: int)
+  /// the user chose a range: its first and last days
+  event change(start: int, end: int)
+}
+
+/// a header that shows or hides the content in its block (SwiftUI's DisclosureGroup, an expander): the platform's disclosure indicator beside its title. The content is built as it opens and goes as it closes; its font and color are the header's
+native component Disclosure(title: string) {
+  prop children: View? = none
+  /// whether its content shows: pressing its header writes it, and writing it opens or closes it. Unbound, it keeps the user's choice (closed at first)
+  prop expanded: bool
+  /// its header pressed: expanded or not now
+  event change(expanded: bool)
 }

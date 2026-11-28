@@ -116,6 +116,16 @@ void wh_create(uint32_t id, uint16_t kind) {
 		n->hwnd = wh_make_view(0);
 		wh_make_date_controls(n);
 		break;
+	case AK_KIND_DATE_RANGE_PICKER:
+		n->hwnd = wh_make_view(0);
+		wh_make_range_controls(n);  // two date pickers, or a month calendar (datepicker.c)
+		break;
+	case AK_KIND_CHIP:
+		wh_make_chip(n);  // drawn as Fluent's toggle button, a pill (chip.c)
+		break;
+	case AK_KIND_DISCLOSURE:
+		wh_make_disclosure(n);  // drawn as WinUI's Expander's header (chip.c)
+		break;
 	case AK_KIND_TEXT_FIELD:
 		wh_make_field(n);
 		break;
@@ -186,6 +196,7 @@ void wh_theme_control(node *n) {
 		}
 		break;
 	case AK_KIND_DATE_PICKER:
+	case AK_KIND_DATE_RANGE_PICKER:
 		wh_theme_date(n);
 		break;
 	case AK_KIND_TABLE:
@@ -391,6 +402,15 @@ void wh_set_own(node *n, uint16_t p, const ak_value *v) {
 	case AK_KIND_DATE_PICKER:
 		wh_set_date_prop(n, p, v);
 		break;
+	case AK_KIND_DATE_RANGE_PICKER:
+		wh_set_range_prop(n, p, v);
+		break;
+	case AK_KIND_CHIP:
+		wh_set_chip_prop(n, p, v);
+		break;
+	case AK_KIND_DISCLOSURE:
+		wh_set_disclosure_prop(n, p, v);
+		break;
 	case AK_KIND_COLOR_PICKER:
 		if (p == AK_PROP_COLOR_PICKER_VALUE) n->color_value = (ak_color)v->i;
 		else if (p == AK_PROP_COLOR_PICKER_TITLE) wstr_set(&n->title, v->s);
@@ -511,6 +531,8 @@ void wh_set_common(node *n, uint16_t p, const ak_value *v) {
 			NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, n->ctl, OBJID_CLIENT, CHILDID_SELF);
 		}
 		if (n->hwnd && n->kind == AK_KIND_VIEW) SetWindowTextW(n->hwnd, wstr_c(&n->a11y_label));  // its accessible name
+		if (n->kind == AK_KIND_CHIP) wh_chip_label(n);  // its remove button's name
+		if (n->kind == AK_KIND_DATE_RANGE_PICKER) wh_name_range(n);  // its pickers'
 		break;
 	case AK_PROP_A11Y_HINT: case AK_PROP_A11Y_ROLE: case AK_PROP_A11Y_HIDDEN: case AK_PROP_A11Y_ACTIONS:
 	case AK_PROP_A11Y_ADJUSTABLE:
@@ -557,7 +579,8 @@ void wh_set_common(node *n, uint16_t p, const ak_value *v) {
 	case AK_PROP_DISABLED:
 		n->disabled = v->i != 0;
 		if (n->ctl) EnableWindow(n->ctl, !n->disabled);
-		if (n->ctl2 && (n->kind == AK_KIND_DATE_PICKER || n->kind == AK_KIND_STEPPER)) EnableWindow(n->ctl2, !n->disabled);
+		if (n->ctl2 && (n->kind == AK_KIND_DATE_PICKER || n->kind == AK_KIND_DATE_RANGE_PICKER || n->kind == AK_KIND_STEPPER)) EnableWindow(n->ctl2, !n->disabled);
+		if (n->kind == AK_KIND_TEXT_FIELD) wh_suggest_disabled(n);
 		wh_redraw(n);
 		break;
 	case AK_PROP_MENU:
@@ -658,7 +681,7 @@ void wh_set_common(node *n, uint16_t p, const ak_value *v) {
 void wh_update_tab_stop(node *n) {
 	if (!n->hwnd) return;
 	if (n->ctl) {
-		if (!n->focusable_set || n->kind == AK_KIND_STEPPER || n->kind == AK_KIND_DATE_PICKER) return;
+		if (!n->focusable_set || n->kind == AK_KIND_STEPPER || n->kind == AK_KIND_DATE_PICKER || n->kind == AK_KIND_DATE_RANGE_PICKER) return;
 		LONG_PTR st = GetWindowLongPtrW(n->ctl, GWL_STYLE);
 		SetWindowLongPtrW(n->ctl, GWL_STYLE, n->focusable ? st | WS_TABSTOP : st & ~(LONG_PTR)WS_TABSTOP);
 		return;
@@ -668,6 +691,13 @@ void wh_update_tab_stop(node *n) {
 		return;  // their own
 	}
 	if (n->nav || n->kind == AK_KIND_SPLIT) return;
+	if (n->kind == AK_KIND_CHIP || n->kind == AK_KIND_DISCLOSURE) {
+		// A control: a tab stop unless Focusable is false.
+		LONG_PTR st = GetWindowLongPtrW(n->hwnd, GWL_STYLE);
+		bool on = !(n->focusable_set && !n->focusable);
+		SetWindowLongPtrW(n->hwnd, GWL_STYLE, on ? st | WS_TABSTOP : st & ~(LONG_PTR)WS_TABSTOP);
+		return;
+	}
 	bool stop = n->focusable || (n->kind == AK_KIND_VIEW && (node_listening(n, AK_EVENT_PRESS) || n->na11y_actions)) || n->adjustable;
 	if (n->focusable_set && !n->focusable) stop = false;  // focusable: false
 	LONG_PTR st = GetWindowLongPtrW(n->hwnd, GWL_STYLE);
@@ -712,11 +742,12 @@ void wh_apply_font(node *n) {
 	if (n->kind == AK_KIND_TEXT) wh_text_changed(n);
 	if (n->rich) {
 		wh_rich_invalidate(n);
-	} else if (n->kind == AK_KIND_TEXT_FIELD || n->kind == AK_KIND_WHEEL || n->kind == AK_KIND_PICKER || n->kind == AK_KIND_DATE_PICKER) {
+	} else if (n->kind == AK_KIND_TEXT_FIELD || n->kind == AK_KIND_WHEEL || n->kind == AK_KIND_PICKER || n->kind == AK_KIND_DATE_PICKER ||
+		n->kind == AK_KIND_DATE_RANGE_PICKER) {
 		if (n->ctl) {
 			SendMessageW(n->ctl, WM_SETFONT, (WPARAM)wh_node_font(n), TRUE);
 			if (n->ctl2) SendMessageW(n->ctl2, WM_SETFONT, (WPARAM)wh_node_font(n), TRUE);
-			if (n->kind == AK_KIND_DATE_PICKER) wh_theme_date(n);
+			if (n->kind == AK_KIND_DATE_PICKER || n->kind == AK_KIND_DATE_RANGE_PICKER) wh_theme_date(n);
 			wh_layout_field(n);
 		}
 	} else if (n->kind == AK_KIND_BUTTON && n->ctl) {
@@ -764,6 +795,8 @@ void wh_direction_changed(node *n) {
 	else if (n->kind == AK_KIND_WHEEL || n->kind == AK_KIND_PICKER) wh_remake_combo(n);
 	else if (n->kind == AK_KIND_SLIDER) wh_apply_slider(n);
 	else if (n->kind == AK_KIND_STEPPER) wh_layout_stepper(n);
+	else if (n->kind == AK_KIND_CHIP) wh_layout_chip(n);
+	else if (n->kind == AK_KIND_DATE_RANGE_PICKER) wh_layout_field(n);
 	else if (n->kind == AK_KIND_SCROLL) wh_restart_scroll(n);
 	else if (n->kind == AK_KIND_STACK) wh_layout_screens(n);
 	else if (n->list) wh_list_rebind(n);
@@ -850,6 +883,7 @@ LRESULT wh_notify(node *n, NMHDR *hdr, LPARAM lp, bool *handled) {
 	}
 	if (n->table && n->kind != KIND_TABLE_CELL) return wh_table_notify(n, hdr, lp, handled);
 	if (n->kind == AK_KIND_DATE_PICKER) return wh_date_notify(n, hdr, lp, handled);
+	if (n->kind == AK_KIND_DATE_RANGE_PICKER) return wh_range_notify(n, hdr, lp, handled);
 	if (n->kind == AK_KIND_TEXT_FIELD) return wh_field_notify(n, hdr, lp, handled);
 	if (n->rich) return wh_rich_notify(n, hdr, lp, handled);
 	return 0;
@@ -925,7 +959,7 @@ bool wh_interactive(const node *n) {
 	case KIND_TAB_BAR: case KIND_SIDEBAR: case KIND_COMMAND_BAR: case AK_KIND_BUTTON: case AK_KIND_TOGGLE:
 	case AK_KIND_SLIDER: case AK_KIND_STEPPER: case AK_KIND_WHEEL: case AK_KIND_PICKER: case AK_KIND_DATE_PICKER:
 	case AK_KIND_COLOR_PICKER: case AK_KIND_WEB_VIEW: case AK_KIND_VIDEO: case AK_KIND_PAGE_CONTROL: case AK_KIND_TABLE:
-	case AK_KIND_OUTLINE:
+	case AK_KIND_OUTLINE: case AK_KIND_CHIP: case AK_KIND_DISCLOSURE: case KIND_CHIP_REMOVE: case AK_KIND_DATE_RANGE_PICKER:
 		return true;
 	}
 	return false;

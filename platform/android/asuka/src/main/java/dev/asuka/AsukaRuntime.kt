@@ -619,6 +619,9 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
                 (n.view as? AsukaSegmented)?.restyle()
                 (n.view as? AsukaPicker)?.restyle()
                 (n.view as? AsukaDatePicker)?.refresh() // says the date in the language
+                (n.view as? AsukaDateRangePicker)?.restyle()
+                (n.view as? AsukaDisclosure)?.let { it.restyle(); applyText(n); applyColor(n) }
+                if (n.view is AsukaChip) restyleChip(n, force = true)
                 if (n.kind == AsukaKind.SHEET && n.fullScreen) styleFullScreen(n, night)
             }
         }
@@ -632,7 +635,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     private val rebuilt = setOf(AsukaKind.TEXT, AsukaKind.BUTTON, AsukaKind.TEXT_FIELD, AsukaKind.TOGGLE, AsukaKind.SLIDER, AsukaKind.ACTIVITY, AsukaKind.PROGRESS_RING)
 
     /** Makes n's view again with the current theme, replaying its props and keeping the user's state. */
-    private fun rebuild(n: AsukaNode) {
+    fun rebuild(n: AsukaNode) {
         val old = n.view
         val v = makeView(n.id, n.kind)
         n.view = v
@@ -776,6 +779,9 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             // shows one activity, which the system sizes in split screen and
             // a desktop's windows: the Window's content shows nothing.
             AsukaKind.WINDOW -> AsukaContainer(ctx)
+            AsukaKind.CHIP -> AsukaChip(this, id, AsukaChipStyle.SUGGESTION)
+            AsukaKind.DATE_RANGE_PICKER -> AsukaDateRangePicker(this, id)
+            AsukaKind.DISCLOSURE -> AsukaDisclosure(this, id)
             else -> error("asuka: the Android host can't show ${AsukaKind.name(kind)} ($kind) yet")
         }.also { if (rtl) it.layoutDirection = View.LAYOUT_DIRECTION_RTL }
     }
@@ -798,26 +804,39 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
 
     private var heightCheckQueued = false
 
-    private fun makeTextField(id: Int) = AsukaEditText(themed, this, id).apply {
+    /** A TextField's view: a suggestion field once it has Suggestions (AsukaSuggestField), else AsukaEditText. */
+    private fun makeTextField(id: Int): android.widget.EditText {
+        val list = nodes[id]?.suggestions
+        val e: android.widget.EditText = if (list != null) AsukaSuggestField(themed, this, id).also { it.setItems(list) } else AsukaEditText(themed, this, id)
+        return wireField(e, id)
+    }
+
+    private fun wireField(field: android.widget.EditText, id: Int) = field.apply {
+        val rich = this as? AsukaEditText
+        val suggest = this as? AsukaSuggestField
         isSingleLine = true
         textAlignment = View.TEXT_ALIGNMENT_VIEW_START
         imeOptions = EditorInfo.IME_ACTION_DONE
         addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
-                if (!settingProp) richWillChange(s, start, count, after)
+                if (!settingProp) rich?.richWillChange(s, start, count, after)
             }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                changeStart = start
-                changeCount = count
-                richDidChange(start, count)
+                if (rich == null) return
+                rich.changeStart = start
+                rich.changeCount = count
+                rich.richDidChange(start, count)
             }
             override fun afterTextChanged(s: Editable?) {
+                // A suggestion chosen goes in without TextChanged: Suggestion says it.
+                if (suggest?.choosing == true) return
                 if (!settingProp) {
+                    suggest?.userTyped()
                     val t = s?.toString() ?: ""
                     emit(id, AsukaEventKind.TEXT_CHANGED) { AsukaEvents.textChanged(id, t) }
                     nodes[id]?.let { n ->
-                        if (rich && !history.restoring) {
-                            typedRich(n, changeStart, changeCount)
+                        if (rich != null && rich.rich && !rich.history.restoring) {
+                            typedRich(n, rich.changeStart, rich.changeCount)
                             richChanged(n)
                         }
                     }
@@ -922,7 +941,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
      * horizontal) and the new one doesn't get again: what TalkBack is
      * told, its tooltip, whether it's shown, enabled, and its transform.
      */
-    private fun carryViewProps(n: AsukaNode, old: View, v: View) {
+    fun carryViewProps(n: AsukaNode, old: View, v: View) {
         v.contentDescription = old.contentDescription
         androidx.core.view.ViewCompat.setStateDescription(v, androidx.core.view.ViewCompat.getStateDescription(old))
         // Its node's, over the new view's own. Any other is the old view's
@@ -1033,6 +1052,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         if (n.kind == AsukaKind.WEB_VIEW && prop == AsukaProp.WebView.BLOCK) { (n.view as AsukaWebView).setBlock(v); return }
         if (n.kind == AsukaKind.VIDEO) { (n.view as AsukaVideo).setBytes(prop, v); return }
         if (n.kind == AsukaKind.TEXT_FIELD && prop == AsukaProp.TextField.SELECTION) { setFieldSelection(n, v); return }
+        if (n.kind == AsukaKind.TEXT_FIELD && prop == AsukaProp.TextField.SUGGESTIONS) { setSuggestions(n, v); return }
         if (n.kind == AsukaKind.TEXT_FIELD && prop == AsukaProp.TextField.RICH) {
             val a = ByteArray(v.remaining())
             v.duplicate().get(a)

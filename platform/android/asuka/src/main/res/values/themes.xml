@@ -67,6 +67,20 @@
         <item name="textInputStyle">@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu</item>
     </style>
 
+    <!-- Chips (ui.Chip): Material 3's assist, suggestion, filter and input chips. -->
+    <style name="ThemeOverlay.Asuka.Chip.Assist" parent="">
+        <item name="chipStyle">@style/Widget.Material3.Chip.Assist</item>
+    </style>
+    <style name="ThemeOverlay.Asuka.Chip.Suggestion" parent="">
+        <item name="chipStyle">@style/Widget.Material3.Chip.Suggestion</item>
+    </style>
+    <style name="ThemeOverlay.Asuka.Chip.Filter" parent="">
+        <item name="chipStyle">@style/Widget.Material3.Chip.Filter</item>
+    </style>
+    <style name="ThemeOverlay.Asuka.Chip.Input" parent="">
+        <item name="chipStyle">@style/Widget.Material3.Chip.Input</item>
+    </style>
+
     <style name="ThemeOverlay.Asuka.SegmentedButton" parent="">
         <item name="materialButtonStyle">@style/Widget.Material3.Button.OutlinedButton</item>
     </style>
