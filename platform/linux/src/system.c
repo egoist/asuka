@@ -431,8 +431,9 @@ static void icloud_any(ak_span args, reply *r) {
 }
 
 // The photo library: a Linux desktop has none an app can read (photos are
-// files: platform/photos' pick and the file picker reach them). Access is
-// denied, and listing fails saying so.
+// files: device.pickMedia and the file picker reach them). Access is
+// denied, and every other method (counting, albums, deleting, changes)
+// fails saying so; stop has nothing to end.
 static void photos_denied(ak_span args, reply *r) {
 	(void)args;
 	reply_str(r, "denied");
@@ -440,7 +441,7 @@ static void photos_denied(ak_span args, reply *r) {
 
 static void photos_none(ak_span args, reply *r) {
 	(void)args;
-	reply_err(r, "not available: Linux has no photo library (pick photos with platform/photos' pick)");
+	reply_err(r, "not available: Linux has no photo library (pick photos and videos with device.pickMedia)");
 }
 
 static void push_none(ak_span args, reply *r) {
@@ -884,6 +885,13 @@ static const method_t system_methods[] = {
 	{"photoLibrary", "list", photos_none},
 	{"photoLibrary", "thumbnail", photos_none},
 	{"photoLibrary", "export", photos_none},
+	{"photoLibrary", "count", photos_none},
+	{"photoLibrary", "albums", photos_none},
+	{"photoLibrary", "createAlbum", photos_none},
+	{"photoLibrary", "addToAlbum", photos_none},
+	{"photoLibrary", "delete", photos_none},
+	{"photoLibrary", "nextChange", photos_none},
+	{"photoLibrary", "stop", nothing},
 	{"push", "rewritten", nothing},
 	{"push", "stop", nothing},
 	{"push", "*", push_none},

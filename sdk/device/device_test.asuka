@@ -16,3 +16,38 @@ test "no platform, no rich clipboard" {
   }
   expect(said.contains("unsupported"))
 }
+
+test "no platform, no picker" {
+  var said = ""
+  do {
+    let _ = try await pickMedia(kind: .videos)
+  } catch e {
+    said = e.message
+  }
+  expect(said.contains("unsupported"))
+}
+
+test "the fake picker: the kind asked, at most max, in the order picked" {
+  let f = fakePicker()
+  f.picked = [
+    Media(path: "/c/a.heic", type: "image/heic", width: 4032, height: 3024),
+    Media(path: "/c/b.mov", type: "video/quicktime", video: true, width: 1920, height: 1080, duration: 8s),
+    Media(path: "/c/c.jpg", type: "image/jpeg"),
+  ]
+  expect((try await pickMedia()).map(m => m.path) == ["/c/a.heic"])
+  expect((try await pickMedia(kind: .videos, max: 0)).map(m => m.duration) == [8s])
+  expect((try await pickMedia(kind: .all, max: 2, ordered: true)).map(m => m.path) == ["/c/a.heic", "/c/b.mov"])
+  expect((try await pickMedia(max: 0)).map(m => m.path) == ["/c/a.heic", "/c/c.jpg"])
+  expect(try await pickPhotos(max: 0) == ["/c/a.heic"])
+  let _ = try await pickMedia(max: 999, maxSize: -1, quality: 0.7)
+  expect(f.asked == [
+    PickRequest(kind: .images, max: 1, ordered: false, maxSize: 0, quality: 0),
+    PickRequest(kind: .videos, max: 0, ordered: false, maxSize: 0, quality: 0),
+    PickRequest(kind: .all, max: 2, ordered: true, maxSize: 0, quality: 0),
+    PickRequest(kind: .images, max: 0, ordered: false, maxSize: 0, quality: 0),
+    PickRequest(kind: .images, max: 1, ordered: false, maxSize: 0, quality: 0),
+    PickRequest(kind: .images, max: 255, ordered: false, maxSize: 0, quality: 0.7),
+  ])
+  f.picked = []
+  expect((try await pickMedia(kind: .all)).isEmpty())
+}

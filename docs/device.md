@@ -40,7 +40,7 @@ web need nothing declared (see each one's section below).
 | `platform/background` | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`, `WAKE_LOCK`; a foreground service | |
 | `platform/scan` | ML Kit's barcode model (about 2 MB) | |
 | `platform/vision` | ML Kit's text, face and barcode models (about 30 MB) | |
-| `platform/photos` | `READ_MEDIA_IMAGES`, `READ_MEDIA_VISUAL_USER_SELECTED`; `READ_EXTERNAL_STORAGE` (Android 12 and earlier) | `NSPhotoLibraryUsageDescription` |
+| `platform/photos` | `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_VISUAL_USER_SELECTED`; `READ_EXTERNAL_STORAGE` (Android 12 and earlier); `WRITE_EXTERNAL_STORAGE` (Android 9 and earlier: albums and deleting) | `NSPhotoLibraryUsageDescription` |
 | `platform/push` | Firebase Cloud Messaging, `POST_NOTIFICATIONS` | the `aps-environment` entitlement; `remote-notification` background mode |
 | `platform/analytics` | Firebase Analytics (`INTERNET`, `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `AD_ID`); `android.googleServices`' settings | Firebase Analytics, the file `ios.googleServices` names, from the app's launch |
 | `platform/appleauth` | | the Sign in with Apple entitlement |
@@ -116,12 +116,12 @@ UserNotifications, AuthenticationServices), except where a Mac differs:
 
 | Package | On a Mac |
 | --- | --- |
-| `platform/device` | `pickPhotos` and `pickFiles`: an open panel, a sheet on the window (no permission), copies in the app's caches. `browse` opens the page in the user's browser. `info`: `model` `"Mac"`, `system` `"macOS"` |
-| `platform/camera` | `take()`: a sheet over the window with a live preview, Take Photo and Cancel (AppKit has no camera screen). `camera.View`'s "back" is the built-in camera (a Mac has no back one), or the one plugged in; scanning codes in it needs macOS 13 |
+| `platform/device` | `pickPhotos`, `pickMedia` and `pickFiles`: an open panel, a sheet on the window (no permission), copies in the app's caches (`pickMedia`'s `ordered` does nothing). `browse` opens the page in the user's browser. `info`: `model` `"Mac"`, `system` `"macOS"` |
+| `platform/camera` | `take()`: a sheet over the window with a live preview, Take Photo and Cancel (AppKit has no camera screen). `camera.View`'s "back" is the built-in camera (a Mac has no back one), or the one plugged in; scanning codes in it needs macOS 13. Its zoom is digital, in photo mode, up to 4× (the preview scaled, photos and frames cropped to the middle); a Mac has no exposure bias, and the torch, the flash and focusing at a point are there only where the camera has them (an iPhone as a Continuity Camera) |
 | `platform/record` | No audio session: other apps' sound plays on; `background` changes nothing, a Mac app records out of sight anyway |
 | `platform/nowplaying` | `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`, as on iOS: Control Center's and the menu bar's Now Playing, the keyboard's media keys, AirPods. A Mac needs no audio session or background mode |
 | `platform/contacts`, `platform/calendar` | `add` asks in an alert over the window (macOS has no new contact or event screen), then saves, asking for access first |
-| `platform/photos` | PhotoKit, as on iOS; a Mac has no limited library: `manageLimited` does nothing |
+| `platform/photos` | PhotoKit, as on iOS: photos and videos, albums, deleting (with the system's question) and changes; a Mac has no limited library: `manageLimited` does nothing |
 | `platform/library` | Photos and videos go to Photos; `.downloads` and `.music` to the user's `~/Downloads` and `~/Music`, in the folder asked |
 | `platform/biometric` | Touch ID's prompt, or the user's password (not with `noPasscode`) |
 | `platform/push` | APNs, as on iOS. Needs a provisioning profile (above) |
@@ -158,9 +158,9 @@ device without it:
 
 | Package | On Windows |
 | --- | --- |
-| `platform/device` | `pickPhotos` and `pickFiles`: the open dialog over the window, copies in the app's caches. `browse` opens the page in the user's browser. The clipboard's images are PNGs. `keepAwake` keeps the display on. `info`: `model` `"PC"`, `system` `"Windows"`, `systemVersion` `"10.0.<build>"` |
+| `platform/device` | `pickPhotos`, `pickMedia` and `pickFiles`: the open dialog over the window, copies in the app's caches (`pickMedia`'s `ordered` does nothing; a video's size and length from its MPEG-4 or QuickTime header, else Media Foundation's). `browse` opens the page in the user's browser. The clipboard's images are PNGs. `keepAwake` keeps the display on. `info`: `model` `"PC"`, `system` `"Windows"`, `systemVersion` `"10.0.<build>"` |
 | `platform/secure` | The user's generic credentials in the Credential Manager, named `<app>/<key>` (a value up to 2560 bytes) |
-| `platform/camera` | Media Foundation's capture engine. `take()`: a dialog over the window with a live preview, Take Photo and Cancel (Enter and Escape). `camera.View` picks the camera Windows names front or rear, else the first; with `scan`, it reads codes in four frames a second with Asuka's own reader (as `scan.file` does). Settings' camera switch off: `CameraError.notAllowed` |
+| `platform/camera` | Media Foundation's capture engine. `take()`: a dialog over the window with a live preview, Take Photo and Cancel (Enter and Escape). `camera.View` picks the camera Windows names front or rear, else the first; with `scan`, it reads codes in four frames a second with Asuka's own reader (as `scan.file` does). Settings' camera switch off: `CameraError.notAllowed`. The camera's own zoom where it has one, else a digital zoom up to 4× in photo mode (the preview, photos and frames cropped; videos are the whole view); a pinch is a touchpad's, a touch screen's, or Ctrl and the wheel. No torch, flash, exposure bias, focus point or `photoQuality`. A camera facing the user shows mirrored, and `mirror` mirrors its photos, videos and frames |
 | `platform/record` (video) | H.264 and AAC in MPEG-4 (`.mp4`), the default microphone unless muted |
 | `platform/audio` | MCI (DirectShow's playback); a URL is downloaded to the app's caches first |
 | `platform/record` (sound) | The default microphone, AAC at 44.1 kHz (voice mono, music stereo); `background` changes nothing |
@@ -172,7 +172,7 @@ device without it:
 | `platform/webauth` | A window over the app's with WebView2 in it (the app's web profile; `ephemeral`: a throwaway one) |
 | `platform/js` | A WebView2 that's never shown |
 | `platform/contacts`, `platform/calendar` | Windows gives the contacts and calendars to packaged apps only: `request` says `.denied`; `add` opens a vCard or an event file in the user's contacts or calendar app, and answers false (Windows doesn't say whether it was saved) |
-| `platform/photos` | The Pictures folder (no permission to ask); screenshots are its Screenshots folder's |
+| `platform/photos` | The Pictures folder's photos and the Videos folder's videos (no permission to ask); screenshots are the Screenshots folder's. Albums are Pictures' folders (Camera Roll and Screenshots the system's; a title already taken becomes "Title (2)"), and adding copies into them; `favorite` is a five-star rating. `delete` moves the files to the Recycle Bin without asking, as Explorer does (unless the user turned its confirmation on). `changes` names the files where Windows says (none when many change at once) |
 | `platform/library` | The user's Downloads, Videos, Music and Pictures folders, in the folder asked |
 | `platform/vision` | Windows's OCR, in the languages whose OCR is installed (Settings, Time & language), and its face detector; codes as `platform/scan` reads them |
 | `platform/scan` | Windows has no reader of codes for apps: Asuka's own reads QR codes, Data Matrix, EAN-13 and EAN-8, UPC-A and UPC-E, Code 128 and Code 39 (not Aztec, PDF417, Code 93, Codabar nor ITF) |
@@ -221,7 +221,7 @@ names what's missing.
 
 | Package | On Linux |
 | --- | --- |
-| `platform/device` | `pickPhotos` and `pickFiles`: GTK's file dialog (the portal's in a sandbox), copies in the app's caches. Clipboard images and changes through GDK's clipboard. `browse` opens the page in the user's browser. `keepAwake` keeps the session from idling. `info`: `model` `"PC"`, `system` `"Linux"`, `systemVersion` the distribution's (`/etc/os-release`) |
+| `platform/device` | `pickPhotos`, `pickMedia` and `pickFiles`: GTK's file dialog (the portal's in a sandbox), copies in the app's caches (`pickMedia`'s `ordered` does nothing; a video's size and length from its MPEG-4 or QuickTime header, else GStreamer's). Clipboard images and changes through GDK's clipboard. `browse` opens the page in the user's browser. `keepAwake` keeps the session from idling. `info`: `model` `"PC"`, `system` `"Linux"`, `systemVersion` the distribution's (`/etc/os-release`) |
 | `platform/secure` | The keyring (libsecret: GNOME Keyring, KWallet, KeePassXC), an item per key labeled with the app's name; without libsecret or a keyring, the calls fail saying so |
 | `platform/network` | GNetworkMonitor (the portal's in a sandbox); Wi-Fi, ethernet or cellular from NetworkManager; never constrained |
 | `platform/location` | The location portal (GeoClue's, which asks the user), else GeoClue itself; `placeName` with geocode-glib, when it's installed. GeoClue has no geofences: regions and background updates are computed from the positions while the app runs |
@@ -230,7 +230,7 @@ names what's missing.
 | `platform/nowplaying` | An MPRIS player on the session bus, named `org.mpris.MediaPlayer2.<app>.instance<pid>` while something shows: GNOME's and KDE's media controls and lock screens, the media keys, `playerctl`. MPRIS's `Seek` is a skip where the app skips, else a seek; the artwork is a `file://` or http(s) URL |
 | `platform/library` | The user's folders (XDG's Pictures, Videos, Music, Downloads), in the folder asked |
 | `device.shareFiles` | No share sheet: the files are copied to the clipboard, with a toast |
-| `platform/camera`, `platform/record` | The camera portal (it asks the user once; PipeWire's cameras, `gstreamer1.0-pipewire`), else the first Video4Linux camera, through GStreamer. `take()`: a dialog over the window with a live preview, Take Photo and Cancel. `camera.View`: the preview, mirrored, filling its box; front and back are the same camera (a computer's face the user). Videos are MPEG-4 (H.264 from x264 or OpenH264, AAC), else WebM; scanning codes needs GStreamer's `zbar` element. No camera: `CameraError.noCamera`; refused: `.notAllowed` |
+| `platform/camera`, `platform/record` | The camera portal (it asks the user once; PipeWire's cameras, `gstreamer1.0-pipewire`), else the first Video4Linux camera, through GStreamer. `take()`: a dialog over the window with a live preview, Take Photo and Cancel. `camera.View`: the preview, mirrored, filling its box; front and back are the same camera (a computer's face the user). Videos are MPEG-4 (H.264 from x264 or OpenH264, AAC), else WebM; scanning codes needs GStreamer's `zbar` element. No camera: `CameraError.noCamera`; refused: `.notAllowed`. A Video4Linux camera's own zoom, exposure bias and torch where its driver has them; else (and with PipeWire's cameras) a digital zoom up to 4×, recordings too. A pinch is a touchpad's, a touch screen's, or Ctrl and the wheel. No flash, focus point or `photoQuality` |
 | `platform/scan`, `platform/vision` | Asuka's own reader reads codes, as on Windows: QR, Data Matrix, EAN, UPC, Code 128, Code 39 (no Aztec, PDF417, Code 93, Codabar or ITF). Tesseract (`libtesseract5` and a language's data) reads text; nothing finds faces: `faces` is empty. `vision.analyze` leaves out the text without Tesseract |
 | `platform/imageedit` | GdkPixbuf's loaders decode (HEIF and WebP where their loaders are installed), upright; Asuka does the actions; video frames from GStreamer |
 | `platform/webauth` | A dialog over the window with a WebKitGTK web view (`ephemeral`: a session of its own); closing it cancels |
@@ -263,12 +263,12 @@ and its service worker for notifications and Web Push.
 
 | Package | In a browser |
 | --- | --- |
-| `platform/device` | `pickPhotos` and `pickFiles`: the browser's file picker, copies in the caches. `browse`: a new tab. The clipboard: the app's own copies, and other apps' where the user lets the page read it. `keepAwake`: the Screen Wake Lock. `info` from the user agent (Chromium's client hints give the system's version and an Android phone's model) |
+| `platform/device` | `pickPhotos`, `pickMedia` and `pickFiles`: the browser's file picker, copies in the caches (`pickMedia`'s `ordered` does nothing, and a HEIC outside Safari has no size and isn't scaled). `browse`: a new tab. The clipboard: the app's own copies, and other apps' where the user lets the page read it. `keepAwake`: the Screen Wake Lock. `info` from the user agent (Chromium's client hints give the system's version and an Android phone's model) |
 | `platform/secure` | The values encrypted (AES-GCM) in IndexedDB, with a key the browser won't let out; not a keychain (see [the web](web.md)) |
-| `platform/camera`, `platform/record` | `take()` opens a phone's camera, or a dialog with the live camera and a shutter; `camera.View` is the camera in a `<video>`, with `capture()`, recording, and scanning codes where the browser has `BarcodeDetector` |
+| `platform/camera`, `platform/record` | `take()` opens a phone's camera, or a dialog with the live camera and a shutter; `camera.View` is the camera in a `<video>`, with `capture()`, recording, and scanning codes where the browser has `BarcodeDetector`. The camera's own zoom, torch, exposure and focus where its track has them (Chrome on Android), else a digital zoom up to 4× (recordings too, drawn through a canvas); the flash through `ImageCapture` where the camera has one; no `photoQuality`. `maxBytes` stops a recording at the chunk before the limit |
 | `platform/scan`, `platform/vision` | `BarcodeDetector` reads codes; faces and text only where the browser has them |
 | `platform/imageedit` | A canvas: JPEG or PNG; a remote image needs CORS |
-| `platform/photos` | A page can't read the library: access is `.denied` (`device.pickPhotos` picks photos) |
+| `platform/photos` | A page can't read the library: access is `.denied` (`device.pickMedia` picks photos and videos) |
 | `platform/library` | `save` downloads the file |
 | `platform/location` | The Geolocation API; `placeName` isn't on the web (a browser has no geocoder). Regions and background updates are computed from the positions, only while the page is open |
 | `platform/network` | Online from `navigator.onLine`; Wi-Fi, cellular or Ethernet where the browser says (Chrome on Android), metered for cellular, constrained for Data Saver |
@@ -411,12 +411,139 @@ the app (`.allowed` where there's no portal); a browser, its permission
 for the site. `record.access()` and `record.request()` are the microphone's,
 alike.
 
+### Zoom, torch, flash and focus
+
+A `camera.View` zooms, lights and focuses as the platform's camera app
+does:
+
+- `zoom` is the zoom factor: 1 is the camera's own view, 2 twice as
+  close. A pinch on the view zooms (`pinchToZoom: false` turns that
+  off), and `bind zoom:` follows it: the user's pinch writes the state,
+  and writing it zooms. Where the back camera has an ultra wide lens the
+  platform reaches through one camera (an iPhone's 0.5×, some Android
+  phones), the zoom goes below 1.
+- `torch` lights what the camera sees while it's true; `flash` (`.off`,
+  `.on`, `.auto`) is the flash of the photos `capture` takes.
+- `exposure` is the exposure's bias in EV: -1 a stop darker, 1 a stop
+  brighter.
+- With `tapToFocus` (on by default), a tap focuses and meters where it
+  is, and `focusPoint` says where (fractions of the view, from its top
+  left: draw a mark there). `camera.focus(x, y)` does the same from the
+  app.
+- `ready` says what the camera can do as it starts, and again when it
+  changes (`facing`): an `Info` of its `minZoom` and `maxZoom`, its
+  `minExposure` and `maxExposure`, and whether it has a `torch`, a
+  `flash` and `focus` at a point. Show only the controls it has.
+
+On iOS the back camera is the phone's lenses as one (its ultra wide
+below 1, the telephoto as the zoom passes it), and after a tap the focus
+goes back to following the scene when it changes much. On Android it's
+CameraX's zoom, torch, exposure and focus. A computer's camera rarely
+has a zoom, a torch, a flash or a point to focus at: the Mac, Windows,
+Linux and a browser zoom digitally where the camera can't (see their
+sections above), and `ready` says what's missing.
+
+```asuka check
+import platform/camera
+
+component Viewfinder {
+  state zoom = 1.0
+  state lit = false
+  state info = camera.Info()
+  state last = ""
+
+  Column {
+    camera.View {
+      bind zoom: zoom
+      torch: lit
+      flash: .auto
+      grow: 1
+      on ready(i) { info = i }
+    }
+    Row {
+      gap: 12
+      padding: 12
+      if info.torch {
+        Button(if lit { "Light off" } else { "Light" }) { on press { lit = !lit } }
+      }
+      if info.maxZoom >= 2 {
+        Button("2×") { on press { zoom = if zoom == 2 { 1 } else { 2 } } }
+      }
+      Button("Take") { on press { last = try await camera.capture(maxSize: 2048, quality: 0.8) } }
+    }
+  }
+}
+```
+
+### Photo and video quality
+
+- `capture(maxSize:, quality:)` scales the photo down to `maxSize`
+  pixels on its long side (0: the camera's full size) and writes it as a
+  JPEG of `quality`, from 0 to 1 (0: the platform's, about 0.9).
+- `photoQuality` is what the photos favor: `.speed` (the shortest wait
+  after the shutter), `.balanced` (the platform's default) or `.quality`
+  (several frames fused, less noise, a longer wait): iOS's and the
+  Mac's quality prioritization, CameraX's capture mode. Windows, Linux
+  and browsers have nothing to choose.
+- `videoQuality` is the size of the videos the view records, the
+  nearest the camera has: `.sd` (480p), `.hd` (720p), `.fullHD`
+  (1080p, the default) or `.uhd` (4K).
+- `mirror` mirrors the front camera's photos, videos and frames as its
+  preview shows them, a selfie as the user saw it. Off (the default),
+  they're as others see the user, as the platforms' camera apps keep
+  them. The preview itself is always mirrored for the front camera.
+
+### Frames for the app's own analysis
+
+`frameRate` hands the app frames to look at while the view shows:
+`frame` is called that many times a second (at most 15) with a `Frame`,
+a JPEG file of what the preview shows, upright, at most `frameSize`
+pixels (480 by default) on its long side, with its `width`, `height`
+and `time`. Read text or faces in it with `platform/vision`, codes with
+`platform/scan`, or send it to a server. The view drops frames rather
+than queue them while one is being written, and it writes a few files
+in turn, reusing them: read a frame's file in the handler, or copy it
+to keep it.
+
+```asuka check
+import platform/camera
+import platform/vision
+
+component Reader {
+  state text = ""
+  state busy = false
+
+  Column {
+    camera.View {
+      frameRate: 2
+      grow: 1
+      on frame(f) {
+        if busy { return }
+        busy = true
+        defer { busy = false }
+        let r = try await vision.analyze(f.path, faces: false, codes: false)
+        text = r.lines.map(l => l.text).joined("\n")
+      }
+    }
+    Text(text)
+  }
+}
+```
+
+Frames are images, not the camera's pixel buffers: what an app does
+with a few a second (reading a page, a label, a face), not per-frame
+work at the camera's own rate, which belongs in a native package's
+code.
+
 ## Recording video: platform/record
 
 A `camera.View` in video mode records: `record.start()` records what it
 shows, with the microphone unless `mute`, until `record.stop()` (or
 `maxDuration`), and gives the file, an MPEG-4 video in the app's caches.
-`camera.record` and `camera.stopRecording` are the same.
+`camera.record` and `camera.stopRecording` are the same. The video
+is the size the view's `videoQuality` asks, mirrored as its `mirror`
+says; `maxBytes` ends it once the file would grow past that size (as
+`maxDuration` does, the file whole).
 
 ```asuka
 import platform/camera
@@ -516,29 +643,45 @@ says where it is.
 
 ## The photo library: platform/photos
 
-`platform/photos` reads the user's library, with their permission: PhotoKit on iOS
-and the Mac, MediaStore on Android, the Pictures folder on Windows. Linux
-and the web have no library an app can read: access is `.denied`. It's for an app whose screen is the library. To let the
-user pick a few photos, `device.pickPhotos` asks for no permission: prefer it
-where it'll do. Google Play asks an app that reads the library why it does, in
-the Play Console. Every call is async.
+`platform/photos` reads and organizes the user's library, with their
+permission: its photos and videos, its albums, and what changes in it.
+PhotoKit on iOS and the Mac, MediaStore on Android, the Pictures and
+Videos folders on Windows. Linux and the web have no library an app can
+read: access is `.denied`. It's for an app whose screen is the library
+(a gallery, an editor). To let the user pick a few photos or videos,
+`device.pickMedia` asks for no permission: prefer it where it'll do.
+Google Play asks an app that reads the library why it does, in the Play
+Console. Every call is async.
 
-```asuka
+```asuka check
 import platform/photos
 
-component Screenshots {
-  state thumbs: [string] = []
+component Recent {
+  state assets: [photos.Asset] = []
+  state thumbs: [string: string] = [:]
 
   task {
     if (try? await photos.request()) == .denied { return }
-    let assets = (try? await photos.list(screenshots: true, limit: 60)) ?? []
+    for await _ in photos.changes() { await load() }   // a photo taken, one deleted
+  }
+
+  task { await load() }
+
+  async fn load() {
+    assets = (try? await photos.list(kind: .all, limit: 60)) ?? []
     for a in assets {
-      thumbs.push((try? await photos.thumbnail(a.id, size: 300)) ?? "")   // a file, for Image
+      thumbs[a.id] = (try? await photos.thumbnail(a.id, size: 300)) ?? ""
     }
   }
 
   Scroll {
-    for (i, t) in thumbs.enumerated() key i { Image(t) { width: 100; height: 100 } }
+    for a in assets key a.id {
+      Row {
+        gap: 8
+        Image(thumbs[a.id] ?? "") { width: 64; height: 64 }
+        if a.video { Text("{a.duration.seconds()} s") }
+      }
+    }
   }
 }
 
@@ -553,16 +696,71 @@ async fn original(a: photos.Asset) throws -> string {
   `photos.request()` asks the first time. `photos.manageLimited()` lets a
   `.limited` user change which photos, and returns once they're done: list
   again then.
-- `photos.list(screenshots:, offset:, limit:)` is newest first, from
-  `offset`, at most `limit` (100 by default). An `Asset` has its `id`,
-  `width`, `height`, `created` (a `time.Time`) and `screenshot`.
-  `screenshots: true` keeps only those: iOS knows; on Android it's what's
-  in a Screenshots folder.
+- `photos.list(kind:, album:, screenshots:, offset:, limit:)` is a page
+  of the library, newest first: from `offset`, at most `limit` (100 by
+  default); the next page starts at `offset + limit`. `kind` is
+  `.photos` (the default), `.videos` or `.all`; `album` keeps an album's
+  (its `id`); `screenshots: true` keeps only those (iOS knows; on
+  Android it's what's in a Screenshots folder). An `Asset` has its `id`,
+  `width`, `height`, `created` (a `time.Time`), `screenshot`, `video`,
+  a video's `duration`, and `favorite`. `photos.count(kind:, album:)`
+  is how many there are: a gallery's last page, its scroll bar.
 - `photos.thumbnail(id, size:)` is a JPEG file at least `size` pixels on
-  its short side, kept in the app's caches for the next time.
-- `photos.export(id)` copies the full image as it is in the library (HEIC,
-  JPEG, PNG) to a file: its `path`, and its `name` in the library. iCloud
-  photos download first.
+  its short side (a video's frame), kept in the app's caches for the next
+  time.
+- `photos.export(id)` copies the photo (HEIC, JPEG, PNG) or the video
+  (MOV, MP4) as it is in the library to a file: its `path`, and its
+  `name` in the library. iCloud ones download first.
+
+### Albums
+
+`photos.albums()` lists the library's albums, the user's and the apps'
+own first, then those the system keeps that hold something (Favorites,
+Screenshots, Videos), each an `Album` with its `id`, `title`, `count`
+and whether it's the `system`'s. `photos.list(album: a.id)` reads one.
+`photos.createAlbum(title)` makes one and `photos.addToAlbum(album,
+ids)` adds photos and videos to it.
+
+```asuka
+import platform/photos
+
+async fn keep(ids: [string]) throws {
+  let albums = try await photos.albums()
+  var trip = ""
+  if let a = albums.filter(a => a.title == "Trip" && !a.system).first() {
+    trip = a.id
+  } else {
+    trip = (try await photos.createAlbum("Trip")).id
+  }
+  try await photos.addToAlbum(trip, ids)
+}
+```
+
+On iOS and the Mac an album holds the same assets as the library. On
+Android an album is a folder of Pictures: `createAlbum` gives its id at
+once, but it shows in `albums()` once something's in it, and
+`addToAlbum` copies the photos and videos into it (new assets; the
+originals stay where they were). On Windows an album is a folder of
+Pictures, and adding copies too.
+
+### Deleting
+
+`photos.delete(ids)` deletes photos and videos once the user agrees in
+the system's own question, and says whether they did. iOS and the Mac
+keep them in Recently Deleted for 30 days, and Android 11 and later in
+its trash. Android 10 asks for each file the app didn't add itself, and
+Android 9 and earlier, which have no such question, delete at once with
+the storage permission (declared for those versions). Windows moves the
+files to the Recycle Bin without asking, as Explorer does.
+
+### Changes
+
+`photos.changes()` is a stream of what changes in the library while
+it's read: photos taken or saved, deleted, edited or made favorites, by
+this app or another. Each `Change` names the ids `inserted`, `removed`
+and `updated` where the platform says (iOS, the Mac, Android 11 and
+later, Windows); empty lists mean something changed: list again. Read it
+in a `task`, and it stops with the screen.
 
 ## Photos, the browser, the clipboard: platform/device
 
@@ -593,6 +791,20 @@ component Gallery {
   only what was picked. It returns the images' files, which `Image`
   shows, or none if the user cancelled. The files are copies in the
   app's temporary files or caches: move one to keep it.
+- `device.pickMedia(kind:, max:, ordered:, maxSize:, quality:)` is the
+  same picker for photos, videos or both (`kind`: `.images`, `.videos`,
+  `.all`), as expo-image-picker's `launchImageLibraryAsync`. `max` is how
+  many the user may pick (0: as many as they like, up to the picker's
+  own limit), and they come back in the order they were picked;
+  `ordered: true` numbers them as they're picked (iOS, Android's photo
+  picker). Each is a `device.Media`: its `path`, `name`, `type` (MIME),
+  whether it's a `video`, its `width` and `height` (upright), a video's
+  `duration`, and its `size` in bytes (Android's photo picker doesn't
+  give the original's `name`: it's the picker's own). Images come as
+  they are (a HEIC stays HEIC) unless `maxSize` or `quality` is set:
+  then each is turned upright, scaled down to at most `maxSize` pixels
+  on its long side, and written as a JPEG of `quality` (0 to 1; 0: 0.9):
+  an upload's size. Videos come as they are.
 - `device.browse(url)` shows a web page in the app (SFSafariViewController,
   a Custom Tab), over the app's screens. The URL must be http or https.
   `device.openURL` leaves the app for the browser instead. A desktop opens
@@ -647,6 +859,55 @@ component Player {
   }
 
   Text(if let i = info.value { "{i.model}, {i.system} {i.systemVersion}" } else { "" })
+}
+```
+
+### Picking, then cropping
+
+A picked photo is cropped with `imageedit.Cropper` (see
+[Cropping](#cropping)), shown in a sheet: the user drags and pinches the
+photo in its frame, and `imageedit.edit` crops it. It's the crop step
+expo-image-picker's `allowsEditing` shows, made of the platform's own
+`Image` and views, the same on every platform.
+
+```asuka check
+import platform/device
+import platform/imageedit
+
+component Avatar {
+  state picked = ""
+  state crop = imageedit.Rect()
+  state avatar = ""
+
+  Column {
+    gap: 12
+    if !avatar.isEmpty() { Image(avatar) { width: 96; height: 96; radius: 48; clip: true } }
+    Button("Choose a photo") {
+      on press {
+        let media = try await device.pickMedia(maxSize: 2048)
+        if let m = media.first() { picked = m.path }
+      }
+    }
+    Sheet {
+      open: !picked.isEmpty()
+      on dismiss { picked = "" }
+      Column {
+        imageedit.Cropper(picked) {
+          aspect: 1
+          circle: true
+          grow: 1
+          on change(r) { crop = r }
+        }
+        Button("Done") {
+          on press {
+            let r = try await imageedit.edit(picked, [.crop(crop.x, crop.y, crop.width, crop.height), .resize(512, 512)])
+            avatar = r.path
+            picked = ""
+          }
+        }
+      }
+    }
+  }
 }
 ```
 
@@ -3608,6 +3869,21 @@ Core Graphics and Image I/O on iOS and the Mac, `Bitmap` and
 `MediaMetadataRetriever` on Android, a canvas in a browser, WIC and
 Media Foundation on Windows, GdkPixbuf and GStreamer on Linux. A source
 that isn't an image throws `EditError.noImage`.
+
+### Cropping
+
+`imageedit.Cropper(source)` shows an image to crop, filling its box: the
+image behind a frame of `aspect` (width over height: 1 a square, `16.0 /
+9`; 0 the image's own), the rest dimmed. The user drags the image and
+pinches it (Ctrl and the wheel, or a trackpad's pinch, on a computer)
+until what they want is in the frame; it can't be moved or shrunk past
+the frame. `circle: true` draws the frame round, for a profile picture
+(the crop is still its square). `change` says the image's rectangle in
+the frame, a `Rect` in its pixels, as the image shows and after each
+move: crop it with `.crop(r.x, r.y, r.width, r.height)`. It's made of an
+`Image` and views, so it looks and works the same on every platform;
+the example in [Picking, then cropping](#picking-then-cropping) puts it
+in a sheet after the photo picker.
 
 ### A view as an image
 

@@ -1,12 +1,19 @@
 // platform/device on iOS and the Mac: UIDevice and the bundle, the in-app
 // browser (SFSafariViewController; the Mac's browser), PHPicker and the
-// document picker (NSOpenPanel on the Mac), the pasteboard. Apple TV has
+// document picker (NSOpenPanel on the Mac), the pasteboard. What
+// pickMedia copies is read with ImageIO (an image's size upright, its
+// scaling) and AVFoundation (a video's size as it plays, its length);
+// videos are copied as they are, never transcoded. Apple TV has
 // no browser, pickers or clipboard: those say unsupported, or nothing's
 // there. Nor has Apple Watch (WatchKit's device for the rest), whose
 // screen sleeps as the wrist comes down: keepAwake does nothing there.
 import Foundation
 import UniformTypeIdentifiers
 import Asuka
+#if !os(tvOS) && !os(watchOS)
+import AVFoundation
+import ImageIO
+#endif
 #if os(tvOS)
 import UIKit
 #elseif os(watchOS)
@@ -119,7 +126,7 @@ final class SystemDevice: Platform {
         #endif
     }
 
-    func pickPhotos(max: Int) async throws -> [String] {
+    func pickMedia(kind: MediaKind, max: Int, ordered: Bool, maxSize: Int, quality: Double) async throws -> [NativeMedia] {
         #if os(tvOS)
         throw AsukaNativeError.unsupported("device: tvOS has no photo picker")
         #elseif os(watchOS)
@@ -128,10 +135,26 @@ final class SystemDevice: Platform {
         let results: [PHPickerResult] = try await MainActor.run {
             guard let top = AsukaNative.presenter else { throw Self.error("device: no screen to show it on") }
             return top
-        }.pickPhotos(max)
-        return await Self.copy(results)
+        }.pickMedia(kind, max, ordered)
+        return await Self.copy(results, maxSize: maxSize, quality: quality)
         #else
-        return try await Self.open(types: [.image], multiple: max > 1, limit: max).map(\.path)
+        var types: [UTType] = []
+        if kind != .videos { types.append(.image) }
+        if kind != .images { types += Self.videoTypes }
+        let urls: [URL] = await MainActor.run { () -> NSOpenPanel in
+            let p = NSOpenPanel()
+            p.canChooseFiles = true
+            p.canChooseDirectories = false
+            p.allowsMultipleSelection = max != 1
+            p.allowedContentTypes = types
+            return p
+        }.choose()
+        var out: [NativeMedia] = []
+        for u in max > 0 ? Array(urls.prefix(max)) : urls {
+            let video = !(UTType(filenameExtension: u.pathExtension)?.conforms(to: .image) ?? false)
+            if let m = await Self.media(u, name: u.lastPathComponent, video: video, maxSize: maxSize, quality: quality) { out.append(m) }
+        }
+        return out
         #endif
     }
 
@@ -414,22 +437,136 @@ final class SystemDevice: Platform {
         return out
     }
 
-    #if canImport(UIKit) && !os(tvOS) && !os(watchOS)
-    /// Copies the picked images to files (the picker's are temporary).
-    static func copy(_ results: [PHPickerResult]) async -> [String] {
-        guard let dir = try? cacheDir("asuka-photos") else { return [] }
-        var paths: [String] = []
-        for r in results {
-            let path: String? = await withCheckedContinuation { c in
-                r.itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.image.identifier) { url, _ in
-                    guard let url else { c.resume(returning: nil); return }
-                    let to = dir.appendingPathComponent(UUID().uuidString + "." + (url.pathExtension.isEmpty ? "jpg" : url.pathExtension))
-                    c.resume(returning: (try? FileManager.default.copyItem(at: url, to: to)) != nil ? to.path : nil)
-                }
+    #if !os(tvOS) && !os(watchOS)
+    /// The videos the Mac's picker offers: what's a movie, and the files
+    /// of the formats that may not say they are (WebM, Matroska).
+    static let videoTypes: [UTType] = [.movie, .mpeg4Movie, .quickTimeMovie, .avi]
+        + ["m4v", "webm", "mkv"].compactMap { UTType(filenameExtension: $0) }
+
+    /// A picked photo or video as pickMedia gives it: copied into the
+    /// caches' asuka-photos (an image decoded, turned upright, scaled to
+    /// maxSize and written as a JPEG of quality when either isn't 0), with
+    /// its size in pixels (upright; a video's track's, turned as it plays),
+    /// its length and its bytes.
+    static func media(_ url: URL, name: String, video: Bool, maxSize: Int, quality: Double) async -> NativeMedia? {
+        guard let dir = try? cacheDir("asuka-photos") else { return nil }
+        let ext = url.pathExtension.lowercased()
+        var m = NativeMedia(name: name, video: video)
+        if !video, maxSize > 0 || quality > 0 {
+            let to = dir.appendingPathComponent(UUID().uuidString + ".jpg")
+            guard let (w, h) = writeJPEG(url, to, maxSize: maxSize, quality: quality) else { return nil }
+            m.path = to.path
+            m.type = "image/jpeg"
+            (m.width, m.height) = (w, h)
+            if !name.isEmpty { m.name = (name as NSString).deletingPathExtension + ".jpg" }
+        } else {
+            let to = dir.appendingPathComponent(UUID().uuidString + "." + (ext.isEmpty ? (video ? "mov" : "jpg") : ext))
+            guard (try? FileManager.default.copyItem(at: url, to: to)) != nil else { return nil }
+            m.path = to.path
+            m.type = UTType(filenameExtension: ext)?.preferredMIMEType ?? (video ? "video/quicktime" : "")
+            if video {
+                (m.width, m.height, m.durationMs) = await videoInfo(to)
+            } else {
+                (m.width, m.height) = imageSize(to)
             }
-            if let path { paths.append(path) }
         }
-        return paths
+        m.size = (try? FileManager.default.attributesOfItem(atPath: m.path)[.size] as? NSNumber)?.intValue ?? 0
+        return m
+    }
+
+    /// An image's size in pixels, upright (its EXIF orientation applied).
+    static func imageSize(_ url: URL) -> (Int, Int) {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] else { return (0, 0) }
+        let w = p[kCGImagePropertyPixelWidth] as? Int ?? 0, h = p[kCGImagePropertyPixelHeight] as? Int ?? 0
+        let o = p[kCGImagePropertyOrientation] as? Int ?? 1
+        return o >= 5 && o <= 8 ? (h, w) : (w, h)
+    }
+
+    /// Decodes an image, turned upright and scaled down to maxSize on its
+    /// long side (0: as it is; never up), and writes it as a JPEG of
+    /// quality (0: 0.9) with its metadata but its orientation: its size.
+    static func writeJPEG(_ from: URL, _ to: URL, maxSize: Int, quality: Double) -> (Int, Int)? {
+        guard let src = CGImageSourceCreateWithURL(from as CFURL, nil) else { return nil }
+        var meta = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] ?? [:]
+        let long = max(meta[kCGImagePropertyPixelWidth] as? Int ?? 0, meta[kCGImagePropertyPixelHeight] as? Int ?? 0)
+        guard long > 0, let img = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxSize > 0 ? min(maxSize, long) : long,
+        ] as CFDictionary) else { return nil }
+        for k in [kCGImagePropertyPixelWidth, kCGImagePropertyPixelHeight] { meta[k] = nil }
+        meta[kCGImagePropertyOrientation] = 1
+        if var tiff = meta[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            tiff[kCGImagePropertyTIFFOrientation] = 1
+            meta[kCGImagePropertyTIFFDictionary] = tiff
+        }
+        meta[kCGImageDestinationLossyCompressionQuality] = quality > 0 ? quality : 0.9
+        guard let dest = CGImageDestinationCreateWithURL(to as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, img, meta as CFDictionary)
+        return CGImageDestinationFinalize(dest) ? (img.width, img.height) : nil
+    }
+
+    /// A video's size as it plays (its track's natural size, turned by its
+    /// transform) and its length in milliseconds.
+    static func videoInfo(_ url: URL) async -> (Int, Int, Int) {
+        let asset = AVURLAsset(url: url)
+        var size = CGSize.zero, transform = CGAffineTransform.identity, seconds = 0.0
+        if #available(iOS 16.0, macOS 13.0, *) {
+            seconds = (try? await asset.load(.duration))?.seconds ?? 0
+            if let t = try? await asset.loadTracks(withMediaType: .video).first,
+               let (s, tr) = try? await t.load(.naturalSize, .preferredTransform) {
+                (size, transform) = (s, tr)
+            }
+        } else {
+            seconds = asset.duration.seconds
+            if let t = asset.tracks(withMediaType: .video).first { (size, transform) = (t.naturalSize, t.preferredTransform) }
+        }
+        let r = CGRect(origin: .zero, size: size).applying(transform)
+        let ms = seconds.isFinite ? Int((seconds * 1000).rounded()) : 0
+        return (Int(abs(r.width).rounded()), Int(abs(r.height).rounded()), ms)
+    }
+    #endif
+
+    #if canImport(UIKit) && !os(tvOS) && !os(watchOS)
+    /// Copies what was picked to files (the picker's are temporary), in
+    /// the order picked: a video's movie, an image in its own type (a HEIC
+    /// stays HEIC) unless it's scaled.
+    static func copy(_ results: [PHPickerResult], maxSize: Int, quality: Double) async -> [NativeMedia] {
+        await withTaskGroup(of: (Int, NativeMedia?).self) { g in
+            for (i, r) in results.enumerated() {
+                let p = r.itemProvider
+                g.addTask { (i, await copy(p, maxSize: maxSize, quality: quality)) }
+            }
+            var got = [NativeMedia?](repeating: nil, count: results.count)
+            for await (i, m) in g { got[i] = m }
+            return got.compactMap { $0 }
+        }
+    }
+
+    static func copy(_ p: NSItemProvider, maxSize: Int, quality: Double) async -> NativeMedia? {
+        let video = p.hasItemConformingToTypeIdentifier(UTType.movie.identifier) && !p.hasItemConformingToTypeIdentifier(UTType.image.identifier)
+        let family: UTType = video ? .movie : .image
+        // Its own type (public.heic, com.apple.quicktime-movie), not one
+        // the provider would convert it to.
+        let type = p.registeredTypeIdentifiers.first { UTType($0)?.conforms(to: family) ?? false } ?? family.identifier
+        let suggested = p.suggestedName
+        let got: (URL, String)? = await withCheckedContinuation { c in
+            p.loadFileRepresentation(forTypeIdentifier: type) { url, _ in
+                // The file goes when this returns: moved aside first.
+                guard let url, let dir = try? cacheDir("asuka-picking") else { c.resume(returning: nil); return }
+                let tmp = dir.appendingPathComponent(UUID().uuidString + "." + url.pathExtension)
+                guard (try? FileManager.default.copyItem(at: url, to: tmp)) != nil else { c.resume(returning: nil); return }
+                var name = url.lastPathComponent
+                if let s = suggested, !s.isEmpty {
+                    name = (s as NSString).pathExtension.isEmpty && !url.pathExtension.isEmpty ? s + "." + url.pathExtension : s
+                }
+                c.resume(returning: (tmp, name))
+            }
+        }
+        guard let (tmp, name) = got else { return nil }
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        return await media(tmp, name: name, video: video, maxSize: maxSize, quality: quality)
     }
     #endif
 
@@ -506,12 +643,17 @@ final class SystemDevice: Platform {
 #if os(tvOS) || os(watchOS)
 #elseif canImport(UIKit)
 extension UIViewController {
-    /// PHPicker over this controller, for up to max images: what's picked.
-    @MainActor func pickPhotos(_ max: Int) async -> [PHPickerResult] {
+    /// PHPicker over this controller, for up to max (0: any number) of
+    /// kind, numbered as they're picked if ordered: what's picked, in the
+    /// order picked.
+    @MainActor func pickMedia(_ kind: MediaKind, _ max: Int, _ ordered: Bool) async -> [PHPickerResult] {
         await withCheckedContinuation { c in
             var config = PHPickerConfiguration()
-            config.filter = .images
-            config.selectionLimit = Swift.max(max, 1)
+            config.filter = kind == .videos ? .videos : kind == .all ? .any(of: [.images, .videos]) : .images
+            config.selectionLimit = Swift.max(max, 0)
+            // The files as they are (a HEIC, an HEVC movie), not converted.
+            config.preferredAssetRepresentationMode = .current
+            if ordered, max != 1 { config.selection = .ordered }
             let p = PHPickerViewController(configuration: config)
             let d = PhotoPickerDelegate { c.resume(returning: $0) }
             p.delegate = d

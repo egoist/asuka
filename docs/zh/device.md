@@ -18,7 +18,7 @@ Asuka 提供了一系列包，让应用用上视图之外的设备能力：相�
 | `platform/background` | `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`POST_NOTIFICATIONS`、`WAKE_LOCK`；一个前台服务 | |
 | `platform/scan` | ML Kit 的条码模型（约 2 MB） | |
 | `platform/vision` | ML Kit 的文字、人脸和条码模型（约 30 MB） | |
-| `platform/photos` | `READ_MEDIA_IMAGES`、`READ_MEDIA_VISUAL_USER_SELECTED`；`READ_EXTERNAL_STORAGE`（Android 12 及更早版本） | `NSPhotoLibraryUsageDescription` |
+| `platform/photos` | `READ_MEDIA_IMAGES`、`READ_MEDIA_VIDEO`、`READ_MEDIA_VISUAL_USER_SELECTED`；`READ_EXTERNAL_STORAGE`（Android 12 及更早版本）；`WRITE_EXTERNAL_STORAGE`（Android 9 及更早版本：用于相册和删除） | `NSPhotoLibraryUsageDescription` |
 | `platform/push` | Firebase Cloud Messaging、`POST_NOTIFICATIONS` | `aps-environment` entitlement；`remote-notification` 后台模式 |
 | `platform/analytics` | Firebase Analytics（`INTERNET`、`ACCESS_NETWORK_STATE`、`WAKE_LOCK`、`AD_ID`）；`android.googleServices` 的设置 | Firebase Analytics，`ios.googleServices` 指定的文件，从应用启动时开始 |
 | `platform/appleauth` | | 通过 Apple 登录（Sign in with Apple）的 entitlement |
@@ -67,12 +67,12 @@ Mac 应用（无论是 `asuka dev` 还是 `asuka build` 生成的）的 Info.pli
 
 | 包 | 在 Mac 上 |
 | --- | --- |
-| `platform/device` | `pickPhotos` 和 `pickFiles`：一个以 sheet 形式附着在窗口上的打开面板（无需权限），选中的文件会复制到应用的缓存目录。`browse` 在用户的浏览器中打开页面。`info`：`model` 为 `"Mac"`，`system` 为 `"macOS"` |
-| `platform/camera` | `take()`：在窗口上弹出一个面板，带实时预览、“拍照”和“取消”按钮（AppKit 没有相机界面）。`camera.View` 的“后置”摄像头就是内置摄像头（Mac 没有后置摄像头），或者外接的那个；在其中扫码需要 macOS 13 |
+| `platform/device` | `pickPhotos`、`pickMedia` 和 `pickFiles`：一个以 sheet 形式附着在窗口上的打开面板（无需权限），选中的文件会复制到应用的缓存目录（`pickMedia` 的 `ordered` 不起作用）。`browse` 在用户的浏览器中打开页面。`info`：`model` 为 `"Mac"`，`system` 为 `"macOS"` |
+| `platform/camera` | `take()`：在窗口上弹出一个面板，带实时预览、“拍照”和“取消”按钮（AppKit 没有相机界面）。`camera.View` 的“后置”摄像头就是内置摄像头（Mac 没有后置摄像头），或者外接的那个；在其中扫码需要 macOS 13。它的缩放是数码变焦，仅限拍照模式，最高 4×（放大预览，照片和画面裁取中间部分）；Mac 没有曝光补偿，手电筒、闪光灯和指定点对焦只在摄像头本身支持时才有（例如用作连续互通相机的 iPhone） |
 | `platform/record` | 没有音频会话：其他应用的声音会照常播放；`background` 不起作用，因为 Mac 应用在后台本来就能录音 |
 | `platform/nowplaying` | 和 iOS 一样使用 `MPNowPlayingInfoCenter` 和 `MPRemoteCommandCenter`：对应控制中心和菜单栏里的“正在播放”、键盘上的媒体键以及 AirPods。Mac 不需要音频会话，也不需要后台模式 |
 | `platform/contacts`、`platform/calendar` | `add` 会在窗口上弹出一个警告框来确认（macOS 没有新建联系人或日程的界面），然后保存；保存前会先请求访问权限 |
-| `platform/photos` | 和 iOS 一样使用 PhotoKit；Mac 没有“有限访问”的照片库，所以 `manageLimited` 什么也不做 |
+| `platform/photos` | 和 iOS 一样使用 PhotoKit：照片和视频、相册、删除（会弹出系统的确认框）以及变化；Mac 没有“有限访问”的照片库，所以 `manageLimited` 什么也不做 |
 | `platform/library` | 照片和视频存入“照片”App；`.downloads` 和 `.music` 分别存到用户的 `~/Downloads` 和 `~/Music` 下指定的文件夹 |
 | `platform/biometric` | Touch ID 的提示框，或者输入用户密码（设置了 `noPasscode` 时除外） |
 | `platform/push` | 和 iOS 一样使用 APNs。需要描述文件（见上文） |
@@ -101,9 +101,9 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 
 | 包 | 在 Windows 上 |
 | --- | --- |
-| `platform/device` | `pickPhotos` 和 `pickFiles`：窗口上弹出的打开对话框，选中的文件会复制到应用的缓存目录。`browse` 在用户的浏览器中打开页面。剪贴板里的图片是 PNG。`keepAwake` 让显示器保持常亮。`info`：`model` 为 `"PC"`，`system` 为 `"Windows"`，`systemVersion` 为 `"10.0.<build>"` |
+| `platform/device` | `pickPhotos`、`pickMedia` 和 `pickFiles`：窗口上弹出的打开对话框，选中的文件会复制到应用的缓存目录（`pickMedia` 的 `ordered` 不起作用；视频的尺寸和时长取自它的 MPEG-4 或 QuickTime 文件头，取不到时由 Media Foundation 提供）。`browse` 在用户的浏览器中打开页面。剪贴板里的图片是 PNG。`keepAwake` 让显示器保持常亮。`info`：`model` 为 `"PC"`，`system` 为 `"Windows"`，`systemVersion` 为 `"10.0.<build>"` |
 | `platform/secure` | 凭据管理器中用户的普通凭据，名为 `<app>/<key>`（每个值最多 2560 字节） |
-| `platform/camera` | Media Foundation 的捕获引擎。`take()`：窗口上弹出一个对话框，带实时预览、“拍照”和“取消”按钮（对应 Enter 和 Escape 键）。`camera.View` 选用 Windows 标为前置或后置的摄像头，找不到就用第一个；设置了 `scan` 时，它每秒取四帧，用 Asuka 自带的识别器读取其中的条码（与 `scan.file` 的做法相同）。“设置”中的相机开关关闭时：`CameraError.notAllowed` |
+| `platform/camera` | Media Foundation 的捕获引擎。`take()`：窗口上弹出一个对话框，带实时预览、“拍照”和“取消”按钮（对应 Enter 和 Escape 键）。`camera.View` 选用 Windows 标为前置或后置的摄像头，找不到就用第一个；设置了 `scan` 时，它每秒取四帧，用 Asuka 自带的识别器读取其中的条码（与 `scan.file` 的做法相同）。“设置”中的相机开关关闭时：`CameraError.notAllowed`。摄像头自己能变焦时用它的变焦，否则在拍照模式下提供最高 4× 的数码变焦（预览、照片和画面都会裁剪；视频录的是完整画面）；双指缩放可以用触控板、触摸屏，或者按住 Ctrl 滚动滚轮。没有手电筒、闪光灯、曝光补偿、指定点对焦，也没有 `photoQuality`。朝向用户的摄像头显示为镜像，`mirror` 会让它拍出的照片、视频和画面也左右镜像 |
 | `platform/record`（视频） | MPEG-4 封装（`.mp4`）的 H.264 和 AAC，使用默认麦克风，除非设置了静音 |
 | `platform/audio` | MCI（DirectShow 的播放功能）；URL 会先下载到应用的缓存目录 |
 | `platform/record`（录音） | 默认麦克风，44.1 kHz 的 AAC（语音为单声道，音乐为立体声）；`background` 不起作用 |
@@ -115,7 +115,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `platform/webauth` | 在应用窗口之上打开一个内嵌 WebView2 的窗口（使用应用的 Web 配置文件；设置 `ephemeral` 时使用一个用完即弃的配置文件） |
 | `platform/js` | 一个从不显示的 WebView2 |
 | `platform/contacts`、`platform/calendar` | Windows 只向打包（packaged）应用开放通讯录和日历：`request` 返回 `.denied`；`add` 会在用户的联系人或日历应用中打开一个 vCard 或日程文件，并返回 false（Windows 不会告知是否已保存） |
-| `platform/photos` | “图片”文件夹（无需申请权限）；截图就是其中“屏幕截图”文件夹里的图片 |
+| `platform/photos` | “图片”文件夹里的照片和“视频”文件夹里的视频（无需申请权限）；截图就是“屏幕截图”文件夹里的图片。相册是“图片”下的文件夹（“本机照片”和“屏幕截图”是系统的；标题已被占用时会变成“标题 (2)”），添加到相册就是复制进去；`favorite` 对应五星评级。`delete` 像资源管理器一样，不询问就把文件移到回收站（除非用户打开了回收站的删除确认）。`changes` 在 Windows 告知时列出变化的文件（大量文件同时变化时不列出） |
 | `platform/library` | 用户的“下载”“视频”“音乐”和“图片”文件夹下指定的文件夹 |
 | `platform/vision` | Windows 的 OCR（支持哪些语言取决于“设置 > 时间和语言”中安装了哪些 OCR 语言）及其人脸检测器；条码的识别方式与 `platform/scan` 相同 |
 | `platform/scan` | Windows 没有供应用使用的条码识别器，因此用的是 Asuka 自带的识别器：能识别 QR 码、Data Matrix、EAN-13 和 EAN-8、UPC-A 和 UPC-E、Code 128 和 Code 39（不支持 Aztec、PDF417、Code 93、Codabar 和 ITF） |
@@ -145,7 +145,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 
 | 包 | 在 Linux 上 |
 | --- | --- |
-| `platform/device` | `pickPhotos` 和 `pickFiles`：GTK 的文件对话框（在沙盒中是门户提供的），选中的文件会复制到应用的缓存目录。剪贴板里的图片及剪贴板的变化通过 GDK 的剪贴板获取。`browse` 在用户的浏览器中打开页面。`keepAwake` 阻止会话进入空闲状态。`info`：`model` 为 `"PC"`，`system` 为 `"Linux"`，`systemVersion` 为发行版的版本（取自 `/etc/os-release`） |
+| `platform/device` | `pickPhotos`、`pickMedia` 和 `pickFiles`：GTK 的文件对话框（在沙盒中是门户提供的），选中的文件会复制到应用的缓存目录（`pickMedia` 的 `ordered` 不起作用；视频的尺寸和时长取自它的 MPEG-4 或 QuickTime 文件头，取不到时由 GStreamer 提供）。剪贴板里的图片及剪贴板的变化通过 GDK 的剪贴板获取。`browse` 在用户的浏览器中打开页面。`keepAwake` 阻止会话进入空闲状态。`info`：`model` 为 `"PC"`，`system` 为 `"Linux"`，`systemVersion` 为发行版的版本（取自 `/etc/os-release`） |
 | `platform/secure` | 密钥环（通过 libsecret：GNOME Keyring、KWallet、KeePassXC），每个键存为一项，标签为应用名；没有 libsecret 或密钥环时，调用会失败并说明原因 |
 | `platform/network` | GNetworkMonitor（在沙盒中是门户提供的）；Wi-Fi、以太网还是蜂窝网络，由 NetworkManager 提供；从不报告受限 |
 | `platform/location` | 定位门户（背后是 GeoClue，由它询问用户），没有门户时直接使用 GeoClue；装了 geocode-glib 时，`placeName` 用它来查询。GeoClue 没有地理围栏：区域和后台定位更新都在应用运行期间根据位置计算 |
@@ -154,7 +154,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/nowplaying` | 有内容显示时，在会话总线上注册一个 MPRIS 播放器，名为 `org.mpris.MediaPlayer2.<app>.instance<pid>`：对应 GNOME 和 KDE 的媒体控件与锁屏、媒体键以及 `playerctl`。如果应用支持跳过，MPRIS 的 `Seek` 就是跳过，否则是跳转播放位置；封面图是一个 `file://` 或 http(s) URL |
 | `platform/library` | 用户的文件夹（XDG 的 Pictures、Videos、Music、Downloads）下指定的文件夹 |
 | `device.shareFiles` | 没有分享面板：文件会复制到剪贴板，并弹出一条提示（toast） |
-| `platform/camera`、`platform/record` | 优先用相机门户（只询问用户一次；使用 PipeWire 的摄像头，需要 `gstreamer1.0-pipewire`），否则用第一个 Video4Linux 摄像头，二者都通过 GStreamer。`take()`：窗口上弹出一个对话框，带实时预览、“拍照”和“取消”按钮。`camera.View`：镜像显示的预览画面，填满它的区域；前置和后置是同一个摄像头（电脑的摄像头本来就朝着用户）。视频优先录成 MPEG-4（x264 或 OpenH264 提供的 H.264，加上 AAC），否则录成 WebM；扫码需要 GStreamer 的 `zbar` 元素。没有摄像头时为 `CameraError.noCamera`；被拒绝时为 `.notAllowed` |
+| `platform/camera`、`platform/record` | 优先用相机门户（只询问用户一次；使用 PipeWire 的摄像头，需要 `gstreamer1.0-pipewire`），否则用第一个 Video4Linux 摄像头，二者都通过 GStreamer。`take()`：窗口上弹出一个对话框，带实时预览、“拍照”和“取消”按钮。`camera.View`：镜像显示的预览画面，填满它的区域；前置和后置是同一个摄像头（电脑的摄像头本来就朝着用户）。视频优先录成 MPEG-4（x264 或 OpenH264 提供的 H.264，加上 AAC），否则录成 WebM；扫码需要 GStreamer 的 `zbar` 元素。没有摄像头时为 `CameraError.noCamera`；被拒绝时为 `.notAllowed`。Video4Linux 摄像头的驱动支持时，用摄像头自己的缩放、曝光补偿和手电筒；否则（以及使用 PipeWire 的摄像头时）提供最高 4× 的数码变焦，录制的视频同样生效。双指缩放可以用触控板、触摸屏，或者按住 Ctrl 滚动滚轮。没有闪光灯、指定点对焦，也没有 `photoQuality` |
 | `platform/scan`、`platform/vision` | 和 Windows 上一样，用 Asuka 自带的识别器识别条码：QR、Data Matrix、EAN、UPC、Code 128、Code 39（不支持 Aztec、PDF417、Code 93、Codabar 和 ITF）。用 Tesseract（`libtesseract5` 加上对应语言的数据）识别文字；没有人脸检测，`faces` 始终为空。没有 Tesseract 时，`vision.analyze` 的结果里没有文字 |
 | `platform/imageedit` | 用 GdkPixbuf 的加载器解码（装了相应加载器时支持 HEIF 和 WebP），并摆正方向；各项编辑操作由 Asuka 完成；视频帧来自 GStreamer |
 | `platform/webauth` | 窗口上弹出一个内嵌 WebKitGTK 网页视图的对话框（设置 `ephemeral` 时使用独立的会话）；关闭对话框即取消 |
@@ -182,12 +182,12 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 
 | 包 | 在浏览器中 |
 | --- | --- |
-| `platform/device` | `pickPhotos` 和 `pickFiles`：浏览器的文件选择器，选中的文件会复制到缓存中。`browse`：打开新标签页。剪贴板：可以读取应用自己复制的内容，在用户允许页面读取剪贴板时，也能读取其他应用复制的内容。`keepAwake`：使用 Screen Wake Lock。`info` 的信息来自 user agent（Chromium 的 client hints 能提供系统版本和 Android 手机的型号） |
+| `platform/device` | `pickPhotos`、`pickMedia` 和 `pickFiles`：浏览器的文件选择器，选中的文件会复制到缓存中（`pickMedia` 的 `ordered` 不起作用；在 Safari 以外的浏览器中，HEIC 图片拿不到尺寸，也不会被缩放）。`browse`：打开新标签页。剪贴板：可以读取应用自己复制的内容，在用户允许页面读取剪贴板时，也能读取其他应用复制的内容。`keepAwake`：使用 Screen Wake Lock。`info` 的信息来自 user agent（Chromium 的 client hints 能提供系统版本和 Android 手机的型号） |
 | `platform/secure` | 值经过加密（AES-GCM）后存在 IndexedDB 中，密钥由浏览器保管、无法导出；这并不是钥匙串（见 [Web](web.md)） |
-| `platform/camera`、`platform/record` | `take()` 在手机上打开相机，否则显示一个带实时画面和快门的对话框；`camera.View` 是放在 `<video>` 中的摄像头画面，支持 `capture()` 和录制，浏览器有 `BarcodeDetector` 时还能扫码 |
+| `platform/camera`、`platform/record` | `take()` 在手机上打开相机，否则显示一个带实时画面和快门的对话框；`camera.View` 是放在 `<video>` 中的摄像头画面，支持 `capture()` 和录制，浏览器有 `BarcodeDetector` 时还能扫码。摄像头的视频轨道支持时（Android 上的 Chrome），用摄像头自己的缩放、手电筒、曝光和对焦，否则提供最高 4× 的数码变焦（录制的视频同样生效，通过 canvas 绘制）；摄像头有闪光灯时通过 `ImageCapture` 使用；没有 `photoQuality`。`maxBytes` 会在超出上限之前的那个数据块处停止录制 |
 | `platform/scan`、`platform/vision` | 用 `BarcodeDetector` 识别条码；人脸和文字只在浏览器支持时才能识别 |
 | `platform/imageedit` | 用 canvas 处理：输出 JPEG 或 PNG；远程图片需要 CORS |
-| `platform/photos` | 网页无法读取照片库：访问权限为 `.denied`（要选照片请用 `device.pickPhotos`） |
+| `platform/photos` | 网页无法读取照片库：访问权限为 `.denied`（要选照片和视频请用 `device.pickMedia`） |
 | `platform/library` | `save` 会把文件下载下来 |
 | `platform/location` | Geolocation API；Web 上没有 `placeName`（浏览器没有地理编码器）。区域和后台定位更新根据位置计算，只在页面打开期间有效 |
 | `platform/network` | 是否在线取自 `navigator.onLine`；浏览器提供相关信息时（Android 上的 Chrome）能区分 Wi-Fi、蜂窝网络和以太网，蜂窝网络视为按流量计费，开启省流量模式（Data Saver）时视为受限 |
@@ -300,9 +300,91 @@ component ScanButton {
 
 iOS 和 Mac 给出用户的选择（被策略禁止时为 `.denied`）；Android 给出是否已授权，以及应用是否问过；Windows 不会询问桌面应用，所以除非在设置里对桌面应用关闭了相机，否则都是 `.allowed`；Linux 上是相机门户对这个应用的回答（没有门户时为 `.allowed`）；浏览器给出它对这个网站的权限。`record.access()` 和 `record.request()` 对麦克风也一样。
 
+### 缩放、手电筒、闪光灯与对焦
+
+`camera.View` 缩放、补光和对焦的方式与平台自带的相机应用一致：
+
+- `zoom` 是缩放倍数：1 是相机本来的视野，2 是拉近一倍。在视图上双指捏合就能缩放（`pinchToZoom: false` 可以关掉），`bind zoom:` 会与之同步：用户捏合时写入状态，写入状态时也会缩放。如果后置摄像头带有超广角镜头，并且平台把几颗镜头当作一个摄像头来用（iPhone 的 0.5×、部分 Android 手机），缩放倍数可以小于 1。
+- `torch` 为 true 时持续照亮相机拍到的画面；`flash`（`.off`、`.on`、`.auto`）是 `capture` 拍照时用的闪光灯。
+- `exposure` 是曝光补偿，单位为 EV：-1 暗一档，1 亮一档。
+- 开启 `tapToFocus`（默认开启）后，点按某处就会在那里对焦和测光，`focusPoint` 给出这个位置（以视图左上角为原点、按视图宽高比例表示：可以在那里画个标记）。`camera.focus(x, y)` 让应用自己做同样的事。
+- `ready` 在相机启动时告诉你它能做什么，相机切换时（`facing`）会再告诉一次：它是一个 `Info`，包含 `minZoom` 和 `maxZoom`、`minExposure` 和 `maxExposure`，以及相机有没有 `torch`、`flash`，能不能对某一点 `focus`。只显示相机支持的控件即可。
+
+在 iOS 上，后置摄像头是把手机的几颗镜头合成一个来用（小于 1 时是超广角，缩放越过长焦镜头的倍数时切换到长焦），点按对焦之后，画面变化较大时对焦会重新跟随场景。在 Android 上，缩放、手电筒、曝光和对焦都由 CameraX 提供。电脑的摄像头很少有变焦、手电筒、闪光灯或指定点对焦：Mac、Windows、Linux 和浏览器在摄像头做不到时使用数码变焦（见上文各自的小节），`ready` 会告诉你缺了哪些功能。
+
+```asuka check
+import platform/camera
+
+component Viewfinder {
+  state zoom = 1.0
+  state lit = false
+  state info = camera.Info()
+  state last = ""
+
+  Column {
+    camera.View {
+      bind zoom: zoom
+      torch: lit
+      flash: .auto
+      grow: 1
+      on ready(i) { info = i }
+    }
+    Row {
+      gap: 12
+      padding: 12
+      if info.torch {
+        Button(if lit { "Light off" } else { "Light" }) { on press { lit = !lit } }
+      }
+      if info.maxZoom >= 2 {
+        Button("2×") { on press { zoom = if zoom == 2 { 1 } else { 2 } } }
+      }
+      Button("Take") { on press { last = try await camera.capture(maxSize: 2048, quality: 0.8) } }
+    }
+  }
+}
+```
+
+### 照片和视频的画质
+
+- `capture(maxSize:, quality:)` 把照片缩小到长边不超过 `maxSize` 像素（0 表示保持相机的完整尺寸），再写成质量为 `quality` 的 JPEG，取值 0 到 1（0 表示用平台的默认值，约为 0.9）。
+- `photoQuality` 决定拍照时侧重什么：`.speed`（按下快门后等待最短）、`.balanced`（平台默认）或 `.quality`（融合多帧，噪点更少，但要等得更久）。它对应 iOS 和 Mac 的 quality prioritization，以及 CameraX 的拍摄模式（capture mode）。Windows、Linux 和浏览器上没有可选的。
+- `videoQuality` 是视图录制视频的尺寸，取相机支持的最接近的一档：`.sd`（480p）、`.hd`（720p）、`.fullHD`（1080p，默认）或 `.uhd`（4K）。
+- `mirror` 让前置摄像头拍出的照片、视频和画面与预览一样左右镜像，自拍就是用户当时看到的样子。关闭时（默认），它们是别人眼中用户的样子，这也是各平台相机应用保存的方式。前置摄像头的预览本身始终是镜像的。
+
+### 交给应用分析的画面
+
+`frameRate` 让视图在显示期间把画面交给应用分析：`frame` 每秒调用这么多次（最多 15 次），传入一个 `Frame`。它是预览中画面的 JPEG 文件，已经摆正，长边最多 `frameSize` 像素（默认 480），并带有 `width`、`height` 和 `time`。你可以用 `platform/vision` 识别其中的文字或人脸，用 `platform/scan` 识别码，或者把它发给服务器。正在写入一帧时，视图会直接丢掉新的帧，而不是让它们排队；它会轮流写入几个文件并反复使用，所以请在处理函数里读取帧的文件，想保留就复制一份。
+
+```asuka check
+import platform/camera
+import platform/vision
+
+component Reader {
+  state text = ""
+  state busy = false
+
+  Column {
+    camera.View {
+      frameRate: 2
+      grow: 1
+      on frame(f) {
+        if busy { return }
+        busy = true
+        defer { busy = false }
+        let r = try await vision.analyze(f.path, faces: false, codes: false)
+        text = r.lines.map(l => l.text).joined("\n")
+      }
+    }
+    Text(text)
+  }
+}
+```
+
+这些帧是图片，不是相机的像素缓冲区：它们适合每秒处理几张的工作（读一页文字、一个标签、一张脸），而不是以相机自身帧率逐帧处理的工作，后者应该写在原生包的代码里。
+
 ## 录制视频：platform/record
 
-处于视频模式的 `camera.View` 可以录像：`record.start()` 录下它显示的画面，除非指定 `mute`，否则同时录下麦克风的声音，直到调用 `record.stop()`（或到达 `maxDuration`），然后返回文件，即应用缓存目录里的一个 MPEG-4 视频。`camera.record` 和 `camera.stopRecording` 的作用相同。
+处于视频模式的 `camera.View` 可以录像：`record.start()` 录下它显示的画面，除非指定 `mute`，否则同时录下麦克风的声音，直到调用 `record.stop()`（或到达 `maxDuration`），然后返回文件，即应用缓存目录里的一个 MPEG-4 视频。`camera.record` 和 `camera.stopRecording` 的作用相同。视频的尺寸由视图的 `videoQuality` 决定，是否镜像由它的 `mirror` 决定；`maxBytes` 会在文件即将超过这个大小时结束录制（和 `maxDuration` 一样，得到的文件是完整的）。
 
 ```asuka
 import platform/camera
@@ -379,24 +461,37 @@ async fn words(photo: string) throws -> [string] {
 
 ## 照片库：platform/photos
 
-`platform/photos` 在用户许可后读取用户的照片库：iOS 和 Mac 上用 PhotoKit，Android 上用 MediaStore，Windows 上读取“图片”文件夹。Linux 和 Web 上没有应用可以读取的照片库，访问权限为 `.denied`。这个包适合以照片库为主界面的应用。如果只是想让用户挑几张照片，用 `device.pickPhotos` 就够了，而且它不需要任何权限：能满足需求时请优先使用它。Google Play 会要求读取照片库的应用在 Play 管理中心说明理由。所有调用都是 async 的。
+`platform/photos` 在用户许可后读取并整理用户的照片库：其中的照片和视频、相册，以及照片库里发生的变化。iOS 和 Mac 上用 PhotoKit，Android 上用 MediaStore，Windows 上用“图片”和“视频”文件夹。Linux 和 Web 上没有应用可以读取的照片库，访问权限为 `.denied`。这个包适合以照片库为主界面的应用（图库、编辑器）。如果只是想让用户挑几张照片或几段视频，用 `device.pickMedia` 就够了，而且它不需要任何权限：能满足需求时请优先使用它。Google Play 会要求读取照片库的应用在 Play 管理中心说明理由。所有调用都是 async 的。
 
-```asuka
+```asuka check
 import platform/photos
 
-component Screenshots {
-  state thumbs: [string] = []
+component Recent {
+  state assets: [photos.Asset] = []
+  state thumbs: [string: string] = [:]
 
   task {
     if (try? await photos.request()) == .denied { return }
-    let assets = (try? await photos.list(screenshots: true, limit: 60)) ?? []
+    for await _ in photos.changes() { await load() }   // 拍了一张照片、删了一张照片……
+  }
+
+  task { await load() }
+
+  async fn load() {
+    assets = (try? await photos.list(kind: .all, limit: 60)) ?? []
     for a in assets {
-      thumbs.push((try? await photos.thumbnail(a.id, size: 300)) ?? "")   // 一个文件，可交给 Image 显示
+      thumbs[a.id] = (try? await photos.thumbnail(a.id, size: 300)) ?? ""
     }
   }
 
   Scroll {
-    for (i, t) in thumbs.enumerated() key i { Image(t) { width: 100; height: 100 } }
+    for a in assets key a.id {
+      Row {
+        gap: 8
+        Image(thumbs[a.id] ?? "") { width: 64; height: 64 }
+        if a.video { Text("{a.duration.seconds()} s") }
+      }
+    }
   }
 }
 
@@ -407,9 +502,38 @@ async fn original(a: photos.Asset) throws -> string {
 ```
 
 - `photos.current()` 不询问用户，直接告诉你当前的授权状态：`.notAsked`、`.denied`、`.limited`（只能访问用户选定的照片：iOS 14、Android 14 起）或 `.allowed`。`photos.request()` 会在第一次调用时询问用户。`photos.manageLimited()` 让处于 `.limited` 状态的用户修改允许访问的照片，并在用户改完后返回：这时请重新获取列表。
-- `photos.list(screenshots:, offset:, limit:)` 按从新到旧的顺序返回，从 `offset` 开始，最多 `limit` 个（默认 100）。每个 `Asset` 包含 `id`、`width`、`height`、`created`（一个 `time.Time`）和 `screenshot`。设置 `screenshots: true` 后只返回截图：iOS 本身知道哪些是截图；Android 上则以 Screenshots 文件夹中的图片为准。
-- `photos.thumbnail(id, size:)` 返回一个短边至少 `size` 像素的 JPEG 文件，并保存在应用的缓存目录中，下次直接复用。
-- `photos.export(id)` 按照片库中的原始格式（HEIC、JPEG、PNG）把完整的图片复制到一个文件，返回它的 `path` 以及它在照片库中的 `name`。iCloud 中的照片会先下载。
+- `photos.list(kind:, album:, screenshots:, offset:, limit:)` 返回照片库中的一页，按从新到旧排列：从 `offset` 开始，最多 `limit` 个（默认 100）；下一页从 `offset + limit` 开始。`kind` 可以是 `.photos`（默认）、`.videos` 或 `.all`；`album` 只返回某个相册里的内容（传入相册的 `id`）；`screenshots: true` 只返回截图（iOS 本身知道哪些是截图；Android 上则以 Screenshots 文件夹中的图片为准）。每个 `Asset` 包含 `id`、`width`、`height`、`created`（一个 `time.Time`）、`screenshot`、`video`、视频的 `duration`，以及 `favorite`。`photos.count(kind:, album:)` 返回总数：可以用来确定图库的最后一页，或者画滚动条。
+- `photos.thumbnail(id, size:)` 返回一个短边至少 `size` 像素的 JPEG 文件（视频则取其中一帧），并保存在应用的缓存目录中，下次直接复用。
+- `photos.export(id)` 按照片库中的原始格式，把照片（HEIC、JPEG、PNG）或视频（MOV、MP4）复制到一个文件，返回它的 `path` 以及它在照片库中的 `name`。iCloud 中的照片和视频会先下载。
+
+### 相册
+
+`photos.albums()` 列出照片库中的相册：先是用户和各个应用自己建的相册，然后是系统维护、且里面有内容的相册（个人收藏、截屏、视频）。每个相册是一个 `Album`，包含 `id`、`title`、`count`，以及它是否由系统维护（`system`）。`photos.list(album: a.id)` 读取其中一个相册。`photos.createAlbum(title)` 新建相册，`photos.addToAlbum(album, ids)` 把照片和视频加进去。
+
+```asuka
+import platform/photos
+
+async fn keep(ids: [string]) throws {
+  let albums = try await photos.albums()
+  var trip = ""
+  if let a = albums.filter(a => a.title == "Trip" && !a.system).first() {
+    trip = a.id
+  } else {
+    trip = (try await photos.createAlbum("Trip")).id
+  }
+  try await photos.addToAlbum(trip, ids)
+}
+```
+
+在 iOS 和 Mac 上，相册里放的就是照片库中的那些照片和视频。在 Android 上，相册是“图片”目录下的一个文件夹：`createAlbum` 会立即返回它的 id，但要等里面有了内容，它才会出现在 `albums()` 中；`addToAlbum` 会把照片和视频复制进去（生成新的资源，原来的仍留在原处）。在 Windows 上，相册也是“图片”下的一个文件夹，添加同样是复制。
+
+### 删除
+
+`photos.delete(ids)` 会弹出系统自己的确认框，用户同意后才删除照片和视频，并返回用户是否同意。iOS 和 Mac 会把它们放进“最近删除”保留 30 天，Android 11 及更高版本会放进回收站。Android 10 会对每个不是本应用自己添加的文件逐一询问；Android 9 及更早版本没有这种确认框，会凭存储权限（已为这些版本声明）直接删除。Windows 则像资源管理器一样，不询问就把文件移到回收站。
+
+### 变化
+
+`photos.changes()` 是一个流，在读取期间给出照片库里发生的变化：拍摄或保存了照片，或者有照片被删除、编辑、标为个人收藏，无论是这个应用还是别的应用做的。在平台提供详情的地方（iOS、Mac、Android 11 及更高版本、Windows），每个 `Change` 会分别列出 `inserted`、`removed` 和 `updated` 的 id；列表为空则表示有东西变了，重新获取列表即可。请在 `task` 中读取它，页面关闭时它也会随之停止。
 
 ## 照片、浏览器与剪贴板：platform/device
 
@@ -434,6 +558,7 @@ component Gallery {
 ```
 
 - `device.pickPhotos(max:)` 显示系统的照片选择器（iOS 上是 PHPicker，Android 上是 Photo Picker；桌面上是打开对话框，浏览器中是文件选择器），最多可选 `max` 张图片（1 到 255）。它不需要任何权限：由用户自己挑选，应用只能看到被选中的图片。它返回这些图片的文件（可以直接交给 `Image` 显示），用户取消时则为空。这些文件是放在应用临时目录或缓存目录中的副本，要保留的话请把它移走。
+- `device.pickMedia(kind:, max:, ordered:, maxSize:, quality:)` 是同一个选择器，但可以选照片、视频或两者都选（`kind`：`.images`、`.videos`、`.all`），相当于 expo-image-picker 的 `launchImageLibraryAsync`。`max` 是用户最多能选几个（0 表示不限，直到选择器自身的上限），返回的顺序就是用户选择的顺序；`ordered: true` 会在用户选择时给它们标上序号（iOS、Android 的照片选择器）。每一项是一个 `device.Media`：包含 `path`、`name`、`type`（MIME 类型）、是否为视频（`video`）、`width` 和 `height`（摆正后的）、视频的 `duration`，以及以字节计的 `size`（Android 的照片选择器不提供原文件的 `name`，给出的是选择器自己起的名字）。图片默认按原样返回（HEIC 仍是 HEIC）；设置了 `maxSize` 或 `quality` 时，每张图片都会被摆正、缩小到长边不超过 `maxSize` 像素，并写成质量为 `quality`（0 到 1；0 表示 0.9）的 JPEG，适合用来控制上传的大小。视频总是按原样返回。
 - `device.browse(url)` 在应用内、覆盖在当前界面之上显示一个网页（SFSafariViewController、Custom Tab）。URL 必须是 http 或 https。而 `device.openURL` 则会离开应用、跳转到浏览器。在桌面上，它会在用户的浏览器中打开页面；在浏览器中，则打开一个新标签页。
 - `device.clipboardText()` 读取剪贴板里的文本，没有文本时返回 `none`。应用第一次读取别的应用放进剪贴板的内容时，iOS 会询问用户。写入剪贴板请用 `device.copy(text)`。
 - `device.keepAwake(on)` 在 `on` 为 true 时让屏幕保持常亮，适合视频、菜谱、地图这类场景。需要常亮的界面关闭时，记得把它关掉。
@@ -454,6 +579,51 @@ component Player {
   }
 
   Text(if let i = info.value { "{i.model}, {i.system} {i.systemVersion}" } else { "" })
+}
+```
+
+### 选择照片后裁剪
+
+选好的照片可以用 `imageedit.Cropper` 裁剪（见[裁剪](#裁剪)），放在弹出面板（sheet）里显示：用户在裁剪框里拖动、捏合照片，然后由 `imageedit.edit` 裁出结果。这就是 expo-image-picker 的 `allowsEditing` 显示的那一步裁剪，只不过由平台自己的 `Image` 和视图组成，在每个平台上都一样。
+
+```asuka check
+import platform/device
+import platform/imageedit
+
+component Avatar {
+  state picked = ""
+  state crop = imageedit.Rect()
+  state avatar = ""
+
+  Column {
+    gap: 12
+    if !avatar.isEmpty() { Image(avatar) { width: 96; height: 96; radius: 48; clip: true } }
+    Button("Choose a photo") {
+      on press {
+        let media = try await device.pickMedia(maxSize: 2048)
+        if let m = media.first() { picked = m.path }
+      }
+    }
+    Sheet {
+      open: !picked.isEmpty()
+      on dismiss { picked = "" }
+      Column {
+        imageedit.Cropper(picked) {
+          aspect: 1
+          circle: true
+          grow: 1
+          on change(r) { crop = r }
+        }
+        Button("Done") {
+          on press {
+            let r = try await imageedit.edit(picked, [.crop(crop.x, crop.y, crop.width, crop.height), .resize(512, 512)])
+            avatar = r.path
+            picked = ""
+          }
+        }
+      }
+    }
+  }
 }
 ```
 
@@ -2438,6 +2608,10 @@ async fn poster(video: string) throws -> string {
 ```
 
 在 iOS 和 Mac 上用的是 Core Graphics 和 Image I/O，在 Android 上是 `Bitmap` 和 `MediaMetadataRetriever`，在浏览器中是 canvas，在 Windows 上是 WIC 和 Media Foundation，在 Linux 上是 GdkPixbuf 和 GStreamer。来源不是图片时会抛出 `EditError.noImage`。
+
+### 裁剪
+
+`imageedit.Cropper(source)` 显示一张待裁剪的图片，并填满自己所在的区域：图片位于一个宽高比为 `aspect` 的裁剪框后面（宽除以高：1 是正方形，也可以写 `16.0 / 9`；0 表示用图片自己的比例），框外的部分会变暗。用户拖动、捏合图片（在电脑上是按住 Ctrl 滚动滚轮，或在触控板上捏合），直到想要的部分落在框内；图片不能被移出裁剪框，也不能缩得比裁剪框还小。`circle: true` 把裁剪框画成圆形，适合做头像（裁出来的仍然是外接的正方形）。`change` 报告框内图片所在的矩形，是一个以图片像素为单位的 `Rect`，在图片显示出来时和每次移动之后报告：用 `.crop(r.x, r.y, r.width, r.height)` 裁剪即可。它由 `Image` 和视图组成，所以在每个平台上的外观和行为都一样；[选择照片后裁剪](#选择照片后裁剪)中的示例把它放在照片选择器之后的弹出面板里。
 
 ### 把视图存成图片
 

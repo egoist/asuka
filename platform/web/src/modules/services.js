@@ -156,7 +156,7 @@ function library() {
 }
 
 export function modules() {
-  const noLibrary = "a page can't read the photo library; device.pickPhotos picks photos";
+  const noLibrary = "a page can't read the photo library; device.pickMedia picks photos and videos";
   return {
     // platform/icloud: iCloud is Apple's (CloudKit JS has neither the
     // key-value store nor the app's containers).
@@ -185,6 +185,13 @@ export function modules() {
       list: fail("photoLibrary.list", noLibrary),
       thumbnail: fail("photoLibrary.thumbnail", noLibrary),
       export: fail("photoLibrary.export", noLibrary),
+      count: fail("photoLibrary.count", noLibrary),
+      albums: fail("photoLibrary.albums", noLibrary),
+      createAlbum: fail("photoLibrary.createAlbum", noLibrary),
+      addToAlbum: fail("photoLibrary.addToAlbum", noLibrary),
+      delete: fail("photoLibrary.delete", noLibrary),
+      nextChange: fail("photoLibrary.nextChange", noLibrary),
+      stop: () => {},
     },
     library: library(),
     contacts: contacts(),

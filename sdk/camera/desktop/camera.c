@@ -12,6 +12,7 @@
 
 #ifdef _WIN32
 #include <direct.h>
+#include "asuka_windows.h"
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -188,6 +189,143 @@ char *camera_file(const char *ext) {
 	}
 	fclose(f);
 	return path;
+}
+
+// ---- Zoom, frames, photos ----
+
+double camera_clamp(double v, double lo, double hi) {
+	if (!(v >= lo)) return lo;  // NaN too
+	return v > hi ? hi : v;
+}
+
+camera_rect camera_zoom_crop(int w, int h, double zoom) {
+	camera_rect r = {0, 0, w, h};
+	if (!(zoom > 1) || w <= 0 || h <= 0) return r;
+	r.w = (int)(w / zoom + 0.5);
+	r.h = (int)(h / zoom + 0.5);
+	if (r.w < 1) r.w = 1;
+	if (r.h < 1) r.h = 1;
+	r.x = (w - r.w) / 2;
+	r.y = (h - r.h) / 2;
+	return r;
+}
+
+void camera_fit(int w, int h, int max, int *ow, int *oh) {
+	if (w < 1) w = 1;
+	if (h < 1) h = 1;
+	if (max > 0 && (w > max || h > max)) {
+		if (w >= h) h = (int)(((int64_t)h * max + w / 2) / w), w = max;
+		else w = (int)(((int64_t)w * max + h / 2) / h), h = max;
+	}
+	*ow = w > 0 ? w : 1;
+	*oh = h > 0 ? h : 1;
+}
+
+void camera_resample(const uint8_t *src, size_t stride, camera_rect r, bool mirror, uint8_t *out, int dw, int dh) {
+	if (r.w <= 0 || r.h <= 0 || dw <= 0 || dh <= 0) return;
+	for (int y = 0; y < dh; y++) {
+		// The source rows this one covers: [y0, y1).
+		int y0 = (int)((int64_t)y * r.h / dh), y1 = (int)((int64_t)(y + 1) * r.h / dh);
+		if (y1 <= y0) y1 = y0 + 1;
+		uint8_t *o = out + (size_t)y * dw * 3;
+		for (int x = 0; x < dw; x++) {
+			int ox = mirror ? dw - 1 - x : x;
+			int x0 = (int)((int64_t)ox * r.w / dw), x1 = (int)((int64_t)(ox + 1) * r.w / dw);
+			if (x1 <= x0) x1 = x0 + 1;
+			uint32_t s0 = 0, s1 = 0, s2 = 0, n = 0;
+			for (int sy = y0; sy < y1; sy++) {
+				const uint8_t *row = src + (size_t)(r.y + sy) * stride + (size_t)(r.x + x0) * 4;
+				for (int sx = x0; sx < x1; sx++, row += 4) s0 += row[0], s1 += row[1], s2 += row[2], n++;
+			}
+			o[x * 3] = (uint8_t)((s0 + n / 2) / n);
+			o[x * 3 + 1] = (uint8_t)((s1 + n / 2) / n);
+			o[x * 3 + 2] = (uint8_t)((s2 + n / 2) / n);
+		}
+	}
+}
+
+bool camera_zoom_optical(camera_zoom_range r, double *max_zoom) {
+	if (r.min <= 0 || r.max <= r.min) return false;
+	*max_zoom = (double)r.max / (double)r.min;
+	return true;
+}
+
+long camera_zoom_value(camera_zoom_range r, double zoom) {
+	double v = camera_clamp(zoom, 1, (double)r.max / (double)(r.min > 0 ? r.min : 1)) * (double)r.min;
+	long l = (long)(v + 0.5);
+	return l < r.min ? r.min : l > r.max ? r.max : l;
+}
+
+static char *frame_path(unsigned view, int n) {
+	char *dir = asuka_sprintf("%s/asuka-camera", asuka_desktop_cache_dir());
+#ifdef _WIN32
+	_mkdir(dir);
+#else
+	mkdir(dir, 0755);
+#endif
+	char *p = asuka_sprintf("%s/frame-%u-%d.jpg", dir, view, n);
+	free(dir);
+	return p;
+}
+
+bool camera_frames_due(camera_frames *f, int64_t now, char **path, int64_t *ms) {
+	if (!(f->rate > 0) || f->writing) return false;
+	double rate = f->rate > CAMERA_MAX_FRAME_RATE ? CAMERA_MAX_FRAME_RATE : f->rate;
+	int64_t every = (int64_t)(1000 / rate + 0.5);
+	if (f->last && now - f->last < every) return false;
+	// On the interval's beat, unless it fell behind a whole one.
+	f->last = f->last && now - f->last < 2 * every ? f->last + every : now;
+	f->writing = true;
+	*path = frame_path(f->view, f->next);
+	f->next = (f->next + 1) % CAMERA_FRAME_RING;
+	*ms = now - f->started;
+	return true;
+}
+
+void camera_frames_clean(unsigned view) {
+	for (int i = 0; i < CAMERA_FRAME_RING; i++) {
+		char *p = frame_path(view, i);
+#ifdef _WIN32
+		wchar_t *w = asuka_wide(p);
+		DeleteFileW(w);
+		free(w);
+#else
+		unlink(p);
+#endif
+		free(p);
+	}
+}
+
+bool camera_record_full(int64_t size, int64_t max, double bitrate, int interval) {
+	if (max <= 0) return false;
+	// Two reads' worth of what it writes, and its index (a second's
+	// samples' sizes and times: a few KB), kept clear of max.
+	double ahead = bitrate / 8 * (2.0 * interval / 1000) + 16384;
+	return (double)size + ahead >= (double)max;
+}
+
+void camera_quality_sizes(camera_VideoQuality q, camera_size sizes[4]) {
+	static const camera_size all[4] = {{640, 480}, {1280, 720}, {1920, 1080}, {3840, 2160}};
+	int at = q >= 0 && q <= 3 ? (int)q : 2;
+	// Itself, then the rest nearest first, the smaller first of two as
+	// near (a camera's 720p before its 4K for 1080p).
+	int n = 0;
+	sizes[n++] = all[at];
+	for (int d = 1; d < 4; d++) {
+		if (at - d >= 0) sizes[n++] = all[at - d];
+		if (at + d < 4) sizes[n++] = all[at + d];
+	}
+}
+
+double camera_size_distance(camera_size want, int w, int h) {
+	// By the pixels' count, on a log scale (twice as many as far as half),
+	// then a little for a shape that isn't the one asked for.
+	double a = (double)want.w * want.h, b = (double)w * h;
+	if (b <= 0) return 1e9;
+	double r = a > b ? a / b : b / a;
+	double sa = (double)want.w / want.h, sb = (double)w / h;
+	double shape = sa > sb ? sa / sb : sb / sa;
+	return (r - 1) + (shape - 1) * 0.5;
 }
 
 // lang_is compares a language tag with one of the table's, ignoring case

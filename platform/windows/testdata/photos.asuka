@@ -1,0 +1,94 @@
+// The photo library on Windows (photos_test.go's TestPhotoLibrary): a
+// photo saved to an album of Pictures' (a folder made by createAlbum),
+// a video to Videos; listed, counted, an album's, its thumbnail and
+// export; copied into another album; the changes heard; deleted to the
+// Recycle Bin. What it made is removed after.
+import platform/photos
+import platform/library
+import std/fs
+
+fn dirOf(p: string) -> string {
+  let parts = p.split("\\")
+  return parts.slice(0, parts.count() - 1).joined("\\")
+}
+
+component Probe(png: string, mp4: string) {
+  state step = "start"
+  state lines: [string] = []
+  state heard = "?"
+  Column {
+    for l in lines key l {
+      Text(l)
+    }
+    Text("heard: {heard}")
+    Text("step: {step}")
+  }
+
+  task {
+    for await c in photos.changes() {
+      if c.inserted.filter(i => i.hasSuffix("a.png")).count() > 0 {
+        heard = c.inserted.filter(i => i.hasSuffix("a.png")).joined(",")
+        break
+      }
+    }
+  }
+
+  task {
+    var made: [string] = []
+    do {
+      await sleep(300ms) // the changes' watch begun
+      let access = try await photos.current()
+      lines = lines + ["access: {if access == .allowed { "allowed" } else { "not allowed" }}"]
+      let album = try await photos.createAlbum("AsukaPhotoTest")
+      lines = lines + ["album: {album.id == album.title} {album.count} {album.system}"]
+      let saved = try await library.save(png, collection: .pictures, name: "a.png", folder: album.title)
+      made = made + [dirOf(saved)]
+      let video = try await library.save(mp4, collection: .movies, name: "asuka-photo-test.mp4")
+      made = made + [video]
+      let mine = try await photos.list(album: album.id, kind: .all)
+      if let a = mine.first() {
+        lines = lines + ["listed: {mine.count()} {a.id == album.id + "/a.png"} {a.width}x{a.height} {a.video} {a.created.unixMilli() > 0}"]
+        let thumb = try await photos.thumbnail(a.id, size: 10)
+        lines = lines + ["thumbnail: {fs.exists(thumb)}"]
+        let f = try await photos.export(a.id)
+        lines = lines + ["export: {f.name} {fs.exists(f.path)}"]
+        let photosOnly = try await photos.list(album: album.id, kind: .videos)
+        lines = lines + ["kind: {photosOnly.count()}"]
+        let albums = try await photos.albums()
+        let found = albums.filter(x => x.id == album.id)
+        lines = lines + ["albums: {found.count()} {if let x = found.first() { x.count } else { -1 }}"]
+        let copy = try await photos.createAlbum("AsukaPhotoTest Copy")
+        try await photos.addToAlbum(album: copy.id, ids: [a.id])
+        let copied = try await photos.list(album: copy.id, kind: .all)
+        lines = lines + ["copied: {copied.count()} {copy.count}"]
+        if let c = copied.first() {
+          let gone = try await photos.delete([c.id])
+          let after = try await photos.count(album: copy.id, kind: .all)
+          lines = lines + ["deleted: {gone} {after}"]
+        }
+        do {
+          try await photos.addToAlbum(album: "no such album", ids: [a.id])
+          lines = lines + ["noalbum: added"]
+        } catch e {
+          lines = lines + ["noalbum: {e.message}"]
+        }
+        let copyDir = dirOf(saved) + " Copy"
+        made = made + [copyDir]
+      }
+      let videos = try await photos.list(kind: .videos, limit: 1000)
+      let v = videos.filter(x => x.id == "videos:asuka-photo-test.mp4")
+      lines = lines + ["video: {v.count()} {if let x = v.first() { x.video } else { false }}"]
+      let n = try await photos.count(kind: .videos)
+      lines = lines + ["counted: {n >= 1}"]
+      await sleep(500ms)
+      step = "done"
+    } catch e {
+      step = "fail {e.message}"
+    }
+    for p in made {
+      try? fs.removeAll(p)
+    }
+  }
+}
+
+app { Probe(png: "PHOTOS_PNG", mp4: "PHOTOS_MP4") }

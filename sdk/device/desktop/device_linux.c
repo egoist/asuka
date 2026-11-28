@@ -3,6 +3,9 @@
 // browser; GdkClipboard; the session kept from idling
 // (gtk_application_inhibit). GTK is touched on the main thread, where its
 // answers come; copying what's picked runs on a thread of its own.
+// pickMedia's dialog offers images and/or videos; a photo scaled
+// (maxSize, quality) is written with GdkPixbuf, upright, and a video the
+// MPEG-4 reader can't read is measured by prerolling it in GStreamer.
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE  // statx
 #endif
@@ -88,19 +91,28 @@ static void p_browse(device_Platform *self, const char *url, asuka_call *call) {
 typedef struct {
 	asuka_call *call;
 	gpointer dialog;
-	bool photos;
+	bool media;  // pickMedia's: scaled to max_size, of quality
+	int64_t max_size;
+	double quality;
 	size_t limit;
 	char **paths;
 	size_t n;
 } picking;
 
+static const device_media_ops media_ops;
+
 static void copy_run(void *p) {
 	picking *k = p;
-	device_list_File files;
 	asuka_error e = {0};
-	if (!device_copy_picked(k->paths, k->n, k->limit, &files, &e)) fail(k->call, &e);
-	else if (k->photos) device_Platform_pickPhotos_done(k->call, device_photos(&files));
-	else device_Platform_pickFiles_done(k->call, files);
+	if (k->media) {
+		device_list_NativeMedia media;
+		if (!device_copy_media(k->paths, k->n, k->limit, k->max_size, k->quality, &media_ops, &media, &e)) fail(k->call, &e);
+		else device_Platform_pickMedia_done(k->call, media);
+	} else {
+		device_list_File files;
+		if (!device_copy_picked(k->paths, k->n, k->limit, &files, &e)) fail(k->call, &e);
+		else device_Platform_pickFiles_done(k->call, files);
+	}
 	for (size_t i = 0; i < k->n; i++) free(k->paths[i]);
 	free(k->paths);
 	free(k);
@@ -176,7 +188,7 @@ static gpointer filter(device_list_string mimes) {
 	return f;
 }
 
-static void pick(asuka_call *call, const char *title, device_list_string mimes, bool multiple, size_t limit, bool photos) {
+static void pick(asuka_call *call, const char *title, device_list_string mimes, bool multiple, const picking *how) {
 	if (!G(gtk_file_dialog_new)) {
 		asuka_error e = {0};
 		asuka_error_unsupported(&e, "no GtkFileDialog (GTK 4.10)");
@@ -184,9 +196,8 @@ static void pick(asuka_call *call, const char *title, device_list_string mimes, 
 		return;
 	}
 	picking *k = calloc(1, sizeof *k);
+	*k = *how;
 	k->call = call;
-	k->photos = photos;
-	k->limit = limit;
 	k->dialog = G(gtk_file_dialog_new)();
 	if (title) G(gtk_file_dialog_set_title)(k->dialog, title);
 	G(gtk_file_dialog_set_modal)(k->dialog, true);
@@ -203,12 +214,97 @@ static void pick(asuka_call *call, const char *title, device_list_string mimes, 
 	else G(gtk_file_dialog_open)(k->dialog, asuka_desktop_window(0), NULL, opened, k);
 }
 
-static void p_photos(device_Platform *self, int64_t max, asuka_call *call) {
-	char *image = "image/*";
-	pick(call, "Choose Images", (device_list_string){&image, 1}, max != 1, max > 0 ? (size_t)max : 0, true);
+// ---- Picked photos and videos: GdkPixbuf for images, a GStreamer
+// pipeline prerolled for a video the MPEG-4 reader can't read (WebM,
+// Matroska, AVI) ----
+
+static bool lx_image_size(const char *path, int64_t *w, int64_t *h) {
+	if (!asuka_linux_load(ASUKA_LIB_PIXBUF) || !G(gdk_pixbuf_get_file_info)) return false;
+	gint iw = 0, ih = 0;
+	if (!G(gdk_pixbuf_get_file_info)(path, &iw, &ih) || iw <= 0 || ih <= 0) return false;
+	bool turned = device_file_orientation(path) >= 5;  // 90° or 270°
+	*w = turned ? ih : iw;
+	*h = turned ? iw : ih;
+	return true;
 }
 
-static void p_files(device_Platform *self, device_list_string types, bool multiple, asuka_call *call) { pick(call, NULL, types, multiple, 0, false); }
+static bool lx_jpeg(const char *from, const char *to, int64_t max, double quality, int64_t *ow, int64_t *oh) {
+	if (!asuka_linux_load(ASUKA_LIB_PIXBUF) || !G(gdk_pixbuf_new_from_data) || !G(gdk_pixbuf_save) || !G(gdk_pixbuf_scale_simple)) return false;
+	int w = 0, h = 0;
+	uint8_t *rgba = NULL;
+	if (!asuka_linux_image_load(from, &w, &h, &rgba)) return false;  // upright
+	// Over black where it's transparent: RGB, what a JPEG holds.
+	size_t n = (size_t)w * h;
+	uint8_t *rgb = malloc(n * 3);
+	for (size_t i = 0; i < n; i++) {
+		unsigned a = rgba[i * 4 + 3];
+		for (int c = 0; c < 3; c++) rgb[i * 3 + c] = (uint8_t)((rgba[i * 4 + c] * a + 127) / 255);
+	}
+	free(rgba);
+	GdkPixbuf *pb = G(gdk_pixbuf_new_from_data)(rgb, GDK_COLORSPACE_RGB, false, 8, w, h, w * 3, NULL, NULL);
+	int64_t sw, sh;
+	device_fit(w, h, max, &sw, &sh);
+	if (pb && (sw != w || sh != h)) {
+		GdkPixbuf *s = G(gdk_pixbuf_scale_simple)(pb, (int)sw, (int)sh, 3);  // GDK_INTERP_HYPER
+		G(g_object_unref)(pb);
+		pb = s;
+	}
+	char q[8];
+	snprintf(q, sizeof q, "%d", (int)(quality * 100 + 0.5));
+	GError *e = NULL;
+	bool ok = pb && G(gdk_pixbuf_save)(pb, to, "jpeg", &e, "quality", q, NULL);
+	if (e) G(g_error_free)(e);
+	if (pb) G(g_object_unref)(pb);
+	free(rgb);
+	*ow = sw;
+	*oh = sh;
+	return ok;
+}
+
+static void lx_video(const char *path, int64_t *w, int64_t *h, int64_t *ms) {
+	if (!asuka_linux_gst() || !G(gst_app_sink_try_pull_preroll)) return;
+	GError *e = NULL;
+	GstElement *pipe = G(gst_parse_launch)("filesrc name=src ! decodebin ! videoconvert ! appsink name=sink sync=false", &e);
+	if (e) G(g_error_free)(e);
+	if (!pipe) return;
+	G(g_object_ref_sink)(pipe);
+	GstElement *src = G(gst_bin_get_by_name)(pipe, "src"), *sink = G(gst_bin_get_by_name)(pipe, "sink");
+	if (src) G(g_object_set)(src, "location", path, NULL);
+	G(gst_element_set_state)(pipe, GST_STATE_PAUSED);
+	GstState st = 0;
+	if (src && sink && G(gst_element_get_state)(pipe, &st, NULL, 5 * GST_SECOND) != 0 && st == GST_STATE_PAUSED) {  // not GST_STATE_CHANGE_FAILURE
+		gint64 d = 0;
+		if (G(gst_element_query_duration)(pipe, GST_FORMAT_TIME, &d) && d > 0) *ms = d / 1000000;
+		GstSample *sample = G(gst_app_sink_try_pull_preroll)((GstAppSink *)sink, 0);
+		GstCaps *caps = sample ? G(gst_sample_get_caps)(sample) : NULL;
+		GstStructure *s = caps ? G(gst_caps_get_structure)(caps, 0) : NULL;
+		gint vw = 0, vh = 0;
+		if (s && G(gst_structure_get_int)(s, "width", &vw) && G(gst_structure_get_int)(s, "height", &vh)) *w = vw, *h = vh;
+		if (sample) G(gst_mini_object_unref)(sample);
+	}
+	G(gst_element_set_state)(pipe, GST_STATE_NULL);
+	if (src) G(gst_object_unref)(src);
+	if (sink) G(gst_object_unref)(sink);
+	G(gst_object_unref)(pipe);
+}
+
+static const device_media_ops media_ops = {lx_image_size, lx_jpeg, lx_video};
+
+static void p_media(device_Platform *self, device_MediaKind kind, int64_t max, bool ordered, int64_t maxSize, double quality, asuka_call *call) {
+	(void)ordered;  // the file dialog doesn't number what's picked: its order is the dialog's
+	char *image = "image/*", *video = "video/*";
+	char *both[] = {image, video};
+	device_list_string mimes = kind == device_MediaKind_videos ? (device_list_string){&video, 1}
+	                           : kind == device_MediaKind_all  ? (device_list_string){both, 2}
+	                                                           : (device_list_string){&image, 1};
+	picking how = {.media = true, .max_size = maxSize, .quality = quality, .limit = max > 0 ? (size_t)max : 0};
+	pick(call, NULL, mimes, max != 1, &how);
+}
+
+static void p_files(device_Platform *self, device_list_string types, bool multiple, asuka_call *call) {
+	picking how = {0};
+	pick(call, NULL, types, multiple, &how);
+}
 
 static GdkClipboard *clipboard(void) {
 	GdkDisplay *d = G(gdk_display_get_default) ? G(gdk_display_get_default)() : NULL;
@@ -459,7 +555,7 @@ static void p_awake(device_Platform *self, bool on, asuka_error *err) {
 static bool p_settings(device_Platform *self, asuka_error *err) { return false; }
 
 static const device_Platform_vtable vt = {
-    .info = p_info, .browse = p_browse, .pickPhotos = p_photos, .pickFiles = p_files, .clipboardText = p_text,
+    .info = p_info, .browse = p_browse, .pickMedia = p_media, .pickFiles = p_files, .clipboardText = p_text,
     .clipboardHas = p_has, .clipboardImage = p_image, .copyImage = p_copy, .clipboardHTML = p_html, .copyHTML = p_copy_html,
     .watchClipboard = p_watch, .keepAwake = p_awake, .openSettings = p_settings,
 };

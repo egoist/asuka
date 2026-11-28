@@ -15,6 +15,9 @@ test("contacts.add's vCard and calendar.add's iCalendar", () => {
 test("what the web hasn't, and background's tasks", async () => {
   const m = modules();
   assert.equal(m.photoLibrary.current(), "denied");
+  for (const k of ["manage", "list", "count", "thumbnail", "export", "albums", "createAlbum", "addToAlbum", "delete", "nextChange"]) {
+    assert.throws(() => m.photoLibrary[k](), { message: new RegExp(`^asuka: photoLibrary.${k} isn't on the web: a page can't read the photo library`) });
+  }
   assert.deepEqual([...m.contacts.request()], [1]);
   assert.throws(() => m.contacts.list(), { message: "not allowed" });
   assert.throws(() => m.icloud.kvGet(), { message: /^not available/ });

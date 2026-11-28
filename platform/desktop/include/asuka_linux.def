@@ -1402,7 +1402,8 @@ SYM(PIXBUF, gboolean, gdk_pixbuf_get_has_alpha, (const GdkPixbuf *pixbuf))
 SYM(PIXBUF, const guint8 *, gdk_pixbuf_read_pixels, (const GdkPixbuf *pixbuf))
 SYM(PIXBUF, gpointer, gdk_pixbuf_get_file_info, (const char *filename, gint *width, gint *height))
 SYM(PIXBUF, gboolean, gdk_pixbuf_save, (GdkPixbuf *pixbuf, const char *filename, const char *type, GError **error, ...))
-SYM(PIXBUF, gboolean, gdk_pixbuf_save_to_bufferv, (GdkPixbuf *pixbuf, gchar **buffer, gsize *buffer_size, const char *type, char **option_keys, char **option_values, GError **error))
+SYM(PIXBUF, GdkPixbuf *, gdk_pixbuf_scale_simple, (const GdkPixbuf *src, int dest_width, int dest_height, int interp_type))
+SYM(PIXBUF, gboolean, gdk_pixbuf_save_to_bufferv,(GdkPixbuf *pixbuf, gchar **buffer, gsize *buffer_size, const char *type, char **option_keys, char **option_values, GError **error))
 
 // ---- Native packages: libshumate (maps) ----
 SYM(SHUMATE, GtkWidget *, shumate_simple_map_new, (void))

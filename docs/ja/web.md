@@ -137,7 +137,7 @@ Web アプリから見える環境（`environment()`）は、ブラウザーの�
 標準ライブラリとプラットフォーム SDK のパッケージは、ブラウザーでは次のようになります。
 
 - `platform/secure`：値は、ブラウザーが保持して外に出さない鍵（エクスポートできない WebCrypto の鍵）で暗号化（AES-GCM）され、IndexedDB に保存されます。キーチェーンではありません。アプリのオリジンで動くスクリプトは鍵そのものを読めませんが、その鍵での復号を依頼することはできます。`https`（または `localhost`）が必要です。
-- `platform/device`：`info()` はユーザーエージェントから取得します（Chromium のクライアントヒントからは、システムのバージョンと Android スマートフォンの機種がわかります）。クリップボード、クリップボードの画像（PNG。キャッシュに保存されます）、`clipboardChanges()`（アプリ自身のコピーと、ユーザーがページにクリップボードの読み取りを許可している場合はほかのアプリのコピー）に対応します。`keepAwake`（Screen Wake Lock。ページが再び表示されると取得し直します）、`browse`（新しいタブ）、`pickPhotos` と `pickFiles`（ブラウザーのファイル選択ダイアログ。選んだファイルはキャッシュにコピーされます）にも対応します。
+- `platform/device`：`info()` はユーザーエージェントから取得します（Chromium のクライアントヒントからは、システムのバージョンと Android スマートフォンの機種がわかります）。クリップボード、クリップボードの画像（PNG。キャッシュに保存されます）、`clipboardChanges()`（アプリ自身のコピーと、ユーザーがページにクリップボードの読み取りを許可している場合はほかのアプリのコピー）に対応します。`keepAwake`（Screen Wake Lock。ページが再び表示されると取得し直します）、`browse`（新しいタブ）、`pickPhotos`、`pickMedia`、`pickFiles`（ブラウザーのファイル選択ダイアログ。選んだファイルはキャッシュにコピーされます。`pickMedia` は画像を canvas で縮小し、その `ordered` は何もしません）にも対応します。
 - `device.shareFiles`：ファイルを渡して共有シートを開きます（`navigator.share`）。共有シートがなければ、各ファイルをダウンロードします。`platform/preview`：ファイルを新しいタブで開きます（画像、動画、音声、テキスト、PDF、HTML）。それ以外の種類は `PreviewError.noViewer` になります。
 - `platform/print`：HTML、ファイル（PDF はブラウザーのビューアーで）、アプリ自身の Web ビューを、ブラウザーの印刷ダイアログで印刷します。結果は常に `.unknown` です（ブラウザーが結果を知らせないためです）。`print.pdf` は Web では使えません（`PrintError.unsupported`）。ブラウザーが PDF を作れるのは、印刷ダイアログ（「PDF として保存」）を通したときだけです。
 - `platform/compose`：`mailto:` と `sms:` のリンクを使います。添付ファイルがあれば共有シートを使います。
@@ -147,7 +147,7 @@ Web アプリから見える環境（`environment()`）は、ブラウザーの�
 - `platform/sensors`：Generic Sensor API（Chrome）か、デバイスの motion イベントと orientation イベント（Safari はタップ時に許可を求めます）を使い、Android と同じ軸と単位で値を返します。気圧計と歩数計はありません。
 - `platform/speech`：`speechSynthesis` と、ブラウザーの音声を使います。
 - `platform/audio`：プレイヤーごとに audio 要素を一つ使います（ブラウザーの自動再生のルールが適用されるので、タップから再生してください）。`platform/record`：`MediaRecorder` を使います。ブラウザーが対応していれば MPEG-4 の AAC で、そうでなければ WebM の Opus で録音します。`platform/nowplaying`：Media Session API を使います。
-- `platform/camera`：`take()` は、スマートフォンならカメラを開き、それ以外ではライブのカメラ映像とシャッターボタンのあるダイアログを開きます。`camera.View` は `<video>` に映したカメラ映像です（`capture()`、`record` に対応し、ブラウザーに `BarcodeDetector` があればコードのスキャンにも対応します）。`platform/scan` と `platform/vision` のコード読み取りは `BarcodeDetector` を使います。顔とテキストの認識は、ブラウザーが対応している場合にだけ使えます。
+- `platform/camera`：`take()` は、スマートフォンならカメラを開き、それ以外ではライブのカメラ映像とシャッターボタンのあるダイアログを開きます。`camera.View` は `<video>` に映したカメラ映像です（`capture()`、`record` に対応し、ブラウザーに `BarcodeDetector` があればコードのスキャンにも対応します）。カメラのトラックが対応していればカメラ自身のズーム、ライト、露出、フォーカスを使い（Android の Chrome）、なければ最大 4× のデジタルズームになります。アプリ向けのフレーム（`frameRate`）は canvas に描いて作ります。`platform/scan` と `platform/vision` のコード読み取りは `BarcodeDetector` を使います。顔とテキストの認識は、ブラウザーが対応している場合にだけ使えます。
 - `platform/imageedit`：canvas を使います（JPEG か PNG。リモートの画像には CORS が必要です）。
 - `platform/maps`：Windows と同じく、OpenStreetMap のタイルから Asuka が描画する地図です。マーカーとそのコールアウト、ドラッグ、ホイール、ピンチ、ダブルクリック、キーボードによる移動、OpenStreetMap が求める帰属表示に対応します。航空写真と混合の地図は道路地図を表示します（無料の航空写真がないためです）。`showsUser` は、ページに位置情報の許可があればユーザーの現在地を表示します（許可を求めるのは `platform/location` で、地図が求めることはありません）。タイルは、利用ポリシーが Web ページに求めるとおりに `tile.openstreetmap.org` から取得します（画面に表示する分だけを、ブラウザーのキャッシュを使い、Referer 付きで取得します）。大量に使う場合は、`start` に `mapTiles`（`{z}`、`{x}`、`{y}` を含む別のサーバーの URL）を渡してください（[埋め込み](#埋め込み)）。
 - `platform/crash`：その実行の記録は、スマートフォンと同じくアプリのファイルに保存されます。Asuka 自身の致命的なエラーはこの記録を書き込んでページのアプリを止め、次回の起動時に報告されます。キャッチされなかった JavaScript のエラー（Asuka のものか、パッケージの `web/` のスクリプトのもの）は、その場で `"exception"` のレポートになりますが、致命的なものとしては扱われません（ページは動き続けます）。ページは `localStorage` に自分の実行が生きていることを記録するので、アプリのほかの開いているページがその実行に手を出すことはありません。
@@ -159,7 +159,7 @@ Web アプリから見える環境（`environment()`）は、ブラウザーの�
 - `platform/tracking` は、ブラウザーが Global Privacy Control か Do Not Track を送っていれば `.denied` を、そうでなければ `.allowed` を、プロンプトを出さずに返します。
 - `platform/pay`：ブラウザーに Apple Pay がある場合（Safari）は、Payment Request API を通じて Apple Pay を使います。マーチャントの検証は、Apple に登録したドメインについてアプリのサーバーが行います（`onValidateMerchant`）。それ以外のブラウザーでは、Google の Web API（pay.google.com から読み込む `pay.js`）を通じて Google Pay を使います。ボタンはそれぞれ純正のものです。シートはタップからしか表示できません。
 - `device.haptic` は、ブラウザーが対応していれば（Android の Chrome）`navigator.vibrate` を使います。
-- Web では使えず、その旨のエラー（またはパッケージ独自の `notAvailable`）になるもの：`platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity`、`platform/photos`（`.denied` を返します。写真の選択は `device.pickPhotos` でできます）、連絡先とカレンダーの読み取り、`platform/transcribe` の `file`、`platform/screen` の `preventCapture` と `screenshots()`。
+- Web では使えず、その旨のエラー（またはパッケージ独自の `notAvailable`）になるもの：`platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity`、`platform/photos`（`.denied` を返します。写真や動画の選択は `device.pickMedia` でできます）、連絡先とカレンダーの読み取り、`platform/transcribe` の `file`、`platform/screen` の `preventCapture` と `screenshots()`。
 
 ## 通知と Web Push
 

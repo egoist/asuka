@@ -1,12 +1,17 @@
-// Package platform/photos reads the user's photo library, with their
-// permission: PhotoKit on iOS, MediaStore on Android. It's for an app
-// whose screen is the library (a gallery, an editor); to let the user
-// pick a few photos, a picker asks for no permission.
+// Package platform/photos reads and organizes the user's photo library,
+// with their permission: its photos and videos, its albums, and what
+// changes in it. PhotoKit on iOS and macOS, MediaStore on Android, the
+// Pictures and Videos folders on Windows. It's for an app whose screen
+// is the library (a gallery, an editor); to let the user pick a few
+// photos, device.pickMedia asks for no permission.
 //
 //   if try await photos.request() != .denied {
-//     let assets = try await photos.list(screenshots: true, limit: 60)
+//     let assets = try await photos.list(kind: .all, limit: 60)
 //     let thumb = try await photos.thumbnail(assets[0].id, size: 300)
 //   }
+//
+// Tests fake the library: photos.fake() gives a FakePhotos whose assets
+// and albums the calls read and change.
 
 import platform/host
 import std/json
@@ -28,7 +33,21 @@ fn accessOf(s: string) -> Access = match s {
   _ => .notAsked
 }
 
-/// A photo in the library.
+/// What a list or a count holds.
+pub enum Kind {
+  photos
+  videos
+  /// Photos and videos.
+  all
+}
+
+fn kindIndex(k: Kind) -> int = match k {
+  .photos => 0
+  .videos => 1
+  .all => 2
+}
+
+/// A photo or a video in the library.
 pub struct Asset {
   id: string = ""
   width: int = 0
@@ -36,33 +55,82 @@ pub struct Asset {
   /// When it was taken.
   created: time.Time = time.unix(0)
   screenshot: bool = false
+  /// It's a video.
+  video: bool = false
+  /// A video's length (0s for a photo).
+  duration: Duration = 0s
+  /// The user's favorite (iOS's heart, Android's star).
+  favorite: bool = false
 }
 
-// An asset as the hosts say it: created in milliseconds since 1970.
+// An asset as the hosts say it: created and duration in milliseconds.
 struct WireAsset {
   id: string = ""
   width: int = 0
   height: int = 0
   created: int = 0
   screenshot: bool = false
+  video: bool = false
+  duration: int = 0
+  favorite: bool = false
 }
 
-/// A photo as a file: a copy in the app's caches.
+fn assetOf(w: WireAsset) -> Asset = Asset(id: w.id, width: w.width, height: w.height, created: time.unixMilli(w.created),
+  screenshot: w.screenshot, video: w.video, duration: w.duration * 1ms, favorite: w.favorite)
+
+/// A photo or a video as a file: a copy in the app's caches.
 pub struct File {
   path: string = ""
   /// Its name in the library (IMG_0042.HEIC).
   name: string = ""
 }
 
+/// An album of the library.
+pub struct Album {
+  id: string = ""
+  title: string = ""
+  /// How many photos and videos it holds.
+  count: int = 0
+  /// One the system keeps (Favorites, Screenshots, Recents, Camera):
+  /// nothing can be added to it.
+  system: bool = false
+}
+
+/// What changed in the library: the ids the platform names, in each of
+/// its lists. A platform that says only that something changed (Android
+/// before 11, Windows' folders when many files change at once) leaves
+/// them empty: list again.
+pub struct Change {
+  inserted: [string] = []
+  removed: [string] = []
+  updated: [string] = []
+}
+
 /// What the user has allowed, without asking.
-pub async fn current() throws -> Access = accessOf((try await host.call("photoLibrary", "current", bytes())).string())
+pub async fn current() throws -> Access {
+  if let f = faked {
+    return f.access
+  }
+  return accessOf((try await host.call("photoLibrary", "current", bytes())).string())
+}
 
 /// Asks the user the first time, and answers what they've allowed.
-pub async fn request() throws -> Access = accessOf((try await host.call("photoLibrary", "request", bytes())).string())
+pub async fn request() throws -> Access {
+  if let f = faked {
+    if f.access == .notAsked {
+      f.access = f.answer
+    }
+    return f.access
+  }
+  return accessOf((try await host.call("photoLibrary", "request", bytes())).string())
+}
 
 /// Lets a user who allowed only some photos change which; it returns
 /// once that's closed: list again.
 pub async fn manageLimited() throws {
+  if let _ = faked {
+    return
+  }
   let _ = try await host.call("photoLibrary", "manage", bytes())
 }
 
@@ -70,15 +138,41 @@ struct Query {
   screenshots: bool
   offset: int
   limit: int
+  kind: int
+  album: string
 }
 
-/// The photos, newest first, from offset, at most limit; screenshots
-/// keeps only those.
-pub async fn list(screenshots: bool = false, offset: int = 0, limit: int = 100) throws -> [Asset] {
-  let q = Query(screenshots: screenshots, offset: offset, limit: if limit <= 0 { 100 } else { limit })
+/// The photos (or videos, or both: kind), newest first, from offset, at
+/// most limit: a page of them, the next from offset + limit. album keeps
+/// those of an album (its id); screenshots keeps only those.
+pub async fn list(screenshots: bool = false, offset: int = 0, limit: int = 100, kind: Kind = .photos, album: string = "") throws -> [Asset] {
+  let n = if limit <= 0 { 100 } else { limit }
+  let from = if offset < 0 { 0 } else { offset }
+  if let f = faked {
+    try f.readable()
+    let all = f.matching(kind, album, screenshots)
+    if from >= all.count() {
+      return []
+    }
+    return all.slice(from, min(from + n, all.count()))
+  }
+  let q = Query(screenshots: screenshots, offset: from, limit: n, kind: kindIndex(kind), album: album)
   let b = try await host.call("photoLibrary", "list", json.encode(q).bytes())
   let ws: [WireAsset] = try json.decode(b.string())
-  return ws.map(w => Asset(id: w.id, width: w.width, height: w.height, created: time.unixMilli(w.created), screenshot: w.screenshot))
+  return ws.map(w => assetOf(w))
+}
+
+/// How many photos (or videos, or both) list would page through: for a
+/// gallery's scroll bar, or its last page.
+pub async fn count(kind: Kind = .photos, album: string = "", screenshots: bool = false) throws -> int {
+  if let f = faked {
+    try f.readable()
+    return f.matching(kind, album, screenshots).count()
+  }
+  let q = Query(screenshots: screenshots, offset: 0, limit: 0, kind: kindIndex(kind), album: album)
+  let b = try await host.call("photoLibrary", "count", json.encode(q).bytes())
+  let n: int = try json.decode(b.string())
+  return n
 }
 
 struct Thumb {
@@ -86,16 +180,218 @@ struct Thumb {
   size: int
 }
 
-/// A JPEG file of the photo, at least size pixels on its short side,
-/// kept in the app's caches.
+/// A JPEG file of the photo (a video's frame), at least size pixels on
+/// its short side, kept in the app's caches.
 pub async fn thumbnail(id: string, size: int = 300) throws -> string {
+  if let f = faked {
+    try f.find(id)
+    return "/tmp/asuka-photo-thumbs/{id}-{size}.jpg"
+  }
   let b = try await host.call("photoLibrary", "thumbnail", json.encode(Thumb(id: id, size: size)).bytes())
   return b.string()
 }
 
-/// Copies the photo's full image as it is in the library (HEIC, JPEG,
-/// PNG) to a file; an iCloud photo downloads first.
+/// Copies the photo's full image (HEIC, JPEG, PNG) or the video (MOV,
+/// MP4) as it is in the library to a file; an iCloud one downloads
+/// first.
 pub async fn export(id: string) throws -> File {
+  if let f = faked {
+    let a = try f.find(id)
+    let ext = if a.video { "mov" } else { "jpg" }
+    return File(path: "/tmp/asuka-photo-exports/{id}.{ext}", name: "{id}.{ext}")
+  }
   let b = try await host.call("photoLibrary", "export", json.encode(["id": id]).bytes())
   return try json.decode(b.string())
+}
+
+/// The library's albums: the user's and the apps' own, then the system's
+/// (Favorites, Screenshots, Videos) that hold something.
+pub async fn albums() throws -> [Album] {
+  if let f = faked {
+    try f.readable()
+    return f.albums.map(a => Album(id: a.id, title: a.title, count: a.ids.count(), system: a.system))
+  }
+  let b = try await host.call("photoLibrary", "albums", bytes())
+  return try json.decode(b.string())
+}
+
+/// Makes an album of that title (another with the same title can be
+/// there too). On Android an album is a folder of Pictures, there once
+/// something's added to it.
+pub async fn createAlbum(title: string) throws -> Album {
+  if let f = faked {
+    try f.writable()
+    f.made += 1
+    let a = FakeAlbum(id: "album-{f.made}", title: title)
+    f.albums = f.albums + [a]
+    return Album(id: a.id, title: title)
+  }
+  let b = try await host.call("photoLibrary", "createAlbum", json.encode(["title": title]).bytes())
+  return try json.decode(b.string())
+}
+
+struct Adding {
+  album: string
+  ids: [string]
+}
+
+/// Adds photos and videos (their ids) to an album of the user's or the
+/// app's. iOS and the Mac add the same assets; on Android, where an album
+/// is a folder, they're copied into it (new assets, the originals left
+/// where they were).
+pub async fn addToAlbum(album: string, ids: [string]) throws {
+  if let f = faked {
+    try f.writable()
+    for id in ids {
+      try f.find(id)
+    }
+    var found = false
+    f.albums = f.albums.map(a => {
+      if a.id != album {
+        return a
+      }
+      found = true
+      if a.system {
+        return a
+      }
+      return FakeAlbum(id: a.id, title: a.title, ids: a.ids + ids.filter(i => !a.ids.contains(i)))
+    })
+    if !found {
+      throw Error("photos: no such album")
+    }
+    return
+  }
+  let _ = try await host.call("photoLibrary", "addToAlbum", json.encode(Adding(album: album, ids: ids)).bytes())
+}
+
+/// Deletes photos and videos (their ids) from the library, once the user
+/// confirms in the system's own question (iOS, the Mac, Android 11; the
+/// Recycle Bin's on Windows): whether they did. iOS and the Mac keep them
+/// in Recently Deleted for 30 days, Android 11 in its trash.
+pub async fn delete(ids: [string]) throws -> bool {
+  if ids.isEmpty() {
+    return true
+  }
+  if let f = faked {
+    try f.writable()
+    for id in ids {
+      try f.find(id)
+    }
+    f.asked += 1
+    if !f.confirms {
+      return false
+    }
+    f.assets = f.assets.filter(a => !ids.contains(a.id))
+    f.albums = f.albums.map(a => FakeAlbum(id: a.id, title: a.title, ids: a.ids.filter(i => !ids.contains(i)), system: a.system))
+    return true
+  }
+  let b = try await host.call("photoLibrary", "delete", json.encode(["ids": ids]).bytes())
+  return b.string() == "true"
+}
+
+/// What changes in the library while the stream is read: photos taken or
+/// saved, deleted, edited, made favorites, in this app or another. List
+/// again at each (a gallery's page, its count).
+pub fn changes() -> Stream<Change> = Stream(give => {
+  if let f = faked {
+    for await c in f.feed() {
+      give(c)
+    }
+    return
+  }
+  for await b in host.next("photoLibrary", "nextChange") {
+    let c: Change = try json.decode(b.string())
+    give(c)
+  }
+})
+
+// ---------------------------------------------------------------------
+// Testing
+
+state faked: FakePhotos? = none
+
+/// An album of the fake library: the ids of what it holds.
+pub struct FakeAlbum {
+  id: string
+  title: string
+  ids: [string] = []
+  system: bool = false
+}
+
+/// The fake library fake() makes, which a test sets and reads.
+pub store FakePhotos {
+  /// What current() says.
+  pub state access: Access = .allowed
+  /// What request() makes access, when it's notAsked.
+  pub state answer: Access = .allowed
+  /// The library, newest first.
+  pub state assets: [Asset] = []
+  /// Its albums.
+  pub state albums: [FakeAlbum] = []
+  /// The user confirms a delete.
+  pub state confirms = true
+  /// How many times delete asked the user.
+  pub state asked = 0
+  /// How many albums createAlbum made.
+  pub state made = 0
+  /// What changes() gives, as the test sends it (send).
+  state sent: [Change] = []
+
+  fn readable() throws {
+    if access == .denied || access == .notAsked {
+      throw Error("photos: not allowed")
+    }
+  }
+
+  fn writable() throws {
+    try readable()
+  }
+
+  fn find(id: string) throws -> Asset {
+    for a in assets {
+      if a.id == id {
+        return a
+      }
+    }
+    throw Error("photos: no such photo")
+  }
+
+  fn matching(kind: Kind, album: string, screenshots: bool) -> [Asset] {
+    var ids: [string]? = none
+    if !album.isEmpty() {
+      for a in albums {
+        if a.id == album {
+          ids = a.ids
+        }
+      }
+      if ids == none {
+        return []
+      }
+    }
+    return assets.filter(a => (kind == .all || a.video == (kind == .videos)) && (!screenshots || a.screenshot) && (ids == none || (ids ?? []).contains(a.id)))
+  }
+
+  /// Sends a change to the changes() streams being read.
+  pub fn send(change: Change) {
+    sent = sent + [change]
+  }
+
+  fn feed() -> Stream<Change> = Stream(give => {
+    var at = 0
+    while true {
+      while at < sent.count() {
+        give(sent[at])
+        at += 1
+      }
+      await sleep(10ms)
+    }
+  })
+}
+
+/// Fakes the library for an app's tests: its calls read and change the
+/// fake's assets and albums, and changes() gives what send sends.
+pub fn fake() -> FakePhotos {
+  let f = FakePhotos()
+  faked = f
+  return f
 }

@@ -137,7 +137,7 @@ Web 应用看到的环境（`environment()`）来自浏览器：
 标准库和平台 SDK 的包在浏览器中的表现：
 
 - `platform/secure`：值用 AES-GCM 加密后存放在 IndexedDB 中，密钥由浏览器保管且无法导出（一个不可提取的 WebCrypto 密钥）。它并不是钥匙串：在应用源中运行的脚本读不到密钥，但可以请求用它解密。它需要 `https`（或 `localhost`）。
-- `platform/device`：`info()` 的信息来自 user agent（Chromium 的 client hints 能提供系统版本和 Android 手机型号）；剪贴板、剪贴板里的图片（PNG，保存到缓存目录）以及 `clipboardChanges()`（应用自己的复制操作都能收到；其他应用的复制，只有在用户允许页面读取剪贴板时才能收到）；`keepAwake`（使用 Screen Wake Lock，页面重新显示时会再次获取）；`browse`（打开新标签页）；`pickPhotos` 和 `pickFiles`（浏览器的文件选择器；选中的文件复制到缓存目录）。
+- `platform/device`：`info()` 的信息来自 user agent（Chromium 的 client hints 能提供系统版本和 Android 手机型号）；剪贴板、剪贴板里的图片（PNG，保存到缓存目录）以及 `clipboardChanges()`（应用自己的复制操作都能收到；其他应用的复制，只有在用户允许页面读取剪贴板时才能收到）；`keepAwake`（使用 Screen Wake Lock，页面重新显示时会再次获取）；`browse`（打开新标签页）；`pickPhotos`、`pickMedia` 和 `pickFiles`（浏览器的文件选择器；选中的文件复制到缓存目录；`pickMedia` 在 canvas 中缩放图片，它的 `ordered` 不起作用）。
 - `device.shareFiles`：通过分享面板分享文件（`navigator.share`），不支持时逐个下载。`platform/preview`：在新标签页中打开文件（图片、视频、音频、文本、PDF、HTML）；其他类型会抛出 `PreviewError.noViewer`。
 - `platform/print`：可以打印 HTML、文件（PDF 在浏览器的查看器中打开）和应用自己的 Web 视图，使用浏览器的打印对话框；结果总是 `.unknown`（浏览器不会告知结果）。Web 上没有 `print.pdf`（抛出 `PrintError.unsupported`）：浏览器只能通过打印对话框生成 PDF（另存为 PDF）。
 - `platform/compose`：使用 `mailto:` 和 `sms:` 链接；带附件时使用分享面板。
@@ -147,7 +147,7 @@ Web 应用看到的环境（`environment()`）来自浏览器：
 - `platform/sensors`：使用 Generic Sensor API（Chrome）或设备运动和方向事件（Safari 需要在点按时请求权限），坐标轴和单位与 Android 一致；没有气压计和计步器。
 - `platform/speech`：使用 `speechSynthesis` 和浏览器自带的语音。
 - `platform/audio`：每个播放器对应一个 audio 元素（受浏览器自动播放规则限制：要在点按时开始播放）。`platform/record`：使用 `MediaRecorder`，浏览器支持时录制为 MPEG-4 封装的 AAC，否则录制为 WebM 封装的 Opus。`platform/nowplaying`：使用 Media Session API。
-- `platform/camera`：`take()` 会打开手机的相机，或者弹出一个带实时画面和快门按钮的对话框；`camera.View` 是放在 `<video>` 里的相机画面（支持 `capture()`、`record`，浏览器有 `BarcodeDetector` 时还能扫码）。`platform/scan` 和 `platform/vision` 的扫码功能使用 `BarcodeDetector`，人脸和文字识别只在浏览器支持时可用。
+- `platform/camera`：`take()` 会打开手机的相机，或者弹出一个带实时画面和快门按钮的对话框；`camera.View` 是放在 `<video>` 里的相机画面（支持 `capture()`、`record`，浏览器有 `BarcodeDetector` 时还能扫码）；摄像头的视频轨道支持时（Android 上的 Chrome），用摄像头自己的缩放、手电筒、曝光和对焦，否则用最高 4× 的数码变焦；交给应用的画面（`frameRate`）在 canvas 中绘制。`platform/scan` 和 `platform/vision` 的扫码功能使用 `BarcodeDetector`，人脸和文字识别只在浏览器支持时可用。
 - `platform/imageedit`：使用 canvas（JPEG 或 PNG；远程图片需要支持 CORS）。
 - `platform/maps`：和 Windows 上一样，由 Asuka 用 OpenStreetMap 的瓦片绘制地图：支持标记及其标注气泡，可以拖动、滚轮、捏合、双击以及用键盘移动地图，并按 OpenStreetMap 的要求显示署名。卫星图和混合图只显示街道图（没有免费的卫星影像）；`showsUser` 在页面获得定位权限后显示用户位置（权限由 `platform/location` 申请，地图本身从不申请）。瓦片按 `tile.openstreetmap.org` 对网页的使用政策获取（只加载屏幕上可见的部分，使用浏览器缓存，带上 Referer）；如果用量很大，可以给 `start` 传入 `mapTiles`（另一个瓦片服务器的 URL，包含 `{z}`、`{x}` 和 `{y}`），见 [嵌入](#嵌入)。
 - `platform/crash`：本次运行的记录保存在应用的文件里，和手机上一样。Asuka 自己的致命错误会写下这份记录并停止页面里的应用，下次启动时上报。未捕获的 JavaScript 错误（Asuka 的，或者某个包的 `web/` 脚本里的）会立即作为 `"exception"` 报告上报，但不算致命错误（页面会继续运行）。每个页面会在 `localStorage` 里标记自己的运行仍然存活，这样应用的其他已打开页面就不会去动它。
@@ -159,7 +159,7 @@ Web 应用看到的环境（`environment()`）来自浏览器：
 - `platform/tracking`：浏览器发送了 Global Privacy Control 或 Do Not Track 时返回 `.denied`，否则返回 `.allowed`，不会弹出提示。
 - `platform/pay`：浏览器支持 Apple Pay 时（Safari）通过 Payment Request API 使用它，商户验证由应用的服务器完成（`onValidateMerchant`），网站的域名需要在 Apple 注册；其他浏览器通过 Google 的 Web API（从 pay.google.com 加载的 `pay.js`）使用 Google Pay；两者都使用各自的官方按钮。支付面板只在点击时显示。
 - `device.haptic` 使用 `navigator.vibrate`，前提是浏览器支持（Android 上的 Chrome）。
-- 以下功能在 Web 上不可用，调用时会抛出说明原因的错误（或返回包自己的 `notAvailable`）：`platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity`、`platform/photos`（返回 `.denied`，可以用 `device.pickPhotos` 选择照片）、读取通讯录和日历、`platform/transcribe` 的 `file`，以及 `platform/screen` 的 `preventCapture` 和 `screenshots()`。
+- 以下功能在 Web 上不可用，调用时会抛出说明原因的错误（或返回包自己的 `notAvailable`）：`platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity`、`platform/photos`（返回 `.denied`，可以用 `device.pickMedia` 选择照片和视频）、读取通讯录和日历、`platform/transcribe` 的 `file`，以及 `platform/screen` 的 `preventCapture` 和 `screenshots()`。
 
 ## 通知与 Web Push
 

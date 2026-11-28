@@ -89,6 +89,46 @@ pub struct File {
   size: int = 0
 }
 
+/// What a media picker offers.
+pub enum MediaKind {
+  /// Photos and other images.
+  images
+  videos
+  /// Images and videos.
+  all
+}
+
+/// A photo or a video the user picked: a copy in the app's caches, the
+/// app's to keep or move.
+pub struct Media {
+  path: string
+  /// Its name where it was ("IMG_0042.HEIC"), where the platform says.
+  name: string = ""
+  /// Its MIME type ("image/jpeg", "video/quicktime"), if known.
+  type: string = ""
+  /// It's a video.
+  video: bool = false
+  /// Its size in pixels, upright (0: not known).
+  width: int = 0
+  height: int = 0
+  /// A video's length (0s for an image, or not known).
+  duration: Duration = 0s
+  /// Its size, in bytes.
+  size: int = 0
+}
+
+/// Media as the platform's code makes it: its duration in milliseconds.
+struct NativeMedia {
+  path: string = ""
+  name: string = ""
+  type: string = ""
+  video: bool = false
+  width: int = 0
+  height: int = 0
+  durationMs: int = 0
+  size: int = 0
+}
+
 /// What the clipboard holds, said without reading it (iOS doesn't ask
 /// the user for this): to show a Paste button only when there's
 /// something to paste.
@@ -106,8 +146,11 @@ native interface Platform {
   async fn info() -> NativeInfo
   /// Shows a web page in the app (or the browser, on desktops).
   async fn browse(url: string)
-  /// The photo picker, for up to max images; their copies' paths.
-  async fn pickPhotos(max: int) -> [string]
+  /// The photo picker, for up to max (0: any number) of kind, in the
+  /// order picked (ordered: the picker numbers them); images scaled to
+  /// maxSize on their long side and written as JPEGs of quality when
+  /// either isn't 0.
+  async fn pickMedia(kind: MediaKind, max: int, ordered: bool, maxSize: int, quality: float) -> [NativeMedia]
   /// The document picker (types: MIME types, none: any file).
   async fn pickFiles(types: [string], multiple: bool) -> [File]
   /// The clipboard's text; none if it has none.
@@ -181,12 +224,38 @@ pub async fn browse(url: string) throws {
 
 /// Shows the system's photo picker for up to max images (no permission
 /// asked) and returns their files, which Image shows; none if the user
-/// cancelled.
+/// cancelled. pickMedia picks videos too, and scales images down.
 pub async fn pickPhotos(max: int = 1) throws -> [string] {
+  let picked = try await pickMedia(kind: .images, max: if max < 1 { 1 } else { max })
+  return picked.map(m => m.path)
+}
+
+/// Shows the system's photo picker (no permission asked) for images,
+/// videos or both, up to max of them (0: as many as the user likes, up
+/// to the platform's limit), and returns copies of what was picked in the
+/// order it was picked; none if the user cancelled. ordered numbers them
+/// as they're picked (iOS, Android's photo picker). An image is given as
+/// it is (a HEIC stays HEIC) unless maxSize or quality is set: then it's
+/// scaled down to at most maxSize pixels on its long side (0: as it is)
+/// and written upright as a JPEG of quality (0 to 1; 0: 0.9). Videos are
+/// given as they are.
+pub async fn pickMedia(kind: MediaKind = .images, max: int = 1, ordered: bool = false, maxSize: int = 0, quality: float = 0) throws -> [Media] {
   var n = max
-  if n < 1 { n = 1 }
+  if n < 0 { n = 0 }
   if n > 255 { n = 255 }
-  return try await made().pickPhotos(max: n)
+  let size = if maxSize < 0 { 0 } else { maxSize }
+  let q = if quality < 0 || quality > 1 { 0.0 } else { quality }
+  if let f = fakedPicker {
+    f.asked = f.asked + [PickRequest(kind: kind, max: n, ordered: ordered, maxSize: size, quality: q)]
+    let all = f.picked.filter(m => kind == .all || m.video == (kind == .videos))
+    if n > 0 && all.count() > n {
+      return all.prefix(n)
+    }
+    return all
+  }
+  let ms = try await made().pickMedia(kind: kind, max: n, ordered: ordered, maxSize: size, quality: q)
+  return ms.map(m => Media(path: m.path, name: m.name, type: m.type, video: m.video, width: m.width, height: m.height,
+    duration: m.durationMs * 1ms, size: m.size))
 }
 
 /// Shows the system's document picker (no permission asked) and returns
@@ -341,4 +410,35 @@ pub fn keepAwake(on: bool) {
   if let p = platform {
     try? p.keepAwake(on: on)
   }
+}
+
+// ---------------------------------------------------------------------
+// Testing
+
+/// What pickMedia (or pickPhotos) was asked for, as the fake keeps it.
+pub struct PickRequest {
+  kind: MediaKind
+  max: int
+  ordered: bool
+  maxSize: int
+  quality: float
+}
+
+state fakedPicker: FakePicker? = none
+
+/// The fake photo picker fakePicker() makes, which a test sets and reads.
+pub store FakePicker {
+  /// What the user picks: pickMedia gives those of the kind asked, at
+  /// most max of them (none: the user cancelled).
+  pub state picked: [Media] = []
+  /// What the pickers were asked for, in order.
+  pub state asked: [PickRequest] = []
+}
+
+/// Fakes the photo picker for an app's tests: pickMedia and pickPhotos
+/// answer at once with what the fake's picked holds.
+pub fn fakePicker() -> FakePicker {
+  let f = FakePicker()
+  fakedPicker = f
+  return f
 }

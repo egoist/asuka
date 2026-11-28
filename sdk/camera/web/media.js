@@ -16,28 +16,46 @@ export function recordingType(supported, video = false) {
 
 export const uuid = () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-/** Recording is a MediaRecorder writing a file of the app's (shared with camera.View's video). */
+/**
+ * Recording is a MediaRecorder writing a file of the app's (shared with
+ * camera.View's video). maxBytes stops it as the file nears that size:
+ * its chunks come as often as the browser hands them out then (a
+ * quarter second's, or a second's fragment of an MP4), and it stops when
+ * another as big as the biggest yet would pass it (the last, flushed as
+ * it stops, is a fraction of one), so the file is whole and about
+ * maxBytes, seldom over it.
+ */
 export class Recording {
-  constructor(stream, { type, path, bitrate, video, maxMs, stream: progressive }, done) {
+  constructor(stream, { type, path, bitrate, video, maxMs, maxBytes = 0, stream: progressive }, done) {
     this.stream = stream;
     this.path = path;
     this.chunks = [];
+    this.bytes = 0;
+    this.biggest = 0;
+    this.maxBytes = maxBytes > 0 ? maxBytes : 0;
     this.done = done;
     this.elapsed = 0;
     this.since = performance.now();
     const opts = {};
     if (type) opts.mimeType = type;
     if (bitrate) opts[video ? "bitsPerSecond" : "audioBitsPerSecond"] = bitrate;
+    // Chrome's MP4 hands out its bytes a fragment at a time, a fragment
+    // from a key frame to the next (every few seconds): with maxBytes,
+    // one a second, so they're counted as they come.
+    if (video && this.maxBytes) opts.videoKeyFrameIntervalDuration = 1000;
     this.rec = new MediaRecorder(stream, opts);
     this.rec.ondataavailable = (e) => {
       if (!e.data.size) return;
       this.chunks.push(e.data);
+      this.bytes += e.data.size;
+      this.biggest = Math.max(this.biggest, e.data.size);
       if (progressive) this.write();
+      if (this.maxBytes && this.bytes + this.biggest >= this.maxBytes) this.stop();
     };
     // onstop comes after the last data.
     this.rec.onstop = () => this.finish(null);
     this.rec.onerror = (e) => this.finish(e.error || new Error("couldn't record"));
-    this.rec.start(1000);
+    this.rec.start(this.maxBytes ? 250 : 1000);
     if (maxMs > 0) this.timer = setTimeout(() => this.stop(), maxMs);
   }
   /** write writes what's recorded so far to the file (in order: each after the last). */

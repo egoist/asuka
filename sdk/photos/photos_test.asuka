@@ -1,0 +1,95 @@
+fn library() -> FakePhotos {
+  let f = fake()
+  f.assets = [
+    Asset(id: "v1", width: 1920, height: 1080, video: true, duration: 12s),
+    Asset(id: "p1", width: 4032, height: 3024, favorite: true),
+    Asset(id: "s1", width: 1179, height: 2556, screenshot: true),
+    Asset(id: "p2", width: 3024, height: 4032),
+  ]
+  f.albums = [FakeAlbum(id: "fav", title: "Favorites", ids: ["p1"], system: true)]
+  return f
+}
+
+test "the fake: pages of photos, videos or both" {
+  let _ = library()
+  let photos = try await list()
+  expect(photos.map(a => a.id) == ["p1", "s1", "p2"])
+  expect((try await list(kind: .videos)).map(a => a.id) == ["v1"])
+  expect((try await list(kind: .videos))[0].duration == 12s)
+  expect((try await list(kind: .all, offset: 1, limit: 2)).map(a => a.id) == ["p1", "s1"])
+  expect((try await list(kind: .all, offset: 9)).isEmpty())
+  expect((try await list(screenshots: true)).map(a => a.id) == ["s1"])
+  expect(try await count() == 3)
+  expect(try await count(kind: .all) == 4)
+  expect(try await count(album: "fav") == 1)
+  expect(try await count(album: "nowhere") == 0)
+}
+
+test "the fake: albums made, added to, read" {
+  let f = library()
+  let trip = try await createAlbum("Trip")
+  expect(trip.title == "Trip" && trip.count == 0 && !trip.system)
+  try await addToAlbum(trip.id, ["p2", "v1"])
+  try await addToAlbum(trip.id, ["p2"])
+  let all = try await albums()
+  expect(all.map(a => a.title) == ["Favorites", "Trip"])
+  expect(all[1].count == 2)
+  expect((try await list(kind: .all, album: trip.id)).map(a => a.id) == ["v1", "p2"])
+  var failed = false
+  do {
+    try await addToAlbum("nowhere", ["p1"])
+  } catch {
+    failed = true
+  }
+  expect(failed)
+  expect(f.made == 1)
+}
+
+test "the fake: a delete the user confirms, or doesn't" {
+  let f = library()
+  f.confirms = false
+  expect(!(try await delete(["p1"])))
+  expect(try await count(kind: .all) == 4)
+  f.confirms = true
+  expect(try await delete(["p1", "v1"]))
+  expect((try await list(kind: .all)).map(a => a.id) == ["s1", "p2"])
+  expect((try await albums())[0].count == 0)
+  expect(f.asked == 2)
+  expect(try await delete([]))
+  expect(f.asked == 2)
+}
+
+test "the fake: not allowed, nothing read" {
+  let f = library()
+  f.access = .notAsked
+  f.answer = .denied
+  expect(try await request() == .denied)
+  var failed = false
+  do {
+    let _ = try await list()
+  } catch {
+    failed = true
+  }
+  expect(failed)
+}
+
+async fn read(n: int) throws -> [Change] {
+  var seen: [Change] = []
+  for await c in changes() {
+    seen.push(c)
+    if seen.count() == n { break }
+  }
+  return seen
+}
+
+async fn sendTwo(f: FakePhotos) {
+  f.send(Change(inserted: ["n1"]))
+  f.send(Change(removed: ["p1"]))
+}
+
+test "the fake: changes as they're sent" {
+  let f = library()
+  let (seen, _) = try await all(read(2), sendTwo(f))
+  expect(seen.map(c => c.inserted) == [["n1"], []])
+  expect(seen[1].removed == ["p1"])
+}

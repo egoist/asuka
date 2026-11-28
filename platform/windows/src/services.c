@@ -16,13 +16,16 @@
 //     Pictures folders.
 //   - compose: a mail through the mailto: app; with attachments, Simple
 //     MAPI's composer. No messages.
-//   - photoLibrary: the user's Pictures folder, read as the library is on
-//     a phone; a Windows app needs no permission to read it.
+//   - photoLibrary: the user's Pictures and Videos folders, read as the
+//     library is on a phone (Pictures' folders its albums, deleting to
+//     the Recycle Bin, changes heard with ReadDirectoryChangesW); a
+//     Windows app needs no permission to read them.
 //   - push: WNS gives channels to packaged apps only. widget,
 //     liveActivity: a phone's. icloud: Apple's.
 #include "modules.h"
 
 #include <time.h>
+#include <wchar.h>
 #include <wincodec.h>
 
 extern bool wh_opened_at_login;  // instance.c
@@ -737,12 +740,23 @@ static void unavailable(wh_reply *r, const uint8_t *a, size_t n) {
 static const wh_method_def compose_methods[] = {{"can", m_compose_can}, {"mail", m_compose_mail}, {"message", unavailable}, {NULL, NULL}};
 const wh_module_def wh_compose_module = {"compose", compose_methods};
 
-// ---- The photo library: the Pictures folder ----
+// ---- The photo library: the Pictures and Videos folders ----
+//
+// The library is what the user's Pictures folder holds (photos, and the
+// videos a phone's import puts there) and their Videos folder's videos:
+// an asset's id is its path under Pictures ("Camera Roll/IMG_1.jpg"), or
+// under Videos after "videos:". Its albums are Pictures' folders (Camera
+// Roll and Screenshots are Windows', system ones: nothing's added to
+// them); adding to one copies the files in. A favorite is a file rated
+// five stars (as the Photos app's heart writes it). Deleting sends the
+// files to the Recycle Bin, with the shell's question if the user has it
+// ask (Windows doesn't, as it comes). Changes are ReadDirectoryChangesW's
+// on both folders, from the first nextChange on.
 
 typedef struct {
-	char *rel, *path;
-	int64_t created;  // ms
-	bool shot;
+	char *rel, *path;  // its id, and its file
+	int64_t created;   // ms
+	bool shot, video;
 } photo;
 
 typedef struct {
@@ -750,13 +764,22 @@ typedef struct {
 	uint32_t n, cap;
 } photos;
 
-static bool photo_ext(const wchar_t *name) {
+static bool ext_in(const wchar_t *name, const wchar_t *const *exts, size_t n) {
 	const wchar_t *e = wcsrchr(name, '.');
 	if (!e) return false;
-	const wchar_t *exts[] = {L".jpg", L".jpeg", L".png", L".heic", L".heif", L".webp", L".gif", L".bmp", L".tif", L".tiff", L".avif", L".jxr", L".dng"};
-	for (size_t i = 0; i < WH_LEN(exts); i++)
+	for (size_t i = 0; i < n; i++)
 		if (!_wcsicmp(e, exts[i])) return true;
 	return false;
+}
+
+static bool photo_ext(const wchar_t *name) {
+	static const wchar_t *exts[] = {L".jpg", L".jpeg", L".png", L".heic", L".heif", L".webp", L".gif", L".bmp", L".tif", L".tiff", L".avif", L".jxr", L".dng"};
+	return ext_in(name, exts, WH_LEN(exts));
+}
+
+static bool video_ext(const wchar_t *name) {
+	static const wchar_t *exts[] = {L".mp4", L".m4v", L".mov", L".wmv", L".avi", L".mkv", L".webm", L".3gp", L".mts", L".m2ts"};
+	return ext_in(name, exts, WH_LEN(exts));
 }
 
 static int64_t filetime_ms(FILETIME t) {
@@ -764,7 +787,26 @@ static int64_t filetime_ms(FILETIME t) {
 	return (int64_t)(v / 10000) - 11644473600000LL;
 }
 
-static void walk(photos *out, const wchar_t *root, const wchar_t *dir, const wchar_t *shots, bool only_shots) {
+// What a walk keeps: its kind (0 photos, 1 videos, 2 both), only
+// screenshots; the root's ids' prefix ("videos:"), and whether the root
+// holds photos at all (Videos doesn't).
+typedef struct {
+	int kind;
+	bool only_shots, photos_too;
+	const char *prefix;
+	const wchar_t *root, *shots;
+	bool count_only;
+	uint32_t counted;
+} walking;
+
+// media_kind is 1 for a photo, 2 for a video, 0 for neither.
+static int media_kind(const walking *q, const wchar_t *name) {
+	if (q->photos_too && photo_ext(name)) return 1;
+	if (video_ext(name)) return 2;
+	return 0;
+}
+
+static void walk(photos *out, walking *q, const wchar_t *dir) {
 	wchar_t pat[MAX_PATH * 2];
 	swprintf(pat, WH_LEN(pat), L"%ls\\*", dir);
 	WIN32_FIND_DATAW fd;
@@ -775,26 +817,35 @@ static void walk(photos *out, const wchar_t *root, const wchar_t *dir, const wch
 		wchar_t p[MAX_PATH * 2];
 		swprintf(p, WH_LEN(p), L"%ls\\%ls", dir, fd.cFileName);
 		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-			if (fd.cFileName[0] != '.' && !(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) walk(out, root, p, shots, only_shots);
+			if (fd.cFileName[0] != '.' && !(fd.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM))) walk(out, q, p);
 			continue;
 		}
-		if (!photo_ext(fd.cFileName)) continue;
+		int k = media_kind(q, fd.cFileName);
+		if (!k || (q->kind == 0 && k != 1) || (q->kind == 1 && k != 2)) continue;
+		const wchar_t *shots = q->shots;
 		size_t dl = wcslen(dir), sl = shots ? wcslen(shots) : 0;
 		const wchar_t *parent = wcsrchr(dir, '\\');
-		bool shot = (shots && sl && !_wcsnicmp(dir, shots, sl) && (dl == sl || dir[sl] == '\\')) || (parent && !_wcsicmp(parent + 1, L"Screenshots"));
-		if (only_shots && !shot) continue;
+		bool shot = k == 1 && ((sl && !_wcsnicmp(dir, shots, sl) && (dl == sl || dir[sl] == '\\')) || (parent && !_wcsicmp(parent + 1, L"Screenshots")));
+		if (q->only_shots && !shot) continue;
+		if (q->count_only) {
+			q->counted++;
+			continue;
+		}
 		if (out->n == out->cap) {
 			out->cap = out->cap ? out->cap * 2 : 64;
 			out->v = wh_realloc(out->v, out->cap * sizeof *out->v);
 		}
 		photo *ph = &out->v[out->n++];
-		const wchar_t *rel = p + wcslen(root) + 1;
-		ph->rel = wh_utf8(rel, -1, NULL);
-		for (char *c = ph->rel; *c; c++)
+		char *rel = wh_utf8(p + wcslen(q->root) + 1, -1, NULL);
+		for (char *c = rel; *c; c++)
 			if (*c == '\\') *c = '/';
+		ph->rel = wh_alloc(strlen(q->prefix) + strlen(rel) + 1);
+		sprintf(ph->rel, "%s%s", q->prefix, rel);
+		free(rel);
 		ph->path = wh_utf8(p, -1, NULL);
 		ph->created = filetime_ms(fd.ftCreationTime);
 		ph->shot = shot;
+		ph->video = k == 2;
 	} while (FindNextFileW(h, &fd));
 	FindClose(h);
 }
@@ -804,9 +855,9 @@ static int newest_first(const void *a, const void *b) {
 	return x->created < y->created ? 1 : x->created > y->created ? -1 : 0;
 }
 
-static wchar_t *pictures_root(void) {
+static wchar_t *known_root(const GUID *id, bool create) {
 	PWSTR p = NULL;
-	if (FAILED(SHGetKnownFolderPath(&FOLDERID_Pictures, KF_FLAG_CREATE, NULL, &p)) || !p) {
+	if (FAILED(SHGetKnownFolderPath(id, create ? KF_FLAG_CREATE : 0, NULL, &p)) || !p) {
 		if (p) CoTaskMemFree(p);
 		return NULL;
 	}
@@ -815,19 +866,62 @@ static wchar_t *pictures_root(void) {
 	return s;
 }
 
-// photo_path is a photo's file, by its id (never outside the library).
+static wchar_t *pictures_root(void) { return known_root(&FOLDERID_Pictures, true); }
+static wchar_t *videos_root(void) { return known_root(&FOLDERID_Videos, false); }
+
+#define VIDEOS_PREFIX "videos:"
+
+// safe_rel reports whether a relative path stays inside its root.
+static bool safe_rel(const char *rel) {
+	return *rel && !strstr(rel, "..") && !strchr(rel, ':') && rel[0] != '/' && rel[0] != '\\';
+}
+
+// asset_path is an asset's file, by its id (never outside the library).
 static char *photo_path(const char *id) {
-	if (!*id || strstr(id, "..") || strchr(id, ':') || id[0] == '/' || id[0] == '\\') return NULL;
-	wchar_t *root = pictures_root();
+	bool video = !strncmp(id, VIDEOS_PREFIX, strlen(VIDEOS_PREFIX));
+	const char *rel = video ? id + strlen(VIDEOS_PREFIX) : id;
+	if (!safe_rel(rel)) return NULL;
+	wchar_t *root = video ? videos_root() : pictures_root();
 	if (!root) return NULL;
 	char *r8 = wh_utf8(root, -1, NULL);
 	free(root);
-	char *rel = wh_strdup(id);
-	for (char *c = rel; *c; c++)
+	char *rel2 = wh_strdup(rel);
+	for (char *c = rel2; *c; c++)
 		if (*c == '/') *c = '\\';
-	char *p = dsk_join(r8, rel);
-	free(r8), free(rel);
+	char *p = dsk_join(r8, rel2);
+	free(r8), free(rel2);
 	if (!wh_file_exists(p)) {
+		free(p);
+		return NULL;
+	}
+	return p;
+}
+
+// Albums: Pictures' folders. Windows' own (the camera's, screenshots')
+// are system albums.
+static bool system_album(const wchar_t *path) {
+	static const GUID *ids[] = {&FOLDERID_CameraRoll, &FOLDERID_Screenshots};
+	for (size_t i = 0; i < WH_LEN(ids); i++) {
+		wchar_t *k = known_root(ids[i], false);
+		bool same = k && !_wcsicmp(k, path);
+		free(k);
+		if (same) return true;
+	}
+	return false;
+}
+
+// album_dir is an album's folder, by its id (a folder of Pictures').
+static wchar_t *album_dir(const char *id) {
+	if (!safe_rel(id) || strchr(id, '/') || strchr(id, '\\')) return NULL;
+	wchar_t *root = pictures_root();
+	if (!root) return NULL;
+	wchar_t *name = wh_wide(id, -1);
+	size_t n = wcslen(root) + wcslen(name) + 2;
+	wchar_t *p = wh_alloc(n * sizeof *p);
+	swprintf(p, n, L"%ls\\%ls", root, name);
+	free(root), free(name);
+	DWORD a = GetFileAttributesW(p);
+	if (a == INVALID_FILE_ATTRIBUTES || !(a & FILE_ATTRIBUTE_DIRECTORY)) {
 		free(p);
 		return NULL;
 	}
@@ -837,55 +931,143 @@ static char *photo_path(const char *id) {
 typedef struct {
 	wh_reply *r;
 	bool shots;
-	int offset, limit, size;
-	char *id;
+	int offset, limit, size, kind;
+	char *id, *album, *title;
+	dsk_json *args;
+	bool count;
 	char *out, *err;
 } photo_job;
 
+// Shell properties: what the system's index knows of a file.
+static const PROPERTYKEY key_duration = {{0x64440490, 0x4c8b, 0x11d1, {0x8b, 0x70, 0x08, 0x00, 0x36, 0xb1, 0x1a, 0x03}}, 3};
+static const PROPERTYKEY key_frame_width = {{0x64440491, 0x4c8b, 0x11d1, {0x8b, 0x70, 0x08, 0x00, 0x36, 0xb1, 0x1a, 0x03}}, 3};
+static const PROPERTYKEY key_frame_height = {{0x64440491, 0x4c8b, 0x11d1, {0x8b, 0x70, 0x08, 0x00, 0x36, 0xb1, 0x1a, 0x03}}, 4};
+static const PROPERTYKEY key_video_orientation = {{0x64440491, 0x4c8b, 0x11d1, {0x8b, 0x70, 0x08, 0x00, 0x36, 0xb1, 0x1a, 0x03}}, 99};
+static const PROPERTYKEY key_rating = {{0x64440492, 0x4c8b, 0x11d1, {0x8b, 0x70, 0x08, 0x00, 0x36, 0xb1, 0x1a, 0x03}}, 9};
+
+static bool prop_u64(IPropertyStore *ps, const PROPERTYKEY *k, uint64_t *out) {
+	PROPVARIANT v;
+	PropVariantInit(&v);
+	bool ok = SUCCEEDED(IPropertyStore_GetValue(ps, k, &v));
+	if (ok && v.vt == VT_UI4) *out = v.ulVal;
+	else if (ok && v.vt == VT_UI8) *out = v.uhVal.QuadPart;
+	else ok = false;
+	PropVariantClear(&v);
+	return ok;
+}
+
+// file_props reads a file's rating and, for a video, its frame (turned
+// as it plays) and length.
+static void file_props(const char *path, bool video, int *w, int *h, int64_t *ms, bool *favorite) {
+	wchar_t *wp = wh_wide(path, -1);
+	IPropertyStore *ps = NULL;
+	if (SUCCEEDED(SHGetPropertyStoreFromParsingName(wp, NULL, GPS_DEFAULT, &IID_IPropertyStore, (void **)&ps)) && ps) {
+		uint64_t v = 0;
+		*favorite = prop_u64(ps, &key_rating, &v) && v >= 99;  // five stars
+		if (video) {
+			uint64_t fw = 0, fh = 0, rot = 0;
+			if (prop_u64(ps, &key_duration, &v)) *ms = (int64_t)(v / 10000);  // 100 ns
+			prop_u64(ps, &key_frame_width, &fw);
+			prop_u64(ps, &key_frame_height, &fh);
+			prop_u64(ps, &key_video_orientation, &rot);
+			bool turned = rot == 90 || rot == 270;
+			*w = (int)(turned ? fh : fw);
+			*h = (int)(turned ? fw : fh);
+		}
+		IPropertyStore_Release(ps);
+	}
+	free(wp);
+}
+
+// gather walks what a job asks for: the album's folder, or both roots.
+static bool gather(photo_job *j, photos *all, uint32_t *count) {
+	wchar_t *pics = pictures_root(), *vids = videos_root();
+	if (!pics) {
+		free(vids);
+		j->err = wh_strdup("no Pictures folder");
+		return false;
+	}
+	wchar_t *shots = known_root(&FOLDERID_Screenshots, false);
+	walking q = {.kind = j->kind, .only_shots = j->shots, .photos_too = true, .prefix = "", .root = pics, .shots = shots, .count_only = count != NULL};
+	bool ok = true;
+	if (j->album && *j->album) {
+		wchar_t *dir = album_dir(j->album);
+		if (dir) walk(all, &q, dir);
+		else ok = false, j->err = wh_strdup("photos: no such album");
+		free(dir);
+	} else {
+		walk(all, &q, pics);
+		// Videos' folder, unless it's in Pictures' (walked already).
+		size_t pl = wcslen(pics);
+		if (vids && !(j->shots) && j->kind != 0 && !(!_wcsnicmp(vids, pics, pl) && (vids[pl] == '\\' || !vids[pl]))) {
+			walking v = q;
+			v.photos_too = false;
+			v.prefix = VIDEOS_PREFIX;
+			v.root = vids;
+			walk(all, &v, vids);
+			q.counted += v.counted;
+		}
+	}
+	if (count) *count = q.counted;
+	free(pics), free(vids), free(shots);
+	return ok;
+}
+
+static void free_photos(photos *all) {
+	for (uint32_t i = 0; i < all->n; i++) free(all->v[i].rel), free(all->v[i].path);
+	free(all->v);
+}
+
 static void list_work(void *ctx) {
 	photo_job *j = ctx;
-	wchar_t *root = pictures_root();
-	if (!root) {
-		j->err = wh_strdup("no Pictures folder");
+	photos all = {0};
+	if (j->count) {
+		uint32_t n = 0;
+		if (gather(j, &all, &n)) {
+			char b[16];
+			snprintf(b, sizeof b, "%u", n);
+			j->out = wh_strdup(b);
+		}
 		return;
 	}
-	PWSTR sp = NULL;
-	wchar_t *shots = NULL;
-	if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Screenshots, 0, NULL, &sp)) && sp) shots = _wcsdup(sp);
-	if (sp) CoTaskMemFree(sp);
-	photos all = {0};
-	walk(&all, root, root, shots, j->shots);
-	qsort(all.v, all.n, sizeof *all.v, newest_first);
+	if (!gather(j, &all, NULL)) return;
+	if (all.n) qsort(all.v, all.n, sizeof *all.v, newest_first);
 	dsk_jw w = {0};
 	dsk_jw_arr(&w);
-	int from = j->offset > 0 ? j->offset : 0, to = from + (j->limit > 0 ? j->limit : 1);
+	int from = j->offset > 0 ? j->offset : 0, to = from + (j->limit > 0 ? j->limit : 100);
 	for (int i = from; i < to && (uint32_t)i < all.n; i++) {
 		photo *p = &all.v[i];
 		int pw = 0, ph = 0;
-		wchar_t *wp = wh_wide(p->path, -1);
-		wh_image_file_size(wp, &pw, &ph);
-		free(wp);
+		int64_t ms = 0;
+		bool fav = false;
+		if (!p->video) {
+			wchar_t *wp = wh_wide(p->path, -1);
+			wh_image_file_size(wp, &pw, &ph);
+			free(wp);
+		}
+		file_props(p->path, p->video, &pw, &ph, &ms, &fav);
 		dsk_jw_obj(&w);
 		dsk_jw_key(&w, "id"), dsk_jw_str(&w, p->rel);
 		dsk_jw_key(&w, "width"), dsk_jw_int(&w, pw);
 		dsk_jw_key(&w, "height"), dsk_jw_int(&w, ph);
 		dsk_jw_key(&w, "created"), dsk_jw_int(&w, p->created);
 		dsk_jw_key(&w, "screenshot"), dsk_jw_bool(&w, p->shot);
+		dsk_jw_key(&w, "video"), dsk_jw_bool(&w, p->video);
+		dsk_jw_key(&w, "duration"), dsk_jw_int(&w, p->video ? ms : 0);
+		dsk_jw_key(&w, "favorite"), dsk_jw_bool(&w, fav);
 		dsk_jw_end(&w);
 	}
 	dsk_jw_aend(&w);
 	j->out = dsk_jw_take(&w, NULL);
-	for (uint32_t i = 0; i < all.n; i++) free(all.v[i].rel), free(all.v[i].path);
-	free(all.v);
-	free(root);
-	free(shots);
+	free_photos(&all);
 }
 
 static void photo_done(void *ctx) {
 	photo_job *j = ctx;
 	if (j->out) wh_reply_str(j->r, j->out);
 	else wh_reply_fail(j->r, "%s", j->err ? j->err : "photos: failed");
-	free(j->id), free(j->out), free(j->err);
+	free(j->id), free(j->album), free(j->title), free(j->out), free(j->err);
+	dsk_json_free(j->args);
 	free(j);
 }
 
@@ -894,15 +1076,68 @@ static void allowed(wh_reply *r, const uint8_t *a, size_t n) {
 	wh_reply_str(r, "allowed");
 }
 
-static void m_photo_list(wh_reply *r, const uint8_t *a, size_t n) {
+static photo_job *query_job(wh_reply *r, const uint8_t *a, size_t n, bool count) {
 	dsk_json *o = parse_args(a, n);
 	photo_job *j = wh_alloc(sizeof *j);
+	memset(j, 0, sizeof *j);
 	j->r = r;
+	j->count = count;
 	j->shots = dsk_json_bool(o, "screenshots", false);
 	j->offset = (int)dsk_json_num(o, "offset", 0);
 	j->limit = (int)dsk_json_num(o, "limit", 100);
+	j->kind = (int)dsk_json_num(o, "kind", 0);
+	if (j->kind < 0 || j->kind > 2) j->kind = 0;
+	j->album = wh_strdup(dsk_json_str(o, "album", ""));
 	dsk_json_free(o);
-	wh_off_main(list_work, photo_done, j);
+	return j;
+}
+
+static void m_photo_list(wh_reply *r, const uint8_t *a, size_t n) { wh_off_main(list_work, photo_done, query_job(r, a, n, false)); }
+static void m_photo_count(wh_reply *r, const uint8_t *a, size_t n) { wh_off_main(list_work, photo_done, query_job(r, a, n, true)); }
+
+static photo_job *id_job(wh_reply *r, const uint8_t *a, size_t n) {
+	dsk_json *o = parse_args(a, n);
+	photo_job *j = wh_alloc(sizeof *j);
+	memset(j, 0, sizeof *j);
+	j->r = r;
+	j->id = wh_strdup(dsk_json_str(o, "id", ""));
+	j->size = (int)dsk_json_num(o, "size", 300);
+	j->title = wh_strdup(dsk_json_str(o, "title", ""));
+	j->album = wh_strdup(dsk_json_str(o, "album", ""));
+	j->args = o;
+	return j;
+}
+
+// video_frame is the shell's thumbnail of a video (a frame of it), as
+// straight BGRA, at least size on its short side where the shell's is.
+static bool video_frame(const wchar_t *path, int size, uint8_t **px, int *w, int *h) {
+	IShellItemImageFactory *f = NULL;
+	if (FAILED(SHCreateItemFromParsingName(path, NULL, &IID_IShellItemImageFactory, (void **)&f)) || !f) return false;
+	SIZE want = {size * 2, size * 2};  // a square box: its short side fits as the long one does
+	HBITMAP bmp = NULL;
+	HRESULT hr = IShellItemImageFactory_GetImage(f, want, SIIGBF_RESIZETOFIT | SIIGBF_THUMBNAILONLY, &bmp);
+	IShellItemImageFactory_Release(f);
+	if (FAILED(hr) || !bmp) return false;
+	BITMAP bm;
+	bool ok = GetObjectW(bmp, sizeof bm, &bm) && bm.bmWidth > 0 && bm.bmHeight != 0;
+	if (ok) {
+		*w = bm.bmWidth;
+		*h = bm.bmHeight < 0 ? -bm.bmHeight : bm.bmHeight;
+		BITMAPINFO bi = {0};
+		bi.bmiHeader.biSize = sizeof bi.bmiHeader;
+		bi.bmiHeader.biWidth = *w;
+		bi.bmiHeader.biHeight = -*h;  // top-down
+		bi.bmiHeader.biPlanes = 1;
+		bi.bmiHeader.biBitCount = 32;
+		*px = wh_alloc((size_t)*w * *h * 4);
+		HDC dc = GetDC(NULL);
+		ok = GetDIBits(dc, bmp, 0, (UINT)*h, *px, &bi, DIB_RGB_COLORS) == *h;
+		ReleaseDC(NULL, dc);
+		for (int i = 0; ok && i < *w * *h; i++) (*px)[i * 4 + 3] = 255;  // a video's frame is opaque
+		if (!ok) free(*px), *px = NULL;
+	}
+	DeleteObject(bmp);
+	return ok;
 }
 
 static void thumb_work(void *ctx) {
@@ -929,23 +1164,29 @@ static void thumb_work(void *ctx) {
 		j->out = out;
 	} else {
 		int w = 0, h = 0;
-		int longest = 0;  // small already: whole
-		if (wh_image_file_size(wp, &w, &h)) {
-			int s = w < h ? w : h, l = w > h ? w : h;
-			// At least size on its short side.
-			if (s > j->size && s > 0) longest = (l * j->size + s - 1) / s;
-		}
 		uint8_t *px = NULL;
-		if (!wh_decode_image_file(wp, longest, &px, &w, &h)) {
-			j->err = wh_strdup("no thumbnail");
-			free(out);
+		bool got;
+		if (video_ext(wp)) {
+			got = video_frame(wp, j->size, &px, &w, &h);
 		} else {
+			int longest = 0;  // small already: whole
+			if (wh_image_file_size(wp, &w, &h)) {
+				int s = w < h ? w : h, l = w > h ? w : h;
+				// At least size on its short side.
+				if (s > j->size && s > 0) longest = (l * j->size + s - 1) / s;
+			}
+			got = wh_decode_image_file(wp, longest, &px, &w, &h);
 			// Straight alpha for the encoder.
-			for (int i = 0; i < w * h; i++) {
+			for (int i = 0; got && i < w * h; i++) {
 				unsigned al = px[i * 4 + 3];
 				if (al && al < 255)
 					for (int c = 0; c < 3; c++) px[i * 4 + c] = (uint8_t)(px[i * 4 + c] * 255 / al);
 			}
+		}
+		if (!got) {
+			j->err = wh_strdup("no thumbnail");
+			free(out);
+		} else {
 			char *tmp = wh_alloc(strlen(out) + 8);
 			sprintf(tmp, "%s.tmp", out);
 			wchar_t *wt = wh_wide(tmp, -1), *wo = wh_wide(out, -1);
@@ -955,22 +1196,14 @@ static void thumb_work(void *ctx) {
 				free(out);
 			}
 			free(wt), free(wo), free(tmp);
-			free(px);
 		}
+		free(px);
 	}
 	free(wp);
 	free(p);
 }
 
-static void m_photo_thumbnail(wh_reply *r, const uint8_t *a, size_t n) {
-	dsk_json *o = parse_args(a, n);
-	photo_job *j = wh_alloc(sizeof *j);
-	j->r = r;
-	j->id = wh_strdup(dsk_json_str(o, "id", ""));
-	j->size = (int)dsk_json_num(o, "size", 300);
-	dsk_json_free(o);
-	wh_off_main(thumb_work, photo_done, j);
-}
+static void m_photo_thumbnail(wh_reply *r, const uint8_t *a, size_t n) { wh_off_main(thumb_work, photo_done, id_job(r, a, n)); }
 
 static void export_work(void *ctx) {
 	photo_job *j = ctx;
@@ -999,17 +1232,432 @@ static void export_work(void *ctx) {
 	free(p);
 }
 
-static void m_photo_export(wh_reply *r, const uint8_t *a, size_t n) {
-	dsk_json *o = parse_args(a, n);
-	photo_job *j = wh_alloc(sizeof *j);
-	j->r = r;
-	j->id = wh_strdup(dsk_json_str(o, "id", ""));
-	dsk_json_free(o);
-	wh_off_main(export_work, photo_done, j);
+static void m_photo_export(wh_reply *r, const uint8_t *a, size_t n) { wh_off_main(export_work, photo_done, id_job(r, a, n)); }
+
+// count_in counts the photos and videos in a folder and its own.
+static uint32_t count_in(const wchar_t *root, const wchar_t *dir) {
+	walking q = {.kind = 2, .photos_too = true, .prefix = "", .root = root, .count_only = true};
+	walk(NULL, &q, dir);
+	return q.counted;
+}
+
+static void album_json(dsk_jw *w, const char *id, uint32_t count, bool sys) {
+	dsk_jw_obj(w);
+	dsk_jw_key(w, "id"), dsk_jw_str(w, id);
+	dsk_jw_key(w, "title"), dsk_jw_str(w, id);
+	dsk_jw_key(w, "count"), dsk_jw_int(w, count);
+	dsk_jw_key(w, "system"), dsk_jw_bool(w, sys);
+	dsk_jw_end(w);
+}
+
+typedef struct {
+	char *name;
+	uint32_t count;
+	bool sys;
+} album;
+
+static int by_title(const void *a, const void *b) {
+	const album *x = a, *y = b;
+	if (x->sys != y->sys) return x->sys ? 1 : -1;  // the user's first
+	return _stricmp(x->name, y->name);
+}
+
+static void albums_work(void *ctx) {
+	photo_job *j = ctx;
+	wchar_t *root = pictures_root();
+	if (!root) {
+		j->err = wh_strdup("no Pictures folder");
+		return;
+	}
+	wchar_t pat[MAX_PATH * 2];
+	swprintf(pat, WH_LEN(pat), L"%ls\\*", root);
+	WIN32_FIND_DATAW fd;
+	album *v = NULL;
+	size_t n = 0;
+	HANDLE h = FindFirstFileW(pat, &fd);
+	if (h != INVALID_HANDLE_VALUE) {
+		do {
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.' ||
+			    (fd.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)))
+				continue;
+			wchar_t p[MAX_PATH * 2];
+			swprintf(p, WH_LEN(p), L"%ls\\%ls", root, fd.cFileName);
+			bool sys = system_album(p);
+			uint32_t c = count_in(root, p);
+			if (sys && !c) continue;  // a system album that holds nothing isn't shown
+			v = wh_realloc(v, (n + 1) * sizeof *v);
+			v[n++] = (album){wh_utf8(fd.cFileName, -1, NULL), c, sys};
+		} while (FindNextFileW(h, &fd));
+		FindClose(h);
+	}
+	if (n) qsort(v, n, sizeof *v, by_title);
+	dsk_jw w = {0};
+	dsk_jw_arr(&w);
+	for (size_t i = 0; i < n; i++) {
+		album_json(&w, v[i].name, v[i].count, v[i].sys);
+		free(v[i].name);
+	}
+	dsk_jw_aend(&w);
+	free(v);
+	free(root);
+	j->out = dsk_jw_take(&w, NULL);
+}
+
+static void m_photo_albums(wh_reply *r, const uint8_t *a, size_t n) { wh_off_main(albums_work, photo_done, id_job(r, a, n)); }
+
+static void create_album_work(void *ctx) {
+	photo_job *j = ctx;
+	wchar_t *root = pictures_root();
+	if (!root) {
+		j->err = wh_strdup("no Pictures folder");
+		return;
+	}
+	char *r8 = wh_utf8(root, -1, NULL);
+	free(root);
+	char *safe = wh_safe_file_name(j->title, "Album");
+	// A folder of the title, numbered if one's there ("Trip (2)").
+	char *name = wh_strdup(safe);
+	for (int i = 2;; i++) {
+		char *p = dsk_join(r8, name);
+		bool taken = wh_file_exists(p);
+		bool made = !taken && dsk_mkdirs(p);
+		free(p);
+		if (made) break;
+		if (!taken || i > 999) {
+			j->err = wh_strdup("photos: couldn't make the album's folder");
+			break;
+		}
+		free(name);
+		name = wh_alloc(strlen(safe) + 16);
+		sprintf(name, "%s (%d)", safe, i);
+	}
+	if (!j->err) {
+		dsk_jw w = {0};
+		album_json(&w, name, 0, false);
+		j->out = dsk_jw_take(&w, NULL);
+	}
+	free(name), free(safe), free(r8);
+}
+
+static void m_photo_create_album(wh_reply *r, const uint8_t *a, size_t n) { wh_off_main(create_album_work, photo_done, id_job(r, a, n)); }
+
+static void add_work(void *ctx) {
+	photo_job *j = ctx;
+	wchar_t *dir = album_dir(j->album);
+	if (!dir) {
+		j->err = wh_strdup("photos: no such album");
+		return;
+	}
+	if (system_album(dir)) {
+		free(dir);
+		j->err = wh_strdup("photos: nothing can be added to a system album");
+		return;
+	}
+	char *d8 = wh_utf8(dir, -1, NULL);
+	free(dir);
+	const dsk_json *ids = jget(j->args, "ids");
+	// Each found first: none copied if one's missing.
+	for (size_t i = 0; ids && ids->type == DSK_JARR && i < ids->n && !j->err; i++) {
+		char *p = ids->kids[i].type == DSK_JSTR ? photo_path(ids->kids[i].str) : NULL;
+		if (!p) j->err = wh_strdup("photos: no such photo");
+		free(p);
+	}
+	size_t dl = strlen(d8);
+	for (size_t i = 0; !j->err && ids && ids->type == DSK_JARR && i < ids->n; i++) {
+		char *p = photo_path(ids->kids[i].str);
+		// Already in it (in its folder, not a folder of it): nothing to do.
+		bool in = p && !_strnicmp(p, d8, dl) && p[dl] == '\\' && !strchr(p + dl + 1, '\\');
+		if (p && !in) {
+			char *err = NULL, *dst = save_file(p, d8, NULL, dsk_base(p), false, &err);
+			if (!dst) j->err = err ? err : wh_strdup("photos: couldn't copy into the album");
+			else free(err);
+			free(dst);
+		}
+		free(p);
+	}
+	free(d8);
+	if (!j->err) j->out = wh_strdup("");
+}
+
+static void m_photo_add(wh_reply *r, const uint8_t *a, size_t n) { wh_off_main(add_work, photo_done, id_job(r, a, n)); }
+
+// delete_work sends the files to the Recycle Bin, as Explorer does: with
+// its question where the user has it ask; "false" if they said no.
+static void delete_work(void *ctx) {
+	photo_job *j = ctx;
+	const dsk_json *ids = jget(j->args, "ids");
+	ak_buf from = {0};  // paths, each NUL-ended, then a NUL
+	size_t count = 0;
+	for (size_t i = 0; ids && ids->type == DSK_JARR && i < ids->n; i++) {
+		char *p = ids->kids[i].type == DSK_JSTR ? photo_path(ids->kids[i].str) : NULL;
+		if (!p) {
+			j->err = wh_strdup("photos: no such photo");
+			break;
+		}
+		wchar_t *w = wh_wide(p, -1);
+		ak_buf_put(&from, w, (wcslen(w) + 1) * sizeof *w);
+		free(w), free(p);
+		count++;
+	}
+	if (j->err || !count) {
+		ak_buf_free(&from);
+		if (!j->err) j->out = wh_strdup("true");
+		return;
+	}
+	wchar_t nul = 0;
+	ak_buf_put(&from, &nul, sizeof nul);
+	SHFILEOPSTRUCTW op;
+	memset(&op, 0, sizeof op);
+	op.hwnd = H.window;
+	op.wFunc = FO_DELETE;
+	op.pFrom = (const wchar_t *)from.data;
+	op.fFlags = FOF_ALLOWUNDO | FOF_WANTNUKEWARNING;
+	int e = SHFileOperationW(&op);
+	ak_buf_free(&from);
+	if (op.fAnyOperationsAborted) j->out = wh_strdup("false");
+	else if (e) j->err = wh_strdup(e == 0x7C /* DE_INVALIDFILES */ ? "photos: no such photo" : "photos: couldn't delete");
+	else j->out = wh_strdup("true");
+}
+
+static void m_photo_delete(wh_reply *r, const uint8_t *a, size_t n) { wh_off_main(delete_work, photo_done, id_job(r, a, n)); }
+
+// ---- The library's changes: ReadDirectoryChangesW on both folders, on
+// a thread of their own, from the first nextChange on; what comes while
+// no one waits is kept, as one change ----
+
+typedef struct {
+	char **v;
+	size_t n;
+} ids;
+
+static struct {
+	bool watching;
+	wh_replies waiting;
+	ids inserted, removed, updated;
+	bool changed;  // something changed since the last answer
+} lib;
+
+#define MAX_CHANGE_IDS 2000  // more: named as none (list again)
+
+static bool ids_drop(ids *s, const char *id) {
+	for (size_t i = 0; i < s->n; i++)
+		if (!strcmp(s->v[i], id)) {
+			free(s->v[i]);
+			s->v[i] = s->v[--s->n];
+			return true;
+		}
+	return false;
+}
+
+static bool ids_has(const ids *s, const char *id) {
+	for (size_t i = 0; i < s->n; i++)
+		if (!strcmp(s->v[i], id)) return true;
+	return false;
+}
+
+static void ids_add(ids *s, const char *id) {
+	if (ids_has(s, id)) return;
+	s->v = wh_realloc(s->v, (s->n + 1) * sizeof *s->v);
+	s->v[s->n++] = wh_strdup(id);
+}
+
+static void ids_clear(ids *s) {
+	for (size_t i = 0; i < s->n; i++) free(s->v[i]);
+	free(s->v);
+	*s = (ids){0};
+}
+
+// note keeps what happened to an id since the last answer, as one: added
+// then removed is nothing; removed then added, changed.
+static void note(int action, const char *id) {
+	switch (action) {
+	case FILE_ACTION_ADDED:
+	case FILE_ACTION_RENAMED_NEW_NAME:
+		if (ids_drop(&lib.removed, id)) ids_add(&lib.updated, id);
+		else ids_add(&lib.inserted, id);
+		break;
+	case FILE_ACTION_REMOVED:
+	case FILE_ACTION_RENAMED_OLD_NAME:
+		if (!ids_drop(&lib.inserted, id)) {
+			ids_drop(&lib.updated, id);
+			ids_add(&lib.removed, id);
+		}
+		break;
+	default:
+		if (!ids_has(&lib.inserted, id)) ids_add(&lib.updated, id);
+	}
+}
+
+static void ids_json(dsk_jw *w, const char *key, const ids *s) {
+	dsk_jw_key(w, key);
+	dsk_jw_arr(w);
+	for (size_t i = 0; i < s->n; i++) dsk_jw_str(w, s->v[i]);
+	dsk_jw_aend(w);
+}
+
+// answer gives what's changed to every nextChange waiting.
+static void answer(void) {
+	if (!lib.changed || !lib.waiting.n) return;
+	dsk_jw w = {0};
+	dsk_jw_obj(&w);
+	bool named = lib.inserted.n + lib.removed.n + lib.updated.n <= MAX_CHANGE_IDS;
+	ids none = {0};
+	ids_json(&w, "inserted", named ? &lib.inserted : &none);
+	ids_json(&w, "removed", named ? &lib.removed : &none);
+	ids_json(&w, "updated", named ? &lib.updated : &none);
+	dsk_jw_end(&w);
+	char *s = dsk_jw_take(&w, NULL);
+	for (wh_reply *r; (r = wh_replies_take(&lib.waiting));) wh_reply_str(r, s);
+	free(s);
+	ids_clear(&lib.inserted), ids_clear(&lib.removed), ids_clear(&lib.updated);
+	lib.changed = false;
+}
+
+// A batch of what a folder said, for the main thread.
+typedef struct {
+	size_t n;
+	int *actions;
+	char **ids;  // NULL: a change it names no asset of (a folder's)
+} batch;
+
+static void batch_main(void *ctx) {
+	batch *b = ctx;
+	for (size_t i = 0; i < b->n; i++) {
+		if (b->ids[i]) note(b->actions[i], b->ids[i]);
+		free(b->ids[i]);
+	}
+	if (b->n) lib.changed = true;
+	free(b->actions), free(b->ids), free(b);
+	answer();
+}
+
+typedef struct {
+	HANDLE dir, event;
+	OVERLAPPED ov;
+	DWORD buf[16384];  // 64 KiB, DWORD-aligned as it must be
+	const char *prefix;
+	bool photos_too;
+} watched;
+
+static bool watch_read(watched *d) {
+	memset(&d->ov, 0, sizeof d->ov);
+	d->ov.hEvent = d->event;
+	return ReadDirectoryChangesW(d->dir, d->buf, sizeof d->buf, TRUE,
+	                             FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE, NULL,
+	                             &d->ov, NULL);
+}
+
+// watch_said turns what a folder said into a batch for the main thread:
+// the photos' and videos' ids (a folder's change names none).
+static void watch_said(watched *d, DWORD got) {
+	batch *b = wh_alloc(sizeof *b);
+	memset(b, 0, sizeof *b);
+	if (!got) {  // more than its buffer held: something changed
+		b->n = 1;
+		b->actions = wh_alloc(sizeof *b->actions);
+		b->ids = wh_alloc(sizeof *b->ids);
+		b->actions[0] = FILE_ACTION_MODIFIED;
+		b->ids[0] = NULL;
+		wh_post(batch_main, b);
+		return;
+	}
+	walking q = {.photos_too = d->photos_too};
+	const uint8_t *p = (const uint8_t *)d->buf;
+	for (;;) {
+		const FILE_NOTIFY_INFORMATION *fi = (const FILE_NOTIFY_INFORMATION *)p;
+		size_t len = fi->FileNameLength / sizeof(WCHAR);
+		wchar_t *name = wh_alloc((len + 1) * sizeof *name);
+		wmemcpy(name, fi->FileName, len);
+		name[len] = 0;
+		const wchar_t *leaf = wcsrchr(name, '\\');
+		leaf = leaf ? leaf + 1 : name;
+		char *id = NULL;
+		if (leaf[0] != '.' && media_kind(&q, leaf)) {
+			char *rel = wh_utf8(name, -1, NULL);
+			for (char *c = rel; *c; c++)
+				if (*c == '\\') *c = '/';
+			id = wh_alloc(strlen(d->prefix) + strlen(rel) + 1);
+			sprintf(id, "%s%s", d->prefix, rel);
+			free(rel);
+		} else if (wcschr(leaf, '.') && fi->Action != FILE_ACTION_REMOVED) {
+			free(name);  // another kind of file: not the library's
+			goto next;
+		}
+		free(name);
+		b->actions = wh_realloc(b->actions, (b->n + 1) * sizeof *b->actions);
+		b->ids = wh_realloc(b->ids, (b->n + 1) * sizeof *b->ids);
+		b->actions[b->n] = (int)fi->Action;
+		b->ids[b->n++] = id;
+	next:
+		if (!fi->NextEntryOffset) break;
+		p += fi->NextEntryOffset;
+	}
+	if (b->n) wh_post(batch_main, b);
+	else free(b);
+}
+
+static DWORD WINAPI watch_thread(void *ctx) {
+	watched *ds = ctx;  // Pictures', Videos' (its dir NULL if none)
+	HANDLE events[2];
+	DWORD n = 0;
+	watched *of[2];
+	for (int i = 0; i < 2; i++)
+		if (ds[i].dir && watch_read(&ds[i])) events[n] = ds[i].event, of[n++] = &ds[i];
+	while (n) {
+		DWORD k = WaitForMultipleObjects(n, events, FALSE, INFINITE);
+		if (k >= WAIT_OBJECT_0 + n) break;
+		watched *d = of[k - WAIT_OBJECT_0];
+		DWORD got = 0;
+		if (!GetOverlappedResult(d->dir, &d->ov, &got, FALSE)) got = 0;
+		watch_said(d, got);
+		if (!watch_read(d)) break;  // the folder went
+	}
+	return 0;
+}
+
+static void watch_start(void) {
+	if (lib.watching) return;
+	lib.watching = true;
+	watched *ds = wh_alloc(2 * sizeof *ds);
+	memset(ds, 0, 2 * sizeof *ds);
+	wchar_t *roots[2] = {pictures_root(), videos_root()};
+	if (roots[0] && roots[1]) {
+		size_t pl = wcslen(roots[0]);
+		if (!_wcsnicmp(roots[1], roots[0], pl) && (roots[1][pl] == '\\' || !roots[1][pl])) free(roots[1]), roots[1] = NULL;  // in Pictures: heard there
+	}
+	for (int i = 0; i < 2; i++) {
+		ds[i].prefix = i ? VIDEOS_PREFIX : "";
+		ds[i].photos_too = i == 0;
+		if (!roots[i]) continue;
+		ds[i].dir = CreateFileW(roots[i], FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+		                        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, NULL);
+		if (ds[i].dir == INVALID_HANDLE_VALUE) ds[i].dir = NULL;
+		ds[i].event = CreateEventW(NULL, FALSE, FALSE, NULL);
+		free(roots[i]);
+	}
+	// The thread lives with the app, as the folders' watch does.
+	HANDLE t = CreateThread(NULL, 0, watch_thread, ds, 0, NULL);
+	if (t) CloseHandle(t);
+}
+
+static void m_photo_next_change(wh_reply *r, const uint8_t *a, size_t n) {
+	(void)a, (void)n;
+	watch_start();
+	wh_replies_add(&lib.waiting, r);
+	answer();
+}
+
+static void m_photo_stop(wh_reply *r, const uint8_t *a, size_t n) {
+	if (n == 10 && !memcmp(a, "nextChange", 10)) wh_replies_fail(&lib.waiting, "stopped");
+	wh_reply_nil(r);
 }
 
 static const wh_method_def photo_methods[] = {
-	{"current", allowed}, {"request", allowed}, {"manage", ok_nil}, {"list", m_photo_list}, {"thumbnail", m_photo_thumbnail}, {"export", m_photo_export}, {NULL, NULL},
+	{"current", allowed},          {"request", allowed},           {"manage", ok_nil},
+	{"list", m_photo_list},        {"count", m_photo_count},       {"thumbnail", m_photo_thumbnail},
+	{"export", m_photo_export},    {"albums", m_photo_albums},     {"createAlbum", m_photo_create_album},
+	{"addToAlbum", m_photo_add},   {"delete", m_photo_delete},     {"nextChange", m_photo_next_change},
+	{"stop", m_photo_stop},        {NULL, NULL},
 };
 const wh_module_def wh_photo_library_module = {"photoLibrary", photo_methods};
 

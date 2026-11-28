@@ -1,10 +1,13 @@
 // platform/device on the web: the browser's platform (User-Agent Client
 // Hints where there are, else the user agent), a new tab for browse, the
 // browser's file picker (its files copied into the app's caches, /tmp, as
-// iOS and Android give them), the async Clipboard API (browsers read the
+// iOS and Android give them; pickMedia's images and videos measured, and
+// images scaled and written as JPEGs when asked), the async Clipboard API (browsers read the
 // clipboard only for a focused page, and ask the user first; images are
 // PNG, what browsers put there and take; rich text, HTML), the Screen
 // Wake Lock.
+
+import { MediaKind } from "./device.decl.asuka.js";
 
 const native = () => globalThis.asuka.native;
 const urlish = /^\s*[a-z][a-z0-9+.-]*:\/\/\S+\s*$/i;
@@ -104,6 +107,104 @@ async function pngOf(bytes, type) {
 }
 
 let names = 0;
+
+/** canvas is a w×h canvas to draw an image to. */
+function canvas(w, h) {
+  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+/** scaled is a w×h scaled down (never up) to at most max on its long side (0: as it is). */
+export function scaled(w, h, max) {
+  const s = max > 0 ? Math.min(1, max / Math.max(w, h)) : 1;
+  return [Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))];
+}
+
+/** videoInfo is a video's natural size (after its rotation) and duration, from a <video>'s metadata: zeros if it can't tell. */
+function videoInfo(blob) {
+  return new Promise((resolve) => {
+    const el = document.createElement("video");
+    const url = URL.createObjectURL(blob);
+    let done = false;
+    const end = (w, h, ms) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      el.removeAttribute("src");
+      el.load?.();
+      URL.revokeObjectURL(url);
+      resolve({ width: w, height: h, durationMs: ms });
+    };
+    // A file the browser can't play says nothing; nor does one it never loads.
+    const timer = setTimeout(() => end(0, 0, 0), 10000);
+    el.preload = "metadata";
+    el.muted = true;
+    el.addEventListener("loadedmetadata", () => {
+      const d = el.duration;
+      end(el.videoWidth || 0, el.videoHeight || 0, Number.isFinite(d) ? Math.round(d * 1000) : 0);
+    });
+    el.addEventListener("error", () => end(0, 0, 0));
+    el.src = url;
+  });
+}
+
+/**
+ * media is a picked file (its copy in the app's caches) as NativeMedia:
+ * an image's upright size, a video's size and duration; an image decoded
+ * and written again as a JPEG, at most maxSize on its long side, when
+ * maxSize or quality is set (one the browser can't decode stays as it is).
+ */
+async function media(f, maxSize, quality) {
+  const fs = native().files.fs;
+  const type = f.type || native().files.typeOf(f.name) || "";
+  const video = type.startsWith("video/");
+  const bytes = fs.readFile(f.path);
+  const out = { path: f.path, name: f.name || "", type, video, width: 0, height: 0, durationMs: 0, size: bytes?.length ?? f.size ?? 0 };
+  if (!bytes) return out;
+  const blob = new Blob([bytes], { type });
+  if (video) return Object.assign(out, await videoInfo(blob));
+  let bmp;
+  try {
+    bmp = await createImageBitmap(blob); // turned upright, as its EXIF says
+  } catch {
+    return out; // not one this browser decodes (HEIC outside Safari)
+  }
+  try {
+    out.width = bmp.width;
+    out.height = bmp.height;
+    if (!(maxSize > 0) && !(quality > 0)) return out;
+    const [w, h] = scaled(bmp.width, bmp.height, maxSize);
+    const c = canvas(w, h);
+    const g = c.getContext("2d");
+    g.fillStyle = "#fff"; // a JPEG has no transparency
+    g.fillRect(0, 0, w, h);
+    g.drawImage(bmp, 0, 0, w, h);
+    const q = quality > 0 && quality <= 1 ? quality : 0.9;
+    const jpeg = c.convertToBlob
+      ? await c.convertToBlob({ type: "image/jpeg", quality: q })
+      : await new Promise((resolve) => c.toBlob(resolve, "image/jpeg", q));
+    if (!jpeg) return out;
+    const data = new Uint8Array(await jpeg.arrayBuffer());
+    const base = (f.name || "photo").replace(/[\/\\]/g, "_").replace(/\.[^.]*$/, "");
+    const path = `/tmp/asuka-photos/${Date.now().toString(36)}-${++names}-${base}.jpg`;
+    fs.writeFile(path, data);
+    fs.removeFile(f.path);
+    return Object.assign(out, { path, type: "image/jpeg", width: w, height: h, size: data.length });
+  } finally {
+    bmp.close?.();
+  }
+}
+
+/** accepts is what the browser's picker offers, for a MediaKind. */
+export function accepts(kind) {
+  if (kind === MediaKind.videos) return ["video/*"];
+  if (kind === MediaKind.all) return ["image/*", "video/*"];
+  return ["image/*"];
+}
+
 let wakeLock = null, wantAwake = false, awakeWatch = false;
 
 async function acquire() {
@@ -141,10 +242,22 @@ export function makePlatform() {
       const w = window.open(u.href, "_blank");
       if (w) w.opener = null;
     },
-    async pickPhotos(_signal, max) {
-      const n = Number(max);
-      const files = await native().files.pick(["image/*"], n);
-      return files.map((f) => f.path);
+    // The browser's file picker (it numbers nothing: ordered is the
+    // native pickers'), its files in the order it gives them.
+    async pickMedia(_signal, kind, max, _ordered, maxSize, quality) {
+      const files = await native().files.pick(accepts(kind), Number(max) || 0);
+      const out = [];
+      for (const f of files) {
+        const m = await media(f, Number(maxSize) || 0, Number(quality) || 0);
+        // What a picker's "All files" let through that isn't of the kind asked.
+        const image = m.type.startsWith("image/");
+        if (kind === MediaKind.videos ? !m.video : kind === MediaKind.images ? !image : !image && !m.video) {
+          native().files.fs.removeFile(m.path);
+          continue;
+        }
+        out.push(m);
+      }
+      return out;
     },
     async pickFiles(_signal, types, multiple) {
       const files = await native().files.pick(types, multiple ? 0 : 1);

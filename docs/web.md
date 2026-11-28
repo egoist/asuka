@@ -332,8 +332,9 @@ browser:
   `clipboardChanges()` (the app's own copies, and other apps' where the
   user lets the page read the clipboard); `keepAwake` (the Screen Wake
   Lock, taken again when the page shows); `browse` (a new tab);
-  `pickPhotos` and `pickFiles` (the browser's file picker; the files
-  copied to the caches).
+  `pickPhotos`, `pickMedia` and `pickFiles` (the browser's file picker;
+  the files copied to the caches; `pickMedia` scales images in a canvas,
+  and its `ordered` does nothing).
 - `device.shareFiles`: the share sheet with the files (`navigator.share`),
   else each file downloaded. `platform/preview`: the file opened in a new
   tab (images, video, audio, text, PDF, HTML); another type is
@@ -365,7 +366,9 @@ browser:
 - `platform/camera`: `take()` opens a phone's camera, or a dialog with the
   live camera and a shutter; `camera.View` is the camera in a `<video>`
   (`capture()`, `record`, and scanning codes where the browser has
-  `BarcodeDetector`). `platform/scan` and `platform/vision`'s codes use
+  `BarcodeDetector`), with the camera's own zoom, torch, exposure and
+  focus where its track has them (Chrome on Android), else a digital
+  zoom up to 4×, and frames for the app (`frameRate`) drawn in a canvas. `platform/scan` and `platform/vision`'s codes use
   `BarcodeDetector`, faces and text only where the browser has them.
 - `platform/imageedit`: a canvas (JPEG or PNG; a remote image needs CORS).
 - `platform/maps`: a map Asuka draws of OpenStreetMap's tiles, as on
@@ -414,8 +417,8 @@ browser:
 - Not on the web, with an error that says so (or the package's own
   `notAvailable`): `platform/review`, `platform/integrity`, `platform/agerange`,
   `platform/appleauth`, `platform/icloud`, `platform/periodic`, `platform/widget`,
-  `platform/liveactivity`, `platform/photos` (`.denied`: `device.pickPhotos`
-  picks photos), reading contacts and calendars, `platform/transcribe`'s
+  `platform/liveactivity`, `platform/photos` (`.denied`: `device.pickMedia`
+  picks photos and videos), reading contacts and calendars, `platform/transcribe`'s
   `file`, `platform/screen`'s `preventCapture` and `screenshots()`.
 
 ## Notifications and Web Push

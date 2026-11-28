@@ -15,7 +15,9 @@ import (
 // platform/camera's Linux C on the test host: a camera of GStreamer's test
 // pattern with a QR code drawn on it (ASUKA_CAMERA_SOURCE), shown in a
 // View, photographed, recorded with and without sound (a tone for the
-// microphone), its code read by zbar; take's dialog shown and cancelled;
+// microphone), its code read by zbar; zoomed (digitally) with frames
+// handed to frame, a capture scaled down, a recording ended by maxBytes;
+// take's dialog shown and cancelled;
 // and with no camera, the View's error and take's. What can't run here:
 // the camera portal and a real camera (PipeWire, V4L2), and take's photo
 // (its button needs a click).
@@ -136,6 +138,83 @@ app { Probe() }
 			"host: photo true true", "host: photo mode: the camera view isn't in video mode", "host: video true true",
 			"host: sound true true true", "host: take cancelled", "host: done")
 		if strings.Contains(got, "host: error") {
+			t.Errorf("the view failed:\n%s", got)
+		}
+	})
+
+	// The zoom (digital: a test pattern's camera has no zoom of its own),
+	// frameRate's frames, capture's maxSize, record's maxBytes, cropped
+	// and mirrored.
+	t.Run("zoomed", func(t *testing.T) {
+		got := run(t, `import platform/camera
+import std/fs
+
+fn size(path: string) -> int {
+  if let e = try? fs.stat(path) {
+    return e.size
+  }
+  return 0
+}
+
+component Probe {
+  state step = "start"
+  state zoom = 1.0
+  state maxZoom = 0.0
+  state frames = 0
+  state last: camera.Frame? = none
+  Text("#{step}")
+  camera.View {
+    mode: .video
+    videoQuality: .sd
+    bind zoom: zoom
+    mirror: true
+    frameRate: 10
+    frameSize: 160
+    on ready(info) { maxZoom = info.maxZoom }
+    on frame(f) {
+      frames += 1
+      last = f
+    }
+    on error(m) { step = "error {m}" }
+  }
+  task {
+    do {
+      while maxZoom == 0 || frames < 3 {
+        await sleep(10ms)
+      }
+      step = "ready {maxZoom}"
+      await sleep(1ms)
+      if let f = last {
+        step = "frame {f.width}x{f.height} {f.path.contains("asuka-camera/frame-")} {size(f.path) > 100} {f.time > 0s}"
+        await sleep(1ms)
+      }
+      zoom = 2
+      let seen = frames
+      while frames < seen + 2 {
+        await sleep(10ms)
+      }
+      if let f = last {
+        step = "zoomed {f.width}x{f.height}"
+        await sleep(1ms)
+      }
+      let full = try await camera.capture()
+      let small = try await camera.capture(maxSize: 100, quality: 0.5)
+      step = "small {size(small) > 100} {size(small) < size(full)}"
+      await sleep(1ms)
+      let v = try await camera.record(mute: true, maxBytes: 300000)
+      step = "bytes {size(v) > 1000} {size(v) <= 300000}"
+      await sleep(1ms)
+      step = "done"
+    } catch e {
+      step = "fail {e.message}"
+    }
+  }
+}
+
+app { Probe() }
+`, "ASUKA_CAMERA_SOURCE=videotestsrc is-live=true pattern=snow ! video/x-raw,width=640,height=480,framerate=30/1")
+		expect(t, got, "host: ready 4", "host: frame 160x120 true true true", "host: zoomed 160x120", "host: small true true", "host: bytes true true", "host: done")
+		if strings.Contains(got, "host: error") || strings.Contains(got, "host: fail") {
 			t.Errorf("the view failed:\n%s", got)
 		}
 	})

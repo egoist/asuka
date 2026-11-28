@@ -1,0 +1,51 @@
+test "no camera here: nothing asked, capture throws" {
+  expect(access() == .notAsked)
+  var failed = false
+  do {
+    let _ = try await capture()
+  } catch {
+    failed = true
+  }
+  expect(failed)
+  focus(0.5, 0.5)
+  stopRecording()
+}
+
+test "the fake: captures, recordings and focus, as asked" {
+  let f = fake()
+  f.access = .notAsked
+  f.answer = .allowed
+  expect(access() == .notAsked)
+  expect(try await request() == .allowed)
+  expect(access() == .allowed)
+
+  expect(try await capture(maxSize: 2048, quality: 0.8) == f.photo)
+  expect(try await capture(maxSize: -3, quality: 7) == f.photo)
+  expect(f.captures == [Capture(maxSize: 2048, quality: 0.8), Capture(maxSize: 0, quality: 0)])
+
+  expect(try await record(maxDuration: 30s, maxBytes: 5_000_000) == f.video)
+  expect(f.recordings == [Recording(mute: false, maxDuration: 30s, maxBytes: 5_000_000)])
+  stopRecording()
+  expect(f.stopped == 1)
+
+  focus(0.25, 2)
+  expect(f.focused == [Point(x: 0.25, y: 1)])
+
+  expect(try await take() == "/tmp/asuka-camera/taken.jpg")
+  f.take = none
+  expect(try await take() == none)
+  expect(f.taken == 2)
+}
+
+test "the fake, denied: notAllowed" {
+  let f = fake()
+  f.access = .denied
+  expect(try await request() == .denied)
+  var said = ""
+  do {
+    let _ = try await capture()
+  } catch CameraError.notAllowed {
+    said = "notAllowed"
+  }
+  expect(said == "notAllowed")
+}

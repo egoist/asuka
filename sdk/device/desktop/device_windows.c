@@ -2,10 +2,14 @@
 // works in), ShellExecute for the browser, the clipboard (its changes
 // heard with AddClipboardFormatListener), SetThreadExecutionState.
 // Win32 is touched on the main thread; copying what's picked runs on a
-// thread of its own.
+// thread of its own. pickMedia's dialog offers images and/or videos; a
+// photo scaled (maxSize, quality) is written with WIC, upright, and a
+// video the MPEG-4 reader can't read is measured with Media Foundation's
+// source reader.
 #include "asuka_windows.h"
 #include <commdlg.h>
 #include <shellapi.h>
+#include <wincodec.h>
 #include "device.h"
 
 #include <limits.h>
@@ -119,19 +123,28 @@ static wchar_t *filters(device_list_string mimes) {
 
 typedef struct {
 	asuka_call *call;
-	bool photos;
+	bool media;  // pickMedia's: scaled to max_size, of quality
+	int64_t max_size;
+	double quality;
 	size_t limit;
 	char **paths;
 	size_t n;
 } picking;
 
+static const device_media_ops media_ops;
+
 static void copy_run(void *p) {
 	picking *k = p;
-	device_list_File files;
 	asuka_error e = {0};
-	if (!device_copy_picked(k->paths, k->n, k->limit, &files, &e)) fail(k->call, &e);
-	else if (k->photos) device_Platform_pickPhotos_done(k->call, device_photos(&files));
-	else device_Platform_pickFiles_done(k->call, files);
+	if (k->media) {
+		device_list_NativeMedia media;
+		if (!device_copy_media(k->paths, k->n, k->limit, k->max_size, k->quality, &media_ops, &media, &e)) fail(k->call, &e);
+		else device_Platform_pickMedia_done(k->call, media);
+	} else {
+		device_list_File files;
+		if (!device_copy_picked(k->paths, k->n, k->limit, &files, &e)) fail(k->call, &e);
+		else device_Platform_pickFiles_done(k->call, files);
+	}
 	for (size_t i = 0; i < k->n; i++) free(k->paths[i]);
 	free(k->paths);
 	free(k);
@@ -142,7 +155,7 @@ static void add(picking *k, char *p) {
 	k->paths[k->n++] = p;
 }
 
-static void pick(asuka_call *call, const char *title, device_list_string mimes, bool multiple, size_t limit, bool photos) {
+static void pick(asuka_call *call, const char *title, device_list_string mimes, bool multiple, const picking *how) {
 	enum { cap = 64 * 1024 };
 	wchar_t *buf = calloc(cap, sizeof(wchar_t));
 	wchar_t *filter = filters(mimes);
@@ -161,9 +174,8 @@ static void pick(asuka_call *call, const char *title, device_list_string mimes, 
 	free(filter);
 	free(wt);
 	picking *k = calloc(1, sizeof *k);
+	*k = *how;
 	k->call = call;
-	k->photos = photos;
-	k->limit = limit;
 	if (!ok) {
 		free(buf);
 		if (CommDlgExtendedError()) {
@@ -196,12 +208,216 @@ static void pick(asuka_call *call, const char *title, device_list_string mimes, 
 	if (!asuka_desktop_spawn(copy_run, k)) copy_run(k);
 }
 
-static void p_photos(device_Platform *self, int64_t max, asuka_call *call) {
-	char *image = "image/*";
-	pick(call, NULL, (device_list_string){&image, 1}, max != 1, max > 0 ? (size_t)max : 0, true);
+// ---- Picked photos and videos: WIC for images, Media Foundation's
+// source reader for a video the MPEG-4 reader can't read (WebM, MKV,
+// AVI, WMV, where Windows has their codecs) ----
+
+static IWICImagingFactory *wic(void) {
+	CoInitializeEx(NULL, COINIT_MULTITHREADED);  // a copying thread's
+	IWICImagingFactory *f = NULL;
+	CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, &IID_IWICImagingFactory, (void **)&f);
+	return f;
 }
 
-static void p_files(device_Platform *self, device_list_string types, bool multiple, asuka_call *call) { pick(call, NULL, types, multiple, 0, false); }
+// orientation is a frame's EXIF orientation (1 to 8; 1 none), as WIC
+// reads a JPEG's, a TIFF's or a HEIF's.
+static USHORT orientation(IWICBitmapFrameDecode *frame) {
+	IWICMetadataQueryReader *q = NULL;
+	USHORT o = 1;
+	if (FAILED(IWICBitmapFrameDecode_GetMetadataQueryReader(frame, &q))) return 1;
+	static const wchar_t *paths[] = {L"/app1/ifd/{ushort=274}", L"/ifd/{ushort=274}", L"System.Photo.Orientation"};
+	for (size_t i = 0; i < 3 && o == 1; i++) {
+		PROPVARIANT v;
+		PropVariantInit(&v);
+		if (SUCCEEDED(IWICMetadataQueryReader_GetMetadataByName(q, paths[i], &v)) && v.vt == VT_UI2 && v.uiVal >= 1 && v.uiVal <= 8) o = v.uiVal;
+		PropVariantClear(&v);
+	}
+	IWICMetadataQueryReader_Release(q);
+	return o;
+}
+
+// open_image decodes an image file's first frame.
+static bool open_image(IWICImagingFactory *f, const char *path, IWICBitmapDecoder **dec, IWICBitmapFrameDecode **frame) {
+	wchar_t *w = asuka_wide(path);
+	*dec = NULL;
+	*frame = NULL;
+	HRESULT hr = IWICImagingFactory_CreateDecoderFromFilename(f, w, NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, dec);
+	free(w);
+	if (SUCCEEDED(hr)) hr = IWICBitmapDecoder_GetFrame(*dec, 0, frame);
+	if (FAILED(hr)) {
+		if (*dec) IWICBitmapDecoder_Release(*dec), *dec = NULL;
+		*frame = NULL;
+		return false;
+	}
+	return true;
+}
+
+static bool win_image_size(const char *path, int64_t *w, int64_t *h) {
+	IWICImagingFactory *f = wic();
+	if (!f) return false;
+	IWICBitmapDecoder *dec;
+	IWICBitmapFrameDecode *frame;
+	bool ok = open_image(f, path, &dec, &frame);
+	if (ok) {
+		UINT fw = 0, fh = 0;
+		ok = SUCCEEDED(IWICBitmapFrameDecode_GetSize(frame, &fw, &fh)) && fw && fh;
+		bool turned = orientation(frame) >= 5;  // 90° or 270°
+		*w = turned ? fh : fw;
+		*h = turned ? fw : fh;
+		IWICBitmapFrameDecode_Release(frame);
+		IWICBitmapDecoder_Release(dec);
+	}
+	IWICImagingFactory_Release(f);
+	return ok;
+}
+
+static bool win_jpeg(const char *from, const char *to, int64_t max, double quality, int64_t *ow, int64_t *oh) {
+	IWICImagingFactory *f = wic();
+	if (!f) return false;
+	IWICBitmapDecoder *dec;
+	IWICBitmapFrameDecode *frame;
+	if (!open_image(f, from, &dec, &frame)) {
+		IWICImagingFactory_Release(f);
+		return false;
+	}
+	IWICBitmapSource *src = (IWICBitmapSource *)frame;
+	IWICBitmapFlipRotator *rot = NULL;
+	IWICBitmapScaler *scaler = NULL;
+	IWICFormatConverter *pre = NULL, *bgr = NULL;
+	IWICStream *st = NULL;
+	IWICBitmapEncoder *enc = NULL;
+	IWICBitmapFrameEncode *out = NULL;
+	IPropertyBag2 *bag = NULL;
+	static const WICBitmapTransformOptions transforms[9] = {
+	    WICBitmapTransformRotate0, WICBitmapTransformRotate0, WICBitmapTransformFlipHorizontal, WICBitmapTransformRotate180,
+	    WICBitmapTransformFlipVertical, (WICBitmapTransformOptions)(WICBitmapTransformRotate90 | WICBitmapTransformFlipHorizontal),
+	    WICBitmapTransformRotate90, (WICBitmapTransformOptions)(WICBitmapTransformRotate270 | WICBitmapTransformFlipHorizontal), WICBitmapTransformRotate270};
+	USHORT o = orientation(frame);
+	HRESULT hr = S_OK;
+	if (o > 1 && SUCCEEDED(hr = IWICImagingFactory_CreateBitmapFlipRotator(f, &rot)) && SUCCEEDED(hr = IWICBitmapFlipRotator_Initialize(rot, src, transforms[o])))
+		src = (IWICBitmapSource *)rot;
+	UINT w = 0, h = 0;
+	if (SUCCEEDED(hr)) hr = IWICBitmapSource_GetSize(src, &w, &h);
+	int64_t sw = w, sh = h;
+	if (SUCCEEDED(hr)) device_fit(w, h, max, &sw, &sh);
+	if (SUCCEEDED(hr) && (sw != (int64_t)w || sh != (int64_t)h)) {
+		hr = IWICImagingFactory_CreateBitmapScaler(f, &scaler);
+		if (SUCCEEDED(hr)) hr = IWICBitmapScaler_Initialize(scaler, src, (UINT)sw, (UINT)sh, WICBitmapInterpolationModeFant);
+		if (SUCCEEDED(hr)) src = (IWICBitmapSource *)scaler;
+	}
+	// Over black where it's transparent (premultiplied), then BGR: what
+	// the JPEG encoder takes.
+	if (SUCCEEDED(hr)) hr = IWICImagingFactory_CreateFormatConverter(f, &pre);
+	if (SUCCEEDED(hr)) hr = IWICFormatConverter_Initialize(pre, src, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, NULL, 0, WICBitmapPaletteTypeCustom);
+	if (SUCCEEDED(hr)) hr = IWICImagingFactory_CreateFormatConverter(f, &bgr);
+	if (SUCCEEDED(hr))
+		hr = IWICFormatConverter_Initialize(bgr, (IWICBitmapSource *)pre, &GUID_WICPixelFormat24bppBGR, WICBitmapDitherTypeNone, NULL, 0, WICBitmapPaletteTypeCustom);
+	wchar_t *wto = asuka_wide(to);
+	if (SUCCEEDED(hr)) hr = IWICImagingFactory_CreateStream(f, &st);
+	if (SUCCEEDED(hr)) hr = IWICStream_InitializeFromFilename(st, wto, GENERIC_WRITE);
+	free(wto);
+	if (SUCCEEDED(hr)) hr = IWICImagingFactory_CreateEncoder(f, &GUID_ContainerFormatJpeg, NULL, &enc);
+	if (SUCCEEDED(hr)) hr = IWICBitmapEncoder_Initialize(enc, (IStream *)st, WICBitmapEncoderNoCache);
+	if (SUCCEEDED(hr)) hr = IWICBitmapEncoder_CreateNewFrame(enc, &out, &bag);
+	if (SUCCEEDED(hr) && bag) {
+		PROPBAG2 opt;
+		memset(&opt, 0, sizeof opt);
+		opt.pstrName = L"ImageQuality";
+		VARIANT v;
+		VariantInit(&v);
+		v.vt = VT_R4;
+		v.fltVal = (float)(quality > 0 && quality <= 1 ? quality : 0.9);
+		IPropertyBag2_Write(bag, 1, &opt, &v);
+	}
+	if (SUCCEEDED(hr)) hr = IWICBitmapFrameEncode_Initialize(out, bag);
+	if (SUCCEEDED(hr)) hr = IWICBitmapFrameEncode_SetSize(out, (UINT)sw, (UINT)sh);
+	WICPixelFormatGUID fmt = GUID_WICPixelFormat24bppBGR;
+	if (SUCCEEDED(hr)) hr = IWICBitmapFrameEncode_SetPixelFormat(out, &fmt);
+	if (SUCCEEDED(hr)) hr = IWICBitmapFrameEncode_WriteSource(out, (IWICBitmapSource *)bgr, NULL);
+	if (SUCCEEDED(hr)) hr = IWICBitmapFrameEncode_Commit(out);
+	if (SUCCEEDED(hr)) hr = IWICBitmapEncoder_Commit(enc);
+	if (bag) IPropertyBag2_Release(bag);
+	if (out) IWICBitmapFrameEncode_Release(out);
+	if (enc) IWICBitmapEncoder_Release(enc);
+	if (st) IWICStream_Release(st);
+	if (bgr) IWICFormatConverter_Release(bgr);
+	if (pre) IWICFormatConverter_Release(pre);
+	if (scaler) IWICBitmapScaler_Release(scaler);
+	if (rot) IWICBitmapFlipRotator_Release(rot);
+	IWICBitmapFrameDecode_Release(frame);
+	IWICBitmapDecoder_Release(dec);
+	IWICImagingFactory_Release(f);
+	*ow = sw;
+	*oh = sh;
+	return SUCCEEDED(hr);
+}
+
+// Media Foundation's, by slot (its GUIDs are mfuuid's, which isn't
+// linked).
+static const GUID pd_duration = {0x6c990d33, 0xbb8e, 0x477a, {0x85, 0x98, 0x0d, 0x5d, 0x96, 0xfc, 0xd8, 0x8a}};
+static const GUID mt_frame_size = {0x1652C33D, 0xD6B2, 0x4012, {0xB8, 0x34, 0x72, 0x03, 0x08, 0x49, 0xA3, 0x7D}};
+static const GUID mt_rotation = {0xc380465d, 0x2271, 0x428c, {0x9b, 0x83, 0xec, 0xea, 0x3b, 0x4a, 0x85, 0xc1}};
+
+static void win_video(const char *path, int64_t *w, int64_t *h, int64_t *ms) {
+	static HRESULT(WINAPI * startup)(ULONG, DWORD);
+	static HRESULT(WINAPI * reader_from_url)(const WCHAR *, void *, void **);
+	static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
+	BOOL pending = FALSE;
+	if (InitOnceBeginInitialize(&once, 0, &pending, NULL) && pending) {
+		HMODULE plat = LoadLibraryExW(L"mfplat.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+		HMODULE rw = LoadLibraryExW(L"mfreadwrite.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+		if (plat) *(FARPROC *)&startup = GetProcAddress(plat, "MFStartup");
+		if (rw) *(FARPROC *)&reader_from_url = GetProcAddress(rw, "MFCreateSourceReaderFromURL");
+		if (startup && FAILED(startup(0x00020070, 0))) reader_from_url = NULL;  // MF_VERSION, MFSTARTUP_FULL
+		InitOnceComplete(&once, 0, NULL);
+	}
+	if (!reader_from_url) return;  // an N edition without its Media Feature Pack
+	CoInitializeEx(NULL, COINIT_MULTITHREADED);
+	wchar_t *wp = asuka_wide(path);
+	void *r = NULL;
+	HRESULT hr = reader_from_url(wp, NULL, &r);
+	free(wp);
+	if (FAILED(hr) || !r) return;
+	PROPVARIANT v;
+	PropVariantInit(&v);
+	// GetPresentationAttribute(MF_SOURCE_READER_MEDIASOURCE, MF_PD_DURATION): 100 ns.
+	if (SUCCEEDED(ASUKA_SLOT(r, 12, HRESULT(STDMETHODCALLTYPE *)(void *, DWORD, const GUID *, PROPVARIANT *))(r, 0xFFFFFFFF, &pd_duration, &v)) &&
+	    v.vt == VT_UI8)
+		*ms = (int64_t)(v.uhVal.QuadPart / 10000);
+	PropVariantClear(&v);
+	void *t = NULL;
+	// GetNativeMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0).
+	if (SUCCEEDED(ASUKA_SLOT(r, 5, HRESULT(STDMETHODCALLTYPE *)(void *, DWORD, DWORD, void **))(r, 0xFFFFFFFC, 0, &t)) && t) {
+		UINT64 size = 0;
+		UINT32 rot = 0;
+		ASUKA_SLOT(t, 8, HRESULT(STDMETHODCALLTYPE *)(void *, const GUID *, UINT64 *))(t, &mt_frame_size, &size);  // GetUINT64
+		ASUKA_SLOT(t, 7, HRESULT(STDMETHODCALLTYPE *)(void *, const GUID *, UINT32 *))(t, &mt_rotation, &rot);    // GetUINT32
+		int64_t fw = (int64_t)(size >> 32), fh = (int64_t)(UINT32)size;
+		bool turned = rot == 90 || rot == 270;
+		*w = turned ? fh : fw;
+		*h = turned ? fw : fh;
+		asuka_com_release(t);
+	}
+	asuka_com_release(r);
+}
+
+static const device_media_ops media_ops = {win_image_size, win_jpeg, win_video};
+
+static void p_media(device_Platform *self, device_MediaKind kind, int64_t max, bool ordered, int64_t maxSize, double quality, asuka_call *call) {
+	(void)ordered;  // the open dialog doesn't number what's picked: its order is the dialog's
+	char *image = "image/*", *video = "video/*";
+	char *both[] = {image, video};
+	device_list_string mimes = kind == device_MediaKind_videos ? (device_list_string){&video, 1}
+	                           : kind == device_MediaKind_all  ? (device_list_string){both, 2}
+	                                                           : (device_list_string){&image, 1};
+	picking how = {.media = true, .max_size = maxSize, .quality = quality, .limit = max > 0 ? (size_t)max : 0};
+	pick(call, NULL, mimes, max != 1, &how);
+}
+
+static void p_files(device_Platform *self, device_list_string types, bool multiple, asuka_call *call) {
+	picking how = {0};
+	pick(call, NULL, types, multiple, &how);
+}
 
 static UINT cf_png(void) {
 	static UINT cf;
@@ -547,7 +763,7 @@ static bool p_settings(device_Platform *self, asuka_error *err) {
 }
 
 static const device_Platform_vtable vt = {
-    .info = p_info, .browse = p_browse, .pickPhotos = p_photos, .pickFiles = p_files, .clipboardText = p_text,
+    .info = p_info, .browse = p_browse, .pickMedia = p_media, .pickFiles = p_files, .clipboardText = p_text,
     .clipboardHas = p_has, .clipboardImage = p_image, .copyImage = p_copy, .clipboardHTML = p_html, .copyHTML = p_copy_html,
     .watchClipboard = p_watch, .keepAwake = p_awake, .openSettings = p_settings,
 };

@@ -15,6 +15,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.6.2")
     implementation("androidx.camera:camera-view:1.6.2")
     implementation("androidx.camera:camera-video:1.6.2")
+    implementation("androidx.exifinterface:exifinterface:1.4.1") // a photo's orientation, written again (capture's maxSize)
     // Reading codes in what it sees: ML Kit, with its model, so it works
     // without Google Play services.
     implementation("com.google.mlkit:barcode-scanning:17.3.0")

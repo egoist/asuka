@@ -71,6 +71,42 @@ static long long field(const char *s, const char *name) {
 	return f ? strtoll(f + strlen(name), NULL, 10) : -1;
 }
 
+// media: pickMedia's images with WIC: a PNG's size; written as a JPEG,
+// scaled to its long side's most (never up), of its quality; what isn't
+// an image refused (copied as it is, then).
+static void media(void) {
+	enum { W = 400, H = 300 };
+	uint8_t *px = malloc(W * H * 4);
+	for (int i = 0; i < W * H; i++) {
+		px[i * 4] = (uint8_t)(i % W), px[i * 4 + 1] = (uint8_t)(i / W), px[i * 4 + 2] = 128, px[i * 4 + 3] = 255;
+	}
+	asuka_bytes png = {0};
+	CHECK(asuka_win_png(W, H, px, &png), "no PNG");
+	free(px);
+	char *dir = asuka_sprintf("%s\\pick-test", asuka_desktop_cache_dir());
+	CreateDirectoryA(dir, NULL);
+	char *in = asuka_sprintf("%s\\in.png", dir), *out = asuka_sprintf("%s\\out.jpg", dir), *big = asuka_sprintf("%s\\big.jpg", dir),
+	     *low = asuka_sprintf("%s\\low.jpg", dir), *text = asuka_sprintf("%s\\note.png", dir);
+	FILE *f = fopen(in, "wb");
+	fwrite(png.data, 1, png.len, f);
+	fclose(f);
+	free(png.data);
+	f = fopen(text, "wb");
+	fputs("not an image", f);
+	fclose(f);
+	int64_t w = 0, h = 0;
+	CHECK(win_image_size(in, &w, &h) && w == W && h == H, "size %lldx%lld", (long long)w, (long long)h);
+	CHECK(win_jpeg(in, out, 100, 0.9, &w, &h) && w == 100 && h == 75, "scaled %lldx%lld", (long long)w, (long long)h);
+	CHECK(win_image_size(out, &w, &h) && w == 100 && h == 75, "written %lldx%lld", (long long)w, (long long)h);
+	CHECK(win_jpeg(in, big, 4000, 0.9, &w, &h) && w == W && h == H, "never up: %lldx%lld", (long long)w, (long long)h);
+	CHECK(win_jpeg(in, low, 4000, 0.1, &w, &h), "quality 0.1");
+	WIN32_FILE_ATTRIBUTE_DATA a, b;
+	CHECK(GetFileAttributesExA(big, GetFileExInfoStandard, &a) && GetFileAttributesExA(low, GetFileExInfoStandard, &b) && b.nFileSizeLow < a.nFileSizeLow,
+	      "quality 0.1 isn't smaller");
+	CHECK(!win_image_size(text, &w, &h) && !win_jpeg(text, out, 100, 0.9, &w, &h), "a text file read as an image");
+	free(in), free(out), free(big), free(low), free(text), free(dir);
+}
+
 int main(void) {
 	setvbuf(stdout, NULL, _IONBF, 0);
 	const char *html = "<p>Hi <b>there</b> &amp; caf\xc3\xa9 \xe6\x97\xa5\xe6\x9c\xac</p>";
@@ -143,6 +179,8 @@ int main(void) {
 	p_html(NULL, call);
 	CHECK(got.answers == 1 && !got.value && !got.error, "text alone: %s", got.value ? got.value : got.error ? got.error : "");
 	reset();
+
+	media();
 
 	printf(failures ? "FAIL\n" : "ok\n");
 	return failures ? 1 : 0;

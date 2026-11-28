@@ -1,12 +1,15 @@
 name = "platform/photos"
 version = "0.1.0"
-description = "The user's photo library, read with their permission"
+description = "The user's photo library: its photos, videos and albums, with their permission"
 
 [ios.usage]
 NSPhotoLibraryUsageDescription = "To show your photos."
 
+# Reading images and videos (Android 13: each its own; Android 14: the
+# ones the user chose); before Android 10, writing an album's folder or
+# deleting needs the storage permission.
 [android]
-permissions = ["android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VISUAL_USER_SELECTED", "android.permission.READ_EXTERNAL_STORAGE:32"]
+permissions = ["android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO", "android.permission.READ_MEDIA_VISUAL_USER_SELECTED", "android.permission.READ_EXTERNAL_STORAGE:32", "android.permission.WRITE_EXTERNAL_STORAGE:28"]
 
 # The host's photo library module (PhotoKit).
 [ios]

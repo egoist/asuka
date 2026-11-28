@@ -1,18 +1,29 @@
 // Package platform/camera shows what the camera sees, live (camera.View),
 // takes photos and records videos from it, reads the codes it sees, and
-// shows the system's camera screen (take). AVFoundation on iOS and
-// macOS, CameraX on Android, getUserMedia on the web, Media Foundation on
-// Windows, GStreamer on Linux. An app that imports it is given the
-// camera's and the microphone's purpose strings (asuka.toml's
-// ios.usage.NSCameraUsageDescription says better).
+// shows the system's camera screen (take). The View zooms (a pinch, or
+// its zoom bound to state), lights the torch, flashes, focuses and
+// meters where it's tapped, takes an exposure bias, records at the size
+// asked, mirrors the front camera's photos as its preview shows them,
+// and hands the app a few frames a second to look at (frameRate).
+// AVFoundation on iOS and macOS, CameraX on Android, getUserMedia on the
+// web, Media Foundation on Windows, GStreamer on Linux. An app that
+// imports it is given the camera's and the microphone's purpose strings
+// (asuka.toml's ios.usage.NSCameraUsageDescription says better).
 //
 //   camera.View {
+//     bind zoom: zoom
+//     torch: lit
+//     flash: .auto
 //     scan: true
 //     grow: 1
+//     on ready(info) { maxZoom = info.maxZoom }
 //     on code(c) { status = "{c.kind}: {c.value}" }
 //     on error(m) { status = m }
 //   }
-//   Button("Take") { on press { last = try await camera.capture() } }
+//   Button("Take") { on press { last = try await camera.capture(maxSize: 2048) } }
+//
+// Tests fake the camera: camera.fake() gives a FakeCamera, whose files
+// capture, record and take give, and which says what they were asked.
 
 /// Which camera a View shows.
 pub enum Facing {
@@ -28,11 +39,83 @@ pub enum Mode {
   video
 }
 
+/// The flash, for the photos a View takes.
+pub enum Flash {
+  off
+  /// For every photo.
+  on
+  /// When the scene is dark, as the camera judges.
+  auto
+}
+
+/// The size of the videos a View records, the nearest the camera has:
+/// its preview's too.
+pub enum VideoQuality {
+  /// 640×480 (480p).
+  sd
+  /// 1280×720 (720p).
+  hd
+  /// 1920×1080 (1080p).
+  fullHD
+  /// 3840×2160 (4K).
+  uhd
+}
+
+/// What a View's photos favor: AVCapturePhotoOutput's quality
+/// prioritization, CameraX's capture mode.
+pub enum PhotoQuality {
+  /// The shortest wait after the shutter, with less processing.
+  speed
+  /// The platform's default.
+  balanced
+  /// The most processing (several frames fused, less noise), however
+  /// long it takes.
+  quality
+}
+
 /// A code the camera read: its kind (platform/scan's: "qr", "ean13",
 /// "upca", "code128"...) and what it says.
 pub struct Code {
   kind: string
   value: string
+}
+
+/// What a View's camera can do, said as it starts (ready) and again when
+/// it changes camera.
+pub struct Info {
+  /// The zoom factors it takes: minZoom below 1 is an ultra wide lens
+  /// (an iPhone's 0.5×).
+  minZoom: float = 1
+  maxZoom: float = 1
+  /// The exposure biases it takes, in EV (0 and 0: none).
+  minExposure: float = 0
+  maxExposure: float = 0
+  /// It has a torch (torch), and a flash (flash).
+  torch: bool = false
+  flash: bool = false
+  /// It focuses at a point (tapToFocus, camera.focus); some cameras only
+  /// meter there.
+  focus: bool = false
+}
+
+/// A point in a View: fractions of its width and height from its top
+/// left (0.5, 0.5: its middle).
+pub struct Point {
+  x: float
+  y: float
+}
+
+/// A frame the View sampled for the app to look at (frameRate): a JPEG
+/// file of what the preview shows, upright (the front camera's mirrored
+/// only with the View's mirror), at most its frameSize on its long side.
+/// The View writes a few in turn and reuses them: read it in the
+/// handler (scan, vision, an upload), or copy it to keep it.
+pub struct Frame {
+  path: string
+  width: int
+  height: int
+  /// When it was seen, from the View's start.
+  time: Duration
 }
 
 /// What the camera fails with.
@@ -56,7 +139,41 @@ pub native component View {
   prop scan: bool = false
   /// The kinds of code to read ("qr", "ean13"...); empty: every kind.
   prop codes: [string] = []
+  /// The zoom factor: 1 the camera's own view, 2 twice as close, within
+  /// ready's minZoom and maxZoom. A pinch changes it (bind it to follow).
+  prop zoom: float = 1
+  /// A pinch zooms.
+  prop pinchToZoom: bool = true
+  /// The torch on, lighting what the camera sees (where it has one).
+  prop torch: bool = false
+  /// The flash, for the photos capture takes (where it has one).
+  prop flash: Flash = .off
+  /// The exposure's bias, in EV (-1: a stop darker), within ready's
+  /// minExposure and maxExposure.
+  prop exposure: float = 0
+  /// A tap focuses and meters where it is (focusPoint says where).
+  prop tapToFocus: bool = true
+  /// The size of the videos it records.
+  prop videoQuality: VideoQuality = .fullHD
+  /// What its photos favor.
+  prop photoQuality: PhotoQuality = .balanced
+  /// The front camera's photos, videos and frames mirrored, as its
+  /// preview shows them (a selfie as the user saw it); off, they're as
+  /// others see the user.
+  prop mirror: bool = false
+  /// Frames a second it hands to frame (at most 15); 0: none.
+  prop frameRate: float = 0
+  /// The long side, in pixels, of the frames it hands to frame.
+  prop frameSize: int = 480
   event code(code: Code)
+  /// The zoom the user pinched to.
+  event zoomChange(zoom: float)
+  /// It focused where it was tapped.
+  event focusPoint(point: Point)
+  /// A frame, frameRate times a second.
+  event frame(frame: Frame)
+  /// The camera started: what it can do.
+  event ready(info: Info)
   /// It can't show: not allowed, no camera.
   event error(message: string)
 }
@@ -67,12 +184,16 @@ native interface Camera {
   /// cancelled.
   /// @mainThread
   async fn take() -> string
-  /// A photo from the View on screen: its file.
-  async fn capture() -> string
+  /// A photo from the View on screen: its file, its long side at most
+  /// maxSize (0: the camera's), a JPEG of quality (0: the platform's).
+  async fn capture(maxSize: int, quality: float) -> string
   /// Records a video from the View on screen (in video mode) until stop
-  /// (or maxDuration, if not 0): its file.
-  async fn record(mute: bool, maxDuration: Duration) -> string
+  /// (or maxDuration, or maxBytes, if not 0): its file.
+  async fn record(mute: bool, maxDuration: Duration, maxBytes: int) -> string
   fn stopRecording()
+  /// Focuses and meters the View on screen at x, y (fractions of it).
+  /// @mainThread
+  fn focus(x: float, y: float)
   /// The camera's permission now, asking nothing: "notAsked", "denied"
   /// or "allowed".
   /// @mainThread
@@ -103,6 +224,9 @@ fn accessOf(s: string) -> Access = match s {
 /// Whether the app may use the camera now, asking nothing: to show why
 /// before asking, or the way to Settings after a no.
 pub fn access() -> Access {
+  if let f = faked {
+    return f.access
+  }
   if let c = cam {
     return accessOf((try? c.access()) ?? "")
   }
@@ -112,6 +236,12 @@ pub fn access() -> Access {
 /// Asks for the camera, if the user hasn't been asked (else the answer
 /// already given): what they said.
 pub async fn request() throws -> Access {
+  if let f = faked {
+    if f.access == .notAsked {
+      f.access = f.answer
+    }
+    return f.access
+  }
   return accessOf(try await camera().requestAccess())
 }
 
@@ -129,6 +259,11 @@ fn camera() throws -> Camera {
 /// the photo's file (a JPEG in the app's caches: move it to keep it), or
 /// none if the user cancelled.
 pub async fn take() throws -> string? {
+  if let f = faked {
+    try f.allowed()
+    f.taken += 1
+    return f.take
+  }
   let path = try await camera().take()
   if path.isEmpty() {
     return none
@@ -136,22 +271,112 @@ pub async fn take() throws -> string? {
   return path
 }
 
-/// Takes a photo from the camera.View on screen: its file (a JPEG in the
-/// app's caches).
-pub async fn capture() throws -> string {
-  return try await camera().capture()
+/// Takes a photo from the camera.View on screen, with its flash, mirror
+/// and photoQuality: its file (a JPEG in the app's caches). maxSize
+/// scales it down to at most that many pixels on its long side (0: the
+/// camera's full size); quality is the JPEG's, from 0 to 1 (0: the
+/// platform's, about 0.9).
+pub async fn capture(maxSize: int = 0, quality: float = 0) throws -> string {
+  let q = if quality < 0 || quality > 1 { 0.0 } else { quality }
+  if let f = faked {
+    try f.allowed()
+    f.captures.push(Capture(maxSize: max(maxSize, 0), quality: q))
+    return f.photo
+  }
+  return try await camera().capture(max(maxSize, 0), q)
 }
 
-/// Records a video from the camera.View on screen, in video mode, until
-/// stopRecording (or maxDuration, if not 0): its file (in the app's
-/// caches). With the microphone, unless mute (or not allowed).
-pub async fn record(mute: bool = false, maxDuration: Duration = 0s) throws -> string {
-  return try await camera().record(mute, maxDuration)
+/// Records a video from the camera.View on screen, in video mode, at its
+/// videoQuality, until stopRecording, or maxDuration or maxBytes (if not
+/// 0), whichever comes first: its file (in the app's caches). With the
+/// microphone, unless mute (or not allowed).
+pub async fn record(mute: bool = false, maxDuration: Duration = 0s, maxBytes: int = 0) throws -> string {
+  if let f = faked {
+    try f.allowed()
+    f.recordings.push(Recording(mute: mute, maxDuration: maxDuration, maxBytes: max(maxBytes, 0)))
+    return f.video
+  }
+  return try await camera().record(mute, maxDuration, max(maxBytes, 0))
 }
 
 /// Ends the recording: record gives its file.
 pub fn stopRecording() {
+  if let f = faked {
+    f.stopped += 1
+    return
+  }
   if let c = cam {
     try? c.stopRecording()
   }
+}
+
+/// Focuses and meters the camera.View on screen at a point of it, as a
+/// tap there does: x and y are fractions of its width and height, from
+/// its top left. Nothing where the camera can't (ready's info.focus).
+pub fn focus(x: float, y: float) {
+  let p = Point(x: min(max(x, 0), 1), y: min(max(y, 0), 1))
+  if let f = faked {
+    f.focused.push(p)
+    return
+  }
+  if let c = cam {
+    try? c.focus(p.x, p.y)
+  }
+}
+
+// ---------------------------------------------------------------------
+// Testing
+
+/// What capture was asked for, as the fake keeps it.
+pub struct Capture {
+  maxSize: int
+  quality: float
+}
+
+/// What record was asked for, as the fake keeps it.
+pub struct Recording {
+  mute: bool
+  maxDuration: Duration
+  maxBytes: int
+}
+
+state faked: FakeCamera? = none
+
+/// The fake camera fake() makes, which a test sets and reads.
+pub store FakeCamera {
+  /// What access() says.
+  pub state access: Access = .allowed
+  /// What request() makes access, when it's notAsked.
+  pub state answer: Access = .allowed
+  /// The file capture gives.
+  pub state photo = "/tmp/asuka-camera/photo.jpg"
+  /// The file record gives.
+  pub state video = "/tmp/asuka-camera/video.mp4"
+  /// What take gives (none: the user cancelled).
+  pub state take: string? = "/tmp/asuka-camera/taken.jpg"
+  /// The captures asked for, in order.
+  pub state captures: [Capture] = []
+  /// The recordings asked for, in order.
+  pub state recordings: [Recording] = []
+  /// How many times take showed the camera.
+  pub state taken = 0
+  /// How many times stopRecording was called.
+  pub state stopped = 0
+  /// Where focus focused, in order.
+  pub state focused: [Point] = []
+
+  fn allowed() throws {
+    if access == .denied {
+      throw CameraError.notAllowed
+    }
+  }
+}
+
+/// Fakes the camera for an app's tests: capture, record and take give
+/// the fake's files at once (a denied access throws notAllowed), and the
+/// fake keeps what they were asked.
+pub fn fake() -> FakeCamera {
+  let f = FakeCamera()
+  faked = f
+  return f
 }

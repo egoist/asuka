@@ -1,0 +1,36 @@
+test "a square frame over a landscape photo: its middle, its height" {
+  // A 4000×3000 photo in a 400×600 box: the frame 368 wide, the image
+  // covering it at 368 tall.
+  let l = place(400, 600, 4000, 3000, 1, 1, 0, 0)
+  expect(l.frameWidth == 368 && l.frameHeight == 368)
+  expect(l.frameX == 16 && l.frameY == 116)
+  expect(cropOf(l, 4000, 3000) == Rect(x: 500, y: 0, width: 3000, height: 3000))
+}
+
+test "moved and zoomed: the frame stays covered" {
+  // Dragged far right: the image's left edge stops at the frame's.
+  let r = place(400, 600, 4000, 3000, 1, 1, 9999, 0)
+  expect(cropOf(r, 4000, 3000) == Rect(x: 0, y: 0, width: 3000, height: 3000))
+  // Twice as close, in the middle: half the square.
+  let z = place(400, 600, 4000, 3000, 1, 2, 0, 0)
+  expect(cropOf(z, 4000, 3000) == Rect(x: 1250, y: 750, width: 1500, height: 1500))
+  // Zoomed out past covering: no less than covering.
+  let out = place(400, 600, 4000, 3000, 1, 0.2, 0, 0)
+  expect(cropOf(out, 4000, 3000) == Rect(x: 500, y: 0, width: 3000, height: 3000))
+  // Past the most: maxZoom's.
+  let most = place(400, 600, 4000, 3000, 1, 100, 0, 0)
+  expect(cropOf(most, 4000, 3000).width == 375)
+}
+
+test "the image's own aspect, and a wide frame" {
+  let own = place(400, 600, 4000, 3000, 0, 1, 0, 0)
+  expect(cropOf(own, 4000, 3000) == Rect(x: 0, y: 0, width: 4000, height: 3000))
+  let wide = place(400, 600, 3000, 4000, 16.0 / 9, 1, 0, -9999)
+  let c = cropOf(wide, 3000, 4000)
+  expect(c.x == 0 && c.width == 3000 && c.y + c.height == 4000)
+}
+
+test "nothing to lay out yet" {
+  expect(place(0, 0, 4000, 3000, 1, 1, 0, 0).frameWidth == 0)
+  expect(place(400, 600, 0, 0, 1, 1, 0, 0).frameWidth == 0)
+}

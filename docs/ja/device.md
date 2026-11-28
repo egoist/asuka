@@ -18,7 +18,7 @@ Asuka のパッケージを使うと、ビューの外にあるデバイスの�
 | `platform/background` | `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`POST_NOTIFICATIONS`、`WAKE_LOCK`。フォアグラウンドサービス | |
 | `platform/scan` | ML Kit のバーコードモデル（約 2 MB） | |
 | `platform/vision` | ML Kit のテキスト、顔、バーコードのモデル（約 30 MB） | |
-| `platform/photos` | `READ_MEDIA_IMAGES`、`READ_MEDIA_VISUAL_USER_SELECTED`。`READ_EXTERNAL_STORAGE`（Android 12 以前） | `NSPhotoLibraryUsageDescription` |
+| `platform/photos` | `READ_MEDIA_IMAGES`、`READ_MEDIA_VIDEO`、`READ_MEDIA_VISUAL_USER_SELECTED`。`READ_EXTERNAL_STORAGE`（Android 12 以前）。`WRITE_EXTERNAL_STORAGE`（Android 9 以前。アルバムと削除のため） | `NSPhotoLibraryUsageDescription` |
 | `platform/push` | Firebase Cloud Messaging、`POST_NOTIFICATIONS` | `aps-environment` エンタイトルメント。`remote-notification` バックグラウンドモード |
 | `platform/analytics` | Firebase Analytics（`INTERNET`、`ACCESS_NETWORK_STATE`、`WAKE_LOCK`、`AD_ID`）。`android.googleServices` の設定 | Firebase Analytics。`ios.googleServices` が指すファイル。アプリの起動時から |
 | `platform/appleauth` | | Sign in with Apple のエンタイトルメント |
@@ -67,12 +67,12 @@ macOS でも各パッケージは iOS と同じフレームワーク（AVFoundat
 
 | パッケージ | Mac の場合 |
 | --- | --- |
-| `platform/device` | `pickPhotos` と `pickFiles`：ウィンドウ上のシートとして開くオープンパネル（権限は不要）で、アプリのキャッシュにコピーを作ります。`browse` はユーザーのブラウザーでページを開きます。`info`：`model` は `"Mac"`、`system` は `"macOS"` |
-| `platform/camera` | `take()`：ウィンドウの上にシートを出し、ライブプレビューと「写真を撮る」「キャンセル」を表示します（AppKit にはカメラ画面がないため）。`camera.View` の「背面」は内蔵カメラ（Mac には背面カメラがないため）か、接続されたカメラです。そこでコードを読み取るには macOS 13 が必要です |
+| `platform/device` | `pickPhotos`、`pickMedia`、`pickFiles`：ウィンドウ上のシートとして開くオープンパネル（権限は不要）で、アプリのキャッシュにコピーを作ります（`pickMedia` の `ordered` は何もしません）。`browse` はユーザーのブラウザーでページを開きます。`info`：`model` は `"Mac"`、`system` は `"macOS"` |
+| `platform/camera` | `take()`：ウィンドウの上にシートを出し、ライブプレビューと「写真を撮る」「キャンセル」を表示します（AppKit にはカメラ画面がないため）。`camera.View` の「背面」は内蔵カメラ（Mac には背面カメラがないため）か、接続されたカメラです。そこでコードを読み取るには macOS 13 が必要です。ズームはデジタルで、写真モードのときに最大 4× です（プレビューを拡大し、写真とフレームは中央を切り出します）。Mac には露出補正がありません。ライト、フラッシュ、指定した位置へのフォーカスは、カメラが対応している場合（連係カメラとして使う iPhone など）にだけ使えます |
 | `platform/record` | オーディオセッションはありません。ほかのアプリの音は鳴り続けます。`background` は何も変えません。Mac アプリはどのみち見えていなくても録音できます |
 | `platform/nowplaying` | iOS と同じく `MPNowPlayingInfoCenter` と `MPRemoteCommandCenter` を使います。コントロールセンターとメニューバーの「再生中」、キーボードのメディアキー、AirPods で操作できます。Mac ではオーディオセッションもバックグラウンドモードも不要です |
 | `platform/contacts`、`platform/calendar` | `add` はウィンドウ上のアラートで確認してから保存します（macOS には新規連絡先や新規イベントの画面がないため）。保存の前にアクセスの許可を求めます |
-| `platform/photos` | iOS と同じく PhotoKit です。Mac には限定アクセスのライブラリがないので、`manageLimited` は何もしません |
+| `platform/photos` | iOS と同じく PhotoKit で、写真と動画、アルバム、削除（システムの確認付き）、ライブラリの変更に対応します。Mac には限定アクセスのライブラリがないので、`manageLimited` は何もしません |
 | `platform/library` | 写真とビデオは「写真」アプリに保存されます。`.downloads` と `.music` は、ユーザーの `~/Downloads` と `~/Music` の中の指定したフォルダーに保存されます |
 | `platform/biometric` | Touch ID のプロンプト、またはユーザーのパスワード（`noPasscode` のときを除く） |
 | `platform/push` | iOS と同じく APNs です。プロビジョニングプロファイルが必要です（上記） |
@@ -101,9 +101,9 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 
 | パッケージ | Windows の場合 |
 | --- | --- |
-| `platform/device` | `pickPhotos` と `pickFiles`：ウィンドウの上に開くファイルを開くダイアログで、アプリのキャッシュにコピーを作ります。`browse` はユーザーのブラウザーでページを開きます。クリップボードの画像は PNG です。`keepAwake` はディスプレイをオンのままにします。`info`：`model` は `"PC"`、`system` は `"Windows"`、`systemVersion` は `"10.0.<build>"` |
+| `platform/device` | `pickPhotos`、`pickMedia`、`pickFiles`：ウィンドウの上に開くファイルを開くダイアログで、アプリのキャッシュにコピーを作ります（`pickMedia` の `ordered` は何もしません。動画のサイズと長さは MPEG-4 か QuickTime のヘッダーから読み、読めなければ Media Foundation から取得します）。`browse` はユーザーのブラウザーでページを開きます。クリップボードの画像は PNG です。`keepAwake` はディスプレイをオンのままにします。`info`：`model` は `"PC"`、`system` は `"Windows"`、`systemVersion` は `"10.0.<build>"` |
 | `platform/secure` | 資格情報マネージャーにある、ユーザーの汎用資格情報です。名前は `<app>/<key>` です（値は 2560 バイトまで） |
-| `platform/camera` | Media Foundation のキャプチャエンジンを使います。`take()`：ウィンドウの上にダイアログを出し、ライブプレビューと「写真を撮る」「キャンセル」を表示します（Enter と Escape でも操作できます）。`camera.View` は Windows が前面または背面と呼ぶカメラを選び、なければ最初のカメラを使います。`scan` を指定すると、Asuka 独自のリーダー（`scan.file` と同じもの）で毎秒 4 フレームからコードを読み取ります。「設定」でカメラのスイッチがオフのときは `CameraError.notAllowed` です |
+| `platform/camera` | Media Foundation のキャプチャエンジンを使います。`take()`：ウィンドウの上にダイアログを出し、ライブプレビューと「写真を撮る」「キャンセル」を表示します（Enter と Escape でも操作できます）。`camera.View` は Windows が前面または背面と呼ぶカメラを選び、なければ最初のカメラを使います。`scan` を指定すると、Asuka 独自のリーダー（`scan.file` と同じもの）で毎秒 4 フレームからコードを読み取ります。「設定」でカメラのスイッチがオフのときは `CameraError.notAllowed` です。カメラ自身にズームがあればそれを使い、なければ写真モードで最大 4× のデジタルズームになります（プレビュー、写真、フレームを切り出します。動画はビュー全体のままです）。ピンチはタッチパッドやタッチスクリーンのもの、または Ctrl キーとホイールです。ライト、フラッシュ、露出補正、フォーカス位置の指定、`photoQuality` はありません。ユーザーのほうを向いたカメラは左右反転して表示され、`mirror` を指定するとその写真、動画、フレームも反転します |
 | `platform/record`（ビデオ） | MPEG-4（`.mp4`）の H.264 と AAC です。ミュートされていなければ既定のマイクを使います |
 | `platform/audio` | MCI（DirectShow の再生）を使います。URL は先にアプリのキャッシュにダウンロードされます |
 | `platform/record`（音声） | 既定のマイクを使い、AAC 44.1 kHz で録音します（音声はモノラル、音楽はステレオ）。`background` は何も変えません |
@@ -115,7 +115,7 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `platform/webauth` | アプリのウィンドウの上に、WebView2 を入れたウィンドウを開きます（アプリの Web プロファイルを使います。`ephemeral` では使い捨てのプロファイル） |
 | `platform/js` | 一度も表示されない WebView2 |
 | `platform/contacts`、`platform/calendar` | Windows はパッケージ化されたアプリにしか連絡先とカレンダーを渡しません。`request` は `.denied` と答えます。`add` は vCard かイベントのファイルを、ユーザーの連絡先アプリやカレンダーアプリで開き、false を返します（保存されたかどうかを Windows は知らせないため） |
-| `platform/photos` | ピクチャフォルダーです（求める権限はありません）。スクリーンショットはその中の Screenshots フォルダーのものです |
+| `platform/photos` | ピクチャフォルダーの写真とビデオフォルダーの動画です（求める権限はありません）。スクリーンショットは Screenshots フォルダーのものです。アルバムはピクチャ内のフォルダーで（Camera Roll と Screenshots はシステムのものです。すでに使われているタイトルは「Title (2)」になります）、アルバムへの追加はそこへのコピーです。`favorite` は星 5 つの評価です。`delete` は、エクスプローラーと同じく確認せずにファイルをごみ箱に移します（ユーザーが削除の確認をオンにしている場合を除きます）。`changes` は、Windows が知らせる場合にファイルを示します（一度に多くのファイルが変わったときは示しません） |
 | `platform/library` | ユーザーのダウンロード、ビデオ、ミュージック、ピクチャフォルダーの、指定したフォルダーに保存されます |
 | `platform/vision` | Windows の OCR（OCR がインストールされている言語のみ。「設定」の「時刻と言語」）と顔検出を使います。コードは `platform/scan` と同じ方法で読み取ります |
 | `platform/scan` | Windows にはアプリ向けのコードリーダーがありません。そのため Asuka 独自のリーダーが、QR コード、Data Matrix、EAN-13 と EAN-8、UPC-A と UPC-E、Code 128、Code 39 を読み取ります（Aztec、PDF417、Code 93、Codabar、ITF は読めません） |
@@ -145,7 +145,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 
 | パッケージ | Linux の場合 |
 | --- | --- |
-| `platform/device` | `pickPhotos` と `pickFiles`：GTK のファイルダイアログ（サンドボックス内ではポータルのもの）で、アプリのキャッシュにコピーを作ります。クリップボードの画像と変更は GDK のクリップボードを通じて扱います。`browse` はユーザーのブラウザーでページを開きます。`keepAwake` はセッションがアイドル状態になるのを防ぎます。`info`：`model` は `"PC"`、`system` は `"Linux"`、`systemVersion` はディストリビューションのバージョン（`/etc/os-release`） |
+| `platform/device` | `pickPhotos`、`pickMedia`、`pickFiles`：GTK のファイルダイアログ（サンドボックス内ではポータルのもの）で、アプリのキャッシュにコピーを作ります（`pickMedia` の `ordered` は何もしません。動画のサイズと長さは MPEG-4 か QuickTime のヘッダーから読み、読めなければ GStreamer から取得します）。クリップボードの画像と変更は GDK のクリップボードを通じて扱います。`browse` はユーザーのブラウザーでページを開きます。`keepAwake` はセッションがアイドル状態になるのを防ぎます。`info`：`model` は `"PC"`、`system` は `"Linux"`、`systemVersion` はディストリビューションのバージョン（`/etc/os-release`） |
 | `platform/secure` | キーリング（libsecret：GNOME Keyring、KWallet、KeePassXC）に、キーごとに 1 つ、アプリ名のラベルを付けた項目を作ります。libsecret やキーリングがなければ、呼び出しはその旨を示して失敗します |
 | `platform/network` | GNetworkMonitor（サンドボックス内ではポータルのもの）を使います。Wi-Fi、Ethernet、モバイルデータ通信の区別は NetworkManager から取得します。constrained になることはありません |
 | `platform/location` | 位置情報ポータル（GeoClue のもので、ユーザーに確認します）、なければ GeoClue 自体を使います。`placeName` は geocode-glib がインストールされていれば使えます。GeoClue にはジオフェンスがないので、リージョンとバックグラウンドでの更新は、アプリの実行中に位置から計算します |
@@ -154,7 +154,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/nowplaying` | 何かを表示しているあいだ、セッションバスに `org.mpris.MediaPlayer2.<app>.instance<pid>` という名前の MPRIS プレイヤーを置きます。GNOME や KDE のメディアコントロールとロック画面、メディアキー、`playerctl` から操作できます。MPRIS の `Seek` は、アプリがスキップを扱う場合はスキップ、そうでなければシークになります。アートワークは `file://` か http(s) の URL です |
 | `platform/library` | ユーザーのフォルダー（XDG のピクチャ、ビデオ、ミュージック、ダウンロード）の、指定したフォルダーに保存されます |
 | `device.shareFiles` | 共有シートはありません。ファイルはクリップボードにコピーされ、トーストが表示されます |
-| `platform/camera`、`platform/record` | カメラポータル（ユーザーへの確認は一度だけ。PipeWire のカメラで、`gstreamer1.0-pipewire` が必要）、なければ最初の Video4Linux カメラを、GStreamer を通じて使います。`take()`：ウィンドウの上にダイアログを出し、ライブプレビューと「写真を撮る」「キャンセル」を表示します。`camera.View`：左右反転したプレビューで、枠いっぱいに表示します。前面と背面は同じカメラです（コンピューターのカメラはユーザーのほうを向いているため）。ビデオは MPEG-4（x264 か OpenH264 の H.264 と AAC）、それができなければ WebM です。コードの読み取りには GStreamer の `zbar` エレメントが必要です。カメラがなければ `CameraError.noCamera`、拒否されたら `.notAllowed` です |
+| `platform/camera`、`platform/record` | カメラポータル（ユーザーへの確認は一度だけ。PipeWire のカメラで、`gstreamer1.0-pipewire` が必要）、なければ最初の Video4Linux カメラを、GStreamer を通じて使います。`take()`：ウィンドウの上にダイアログを出し、ライブプレビューと「写真を撮る」「キャンセル」を表示します。`camera.View`：左右反転したプレビューで、枠いっぱいに表示します。前面と背面は同じカメラです（コンピューターのカメラはユーザーのほうを向いているため）。ビデオは MPEG-4（x264 か OpenH264 の H.264 と AAC）、それができなければ WebM です。コードの読み取りには GStreamer の `zbar` エレメントが必要です。カメラがなければ `CameraError.noCamera`、拒否されたら `.notAllowed` です。Video4Linux カメラでは、ドライバーが対応していればカメラ自身のズーム、露出補正、ライトを使います。そうでない場合（PipeWire のカメラも含みます）は最大 4× のデジタルズームになり、録画にも反映されます。ピンチはタッチパッドやタッチスクリーンのもの、または Ctrl キーとホイールです。フラッシュ、フォーカス位置の指定、`photoQuality` はありません |
 | `platform/scan`、`platform/vision` | Windows と同じく、コードは Asuka 自身のリーダーが読み取ります。QR、Data Matrix、EAN、UPC、Code 128、Code 39 です（Aztec、PDF417、Code 93、Codabar、ITF は読めません）。テキストは Tesseract（`libtesseract5` と各言語のデータ）が読み取ります。顔を検出するものはないので、`faces` は空です。Tesseract がなければ、`vision.analyze` の結果にテキストは含まれません |
 | `platform/imageedit` | GdkPixbuf のローダーでデコードし（HEIF と WebP は、それぞれのローダーがインストールされている場合）、向きを正しく直します。各操作は Asuka が行います。ビデオのフレームは GStreamer で取り出します |
 | `platform/webauth` | ウィンドウの上に WebKitGTK の Web ビューを入れたダイアログを開きます（`ephemeral` では専用のセッション）。閉じるとキャンセルになります |
@@ -182,12 +182,12 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 
 | パッケージ | ブラウザーの場合 |
 | --- | --- |
-| `platform/device` | `pickPhotos` と `pickFiles`：ブラウザーのファイル選択で、キャッシュにコピーを作ります。`browse`：新しいタブで開きます。クリップボード：アプリ自身がコピーしたものと、ユーザーがページに読み取りを許可した場合はほかのアプリのものです。`keepAwake`：Screen Wake Lock です。`info` はユーザーエージェントから取得します（Chromium のクライアントヒントがあれば、システムのバージョンと Android スマートフォンの機種も分かります） |
+| `platform/device` | `pickPhotos`、`pickMedia`、`pickFiles`：ブラウザーのファイル選択で、キャッシュにコピーを作ります（`pickMedia` の `ordered` は何もしません。また Safari 以外では HEIC のサイズがわからず、縮小もされません）。`browse`：新しいタブで開きます。クリップボード：アプリ自身がコピーしたものと、ユーザーがページに読み取りを許可した場合はほかのアプリのものです。`keepAwake`：Screen Wake Lock です。`info` はユーザーエージェントから取得します（Chromium のクライアントヒントがあれば、システムのバージョンと Android スマートフォンの機種も分かります） |
 | `platform/secure` | 値を AES-GCM で暗号化して IndexedDB に保存します。鍵はブラウザーが外に出さないものです。キーチェーンではありません（[Web](web.md) を参照） |
-| `platform/camera`、`platform/record` | `take()` はスマートフォンのカメラを開くか、ライブのカメラ映像とシャッターのあるダイアログを開きます。`camera.View` は `<video>` に映したカメラで、`capture()` と録画が使えます。ブラウザーに `BarcodeDetector` があればコードも読み取れます |
+| `platform/camera`、`platform/record` | `take()` はスマートフォンのカメラを開くか、ライブのカメラ映像とシャッターのあるダイアログを開きます。`camera.View` は `<video>` に映したカメラで、`capture()` と録画が使えます。ブラウザーに `BarcodeDetector` があればコードも読み取れます。ズーム、ライト、露出、フォーカスは、カメラのトラックが対応していればカメラ自身のものを使い（Android の Chrome）、なければ最大 4× のデジタルズームになります（録画にも反映され、canvas を通して描きます）。フラッシュは、カメラにあれば `ImageCapture` を通じて使えます。`photoQuality` はありません。`maxBytes` は、上限を超える前のチャンクで録画を止めます |
 | `platform/scan`、`platform/vision` | `BarcodeDetector` がコードを読み取ります。顔とテキストは、ブラウザーが対応している場合だけです |
 | `platform/imageedit` | canvas を使い、JPEG か PNG を出力します。リモートの画像には CORS が必要です |
-| `platform/photos` | ページはライブラリを読めないので、アクセスは `.denied` です（写真の選択には `device.pickPhotos` を使います） |
+| `platform/photos` | ページはライブラリを読めないので、アクセスは `.denied` です（写真や動画の選択には `device.pickMedia` を使います） |
 | `platform/library` | `save` はファイルをダウンロードします |
 | `platform/location` | Geolocation API を使います。Web には `placeName` がありません（ブラウザーにはジオコーダーがないため）。リージョンとバックグラウンドでの更新は位置から計算し、ページが開いているあいだだけ動きます |
 | `platform/network` | オンラインかどうかは `navigator.onLine` から取得します。Wi-Fi、モバイルデータ通信、Ethernet の区別はブラウザーが教える場合（Android の Chrome）だけです。モバイルデータ通信は metered、データセーバーは constrained になります |
@@ -300,9 +300,91 @@ component ScanButton {
 
 iOS と Mac はユーザーの選択を返します（ポリシーで禁止されている場合は `.denied`）。Android は許可されているかどうかと、アプリが尋ねたかどうかを返します。Windows はデスクトップアプリに何も尋ねないので、設定でデスクトップアプリのカメラをオフにしていなければ `.allowed` です。Linux はカメラポータルのこのアプリへの答え（ポータルがなければ `.allowed`）、ブラウザーはそのサイトへの許可です。`record.access()` と `record.request()` はマイクについて同じことをします。
 
+### ズーム、ライト、フラッシュ、フォーカス
+
+`camera.View` は、プラットフォームのカメラアプリと同じようにズームし、ライトを点け、ピントを合わせます。
+
+- `zoom` はズーム倍率です。1 がカメラ本来の画角で、2 なら 2 倍に寄ります。ビューをピンチするとズームし（`pinchToZoom: false` でオフにできます）、`bind zoom:` はその値に追従します。つまり、ユーザーのピンチが状態に書き込まれ、状態に書き込むとズームします。背面カメラに超広角レンズがあり、プラットフォームがそれを一つのカメラとして扱う場合（iPhone の 0.5×、一部の Android スマートフォン）は、1 より小さい倍率にもなります。
+- `torch` が true のあいだは、カメラが写している先をライトで照らします。`flash`（`.off`、`.on`、`.auto`）は、`capture` で撮る写真のフラッシュです。
+- `exposure` は露出補正の量で、単位は EV です。-1 で 1 段暗く、1 で 1 段明るくなります。
+- `tapToFocus`（既定でオン）のときは、タップした位置にピントと露出を合わせます。その位置は `focusPoint` でわかります（ビューの左上からの、ビューの大きさに対する割合です。そこに印を描けます）。アプリから同じことをするには `camera.focus(x, y)` を使います。
+- `ready` は、カメラが起動したときと、カメラが切り替わったとき（`facing`）に、そのカメラでできることを伝えます。中身は `Info` で、`minZoom` と `maxZoom`、`minExposure` と `maxExposure`、そして `torch` と `flash`、指定した位置での `focus` に対応しているかどうかを持ちます。カメラが対応しているコントロールだけを表示してください。
+
+iOS では、背面カメラはスマートフォンの複数のレンズを一つにまとめたものです（1 未満では超広角、ズームが進むと望遠に切り替わります）。また、タップでピントを合わせたあとも、シーンが大きく変わるとフォーカスは再びシーンを追うようになります。Android では CameraX のズーム、ライト、露出、フォーカスを使います。コンピューターのカメラには、ズーム、ライト、フラッシュ、指定した位置へのフォーカスがまずありません。そのため Mac、Windows、Linux、ブラウザーでは、カメラにできない場合はデジタルでズームします（上の各節を参照）。足りない機能は `ready` でわかります。
+
+```asuka check
+import platform/camera
+
+component Viewfinder {
+  state zoom = 1.0
+  state lit = false
+  state info = camera.Info()
+  state last = ""
+
+  Column {
+    camera.View {
+      bind zoom: zoom
+      torch: lit
+      flash: .auto
+      grow: 1
+      on ready(i) { info = i }
+    }
+    Row {
+      gap: 12
+      padding: 12
+      if info.torch {
+        Button(if lit { "Light off" } else { "Light" }) { on press { lit = !lit } }
+      }
+      if info.maxZoom >= 2 {
+        Button("2×") { on press { zoom = if zoom == 2 { 1 } else { 2 } } }
+      }
+      Button("Take") { on press { last = try await camera.capture(maxSize: 2048, quality: 0.8) } }
+    }
+  }
+}
+```
+
+### 写真と動画の画質
+
+- `capture(maxSize:, quality:)` は、写真の長辺が `maxSize` ピクセルになるまで縮小し（0 ならカメラのフルサイズのまま）、0〜1 の `quality` の JPEG として書き出します（0 ならプラットフォームの既定値で、約 0.9 です）。
+- `photoQuality` は、写真で何を優先するかです。`.speed`（シャッター後の待ち時間が最も短い）、`.balanced`（プラットフォームの既定）、`.quality`（複数のフレームを合成してノイズを減らす代わりに、待ち時間が長くなる）のいずれかで、iOS と Mac の quality prioritization、CameraX のキャプチャモードにあたります。Windows、Linux、ブラウザーには選べるものがありません。
+- `videoQuality` は、ビューで録画する動画のサイズです。カメラが対応するサイズのうち最も近いものになります。`.sd`（480p）、`.hd`（720p）、`.fullHD`（1080p、既定）、`.uhd`（4K）のいずれかです。
+- `mirror` をオンにすると、前面カメラの写真、動画、フレームをプレビューと同じように左右反転させ、ユーザーが見たとおりの自撮りにします。オフ（既定）では、プラットフォームのカメラアプリと同じく、ほかの人から見たユーザーの姿のまま保存されます。前面カメラのプレビュー自体は常に左右反転して表示されます。
+
+### アプリ自身で解析するフレーム
+
+`frameRate` を指定すると、ビューが表示されているあいだ、アプリが調べるためのフレームを受け取れます。`frame` が 1 秒にその回数（最大 15 回）呼ばれ、`Frame` が渡されます。これはプレビューに映っているものを正しい向きにした JPEG ファイルで、長辺は最大 `frameSize` ピクセル（既定は 480）です。`width`、`height`、`time` も持ちます。`platform/vision` でテキストや顔を、`platform/scan` でコードを読み取ったり、サーバーに送ったりできます。ビューは、フレームを書き出している最中に来たフレームを溜めずに捨てます。また、いくつかのファイルを順番に使い回して書き出すので、フレームのファイルはハンドラーの中で読むか、残したいときはコピーしてください。
+
+```asuka check
+import platform/camera
+import platform/vision
+
+component Reader {
+  state text = ""
+  state busy = false
+
+  Column {
+    camera.View {
+      frameRate: 2
+      grow: 1
+      on frame(f) {
+        if busy { return }
+        busy = true
+        defer { busy = false }
+        let r = try await vision.analyze(f.path, faces: false, codes: false)
+        text = r.lines.map(l => l.text).joined("\n")
+      }
+    }
+    Text(text)
+  }
+}
+```
+
+フレームは画像であり、カメラのピクセルバッファーではありません。1 秒に数枚で済む処理（ページやラベル、顔を読み取るなど）のためのもので、カメラ本来のフレームレートでフレームごとに行う処理は、ネイティブパッケージのコードで書くべきものです。
+
 ## ビデオの録画：platform/record
 
-ビデオモードの `camera.View` は録画できます。`record.start()` はビューに映っているものを、`mute` を指定しない限りマイクの音と一緒に、`record.stop()` を呼ぶまで（または `maxDuration` まで）録画し、ファイル（アプリのキャッシュにある MPEG-4 の動画）を返します。`camera.record` と `camera.stopRecording` も同じものです。
+ビデオモードの `camera.View` は録画できます。`record.start()` はビューに映っているものを、`mute` を指定しない限りマイクの音と一緒に、`record.stop()` を呼ぶまで（または `maxDuration` まで）録画し、ファイル（アプリのキャッシュにある MPEG-4 の動画）を返します。`camera.record` と `camera.stopRecording` も同じものです。動画のサイズはビューの `videoQuality` で指定したものになり、ビューの `mirror` に従って左右反転されます。`maxBytes` を指定すると、ファイルがそのサイズを超えそうになった時点で録画を終えます（`maxDuration` と同じく、ファイルは完全な形で残ります）。
 
 ```asuka
 import platform/camera
@@ -379,24 +461,37 @@ iOS と Mac では Vision フレームワーク、Android では ML Kit と同�
 
 ## 写真ライブラリ：platform/photos
 
-`platform/photos` は、ユーザーの許可を得てユーザーのライブラリを読み取ります。iOS と Mac では PhotoKit、Android では MediaStore、Windows ではピクチャフォルダーを使います。Linux と Web にはアプリが読めるライブラリがないので、アクセスは `.denied` です。このパッケージは、ライブラリそのものを画面にするアプリのためのものです。ユーザーに数枚の写真を選んでもらうだけなら、権限を求めない `device.pickPhotos` を使えます。それで足りる場合はそちらを使ってください。Google Play は、ライブラリを読むアプリにその理由を Play Console で尋ねます。呼び出しはすべて async です。
+`platform/photos` は、ユーザーの許可を得てユーザーのライブラリを読み取り、整理します。対象はライブラリの写真と動画、アルバム、そしてライブラリで起きた変更です。iOS と Mac では PhotoKit、Android では MediaStore、Windows ではピクチャフォルダーとビデオフォルダーを使います。Linux と Web にはアプリが読めるライブラリがないので、アクセスは `.denied` です。このパッケージは、ライブラリそのものを画面にするアプリ（ギャラリーや編集アプリ）のためのものです。ユーザーに数枚の写真や動画を選んでもらうだけなら、権限を求めない `device.pickMedia` を使えます。それで足りる場合はそちらを使ってください。Google Play は、ライブラリを読むアプリにその理由を Play Console で尋ねます。呼び出しはすべて async です。
 
-```asuka
+```asuka check
 import platform/photos
 
-component Screenshots {
-  state thumbs: [string] = []
+component Recent {
+  state assets: [photos.Asset] = []
+  state thumbs: [string: string] = [:]
 
   task {
     if (try? await photos.request()) == .denied { return }
-    let assets = (try? await photos.list(screenshots: true, limit: 60)) ?? []
+    for await _ in photos.changes() { await load() }   // 写真が撮られた、削除された
+  }
+
+  task { await load() }
+
+  async fn load() {
+    assets = (try? await photos.list(kind: .all, limit: 60)) ?? []
     for a in assets {
-      thumbs.push((try? await photos.thumbnail(a.id, size: 300)) ?? "")   // Image 用のファイル
+      thumbs[a.id] = (try? await photos.thumbnail(a.id, size: 300)) ?? ""
     }
   }
 
   Scroll {
-    for (i, t) in thumbs.enumerated() key i { Image(t) { width: 100; height: 100 } }
+    for a in assets key a.id {
+      Row {
+        gap: 8
+        Image(thumbs[a.id] ?? "") { width: 64; height: 64 }
+        if a.video { Text("{a.duration.seconds()} s") }
+      }
+    }
   }
 }
 
@@ -407,9 +502,38 @@ async fn original(a: photos.Asset) throws -> string {
 ```
 
 - `photos.current()` は、許可を求めずに、何が許可されているかを返します。`.notAsked`、`.denied`、`.limited`（ユーザーが選んだ写真だけ。iOS 14、Android 14）、`.allowed` のいずれかです。`photos.request()` は初回に許可を求めます。`photos.manageLimited()` を使うと、`.limited` のユーザーが対象の写真を変更できます。ユーザーが終えると戻るので、そこでもう一度一覧を取得してください。
-- `photos.list(screenshots:, offset:, limit:)` は新しい順に、`offset` から最大 `limit` 件（既定は 100）を返します。`Asset` は `id`、`width`、`height`、`created`（`time.Time`）、`screenshot` を持ちます。`screenshots: true` にするとスクリーンショットだけに絞り込みます。iOS はスクリーンショットかどうかを知っていますが、Android では Screenshots フォルダーにあるものがスクリーンショットとして扱われます。
-- `photos.thumbnail(id, size:)` は、短辺が `size` ピクセル以上の JPEG ファイルです。次回のためにアプリのキャッシュに保存されます。
-- `photos.export(id)` は、ライブラリにあるままのフルサイズの画像（HEIC、JPEG、PNG）をファイルにコピーし、その `path` と、ライブラリでの名前 `name` を返します。iCloud の写真は先にダウンロードされます。
+- `photos.list(kind:, album:, screenshots:, offset:, limit:)` は、ライブラリの 1 ページ分を新しい順に返します。`offset` から最大 `limit` 件（既定は 100）で、次のページは `offset + limit` から始まります。`kind` は `.photos`（既定）、`.videos`、`.all` のいずれかです。`album` を指定すると、そのアルバム（の `id`）のものだけに絞り込みます。`screenshots: true` にするとスクリーンショットだけに絞り込みます（iOS はスクリーンショットかどうかを知っていますが、Android では Screenshots フォルダーにあるものがスクリーンショットとして扱われます）。`Asset` は `id`、`width`、`height`、`created`（`time.Time`）、`screenshot`、`video`、動画の `duration`、`favorite` を持ちます。`photos.count(kind:, album:)` は件数を返します。ギャラリーの最後のページやスクロールバーに使えます。
+- `photos.thumbnail(id, size:)` は、短辺が `size` ピクセル以上の JPEG ファイル（動画ならそのフレーム）です。次回のためにアプリのキャッシュに保存されます。
+- `photos.export(id)` は、ライブラリにあるままの写真（HEIC、JPEG、PNG）や動画（MOV、MP4）をファイルにコピーし、その `path` と、ライブラリでの名前 `name` を返します。iCloud にあるものは先にダウンロードされます。
+
+### アルバム
+
+`photos.albums()` はライブラリのアルバムを一覧にします。ユーザーやアプリが作ったアルバムが先に並び、続いてシステムが管理するアルバムのうち中身のあるもの（お気に入り、スクリーンショット、ビデオ）が並びます。それぞれは `Album` で、`id`、`title`、`count`、システムのものかどうか（`system`）を持ちます。一つのアルバムの中身は `photos.list(album: a.id)` で読み取ります。`photos.createAlbum(title)` でアルバムを作り、`photos.addToAlbum(album, ids)` で写真や動画を追加します。
+
+```asuka
+import platform/photos
+
+async fn keep(ids: [string]) throws {
+  let albums = try await photos.albums()
+  var trip = ""
+  if let a = albums.filter(a => a.title == "Trip" && !a.system).first() {
+    trip = a.id
+  } else {
+    trip = (try await photos.createAlbum("Trip")).id
+  }
+  try await photos.addToAlbum(trip, ids)
+}
+```
+
+iOS と Mac では、アルバムにはライブラリと同じアセットが入ります。Android ではアルバムはピクチャ内のフォルダーです。`createAlbum` はすぐに id を返しますが、`albums()` に現れるのは何かが入ってからです。また `addToAlbum` は写真や動画をそのフォルダーにコピーします（新しいアセットになり、元のものは元の場所に残ります）。Windows でもアルバムはピクチャ内のフォルダーで、追加するとコピーされます。
+
+### 削除
+
+`photos.delete(ids)` は、システム自身の確認でユーザーが同意すると写真や動画を削除し、削除したかどうかを返します。iOS と Mac では「最近削除した項目」に 30 日間残り、Android 11 以降ではゴミ箱に入ります。Android 10 は、アプリ自身が追加したのではないファイルについて、一つずつ確認します。Android 9 以前にはこのような確認がないので、ストレージの権限（これらのバージョン向けに宣言されています）ですぐに削除します。Windows は、エクスプローラーと同じく確認せずにファイルをごみ箱に移します。
+
+### ライブラリの変更
+
+`photos.changes()` は、読み取っているあいだにライブラリで起きた変更のストリームです。写真の撮影や保存、削除、編集、お気に入りへの追加を、このアプリによるものもほかのアプリによるものも伝えます。プラットフォームが教えてくれる場合（iOS、Mac、Android 11 以降、Windows）、各 `Change` は `inserted`、`removed`、`updated` の id を持ちます。リストが空なら、何かが変わったということなので、一覧を取得し直してください。`task` の中で読めば、画面が閉じるときに止まります。
 
 ## 写真、ブラウザー、クリップボード：platform/device
 
@@ -434,6 +558,7 @@ component Gallery {
 ```
 
 - `device.pickPhotos(max:)` は、システムの写真ピッカー（iOS では PHPicker、Android では写真選択ツール、デスクトップではファイルを開くダイアログ、ブラウザーではファイル選択）を表示し、最大 `max` 枚（1〜255）の画像を選ばせます。権限は求めません。選ぶのはユーザーで、アプリに見えるのは選ばれたものだけです。戻り値は画像のファイルで、`Image` で表示できます。ユーザーがキャンセルした場合は一つも返りません。ファイルはアプリの一時ファイルかキャッシュに置かれたコピーなので、残しておきたいものは移動してください。
+- `device.pickMedia(kind:, max:, ordered:, maxSize:, quality:)` は、同じピッカーで写真、動画、またはその両方を選ばせます（`kind`：`.images`、`.videos`、`.all`）。expo-image-picker の `launchImageLibraryAsync` にあたります。`max` はユーザーが選べる数で（0 なら、ピッカー自身の上限まで好きなだけ）、選んだ順に返ります。`ordered: true` にすると、選んだ順に番号を表示します（iOS、Android の写真選択ツール）。それぞれは `device.Media` で、`path`、`name`、`type`（MIME）、動画かどうか（`video`）、`width` と `height`（正しい向きでの値）、動画の `duration`、バイト単位の `size` を持ちます（Android の写真選択ツールは元のファイルの `name` を渡さないので、`name` はピッカー自身が付けた名前になります）。画像は、`maxSize` か `quality` を指定しない限りそのままの形式で返ります（HEIC は HEIC のまま）。指定した場合は、それぞれを正しい向きに直し、長辺が最大 `maxSize` ピクセルになるまで縮小し、`quality`（0〜1。0 なら 0.9）の JPEG として書き出します。アップロードに適したサイズにするのに使えます。動画は常にそのままの形式で返ります。
 - `device.browse(url)` は、アプリの画面の上に Web ページを表示します（SFSafariViewController、Custom Tab）。URL は http か https でなければなりません。これに対して `device.openURL` は、アプリを離れてブラウザーで開きます。デスクトップではユーザーのブラウザーで、ブラウザーでは新しいタブでページを開きます。
 - `device.clipboardText()` はクリップボードのテキストを読み取ります。テキストがなければ `none` です。iOS では、ほかのアプリが置いたものをアプリが初めて読むときにユーザーに確認します。書き込むには `device.copy(text)` を使います。
 - `device.keepAwake(on)` は、`on` が true のあいだ画面をオンのままにします。ビデオ、レシピ、地図などに使います。それを必要とする画面が閉じたらオフにしてください。
@@ -454,6 +579,51 @@ component Player {
   }
 
   Text(if let i = info.value { "{i.model}, {i.system} {i.systemVersion}" } else { "" })
+}
+```
+
+### 選んだ写真の切り抜き
+
+選んだ写真は、シートに表示した `imageedit.Cropper`（[切り抜き](#切り抜き)を参照）で切り抜けます。ユーザーが枠の中で写真をドラッグやピンチで合わせ、`imageedit.edit` がそれを切り抜きます。expo-image-picker の `allowsEditing` が表示する切り抜きの手順にあたるもので、プラットフォーム自身の `Image` とビューで作られており、どのプラットフォームでも同じように動きます。
+
+```asuka check
+import platform/device
+import platform/imageedit
+
+component Avatar {
+  state picked = ""
+  state crop = imageedit.Rect()
+  state avatar = ""
+
+  Column {
+    gap: 12
+    if !avatar.isEmpty() { Image(avatar) { width: 96; height: 96; radius: 48; clip: true } }
+    Button("Choose a photo") {
+      on press {
+        let media = try await device.pickMedia(maxSize: 2048)
+        if let m = media.first() { picked = m.path }
+      }
+    }
+    Sheet {
+      open: !picked.isEmpty()
+      on dismiss { picked = "" }
+      Column {
+        imageedit.Cropper(picked) {
+          aspect: 1
+          circle: true
+          grow: 1
+          on change(r) { crop = r }
+        }
+        Button("Done") {
+          on press {
+            let r = try await imageedit.edit(picked, [.crop(crop.x, crop.y, crop.width, crop.height), .resize(512, 512)])
+            avatar = r.path
+            picked = ""
+          }
+        }
+      }
+    }
+  }
 }
 ```
 
@@ -2438,6 +2608,10 @@ async fn poster(video: string) throws -> string {
 ```
 
 iOS と Mac では Core Graphics と Image I/O、Android では `Bitmap` と `MediaMetadataRetriever`、ブラウザーでは canvas、Windows では WIC と Media Foundation、Linux では GdkPixbuf と GStreamer を使います。画像でないソースには `EditError.noImage` を投げます。
+
+### 切り抜き
+
+`imageedit.Cropper(source)` は、切り抜く画像をボックスいっぱいに表示します。画像は縦横比 `aspect`（幅を高さで割った値。1 なら正方形、`16.0 / 9` など。0 なら画像自身の縦横比）の枠の後ろに置かれ、枠の外は暗く表示されます。ユーザーは、欲しい部分が枠に収まるまで画像をドラッグしたりピンチしたりします（コンピューターでは Ctrl キーとホイール、またはトラックパッドのピンチ）。画像を枠の外まで動かしたり、枠より小さく縮めたりはできません。`circle: true` にすると枠を丸く描くので、プロフィール写真に向いています（切り抜く範囲は正方形のままです）。`change` は、画像の表示時と各操作のあとに、枠に収まっている画像の範囲を、画像のピクセル単位の `Rect` で伝えます。`.crop(r.x, r.y, r.width, r.height)` で切り抜いてください。`Image` とビューで作られているので、どのプラットフォームでも同じ見た目と動作になります。[選んだ写真の切り抜き](#選んだ写真の切り抜き)の例では、写真ピッカーのあとにシートで表示しています。
 
 ### ビューを画像にする
 

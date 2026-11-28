@@ -57,6 +57,83 @@ int64_t camera_now_ms(void);
 // can't be.
 char *camera_file(const char *ext);
 
+// ---- Zoom, frames, photos: the math both platforms share ----
+
+// The digital zoom's most (a webcam's, cropping the middle of what it
+// sees), and the frames' most a second.
+#define CAMERA_DIGITAL_ZOOM 4.0
+#define CAMERA_MAX_FRAME_RATE 15.0
+
+// camera_clamp is v within lo and hi (lo if v is NaN).
+double camera_clamp(double v, double lo, double hi);
+
+// A part of a frame, in its pixels.
+typedef struct {
+	int x, y, w, h;
+} camera_rect;
+
+// camera_zoom_crop is the middle of a w×h frame that a zoom of factor
+// shows (all of it at 1 or less).
+camera_rect camera_zoom_crop(int w, int h, double zoom);
+// camera_fit is w×h scaled down so its long side is at most max (0: as it
+// is; never up), at least 1×1.
+void camera_fit(int w, int h, int max, int *ow, int *oh);
+
+// camera_resample writes the part r of a frame of 4-byte pixels (rows
+// of stride bytes; its channels' order rgb: 0, 1, 2 for RGBA, 2, 1, 0 for
+// BGRA) as dw×dh pixels of 3 bytes in that order (out's rows dw*3), each
+// the average of the pixels it covers, mirrored left to right if mirror.
+void camera_resample(const uint8_t *src, size_t stride, camera_rect r, bool mirror, uint8_t *out, int dw, int dh);
+
+// An optical zoom's range as a camera's control gives it (UVC's zoom,
+// V4L2's zoom_absolute, IAMCameraControl's): a factor is a value over its
+// least, when its least is more than 0 (100 to 500: 1× to 5×). false when
+// its values aren't such.
+typedef struct {
+	long min, max;
+} camera_zoom_range;
+
+bool camera_zoom_optical(camera_zoom_range r, double *max_zoom);
+long camera_zoom_value(camera_zoom_range r, double zoom);
+
+// A view's frames: frameRate's clock, and the ring of files they're
+// written to.
+typedef struct {
+	unsigned view;
+	double rate;      // a second (0: none)
+	int size;         // the long side's most
+	int64_t started;  // the view's start (camera_now_ms)
+	int64_t last;     // the last one sampled
+	int next;         // the ring's next file
+	bool writing;     // one's being written: the next waits for it
+} camera_frames;
+
+#define CAMERA_FRAME_RING 4
+
+// camera_frames_due reports whether a frame should be sampled at now:
+// frameRate's interval since the last, none being written. It takes it
+// if so (*path: the ring's next file, malloc's; *ms: since the start).
+bool camera_frames_due(camera_frames *f, int64_t now, char **path, int64_t *ms);
+// camera_frames_clean removes a view's ring's files.
+void camera_frames_clean(unsigned view);
+
+// camera_record_full reports whether a recording of size bytes so far
+// should stop to stay within max bytes, at bitrate bits a second, its
+// size read every interval ms (what it writes by the next read, and its
+// index's, kept below max).
+bool camera_record_full(int64_t size, int64_t max, double bitrate, int interval);
+
+// The nearest of videoQuality's sizes, in order of preference: sizes[0]
+// is the one asked for.
+typedef struct {
+	int w, h;
+} camera_size;
+
+void camera_quality_sizes(camera_VideoQuality q, camera_size sizes[4]);
+// camera_size_distance is how far a camera's size is from the one asked
+// for: 0 the same, less nearer.
+double camera_size_distance(camera_size want, int w, int h);
+
 // The take dialog's words, in a language: the first that the user's
 // languages (locales, most preferred first: "de-DE", "zh-Hant-TW", "pt_BR")
 // match, else English.

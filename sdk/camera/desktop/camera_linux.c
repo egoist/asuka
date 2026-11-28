@@ -14,6 +14,17 @@
 // the user: front and back both take the first one, as on a Mac. Photos
 // and videos go to the app's caches (asuka-camera).
 //
+// The zoom is a V4L2 camera's own (zoom_absolute), else digital: the
+// middle of the frames cropped, for the preview, photos, frames and,
+// with videocrop, recordings (scaled back to the camera's size). A pinch
+// (GtkGestureZoom: a touchpad's, a touchscreen's) or Ctrl and the wheel
+// zooms. The exposure's bias and the torch are a V4L2 camera's controls
+// where its driver has them; nothing has a flash, or focuses at a point.
+// In video mode the camera's asked for videoQuality's size, else the
+// nearest it has. frameRate's frames are the preview's (mirrored only with mirror), a ring of JPEGs
+// written off the main thread; maxBytes ends a recording as its file
+// nears it.
+//
 // ASUKA_CAMERA_SOURCE, if set, is the camera's source as gst-launch
 // writes it ("videotestsrc is-live=true"), and ASUKA_CAMERA_SOUND the
 // recording's sound's (autoaudiosrc's place): for tests.
@@ -21,9 +32,14 @@
 #include "camera.h"
 
 #include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/videodev2.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -116,7 +132,7 @@ static void v4l2(void) {
 	}
 	told = "allowed";  // no portal asked: the device's node is the user's
 	free(grant.src);
-	grant.src = asuka_sprintf("v4l2src device=/dev/%s ! decodebin", dev);
+	grant.src = asuka_sprintf("v4l2src device=/dev/%s", dev);  // decoded as the pipeline is made
 	free(dev);
 	finish_open(grant.src, E_OK, NULL);
 }
@@ -388,31 +404,144 @@ static bool encoders(bool mute, encoding *out, const char **why) {
 	return true;
 }
 
+// ---- A Video4Linux camera's controls ----
+//
+// Where the camera is v4l2src's, its node is opened beside it for the
+// controls a driver has: zoom_absolute (a UVC camera's own zoom, used as
+// the zoom when its values read as factors: camera_zoom_optical), the
+// auto exposure's bias (EV, in thousandths, an integer or a menu of
+// them), and a flash LED's torch mode. PipeWire's camera has none an app
+// reaches: its zoom is digital.
+
+typedef struct {
+	int fd;  // -1: none
+	bool zoom, bias, torch;
+	camera_zoom_range zr;
+	double max_zoom;
+	// The bias: an integer's range, or a menu's values (index i at
+	// bias_min + i).
+	long bias_min, bias_max;
+	int64_t *menu;
+	int menu_n;
+	double ev_min, ev_max;
+} controls;
+
+static bool query_ctrl(int fd, uint32_t id, struct v4l2_queryctrl *q) {
+	memset(q, 0, sizeof *q);
+	q->id = id;
+	return ioctl(fd, VIDIOC_QUERYCTRL, q) == 0 && !(q->flags & V4L2_CTRL_FLAG_DISABLED);
+}
+
+static void set_ctrl(int fd, uint32_t id, int32_t value) {
+	struct v4l2_control c = {id, value};
+	ioctl(fd, VIDIOC_S_CTRL, &c);
+}
+
+static void controls_close(controls *c) {
+	if (c->fd >= 0) close(c->fd);
+	free(c->menu);
+	*c = (controls){.fd = -1};
+}
+
+// controls_open reads a v4l2src source's node's controls ("v4l2src
+// device=/dev/video0").
+static void controls_open(controls *c, const char *src) {
+	controls_close(c);
+	const char *dev = src && !strncmp(src, "v4l2src device=", 15) ? src + 15 : NULL;
+	if (!dev) return;
+	char *path = asuka_sprintf("%.*s", (int)strcspn(dev, " !"), dev);
+	c->fd = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+	free(path);
+	if (c->fd < 0) return;
+	struct v4l2_queryctrl q;
+	if (query_ctrl(c->fd, V4L2_CID_ZOOM_ABSOLUTE, &q)) {
+		c->zr = (camera_zoom_range){q.minimum, q.maximum};
+		c->zoom = camera_zoom_optical(c->zr, &c->max_zoom);
+	}
+	if (query_ctrl(c->fd, V4L2_CID_AUTO_EXPOSURE_BIAS, &q) && q.maximum > q.minimum) {
+		c->bias_min = q.minimum, c->bias_max = q.maximum;
+		if (q.type == V4L2_CTRL_TYPE_INTEGER_MENU) {
+			c->menu_n = (int)(q.maximum - q.minimum + 1);
+			c->menu = calloc((size_t)c->menu_n, sizeof *c->menu);
+			for (int i = 0; i < c->menu_n; i++) {
+				struct v4l2_querymenu m = {.id = q.id, .index = (uint32_t)(q.minimum + i)};
+				if (ioctl(c->fd, VIDIOC_QUERYMENU, &m) == 0) c->menu[i] = m.value;
+			}
+			c->ev_min = c->ev_max = (double)c->menu[0] / 1000;
+			for (int i = 0; i < c->menu_n; i++) {
+				double ev = (double)c->menu[i] / 1000;
+				if (ev < c->ev_min) c->ev_min = ev;
+				if (ev > c->ev_max) c->ev_max = ev;
+			}
+		} else {
+			c->ev_min = (double)q.minimum / 1000, c->ev_max = (double)q.maximum / 1000;
+		}
+		c->bias = c->ev_max > c->ev_min;
+	}
+	if (query_ctrl(c->fd, V4L2_CID_FLASH_LED_MODE, &q) && q.maximum >= V4L2_FLASH_LED_MODE_TORCH) c->torch = true;
+}
+
+static void controls_bias(controls *c, double ev) {
+	if (!c->bias) return;
+	if (!c->menu) {
+		set_ctrl(c->fd, V4L2_CID_AUTO_EXPOSURE_BIAS, (int32_t)camera_clamp(ev * 1000 + (ev < 0 ? -0.5 : 0.5), (double)c->bias_min, (double)c->bias_max));
+		return;
+	}
+	int best = 0;
+	for (int i = 1; i < c->menu_n; i++)
+		if (fabs((double)c->menu[i] / 1000 - ev) < fabs((double)c->menu[best] / 1000 - ev)) best = i;
+	set_ctrl(c->fd, V4L2_CID_AUTO_EXPOSURE_BIAS, (int32_t)(c->bias_min + best));
+}
+
 // ---- The view ----
 
 typedef struct sheet sheet;
 
-typedef struct {
+typedef struct view view;
+struct view {
 	camera_View base;
 	camera_View_events events;
+	unsigned serial;
 	sheet *sheet;  // the take dialog's (never the current one), or NULL
 	GtkWidget *picture;
-	GstElement *pipe, *sink;
+	GtkGesture *pinch;
+	GtkEventController *wheel;
+	GstElement *pipe, *sink, *crop;
 	GstBus *bus;
 	gulong bus_handlers[3], map_handlers[2];
-	guint tick, idle, rec_timer;
+	guint tick, idle, rec_timer, bytes_timer;
 	bool front, video, scan;
 	bool mapped, opening, destroyed, recording, stopping, mute;
 	bool snap;  // the dialog's photo is taken from the next frame
+	bool ready_due;
+	// The props.
+	double zoom, exposure, pinch_from;
+	bool pinch_on, torch, mirror;
+	camera_VideoQuality quality;
+	camera_frames frames;
 	camera_kinds kinds;
 	camera_seen seen;
-	char *src;  // the camera's source, once open
+	controls ctl;
+	int fw, fh;   // the camera's frames, as the last came
+	char *src;    // the camera's source, once open
 	camera_pending *capturing, *rec_reply;
+	int64_t cap_max;  // what the waiting capture asked for
+	double cap_quality;
 	char *rec_path;
-} view;
+	int64_t rec_max_bytes, rec_last_size;
+	bool rec_mirror;
+	view *next;
+};
 
+static view *views;  // those not destroyed
 // current is the view on screen capture and record use.
 static view *current;
+
+static view *view_of(unsigned serial) {
+	for (view *v = views; v; v = v->next)
+		if (v->serial == serial) return v;
+	return NULL;
+}
 
 static void sheet_failed(sheet *s, const char *msg);
 static unsigned sheet_serial(sheet *s);
@@ -432,9 +561,14 @@ static void fail_all(view *v, const char *msg) {
 	fail(v, msg);
 }
 
+static void rec_timers_stop(view *v) {
+	if (v->rec_timer) G(g_source_remove)(v->rec_timer), v->rec_timer = 0;
+	if (v->bytes_timer) G(g_source_remove)(v->bytes_timer), v->bytes_timer = 0;
+}
+
 static void record_failed(view *v, const char *why) {
 	v->recording = v->stopping = false;
-	if (v->rec_timer) G(g_source_remove)(v->rec_timer), v->rec_timer = 0;
+	rec_timers_stop(v);
 	if (v->rec_reply) {
 		char *m = asuka_sprintf("the recording failed: %s", why);
 		camera_fail(&v->rec_reply, m);
@@ -442,13 +576,77 @@ static void record_failed(view *v, const char *why) {
 	}
 }
 
+// can_crop_video reports whether a recording can be zoomed digitally
+// (GStreamer's videocrop and videoscale, of the good and base plugins).
+static bool can_crop_video(void) {
+	static int has = -1;
+	if (has < 0) has = gst_has("videocrop") && gst_has("videoscale");
+	return has;
+}
+
+// max_zoom is the most the view zooms: its camera's own zoom's, else
+// digitally (a recording's too, where it can be cropped).
+static double max_zoom(const view *v) {
+	if (v->ctl.zoom) return v->ctl.max_zoom;
+	if (v->video && !can_crop_video()) return 1;
+	return CAMERA_DIGITAL_ZOOM;
+}
+
+static double zoom_now(const view *v) { return camera_clamp(v->zoom, 1, max_zoom(v)); }
+
+// digital is the zoom the view crops its frames by (1: its camera's own
+// zoom does it).
+static double digital(const view *v) { return v->ctl.zoom ? 1 : zoom_now(v); }
+
+// crop_props are videocrop's sides for a w×h frame at the digital zoom.
+static void crop_props(const view *v, int *l, int *r, int *t, int *b) {
+	camera_rect c = camera_zoom_crop(v->fw, v->fh, digital(v));
+	*l = c.x, *t = c.y, *r = v->fw - c.x - c.w, *b = v->fh - c.y - c.h;
+}
+
+// apply_zoom zooms the camera (its own zoom), or a recording's crop.
+static void apply_zoom(view *v) {
+	if (v->ctl.zoom) {
+		set_ctrl(v->ctl.fd, V4L2_CID_ZOOM_ABSOLUTE, (int32_t)camera_zoom_value(v->ctl.zr, zoom_now(v)));
+	} else if (v->crop) {
+		int l, r, t, b;
+		crop_props(v, &l, &r, &t, &b);
+		G(g_object_set)(v->crop, "left", l, "right", r, "top", t, "bottom", b, NULL);
+	}
+}
+
+static void apply_controls(view *v) {
+	if (v->ctl.fd < 0) return;
+	if (v->ctl.zoom) apply_zoom(v);
+	controls_bias(&v->ctl, v->exposure);
+	if (v->ctl.torch) set_ctrl(v->ctl.fd, V4L2_CID_FLASH_LED_MODE, v->torch ? V4L2_FLASH_LED_MODE_TORCH : V4L2_FLASH_LED_MODE_NONE);
+}
+
+// The caps a video mode's camera is asked for: videoQuality's size, else
+// the nearest, else what it has.
+static void put_quality(asuka_writer *b, camera_VideoQuality q) {
+	camera_size sizes[4];
+	camera_quality_sizes(q, sizes);
+	asuka_writer_put(b, " ! capsfilter caps=\"", 20);
+	for (int i = 0; i < 4; i++) {
+		char *s = asuka_sprintf("video/x-raw,width=%d,height=%d;image/jpeg,width=%d,height=%d;", sizes[i].w, sizes[i].h, sizes[i].w, sizes[i].h);
+		asuka_writer_put(b, s, strlen(s));
+		free(s);
+	}
+	const char *any = "video/x-raw;image/jpeg\"";
+	asuka_writer_put(b, any, strlen(any));
+}
+
 // description is the pipeline: the camera, through a tee, to the
 // preview's appsink (mirrored), to zbar with scan, and to the encoders
-// and a file while recording.
+// and a file while recording (cropped to the zoom, mirrored if mirror).
 static char *description(view *v, const char **why) {
 	asuka_writer b = {0};
 #define PUT(s) asuka_writer_put(&b, (s), strlen(s))
 	PUT(v->src);
+	bool v4l2 = !strncmp(v->src, "v4l2src", 7);
+	if (v->video && (v4l2 || !strncmp(v->src, "pipewiresrc", 11))) put_quality(&b, v->quality);
+	if (v4l2) PUT(" ! decodebin");
 	PUT(" ! queue leaky=downstream max-size-buffers=2 ! videoconvert ! tee name=t");
 	PUT(" t. ! queue leaky=downstream max-size-buffers=1 ! videoflip method=horizontal-flip ! videoconvert ! video/x-raw,format=RGBA ! appsink "
 	    "name=frames max-buffers=1 drop=true sync=false");
@@ -467,8 +665,20 @@ static char *description(view *v, const char **why) {
 			free(v->rec_path);
 			v->rec_path = p;
 		}
-		char *s = asuka_sprintf(" t. ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=3000000000 ! videoconvert ! %s ! %s name=mux ! filesink name=file",
-		                        enc.video, enc.mux);
+		PUT(" t. ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=3000000000 ! videoconvert");
+		if (v->rec_mirror) PUT(" ! videoflip method=horizontal-flip");
+		if (!v->ctl.zoom && can_crop_video() && v->fw > 0 && v->fh > 0) {
+			// Cropped to the zoom, scaled back to the camera's size: the
+			// zoom changes as it records.
+			int l, r, t, bt;
+			crop_props(v, &l, &r, &t, &bt);
+			char *s = asuka_sprintf(" ! videocrop name=crop left=%d right=%d top=%d bottom=%d ! videoscale ! video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1"
+			                        " ! videoconvert",
+			                        l, r, t, bt, v->fw, v->fh);
+			PUT(s);
+			free(s);
+		}
+		char *s = asuka_sprintf(" ! %s ! %s name=mux ! filesink name=file", enc.video, enc.mux);
 		PUT(s);
 		free(s);
 		if (enc.audio) {
@@ -483,12 +693,19 @@ static char *description(view *v, const char **why) {
 	return (char *)b.data;
 }
 
+// ---- Photos and frames, written off the main thread ----
+
 typedef struct {
 	camera_pending *reply;
 	unsigned sheet;  // or the photo of the take dialog of this serial
+	unsigned view;   // or a frame of the view of this serial
 	char *path;
-	int w, h;
-	uint8_t *rgb;
+	int w, h;          // the crop's
+	uint8_t *rgba;     // the crop of the frame, rows of w*4
+	bool mirror;       // flipped as it's written
+	int max, quality;  // its long side's most (0: as it is); the JPEG's quality (1 to 100)
+	int ow, oh;        // as written
+	int64_t ms;        // a frame's time
 	bool ok;
 } photo;
 
@@ -496,31 +713,80 @@ static void sheet_photo(unsigned serial, const char *path);
 
 static void photo_saved(void *p) {
 	photo *ph = p;
-	if (ph->sheet) sheet_photo(ph->sheet, ph->ok ? ph->path : NULL);
-	else if (ph->ok) camera_answer(&ph->reply, ph->path);
-	else camera_fail(&ph->reply, "couldn't save the photo");
+	if (ph->view) {
+		view *v = view_of(ph->view);
+		if (v) {
+			v->frames.writing = false;
+			if (ph->ok && !v->destroyed) {
+				camera_Frame f = {ph->path, ph->ow, ph->oh, ph->ms * 1000000};
+				camera_View_frame(v->events, &f);
+			}
+		} else if (ph->path) {
+			unlink(ph->path);  // its view went
+		}
+	} else if (ph->sheet) {
+		sheet_photo(ph->sheet, ph->ok ? ph->path : NULL);
+	} else if (ph->ok) {
+		camera_answer(&ph->reply, ph->path);
+	} else {
+		camera_fail(&ph->reply, "couldn't save the photo");
+	}
 	free(ph->path);
 	free(ph);
 }
 
-// save_photo writes the photo as a JPEG. Not on the main thread.
+// save_photo writes the photo (or the frame) as a JPEG. Not on the main
+// thread.
 static void save_photo(void *p) {
 	photo *ph = p;
-	ph->path = camera_file(".jpg");
+	if (!ph->path) ph->path = camera_file(".jpg");
+	camera_fit(ph->w, ph->h, ph->max, &ph->ow, &ph->oh);
 	if (ph->path && asuka_linux_load(ASUKA_LIB_PIXBUF) && G(gdk_pixbuf_new_from_data) && G(gdk_pixbuf_save)) {
-		GdkPixbuf *pb = G(gdk_pixbuf_new_from_data)(ph->rgb, 0, false, 8, ph->w, ph->h, ph->w * 3, NULL, NULL);  // GDK_COLORSPACE_RGB
+		uint8_t *rgb = malloc((size_t)ph->ow * ph->oh * 3);
+		camera_resample(ph->rgba, (size_t)ph->w * 4, (camera_rect){0, 0, ph->w, ph->h}, ph->mirror, rgb, ph->ow, ph->oh);
+		GdkPixbuf *pb = G(gdk_pixbuf_new_from_data)(rgb, GDK_COLORSPACE_RGB, false, 8, ph->ow, ph->oh, ph->ow * 3, NULL, NULL);
 		GError *e = NULL;
-		ph->ok = pb && G(gdk_pixbuf_save)(pb, ph->path, "jpeg", &e, "quality", "90", NULL);
+		char q[8];
+		snprintf(q, sizeof q, "%d", ph->quality);
+		ph->ok = pb && G(gdk_pixbuf_save)(pb, ph->path, "jpeg", &e, "quality", q, NULL);
 		if (e) G(g_error_free)(e);
 		if (pb) G(g_object_unref)(pb);
+		free(rgb);
 		if (!ph->ok) unlink(ph->path);
 	}
-	free(ph->rgb);
+	free(ph->rgba);
+	ph->rgba = NULL;
 	asuka_desktop_post(photo_saved, ph);
 }
 
-// pull_frame shows the camera's latest frame, if there's a new one, and
-// gives it to a waiting capture.
+// crop_copy copies the part r of a frame of rows of stride bytes.
+static uint8_t *crop_copy(const uint8_t *data, size_t stride, camera_rect r) {
+	uint8_t *out = malloc((size_t)r.w * r.h * 4);
+	for (int y = 0; y < r.h; y++) memcpy(out + (size_t)y * r.w * 4, data + (size_t)(r.y + y) * stride + (size_t)r.x * 4, (size_t)r.w * 4);
+	return out;
+}
+
+static void spawn_photo(photo *ph) {
+	if (!asuka_desktop_spawn(save_photo, ph)) {
+		free(ph->rgba);
+		ph->rgba = NULL;
+		ph->ok = false;
+		photo_saved(ph);
+	}
+}
+
+// ready says what the camera can do, once it shows.
+static void ready(view *v) {
+	v->ready_due = false;
+	if (v->sheet || v->destroyed) return;
+	camera_Info i = {.minZoom = 1, .maxZoom = max_zoom(v), .torch = v->ctl.torch};
+	if (v->ctl.bias) i.minExposure = v->ctl.ev_min, i.maxExposure = v->ctl.ev_max;
+	camera_View_ready(v->events, &i);
+}
+
+// pull_frame shows the camera's latest frame, if there's a new one,
+// cropped to the zoom; gives it to a waiting capture, and to frame when
+// one's due.
 static void pull_frame(view *v) {
 	if (!v->sink) return;
 	gpointer sample = G(gst_app_sink_try_pull_sample)((GstAppSink *)v->sink, 0);
@@ -535,29 +801,42 @@ static void pull_frame(view *v) {
 		// RGBA rows are 4-byte aligned: GStreamer's stride is the width's.
 		size_t stride = (size_t)w * 4;
 		if (info.size >= stride * (size_t)h) {
-			GBytes *bytes = G(g_bytes_new)(info.data, stride * (size_t)h);
-			GdkTexture *t = G(gdk_memory_texture_new)(w, h, 5, bytes, stride);  // GDK_MEMORY_R8G8B8A8
+			v->fw = w, v->fh = h;
+			camera_rect r = camera_zoom_crop(w, h, digital(v));
+			GBytes *bytes = G(g_bytes_new)(info.data + (size_t)r.y * stride + (size_t)r.x * 4, stride * (size_t)(r.h - 1) + (size_t)r.w * 4);
+			GdkTexture *t = G(gdk_memory_texture_new)(r.w, r.h, 5, bytes, stride);  // GDK_MEMORY_R8G8B8A8
 			G(g_bytes_unref)(bytes);
 			G(gtk_picture_set_paintable)((GtkPicture *)v->picture, (GdkPaintable *)t);
 			G(g_object_unref)(t);
+			if (v->ready_due) ready(v);
 			if (v->capturing || v->snap) {
-				// The preview's mirrored: the photo isn't.
+				// The preview's mirrored: the photo is as others see the
+				// user, unless mirror.
 				photo *ph = calloc(1, sizeof *ph);
-				ph->w = w, ph->h = h;
-				ph->rgb = malloc((size_t)w * h * 3);
-				for (int y = 0; y < h; y++) {
-					const uint8_t *row = info.data + y * stride;
-					uint8_t *out = ph->rgb + (size_t)y * w * 3;
-					for (int x = 0; x < w; x++) memcpy(out + x * 3, row + (size_t)(w - 1 - x) * 4, 3);
-				}
+				ph->w = r.w, ph->h = r.h;
+				ph->rgba = crop_copy(info.data, stride, r);
+				ph->mirror = !(v->mirror && !v->sheet);
+				ph->max = v->snap ? 0 : (int)v->cap_max;
+				double q = v->snap || !(v->cap_quality > 0) ? 0.9 : v->cap_quality;
+				ph->quality = (int)camera_clamp(q * 100 + 0.5, 1, 100);
 				camera_move(&v->capturing, &ph->reply);
 				if (v->snap) ph->sheet = sheet_serial(v->sheet);
 				v->snap = false;
-				if (!asuka_desktop_spawn(save_photo, ph)) {
-					free(ph->rgb);
-					ph->ok = false;
-					photo_saved(ph);
-				}
+				spawn_photo(ph);
+			}
+			char *path = NULL;
+			int64_t ms = 0;
+			if (!v->sheet && camera_frames_due(&v->frames, camera_now_ms(), &path, &ms)) {
+				photo *ph = calloc(1, sizeof *ph);
+				ph->view = v->serial;
+				ph->path = path;
+				ph->ms = ms;
+				ph->w = r.w, ph->h = r.h;
+				ph->rgba = crop_copy(info.data, stride, r);
+				ph->mirror = !v->mirror;  // the preview's mirrored: as others see the user, unless mirror
+				ph->max = v->frames.size > 0 ? v->frames.size : 480;
+				ph->quality = 80;
+				spawn_photo(ph);
 			}
 		}
 		G(gst_buffer_unmap)(buf, &info);
@@ -614,6 +893,7 @@ static void on_element(GstBus *bus, GstMessage *msg, gpointer p) {
 static void ended(view *v) {
 	bool was = v->recording;
 	v->recording = v->stopping = false;
+	rec_timers_stop(v);
 	stop_pipe(v);
 	if (was) camera_answer(&v->rec_reply, v->rec_path);
 	start(v);
@@ -664,6 +944,7 @@ static void start(view *v) {
 	G(g_object_ref_sink)(pipe);
 	v->pipe = pipe;
 	v->sink = G(gst_bin_get_by_name)(pipe, "frames");
+	v->crop = G(gst_bin_get_by_name)(pipe, "crop");
 	GstElement *file = G(gst_bin_get_by_name)(pipe, "file");
 	if (file) {
 		G(g_object_set)(file, "location", v->rec_path, NULL);
@@ -679,6 +960,7 @@ static void start(view *v) {
 		fail_all(v, "no camera");
 		return;
 	}
+	apply_controls(v);
 	if (!v->tick) v->tick = G(gtk_widget_add_tick_callback)(v->picture, (GtkTickCallback)ticked, v, NULL);
 }
 
@@ -691,6 +973,7 @@ static void stop_pipe(view *v) {
 	G(gst_object_unref)(v->bus);
 	v->bus = NULL;
 	if (v->sink) G(gst_object_unref)(v->sink), v->sink = NULL;
+	if (v->crop) G(gst_object_unref)(v->crop), v->crop = NULL;
 	G(gst_element_set_state)(v->pipe, GST_STATE_NULL);
 	G(gst_object_unref)(v->pipe);
 	v->pipe = NULL;
@@ -706,6 +989,8 @@ static void opened(void *p, const char *src, int code, const char *msg) {
 	}
 	free(v->src);
 	v->src = asuka_strdup(src);
+	controls_open(&v->ctl, v->src);
+	v->ready_due = true;
 	if (v->mapped) start(v);
 }
 
@@ -746,10 +1031,45 @@ static void changed(view *v) {
 	v->idle = G(g_idle_add_full)(G_PRIORITY_DEFAULT, configure, v, NULL);
 }
 
-static void set_facing(camera_View *self, camera_Facing f) { ((view *)self)->front = f == camera_Facing_front; }  // the same camera
+// zoom_to zooms to z (within the camera's range); the user's pinch says
+// so (zoomChange).
+static void zoom_to(view *v, double z, bool user) {
+	z = camera_clamp(z, 1, max_zoom(v));
+	if (z == zoom_now(v) && z == v->zoom) return;
+	v->zoom = z;
+	apply_zoom(v);
+	if (user && !v->sheet) camera_View_zoomChange(v->events, z);
+}
+
+static void pinch_begin(GtkGesture *g, gpointer seq, gpointer p) {
+	view *v = p;
+	v->pinch_from = zoom_now(v);
+}
+
+static void pinch_scale(GtkGestureZoom *g, double scale, gpointer p) {
+	view *v = p;
+	if (v->pinch_on && scale > 0) zoom_to(v, v->pinch_from * scale, true);
+}
+
+// Ctrl and the wheel zoom too: 10% a notch.
+static gboolean wheel(GtkEventControllerScroll *c, double dx, double dy, gpointer p) {
+	view *v = p;
+	if (!v->pinch_on || !(G(gtk_event_controller_get_current_event_state)((GtkEventController *)c) & GDK_CONTROL_MASK)) return false;
+	zoom_to(v, zoom_now(v) * pow(1.1, -dy), true);
+	return true;
+}
+
+static void set_facing(camera_View *self, camera_Facing f) {
+	view *v = (view *)self;
+	v->front = f == camera_Facing_front;  // the same camera: it says so again
+	v->ready_due = v->src != NULL;
+}
 static void set_mode(camera_View *self, camera_Mode m) {
 	view *v = (view *)self;
-	v->video = m == camera_Mode_video;
+	bool video = m == camera_Mode_video;
+	if (video == v->video) return;
+	v->video = video;
+	v->ready_due = v->src != NULL;  // its zoom's most may change
 	changed(v);
 }
 static void set_scan(camera_View *self, bool on) {
@@ -762,6 +1082,33 @@ static void set_codes(camera_View *self, camera_list_string codes) {
 	camera_kinds_set(&v->kinds, codes);
 	changed(v);
 }
+static void set_zoom(camera_View *self, double z) { zoom_to((view *)self, z, false); }
+static void set_pinch(camera_View *self, bool on) { ((view *)self)->pinch_on = on; }
+static void set_torch(camera_View *self, bool on) {
+	view *v = (view *)self;
+	v->torch = on;
+	apply_controls(v);
+}
+static void set_flash(camera_View *self, camera_Flash f) {}         // a computer's camera has none
+static void set_tap(camera_View *self, bool on) {}                  // none focuses at a point
+static void set_photo_quality(camera_View *self, camera_PhotoQuality q) {}  // a frame of the preview's: nothing to favor
+static void set_exposure(camera_View *self, double ev) {
+	view *v = (view *)self;
+	v->exposure = ev;
+	if (v->ctl.fd >= 0) controls_bias(&v->ctl, ev);
+}
+static void set_video_quality(camera_View *self, camera_VideoQuality q) {
+	view *v = (view *)self;
+	if (q == v->quality) return;
+	v->quality = q;
+	if (v->video) changed(v);
+}
+static void set_mirror(camera_View *self, bool on) { ((view *)self)->mirror = on; }  // the next photo's and recording's
+static void set_frame_rate(camera_View *self, double r) {
+	view *v = (view *)self;
+	v->frames.rate = camera_clamp(r, 0, CAMERA_MAX_FRAME_RATE);
+}
+static void set_frame_size(camera_View *self, int64_t s) { ((view *)self)->frames.size = s > 0 ? (int)(s < 8192 ? s : 8192) : 480; }
 
 // measure: none of its own; its style gives it a size.
 static bool measure(camera_View *self, float w, float h, float *ow, float *oh) {
@@ -777,12 +1124,21 @@ static void destroy(camera_View *self) {
 	if (v->recording) record_failed(v, "the camera isn't showing");  // what's recorded so far is lost with the pipeline
 	stop_pipe(v);
 	v->destroyed = true;
+	for (view **q = &views; *q; q = &(*q)->next)
+		if (*q == v) {
+			*q = v->next;
+			break;
+		}
 	camera_fail(&v->capturing, "the camera isn't showing");
 	camera_open_cancel(v);
 	for (int i = 0; i < 2; i++)
 		if (v->map_handlers[i]) G(g_signal_handler_disconnect)(v->picture, v->map_handlers[i]);
+	if (v->pinch) G(gtk_widget_remove_controller)(v->picture, (GtkEventController *)v->pinch);
+	if (v->wheel) G(gtk_widget_remove_controller)(v->picture, v->wheel);
 	if (v->idle) G(g_source_remove)(v->idle);
-	if (v->rec_timer) G(g_source_remove)(v->rec_timer);
+	rec_timers_stop(v);
+	controls_close(&v->ctl);
+	if (!v->sheet) camera_frames_clean(v->serial);
 	G(g_object_unref)(v->picture);
 	camera_kinds_free(&v->kinds);
 	camera_seen_free(&v->seen);
@@ -792,14 +1148,38 @@ static void destroy(camera_View *self) {
 }
 
 static const camera_View_vtable view_vt = {
-    .destroy = destroy, .set_facing = set_facing, .set_mode = set_mode, .set_scan = set_scan, .set_codes = set_codes, .measure = measure};
+    .destroy = destroy,
+    .set_facing = set_facing,
+    .set_mode = set_mode,
+    .set_scan = set_scan,
+    .set_codes = set_codes,
+    .set_zoom = set_zoom,
+    .set_pinchToZoom = set_pinch,
+    .set_torch = set_torch,
+    .set_flash = set_flash,
+    .set_exposure = set_exposure,
+    .set_tapToFocus = set_tap,
+    .set_videoQuality = set_video_quality,
+    .set_photoQuality = set_photo_quality,
+    .set_mirror = set_mirror,
+    .set_frameRate = set_frame_rate,
+    .set_frameSize = set_frame_size,
+    .measure = measure,
+};
 
 static view *new_view(camera_View_events events, sheet *s) {
+	static unsigned serials;
 	view *v = calloc(1, sizeof *v);
 	v->base.vt = &view_vt;
 	v->events = events;
+	v->serial = ++serials;
 	v->sheet = s;
 	v->front = s != NULL;
+	v->zoom = 1;
+	v->pinch_on = true;
+	v->quality = camera_VideoQuality_fullHD;
+	v->ctl.fd = -1;
+	v->frames = (camera_frames){.view = v->serial, .size = 480, .started = camera_now_ms()};
 	v->picture = G(gtk_picture_new)();
 	G(g_object_ref_sink)(v->picture);
 	G(gtk_picture_set_content_fit)((GtkPicture *)v->picture, 2);  // GTK_CONTENT_FIT_COVER
@@ -807,7 +1187,19 @@ static view *new_view(camera_View_events events, sheet *s) {
 	G(gtk_widget_add_css_class)(v->picture, "asuka-camera");
 	v->map_handlers[0] = g_signal_connect(v->picture, "map", on_map, v);
 	v->map_handlers[1] = g_signal_connect(v->picture, "unmap", on_unmap, v);
+	if (!s && G(gtk_gesture_zoom_new) && G(gtk_event_controller_scroll_new)) {
+		// A pinch (a touchscreen's, a touchpad's), or Ctrl and the wheel.
+		v->pinch = G(gtk_gesture_zoom_new)();
+		g_signal_connect(v->pinch, "begin", pinch_begin, v);
+		g_signal_connect(v->pinch, "scale-changed", pinch_scale, v);
+		G(gtk_widget_add_controller)(v->picture, (GtkEventController *)v->pinch);
+		v->wheel = G(gtk_event_controller_scroll_new)(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL | GTK_EVENT_CONTROLLER_SCROLL_DISCRETE);
+		g_signal_connect(v->wheel, "scroll", wheel, v);
+		G(gtk_widget_add_controller)(v->picture, v->wheel);
+	}
 	v->base.widget = v->picture;
+	v->next = views;
+	views = v;
 	return v;
 }
 
@@ -949,7 +1341,7 @@ static void c_take(camera_Camera *self, asuka_call *call) {
 	camera_open(take_opened, &take_wait);
 }
 
-static void c_capture(camera_Camera *self, asuka_call *call) {
+static void c_capture(camera_Camera *self, int64_t max_size, double quality, asuka_call *call) {
 	camera_pending *w = NULL;
 	camera_wait(call, camera_Camera_capture_done, &w, NULL, NULL);
 	view *v = current;
@@ -962,13 +1354,15 @@ static void c_capture(camera_Camera *self, asuka_call *call) {
 		return;
 	}
 	camera_fail(&v->capturing, "another photo was taken");
+	v->cap_max = max_size > 0 ? max_size : 0;
+	v->cap_quality = quality;
 	camera_move(&w, &v->capturing);
 }
 
 static void stop_recording(view *v) {
 	if (!v->recording || v->stopping || !v->pipe) return;
 	v->stopping = true;
-	if (v->rec_timer) G(g_source_remove)(v->rec_timer), v->rec_timer = 0;
+	rec_timers_stop(v);
 	G(gst_element_send_event)(v->pipe, G(gst_event_new_eos)());
 }
 
@@ -979,12 +1373,31 @@ static gboolean rec_timeout(gpointer p) {
 	return false;
 }
 
+// rec_bytes reads the recording's file as it grows: it ends before it
+// would pass maxBytes (at the rate it's written).
+#define BYTES_EVERY 250
+
+static gboolean rec_bytes(gpointer p) {
+	view *v = p;
+	struct stat st;
+	if (!v->recording || v->stopping || !v->rec_path || stat(v->rec_path, &st) != 0) return true;
+	int64_t size = (int64_t)st.st_size;
+	double rate = (double)(size - v->rec_last_size) * 8 * 1000 / BYTES_EVERY;
+	v->rec_last_size = size;
+	if (camera_record_full(size, v->rec_max_bytes, rate > 1e6 ? rate : 1e6, BYTES_EVERY)) {
+		v->bytes_timer = 0;
+		stop_recording(v);
+		return false;
+	}
+	return true;
+}
+
 // rec_cancelled: the task that records went; the recording ends.
 static void rec_cancelled(void *p) {
 	if (p && p == current) stop_recording(p);
 }
 
-static void c_record(camera_Camera *self, bool mute, int64_t max, asuka_call *call) {
+static void c_record(camera_Camera *self, bool mute, int64_t max, int64_t max_bytes, asuka_call *call) {
 	camera_pending *w = NULL;
 	view *v = current;
 	camera_wait(call, camera_Camera_record_done, &w, rec_cancelled, v);
@@ -1006,13 +1419,21 @@ static void c_record(camera_Camera *self, bool mute, int64_t max, asuka_call *ca
 	v->recording = true;
 	v->stopping = false;
 	v->mute = mute;
+	v->rec_mirror = v->mirror;
+	v->rec_max_bytes = max_bytes > 0 ? max_bytes : 0;
+	v->rec_last_size = 0;
 	start(v);
 	if (v->recording && max > 0) v->rec_timer = G(g_timeout_add_full)(G_PRIORITY_DEFAULT, (guint)(max / 1000000), rec_timeout, v, NULL);
+	if (v->recording && v->rec_max_bytes) v->bytes_timer = G(g_timeout_add_full)(G_PRIORITY_DEFAULT, BYTES_EVERY, rec_bytes, v, NULL);
 }
 
 static void c_stop_recording(camera_Camera *self, asuka_error *err) {
 	if (current) stop_recording(current);
 }
+
+// focus: a computer's camera focuses as it does (its own autofocus, if
+// it has one); none Video4Linux or PipeWire reaches focuses at a point.
+static void c_focus(camera_Camera *self, double x, double y, asuka_error *err) {}
 
 // ---- The permission ----
 //
@@ -1177,6 +1598,7 @@ static const camera_Camera_vtable camera_vt = {.release = c_release,
                                                .capture = c_capture,
                                                .record = c_record,
                                                .stopRecording = c_stop_recording,
+                                               .focus = c_focus,
                                                .access = c_access,
                                                .requestAccess = c_request_access};
 

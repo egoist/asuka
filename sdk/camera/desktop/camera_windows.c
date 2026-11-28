@@ -13,15 +13,34 @@
 // app's caches (asuka-camera). Settings' camera privacy switch refused:
 // "not allowed".
 //
-// The camera is chosen by its facing as Windows names it ("Front",
-// "Rear"/"Back" in its name); else the first one. Media Foundation is
-// loaded when first used (an N edition of Windows may lack it). The
-// engine's events come on Media Foundation's threads and are posted to
-// the main one.
+// The camera is chosen by its facing: the panel the PC's firmware says
+// it's on (front: facing the user; back), else as its name says ("Front",
+// "Rear"/"Back"); else the first one. One facing the user (a front
+// panel's, a USB webcam's) is shown mirrored. Media Foundation is loaded
+// when first used (an N edition of Windows may lack it). The engine's
+// events come on Media Foundation's threads and are posted to the main
+// one.
+//
+// The zoom is the camera's own where its control's values read as
+// factors (IAMCameraControl's zoom: a UVC camera's), else digital in
+// photo mode: the middle of the frames, the preview's (its sink's source
+// rectangle, or the frames drawn), photos' (cropped as they're written)
+// and frames'; the capture engine records what the camera sees whole, so
+// in video mode a webcam's zoom is 1. Ctrl and the wheel, or a
+// touchscreen's pinch, zoom. A webcam has no torch, flash, exposure bias
+// or focus point a desktop app reaches through these: they do nothing.
+// capture's photo is the engine's, rewritten with WIC (cropped, mirrored,
+// scaled, of its quality) when it must be. In video mode the camera's
+// media type nearest videoQuality's size is chosen, and mirror mirrors
+// the camera's stream (IMFCaptureSource's) for a recording of the user.
+// frameRate's frames are the preview's (mirrored only with mirror), a ring of JPEGs (WIC) written off
+// the main thread; maxBytes ends a recording as its file nears it.
 #include "asuka_barcode.h"
 #include "asuka_windows.h"
+#include <wincodec.h>
 #include "camera.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,6 +79,8 @@ static const GUID mf_jpeg = {0x19E4A5AA, 0x5662, 0x4FC5, {0xA0, 0xC0, 0x17, 0x58
 static const GUID dev_source_type = {0xC60AC5FE, 0x252A, 0x478F, {0xA0, 0xEF, 0xBC, 0x8F, 0xA5, 0xF7, 0xCA, 0xD3}};
 static const GUID dev_source_vidcap = {0x8AC3587A, 0x4AE7, 0x42D8, {0x99, 0xE0, 0x0A, 0x60, 0x13, 0xEE, 0xF9, 0x0F}};
 static const GUID dev_source_name = {0x60D0E559, 0x52F8, 0x4FA2, {0xBB, 0xCE, 0xAC, 0xDB, 0x34, 0xA8, 0xEC, 0x01}};
+static const GUID dev_source_link = {0x58F0AAD8, 0x22BF, 0x4F8A, {0xBB, 0x3D, 0xD2, 0xC4, 0x97, 0x8C, 0x6E, 0x2F}};
+static const GUID iid_camera_control = {0xC6E13370, 0x30AC, 0x11D0, {0xA1, 0x8C, 0x00, 0xA0, 0xC9, 0x11, 0x89, 0x56}};
 
 // The capture engine's events.
 static const GUID ev_initialized = {0x219992BC, 0xCF92, 0x4531, {0xA1, 0xAE, 0x96, 0xE1, 0xE8, 0x86, 0xC8, 0xF1}};
@@ -98,12 +119,19 @@ enum {
 	engine_take_photo = 8,
 	engine_get_sink = 9,
 	engine_get_source = 10,
+	capture_source_available_type = 9,
+	capture_source_set_type = 10,
 	capture_source_current_type = 11,
+	capture_source_set_mirror = 15,
+	capture_source_stream_index = 16,
+	camera_control_range = 3,
+	camera_control_set = 4,
 	sink_add_stream = 5,
 	sink_remove_all = 7,
 	preview_set_hwnd = 8,
 	preview_update_video = 10,
 	preview_set_sample_callback = 11,
+	preview_set_mirror = 13,
 	photo_set_file = 8,
 	record_set_file = 9,
 };
@@ -165,10 +193,54 @@ static void *new_media_type(void) {
 
 // The cameras.
 
+enum { panel_unknown, panel_front, panel_back };
+
 typedef struct {
 	char *name;
 	void *activate;  // IMFActivate
+	int panel;       // where the PC's firmware says it is
 } device;
+
+// The device properties a camera's panel is read from (devpkey.h's).
+typedef struct {
+	GUID fmtid;
+	ULONG pid;
+} devkey;
+
+static const devkey key_instance_id = {{0x78C34FC8, 0x104A, 0x4ACA, {0x9E, 0xA4, 0x52, 0x4D, 0x52, 0x99, 0x6E, 0x57}}, 256};
+static const devkey key_location = {{0x540B947E, 0x8B40, 0x45BC, {0xA8, 0xA2, 0x6A, 0x0B, 0x89, 0x4C, 0xBD, 0xA2}}, 9};
+
+// panel_of reads the panel a camera's on from its device's physical
+// location (ACPI's _PLD, as cfgmgr32 gives it: its Panel bits, 67 to 69:
+// 4 front, 5 back). A USB webcam has none: unknown.
+static int panel_of(const wchar_t *link) {
+	typedef DWORD(WINAPI * iface_prop_fn)(const wchar_t *, const devkey *, ULONG *, BYTE *, ULONG *, ULONG);
+	typedef DWORD(WINAPI * locate_fn)(DWORD *, const wchar_t *, ULONG);
+	typedef DWORD(WINAPI * node_prop_fn)(DWORD, const devkey *, ULONG *, BYTE *, ULONG *, ULONG);
+	static iface_prop_fn iface_prop;
+	static locate_fn locate;
+	static node_prop_fn node_prop;
+	static bool tried;
+	if (!tried) {
+		tried = true;
+		HMODULE cm = LoadLibraryExW(L"cfgmgr32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+		if (cm) {
+			*(FARPROC *)&iface_prop = GetProcAddress(cm, "CM_Get_Device_Interface_PropertyW");
+			*(FARPROC *)&locate = GetProcAddress(cm, "CM_Locate_DevNodeW");
+			*(FARPROC *)&node_prop = GetProcAddress(cm, "CM_Get_DevNode_PropertyW");
+		}
+	}
+	if (!iface_prop || !locate || !node_prop || !link) return panel_unknown;
+	wchar_t id[512];
+	ULONG type = 0, size = sizeof id;
+	DWORD node = 0;
+	if (iface_prop(link, &key_instance_id, &type, (BYTE *)id, &size, 0) || locate(&node, id, 0)) return panel_unknown;  // CR_SUCCESS is 0
+	BYTE pld[64];
+	size = sizeof pld;
+	if (node_prop(node, &key_location, &type, pld, &size, 0) || size < 9) return panel_unknown;
+	int panel = (pld[8] >> 3) & 7;
+	return panel == 4 ? panel_front : panel == 5 ? panel_back : panel_unknown;
+}
 
 static void free_devices(device *ds, UINT32 n) {
 	for (UINT32 i = 0; i < n; i++) {
@@ -204,15 +276,23 @@ static device *devices(UINT32 *n) {
 			free(w);
 		}
 		if (!ds[i].name) ds[i].name = asuka_strdup("");
+		if (SUCCEEDED(CALL2(arr[i], attr_get_string_length, &dev_source_link, &len))) {
+			wchar_t *w = calloc(len + 1, sizeof *w);
+			if (SUCCEEDED(CALL4(arr[i], attr_get_string, &dev_source_link, w, len + 1, NULL))) ds[i].panel = panel_of(w);
+			free(w);
+		}
 	}
 	CoTaskMemFree(arr);
 	*n = count;
 	return ds;
 }
 
-// device_for is the camera of a facing: named so, else the first.
+// device_for is the camera of a facing: on that panel, else named so,
+// else the first.
 static device *device_for(device *ds, UINT32 n, bool front) {
 	if (!n) return NULL;
+	for (UINT32 i = 0; i < n; i++)
+		if (ds[i].panel == (front ? panel_front : panel_back)) return &ds[i];
 	static const char *back_words[] = {"rear", "back", "world"}, *front_words[] = {"front", "user", "integrated"};
 	const char **words = front ? front_words : back_words;
 	for (UINT32 i = 0; i < n; i++) {
@@ -259,8 +339,17 @@ typedef struct {
 	void *engine;    // IMFCaptureEngine
 	void *source;    // the device's IMFMediaSource
 	void *callback;  // its event callback
+	void *control;   // its IAMCameraControl, if it has one
 	bool audio;
 	int width, height;  // the preview's frames, once it's set up
+	// Its own zoom, where its values read as factors.
+	bool optical;
+	camera_zoom_range zoom;
+	double max_zoom;
+	// The camera's stream mirrored (a recording of the user, mirror on),
+	// and so the preview's and the photos' where they're that stream.
+	bool preview_mirrored, photo_mirrored;
+	double bitrate;  // the recording's, bits a second
 } engine;
 
 // An event, from Media Foundation's thread to the main one.
@@ -290,6 +379,7 @@ static void on_event(void *p, void *event, void *unused) {
 
 static void engine_close(engine *e) {
 	if (!e) return;
+	asuka_com_release(e->control);
 	asuka_com_release(e->engine);
 	if (e->source) {
 		CALL0(e->source, source_shutdown);
@@ -323,6 +413,14 @@ static engine *engine_new(device *d, bool audio, unsigned view, const char **why
 		engine_close(e);
 		*why = "no camera";
 		return NULL;
+	}
+	// Its zoom (CameraControl_Zoom), if its control has one.
+	e->control = asuka_com_query(e->source, &iid_camera_control);
+	long min = 0, max = 0, step = 0, def = 0, caps = 0;
+	if (e->control && SUCCEEDED(ASUKA_SLOT(e->control, camera_control_range, HRESULT(STDMETHODCALLTYPE *)(void *, long, long *, long *, long *, long *, long *))(
+	                      e->control, 3, &min, &max, &step, &def, &caps))) {
+		e->zoom = (camera_zoom_range){min, max};
+		e->optical = camera_zoom_optical(e->zoom, &e->max_zoom);
 	}
 	void *attrs = NULL;
 	if (FAILED(mf.attributes(&attrs, 1))) {
@@ -365,8 +463,69 @@ static void *device_type(engine *e, DWORD stream) {
 	return t;
 }
 
-// start_preview draws the preview into hwnd (ev_preview_started follows).
-static bool start_preview(engine *e, HWND hwnd) {
+// optical_zoom zooms the camera itself (CameraControl_Zoom, manual).
+static void optical_zoom(engine *e, double zoom) {
+	if (!e->optical) return;
+	ASUKA_SLOT(e->control, camera_control_set, HRESULT(STDMETHODCALLTYPE *)(void *, long, long, long))(e->control, 3, camera_zoom_value(e->zoom, zoom), 2);
+}
+
+static void *capture_source(engine *e) {
+	void *src = NULL;
+	return SUCCEEDED(CALL1(e->engine, engine_get_source, &src)) ? src : NULL;
+}
+
+// stream_of is the camera's stream a preferred one is (its index).
+static DWORD stream_of(void *src, DWORD preferred) {
+	DWORD i = preferred;
+	if (FAILED(ASUKA_SLOT(src, capture_source_stream_index, HRESULT(STDMETHODCALLTYPE *)(void *, UINT32, DWORD *))(src, preferred, &i))) i = preferred;
+	return i;
+}
+
+// set_up chooses, for video mode, the camera's media type nearest
+// videoQuality's size (24 frames a second or more, nearest 30), and
+// mirrors its stream for a recording of the user that's mirrored: the
+// preview's and photos' too where they're that stream.
+static void set_up(engine *e, bool video, camera_VideoQuality q, bool mirror) {
+	void *src = capture_source(e);
+	if (!src) return;
+	if (video) {
+		camera_size want[4];
+		camera_quality_sizes(q, want);
+		void *best = NULL;
+		double score = 1e18;
+		for (DWORD i = 0; i < 4096; i++) {
+			void *t = NULL;
+			if (FAILED(ASUKA_SLOT(src, capture_source_available_type, HRESULT(STDMETHODCALLTYPE *)(void *, DWORD, DWORD, void **))(src, stream_record, i, &t)) || !t)
+				break;
+			UINT64 size = 0, rate = 0;
+			get_u64(t, &mt_frame_size, &size);
+			get_u64(t, &mt_frame_rate, &rate);
+			double fps = (UINT32)rate ? (double)(rate >> 32) / (double)(UINT32)rate : 0;
+			double d = camera_size_distance(want[0], (int)(size >> 32), (int)(UINT32)size) + (fps < 24 ? 1 : fabs(fps - 30) / 1000);
+			if (d < score) {
+				asuka_com_release(best);
+				best = t, score = d;
+			} else {
+				asuka_com_release(t);
+			}
+		}
+		if (best) ASUKA_SLOT(src, capture_source_set_type, HRESULT(STDMETHODCALLTYPE *)(void *, DWORD, void *))(src, stream_record, best);
+		asuka_com_release(best);
+	}
+	e->preview_mirrored = e->photo_mirrored = false;
+	if (video && mirror) {
+		DWORD rec = stream_of(src, stream_record);
+		if (SUCCEEDED(ASUKA_SLOT(src, capture_source_set_mirror, HRESULT(STDMETHODCALLTYPE *)(void *, DWORD, BOOL))(src, rec, TRUE))) {
+			e->preview_mirrored = stream_of(src, stream_preview) == rec;
+			e->photo_mirrored = stream_of(src, stream_photo) == rec;
+		}
+	}
+	asuka_com_release(src);
+}
+
+// start_preview draws the preview into hwnd (ev_preview_started follows),
+// mirrored if mirror.
+static bool start_preview(engine *e, HWND hwnd, bool mirror) {
 	void *s = sink(e, 1, &iid_preview_sink);
 	if (!s) return false;
 	CALL0(s, sink_remove_all);
@@ -376,8 +535,9 @@ static bool start_preview(engine *e, HWND hwnd) {
 		UINT64 size;
 		if (get_u64(t, &mt_frame_size, &size)) e->width = (int)(size >> 32), e->height = (int)(UINT32)size;
 		DWORD idx;
-		ok = SUCCEEDED(CALL4(s, sink_add_stream, (DWORD)stream_preview, t, NULL, &idx)) && SUCCEEDED(CALL1(s, preview_set_hwnd, hwnd)) &&
-		     SUCCEEDED(CALL0(e->engine, engine_start_preview));
+		ok = SUCCEEDED(CALL4(s, sink_add_stream, (DWORD)stream_preview, t, NULL, &idx)) && SUCCEEDED(CALL1(s, preview_set_hwnd, hwnd));
+		if (ok) CALL1(s, preview_set_mirror, mirror ? TRUE : FALSE);
+		ok = ok && SUCCEEDED(CALL0(e->engine, engine_start_preview));
 		asuka_com_release(t);
 	}
 	asuka_com_release(s);
@@ -385,8 +545,8 @@ static bool start_preview(engine *e, HWND hwnd) {
 }
 
 // fit_preview draws the preview filling w×h pixels of its window,
-// cropped to keep its aspect.
-static void fit_preview(engine *e, int w, int h) {
+// cropped to keep its aspect, and to the middle a zoom shows (1: all).
+static void fit_preview(engine *e, int w, int h, double zoom) {
 	if (w <= 0 || h <= 0) return;
 	void *s = sink(e, 1, &iid_preview_sink);
 	if (!s) return;
@@ -399,6 +559,13 @@ static void fit_preview(engine *e, int w, int h) {
 		} else {
 			float k = va / fa;
 			src[1] = (1 - k) / 2, src[3] = (1 + k) / 2;
+		}
+	}
+	if (zoom > 1) {
+		float k = (float)(1 / zoom);
+		for (int i = 0; i < 2; i++) {
+			float mid = (src[i] + src[i + 2]) / 2, half = (src[i + 2] - src[i]) / 2 * k;
+			src[i] = mid - half, src[i + 2] = mid + half;
 		}
 	}
 	RECT dst = {0, 0, w, h};
@@ -469,6 +636,7 @@ static bool start_recording(engine *e, const char *path, bool sound) {
 		set_u32(v, &mt_interlace, 2);  // progressive
 		double fps = (double)(rate >> 32) / (double)((UINT32)rate ? (UINT32)rate : 1);
 		double bitrate = (double)(size >> 32) * (double)(UINT32)size * fps * 0.15;
+		e->bitrate = (bitrate < 20e6 ? bitrate : 20e6) + (sound && e->audio ? 24000 * 8 : 0);
 		set_u32(v, &mt_avg_bitrate, (UINT32)(bitrate < 20e6 ? bitrate : 20e6));
 		DWORD idx;
 		if (SUCCEEDED(CALL4(s, sink_add_stream, (DWORD)stream_record, v, NULL, &idx))) {
@@ -488,13 +656,125 @@ static bool start_recording(engine *e, const char *path, bool sound) {
 
 static void stop_recording_engine(engine *e) { CALL2(e->engine, engine_stop_record, TRUE, FALSE); }
 
-// ---- A scanning view's frames ----
+// ---- JPEGs, with WIC (any thread: COM is started on it) ----
+
+static IWICImagingFactory *wic(void) {
+	CoInitializeEx(NULL, asuka_desktop_on_main() ? COINIT_APARTMENTTHREADED : COINIT_MULTITHREADED);
+	IWICImagingFactory *f = NULL;
+	CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, &IID_IWICImagingFactory, (void **)&f);
+	return f;
+}
+
+// write_jpeg writes a WIC image as a JPEG of quality (0 to 1) to path.
+static bool write_jpeg(IWICImagingFactory *f, IWICBitmapSource *src, const char *path, double quality) {
+	IWICFormatConverter *bgr = NULL;
+	IWICStream *st = NULL;
+	IWICBitmapEncoder *enc = NULL;
+	IWICBitmapFrameEncode *out = NULL;
+	IPropertyBag2 *bag = NULL;
+	UINT w = 0, h = 0;
+	HRESULT hr = IWICBitmapSource_GetSize(src, &w, &h);
+	if (SUCCEEDED(hr)) hr = IWICImagingFactory_CreateFormatConverter(f, &bgr);
+	if (SUCCEEDED(hr)) hr = IWICFormatConverter_Initialize(bgr, src, &GUID_WICPixelFormat24bppBGR, WICBitmapDitherTypeNone, NULL, 0, WICBitmapPaletteTypeCustom);
+	wchar_t *wp = asuka_wide(path);
+	if (SUCCEEDED(hr)) hr = IWICImagingFactory_CreateStream(f, &st);
+	if (SUCCEEDED(hr)) hr = IWICStream_InitializeFromFilename(st, wp, GENERIC_WRITE);
+	free(wp);
+	if (SUCCEEDED(hr)) hr = IWICImagingFactory_CreateEncoder(f, &GUID_ContainerFormatJpeg, NULL, &enc);
+	if (SUCCEEDED(hr)) hr = IWICBitmapEncoder_Initialize(enc, (IStream *)st, WICBitmapEncoderNoCache);
+	if (SUCCEEDED(hr)) hr = IWICBitmapEncoder_CreateNewFrame(enc, &out, &bag);
+	if (SUCCEEDED(hr) && bag) {
+		PROPBAG2 opt;
+		memset(&opt, 0, sizeof opt);
+		opt.pstrName = L"ImageQuality";
+		VARIANT v;
+		VariantInit(&v);
+		v.vt = VT_R4;
+		v.fltVal = (float)(quality > 0 && quality <= 1 ? quality : 0.9);
+		IPropertyBag2_Write(bag, 1, &opt, &v);
+	}
+	if (SUCCEEDED(hr)) hr = IWICBitmapFrameEncode_Initialize(out, bag);
+	if (SUCCEEDED(hr)) hr = IWICBitmapFrameEncode_SetSize(out, w, h);
+	WICPixelFormatGUID fmt = GUID_WICPixelFormat24bppBGR;
+	if (SUCCEEDED(hr)) hr = IWICBitmapFrameEncode_SetPixelFormat(out, &fmt);
+	if (SUCCEEDED(hr)) hr = IWICBitmapFrameEncode_WriteSource(out, (IWICBitmapSource *)bgr, NULL);
+	if (SUCCEEDED(hr)) hr = IWICBitmapFrameEncode_Commit(out);
+	if (SUCCEEDED(hr)) hr = IWICBitmapEncoder_Commit(enc);
+	if (bag) IPropertyBag2_Release(bag);
+	if (out) IWICBitmapFrameEncode_Release(out);
+	if (enc) IWICBitmapEncoder_Release(enc);
+	if (st) IWICStream_Release(st);
+	if (bgr) IWICFormatConverter_Release(bgr);
+	return SUCCEEDED(hr);
+}
+
+// jpeg_pixels writes w×h pixels of BGR as a JPEG.
+static bool jpeg_pixels(const char *path, uint8_t *bgr, int w, int h, double quality) {
+	IWICImagingFactory *f = wic();
+	if (!f) return false;
+	IWICBitmap *bmp = NULL;
+	bool ok = SUCCEEDED(IWICImagingFactory_CreateBitmapFromMemory(f, (UINT)w, (UINT)h, &GUID_WICPixelFormat24bppBGR, (UINT)w * 3, (UINT)(w * h * 3), bgr, &bmp)) &&
+	          write_jpeg(f, (IWICBitmapSource *)bmp, path, quality);
+	if (bmp) IWICBitmap_Release(bmp);
+	IWICImagingFactory_Release(f);
+	return ok;
+}
+
+// rewrite_photo writes the engine's photo at from again to `to`: the
+// middle a zoom shows, mirrored if mirror, its long side at most max (0:
+// as it is), of quality.
+static bool rewrite_photo(const char *from, const char *to, double zoom, bool mirror, int max, double quality) {
+	IWICImagingFactory *f = wic();
+	if (!f) return false;
+	IWICBitmapDecoder *dec = NULL;
+	IWICBitmapFrameDecode *frame = NULL;
+	IWICBitmapClipper *clip = NULL;
+	IWICBitmapFlipRotator *flip = NULL;
+	IWICBitmapScaler *scaler = NULL;
+	wchar_t *w = asuka_wide(from);
+	HRESULT hr = IWICImagingFactory_CreateDecoderFromFilename(f, w, NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &dec);
+	free(w);
+	if (SUCCEEDED(hr)) hr = IWICBitmapDecoder_GetFrame(dec, 0, &frame);
+	IWICBitmapSource *src = (IWICBitmapSource *)frame;
+	UINT fw = 0, fh = 0;
+	if (SUCCEEDED(hr)) hr = IWICBitmapSource_GetSize(src, &fw, &fh);
+	camera_rect r = camera_zoom_crop((int)fw, (int)fh, zoom);
+	if (SUCCEEDED(hr) && (r.w != (int)fw || r.h != (int)fh)) {
+		WICRect wr = {r.x, r.y, r.w, r.h};
+		hr = IWICImagingFactory_CreateBitmapClipper(f, &clip);
+		if (SUCCEEDED(hr)) hr = IWICBitmapClipper_Initialize(clip, src, &wr);
+		if (SUCCEEDED(hr)) src = (IWICBitmapSource *)clip;
+	}
+	if (SUCCEEDED(hr) && mirror) {
+		hr = IWICImagingFactory_CreateBitmapFlipRotator(f, &flip);
+		if (SUCCEEDED(hr)) hr = IWICBitmapFlipRotator_Initialize(flip, src, WICBitmapTransformFlipHorizontal);
+		if (SUCCEEDED(hr)) src = (IWICBitmapSource *)flip;
+	}
+	int ow = r.w, oh = r.h;
+	camera_fit(r.w, r.h, max, &ow, &oh);
+	if (SUCCEEDED(hr) && (ow != r.w || oh != r.h)) {
+		hr = IWICImagingFactory_CreateBitmapScaler(f, &scaler);
+		if (SUCCEEDED(hr)) hr = IWICBitmapScaler_Initialize(scaler, src, (UINT)ow, (UINT)oh, WICBitmapInterpolationModeFant);
+		if (SUCCEEDED(hr)) src = (IWICBitmapSource *)scaler;
+	}
+	bool ok = SUCCEEDED(hr) && write_jpeg(f, src, to, quality);
+	if (scaler) IWICBitmapScaler_Release(scaler);
+	if (flip) IWICBitmapFlipRotator_Release(flip);
+	if (clip) IWICBitmapClipper_Release(clip);
+	if (frame) IWICBitmapFrameDecode_Release(frame);
+	if (dec) IWICBitmapDecoder_Release(dec);
+	IWICImagingFactory_Release(f);
+	return ok;
+}
+
+// ---- A view's frames, when it scans or hands frames to frame ----
 //
 // The preview's frames, in RGB32 (the engine converts what the camera
 // gives), from the preview sink's sample callback: the latest drawn by
-// the view, and the codes read in one every quarter second, off the
-// main thread. Shared by Media Foundation's threads, a reading's and
-// the main one: counted references.
+// the view (the middle a digital zoom shows, mirrored as the preview
+// is), the codes read in one every quarter second, and frameRate's
+// written as JPEGs, off the main thread. Shared by Media Foundation's
+// threads, a reading's, a writing's and the main one: counted references.
 
 typedef struct {
 	LONG refs;
@@ -504,7 +784,11 @@ typedef struct {
 	int w, h;
 	bool posted, closed, reading;
 	int64_t last;
-	unsigned kinds;  // what to read (0: nothing it reads was asked for)
+	unsigned kinds;       // what to read (0: nothing it reads was asked for)
+	double zoom;          // the digital zoom's (1: none)
+	bool mirror;          // drawn mirrored
+	bool frame_mirror;    // frame's written mirrored
+	camera_frames clock;  // frameRate's
 	// The main thread's: the frame drawn.
 	HBITMAP bmp;
 	void *bits;
@@ -531,6 +815,43 @@ typedef struct view view;
 static view *view_of(unsigned id);
 static void view_invalidate(view *v);
 static void codes_found(view *v, asuka_barcode *codes, size_t n);
+static void frame_written(view *v, const char *path, int w, int h, int64_t ms);
+
+// A frame for frame, written off the main thread.
+typedef struct {
+	frames *f;
+	char *path;
+	uint8_t *px;  // the part of the frame the zoom shows: BGRX, rows of w*4
+	int w, h, max;
+	bool mirror;
+	int64_t ms;
+	int ow, oh;
+	bool ok;
+} frame_job;
+
+static void frame_main(void *p) {
+	frame_job *j = p;
+	EnterCriticalSection(&j->f->mu);
+	j->f->clock.writing = false;
+	bool closed = j->f->closed;
+	LeaveCriticalSection(&j->f->mu);
+	view *v = closed ? NULL : view_of(j->f->view);
+	if (v && j->ok) frame_written(v, j->path, j->ow, j->oh, j->ms);
+	frames_unref(j->f);
+	free(j->path);
+	free(j);
+}
+
+static void write_frame(void *p) {
+	frame_job *j = p;
+	camera_fit(j->w, j->h, j->max, &j->ow, &j->oh);
+	uint8_t *bgr = malloc((size_t)j->ow * j->oh * 3);
+	camera_resample(j->px, (size_t)j->w * 4, (camera_rect){0, 0, j->w, j->h}, j->mirror, bgr, j->ow, j->oh);
+	j->ok = jpeg_pixels(j->path, bgr, j->ow, j->oh, 0.8);
+	free(bgr);
+	free(j->px);
+	asuka_desktop_post(frame_main, j);
+}
 
 typedef struct {
 	frames *f;
@@ -616,6 +937,22 @@ static void on_sample(void *p, void *sample, void *unused) {
 				InterlockedDecrement(&f->refs);  // the view's still holds it
 			}
 		}
+		char *path = NULL;
+		int64_t ms = 0;
+		if (camera_frames_due(&f->clock, now, &path, &ms)) {
+			camera_rect r = camera_zoom_crop(f->w, f->h, f->zoom);
+			frame_job *j = calloc(1, sizeof *j);
+			*j = (frame_job){f, path, malloc((size_t)r.w * r.h * 4), r.w, r.h, f->clock.size > 0 ? f->clock.size : 480, f->frame_mirror, ms, 0, 0, false};
+			for (int y = 0; y < r.h; y++) memcpy(j->px + (size_t)y * r.w * 4, data + ((size_t)(r.y + y) * f->w + r.x) * 4, (size_t)r.w * 4);
+			InterlockedIncrement(&f->refs);
+			if (!asuka_desktop_spawn(write_frame, j)) {
+				f->clock.writing = false;
+				free(j->px);
+				free(j->path);
+				free(j);
+				InterlockedDecrement(&f->refs);
+			}
+		}
 	}
 	LeaveCriticalSection(&f->mu);
 	CALL0(mb, buffer_unlock);
@@ -654,10 +991,13 @@ static bool preview_frames(engine *e, frames *f) {
 	return ok;
 }
 
-// paint draws the latest frame filling r, cropped to keep its aspect.
+// paint draws the latest frame filling r, cropped to keep its aspect and
+// to the zoom's middle, mirrored as the preview is.
 static void frames_paint(frames *f, HDC dc, RECT r) {
 	EnterCriticalSection(&f->mu);
 	int w = f->w, h = f->h;
+	double zoom = f->zoom;
+	bool mirror = f->mirror;
 	if (w > 0 && h > 0 && f->latest) {
 		if (!f->bmp || f->bw != w || f->bh != h) {
 			if (f->bmp) DeleteObject(f->bmp);
@@ -678,19 +1018,23 @@ static void frames_paint(frames *f, HDC dc, RECT r) {
 		FillRect(dc, &r, GetStockObject(BLACK_BRUSH));
 		return;
 	}
-	// The part of the frame of the view's aspect, centered.
-	int sx = 0, sy = 0, sw = w, sh = h;
-	double fa = (double)rw / rh, va = (double)w / h;
+	// The part of the zoom's middle of the view's aspect, centered.
+	camera_rect c = camera_zoom_crop(w, h, zoom);
+	int sx = c.x, sy = c.y, sw = c.w, sh = c.h;
+	double fa = (double)rw / rh, va = (double)sw / sh;
 	if (va > fa) {
-		sw = (int)(h * fa);
-		sx = (w - sw) / 2;
+		int nw = (int)(sh * fa);
+		sx += (sw - nw) / 2, sw = nw > 0 ? nw : 1;
 	} else {
-		sh = (int)(w / fa);
-		sy = (h - sh) / 2;
+		int nh = (int)(sw / fa);
+		sy += (sh - nh) / 2, sh = nh > 0 ? nh : 1;
 	}
 	HDC mem = CreateCompatibleDC(dc);
 	HGDIOBJ old = SelectObject(mem, f->bmp);
-	StretchBlt(dc, 0, 0, rw, rh, mem, sx, sy, sw, sh, SRCCOPY);
+	SetStretchBltMode(dc, HALFTONE);
+	SetBrushOrgEx(dc, 0, 0, NULL);
+	if (mirror) StretchBlt(dc, 0, 0, rw, rh, mem, sx + sw - 1, sy, -sw, sh, SRCCOPY);
+	else StretchBlt(dc, 0, 0, rw, rh, mem, sx, sy, sw, sh, SRCCOPY);
 	SelectObject(mem, old);
 	DeleteDC(mem);
 }
@@ -721,19 +1065,35 @@ struct view {
 	unsigned id;
 	sheet *sheet;  // the take dialog's (never the current one), or NULL
 	engine *engine;
-	char running[32];  // the facing and mode the engine was made for
+	char running[48];  // what the engine was made for: facing, mode...
 	bool front, video, scan, configuring, previewing, destroyed, failed;
-	bool snap;  // the dialog's photo is being taken
+	bool snap;       // the dialog's photo is being taken
+	bool user;       // its camera faces the user: shown mirrored
+	bool ready_due;  // ready is said once it shows
+	// The props.
+	double zoom;
+	bool pinch, mirror;
+	camera_VideoQuality quality;
+	camera_frames clock;  // frameRate's and frameSize
 	camera_kinds kinds;
 	camera_seen seen;
 	frames *frames;
+	// A pinch on a touchscreen: where it began.
+	double gesture_zoom;
+	ULONGLONG gesture_span;
 	camera_pending *capturing;
 	char *photo_path;
+	int cap_max;  // what the waiting capture asked for
+	double cap_quality;
 	camera_pending *rec_reply;
 	bool recording;
 	char *rec_path;
+	int64_t rec_max_bytes, rec_last_size;
 	view *next;
 };
+
+enum { timer_duration = 1, timer_bytes = 2 };
+#define BYTES_EVERY 250
 
 static view *views;
 // current is the view on screen capture and record use: the last made
@@ -748,6 +1108,7 @@ static view *view_of(unsigned id) {
 
 static void sheet_failed(sheet *s, const char *msg);
 static void sheet_photo(sheet *s, const char *path);
+static void configure_later(view *v);
 
 static void view_invalidate(view *v) { InvalidateRect(v->hwnd, NULL, FALSE); }
 
@@ -767,11 +1128,84 @@ static void codes_found(view *v, asuka_barcode *codes, size_t n) {
 	}
 }
 
+static void frame_written(view *v, const char *path, int w, int h, int64_t ms) {
+	if (v->destroyed || v->sheet) return;
+	camera_Frame f = {(char *)path, w, h, ms * 1000000};
+	camera_View_frame(v->events, &f);
+}
+
 static void remove_file(const char *path) {
 	if (!path) return;
 	wchar_t *w = asuka_wide(path);
 	DeleteFileW(w);
 	free(w);
+}
+
+// The zoom: the camera's own where it has one, else digital in photo
+// mode (the recording's the camera's whole view: 1 in video mode).
+static double max_zoom(const view *v) {
+	if (v->engine && v->engine->optical) return v->engine->max_zoom;
+	return v->video ? 1 : CAMERA_DIGITAL_ZOOM;
+}
+
+static double zoom_now(const view *v) { return camera_clamp(v->zoom, 1, max_zoom(v)); }
+
+// digital is the zoom the view crops by (1: the camera's own zoom does it).
+static double digital(const view *v) { return v->engine && v->engine->optical ? 1 : zoom_now(v); }
+
+// preview_mirror: the preview's mirrored for a camera facing the user,
+// unless its stream is already.
+static bool preview_mirror(const view *v) { return v->user && !(v->engine && v->engine->preview_mirrored); }
+
+// sampled: the preview comes as frames (to read codes in, or for frame).
+static bool sampled(const view *v) { return v->scan || v->clock.rate > 0; }
+
+// sync_frames gives the frames what the props say.
+static void sync_frames(view *v) {
+	frames *f = v->frames;
+	if (!f) return;
+	EnterCriticalSection(&f->mu);
+	f->zoom = digital(v);
+	f->mirror = preview_mirror(v);
+	// frame's: mirrored only with mirror (a camera facing the user), its
+	// stream flipped back if it's mirrored already.
+	f->frame_mirror = (v->mirror && v->user) != (v->engine && v->engine->preview_mirrored);
+	f->clock.rate = v->clock.rate;
+	f->clock.size = v->clock.size;
+	f->kinds = v->scan ? barcode_kinds(&v->kinds) : 0;
+	LeaveCriticalSection(&f->mu);
+	view_invalidate(v);
+}
+
+static void apply_zoom(view *v) {
+	if (!v->engine) return;
+	if (v->engine->optical) {
+		optical_zoom(v->engine, zoom_now(v));
+	} else if (v->frames) {
+		sync_frames(v);
+	} else if (v->previewing) {
+		RECT r;
+		GetClientRect(v->hwnd, &r);
+		fit_preview(v->engine, r.right, r.bottom, digital(v));
+	}
+}
+
+// zoom_to zooms to z (within the camera's range); the user's pinch says
+// so (zoomChange).
+static void zoom_to(view *v, double z, bool user) {
+	if (user) z = camera_clamp(z, 1, max_zoom(v));
+	if (z == v->zoom) return;
+	v->zoom = z;
+	apply_zoom(v);
+	if (user && !v->sheet) camera_View_zoomChange(v->events, z);
+}
+
+// ready says what the camera can do, once it shows.
+static void ready(view *v) {
+	v->ready_due = false;
+	if (v->sheet || v->destroyed) return;
+	camera_Info i = {.minZoom = 1, .maxZoom = max_zoom(v)};
+	camera_View_ready(v->events, &i);
 }
 
 static void close_engine(view *v) {
@@ -790,7 +1224,7 @@ static void close_engine(view *v) {
 static void record_done(view *v, const char *err) {
 	bool was = v->recording;
 	v->recording = false;
-	if (v->hwnd) KillTimer(v->hwnd, 1);
+	if (v->hwnd) KillTimer(v->hwnd, timer_duration), KillTimer(v->hwnd, timer_bytes);
 	if (!was) return;
 	if (err) {
 		remove_file(v->rec_path);
@@ -798,12 +1232,14 @@ static void record_done(view *v, const char *err) {
 	} else {
 		camera_answer(&v->rec_reply, v->rec_path);
 	}
+	configure_later(v);  // what changed while it recorded
 }
 
 static void configure(view *v) {
-	if (v->destroyed) return;
-	char want[32];
-	snprintf(want, sizeof want, "%s/%s%s", v->front ? "front" : "back", v->video ? "video" : "photo", v->scan ? "/scan" : "");
+	if (v->destroyed || v->recording) return;
+	char want[48];
+	snprintf(want, sizeof want, "%s/%s%s%s%d", v->front ? "front" : "back", v->video ? "video" : "photo", sampled(v) ? "/frames" : "",
+	         v->video && v->mirror ? "/mirror" : "", v->video ? (int)v->quality : 0);
 	if (v->engine && !strcmp(v->running, want)) return;
 	close_engine(v);
 	if (capability_denied(L"webcam")) {
@@ -816,6 +1252,7 @@ static void configure(view *v) {
 	device *d = device_for(ds, n, v->front);
 	const char *why = NULL;
 	engine *e = d ? engine_new(d, v->video && has_microphone() && !capability_denied(L"microphone"), v->id, &why) : NULL;
+	v->user = d && d->panel != panel_back;  // a front panel's, or a webcam's
 	free_devices(ds, n);
 	if (!e) {
 		v->failed = true;
@@ -825,6 +1262,7 @@ static void configure(view *v) {
 	v->engine = e;
 	strcpy(v->running, want);
 	v->failed = false;
+	v->ready_due = true;
 }
 
 static void configure_main(void *p) {
@@ -841,6 +1279,53 @@ static void configure_later(view *v) {
 	asuka_desktop_post(configure_main, (void *)(uintptr_t)v->id);
 }
 
+// A photo rewritten (cropped, mirrored, scaled, of its quality) off the
+// main thread.
+typedef struct {
+	camera_pending *reply;
+	char *from, *to;
+	double zoom, quality;
+	bool mirror;
+	int max;
+	bool ok;
+} rewrite;
+
+static void rewritten(void *p) {
+	rewrite *r = p;
+	remove_file(r->from);
+	if (!r->ok || !r->reply) remove_file(r->to);  // failed, or its task went
+	if (r->ok) camera_answer(&r->reply, r->to);
+	else camera_fail(&r->reply, "couldn't save the photo");
+	free(r->from), free(r->to), free(r);
+}
+
+static void rewrite_run(void *p) {
+	rewrite *r = p;
+	r->to = camera_file(".jpg");
+	r->ok = r->to && rewrite_photo(r->from, r->to, r->zoom, r->mirror, r->max, r->quality);
+	asuka_desktop_post(rewritten, r);
+}
+
+// photo_taken answers capture with the engine's photo, rewritten if it
+// must be: the zoom's middle (digital), mirrored (mirror, a camera facing
+// the user), at most cap_max, of cap_quality.
+static void photo_taken(view *v, char *path) {
+	bool mirror = (v->mirror && v->user) != v->engine->photo_mirrored;
+	double zoom = digital(v);
+	if (!mirror && !(zoom > 1) && v->cap_max <= 0 && !(v->cap_quality > 0)) {
+		camera_answer(&v->capturing, path);
+		free(path);
+		return;
+	}
+	rewrite *r = calloc(1, sizeof *r);
+	*r = (rewrite){NULL, path, NULL, zoom, v->cap_quality > 0 ? v->cap_quality : 0.9, mirror, v->cap_max, false};
+	camera_move(&v->capturing, &r->reply);
+	if (!asuka_desktop_spawn(rewrite_run, r)) {
+		r->ok = false;
+		rewritten(r);
+	}
+}
+
 // event is the engine's event, on the main thread.
 static void event(view *v, const GUID *kind, HRESULT status) {
 	bool ok = SUCCEEDED(status);
@@ -850,17 +1335,19 @@ static void event(view *v, const GUID *kind, HRESULT status) {
 			fail(v, status == E_ACCESSDENIED ? "not allowed" : "no camera");
 			return;
 		}
+		set_up(v->engine, v->video, v->quality, v->video && v->mirror && v->user);
 		bool started;
-		if (v->scan) {
+		if (sampled(v)) {
 			frames *f = calloc(1, sizeof *f);
 			f->refs = 1;
 			InitializeCriticalSection(&f->mu);
 			f->view = v->id;
-			f->kinds = barcode_kinds(&v->kinds);
+			f->clock = v->clock;
 			v->frames = f;
+			sync_frames(v);
 			started = preview_frames(v->engine, f);
 		} else {
-			started = start_preview(v->engine, v->hwnd);
+			started = start_preview(v->engine, v->hwnd, preview_mirror(v));
 		}
 		if (!started) {
 			v->failed = true;
@@ -868,10 +1355,14 @@ static void event(view *v, const GUID *kind, HRESULT status) {
 		}
 	} else if (IsEqualGUID(kind, &ev_preview_started)) {
 		v->previewing = ok;
-		if (ok && !v->frames) {
-			RECT r;
-			GetClientRect(v->hwnd, &r);
-			fit_preview(v->engine, r.right, r.bottom);
+		if (ok) {
+			if (v->engine->optical) optical_zoom(v->engine, zoom_now(v));
+			if (!v->frames) {
+				RECT r;
+				GetClientRect(v->hwnd, &r);
+				fit_preview(v->engine, r.right, r.bottom, digital(v));
+			}
+			if (v->ready_due) ready(v);
 		}
 	} else if (IsEqualGUID(kind, &ev_preview_stopped)) {
 		v->previewing = false;
@@ -881,10 +1372,15 @@ static void event(view *v, const GUID *kind, HRESULT status) {
 		bool snap = v->snap;
 		v->snap = false;
 		if (!ok) remove_file(path);
-		if (snap) sheet_photo(v->sheet, ok ? path : NULL);  // may destroy v
-		else if (ok) camera_answer(&v->capturing, path);
-		else camera_fail(&v->capturing, "no photo");
-		free(path);
+		if (snap) {
+			sheet_photo(v->sheet, ok ? path : NULL);  // may destroy v
+			free(path);
+		} else if (ok) {
+			photo_taken(v, path);
+		} else {
+			camera_fail(&v->capturing, "no photo");
+			free(path);
+		}
 	} else if (IsEqualGUID(kind, &ev_record_started)) {
 		if (!ok) record_done(v, "couldn't record");
 	} else if (IsEqualGUID(kind, &ev_record_stopped)) {
@@ -932,6 +1428,25 @@ static void stop_recording(view *v) {
 	if (v->recording && v->engine) stop_recording_engine(v->engine);
 }
 
+// bytes_check reads the recording's file as it grows: it ends before it
+// would pass maxBytes (at the rate it's written, or its bitrate's).
+static void bytes_check(view *v) {
+	if (!v->recording || !v->rec_path) return;
+	wchar_t *w = asuka_wide(v->rec_path);
+	WIN32_FILE_ATTRIBUTE_DATA a;
+	bool got = GetFileAttributesExW(w, GetFileExInfoStandard, &a);
+	free(w);
+	if (!got) return;
+	int64_t size = (int64_t)((uint64_t)a.nFileSizeHigh << 32 | a.nFileSizeLow);
+	double rate = (double)(size - v->rec_last_size) * 8 * 1000 / BYTES_EVERY;
+	v->rec_last_size = size;
+	double known = v->engine ? v->engine->bitrate : 0;
+	if (camera_record_full(size, v->rec_max_bytes, rate > known ? rate : known, BYTES_EVERY)) {
+		KillTimer(v->hwnd, timer_bytes);
+		stop_recording(v);
+	}
+}
+
 static bool view_proc(view *v, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, LRESULT *result) {
 	switch (m) {
 	case WM_PAINT:
@@ -948,7 +1463,7 @@ static bool view_proc(view *v, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, LRESULT 
 		break;
 	case WM_SIZE:
 		if (v->frames) InvalidateRect(hwnd, NULL, FALSE);
-		else if (v->engine && v->previewing) fit_preview(v->engine, LOWORD(lp), HIWORD(lp));
+		else if (v->engine && v->previewing) fit_preview(v->engine, LOWORD(lp), HIWORD(lp), digital(v));
 		break;
 	case WM_ERASEBKGND:
 		if (v->frames && v->frames->bmp) {
@@ -961,10 +1476,40 @@ static bool view_proc(view *v, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, LRESULT 
 			*result = 1;
 			return true;
 		}
+	case WM_MOUSEWHEEL:
+		// Ctrl and the wheel zoom (a precision touchpad's pinch comes so
+		// too): 10% a notch.
+		if (v->pinch && !v->sheet && (GET_KEYSTATE_WPARAM(wp) & MK_CONTROL)) {
+			zoom_to(v, zoom_now(v) * pow(1.1, GET_WHEEL_DELTA_WPARAM(wp) / (double)WHEEL_DELTA), true);
+			*result = 0;
+			return true;
+		}
+		break;
+	case WM_GESTURE: {
+		// A touchscreen's pinch: the fingers' span, from where it began.
+		GESTUREINFO gi;
+		memset(&gi, 0, sizeof gi);
+		gi.cbSize = sizeof gi;
+		if (!v->pinch || v->sheet || !GetGestureInfo((HGESTUREINFO)lp, &gi) || gi.dwID != GID_ZOOM) break;
+		if (gi.dwFlags & GF_BEGIN) {
+			v->gesture_zoom = zoom_now(v);
+			v->gesture_span = gi.ullArguments;
+		} else if (v->gesture_span) {
+			zoom_to(v, v->gesture_zoom * (double)gi.ullArguments / (double)v->gesture_span, true);
+		}
+		CloseGestureInfoHandle((HGESTUREINFO)lp);
+		*result = 0;
+		return true;
+	}
 	case WM_TIMER:
-		if (wp == 1) {  // record's max duration
-			KillTimer(hwnd, 1);
+		if (wp == timer_duration) {  // record's max duration
+			KillTimer(hwnd, timer_duration);
 			stop_recording(v);
+			*result = 0;
+			return true;
+		}
+		if (wp == timer_bytes) {
+			bytes_check(v);
 			*result = 0;
 			return true;
 		}
@@ -986,16 +1531,45 @@ static void set_mode(camera_View *self, camera_Mode m) {
 static void set_scan(camera_View *self, bool on) {
 	view *v = (view *)self;
 	v->scan = on;
+	if (v->frames) sync_frames(v);
 	configure_later(v);
 }
 static void set_codes(camera_View *self, camera_list_string codes) {
 	view *v = (view *)self;
 	camera_kinds_set(&v->kinds, codes);
-	if (v->frames) {
-		EnterCriticalSection(&v->frames->mu);
-		v->frames->kinds = barcode_kinds(&v->kinds);
-		LeaveCriticalSection(&v->frames->mu);
-	}
+	sync_frames(v);
+}
+static void set_zoom(camera_View *self, double z) { zoom_to((view *)self, z, false); }
+static void set_pinch(camera_View *self, bool on) { ((view *)self)->pinch = on; }
+// A webcam's torch, flash, exposure bias and focus point aren't a desktop
+// app's: these do nothing on Windows.
+static void set_torch(camera_View *self, bool on) {}
+static void set_flash(camera_View *self, camera_Flash f) {}
+static void set_exposure(camera_View *self, double ev) {}
+static void set_tap(camera_View *self, bool on) {}
+static void set_photo_quality(camera_View *self, camera_PhotoQuality q) {}  // the engine's photos favor nothing
+static void set_video_quality(camera_View *self, camera_VideoQuality q) {
+	view *v = (view *)self;
+	v->quality = q;
+	if (v->video) configure_later(v);
+}
+static void set_mirror(camera_View *self, bool on) {
+	view *v = (view *)self;
+	v->mirror = on;
+	sync_frames(v);
+	if (v->video) configure_later(v);  // the stream's mirrored for a recording
+}
+static void set_frame_rate(camera_View *self, double r) {
+	view *v = (view *)self;
+	bool was = sampled(v);
+	v->clock.rate = camera_clamp(r, 0, CAMERA_MAX_FRAME_RATE);
+	if (sampled(v) != was) configure_later(v);
+	else sync_frames(v);
+}
+static void set_frame_size(camera_View *self, int64_t s) {
+	view *v = (view *)self;
+	v->clock.size = s > 0 ? (int)(s < 8192 ? s : 8192) : 480;
+	sync_frames(v);
 }
 
 // destroy: the camera stops, and what waits on it is told.
@@ -1015,7 +1589,8 @@ static void destroy(camera_View *self) {
 		}
 	close_engine(v);
 	if (v->w) v->w->v = NULL;
-	if (v->hwnd) KillTimer(v->hwnd, 1);
+	if (v->hwnd) KillTimer(v->hwnd, timer_duration), KillTimer(v->hwnd, timer_bytes);
+	if (!v->sheet) camera_frames_clean(v->id);
 	remove_file(v->photo_path);
 	free(v->photo_path);
 	free(v->rec_path);
@@ -1025,7 +1600,23 @@ static void destroy(camera_View *self) {
 }
 
 static const camera_View_vtable view_vt = {
-    .destroy = destroy, .set_facing = set_facing, .set_mode = set_mode, .set_scan = set_scan, .set_codes = set_codes};
+    .destroy = destroy,
+    .set_facing = set_facing,
+    .set_mode = set_mode,
+    .set_scan = set_scan,
+    .set_codes = set_codes,
+    .set_zoom = set_zoom,
+    .set_pinchToZoom = set_pinch,
+    .set_torch = set_torch,
+    .set_flash = set_flash,
+    .set_exposure = set_exposure,
+    .set_tapToFocus = set_tap,
+    .set_videoQuality = set_video_quality,
+    .set_photoQuality = set_photo_quality,
+    .set_mirror = set_mirror,
+    .set_frameRate = set_frame_rate,
+    .set_frameSize = set_frame_size,
+};
 
 static view *new_view(HWND parent, camera_View_events events, sheet *s) {
 	static unsigned ids;
@@ -1035,6 +1626,10 @@ static view *new_view(HWND parent, camera_View_events events, sheet *s) {
 	v->id = ++ids;
 	v->sheet = s;
 	v->front = s != NULL;
+	v->zoom = 1;
+	v->pinch = true;
+	v->quality = camera_VideoQuality_fullHD;
+	v->clock = (camera_frames){.view = v->id, .size = 480, .started = camera_now_ms()};
 	v->w = calloc(1, sizeof *v->w);
 	v->w->v = v;
 	v->hwnd = asuka_win_window(0, L"", (parent ? WS_CHILD | WS_VISIBLE : WS_POPUP) | WS_CLIPCHILDREN, 0, 0, 0, 0, parent, wnd_proc, v->w);
@@ -1232,7 +1827,7 @@ static void c_take(camera_Camera *self, asuka_call *call) {
 	show_sheet(&w);
 }
 
-static void c_capture(camera_Camera *self, asuka_call *call) {
+static void c_capture(camera_Camera *self, int64_t max_size, double quality, asuka_call *call) {
 	camera_pending *w = NULL;
 	camera_wait(call, camera_Camera_capture_done, &w, NULL, NULL);
 	view *v = current;
@@ -1246,6 +1841,8 @@ static void c_capture(camera_Camera *self, asuka_call *call) {
 		camera_fail(&w, why);
 		return;
 	}
+	v->cap_max = max_size > 0 ? (int)(max_size < 65536 ? max_size : 65536) : 0;
+	v->cap_quality = quality;
 	camera_move(&w, &v->capturing);
 }
 
@@ -1255,7 +1852,7 @@ static void rec_cancelled(void *p) {
 		if (v == p) stop_recording(v);
 }
 
-static void c_record(camera_Camera *self, bool mute, int64_t max, asuka_call *call) {
+static void c_record(camera_Camera *self, bool mute, int64_t max, int64_t max_bytes, asuka_call *call) {
 	camera_pending *w = NULL;
 	view *v = current;
 	camera_wait(call, camera_Camera_record_done, &w, rec_cancelled, v);
@@ -1281,13 +1878,20 @@ static void c_record(camera_Camera *self, bool mute, int64_t max, asuka_call *ca
 	free(v->rec_path);
 	v->rec_path = path;
 	v->recording = true;
+	v->rec_max_bytes = max_bytes > 0 ? max_bytes : 0;
+	v->rec_last_size = 0;
 	camera_move(&w, &v->rec_reply);
-	if (max > 0) SetTimer(v->hwnd, 1, (UINT)(max / 1000000 > 0 ? max / 1000000 : 1), NULL);
+	if (max > 0) SetTimer(v->hwnd, timer_duration, (UINT)(max / 1000000 > 0 ? max / 1000000 : 1), NULL);
+	if (v->rec_max_bytes) SetTimer(v->hwnd, timer_bytes, BYTES_EVERY, NULL);
 }
 
 static void c_stop_recording(camera_Camera *self, asuka_error *err) {
 	if (current) stop_recording(current);
 }
+
+// focus: a webcam focuses as it does (its own autofocus); none a desktop
+// app reaches through Media Foundation focuses at a point.
+static void c_focus(camera_Camera *self, double x, double y, asuka_error *err) {}
 
 // Windows never asks a desktop app for the camera: Settings' privacy
 // switches (every app's, desktop apps', a policy's) allow it or don't.
@@ -1305,6 +1909,7 @@ static const camera_Camera_vtable camera_vt = {.release = c_release,
                                                .capture = c_capture,
                                                .record = c_record,
                                                .stopRecording = c_stop_recording,
+                                               .focus = c_focus,
                                                .access = c_access,
                                                .requestAccess = c_request_access};
 

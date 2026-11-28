@@ -104,9 +104,9 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | SQLite | SwiftData / GRDB | `expo-sqlite` | ✓ `std/sqlite`（`migrate`，把行直接解码成 `T` 的 `query<T>`，`exec`，事务，都在主线程之外执行；`watch<T>`：实时查询，读取的表被写入或参数变化时重新运行；每个平台都是同一个 SQLite，浏览器里运行在页面的一个 worker 中）（见[数据](data.md)） |
 | 安全存储 | 钥匙串 | `expo-secure-store` | ✓ `platform/secure`（钥匙串、Android Keystore、凭据管理器、libsecret；Web 上用浏览器不允许导出的密钥加密后存进 IndexedDB，并不是真正的钥匙串）；`protected: true`：要先通过 Face ID、指纹、Windows Hello 或密码验证才能读出，相当于 `requireAuthentication` |
 | 文件、网络 | Foundation | `expo-file-system`、fetch | ✓ `std/fs`；`std/http`（用平台自己的客户端：URLSession、`HttpURLConnection`、WinHTTP、libsoup、`fetch`）、`http.download`、`http.upload`（文件、用 `http.multipart` 组成的表单字段和文件、`Stream` 的片段：边读边发，并报告进度；在 iOS、macOS 和 Android 上可以后台传输）、`http.stream` 和服务器发送事件（`http.events`）；`std/websocket` |
-| 照片 | `PhotosPicker` | `expo-image-picker` | ✓ `device.pickPhotos(max:)` |
+| 照片 | `PhotosPicker` | `expo-image-picker` | ✓ `device.pickPhotos(max:)`、`device.pickMedia`（照片、视频或两者；`max`、`ordered`、`maxSize`、`quality`）；选完后的裁剪步骤：`imageedit.Cropper` |
 | 文档 | `UIDocumentPickerViewController` | `expo-document-picker` | ✓ `device.pickFiles(types:, multiple:)`；桌面端用 `platform/dialog` |
-| 相机 | AVFoundation | `expo-camera` | ✓ `platform/camera`：`camera.take()`（系统相机；在 Mac、Windows 和 Linux 上是一个带实时预览的对话框）、`camera.View`（实时预览，前置或后置）、`capture()`、`record()`（AVFoundation、CameraX、Media Foundation、GStreamer、`getUserMedia`）；`platform/record` 可以录制带声音的视频 |
+| 相机 | AVFoundation | `expo-camera` | ✓ `platform/camera`：`camera.take()`（系统相机；在 Mac、Windows 和 Linux 上是一个带实时预览的对话框）、`camera.View`（实时预览，前置或后置）、`capture(maxSize:, quality:)`、`record(maxDuration:, maxBytes:)`（AVFoundation、CameraX、Media Foundation、GStreamer、`getUserMedia`）；缩放（可双指捏合，可绑定）、手电筒、闪光灯、曝光、点按对焦、`videoQuality`、`photoQuality`、`mirror`，以及每秒几帧、交给应用自己分析的画面（`frameRate`）；电脑的摄像头：数码变焦，其余功能视摄像头支持情况而定；`platform/record` 可以录制带声音的视频 |
 | 条形码、二维码 | AVFoundation、Vision | `expo-camera` 的扫码 | ✓ 在 `camera.View` 里实时识别（`scan`、`on code`），也能识别图片文件（`scan.file`）：Vision，Android 上用 ML Kit（只打包进导入了它的应用），浏览器有 `BarcodeDetector` 时用它，Windows 和 Linux 上用 Asuka 自己用 C 写的识别器（QR、Data Matrix、EAN、UPC、Code 128、Code 39） |
 | 定位 | Core Location | `expo-location` | ✓ `platform/location`（Core Location、Android 的 location manager、WinRT 的 `Geolocator`、GeoClue 或定位 portal、Geolocation API；使用期间和始终，精确或大致位置；地名；后台更新和地理围栏，iOS 和 Android 上会为这些事件启动应用，并在处理期间保持运行） |
 | 翻译、复数、地区格式 | String Catalogs、FormatStyle | `expo-localization`、i18next | ✓ 文案目录和 `tr.key(…)`、`std/i18n`（见[多语言](i18n.md)） |
@@ -152,12 +152,12 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 广告（AdMob） | Google Mobile Ads SDK | `react-native-google-mobile-ads`、Flutter 的 `google_mobile_ads` | ✓ `platform/ads`（自适应和固定尺寸横幅；插页式、激励、插页式激励和开屏广告；通过 Google 的 User Messaging Platform 征得同意；请求设置；Google 的测试广告单元；iOS 和 Android；测试用的 `ads.fake()`） |
 | NFC 标签 | Core NFC | `react-native-nfc-manager` | ✓ `platform/nfc`（读写 NDEF，只读标签，标签 ID，原始命令；iOS 的系统面板，Android 的读卡器模式，可以打开应用的标签；Android 上 Chrome 的 Web NFC；桌面端不支持）（见 [NFC 标签](nfc.md)） |
 | 低功耗蓝牙 | Core Bluetooth | 社区方案（`react-native-ble-plx`） | ✓ `platform/bluetooth`（扫描、连接、服务、读、写、通知；广播和 GATT 服务端；后台扫描和状态恢复；Core Bluetooth、Android 的 BLE、WinRT、BlueZ；Chromium 里 Web Bluetooth 的设备选择器，不支持外设角色）（见[蓝牙](bluetooth.md)） |
-| 图片编辑 | Core Graphics、ImageIO | `expo-image-manipulator` | ✓ `platform/imageedit`（缩放、裁剪、旋转、翻转、填充、像素化；读入 HEIC，输出 JPEG 或 PNG，方向自动摆正；Image I/O、Android 的 `Bitmap`、WIC、GdkPixbuf、canvas） |
+| 图片编辑 | Core Graphics、ImageIO | `expo-image-manipulator` | ✓ `platform/imageedit`（缩放、裁剪、旋转、翻转、填充、像素化；读入 HEIC，输出 JPEG 或 PNG，方向自动摆正；Image I/O、Android 的 `Bitmap`、WIC、GdkPixbuf、canvas）；`imageedit.Cropper`，一个由用户拖动和双指缩放来裁剪的步骤 |
 | 视频缩略图 | `AVAssetImageGenerator` | `expo-video-thumbnails` | ✓ `imageedit.videoFrame` |
 | 把视图存成图片 | `ImageRenderer`、`drawHierarchy` | `react-native-view-shot` | ✓ `imageedit.capture(view: ref)`：PNG 或 JPEG，由平台来画（图层、Android 的 `View`，Windows 和 Linux 上取窗口的像素；Web 上是元素的 SVG 副本） |
 | 识别图片中的文字、人脸和码 | Vision | 无 | ✓ `platform/vision`，同时给出每一项的位置（Vision；Android 上用 ML Kit，只打包进导入了它的应用；Windows 的 OCR 和人脸检测；Linux 上用 Tesseract 识别文字，不支持人脸；浏览器有 Shape Detection API 时用它） |
 | 语音转文字 | Speech（`SFSpeechRecognizer`） | 社区方案（`expo-speech-recognition`） | ✓ `platform/transcribe`（识别一段录音，只在设备上进行：iOS 和 macOS 上用 Speech，Android 的设备端识别器（录音要 13 及以上，听写要 12 及以上），浏览器在设备上运行的识别器（Chrome 139 及以上）；Windows 的桌面语音识别器（SAPI），Linux 上发行版提供的 PocketSphinx（英语）；`transcribe.listen`：从麦克风边说边识别的听写） |
-| 照片图库 | PhotoKit | `expo-media-library` | ✓ `platform/photos`：权限、列出照片、缩略图、原始文件（PhotoKit、MediaStore） |
+| 照片图库 | PhotoKit | `expo-media-library` | ✓ `platform/photos`：权限、照片和视频（分页、计数、带时长）、缩略图、原始文件、相册（列出、创建、添加）、经系统确认后删除、变化（iOS 和 Mac 上用 PhotoKit，MediaStore，Windows 的“图片”和“视频”文件夹） |
 | 文字转语音 | `AVSpeechSynthesizer` | `expo-speech` | ✓ `platform/speech`（队列、声音、音调、语速、暂停；AVSpeechSynthesizer、TextToSpeech、SAPI、Speech Dispatcher、`speechSynthesis`） |
 | 通讯录 | Contacts、ContactsUI | `expo-contacts` | ✓ `platform/contacts`（`pick()` 和新建联系人界面不需要权限；访问通讯录需要权限） |
 | 日历 | EventKit、EventKitUI | `expo-calendar` | ✓ `platform/calendar`（事件编辑界面不需要权限；读取日历和事件需要权限；EventKit、Calendar Provider） |

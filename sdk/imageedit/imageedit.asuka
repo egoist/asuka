@@ -8,6 +8,10 @@
 //   let r = try await imageedit.edit(photo, [.resize(1080, 0)], quality: 0.8)
 //   let card = try await imageedit.capture(view: cardRef)   // a view, as it shows
 //
+// Cropper is the crop step after a pick or a photo: the image behind a
+// frame the user drags and pinches it in, which says the rectangle to
+// crop (edit's .crop).
+//
 // A source is what Image takes: a file's path, a file:// or http(s) URL,
 // or a file in the app's assets.
 

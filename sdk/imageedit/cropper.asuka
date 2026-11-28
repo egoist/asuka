@@ -1,0 +1,185 @@
+// The crop step after a pick or a photo: Cropper, made of the
+// platform's own Image and views, the same on every platform.
+
+/// A rectangle of an image, in its pixels from its top left.
+pub struct Rect {
+  x: int = 0
+  y: int = 0
+  width: int = 0
+  height: int = 0
+}
+
+/// Where a Cropper's image and frame are in its box, in points: the
+/// frame, the image's top left and size on screen, and the image's pixels
+/// per point.
+struct Layout {
+  frameX: float = 0
+  frameY: float = 0
+  frameWidth: float = 0
+  frameHeight: float = 0
+  imageX: float = 0
+  imageY: float = 0
+  imageWidth: float = 0
+  imageHeight: float = 0
+  scale: float = 1
+}
+
+/// The most a Cropper zooms in, over the image just covering its frame.
+let maxZoom = 8.0
+
+/// The space around a Cropper's frame, in points.
+let margin = 16.0
+
+/// The frame in a box of width×height for an aspect (width / height),
+/// as large as it fits in the margins.
+fn frameIn(width: float, height: float, aspect: float) -> (float, float) {
+  let w = max(width - 2 * margin, 1)
+  let h = max(height - 2 * margin, 1)
+  if w / h > aspect {
+    return (h * aspect, h)
+  }
+  return (w, w / aspect)
+}
+
+/// The most an image can move from the frame's middle, along one side:
+/// half of what's past the frame.
+fn slack(shown: float, frame: float) -> float = max((shown - frame) / 2, 0)
+
+/// Lays an image of iw×ih pixels out in a box of bw×bh points, behind a
+/// frame of aspect (0: the image's), zoomed by zoom (1: just covering the
+/// frame) and moved by dx, dy from the frame's middle (clamped so the
+/// frame stays covered).
+fn place(bw: float, bh: float, iw: float, ih: float, aspect: float, zoom: float, dx: float, dy: float) -> Layout {
+  if bw <= 0 || bh <= 0 || iw <= 0 || ih <= 0 {
+    return Layout()
+  }
+  let a = if aspect > 0 { aspect } else { iw / ih }
+  let (fw, fh) = frameIn(bw, bh, a)
+  let cover = max(fw / iw, fh / ih)
+  let s = cover * min(max(zoom, 1), maxZoom)
+  let w = iw * s
+  let h = ih * s
+  let sx = slack(w, fw)
+  let sy = slack(h, fh)
+  let ox = min(max(dx, -sx), sx)
+  let oy = min(max(dy, -sy), sy)
+  return Layout(frameX: (bw - fw) / 2, frameY: (bh - fh) / 2, frameWidth: fw, frameHeight: fh,
+    imageX: bw / 2 + ox - w / 2, imageY: bh / 2 + oy - h / 2, imageWidth: w, imageHeight: h, scale: 1 / s)
+}
+
+/// The image's rectangle under the frame, in its pixels, within it.
+fn cropOf(l: Layout, iw: int, ih: int) -> Rect {
+  let x = max(int(((l.frameX - l.imageX) * l.scale).rounded()), 0)
+  let y = max(int(((l.frameY - l.imageY) * l.scale).rounded()), 0)
+  let w = min(int((l.frameWidth * l.scale).rounded()), iw - x)
+  let h = min(int((l.frameHeight * l.scale).rounded()), ih - y)
+  return Rect(x: x, y: y, width: max(w, 1), height: max(h, 1))
+}
+
+/// An image to crop, filling its box: the image behind a frame of
+/// aspect, the rest dimmed; the user drags it and pinches it (Ctrl and
+/// the wheel, a trackpad's pinch) until what they want is in the frame.
+/// change says the image's rectangle in the frame, in its pixels, as the
+/// image shows and after each move: crop it with edit's .crop.
+///
+///   imageedit.Cropper(photo) {
+///     aspect: 1
+///     circle: true
+///     grow: 1
+///     on change(r) { crop = r }
+///   }
+///   ...
+///   let out = try await imageedit.edit(photo, [.crop(crop.x, crop.y, crop.width, crop.height), .resize(512, 512)])
+///
+/// source is what Image takes; a photo is shown upright, as edit reads
+/// it.
+pub component Cropper(source: string) {
+  /// The frame's width over its height (1: a square, 16 / 9); 0: the
+  /// image's own.
+  prop aspect: float = 1
+  /// The frame drawn round, for a profile picture: the crop is still its
+  /// square.
+  prop circle: bool = false
+  /// The image's rectangle in the frame, in its pixels.
+  event change(crop: Rect)
+
+  state box = Frame()
+  state pixels = Result(path: "", width: 0, height: 0)
+  state zoom = 1.0
+  state dx = 0.0
+  state dy = 0.0
+  state startZoom = 1.0
+  state startX = 0.0
+  state startY = 0.0
+  let l = place(box.width, box.height, float(pixels.width), float(pixels.height), aspect, zoom, dx, dy)
+
+  task {
+    if let s = try? await size(source) {
+      pixels = s
+      zoom = 1
+      dx = 0
+      dy = 0
+      report()
+    }
+  }
+
+  fn report() {
+    let p = place(box.width, box.height, float(pixels.width), float(pixels.height), aspect, zoom, dx, dy)
+    if p.frameWidth > 0 {
+      // What's shown, kept: the image can't sit past the frame.
+      dx = p.imageX + p.imageWidth / 2 - box.width / 2
+      dy = p.imageY + p.imageHeight / 2 - box.height / 2
+      emit change(cropOf(p, pixels.width, pixels.height))
+    }
+  }
+
+  View {
+    clip: true
+    background: #000000
+    on layout(f) {
+      let first = box.width == 0
+      box = f
+      if first { report() }
+    }
+    on pan(g) {
+      if g.state == .began {
+        startX = dx
+        startY = dy
+      }
+      dx = startX + g.translationX
+      dy = startY + g.translationY
+      if g.state == .ended || g.state == .cancelled { report() }
+    }
+    on pinch(g) {
+      if g.state == .began { startZoom = zoom }
+      zoom = min(max(startZoom * g.scale, 1), maxZoom)
+      if g.state == .ended || g.state == .cancelled { report() }
+    }
+    if l.frameWidth > 0 {
+      Image(source) {
+        label: "The image to crop"
+        mode: .stretch
+        absolute: true
+        left: l.imageX
+        top: l.imageY
+        width: l.imageWidth
+        height: l.imageHeight
+      }
+      // The dimmed parts around the frame.
+      View { absolute: true; left: 0; top: 0; right: 0; height: l.frameY; background: #0000008c }
+      View { absolute: true; left: 0; bottom: 0; right: 0; height: l.frameY; background: #0000008c }
+      View { absolute: true; left: 0; top: l.frameY; width: l.frameX; height: l.frameHeight; background: #0000008c }
+      View { absolute: true; right: 0; top: l.frameY; width: l.frameX; height: l.frameHeight; background: #0000008c }
+      View {
+        absolute: true
+        left: l.frameX
+        top: l.frameY
+        width: l.frameWidth
+        height: l.frameHeight
+        border: 1
+        borderColor: #ffffff
+        radius: if circle { l.frameWidth / 2 } else { 0 }
+      }
+    }
+  }
+}
