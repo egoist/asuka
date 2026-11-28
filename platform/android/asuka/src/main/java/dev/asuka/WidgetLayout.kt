@@ -120,6 +120,9 @@ object AsukaWidgetLayout {
     private fun dp(ctx: Context, v: Double) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), ctx.resources.displayMetrics).toInt()
 
     /** A text style's size (px, the user's font scale in it) and its weight, from its Material text appearance. */
+    // Its attributes are read by their index in the array asked for, not
+    // a declared styleable's.
+    @android.annotation.SuppressLint("ResourceType")
     private fun textStyle(ctx: Context, style: String): Pair<Float, Boolean> {
         val s = when (style) {
             "largeTitle" -> AsukaTextStyle.LARGE_TITLE

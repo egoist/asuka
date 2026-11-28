@@ -82,6 +82,9 @@ object AsukaDisplay {
     }
 
     /** Follows screenshots while the Activity shows and someone waits for one (Android 14 and later). */
+    // DETECT_SCREEN_CAPTURE is in platform/screen's manifest, which an app
+    // that watches screenshots has.
+    @android.annotation.SuppressLint("MissingPermission")
     fun watch(act: Activity, on: Boolean) {
         if (Build.VERSION.SDK_INT < 34) return
         try {

@@ -757,6 +757,9 @@ object AsukaNotifications {
      * app showed it again, a conversation shows the reply under the user's
      * name; another is taken away.
      */
+    // POST_NOTIFICATIONS is the app's (platform/notify's manifest); without it
+    // the post throws, caught below.
+    @android.annotation.SuppressLint("MissingPermission")
     fun replied(ctx: Context, id: String, text: String, postsBefore: Int) {
         if (posted(id) != postsBefore) return
         val spec = spec(ctx, id)
