@@ -26,7 +26,7 @@ func TestControls(t *testing.T) {
 	controlsAssets(t, local)
 	buildApp(t, w, string(src), local)
 	d := script(t, w, local, guest, "app.exe",
-		"wait:500ms", "snap:start",
+		"until:Loaded: 2", "snap:start",
 		"tap:Wi-Fi", "tap:Breakfast", "snap:chips",
 		"remove:Bo", "focus:Cy", "key:delete", "tap:Add me", "snap:removed",
 		"tap:Destination", "type:r", "snap:typed",

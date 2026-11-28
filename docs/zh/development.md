@@ -333,7 +333,7 @@ ASUKA_SCRIPT="tap:Add;tap:Add" ASUKA_SNAPSHOT=shot.png asuka dev    # 先执行�
 
 - `ASUKA_SNAPSHOT` 会在窗口显示后（以及脚本执行完后）把窗口保存为 PNG，然后退出；设置 `ASUKA_SNAPSHOT_STAY=1` 可以让应用继续运行。在 macOS 上，截图取自窗口服务器合成的窗口图像（连同其上的弹出面板），材质和 Liquid Glass 都和屏幕上一样；文件名为 `*.content.png` 时只保存内容，不含标题栏。
 - `ASUKA_DUMP` 会在截图旁边写出视图树：每个视图的类型、frame（位置和尺寸）以及显示的内容。
-- `ASUKA_SCRIPT` 会在截图前执行一系列以 `;` 分隔的步骤：`tap:<text>`（点按显示该文字的视图：按钮标题、文本、标签页、侧边栏的行、分段控件的段）、`type:<text>`（在获得焦点的输入框中输入）、`back`、`key:<shortcut>`（如 `ctrl+shift+k`）、`menu:<item>`（菜单栏中的菜单项）、`escape`、`close`（关闭当前窗口）、`wait:<duration>`（如 `500ms`）、`waitfor:<file>`（等到该文件出现：由测试决定何时继续）和 `snap:<file>`。
+- `ASUKA_SCRIPT` 会在截图前执行一系列以 `;` 分隔的步骤：`tap:<text>`（点按显示该文字的视图：按钮标题、文本、标签页、侧边栏的行、分段控件的段）、`type:<text>`（在获得焦点的输入框中输入）、`back`、`key:<shortcut>`（如 `ctrl+shift+k`）、`menu:<item>`（菜单栏中的菜单项）、`escape`、`close`（关闭当前窗口）、`wait:<duration>`（如 `500ms`）、`waitfor:<file>`（等到该文件出现：由测试决定何时继续）、`until:<text>`（等到窗口显示出该文字，最多一分钟）和 `snap:<file>`。
 
 ## 构建缓存
 

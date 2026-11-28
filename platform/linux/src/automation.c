@@ -778,6 +778,18 @@ static void write_dump(const char *path) {
 	ak_buf_free(&b);
 }
 
+// dump_shows is whether the window's views, as a dump writes them, have
+// text in them (until:'s condition).
+static bool dump_shows(const char *text) {
+	ak_buf b = {0};
+	if (H.root) lx_dump_node(H.root, 0, &b);
+	lx_each_node(dump_floating, &b);
+	ak_buf_u8(&b, 0);
+	bool shows = strstr((const char *)b.data, text) != NULL;
+	ak_buf_free(&b);
+	return shows;
+}
+
 typedef struct {
 	node_vec shown;
 } texts_ctx;
@@ -836,10 +848,17 @@ static void schedule(guint ms) { g_timeout_add(ms, next_step, NULL); }
 static gboolean next_step(gpointer data) {
 	(void)data;
 	if (waiting_until) {
-		// waitfor: a file, polled for up to a minute.
-		const char *p = steps[step_at] + strlen("waitfor:");
-		struct stat st;
-		if (stat(p, &st) != 0 && g_get_monotonic_time() < waiting_until) return 1;
+		// waitfor: a file, and until: text the window shows, polled for up
+		// to a minute.
+		const char *s = steps[step_at];
+		bool met;
+		if (!strncmp(s, "until:", 6)) {
+			met = dump_shows(s + 6);
+		} else {
+			struct stat st;
+			met = stat(s + strlen("waitfor:"), &st) == 0;
+		}
+		if (!met && g_get_monotonic_time() < waiting_until) return 1;
 		waiting_until = 0;
 		step_at++;
 		schedule(1);
@@ -858,7 +877,7 @@ static gboolean next_step(gpointer data) {
 			schedule(ms ? ms : 1);
 			return 0;
 		}
-		if (!strncmp(s, "waitfor:", 8)) {
+		if (!strncmp(s, "waitfor:", 8) || !strncmp(s, "until:", 6)) {
 			memmove(steps[step_at], s, strlen(s) + 1);
 			waiting_until = g_get_monotonic_time() + 60 * G_USEC_PER_SEC;
 			g_timeout_add(20, next_step, NULL);

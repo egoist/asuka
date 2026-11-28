@@ -13,6 +13,7 @@ component Images {
   state pre = "?"
   state shown = true
   state prefetched = false
+  state pin = "?"
 
   Column {
     gap: 8
@@ -52,7 +53,12 @@ component Images {
         on error(m) { pre = "failed" }
       }
     }
-    Image("pin.png") { width: 32; height: 32; color: .red }
+    Image("pin.png") {
+      width: 32; height: 32
+      color: .red
+      on loaded(w, h) { pin = "loaded" }
+    }
+    Text("pin {pin}")
     Text("auth {auth}")
     Text("noauth {noauth}")
     Text("memory {memory}")

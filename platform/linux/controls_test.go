@@ -220,12 +220,12 @@ func TestImageOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := script(t, dir, exe,
-		"wait:1500ms", "snap:loaded",
+		"until:pin loaded", "until:auth loaded", "until:noauth failed", "until:memory loaded", "until:none loaded", "snap:loaded",
 		"tap:Hide", "tap:Show", "wait:1s", "snap:again",
-		"tap:Prefetch", "wait:1s", "tap:Prefetched", "wait:1s", "snap:prefetched",
+		"tap:Prefetch", "wait:1s", "tap:Prefetched", "until:pre loaded", "snap:prefetched",
 		"tap:Hide", "tap:Clear", "wait:500ms", "tap:Show", "wait:1s", "snap:cleared")
 	keepShots(t, dir, "images", "loaded", "cleared")
-	shows(t, d["loaded"], "loaded", []string{"auth loaded 32", "noauth failed", "memory loaded 32", "none loaded 32"})
+	shows(t, d["loaded"], "loaded", []string{"pin loaded", "auth loaded 32", "noauth failed", "memory loaded 32", "none loaded 32"})
 
 	shows(t, d["prefetched"], "prefetched", []string{"pre loaded 32"})
 	shows(t, d["cleared"], "shown again", []string{"auth loaded 32", "memory loaded 32", "none loaded 32"})

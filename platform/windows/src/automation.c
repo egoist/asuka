@@ -822,6 +822,9 @@ static bool real_step(const char *verb, const char *arg, const wchar_t *warg) {
 static char *script, *snap_path;
 static size_t at;
 static char *wait_file;
+// until:'s text, and when it stops waiting for it (a minute on).
+static char *wait_text;
+static ULONGLONG wait_text_until;
 
 static void finish(void) {
 	if (!snap_path) return;
@@ -866,6 +869,18 @@ static void next_step(void) {
 		free(wait_file);
 		wait_file = NULL;
 	}
+	if (wait_text) {
+		size_t n;
+		char *d = wh_dump(&n);
+		bool shows = d && strstr(d, wait_text);
+		free(d);
+		if (!shows && GetTickCount64() < wait_text_until) {
+			SetTimer(H.msg_win, TIMER_SCRIPT, 50, NULL);
+			return;
+		}
+		free(wait_text);
+		wait_text = NULL;
+	}
 	while (script && script[at]) {
 		size_t end = at;
 		while (script[end] && script[end] != ';') end++;
@@ -886,6 +901,14 @@ static void next_step(void) {
 			UINT ms = (UINT)parse_duration_ms(arg);
 			free(s);
 			SetTimer(H.msg_win, TIMER_SCRIPT, ms ? ms : 1, NULL);
+			return;
+		}
+		if (!strcmp(p, "until")) {
+			// Until the window shows the text (a minute at most).
+			wait_text = wh_strdup(arg);
+			wait_text_until = GetTickCount64() + 60000;
+			free(s);
+			SetTimer(H.msg_win, TIMER_SCRIPT, 1, NULL);
 			return;
 		}
 		if (!strcmp(p, "waitfor")) {

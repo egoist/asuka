@@ -702,7 +702,8 @@ ASUKA_SCRIPT="tap:Add;tap:Add" ASUKA_SNAPSHOT=shot.png asuka dev    # steps firs
   `back`, `key:<shortcut>` (`ctrl+shift+k`), `menu:<item>` (the menu
   bar's), `escape`, `close` (the window in use), `wait:<duration>`
   (`500ms`), `waitfor:<file>` (until the file exists: a test says when
-  to go on) and `snap:<file>`.
+  to go on), `until:<text>` (until the window shows the text, a minute
+  at most) and `snap:<file>`.
 
 ## The build cache
 
