@@ -138,6 +138,9 @@ struct AsukaWidgetProvider: TimelineProvider {
 protocol AsukaWidgetConfiguration: WidgetConfigurationIntent {
     var asukaValues: [String: String] { get }
     var asukaTitles: [String: String] { get }
+    /// What a watch offers in its place to add the widget, as it has no
+    /// way to edit one: the configurations, each with what it's called.
+    static var asukaRecommendations: [(intent: Self, description: String)] { get }
 }
 
 /// Reads the kind's entries for the widget's configuration.
@@ -154,6 +157,12 @@ struct AsukaConfiguredProvider<I: AsukaWidgetConfiguration>: AppIntentTimelinePr
     func timeline(for c: I, in context: Context) async -> Timeline<AsukaWidgetEntry> {
         source.timeline(c.asukaValues, c.asukaTitles)
     }
+
+    #if os(watchOS)
+    func recommendations() -> [AppIntentRecommendation<I>] {
+        I.asukaRecommendations.map { AppIntentRecommendation(intent: $0.intent, description: LocalizedStringResource(stringLiteral: $0.description)) }
+    }
+    #endif
 }
 
 /// One kind of widget with params: configured by the user.

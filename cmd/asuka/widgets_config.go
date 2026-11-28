@@ -174,7 +174,21 @@ func (c *appConfig) widgetConfigSwift(ext bool) string {
 		}
 		fmt.Fprintf(&b, "\n    init() {}\n\n    var asukaValues: [String: String] {\n        var v: [String: String] = [:]\n%s        return v\n    }\n\n    var asukaTitles: [String: String] {\n        var t: [String: String] = [:]\n%s        return t\n    }\n}\n\n", values.String(), titles.String())
 		if ext {
-			fmt.Fprintf(&b, avail+"extension AsukaWidgetConfig_%s: AsukaWidgetConfiguration {}\n\n", w.Kind)
+			fmt.Fprintf(&b, avail+"extension AsukaWidgetConfig_%s: AsukaWidgetConfiguration {\n", w.Kind)
+			b.WriteString("    static var asukaRecommendations: [(intent: Self, description: String)] {\n")
+			// A watch offers these to add the widget: one for each of
+			// its first options param's options, or its defaults.
+			if i := slices.IndexFunc(w.Params, func(p shortcutParam) bool { return p.Type == "options" && len(p.Options) > 0 }); i >= 0 {
+				p := w.Params[i]
+				b.WriteString("        var out: [(intent: Self, description: String)] = []\n")
+				for j, o := range p.Options {
+					fmt.Fprintf(&b, "        do { var c = Self(); c.%s = .o%d; out.append((c, %s)) }\n", p.Name, j, swiftString(o.Title))
+				}
+				b.WriteString("        return out\n")
+			} else {
+				fmt.Fprintf(&b, "        [(Self(), %s)]\n", swiftString(w.Name))
+			}
+			b.WriteString("    }\n}\n\n")
 		}
 	}
 	return b.String()

@@ -71,7 +71,10 @@ func TestConfigurableWidgets(t *testing.T) {
 		`v["place"] = place?.id ?? ""`,
 		`t["city"] = city.asukaTitle`,
 		`AsukaWidgetStore.entities("place")`,
-		"extension AsukaWidgetConfig_weather: AsukaWidgetConfiguration {}",
+		"extension AsukaWidgetConfig_weather: AsukaWidgetConfiguration {",
+		// What a watch offers to add it: one for each city.
+		`do { var c = Self(); c.city = .o0; out.append((c, "Tokyo")) }`,
+		`do { var c = Self(); c.city = .o1; out.append((c, "Paris")) }`,
 		"if #available(iOS 17.0, *) { AsukaConfigurableWidget<AsukaKind0, AsukaWidgetConfig_weather>() }",
 		"AsukaKindWidget<AsukaKind1>()",
 	} {
