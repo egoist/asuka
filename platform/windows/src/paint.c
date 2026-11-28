@@ -30,15 +30,42 @@ void wh_paint_window(node *n, HWND hwnd) {
 // picture fades it with what's in it.
 float wh_own_alpha(const node *n) { return n->pict ? 1 : n->opacity; }
 
+bool wh_round(const node *n) {
+	return n->corner_radius > 0 || n->corner_radii[0] > 0 || n->corner_radii[1] > 0 || n->corner_radii[2] > 0 || n->corner_radii[3] > 0;
+}
+
+bool wh_uniform_radii(const float r[4]) { return r[0] == r[1] && r[1] == r[2] && r[2] == r[3]; }
+
+void wh_radii(const node *n, float w, float h, float r[4]) {
+	float k = wh_scale_of(n);
+	bool per = n->corner_radii[0] > 0 || n->corner_radii[1] > 0 || n->corner_radii[2] > 0 || n->corner_radii[3] > 0;
+	for (int i = 0; i < 4; i++) r[i] = wh_maxf((per ? n->corner_radii[i] : n->corner_radius) * k, 0);
+	// CSS's: when two radii on a side are more than it, every radius is
+	// scaled down by the same factor, the least the sides need (one
+	// radius of 999: half the shorter side, a capsule).
+	float f = 1;
+	const float side[4] = {w, h, w, h};
+	for (int i = 0; i < 4; i++) {
+		float sum = r[i] + r[(i + 1) % 4];
+		if (sum > side[i] && sum > 0) f = wh_minf(f, wh_maxf(side[i], 0) / sum);
+	}
+	if (f < 1)
+		for (int i = 0; i < 4; i++) r[i] *= f;
+}
+
+bool wh_has_border(const node *n) {
+	return n->border_width > 0 || n->border_widths[0] > 0 || n->border_widths[1] > 0 || n->border_widths[2] > 0 || n->border_widths[3] > 0;
+}
+
 bool wh_opaque(const node *n) {
 	if (n->material) return false;  // it blurs what's behind it
 	switch (n->kind) {
 	case AK_KIND_SCREEN: case AK_KIND_SHEET: case AK_KIND_WINDOW: case KIND_HEADER: case KIND_TAB_BAR:
 	case KIND_SIDEBAR: case KIND_COMMAND_BAR: case KIND_ALERT_WINDOW:
-		return n->corner_radius == 0;
+		return !wh_round(n);
 	}
 	rgba c;
-	return wh_resolve(n->background, &c) && c.a == 255 && n->corner_radius == 0 && wh_own_alpha(n) >= 1;
+	return wh_resolve(n->background, &c) && c.a == 255 && !wh_round(n) && wh_own_alpha(n) >= 1;
 }
 
 void wh_paint(node *n, HWND hwnd, HDC dc, RECT r) {
@@ -86,8 +113,12 @@ typedef struct {
 } shadow_spec;
 
 static bool read_shadow(const node *n, shadow_spec *s) {
-	if (n->shadow_len < 20) return false;
-	s->color = wh_u64(n->shadow), s->blur = wh_f32(n->shadow + 8), s->dx = wh_f32(n->shadow + 12), s->dy = wh_f32(n->shadow + 16);
+	const uint8_t *b = n->shadow;
+	if (n->shadow_len < 20) {
+		if (!n->has_text_shadow) return false;
+		b = n->text_shadow;  // a text's, under its glyphs
+	}
+	s->color = wh_u64(b), s->blur = wh_f32(b + 8), s->dx = wh_f32(b + 12), s->dy = wh_f32(b + 16);
 	return s->color != 0;
 }
 
@@ -112,7 +143,8 @@ static void paint_shadows(node *n, HWND hwnd, gfx g) {
 		RECT r = wh_rect_in(c->hwnd, hwnd);
 		float x = (float)r.left + s.dx * k, y = (float)r.top + s.dy * k;
 		float w = (float)(r.right - r.left), ht = (float)(r.bottom - r.top);
-		float radius = wh_minf(c->corner_radius * k, wh_minf(w / 2, ht / 2));
+		float radii[4];
+		wh_radii(c, w, ht, radii);
 		// Radius is a blur radius, as CSS and SwiftUI mean it: 2σ.
 		double a = (double)col.a / 255 * c->opacity;
 		int ns = wh_shadow_steps((double)(s.blur * k) / 2, a, steps);
@@ -121,8 +153,18 @@ static void paint_shadows(node *n, HWND hwnd, gfx g) {
 			rgba lc = col;
 			lc.a = (uint8_t)lround(steps[j].alpha * 255);
 			if (!lc.a) continue;
-			g_fill_round_rect(g, rgba_argb(lc), x - spread, y - spread, w + 2 * spread, ht + 2 * spread, wh_maxf(radius + spread, 0));
+			float rs[4];
+			for (int q = 0; q < 4; q++) rs[q] = radii[q] > 0 ? wh_maxf(radii[q] + spread, 0) : 0;
+			g_fill_corners(g, rgba_argb(lc), x - spread, y - spread, w + 2 * spread, ht + 2 * spread, rs);
 		}
+	}
+	// Texts' shadows, under their glyphs: in the parent, so that they
+	// reach past the text's window.
+	for (uint32_t i = 0; i < n->nkids; i++) {
+		node *c = n->kids[i];
+		if (!c->has_text_shadow || c->kind != AK_KIND_TEXT || !c->hwnd || c->hidden || GetParent(c->hwnd) != hwnd || !IsWindowVisible(c->hwnd)) continue;
+		RECT r = wh_rect_in(c->hwnd, hwnd);
+		wh_paint_text_shadow(c, g, (float)r.left, (float)r.top);
 	}
 }
 
@@ -140,7 +182,58 @@ void wh_invalidate_shadow(node *n) {
 
 // ---- A view's own drawing ----
 
-static void paint_gradient(gfx g, node *n, float w, float ht, float radius) {
+// stop_color is the gradient's color at t (0 to 1), its stops (count of
+// them, at b + 4) mixed.
+static rgba stop_color(const uint8_t *b, uint32_t count, float t) {
+	rgba prev = {0}, c = {0};
+	float pt = 0;
+	for (uint32_t i = 0; i < count; i++) {
+		uint32_t o = 4 + i * 12;
+		wh_resolve(wh_u64(b + o), &c);
+		float at = wh_clampf(wh_f32(b + o + 8), 0, 1);
+		if (i == 0 && t <= at) return c;
+		if (t <= at) {
+			float f = at > pt ? (t - pt) / (at - pt) : 1;
+			rgba m = {(uint8_t)lroundf(prev.r + (c.r - prev.r) * f), (uint8_t)lroundf(prev.g + (c.g - prev.g) * f),
+			          (uint8_t)lroundf(prev.b + (c.b - prev.b) * f), (uint8_t)lroundf(prev.a + (c.a - prev.a) * f)};
+			return m;
+		}
+		prev = c, pt = at;
+	}
+	return c;
+}
+
+// conic_picture draws a conic gradient into a w by h bitmap: a wedge a
+// degree wide for each degree, from angle (clockwise from the top) round
+// (cx, cy). GDI+ has no conic brush; the bitmap fills the view's shape
+// as a texture, so its edge is antialiased as any fill's.
+static GpBitmap *conic_picture(const uint8_t *b, uint32_t count, int w, int h, float cx, float cy, float angle) {
+	GpBitmap *bmp = NULL;
+	GdipCreateBitmapFromScan0(w, h, 0, PixelFormat32bppPARGB, NULL, &bmp);
+	if (!bmp) return NULL;
+	GpGraphics *g = NULL;
+	GdipGetImageGraphicsContext((GpImage *)bmp, &g);
+	if (!g) return bmp;
+	GdipSetSmoothingMode(g, SmoothingModeNone);
+	float reach = 0;  // its farthest corner
+	const float xs[4] = {0, (float)w, (float)w, 0}, ys[4] = {0, 0, (float)h, (float)h};
+	for (int i = 0; i < 4; i++) reach = wh_maxf(reach, hypotf(xs[i] - cx, ys[i] - cy));
+	reach += 2;
+	GpSolidFill *br = NULL;
+	GdipCreateSolidFill(0, &br);
+	for (int d = 0; d < 360; d++) {
+		rgba c = stop_color(b, count, ((float)d + 0.5f) / 360);
+		GdipSetSolidFillColor(br, rgba_argb(c));
+		// GDI+'s angles are clockwise from the right; each wedge a little
+		// wider, over the next one's edge.
+		GdipFillPie(g, (GpBrush *)br, cx - reach, cy - reach, 2 * reach, 2 * reach, angle - 90 + (float)d, 1.6f);
+	}
+	GdipDeleteBrush((GpBrush *)br);
+	GdipDeleteGraphics(g);
+	return bmp;
+}
+
+static void paint_gradient(gfx g, node *n, float w, float ht, const float radii[4]) {
 	const uint8_t *b = n->gradient;
 	if (n->gradient_len < 4) return;
 	uint32_t count = wh_u32(b);
@@ -170,17 +263,138 @@ static void paint_gradient(gfx g, node *n, float w, float ht, float radius) {
 		m++;
 	}
 	uint32_t o = 4 + count * 12;
-	GpPointF p0 = {wh_f32(b + o) * w, wh_f32(b + o + 4) * ht}, p1 = {wh_f32(b + o + 8) * w, wh_f32(b + o + 12) * ht};
-	if (p0.X == p1.X && p0.Y == p1.Y) p1.X += 0.01f;
-	GpLineGradient *br = NULL;
-	GdipCreateLineBrush(&p0, &p1, cs[0], cs[m - 1], WrapModeTile, &br);
-	if (!br) return;
-	GdipSetLinePresetBlend(br, cs, ps, (INT)m);
+	// After the line: its kind, center, radius and angle (none: linear).
+	uint8_t kind = AK_GRADIENT_KIND_LINEAR;
+	float cx = 0.5f * w, cy = 0.5f * ht, rad = 0.5f, angle = 0;
+	if (n->gradient_len >= o + 16 + 17) {
+		const uint8_t *e = b + o + 16;
+		kind = e[0];
+		cx = wh_f32(e + 1) * w, cy = wh_f32(e + 5) * ht, rad = wh_f32(e + 9), angle = wh_f32(e + 13);
+	}
 	GpPath *p = g_path();
-	g_path_round_rect(p, 0, 0, w, ht, radius);
-	GdipFillPath(g, (GpBrush *)br, p);
+	g_path_corners(p, 0, 0, w, ht, radii);
+	if (kind == AK_GRADIENT_KIND_RADIAL) {
+		// A circle of the radius (a fraction of the shorter side): GDI+'s
+		// path gradient on it, its blend from the edge (0) to the center
+		// (1); past it, the last stop's color, as CSS's.
+		float r = wh_maxf(rad * wh_minf(w, ht), 0.5f);
+		GpSolidFill *last = NULL;
+		GdipCreateSolidFill(cs[m - 1], &last);
+		GdipFillPath(g, (GpBrush *)last, p);
+		GdipDeleteBrush((GpBrush *)last);
+		GpPath *circle = g_path();
+		GdipAddPathEllipse(circle, cx - r, cy - r, 2 * r, 2 * r);
+		GpPathGradient *pg = NULL;
+		GdipCreatePathGradientFromPath(circle, &pg);
+		if (pg) {
+			ARGB rc[66];
+			REAL rp[66];
+			for (uint32_t i = 0; i < m; i++) rc[i] = cs[m - 1 - i], rp[i] = 1 - ps[m - 1 - i];
+			GpPointF c = {cx, cy};
+			GdipSetPathGradientCenterPoint(pg, &c);
+			GdipSetPathGradientPresetBlend(pg, rc, rp, (INT)m);
+			g_clip_path(g, p);
+			GdipFillPath(g, (GpBrush *)pg, circle);
+			g_reset_clip(g);
+			GdipDeleteBrush((GpBrush *)pg);
+		}
+		GdipDeletePath(circle);
+	} else if (kind == AK_GRADIENT_KIND_CONIC) {
+		int iw = (int)ceilf(w), ih = (int)ceilf(ht);
+		if (!n->conic || n->conic_w != iw || n->conic_h != ih) {
+			if (n->conic) GdipDisposeImage((GpImage *)n->conic);
+			n->conic = iw > 0 && ih > 0 ? conic_picture(b, count, iw, ih, cx, cy, angle) : NULL;
+			n->conic_w = iw, n->conic_h = ih;
+		}
+		GpTexture *t = NULL;
+		if (n->conic) GdipCreateTexture((GpImage *)n->conic, WrapModeClamp, &t);
+		if (t) {
+			GdipFillPath(g, (GpBrush *)t, p);
+			GdipDeleteBrush((GpBrush *)t);
+		}
+	} else {
+		GpPointF p0 = {wh_f32(b + o) * w, wh_f32(b + o + 4) * ht}, p1 = {wh_f32(b + o + 8) * w, wh_f32(b + o + 12) * ht};
+		if (p0.X == p1.X && p0.Y == p1.Y) p1.X += 0.01f;
+		GpLineGradient *br = NULL;
+		GdipCreateLineBrush(&p0, &p1, cs[0], cs[m - 1], WrapModeTile, &br);
+		if (br) {
+			GdipSetLinePresetBlend(br, cs, ps, (INT)m);
+			GdipFillPath(g, (GpBrush *)br, p);
+			GdipDeleteBrush((GpBrush *)br);
+		}
+	}
 	GdipDeletePath(p);
+}
+
+static void dash_pen(GpPen *pen, int32_t style) {
+	if (style == AK_BORDER_STYLE_DASHED) {
+		REAL dash[2] = {3, 3};  // in widths: three on, three off
+		GdipSetPenDashArray(pen, dash, 2);
+	} else if (style == AK_BORDER_STYLE_DOTTED) {
+		// Round dots as wide as the line, a width apart: dashes of almost
+		// nothing, their round caps the dots.
+		REAL dash[2] = {0.001f, 1.999f};
+		GdipSetPenDashCap197819(pen, DashCapRound);
+		GdipSetPenDashArray(pen, dash, 2);
+	}
+}
+
+// paint_border draws n's border inside its w by ht box of corner radii
+// radii: one width all round, stroked along the middle of its width
+// (dashed or dotted with its style); a width a side, each side its own:
+// solid, the ring between the box and its inside, whose corners are the
+// outer ones less the sides' widths (CSS's); dashed or dotted, each
+// side's line.
+static void paint_border(gfx g, node *n, float w, float ht, const float radii[4]) {
+	float k = wh_scale_of(n);
+	bool per = n->border_widths[0] > 0 || n->border_widths[1] > 0 || n->border_widths[2] > 0 || n->border_widths[3] > 0;
+	float bw[4];
+	for (int i = 0; i < 4; i++) bw[i] = wh_maxf((per ? n->border_widths[i] : n->border_width) * k, 0);
+	if (bw[0] <= 0 && bw[1] <= 0 && bw[2] <= 0 && bw[3] <= 0) return;
+	rgba bc;
+	if (!wh_resolve(n->border_color, &bc)) bc = H.theme.label;
+	ARGB c = rgba_argb(bc);
+	int32_t style = n->border_style;
+	GpPen *pen = NULL;
+	if (bw[0] == bw[1] && bw[1] == bw[2] && bw[2] == bw[3]) {
+		float width = bw[0], ri[4];
+		for (int i = 0; i < 4; i++) ri[i] = radii[i] > 0 ? wh_maxf(radii[i] - width / 2, 0) : 0;
+		GpPath *p = g_path();
+		g_path_corners(p, width / 2, width / 2, w - width, ht - width, ri);
+		GdipCreatePen1(c, width, UnitPixel, &pen);
+		dash_pen(pen, style);
+		GdipDrawPath(g, pen, p);
+		GdipDeletePen(pen);
+		GdipDeletePath(p);
+		return;
+	}
+	if (style != AK_BORDER_STYLE_SOLID) {
+		const float x0[4] = {0, w, w, 0}, y0[4] = {0, 0, ht, ht}, x1[4] = {w, w, 0, 0}, y1[4] = {0, ht, ht, 0};
+		const float nx[4] = {0, -1, 0, 1}, ny[4] = {1, 0, -1, 0};  // inward
+		for (int i = 0; i < 4; i++) {
+			if (bw[i] <= 0) continue;
+			float off = bw[i] / 2;
+			GdipCreatePen1(c, bw[i], UnitPixel, &pen);
+			dash_pen(pen, style);
+			GdipDrawLine(g, pen, x0[i] + nx[i] * off, y0[i] + ny[i] * off, x1[i] + nx[i] * off, y1[i] + ny[i] * off);
+			GdipDeletePen(pen);
+		}
+		return;
+	}
+	// Each corner's inner ellipse: its radius less the widths of the sides
+	// it joins (top left: left across, top down).
+	float rx[4], ry[4];
+	const int hs[4] = {3, 1, 1, 3}, vs[4] = {0, 0, 2, 2};
+	for (int i = 0; i < 4; i++) rx[i] = wh_maxf(radii[i] - bw[hs[i]], 0), ry[i] = wh_maxf(radii[i] - bw[vs[i]], 0);
+	GpPath *p = g_path();
+	g_path_corners(p, 0, 0, w, ht, radii);
+	float iw = w - bw[1] - bw[3], ih = ht - bw[0] - bw[2];
+	if (iw > 0 && ih > 0) g_path_rrect(p, bw[3], bw[0], iw, ih, rx, ry);
+	GpSolidFill *br = NULL;
+	GdipCreateSolidFill(c, &br);
+	GdipFillPath(g, (GpBrush *)br, p);  // alternate fill: the ring between them
 	GdipDeleteBrush((GpBrush *)br);
+	GdipDeletePath(p);
 }
 
 // The progress bar: Fluent's hairline track and a 3-point fill in the
@@ -291,12 +505,19 @@ RECT wh_inset_rect(const node *n, RECT r) {
 	return r;
 }
 
-static void paint_text(node *n, HDC dc, RECT r) {
+// wh_draw_text draws a Text in its client rect r, in color: DrawText's
+// lines, or its own (textlay.c) when its style asks for what DrawText
+// can't do.
+void wh_draw_text(node *n, HDC dc, RECT r, COLORREF color) {
 	if (!n->text.n) return;
+	if (wh_styled_text(n)) {
+		wh_styled_paint(n, dc, r, color);
+		return;
+	}
 	r = wh_inset_rect(n, r);
 	HGDIOBJ old = SelectObject(dc, wh_node_font(n));
 	SetBkMode(dc, TRANSPARENT);
-	SetTextColor(dc, rgba_ref(wh_text_color(n, H.theme.label)));
+	SetTextColor(dc, color);
 	if (n->line_limit > 1) {
 		TEXTMETRICW tm;
 		GetTextMetricsW(dc, &tm);
@@ -337,33 +558,30 @@ void wh_paint_own(node *n, HWND hwnd, HDC dc, RECT r) {
 	// at the DC's origin while one is open, not at the origin paint_behind
 	// moved it to.
 	gfx g = g_new(dc);
-	float k = wh_scale_of(n);
-	float radius = wh_minf(n->corner_radius * k, wh_minf(w / 2, ht / 2));
+	float radii[4];
+	wh_radii(n, w, ht, radii);
+	float radius = wh_maxf(wh_maxf(radii[0], radii[1]), wh_maxf(radii[2], radii[3]));  // what takes one: a focus ring, a clip's test
 	rgba bg;
 	bool has_bg = wh_resolve(n->background, &bg);
 	if (!has_bg && window_kind(n)) bg = wh_bg_in(hwnd), has_bg = true;  // its window's
 	float a = wh_own_alpha(n);
 	if (a < 1) bg = rgba_alpha(bg, a);
 	if (n->gradient) {
-		paint_gradient(g, n, w, ht, radius);
+		paint_gradient(g, n, w, ht, radii);
 	} else if (has_bg && bg.a > 0) {
 		// GDI+, not GDI: GDI leaves the bitmap's alpha 0, and GDI+ blends
 		// what it draws next against that alpha.
-		if (radius > 0) g_fill_round_rect(g, rgba_argb(bg), 0, 0, w, ht, radius);
+		if (radius > 0) g_fill_corners(g, rgba_argb(bg), 0, 0, w, ht, radii);
 		else g_fill_rect(g, rgba_argb(bg), 0, 0, w, ht);
 	}
 	paint_shadows(n, hwnd, g);  // its children's, under them
 	if (wh_pressable(n) && !n->disabled && (n->hot || n->pressed) && !wh_draws_states(n)) {
 		rgba c = H.theme.subtle_hot;
 		if (n->pressed) c = H.dark ? H.theme.subtle_pressed : (rgba){0, 0, 0, 0x0C};
-		if (radius > 0) g_fill_round_rect(g, rgba_argb(c), 0, 0, w, ht, radius);
+		if (radius > 0) g_fill_corners(g, rgba_argb(c), 0, 0, w, ht, radii);
 		else g_fill_rect(g, rgba_argb(c), 0, 0, w, ht);
 	}
-	if (n->border_width > 0) {
-		rgba bc;
-		if (!wh_resolve(n->border_color, &bc)) bc = H.theme.label;
-		g_stroke_round_rect(g, rgba_argb(bc), n->border_width * k, 0, 0, w, ht, radius);
-	}
+	if (wh_has_border(n)) paint_border(g, n, w, ht, radii);
 	switch (n->kind) {
 	case AK_KIND_IMAGE: wh_paint_image(n, g, w, ht, radius); break;
 	case AK_KIND_SHAPE: wh_paint_shape(n, g); break;
@@ -388,7 +606,7 @@ void wh_paint_own(node *n, HWND hwnd, HDC dc, RECT r) {
 	g_close(g);
 	switch (n->kind) {
 	case KIND_PICTURE: wh_paint_picture(n, dc, false); break;  // drawn behind another view
-	case AK_KIND_TEXT: paint_text(n, dc, r); break;
+	case AK_KIND_TEXT: wh_draw_text(n, dc, r, rgba_ref(wh_text_color(n, H.theme.label))); break;
 	case AK_KIND_SYMBOL: paint_symbol(n, dc, r); break;
 	case AK_KIND_SEGMENTED: wh_paint_segmented(n, dc, NULL, r); break;
 	case KIND_HEADER: wh_paint_header(n, dc, NULL, r); break;

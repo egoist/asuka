@@ -85,7 +85,8 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 変形 | `.rotationEffect`、`.scaleEffect`、`.offset` | `transform` | ✓ `transform: Transform(…)` |
 | 出現と退場のトランジション | `.transition` | entering/exiting | ✓ `transition`（`.opacity`、`.pop`、`.slide`、独自の `Transition(…)`） |
 | フレームごとのアニメーション | `TimelineView(.animation)` | `useFrameCallback` | ✓ `frames()`、`onFrame` |
-| 影、グラデーション、ぼかし | `.shadow`、`LinearGradient`、マテリアル | スタイル、expo-linear-gradient、expo-blur | ✓ `shadow`、`gradient`、`material` |
+| 影、グラデーション、ぼかし | `.shadow`、`LinearGradient`、`RadialGradient`、`AngularGradient`、マテリアル | スタイル、expo-linear-gradient、expo-blur | ✓ `shadow`、`gradient`（`.linear`、`.radial`、`.conic`）、`material` |
+| 角と枠線 | `UnevenRoundedRectangle`、`StrokeStyle` の破線を使った `.strokeBorder` | `borderTopLeftRadius`…、`borderBottomWidth`…、`borderStyle` | ✓ `radius`（`[tl, tr, br, bl]`、`Corners(topStart:...)`）、`border`（`Edges(bottom: 1)`）、`borderStyle`（`.dashed`、`.dotted`） |
 | ジェスチャー | タップ、長押し、ドラッグ、拡大縮小、回転 | Gesture Handler | ✓ `on press`、`on longPress`、`on pan`、`on pinch`、`on rotate`、`on swipe` |
 | ハードウェアキーボードのキー | `.onKeyPress`、`.keyboardShortcut` | `onKeyPress`（`TextInput` のもの。React Native for Windows and macOS では `onKeyDown`） | ✓ `keys`（フォーカスのあるビューから外側へ、コントロールやメニューより先に）、`useKeys`、`WindowKeys`（ウィンドウのもの） |
 | 押下とホバーの状態 | `ButtonStyle` の `isPressed`、`.onHover` | `Pressable` の `pressed`、`onHoverIn`/`onHoverOut` | ✓ `pressed { … }` と `hovered { … }` のバリアント。グループや隣のビューの状態は `Ref` の `pressed` と `hovered` で。`on pressedChange`、`on hoverChange` |
@@ -164,6 +165,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | ライブアクティビティ | ActivityKit | `expo-live-activity` | ✓ `platform/liveactivity`（iOS：ロック画面と Dynamic Island。Android 16 の Live Update。カウントダウン、進捗、アラート、サーバーからの更新のためのプッシュトークン） |
 | App Intents、ショートカット | App Intents、App Shortcuts | — | ✓ `asuka.toml` の `shortcuts`（iOS：Siri のフレーズ付きの App Shortcuts で、Spotlight とショートカットに出る。パラメーターはテキスト、数値、スイッチ、選択肢、アプリ自身のデータ（`platform/shortcuts` のエンティティ）で、選択肢とエンティティはフレーズに入れられる。Android：ランチャーのショートカットで、データ一つにつき一つ） |
 | カスタムフォント | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`、`Font(family:)` |
+| テキストの組み方 | `.tracking`、`.lineSpacing`、`.italic()`、`.monospacedDigit()`、`.smallCaps()`、`.truncationMode`、`.minimumScaleFactor`、`.shadow` | `letterSpacing`、`lineHeight`、`fontStyle`、`fontVariant`、`ellipsizeMode`、`adjustsFontSizeToFit`、`textShadow*` | ✓ `letterSpacing`、`lineHeight`、`Font` の `italic`、`monospacedDigits`、`smallCaps`、`truncation`、`minimumScale`、`textShadow` |
 | ライフサイクル | `scenePhase` | AppState | ✓ `onLifecycle` |
 | 起動画面 | `UILaunchScreen` | `expo-splash-screen` | ✓ `asuka.toml` の `splash`。`platform/splash` で読み込み中は表示を保つ |
 | アプリアイコンの切り替え | `setAlternateIconName` | コミュニティ（`expo-dynamic-app-icon`） | ✓ `asuka.toml` の `alternateIcons`、`platform/appicon` の `set`（iOS のホーム画面。Android のランチャーはアプリが画面から離れたときに切り替わる。Mac の Dock、Windows のウィンドウとタスクバー、Web ページのアイコン。Linux はランチャーが desktop ファイルのアイコンを表示するので不可） |

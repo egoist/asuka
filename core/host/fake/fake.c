@@ -894,23 +894,41 @@ static int64_t trunc_i64(float x) {
 
 // measure_text lays out 8pt characters on 20pt lines, wrapping anywhere
 // (min-content is one character wide).
-static void measure_text(ak_span text, float width, float avail_w, float *w, float *h) {
+// measure_text measures a Text: characters 8 points wide and its
+// letter spacing, on lines 20 points tall or its line height. With a
+// minimum scale, a text wider than its lines (its limit, else one) hold
+// at its width is measured at the scale they'd hold it at, down to the
+// minimum: its characters, spacing and lines all scaled.
+static void measure_text(const ak_fake_view *v, ak_span text, float width, float avail_w, float *w, float *h) {
 	int64_t n = runes(text);
 	if (n == 0) {
 		*w = *h = 0;
 		return;
 	}
+	float ls = (float)ak_fake_float(v, AK_PROP_LETTER_SPACING), lh = (float)ak_fake_float(v, AK_PROP_LINE_HEIGHT);
+	float ms = (float)ak_fake_float(v, AK_PROP_MINIMUM_SCALE);
+	int64_t limit = ak_fake_int(v, AK_PROP_LINE_LIMIT);
+	float cw = 8 + ls, line = lh > 0 ? lh : 20, scale = 1;
+	if (cw < 1) cw = 1;
+	if (ms > 0 && ms < 1) {
+		float room = width == width ? width : fin(avail_w) ? avail_w : AK_INF;
+		float fits = (float)(limit > 0 ? limit : 1) * room;
+		if (fin(room) && (float)n * cw > fits) scale = ak_maxf(ms, fits / ((float)n * cw));
+		if (limit <= 0) limit = 1;
+	}
+	cw *= scale, line *= scale;
 	float tw = width;
 	if (tw != tw) {
-		if (avail_w == -AK_INF) tw = 8;
-		else if (fin(avail_w)) tw = ak_minf((float)(n * 8), ak_maxf(8, truncf(avail_w / 8) * 8));
-		else tw = (float)(n * 8);
+		if (avail_w == -AK_INF) tw = cw;
+		else if (fin(avail_w)) tw = ak_minf((float)n * cw, ak_maxf(cw, truncf(avail_w / cw) * cw));
+		else tw = (float)n * cw;
 	}
-	int64_t per = trunc_i64(tw / 8);
+	int64_t per = trunc_i64(tw / cw + 0.001f);
 	if (per < 1) per = 1;
 	int64_t lines = n / per + (n % per != 0);
+	if (scale < 1 && limit > 0 && lines > limit) lines = limit;
 	*w = tw;
-	*h = (float)(lines * 20);
+	*h = (float)lines * line;
 }
 
 // rich_size measures a RichText as Go's fake does: the paragraphs' text,
@@ -955,14 +973,15 @@ static void rich_size(const ak_fake_view *v, float width, float avail_w, float *
 				if (inline_style.data[st]) inl++;
 			}
 			float tw, th;
-			measure_text((ak_span){(const char *)text.data, (uint32_t)text.len}, width, avail_w, &tw, &th);
+			measure_text(v, (ak_span){(const char *)text.data, (uint32_t)text.len}, width, avail_w, &tw, &th);
 			w = ak_maxf(w, tw);
 			for (uint32_t k = 0; k < inl && first_inline + k < ninl; k++) {
 				ak_reader e = {(const uint8_t *)in.p, in.len, 4 + (size_t)(first_inline + k) * 12 + 8, false};
 				th = ak_maxf(th, ak_read_f32(&e));
 				next++;
 			}
-			h += ak_maxf(th, 20);
+			float lh = (float)ak_fake_float(v, AK_PROP_LINE_HEIGHT);
+			h += ak_maxf(th, lh > 0 ? lh : 20);  // a line, if it's empty
 		}
 		ak_buf_free(&text);
 		ak_vec_free(&inline_style);
@@ -984,7 +1003,7 @@ void ak_fake_measure(ak_fake *f, ak_id id, float width, float height, float avai
 	}
 	float w = 0, h = 0;
 	switch (v->kind) {
-	case AK_KIND_TEXT: measure_text(ak_fake_string(v, AK_PROP_TEXT_TEXT), width, avail_w, &w, &h); break;
+	case AK_KIND_TEXT: measure_text(v, ak_fake_string(v, AK_PROP_TEXT_TEXT), width, avail_w, &w, &h); break;
 	case AK_KIND_BUTTON:
 		w = (float)runes(ak_fake_string(v, AK_PROP_BUTTON_TITLE)) * 8 + 24;
 		h = 44;

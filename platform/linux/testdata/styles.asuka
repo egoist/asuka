@@ -1,0 +1,26 @@
+// The text and look keys the Linux host draws (TestStyles): letter
+// spacing, line height, font variants, truncation, shrinking to fit, a
+// text's shadow, per-corner radii, per-side and dashed borders, radial
+// and conic gradients.
+
+app {
+  Column {
+    padding: 16; gap: 8; align: .start; background: #ffffff
+    Text("Hello") { font: Font(size: 15) }
+    Text("Hello") { font: Font(size: 15); letterSpacing: 4 }
+    Text("Two lines of a long text, forty points apart from each other") { font: Font(size: 15); lineHeight: 40; lines: 2; width: 160 }
+    Text("Two lines of a long text, at its font's own line height") { font: Font(size: 15); lines: 2; width: 160 }
+    Text("A long title that shrinks to fit on one line") { font: Font(size: 15); minimumScale: 0.3; width: 120 }
+    Text("Italic, 12:30, Small Caps") { font: Font(size: 15, italic: true, monospacedDigits: true, smallCaps: true) }
+    Text("Head truncated, a long title that does not fit") { font: Font(size: 15); lines: 1; truncation: .head; width: 120 }
+    Text("Shadowed") { font: Font(size: 20); color: #000000; textShadow: Shadow(color: #ff00ff, radius: 0, x: 3, y: 3) }
+    Row {
+      gap: 16
+      View { width: 60; height: 60; background: #ff0000; radius: [30, 0, 0, 0] }
+      View { width: 60; height: 60; border: 4; borderStyle: .dashed; borderColor: #0000ff }
+      View { width: 60; height: 60; border: Edges(bottom: 6); borderColor: #00ff00 }
+      View { width: 60; height: 60; gradient: Gradient(kind: .radial, stops: [Stop(color: #ffff00, at: 0), Stop(color: #000000, at: 1)]) }
+      View { width: 60; height: 60; gradient: Gradient(kind: .conic, stops: [Stop(color: #00ffff, at: 0), Stop(color: #ff8000, at: 1)]) }
+    }
+  }
+}

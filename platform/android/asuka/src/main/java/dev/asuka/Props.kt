@@ -106,13 +106,18 @@ fun AsukaRuntime.applyText(n: AsukaNode) {
         it.size = n.fontSize
         it.weight = n.fontWeight
         it.family = n.fontFamily
+        it.traits = n.fontTraits
+        it.letterSpacing = n.letterSpacing
+        it.lineHeight = n.lineHeight
         it.color = n.color
         it.invalidateText()
         return
     }
     val tv = n.view as? TextView ?: return
-    if (tv is MaterialButton && n.fontSize == 0f && n.fontWeight == 0 && n.textStyle == 0 && n.fontFamily.isEmpty()) return
-    applyTextStyle(tv, n.textStyle, n.fontSize, n.fontWeight, n.fontFamily)
+    if (tv is MaterialButton && n.fontSize == 0f && n.fontWeight == 0 && n.textStyle == 0 && n.fontFamily.isEmpty() &&
+        n.fontTraits == 0 && n.letterSpacing == 0f) return
+    applyTextStyle(tv, n.textStyle, n.fontSize, n.fontWeight, n.fontFamily, n.fontTraits)
+    applyTextSpacing(n, tv)
     applyColor(n)
 }
 
@@ -159,8 +164,13 @@ private fun AsukaRuntime.appearance(style: Int): AsukaAppearance {
     }
 }
 
-/** Applies a text style, size, weight and font family (an app's font, or the system's). */
-fun AsukaRuntime.applyTextStyle(tv: TextView, style: Int, size: Float = 0f, weight: Int = 0, family: String = "") {
+/**
+ * Applies a text style, size, weight, font family (an app's font, or the
+ * system's) and FontTraits (1 italic, 2 monospaced digits: OpenType's
+ * tnum, 4 small capitals: smcp, with the appearance's features).
+ */
+fun AsukaRuntime.applyTextStyle(tv: TextView, style: Int, size: Float = 0f, weight: Int = 0, family: String = "", traits: Int = 0) {
+    var features: String? = null
     if (tv !is MaterialButton) {
         val a = appearance(style)
         tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, a.size)
@@ -169,15 +179,22 @@ fun AsukaRuntime.applyTextStyle(tv: TextView, style: Int, size: Float = 0f, weig
         tv.setLineSpacing(a.spacingExtra, a.spacingMult)
         a.colors?.let { tv.setTextColor(it) }
         a.hints?.let { tv.setHintTextColor(it) }
-        tv.fontFeatureSettings = a.features
+        features = a.features
+    }
+    if (traits and 6 != 0 || tv !is MaterialButton || tv.fontFeatureSettings != null) {
+        val own = listOfNotNull(features, if (traits and 2 != 0) "'tnum'" else null, if (traits and 4 != 0) "'smcp'" else null)
+        tv.fontFeatureSettings = own.joinToString(", ").ifEmpty { null }
     }
     if (size > 0) tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
     val w = weightOf(weight)
-    val custom = if (family.isNotEmpty()) AsukaFonts.typeface(app, family, w) else null
+    val italic = traits and 1 != 0
+    val custom = if (family.isNotEmpty()) AsukaFonts.typeface(app, family, w, italic) else null
     if (custom != null) {
         tv.typeface = custom
     } else if (w > 0) {
-        tv.typeface = AsukaFonts.weighted(app, tv.typeface, w, false)
+        tv.typeface = AsukaFonts.weighted(app, tv.typeface, w, italic)
+    } else if (italic) {
+        tv.typeface = Typeface.create(tv.typeface, if (tv.typeface?.isBold == true) Typeface.BOLD_ITALIC else Typeface.ITALIC)
     }
 }
 
@@ -276,32 +293,44 @@ fun AsukaRuntime.applyColor(n: AsukaNode) {
     }
 }
 
+/** Whether a view's background needs AsukaBoxDrawable: what a GradientDrawable doesn't draw. */
+private fun boxed(n: AsukaNode) = n.gradient != null || n.cornerRadii != null || n.borderWidths != null || n.borderStyle != AsukaBorderStyle.SOLID
+
 fun AsukaRuntime.applyBackground(n: AsukaNode) {
-    if (n.background == 0L && n.cornerRadius == 0f && n.borderWidth == 0f && n.gradient == null && n.material == 0) return
+    if (n.background == 0L && n.cornerRadius == 0f && n.borderWidth == 0f && n.gradient == null && n.material == 0 &&
+        n.cornerRadii == null && n.borderWidths == null && n.borderStyle == AsukaBorderStyle.SOLID && n.view.background !is AsukaBoxDrawable) return
     if (n.view is MaterialButton) {
         val b = n.view as MaterialButton
         if (n.background != 0L) b.backgroundTintList = ColorStateList.valueOf(color(n.background))
-        if (n.cornerRadius > 0) b.cornerRadius = Math.round(n.cornerRadius * density)
+        val radii = n.cornerRadii
+        if (radii != null) {
+            val d = density
+            b.shapeAppearanceModel = b.shapeAppearanceModel.toBuilder()
+                .setTopLeftCornerSize(radii[0] * d).setTopRightCornerSize(radii[1] * d)
+                .setBottomRightCornerSize(radii[2] * d).setBottomLeftCornerSize(radii[3] * d).build()
+        } else if (n.cornerRadius > 0) b.cornerRadius = Math.round(n.cornerRadius * density)
         return
     }
     // A material, which Android can't blur behind: the surface, translucent.
     val toColor = if (n.background == 0L && n.material != 0) materialColor(n.material) else color(n.background)
     val toRadius = n.cornerRadius * density
     // Media (pictures, videos) clips to its corners, as on iOS.
-    if (n.view is android.widget.ImageView || n.view is AsukaVideo) n.view.clipToOutline = n.cornerRadius > 0
-    val old = n.view.background as? GradientDrawable
-    val g = n.gradient
-    if (g != null) {
-        // Over the background color: a GradientDrawable fills one or the other.
+    if (n.view is android.widget.ImageView || n.view is AsukaVideo) n.view.clipToOutline = n.cornerRadius > 0 || n.cornerRadii != null
+    if (boxed(n)) {
+        // Per-corner radii, per-side or dashed borders, gradients: drawn
+        // by its own drawable, kept (and told only what changed).
         n.backgroundAnimator?.cancel()
-        val d = GradientDrawable(g.orientation(), g.colors)
-        // Before Android 10 a GradientDrawable takes no offsets: its colors are spaced evenly, so it gets the stops resampled.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) d.setColors(g.colors, g.offsets) else d.setColors(g.evenColors())
-        d.cornerRadius = toRadius
-        if (n.borderWidth > 0) d.setStroke(Math.round(n.borderWidth * density), color(n.borderColor, Color.GRAY))
-        n.view.background = d
+        val d = density
+        val radii = FloatArray(4)
+        val widths = FloatArray(4)
+        n.cornerRadii?.let { for (i in 0..3) radii[i] = it[i] * d } ?: radii.fill(toRadius)
+        n.borderWidths?.let { for (i in 0..3) widths[i] = it[i] * d } ?: widths.fill(n.borderWidth * d)
+        val box = n.view.background as? AsukaBoxDrawable ?: AsukaBoxDrawable().also { n.view.background = it }
+        box.set(toColor, n.gradient, radii, widths, color(n.borderColor, Color.GRAY), n.borderStyle)
+        n.view.invalidateOutline()
         return
     }
+    val old = n.view.background as? GradientDrawable
     if (old != null && animates(n.view)) {
         if (n.borderWidth > 0) old.setStroke(Math.round(n.borderWidth * density), color(n.borderColor, Color.GRAY))
         animateBackground(n, old, old.color?.defaultColor ?: toColor, toColor, old.cornerRadius, toRadius)
@@ -419,10 +448,8 @@ fun AsukaRuntime.propInt(id: Int, prop: Int, v: Long) {
         (n.view as? EditText)?.let { setMultiline(n, it, true) }
         return
     }
-    if (prop == AsukaProp.LINE_LIMIT) (n.view as? TextView)?.let {
-        it.maxLines = if (v > 0) v.toInt() else Int.MAX_VALUE
-        it.ellipsize = if (v > 0) android.text.TextUtils.TruncateAt.END else null
-    }
+    if (prop == AsukaProp.LINE_LIMIT) (n.view as? TextView)?.let { applyLineLimit(n, it) }
+    if (prop == AsukaProp.FONT_TRAITS) { n.fontTraits = v.toInt(); applyText(n) }
 }
 
 fun AsukaRuntime.propFloat(id: Int, prop: Int, v: Double) {
@@ -440,6 +467,9 @@ fun AsukaRuntime.propFloat(id: Int, prop: Int, v: Double) {
             else { stopRepeating(n.view, View.ALPHA); n.view.alpha = v.toFloat() }
         }
         AsukaProp.FONT_SIZE -> { n.fontSize = v.toFloat(); applyText(n) }
+        AsukaProp.LETTER_SPACING -> { n.letterSpacing = v.toFloat(); applyText(n) }
+        AsukaProp.LINE_HEIGHT -> { n.lineHeight = v.toFloat(); applyText(n) }
+        AsukaProp.MINIMUM_SCALE -> (n.view as? AsukaText)?.let { it.minScale = v.toFloat(); applyLineLimit(n, it) }
         else -> if (setNavProp(n, prop, v)) {
             // A popover's or a keyboard bar's size.
         } else if (n.kind == AsukaKind.LIST && prop == AsukaProp.List.GAP) {
@@ -500,7 +530,7 @@ fun AsukaRuntime.propString(id: Int, prop: Int, v: String) {
             applyText(n)
         }
         else -> if (!setNavProp(n, prop, v)) when (n.kind) {
-            AsukaKind.TEXT -> if (prop == AsukaProp.Text.TEXT) (view as TextView).text = v
+            AsukaKind.TEXT -> if (prop == AsukaProp.Text.TEXT) { if (view is AsukaText) view.setContent(v) else (view as TextView).text = v }
             AsukaKind.BUTTON -> when (prop) {
                 AsukaProp.Button.TITLE -> { (view as TextView).text = v; (view as? MaterialButton)?.let { iconPadding(n, it) } }
                 AsukaProp.Button.ICON -> setButtonIcon(n, view as MaterialButton, v)
@@ -564,6 +594,8 @@ fun AsukaRuntime.propEnum(id: Int, prop: Int, v: Int) {
     when (prop) {
         AsukaProp.TEXT_STYLE -> { n.textStyle = v; applyText(n) }
         AsukaProp.FONT_WEIGHT -> { n.fontWeight = v; applyText(n) }
+        AsukaProp.TRUNCATION -> (view as? TextView)?.let { applyLineLimit(n, it) }
+        AsukaProp.BORDER_STYLE -> { n.borderStyle = v; applyBackground(n) }
         AsukaProp.MENU_TRIGGER -> { n.menuTrigger = v; wirePresses(n) }
         AsukaProp.LAYOUT_DIRECTION -> view.layoutDirection = directionOf(n)
         AsukaProp.TEXT_ALIGN -> if (view is AsukaRichText) { view.align = v; view.invalidateText() } else (view as? TextView)?.let {

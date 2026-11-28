@@ -169,7 +169,7 @@ import AsukaOps
         case .text:
             if p == AsukaProp.Text.text {
                 n.text = v.string
-                (n.view as? NSTextField)?.stringValue = v.string
+                if styledText(n) { applyStyledText(n) } else { (n.view as? NSTextField)?.stringValue = v.string }
             }
         case .button:
             guard let b = n.view as? NSButton else { return }

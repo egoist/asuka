@@ -5,9 +5,9 @@
 // its prop if it changed.
 //
 // Values are rt values (lang/LOWERING.md): a Length packs its unit in
-// bits 32-39 and its float32 value in bits 0-31; Edges, Font, Transform,
-// Shadow, Gradient, Transition and Grid are structs in types.asuka's
-// field order; Track and GridLine are enums with payloads.
+// bits 32-39 and its float32 value in bits 0-31; Edges, Corners, Font,
+// Transform, Shadow, Gradient, Transition and Grid are structs in
+// types.asuka's field order; Track and GridLine are enums with payloads.
 #include "ui/ui_ext.h"
 #include <stddef.h>
 #include "ui/ui_int.h"
@@ -81,6 +81,27 @@ static void edges(const ak_struct *s, bool rtl, float out[4]) {
 	float start = (float)s->f[4].f, end = (float)s->f[5].f;
 	if (start != 0) out[rtl ? 1 : 3] = start;
 	if (end != 0) out[rtl ? 3 : 1] = end;
+}
+
+// corners are e's corner radii (top left, top right, bottom right,
+// bottom left) from a Corners (those, then topStart, topEnd,
+// bottomStart, bottomEnd), the logical ones on the sides they are in
+// direction rtl.
+static void corners(const ak_struct *s, bool rtl, float out[4]) {
+	out[0] = out[1] = out[2] = out[3] = 0;
+	if (!s) return;
+	for (int i = 0; i < 4; i++) out[i] = (float)s->f[i].f;
+	float ts = (float)s->f[4].f, te = (float)s->f[5].f, bs = (float)s->f[6].f, be = (float)s->f[7].f;
+	if (ts != 0) out[rtl ? 1 : 0] = ts;
+	if (te != 0) out[rtl ? 0 : 1] = te;
+	if (bs != 0) out[rtl ? 2 : 3] = bs;
+	if (be != 0) out[rtl ? 3 : 2] = be;
+}
+
+static bool box_zero(const ak_struct *s, int n) {
+	for (int i = 0; s && i < n; i++)
+		if (s->f[i].f != 0) return false;
+	return true;
 }
 
 static uint8_t align_of(int64_t a) {
@@ -244,7 +265,9 @@ void ak_style_layout(ak_view *e, ak_lstyle *l) {
 	l->padding = (ak_lrect){ak_lpt(pad[0]), ak_lpt(pad[1]), ak_lpt(pad[2]), ak_lpt(pad[3])};
 	edges(lk_struct(k, AK_KEY_MARGIN), rtl, mar);
 	l->margin = (ak_lrect){ak_lpt(mar[0]), ak_lpt(mar[1]), ak_lpt(mar[2]), ak_lpt(mar[3])};
-	l->border = ak_lrect_all(ak_lpt(lk_float(k, AK_KEY_BORDER)));
+	float bor[4];
+	edges(lk_struct(k, AK_KEY_BORDER), rtl, bor);
+	l->border = (ak_lrect){ak_lpt(bor[0]), ak_lpt(bor[1]), ak_lpt(bor[2]), ak_lpt(bor[3])};
 	l->width = ak_length(lk_int(k, AK_KEY_WIDTH));
 	l->height = ak_length(lk_int(k, AK_KEY_HEIGHT));
 	l->min_width = ak_length(lk_int(k, AK_KEY_MIN_WIDTH));
@@ -306,7 +329,19 @@ static bool is_layout(uint16_t key) {
 	return (key >= AK_KEY_DIRECTION && key <= AK_KEY_GRID_ROW) || key == AK_KEY_BORDER || key == AK_KEY_CLIP;
 }
 
-static bool is_text(uint16_t key) { return key == AK_KEY_FONT || key == AK_KEY_LINES || key == AK_KEY_TEXT_ALIGN; }
+// is_text reports a text key that changes a text's size: the text is
+// measured again.
+static bool is_text(uint16_t key) {
+	switch (key) {
+	case AK_KEY_FONT:
+	case AK_KEY_LINES:
+	case AK_KEY_LETTER_SPACING:
+	case AK_KEY_LINE_HEIGHT:
+	case AK_KEY_MINIMUM_SCALE:
+		return true;
+	}
+	return false;
+}
 
 // makes_real reports whether a container with key set to v needs a view
 // of its own: a look, or an accessibility prop.
@@ -317,9 +352,8 @@ static bool makes_real(uint16_t key, ak_val v) {
 	case AK_KEY_MATERIAL:
 	case AK_KEY_ROLE:
 		return v.i != 0;
-	case AK_KEY_RADIUS:
-	case AK_KEY_BORDER:
-		return v.f != 0;
+	case AK_KEY_RADIUS: return !box_zero(v.p, 8);
+	case AK_KEY_BORDER: return !box_zero(v.p, 6);
 	case AK_KEY_OPACITY:
 		return v.f != 1;
 	case AK_KEY_HIDDEN:
@@ -361,6 +395,42 @@ static void put_u64(uint8_t *p, uint64_t v) {
 	for (int i = 0; i < 8; i++) p[i] = (uint8_t)(v >> (8 * i));
 }
 
+// send_box sends four physical values now (a corner's radii, a side's
+// border widths), was before (NULL: none sent): when they're the same,
+// as the one value of uniform (and sides as none, if they were sent);
+// else as sides (and uniform as 0, if it was sent).
+static void send_box(ak_view *e, ak_prop uniform, ak_prop sides, const float now[4], const float *was) {
+	ak_batch *b = e->r->batch;
+	bool nu = now[0] == now[1] && now[1] == now[2] && now[2] == now[3];
+	bool wu = !was || (was[0] == was[1] && was[1] == was[2] && was[2] == was[3]);
+	float wv = was && wu ? was[0] : 0;
+	if (nu) {
+		if (!wu) ak_batch_set_edges(b, e->id, sides, 0, 0, 0, 0);
+		if (!was || !wu || now[0] != wv) ak_batch_set_float(b, e->id, uniform, now[0]);
+	} else {
+		if (wv != 0) ak_batch_set_float(b, e->id, uniform, 0);
+		ak_batch_set_edges(b, e->id, sides, now[0], now[1], now[2], now[3]);
+	}
+}
+
+// send_shadow sends a Shadow (color, radius, x, y): u64 color, f32 blur
+// radius, offset x, y.
+static void send_shadow(ak_view *e, ak_prop p, const ak_struct *s) {
+	uint8_t buf[20] = {0};
+	if (s) {
+		put_u64(buf, (uint64_t)s->f[0].i);
+		put_f32(buf + 8, (float)s->f[1].f), put_f32(buf + 12, (float)s->f[2].f), put_f32(buf + 16, (float)s->f[3].f);
+	}
+	ak_batch_set_bytes(e->r->batch, e->id, p, buf, sizeof buf);
+}
+
+// font_traits are a Font's variants (italic, monospacedDigits,
+// smallCaps) as FontTraits' bits.
+static int64_t font_traits(const ak_struct *f) {
+	if (!f) return 0;
+	return (f->f[4].i ? 1 : 0) | (f->f[5].i ? 2 : 0) | (f->f[6].i ? 4 : 0);
+}
+
 static void send_string(ak_view *e, ak_prop p, const ak_val *v) {
 	const ak_str *s = v ? v->p : NULL;
 	ak_batch_set_string(e->r->batch, e->id, p, s ? s->data : "", s ? s->len : 0);
@@ -376,9 +446,24 @@ static void send(ak_view *e, uint16_t key, const ak_val *v, const ak_val *prev) 
 	ak_val x = v ? *v : zero;
 	switch (key) {
 	case AK_KEY_BACKGROUND: ak_batch_set_color(b, id, AK_PROP_BACKGROUND, (ak_color)x.i); break;
-	case AK_KEY_RADIUS: ak_batch_set_float(b, id, AK_PROP_CORNER_RADIUS, x.f); break;
-	case AK_KEY_BORDER: ak_batch_set_float(b, id, AK_PROP_BORDER_WIDTH, x.f); break;
+	case AK_KEY_RADIUS: {
+		bool rtl = ak_view_rtl(e);
+		float now[4], was[4];
+		corners(x.p, rtl, now);
+		if (prev) corners(prev->p, rtl, was);
+		send_box(e, AK_PROP_CORNER_RADIUS, AK_PROP_CORNER_RADII, now, prev ? was : NULL);
+		break;
+	}
+	case AK_KEY_BORDER: {
+		bool rtl = ak_view_rtl(e);
+		float now[4], was[4];
+		edges(x.p, rtl, now);
+		if (prev) edges(prev->p, rtl, was);
+		send_box(e, AK_PROP_BORDER_WIDTH, AK_PROP_BORDER_WIDTHS, now, prev ? was : NULL);
+		break;
+	}
 	case AK_KEY_BORDER_COLOR: ak_batch_set_color(b, id, AK_PROP_BORDER_COLOR, (ak_color)x.i); break;
+	case AK_KEY_BORDER_STYLE: ak_batch_set_enum(b, id, AK_PROP_BORDER_STYLE, (int32_t)x.i); break;
 	case AK_KEY_OPACITY: ak_batch_set_float(b, id, AK_PROP_OPACITY, v ? x.f : 1); break;
 	case AK_KEY_HIDDEN: ak_batch_set_bool(b, id, AK_PROP_HIDDEN, x.i != 0); break;
 	case AK_KEY_CLIP: ak_batch_set_bool(b, id, AK_PROP_CLIP, x.i != 0); break;
@@ -397,30 +482,26 @@ static void send(ak_view *e, uint16_t key, const ak_val *v, const ak_val *prev) 
 		ak_batch_set_bytes(b, id, AK_PROP_TRANSFORM, buf, sizeof buf);
 		break;
 	}
-	case AK_KEY_SHADOW: {
-		const ak_struct *s = x.p;
-		uint8_t buf[20] = {0};
-		if (s) {
-			put_u64(buf, (uint64_t)s->f[0].i);
-			put_f32(buf + 8, (float)s->f[1].f), put_f32(buf + 12, (float)s->f[2].f), put_f32(buf + 16, (float)s->f[3].f);
-		}
-		ak_batch_set_bytes(b, id, AK_PROP_SHADOW, buf, sizeof buf);
-		break;
-	}
+	case AK_KEY_SHADOW: send_shadow(e, AK_PROP_SHADOW, x.p); break;
 	case AK_KEY_GRADIENT: {
 		// u32 n, per color u64 color and f32 location, then f32 start x, y,
-		// end x, y.
+		// end x, y, u8 kind, f32 center x, y, radius, angle: the Gradient's
+		// fields (stops, startX, startY, endX, endY, kind, centerX,
+		// centerY, radius, angle) in order. None: empty.
 		const ak_struct *g = x.p;
 		ak_buf *out = ak_batch_set_bytes_begin(b, id, AK_PROP_GRADIENT);
-		const ak_arr *stops = g ? g->f[0].p : NULL;
-		ak_buf_u32(out, stops ? stops->len : 0);
-		for (uint32_t i = 0; stops && i < stops->len; i++) {
-			const ak_struct *st = ak_arr_vals(stops)[i].p;
-			ak_buf_u64(out, (uint64_t)st->f[0].i);
-			ak_buf_f32(out, (float)st->f[1].f);
-		}
-		if (g)
+		if (g) {
+			const ak_arr *stops = g->f[0].p;
+			ak_buf_u32(out, stops ? stops->len : 0);
+			for (uint32_t i = 0; stops && i < stops->len; i++) {
+				const ak_struct *st = ak_arr_vals(stops)[i].p;
+				ak_buf_u64(out, (uint64_t)st->f[0].i);
+				ak_buf_f32(out, (float)st->f[1].f);
+			}
 			for (int i = 1; i <= 4; i++) ak_buf_f32(out, (float)g->f[i].f);
+			ak_buf_u8(out, (uint8_t)g->f[5].i);
+			for (int i = 6; i <= 9; i++) ak_buf_f32(out, (float)g->f[i].f);
+		}
 		ak_batch_set_bytes_end(b);
 		break;
 	}
@@ -450,6 +531,8 @@ static void send(ak_view *e, uint16_t key, const ak_val *v, const ak_val *prev) 
 		if (!ak_obj_eq((const ak_obj *)fam, (const ak_obj *)ofam) && (fam ? fam->len : 0) + (ofam ? ofam->len : 0) > 0)
 			ak_batch_set_string(b, id, AK_PROP_FONT_FAMILY, fam ? fam->data : "", fam ? fam->len : 0);
 		if (wt != owt) ak_batch_set_enum(b, id, AK_PROP_FONT_WEIGHT, (int32_t)wt);
+		int64_t tr = font_traits(f), otr = font_traits(o);
+		if (tr != otr) ak_batch_set_int(b, id, AK_PROP_FONT_TRAITS, tr);
 		break;
 	}
 	case AK_KEY_TEXT_ALIGN:
@@ -457,6 +540,21 @@ static void send(ak_view *e, uint16_t key, const ak_val *v, const ak_val *prev) 
 		break;
 	case AK_KEY_LINES:
 		if (text) ak_batch_set_int(b, id, AK_PROP_LINE_LIMIT, x.i);
+		break;
+	case AK_KEY_LETTER_SPACING:
+		if (text) ak_batch_set_float(b, id, AK_PROP_LETTER_SPACING, x.f);
+		break;
+	case AK_KEY_LINE_HEIGHT:
+		if (text) ak_batch_set_float(b, id, AK_PROP_LINE_HEIGHT, x.f);
+		break;
+	case AK_KEY_TRUNCATION:
+		if (text) ak_batch_set_enum(b, id, AK_PROP_TRUNCATION, (int32_t)x.i);
+		break;
+	case AK_KEY_MINIMUM_SCALE:
+		if (text) ak_batch_set_float(b, id, AK_PROP_MINIMUM_SCALE, x.f);
+		break;
+	case AK_KEY_TEXT_SHADOW:
+		if (text) send_shadow(e, AK_PROP_TEXT_SHADOW, x.p);
 		break;
 	case AK_KEY_LABEL: send_string(e, AK_PROP_A11Y_LABEL, v); break;
 	case AK_KEY_HINT: send_string(e, AK_PROP_A11Y_HINT, v); break;
@@ -500,8 +598,11 @@ static bool is_zero(uint16_t key, ak_val v) {
 		if (key == AK_KEY_FONT) {
 			const ak_struct *f = v.p;
 			const ak_str *fam = f->f[3].p;
-			return f->f[0].i == 0 && f->f[1].f == 0 && f->f[2].i == 0 && (!fam || fam->len == 0);
+			return f->f[0].i == 0 && f->f[1].f == 0 && f->f[2].i == 0 && (!fam || fam->len == 0) && font_traits(f) == 0;
 		}
+		// A radius or border of 0 on every side is none.
+		if (key == AK_KEY_RADIUS) return box_zero(v.p, 8);
+		if (key == AK_KEY_BORDER) return box_zero(v.p, 6);
 		return false;
 	}
 	default: return v.i == 0;
@@ -558,7 +659,28 @@ void ak_style_set(ak_view *e, uint16_t key, ak_val v) {
 		} else {
 			send(e, key, &v, had ? &prev : NULL);
 		}
-		if (is_text(key) && key != AK_KEY_TEXT_ALIGN && (e->cls->flags & AK_ELF_TEXT)) ak_view_remeasure(e);
+		if (is_text(key) && (e->cls->flags & AK_ELF_TEXT)) ak_view_remeasure(e);
 	}
 	ak_release_val(prev, k);
+}
+
+// ak_style_dir_changed sends e's radius and border again in its new
+// direction, when they have logical corners or sides: what was sent was
+// the other direction's.
+void ak_style_dir_changed(ak_view *e) {
+	if (!e->real) return;
+	bool rtl = ak_view_rtl(e);
+	float now[4], was[4];
+	const ak_val *v = ak_style_get(e, AK_KEY_RADIUS);
+	const ak_struct *s = v ? v->p : NULL;
+	if (s && (s->f[4].f != 0 || s->f[5].f != 0 || s->f[6].f != 0 || s->f[7].f != 0)) {
+		corners(s, rtl, now), corners(s, !rtl, was);
+		send_box(e, AK_PROP_CORNER_RADIUS, AK_PROP_CORNER_RADII, now, was);
+	}
+	v = ak_style_get(e, AK_KEY_BORDER);
+	s = v ? v->p : NULL;
+	if (s && (s->f[4].f != 0 || s->f[5].f != 0)) {
+		edges(s, rtl, now), edges(s, !rtl, was);
+		send_box(e, AK_PROP_BORDER_WIDTH, AK_PROP_BORDER_WIDTHS, now, was);
+	}
 }

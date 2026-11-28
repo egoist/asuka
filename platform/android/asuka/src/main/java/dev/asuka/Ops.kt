@@ -144,6 +144,15 @@ object AsukaProp {
     const val A11Y_CONTROLS = 48
     const val A11Y_LABELLED_BY = 49
     const val A11Y_DESCRIBED_BY = 50
+    const val LETTER_SPACING = 51
+    const val LINE_HEIGHT = 52
+    const val FONT_TRAITS = 53
+    const val TEXT_SHADOW = 54
+    const val TRUNCATION = 55
+    const val MINIMUM_SCALE = 56
+    const val CORNER_RADII = 57
+    const val BORDER_WIDTHS = 58
+    const val BORDER_STYLE = 59
 
     object View {
         const val DROP_ACCEPT = 64
@@ -637,6 +646,25 @@ object AsukaTextAlign {
     const val CENTER = 1
     const val END = 2
     const val JUSTIFY = 3
+}
+
+object AsukaTruncation {
+    const val TAIL = 0
+    const val HEAD = 1
+    const val MIDDLE = 2
+    const val CLIP = 3
+}
+
+object AsukaBorderStyle {
+    const val SOLID = 0
+    const val DASHED = 1
+    const val DOTTED = 2
+}
+
+object AsukaGradientKind {
+    const val LINEAR = 0
+    const val RADIAL = 1
+    const val CONIC = 2
 }
 
 object AsukaLayoutDirection {

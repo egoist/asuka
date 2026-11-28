@@ -31,10 +31,8 @@ import AsukaOps
         guard let n = nodes[id] else { return .zero }
         var s: CGSize
         switch n.kind {
-        case .text:
-            s = n.text.isEmpty ? .zero : AsukaMeasure.text(attributed(n.text, AsukaFonts.font(of: n)), w, aw, lines: n.lineLimit)
-        case .richText:
-            s = n.runs.isEmpty ? .zero : AsukaMeasure.text(attributed(n.runs), w, aw, lines: n.lineLimit)
+        case .text, .richText:
+            s = n.text.isEmpty && n.runs.isEmpty ? .zero : AsukaMeasure.text(n, w, aw)
         case .image:
             s = n.image.map { CGSize(width: CGFloat($0.width) / scale, height: CGFloat($0.height) / scale) } ?? .zero
         case .button, .toggle, .stepper, .symbol, .activity, .progressRing, .pageControl, .datePicker, .native:
@@ -85,33 +83,45 @@ import AsukaOps
         guard n.kind == .button, !(AsukaButtonVariant(rawValue: n.variant) == .plain && n.background != 0) else { return nil }
         return AsukaMeasure.widest(n)
     }
-
-    private func attributed(_ s: String, _ font: CTFont) -> NSAttributedString {
-        NSAttributedString(string: s, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
-    }
-
-    private func attributed(_ runs: [AsukaRichRun]) -> NSAttributedString {
-        let out = NSMutableAttributedString()
-        for r in runs { out.append(attributed(r.text, r.font)) }
-        return out
-    }
 }
 
 @MainActor enum AsukaMeasure {
+    /// A Text's or RichText's size as it's typeset (Typeset.swift): its
+    /// fonts, letter spacing and line height, at the scale MinimumScale
+    /// finds at its width (its min-content: the minimum's widest word).
+    static func text(_ n: AsukaNode, _ w: Float, _ aw: Float) -> CGSize {
+        let room: CGFloat = !w.isNaN ? CGFloat(w) : aw.isFinite ? CGFloat(Swift.max(aw, 0)) : .infinity
+        var scale = AsukaTypeset.scale(n, width: room)
+        if w.isNaN, aw == -.infinity, AsukaTypeset.shrinks(n) { scale = n.minimumScale }
+        let s = AsukaTypeset.attributed(n, scale)
+        let lines = AsukaTypeset.lines(n)
+        var size = text(s, w, aw, lines: lines)
+        let extra = AsukaTypeset.extra(n, scale)
+        if extra > 0 {
+            // Each line its height: the font's and the extra room
+            // (between lines, and half above the first and below the
+            // last).
+            var count = AsukaTypeset.lineCount(s, width(s, w, aw))
+            if lines > 0 { count = Swift.min(count, lines) }
+            size.height = CGFloat(count) * (AsukaTypeset.natural(AsukaTypeset.font(n, scale)) + extra)
+        }
+        return size
+    }
+
+    /// The width a text is laid out in: a known width w, or the width
+    /// available (aw: +inf max-content, -inf min-content).
+    static func width(_ s: NSAttributedString, _ w: Float, _ aw: Float) -> CGFloat {
+        if !w.isNaN { return CGFloat(w) }
+        if aw == .infinity { return .greatestFiniteMagnitude }
+        if aw == -.infinity { return widestWord(s) }
+        return CGFloat(Swift.max(aw, 0))
+    }
+
     /// A text's size: at a known width w, or the width available (aw:
     /// +inf max-content, -inf min-content), at most lines lines (0: any).
     static func text(_ s: NSAttributedString, _ w: Float, _ aw: Float, lines: Int) -> CGSize {
         let big = CGFloat.greatestFiniteMagnitude
-        let width: CGFloat
-        if !w.isNaN {
-            width = CGFloat(w)
-        } else if aw == .infinity {
-            width = big
-        } else if aw == -.infinity {
-            width = widestWord(s)
-        } else {
-            width = CGFloat(Swift.max(aw, 0))
-        }
+        let width = width(s, w, aw)
         let fs = CTFramesetterCreateWithAttributedString(s as CFAttributedString)
         var size = CTFramesetterSuggestFrameSizeWithConstraints(fs, CFRange(location: 0, length: 0), nil, CGSize(width: width, height: big), nil)
         if lines > 0 {
@@ -152,6 +162,7 @@ import AsukaOps
         var variant: Int32
         var font: CGFloat
         var weight: Int32
+        var traits: Int
     }
 
     /// The widest buttons are drawn, by look: measured once each.
@@ -160,7 +171,7 @@ import AsukaOps
     /// The widest SwiftUI draws a button, whatever it's proposed: its
     /// width proposed more than any screen.
     static func widest(_ n: AsukaNode) -> CGFloat {
-        let look = ButtonLook(title: n.title, icon: n.icon, variant: n.variant, font: CTFontGetSize(AsukaFonts.font(of: n)), weight: n.fontWeight)
+        let look = ButtonLook(title: n.title, icon: n.icon, variant: n.variant, font: CTFontGetSize(AsukaFonts.font(of: n)), weight: n.fontWeight, traits: n.fontTraits)
         if let w = widestButtons[look] { return w }
         if widestButtons.count >= 256 { widestButtons.removeAll() }
         let w = control(n, width: 10_000).width

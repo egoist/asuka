@@ -1,8 +1,9 @@
 // measure.c: the shared measure cache. Nodes showing the
 // same thing (recycled list rows, repeated labels) ask the host once: a
 // measurement is keyed by the kind, the text or title, the variant, the
-// font, the line limit, the font scale, the scale, whether it's inset
-// and the constraints. Two generations bound it: when the current one is
+// font (its variants too), the line limit, the letter spacing, the line
+// height, the minimum scale, the font scale, the scale, whether it's
+// inset and the constraints. Two generations bound it: when the current one is
 // full it becomes the old one, and hits in the old one move back. Its
 // tables are made once: looking up and storing allocate nothing.
 #include "ui/ui_int.h"
@@ -24,8 +25,15 @@ uint32_t ak_mkey_hash(const ak_mkey *k) {
 	h = mix(h, str_hash(k->family));
 	h = mix(h, (uint32_t)k->font_style);
 	h = mix(h, (uint32_t)k->font_weight);
+	h = mix(h, (uint32_t)k->font_traits);
 	uint32_t u;
 	memcpy(&u, &k->font_size, 4);
+	h = mix(h, u);
+	memcpy(&u, &k->letter_spacing, 4);
+	h = mix(h, u);
+	memcpy(&u, &k->line_height, 4);
+	h = mix(h, u);
+	memcpy(&u, &k->min_scale, 4);
 	h = mix(h, u);
 	h = mix(h, (uint32_t)k->lines);
 	memcpy(&u, &k->font_scale, 4);
@@ -54,7 +62,9 @@ static bool str_same(const ak_str *a, const ak_str *b) {
 
 static bool key_eq(const ak_mkey *a, const ak_mkey *b) {
 	return a->kind == b->kind && a->variant == b->variant && a->font_style == b->font_style && a->font_weight == b->font_weight &&
-	       memcmp(&a->font_size, &b->font_size, 4) == 0 && a->lines == b->lines && memcmp(&a->font_scale, &b->font_scale, 4) == 0 &&
+	       a->font_traits == b->font_traits && memcmp(&a->font_size, &b->font_size, 4) == 0 &&
+	       memcmp(&a->letter_spacing, &b->letter_spacing, 4) == 0 && memcmp(&a->line_height, &b->line_height, 4) == 0 &&
+	       memcmp(&a->min_scale, &b->min_scale, 4) == 0 && a->lines == b->lines && memcmp(&a->font_scale, &b->font_scale, 4) == 0 &&
 	       memcmp(&a->scale, &b->scale, 4) == 0 && a->inset == b->inset && memcmp(a->c, b->c, sizeof a->c) == 0 &&
 	       str_same(a->text, b->text) && str_same(a->text2, b->text2) && str_same(a->family, b->family);
 }

@@ -208,6 +208,7 @@ font_spec wh_spec(int32_t style, int32_t weight, float size, const char *family)
 font_spec wh_node_spec(const node *n) {
 	font_spec s = wh_spec(n->text_style, n->font_weight, n->font_size, n->font_family);
 	s.k = wh_scale_of(n);
+	s.italic = (n->font_traits & 1) != 0;  // FontTraits' italic: the face's (GDI slants one that has none)
 	return s;
 }
 

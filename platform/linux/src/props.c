@@ -162,10 +162,54 @@ void lx_set_common(node *n, ak_prop p, const ak_value *v) {
 		n->corner_radius = (float)v->f;
 		lx_queue_draw(n);
 		break;
+	case AK_PROP_CORNER_RADII:
+		memcpy(n->corner_radii, v->edges, sizeof n->corner_radii);
+		lx_queue_draw(n);
+		break;
 	case AK_PROP_BORDER_WIDTH:
 		n->border_width = (float)v->f;
 		lx_queue_draw(n);
 		break;
+	case AK_PROP_BORDER_WIDTHS:
+		memcpy(n->border_widths, v->edges, sizeof n->border_widths);
+		lx_queue_draw(n);
+		break;
+	case AK_PROP_BORDER_STYLE:
+		n->border_style = (int32_t)v->i;
+		lx_queue_draw(n);
+		break;
+	case AK_PROP_LETTER_SPACING:
+		n->letter_spacing = (float)v->f;
+		lx_apply_text(n);
+		break;
+	case AK_PROP_LINE_HEIGHT:
+		n->line_height = (float)v->f;
+		lx_apply_text(n);
+		break;
+	case AK_PROP_FONT_TRAITS:
+		n->font_traits = (int32_t)v->i;
+		lx_apply_text(n);
+		break;
+	case AK_PROP_TRUNCATION:
+		n->truncation = (int32_t)v->i;
+		lx_apply_text(n);
+		break;
+	case AK_PROP_MINIMUM_SCALE:
+		n->min_scale = (float)v->f;
+		n->text_scale = 0;
+		lx_text_frame(n);
+		lx_apply_text(n);
+		break;
+	case AK_PROP_TEXT_SHADOW: {
+		ak_reader r = {(const uint8_t *)v->s.p, v->s.len, 0, false};
+		n->text_shadow.color = ak_read_u64(&r);
+		n->text_shadow.blur = ak_read_f32(&r);
+		n->text_shadow.dx = ak_read_f32(&r);
+		n->text_shadow.dy = ak_read_f32(&r);
+		if (r.err) n->text_shadow = (shadow_t){0};
+		lx_queue_draw(n);
+		break;
+	}
 	case AK_PROP_BORDER_COLOR:
 		n->border_color = (ak_color)v->i;
 		lx_queue_draw(n);
@@ -272,6 +316,15 @@ void lx_set_common(node *n, ak_prop p, const ak_value *v) {
 			ak_vec_push(&n->gradient, s);
 		}
 		for (int i = 0; i < 4; i++) n->gradient_line[i] = ak_read_f32(&r);
+		// Its kind, center, radius and angle; a linear one without them.
+		n->gradient_kind = AK_GRADIENT_KIND_LINEAR;
+		if (r.off + 17 <= r.len) {
+			n->gradient_kind = ak_read_u8(&r);
+			n->gradient_center[0] = ak_read_f32(&r);
+			n->gradient_center[1] = ak_read_f32(&r);
+			n->gradient_radius = ak_read_f32(&r);
+			n->gradient_angle = ak_read_f32(&r);
+		}
 		lx_queue_draw(n);
 		break;
 	}
@@ -371,22 +424,83 @@ const char *lx_family(node *n) {
 }
 
 // lx_attrs are a node's text props as Pango attributes: its font's
-// family, size and weight, and its color.
-PangoAttrList *lx_attrs(node *n, bool with_color) {
+// family, size, weight and variants, its letter spacing and line height,
+// and its color; at the scale MinimumScale shrank it to.
+PangoAttrList *lx_attrs(node *n, bool with_color) { return lx_attrs_at(n, with_color, n->text_scale > 0 ? n->text_scale : 1); }
+
+// lx_attrs_at are lx_attrs with the text scaled by scale: its size, its
+// letter spacing and its line height.
+PangoAttrList *lx_attrs_at(node *n, bool with_color, float scale) {
 	PangoAttrList *list = pango_attr_list_new();
 	float size;
 	int weight;
 	lx_font(n, &size, &weight);
+	size *= scale;
 	pango_attr_list_insert(list, pango_attr_size_new_absolute((int)(size * 1024 + 0.5f)));
 	pango_attr_list_insert(list, pango_attr_weight_new((PangoWeight)weight));
 	const char *fam = lx_family(n);
 	if (*fam) pango_attr_list_insert(list, pango_attr_family_new(fam));
+	// Spacing and line height follow the text size, as the font does.
+	float k = (H.font_scale > 0 ? H.font_scale : 1) * scale;
+	if (n->letter_spacing != 0 && pango_attr_letter_spacing_new)
+		pango_attr_list_insert(list, pango_attr_letter_spacing_new((int)lroundf(n->letter_spacing * k * 1024)));
+	if (n->line_height > 0 && pango_attr_line_height_new_absolute)
+		pango_attr_list_insert(list, pango_attr_line_height_new_absolute((int)lroundf(n->line_height * k * 1024)));
+	if (n->font_traits & 1) pango_attr_list_insert(list, pango_attr_style_new(PANGO_STYLE_ITALIC));
+	if ((n->font_traits & 2) && pango_attr_font_features_new) pango_attr_list_insert(list, pango_attr_font_features_new("tnum=1"));
+	// Small capitals: the font's (smcp), else Pango's, made from its
+	// capitals.
+	if ((n->font_traits & 4) && pango_attr_variant_new) pango_attr_list_insert(list, pango_attr_variant_new(PANGO_VARIANT_SMALL_CAPS));
 	GdkRGBA c;
 	if (with_color && lx_resolve(n->color, &c)) {
 		pango_attr_list_insert(list, pango_attr_foreground_new(u16c(c.red), u16c(c.green), u16c(c.blue)));
 		if (c.alpha < 1) pango_attr_list_insert(list, pango_attr_foreground_alpha_new(u16c(c.alpha)));
 	}
 	return list;
+}
+
+// lines_of is how many lines a node's text takes at width, at scale.
+static int lines_of(node *n, float width, float scale) {
+	PangoLayout *pl = gtk_widget_create_pango_layout(n->inner, n->text);
+	PangoAttrList *attrs = lx_attrs_at(n, false, scale);
+	pango_layout_set_attributes(pl, attrs);
+	pango_attr_list_unref(attrs);
+	pango_layout_set_wrap(pl, PANGO_WRAP_WORD_CHAR);
+	pango_layout_set_width(pl, (int)(width * 1024));
+	int lines = pango_layout_get_line_count ? pango_layout_get_line_count(pl) : 1;
+	g_object_unref(pl);
+	return lines;
+}
+
+// lx_fit_scale is the scale a text with a MinimumScale is drawn at in a
+// width: the largest, to 1/128, at which its lines (its limit, or one)
+// hold it, never under its minimum; 1 when it fits at its size. Measuring
+// and drawing both ask it.
+float lx_fit_scale(node *n, float width) {
+	float min = n->min_scale;
+	if (min <= 0 || min >= 1 || n->kind != AK_KIND_TEXT || !n->inner || str_empty(n->text) || !(width > 0) || width >= AK_BIG) return 1;
+	int limit = n->line_limit > 0 ? n->line_limit : 1;
+	if (lines_of(n, width, 1) <= limit) return 1;
+	if (lines_of(n, width, min) > limit) return min;
+	float lo = min, hi = 1;  // lo fits, hi doesn't
+	while (hi - lo > 1.0f / 128) {
+		float mid = (lo + hi) / 2;
+		if (lines_of(n, width, mid) <= limit)
+			lo = mid;
+		else
+			hi = mid;
+	}
+	return lo;
+}
+
+// lx_text_frame draws a shrinking text at the scale its frame's width
+// holds it at (lx_fit_scale, as it was measured).
+void lx_text_frame(node *n) {
+	if (n->kind != AK_KIND_TEXT || !n->placed) return;
+	float s = lx_fit_scale(n, n->frame[2] - n->inset[1] - n->inset[3]);
+	if (s == (n->text_scale > 0 ? n->text_scale : 1)) return;
+	n->text_scale = s;
+	lx_apply_text(n);
 }
 
 void lx_set_label_attrs(node *n, GtkWidget *label) {
@@ -423,9 +537,16 @@ void lx_apply_text(node *n) {
 		case 3: j = GTK_JUSTIFY_FILL; break;
 		}
 		gtk_label_set_justify(l, j);
-		if (n->line_limit > 0) {
-			gtk_label_set_lines(l, n->line_limit);
-			gtk_label_set_ellipsize(l, PANGO_ELLIPSIZE_END);
+		// Its lines: its limit, or one when it shrinks to fit; cut where
+		// Truncation says, or clipped at its frame.
+		int lines = n->line_limit > 0 ? n->line_limit : (n->min_scale > 0 && n->min_scale < 1) ? 1 : 0;
+		bool clip = lines > 0 && n->truncation == AK_TRUNCATION_CLIP;
+		gtk_widget_set_overflow(n->inner, clip ? GTK_OVERFLOW_HIDDEN : GTK_OVERFLOW_VISIBLE);
+		gtk_label_set_wrap(l, !(clip && lines == 1));
+		if (lines > 0 && !clip) {
+			static const PangoEllipsizeMode modes[] = {PANGO_ELLIPSIZE_END, PANGO_ELLIPSIZE_START, PANGO_ELLIPSIZE_MIDDLE};
+			gtk_label_set_lines(l, lines);
+			gtk_label_set_ellipsize(l, n->truncation >= 0 && n->truncation < 3 ? modes[n->truncation] : PANGO_ELLIPSIZE_END);
 		} else {
 			gtk_label_set_lines(l, -1);
 			gtk_label_set_ellipsize(l, PANGO_ELLIPSIZE_NONE);
@@ -494,7 +615,7 @@ void lx_style_button(node *n) {
 	// style's.
 	GtkWidget *l = lx_button_label((GtkWidget *)b);
 	if (!l) return;
-	if (n->color || n->font_size > 0 || n->text_style || n->font_weight || !str_empty(n->font_family) || H.dev_font_scale > 0)
+	if (n->color || n->font_size > 0 || n->text_style || n->font_weight || n->font_traits || n->letter_spacing != 0 || !str_empty(n->font_family) || H.dev_font_scale > 0)
 		lx_set_label_attrs(n, l);
 	else
 		gtk_label_set_attributes((GtkLabel *)l, NULL);

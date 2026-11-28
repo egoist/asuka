@@ -65,7 +65,11 @@ component Inbox {
 }
 ```
 
-The style's `font`, `color`, `textAlign` and `lines` are the text's.
+The style's `font`, `color`, `textAlign` and `lines` are the text's,
+and so are `letterSpacing`, `lineHeight`, `truncation` (where the
+lines cut it: `.tail`, `.head`, `.middle`, `.clip`), `minimumScale`
+(how far it shrinks to fit before it's cut) and `textShadow` (see
+[Layout and style](layout.md#text)).
 Text styles (`.body`, `.headline`, `.footnote`...) follow the text size
 the user picked.
 

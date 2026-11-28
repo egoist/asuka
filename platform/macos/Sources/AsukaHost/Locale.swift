@@ -136,6 +136,7 @@ import AsukaOps
         guard let c = n.view as? NSControl else { return }
         c.alignment = alignment(n)
         if n.kind == .text || n.kind == .textField { c.baseWritingDirection = writingDirection(n) }
+        if n.styledLabel { applyStyledText(n) } // its paragraph style's (TextStyle.swift)
     }
 
     /// A horizontal Scroll going another way: once the core has laid it

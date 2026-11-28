@@ -47,11 +47,13 @@ native component Style {
   prop gridColumn: GridLine
   prop gridRow: GridLine
   prop background: Color
-  /// corner radius
-  prop radius: float
-  /// border width, drawn inside the box
-  prop border: float
+  /// corner radius: 12, [tl, tr, br, bl] or Corners(topStart: 8); a radius more than half the side is the most it can be (999: a capsule)
+  prop radius: Corners
+  /// border width, drawn inside the box: 1, [t, r, b, l] or Edges(bottom: 1)
+  prop border: Edges
   prop borderColor: Color
+  /// .solid (the default), .dashed or .dotted
+  prop borderStyle: BorderStyle
   prop opacity: float = 1
   prop hidden: bool
   /// clips children to its bounds
@@ -72,6 +74,16 @@ native component Style {
   prop textAlign: TextAlign
   /// the most lines of text (0: no limit)
   prop lines: int
+  /// points added between characters (negative: tighter), scaled with the user's text size as the font is
+  prop letterSpacing: float
+  /// points from one line's baseline to the next, as React Native's lineHeight and CSS's in px, scaled with the user's text size; the text sits in the middle of each line (0: the font's)
+  prop lineHeight: float
+  /// where a text that doesn't fit its lines is cut: .tail (the default), .head, .middle or .clip
+  prop truncation: Truncation
+  /// a text shrinks to fit its width in its lines (1 when lines isn't set), down to this fraction of its size, before it's truncated: 0.5 (0, 1: it doesn't)
+  prop minimumScale: float
+  /// a shadow under a text's glyphs; layout doesn't see it
+  prop textShadow: Shadow?
   /// what screen readers read
   prop label: string
   prop hint: string

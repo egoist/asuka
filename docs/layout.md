@@ -370,9 +370,23 @@ View { padding: [4, 10]; radius: 12; background: tint.opacity(0.15); Text("New")
 ## Backgrounds, borders and shadows
 
 - **`background`**: the view's background color.
-- **`radius`**: rounds its corners, in points.
+- **`radius`**: rounds its corners, in points: one radius for all
+  (`radius: 12`; 999 makes a capsule), or each its own:
+  `[16, 16, 0, 0]` (top left, top right, bottom right, bottom left, as
+  CSS's) or `Corners(topStart: 12, bottomStart: 12)`, whose start and
+  end corners follow the text's direction. Radii too large for their
+  side are scaled down together, as CSS's are.
 - **`border`** and **`borderColor`**: a border, drawn inside the box. It
-  insets the content, as padding does.
+  insets the content, as padding does. Its width is the same on every
+  side (`border: 1`), or each side's own, as `padding` takes them:
+  `border: Edges(bottom: 1)`, `border: [0, 0, 1, 0]`. Where a rounded
+  corner joins two sides, its inner curve is its radius less their
+  widths.
+- **`borderStyle`**: `.solid` (the default), `.dashed` (dashes three
+  times the border's width, gaps as long) or `.dotted` (round dots as
+  wide as the border, a width apart). The web draws CSS's own dashes
+  and dots. Where the sides' widths differ, every platform but the web
+  draws a dashed or dotted side straight, its corners square.
 - **`shadow`**: a drop shadow, cast by the view's shape (its bounds,
   rounded by `radius`), not by what's drawn in it: `Shadow(color:,
   radius:, x:, y:)`, where `radius` is a blur radius (as CSS's and
@@ -382,12 +396,19 @@ View { padding: [4, 10]; radius: 12; background: tint.opacity(0.15); Text("New")
   radius is the elevation, the color tints it, and the light sets the
   offset. macOS, Windows, Linux and the web draw it as iOS does, with
   the same blur and offset.
-- **`gradient`**: a linear gradient over the background,
-  `Gradient(stops: [...])`, top to bottom unless `startX`, `startY`,
-  `endX` and `endY` say otherwise, in units of the view's size ((0, 0)
-  its top left corner, (1, 1) its bottom right one). Each `Stop` is a
-  color at a location from 0 to 1. Android draws it along the nearest
-  of eight directions; the other platforms along the line you give.
+- **`gradient`**: a gradient over the background,
+  `Gradient(stops: [...])`. Each `Stop` is a color at a location from 0
+  to 1. Its `kind`:
+  - `.linear` (the default): top to bottom unless `startX`, `startY`,
+    `endX` and `endY` say otherwise, in units of the view's size ((0, 0)
+    its top left corner, (1, 1) its bottom right one).
+  - `.radial`: a circle around `centerX`, `centerY` (0.5, 0.5: the
+    middle), whose `radius` is a fraction of the view's shorter side:
+    0.5, the default, reaches the nearer sides. Past it, the last
+    stop's color.
+  - `.conic`: sweeping clockwise around the center, from `angle`
+    (degrees clockwise from the top; 0, the default, starts at the
+    top).
 - **`material`**: a translucent background that blurs what's behind it,
   iOS's materials: `.ultraThin`, `.thin`, `.regular`, `.thick`, `.bar`.
   - iOS: `UIVisualEffectView`'s blurs.
@@ -416,6 +437,28 @@ View {
 View {
   height: 80
   gradient: Gradient(stops: [Stop(color: .blue, at: 0), Stop(color: .purple, at: 1)], startY: 0.5, endX: 1, endY: 0.5)
+}
+
+// A sheet's top: its top corners rounded.
+View { height: 200; background: .secondaryBackground; radius: [20, 20, 0, 0] }
+
+// A hairline under a row.
+View {
+  padding: 12; border: Edges(bottom: 1); borderColor: .separator
+  Text("Row")
+}
+
+// A place to drop files.
+View { height: 120; border: 2; borderStyle: .dashed; borderColor: .accent; radius: 12 }
+
+// A glow, and a color wheel.
+View {
+  height: 160
+  gradient: Gradient(kind: .radial, stops: [Stop(color: #fde68a, at: 0), Stop(color: #f97316, at: 1)], radius: 0.8)
+}
+View {
+  width: 120; height: 120; radius: 60
+  gradient: Gradient(kind: .conic, stops: [Stop(color: #ef4444, at: 0), Stop(color: #eab308, at: 0.33), Stop(color: #3b82f6, at: 0.66), Stop(color: #ef4444, at: 1)])
 }
 ```
 
@@ -446,6 +489,12 @@ Transforms, `transition` and `shared` are for animation: see
 - **A weight**: `.bold()`, `.semibold()`, `.medium()`, or `weighted(w)`
   with any of `.ultralight`, `.thin`, `.light`, `.regular`, `.medium`,
   `.semibold`, `.bold`, `.heavy`, `.black`.
+- **Variants**: `.italic()`; `.monospacedDigits()`, every digit as wide,
+  for numbers that change in place (a timer, a column of prices); and
+  `.smallCaps()`, lower case letters as small capitals. Or
+  `Font(size: 34, italic: true, monospacedDigits: true)`. A font with no
+  italic face is slanted, and one with no small capitals draws smaller
+  capitals. Windows' buttons and fields take italic, not the other two.
 
 `color` is the text's color, `textAlign` its alignment (`.start`,
 `.center`, `.end`, `.justify`), and `lines` the most lines it shows; 0,
@@ -455,6 +504,42 @@ the default, is no limit. Text wraps by default.
 Text("Brand") { color: #7c3aed; font: .title.bold() }
 Text("A long paragraph that stops after two lines.") { font: .body; lines: 2; textAlign: .center }
 Text("Fixed size") { font: Font(size: 20).medium() }
+Text("00:42.17") { font: Font(size: 48, weight: .light, monospacedDigits: true) }
+```
+
+How a text is set:
+
+- **`letterSpacing`**: points added between characters (negative ones
+  tighten them), as React Native's and CSS's.
+- **`lineHeight`**: the distance from one line's baseline to the next,
+  in points, as React Native's `lineHeight` and CSS's in pixels; the
+  text sits in the middle of each line. 0, the default, is the font's
+  own. Apple Watch sets lines no tighter than the font's own.
+- **`textShadow`**: a `Shadow` cast by the glyphs, its `radius` a blur
+  radius as `shadow`'s is. Layout doesn't see it.
+- **`truncation`**: where a text that doesn't fit its `lines` is cut:
+  `.tail` (the default) ends it with an ellipsis, `.head` starts it
+  with one, `.middle` puts one in its middle, and `.clip` cuts it at its
+  edge. Android and the web cut the head or the middle of one line
+  only: a text of more lines ends with an ellipsis there.
+- **`minimumScale`**: a text that doesn't fit its width in its lines
+  (one, unless `lines` says more) shrinks, down to this fraction of its
+  size, before it's cut: `minimumScale: 0.5` (UIKit's
+  `minimumScaleFactor`, React Native's `adjustsFontSizeToFit`). Its
+  letter spacing and line height shrink with it, and layout gives it
+  the size it's drawn at.
+
+`letterSpacing` and `lineHeight` scale with the user's text size, as
+the font does. They and the font's variants apply to a selectable Text
+and a RichText too (Windows' RichText takes no letter spacing); the
+shadow, truncation and shrinking are a `Text`'s.
+
+```asuka
+Text("OVERVIEW") { font: .footnote.semibold(); letterSpacing: 1.5; color: .secondaryLabel }
+Text("A paragraph with room between its lines.") { font: .body; lineHeight: 26 }
+Text("IMG_20260412_183015_HDR.jpg") { lines: 1; truncation: .middle }
+Text("A title that fits on one line") { font: .title; minimumScale: 0.6 }
+Text("Over a photo") { color: .white; textShadow: Shadow(color: #00000080, radius: 6, y: 1) }
 ```
 
 For text with several styles in it, links and inline views, see

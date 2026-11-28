@@ -50,7 +50,7 @@ component Inbox {
 }
 ```
 
-スタイルの `font`、`color`、`textAlign`、`lines` がテキストに適用されます。テキストスタイル（`.body`、`.headline`、`.footnote` など）は、ユーザーが選んだ文字サイズに追従します。
+スタイルの `font`、`color`、`textAlign`、`lines` がテキストに適用されます。`letterSpacing`、`lineHeight`、`truncation`（行に収まらないときに切る位置：`.tail`、`.head`、`.middle`、`.clip`）、`minimumScale`（切る前にどこまで縮めて収めるか）、`textShadow` も同様です（[レイアウトとスタイル](layout.md#テキスト)を参照）。テキストスタイル（`.body`、`.headline`、`.footnote` など）は、ユーザーが選んだ文字サイズに追従します。
 
 ### RichText
 

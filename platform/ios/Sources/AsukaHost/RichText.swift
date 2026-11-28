@@ -39,6 +39,13 @@ struct AsukaRichBase: Hashable {
     var color: UInt64 = 0
     var align: Int32 = 0
     var lines = 0
+    /// LetterSpacing and LineHeight (points, before Dynamic Type),
+    /// FontTraits, Truncation and TextShadow: the paragraphs' too.
+    var letterSpacing: Float = 0
+    var lineHeight: Float = 0
+    var traits: Int64 = 0
+    var truncation: Int32 = 0
+    var shadow: AsukaRichShadow?
     /// The paragraphs' base writing direction: 1 right to left, 0 left to
     /// right, as a view with a LayoutDirection of its own goes; -1 the
     /// text's own (its first strong character), as a label's is.
@@ -49,7 +56,7 @@ struct AsukaRichBase: Hashable {
 
 /// A font from text props: a Dynamic Type text style, or a system font
 /// scaled like one; italic and monospaced as asked.
-func asukaFont(_ textStyle: Int32, _ size: Float, _ weight: Int32, family: String = "", italic: Bool = false, mono: Bool = false) -> UIFont {
+func asukaFont(_ textStyle: Int32, _ size: Float, _ weight: Int32, family: String = "", italic: Bool = false, mono: Bool = false, traits: Int64 = 0) -> UIFont {
     let style = uiTextStyle(textStyle)
     let metrics = UIFontMetrics(forTextStyle: style)
     let w = uiWeight(weight)
@@ -69,7 +76,7 @@ func asukaFont(_ textStyle: Int32, _ size: Float, _ weight: Int32, family: Strin
     if italic, let d = f.fontDescriptor.withSymbolicTraits(f.fontDescriptor.symbolicTraits.union(.traitItalic)) {
         f = UIFont(descriptor: d, size: f.pointSize)
     }
-    return f
+    return asukaTraited(f, italic ? traits & ~1 : traits)
 }
 
 private extension NSAttributedString.Key {
@@ -115,11 +122,14 @@ final class AsukaParagraphLayout {
     var width: CGFloat = 0 // the widest line's
     let string: NSAttributedString
 
-    init(_ s: NSAttributedString, width: CGFloat, emptyFont: UIFont, maxLines: Int, truncate: Bool) {
+    /// lineHeight (0: the font's): each line that tall, its glyphs in the
+    /// middle of it. truncation: where a last line with more after it is
+    /// cut (nil: clipped).
+    init(_ s: NSAttributedString, width: CGFloat, emptyFont: UIFont, maxLines: Int, truncate: Bool, lineHeight: CGFloat = 0, truncation: CTLineTruncationType = .end) {
         string = s
         if s.length == 0 {
             // An empty paragraph is an empty line.
-            height = ceil(emptyFont.lineHeight)
+            height = lineHeight > 0 ? ceil(lineHeight) : ceil(emptyFont.lineHeight)
             return
         }
         let ts = CTTypesetterCreateWithAttributedString(s)
@@ -134,14 +144,15 @@ final class AsukaParagraphLayout {
                 // The last line allowed, with more after it: the rest, truncated.
                 let rest = CTTypesetterCreateLine(ts, CFRange(location: start, length: s.length - start))
                 let token = CTLineCreateWithAttributedString(NSAttributedString(string: "…", attributes: s.attributes(at: start + count - 1, effectiveRange: nil)))
-                line = CTLineCreateTruncatedLine(rest, Double(width), .end, token) ?? line
+                line = CTLineCreateTruncatedLine(rest, Double(width), truncation, token) ?? line
             }
             var a: CGFloat = 0, d: CGFloat = 0, l: CGFloat = 0
             let space = CGFloat(CTLineGetTrailingWhitespaceWidth(line))
             let w = CGFloat(CTLineGetTypographicBounds(line, &a, &d, &l)) - space
-            y += a
+            let top = y
+            y += lineHeight > 0 ? (lineHeight - a - d) / 2 + a : a
             lines.append(Line(line: line, baseline: y, ascent: a, descent: d, width: w, range: CFRange(location: start, length: count), ink: space > 0 ? AsukaParagraphLayout.ink(line, s) : 0))
-            y += d + max(l, 0)
+            y = lineHeight > 0 ? top + lineHeight : y + d + max(l, 0)
             self.width = max(self.width, w)
             start += count
         }
@@ -422,6 +433,7 @@ final class AsukaRichTextView: UIView {
     private func attributed(_ p: AsukaRichParagraph) -> NSAttributedString {
         let out = NSMutableAttributedString()
         let t = traits
+        let kern = asukaScaled(CGFloat(base.letterSpacing), base.textStyle)
         var next = 0
         for run in p.runs {
             let s = styles[run.style]
@@ -436,10 +448,11 @@ final class AsukaRichTextView: UIView {
                 continue
             }
             let font = asukaFont(s.textStyle != 0 ? s.textStyle : base.textStyle, s.size > 0 ? s.size : base.size,
-                               s.weight != 0 ? s.weight : base.weight, family: base.family, italic: s.italic, mono: s.mono)
+                               s.weight != 0 ? s.weight : base.weight, family: base.family, italic: s.italic, mono: s.mono, traits: base.traits)
             var color = asukaColor(s.color != 0 ? s.color : base.color) ?? .label
             if s.color == 0 && !s.link.isEmpty { color = tintColor }
             var a: [NSAttributedString.Key: Any] = [.font: font, .ctForeground: color.resolvedColor(with: t).cgColor]
+            if kern != 0 { a[.kern] = kern }
             if s.background != 0, let bg = asukaColor(s.background) { a[.asukaBackground] = bg.resolvedColor(with: t).cgColor }
             if !s.link.isEmpty { a[.asukaLink] = s.link }
             if s.underline { a[.asukaUnderline] = true }
@@ -477,18 +490,32 @@ final class AsukaRichTextView: UIView {
         UITraitCollection(traitsFrom: [traitCollection, UITraitCollection(preferredContentSizeCategory: asukaContentSize)])
     }
 
+    /// LineHeight, at the app's text size.
+    private var lineHeight: CGFloat { asukaScaled(CGFloat(base.lineHeight), base.textStyle) }
+
+    /// Truncation's: where a last line is cut (nil: clipped).
+    private var truncationType: CTLineTruncationType? {
+        switch AsukaTruncation(rawValue: base.truncation) {
+        case .head: return .start
+        case .middle: return .middle
+        case .clip: return nil
+        default: return .end
+        }
+    }
+
     private func layoutsNow(_ width: CGFloat) -> [AsukaParagraphLayout] {
         var out: [AsukaParagraphLayout] = []
         var left = base.lines
         let t = traits
         let emptyFont = asukaFont(base.textStyle, base.size, base.weight, family: base.family)
+        let lh = lineHeight, cut = truncationType
         if width < 1e6 { lastWidth = width }
         for p in paragraphs {
             if base.lines > 0 && left <= 0 { break }
             let key = AsukaLayoutCache.Key(paragraph: layoutKey(p), base: base, width: width, lines: left, size: t.preferredContentSizeCategory, dark: t.userInterfaceStyle == .dark)
             let lines = max(left, 0)
             let l = AsukaLayoutCache.shared.layout(key) {
-                AsukaParagraphLayout(attributed(p), width: width, emptyFont: emptyFont, maxLines: lines, truncate: true)
+                AsukaParagraphLayout(attributed(p), width: width, emptyFont: emptyFont, maxLines: lines, truncate: cut != nil, lineHeight: lh, truncation: cut ?? .end)
             }
             out.append(l)
             left -= max(l.lines.count, 1)
@@ -505,12 +532,13 @@ final class AsukaRichTextView: UIView {
         let t = traits
         t.performAsCurrent {
             let emptyFont = asukaFont(base.textStyle, base.size, base.weight, family: base.family)
+            let lh = lineHeight
             for p in paragraphs {
                 let key = AsukaLayoutCache.Key(paragraph: layoutKey(p), base: base, width: width, lines: 0, size: t.preferredContentSizeCategory, dark: t.userInterfaceStyle == .dark)
                 if !p.inlines.isEmpty || AsukaLayoutCache.shared.has(key) { continue }
                 let s = attributed(p)
                 AsukaLayoutCache.shared.prepare(key) {
-                    AsukaParagraphLayout(s, width: width, emptyFont: emptyFont, maxLines: 0, truncate: true)
+                    AsukaParagraphLayout(s, width: width, emptyFont: emptyFont, maxLines: 0, truncate: true, lineHeight: lh)
                 }
             }
         }
@@ -563,6 +591,10 @@ final class AsukaRichTextView: UIView {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         // Glyphs upright in UIKit's flipped coordinates.
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+        if let sh = base.shadow {
+            // TextShadow: under the glyphs (and what's drawn with them).
+            ctx.setShadow(offset: CGSize(width: sh.x, height: sh.y), blur: sh.blur, color: sh.color.resolvedColor(with: traitCollection).cgColor)
+        }
         var top: CGFloat = 0
         for p in current() {
             for l in p.lines {

@@ -26,6 +26,16 @@ class AsukaNode(val id: Int, val kind: Int, var view: View) {
     var cornerRadius = 0f
     var borderWidth = 0f
     var borderColor = 0L
+    /** CornerRadii (dp: top left, top right, bottom right, bottom left), over cornerRadius; null: none. */
+    var cornerRadii: FloatArray? = null
+    /** BorderWidths (dp: top, right, bottom, left), over borderWidth; null: none. */
+    var borderWidths: FloatArray? = null
+    var borderStyle = AsukaBorderStyle.SOLID
+    /** FontTraits' bits: 1 italic, 2 monospaced digits, 4 small capitals. */
+    var fontTraits = 0
+    /** LetterSpacing and LineHeight, in points (0: the font's). */
+    var letterSpacing = 0f
+    var lineHeight = 0f
     var list: AsukaList? = null
     /** A list cell's List's node ID (0: no cell): where its keys go on. */
     var cellOf = 0

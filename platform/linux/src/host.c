@@ -554,6 +554,7 @@ void lx_set_frame(node *n, const float f[4]) {
 	memcpy(n->frame, f, sizeof n->frame);
 	n->placed = true;
 	if (!n->widget) return;
+	if (n->min_scale > 0 && (f[2] != old[2] || !was)) lx_text_frame(n);  // a shrinking text, at its new width
 	if (n->parent && n->parent->scroll) {
 		// A scroll's content: its size is what scrolls.
 		gtk_widget_queue_resize(n->widget);

@@ -94,21 +94,18 @@ struct AsukaLeaf: View {
         let tint = asukaColor(n.color)
         switch n.kind {
         case .text:
-            let (ta, a) = textAlignment(n.textAlign)
+            // Typeset as it was measured (Typeset.swift): at the scale
+            // its frame's width holds it at.
+            let scale = AsukaTypeset.scale(n, width: n.frame.width)
             Text(n.text)
-                .font(Font(AsukaFonts.font(of: n)))
+                .font(Font(AsukaTypeset.font(n, scale)))
+                .kerning(AsukaTypeset.kern(n, scale))
                 .foregroundStyle(tint ?? .primary)
-                .multilineTextAlignment(ta)
-                .lineLimit(n.lineLimit > 0 ? n.lineLimit : nil)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: a)
+                .modifier(AsukaTextLook(node: n, scale: scale))
         case .richText:
-            let (ta, a) = textAlignment(n.textAlign)
-            richText(n.runs, tint)
-                .multilineTextAlignment(ta)
-                .lineLimit(n.lineLimit > 0 ? n.lineLimit : nil)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: a)
+            let scale = AsukaTypeset.scale(n, width: n.frame.width)
+            richText(n, scale, tint)
+                .modifier(AsukaTextLook(node: n, scale: scale))
         case .button:
             AsukaButton(node: n)
         case .textField:
@@ -211,10 +208,12 @@ struct AsukaLeaf: View {
         }
     }
 
-    private func richText(_ runs: [AsukaRichRun], _ tint: Color?) -> Text {
+    private func richText(_ n: AsukaNode, _ scale: CGFloat, _ tint: Color?) -> Text {
         var t = Text("")
-        for r in runs {
-            var piece = Text(r.text).font(Font(r.font))
+        let kern = AsukaTypeset.kern(n, scale)
+        for r in n.runs {
+            // Its italic is its font's, as it's measured.
+            var piece = Text(r.text).font(Font(AsukaTypeset.sized(r.font(AsukaTypeset.runTraits(n, r)), scale))).kerning(kern)
             if let c = asukaColor(r.color) {
                 piece = piece.foregroundColor(c)
             } else if !r.link.isEmpty {
@@ -222,7 +221,6 @@ struct AsukaLeaf: View {
             } else if let tint {
                 piece = piece.foregroundColor(tint)
             }
-            if r.flags & 1 != 0 { piece = piece.italic() }
             if r.flags & 4 != 0 { piece = piece.underline() }
             if r.flags & 8 != 0 { piece = piece.strikethrough() }
             t = t + piece
@@ -384,12 +382,12 @@ struct AsukaStyle: ViewModifier {
         let _ = node.rev // what it reads of the node is the batch's
         let n = node
         let rt = AsukaRuntime.shared
-        let shape = RoundedRectangle(cornerRadius: Swift.min(n.cornerRadius, Swift.min(n.frame.width, n.frame.height) / 2), style: .continuous)
+        let shape = AsukaBoxShape(radii: n.radii)
         let t = n.transform
         content
-            .background { if let bg = asukaColor(n.background) { shape.fill(bg) } }
-            .overlay { if n.borderWidth > 0 { shape.strokeBorder(asukaColor(n.borderColor) ?? Color.secondary, lineWidth: n.borderWidth) } }
-            .modifier(AsukaClip(on: n.clip || (n.cornerRadius > 0 && n.kind == .image), shape: shape))
+            .background { if n.background != 0 || n.gradient != nil { AsukaBackground(node: n, shape: shape) } }
+            .overlay { if n.hasBorder { AsukaBorder(node: n, shape: shape) } }
+            .modifier(AsukaClip(on: n.clip || (n.rounded && n.kind == .image), shape: shape))
             .modifier(AsukaPress(node: n, rt: rt))
             .opacity(n.hidden ? 0 : n.opacity)
             .allowsHitTesting(!n.hidden)

@@ -36,32 +36,37 @@ static float widget_min(GtkWidget *w) {
 	return (float)mn;
 }
 
-// measure_text lays the text out as the label will, with Pango: as wide
-// as its widest line at the width it may take, as tall as its lines (to
-// its line limit); min-content is its widest word.
+// measure_text lays the text out as the label will, with Pango (its
+// attributes: letter spacing, line height, variants): as wide as its
+// widest line at the width it may take, as tall as its lines (to its line
+// limit, or one when it shrinks to fit), at the scale MinimumScale
+// shrinks it to in that width (lx_fit_scale, as it's drawn);
+// min-content is its widest word.
 static void measure_text(node *n, float cw, float aw, float *ow, float *oh) {
 	*ow = *oh = 0;
 	if (str_empty(n->text) || !n->inner) return;
+	bool min_content = cw != cw && aw <= -AK_INF;
+	float w = min_content ? 0 : lx_fit(cw, aw, 0);
+	float scale = min_content ? 1 : lx_fit_scale(n, w);
 	PangoLayout *pl = gtk_widget_create_pango_layout(n->inner, n->text);
-	PangoAttrList *attrs = lx_attrs(n, false);
+	PangoAttrList *attrs = lx_attrs_at(n, false, scale);
 	pango_layout_set_attributes(pl, attrs);
 	pango_attr_list_unref(attrs);
 	pango_layout_set_wrap(pl, PANGO_WRAP_WORD_CHAR);
-	if (n->line_limit > 0) {
-		pango_layout_set_height(pl, -n->line_limit);
+	int lines = n->line_limit > 0 ? n->line_limit : (n->min_scale > 0 && n->min_scale < 1) ? 1 : 0;
+	if (lines > 0) {
+		// Clipped or cut with an ellipsis, it takes as many lines.
+		pango_layout_set_height(pl, -lines);
 		pango_layout_set_ellipsize(pl, PANGO_ELLIPSIZE_END);
 	}
-	float w;
 	int pw, ph;
-	if (cw != cw && aw <= -AK_INF) {
+	if (min_content) {
 		// Min-content: the widest word.
 		pango_layout_set_wrap(pl, PANGO_WRAP_WORD);
 		pango_layout_set_width(pl, 1);
 		pango_layout_get_pixel_size(pl, &pw, &ph);
 		w = (float)pw;
 		pango_layout_set_wrap(pl, PANGO_WRAP_WORD_CHAR);
-	} else {
-		w = lx_fit(cw, aw, 0);
 	}
 	pango_layout_set_width(pl, w < AK_BIG ? (int)(w * 1024) : -1);
 	pango_layout_get_pixel_size(pl, &pw, &ph);

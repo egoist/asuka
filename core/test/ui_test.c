@@ -1484,12 +1484,12 @@ static ak_val buttons_app(ak_closure *c, ak_val *a, uint32_t n) {
 	add(col, b);
 	b = ak_ui_new(AK_EL_BUTTON);
 	set_str(b, AK_KEY_BUTTON_TITLE, "Bordered");
-	set_f(b, AK_KEY_BORDER, 2);
+	set(b, AK_KEY_BORDER, edges4(2, 2, 2, 2));
 	add(col, b);
 	b = ak_ui_new(AK_EL_BUTTON);
 	set_str(b, AK_KEY_BUTTON_TITLE, "Zero");
 	set(b, AK_KEY_PADDING, edges4(0, 0, 0, 0));
-	set_f(b, AK_KEY_BORDER, 1);
+	set(b, AK_KEY_BORDER, edges4(1, 1, 1, 1));
 	add(col, b);
 	return (ak_val){.p = col};
 }

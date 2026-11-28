@@ -273,10 +273,14 @@ View { padding: [4, 10]; radius: 12; background: tint.opacity(0.15); Text("New")
 ## 背景、边框与阴影
 
 - **`background`**：视图的背景色。
-- **`radius`**：圆角半径，单位是点。
-- **`border`** 和 **`borderColor`**：边框，画在盒子内侧。它会像内边距一样把内容往里推。
+- **`radius`**：圆角半径，单位是点。可以四个角用同一个半径（`radius: 12`；设成 999 就是胶囊形），也可以每个角各自指定：`[16, 16, 0, 0]`（依次是左上、右上、右下、左下，与 CSS 相同），或者 `Corners(topStart: 12, bottomStart: 12)`，其中 start 和 end 一侧的角跟随文字方向。如果半径大到一条边放不下，所有半径会按同一比例缩小，与 CSS 的处理一致。
+- **`border`** 和 **`borderColor`**：边框，画在盒子内侧。它会像内边距一样把内容往里推。宽度可以四边相同（`border: 1`），也可以像 `padding` 那样每条边各自指定：`border: Edges(bottom: 1)`、`border: [0, 0, 1, 0]`。圆角连接两条边时，内侧弧线的半径是圆角半径减去这两条边的宽度。
+- **`borderStyle`**：`.solid`（默认）、`.dashed`（虚线，每段长为边框宽度的三倍，间隔同样长）或 `.dotted`（点线，圆点直径等于边框宽度，间隔一个宽度）。Web 上用的是 CSS 自己的虚线和点线。如果各边宽度不同，除 Web 以外的平台会把虚线或点线的边画成直线，转角处是直角。
 - **`shadow`**：投影。投影由视图的形状（也就是它的边界，再按 `radius` 取圆角）产生，与视图里画了什么无关：`Shadow(color:, radius:, x:, y:)`，其中 `radius` 是模糊半径（与 CSS 和 SwiftUI 的含义相同，即模糊 σ 的两倍），`x` 和 `y` 是偏移量。裁剪子视图的视图（设置了 `clip`）照样会投下阴影，就像一张裁剪了图片的圆角卡片那样。Android 上画的是它自己的高度（elevation）阴影：半径对应高度，颜色为阴影着色，偏移量由光源决定。macOS、Windows、Linux 和 Web 则与 iOS 的画法一致，模糊和偏移效果都相同。
-- **`gradient`**：覆盖在背景上的线性渐变，`Gradient(stops: [...])`。默认从上往下渐变，也可以用 `startX`、`startY`、`endX` 和 `endY` 另行指定，以视图的尺寸为单位：(0, 0) 是左上角，(1, 1) 是右下角。每个 `Stop` 是一个颜色，以及它在 0 到 1 之间的位置。Android 会沿八个方向中最接近的那个绘制渐变；其他平台则严格沿你给出的线条绘制。
+- **`gradient`**：覆盖在背景上的渐变，`Gradient(stops: [...])`。每个 `Stop` 是一个颜色，以及它在 0 到 1 之间的位置。渐变的 `kind` 有三种：
+  - `.linear`（默认）：线性渐变，默认从上往下，也可以用 `startX`、`startY`、`endX` 和 `endY` 另行指定，以视图的尺寸为单位：(0, 0) 是左上角，(1, 1) 是右下角。
+  - `.radial`：径向渐变，是一个以 `centerX`、`centerY` 为圆心（默认 0.5, 0.5，即正中）的圆，`radius` 是视图较短一边的比例：默认的 0.5 正好触到较近的两条边。圆以外是最后一个 stop 的颜色。
+  - `.conic`：锥形渐变，从 `angle`（从顶部起按顺时针计的角度；默认 0，从顶部开始）绕圆心顺时针扫过一周。
 - **`material`**：一种半透明、会模糊其后内容的背景，即 iOS 的材质（material）：`.ultraThin`、`.thin`、`.regular`、`.thick`、`.bar`。
   - iOS：`UIVisualEffectView` 的模糊效果。
   - macOS：在视图内容后面放一个 `NSVisualEffectView`，模糊窗口中位于其后的内容。
@@ -302,6 +306,28 @@ View {
   height: 80
   gradient: Gradient(stops: [Stop(color: .blue, at: 0), Stop(color: .purple, at: 1)], startY: 0.5, endX: 1, endY: 0.5)
 }
+
+// 面板的顶部：只有上面两个角是圆角。
+View { height: 200; background: .secondaryBackground; radius: [20, 20, 0, 0] }
+
+// 行下方的一条细线。
+View {
+  padding: 12; border: Edges(bottom: 1); borderColor: .separator
+  Text("Row")
+}
+
+// 拖放文件的区域。
+View { height: 120; border: 2; borderStyle: .dashed; borderColor: .accent; radius: 12 }
+
+// 一团光晕，和一个色环。
+View {
+  height: 160
+  gradient: Gradient(kind: .radial, stops: [Stop(color: #fde68a, at: 0), Stop(color: #f97316, at: 1)], radius: 0.8)
+}
+View {
+  width: 120; height: 120; radius: 60
+  gradient: Gradient(kind: .conic, stops: [Stop(color: #ef4444, at: 0), Stop(color: #eab308, at: 0.33), Stop(color: #3b82f6, at: 0.66), Stop(color: #ef4444, at: 1)])
+}
 ```
 
 ## 不透明度与隐藏
@@ -319,6 +345,7 @@ View {
 - **语义字体**：平台的文本样式，会随用户设置的文字大小缩放：`.largeTitle`、`.title`、`.title2`、`.title3`、`.headline`、`.subheadline`、`.body`、`.callout`、`.footnote`、`.caption`、`.caption2`。
 - **`Font(size: 20)`**：指定字号（单位是点）的系统字体。
 - **字重**：`.bold()`、`.semibold()`、`.medium()`，或者用 `weighted(w)` 指定以下任意一种：`.ultralight`、`.thin`、`.light`、`.regular`、`.medium`、`.semibold`、`.bold`、`.heavy`、`.black`。
+- **变体**：`.italic()`（斜体）；`.monospacedDigits()`，让每个数字一样宽，适合原地变化的数字（计时器、一列价格）；`.smallCaps()`，把小写字母画成小型大写字母。也可以写成 `Font(size: 34, italic: true, monospacedDigits: true)`。字体没有斜体字形时会被倾斜绘制，没有小型大写字母时会画成缩小的大写字母。Windows 上的按钮和输入框只支持斜体，不支持另外两种。
 
 `color` 是文字颜色，`textAlign` 是对齐方式（`.start`、`.center`、`.end`、`.justify`），`lines` 是最多显示的行数，默认值 0 表示不限制。文字默认会自动换行。
 
@@ -326,6 +353,25 @@ View {
 Text("Brand") { color: #7c3aed; font: .title.bold() }
 Text("A long paragraph that stops after two lines.") { font: .body; lines: 2; textAlign: .center }
 Text("Fixed size") { font: Font(size: 20).medium() }
+Text("00:42.17") { font: Font(size: 48, weight: .light, monospacedDigits: true) }
+```
+
+文字的排版：
+
+- **`letterSpacing`**：在字符之间增加的间距，单位是点（负值会让字符更紧凑），与 React Native 和 CSS 的含义相同。
+- **`lineHeight`**：从一行的基线到下一行基线的距离，单位是点，与 React Native 的 `lineHeight`、以像素为单位的 CSS `line-height` 相同；文字位于每行的垂直正中。默认值 0 表示使用字体自身的行高。Apple Watch 上的行距不会小于字体自身的行高。
+- **`textShadow`**：由字形投下的 `Shadow`，其中 `radius` 和 `shadow` 的一样是模糊半径。布局感知不到它。
+- **`truncation`**：文字超出 `lines` 时在哪里截断：`.tail`（默认）在末尾加省略号，`.head` 在开头加，`.middle` 在中间加，`.clip` 则在边缘直接截掉。Android 和 Web 只有单行文字能在开头或中间截断，多行时省略号会放在末尾。
+- **`minimumScale`**：文字在它的行数内（默认一行，除非 `lines` 指定更多）放不下宽度时，先缩小，最多缩到原大小的这个比例，然后才截断：`minimumScale: 0.5`（相当于 UIKit 的 `minimumScaleFactor`、React Native 的 `adjustsFontSizeToFit`）。字间距和行高会一起缩小，布局拿到的就是它实际绘制的尺寸。
+
+`letterSpacing` 和 `lineHeight` 会像字体一样随用户设置的文字大小缩放。它们和字体变体同样作用于可选中的 Text 和 RichText（Windows 的 RichText 不支持字间距）；阴影、截断和缩小只作用于 `Text`。
+
+```asuka
+Text("OVERVIEW") { font: .footnote.semibold(); letterSpacing: 1.5; color: .secondaryLabel }
+Text("A paragraph with room between its lines.") { font: .body; lineHeight: 26 }
+Text("IMG_20260412_183015_HDR.jpg") { lines: 1; truncation: .middle }
+Text("A title that fits on one line") { font: .title; minimumScale: 0.6 }
+Text("Over a photo") { color: .white; textShadow: Shadow(color: #00000080, radius: 6, y: 1) }
 ```
 
 如果一段文字里要混用多种样式、链接或内嵌视图，请看 [RichText](components.md)。

@@ -16,42 +16,56 @@
 
 static node *clip_off;  // the view whose corners are being drawn whole
 
-// clip_radius is n's rounded clip's radius in pixels, 0 for none.
-static double clip_radius(node *n, int w, int h) {
-	if (!n->clip || n->corner_radius <= 0 || w <= 0 || h <= 0) return 0;
-	double r = n->corner_radius * wh_scale_of(n);
-	if (r > w / 2.0) r = w / 2.0;
-	if (r > h / 2.0) r = h / 2.0;
-	return r;
+// clip_radii are n's rounded clip's radii in pixels (top left, top
+// right, bottom right, bottom left), the largest returned: 0 for none.
+static double clip_radii(node *n, int w, int h, double rs[4]) {
+	rs[0] = rs[1] = rs[2] = rs[3] = 0;
+	if (!n->clip || !wh_round(n) || w <= 0 || h <= 0) return 0;
+	float r[4];
+	wh_radii(n, (float)w, (float)h, r);
+	double most = 0;
+	for (int i = 0; i < 4; i++) rs[i] = r[i], most = fmax(most, r[i]);
+	return most;
 }
 
-// clip_rows is the region of the pixels a w by h rounded rectangle of
-// radius rc covers whole (coverage 1), runs of rows of the same width
+// inset is where a row's pixels' centers enter a corner's circle of
+// radius rc, ry rows from the corner's side.
+static int inset(double rc, int ry, int w) {
+	if (rc <= 0) return 0;
+	double dy = rc - (ry + 0.5);
+	if (dy <= 0) return 0;
+	double s = (rc - 0.5) * (rc - 0.5) - dy * dy;
+	double x = s < 0 ? ceil(rc - 0.5) : ceil(rc - 0.5 - sqrt(s));
+	x = x < 0 ? 0 : x > w / 2.0 ? w / 2.0 : x;
+	return (int)x;
+}
+
+// clip_rows is the region of the pixels a w by h rectangle of corner
+// radii rs covers whole (coverage 1), runs of rows of the same width
 // merged.
-static HRGN clip_rows(int w, int h, double rc) {
-	int z = (int)ceil(rc - 0.5);  // rows whose pixel centers are above the corners' centers
-	if (z > h / 2) z = h / 2;
-	size_t cap = (size_t)z * 2 + 1;
+static HRGN clip_rows(int w, int h, const double rs[4]) {
+	int zt = (int)ceil(fmax(rs[0], rs[1]) - 0.5), zb = (int)ceil(fmax(rs[2], rs[3]) - 0.5);  // rows above the corners' centers
+	if (zt > h / 2) zt = h / 2;
+	if (zb > h / 2) zb = h / 2;
+	int z = zt;
+	size_t cap = (size_t)zt + (size_t)zb + 1;
 	size_t hs = sizeof(RGNDATAHEADER);
 	RGNDATA *d = wh_alloc(hs + cap * sizeof(RECT));
 	RECT *rects = (RECT *)d->Buffer;
 	DWORD n = 0;
 	// The top corners' rows, the middle, the bottom corners' rows: a row's
-	// inset is where its pixels' centers enter the corner's circle.
+	// inset is where its pixels' centers enter its corners' circles.
 	for (int pass = 0; pass < 3; pass++) {
-		int y0 = pass == 0 ? 0 : pass == 1 ? z : h - z;
-		int y1 = pass == 0 ? z : pass == 1 ? h - z : h;
+		int y0 = pass == 0 ? 0 : pass == 1 ? z : h - zb;
+		int y1 = pass == 0 ? z : pass == 1 ? h - zb : h;
 		for (int y = y0; y < y1; y++) {
 			int x0 = 0, x1 = w, yb = y + 1;
 			if (pass == 1) {
 				yb = y1;
+			} else if (pass == 0) {
+				x0 = inset(rs[0], y, w), x1 = w - inset(rs[1], y, w);
 			} else {
-				int ry = pass == 0 ? y : h - 1 - y;
-				double dy = rc - (ry + 0.5);
-				double s = (rc - 0.5) * (rc - 0.5) - dy * dy;
-				double x = s < 0 ? ceil(rc - 0.5) : ceil(rc - 0.5 - sqrt(s));
-				x = x < 0 ? 0 : x > w / 2.0 ? w / 2.0 : x;
-				x0 = (int)x, x1 = w - (int)x;
+				x0 = inset(rs[3], h - 1 - y, w), x1 = w - inset(rs[2], h - 1 - y, w);
 			}
 			if (x1 > x0 && yb > y) {
 				RECT *p = n ? &rects[n - 1] : NULL;
@@ -77,12 +91,17 @@ static HRGN clip_rows(int w, int h, double rc) {
 // wh_clip_coverage is how much of the pixel at (x, y) (pixels from the
 // view's top left) a w by h rounded rectangle of radius rc covers.
 double wh_clip_coverage(int x, int y, int w, int h, double rc) {
-	double px = x + 0.5, py = y + 0.5, dx, dy;
-	if (px < rc) dx = rc - px;
-	else if (px > w - rc) dx = px - (w - rc);
-	else return 1;
-	if (py < rc) dy = rc - py;
-	else if (py > h - rc) dy = py - (h - rc);
+	const double r[4] = {rc, rc, rc, rc};
+	return wh_clip_coverage4(x, y, w, h, r);
+}
+
+double wh_clip_coverage4(int x, int y, int w, int h, const double r[4]) {
+	double px = x + 0.5, py = y + 0.5, dx, dy, rc;
+	// The corner whose square it's in (scaled as CSS's, they don't meet).
+	if (px < r[0] && py < r[0]) rc = r[0], dx = rc - px, dy = rc - py;
+	else if (px > w - r[1] && py < r[1]) rc = r[1], dx = px - (w - rc), dy = rc - py;
+	else if (px > w - r[2] && py > h - r[2]) rc = r[2], dx = px - (w - rc), dy = py - (h - rc);
+	else if (px < r[3] && py > h - r[3]) rc = r[3], dx = rc - px, dy = py - (h - rc);
 	else return 1;
 	double c = rc - hypot(dx, dy) + 0.5;
 	return c < 0 ? 0 : c > 1 ? 1 : c;
@@ -102,7 +121,8 @@ void wh_shape_clip(node *n) {
 	if (!n->hwnd) return;
 	RECT r;
 	GetClientRect(n->hwnd, &r);
-	double rc = clip_radius(n, r.right, r.bottom);
+	double rs[4];
+	double rc = clip_radii(n, r.right, r.bottom, rs);
 	if (rc <= 0) {
 		if (n->clip_rgn) {
 			DeleteObject(n->clip_rgn);
@@ -112,17 +132,18 @@ void wh_shape_clip(node *n) {
 		}
 		return;
 	}
-	HRGN rgn = clip_rows(r.right, r.bottom, rc);
+	HRGN rgn = clip_rows(r.right, r.bottom, rs);
 	if (!rgn) return;
 	if (!n->clip_rgn) {
 		H.round_clips++;
-	} else if (n->clip_r == rc && EqualRgn(n->clip_rgn, rgn)) {
+	} else if (n->clip_r == rc && memcmp(n->clip_rs, rs, sizeof rs) == 0 && EqualRgn(n->clip_rgn, rgn)) {
 		DeleteObject(rgn);
 		return;
 	} else {
 		DeleteObject(n->clip_rgn);
 	}
 	n->clip_rgn = rgn, n->clip_r = rc;
+	memcpy(n->clip_rs, rs, sizeof rs);
 	if (wh_picture_shaped(n)) return;  // shaped to nothing while it's rotated (picture.c)
 	SetWindowRgn(n->hwnd, copy_rgn(rgn), TRUE);
 	HWND p = GetParent(n->hwnd);
@@ -185,7 +206,7 @@ static void paint_corners(node *c, HWND parent, HDC dc) {
 		for (int y = 0; y < z; y++)
 			for (int x = 0; x < z; x++) {
 				size_t k = ((size_t)y * (size_t)z + (size_t)x) * 4;
-				double cov = wh_clip_coverage(q[i].left - at.left + x, q[i].top - at.top + y, w, h, c->clip_r);
+				double cov = wh_clip_coverage4(q[i].left - at.left + x, q[i].top - at.top + y, w, h, c->clip_rs);
 				if (cov >= 1) continue;
 				for (int j = 0; j < 3; j++) px[k + j] = (uint8_t)(behind[k + j] * (1 - cov) + px[k + j] * cov + 0.5);
 				px[k + 3] = 255;

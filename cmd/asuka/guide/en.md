@@ -2801,8 +2801,9 @@ Boundary {
 Every element takes the style props: layout first (`direction`,
 `justify`, `align`, `gap`, `padding`, `margin`, `width`, `height`,
 `grow`, `shrink`, `absolute`, `top`, `grid`, ...), then look
-(`background`, `radius`, `border`, `opacity`, `shadow`, `font`,
-`color`, `lines`, ...). See [Layout and style](https://asuka.egoist.dev/docs/layout).
+(`background`, `radius`, `border`, `opacity`, `shadow`, `gradient`,
+`font`, `color`, `lines`, `letterSpacing`, `lineHeight`, ...). See
+[Layout and style](https://asuka.egoist.dev/docs/layout).
 
 A `style` declares props to reuse, and `style:` applies one, or a list
 of them:

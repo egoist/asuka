@@ -130,24 +130,29 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
     /// The font for the node's text props: a Dynamic Type text style,
     /// or a system font (or its own family's) scaled like one, in the
     /// app's text size (a view outside the window has yet to take a new
-    /// one).
+    /// one), with its FontTraits' variants.
     var font: UIFont {
         let style = uiTextStyle(textStyle)
         let metrics = UIFontMetrics(forTextStyle: style)
         let size = UITraitCollection(preferredContentSizeCategory: asukaContentSize)
+        let traits = fontTraits
         if !fontFamily.isEmpty {
             let base = fontSize > 0 ? CGFloat(fontSize)
                 : UIFont.preferredFont(forTextStyle: style, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)).pointSize
             if let f = AsukaFonts.font(fontFamily, size: base, weight: uiWeight(fontWeight)) {
-                return metrics.scaledFont(for: f, compatibleWith: size)
+                return metrics.scaledFont(for: asukaTraited(f, traits), compatibleWith: size)
             }
         }
         if fontSize > 0 {
-            return metrics.scaledFont(for: .systemFont(ofSize: CGFloat(fontSize), weight: uiWeight(fontWeight) ?? .regular), compatibleWith: size)
+            return metrics.scaledFont(for: asukaTraited(.systemFont(ofSize: CGFloat(fontSize), weight: uiWeight(fontWeight) ?? .regular), traits), compatibleWith: size)
         }
         if let w = uiWeight(fontWeight) {
             let base = UIFont.preferredFont(forTextStyle: style, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large))
-            return metrics.scaledFont(for: .systemFont(ofSize: base.pointSize, weight: w), compatibleWith: size)
+            return metrics.scaledFont(for: asukaTraited(.systemFont(ofSize: base.pointSize, weight: w), traits), compatibleWith: size)
+        }
+        if traits != 0 {
+            let base = UIFont.preferredFont(forTextStyle: style, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large))
+            return metrics.scaledFont(for: asukaTraited(base, traits), compatibleWith: size)
         }
         return .preferredFont(forTextStyle: style, compatibleWith: size)
     }
@@ -166,10 +171,12 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             l.holdsFont = out
             l.adjustsFontForContentSizeCategory = !out
             l.font = font
+            if l.styled { restyleLabel() } // its spacing and line height scale too
         case let t as AsukaTextField:
             t.holdsFont = out
             t.adjustsFontForContentSizeCategory = !out
             t.font = font
+            if letterSpacing != 0 { applyFieldSpacing() }
         case let t as AsukaTextView:
             t.holdsFont = out
             t.adjustsFontForContentSizeCategory = !out
@@ -195,9 +202,11 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         case let l as UILabel:
             l.font = f
             l.adjustsFontForContentSizeCategory = true
+            if (l as? AsukaLabel)?.styled == true { restyleLabel() }
         case let t as UITextField:
             t.font = f
             t.adjustsFontForContentSizeCategory = true
+            if letterSpacing != 0 { applyFieldSpacing() }
         case let t as AsukaTextView:
             t.font = f
             t.adjustsFontForContentSizeCategory = true
@@ -212,6 +221,8 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             c.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { [weak self] a in
                 var a = a
                 a.font = MainActor.assumeIsolated { self?.font } ?? f
+                let ls = MainActor.assumeIsolated { self.map { asukaScaled($0.letterSpacing, $0.textStyle) } } ?? 0
+                if ls != 0 { a.uiKit.kern = ls }
                 return a
             }
             b.configuration = c
@@ -223,7 +234,9 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
     func applyColor() {
         let c = asukaColor(color)
         switch view {
-        case let l as UILabel: l.textColor = c ?? .label
+        case let l as UILabel:
+            l.textColor = c ?? .label
+            if (l as? AsukaLabel)?.styled == true { restyleLabel() }
         case let t as UITextField: t.textColor = c ?? .label
         case let t as AsukaTextView: t.textColor = c ?? .label
         case let s as UISwitch: s.onTintColor = c
@@ -272,18 +285,25 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
                 setContentInset(n, UIEdgeInsets(top: CGFloat(t), left: CGFloat(l), bottom: CGFloat(b), right: CGFloat(r)))
             }
         case AsukaProp.background:
-            let c = asukaColor(v.color)
-            animated(view) { view.backgroundColor = c }
+            n.setBackground(asukaColor(v.color))
         case AsukaProp.cornerRadius:
             view.layer.cornerCurve = .continuous
             n.cornerRadius = CGFloat(v.float)
-            let r = n.clampedRadius
+            let r = n.layerRadius
             animated(view) { view.layer.cornerRadius = r }
             n.updateLayers()
-        case AsukaProp.borderWidth: view.layer.borderWidth = CGFloat(v.float)
+        case AsukaProp.borderWidth:
+            n.borderWidth = CGFloat(v.float)
+            if !n.drawsBorder { view.layer.borderWidth = n.borderWidth }
+            n.updateOutline()
         case AsukaProp.borderColor:
             n.borderColor = v.color
             view.layer.borderColor = asukaColor(v.color)?.resolvedColor(with: view.traitCollection).cgColor
+            n.updateOutlineColors()
+        case AsukaProp.cornerRadii, AsukaProp.borderWidths, AsukaProp.borderStyle:
+            _ = setOutline(n, prop, v)
+        case AsukaProp.letterSpacing, AsukaProp.lineHeight, AsukaProp.fontTraits, AsukaProp.textShadow, AsukaProp.truncation, AsukaProp.minimumScale:
+            _ = setTextStyle(n, prop, v)
         case AsukaProp.opacity:
             let a = CGFloat(v.float)
             n.opacity = a
@@ -374,7 +394,9 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
         case AsukaProp.layoutDirection:
             setDirection(n, AsukaLayoutDirection(rawValue: v.enumValue) ?? .inherit)
         case AsukaProp.lineLimit:
+            n.lineLimit = Int(v.int)
             (view as? UILabel)?.numberOfLines = Int(v.int)
+            if view is AsukaLabel { n.restyleLabel() }
             (view as? AsukaRichTextView)?.base.lines = Int(v.int)
             (view as? AsukaTextView)?.maxLines = Int(v.int)
         case AsukaProp.disabled:
@@ -444,7 +466,12 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
     func setOwn(_ n: AsukaNode, _ prop: UInt16, _ v: AsukaValue) {
         switch (n.kind, prop) {
         case (.text, AsukaProp.Text.text):
-            (n.view as? UILabel)?.text = v.string
+            if let l = n.view as? AsukaLabel {
+                l.source = v.string
+                if l.styled { n.restyleLabel() } else { l.text = v.string }
+            } else {
+                (n.view as? UILabel)?.text = v.string
+            }
         case (.button, AsukaProp.Button.title):
             guard let b = n.view as? UIButton else { return }
             var c = b.configuration ?? .plain()
@@ -626,13 +653,20 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             // Min-content: the widest word.
             var widest: CGFloat = 0
             if aw == -.infinity, w.isNaN, let text = l.text {
-                let attrs: [NSAttributedString.Key: Any] = [.font: l.font as Any]
+                var attrs: [NSAttributedString.Key: Any] = [.font: l.font as Any]
+                let ls = asukaScaled(n.letterSpacing, n.textStyle)
+                if ls != 0 { attrs[.kern] = ls }
                 for word in text.split(whereSeparator: { $0.isWhitespace }) {
                     widest = max(widest, (String(word) as NSString).size(withAttributes: attrs).width)
                 }
             }
             let fw = fit(w, aw, minContent: ceil(widest))
-            s = l.sizeThatFits(CGSize(width: fw, height: big))
+            if n.shrinks, let al = l as? AsukaLabel {
+                // At the scale it fits its width at, as it's drawn there.
+                s = n.labelSize(al, width: fw)
+            } else {
+                s = l.sizeThatFits(CGSize(width: fw, height: big))
+            }
             if fw < big { s.width = min(s.width, fw) }
             if l.text?.isEmpty ?? true { s = .zero }
         case is UISlider:

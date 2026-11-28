@@ -50,7 +50,7 @@ component Inbox {
 }
 ```
 
-样式中的 `font`、`color`、`textAlign` 和 `lines` 作用于文本本身。文本样式（`.body`、`.headline`、`.footnote` 等）会跟随用户设置的字号。
+样式中的 `font`、`color`、`textAlign` 和 `lines` 作用于文本本身，`letterSpacing`、`lineHeight`、`truncation`（超出行数时在哪里截断：`.tail`、`.head`、`.middle`、`.clip`）、`minimumScale`（截断前最多缩小到多少以放下文字）和 `textShadow` 也是（见[布局与样式](layout.md#文字)）。文本样式（`.body`、`.headline`、`.footnote` 等）会跟随用户设置的字号。
 
 ### RichText
 

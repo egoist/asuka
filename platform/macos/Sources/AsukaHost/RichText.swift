@@ -233,6 +233,10 @@ final class AsukaRichTextView: NSTextView {
         let para = NSMutableParagraphStyle()
         para.alignment = alignment(n)
         para.baseWritingDirection = writingDirection(n)
+        if n.lineHeight > 0 {
+            para.minimumLineHeight = n.lineHeight * previewFontScale
+            para.maximumLineHeight = para.minimumLineHeight
+        }
         let baseColor = asukaColor(n.color) ?? .labelColor
         let fm = NSFontManager.shared
         var styles: [[NSAttributedString.Key: Any]] = []
@@ -245,8 +249,15 @@ final class AsukaRichTextView: NSTextView {
                 let w = weight > 0 && Int(weight) < asukaWeights.count ? asukaWeights[Int(weight)] : 0
                 f = NSFont.monospacedSystemFont(ofSize: f.pointSize, weight: NSFont.Weight(w))
             }
+            f = traited(f, n.fontTraits) // the view's variants (TextStyle.swift)
             if s.italic { f = fm.convert(f, toHaveTrait: .italicFontMask) }
             var a: [NSAttributedString.Key: Any] = [.font: f, .paragraphStyle: para]
+            // The view's letter spacing and line height, in the text size
+            // it's drawn at, the text in the middle of each line.
+            if n.letterSpacing != 0 { a[.kern] = n.letterSpacing * previewFontScale }
+            if n.lineHeight > 0 {
+                a[.baselineOffset] = (n.lineHeight * previewFontScale - NSLayoutManager().defaultLineHeight(for: f)) / 2
+            }
             var color = baseColor
             if s.color != 0, let x = asukaColor(s.color) { color = x } else if !s.link.isEmpty { color = accentNSColor }
             a[.foregroundColor] = color

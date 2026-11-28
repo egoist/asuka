@@ -1,5 +1,6 @@
 // The visual part of the Mac host: what each kind it owns does as the
 // core's ops come (its files: Image.swift, Shape.swift, Canvas.swift,
+// Box.swift (corners of different radii, per-side and dashed borders),
 // Shader.swift, ProgressRing.swift, Video.swift, Web.swift,
 // WebModules.swift, NativeViews.swift; presses, hover, gestures and drag
 // and drop are Interaction.swift's, Gestures.swift's and DragDrop.swift's),
@@ -84,6 +85,7 @@ import AsukaOps
         if let s = n.shape { s.resized(n) }
         if let r = n.ring { r.layout(self, n) }
         if n.image != nil { layoutImage(n) }
+        boxPlaced(n) // Box.swift
     }
 
     /// The appearance changed: the colors set as fixed CGColors.
@@ -125,6 +127,7 @@ import AsukaOps
     /// label.
     func layerJSON(_ n: AsukaNode, _ d: inout [String: Any]) {
         guard let v = n.view else { return }
+        boxJSON(n, &d)
         if let l = v.layer {
             if l.shadowOpacity != 0 || n.hasShadow {
                 d["shadowOpacity"] = Double(l.shadowOpacity)

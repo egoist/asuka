@@ -1,6 +1,7 @@
 // Text: the type ramp, the app's fonts and text measuring helpers.
 
 import { Events } from "./ops.js";
+import { traitsCSS } from "./textstyle.js";
 
 // Text styles (ops.TextStyle): size in CSS pixels at the user's default
 // text size, weight, line height. The web's ramp: body 16.
@@ -38,14 +39,24 @@ export function fontOf(h, f) {
   return [size, weight, r[2], family];
 }
 
-/** applyFont sets el's font from n's text props, in rem: it follows the browser's text size. */
-export function applyFont(h, n, el, scale = 1) {
+/**
+ * applyFont sets el's font from n's text props, in rem: it follows the
+ * browser's text size, and so do its letter spacing and line height
+ * (points, as the font's size is). scale shrinks all three (a shrinking
+ * text's, MinimumScale); unset, it's the scale n is drawn at.
+ */
+export function applyFont(h, n, el, scale = n.fitScale || 1) {
   const [size, weight, line, family] = fontOf(h, n.font);
   const s = el.style;
   s.fontSize = (size * scale) / 16 + "rem";
   s.fontWeight = String(weight);
-  s.lineHeight = String(line);
+  s.lineHeight = n.lineHeight > 0 ? (n.lineHeight * scale) / 16 + "rem" : String(line);
   s.fontFamily = family;
+  s.letterSpacing = n.letterSpacing ? (n.letterSpacing * scale) / 16 + "rem" : "";
+  const [style, numeric, caps] = traitsCSS(n.font.traits || 0);
+  s.fontStyle = style;
+  s.fontVariantNumeric = numeric;
+  s.fontVariantCaps = caps;
 }
 
 export function align(a) {

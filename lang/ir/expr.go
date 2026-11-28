@@ -63,7 +63,7 @@ func (b *fb) value(e syntax.Expr, dst int) int {
 		return b.toOptional(r, check.Length, to, dst)
 	}
 	if b.isEdges(inner) && !b.isEdges(from) {
-		r := b.edges(e)
+		r := b.edges(e, inner)
 		return b.toOptional(r, inner, to, dst)
 	}
 	var r int
@@ -97,13 +97,16 @@ func (b *fb) toOptional(r int, from, to check.Type, dst int) int {
 	return o
 }
 
+// isEdges reports the prelude's Edges or Corners (check's isEdges).
 func (b *fb) isEdges(t check.Type) bool {
 	n, ok := t.(*check.Named)
-	return ok && n.Obj.Pkg != nil && n.Obj.Pkg.Prelude && n.Obj.Name() == "Edges"
+	return ok && n.Obj.Pkg != nil && n.Obj.Pkg.Prelude && (n.Obj.Name() == "Edges" || n.Obj.Name() == "Corners")
 }
 
-// edges makes Edges from a number or [v, h] / [t, r, b, l].
-func (b *fb) edges(e syntax.Expr) int {
+// edges makes Edges from a number or [v, h] / [t, r, b, l], or Corners
+// (want's) from a number or [tl, tr, br, bl]: the four physical ones,
+// the logical ones 0.
+func (b *fb) edges(e syntax.Expr, want check.Type) int {
 	var t, r, bo, l int
 	num := func(x syntax.Expr) int {
 		v := b.expr(x, -1)
@@ -125,17 +128,22 @@ func (b *fb) edges(e syntax.Expr) int {
 		t = num(e)
 		r, bo, l = t, t, t
 	}
-	edges := b.l.prog.Prelude.Scope.LookupLocal("Edges").(*check.TypeName)
-	shape := b.l.shape(edges.Type)
-	ks := repeatKind(bc.KFloat, 6)
+	name, fields := "Edges", 6
+	if n, ok := want.(*check.Named); ok && n.Obj.Name() == "Corners" {
+		name, fields = "Corners", 8
+	}
+	box := b.l.prog.Prelude.Scope.LookupLocal(name).(*check.TypeName)
+	shape := b.l.shape(box.Type)
+	ks := repeatKind(bc.KFloat, fields)
 	blk := b.regs(ks)
 	for i, v := range []int{t, r, bo, l} {
 		b.move(blk+i, v)
 	}
 	z := b.temp(bc.KFloat)
 	b.emit(op("KFLOAT"), z, b.l.floatConst(0))
-	b.move(blk+4, z)
-	b.move(blk+5, z)
+	for i := 4; i < fields; i++ {
+		b.move(blk+i, z)
+	}
 	o := b.temp(bc.KRef)
 	b.emit(op("NEWS"), o, shape, blk)
 	b.releaseRegs(blk, ks)

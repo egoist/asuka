@@ -265,6 +265,101 @@ static GskRoundedRect rounded(graphene_rect_t r, float radius) {
 	return rr;
 }
 
+// lx_corners are a node's corner radii: top left, top right, bottom
+// right, bottom left (CornerRadii, else CornerRadius on each).
+void lx_corners(node *n, float out[4]) {
+	bool per = false;
+	for (int i = 0; i < 4; i++) per |= n->corner_radii[i] != 0;
+	for (int i = 0; i < 4; i++) out[i] = fmaxf(per ? n->corner_radii[i] : n->corner_radius, 0);
+}
+
+bool lx_rounded_node(node *n) {
+	float c[4];
+	lx_corners(n, c);
+	return c[0] > 0 || c[1] > 0 || c[2] > 0 || c[3] > 0;
+}
+
+// lx_node_rounded is a node's shape in r: its corners, scaled down
+// together where two on a side are more than it, as CSS's are.
+GskRoundedRect lx_node_rounded(node *n, graphene_rect_t r) {
+	float c[4];
+	lx_corners(n, c);
+	float w = r.size.width, h = r.size.height, f = 1;
+	float sums[4] = {c[0] + c[1], c[1] + c[2], c[2] + c[3], c[3] + c[0]}, sides[4] = {w, h, w, h};
+	for (int i = 0; i < 4; i++)
+		if (sums[i] > sides[i] && sums[i] > 0) f = fminf(f, sides[i] / sums[i]);
+	GskRoundedRect rr = {.bounds = r};
+	for (int i = 0; i < 4; i++) rr.corner[i] = (graphene_size_t){c[i] * f, c[i] * f};
+	return rr;
+}
+
+// border_widths are a node's border's sides: top, right, bottom, left.
+static bool border_widths(node *n, float bw[4]) {
+	bool per = false;
+	for (int i = 0; i < 4; i++) per |= n->border_widths[i] != 0;
+	bool any = false;
+	for (int i = 0; i < 4; i++) {
+		bw[i] = fmaxf(per ? n->border_widths[i] : n->border_width, 0);
+		any |= bw[i] > 0;
+	}
+	return any;
+}
+
+// stroke_dashed strokes path w wide in c, as a dashed border's dashes
+// (3 widths long, gaps as long) or a dotted one's round dots (as wide as
+// it, a width apart).
+static void stroke_dashed(GtkSnapshot *snap, GskPath *path, float w, bool dotted, const GdkRGBA *c) {
+	GskStroke *s = gsk_stroke_new(w);
+	if (dotted) {
+		float dash[2] = {0, 2 * w};
+		gsk_stroke_set_line_cap(s, GSK_LINE_CAP_ROUND);
+		gsk_stroke_set_dash(s, dash, 2);
+	} else {
+		float dash[2] = {3 * w, 3 * w};
+		gsk_stroke_set_dash(s, dash, 2);
+	}
+	gtk_snapshot_append_stroke(snap, path, s, c);
+	gsk_stroke_free(s);
+	gsk_path_unref(path);
+}
+
+// draw_border draws a node's border inside rr: solid as GSK's border (its
+// sides' widths, the inner corners the outer less them), dashed or
+// dotted along the middle of its sides, around its corners when every
+// side is as wide.
+static void draw_border(node *n, GtkSnapshot *snap, const GskRoundedRect *rr, const float bw[4], GdkRGBA c) {
+	if (n->border_style == AK_BORDER_STYLE_SOLID || !gsk_path_builder_add_rounded_rect || !gsk_path_builder_move_to) {
+		GdkRGBA cs[4] = {c, c, c, c};
+		gtk_snapshot_append_border(snap, rr, bw, cs);
+		return;
+	}
+	bool dotted = n->border_style == AK_BORDER_STYLE_DOTTED;
+	const graphene_rect_t *b = &rr->bounds;
+	if (bw[0] == bw[1] && bw[1] == bw[2] && bw[2] == bw[3]) {
+		float w = bw[0], h = w / 2;
+		GskRoundedRect in = {.bounds = {{b->origin.x + h, b->origin.y + h}, {fmaxf(b->size.width - w, 0), fmaxf(b->size.height - w, 0)}}};
+		for (int i = 0; i < 4; i++) in.corner[i] = (graphene_size_t){fmaxf(rr->corner[i].width - h, 0), fmaxf(rr->corner[i].height - h, 0)};
+		GskPathBuilder *pb = gsk_path_builder_new();
+		gsk_path_builder_add_rounded_rect(pb, &in);
+		stroke_dashed(snap, gsk_path_builder_free_to_path(pb), w, dotted, &c);
+		return;
+	}
+	float x0 = b->origin.x, y0 = b->origin.y, x1 = x0 + b->size.width, y1 = y0 + b->size.height;
+	float seg[4][4] = {
+		{x0, y0 + bw[0] / 2, x1, y0 + bw[0] / 2},
+		{x1 - bw[1] / 2, y0, x1 - bw[1] / 2, y1},
+		{x1, y1 - bw[2] / 2, x0, y1 - bw[2] / 2},
+		{x0 + bw[3] / 2, y1, x0 + bw[3] / 2, y0},
+	};
+	for (int i = 0; i < 4; i++) {
+		if (bw[i] <= 0) continue;
+		GskPathBuilder *pb = gsk_path_builder_new();
+		gsk_path_builder_move_to(pb, seg[i][0], seg[i][1]);
+		gsk_path_builder_line_to(pb, seg[i][2], seg[i][3]);
+		stroke_dashed(snap, gsk_path_builder_free_to_path(pb), bw[i], dotted, &c);
+	}
+}
+
 // background is the color behind a node's content: its Background, or a
 // material's translucent surface (GTK can't blur what's behind a view).
 static bool background(node *n, GdkRGBA *c) {
@@ -290,12 +385,23 @@ static void draw_gradient(node *n, GtkSnapshot *snap, graphene_rect_t bounds, Gs
 		stops[i] = (GskColorStop){off, c};
 		last = off;
 	}
-	graphene_point_t start = {n->gradient_line[0] * bounds.size.width, n->gradient_line[1] * bounds.size.height};
-	graphene_point_t end = {n->gradient_line[2] * bounds.size.width, n->gradient_line[3] * bounds.size.height};
-	if (start.x == end.x && start.y == end.y) end.y += 1;
-	if (n->corner_radius > 0) gtk_snapshot_push_rounded_clip(snap, rr);
-	gtk_snapshot_append_linear_gradient(snap, &bounds, &start, &end, stops, count);
-	if (n->corner_radius > 0) gtk_snapshot_pop(snap);
+	bool round = lx_rounded_node(n);
+	if (round) gtk_snapshot_push_rounded_clip(snap, rr);
+	graphene_point_t center = {n->gradient_center[0] * bounds.size.width, n->gradient_center[1] * bounds.size.height};
+	if (n->gradient_kind == AK_GRADIENT_KIND_RADIAL) {
+		// A circle, its radius a fraction of the shorter side.
+		float r = fmaxf(n->gradient_radius * fminf(bounds.size.width, bounds.size.height), 0.01f);
+		gtk_snapshot_append_radial_gradient(snap, &bounds, &center, r, r, 0, 1, stops, count);
+	} else if (n->gradient_kind == AK_GRADIENT_KIND_CONIC && gtk_snapshot_append_conic_gradient) {
+		// From angle, clockwise from the top, as GSK's rotation is.
+		gtk_snapshot_append_conic_gradient(snap, &bounds, &center, n->gradient_angle, stops, count);
+	} else {
+		graphene_point_t start = {n->gradient_line[0] * bounds.size.width, n->gradient_line[1] * bounds.size.height};
+		graphene_point_t end = {n->gradient_line[2] * bounds.size.width, n->gradient_line[3] * bounds.size.height};
+		if (start.x == end.x && start.y == end.y) end.y += 1;
+		gtk_snapshot_append_linear_gradient(snap, &bounds, &start, &end, stops, count);
+	}
+	if (round) gtk_snapshot_pop(snap);
 	if (stops != stack) free(stops);
 }
 
@@ -332,11 +438,11 @@ void lx_snapshot_view(GtkWidget *w, GtkSnapshot *snap) {
 	float width, height;
 	lx_size(n, w, &width, &height);
 	graphene_rect_t bounds = {{0, 0}, {width, height}};
-	GskRoundedRect rr = rounded(bounds, n->corner_radius);
+	GskRoundedRect rr = lx_node_rounded(n, bounds);
 	GdkRGBA c;
 	if (n->shadow.color && lx_resolve(n->shadow.color, &c) && c.alpha > 0)
 		gtk_snapshot_append_outset_shadow(snap, &rr, &c, n->shadow.dx, n->shadow.dy, 0, n->shadow.blur);
-	bool round = n->corner_radius > 0;
+	bool round = lx_rounded_node(n);
 	if (n->gradient.len > 0) {
 		draw_gradient(n, snap, bounds, &rr);
 	} else if (background(n, &c) && c.alpha > 0) {
@@ -352,14 +458,19 @@ void lx_snapshot_view(GtkWidget *w, GtkSnapshot *snap) {
 		else
 			gtk_snapshot_push_clip(snap, &bounds);
 	}
+	// A text's shadow, under its glyphs: what its label draws, shadowed.
+	GdkRGBA tc;
+	bool shadowed = n->text_shadow.color && gtk_snapshot_push_shadow && lx_resolve(n->text_shadow.color, &tc) && tc.alpha > 0;
+	if (shadowed) {
+		GskShadow sh = {tc, n->text_shadow.dx, n->text_shadow.dy, n->text_shadow.blur};
+		gtk_snapshot_push_shadow(snap, &sh, 1);
+	}
 	snapshot_content(n, snap, &bounds);
 	lx_snapshot_children(w, snap);
+	if (shadowed) gtk_snapshot_pop(snap);
 	if (clip) gtk_snapshot_pop(snap);
-	if (n->border_width > 0 && lx_resolve(n->border_color, &c) && c.alpha > 0) {
-		float bw[4] = {n->border_width, n->border_width, n->border_width, n->border_width};
-		GdkRGBA cs[4] = {c, c, c, c};
-		gtk_snapshot_append_border(snap, &rr, bw, cs);
-	}
+	float bw[4];
+	if (border_widths(n, bw) && lx_resolve(n->border_color, &c) && c.alpha > 0) draw_border(n, snap, &rr, bw, c);
 	snapshot_highlight(n, snap, bounds);
 }
 

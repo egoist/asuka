@@ -155,7 +155,7 @@ enum {
 	AK_PROP_TRANSFORM = 23,
 	// u64 color (0: none), f32 blur radius, offset x, y (points), from the view's shape
 	AK_PROP_SHADOW = 24,
-	// a linear background gradient: u32 count, per stop u64 color and f32 location (0 to 1); f32 start x, y, end x, y (unit points of the view)
+	// a background gradient: u32 count, per stop u64 color and f32 location (0 to 1); f32 start x, y, end x, y (unit points of the view: a linear gradient's line); u8 GradientKind; f32 center x, y (unit points: a radial or conic gradient's center), radius (a radial gradient's circle, as a fraction of the view's shorter side: 0.5 reaches its nearer sides), angle (where a conic gradient starts, in degrees clockwise from the top; it sweeps clockwise). Empty: none
 	AK_PROP_GRADIENT = 25,
 	// u8 fade, f32 scale (0: none), offset x, y (points): the state a view comes in from when it's inserted during an animation, and goes out to when it's destroyed during one (the host keeps it until it has)
 	AK_PROP_TRANSITION = 26,
@@ -207,7 +207,25 @@ enum {
 	AK_PROP_A11Y_LABELLED_BY = 49,
 	// the view (a node ID; 0: none) whose text describes this one (a field's description or error): accessibilityHint from its text where the platform has no relation, AXHelp's text, UIA's DescribedBy, GTK_ACCESSIBLE_RELATION_DESCRIBED_BY, aria-describedby
 	AK_PROP_A11Y_DESCRIBED_BY = 50,
-	AK_COMMON_PROP_COUNT = 51,
+	// points added after each character (tracking; negative: tighter), scaled as the font is with the user's text size: NSAttributedString's kern, letterSpacing in ems (the points over the text size), CSS's letter-spacing. 0: the font's own
+	AK_PROP_LETTER_SPACING = 51,
+	// points from one line's baseline to the next (React Native's lineHeight, CSS's line-height in px), scaled as the font is with the user's text size; the text sits in the middle of each line's height, as CSS's does. 0: the font's own
+	AK_PROP_LINE_HEIGHT = 52,
+	// the font's variants, a set of bits: 1 italic (its italic face, or slanted when it has none), 2 monospaced digits (OpenType's tnum: every digit as wide), 4 small capitals (smcp: lower case letters drawn as small capitals). Where a font is applied: texts, buttons' titles, fields, a RichText's default
+	AK_PROP_FONT_TRAITS = 53,
+	// a shadow under a text's glyphs: as Shadow (u64 color, 0: none; f32 blur radius, offset x, y in points). It takes no room: layout doesn't see it
+	AK_PROP_TEXT_SHADOW = 54,
+	// where a text that doesn't fit its lines (LineLimit; one line with MinimumScale) is cut: an ellipsis at its end (Tail), its start (Head) or its middle (Middle), or cut off at its edge (Clip)
+	AK_PROP_TRUNCATION = 55,
+	// a text shrinks to fit its width in its lines (LineLimit; 1 when there's none), down to this fraction of its font's size (its letter spacing and line height with it), before it's truncated: the largest scale it fits at, found the same way where it's measured and where it's drawn. 0 or 1: it doesn't shrink
+	AK_PROP_MINIMUM_SCALE = 56,
+	// per-corner radii, in points, physical: top left, top right, bottom right, bottom left (in an edges' top, right, bottom, left). When they differ the core sends these and a CornerRadius of 0; when they're the same it sends CornerRadius and these as 0, 0, 0, 0 (none). As CSS's, radii whose sum is more than their side are all scaled down by the same factor until they fit
+	AK_PROP_CORNER_RADII = 57,
+	// per-side border widths, in points, physical (top, right, bottom, left), drawn inside the box, each in BorderColor. When they differ the core sends these and a BorderWidth of 0; when they're the same it sends BorderWidth and these as 0, 0, 0, 0 (none). Corners join as CSS's: an inner radius is the outer one less the side's width
+	AK_PROP_BORDER_WIDTHS = 58,
+	// how a border is drawn: solid, dashed (dashes three times its width long, gaps as long), or dotted (round dots as wide as it, a width apart), along its sides and around its corners
+	AK_PROP_BORDER_STYLE = 59,
+	AK_COMMON_PROP_COUNT = 60,
 	AK_FIRST_KIND_PROP = 64,
 };
 
@@ -869,41 +887,44 @@ enum {
 	AK_ENUM_TEXT_STYLE = 5,
 	AK_ENUM_FONT_WEIGHT = 6,
 	AK_ENUM_TEXT_ALIGN = 7,
-	AK_ENUM_LAYOUT_DIRECTION = 8,
-	AK_ENUM_BUTTON_VARIANT = 9,
-	AK_ENUM_KEYBOARD = 10,
-	AK_ENUM_RETURN_KEY = 11,
-	AK_ENUM_AUTOCAPITALIZE = 12,
-	AK_ENUM_AUTOCORRECT = 13,
-	AK_ENUM_LIFECYCLE = 14,
-	AK_ENUM_ALERT_STYLE = 15,
-	AK_ENUM_ALERT_BUTTON_ROLE = 16,
-	AK_ENUM_MENU_TRIGGER = 17,
-	AK_ENUM_HAPTIC = 18,
-	AK_ENUM_IMAGE_MODE = 19,
-	AK_ENUM_LIST_APPEARANCE = 20,
-	AK_ENUM_DATE_MODE = 21,
-	AK_ENUM_MATERIAL = 22,
-	AK_ENUM_GESTURE_STATE = 23,
-	AK_ENUM_PATH_OP = 24,
-	AK_ENUM_LINE_CAP = 25,
-	AK_ENUM_LINE_JOIN = 26,
-	AK_ENUM_CANVAS_OP = 27,
-	AK_ENUM_ANIMATION_CURVE = 28,
-	AK_ENUM_COLOR_SCHEME = 29,
-	AK_ENUM_SEMANTIC_COLOR = 30,
-	AK_ENUM_SHARE_KIND = 31,
-	AK_ENUM_DRAG_PHASE = 32,
-	AK_ENUM_SCROLL_ANCHOR = 33,
-	AK_ENUM_EDGE_EFFECT = 34,
-	AK_ENUM_WINDOW_ACTION = 35,
-	AK_ENUM_PLACEMENT = 36,
-	AK_ENUM_TITLE_BAR = 37,
-	AK_ENUM_SNACKBAR_DURATION = 38,
-	AK_ENUM_LOCATION_ACTION = 39,
-	AK_ENUM_DEV_ERROR_ACTION = 40,
-	AK_ENUM_VIDEO_ACTION = 41,
-	AK_ENUM_COUNT = 42,
+	AK_ENUM_TRUNCATION = 8,
+	AK_ENUM_BORDER_STYLE = 9,
+	AK_ENUM_GRADIENT_KIND = 10,
+	AK_ENUM_LAYOUT_DIRECTION = 11,
+	AK_ENUM_BUTTON_VARIANT = 12,
+	AK_ENUM_KEYBOARD = 13,
+	AK_ENUM_RETURN_KEY = 14,
+	AK_ENUM_AUTOCAPITALIZE = 15,
+	AK_ENUM_AUTOCORRECT = 16,
+	AK_ENUM_LIFECYCLE = 17,
+	AK_ENUM_ALERT_STYLE = 18,
+	AK_ENUM_ALERT_BUTTON_ROLE = 19,
+	AK_ENUM_MENU_TRIGGER = 20,
+	AK_ENUM_HAPTIC = 21,
+	AK_ENUM_IMAGE_MODE = 22,
+	AK_ENUM_LIST_APPEARANCE = 23,
+	AK_ENUM_DATE_MODE = 24,
+	AK_ENUM_MATERIAL = 25,
+	AK_ENUM_GESTURE_STATE = 26,
+	AK_ENUM_PATH_OP = 27,
+	AK_ENUM_LINE_CAP = 28,
+	AK_ENUM_LINE_JOIN = 29,
+	AK_ENUM_CANVAS_OP = 30,
+	AK_ENUM_ANIMATION_CURVE = 31,
+	AK_ENUM_COLOR_SCHEME = 32,
+	AK_ENUM_SEMANTIC_COLOR = 33,
+	AK_ENUM_SHARE_KIND = 34,
+	AK_ENUM_DRAG_PHASE = 35,
+	AK_ENUM_SCROLL_ANCHOR = 36,
+	AK_ENUM_EDGE_EFFECT = 37,
+	AK_ENUM_WINDOW_ACTION = 38,
+	AK_ENUM_PLACEMENT = 39,
+	AK_ENUM_TITLE_BAR = 40,
+	AK_ENUM_SNACKBAR_DURATION = 41,
+	AK_ENUM_LOCATION_ACTION = 42,
+	AK_ENUM_DEV_ERROR_ACTION = 43,
+	AK_ENUM_VIDEO_ACTION = 44,
+	AK_ENUM_COUNT = 45,
 };
 
 // Role.
@@ -1020,6 +1041,31 @@ enum {
 	AK_TEXT_ALIGN_END = 2,
 	AK_TEXT_ALIGN_JUSTIFY = 3,
 	AK_TEXT_ALIGN_COUNT = 4,
+};
+
+// Truncation.
+enum {
+	AK_TRUNCATION_TAIL = 0,
+	AK_TRUNCATION_HEAD = 1,
+	AK_TRUNCATION_MIDDLE = 2,
+	AK_TRUNCATION_CLIP = 3,
+	AK_TRUNCATION_COUNT = 4,
+};
+
+// BorderStyle.
+enum {
+	AK_BORDER_STYLE_SOLID = 0,
+	AK_BORDER_STYLE_DASHED = 1,
+	AK_BORDER_STYLE_DOTTED = 2,
+	AK_BORDER_STYLE_COUNT = 3,
+};
+
+// GradientKind.
+enum {
+	AK_GRADIENT_KIND_LINEAR = 0,
+	AK_GRADIENT_KIND_RADIAL = 1,
+	AK_GRADIENT_KIND_CONIC = 2,
+	AK_GRADIENT_KIND_COUNT = 3,
 };
 
 // LayoutDirection.

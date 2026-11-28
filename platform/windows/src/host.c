@@ -41,6 +41,8 @@ static void node_free(node *n) {
 	free(n->kids);
 	free(n->font_family);
 	free(n->gradient);
+	if (n->conic) GdipDisposeImage((GpImage *)n->conic);
+	wh_free_text(n);
 	free(n->shadow);
 	actions_free(&n->menu);
 	actions_free(&n->acts);
@@ -558,7 +560,7 @@ void wh_place_at(node *n, const float f[4]) {
 		wh_transformed(n, x, y, f[2], f[3], &x0, &y0, &x1, &y1);
 		w = x1 - x0, ht = y1 - y0;
 	}
-	bool shadow = n->shadow_len > 0;
+	bool shadow = n->shadow_len > 0 || n->has_text_shadow;
 	if (shadow) wh_invalidate_shadow(n);  // where it was
 	SetWindowPos(n->hwnd, NULL, x0, y0, w, ht, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOCOPYBITS);
 	if (shadow) wh_invalidate_shadow(n);
@@ -579,7 +581,7 @@ void wh_resized(node *n) {
 	else if (n->rich) wh_rich_resized(n);
 	else if (n->web) wh_web_resized(n);
 	else if (n->shader) wh_render_shader(n);
-	if (n->corner_radius > 0 || n->gradient || n->border_width > 0) InvalidateRect(n->hwnd, NULL, FALSE);
+	if (wh_round(n) || n->gradient || wh_has_border(n)) InvalidateRect(n->hwnd, NULL, FALSE);
 }
 
 void wh_measure(uint32_t id, float w, float h, float aw, float ah, float *ow, float *oh) {

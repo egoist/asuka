@@ -432,7 +432,7 @@ static void build(node *n) {
 		int32_t weight = st->weight ? st->weight : n->font_weight;
 		font_spec s = wh_spec(ts, weight, size, n->font_family);
 		s.k = wh_scale_of(n);
-		s.italic = st->flags & AK_RICH_ITALIC;
+		s.italic = (st->flags & AK_RICH_ITALIC) || (n->font_traits & 1);
 		s.mono = st->flags & AK_RICH_MONO;
 		s.underline = st->flags & AK_RICH_UNDERLINE;
 		s.strike = st->flags & AK_RICH_STRIKE;
@@ -458,6 +458,15 @@ static void build(node *n) {
 	else if (wh_aligned_right(n->text_align, rtl)) align = PFA_RIGHT;
 	set_paragraphs(ctl, align, rtl);
 	if (n->dir == AK_LAYOUT_DIRECTION_INHERIT) text_directions(ctl, align, rtl, text.data, (int32_t)text.len, r->para_ends.data, r->para_ends.len);
+	if (n->line_height > 0) {
+		// Its line height: exactly so many twips a line (the selection is
+		// all of it). Its letter spacing isn't: a rich edit measures and
+		// draws none (CHARFORMAT2's sSpacing and TOM's are its documents').
+		PARAFORMAT2 lh = {.cbSize = sizeof lh, .dwMask = PFM_LINESPACING, .bLineSpacingRule = 4};
+		lh.dyLineSpacing = wh_twips(n->line_height * wh_font_scale(), spec.k);
+		set_sel(ctl, 0, -1);
+		SendMessageW(ctl, EM_SETPARAFORMAT, 0, (LPARAM)&lh);
+	}
 	insert_inlines(n, r, ctl);
 	// A line limit ends the last line shown with an ellipsis.
 	SendMessageW(ctl, EM_SETELLIPSISMODE, 0, n->line_limit > 0 ? ELLIPSIS_END : ELLIPSIS_NONE);

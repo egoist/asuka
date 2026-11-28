@@ -886,11 +886,17 @@ func (c *Checker) assign(e syntax.Expr, want Type, what string) Type {
 		c.expr(e, Invalid)
 		return Invalid
 	}
-	// Edges from a number or [v, h] / [t, r, b, l].
+	// Edges from a number or [v, h] / [t, r, b, l]; Corners from a
+	// number or [tl, tr, br, bl].
 	if c.isEdges(want) {
-		if a, ok := e.(*syntax.ArrayExpr); ok && (len(a.Elems) == 2 || len(a.Elems) == 4) {
+		corners := c.isCorners(want)
+		if a, ok := e.(*syntax.ArrayExpr); ok && (len(a.Elems) == 2 && !corners || len(a.Elems) == 4) {
+			what := "a side of Edges"
+			if corners {
+				what = "a corner of Corners"
+			}
 			for _, x := range a.Elems {
-				c.assign(x, Float, "a side of Edges")
+				c.assign(x, Float, what)
 			}
 			c.record(e, &Array{Float})
 			c.info.Convs[e] = want
@@ -1043,10 +1049,17 @@ func (c *Checker) convert(e syntax.Expr, got, want Type) bool {
 	return false
 }
 
-// isEdges reports the prelude's Edges.
+// isEdges reports the prelude's Edges, or its Corners: the box types a
+// number (every side, every corner) or an array of them converts to.
 func (c *Checker) isEdges(t Type) bool {
 	n, ok := t.(*Named)
-	return ok && n.Obj.Pkg != nil && n.Obj.Pkg.Prelude && n.Obj.name == "Edges"
+	return ok && n.Obj.Pkg != nil && n.Obj.Pkg.Prelude && (n.Obj.name == "Edges" || n.Obj.name == "Corners")
+}
+
+// isCorners reports the prelude's Corners.
+func (c *Checker) isCorners(t Type) bool {
+	n, ok := t.(*Named)
+	return ok && n.Obj.Pkg != nil && n.Obj.Pkg.Prelude && n.Obj.name == "Corners"
 }
 
 // constNumber reports a number known when compiling: a literal, maybe

@@ -141,6 +141,15 @@ public enum AsukaProp {
     public static let a11yControls: UInt16 = 48
     public static let a11yLabelledBy: UInt16 = 49
     public static let a11yDescribedBy: UInt16 = 50
+    public static let letterSpacing: UInt16 = 51
+    public static let lineHeight: UInt16 = 52
+    public static let fontTraits: UInt16 = 53
+    public static let textShadow: UInt16 = 54
+    public static let truncation: UInt16 = 55
+    public static let minimumScale: UInt16 = 56
+    public static let cornerRadii: UInt16 = 57
+    public static let borderWidths: UInt16 = 58
+    public static let borderStyle: UInt16 = 59
 
     public enum View {
         public static let dropAccept: UInt16 = 64
@@ -634,6 +643,25 @@ public enum AsukaTextAlign: Int32 {
     case center = 1
     case end = 2
     case justify = 3
+}
+
+public enum AsukaTruncation: Int32 {
+    case tail = 0
+    case head = 1
+    case middle = 2
+    case clip = 3
+}
+
+public enum AsukaBorderStyle: Int32 {
+    case solid = 0
+    case dashed = 1
+    case dotted = 2
+}
+
+public enum AsukaGradientKind: Int32 {
+    case linear = 0
+    case radial = 1
+    case conic = 2
 }
 
 public enum AsukaLayoutDirection: Int32 {

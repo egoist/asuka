@@ -14,6 +14,7 @@
 // with Pasted instead of going in.
 #include "host.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -905,8 +906,17 @@ static void style_base_tag(node *n) {
 	if (*fam) pango_font_description_set_family(desc, fam);
 	pango_font_description_set_absolute_size(desc, size * 1024.0);
 	pango_font_description_set_weight(desc, (PangoWeight)weight);
+	pango_font_description_set_style(desc, n->font_traits & 1 ? PANGO_STYLE_ITALIC : PANGO_STYLE_NORMAL);
 	set_boxed(t, "font-desc", pango_font_description_get_type(), desc);
 	pango_font_description_free(desc);
+	// Its letter spacing and font features, as a label's attributes.
+	float k = H.font_scale > 0 ? H.font_scale : 1;
+	g_object_set(t, "letter-spacing", (int)lroundf(n->letter_spacing * k * 1024), NULL);
+	if (n->font_traits & 2)
+		g_object_set(t, "font-features", "tnum=1", NULL);
+	else
+		g_object_set(t, "font-features-set", 0, NULL);
+	g_object_set(t, "variant", n->font_traits & 4 ? PANGO_VARIANT_SMALL_CAPS : PANGO_VARIANT_NORMAL, NULL);
 	GdkRGBA c;
 	if (lx_resolve(n->color, &c))
 		set_boxed(t, "foreground-rgba", gdk_rgba_get_type(), &c);

@@ -222,12 +222,28 @@ struct node {
 	char *font_family;
 	ak_color color;
 	int line_limit;
+	// Style's letterSpacing, lineHeight (points), minimumScale, the
+	// font's variants (FontTraits' bits), truncation (AK_TRUNCATION_*)
+	// and textShadow (Shadow's bytes; has_text_shadow: a color).
+	float letter_spacing, line_height, min_scale;
+	int32_t font_traits, truncation;
+	uint8_t text_shadow[20];
+	bool has_text_shadow;
+	uint32_t text_gen;      // counts changes to what a Text draws: its shadow's picture follows it
+	GpBitmap *tshadow;      // the text's shadow, blurred (textlay.c), for text_gen at tshadow_w by tshadow_h
+	uint32_t tshadow_gen;
+	int tshadow_w, tshadow_h, tshadow_pad;
 
 	// Visual props.
 	ak_color background, border_color;
 	float corner_radius, border_width;
+	float corner_radii[4];   // CornerRadii: top left, top right, bottom right, bottom left (points; all 0: CornerRadius)
+	float border_widths[4];  // BorderWidths: top, right, bottom, left (points; all 0: BorderWidth)
+	int32_t border_style;    // AK_BORDER_STYLE_*
 	uint8_t *gradient;
 	uint32_t gradient_len;
+	GpBitmap *conic;         // a conic gradient's picture, conic_w by conic_h pixels
+	int conic_w, conic_h;
 	uint8_t *shadow;
 	uint32_t shadow_len;
 	float opacity;
@@ -238,7 +254,8 @@ struct node {
 	int32_t material;      // Style.Material
 	bool clip;             // Style.Clip
 	HRGN clip_rgn;         // its rounded clip's region (clip.c)
-	double clip_r;         // and its radius, in pixels
+	double clip_r;         // and its largest radius, in pixels
+	double clip_rs[4];     // each corner's (top left, top right, bottom right, bottom left)
 	bool disabled;
 
 	actions menu;
@@ -624,6 +641,12 @@ void g_draw_arc(gfx g, ARGB c, float width, int cap, float x, float y, float w, 
 void g_draw_line(gfx g, ARGB c, float width, float x0, float y0, float x1, float y1);
 GpPath *g_path(void);
 void g_path_round_rect(GpPath *p, float x, float y, float w, float h, float r);
+// g_path_rrect adds a rectangle whose corners (top left, top right,
+// bottom right, bottom left) are quarter ellipses of radii rx, ry (0:
+// square).
+void g_path_rrect(GpPath *p, float x, float y, float w, float h, const float rx[4], const float ry[4]);
+void g_path_corners(GpPath *p, float x, float y, float w, float h, const float r[4]);
+void g_fill_corners(gfx g, ARGB c, float x, float y, float w, float h, const float r[4]);
 void g_clip_path(gfx g, GpPath *p);
 void g_reset_clip(gfx g);
 void g_draw_image(gfx g, GpBitmap *b, float alpha, float x, float y, float w, float h, float sx, float sy, float sw, float sh);
@@ -649,6 +672,26 @@ rgba wh_bg_of(HWND top);
 UINT wh_text_direction(bool rtl);
 UINT wh_start_side(bool rtl);
 bool wh_aligned_right(int32_t align, bool rtl);
+// wh_radii are n's corner radii in pixels (top left, top right, bottom
+// right, bottom left) for a w by h pixel box: its CornerRadii, or its
+// CornerRadius on each, scaled down as CSS's are when two on a side are
+// more than it. wh_round reports whether any is more than 0;
+// wh_uniform whether they're all one, its radius.
+void wh_radii(const node *n, float w, float h, float r[4]);
+bool wh_round(const node *n);
+bool wh_uniform_radii(const float r[4]);
+bool wh_has_border(const node *n);
+
+// ---- textlay.c: a Text's own lines (letter spacing, line height,
+// truncation, shrinking, OpenType features, its shadow) ----
+
+void wh_draw_text(node *n, HDC dc, RECT r, COLORREF color);
+bool wh_styled_text(const node *n);
+void wh_styled_measure(node *n, float cw, float aw, float *w, float *h);
+void wh_styled_paint(node *n, HDC dc, RECT r, COLORREF color);
+void wh_paint_text_shadow(node *n, gfx g, float x, float y);
+void wh_text_changed(node *n);
+void wh_free_text(node *n);
 
 // ---- text.c: measuring ----
 

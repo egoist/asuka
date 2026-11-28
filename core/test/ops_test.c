@@ -60,6 +60,9 @@ static void golden_batch(ak_batch *b) {
 	ak_batch_set_color(b, 2, AK_PROP_COLOR, ak_semantic_color(AK_SEMANTIC_COLOR_SECONDARY_LABEL));
 	ak_batch_set_enum(b, 2, AK_PROP_TEXT_STYLE, AK_TEXT_STYLE_HEADLINE);
 	ak_batch_set_edges(b, 1, AK_PROP_BORDER_WIDTH, 1, 2, 3.25f, 4);
+	ak_batch_set_edges(b, 1, AK_PROP_CORNER_RADII, 16, 16, 0, 0.5f);
+	ak_batch_set_float(b, 2, AK_PROP_LETTER_SPACING, -0.25);
+	ak_batch_set_int(b, 2, AK_PROP_FONT_TRAITS, 3);
 	ak_batch_set_bytes(b, 1, AK_PROP_A11Y_LABEL, (const uint8_t[]){0, 1, 0xfe}, 3);
 	ak_batch_insert(b, 1, 2, 0);
 	ak_batch_set_frame(b, 2, 0.5f, 1, 320, 44.25f);
@@ -74,7 +77,7 @@ static void golden_batch(ak_batch *b) {
 TEST(golden_bin) {
 	ak_batch b = {0};
 	golden_batch(&b);
-	CHECK_EQ_INT(ak_batch_len(&b), 19);
+	CHECK_EQ_INT(ak_batch_len(&b), 22);
 	size_t n;
 	const uint8_t *p = ak_batch_encode(&b, &n);
 	check_golden("golden.bin", p, n);
@@ -100,7 +103,7 @@ TEST(golden_txt) {
 		n++;
 	}
 	CHECK_EQ_INT(br.err, AK_OK);
-	CHECK_EQ_INT(n, 19);
+	CHECK_EQ_INT(n, 22);
 	check_bytes("golden.txt", dump.data, dump.len, &txt);
 	CHECK_EQ_STR(cstr(&str),
 		"Create 1 View\n"
@@ -113,6 +116,9 @@ TEST(golden_txt) {
 		"SetProp 2 Color=#100000002\n"
 		"SetProp 2 TextStyle=5\n"
 		"SetProp 1 BorderWidth=[1 2 3.25 4]\n"
+		"SetProp 1 CornerRadii=[16 16 0 0.5]\n"
+		"SetProp 2 LetterSpacing=-0.25\n"
+		"SetProp 2 FontTraits=3\n"
 		"SetProp 1 A11yLabel=0001fe\n"
 		"Insert 1 2 @0\n"
 		"SetFrame 2 0.5,1 320x44.25\n"
@@ -191,7 +197,7 @@ TEST(round_trip) {
 	int count = 0;
 	while (ak_batch_next(&br, &op)) count++;
 	CHECK_EQ_INT(br.err, AK_OK);
-	CHECK_EQ_INT(count, 19);
+	CHECK_EQ_INT(count, 22);
 	// Cut short, it stops with an error.
 	ak_batch_reader_init(&br, p, 20);
 	while (ak_batch_next(&br, &op)) {

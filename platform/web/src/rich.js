@@ -42,6 +42,7 @@ function render(h, n) {
   const el = n.text;
   el.textContent = "";
   n.slots = [];
+  n.runsLineHeight = n.lineHeight > 0;
   if (!n.content) return;
   const { styles, paras } = n.content;
   let next = 0;
@@ -74,7 +75,7 @@ function render(h, n) {
         const [size, weight, line] = text.fontOf(h, { style: st.style || n.font.style, size: st.size || 0, weight: 0, family: "" });
         css.fontSize = size / 16 + "rem";
         if (!st.weight && st.style) css.fontWeight = String(weight);
-        css.lineHeight = String(line);
+        if (!(n.lineHeight > 0)) css.lineHeight = String(line); // the view's LineHeight holds for every run
       }
       if (st.weight) css.fontWeight = String(weights[st.weight]);
       if (st.flags & 1) css.fontStyle = "italic";
@@ -121,6 +122,11 @@ const richText = {
   },
   lines(h, n) { lineClamp(n.text, n.lines); },
   align(h, n) { n.el.style.textAlign = text.align(n.align); },
+  font(h, n) {
+    text.applyFont(h, n, n.el);
+    // A LineHeight set or unset: the runs' own line heights follow it.
+    if (n.content && (n.lineHeight > 0) !== !!n.runsLineHeight) render(h, n);
+  },
   insert(h, p, c, i) {
     p.el.appendChild(c.el);
     h.afterCore(() => placeInlines(h, p));

@@ -93,15 +93,11 @@ extension AsukaEnvironment {
     /// Style.TextAlign, or the side the language starts on: End is the
     /// other one, whichever way the view runs.
     func applyTextAlign() {
-        let a: NSTextAlignment
-        switch AsukaTextAlign(rawValue: textAlign) {
-        case .center: a = .center
-        case .end: a = isRTL ? .left : .right
-        case .justify: a = .justified
-        default: a = AsukaRuntime.shared.startAlignment(isRTL)
-        }
+        let a = labelAlignment
         switch view {
-        case let l as UILabel: l.textAlignment = a
+        case let l as UILabel:
+            l.textAlignment = a
+            if (l as? AsukaLabel)?.styled == true { restyleLabel() }
         case let t as UITextField: t.textAlignment = a
         case let t as AsukaTextView:
             t.textAlignment = a

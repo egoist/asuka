@@ -337,6 +337,11 @@ import AsukaOps
             if n.background != 0 { layer(n)?.backgroundColor = asukaColor(n.background)?.cgColor }
             if n.borderColor != 0 { layer(n)?.borderColor = asukaColor(n.borderColor)?.cgColor }
         }
+        if n.box != nil {
+            n.box?.remove()
+            n.box = nil
+        }
+        updateBox(n)
         // What VoiceOver reads of it goes with it: its Label may have come
         // before what made the new view (a checkbox, a multiline field).
         if !n.a11yLabel.isEmpty { (n.textView ?? v).setAccessibilityLabel(n.a11yLabel) }

@@ -128,8 +128,8 @@ TEST(golden_batch) {
 	REQUIRE(golden("golden.txt", &txt));
 	ak_fake_apply(e.f, bin.data, bin.len);
 	CHECK_EQ_INT(e.f->applies, 1);
-	CHECK_EQ_INT(ak_fake_op_count(e.f), 19);
-	CHECK_EQ_INT(ak_fake_count(e.f, AK_OP_SET_PROP), 9);
+	CHECK_EQ_INT(ak_fake_op_count(e.f), 22);
+	CHECK_EQ_INT(ak_fake_count(e.f, AK_OP_SET_PROP), 12);
 	ak_fake_dump(e.f, &out);
 	ak_buf_u8(&txt, 0);
 	CHECK_EQ_STR(cstr(&out), (const char *)txt.data);
@@ -150,6 +150,9 @@ TEST(golden_batch) {
 		"SetProp 2 Color=#100000002\n"
 		"SetProp 2 TextStyle=5\n"
 		"SetProp 1 BorderWidth=[1 2 3.25 4]\n"
+		"SetProp 1 CornerRadii=[16 16 0 0.5]\n"
+		"SetProp 2 LetterSpacing=-0.25\n"
+		"SetProp 2 FontTraits=3\n"
 		"SetProp 1 A11yLabel=0001fe\n"
 		"Insert 1 2 @0\n"
 		"SetFrame 2 0.5,1 320x44.25\n"

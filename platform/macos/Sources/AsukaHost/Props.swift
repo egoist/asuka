@@ -164,15 +164,19 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             }
             withAppearance(n) { layer(n)?.backgroundColor = asukaColor(n.background)?.cgColor }
             if n.list != nil { listBackground(n) }
+            if n.box != nil { updateBox(n) } // its fill draws it (Box.swift)
         case AsukaProp.cornerRadius:
             n.cornerRadius = CGFloat(v.float)
             applyCorner(n)
+            if n.box != nil { updateBox(n) }
         case AsukaProp.borderWidth:
             n.borderWidth = CGFloat(v.float)
             layer(n)?.borderWidth = n.borderWidth
+            if n.box != nil || n.borderStyle != 0 { updateBox(n) }
         case AsukaProp.borderColor:
             n.borderColor = v.color
             withAppearance(n) { layer(n)?.borderColor = asukaColor(n.borderColor)?.cgColor }
+            if n.box != nil { updateBox(n) }
         case AsukaProp.opacity:
             n.opacity = CGFloat(v.float)
             if animating { view.animator().alphaValue = n.opacity } else { view.alphaValue = n.opacity }
@@ -219,6 +223,20 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
         case AsukaProp.lineLimit:
             n.lineLimit = Int(v.int)
             applyLineLimit(n)
+        case AsukaProp.letterSpacing, AsukaProp.lineHeight, AsukaProp.textShadow, AsukaProp.truncation, AsukaProp.minimumScale, AsukaProp.fontTraits:
+            setTextStyleProp(n, p, v) // TextStyle.swift
+        case AsukaProp.cornerRadii:
+            let e = v.edges
+            n.cornerRadii = [e.top, e.right, e.bottom, e.left]
+            applyCorner(n)
+            updateBox(n)
+        case AsukaProp.borderWidths:
+            let e = v.edges
+            n.borderWidths = [e.top, e.right, e.bottom, e.left]
+            updateBox(n)
+        case AsukaProp.borderStyle:
+            n.borderStyle = v.enumValue
+            updateBox(n)
         case AsukaProp.disabled:
             if let c = view as? NSControl { c.isEnabled = !v.bool }
             if view is NSButton && n.kind == .button { buttonTitle(n) } // a disabled filled button's title: white, or the app's color (Controls.swift)
@@ -355,6 +373,10 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
     func updateShadowPath(_ n: AsukaNode) {
         guard n.hasShadow, let l = layer(n) else { return }
         let b = CGRect(origin: .zero, size: n.frame.size)
+        if n.box != nil, b.width > 0, b.height > 0 {
+            l.shadowPath = asukaBoxPath(b, n.radii.map { ($0, $0) })
+            return
+        }
         let r = n.cornerOf
         l.shadowPath = r > 0 && b.width > 0 && b.height > 0 ? CGPath(roundedRect: b, cornerWidth: r, cornerHeight: r, transform: nil) : CGPath(rect: b, transform: nil)
     }
@@ -385,13 +407,14 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             cl.masksToBounds = true
             cl.cornerRadius = n.cornerOf
         }
+        boxClip(n) // corners of different radii: a mask of their shape (Box.swift)
     }
 
     /// Puts a CAGradientLayer under the view's content.
     func setGradient(_ n: AsukaNode) {
         guard let l = layer(n) else { return }
         let b = n.gradient
-        let count = Int(b.u32(0))
+        let count = b.count >= 4 ? Int(b.u32(0)) : 0
         guard b.count >= 4, count > 0, b.count >= 4 + count * 12 + 16 else {
             n.gradientLayer?.removeFromSuperlayer()
             n.gradientLayer = nil
@@ -417,14 +440,44 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
         // window's flipped content view do.
         g.startPoint = CGPoint(x: CGFloat(b.f32(o)), y: CGFloat(b.f32(o + 4)))
         g.endPoint = CGPoint(x: CGFloat(b.f32(o + 8)), y: CGFloat(b.f32(o + 12)))
+        // Its kind, and a radial or conic one's center, radius and angle
+        // (an older core's ends before them: linear).
+        let k = o + 16
+        let kind = b.count >= k + 17 ? AsukaGradientKind(rawValue: Int32(b[k])) ?? .linear : .linear
+        switch kind {
+        case .radial: g.type = .radial
+        case .conic: g.type = .conic
+        default: g.type = .axial
+        }
+        g.zPosition = -2 // over a box's fill (Box.swift), under its border and children
         layoutGradient(n, g)
     }
 
     func layoutGradient(_ n: AsukaNode, _ g: CAGradientLayer) {
         CATransaction.begin()
         if !animating { CATransaction.setDisableActions(true) }
-        g.frame = CGRect(origin: .zero, size: n.frame.size)
+        let size = n.frame.size
+        g.frame = CGRect(origin: .zero, size: size)
         g.cornerRadius = n.view?.layer?.cornerRadius ?? 0
+        g.mask = n.box.map { $0.gradientMask }
+        let b = n.gradient
+        let k = 4 + Int(b.u32(0)) * 12 + 16
+        if g.type != .axial, b.count >= k + 17, size.width > 0, size.height > 0 {
+            let c = CGPoint(x: CGFloat(b.f32(k + 1)), y: CGFloat(b.f32(k + 5)))
+            g.startPoint = c
+            let side = min(size.width, size.height)
+            if g.type == .radial {
+                // A circle: its radius a fraction of the shorter side, in
+                // each axis' unit.
+                let r = CGFloat(b.f32(k + 9)) * side
+                g.endPoint = CGPoint(x: c.x + r / size.width, y: c.y + r / size.height)
+            } else {
+                // Where it starts: angle degrees clockwise from the top (y
+                // down), a direction in the view's points.
+                let a = CGFloat(b.f32(k + 13)) * .pi / 180
+                g.endPoint = CGPoint(x: c.x + sin(a) * side / size.width / 2, y: c.y - cos(a) * side / size.height / 2)
+            }
+        }
         CATransaction.commit()
     }
 
@@ -518,13 +571,14 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             if n.hasShadow { setShadow(n) }
         }
         if !n.gradient.isEmpty { setGradient(n) }
+        if n.box != nil { updateBox(n) }
         partColors(n)
     }
 
     // MARK: Text
 
     /// The NSFont for a node's text props.
-    func font(_ n: AsukaNode) -> NSFont { font(style: n.textStyle, weight: n.fontWeight, size: n.fontSize, family: n.fontFamily) }
+    func font(_ n: AsukaNode) -> NSFont { traited(font(style: n.textStyle, weight: n.fontWeight, size: n.fontSize, family: n.fontFamily), n.fontTraits) }
 
     /// A text's font: scaled by asuka dev's preview's text size
     /// (previewFontScale), unless it's a canvas's, which draws at its own sizes.
@@ -555,6 +609,7 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
             tv.font = font(n)
         } else if let c = v as? NSControl {
             c.font = font(n)
+            if n.styledLabel || n.kind == .text && styledText(n) { applyStyledText(n) }
         }
     }
 
@@ -566,6 +621,7 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
         switch n.kind {
         case .text, .textField:
             if let tv = n.textView { tv.textColor = c ?? .labelColor } else { (v as? NSTextField)?.textColor = c ?? .labelColor }
+            if n.styledLabel { applyStyledText(n) }
         case .button:
             if (c != nil && n.variant == AsukaButtonVariant.plain.rawValue) || macVariant(n) == .filled { buttonTitle(n) }
             (v as? NSButton)?.contentTintColor = c
@@ -586,10 +642,8 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
     func applyLineLimit(_ n: AsukaNode) {
         switch n.kind {
         case .text:
-            guard let t = n.view as? NSTextField else { return }
-            t.maximumNumberOfLines = n.lineLimit
-            t.cell?.truncatesLastVisibleLine = n.lineLimit > 0
-            t.lineBreakMode = n.lineLimit == 1 ? .byTruncatingTail : .byWordWrapping
+            applyLabelLines(n) // TextStyle.swift: its Truncation and MinimumScale too
+            if n.styledLabel { applyStyledText(n) }
         case .richText:
             richInvalidate(n)
         case .textField:

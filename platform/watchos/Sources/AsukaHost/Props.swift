@@ -169,6 +169,34 @@ import AsukaOps
         case AsukaProp.a11yHint: n.a11yHint = v.string
         case AsukaProp.a11yHidden: n.a11yHidden = v.bool
         case AsukaProp.a11yValue: n.a11yValue = v.string
+        case AsukaProp.letterSpacing: n.letterSpacing = CGFloat(v.float)
+        case AsukaProp.lineHeight: n.lineHeight = CGFloat(v.float)
+        case AsukaProp.fontTraits:
+            n.fontTraits = Int(v.int)
+        case AsukaProp.truncation: n.truncation = v.enumValue
+        case AsukaProp.minimumScale: n.minimumScale = CGFloat(v.float)
+        case AsukaProp.textShadow:
+            guard case .bytes(let b) = v, b.count >= 20 else {
+                n.textShadow = nil
+                return
+            }
+            var r = AsukaReader(b)
+            let c = r.u64()
+            let s = AsukaShadow(color: c, radius: CGFloat(r.f32()), x: CGFloat(r.f32()), y: CGFloat(r.f32()))
+            n.textShadow = c == 0 ? nil : s
+        case AsukaProp.cornerRadii:
+            if case .edges(let tl, let tr, let br, let bl) = v {
+                let c = [CGFloat(tl), CGFloat(tr), CGFloat(br), CGFloat(bl)]
+                n.cornerRadii = c.allSatisfy({ $0 == 0 }) ? nil : c
+            }
+        case AsukaProp.borderWidths:
+            if case .edges(let t, let r, let b, let l) = v {
+                let w = [CGFloat(t), CGFloat(r), CGFloat(b), CGFloat(l)]
+                n.borderWidths = w.allSatisfy({ $0 == 0 }) ? nil : w
+            }
+        case AsukaProp.borderStyle: n.borderStyle = v.enumValue
+        case AsukaProp.gradient:
+            if case .bytes(let b) = v { n.gradient = AsukaGradient(b) } else { n.gradient = nil }
         case AsukaProp.transform:
             guard case .bytes(let b) = v, b.count >= 20 else {
                 n.transform = (0, 0, 1, 1, 0)
@@ -186,7 +214,7 @@ import AsukaOps
     private func richRuns(_ b: UnsafeRawBufferPointer, _ n: AsukaNode) -> [AsukaRichRun] {
         var r = AsukaReader(b)
         func has(_ k: Int) -> Bool { r.p + k <= r.end }
-        struct Style { var font: CTFont; var color: UInt64; var flags: UInt8; var link: String }
+        struct Style { var style: Int32; var size: Float; var weight: Int32; var color: UInt64; var flags: UInt8; var link: String }
         var styles: [Style] = []
         guard has(4) else { return [] }
         for _ in 0..<Int(r.u32()) {
@@ -196,9 +224,10 @@ import AsukaOps
             _ = r.u64() // its background: not drawn on the watch
             guard has(4) else { return [] }
             let link = r.string()
-            let font = AsukaFonts.font(style: ts != 0 ? ts : n.textStyle, size: size > 0 ? size : n.fontSize, weight: w != 0 ? w : n.fontWeight)
-            styles.append(Style(font: font, color: color, flags: flags, link: link))
+            styles.append(Style(style: ts != 0 ? ts : n.textStyle, size: size > 0 ? size : n.fontSize, weight: w != 0 ? w : n.fontWeight,
+                                color: color, flags: flags, link: link))
         }
+        let plain = Style(style: n.textStyle, size: n.fontSize, weight: n.fontWeight, color: 0, flags: 0, link: "")
         var out: [AsukaRichRun] = []
         guard has(4) else { return [] }
         let paragraphs = Int(r.u32())
@@ -208,11 +237,13 @@ import AsukaOps
                 guard has(8) else { return out }
                 let si = Int(r.u32())
                 let text = r.string()
-                let st = si < styles.count ? styles[si] : Style(font: AsukaFonts.font(of: n), color: 0, flags: 0, link: "")
+                let st = si < styles.count ? styles[si] : plain
                 if st.flags & 16 != 0 { continue } // an inline component: the watch shows none
-                out.append(AsukaRichRun(text: text, font: st.font, color: st.color, flags: st.flags, link: st.link))
+                out.append(AsukaRichRun(text: text, style: st.style, size: st.size, weight: st.weight, color: st.color, flags: st.flags, link: st.link))
             }
-            if p + 1 < paragraphs { out.append(AsukaRichRun(text: "\n", font: AsukaFonts.font(of: n), color: 0, flags: 0, link: "")) }
+            if p + 1 < paragraphs {
+                out.append(AsukaRichRun(text: "\n", style: plain.style, size: plain.size, weight: plain.weight, color: 0, flags: 0, link: ""))
+            }
         }
         return out
     }

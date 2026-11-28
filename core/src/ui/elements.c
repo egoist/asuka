@@ -1077,7 +1077,7 @@ static void check_key(const ak_view *v, uint16_t key) {
 		ak_panic("ui: %s takes no key %s", v->el ? ak_el_names[v->el] : v->cls->name, ak_key_names[key]);
 }
 
-_Static_assert(AK_KEY__STYLE_END <= 64, "ak_view's outer has a bit per style key");
+_Static_assert(AK_KEY__STYLE_END <= 128, "ak_view's outer has a bit per style key");
 
 static void set_key(ak_view *v, uint16_t key, ak_val value, bool outer);
 
@@ -1091,8 +1091,8 @@ static void set_key(ak_view *v, uint16_t key, ak_val value, bool outer) {
 	if (v->bar) ak_bar_dirty(v);  // a Button in a Screen's bar: the bar is sent again
 	if (key < AK_KEY__STYLE_END) {
 		// The caller's style is over the component's own.
-		if (outer) v->outer |= 1ull << key;
-		else if (v->outer >> key & 1) return;
+		if (outer) v->outer[key / 64] |= 1ull << (key % 64);
+		else if (v->outer[key / 64] >> (key % 64) & 1) return;
 		if (v->ix && ak_ix_set_base(v, key, value)) return;  // a key its variants set (interaction.c)
 		ak_view *t = v->cls->style_target ? v->cls->style_target(v, key) : v;
 		if (t) ak_style_set(t, key, value);
@@ -1174,7 +1174,7 @@ static void bind_key(ak_view *v, uint16_t key, ak_closure *thunk, bool outer) {
 void ak_ui_bind(ak_view *v, uint16_t key, ak_closure *thunk) { bind_key(v, key, thunk, false); }
 
 void ak_ui_bind_outer(ak_view *v, uint16_t key, ak_closure *thunk) {
-	if (key < AK_KEY__STYLE_END) v->outer |= 1ull << key;  // before the component's own effects run again
+	if (key < AK_KEY__STYLE_END) v->outer[key / 64] |= 1ull << (key % 64);  // before the component's own effects run again
 	bind_key(v, key, thunk, true);
 }
 

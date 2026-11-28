@@ -23,6 +23,7 @@ import { Keys } from "./keys.js";
 import { Motion } from "./motion.js";
 import * as color from "./color.js";
 import * as text from "./text.js";
+import { gradientCSS, shadowCSS } from "./textstyle.js";
 import { redrawCanvases } from "./draw.js";
 import { Focus } from "./focus.js";
 import { Overlays } from "./overlay.js";
@@ -46,12 +47,20 @@ export class Node {
     this.placed = false;
     this.impl = null;
     // Common props, as last set.
-    this.font = { style: 0, size: 0, weight: 0, family: "" };
+    this.font = { style: 0, size: 0, weight: 0, family: "", traits: 0 };
+    this.letterSpacing = 0;
+    this.lineHeight = 0;
+    this.truncation = 0; // Truncation: Tail
+    this.minimumScale = 0;
+    this.fitScale = 1; // the scale a shrinking text is drawn at
     this.color = 0;
     this.background = 0;
     this.borderColor = 0;
     this.borderWidth = 0;
+    this.borderWidths = null; // BorderWidths: [top, right, bottom, left], when they differ
+    this.borderStyle = 0;
     this.radius = 0;
+    this.radii = null; // CornerRadii: [top left, top right, bottom right, bottom left], when they differ
     this.align = 0;
     this.lines = 0;
     this.inset = null; // ContentInset: [top, right, bottom, left]
@@ -460,12 +469,46 @@ export class Host {
         break;
       case Prop.CornerRadius:
         n.radius = v;
-        s.borderRadius = v ? v + "px" : "";
-        if (n.impl.radius) n.impl.radius(this, n);
+        this.applyRadius(n);
+        break;
+      case Prop.CornerRadii:
+        n.radii = v.some((r) => r !== 0) ? v.slice() : null;
+        this.applyRadius(n);
         break;
       case Prop.BorderWidth:
         n.borderWidth = v;
         this.applyBorder(n);
+        break;
+      case Prop.BorderWidths:
+        n.borderWidths = v.some((w) => w !== 0) ? v.slice() : null;
+        this.applyBorder(n);
+        break;
+      case Prop.BorderStyle:
+        n.borderStyle = v;
+        this.applyBorder(n);
+        break;
+      case Prop.LetterSpacing:
+        n.letterSpacing = v;
+        this.fontChanged(n);
+        break;
+      case Prop.LineHeight:
+        n.lineHeight = v;
+        this.fontChanged(n);
+        break;
+      case Prop.FontTraits:
+        n.font.traits = v;
+        this.fontChanged(n);
+        break;
+      case Prop.TextShadow:
+        s.textShadow = shadowCSS(v, (c) => this.css(c));
+        break;
+      case Prop.Truncation:
+        n.truncation = v;
+        if (n.impl.lines) n.impl.lines(this, n);
+        break;
+      case Prop.MinimumScale:
+        n.minimumScale = v;
+        if (n.impl.lines) n.impl.lines(this, n);
         break;
       case Prop.BorderColor:
         n.borderColor = v;
@@ -661,15 +704,35 @@ export class Host {
     // children. A scroller keeps the outline, which its content can
     // cover: a layer in it would scroll away with the content. So does a
     // picker's box, whose ::after is its chevron.
+    // Each side its own width when they differ (BorderWidths), in the
+    // border's style: CSS's dashes and dots, the browser's lengths.
     const el = n.el, s = el.style;
-    const line = n.borderWidth > 0 ? `${n.borderWidth}px solid ${this.css(n.borderColor) || "var(--asuka-separator)"}` : "";
-    const layer = line !== "" && !el.classList.contains("asuka-scroller") && !el.classList.contains("asuka-select-box");
+    const ws = n.borderWidths || [n.borderWidth, n.borderWidth, n.borderWidth, n.borderWidth];
+    const widest = Math.max(ws[0], ws[1], ws[2], ws[3]);
+    const style = ["solid", "dashed", "dotted"][n.borderStyle] || "solid";
+    const c = this.css(n.borderColor) || "var(--asuka-separator)";
+    const on = widest > 0;
+    const layer = on && !el.classList.contains("asuka-scroller") && !el.classList.contains("asuka-select-box");
     el.classList.toggle("asuka-bordered", layer);
-    if (layer) s.setProperty("--asuka-border", line);
-    else s.removeProperty("--asuka-border");
-    const outline = line !== "" && !layer;
-    s.outline = outline ? line : "";
-    s.outlineOffset = outline ? -n.borderWidth + "px" : "";
+    if (layer) {
+      s.setProperty("--asuka-border", `${style} ${c}`);
+      s.setProperty("--asuka-border-width", ws.map((w) => w + "px").join(" "));
+    } else {
+      s.removeProperty("--asuka-border");
+      s.removeProperty("--asuka-border-width");
+    }
+    // An outline has one width: a scroller's per-side border is its
+    // widest side's.
+    const outline = on && !layer;
+    s.outline = outline ? `${widest}px ${style} ${c}` : "";
+    s.outlineOffset = outline ? -widest + "px" : "";
+  }
+
+  /** applyRadius rounds n's corners: each its own (CornerRadii) or one radius; CSS scales radii that don't fit down together. */
+  applyRadius(n) {
+    const r = n.radii;
+    n.el.style.borderRadius = r ? r.map((x) => x + "px").join(" ") : n.radius ? n.radius + "px" : "";
+    if (n.impl.radius) n.impl.radius(this, n);
   }
 
   applyShadow(n) {
@@ -687,28 +750,9 @@ export class Host {
     this.motion.style(n, "transform", v);
   }
 
-  /** applyGradient draws a gradient between two points of the box (unit coordinates) with CSS's angle and stops. */
+  /** applyGradient draws n's gradient (linear, radial or conic: textstyle.gradientCSS) at its frame's size. */
   applyGradient(n) {
-    const s = n.el.style;
-    const b = n.gradient;
-    if (!b) { s.backgroundImage = ""; return; }
-    const r = new Reader(b);
-    const count = r.u32();
-    const stops = [];
-    for (let i = 0; i < count; i++) stops.push([r.u64(), r.f32()]);
-    const sx = r.f32(), sy = r.f32(), ex = r.f32(), ey = r.f32();
-    const w = n.frame[2] || 1, h = n.frame[3] || 1;
-    const dx = (ex - sx) * w, dy = (ey - sy) * h;
-    const len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    // CSS: 0deg points up, clockwise; the line goes through the center,
-    // as long as the box's corners need.
-    const angle = Math.atan2(ux, -uy);
-    const L = Math.abs(w * Math.sin(angle)) + Math.abs(h * Math.cos(angle)) || 1;
-    const t = (px, py) => ((px * w - w / 2) * ux + (py * h - h / 2) * uy) / L + 0.5;
-    const t0 = t(sx, sy), t1 = t(ex, ey);
-    const list = stops.map(([c, at]) => `${this.css(c) || "transparent"} ${((t0 + at * (t1 - t0)) * 100).toFixed(3)}%`);
-    s.backgroundImage = `linear-gradient(${(angle * 180 / Math.PI).toFixed(3)}deg, ${list.join(", ")})`;
+    n.el.style.backgroundImage = gradientCSS(n.gradient, n.frame[2], n.frame[3], (c) => this.css(c));
   }
 
   fontChanged(n) {

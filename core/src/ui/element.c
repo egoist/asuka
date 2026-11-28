@@ -553,8 +553,12 @@ static ak_lsize measure_cb(void *ctx, ak_lconstraints c) {
 		k.font_size = (float)f->f[1].f;
 		k.font_weight = (int32_t)f->f[2].i;
 		k.family = f->f[3].p;
+		k.font_traits = (int32_t)((f->f[4].i ? 1 : 0) | (f->f[5].i ? 2 : 0) | (f->f[6].i ? 4 : 0));
 	}
 	k.lines = ak_style_int(e, AK_KEY_LINES, 0);
+	k.letter_spacing = ak_style_float(e, AK_KEY_LETTER_SPACING, 0);
+	k.line_height = ak_style_float(e, AK_KEY_LINE_HEIGHT, 0);
+	k.min_scale = ak_style_float(e, AK_KEY_MINIMUM_SCALE, 0);
 	k.font_scale = ak_view_font_scale(e);
 	k.scale = ak_view_scale(e);
 	k.inset = e->insets[0] != 0 || e->insets[1] != 0 || e->insets[2] != 0 || e->insets[3] != 0;
@@ -600,6 +604,7 @@ void ak_view_set_dir(ak_view *e, uint8_t dir) {
 	e->dir = dir;
 	if (e->real) ak_batch_set_enum(e->r->batch, e->id, AK_PROP_LAYOUT_DIRECTION, dir);
 	if (e->box) ak_style_relayout(e);
+	ak_style_dir_changed(e);
 }
 
 // ak_view_ldir is what e's box is told: only a layout root (it has no

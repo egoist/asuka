@@ -100,6 +100,25 @@ enum TextAlign {
   justify
 }
 
+enum Truncation {
+  tail
+  head
+  middle
+  clip
+}
+
+enum BorderStyle {
+  solid
+  dashed
+  dotted
+}
+
+enum GradientKind {
+  linear
+  radial
+  conic
+}
+
 enum LayoutDirection {
   inherit
   leftToRight

@@ -85,7 +85,8 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 变换 | `.rotationEffect`、`.scaleEffect`、`.offset` | `transform` | ✓ `transform: Transform(…)` |
 | 进入和退出过渡 | `.transition` | entering/exiting | ✓ `transition`（`.opacity`、`.pop`、`.slide`，或自己定义的 `Transition(…)`） |
 | 逐帧动画 | `TimelineView(.animation)` | `useFrameCallback` | ✓ `frames()`、`onFrame` |
-| 阴影、渐变、模糊 | `.shadow`、`LinearGradient`、材质 | style、expo-linear-gradient、expo-blur | ✓ `shadow`、`gradient`、`material` |
+| 阴影、渐变、模糊 | `.shadow`、`LinearGradient`、`RadialGradient`、`AngularGradient`、材质 | style、expo-linear-gradient、expo-blur | ✓ `shadow`、`gradient`（`.linear`、`.radial`、`.conic`）、`material` |
+| 圆角与边框 | `UnevenRoundedRectangle`、带 `StrokeStyle` 虚线的 `.strokeBorder` | `borderTopLeftRadius`……、`borderBottomWidth`……、`borderStyle` | ✓ `radius`（`[tl, tr, br, bl]`、`Corners(topStart:...)`）、`border`（`Edges(bottom: 1)`）、`borderStyle`（`.dashed`、`.dotted`） |
 | 手势 | 点按、长按、拖动、缩放、旋转 | Gesture Handler | ✓ `on press`、`on longPress`、`on pan`、`on pinch`、`on rotate`、`on swipe` |
 | 硬件键盘的按键 | `.onKeyPress`、`.keyboardShortcut` | `onKeyPress`（`TextInput` 的；React Native for Windows and macOS 上是 `onKeyDown`） | ✓ `keys`（从获得焦点的视图开始往外找，优先于控件和菜单）、`useKeys`、`WindowKeys`（整个窗口的） |
 | 按下和悬停状态 | `ButtonStyle` 的 `isPressed`、`.onHover` | `Pressable` 的 `pressed`、`onHoverIn`/`onHoverOut` | ✓ `pressed { … }` 和 `hovered { … }` 变体；用 `Ref` 的 `pressed` 和 `hovered` 跟随一组视图或相邻视图的状态；`on pressedChange`、`on hoverChange` |
@@ -164,6 +165,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 实时活动 | ActivityKit | `expo-live-activity` | ✓ `platform/liveactivity`（iOS：锁屏和灵动岛；Android 16 的 Live Update；倒计时、进度、提醒，以及供服务端推送更新用的推送 token） |
 | App Intents、快捷指令 | App Intents、App Shortcuts | — | ✓ `asuka.toml` 的 `shortcuts`（iOS：带 Siri 短语的 App Shortcuts，出现在聚焦搜索和快捷指令里，可以带参数：文字、数字、开关、选项，以及应用自己的数据（`platform/shortcuts` 的实体），短语里可以引用选项和实体；Android：启动器快捷方式，每项数据一个） |
 | 自定义字体 | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`、`Font(family:)` |
+| 文字排版 | `.tracking`、`.lineSpacing`、`.italic()`、`.monospacedDigit()`、`.smallCaps()`、`.truncationMode`、`.minimumScaleFactor`、`.shadow` | `letterSpacing`、`lineHeight`、`fontStyle`、`fontVariant`、`ellipsizeMode`、`adjustsFontSizeToFit`、`textShadow*` | ✓ `letterSpacing`、`lineHeight`、`Font` 的 `italic`、`monospacedDigits` 和 `smallCaps`、`truncation`、`minimumScale`、`textShadow` |
 | 生命周期 | `scenePhase` | AppState | ✓ `onLifecycle` |
 | 启动画面 | `UILaunchScreen` | `expo-splash-screen` | ✓ `asuka.toml` 的 `splash`；`platform/splash` 可以在应用加载期间保持它显示 |
 | 更换应用图标 | `setAlternateIconName` | 社区（`expo-dynamic-app-icon`） | ✓ `asuka.toml` 的 `alternateIcons`、`platform/appicon` 的 `set`（iOS 的主屏幕；Android 的启动器，在应用离开屏幕时生效；Mac 的程序坞、Windows 的窗口和任务栏、Web 页面的图标；Linux 不支持，启动器显示的是 desktop 文件里的图标） |

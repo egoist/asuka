@@ -643,10 +643,9 @@ static bool kage_draw(node *n, GtkSnapshot *snap, const graphene_rect_t *b) {
 	if (!k) return false;
 	render_if_changed(n, k);
 	if (!k->texture) return true;
-	bool rounded = n->corner_radius > 0 && !n->clip;  // a clipping view clips it already
+	bool rounded = lx_rounded_node(n) && !n->clip;  // a clipping view clips it already
 	if (rounded) {
-		GskRoundedRect rr;
-		gsk_rounded_rect_init_from_rect(&rr, b, n->corner_radius);
+		GskRoundedRect rr = lx_node_rounded(n, *b);
 		gtk_snapshot_push_rounded_clip(snap, &rr);
 	}
 	gtk_snapshot_save(snap);

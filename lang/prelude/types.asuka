@@ -53,17 +53,24 @@ struct Edges {
 }
 
 /// A font: a text style the platform scales with the user's text size,
-/// a size, a weight, and a family of the app's (assets/fonts) or the
-/// system's.
+/// a size, a weight, a family of the app's (assets/fonts) or the
+/// system's, and its variants: italic, monospaced digits (each digit as
+/// wide, for numbers that change in place: a timer, a price column) and
+/// small capitals.
 ///
 ///   font: .title
-///   font: .largeTitle.bold
+///   font: .largeTitle.bold()
 ///   font: Font(size: 17, weight: .semibold, family: "Inter")
+///   font: .body.italic()
+///   font: Font(size: 34, monospacedDigits: true)
 struct Font {
   style: TextStyle = .default
   size: float = 0
   weight: FontWeight = .default
   family: string = ""
+  italic: bool = false
+  monospacedDigits: bool = false
+  smallCaps: bool = false
 
   let largeTitle = Font(style: .largeTitle)
   let title = Font(style: .title)
@@ -77,12 +84,36 @@ struct Font {
   let caption = Font(style: .caption)
   let caption2 = Font(style: .caption2)
 
-  fn weighted(weight: FontWeight) -> Font = Font(style: style, size: size, weight: weight, family: family)
-  fn sized(size: float) -> Font = Font(style: style, size: size, weight: weight, family: family)
-  fn family(name: string) -> Font = Font(style: style, size: size, weight: weight, family: name)
+  fn weighted(weight: FontWeight) -> Font = Font(style: style, size: size, weight: weight, family: family, italic: italic, monospacedDigits: monospacedDigits, smallCaps: smallCaps)
+  fn sized(size: float) -> Font = Font(style: style, size: size, weight: weight, family: family, italic: italic, monospacedDigits: monospacedDigits, smallCaps: smallCaps)
+  fn family(name: string) -> Font = Font(style: style, size: size, weight: weight, family: name, italic: italic, monospacedDigits: monospacedDigits, smallCaps: smallCaps)
   fn bold() -> Font = weighted(.bold)
   fn semibold() -> Font = weighted(.semibold)
   fn medium() -> Font = weighted(.medium)
+  /// The font's italic face (slanted, where it has none).
+  fn italic() -> Font = Font(style: style, size: size, weight: weight, family: family, italic: true, monospacedDigits: monospacedDigits, smallCaps: smallCaps)
+  /// Every digit as wide (OpenType's tabular figures).
+  fn monospacedDigits() -> Font = Font(style: style, size: size, weight: weight, family: family, italic: italic, monospacedDigits: true, smallCaps: smallCaps)
+  /// Lower case letters drawn as small capitals.
+  fn smallCaps() -> Font = Font(style: style, size: size, weight: weight, family: family, italic: italic, monospacedDigits: monospacedDigits, smallCaps: true)
+}
+
+/// A box's corner radii, in points. start and end are the sides a line
+/// of text starts and ends on (left and right, or right and left in
+/// Arabic); where a corner has both, start or end wins.
+///
+///   radius: 12                every corner
+///   radius: [16, 16, 0, 0]    top left, top right, bottom right, bottom left
+///   radius: Corners(topStart: 8, bottomStart: 8)
+struct Corners {
+  topLeft: float = 0
+  topRight: float = 0
+  bottomRight: float = 0
+  bottomLeft: float = 0
+  topStart: float = 0
+  topEnd: float = 0
+  bottomStart: float = 0
+  bottomEnd: float = 0
 }
 
 /// Moves, scales and rotates a view as it's drawn, around its center;
@@ -96,7 +127,8 @@ struct Transform {
   rotation: float = 0 // degrees, clockwise
 }
 
-/// A shadow under a view, cast by its shape.
+/// A shadow under a view, cast by its shape (or, as textShadow, under
+/// a text's glyphs).
 struct Shadow {
   color: Color = #00000033
   radius: float = 4 // blur radius
@@ -110,14 +142,27 @@ struct Stop {
   at: float
 }
 
-/// A linear gradient over a view's background, from start to end in
-/// unit points of the view (0, 0 is its top left).
+/// A gradient over a view's background: linear, from start to end in
+/// unit points of the view (0, 0 is its top left; 1, 1 its bottom
+/// right); radial, a circle around center whose radius is a fraction of
+/// the view's shorter side (0.5 reaches its nearer sides); or conic,
+/// sweeping clockwise around center from angle (degrees clockwise from
+/// the top).
+///
+///   gradient: Gradient(stops: [Stop(color: .blue, at: 0), Stop(color: .purple, at: 1)])
+///   gradient: Gradient(kind: .radial, stops: [Stop(color: #fff, at: 0), Stop(color: #fff0, at: 1)], radius: 0.7)
+///   gradient: Gradient(kind: .conic, stops: [Stop(color: .red, at: 0), Stop(color: .blue, at: 1)])
 struct Gradient {
   stops: [Stop]
   startX: float = 0
   startY: float = 0
   endX: float = 0
   endY: float = 1
+  kind: GradientKind = .linear
+  centerX: float = 0.5
+  centerY: float = 0.5
+  radius: float = 0.5
+  angle: float = 0
 }
 
 /// How a view comes in when it's added during animate { }, and goes out

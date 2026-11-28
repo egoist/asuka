@@ -724,7 +724,9 @@ void wh_paint_image(node *n, gfx g, float w, float h, float radius) {
 	GpPath *clip = NULL;
 	if (radius > 0) {
 		clip = g_path();
-		g_path_round_rect(clip, 0, 0, w, h, radius);
+		float rr[4];
+		wh_radii(n, w, h, rr);  // its corners, each its own
+		g_path_corners(clip, 0, 0, w, h, rr);
 		g_clip_path(g, clip);
 	}
 	float d[4], s[4];

@@ -48,6 +48,21 @@ import AsukaOps
     @ObservationIgnored var fontWeight: Int32 = 0
     @ObservationIgnored var textAlign: Int32 = 0
     @ObservationIgnored var lineLimit = 0
+    /// LetterSpacing and LineHeight, in points at the default text size
+    /// (0: the font's); FontTraits' bits; Truncation; MinimumScale.
+    @ObservationIgnored var letterSpacing: CGFloat = 0
+    @ObservationIgnored var lineHeight: CGFloat = 0
+    @ObservationIgnored var fontTraits = 0
+    @ObservationIgnored var truncation: Int32 = 0
+    @ObservationIgnored var minimumScale: CGFloat = 0
+    @ObservationIgnored var textShadow: AsukaShadow?
+    /// CornerRadii and BorderWidths (physical: top left, top right,
+    /// bottom right, bottom left; top, right, bottom, left), nil when
+    /// CornerRadius and BorderWidth say; BorderStyle; Gradient.
+    @ObservationIgnored var cornerRadii: [CGFloat]?
+    @ObservationIgnored var borderWidths: [CGFloat]?
+    @ObservationIgnored var borderStyle: Int32 = 0
+    @ObservationIgnored var gradient: AsukaGradient?
     /// Style.Transform: translate x, y, scale x, y, rotation in degrees.
     @ObservationIgnored var transform: (tx: CGFloat, ty: CGFloat, sx: CGFloat, sy: CGFloat, deg: Double) = (0, 0, 1, 1, 0)
     @ObservationIgnored var a11yLabel = ""
@@ -143,8 +158,15 @@ import AsukaOps
 /// italic, 2 monospaced, 4 underline, 8 strikethrough), and its link.
 struct AsukaRichRun {
     var text: String
-    var font: CTFont
+    /// Its style's TextStyle, size and FontWeight (the view's where it
+    /// has none), whose font the view's FontTraits make (font(_:)).
+    var style: Int32
+    var size: Float
+    var weight: Int32
     var color: UInt64
     var flags: UInt8
     var link: String
+
+    /// Its font, with the view's FontTraits (its own italic is a flag).
+    @MainActor func font(_ traits: Int) -> CTFont { AsukaFonts.font(style: style, size: size, weight: weight, traits: traits) }
 }

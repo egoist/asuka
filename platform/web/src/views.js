@@ -3,8 +3,9 @@
 // the platform's keyboard handling, focus, autofill and accessibility;
 // the app's accent is their accent-color.
 
-import { Kind, KindProp as P, Event, Events, Command, Reader, Writer } from "./ops.js";
+import { Kind, KindProp as P, Event, Events, Command, Reader, Writer, Truncation } from "./ops.js";
 import * as text from "./text.js";
+import * as textstyle from "./textstyle.js";
 import { decodeStrings, decodeActions } from "./host.js";
 import { decodeDragItems, appendItems, shareKind, matchMIME } from "./interaction.js";
 import { navKinds } from "./nav.js";
@@ -82,34 +83,171 @@ const view = {
   measure() { return [0, 0]; },
 };
 
+// A Text's truncation and shrinking. CSS cuts a line at its end
+// (text-overflow: ellipsis, -webkit-line-clamp) or its edge (clip); a
+// cut at the start or the middle is computed here, measured as the text
+// is drawn, and a shrinking text's scale is the largest its lines hold
+// it at (textstyle.fitScale), found the same way where the core measures
+// it and where its frame comes.
+
+/** shrinks says n's text shrinks to fit (MinimumScale). */
+const shrinks = (n) => n.minimumScale > 0 && n.minimumScale < 1;
+
+/** textLines is the most lines n's text takes: its limit, or one for a shrinking text without one. */
+const textLines = (n) => n.lines > 0 ? n.lines : shrinks(n) ? 1 : 0;
+
+/** cutsInJS says n's line is cut at its start or its middle, which the host computes. */
+const cutsInJS = (n) => textLines(n) === 1 && (n.truncation === Truncation.Head || n.truncation === Truncation.Middle);
+
+/** showText puts what n's line shows in its element: all of it, or its cut (the whole text kept for screen readers). */
+function showText(n, shown) {
+  const el = n.el;
+  if (shown === n.text) {
+    if (n.cut != null || el.textContent !== n.text) el.textContent = n.text;
+    n.cut = null;
+    return;
+  }
+  n.cut = shown;
+  el.textContent = "";
+  const seen = document.createElement("span");
+  seen.setAttribute("aria-hidden", "true");
+  seen.textContent = shown;
+  const read = document.createElement("span");
+  read.className = "asuka-a11y-text";
+  read.textContent = n.text;
+  el.append(seen, read);
+}
+
+/** linesAt is how many lines n's text takes at scale at content width w. */
+function linesAt(h, n, scale, w) {
+  const el = n.el, s = el.style;
+  return h.measurable(el, () => {
+    text.applyFont(h, n, el, scale);
+    const cls = ["asuka-one-line", "asuka-clamp", "asuka-clip-lines"].filter((c) => el.classList.contains(c));
+    el.classList.remove(...cls);
+    const saved = [s.width, s.height, s.maxWidth, s.maxHeight, s.webkitLineClamp];
+    const [iw, ih] = text.insetSize(n);
+    s.width = w + iw + "px"; s.height = "auto"; s.maxWidth = "none"; s.maxHeight = "none"; s.webkitLineClamp = "";
+    const height = text.boxSize(el)[1] - ih;
+    const line = parseFloat(getComputedStyle(el).lineHeight) || 1;
+    [s.width, s.height, s.maxWidth, s.maxHeight, s.webkitLineClamp] = saved;
+    el.classList.add(...cls);
+    return Math.max(1, Math.round(height / line));
+  });
+}
+
+/** scaleAt is the scale n's text is drawn at in content width w (none, Infinity: its own). */
+function scaleAt(h, n, w) {
+  if (!shrinks(n) || !(w >= 0) || w === Infinity || !n.text) return 1;
+  const most = textLines(n);
+  const s = textstyle.fitScale(n.minimumScale, (k) => linesAt(h, n, k, w) <= most);
+  text.applyFont(h, n, n.el); // back to the scale it's drawn at
+  return s;
+}
+
+/** contentWidth is n's frame's width within its inset. */
+const contentWidth = (n) => n.frame[2] - text.insetSize(n)[0];
+
+/** cutProbe is the host's span a cut is measured in, in its element's font. */
+function cutWidth(h, el, str) {
+  let p = h.cutProbe;
+  if (!p) {
+    p = h.cutProbe = document.createElement("span");
+    p.style.cssText = "display: inline-block; white-space: pre; position: absolute; visibility: hidden;";
+    h.measurer.appendChild(p);
+  }
+  const cs = getComputedStyle(el), ps = p.style;
+  for (const k of ["fontFamily", "fontSize", "fontWeight", "fontStyle", "fontStretch", "letterSpacing", "fontVariantNumeric", "fontVariantCaps", "fontFeatureSettings", "fontKerning", "wordSpacing"]) ps[k] = cs[k];
+  p.textContent = str;
+  return text.boxSize(p)[0];
+}
+
+/** refit draws n's text at the scale and with the cut its frame's width gives. */
+function refit(h, n) {
+  if (!n.placed) return;
+  const w = contentWidth(n);
+  if (shrinks(n) || n.fitScale !== 1) {
+    const s = scaleAt(h, n, w);
+    if (s !== n.fitScale) {
+      n.fitScale = s;
+      text.applyFont(h, n, n.el);
+    }
+  }
+  if (cutsInJS(n)) {
+    // A pixel's slack for rounding: the line is clipped at its edge.
+    showText(n, textstyle.truncate(n.text, n.truncation, (str) => cutWidth(h, n.el, str) <= w + 0.5));
+  } else if (n.cut != null) {
+    showText(n, n.text);
+  }
+}
+
+/** applyLines makes n's element show its lines: clamped, cut at its end with an ellipsis or at its edge. */
+function applyLines(n) {
+  const el = n.el, lines = textLines(n);
+  const clip = n.truncation === Truncation.Clip || cutsInJS(n);
+  lineClamp(el, clip && lines > 1 ? 0 : lines);
+  // Clip: no ellipsis. On one line, overflow cut at the edge; on more,
+  // as many lines as it takes, cut below them (CSS's lh: its line height).
+  el.style.textOverflow = clip && lines === 1 ? "clip" : "";
+  el.classList.toggle("asuka-clip-lines", clip && lines > 1);
+  el.style.maxHeight = clip && lines > 1 ? `calc(${lines}lh + ${text.insetSize(n)[1]}px)` : "";
+}
+
 const textView = {
   create(h, n) {
     own(n, div("asuka-text"));
     n.text = "";
+    n.cut = null;
     text.applyFont(h, n, n.el);
   },
   prop(h, n, p, v) {
     if (p === P.Text.Text) {
       n.text = v;
-      n.el.textContent = v;
+      showText(n, v);
+      refit(h, n);
     }
   },
-  lines(h, n) { lineClamp(n.el, n.lines); },
+  lines(h, n) {
+    applyLines(n);
+    refit(h, n);
+  },
+  font(h, n) {
+    text.applyFont(h, n, n.el);
+    refit(h, n);
+  },
+  resized(h, n) { refit(h, n); },
+  inset(h, n) {
+    const v = n.inset;
+    n.el.style.padding = `${v[0]}px ${v[1]}px ${v[2]}px ${v[3]}px`;
+    if (n.el.classList.contains("asuka-clip-lines")) applyLines(n);
+    refit(h, n);
+  },
   measure(h, n, c) {
     if (!n.text) return [0, 0];
-    const size = h.measureElement(n, n.el, c, { tight: true });
-    if (n.lines === 1 && c.availW === -Infinity && c.width !== c.width) {
-      // A line that's cut short with an ellipsis is as narrow as its
-      // widest word, as the native hosts measure it, so it can shrink: on
-      // one line (white-space: pre) the browser's min-content is all of it.
-      n.el.classList.remove("asuka-one-line");
-      try {
-        size[0] = Math.min(size[0], h.measureElement(n, n.el, c, { tight: true })[0]);
-      } finally {
-        n.el.classList.add("asuka-one-line");
+    // Measured whole, at the scale it'd be drawn at in this width.
+    const cut = n.cut;
+    if (cut != null) showText(n, n.text);
+    const w = c.width === c.width ? c.width : c.availW;
+    const scale = scaleAt(h, n, w);
+    if (scale !== n.fitScale) text.applyFont(h, n, n.el, scale);
+    try {
+      const size = h.measureElement(n, n.el, c, { tight: true });
+      if (textLines(n) === 1 && c.availW === -Infinity && c.width !== c.width) {
+        // A line that's cut short with an ellipsis is as narrow as its
+        // widest word, as the native hosts measure it, so it can shrink: on
+        // one line (white-space: pre) the browser's min-content is all of it.
+        n.el.classList.remove("asuka-one-line");
+        try {
+          size[0] = Math.min(size[0], h.measureElement(n, n.el, c, { tight: true })[0]);
+        } finally {
+          n.el.classList.add("asuka-one-line");
+        }
       }
+      return size;
+    } finally {
+      if (scale !== n.fitScale) text.applyFont(h, n, n.el);
+      if (cut != null) showText(n, cut);
     }
-    return size;
   },
 };
 

@@ -104,7 +104,8 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Transforms | `.rotationEffect`, `.scaleEffect`, `.offset` | `transform` | ✓ `transform: Transform(…)` |
 | Enter and exit transitions | `.transition` | entering/exiting | ✓ `transition` (`.opacity`, `.pop`, `.slide`, `Transition(…)` of your own) |
 | Frame-driven animation | `TimelineView(.animation)` | `useFrameCallback` | ✓ `frames()`, `onFrame` |
-| Shadows, gradients, blur | `.shadow`, `LinearGradient`, materials | style, expo-linear-gradient, expo-blur | ✓ `shadow`, `gradient`, `material` |
+| Shadows, gradients, blur | `.shadow`, `LinearGradient`, `RadialGradient`, `AngularGradient`, materials | style, expo-linear-gradient, expo-blur | ✓ `shadow`, `gradient` (`.linear`, `.radial`, `.conic`), `material` |
+| Corners and borders | `UnevenRoundedRectangle`, `.strokeBorder` with a `StrokeStyle`'s dashes | `borderTopLeftRadius`..., `borderBottomWidth`..., `borderStyle` | ✓ `radius` (`[tl, tr, br, bl]`, `Corners(topStart:...)`), `border` (`Edges(bottom: 1)`), `borderStyle` (`.dashed`, `.dotted`) |
 | Gestures | tap, long press, drag, magnify, rotate | Gesture Handler | ✓ `on press`, `on longPress`, `on pan`, `on pinch`, `on rotate`, `on swipe` |
 | Keys of a hardware keyboard | `.onKeyPress`, `.keyboardShortcut` | `onKeyPress` (a `TextInput`'s; React Native for Windows and macOS: `onKeyDown`) | ✓ `keys` (from the focused view out, ahead of the control and the menus), `useKeys`, `WindowKeys` (the window's) |
 | Pressed and hover states | `ButtonStyle`'s `isPressed`, `.onHover` | `Pressable`'s `pressed`, `onHoverIn`/`onHoverOut` | ✓ `pressed { … }` and `hovered { … }` variants; a `Ref`'s `pressed` and `hovered` for a group's or a peer's; `on pressedChange`, `on hoverChange` |
@@ -183,6 +184,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Live Activities | ActivityKit | `expo-live-activity` | ✓ `platform/liveactivity` (iOS: the lock screen and the Dynamic Island; Android 16's Live Updates; countdowns, progress, alerts, push tokens for a server's updates) |
 | App Intents, shortcuts | App Intents, App Shortcuts | — | ✓ `asuka.toml`'s `shortcuts` (iOS: App Shortcuts with Siri phrases, in Spotlight and Shortcuts, and parameters: text, numbers, switches, options, and the app's own things (`platform/shortcuts`' entities), which a phrase can name; Android: launcher shortcuts, one for each of those things) |
 | Custom fonts | `.font(.custom)` | `expo-font` | ✓ `assets/fonts`, `Font(family:)` |
+| Setting text | `.tracking`, `.lineSpacing`, `.italic()`, `.monospacedDigit()`, `.smallCaps()`, `.truncationMode`, `.minimumScaleFactor`, `.shadow` | `letterSpacing`, `lineHeight`, `fontStyle`, `fontVariant`, `ellipsizeMode`, `adjustsFontSizeToFit`, `textShadow*` | ✓ `letterSpacing`, `lineHeight`, `Font`'s `italic`, `monospacedDigits` and `smallCaps`, `truncation`, `minimumScale`, `textShadow` |
 | Lifecycle | `scenePhase` | AppState | ✓ `onLifecycle` |
 | Launch screen | `UILaunchScreen` | `expo-splash-screen` | ✓ `asuka.toml`'s `splash`; `platform/splash` holds it while the app loads |
 | Alternate app icons | `setAlternateIconName` | community (`expo-dynamic-app-icon`) | ✓ `asuka.toml`'s `alternateIcons`, `platform/appicon`'s `set` (iOS's home screen; Android's launcher, as the app leaves the screen; the Mac's Dock, Windows' windows and taskbar, the web page's icon; not on Linux, whose launchers show the desktop file's) |

@@ -1949,7 +1949,7 @@ Boundary {
 
 ### スタイル
 
-すべての要素がスタイルのプロパティを受け取ります。まずレイアウト（`direction`、`justify`、`align`、`gap`、`padding`、`margin`、`width`、`height`、`grow`、`shrink`、`absolute`、`top`、`grid` など）、次に見た目（`background`、`radius`、`border`、`opacity`、`shadow`、`font`、`color`、`lines` など）です。詳しくは[レイアウトとスタイル](https://asuka.egoist.dev/ja/docs/layout)を参照してください。
+すべての要素がスタイルのプロパティを受け取ります。まずレイアウト（`direction`、`justify`、`align`、`gap`、`padding`、`margin`、`width`、`height`、`grow`、`shrink`、`absolute`、`top`、`grid` など）、次に見た目（`background`、`radius`、`border`、`opacity`、`shadow`、`gradient`、`font`、`color`、`lines`、`letterSpacing`、`lineHeight` など）です。詳しくは[レイアウトとスタイル](https://asuka.egoist.dev/ja/docs/layout)を参照してください。
 
 `style` は再利用するプロパティをまとめて宣言します。`style:` で 1 つのスタイル、またはスタイルのリストを適用します。
 

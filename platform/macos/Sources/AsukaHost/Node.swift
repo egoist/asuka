@@ -29,6 +29,20 @@ import AsukaOps
     var fontFamily = ""
     var color: UInt64 = 0
     var lineLimit = 0
+    /// LetterSpacing and LineHeight, in points (0: the font's).
+    var letterSpacing: CGFloat = 0
+    var lineHeight: CGFloat = 0
+    /// FontTraits' bits: 1 italic, 2 monospaced digits, 4 small capitals.
+    var fontTraits = 0
+    /// TextShadow's bytes, as Shadow's.
+    var textShadow: [UInt8] = []
+    /// Truncation (AsukaTruncation), MinimumScale (0: none).
+    var truncation: Int32 = 0
+    var minimumScale: CGFloat = 0
+    /// The scale a shrinking text is drawn at (TextStyle.swift).
+    var textScale: CGFloat = 1
+    /// Its label draws an attributed string of its props.
+    var styledLabel = false
 
     // Visual props.
     var background: UInt64 = 0
@@ -39,6 +53,15 @@ import AsukaOps
     var shadow: [UInt8] = []
     var gradient: [UInt8] = []
     var gradientLayer: CAGradientLayer?
+    /// CornerRadii (top left, top right, bottom right, bottom left) and
+    /// BorderWidths (top, right, bottom, left): all 0 when they're the same
+    /// (CornerRadius, BorderWidth say).
+    var cornerRadii: [CGFloat] = [0, 0, 0, 0]
+    var borderWidths: [CGFloat] = [0, 0, 0, 0]
+    var borderStyle: Int32 = 0
+    /// The layers that draw a box CALayer's own properties can't: per-corner
+    /// radii, per-side or dashed borders (Box.swift).
+    var box: AsukaBox?
     var transform: [UInt8] = []
     /// The transform its layer's animation holds (Props.swift).
     var held = CATransform3DIdentity

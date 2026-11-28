@@ -550,9 +550,7 @@ static void draw_texture(node *n, GtkSnapshot *snap, const graphene_rect_t *b, G
 void lx_draw_image(node *n, GtkSnapshot *snap, const graphene_rect_t *b) {
 	if (b->size.width == 0 || b->size.height == 0) return;
 	image_extra *x = n->imgx;
-	float m = fminf(b->size.width / 2, b->size.height / 2), radius = fminf(n->corner_radius, m);
-	GskRoundedRect rr = {.bounds = *b};
-	for (int i = 0; i < 4; i++) rr.corner[i] = (graphene_size_t){radius, radius};
+	GskRoundedRect rr = lx_node_rounded(n, *b);
 	gtk_snapshot_push_rounded_clip(snap, &rr);
 	bool loaded = x && x->loaded;
 	if (x && x->ph && (!loaded || x->fade < 1)) {

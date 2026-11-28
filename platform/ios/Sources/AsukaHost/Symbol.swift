@@ -95,8 +95,38 @@ final class AsukaDatePickerView: UIView {
         g.locations = locations
         g.startPoint = CGPoint(x: CGFloat(r.f32()), y: CGFloat(r.f32()))
         g.endPoint = CGPoint(x: CGFloat(r.f32()), y: CGFloat(r.f32()))
+        // Its kind, center, radius and angle (linear, without them).
+        gradientKind = 0
+        if r.end - r.p >= 17 {
+            gradientKind = Int32(r.u8())
+            gradientCenter = CGPoint(x: CGFloat(r.f32()), y: CGFloat(r.f32()))
+            gradientRadius = CGFloat(r.f32())
+            gradientAngle = CGFloat(r.f32())
+        }
+        switch AsukaGradientKind(rawValue: gradientKind) {
+        case .radial: g.type = .radial
+        case .conic: g.type = .conic
+        default: g.type = .axial
+        }
         resolveLayerColors()
         updateLayers()
+    }
+
+    /// A radial or conic gradient's points at the view's size: a radial
+    /// one's a circle (CAGradientLayer's radial is an ellipse through its
+    /// end point's offsets, in unit points), a conic one's from its angle,
+    /// clockwise from the top.
+    func placeGradient(_ g: CAGradientLayer, _ b: CGRect) {
+        guard gradientKind != 0, b.width > 0, b.height > 0 else { return }
+        let c = gradientCenter
+        g.startPoint = c
+        if gradientKind == AsukaGradientKind.radial.rawValue {
+            let r = gradientRadius * min(b.width, b.height)
+            g.endPoint = CGPoint(x: c.x + r / b.width, y: c.y + r / b.height)
+        } else {
+            let a = gradientAngle * .pi / 180, k = min(b.width, b.height) / 2
+            g.endPoint = CGPoint(x: c.x + sin(a) * k / b.width, y: c.y - cos(a) * k / b.height)
+        }
     }
 
     /// Resolves the layers' dynamic colors with the view's traits (dark mode).
@@ -105,6 +135,7 @@ final class AsukaDatePickerView: UIView {
         if borderColor != 0 { view.layer.borderColor = asukaColor(borderColor)?.resolvedColor(with: t).cgColor }
         gradient?.colors = gradientColors.map { ($0 ?? .clear).resolvedColor(with: t).cgColor }
         if let c = shadowColor { view.layer.shadowColor = c.resolvedColor(with: t).cgColor }
+        updateOutlineColors()
     }
 
     /// Clips the children to the view's bounds, rounded, while Style.Clip
@@ -131,6 +162,8 @@ final class AsukaDatePickerView: UIView {
         }
         view.clipsToBounds = clips && clipView == nil
         clipView?.layer.cornerRadius = view.layer.cornerRadius
+        clipView?.layer.maskedCorners = view.layer.maskedCorners
+        if outline != nil { updateOutline() } // its children's mask
     }
 
     /// Fits the shadow's path and the gradient to the view's bounds.
@@ -143,23 +176,30 @@ final class AsukaDatePickerView: UIView {
     func updateLayers() {
         let b = view.bounds
         // A new size may change how far a large radius is clamped.
-        if cornerRadius > 0, view.layer.cornerRadius != clampedRadius { view.layer.cornerRadius = clampedRadius }
+        if cornerRadius > 0 || cornerRadii != nil, view.layer.cornerRadius != layerRadius { view.layer.cornerRadius = layerRadius }
+        let corners = view.layer.maskedCorners
         if let g = gradient {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             g.frame = b
             g.cornerRadius = view.layer.cornerRadius
             g.cornerCurve = view.layer.cornerCurve
+            g.maskedCorners = corners
+            placeGradient(g, b)
             CATransaction.commit()
         }
         if let m = material {
             m.layer.cornerRadius = view.layer.cornerRadius
+            m.layer.maskedCorners = corners
             m.superview?.sendSubviewToBack(m)
         }
         clipView?.layer.cornerRadius = view.layer.cornerRadius
+        clipView?.layer.maskedCorners = corners
+        updateOutline()
         if view.layer.shadowOpacity > 0 {
-            view.layer.shadowPath = UIBezierPath(roundedRect: b, cornerRadius: view.layer.cornerRadius).cgPath
+            view.layer.shadowPath = shapePath
         }
+        fitLabel()
     }
 }
 

@@ -123,7 +123,7 @@ const (
 	PropTransform PropID = 23
 	// PropShadow: u64 color (0: none), f32 blur radius, offset x, y (points), from the view's shape.
 	PropShadow PropID = 24
-	// PropGradient: a linear background gradient: u32 count, per stop u64 color and f32 location (0 to 1); f32 start x, y, end x, y (unit points of the view).
+	// PropGradient: a background gradient: u32 count, per stop u64 color and f32 location (0 to 1); f32 start x, y, end x, y (unit points of the view: a linear gradient's line); u8 GradientKind; f32 center x, y (unit points: a radial or conic gradient's center), radius (a radial gradient's circle, as a fraction of the view's shorter side: 0.5 reaches its nearer sides), angle (where a conic gradient starts, in degrees clockwise from the top; it sweeps clockwise). Empty: none.
 	PropGradient PropID = 25
 	// PropTransition: u8 fade, f32 scale (0: none), offset x, y (points): the state a view comes in from when it's inserted during an animation, and goes out to when it's destroyed during one (the host keeps it until it has).
 	PropTransition PropID = 26
@@ -175,6 +175,24 @@ const (
 	PropA11yLabelledBy PropID = 49
 	// PropA11yDescribedBy: the view (a node ID; 0: none) whose text describes this one (a field's description or error): accessibilityHint from its text where the platform has no relation, AXHelp's text, UIA's DescribedBy, GTK_ACCESSIBLE_RELATION_DESCRIBED_BY, aria-describedby.
 	PropA11yDescribedBy PropID = 50
+	// PropLetterSpacing: points added after each character (tracking; negative: tighter), scaled as the font is with the user's text size: NSAttributedString's kern, letterSpacing in ems (the points over the text size), CSS's letter-spacing. 0: the font's own.
+	PropLetterSpacing PropID = 51
+	// PropLineHeight: points from one line's baseline to the next (React Native's lineHeight, CSS's line-height in px), scaled as the font is with the user's text size; the text sits in the middle of each line's height, as CSS's does. 0: the font's own.
+	PropLineHeight PropID = 52
+	// PropFontTraits: the font's variants, a set of bits: 1 italic (its italic face, or slanted when it has none), 2 monospaced digits (OpenType's tnum: every digit as wide), 4 small capitals (smcp: lower case letters drawn as small capitals). Where a font is applied: texts, buttons' titles, fields, a RichText's default.
+	PropFontTraits PropID = 53
+	// PropTextShadow: a shadow under a text's glyphs: as Shadow (u64 color, 0: none; f32 blur radius, offset x, y in points). It takes no room: layout doesn't see it.
+	PropTextShadow PropID = 54
+	// PropTruncation: where a text that doesn't fit its lines (LineLimit; one line with MinimumScale) is cut: an ellipsis at its end (Tail), its start (Head) or its middle (Middle), or cut off at its edge (Clip).
+	PropTruncation PropID = 55
+	// PropMinimumScale: a text shrinks to fit its width in its lines (LineLimit; 1 when there's none), down to this fraction of its font's size (its letter spacing and line height with it), before it's truncated: the largest scale it fits at, found the same way where it's measured and where it's drawn. 0 or 1: it doesn't shrink.
+	PropMinimumScale PropID = 56
+	// PropCornerRadii: per-corner radii, in points, physical: top left, top right, bottom right, bottom left (in an edges' top, right, bottom, left). When they differ the core sends these and a CornerRadius of 0; when they're the same it sends CornerRadius and these as 0, 0, 0, 0 (none). As CSS's, radii whose sum is more than their side are all scaled down by the same factor until they fit.
+	PropCornerRadii PropID = 57
+	// PropBorderWidths: per-side border widths, in points, physical (top, right, bottom, left), drawn inside the box, each in BorderColor. When they differ the core sends these and a BorderWidth of 0; when they're the same it sends BorderWidth and these as 0, 0, 0, 0 (none). Corners join as CSS's: an inner radius is the outer one less the side's width.
+	PropBorderWidths PropID = 58
+	// PropBorderStyle: how a border is drawn: solid, dashed (dashes three times its width long, gaps as long), or dotted (round dots as wide as it, a width apart), along its sides and around its corners.
+	PropBorderStyle PropID = 59
 )
 
 // View props.
@@ -606,7 +624,7 @@ const (
 	PropOverlayModal PropID = 66
 )
 
-var commonProps = [...]propInfo{{}, {"Background", TColor}, {"CornerRadius", TFloat}, {"BorderWidth", TFloat}, {"BorderColor", TColor}, {"Opacity", TFloat}, {"Hidden", TBool}, {"Clip", TBool}, {"A11yLabel", TString}, {"A11yHint", TString}, {"A11yRole", TEnum}, {"A11yActions", TBytes}, {"A11yAdjustable", TBool}, {"A11yHidden", TBool}, {"Color", TColor}, {"TextStyle", TEnum}, {"FontSize", TFloat}, {"FontWeight", TEnum}, {"TextAlign", TEnum}, {"LineLimit", TInt}, {"Disabled", TBool}, {"Menu", TBytes}, {"MenuTrigger", TEnum}, {"Transform", TBytes}, {"Shadow", TBytes}, {"Gradient", TBytes}, {"Transition", TBytes}, {"Material", TEnum}, {"FontFamily", TString}, {"SwipeActions", TBytes}, {"LayoutDirection", TEnum}, {"ContentInset", TEdges}, {"LeadingSwipeActions", TBytes}, {"Selected", TBool}, {"Match", TString}, {"InterceptBack", TBool}, {"Tooltip", TString}, {"Keys", TBytes}, {"Focusable", TBool}, {"NoFocusOnPress", TBool}, {"NoFocusRing", TBool}, {"FocusTrap", TBool}, {"A11yChecked", TEnum}, {"A11yExpanded", TEnum}, {"A11ySelected", TBool}, {"A11yValue", TString}, {"A11yRange", TBytes}, {"A11yModal", TBool}, {"A11yControls", TInt}, {"A11yLabelledBy", TInt}, {"A11yDescribedBy", TInt}}
+var commonProps = [...]propInfo{{}, {"Background", TColor}, {"CornerRadius", TFloat}, {"BorderWidth", TFloat}, {"BorderColor", TColor}, {"Opacity", TFloat}, {"Hidden", TBool}, {"Clip", TBool}, {"A11yLabel", TString}, {"A11yHint", TString}, {"A11yRole", TEnum}, {"A11yActions", TBytes}, {"A11yAdjustable", TBool}, {"A11yHidden", TBool}, {"Color", TColor}, {"TextStyle", TEnum}, {"FontSize", TFloat}, {"FontWeight", TEnum}, {"TextAlign", TEnum}, {"LineLimit", TInt}, {"Disabled", TBool}, {"Menu", TBytes}, {"MenuTrigger", TEnum}, {"Transform", TBytes}, {"Shadow", TBytes}, {"Gradient", TBytes}, {"Transition", TBytes}, {"Material", TEnum}, {"FontFamily", TString}, {"SwipeActions", TBytes}, {"LayoutDirection", TEnum}, {"ContentInset", TEdges}, {"LeadingSwipeActions", TBytes}, {"Selected", TBool}, {"Match", TString}, {"InterceptBack", TBool}, {"Tooltip", TString}, {"Keys", TBytes}, {"Focusable", TBool}, {"NoFocusOnPress", TBool}, {"NoFocusRing", TBool}, {"FocusTrap", TBool}, {"A11yChecked", TEnum}, {"A11yExpanded", TEnum}, {"A11ySelected", TBool}, {"A11yValue", TString}, {"A11yRange", TBytes}, {"A11yModal", TBool}, {"A11yControls", TInt}, {"A11yLabelledBy", TInt}, {"A11yDescribedBy", TInt}, {"LetterSpacing", TFloat}, {"LineHeight", TFloat}, {"FontTraits", TInt}, {"TextShadow", TBytes}, {"Truncation", TEnum}, {"MinimumScale", TFloat}, {"CornerRadii", TEdges}, {"BorderWidths", TEdges}, {"BorderStyle", TEnum}}
 
 var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}, {"TakesClicks", TBool}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}, {"EdgeEffect", TEnum}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"EdgeEffect", TEnum}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TInt}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}, {"Rate", TFloat}, {"Volume", TFloat}, {"Headers", TBytes}, {"Poster", TString}, {"StartAt", TFloat}, {"TimeInterval", TFloat}, {"Subtitle", TString}, {"AudioTrack", TString}, {"SubtitleFiles", TBytes}, {"PictureInPicture", TBool}, {"AutoPictureInPicture", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}, {{"Root", TInt}, {"Anchor", TInt}, {"Modal", TBool}}}
 
@@ -969,6 +987,31 @@ const (
 	TextAlignCenter
 	TextAlignEnd
 	TextAlignJustify
+)
+
+type Truncation int32
+
+const (
+	TruncationTail Truncation = iota
+	TruncationHead
+	TruncationMiddle
+	TruncationClip
+)
+
+type BorderStyle int32
+
+const (
+	BorderStyleSolid BorderStyle = iota
+	BorderStyleDashed
+	BorderStyleDotted
+)
+
+type GradientKind int32
+
+const (
+	GradientKindLinear GradientKind = iota
+	GradientKindRadial
+	GradientKindConic
 )
 
 type LayoutDirection int32

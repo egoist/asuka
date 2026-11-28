@@ -97,12 +97,15 @@ void wh_paint_material(node *n, HDC dc, int w, int h) {
 	}
 	rgba c = {28, 28, 28, 255};
 	if (!H.dark) c = (rgba){252, 252, 252, 255}, tint = wh_minf(tint + 0.1f, 1);
-	double radius = wh_minf(n->corner_radius * k, wh_minf(w / 2.0f, h / 2.0f));
+	float rf[4];
+	wh_radii(n, (float)w, (float)h, rf);  // each corner its own
+	double radii[4] = {rf[0], rf[1], rf[2], rf[3]};
+	bool round = rf[0] > 0 || rf[1] > 0 || rf[2] > 0 || rf[3] > 0;
 	double t = tint, tb = c.b * t, tg = c.g * t, tr = c.r * t;
 	for (int y = 0; y < ah; y++)
 		for (int x = 0; x < aw; x++) {
 			size_t i = ((size_t)y * (size_t)aw + (size_t)x) * 4;
-			double cov = radius > 0 ? wh_clip_coverage(area.left + x, area.top + y, w, h, radius) : 1;
+			double cov = round ? wh_clip_coverage4(area.left + x, area.top + y, w, h, radii) : 1;
 			double bl = px[i] * (1 - t) + tb, gr = px[i + 1] * (1 - t) + tg, rd = px[i + 2] * (1 - t) + tr;
 			px[i] = (uint8_t)(behind[i] * (1 - cov) + bl * cov + 0.5);
 			px[i + 1] = (uint8_t)(behind[i + 1] * (1 - cov) + gr * cov + 0.5);

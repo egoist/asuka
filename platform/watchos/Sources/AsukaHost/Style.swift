@@ -103,10 +103,18 @@ typealias AsukaFontDescriptor = NSFontDescriptor
     }
 
     /// The font of a text style (Body by default) at the user's text
-    /// size, or of a size the app gave (scaled as Body is), in a weight.
-    static func font(style: Int32, size: Float, weight w: Int32) -> CTFont {
-        let key = Int64(style) | Int64(w) << 8 | Int64(size.bitPattern) << 16
+    /// size, or of a size the app gave (scaled as Body is), in a weight,
+    /// with its variants (FontTraits: 1 italic, 2 monospaced digits, 4
+    /// small capitals), which SwiftUI draws as CoreText measures them:
+    /// they're the CTFont's.
+    static func font(style: Int32, size: Float, weight w: Int32, traits: Int = 0) -> CTFont {
+        let key = Int64(style) | Int64(w) << 8 | Int64(traits & 7) << 13 | Int64(size.bitPattern) << 16
         if let f = cache[key] { return f }
+        if traits & 7 != 0 {
+            let ct = variant(font(style: style, size: size, weight: w), traits)
+            cache[key] = ct
+            return ct
+        }
         let ts = textStyle(style)
         var f: AsukaFont = AsukaFont.preferredFont(forTextStyle: ts)
         if size > 0 {
@@ -129,8 +137,44 @@ typealias AsukaFontDescriptor = NSFontDescriptor
         return ct
     }
 
-    /// A node's font: its TextStyle, FontSize and FontWeight.
-    static func font(of n: AsukaNode) -> CTFont { font(style: n.textStyle, size: n.fontSize, weight: n.fontWeight) }
+    /// A node's font: its TextStyle, FontSize, FontWeight and FontTraits.
+    static func font(of n: AsukaNode) -> CTFont { font(style: n.textStyle, size: n.fontSize, weight: n.fontWeight, traits: n.fontTraits) }
+
+    /// f with FontTraits' variants: its italic face (slanted by a matrix
+    /// where it has none), OpenType's tnum and smcp as feature settings.
+    static func variant(_ f: CTFont, _ traits: Int) -> CTFont {
+        var out = f
+        if traits & 1 != 0 {
+            if let it = CTFontCreateCopyWithSymbolicTraits(out, 0, nil, .traitItalic, .traitItalic) {
+                out = it
+            } else {
+                var skew = CGAffineTransform(a: 1, b: 0, c: 0.2, d: 1, tx: 0, ty: 0)
+                out = CTFontCreateCopyWithAttributes(out, 0, &skew, nil)
+            }
+        }
+        var features: [[CFString: Any]] = []
+        if traits & 2 != 0 {
+            features.append([kCTFontFeatureTypeIdentifierKey: kNumberSpacingType, kCTFontFeatureSelectorIdentifierKey: kMonospacedNumbersSelector])
+        }
+        if traits & 4 != 0 {
+            features.append([kCTFontFeatureTypeIdentifierKey: kLowerCaseType, kCTFontFeatureSelectorIdentifierKey: kLowerCaseSmallCapsSelector])
+        }
+        if !features.isEmpty {
+            let d = CTFontDescriptorCreateWithAttributes([kCTFontFeatureSettingsAttribute: features] as CFDictionary)
+            out = CTFontCreateCopyWithAttributes(out, 0, nil, d)
+        }
+        return out
+    }
+
+    /// A length in a text (a letter spacing, a line height) at the user's
+    /// text size, scaled as the node's font is.
+    static func scaled(_ v: CGFloat, _ n: AsukaNode) -> CGFloat {
+        #if os(watchOS)
+        return UIFontMetrics(forTextStyle: n.fontSize > 0 ? .body : textStyle(n.textStyle)).scaledValue(for: v)
+        #else
+        return v
+        #endif
+    }
 
     /// The user's text size against the default's (1 at Large), which
     /// the environment reports as fontScale.

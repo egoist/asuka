@@ -150,6 +150,7 @@ import AsukaOps
 
     func textPlaced(_ n: AsukaNode) {
         if n.rich != nil { placeInlines(n) }
+        textStylePlaced(n) // TextStyle.swift: a shrinking text fits its frame
     }
 
     func textColors(_ n: AsukaNode) {
@@ -202,6 +203,7 @@ import AsukaOps
                           "inset": [Double(n.inset.top), Double(n.inset.right), Double(n.inset.bottom), Double(n.inset.left)]]
         }
         richJSON(n, &d)
+        textStyleJSON(n, &d)
         if n.kind == .selectable { d["selectedText"] = selectableText(n) ?? "" }
         if !n.keys.isEmpty { d["keys"] = n.keys.map { ["name": $0.name, "mods": Int($0.mods)] } }
     }

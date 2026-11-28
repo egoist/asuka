@@ -11,6 +11,9 @@ void wh_style_pen(GpPen *pen, int cap, int join, const float *dash, uint32_t nda
 
 // clip.c
 double wh_clip_coverage(int x, int y, int w, int h, double rc);
+// wh_clip_coverage4 is wh_clip_coverage's of corners of radii r (top
+// left, top right, bottom right, bottom left).
+double wh_clip_coverage4(int x, int y, int w, int h, const double r[4]);
 void wh_restore_shape(node *n);
 
 // picture.c: a DIB section of w by h pixels (BGRA, top-down) and its

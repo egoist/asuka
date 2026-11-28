@@ -34,6 +34,36 @@ let asukaAssets: URL? = {
     /// Style.CornerRadius as set; the layer's is at most half the view's
     /// shorter side, as CSS and Android clamp it (999: a capsule).
     var cornerRadius: CGFloat = 0
+    /// CornerRadii as set (top left, top right, bottom right, bottom
+    /// left) while they differ; BorderWidths (top, right, bottom, left)
+    /// likewise, BorderWidth, and BorderStyle (Outline.swift).
+    var cornerRadii: [CGFloat]?
+    var borderWidths: UIEdgeInsets?
+    var borderWidth: CGFloat = 0
+    var borderStyle: Int32 = 0
+    /// Background as set: drawn by the view, or by its outline's fill
+    /// while its corners differ.
+    var background: UIColor?
+    /// The outline's layers, while the view's shape or border is more
+    /// than its layer draws (Outline.swift).
+    var outline: AsukaOutline?
+    /// The gradient's shape: Gradient's kind, center, radius and angle.
+    var gradientKind: Int32 = 0
+    var gradientCenter = CGPoint(x: 0.5, y: 0.5)
+    var gradientRadius: CGFloat = 0.5
+    var gradientAngle: CGFloat = 0
+    /// The text props beyond a label's own (TextStyle.swift):
+    /// LetterSpacing and LineHeight (points, before Dynamic Type),
+    /// FontTraits, TextShadow, Truncation, MinimumScale, and LineLimit.
+    var letterSpacing: CGFloat = 0
+    var lineHeight: CGFloat = 0
+    var fontTraits: Int64 = 0
+    var textShadow: NSShadow?
+    var truncation: Int32 = 0
+    var minimumScale: CGFloat = 0
+    var lineLimit = 0
+    /// MinimumScale's fits: the scales found at the last widths.
+    var fitCache: [(width: CGFloat, scale: CGFloat)] = []
     /// A button's ContentInset while its style gives it padding or a
     /// border, which replaces its configuration's insets (fitButton), and
     /// those insets, to put back when it has none again.
@@ -262,6 +292,14 @@ final class AsukaContainerView: UIView {
 
 /// A Text: a label that draws its text inside its padding (ContentInset).
 final class AsukaLabel: UILabel {
+    /// Its text is attributed, for the text props a label hasn't
+    /// (TextStyle.swift); it then takes Dynamic Type's sizes from
+    /// followTextSize, not on its own.
+    var styled = false
+    /// Its text, as set.
+    var source = ""
+    /// The scale MinimumScale shrinks it to at its width (1: none).
+    var shrink: CGFloat = 1
     var contentInset: UIEdgeInsets = .zero {
         didSet { if contentInset != oldValue { setNeedsDisplay() } }
     }
@@ -277,7 +315,7 @@ final class AsukaLabel: UILabel {
         super.didMoveToWindow()
         if holdsFont, window != nil {
             holdsFont = false
-            adjustsFontForContentSizeCategory = true
+            adjustsFontForContentSizeCategory = !styled
         }
     }
 }

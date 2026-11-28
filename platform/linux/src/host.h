@@ -106,13 +106,26 @@ struct node {
 	ak_color color;
 	int line_limit;
 	float inset[4];  // ContentInset: top, right, bottom, left
+	float letter_spacing, line_height;  // points (0: the font's)
+	int32_t font_traits;                // FontTraits: 1 italic, 2 tabular digits, 4 small capitals
+	int32_t truncation;                 // Truncation
+	float min_scale;                    // MinimumScale (0, >= 1: none)
+	float text_scale;                   // the scale its text is drawn at, from MinimumScale (0: 1)
+	shadow_t text_shadow;               // TextShadow
 
 	// Visual props, drawn by the view.
 	ak_color background, border_color;
 	float corner_radius, border_width, opacity;
+	float corner_radii[4];   // CornerRadii: top left, top right, bottom right, bottom left (all 0: corner_radius)
+	float border_widths[4];  // BorderWidths: top, right, bottom, left (all 0: border_width)
+	int32_t border_style;    // BorderStyle
 	shadow_t shadow;
 	AK_VEC(grad_stop) gradient;
 	float gradient_line[4];
+	int32_t gradient_kind;       // GradientKind
+	float gradient_center[2];    // unit points
+	float gradient_radius;       // a fraction of the shorter side
+	float gradient_angle;        // degrees clockwise from the top
 	transform_t transform;
 	bool clip;
 	int32_t material;
@@ -422,6 +435,12 @@ void lx_set_own(node *n, ak_prop p, const ak_value *v);
 void lx_apply_text(node *n);
 void lx_style_button(node *n);
 PangoAttrList *lx_attrs(node *n, bool with_color);
+PangoAttrList *lx_attrs_at(node *n, bool with_color, float scale);
+float lx_fit_scale(node *n, float width);
+void lx_text_frame(node *n);
+void lx_corners(node *n, float out[4]);
+bool lx_rounded_node(node *n);
+GskRoundedRect lx_node_rounded(node *n, graphene_rect_t r);
 void lx_set_label_attrs(node *n, GtkWidget *label);
 const char *lx_family(node *n);
 int lx_physical_align(node *n);

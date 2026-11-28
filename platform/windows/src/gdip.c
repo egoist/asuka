@@ -54,6 +54,37 @@ void g_path_round_rect(GpPath *p, float x, float y, float w, float h, float r) {
 	GdipClosePathFigure(p);
 }
 
+void g_path_rrect(GpPath *p, float x, float y, float w, float h, const float rx[4], const float ry[4]) {
+	GdipStartPathFigure(p);
+	// Clockwise from the top left: each corner's arc, or its point.
+	const float cx[4] = {x, x + w, x + w, x}, cy[4] = {y, y, y + h, y + h};
+	const float sx[4] = {0, -2, -2, 0}, sy[4] = {0, 0, -2, -2}, start[4] = {180, 270, 0, 90};
+	for (int i = 0; i < 4; i++) {
+		float a = wh_maxf(rx[i], 0), b = wh_maxf(ry[i], 0);
+		if (a > 0 && b > 0) GdipAddPathArc(p, cx[i] + sx[i] * a, cy[i] + sy[i] * b, 2 * a, 2 * b, start[i], 90);
+		else GdipAddPathLine(p, cx[i], cy[i], cx[i], cy[i]);
+	}
+	GdipClosePathFigure(p);
+}
+
+void g_path_corners(GpPath *p, float x, float y, float w, float h, const float r[4]) {
+	if (r[0] <= 0 && r[1] <= 0 && r[2] <= 0 && r[3] <= 0) {
+		GdipAddPathRectangle(p, x, y, w, h);
+		return;
+	}
+	g_path_rrect(p, x, y, w, h, r, r);
+}
+
+void g_fill_corners(gfx g, ARGB c, float x, float y, float w, float h, const float r[4]) {
+	GpPath *p = g_path();
+	g_path_corners(p, x, y, w, h, r);
+	GpSolidFill *b = NULL;
+	GdipCreateSolidFill(c, &b);
+	GdipFillPath(g, (GpBrush *)b, p);
+	GdipDeleteBrush((GpBrush *)b);
+	GdipDeletePath(p);
+}
+
 void g_fill_round_rect(gfx g, ARGB c, float x, float y, float w, float h, float r) {
 	GpPath *p = g_path();
 	g_path_round_rect(p, x, y, w, h, r);

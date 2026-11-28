@@ -11,9 +11,9 @@
 // ---- Spans to the wire ----
 
 static const ak_shape *const no_shapes[12];
-static const uint8_t font_kinds[] = {AK_K_INT, AK_K_FLOAT, AK_K_INT, AK_K_REF};
-static const char *const font_names[] = {"style", "size", "weight", "family"};
-const ak_shape ak_ui_shape_font = {"Font", 4, font_kinds, no_shapes, font_names, 0, NULL, false, NULL};
+static const uint8_t font_kinds[] = {AK_K_INT, AK_K_FLOAT, AK_K_INT, AK_K_REF, AK_K_BOOL, AK_K_BOOL, AK_K_BOOL};
+static const char *const font_names[] = {"style", "size", "weight", "family", "italic", "monospacedDigits", "smallCaps"};
+const ak_shape ak_ui_shape_font = {"Font", 7, font_kinds, no_shapes, font_names, 0, NULL, false, NULL};
 
 static const uint8_t span_kinds[] = {AK_K_REF, AK_K_REF, AK_K_BOOL, AK_K_BOOL, AK_K_BOOL, AK_K_BOOL, AK_K_INT, AK_K_INT, AK_K_REF, AK_K_REF};
 static const char *const span_names[] = {"text", "font", "italic", "mono", "underline", "strike", "color", "background", "link", "inline"};
@@ -33,12 +33,14 @@ static const char object_char[] = "\xEF\xBF\xBC";  // U+FFFC: an inline componen
 static ak_rich_style style_of(const ak_struct *s) {
 	ak_rich_style st = {0};
 	const ak_struct *f = s->f[SP_FONT].p;
+	bool italic = false;  // the span's, or its font's
 	if (f) {
 		st.text_style = (uint8_t)f->f[0].i;
 		st.size = (float)f->f[1].f;
 		st.weight = (uint8_t)f->f[2].i;
+		italic = f->f[4].i != 0;
 	}
-	st.flags = (uint8_t)((s->f[SP_ITALIC].i ? AK_RICH_ITALIC : 0) | (s->f[SP_MONO].i ? AK_RICH_MONO : 0) |
+	st.flags = (uint8_t)((s->f[SP_ITALIC].i || italic ? AK_RICH_ITALIC : 0) | (s->f[SP_MONO].i ? AK_RICH_MONO : 0) |
 	                     (s->f[SP_UNDERLINE].i ? AK_RICH_UNDERLINE : 0) | (s->f[SP_STRIKE].i ? AK_RICH_STRIKE : 0));
 	st.color = (ak_color)s->f[SP_COLOR].i;
 	st.background = (ak_color)s->f[SP_BACKGROUND].i;
@@ -448,7 +450,21 @@ static void set_accessory(ak_view *field, ak_view *content) {
 // text keys go to the RichText.
 static const ak_el_class cls_inner = {.name = "RichText", .kind = AK_KIND_RICH_TEXT, .flags = AK_ELF_TEXT | AK_ELF_MEASURED};
 
-static bool text_key(uint16_t key) { return key == AK_KEY_FONT || key == AK_KEY_COLOR || key == AK_KEY_LINES || key == AK_KEY_TEXT_ALIGN; }
+static bool text_key(uint16_t key) {
+	switch (key) {
+	case AK_KEY_FONT:
+	case AK_KEY_COLOR:
+	case AK_KEY_LINES:
+	case AK_KEY_TEXT_ALIGN:
+	case AK_KEY_LETTER_SPACING:
+	case AK_KEY_LINE_HEIGHT:
+	case AK_KEY_TRUNCATION:
+	case AK_KEY_MINIMUM_SCALE:
+	case AK_KEY_TEXT_SHADOW:
+		return true;
+	}
+	return false;
+}
 
 ak_view *ak_text_style_target(ak_view *e, uint16_t key) { return e->impl && text_key(key) ? e->impl : e; }
 

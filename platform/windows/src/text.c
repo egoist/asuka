@@ -40,6 +40,10 @@ static float widest_word(const node *n, HDC dc, const wchar_t *s, int len) {
 static void measure_text(node *n, float cw, float aw, float *w, float *h) {
 	*w = *h = 0;
 	if (!n->text.n) return;
+	if (wh_styled_text(n)) {
+		wh_styled_measure(n, cw, aw, w, h);  // its own lines, as they're drawn
+		return;
+	}
 	HDC dc = H.measure_dc;
 	HGDIOBJ old = SelectObject(dc, wh_node_font(n));
 	float widest = 0;

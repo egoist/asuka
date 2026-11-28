@@ -91,6 +91,10 @@ class AsukaRichText(private val rt: AsukaRuntime, private val id2: Int) : AsukaC
     var size = 0f
     var weight = 0
     var family = ""
+    /** FontTraits, LetterSpacing (points) and LineHeight (points; 0: the font's): its runs' defaults. */
+    var traits = 0
+    var letterSpacing = 0f
+    var lineHeight = 0f
     var color = 0L
     var align = AsukaTextAlign.START
     var lines = 0
@@ -257,6 +261,7 @@ class AsukaRichText(private val rt: AsukaRuntime, private val id2: Int) : AsukaC
     }
 
     private var spacingExtra = 0f
+    private var lineHeightPx = 0
     private var spacingMult = 1f
 
     private var paint: TextPaint? = null
@@ -265,12 +270,15 @@ class AsukaRichText(private val rt: AsukaRuntime, private val id2: Int) : AsukaC
     /** The base paint: the view's text style, as a Text's would be (and its line spacing). */
     private fun basePaint(): TextPaint {
         val cfg = resources.configuration
-        val key = "$textStyle|$size|$weight|$family|${AsukaFonts.version}|$color|${cfg.fontScale}|${cfg.uiMode}|${cfg.densityDpi}|${rt.themeVersion}"
+        val key = "$textStyle|$size|$weight|$family|$traits|$letterSpacing|$lineHeight|${AsukaFonts.version}|$color|${cfg.fontScale}|${cfg.uiMode}|${cfg.densityDpi}|${rt.themeVersion}"
         paint?.let { if (key == paintKey) return it }
         val tv = MaterialTextView(rt.themed)
-        rt.applyTextStyle(tv, textStyle, size, weight, family)
-        spacingExtra = tv.lineSpacingExtra
-        spacingMult = tv.lineSpacingMultiplier
+        rt.applyTextStyle(tv, textStyle, size, weight, family, traits)
+        if (letterSpacing != 0f) tv.letterSpacing = rt.letterSpacingEm(letterSpacing, tv.textSize)
+        lineHeightPx = if (lineHeight > 0f) Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, lineHeight, resources.displayMetrics)) else 0
+        // A line height of its own replaces the appearance's spacing.
+        spacingExtra = if (lineHeightPx > 0) 0f else tv.lineSpacingExtra
+        spacingMult = if (lineHeightPx > 0) 1f else tv.lineSpacingMultiplier
         val p = TextPaint(tv.paint)
         p.color = if (color != 0L) rt.color(color) else MaterialColors.getColor(rt.themed, com.google.android.material.R.attr.colorOnSurface, Color.BLACK)
         paint = p
@@ -320,6 +328,7 @@ class AsukaRichText(private val rt: AsukaRuntime, private val id2: Int) : AsukaC
             if (s.background != 0L) span(AsukaBackgroundSpan(rt.color(s.background)))
             if (s.link.isNotEmpty()) span(AsukaLinkSpan(s.link))
         }
+        if (lineHeightPx > 0 && sb.isNotEmpty()) sb.setSpan(AsukaLineHeightSpan(lineHeightPx), 0, sb.length, Spanned.SPAN_INCLUSIVE_INCLUSIVE)
         return sb
     }
 
@@ -339,7 +348,7 @@ class AsukaRichText(private val rt: AsukaRuntime, private val id2: Int) : AsukaC
         val cfg = resources.configuration
         // With its inline components' sizes.
         val ins = if (p.inlines.isEmpty()) "" else p.inlines.joinToString(",") { i -> inlines.getOrNull(i)?.let { "${it.second}x${it.third}" } ?: "0x0" }
-        return "${p.key}|$ins|$textStyle|$size|$weight|$family|${AsukaFonts.version}|$color|$align|$rtlLaidOut|$left|$width|${cfg.fontScale}|${cfg.uiMode}|${cfg.densityDpi}|${rt.themeVersion}"
+        return "${p.key}|$ins|$textStyle|$size|$weight|$family|$traits|$letterSpacing|$lineHeight|${AsukaFonts.version}|$color|$align|$rtlLaidOut|$left|$width|${cfg.fontScale}|${cfg.uiMode}|${cfg.densityDpi}|${rt.themeVersion}"
     }
 
     /** The paragraphs' layouts at a width in px (cached). */

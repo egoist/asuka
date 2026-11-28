@@ -133,7 +133,7 @@ struct ak_view {
 	AK_VEC(ak_style_ent) style;
 	AK_VEC(ak_handler_ent) handlers;
 	uint64_t listens[2];  // the ops events it listens for, a bit each (AK_EVENT_COUNT <= 128)
-	uint64_t outer;    // the style keys its component's caller set, a bit each (ak_ui_set_outer)
+	uint64_t outer[2];  // the style keys its component's caller set, a bit each (ak_ui_set_outer; AK_KEY__STYLE_END <= 128)
 	ak_owner *owner;   // retained: the owner it was made under
 	ak_str *text, *text2;  // what the measure cache keys it by (Text's text; Button's title and icon)
 	int32_t variant;
@@ -149,8 +149,8 @@ typedef struct {
 	ak_view_kind kind;
 	int32_t variant;
 	ak_str *text, *text2, *family;  // retained
-	int32_t font_style, font_weight;
-	float font_size;
+	int32_t font_style, font_weight, font_traits;
+	float font_size, letter_spacing, line_height, min_scale;
 	int64_t lines;
 	float font_scale, scale;
 	bool inset;
@@ -333,6 +333,7 @@ void ak_style_set(ak_view *e, uint16_t key, ak_val v);
 const ak_val *ak_style_get(const ak_view *e, uint16_t key);  // NULL: unset
 // ak_style_layout derives the view's layout style and gives it to its box.
 void ak_style_relayout(ak_view *e);
+void ak_style_dir_changed(ak_view *e);
 void ak_style_layout(ak_view *e, ak_lstyle *out);
 // ak_style_send sends the look of every key set: a view made real.
 void ak_style_send_all(ak_view *e);

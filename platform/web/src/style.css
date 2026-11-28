@@ -91,7 +91,7 @@
 .asuka-hidden { visibility: hidden !important; }
 .asuka-clip { overflow: hidden; }
 /* A view's border (host.js applyBorder): a layer over its children with the frame's own corner */
-.asuka-bordered::after { content: ""; position: absolute; inset: 0; border: var(--asuka-border); border-radius: inherit; pointer-events: none; }
+.asuka-bordered::after { content: ""; position: absolute; inset: 0; border: var(--asuka-border); border-width: var(--asuka-border-width); border-radius: inherit; pointer-events: none; }
 .asuka-disabled { opacity: 0.5; pointer-events: none; }
 .asuka-exiting { pointer-events: none; }
 
@@ -165,6 +165,9 @@
 }
 .asuka-one-line { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .asuka-clamp { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.asuka-clip-lines { overflow: hidden; }
+/* A line cut at its start or middle shows its cut; screen readers read all of it. */
+.asuka-a11y-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; user-select: none; }
 
 .asuka-rich { color: var(--asuka-label); }
 .asuka-rich-text { white-space: pre-wrap; overflow-wrap: break-word; }

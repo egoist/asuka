@@ -1,0 +1,44 @@
+// The text and look styles the Windows host draws itself: letter spacing,
+// line height, truncation, shrinking to fit, monospaced digits, a text's
+// shadow, per-corner radii, a side's border, a dashed border, radial and
+// conic gradients and a per-corner clip (TestStyles).
+
+component Styles {
+  View {
+    Column {
+      padding: 16; gap: 8; align: .start
+      Text("Spaced") { letterSpacing: 4 }
+      Text("Spaced")
+      Text("Lines of text at a tall line height") { lineHeight: 40; width: 120 }
+      Text("Head: a title that doesn't fit") { lines: 1; truncation: .head; width: 120 }
+      Text("Middle: a title that doesn't fit") { lines: 1; truncation: .middle; width: 120 }
+      Text("Shrinks to fit a narrow width") { minimumScale: 0.5; width: 100 }
+      Text("Wraps at a narrow width") { width: 100 }
+      Text("1111") { font: Font(size: 20, monospacedDigits: true) }
+      Text("0000") { font: Font(size: 20, monospacedDigits: true) }
+      Text("Shadow") { font: Font(size: 28, weight: .bold); color: #ffffff; textShadow: Shadow(color: #000000, radius: 2, x: 3, y: 3) }
+      Text("Italic") { font: Font(size: 20, italic: true) }
+      Text("Small Caps") { font: Font(size: 20, smallCaps: true) }
+      Text("Picked") { selectable: true; letterSpacing: 4; lineHeight: 30 }
+      Text("Picked") { selectable: true }
+    }
+    View { absolute: true; left: 300; top: 16; width: 80; height: 80; background: #ff0000; radius: [40, 0, 0, 0] }
+    View { absolute: true; left: 400; top: 16; width: 80; height: 80; border: Edges(bottom: 6); borderColor: #0000ff }
+    View { absolute: true; left: 500; top: 16; width: 80; height: 80; border: 4; borderStyle: .dashed; borderColor: #000000 }
+    View {
+      absolute: true; left: 600; top: 16; width: 80; height: 80
+      gradient: Gradient(kind: .radial, stops: [Stop(color: #ff0000, at: 0), Stop(color: #0000ff, at: 1)])
+    }
+    View {
+      absolute: true; left: 300; top: 120; width: 80; height: 80
+      gradient: Gradient(kind: .conic, stops: [Stop(color: #ff0000, at: 0), Stop(color: #0000ff, at: 1)])
+    }
+    View {
+      absolute: true; left: 400; top: 120; width: 80; height: 80; radius: [0, 0, 40, 0]; clip: true; background: #ff0000
+      View { width: 120; height: 120; background: #00ff00 }
+    }
+    View { absolute: true; left: 500; top: 120; width: 80; height: 80; border: [2, 8, 2, 8]; borderColor: #000000; radius: 16 }
+  }
+}
+
+app { Styles() }

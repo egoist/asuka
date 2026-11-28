@@ -235,6 +235,102 @@ var Cases = []Case{
 		Check: func(p *Probe) { gradient(p, 11, 50, 89, 50) },
 	},
 	{
+		// Corners of different radii: the top ones rounded, the bottom
+		// ones square.
+		Name:  "corner_radii",
+		Scene: box(10, 10, 80, 80, style("background: "+cRed, "radius: [24, 24, 0, 0]")),
+		Check: func(p *Probe) {
+			edges(p, "the box", 10, 10, 90, 90)
+			p.Mix("the top left corner", 11.5, 11.5, white, red, 0, 0.1)
+			p.Mix("the top right corner", 88.5, 11.5, white, red, 0, 0.1)
+			p.Mix("the bottom left corner", 11, 89, white, red, 1, 0.1)
+			p.Mix("the bottom right corner", 89, 89, white, red, 1, 0.1)
+			// A circular corner of 24: 7.03 in along the diagonal.
+			d := diagonal(p, 10, 10)
+			p.Logf("the top left corner's edge %.2f in", d)
+			if d < 6 || d > 10 {
+				p.Errorf("the top left corner's edge is %.2f in along the diagonal, want 7.03 (circular) to 10", d)
+			}
+		},
+	},
+	{
+		// A border on one side: inside the box, the other sides the
+		// background's.
+		Name:  "border_side",
+		Scene: box(10, 10, 80, 80, style("background: "+cYellow, "border: Edges(bottom: 8)", "borderColor: "+cBlue)),
+		Check: func(p *Probe) {
+			p.Edge("the border's outside, bottom", 50, Cell-1, 50, 86, white, blue, 90)
+			p.Edge("the border's inside, bottom", 50, 86, 50, 50, blue, yellow, 82)
+			p.Edge("the left side, without a border", 0, 50, 50, 50, white, yellow, 10)
+			p.Edge("the top, without a border", 50, 0, 50, 50, white, yellow, 10)
+			p.Mix("the bottom left corner, the border's", 11, 89, white, blue, 1, 0.1)
+		},
+	},
+	{
+		// A dashed border: dashes and gaps along its sides.
+		Name:  "border_dashed",
+		Scene: box(10, 10, 80, 80, style("border: 4", "borderStyle: .dashed", "borderColor: "+cBlue)),
+		Check: func(p *Probe) {
+			for _, side := range []struct {
+				what           string
+				x0, y0, x1, y1 float64
+			}{{"top", 20, 12, 80, 12}, {"left", 12, 20, 12, 80}} {
+				s := p.Profile(side.x0, side.y0, side.x1, side.y1, func(c RGB) float64 { return c.Mix(p.ref(white), p.ref(blue)) })
+				on, turns := 0, 0
+				for i, x := range s {
+					if x.v > 0.5 {
+						on++
+					}
+					if i > 0 && (x.v > 0.5) != (s[i-1].v > 0.5) {
+						turns++
+					}
+				}
+				frac := float64(on) / float64(max(len(s), 1))
+				p.Logf("its %s side: %.2f dashes, %d ends", side.what, frac, turns)
+				if frac < 0.25 || frac > 0.75 {
+					p.Errorf("its %s side is %.2f dashes, want about half (dashes and gaps as long)", side.what, frac)
+				}
+				if turns < 3 {
+					p.Errorf("its %s side has %d dash ends over 60 points, want dashes of 12", side.what, turns)
+				}
+			}
+			p.Mix("inside the border", 50, 50, white, blue, 0, 0.1)
+		},
+	},
+	{
+		// A radial gradient: red at its center, blue at its circle (half
+		// the box's side) and beyond.
+		Name:  "gradient_radial",
+		Scene: box(10, 10, 80, 80, "gradient: Gradient(kind: .radial, stops: [Stop(color: "+cRed+", at: 0), Stop(color: "+cBlue+", at: 1)])"),
+		Check: func(p *Probe) {
+			p.Mix("the center", 50, 50, red, blue, 0, 0.1)
+			p.Mix("half way to the circle", 70, 50, red, blue, 0.5, 0.12)
+			p.Mix("half way up", 50, 30, red, blue, 0.5, 0.12) // a circle, not an ellipse
+			p.Mix("the corner, beyond the circle", 12, 12, red, blue, 1, 0.1)
+			s := p.Profile(50, 50, 89, 50, func(c RGB) float64 { return c.Mix(p.ref(red), p.ref(blue)) })
+			for i := 1; i < len(s); i++ {
+				if s[i].v < s[i-1].v-0.03 {
+					p.Errorf("it turns back at %.2f: %.2f after %.2f", s[i].at, s[i].v, s[i-1].v)
+					break
+				}
+			}
+		},
+	},
+	{
+		// A conic gradient sweeps clockwise from the top: red to half way
+		// round (the right half), then blue.
+		Name:  "gradient_conic",
+		Scene: box(10, 10, 80, 80, "gradient: Gradient(kind: .conic, stops: [Stop(color: "+cRed+", at: 0), Stop(color: "+cRed+", at: 0.5), Stop(color: "+cBlue+", at: 0.5), Stop(color: "+cBlue+", at: 1)])"),
+		Check: func(p *Probe) {
+			p.Mix("the right", 80, 50, red, blue, 0, 0.1)
+			p.Mix("the top right", 70, 25, red, blue, 0, 0.1)
+			p.Mix("the bottom right", 70, 75, red, blue, 0, 0.1)
+			p.Mix("the left", 20, 50, red, blue, 1, 0.1)
+			p.Mix("the top left", 30, 25, red, blue, 1, 0.1)
+			p.Mix("the bottom left", 30, 75, red, blue, 1, 0.1)
+		},
+	},
+	{
 		Name:  "translate",
 		Needs: []Feature{Transform},
 		Scene: box(10, 30, 40, 40, style("background: "+cRed, "transform: Transform(x: 30, y: 10)")),

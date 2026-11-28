@@ -35,15 +35,15 @@ const ak_prop_info ak_common_props[AK_COMMON_PROP_COUNT] = {
 	{"LineLimit", AK_T_INT, -1},
 	{"Disabled", AK_T_BOOL, -1},
 	{"Menu", AK_T_BYTES, -1},
-	{"MenuTrigger", AK_T_ENUM, 17},
+	{"MenuTrigger", AK_T_ENUM, 20},
 	{"Transform", AK_T_BYTES, -1},
 	{"Shadow", AK_T_BYTES, -1},
 	{"Gradient", AK_T_BYTES, -1},
 	{"Transition", AK_T_BYTES, -1},
-	{"Material", AK_T_ENUM, 22},
+	{"Material", AK_T_ENUM, 25},
 	{"FontFamily", AK_T_STRING, -1},
 	{"SwipeActions", AK_T_BYTES, -1},
-	{"LayoutDirection", AK_T_ENUM, 8},
+	{"LayoutDirection", AK_T_ENUM, 11},
 	{"ContentInset", AK_T_EDGES, -1},
 	{"LeadingSwipeActions", AK_T_BYTES, -1},
 	{"Selected", AK_T_BOOL, -1},
@@ -64,6 +64,15 @@ const ak_prop_info ak_common_props[AK_COMMON_PROP_COUNT] = {
 	{"A11yControls", AK_T_INT, -1},
 	{"A11yLabelledBy", AK_T_INT, -1},
 	{"A11yDescribedBy", AK_T_INT, -1},
+	{"LetterSpacing", AK_T_FLOAT, -1},
+	{"LineHeight", AK_T_FLOAT, -1},
+	{"FontTraits", AK_T_INT, -1},
+	{"TextShadow", AK_T_BYTES, -1},
+	{"Truncation", AK_T_ENUM, 8},
+	{"MinimumScale", AK_T_FLOAT, -1},
+	{"CornerRadii", AK_T_EDGES, -1},
+	{"BorderWidths", AK_T_EDGES, -1},
+	{"BorderStyle", AK_T_ENUM, 9},
 };
 
 static const ak_prop_info props_View[] = {
@@ -78,18 +87,18 @@ static const ak_prop_info props_Text[] = {
 
 static const ak_prop_info props_Button[] = {
 	{"Title", AK_T_STRING, -1},
-	{"Variant", AK_T_ENUM, 9},
+	{"Variant", AK_T_ENUM, 12},
 	{"Icon", AK_T_STRING, -1},
 };
 
 static const ak_prop_info props_TextField[] = {
 	{"Value", AK_T_STRING, -1},
 	{"Placeholder", AK_T_STRING, -1},
-	{"Keyboard", AK_T_ENUM, 10},
-	{"ReturnKey", AK_T_ENUM, 11},
+	{"Keyboard", AK_T_ENUM, 13},
+	{"ReturnKey", AK_T_ENUM, 14},
 	{"Secure", AK_T_BOOL, -1},
-	{"Autocapitalize", AK_T_ENUM, 12},
-	{"Autocorrect", AK_T_ENUM, 13},
+	{"Autocapitalize", AK_T_ENUM, 15},
+	{"Autocorrect", AK_T_ENUM, 16},
 	{"ContentType", AK_T_STRING, -1},
 	{"Multiline", AK_T_BOOL, -1},
 	{"Plain", AK_T_BOOL, -1},
@@ -115,18 +124,18 @@ static const ak_prop_info props_Scroll[] = {
 	{"Refreshable", AK_T_BOOL, -1},
 	{"Refreshing", AK_T_BOOL, -1},
 	{"Paging", AK_T_BOOL, -1},
-	{"EdgeEffect", AK_T_ENUM, 34},
+	{"EdgeEffect", AK_T_ENUM, 37},
 };
 
 static const ak_prop_info props_List[] = {
 	{"Refreshable", AK_T_BOOL, -1},
 	{"Refreshing", AK_T_BOOL, -1},
-	{"EdgeEffect", AK_T_ENUM, 34},
+	{"EdgeEffect", AK_T_ENUM, 37},
 	{"Columns", AK_T_INT, -1},
 	{"Gap", AK_T_FLOAT, -1},
-	{"Appearance", AK_T_ENUM, 20},
+	{"Appearance", AK_T_ENUM, 23},
 	{"Inset", AK_T_FLOAT, -1},
-	{"Anchor", AK_T_ENUM, 33},
+	{"Anchor", AK_T_ENUM, 36},
 	{"Selecting", AK_T_BOOL, -1},
 };
 
@@ -171,17 +180,17 @@ static const ak_prop_info props_Alert[] = {
 	{"Title", AK_T_STRING, -1},
 	{"Message", AK_T_STRING, -1},
 	{"Buttons", AK_T_BYTES, -1},
-	{"Style", AK_T_ENUM, 15},
+	{"Style", AK_T_ENUM, 18},
 	{"Window", AK_T_INT, -1},
 	{"Fields", AK_T_BYTES, -1},
 };
 
 static const ak_prop_info props_Image[] = {
 	{"Source", AK_T_STRING, -1},
-	{"Mode", AK_T_ENUM, 19},
+	{"Mode", AK_T_ENUM, 22},
 	{"Placeholder", AK_T_STRING, -1},
 	{"PlaceholderImage", AK_T_BYTES, -1},
-	{"PlaceholderMode", AK_T_ENUM, 19},
+	{"PlaceholderMode", AK_T_ENUM, 22},
 	{"Transition", AK_T_FLOAT, -1},
 	{"Paused", AK_T_BOOL, -1},
 };
@@ -233,8 +242,8 @@ static const ak_prop_info props_Shape[] = {
 	{"Fill", AK_T_COLOR, -1},
 	{"Stroke", AK_T_COLOR, -1},
 	{"LineWidth", AK_T_FLOAT, -1},
-	{"LineCap", AK_T_ENUM, 25},
-	{"LineJoin", AK_T_ENUM, 26},
+	{"LineCap", AK_T_ENUM, 28},
+	{"LineJoin", AK_T_ENUM, 29},
 	{"TrimStart", AK_T_FLOAT, -1},
 	{"TrimEnd", AK_T_FLOAT, -1},
 	{"Dash", AK_T_BYTES, -1},
@@ -242,7 +251,7 @@ static const ak_prop_info props_Shape[] = {
 
 static const ak_prop_info props_Video[] = {
 	{"Source", AK_T_STRING, -1},
-	{"Mode", AK_T_ENUM, 19},
+	{"Mode", AK_T_ENUM, 22},
 	{"HideControls", AK_T_BOOL, -1},
 	{"AutoPlay", AK_T_BOOL, -1},
 	{"Loop", AK_T_BOOL, -1},
@@ -271,7 +280,7 @@ static const ak_prop_info props_WebView[] = {
 
 static const ak_prop_info props_DatePicker[] = {
 	{"Value", AK_T_INT, -1},
-	{"Mode", AK_T_ENUM, 21},
+	{"Mode", AK_T_ENUM, 24},
 	{"Min", AK_T_INT, -1},
 	{"Max", AK_T_INT, -1},
 	{"Inline", AK_T_BOOL, -1},
@@ -331,7 +340,7 @@ static const ak_prop_info props_ProgressRing[] = {
 static const ak_prop_info props_Snackbar[] = {
 	{"Message", AK_T_STRING, -1},
 	{"Action", AK_T_STRING, -1},
-	{"Duration", AK_T_ENUM, 38},
+	{"Duration", AK_T_ENUM, 41},
 	{"Window", AK_T_INT, -1},
 };
 
@@ -394,6 +403,9 @@ static const char *const enum_DismissReason[] = {"OutsidePress", "Escape", "Back
 static const char *const enum_TextStyle[] = {"Default", "LargeTitle", "Title", "Title2", "Title3", "Headline", "Subheadline", "Body", "Callout", "Footnote", "Caption", "Caption2"};
 static const char *const enum_FontWeight[] = {"Default", "Ultralight", "Thin", "Light", "Regular", "Medium", "Semibold", "Bold", "Heavy", "Black"};
 static const char *const enum_TextAlign[] = {"Start", "Center", "End", "Justify"};
+static const char *const enum_Truncation[] = {"Tail", "Head", "Middle", "Clip"};
+static const char *const enum_BorderStyle[] = {"Solid", "Dashed", "Dotted"};
+static const char *const enum_GradientKind[] = {"Linear", "Radial", "Conic"};
 static const char *const enum_LayoutDirection[] = {"Inherit", "LeftToRight", "RightToLeft"};
 static const char *const enum_ButtonVariant[] = {"Plain", "Filled", "Tinted", "Gray", "Bordered", "Glass", "GlassProminent"};
 static const char *const enum_Keyboard[] = {"Default", "Number", "Decimal", "Email", "URL", "Phone"};
@@ -438,6 +450,9 @@ const ak_enum_info ak_enums[AK_ENUM_COUNT] = {
 	{"TextStyle", enum_TextStyle, 12},
 	{"FontWeight", enum_FontWeight, 10},
 	{"TextAlign", enum_TextAlign, 4},
+	{"Truncation", enum_Truncation, 4},
+	{"BorderStyle", enum_BorderStyle, 3},
+	{"GradientKind", enum_GradientKind, 3},
 	{"LayoutDirection", enum_LayoutDirection, 3},
 	{"ButtonVariant", enum_ButtonVariant, 7},
 	{"Keyboard", enum_Keyboard, 6},

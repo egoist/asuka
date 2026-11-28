@@ -718,7 +718,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             // The platform's TextView: AppCompat's (Material's) posts a message
             // to load the theme's font for each one made, and needs nothing
             // else here; the Material text appearance is applied all the same.
-            AsukaKind.TEXT -> TextView(ctx).apply { applyTextStyle(this, 0); textAlignment = View.TEXT_ALIGNMENT_VIEW_START }
+            AsukaKind.TEXT -> AsukaText(ctx).apply { applyTextStyle(this, 0); baseSize = textSize; textAlignment = View.TEXT_ALIGNMENT_VIEW_START }
             AsukaKind.BUTTON -> makeButton(id, AsukaButtonVariant.PLAIN)
             AsukaKind.TEXT_FIELD -> makeTextField(id)
             AsukaKind.TOGGLE -> MaterialSwitch(ctx).apply {
@@ -963,9 +963,20 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     override fun setColor(id: Int, prop: Int, v: Long) = propColor(id, prop, v)
     override fun setEdges(id: Int, prop: Int, top: Float, right: Float, bottom: Float, left: Float) {
         val n = nodes[id] ?: return
-        if (prop == AsukaProp.CONTENT_INSET) {
-            n.contentInset = floatArrayOf(top, right, bottom, left)
-            applyContentInset(n)
+        when (prop) {
+            AsukaProp.CONTENT_INSET -> {
+                n.contentInset = floatArrayOf(top, right, bottom, left)
+                applyContentInset(n)
+            }
+            // Per corner, per side; all 0: none (the uniform prop's then).
+            AsukaProp.CORNER_RADII -> {
+                n.cornerRadii = if (top == 0f && right == 0f && bottom == 0f && left == 0f) null else floatArrayOf(top, right, bottom, left)
+                applyBackground(n)
+            }
+            AsukaProp.BORDER_WIDTHS -> {
+                n.borderWidths = if (top == 0f && right == 0f && bottom == 0f && left == 0f) null else floatArrayOf(top, right, bottom, left)
+                applyBackground(n)
+            }
         }
     }
     override fun setEnum(id: Int, prop: Int, v: Int) = propEnum(id, prop, v)
@@ -1034,6 +1045,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             AsukaProp.TRANSITION -> { n.transition = AsukaTransition(v); return }
             AsukaProp.SHADOW -> { setShadow(n, v); return }
             AsukaProp.GRADIENT -> { setGradient(n, v); return }
+            AsukaProp.TEXT_SHADOW -> { setTextShadow(n, v); return }
         }
         setNavProp(n, prop, v)
     }

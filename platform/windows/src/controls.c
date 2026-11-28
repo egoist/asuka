@@ -48,7 +48,11 @@ LRESULT wh_draw_button(node *n, NMCUSTOMDRAW *cd) {
 	bool focus = (cd->uItemState & CDIS_FOCUS) && (cd->uItemState & CDIS_SHOWKEYBOARDCUES) && !n->no_focus_ring;
 	const palette *p = &H.theme;
 	float radius = 4 * k;
-	if (n->corner_radius > 0 && n->kind == AK_KIND_BUTTON) radius = wh_minf(n->corner_radius * k, wh_minf(w / 2, ht / 2));
+	float radii[4] = {radius, radius, radius, radius};  // a button's own corners, each its own
+	if (wh_round(n) && n->kind == AK_KIND_BUTTON) {
+		wh_radii(n, w, ht, radii);
+		radius = wh_maxf(wh_maxf(radii[0], radii[1]), wh_maxf(radii[2], radii[3]));
+	}
 
 	if (n->kind == AK_KIND_COLOR_PICKER) {
 		rgba c;
@@ -109,8 +113,20 @@ LRESULT wh_draw_button(node *n, NMCUSTOMDRAW *cd) {
 		if (wh_resolve(n->color, &c)) text = c;
 	}
 	if (disabled && variant != AK_BUTTON_VARIANT_FILLED) text = p->disabled;
-	if (fill.a > 0) g_fill_round_rect(g, rgba_argb(fill), 0, 0, w, ht, radius);
-	if (stroke) g_stroke_round_rect(g, rgba_argb(p->control_stroke), wh_maxf(k, 1), 0, 0, w, ht, radius);
+	if (fill.a > 0) g_fill_corners(g, rgba_argb(fill), 0, 0, w, ht, radii);
+	if (stroke && wh_uniform_radii(radii)) {
+		g_stroke_round_rect(g, rgba_argb(p->control_stroke), wh_maxf(k, 1), 0, 0, w, ht, radius);
+	} else if (stroke) {
+		float line = wh_maxf(k, 1), ri[4];
+		for (int i = 0; i < 4; i++) ri[i] = radii[i] > 0 ? wh_maxf(radii[i] - line / 2, 0) : 0;
+		GpPath *pa = g_path();
+		g_path_corners(pa, line / 2, line / 2, w - line, ht - line, ri);
+		GpPen *pen = NULL;
+		GdipCreatePen1(rgba_argb(p->control_stroke), line, UnitPixel, &pen);
+		GdipDrawPath(g, pen, pa);
+		GdipDeletePen(pen);
+		GdipDeletePath(pa);
+	}
 	if (focus) wh_focus_ring(n, g, w, ht, radius);
 	g_close(g);  // before GDI draws the title
 

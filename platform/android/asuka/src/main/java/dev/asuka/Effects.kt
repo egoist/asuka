@@ -7,8 +7,14 @@ import android.view.View
 import android.view.ViewOutlineProvider
 import java.nio.ByteBuffer
 
-/** A background gradient (Style.Gradient): stops, and its direction. */
-class AsukaGradient(val colors: IntArray, val offsets: FloatArray, val sx: Float, val sy: Float, val ex: Float, val ey: Float) {
+/**
+ * A background gradient (Style.Gradient): stops, a linear one's line (unit
+ * points of the view), its kind, and a radial or conic one's center (unit
+ * points), radius (a fraction of the shorter side) and start angle
+ * (degrees clockwise from the top).
+ */
+class AsukaGradient(val colors: IntArray, val offsets: FloatArray, val sx: Float, val sy: Float, val ex: Float, val ey: Float,
+                    val kind: Int = AsukaGradientKind.LINEAR, val cx: Float = 0.5f, val cy: Float = 0.5f, val radius: Float = 0.5f, val angle: Float = 0f) {
     /** GradientDrawable's direction nearest the start to end vector. */
     fun orientation(): GradientDrawable.Orientation {
         val a = Math.toDegrees(Math.atan2((ey - sy).toDouble(), (ex - sx).toDouble()))
@@ -96,7 +102,8 @@ fun AsukaRuntime.setShadow(n: AsukaNode, b: ByteBuffer) {
     }
     v.outlineProvider = object : ViewOutlineProvider() {
         override fun getOutline(view: View, o: Outline) {
-            o.setRoundRect(0, 0, view.width, view.height, n.cornerRadius * density)
+            val box = view.background as? AsukaBoxDrawable
+            if (box != null) box.getOutline(o) else o.setRoundRect(0, 0, view.width, view.height, n.cornerRadius * density)
         }
     }
     v.elevation = radius / 2 * density
@@ -120,6 +127,12 @@ fun AsukaRuntime.setGradient(n: AsukaNode, b: ByteBuffer) {
         colors[i] = color(b.long)
         offsets[i] = b.float
     }
-    n.gradient = AsukaGradient(colors, offsets, b.float, b.float, b.float, b.float)
+    val sx = b.float
+    val sy = b.float
+    val ex = b.float
+    val ey = b.float
+    // Its kind and a radial or conic one's center, radius and angle (none: linear).
+    n.gradient = if (b.remaining() >= 17) AsukaGradient(colors, offsets, sx, sy, ex, ey, b.get().toInt() and 0xff, b.float, b.float, b.float, b.float)
+        else AsukaGradient(colors, offsets, sx, sy, ex, ey)
     applyBackground(n)
 }

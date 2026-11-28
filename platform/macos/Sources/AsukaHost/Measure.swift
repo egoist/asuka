@@ -56,6 +56,7 @@ struct AsukaOffer {
             var widest: CGFloat = 0
             if c.minContent && !c.widthKnown { widest = widestWord(n) }
             let w = c.fitWidth(widest)
+            if n.styledLabel || styledText(n) { return measureStyledText(n, cell, w) } // TextStyle.swift
             var s = cell.cellSize(forBounds: CGRect(x: 0, y: 0, width: w, height: asukaBig))
             if w < asukaBig { s.width = min(s.width, w) }
             return s
@@ -98,7 +99,8 @@ struct AsukaOffer {
 
     /// A text's min-content width: its widest word.
     func widestWord(_ n: AsukaNode) -> CGFloat {
-        let attrs: [NSAttributedString.Key: Any] = [.font: (n.view as? NSTextField)?.font ?? styleFont(0)]
+        var attrs: [NSAttributedString.Key: Any] = [.font: (n.view as? NSTextField)?.font ?? styleFont(0)]
+        if styledText(n) { attrs = textAttributes(n, scale: 1) } // its letter spacing; a shrinking one's words at its size
         var widest: CGFloat = 0
         for w in n.text.split(whereSeparator: { $0.isWhitespace }) {
             widest = max(widest, (String(w) as NSString).size(withAttributes: attrs).width)

@@ -273,10 +273,14 @@ View { padding: [4, 10]; radius: 12; background: tint.opacity(0.15); Text("New")
 ## 背景、枠線、影
 
 - **`background`**：ビューの背景色。
-- **`radius`**：角を丸めます。単位はポイントです。
-- **`border`** と **`borderColor`**：枠線。ボックスの内側に描画され、パディングと同じように中身を内側に寄せます。
+- **`radius`**：角を丸めます。単位はポイントです。4 つの角に同じ半径を指定する（`radius: 12`。999 にするとカプセル形になります）ことも、角ごとに指定することもできます。`[16, 16, 0, 0]`（CSS と同じく左上、右上、右下、左下の順）や `Corners(topStart: 12, bottomStart: 12)` のように書き、start と end 側の角はテキストの方向に従います。辺に収まらないほど大きな半径は、CSS と同じくすべて同じ比率で縮められます。
+- **`border`** と **`borderColor`**：枠線。ボックスの内側に描画され、パディングと同じように中身を内側に寄せます。幅はすべての辺で同じにする（`border: 1`）ことも、`padding` と同じ書き方で辺ごとに指定する（`border: Edges(bottom: 1)`、`border: [0, 0, 1, 0]`）こともできます。角丸が 2 つの辺をつなぐところでは、内側の曲線の半径は角の半径からそれぞれの辺の幅を引いたものになります。
+- **`borderStyle`**：`.solid`（デフォルト）、`.dashed`（枠線の幅の 3 倍の長さの破線と、同じ長さの間隔）、`.dotted`（枠線の幅と同じ直径の丸い点を、幅 1 つ分ずつ空けて並べた点線）。Web では CSS 自身の破線と点線で描画します。辺ごとに幅が異なる場合、Web 以外のプラットフォームでは破線や点線の辺を直線で描き、角は直角になります。
 - **`shadow`**：ドロップシャドウ。中に描かれた内容ではなく、ビューの形（`radius` で角を丸めた境界）から落ちる影です。`Shadow(color:, radius:, x:, y:)` で指定し、`radius` はぼかし半径（CSS や SwiftUI と同じく、ぼかしの σ の 2 倍）、`x` と `y` はオフセットです。子をクリップするビュー（`clip`）でも影は出ます。画像をクリップした角丸のカードに影が付くのと同じです。Android では代わりにエレベーションの影を描画します。半径がエレベーションになり、色は影の色味になり、オフセットは光源で決まります。macOS、Windows、Linux、Web では、iOS と同じぼかしとオフセットで描画します。
-- **`gradient`**：背景に重ねる線形グラデーション（`Gradient(stops: [...])`）。`startX`、`startY`、`endX`、`endY` を指定しなければ上から下へのグラデーションになります。これらはビューのサイズを単位とした値で、(0, 0) が左上の角、(1, 1) が右下の角です。各 `Stop` は、色と、0 から 1 の位置です。Android では 8 方向のうち最も近い方向に沿って描画し、ほかのプラットフォームでは指定した線に沿って描画します。
+- **`gradient`**：背景に重ねるグラデーション（`Gradient(stops: [...])`）。各 `Stop` は、色と、0 から 1 の位置です。`kind` で形を選びます。
+  - `.linear`（デフォルト）：線形グラデーション。`startX`、`startY`、`endX`、`endY` を指定しなければ上から下へのグラデーションになります。これらはビューのサイズを単位とした値で、(0, 0) が左上の角、(1, 1) が右下の角です。
+  - `.radial`：`centerX`、`centerY`（デフォルトは 0.5, 0.5 で中央）を中心とする円形のグラデーション。`radius` はビューの短い辺に対する比率で、デフォルトの 0.5 で近い側の辺に届きます。円の外側は最後の stop の色になります。
+  - `.conic`：中心の周りを時計回りに一周するグラデーション。`angle`（上から時計回りに測った角度。デフォルトの 0 は真上から始まります）から始まります。
 - **`material`**：背後にあるものをぼかす半透明の背景で、iOS のマテリアルにあたります。`.ultraThin`、`.thin`、`.regular`、`.thick`、`.bar` があります。
   - iOS：`UIVisualEffectView` のぼかし。
   - macOS：ビューの内容の背後に置いた `NSVisualEffectView`。ウィンドウ内でその背後にあるものをぼかします。
@@ -302,6 +306,28 @@ View {
   height: 80
   gradient: Gradient(stops: [Stop(color: .blue, at: 0), Stop(color: .purple, at: 1)], startY: 0.5, endX: 1, endY: 0.5)
 }
+
+// シートの上端：上の 2 つの角だけを丸めます。
+View { height: 200; background: .secondaryBackground; radius: [20, 20, 0, 0] }
+
+// 行の下に引く細い線。
+View {
+  padding: 12; border: Edges(bottom: 1); borderColor: .separator
+  Text("Row")
+}
+
+// ファイルをドロップする場所。
+View { height: 120; border: 2; borderStyle: .dashed; borderColor: .accent; radius: 12 }
+
+// 光のにじみと、色相環。
+View {
+  height: 160
+  gradient: Gradient(kind: .radial, stops: [Stop(color: #fde68a, at: 0), Stop(color: #f97316, at: 1)], radius: 0.8)
+}
+View {
+  width: 120; height: 120; radius: 60
+  gradient: Gradient(kind: .conic, stops: [Stop(color: #ef4444, at: 0), Stop(color: #eab308, at: 0.33), Stop(color: #3b82f6, at: 0.66), Stop(color: #ef4444, at: 1)])
+}
 ```
 
 ## 不透明度と非表示
@@ -319,6 +345,7 @@ View {
 - **セマンティックフォント**：プラットフォームのテキストスタイルで、ユーザーの文字サイズ設定に合わせて拡大縮小されます。`.largeTitle`、`.title`、`.title2`、`.title3`、`.headline`、`.subheadline`、`.body`、`.callout`、`.footnote`、`.caption`、`.caption2` があります。
 - **`Font(size: 20)`**：指定したサイズ（ポイント）のシステムフォント。
 - **ウェイト**：`.bold()`、`.semibold()`、`.medium()`、または `weighted(w)` に `.ultralight`、`.thin`、`.light`、`.regular`、`.medium`、`.semibold`、`.bold`、`.heavy`、`.black` のいずれかを渡します。
+- **バリエーション**：`.italic()`（イタリック）、`.monospacedDigits()`（数字をすべて同じ幅にします。タイマーや価格の列のように、その場で変わる数字に向いています）、`.smallCaps()`（小文字をスモールキャピタルで描きます）。`Font(size: 34, italic: true, monospacedDigits: true)` のようにも書けます。イタリック体のないフォントは斜めに傾けて描かれ、スモールキャピタルのないフォントは小さくした大文字で描かれます。Windows のボタンとテキストフィールドはイタリックのみに対応し、ほかの 2 つには対応しません。
 
 `color` はテキストの色、`textAlign` は揃え方（`.start`、`.center`、`.end`、`.justify`）、`lines` は表示する最大行数です。`lines` のデフォルトの 0 は無制限を意味します。テキストはデフォルトで折り返します。
 
@@ -326,6 +353,25 @@ View {
 Text("Brand") { color: #7c3aed; font: .title.bold() }
 Text("A long paragraph that stops after two lines.") { font: .body; lines: 2; textAlign: .center }
 Text("Fixed size") { font: Font(size: 20).medium() }
+Text("00:42.17") { font: Font(size: 48, weight: .light, monospacedDigits: true) }
+```
+
+テキストの組み方：
+
+- **`letterSpacing`**：文字と文字の間に足す間隔（ポイント）。負の値で詰まります。React Native や CSS と同じ意味です。
+- **`lineHeight`**：ある行のベースラインから次の行のベースラインまでの距離（ポイント）。React Native の `lineHeight` や、ピクセル単位の CSS の `line-height` と同じで、テキストは各行の上下中央に置かれます。デフォルトの 0 はフォント自身の行の高さです。Apple Watch では、フォント自身の行の高さより詰めることはできません。
+- **`textShadow`**：グリフが落とす `Shadow`。`radius` は `shadow` と同じくぼかし半径です。レイアウトには影響しません。
+- **`truncation`**：`lines` に収まらないテキストをどこで切るか。`.tail`（デフォルト）は末尾に省略記号を付け、`.head` は先頭に、`.middle` は途中に付けます。`.clip` は端でそのまま切ります。Android と Web で先頭や途中を切れるのは 1 行のテキストだけで、複数行のテキストは末尾に省略記号が付きます。
+- **`minimumScale`**：行数（`lines` で増やさない限り 1 行）の中に幅が収まらないテキストを、切る前にこの比率まで縮めます：`minimumScale: 0.5`（UIKit の `minimumScaleFactor`、React Native の `adjustsFontSizeToFit` にあたります）。文字間隔と行の高さも一緒に縮み、レイアウトには実際に描かれるサイズが渡されます。
+
+`letterSpacing` と `lineHeight` は、フォントと同じくユーザーの文字サイズ設定に合わせて拡大縮小されます。これらとフォントのバリエーションは、選択できる Text と RichText にも適用されます（Windows の RichText は文字間隔に対応しません）。影、切り詰め、縮小は `Text` だけに適用されます。
+
+```asuka
+Text("OVERVIEW") { font: .footnote.semibold(); letterSpacing: 1.5; color: .secondaryLabel }
+Text("A paragraph with room between its lines.") { font: .body; lineHeight: 26 }
+Text("IMG_20260412_183015_HDR.jpg") { lines: 1; truncation: .middle }
+Text("A title that fits on one line") { font: .title; minimumScale: 0.6 }
+Text("Over a photo") { color: .white; textShadow: Shadow(color: #00000080, radius: 6, y: 1) }
 ```
 
 複数のスタイル、リンク、インラインのビューを含むテキストについては、[RichText](components.md) を参照してください。

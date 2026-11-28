@@ -98,6 +98,15 @@ export const Prop = Object.freeze({
   A11yControls: 48,
   A11yLabelledBy: 49,
   A11yDescribedBy: 50,
+  LetterSpacing: 51,
+  LineHeight: 52,
+  FontTraits: 53,
+  TextShadow: 54,
+  Truncation: 55,
+  MinimumScale: 56,
+  CornerRadii: 57,
+  BorderWidths: 58,
+  BorderStyle: 59,
 });
 
 /** Each kind's own props, from 64. */
@@ -270,6 +279,9 @@ export const DismissReason = Object.freeze({ OutsidePress: 0, Escape: 1, Back: 2
 export const TextStyle = Object.freeze({ Default: 0, LargeTitle: 1, Title: 2, Title2: 3, Title3: 4, Headline: 5, Subheadline: 6, Body: 7, Callout: 8, Footnote: 9, Caption: 10, Caption2: 11 });
 export const FontWeight = Object.freeze({ Default: 0, Ultralight: 1, Thin: 2, Light: 3, Regular: 4, Medium: 5, Semibold: 6, Bold: 7, Heavy: 8, Black: 9 });
 export const TextAlign = Object.freeze({ Start: 0, Center: 1, End: 2, Justify: 3 });
+export const Truncation = Object.freeze({ Tail: 0, Head: 1, Middle: 2, Clip: 3 });
+export const BorderStyle = Object.freeze({ Solid: 0, Dashed: 1, Dotted: 2 });
+export const GradientKind = Object.freeze({ Linear: 0, Radial: 1, Conic: 2 });
 export const LayoutDirection = Object.freeze({ Inherit: 0, LeftToRight: 1, RightToLeft: 2 });
 export const ButtonVariant = Object.freeze({ Plain: 0, Filled: 1, Tinted: 2, Gray: 3, Bordered: 4, Glass: 5, GlassProminent: 6 });
 export const Keyboard = Object.freeze({ Default: 0, Number: 1, Decimal: 2, Email: 3, URL: 4, Phone: 5 });

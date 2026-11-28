@@ -3,6 +3,7 @@
 package mactest
 
 import (
+	"fmt"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -26,6 +27,10 @@ func TestConformance(t *testing.T) {
 		}
 		return false
 	})
+	// The sheet is taller than the window's default content (600): the
+	// window grows to show all of it.
+	_, h := conformance.SheetSize()
+	a.Do(fmt.Sprintf("resize 800,%d", int(h)+24))
 	// Images and fonts load; the window settles.
 	a.Do("wait 1s")
 	shot := filepath.Join(t.TempDir(), "sheet.content.display.png")

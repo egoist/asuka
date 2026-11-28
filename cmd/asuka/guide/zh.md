@@ -1949,7 +1949,7 @@ Boundary {
 
 ### 样式
 
-每个元素都接收样式 prop：先是布局（`direction`、`justify`、`align`、`gap`、`padding`、`margin`、`width`、`height`、`grow`、`shrink`、`absolute`、`top`、`grid` ……），然后是外观（`background`、`radius`、`border`、`opacity`、`shadow`、`font`、`color`、`lines` ……）。详见[布局与样式](https://asuka.egoist.dev/zh/docs/layout)。
+每个元素都接收样式 prop：先是布局（`direction`、`justify`、`align`、`gap`、`padding`、`margin`、`width`、`height`、`grow`、`shrink`、`absolute`、`top`、`grid` ……），然后是外观（`background`、`radius`、`border`、`opacity`、`shadow`、`gradient`、`font`、`color`、`lines`、`letterSpacing`、`lineHeight` ……）。详见[布局与样式](https://asuka.egoist.dev/zh/docs/layout)。
 
 `style` 声明一组可以复用的 prop，用 `style:` 应用一个样式，或者一个样式列表：
 

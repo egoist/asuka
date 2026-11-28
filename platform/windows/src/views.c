@@ -242,6 +242,7 @@ void wh_set_own(node *n, uint16_t p, const ak_value *v) {
 	case AK_KIND_TEXT:
 		if (p == AK_PROP_TEXT_TEXT) {
 			wstr_set(&n->text, v->s);
+			wh_text_changed(n);
 			wh_redraw(n);
 		}
 		break;
@@ -411,9 +412,54 @@ void wh_set_common(node *n, uint16_t p, const ak_value *v) {
 		wh_shape_clip(n);
 		wh_redraw(n);
 		break;
+	case AK_PROP_CORNER_RADII:
+		// Each corner its own (none: CornerRadius's).
+		memcpy(n->corner_radii, v->edges, sizeof n->corner_radii);
+		wh_shape_clip(n);
+		wh_redraw(n);
+		break;
 	case AK_PROP_BORDER_WIDTH:
 		n->border_width = (float)v->f;
 		wh_redraw(n);
+		break;
+	case AK_PROP_BORDER_WIDTHS:
+		memcpy(n->border_widths, v->edges, sizeof n->border_widths);
+		wh_redraw(n);
+		break;
+	case AK_PROP_BORDER_STYLE:
+		n->border_style = (int32_t)v->i;
+		wh_redraw(n);
+		break;
+	case AK_PROP_LETTER_SPACING:
+		n->letter_spacing = (float)v->f;
+		wh_text_changed(n);
+		if (n->rich) wh_rich_invalidate(n);
+		break;
+	case AK_PROP_LINE_HEIGHT:
+		n->line_height = (float)v->f;
+		wh_text_changed(n);
+		if (n->rich) wh_rich_invalidate(n);
+		break;
+	case AK_PROP_MINIMUM_SCALE:
+		n->min_scale = (float)v->f;
+		wh_text_changed(n);
+		break;
+	case AK_PROP_TRUNCATION:
+		n->truncation = (int32_t)v->i;
+		wh_text_changed(n);
+		break;
+	case AK_PROP_FONT_TRAITS:
+		n->font_traits = (int32_t)v->i;
+		wh_apply_font(n);
+		wh_text_changed(n);
+		break;
+	case AK_PROP_TEXT_SHADOW:
+		// Drawn by its parent, under its glyphs (textlay.c).
+		if (n->has_text_shadow) wh_invalidate_shadow(n);
+		memset(n->text_shadow, 0, sizeof n->text_shadow);
+		if (v->s.len >= 20) memcpy(n->text_shadow, v->s.p, 20);
+		n->has_text_shadow = wh_u64(n->text_shadow) != 0;
+		wh_text_changed(n);
 		break;
 	case AK_PROP_BORDER_COLOR:
 		n->border_color = (ak_color)v->i;
@@ -452,6 +498,7 @@ void wh_set_common(node *n, uint16_t p, const ak_value *v) {
 	case AK_PROP_COLOR:
 		n->color = (ak_color)v->i;
 		wh_redraw(n);
+		if (n->has_text_shadow) wh_text_changed(n);
 		if (n->kind == AK_KIND_BUTTON) wh_redraw_control(n);
 		if (n->image) wh_image_tint_changed(n);
 		break;
@@ -502,6 +549,8 @@ void wh_set_common(node *n, uint16_t p, const ak_value *v) {
 		free(n->gradient);
 		n->gradient = NULL;
 		n->gradient_len = 0;
+		if (n->conic) GdipDisposeImage((GpImage *)n->conic);
+		n->conic = NULL;
 		if (v->s.len >= 4 && wh_u32((const uint8_t *)v->s.p) != 0) {
 			n->gradient = (uint8_t *)wh_strndup(v->s.p, v->s.len);
 			n->gradient_len = v->s.len;
@@ -633,6 +682,7 @@ void wh_apply_hidden(node *n) {
 // wh_apply_font sets the font of what draws its own text from n's text
 // props.
 void wh_apply_font(node *n) {
+	if (n->kind == AK_KIND_TEXT) wh_text_changed(n);
 	if (n->rich) {
 		wh_rich_invalidate(n);
 	} else if (n->kind == AK_KIND_TEXT_FIELD || n->kind == AK_KIND_WHEEL || n->kind == AK_KIND_PICKER || n->kind == AK_KIND_DATE_PICKER) {

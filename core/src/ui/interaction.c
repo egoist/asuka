@@ -222,7 +222,7 @@ static void apply(ak_view *e, uint16_t key) {
 	ak_ix *ix = e->ix;
 	ak_style_ent *b = find_base(ix, key);
 	ak_val v = b ? b->v : key_unset(key);
-	bool outer = (e->outer >> key) & 1;
+	bool outer = key < AK_KEY__STYLE_END && (e->outer[key / 64] >> (key % 64)) & 1;
 	const ak_layer_ent *best = NULL;
 	for (uint32_t i = 0; i < ix->lents.len; i++) {
 		const ak_layer_ent *ent = &ix->lents.data[i];
