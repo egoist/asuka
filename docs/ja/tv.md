@@ -134,7 +134,7 @@ component Shelf(items: [string]) {
 | `platform/integrity` | App Attest。実機の Apple TV でだけ使えます（シミュレーターでは使えません） |
 | `platform/js` | WebKit なしの JavaScriptCore で動きます。言語と組み込みオブジェクト、タイマーはありますが、DOM や `fetch` はありません |
 | `platform/location` | 使用中のみの許可で、位置を一度に一つずつ取得します。`positions()` は 5 分ごとに取り直します。バックグラウンドの更新はなく、領域はアプリの実行中にパッケージが計算します |
-| `platform/maps` | Apple マップ。回転や傾きはできません |
+| `platform/maps` | Apple マップ。ユーザーが回したり傾けたりはできません。マーカーのドラッグ、長押し、吹き出しのタップもありません |
 | `platform/notify` | バッジだけです。`request` でバッジの許可を求め、`setBadge` でバッジを付けます。`schedule` と `show` は `unsupported` を投げます |
 | `platform/nowplaying` | iPhone と同じ。コントロールセンターとリモコンの再生・一時停止 |
 | `platform/power` | バッテリーはありません（`battery` は false）。わかるのは熱の状態だけです |

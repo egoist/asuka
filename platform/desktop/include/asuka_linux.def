@@ -1424,6 +1424,17 @@ SYM(SHUMATE, void, shumate_marker_layer_add_marker, (GtkWidget *self, GtkWidget 
 SYM(SHUMATE, void, shumate_marker_layer_remove_all, (GtkWidget *self))
 SYM(SHUMATE, GtkWidget *, shumate_marker_new, (void))
 SYM(SHUMATE, void, shumate_marker_set_child, (GtkWidget *self, GtkWidget *child))
+SYM(SHUMATE, void, shumate_marker_layer_remove_marker, (GtkWidget *self, GtkWidget *marker))
+SYM(SHUMATE, void, shumate_viewport_location_to_widget_coords, (gpointer self, GtkWidget *widget, double latitude, double longitude, double *x, double *y))
+SYM(SHUMATE, double, shumate_viewport_get_zoom_level, (gpointer self))
+SYM(SHUMATE, double, shumate_viewport_get_rotation, (gpointer self))
+SYM(SHUMATE, void, shumate_viewport_set_rotation, (gpointer self, double rotation))
+SYM(SHUMATE, GType, shumate_layer_get_type, (void))
+SYM(SHUMATE, void, shumate_map_go_to_full, (GtkWidget *self, double latitude, double longitude, double zoom_level))
+SYM(SHUMATE, void, shumate_map_go_to_full_with_duration, (GtkWidget *self, double latitude, double longitude, double zoom_level, guint duration_ms))
+SYM(SHUMATE, void, shumate_map_stop_go_to, (GtkWidget *self))
+SYM(GTK, gboolean, gtk_gesture_get_point, (GtkGesture *gesture, gpointer sequence, double *x, double *y))
+SYM(GTK, void, gsk_path_builder_close, (GskPathBuilder *self))
 
 // ---- Native packages: Poppler's GLib API (pdf), and the cairo it draws with ----
 SYM(CAIRO, cairo_surface_t *, cairo_image_surface_create_for_data, (unsigned char *data, cairo_format_t format, int width, int height, int stride))

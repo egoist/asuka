@@ -134,7 +134,7 @@ component Shelf(items: [string]) {
 | `platform/integrity` | App Attest，需要真实的 Apple TV（模拟器上不可用） |
 | `platform/js` | 用 JavaScriptCore 运行，没有 WebKit：语言本身和内置对象都有，计时器也有，但没有 DOM 和 `fetch` |
 | `platform/location` | 只能在使用期间定位，每次给出一个位置：`positions()` 每五分钟重新获取一次；没有后台更新，区域监测由包在应用运行期间自行计算 |
-| `platform/maps` | Apple 地图，不能旋转或倾斜 |
+| `platform/maps` | Apple 地图，用户不能旋转或倾斜它；标记不能拖动，也没有长按和可点的气泡 |
 | `platform/notify` | 只有角标：`request` 申请角标权限，`setBadge` 设置角标；`schedule` 和 `show` 会抛出 `unsupported` |
 | `platform/nowplaying` | 和 iPhone 上一样：控制中心和遥控器的播放、暂停键 |
 | `platform/power` | 没有电池（`battery` 为 false）：只有设备的热状态 |

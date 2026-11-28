@@ -1,0 +1,122 @@
+let route = [
+  Coordinate(lat: 37.7955, lng: -122.3937),
+  Coordinate(lat: 37.7880, lng: -122.4075),
+  Coordinate(lat: 37.7694, lng: -122.4862),
+]
+
+component Trip {
+  state region = Region(center: Coordinate(lat: 37.7749, lng: -122.4194), latDelta: 0.08, lngDelta: 0.08)
+  state selected = ""
+  state said = "none"
+
+  let map = Ref()
+
+  Column {
+    View {
+      ref: map
+      bind region: region
+      bind selected: selected
+      markers: [
+        Marker(id: "ferry", at: route[0], title: "Ferry Building", draggable: true),
+        Marker(id: "park", at: route[2], image: "park.png", width: 32, height: 32, anchor: Anchor(x: 0.5, y: 1), zIndex: 1),
+      ]
+      polylines: [Polyline(id: "route", points: route, width: 5, dashed: true)]
+      polygons: [Polygon(points: route, holes: [[route[1]]])]
+      circles: [Circle(center: route[1], radius: 500)]
+      clustering: true
+      camera: Camera(center: route[1], zoom: 14, heading: 30, pitch: 45)
+      height: 300
+      on press(c) { said = "press {c.lat}" }
+      on markerDragEnd(id, at) { said = "{id} to {at.lat}" }
+      on cameraIdle(c, r) { said = "idle {c.zoom}" }
+    }
+    Text(said)
+    Text("selected: {selected}")
+    Button("Fit") { on press { fit(map, route, padding: .all(40)) } }
+    Button("Turn") {
+      on press {
+        var c = camera(map)
+        c.heading = 90
+        moveCamera(map, c)
+      }
+    }
+    Button("Home") { on press { moveTo(map, region, animated: false) } }
+  }
+}
+
+test "a map shows on the fake host, with everything on it" {
+  let app = mount(Trip())
+  await app.idle()
+  app.expect("none")
+  app.expect("selected: ")
+}
+
+test "with no platform, moving a map does nothing" {
+  let app = mount(Trip())
+  await app.idle()
+  app.tap("Fit")
+  app.tap("Turn")
+  expect(camera(Ref()) == Camera())
+}
+
+test "the fake records the moves" {
+  let f = fake()
+  f.camera = Camera(center: route[0], zoom: 12)
+  let app = mount(Trip())
+  await app.idle()
+
+  app.tap("Turn")
+  expect(f.cameras.count() == 1)
+  expect(f.cameras[0].heading == 90 && f.cameras[0].zoom == 12)
+  expect(f.camera.heading == 90)
+
+  app.tap("Fit")
+  expect(f.fits.count() == 1)
+  expect(f.padding == Insets.all(40))
+  let r = f.fits[0]
+  expect(r.lngDelta > 0.0924 && r.lngDelta < 0.0926)
+  expect(f.camera.heading == 90 && f.camera.pitch == 0)
+
+  app.tap("Home")
+  expect(f.regions.count() == 1 && f.regions[0].latDelta == 0.08)
+  expect(f.camera.center == f.regions[0].center)
+  expect(f.camera.zoom > 12.7 && f.camera.zoom < 12.8)
+}
+
+test "fit with no coordinates stays" {
+  let f = fake()
+  fit(Ref(), [])
+  expect(f.fits.isEmpty())
+}
+
+test "distance on the ground" {
+  let paris = Coordinate(lat: 48.8566, lng: 2.3522)
+  let london = Coordinate(lat: 51.5074, lng: -0.1278)
+  let d = distance(from: paris, to: london)
+  expect(d > 343000 && d < 344500)
+  expect(distance(from: paris, to: paris) == 0)
+}
+
+test "bounds hold every coordinate" {
+  let r = bounds(route)
+  expect(r.latDelta > 0.0260 && r.latDelta < 0.0262)
+  expect(r.center.lat > 37.782 && r.center.lat < 37.783)
+  expect(r.center.lng > -122.441 && r.center.lng < -122.439)
+  expect(bounds([]) == Region())
+  let one = bounds([route[0]])
+  expect(one.center == route[0] && one.latDelta == 0 && one.lngDelta == 0)
+}
+
+test "bounds across the 180th meridian go the short way" {
+  let r = bounds([Coordinate(lat: -17, lng: 178), Coordinate(lat: -18, lng: -179)])
+  expect(r.lngDelta > 2.99 && r.lngDelta < 3.01)
+  expect(r.center.lng > 179.4 && r.center.lng < 179.6)
+}
+
+test "the defaults" {
+  let m = Marker(id: "a", at: Coordinate())
+  expect(m.anchor == Anchor(x: 0.5, y: 0.5) && m.clusters && !m.draggable)
+  expect(Polyline().width == 3 && !Polyline().geodesic)
+  expect(Polygon().strokeWidth == 1 && Circle().radius == 0)
+  expect(Camera().zoom == 0)
+}

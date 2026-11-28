@@ -35,7 +35,7 @@ Asuka 提供了一系列包，让应用用上视图之外的设备能力：相�
 | `platform/agerange` | Play Age Signals | Declared Age Range 的 entitlement |
 | `platform/purchase` | Play Billing、`com.android.vending.BILLING` | StoreKit 2（仅限调用了它的应用）；不需要 entitlement |
 | `platform/icloud` | （无：Android 上没有 iCloud） | 根据应用调用的功能，加上键值存储的 entitlement、iCloud Documents 和应用的容器、`NSUbiquitousContainers`（见 [iCloud](icloud.md)） |
-| `platform/maps` | Google 的 Maps SDK | |
+| `platform/maps` | Google 的 Maps SDK 及其 Utility Library（用于聚合） | |
 | `platform/periodic` | WorkManager | `fetch` 和 `processing` 后台模式；各任务的标识符 |
 | `platform/sensors` | `ACTIVITY_RECOGNITION`（计步器） | `NSMotionUsageDescription`（计步器） |
 | `platform/speech` | 文字转语音引擎的可见性声明（`<queries>`） | |
@@ -120,7 +120,7 @@ Windows 应用不需要声明任何东西：`asuka build --platform windows` 不
 | `platform/vision` | Windows 的 OCR（支持哪些语言取决于“设置 > 时间和语言”中安装了哪些 OCR 语言）及其人脸检测器；条码的识别方式与 `platform/scan` 相同 |
 | `platform/scan` | Windows 没有供应用使用的条码识别器，因此用的是 Asuka 自带的识别器：能识别 QR 码、Data Matrix、EAN-13 和 EAN-8、UPC-A 和 UPC-E、Code 128 和 Code 39（不支持 Aztec、PDF417、Code 93、Codabar 和 ITF） |
 | `platform/imageedit` | 用 Windows 的编解码器读取图片（装了相应扩展时支持 HEIC 和 WebP）；视频帧通过 Media Foundation 获取 |
-| `platform/maps` | Windows 没有供桌面应用使用的地图控件（它自带的那个需要 Bing Maps 密钥），所以由 Asuka 自己绘制 OpenStreetMap 的瓦片：每次下载两张，在应用的缓存目录中保留一周，地图上标注“© OpenStreetMap contributors”；支持拖动、滚轮或双指缩放、双击，以及 + 和 - 键。`.satellite` 和 `.hybrid` 显示的也是街道图（没有免费的卫星影像），`showsUser` 不显示任何东西，这两点与 Linux 相同 |
+| `platform/maps` | Windows 没有供桌面应用使用的地图控件（它自带的那个需要 Bing Maps 密钥），所以由 Asuka 自己绘制 OpenStreetMap 的瓦片：每次下载两张，在应用的缓存目录中保留一周，地图上标注“© OpenStreetMap contributors”；支持拖动、滚轮或双指缩放、双击，以及 + 和 - 键。`.satellite` 和 `.hybrid` 显示的也是街道图（没有免费的卫星影像），`showsUser` 不显示任何东西，这两点与 Linux 相同。线、多边形、圆、图片标记和聚合也由 Asuka 绘制；地图会转到应用设置的 `heading`（用户无法旋转），但始终是平的；鼠标右键对应 `longPress` |
 | `platform/background` | 任务会阻止电脑进入睡眠；没有通知，所以 `update` 不起作用 |
 | `platform/periodic` | 应用运行期间用定时器执行（系统不会为了它们启动应用）；需要接通电源的任务，会在电脑使用电池时等待 |
 | `platform/screen` | `lock`、`setBars` 和 `setBrightness` 什么也不做；`preventCapture` 让应用的窗口不出现在截图和录屏中；`screenshots()` 不会报告任何截图 |
@@ -159,7 +159,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/imageedit` | 用 GdkPixbuf 的加载器解码（装了相应加载器时支持 HEIF 和 WebP），并摆正方向；各项编辑操作由 Asuka 完成；视频帧来自 GStreamer |
 | `platform/webauth` | 窗口上弹出一个内嵌 WebKitGTK 网页视图的对话框（设置 `ephemeral` 时使用独立的会话）；关闭对话框即取消 |
 | `platform/js` | 一个从不显示的 WebKitGTK 网页视图 |
-| `platform/maps` | 用 libshumate（`libshumate-1.0-1`）显示 OpenStreetMap 瓦片地图；`.satellite` 和 `.hybrid` 显示的也是街道图；没有用户位置图层。没有 libshumate 时，视图会显示相应说明，并报告 `error` |
+| `platform/maps` | 用 libshumate（`libshumate-1.0-1`）显示 OpenStreetMap 瓦片地图；`.satellite` 和 `.hybrid` 显示的也是街道图；没有用户位置图层。线、多边形和圆由 Asuka 画在地图上；标记、图片和聚合是 libshumate 的标记。地图会转到应用设置的 `heading`，但始终是平的；鼠标右键或长按对应 `longPress`。没有 libshumate 时，视图会显示相应说明，并报告 `error` |
 | `platform/background` | 任务会阻止系统挂起；没有通知，`update` 不起作用 |
 | `platform/periodic` | 应用运行期间按定时器执行任务（系统不会为了它们启动应用）；需要接通电源的任务会在使用电池时等待，需要网络的任务会在离线时等待 |
 | `platform/screen` | `lock`、`setBars`、`preventCapture` 和 `setBrightness` 什么也不做；`screenshots()` 不会报告任何截图 |
@@ -207,7 +207,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `device.haptic` | 浏览器支持时（Android 上的 Chrome）使用 `navigator.vibrate` |
 | `platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity` | Web 上不支持：返回一个说明这一点的错误，或者该包的 `notAvailable` |
 | `platform/purchase` | 在 Trusted Web Activity 里通过 Digital Goods API 使用 Google Play；其他情况下没有应用商店（`PurchaseError.notAvailable`） |
-| `platform/maps` | 和 Windows 一样，由 Asuka 绘制 OpenStreetMap 的瓦片；页面获得定位权限后，`showsUser` 才会生效 |
+| `platform/maps` | 和 Windows 一样，由 Asuka 绘制 OpenStreetMap 的瓦片，以及线、多边形、圆、标记和聚合；地图可以旋转（应用设置的 `heading`，或用户用双指、按住 Shift 拖动），但始终是平的；鼠标右键对应 `longPress`；页面获得定位权限后，`showsUser` 才会生效 |
 | `platform/pay` | 浏览器支持 Apple Pay 时（Safari）通过 Payment Request API 使用它，商户验证由应用的服务器完成（`onValidateMerchant`）；其他浏览器通过 Google 的 Web API（pay.js）使用 Google Pay；两者都使用各自的官方按钮。支付面板只在点击时显示 |
 | `platform/crash` | Asuka 的致命错误，以及未捕获的 JavaScript 错误；后者作为非致命的 `"exception"` 报告 |
 | `platform/analytics` | 从 Google 加载的 gtag.js，发送到 `asuka.toml` 里的 Web 数据流；关闭数据收集用的是 gtag 自己的开关，并保存在 `localStorage` 里 |
@@ -2071,9 +2071,9 @@ component Home { Text("Signed in") }
 
 ## 地图：platform/maps
 
-`maps.View` 是一张地图：在 iOS 和 Mac 上是 Apple 地图，在 Android 上是 Google 地图，在 Windows 和浏览器中是 OpenStreetMap 的瓦片，在 Linux 上是 libshumate 的瓦片。绑定它的 `region`（中心点和跨越的度数），就能移动地图，也能跟上用户的拖动；`markers` 是地图上的标记，`markerPress`、`press` 和 `regionChange` 是用户的操作。
+`maps.View` 是一张地图：在 iOS、Mac 和 Apple TV 上是 Apple 地图，在 Android 上是 Google 地图，在 Windows 和浏览器中是 OpenStreetMap 的瓦片，在 Linux 上是 libshumate 的瓦片。绑定它的 `region`（中心点和跨越的度数），就能移动地图，也能跟上用户的拖动；`markers` 是地图上的标记，`markerPress`、`press` 和 `regionChange` 是用户的操作。
 
-```asuka
+```asuka check
 import platform/maps
 
 component Places {
@@ -2091,9 +2091,120 @@ component Places {
     Text(picked)
   }
 }
+
+app { Places() }
 ```
 
-`mapType` 可以是 `.standard`、`.satellite`、`.hybrid` 或 `.muted`，`showsUser` 显示用户的位置（先用 `platform/location` 请求权限）。OpenStreetMap 的地图显示的是街道（在浏览器中 `.muted` 会用更柔和的颜色），用户位置也只在浏览器中显示。在 Android 上，导入这个包的应用会带上 Google 的 Maps SDK 一起构建，还需要在 asuka.toml 的 `android.mapsKey` 里填一个 Maps SDK for Android 的密钥。
+`mapType` 可以是 `.standard`、`.satellite`、`.hybrid` 或 `.muted`，`showsUser` 显示用户的位置（先用 `platform/location` 请求权限）。`interactive: false` 让地图成为用户无法拖动的预览图。在 Android 上，导入这个包的应用会带上 Google 的 Maps SDK 一起构建，还需要在 asuka.toml 的 `android.mapsKey` 里填一个 Maps SDK for Android 的密钥；没有密钥时，地图上会显示相应说明，并报告 `error`。
+
+### 标记
+
+`Marker` 可以是平台自带的大头针（用 `color` 着色），也可以是一张 `image`：应用的资源文件、一个文件或一个 `https:` 地址。`width` 和 `height` 是它的大小（单位为点，只给一个时保持原有比例），`anchor` 决定图片的哪一点落在坐标上（默认是图片中心；`maps.Anchor(x: 0.5, y: 1)` 让底边中点落在该位置）。`zIndex` 越大，画得越靠上。
+
+把 `selected` 绑定到选中的标记：用户点一下标记就会选中它，并在气泡（Android 上是信息窗口）里显示它的 `title` 和 `subtitle`；点在标记以外的地方则取消选中；应用也可以直接设置它来选中某个标记。`calloutPress` 表示用户点了气泡。
+
+`draggable` 的标记长按即可拿起（用鼠标则是按下后移动），`markerDragStart`、`markerDrag` 和 `markerDragEnd` 告诉你它被拖到了哪里。放下后，它会停在那里，直到 `markers` 发生变化，所以要把新位置写回应用自己的列表：
+
+```asuka check
+import platform/maps
+
+component Pin {
+  state at = maps.Coordinate(lat: 48.8584, lng: 2.2945)
+  state selected = ""
+
+  maps.View {
+    bind selected: selected
+    markers: [
+      maps.Marker(id: "pin", at: at, title: "Meet here", draggable: true),
+      maps.Marker(id: "cafe", at: maps.Coordinate(lat: 48.8606, lng: 2.2978), title: "Café", image: "cafe.png", width: 32, height: 32),
+    ]
+    grow: 1
+    on markerDragEnd(id, place) { at = place }
+    on calloutPress(id) { print("open {id}") }
+  }
+}
+
+app { Pin() }
+```
+
+想用应用里的某个视图当标记（比如显示价格的角标、头像），也是通过图片实现：用 `platform/imageedit` 的 `capture` 把视图画成图片文件，再把文件交给标记的 `image`。
+
+### 线、多边形和圆
+
+`polylines` 画出经过一串点的线（路线、轨迹）：`color`、以点为单位的 `width`、`dashed`（虚线），以及沿地球曲面走的 `geodesic`（比如航线）。`polygons` 是区域，有 `fill`、`stroke`、`strokeWidth`，还可以用 `holes` 挖去其中的部分；`circles` 是以 `center` 为中心、半径 `radius` 米的圆。它们都画在标记下面，先按 `zIndex` 排序，相同时依次是多边形、圆、线，各按列表顺序。带 `id` 的图形被点中时，报告的是 `overlayPress` 而不是 `press`。
+
+```asuka check
+import platform/maps
+
+let route = [
+  maps.Coordinate(lat: 37.8080, lng: -122.4177),
+  maps.Coordinate(lat: 37.7955, lng: -122.3937),
+  maps.Coordinate(lat: 37.7694, lng: -122.4862),
+]
+
+component Route {
+  maps.View {
+    polylines: [maps.Polyline(id: "route", points: route, color: .blue, width: 5)]
+    polygons: [maps.Polygon(points: [
+      maps.Coordinate(lat: 37.806, lng: -122.475), maps.Coordinate(lat: 37.806, lng: -122.445),
+      maps.Coordinate(lat: 37.790, lng: -122.445), maps.Coordinate(lat: 37.790, lng: -122.475),
+    ], fill: .green.opacity(0.3), stroke: .green)]
+    circles: [maps.Circle(center: route[1], radius: 500)]
+    grow: 1
+    on overlayPress(id) { print("tapped {id}") }
+  }
+}
+
+app { Route() }
+```
+
+### 聚合
+
+设置 `clustering: true` 后，屏幕上彼此靠近的标记会合并成一个显示数量的标记；地图放大时它会拆开，点它会放大到它包含的那些标记，并通过 `clusterPress` 报告它们的 id。`clusterColor` 设置它的颜色。`clusters: false` 的标记始终单独显示。各平台的聚合方式不同（MapKit 自带的聚合、Android 上 Google 的 Maps SDK Utility Library、Windows、Linux 和浏览器中相距 40 点以内的标记），所以拆开时的缩放级别会略有差异。
+
+### 相机
+
+`camera` 描述地图从哪里看：`center` 是中心点，`zoom` 是缩放级别（0 时整个世界宽 256 点，每增加一级就近一倍：城市约为 10，街道约为 15），`heading` 是朝向（从正北顺时针的度数），`pitch` 是倾斜的度数。绑定它而不是 `region`，就能连用户旋转、倾斜地图的操作也一起跟上。
+
+移动地图的函数接收指向它的 `Ref`：`maps.moveTo` 显示某个区域，`maps.moveCamera` 移动相机，`maps.fit` 让给定的所有坐标都显示出来，并在边缘留出空间（`maps.Insets`，比如给盖在地图上的面板留位置），`maps.camera` 返回地图当前的相机。除非传入 `animated: false`，它们都会以动画移动。
+
+```asuka check
+import platform/maps
+
+let stops = [maps.Coordinate(lat: 35.6586, lng: 139.7454), maps.Coordinate(lat: 35.7101, lng: 139.8107)]
+
+component Tour {
+  let map = Ref()
+
+  Column {
+    maps.View {
+      ref: map
+      markers: [maps.Marker(id: "a", at: stops[0]), maps.Marker(id: "b", at: stops[1])]
+      grow: 1
+      on cameraIdle(camera, region) { print("at zoom {camera.zoom}") }
+    }
+    Row {
+      Button("Show all") { on press { maps.fit(map, stops, padding: .all(40)) } }
+      Button("Tilt") {
+        on press {
+          var c = maps.camera(map)
+          c.pitch = 45
+          c.heading = 90
+          maps.moveCamera(map, c)
+        }
+      }
+    }
+  }
+}
+
+app { Tour() }
+```
+
+`cameraMove` 在地图移动过程中报告它的位置（无论是用户还是应用在移动），`cameraIdle` 在它停下后报告；`regionChange` 和 `cameraChange` 只报告用户的移动，绑定正需要这样。`press` 和 `longPress`（在 Windows、Linux 和浏览器中用鼠标右键）给出被点到的位置。`maps.distance` 返回两地之间的距离（米），`maps.bounds` 返回包含一组坐标的区域。
+
+OpenStreetMap 的地图（Windows、Linux、浏览器）始终是平的：`pitch` 在那里总是 0，它们会转到应用设置的 `heading`（在浏览器中，用户可以用双指或按住 Shift 拖动来旋转）。MapKit 能倾斜的角度取决于缩放级别：离得越远，能倾斜的越少。
+
+在应用的测试中，地图只是一个空盒子：`maps.fake()` 会记录 `moveTo`、`moveCamera` 和 `fit` 的请求，并决定 `camera` 返回什么。
 
 ## 后台刷新：platform/periodic
 

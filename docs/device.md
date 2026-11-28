@@ -57,7 +57,7 @@ web need nothing declared (see each one's section below).
 | `platform/agerange` | Play Age Signals | the Declared Age Range entitlement |
 | `platform/purchase` | Play Billing, `com.android.vending.BILLING` | StoreKit 2 (for an app that calls it); no entitlement |
 | `platform/icloud` | (none: no iCloud) | the key-value store's entitlement, iCloud Documents and the app's containers, `NSUbiquitousContainers`, as the app calls them ([iCloud](icloud.md)) |
-| `platform/maps` | Google's Maps SDK | |
+| `platform/maps` | Google's Maps SDK and its Utility Library (clusters) | |
 | `platform/periodic` | WorkManager | `fetch` and `processing` background modes; the task identifiers |
 | `platform/sensors` | `ACTIVITY_RECOGNITION` (the pedometer) | `NSMotionUsageDescription` (the pedometer) |
 | `platform/speech` | the text-to-speech engine's visibility (`<queries>`) | |
@@ -177,7 +177,7 @@ device without it:
 | `platform/vision` | Windows's OCR, in the languages whose OCR is installed (Settings, Time & language), and its face detector; codes as `platform/scan` reads them |
 | `platform/scan` | Windows has no reader of codes for apps: Asuka's own reads QR codes, Data Matrix, EAN-13 and EAN-8, UPC-A and UPC-E, Code 128 and Code 39 (not Aztec, PDF417, Code 93, Codabar nor ITF) |
 | `platform/imageedit` | Windows's codecs read (HEIC and WebP where their extensions are installed); a video's frame through Media Foundation |
-| `platform/maps` | Windows has no map control for desktop apps (its own needs a Bing Maps key): Asuka draws OpenStreetMap's tiles, downloaded two at a time and kept a week in the app's caches, with "© OpenStreetMap contributors" on the map; drag, the wheel or a pinch, double-click, + and -. `.satellite` and `.hybrid` show the streets (no free imagery), and `showsUser` shows nothing, as on Linux |
+| `platform/maps` | Windows has no map control for desktop apps (its own needs a Bing Maps key): Asuka draws OpenStreetMap's tiles, downloaded two at a time and kept a week in the app's caches, with "© OpenStreetMap contributors" on the map; drag, the wheel or a pinch, double-click, + and -. `.satellite` and `.hybrid` show the streets (no free imagery), and `showsUser` shows nothing, as on Linux. Lines, shapes, circles, image markers and clusters are drawn by Asuka too; the map turns to the `heading` the app sets (the user can't turn it) and stays flat; a right click is `longPress` |
 | `platform/background` | The task keeps the PC from sleeping; there's no notification, so `update` changes nothing |
 | `platform/periodic` | Timers while the app runs (it isn't launched for them); one that wants power waits while the PC is on its battery |
 | `platform/screen` | `lock`, `setBars` and `setBrightness` do nothing; `preventCapture` leaves the app's windows out of screenshots and recordings; `screenshots()` says nothing |
@@ -235,7 +235,7 @@ names what's missing.
 | `platform/imageedit` | GdkPixbuf's loaders decode (HEIF and WebP where their loaders are installed), upright; Asuka does the actions; video frames from GStreamer |
 | `platform/webauth` | A dialog over the window with a WebKitGTK web view (`ephemeral`: a session of its own); closing it cancels |
 | `platform/js` | A WebKitGTK web view that's never shown |
-| `platform/maps` | libshumate's map of OpenStreetMap's tiles (`libshumate-1.0-1`); `.satellite` and `.hybrid` show the streets; no user location layer. Without libshumate, the view says so and reports `error` |
+| `platform/maps` | libshumate's map of OpenStreetMap's tiles (`libshumate-1.0-1`); `.satellite` and `.hybrid` show the streets; no user location layer. Asuka draws the lines, shapes and circles on it; markers, images and clusters are libshumate's markers. It turns to the `heading` the app sets and stays flat; a right click or a long press is `longPress`. Without libshumate, the view says so and reports `error` |
 | `platform/background` | The task keeps the system from suspending; no notification, `update` changes nothing |
 | `platform/periodic` | The tasks run on a timer while the app runs (it isn't launched for them); one that wants power waits while on the battery, one that wants the network while it's offline |
 | `platform/screen` | `lock`, `setBars`, `preventCapture` and `setBrightness` do nothing; `screenshots()` says nothing |
@@ -288,7 +288,7 @@ and its service worker for notifications and Web Push.
 | `device.haptic` | `navigator.vibrate`, where the browser has it (Chrome on Android) |
 | `platform/review`, `platform/integrity`, `platform/agerange`, `platform/appleauth`, `platform/icloud`, `platform/periodic`, `platform/widget`, `platform/liveactivity` | Not on the web: an error that says so, or the package's `notAvailable` |
 | `platform/purchase` | Google Play through the Digital Goods API, in a Trusted Web Activity; elsewhere no store (`PurchaseError.notAvailable`) |
-| `platform/maps` | OpenStreetMap's tiles, drawn by Asuka, as on Windows; `showsUser` once the page has the location permission |
+| `platform/maps` | OpenStreetMap's tiles, drawn by Asuka, as on Windows, with its lines, shapes, circles, markers and clusters; it turns (the app's `heading`, or two fingers, or Shift and a drag) and stays flat; a right click is `longPress`; `showsUser` once the page has the location permission |
 | `platform/pay` | Apple Pay where the browser has it (Safari), through the Payment Request API, the merchant validated by the app's server (`onValidateMerchant`); Google Pay elsewhere, through Google's web API (pay.js); each one's own button. A sheet shows only from a tap |
 | `platform/crash` | Asuka's fatal errors, and uncaught JavaScript errors as `"exception"` reports that aren't fatal |
 | `platform/analytics` | gtag.js, loaded from Google, for `asuka.toml`'s web stream; collection off is gtag's own switch, kept in `localStorage` |
@@ -3035,13 +3035,13 @@ component Home { Text("Signed in") }
 
 ## Maps: platform/maps
 
-`maps.View` is a map: Apple Maps on iOS and the Mac, Google Maps on
-Android, OpenStreetMap's tiles on Windows and in a browser, and
+`maps.View` is a map: Apple Maps on iOS, the Mac and Apple TV, Google
+Maps on Android, OpenStreetMap's tiles on Windows and in a browser, and
 libshumate's on Linux. Bind its `region` (a center and how many degrees
 it spans) to move it and follow the user's moves; `markers` are its
 pins, and `markerPress`, `press` and `regionChange` what the user does.
 
-```asuka
+```asuka check
 import platform/maps
 
 component Places {
@@ -3059,14 +3059,168 @@ component Places {
     Text(picked)
   }
 }
+
+app { Places() }
 ```
 
 `mapType` is `.standard`, `.satellite`, `.hybrid` or `.muted`, and
 `showsUser` shows the user's location (ask for it first, with
-`platform/location`). OpenStreetMap's maps show streets (in a browser,
-`.muted` in quieter colors), and the user's location only in a browser. On Android, an app that imports the package is built with
+`platform/location`). `interactive: false` makes a preview the user
+can't move. On Android, an app that imports the package is built with
 Google's Maps SDK and needs a Maps SDK for Android key in asuka.toml's
-`android.mapsKey`.
+`android.mapsKey`; without one the map says so and reports `error`.
+
+### Markers
+
+A `Marker` is the platform's pin, tinted by `color`, or an `image`: one
+of the app's assets, a file or an `https:` URL, `width` and `height`
+points big (one of them keeps its shape), placed by its `anchor` (the
+image's middle by default; `maps.Anchor(x: 0.5, y: 1)` puts its
+bottom's middle on the place). A higher `zIndex` draws over the others.
+
+Bind `selected` to the marker selected: a tap selects one and shows its
+`title` and `subtitle` in a callout (an info window on Android), a tap
+off the markers selects none, and setting it selects one from the app.
+`calloutPress` says the user tapped the callout.
+
+A `draggable` marker is picked up with a long press (a press and a move
+with a mouse): `markerDragStart`, `markerDrag` and `markerDragEnd` say
+where it goes. It stays where it was dropped until `markers` changes, so
+write the new place into the app's list:
+
+```asuka check
+import platform/maps
+
+component Pin {
+  state at = maps.Coordinate(lat: 48.8584, lng: 2.2945)
+  state selected = ""
+
+  maps.View {
+    bind selected: selected
+    markers: [
+      maps.Marker(id: "pin", at: at, title: "Meet here", draggable: true),
+      maps.Marker(id: "cafe", at: maps.Coordinate(lat: 48.8606, lng: 2.2978), title: "Café", image: "cafe.png", width: 32, height: 32),
+    ]
+    grow: 1
+    on markerDragEnd(id, place) { at = place }
+    on calloutPress(id) { print("open {id}") }
+  }
+}
+
+app { Pin() }
+```
+
+A marker drawn from a view of the app's (a badge with a price, an
+avatar) is an image too: draw the view with `platform/imageedit`'s
+`capture` and give the file as the marker's `image`.
+
+### Lines, shapes and circles
+
+`polylines` draws lines through points (a route, a track): `color`,
+`width` in points, `dashed`, and `geodesic` to follow the Earth's curve
+(a flight). `polygons` are areas, with `fill`, `stroke`, `strokeWidth`
+and `holes` cut out of them; `circles` are a `radius` in meters around
+a `center`. They draw under the markers, by `zIndex`, then polygons,
+circles and lines in their order. One with an `id` reports a tap on it
+with `overlayPress` instead of `press`.
+
+```asuka check
+import platform/maps
+
+let route = [
+  maps.Coordinate(lat: 37.8080, lng: -122.4177),
+  maps.Coordinate(lat: 37.7955, lng: -122.3937),
+  maps.Coordinate(lat: 37.7694, lng: -122.4862),
+]
+
+component Route {
+  maps.View {
+    polylines: [maps.Polyline(id: "route", points: route, color: .blue, width: 5)]
+    polygons: [maps.Polygon(points: [
+      maps.Coordinate(lat: 37.806, lng: -122.475), maps.Coordinate(lat: 37.806, lng: -122.445),
+      maps.Coordinate(lat: 37.790, lng: -122.445), maps.Coordinate(lat: 37.790, lng: -122.475),
+    ], fill: .green.opacity(0.3), stroke: .green)]
+    circles: [maps.Circle(center: route[1], radius: 500)]
+    grow: 1
+    on overlayPress(id) { print("tapped {id}") }
+  }
+}
+
+app { Route() }
+```
+
+### Clusters
+
+With `clustering: true`, markers near each other on the screen show as
+one that says how many; it splits as the map zooms in, and a tap on it
+zooms to its markers and reports `clusterPress` with their ids.
+`clusterColor` colors it. A marker with `clusters: false` always shows
+on its own. Each platform groups them its own way (MapKit's clusters,
+Google's Maps SDK Utility Library on Android, markers within 40 points
+of each other on Windows, Linux and the web), so a cluster splits at
+somewhat different zooms on each.
+
+### The camera
+
+`camera` is where the map looks from: its `center`, its `zoom` (0 is
+the whole world 256 points wide, each level twice as near: about 10 a
+city, 15 streets), its `heading` (degrees clockwise from north) and its
+`pitch` (degrees of tilt). Bind it instead of `region` to follow the
+user turning and tilting the map too.
+
+The functions that move a map take a `Ref` on it: `maps.moveTo` shows a
+region, `maps.moveCamera` moves the camera, `maps.fit` shows every
+coordinate given with room at the edges (`maps.Insets`, for a sheet over
+the map), and `maps.camera` is where it looks from now. They animate
+unless given `animated: false`.
+
+```asuka check
+import platform/maps
+
+let stops = [maps.Coordinate(lat: 35.6586, lng: 139.7454), maps.Coordinate(lat: 35.7101, lng: 139.8107)]
+
+component Tour {
+  let map = Ref()
+
+  Column {
+    maps.View {
+      ref: map
+      markers: [maps.Marker(id: "a", at: stops[0]), maps.Marker(id: "b", at: stops[1])]
+      grow: 1
+      on cameraIdle(camera, region) { print("at zoom {camera.zoom}") }
+    }
+    Row {
+      Button("Show all") { on press { maps.fit(map, stops, padding: .all(40)) } }
+      Button("Tilt") {
+        on press {
+          var c = maps.camera(map)
+          c.pitch = 45
+          c.heading = 90
+          maps.moveCamera(map, c)
+        }
+      }
+    }
+  }
+}
+
+app { Tour() }
+```
+
+`cameraMove` reports where the map is as it moves (the user's move or
+the app's), `cameraIdle` once it stops; `regionChange` and
+`cameraChange` only the user's moves, which is what binding needs.
+`press` and `longPress` (a right click with a mouse on Windows, Linux
+and the web) give the place tapped. `maps.distance` is the distance
+between two places in meters, and `maps.bounds` the region that holds
+some.
+
+OpenStreetMap's maps (Windows, Linux, the web) stay flat: `pitch` is
+always 0 there, and they turn to a `heading` the app sets (on the web
+the user turns one with two fingers, or Shift and a drag). MapKit tilts
+only as far as the zoom allows: less when far out.
+
+In an app's tests the map is an empty box: `maps.fake()` records what
+`moveTo`, `moveCamera` and `fit` asked, and says what `camera` gives.
 
 ## Background refresh: platform/periodic
 

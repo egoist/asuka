@@ -220,7 +220,7 @@ tvOS has run there, some with less than on a phone:
 | `platform/integrity` | App Attest, on an Apple TV (not the simulator) |
 | `platform/js` | JavaScriptCore, without WebKit: the language and its built-ins, timers too, but no DOM or `fetch` |
 | `platform/location` | when in use only, a position at a time: `positions()` asks again every five minutes; no background updates, and regions are computed while the app runs |
-| `platform/maps` | Apple Maps, which doesn't rotate or tilt |
+| `platform/maps` | Apple Maps, which the user doesn't turn or tilt; markers aren't dragged and there's no long press or callout to press |
 | `platform/notify` | the badge alone: `request` asks for it and `setBadge` sets it; `schedule` and `show` throw `unsupported` |
 | `platform/nowplaying` | as on an iPhone: Control Center and the remote's play and pause |
 | `platform/power` | no battery (`battery` false): the thermal state |

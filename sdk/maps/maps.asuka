@@ -1,21 +1,33 @@
-// Package platform/maps shows a map: Apple Maps (MapKit) on iOS and macOS,
-// Google Maps on Android, OpenStreetMap's tiles on Windows, Linux
-// (libshumate) and the web, with markers, the user's location and the
-// region the app moves it to.
+// Package platform/maps shows a map: Apple Maps (MapKit) on iOS, macOS
+// and tvOS, Google Maps on Android, OpenStreetMap's tiles on Windows,
+// Linux (libshumate) and the web, with markers (pins, images, dragged,
+// clustered), lines, shapes and circles drawn on it, the user's location,
+// and a camera the app moves, tilts and turns.
 //
 //   state region = maps.Region(center: maps.Coordinate(lat: 37.77, lng: -122.42), latDelta: 0.08, lngDelta: 0.08)
+//   let map = Ref()
 //
 //   maps.View {
+//     ref: map
 //     bind region: region
 //     markers: pins
+//     polylines: [maps.Polyline(points: route, width: 5)]
+//     clustering: true
 //     grow: 1
 //     on markerPress(id) { picked = id }
 //   }
+//   Button("Show all") { on press { maps.fit(map, pins.map(p => p.at), padding: .all(40)) } }
 //
 // Android: Google's Maps SDK, which an app that imports this package is
 // built with, and a Google Maps Platform API key (Maps SDK for Android)
 // in asuka.toml's android.mapsKey. showsUser needs the location
 // permission: ask for it first (platform/location).
+//
+// Tests drive a fake: maps.fake() gives the package a FakeMaps, which
+// records what moveTo, moveCamera and fit asked and says what camera()
+// gives.
+
+import std/math
 
 /// A place on Earth, in degrees.
 pub struct Coordinate {
@@ -32,16 +44,125 @@ pub struct Region {
   lngDelta: float = 0
 }
 
-/// A pin on the map.
+/// Where the map looks from: the place at its middle, how near, which
+/// way it faces and how far it tilts.
+pub struct Camera {
+  center: Coordinate = Coordinate()
+  /// The zoom level, as Google's and OpenStreetMap's maps count it: 0
+  /// shows the whole world 256 points wide, and each level is twice as
+  /// near (about 4 a continent, 10 a city, 15 streets, 18 buildings).
+  /// 0: no camera (the region says where the map is).
+  zoom: float = 0
+  /// The compass direction the map's top faces, in degrees clockwise
+  /// from north (0: north up).
+  heading: float = 0
+  /// How far the map tilts toward the horizon, in degrees from looking
+  /// straight down (0), up to the platform's most (about 60). The maps
+  /// of OpenStreetMap's tiles stay flat.
+  pitch: float = 0
+}
+
+/// Room left at a map's edges, in points: where the app's own views
+/// cover the map (a sheet, a toolbar), so what's fitted stays in sight.
+pub struct Insets {
+  top: float = 0
+  left: float = 0
+  bottom: float = 0
+  right: float = 0
+}
+
+extend Insets {
+  /// The same room at every edge.
+  pub static fn all(points: float) -> Insets = Insets(top: points, left: points, bottom: points, right: points)
+}
+
+/// The point of a marker's image that's at its coordinate, from 0 to 1
+/// across and down: the middle (0.5, 0.5), the bottom's middle (0.5, 1:
+/// a pin's tip).
+pub struct Anchor {
+  x: float = 0.5
+  y: float = 0.5
+}
+
+/// A marker on the map: the platform's pin, or an image.
 pub struct Marker {
-  /// Names it, for markerPress.
+  /// Names it, for its events and selected.
   id: string
   at: Coordinate
-  /// In its callout (iOS, macOS) or info window (Android).
+  /// In its callout (iOS, macOS) or info window (Android), shown as
+  /// it's selected.
   title: string = ""
   subtitle: string = ""
-  /// Tints it; none: the platform's red.
+  /// Tints the pin; none: the platform's red.
   color: Color? = none
+  /// An image instead of the pin: one of the app's assets (its path in
+  /// assets/), a file (file:) or a URL (https:). A view of the app's
+  /// becomes one with platform/imageedit's capture.
+  image: string = ""
+  /// The image's size in points; 0 for both: its own (a URL's pixels as
+  /// points at the screen's scale). One of them: the other keeps its
+  /// shape.
+  width: float = 0
+  height: float = 0
+  /// The image's point at the coordinate; the pin's is its tip.
+  anchor: Anchor = Anchor()
+  /// The user can drag it: a long press picks it up (a press and a
+  /// move with a mouse), and markerDragStart, markerDrag and
+  /// markerDragEnd say where it goes.
+  draggable: bool = false
+  /// Drawn over the markers with less, and with as much in their order.
+  zIndex: float = 0
+  /// Joins a cluster when the View clusters (clustering); false: always
+  /// on its own.
+  clusters: bool = true
+}
+
+/// A line through points on the map: a route, a track.
+pub struct Polyline {
+  /// Names it, for overlayPress (""; it isn't pressed).
+  id: string = ""
+  points: [Coordinate] = []
+  color: Color = .blue
+  /// Its width in points.
+  width: float = 3
+  /// Dashes, each four times as long as the line is wide, with gaps
+  /// half that.
+  dashed: bool = false
+  /// Follows the Earth's curve between points (a great circle: a
+  /// flight's path), not a straight line on the map.
+  geodesic: bool = false
+  /// Drawn over the overlays with less (polygons, circles and lines),
+  /// and with as much in their order: polygons, then circles, then lines.
+  zIndex: float = 0
+}
+
+/// An area on the map, its outline through points, with holes cut out
+/// of it.
+pub struct Polygon {
+  /// Names it, for overlayPress (""; it isn't pressed).
+  id: string = ""
+  points: [Coordinate] = []
+  /// Areas inside it that aren't, each an outline as points is.
+  holes: [[Coordinate]] = []
+  fill: Color = .blue.opacity(0.2)
+  stroke: Color = .blue
+  /// The outline's width in points (0: none).
+  strokeWidth: float = 1
+  zIndex: float = 0
+}
+
+/// A circle on the map, around a place.
+pub struct Circle {
+  /// Names it, for overlayPress (""; it isn't pressed).
+  id: string = ""
+  center: Coordinate = Coordinate()
+  /// In meters, on the ground.
+  radius: float = 0
+  fill: Color = .blue.opacity(0.2)
+  stroke: Color = .blue
+  /// The outline's width in points (0: none).
+  strokeWidth: float = 1
+  zIndex: float = 0
 }
 
 /// The map's look.
@@ -56,23 +177,241 @@ pub enum MapType {
   muted
 }
 
-/// A map. Give it a size, or grow.
+/// A map. Give it a size, or grow; a Ref on it is for moveTo,
+/// moveCamera, fit and camera.
 pub native component View {
   /// Where the map shows; changing it moves the map there (animated).
   /// Bound, it follows the user's moves too.
   prop region: Region = Region()
+  /// Where the map looks from, instead of region (a zoom of 0: none);
+  /// changing it moves the map there (animated). Bound, it follows the
+  /// user's moves too, turning and tilting it.
+  prop camera: Camera = Camera()
   prop markers: [Marker] = []
+  prop polylines: [Polyline] = []
+  prop polygons: [Polygon] = []
+  prop circles: [Circle] = []
+  /// The marker selected (its id; "": none): its callout shows. The
+  /// user selects one with a tap, and none with a tap off the markers.
+  prop selected: string = ""
+  /// Gathers the markers near each other (as the map shows them) into
+  /// one that says how many, which splits as the map zooms in; a press
+  /// on it zooms in to its markers.
+  prop clustering: bool = false
+  /// The clusters' color; none: the platform's (the accent, Google's).
+  prop clusterColor: Color? = none
   prop mapType: MapType = .standard
   /// Shows the user's location, with the permission.
   prop showsUser: bool = false
-  /// false: the user can't move or zoom it (a preview).
+  /// false: the user can't move, zoom, turn or tilt it (a preview).
   prop interactive: bool = true
   /// The region, once the user has moved the map (not as it moves).
   event regionChange(region: Region)
+  /// The camera, once the user has moved, turned or tilted the map.
+  event cameraChange(camera: Camera)
+  /// As the map moves, the user's move or the app's: where it is, at
+  /// most once a frame.
+  event cameraMove(camera: Camera, region: Region)
+  /// Once the map stops moving: where it is.
+  event cameraIdle(camera: Camera, region: Region)
   /// A marker the user tapped.
   event markerPress(id: string)
-  /// Where the user tapped the map (not a marker).
+  /// The marker the user selected ("": none, with a tap off the markers).
+  event selectedChange(selected: string)
+  /// A tap on the callout (an info window) of the marker selected.
+  event calloutPress(id: string)
+  /// A cluster the user tapped: its markers' ids.
+  event clusterPress(ids: [string])
+  /// The user picked a draggable marker up, at.
+  event markerDragStart(id: string, at: Coordinate)
+  /// A marker being dragged moved to at.
+  event markerDrag(id: string, at: Coordinate)
+  /// The user put a dragged marker down at at: move it there in markers
+  /// to keep it there.
+  event markerDragEnd(id: string, at: Coordinate)
+  /// A polyline, polygon or circle with an id that the user tapped (the
+  /// topmost there).
+  event overlayPress(id: string)
+  /// Where the user tapped the map (not a marker or an overlay with an
+  /// id).
   event press(at: Coordinate)
+  /// Where the user long-pressed the map (a right click with a mouse
+  /// on Windows, Linux and the web).
+  event longPress(at: Coordinate)
   /// Why the map can't show (Android: no API key).
   event error(message: string)
+}
+
+// The maps on screen, for the functions that move one: each finds its
+// map by the Ref it's in.
+native interface Maps {
+  /// @mainThread
+  fn moveTo(view: Ref, region: Region, animated: bool)
+  /// @mainThread
+  fn moveCamera(view: Ref, camera: Camera, animated: bool)
+  /// @mainThread
+  fn fit(view: Ref, coordinates: [Coordinate], padding: Insets, animated: bool)
+  /// @mainThread
+  fn camera(view: Ref) -> Camera
+}
+
+// Made once; none where the platform has no maps (an app's tests).
+let platform = try? Maps()
+
+state faked: FakeMaps? = none
+
+/// Moves the map a Ref holds to show region, animated unless animated is
+/// false. The map's region binding follows only the user's moves: set
+/// region instead to keep it.
+pub fn moveTo(map: Ref, region: Region, animated: bool = true) {
+  if let f = faked {
+    f.regions.push(region)
+    f.camera = Camera(center: region.center, zoom: zoomOf(region), heading: f.camera.heading, pitch: f.camera.pitch)
+    return
+  }
+  if let p = platform {
+    try? p.moveTo(map, region, animated)
+  }
+}
+
+/// Moves the map a Ref holds to look from camera (its zoom, heading and
+/// pitch), animated unless animated is false: camera(map) with a field
+/// changed turns or tilts it where it is.
+pub fn moveCamera(map: Ref, camera: Camera, animated: bool = true) {
+  if let f = faked {
+    f.cameras.push(camera)
+    f.camera = camera
+    return
+  }
+  if let p = platform {
+    try? p.moveCamera(map, camera, animated)
+  }
+}
+
+/// Moves the map a Ref holds to show every coordinate, as near as it can,
+/// with padding's room at its edges (the camera's heading kept, its pitch
+/// none). No coordinates: it stays.
+pub fn fit(map: Ref, coordinates: [Coordinate], padding: Insets = Insets(), animated: bool = true) {
+  if coordinates.isEmpty() {
+    return
+  }
+  if let f = faked {
+    let r = bounds(coordinates)
+    f.fits.push(r)
+    f.padding = padding
+    f.camera = Camera(center: r.center, zoom: zoomOf(r), heading: f.camera.heading)
+    return
+  }
+  if let p = platform {
+    try? p.fit(map, coordinates, padding, animated)
+  }
+}
+
+/// Where the map a Ref holds looks from now (a zoom of 0: no map there).
+pub fn camera(map: Ref) -> Camera {
+  if let f = faked {
+    return f.camera
+  }
+  if let p = platform {
+    return (try? p.camera(map)) ?? Camera()
+  }
+  return Camera()
+}
+
+// ---------------------------------------------------------------------
+// Geometry
+
+let earthRadius = 6371008.8 // meters: the mean radius
+
+fn radians(d: float) -> float = d * math.pi / 180
+
+/// The distance between two places on the ground, in meters (along a
+/// great circle, the Earth taken as a sphere).
+pub fn distance(from: Coordinate, to: Coordinate) -> float {
+  let dLat = radians(to.lat - from.lat)
+  let dLng = radians(to.lng - from.lng)
+  let a = math.sin(dLat / 2) * math.sin(dLat / 2) + math.cos(radians(from.lat)) * math.cos(radians(to.lat)) * math.sin(dLng / 2) * math.sin(dLng / 2)
+  return 2 * earthRadius * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+}
+
+/// The smallest region that holds every coordinate (none: Region()),
+/// across the 180th meridian when that's the shorter way.
+pub fn bounds(coordinates: [Coordinate]) -> Region {
+  if coordinates.isEmpty() {
+    return Region()
+  }
+  var south = coordinates[0].lat
+  var north = south
+  for c in coordinates {
+    if c.lat < south {
+      south = c.lat
+    }
+    if c.lat > north {
+      north = c.lat
+    }
+  }
+  // The longitudes, sorted: the widest gap between two of them (round the
+  // world too) is what the region leaves out.
+  let lngs = coordinates.map(c => normal(c.lng)).sorted()
+  var gap = lngs[0] + 360 - lngs[lngs.count() - 1]
+  var east = lngs[lngs.count() - 1]
+  var west = lngs[0]
+  for i in 1..<lngs.count() {
+    let g = lngs[i] - lngs[i - 1]
+    if g > gap {
+      gap = g
+      east = lngs[i - 1]
+      west = lngs[i]
+    }
+  }
+  let span = 360 - gap
+  return Region(center: Coordinate(lat: (south + north) / 2, lng: normal(west + span / 2)), latDelta: north - south, lngDelta: span)
+}
+
+/// A longitude in [-180, 180).
+fn normal(lng: float) -> float {
+  var l = lng
+  while l >= 180 {
+    l -= 360
+  }
+  while l < -180 {
+    l += 360
+  }
+  return l
+}
+
+/// The zoom level that shows a region's span of longitude across a phone
+/// held upright (390 points), as the fake reports it.
+fn zoomOf(r: Region) -> float {
+  if r.lngDelta <= 0 {
+    return 0
+  }
+  let z = math.log2(390 * 360 / (256 * r.lngDelta))
+  return if z > 0 { z } else { 0 }
+}
+
+// ---------------------------------------------------------------------
+// Testing
+
+/// The fake maps fake() makes, which a test sets and reads.
+pub store FakeMaps {
+  /// What camera() gives; moveTo, moveCamera and fit set it (a phone's
+  /// width taken for the zoom of a region).
+  pub state camera: Camera = Camera()
+  /// The regions moveTo moved to, in order.
+  pub state regions: [Region] = []
+  /// The cameras moveCamera moved to, in order.
+  pub state cameras: [Camera] = []
+  /// What fit showed, in order: the bounds of its coordinates.
+  pub state fits: [Region] = []
+  /// The padding the last fit kept.
+  pub state padding: Insets = Insets()
+}
+
+/// Fakes the maps for an app's tests: moveTo, moveCamera and fit record
+/// what they asked, and camera() says where the map looks from.
+pub fn fake() -> FakeMaps {
+  let f = FakeMaps()
+  faked = f
+  return f
 }

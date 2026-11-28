@@ -35,7 +35,7 @@ Asuka のパッケージを使うと、ビューの外にあるデバイスの�
 | `platform/agerange` | Play Age Signals | Declared Age Range のエンタイトルメント |
 | `platform/purchase` | Play Billing、`com.android.vending.BILLING` | StoreKit 2（呼び出すアプリの場合）。エンタイトルメントは不要 |
 | `platform/icloud` | （なし：iCloud はありません） | キーバリューストアのエンタイトルメント、iCloud Documents とアプリのコンテナー、`NSUbiquitousContainers`。アプリが呼ぶものに応じて加わります（[iCloud](icloud.md)） |
-| `platform/maps` | Google の Maps SDK | |
+| `platform/maps` | Google の Maps SDK とその Utility Library（クラスター） | |
 | `platform/periodic` | WorkManager | `fetch` と `processing` バックグラウンドモード。タスクの識別子 |
 | `platform/sensors` | `ACTIVITY_RECOGNITION`（歩数計） | `NSMotionUsageDescription`（歩数計） |
 | `platform/speech` | 音声合成エンジンの可視性（`<queries>`） | |
@@ -120,7 +120,7 @@ Windows では、各パッケージは Windows 自身のサービス（Media Fou
 | `platform/vision` | Windows の OCR（OCR がインストールされている言語のみ。「設定」の「時刻と言語」）と顔検出を使います。コードは `platform/scan` と同じ方法で読み取ります |
 | `platform/scan` | Windows にはアプリ向けのコードリーダーがありません。そのため Asuka 独自のリーダーが、QR コード、Data Matrix、EAN-13 と EAN-8、UPC-A と UPC-E、Code 128、Code 39 を読み取ります（Aztec、PDF417、Code 93、Codabar、ITF は読めません） |
 | `platform/imageedit` | Windows のコーデックで読み込みます（HEIC と WebP は、それぞれの拡張機能がインストールされている場合）。ビデオのフレームは Media Foundation で取り出します |
-| `platform/maps` | Windows にはデスクトップアプリ向けの地図コントロールがありません（Windows 自身のものには Bing Maps のキーが必要です）。そのため Asuka が OpenStreetMap のタイルを描きます。タイルは 2 枚ずつダウンロードされ、アプリのキャッシュに 1 週間保存されます。地図には「© OpenStreetMap contributors」が表示されます。ドラッグ、ホイール、ピンチ、ダブルクリック、+ と - で操作できます。`.satellite` と `.hybrid` は道路地図を表示し（無料の航空写真がないため）、`showsUser` は Linux と同じく何も表示しません |
+| `platform/maps` | Windows にはデスクトップアプリ向けの地図コントロールがありません（Windows 自身のものには Bing Maps のキーが必要です）。そのため Asuka が OpenStreetMap のタイルを描きます。タイルは 2 枚ずつダウンロードされ、アプリのキャッシュに 1 週間保存されます。地図には「© OpenStreetMap contributors」が表示されます。ドラッグ、ホイール、ピンチ、ダブルクリック、+ と - で操作できます。`.satellite` と `.hybrid` は道路地図を表示し（無料の航空写真がないため）、`showsUser` は Linux と同じく何も表示しません。線・図形・円・画像のマーカー・クラスターも Asuka が描きます。地図はアプリが設定した `heading` に回転しますが（ユーザーは回せません）、平面のままです。右クリックが `longPress` です |
 | `platform/background` | タスクの実行中は PC がスリープしないようにします。通知は出ないので、`update` は何も変えません |
 | `platform/periodic` | アプリの実行中にタイマーで動きます（タスクのためにアプリが起動されることはありません）。電源を必要とするタスクは、PC がバッテリーで動いているあいだ待ちます |
 | `platform/screen` | `lock`、`setBars`、`setBrightness` は何もしません。`preventCapture` はアプリのウィンドウをスクリーンショットと画面録画から除外します。`screenshots()` は何も知らせません |
@@ -159,7 +159,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/imageedit` | GdkPixbuf のローダーでデコードし（HEIF と WebP は、それぞれのローダーがインストールされている場合）、向きを正しく直します。各操作は Asuka が行います。ビデオのフレームは GStreamer で取り出します |
 | `platform/webauth` | ウィンドウの上に WebKitGTK の Web ビューを入れたダイアログを開きます（`ephemeral` では専用のセッション）。閉じるとキャンセルになります |
 | `platform/js` | 一度も表示されない WebKitGTK の Web ビュー |
-| `platform/maps` | libshumate（`libshumate-1.0-1`）で OpenStreetMap のタイルの地図を表示します。`.satellite` と `.hybrid` は道路地図を表示します。ユーザーの位置を示すレイヤーはありません。libshumate がなければ、ビューにその旨が表示され、`error` が報告されます |
+| `platform/maps` | libshumate（`libshumate-1.0-1`）で OpenStreetMap のタイルの地図を表示します。`.satellite` と `.hybrid` は道路地図を表示します。ユーザーの位置を示すレイヤーはありません。線・図形・円は Asuka が地図の上に描き、マーカー・画像・クラスターは libshumate のマーカーです。地図はアプリが設定した `heading` に回転しますが、平面のままです。右クリックか長押しが `longPress` です。libshumate がなければ、ビューにその旨が表示され、`error` が報告されます |
 | `platform/background` | タスクの実行中はシステムがサスペンドしないようにします。通知は出ず、`update` は何も変えません |
 | `platform/periodic` | タスクはアプリの実行中にタイマーで動きます（タスクのためにアプリが起動されることはありません）。電源を必要とするタスクはバッテリーで動いているあいだ、ネットワークを必要とするタスクはオフラインのあいだ待ちます |
 | `platform/screen` | `lock`、`setBars`、`preventCapture`、`setBrightness` は何もしません。`screenshots()` は何も知らせません |
@@ -207,7 +207,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `device.haptic` | ブラウザーが対応していれば（Android の Chrome）`navigator.vibrate` を使います |
 | `platform/review`、`platform/integrity`、`platform/agerange`、`platform/appleauth`、`platform/icloud`、`platform/periodic`、`platform/widget`、`platform/liveactivity` | Web にはありません。その旨を示すエラーか、パッケージの `notAvailable` になります |
 | `platform/purchase` | Trusted Web Activity の中では、Digital Goods API を通じて Google Play を使います。それ以外ではストアはありません（`PurchaseError.notAvailable`） |
-| `platform/maps` | Windows と同じく、Asuka が OpenStreetMap のタイルを描きます。`showsUser` は、ページに位置情報の許可があれば表示されます |
+| `platform/maps` | Windows と同じく、Asuka が OpenStreetMap のタイルと、線・図形・円・マーカー・クラスターを描きます。地図は回転でき（アプリの `heading`、または 2 本指か Shift を押しながらのドラッグ）、平面のままです。右クリックが `longPress` です。`showsUser` は、ページに位置情報の許可があれば表示されます |
 | `platform/pay` | ブラウザーが対応していれば（Safari）、Payment Request API を通じて Apple Pay を使います。マーチャントの検証はアプリのサーバーが行います（`onValidateMerchant`）。それ以外では、Google の Web API（pay.js）を通じて Google Pay を使います。ボタンはそれぞれ専用のものです。シートはタップからしか表示できません |
 | `platform/crash` | Asuka の致命的なエラーと、捕捉されなかった JavaScript のエラーを扱います。後者は致命的でない `"exception"` のレポートになります |
 | `platform/analytics` | Google から読み込む gtag.js で、`asuka.toml` の Web ストリームに送ります。収集のオフは gtag 自身のスイッチで、`localStorage` に保存されます |
@@ -2071,9 +2071,9 @@ component Home { Text("Signed in") }
 
 ## 地図：platform/maps
 
-`maps.View` は地図です。iOS と Mac では Apple マップ、Android では Google マップ、Windows とブラウザーでは OpenStreetMap のタイル、Linux では libshumate のタイルです。`region`（中心と、何度分の範囲を表示するか）をバインドすると、地図を動かせるうえ、ユーザーの操作にも追従します。`markers` は地図上のピンで、`markerPress`、`press`、`regionChange` がユーザーの操作です。
+`maps.View` は地図です。iOS、Mac、Apple TV では Apple マップ、Android では Google マップ、Windows とブラウザーでは OpenStreetMap のタイル、Linux では libshumate のタイルです。`region`（中心と、何度分の範囲を表示するか）をバインドすると、地図を動かせるうえ、ユーザーの操作にも追従します。`markers` は地図上のピンで、`markerPress`、`press`、`regionChange` がユーザーの操作です。
 
-```asuka
+```asuka check
 import platform/maps
 
 component Places {
@@ -2091,9 +2091,120 @@ component Places {
     Text(picked)
   }
 }
+
+app { Places() }
 ```
 
-`mapType` は `.standard`、`.satellite`、`.hybrid`、`.muted` のどれかで、`showsUser` はユーザーの現在地を表示します（先に `platform/location` で許可を求めてください）。OpenStreetMap の地図は道路を表示し（ブラウザーでは `.muted` で落ち着いた色になります）、現在地はブラウザーでだけ表示します。Android では、このパッケージを import したアプリは Google の Maps SDK と一緒にビルドされ、asuka.toml の `android.mapsKey` に Maps SDK for Android のキーが必要です。
+`mapType` は `.standard`、`.satellite`、`.hybrid`、`.muted` のどれかで、`showsUser` はユーザーの現在地を表示します（先に `platform/location` で許可を求めてください）。`interactive: false` にすると、ユーザーが動かせないプレビューになります。Android では、このパッケージを import したアプリは Google の Maps SDK と一緒にビルドされ、asuka.toml の `android.mapsKey` に Maps SDK for Android のキーが必要です。キーがなければ、地図の代わりにその旨が表示され、`error` が報告されます。
+
+### マーカー
+
+`Marker` は、`color` で色を付けたプラットフォームのピンか、`image` です。画像にはアプリのアセット、ファイル、`https:` の URL を使えます。`width` と `height` がポイント単位の大きさで（片方だけなら縦横比を保ちます）、`anchor` で画像のどの点をその場所に合わせるかを決めます（既定は画像の中心で、`maps.Anchor(x: 0.5, y: 1)` なら下辺の中央）。`zIndex` が大きいものほど上に描かれます。
+
+`selected` を選択中のマーカーにバインドします。タップしたマーカーが選択され、その `title` と `subtitle` が吹き出し（Android では情報ウィンドウ）に表示されます。マーカー以外をタップすると選択が外れ、アプリから設定すればそのマーカーを選択できます。吹き出しがタップされると `calloutPress` が届きます。
+
+`draggable` なマーカーは長押しで持ち上げられ（マウスなら押したまま動かす）、`markerDragStart`、`markerDrag`、`markerDragEnd` で行き先がわかります。置いた場所には `markers` が変わるまでとどまるので、新しい位置をアプリのリストに書き戻してください。
+
+```asuka check
+import platform/maps
+
+component Pin {
+  state at = maps.Coordinate(lat: 48.8584, lng: 2.2945)
+  state selected = ""
+
+  maps.View {
+    bind selected: selected
+    markers: [
+      maps.Marker(id: "pin", at: at, title: "Meet here", draggable: true),
+      maps.Marker(id: "cafe", at: maps.Coordinate(lat: 48.8606, lng: 2.2978), title: "Café", image: "cafe.png", width: 32, height: 32),
+    ]
+    grow: 1
+    on markerDragEnd(id, place) { at = place }
+    on calloutPress(id) { print("open {id}") }
+  }
+}
+
+app { Pin() }
+```
+
+アプリのビュー（価格のバッジやアバターなど）をマーカーにしたいときも画像を使います。`platform/imageedit` の `capture` でビューを画像ファイルに描き、そのファイルをマーカーの `image` に渡します。
+
+### 線・図形・円
+
+`polylines` は点を結ぶ線（経路や軌跡）を描きます。`color`、ポイント単位の `width`、破線にする `dashed`、地球の丸みに沿わせる `geodesic`（航路など）を指定できます。`polygons` は領域で、`fill`、`stroke`、`strokeWidth` と、くり抜く部分の `holes` を持ちます。`circles` は `center` を中心とした半径 `radius` メートルの円です。どれもマーカーの下に描かれ、`zIndex` の順、同じなら多角形、円、線の順に、それぞれリストの順で重なります。`id` を持つものがタップされると、`press` の代わりに `overlayPress` が届きます。
+
+```asuka check
+import platform/maps
+
+let route = [
+  maps.Coordinate(lat: 37.8080, lng: -122.4177),
+  maps.Coordinate(lat: 37.7955, lng: -122.3937),
+  maps.Coordinate(lat: 37.7694, lng: -122.4862),
+]
+
+component Route {
+  maps.View {
+    polylines: [maps.Polyline(id: "route", points: route, color: .blue, width: 5)]
+    polygons: [maps.Polygon(points: [
+      maps.Coordinate(lat: 37.806, lng: -122.475), maps.Coordinate(lat: 37.806, lng: -122.445),
+      maps.Coordinate(lat: 37.790, lng: -122.445), maps.Coordinate(lat: 37.790, lng: -122.475),
+    ], fill: .green.opacity(0.3), stroke: .green)]
+    circles: [maps.Circle(center: route[1], radius: 500)]
+    grow: 1
+    on overlayPress(id) { print("tapped {id}") }
+  }
+}
+
+app { Route() }
+```
+
+### クラスター
+
+`clustering: true` にすると、画面上で近くにあるマーカーが、数を示す 1 つのマーカーにまとまります。地図を拡大すると分かれ、タップするとそのマーカーたちが見えるまで拡大して、`clusterPress` でそれらの id を知らせます。色は `clusterColor` で変えられます。`clusters: false` のマーカーは常に単独で表示されます。まとめ方はプラットフォームごとに異なる（MapKit のクラスター、Android では Google の Maps SDK Utility Library、Windows・Linux・ブラウザーでは互いに 40 ポイント以内のマーカー）ため、分かれるズームは少しずつ違います。
+
+### カメラ
+
+`camera` は地図をどこから見ているかです。`center` が中心、`zoom` がズームレベル（0 で世界全体が幅 256 ポイント、1 段ごとに 2 倍近づき、都市でおよそ 10、街路でおよそ 15）、`heading` が向き（北から時計回りの度数）、`pitch` が傾きの度数です。`region` の代わりにこれをバインドすると、ユーザーが地図を回したり傾けたりした操作にも追従します。
+
+地図を動かす関数は、その地図の `Ref` を受け取ります。`maps.moveTo` は領域を表示し、`maps.moveCamera` はカメラを動かし、`maps.fit` は渡した座標がすべて入るように、端に余白（`maps.Insets`。地図に重なるシートの分など）を取って表示します。`maps.camera` は今のカメラです。`animated: false` を渡さない限り、アニメーションで動きます。
+
+```asuka check
+import platform/maps
+
+let stops = [maps.Coordinate(lat: 35.6586, lng: 139.7454), maps.Coordinate(lat: 35.7101, lng: 139.8107)]
+
+component Tour {
+  let map = Ref()
+
+  Column {
+    maps.View {
+      ref: map
+      markers: [maps.Marker(id: "a", at: stops[0]), maps.Marker(id: "b", at: stops[1])]
+      grow: 1
+      on cameraIdle(camera, region) { print("at zoom {camera.zoom}") }
+    }
+    Row {
+      Button("Show all") { on press { maps.fit(map, stops, padding: .all(40)) } }
+      Button("Tilt") {
+        on press {
+          var c = maps.camera(map)
+          c.pitch = 45
+          c.heading = 90
+          maps.moveCamera(map, c)
+        }
+      }
+    }
+  }
+}
+
+app { Tour() }
+```
+
+`cameraMove` は地図が動いているあいだ（ユーザーの操作でもアプリによる移動でも）その位置を知らせ、`cameraIdle` は止まったときに知らせます。`regionChange` と `cameraChange` はユーザーの操作だけを知らせ、バインドにはこれが必要です。`press` と `longPress`（Windows・Linux・ブラウザーではマウスの右クリック）は、タップされた場所を渡します。`maps.distance` は 2 地点間の距離（メートル）、`maps.bounds` はいくつかの座標をすべて含む領域です。
+
+OpenStreetMap の地図（Windows、Linux、ブラウザー）は平面のままで、`pitch` は常に 0 です。アプリが設定した `heading` には回転します（ブラウザーでは、ユーザーが 2 本指か Shift を押しながらのドラッグで回せます）。MapKit で傾けられる角度はズームによって決まり、遠くから見ているほど小さくなります。
+
+アプリのテストでは、地図は空の箱です。`maps.fake()` は `moveTo`、`moveCamera`、`fit` の呼び出しを記録し、`camera` が返す値を決めます。
 
 ## バックグラウンド更新：platform/periodic
 
