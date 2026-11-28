@@ -129,6 +129,43 @@ test("a version installs whole or not at all", async () => {
   assert.deepEqual(await caches.keys(), []);
 });
 
+test("a file the server dropped or couldn't answer is asked for again; one it hasn't isn't", async () => {
+  const caches = fakeCaches();
+  const net = fakeNetwork(site1);
+  // A server that takes a few connections at a time (python3 -m http.server):
+  // the wasm's request reset twice, the script's answered 503 once.
+  const failing = { "asuka.aaaaaaaaaaaa.wasm": 2, "asuka/aaaaaaaaaaaa/asuka.js": 1 };
+  const flaky = async (r) => {
+    const path = r.url.slice(scope.length);
+    if (failing[path] > 0) {
+      failing[path]--;
+      net.asked.push(r.url);
+      if (path.endsWith(".wasm")) throw new TypeError("Failed to fetch");
+      return new Response("busy", { status: 503 });
+    }
+    return net.fetch(r);
+  };
+  const waited = [];
+  const o = context().asukaOffline.create({ manifest: v1, scope, caches, fetch: flaky, wait: async (ms) => { waited.push(ms); } });
+  await o.install();
+  const name = "asuka-precache:" + scope + ":v1";
+  assert.equal(caches.text(name, scope + "asuka.aaaaaaaaaaaa.wasm"), "wasm1");
+  assert.equal(caches.text(name, scope + "asuka/aaaaaaaaaaaa/asuka.js"), "js1");
+  assert.equal(net.asked.filter((u) => u.endsWith(".wasm")).length, 3);
+  assert.deepEqual(waited.sort((a, b) => a - b), [250, 250, 500]);
+  // A network that stays down fails the install after its attempts; a 404 at once.
+  net.down = true;
+  net.asked = [];
+  const down = context().asukaOffline.create({ manifest: manifest("v9", [["assets/a.txt", "x9"]]), scope, caches, fetch: (r) => net.fetch(r), wait: async () => {} });
+  await assert.rejects(down.install(), /Failed to fetch/);
+  assert.equal(net.asked.length, 4);
+  net.down = false;
+  net.asked = [];
+  const missing = context().asukaOffline.create({ manifest: manifest("v8", [["assets/none.txt", "x8"]]), scope, caches, fetch: (r) => net.fetch(r), wait: async () => {} });
+  await assert.rejects(missing.install(), /none\.txt.*404/);
+  assert.equal(net.asked.length, 1);
+});
+
 test("a new version copies the files it shares with the old, keeps the old for its pages, and deletes older ones", async () => {
   const caches = fakeCaches();
   const net = fakeNetwork(site1);

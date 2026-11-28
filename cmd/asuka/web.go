@@ -107,6 +107,10 @@ type webPage struct {
 	Options        map[string]any
 	Launch         [2]string // the splash's colors, light and dark: the page's until the first frame
 	Icon, Manifest bool
+	// Offline is a build kept offline: a page whose files didn't all load
+	// loads again from its service worker (Options' serviceWorker) once
+	// that has kept them.
+	Offline bool
 	// Scripts are its native packages' generated JavaScript, loaded
 	// before it starts: they register the packages' modules and views.
 	Scripts []string
@@ -182,15 +186,74 @@ func webIndex(p webPage) string {
 </head>
 <body>
 <script type="module">
-import * as asuka from "./%[1]s/asuka.js";
-globalThis.asuka = asuka;
-%[4]sasuka.start(%[3]s);
-</script>
-</body>
-</html>
-`, p.Host, p.Core, o, imports(p.Scripts))
+`, p.Host, p.Core)
+	entry, _ := json.Marshal("./" + p.Host + "/asuka.js")
+	sw := ""
+	if p.Offline {
+		sw, _ = p.Options["serviceWorker"].(string)
+	}
+	worker, _ := json.Marshal(sw)
+	b.WriteString(strings.NewReplacer("ENTRY", string(entry), "IMPORTS", imports(p.Scripts), "WORKER", string(worker), "OPTIONS", string(o)).Replace(webBoot))
+	b.WriteString("</script>\n</body>\n</html>\n")
 	return b.String()
 }
+
+// webBoot is the page's script: it imports Asuka's loader and the native
+// packages' scripts (IMPORTS), then starts the app (OPTIONS). The page
+// asks for Asuka's files together, dozens of them as they import each
+// other, and a server may drop some: python3 -m http.server keeps 5
+// connections waiting and closes each after one file, a phone's network
+// drops one. A browser doesn't ask for a module again on the page that
+// failed to load it, so the page loads again, at most twice in a row: in
+// a build kept offline once its service worker (WORKER) has kept the
+// files, which it asks for a few at a time, and again if dropped, so the
+// load is the worker's. Then it says what didn't load, on the console
+// and the page.
+const webBoot = `const failed = async (e) => {
+  const key = "asuka-load:" + document.baseURI, worker = WORKER, sw = navigator.serviceWorker;
+  let tries = 2;
+  try {
+    tries = Number(sessionStorage.getItem(key)) || 0;
+    sessionStorage.setItem(key, String(tries + 1));
+  } catch {}
+  if (tries < 2) {
+    if (worker && sw) {
+      try {
+        const r = await sw.register(worker);
+        await new Promise((ok, no) => {
+          sw.ready.then(ok);
+          const w = r.installing;
+          w?.addEventListener("statechange", () => w.state === "redundant" && !r.active && no(new Error("it didn't install")));
+        });
+      } catch (err) {
+        console.error("asuka: the app's service worker didn't keep its files:", err);
+      }
+    }
+    location.reload();
+    return;
+  }
+  try { sessionStorage.removeItem(key); } catch {}
+  console.error("asuka: the app's files didn't load (" + e.message + "). If the Network panel shows requests reset or refused, the server dropped them as the page asked for its files together: serve the folder with a server that keeps connections open (python3 -m http.server doesn't), as https://asuka.egoist.dev/docs/web#asuka-build---platform-web says.");
+  const p = document.body.appendChild(document.createElement("p"));
+  p.style.cssText = "font: 15px system-ui, sans-serif; margin: 40vh 16px 0; text-align: center";
+  p.append("The app couldn't load. ");
+  const a = p.appendChild(document.createElement("a"));
+  a.href = location.href;
+  a.textContent = "Reload";
+};
+let loaded = false;
+try {
+  globalThis.asuka = await import(ENTRY);
+IMPORTS  loaded = true;
+} catch (e) {
+  if (!(e instanceof TypeError) || !/dynamically imported module|importing a module script failed/i.test(e.message)) throw e;
+  await failed(e);
+}
+if (loaded) {
+  try { sessionStorage.removeItem("asuka-load:" + document.baseURI); } catch {}
+  globalThis.asuka.start(OPTIONS);
+}
+`
 
 // webScript is a native package's file among the host's
 // (packages/<package>/<file>): its path there, its file here, and whether
@@ -242,7 +305,7 @@ func imports(scripts []string) string {
 	var b strings.Builder
 	for _, s := range scripts {
 		q, _ := json.Marshal("./" + s)
-		fmt.Fprintf(&b, "await import(%s);\n", q)
+		fmt.Fprintf(&b, "  await import(%s);\n", q)
 	}
 	return b.String()
 }
@@ -1144,6 +1207,7 @@ func buildWeb(app *asukaApp, o *buildOptions) error {
 		Options:  opts,
 		Icon:     icon,
 		Manifest: true,
+		Offline:  app.cfg.webOffline(),
 		Scripts:  scripts,
 	})
 	if err := os.WriteFile(filepath.Join(out, "index.html"), []byte(page), 0o644); err != nil {

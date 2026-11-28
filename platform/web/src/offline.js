@@ -7,7 +7,8 @@
 //
 //   - install: every file into a cache of its own version (the files an
 //     older version has, by path and revision, copied from it; the rest
-//     from the network, past the browser's HTTP cache): all of them or
+//     from the network, past the browser's HTTP cache, a few at a time,
+//     each asked for again if the network dropped it): all of them or
 //     none, so a version is whole or isn't.
 //   - the new version takes over once no page of the old one is open, or
 //     as one reloads (the only page of the app: its load becomes the new
@@ -36,9 +37,11 @@
 
   /**
    * create is the offline part of the worker of the app at scope (its
-   * registration's), with manifest's files.
+   * registration's), with manifest's files: a file the network fails to
+   * give is asked for up to attempts times, retryDelay ms apart and
+   * doubling.
    */
-  function create({ manifest, scope, caches = g.caches, fetch = (r) => g.fetch(r), clients = g.clients, registration = g.registration }) {
+  function create({ manifest, scope, caches = g.caches, fetch = (r) => g.fetch(r), clients = g.clients, registration = g.registration, attempts = 4, retryDelay = 250, wait = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
     const prefix = prefixOf(scope);
     const name = prefix + manifest.version;
     const origin = new URL(scope).origin;
@@ -88,8 +91,20 @@
           }
         }
         // A file named by its digest may come from the HTTP cache; the
-        // others are asked for again.
-        const res = await fetch(new Request(f.url, { cache: f.rev ? "reload" : "default", credentials: "same-origin" }));
+        // others are asked for again. A request the server dropped or
+        // couldn't answer then (a reset connection, a 503: a server that
+        // takes a few connections at a time, python3 -m http.server) is
+        // asked for again, a little later each time.
+        let res;
+        for (let attempt = 1; ; attempt++) {
+          try {
+            res = await fetch(new Request(f.url, { cache: f.rev ? "reload" : "default", credentials: "same-origin" }));
+            if (res.status < 500 || attempt === attempts) break;
+          } catch (e) {
+            if (attempt === attempts) throw e;
+          }
+          await wait(retryDelay * 2 ** (attempt - 1));
+        }
         if (!res.ok) throw new Error(`asuka: the app's ${f.url} for offline: ${res.status}`);
         await cache.put(f.key, await plain(res));
       };

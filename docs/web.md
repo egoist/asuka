@@ -82,6 +82,18 @@ again. Serve `.wasm` as
 gzipped, with Asuka's JavaScript beside it; an app's own code adds to
 that.
 
+The page asks for Asuka's scripts together as it starts, dozens of
+them. A server that drops connections when asked for that many at once,
+as `python3 -m http.server` does (it keeps 5 waiting and closes each
+after one file), fails some, and a browser doesn't ask for them again on
+that page. The page then loads again once its service worker has kept
+the site's files ([Offline](#offline)), which the worker asks for a few
+at a time, and again if one is dropped: the app starts on such a server
+too. A build with `web.offline = false` only loads again, twice at most;
+if its files still don't load, the page says so, and the console says
+which. A server that keeps connections open (`npx serve`, Caddy, nginx,
+a CDN) starts it at the first load.
+
 ## Offline
 
 A build works offline, as an installed app does. The first time its
