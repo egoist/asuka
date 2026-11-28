@@ -1646,7 +1646,13 @@ flush. What makes SwiftUI a target rather than a second reconciler:
   `ZStack(alignment: .topLeading)` of its children, each `.frame`d to
   its size and `.offset` to its origin in the container's coordinates;
   a text is drawn `fixedSize` vertically in its frame, so it never
-  truncates where the core measured it whole. Navigators are SwiftUI's
+  truncates where the core measured it whole. A Button is centered in
+  its frame: watchOS draws no button style wider than the screen less
+  its margins (178pt on a 46mm watch, whatever it's proposed, the
+  label's frame, `buttonSizing` or `controlSize`), so one stretched
+  across a wider column is the watch's full-width button with the
+  platform's inset on both sides, as SwiftUI's own frame places it; its
+  measurement never reports it wider. Navigators are SwiftUI's
   (NavigationStack with the stack's screens as its path, a vertical page
   TabView, sheets, alerts), and screens and sheets are environment
   providers as on the other hosts: each reports the size SwiftUI gives

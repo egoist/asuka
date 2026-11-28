@@ -12,6 +12,9 @@
 //     the watch's metrics for each control and text size, measured, not
 //     tabulated. The core caches measurements by content (its shared
 //     measure cache), so a control is measured once per title and size.
+//     A Button is never measured wider than watchOS draws buttons (the
+//     screen less its margins): a frame wider than that, stretched to a
+//     column, centers it (Views.swift's asukaPlacement).
 //   - Images: their natural size (Loaded), which the core keeps.
 
 import CoreText

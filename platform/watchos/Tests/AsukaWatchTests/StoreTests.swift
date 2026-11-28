@@ -2,6 +2,7 @@
 // decoded into the nodes and published once, each node changed bumping its
 // revision once; texts are measured as they're drawn; a list's cells are
 // recycled.
+import SwiftUI
 import XCTest
 @testable import AsukaHost
 
@@ -121,5 +122,56 @@ struct Batch {
         b2.listUpdate(301, [10, 12])
         apply(b2)
         XCTAssertTrue(list.appear(12, 1) === first)
+    }
+}
+
+/// Where a node's view sits in its frame: a Button narrower than its
+/// frame (watchOS draws none wider than the screen less its margins, so a
+/// button stretched across a wider column is) is centered in it, as
+/// SwiftUI's frame centers it; a text keeps its top leading corner.
+@MainActor final class PlacementTests: XCTestCase {
+    /// The columns of a node's view, drawn in its frame, that have ink:
+    /// the first and last.
+    func inked(_ n: AsukaNode) -> (Int, Int)? {
+        let r = ImageRenderer(content: AsukaNodeView(node: n).frame(width: n.frame.maxX, height: n.frame.maxY, alignment: .topLeading))
+        r.scale = 1
+        guard let img = r.cgImage else { return nil }
+        let w = img.width, h = img.height
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var first = -1, last = -1
+        for x in 0..<w {
+            for y in 0..<h where px[(y * w + x) * 4 + 3] > 0 {
+                if first < 0 { first = x }
+                last = x
+                break
+            }
+        }
+        return first < 0 ? nil : (first, last)
+    }
+
+    func testAButtonIsCenteredInAWiderFrame() throws {
+        let rt = AsukaRuntime.shared
+        var b = Batch()
+        b.create(401, .button)
+        b.text(401, AsukaProp.Button.title, "Go")
+        b.frame(401, 0, 0, 300, 60)
+        b.create(402, .text)
+        b.text(402, AsukaProp.Text.text, "Go")
+        b.frame(402, 0, 0, 300, 60)
+        apply(b)
+        XCTAssertEqual(asukaPlacement(.button), .center)
+        XCTAssertEqual(asukaPlacement(.text), .topLeading)
+        let (l, r) = try XCTUnwrap(inked(rt.nodes[401]!), "the button draws")
+        XCTAssertGreaterThan(l, 20, "the button is narrower than its frame")
+        XCTAssertLessThanOrEqual(abs(l - (299 - r)), 2, "and centered in it: \(l)...\(r) in 300")
+        let (tl, _) = try XCTUnwrap(inked(rt.nodes[402]!), "the text draws")
+        XCTAssertLessThan(tl, 4, "a text sits at its frame's leading edge")
+    }
+
+    func apply(_ b: Batch) {
+        b.bytes.withUnsafeBytes { AsukaRuntime.shared.apply($0) }
     }
 }

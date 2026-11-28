@@ -19,11 +19,24 @@ struct AsukaNodeView: View {
         if node.placed {
             let f = node.frame
             AsukaContent(node: node)
-                .frame(width: f.width, height: f.height, alignment: .topLeading)
+                .frame(width: f.width, height: f.height, alignment: asukaPlacement(node.kind))
                 .modifier(AsukaStyle(node: node))
                 .offset(x: f.minX, y: f.minY)
         }
     }
+}
+
+/// Where a node's view sits in its frame when it's smaller than it. Most
+/// views fill their frame (the core measured them) and sit at its top
+/// leading corner. A Button is centered: watchOS draws every button style
+/// (bordered, prominent, glass, with any label, `buttonSizing` or
+/// `controlSize`) at most as wide as the screen less its margins (178pt on
+/// a 46mm watch), whatever it's proposed, so a button stretched across a
+/// wider column is drawn at that width; centered in its frame it's where
+/// SwiftUI's own frame and VStack put it, the watch's full-width button,
+/// with the platform's inset on both sides.
+func asukaPlacement(_ kind: AsukaKind?) -> Alignment {
+    kind == .button ? .center : .topLeading
 }
 
 /// The children of a container, each at its frame.

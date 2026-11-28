@@ -205,7 +205,7 @@ Each element is the watch's own control where watchOS has one:
 | Component | On Apple Watch |
 |---|---|
 | `Text`, `RichText` | SwiftUI's text, in the watch's system font at the user's text size; a rich text's styles and links' color, without its inline components |
-| `Button` | the watch's button: a rounded capsule, or filled with the accent for `variant: .filled`; a `.plain` button with a `background` of its own is its label alone |
+| `Button` | the watch's button: a rounded capsule, or filled with the accent for `variant: .filled`; a `.plain` button with a `background` of its own is its label alone. No watch button is wider than the screen less its margins: one stretched across a wider column is centered in it |
 | `Toggle` | the watch's switch |
 | `Slider` | the watch's slider, a minus and a plus; the Digital Crown moves it while it's focused |
 | `Stepper` | the watch's stepper, its value between a minus and a plus |
