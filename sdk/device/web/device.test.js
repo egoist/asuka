@@ -43,7 +43,51 @@ test("copyHTML puts the HTML and the text; clipboardHTML reads the HTML", async 
   assert.deepEqual(items[0].types, ["text/html", "text/plain"]);
   assert.equal(await p.clipboardHTML(signal), "<b>Hi</b> there");
   assert.equal(await p.clipboardText(signal), "Hi there");
-  assert.deepEqual(await p.clipboardHas(signal), { text: true, image: false, url: false, html: true });
+  assert.deepEqual(await p.clipboardHas(signal), { text: true, image: false, url: false, html: true, files: false });
+});
+
+test("copyFormats puts an app's own as a web custom format; clipboardFormats and clipboardData read it back", async () => {
+  const json = new TextEncoder().encode('{"shapes":[1]}');
+  await p.copyFormats(signal, [
+    { type: "application/x.drawing+json", data: json },
+    { type: "text/plain", data: new TextEncoder().encode("a drawing") },
+  ]);
+  assert.deepEqual(items[0].types, ["web application/x.drawing+json", "text/plain"]);
+  assert.equal((await items[0].getType("web application/x.drawing+json")).type, "application/x.drawing+json");
+  assert.deepEqual(await p.clipboardFormats(signal), ["application/x.drawing+json", "text/plain"]);
+  assert.deepEqual(await p.clipboardData(signal, "application/x.drawing+json"), json);
+  assert.equal(new TextDecoder().decode(await p.clipboardData(signal, "text/plain")), "a drawing");
+  assert.equal(await p.clipboardData(signal, "application/x.other"), null);
+  assert.deepEqual(await p.clipboardHas(signal), { text: true, image: false, url: false, html: false, files: false });
+});
+
+test("a browser that has no web custom formats says unsupported", async () => {
+  ClipboardItem.supports = (t) => !t.startsWith("web ");
+  try {
+    await assert.rejects(p.copyFormats(signal, [{ type: "application/x.drawing+json", data: new Uint8Array([1]) }]), asuka.native.UnsupportedError);
+    await p.copyFormats(signal, [{ type: "text/html", data: new TextEncoder().encode("<b>x</b>") }, { type: "text/plain", data: new TextEncoder().encode("x") }]);
+    assert.deepEqual(items[0].types, ["text/html", "text/plain"]);
+  } finally {
+    delete ClipboardItem.supports;
+  }
+});
+
+test("an image is the clipboard's file; files can't be put there", async () => {
+  const written = new Map();
+  asuka.native.files = { fs: { writeFile: (p, b) => written.set(p, b) } };
+  try {
+    items = [new ClipboardItem({ "image/png": new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: "image/png" }) })];
+    assert.deepEqual(await p.clipboardHas(signal), { text: false, image: true, url: false, html: false, files: true });
+    const files = await p.clipboardFiles(signal);
+    assert.equal(files.length, 1);
+    assert.match(files[0], /^\/tmp\/asuka-clipboard\/.+\/Pasted\.png$/);
+    assert.deepEqual(written.get(files[0]), new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    await clipboard.writeText("plain");
+    assert.deepEqual(await p.clipboardFiles(signal), []);
+    await assert.rejects(p.copyFiles(signal, ["/tmp/a.txt"]), asuka.native.UnsupportedError);
+  } finally {
+    delete asuka.native.files;
+  }
 });
 
 test("no HTML: none", async () => {

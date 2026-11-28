@@ -155,6 +155,7 @@ class AsukaScreen(context: Context, val nodeID: Int, private val rt: AsukaRuntim
         val own = rootView !== rt.activity?.window?.decorView
         if (own && rt.routeKey(event, findFocus(), rt.nodes[nodeID])) return true
         if (super.dispatchKeyEvent(event)) return true
+        if (own && rt.undoKey(event, findFocus())) return true
         return own && rt.keyText(event, findFocus())
     }
 
@@ -164,7 +165,7 @@ class AsukaScreen(context: Context, val nodeID: Int, private val rt: AsukaRuntim
         ViewCompat.addOnUnhandledKeyEventListener(this) { _, e ->
             val n = rt.nodes[nodeID]
             (n?.kind == AsukaKind.SHEET || n?.kind == AsukaKind.POPOVER) &&
-                rootView !== rt.activity?.window?.decorView && findFocus() == null && rt.routeKey(e, null, n)
+                rootView !== rt.activity?.window?.decorView && findFocus() == null && (rt.routeKey(e, null, n) || rt.undoKey(e, null))
         }
     }
 

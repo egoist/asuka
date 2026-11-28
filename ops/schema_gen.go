@@ -78,9 +78,13 @@ const (
 	KindSnackbar Kind = 38
 	// KindOverlay: a layer over a layout root (std/base's popups: a select's list, a menu, a dialog, a tooltip), laid out by the core at the root's size, its children placed by the core next to an anchor view: shown while it exists (made: added on top of the root's other overlays; Destroy: removed), never in its parent's view. Reports OutsidePress.
 	KindOverlay Kind = 39
+	// KindTable: a table of rows and columns, the platform's own on the desktop and the web (NSTableView, a ListView in report view with owner data, a GtkColumnView, a <table> with the grid role): its rows are a List's, bound through ListCount, ListBind and ListUnbind into cells the host makes (a row each, not a cell per column), their IDs in ListUpdate; a row's plain text comes as the cell's RowData, its views (a view per column, in Columns' order) as the cell's children, each laid out by the core at its column's place and width as shown (ColumnLayout's: x from the row's left) and at RowHeight. A right click on a row selects it, as the platform does, and shows the cell's Menu. Phones get a List instead: the core sends no Table there.
+	KindTable Kind = 40
+	// KindOutline: a tree of rows (a sidebar's folders, a file tree): the rows shown (the roots, and the children of each expanded row, depth first) are a List's, bound through ListBind into cells the host makes, each with its RowData (its text and symbol) or its views (laid out by the core at the row's width less its indent: the host draws its disclosure and the depth's indentation, and tells the core the room they take with RowInset). Arrow keys move the selection, right and left expand and collapse (the platform's own). Phones get a List instead, of indented rows with a disclosure the core makes.
+	KindOutline Kind = 41
 )
 
-var kindNames = [...]string{"", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay"}
+var kindNames = [...]string{"", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay", "Table", "Outline"}
 
 func (k Kind) String() string {
 	if int(k) < len(kindNames) && k > 0 {
@@ -193,6 +197,10 @@ const (
 	PropBorderWidths PropID = 58
 	// PropBorderStyle: how a border is drawn: solid, dashed (dashes three times its width long, gaps as long), or dotted (round dots as wide as it, a width apart), along its sides and around its corners.
 	PropBorderStyle PropID = 59
+	// PropCursor: the mouse pointer's shape over the view and the views inside it that set none (CSS's cursor, inherited: Auto takes the parent's, else the platform's own for what's under it: a text field's I-beam, a link's hand): NSCursor, SetCursor, gdk_cursor_new_from_name, CSS cursor; iPadOS's pointer (UIPointerStyle: Text a vertical beam, Hidden hidden, Pointer a highlight), Android's PointerIcon for a mouse.
+	PropCursor PropID = 60
+	// PropRowData: a Table's or Outline's row's text, on the cell the host bound it into (the plain text a native table draws itself): u32 count, then u32-length strings: a Table's cells, one per column of its Columns, in their order; an Outline row's text alone. Then a u32-length symbol (Symbol.Name; empty: none) the row's first cell shows before its text (a file's icon). Sent as the row binds, and again as its text changes.
+	PropRowData PropID = 61
 )
 
 // View props.
@@ -644,9 +652,37 @@ const (
 	PropOverlayModal PropID = 66
 )
 
-var commonProps = [...]propInfo{{}, {"Background", TColor}, {"CornerRadius", TFloat}, {"BorderWidth", TFloat}, {"BorderColor", TColor}, {"Opacity", TFloat}, {"Hidden", TBool}, {"Clip", TBool}, {"A11yLabel", TString}, {"A11yHint", TString}, {"A11yRole", TEnum}, {"A11yActions", TBytes}, {"A11yAdjustable", TBool}, {"A11yHidden", TBool}, {"Color", TColor}, {"TextStyle", TEnum}, {"FontSize", TFloat}, {"FontWeight", TEnum}, {"TextAlign", TEnum}, {"LineLimit", TInt}, {"Disabled", TBool}, {"Menu", TBytes}, {"MenuTrigger", TEnum}, {"Transform", TBytes}, {"Shadow", TBytes}, {"Gradient", TBytes}, {"Transition", TBytes}, {"Material", TEnum}, {"FontFamily", TString}, {"SwipeActions", TBytes}, {"LayoutDirection", TEnum}, {"ContentInset", TEdges}, {"LeadingSwipeActions", TBytes}, {"Selected", TBool}, {"Match", TString}, {"InterceptBack", TBool}, {"Tooltip", TString}, {"Keys", TBytes}, {"Focusable", TBool}, {"NoFocusOnPress", TBool}, {"NoFocusRing", TBool}, {"FocusTrap", TBool}, {"A11yChecked", TEnum}, {"A11yExpanded", TEnum}, {"A11ySelected", TBool}, {"A11yValue", TString}, {"A11yRange", TBytes}, {"A11yModal", TBool}, {"A11yControls", TInt}, {"A11yLabelledBy", TInt}, {"A11yDescribedBy", TInt}, {"LetterSpacing", TFloat}, {"LineHeight", TFloat}, {"FontTraits", TInt}, {"TextShadow", TBytes}, {"Truncation", TEnum}, {"MinimumScale", TFloat}, {"CornerRadii", TEdges}, {"BorderWidths", TEdges}, {"BorderStyle", TEnum}}
+// Table props.
+const (
+	// PropTableColumns: its columns, in the app's order (a row's cells are in it): u32 count, per column a u32-length ID, a u32-length title (the header's), f32 width (points; 0: the host's default), f32 min width (0: the host's), f32 max width (0: none), u8 flags (1 resizable by the user, 2 sortable: a click on its header reports SortBy), u8 TextAlign of its cells and header. The host shows them in this order unless the user moved one (ColumnsMovable): it keeps the user's order and widths while the IDs it has stay, and reports them with ColumnLayout.
+	PropTableColumns PropID = 64
+	// PropTableSort: the sort shown: u32 count, per key u32 a column's index in Columns and u8 1 ascending, 0 descending, the first the primary: the host draws the primary's indicator in its header (NSTableView's sort indicator, the header's HDF_SORTUP and HDF_SORTDOWN, GtkColumnView's sorter's, aria-sort). The rows come sorted from the app: the host sorts nothing.
+	PropTableSort PropID = 65
+	// PropTableSelectionMode: how many rows the user selects: one (a click selects it), several (shift extends, the primary modifier toggles: the platform's own), or none (a click selects nothing; Open still comes).
+	PropTableSelectionMode PropID = 66
+	// PropTableSelection: the rows selected (as ListUpdate's items' indices): u32 count, per run u32 its first row and u32 its length, in order. Set from code, the host selects them (and none else) without reporting it; the user's changes are reported with RowsSelected.
+	PropTableSelection PropID = 67
+	// PropTableRowHeight: every row's height in points: the core sends the platform's (24 on a Mac, 32 on Windows and the web, 34 on Linux) unless the app sets one; a row's views are laid out at it.
+	PropTableRowHeight PropID = 68
+	// PropTableColumnsMovable: the user can drag a column's header to another place (NSTableView's allowsColumnReordering, LVS_EX_HEADERDRAGDROP, GtkColumnView's reorderable, the web's dragged header): reported with ColumnLayout.
+	PropTableColumnsMovable PropID = 69
+)
 
-var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}, {"TakesClicks", TBool}, {"PanAxis", TEnum}, {"PanMinDistance", TFloat}, {"PanSimultaneous", TBool}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}, {"EdgeEffect", TEnum}, {"MinZoom", TFloat}, {"MaxZoom", TFloat}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"EdgeEffect", TEnum}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}, {"Reorder", TBytes}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TBytes}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}, {"Detent", TInt}, {"Undimmed", TInt}, {"CornerRadius", TFloat}, {"NoDismiss", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}, {"Rate", TFloat}, {"Volume", TFloat}, {"Headers", TBytes}, {"Poster", TString}, {"StartAt", TFloat}, {"TimeInterval", TFloat}, {"Subtitle", TString}, {"AudioTrack", TString}, {"SubtitleFiles", TBytes}, {"PictureInPicture", TBool}, {"AutoPictureInPicture", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}, {{"Root", TInt}, {"Anchor", TInt}, {"Modal", TBool}}}
+// Outline props.
+const (
+	// PropOutlineLevels: the shown rows' places in the tree, as ListUpdate's IDs (sent before it, in the same batch, when either changes): u32 count, then per row u16 depth (0: a root) and u8 flags (1 it can expand: a disclosure; 2 expanded: its children are the rows after it one level deeper). The core says what's expanded: the host's tree (NSOutlineView, a TreeView, a GtkTreeListModel, the web's role=tree) expands and collapses only as Levels says, and reports the user's expanding and collapsing with Expand.
+	PropOutlineLevels PropID = 64
+	// PropOutlineSelectionMode: as a Table's.
+	PropOutlineSelectionMode PropID = 65
+	// PropOutlineSelection: as a Table's: the shown rows selected.
+	PropOutlineSelection PropID = 66
+	// PropOutlineRowHeight: as a Table's.
+	PropOutlineRowHeight PropID = 67
+)
+
+var commonProps = [...]propInfo{{}, {"Background", TColor}, {"CornerRadius", TFloat}, {"BorderWidth", TFloat}, {"BorderColor", TColor}, {"Opacity", TFloat}, {"Hidden", TBool}, {"Clip", TBool}, {"A11yLabel", TString}, {"A11yHint", TString}, {"A11yRole", TEnum}, {"A11yActions", TBytes}, {"A11yAdjustable", TBool}, {"A11yHidden", TBool}, {"Color", TColor}, {"TextStyle", TEnum}, {"FontSize", TFloat}, {"FontWeight", TEnum}, {"TextAlign", TEnum}, {"LineLimit", TInt}, {"Disabled", TBool}, {"Menu", TBytes}, {"MenuTrigger", TEnum}, {"Transform", TBytes}, {"Shadow", TBytes}, {"Gradient", TBytes}, {"Transition", TBytes}, {"Material", TEnum}, {"FontFamily", TString}, {"SwipeActions", TBytes}, {"LayoutDirection", TEnum}, {"ContentInset", TEdges}, {"LeadingSwipeActions", TBytes}, {"Selected", TBool}, {"Match", TString}, {"InterceptBack", TBool}, {"Tooltip", TString}, {"Keys", TBytes}, {"Focusable", TBool}, {"NoFocusOnPress", TBool}, {"NoFocusRing", TBool}, {"FocusTrap", TBool}, {"A11yChecked", TEnum}, {"A11yExpanded", TEnum}, {"A11ySelected", TBool}, {"A11yValue", TString}, {"A11yRange", TBytes}, {"A11yModal", TBool}, {"A11yControls", TInt}, {"A11yLabelledBy", TInt}, {"A11yDescribedBy", TInt}, {"LetterSpacing", TFloat}, {"LineHeight", TFloat}, {"FontTraits", TInt}, {"TextShadow", TBytes}, {"Truncation", TEnum}, {"MinimumScale", TFloat}, {"CornerRadii", TEdges}, {"BorderWidths", TEdges}, {"BorderStyle", TEnum}, {"Cursor", TEnum}, {"RowData", TBytes}}
+
+var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}, {"TakesClicks", TBool}, {"PanAxis", TEnum}, {"PanMinDistance", TFloat}, {"PanSimultaneous", TBool}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}, {"EdgeEffect", TEnum}, {"MinZoom", TFloat}, {"MaxZoom", TFloat}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"EdgeEffect", TEnum}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}, {"Reorder", TBytes}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TBytes}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}, {"Detent", TInt}, {"Undimmed", TInt}, {"CornerRadius", TFloat}, {"NoDismiss", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}, {"Rate", TFloat}, {"Volume", TFloat}, {"Headers", TBytes}, {"Poster", TString}, {"StartAt", TFloat}, {"TimeInterval", TFloat}, {"Subtitle", TString}, {"AudioTrack", TString}, {"SubtitleFiles", TBytes}, {"PictureInPicture", TBool}, {"AutoPictureInPicture", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}, {{"Root", TInt}, {"Anchor", TInt}, {"Modal", TBool}}, {{"Columns", TBytes}, {"Sort", TBytes}, {"SelectionMode", TEnum}, {"Selection", TBytes}, {"RowHeight", TFloat}, {"ColumnsMovable", TBool}}, {{"Levels", TBytes}, {"SelectionMode", TEnum}, {"Selection", TBytes}, {"RowHeight", TFloat}}}
 
 // Events.
 const (
@@ -784,11 +820,23 @@ const (
 	EventMoved EventKind = 72
 	// EventSheetHeight: a Sheet's height on the screen, in points from its window's bottom edge to the sheet's top edge (the bottom safe area in it), as it changes: as it opens and closes, as the user drags it and it settles, as it moves to a Detent set; frame by frame while it moves. Listened for.
 	EventSheetHeight EventKind = 73
+	// EventSortBy: the user clicked a sortable column's header (its index in Columns) of a Table: the core works out the new sort (that column first, ascending, or the other way when it was first already) and sends Sort.
+	EventSortBy EventKind = 74
+	// EventColumnLayout: a Table's columns as shown, once they're first laid out and after the user resized or moved one: u32 count, per column (in the order shown, from the start) u32 its index in Columns and f32 its width in points.
+	EventColumnLayout EventKind = 75
+	// EventRowsSelected: the user changed a Table's or Outline's selection: the rows selected now, as Selection's runs.
+	EventRowsSelected EventKind = 76
+	// EventOpen: the user opened a Table's or Outline's row (its index): a double click, Enter or Return.
+	EventOpen EventKind = 77
+	// EventExpand: the user expanded (Y 1) or collapsed (Y 0) an Outline's row, X its index (a click on its disclosure, the right or left arrow, a double click where the platform does): the host shows it as Levels says, which comes with the children once the app has them.
+	EventExpand EventKind = 78
+	// EventUndo: sent to the root: the user asked to undo (0) or redo (1) the app's last change (Edit > Undo or Redo, ⌘Z, Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, a shake or three fingers on iOS), where no text field took it (a field being edited undoes its own typing).
+	EventUndo EventKind = 79
 )
 
-var eventNames = [...]string{"", "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint", "DevErrorAction", "VideoState", "VideoTracks", "DoubleTap", "HoverMove", "Zoomed", "Moved", "SheetHeight"}
+var eventNames = [...]string{"", "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint", "DevErrorAction", "VideoState", "VideoTracks", "DoubleTap", "HoverMove", "Zoomed", "Moved", "SheetHeight", "SortBy", "ColumnLayout", "RowsSelected", "Open", "Expand", "Undo"}
 
-var eventPayloads = [...]Payload{0, PNone, PNone, PString, PNone, PNone, PNone, PBool, PFloat, PPoint, PEnvironment, PInt, PInt, PInt, PInt, PNone, PNone, PGesture, PGesture, PGesture, PInt, PPoint, PString, PBytes, PString, PInt, PInt, PNone, PString, PString, PString, PString, PFloat, PBytes, PInt, PBytes, PString, PBytes, PString, PBytes, PBool, PBool, PGesture, PBytes, PBytes, PBytes, PBytes, PBytes, PBool, PNone, PPoint, PInt, PNone, PInt, PBytes, PNone, PInt, PBytes, PBytes, PNone, PBytes, PInt, PString, PPoint, PBytes, PPoint, PInt, PBytes, PBytes, PPoint, PPoint, PFloat, PPoint, PFloat}
+var eventPayloads = [...]Payload{0, PNone, PNone, PString, PNone, PNone, PNone, PBool, PFloat, PPoint, PEnvironment, PInt, PInt, PInt, PInt, PNone, PNone, PGesture, PGesture, PGesture, PInt, PPoint, PString, PBytes, PString, PInt, PInt, PNone, PString, PString, PString, PString, PFloat, PBytes, PInt, PBytes, PString, PBytes, PString, PBytes, PBool, PBool, PGesture, PBytes, PBytes, PBytes, PBytes, PBytes, PBool, PNone, PPoint, PInt, PNone, PInt, PBytes, PNone, PInt, PBytes, PBytes, PNone, PBytes, PInt, PString, PPoint, PBytes, PPoint, PInt, PBytes, PBytes, PPoint, PPoint, PFloat, PPoint, PFloat, PInt, PBytes, PBytes, PInt, PPoint, PInt}
 
 func (e EventKind) String() string {
 	if int(e) < len(eventNames) && e > 0 {
@@ -846,7 +894,7 @@ const (
 	CmdAccent CommandID = 20
 	// CmdWebNavigate: args: u8 0 back, 1 forward, 2 reload, 3 stop; sent to a WebView.
 	CmdWebNavigate CommandID = 21
-	// CmdMenuBar: args: the app's menus (desktop): u32 count, per menu a u32-length title and its items, a menu (ops/menu.go): u32 count, per item u8 flags (1 separator, 2 disabled, 4 checked, 8 destructive, 16 submenu), a u32-length title, a u32-length key (a character, or enter, escape, tab, space, delete, backspace, up, down, left, right, home, end, pageup, pagedown, f1-f12; empty: no shortcut), u8 modifiers (1 primary: ⌘ on macOS, Ctrl on Windows; 2 shift; 4 alt, a Mac's option; 8 control) and u8 MenuRole (1 quit: the host quits the app; 2 close: the host closes the window in use, as its close button does; 3 open recent: a Mac's host puts its own Open Recent submenu there, the others the item's submenu), then with flag 16 its submenu, a menu; sent to the root, again when they change: the host shows them with its own (a Mac's app, Edit and Window menus), and reports a chosen item, or its shortcut, with Action on the root carrying the item's index among all the menus' items, depth first (a submenu's items after the item that opens it; separators and submenus count).
+	// CmdMenuBar: args: the app's menus (desktop): u32 count, per menu a u32-length title and its items, a menu (ops/menu.go): u32 count, per item u8 flags (1 separator, 2 disabled, 4 checked, 8 destructive, 16 submenu), a u32-length title, a u32-length key (a character, or enter, escape, tab, space, delete, backspace, up, down, left, right, home, end, pageup, pagedown, f1-f12; empty: no shortcut), u8 modifiers (1 primary: ⌘ on macOS, Ctrl on Windows; 2 shift; 4 alt, a Mac's option; 8 control) and u8 MenuRole (1 quit: the host quits the app; 2 close: the host closes the window in use, as its close button does; 3 open recent: a Mac's host puts its own Open Recent submenu there, the others the item's submenu; 4 undo, 5 redo: the app's undo stack's, which UndoState enables and names, the host's own shortcut where the item has none, a text field being edited undoing its own typing instead; a Mac's host, whose Edit menu has its own, leaves them out), then with flag 16 its submenu, a menu; sent to the root, again when they change: the host shows them with its own (a Mac's app, Edit and Window menus), and reports a chosen item, or its shortcut, with Action on the root carrying the item's index among all the menus' items, depth first (a submenu's items after the item that opens it; separators and submenus count).
 	CmdMenuBar CommandID = 22
 	// CmdWindowOptions: args: the main window's options (ops.WindowConfig, ops.AppendWindowConfig): f32 width, height, min width, min height, max width, max height (its content's, in points; 0: the host's, or no most), f32 x, y (its frame's top left on the screen, points from the main display's; with WindowPositioned), u32 WindowFlags (1 not resizable, 2 no minimize, 4 no maximize, 8 no close, 16 always on top, 32 hidden, 64 skip the taskbar, 128 centered, 256 positioned, 512 transparent, 1024 maximized, 2048 full screen, 4096 child of its parent, 8192 modal to its parent, 16384 a panel: floating, non-activating, on every Space, 32768 a flyout: frameless, hanging from its Flyout prop's anchor, closed as it loses the keyboard, 65536 sized to its content: WindowAction Fit sizes it, 131072 click-through: the mouse goes to what's behind it, 262144 shows the app's menu bar as the main window does: Windows' menu bar, Linux's main menu, 524288 none: the app has no main window, its app block showing nothing outside its Windows (sent with hidden): the host never shows the root's window, reopening the app doesn't, and with no window left the app ends unless it keeps running), u8 TitleBar, u64 background Color (0: the platform's), u32 parent (a Window's: the Window node or root it belongs to; 0: none), u32-length state key (where the host remembers its place; empty: not remembered, but the main window's is "main" then), then the title (rest of the args; empty: the app's name); sent to the root when it mounts (by an app without a main window too; again, with the host's options, when one reloads with a main window).
 	CmdWindowOptions CommandID = 23
@@ -894,9 +942,11 @@ const (
 	CmdVideoAction CommandID = 44
 	// CmdZoomTo: args: f32 scale (within MinZoom and MaxZoom: the core clamps it), u8 animated; sent to a zoomable Scroll as the flush ends (as ScrollToOffset): it zooms its content to the scale around the middle of what it shows. Not reported with Zoomed.
 	CmdZoomTo CommandID = 45
+	// CmdUndoState: args: u8 flags (1 something to undo, 2 something to redo), u32-length undo name, u32-length redo name (what the change was: Rename; empty: none); sent to the root as the app's undo stack changes (once it's used): the host's Edit > Undo and Redo, and the MenuBar's items of those roles, are enabled while there's something to undo or redo and say what ("Undo Rename", in the host's words), unless a text field being edited has its own.
+	CmdUndoState CommandID = 46
 )
 
-var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear", "DevHighlight", "DevHighlightClear", "DevPerf", "DevFontScale", "VideoAction", "ZoomTo"}
+var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear", "DevHighlight", "DevHighlightClear", "DevPerf", "DevFontScale", "VideoAction", "ZoomTo", "UndoState"}
 
 func (c CommandID) String() string {
 	if int(c) < len(commandNames) && c > 0 {
@@ -1416,4 +1466,41 @@ const (
 	DetentKindFit
 	DetentKindHeight
 	DetentKindFraction
+)
+
+type Cursor int32
+
+const (
+	CursorAuto Cursor = iota
+	CursorArrow
+	CursorPointer
+	CursorText
+	CursorCrosshair
+	CursorMove
+	CursorGrab
+	CursorGrabbing
+	CursorNotAllowed
+	CursorWait
+	CursorProgress
+	CursorHelp
+	CursorContextMenu
+	CursorCopy
+	CursorAlias
+	CursorResizeHorizontal
+	CursorResizeVertical
+	CursorResizeDiagonal
+	CursorResizeAntiDiagonal
+	CursorResizeColumn
+	CursorResizeRow
+	CursorZoomIn
+	CursorZoomOut
+	CursorHidden
+)
+
+type SelectionMode int32
+
+const (
+	SelectionModeSingle SelectionMode = iota
+	SelectionModeMultiple
+	SelectionModeNone
 )

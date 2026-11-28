@@ -189,6 +189,15 @@ typedef void (*GBaseInitFunc)(gpointer g_class);
 typedef void (*GBaseFinalizeFunc)(gpointer g_class);
 typedef void (*GClassFinalizeFunc)(gpointer g_class, gpointer class_data);
 typedef void (*GWeakNotify)(gpointer data, GObject *where_the_object_was);
+typedef void (*GToggleNotify)(gpointer data, GObject *object, gboolean is_last_ref);
+typedef void (*GInterfaceInitFunc)(gpointer g_iface, gpointer iface_data);
+typedef void (*GInterfaceFinalizeFunc)(gpointer g_iface, gpointer iface_data);
+typedef struct _GInterfaceInfo {
+	GInterfaceInitFunc interface_init;
+	GInterfaceFinalizeFunc interface_finalize;
+	gpointer interface_data;
+} GInterfaceInfo;
+typedef gint (*GCompareDataFunc)(gconstpointer a, gconstpointer b, gpointer user_data);
 
 typedef struct _GTypeQuery {
 	GType type;
@@ -764,6 +773,30 @@ typedef struct _GtkStringList GtkStringList;
 typedef struct _GtkStringObject GtkStringObject;
 typedef struct _GtkListItem GtkListItem;
 typedef struct _GtkListItemFactory GtkListItemFactory;
+// Tables and trees: GtkColumnView, GtkListView over a GtkTreeListModel,
+// their selection models and sorters (platform/linux/src/table.c).
+typedef struct _GtkColumnView GtkColumnView;
+typedef struct _GtkColumnViewColumn GtkColumnViewColumn;
+typedef struct _GtkColumnViewSorter GtkColumnViewSorter;
+typedef struct _GtkListView GtkListView;
+typedef struct _GtkSelectionModel GtkSelectionModel;
+typedef struct _GtkSingleSelection GtkSingleSelection;
+typedef struct _GtkMultiSelection GtkMultiSelection;
+typedef struct _GtkNoSelection GtkNoSelection;
+typedef struct _GtkSorter GtkSorter;
+typedef struct _GtkCustomSorter GtkCustomSorter;
+typedef struct _GtkBitset GtkBitset;
+// GtkBitsetIter lives on the stack: GTK's layout.
+typedef struct _GtkBitsetIter {
+	gpointer private_data[10];
+} GtkBitsetIter;
+typedef struct _GtkTreeListModel GtkTreeListModel;
+typedef struct _GtkTreeListRow GtkTreeListRow;
+typedef struct _GtkTreeExpander GtkTreeExpander;
+typedef struct _GtkScrollInfo GtkScrollInfo;
+typedef enum { GTK_SORT_ASCENDING, GTK_SORT_DESCENDING } GtkSortType;
+typedef enum { GTK_LIST_SCROLL_NONE = 0, GTK_LIST_SCROLL_FOCUS = 1, GTK_LIST_SCROLL_SELECT = 2 } GtkListScrollFlags;
+typedef GListModel *(*GtkTreeListModelCreateModelFunc)(gpointer item, gpointer user_data);
 typedef struct _GtkColorDialog GtkColorDialog;
 typedef struct _GtkColorDialogButton GtkColorDialogButton;
 typedef struct _GtkCalendar GtkCalendar;

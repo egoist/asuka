@@ -1554,6 +1554,105 @@ component Tags(tags: [string]) {
 
 項目が多い、または上限がない場合（フィード、受信トレイ、検索結果、写真など）や、スワイプアクション、区切り線、末尾での追加読み込み、グリッドが必要な場合は `List` を使ってください。`List` はそれ自体がスクロールするので、`Scroll` の中には入れないでください。
 
+## テーブルとアウトライン
+
+`Table` は、行と列をプラットフォーム自身のテーブルで表示します。Mac では `NSTableView`、Windows ではレポート表示の ListView（Windows 11 の見た目で描画）、Linux では `GtkColumnView`、ブラウザーでは grid ロールの `<table>` です。ヘッダーをクリックすると並べ替えられ、ユーザーは列の幅を変えたり（`columnsMovable` があれば）列を移動したりでき、行は 1 行ずつでも複数まとめてでも選択できます。行は `List` と同じく中の `for` から作られ、表示されている間だけ存在するので、10 万行でも 10 行と同じように扱えます。両方の例が [`examples/tables`](../../examples/tables) にあります。
+
+```asuka check
+struct File {
+  id: int
+  name: string
+  size: int
+  kind: string
+}
+
+fn sorted(files: [File], by: [SortKey]) -> [File] {
+  if by.isEmpty() {
+    return files
+  }
+  let k = by[0]
+  return files.sorted((a, b) => {
+    let less = if k.column == "size" { a.size < b.size } else { a.name < b.name }
+    let more = if k.column == "size" { a.size > b.size } else { a.name > b.name }
+    return if k.ascending { less } else { more }
+  })
+}
+
+component Files {
+  state files = [File(id: 1, name: "Notes.txt", size: 12, kind: "Text"), File(id: 2, name: "Photo.heic", size: 2400, kind: "Image")]
+  state sort: [SortKey] = [SortKey(column: "name")]
+  state selection: [int] = []
+  state opened = ""
+
+  let shown = sorted(files, sort)
+
+  Table {
+    columns: [
+      TableColumn(id: "name", title: "Name", width: 240, sortable: true),
+      TableColumn(id: "size", title: "Size", width: 90, sortable: true, align: .end),
+      TableColumn(id: "kind", title: "Kind", width: 120),
+    ]
+    selectionMode: .multiple
+    bind sort: sort
+    bind selection: selection
+    on open(row) { opened = shown[row].name }
+    menu: row => [.button(title: "Delete", icon: "trash", role: .destructive, run: () => {
+      files = files.filter(f => f.id != shown[row].id)
+    })]
+    for f in shown key f.id {
+      TableRow([f.name, "{f.size} KB", f.kind]) { icon: "doc" }
+    }
+  }
+}
+
+app { Files() }
+```
+
+- `columns` は `TableColumn` を順に並べたものです。`id`、ヘッダーの `title`、ポイント単位の `width`（0 ならプラットフォームの既定値）、ユーザーが変えられる幅の下限 `minWidth` と上限 `maxWidth`、幅を変えられるか（`resizable`、既定では可）、並べ替えられるか（`sortable`）、そしてセルとヘッダーの揃え方 `align`（数値なら `.end`）を持ちます。
+- 各行は `TableRow` です。列の順にセルのテキストを 1 列に 1 つずつ渡すと、プラットフォームのテーブルがそのまま描画します（いちばん速い方法です）。`icon` は、最初のセルがテキストの前に表示するシンボルです。テキストの代わりに子ビューを渡すこともできます。列の順に 1 列 1 ビューで、それぞれその列の幅でレイアウトされます（`Text` と `Symbol`、`Toggle` など）。
+- `sort` は行の並べ方で、`[SortKey]` の先頭が主キーとしてヘッダーに表示されます。並べ替えられる列のヘッダーをクリックすると書き込まれ、その列が先頭に来て昇順になり、もう一度クリックすると降順になります。テーブル自身は並べ替えません。上の例のように、アプリが並べ替えた行を `for` に渡します。
+- `selection` は、選択された行の `for` の項目内でのインデックスです。ユーザーの選択で書き込まれ（`selectionMode: .multiple` なら Shift や ⌘ / Ctrl で複数選択、`.off` なら選択なし）、項目の変化にもついていきます。逆順に並べ替えたり、前に行が挿入されたりしても、同じ項目が選ばれたままです。
+- `on open(row)` は、行のダブルクリックか Enter / Return で呼ばれます。
+- `menu` は行のコンテキストメニューです。右クリックすると、その行がまだ選択されていなければ選択してから表示します。
+- `on columnResize(column, width)` と `on columnMove(column, index)` は、ユーザーが列に対して行ったことを知らせるので、保存しておけます。
+- `rowHeight` はすべての行の高さです（既定の 0 はプラットフォームの高さ）。`on endReached` は `List` と同じく、続きを読み込むためのものです。
+
+テーブルのないスマートフォンでは、`Table` は行を並べた `List` になります。各行は最初のセルが上に、残りのセルがその下に順に並びます。タップするとその行を選択して開き、長押しするとメニューを表示します。
+
+`Outline` は、項目を展開して子を表示できるツリーです。Mac では `NSOutlineView`、Windows では TreeView、Linux では `GtkTreeListModel` とその展開ボタンを使った `GtkListView`、ブラウザーではツリー（`role="tree"`）です。項目は ID（文字列）で表します。`roots` が最上位の項目、`childrenOf` がある項目の子で、展開されている部分しか読まないので、子は求められたときに読み込めます。
+
+```asuka check
+component Folders {
+  state open: [string] = []
+  state loaded: [string: [string]] = ["Home": ["Home/Documents", "Home/Pictures"]]
+  state shown = ""
+
+  Outline(["Home", "Shared"]) {
+    childrenOf: id => loaded.get(id) ?? []
+    expandable: id => !id.hasSuffix("Pictures")
+    text: id => id.split("/").last() ?? id
+    icon: id => "folder"
+    bind expanded: open
+    on expand(id, expanded) {
+      if expanded && !loaded.has(id) {
+        loaded[id] = ["{id}/One", "{id}/Two"]
+      }
+    }
+    on open(id) { shown = id }
+  }
+}
+
+app { Folders() }
+```
+
+- `childrenOf(id)` は ID で表したある項目の子です。中で読んだものは追跡されるので、子が変わればツリーも変わります。読み込み中は `[]` を返します。その項目は展開された状態で表示され、まだ何も下にありません。
+- `expandable(id)` は、子を読み込む前から子があること（フォルダーなど）を示します。これがなければ、`childrenOf` が子を返す項目だけが展開できます。
+- `text(id)` と `icon(id)` は項目のテキスト（なければ ID）とシンボルで、プラットフォームのツリーが描画します。ビューで行を作るなら `row: id => View` を使います。
+- `expanded` は展開されている項目の ID です。ユーザーが展開・折りたたみ（展開の三角形のクリック、左右の矢印キー）すると書き込まれ、書き込むとその項目が展開されます。子を読み込むのは `on expand(id, expanded)` の中です。
+- `selection` は選択された項目の ID で、`selectionMode` はテーブルと同じです。`on open(id)`、`menu: id => [Action]`、`rowHeight` もテーブルと同じです。
+
+スマートフォンでは、`Outline` はインデントされた行の `List` になり、展開できる行には開閉の印が付きます。その印をタップするか、展開できて `on open` のない行をタップすると、展開したり折りたたんだりします。「ファイル」App のリスト表示と同じです。
+
 ## 独自の見た目
 
 ここまでの要素は、どれも各プラットフォーム純正のコントロールです。スタイルを付けなければ、アプリはどこでもネイティブな見た目になります。たとえば `Picker` は、iOS ではメニュー、Windows ではドロップダウンです。一方で、アプリに独自のデザインがある場合（ブランドの色、形、動きをすべてのコントロールに、スマートフォンでもブラウザーでも同じように使いたい）や、プラットフォームにないコントロール（コンボボックス、トグルグループ、範囲スライダー）が必要な場合は、`std/base` が見た目を持たず振る舞いだけを持つコンポーネントを提供します。セレクト、メニュー、ダイアログ、チェックボックス、タブ、スライダーなどです。それぞれが状態、キーボードとフォーカス、スクリーンリーダー、そしてウィンドウの上での位置を扱い、表示されるのはアプリがスタイルを付けたものだけです。

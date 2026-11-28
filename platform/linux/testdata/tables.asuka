@@ -1,0 +1,120 @@
+// A Table of files and an Outline of folders (tables_test.go): sorting,
+// selecting, opening, a row's menu, 100,000 rows; folders whose children
+// load as they're expanded; a pointer's shape; undo, from the main menu
+// and Ctrl+Z, a field keeping its own.
+
+struct File {
+  id: int
+  name: string
+  size: int
+}
+
+fn makeFiles(n: int) -> [File] = (0..<n).map(i => File(id: i, name: "file {i}", size: (i * 7919) % 1000))
+
+fn sortFiles(files: [File], by: [SortKey]) -> [File] {
+  if by.isEmpty() {
+    return files
+  }
+  let k = by[0]
+  return files.sorted((a, b) => {
+    let less = if k.column == "size" { a.size < b.size } else { a.id < b.id }
+    let more = if k.column == "size" { a.size > b.size } else { a.id > b.id }
+    return if k.ascending { less } else { more }
+  })
+}
+
+fn sortText(by: [SortKey]) -> string = if by.isEmpty() { "none" } else { "{by[0].column} {if by[0].ascending { "up" } else { "down" }}" }
+
+component Files {
+  state files = makeFiles(200)
+  state sort: [SortKey] = [SortKey(column: "name")]
+  state selection: [int] = []
+  state opened = ""
+  state count = 0
+  state note = ""
+  state open: [string] = []
+  state loaded: [string: [string]] = [:]
+
+  let shown = sortFiles(files, sort)
+
+  fn load(id: string) {
+    if loaded.has(id) {
+      return
+    }
+    loaded[id] = ["{id}/x", "{id}/y"]
+  }
+
+  MenuBar {
+    Menu("Edit") {
+      MenuItem("") { role: .undo }
+      MenuItem("") { role: .redo }
+    }
+  }
+  Column {
+    grow: 1
+    Row {
+      gap: 8
+      padding: 8
+      align: .center
+      Button("Many") {
+        on press { files = makeFiles(100_000) }
+      }
+      Button("Add") {
+        on press {
+          count += 1
+          undo.register("Add", undo: () => { count -= 1 }, redo: () => { count += 1 })
+        }
+      }
+      Text("count {count}")
+      Text("{selection.count()} selected")
+      Text("opened {opened}")
+      Text("sort {sortText(sort)}")
+      Text("Pointer") { cursor: .pointer }
+      TextField {
+        width: 120
+        bind text: note
+        placeholder: "Note"
+      }
+      Text("note {note}")
+    }
+    Row {
+      grow: 1
+      Outline(["A", "B"]) {
+        width: 200
+        childrenOf: id => loaded.get(id) ?? []
+        expandable: id => !id.hasSuffix("x") && !id.hasSuffix("y")
+        text: id => "folder {id}"
+        icon: id => "folder"
+        bind expanded: open
+        on expand(id, expanded) {
+          if expanded {
+            load(id)
+          }
+        }
+        on open(id) { opened = id }
+      }
+      Table {
+        grow: 1
+        columns: [
+          TableColumn(id: "name", title: "Name", width: 200, sortable: true),
+          TableColumn(id: "size", title: "Size", width: 100, sortable: true, align: .end),
+        ]
+        selectionMode: .multiple
+        bind sort: sort
+        bind selection: selection
+        on open(row) { opened = shown[row].name }
+        menu: row => [
+          .button(title: "Remove", run: () => {
+            let id = shown[row].id
+            files = files.filter(f => f.id != id)
+          }),
+        ]
+        for f in shown key f.id {
+          TableRow([f.name, "{f.size} B"]) { icon: "doc" }
+        }
+      }
+    }
+  }
+}
+
+app { Files() }

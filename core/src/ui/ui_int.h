@@ -231,6 +231,7 @@ struct ak_ui_root {
 	float fit_min[2], fit_max[2];
 	ak_lsize fit_laid;
 	struct ak_menus *menus;  // MenuBars (menubar.c)
+	struct ak_undo *undo;    // the app's undo stack (undo.c)
 	// What the app's main window is (AK_MAIN_*, the app's function says
 	// as it starts): its content's, its Window's, or none.
 	uint8_t main_kind;
@@ -509,6 +510,22 @@ const ak_el_class *ak_menu_class_of(uint16_t el);
 const ak_el_class *ak_menu_class_here(void);  // Menu's: a MenuBar's menu inside one, else the context menu
 void ak_menubar_action(ak_ui_root *r, int64_t index);
 void ak_menus_free(ak_ui_root *r);
+// The menu bar's sent again at the next flush if it changed (the undo
+// stack's items: enabled while there's something to undo).
+void ak_menubar_resync(ak_ui_root *r);
+// The app's undo stack (undo.c): its builtins', the host's Undo event (0
+// undo, 1 redo), whether there's something to undo (untracked), a
+// root's going.
+void ak_undo_register(ak_str *name, ak_closure *undo, ak_closure *redo);
+void ak_undo_group(ak_str *name, ak_closure *body);
+bool ak_undo_undo(void);
+bool ak_undo_redo(void);
+void ak_undo_clear(void);
+bool ak_undo_can(bool redo);  // tracked
+ak_str *ak_undo_name(bool redo);  // tracked
+bool ak_undo_peek(const ak_ui_root *r, bool redo);
+void ak_undo_event(ak_ui_root *r, int64_t which);
+void ak_undo_free(ak_ui_root *r);
 void ak_window_root_drop(ak_view *e);
 ak_view *ak_window_of(ak_view *e);  // the window e is in: the root's view or a Window's
 ak_view *ak_window_under(ak_owner *o);  // the window code under o runs in, by its context
@@ -598,6 +615,11 @@ void ak_row_move(ak_row *rw, ak_val item, ak_kind item_kind, int64_t i);
 // ---- list.c ----
 
 int64_t ak_list_count(ak_view *e);
+// table.c: Table's, Outline's and TableRow's classes (a phone's: a List,
+// rows the core fills); whether e's rows are a List's (a List, a Table,
+// an Outline).
+const ak_el_class *ak_tbl_class_of(uint16_t el);
+bool ak_listlike(const ak_view *e);
 void ak_list_bind(ak_view *e, int64_t index, ak_id cell);
 // ak_list_row_keys hears of a container's swipeActions,
 // leadingSwipeActions or selected changing (a List's row's own).

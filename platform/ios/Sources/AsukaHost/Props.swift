@@ -436,6 +436,10 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             setNoFocusRing(n, v.bool)
         case AsukaProp.focusTrap:
             setFocusTrap(n, v.bool)
+        case AsukaProp.cursor:
+            setCursor(n, v.enumValue)
+        case AsukaProp.rowData:
+            break // a desktop table's cell's text: a phone's Table is a List of views the core makes
         default:
             _ = setA11y(n, prop, v)
         }

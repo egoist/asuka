@@ -1,0 +1,125 @@
+// Webtable is a web e2e's app (e2e/table_web_test.go): a Table of
+// 100,000 rows of text (sortable, several selected, opened), a Table
+// whose rows are views, an Outline whose children load as a folder is
+// expanded, a view with a cursor of its own, a field, and an undoable
+// counter, each on a line the test reads.
+
+struct Item {
+  id: int
+  name: string
+  size: int
+}
+
+fn makeItems(n: int) -> [Item] = (0..<n).map(i => Item(id: i, name: "item {i}", size: (i * 7919) % 1000))
+
+fn sortItems(items: [Item], by: [SortKey]) -> [Item] {
+  if by.isEmpty() {
+    return items
+  }
+  let k = by[0]
+  return items.sorted((a, b) => {
+    let less = if k.column == "size" { a.size < b.size || (a.size == b.size && a.id < b.id) } else { a.id < b.id }
+    let more = if k.column == "size" { a.size > b.size || (a.size == b.size && a.id > b.id) } else { a.id > b.id }
+    return if k.ascending { less } else { more }
+  })
+}
+
+state items = makeItems(100_000)
+state sort: [SortKey] = [SortKey(column: "name")]
+state selection: [int] = []
+state opened = "none"
+state open: [string] = []
+state loaded: [string: [string]] = [:]
+state note = ""
+state count = 0
+
+fn bump() {
+  count += 1
+  undo.register("Bump", undo: () => { count -= 1 }, redo: () => { count += 1 })
+}
+
+component WebTable {
+  let shown = sortItems(items, sort)
+
+  Column {
+    grow: 1
+    padding: 8
+    gap: 6
+    Row {
+      gap: 8
+      align: .center
+      TextField {
+        width: 160
+        placeholder: "Note"
+        bind text: note
+      }
+      Button("Bump") {
+        on press { bump() }
+      }
+      Text("Pointer here") {
+        cursor: .pointer
+      }
+    }
+    Text("count: {count}")
+    Text("rows: {shown.count()} selected: {selection.count()} opened: {opened}")
+    Text("expanded: {open.count()}")
+    Row {
+      grow: 1
+      gap: 8
+      Outline(["Root"]) {
+        width: 200
+        height: 500
+        childrenOf: id => loaded.get(id) ?? []
+        expandable: id => id.count() < 12
+        text: id => id
+        icon: id => "folder"
+        bind expanded: open
+        on expand(id, expanded) {
+          if expanded && !loaded.has(id) {
+            loaded[id] = ["{id}/a", "{id}/b"]
+          }
+        }
+      }
+      Table {
+        grow: 1
+        columns: [
+          TableColumn(id: "name", title: "Name", width: 200, sortable: true),
+          TableColumn(id: "size", title: "Size", width: 100, sortable: true, align: .end),
+        ]
+        selectionMode: .multiple
+        bind sort: sort
+        bind selection: selection
+        on open(row) { opened = shown[row].name }
+        for it in shown key it.id {
+          TableRow([it.name, "{it.size}"]) {
+            icon: "doc"
+          }
+        }
+      }
+      Outline(["v1", "v2"]) {
+        width: 160
+        height: 160
+        childrenOf: id => if id.count() < 4 { ["{id}x"] } else { [] }
+        row: id => Text("view {id}")
+      }
+      Table {
+        width: 220
+        height: 160
+        columns: [
+          TableColumn(id: "a", title: "A", width: 100),
+          TableColumn(id: "b", title: "B", width: 100),
+        ]
+        for i in [1, 2, 3] key i {
+          TableRow {
+            Text("left {i}")
+            Text("right {i}")
+          }
+        }
+      }
+    }
+  }
+}
+
+app {
+  WebTable()
+}

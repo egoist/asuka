@@ -278,6 +278,7 @@ static void apply_op(const ak_op *op) {
 
 void wh_apply(const uint8_t *buf, size_t len) {
 	H.depth++;
+	H.applying++;  // the core is running: nothing here may call it
 	// Frames first noted, so a transition knows the batch places what it
 	// makes.
 	ak_batch_reader br;
@@ -295,6 +296,7 @@ void wh_apply(const uint8_t *buf, size_t len) {
 	wh_match_batch_done();
 	wh_refresh_hover();
 	wh_overlays_dirty();  // where the overlays' anchors are now
+	H.applying--;
 	H.depth--;
 }
 
@@ -361,6 +363,11 @@ void wh_free_dead(void) {
 // reused once its window is gone).
 void wh_release(node *n) {
 	if (n->list) wh_list_release(n);
+	if (n->table && n->kind != KIND_TABLE_CELL) wh_table_release(n);
+	if (n->cursor) {
+		n->cursor = 0;
+		H.cursors--;
+	}
 	if (n->image) wh_image_close(n);
 	if (n->shader) wh_shader_release(n);
 	if (n->shape) wh_shape_free(n);
@@ -457,6 +464,7 @@ static void kids_insert(node *p, node *c, uint32_t i) {
 
 void wh_insert(node *p, node *c, uint32_t index) {
 	if (wh_insert_nav(p, c, index)) return;
+	if (p->kind == KIND_TABLE_CELL && !p->hwnd && c->hwnd) wh_table_cell_window(p);  // a row of views: its cell's window, over the row
 	uint32_t i = index < p->nkids ? index : p->nkids;
 	kids_insert(p, c, i);
 	c->parent = p;
@@ -517,6 +525,10 @@ float wh_pt(const node *n, int v) { return (float)v / wh_scale_of(n); }
 void wh_set_frame(node *n, const float f[4]) {
 	if (n->cell) {
 		wh_cell_set_height(n, f[3]);
+		return;
+	}
+	if (n->kind == KIND_TABLE_CELL) {
+		wh_table_cell_frame(n, f);  // its size; its place is its row's
 		return;
 	}
 	if ((n->nav && wh_nav_sized_by_host(n)) || n->kind == AK_KIND_OVERLAY) return;  // the host sizes it
@@ -585,6 +597,7 @@ void wh_place_at(node *n, const float f[4]) {
 void wh_resized(node *n) {
 	if (n->kind == AK_KIND_TEXT_FIELD) wh_layout_field(n);
 	else if (n->list) wh_list_resized(n);
+	else if (n->table && n->kind != KIND_TABLE_CELL) wh_table_resized(n);
 	else if (n->kind == AK_KIND_STACK || n->kind == AK_KIND_TABS) wh_layout_screens(n);
 	else if (n->pane_node) wh_layout_split(n);
 	else if (n->kind == AK_KIND_SCROLL) wh_update_scroll(n);

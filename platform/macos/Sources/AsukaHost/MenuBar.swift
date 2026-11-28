@@ -46,6 +46,10 @@ struct AsukaMenuItem {
     /// The host's own Open Recent submenu, NSDocumentController's, in its
     /// place.
     static let roleOpenRecent: UInt8 = 3
+    /// The app's undo and redo: the host's own Edit menu has them
+    /// (Undo.swift), so the main menu leaves these out.
+    static let roleUndo: UInt8 = 4
+    static let roleRedo: UInt8 = 5
 
     func `is`(_ f: UInt8) -> Bool { flags & f == f }
 }
@@ -206,6 +210,8 @@ enum AsukaMenus {
         if let m = ownMenu("Edit") {
             edit.addItem(.separator())
             addAppItems(edit, m)
+            // An Edit menu of only Undo and Redo, which the host's are.
+            while let last = edit.items.last, last.isSeparatorItem { edit.removeItem(last) }
         }
         asukaAddSubmenu(bar, menuWord("Edit"), edit)
 
@@ -290,6 +296,11 @@ enum AsukaMenus {
                 // The host's own, NSDocumentController's recent documents.
                 addOpenRecent(m)
                 continue
+            case AsukaMenuItem.roleUndo, AsukaMenuItem.roleRedo:
+                // The main menu's Edit menu has its own (Undo.swift); a tray's
+                // or the Dock's menu reports it, and the core undoes.
+                if action == #selector(appMenuItem(_:)) { continue }
+                if title.isEmpty { title = menuWord(it.role == AsukaMenuItem.roleUndo ? "Undo" : "Redo") }
             default:
                 break
             }
@@ -300,7 +311,7 @@ enum AsukaMenus {
             }
             let mi = m.addItem(withTitle: title, action: act, keyEquivalent: key)
             mi.keyEquivalentModifierMask = mods
-            if act == action && it.role == AsukaMenuItem.roleNone {
+            if act == action && (it.role == AsukaMenuItem.roleNone || it.role == AsukaMenuItem.roleUndo || it.role == AsukaMenuItem.roleRedo) {
                 mi.target = action == #selector(appMenuItem(_:)) ? self : AsukaTray.shared
                 mi.tag = tagBase + it.index
             }

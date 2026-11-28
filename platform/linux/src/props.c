@@ -151,6 +151,51 @@ static void style_changed(node *n) {
 
 void lx_apply_direction(node *n);
 void lx_set_dialog_can_close(node *n);
+GtkWidget *lx_field_widget(node *n);
+
+// Cursor's values as CSS names them (gdk_cursor_new_from_name's); Auto
+// none: the parent's (GTK's own for a widget that has one: a text's
+// I-beam).
+static const char *const cursor_names[AK_CURSOR_COUNT] = {
+	[AK_CURSOR_ARROW] = "default",
+	[AK_CURSOR_POINTER] = "pointer",
+	[AK_CURSOR_TEXT] = "text",
+	[AK_CURSOR_CROSSHAIR] = "crosshair",
+	[AK_CURSOR_MOVE] = "move",
+	[AK_CURSOR_GRAB] = "grab",
+	[AK_CURSOR_GRABBING] = "grabbing",
+	[AK_CURSOR_NOT_ALLOWED] = "not-allowed",
+	[AK_CURSOR_WAIT] = "wait",
+	[AK_CURSOR_PROGRESS] = "progress",
+	[AK_CURSOR_HELP] = "help",
+	[AK_CURSOR_CONTEXT_MENU] = "context-menu",
+	[AK_CURSOR_COPY] = "copy",
+	[AK_CURSOR_ALIAS] = "alias",
+	[AK_CURSOR_RESIZE_HORIZONTAL] = "ew-resize",
+	[AK_CURSOR_RESIZE_VERTICAL] = "ns-resize",
+	[AK_CURSOR_RESIZE_DIAGONAL] = "nwse-resize",
+	[AK_CURSOR_RESIZE_ANTI_DIAGONAL] = "nesw-resize",
+	[AK_CURSOR_RESIZE_COLUMN] = "col-resize",
+	[AK_CURSOR_RESIZE_ROW] = "row-resize",
+	[AK_CURSOR_ZOOM_IN] = "zoom-in",
+	[AK_CURSOR_ZOOM_OUT] = "zoom-out",
+	[AK_CURSOR_HIDDEN] = "none",
+};
+
+// set_cursor gives a view the pointer's shape over it and what's in it
+// that sets none (GTK takes a parent's cursor where a widget has none);
+// a field's text keeps its I-beam unless the field sets one.
+static void set_cursor(node *n, int64_t c) {
+	if (!n->widget) return;
+	const char *name = c > 0 && c < AK_CURSOR_COUNT ? cursor_names[c] : NULL;
+	gtk_widget_set_cursor_from_name(n->widget, name);
+	GtkWidget *text = n->kind == AK_KIND_TEXT_FIELD ? lx_field_widget(n) : NULL;
+	if (text && AK_IS(text, gtk_editable_get_type)) {
+		GtkEditable *d = gtk_editable_get_delegate((GtkEditable *)text);  // an entry's GtkText
+		if (d) text = (GtkWidget *)d;
+	}
+	if (text) gtk_widget_set_cursor_from_name(text, name ? name : "text");
+}
 
 void lx_set_common(node *n, ak_prop p, const ak_value *v) {
 	switch (p) {
@@ -357,6 +402,9 @@ void lx_set_common(node *n, ak_prop p, const ak_value *v) {
 		break;
 	case AK_PROP_KEYS:
 		lx_set_keys(n, v->s);
+		break;
+	case AK_PROP_CURSOR:
+		set_cursor(n, v->i);
 		break;
 	case AK_PROP_A11Y_ACTIONS:
 		lx_set_a11y_actions(n, v->s);

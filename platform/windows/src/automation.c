@@ -154,6 +154,7 @@ static const char *kind_name(uint16_t k, char *buf) {
 	case KIND_TAB_BAR: return "TabBar";
 	case KIND_COMMAND_BAR: return "CommandBar";
 	case KIND_WINDOW_FRAME: return "WindowFrame";
+	case KIND_TABLE_CELL: return "TableCell";
 	}
 	const char *s = k < AK_KIND_COUNT ? ak_kind_name((ak_view_kind)k) : NULL;
 	if (s) return s;
@@ -211,6 +212,7 @@ static void walk(ak_buf *b, node *n, int depth) {
 	ak_buf_u8(b, '\n');
 	for (uint32_t i = 0; i < n->nkids; i++) walk(b, n->kids[i], depth + 1);
 	if (n->list) wh_list_dump(n, b, depth, walk);
+	if (n->table && n->kind != KIND_TABLE_CELL) wh_table_dump(n, b, depth, walk);
 }
 
 static void menu_items(ak_buf *b, HMENU m, int depth) {
@@ -279,6 +281,9 @@ char *wh_dump(size_t *len) {
 			menu_items(&b, GetSubMenu(bar, i), 2);
 		}
 	}
+	// The pointer's shape the app last set (a view's Cursor; a field's
+	// I-beam), wherever the pointer is.
+	ak_buf_printf(&b, "cursor: %s\n", wh_cursor_name(GetCursor()));
 	char *out = wh_strndup(b.data ? (const char *)b.data : "", b.len);
 	if (len) *len = b.len;
 	ak_buf_free(&b);
@@ -498,6 +503,7 @@ static void hover_later(HWND top, POINT p) {
 }
 
 static bool mouse_step(const char *verb, const char *arg, const wchar_t *warg);
+static bool real_step(const char *verb, const char *arg, const wchar_t *warg);
 
 static void step(const char *verb, const char *arg) {
 	wchar_t *warg = wh_wide(arg, (int)strlen(arg));
@@ -616,6 +622,7 @@ static void step(const char *verb, const char *arg) {
 		if (open_menu_window()) EndMenu();
 		else if (H.nsheets) wh_cancel_sheet(wh_node_of(wh_nav_window(H.sheets[H.nsheets - 1])));
 	} else if (mouse_step(verb, arg, warg)) {
+	} else if (real_step(verb, arg, warg)) {
 	} else if (wh_interaction_step(verb, warg)) {
 	} else if (!strcmp(verb, "snap")) {
 		wh_snapshot(arg);
@@ -712,6 +719,69 @@ static bool mouse_step(const char *verb, const char *arg, const wchar_t *warg) {
 	return false;
 }
 
+// ---- The mouse's own input (SendInput), at a table's rows ----
+
+// real_click clicks at screen point p as the mouse does, through the
+// system's input queue (a double click's second press Windows's own):
+// button 0 the left, 1 the right; mods' Ctrl and Shift held.
+static void real_click(POINT p, int button, int clicks, bool ctrl, bool shift) {
+	HWND top = wh_window_in_use();
+	SetForegroundWindow(top);
+	SetCursorPos(p.x, p.y);
+	INPUT in[12];
+	int n = 0;
+	if (ctrl) in[n++] = (INPUT){.type = INPUT_KEYBOARD, .ki = {.wVk = VK_CONTROL}};
+	if (shift) in[n++] = (INPUT){.type = INPUT_KEYBOARD, .ki = {.wVk = VK_SHIFT}};
+	for (int i = 0; i < clicks && i < 2; i++) {
+		in[n++] = (INPUT){.type = INPUT_MOUSE, .mi = {.dwFlags = button ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_LEFTDOWN}};
+		in[n++] = (INPUT){.type = INPUT_MOUSE, .mi = {.dwFlags = button ? MOUSEEVENTF_RIGHTUP : MOUSEEVENTF_LEFTUP}};
+	}
+	if (shift) in[n++] = (INPUT){.type = INPUT_KEYBOARD, .ki = {.wVk = VK_SHIFT, .dwFlags = KEYEVENTF_KEYUP}};
+	if (ctrl) in[n++] = (INPUT){.type = INPUT_KEYBOARD, .ki = {.wVk = VK_CONTROL, .dwFlags = KEYEVENTF_KEYUP}};
+	SendInput((UINT)n, in, sizeof *in);
+}
+
+// real_step runs the steps that drive a table and an outline with the
+// mouse's own input:
+//
+//   - row:<n>[,ctrl|,shift], rowdbl:<n>, rowmenu:<n>: a click (with Ctrl
+//     or Shift held), a double click, a right click on a Table's row n
+//     (scrolled to first);
+//   - header:<title>: a click on its column's header;
+//   - item:<text>, itemdbl:<text>, itemmenu:<text>, chevron:<text>: a
+//     click, a double click, a right click on an Outline's row that says
+//     text, or on its disclosure;
+//   - pointer:<text>: the mouse over the middle of what shows text.
+static bool real_step(const char *verb, const char *arg, const wchar_t *warg) {
+	POINT p;
+	if (!strcmp(verb, "row") || !strcmp(verb, "rowdbl") || !strcmp(verb, "rowmenu")) {
+		if (!wh_table_row_point(atoll(arg), &p)) {
+			wh_log("automation: no row \"%s\"", arg);
+			return true;
+		}
+		real_click(p, !strcmp(verb, "rowmenu"), !strcmp(verb, "rowdbl") ? 2 : 1, strstr(arg, "ctrl") != NULL, strstr(arg, "shift") != NULL);
+		return true;
+	}
+	if (!strcmp(verb, "header")) {
+		if (!wh_table_header_point(warg, &p)) wh_log("automation: no header \"%s\"", arg);
+		else real_click(p, 0, 1, false, false);
+		return true;
+	}
+	if (!strcmp(verb, "item") || !strcmp(verb, "itemdbl") || !strcmp(verb, "itemmenu") || !strcmp(verb, "chevron")) {
+		if (!wh_outline_point(warg, !strcmp(verb, "chevron"), &p)) wh_log("automation: no item \"%s\"", arg);
+		else real_click(p, !strcmp(verb, "itemmenu"), !strcmp(verb, "itemdbl") ? 2 : 1, false, false);
+		return true;
+	}
+	if (!strcmp(verb, "pointer")) {
+		if (center_of(arg, warg, &p)) {
+			SetForegroundWindow(wh_window_in_use());
+			SetCursorPos(p.x, p.y);
+		}
+		return true;
+	}
+	return false;
+}
+
 // ---- The script, on a timer ----
 
 static char *script, *snap_path;
@@ -789,11 +859,13 @@ static void next_step(void) {
 			SetTimer(H.msg_win, TIMER_SCRIPT, 1, NULL);
 			return;
 		}
+		// The next step's timer first: a step may open a modal loop (a
+		// menu), in which the steps go on.
+		SetTimer(H.msg_win, TIMER_SCRIPT, 400, NULL);
 		wh_core_begin();
 		step(p, arg);
 		wh_core_end();
 		free(s);
-		SetTimer(H.msg_win, TIMER_SCRIPT, 400, NULL);
 		return;
 	}
 	KillTimer(H.msg_win, TIMER_SCRIPT);

@@ -115,9 +115,9 @@ import AsukaOps
         case "scroll":
             guard let y = Double(arg) else { return "want scroll:<y>" }
             var s: AsukaNode?
-            for n in rt.nodes.values where (n.kind == .scroll || n.kind == .list) && showing(n) && (s == nil || n.id > s!.id) { s = n }
+            for n in rt.nodes.values where (n.kind == .scroll || n.kind == .list || n.table != nil) && showing(n) && (s == nil || n.id > s!.id) { s = n }
             guard let s else { return "no scroll view shows" }
-            rt.scrollToOffset(s, 0, CGFloat(y), false)
+            if let t = s.table { t.scrollToOffset(CGFloat(y), false) } else { rt.scrollToOffset(s, 0, CGFloat(y), false) }
         case "resize":
             let wh = arg.split(separator: ",")
             guard wh.count == 2, let w = Double(wh[0]), let h = Double(wh[1]) else { return "want resize:<width>,<height>" }
@@ -143,6 +143,9 @@ import AsukaOps
             // a11ypress, pasteboard, dragging, fakedrag, dragmask, enddrag,
             // nativeemit, module): "" done (VisualAutomation.swift).
             if let r = rt.visualStep(verb, arg) { return r.isEmpty ? nil : r }
+            // Tables' (tableheader, tablerow, tabledouble, tablemenu,
+            // outlinerow, outlinedisclose, ...): Tables.swift.
+            if let r = rt.tableStep(verb, arg) { return r }
             return "unknown step"
         }
         return nil
@@ -443,6 +446,7 @@ import AsukaOps
         AsukaShell.shared.dumpJSON(&out)
         rt.modules1JSON(&out)
         rt.modules2JSON(&out)
+        rt.undoJSON(&out) // Undo.swift
         return out
     }
 

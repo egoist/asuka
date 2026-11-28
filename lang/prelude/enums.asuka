@@ -306,3 +306,36 @@ enum PanAxis {
   horizontal
   vertical
 }
+
+enum Cursor {
+  auto
+  arrow
+  pointer
+  text
+  crosshair
+  move
+  grab
+  grabbing
+  notAllowed
+  wait
+  progress
+  help
+  contextMenu
+  copy
+  alias
+  resizeHorizontal
+  resizeVertical
+  resizeDiagonal
+  resizeAntiDiagonal
+  resizeColumn
+  resizeRow
+  zoomIn
+  zoomOut
+  hidden
+}
+
+enum SelectionMode {
+  single
+  multiple
+  off
+}

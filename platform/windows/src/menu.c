@@ -264,9 +264,20 @@ typedef struct {
 	uint32_t nowned;
 } builder;
 
+static bool undo_role(uint8_t r) { return r == AK_MENU_ROLE_UNDO || r == AK_MENU_ROLE_REDO; }
+
+// undo_key is an Undo or Redo item's shortcut where it has none of its
+// own: Ctrl+Z, Ctrl+Y (Windows'; Ctrl+Shift+Z redoes too).
+static const char *undo_key(uint8_t role, const char *key, uint8_t *mods) {
+	if (key[0] || !undo_role(role)) return key;
+	*mods = KM_PRIMARY;
+	return role == AK_MENU_ROLE_UNDO ? "z" : "y";
+}
+
 // item_title is what an item says: a quit item's own title, else the
-// platform's.
+// platform's; an Undo or Redo item's names the change ("Undo Rename").
 static const wchar_t *item_title(const mitem *it, wchar_t *buf, size_t cap) {
+	if (!it->title[0] && undo_role(it->role)) return wh_undo_title(it->role == AK_MENU_ROLE_REDO, buf, cap);
 	if (!it->title[0] && it->role == AK_MENU_ROLE_QUIT) {
 		wh_word_app(buf, cap, "quit");
 		return buf;
@@ -304,7 +315,8 @@ static HMENU popup(builder *b, const mitem *items, uint32_t n) {
 			continue;
 		}
 		UINT flags = MF_STRING | b->order;
-		if (it->flags & AK_MENU_DISABLED) flags |= MF_GRAYED;
+		bool off = undo_role(it->role) ? !wh_undo_enabled(it->role == AK_MENU_ROLE_REDO) : (it->flags & AK_MENU_DISABLED) != 0;
+		if (off) flags |= MF_GRAYED;
 		wchar_t *text = names[k++];
 		if (it->count) {
 			AppendMenuW(pop, flags | MF_POPUP, (UINT_PTR)popup(b, it->items, it->count), text);
@@ -316,6 +328,7 @@ static HMENU popup(builder *b, const mitem *items, uint32_t n) {
 		const char *key = it->key;
 		uint8_t mods = it->mods;
 		if (!key[0] && it->role == AK_MENU_ROLE_CLOSE) key = "w", mods = KM_PRIMARY;  // Close's Ctrl+W
+		key = undo_key(it->role, key, &mods);
 		shortcut_text(sc, WH_LEN(sc), key, mods);
 		wchar_t full[600];
 		if (sc[0] && b->shortcuts) swprintf(full, WH_LEN(full), L"%ls\t%ls", text, sc);
@@ -428,15 +441,21 @@ void wh_build_menu_bar(void) {
 	while (wh_map_next(&H.ctls, &i, NULL, &v)) wh_set_window_menu(v);
 	if (bar.accel) DestroyAcceleratorTable(bar.accel);
 	bar.accel = NULL;
-	ACCEL *accels = wh_alloc((bar.nitems ? bar.nitems : 1) * sizeof *accels);
+	ACCEL *accels = wh_alloc((2 * bar.nitems + 1) * sizeof *accels);
 	int na = 0;
 	for (uint32_t j = 0; j < bar.nitems; j++) {
 		bar_item *it = &bar.items[j];
-		if (it->flags & (AK_MENU_SEPARATOR | AK_MENU_DISABLED | AK_MENU_SUBMENU)) continue;
+		// An Undo or Redo item's is enabled as the keyboard's field or the
+		// app's stack says (WM_INITMENUPOPUP, which accelerators send too).
+		uint8_t off = undo_role(it->role) ? 0 : AK_MENU_DISABLED;
+		if (it->flags & (AK_MENU_SEPARATOR | off | AK_MENU_SUBMENU)) continue;
 		const char *key = it->key;
 		uint8_t mods = it->mods;
 		if (!key[0] && it->role == AK_MENU_ROLE_CLOSE) key = "w", mods = KM_PRIMARY;
+		bool own = key[0] != 0;
+		key = undo_key(it->role, key, &mods);
 		if (wh_accelerator(key, mods, &accels[na])) accels[na++].cmd = (WORD)(MENU_BASE + it->index);
+		if (!own && it->role == AK_MENU_ROLE_REDO && wh_accelerator("z", KM_PRIMARY | KM_SHIFT, &accels[na])) accels[na++].cmd = (WORD)(MENU_BASE + it->index);
 	}
 	if (na) bar.accel = CreateAcceleratorTableW(accels, na);
 	free(accels);
@@ -486,6 +505,10 @@ bool wh_menu_command(int id) {
 	int i = id - MENU_BASE;
 	if (i < 0 || (uint32_t)i >= bar.nitems) return false;
 	bar_item *it = &bar.items[i];
+	if (undo_role(it->role) && !(it->flags & (AK_MENU_SEPARATOR | AK_MENU_SUBMENU))) {
+		wh_undo_chosen(it->role == AK_MENU_ROLE_REDO, it->index);  // a field's typing, or the app's change
+		return true;
+	}
 	if (it->flags & (AK_MENU_SEPARATOR | AK_MENU_DISABLED | AK_MENU_SUBMENU)) return true;
 	if (it->role == AK_MENU_ROLE_QUIT) wh_quit(false);
 	else if (it->role == AK_MENU_ROLE_CLOSE) PostMessageW(wh_window_in_use(), WM_CLOSE, 0, 0);  // as its close button
@@ -497,12 +520,54 @@ bool wh_accelerate(HWND win, MSG *m) { return bar.accel && TranslateAcceleratorW
 
 // For the automation: a menu bar's item, chosen by its title.
 bool wh_choose_menu_item(const wchar_t *title) {
-	for (uint32_t i = 0; i < bar.nitems; i++)
-		if (!wcscmp(bar.items[i].title, title) && !(bar.items[i].flags & AK_MENU_SUBMENU)) {
+	for (uint32_t i = 0; i < bar.nitems; i++) {
+		wchar_t buf[256];
+		const wchar_t *t = bar.items[i].title;
+		if (!t[0] && undo_role(bar.items[i].role)) t = wh_undo_title(bar.items[i].role == AK_MENU_ROLE_REDO, buf, WH_LEN(buf));
+		if (!wcscmp(t, title) && !(bar.items[i].flags & AK_MENU_SUBMENU)) {
 			SendMessageW(H.window, WM_COMMAND, (WPARAM)(MENU_BASE + bar.items[i].index), 0);
 			return true;
 		}
+	}
 	return false;
+}
+
+// refresh_undo says what a menu's Undo and Redo items do now, as it opens
+// (or an accelerator checks it): their names, enabled or not.
+static void refresh_undo(HMENU m) {
+	int count = GetMenuItemCount(m);
+	for (int i = 0; i < count; i++) {
+		MENUITEMINFOW mi = {sizeof mi, MIIM_ID | MIIM_FTYPE | MIIM_DATA};
+		if (!GetMenuItemInfoW(m, (UINT)i, TRUE, &mi)) continue;
+		int k = (int)mi.wID - MENU_BASE;
+		if (k < 0 || (uint32_t)k >= bar.nitems) continue;
+		bar_item *it = &bar.items[k];
+		if (!undo_role(it->role) || (it->flags & AK_MENU_SUBMENU)) continue;
+		bool redo = it->role == AK_MENU_ROLE_REDO;
+		wchar_t buf[256], sc[64], full[600];
+		const wchar_t *title = it->title[0] ? it->title : wh_undo_title(redo, buf, WH_LEN(buf));
+		uint8_t mods = it->mods;
+		const char *key = undo_key(it->role, it->key, &mods);
+		shortcut_text(sc, WH_LEN(sc), key, mods);
+		wchar_t *esc = dup_escaped(title);
+		swprintf(full, WH_LEN(full), sc[0] ? L"&%ls\t%ls" : L"&%ls", esc, sc);
+		free(esc);
+		MENUITEMINFOW set = {sizeof set, MIIM_STATE};
+		set.fState = wh_undo_enabled(redo) ? MFS_ENABLED : MFS_GRAYED;
+		if (mi.fType & MFT_OWNERDRAW) {
+			owner_item *o = wh_map_get(&owned, mi.dwItemData);
+			if (o) {
+				free(o->text);
+				o->text = _wcsdup(full);
+				wchar_t *tab = wcschr(o->text, '\t');
+				if (tab) *tab = 0;
+			}
+		} else {
+			set.fMask |= MIIM_STRING;
+			set.dwTypeData = full;
+		}
+		SetMenuItemInfoW(m, (UINT)i, TRUE, &set);
+	}
 }
 
 static void menu_loop(bool enter);
@@ -861,6 +926,7 @@ LRESULT wh_menu_item_message(HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *hand
 		return TRUE;
 	}
 	case WM_INITMENUPOPUP:
+		refresh_undo((HMENU)wp);
 		// Its background, light or dark as the app is now.
 		for (uint32_t i = 0; i < nowned_menus; i++)
 			if (owned_menus[i]->menu == (HMENU)wp) {

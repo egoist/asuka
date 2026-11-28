@@ -210,6 +210,9 @@ func readEnums(path string) {
 			if strings.HasPrefix(c, "}") {
 				break
 			}
+			if strings.HasPrefix(strings.TrimSpace(c), "//") {
+				continue // a case's doc comment
+			}
 			payload = payload || strings.Contains(c, "(")
 		}
 		if !payload {

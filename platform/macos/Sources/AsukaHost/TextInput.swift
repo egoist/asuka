@@ -47,6 +47,9 @@ extension AsukaWin {
         if let e = fieldEditors[key] { return e }
         let e = AsukaFieldEditor(frame: .zero)
         e.isFieldEditor = true
+        // Its typing undoes with ⌘Z, as the window's own field editor's
+        // does (in the window's undo manager: Undo.swift).
+        e.allowsUndo = true
         fieldEditors[key] = e
         AsukaTextDelegate.shared.start()
         return e

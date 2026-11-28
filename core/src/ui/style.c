@@ -351,6 +351,7 @@ static bool makes_real(uint16_t key, ak_val v) {
 	case AK_KEY_BORDER_COLOR:
 	case AK_KEY_MATERIAL:
 	case AK_KEY_ROLE:
+	case AK_KEY_CURSOR:
 		return v.i != 0;
 	case AK_KEY_RADIUS: return !box_zero(v.p, 8);
 	case AK_KEY_BORDER: return !box_zero(v.p, 6);
@@ -578,6 +579,7 @@ static void send(ak_view *e, uint16_t key, const ak_val *v, const ak_val *prev) 
 	case AK_KEY_A11Y_LABELLED_BY:
 	case AK_KEY_A11Y_DESCRIBED_BY: ak_focus_rel_set(e, key); break;
 	case AK_KEY_TOOLTIP: send_string(e, AK_PROP_TOOLTIP, v); break;
+	case AK_KEY_CURSOR: ak_batch_set_enum(b, id, AK_PROP_CURSOR, v ? (int32_t)x.i : 0); break;
 	case AK_KEY_DISABLED: ak_batch_set_bool(b, id, AK_PROP_DISABLED, x.i != 0); break;
 	default:
 		if (ak_ix_style_key(key)) ak_ix_style_set(e, key, x, prev);

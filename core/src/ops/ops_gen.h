@@ -118,7 +118,11 @@ enum {
 	AK_KIND_SNACKBAR = 38,
 	// a layer over a layout root (std/base's popups: a select's list, a menu, a dialog, a tooltip), laid out by the core at the root's size, its children placed by the core next to an anchor view: shown while it exists (made: added on top of the root's other overlays; Destroy: removed), never in its parent's view. Reports OutsidePress
 	AK_KIND_OVERLAY = 39,
-	AK_KIND_COUNT = 40,
+	// a table of rows and columns, the platform's own on the desktop and the web (NSTableView, a ListView in report view with owner data, a GtkColumnView, a <table> with the grid role): its rows are a List's, bound through ListCount, ListBind and ListUnbind into cells the host makes (a row each, not a cell per column), their IDs in ListUpdate; a row's plain text comes as the cell's RowData, its views (a view per column, in Columns' order) as the cell's children, each laid out by the core at its column's place and width as shown (ColumnLayout's: x from the row's left) and at RowHeight. A right click on a row selects it, as the platform does, and shows the cell's Menu. Phones get a List instead: the core sends no Table there
+	AK_KIND_TABLE = 40,
+	// a tree of rows (a sidebar's folders, a file tree): the rows shown (the roots, and the children of each expanded row, depth first) are a List's, bound through ListBind into cells the host makes, each with its RowData (its text and symbol) or its views (laid out by the core at the row's width less its indent: the host draws its disclosure and the depth's indentation, and tells the core the room they take with RowInset). Arrow keys move the selection, right and left expand and collapse (the platform's own). Phones get a List instead, of indented rows with a disclosure the core makes
+	AK_KIND_OUTLINE = 41,
+	AK_KIND_COUNT = 42,
 };
 
 // Props every kind has.
@@ -225,7 +229,11 @@ enum {
 	AK_PROP_BORDER_WIDTHS = 58,
 	// how a border is drawn: solid, dashed (dashes three times its width long, gaps as long), or dotted (round dots as wide as it, a width apart), along its sides and around its corners
 	AK_PROP_BORDER_STYLE = 59,
-	AK_COMMON_PROP_COUNT = 60,
+	// the mouse pointer's shape over the view and the views inside it that set none (CSS's cursor, inherited: Auto takes the parent's, else the platform's own for what's under it: a text field's I-beam, a link's hand): NSCursor, SetCursor, gdk_cursor_new_from_name, CSS cursor; iPadOS's pointer (UIPointerStyle: Text a vertical beam, Hidden hidden, Pointer a highlight), Android's PointerIcon for a mouse
+	AK_PROP_CURSOR = 60,
+	// a Table's or Outline's row's text, on the cell the host bound it into (the plain text a native table draws itself): u32 count, then u32-length strings: a Table's cells, one per column of its Columns, in their order; an Outline row's text alone. Then a u32-length symbol (Symbol.Name; empty: none) the row's first cell shows before its text (a file's icon). Sent as the row binds, and again as its text changes
+	AK_PROP_ROW_DATA = 61,
+	AK_COMMON_PROP_COUNT = 62,
 	AK_FIRST_KIND_PROP = 64,
 };
 
@@ -678,6 +686,34 @@ enum {
 	AK_PROP_OVERLAY_MODAL = 66,
 };
 
+// Table props.
+enum {
+	// its columns, in the app's order (a row's cells are in it): u32 count, per column a u32-length ID, a u32-length title (the header's), f32 width (points; 0: the host's default), f32 min width (0: the host's), f32 max width (0: none), u8 flags (1 resizable by the user, 2 sortable: a click on its header reports SortBy), u8 TextAlign of its cells and header. The host shows them in this order unless the user moved one (ColumnsMovable): it keeps the user's order and widths while the IDs it has stay, and reports them with ColumnLayout
+	AK_PROP_TABLE_COLUMNS = 64,
+	// the sort shown: u32 count, per key u32 a column's index in Columns and u8 1 ascending, 0 descending, the first the primary: the host draws the primary's indicator in its header (NSTableView's sort indicator, the header's HDF_SORTUP and HDF_SORTDOWN, GtkColumnView's sorter's, aria-sort). The rows come sorted from the app: the host sorts nothing
+	AK_PROP_TABLE_SORT = 65,
+	// how many rows the user selects: one (a click selects it), several (shift extends, the primary modifier toggles: the platform's own), or none (a click selects nothing; Open still comes)
+	AK_PROP_TABLE_SELECTION_MODE = 66,
+	// the rows selected (as ListUpdate's items' indices): u32 count, per run u32 its first row and u32 its length, in order. Set from code, the host selects them (and none else) without reporting it; the user's changes are reported with RowsSelected
+	AK_PROP_TABLE_SELECTION = 67,
+	// every row's height in points: the core sends the platform's (24 on a Mac, 32 on Windows and the web, 34 on Linux) unless the app sets one; a row's views are laid out at it
+	AK_PROP_TABLE_ROW_HEIGHT = 68,
+	// the user can drag a column's header to another place (NSTableView's allowsColumnReordering, LVS_EX_HEADERDRAGDROP, GtkColumnView's reorderable, the web's dragged header): reported with ColumnLayout
+	AK_PROP_TABLE_COLUMNS_MOVABLE = 69,
+};
+
+// Outline props.
+enum {
+	// the shown rows' places in the tree, as ListUpdate's IDs (sent before it, in the same batch, when either changes): u32 count, then per row u16 depth (0: a root) and u8 flags (1 it can expand: a disclosure; 2 expanded: its children are the rows after it one level deeper). The core says what's expanded: the host's tree (NSOutlineView, a TreeView, a GtkTreeListModel, the web's role=tree) expands and collapses only as Levels says, and reports the user's expanding and collapsing with Expand
+	AK_PROP_OUTLINE_LEVELS = 64,
+	// as a Table's
+	AK_PROP_OUTLINE_SELECTION_MODE = 65,
+	// as a Table's: the shown rows selected
+	AK_PROP_OUTLINE_SELECTION = 66,
+	// as a Table's
+	AK_PROP_OUTLINE_ROW_HEIGHT = 67,
+};
+
 // Events.
 enum {
 	AK_EVENT_PRESS = 1,
@@ -814,7 +850,19 @@ enum {
 	AK_EVENT_MOVED = 72,
 	// a Sheet's height on the screen, in points from its window's bottom edge to the sheet's top edge (the bottom safe area in it), as it changes: as it opens and closes, as the user drags it and it settles, as it moves to a Detent set; frame by frame while it moves. Listened for
 	AK_EVENT_SHEET_HEIGHT = 73,
-	AK_EVENT_COUNT = 74,
+	// the user clicked a sortable column's header (its index in Columns) of a Table: the core works out the new sort (that column first, ascending, or the other way when it was first already) and sends Sort
+	AK_EVENT_SORT_BY = 74,
+	// a Table's columns as shown, once they're first laid out and after the user resized or moved one: u32 count, per column (in the order shown, from the start) u32 its index in Columns and f32 its width in points
+	AK_EVENT_COLUMN_LAYOUT = 75,
+	// the user changed a Table's or Outline's selection: the rows selected now, as Selection's runs
+	AK_EVENT_ROWS_SELECTED = 76,
+	// the user opened a Table's or Outline's row (its index): a double click, Enter or Return
+	AK_EVENT_OPEN = 77,
+	// the user expanded (Y 1) or collapsed (Y 0) an Outline's row, X its index (a click on its disclosure, the right or left arrow, a double click where the platform does): the host shows it as Levels says, which comes with the children once the app has them
+	AK_EVENT_EXPAND = 78,
+	// sent to the root: the user asked to undo (0) or redo (1) the app's last change (Edit > Undo or Redo, ⌘Z, Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, a shake or three fingers on iOS), where no text field took it (a field being edited undoes its own typing)
+	AK_EVENT_UNDO = 79,
+	AK_EVENT_COUNT = 80,
 };
 
 // Commands.
@@ -858,7 +906,7 @@ enum {
 	AK_CMD_ACCENT = 20,
 	// args: u8 0 back, 1 forward, 2 reload, 3 stop; sent to a WebView
 	AK_CMD_WEB_NAVIGATE = 21,
-	// args: the app's menus (desktop): u32 count, per menu a u32-length title and its items, a menu (ops/menu.go): u32 count, per item u8 flags (1 separator, 2 disabled, 4 checked, 8 destructive, 16 submenu), a u32-length title, a u32-length key (a character, or enter, escape, tab, space, delete, backspace, up, down, left, right, home, end, pageup, pagedown, f1-f12; empty: no shortcut), u8 modifiers (1 primary: ⌘ on macOS, Ctrl on Windows; 2 shift; 4 alt, a Mac's option; 8 control) and u8 MenuRole (1 quit: the host quits the app; 2 close: the host closes the window in use, as its close button does; 3 open recent: a Mac's host puts its own Open Recent submenu there, the others the item's submenu), then with flag 16 its submenu, a menu; sent to the root, again when they change: the host shows them with its own (a Mac's app, Edit and Window menus), and reports a chosen item, or its shortcut, with Action on the root carrying the item's index among all the menus' items, depth first (a submenu's items after the item that opens it; separators and submenus count)
+	// args: the app's menus (desktop): u32 count, per menu a u32-length title and its items, a menu (ops/menu.go): u32 count, per item u8 flags (1 separator, 2 disabled, 4 checked, 8 destructive, 16 submenu), a u32-length title, a u32-length key (a character, or enter, escape, tab, space, delete, backspace, up, down, left, right, home, end, pageup, pagedown, f1-f12; empty: no shortcut), u8 modifiers (1 primary: ⌘ on macOS, Ctrl on Windows; 2 shift; 4 alt, a Mac's option; 8 control) and u8 MenuRole (1 quit: the host quits the app; 2 close: the host closes the window in use, as its close button does; 3 open recent: a Mac's host puts its own Open Recent submenu there, the others the item's submenu; 4 undo, 5 redo: the app's undo stack's, which UndoState enables and names, the host's own shortcut where the item has none, a text field being edited undoing its own typing instead; a Mac's host, whose Edit menu has its own, leaves them out), then with flag 16 its submenu, a menu; sent to the root, again when they change: the host shows them with its own (a Mac's app, Edit and Window menus), and reports a chosen item, or its shortcut, with Action on the root carrying the item's index among all the menus' items, depth first (a submenu's items after the item that opens it; separators and submenus count)
 	AK_CMD_MENU_BAR = 22,
 	// args: the main window's options (ops.WindowConfig, ops.AppendWindowConfig): f32 width, height, min width, min height, max width, max height (its content's, in points; 0: the host's, or no most), f32 x, y (its frame's top left on the screen, points from the main display's; with WindowPositioned), u32 WindowFlags (1 not resizable, 2 no minimize, 4 no maximize, 8 no close, 16 always on top, 32 hidden, 64 skip the taskbar, 128 centered, 256 positioned, 512 transparent, 1024 maximized, 2048 full screen, 4096 child of its parent, 8192 modal to its parent, 16384 a panel: floating, non-activating, on every Space, 32768 a flyout: frameless, hanging from its Flyout prop's anchor, closed as it loses the keyboard, 65536 sized to its content: WindowAction Fit sizes it, 131072 click-through: the mouse goes to what's behind it, 262144 shows the app's menu bar as the main window does: Windows' menu bar, Linux's main menu, 524288 none: the app has no main window, its app block showing nothing outside its Windows (sent with hidden): the host never shows the root's window, reopening the app doesn't, and with no window left the app ends unless it keeps running), u8 TitleBar, u64 background Color (0: the platform's), u32 parent (a Window's: the Window node or root it belongs to; 0: none), u32-length state key (where the host remembers its place; empty: not remembered, but the main window's is "main" then), then the title (rest of the args; empty: the app's name); sent to the root when it mounts (by an app without a main window too; again, with the host's options, when one reloads with a main window)
 	AK_CMD_WINDOW_OPTIONS = 23,
@@ -906,7 +954,9 @@ enum {
 	AK_CMD_VIDEO_ACTION = 44,
 	// args: f32 scale (within MinZoom and MaxZoom: the core clamps it), u8 animated; sent to a zoomable Scroll as the flush ends (as ScrollToOffset): it zooms its content to the scale around the middle of what it shows. Not reported with Zoomed
 	AK_CMD_ZOOM_TO = 45,
-	AK_CMD_COUNT = 46,
+	// args: u8 flags (1 something to undo, 2 something to redo), u32-length undo name, u32-length redo name (what the change was: Rename; empty: none); sent to the root as the app's undo stack changes (once it's used): the host's Edit > Undo and Redo, and the MenuBar's items of those roles, are enabled while there's something to undo or redo and say what ("Undo Rename", in the host's words), unless a text field being edited has its own
+	AK_CMD_UNDO_STATE = 46,
+	AK_CMD_COUNT = 47,
 };
 
 // Enums, by their index in ak_enums.
@@ -958,7 +1008,9 @@ enum {
 	AK_ENUM_VIDEO_ACTION = 44,
 	AK_ENUM_PAN_AXIS = 45,
 	AK_ENUM_DETENT_KIND = 46,
-	AK_ENUM_COUNT = 47,
+	AK_ENUM_CURSOR = 47,
+	AK_ENUM_SELECTION_MODE = 48,
+	AK_ENUM_COUNT = 49,
 };
 
 // Role.
@@ -1472,6 +1524,43 @@ enum {
 	AK_DETENT_KIND_HEIGHT = 3,
 	AK_DETENT_KIND_FRACTION = 4,
 	AK_DETENT_KIND_COUNT = 5,
+};
+
+// Cursor.
+enum {
+	AK_CURSOR_AUTO = 0,
+	AK_CURSOR_ARROW = 1,
+	AK_CURSOR_POINTER = 2,
+	AK_CURSOR_TEXT = 3,
+	AK_CURSOR_CROSSHAIR = 4,
+	AK_CURSOR_MOVE = 5,
+	AK_CURSOR_GRAB = 6,
+	AK_CURSOR_GRABBING = 7,
+	AK_CURSOR_NOT_ALLOWED = 8,
+	AK_CURSOR_WAIT = 9,
+	AK_CURSOR_PROGRESS = 10,
+	AK_CURSOR_HELP = 11,
+	AK_CURSOR_CONTEXT_MENU = 12,
+	AK_CURSOR_COPY = 13,
+	AK_CURSOR_ALIAS = 14,
+	AK_CURSOR_RESIZE_HORIZONTAL = 15,
+	AK_CURSOR_RESIZE_VERTICAL = 16,
+	AK_CURSOR_RESIZE_DIAGONAL = 17,
+	AK_CURSOR_RESIZE_ANTI_DIAGONAL = 18,
+	AK_CURSOR_RESIZE_COLUMN = 19,
+	AK_CURSOR_RESIZE_ROW = 20,
+	AK_CURSOR_ZOOM_IN = 21,
+	AK_CURSOR_ZOOM_OUT = 22,
+	AK_CURSOR_HIDDEN = 23,
+	AK_CURSOR_COUNT = 24,
+};
+
+// SelectionMode.
+enum {
+	AK_SELECTION_MODE_SINGLE = 0,
+	AK_SELECTION_MODE_MULTIPLE = 1,
+	AK_SELECTION_MODE_NONE = 2,
+	AK_SELECTION_MODE_COUNT = 3,
 };
 
 // A prop's name and wire type; enum is its enum's index (AK_ENUM_*) for

@@ -571,7 +571,7 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 		ak_fake_view *v = ak_alloc(sizeof *v);
 		v->id = op->id;
 		v->kind = op->kind;
-		if (v->kind == AK_KIND_LIST) f->nlists++;
+		if (ak_fake_listy(v->kind)) f->nlists++;
 		slots_put(f, v);
 		return;
 	}
@@ -590,7 +590,7 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 			fail(f, "Destroy: root %u went with its performance overlay showing (an empty DevPerf first)", v->id);
 			f->dev_perf_on = 0;
 		}
-		if (v->kind == AK_KIND_LIST) f->nlists--;
+		if (ak_fake_listy(v->kind)) f->nlists--;
 		if (v->presented) f->npresented--;
 		if (v->id == f->root_id) f->root_id = 0;
 		slots_delete(f, v->id);
@@ -1119,8 +1119,28 @@ static ak_id root_id(const ak_fake *f) {
 	return r ? r->id : 0;
 }
 
+// row_cell is a Table's or Outline's row's cell i's text (its RowData's),
+// empty past its last.
+ak_span ak_fake_row_cell(const ak_fake_view *v, uint32_t i) {
+	ak_span d = ak_fake_string(v, AK_PROP_ROW_DATA);
+	ak_reader r = {(const uint8_t *)d.p, d.len, 0, false};
+	uint32_t n = d.len ? ak_read_u32(&r) : 0;
+	for (uint32_t k = 0; k < n && !r.err; k++) {
+		ak_span s = ak_read_str(&r);
+		if (k == i && !r.err) return s;
+	}
+	return (ak_span){"", 0};
+}
+
+uint32_t ak_fake_row_cells(const ak_fake_view *v) {
+	ak_span d = ak_fake_string(v, AK_PROP_ROW_DATA);
+	ak_reader r = {(const uint8_t *)d.p, d.len, 0, false};
+	return d.len >= 4 ? ak_read_u32(&r) : 0;
+}
+
 ak_span ak_fake_label(const ak_fake_view *v) {
 	switch (v->kind) {
+	case AK_FAKE_KIND_CELL: return ak_fake_row_cell(v, 0);  // a table's row: its first cell
 	case AK_KIND_TEXT: return ak_fake_string(v, AK_PROP_TEXT_TEXT);
 	case AK_KIND_BUTTON: return ak_fake_string(v, AK_PROP_BUTTON_TITLE);
 	case AK_KIND_NATIVE: {
@@ -1256,8 +1276,10 @@ void ak_fake_text(const ak_fake_view *v, ak_buf *out) {
 	ak_vec_push(&stack, v);
 	while (stack.len) {
 		const ak_fake_view *x = ak_vec_pop(&stack);
-		ak_span s = ak_fake_label(x);
-		if (s.len) {
+		uint32_t cells = x->kind == AK_FAKE_KIND_CELL ? ak_fake_row_cells(x) : 0;
+		for (uint32_t i = 0; i < (cells ? cells : 1); i++) {
+			ak_span s = cells ? ak_fake_row_cell(x, i) : ak_fake_label(x);
+			if (!s.len) continue;
 			if (out->len > start) ak_buf_u8(out, '|');
 			ak_buf_put(out, s.p, s.len);
 		}

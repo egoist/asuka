@@ -57,6 +57,8 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 原生扩展 | `UIViewRepresentable` | 原生模块 | ✓ 原生包：在 Asuka 里声明 `native interface` 或 `native component`，在 iOS 和 Mac 上用 Swift 实现，Android 上用 Kotlin，Web 上用 JavaScript，Windows 和 Linux 上用 C（见[原生代码](native.md)）；C 库用 `extern` 直接调用（见[在 Asuka 中调用 C](c.md)） |
 | 分页、页码圆点 | `.scrollTargetBehavior(.paging)`、`TabView(.page)` | `react-native-pager-view` | ✓ `Scroll` 的 `paging`、`PageControl` |
 | 复选框 | `Toggle`（`.checkbox`，macOS） | 社区方案 | ✓ `Toggle { checkbox: true }` |
+| 表格：多列、排序、选择行 | `Table`、`TableColumn`（iPadOS、macOS） | 社区方案 | ✓ `Table`、`TableColumn`、`TableRow`（`NSTableView`；按 Windows 11 样式绘制的报表视图 ListView；`GtkColumnView`；`<table>` 网格）：可排序、可调整宽度、可移动的列，单选或多选行，`on open`，行的 `menu`，十万行；在手机上是由各行组成的列表 |
+| 树 | `OutlineGroup`、`List(children:)` | 社区方案 | ✓ `Outline`（`NSOutlineView`、TreeView、`GtkTreeListModel` 驱动的列表、`role="tree"`）：绑定已展开的项，展开时再加载子项，支持方向键；在手机上是带展开标记的缩进行 |
 
 ## 导航与呈现
 
@@ -123,7 +125,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | Android 通知渠道 | — | `setNotificationChannelAsync` | ✓ `notify.setChannels`、`setChannelGroups`；推送里也可以指定渠道（iOS 没有渠道） |
 | 会话里的消息 | 通信通知（`INSendMessageIntent`） | 社区方案 | ✓ `Notification(…).from(person, conversation)`、`Message.from`：iOS 的通信通知，Android 的 MessagingStyle 和会话快捷方式；其他平台显示为普通通知 |
 | 在推送显示之前修改它 | Notification Service Extension | 社区方案（`expo-notifications` 不支持） | ✓ `push.rewrite(f)`：应用的代码运行在 iOS 的 Notification Service Extension 里（由 `asuka build` 构建并签名），在 Android 上运行在处理数据消息的 Firebase 服务里 |
-| 剪贴板、分享面板、浏览器 | `UIPasteboard`、`ShareLink`、`SFSafariViewController` | `expo-clipboard`、`expo-sharing`、`expo-web-browser` | ✓ `device.copy(text)`、`device.clipboardText()`、`clipboardHas`、`clipboardImage`、`copyImage`、`clipboardHTML`、`copyHTML`（富文本）、`clipboardChanges()`；`device.share(text)`、`device.shareFiles(paths)`（Mac 上的分享菜单、Windows 的分享界面、浏览器的分享；Linux 没有分享面板，会复制到剪贴板并弹出提示）；`device.browse(url)`（`SFSafariViewController`、Custom Tab）、`device.openURL(url)` |
+| 剪贴板、分享面板、浏览器 | `UIPasteboard`、`ShareLink`、`SFSafariViewController` | `expo-clipboard`、`expo-sharing`、`expo-web-browser` | ✓ `device.copy(text)`、`device.clipboardText()`、`clipboardHas`、`clipboardImage`、`copyImage`、`clipboardHTML`、`copyHTML`（富文本）、`clipboardFiles`、`copyFiles`（文件：与文件管理器之间复制粘贴）、`copyData`、`clipboardData`、`copyFormats`、`clipboardFormats`（应用自己的格式，按 MIME 类型）、`clipboardChanges()`；`device.share(text)`、`device.shareFiles(paths)`（Mac 上的分享菜单、Windows 的分享界面、浏览器的分享；Linux 没有分享面板，会复制到剪贴板并弹出提示）；`device.browse(url)`（`SFSafariViewController`、Custom Tab）、`device.openURL(url)` |
 | 预览文件 | `QLPreviewController`、`.quickLookPreview` | `react-native-file-viewer` | ✓ `platform/preview`（iOS 和 Mac 上用快速查看，支持多个文件和标记；Android、Windows 和 Linux 上用打开该文件的应用；Web 上在新标签页打开） |
 | 在界面里显示 PDF | PDFKit 的 `PDFView` | `react-native-pdf` | ✓ `platform/pdf` 的 `pdf.View`（`source`、可绑定的 `page`、`loaded`、`pageChange`；PDFKit、Android 的 `PdfRenderer`、`Windows.Data.Pdf`、Poppler、浏览器的查看器；Flutter：`pdfx`） |
 | 打印、从 HTML 生成 PDF | `UIPrintInteractionController`、`UIPrintPageRenderer` | `expo-print` | ✓ `platform/print`（打印文件、HTML、`WebView`，使用系统的打印对话框并返回结果；`print.pdf`：分页、按地区选纸张大小、页边距） |
@@ -235,7 +237,9 @@ web view 应用在所有系统上都长得一样，完全按它的 HTML 和 CSS 
 |---|---|---|---|
 | 控制窗口 | `BrowserWindow` | `Window` | ✓ `app` 块里的 `Window` 和其他 `Window`（只有这些 `Window` 的应用，比如托盘应用，没有主窗口）、`window.main()`、`window.current()`、窗口的 `Ref`（`Window as w`）：显示、隐藏、聚焦、最小化、最大化、全屏、尺寸、位置、置顶，并跟随窗口状态；`on closeRequest`、`WindowCloseGuard`；用 `stateKey` 记住窗口位置；`child` 和 `modal` 窗口；`titleBar: .hidden`（Wayland 下由合成器决定，无法设置位置、居中或置顶） |
 | 托盘图标 | `Tray` | 托盘图标 | ✓ `platform/tray` 的 `tray.Tray`（`NSStatusItem`；通知区域；Linux 上的 StatusNotifierItem）：图片或符号、标题、提示、菜单、点击 |
-| 子菜单、退出菜单项 | `MenuItem.submenu`、roles | roles、子菜单 | ✓ `MenuBar`、`Menu`、`MenuItem`（菜单项里嵌套菜单项就是子菜单；`role: .quit`、`.close`、`.openRecent`）；托盘和 Dock 菜单里用 `Action` 的 `.submenu` 和 `.section` |
+| 子菜单、退出菜单项 | `MenuItem.submenu`、roles | roles、子菜单 | ✓ `MenuBar`、`Menu`、`MenuItem`（菜单项里嵌套菜单项就是子菜单；`role: .quit`、`.close`、`.openRecent`、`.undo`、`.redo`）；托盘和 Dock 菜单里用 `Action` 的 `.submenu` 和 `.section` |
+| 撤销与重做 | `undo`/`redo` roles（只作用于页面自身） | — | ✓ `undo.register(name, undo:, redo:)`、`undo.group`、`canUndo()`、`undoName()`：“编辑”>“撤销”和“重做”、⌘Z 和 Ctrl+Z、浏览器的快捷键、iOS 的摇动撤销；正在编辑的文本框会先撤销它自己的输入 |
+| 指针的形状 | CSS `cursor` | — | ✓ 任意视图上的 `cursor`（`NSCursor`、`SetCursor`、GTK 的具名光标、CSS；iPad 的指针、Android 接鼠标时的指针） |
 | Dock 菜单、跳转列表任务 | `app.dock.setMenu`、`setUserTasks` | Dock 菜单、跳转列表 | ✓ `tray.DockMenu`（Dock 的菜单、跳转列表的“任务”、Linux 启动器的快捷列表） |
 | 后台运行的应用 | `app.dock.hide`、在 `window-all-closed` 时不退出 | 后台应用 | ✓ `asuka.toml` 的 `keepRunning` 和 `background` |
 | 浮出窗口：挂在托盘图标下的窗口 | 由应用把无边框 `BrowserWindow` 放到 `tray.getBounds()` 的位置 | 浮出窗口 | ✓ `Window` 的 `flyout`，挂在 `tray.anchor(id)` 或其窗口的某个矩形上：在显示器范围内定位并自动翻转，点击别处或按 Escape 关闭，上面可以再弹出模态对话框（Linux 上只有 X11 能定位） |

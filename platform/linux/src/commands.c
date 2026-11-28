@@ -7,6 +7,7 @@
 
 void lx_copy_text(const char *text);
 void lx_share(node *n, ak_span text);
+void lx_undo_state(ak_span args);
 
 void lx_copy_text(const char *text) { gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()), text); }
 
@@ -95,6 +96,9 @@ void lx_command(node *n, ak_cmd c, ak_span args) {
 		return;
 	case AK_CMD_MENU_BAR:
 		lx_set_menu_bar(args);
+		return;
+	case AK_CMD_UNDO_STATE:
+		lx_undo_state(args);  // undo.c
 		return;
 	case AK_CMD_WINDOW_OPTIONS:
 		lx_set_window_options(args);

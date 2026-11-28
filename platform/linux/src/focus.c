@@ -129,10 +129,13 @@ void lx_focus_report(win *w) {
 	send_change(now, H.key_input ? 2 : 1);
 }
 
+void lx_undo_focus_changed(void);
+
 static void on_focus_widget(GObject *o, GParamSpec *ps, gpointer data) {
 	(void)o;
 	(void)ps;
 	lx_focus_report(data);
+	lx_undo_focus_changed();  // Undo's a text's own there, or the app's
 }
 
 // focus_on_press gives the focus to the view a primary press at x, y of

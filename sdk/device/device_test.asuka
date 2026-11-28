@@ -27,6 +27,52 @@ test "no platform, no picker" {
   expect(said.contains("unsupported"))
 }
 
+test "clipboard formats: their types as the platforms take them, each once" {
+  let png = bytes([0x89, 0x50])
+  let got = try checkedFormats([
+    ClipboardFormat(type: " Application/X.Drawing+JSON ", data: "[1]".bytes()),
+    ClipboardFormat(type: "com.example.Drawing", data: png),
+    ClipboardFormat(type: "text/plain", data: "a drawing".bytes()),
+  ])
+  expect(got.map(f => f.type) == ["application/x.drawing+json", "com.example.Drawing", "text/plain"])
+  expect(got[1].data == png)
+  // HTML without text: its text with it, for the apps that paste text.
+  let rich = try checkedFormats([ClipboardFormat(type: "text/html", data: "<p>Hi <b>there</b></p>".bytes())])
+  expect(rich.map(f => f.type) == ["text/html", "text/plain"] && rich[1].data.string() == "Hi there")
+  var said: [string] = []
+  let bad: [[ClipboardFormat]] = [[], [ClipboardFormat(type: "  ", data: png)],
+    [ClipboardFormat(type: "image/png", data: png), ClipboardFormat(type: "IMAGE/PNG", data: png)]]
+  for formats in bad {
+    do {
+      let _ = try checkedFormats(formats)
+    } catch e {
+      said.push(e.message)
+    }
+  }
+  expect(said == ["device: no formats to copy", "device: a clipboard format needs a type", "device: the clipboard format image/png is given twice"])
+}
+
+test "no platform, no files or formats on the clipboard" {
+  var said: [string] = []
+  do {
+    let _ = try await clipboardFiles()
+  } catch e {
+    said.push(e.message)
+  }
+  do {
+    try await copyData("application/x.drawing+json", "[1]".bytes(), text: "a drawing")
+  } catch e {
+    said.push(e.message)
+  }
+  do {
+    try await copyFiles([])
+  } catch e {
+    said.push(e.message)
+  }
+  expect(said.count() == 3 && said[0].contains("unsupported") && said[1].contains("unsupported"))
+  expect(said[2] == "device: no files to copy")
+}
+
 test "the fake picker: the kind asked, at most max, in the order picked" {
   let f = fakePicker()
   f.picked = [

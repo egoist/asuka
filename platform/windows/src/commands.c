@@ -142,6 +142,10 @@ void wh_command(node *n, uint16_t cmd, const uint8_t *args, size_t len) {
 	}
 	case AK_CMD_LIST_UPDATE:
 		if (n->list) wh_list_update(n, args, len);
+		else if (n->table && n->kind != KIND_TABLE_CELL) wh_table_update(n, args, len);
+		break;
+	case AK_CMD_UNDO_STATE:
+		wh_undo_state(args, len);  // what the Edit menu's Undo and Redo say (undo.c)
 		break;
 	case AK_CMD_INSERT_TEXT:
 		if (n->kind == AK_KIND_TEXT_FIELD) wh_insert_text(n, (const char *)args, len);

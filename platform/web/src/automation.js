@@ -71,7 +71,7 @@ function shown(el) {
   return r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
 }
 
-const textSelector = ".asuka-text, .asuka-rich, .asuka-button-title, .asuka-bar-title, .asuka-tab span, .asuka-sidebar-item span, .asuka-menu-item span, .asuka-menu-header, .asuka-alert-title, .asuka-alert-message, .asuka-alert-buttons button, .asuka-segmented button, .asuka-stepper button, .asuka-bar-text, .asuka-fab span, .asuka-snackbar-message, .asuka-snackbar-action, .asuka-error-title, .asuka-error-message, .asuka-error-source, .asuka-error-details, .asuka-error-buttons button";
+const textSelector = ".asuka-text, .asuka-th-title, .asuka-cell-text, .asuka-tree-text, .asuka-rich, .asuka-button-title, .asuka-bar-title, .asuka-tab span, .asuka-sidebar-item span, .asuka-menu-item span, .asuka-menu-header, .asuka-alert-title, .asuka-alert-message, .asuka-alert-buttons button, .asuka-segmented button, .asuka-stepper button, .asuka-bar-text, .asuka-fab span, .asuka-snackbar-message, .asuka-snackbar-action, .asuka-error-title, .asuka-error-message, .asuka-error-source, .asuka-error-details, .asuka-error-buttons button";
 
 /** texts are what the screen shows: each text, title and field (its text, or its placeholder). */
 function texts(h) {

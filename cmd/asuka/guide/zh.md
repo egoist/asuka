@@ -2188,6 +2188,7 @@ component Badge {
 | `environment()`、`screenEnvironment()` | 尺寸、安全区域、文字大小、平台等（会被跟踪）：页面或弹出面板自己的，以及整个屏幕的 |
 | `window.main()`、`window.current()` | 主窗口的 `Ref`，以及代码所在窗口的 `Ref`：在任何地方都可以 `show()`、`hide()`、`focus()` …… |
 | `window.close()` | 不询问，直接关闭代码所在的窗口 |
+| `undo.register(name, undo:, redo:)`、`undo.group(name, body)` | 记录应用做的一处改动，“编辑”>“撤销”、⌘Z 或 Ctrl+Z 以及手机上的摇动都能撤销它；`undo.undo()`、`undo.redo()`、`canUndo()`、`canRedo()`、`undoName()`、`redoName()`（会被追踪）、`clear()`（见[撤销与重做](https://asuka.egoist.dev/zh/docs/desktop#撤销与重做)） |
 
 应用向系统服务请求的功能，在[平台 SDK](https://asuka.egoist.dev/zh/docs/stdlib) 的包里，和其他包一样导入后使用：
 

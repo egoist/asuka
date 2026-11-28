@@ -162,6 +162,7 @@ var Style = []Key{
 	{Name: "a11yLabelledBy", Type: "Ref?", Doc: "the view whose text labels this one: a field's label"},
 	{Name: "a11yDescribedBy", Type: "Ref?", Doc: "the view whose text describes this one: a field's description or error"},
 	{Name: "tooltip", Type: "string"},
+	{Name: "cursor", Type: "Cursor", Doc: "the mouse pointer's shape over it and what's inside it that sets none: .pointer (a hand), .text, .crosshair, .move, .grab and .grabbing, .notAllowed, .wait, .progress, .help, .resizeHorizontal and the other resizes, .zoomIn, .hidden; .auto (the default): its parent's, else the platform's for what's under it. Desktops and the web; an iPad's pointer and Android's mouse take what they have"},
 	{Name: "disabled", Type: "bool"},
 	// Direction.
 	{Name: "layoutDirection", Type: "LayoutDirection", Doc: "lays it and what's in it out this way, whatever the app's language: what reads one way everywhere (a phone number, a player's controls)"},
@@ -373,6 +374,44 @@ var Elements = []Element{
 		{Name: "move", Params: []Param{{"from", "int"}, {"to", "int"}}, Doc: "the user moved row from to index to (where it is now, among the items: move the items the same way), by a drag (on a touch screen, a long press lifts the row) or a screen reader's Move up or Move down. It makes the rows movable; they keep their views as they move, and a move the items don't take goes back"},
 		{Name: "action", Params: []Param{{"index", "int"}, {"action", "int"}}, Doc: "a swipe action of row index was chosen: its index among swipeActions, or -1 - its index among leadingSwipeActions (its run has run)"},
 	}, Doc: "a for in it is the platform's recycling list: rows exist only while they're on screen. It grows into its room unless it's sized"},
+	{Name: "Table", Children: true, LazyFor: true, Keys: []Key{
+		{Name: "columns", Type: "[TableColumn]", Doc: "its columns, in order: each row's cells are in it"},
+		{Name: "sort", Type: "[SortKey]", Bind: true, Event: "sortChange", Doc: "how its rows are sorted, the first key the primary (the header shows it): a click on a sortable column's header writes it, that column first (ascending, or descending when it was first already). The app sorts the rows it gives the for"},
+		{Name: "selection", Type: "[int]", Bind: true, Event: "selectionChange", Doc: "the selected rows' indices, among the for's items: the user's selecting writes it, and it follows the items as they change (sorted, inserted before)"},
+		{Name: "selectionMode", Type: "SelectionMode", Doc: ".single (the default), .multiple (shift and ⌘ or Ctrl select more) or .off"},
+		{Name: "columnsMovable", Type: "bool", Doc: "the user can drag a column's header to another place"},
+		{Name: "rowHeight", Type: "float", Doc: "its rows' height in points (0, the default: the platform's)"},
+		{Name: "menu", Type: "fn(int) -> [Action]", Doc: "row index's context menu: a right click (a long press on a touch screen) selects the row and shows it"},
+	}, Events: []Event{
+		{Name: "sortChange", Params: []Param{{"sort", "[SortKey]"}}, Doc: "the user clicked a sortable column's header: the new sort"},
+		{Name: "selectionChange", Params: []Param{{"rows", "[int]"}}, Doc: "the selection changed: the user's, or the items' moving under it"},
+		{Name: "open", Params: []Param{{"row", "int"}}, Doc: "the user opened row: a double click, Enter or Return (a tap on a phone)"},
+		{Name: "columnResize", Params: []Param{{"column", "string"}, {"width", "float"}}, Doc: "the user resized a column (its ID): its width now"},
+		{Name: "columnMove", Params: []Param{{"column", "string"}, {"index", "int"}}, Doc: "the user moved a column (its ID) to index among the columns as shown"},
+		{Name: "endReached", Doc: "the last rows are about to show: load more (once per length)"},
+	}, Doc: "rows and columns: the platform's table on a desktop (NSTableView, a ListView, a GtkColumnView) and in a browser (a <table> grid), its header sorting, its columns resized and moved by the user; a for in it gives its rows (TableRows), made only while they show, so it takes 100,000 of them. On a phone it's a list: each row's first cell over the others. It grows into its room unless it's sized"},
+	{Name: "TableRow", Children: true, Keys: []Key{
+		{Name: "cells", Type: "[string]", Positional: true, Default: "[]", Doc: "its cells' text, a column's each, in the columns' order: drawn by the platform's table itself, the fastest"},
+		{Name: "icon", Type: "string", Doc: "a symbol its first cell shows before its text (a file's icon)"},
+	}, Doc: "a row of a Table: its cells' text, or its children, a view for each column in the columns' order (TableRow { Text(f.name); Badge(f.state) }), each laid out at its column's width"},
+	{Name: "Outline", Keys: []Key{
+		{Name: "roots", Type: "[string]", Positional: true, Doc: "the top level's items, by ID"},
+		{Name: "childrenOf", Type: "fn(string) -> [string]", Doc: "an item's children, by ID, read when it's expanded and followed (what it reads changing updates the tree): [] for none yet, while they load"},
+		{Name: "expandable", Type: "fn(string) -> bool", Doc: "whether an item has children to show, before they're loaded (a folder): without it, whether childrenOf gives any"},
+		{Name: "text", Type: "fn(string) -> string", Doc: "an item's text, drawn by the platform's tree itself (without it: its ID)"},
+		{Name: "icon", Type: "fn(string) -> string", Doc: "an item's symbol, before its text"},
+		{Name: "row", Type: "fn(string) -> View", Builder: true, Doc: "an item's row as views, instead of text and icon (an accessor: a recycled row follows its new item)"},
+		{Name: "expanded", Type: "[string]", Bind: true, Event: "expandedChange", Doc: "the items expanded, by ID: the user's expanding and collapsing writes it, and writing it expands them"},
+		{Name: "selection", Type: "[string]", Bind: true, Event: "selectionChange", Doc: "the items selected, by ID"},
+		{Name: "selectionMode", Type: "SelectionMode", Doc: ".single (the default), .multiple or .off"},
+		{Name: "rowHeight", Type: "float", Doc: "its rows' height in points (0, the default: the platform's)"},
+		{Name: "menu", Type: "fn(string) -> [Action]", Doc: "an item's context menu: a right click (a long press on a touch screen) selects it and shows it"},
+	}, Events: []Event{
+		{Name: "expand", Params: []Param{{"id", "string"}, {"expanded", "bool"}}, Doc: "the user expanded or collapsed an item: load its children here"},
+		{Name: "expandedChange", Params: []Param{{"expanded", "[string]"}}, Doc: "the items expanded now"},
+		{Name: "selectionChange", Params: []Param{{"ids", "[string]"}}, Doc: "the user changed the selection"},
+		{Name: "open", Params: []Param{{"id", "string"}}, Doc: "the user opened an item: a double click, Enter or Return (a tap on a phone, on an item that doesn't expand)"},
+	}, Doc: "a tree of items, each expanded to show its children: the platform's outline on a desktop (NSOutlineView, a TreeView, a GtkTreeListModel's list) and in a browser (role tree), its arrow keys expanding and collapsing; only what's expanded is read, so children can load as they're asked for. On a phone it's a list of indented rows with a disclosure. It grows into its room unless it's sized"},
 	{Name: "RichText", Children: false, Keys: []Key{
 		{Name: "text", Type: "[Span]", Positional: true},
 	}, Events: []Event{

@@ -568,7 +568,9 @@ component Gallery {
 - `device.clipboardText()` 读取剪贴板里的文本，没有文本时返回 `none`。应用第一次读取别的应用放进剪贴板的内容时，iOS 会询问用户。写入剪贴板请用 `device.copy(text)`。
 - `device.keepAwake(on)` 在 `on` 为 true 时让屏幕保持常亮，适合视频、菜谱、地图这类场景。需要常亮的界面关闭时，记得把它关掉。
 - `device.pickFiles(types:, multiple:)` 显示系统的文档选择器（iOS 的“文件”浏览器、Android 的存储选择器、桌面上的打开对话框、浏览器中的文件选择器；都不需要权限）。`types` 是 MIME 类型（`"application/pdf"`、`"image/*"`；不填则可以选任何文件），`multiple` 允许用户选择多个文件。它为每个文件返回一个 `device.File`：`path` 是复制到应用缓存目录中的副本，另外还有 `name`、`type` 和 `size`；用户取消时则为空。
-- `device.clipboardHas()` 不读取剪贴板，就能告诉你里面装的是 `text`、`image`、`url` 还是富文本（`html`）（iOS 不会因此询问用户）：这样你可以只在有东西可粘贴时才显示“粘贴”按钮。`device.clipboardImage()` 把剪贴板里的图片读到一个文件中，格式与复制时相同；`device.copyImage(path)` 把一个图片文件放进剪贴板。`device.clipboardHTML()` 以 HTML 形式读取富文本（浏览器、邮件或文档里复制的内容，带着粗体、链接和列表）；`device.copyHTML(html, text:)` 把富文本放进剪贴板，同时附上 `text`（默认是这段 HTML 自身的文字），给只能粘贴纯文本的应用。`device.clipboardChanges()` 是一个流，每当剪贴板变化时给出它当前的内容（iOS 和 Android 会主动通知；Mac 和 Windows 则每秒查询两次；浏览器能看到页面内的复制，在用户允许页面读取剪贴板时，也能看到其他应用的复制）。
+- `device.clipboardHas()` 不读取剪贴板，就能告诉你里面装的是 `text`、`image`、`url`、富文本（`html`）还是文件（`files`）（iOS 不会因此询问用户）：这样你可以只在有东西可粘贴时才显示“粘贴”按钮。`device.clipboardImage()` 把剪贴板里的图片读到一个文件中，格式与复制时相同；`device.copyImage(path)` 把一个图片文件放进剪贴板。`device.clipboardHTML()` 以 HTML 形式读取富文本（浏览器、邮件或文档里复制的内容，带着粗体、链接和列表）；`device.copyHTML(html, text:)` 把富文本放进剪贴板，同时附上 `text`（默认是这段 HTML 自身的文字），给只能粘贴纯文本的应用。`device.clipboardChanges()` 是一个流，每当剪贴板变化时给出它当前的内容（iOS 和 Android 会主动通知；Mac 和 Windows 则每秒查询两次；浏览器能看到页面内的复制，在用户允许页面读取剪贴板时，也能看到其他应用的复制）。
+- `device.clipboardFiles()` 返回剪贴板上的文件，也就是文件管理器（访达、资源管理器、GNOME 的“文件”）复制的那些；`device.copyFiles(paths)` 把文件放进剪贴板，可以粘贴到文件管理器里（作为一份副本），也可以粘贴到接受文件的应用里。在 Mac、Windows 和 Linux 上，给出的是文件本身的路径：可以读取或复制，但不要移动它们。iOS 的剪贴板上其实没有“文件”这回事：“文件”App 复制的是每个文件的内容加上文件名。因此 `copyFiles` 也这样放入每个文件（“文件”和“邮件”都能粘贴），`clipboardFiles` 则给出放在应用缓存里的副本；在“照片”里复制的图片也算作文件。Android 同样给出副本，放入文件时用的是内容链接，其他应用在粘贴时可以读取。浏览器不能把文件放进剪贴板（`copyFiles` 会抛出 unsupported）；它能读到的只有图片，以文件的形式给出。
+- `device.copyData(type, data, text:)` 把应用自己的数据（绘图里的图形、表格里的单元格）放进剪贴板，并附上 `text` 给只能粘贴纯文本的应用；`device.clipboardData(type)` 把它读回来，无论是在本应用里，还是在这个应用的另一份副本里，相当于 Electron 的 `clipboard.writeBuffer` 和 `readBuffer`。`device.copyFormats` 一次放入多种格式，每种是一个 `device.ClipboardFormat(type:, data:)`：应用自己的格式加上 HTML 和文本，这样每个应用都能粘贴它认识的那种。`device.clipboardFormats()` 列出剪贴板上现有的类型，但不读取内容。类型是 MIME 类型（`"application/x.drawing+json"`；`text/plain`、`text/html` 和 `image/png` 分别对应平台的文本、富文本和图片），在每个平台上都是同一个字符串：在 Apple 平台上它对应一个 UTI（系统不认识这个 MIME 类型时，会由它生成一个），在 Windows 上是以这个名字注册的剪贴板格式，在 Linux 和 Android 上就是 MIME 类型本身。不含 `/` 的类型是平台自己的名字，原样使用（`"com.adobe.pdf"`、Windows 的 `"Rich Text Format"`）；`clipboardFormats` 在平台的名字有对应 MIME 类型时给出 MIME 类型，否则给出平台的名字。在 Android 上，每种格式是应用缓存里的一个文件，粘贴它的应用可以读取。浏览器接受文本、HTML 和 PNG；支持 web 自定义格式的浏览器（Chrome、Edge）还接受应用自己的类型，但这些只能被其他网页和网页上的同一个应用读到，电脑上的其他应用读不到；Safari 和 Firefox 会抛出 unsupported。
 - `device.info()` 返回设备和应用的信息：`model`（"iPhone"、"Pixel 9"、"Mac"、"PC"）、`system`（"iOS"、"Android"、"macOS"、"Windows"、"Linux"）、`systemVersion`，以及 `appVersion` 和 `build`，即 `asuka.toml` 中的 `version` 和 `build`。和 expo-application 一样，`source` 表示应用从哪里来（`.appStore`、`.testFlight`、`.playStore`、`.otherStore`（比如 Microsoft Store 或 Flathub）、`.direct`（下载或侧载的 APK）、`.development`（开发者的构建）），`installedAt` 和 `updatedAt` 是应用安装的时间和当前版本安装的时间（Web 上没有，`source` 为 `.unknown`）：可以用来显示测试版横幅，或者提示下载来的副本去商店安装。
 
 ```asuka
@@ -584,6 +586,39 @@ component Player {
   }
 
   Text(if let i = info.value { "{i.model}, {i.system} {i.systemVersion}" } else { "" })
+}
+```
+
+一个编辑器复制自己的图形，供它自己粘贴，同时附上图形的文字给其他应用：
+
+```asuka check
+import platform/device
+
+let shapesType = "application/x.sketch-shapes+json"
+
+component Board {
+  state shapes: [string] = ["circle", "square"]
+
+  Column {
+    Button("Copy") {
+      on press {
+        try? await device.copyFormats([
+          device.ClipboardFormat(type: shapesType, data: shapes.joined(separator: ",").bytes()),
+          device.ClipboardFormat(type: "text/plain", data: shapes.joined(separator: ", ").bytes()),
+        ])
+      }
+    }
+    Button("Paste") {
+      on press {
+        if let data = try? await device.clipboardData(shapesType) {
+          shapes = shapes + data.string().split(",")
+        } else {
+          shapes = shapes + ((try? await device.clipboardFiles()) ?? [])
+        }
+      }
+    }
+    for s in shapes key s { Text(s) }
+  }
 }
 ```
 

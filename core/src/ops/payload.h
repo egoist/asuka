@@ -38,6 +38,8 @@ enum {
 	AK_MENU_ROLE_QUIT,
 	AK_MENU_ROLE_CLOSE,
 	AK_MENU_ROLE_OPEN_RECENT,
+	AK_MENU_ROLE_UNDO,
+	AK_MENU_ROLE_REDO,
 };
 
 // A Screen's Action events say which of its menus the item is in: its bar

@@ -230,6 +230,41 @@ bool wh_list_cancel_move(void);
 bool wh_list_move_key(HWND focus, bool up);
 void wh_paint_list(node *n, gfx g);
 
+// ---- table.c: Table (a ListView, owner data), Outline (a TreeView) ----
+void wh_table_new(node *n, bool outline);
+void wh_table_release(node *n);
+void wh_table_set_prop(node *n, uint16_t p, const ak_value *v);
+void wh_table_update(node *n, const uint8_t *args, size_t len);
+void wh_table_theme(node *n);
+void wh_table_resized(node *n);
+void wh_table_rescale(node *n);
+void wh_table_direction(node *n);
+void wh_table_listen(node *n, int e);
+LRESULT wh_table_notify(node *n, NMHDR *hdr, LPARAM lp, bool *handled);
+void wh_table_row_data(node *cell, const ak_value *v);
+void wh_table_cell_frame(node *cell, const float f[4]);
+void wh_table_cell_window(node *cell);
+node *wh_table_of(node *cell);
+void wh_table_dump(node *n, ak_buf *b, int depth, void (*walk)(ak_buf *, node *, int));
+// For the automation: a row's, a header's or an outline item's middle on
+// the screen (a row scrolled to first); false: none.
+bool wh_table_row_point(int64_t row, POINT *p);
+bool wh_table_header_point(const wchar_t *title, POINT *p);
+bool wh_outline_point(const wchar_t *text, bool disclosure, POINT *p);
+
+// ---- cursor.c: Cursor ----
+void wh_set_cursor_prop(node *n, int32_t c);
+bool wh_cursor_message(HWND hwnd, WPARAM wp, LPARAM lp);
+const char *wh_cursor_name(HCURSOR c);
+
+// ---- undo.c: UndoState, the Edit menu's Undo and Redo, Ctrl+Z ----
+void wh_undo_state(const uint8_t *args, size_t len);
+bool wh_undo_enabled(bool redo);
+const wchar_t *wh_undo_title(bool redo, wchar_t *buf, size_t cap);
+void wh_undo_chosen(bool redo, int64_t index);
+bool wh_undo_key(MSG *m);
+HWND wh_undo_field(void);
+
 // ---- nav.c: stacks, tabs, sheets, alerts, windows (and cmdbar.c,
 // search.c, split.c, popover.c, snackbar.c, alertdialog.c) ----
 bool wh_create_nav(node *n);

@@ -865,6 +865,7 @@ func asukaSearch(_ count: Int, _ pred: (Int) -> Bool) -> Int {
 
     /// The rows a list shows, and their cells' nodes (for dumps).
     func listRows(_ n: AsukaNode) -> [(Int, [AsukaNode])] {
+        if let t = n.table { return t.boundRows() } // Tables.swift
         guard let l = n.list else { return [] }
         return l.shown.keys.sorted().compactMap { r in
             guard let rv = l.shown[r] else { return nil }

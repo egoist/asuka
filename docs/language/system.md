@@ -17,6 +17,7 @@ the app's windows.
 | `environment()`, `screenEnvironment()` | the size, safe area, text size, platform and the rest (tracked): the screen's or sheet's own, and the whole screen's |
 | `window.main()`, `window.current()` | the main window's `Ref`, and the one of the window the code is in: `show()`, `hide()`, `focus()`... from anywhere |
 | `window.close()` | closes the window the code is in, without asking |
+| `undo.register(name, undo:, redo:)`, `undo.group(name, body)` | records a change the app made, which Edit > Undo, ⌘Z or Ctrl+Z and a phone's shake undo; `undo.undo()`, `undo.redo()`, `canUndo()`, `canRedo()`, `undoName()`, `redoName()` (tracked), `clear()` ([Undo and redo](../desktop.md#undo-and-redo)) |
 
 What the app asks of the system's services is in the [platform
 SDK](../stdlib.md)'s packages, imported as any other:

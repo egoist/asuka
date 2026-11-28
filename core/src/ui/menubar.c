@@ -81,8 +81,8 @@ static bool has_entries(ak_view *v) {
 static void write_menu(ak_menus *m, ak_view *bar, ak_view *parent);
 
 // MenuRole's cases (types.asuka): normal, destructive, quit, close,
-// openRecent; the wire's roles are the last three's.
-enum { ROLE_NORMAL, ROLE_DESTRUCTIVE, ROLE_QUIT, ROLE_CLOSE, ROLE_OPEN_RECENT };
+// openRecent, undo, redo; the wire's roles are the last five's.
+enum { ROLE_NORMAL, ROLE_DESTRUCTIVE, ROLE_QUIT, ROLE_CLOSE, ROLE_OPEN_RECENT, ROLE_UNDO, ROLE_REDO };
 
 static void write_item(ak_menus *m, ak_view *bar, ak_view *v) {
 	ak_buf *b = &m->buf;
@@ -103,6 +103,9 @@ static void write_item(ak_menus *m, ak_view *bar, ak_view *v) {
 	if (d && d->i) flags |= AK_MENU_DISABLED;
 	if (c && c->i) flags |= AK_MENU_CHECKED;
 	if (ro == ROLE_DESTRUCTIVE) flags |= AK_MENU_DESTRUCTIVE;
+	// The undo stack's: enabled while there's something to undo (the host
+	// enables it for a text field being edited too).
+	if ((ro == ROLE_UNDO || ro == ROLE_REDO) && !ak_undo_peek(bar->r, ro == ROLE_REDO)) flags |= AK_MENU_DISABLED;
 	if (sub) flags |= AK_MENU_SUBMENU;
 	ak_buf_u8(b, flags);
 	put_str(b, key_of(v, AK_KEY_MENU_ITEM_TITLE));
@@ -123,7 +126,8 @@ static void write_item(ak_menus *m, ak_view *bar, ak_view *v) {
 		ak_buf_str(b, "", 0);
 	}
 	ak_buf_u8(b, mods);
-	uint8_t wire = ro == ROLE_QUIT ? AK_MENU_ROLE_QUIT : ro == ROLE_CLOSE ? AK_MENU_ROLE_CLOSE : ro == ROLE_OPEN_RECENT ? AK_MENU_ROLE_OPEN_RECENT : 0;
+	static const uint8_t wires[] = {0, 0, AK_MENU_ROLE_QUIT, AK_MENU_ROLE_CLOSE, AK_MENU_ROLE_OPEN_RECENT, AK_MENU_ROLE_UNDO, AK_MENU_ROLE_REDO};
+	uint8_t wire = ro >= 0 && ro < (int64_t)AK_LEN(wires) ? wires[ro] : 0;
 	ak_buf_u8(b, wire);
 	if (sub) write_menu(m, bar, v);
 }
@@ -189,6 +193,11 @@ static void send(ak_ui_root *r) {
 	}
 }
 
+void ak_menubar_resync(ak_ui_root *r) {
+	ak_menus *m = r->menus;
+	if (m && m->bars.len) ak_view_sync(m->bars.data[m->bars.len - 1]);
+}
+
 // ak_menubar_action runs the menu bar's item numbered index: a
 // MenuItem's press, unless it's disabled, opens a submenu, or is the
 // platform's (a role's, which the host does itself).
@@ -198,6 +207,11 @@ void ak_menubar_action(ak_ui_root *r, int64_t index) {
 	ak_view *v = m->items.data[index];
 	if (v->cls != &cls_item || v->dead || has_entries(v)) return;
 	const ak_val *d = key_of(v, AK_KEY_MENU_ITEM_DISABLED), *role = key_of(v, AK_KEY_MENU_ITEM_ROLE);
+	if (role && (role->i == ROLE_UNDO || role->i == ROLE_REDO)) {
+		// The host undoes a field's typing itself: this is the app's.
+		ak_undo_event(r, role->i == ROLE_REDO);
+		return;
+	}
 	if ((d && d->i) || (role && role->i > ROLE_DESTRUCTIVE)) return;
 	ak_retain(v);
 	ak_view_call(v, AK_EV_MENU_ITEM_PRESS, NULL, 0);

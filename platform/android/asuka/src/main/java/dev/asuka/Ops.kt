@@ -47,6 +47,8 @@ object AsukaKind {
     const val PROGRESS_RING = 37
     const val SNACKBAR = 38
     const val OVERLAY = 39
+    const val TABLE = 40
+    const val OUTLINE = 41
 
     fun name(kind: Int): String = when (kind) {
         1 -> "View"
@@ -88,6 +90,8 @@ object AsukaKind {
         37 -> "ProgressRing"
         38 -> "Snackbar"
         39 -> "Overlay"
+        40 -> "Table"
+        41 -> "Outline"
         else -> "Kind($kind)"
     }
 }
@@ -153,6 +157,8 @@ object AsukaProp {
     const val CORNER_RADII = 57
     const val BORDER_WIDTHS = 58
     const val BORDER_STYLE = 59
+    const val CURSOR = 60
+    const val ROW_DATA = 61
 
     object View {
         const val DROP_ACCEPT = 64
@@ -438,6 +444,22 @@ object AsukaProp {
         const val ANCHOR = 65
         const val MODAL = 66
     }
+
+    object Table {
+        const val COLUMNS = 64
+        const val SORT = 65
+        const val SELECTION_MODE = 66
+        const val SELECTION = 67
+        const val ROW_HEIGHT = 68
+        const val COLUMNS_MOVABLE = 69
+    }
+
+    object Outline {
+        const val LEVELS = 64
+        const val SELECTION_MODE = 65
+        const val SELECTION = 66
+        const val ROW_HEIGHT = 67
+    }
 }
 
 object AsukaEventKind {
@@ -514,6 +536,12 @@ object AsukaEventKind {
     const val ZOOMED = 71
     const val MOVED = 72
     const val SHEET_HEIGHT = 73
+    const val SORT_BY = 74
+    const val COLUMN_LAYOUT = 75
+    const val ROWS_SELECTED = 76
+    const val OPEN = 77
+    const val EXPAND = 78
+    const val UNDO = 79
 }
 
 object AsukaCommand {
@@ -562,6 +590,7 @@ object AsukaCommand {
     const val DEV_FONT_SCALE = 43
     const val VIDEO_ACTION = 44
     const val ZOOM_TO = 45
+    const val UNDO_STATE = 46
 }
 
 object AsukaRole {
@@ -983,6 +1012,39 @@ object AsukaDetentKind {
     const val FRACTION = 4
 }
 
+object AsukaCursor {
+    const val AUTO = 0
+    const val ARROW = 1
+    const val POINTER = 2
+    const val TEXT = 3
+    const val CROSSHAIR = 4
+    const val MOVE = 5
+    const val GRAB = 6
+    const val GRABBING = 7
+    const val NOT_ALLOWED = 8
+    const val WAIT = 9
+    const val PROGRESS = 10
+    const val HELP = 11
+    const val CONTEXT_MENU = 12
+    const val COPY = 13
+    const val ALIAS = 14
+    const val RESIZE_HORIZONTAL = 15
+    const val RESIZE_VERTICAL = 16
+    const val RESIZE_DIAGONAL = 17
+    const val RESIZE_ANTI_DIAGONAL = 18
+    const val RESIZE_COLUMN = 19
+    const val RESIZE_ROW = 20
+    const val ZOOM_IN = 21
+    const val ZOOM_OUT = 22
+    const val HIDDEN = 23
+}
+
+object AsukaSelectionMode {
+    const val SINGLE = 0
+    const val MULTIPLE = 1
+    const val NONE = 2
+}
+
 /** Receives decoded ops, in order, on the main thread. */
 interface AsukaOpHandler {
     fun create(id: Int, kind: Int)
@@ -1215,4 +1277,10 @@ object AsukaEvents {
     fun zoomed(id: Int, v: Double): ByteArray = AsukaWriter().apply { header(id, 71); f64(v) }.bytes()
     fun moved(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 72); f64(x); f64(y) }.bytes()
     fun sheetHeight(id: Int, v: Double): ByteArray = AsukaWriter().apply { header(id, 73); f64(v) }.bytes()
+    fun sortBy(id: Int, v: Long): ByteArray = AsukaWriter().apply { header(id, 74); u64(v) }.bytes()
+    fun columnLayout(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 75); u32(v.size); raw(v) }.bytes()
+    fun rowsSelected(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 76); u32(v.size); raw(v) }.bytes()
+    fun open(id: Int, v: Long): ByteArray = AsukaWriter().apply { header(id, 77); u64(v) }.bytes()
+    fun expand(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 78); f64(x); f64(y) }.bytes()
+    fun undo(id: Int, v: Long): ByteArray = AsukaWriter().apply { header(id, 79); u64(v) }.bytes()
 }

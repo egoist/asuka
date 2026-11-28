@@ -223,6 +223,7 @@ void wh_crash_start(void);
 
 // locale.c
 void wh_word_app(wchar_t *buf, size_t cap, const char *key);
+void wh_word_vars(wchar_t *buf, size_t cap, const char *key, const char *const *vars, size_t nvars);
 void wh_say_words(void);
 void wh_mirror_window(HWND win, node *content);
 DWORD wh_top_level_style(void);

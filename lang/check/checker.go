@@ -320,6 +320,13 @@ func (c *Checker) initUniverse() {
 		wp.Scope.Insert(&Builtin{object: object{name: f.Name}, ID: BRuntime, Fn: f})
 	}
 	c.universe.Insert(&PkgName{object: object{name: "window"}, Pkg: wp})
+	// undo: the app's undo stack, a package of the universe as window is.
+	up := &Package{Path: "undo", Name: "undo"}
+	up.Scope = NewScope(nil)
+	for _, f := range UndoFuncs {
+		up.Scope.Insert(&Builtin{object: object{name: f.Name}, ID: BRuntime, Fn: f})
+	}
+	c.universe.Insert(&PkgName{object: object{name: "undo"}, Pkg: up})
 }
 
 // otherIntNames are other languages' names of the integer types, and

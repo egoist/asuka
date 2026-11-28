@@ -1,0 +1,196 @@
+// Tables: a desktop app's building blocks. A Table of files (sortable,
+// resizable and movable columns, several rows selected, a double click
+// or Enter opening one, a context menu), 100,000 rows of it at a click;
+// an Outline of folders whose children load as they're expanded; the
+// pointer's shape over what it's over; and undo, which Edit > Undo, ⌘Z
+// or Ctrl+Z, and a phone's shake reach. On a phone, the table is a list
+// of its rows and the outline a list of indented rows.
+//
+//   asuka dev examples/tables
+//   asuka dev --platform web examples/tables
+
+struct File {
+  id: int
+  name: string
+  size: int
+  kind: string
+  starred: bool = false
+}
+
+let kinds = ["Document", "Image", "Movie", "Archive", "Folder"]
+let words = ["amber", "basil", "cedar", "delta", "ember", "fjord", "garnet", "harbor", "indigo", "juniper"]
+
+fn makeFiles(n: int) -> [File] = (0..<n).map(i => File(
+  id: i,
+  name: "{words[i % 10]} {words[i / 10 % 10]} {i}",
+  size: (i * 7919) % 900_000 + 100,
+  kind: kinds[i % kinds.count()],
+))
+
+fn sizeText(b: int) -> string = if b < 1000 { "{b} bytes" } else if b < 1_000_000 { "{b / 1000} KB" } else { "{b / 1_000_000} MB" }
+
+fn sortFiles(files: [File], by: [SortKey]) -> [File] {
+  if by.isEmpty() {
+    return files
+  }
+  let k = by[0]
+  return files.sorted((a, b) => {
+    let less = match k.column {
+      "size" => a.size < b.size
+      "kind" => a.kind < b.kind
+      _ => a.name < b.name
+    }
+    let more = match k.column {
+      "size" => a.size > b.size
+      "kind" => a.kind > b.kind
+      _ => a.name > b.name
+    }
+    return if k.ascending { less } else { more }
+  })
+}
+
+// The folders: a tree of IDs, children loaded the first time a folder
+// is expanded (as from a disk or a server).
+fn folderName(id: string) -> string = id.split("/").last() ?? id
+
+component Explorer {
+  state files = makeFiles(200)
+  state sort: [SortKey] = [SortKey(column: "name")]
+  state selection: [int] = []
+  state opened = ""
+  state open: [string] = ["Home"]
+  state loaded: [string: [string]] = ["Home": ["Home/Documents", "Home/Pictures", "Home/Music"]]
+
+  let shown = sortFiles(files, sort)
+  let columns = [
+    TableColumn(id: "name", title: "Name", width: 260, minWidth: 120, sortable: true),
+    TableColumn(id: "size", title: "Size", width: 100, sortable: true, align: .end),
+    TableColumn(id: "kind", title: "Kind", width: 120, sortable: true),
+  ]
+
+  fn remove(ids: [int]) {
+    let gone = files.filter(f => ids.contains(f.id))
+    files = files.filter(f => !ids.contains(f.id))
+    selection = []
+    undo.register("Delete", undo: () => { files = files + gone }, redo: () => {
+      files = files.filter(f => !ids.contains(f.id))
+    })
+  }
+
+  fn star(id: int) {
+    files = files.map(f => if f.id == id { File(id: f.id, name: f.name, size: f.size, kind: f.kind, starred: !f.starred) } else { f })
+    undo.register("Star", undo: () => star(id), redo: () => star(id))
+  }
+
+  fn load(id: string) {
+    if loaded.has(id) {
+      return
+    }
+    loaded[id] = (1..<4).map(i => "{id}/Folder {i}")
+  }
+
+  MenuBar {
+    Menu("Edit") {
+      MenuItem("") { role: .undo }
+      MenuItem("") { role: .redo }
+    }
+  }
+  // A phone stacks the outline over the table; a desktop puts it beside.
+  let narrow = environment().widthClass == .compact
+  SafeArea {
+    grow: 1
+    View {
+      grow: 1
+      direction: if narrow { .column } else { .row }
+      Outline(["Home", "Shared"]) {
+        width: if narrow { .auto } else { 220 }
+        height: if narrow { 200 } else { .auto }
+        childrenOf: id => loaded.get(id) ?? []
+        expandable: id => !id.hasPrefix("Home/Music")
+        text: id => folderName(id)
+        icon: id => if open.contains(id) { "folder.fill" } else { "folder" }
+        bind expanded: open
+        on expand(id, expanded) {
+          if expanded {
+            load(id)
+          }
+        }
+        on open(id) { opened = id }
+      }
+      Column {
+        grow: 1
+        Row {
+          gap: 8
+          padding: [8, 12]
+          align: .center
+          wrap: true
+          Button("Undo {undo.undoName()}") {
+            disabled: !undo.canUndo()
+            on press { undo.undo() }
+          }
+          Button("Redo") {
+            disabled: !undo.canRedo()
+            on press { undo.redo() }
+          }
+          Button("100,000 files") {
+            on press {
+              files = makeFiles(100_000)
+              undo.clear()
+            }
+          }
+          Text("Resize me") {
+            padding: [4, 8]
+            cursor: .resizeHorizontal
+            background: .secondaryBackground
+            radius: 4
+          }
+          Text("Link") {
+            cursor: .pointer
+            color: .accent
+          }
+          Text("{shown.count()} files · {selection.count()} selected{if opened.isEmpty() { "" } else { " · opened " + opened }}") {
+            grow: 1
+            lines: 1
+            color: .secondaryLabel
+            textAlign: .end
+          }
+        }
+        Table {
+          grow: 1
+          columns: columns
+          columnsMovable: true
+          selectionMode: .multiple
+          bind sort: sort
+          bind selection: selection
+          on open(row) { opened = shown[row].name }
+          menu: row => [
+            .button(title: if shown[row].starred { "Unstar" } else { "Star" }, icon: "star", run: () => star(shown[row].id)),
+            .button(title: "Delete", icon: "trash", role: .destructive, run: () => {
+              remove(if selection.contains(row) { selection.map(i => shown[i].id) } else { [shown[row].id] })
+            }),
+          ]
+          for f in shown key f.id {
+            TableRow([if f.starred { "★ " + f.name } else { f.name }, sizeText(f.size), f.kind]) {
+              icon: if f.kind == "Folder" { "folder" } else { "doc" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+app {
+  Window {
+    title: "Tables"
+    width: 900
+    height: 600
+    Explorer()
+  }
+}
+
+test "the files show, with nothing to undo yet" {
+  let app = mount(Explorer())
+  app.expect("200 files · 0 selected")
+  expect(undo.canUndo() == false)
+}

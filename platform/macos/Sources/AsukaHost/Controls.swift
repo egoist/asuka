@@ -119,6 +119,8 @@ import AsukaOps
             return makeImage(n, kind)
         case .list:
             return makeList(n)
+        case .table, .outline:
+            return makeTable(n, outline: kind == .outline) // Tables.swift
         case .progressRing:
             return makeRing(n)
         case .pageControl:
@@ -359,6 +361,7 @@ import AsukaOps
             case AsukaProp.List.refreshing: setRefreshing(n, v.bool)
             default: setListProp(n, p, v)
             }
+        case .table, .outline: n.table?.setProp(p, v) // Tables.swift
         case .progressRing: setRingProp(n, p, v)
         case .pageControl: setPageDotsProp(n, p, v)
         case .canvas:

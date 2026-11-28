@@ -210,7 +210,7 @@ bool wh_pre_translate(MSG *m) {
 		// shortcuts wait, and its fields keep Ctrl+C and the like.
 		return wh_key_message(m) || IsDialogMessageW(w, m);
 	}
-	return wh_accelerate(w, m) || wh_key_message(m) || wh_tab_key(m) || IsDialogMessageW(w, m);
+	return wh_accelerate(w, m) || wh_undo_key(m) || wh_key_message(m) || wh_tab_key(m) || IsDialogMessageW(w, m);
 }
 
 static void loop(void) {

@@ -3,14 +3,23 @@
 // with its calls' answers caught here. copyHTML offers text/html and the
 // text; clipboardHTML reads the HTML back; clipboardHas says html; text
 // alone has none. Another app's HTML in UTF-16 (Firefox's, on X11) comes
-// back as UTF-8.
+// back as UTF-8. copyFiles offers a file list and GNOME's copied files;
+// clipboardFiles reads the paths back. copyFormats offers an app's own
+// type beside text and HTML; clipboardFormats lists them, clipboardData
+// reads each back.
 #define device_Platform_clipboardHTML_done t_html_done
 #define device_Platform_clipboardText_done t_text_done
 #define device_Platform_copyHTML_done t_copied
+#define device_Platform_copyFiles_done t_copied
+#define device_Platform_copyFormats_done t_copied
+#define device_Platform_clipboardFiles_done t_list_done
+#define device_Platform_clipboardFormats_done t_list_done
+#define device_Platform_clipboardData_done t_data_done
 #define asuka_call_fail t_fail
 #include "device_linux.c"
 
 #include <stdio.h>
+#include <unistd.h>
 
 static int failed;
 
@@ -48,17 +57,32 @@ static struct {
 	int answers;
 	char *value;
 	char *error;
+	device_list_string list;
+	asuka_bytes *data;
 } got;
 
 static void reset(void) {
 	free(got.value);
 	free(got.error);
+	device_list_string_free(&got.list);
+	if (got.data) free(got.data->data), free(got.data);
 	memset(&got, 0, sizeof got);
 }
 
 void t_html_done(asuka_call *call, char *value) { got.answers++, got.value = value; }
 void t_text_done(asuka_call *call, char *value) { got.answers++, got.value = value; }
 void t_copied(asuka_call *call) { got.answers++; }
+void t_list_done(asuka_call *call, device_list_string v) { got.answers++, got.list = v; }
+void t_data_done(asuka_call *call, asuka_bytes *v) { got.answers++, got.data = v; }
+
+// listed reports whether the last list answered has s.
+static bool listed(const char *s) {
+	for (size_t i = 0; i < got.list.len; i++)
+		if (!strcmp(got.list.data[i], s)) return true;
+	return false;
+}
+
+static bool data_is(const char *s) { return got.data && got.data->len == strlen(s) && !memcmp(got.data->data, s, got.data->len); }
 void t_fail(asuka_call *call, asuka_error *e) {
 	got.answers++;
 	got.error = asuka_strdup(e->message ? e->message : "failed");
@@ -122,6 +146,83 @@ int main(void) {
 	WAIT(got.answers == 1);
 	CHECK(!got.value && !got.error);
 	reset();
+
+	// copyFiles: the files, as a file manager pastes them; read back.
+	char *dir = asuka_sprintf("%s/clip-test", asuka_desktop_cache_dir());
+	mkdir(dir, 0755);
+	char *a = asuka_sprintf("%s/caf\xc3\xa9 one.txt", dir), *b2 = asuka_sprintf("%s/b.pdf", dir);
+	for (int i = 0; i < 2; i++) {
+		FILE *f = fopen(i ? b2 : a, "w");
+		fputs("x", f);
+		fclose(f);
+	}
+	char *paths[] = {a, b2};
+	reset();
+	p_copy_files(NULL, (device_list_string){paths, 2}, call);
+	CHECK(got.answers == 1 && !got.error);
+	k = kinds();
+	CHECK(k.files && !k.html);
+	reset();
+	p_files_read(NULL, call);
+	WAIT(got.answers == 1);
+	CHECK(got.list.len == 2 && !strcmp(got.list.data[0], a) && !strcmp(got.list.data[1], b2));
+	reset();
+	p_formats(NULL, call);
+	CHECK(listed("text/uri-list") && listed("x-special/gnome-copied-files"));
+	reset();
+	p_data(NULL, "x-special/gnome-copied-files", call);
+	WAIT(got.answers == 1);
+	CHECK(got.data && got.data->len > 5 && !memcmp(got.data->data, "copy\nfile:///", 13));
+	char *missing[] = {a, "/no/such/file"};
+	reset();
+	p_copy_files(NULL, (device_list_string){missing, 2}, call);
+	CHECK(got.error && strstr(got.error, "no file at"));
+	reset();
+	// Text alone: no files.
+	G(gdk_clipboard_set_text)(clipboard(), "plain");
+	CHECK(!kinds().files);
+	p_files_read(NULL, call);
+	WAIT(got.answers == 1);
+	CHECK(got.list.len == 0 && !got.error);
+	reset();
+
+	// copyFormats: an app's own type, HTML and text; listed, read back.
+	const char *json = "{\"shapes\":[1]}", *bold = "<b>a drawing</b>";
+	device_ClipboardFormat fs[] = {
+	    {"application/x.drawing+json", {(uint8_t *)json, strlen(json)}},
+	    {"text/html", {(uint8_t *)bold, strlen(bold)}},
+	    {"text/plain", {(uint8_t *)"a drawing", 9}},
+	};
+	p_copy_formats(NULL, (device_list_ClipboardFormat){fs, 3}, call);
+	CHECK(got.answers == 1 && !got.error);
+	k = kinds();
+	CHECK(k.text && k.html && !k.files);
+	reset();
+	p_formats(NULL, call);
+	CHECK(listed("application/x.drawing+json") && listed("text/html") && listed("text/plain"));
+	for (size_t i = 0; i < got.list.len; i++) {
+		CHECK(!strchr(got.list.data[i], ';'));
+		for (size_t j = i + 1; j < got.list.len; j++) CHECK(strcmp(got.list.data[i], got.list.data[j]) != 0);
+	}
+	reset();
+	p_data(NULL, "application/x.drawing+json", call);
+	WAIT(got.answers == 1);
+	CHECK(data_is(json));
+	reset();
+	p_data(NULL, "text/html", call);
+	WAIT(got.answers == 1);
+	CHECK(data_is(bold));
+	reset();
+	p_data(NULL, "text/plain", call);
+	WAIT(got.answers == 1);
+	CHECK(data_is("a drawing"));
+	reset();
+	p_data(NULL, "application/x.other", call);
+	WAIT(got.answers == 1);
+	CHECK(!got.data && !got.error);
+	reset();
+	remove(a), remove(b2), rmdir(dir);
+	free(a), free(b2), free(dir);
 
 	printf(failed ? "FAIL\n" : "ok\n");
 	return failed;

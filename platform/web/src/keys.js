@@ -133,6 +133,35 @@ export function matchKey(keys, k, mac) {
   return -1;
 }
 
+/**
+ * undoKey is what a keydown asks of the app's undo stack: 0 undo (⌘Z on
+ * Apple's platforms, Ctrl+Z elsewhere), 1 redo (⇧⌘Z; Ctrl+Shift+Z or
+ * Ctrl+Y), -1 neither. The Z (Y) is the key's character, or where a US
+ * keyboard has it when the layout's isn't a Latin letter.
+ */
+export function undoKey(e, mac) {
+  if (e.isComposing || e.altKey) return -1;
+  const primary = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+  if (!primary) return -1;
+  let k = (e.key || "").toLowerCase();
+  if (!/^[a-z]$/.test(k)) k = codeChar(e.code || "");
+  if (k === "z") return e.shiftKey ? 1 : 0;
+  if (k === "y" && !mac && !e.shiftKey) return 1;
+  return -1;
+}
+
+const textInputs = new Set(["", "text", "search", "url", "tel", "email", "password", "number", "date", "datetime-local", "month", "time", "week"]);
+
+/** editable reports whether el is where text is typed (a text input, a textarea, what's contenteditable): it undoes its own typing. */
+export function editable(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  if (tag === "TEXTAREA") return !el.readOnly && !el.disabled;
+  if (tag === "INPUT") return textInputs.has((el.getAttribute("type") || "").toLowerCase()) && !el.readOnly && !el.disabled;
+  return false;
+}
+
 export class Keys {
   constructor(h) {
     this.h = h;

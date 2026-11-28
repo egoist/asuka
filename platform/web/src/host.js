@@ -29,6 +29,7 @@ import { Focus } from "./focus.js";
 import { Overlays } from "./overlay.js";
 import { DevErrors, showHighlight, hideHighlight, showPerf } from "./deverror.js";
 import * as a11y from "./a11y.js";
+import { cursorCSS } from "./cursor.js";
 
 const NaN32 = NaN;
 const HostIDBit = 0x80000000;
@@ -670,6 +671,16 @@ export class Host {
       case Prop.Tooltip:
         if (v) el.title = v; else el.removeAttribute("title");
         break;
+      case Prop.Cursor: {
+        // CSS's cursor, which what's inside takes (style.css: asuka-cursor)
+        // unless it sets its own; a control's own element too (a field's
+        // input keeps its I-beam unless it sets one).
+        const c = cursorCSS(v);
+        el.style.cursor = c;
+        el.classList.toggle("asuka-cursor", !!c);
+        if (n.focusEl && n.focusEl !== el) n.focusEl.style.cursor = c;
+        break;
+      }
     }
   }
 
@@ -946,6 +957,9 @@ export class Host {
         break;
       case Command.MenuBar:
         this.menus.menuBar(n, args);
+        break;
+      case Command.UndoState:
+        this.menus.undoState(n, args);
         break;
       case Command.BackExit:
         this.nav.backExit();

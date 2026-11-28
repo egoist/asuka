@@ -332,6 +332,7 @@ effect. A style is a set of keys like any other.
 | `Image` | UIImageView | ImageView |
 | `Scroll` | UIScrollView | NestedScrollView / HorizontalScrollView |
 | `List` | UICollectionView (list layout) | RecyclerView |
+| `Table`, `Outline` | a `List` of the core's rows (a table's first cell over the rest; an outline's indented behind a disclosure) | likewise |
 | `Refresh` (pull to refresh, on `Scroll`/`List`) | UIRefreshControl | SwipeRefreshLayout |
 | `Stack` (navigation) | UINavigationController | own view stack with transitions, `OnBackPressedDispatcher` and predictive back |
 | `Tabs` | UITabBarController | BottomNavigationView |
@@ -1284,6 +1285,62 @@ thread, the data source calls straight in:
   the host shows its control, reports the user's choices
   (`RowSelected`), and the room the control takes from the rows
   (`RowInset`), at which the core lays them out again.
+
+### Tables and outlines
+
+`Table` and `Outline` (core/src/ui/table.c) are a List's rows in the
+platform's table and tree: their rows are bound by the host into cells
+it makes, through the same `ListCount`, `ListBind` and `ListUnbind`,
+keyed in the same `ListUpdate` (list.c's machinery, list_int.h; the
+table's state hangs off the list's). No new entry point crosses the C
+ABI.
+
+- A Table's rows come from the `for` in it, each a `TableRow`. Its
+  cells' text is the fast path: the TableRow makes no view, and the
+  core sends the cell the host bound it into `RowData` (the cells'
+  strings, a symbol), which `NSTableView`, an owner-data ListView, a
+  `GtkColumnView` and the web's `<table>` draw themselves. A TableRow of
+  views puts each child in a box of the core's (a native view each, so
+  the cell's children are its columns', in their order), placed at its
+  column's x and width as the host shows them (`ColumnLayout`), at the
+  table's `RowHeight` (the core's, per platform, unless the app's).
+- The sort is the app's (`bind sort`), shown by the host (`Sort`); a
+  header's click is `SortBy`, from which the core works out the new
+  keys, and the host draws only what `Sort` says. The selection is rows'
+  indices (`bind selection`): the host's own model reports the user's
+  (`RowsSelected`, runs), the core sends the app's, and as the items
+  change it maps the selected rows' IDs to their new places, sends
+  them after the `ListUpdate` and reports them to the app (posted, not
+  from inside the items' effect).
+- An Outline's items are IDs: the core flattens what's shown (the roots,
+  each expanded item's `childrenOf`, depth first) in the list's items
+  effect, which follows what those functions read, so children load as
+  they're asked for; each row's depth and flags go to the host in
+  `Levels`, before the `ListUpdate`. The host builds its own tree
+  (`NSOutlineView`, a TreeView, a `GtkTreeListModel`, the web's tree)
+  from them, expands only as they say, and reports the user's
+  expanding with `Expand`.
+- A row's context menu (`menu`) is its cell's `Menu`, followed in the
+  row's effect as swipe actions are.
+- Phones have no table: there the element makes a `List` (the class is
+  chosen as it's made, from the environment's platform, else the one
+  the core was built for), and the TableRows are the core's own views
+  in its cells (the first cell over the others; an outline's rows
+  indented behind a disclosure), so the phone hosts need nothing of
+  their own.
+
+### The cursor and undo
+
+`cursor` is a style key every view takes: a container with one gets a
+native view, and the host shows the pointer's shape over it and what's
+in it that sets none (CSS's inheritance). The app's undo stack is the
+core's (undo.c, the prelude's `undo`): entries of a name and the
+closures that undo and redo them, groups, a signal its readers
+(`canUndo`) follow. Its state goes to the root as `UndoState`, and the
+MenuBar's items of roles undo and redo are enabled by it; the host's
+Edit > Undo, ⌘Z and Ctrl+Z, a browser's shortcuts and iOS's shake come
+back as the root's `Undo` event, unless a text field being edited takes
+them first.
 
 ### Text input
 

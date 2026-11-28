@@ -1,7 +1,9 @@
 // platform/device on Android: Build and the package's info, Custom Tabs, the
 // Photo Picker (images, videos or both; numbered where it numbers them)
 // and the storage picker (no permission), ClipboardManager (images through
-// the app's FileProvider, the host's; rich text as an HTML clip), the
+// the app's FileProvider, the host's; rich text as an HTML clip; files as
+// content URIs, copied in as they're read; an app's own formats as files of
+// its caches, the clip's description naming their types), the
 // window's FLAG_KEEP_SCREEN_ON.
 package platform.device
 
@@ -16,6 +18,7 @@ import android.graphics.Matrix
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.PersistableBundle
 import android.os.ext.SdkExtensions
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -204,15 +207,15 @@ class AndroidDevice(private val app: Context) : Platform {
         return withContext(Dispatchers.IO) { uris.mapNotNull { copyPicked(it) } }
     }
 
-    /** Copies a picked document to the caches, in a folder of its own (its name stays its own). */
-    private fun copyPicked(u: Uri): File? = runCatching {
+    /** Copies a picked document (or a file on the clipboard) to the caches' folder, in a folder of its own (its name stays its own). */
+    private fun copyPicked(u: Uri, folder: String = "asuka-files"): File? = runCatching {
         val cr = app.contentResolver
         var name = "file"
         cr.query(u, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst() && !c.isNull(0)) name = c.getString(0)
         }
         name = name.replace('/', '_')
-        val dir = JFile(app.cacheDir, "asuka-files/" + UUID.randomUUID()).apply { mkdirs() }
+        val dir = JFile(app.cacheDir, folder + "/" + UUID.randomUUID()).apply { mkdirs() }
         val f = JFile(dir, name)
         cr.openInputStream(u)!!.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
         File(path = f.absolutePath, name = name, type = cr.getType(u) ?: "", size = f.length())
@@ -232,7 +235,105 @@ class AndroidDevice(private val app: Context) : Platform {
         // Before Android 12 the system doesn't classify it: a URI list only.
         val url = d.hasMimeType(ClipDescription.MIMETYPE_TEXT_URILIST) || Build.VERSION.SDK_INT >= 31 &&
             d.classificationStatus == ClipDescription.CLASSIFICATION_COMPLETE && d.getConfidenceScore(TextClassifier.TYPE_URL) >= 0.5f
-        return ClipboardKinds(text = text, image = image, url = url, html = d.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML))
+        return ClipboardKinds(text = text, image = image, url = url, html = d.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML), files = hasFiles(d))
+    }
+
+    /**
+     * Whether a clip is files: copyFiles' (it says so), or content of a
+     * type other than text's, a link's or an intent's (an image, a PDF),
+     * which only a content URI holds; not an app's own data (copyFormats').
+     */
+    private fun hasFiles(d: ClipDescription): Boolean {
+        val extras = d.extras
+        if (extras?.getBoolean(FILES) == true) return true
+        if (extras?.containsKey(DATA) == true) return false
+        return (0 until d.mimeTypeCount).any { d.getMimeType(it).substringBefore(';').trim().lowercase() !in plainTypes }
+    }
+
+    override suspend fun clipboardFiles(): List<String> {
+        val clip = withContext(Dispatchers.Main) { cm.primaryClip } ?: return emptyList()
+        if (!hasFiles(clip.description)) return emptyList()
+        val uris = (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }.filter { it.scheme == "content" || it.scheme == "file" }
+        return withContext(Dispatchers.IO) { uris.mapNotNull { copyPicked(it, "asuka-clipboard")?.path } }
+    }
+
+    /** Each file as an item's content URI, through the app's FileProvider (what the app that pastes is let read). */
+    override suspend fun copyFiles(paths: List<String>) {
+        val uris = withContext(Dispatchers.IO) {
+            paths.map { p ->
+                val f = JFile(p)
+                if (!f.isFile) throw java.io.FileNotFoundException("device: no file at $p")
+                shareable(f)
+            }
+        }
+        withContext(Dispatchers.Main) {
+            val cr = app.contentResolver
+            val d = ClipDescription("files", uris.map { cr.getType(it) ?: "application/octet-stream" }.distinct().toTypedArray())
+            d.extras = PersistableBundle().apply { putBoolean(FILES, true) }
+            val clip = ClipData(d, ClipData.Item(uris[0]))
+            for (u in uris.drop(1)) clip.addItem(ClipData.Item(u))
+            cm.setPrimaryClip(clip)
+        }
+    }
+
+    override suspend fun clipboardFormats(): List<String> = withContext(Dispatchers.Main) {
+        val d = cm.primaryClipDescription ?: return@withContext emptyList()
+        (0 until d.mimeTypeCount).map { d.getMimeType(it) }.distinct()
+    }
+
+    override suspend fun clipboardData(type: String): ByteArray? {
+        val clip = withContext(Dispatchers.Main) { cm.primaryClip } ?: return null
+        val d = clip.description
+        if (clip.itemCount == 0 || (0 until d.mimeTypeCount).none { d.getMimeType(it).equals(type, ignoreCase = true) }) return null
+        val first = clip.getItemAt(0)
+        when (type) {
+            ClipDescription.MIMETYPE_TEXT_PLAIN ->
+                return (first.text ?: withContext(Dispatchers.Main) { first.coerceToText(app) })?.toString()?.toByteArray()
+            ClipDescription.MIMETYPE_TEXT_HTML -> return first.htmlText?.toByteArray()
+            ClipDescription.MIMETYPE_TEXT_URILIST ->
+                return (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri?.toString() }.joinToString("\r\n").toByteArray()
+        }
+        // The item copyFormats put it in (the extras say which), else the
+        // first whose content is of the type, else the first with content.
+        val cr = app.contentResolver
+        val items = (0 until clip.itemCount).map { clip.getItemAt(it) }
+        val at = d.extras?.getStringArray(DATA)?.indexOfFirst { it.equals(type, ignoreCase = true) } ?: -1
+        return withContext(Dispatchers.IO) {
+            val uri = items.getOrNull(at)?.uri
+                ?: items.mapNotNull { it.uri }.let { us -> us.firstOrNull { cr.getType(it) == type } ?: us.firstOrNull() }
+                ?: return@withContext null
+            cr.openInputStream(uri)?.use { it.readBytes() }
+        }
+    }
+
+    /**
+     * Text and HTML go as the clip's text and HTML; every other format as
+     * a file of the app's caches, an item's content URI through the app's
+     * FileProvider (what the app that pastes is let read), the
+     * description naming the types and its extras which item has which.
+     */
+    override suspend fun copyFormats(formats: List<ClipboardFormat>) {
+        val text = formats.firstOrNull { it.type == ClipDescription.MIMETYPE_TEXT_PLAIN }?.data?.toString(Charsets.UTF_8)
+        val html = formats.firstOrNull { it.type == ClipDescription.MIMETYPE_TEXT_HTML }?.data?.toString(Charsets.UTF_8)
+        val data = formats.filter { it.type != ClipDescription.MIMETYPE_TEXT_PLAIN && it.type != ClipDescription.MIMETYPE_TEXT_HTML }
+        val uris = withContext(Dispatchers.IO) {
+            data.map { f ->
+                val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(f.type) ?: "bin"
+                val file = JFile(JFile(app.cacheDir, "asuka-clipboard/" + UUID.randomUUID()).apply { mkdirs() }, "data.$ext")
+                file.writeBytes(f.data)
+                FileProvider.getUriForFile(app, app.packageName + ".asuka.files", file)
+            }
+        }
+        withContext(Dispatchers.Main) {
+            val clip = if (data.isEmpty()) {
+                if (html != null) ClipData.newHtmlText("text", text ?: "", html) else ClipData.newPlainText("text", text ?: "")
+            } else {
+                val d = ClipDescription("data", formats.map { it.type }.toTypedArray())
+                d.extras = PersistableBundle().apply { putStringArray(DATA, data.map { it.type }.toTypedArray()) }
+                ClipData(d, ClipData.Item(text, html, null, uris[0])).apply { for (u in uris.drop(1)) addItem(ClipData.Item(u)) }
+            }
+            cm.setPrimaryClip(clip)
+        }
     }
 
     override suspend fun clipboardHTML(): String? = withContext(Dispatchers.Main) {
@@ -260,16 +361,18 @@ class AndroidDevice(private val app: Context) : Platform {
     override suspend fun copyImage(path: String) {
         val f = JFile(path)
         if (!f.isFile) throw java.io.FileNotFoundException("device: no file at $path")
-        val authority = app.packageName + ".asuka.files"
-        val uri = withContext(Dispatchers.IO) {
-            // A file outside the app's folders goes to its caches first.
-            runCatching { FileProvider.getUriForFile(app, authority, f) }.getOrNull()
-                ?: JFile(JFile(app.cacheDir, "asuka-clipboard/" + UUID.randomUUID()).apply { mkdirs() }, f.name).let { c ->
-                    f.copyTo(c, overwrite = true)
-                    FileProvider.getUriForFile(app, authority, c)
-                }
-        }
+        val uri = withContext(Dispatchers.IO) { shareable(f) }
         withContext(Dispatchers.Main) { cm.setPrimaryClip(ClipData.newUri(app.contentResolver, "image", uri)) }
+    }
+
+    /** A file's content URI, through the app's FileProvider: a file outside the app's folders is copied to its caches first. */
+    private fun shareable(f: JFile): Uri {
+        val authority = app.packageName + ".asuka.files"
+        return runCatching { FileProvider.getUriForFile(app, authority, f) }.getOrNull()
+            ?: JFile(JFile(app.cacheDir, "asuka-clipboard/" + UUID.randomUUID()).apply { mkdirs() }, f.name).let { c ->
+                f.copyTo(c, overwrite = true)
+                FileProvider.getUriForFile(app, authority, c)
+            }
     }
 
     override suspend fun watchClipboard(changed: (ClipboardKinds) -> kotlin.Unit) = withContext(Dispatchers.Main) {
@@ -302,5 +405,13 @@ class AndroidDevice(private val app: Context) : Platform {
         }
     }
 }
+
+/** What a clip's description's extras say: copyFiles' files, copyFormats' items' types. */
+private const val FILES = "dev.asuka.files"
+private const val DATA = "dev.asuka.data"
+
+/** The types that aren't a file's content: text, HTML, a link, an intent. */
+private val plainTypes = setOf(ClipDescription.MIMETYPE_TEXT_PLAIN, ClipDescription.MIMETYPE_TEXT_HTML, ClipDescription.MIMETYPE_TEXT_URILIST,
+    ClipDescription.MIMETYPE_TEXT_INTENT)
 
 fun makePlatform(): Platform = AndroidDevice(AsukaModules.context)

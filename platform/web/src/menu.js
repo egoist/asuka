@@ -10,7 +10,7 @@
 import { Event, Events, Reader } from "./ops.js";
 import { decodeActions, MenuFlags } from "./actions.js";
 import { symbolSVG } from "./media.js";
-import { apple, modsOf, declaredMods } from "./keys.js";
+import { apple, modsOf, declaredMods, undoKey, editable } from "./keys.js";
 
 /** withPicks gives each item that can be chosen pick(): f(item). */
 export function withPicks(items, f) {
@@ -261,7 +261,10 @@ export class Menus {
         const mods = r.u8();
         const role = r.u8();
         const at = index++;
-        if (key && !(flags & (1 | 2 | 16)) && !role) out.push({ key: key.toLowerCase(), mods, index: at, root: n.id });
+        // Undo and Redo (roles 4, 5) with a shortcut of their own: a
+        // field being edited undoes its own typing; else the item's Action.
+        if (key && !(flags & (1 | 16)) && (role === 4 || role === 5)) out.push({ key: key.toLowerCase(), mods, index: at, root: n.id, role });
+        else if (key && !(flags & (1 | 2 | 16)) && !role) out.push({ key: key.toLowerCase(), mods, index: at, root: n.id });
         if (flags & 16 && depth < 16) menu(depth + 1);
       }
     };
@@ -272,8 +275,14 @@ export class Menus {
     this.shortcuts = out;
   }
 
+  /** undoState takes UndoState: what the app's undo stack can undo and redo, and their names. */
+  undoState(n, args) {
+    const r = new Reader(args);
+    const flags = r.u8();
+    this.undo = { flags, undo: r.atEnd ? "" : r.string(), redo: r.atEnd ? "" : r.string() };
+  }
+
   key(e) {
-    if (!this.shortcuts.length) return;
     if (!this.h.options.fullPage && !this.h.container.contains(e.target)) return;
     // The modifiers as a view's Keys have them (keys.js routes a key
     // first: one a view takes is stopped before it comes here).
@@ -285,11 +294,33 @@ export class Menus {
       const got = want.length === 1 ? e.key.toLowerCase() : e.key;
       const code = want.length === 1 && e.code === "Key" + want.toUpperCase();
       if ((got === want || code) && mods === declaredMods(s.mods, mac)) {
+        if (s.role && editable(e.target)) {
+          // A field's own undo, at the item's shortcut.
+          e.preventDefault();
+          e.stopPropagation();
+          document.execCommand?.(s.role === 4 ? "undo" : "redo");
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         this.h.dispatch(Events.action(s.root, s.index));
         return;
       }
     }
+    this.undoKey(e, mac);
+  }
+
+  /**
+   * undoKey: ⌘Z, ⇧⌘Z (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y off Apple's) undo and
+   * redo the app's changes (Undo on the root) where no field is being
+   * edited (a field undoes its own typing) and the root hears of it.
+   */
+  undoKey(e, mac) {
+    const which = undoKey(e, mac);
+    const root = this.h.root;
+    if (which < 0 || !root || !root.listening(Event.Undo) || editable(e.target) || editable(document.activeElement)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.h.dispatch(Events.undo(root.id, which));
   }
 }

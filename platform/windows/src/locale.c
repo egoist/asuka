@@ -174,6 +174,15 @@ void wh_word_app(wchar_t *buf, size_t cap, const char *key) {
 	buf[cap - 1] = 0;
 }
 
+// wh_word_vars writes a word with its {name}s filled from vars (name,
+// value pairs, nvars strings) into buf.
+void wh_word_vars(wchar_t *buf, size_t cap, const char *key, const char *const *vars, size_t nvars) {
+	char out[512];
+	dsk_word_format(out, sizeof out, word_locale(), key, vars, nvars);
+	MultiByteToWideChar(CP_UTF8, 0, out, -1, buf, (int)cap);
+	buf[cap - 1] = 0;
+}
+
 // wh_say_words says the host's own words in the app's language again.
 void wh_say_words(void) {
 	uint32_t i = 0;

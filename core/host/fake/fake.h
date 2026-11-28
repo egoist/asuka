@@ -286,6 +286,13 @@ ak_span ak_fake_label(const ak_fake_view *v);
 // ak_fake_text appends the texts and titles under v, depth first, joined
 // by "|".
 void ak_fake_text(const ak_fake_view *v, ak_buf *out);
+// A Table's or Outline's row's cells, a host cell's RowData: how many, and
+// cell i's text.
+uint32_t ak_fake_row_cells(const ak_fake_view *v);
+ak_span ak_fake_row_cell(const ak_fake_view *v, uint32_t i);
+// ak_fake_listy reports a kind whose rows are bound into cells: a List,
+// a Table, an Outline.
+static inline bool ak_fake_listy(ak_view_kind k) { return k == AK_KIND_LIST || k == AK_KIND_TABLE || k == AK_KIND_OUTLINE; }
 // ak_fake_tree appends the view tree under v: kind, frame and text, a
 // line each, as Go's View.Tree.
 void ak_fake_tree(const ak_fake_view *v, ak_buf *out);

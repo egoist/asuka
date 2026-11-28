@@ -15,6 +15,7 @@
 | `environment()`、`screenEnvironment()` | サイズ、セーフエリア、文字サイズ、プラットフォームなど（追跡されます）。画面やシート自身のものと、画面全体のもの |
 | `window.main()`、`window.current()` | メインウィンドウの `Ref` と、コードがあるウィンドウの `Ref`。どこからでも `show()`、`hide()`、`focus()` などができます |
 | `window.close()` | コードがあるウィンドウを確認せずに閉じます |
+| `undo.register(name, undo:, redo:)`、`undo.group(name, body)` | アプリが行った変更を記録します。「編集」>「取り消す」、⌘Z や Ctrl+Z、スマートフォンのシェイクで取り消せます。`undo.undo()`、`undo.redo()`、`canUndo()`、`canRedo()`、`undoName()`、`redoName()`（追跡されます）、`clear()`（[取り消しとやり直し](../desktop.md#取り消しとやり直し)） |
 
 システムのサービスに頼むことは[プラットフォーム SDK](../stdlib.md) のパッケージにあり、ほかのパッケージと同じようにインポートして使います。
 

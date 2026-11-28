@@ -1,7 +1,8 @@
 // Package platform/device is what the platform offers apps beyond views:
 // what device it is, links opened in other apps and in its in-app
 // browser, the share sheet, haptic feedback, its photo and document
-// pickers, the clipboard (text and images), and keeping the screen on.
+// pickers, the clipboard (text, images, rich text, files and an app's
+// own formats), and keeping the screen on.
 //
 //   let info = try await device.info()          // "iPhone", "iOS", "26.0"
 //   device.openURL("mailto:hi@example.com")     // in the app that takes it
@@ -138,6 +139,23 @@ pub struct ClipboardKinds {
   url: bool = false
   /// Rich text: what a browser, a mail or a document copied, as HTML.
   html: bool = false
+  /// Files: what a file manager copied (Finder, Explorer, Files, GNOME's
+  /// Files), or copyFiles. On phones and the web an image counts too
+  /// (clipboardFiles gives it as a file).
+  files: bool = false
+}
+
+/// One format of what copyFormats puts on the clipboard together: an
+/// app's own data, with others for the apps that don't know it.
+pub struct ClipboardFormat {
+  /// Its type: a MIME type ("application/x.drawing+json", "text/plain",
+  /// "text/html", "image/png"), each platform's own for the ones it
+  /// knows; one without a "/" is the platform's name as it is (a UTI on
+  /// Apple platforms, a registered format's on Windows, an X11 target's
+  /// on Linux).
+  type: string
+  /// Its data: text/plain's and text/html's as UTF-8.
+  data: bytes
 }
 
 /// The platform's side.
@@ -167,6 +185,17 @@ native interface Platform {
   /// Puts html on the clipboard, with text for the apps that paste
   /// plain text.
   async fn copyHTML(html: string, text: string)
+  /// The files on the clipboard: their paths (the desktops'), or copies
+  /// in the app's caches (phones, the web); none if it has none.
+  async fn clipboardFiles() -> [string]
+  /// Puts the files at paths on the clipboard.
+  async fn copyFiles(paths: [string])
+  /// The formats on the clipboard, as MIME types where known.
+  async fn clipboardFormats() -> [string]
+  /// The clipboard's data of type; none if it has none.
+  async fn clipboardData(type: string) -> bytes?
+  /// Puts formats on the clipboard together, in place of what it held.
+  async fn copyFormats(formats: [ClipboardFormat])
   /// Calls changed with what the clipboard holds at each change, until
   /// the task is cancelled.
   async fn watchClipboard(changed: fn(ClipboardKinds))
@@ -391,6 +420,109 @@ fn plainOf(html: string) -> string {
 /// for pasting in another app.
 pub async fn copyImage(path: string) throws {
   try await made().copyImage(path: path)
+}
+
+/// The files on the clipboard (what a file manager copied, or
+/// copyFiles), in order; none if it has none. On a Mac, Windows and Linux
+/// they're the files' own paths, to read or copy (not the app's to move);
+/// on iOS, Android and the web they're copies in the app's caches, the
+/// app's to keep or move, and an image on the clipboard counts as a file.
+/// iOS asks the user the first time the app reads what another app put
+/// there.
+pub async fn clipboardFiles() throws -> [string] {
+  return try await made().clipboardFiles()
+}
+
+/// Puts the files at paths on the clipboard, for pasting in a file
+/// manager (Finder, Explorer, GNOME's Files: a copy, not a move) or an
+/// app that takes files (a mail, a chat). On iOS and Android each file's
+/// content goes with its name (Files, Mail and the like paste it); a
+/// browser can't put files there: it throws unsupported.
+pub async fn copyFiles(paths: [string]) throws {
+  if paths.isEmpty() {
+    throw Error("device: no files to copy")
+  }
+  try await made().copyFiles(paths: paths)
+}
+
+/// The formats on the clipboard now, without reading their data: MIME
+/// types where the platform's name has one ("text/plain", "text/html",
+/// "image/png", an app's "application/x.drawing+json"), else the
+/// platform's own name (a UTI, a Windows format's name, an X11 target).
+/// What clipboardData reads, as Electron's clipboard.availableFormats.
+pub async fn clipboardFormats() throws -> [string] {
+  return try await made().clipboardFormats()
+}
+
+/// The clipboard's data of type, none if it has none: an app's own
+/// format that copyData or copyFormats put there (here or in another copy
+/// of the app), or another app's (type as clipboardFormats names it).
+/// text/plain's and text/html's come as UTF-8. iOS asks, as clipboardText
+/// does; a browser reads only text/plain, text/html, image/png and the
+/// formats a page put (Chrome's web custom formats).
+pub async fn clipboardData(type: string) throws -> bytes? {
+  let t = formatType(type)
+  if t.isEmpty() {
+    throw Error("device: a clipboard format needs a type")
+  }
+  return try await made().clipboardData(type: t)
+}
+
+/// Puts data of type (an app's own format: a MIME type, see
+/// ClipboardFormat) on the clipboard, with text for the apps that paste
+/// plain text (empty: none), as Electron's clipboard.writeBuffer. Another
+/// copy of the app (or an app that knows the type) reads it back with
+/// clipboardData.
+pub async fn copyData(type: string, data: bytes, text: string = "") throws {
+  var formats = [ClipboardFormat(type: type, data: data)]
+  if !text.isEmpty() {
+    formats.push(ClipboardFormat(type: "text/plain", data: text.bytes()))
+  }
+  try await copyFormats(formats)
+}
+
+/// Puts several formats on the clipboard together, in place of what it
+/// held: an app's own data with HTML and text for other apps (a
+/// spreadsheet's cells as its own, an HTML table and tab-separated text).
+/// Each type once; text/plain and text/html go as the platform's text and
+/// rich text (HTML without text/plain gets its text, as copyHTML's does),
+/// image/png as its image.
+pub async fn copyFormats(formats: [ClipboardFormat]) throws {
+  try await made().copyFormats(formats: try checkedFormats(formats))
+}
+
+/// A format's type as the platforms take it: trimmed, a MIME type in
+/// lower case (a platform's own name as it is).
+fn formatType(type: string) -> string {
+  let t = type.trim()
+  return if t.contains("/") { t.lower() } else { t }
+}
+
+/// formats with their types as the platforms take them, and text/html's
+/// text as text/plain if they have none; throws for none, a type that's
+/// empty, or one given twice.
+fn checkedFormats(formats: [ClipboardFormat]) throws -> [ClipboardFormat] {
+  if formats.isEmpty() {
+    throw Error("device: no formats to copy")
+  }
+  var out: [ClipboardFormat] = []
+  var seen = Set<string>()
+  for f in formats {
+    let t = formatType(f.type)
+    if t.isEmpty() {
+      throw Error("device: a clipboard format needs a type")
+    }
+    if !seen.insert(t.lower()) {
+      throw Error("device: the clipboard format {t} is given twice")
+    }
+    out.push(ClipboardFormat(type: t, data: f.data))
+  }
+  if seen.contains("text/html") && !seen.contains("text/plain") {
+    if let html = out.find(f => f.type == "text/html") {
+      out.push(ClipboardFormat(type: "text/plain", data: plainOf(html.data.string()).bytes()))
+    }
+  }
+  return out
 }
 
 /// What the clipboard holds at each change while the app is in front

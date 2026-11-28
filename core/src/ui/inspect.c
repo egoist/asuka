@@ -68,7 +68,7 @@ static void view_json(walk *w, ak_view *e) {
 	ak_buf_put(b, ",\"kids\":[", 9);
 	walk inner = {b, true, w->depth + 1};
 	for (uint32_t i = 0; i < e->kids.len; i++) view_json(&inner, e->kids.data[i]);
-	if (e->kind == AK_KIND_LIST && e->el == AK_EL_LIST) ak_list_each_cell(e, cell_json, &inner);
+	if (ak_listlike(e)) ak_list_each_cell(e, cell_json, &inner);
 	ak_buf_put(b, "]}", 2);
 }
 
@@ -119,7 +119,7 @@ static ak_view *kid_at(ak_view *e, uint32_t i) {
 		if (k && !k->dead && i-- == 0) return k;
 	}
 	nth n = {i, NULL};
-	if (e->kind == AK_KIND_LIST && e->el == AK_EL_LIST) ak_list_each_cell(e, cell_nth, &n);
+	if (ak_listlike(e)) ak_list_each_cell(e, cell_nth, &n);
 	return n.found;
 }
 

@@ -13,7 +13,8 @@
 // accelerators, in every window. A chosen item sends Action on the root
 // with its number among all the menus' items; a Quit item quits the app
 // as the user's quit does (the app asked first), and takes Ctrl+Q; a
-// Close item closes the window in use (Ctrl+W).
+// Close item closes the window in use (Ctrl+W); Undo and Redo items are
+// undo.c's (Ctrl+Z, Ctrl+Shift+Z).
 #include "host.h"
 
 #include <ctype.h>
@@ -24,6 +25,10 @@ void lx_listen_long_press(node *n);
 void lx_listen_click(node *n);
 void lx_popup_at(node *n, GMenuModel *model, double x, double y);
 const char *lx_word_app(const char *key, const char *app);
+const char *lx_undo_title(bool redo);
+void lx_undo_item(bool redo, GSimpleAction *a, bool disabled);
+bool lx_undo_enabled(bool redo);
+void lx_undo_choose(bool redo, int64_t index);
 
 void lx_menu_changed(node *n) {
 	if (!n->widget || !n->has_menu) return;
@@ -200,6 +205,7 @@ char *lx_accelerator(const char *key, uint8_t mods) {
 static const char *item_title(const ak_menu_entry *it, char *buf, size_t n) {
 	if (!it->title.len && it->role == AK_MENU_ROLE_QUIT) return lx_word_app("quit", H.app_name);
 	if (!it->title.len && it->role == AK_MENU_ROLE_CLOSE) return lx_word("close");
+	if (!it->title.len && (it->role == AK_MENU_ROLE_UNDO || it->role == AK_MENU_ROLE_REDO)) return lx_undo_title(it->role == AK_MENU_ROLE_REDO);
 	size_t k = it->title.len < n - 1 ? it->title.len : n - 1;
 	memcpy(buf, it->title.p, k);
 	buf[k] = 0;
@@ -227,6 +233,11 @@ static void choose_app_item(int index, uint8_t role) {
 	if (role == AK_MENU_ROLE_CLOSE) {
 		// The window in use, as its close button closes it.
 		lx_after_core(close_active, NULL);
+		return;
+	}
+	if (role == AK_MENU_ROLE_UNDO || role == AK_MENU_ROLE_REDO) {
+		// A focused text's own, else the app's.
+		lx_undo_choose(role == AK_MENU_ROLE_REDO, index);
 		return;
 	}
 	if (H.root) lx_dispatch(&(ak_event){.id = H.root->id, .kind = AK_EVENT_ACTION, .i = index});
@@ -271,7 +282,9 @@ static GMenuModel *app_menu_model(const ak_menu_entry *es, uint32_t n, uint32_t 
 		snprintf(name, sizeof name, "asuka-menu-%u", it->index);
 		snprintf(detailed, sizeof detailed, "app.%s", name);
 		GSimpleAction *a = (it->flags & AK_MENU_CHECKED) ? g_simple_action_new_stateful(name, NULL, g_variant_new_boolean(1)) : g_simple_action_new(name, NULL);
+		bool undo = it->role == AK_MENU_ROLE_UNDO || it->role == AK_MENU_ROLE_REDO;
 		g_simple_action_set_enabled(a, !(it->flags & AK_MENU_DISABLED));
+		if (undo) lx_undo_item(it->role == AK_MENU_ROLE_REDO, a, (it->flags & AK_MENU_DISABLED) != 0);  // enabled as undo.c says
 		g_signal_connect(a, "activate", G_CALLBACK(on_app_item), (gpointer)(((uintptr_t)it->index << 8) | it->role));
 		g_action_map_add_action((GActionMap *)H.app, (GAction *)a);
 		g_object_unref(a);
@@ -289,8 +302,12 @@ static GMenuModel *app_menu_model(const ak_menu_entry *es, uint32_t n, uint32_t 
 			snprintf(key, sizeof key, "w");
 			mods = 1;
 		}
+		if (undo && !kn) {
+			snprintf(key, sizeof key, "z");
+			mods = it->role == AK_MENU_ROLE_REDO ? 3 : 1;
+		}
 		char *accel = lx_accelerator(key, mods);
-		if (accel && !(it->flags & AK_MENU_DISABLED)) {
+		if (accel && (undo || !(it->flags & AK_MENU_DISABLED))) {  // a disabled Undo leaves Ctrl+Z to the focused widget
 			const char *list[2] = {accel, NULL};
 			gtk_application_set_accels_for_action(H.app, detailed, list);
 		}
@@ -305,7 +322,23 @@ static GMenuModel *app_menu_model(const ak_menu_entry *es, uint32_t n, uint32_t 
 	return (GMenuModel *)m;
 }
 
+static ak_buf menu_bar;  // the MenuBar as last set (undo.c's names change its titles)
+
+void lx_menu_rebuild(void);
+void lx_menu_rebuild(void) {
+	ak_buf b = menu_bar;
+	menu_bar = (ak_buf){0};
+	lx_set_menu_bar((ak_span){(const char *)b.data, b.len});
+	ak_buf_free(&b);
+}
+
 void lx_set_menu_bar(ak_span b) {
+	if ((const uint8_t *)b.p != menu_bar.data) {
+		ak_buf_reset(&menu_bar);
+		ak_buf_put(&menu_bar, b.p, b.len);
+	}
+	lx_undo_item(false, NULL, false);
+	lx_undo_item(true, NULL, false);
 	// The previous menus' actions and accelerators go.
 	for (uint32_t i = 0; i < H.app_actions.len; i++) {
 		char detailed[64];
@@ -361,7 +394,11 @@ bool lx_activate_app_item(const char *title) {
 	for (uint32_t i = 0; i < app_items.len; i++) {
 		app_item *it = &app_items.data[i];
 		if (strcmp(it->title, title) || (it->flags & (AK_MENU_SEPARATOR | AK_MENU_SUBMENU))) continue;
-		if (it->flags & AK_MENU_DISABLED) return false;
+		if (it->role == AK_MENU_ROLE_UNDO || it->role == AK_MENU_ROLE_REDO) {
+			if (!lx_undo_enabled(it->role == AK_MENU_ROLE_REDO)) return false;
+		} else if (it->flags & AK_MENU_DISABLED) {
+			return false;
+		}
 		choose_app_item(it->index, it->role);
 		return true;
 	}

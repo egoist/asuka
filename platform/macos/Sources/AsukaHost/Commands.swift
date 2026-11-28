@@ -19,7 +19,7 @@ import AsukaOps
         case .blur:
             blurCommand(n)
         case .listUpdate:
-            listUpdate(n, args)
+            if let t = n.table { t.update(args) } else { listUpdate(n, args) } // Tables.swift, Lists.swift
         case .insertText:
             if n.kind == .textField { insertText(n, String(decoding: args, as: UTF8.self)) }
         case .format:
@@ -72,14 +72,14 @@ import AsukaOps
         case .scrollTo:
             guard args.count >= 5 else { return }
             let b = Array(args)
-            listScrollTo(n, Int(b.u32(0)), b[4] != 0)
+            if n.table != nil { tableScrollTo(n, Int(b.u32(0)), b[4] != 0) } else { listScrollTo(n, Int(b.u32(0)), b[4] != 0) }
         case .zoomTo:
             zoomTo(n, args) // Zoom.swift
         case .scrollToOffset:
             guard args.count >= 9 else { return }
             let b = Array(args)
             // A list's own: it knows its end, and whether it stays there.
-            if let l = n.list { l.scrollToOffset(CGFloat(b.f32(4)), b[8] != 0) } else { scrollToOffset(n, CGFloat(b.f32(0)), CGFloat(b.f32(4)), b[8] != 0) }
+            if n.table != nil { tableScrollToOffset(n, CGFloat(b.f32(4)), b[8] != 0) } else if let l = n.list { l.scrollToOffset(CGFloat(b.f32(4)), b[8] != 0) } else { scrollToOffset(n, CGFloat(b.f32(0)), CGFloat(b.f32(4)), b[8] != 0) }
         case .accent:
             guard args.count >= 8 else { return }
             setAccent(Array(args).u64(0))
@@ -105,6 +105,8 @@ import AsukaOps
             setFontScale(CGFloat(Array(args).f32(0)))
         case .quit:
             AsukaShell.shared.quit(Array(args))
+        case .undoState:
+            undoState(Array(args)) // Undo.swift
         case .shareClose, .backExit:
             break // a share extension's; a phone's back out of the app
         }
@@ -160,7 +162,9 @@ import AsukaOps
         guard let clip = note.object as? NSClipView else { return }
         listScrolled(clip)
         guard let n = node(of: clip.superview) else { return }
-        let o = clip.bounds.origin, s = zoomScale(n)
+        var o = clip.bounds.origin
+        let s = zoomScale(n)
+        if n.table != nil { o.y += clip.contentInsets.top } // from the rows' top, under a table's header
         emit(n, .scrolled) { AsukaEvents.scrolled($0, x: Double(o.x * s), y: Double(o.y * s)) }
     }
 
@@ -171,7 +175,7 @@ import AsukaOps
             listenWindow(n)
             return
         }
-        if e == .scrolled, n.kind == .scroll || n.kind == .list, !n.observesScroll, let sv = n.view as? NSScrollView {
+        if e == .scrolled, n.kind == .scroll || n.kind == .list || n.table != nil, !n.observesScroll, let sv = n.view as? NSScrollView {
             n.observesScroll = true
             sv.contentView.postsBoundsChangedNotifications = true
             NotificationCenter.default.addObserver(self, selector: #selector(boundsChanged(_:)), name: NSView.boundsDidChangeNotification, object: sv.contentView)

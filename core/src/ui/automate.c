@@ -66,7 +66,7 @@ static void walk_view(walk *w, ak_view *e) {
 	int64_t sel = ak_tabs_selected(e);
 	if (sel >= 0 && sel < (int64_t)e->kids.len) from = (uint32_t)sel, to = (uint32_t)sel + 1;
 	for (uint32_t i = from; i < to && !w->stop; i++) walk_view(w, e->kids.data[i]);
-	if (e->kind == AK_KIND_LIST && e->el == AK_EL_LIST) ak_list_each_cell(e, walk_cell, w);
+	if (ak_listlike(e)) ak_list_each_cell(e, walk_cell, w);
 	w->depth--;
 }
 
@@ -270,7 +270,7 @@ static void back(ak_buf *out) {
 // scroll: the first List that shows, a page further down: to the row
 // after the last the host has bound, as many on as it binds.
 static bool first_list(ak_view *e, void *ctx) {
-	if (e->kind == AK_KIND_LIST && e->el == AK_EL_LIST) {
+	if (ak_listlike(e)) {
 		*(ak_view **)ctx = e;
 		return true;
 	}

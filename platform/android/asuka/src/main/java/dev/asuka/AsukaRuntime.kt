@@ -285,6 +285,8 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     val keyed = HashSet<Int>()
     val takenKeys = HashSet<Int>()
     var rootID = 0
+    /** UndoState's: the app's undo stack (Undo.kt). */
+    var undoState = AsukaUndoState()
     var activity: AsukaActivity? = null
     private var started = false
     private val main = Handler(Looper.getMainLooper())
@@ -1246,6 +1248,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
                 insertFieldText(n, String(b, Charsets.UTF_8))
             }
             AsukaCommand.PRESENT -> present(n)
+            AsukaCommand.UNDO_STATE -> setUndoState(args)
             AsukaCommand.WINDOW_ACTION -> if (n.kind == AsukaKind.SHEET) sheetWindowAction(n, args)
             AsukaCommand.HAPTIC -> if (args.remaining() > 0) haptic(args.get().toInt() and 0xff)
             AsukaCommand.ANIMATE_BEGIN -> beginAnimation(args)

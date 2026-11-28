@@ -225,7 +225,7 @@ static void walk(ak_uitest *a, ak_fake_view *v, walk_fn f, void *ctx) {
 		return;
 	}
 	for (uint32_t i = 0; i < v->children.len; i++) walk(a, v->children.data[i], f, ctx);
-	if (v->kind == AK_KIND_LIST) {
+	if (ak_fake_listy(v->kind)) {
 		list_state *st = list_of(a, v->id);
 		uint32_t h = 0;
 		for (uint32_t i = 0; st && i < st->cells.len; i++) {
@@ -320,6 +320,9 @@ static void shows(const ak_fake_view *v, text_fn f, void *ctx) {
 	ak_span s;
 #define ADD(x) do { s = (x); if (s.len) f(s, ctx); } while (0)
 	switch (v->kind) {
+	case AK_FAKE_KIND_CELL:  // a Table's or Outline's row: its cells' text
+		for (uint32_t i = 0, n = ak_fake_row_cells(v); i < n; i++) ADD(ak_fake_row_cell(v, i));
+		break;
 	case AK_KIND_TEXT: ADD(ak_fake_string(v, AK_PROP_TEXT_TEXT)); break;
 	case AK_KIND_BUTTON: ADD(ak_fake_string(v, AK_PROP_BUTTON_TITLE)); break;
 	case AK_KIND_NATIVE: {
@@ -840,6 +843,10 @@ static void describe(ak_uitest *a, ak_buf *b, ak_fake_view *v, int depth) {
 			}
 		}
 	}
+	for (uint32_t i = 0, n = v->kind == AK_FAKE_KIND_CELL ? ak_fake_row_cells(v) : 0; i < n; i++) {
+		ak_buf_u8(b, ' ');
+		ak_fmt_quote(b, ak_fake_row_cell(v, i));
+	}
 	if (ak_fake_bool(v, AK_PROP_SELECTED)) ak_buf_printf(b, " selected");
 	if (ak_fake_bool(v, AK_PROP_DISABLED)) ak_buf_printf(b, " disabled");
 	ak_buf_u8(b, '\n');
@@ -853,7 +860,7 @@ static void describe(ak_uitest *a, ak_buf *b, ak_fake_view *v, int depth) {
 		return;
 	}
 	for (uint32_t i = 0; i < v->children.len; i++) describe(a, b, v->children.data[i], depth + 1);
-	if (v->kind == AK_KIND_LIST) {
+	if (ak_fake_listy(v->kind)) {
 		list_state *st = list_of(a, v->id);
 		uint32_t h = 0;
 		for (uint32_t i = 0; st && i < st->cells.len; i++) {
@@ -1036,10 +1043,10 @@ static bool sync_list(ak_uitest *a, ak_fake_view *list) {
 }
 
 static bool lists_fn(ak_uitest *a, ak_fake_view *v, void *ctx) {
-	if (v->kind == AK_KIND_LIST && !list_of(a, v->id)) {
+	if (ak_fake_listy(v->kind) && !list_of(a, v->id)) {
 		ak_vec_push(&a->lists, ((list_state){.list = v->id, .end = ak_fake_int(v, AK_PROP_LIST_ANCHOR) == AK_SCROLL_ANCHOR_BOTTOM}));
 	}
-	if (v->kind == AK_KIND_LIST) {
+	if (ak_fake_listy(v->kind)) {
 		list_state *st = list_of(a, v->id);
 		if (!st->seen && sync_list(a, v)) *(bool *)ctx = true;
 	}
@@ -1905,7 +1912,7 @@ bool ak_uitest_scroll_to(ak_uitest *a, ak_span text, ak_buf *err) {
 	visible(a, &vs);
 	bool ok = false;
 	for (uint32_t i = 0; i < vs.len && !ok; i++) {
-		if (vs.data[i]->kind != AK_KIND_LIST) continue;
+		if (!ak_fake_listy(vs.data[i]->kind)) continue;
 		list_state *st = list_of(a, vs.data[i]->id);
 		if (!st) continue;
 		st->end = false;

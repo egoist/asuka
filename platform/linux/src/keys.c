@@ -25,6 +25,7 @@
 #define KEY_ESCAPE 0xff1b
 
 node *lx_popover_anchor(node *n);
+bool lx_undo_key(ak_span name, uint8_t mods);
 
 // The Keys prop.
 void lx_set_keys(node *n, ak_span b) {
@@ -179,6 +180,8 @@ static gboolean on_key(GtkEventControllerKey *k, guint keyval, guint keycode, Gd
 	if (!name.len) return 0;
 	lx_enter_begin();
 	bool took = route_key(focus_node(w, kr->native, focus, start), name, mods);
+	// Ctrl+Z, Ctrl+Shift+Z: the app's undo where no text takes it (undo.c).
+	if (!took && kr->w) took = lx_undo_key(name, mods);
 	lx_enter_end();
 	return took;
 }

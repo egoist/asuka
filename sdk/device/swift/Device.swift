@@ -184,9 +184,9 @@ final class SystemDevice: Platform {
         #else
         return await MainActor.run {
             #if canImport(UIKit)
-            UIPasteboard.general.string
+            SystemDevice.board.string
             #else
-            NSPasteboard.general.string(forType: .string)
+            SystemDevice.board.string(forType: .string)
             #endif
         }
         #endif
@@ -198,19 +198,207 @@ final class SystemDevice: Platform {
         #if os(tvOS) || os(watchOS)
         return ClipboardKinds(text: false, image: false, url: false, html: false)
         #elseif canImport(UIKit)
-        let pb = UIPasteboard.general
+        let pb = SystemDevice.board
         // contains(pasteboardTypes:) reads the types, not the data: no prompt.
         return ClipboardKinds(text: pb.hasStrings, image: pb.hasImages, url: pb.hasURLs,
-                              html: pb.contains(pasteboardTypes: richTypes))
+                              html: pb.contains(pasteboardTypes: richTypes), files: pb.types.contains { fileish($0) })
         #else
-        let pb = NSPasteboard.general
+        let pb = SystemDevice.board
         let types = pb.types ?? []
         let image = types.contains { UTType($0.rawValue)?.conforms(to: .image) ?? false }
         let url = types.contains(.URL) || types.contains(.fileURL)
         let html = types.contains { richTypes.contains($0.rawValue) }
-        return ClipboardKinds(text: types.contains(.string), image: image, url: url, html: html)
+        return ClipboardKinds(text: types.contains(.string), image: image, url: url, html: html, files: types.contains(.fileURL))
         #endif
     }
+
+    #if !os(tvOS) && !os(watchOS)
+    /// The pasteboard the clipboard is: the general one (a test's own).
+    #if canImport(UIKit)
+    @MainActor static var board = UIPasteboard.general
+    #else
+    @MainActor static var board = NSPasteboard.general
+    #endif
+    #endif
+
+    /// Whether a pasteboard type is a file's (iOS, which has no files on
+    /// its pasteboard as such: what the Files app copies is each file's
+    /// content, named): a file URL, or content that's neither text nor a
+    /// link nor rich text's (an image, a PDF, a movie, an archive), of a
+    /// type the system declares, not the system's own (UIKit's attributed
+    /// strings, Notes' rich text).
+    static func fileish(_ id: String) -> Bool {
+        guard let t = UTType(id), !t.isDynamic else { return false }
+        if t.conforms(to: .fileURL) { return true }
+        guard t.conforms(to: .data), !t.conforms(to: .text), !t.conforms(to: .url) else { return false }
+        if [UTType.rtfd, .flatRTFD, .webArchive].contains(where: { t.conforms(to: $0) }) { return false }
+        return !id.hasPrefix("com.apple.")
+    }
+
+    /// A clipboard format's pasteboard type: a MIME type's UTI (a dynamic
+    /// one, made of the MIME type, for one the system doesn't declare:
+    /// another copy of the app makes the same), text/plain as UTF-8's; a
+    /// UTI as it is.
+    static func boardType(_ type: String) -> String {
+        guard type.contains("/") else { return type }
+        if type == "text/plain" { return UTType.utf8PlainText.identifier }
+        return UTType(mimeType: type)?.identifier ?? type
+    }
+
+    /// A pasteboard type as clipboardFormats names it: its MIME type (less
+    /// its parameters) where it has one, else the UTI; none for the Mac's
+    /// legacy aliases of the types beside them ("NSStringPboardType",
+    /// "Apple URL pasteboard type", a dynamic type without a MIME type).
+    static func formatName(_ id: String) -> String? {
+        if let m = UTType(id)?.preferredMIMEType {
+            return String(m.split(separator: ";")[0]).trimmingCharacters(in: .whitespaces)
+        }
+        if id.contains(" ") || id.hasSuffix("PboardType") || id.hasPrefix("dyn.") { return nil }
+        return id
+    }
+
+    func clipboardFormats() async throws -> [String] {
+        #if os(tvOS) || os(watchOS)
+        return []
+        #else
+        return await MainActor.run {
+            #if canImport(UIKit)
+            let types = Self.board.types
+            #else
+            let types = (Self.board.types ?? []).map { $0.rawValue }
+            #endif
+            var seen = Set<String>()
+            return types.compactMap { Self.formatName($0) }.filter { seen.insert($0).inserted }
+        }
+        #endif
+    }
+
+    func clipboardData(type: String) async throws -> Data? {
+        #if os(tvOS) || os(watchOS)
+        return nil
+        #else
+        let t = Self.boardType(type)
+        return await MainActor.run {
+            #if canImport(UIKit)
+            let pb = Self.board
+            guard pb.contains(pasteboardTypes: [t]) else { return nil }
+            if t == UTType.utf8PlainText.identifier, let s = pb.string { return Data(s.utf8) }
+            if let d = pb.data(forPasteboardType: t) { return d }
+            return (pb.value(forPasteboardType: t) as? String).map { Data($0.utf8) }
+            #else
+            let pb = Self.board
+            if t == UTType.utf8PlainText.identifier { return pb.string(forType: .string).map { Data($0.utf8) } }
+            return pb.data(forType: NSPasteboard.PasteboardType(t))
+            #endif
+        }
+        #endif
+    }
+
+    func copyFormats(formats: [ClipboardFormat]) async throws {
+        #if os(tvOS) || os(watchOS)
+        throw AsukaNativeError.unsupported("device: this system has no clipboard")
+        #else
+        await MainActor.run {
+            let types = formats.map { Self.boardType($0.type) }
+            #if canImport(UIKit)
+            // One item, each format a representation of it; text as a
+            // string, which every app's paste reads.
+            var item: [String: Any] = [:]
+            for (f, t) in zip(formats, types) {
+                item[t] = t == UTType.utf8PlainText.identifier ? String(decoding: f.data, as: UTF8.self) : f.data
+            }
+            Self.board.setItems([item])
+            #else
+            let pb = Self.board
+            pb.clearContents()
+            pb.declareTypes(types.map { NSPasteboard.PasteboardType($0) }, owner: nil)
+            for (f, t) in zip(formats, types) { pb.setData(f.data, forType: NSPasteboard.PasteboardType(t)) }
+            #endif
+        }
+        #endif
+    }
+
+    func clipboardFiles() async throws -> [String] {
+        #if os(tvOS) || os(watchOS)
+        return []
+        #elseif canImport(UIKit)
+        // Each item that's a file (a file URL the app may read, or a
+        // file's content, named), copied into the caches.
+        let providers: [NSItemProvider] = await MainActor.run {
+            Self.board.types.contains { Self.fileish($0) } ? Self.board.itemProviders : []
+        }
+        var out: [String] = []
+        for p in providers {
+            if let path = await Self.keepFile(p) { out.append(path) }
+        }
+        return out
+        #else
+        return await MainActor.run {
+            let urls = Self.board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+            return urls.map { $0.path }
+        }
+        #endif
+    }
+
+    func copyFiles(paths: [String]) async throws {
+        #if os(tvOS) || os(watchOS)
+        throw AsukaNativeError.unsupported("device: this system has no clipboard")
+        #else
+        let urls = paths.map { URL(fileURLWithPath: $0) }
+        for u in urls where !FileManager.default.fileExists(atPath: u.path) { throw Self.error("device: no file at \(u.path)") }
+        try await MainActor.run {
+            #if canImport(UIKit)
+            // Each file's content, of its type, with its name: what the
+            // Files app copies, and pastes.
+            let providers = try urls.map { u -> NSItemProvider in
+                guard let p = NSItemProvider(contentsOf: u) else { throw Self.error("device: can't read \(u.path)") }
+                p.suggestedName = u.lastPathComponent
+                return p
+            }
+            Self.board.setItemProviders(providers, localOnly: false, expirationDate: nil)
+            #else
+            let pb = Self.board
+            pb.clearContents()
+            if !pb.writeObjects(urls as [NSURL]) { throw Self.error("device: the clipboard took no files") }
+            #endif
+        }
+        #endif
+    }
+
+    #if canImport(UIKit) && !os(tvOS) && !os(watchOS)
+    /// An item provider's file, copied into the caches' asuka-clipboard, in
+    /// a folder of its own (its name stays its own): a file URL's file, or
+    /// its first file type's content, named as it says (else "Pasted").
+    static func keepFile(_ p: NSItemProvider) async -> String? {
+        let dir: URL
+        do { dir = try cacheDir("asuka-clipboard").appendingPathComponent(UUID().uuidString, isDirectory: true) } catch { return nil }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            let url: URL? = await withCheckedContinuation { c in
+                _ = p.loadObject(ofClass: URL.self) { u, _ in c.resume(returning: u) }
+            }
+            if let u = url, u.isFileURL {
+                let scoped = u.startAccessingSecurityScopedResource()
+                defer { if scoped { u.stopAccessingSecurityScopedResource() } }
+                let to = dir.appendingPathComponent(u.lastPathComponent)
+                if (try? FileManager.default.copyItem(at: u, to: to)) != nil { return to.path }
+            }
+        }
+        guard let id = p.registeredTypeIdentifiers.first(where: { fileish($0) && $0 != UTType.fileURL.identifier }) else { return nil }
+        let ext = UTType(id)?.preferredFilenameExtension ?? ""
+        var name = (p.suggestedName ?? "").replacingOccurrences(of: "/", with: "_")
+        if name.isEmpty { name = "Pasted" }
+        if !ext.isEmpty && (name as NSString).pathExtension.isEmpty { name += "." + ext }
+        let to = dir.appendingPathComponent(name)
+        return await withCheckedContinuation { c in
+            _ = p.loadFileRepresentation(forTypeIdentifier: id) { u, _ in
+                // The file is the provider's only until this returns: copied now.
+                guard let u, (try? FileManager.default.copyItem(at: u, to: to)) != nil else { c.resume(returning: nil); return }
+                c.resume(returning: to.path)
+            }
+        }
+    }
+    #endif
 
     /// The types rich text arrives in, the one read first first: HTML (a
     /// browser's, a mail's), a web archive (Safari's: its HTML inside),
@@ -224,13 +412,13 @@ final class SystemDevice: Platform {
         #else
         return await MainActor.run {
             #if canImport(UIKit)
-            let pb = UIPasteboard.general
+            let pb = SystemDevice.board
             func data(_ t: String) -> Data? {
                 if let d = pb.data(forPasteboardType: t) { return d }
                 return (pb.value(forPasteboardType: t) as? String).map { Data($0.utf8) }
             }
             #else
-            let pb = NSPasteboard.general
+            let pb = SystemDevice.board
             func data(_ t: String) -> Data? { pb.data(forType: NSPasteboard.PasteboardType(t)) }
             #endif
             for t in Self.richTypes {
@@ -276,9 +464,9 @@ final class SystemDevice: Platform {
         #else
         await MainActor.run {
             #if canImport(UIKit)
-            UIPasteboard.general.setItems([[UTType.html.identifier: Data(html.utf8), UTType.utf8PlainText.identifier: text]])
+            SystemDevice.board.setItems([[UTType.html.identifier: Data(html.utf8), UTType.utf8PlainText.identifier: text]])
             #else
-            let pb = NSPasteboard.general
+            let pb = SystemDevice.board
             pb.clearContents()
             pb.declareTypes([.html, .string], owner: nil)
             pb.setString(html, forType: .html)
@@ -296,14 +484,14 @@ final class SystemDevice: Platform {
         // first image type the clipboard has.
         let found: (Data, String)? = await MainActor.run {
             #if canImport(UIKit)
-            let pb = UIPasteboard.general
+            let pb = SystemDevice.board
             for t in pb.types.compactMap({ UTType($0) }) where t.conforms(to: .image) {
                 if let d = pb.data(forPasteboardType: t.identifier) { return (d, t.preferredFilenameExtension ?? "png") }
             }
             if let img = pb.image, let d = img.pngData() { return (d, "png") }
             return nil
             #else
-            let pb = NSPasteboard.general
+            let pb = SystemDevice.board
             for t in pb.types ?? [] {
                 guard let u = UTType(t.rawValue), u.conforms(to: .image), let d = pb.data(forType: t) else { continue }
                 if u == .tiff, let rep = NSBitmapImageRep(data: d), let png = rep.representation(using: .png, properties: [:]) {
@@ -329,7 +517,7 @@ final class SystemDevice: Platform {
         guard let data = try? Data(contentsOf: url) else { throw Self.error("device: no file at \(path)") }
         try await MainActor.run {
             #if canImport(UIKit)
-            let pb = UIPasteboard.general
+            let pb = SystemDevice.board
             if let t = UTType(filenameExtension: url.pathExtension), t.conforms(to: .image) {
                 pb.setData(data, forPasteboardType: t.identifier)
             } else if let img = UIImage(data: data) {
@@ -338,7 +526,7 @@ final class SystemDevice: Platform {
                 throw Self.error("device: not an image: \(path)")
             }
             #else
-            let pb = NSPasteboard.general
+            let pb = SystemDevice.board
             pb.clearContents()
             if let t = UTType(filenameExtension: url.pathExtension), t.conforms(to: .image) {
                 pb.setData(data, forType: NSPasteboard.PasteboardType(t.identifier))
@@ -605,9 +793,9 @@ final class SystemDevice: Platform {
     init(_ changed: @escaping (ClipboardKinds) -> Void) {
         self.changed = changed
         #if canImport(UIKit)
-        seen = UIPasteboard.general.changeCount
+        seen = SystemDevice.board.changeCount
         #else
-        seen = NSPasteboard.general.changeCount
+        seen = SystemDevice.board.changeCount
         #endif
         super.init()
         #if canImport(UIKit)
@@ -623,9 +811,9 @@ final class SystemDevice: Platform {
 
     @objc func check() {
         #if canImport(UIKit)
-        let n = UIPasteboard.general.changeCount
+        let n = SystemDevice.board.changeCount
         #else
-        let n = NSPasteboard.general.changeCount
+        let n = SystemDevice.board.changeCount
         #endif
         guard n != seen else { return }
         seen = n

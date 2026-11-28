@@ -8,14 +8,16 @@
 //     matched views, window options and state, panels and flyouts, the
 //     views a click-through window still takes the mouse over)
 //   - list: lists, moving their rows, refresh, paging and page dots, and
-//     zoomable Scrolls (List, PageControl; ListReorder.swift, Zoom.swift)
+//     zoomable Scrolls (List, PageControl; ListReorder.swift, Zoom.swift);
+//     tables and outlines (Table, Outline: Tables.swift)
 //   - text: rich text, rich and multiline fields, selection, keys
 //   - visual: images, symbols, shapes, canvases, shaders, progress rings,
 //     video, web views, native views, interaction (press, hover, drag and
-//     drop, gestures)
+//     drop, gestures), the pointer's shape (Cursor.swift)
 //   - shell: the app (menu bar, tray, Dock, quit, files and links, single
-//     instance, crash records, the updater's module, routes) and its
-//     modules (dock, hotkey, login, recent, apps, dialogs, clipboard, ...)
+//     instance, crash records, the updater's module, routes, the app's undo
+//     behind Edit > Undo: Undo.swift) and its modules (dock, hotkey, login,
+//     recent, apps, dialogs, clipboard, ...)
 //   - modules1, modules2: the packages' modules (camera, location, ...)
 //   - focus: the keyboard's focus (Focusable, Tab, FocusTrap, KeyText) and
 //     screen readers' roles, states and relations (Focus.swift, A11y.swift).
@@ -43,6 +45,7 @@ import AsukaOps
     /// n's view goes: what its parts hold.
     func releaseParts(_ n: AsukaNode) {
         listReleased(n)
+        tableReleased(n)
         textReleased(n)
         visualReleased(n)
     }
@@ -51,8 +54,10 @@ import AsukaOps
     func placed(_ n: AsukaNode) {
         navPlaced(n)
         listPlaced(n)
+        tablePlaced(n)
         textPlaced(n)
         visualPlaced(n)
+        cursorPlaced(n)
     }
 
     /// The appearance changed: colors the parts set as fixed CGColors.
@@ -66,6 +71,7 @@ import AsukaOps
     func directionChanged(_ n: AsukaNode, _ changed: Bool) {
         navDirection(n, changed)
         listDirection(n, changed)
+        tableDirection(n, changed)
         textDirection(n, changed)
         visualDirection(n, changed)
     }
@@ -81,8 +87,10 @@ import AsukaOps
     func partJSON(_ n: AsukaNode, _ d: inout [String: Any]) {
         navJSON(n, &d)
         listJSON(n, &d)
+        tableJSON(n, &d)
         textJSON(n, &d)
         visualJSON(n, &d)
+        cursorJSON(n, &d)
         focusJSON(n, &d)
     }
 

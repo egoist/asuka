@@ -600,6 +600,7 @@ fun AsukaRuntime.propEnum(id: Int, prop: Int, v: Int) {
         AsukaProp.TRUNCATION -> (view as? TextView)?.let { applyLineLimit(n, it) }
         AsukaProp.BORDER_STYLE -> { n.borderStyle = v; applyBackground(n) }
         AsukaProp.MENU_TRIGGER -> { n.menuTrigger = v; wirePresses(n) }
+        AsukaProp.CURSOR -> setCursor(n, v)
         AsukaProp.LAYOUT_DIRECTION -> view.layoutDirection = directionOf(n)
         AsukaProp.TEXT_ALIGN -> if (view is AsukaRichText) { view.align = v; view.invalidateText() } else (view as? TextView)?.let {
             it.gravity = when (v) {

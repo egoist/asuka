@@ -54,6 +54,21 @@ var WindowFuncs = []*RuntimeFunc{
 	{Name: "close", Sig: "()", Builtin: "ui.window_close", Doc: "closes the window the calling code is in now, without asking (a Ref's close() asks): what a close request that kept it open calls once the user has chosen"},
 }
 
+// UndoFuncs are undo's members (undo.register(), undo.undo()): the app's
+// undo stack, which Edit > Undo and Redo, their shortcuts and a phone's
+// shake undo and redo.
+var UndoFuncs = []*RuntimeFunc{
+	{Name: "register", Sig: "(name: string, undo: fn(), redo: fn())", Builtin: "undo.register", Doc: "records a change the app made, named for Edit's menu (\"Undo Rename\"): undo puts it back as it was, redo does it again. Inside group's block, it's part of the group's change; while undo or redo runs, it records nothing. A new change lets go of what there was to redo"},
+	{Name: "group", Sig: "(name: string, body: fn())", Builtin: "undo.group", Doc: "runs body, the changes it registers one change named name (\"\": its first change's name): undone together, the last first"},
+	{Name: "undo", Sig: "() -> bool", Builtin: "undo.undo", Doc: "undoes the newest change, as Edit > Undo does; false with nothing to undo"},
+	{Name: "redo", Sig: "() -> bool", Builtin: "undo.redo", Doc: "does again what undo undid last, as Edit > Redo does; false with nothing to redo"},
+	{Name: "canUndo", Tracked: true, Sig: "() -> bool", Builtin: "undo.can_undo", Doc: "whether there's a change to undo (tracked: a binding that reads it follows it)"},
+	{Name: "canRedo", Tracked: true, Sig: "() -> bool", Builtin: "undo.can_redo", Doc: "whether there's a change to redo (tracked)"},
+	{Name: "undoName", Tracked: true, Sig: "() -> string", Builtin: "undo.undo_name", Doc: "the name of the change undo would undo (\"\": none; tracked)"},
+	{Name: "redoName", Tracked: true, Sig: "() -> string", Builtin: "undo.redo_name", Doc: "the name of the change redo would redo (tracked)"},
+	{Name: "clear", Sig: "()", Builtin: "undo.clear", Doc: "forgets every change (a document saved, or another one opened)"},
+}
+
 // movedFuncs are the prelude's functions that moved into packages (the
 // system's services) and into window: an unknown name of theirs says
 // where they are.

@@ -1,6 +1,7 @@
 // platform/device on Windows: the open dialog (modal to the window the user
 // works in), ShellExecute for the browser, the clipboard (its changes
-// heard with AddClipboardFormatListener), SetThreadExecutionState.
+// heard with AddClipboardFormatListener; files as CF_HDROP; an app's own
+// formats registered by their types' names), SetThreadExecutionState.
 // Win32 is touched on the main thread; copying what's picked runs on a
 // thread of its own. pickMedia's dialog offers images and/or videos; a
 // photo scaled (maxSize, quality) is written with WIC, upright, and a
@@ -9,6 +10,7 @@
 #include "asuka_windows.h"
 #include <commdlg.h>
 #include <shellapi.h>
+#include <shlobj.h>  // DROPFILES
 #include <wincodec.h>
 #include "device.h"
 
@@ -471,6 +473,7 @@ static device_ClipboardKinds kinds(void) {
 	k.image = IsClipboardFormatAvailable(cf_png()) || IsClipboardFormatAvailable(CF_DIB) || IsClipboardFormatAvailable(CF_DIBV5);
 	k.url = IsClipboardFormatAvailable(cf_url()) || IsClipboardFormatAvailable(CF_HDROP);
 	k.html = IsClipboardFormatAvailable(cf_html());
+	k.files = IsClipboardFormatAvailable(CF_HDROP);
 	return k;
 }
 
@@ -551,8 +554,10 @@ static void p_image(device_Platform *self, asuka_call *call) {
 static bool put(UINT cf, const void *p, size_t n) {
 	HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE, n);
 	if (!g) return false;
-	memcpy(GlobalLock(g), p, n);
-	GlobalUnlock(g);
+	if (n) {  // an empty one has no memory to lock
+		memcpy(GlobalLock(g), p, n);
+		GlobalUnlock(g);
+	}
 	if (SetClipboardData(cf, g)) return true;
 	GlobalFree(g);
 	return false;
@@ -710,6 +715,241 @@ static void p_copy_html(device_Platform *self, const char *html, const char *tex
 	free(w);
 }
 
+// ---- Files ----
+
+static UINT cf_drop_effect(void) {
+	static UINT cf;
+	if (!cf) cf = RegisterClipboardFormatW(L"Preferred DropEffect");
+	return cf;
+}
+
+static void p_files_read(device_Platform *self, asuka_call *call) {
+	device_list_string out = {calloc(1, sizeof(char *)), 0};
+	if (IsClipboardFormatAvailable(CF_HDROP) && open_clipboard()) {
+		HDROP h = GetClipboardData(CF_HDROP);
+		UINT n = h ? DragQueryFileW(h, 0xFFFFFFFF, NULL, 0) : 0;
+		out.data = realloc(out.data, (n ? n : 1) * sizeof(char *));
+		for (UINT i = 0; i < n; i++) {
+			UINT len = DragQueryFileW(h, i, NULL, 0);
+			wchar_t *w = calloc((size_t)len + 1, sizeof(wchar_t));
+			if (len && DragQueryFileW(h, i, w, len + 1) == len) out.data[out.len++] = asuka_narrow(w, (int)len);
+			free(w);
+		}
+		CloseClipboard();
+	}
+	device_Platform_clipboardFiles_done(call, out);
+}
+
+// p_copy_files puts CF_HDROP (DROPFILES, then each full path, wide, and
+// an empty one) and Explorer's Preferred DropEffect: a copy.
+static void p_copy_files(device_Platform *self, device_list_string paths, asuka_call *call) {
+	asuka_error e = {0};
+	size_t chars = 1;
+	wchar_t **full = calloc(paths.len ? paths.len : 1, sizeof *full);
+	bool ok = true;
+	for (size_t i = 0; ok && i < paths.len; i++) {
+		wchar_t *w = asuka_wide(paths.data[i]);
+		DWORD n = GetFullPathNameW(w, 0, NULL, NULL);
+		full[i] = n ? calloc(n, sizeof(wchar_t)) : NULL;
+		if (!full[i] || !GetFullPathNameW(w, n, full[i], NULL) || GetFileAttributesW(full[i]) == INVALID_FILE_ATTRIBUTES) {
+			asuka_error_failed(&e, "device", 0, "device: no file at %s", paths.data[i]);
+			ok = false;
+		} else {
+			chars += wcslen(full[i]) + 1;
+		}
+		free(w);
+	}
+	size_t n = sizeof(DROPFILES) + chars * sizeof(wchar_t);
+	uint8_t *drop = ok ? calloc(1, n) : NULL;
+	if (drop) {
+		DROPFILES *df = (DROPFILES *)drop;
+		df->pFiles = sizeof(DROPFILES);
+		df->fWide = TRUE;
+		wchar_t *at = (wchar_t *)(drop + sizeof(DROPFILES));
+		for (size_t i = 0; i < paths.len; i++) {
+			size_t len = wcslen(full[i]) + 1;
+			memcpy(at, full[i], len * sizeof(wchar_t));
+			at += len;
+		}
+	}
+	for (size_t i = 0; i < paths.len; i++) free(full[i]);
+	free(full);
+	if (!ok) return fail(call, &e);
+	if (!open_clipboard()) {
+		asuka_error_failed(&e, "device", 0, "the clipboard is in use");
+		fail(call, &e);
+	} else {
+		EmptyClipboard();
+		DWORD copy = 1;  // DROPEFFECT_COPY
+		ok = put(CF_HDROP, drop, n);
+		put(cf_drop_effect(), &copy, sizeof copy);
+		CloseClipboard();
+		if (ok) {
+			device_Platform_copyFiles_done(call);
+		} else {
+			asuka_error_failed(&e, "device", 0, "the clipboard took no files");
+			fail(call, &e);
+		}
+	}
+	free(drop);
+}
+
+// ---- Formats ----
+
+static UINT cf_rtf(void) {
+	static UINT cf;
+	if (!cf) cf = RegisterClipboardFormatW(L"Rich Text Format");
+	return cf;
+}
+
+// The formats Windows predefines that are memory (not a GDI handle), as
+// a type names them.
+static const struct {
+	UINT cf;
+	const char *name;
+} predefined[] = {
+    {CF_UNICODETEXT, "text/plain"}, {CF_TEXT, "text/plain"}, {CF_OEMTEXT, "text/plain"}, {CF_DIB, "image/bmp"}, {CF_DIBV5, "image/bmp"},
+    {CF_HDROP, "CF_HDROP"},         {CF_RIFF, "audio/wav"},  {CF_WAVE, "audio/wav"},    {CF_TIFF, "image/tiff"},
+};
+
+// format_of is a type's clipboard format: Windows' own for text,
+// CF_HTML's for HTML, the PNG, RTF and bitmap formats apps exchange;
+// any other's the type itself, registered as a format's name (another
+// app that registers it gets the same).
+static UINT format_of(const char *type) {
+	if (!strcmp(type, "text/html")) return cf_html();
+	if (!strcmp(type, "image/png")) return cf_png();
+	if (!strcmp(type, "text/rtf") || !strcmp(type, "application/rtf")) return cf_rtf();
+	for (size_t i = 0; i < sizeof predefined / sizeof *predefined; i++)
+		if (!strcmp(type, predefined[i].name)) return predefined[i].cf;
+	wchar_t *w = asuka_wide(type);
+	UINT cf = RegisterClipboardFormatW(w);
+	free(w);
+	return cf;
+}
+
+// format_name is a clipboard format as clipboardFormats names it: a MIME
+// type where it has one, else its registered name; NULL for what's a GDI
+// handle or synthesized (CF_BITMAP, CF_LOCALE).
+static char *format_name(UINT cf) {
+	if (cf == cf_html()) return asuka_strdup("text/html");
+	if (cf == cf_png()) return asuka_strdup("image/png");
+	if (cf == cf_rtf()) return asuka_strdup("text/rtf");
+	for (size_t i = 0; i < sizeof predefined / sizeof *predefined; i++)
+		if (cf == predefined[i].cf) return asuka_strdup(predefined[i].name);
+	wchar_t name[256];
+	int n = cf >= 0xC000 ? GetClipboardFormatNameW(cf, name, 256) : 0;
+	return n > 0 ? asuka_narrow(name, n) : NULL;
+}
+
+static void p_formats(device_Platform *self, asuka_call *call) {
+	device_list_string out = {calloc(8, sizeof(char *)), 0};
+	size_t cap = 8;
+	if (open_clipboard()) {
+		for (UINT cf = EnumClipboardFormats(0); cf; cf = EnumClipboardFormats(cf)) {
+			char *name = format_name(cf);
+			bool seen = !name;
+			for (size_t i = 0; !seen && i < out.len; i++) seen = strcmp(out.data[i], name) == 0;
+			if (seen) {
+				free(name);
+				continue;
+			}
+			if (out.len == cap) out.data = realloc(out.data, (cap *= 2) * sizeof(char *));
+			out.data[out.len++] = name;
+		}
+		CloseClipboard();
+	}
+	device_Platform_clipboardFormats_done(call, out);
+}
+
+static asuka_bytes *bytes_of(const void *p, size_t n) {
+	asuka_bytes *b = malloc(sizeof *b);
+	*b = n ? asuka_bytes_copy(p, n) : (asuka_bytes){malloc(1), 0};
+	return b;
+}
+
+// p_data reads a format: text as UTF-8, CF_HTML's fragment, a bitmap as
+// a BMP file (its header first), any other's memory as it is.
+static void p_data(device_Platform *self, const char *type, asuka_call *call) {
+	UINT cf = format_of(type);
+	asuka_bytes *out = NULL;
+	if (cf && IsClipboardFormatAvailable(cf) && open_clipboard()) {
+		HANDLE h = GetClipboardData(cf);
+		const uint8_t *p = h ? GlobalLock(h) : NULL;
+		size_t size = p ? GlobalSize(h) : 0;
+		if (p && cf == CF_UNICODETEXT) {
+			const wchar_t *w = (const wchar_t *)p;
+			size_t cap = size / sizeof(wchar_t), n = 0;
+			while (n < cap && w[n]) n++;
+			char *s = n ? asuka_narrow(w, n > INT_MAX ? INT_MAX : (int)n) : asuka_strdup("");
+			out = bytes_of(s, strlen(s));
+			free(s);
+		} else if (p && cf == cf_html()) {
+			size_t n = 0;
+			while (n < size && p[n]) n++;
+			char *s = fragment((const char *)p, n);
+			out = bytes_of(s, strlen(s));
+			free(s);
+		} else if (p && (cf == CF_DIB || cf == CF_DIBV5) && size >= sizeof(BITMAPINFOHEADER)) {
+			const BITMAPINFOHEADER *bi = (const BITMAPINFOHEADER *)p;
+			size_t colors = bi->biClrUsed ? bi->biClrUsed : bi->biBitCount <= 8 ? (size_t)1 << bi->biBitCount : 0;
+			size_t bits = bi->biSize + colors * 4 + (bi->biCompression == BI_BITFIELDS && bi->biSize == 40 ? 12 : 0);
+			BITMAPFILEHEADER fh = {0x4D42, (DWORD)(sizeof fh + size), 0, 0, (DWORD)(sizeof fh + bits)};
+			out = malloc(sizeof *out);
+			*out = (asuka_bytes){malloc(sizeof fh + size), sizeof fh + size};
+			memcpy(out->data, &fh, sizeof fh);
+			memcpy(out->data + sizeof fh, p, size);
+		} else if (p) {
+			out = bytes_of(p, size);
+		} else if (h) {
+			out = bytes_of(NULL, 0);  // an empty one
+		}
+		if (p) GlobalUnlock(h);
+		CloseClipboard();
+	}
+	device_Platform_clipboardData_done(call, out);
+}
+
+// p_copy_formats puts each format: text as CF_UNICODETEXT, HTML as
+// CF_HTML, a BMP file as CF_DIB, any other's bytes as they are.
+static void p_copy_formats(device_Platform *self, device_list_ClipboardFormat formats, asuka_call *call) {
+	asuka_error e = {0};
+	if (!open_clipboard()) {
+		asuka_error_failed(&e, "device", 0, "the clipboard is in use");
+		return fail(call, &e);
+	}
+	EmptyClipboard();
+	bool ok = true;
+	for (size_t i = 0; ok && i < formats.len; i++) {
+		const device_ClipboardFormat *f = &formats.data[i];
+		UINT cf = format_of(f->type);
+		char *z = malloc(f->data.len + 1);  // the data, NUL ended, for text
+		if (f->data.len) memcpy(z, f->data.data, f->data.len);
+		z[f->data.len] = 0;
+		if (!cf) {
+			ok = false;
+		} else if (cf == CF_UNICODETEXT || cf == CF_TEXT || cf == CF_OEMTEXT) {
+			wchar_t *w = asuka_wide(z);
+			ok = put(CF_UNICODETEXT, w, (wcslen(w) + 1) * sizeof(wchar_t));
+			free(w);
+		} else if (cf == cf_html()) {
+			size_t n = 0;
+			char *h = cf_html_of(z, &n);
+			ok = put(cf, h, n);
+			free(h);
+		} else if ((cf == CF_DIB || cf == CF_DIBV5) && f->data.len > 14 && f->data.data[0] == 'B' && f->data.data[1] == 'M') {
+			ok = put(CF_DIB, f->data.data + 14, f->data.len - 14);
+		} else {
+			ok = put(cf, f->data.data, f->data.len);
+		}
+		if (!ok) asuka_error_failed(&e, "device", 0, "the clipboard took no %s", f->type);
+		free(z);
+	}
+	CloseClipboard();
+	if (ok) device_Platform_copyFormats_done(call);
+	else fail(call, &e);
+}
+
 typedef struct {
 	device_fn_ClipboardKinds changed;
 	asuka_call *call;
@@ -765,7 +1005,8 @@ static bool p_settings(device_Platform *self, asuka_error *err) {
 static const device_Platform_vtable vt = {
     .info = p_info, .browse = p_browse, .pickMedia = p_media, .pickFiles = p_files, .clipboardText = p_text,
     .clipboardHas = p_has, .clipboardImage = p_image, .copyImage = p_copy, .clipboardHTML = p_html, .copyHTML = p_copy_html,
-    .watchClipboard = p_watch, .keepAwake = p_awake, .openSettings = p_settings,
+    .clipboardFiles = p_files_read, .copyFiles = p_copy_files, .clipboardFormats = p_formats, .clipboardData = p_data,
+    .copyFormats = p_copy_formats, .watchClipboard = p_watch, .keepAwake = p_awake, .openSettings = p_settings,
 };
 
 device_Platform *device_make_Platform(asuka_error *err) {

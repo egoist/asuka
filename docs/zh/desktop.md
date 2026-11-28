@@ -1,6 +1,6 @@
 # 桌面端
 
-除了窗口和菜单栏（见[导航](navigation.md#窗口)），桌面端还有许多手机上没有的东西：托盘图标和程序坞（Dock）菜单、浮出面板、在后台常驻的应用、全局快捷键、面板与启动器、查找已安装的应用、鼠标穿透窗口、文件对话框与文件管理器、应用打开的文件、单实例、退出、最近使用的文档、基于文档的应用、登录时启动、自动更新、“正在播放”与媒体键、显示器、电源、应用图标上的进度，以及系统外观。如果想跟踪文件和文件夹的变化（比如应用正在展示的文件夹，或其他应用保存的文档），请参阅[监视文件](data.md#监视文件stdwatch)，这项功能在手机和 Web 上也有。
+除了窗口和菜单栏（见[导航](navigation.md#窗口)），桌面端还有许多手机上没有的东西：托盘图标和程序坞（Dock）菜单、浮出面板、在后台常驻的应用、全局快捷键、面板与启动器、查找已安装的应用、鼠标穿透窗口、文件对话框与文件管理器、应用打开的文件、单实例、退出、最近使用的文档、基于文档的应用、登录时启动、自动更新、撤销与重做、指针的形状、“正在播放”与媒体键、显示器、电源、应用图标上的进度，以及系统外观。表格与大纲这类桌面端的列表，见[组件](components.md#表格与大纲)。如果想跟踪文件和文件夹的变化（比如应用正在展示的文件夹，或其他应用保存的文档），请参阅[监视文件](data.md#监视文件stdwatch)，这项功能在手机和 Web 上也有。
 
 上面每一项都是平台 SDK（或标准库）里的一个包，或是 prelude 里的一个元素或函数，在 Mac、Windows 和 Linux 上都能用。手机或浏览器上没有某项功能时，会明确告诉你不支持（抛出 `unsupported`、`notAvailable` 错误，或者 `supported()` 为 false），或者什么也不显示，这样应用就可以只在支持的平台上提供它。
 
@@ -417,6 +417,88 @@ component Editor(doc: document.Document<string>) {
 - **版本和锁定**：“浏览所有版本…”列出文档以前的版本，并在列表旁边显示所选版本的文字，“恢复”把选中的版本恢复回来（恢复之前的文档也会留作一个版本）。编辑已锁定的文档时会像 Mac 上那样询问：解锁、复制（把这次编辑放进一个新文档）或取消（保持文件原样）。
 - **在更改可能丢失时询问**：关闭有更改的未命名文档时，会询问是否保留它（存储…、删除、取消）；关闭保存失败或遇到其他应用修改的文档时，会询问是否保存（存储、不存储、取消）；保存时如果文件已被其他应用修改，会询问是“仍然存储”还是“复原”；复原到上次存储的版本之前也会先询问。移到…在要替换同名文件之前会询问。
 - **在手机和浏览器上**，同一时间只有一个文档：应用打开后先显示它的文档列表，带有新建；打开某个文档时，文档页面会推入到列表之上，并在用户编辑时保存。在列表的某一行上滑动，可以复制、重新命名（会询问新名称）或删除（会先询问）该文档。
+
+## 撤销与重做
+
+`undo` 是应用的撤销栈，就像 `NSUndoManager`，以及 Android 和 Web 编辑器各自维护的那样：应用做的每一处改动，都连同撤销它的操作、重做它的操作和一个名字一起登记下来，平台的“撤销”和“重做”就会作用到它上面。
+
+```asuka check
+component Shopping {
+  state items: [string] = ["Milk", "Bread", "Eggs"]
+
+  fn remove(item: string) {
+    items = items.filter(i => i != item)
+    undo.register("Delete {item}", undo: () => { items = items + [item] }, redo: () => {
+      items = items.filter(i => i != item)
+    })
+  }
+
+  MenuBar {
+    Menu("Edit") {
+      MenuItem("") { role: .undo }
+      MenuItem("") { role: .redo }
+    }
+  }
+  Column {
+    padding: 16
+    gap: 8
+    for item in items key item {
+      Row {
+        Text(item) { grow: 1 }
+        Button("Delete") {
+          on press { remove(item) }
+        }
+      }
+    }
+    Button("Undo {undo.undoName()}") {
+      disabled: !undo.canUndo()
+      on press { undo.undo() }
+    }
+  }
+}
+
+app { Shopping() }
+```
+
+- `undo.register(name, undo:, redo:)` 记录一处改动：`undo` 把东西恢复原样，`redo` 再做一遍这处改动。新的改动会丢弃原本可以重做的内容；`undo` 和 `redo` 运行时登记的内容不会被记录。
+- `undo.group(name, () => { … })` 把这个块里登记的改动合成一处改动，一起撤销，后做的先撤销（比如一次粘贴了好几行，或者一次拖动了很多项）。
+- `undo.undo()` 和 `undo.redo()` 在代码里撤销和重做；`undo.canUndo()`、`canRedo()`、`undoName()` 和 `redoName()` 说明当前能撤销、重做什么，读取它们的绑定会跟着变化；`undo.clear()` 清空全部记录（比如文档已保存，或者打开了另一个文档）。
+
+用户在哪里撤销：
+
+- **在 Mac 上**，用“编辑”>“撤销”和“重做”，菜单项会写明撤销的是什么（“撤销 Delete Milk”），以及 ⌘Z、⇧⌘Z。应用的“编辑”菜单什么都不用做：角色为 `.undo` 或 `.redo` 的 `MenuItem` 就是 Mac 自己的菜单项。
+- **在 Windows 和 Linux 上**，用应用菜单栏里角色为 `.undo` 和 `.redo` 的菜单项。它们使用平台自己的文字和快捷键（Ctrl+Z、Ctrl+Shift+Z，Windows 上还有 Ctrl+Y），有可撤销的内容时才可用。即使没有这些菜单项，快捷键也照样有效。
+- **在浏览器里**，用 Ctrl+Z 或 ⌘Z，以及 Ctrl+Shift+Z、⇧⌘Z 或 Ctrl+Y。
+- **在手机上**，iOS 用摇动撤销、三指手势和 iPad 键盘上的 ⌘Z，系统自己的提示框里会显示“撤销 Delete Milk”；Android 用外接键盘的 Ctrl+Z。
+
+在所有平台上，正在编辑的文本框都会先撤销它自己的输入：焦点离开文本框之后，撤销的才是应用的改动。
+
+## 指针的形状
+
+`cursor` 设置鼠标指针在某个视图及其中未自行设置的视图上方时的形状，和 CSS 的 `cursor` 一样：`.pointer`（一只手，用于可点击的东西）、`.text`、`.crosshair`、`.move`、`.grab` 和 `.grabbing`、`.notAllowed`、`.wait`、`.progress`、`.help`、`.contextMenu`、`.copy`、`.alias`、`.resizeHorizontal`、`.resizeVertical`、`.resizeDiagonal`、`.resizeAntiDiagonal`、`.resizeColumn`、`.resizeRow`、`.zoomIn`、`.zoomOut` 以及 `.hidden`。默认值 `.auto` 表示沿用父视图的设置，父视图也没有设置时，就用平台根据指针下方内容给出的形状（文本框上的 I 形光标、链接上的手形）。
+
+```asuka check
+component Splitter {
+  state width = 240.0
+
+  Row {
+    Column {
+      width: width
+      Text("Sidebar")
+    }
+    View {
+      width: 6
+      cursor: .resizeHorizontal
+      on pan(g) { width = max(120, width + g.translationX) }
+    }
+    Text("Content") { grow: 1 }
+  }
+}
+
+app { Splitter() }
+```
+
+它在 Mac 上是 `NSCursor`，在 Windows 上是 `SetCursor` 的各种光标，在 Linux 上是 GTK 的具名光标，在浏览器里是 CSS 的光标。iPad 的指针在 `.text` 上会变成文本光标，遇到 `.hidden` 会隐藏，在 `.pointer` 上会把下方的内容浮起；Android 接上鼠标时会使用它支持的形状（`PointerIcon`）；其他没有指针的手机会忽略这个属性。
 
 ## 登录时启动
 

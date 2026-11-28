@@ -827,7 +827,7 @@ component Gallery {
   each, its `path` a copy in the app's caches, with its `name`, `type`
   and `size`, or none if the user cancelled.
 - `device.clipboardHas()` says whether the clipboard holds `text`, an
-  `image`, a `url` or rich text (`html`), without reading it (iOS doesn't ask the user for
+  `image`, a `url`, rich text (`html`) or `files`, without reading it (iOS doesn't ask the user for
   this): show a Paste button only when there's something to paste.
   `device.clipboardImage()` reads its image into a file, in the format it
   was copied in; `device.copyImage(path)` puts an image file on it.
@@ -839,6 +839,39 @@ component Gallery {
   (iOS and Android say; the Mac and Windows are asked twice a second; a
   browser sees copies in the page, and others' where the user lets it
   read the clipboard).
+- `device.clipboardFiles()` gives the files on the clipboard, what a file
+  manager copied (Finder, Explorer, GNOME's Files); `device.copyFiles(paths)`
+  puts files there, for pasting in a file manager (as a copy) or in an app
+  that takes files. On a Mac, Windows and Linux the paths are the files'
+  own: read or copy them, don't move them. iOS has no files on its
+  clipboard as such: what the Files app copies is each file's content
+  with its name, so `copyFiles` puts each file so (Files and Mail paste
+  it) and `clipboardFiles` gives copies in the app's caches; an image
+  copied in Photos counts as a file too. Android likewise gives copies,
+  and puts files as content links other apps may read while they paste.
+  A browser can't put files on the clipboard (`copyFiles` throws
+  unsupported); what it reads is an image, given as a file.
+- `device.copyData(type, data, text:)` puts an app's own data on the
+  clipboard (a drawing's shapes, a spreadsheet's cells), with `text` for
+  the apps that paste plain text, and `device.clipboardData(type)` reads
+  it back, in this app or another copy of it: Electron's
+  `clipboard.writeBuffer` and `readBuffer`. `device.copyFormats` puts
+  several at once, each a `device.ClipboardFormat(type:, data:)`: the
+  app's own with HTML and text, so each app pastes what it knows.
+  `device.clipboardFormats()` lists the types on the clipboard now,
+  without reading them. A type is a MIME type (`"application/x.drawing+json"`;
+  `text/plain`, `text/html` and `image/png` are the platform's text, rich
+  text and image), the same string on every platform: it's a UTI on
+  Apple platforms (one the system makes of the MIME type when it doesn't
+  know it), a format registered by that name on Windows, the MIME type
+  itself on Linux and Android. A type without a `/` is the platform's own
+  name, as it is (`"com.adobe.pdf"`, Windows' `"Rich Text Format"`), and
+  `clipboardFormats` gives a MIME type where the platform's name has one,
+  else that name. On Android a format is a file of the app's caches,
+  which the app that pastes is let read. A browser takes text, HTML and
+  PNG, and an app's own types where it has web custom formats (Chrome,
+  Edge): those reach other pages and the same app on the web, not the
+  apps of the computer; Safari and Firefox throw unsupported.
 - `device.info()` is the device and the app: `model` ("iPhone", "Pixel
   9", "Mac", "PC"), `system` ("iOS", "Android", "macOS", "Windows",
   "Linux"), `systemVersion`, and `appVersion` and `build`,
@@ -864,6 +897,40 @@ component Player {
   }
 
   Text(if let i = info.value { "{i.model}, {i.system} {i.systemVersion}" } else { "" })
+}
+```
+
+An editor that copies its own shapes, for pasting in itself, and their
+text for other apps:
+
+```asuka check
+import platform/device
+
+let shapesType = "application/x.sketch-shapes+json"
+
+component Board {
+  state shapes: [string] = ["circle", "square"]
+
+  Column {
+    Button("Copy") {
+      on press {
+        try? await device.copyFormats([
+          device.ClipboardFormat(type: shapesType, data: shapes.joined(separator: ",").bytes()),
+          device.ClipboardFormat(type: "text/plain", data: shapes.joined(separator: ", ").bytes()),
+        ])
+      }
+    }
+    Button("Paste") {
+      on press {
+        if let data = try? await device.clipboardData(shapesType) {
+          shapes = shapes + data.string().split(",")
+        } else {
+          shapes = shapes + ((try? await device.clipboardFiles()) ?? [])
+        }
+      }
+    }
+    for s in shapes key s { Text(s) }
+  }
 }
 ```
 

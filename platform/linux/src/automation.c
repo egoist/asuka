@@ -3,7 +3,9 @@
 // resize:<w>,<h>, key:<shortcut>, menu:<item title>, tab:<title>, close,
 // wait:<d>, waitfor:<file>, snap:<file>; on X11, real input through the X
 // server's XTest, as a user's: click:<text> (a press of the mouse's
-// button on the view showing text), clickat:<x>,<y> (in the main
+// button on the view showing text, else on a GTK label showing it: a
+// table's cell, a header, a menu's item; rclick:<text> the secondary
+// button's), clickat:<x>,<y> (in the main
 // window's root), press:<keys> (shift+tab, b, space), dclick:<text> (a
 // double click on it), drag:<text>,<dx>,<dy>[,hold] (the button held from
 // its middle, moved by dx, dy in steps, let go, or held until release),
@@ -92,16 +94,33 @@ static void find_widgets(GtkWidget *w, const char *text, widget_vec *out) {
 	if (AK_IS(w, gtk_label_get_type) && str_eq(gtk_label_get_text((GtkLabel *)w), text)) {
 		ak_vec_push(out, w);
 	} else {
-		char *t = gtk_widget_get_tooltip_text(w);
+		const char *t = gtk_widget_get_tooltip_text(w);  // GTK 4's: the widget's own
 		if (t && strcmp(t, text) == 0) ak_vec_push(out, w);
-		g_free(t);
 	}
 	for (GtkWidget *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c)) find_widgets(c, text, out);
 }
 
+// label_widget is a mapped GTK label of the app's showing text (a
+// Table's cell, a column's header, a menu's item), or NULL.
+static GtkWidget *label_widget(const char *text) {
+	GListModel *tops = gtk_window_get_toplevels();
+	widget_vec found = {0};
+	for (guint i = 0; i < g_list_model_get_n_items(tops) && !found.len; i++) {
+		GtkWidget *w = g_list_model_get_item(tops, i);
+		if (w && gtk_widget_get_mapped(w)) find_widgets(w, text, &found);
+		if (w) g_object_unref(w);
+	}
+	GtkWidget *l = NULL;
+	for (uint32_t i = 0; i < found.len && !l; i++)
+		if (AK_IS(found.data[i], gtk_label_get_type)) l = found.data[i];
+	ak_vec_free(&found);
+	return l;
+}
+
 // tap_widget activates the GTK widget in a window of the app's (or a
 // dialog over one) whose label or tooltip is text: a button, a list box's
-// row, a check button, the nearest of them around a label.
+// row, a check button, a tree's row (its expander toggles), the nearest of
+// them around a label.
 static bool tap_widget(const char *text) {
 	GListModel *tops = gtk_window_get_toplevels();
 	widget_vec found = {0};
@@ -122,6 +141,10 @@ static bool tap_widget(const char *text) {
 				done = true;
 			} else if (AK_IS(w, gtk_check_button_get_type) || AK_IS(w, gtk_switch_get_type)) {
 				gtk_widget_activate(w);
+				done = true;
+			} else if (gtk_tree_expander_get_type && AK_IS(w, gtk_tree_expander_get_type)) {
+				// An Outline's row: its arrow's click.
+				gtk_widget_activate_action(w, "listitem.toggle-expand", NULL);
 				done = true;
 			}
 		}
@@ -170,7 +193,7 @@ static void scroll_first(node *n, void *data) {
 	if (n->scroll) {
 		lx_scroll_to(n, 0, c->y, false);
 		c->done = true;
-	} else if (n->kind == AK_KIND_LIST) {
+	} else if (n->kind == AK_KIND_LIST || n->kind == AK_KIND_TABLE || n->kind == AK_KIND_OUTLINE) {
 		lx_list_scroll_to_offset(n, 0, c->y, false);
 		c->done = true;
 	}
@@ -315,32 +338,42 @@ static bool screen_point(GtkWidget *w, double x, double y, int *sx, int *sy) {
 		(int)((q.x + tx) * scale), (int)((q.y + ty) * scale), sx, sy, &child) != 0;
 }
 
-// real_click presses and lets go of the mouse's primary button at x, y of
-// w, through the X server.
-static bool real_click(GtkWidget *w, double x, double y) {
+// real_button presses and lets go of the mouse's button at x, y of w,
+// through the X server.
+static bool real_button(GtkWidget *w, double x, double y, unsigned button) {
 	void *dpy = x_display();
 	int sx, sy;
 	if (!dpy || !screen_point(w, x, y, &sx, &sy)) return false;
 	XTestFakeMotionEvent(dpy, -1, sx, sy, 0);
-	XTestFakeButtonEvent(dpy, 1, 1, 30);
-	XTestFakeButtonEvent(dpy, 1, 0, 30);
+	XTestFakeButtonEvent(dpy, button, 1, 30);
+	XTestFakeButtonEvent(dpy, button, 0, 30);
 	XFlush(dpy);
 	return true;
 }
+
+// real_click is the primary button's click.
+static bool real_click(GtkWidget *w, double x, double y) { return real_button(w, x, y, 1); }
 
 // node_middle is where the middle of the node showing text is on the X
 // screen (its view's).
 static bool node_middle(const char *text, size_t n, int *sx, int *sy, GtkWidget **w, double *mx, double *my) {
 	char *t = strndup(text, n);
 	node *nd = find_text_node(t);
+	GtkWidget *l = nd ? NULL : label_widget(t);
 	free(t);
-	if (!nd || !x_display()) return false;
+	if ((!nd && !l) || !x_display()) return false;
 	float width, height;
-	lx_size(nd, nd->widget, &width, &height);
-	*w = nd->widget;
+	if (nd) {
+		lx_size(nd, nd->widget, &width, &height);
+		*w = nd->widget;
+	} else {
+		width = (float)gtk_widget_get_width(l);
+		height = (float)gtk_widget_get_height(l);
+		*w = l;
+	}
 	*mx = width / 2;
 	*my = height / 2;
-	return screen_point(nd->widget, width / 2, height / 2, sx, sy);
+	return screen_point(*w, width / 2, height / 2, sx, sy);
 }
 
 // real_dclick double clicks the mouse's primary button at x, y of w.
@@ -478,12 +511,20 @@ static bool step(const char *s, char *err, size_t errn) {
 		snprintf(err, errn, "nothing shows \"%s\"", arg);
 		return false;
 	}
-	if (!strcmp(verb, "click")) {
+	if (!strcmp(verb, "click") || !strcmp(verb, "rclick")) {
+		// A view showing it, else a label of GTK's (a table's cell, a
+		// header, a menu's item); rclick: the secondary button.
 		node *n = find_text_node(arg);
-		float w, h;
-		if (n) lx_size(n, n->widget, &w, &h);
-		if (n && real_click(n->widget, w / 2, h / 2)) return true;
-		snprintf(err, errn, n ? "no X11 XTest to click with" : "nothing shows \"%s\"", arg);
+		GtkWidget *target = n ? n->widget : label_widget(arg);
+		float w = 0, h = 0;
+		if (n) {
+			lx_size(n, n->widget, &w, &h);
+		} else if (target) {
+			w = (float)gtk_widget_get_width(target);
+			h = (float)gtk_widget_get_height(target);
+		}
+		if (target && real_button(target, w / 2, h / 2, verb[0] == 'r' ? 3 : 1)) return true;
+		snprintf(err, errn, target ? "no X11 XTest to click with" : "nothing shows \"%s\"", arg);
 		return false;
 	}
 	if (!strcmp(verb, "clickat")) {
@@ -668,6 +709,8 @@ void lx_dump_node(node *n, int depth, ak_buf *b) {
 		}
 	}
 	lx_a11y_dump(n, b);
+	GdkCursor *cur = n->widget && gtk_widget_get_cursor ? gtk_widget_get_cursor(n->widget) : NULL;
+	if (cur && gdk_cursor_get_name(cur)) ak_buf_printf(b, " cursor=%s", gdk_cursor_get_name(cur));
 	if (!str_empty(n->text)) {
 		ak_buf_u8(b, ' ');
 		quote(b, n->text);

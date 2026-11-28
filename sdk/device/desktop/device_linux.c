@@ -1,6 +1,7 @@
 // platform/device on Linux: GtkFileDialog for the pickers (the portal's in a
 // sandbox), modal to the window the user works in; GtkUriLauncher for the
-// browser; GdkClipboard; the session kept from idling
+// browser; GdkClipboard (files as a GdkFileList, an app's own formats as
+// their MIME types); the session kept from idling
 // (gtk_application_inhibit). GTK is touched on the main thread, where its
 // answers come; copying what's picked runs on a thread of its own.
 // pickMedia's dialog offers images and/or videos; a photo scaled
@@ -342,6 +343,13 @@ static device_ClipboardKinds kinds(void) {
 	k.url = G(gdk_content_formats_contain_mime_type)(f, "text/uri-list") || G(gdk_content_formats_contain_gtype)(f, G(gdk_file_list_get_type)()) ||
 	        G(gdk_content_formats_contain_gtype)(f, G(g_file_get_type)());
 	k.html = G(gdk_content_formats_contain_mime_type)(f, "text/html");
+	// Files: GTK's file list (an app's own), a file manager's copy (GNOME's
+	// and the others' x-special/gnome-copied-files, the portal's), or a URI
+	// list that isn't a browser's link (Firefox's has text/x-moz-url).
+	k.files = G(gdk_content_formats_contain_gtype)(f, G(gdk_file_list_get_type)()) ||
+	          G(gdk_content_formats_contain_mime_type)(f, "x-special/gnome-copied-files") ||
+	          G(gdk_content_formats_contain_mime_type)(f, "application/vnd.portal.files") ||
+	          (G(gdk_content_formats_contain_mime_type)(f, "text/uri-list") && !G(gdk_content_formats_contain_mime_type)(f, "text/x-moz-url"));
 	return k;
 }
 
@@ -430,13 +438,32 @@ static char *utf8_of(const unsigned char *p, size_t n) {
 	return s;
 }
 
+// A read of one of the clipboard's MIME types: clipboardHTML's (its
+// answer UTF-8 text), or clipboardData's (its bytes as they are).
 typedef struct {
 	asuka_call *call;
+	bool html;
 	GInputStream *in;
 	GOutputStream *out;
 } reading;
 
-static void html_spliced(GObject *src, GAsyncResult *res, gpointer p) {
+// read_done answers r's call with d (NULL: none) and frees r.
+static void read_done(reading *r, const unsigned char *d, size_t n) {
+	if (r->html) {
+		device_Platform_clipboardHTML_done(r->call, d ? utf8_of(d, n) : NULL);
+	} else {
+		asuka_bytes *b = NULL;
+		if (d) {
+			b = malloc(sizeof *b);
+			*b = (asuka_bytes){malloc(n ? n : 1), n};
+			if (n) memcpy(b->data, d, n);
+		}
+		device_Platform_clipboardData_done(r->call, b);
+	}
+	free(r);
+}
+
+static void spliced(GObject *src, GAsyncResult *res, gpointer p) {
 	reading *r = p;
 	GError *e = NULL;
 	gssize n = G(g_output_stream_splice_finish)((GOutputStream *)src, res, &e);
@@ -445,7 +472,7 @@ static void html_spliced(GObject *src, GAsyncResult *res, gpointer p) {
 	G(g_object_unref)(r->in);
 	if (!b) {
 		asuka_error err = {0};
-		asuka_error_failed(&err, "device", 0, "device: the clipboard's HTML: %s", e && e->message ? e->message : "unreadable");
+		asuka_error_failed(&err, "device", 0, "device: the clipboard's %s: %s", r->html ? "HTML" : "data", e && e->message ? e->message : "unreadable");
 		if (e) G(g_error_free)(e);
 		fail(r->call, &err);
 		free(r);
@@ -454,24 +481,33 @@ static void html_spliced(GObject *src, GAsyncResult *res, gpointer p) {
 	if (e) G(g_error_free)(e);
 	gsize size = 0;
 	const unsigned char *d = G(g_bytes_get_data)(b, &size);
-	device_Platform_clipboardHTML_done(r->call, utf8_of(d, d ? size : 0));
+	read_done(r, d ? d : (const unsigned char *)"", d ? size : 0);
 	G(g_bytes_unref)(b);
-	free(r);
 }
 
-static void html_read(GObject *src, GAsyncResult *res, gpointer call) {
+static void stream_read(GObject *src, GAsyncResult *res, gpointer p) {
+	reading *r = p;
 	GError *e = NULL;
 	GInputStream *in = G(gdk_clipboard_read_finish)((GdkClipboard *)src, res, NULL, &e);
 	if (!in) {
 		// Gone before it was read (another copy): none.
 		if (e) G(g_error_free)(e);
-		device_Platform_clipboardHTML_done(call, NULL);
+		read_done(r, NULL, 0);
 		return;
 	}
-	reading *r = malloc(sizeof *r);
-	*r = (reading){call, in, G(g_memory_output_stream_new_resizable)()};
+	r->in = in;
+	r->out = G(g_memory_output_stream_new_resizable)();
 	G(g_output_stream_splice_async)(r->out, in, G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE | G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET, G_PRIORITY_DEFAULT, NULL,
-	                                html_spliced, r);
+	                                spliced, r);
+}
+
+// read_mime reads the clipboard's mime for call, as html's or data's.
+static void read_mime(GdkClipboard *c, const char *mime, bool html, asuka_call *call) {
+	reading *r = calloc(1, sizeof *r);
+	r->call = call;
+	r->html = html;
+	const char *mimes[] = {mime, NULL};
+	G(gdk_clipboard_read_async)(c, mimes, G_PRIORITY_DEFAULT, NULL, stream_read, r);
 }
 
 static void p_html(device_Platform *self, asuka_call *call) {
@@ -481,8 +517,7 @@ static void p_html(device_Platform *self, asuka_call *call) {
 		device_Platform_clipboardHTML_done(call, NULL);
 		return;
 	}
-	const char *mimes[] = {"text/html", NULL};
-	G(gdk_clipboard_read_async)(c, mimes, G_PRIORITY_DEFAULT, NULL, html_read, call);
+	read_mime(c, "text/html", true, call);
 }
 
 // p_copy_html offers both: text/html, and the text as GTK offers a string
@@ -506,6 +541,191 @@ static void p_copy_html(device_Platform *self, const char *html, const char *tex
 		return fail(call, &e);
 	}
 	device_Platform_copyHTML_done(call);
+}
+
+// ---- Files ----
+
+static void files_read(GObject *src, GAsyncResult *res, gpointer call) {
+	GError *e = NULL;
+	const GValue *v = G(gdk_clipboard_read_value_finish)((GdkClipboard *)src, res, &e);
+	if (e) G(g_error_free)(e);
+	GdkFileList *list = v ? G(g_value_get_boxed)(v) : NULL;
+	GSList *files = list ? G(gdk_file_list_get_files)(list) : NULL;
+	size_t n = 0;
+	for (GSList *l = files; l; l = l->next) n++;
+	device_list_string out = {calloc(n ? n : 1, sizeof(char *)), 0};
+	// Local files' paths (a URI that isn't one has none).
+	for (GSList *l = files; l; l = l->next) {
+		char *path = G(g_file_get_path)(l->data);
+		if (path) out.data[out.len++] = asuka_strdup(path);
+		G(g_free)(path);
+	}
+	G(g_slist_free)(files);
+	device_Platform_clipboardFiles_done(call, out);
+}
+
+static void p_files_read(device_Platform *self, asuka_call *call) {
+	GdkClipboard *c = clipboard();
+	if (!c) return no_clipboard(call);
+	if (!kinds().files) {
+		device_Platform_clipboardFiles_done(call, (device_list_string){calloc(1, sizeof(char *)), 0});
+		return;
+	}
+	G(gdk_clipboard_read_value_async)(c, G(gdk_file_list_get_type)(), G_PRIORITY_DEFAULT, NULL, files_read, call);
+}
+
+// p_copy_files offers a file list (GTK's: text/uri-list, the portal's,
+// text), and x-special/gnome-copied-files, which file managers paste as a
+// copy (GNOME's, Nemo, Caja, Thunar).
+static void p_copy_files(device_Platform *self, device_list_string paths, asuka_call *call) {
+	asuka_error e = {0};
+	for (size_t i = 0; i < paths.len; i++) {
+		struct stat st;
+		if (stat(paths.data[i], &st) != 0) {
+			asuka_error_failed(&e, "device", 0, "device: no file at %s", paths.data[i]);
+			return fail(call, &e);
+		}
+	}
+	GdkClipboard *c = clipboard();
+	if (!c) return no_clipboard(call);
+	GFile **files = calloc(paths.len ? paths.len : 1, sizeof *files);
+	size_t cap = 6, len = 5;
+	char *copied = malloc(cap);
+	memcpy(copied, "copy\n", 5);
+	for (size_t i = 0; i < paths.len; i++) {
+		files[i] = G(g_file_new_for_path)(paths.data[i]);
+		char *uri = G(g_file_get_uri)(files[i]);
+		size_t n = strlen(uri);
+		if (len + n + 2 > cap) copied = realloc(copied, cap = (len + n + 2) * 2);
+		if (i) copied[len++] = '\n';
+		memcpy(copied + len, uri, n);
+		len += n;
+		G(g_free)(uri);
+	}
+	GValue v = {0};
+	G(g_value_init)(&v, G(gdk_file_list_get_type)());
+	G(g_value_take_boxed)(&v, G(gdk_file_list_new_from_array)(files, paths.len));
+	GBytes *b = G(g_bytes_new)(copied, len);
+	GdkContentProvider *ps[2] = {G(gdk_content_provider_new_for_value)(&v), G(gdk_content_provider_new_for_bytes)("x-special/gnome-copied-files", b)};
+	G(g_bytes_unref)(b);
+	G(g_value_unset)(&v);
+	for (size_t i = 0; i < paths.len; i++) G(g_object_unref)(files[i]);
+	free(files);
+	free(copied);
+	GdkContentProvider *u = G(gdk_content_provider_new_union)(ps, 2);
+	gboolean ok = G(gdk_clipboard_set_content)(c, u);
+	G(g_object_unref)(u);
+	if (!ok) {
+		asuka_error_failed(&e, "device", 0, "the clipboard took no files");
+		return fail(call, &e);
+	}
+	device_Platform_copyFiles_done(call);
+}
+
+// ---- Formats ----
+
+// format_name is a clipboard's MIME type (or X11 target) as
+// clipboardFormats names it: less its parameters, X11's text targets
+// text/plain; NULL for X11's own (TARGETS, TIMESTAMP...).
+static char *format_name(const char *m) {
+	static const char *text[] = {"UTF8_STRING", "STRING", "TEXT", "COMPOUND_TEXT"};
+	static const char *own[] = {"TARGETS", "TIMESTAMP", "MULTIPLE", "SAVE_TARGETS", "DELETE", "INCR"};
+	for (size_t i = 0; i < sizeof text / sizeof *text; i++)
+		if (!strcmp(m, text[i])) return asuka_strdup("text/plain");
+	for (size_t i = 0; i < sizeof own / sizeof *own; i++)
+		if (!strcmp(m, own[i])) return NULL;
+	size_t n = strcspn(m, ";");
+	while (n && m[n - 1] == ' ') n--;
+	char *s = malloc(n + 1);
+	memcpy(s, m, n);
+	s[n] = 0;
+	return s;
+}
+
+static void p_formats(device_Platform *self, asuka_call *call) {
+	GdkClipboard *c = clipboard();
+	if (!c) return no_clipboard(call);
+	gsize n = 0;
+	const char *const *mimes = G(gdk_content_formats_get_mime_types)(G(gdk_clipboard_get_formats)(c), &n);
+	device_list_string out = {calloc(n ? n : 1, sizeof(char *)), 0};
+	for (gsize i = 0; i < n; i++) {
+		char *name = format_name(mimes[i]);
+		bool seen = !name;
+		for (size_t j = 0; !seen && j < out.len; j++) seen = strcmp(out.data[j], name) == 0;
+		if (seen) free(name);
+		else out.data[out.len++] = name;
+	}
+	device_Platform_clipboardFormats_done(call, out);
+}
+
+static void text_read(GObject *src, GAsyncResult *res, gpointer call) {
+	GError *e = NULL;
+	char *t = G(gdk_clipboard_read_text_finish)((GdkClipboard *)src, res, &e);
+	if (e) G(g_error_free)(e);
+	asuka_bytes *b = NULL;
+	if (t) {
+		b = malloc(sizeof *b);
+		*b = asuka_bytes_copy(t, strlen(t));
+		if (!b->data) b->data = malloc(1);
+	}
+	G(g_free)(t);
+	device_Platform_clipboardData_done(call, b);
+}
+
+// p_data reads a type: text as GTK reads it (any of its targets, as
+// UTF-8), any other's bytes as they are.
+static void p_data(device_Platform *self, const char *type, asuka_call *call) {
+	GdkClipboard *c = clipboard();
+	if (!c) return no_clipboard(call);
+	if (!strcmp(type, "text/plain")) {
+		if (!kinds().text) {
+			device_Platform_clipboardData_done(call, NULL);
+			return;
+		}
+		G(gdk_clipboard_read_text_async)(c, NULL, text_read, call);
+		return;
+	}
+	if (!G(gdk_content_formats_contain_mime_type)(G(gdk_clipboard_get_formats)(c), type)) {
+		device_Platform_clipboardData_done(call, NULL);
+		return;
+	}
+	read_mime(c, type, false, call);
+}
+
+// p_copy_formats offers each: text/plain as GTK offers a string (all its
+// targets), any other's bytes as their type.
+static void p_copy_formats(device_Platform *self, device_list_ClipboardFormat formats, asuka_call *call) {
+	GdkClipboard *c = clipboard();
+	if (!c) return no_clipboard(call);
+	GdkContentProvider **ps = calloc(formats.len ? formats.len : 1, sizeof *ps);
+	for (size_t i = 0; i < formats.len; i++) {
+		const device_ClipboardFormat *f = &formats.data[i];
+		if (!strcmp(f->type, "text/plain")) {
+			char *z = malloc(f->data.len + 1);
+			if (f->data.len) memcpy(z, f->data.data, f->data.len);
+			z[f->data.len] = 0;
+			GValue v = {0};
+			G(g_value_init)(&v, G_TYPE_STRING);
+			G(g_value_set_string)(&v, z);
+			ps[i] = G(gdk_content_provider_new_for_value)(&v);
+			G(g_value_unset)(&v);
+			free(z);
+		} else {
+			GBytes *b = G(g_bytes_new)(f->data.data, f->data.len);
+			ps[i] = G(gdk_content_provider_new_for_bytes)(f->type, b);
+			G(g_bytes_unref)(b);
+		}
+	}
+	GdkContentProvider *u = G(gdk_content_provider_new_union)(ps, formats.len);
+	free(ps);
+	gboolean ok = G(gdk_clipboard_set_content)(c, u);
+	G(g_object_unref)(u);
+	if (!ok) {
+		asuka_error e = {0};
+		asuka_error_failed(&e, "device", 0, "the clipboard took none of the formats");
+		return fail(call, &e);
+	}
+	device_Platform_copyFormats_done(call);
 }
 
 typedef struct {
@@ -557,7 +777,8 @@ static bool p_settings(device_Platform *self, asuka_error *err) { return false; 
 static const device_Platform_vtable vt = {
     .info = p_info, .browse = p_browse, .pickMedia = p_media, .pickFiles = p_files, .clipboardText = p_text,
     .clipboardHas = p_has, .clipboardImage = p_image, .copyImage = p_copy, .clipboardHTML = p_html, .copyHTML = p_copy_html,
-    .watchClipboard = p_watch, .keepAwake = p_awake, .openSettings = p_settings,
+    .clipboardFiles = p_files_read, .copyFiles = p_copy_files, .clipboardFormats = p_formats, .clipboardData = p_data,
+    .copyFormats = p_copy_formats, .watchClipboard = p_watch, .keepAwake = p_awake, .openSettings = p_settings,
 };
 
 device_Platform *device_make_Platform(asuka_error *err) {

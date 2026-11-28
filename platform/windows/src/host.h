@@ -141,6 +141,7 @@ enum {
 	KIND_ALERT_WINDOW,   // an alert's dialog (alertdialog.c)
 	KIND_PICTURE,        // a view drawn for another (picture.c)
 	KIND_DEV_ERROR,      // asuka dev's error overlay's buttons (deverror.c)
+	KIND_TABLE_CELL,     // a cell a Table's or Outline's row is bound into (table.c)
 };
 
 // An item of a menu of actions (a Menu prop, a Screen's bar buttons, an
@@ -190,6 +191,7 @@ typedef struct wh_split wh_split;
 typedef struct wh_native wh_native;
 typedef struct wh_field wh_field;  // a Rich TextField's (richfield.c)
 typedef struct wh_uia wh_uia;      // a view's UI Automation provider
+typedef struct wh_table wh_table;  // a Table's or Outline's (table.c)
 
 // A transform (Style.Transform): translation in points, scale, rotation
 // in degrees clockwise, around the view's center.
@@ -333,6 +335,8 @@ struct node {
 	wh_image *image;
 	char *symbol;
 	wh_list *list;
+	wh_table *table;     // a Table's or Outline's; a cell's: the one it's in
+	int32_t cursor;      // Cursor (AK_CURSOR_*; Auto: its parent's)
 	wh_scrollbar *bar;   // a Scroll's or List's thumb
 	wh_scrollbar *bar2;  // a zoomable Scroll's, across its axis
 	wh_scrollbar *sbar;  // the thumb a KIND_SCROLL_BAR view is
@@ -414,6 +418,8 @@ typedef struct {
 	HDC measure_dc;
 
 	int depth;          // calls into the core in progress
+	int applying;       // batches being applied: the core is running, not to be called
+	int cursors;        // views with a Cursor of their own
 	ak_buf pending;     // events raised meanwhile: u32 length, then each
 	size_t pending_at;  // where the next to send starts
 	wh_jobs later;      // work to do once the core has returned

@@ -57,6 +57,8 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | ネイティブへの抜け道 | `UIViewRepresentable` | ネイティブモジュール | ✓ ネイティブパッケージ：`native interface` や `native component` を Asuka で宣言し、iOS と Mac では Swift、Android では Kotlin、Web では JavaScript、Windows と Linux では C で実装（[ネイティブコード](native.md)）。C のライブラリは `extern` で直接呼び出せる（[Asuka から C を呼ぶ](c.md)） |
 | ページング、ページのドット | `.scrollTargetBehavior(.paging)`、`TabView(.page)` | `react-native-pager-view` | ✓ `Scroll` の `paging`、`PageControl` |
 | チェックボックス | `Toggle`（`.checkbox`、macOS） | コミュニティ製 | ✓ `Toggle { checkbox: true }` |
+| テーブル：列、並べ替え、行の選択 | `Table`、`TableColumn`（iPadOS、macOS） | コミュニティ製 | ✓ `Table`、`TableColumn`、`TableRow`（`NSTableView`、Windows 11 の見た目で描くレポート表示の ListView、`GtkColumnView`、`<table>` のグリッド）。並べ替え・幅の変更・移動ができる列、1 行または複数行の選択、`on open`、行の `menu`、10 万行。スマートフォンでは行を並べたリスト |
+| ツリー | `OutlineGroup`、`List(children:)` | コミュニティ製 | ✓ `Outline`（`NSOutlineView`、TreeView、`GtkTreeListModel` のリスト、`role="tree"`）。展開した項目のバインド、展開したときに読み込む子、矢印キー。スマートフォンでは開閉の印の付いたインデントされた行 |
 
 ## ナビゲーションと表示
 
@@ -123,7 +125,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | Android の通知チャンネル | — | `setNotificationChannelAsync` | ✓ `notify.setChannels`、`setChannelGroups`。プッシュのチャンネル（iOS にはない） |
 | 会話のメッセージ | 通信通知（`INSendMessageIntent`） | コミュニティ製 | ✓ `Notification(…).from(person, conversation)`、`Message.from`：iOS の通信通知、Android の MessagingStyle と会話のショートカット。ほかでは通常の通知 |
 | 表示前のプッシュの書き換え | Notification Service Extension | コミュニティ製（`expo-notifications` にはない） | ✓ `push.rewrite(f)`：iOS の Notification Service Extension の中で（`asuka build` がビルドして署名）、Android ではデータメッセージを受ける Firebase のサービスの中でアプリのコードが動く |
-| クリップボード、共有シート、ブラウザー | `UIPasteboard`、`ShareLink`、`SFSafariViewController` | `expo-clipboard`、`expo-sharing`、`expo-web-browser` | ✓ `device.copy(text)`、`device.clipboardText()`、`clipboardHas`、`clipboardImage`、`copyImage`、`clipboardHTML`、`copyHTML`（リッチテキスト）、`clipboardChanges()`。`device.share(text)`、`device.shareFiles(paths)`（Mac の共有メニュー、Windows の共有 UI、ブラウザーのもの。Linux にはないので、クリップボードにコピーしてトーストで知らせる）。`device.browse(url)`（`SFSafariViewController`、Custom Tab）、`device.openURL(url)` |
+| クリップボード、共有シート、ブラウザー | `UIPasteboard`、`ShareLink`、`SFSafariViewController` | `expo-clipboard`、`expo-sharing`、`expo-web-browser` | ✓ `device.copy(text)`、`device.clipboardText()`、`clipboardHas`、`clipboardImage`、`copyImage`、`clipboardHTML`、`copyHTML`（リッチテキスト）、`clipboardFiles`、`copyFiles`（ファイル。ファイルマネージャーとのコピーとペースト）、`copyData`、`clipboardData`、`copyFormats`、`clipboardFormats`（アプリ独自の形式。MIME タイプで指定）、`clipboardChanges()`。`device.share(text)`、`device.shareFiles(paths)`（Mac の共有メニュー、Windows の共有 UI、ブラウザーのもの。Linux にはないので、クリップボードにコピーしてトーストで知らせる）。`device.browse(url)`（`SFSafariViewController`、Custom Tab）、`device.openURL(url)` |
 | ファイルのプレビュー | `QLPreviewController`、`.quickLookPreview` | `react-native-file-viewer` | ✓ `platform/preview`（iOS と Mac ではクイックルックで、複数のファイル、マークアップ。Android、Windows、Linux ではそのファイルのアプリ。Web では新しいタブ） |
 | 画面の中での PDF 表示 | PDFKit の `PDFView` | `react-native-pdf` | ✓ `platform/pdf` の `pdf.View`（`source`、バインドできる `page`、`loaded`、`pageChange`。PDFKit、Android の `PdfRenderer`、`Windows.Data.Pdf`、Poppler、ブラウザーのビューアー。Flutter は `pdfx`） |
 | 印刷、HTML からの PDF | `UIPrintInteractionController`、`UIPrintPageRenderer` | `expo-print` | ✓ `platform/print`（ファイル、HTML、`WebView` を、システムのダイアログで印刷し、結果を返す。`print.pdf`：ページ分割、地域の用紙サイズ、余白） |
@@ -235,7 +237,9 @@ Web ビューのアプリは、HTML と CSS で書いたとおりに、どのシ
 |---|---|---|---|
 | ウィンドウの制御 | `BrowserWindow` | `Window` | ✓ `app` ブロックの `Window` とほかの `Window`（これらだけを持つアプリ、トレイのアプリにはメインウィンドウがない）、`window.main()`、`window.current()`、ウィンドウの `Ref`（`Window as w`）：表示、非表示、フォーカス、最小化、最大化、フルスクリーン、サイズ、位置、常に手前に表示、状態の追従。`on closeRequest`、`WindowCloseGuard`。`stateKey` による前回の位置の復元。`child` と `modal` のウィンドウ。`titleBar: .hidden`（Wayland では位置の指定、中央への配置、常に手前に表示はできず、コンポジターが決める） |
 | トレイアイコン | `Tray` | トレイアイコン | ✓ `platform/tray` の `tray.Tray`（`NSStatusItem`、通知領域、Linux では StatusNotifierItem）：画像またはシンボル、タイトル、ツールチップ、メニュー、クリック |
-| サブメニュー、終了の項目 | `MenuItem.submenu`、ロール | ロール、サブメニュー | ✓ `MenuBar`、`Menu`、`MenuItem`（項目の中の項目はサブメニュー。`role: .quit`、`.close`、`.openRecent`）。トレイと Dock のメニューでは `Action` の `.submenu` と `.section` |
+| サブメニュー、終了の項目 | `MenuItem.submenu`、ロール | ロール、サブメニュー | ✓ `MenuBar`、`Menu`、`MenuItem`（項目の中の項目はサブメニュー。`role: .quit`、`.close`、`.openRecent`、`.undo`、`.redo`）。トレイと Dock のメニューでは `Action` の `.submenu` と `.section` |
+| 取り消しとやり直し | `undo`/`redo` ロール（ページ自身のもの） | — | ✓ `undo.register(name, undo:, redo:)`、`undo.group`、`canUndo()`、`undoName()`。「編集」>「取り消す」と「やり直す」、⌘Z と Ctrl+Z、ブラウザーのショートカット、iOS のシェイク。編集中のテキストフィールドはまず自分の入力を取り消す |
+| ポインターの形 | CSS の `cursor` | — | ✓ どのビューにも `cursor`（`NSCursor`、`SetCursor`、GTK の名前付きカーソル、CSS。iPad のポインター、マウスをつないだ Android） |
 | Dock のメニュー、ジャンプリストのタスク | `app.dock.setMenu`、`setUserTasks` | Dock のメニュー、ジャンプリスト | ✓ `tray.DockMenu`（Dock のメニュー、ジャンプリストのタスク、Linux のランチャーのクイックリスト） |
 | バックグラウンドのアプリ | `app.dock.hide`、`window-all-closed` で終了しない | バックグラウンドのアプリ | ✓ `asuka.toml` の `keepRunning` と `background` |
 | フライアウト：トレイアイコンから垂れ下がるウィンドウ | アプリが `tray.getBounds()` の位置に置くフレームなしの `BrowserWindow` | フライアウト | ✓ `Window` の `flyout`。`tray.anchor(id)` か、ウィンドウ内の矩形から垂れ下がる：ディスプレイに収まるように配置・反転し、ほかの場所のクリックか Escape で閉じ、上にモーダルダイアログも出せる（Linux では X11 の場合のみ配置） |

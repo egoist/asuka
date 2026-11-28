@@ -131,6 +131,10 @@ import AsukaOps
     // the part needs it.
     var list: AsukaList? // List.swift
     var cell: AsukaListCell? // List.swift: a list cell's
+    var table: AsukaTable? // Tables.swift: a Table's or an Outline's
+    var tableCell: AsukaTableCell? // Tables.swift: a Table's or an Outline's row's cell
+    var cursor: Int32 = 0 // Cursor.swift: its Cursor (0: Auto)
+    var cursorView: AsukaCursorView? // Cursor.swift: what registers its cursor rect
     var refresh: AsukaRefresher? // Refresh.swift
     var nav: AsukaNav? // Navigation.swift: stacks, screens, tabs, sheets, alerts, windows
     var snack: AsukaSnack? // Snackbar.swift

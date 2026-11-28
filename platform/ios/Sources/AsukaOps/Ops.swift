@@ -42,6 +42,8 @@ public enum AsukaKind: UInt16 {
     case progressRing = 37
     case snackbar = 38
     case overlay = 39
+    case table = 40
+    case outline = 41
 
     public var name: String {
         switch self {
@@ -84,6 +86,8 @@ public enum AsukaKind: UInt16 {
         case .progressRing: return "ProgressRing"
         case .snackbar: return "Snackbar"
         case .overlay: return "Overlay"
+        case .table: return "Table"
+        case .outline: return "Outline"
         }
     }
 }
@@ -150,6 +154,8 @@ public enum AsukaProp {
     public static let cornerRadii: UInt16 = 57
     public static let borderWidths: UInt16 = 58
     public static let borderStyle: UInt16 = 59
+    public static let cursor: UInt16 = 60
+    public static let rowData: UInt16 = 61
 
     public enum View {
         public static let dropAccept: UInt16 = 64
@@ -435,6 +441,22 @@ public enum AsukaProp {
         public static let anchor: UInt16 = 65
         public static let modal: UInt16 = 66
     }
+
+    public enum Table {
+        public static let columns: UInt16 = 64
+        public static let sort: UInt16 = 65
+        public static let selectionMode: UInt16 = 66
+        public static let selection: UInt16 = 67
+        public static let rowHeight: UInt16 = 68
+        public static let columnsMovable: UInt16 = 69
+    }
+
+    public enum Outline {
+        public static let levels: UInt16 = 64
+        public static let selectionMode: UInt16 = 65
+        public static let selection: UInt16 = 66
+        public static let rowHeight: UInt16 = 67
+    }
 }
 
 public enum AsukaEventKind: UInt16 {
@@ -511,6 +533,12 @@ public enum AsukaEventKind: UInt16 {
     case zoomed = 71
     case moved = 72
     case sheetHeight = 73
+    case sortBy = 74
+    case columnLayout = 75
+    case rowsSelected = 76
+    case open = 77
+    case expand = 78
+    case undo = 79
 }
 
 public enum AsukaCommand: UInt16 {
@@ -559,6 +587,7 @@ public enum AsukaCommand: UInt16 {
     case devFontScale = 43
     case videoAction = 44
     case zoomTo = 45
+    case undoState = 46
 }
 
 public enum AsukaRole: Int32 {
@@ -980,6 +1009,39 @@ public enum AsukaDetentKind: Int32 {
     case fraction = 4
 }
 
+public enum AsukaCursor: Int32 {
+    case auto = 0
+    case arrow = 1
+    case pointer = 2
+    case text = 3
+    case crosshair = 4
+    case move = 5
+    case grab = 6
+    case grabbing = 7
+    case notAllowed = 8
+    case wait = 9
+    case progress = 10
+    case help = 11
+    case contextMenu = 12
+    case copy = 13
+    case alias = 14
+    case resizeHorizontal = 15
+    case resizeVertical = 16
+    case resizeDiagonal = 17
+    case resizeAntiDiagonal = 18
+    case resizeColumn = 19
+    case resizeRow = 20
+    case zoomIn = 21
+    case zoomOut = 22
+    case hidden = 23
+}
+
+public enum AsukaSelectionMode: Int32 {
+    case single = 0
+    case multiple = 1
+    case none = 2
+}
+
 /// A prop value. Bytes are valid only during the handler call.
 public enum AsukaValue {
     case bool(Bool)
@@ -1363,5 +1425,23 @@ public enum AsukaEvents {
     }
     public static func sheetHeight(_ id: UInt32, _ v: Double) -> [UInt8] {
         var w = AsukaWriter(); w.header(id, 73); w.f64(v); return w.bytes
+    }
+    public static func sortBy(_ id: UInt32, _ v: Int64) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 74); w.u64(UInt64(bitPattern: v)); return w.bytes
+    }
+    public static func columnLayout(_ id: UInt32, _ v: [UInt8]) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 75); w.u32(UInt32(v.count)); w.bytes.append(contentsOf: v); return w.bytes
+    }
+    public static func rowsSelected(_ id: UInt32, _ v: [UInt8]) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 76); w.u32(UInt32(v.count)); w.bytes.append(contentsOf: v); return w.bytes
+    }
+    public static func open(_ id: UInt32, _ v: Int64) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 77); w.u64(UInt64(bitPattern: v)); return w.bytes
+    }
+    public static func expand(_ id: UInt32, x: Double, y: Double) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 78); w.f64(x); w.f64(y); return w.bytes
+    }
+    public static func undo(_ id: UInt32, _ v: Int64) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 79); w.u64(UInt64(bitPattern: v)); return w.bytes
     }
 }

@@ -145,6 +145,12 @@ func asukaStrings(_ b: [UInt8]) -> [String] {
              AsukaProp.a11yDescribedBy:
             setA11yProp(n, p, v) // A11y.swift
             return
+        case AsukaProp.cursor:
+            setCursor(n, v.enumValue) // Cursor.swift
+            return
+        case AsukaProp.rowData:
+            n.tableCell?.setRowData(v.data) // Tables.swift
+            return
         default:
             break
         }

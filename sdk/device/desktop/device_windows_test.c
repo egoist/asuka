@@ -4,10 +4,19 @@
 // copyHTML puts CF_HTML (its header's byte offsets right, UTF-8) and
 // CF_UNICODETEXT; clipboardHTML reads the fragment back; clipboardHas
 // says html; text alone has none. Another app's CF_HTML, as Chrome and
-// Word write it, gives its fragment.
+// Word write it, gives its fragment. copyFiles puts CF_HDROP (wide, full
+// paths) and a copy's drop effect; clipboardFiles reads them back.
+// copyFormats puts an app's own format (registered by its type) beside
+// text and HTML; clipboardFormats lists them as MIME types, clipboardData
+// reads each back.
 #define device_Platform_clipboardHTML_done t_html_done
 #define device_Platform_clipboardText_done t_text_done
 #define device_Platform_copyHTML_done t_copied
+#define device_Platform_copyFiles_done t_copied
+#define device_Platform_copyFormats_done t_copied
+#define device_Platform_clipboardFiles_done t_list_done
+#define device_Platform_clipboardFormats_done t_list_done
+#define device_Platform_clipboardData_done t_data_done
 #define asuka_call_fail t_fail
 #include "device_windows.c"
 
@@ -30,17 +39,24 @@ static struct {
 	int answers;
 	char *value;
 	char *error;
+	device_list_string list;
+	asuka_bytes *data;
 } got;
 
 static void reset(void) {
 	free(got.value);
 	free(got.error);
+	device_list_string_free(&got.list);
+	if (got.data) free(got.data->data), free(got.data);
 	memset(&got, 0, sizeof got);
 }
 
 void t_html_done(asuka_call *call, char *value) { got.answers++, got.value = value; }
 void t_text_done(asuka_call *call, char *value) { got.answers++, got.value = value; }
 void t_copied(asuka_call *call) { got.answers++; }
+void t_list_done(asuka_call *call, device_list_string v) { got.answers++, got.list = v; }
+void t_data_done(asuka_call *call, asuka_bytes *v) { got.answers++, got.data = v; }
+
 void t_fail(asuka_call *call, asuka_error *e) {
 	got.answers++;
 	got.error = asuka_strdup(e->message ? e->message : "failed");
@@ -71,6 +87,100 @@ static long long field(const char *s, const char *name) {
 	return f ? strtoll(f + strlen(name), NULL, 10) : -1;
 }
 
+// listed reports whether the last list answered has s.
+static bool listed(const char *s) {
+	for (size_t i = 0; i < got.list.len; i++)
+		if (!strcmp(got.list.data[i], s)) return true;
+	return false;
+}
+
+static bool ends(const char *s, const char *end) { return strlen(s) >= strlen(end) && !strcmp(s + strlen(s) - strlen(end), end); }
+
+static bool data_is(const char *s) { return got.data && got.data->len == strlen(s) && !memcmp(got.data->data, s, got.data->len); }
+
+// files: copyFiles' CF_HDROP, read back; formats: an app's own beside
+// text and HTML, listed and read back.
+static void files_and_formats(void) {
+	char *dir = asuka_sprintf("%s\\clip-test", asuka_desktop_cache_dir());
+	CreateDirectoryA(dir, NULL);
+	char *a = asuka_sprintf("%s\\caf\xc3\xa9.txt", dir), *b = asuka_sprintf("%s\\b.pdf", dir);
+	for (int i = 0; i < 2; i++) {
+		wchar_t *w = asuka_wide(i ? b : a);
+		FILE *f = _wfopen(w, L"wb");
+		fputs("x", f);
+		fclose(f);
+		free(w);
+	}
+	char *paths[] = {a, b};
+	reset();
+	p_copy_files(NULL, (device_list_string){paths, 2}, call);
+	CHECK(got.answers == 1 && !got.error, "copyFiles: %s", got.error ? got.error : "no answer");
+	device_ClipboardKinds k = kinds();
+	CHECK(k.files && !k.text, "kinds: files %d text %d", k.files, k.text);
+	size_t n = 0;
+	char *drop = raw(CF_HDROP, &n);
+	CHECK(drop && ((DROPFILES *)drop)->fWide && ((DROPFILES *)drop)->pFiles == sizeof(DROPFILES), "DROPFILES");
+	free(drop);
+	reset();
+	p_files_read(NULL, call);
+	// Full paths (the cache's may be the working directory's), in order.
+	CHECK(got.answers == 1 && got.list.len == 2 && got.list.data[0][1] == ':' && ends(got.list.data[0], "\\clip-test\\caf\xc3\xa9.txt") &&
+	          ends(got.list.data[1], "\\clip-test\\b.pdf"),
+	      "clipboardFiles: %zu %s", got.list.len, got.list.len ? got.list.data[0] : "");
+	reset();
+	p_formats(NULL, call);
+	CHECK(listed("CF_HDROP") && listed("Preferred DropEffect"), "formats of files");
+	char *missing[] = {b, "C:\\no\\such.txt"};
+	reset();
+	p_copy_files(NULL, (device_list_string){missing, 2}, call);
+	CHECK(got.error && strstr(got.error, "no file at"), "a missing file: %s", got.error ? got.error : "no error");
+	reset();
+
+	const char *json = "{\"shapes\":[1]}", *html = "<b>a drawing</b>";
+	device_ClipboardFormat fs[] = {
+	    {"application/x.drawing+json", {(uint8_t *)json, strlen(json)}},
+	    {"text/html", {(uint8_t *)html, strlen(html)}},
+	    {"text/plain", {(uint8_t *)"a drawing", 9}},
+	};
+	p_copy_formats(NULL, (device_list_ClipboardFormat){fs, 3}, call);
+	CHECK(got.answers == 1 && !got.error, "copyFormats: %s", got.error ? got.error : "no answer");
+	k = kinds();
+	CHECK(k.text && k.html && !k.files, "kinds: text %d html %d files %d", k.text, k.html, k.files);
+	reset();
+	p_formats(NULL, call);
+	CHECK(listed("application/x.drawing+json") && listed("text/html") && listed("text/plain") && !listed("CF_HDROP"), "formats: %zu, %s", got.list.len,
+	      got.list.len ? got.list.data[0] : "");
+	for (size_t i = 0; i < got.list.len; i++)
+		for (size_t j = i + 1; j < got.list.len; j++) CHECK(strcmp(got.list.data[i], got.list.data[j]), "twice: %s", got.list.data[i]);
+	reset();
+	p_data(NULL, "application/x.drawing+json", call);
+	CHECK(data_is(json), "the app's own: %zu bytes", got.data ? got.data->len : 0);
+	reset();
+	p_data(NULL, "text/html", call);
+	CHECK(data_is(html), "html");
+	reset();
+	p_data(NULL, "text/plain", call);
+	CHECK(data_is("a drawing"), "text");
+	reset();
+	p_data(NULL, "application/x.other", call);
+	CHECK(got.answers == 1 && !got.data && !got.error, "another type: none");
+	reset();
+	// A bitmap's, as a BMP file, and back.
+	uint8_t bmp[14 + 40 + 4] = {'B', 'M'};
+	BITMAPINFOHEADER *bi = (BITMAPINFOHEADER *)(bmp + 14);
+	bi->biSize = 40, bi->biWidth = 1, bi->biHeight = 1, bi->biPlanes = 1, bi->biBitCount = 32;
+	bmp[14 + 40] = 0x11, bmp[14 + 40 + 3] = 0xFF;
+	device_ClipboardFormat img[] = {{"image/bmp", {bmp, sizeof bmp}}};
+	p_copy_formats(NULL, (device_list_ClipboardFormat){img, 1}, call);
+	CHECK(kinds().image, "a BMP: an image");
+	reset();
+	p_data(NULL, "image/bmp", call);
+	CHECK(got.data && got.data->len >= sizeof bmp && got.data->data[0] == 'B' && got.data->data[1] == 'M' && *(DWORD *)(got.data->data + 10) == 54 &&
+	          got.data->data[54] == 0x11,
+	      "the BMP back: %zu bytes", got.data ? got.data->len : 0);
+	reset();
+	free(a), free(b), free(dir);
+}
 // media: pickMedia's images with WIC: a PNG's size; written as a JPEG,
 // scaled to its long side's most (never up), of its quality; what isn't
 // an image refused (copied as it is, then).
@@ -181,6 +291,7 @@ int main(void) {
 	reset();
 
 	media();
+	files_and_formats();
 
 	printf(failures ? "FAIL\n" : "ok\n");
 	return failures ? 1 : 0;

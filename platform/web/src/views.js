@@ -11,6 +11,7 @@ import { decodeDragItems, appendItems, shareKind, matchMIME } from "./interactio
 import { navKinds } from "./nav.js";
 import { overlayKind } from "./overlay.js";
 import { listKind, scrollKind } from "./list.js";
+import { tableKind, outlineKind } from "./table.js";
 import { mediaKinds, symbolSVG } from "./media.js";
 import { richKinds } from "./rich.js";
 import { drawKinds } from "./draw.js";
@@ -1113,6 +1114,8 @@ export const kinds = {
   [Kind.Scroll]: scrollKind,
   [Kind.Shader]: shaderKind,
   [Kind.Overlay]: overlayKind,
+  [Kind.Table]: tableKind,
+  [Kind.Outline]: outlineKind,
   ...navKinds,
   ...mediaKinds,
   ...richKinds,

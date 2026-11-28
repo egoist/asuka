@@ -6,8 +6,10 @@ flyouts, apps that live in the background, global shortcuts, panels and
 launchers, finding the apps installed, click-through windows, file
 dialogs and the file manager, files the app opens, one instance,
 quitting, recent documents, document-based apps, starting at login,
-updates, Now Playing and the media keys, the displays, power, progress
-on the app's icon and the system's appearance. To follow changes to
+updates, undo and redo, the pointer's shape, Now Playing and the media
+keys, the displays, power, progress on the app's icon and the system's
+appearance. Tables and outlines, the desktop's lists, are in
+[Components](components.md#tables-and-outlines). To follow changes to
 files and folders (a folder the app shows, a document another app
 saves), see [Watching files](data.md#watching-files-stdwatch), which
 phones and the web have too.
@@ -686,6 +688,119 @@ What the user gets:
   opens on a list of its documents, with New, and a document's screen
   is pushed over it, saved as the user edits. A row's swipe Duplicates,
   Renames (asking the name) or Deletes it (asking first).
+
+## Undo and redo
+
+`undo` is the app's undo stack, as `NSUndoManager` and Android's and the
+web's editors keep theirs: each change the app makes is registered with
+what undoes it and what does it again, under a name, and the platform's
+Undo and Redo reach it.
+
+```asuka check
+component Shopping {
+  state items: [string] = ["Milk", "Bread", "Eggs"]
+
+  fn remove(item: string) {
+    items = items.filter(i => i != item)
+    undo.register("Delete {item}", undo: () => { items = items + [item] }, redo: () => {
+      items = items.filter(i => i != item)
+    })
+  }
+
+  MenuBar {
+    Menu("Edit") {
+      MenuItem("") { role: .undo }
+      MenuItem("") { role: .redo }
+    }
+  }
+  Column {
+    padding: 16
+    gap: 8
+    for item in items key item {
+      Row {
+        Text(item) { grow: 1 }
+        Button("Delete") {
+          on press { remove(item) }
+        }
+      }
+    }
+    Button("Undo {undo.undoName()}") {
+      disabled: !undo.canUndo()
+      on press { undo.undo() }
+    }
+  }
+}
+
+app { Shopping() }
+```
+
+- `undo.register(name, undo:, redo:)` records a change: `undo` puts
+  things back, `redo` does the change again. A new change lets go of what
+  there was to redo; what `undo` and `redo` register as they run isn't
+  recorded.
+- `undo.group(name, () => { … })` makes the changes its block registers
+  one change, undone together, the last first (a paste of several rows,
+  a drag of many).
+- `undo.undo()` and `undo.redo()` undo and redo from code;
+  `undo.canUndo()`, `canRedo()`, `undoName()` and `redoName()` say what
+  there is, and a binding that reads them follows them;
+  `undo.clear()` forgets it all (a document saved, another opened).
+
+Where the user undoes:
+
+- **On the Mac**, Edit > Undo and Redo, which say what ("Undo Delete
+  Milk"), and ⌘Z, ⇧⌘Z. The app's Edit menu needs nothing: a `MenuItem`
+  of role `.undo` or `.redo` is the Mac's own item.
+- **On Windows and Linux**, the app's menu bar's items of role `.undo`
+  and `.redo`, which take the platform's words and shortcuts (Ctrl+Z,
+  Ctrl+Shift+Z, and Ctrl+Y on Windows), enabled while there's something
+  to undo. The shortcuts work without the items too.
+- **In a browser**, Ctrl+Z or ⌘Z, and Ctrl+Shift+Z, ⇧⌘Z or Ctrl+Y.
+- **On a phone**, iOS's shake to undo, its three-finger swipes and an
+  iPad keyboard's ⌘Z, with "Undo Delete Milk" in the system's own alert;
+  a hardware keyboard's Ctrl+Z on Android.
+
+Everywhere, a text field being edited undoes its own typing first: the
+app's changes are undone once focus is out of it.
+
+## The pointer's shape
+
+`cursor` is the mouse pointer's shape over a view and what's inside it
+that sets none, as CSS's `cursor`: `.pointer` (a hand, for what's
+clicked), `.text`, `.crosshair`, `.move`, `.grab` and `.grabbing`,
+`.notAllowed`, `.wait`, `.progress`, `.help`, `.contextMenu`, `.copy`,
+`.alias`, `.resizeHorizontal`, `.resizeVertical`, `.resizeDiagonal`,
+`.resizeAntiDiagonal`, `.resizeColumn`, `.resizeRow`, `.zoomIn`,
+`.zoomOut` and `.hidden`. `.auto`, the default, is its parent's, else
+the platform's own for what's under the pointer (a text field's I-beam,
+a link's hand).
+
+```asuka check
+component Splitter {
+  state width = 240.0
+
+  Row {
+    Column {
+      width: width
+      Text("Sidebar")
+    }
+    View {
+      width: 6
+      cursor: .resizeHorizontal
+      on pan(g) { width = max(120, width + g.translationX) }
+    }
+    Text("Content") { grow: 1 }
+  }
+}
+
+app { Splitter() }
+```
+
+It's `NSCursor` on the Mac, `SetCursor`'s cursors on Windows, GTK's
+named cursors on Linux and CSS's in a browser. An iPad's pointer takes a
+text beam over `.text`, hides for `.hidden` and lifts what's under it
+for `.pointer`; Android takes the shapes it has (`PointerIcon`) with a
+mouse; other phones, with no pointer, ignore it.
 
 ## Starting at login
 

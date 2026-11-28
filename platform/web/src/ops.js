@@ -41,10 +41,12 @@ export const Kind = Object.freeze({
   ProgressRing: 37,
   Snackbar: 38,
   Overlay: 39,
+  Table: 40,
+  Outline: 41,
 });
 
 /** Kind names, by kind. */
-export const kindNames = ["", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay"];
+export const kindNames = ["", "View", "Text", "Button", "TextField", "Toggle", "Slider", "Scroll", "List", "Activity", "Stack", "Screen", "Tabs", "Sheet", "Alert", "Image", "Native", "RichText", "Selectable", "Symbol", "Segmented", "Wheel", "Stepper", "ColorPicker", "Progress", "Shape", "Video", "WebView", "DatePicker", "PageControl", "Popover", "Accessory", "Canvas", "Split", "Shader", "Window", "Picker", "ProgressRing", "Snackbar", "Overlay", "Table", "Outline"];
 
 /** Props every kind has. */
 export const Prop = Object.freeze({
@@ -107,6 +109,8 @@ export const Prop = Object.freeze({
   CornerRadii: 57,
   BorderWidths: 58,
   BorderStyle: 59,
+  Cursor: 60,
+  RowData: 61,
 });
 
 /** Each kind's own props, from 64. */
@@ -149,6 +153,8 @@ export const KindProp = Object.freeze({
   ProgressRing: Object.freeze({ Value: 64, Indeterminate: 65 }),
   Snackbar: Object.freeze({ Message: 64, Action: 65, Duration: 66, Window: 67 }),
   Overlay: Object.freeze({ Root: 64, Anchor: 65, Modal: 66 }),
+  Table: Object.freeze({ Columns: 64, Sort: 65, SelectionMode: 66, Selection: 67, RowHeight: 68, ColumnsMovable: 69 }),
+  Outline: Object.freeze({ Levels: 64, SelectionMode: 65, Selection: 66, RowHeight: 67 }),
 });
 
 /** Events hosts send. */
@@ -226,6 +232,12 @@ export const Event = Object.freeze({
   Zoomed: 71,
   Moved: 72,
   SheetHeight: 73,
+  SortBy: 74,
+  ColumnLayout: 75,
+  RowsSelected: 76,
+  Open: 77,
+  Expand: 78,
+  Undo: 79,
 });
 
 /** Commands the core sends. */
@@ -275,6 +287,7 @@ export const Command = Object.freeze({
   DevFontScale: 43,
   VideoAction: 44,
   ZoomTo: 45,
+  UndoState: 46,
 });
 
 export const Role = Object.freeze({ None: 0, Button: 1, Header: 2, Image: 3, Link: 4, Text: 5, Search: 6, Checkbox: 7, Radio: 8, RadioGroup: 9, Switch: 10, Tab: 11, TabList: 12, TabPanel: 13, Slider: 14, SpinButton: 15, ProgressBar: 16, Meter: 17, Menu: 18, MenuBar: 19, MenuItem: 20, MenuItemCheckbox: 21, MenuItemRadio: 22, Listbox: 23, Option: 24, ComboBox: 25, Dialog: 26, AlertDialog: 27, Tooltip: 28, Group: 29, Separator: 30, Toolbar: 31, Status: 32 });
@@ -324,6 +337,8 @@ export const DevErrorAction = Object.freeze({ Dismiss: 0, Reload: 1 });
 export const VideoAction = Object.freeze({ EnterPictureInPicture: 0, ExitPictureInPicture: 1, EnterFullScreen: 2, ExitFullScreen: 3 });
 export const PanAxis = Object.freeze({ Both: 0, Horizontal: 1, Vertical: 2 });
 export const DetentKind = Object.freeze({ Medium: 0, Large: 1, Fit: 2, Height: 3, Fraction: 4 });
+export const Cursor = Object.freeze({ Auto: 0, Arrow: 1, Pointer: 2, Text: 3, Crosshair: 4, Move: 5, Grab: 6, Grabbing: 7, NotAllowed: 8, Wait: 9, Progress: 10, Help: 11, ContextMenu: 12, Copy: 13, Alias: 14, ResizeHorizontal: 15, ResizeVertical: 16, ResizeDiagonal: 17, ResizeAntiDiagonal: 18, ResizeColumn: 19, ResizeRow: 20, ZoomIn: 21, ZoomOut: 22, Hidden: 23 });
+export const SelectionMode = Object.freeze({ Single: 0, Multiple: 1, None: 2 });
 
 const utf8 = new TextDecoder();
 const utf8Out = new TextEncoder();
@@ -532,4 +547,10 @@ export const Events = Object.freeze({
   zoomed: (id, v) => new Writer().header(id, 71).f64(v).done(),
   moved: (id, x, y) => new Writer().header(id, 72).f64(x).f64(y).done(),
   sheetHeight: (id, v) => new Writer().header(id, 73).f64(v).done(),
+  sortBy: (id, v) => new Writer().header(id, 74).i64(v).done(),
+  columnLayout: (id, v) => new Writer().header(id, 75).bytes(v).done(),
+  rowsSelected: (id, v) => new Writer().header(id, 76).bytes(v).done(),
+  open: (id, v) => new Writer().header(id, 77).i64(v).done(),
+  expand: (id, x, y) => new Writer().header(id, 78).f64(x).f64(y).done(),
+  undo: (id, v) => new Writer().header(id, 79).i64(v).done(),
 });

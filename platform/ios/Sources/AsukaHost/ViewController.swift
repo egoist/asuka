@@ -21,6 +21,11 @@ public final class AsukaViewController: UIViewController {
     /// another with an accessory on either (fieldFocus), cleared by the
     /// keyboard's next notification (keyboardWillChange).
     private var keyboardHeld = false
+    /// The app's undo stack as UIKit's undo (Undo.swift).
+    lazy var appUndo = AsukaUndoManager(state: { AsukaRuntime.shared.undoState }, perform: { AsukaRuntime.shared.undo($0) })
+    var undoResponderPending = false
+    /// The text field or text view being edited, which has its own undo.
+    weak var textBeingEdited: UIResponder?
 
     public override func viewDidLoad() {
         super.viewDidLoad()
@@ -69,7 +74,21 @@ public final class AsukaViewController: UIViewController {
         rt.scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
         sendEnvironment()
         rt.start(self)
+        observeTextEditing()
     }
+
+    /// The core's undo stack (Undo.swift), while the app uses it and no
+    /// text field is being edited: that one undoes its typing with the
+    /// window's undo manager.
+    public override var undoManager: UndoManager? {
+        guard AsukaRuntime.shared.rootUndoes else { return super.undoManager }
+        if editingText { return super.undoManager }
+        return appUndo
+    }
+
+    /// While the app uses its undo stack, the first responder when
+    /// nothing else is, so a shake or ⌘Z reaches its undo manager.
+    public override var canBecomeFirstResponder: Bool { AsukaRuntime.shared.rootUndoes }
 
     #if !os(tvOS) // a TV neither rotates nor has a status bar
     // platform/screen's lock and status bar.
@@ -144,6 +163,7 @@ public final class AsukaViewController: UIViewController {
         super.viewDidAppear(animated)
         // Outside presses for the overlays, and that the last input was a touch.
         if let w = view.window { AsukaRuntime.shared.observeTouches(in: w) }
+        takeUndoResponder()
     }
 
     public override func viewDidLayoutSubviews() {

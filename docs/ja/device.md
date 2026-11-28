@@ -568,7 +568,9 @@ component Gallery {
 - `device.clipboardText()` はクリップボードのテキストを読み取ります。テキストがなければ `none` です。iOS では、ほかのアプリが置いたものをアプリが初めて読むときにユーザーに確認します。書き込むには `device.copy(text)` を使います。
 - `device.keepAwake(on)` は、`on` が true のあいだ画面をオンのままにします。ビデオ、レシピ、地図などに使います。それを必要とする画面が閉じたらオフにしてください。
 - `device.pickFiles(types:, multiple:)` は、システムのドキュメントピッカー（iOS の「ファイル」ブラウザー、Android のストレージピッカー、デスクトップではファイルを開くダイアログ、ブラウザーではファイル選択。権限は不要）を表示します。`types` は MIME タイプ（`"application/pdf"`、`"image/*"`。指定しなければどのファイルでも）で、`multiple` を指定すると複数選べます。選ばれたファイルごとに `device.File` を返します。その `path` はアプリのキャッシュにあるコピーで、`name`、`type`、`size` も持ちます。ユーザーがキャンセルした場合は一つも返りません。
-- `device.clipboardHas()` は、クリップボードの中身を読まずに、`text`、`image`、`url`、リッチテキスト（`html`）のどれがあるかを返します（iOS はこのときユーザーに確認しません）。貼り付けるものがあるときだけ「ペースト」ボタンを表示する、といった使い方ができます。`device.clipboardImage()` はクリップボードの画像を、コピーされたときの形式のままファイルに読み出します。`device.copyImage(path)` は画像ファイルをクリップボードに置きます。`device.clipboardHTML()` は、リッチテキスト（ブラウザー、メール、文書からコピーしたもの。太字、リンク、リストを含みます）を HTML として読み取ります。`device.copyHTML(html, text:)` はそれをクリップボードに置き、プレーンテキストしか貼り付けられないアプリのために `text`（既定では HTML 自身のテキスト）も添えます。`device.clipboardChanges()` は、クリップボードが変わるたびにその中身を伝えるストリームです（iOS と Android は変化を知らせます。Mac と Windows には毎秒 2 回問い合わせます。ブラウザーはページの中でのコピーと、ユーザーがクリップボードの読み取りを許可した場合はほかのアプリのコピーを検知します）。
+- `device.clipboardHas()` は、クリップボードの中身を読まずに、`text`、`image`、`url`、リッチテキスト（`html`）、ファイル（`files`）のどれがあるかを返します（iOS はこのときユーザーに確認しません）。貼り付けるものがあるときだけ「ペースト」ボタンを表示する、といった使い方ができます。`device.clipboardImage()` はクリップボードの画像を、コピーされたときの形式のままファイルに読み出します。`device.copyImage(path)` は画像ファイルをクリップボードに置きます。`device.clipboardHTML()` は、リッチテキスト（ブラウザー、メール、文書からコピーしたもの。太字、リンク、リストを含みます）を HTML として読み取ります。`device.copyHTML(html, text:)` はそれをクリップボードに置き、プレーンテキストしか貼り付けられないアプリのために `text`（既定では HTML 自身のテキスト）も添えます。`device.clipboardChanges()` は、クリップボードが変わるたびにその中身を伝えるストリームです（iOS と Android は変化を知らせます。Mac と Windows には毎秒 2 回問い合わせます。ブラウザーはページの中でのコピーと、ユーザーがクリップボードの読み取りを許可した場合はほかのアプリのコピーを検知します）。
+- `device.clipboardFiles()` は、クリップボードにあるファイル、つまりファイルマネージャー（Finder、エクスプローラー、GNOME の「ファイル」）でコピーされたファイルを返します。`device.copyFiles(paths)` はファイルをクリップボードに置き、ファイルマネージャーに（コピーとして）、あるいはファイルを受け付けるアプリに貼り付けられるようにします。Mac、Windows、Linux で返るのはファイルそのもののパスです。読んだりコピーしたりはできますが、移動はしないでください。iOS のクリップボードには、もともとファイルというものがありません。「ファイル」App がコピーするのは、各ファイルの中身とその名前です。そのため `copyFiles` も各ファイルをその形で置き（「ファイル」や「メール」で貼り付けられます）、`clipboardFiles` はアプリのキャッシュに置いたコピーを返します。「写真」でコピーした画像もファイルとして扱われます。Android も同じくコピーを返し、ファイルを置くときはコンテンツのリンクとして置くので、ほかのアプリは貼り付けるときにそれを読めます。ブラウザーはファイルをクリップボードに置けません（`copyFiles` は unsupported を投げます）。ブラウザーで読めるのは画像だけで、ファイルとして返します。
+- `device.copyData(type, data, text:)` は、アプリ独自のデータ（図形、スプレッドシートのセルなど）をクリップボードに置き、プレーンテキストしか貼り付けられないアプリのために `text` も添えます。`device.clipboardData(type)` はそれを、同じアプリの中でも、そのアプリの別のコピーでも読み戻せます。Electron の `clipboard.writeBuffer` と `readBuffer` にあたります。`device.copyFormats` は複数の形式を一度に置きます。それぞれが `device.ClipboardFormat(type:, data:)` で、アプリ独自の形式に HTML とテキストを添えておけば、どのアプリも自分の知っている形式で貼り付けられます。`device.clipboardFormats()` は、中身を読まずに、いまクリップボードにある型を一覧にします。型は MIME タイプ（`"application/x.drawing+json"`。`text/plain`、`text/html`、`image/png` はそれぞれプラットフォームのテキスト、リッチテキスト、画像）で、どのプラットフォームでも同じ文字列を使います。Apple のプラットフォームでは UTI に対応し（システムが知らない MIME タイプなら、それをもとにシステムが作ります）、Windows ではその名前で登録したクリップボード形式、Linux と Android では MIME タイプそのものになります。`/` を含まない型はプラットフォーム独自の名前で、そのまま使われます（`"com.adobe.pdf"`、Windows の `"Rich Text Format"`）。`clipboardFormats` は、プラットフォームの名前に対応する MIME タイプがあればそれを、なければその名前を返します。Android では各形式がアプリのキャッシュにあるファイルになり、貼り付けるアプリはそれを読めます。ブラウザーが受け付けるのはテキスト、HTML、PNG で、Web カスタムフォーマットに対応したブラウザー（Chrome、Edge）ではアプリ独自の型も受け付けます。ただしそれを読めるのはほかの Web ページと Web 上の同じアプリだけで、コンピューターのほかのアプリからは読めません。Safari と Firefox は unsupported を投げます。
 - `device.info()` はデバイスとアプリの情報です。`model`（"iPhone"、"Pixel 9"、"Mac"、"PC"）、`system`（"iOS"、"Android"、"macOS"、"Windows"、"Linux"）、`systemVersion`、そして `asuka.toml` の `version` と `build` である `appVersion` と `build` を持ちます。expo-application と同じく、`source` はアプリの入手元（`.appStore`、`.testFlight`、`.playStore`、Microsoft Store や Flathub などの `.otherStore`、ダウンロードやサイドロードした APK の `.direct`、開発者のビルドの `.development`）で、`installedAt` と `updatedAt` はアプリがインストールされた日時と、このバージョンがインストールされた日時です（Web ではなく、`source` は `.unknown`）。ベータ版のバナーを出したり、ダウンロードしたコピーにストアを案内したりするのに使えます。
 
 ```asuka
@@ -584,6 +586,39 @@ component Player {
   }
 
   Text(if let i = info.value { "{i.model}, {i.system} {i.systemVersion}" } else { "" })
+}
+```
+
+独自の図形をコピーして自分自身に貼り付けられるようにし、ほかのアプリ向けには図形のテキストを添えるエディターです。
+
+```asuka check
+import platform/device
+
+let shapesType = "application/x.sketch-shapes+json"
+
+component Board {
+  state shapes: [string] = ["circle", "square"]
+
+  Column {
+    Button("Copy") {
+      on press {
+        try? await device.copyFormats([
+          device.ClipboardFormat(type: shapesType, data: shapes.joined(separator: ",").bytes()),
+          device.ClipboardFormat(type: "text/plain", data: shapes.joined(separator: ", ").bytes()),
+        ])
+      }
+    }
+    Button("Paste") {
+      on press {
+        if let data = try? await device.clipboardData(shapesType) {
+          shapes = shapes + data.string().split(",")
+        } else {
+          shapes = shapes + ((try? await device.clipboardFiles()) ?? [])
+        }
+      }
+    }
+    for s in shapes key s { Text(s) }
+  }
 }
 ```
 

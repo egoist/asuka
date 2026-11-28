@@ -594,7 +594,7 @@ void ak_view_mark_measured(ak_view *e) {
 		ak_view_queue_frame(e);
 	}
 	for (uint32_t i = 0; i < e->kids.len; i++) ak_view_mark_measured(e->kids.data[i]);
-	if (e->kind == AK_KIND_LIST && e->el == AK_EL_LIST) ak_list_each_cell(e, mark_cell, NULL);
+	if (ak_listlike(e)) ak_list_each_cell(e, mark_cell, NULL);
 }
 
 // ---- Direction ----

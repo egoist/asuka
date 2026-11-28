@@ -1,0 +1,5 @@
+name = "Tables"
+id = "dev.asuka.tables"
+version = "1.0.0"
+build = 1
+orientations = ["portrait", "landscape"]

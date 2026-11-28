@@ -57,6 +57,9 @@ class AsukaView: NSView, NSDraggingSource {
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let n = asukaNode else { return super.menu(for: event) }
         if let c = n.cell, n.menu == nil { return rt.cellMenu(c) }
+        // A table's row: the table selects it first, then shows its menu
+        // (Tables.swift).
+        if n.tableCell != nil { return nil }
         guard let m = n.menu, n.menuTrigger == AsukaMenuTrigger.longPress.rawValue else { return nil }
         return m
     }

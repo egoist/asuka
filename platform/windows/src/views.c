@@ -126,6 +126,10 @@ void wh_create(uint32_t id, uint16_t kind) {
 	case AK_KIND_LIST:
 		wh_list_new(n);
 		break;
+	case AK_KIND_TABLE:
+	case AK_KIND_OUTLINE:
+		wh_table_new(n, kind == AK_KIND_OUTLINE);  // a ListView, a TreeView (table.c)
+		break;
 	case AK_KIND_RICH_TEXT:
 		wh_make_rich(n);
 		break;
@@ -183,6 +187,10 @@ void wh_theme_control(node *n) {
 		break;
 	case AK_KIND_DATE_PICKER:
 		wh_theme_date(n);
+		break;
+	case AK_KIND_TABLE:
+	case AK_KIND_OUTLINE:
+		wh_table_theme(n);
 		break;
 	}
 }
@@ -325,6 +333,10 @@ void wh_set_own(node *n, uint16_t p, const ak_value *v) {
 		break;
 	case AK_KIND_LIST:
 		wh_list_set_prop(n, p, v);
+		break;
+	case AK_KIND_TABLE:
+	case AK_KIND_OUTLINE:
+		wh_table_set_prop(n, p, v);
 		break;
 	case AK_KIND_ACTIVITY:
 		if (p == AK_PROP_ACTIVITY_ANIMATING) {
@@ -631,6 +643,12 @@ void wh_set_common(node *n, uint16_t p, const ak_value *v) {
 	case AK_PROP_A11Y_DESCRIBED_BY:
 		wh_set_a11y(n, p, v);
 		break;
+	case AK_PROP_CURSOR:
+		wh_set_cursor_prop(n, (int32_t)v->i);  // the pointer over it (cursor.c)
+		break;
+	case AK_PROP_ROW_DATA:
+		if (n->kind == KIND_TABLE_CELL) wh_table_row_data(n, v);  // the row's text, drawn by its table
+		break;
 	}
 }
 
@@ -703,6 +721,8 @@ void wh_apply_font(node *n) {
 		}
 	} else if (n->kind == AK_KIND_BUTTON && n->ctl) {
 		SendMessageW(n->ctl, WM_SETFONT, (WPARAM)wh_node_font(n), TRUE);
+	} else if (n->table && n->kind != KIND_TABLE_CELL) {
+		wh_table_rescale(n);
 	}
 	wh_redraw(n);
 }
@@ -747,6 +767,7 @@ void wh_direction_changed(node *n) {
 	else if (n->kind == AK_KIND_SCROLL) wh_restart_scroll(n);
 	else if (n->kind == AK_KIND_STACK) wh_layout_screens(n);
 	else if (n->list) wh_list_rebind(n);
+	else if (n->table && n->kind != KIND_TABLE_CELL) wh_table_direction(n);
 	else if (n->rich) wh_rich_invalidate(n);
 	if (n->bar) wh_bars_reset(n);
 	wh_redraw(n);
@@ -827,6 +848,7 @@ LRESULT wh_notify(node *n, NMHDR *hdr, LPARAM lp, bool *handled) {
 		}
 		break;
 	}
+	if (n->table && n->kind != KIND_TABLE_CELL) return wh_table_notify(n, hdr, lp, handled);
 	if (n->kind == AK_KIND_DATE_PICKER) return wh_date_notify(n, hdr, lp, handled);
 	if (n->kind == AK_KIND_TEXT_FIELD) return wh_field_notify(n, hdr, lp, handled);
 	if (n->rich) return wh_rich_notify(n, hdr, lp, handled);
@@ -867,6 +889,7 @@ void wh_listen(node *n, int e) {
 		return;
 	}
 	if (!n->hwnd) return;
+	if (n->table && n->kind != KIND_TABLE_CELL) wh_table_listen(n, e);
 	if (e == AK_EVENT_WINDOW_STATE) {
 		wh_listen_window(n);
 		return;
@@ -901,7 +924,8 @@ bool wh_interactive(const node *n) {
 	case AK_KIND_SCROLL: case AK_KIND_LIST: case AK_KIND_SEGMENTED: case AK_KIND_TEXT_FIELD: case KIND_HEADER:
 	case KIND_TAB_BAR: case KIND_SIDEBAR: case KIND_COMMAND_BAR: case AK_KIND_BUTTON: case AK_KIND_TOGGLE:
 	case AK_KIND_SLIDER: case AK_KIND_STEPPER: case AK_KIND_WHEEL: case AK_KIND_PICKER: case AK_KIND_DATE_PICKER:
-	case AK_KIND_COLOR_PICKER: case AK_KIND_WEB_VIEW: case AK_KIND_VIDEO: case AK_KIND_PAGE_CONTROL:
+	case AK_KIND_COLOR_PICKER: case AK_KIND_WEB_VIEW: case AK_KIND_VIDEO: case AK_KIND_PAGE_CONTROL: case AK_KIND_TABLE:
+	case AK_KIND_OUTLINE:
 		return true;
 	}
 	return false;

@@ -135,6 +135,8 @@ open class AsukaActivity : AppCompatActivity() {
         val ours = ::runtime.isInitialized && runtime.activity === this
         if (ours && runtime.routeKey(event, currentFocus, runtime.nodes[runtime.rootID])) return true
         if (super.dispatchKeyEvent(event)) return true
+        // Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y outside a text field: the app's undo (Undo.kt).
+        if (ours && runtime.undoKey(event, currentFocus)) return true
         // Text typed that nothing took: the focused view's KeyText (a listbox's typeahead).
         return ours && runtime.keyText(event, currentFocus)
     }

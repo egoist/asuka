@@ -2180,6 +2180,150 @@ search results, photos), or you want swipe actions, separators, loading
 more at the end, or a grid. A `List` scrolls by itself: don't put it in
 a `Scroll`.
 
+## Tables and outlines
+
+`Table` shows rows and columns in the platform's own table: an
+`NSTableView` on the Mac, a ListView in report view on Windows (drawn
+as Windows 11's), a `GtkColumnView` on Linux, a `<table>` with the
+grid role in a browser. Its header sorts, its columns are resized (and,
+with `columnsMovable`, moved) by the user, and its rows are selected one
+or several at a time. Its rows come from a `for` in it, as a `List`'s
+do, and are made only while they show, so it takes 100,000 rows as
+easily as ten. [`examples/tables`](../examples/tables) has both.
+
+```asuka check
+struct File {
+  id: int
+  name: string
+  size: int
+  kind: string
+}
+
+fn sorted(files: [File], by: [SortKey]) -> [File] {
+  if by.isEmpty() {
+    return files
+  }
+  let k = by[0]
+  return files.sorted((a, b) => {
+    let less = if k.column == "size" { a.size < b.size } else { a.name < b.name }
+    let more = if k.column == "size" { a.size > b.size } else { a.name > b.name }
+    return if k.ascending { less } else { more }
+  })
+}
+
+component Files {
+  state files = [File(id: 1, name: "Notes.txt", size: 12, kind: "Text"), File(id: 2, name: "Photo.heic", size: 2400, kind: "Image")]
+  state sort: [SortKey] = [SortKey(column: "name")]
+  state selection: [int] = []
+  state opened = ""
+
+  let shown = sorted(files, sort)
+
+  Table {
+    columns: [
+      TableColumn(id: "name", title: "Name", width: 240, sortable: true),
+      TableColumn(id: "size", title: "Size", width: 90, sortable: true, align: .end),
+      TableColumn(id: "kind", title: "Kind", width: 120),
+    ]
+    selectionMode: .multiple
+    bind sort: sort
+    bind selection: selection
+    on open(row) { opened = shown[row].name }
+    menu: row => [.button(title: "Delete", icon: "trash", role: .destructive, run: () => {
+      files = files.filter(f => f.id != shown[row].id)
+    })]
+    for f in shown key f.id {
+      TableRow([f.name, "{f.size} KB", f.kind]) { icon: "doc" }
+    }
+  }
+}
+
+app { Files() }
+```
+
+- `columns` are its `TableColumn`s, in order: an `id`, the header's
+  `title`, a `width` in points (0: the platform's), the `minWidth` and
+  `maxWidth` the user can make it, whether it's `resizable` (by default)
+  and `sortable`, and the `align`ment of its cells and header (`.end` for
+  numbers).
+- Each row is a `TableRow`: its cells' text, one per column in the
+  columns' order, which the platform's table draws itself (the fastest
+  way), and an `icon`, a symbol its first cell shows before its text.
+  Or its children: a view per column, in the columns' order, each laid
+  out at its column's width: a `Text` and a `Symbol`, a `Toggle`.
+- `sort` is how the rows are sorted, `[SortKey]`, the first the primary,
+  which the header shows: a click on a sortable column's header writes
+  it, that column first, ascending, then descending at the next click.
+  The table doesn't sort: the app gives the `for` its rows sorted, as
+  above.
+- `selection` is the selected rows' indices among the `for`'s items. The
+  user's selecting writes it (shift, and ⌘ or Ctrl, select more with
+  `selectionMode: .multiple`; `.off` selects nothing), and it follows the
+  items as they change: sorted the other way, or with rows inserted
+  before, the same items stay selected.
+- `on open(row)` is a double click on a row, or Enter or Return.
+- `menu` is a row's context menu: a right click selects the row, if it
+  isn't already, and shows it.
+- `on columnResize(column, width)` and `on columnMove(column, index)` say
+  what the user did to the columns, to keep it.
+- `rowHeight` is every row's height (0, the default: the platform's);
+  `on endReached` loads more, as a `List`'s.
+
+On a phone, which has no table, a `Table` is a `List` of its rows: each
+row's first cell over the others, after one another; a tap selects the
+row and opens it, a long press shows its menu.
+
+`Outline` is a tree of items, each expanded to show its children: an
+`NSOutlineView` on the Mac, a TreeView on Windows, a `GtkListView` of a
+`GtkTreeListModel` with its expanders on Linux, a tree (`role="tree"`)
+in a browser. Its items are IDs, strings: `roots` are the top level's,
+`childrenOf` gives an item's children, and only what's expanded is
+read, so children can load as they're asked for.
+
+```asuka check
+component Folders {
+  state open: [string] = []
+  state loaded: [string: [string]] = ["Home": ["Home/Documents", "Home/Pictures"]]
+  state shown = ""
+
+  Outline(["Home", "Shared"]) {
+    childrenOf: id => loaded.get(id) ?? []
+    expandable: id => !id.hasSuffix("Pictures")
+    text: id => id.split("/").last() ?? id
+    icon: id => "folder"
+    bind expanded: open
+    on expand(id, expanded) {
+      if expanded && !loaded.has(id) {
+        loaded[id] = ["{id}/One", "{id}/Two"]
+      }
+    }
+    on open(id) { shown = id }
+  }
+}
+
+app { Folders() }
+```
+
+- `childrenOf(id)` is an item's children, by ID; what it reads is
+  followed, so the tree changes as they do. `[]` while they load: the
+  item shows expanded, with nothing under it yet.
+- `expandable(id)` says an item has children before they're loaded (a
+  folder); without it, an item expands when `childrenOf` gives any.
+- `text(id)` and `icon(id)` are its text (its ID without one) and
+  symbol, which the platform's tree draws; or `row: id => View` for a
+  row of views.
+- `expanded` is the expanded items' IDs: the user's expanding and
+  collapsing writes it (a click on the disclosure, the right and left
+  arrows), and writing it expands them. `on expand(id, expanded)` is
+  where to load children.
+- `selection` is the selected items' IDs, `selectionMode` as a table's;
+  `on open(id)`, `menu: id => [Action]` and `rowHeight` as a table's.
+
+On a phone an `Outline` is a `List` of indented rows, a disclosure on
+those that expand: a tap on the disclosure, or on a row that expands
+(and has no `on open`), expands it or collapses it, as Files' list view
+does.
+
 ## Your own look
 
 The elements above are each platform's own controls: an app that sets no

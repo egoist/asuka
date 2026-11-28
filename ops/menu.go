@@ -52,6 +52,13 @@ const (
 	// own Open Recent submenu, NSDocumentController's, in its place;
 	// elsewhere the item's submenu, as the app gives it.
 	MenuRoleOpenRecent
+	// MenuRoleUndo and MenuRoleRedo undo and redo the app's last change
+	// (its undo stack: UndoState enables and names them), or a text
+	// field's typing while one is being edited: "Undo Rename", ⌘Z,
+	// Ctrl+Z; ⇧⌘Z, Ctrl+Shift+Z (Ctrl+Y too on Windows). A Mac's Edit
+	// menu has its own, and the host leaves these out.
+	MenuRoleUndo
+	MenuRoleRedo
 )
 
 // MenuItem is a menu's item.

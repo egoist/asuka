@@ -99,6 +99,10 @@ static LRESULT message(HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *handled) {
 	*handled = true;
 	LRESULT r;
 	bool h;
+	// A view's Cursor, over it and what's in it: asked of each window the
+	// pointer is in, from the top-level one (the views under it may let
+	// the mouse through them).
+	if (m == WM_SETCURSOR && wh_cursor_message(hwnd, wp, lp)) return TRUE;
 	// A menu item chosen, or its accelerator, in one of the app's windows.
 	if (m == WM_COMMAND && lp == 0 && HIWORD(wp) <= 1 && wh_key_window(hwnd) == hwnd && wh_menu_command(LOWORD(wp))) return 0;
 	// Owner-drawn menu items, in a menu one of the app's windows owns.

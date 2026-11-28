@@ -757,6 +757,35 @@ enum MenuRole {
   quit
   close
   openRecent
+  /// Edit's Undo: undoes the app's last change (undo.register's), or
+  /// the typing in the text field being edited ("Undo Rename", ⌘Z,
+  /// Ctrl+Z), enabled while there's one. A Mac's Edit menu has its own.
+  undo
+  /// Edit's Redo: what undo undid, done again (⇧⌘Z, Ctrl+Shift+Z).
+  redo
+}
+
+/// A Table's column: its ID (what its sort keys name), its header's
+/// title, its width in points (0: the platform's), the least and most
+/// the user can make it (0: the platform's, and no most), whether the
+/// user resizes it, whether a click on its header sorts by it, and its
+/// cells' and header's alignment.
+struct TableColumn {
+  id: string
+  title: string = ""
+  width: float = 0
+  minWidth: float = 0
+  maxWidth: float = 0
+  resizable: bool = true
+  sortable: bool = false
+  align: TextAlign = .start
+}
+
+/// A sort of a Table's rows: by the column with this ID, ascending (A
+/// to Z, oldest first) or not.
+struct SortKey {
+  column: string
+  ascending: bool = true
 }
 
 /// A quit about to happen (the app block's on quit(e), onQuit): cancel()

@@ -1205,6 +1205,10 @@ const ak_el_class *ak_el_class_of(uint16_t el) {
 	case AK_EL_IMAGE: return &ak_class_image;
 	case AK_EL_SCROLL: return &cls_scroll;
 	case AK_EL_LIST: return &ak_class_list;
+	case AK_EL_TABLE:
+	case AK_EL_OUTLINE:
+	case AK_EL_TABLE_ROW:
+		return ak_tbl_class_of(el);
 	}
 	const ak_el_class *c = ak_nav_class_of(el);
 	if (!c) c = ak_window_class_of(el);
@@ -1405,7 +1409,7 @@ void ak_ui_scroll_to_end(ak_view *v, bool animated) {
 // items) into view. Like ak_ui_scroll_to, at the flush's end: an item
 // just added is there.
 void ak_ui_scroll_to_item(ak_view *v, int64_t i, bool animated) {
-	if (!v || v->dead || v->kind != AK_KIND_LIST || i < 0 || i > UINT32_MAX) return;
+	if (!v || v->dead || !ak_listlike(v) || i < 0 || i > UINT32_MAX) return;
 	uint8_t args[5];
 	uint32_t u = (uint32_t)i;
 	memcpy(args, &u, 4);
@@ -1419,7 +1423,7 @@ void ak_ui_scroll_to_item(ak_view *v, int64_t i, bool animated) {
 // it scrolls what the writes before it made (a row just added, content
 // that grew), which the host has by then.
 void ak_ui_scroll_to(ak_view *v, float x, float y, bool animated) {
-	if (!v || v->dead || (v->kind != AK_KIND_SCROLL && v->kind != AK_KIND_LIST)) return;
+	if (!v || v->dead || (v->kind != AK_KIND_SCROLL && !ak_listlike(v))) return;
 	uint8_t args[9];
 	memcpy(args, &x, 4);
 	memcpy(args + 4, &y, 4);

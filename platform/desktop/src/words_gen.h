@@ -2,7 +2,7 @@
 #ifndef DSK_WORDS_GEN_H
 #define DSK_WORDS_GEN_H
 
-#define DSK_WORD_KEYS 42
+#define DSK_WORD_KEYS 46
 #define DSK_WORD_LANGS 44
 
 #endif

@@ -4,7 +4,9 @@
 // iOS and Android give them; pickMedia's images and videos measured, and
 // images scaled and written as JPEGs when asked), the async Clipboard API (browsers read the
 // clipboard only for a focused page, and ask the user first; images are
-// PNG, what browsers put there and take; rich text, HTML), the Screen
+// PNG, what browsers put there and take; rich text, HTML; an app's own
+// formats as Chrome's web custom formats; no files, which only a paste
+// event gives a page), the Screen
 // Wake Lock.
 
 import { MediaKind } from "./device.decl.asuka.js";
@@ -64,12 +66,17 @@ function denied(e) {
   if (e?.name === "NotAllowedError" && document.hasFocus()) throw new Error("device: the browser didn't allow reading the clipboard");
 }
 
+// The types that aren't a file's: text, HTML, a link; and a page's own
+// (Chrome's web custom formats, "web " and a MIME type).
+const textual = (t) => t === "text/plain" || t === "text/html" || t === "text/uri-list" || t.startsWith("web ");
+
 async function kinds() {
-  const out = { text: false, image: false, url: false, html: false };
+  const out = { text: false, image: false, url: false, html: false, files: false };
   try {
     if (navigator.clipboard.read) {
       for (const it of await navigator.clipboard.read()) {
         if (it.types.some((t) => t.startsWith("image/"))) out.image = true;
+        if (it.types.some((t) => !textual(t))) out.files = true;
         if (it.types.includes("text/uri-list")) out.url = true;
         if (it.types.includes("text/html")) out.html = true;
         if (it.types.includes("text/plain")) {
@@ -107,6 +114,12 @@ async function pngOf(bytes, type) {
 }
 
 let names = 0;
+
+// What a file of the clipboard's types is named with.
+const extensions = {
+  "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg", "image/avif": "avif",
+  "application/pdf": "pdf", "application/json": "json", "text/csv": "csv",
+};
 
 /** canvas is a w×h canvas to draw an image to. */
 function canvas(w, h) {
@@ -286,7 +299,7 @@ export function makePlatform() {
         const t = it.types.find((t) => t.startsWith("image/"));
         if (!t) continue;
         const blob = await it.getType(t);
-        const ext = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg" }[t] || "png";
+        const ext = extensions[t] || "png";
         const path = `/tmp/asuka-clipboard/${Date.now().toString(36)}-${++names}.${ext}`;
         native().files.fs.writeFile(path, new Uint8Array(await blob.arrayBuffer()));
         return path;
@@ -321,6 +334,92 @@ export function makePlatform() {
         "text/html": new Blob([html], { type: "text/html" }),
         "text/plain": new Blob([text], { type: "text/plain" }),
       })]);
+    },
+    // A browser gives a page no files from the clipboard (only a paste
+    // event's): what it gives is an item's content of another type than
+    // text's (an image), each written into the caches as a file.
+    async clipboardFiles(_signal) {
+      if (!navigator.clipboard.read) return [];
+      let items;
+      try {
+        items = await navigator.clipboard.read();
+      } catch (e) {
+        denied(e);
+        return [];
+      }
+      const out = [];
+      for (const it of items) {
+        const t = it.types.find((t) => !textual(t));
+        if (!t) continue;
+        const ext = extensions[t] || "bin";
+        const path = `/tmp/asuka-clipboard/${Date.now().toString(36)}-${++names}/Pasted.${ext}`;
+        native().files.fs.writeFile(path, new Uint8Array(await (await it.getType(t)).arrayBuffer()));
+        out.push(path);
+      }
+      return out;
+    },
+    async copyFiles(_signal, _paths) {
+      throw new (native().UnsupportedError)("device: a browser can't put files on the clipboard");
+    },
+    async clipboardFormats(_signal) {
+      try {
+        if (!navigator.clipboard.read) return (await navigator.clipboard.readText()) ? ["text/plain"] : [];
+        const out = new Set();
+        for (const it of await navigator.clipboard.read()) for (const t of it.types) out.add(t.startsWith("web ") ? t.slice(4) : t);
+        return [...out];
+      } catch (e) {
+        denied(e);
+        return [];
+      }
+    },
+    async clipboardData(_signal, type) {
+      try {
+        if (!navigator.clipboard.read) {
+          if (type !== "text/plain") return null;
+          const t = await navigator.clipboard.readText();
+          return t === "" ? null : new TextEncoder().encode(t);
+        }
+        for (const it of await navigator.clipboard.read()) {
+          const t = it.types.includes(type) ? type : it.types.includes("web " + type) ? "web " + type : null;
+          if (t) return new Uint8Array(await (await it.getType(t)).arrayBuffer());
+        }
+        return null;
+      } catch (e) {
+        denied(e);
+        return null;
+      }
+    },
+    // One item, each format a type of it: text, HTML and PNG as they are
+    // (what every browser takes), any other as Chrome's web custom format
+    // ("web " and its type), which other pages (and the same app's
+    // other copies) read back.
+    async copyFormats(_signal, formats) {
+      const own = (t) => t === "text/plain" || t === "text/html" || t === "image/png" ? t : "web " + t;
+      if (!navigator.clipboard?.write || !globalThis.ClipboardItem) {
+        const text = formats.find((f) => f.type === "text/plain");
+        if (!text || formats.some((f) => f.type !== "text/plain" && f.type !== "text/html")) {
+          throw new (native().UnsupportedError)("device: this browser puts only text on the clipboard");
+        }
+        await navigator.clipboard.writeText(new TextDecoder().decode(text.data));
+        return;
+      }
+      const parts = {};
+      for (const f of formats) {
+        const t = own(f.type);
+        if (ClipboardItem.supports && !ClipboardItem.supports(t)) {
+          throw new (native().UnsupportedError)(`device: this browser can't put ${f.type} on the clipboard`);
+        }
+        parts[t] = new Blob([f.data], { type: f.type });
+      }
+      try {
+        await navigator.clipboard.write([new ClipboardItem(parts)]);
+      } catch (e) {
+        // A browser without web custom formats (Safari, Firefox) refuses them.
+        if (Object.keys(parts).some((t) => t.startsWith("web ")) && e?.name !== "NotAllowedError") {
+          throw new (native().UnsupportedError)("device: this browser puts only text, HTML and PNG images on the clipboard");
+        }
+        throw e;
+      }
     },
     // What changes it is seen, as browsers tell a page: copies and cuts in
     // it, and, where the user has let the page read the clipboard

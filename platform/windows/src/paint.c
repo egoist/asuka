@@ -648,7 +648,11 @@ void wh_paint_behind(HWND hwnd, HDC dc) {
 	if (pn && pn->hwnd == parent && pn->kind != KIND_SHEET_WINDOW && pn->kind != KIND_WINDOW_FRAME) {
 		wh_paint(pn, parent, dc, pr);
 	} else if (pn && pn->ctl == parent) {
+		// The control draws itself (WM_PRINTCLIENT) moved by hwnd's place
+		// in it: from the DC's own origin.
+		OffsetViewportOrgEx(dc, at.left, at.top, NULL);
 		DrawThemeParentBackground(hwnd, dc, NULL);
+		OffsetViewportOrgEx(dc, -at.left, -at.top, NULL);
 	} else {
 		gfx g = g_new(dc);
 		g_fill_rect(g, rgba_argb(wh_bg_of(parent)), 0, 0, (float)pr.right, (float)pr.bottom);

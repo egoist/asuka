@@ -1554,6 +1554,105 @@ component Tags(tags: [string]) {
 
 如果数据项很多或者数量没有上限（信息流、收件箱、搜索结果、照片），或者你需要滑动操作、分隔线、滚到末尾加载更多、网格布局，就用 `List`。`List` 自己就能滚动，不要把它放进 `Scroll`。
 
+## 表格与大纲
+
+`Table` 用平台自己的表格控件显示行和列：Mac 上是 `NSTableView`，Windows 上是报表视图的 ListView（按 Windows 11 的样式绘制），Linux 上是 `GtkColumnView`，浏览器里是带 grid 角色的 `<table>`。用户可以点表头排序、拖动调整列宽（设了 `columnsMovable` 还能拖动换列的顺序），一次选中一行或多行。它的行和 `List` 一样来自块里的 `for`，只在显示时才创建，所以十万行和十行一样轻松。[`examples/tables`](../../examples/tables) 里两样都有。
+
+```asuka check
+struct File {
+  id: int
+  name: string
+  size: int
+  kind: string
+}
+
+fn sorted(files: [File], by: [SortKey]) -> [File] {
+  if by.isEmpty() {
+    return files
+  }
+  let k = by[0]
+  return files.sorted((a, b) => {
+    let less = if k.column == "size" { a.size < b.size } else { a.name < b.name }
+    let more = if k.column == "size" { a.size > b.size } else { a.name > b.name }
+    return if k.ascending { less } else { more }
+  })
+}
+
+component Files {
+  state files = [File(id: 1, name: "Notes.txt", size: 12, kind: "Text"), File(id: 2, name: "Photo.heic", size: 2400, kind: "Image")]
+  state sort: [SortKey] = [SortKey(column: "name")]
+  state selection: [int] = []
+  state opened = ""
+
+  let shown = sorted(files, sort)
+
+  Table {
+    columns: [
+      TableColumn(id: "name", title: "Name", width: 240, sortable: true),
+      TableColumn(id: "size", title: "Size", width: 90, sortable: true, align: .end),
+      TableColumn(id: "kind", title: "Kind", width: 120),
+    ]
+    selectionMode: .multiple
+    bind sort: sort
+    bind selection: selection
+    on open(row) { opened = shown[row].name }
+    menu: row => [.button(title: "Delete", icon: "trash", role: .destructive, run: () => {
+      files = files.filter(f => f.id != shown[row].id)
+    })]
+    for f in shown key f.id {
+      TableRow([f.name, "{f.size} KB", f.kind]) { icon: "doc" }
+    }
+  }
+}
+
+app { Files() }
+```
+
+- `columns` 是按顺序排列的 `TableColumn`：`id`、表头的 `title`、以点为单位的 `width`（0 表示用平台默认值）、用户能拖到的最小宽度 `minWidth` 和最大宽度 `maxWidth`、能否调整宽度 `resizable`（默认可以）、能否排序 `sortable`，以及单元格和表头的对齐方式 `align`（数字列用 `.end`）。
+- 每一行是一个 `TableRow`：要么给出各单元格的文本，按列的顺序每列一个，由平台的表格自己绘制（这是最快的方式），再加一个 `icon`，即第一个单元格在文本前显示的符号；要么给出子视图，按列的顺序每列一个视图，各自按所在列的宽度布局，比如一个 `Text` 加一个 `Symbol`，或者一个 `Toggle`。
+- `sort` 是行的排序方式，类型为 `[SortKey]`，第一个是主排序键，表头会显示它。点击可排序列的表头会写入它：先把这一列放到最前、升序，再点一次变成降序。表格本身不排序：应用要像上面那样，把排好序的行交给 `for`。
+- `selection` 是选中行在 `for` 的各项中的下标。用户的选择会写入它（`selectionMode: .multiple` 时可以按住 Shift 以及 ⌘ 或 Ctrl 多选，`.off` 则不能选），而且它会跟着数据项走：换个方向排序，或者在前面插入了行，选中的仍是原来那些项。
+- `on open(row)` 在双击某一行，或按下 Enter / Return 时触发。
+- `menu` 是一行的右键菜单：右键点击时，如果这一行还没选中就先选中它，再显示菜单。
+- `on columnResize(column, width)` 和 `on columnMove(column, index)` 告诉你用户对列做了什么，方便保存下来。
+- `rowHeight` 是每一行的高度（默认 0，即平台的默认高度）；`on endReached` 和 `List` 的一样，用来加载更多。
+
+手机上没有表格，`Table` 会变成由各行组成的 `List`：每行第一个单元格在上，其余单元格依次排在下面；点按一行会选中并打开它，长按显示它的菜单。
+
+`Outline` 是一棵可以展开、显示子项的树：Mac 上是 `NSOutlineView`，Windows 上是 TreeView，Linux 上是 `GtkTreeListModel` 驱动、带展开器的 `GtkListView`，浏览器里是一棵树（`role="tree"`）。它的项是 ID，也就是字符串：`roots` 是顶层的项，`childrenOf` 给出某一项的子项，而且只读取已展开的部分，所以子项可以在需要时再加载。
+
+```asuka check
+component Folders {
+  state open: [string] = []
+  state loaded: [string: [string]] = ["Home": ["Home/Documents", "Home/Pictures"]]
+  state shown = ""
+
+  Outline(["Home", "Shared"]) {
+    childrenOf: id => loaded.get(id) ?? []
+    expandable: id => !id.hasSuffix("Pictures")
+    text: id => id.split("/").last() ?? id
+    icon: id => "folder"
+    bind expanded: open
+    on expand(id, expanded) {
+      if expanded && !loaded.has(id) {
+        loaded[id] = ["{id}/One", "{id}/Two"]
+      }
+    }
+    on open(id) { shown = id }
+  }
+}
+
+app { Folders() }
+```
+
+- `childrenOf(id)` 按 ID 给出某一项的子项；它读取的内容会被追踪，所以子项一变，树就跟着变。子项还在加载时返回 `[]`：这一项会显示为已展开，只是下面暂时什么也没有。
+- `expandable(id)` 用来在子项加载之前说明某一项有子项（比如文件夹）；不提供它时，只有 `childrenOf` 返回了子项的项才能展开。
+- `text(id)` 和 `icon(id)` 是某一项的文本（不提供时就用它的 ID）和符号，由平台的树控件绘制；如果要用视图组成一行，就改用 `row: id => View`。
+- `expanded` 是已展开项的 ID。用户展开、收起（点击展开三角，或按左右方向键）时会写入它，写入它也会展开对应的项。在 `on expand(id, expanded)` 里加载子项。
+- `selection` 是选中项的 ID，`selectionMode` 和表格的一样；`on open(id)`、`menu: id => [Action]` 和 `rowHeight` 也和表格的一样。
+
+在手机上，`Outline` 是一个由缩进的行组成的 `List`，能展开的行带一个展开标记：点按这个标记，或者点按一个能展开（且没有 `on open`）的行，就会展开或收起它，和“文件”App 的列表视图一样。
+
 ## 自定义外观
 
 上面这些元素都是各平台自己的控件：不设置样式的应用在哪里看起来都是原生的，`Picker` 在 iOS 上是一个菜单，在 Windows 上是一个下拉列表。如果应用有自己的设计（每个控件都用品牌的配色、形状和动效，在手机上和浏览器里都一样），或者需要平台没有的控件（组合框、切换按钮组、范围滑块），`std/base` 提供的是只有行为、没有外观的组件：选择框、菜单、对话框、复选框、标签页、滑块等等。每个组件都会处理好自己的状态、键盘与焦点、屏幕阅读器，以及它浮在窗口上的位置；至于显示成什么样，完全取决于应用设置的样式。

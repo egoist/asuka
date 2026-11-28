@@ -345,6 +345,10 @@ import AsukaOps
         // What VoiceOver reads of it goes with it: its Label may have come
         // before what made the new view (a checkbox, a multiline field).
         if !n.a11yLabel.isEmpty { (n.textView ?? v).setAccessibilityLabel(n.a11yLabel) }
+        if n.cursor != 0 {
+            n.cursorView = nil
+            setCursor(n, n.cursor) // Cursor.swift
+        }
     }
 
     public func destroy(_ id: UInt32) {
@@ -467,6 +471,12 @@ import AsukaOps
             c.setHeight(r.height)
             return
         }
+        if let c = n.tableCell {
+            c.table?.cellPlaced(c, r) // Tables.swift
+            return
+        }
+        // A view of a table's row: at its column, as the table shows it.
+        let r = n.parent?.tableCell != nil ? tableChildFrame(n, r) : r
         guard let v = n.view, !(n.nav?.sizedByHost(n) ?? false), n.kind != .overlay else { return } // an overlay's size is its root's
         if let p = n.parent, p.rich != nil {
             // An inline component: its size is the core's, its place the text's.

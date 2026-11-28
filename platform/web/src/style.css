@@ -407,6 +407,69 @@ textarea.asuka-field { overflow-y: auto; display: block; }
   .asuka-list:not([data-appearance="bare"]) .asuka-row:not(.asuka-header):has(.asuka-pressable):hover { background-color: var(--asuka-fill); }
 }
 
+/* Table and Outline (table.js): a grid's <table> and a tree, their rows
+   virtualized in a scroller; a sticky header; the selection in the
+   accent while the grid has the keyboard's focus, gray while it hasn't. */
+.asuka-grid-view { --asuka-row-height: 32px; --asuka-grid-stripe: rgb(120 120 128 / 0.05); --asuka-grid-hover: rgb(120 120 128 / 0.08); background: var(--asuka-background); color: var(--asuka-label); }
+.asuka-dark .asuka-grid-view { --asuka-grid-stripe: rgb(255 255 255 / 0.035); --asuka-grid-hover: rgb(255 255 255 / 0.06); }
+.asuka-grid-scroll { position: absolute; inset: 0; overflow: auto; overscroll-behavior: contain; }
+.asuka-table { table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; line-height: 1.25; color: inherit; outline: none; }
+.asuka-table th { position: sticky; top: 0; z-index: 2; height: 28px; padding: 0 8px; background: var(--asuka-background); color: var(--asuka-secondary-label); font-weight: 600; font-size: 0.8125rem; text-align: start; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: inset 0 -1px 0 var(--asuka-separator); user-select: none; -webkit-user-select: none; }
+/* A short line between headers */
+.asuka-table th + th:not(.asuka-th-filler)::before { content: ""; position: absolute; inset-inline-start: 0; top: 7px; bottom: 7px; width: 1px; background: var(--asuka-separator); }
+.asuka-th-inner { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; vertical-align: middle; }
+.asuka-th-title { overflow: hidden; text-overflow: ellipsis; }
+.asuka-sort-indicator { display: inline-flex; width: 12px; height: 12px; flex: none; color: var(--asuka-label); }
+.asuka-sort-indicator:empty { display: none; }
+.asuka-sort-indicator .asuka-symbol { width: 12px; height: 12px; }
+.asuka-th-sortable.asuka-sorted { color: var(--asuka-label); }
+.asuka-th-sortable:focus-visible { outline: 2px solid var(--asuka-accent); outline-offset: -2px; }
+.asuka-columns-movable .asuka-table th:not(.asuka-th-filler) { cursor: default; }
+.asuka-table th.asuka-th-dragging { background: var(--asuka-fill-strong); color: var(--asuka-label); }
+.asuka-col-resize { position: absolute; top: 0; bottom: 0; inset-inline-end: 0; width: 6px; cursor: col-resize; z-index: 3; touch-action: none; }
+.asuka-resizing, .asuka-resizing * { cursor: col-resize !important; }
+.asuka-col-drop { position: absolute; left: 0; top: 0; width: 2px; z-index: 4; background: var(--asuka-accent); pointer-events: none; }
+.asuka-table td { height: var(--asuka-row-height); padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.asuka-table td.asuka-grid-views { position: relative; padding: 0; overflow: visible; }
+.asuka-table td.asuka-td-filler { padding: 0; }
+.asuka-grid-spacer, .asuka-grid-spacer td { padding: 0; border: 0; }
+.asuka-grid-spacer td { height: auto; }
+.asuka-cell-icon { display: inline-flex; vertical-align: middle; margin-inline-end: 6px; color: var(--asuka-secondary-label); }
+.asuka-cell-icon .asuka-symbol { width: 16px; height: 16px; }
+.asuka-cell-text { vertical-align: middle; }
+.asuka-grid-row.asuka-odd > td { background-color: var(--asuka-grid-stripe); }
+@media (hover: hover) {
+  .asuka-grid-row:hover > td, .asuka-tree-row:hover::before { background-color: var(--asuka-grid-hover); }
+}
+.asuka-grid-row.asuka-selected > td, .asuka-tree-row.asuka-selected::before { background-color: var(--asuka-fill-strong); }
+.asuka-grid-focused .asuka-grid-row.asuka-selected > td, .asuka-grid-focused .asuka-tree-row.asuka-selected::before { background-color: var(--asuka-accent); }
+.asuka-grid-focused .asuka-grid-row.asuka-selected, .asuka-grid-focused .asuka-grid-row.asuka-selected .asuka-cell-icon { color: var(--asuka-on-accent); }
+/* The keyboard's row, while the keyboard moves it */
+.asuka-grid-focused.asuka-grid-keys .asuka-grid-row.asuka-active > td:not([hidden]) { box-shadow: inset 0 2px 0 var(--asuka-accent), inset 0 -2px 0 var(--asuka-accent); }
+.asuka-grid-focused.asuka-grid-keys .asuka-grid-row.asuka-active > td:not([hidden]):first-child { box-shadow: inset 0 2px 0 var(--asuka-accent), inset 0 -2px 0 var(--asuka-accent), inset 2px 0 0 var(--asuka-accent); }
+.asuka-grid-focused.asuka-grid-keys .asuka-grid-row.asuka-selected.asuka-active > td:not([hidden]) { box-shadow: none; }
+.asuka-tree { position: relative; outline: none; font-size: 0.875rem; line-height: 1.25; }
+.asuka-tree-row { position: relative; display: flex; align-items: center; height: var(--asuka-row-height); white-space: nowrap; }
+.asuka-tree-row::before { content: ""; position: absolute; inset: 1px 4px; border-radius: 6px; z-index: -1; pointer-events: none; }
+.asuka-tree { isolation: isolate; }
+.asuka-grid-focused.asuka-grid-keys .asuka-tree-row.asuka-active:not(.asuka-selected)::before { box-shadow: inset 0 0 0 2px var(--asuka-accent); }
+.asuka-grid-focused .asuka-tree-row.asuka-selected { color: var(--asuka-on-accent); }
+.asuka-grid-focused .asuka-tree-row.asuka-selected .asuka-cell-icon, .asuka-grid-focused .asuka-tree-row.asuka-selected .asuka-tree-disclosure { color: var(--asuka-on-accent); }
+.asuka-tree-disclosure { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 100%; color: var(--asuka-secondary-label); visibility: hidden; }
+.asuka-tree-disclosure.asuka-expandable { visibility: visible; }
+.asuka-tree-disclosure .asuka-symbol { width: 12px; height: 12px; transition: transform 0.15s ease; }
+[dir="rtl"] .asuka-tree-disclosure .asuka-symbol { transform: scaleX(-1); }
+.asuka-tree-disclosure.asuka-expanded .asuka-symbol { transform: rotate(90deg); }
+.asuka-tree-row .asuka-cell-icon { flex: none; }
+.asuka-tree-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; padding-inline-end: 8px; }
+.asuka-tree-views { position: relative; flex: 1 1 auto; align-self: stretch; min-width: 0; }
+.asuka-tree-views[hidden], .asuka-tree-text[hidden], .asuka-cell-icon[hidden] { display: none; }
+
+/* Cursor: what's inside a view that sets one takes it, unless it sets its
+   own (inline); a text field keeps its I-beam. */
+.asuka .asuka-cursor :not(input, textarea, [contenteditable]:not([contenteditable=false]), .asuka-col-resize) { cursor: inherit; }
+.asuka .asuka-cursor :is(input:not([type=checkbox], [type=radio], [type=range], [type=color], [type=button], [type=submit], [type=reset], [type=file], [type=image]), textarea, [contenteditable]:not([contenteditable=false])) { cursor: auto; }
+
 /* Navigation */
 
 .asuka-stack, .asuka-tabs, .asuka-split { overflow: hidden; background: var(--asuka-background); }

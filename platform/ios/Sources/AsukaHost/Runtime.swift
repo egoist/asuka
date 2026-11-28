@@ -133,6 +133,11 @@ let asukaAssets: URL? = {
     var a11y = AsukaA11yState()
     /// An Overlay's layer (Overlay.swift).
     var overlay: AsukaOverlay?
+    #if !os(tvOS)
+    /// Its Cursor's pointer interaction, on an iPad (Cursor.swift).
+    var pointer: UIPointerInteraction?
+    var pointerDelegate: AsukaPointerDelegate?
+    #endif
 
     /// Whether its container holds an Overlay's view, which stays over
     /// the children inserted after it (a sheet's content).
@@ -450,6 +455,8 @@ final class AsukaTextField: UITextField {
     /// Buttons with a glass variant (roundGlass).
     var glassButtons = Set<ObjectIdentifier>()
     weak var controller: AsukaViewController?
+    /// UndoState's: the app's undo stack, for UIKit's undo (Undo.swift).
+    var undoState = AsukaUndoState()
     /// The share sheet this runtime is in (platform/sharesheet, in the share
     /// extension), if it is.
     weak var sheet: AsukaShareSheetController?
@@ -991,6 +998,7 @@ final class AsukaTextField: UITextField {
         guard let n = nodes[id] else { return }
         n.listens.insert(event)
         if event == AsukaEventKind.anchorFrame.rawValue, n.overlay != nil { scheduleAnchors() }
+        if event == AsukaEventKind.undo.rawValue, id == rootID { controller?.takeUndoResponder() }
         if event == AsukaEventKind.scrolled.rawValue || event == AsukaEventKind.paged.rawValue, let s = n.view as? UIScrollView, n.scrolls == nil {
             n.scrolls = AsukaScrollReporter(id, self)
             if n.list == nil { s.delegate = n.scrolls } // a list's own delegate forwards it
@@ -1160,6 +1168,8 @@ final class AsukaTextField: UITextField {
             _ = r.f32()
             s.fit(CGFloat(r.f32()))
             #endif
+        case .undoState:
+            setUndoState(args)
         case .menuBar, .windowOptions, .windowTitle, .windowAction, .quit:
             break // desktop hosts' (a phone has no menu bar or windows, and its app doesn't quit itself)
         case .location:

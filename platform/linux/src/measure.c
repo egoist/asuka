@@ -144,6 +144,8 @@ void lx_measure(node *n, float cw, float ch, float aw, float ah, float *ow, floa
 	case AK_KIND_VIEW:
 	case AK_KIND_SCROLL:
 	case AK_KIND_LIST:
+	case AK_KIND_TABLE:  // as a List: the room it's given
+	case AK_KIND_OUTLINE:
 	case AK_KIND_WEB_VIEW:
 	case AK_KIND_VIDEO:
 	case AK_KIND_SHAPE:

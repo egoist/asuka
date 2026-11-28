@@ -336,6 +336,7 @@ void ak_ui_unmount(void) {
 	for (uint32_t i = 0; i < r->scroll_q.len; i++) ak_release(r->scroll_q.data[i].v);
 	ak_vec_free(&r->scroll_q);
 	ak_menus_free(r);
+	ak_undo_free(r);
 	if (r->back) {
 		ak_back_release(r->back);
 		r->back = NULL;
@@ -688,12 +689,12 @@ void ak_ui_dispatch_event(const ak_event *ev) {
 
 int64_t ak_ui_list_count(uint32_t list) {
 	ak_view *e = ak_view_of(list);
-	return e && e->el == AK_EL_LIST && !e->dead ? ak_list_count(e) : 0;
+	return ak_listlike(e) && !e->dead ? ak_list_count(e) : 0;
 }
 
 void ak_ui_list_bind(uint32_t list, int64_t index, uint32_t cell) {
 	ak_view *e = ak_view_of(list);
-	if (!e || e->el != AK_EL_LIST || e->dead) return;
+	if (!ak_listlike(e) || e->dead) return;
 	ak_perf_enter(AK_PERF_LIST, 0);
 	ak_retain(e);
 	ak_batch_begin();
@@ -706,7 +707,7 @@ void ak_ui_list_bind(uint32_t list, int64_t index, uint32_t cell) {
 
 void ak_ui_list_unbind(uint32_t list, uint32_t cell) {
 	ak_view *e = ak_view_of(list);
-	if (!e || e->el != AK_EL_LIST || e->dead) return;
+	if (!ak_listlike(e) || e->dead) return;
 	ak_perf_enter(AK_PERF_LIST, 0);
 	ak_retain(e);
 	ak_batch_begin();
@@ -760,7 +761,7 @@ static void redirect_cell(ak_view *c, void *ctx) { redirect(c, ctx); }
 static void redirect(ak_view *e, void *ctx) {
 	if (e->box) ak_style_relayout(e);
 	for (uint32_t i = 0; i < e->kids.len; i++) redirect(e->kids.data[i], ctx);
-	if (e->el == AK_EL_LIST) ak_list_each_cell(e, redirect_cell, ctx);
+	if (ak_listlike(e)) ak_list_each_cell(e, redirect_cell, ctx);
 }
 
 void ak_ui_set_direction(bool rtl) {
