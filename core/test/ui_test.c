@@ -1101,6 +1101,7 @@ static ak_val move_handler(ak_closure *c, ak_val *a, uint32_t n) {
 	for (uint32_t i = 0; i < now->len; i++)
 		if ((int64_t)i != from) ak_arr_push(&next, (ak_val){.p = ak_retain(ak_arr_vals(now)[i].p)});
 	ak_arr_insert(&next, (uint32_t)to, (ak_val){.p = ak_retain(ak_arr_vals(now)[from].p)});
+	ak_release(now);  // cell_get's
 	write_p(items, next);
 	return (ak_val){0};
 }
