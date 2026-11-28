@@ -135,6 +135,7 @@ SYM(GTK, void, gtk_widget_measure, (GtkWidget *widget, GtkOrientation orientatio
 SYM(GTK, GtkWidget *, gtk_widget_get_first_child, (GtkWidget *widget))
 SYM(GTK, GtkWidget *, gtk_widget_get_next_sibling, (GtkWidget *widget))
 SYM(GTK, GtkWidget *, gtk_widget_get_parent, (GtkWidget *widget))
+SYM(GTK, const char *, gtk_widget_get_css_name, (GtkWidget *self))
 SYM(GTK, void, gtk_widget_set_parent, (GtkWidget *widget, GtkWidget *parent))
 SYM(GTK, void, gtk_widget_unparent, (GtkWidget *widget))
 SYM(GTK, void, gtk_widget_insert_before, (GtkWidget *widget, GtkWidget *parent, GtkWidget *next_sibling))

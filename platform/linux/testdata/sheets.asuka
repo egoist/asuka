@@ -1,0 +1,67 @@
+// Sheets' detents: an undimmed panel dragged between them and moved by
+// its bound detent, the window behind it usable at its small ones; a
+// sheet as tall as its content; a modal one that isn't dragged away.
+app { Sheets() }
+
+component Sheets {
+  state taps = 0
+  state maps = false
+  state fit = false
+  state modal = false
+  state at: Detent = .height(150)
+  state modalAt: Detent = .height(240)
+  state height: float = 0
+  state lines = 2
+
+  Column {
+    padding: 16
+    gap: 8
+    Text("Taps: {taps}")
+    Text("Height: {height.rounded()}")
+    Text("At: {if at == .height(150) { "small" } else if at == .medium { "medium" } else { "large" }}")
+    Button("Tap behind") { on press { taps += 1 } }
+    Button("Open maps") { on press { maps = true } }
+    Button("Open fit") { on press { fit = true } }
+    Button("Open modal") { on press { modal = true } }
+    Sheet {
+      bind open: maps
+      detents: [.height(150), .medium, .large]
+      bind detent: at
+      undimmed: .medium
+      grabber: true
+      cornerRadius: 20
+      dismissible: false
+      on resize(h) { height = h }
+      Column {
+        padding: 16
+        gap: 8
+        Text("Search Maps")
+        Button("Go large") { on press { at = .large } }
+        Button("Go small") { on press { at = .height(150) } }
+      }
+    }
+    Sheet {
+      bind open: fit
+      detents: [.fit]
+      Column {
+        padding: 20
+        gap: 8
+        for i in 0..<lines { Text("Line {i + 1}") }
+        Button("More") { on press { lines += 1 } }
+      }
+    }
+    Sheet {
+      bind open: modal
+      detents: [.height(240), .large]
+      bind detent: modalAt
+      dismissible: false
+      Column {
+        padding: 16
+        gap: 8
+        Text("A modal sheet")
+        Button("Modal large") { on press { modalAt = .large } }
+        Button("Close modal") { on press { modal = false } }
+      }
+    }
+  }
+}

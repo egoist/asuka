@@ -214,6 +214,12 @@ void lx_allocate_view(GtkWidget *w, int width, int height) {
 		// A node's view; or one going out (a transition, a match: no
 		// parent any more), at the frame it goes with.
 		node *cn = lx_view_node(c);
+		node *sheet = cn ? NULL : lx_sheet_panel_of(c);
+		if (sheet) {
+			// An undimmed sheet's panel over this root, or its scrim (nav.c).
+			lx_allocate_sheet_panel(sheet, c, width, height);
+			continue;
+		}
 		if (cn && cn->kind == AK_KIND_OVERLAY && !cn->parent) {
 			// An overlay over this root: its whole area (overlay.c).
 			lx_allocate(c, width, height, 0, 0, NULL);

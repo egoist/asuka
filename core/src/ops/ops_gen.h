@@ -384,7 +384,7 @@ enum {
 
 // Sheet props.
 enum {
-	// bits: 1 medium, 2 large, 4 fit: as tall as its content, which the core lays out at the sheet's width and sends with WindowAction Fit (0: large)
+	// the heights it rests at, in the app's order (empty: Large alone): u32 count, then per detent u8 DetentKind and f32 its value: Height's points, Fraction's share (0 to 1) of the largest a sheet can be (Large's height), 0 for the others. A host resolves each detent's height, up to Large's, and rests the sheet at them from the shortest to the tallest. Fit is as tall as its content, which the core lays out at the sheet's width and sends with WindowAction Fit (its width and height there, the bottom safe area in it) and again as it changes. Set before Present, and again while it shows when the app changes them
 	AK_PROP_SHEET_DETENTS = 64,
 	AK_PROP_SHEET_GRABBER = 65,
 	// the window it's declared in: the root's or a Window node's ID. A desktop host presents it on that window, and a key goes on from it to that window's root; a phone's one window takes it and ignores it
@@ -393,6 +393,14 @@ enum {
 	AK_PROP_SHEET_FULL_SCREEN = 67,
 	// a Router's sheet, a route of its own: as Stack's Routed, the web keeps no back entry of its own for it
 	AK_PROP_SHEET_ROUTED = 68,
+	// the detent it's at: 1 + its index in Detents (0: the shortest, where a sheet opens). Set while it shows, the sheet moves there, animated (UISheetPresentationController's animateChanges). The user's dragging it to another is reported with Selected (the index, from 0); a host keeps showing it there
+	AK_PROP_SHEET_DETENT = 69,
+	// 1 + the index in Detents of the tallest detent at which what's behind the sheet isn't dimmed and takes touches and clicks, as Apple Maps' sheet is (iOS's largestUndimmedDetentIdentifier); 0: none, modal at every detent. At a detent no taller than it, a tap outside doesn't dismiss the sheet, and the keyboard's focus may leave it
+	AK_PROP_SHEET_UNDIMMED = 70,
+	// its top corners' radius, in points (0: the platform's)
+	AK_PROP_SHEET_CORNER_RADIUS = 71,
+	// the user can't dismiss it by dragging it down or tapping outside it (iOS's isModalInPresentation, a BottomSheetBehavior that isn't hideable); Android's back and Escape still do, as a full-screen sheet's
+	AK_PROP_SHEET_NO_DISMISS = 72,
 };
 
 // Alert props.
@@ -688,7 +696,7 @@ enum {
 	AK_EVENT_LIFECYCLE = 11,
 	// the user popped a Stack's top screen (its ID)
 	AK_EVENT_POPPED = 12,
-	// the user selected a tab or a segment (its index)
+	// the user selected a tab or a segment (its index), or dragged a Sheet to one of its Detents (its index), where it settled
 	AK_EVENT_SELECTED = 13,
 	// a menu item, alert button or bar button (its index)
 	AK_EVENT_ACTION = 14,
@@ -804,7 +812,9 @@ enum {
 	AK_EVENT_ZOOMED = 71,
 	// the user moved a row of a List with Reorder (a drag dropped, or a screen reader's move action): X its item's index before, Y the index it's at now (among all the items, as ListUpdate's IDs). The host has moved it already, and keeps its IDs in the new order: a ListUpdate in that order changes nothing; the core sends one in the old order when the app doesn't take the move
 	AK_EVENT_MOVED = 72,
-	AK_EVENT_COUNT = 73,
+	// a Sheet's height on the screen, in points from its window's bottom edge to the sheet's top edge (the bottom safe area in it), as it changes: as it opens and closes, as the user drags it and it settles, as it moves to a Detent set; frame by frame while it moves. Listened for
+	AK_EVENT_SHEET_HEIGHT = 73,
+	AK_EVENT_COUNT = 74,
 };
 
 // Commands.
@@ -947,7 +957,8 @@ enum {
 	AK_ENUM_DEV_ERROR_ACTION = 43,
 	AK_ENUM_VIDEO_ACTION = 44,
 	AK_ENUM_PAN_AXIS = 45,
-	AK_ENUM_COUNT = 46,
+	AK_ENUM_DETENT_KIND = 46,
+	AK_ENUM_COUNT = 47,
 };
 
 // Role.
@@ -1451,6 +1462,16 @@ enum {
 	AK_PAN_AXIS_HORIZONTAL = 1,
 	AK_PAN_AXIS_VERTICAL = 2,
 	AK_PAN_AXIS_COUNT = 3,
+};
+
+// DetentKind.
+enum {
+	AK_DETENT_KIND_MEDIUM = 0,
+	AK_DETENT_KIND_LARGE = 1,
+	AK_DETENT_KIND_FIT = 2,
+	AK_DETENT_KIND_HEIGHT = 3,
+	AK_DETENT_KIND_FRACTION = 4,
+	AK_DETENT_KIND_COUNT = 5,
 };
 
 // A prop's name and wire type; enum is its enum's index (AK_ENUM_*) for

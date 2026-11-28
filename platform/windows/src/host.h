@@ -347,7 +347,6 @@ struct node {
 	wh_split *split;
 	node *pane_node;  // a SplitView's pane
 	bool presented;
-	int64_t detents;
 	bool intercept_back;
 	wstr tooltip;
 	wh_key *keys;

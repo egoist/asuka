@@ -1151,6 +1151,15 @@ final class AsukaTextField: UITextField {
             guard args.count >= 8 else { return }
             var r = AsukaReader(args)
             setAccent(asukaColor(r.u64()))
+        case .windowAction where n.kind == .sheet:
+            // A sheet's content's height (Fit): its fit detent's.
+            #if !os(tvOS)
+            guard args.count >= 9, let s = n.vc as? AsukaSheetController else { return }
+            var r = AsukaReader(args)
+            guard r.u8() == UInt8(AsukaWindowAction.fit.rawValue) else { return }
+            _ = r.f32()
+            s.fit(CGFloat(r.f32()))
+            #endif
         case .menuBar, .windowOptions, .windowTitle, .windowAction, .quit:
             break // desktop hosts' (a phone has no menu bar or windows, and its app doesn't quit itself)
         case .location:

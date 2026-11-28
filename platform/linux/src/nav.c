@@ -12,6 +12,7 @@
 // bar as its bottom bar.
 #include "host.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -41,6 +42,7 @@ void lx_nav_free(node *n) {
 	free(v->search_tx);
 	free(v->badge);
 	ak_buf_free(&v->fields_buf);
+	ak_buf_free(&v->detents);
 	ak_vec_free(&v->fields);
 	ak_vec_free(&v->rows);
 	actions_free(&v->toolbar);
@@ -53,9 +55,19 @@ void lx_nav_free(node *n) {
 
 // lx_root_allocated: a screen, sheet, window or popover was sized; the
 // core lays it out at that size.
+static bool sheet_fit_only(node *n);
+static void sheet_room(node *n, float *w, float *h);
+static void follow_height(node *n);
+
 void lx_root_allocated(node *n, int width, int height) {
 	nav *v = nav_of(n);
 	float w = (float)width, h = (float)height;
+	if (n->kind == AK_KIND_SHEET) {
+		follow_height(n);
+		// As tall as its content: its room, which the core lays it out in
+		// (and sizes it to with Fit), not what it's sized to.
+		if (sheet_fit_only(n)) sheet_room(n, &w, &h);
+	}
 	if (v->env_w == w && v->env_h == h) return;
 	v->env_w = w;
 	v->env_h = h;
@@ -155,7 +167,21 @@ static void on_sheet_closed(AdwDialog *d, node *n) {
 
 static void on_close_attempt(AdwDialog *d, node *n) {
 	(void)d;
-	lx_emit(n, (ak_event){.kind = AK_EVENT_BACK});
+	// Escape or a swipe down: the core decides while it intercepts; a
+	// sheet that can't be dismissed stays (Escape is on_sheet_key's).
+	if (n->intercept_back) lx_emit(n, (ak_event){.kind = AK_EVENT_BACK});
+}
+
+#define KEY_ESCAPE 0xff1b
+
+// on_sheet_key: Escape dismisses a sheet that can't be dragged away
+// (NoDismiss), as a full-screen one's does, unless it intercepts (then
+// close-attempt asks the core).
+static gboolean on_sheet_key(GtkEventControllerKey *k, guint key, guint code, GdkModifierType mods, node *n) {
+	(void)k, (void)code, (void)mods;
+	if (key != KEY_ESCAPE || n->dead || !n->nav || n->nav->gone || n->intercept_back || !n->nav->no_dismiss) return 0;
+	if (n->nav->dialog) adw_dialog_force_close(n->nav->dialog);  // closed: Dismissed
+	return 1;
 }
 
 static gboolean on_window_close(GtkWindow *window, node *n) {
@@ -214,6 +240,11 @@ bool lx_create_nav(node *n) {
 		adw_dialog_set_child(d, n->widget);
 		lx_connect(n, d, "closed", G_CALLBACK(on_sheet_closed));
 		lx_connect(n, d, "close-attempt", G_CALLBACK(on_close_attempt));
+		GtkEventController *keys = gtk_event_controller_key_new();
+		gtk_event_controller_set_propagation_phase(keys, GTK_PHASE_CAPTURE);
+		lx_connect(n, keys, "key-pressed", G_CALLBACK(on_sheet_key));
+		gtk_widget_add_controller((GtkWidget *)d, keys);
+		n->nav->sent_height = -1;
 		return true;
 	}
 	case AK_KIND_WINDOW: {
@@ -451,11 +482,15 @@ static void show_tab_badge(node *n);
 static void label_tabs(node *tabs);
 static void select_tab(node *n);
 static void size_sheet(node *n);
+static void sheet_corners(node *n);
+static void sheet_grabber(node *n);
 
 void lx_set_dialog_can_close(node *n) {
 	if (n->kind == AK_KIND_SHEET && n->nav && n->nav->dialog)
-		// Escape asks the core (close-attempt) rather than closing it.
-		adw_dialog_set_can_close(n->nav->dialog, !n->intercept_back);
+		// Escape asks the core (close-attempt) rather than closing it; a
+		// sheet that can't be dismissed isn't swiped away, and its Escape
+		// is its key controller's (on_sheet_key).
+		adw_dialog_set_can_close(n->nav->dialog, !n->intercept_back && !n->nav->no_dismiss);
 }
 
 static bool in_tabs(node *n) { return n->nav->page && n->parent && n->parent->kind == AK_KIND_TABS; }
@@ -522,8 +557,29 @@ bool lx_set_nav_prop(node *n, ak_prop p, const ak_value *v) {
 	case AK_KIND_SHEET:
 		switch (p) {
 		case AK_PROP_SHEET_DETENTS:
-			n->nav->detents = v->i;
+			n->nav->detents.len = 0;
+			ak_buf_put(&n->nav->detents, v->s.p, v->s.len);
 			size_sheet(n);
+			break;
+		case AK_PROP_SHEET_DETENT:
+			n->nav->detent = (int32_t)v->i;
+			size_sheet(n);  // moved there
+			break;
+		case AK_PROP_SHEET_UNDIMMED:
+			n->nav->undimmed = (int32_t)v->i;
+			size_sheet(n);
+			break;
+		case AK_PROP_SHEET_CORNER_RADIUS:
+			n->nav->corner = (float)v->f;
+			sheet_corners(n);
+			break;
+		case AK_PROP_SHEET_GRABBER:
+			n->nav->grabber = v->i != 0;
+			if (n->nav->panel) sheet_grabber(n);
+			break;
+		case AK_PROP_SHEET_NO_DISMISS:
+			n->nav->no_dismiss = v->i != 0;
+			lx_set_dialog_can_close(n);
 			break;
 		case AK_PROP_SHEET_WINDOW:
 			n->nav->window = (ak_id)v->i;
@@ -786,6 +842,7 @@ bool lx_remove_nav(node *p, node *c) {
 }
 
 void lx_save_window(win *w);
+static void sheet_forget(node *n);
 
 // lx_destroy_nav handles the destruction of a navigation node: a sheet or
 // alert dismissed, a window closed.
@@ -793,6 +850,7 @@ bool lx_destroy_nav(node *n) {
 	lx_forget_chrome(n);
 	switch (n->kind) {
 	case AK_KIND_SHEET:
+		sheet_forget(n);
 		if (n->nav->dialog) {
 			AdwDialog *d = n->nav->dialog;
 			n->nav->popping = true;
@@ -862,14 +920,14 @@ bool lx_destroy_nav(node *n) {
 
 void lx_present_popover(node *n);
 static void present_alert(node *n, GtkWidget *parent);
+static void present_sheet(node *n);
 
 // lx_present shows a sheet or alert over the window it's declared in (its
 // Window prop), or opens a Window or a popover.
 void lx_present(node *n) {
 	switch (n->kind) {
 	case AK_KIND_SHEET:
-		size_sheet(n);
-		adw_dialog_present(n->nav->dialog, lx_declared_win(n)->content);
+		present_sheet(n);
 		lx_dev_error_raise();  // asuka dev's error overlay stays on top
 		break;
 	case AK_KIND_ALERT:
@@ -894,10 +952,11 @@ typedef struct {
 
 static void size_cover(node *n, void *ctx) {
 	covers_ctx *c = ctx;
-	if (n->kind == AK_KIND_SHEET && n->nav && n->nav->full && n->nav->dialog && lx_declared_win(n) == c->w) size_sheet(n);
+	if (n->kind == AK_KIND_SHEET && n->nav && (n->nav->dialog || n->nav->panel) && lx_declared_win(n) == c->w) size_sheet(n);
 }
 
-// lx_size_covers sizes the full-screen sheets on w again (it resized).
+// lx_size_covers sizes the sheets on w again (it resized): a full-screen
+// one's its size, the others' detents its share.
 void lx_size_covers(win *w) {
 	covers_ctx c = {w};
 	lx_each_node(size_cover, &c);
@@ -916,29 +975,586 @@ win *lx_declared_win(node *n) {
 	return H.main;
 }
 
-// size_sheet sizes a sheet's dialog: as wide as a dialog of libadwaita's
-// (up to 600 points), most of the window's height, half of it for a
-// medium-only sheet; a full-screen one, as big as its whole window.
+// ---- Sheets: detents ----
+//
+// A sheet rests at its detent's height: Detent's, else its shortest.
+// Large is most of its window's height (nine tenths), medium half of it
+// (at least 200 points), height its points, fraction its share of large,
+// fit its content's (the core's Fit), each at most large. A modal sheet
+// is an AdwDialog of that content height, which libadwaita floats, or
+// shows as a bottom sheet in a narrow window; it isn't dragged between
+// detents (libadwaita's dialogs aren't), Detent moves it. An undimmed one
+// (Undimmed) is the host's own panel instead, at the bottom of its
+// window's root view over the app (libadwaita's AdwBottomSheet would need
+// to hold the window's content, and has no detents): the window behind
+// takes clicks and keys while it's at the undimmed detent or lower; above
+// that a scrim dims it and takes them. The panel is dragged between its
+// detents (Selected), down past its shortest to dismiss it, and slides
+// to a detent set.
+
+typedef struct sheet_panel {
+	GtkWidget *box;     // the panel: its grabber over the sheet's view
+	GtkWidget *handle;  // its grabber, shown with Grabber
+	GtkWidget *scrim;   // over the window, under the panel: dims and takes presses above the undimmed detent
+	GtkWidget *root;    // the root view they're in (a reference)
+	float h;            // its height now
+	float from, to;     // a slide's
+	gint64 start;
+	guint tick;
+	float drag_h;  // its height as a drag began
+	double press_x, press_y, press_root;  // where it began: in the panel, and in the root
+	bool pressed, dragging;
+} sheet_panel;
+
+static uint32_t detent_count(const nav *v) {
+	uint32_t c = 0;
+	if (v->detents.len >= 4) memcpy(&c, v->detents.data, 4);
+	return v->detents.len == 4 + (size_t)5 * c ? c : 0;
+}
+
+static uint8_t detent_kind(const nav *v, uint32_t i, float *value) {
+	const uint8_t *p = v->detents.data + 4 + (size_t)5 * i;
+	memcpy(value, p + 1, 4);
+	return p[0];
+}
+
+static bool sheet_fit_only(node *n) {
+	nav *v = n->nav;
+	float x;
+	return v && !v->full && detent_count(v) == 1 && detent_kind(v, 0, &x) == AK_DETENT_KIND_FIT;
+}
+
+// sheet_window is the size of the window a sheet is on (its content's).
+static void sheet_window(node *n, float *ww, float *wh) {
+	win *w = lx_declared_win(n);
+	*ww = w ? w->env_w : 0, *wh = w ? w->env_h : 0;
+	if (*ww <= 0 || *wh <= 0) *ww = 800, *wh = 600;  // not shown yet
+}
+
+static float sheet_large(node *n) {
+	float ww, wh;
+	sheet_window(n, &ww, &wh);
+	return fmaxf(wh * 0.9f, fminf(200, wh));
+}
+
+static float sheet_width(node *n) {
+	float ww, wh;
+	sheet_window(n, &ww, &wh);
+	return ww < 600 ? ww : 600;  // as wide as libadwaita's dialogs, at most
+}
+
+// sheet_room is what a sheet as tall as its content may take: its width
+// and large.
+static void sheet_room(node *n, float *w, float *h) {
+	*w = sheet_width(n);
+	*h = sheet_large(n);
+}
+
+static float detent_height(node *n, uint32_t i) {
+	nav *v = n->nav;
+	float ww, wh, x, large = sheet_large(n), h = large;
+	sheet_window(n, &ww, &wh);
+	switch (detent_kind(v, i, &x)) {
+	case AK_DETENT_KIND_MEDIUM: h = fmaxf(wh * 0.5f, fminf(200, wh)); break;
+	case AK_DETENT_KIND_FIT: h = v->fit_h > 0 ? v->fit_h : large; break;
+	case AK_DETENT_KIND_HEIGHT: h = x; break;
+	case AK_DETENT_KIND_FRACTION: h = large * x; break;
+	}
+	return h > large ? large : h < 1 ? 1 : h;
+}
+
+// sheet_at is the index of the detent a sheet is at.
+static uint32_t sheet_at(node *n) {
+	nav *v = n->nav;
+	uint32_t c = detent_count(v);
+	if (v->detent >= 1 && (uint32_t)v->detent <= c) return (uint32_t)v->detent - 1;
+	uint32_t at = 0;
+	for (uint32_t i = 1; i < c; i++)
+		if (detent_height(n, i) < detent_height(n, at)) at = i;
+	return at;
+}
+
+static float sheet_rest(node *n) { return detent_count(n->nav) ? detent_height(n, sheet_at(n)) : sheet_large(n); }
+
+// undimmed_height is the height of its tallest undimmed detent (< 0:
+// none).
+static float undimmed_height(node *n) {
+	nav *v = n->nav;
+	return v->undimmed >= 1 && (uint32_t)v->undimmed <= detent_count(v) ? detent_height(n, (uint32_t)v->undimmed - 1) : -1;
+}
+
+// ---- Its height, as it moves (SheetHeight) ----
+
+// shown_height is how far a sheet's top is from its window's bottom.
+static float shown_height(node *n) {
+	nav *v = n->nav;
+	if (v->panel) return v->panel->h;
+	win *w = lx_declared_win(n);
+	if (!w || !gtk_widget_get_mapped(n->widget)) return 0;
+	graphene_point_t p = {0, 0}, out;
+	if (!gtk_widget_compute_point(n->widget, w->content, &p, &out)) return 0;
+	float h = (float)gtk_widget_get_height(w->content) - out.y;
+	return h > 0 ? h : 0;
+}
+
+static void send_height(node *n) {
+	nav *v = n->nav;
+	float h = roundf(shown_height(n) * 2) / 2;
+	if (h == v->sent_height) {
+		v->height_still++;
+		return;
+	}
+	v->height_still = 0;
+	v->sent_height = h;
+	lx_emit(n, (ak_event){.kind = AK_EVENT_SHEET_HEIGHT, .f = h});
+}
+
+static gboolean height_tick(GtkWidget *w, GdkFrameClock *c, gpointer data) {
+	(void)w, (void)c;
+	node *n = node_get((ak_id)(uintptr_t)data);
+	if (!n || n->dead || !n->nav || n->nav->gone) return 0;
+	send_height(n);
+	// Still for half a second (libadwaita's animations are shorter): it
+	// settled; a resize or a move follows it again.
+	if (n->nav->height_still < 30) return 1;
+	n->nav->height_tick = 0;
+	return 0;
+}
+
+// follow_height follows a sheet's height frame by frame while the core
+// listens, until it settles.
+static void follow_height(node *n) {
+	nav *v = n->nav;
+	if (!v || !listening(n, AK_EVENT_SHEET_HEIGHT) || v->gone) return;
+	v->height_still = 0;
+	if (!v->height_tick) v->height_tick = gtk_widget_add_tick_callback(n->widget, height_tick, (gpointer)(uintptr_t)n->id, NULL);
+}
+
+// ---- Its corners ----
+
+// sheet_corners rounds a sheet's corners to CornerRadius: a panel's top
+// ones, a dialog's sheet's (libadwaita's sheet node, in the dialog around
+// its child: all four floating, the top ones as a bottom sheet).
+static void sheet_corners(node *n) {
+	nav *v = n->nav;
+	char cls[32];
+	snprintf(cls, sizeof cls, "asuka-sheet-%u", n->id);
+	GtkWidget *target = v->panel ? v->panel->box : NULL;
+	if (!target && v->dialog) {
+		for (GtkWidget *x = gtk_widget_get_parent(n->widget); x && x != (GtkWidget *)v->dialog; x = gtk_widget_get_parent(x)) {
+			const char *name = gtk_widget_get_css_name ? gtk_widget_get_css_name(x) : NULL;
+			if (name && strcmp(name, "sheet") == 0) {
+				target = x;
+				break;
+			}
+		}
+	}
+	if (v->corner_sheet && v->corner_sheet != target) {
+		gtk_widget_remove_css_class(v->corner_sheet, cls);
+		g_object_unref(v->corner_sheet);
+		v->corner_sheet = NULL;
+	}
+	if (v->corner <= 0 || !target) return;
+	if (!v->corner_css) {
+		v->corner_css = gtk_css_provider_new();
+		gtk_style_context_add_provider_for_display(gtk_widget_get_display(n->widget), (GtkStyleProvider *)v->corner_css, 800);
+	}
+	char css[256];
+	float r = v->corner;
+	snprintf(css, sizeof css,
+	         ".%s { border-radius: %gpx; }\n"
+	         ".%s.asuka-sheet-panel, bottom-sheet .%s { border-radius: %gpx %gpx 0 0; }\n",
+	         cls, r, cls, cls, r, r);
+	gtk_css_provider_load_from_string(v->corner_css, css);
+	if (v->corner_sheet != target) {
+		v->corner_sheet = g_object_ref(target);
+		gtk_widget_add_css_class(target, cls);
+	}
+}
+
+// ---- The undimmed panel ----
+
+static node *panel_node(gpointer data) {
+	node *n = node_get((ak_id)(uintptr_t)data);
+	return n && !n->dead && n->nav && n->nav->panel ? n : NULL;
+}
+
+node *lx_sheet_panel_of(GtkWidget *w) {
+	gpointer id = g_object_get_data((GObject *)w, "asuka-sheet");
+	return id ? panel_node(id) : NULL;
+}
+
+// scrim_dim is how dim the scrim is at the panel's height: none at the
+// undimmed detent or lower, all of it at the next one up.
+static float scrim_dim(node *n) {
+	float und = undimmed_height(n), h = n->nav->panel->h, next = sheet_large(n);
+	if (und < 0) return 1;
+	if (h <= und) return 0;
+	uint32_t c = detent_count(n->nav);
+	for (uint32_t i = 0; i < c; i++) {
+		float d = detent_height(n, i);
+		if (d > und + 0.5f && d < next) next = d;
+	}
+	float t = next > und ? (h - und) / (next - und) : 1;
+	return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+
+void lx_allocate_sheet_panel(node *n, GtkWidget *w, int width, int height) {
+	sheet_panel *p = n->nav->panel;
+	if (w == p->scrim) {
+		float dim = scrim_dim(n);
+		gtk_widget_set_opacity(w, dim);
+		gtk_widget_set_can_target(w, dim > 0.01f);
+		lx_allocate(w, width, height, 0, 0, NULL);
+		return;
+	}
+	float pw = width < 600 ? (float)width : 600, h = p->h < height ? p->h : (float)height;
+	lx_allocate(w, (int)pw, (int)ceilf(h), ((float)width - pw) / 2, (float)height - h, NULL);
+}
+
+static void panel_moved(node *n) {
+	sheet_panel *p = n->nav->panel;
+	gtk_widget_queue_allocate(p->root);
+	follow_height(n);
+}
+
+static gboolean slide_tick(GtkWidget *w, GdkFrameClock *c, gpointer data) {
+	(void)w;
+	node *n = panel_node(data);
+	if (!n) return 0;
+	sheet_panel *p = n->nav->panel;
+	gint64 now = gdk_frame_clock_get_frame_time(c);
+	if (!p->start) p->start = now;
+	float t = (float)(now - p->start) / 250000.0f;  // a quarter of a second
+	if (t >= 1 || H.env.reduce_motion) t = 1;
+	float e = 1 - (1 - t) * (1 - t) * (1 - t);  // ease out
+	p->h = p->from + (p->to - p->from) * e;
+	panel_moved(n);
+	if (t < 1) return 1;
+	p->tick = 0;
+	return 0;
+}
+
+// slide_to slides the panel to height h.
+static void slide_to(node *n, float h) {
+	sheet_panel *p = n->nav->panel;
+	if (p->dragging) return;
+	if (p->tick && p->to == h) return;
+	p->from = p->h, p->to = h, p->start = 0;
+	if (p->h == h) {
+		panel_moved(n);
+		return;
+	}
+	if (!p->tick) p->tick = gtk_widget_add_tick_callback(p->box, slide_tick, (gpointer)(uintptr_t)n->id, NULL);
+}
+
+// panel_dismiss is a panel dismissed by the user: the core destroys it,
+// or, while it intercepts, decides.
+static void panel_dismiss(node *n) {
+	if (n->intercept_back) {
+		lx_emit(n, (ak_event){.kind = AK_EVENT_BACK});
+		slide_to(n, sheet_rest(n));
+		return;
+	}
+	n->nav->gone = true;
+	lx_emit(n, (ak_event){.kind = AK_EVENT_DISMISSED});
+}
+
+// The panel's drag watches every press in it (capture), and takes it
+// (claiming it from a button under it) once it has moved vertically: a
+// sheet is dragged from anywhere on it, as a phone's is. The pointer's
+// travel is measured in the root's coordinates, the panel moving under
+// it.
+
+// root_y is where a point of the panel, as the gesture has it, is in
+// the root.
+static double root_y(sheet_panel *p, double x, double y) {
+	graphene_point_t a = {(float)x, (float)y}, out;
+	return gtk_widget_compute_point(p->box, p->root, &a, &out) ? out.y : y;
+}
+
+static void on_panel_drag_begin(GtkGestureDrag *g, double x, double y, gpointer data) {
+	(void)g;
+	node *n = panel_node(data);
+	if (!n) return;
+	sheet_panel *p = n->nav->panel;
+	p->pressed = true;
+	p->press_x = x, p->press_y = y;
+	p->press_root = root_y(p, x, y);
+}
+
+static void on_panel_drag_update(GtkGestureDrag *g, double dx, double dy, gpointer data) {
+	node *n = panel_node(data);
+	if (!n || !n->nav->panel->pressed) return;
+	sheet_panel *p = n->nav->panel;
+	double travel = root_y(p, p->press_x + dx, p->press_y + dy) - p->press_root;
+	if (!p->dragging) {
+		if (fabs(travel) < 8 || fabs(travel) < fabs(dx)) return;  // not yet a vertical drag
+		gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_CLAIMED);
+		if (p->tick) {
+			gtk_widget_remove_tick_callback(p->box, p->tick);
+			p->tick = 0;
+		}
+		p->dragging = true;
+		p->drag_h = p->h;
+	}
+	float h = p->drag_h - (float)travel, large = sheet_large(n);
+	if (h > large) h = large + (h - large) / 4;  // past large: it resists
+	p->h = h > 0 ? h : 0;
+	panel_moved(n);
+}
+
+static void on_panel_drag_end(GtkGestureDrag *g, double dx, double dy, gpointer data) {
+	(void)g, (void)dx, (void)dy;
+	node *n = panel_node(data);
+	if (!n) return;
+	nav *v = n->nav;
+	sheet_panel *p = v->panel;
+	p->pressed = false;
+	if (!p->dragging) return;  // a press, not a drag: its view's
+	p->dragging = false;
+	uint32_t c = detent_count(v);
+	float shortest = c ? detent_height(n, 0) : sheet_large(n);
+	for (uint32_t i = 1; i < c; i++) shortest = fminf(shortest, detent_height(n, i));
+	if (!v->no_dismiss && p->h < shortest * 0.5f) {
+		panel_dismiss(n);
+		return;
+	}
+	// The nearest detent; its index is the user's choice.
+	uint32_t at = sheet_at(n);
+	float best = -1;
+	for (uint32_t i = 0; i < c; i++) {
+		float d = fabsf(detent_height(n, i) - p->h);
+		if (best < 0 || d < best) best = d, at = i;
+	}
+	if (c && at != sheet_at(n)) {
+		v->detent = (int32_t)at + 1;
+		lx_emit(n, (ak_event){.kind = AK_EVENT_SELECTED, .i = at});
+	}
+	slide_to(n, sheet_rest(n));
+}
+
+// on_panel_drag_cancel: another gesture took the press (a scroll in the
+// sheet); a drag under way settles where it was.
+static void on_panel_drag_cancel(GtkGesture *g, gpointer s, gpointer data) {
+	(void)g, (void)s;
+	node *n = panel_node(data);
+	if (!n) return;
+	sheet_panel *p = n->nav->panel;
+	bool was = p->dragging;
+	p->pressed = p->dragging = false;
+	if (was) slide_to(n, sheet_rest(n));
+}
+
+static void on_scrim_press(GtkGestureClick *g, int count, double x, double y, gpointer data) {
+	(void)count, (void)x, (void)y;
+	node *n = panel_node(data);
+	if (!n) return;
+	gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_CLAIMED);
+	if (!n->nav->no_dismiss || n->intercept_back) panel_dismiss(n);
+}
+
+static gboolean on_panel_key(GtkEventControllerKey *k, guint key, guint code, GdkModifierType mods, gpointer data) {
+	(void)k, (void)code, (void)mods;
+	node *n = panel_node(data);
+	if (!n || key != KEY_ESCAPE) return 0;
+	panel_dismiss(n);  // Escape dismisses it, as a dialog's does
+	return 1;
+}
+
+static void sheet_grabber(node *n) {
+	sheet_panel *p = n->nav->panel;
+	if (p) gtk_widget_set_visible(p->handle, n->nav->grabber);
+}
+
+// present_panel shows an undimmed sheet as a panel over its window's
+// root view, sliding up to its detent.
+static void present_panel(node *n) {
+	nav *v = n->nav;
+	win *w = lx_declared_win(n);
+	GtkWidget *root = w && w->root ? w->root->widget : NULL;
+	if (!root) return;
+	sheet_panel *p = calloc(1, sizeof *p);
+	if (!p) abort();
+	v->panel = p;
+	gpointer id = (gpointer)(uintptr_t)n->id;
+	p->root = g_object_ref(root);
+	p->scrim = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+	gtk_widget_add_css_class(p->scrim, "asuka-sheet-scrim");
+	g_object_set_data((GObject *)p->scrim, "asuka-sheet", id);
+	gtk_widget_set_opacity(p->scrim, 0);
+	gtk_widget_set_can_target(p->scrim, 0);
+	GtkGesture *press = gtk_gesture_click_new();
+	gtk_gesture_single_set_button((GtkGestureSingle *)press, 0);
+	g_signal_connect(press, "pressed", G_CALLBACK(on_scrim_press), id);
+	gtk_widget_add_controller(p->scrim, (GtkEventController *)press);
+	p->box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+	gtk_widget_add_css_class(p->box, "asuka-sheet-panel");
+	gtk_widget_set_overflow(p->box, GTK_OVERFLOW_HIDDEN);
+	g_object_set_data((GObject *)p->box, "asuka-sheet", id);
+	p->handle = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+	gtk_widget_add_css_class(p->handle, "asuka-sheet-handle");
+	gtk_widget_set_halign(p->handle, GTK_ALIGN_CENTER);
+	gtk_box_append((GtkBox *)p->box, p->handle);
+	sheet_grabber(n);
+	adw_dialog_set_child(v->dialog, NULL);  // its view goes in the panel
+	gtk_widget_set_vexpand(n->widget, 1);
+	gtk_box_append((GtkBox *)p->box, n->widget);
+	GtkGesture *drag = gtk_gesture_drag_new();
+	g_signal_connect(drag, "drag-begin", G_CALLBACK(on_panel_drag_begin), id);
+	g_signal_connect(drag, "drag-update", G_CALLBACK(on_panel_drag_update), id);
+	g_signal_connect(drag, "drag-end", G_CALLBACK(on_panel_drag_end), id);
+	g_signal_connect(drag, "cancel", G_CALLBACK(on_panel_drag_cancel), id);
+	gtk_event_controller_set_propagation_phase((GtkEventController *)drag, GTK_PHASE_CAPTURE);
+	gtk_widget_add_controller(p->box, (GtkEventController *)drag);
+	GtkEventController *keys = gtk_event_controller_key_new();
+	g_signal_connect(keys, "key-pressed", G_CALLBACK(on_panel_key), id);
+	gtk_widget_add_controller(p->box, keys);
+	gtk_widget_insert_before(p->scrim, root, NULL);  // over the app, under its overlays as they come
+	gtk_widget_insert_before(p->box, root, NULL);
+	sheet_corners(n);
+	slide_to(n, sheet_rest(n));
+}
+
+static void drop_panel(node *n) {
+	sheet_panel *p = n->nav->panel;
+	if (!p) return;
+	n->nav->panel = NULL;
+	if (p->tick) gtk_widget_remove_tick_callback(p->box, p->tick);
+	if (gtk_widget_get_parent(n->widget) == p->box) gtk_box_remove((GtkBox *)p->box, n->widget);
+	gtk_widget_unparent(p->box);
+	gtk_widget_unparent(p->scrim);
+	gtk_widget_queue_allocate(p->root);
+	g_object_unref(p->root);
+	free(p);
+}
+
+// sheet_forget lets go of what a sheet holds as it goes.
+static void sheet_forget(node *n) {
+	nav *v = n->nav;
+	if (v->height_tick) {
+		gtk_widget_remove_tick_callback(n->widget, v->height_tick);
+		v->height_tick = 0;
+	}
+	if (v->corner_sheet) {
+		char cls[32];
+		snprintf(cls, sizeof cls, "asuka-sheet-%u", n->id);
+		gtk_widget_remove_css_class(v->corner_sheet, cls);
+		g_object_unref(v->corner_sheet);
+		v->corner_sheet = NULL;
+	}
+	if (v->corner_css) {
+		gtk_style_context_remove_provider_for_display(gtk_widget_get_display(n->widget), (GtkStyleProvider *)v->corner_css);
+		g_object_unref(v->corner_css);
+		v->corner_css = NULL;
+	}
+	drop_panel(n);
+}
+
+// ---- Sizing and presenting ----
+
+// size_sheet sizes a sheet at its detent: a dialog's content height, a
+// panel's slide; a full-screen one, as big as its whole window.
 static void size_sheet(node *n) {
-	AdwDialog *d = n->nav->dialog;
+	nav *v = n->nav;
+	if (v->panel) {
+		slide_to(n, sheet_rest(n));
+		return;
+	}
+	AdwDialog *d = v->dialog;
 	if (!d) return;
 	win *w = lx_declared_win(n);
-	if (n->nav->full) {
+	if (v->full) {
 		int ww = gtk_widget_get_width((GtkWidget *)w->window), wh = gtk_widget_get_height((GtkWidget *)w->window);
 		if (ww <= 0 || wh <= 0) gtk_window_get_default_size(w->window, &ww, &wh);  // not shown yet
 		adw_dialog_set_content_width(d, ww > 1 ? ww : 1);
 		adw_dialog_set_content_height(d, wh > 1 ? wh : 1);
 		return;
 	}
-	float ww = w->env_w, wh = w->env_h;
-	if (ww == 0) {
-		ww = 800;
-		wh = 600;
+	float width = sheet_width(n), height = sheet_rest(n);
+	if (sheet_fit_only(n) && v->fit_w > 0) {
+		// As tall as its content: the size the core laid it out at (wider
+		// than a sheet when its content can't be narrower).
+		float ww, wh;
+		sheet_window(n, &ww, &wh);
+		width = v->fit_w < ww ? v->fit_w : ww;
 	}
-	float height = n->nav->detents == 1 ? wh * 0.5f : wh * 0.9f;  // medium only: half
-	adw_dialog_set_content_width(d, lx_window_size(ww < 600 ? ww : 600));
-	float h = height < wh ? height : wh;
-	adw_dialog_set_content_height(d, lx_window_size(h > 200 ? h : 200));
+	adw_dialog_set_content_width(d, lx_window_size(width));
+	adw_dialog_set_content_height(d, lx_window_size(height));
+	if (v->corner > 0) sheet_corners(n);  // a narrower window may have made it a bottom sheet
+	follow_height(n);
+}
+
+static void show_sheet(node *n);
+
+void lx_sheet_action(node *n, ak_span args) {
+	float w, h;
+	nav *v = n->nav;
+	if (!v || args.len < 9 || (uint8_t)args.p[0] != AK_WINDOW_ACTION_FIT) return;
+	memcpy(&w, args.p + 1, 4);
+	memcpy(&h, args.p + 5, 4);
+	if (w == v->fit_w && h == v->fit_h && !v->fit_pending) return;
+	v->fit_w = w, v->fit_h = h;
+	if (v->fit_pending) {
+		v->fit_pending = false;
+		show_sheet(n);  // its first Fit: it shows at its content's size
+		return;
+	}
+	size_sheet(n);  // its fit detent's height
+}
+
+// show_sheet shows a sheet over the window it's declared in: an
+// undimmed one as a panel, the others as a dialog.
+static void show_sheet(node *n) {
+	nav *v = n->nav;
+	if (v->undimmed > 0 && !v->full) {
+		present_panel(n);
+		return;
+	}
+	size_sheet(n);
+	adw_dialog_present(v->dialog, lx_declared_win(n)->content);
+	sheet_corners(n);
+	follow_height(n);
+}
+
+bool lx_sheet_escape(node *n) {
+	nav *v = n->nav;
+	if (!v || v->gone) return false;
+	if (v->panel) {
+		panel_dismiss(n);
+		return true;
+	}
+	if (v->no_dismiss && !n->intercept_back && v->dialog) {
+		adw_dialog_force_close(v->dialog);
+		return true;
+	}
+	return false;
+}
+
+void lx_sheet_dump(node *n, ak_buf *b) {
+	nav *v = n->nav;
+	if (!v || !n->widget) return;
+	ak_buf_printf(b, " sheet=%dx%d detent=%u height=%.0f", gtk_widget_get_width(n->widget), gtk_widget_get_height(n->widget),
+	              detent_count(v) ? sheet_at(n) : 0, shown_height(n));
+	if (v->panel) ak_buf_printf(b, " panel dim=%.2f", (double)gtk_widget_get_opacity(v->panel->scrim));
+}
+
+// present_sheet presents a sheet. One as tall as its content is told its
+// room first, and shows once the core's Fit says its size (as a Mac's
+// sheet does), not at another size before it.
+static void present_sheet(node *n) {
+	nav *v = n->nav;
+	if (sheet_fit_only(n) && v->fit_h <= 0) {
+		float w, h;
+		sheet_room(n, &w, &h);
+		v->env_w = w, v->env_h = h;
+		v->fit_pending = true;
+		ak_event ev = {.id = n->id, .kind = AK_EVENT_ENVIRONMENT};
+		lx_root_env(n, &ev.env);
+		lx_dispatch(&ev);  // laid out after this batch: its Fit comes
+		return;
+	}
+	show_sheet(n);
 }
 
 // ---- Alerts ----

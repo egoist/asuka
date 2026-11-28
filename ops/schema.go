@@ -232,11 +232,15 @@ var Schema = SchemaDef{
 			{Name: "Selected", Type: TInt},
 		}, Doc: "its children are Screens (pages); the user's choice is reported with Selected"},
 		{Name: "Sheet", Props: []PropDef{
-			{Name: "Detents", Type: TInt, Doc: "bits: 1 medium, 2 large, 4 fit: as tall as its content, which the core lays out at the sheet's width and sends with WindowAction Fit (0: large)"},
+			{Name: "Detents", Type: TBytes, Doc: "the heights it rests at, in the app's order (empty: Large alone): u32 count, then per detent u8 DetentKind and f32 its value: Height's points, Fraction's share (0 to 1) of the largest a sheet can be (Large's height), 0 for the others. A host resolves each detent's height, up to Large's, and rests the sheet at them from the shortest to the tallest. Fit is as tall as its content, which the core lays out at the sheet's width and sends with WindowAction Fit (its width and height there, the bottom safe area in it) and again as it changes. Set before Present, and again while it shows when the app changes them"},
 			{Name: "Grabber", Type: TBool},
 			{Name: "Window", Type: TInt, Doc: "the window it's declared in: the root's or a Window node's ID. A desktop host presents it on that window, and a key goes on from it to that window's root; a phone's one window takes it and ignores it"},
 			{Name: "FullScreen", Type: TBool, Doc: "it covers the whole screen (iOS's full-screen cover, Material's full-screen dialog; a desktop's sheet over all of its window's content, the web's dialog over the viewport), sent before Present: Detents and Grabber don't apply, and no swipe or tap outside dismisses it"},
 			{Name: "Routed", Type: TBool, Doc: "a Router's sheet, a route of its own: as Stack's Routed, the web keeps no back entry of its own for it"},
+			{Name: "Detent", Type: TInt, Doc: "the detent it's at: 1 + its index in Detents (0: the shortest, where a sheet opens). Set while it shows, the sheet moves there, animated (UISheetPresentationController's animateChanges). The user's dragging it to another is reported with Selected (the index, from 0); a host keeps showing it there"},
+			{Name: "Undimmed", Type: TInt, Doc: "1 + the index in Detents of the tallest detent at which what's behind the sheet isn't dimmed and takes touches and clicks, as Apple Maps' sheet is (iOS's largestUndimmedDetentIdentifier); 0: none, modal at every detent. At a detent no taller than it, a tap outside doesn't dismiss the sheet, and the keyboard's focus may leave it"},
+			{Name: "CornerRadius", Type: TFloat, Doc: "its top corners' radius, in points (0: the platform's)"},
+			{Name: "NoDismiss", Type: TBool, Doc: "the user can't dismiss it by dragging it down or tapping outside it (iOS's isModalInPresentation, a BottomSheetBehavior that isn't hideable); Android's back and Escape still do, as a full-screen sheet's"},
 		}, Doc: "a modal sheet with one child, its content: Present shows it, Destroy dismisses it; the user's dismissal is reported with Dismissed. Sized by the host, which reports its Environment"},
 		{Name: "Alert", Props: []PropDef{
 			{Name: "Title", Type: TString},
@@ -402,7 +406,7 @@ var Schema = SchemaDef{
 		{Name: "Environment", Payload: PEnvironment, Doc: "sent for the root; the ID is the root's"},
 		{Name: "Lifecycle", Payload: PInt, Doc: "a Lifecycle value"},
 		{Name: "Popped", Payload: PInt, Doc: "the user popped a Stack's top screen (its ID)"},
-		{Name: "Selected", Payload: PInt, Doc: "the user selected a tab or a segment (its index)"},
+		{Name: "Selected", Payload: PInt, Doc: "the user selected a tab or a segment (its index), or dragged a Sheet to one of its Detents (its index), where it settled"},
 		{Name: "Action", Payload: PInt, Doc: "a menu item, alert button or bar button (its index)"},
 		{Name: "Dismissed", Payload: PNone},
 		{Name: "Refresh", Payload: PNone, Doc: "the user pulled to refresh"},
@@ -462,6 +466,7 @@ var Schema = SchemaDef{
 		{Name: "HoverMove", Payload: PPoint, Doc: "a pointer moved over the view or its children: where it is, in points from the view's top left; it comes after Hover (true), and none after Hover (false)"},
 		{Name: "Zoomed", Payload: PFloat, Doc: "a zoomable Scroll's zoom scale as the user changes it (a pinch, a double tap; ctrl or ⌘ and the wheel), as it goes, and where it settles (back within MinZoom and MaxZoom). ZoomTo's zoom isn't reported"},
 		{Name: "Moved", Payload: PPoint, Doc: "the user moved a row of a List with Reorder (a drag dropped, or a screen reader's move action): X its item's index before, Y the index it's at now (among all the items, as ListUpdate's IDs). The host has moved it already, and keeps its IDs in the new order: a ListUpdate in that order changes nothing; the core sends one in the old order when the app doesn't take the move"},
+		{Name: "SheetHeight", Payload: PFloat, Doc: "a Sheet's height on the screen, in points from its window's bottom edge to the sheet's top edge (the bottom safe area in it), as it changes: as it opens and closes, as the user drags it and it settles, as it moves to a Detent set; frame by frame while it moves. Listened for"},
 	},
 	Commands: []CommandDef{
 		{Name: "Focus"},
@@ -557,5 +562,6 @@ var Schema = SchemaDef{
 		{Name: "DevErrorAction", Values: []string{"Dismiss", "Reload"}},
 		{Name: "VideoAction", Values: []string{"EnterPictureInPicture", "ExitPictureInPicture", "EnterFullScreen", "ExitFullScreen"}},
 		{Name: "PanAxis", Values: []string{"Both", "Horizontal", "Vertical"}},
+		{Name: "DetentKind", Values: []string{"Medium", "Large", "Fit", "Height", "Fraction"}},
 	},
 }

@@ -4,6 +4,7 @@
 // apart: 1.5 s before the first (images and fonts load), 0.4 s between
 // them.
 #include "win.h"
+#include "nav.h"
 
 #include <wincodec.h>
 
@@ -238,8 +239,17 @@ char *wh_dump(size_t *len) {
 	ak_buf b = {0};
 	if (H.root) walk(&b, H.root, 0);
 	for (uint32_t i = 0; i < H.nsheets; i++) {
-		ak_buf_put(&b, "sheet:\n", 7);
-		walk(&b, H.sheets[i], 1);
+		// Its client area's size, in points, and whether its window is
+		// kept from the user (modal) or usable under it (an undimmed
+		// detent).
+		node *s = H.sheets[i];
+		char line[96];
+		RECT cr = {0};
+		if (s->nav->window) GetClientRect(s->nav->window, &cr);
+		int k = snprintf(line, sizeof line, "sheet: %gx%g %s\n", (double)lroundf(wh_pt(s, cr.right)), (double)lroundf(wh_pt(s, cr.bottom)),
+		                 s->nav->owner && IsWindowEnabled(s->nav->owner) ? "usable" : "modal");
+		ak_buf_put(&b, line, (size_t)k);
+		walk(&b, s, 1);
 	}
 	wh_overlays_dump(&b, walk);
 	wh_dev_error_dump(&b);

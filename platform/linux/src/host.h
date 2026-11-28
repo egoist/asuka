@@ -516,6 +516,20 @@ void lx_present(node *n);
 void lx_roots_env_changed(void);
 void lx_root_env(node *n, ak_environment *env);
 void lx_size_covers(win *w);
+// lx_sheet_action takes a WindowAction for a Sheet: Fit, its content's
+// size (nav.c).
+void lx_sheet_action(node *n, ak_span args);
+// lx_sheet_panel_of is the node of an undimmed sheet's panel, a child of
+// a window's root view (NULL for any other widget); lx_allocate_sheet_panel
+// places it, and its scrim, in that root of width by height.
+node *lx_sheet_panel_of(GtkWidget *w);
+// lx_sheet_escape is Escape on a sheet the host handles itself (a panel,
+// one that can't be dragged away): false for libadwaita's own.
+bool lx_sheet_escape(node *n);
+// lx_sheet_dump describes a sheet for the automation's dump: " sheet=W×H
+// detent=I height=H", " panel" for an undimmed one.
+void lx_sheet_dump(node *n, ak_buf *b);
+void lx_allocate_sheet_panel(node *n, GtkWidget *w, int width, int height);
 win *lx_declared_win(node *n);
 void lx_tabs_resized(node *n);
 void lx_add_child(node *p, node *c, uint32_t index);
@@ -537,7 +551,21 @@ struct nav {
 	ak_alert_field_vec fields;
 	widget_vec rows;
 	char *badge;
-	int64_t detents;
+	// A Sheet's: its Detents as last set (u32 count, then u8 DetentKind
+	// and f32 value each), 1 + the index of the detent it's at (0: the
+	// shortest), 1 + the index of the tallest undimmed one (0: none), its
+	// corners' radius (0: libadwaita's), its last Fit.
+	ak_buf detents;
+	int32_t detent, undimmed;
+	float corner, fit_w, fit_h;
+	bool grabber, no_dismiss;
+	bool fit_pending;  // a sheet as tall as its content shows once its first Fit comes
+	struct sheet_panel *panel;  // an undimmed sheet's: the host's own non-modal panel (nav.c)
+	float sent_height;          // the SheetHeight last sent (< 0: none yet)
+	guint height_tick;          // following its height while it moves
+	int height_still;           // frames its height hasn't moved
+	GtkCssProvider *corner_css;
+	GtkWidget *corner_sheet;    // the dialog's sheet its radius is on (a reference)
 	bool full;
 	float env_w, env_h;
 	action_vec toolbar, primary;

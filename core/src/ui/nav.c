@@ -89,7 +89,17 @@ ak_prov *ak_prov_new(ak_ui_root *r) {
 	return p;
 }
 
-bool ak_fit_sheet_platform(uint8_t platform) { return platform == AK_PLATFORM_MACOS || platform == AK_PLATFORM_WEB; }
+bool ak_fit_sheet_platform(uint8_t platform) {
+	return platform == AK_PLATFORM_MACOS || platform == AK_PLATFORM_WEB || platform == AK_PLATFORM_WINDOWS || platform == AK_PLATFORM_LINUX;
+}
+
+void ak_prov_fit_mode(ak_prov *p, bool fit, bool only, uint8_t platform) {
+	bool sheet = fit && only && ak_fit_sheet_platform(platform), measure = fit && !sheet;
+	p->fit_only = fit && only;
+	if (sheet == p->fit_sheet && measure == p->fit_measure) return;
+	p->fit_sheet = sheet, p->fit_measure = measure, p->fit_sent = false;
+	if (p->view) ak_style_relayout(p->view);
+}
 
 ak_prov *ak_prov_current(void) {
 	void *v = NULL;
@@ -184,15 +194,10 @@ bool ak_prov_report(ak_id id, const ak_environment *in) {
 	ak_environment env = *in;
 	if (env.width_class == AK_SIZE_CLASS_UNSPECIFIED) env.width_class = ak_width_class_of(env.width);
 	if (env.height_class == AK_SIZE_CLASS_UNSPECIFIED) env.height_class = ak_height_class_of(env.height);
-	if (p->fit_wait) {
-		// A sheet asking to be as tall as its content is one where the
-		// platform its first environment names has such a sheet.
-		bool fit = ak_fit_sheet_platform(env.platform);
-		if (fit != p->fit_sheet) {
-			p->fit_sheet = fit;
-			ak_style_relayout(v);
-		}
-	}
+	// A sheet asking to be as tall as its content is sized to it where the
+	// platform its first environment names sizes such a sheet, else rests
+	// at a detent of its content's height.
+	if (p->fit_wait) ak_prov_fit_mode(p, true, p->fit_only, env.platform);
 	p->fit_wait = false;  // its own room, which a fit sheet waits for
 	if (p->follows) {
 		// The host sizes it itself: it no longer follows.
@@ -335,6 +340,28 @@ static void layout_fit_sheet(ak_ui_root *r, ak_view *e, ak_lpass *lp) {
 	send_fit(r, e, s);
 }
 
+// layout_measure_sheet lays a sheet with a detent of its content's height
+// out at the size its environment gives (the detent it's at, which the
+// host sizes it to), and measures its content's height at that width,
+// sending WindowAction Fit as that changes: the host's fit detent.
+static void layout_measure_sheet(ak_ui_root *r, ak_view *e, ak_lpass *lp) {
+	ak_prov *p = e->prov;
+	ak_lsize size = {p->env.width, p->env.height};
+	if (p->fit_wait || size.w <= 0 || size.h <= 0) return;
+	bool dirty = ak_lnode_dirty(e->box);
+	if (!dirty && p->fit_sent && size.w == p->laid.w && size.h == p->laid.h) return;
+	if (dirty || !p->fit_sent || size.w != p->room.w) {
+		ak_lsize s = ak_lnode_measure(e->box, (ak_lsize){size.w, AK_LMAX_CONTENT}, lp);
+		p->room.w = size.w;
+		if (!p->fit_sent || s.w != p->fit.w || s.h != p->fit.h) {
+			p->fit = s, p->fit_sent = true;
+			send_fit(r, e, s);
+		}
+	}
+	p->laid = size;
+	ak_lnode_layout(e->box, size, lp);
+}
+
 // layout_fit_window lays a window sized to its content out at its
 // content's size, within its least and most size.
 static void layout_fit_window(ak_ui_root *r, ak_view *e, ak_lpass *lp) {
@@ -361,6 +388,7 @@ void ak_root_layout_provs(ak_ui_root *r, ak_lpass *lp) {
 		ak_prov *p = e->prov;
 		if (p->fit_win) layout_fit_window(r, e, lp);
 		else if (p->fit_sheet) layout_fit_sheet(r, e, lp);
+		else if (p->fit_measure) layout_measure_sheet(r, e, lp);
 		else if (p->fits) layout_fit(r, e, lp);
 		else {
 			ak_lsize size = {p->env.width, p->env.height};

@@ -407,6 +407,9 @@ ak_ledges ak_lnode_content_insets(const ak_lnode *n);
 // own size comes from its style resolved against avail; its x and y are
 // its margins. Returns n's size.
 ak_lsize ak_lnode_layout(ak_lnode *n, ak_lsize avail, ak_lpass *p);
+// ak_lnode_measure is the size ak_lnode_layout would give n within
+// avail, placing nothing.
+ak_lsize ak_lnode_measure(ak_lnode *n, ak_lsize avail, ak_lpass *p);
 
 // ak_lround snaps a laid-out tree to a pixel grid of scale pixels per
 // point, the way browsers do: edges are rounded in absolute coordinates

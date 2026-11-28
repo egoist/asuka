@@ -66,7 +66,23 @@ let asukaSheetMargin: CGFloat = 80
     var on: UInt32 = 0
     var deferred = false // presenting waits for its window to open
     var full = false // a Sheet's FullScreen: as big as its window's content
-    var detents: Int64 = 0
+    /// A Sheet's detents (Detents), the one it's at (Detent: 1 + its
+    /// index, 0 the shortest), the tallest that leaves its window usable
+    /// (Undimmed: 1 + its index, 0 none), its corners (CornerRadius) and
+    /// its content's height for its fit detent (the core's Fit), as
+    /// Sheets.swift resolves them.
+    var detents: [AsukaDetent] = []
+    var detentAt = 0
+    var undimmed = 0
+    var cornerRadius: CGFloat = 0
+    var fitHeight: CGFloat = 0
+    /// Shown as a panel at the bottom of its window, which stays usable
+    /// (a detent no taller than Undimmed's), not a sheet of it.
+    var panel = false
+    /// A change to its detents waits for the batch to end (sheetChanged).
+    var sheetQueued = false
+    /// Its height as last reported (SheetHeight).
+    var heightSent: Float = -1
     /// Shows a sheet as tall as its content once the core has sized it
     /// (fitSheet): before, it would slide in at its room's size.
     var begin: (() -> Void)?
@@ -137,6 +153,11 @@ final class AsukaTabViewItem: NSTabViewItem {
 /// A sheet's window: Escape dismisses it, past what its content does with
 /// it.
 final class AsukaSheetWindow: NSWindow {
+    /// Shown as a panel over its window's bottom (Sheets.swift), which is
+    /// borderless and takes the keyboard as a sheet does.
+    var asPanel = false
+    override var canBecomeKey: Bool { asPanel || super.canBecomeKey }
+
     override func cancelOperation(_ sender: Any?) {
         guard let v = contentView else { return }
         MainActor.assumeIsolated { AsukaRuntime.shared.cancel(v) }
@@ -357,6 +378,7 @@ final class AsukaSheetWindow: NSWindow {
             releaseSheetWidth(n)
             if let w = nav.window {
                 if let p = w.sheetParent { p.endSheet(w) }
+                if let p = w.parent { p.removeChildWindow(w) } // a panel
                 w.orderOut(nil)
                 if let c = w.contentView { byView.removeValue(forKey: ObjectIdentifier(c)) }
                 nav.window = nil
@@ -561,19 +583,20 @@ final class AsukaSheetWindow: NSWindow {
     }
 
     /// The size of a sheet on over: its window's content less a margin, at
-    /// most 640 wide, or half as tall for a medium sheet. A sheet as tall
-    /// as its content (DetentFit) is that tall at most.
+    /// most 640 wide, as tall as the detent it's at (Sheets.swift's
+    /// sheetHeight). A sheet whose one detent is fit, which the core sizes,
+    /// is the largest a sheet may be at most.
     func sheetRoom(_ n: AsukaNode, _ over: AsukaWin) -> CGSize {
-        let cs = over.content.bounds.size
-        var size = CGSize(width: min(max(cs.width - asukaSheetMargin, 320), 640), height: max(cs.height - 100, 240))
-        if n.nav?.detents == 1 { size.height = max(cs.height / 2, 240) } // medium only
-        return size
+        let large = sheetLarge(over)
+        if fitsContent(n) { return large }
+        return CGSize(width: large.width, height: sheetHeight(n, over))
     }
 
-    /// Whether n is a sheet as tall as its content (DetentFit), which the
-    /// core sizes.
+    /// Whether n is a sheet whose one detent is fit (as tall as its
+    /// content), which the core sizes.
     func fitsContent(_ n: AsukaNode) -> Bool {
-        n.kind == .sheet && (n.nav?.detents ?? 0) & 4 != 0 && !(n.nav?.full ?? false)
+        guard n.kind == .sheet, let nav = n.nav, !nav.full else { return false }
+        return nav.detents.count == 1 && nav.detents[0].kind == AsukaDetentKind.fit.rawValue
     }
 
     /// Sizes a sheet as tall as its content to the size the core laid it
@@ -647,6 +670,7 @@ final class AsukaSheetWindow: NSWindow {
             case .sheet, .window:
                 guard let nav = n.nav, let w = nav.window, let cv = w.contentView else { continue }
                 if nav.full { fitCover(n) }
+                if n.kind == .sheet && nav.panel { placePanel(n, false) } // its window resized
                 let b = cv.bounds
                 n.view?.frame = b
                 if fitsContent(n), let over = onWin(n) {
@@ -798,10 +822,9 @@ final class AsukaSheetWindow: NSWindow {
             }
         case .sheet:
             switch p {
-            case AsukaProp.Sheet.detents: nav.detents = v.int
             case AsukaProp.Sheet.window: nav.on = UInt32(truncatingIfNeeded: v.int)
             case AsukaProp.Sheet.fullScreen: nav.full = v.int != 0 || v.bool
-            default: break
+            default: setSheetDetentProp(n, nav, p, v)
             }
         case .popover:
             setPopoverProp(n, p, v)
@@ -905,7 +928,7 @@ final class AsukaSheetWindow: NSWindow {
         }
         let w = AsukaSheetWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: style, backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false
-        let content = AsukaView(frame: CGRect(origin: .zero, size: size))
+        let content = AsukaSheetContent(frame: CGRect(origin: .zero, size: size))
         content.autoresizesSubviews = false
         w.contentView = content
         view.frame = CGRect(origin: .zero, size: size)
@@ -919,17 +942,24 @@ final class AsukaSheetWindow: NSWindow {
         // field's focus ring at its corner.
         let begin: () -> Void = { [weak self] in
             guard let self, self.alive(n), !n.dying, n.nav?.window === w else { return }
-            over.window.beginSheet(w, completionHandler: nil)
+            // At a detent no taller than Undimmed's, a panel over the
+            // bottom of its window, which stays usable; else a sheet.
+            if !nav.full && self.wantsPanel(n, over) {
+                self.showPanel(n, over)
+            } else {
+                over.window.beginSheet(w, completionHandler: nil)
+            }
+            self.reportSheetHeight(n)
         }
-        if fitsContent(n) {
-            // It shows at its content's size: the core's first Fit, for the
-            // room reported here or as the window lays out, begins it.
-            nav.begin = begin
-        }
+        // It shows at its content's size: the core's first Fit, for the
+        // room reported here or as the window lays out, begins it (a fit
+        // sheet's, or one at its fit detent).
+        let waitsForFit = fitsContent(n) || (!nav.full && atFitDetent(n) && nav.fitHeight <= 0)
+        if waitsForFit { nav.begin = begin }
         afterCore { [weak self] in
             guard let self, self.alive(n), !n.dying, n.nav?.window === w else { return }
             self.reportScreen(n, size)
-            if !self.fitsContent(n) { begin() }
+            if !waitsForFit { begin() }
         }
     }
 
@@ -1181,10 +1211,17 @@ final class AsukaSheetWindow: NSWindow {
             if let w = nav.window {
                 d["sheetWindow"] = ["visible": w.isVisible, "styleMask": w.styleMask.rawValue,
                                     "content": asukaRectJSON(w.contentView?.bounds ?? .zero), "frame": asukaRectJSON(w.frame),
-                                    "isSheet": w.sheetParent != nil, "parent": w.sheetParent?.title ?? ""] as [String: Any]
+                                    "isSheet": w.sheetParent != nil, "parent": w.sheetParent?.title ?? "",
+                                    "panel": nav.panel, "childOf": w.parent?.title ?? ""] as [String: Any]
                 if let over = onWin(n) {
                     let r = sheetRoom(n, over)
                     d["sheetRoom"] = [Double(r.width), Double(r.height)]
+                    let hs = detentHeights(n, over)
+                    d["detentHeights"] = hs.map { Double($0) }
+                    d["detentAt"] = detentIndex(n, hs)
+                    let large = sheetLarge(over)
+                    d["sheetLarge"] = [Double(large.width), Double(large.height)]
+                    if let c = w.contentView?.layer { d["cornerRadius"] = Double(c.cornerRadius) }
                     d["cover"] = [Double(coverSize(over.window).width), Double(coverSize(over.window).height)]
                 }
             }

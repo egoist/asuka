@@ -126,6 +126,9 @@ wh_wctl *wh_nav_ctl(node *n);
 bool wh_nav_flyout(node *n, ak_flyout *f);
 void wh_nav_min_size(node *n, float out[2]);
 void wh_nav_fitted(node *n, float w, float h);
+// wh_sheet_fit sizes a sheet to its content (WindowAction Fit): its fit
+// detent's height, or, fit its one detent, the sheet's whole size.
+void wh_sheet_fit(node *n, float w, float h);
 void wh_open_window(node *n);
 void wh_close_window(node *n);
 void wh_window_dpi_changed(node *frame, int dpi, const RECT *suggested);
@@ -170,6 +173,7 @@ void wh_cancel_popover(node *n);
 void wh_cancel_alert_dialog(node *n);
 void wh_fit_covers(HWND hwnd);
 void wh_round_covers(HWND hwnd);
+void wh_fit_sheets(HWND owner);
 bool wh_tray_icon_rect(uint32_t id, RECT *r);
 bool wh_snapshotting(void);
 

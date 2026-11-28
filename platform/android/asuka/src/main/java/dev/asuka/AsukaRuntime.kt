@@ -1246,6 +1246,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
                 insertFieldText(n, String(b, Charsets.UTF_8))
             }
             AsukaCommand.PRESENT -> present(n)
+            AsukaCommand.WINDOW_ACTION -> if (n.kind == AsukaKind.SHEET) sheetWindowAction(n, args)
             AsukaCommand.HAPTIC -> if (args.remaining() > 0) haptic(args.get().toInt() and 0xff)
             AsukaCommand.ANIMATE_BEGIN -> beginAnimation(args)
             AsukaCommand.ANIMATE_END -> animation = null

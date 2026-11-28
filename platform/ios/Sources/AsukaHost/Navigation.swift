@@ -114,28 +114,6 @@ class AsukaScreenController: UIViewController {
     }
 }
 
-final class AsukaSheetController: AsukaScreenController, UIAdaptivePresentationControllerDelegate {
-    var detents: Int64 = 0
-    var grabber = false
-    /// SheetProps.FullScreen: presented .fullScreen (SwiftUI's
-    /// fullScreenCover), over everything, its view the screen's: its
-    /// environment is the screen's size and safe area. Nothing but the
-    /// core dismisses it.
-    var fullScreen = false
-
-    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        guard let n = AsukaRuntime.shared.nodes[nodeID], !n.dying else { return }
-        AsukaRuntime.shared.emit(nodeID, .dismissed) { AsukaEvents.dismissed(nodeID) }
-    }
-
-    /// A swipe down or a tap outside while it intercepts (isModalInPresentation): ui.OnBack decides.
-    func presentationControllerDidAttemptToDismiss(_ presentationController: UIPresentationController) {
-        guard let n = AsukaRuntime.shared.nodes[nodeID], !n.dying else { return }
-        let id = nodeID
-        AsukaRuntime.shared.emit(id, .back) { AsukaEvents.back(id) }
-    }
-}
-
 /// A Popover's content: a popover on every size class (an iPhone's too,
 /// as SwiftUI's popover with its compact adaptation turned off), as big as
 /// the core laid its content out, pointing at its anchor.
@@ -614,21 +592,8 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         }
         switch n.kind {
         case .sheet:
-            guard let s = n.vc as? AsukaSheetController, let top = topController else { return }
-            // The style before the presentation controller is first asked
-            // for: it's made for the style it has then.
-            s.modalPresentationStyle = s.fullScreen ? .fullScreen : .automatic
-            #if !os(tvOS) // a TV's sheets cover the screen, without detents
-            if !s.fullScreen, let sheet = s.sheetPresentationController {
-                var ds: [UISheetPresentationController.Detent] = []
-                if s.detents & 1 != 0 { ds.append(.medium()) }
-                if s.detents & 2 != 0 || ds.isEmpty { ds.append(.large()) }
-                sheet.detents = ds
-                sheet.prefersGrabberVisible = s.grabber
-            }
-            #endif
-            s.presentationController?.delegate = s
-            top.present(s, animated: true)
+            guard let s = n.vc as? AsukaSheetController else { return }
+            presentSheet(s) // Sheet.swift
         case .popover:
             guard let p = n.vc as? AsukaPopoverController, let top = topController,
                   let anchor = nodes[p.anchor]?.view, anchor.window != nil else { return }
@@ -807,8 +772,9 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             } : nil
             #endif
         case .sheet, .popover:
-            n.vc?.isModalInPresentation = on
             (n.vc as? AsukaScreenController)?.interceptsBack = on // tvOS's Menu
+            // A sheet that can't be dragged away (NoDismiss) stays so.
+            n.vc?.isModalInPresentation = on || ((n.vc as? AsukaSheetController)?.noDismiss ?? false)
         default:
             if n.id == rootID { rootInterceptsBack = on }
         }
@@ -902,12 +868,10 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         case (.popover, AsukaProp.Popover.height):
             guard let p = n.vc as? AsukaPopoverController else { return }
             p.size.height = CGFloat(v.float)
-        case (.sheet, AsukaProp.Sheet.detents):
-            (n.vc as? AsukaSheetController)?.detents = v.int
-        case (.sheet, AsukaProp.Sheet.grabber):
-            (n.vc as? AsukaSheetController)?.grabber = v.bool
-        case (.sheet, AsukaProp.Sheet.fullScreen):
-            (n.vc as? AsukaSheetController)?.fullScreen = v.bool
+        case (.sheet, AsukaProp.Sheet.detents), (.sheet, AsukaProp.Sheet.detent), (.sheet, AsukaProp.Sheet.undimmed),
+             (.sheet, AsukaProp.Sheet.cornerRadius), (.sheet, AsukaProp.Sheet.grabber), (.sheet, AsukaProp.Sheet.noDismiss),
+             (.sheet, AsukaProp.Sheet.fullScreen):
+            if let s = n.vc as? AsukaSheetController { setSheetProp(s, prop, v) } // Sheet.swift
         case (.alert, AsukaProp.Alert.title):
             n.alertTitle = v.string
         case (.alert, AsukaProp.Alert.message):

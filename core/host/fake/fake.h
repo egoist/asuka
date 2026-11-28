@@ -74,6 +74,8 @@ struct ak_fake_view {
 	bool root;
 	bool presented;  // got Present
 	float fit[2];    // a sheet as tall as its content: its last Fit, width and height
+	uint32_t detent;  // a sheet's: 1 + the index of the detent it's at (0: its shortest), as Detent or the user put it
+	bool detent_moved;  // Detent moved it while it shows: its environment and height are reported after the batch
 	// A List's, as its last ListUpdate had them.
 	AK_VEC(int64_t) items;
 	AK_VEC(ak_fake_section) sections;
@@ -383,8 +385,24 @@ void ak_fake_outside_press(ak_fake *f, ak_fake_view *overlay, double x, double y
 // root.
 void ak_fake_set_environment(ak_fake *f, const ak_environment *e);
 // ak_fake_report_sheet reports a presented sheet's environment as a
-// phone sizes it.
+// phone sizes it, at the detent it's at, and its SheetHeight when the
+// core listens.
 void ak_fake_report_sheet(ak_fake *f, ak_fake_view *sheet);
+// ak_fake_sheet_heights resolves a sheet's Detents as the fake sizes
+// them, into heights (at most max of them; it returns how many there
+// are, 0 for none: large alone): large is the screen under its safe
+// area's top and a 10pt gap, medium half of that, fit its last Fit's
+// height (large before one came), height its points and fraction its
+// share of large, each at most large.
+uint32_t ak_fake_sheet_heights(const ak_fake *f, const ak_fake_view *sheet, float *heights, uint32_t max);
+// ak_fake_sheet_at is the index of the detent a sheet is at: Detent's,
+// else the one the user dragged it to, else its shortest.
+uint32_t ak_fake_sheet_at(const ak_fake *f, const ak_fake_view *sheet);
+// ak_fake_sheet_height is a sheet's height at the detent it's at.
+float ak_fake_sheet_height(const ak_fake *f, const ak_fake_view *sheet);
+// ak_fake_drag_sheet drags a sheet to its detent at index, as the user
+// does: Selected, then its environment and height there.
+void ak_fake_drag_sheet(ak_fake *f, ak_fake_view *sheet, uint32_t index);
 void ak_fake_open_url(ak_fake *f, const char *url);
 // ak_fake_link taps a link of a RichText, as the user does: Link with
 // its URL, to the view.

@@ -113,6 +113,9 @@ import AsukaOps
     @ObservationIgnored var lastEnv: AsukaEnvironment?
     /// A Sheet's FullScreen.
     @ObservationIgnored var fullScreen = false
+    /// A Sheet's NoDismiss: no swipe dismisses it (a watch's sheets
+    /// cover the screen, without detents).
+    @ObservationIgnored var noDismiss = false
 
     /// A List's state.
     @ObservationIgnored var list: AsukaWatchList?

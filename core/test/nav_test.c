@@ -10,6 +10,7 @@
 #include "fuzz.h"
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 
 // ---- Helpers ----
@@ -69,6 +70,58 @@ static ak_view *button(const char *title, ak_invoke_fn press, const void *data) 
 	set_str(b, AK_KEY_BUTTON_TITLE, title);
 	if (press) on(b, AK_EV_BUTTON_PRESS, press, data);
 	return b;
+}
+
+// The prelude's Detent (types.asuka): medium, large, fit, height(float),
+// fraction(float). Its payloadless cases are its shape's singletons.
+static const uint8_t detent_f[] = {AK_K_FLOAT};
+static const ak_case detent_cases[] = {
+    {"medium", 0, NULL, NULL, NULL}, {"large", 0, NULL, NULL, NULL}, {"fit", 0, NULL, NULL, NULL},
+    {"height", 1, detent_f, NULL, NULL}, {"fraction", 1, detent_f, NULL, NULL},
+};
+static ak_shape detent_shape = {"Detent", 0, NULL, NULL, NULL, 5, detent_cases, false, false, NULL, 0, NULL};
+enum { D_MEDIUM, D_LARGE, D_FIT, D_HEIGHT, D_FRACTION };
+
+static ak_val detent(uint16_t c, float v) {
+	ak_enum *e = ak_enum_new(&detent_shape, c);
+	if (c >= D_HEIGHT) e->f[0].f = v;
+	return (ak_val){.p = e};
+}
+
+// detents is a [Detent] of n, given as case, value pairs.
+static ak_arr *detents(uint32_t n, ...) {
+	ak_arr *a = ak_arr_new(AK_K_REF, NULL, n);
+	va_list ap;
+	va_start(ap, n);
+	for (uint32_t i = 0; i < n; i++) {
+		int c = va_arg(ap, int);
+		double v = va_arg(ap, double);
+		ak_arr_push(&a, detent((uint16_t)c, (float)v));
+	}
+	va_end(ap);
+	return a;
+}
+
+// check_detents checks a sheet's Detents: n of them, as case, value
+// pairs.
+static void check_detents(ak_fake_view *sheet, uint32_t n, ...) {
+	ak_span d = ak_fake_string(sheet, AK_PROP_SHEET_DETENTS);
+	uint32_t got = 0;
+	if (d.len >= 4) memcpy(&got, d.p, 4);
+	if (got != n || d.len != 4 + 5 * (size_t)n) {
+		T_FAIL("Detents: %u of %u bytes, want %u", got, (unsigned)d.len, n);
+		return;
+	}
+	va_list ap;
+	va_start(ap, n);
+	for (uint32_t i = 0; i < n; i++) {
+		int c = va_arg(ap, int);
+		double v = va_arg(ap, double);
+		float x;
+		memcpy(&x, d.p + 5 + 5 * i, 4);
+		if ((uint8_t)d.p[4 + 5 * i] != c || x != (float)v) T_FAIL("detent %u is %u(%g), want %d(%g)", i, (uint8_t)d.p[4 + 5 * i], x, c, v);
+	}
+	va_end(ap);
 }
 
 static void *cell_int(int64_t v) { return ak_vm_cell_new((ak_val){.i = v}, AK_K_INT, NULL).p; }
@@ -641,12 +694,7 @@ static ak_val sheet_app(ak_closure *c, ak_val *a, uint32_t n) {
 	on(s, AK_EV_SHEET_CHANGE, write_arg, open_cell);
 	on(s, AK_EV_SHEET_DISMISS, count_up, &dismisses);
 	set_i(s, AK_KEY_SHEET_GRABBER, 1);
-	ak_enum *none[1];
-	AK_UNUSED(none);
-	ak_arr *dets = ak_arr_new(AK_K_INT, NULL, 2);
-	ak_arr_push(&dets, (ak_val){.i = 0});  // medium
-	ak_arr_push(&dets, (ak_val){.i = 1});  // large
-	set(s, AK_KEY_SHEET_DETENTS, (ak_val){.p = dets});
+	set(s, AK_KEY_SHEET_DETENTS, (ak_val){.p = detents(2, D_MEDIUM, 0.0, D_LARGE, 0.0)});
 	lazy(s, sheet_content, NULL);
 	add(col, s);
 	add(col, text("below"));
@@ -665,7 +713,8 @@ TEST(sheet) {
 	ak_ui_flush();
 	ak_fake_view *sheet = nth(a, AK_KIND_SHEET, 0);
 	REQUIRE(sheet && sheet->presented);
-	CHECK_EQ_INT(ak_fake_int(sheet, AK_PROP_SHEET_DETENTS), 3);
+	check_detents(sheet, 2, D_MEDIUM, 0.0, D_LARGE, 0.0);
+	CHECK(!ak_fake_listens(sheet, AK_EVENT_SHEET_HEIGHT));  // no on resize
 	CHECK(ak_fake_bool(sheet, AK_PROP_SHEET_GRABBER));
 	CHECK_EQ_INT(ak_fake_int(sheet, AK_PROP_SHEET_WINDOW), root(a)->id);
 	check_text(sheet, "in the sheet|Done");
@@ -757,9 +806,7 @@ static ak_val fit_app(ak_closure *c, ak_val *a, uint32_t n) {
 	ak_view *col = ak_ui_new(AK_EL_COLUMN);
 	ak_view *s = ak_ui_new(AK_EL_SHEET);
 	bind(s, AK_KEY_SHEET_OPEN, read_cell, open_cell);
-	ak_arr *dets = ak_arr_new(AK_K_INT, NULL, 1);
-	ak_arr_push(&dets, (ak_val){.i = 2});  // fit
-	set(s, AK_KEY_SHEET_DETENTS, (ak_val){.p = dets});
+	set(s, AK_KEY_SHEET_DETENTS, (ak_val){.p = detents(1, D_FIT, 0.0)});
 	lazy(s, fit_content, NULL);
 	add(col, s);
 	return (ak_val){.p = col};
@@ -816,8 +863,8 @@ static void fit_report_room(ak_fake *f, ak_fake_view *sheet, float width) {
 // its narrowest. A view as wide as a sheet keeps a sheet's width, as
 // content of no fixed width does or a view placed out of the flow, and a
 // wider one widens the sheet to it. A sheet as wide as the window (a narrow web page's bottom sheet)
-// keeps its width; on a phone, where a fit sheet is large, no Fit is
-// sent.
+// keeps its width; on a phone, where the sheet rests at a detent of its
+// content's height, its content is measured at the sheet's width.
 TEST(fit_sheet_narrows_to_its_fixed_width_content) {
 	const float room = 390;  // the sheet's room
 	const struct {
@@ -835,7 +882,7 @@ TEST(fit_sheet_narrows_to_its_fixed_width_content) {
 		{0, 0, false, false, 1000, AK_PLATFORM_MACOS, room},                 // no fixed width
 		{195, 0, false, true, 1000, AK_PLATFORM_MACOS, room},                // out of the flow
 		{195, 0, false, false, room, AK_PLATFORM_WEB, room},                 // a bottom sheet
-		{195, 0, false, false, room, AK_PLATFORM_IOS, 0},                    // a phone's
+		{195, 0, false, false, room, AK_PLATFORM_IOS, room},                 // a phone's detent
 	};
 	for (size_t i = 0; i < sizeof cases / sizeof *cases; i++) {
 		fit_wide = false, fit_min_measures = 0;
@@ -869,6 +916,189 @@ TEST(fit_sheet_narrows_to_its_fixed_width_content) {
 	fit_fixed = 0, fit_wrap = false, fit_wrap_pad = 0, fit_absolute = false;
 }
 
+// ---- A sheet's detents: custom heights, the one it's at, undimmed ----
+
+static void *det_cell;    // the detent it's at (bound)
+static void *dets_cell;   // its detents (bound)
+static float heights[16];  // what on resize heard
+static void write_p(void *cell, void *p) { ak_vm_cell_set(cell, (ak_val){.p = p}); }  // takes p
+static int nheights;
+
+static ak_val write_ref(ak_closure *c, ak_val *a, uint32_t n) {
+	if (n > 0) ak_vm_cell_set((void *)c->fn, (ak_val){.p = ak_retain(a[0].p)});
+	return (ak_val){0};
+}
+
+static ak_val record_height(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c);
+	if (n > 0 && nheights < 16) heights[nheights++] = (float)a[0].f;
+	return (ak_val){0};
+}
+
+static ak_val detents_content(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	add(col, text("top"));
+	ak_view *gap = ak_ui_new(AK_EL_VIEW);
+	set(gap, AK_KEY_GROW, (ak_val){.f = 1});
+	add(col, gap);
+	add(col, text("bottom"));
+	return (ak_val){.p = col};
+}
+
+static ak_val detents_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	ak_view *s = ak_ui_new(AK_EL_SHEET);
+	bind(s, AK_KEY_SHEET_OPEN, read_cell, open_cell);
+	bind(s, AK_KEY_SHEET_DETENTS, read_cell, dets_cell);
+	bind(s, AK_KEY_SHEET_DETENT, read_cell, det_cell);
+	on(s, AK_EV_SHEET_DETENT_CHANGE, write_ref, det_cell);
+	on(s, AK_EV_SHEET_RESIZE, record_height, NULL);
+	set(s, AK_KEY_SHEET_UNDIMMED, detent(D_FRACTION, 0.5f));
+	set(s, AK_KEY_SHEET_CORNER_RADIUS, (ak_val){.f = 24});
+	set_i(s, AK_KEY_SHEET_DISMISSIBLE, 0);
+	lazy(s, detents_content, NULL);
+	add(col, s);
+	return (ak_val){.p = col};
+}
+
+// sets is how many times the ops since the last reset set p on id.
+static uint32_t sets(ak_fake *f, ak_id id, ak_prop p) {
+	uint32_t k = 0;
+	for (uint32_t i = 0; i < ak_fake_op_count(f); i++) {
+		ak_op op = ak_fake_op_at(f, i);
+		if (op.code == AK_OP_SET_PROP && op.id == id && op.prop == p) k++;
+	}
+	return k;
+}
+
+static uint16_t cell_detent(float *v) {
+	ak_val d = ak_vm_cell_get(det_cell, false);
+	const ak_enum *e = d.p;
+	uint16_t c = ak_enum_case(e);
+	*v = c >= D_HEIGHT ? (float)e->f[0].f : 0;
+	ak_release(d.p);
+	return c;
+}
+
+// A sheet's detents go to the host in the app's order, custom heights
+// with their values; the detent it's at, the one that doesn't dim, its
+// corners and whether it can be dragged away go with them. The user's
+// drag writes the bound detent (and isn't sent back); the app's setting
+// it moves the sheet there; one that isn't among them changes nothing.
+// on resize hears its height as it moves. Its detents changed while it
+// shows go to it, the detent it's at by its new index.
+TEST(sheet_detents) {
+	setup();
+	open_cell = ak_vm_cell_new((ak_val){.i = 1}, AK_K_BOOL, NULL).p;
+	dets_cell = ak_vm_cell_new((ak_val){.p = detents(3, D_HEIGHT, 200.0, D_FRACTION, 0.5, D_LARGE, 0.0)}, AK_K_REF, NULL).p;
+	det_cell = ak_vm_cell_new(detent(D_FRACTION, 0.5f), AK_K_REF, NULL).p;
+	nheights = 0;
+	ak_uitest *a = mount(detents_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *sheet = nth(a, AK_KIND_SHEET, 0);
+	REQUIRE(sheet && sheet->presented);
+	check_detents(sheet, 3, D_HEIGHT, 200.0, D_FRACTION, 0.5, D_LARGE, 0.0);
+	CHECK_EQ_INT(ak_fake_int(sheet, AK_PROP_SHEET_DETENT), 2);
+	CHECK_EQ_INT(ak_fake_int(sheet, AK_PROP_SHEET_UNDIMMED), 2);
+	CHECK_EQ_F(ak_fake_float(sheet, AK_PROP_SHEET_CORNER_RADIUS), 24);
+	CHECK(ak_fake_bool(sheet, AK_PROP_SHEET_NO_DISMISS));
+	CHECK(!ak_fake_bool(sheet, AK_PROP_SHEET_GRABBER));
+	CHECK(ak_fake_listens(sheet, AK_EVENT_SHEET_HEIGHT));
+	CHECK(ak_fake_listens(sheet, AK_EVENT_SELECTED));
+	// The uitest reported it at its detent: half of large.
+	float large = f->env.height - f->env.safe_top - 10;
+	CHECK_EQ_F(ak_fake_sheet_height(f, sheet), floorf(large * 0.5f));
+	ak_fake_view *bottom = one(a, AK_KIND_TEXT, "bottom");
+	REQUIRE(bottom);
+	CHECK_EQ_F(bottom->frame[1] + bottom->frame[3], floorf(large * 0.5f));
+	REQUIRE(nheights >= 1);
+	CHECK_EQ_F(heights[nheights - 1], floorf(large * 0.5f));
+	// The user drags it to 200 points: the binding hears it, nothing
+	// goes back, its content follows.
+	ak_fake_reset(f);
+	ak_fake_drag_sheet(f, sheet, 0);
+	ak_ui_flush();
+	float v;
+	CHECK_EQ_INT(cell_detent(&v), D_HEIGHT);
+	CHECK_EQ_F(v, 200);
+	CHECK_EQ_INT(sets(f, sheet->id, AK_PROP_SHEET_DETENT), 0);
+	CHECK_EQ_F(heights[nheights - 1], 200);
+	CHECK_EQ_F(bottom->frame[1] + bottom->frame[3], 200);
+	// The app moves it to large.
+	write_p(det_cell, detent(D_LARGE, 0).p);
+	ak_ui_flush();
+	CHECK_EQ_INT(ak_fake_int(sheet, AK_PROP_SHEET_DETENT), 3);
+	ak_fake_run_posted(f);
+	ak_ui_flush();
+	CHECK_EQ_F(heights[nheights - 1], large);
+	CHECK_EQ_F(bottom->frame[1] + bottom->frame[3], large);
+	// A detent that isn't one of them: it stays.
+	ak_fake_reset(f);
+	write_p(det_cell, detent(D_HEIGHT, 999).p);
+	ak_ui_flush();
+	CHECK_EQ_INT(sets(f, sheet->id, AK_PROP_SHEET_DETENT), 0);
+	// Its detents change: large is now the second; the fraction that
+	// didn't dim is gone.
+	write_p(det_cell, detent(D_LARGE, 0).p);
+	write_p(dets_cell, detents(2, D_MEDIUM, 0.0, D_LARGE, 0.0));
+	ak_ui_flush();
+	check_detents(sheet, 2, D_MEDIUM, 0.0, D_LARGE, 0.0);
+	CHECK_EQ_INT(ak_fake_int(sheet, AK_PROP_SHEET_DETENT), 2);
+	CHECK_EQ_INT(ak_fake_int(sheet, AK_PROP_SHEET_UNDIMMED), 0);
+	done(a);
+	ak_release(open_cell), ak_release(dets_cell), ak_release(det_cell);
+}
+
+// ---- A detent of the content's height among others ----
+
+static ak_val fit_large_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	ak_view *s = ak_ui_new(AK_EL_SHEET);
+	bind(s, AK_KEY_SHEET_OPEN, read_cell, open_cell);
+	set(s, AK_KEY_SHEET_DETENTS, (ak_val){.p = detents(2, D_FIT, 0.0, D_LARGE, 0.0)});
+	lazy(s, detents_content, NULL);
+	add(col, s);
+	return (ak_val){.p = col};
+}
+
+// With fit among its detents (on a phone; on a desktop too, unless fit
+// is its only one), a sheet is laid out at the size the host gives it,
+// its content's height measured at its width and sent with Fit: the
+// host's fit detent. At large its content fills it; at fit, the height
+// it measured, its content's own; a change in it is sent again.
+TEST(fit_detent_among_others) {
+	const uint8_t platforms[] = {AK_PLATFORM_IOS, AK_PLATFORM_ANDROID, AK_PLATFORM_MACOS, AK_PLATFORM_WEB};
+	for (size_t i = 0; i < sizeof platforms; i++) {
+		open_cell = ak_vm_cell_new((ak_val){.i = 1}, AK_K_BOOL, NULL).p;
+		setup();
+		ak_closure *c = fn(fit_large_app, NULL);
+		ak_uitest *a = ak_uitest_mount_at(c, NULL, platforms[i], (ak_span){0});
+		ak_release(c);
+		ak_fake *f = ak_uitest_host(a);
+		ak_fake_view *sheet = nth(a, AK_KIND_SHEET, 0);
+		REQUIRE(sheet && sheet->presented);
+		check_detents(sheet, 2, D_FIT, 0.0, D_LARGE, 0.0);
+		// A phone's is reported as it shows (the uitest's); a desktop's
+		// here.
+		if (platforms[i] != AK_PLATFORM_IOS && platforms[i] != AK_PLATFORM_ANDROID) ak_fake_report_sheet(f, sheet);
+		// Its content: two lines of text, 20 points each.
+		if (sheet->fit[0] != f->env.width || sheet->fit[1] != 40) T_FAIL("platform %u: Fit %gx%g", platforms[i], sheet->fit[0], sheet->fit[1]);
+		ak_fake_view *bottom = one(a, AK_KIND_TEXT, "bottom");
+		REQUIRE(bottom);
+		// First reported before its Fit came: large, which it fills.
+		float large = f->env.height - f->env.safe_top - 10;
+		CHECK_EQ_F(bottom->frame[1] + bottom->frame[3], large);
+		// At fit, its shortest.
+		ak_fake_report_sheet(f, sheet);
+		CHECK_EQ_F(ak_fake_sheet_height(f, sheet), 40);
+		CHECK_EQ_F(bottom->frame[1] + bottom->frame[3], 40);
+		done(a);
+		ak_release(open_cell);
+	}
+}
 // ---- A sheet's screen (a Router's sheet route's) ----
 
 static ak_val sheet_screen_content(ak_closure *c, ak_val *a, uint32_t n) {

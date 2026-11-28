@@ -394,10 +394,13 @@ typedef struct ak_prov {
 	ak_node node;  // read: follows the environment
 	ak_lsize laid;  // as last laid out
 	ak_lsize room;  // a fit sheet's, as last laid out
+	ak_lsize fit;   // a measured sheet's content, as last sent with Fit
 	float max_w;    // a fit root's widest (a popover's)
 	bool fits;      // sized to its content: a popover's, an accessory's
 	bool full_width;
-	bool fit_sheet;  // a sheet as tall as its content (Detent fit)
+	bool fit_sheet;  // a sheet as tall as its content (Detent fit alone, on a desktop or the web): laid out at its content's height
+	bool fit_measure;  // a sheet with Detent fit among others, or on a phone: laid out at its size, its content's height measured for the fit detent
+	bool fit_only;   // its one detent is fit
 	bool fit_wait;   // a sheet asking to fit its content waits for its room (its first Environment)
 	bool fit_win;    // a window sized to its content
 	bool fit_sent;
@@ -431,9 +434,13 @@ void ak_root_layout_provs(ak_ui_root *r, ak_lpass *p);
 void ak_overlays_layout_hook(ak_ui_root *r, ak_lpass *p);
 // ak_prov_report sets a provider's environment, reported by the host.
 bool ak_prov_report(ak_id id, const ak_environment *env);
-// ak_fit_sheet_platform reports whether the platform has sheets as tall as
-// their content (Detent fit): macOS's and the web's.
+// ak_fit_sheet_platform reports whether the platform sizes a sheet whose
+// one detent is fit to its content (a desktop's sheet, the web's), where
+// a phone's rests at a detent of its content's height.
 bool ak_fit_sheet_platform(uint8_t platform);
+// ak_prov_fit_mode sets how a sheet's provider fits its content (fit:
+// a detent of it is Detent fit; only: its one detent) on platform.
+void ak_prov_fit_mode(ak_prov *p, bool fit, bool only, uint8_t platform);
 // ak_only_kid is v made to fill its parent, as the one child of a kind
 // that has one (a sheet's, a window's content): wrapped in a View when
 // it makes none of its own.
@@ -509,7 +516,17 @@ ak_view *ak_alert_window(ak_ui_root *r);
 void ak_router_href(ak_view *from, ak_str *href);  // a Button's href, pressed
 bool ak_router_incoming(ak_span url);
 void ak_router_location(ak_view *win, const ak_event *ev);
-ak_view *ak_sheet_present(ak_ui_root *r, ak_owner *owner, ak_closure *build, ak_val *args, uint32_t nargs, int64_t detents, bool grabber, bool full, bool routed, void (*dismissed)(void *ctx), void *ctx);
+// A sheet's options: its keys (a Sheet's, a Route's).
+typedef struct {
+	const ak_arr *detents;  // [Detent], or NULL: large alone
+	ak_val detent;          // the Detent it's at (.p NULL: the shortest)
+	ak_val undimmed;        // the tallest Detent not dimming what's behind (.p NULL: none)
+	float corner;           // its corners' radius (0: the platform's)
+	bool grabber, full, no_dismiss, routed;
+	bool listen_height;     // it reports its height (SheetHeight)
+} ak_sheet_opts;
+ak_view *ak_sheet_present(ak_ui_root *r, ak_owner *owner, ak_closure *build, ak_val *args, uint32_t nargs, const ak_sheet_opts *o,
+                          void (*dismissed)(void *ctx), void *ctx);
 void ak_sheet_close(ak_view *sheet);
 
 // ---- control.c ----

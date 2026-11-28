@@ -140,7 +140,7 @@ func enums() []byte {
 // encodes (canvas ops, paths, window actions) or hears (the error
 // overlay's buttons), SemanticColor, whose cases are Color's, and
 // Haptic, platform/device's.
-var skipEnum = map[string]bool{"Haptic": true, "PathOp": true, "CanvasOp": true, "WindowAction": true, "LocationAction": true, "DevErrorAction": true, "VideoAction": true, "SemanticColor": true}
+var skipEnum = map[string]bool{"Haptic": true, "PathOp": true, "CanvasOp": true, "WindowAction": true, "LocationAction": true, "DevErrorAction": true, "VideoAction": true, "SemanticColor": true, "DetentKind": true}
 
 var renameEnum = map[string]string{"Placement": "PopoverPlacement", "A11yChecked": "Checked", "A11yExpanded": "Expanded"}
 
@@ -221,7 +221,7 @@ func readEnums(path string) {
 // enumTypes are types.asuka's payloadless enums (readEnums finds them).
 var enumTypes = map[string]bool{
 	"Axis": true, "Justify": true, "Align": true, "Platform": true, "SizeClass": true, "TextAlign": true, "Role": true, "Material": true,
-	"ButtonVariant": true, "Keyboard": true, "TextStyle": true, "FontWeight": true, "Detent": true, "RouteLayout": true,
+	"ButtonVariant": true, "Keyboard": true, "TextStyle": true, "FontWeight": true, "RouteLayout": true,
 }
 
 func header() []byte {

@@ -234,6 +234,7 @@ struct AsukaSheets: ViewModifier {
             if let s = sheet {
                 AsukaProvider(node: s)
                     .modifier(AsukaSheets(level: level + 1))
+                    .interactiveDismissDisabled(s.noDismiss)
             }
         }
     }

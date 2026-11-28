@@ -155,7 +155,7 @@ static void escape(void) {
 	if (lx_dev_error_escape()) return;
 	find_ctx c = {0};
 	lx_each_node(sheet_or_alert, &c);
-	if (c.found) adw_dialog_close(c.found->nav->dialog);
+	if (c.found && !(c.found->kind == AK_KIND_SHEET && lx_sheet_escape(c.found))) adw_dialog_close(c.found->nav->dialog);
 }
 
 typedef struct {
@@ -649,6 +649,7 @@ void lx_dump_node(node *n, int depth, ak_buf *b) {
 	if (n->hidden) ak_buf_put(b, " hidden", 7);
 	if (n->widget && !gtk_widget_get_mapped(n->widget)) ak_buf_put(b, " unmapped", 9);
 	if (n->rtl) ak_buf_put(b, " rtl", 4);
+	if (n->kind == AK_KIND_SHEET) lx_sheet_dump(n, b);  // its size, its detent, a panel
 	// The keyboard's focus, as GTK has it.
 	if (n->focusable) ak_buf_put(b, " focusable", 10);
 	if (n->focus_trap) ak_buf_put(b, " trap", 5);

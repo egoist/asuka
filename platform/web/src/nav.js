@@ -13,8 +13,13 @@
 //     to its icon as the screen's content scrolls down.
 //   - Tabs are a bar of tabs at the bottom, the selected page above it.
 //   - A Sheet is a modal <dialog> (the top layer: what's under it is
-//     inert): a bottom sheet on a narrow window, a centered card on a
-//     wide one. Escape, a click outside or a swipe down dismisses it. A
+//     inert): a bottom sheet on a narrow window, which the user drags
+//     between its detents (sheet.js), a centered card on a wide one, as
+//     tall as the detent it's at. Escape, a click outside or a swipe down
+//     dismisses it (NoDismiss: Escape alone). One with Undimmed is a
+//     non-modal <dialog> (show()): at that detent or lower what's behind
+//     it is neither dimmed nor inert, and above it a backdrop of its own
+//     fades in and the page goes inert, as Apple Maps' sheet. A
 //     FullScreen one covers the whole page (a Window's panel's content,
 //     for one declared in a Window), sliding up; only Escape (or going
 //     back) dismisses it.
@@ -43,7 +48,7 @@
 // Screens, sheets, popovers and windows are sized by the host, which
 // reports each one's Environment.
 
-import { Kind, KindProp as P, Event, Events, Command, Reader, TitleBar, WindowAction, environment as newEnv } from "./ops.js";
+import { Kind, KindProp as P, Event, Events, Command, Reader, TitleBar, WindowAction, DetentKind, environment as newEnv } from "./ops.js";
 import { Flag, place, center, trayAnchor, focusIn, transient } from "./window.js";
 import { own, autocomplete, inputModes } from "./views.js";
 import { decodeAlertFields, fieldChanged, AlertFieldFlags } from "./alertfields.js";
@@ -55,6 +60,7 @@ import { decodeSidebar, sameShape, badgeNumber } from "./sidebar.js";
 import * as text from "./text.js";
 import { snackbarKind, presentSnackbar, placeSnackbar } from "./snackbar.js";
 import { RouteHistory, decodeLocation, encodeLocationEvent } from "./history.js";
+import { decodeDetents, resolveHeights, shortest, tallest, fitsOnly, hasFit, settle, dimming, shownHeight } from "./sheet.js";
 import "./doubleclick.js"; // a double-click's second press on what its first opened
 
 const headerHeight = 52;
@@ -97,6 +103,27 @@ function onBackdropPress(d, f) {
     down = false;
     if (e.target === d && pressed) f();
   });
+}
+
+/** onScrimPress runs f on a click on a non-modal sheet's backdrop while it dims (it takes presses only then). */
+function onScrimPress(el, f) {
+  el.addEventListener("click", (e) => { if (e.target === el && el.classList.contains("asuka-dimming")) f(); });
+}
+
+/**
+ * draggableFrom reports whether a press at el drags the sheet dialog d
+ * it's in, once it moves: not one on a field, nor in a view that
+ * scrolls up and down, which takes the drag itself.
+ */
+function draggableFrom(el, d) {
+  for (let x = el; x && x !== d; x = x.parentElement) {
+    if (x.matches?.("input, textarea, select, [contenteditable=''], [contenteditable='true']")) return false;
+    if (x.scrollHeight > x.clientHeight + 1) {
+      const o = getComputedStyle(x).overflowY;
+      if (o === "auto" || o === "scroll") return false;
+    }
+  }
+  return true;
 }
 
 export class Navigation {
@@ -582,25 +609,32 @@ export class Navigation {
     d.className = n.fullScreen ? "asuka-sheet-dialog asuka-full-screen" : "asuka-sheet-dialog";
     this.h.container.appendChild(d);
     d.appendChild(n.el);
-    if (n.grabber && !n.fullScreen) {
-      const g = div("asuka-grabber");
-      d.appendChild(g);
-      this.swipeDown(n, g);
-    }
     n.dialog = d;
     n.shown = true;
+    n.heightSent = undefined;
     this.dialogs.push(n);
+    this.updateGrabber(n);
+    this.styleCorners(n);
     d.addEventListener("cancel", (e) => { e.preventDefault(); this.dismiss(n); });
-    onBackdropPress(d, () => { if (!n.fullScreen) this.dismiss(n); });
-    d.showModal();
+    // A non-modal one gets no cancel: Escape in it dismisses it.
+    d.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented || d.matches(":modal") || e.target.closest?.("input, textarea")) return;
+      e.preventDefault();
+      this.dismiss(n);
+    });
+    onBackdropPress(d, () => { if (!n.fullScreen && !n.noDismiss) this.dismiss(n); });
+    if (!n.fullScreen) this.dragSheet(n);
+    this.openDialog(n);
     this.sizeDialog(n);
     const wide = this.wide() && !n.fullScreen;
     const begin = () => {
+      n.begun = true;
       if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        d.animate(wide ? [{ opacity: 0, transform: "scale(0.96)" }, { opacity: 1, transform: "none" }] : [{ transform: "translateY(100%)" }, { transform: "none" }], { duration: 300, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
-      }
+        const a = d.animate(wide ? [{ opacity: 0, transform: "scale(0.96)" }, { opacity: 1, transform: "none" }] : [{ transform: "translateY(100%)" }, { transform: "none" }], { duration: 300, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
+        this.trackSheet(n, a);
+      } else this.sheetMoved(n);
     };
-    if (this.fitsContent(n)) {
+    if (this.fitsContent(n) || this.waitsForFit(n)) {
       // It shows at its content's size: the core's first Fit, for the
       // room reported as it was sized, begins it (fitSheet). The core
       // answers that report before anything queued after it, so a sheet
@@ -614,20 +648,56 @@ export class Navigation {
     this.updateGuard();
   }
 
-  /** fitsContent reports whether n is a sheet as tall as its content (DetentFit), which the core sizes. */
-  fitsContent(n) { return n.kind === Kind.Sheet && (n.detents & 4) !== 0 && !n.fullScreen; }
+  /**
+   * openDialog shows a sheet's dialog: modal, unless it has a detent that
+   * doesn't dim (Undimmed), when it's non-modal and its own backdrop
+   * (dimSheet) dims and blocks what's behind it above that detent.
+   */
+  openDialog(n) {
+    const d = n.dialog;
+    const modeless = !n.fullScreen && n.undimmed >= 0;
+    if (d.open && d.matches(":modal") === !modeless) return;
+    if (d.open) d.close();
+    d.classList.toggle("asuka-modeless", modeless);
+    if (modeless) {
+      if (!n.scrim) {
+        n.scrim = div("asuka-sheet-scrim");
+        onScrimPress(n.scrim, () => { if (!n.noDismiss) this.dismiss(n); });
+      }
+      d.before(n.scrim);
+      d.show();
+    } else {
+      this.undim(n);
+      n.scrim?.remove();
+      n.scrim = null;
+      d.showModal();
+    }
+  }
+
+  /** fitsContent reports whether n is a sheet whose one detent is fit: as tall as its content, which the core sizes. */
+  fitsContent(n) { return n.kind === Kind.Sheet && fitsOnly(n.detents) && !n.fullScreen; }
+
+  /** waitsForFit reports whether a sheet opens at a detent of its content's height (among others), which the core's Fit gives. */
+  waitsForFit(n) {
+    if (n.fullScreen || !hasFit(n.detents) || n.fit) return false;
+    const c = this.h.container.getBoundingClientRect();
+    const hs = resolveHeights(n.detents, { ...this.sheetRoom(n, c), fit: 1 }); // its content's height, the shortest it may be
+    return n.detents[this.sheetAt(n, hs)]?.kind === DetentKind.Fit;
+  }
 
   /**
-   * fitSheet sizes a sheet as tall as its content to the size the core
-   * laid it out at (WindowAction Fit: its width and height), and shows
-   * it the first time.
+   * fitSheet takes a sheet's content's size the core laid it out at
+   * (WindowAction Fit: its width and height): a sheet as tall as its
+   * content is sized to it, and a fit detent among others is that tall;
+   * it shows the sheet the first time.
    */
   fitSheet(n, args) {
     if (args.length < 9 || args[0] !== WindowAction.Fit) return;
     const v = new DataView(args.buffer, args.byteOffset, args.byteLength);
     const w = v.getFloat32(1, true), h = v.getFloat32(5, true);
     if (w > 0 && h > 0) n.fit = [w, h];
-    this.sizeDialog(n);
+    if (n.begin || !n.begun) this.sizeDialog(n);
+    else this.moveSheet(n);
     this.showSheet(n);
   }
 
@@ -640,11 +710,265 @@ export class Navigation {
     begin();
   }
 
+  /**
+   * sheetRoom is how a sheet n is shown in the container's rectangle c:
+   * its mode (a bottom sheet, a card over the page, a card over a
+   * Window's panel), its width, and its large and medium detents'
+   * heights; fit, its content's height (0: not known yet).
+   */
+  sheetRoom(n, c) {
+    const fit = n.fit ? n.fit[1] : 0;
+    const w0 = this.panelOf(n);
+    if (w0) {
+      // A card over the panel's content, as a desktop's sheet over its window.
+      const a = this.panelArea(w0, c);
+      const large = Math.min(Math.max(a.h - 40, 200), c.height - 16);
+      return { mode: "panel", area: a, w: Math.min(Math.max(a.w - 40, 280), c.width - 16), large, medium: Math.min(Math.max(a.h / 2, 200), large), fit };
+    }
+    if (this.wide()) {
+      // A card over a wide window, as iPad's form sheets.
+      return { mode: "card", w: Math.min(c.width - 80, 560), large: Math.min(c.height - 80, 720), medium: Math.min(Math.max(c.height / 2, 320), c.height - 80), fit };
+    }
+    const large = c.height - (this.h.safeArea()[0] + 10);
+    return { mode: "bottom", w: c.width, large, medium: Math.min(Math.max(c.height / 2, 300), large), fit };
+  }
+
+  /** sheetAt is the index of the detent sheet n is at, of its heights hs: Detent's or the user's, else the shortest. */
+  sheetAt(n, hs) { return n.at >= 0 && n.at < hs.length ? n.at : shortest(hs); }
+
+  /** sheetHeights is sheet n's detents' heights now. */
+  sheetHeights(n) {
+    const c = this.h.container.getBoundingClientRect();
+    return resolveHeights(n.detents, this.sheetRoom(n, c));
+  }
+
+  /** atDetent records that the user moved sheet n to detent i (Selected, when it's another). */
+  atDetent(n, i, hs) {
+    if (i === this.sheetAt(n, hs) && n.at >= 0) return;
+    const was = this.sheetAt(n, hs);
+    n.at = i;
+    if (i !== was) this.h.emit(n, Event.Selected, (id) => Events.selected(id, i));
+  }
+
+  /** updateGrabber shows a sheet's grabber, at its top, while it has one. */
+  updateGrabber(n) {
+    const d = n.dialog;
+    if (!d) return;
+    const want = n.grabber && !n.fullScreen;
+    if (want && !n.grabberEl) {
+      n.grabberEl = div("asuka-grabber");
+      d.appendChild(n.grabberEl);
+    } else if (!want && n.grabberEl) {
+      n.grabberEl.remove();
+      n.grabberEl = null;
+    }
+  }
+
+  /** styleCorners rounds a sheet's corners: CornerRadius, else the style sheet's. */
+  styleCorners(n) {
+    const d = n.dialog;
+    if (!d) return;
+    const r = n.corner > 0 && !n.fullScreen ? n.corner : 0;
+    if (!r) d.style.borderRadius = "";
+    else d.style.borderRadius = d.classList.contains("asuka-wide") || d.classList.contains("asuka-on-window") ? `${r}px` : `${r}px ${r}px 0 0`;
+  }
+
+  /** sheetChanged applies, once the core's batch is done, what changed in a shown sheet's detents. */
+  sheetChanged(n) {
+    if (!n.shown || n.changing) return;
+    n.changing = true;
+    this.h.afterCore(() => {
+      n.changing = false;
+      if (!n.shown || !n.dialog) return;
+      this.openDialog(n);
+      this.moveSheet(n);
+    });
+  }
+
+  /**
+   * moveSheet sizes a shown sheet again (its detents, the detent it's at,
+   * its Fit changed), its height animated from what it shows (from, else
+   * its height now) to its new one, its content laid out at the new one
+   * at once, as iOS's sheets do.
+   */
+  moveSheet(n, from) {
+    const d = n.dialog;
+    if (!d || !n.shown || n.fullScreen || n.drag) return;
+    if (from === undefined) from = d.getBoundingClientRect().height;
+    n.anim?.cancel();
+    n.anim = null;
+    d.style.translate = "";
+    this.sizeDialog(n);
+    const to = parseFloat(d.style.height) || from;
+    if (!n.begun || Math.abs(to - from) < 0.5 || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      this.sheetMoved(n);
+      return;
+    }
+    const a = d.animate([{ height: from + "px" }, { height: to + "px" }], { duration: 320, easing: "cubic-bezier(0.2, 0.9, 0.25, 1)" });
+    n.anim = a;
+    const end = () => { if (n.anim === a) n.anim = null; };
+    a.onfinish = end;
+    a.oncancel = end;
+    this.trackSheet(n, a);
+  }
+
+  /** trackSheet follows a sheet's animation frame by frame: its height (SheetHeight) and its backdrop. */
+  trackSheet(n, a) {
+    const step = () => {
+      if (!n.dialog) return;
+      this.sheetMoved(n);
+      if (a.playState === "running" || a.playState === "pending") requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+    a.finished.then(() => this.sheetMoved(n), () => {});
+  }
+
+  /**
+   * sheetMoved reports a sheet's height on the screen (SheetHeight, when
+   * the core listens: sheet.js's shownHeight), and dims what's behind a
+   * non-modal one as much as its height asks.
+   */
+  sheetMoved(n) {
+    const d = n.dialog;
+    if (!d) return;
+    const c = this.h.container.getBoundingClientRect(), r = d.getBoundingClientRect();
+    const h = shownHeight(!d.classList.contains("asuka-wide"), r, c.bottom);
+    if (n.scrim) this.dimSheet(n, r.height);
+    if (h === n.heightSent || !n.listening(Event.SheetHeight)) return;
+    n.heightSent = h;
+    this.h.dispatch(Events.sheetHeight(n.id, h));
+  }
+
+  /**
+   * dimSheet dims what's behind a non-modal sheet shown h points tall: its
+   * backdrop's opacity; dimmed, the page behind is inert and the backdrop
+   * takes presses, as a modal sheet's.
+   */
+  dimSheet(n, h) {
+    const k = dimming(this.sheetHeights(n), n.undimmed, h);
+    n.scrim.style.opacity = String(k);
+    const dim = k > 0.01;
+    n.scrim.classList.toggle("asuka-dimming", dim);
+    if (dim === !!n.inerted) return;
+    if (!dim) return this.undim(n);
+    n.inerted = [];
+    for (const el of this.h.container.children) {
+      if (el === n.dialog || el === n.scrim || el.tagName === "DIALOG" || el.inert) continue;
+      el.inert = true;
+      n.inerted.push(el);
+    }
+    if (!n.dialog.contains(document.activeElement)) n.dialog.focus({ preventScroll: true });
+  }
+
+  /** undim gives the page behind a non-modal sheet back. */
+  undim(n) {
+    for (const el of n.inerted || []) el.inert = false;
+    n.inerted = null;
+  }
+
+  /**
+   * dragSheet lets the user drag a bottom sheet between its detents: by
+   * its grabber, or anywhere on it that doesn't scroll or take text, once
+   * the press has moved up or down. It follows the finger, rubber-banding
+   * past its tallest detent and sliding down past its shortest; let go,
+   * it settles at the detent its velocity carries it to (sheet.js), or is
+   * dismissed, unless NoDismiss.
+   */
+  dragSheet(n) {
+    const d = n.dialog;
+    let p = null; // the press: pointer, y0, x0, height at its start, samples
+    const height = (y) => {
+      const dy = p.y0 - y;
+      const hs = this.sheetHeights(n);
+      const top = hs[tallest(hs)];
+      let v = p.h + dy;
+      if (v > top) v = top + (v - top) * 0.25; // past the tallest: it resists
+      return v;
+    };
+    const show = (v) => {
+      const hs = this.sheetHeights(n);
+      const low = hs[shortest(hs)];
+      // Taller than its shortest: as tall as that; shorter: its shortest,
+      // slid down.
+      const h = Math.max(v, Math.min(low, p.h));
+      d.style.height = h + "px";
+      d.style.translate = h > v ? `0 ${h - v}px` : "";
+      this.sheetMoved(n);
+    };
+    d.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || this.wide() || this.panelOf(n) || n.fullScreen || !e.isPrimary) return;
+      const onGrabber = n.grabberEl && (e.target === n.grabberEl);
+      if (!onGrabber && !draggableFrom(e.target, d)) return;
+      p = { id: e.pointerId, y0: e.clientY, x0: e.clientX, h: d.getBoundingClientRect().height, moving: onGrabber, samples: [[e.timeStamp, e.clientY]] };
+      if (onGrabber) this.beginDrag(n, e, p);
+    });
+    d.addEventListener("pointermove", (e) => {
+      if (!p || e.pointerId !== p.id) return;
+      if (!p.moving) {
+        const dy = e.clientY - p.y0, dx = e.clientX - p.x0;
+        if (Math.abs(dy) < 6 || Math.abs(dy) < Math.abs(dx)) {
+          if (Math.abs(dx) > 10) p = null; // a horizontal swipe: not the sheet's
+          return;
+        }
+        p.moving = true;
+        this.beginDrag(n, e, p);
+      }
+      p.samples.push([e.timeStamp, e.clientY]);
+      if (p.samples.length > 6) p.samples.shift();
+      show(height(e.clientY));
+    });
+    const up = (e) => {
+      if (!p || e.pointerId !== p.id) return;
+      const q = p;
+      p = null;
+      if (!q.moving) return;
+      n.drag = false;
+      // Its velocity, points a millisecond, up positive: over the last
+      // tenth of a second of samples.
+      let v = 0;
+      const last = q.samples[q.samples.length - 1];
+      for (const s of q.samples) {
+        if (last[0] - s[0] <= 100 && last[0] > s[0]) { v = (s[1] - last[1]) / (last[0] - s[0]); break; }
+      }
+      if (e.type === "pointercancel") v = 0;
+      const now = d.getBoundingClientRect().height - (parseFloat(d.style.translate?.split(" ")[1]) || 0);
+      const hs = this.sheetHeights(n);
+      const i = settle(hs, now, v, !n.noDismiss);
+      // A click that ends a drag isn't one.
+      const eat = (c) => { c.stopPropagation(); c.preventDefault(); };
+      addEventListener("click", eat, { capture: true, once: true });
+      setTimeout(() => removeEventListener("click", eat, true), 0);
+      if (i < 0) {
+        this.dismiss(n);
+        // Its onBack decides: meanwhile it goes back to where it was.
+        if (n.interceptBack) this.moveSheet(n, now);
+        return;
+      }
+      this.atDetent(n, i, hs);
+      this.moveSheet(n, now);
+    };
+    d.addEventListener("pointerup", up);
+    d.addEventListener("pointercancel", up);
+  }
+
+  /** beginDrag starts dragging sheet n: the press is the sheet's, any animation of it stops where it is. */
+  beginDrag(n, e, p) {
+    const d = n.dialog;
+    try { d.setPointerCapture(e.pointerId); } catch {}
+    if (n.anim) {
+      p.h = d.getBoundingClientRect().height;
+      n.anim.cancel();
+      n.anim = null;
+    }
+    d.style.height = p.h + "px";
+    n.drag = true;
+  }
+
   sizeDialog(n) {
     const c = this.h.container.getBoundingClientRect();
     const d = n.dialog;
     if (!d) return;
-    let w, h;
+    let w, h, room;
     if (n.kind === Kind.Window) {
       const wn = n.win;
       if (wn.flyout) this.placeFlyout(n, c);
@@ -667,42 +991,35 @@ export class Navigation {
       h = a.h;
       d.style.left = a.x + "px";
       d.style.top = a.y + "px";
-    } else if ((n.kind === Kind.Sheet) && this.panelOf(n)) {
-      // A sheet of a Window's panel: a card over the panel's content,
-      // as a desktop's sheet over its window.
-      const a = this.panelArea(this.panelOf(n), c);
-      d.classList.add("asuka-wide", "asuka-on-window");
-      w = Math.min(Math.max(a.w - 40, 280), c.width - 16);
-      h = Math.min(n.detents === 1 ? Math.max(a.h / 2, 200) : Math.max(a.h - 40, 200), c.height - 16);
-      this.placeOver(d, a, w, h, c);
-    } else {
-      const wide = this.wide();
-      d.classList.remove("asuka-on-window");
-      d.style.left = d.style.top = "";
-      d.classList.toggle("asuka-wide", wide);
-      // It opens at its smallest detent, as iOS's sheets do; the keyboard expands it.
-      const medium = (n.detents & 1) !== 0 && !n.expanded;
-      if (wide) {
-        w = Math.min(c.width - 80, 560);
-        // A card over a wide window, as iPad's form sheets: half height only for a medium-only sheet.
-        h = Math.min(c.height - 80, n.detents === 1 ? Math.max(c.height / 2, 320) : 720);
-      } else {
-        w = c.width;
-        const top = this.h.safeArea()[0] + 10;
-        h = medium ? Math.max(c.height / 2, 300) : c.height - top;
-        if (medium && (this.h.env().keyboard || n.el.contains(document.activeElement) && matchMedia("(pointer: coarse)").matches)) {
-          n.expanded = true;
-          h = c.height - top;
-        }
+    } else if (n.kind === Kind.Sheet) {
+      if (n.drag) return; // the user's finger has it: sized as it lets go
+      const r = this.sheetRoom(n, c);
+      d.classList.toggle("asuka-on-window", r.mode === "panel");
+      d.classList.toggle("asuka-wide", r.mode !== "bottom");
+      if (r.mode !== "panel") d.style.left = d.style.top = "";
+      const hs = resolveHeights(n.detents, r);
+      let at = this.sheetAt(n, hs);
+      // The keyboard takes a bottom sheet to its tallest detent, as iOS's.
+      if (r.mode === "bottom" && hs[tallest(hs)] > hs[at] && (this.h.env().keyboard || n.el.contains(document.activeElement) && matchMedia("(pointer: coarse)").matches)) {
+        this.atDetent(n, tallest(hs), hs);
+        at = tallest(hs);
       }
+      w = r.w;
+      h = hs[at];
+      // A sheet as tall as its content is as big as the core laid it
+      // out (fitSheet), its room what it reports: what the core fits it
+      // in. Any other is laid out at its detent's height.
+      if (this.fitsContent(n)) {
+        room = [w, r.large];
+        if (n.fit) {
+          w = Math.min(n.fit[0], c.width);
+          h = Math.min(n.fit[1], r.large);
+        } else h = r.large;
+      }
+      if (r.mode === "panel") this.placeOver(d, r.area, w, h, c);
+      this.styleCorners(n);
     }
-    // A sheet as tall as its content is as big as the core laid it out
-    // (fitSheet), its room what it reports: what the core fits it in.
-    const room = [w, h];
-    if (n.fit && this.fitsContent(n)) {
-      w = Math.min(n.fit[0], c.width);
-      h = Math.min(n.fit[1], h);
-    }
+    if (!room) room = [w, h];
     d.style.width = w + "px";
     d.style.height = h + "px";
     const s = n.el.style;
@@ -716,6 +1033,7 @@ export class Navigation {
     n.placed = true;
     this.report(n, room[0], room[1] - top, n.el, n.kind === Kind.Window ? n.win.safeTop : 0);
     this.h.overlays?.changed();
+    if (n.kind === Kind.Sheet && !n.anim) this.sheetMoved(n);
     if (n.kind === Kind.Window) {
       this.h.windows.report(n);
       // Its sheets and alerts go with it.
@@ -780,6 +1098,18 @@ export class Navigation {
     if (!d) return;
     n.shown = false;
     n.dialog = null;
+    n.anim?.cancel();
+    n.anim = null;
+    n.drag = false;
+    n.begun = false;
+    n.grabberEl = null;
+    if (n.scrim) {
+      this.undim(n);
+      const scrim = n.scrim;
+      n.scrim = null;
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) scrim.remove();
+      else scrim.animate([{ opacity: scrim.style.opacity || 0 }, { opacity: 0 }], { duration: 220, fill: "forwards" }).onfinish = () => scrim.remove();
+    }
     this.dialogs = this.dialogs.filter((x) => x !== n);
     d.classList.add("asuka-exiting");
     const done = () => { d.close(); d.remove(); };
@@ -789,27 +1119,6 @@ export class Navigation {
       d.animate(wide ? [{ opacity: 1 }, { opacity: 0 }] : [{ transform: "none" }, { transform: "translateY(100%)" }], { duration: 220, easing: "ease-in", fill: "forwards" }).onfinish = done;
     }
     this.updateGuard();
-  }
-
-  swipeDown(n, handle) {
-    let y0 = null;
-    handle.addEventListener("pointerdown", (e) => { y0 = e.clientY; handle.setPointerCapture(e.pointerId); });
-    handle.addEventListener("pointermove", (e) => {
-      if (y0 == null || !n.dialog) return;
-      n.dialog.style.translate = `0 ${Math.max(0, e.clientY - y0)}px`;
-    });
-    handle.addEventListener("pointerup", (e) => {
-      if (y0 == null) return;
-      const dy = e.clientY - y0;
-      y0 = null;
-      if (n.dialog) n.dialog.style.translate = "";
-      if (dy > 80) this.dismiss(n);
-      else if (dy < -60 && n.detents & 2 && !n.expanded) {
-        // Pulled up from medium: large.
-        n.expanded = true;
-        this.sizeDialog(n);
-      }
-    });
   }
 
   presentAlert(n) {
@@ -1336,7 +1645,7 @@ export class Navigation {
     if (!this.h.options.fullPage && !this.h.container.contains(e.target)) return;
     const mac = /Mac|iPhone|iPad/.test(navigator.platform);
     const backKey = (e.altKey && e.key === "ArrowLeft" && !mac) || (e.metaKey && e.key === "[" && mac) || e.key === "BrowserBack";
-    const escape = e.key === "Escape" && !this.dialogs.some((d) => d.dialog?.tagName === "DIALOG" || d.kind === Kind.Popover);
+    const escape = e.key === "Escape" && !this.dialogs.some((d) => d.dialog?.matches?.(":modal") || d.kind === Kind.Popover);
     // A flyout or a panel with the keyboard closes as the user closes it,
     // from a text field in it too (a launcher's), unless a stack in it
     // goes back.
@@ -1475,7 +1784,7 @@ export class Navigation {
   }
 
   fieldFocused(n, on) {
-    if (on) for (const d of this.dialogs) if (d.kind === Kind.Sheet && d.el.contains(n.el) && !d.expanded) this.h.afterCore(() => this.sizeDialog(d));
+    if (on) for (const d of this.dialogs) if (d.kind === Kind.Sheet && d.el.contains(n.el) && !d.fullScreen) this.h.afterCore(() => this.moveSheet(d));
     if (n.accessory) {
       const a = this.h.nodes.get(n.accessory);
       if (a) showAccessory(this.h, a, on);
@@ -1751,14 +2060,23 @@ const tabs = {
 const sheet = {
   create(h, n) {
     own(n, div("asuka-sheet"));
-    n.detents = 0;
+    n.detents = [];
+    n.at = -1; // the detent it's at (Detent, or where the user left it): -1, its shortest
+    n.undimmed = -1; // the tallest detent that doesn't dim: -1, none
+    n.corner = 0;
   },
   prop(h, n, p, v) {
-    if (p === P.Sheet.Detents) n.detents = v;
-    if (p === P.Sheet.Grabber) n.grabber = !!v;
-    if (p === P.Sheet.Window) n.winID = v; // the window it's declared in: the root's, a Window's
-    if (p === P.Sheet.FullScreen) n.fullScreen = !!v; // before Present
-    if (p === P.Sheet.Routed) n.routed = !!v; // a Router's: the history goes back from it
+    switch (p) {
+      case P.Sheet.Detents: n.detents = decodeDetents(v); h.nav.sheetChanged(n); break;
+      case P.Sheet.Detent: n.at = Number(v) - 1; h.nav.sheetChanged(n); break;
+      case P.Sheet.Undimmed: n.undimmed = Number(v) - 1; h.nav.sheetChanged(n); break;
+      case P.Sheet.CornerRadius: n.corner = v; h.nav.styleCorners(n); break;
+      case P.Sheet.NoDismiss: n.noDismiss = !!v; break;
+      case P.Sheet.Grabber: n.grabber = !!v; h.nav.updateGrabber(n); break;
+      case P.Sheet.Window: n.winID = v; break; // the window it's declared in: the root's, a Window's
+      case P.Sheet.FullScreen: n.fullScreen = !!v; break; // before Present
+      case P.Sheet.Routed: n.routed = !!v; break; // a Router's: the history goes back from it
+    }
   },
   frame() { return true; },
   destroy(h, n) {

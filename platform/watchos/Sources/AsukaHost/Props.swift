@@ -77,6 +77,7 @@ import AsukaOps
             if prop == AsukaProp.Tabs.selected { n.selected = Int(v.int) }
         case .sheet:
             if prop == AsukaProp.Sheet.fullScreen { n.fullScreen = v.bool }
+            if prop == AsukaProp.Sheet.noDismiss { n.noDismiss = v.bool }
         case .alert:
             switch prop {
             case AsukaProp.Alert.title: n.title = v.string

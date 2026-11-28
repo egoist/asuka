@@ -851,19 +851,31 @@ native component Tab(title: string) {
   prop badge: string
 }
 
-/// content in a modal sheet while open: built as it opens, disposed as it closes. It takes no room where it's declared
+/// content in a sheet while open: built as it opens, disposed as it closes. It takes no room where it's declared
 native component Sheet() {
   prop children: View? = none
   /// shows the sheet while true; the user dismissing it writes false
   prop open: bool
-  /// the heights it rests at ([]: large)
+  /// the heights it rests at, in any order ([]: large)
   prop detents: [Detent]
+  /// the detent it's at: the user's dragging writes it, and writing it moves the sheet there. Unset, or not one of detents: it opens at the shortest
+  prop detent: Detent
+  /// the tallest detent at which what's behind it isn't dimmed and can still be used, as Apple Maps' sheet (one of detents); none: modal at every detent
+  prop undimmed: Detent?
+  /// the handle at its top
   prop grabber: bool
+  /// its top corners' radius (0: the platform's)
+  prop cornerRadius: float
+  /// false: dragging it down or tapping outside doesn't dismiss it (Android's back and Escape still do)
+  prop dismissible: bool = true
   /// covers the screen; the user can't swipe it away
   prop fullScreen: bool
   event change(open: bool)
   /// the user dismissed it
   event dismiss
+  event detentChange(detent: Detent)
+  /// its height on the screen changed (points from the window's bottom), frame by frame as it's dragged and settles: for what follows its top edge
+  event resize(height: float)
 }
 
 /// an alert while open: its block's Buttons are its buttons (their title, icon, role and disabled; a cancel one's press runs as it's dismissed too), its TextFields its fields (placeholder, bind text, secure, keyboard, contentType). It takes no room where it's declared; with no Button, it has an OK
@@ -1035,7 +1047,7 @@ native component Router(initial: string = "/") {
 }
 
 /// maps a path to a screen, or holds routes: Route("/inbox", layout: .stack, title: "Inbox") { Inbox; Thread; Route(":id/reply", sheet: true) { p => Reply(id: p.get("id")) } }. Its block holds its child Routes, its screen (p => View, built with its Params), or routed screens named alone (screen Thread(id: int) at ":id"), a Route of their pattern each
-native component Route(path: string = "", layout: RouteLayout = .group, title: string = "", icon: string = "", badge: string = "", initial: string = "", redirect: string = "", sheet: bool = false, detents: [Detent] = [], grabber: bool = false, fullScreen: bool = false, guard: (fn(string) -> string)? = none) {
+native component Route(path: string = "", layout: RouteLayout = .group, title: string = "", icon: string = "", badge: string = "", initial: string = "", redirect: string = "", sheet: bool = false, detents: [Detent] = [], grabber: bool = false, fullScreen: bool = false, dismissible: bool = true, cornerRadius: float = 0, guard: (fn(string) -> string)? = none) {
   prop children: View? = none
 }
 

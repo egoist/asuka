@@ -25,6 +25,10 @@ static wh_nav *nav_new(void) {
 	return v;
 }
 
+static void set_detents(wh_nav *v, ak_span s);
+static void place_sheet(node *n, bool opening);
+static bool sheet_fit_only(const wh_nav *v);
+static void report_sheet(node *n);
 static node *make_header(node *stack);
 static node *make_tab_bar(node *tabs);
 
@@ -276,6 +280,8 @@ void wh_nav_free(node *n) {
 	actions_free(&v->primary);
 	free(v->fields);
 	free(v->cfg);
+	free(v->det_kinds);
+	free(v->det_vals);
 	free(v);
 }
 
@@ -422,9 +428,18 @@ void wh_set_nav_prop(node *n, uint16_t p, const ak_value *v) {
 		}
 		break;
 	case AK_KIND_SHEET:
-		if (p == AK_PROP_SHEET_DETENTS) n->detents = v->i;
-		else if (p == AK_PROP_SHEET_WINDOW) n->nav->on = (uint32_t)v->i;
-		else if (p == AK_PROP_SHEET_FULL_SCREEN) n->nav->full = v->i != 0;
+		switch (p) {
+		case AK_PROP_SHEET_DETENTS: set_detents(n->nav, v->s); break;
+		case AK_PROP_SHEET_DETENT: n->nav->detent = (uint32_t)v->i; break;
+		case AK_PROP_SHEET_UNDIMMED: n->nav->undimmed = (uint32_t)v->i; break;
+		case AK_PROP_SHEET_CORNER_RADIUS: n->nav->corner = (float)v->f; break;
+		case AK_PROP_SHEET_NO_DISMISS: n->nav->no_dismiss = v->i != 0; return;  // nothing outside dismisses a sheet here
+		case AK_PROP_SHEET_WINDOW: n->nav->on = (uint32_t)v->i; return;
+		case AK_PROP_SHEET_FULL_SCREEN: n->nav->full = v->i != 0; return;
+		default: return;
+		}
+		// Shown, it takes its new detent, height, corners and modality.
+		if (n->nav->window && !n->nav->full) place_sheet(n, false);
 		break;
 	case AK_KIND_POPOVER:
 		wh_set_popover_prop(n, p, v);
@@ -1084,25 +1099,197 @@ void wh_fit_covers(HWND owner) {
 	}
 }
 
+// wh_fit_sheets sizes the sheets over owner to their detents again as
+// owner resizes (medium and large, fractions, are shares of it), and
+// tells the core a sheet as big as its content has new room.
+void wh_fit_sheets(HWND owner) {
+	if (!owner || IsIconic(owner)) return;
+	for (uint32_t i = 0; i < H.nsheets; i++) {
+		node *s = H.sheets[i];
+		if (s->nav->full || s->nav->owner != owner || !s->nav->window) continue;
+		place_sheet(s, false);
+		if (sheet_fit_only(s->nav)) report_sheet(s);
+	}
+}
+
 void wh_round_covers(HWND owner) {
 	for (uint32_t i = 0; i < H.nsheets; i++)
 		if (H.sheets[i]->nav->full && H.sheets[i]->nav->owner == owner) round_cover(H.sheets[i]);
 }
 
-// open_sheet shows a sheet as a modal window centered over the window
-// it's declared in: as wide as fits (320 to 560 points), as tall as it
-// less a margin, or half of it for a medium sheet.
+// ---- Sheets: their detents ----
+
+// set_detents takes a sheet's Detents: u32 count, then per detent u8
+// DetentKind and f32 its value.
+static void set_detents(wh_nav *v, ak_span s) {
+	uint32_t n = s.len >= 4 ? wh_u32((const uint8_t *)s.p) : 0;
+	if (s.len != 4 + (size_t)5 * n) n = 0;
+	free(v->det_kinds);
+	free(v->det_vals);
+	v->det_kinds = n ? wh_alloc(n) : NULL;
+	v->det_vals = n ? wh_alloc(n * sizeof(float)) : NULL;
+	for (uint32_t i = 0; i < n; i++) {
+		v->det_kinds[i] = (uint8_t)s.p[4 + 5 * i];
+		v->det_vals[i] = wh_f32((const uint8_t *)s.p + 5 + 5 * i);
+	}
+	v->ndet = n;
+}
+
+// sheet_fit_only reports whether a sheet's one detent is fit: it's as
+// big as its content, which the core lays out in the room it's given.
+static bool sheet_fit_only(const wh_nav *v) { return v->ndet == 1 && v->det_kinds[0] == AK_DETENT_KIND_FIT; }
+
+// sheet_room is the most a sheet over owner may be, in points: as wide
+// as fits (320 to 560), as tall as its client area less a margin (240
+// at least): a large detent's size. half is a medium one's height.
+static void sheet_room(HWND owner, float *w, float *h, float *half) {
+	float k = (float)wh_dpi(owner) / 96;
+	RECT cr;
+	GetClientRect(owner, &cr);
+	float cw = (float)cr.right / k, ch = (float)cr.bottom / k;
+	*w = wh_minf(wh_maxf(cw - 80, 320), 560);
+	*h = wh_maxf(ch - 100, 240);
+	*half = wh_minf(wh_maxf(ch / 2, 240), *h);
+}
+
+// detent_height is a sheet's detent i's height, in points, up to large.
+static float detent_height(const wh_nav *v, uint32_t i, float large, float half) {
+	float h = large;
+	if (i < v->ndet) {
+		float x = v->det_vals[i];
+		switch (v->det_kinds[i]) {
+		case AK_DETENT_KIND_MEDIUM: h = half; break;
+		case AK_DETENT_KIND_FIT: h = v->fit_h > 0 ? v->fit_h : large; break;
+		case AK_DETENT_KIND_HEIGHT: h = x; break;
+		case AK_DETENT_KIND_FRACTION: h = large * x; break;
+		}
+	}
+	return wh_minf(wh_maxf(h, 1), large);
+}
+
+// sheet_at is the index of the detent a sheet is at: Detent's, else its
+// shortest.
+static uint32_t sheet_at(const wh_nav *v, float large, float half) {
+	if (v->detent >= 1 && v->detent <= v->ndet) return v->detent - 1;
+	uint32_t at = 0;
+	for (uint32_t i = 1; i < v->ndet; i++)
+		if (detent_height(v, i, large, half) < detent_height(v, at, large, half)) at = i;
+	return at;
+}
+
+// sheet_size is the size a sheet's window's client area takes, in
+// points: the room's width and its detent's height; fit alone, its
+// content's size (the room until that's known).
+static void sheet_size(node *n, HWND owner, float *w, float *h) {
+	float half, large;
+	sheet_room(owner, w, &large, &half);
+	wh_nav *v = n->nav;
+	if (sheet_fit_only(v)) {
+		if (v->fit_w > 0 && v->fit_h > 0) *w = v->fit_w;
+		*h = v->fit_h > 0 ? wh_minf(v->fit_h, large) : large;
+		return;
+	}
+	*h = detent_height(v, sheet_at(v, large, half), large, half);
+}
+
+// sheet_modal reports whether a shown sheet keeps its window from the
+// user: unless it's at a detent no taller than its Undimmed one, as
+// Apple Maps' sheet leaves the map usable below it.
+static bool sheet_modal(node *n) {
+	wh_nav *v = n->nav;
+	if (v->full || v->undimmed < 1 || v->undimmed > v->ndet || !v->owner) return true;
+	float w, large, half;
+	sheet_room(v->owner, &w, &large, &half);
+	return detent_height(v, sheet_at(v, large, half), large, half) > detent_height(v, v->undimmed - 1, large, half) + 0.5f;
+}
+
+// sheet_corners gives a sheet's window its corners: DWM rounds a
+// window's to its own radii (8 or 4 pixels at 100%), so CornerRadius
+// picks the nearest: none under 2 points, the small one under 6.
+static void sheet_corners(node *n) {
+	if (!n->nav->window || n->nav->full || !wh_windows11()) return;
+	float r = n->nav->corner;
+	DWORD pref = r <= 0 ? 0 : r < 2 ? 1 : r < 6 ? 3 : 2;  // DWMWCP_DEFAULT, DONOTROUND, ROUNDSMALL, ROUND
+	DwmSetWindowAttribute(n->nav->window, 33, &pref, sizeof pref);  // DWMWA_WINDOW_CORNER_PREFERENCE
+}
+
+// report_sheet reports a sheet's environment, its client area's size (a
+// sheet as big as its content, the room it may take, which the core
+// lays its content out in), and its height when the core listens.
+static void report_sheet(node *n) {
+	HWND win = n->nav->window;
+	if (!win) return;
+	RECT cr;
+	GetClientRect(win, &cr);
+	float w = wh_pt(n, cr.right), h = wh_pt(n, cr.bottom);
+	if (!n->nav->full && sheet_fit_only(n->nav)) {
+		float half;
+		sheet_room(n->nav->owner, &w, &h, &half);
+	}
+	wh_report_screen(n, w, h);
+	float shown = wh_pt(n, cr.bottom);
+	if (node_listening(n, AK_EVENT_SHEET_HEIGHT) && shown != n->nav->shown_h) {
+		n->nav->shown_h = shown;
+		wh_emit_float(n, AK_EVENT_SHEET_HEIGHT, shown);
+	}
+}
+
+// place_sheet sizes a shown sheet's window to its detent (its top edge
+// and its center kept, unless it's opening, when it's centered over its
+// window) and gives it its corners, and its window back to the user at
+// a detent that leaves it usable.
+static void place_sheet(node *n, bool opening) {
+	wh_nav *v = n->nav;
+	HWND win = v->window;
+	if (!win || v->full) return;
+	float w, h;
+	sheet_size(n, v->owner, &w, &h);
+	int dpi = wh_dpi(win);
+	DWORD style = (DWORD)GetWindowLongPtrW(win, GWL_STYLE);
+	RECT r = frame_rect(w, h, style, dpi), now, wr;
+	GetWindowRect(win, &now);
+	int fw = r.right - r.left, fh = r.bottom - r.top;
+	int x = now.left + ((now.right - now.left) - fw) / 2, y = now.top;
+	if (opening) {
+		GetWindowRect(v->owner, &wr);
+		x = wr.left + ((wr.right - wr.left) - fw) / 2, y = wr.top + ((wr.bottom - wr.top) - fh) / 2;
+	}
+	if (fw != now.right - now.left || fh != now.bottom - now.top || x != now.left || y != now.top)
+		SetWindowPos(win, NULL, x, y, fw, fh, SWP_NOZORDER | SWP_NOACTIVATE);
+	sheet_corners(n);
+	bool modal = sheet_modal(n);
+	if (IsWindowEnabled(v->owner) == modal) EnableWindow(v->owner, !modal);
+}
+
+void wh_sheet_fit(node *n, float w, float h) {
+	wh_nav *v = n->nav;
+	if (!v || w <= 0 || h <= 0) return;
+	v->fit_w = w, v->fit_h = h;
+	if (!v->window || v->full) return;
+	place_sheet(n, v->wait_fit);
+	if (v->wait_fit) {
+		// Its first size: it shows.
+		v->wait_fit = false;
+		ShowWindow(v->window, wh_snapshotting() ? SW_SHOWNOACTIVATE : SW_SHOW);
+	}
+}
+
+// open_sheet shows a sheet as a window centered over the window it's
+// declared in, which it disables while it's modal: as wide as fits (320
+// to 560 points) and as tall as its detent (sheet_size). A sheet whose
+// one detent is fit isn't resized by the user, and shows once the core
+// has sized it to its content.
 static void open_sheet(node *n) {
 	HWND owner = wh_present_on(n->nav->on);
 	if (!owner) owner = H.window;  // its Window never opened
 	int dpi = wh_dpi(owner);
 	float k = (float)dpi / 96;
 	RECT cr;
-	GetClientRect(owner, &cr);
-	float cw = (float)cr.right / k, ch = (float)cr.bottom / k;
-	float w = wh_minf(wh_maxf(cw - 80, 320), 560), ht = wh_maxf(ch - 100, 240);
-	if (n->detents == 1) ht = wh_maxf(ch / 2, 240);  // medium only
-	DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN;
+	n->nav->owner = owner;
+	float w, ht;
+	sheet_size(n, owner, &w, &ht);
+	bool fit_only = !n->nav->full && sheet_fit_only(n->nav);
+	DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN | (fit_only ? 0 : WS_THICKFRAME);
 	RECT r = frame_rect(w, ht, style, dpi), wr;
 	GetWindowRect(owner, &wr);
 	int x = wr.left + ((wr.right - wr.left) - (r.right - r.left)) / 2, y = wr.top + ((wr.bottom - wr.top) - (r.bottom - r.top)) / 2;
@@ -1141,9 +1328,13 @@ static void open_sheet(node *n) {
 	SetWindowPos(n->hwnd, NULL, 0, 0, cr.right, cr.bottom, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
 	H.sheets = wh_realloc(H.sheets, (H.nsheets + 1) * sizeof *H.sheets);
 	H.sheets[H.nsheets++] = n;
-	wh_report_screen(n, wh_pt(n, cr.right), wh_pt(n, cr.bottom));
-	EnableWindow(owner, FALSE);
-	ShowWindow(win, wh_snapshotting() ? SW_SHOWNOACTIVATE : SW_SHOW);
+	report_sheet(n);
+	if (n->nav->full) EnableWindow(owner, FALSE);
+	else place_sheet(n, false);  // its corners, and its window kept from the user unless it's undimmed there
+	// As big as its content: it shows once the core has laid that out
+	// in its room (Fit).
+	n->nav->wait_fit = fit_only && !(n->nav->fit_w > 0 && n->nav->fit_h > 0);
+	if (!n->nav->wait_fit) ShowWindow(win, wh_snapshotting() ? SW_SHOWNOACTIVATE : SW_SHOW);
 }
 
 static void fill(HDC dc, HWND w, rgba c) {
@@ -1162,11 +1353,12 @@ LRESULT wh_sheet_message(node *sw, UINT m, WPARAM wp, LPARAM lp, bool *handled) 
 	case WM_SIZE:
 		wh_fit_covers(sw->hwnd);
 		if (n && n->nav->full) round_cover(n);
+		wh_fit_sheets(sw->hwnd);  // the sheets over it
 		if (n && n->hwnd) {
 			RECT cr;
 			GetClientRect(sw->hwnd, &cr);
 			SetWindowPos(n->hwnd, NULL, 0, 0, cr.right, cr.bottom, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
-			wh_report_screen(n, wh_pt(n, cr.right), wh_pt(n, cr.bottom));
+			report_sheet(n);
 		}
 		wh_place_snacks();
 		return 0;

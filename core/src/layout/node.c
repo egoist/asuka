@@ -422,7 +422,13 @@ static void resolve(ak_lnode *n, ak_lnode *top, ak_lpass *p) {
 
 // Layout.
 
-ak_lsize ak_lnode_layout(ak_lnode *n, ak_lsize avail, ak_lpass *p) {
+static ak_lsize layout_root(ak_lnode *n, ak_lsize avail, ak_lpass *p, int mode);
+
+ak_lsize ak_lnode_layout(ak_lnode *n, ak_lsize avail, ak_lpass *p) { return layout_root(n, avail, p, MODE_LAYOUT); }
+
+ak_lsize ak_lnode_measure(ak_lnode *n, ak_lsize avail, ak_lpass *p) { return layout_root(n, avail, p, MODE_SIZE); }
+
+static ak_lsize layout_root(ak_lnode *n, ak_lsize avail, ak_lpass *p, int mode) {
 	if (n->revalidate) resolve(n, n, p);
 	ak_lsize parent = {LNAN, LNAN};
 	if (l_definite(avail.w)) parent.w = avail.w;
@@ -445,8 +451,9 @@ ak_lsize ak_lnode_layout(ak_lnode *n, ak_lsize avail, ak_lpass *p) {
 			break;
 		}
 	}
-	l_input in = {.mode = MODE_LAYOUT, .known = known, .parent = parent, .avail = avail};
+	l_input in = {.mode = (uint8_t)mode, .known = known, .parent = parent, .avail = avail};
 	l_output out = compute_dir(n, in, rtl, p);
+	if (mode != MODE_LAYOUT) return out.size;
 	ak_ledges m = l_margins_of(n, parent.w);
 	l_place(p, n, m.left, m.top, out.size);
 	return out.size;

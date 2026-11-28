@@ -25,6 +25,38 @@ final class AsukaWheelView: UIPickerView, UIPickerViewDataSource, UIPickerViewDe
 }
 #endif
 
+#if os(tvOS)
+typealias AsukaStepper = UIStepper // TV.swift's, the remote's adjustable
+#else
+/// A Stepper: UIKit's, which draws its minus and plus at its own size
+/// from its top left whatever its frame. A frame the core makes larger
+/// (stretched in a Column) keeps it at the frame's start edge, the right
+/// in a right-to-left layout, and centred down it, as Android's: its
+/// bounds' origin moves its drawing (and its touches) there. The frame
+/// stays the core's, as placed.
+final class AsukaStepper: UIStepper {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let own = intrinsicContentSize
+        let px = 1 / max(traitCollection.displayScale, 1)
+        let dx = max(0, bounds.width - own.width), dy = max(0, bounds.height - own.height)
+        let o = CGPoint(x: effectiveUserInterfaceLayoutDirection == .rightToLeft ? -(dx / px).rounded() * px : 0,
+                        y: -(dy / 2 / px).rounded() * px)
+        if bounds.origin != o { bounds.origin = o }
+    }
+
+    // The app's direction changing (the language's) moves it.
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        if previous?.layoutDirection != traitCollection.layoutDirection { setNeedsLayout() }
+    }
+
+    override var semanticContentAttribute: UISemanticContentAttribute {
+        didSet { setNeedsLayout() }
+    }
+}
+#endif
+
 @MainActor extension AsukaRuntime {
     func makeWheel(_ id: UInt32) -> UIView {
         let w = AsukaWheelView()
@@ -33,7 +65,7 @@ final class AsukaWheelView: UIPickerView, UIPickerViewDataSource, UIPickerViewDe
     }
 
     func makeStepper(_ id: UInt32) -> UIView {
-        let s = UIStepper()
+        let s = AsukaStepper()
         s.addAction(UIAction { [weak self, weak s] _ in
             guard let s else { return }
             let v = s.value

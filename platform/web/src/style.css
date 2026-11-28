@@ -520,8 +520,18 @@ textarea.asuka-field { overflow-y: auto; display: block; }
 .asuka-sheet-dialog.asuka-full-screen { inset: auto; margin: 0; border-radius: 0; box-shadow: none; }
 .asuka-sheet-dialog::backdrop, .asuka-alert::backdrop { background: var(--asuka-scrim); }
 .asuka-sheet { position: absolute; }
+/* A bottom sheet takes a drag up or down itself (what scrolls in it, its own). */
+.asuka-sheet-dialog:not(.asuka-wide):not(.asuka-full-screen) { touch-action: none; }
+/* A sheet with a detent that doesn't dim (Undimmed): a non-modal dialog
+   over the page, and its own backdrop, which fades in above that detent
+   and only then takes presses. */
+.asuka-sheet-dialog.asuka-modeless { z-index: 40; }
+.asuka-sheet-scrim { position: fixed; inset: 0; background: var(--asuka-scrim); opacity: 0; pointer-events: none; z-index: 39; }
+.asuka-sheet-scrim.asuka-dimming { pointer-events: auto; }
 .asuka-grabber { position: absolute; top: 5px; left: calc(50% - 18px); width: 36px; height: 5px; border-radius: 3px; background: var(--asuka-tertiary-label); z-index: 5; cursor: grab; touch-action: none; }
 .asuka-grabber::before { content: ""; position: absolute; inset: -12px -40px; }
+/* A card isn't dragged: no grabber. */
+.asuka-sheet-dialog.asuka-wide .asuka-grabber { display: none; }
 
 .asuka-alert {
   width: min(300px, calc(100vw - 48px));

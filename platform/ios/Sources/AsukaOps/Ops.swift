@@ -256,6 +256,10 @@ public enum AsukaProp {
         public static let window: UInt16 = 66
         public static let fullScreen: UInt16 = 67
         public static let routed: UInt16 = 68
+        public static let detent: UInt16 = 69
+        public static let undimmed: UInt16 = 70
+        public static let cornerRadius: UInt16 = 71
+        public static let noDismiss: UInt16 = 72
     }
 
     public enum Alert {
@@ -506,6 +510,7 @@ public enum AsukaEventKind: UInt16 {
     case hoverMove = 70
     case zoomed = 71
     case moved = 72
+    case sheetHeight = 73
 }
 
 public enum AsukaCommand: UInt16 {
@@ -967,6 +972,14 @@ public enum AsukaPanAxis: Int32 {
     case vertical = 2
 }
 
+public enum AsukaDetentKind: Int32 {
+    case medium = 0
+    case large = 1
+    case fit = 2
+    case height = 3
+    case fraction = 4
+}
+
 /// A prop value. Bytes are valid only during the handler call.
 public enum AsukaValue {
     case bool(Bool)
@@ -1347,5 +1360,8 @@ public enum AsukaEvents {
     }
     public static func moved(_ id: UInt32, x: Double, y: Double) -> [UInt8] {
         var w = AsukaWriter(); w.header(id, 72); w.f64(x); w.f64(y); return w.bytes
+    }
+    public static func sheetHeight(_ id: UInt32, _ v: Double) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 73); w.f64(v); return w.bytes
     }
 }

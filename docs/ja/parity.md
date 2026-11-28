@@ -68,7 +68,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | タブとサイドバーの行のバッジ | `badge` | `tabBarBadge`、`drawerItem` の件数 | ✓ `Tab` と `Destination` の `badge`（`badgeValue`、`BadgeDrawable`、ドロワーのカウンター。Mac ではソースリストの件数。Fluent の `InfoBadge`。Linux と Web では件数） |
 | バーボタン、タイトル、検索 | `.toolbar`、`.searchable` | ヘッダーのオプション | ✓ 画面の `title`、`largeTitle`、`toolbar { … }`、`bind search` |
 | 下部のツールバー、主要なアクション（FAB） | `ToolbarItem(placement: .bottomBar)` | — | ✓ 画面の `bottomToolbar`、`primary`、`primaryExtended`：UIKit のツールバー、Material の `BottomAppBar` と（拡張）FAB、Mac ではウィンドウのツールバー、Windows ではコマンドバー、Linux では `GtkActionBar`、Web ではバーとフローティングボタン |
-| 段階的な高さのシート | `.sheet`、`.presentationDetents` | モーダル | ✓ `Sheet`（`detents`、`grabber`） |
+| 段階的な高さのシート | `.sheet`、`.presentationDetents`（`.height`、`.fraction`、バインドした `selection`）、`.presentationBackgroundInteraction(.enabled(upThrough:))`、`.presentationCornerRadius`、`.presentationDragIndicator`、`.interactiveDismissDisabled` | モーダル、`@gorhom/bottom-sheet`（`snapPoints`、`index`、`onChange`、`animatedPosition`、`enablePanDownToClose`） | ✓ `Sheet`（`detents`：medium、large、fit、`.height(pt)`、`.fraction(f)` をすべてのプラットフォームで。`bind detent`。`undimmed`：Apple マップのように、ある高さ以下では背後も操作できる。`cornerRadius`、`grabber`、`dismissible`、`on resize(height)`） |
 | フルスクリーンのモーダル | `.fullScreenCover` | `presentation: "fullScreenModal"` | ✓ `Sheet { fullScreen: true }`（iOS の `.fullScreen`。Material のフルスクリーンダイアログ。デスクトップではウィンドウのコンテンツ全体を覆う。Web ではページを覆う `<dialog>`） |
 | 戻る操作の横取り、閉じるのを防ぐ | `.navigationBarBackButtonHidden`、`.interactiveDismissDisabled` | `BackHandler`、`usePreventRemove` | ✓ `onBack { … }`（画面、シート、アプリ全体）、`backGesture: false` |
 | ポップオーバー | `.popover` | — | ✓ `Popover`（iPhone でもポップオーバー） |

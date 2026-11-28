@@ -27,12 +27,67 @@ static void unhold(ak_view *v) {
 	}
 }
 
-// detents_bits is a [Detent]'s bits, as the wire has them (1 medium, 2
-// large, 4 fit).
-static int64_t detents_bits(const ak_arr *a) {
-	int64_t b = 0;
-	for (uint32_t i = 0; a && i < a->len; i++) b |= INT64_C(1) << ak_arr_vals(a)[i].i;
-	return b;
+// ---- Detents ----
+
+// A Detent (types.asuka: medium, large, fit, height(float),
+// fraction(float)) is an enum with payloads: its case is the wire's
+// DetentKind. No Detent (.p NULL) is large.
+static uint16_t detent_case(ak_val d) { return d.p ? ak_enum_case(d.p) : AK_DETENT_KIND_LARGE; }
+
+static float detent_value(ak_val d) {
+	uint16_t c = detent_case(d);
+	return c == AK_DETENT_KIND_HEIGHT || c == AK_DETENT_KIND_FRACTION ? (float)((const ak_enum *)d.p)->f[0].f : 0;
+}
+
+static bool detent_eq(ak_val a, ak_val b) { return detent_case(a) == detent_case(b) && detent_value(a) == detent_value(b); }
+
+// detent_index is d's index in a: -1 when it isn't one of them, or for
+// no Detent.
+static int32_t detent_index(const ak_arr *a, ak_val d) {
+	if (!d.p) return -1;
+	for (uint32_t i = 0; a && i < a->len; i++)
+		if (detent_eq(ak_arr_vals(a)[i], d)) return (int32_t)i;
+	return -1;
+}
+
+static bool detents_same(const ak_arr *a, const ak_arr *b) {
+	uint32_t n = a ? a->len : 0;
+	if (n != (b ? b->len : 0)) return false;
+	for (uint32_t i = 0; i < n; i++)
+		if (!detent_eq(ak_arr_vals(a)[i], ak_arr_vals(b)[i])) return false;
+	return true;
+}
+
+// detents_fit reports whether a has Detent fit, and whether it's a's
+// only one.
+static bool detents_fit(const ak_arr *a, bool *only) {
+	bool fit = false;
+	for (uint32_t i = 0; a && i < a->len; i++) fit = fit || detent_case(ak_arr_vals(a)[i]) == AK_DETENT_KIND_FIT;
+	*only = fit && a->len == 1;
+	return fit;
+}
+
+// send_detents sends a as the wire's Detents: u32 count, then per
+// detent u8 DetentKind and f32 its value.
+static void send_detents(ak_view *e, const ak_arr *a) {
+	uint32_t n = a ? a->len : 0;
+	uint8_t small[4 + 5 * 8];
+	ak_buf big = {0};
+	uint8_t *p = small;
+	size_t len = 4 + (size_t)5 * n;
+	if (len > sizeof small) {
+		ak_buf_reserve(&big, len);
+		p = big.data;
+	}
+	memcpy(p, &n, 4);
+	for (uint32_t i = 0; i < n; i++) {
+		ak_val d = ak_arr_vals(a)[i];
+		float v = detent_value(d);
+		p[4 + 5 * i] = (uint8_t)detent_case(d);
+		memcpy(p + 5 + 5 * i, &v, 4);
+	}
+	ak_batch_set_bytes(e->r->batch, e->id, AK_PROP_SHEET_DETENTS, p, len);
+	ak_buf_free(&big);
 }
 
 ak_view *ak_alert_window(ak_ui_root *r) {
@@ -50,7 +105,14 @@ typedef struct {
 	ak_owner *owner;  // its content's
 	ak_back *back;
 	void (*dismissed)(void *ctx);  // the user's dismissal (and going back's, and dismiss())
+	void (*moved)(void *ctx, ak_val detent);  // the user dragged it to a detent
+	void (*resized)(void *ctx, float height);  // its height on the screen (SheetHeight)
 	void *ctx;
+	ak_arr *detents;  // as last sent (retained)
+	int32_t at;       // the index of the detent it's at, as last set or reported (-1: the shortest)
+	int32_t undimmed;  // likewise, the one sent (-1: none)
+	float corner;
+	bool grabber, no_dismiss, full;
 	bool closed;
 } sheet_t;
 
@@ -59,7 +121,51 @@ static void sheet_view_drop(ak_view *e) {
 	if (!s) return;
 	if (s->owner) ak_owner_dispose(s->owner);
 	ak_back_release(s->back);
+	ak_release(s->detents);
 	ak_free(s);
+}
+
+// sheet_apply sends a sheet's options that differ from what it was sent
+// (all of them as it's made, before Present), and fits its content as
+// its detents ask.
+static void sheet_apply(ak_view *e, const ak_sheet_opts *o, bool made) {
+	sheet_t *s = e->impl;
+	ak_batch *b = e->r->batch;
+	if (s->full) return;  // Detents and the rest don't apply
+	if (made || !detents_same(s->detents, o->detents)) {
+		if (o->detents && o->detents->len) send_detents(e, o->detents);
+		else if (!made) send_detents(e, NULL);
+		ak_retain((void *)o->detents);
+		ak_release(s->detents);
+		s->detents = (ak_arr *)o->detents;
+		bool only, fit = detents_fit(s->detents, &only);
+		ak_prov *pv = e->prov;
+		if (made) {
+			// A sheet can open before the root's environment names the
+			// platform (the web's): its own first one settles how it fits.
+			pv->fit_wait = fit;
+			ak_prov_fit_mode(pv, fit, only, e->r->env.platform);
+		} else if (!pv->fit_wait) {
+			ak_prov_fit_mode(pv, fit, only, pv->env.platform);
+		} else {
+			pv->fit_wait = fit;
+			ak_prov_fit_mode(pv, fit, only, e->r->env.platform);
+		}
+		s->at = -2;  // sent again: the detent's index may have moved
+	}
+	int32_t at = detent_index(s->detents, o->detent);
+	if (at >= 0 && at != s->at) ak_batch_set_int(b, e->id, AK_PROP_SHEET_DETENT, at + 1);
+	if (at >= 0 || s->at == -2) s->at = at;
+	int32_t und = detent_index(s->detents, o->undimmed);
+	if (und != s->undimmed || (made && und >= 0)) ak_batch_set_int(b, e->id, AK_PROP_SHEET_UNDIMMED, und + 1);
+	s->undimmed = und;
+	if (o->corner != s->corner) ak_batch_set_float(b, e->id, AK_PROP_SHEET_CORNER_RADIUS, o->corner > 0 ? o->corner : 0);
+	s->corner = o->corner;
+	if (o->grabber != s->grabber) ak_batch_set_bool(b, e->id, AK_PROP_SHEET_GRABBER, o->grabber);
+	s->grabber = o->grabber;
+	if (o->no_dismiss != s->no_dismiss) ak_batch_set_bool(b, e->id, AK_PROP_SHEET_NO_DISMISS, o->no_dismiss);
+	s->no_dismiss = o->no_dismiss;
+	if (o->listen_height) ak_view_listen(e, AK_EVENT_SHEET_HEIGHT);
 }
 
 static void sheet_dismissed(void *ctx) {
@@ -74,8 +180,24 @@ static void sheet_dismissed(void *ctx) {
 
 static void sheet_view_event(ak_view *e, const ak_event *ev) {
 	sheet_t *s = e->impl;
-	if (ev->kind == AK_EVENT_DISMISSED) sheet_dismissed(e);
-	else if (ev->kind == AK_EVENT_BACK && s->back) ak_back_run(s->back);
+	if (ev->kind == AK_EVENT_DISMISSED) {
+		sheet_dismissed(e);
+	} else if (ev->kind == AK_EVENT_BACK && s->back) {
+		ak_back_run(s->back);
+	} else if (ev->kind == AK_EVENT_SELECTED) {
+		// The user dragged it to a detent: the host shows it there.
+		if (s->closed || !s->detents || ev->i < 0 || ev->i >= s->detents->len) return;
+		s->at = (int32_t)ev->i;
+		if (!s->moved) return;
+		ak_arr *a = ak_retain(s->detents);
+		ak_val d = ak_arr_vals(a)[ev->i];
+		ak_retain(d.p);
+		s->moved(s->ctx, d);
+		ak_release(d.p);
+		ak_release(a);
+	} else if (ev->kind == AK_EVENT_SHEET_HEIGHT) {
+		if (!s->closed && s->resized) s->resized(s->ctx, (float)ev->f);
+	}
 }
 
 static void prov_adjust(ak_view *e, ak_lstyle *ls) {
@@ -101,33 +223,27 @@ void ak_sheet_close(ak_view *e) {
 	unhold(e);
 }
 
-ak_view *ak_sheet_present(ak_ui_root *r, ak_owner *owner, ak_closure *build, ak_val *args, uint32_t nargs, int64_t detents, bool grabber, bool full,
-                          bool routed, void (*dismissed)(void *ctx), void *ctx) {
+ak_view *ak_sheet_present(ak_ui_root *r, ak_owner *owner, ak_closure *build, ak_val *args, uint32_t nargs, const ak_sheet_opts *o,
+                          void (*dismissed)(void *ctx), void *ctx) {
 	ak_view *up = ak_alert_window(r);  // the window it's declared in
 	ak_view *e = ak_view_new(r, &cls_sheet_view, 0, true);
 	sheet_t *s = ak_alloc(sizeof *s);
 	e->impl = s;
 	s->dismissed = dismissed;
 	s->ctx = ctx;
+	s->at = -1, s->undimmed = -1;
+	s->full = o->full;
 	ak_prov *pv = ak_prov_new(r);
-	// As tall as its content where the platform has such a sheet; a
-	// sheet can open before the root's environment names the platform
-	// (the web's), so its own first one settles it (ak_prov_report).
-	pv->fit_wait = !full && (detents & 4);
-	pv->fit_sheet = pv->fit_wait && ak_fit_sheet_platform(r->env.platform);
 	ak_prov_attach(e, pv);
 	ak_release(pv);
 	e->up = up;
 	ak_batch *b = r->batch;
 	ak_batch_set_int(b, e->id, AK_PROP_SHEET_WINDOW, up->id);
-	if (full) {
-		ak_batch_set_bool(b, e->id, AK_PROP_SHEET_FULL_SCREEN, true);
-	} else {
-		if (detents) ak_batch_set_int(b, e->id, AK_PROP_SHEET_DETENTS, detents);
-		if (grabber) ak_batch_set_bool(b, e->id, AK_PROP_SHEET_GRABBER, true);
-	}
-	if (routed) ak_batch_set_bool(b, e->id, AK_PROP_SHEET_ROUTED, true);
+	if (o->full) ak_batch_set_bool(b, e->id, AK_PROP_SHEET_FULL_SCREEN, true);
+	sheet_apply(e, o, true);
+	if (o->routed) ak_batch_set_bool(b, e->id, AK_PROP_SHEET_ROUTED, true);
 	ak_view_listen(e, AK_EVENT_DISMISSED);
+	if (!o->full) ak_view_listen(e, AK_EVENT_SELECTED);
 	e->finalized = true;
 	hold(e);
 	ak_release(e);  // the root holds it while it shows
@@ -172,11 +288,37 @@ static void sheet_el_dismissed(void *ctx) {
 	ak_release(e);
 }
 
+static void sheet_el_moved(void *ctx, ak_val detent) { ak_view_call(ctx, AK_EV_SHEET_DETENT_CHANGE, &detent, 1); }
+
+static void sheet_el_resized(void *ctx, float height) {
+	ak_val h = {.f = height};
+	ak_view_call(ctx, AK_EV_SHEET_RESIZE, &h, 1);
+}
+
+// sheet_el_opts reads a Sheet's options from its keys.
+static ak_sheet_opts sheet_el_opts(ak_view *e) {
+	const ak_val *d = key_of(e, AK_KEY_SHEET_DETENTS), *at = key_of(e, AK_KEY_SHEET_DETENT), *u = key_of(e, AK_KEY_SHEET_UNDIMMED);
+	const ak_val *g = key_of(e, AK_KEY_SHEET_GRABBER), *f = key_of(e, AK_KEY_SHEET_FULL_SCREEN), *c = key_of(e, AK_KEY_SHEET_CORNER_RADIUS);
+	const ak_val *dis = key_of(e, AK_KEY_SHEET_DISMISSIBLE);
+	return (ak_sheet_opts){
+	    .detents = d ? d->p : NULL,
+	    .detent = at ? *at : (ak_val){0},
+	    .undimmed = u ? *u : (ak_val){0},
+	    .corner = c && c->f > 0 ? (float)c->f : 0,
+	    .grabber = g && g->i,
+	    .full = f && f->i,
+	    .no_dismiss = dis && !dis->i,
+	    .listen_height = ak_view_handler(e, AK_EV_SHEET_RESIZE) != NULL,
+	};
+}
+
 static void sheet_el_open(ak_view *e) {
 	sheet_el *s = e->impl;
 	if (s->shown || !s->build || e->dead || !e->finalized) return;
-	const ak_val *d = key_of(e, AK_KEY_SHEET_DETENTS), *g = key_of(e, AK_KEY_SHEET_GRABBER), *f = key_of(e, AK_KEY_SHEET_FULL_SCREEN);
-	ak_view *v = ak_sheet_present(e->r, e->owner, s->build, NULL, 0, d ? detents_bits(d->p) : 0, g && g->i, f && f->i, false, sheet_el_dismissed, e);
+	ak_sheet_opts o = sheet_el_opts(e);
+	ak_view *v = ak_sheet_present(e->r, e->owner, s->build, NULL, 0, &o, sheet_el_dismissed, e);
+	sheet_t *st = v->impl;
+	st->moved = sheet_el_moved, st->resized = sheet_el_resized;
 	s->shown = ak_retain(v);
 }
 
@@ -201,9 +343,26 @@ static void sheet_el_drop(ak_view *e) {
 
 static void sheet_el_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 	AK_UNUSED(prev);
-	if (key != AK_KEY_SHEET_OPEN) return;
-	if (v.i) sheet_el_open(e);
-	else sheet_el_close(e);
+	sheet_el *s = e->impl;
+	switch (key) {
+	case AK_KEY_SHEET_OPEN:
+		if (v.i) sheet_el_open(e);
+		else sheet_el_close(e);
+		break;
+	case AK_KEY_SHEET_DETENTS:
+	case AK_KEY_SHEET_DETENT:
+	case AK_KEY_SHEET_UNDIMMED:
+	case AK_KEY_SHEET_GRABBER:
+	case AK_KEY_SHEET_CORNER_RADIUS:
+	case AK_KEY_SHEET_DISMISSIBLE:
+		// While it shows, what changed goes to it: a detent set moves it
+		// there.
+		if (s->shown && !s->shown->dead) {
+			ak_sheet_opts o = sheet_el_opts(e);
+			sheet_apply(s->shown, &o, false);
+		}
+		break;
+	}
 }
 
 static void sheet_el_finalize(ak_view *e) {
@@ -237,7 +396,8 @@ static void presented_cleanup(void *ctx) {
 void ak_ui_present(ak_closure *build) {
 	ak_ui_root *r = ak_ui_current();
 	ak_owner *o = ak_current_owner();
-	ak_view *e = ak_sheet_present(r, o, build, NULL, 0, 0, false, false, false, presented_dismissed, NULL);
+	ak_sheet_opts opts = {0};
+	ak_view *e = ak_sheet_present(r, o, build, NULL, 0, &opts, presented_dismissed, NULL);
 	((sheet_t *)e->impl)->ctx = e;
 	ak_on_cleanup(presented_cleanup, ak_retain(e));
 }

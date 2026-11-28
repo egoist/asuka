@@ -425,8 +425,10 @@ extension AsukaWindowConfig {
             px = b.f32(1)
             py = b.f32(5)
         }
-        if a == .fit && fitsContent(n) {
-            fitSheet(n, px, py)
+        if a == .fit && n.kind == .sheet {
+            // A sheet whose one detent is fit is sized to its content; one
+            // with fit among others takes it as its fit detent's height.
+            if fitsContent(n) { fitSheet(n, px, py) } else { sheetFit(n, CGFloat(py)) }
             return
         }
         guard let x = nodeWin(n) else { return }

@@ -164,7 +164,11 @@ static const char host_css[] =
 	"scrolledwindow.asuka-field { background-color: alpha(currentColor, 0.1); border-radius: 6px; outline: 0 solid transparent; outline-offset: 2px; transition: outline-color 200ms ease-out, outline-width 200ms ease-out, outline-offset 200ms ease-out; }\n"
 	"scrolledwindow.asuka-field:focus-within { outline-color: alpha(@accent_color, 0.5); outline-width: 2px; outline-offset: -2px; }\n"
 	"scrolledwindow.asuka-field:disabled { filter: opacity(0.5); }\n"
-	"textview.asuka-clear, textview.asuka-clear > text { background: none; }\n";
+	"textview.asuka-clear, textview.asuka-clear > text { background: none; }\n"
+	// An undimmed sheet's panel (nav.c), as libadwaita draws a bottom sheet.
+	".asuka-sheet-panel { background-color: @dialog_bg_color; color: @dialog_fg_color; border-radius: 12px 12px 0 0; box-shadow: 0 -1px 3px 0 rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05); }\n"
+	".asuka-sheet-handle { min-width: 36px; min-height: 4px; margin: 8px 0 4px; border-radius: 99px; background-color: alpha(currentColor, 0.2); }\n"
+	".asuka-sheet-scrim { background-color: rgba(0,0,0,0.25); }\n";
 
 // lx_update_css sets the app's style sheet: the host's classes, and the
 // accent (1.5's named colors, 1.6's variables).

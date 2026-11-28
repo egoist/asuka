@@ -123,7 +123,7 @@ export const KindProp = Object.freeze({
   Stack: Object.freeze({ Routed: 64 }),
   Screen: Object.freeze({ Title: 64, Actions: 65, BackGesture: 66, Icon: 67, Search: 68, SearchText: 69, SearchButton: 70, ZoomFrom: 71, LargeTitle: 72, BarColor: 73, Toolbar: 74, Primary: 75, PrimaryExtended: 76, Badge: 77 }),
   Tabs: Object.freeze({ Selected: 64 }),
-  Sheet: Object.freeze({ Detents: 64, Grabber: 65, Window: 66, FullScreen: 67, Routed: 68 }),
+  Sheet: Object.freeze({ Detents: 64, Grabber: 65, Window: 66, FullScreen: 67, Routed: 68, Detent: 69, Undimmed: 70, CornerRadius: 71, NoDismiss: 72 }),
   Alert: Object.freeze({ Title: 64, Message: 65, Buttons: 66, Style: 67, Window: 68, Fields: 69 }),
   Image: Object.freeze({ Source: 64, Mode: 65, Placeholder: 66, PlaceholderImage: 67, PlaceholderMode: 68, Transition: 69, Paused: 70 }),
   Native: Object.freeze({ Type: 64, Prop: 65 }),
@@ -225,6 +225,7 @@ export const Event = Object.freeze({
   HoverMove: 70,
   Zoomed: 71,
   Moved: 72,
+  SheetHeight: 73,
 });
 
 /** Commands the core sends. */
@@ -322,6 +323,7 @@ export const LocationAction = Object.freeze({ Replace: 0, Push: 1, Back: 2, Forw
 export const DevErrorAction = Object.freeze({ Dismiss: 0, Reload: 1 });
 export const VideoAction = Object.freeze({ EnterPictureInPicture: 0, ExitPictureInPicture: 1, EnterFullScreen: 2, ExitFullScreen: 3 });
 export const PanAxis = Object.freeze({ Both: 0, Horizontal: 1, Vertical: 2 });
+export const DetentKind = Object.freeze({ Medium: 0, Large: 1, Fit: 2, Height: 3, Fraction: 4 });
 
 const utf8 = new TextDecoder();
 const utf8Out = new TextEncoder();
@@ -529,4 +531,5 @@ export const Events = Object.freeze({
   hoverMove: (id, x, y) => new Writer().header(id, 70).f64(x).f64(y).done(),
   zoomed: (id, v) => new Writer().header(id, 71).f64(v).done(),
   moved: (id, x, y) => new Writer().header(id, 72).f64(x).f64(y).done(),
+  sheetHeight: (id, v) => new Writer().header(id, 73).f64(v).done(),
 });

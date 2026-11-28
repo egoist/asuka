@@ -27,6 +27,8 @@ static void location(ak_fake *f, ak_fake_view *v, ak_span args);
 static bool listening(ak_fake *f, const ak_fake_view *v, ak_event_kind e);
 static void focus_to(ak_fake *f, ak_fake_view *v, bool keyboard, bool posted);
 static void report_anchors(ak_fake *f);
+static void report_moved_sheets(ak_fake *f);
+static bool sheet_prop_ok(ak_fake *f, const ak_fake_view *v, const ak_op *op);
 
 static const char *kind_str(ak_view_kind k, char buf[16]) {
 	if (k == AK_FAKE_KIND_CELL) return "Cell";
@@ -626,7 +628,12 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 			{ fail(f, "SetProp: %s has no %s prop %u", kind_str(v->kind, kb), op->value.type < AK_T_COUNT ? type_names[op->value.type] : "?", op->prop); return; }
 		if (v->kind == AK_KIND_SHEET && op->prop == AK_PROP_SHEET_FULL_SCREEN && v->presented)
 			{ fail(f, "SetProp: a sheet's FullScreen after its Present: a host presents it as it was"); return; }
+		if (v->kind == AK_KIND_SHEET && !sheet_prop_ok(f, v, op)) return;
 		set_prop(v, op->prop, &op->value);
+		if (v->kind == AK_KIND_SHEET && op->prop == AK_PROP_SHEET_DETENT) {
+			v->detent = (uint32_t)op->value.i;
+			if (v->presented) v->detent_moved = true;
+		}
 		if (v->kind == AK_KIND_NATIVE && op->prop == AK_PROP_NATIVE_PROP) set_native(v, op->value.s);
 		if (v->kind == AK_KIND_OVERLAY && op->prop == AK_PROP_OVERLAY_ANCHOR) v->anchor_known = false;  // reported again
 		return;
@@ -891,6 +898,7 @@ void ak_fake_apply(ak_fake *f, const uint8_t *buf, size_t len) {
 	}
 	if (br.err != AK_OK) fail(f, "a bad batch: %s", ak_err_string(br.err));
 	report_anchors(f);
+	report_moved_sheets(f);
 }
 
 // Measuring.
@@ -1838,17 +1846,145 @@ void ak_fake_set_environment(ak_fake *f, const ak_environment *e) {
 	ak_fake_dispatch(f, &(ak_event){.id = root_id(f), .kind = AK_EVENT_ENVIRONMENT, .env = *e});
 }
 
+// sheet_detents_n is how many detents a sheet's Detents has (0: none,
+// or not well formed).
+static uint32_t sheet_detents_n(ak_span d) {
+	uint32_t n = 0;
+	if (d.len >= 4) memcpy(&n, d.p, 4);
+	return d.len >= 4 && d.len == 4 + (size_t)5 * n ? n : 0;
+}
+
+// sheet_prop_ok checks a Sheet's detent props: Detents well formed,
+// Detent and Undimmed among them.
+static bool sheet_prop_ok(ak_fake *f, const ak_fake_view *v, const ak_op *op) {
+	ak_span d = ak_fake_string(v, AK_PROP_SHEET_DETENTS);
+	uint32_t n = sheet_detents_n(d);
+	switch (op->prop) {
+	case AK_PROP_SHEET_DETENTS: {
+		ak_span s = op->value.s;
+		uint32_t m = sheet_detents_n(s);
+		uint32_t count = 0;
+		if (s.len >= 4) memcpy(&count, s.p, 4);
+		if (s.len < 4 || s.len != 4 + (size_t)5 * count) { fail(f, "SetProp: a sheet's Detents of %u bytes, not u32 count and 5 bytes a detent", (unsigned)s.len); return false; }
+		for (uint32_t i = 0; i < m; i++) {
+			uint8_t k = (uint8_t)s.p[4 + 5 * i];
+			float x;
+			memcpy(&x, s.p + 5 + 5 * i, 4);
+			if (k >= AK_DETENT_KIND_COUNT) { fail(f, "SetProp: a sheet's detent %u is of kind %u", i, k); return false; }
+			bool valued = k == AK_DETENT_KIND_HEIGHT || k == AK_DETENT_KIND_FRACTION;
+			if (valued ? !(x >= 0) : x != 0) { fail(f, "SetProp: a sheet's detent %u has the value %g", i, x); return false; }
+		}
+		return true;
+	}
+	case AK_PROP_SHEET_DETENT:
+		if (op->value.i < 1 || op->value.i > (n ? n : 1)) { fail(f, "SetProp: a sheet's Detent %lld of %u detents", (long long)op->value.i, n); return false; }
+		return true;
+	case AK_PROP_SHEET_UNDIMMED:
+		if (op->value.i < 0 || op->value.i > n) { fail(f, "SetProp: a sheet's Undimmed %lld of %u detents", (long long)op->value.i, n); return false; }
+		return true;
+	}
+	return true;
+}
+
+// sheet_large is the tallest a sheet may be: the screen under its safe
+// area's top and a gap.
+static float sheet_large(const ak_fake *f) { return f->env.height - f->env.safe_top - 10; }
+
+uint32_t ak_fake_sheet_heights(const ak_fake *f, const ak_fake_view *sheet, float *heights, uint32_t max) {
+	ak_span d = ak_fake_string(sheet, AK_PROP_SHEET_DETENTS);
+	uint32_t n = sheet_detents_n(d);
+	float large = sheet_large(f);
+	for (uint32_t i = 0; i < n && i < max; i++) {
+		uint8_t k = (uint8_t)d.p[4 + 5 * i];
+		float x, h = large;
+		memcpy(&x, d.p + 5 + 5 * i, 4);
+		switch (k) {
+		case AK_DETENT_KIND_MEDIUM: h = floorf(large / 2); break;
+		case AK_DETENT_KIND_FIT: h = sheet->fit[1] > 0 ? sheet->fit[1] : large; break;
+		case AK_DETENT_KIND_HEIGHT: h = x; break;
+		case AK_DETENT_KIND_FRACTION: h = floorf(large * x); break;
+		}
+		heights[i] = h < large ? h : large;
+	}
+	return n;
+}
+
+uint32_t ak_fake_sheet_at(const ak_fake *f, const ak_fake_view *sheet) {
+	float h[64];
+	uint32_t n = ak_fake_sheet_heights(f, sheet, h, 64);
+	if (n > 64) n = 64;
+	if (sheet->detent >= 1 && sheet->detent <= n) return sheet->detent - 1;
+	uint32_t at = 0;
+	for (uint32_t i = 1; i < n; i++)
+		if (h[i] < h[at]) at = i;
+	return at;
+}
+
+float ak_fake_sheet_height(const ak_fake *f, const ak_fake_view *sheet) {
+	float h[64];
+	uint32_t n = ak_fake_sheet_heights(f, sheet, h, 64);
+	if (n == 0 || n > 64) return sheet_large(f);
+	return h[ak_fake_sheet_at(f, sheet)];
+}
+
+// sheet_env is a presented sheet's environment, at the detent it's at;
+// a desktop's or the web's sheet as tall as its content is given the
+// room it may take, its content's height the core's.
+static ak_environment sheet_env(const ak_fake *f, const ak_fake_view *sheet) {
+	ak_environment e = f->env;
+	if (ak_fake_bool(sheet, AK_PROP_SHEET_FULL_SCREEN)) return e;
+	ak_span d = ak_fake_string(sheet, AK_PROP_SHEET_DETENTS);
+	uint8_t pl = f->env.platform;
+	bool sized = pl == AK_PLATFORM_MACOS || pl == AK_PLATFORM_WEB || pl == AK_PLATFORM_WINDOWS || pl == AK_PLATFORM_LINUX;
+	bool fit_only = sheet_detents_n(d) == 1 && (uint8_t)d.p[4] == AK_DETENT_KIND_FIT;
+	e.height = sized && fit_only ? sheet_large(f) : ak_fake_sheet_height(f, sheet);
+	e.safe_top = 0;
+	return e;
+}
+
+static void report_sheet_at(ak_fake *f, ak_fake_view *sheet, bool posted) {
+	ak_event env = {.id = sheet->id, .kind = AK_EVENT_ENVIRONMENT, .env = sheet_env(f, sheet)};
+	ak_event h = {.id = sheet->id, .kind = AK_EVENT_SHEET_HEIGHT, .f = ak_fake_bool(sheet, AK_PROP_SHEET_FULL_SCREEN) ? f->env.height : ak_fake_sheet_height(f, sheet)};
+	bool height = ak_fake_listens(sheet, AK_EVENT_SHEET_HEIGHT);
+	if (posted) {
+		ak_fake_post_event(f, &env);
+		if (height) ak_fake_post_event(f, &h);
+		return;
+	}
+	ak_fake_dispatch(f, &env);
+	if (height) ak_fake_dispatch(f, &h);
+}
+
 void ak_fake_report_sheet(ak_fake *f, ak_fake_view *sheet) {
 	if (sheet->kind != AK_KIND_SHEET || !sheet->presented) {
 		char kb[16];
 		{ fail(f, "ReportSheet on %u (%s), not a presented sheet", sheet->id, kind_str(sheet->kind, kb)); return; }
 	}
-	ak_environment e = f->env;
-	if (!ak_fake_bool(sheet, AK_PROP_SHEET_FULL_SCREEN)) {
-		e.height -= e.safe_top + 10;
-		e.safe_top = 0;
+	report_sheet_at(f, sheet, false);
+}
+
+void ak_fake_drag_sheet(ak_fake *f, ak_fake_view *sheet, uint32_t index) {
+	float h[64];
+	uint32_t n = ak_fake_sheet_heights(f, sheet, h, 64);
+	if (sheet->kind != AK_KIND_SHEET || !sheet->presented || index >= (n ? n : 1)) {
+		fail(f, "DragSheet on %u to detent %u of %u", sheet->id, index, n);
+		return;
 	}
-	ak_fake_dispatch(f, &(ak_event){.id = sheet->id, .kind = AK_EVENT_ENVIRONMENT, .env = e});
+	sheet->detent = index + 1;
+	if (!listening(f, sheet, AK_EVENT_SELECTED)) return;
+	ak_fake_dispatch(f, &(ak_event){.id = sheet->id, .kind = AK_EVENT_SELECTED, .i = index});
+	report_sheet_at(f, sheet, false);
+}
+
+// report_moved_sheets reports, after the batch, the environment and
+// height of each sheet Detent moved, as a host does once it's there.
+static void report_moved_sheets(ak_fake *f) {
+	for (uint32_t i = 0; i < f->slots_cap; i++) {
+		ak_fake_view *s = f->slots[i];
+		if (!s || s->kind != AK_KIND_SHEET || !s->detent_moved) continue;
+		s->detent_moved = false;
+		if (s->presented) report_sheet_at(f, s, true);
+	}
 }
 
 void ak_fake_open_url(ak_fake *f, const char *url) {

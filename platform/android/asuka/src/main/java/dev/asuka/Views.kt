@@ -83,8 +83,11 @@ class AsukaNode(val id: Int, val kind: Int, var view: View) {
     var alertFields: List<AsukaAlertField> = emptyList()
     /** A showing alert's: shows its buttons' Disabled again. */
     var alertRefresh: (() -> Unit)? = null
-    var detents = 0L
-    var grabber = false
+    private var sheetPropsMade: AsukaSheetProps? = null
+    /** A sheet's Detents, Detent, Undimmed, CornerRadius, Grabber, NoDismiss and Fit (Sheet.kt). */
+    val sheetProps: AsukaSheetProps get() = sheetPropsMade ?: AsukaSheetProps().also { sheetPropsMade = it }
+    /** A sheet that shows (not full screen): its dialog or standard sheet. */
+    var sheet: AsukaSheet? = null
     /** A sheet's FullScreen: a full-screen dialog, not a bottom sheet. */
     var fullScreen = false
     var imageSource: String? = null

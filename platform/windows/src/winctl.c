@@ -311,6 +311,11 @@ void wh_window_action(node *n, const uint8_t *args, size_t len) {
 	uint8_t a;
 	float x = 0, y = 0;
 	bool ok = ak_decode_window_action(args, len, &a, &x, &y);
+	if (n->kind == AK_KIND_SHEET) {
+		// A sheet's content measured (a fit detent): Fit alone.
+		if (ok && a == AK_WINDOW_ACTION_FIT) wh_sheet_fit(n, x, y);
+		return;
+	}
 	wh_wctl *c = wh_ctl_for(n);
 	if (ok && !c && a == AK_WINDOW_ACTION_FIT && n->kind == AK_KIND_WINDOW && n->nav) {
 		// Laid out before its window opens: it opens at that size.
@@ -484,6 +489,7 @@ LRESULT wh_ctl_message(wh_wctl *c, UINT m, WPARAM wp, LPARAM lp, bool *handled) 
 		wh_report_state(c);
 		wh_fit_covers(c->hwnd);  // its full-screen sheets
 		wh_round_covers(c->hwnd);
+		wh_fit_sheets(c->hwnd);  // its sheets, to their detents
 		break;
 	case WM_MOVE:
 	case WM_WINDOWPOSCHANGED:

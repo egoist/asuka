@@ -100,6 +100,10 @@ void lx_command(node *n, ak_cmd c, ak_span args) {
 		lx_set_window_options(args);
 		return;
 	case AK_CMD_WINDOW_ACTION: {
+		if (n->kind == AK_KIND_SHEET) {
+			lx_sheet_action(n, args);  // Fit: its content's size
+			return;
+		}
 		win *w = lx_win_for(n);
 		if (w) lx_window_action(w, args);
 		return;

@@ -68,7 +68,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 标签页和侧边栏行上的徽标 | `badge` | `tabBarBadge`、`drawerItem` 的计数 | ✓ `Tab` 和 `Destination` 的 `badge`（`badgeValue`、`BadgeDrawable`、抽屉里的计数；Mac 上是来源列表的计数；Fluent 的 `InfoBadge`；Linux 和 Web 上显示一个计数） |
 | 栏按钮、标题、搜索 | `.toolbar`、`.searchable` | header 选项 | ✓ 页面的 `title`、`largeTitle`、`toolbar { … }`、`bind search` |
 | 底部工具栏、主操作（FAB） | `ToolbarItem(placement: .bottomBar)` | — | ✓ 页面的 `bottomToolbar`、`primary`、`primaryExtended`：UIKit 的工具栏，Material 的 `BottomAppBar` 和（扩展）FAB，Mac 上窗口的工具栏，Windows 上的命令栏，Linux 上的 `GtkActionBar`，Web 上的一条栏和一个浮动按钮 |
-| 带档位的弹出面板 | `.sheet`、`.presentationDetents` | modal | ✓ `Sheet`（`detents`、`grabber`） |
+| 带档位的弹出面板 | `.sheet`、`.presentationDetents`（`.height`、`.fraction`、绑定的 `selection`）、`.presentationBackgroundInteraction(.enabled(upThrough:))`、`.presentationCornerRadius`、`.presentationDragIndicator`、`.interactiveDismissDisabled` | modal、`@gorhom/bottom-sheet`（`snapPoints`、`index`、`onChange`、`animatedPosition`、`enablePanDownToClose`） | ✓ `Sheet`（`detents`：medium、large、fit、`.height(pt)`、`.fraction(f)`，所有平台都支持；`bind detent`；`undimmed`：像 Apple 地图那样，在某个档位及以下背后仍可操作；`cornerRadius`、`grabber`、`dismissible`、`on resize(height)`） |
 | 全屏模态 | `.fullScreenCover` | `presentation: "fullScreenModal"` | ✓ `Sheet { fullScreen: true }`（iOS 的 `.fullScreen`；Material 的全屏对话框；在桌面端覆盖整个窗口内容；在 Web 上是覆盖页面的 `<dialog>`） |
 | 拦截返回、阻止关闭 | `.navigationBarBackButtonHidden`、`.interactiveDismissDisabled` | `BackHandler`、`usePreventRemove` | ✓ `onBack { … }`（页面、弹出面板、整个应用）、`backGesture: false` |
 | 气泡弹窗 | `.popover` | — | ✓ `Popover`（iPhone 上也是气泡弹窗） |

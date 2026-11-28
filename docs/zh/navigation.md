@@ -399,10 +399,10 @@ screen Settings {
 
 ## 弹出面板
 
-`open` 为 true 时，`Sheet` 会在模态的弹出面板里展示它的内容：
+`open` 为 true 时，`Sheet` 会在弹出面板里展示它的内容：
 
 - **iOS**：带停靠高度（detent）的 sheet 呈现。
-- **Android**：`BottomSheetDialog`。
+- **Android**：`BottomSheetDialog`；不阻挡背后的面板则是放在 activity 布局里的标准底部面板。
 - **macOS**：一个 sheet 窗口，附着在当前使用的窗口上。
 - **Windows**：盖在当前窗口上方的模态窗口，期间原窗口不可操作。
 - **Linux**：`AdwDialog`：一个浮动的对话框，窗口较窄时则是底部面板。
@@ -449,13 +449,63 @@ component Notes {
 }
 ```
 
-- `detents` 是面板可以停留的高度：`.medium`（半屏）、`.large`（全屏），或者两者都要。两者都设置时，面板从半屏开始，用户可以把它往上拖到全屏。不设置时就是全屏。键盘弹出时，能变成全屏的面板会自动变成全屏。在桌面端，只设置了 medium 的面板高度是窗口的一半，其他情况则占窗口的大部分；在 Mac 上，用户可以自己调整 sheet 窗口的大小。`.fit` 则让面板和内容一样高，就像 Mac 上的 sheet：适合表单或确认这类内容本身有高度的面板。它的宽度是 sheet 的宽度；如果内容不能那么窄（比如设了固定的 `width`），面板就加宽，让内容完整显示，在 Web 上最多和页面一样宽。像 Mac 上的 sheet 和宽页面上的面板这样的卡片，如果内容只是一个固定 `width` 比 sheet 窄的视图（比如有自己宽度的对话框），即使外面包着没有宽度的视图，宽度也就是这个视图的宽度加上它周围的内边距；窄页面上的底部面板仍然和页面一样宽。在 Mac 上，比 sheet 宽的面板显示期间，窗口不能缩得比面板加两侧的一点边距更窄；如果窗口本来就太窄，它会自动变宽。内容变化时高度随之变化，超过面板的最大高度时由其中的 `Scroll` 滚动；用户不能调整它的大小。macOS 和 Web 支持这种面板，其他平台上它是全屏的。
-- `grabber: true` 在面板顶部显示拖动把手（iOS、Android，以及 Web 的底部面板）。
+- `detents` 是面板可以停留的高度，顺序随意：`.medium`（大约半屏）、`.large`（状态栏以下的整个屏幕）、`.fit`（和内容一样高）、`.height(240)`（指定的点数）和 `.fraction(0.3)`（占 large 高度的比例）。它们都不会比 large 更高。不设置时就是 large。面板从最低的那个高度打开，用户可以在这些高度之间拖动；键盘弹出时，面板会移到最高的那个。在桌面端，面板只停在其中一个高度上：`detent` 指定的那个，没有指定时就是最低的那个。large 占窗口的大部分，medium 是它的一半，用户不能拖动切换。
+- `detent` 是面板当前停在的高度。绑定它之后，用户拖动面板会写入这个值；写入新值时，面板会以动画移到那里。写入一个不在 `detents` 里的值不会有任何变化。
+- `.fit` 在所有平台上都让面板和内容一样高，适合表单或确认这类内容本身有高度的面板。内容变化时高度随之变化，超过 large 时由其中的 `Scroll` 滚动。只设置 `.fit` 时，在 Mac、Windows、Linux 和 Web 上，面板本身会按内容的大小来定尺寸：它的宽度是 sheet 的宽度；如果内容不能那么窄（比如设了固定的 `width`），面板就加宽，让内容完整显示，在 Web 上最多和页面一样宽。像 Mac 上的 sheet 和宽页面上的面板这样的卡片，如果内容只是一个固定 `width` 比 sheet 窄的视图（比如有自己宽度的对话框），即使外面包着没有宽度的视图，宽度也就是这个视图的宽度加上它周围的内边距；窄页面上的底部面板仍然和页面一样宽。在 Mac 上，比 sheet 宽的面板显示期间，窗口不能缩得比面板加两侧的一点边距更窄；如果窗口本来就太窄，它会自动变宽。用户不能调整它的大小。
+- `grabber: true` 在面板顶部显示拖动把手（iOS、Android，以及 Web 和 Linux 的底部面板；桌面端的 sheet 窗口没有把手）。
+- `cornerRadius` 把面板顶部的两个角（卡片则是四个角）圆角设成这么多点；为 0 或不设置时使用平台默认的圆角。在 Windows 上，窗口的圆角只能是 DWM 提供的几种：直角、小圆角或圆角。
+- `dismissible: false` 让用户不能通过向下拖动或点击外部来关闭面板，适合像 Apple 地图那样一直留着、由应用来关闭的面板。Android 的返回和 Escape 仍然可以关闭它，除非其中的 `onBack` 拦下了。
+- `on resize(height)` 会收到面板在屏幕上的高度（单位是点），在面板打开、用户拖动以及面板停稳的过程中逐帧触发，适合让某个视图（比如地图上的按钮）始终待在面板上方。对底部面板来说，这个高度也就是它从窗口底边往上延伸的距离；桌面端的 sheet 窗口挂在窗口顶部或居中显示，报告的是它自身的高度。
 - 它的内容在面板打开时构建、关闭时销毁，所以在里面创建的状态每次都是全新的。
+
+### 不阻挡背后的面板
+
+`undimmed` 指定一个档位：面板在这个高度及以下时，不会遮暗背后的内容，背后仍然可以点击、滚动和输入，就像 Apple 地图的面板那样。高于这个档位时，面板重新变成模态的，背后会变暗。面板不高于这个档位时，点击外部也不会关闭它。它必须是 `detents` 中的一个；不设置时，面板在每个高度都是模态的。
+
+```asuka
+component Places {
+  state open = true
+  state at: Detent = .height(120)
+  state sheetHeight: float = 0
+
+  Column {
+    grow: 1
+    View {
+      grow: 1
+      background: .secondaryBackground
+    }
+    Text("{sheetHeight.rounded()} points of sheet")
+    Sheet {
+      bind open: open
+      detents: [.height(120), .medium, .large]
+      bind detent: at
+      undimmed: .medium
+      grabber: true
+      dismissible: false
+      on resize(h) { sheetHeight = h }
+      SafeArea {
+        padding: 16
+        gap: 12
+        Text("Search Maps") { font: .headline }
+        Button("Show all") { on press { at = .large } }
+      }
+    }
+  }
+}
+```
+
+| | 停靠高度 | 不阻挡背后（`undimmed`） |
+|---|---|---|
+| iOS | `UISheetPresentationController` 的停靠高度：medium 和 large 用系统自带的，fit、指定高度和比例用自定义的（较小的高度可能会被 UIKit 取整）；用户可以拖动切换 | `largestUndimmedDetentIdentifier`：背后的内容可以接收触摸 |
+| Android | `BottomSheetBehavior` 的状态：最低的是 collapsed，中间的是 half expanded，最高的是 expanded；超过三个时，使用最低的、最高的和当前所在的那个，指定一个没被使用的档位会移到最近的那个 | 不用对话框，而是放在 activity 布局里的标准底部面板：背后的内容可以接收触摸；高于这个档位时会淡入一层遮罩，点击遮罩会关闭面板（`dismissible` 为 false 时则把它降回这个档位） |
+| macOS | sheet 窗口停在对应档位的高度；设置 `detent` 时以动画调整到那里 | 不高于这个档位时，是一个盖在窗口底部、顶部带圆角的面板，窗口仍然可以使用；高于它时，又变回 sheet |
+| Windows | sheet 窗口停在对应档位的高度；设置 `detent` 时直接调整大小 | 背后的窗口保持可用 |
+| Linux | `AdwDialog` 停在对应档位的高度 | 宿主自己绘制的、盖在窗口上的底部面板，用户可以在各档位之间拖动；高于这个档位时出现遮罩 |
+| Web | 窄页面上是底部面板，可以在各档位之间拖动；宽页面上的卡片停在对应档位的高度 | 非模态的 `<dialog>`（背后的页面仍然可以点击和获得焦点），高于这个档位时显示自己的背景遮罩 |
 
 ### 全屏弹出面板
 
-`fullScreen: true` 让面板盖住整个屏幕，适合那些需要用户专心完成或主动放弃的任务：写一封邮件、登录、编辑一张照片（相当于 SwiftUI 的 `fullScreenCover`，以及 Material 的全屏对话框）。`detents` 和 `grabber` 对它不起作用，也没有面板外部可以点击，不能滑走：只有 `open` 变成 false 时它才会关闭，所以要给它放上自己的“取消”和“完成”按钮。Android 的返回，以及桌面端或浏览器里的 Escape，会像关闭普通面板一样关闭它，除非其中的 `onBack` 拦下了（比如要先确认是否丢弃草稿）。
+`fullScreen: true` 让面板盖住整个屏幕，适合那些需要用户专心完成或主动放弃的任务：写一封邮件、登录、编辑一张照片（相当于 SwiftUI 的 `fullScreenCover`，以及 Material 的全屏对话框）。`detents` 和上面那些选项对它都不起作用，也没有面板外部可以点击，不能滑走：只有 `open` 变成 false 时它才会关闭，所以要给它放上自己的“取消”和“完成”按钮。Android 的返回，以及桌面端或浏览器里的 Escape，会像关闭普通面板一样关闭它，除非其中的 `onBack` 拦下了（比如要先确认是否丢弃草稿）。
 
 ```asuka
 component Mail {
@@ -516,7 +566,7 @@ component Compose {
 | Linux | 一个和窗口一样大的浮动 `AdwDialog`，libadwaita 会让它盖住整个窗口，就像对待放不下的对话框那样（在手机上或窄窗口里）；它会随窗口一起调整大小 |
 | Web | 盖住整个页面的模态 `<dialog>`（焦点留在里面；Escape 和浏览器的后退会关闭它）；如果面板是在 Window 面板里声明的，就只盖住那个面板的内容；它从下方滑入 |
 
-用户可以向下滑动来关闭面板；在 Android 上还可以按返回或点击面板外部；在桌面端或浏览器里可以按 Escape（Windows 上还可以点面板窗口的关闭按钮，Web 上还可以点击面板外部）。这些操作会把 `open` 设为 false，并运行 `on dismiss`。如果是代码把 `open` 设为 false，面板同样会关闭，但不会运行 `on dismiss`。因此，`on dismiss` 的含义是“面板在你没有决定的情况下被关掉了”，比如草稿还没保存就被关掉。
+用户可以向下滑动来关闭面板；在 Android 上还可以按返回或点击面板外部；在桌面端或浏览器里可以按 Escape（Windows 上还可以点面板窗口的关闭按钮，Web 上还可以点击面板外部）。这些操作会把 `open` 设为 false，并运行 `on dismiss`。如果是代码把 `open` 设为 false，面板同样会关闭，但不会运行 `on dismiss`。因此，`on dismiss` 的含义是“面板在你没有决定的情况下被关掉了”，比如草稿还没保存就被关掉。设置了 `dismissible: false` 时，只有 Android 的返回、Escape 和 Windows 上 sheet 窗口的关闭按钮能关闭它。
 
 ## 气泡弹窗
 
@@ -1125,7 +1175,7 @@ screen About {
 - `.slot`：一次只显示一个子路由，铺满它所在的位置，没有导航栏：比如应用的未登录和已登录两部分。
 - `.group`（默认）：它的子路由在它的路径和守卫之下，并入父路由的导航器。
 
-设置了 `sheet: true` 的路由会在它的导航器（栈顶的页面、标签页）上方以弹出面板呈现，而不是被推入或选中；它的 `detents`、`grabber` 和 `fullScreen` 就是弹出面板的选项。返回会关闭它；导航到它下面那个导航器里的页面也会关闭它。
+设置了 `sheet: true` 的路由会在它的导航器（栈顶的页面、标签页）上方以弹出面板呈现，而不是被推入或选中；它的 `detents`、`grabber`、`cornerRadius`、`dismissible` 和 `fullScreen` 就是弹出面板的选项。返回会关闭它；导航到它下面那个导航器里的页面也会关闭它。
 
 ### 导航
 

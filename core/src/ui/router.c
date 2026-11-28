@@ -1314,15 +1314,21 @@ static ak_val sheet_content(ak_closure *c, ak_val *a, uint32_t n) {
 static const uint8_t int_cap[] = {AK_K_INT};
 
 static void present(router_t *rt, inst *in, entry *e, const edesc *d) {
-	const ak_val *dv = key_of(e->member->route, AK_KEY_ROUTE_DETENTS);
-	int64_t detents = 0;
-	const ak_arr *da = dv ? dv->p : NULL;
-	for (uint32_t i = 0; da && i < da->len; i++) detents |= INT64_C(1) << ak_arr_vals(da)[i].i;
+	const ak_view *route = e->member->route;
+	const ak_val *dv = key_of(route, AK_KEY_ROUTE_DETENTS), *dis = key_of(route, AK_KEY_ROUTE_DISMISSIBLE);
+	const ak_val *corner = key_of(route, AK_KEY_ROUTE_CORNER_RADIUS);
 	content_ctx cc = {rt, in, e, d, NULL};
 	ak_closure *c = ak_closure_new(sheet_content, NULL, 1, int_cap);
 	c->caps[0].i = (int64_t)(uintptr_t)&cc;
-	bool grabber = int_key(e->member->route, AK_KEY_ROUTE_GRABBER) != 0, full = int_key(e->member->route, AK_KEY_ROUTE_FULL_SCREEN) != 0;
-	ak_view *s = ak_sheet_present(rt->e->r, in->owner, c, NULL, 0, detents, grabber, full, true, dismissed, e);
+	ak_sheet_opts o = {
+	    .detents = dv ? dv->p : NULL,
+	    .corner = corner && corner->f > 0 ? (float)corner->f : 0,
+	    .grabber = int_key(route, AK_KEY_ROUTE_GRABBER) != 0,
+	    .full = int_key(route, AK_KEY_ROUTE_FULL_SCREEN) != 0,
+	    .no_dismiss = dis && !dis->i,
+	    .routed = true,
+	};
+	ak_view *s = ak_sheet_present(rt->e->r, in->owner, c, NULL, 0, &o, dismissed, e);
 	ak_release(c);
 	e->sheet = ak_retain(s);
 	if (e->member->leaf) title_screen(s->kids.len ? s->kids.data[0] : NULL, e->member);

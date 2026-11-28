@@ -259,6 +259,10 @@ object AsukaProp {
         const val WINDOW = 66
         const val FULL_SCREEN = 67
         const val ROUTED = 68
+        const val DETENT = 69
+        const val UNDIMMED = 70
+        const val CORNER_RADIUS = 71
+        const val NO_DISMISS = 72
     }
 
     object Alert {
@@ -509,6 +513,7 @@ object AsukaEventKind {
     const val HOVER_MOVE = 70
     const val ZOOMED = 71
     const val MOVED = 72
+    const val SHEET_HEIGHT = 73
 }
 
 object AsukaCommand {
@@ -970,6 +975,14 @@ object AsukaPanAxis {
     const val VERTICAL = 2
 }
 
+object AsukaDetentKind {
+    const val MEDIUM = 0
+    const val LARGE = 1
+    const val FIT = 2
+    const val HEIGHT = 3
+    const val FRACTION = 4
+}
+
 /** Receives decoded ops, in order, on the main thread. */
 interface AsukaOpHandler {
     fun create(id: Int, kind: Int)
@@ -1201,4 +1214,5 @@ object AsukaEvents {
     fun hoverMove(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 70); f64(x); f64(y) }.bytes()
     fun zoomed(id: Int, v: Double): ByteArray = AsukaWriter().apply { header(id, 71); f64(v) }.bytes()
     fun moved(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 72); f64(x); f64(y) }.bytes()
+    fun sheetHeight(id: Int, v: Double): ByteArray = AsukaWriter().apply { header(id, 73); f64(v) }.bytes()
 }

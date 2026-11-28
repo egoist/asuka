@@ -644,11 +644,18 @@ struct Region {
   hourCycle: int = 24
 }
 
-/// A height a sheet can rest at.
+/// A height a sheet can rest at. None is taller than large.
 enum Detent {
+  /// About half the screen's height.
   medium
+  /// The tallest a sheet can be: the screen under the status bar.
   large
-  fit // as tall as its content (macOS; large elsewhere)
+  /// As tall as its content.
+  fit
+  /// A height in points.
+  height(float)
+  /// A share of large's height: .fraction(0.25), a quarter of it.
+  fraction(float)
 }
 
 /// How a Route shows its child routes.

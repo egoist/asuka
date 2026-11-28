@@ -50,6 +50,17 @@ struct wh_nav {
 	uint32_t on;
 	bool full;  // a Sheet's FullScreen
 
+	// Sheet: its Detents (kinds and values, in the app's order), the one
+	// it's at (1 + its index; 0: the shortest), the tallest that leaves
+	// its window usable (1 + its index; 0: none, modal), its corners'
+	// radius, and its content's size as the core last sent it (Fit; 0:
+	// none yet). A sheet whose one detent is fit opens once it's sized.
+	uint8_t *det_kinds;
+	float *det_vals;
+	uint32_t ndet, detent, undimmed;
+	float corner, fit_w, fit_h, shown_h;
+	bool no_dismiss, wait_fit;
+
 	// Alert: its task dialog's window while it shows; its text fields
 	// (their bytes), and with them the host's own dialog.
 	HWND dialog;

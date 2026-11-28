@@ -40,6 +40,12 @@ class AsukaWheel(rt: AsukaRuntime, asukaID: Int) : NumberPicker(rt.themed) {
 }
 
 /**
+ * Where a Stepper's pair of buttons (each side px, gap apart) starts in a
+ * frame width px wide: at its start, the left, or the right right to left.
+ */
+fun stepperPairX(width: Int, side: Int, gap: Int, rtl: Boolean): Int = if (rtl) maxOf(0, width - (2 * side + gap)) else 0
+
+/**
  * A Stepper: Android has none (nor has Material, nor Compose), so a pair
  * of Material icon buttons, minus and plus, which step a value between a
  * minimum and maximum, each off at its end.
@@ -77,11 +83,14 @@ class AsukaStepper(private val rt: AsukaRuntime, private val asukaID: Int) : and
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val y = maxOf(0, (b - t - side) / 2)
-        // Minus first, in the direction it reads.
+        // Minus first, in the direction it reads; the pair at the start of
+        // the frame the core gave it (stretched across a column, wider than
+        // the pair), which is its right end right to left.
         val rtl = layoutDirection == LAYOUT_DIRECTION_RTL
         val (first, second) = if (rtl) plus to minus else minus to plus
-        first.layout(0, y, side, y + side)
-        second.layout(side + gap, y, 2 * side + gap, y + side)
+        val x = stepperPairX(r - l, side, gap, rtl)
+        first.layout(x, y, x + side, y + side)
+        second.layout(x + side + gap, y, x + 2 * side + gap, y + side)
     }
 
     private fun button(symbol: String, label: String, by: () -> Double) =

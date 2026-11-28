@@ -22,9 +22,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.google.android.material.bottomsheet.BottomSheetBehavior
-import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.bottomsheet.BottomSheetDragHandleView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.navigation.NavigationBarView
@@ -865,10 +862,18 @@ fun AsukaRuntime.backExit() {
 
 /** A sheet's OnBack: Android's back, a tap outside and a swipe down ask the core rather than dismiss it. */
 fun AsukaRuntime.sheetIntercepts(n: AsukaNode) {
-    val d = n.dialog as? BottomSheetDialog ?: return
-    val on = n.intercepts
-    d.setCancelable(!on) // not hideable by a swipe either
-    sheetBack[n.id]?.isEnabled = on
+    n.sheet?.applyDismissal() // not hideable by a swipe either
+}
+
+/** A WindowAction to a sheet: Fit, its content's height, which its fit detent is. */
+fun AsukaRuntime.sheetWindowAction(n: AsukaNode, args: ByteBuffer) {
+    val b = args.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    if (b.remaining() < 9 || (b.get().toInt() and 0xff) != AsukaWindowAction.FIT) return
+    b.float // its width: the sheet's
+    val h = b.float
+    if (h == n.sheetProps.fit) return
+    n.sheetProps.fit = h
+    n.sheet?.update()
 }
 
 /** The user popped a stack's top screen: tell the core, which destroys it. */
@@ -929,6 +934,12 @@ fun AsukaRuntime.destroyNav(n: AsukaNode): Boolean {
         n.kind == AsukaKind.POPOVER -> {
             n.dying = true
             n.popover?.dismiss()
+            return true
+        }
+        n.kind == AsukaKind.SHEET && n.sheet != null -> {
+            n.dying = true
+            n.sheet?.destroy()
+            n.sheet = null
             return true
         }
         n.kind == AsukaKind.SHEET || n.kind == AsukaKind.ALERT -> {
@@ -1004,8 +1015,12 @@ fun AsukaRuntime.setNavProp(n: AsukaNode, prop: Int, v: Any): Boolean {
             }
         }
         AsukaKind.SHEET -> when (prop) {
-            AsukaProp.Sheet.DETENTS -> n.detents = v as Long
-            AsukaProp.Sheet.GRABBER -> n.grabber = v as Boolean
+            AsukaProp.Sheet.DETENTS -> { n.sheetProps.setDetents(v as ByteBuffer); n.sheet?.update() }
+            AsukaProp.Sheet.DETENT -> { n.sheetProps.detent = (v as Long).toInt(); n.sheet?.moveTo(n.sheetProps.detent - 1) }
+            AsukaProp.Sheet.UNDIMMED -> { n.sheetProps.undimmed = (v as Long).toInt(); n.sheet?.update() }
+            AsukaProp.Sheet.CORNER_RADIUS -> { n.sheetProps.corner = (v as Double).toFloat(); n.sheet?.update() }
+            AsukaProp.Sheet.GRABBER -> { n.sheetProps.grabber = v as Boolean; n.sheet?.update() }
+            AsukaProp.Sheet.NO_DISMISS -> { n.sheetProps.noDismiss = v as Boolean; n.sheet?.update() }
             AsukaProp.Sheet.FULL_SCREEN -> n.fullScreen = v as Boolean
             AsukaProp.Sheet.WINDOW -> {} // the window it's declared in: a phone has one
             else -> return false
@@ -1278,93 +1293,9 @@ fun AsukaRuntime.present(n: AsukaNode) {
 }
 
 private fun AsukaRuntime.presentSheet(act: AsukaActivity, n: AsukaNode) {
-    val d = BottomSheetDialog(dialogContext(act))
-    directDialog(d)
-    val screen = n.view as AsukaScreen
-    (screen.parent as? ViewGroup)?.removeView(screen)
-    val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-    var handle = 0
-    if (n.grabber) {
-        val h = BottomSheetDragHandleView(act)
-        box.addView(h)
-        h.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-        handle = h.measuredHeight
-    }
-    // The content's height is the sheet's at its largest detent.
-    val decor = act.window.decorView
-    val bars = ViewCompat.getRootWindowInsets(decor)?.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()) ?: Insets.NONE
-    val full = decor.height - bars.top - bars.bottom - handle
-    val medium = n.detents and 1L != 0L
-    val large = n.detents and 2L != 0L || !medium
-    val h = if (large) full else (decor.height / 2 - bars.bottom - handle)
-    box.addView(screen, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, h))
-    d.setContentView(box)
-    val b = d.behavior
-    b.skipCollapsed = true
-    if (medium && large) {
-        b.isFitToContents = false
-        b.halfExpandedRatio = 0.5f
-        b.expandedOffset = bars.top
-        b.state = BottomSheetBehavior.STATE_HALF_EXPANDED
-    } else {
-        b.state = BottomSheetBehavior.STATE_EXPANDED
-    }
-    b.addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
-        override fun onStateChanged(sheet: View, state: Int) {
-            if (state == BottomSheetBehavior.STATE_EXPANDED || state == BottomSheetBehavior.STATE_HALF_EXPANDED) screen.report()
-        }
-        override fun onSlide(sheet: View, offset: Float) {}
-    })
-    // The keyboard: the sheet goes to its largest detent, as on iOS, and
-    // its content follows the keyboard frame by frame.
-    val sheetDecor = d.window?.decorView ?: box
-    ViewCompat.setWindowInsetsAnimationCallback(sheetDecor, object : WindowInsetsAnimationCompat.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
-        override fun onStart(a: WindowInsetsAnimationCompat, bounds: WindowInsetsAnimationCompat.BoundsCompat): WindowInsetsAnimationCompat.BoundsCompat {
-            if (ViewCompat.getRootWindowInsets(box)?.isVisible(WindowInsetsCompat.Type.ime()) == true && large) b.state = BottomSheetBehavior.STATE_EXPANDED
-            return bounds
-        }
-        override fun onProgress(insets: WindowInsetsCompat, running: MutableList<WindowInsetsAnimationCompat>): WindowInsetsCompat {
-            screen.ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-            screen.report()
-            return insets
-        }
-        override fun onEnd(a: WindowInsetsAnimationCompat) {
-            screen.ime = -1
-            screen.report()
-        }
-    })
-    val id = n.id
-    d.setOnDismissListener {
-        sheetBack.remove(id)
-        if (!n.dying) {
-            n.dying = true
-            emit(id, AsukaEventKind.DISMISSED) { AsukaEvents.dismissed(id) }
-        }
-    }
-    // A keyboard that shows without animating: catch it on layout.
-    var imeShown = false
-    box.viewTreeObserver.addOnGlobalLayoutListener {
-        val shown = ViewCompat.getRootWindowInsets(box)?.isVisible(WindowInsetsCompat.Type.ime()) == true
-        if (shown == imeShown) return@addOnGlobalLayoutListener
-        imeShown = shown
-        if (shown && large) b.state = BottomSheetBehavior.STATE_EXPANDED
-        screen.report()
-    }
-    // ui.OnBack: what would dismiss it asks the core while it intercepts.
-    val back = object : androidx.activity.OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() { emit(id, AsukaEventKind.BACK) { AsukaEvents.back(id) } }
-    }
-    d.onBackPressedDispatcher.addCallback(back)
-    sheetBack[id] = back
-    d.setOnShowListener {
-        d.findViewById<View>(com.google.android.material.R.id.touch_outside)?.setOnClickListener {
-            if (n.intercepts) emit(id, AsukaEventKind.BACK) { AsukaEvents.back(id) }
-            else if (d.isShowing) d.cancel()
-        }
-    }
-    n.dialog = d
-    sheetIntercepts(n)
-    d.show()
+    val s = AsukaSheet(this, n)
+    n.sheet = s
+    s.present(act)
 }
 
 /**

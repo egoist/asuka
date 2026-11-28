@@ -475,13 +475,19 @@ var Elements = []Element{
 	}, Doc: "a page of Tabs: its content is built when it's first chosen"},
 	{Name: "Sheet", Children: true, LazyChildren: true, Keys: []Key{
 		{Name: "open", Type: "bool", Bind: true, Event: "change", Doc: "shows the sheet while true; the user dismissing it writes false"},
-		{Name: "detents", Type: "[Detent]", Doc: "the heights it rests at ([]: large)"},
-		{Name: "grabber", Type: "bool"},
+		{Name: "detents", Type: "[Detent]", Doc: "the heights it rests at, in any order ([]: large)"},
+		{Name: "detent", Type: "Detent", Bind: true, Event: "detentChange", Doc: "the detent it's at: the user's dragging writes it, and writing it moves the sheet there. Unset, or not one of detents: it opens at the shortest"},
+		{Name: "undimmed", Type: "Detent?", Doc: "the tallest detent at which what's behind it isn't dimmed and can still be used, as Apple Maps' sheet (one of detents); none: modal at every detent"},
+		{Name: "grabber", Type: "bool", Doc: "the handle at its top"},
+		{Name: "cornerRadius", Type: "float", Doc: "its top corners' radius (0: the platform's)"},
+		{Name: "dismissible", Type: "bool", Default: "true", Doc: "false: dragging it down or tapping outside doesn't dismiss it (Android's back and Escape still do)"},
 		{Name: "fullScreen", Type: "bool", Doc: "covers the screen; the user can't swipe it away"},
 	}, Events: []Event{
 		{Name: "change", Params: []Param{{"open", "bool"}}},
 		{Name: "dismiss", Doc: "the user dismissed it"},
-	}, Doc: "content in a modal sheet while open: built as it opens, disposed as it closes. It takes no room where it's declared"},
+		{Name: "detentChange", Params: []Param{{"detent", "Detent"}}},
+		{Name: "resize", Params: []Param{{"height", "float"}}, Doc: "its height on the screen changed (points from the window's bottom), frame by frame as it's dragged and settles: for what follows its top edge"},
+	}, Doc: "content in a sheet while open: built as it opens, disposed as it closes. It takes no room where it's declared"},
 	{Name: "Alert", Children: true, Keys: []Key{
 		{Name: "title", Type: "string", Positional: true},
 		{Name: "open", Type: "bool", Bind: true, Event: "change", Doc: "shows the alert while true; choosing a button, or the user dismissing it, writes false"},
@@ -591,6 +597,8 @@ var Elements = []Element{
 		{Name: "detents", Type: "[Detent]", Positional: true, Default: "[]", Doc: "a sheet's heights ([]: large)"},
 		{Name: "grabber", Type: "bool", Positional: true, Default: "false", Doc: "a sheet's grabber, at its top"},
 		{Name: "fullScreen", Type: "bool", Positional: true, Default: "false", Doc: "a sheet that covers the screen: no swipe or tap outside dismisses it"},
+		{Name: "dismissible", Type: "bool", Positional: true, Default: "true", Doc: "false: dragging a sheet down or tapping outside it doesn't dismiss it"},
+		{Name: "cornerRadius", Type: "float", Positional: true, Default: "0", Doc: "a sheet's top corners' radius (0: the platform's)"},
 		{Name: "guard", Type: "(fn(string) -> string)?", Positional: true, Default: "none", Doc: "asked before its screens show, with the href asked for: \"\" lets the user in, an href sends them there"},
 	}, Doc: "maps a path to a screen, or holds routes: Route(\"/inbox\", layout: .stack, title: \"Inbox\") { Inbox; Thread; Route(\":id/reply\", sheet: true) { p => Reply(id: p.get(\"id\")) } }. Its block holds its child Routes, its screen (p => View, built with its Params), or routed screens named alone (screen Thread(id: int) at \":id\"), a Route of their pattern each"},
 	{Name: "Boundary", Children: true, LazyChildren: true, Events: []Event{

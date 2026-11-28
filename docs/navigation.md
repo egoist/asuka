@@ -580,10 +580,11 @@ On Android an icon must be one that Android has.
 
 ## Sheets
 
-`Sheet` presents its content in a modal sheet while `open` is true:
+`Sheet` presents its content in a sheet while `open` is true:
 
 - **iOS**: a sheet presentation with detents.
-- **Android**: a `BottomSheetDialog`.
+- **Android**: a `BottomSheetDialog`, or a standard bottom sheet in the
+  activity's layout when it doesn't block what's behind it.
 - **macOS**: a sheet window, attached to the window in use.
 - **Windows**: a modal window over the window in use, which is disabled
   meanwhile.
@@ -634,37 +635,106 @@ component Notes {
 }
 ```
 
-- `detents` are the heights it can rest at: `.medium` (half the
-  screen), `.large` (all of it), or both, which starts at medium and
-  lets the user drag it up. With none, it's large. When the
-  keyboard shows, a sheet that can be large goes large. On a desktop a
-  medium-only sheet is half the window's height, and any other most of
-  it; the user resizes a sheet window on a Mac. `.fit` makes it
-  as tall as its content instead, as a Mac's sheets are: for a form or a
-  confirmation, whose content has a height of its own. It's a sheet's
-  width, or wider when its content can't be that narrow (a fixed
-  `width`), so the content shows whole, up to the page's width on the
-  web. A card, as a Mac's sheet and a wide page's are, whose content is
-  one view of a fixed `width` narrower than a sheet (a dialog of its
-  own width), alone or in views of no width of their own, is that
-  view's width and any padding around it; a narrow page's bottom sheet
-  stays the page's width. On a Mac, while it's wider than a sheet, its
-  window can't be made narrower than the sheet and a margin on each
-  side, and a window already narrower widens. The sheet follows the
-  content as it changes, up to the most a sheet may be, beyond which a
-  `Scroll` in it scrolls; the user doesn't resize it. macOS and the web
-  have such a sheet; elsewhere it's large.
-- `grabber: true` shows the handle at its top (iOS, Android, and the
-  web's bottom sheet).
+- `detents` are the heights it can rest at, in any order: `.medium`
+  (about half the screen), `.large` (all of it under the status bar),
+  `.fit` (as tall as its content), `.height(240)` (points) and
+  `.fraction(0.3)` (a share of large's height). None is taller than
+  large. With none, it's large. It opens at the shortest and the user
+  drags it between them; when the keyboard shows, it goes to the
+  tallest. On a desktop a sheet rests at one of them, the one `detent`
+  says or else the shortest: large is most of the window and medium
+  half of it, and the user doesn't drag between them.
+- `detent` is the one it's at: bind it, and the user's dragging writes
+  it, and writing it moves the sheet there, animated. One that isn't
+  among `detents` changes nothing.
+- `.fit` makes it as tall as its content, for a form or a confirmation
+  whose content has a height of its own, on every platform. It follows
+  the content as it changes, up to large, beyond which a `Scroll` in it
+  scrolls. Alone, on a Mac, on Windows, on Linux and on the web, the
+  sheet is sized to the content: it's a sheet's width, or wider when
+  its content can't be that narrow (a fixed `width`), so the content
+  shows whole, up to the page's width on the web. A card, as a Mac's
+  sheet and a wide page's are, whose content is one view of a fixed
+  `width` narrower than a sheet (a dialog of its own width), alone or
+  in views of no width of their own, is that view's width and any
+  padding around it; a narrow page's bottom sheet stays the page's
+  width. On a Mac, while it's wider than a sheet, its window can't be
+  made narrower than the sheet and a margin on each side, and a window
+  already narrower widens. The user doesn't resize it.
+- `grabber: true` shows the handle at its top (iOS, Android, the web's
+  bottom sheet and Linux's; a desktop's sheet window has none).
+- `cornerRadius` rounds its top corners (all of them on a card) to
+  that many points; 0, or none, is the platform's. Windows rounds a
+  window only as DWM does: square, slightly rounded or rounded.
+- `dismissible: false` keeps the user from dragging it down or tapping
+  outside it to dismiss it, for a sheet that stays until the app closes
+  it, as Apple Maps' does. Android's back and Escape still dismiss it,
+  unless an `onBack` in it keeps it.
+- `on resize(height)` hears its height on the screen, in points, frame
+  by frame as it opens, as the user drags it and as it settles: for a
+  view that stays just above it, as a map's buttons do. A bottom sheet's
+  height is also how far up the window it reaches; a desktop's sheet
+  window, which hangs from its window's top or is centered over it,
+  says its own height.
 - Its content is built when it opens and disposed when it closes, so
   state made in it starts fresh each time.
+
+### Sheets that don't block
+
+`undimmed` names the tallest detent at which the sheet leaves what's
+behind it as it is: not dimmed, and still taking taps, scrolls and the
+keyboard, as Apple Maps' sheet does. Above it, the sheet is modal again
+and what's behind dims. A tap outside doesn't dismiss it while it's no
+taller than that. It's one of `detents`; with none, the sheet is modal
+at every detent.
+
+```asuka
+component Places {
+  state open = true
+  state at: Detent = .height(120)
+  state sheetHeight: float = 0
+
+  Column {
+    grow: 1
+    View {
+      grow: 1
+      background: .secondaryBackground
+    }
+    Text("{sheetHeight.rounded()} points of sheet")
+    Sheet {
+      bind open: open
+      detents: [.height(120), .medium, .large]
+      bind detent: at
+      undimmed: .medium
+      grabber: true
+      dismissible: false
+      on resize(h) { sheetHeight = h }
+      SafeArea {
+        padding: 16
+        gap: 12
+        Text("Search Maps") { font: .headline }
+        Button("Show all") { on press { at = .large } }
+      }
+    }
+  }
+}
+```
+
+| | Its detents | Not blocking (`undimmed`) |
+|---|---|---|
+| iOS | `UISheetPresentationController`'s: the system's medium and large, and custom ones for fit, heights and fractions (UIKit may round a small height); a drag moves it between them | `largestUndimmedDetentIdentifier`: what's behind takes touches |
+| Android | `BottomSheetBehavior`'s: the shortest collapsed, a middle one half expanded, the tallest expanded; of more than three, the shortest, the tallest and the one it's at, a detent set that isn't kept going to the nearest | a standard bottom sheet in the activity's layout instead of a dialog: what's behind takes touches; above it a scrim fades in, and a tap on it dismisses the sheet (or brings it down when `dismissible` is false) |
+| macOS | the sheet window at its detent's height; setting `detent` animates it there | at or below it, a panel over the bottom of its window, its top corners rounded, the window still in use; above it, a sheet again |
+| Windows | the sheet window at its detent's height; setting `detent` resizes it | the window behind stays enabled |
+| Linux | the `AdwDialog` at its detent's height | a bottom sheet of the host's own over its window, which the user drags between detents; above the detent a scrim |
+| The web | a narrow page's bottom sheet, dragged between them; a wide page's card at its detent's height | a non-modal `<dialog>` (the page behind clickable and focusable), with a backdrop of its own above the detent |
 
 ### Full-screen sheets
 
 `fullScreen: true` covers the whole screen instead, for a task that takes the
 user's attention until it's done or given up: composing a message,
 signing in, editing a photo (SwiftUI's `fullScreenCover`, Material's
-full-screen dialog). `detents` and `grabber` don't apply, and nothing
+full-screen dialog). `detents` and the options above don't apply, and nothing
 outside it can be tapped or swiped away: it closes when `open` goes
 false, so give it its own Cancel and Done. Android's back, and Escape on
 a desktop or in a browser, dismiss it as they do a sheet, unless an
@@ -737,7 +807,9 @@ or a tap outside it, and on a desktop or in a browser with Escape (on
 Windows, its window's close button too; on the web, a click outside).
 That sets `open` to false and runs `on dismiss`. Setting `open` to
 false from code closes it without running `on dismiss`. So `on dismiss`
-means "closed without your say", such as a draft left unsaved.
+means "closed without your say", such as a draft left unsaved. With
+`dismissible: false`, only Android's back, Escape and a Windows sheet
+window's close button do.
 
 ## Popovers
 
@@ -1582,8 +1654,8 @@ a group:
 
 A route with `sheet: true` is presented in a sheet over its navigator
 (its stack's top screen, the tabs) rather than pushed or chosen; its
-`detents`, `grabber` and `fullScreen` are a sheet's. Going back
-dismisses it; so does navigating to a screen of the navigator under it.
+`detents`, `grabber`, `cornerRadius`, `dismissible` and `fullScreen`
+are a sheet's. Going back dismisses it; so does navigating to a screen of the navigator under it.
 
 ### Navigating
 
