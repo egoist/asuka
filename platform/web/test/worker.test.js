@@ -361,6 +361,40 @@ test("notify: what came due while no page was open shows as the module starts; t
   assert.deepEqual(await env.core.scheduled(env.store), []);
 });
 
+test("notify: a trigger's next time on the device's clock, and a repeating one shows each time it's due", async () => {
+  const env = notifyEnv();
+  const c = env.core;
+  // Saturday 2026-03-07 15:04, the device's clock.
+  const sat = new Date(2026, 2, 7, 15, 4).getTime();
+  const at = (...a) => new Date(...a).getTime();
+  assert.equal(c.nextAt({ kind: "daily", hour: 16, minute: 30 }, sat), at(2026, 2, 7, 16, 30));
+  assert.equal(c.nextAt({ kind: "daily", hour: 9 }, sat), at(2026, 2, 8, 9));
+  assert.equal(c.nextAt({ kind: "weekly", weekday: 2, hour: 9, minute: 30 }, sat), at(2026, 2, 9, 9, 30));
+  assert.equal(c.nextAt({ kind: "weekly", weekday: 7, hour: 8 }, sat), at(2026, 2, 14, 8));
+  assert.equal(c.nextAt({ kind: "monthly", day: 31, hour: 8 }, at(2026, 2, 31, 9)), at(2026, 4, 31, 8));
+  assert.equal(c.nextAt({ kind: "yearly", month: 2, day: 29 }, sat), at(2028, 1, 29));
+  assert.equal(c.nextAt({ kind: "every", seconds: 5 }, sat), sat + 60_000);
+  assert.equal(c.nextAt({ kind: "at", at: sat }, sat + 1), 0);
+  assert.equal(c.afterDue({ kind: "every", seconds: 3600 }, sat, sat + 2 * 3600_000 + 5), sat + 3 * 3600_000);
+
+  const m = notifyModule(fakeHost("n.app"), env);
+  await m.ready;
+  await m.schedule(enc.encode(JSON.stringify({ id: "tick", title: "Tick", seconds: 60, trigger: { kind: "every", seconds: 60 } })));
+  await m.schedule(enc.encode(JSON.stringify({ id: "day", title: "Day", seconds: 60, trigger: { kind: "daily", hour: 9, minute: 0 } })));
+  const pending = json(await m.pending());
+  assert.deepEqual(pending.map((p) => p.id).sort(), ["day", "tick"]);
+  assert.equal(pending.find((p) => p.id === "day").trigger.kind, "daily");
+  assert.equal(pending.find((p) => p.id === "day").next, c.nextAt({ kind: "daily", hour: 9 }, Date.now()));
+  // Due (as if its minute came): it shows, and stays, due a minute on.
+  const due = Date.now() - 1;
+  await c.schedule(env.store, "n.app", { id: "tick", title: "Tick", trigger: { kind: "every", seconds: 60 } }, due);
+  await m.fire();
+  assert.deepEqual(env.shown.map((n) => n.title), ["Tick"]);
+  assert.equal((await c.scheduled(env.store)).find((e) => e.s.id === "tick").at, due + 60_000);
+  await m.cancelAll();
+  assert.deepEqual(await c.scheduled(env.store), []);
+});
+
 test("notify: Present hides one that comes while the page is in front", async () => {
   const env = notifyEnv();
   const h = fakeHost("n.app");

@@ -5,7 +5,7 @@
 // packages' Linux and Windows C share. Its
 // tests build them with a test host (test/host.c) and run Asuka on the
 // core, with no Go at run time. include/desktop.h (src/app.c, files.c,
-// jsontree.c, state.c, flyout.c, animimage.c, imagecache.c, words.c) is what the hosts
+// jsontree.c, state.c, flyout.c, animimage.c, imagecache.c, trigger.c, words.c) is what the hosts
 // themselves share: their settings, files, state, flyouts' places,
 // animated images and Asuka's own words.
 package desktop
@@ -67,11 +67,12 @@ func Shared(dir string) []string {
 // HostShared are the C the Windows and Linux hosts share themselves
 // (desktop.h's dsk_: JSON, the app's settings and directories, files, the
 // window and route state, flyouts' places, animated images, the images'
-// cache, Asuka's own words), and its headers, in dir (Dir's).
+// cache, scheduled notifications' next times, Asuka's own words), and its
+// headers, in dir (Dir's).
 func HostShared(dir string) []string {
 	src := filepath.Join(dir, "src")
 	var out []string
-	for _, f := range []string{"app.c", "files.c", "jsontree.c", "state.c", "flyout.c", "animimage.c", "imagecache.c", "words.c", "words_gen.c", "words.h", "words_gen.h"} {
+	for _, f := range []string{"app.c", "files.c", "jsontree.c", "state.c", "flyout.c", "animimage.c", "imagecache.c", "trigger.c", "words.c", "words_gen.c", "words.h", "words_gen.h"} {
 		out = append(out, filepath.Join(src, f))
 	}
 	return append(out, filepath.Join(dir, "include", "desktop.h"))

@@ -27,6 +27,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     testOptions.unitTests.isReturnDefaultValues = true
+    testOptions.unitTests.isIncludeAndroidResources = true
     if (embed) {
         sourceSets.getByName("main") {
             prop("asukaJniLibs")?.let { jniLibs.srcDir(it) }
@@ -72,4 +73,8 @@ dependencies {
     // apps that show one.
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303") // the real org.json: android.jar's is a stub
+    // Android's own classes, for the tests that need them (the scheduled
+    // notifications' alarms and their receiver after a reboot).
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("org.robolectric:robolectric:4.14")
 }

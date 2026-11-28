@@ -1,13 +1,18 @@
-// Package platform/notify is local notifications: shown now or after a
-// while, whether or not the app runs then; tapping one opens the app with
-// its URL (the app's openURL). The user allows them first (request).
+// Package platform/notify is local notifications: shown now, after a
+// while, at a time, or again and again (each day at a time, each week,
+// month or year, every few minutes), whether or not the app runs then;
+// tapping one opens the app with its URL (the app's openURL). The user
+// allows them first (request). What's waiting is listed (pending) and
+// taken away (cancel, cancelAll).
 //
 // What a messaging app needs is here too, for platform/push's notifications
 // as well: actions and inline replies (setCategories, responses), threads
 // that group a chat's notifications, Android's channels (setChannels),
 // messages in conversations (Notification.from), the app icon's badge
 // (setBadge), the notifications showing (showing, remove, removeThread),
-// and which ones show while the app is open (present).
+// and which ones show while the app is open (present). A notification
+// has its own sound, iOS's interruption level and relevance, and on
+// Android it may stay (ongoing) with a progress bar, updated by its ID.
 //
 // Each platform's host shows them as its own apps' do (iOS's and macOS's
 // UserNotifications, Android's notifications, Windows' toasts, Linux's
@@ -19,7 +24,11 @@
 //
 //   if try await notify.request() {
 //     try await notify.schedule(notify.Notification(title: "Tea", body: "It's ready", after: 4min))
+//     try await notify.schedule(notify.Notification(id: "standup", title: "Stand-up", trigger: .weekly(weekday: .monday, hour: 9, minute: 30)))
 //   }
+//
+// Tests drive a fake: notify.fake() stands for the device, its clock
+// moved by advance.
 
 import platform/host
 import std/json
@@ -74,8 +83,12 @@ pub struct Notification {
   body: string = ""
   /// What the app is opened with when it's tapped (one of its scheme's).
   url: string = ""
-  /// How long from now it shows (schedule: at least a second).
+  /// How long from now it shows (schedule: at least a second), when it
+  /// has no trigger.
   after: Duration = 0s
+  /// When schedule shows it: at a time, or again and again (each day at
+  /// a time, each week...); none: after.
+  trigger: Trigger? = none
   /// A line under the title (iOS); Android's sub text.
   subtitle: string = ""
   /// The app's own keys, given back in showing, responses and present.
@@ -98,6 +111,23 @@ pub struct Notification {
   /// A message's sender and conversation (from).
   sender: Person? = none
   conversation: Conversation? = none
+  /// A sound in the app's assets ("sounds/chime.caf") played in place of
+  /// the system's: iOS and macOS take .caf, .aiff and .wav files of 30
+  /// seconds at most; Android 8 and later play their channel's sound
+  /// (Channel.sound), not a notification's.
+  sound: string = ""
+  /// How much it interrupts (iOS 15, macOS 12): passive ones wait in the
+  /// list, time-sensitive and critical ones come through Focus.
+  interruption: Interruption = .active
+  /// Where it goes in the notification summary (iOS 15, macOS 12): 0 to
+  /// 1, the highest first.
+  relevance: float = 0
+  /// Stays until the app takes it away (cancel, remove): the user can't
+  /// swipe it away (Android; elsewhere it's a notification as any other).
+  ongoing: bool = false
+  /// A progress bar (Android, Windows): show it again with its ID as the
+  /// work goes on, which updates it without a sound.
+  progress: Progress? = none
 
   /// Makes it a message: sender said its body in c, shown as the
   /// platform shows messages (iOS's communication notifications,
@@ -108,6 +138,161 @@ pub struct Notification {
     n.sender = sender
     n.conversation = c
     return n
+  }
+}
+
+/// When a scheduled notification shows: once (after a while, at a time)
+/// or again and again. The times of day are the device's clock's, and
+/// follow it as it changes zone; a repeating one shows until it's
+/// cancelled.
+pub enum Trigger {
+  /// Once, a while from now (at least a second).
+  after(Duration)
+  /// Once, at a time (one that's past shows in a second).
+  at(time.Time)
+  /// Every interval (at least a minute), the first an interval from now.
+  every(Duration)
+  /// Each day at hour (0 to 23) and minute.
+  daily(hour: int, minute: int)
+  /// Each week, on weekday at hour and minute.
+  weekly(weekday: time.Weekday, hour: int, minute: int)
+  /// Each month, on day (1 to 31: a month without it is skipped) at
+  /// hour and minute.
+  monthly(day: int, hour: int, minute: int)
+  /// Each year, on month (1 to 12) and day at hour and minute (February
+  /// 29: the years that have it).
+  yearly(month: int, day: int, hour: int, minute: int)
+
+  /// Whether it shows again and again.
+  fn repeats() -> bool = match self {
+    .after(_) | .at(_) => false
+    _ => true
+  }
+
+  /// When it shows next after the time after (when it was scheduled,
+  /// or last showed), on after's zone's clock; none: it shows once, and
+  /// that's past.
+  fn next(after: time.Time) -> time.Time? = match self {
+    .after(d) => after.add(if d < 1s { 1s } else { d })
+    .at(t) => if t.isAfter(after) { t } else { none }
+    .every(d) => after.add(if d < 60s { 60s } else { d })
+    .daily(hour: h, minute: m) => nextDaily(after, h, m)
+    .weekly(weekday: w, hour: h, minute: m) => nextWeekly(after, w, h, m)
+    .monthly(day: d, hour: h, minute: m) => nextMonthly(after, d, h, m)
+    .yearly(month: mo, day: d, hour: h, minute: m) => nextYearly(after, mo, d, h, m)
+  }
+}
+
+fn nextDaily(after: time.Time, h: int, m: int) -> time.Time {
+  let t = time.date(after.year(), after.month(), after.day(), hour: h, minute: m, zone: after.zone)
+  if t.isAfter(after) {
+    return t
+  }
+  return time.date(after.year(), after.month(), after.day() + 1, hour: h, minute: m, zone: after.zone)
+}
+
+fn weekdayIndex(w: time.Weekday) -> int = match w {
+  .sunday => 0
+  .monday => 1
+  .tuesday => 2
+  .wednesday => 3
+  .thursday => 4
+  .friday => 5
+  .saturday => 6
+}
+
+fn nextWeekly(after: time.Time, w: time.Weekday, h: int, m: int) -> time.Time {
+  let ahead = (weekdayIndex(w) - weekdayIndex(after.weekday()) + 7) % 7
+  let t = time.date(after.year(), after.month(), after.day() + ahead, hour: h, minute: m, zone: after.zone)
+  if t.isAfter(after) {
+    return t
+  }
+  return time.date(after.year(), after.month(), after.day() + ahead + 7, hour: h, minute: m, zone: after.zone)
+}
+
+fn nextMonthly(after: time.Time, d: int, h: int, m: int) -> time.Time? {
+  // Every day of the month comes within a year (a 31st in a month or
+  // two): a year and a month covers them.
+  for i in 0..<13 {
+    let y = after.year() + (after.month() - 1 + i) / 12
+    let mo = (after.month() - 1 + i) % 12 + 1
+    if d <= time.daysIn(mo, year: y) {
+      let t = time.date(y, mo, d, hour: h, minute: m, zone: after.zone)
+      if t.isAfter(after) {
+        return t
+      }
+    }
+  }
+  return none
+}
+
+fn nextYearly(after: time.Time, mo: int, d: int, h: int, m: int) -> time.Time? {
+  // February 29 comes within 8 years (1900 and 2100 aren't leap years).
+  for i in 0..<9 {
+    let y = after.year() + i
+    if d <= time.daysIn(mo, year: y) {
+      let t = time.date(y, mo, d, hour: h, minute: m, zone: after.zone)
+      if t.isAfter(after) {
+        return t
+      }
+    }
+  }
+  return none
+}
+
+/// How much a notification interrupts (iOS's interruption levels).
+pub enum Interruption {
+  /// As notifications do: a banner and a sound, the screen lit.
+  active
+  /// Into the list quietly: no banner, sound or lit screen.
+  passive
+  /// Through Focus and the scheduled summary, for what can't wait (a
+  /// delivery at the door): an app that uses it is given the Time
+  /// Sensitive Notifications capability.
+  timeSensitive
+  /// Through Focus and the ring switch, with its sound, for health and
+  /// safety: Apple grants the Critical Alerts capability on request, the
+  /// app's profile must have it, and request(critical: true) asks the
+  /// user for it.
+  critical
+}
+
+/// A notification's progress bar (Android, Windows).
+pub enum Progress {
+  /// How far it is, 0 to 1.
+  of(float)
+  /// Going on, how far not known.
+  indeterminate
+}
+
+/// A notification waiting to show (pending): its content and trigger,
+/// and when it shows next.
+pub struct Scheduled {
+  id: string = ""
+  title: string = ""
+  subtitle: string = ""
+  body: string = ""
+  url: string = ""
+  data: [string: string] = [:]
+  category: string = ""
+  thread: string = ""
+  trigger: Trigger = .after(1s)
+  /// When it shows next; none: the system doesn't say.
+  next: time.Time? = none
+}
+
+/// What schedule throws for a trigger it can't take.
+pub enum NotifyError: Error {
+  /// notify: a trigger's time isn't one (an hour of 0 to 23, a minute of 0 to 59, a day of 1 to 31, a month of 1 to 12)
+  badTime
+  /// notify: a repeating interval is at least a minute
+  shortInterval
+
+  /// The error's text: "notify: " and what's wrong, as each case's
+  /// comment says.
+  fn message() -> string = match self {
+    .badTime => "notify: a trigger's time isn't one (an hour of 0 to 23, a minute of 0 to 59, a day of 1 to 31, a month of 1 to 12)"
+    .shortInterval => "notify: a repeating interval is at least a minute"
   }
 }
 
@@ -217,6 +402,9 @@ pub struct Channel {
   noVibration: bool = false
   noBadge: bool = false
   group: string = ""
+  /// A sound in the app's assets its notifications play ("": the
+  /// system's), set as it's made, as its other settings are.
+  sound: string = ""
 }
 
 /// A group of Android channels.
@@ -237,69 +425,237 @@ pub enum Presentation {
 
 /// Asks the user to allow notifications (the first time; then it's
 /// their answer, or what they've set in Settings since), and answers
-/// whether they're allowed.
-pub async fn request() throws -> bool {
-  let b = try await host.call("notify", "request", bytes())
+/// whether they're allowed. critical asks for critical alerts too (iOS:
+/// Interruption's critical, which Apple grants the app first).
+pub async fn request(critical: bool = false) throws -> bool {
+  if let f = faked {
+    f.asked = true
+    return f.allowed
+  }
+  let b = try await host.call("notify", "request", host.u8(if critical { 1 } else { 0 }))
   return host.readU8(b, 0) == 1
 }
 
-/// Shows n after n.after (at least a second).
+/// Shows n when its trigger says (none: n.after from now, at least a
+/// second), whether or not the app runs then; one with the ID of one
+/// waiting or showing replaces it. A trigger it can't take throws
+/// NotifyError.
 pub async fn schedule(n: Notification) throws {
-  let secs = max(n.after.seconds(), 1.0)
-  try await post(n, secs)
+  let tr = n.trigger ?? .after(n.after)
+  try check(tr)
+  let now = if let f = faked { f.now } else { time.now() }
+  var secs = 1.0
+  if let at = tr.next(after: now) {
+    secs = max(at.sub(now).seconds(), 1.0)
+  }
+  if let f = faked {
+    f.add(n, tr)
+    return
+  }
+  try await post(spec(n, secs, trigger: wireTrigger(tr, now)))
 }
 
-/// Shows n now; with its ID, it replaces the one showing.
+/// Shows n now; with its ID, it replaces the one showing (an ongoing
+/// one's progress, updated).
 pub async fn show(n: Notification) throws {
-  try await post(n, 0.0)
+  if let f = faked {
+    f.deliver(spec(n, 0.0))
+    return
+  }
+  try await post(spec(n, 0.0))
 }
 
-async fn post(n: Notification, seconds: float) throws {
-  let _ = try await host.call("notify", "schedule", json.encode(spec(n, seconds)).bytes())
+async fn post(s: Spec) throws {
+  let _ = try await host.call("notify", "schedule", json.encode(s).bytes())
 }
 
-/// Takes away the notification id: waiting, or showing.
-pub fn cancel(id: string) = host.send("notify", "cancel", id.bytes())
+fn check(t: Trigger) throws {
+  // 0: it's one; 1: a time that isn't; 2: an interval too short.
+  let bad = match t {
+    .after(_) | .at(_) => 0
+    .every(d) => if d < 60s { 2 } else { 0 }
+    .daily(hour: h, minute: m) => if clock(h, m) { 0 } else { 1 }
+    .weekly(weekday: _, hour: h, minute: m) => if clock(h, m) { 0 } else { 1 }
+    .monthly(day: d, hour: h, minute: m) => if clock(h, m) && d >= 1 && d <= 31 { 0 } else { 1 }
+    .yearly(month: mo, day: d, hour: h, minute: m) => if clock(h, m) && mo >= 1 && mo <= 12 && d >= 1 && d <= time.daysIn(mo, year: 2000) { 0 } else { 1 }
+  }
+  if bad == 1 {
+    throw NotifyError.badTime
+  }
+  if bad == 2 {
+    throw NotifyError.shortInterval
+  }
+}
+
+fn clock(h: int, m: int) -> bool = h >= 0 && h <= 23 && m >= 0 && m <= 59
+
+/// Takes away the notification id: waiting (its repeats too), or
+/// showing.
+pub fn cancel(id: string) {
+  if let f = faked {
+    f.scheduled = f.scheduled.filter(s => s.id != id)
+    f.shown = f.shown.filter(d => d.id != id)
+    return
+  }
+  host.send("notify", "cancel", id.bytes())
+}
+
+/// Takes away every notification of the app's waiting to show (not
+/// those showing: removeAll).
+pub fn cancelAll() {
+  if let f = faked {
+    f.scheduled = []
+    return
+  }
+  host.send("notify", "cancelAll", bytes())
+}
+
+/// The app's notifications waiting to show, the soonest first.
+pub async fn pending() throws -> [Scheduled] {
+  if let f = faked {
+    return f.scheduled
+  }
+  do {
+    let b = try await host.call("notify", "pending", bytes())
+    let ws: [WireScheduled] = try json.decode(b.string())
+    return ws.map(scheduledOf).sorted(key: s => s.next?.unixMilli() ?? 9223372036854775807)
+  } catch e {
+    if host.unsupported(e) {
+      return []
+    }
+    throw e
+  }
+}
+
+/// Whether scheduled notifications show at their time to the minute.
+/// Android 12 and later let the user turn the app's exact alarms off
+/// (Settings, Alarms & reminders), and Android 14 has them off for an
+/// app just installed: then Android shows them within a few minutes
+/// of their time, when it wakes for other work too, to save the battery.
+/// Elsewhere, true.
+pub async fn exactAllowed() -> bool {
+  if let f = faked {
+    return f.exact
+  }
+  do {
+    let b = try await host.call("notify", "exact", bytes())
+    return host.readU8(b, 0) == 1
+  } catch {
+    return true
+  }
+}
+
+/// Asks for exact alarms (exactAllowed): on Android 12 and later, opens
+/// the app's Alarms & reminders page for the user to allow them, and
+/// answers whether they're allowed once the user is back; elsewhere,
+/// true at once. Notifications scheduled before show at their time from
+/// then on.
+pub async fn requestExact() throws -> bool {
+  if let f = faked {
+    return f.exact
+  }
+  do {
+    let b = try await host.call("notify", "requestExact", bytes())
+    return host.readU8(b, 0) == 1
+  } catch e {
+    if host.unsupported(e) {
+      return true
+    }
+    throw e
+  }
+}
 
 /// Sets the number on the app's icon; 0 takes it away. Android has no
 /// badge of its own (launchers count the notifications): it does nothing
 /// there.
-pub fn setBadge(n: int) = host.send("notify", "badge", host.u32(max(n, 0)))
+pub fn setBadge(n: int) {
+  if let f = faked {
+    f.badge = max(n, 0)
+    return
+  }
+  host.send("notify", "badge", host.u32(max(n, 0)))
+}
 
 /// The app's notifications showing, its pushes' too, newest first.
 pub async fn showing() throws -> [Delivered] {
+  if let f = faked {
+    return f.shown
+  }
   let b = try await host.call("notify", "showing", bytes())
   let ws: [WireDelivered] = try json.decode(b.string())
   return ws.map(deliveredOf)
 }
 
 /// Takes away the notifications ids that show.
-pub fn remove(ids: [string]) = host.send("notify", "remove", json.encode(ids).bytes())
+pub fn remove(ids: [string]) {
+  if let f = faked {
+    f.shown = f.shown.filter(d => !ids.contains(d.id))
+    return
+  }
+  host.send("notify", "remove", json.encode(ids).bytes())
+}
 
 /// Takes away the notifications of thread that show: a chat's, once it's
 /// read.
-pub fn removeThread(thread: string) = host.send("notify", "removeThread", thread.bytes())
+pub fn removeThread(thread: string) {
+  if let f = faked {
+    f.shown = f.shown.filter(d => d.thread != thread)
+    return
+  }
+  host.send("notify", "removeThread", thread.bytes())
+}
 
 /// Takes away all the app's notifications that show (not the ones
 /// waiting: cancel them).
-pub fn removeAll() = host.send("notify", "removeAll", bytes())
+pub fn removeAll() {
+  if let f = faked {
+    f.shown = []
+    return
+  }
+  host.send("notify", "removeAll", bytes())
+}
 
 /// Sets the app's categories: the actions their notifications show.
-pub fn setCategories(cs: [Category]) = host.send("notify", "categories", json.encode(cs).bytes())
+pub fn setCategories(cs: [Category]) {
+  if let f = faked {
+    f.categories = cs
+    return
+  }
+  host.send("notify", "categories", json.encode(cs).bytes())
+}
 
 /// Sets the app's Android channels (iOS and the desktops have none).
 pub fn setChannels(cs: [Channel]) {
-  let wire = cs.map(c => WireChannel(id: c.id, name: c.name, description: c.description, importance: importance(c.importance), silent: c.silent, noVibration: c.noVibration, noBadge: c.noBadge, group: c.group))
+  if let f = faked {
+    f.channels = cs
+    return
+  }
+  let wire = cs.map(c => WireChannel(id: c.id, name: c.name, description: c.description, importance: importance(c.importance), silent: c.silent, noVibration: c.noVibration, noBadge: c.noBadge, group: c.group, sound: c.sound))
   host.send("notify", "channels", json.encode(wire).bytes())
 }
 
 /// Sets the app's Android channel groups.
-pub fn setChannelGroups(gs: [ChannelGroup]) = host.send("notify", "channelGroups", json.encode(gs).bytes())
+pub fn setChannelGroups(gs: [ChannelGroup]) {
+  if faked.isSome() {
+    return
+  }
+  host.send("notify", "channelGroups", json.encode(gs).bytes())
+}
 
 /// What the user does with the app's notifications (and its pushes'):
 /// taps, actions, replies. A response that comes as the app starts waits
 /// until this is read.
 pub fn responses() -> Stream<Response> = Stream(give => {
+  if let f = faked {
+    for r in f.responses {
+      give(r)
+    }
+    f.responses = []
+    let id = f.onResponse(r => give(r))
+    defer { f.unlisten(id) }
+    await never()
+    return
+  }
   for await b in host.next("notify", "nextAction") {
     let r: WireResponse? = try? json.decode(b.string())
     if let x = r {
@@ -329,7 +685,7 @@ store Presenter {
 
   fn set(f: fn(Delivered) -> Presentation) {
     decide = f
-    if !on {
+    if !on && faked.isNone() {
       on = true
       host.send("notify", "present", host.u8(1))
     }
@@ -337,7 +693,7 @@ store Presenter {
 
   fn clear() {
     decide = none
-    if on {
+    if on && faked.isNone() {
       on = false
       host.send("notify", "present", host.u8(0))
     }
@@ -394,9 +750,12 @@ struct WireChannel {
   noVibration: bool
   noBadge: bool
   group: string
+  sound: string
 }
 
-// What the hosts take (sdk/notify's Spec).
+// What the hosts take (sdk/notify's Spec). seconds is how long until it
+// shows first (0: now); trigger, for a scheduled one, when it shows (a
+// host keeps it, and says it back in pending).
 struct Spec {
   id: string
   title: string
@@ -414,6 +773,92 @@ struct Spec {
   image: string
   sender: Person?
   conversation: WireConversation?
+  trigger: WireTrigger? = none
+  sound: string = ""
+  /// "", "passive", "timeSensitive", "critical".
+  interruption: string = ""
+  relevance: float = 0
+  ongoing: bool = false
+  progress: WireProgress? = none
+}
+
+// A trigger as the hosts take it: its kind ("after", "at", "every",
+// "daily", "weekly", "monthly", "yearly"); seconds, an after's or an
+// every's; at, an at's time in milliseconds since 1970 (an after's too,
+// from when it's scheduled); the time of day, and the weekday (1:
+// Sunday, as iOS's and Android's calendars), the day of the month, the
+// month (1: January).
+struct WireTrigger {
+  kind: string
+  seconds: float = 0
+  at: int = 0
+  hour: int = 0
+  minute: int = 0
+  weekday: int = 0
+  day: int = 0
+  month: int = 0
+}
+
+struct WireProgress {
+  value: float
+  indeterminate: bool
+}
+
+// What a host says of a notification waiting (pending): next is when
+// it shows next, in milliseconds since 1970 (0: it doesn't say).
+struct WireScheduled {
+  id: string = ""
+  title: string = ""
+  subtitle: string = ""
+  body: string = ""
+  url: string = ""
+  data: [string: string] = [:]
+  category: string = ""
+  thread: string = ""
+  trigger: WireTrigger? = none
+  next: int = 0
+}
+
+fn wireTrigger(t: Trigger, now: time.Time) -> WireTrigger = match t {
+  .after(d) => WireTrigger(kind: "after", seconds: d.seconds(), at: now.add(d).unixMilli())
+  .at(x) => WireTrigger(kind: "at", at: x.unixMilli())
+  .every(d) => WireTrigger(kind: "every", seconds: d.seconds())
+  .daily(hour: h, minute: m) => WireTrigger(kind: "daily", hour: h, minute: m)
+  .weekly(weekday: w, hour: h, minute: m) => WireTrigger(kind: "weekly", hour: h, minute: m, weekday: weekdayIndex(w) + 1)
+  .monthly(day: d, hour: h, minute: m) => WireTrigger(kind: "monthly", hour: h, minute: m, day: d)
+  .yearly(month: mo, day: d, hour: h, minute: m) => WireTrigger(kind: "yearly", hour: h, minute: m, day: d, month: mo)
+}
+
+fn triggerOf(w: WireTrigger) -> Trigger = match w.kind {
+  "at" => .at(time.unixMilli(w.at))
+  "every" => .every(w.seconds * 1s)
+  "daily" => .daily(hour: w.hour, minute: w.minute)
+  "weekly" => .weekly(weekday: weekdays[(w.weekday + 6) % 7], hour: w.hour, minute: w.minute)
+  "monthly" => .monthly(day: w.day, hour: w.hour, minute: w.minute)
+  "yearly" => .yearly(month: w.month, day: w.day, hour: w.hour, minute: w.minute)
+  _ => .after(w.seconds * 1s)
+}
+
+let weekdays: [time.Weekday] = [.sunday, .monday, .tuesday, .wednesday, .thursday, .friday, .saturday]
+
+fn scheduledOf(w: WireScheduled) -> Scheduled = Scheduled(id: w.id, title: w.title, subtitle: w.subtitle, body: w.body, url: w.url, data: w.data,
+  category: w.category, thread: w.thread, trigger: if let t = w.trigger { triggerOf(t) } else { .after(1s) }, next: if w.next > 0 { time.unixMilli(w.next) } else { none })
+
+fn interruptionName(i: Interruption) -> string = match i {
+  .active => ""
+  .passive => "passive"
+  .timeSensitive => "timeSensitive"
+  .critical => "critical"
+}
+
+fn wireProgress(p: Progress?) -> WireProgress? {
+  if let x = p {
+    return match x {
+      .of(v) => WireProgress(value: if v < 0.0 { 0.0 } else if v > 1.0 { 1.0 } else { v }, indeterminate: false)
+      .indeterminate => WireProgress(value: 0.0, indeterminate: true)
+    }
+  }
+  return none
 }
 
 struct WireConversation {
@@ -451,9 +896,10 @@ pub fn specOf(n: Notification, sender: Person?, c: Conversation?) -> Spec {
   return spec(m, 0.0)
 }
 
-/// n as the hosts take it: a message's ID, thread and title from its
+/// n as the hosts take it, shown in seconds (0: now), when trigger says
+/// (a scheduled one's): a message's ID, thread and title from its
 /// conversation and sender.
-pub fn spec(n: Notification, seconds: float) -> Spec {
+pub fn spec(n: Notification, seconds: float, trigger: WireTrigger? = none) -> Spec {
   var id = n.id
   var thread = n.thread
   var title = n.title
@@ -472,5 +918,152 @@ pub fn spec(n: Notification, seconds: float) -> Spec {
       title = if c.group && !c.title.isEmpty() { c.title } else { s.name }
     }
   }
-  return Spec(id: id, title: title, subtitle: n.subtitle, body: n.body, url: n.url, data: n.data, seconds: seconds, category: n.category, thread: thread, summary: n.summary, channel: n.channel, badge: n.badge, silent: n.silent, image: n.image, sender: n.sender, conversation: conv)
+  return Spec(id: id, title: title, subtitle: n.subtitle, body: n.body, url: n.url, data: n.data, seconds: seconds, category: n.category, thread: thread,
+    summary: n.summary, channel: n.channel, badge: n.badge, silent: n.silent, image: n.image, sender: n.sender, conversation: conv,
+    trigger: trigger, sound: n.sound, interruption: interruptionName(n.interruption), relevance: n.relevance, ongoing: n.ongoing, progress: wireProgress(n.progress))
+}
+
+// ---------------------------------------------------------------------
+// Testing
+
+// The fake a test installed (fake()).
+state faked: FakeNotify? = none
+
+/// The device's notifications, as a test drives them: fake() installs
+/// one, and the package reads it in place of the platform. Its clock
+/// (now) is the test's: schedule counts from it, and advance moves it,
+/// showing what's due as the device would.
+///
+///   let device = notify.fake()
+///   try await notify.schedule(notify.Notification(id: "water", trigger: .daily(hour: 9, minute: 0)))
+///   let shown = device.advance(24h)
+pub store FakeNotify {
+  /// What request answers: whether the user allows notifications.
+  pub state allowed = true
+  /// Whether request asked.
+  pub state asked = false
+  /// What exactAllowed and requestExact answer.
+  pub state exact = true
+  /// The device's clock.
+  pub state now: time.Time = time.unix(0)
+  /// What's waiting to show, as pending answers it: the soonest first.
+  pub state scheduled: [Scheduled] = []
+  /// What shows, newest first, as showing answers it.
+  pub state shown: [Delivered] = []
+  /// What setBadge set, and what the notifications shown set it to.
+  pub state badge = 0
+  /// What setCategories set.
+  pub state categories: [Category] = []
+  /// What setChannels set.
+  pub state channels: [Channel] = []
+  /// The last spec shown of each ID: its sound, interruption, progress.
+  pub state specs: [string: Spec] = [:]
+  /// The responses waiting for responses() to read.
+  pub state responses: [Response] = []
+  state readers: [int: fn(Response)] = [:]
+  state ids = 0
+
+  fn add(n: Notification, t: Trigger) {
+    var id = n.id
+    if id.isEmpty() {
+      ids += 1
+      id = "fake-{ids}"
+    }
+    var m = n
+    m.id = id
+    let s = spec(m, 0.0)
+    specs[id] = s
+    let at = t.next(after: now)
+    let x = Scheduled(id: id, title: s.title, subtitle: s.subtitle, body: s.body, url: s.url, data: s.data, category: s.category, thread: s.thread, trigger: t, next: at)
+    scheduled = (scheduled.filter(e => e.id != id) + [x]).sorted(key: e => e.next?.unixMilli() ?? 9223372036854775807)
+  }
+
+  fn deliver(s: Spec) {
+    var x = s
+    if x.id.isEmpty() {
+      ids += 1
+      x.id = "fake-{ids}"
+    }
+    specs[x.id] = x
+    if x.badge > 0 {
+      badge = x.badge
+    }
+    let d = Delivered(id: x.id, title: x.title, subtitle: x.subtitle, body: x.body, url: x.url, data: x.data, category: x.category, thread: x.thread, time: now)
+    if let decide = presenter.decide {
+      if presentation(decide(d)) == 2 {
+        return
+      }
+    }
+    shown = [d] + shown.filter(e => e.id != x.id)
+  }
+
+  /// Moves the clock by d: what's due by then shows, the soonest first
+  /// (a repeating one is scheduled again for its next time), and is
+  /// answered.
+  pub fn advance(d: Duration) -> [Delivered] {
+    let until = now.add(d)
+    var out: [Delivered] = []
+    var more = true
+    while more {
+      more = false
+      if let first = scheduled.first() {
+        if let at = first.next {
+          if !at.isAfter(until) {
+            more = true
+            now = at
+            scheduled = scheduled.filter(e => e.id != first.id)
+            if let s = specs[first.id] {
+              deliver(s)
+              if let got = shown.first() {
+                if got.id == first.id {
+                  out.push(got)
+                }
+              }
+            }
+            if first.trigger.repeats() {
+              var again = first
+              again.next = first.trigger.next(after: at)
+              scheduled = (scheduled + [again]).sorted(key: e => e.next?.unixMilli() ?? 9223372036854775807)
+            }
+          }
+        }
+      }
+    }
+    now = until
+    return out
+  }
+
+  /// The user taps the notification id (action ""), or one of its
+  /// category's actions, with a reply's text: responses() gets it.
+  pub fn tap(id: string, action: string = "", reply: string = "") {
+    let n = shown.find(d => d.id == id) ?? Delivered(id: id)
+    let r = Response(action: action, reply: reply, notification: n)
+    shown = shown.filter(d => d.id != id)
+    if readers.isEmpty() {
+      responses = responses + [r]
+      return
+    }
+    for (_, f) in readers {
+      f(r)
+    }
+  }
+
+  fn onResponse(f: fn(Response)) -> int {
+    ids += 1
+    readers[ids] = f
+    return ids
+  }
+
+  fn unlisten(id: int) {
+    readers.remove(id)
+  }
+}
+
+/// Installs a FakeNotify, for a test, its clock at now: from then on the
+/// package reads it, allowed and with exact alarms.
+pub fn fake(now: time.Time = time.now()) -> FakeNotify {
+  let f = FakeNotify()
+  f.now = now
+  faked = f
+  return f
 }

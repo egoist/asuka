@@ -34,7 +34,7 @@ web need nothing declared (see each one's section below).
 | --- | --- | --- |
 | `platform/camera` | `CAMERA`, `RECORD_AUDIO` | `NSCameraUsageDescription`, `NSMicrophoneUsageDescription` |
 | `platform/location` | `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION`, `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE_LOCATION`, `RECEIVE_BOOT_COMPLETED`; the package's foreground service and its receiver (background updates, regions) | `NSLocationWhenInUseUsageDescription`, `NSLocationAlwaysAndWhenInUseUsageDescription`, the `location` background mode; for an app that calls `requestPrecise`, `NSLocationTemporaryUsageDescriptionDictionary` |
-| `platform/notify` | `POST_NOTIFICATIONS` | |
+| `platform/notify` | `POST_NOTIFICATIONS`; for an app that calls `schedule`, `RECEIVE_BOOT_COMPLETED`, `SCHEDULE_EXACT_ALARM` and the receiver that sets its notifications again after a reboot | for an app that uses `.timeSensitive`, the Time Sensitive Notifications entitlement; `.critical`, the Critical Alerts entitlement |
 | `platform/network` | `ACCESS_NETWORK_STATE` | |
 | `platform/library` | `WRITE_EXTERNAL_STORAGE` (Android 9 and earlier) | `NSPhotoLibraryAddUsageDescription`; the app's Documents shown in Files |
 | `platform/background` | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`, `WAKE_LOCK`; a foreground service | |
@@ -320,7 +320,7 @@ Keychain, Network), except where a watch differs:
 | `platform/nowplaying` | The watch's Now Playing, and the Digital Crown's volume |
 | `platform/purchase` | StoreKit 2; the watch confirms a purchase in its own sheet. It has no subscriptions, refund or offer code sheets: `manageSubscriptions`, `requestRefund` and `redeemCode` throw unsupported |
 | `platform/appleauth` | The watch's Sign in with Apple sheet and SwiftUI's button (`.automatic` is white, on the watch's black) |
-| `platform/notify` | Notifications as on an iPhone, with their actions, replies and messages. A watch app has no badge: `setBadge` does nothing |
+| `platform/notify` | Notifications as on an iPhone, with their actions, replies and messages. A watch app has no badge: `setBadge` does nothing; it plays the watch's own sound, not a notification's `sound` |
 | `platform/push` | APNs, the watch app's own token, alerts and data messages; no `rewrite` (a watch app has no Notification Service Extension) |
 | `platform/crash` | The core's fatal errors and uncaught exceptions; no MetricKit diagnostics |
 | `platform/analytics` | Not on the watch (Firebase's Analytics has no watchOS SDK): `available()` is false and nothing is sent |
@@ -1281,9 +1281,10 @@ test "a region, crossed" {
 
 ## Notifications: platform/notify
 
-`platform/notify` shows local notifications, now or at a time the app sets,
-whether or not the app is running then. Tapping one opens the app with
-its URL. It also has what a messaging app needs, for `platform/push`'s
+`platform/notify` shows local notifications, now, at a time the app
+sets, or again and again (each day at a time, each week, month or year,
+every few minutes), whether or not the app is running then. Tapping one
+opens the app with its URL. It also has what a messaging app needs, for `platform/push`'s
 notifications too: actions and replies typed in the notification,
 threads, Android's channels, messages in conversations, the badge, the
 notifications showing, and which ones show while the app is open.
@@ -1308,10 +1309,17 @@ async fn remindToWater() throws {
 - `notify.request()` asks the user to allow notifications the first
   time, and answers whether they're allowed: their answer then, or what
   they've set in Settings since.
-- `notify.schedule(n)` sets `n` to show `n.after` from now (at least a
-  second); `notify.show(n)` shows it now. One with the `id` of one
-  waiting or showing replaces it. Both are async.
-- `notify.cancel(id)` takes the notification away, waiting or shown.
+- `notify.schedule(n)` sets `n` to show when its `trigger` says (below),
+  or `n.after` from now (at least a second); `notify.show(n)` shows it
+  now. One with the `id` of one waiting or showing replaces it. Both are
+  async.
+- `notify.cancel(id)` takes the notification away, waiting (a repeating
+  one's next times too) or shown; `notify.cancelAll()` takes away every
+  one waiting.
+- `notify.pending()` lists the notifications waiting, the soonest first:
+  each `Scheduled` has the notification's `id`, `title`, `subtitle`,
+  `body`, `url`, `data`, `category` and `thread`, its `trigger`, and
+  `next`, when it shows next (a `time.Time?`).
 
 A `Notification`'s `url` should be one of the app's scheme (`asuka.toml`'s
 `scheme`): the app's `openURL` gets it when the user taps the
@@ -1328,11 +1336,120 @@ notification. Its other fields:
 | `badge` | The app icon's number when it shows (iOS, macOS); Android's notification number |
 | `silent` | No sound |
 | `image` | A picture, as `Image`'s sources (an asset, a file, an http(s) URL): iOS's attachment, Android's big picture |
+| `trigger` | When `schedule` shows it (below); none: `after` |
+| `sound` | A sound in the app's assets played in its place of the system's (iOS and macOS: a `.caf`, `.aiff` or `.wav` of 30 seconds at most); Android 8 and later play the channel's sound instead (`Channel`'s `sound`) |
+| `interruption` | How much it interrupts (iOS 15, macOS 12): `.active` (the default), `.passive` (into the list quietly; Android: without a sound), `.timeSensitive` (through Focus), `.critical` (below) |
+| `relevance` | Where it goes in iOS's notification summary, `0` to `1`: the highest first |
+| `ongoing` | Android: it stays until the app takes it away (`cancel`, `remove`); the user can't swipe it away |
+| `progress` | A progress bar (Android, Windows): `.of(0.4)`, or `.indeterminate`; show it again with its `id` as the work goes on, which updates it without a sound |
 
 **iOS** shows a notification while the app is open too, as a banner,
-unless `present` says otherwise. **Android** posts a scheduled one from an
-inexact alarm (no exact-alarm permission needed), so it may come a
-little after its time.
+unless `present` says otherwise.
+
+### When it shows
+
+A notification's `trigger` says when `schedule` shows it: once, or again
+and again until it's cancelled. Times of day are the device's clock's,
+and follow it when it changes time zone.
+
+```asuka check
+import platform/notify
+import std/time
+
+async fn remind() throws {
+  try await notify.schedule(notify.Notification(id: "plants", title: "Water the plants", trigger: .daily(hour: 9, minute: 0)))
+  try await notify.schedule(notify.Notification(id: "standup", title: "Stand-up", trigger: .weekly(weekday: .monday, hour: 9, minute: 30)))
+  try await notify.schedule(notify.Notification(id: "rent", title: "Rent is due", trigger: .monthly(day: 1, hour: 8, minute: 0)))
+  try await notify.schedule(notify.Notification(id: "trip", title: "Pack for the trip", trigger: .at(time.date(2026, 12, 20, hour: 7))))
+  try await notify.schedule(notify.Notification(id: "stretch", title: "Stretch", trigger: .every(1h)))
+}
+```
+
+| Trigger | When |
+|---|---|
+| `.after(d)` | Once, `d` from now (at least a second): `after`'s |
+| `.at(t)` | Once, at `t` (one that's past shows in a second) |
+| `.every(d)` | Every `d` (at least a minute), the first `d` from now |
+| `.daily(hour:, minute:)` | Each day at that time |
+| `.weekly(weekday:, hour:, minute:)` | Each week on that day (a `time.Weekday`) |
+| `.monthly(day:, hour:, minute:)` | Each month on that day (1 to 31: a month without it is skipped) |
+| `.yearly(month:, day:, hour:, minute:)` | Each year on that date (February 29: the years that have it) |
+
+`schedule` throws `NotifyError.badTime` for a time that isn't one (an
+hour past 23, a 32nd) and `NotifyError.shortInterval` for an `every` of
+less than a minute. `trigger.next(after: t)` is when a trigger shows next
+after `t`, on `t`'s zone's clock, and `trigger.repeats()` whether it
+shows again.
+
+**iOS** and **macOS** schedule them with UserNotifications' calendar and
+interval triggers, which the system keeps however long the app is
+closed; iOS keeps 64 waiting notifications per app (the soonest).
+**Android** sets an alarm for each, and for a repeating one the next as
+one goes off; Asuka keeps them, and sets their alarms again after what
+clears or moves them: a reboot, the app updated, the clock or the time
+zone changed (an app that calls `schedule` has the receiver for those).
+A one-time notification whose time went by while the phone was off
+shows as it starts again; a repeating one shows at its next time, not
+the ones it missed. An alarm is exact when the app may set them (the
+`SCHEDULE_EXACT_ALARM` permission, which an app that calls `schedule`
+declares): Android 12 and 13 grant it, but Android 14 has it off for an
+app just installed, and the user may turn it off in Settings (Alarms &
+reminders). Without it, Android shows a notification within a few
+minutes of its time (an inexact alarm, which it batches with other work
+to save the battery). `notify.exactAllowed()` says whether it's on,
+and `notify.requestExact()` takes the user to the app's Alarms &
+reminders page and answers once they're back (elsewhere both answer
+`true`); notifications already scheduled are exact from then on. An
+alarm clock or a calendar, which Google Play lets use
+`USE_EXACT_ALARM`, isn't asked: it declares that permission instead.
+
+### Sounds, interruption levels, progress
+
+- A notification's `sound` is a file in the app's `assets`. iOS and macOS
+  play it in place of the system's (a critical one at the alarm's
+  volume). Android 8 and later play a channel's sound, not a
+  notification's: give the channel it's in a `sound` as it's made
+  (`notify.Channel(id: "alarms", name: "Alarms", sound: "sounds/bell.ogg")`);
+  Android 7 plays the notification's. Windows and Linux play their own,
+  and the web the browser's.
+- `.timeSensitive` notifications come through Focus and the scheduled
+  summary: an app that uses it is given the Time Sensitive Notifications
+  capability (its entitlement), which a release build's profile must
+  have. Windows shows them as important notifications (`scenario`
+  `urgent`), which the user may let through Do Not Disturb.
+- `.critical` alerts sound with the ring switch off and through Focus,
+  for health, safety and security: Apple grants the Critical Alerts
+  capability only on request, so an app that uses `.critical` is given
+  its entitlement, and its profile must have it to be signed.
+  `notify.request(critical: true)` asks the user for critical alerts
+  too. Without the capability, a critical notification shows as an
+  active one.
+- An `ongoing` notification with a `progress` bar is Android's way to
+  show work going on: show it again with its `id` to move the bar, and
+  `cancel` it once the work is done. Windows draws the bar in the toast
+  too; iOS has Live Activities for it (`platform/liveactivity`).
+
+### Testing
+
+`notify.fake(now:)` stands in for the device in an app's tests: `request`
+answers its `allowed`, `schedule` keeps what's scheduled (`pending`), and
+its `advance(d)` moves its clock, showing what's due as the device
+would (a repeating one again and again) and answering what showed.
+`tap(id, action:, reply:)` sends a response to `responses()`, and its
+`specs` say what reached the platform (a notification's `sound`,
+`interruption`, `progress`).
+
+```asuka check
+import platform/notify
+import std/time
+
+test "the plants, each morning" {
+  let device = notify.fake(now: time.date(2026, 3, 7, hour: 15, zone: .utc))
+  try await notify.schedule(notify.Notification(id: "plants", title: "Water the plants", trigger: .daily(hour: 9, minute: 0)))
+  expect(try await notify.pending()[0].next == time.date(2026, 3, 8, hour: 9, zone: .utc))
+  expect(device.advance(48h).map(d => d.id) == ["plants", "plants"])
+}
+```
 
 ### Actions and replies
 
@@ -1519,6 +1636,12 @@ count.
 | | iOS | Android | macOS | Windows | Linux | Web |
 |---|---|---|---|---|---|---|
 | Show, schedule, cancel | ✓ | ✓ | ✓ | ✓ (toasts) | ✓ (scheduled: a systemd user timer, whether the app runs or not) | ✓ (scheduled: while a page of the app is open) |
+| Repeating (daily, weekly, monthly, yearly, every) | ✓ | ✓ (exact with the permission, else within minutes) | ✓ | ✓ (the next 64 times, scheduled ahead again as the app starts) | ✓ (a systemd timer; without systemd, while the app runs) | while a page of the app is open (missed ones show once as the next opens) |
+| `pending`, `cancelAll` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Kept across a reboot | ✓ | ✓ (set again as the device starts) | ✓ | ✓ | ✓ (systemd's) | not needed (kept in the app's storage) |
+| Sound | ✓ | the channel's (Android 7: the notification's) | ✓ | the system's | the system's | the browser's |
+| Interruption levels, relevance | ✓ (iOS 15) | `.passive`: no sound | ✓ (macOS 12) | `.timeSensitive`, `.critical`: urgent | ignored | ignored |
+| Ongoing, progress | ignored | ✓ | ignored | progress bar | ignored | ignored |
 | Actions, replies | ✓ | ✓ | ✓ | ✓ (five buttons) | actions (a reply opens the app) | buttons where the browser shows them (Chrome, Edge: two); replies where it has inline replies |
 | Background actions | ✓ (about 25 s) | ✓ (about 9 s) | ✓ | ✓ (about 25 s; started for it) | while the app runs | in a page of the app (the worker opens one) |
 | Threads | ✓ | ✓ (a group and its summary) | ✓ | not grouped; `removeThread` | ✓ | not grouped; `removeThread` |
@@ -1545,8 +1668,13 @@ desktop's notification server itself (GNOME Shell turns away an app it
 has no desktop file for); taps and buttons reach the app while it runs.
 A notification due later is a systemd user timer (`systemd-run --user`),
 which runs the app's executable without a window to show it, hands it
-to the app if it runs, and launches the app for a tap; without systemd
-(a Flatpak, `asuka dev`) it shows while the app runs. **A browser** shows
+to the app if it runs, and launches the app for a tap; a repeating one
+is a timer that repeats on the computer's clock (`OnCalendar`) or every
+interval. Without systemd (a Flatpak, `asuka dev`) they show while the
+app runs, set again each time it starts (a one-time one whose time went
+by while it was closed showing then). **Windows** has no repeating toast:
+a repeating notification's next 64 times (within a year) are scheduled
+ahead, and again each time the app starts. **A browser** shows
 them through the app's service worker, with Web Push for `platform/push`:
 [the web](web.md) has the details.
 

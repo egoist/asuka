@@ -64,6 +64,70 @@
     return f();
   }
 
+  // --- Triggers (sdk/notify's WireTrigger) ---
+
+  const repeats = (t) => !!t && !!t.kind && t.kind !== "at" && t.kind !== "after";
+
+  /**
+   * nextAt is when trigger t shows next after after (ms since 1970), on
+   * the device's clock: "daily", "weekly" (weekday 1: Sunday), "monthly"
+   * (a month without the day skipped), "yearly"; "every" seconds (at
+   * least 60); "at" and "after" once at their time. 0: once, and past.
+   */
+  function nextAt(t, after) {
+    if (!t || !repeats(t)) return t?.at > after ? t.at : 0;
+    if (t.kind === "every") return after + Math.max(60, t.seconds || 60) * 1000;
+    const now = new Date(after);
+    const y = now.getFullYear(), mo = now.getMonth(), d = now.getDate();
+    const h = t.hour || 0, m = t.minute || 0;
+    const wall = (yy, mm, dd) => new Date(yy, mm, dd, h, m, 0, 0).getTime();
+    const daysIn = (yy, mm) => new Date(yy, mm + 1, 0).getDate();
+    if (t.kind === "daily") {
+      const c = wall(y, mo, d);
+      return c > after ? c : wall(y, mo, d + 1);
+    }
+    if (t.kind === "weekly") {
+      const ahead = (((t.weekday || 1) - 1 - now.getDay()) % 7 + 7) % 7;
+      const c = wall(y, mo, d + ahead);
+      return c > after ? c : wall(y, mo, d + ahead + 7);
+    }
+    if (t.kind === "monthly") {
+      const day = t.day || 1;
+      for (let i = 0; i <= 12; i++) {
+        const mm = mo + i, yy = y + Math.floor(mm / 12);
+        if (day > daysIn(yy, mm % 12)) continue;
+        const c = wall(yy, mm % 12, day);
+        if (c > after) return c;
+      }
+      return 0;
+    }
+    if (t.kind === "yearly") {
+      const mm = (t.month || 1) - 1, day = t.day || 1;
+      for (let i = 0; i <= 8; i++) {
+        if (day > daysIn(y + i, mm)) continue;
+        const c = wall(y + i, mm, day);
+        if (c > after) return c;
+      }
+      return 0;
+    }
+    return 0;
+  }
+
+  /**
+   * afterDue is when one first due at due shows next after now: due if
+   * it's ahead; a repeating one's next time (an interval's counted on
+   * from due, keeping its pace, the times missed skipped); 0 once past.
+   */
+  function afterDue(t, due, now) {
+    if (due > now) return due;
+    if (!repeats(t)) return 0;
+    if (t.kind === "every") {
+      const iv = Math.max(60, t.seconds || 60) * 1000;
+      return due + (Math.floor((now - due) / iv) + 1) * iv;
+    }
+    return nextAt(t, now);
+  }
+
   // --- Scheduled notifications: { id: { s: Spec, at: ms } } ---
 
   /** schedule keeps s to show at at (ms since 1970), in place of one with its ID. */
@@ -94,7 +158,8 @@
   /**
    * takeDue takes the scheduled ones due at now out of the store, under
    * the app's lock, and returns them, the oldest first: whichever page,
-   * or the worker, takes one shows it, once.
+   * or the worker, takes one shows it, once. A repeating one stays, due
+   * at its next time (the times it missed with no page open shown once).
    */
   function takeDue(st, app, now, nav) {
     return locked(app, async () => {
@@ -102,7 +167,12 @@
       const due = [];
       for (const [id, e] of Object.entries(m)) {
         if (!e?.s || e.s.id !== id) { delete m[id]; continue; }
-        if (e.at <= now) { due.push(e); delete m[id]; }
+        if (e.at <= now) {
+          due.push({ ...e });
+          const next = repeats(e.s.trigger) ? afterDue(e.s.trigger, e.at, now) : 0;
+          if (next) e.at = next;
+          else delete m[id];
+        }
       }
       if (due.length) await st.set("scheduled", m);
       return due.sort((a, b) => a.at - b.at).map((e) => e.s);
@@ -226,7 +296,7 @@
   }
 
   g.asukaNotify = {
-    store, locked, schedule, unschedule, scheduled, takeDue, addPending, takePending,
+    store, locked, schedule, unschedule, scheduled, takeDue, addPending, takePending, nextAt, afterDue, repeats,
     newID, shownOf, notificationOf, messageOf, specOfMessage, responseOf,
   };
 })();

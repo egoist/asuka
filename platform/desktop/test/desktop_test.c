@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static int failed;
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #c); failed++; } } while (0)
@@ -334,7 +335,62 @@ static void test_config(const char *dir) {
 	free(p);
 }
 
+// trig is a trigger's JSON's next after after.
+static int64_t trig(const char *json, int64_t after) {
+	dsk_json *t = dsk_json_parse(json, strlen(json));
+	int64_t n = dsk_trigger_next(t, after);
+	dsk_json_free(t);
+	return n;
+}
+
+// test_trigger: when a scheduled notification shows next (trigger.c), on
+// UTC's clock and New York's (its clocks go forward on 2026-03-08).
+static void test_trigger(void) {
+	setenv("TZ", "UTC0", 1);
+	tzset();
+	const int64_t sat = 1772895840000;  // Saturday 2026-03-07 15:04 UTC
+	const int64_t hour = 3600000, day = 24 * hour;
+	CHECK(trig("{\"kind\":\"daily\",\"hour\":16,\"minute\":30}", sat) == sat + 86 * 60000);
+	CHECK(trig("{\"kind\":\"daily\",\"hour\":9}", sat) == sat - (6 * hour + 4 * 60000) + day);
+	CHECK(trig("{\"kind\":\"daily\",\"hour\":15,\"minute\":4}", sat) == sat + day);
+	// Monday 9:30; Saturday 18:00, today; Saturday 8:00, a week on.
+	CHECK(trig("{\"kind\":\"weekly\",\"weekday\":2,\"hour\":9,\"minute\":30}", sat) == 1773048600000);
+	CHECK(trig("{\"kind\":\"weekly\",\"weekday\":7,\"hour\":18}", sat) == sat + 2 * hour + 56 * 60000);
+	CHECK(trig("{\"kind\":\"weekly\",\"weekday\":7,\"hour\":8}", sat) == 1773475200000);
+	// April 1 8:00; May 31 (April has no 31st); December 25; 2028-02-29.
+	CHECK(trig("{\"kind\":\"monthly\",\"day\":1,\"hour\":8}", sat) == 1775030400000);
+	CHECK(trig("{\"kind\":\"monthly\",\"day\":31,\"hour\":8}", 1774947600000) == 1780214400000);
+	CHECK(trig("{\"kind\":\"yearly\",\"month\":12,\"day\":25,\"hour\":7}", sat) == 1798182000000);
+	CHECK(trig("{\"kind\":\"yearly\",\"month\":2,\"day\":29}", sat) == 1835395200000);
+	CHECK(trig("{\"kind\":\"every\",\"seconds\":900}", sat) == sat + 900000);
+	CHECK(trig("{\"kind\":\"every\",\"seconds\":5}", sat) == sat + 60000);
+	CHECK(trig("{\"kind\":\"at\",\"at\":1772903040000}", sat) == 1772903040000);
+	CHECK(trig("{\"kind\":\"at\",\"at\":1772895840000}", sat + 1) == 0);
+	dsk_json *t = dsk_json_parse("{\"kind\":\"after\"}", 17);
+	CHECK(!dsk_trigger_repeats(t));
+	dsk_json_free(t);
+	t = dsk_json_parse("{\"kind\":\"daily\"}", 16);
+	CHECK(dsk_trigger_repeats(t));
+	dsk_json_free(t);
+	// After it showed (or was missed): an interval keeps its pace.
+	t = dsk_json_parse("{\"kind\":\"every\",\"seconds\":3600}", 31);
+	CHECK(dsk_trigger_after(t, sat, sat + 2 * hour + 5) == sat + 3 * hour);
+	CHECK(dsk_trigger_after(t, sat + hour, sat) == sat + hour);
+	dsk_json_free(t);
+	t = dsk_json_parse("{\"kind\":\"at\"}", 13);
+	CHECK(dsk_trigger_after(t, sat, sat + 1) == 0);
+	dsk_json_free(t);
+	// New York: 9:00 on the clock both days, 23 hours apart.
+	setenv("TZ", "America/New_York", 1);
+	tzset();
+	const int64_t ny9 = 1772892000000;  // 2026-03-07 09:00 EST
+	CHECK(trig("{\"kind\":\"daily\",\"hour\":9}", ny9) == ny9 + 23 * hour);
+	unsetenv("TZ");
+	tzset();
+}
+
 int main(int argc, char **argv) {
+	test_trigger();
 	test_windows_names();
 	test_words();
 	test_flyout();

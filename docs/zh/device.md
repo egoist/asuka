@@ -12,7 +12,7 @@ Asuka 提供了一系列包，让应用用上视图之外的设备能力：相�
 | --- | --- | --- |
 | `platform/camera` | `CAMERA`、`RECORD_AUDIO` | `NSCameraUsageDescription`、`NSMicrophoneUsageDescription` |
 | `platform/location` | `ACCESS_COARSE_LOCATION`、`ACCESS_FINE_LOCATION`、`ACCESS_BACKGROUND_LOCATION`、`FOREGROUND_SERVICE_LOCATION`、`RECEIVE_BOOT_COMPLETED`；这个包的前台服务及其广播接收器（用于后台定位更新和区域） | `NSLocationWhenInUseUsageDescription`、`NSLocationAlwaysAndWhenInUseUsageDescription`、`location` 后台模式；调用了 `requestPrecise` 的应用另有 `NSLocationTemporaryUsageDescriptionDictionary` |
-| `platform/notify` | `POST_NOTIFICATIONS` | |
+| `platform/notify` | `POST_NOTIFICATIONS`；调用了 `schedule` 的应用另有 `RECEIVE_BOOT_COMPLETED`、`SCHEDULE_EXACT_ALARM`，以及重启后重新设置通知的广播接收器 | 用到 `.timeSensitive` 的应用有 Time Sensitive Notifications 权利（entitlement），用到 `.critical` 的有 Critical Alerts 权利 |
 | `platform/network` | `ACCESS_NETWORK_STATE` | |
 | `platform/library` | `WRITE_EXTERNAL_STORAGE`（Android 9 及更早版本） | `NSPhotoLibraryAddUsageDescription`；应用的 Documents 目录会出现在“文件”App 中 |
 | `platform/background` | `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`POST_NOTIFICATIONS`、`WAKE_LOCK`；一个前台服务 | |
@@ -232,7 +232,7 @@ Linux 应用同样不需要声明任何东西。凡是 Asuka 通过 XDG 桌面�
 | `platform/nowplaying` | 手表的“正在播放”，以及用数码表冠调节音量 |
 | `platform/purchase` | StoreKit 2；购买由手表在自己的面板中确认。手表没有订阅管理、退款和优惠码面板：`manageSubscriptions`、`requestRefund` 和 `redeemCode` 会抛出 unsupported |
 | `platform/appleauth` | 手表的“通过 Apple 登录”面板和 SwiftUI 的按钮（`.automatic` 在手表的黑色背景上显示为白色） |
-| `platform/notify` | 和在 iPhone 上一样显示通知，包括操作、回复和消息。手表应用没有角标：`setBadge` 什么也不做 |
+| `platform/notify` | 和在 iPhone 上一样显示通知，包括操作、回复和消息。手表应用没有角标：`setBadge` 什么也不做；手表播放自己的提示音，而不是通知的 `sound` |
 | `platform/push` | 使用 APNs，手表应用有自己的 token，支持提醒推送和数据消息；不支持 `rewrite`（手表应用没有 Notification Service Extension） |
 | `platform/crash` | 核心的致命错误和未捕获的异常；没有 MetricKit 的诊断信息 |
 | `platform/analytics` | 不支持手表（Firebase 的 Analytics 没有 watchOS SDK）：`available()` 为 false，什么也不会发送 |
@@ -898,7 +898,7 @@ test "a region, crossed" {
 
 ## 通知：platform/notify
 
-`platform/notify` 用来显示本地通知，可以立即显示，也可以在应用设定的时间显示，到时应用是否在运行都没关系。点按通知会用它的 URL 打开应用。它还提供了消息类应用所需的各种功能，同样适用于 `platform/push` 的通知：操作按钮和直接在通知里输入的回复、会话分组（thread）、Android 的通知渠道、对话中的消息、角标、当前显示的通知，以及应用打开时哪些通知要显示。
+`platform/notify` 用来显示本地通知，可以立即显示，可以在应用设定的时间显示，也可以重复显示（每天的某个时间、每周、每月、每年，或每隔几分钟），到时应用是否在运行都没关系。点按通知会用它的 URL 打开应用。它还提供了消息类应用所需的各种功能，同样适用于 `platform/push` 的通知：操作按钮和直接在通知里输入的回复、会话分组（thread）、Android 的通知渠道、对话中的消息、角标、当前显示的通知，以及应用打开时哪些通知要显示。
 
 ```asuka
 import platform/notify
@@ -918,8 +918,9 @@ async fn remindToWater() throws {
 ```
 
 - `notify.request()` 第一次调用时会请求用户允许通知，并返回通知是否已被允许：可能是用户当时的回答，也可能是之后在“设置”中修改过的结果。
-- `notify.schedule(n)` 安排 `n` 在 `n.after` 之后显示（至少一秒）；`notify.show(n)` 则立即显示。如果 `id` 与某条等待中或正在显示的通知相同，就会替换掉它。两者都是异步的。
-- `notify.cancel(id)` 移除一条通知，无论它还在等待还是已经显示。
+- `notify.schedule(n)` 安排 `n` 在它的 `trigger`（见下文）指定的时候显示，没有 `trigger` 时则在 `n.after` 之后显示（至少一秒）；`notify.show(n)` 则立即显示。如果 `id` 与某条等待中或正在显示的通知相同，就会替换掉它。两者都是异步的。
+- `notify.cancel(id)` 移除一条通知，无论它还在等待（重复的通知连同以后的各次）还是已经显示；`notify.cancelAll()` 移除所有等待中的通知。
+- `notify.pending()` 按显示时间由近到远列出等待中的通知：每个 `Scheduled` 包含通知的 `id`、`title`、`subtitle`、`body`、`url`、`data`、`category` 和 `thread`，它的 `trigger`，以及下一次显示的时间 `next`（一个 `time.Time?`）。
 
 `Notification` 的 `url` 应该使用应用自己的 scheme（`asuka.toml` 中的 `scheme`）：用户点按通知时，应用的 `openURL` 会收到这个 URL。其他字段如下：
 
@@ -934,8 +935,68 @@ async fn remindToWater() throws {
 | `badge` | 通知显示时应用图标上的数字（iOS、macOS）；在 Android 上是通知的数字 |
 | `silent` | 不发出声音 |
 | `image` | 一张图片，来源与 `Image` 相同（资源、文件、http(s) URL）：在 iOS 上作为附件，在 Android 上作为大图（big picture） |
+| `trigger` | `schedule` 什么时候显示它（见下文）；不设置时用 `after` |
+| `sound` | 应用资源中的一个声音，代替系统的提示音播放（iOS 和 macOS：不超过 30 秒的 `.caf`、`.aiff` 或 `.wav`）；Android 8 及以上播放的是渠道的声音（`Channel` 的 `sound`），而不是通知自己的 |
+| `interruption` | 打扰程度（iOS 15、macOS 12）：`.active`（默认）、`.passive`（静静地进入通知列表；在 Android 上不发出声音）、`.timeSensitive`（可以穿过专注模式）、`.critical`（见下文） |
+| `relevance` | 在 iOS 通知摘要中的排序，`0` 到 `1`，越大越靠前 |
+| `ongoing` | Android：通知会一直保留，直到应用移除它（`cancel`、`remove`），用户无法划掉 |
+| `progress` | 进度条（Android、Windows）：`.of(0.4)` 或 `.indeterminate`；随着工作推进，用同一个 `id` 再次显示它即可更新，且不会再发出声音 |
 
-**iOS** 在应用打开时也会以横幅形式显示通知，除非 `present` 另有指定。**Android** 用非精确闹钟（inexact alarm）发出定时通知（因此不需要精确闹钟权限），所以通知可能会比设定的时间稍晚一点出现。
+**iOS** 在应用打开时也会以横幅形式显示通知，除非 `present` 另有指定。
+
+### 显示时机
+
+通知的 `trigger` 决定 `schedule` 什么时候显示它：可以只显示一次，也可以一直重复，直到被取消。时间按设备的时钟计算，设备换了时区也会随之调整。
+
+```asuka check
+import platform/notify
+import std/time
+
+async fn remind() throws {
+  try await notify.schedule(notify.Notification(id: "plants", title: "Water the plants", trigger: .daily(hour: 9, minute: 0)))
+  try await notify.schedule(notify.Notification(id: "standup", title: "Stand-up", trigger: .weekly(weekday: .monday, hour: 9, minute: 30)))
+  try await notify.schedule(notify.Notification(id: "rent", title: "Rent is due", trigger: .monthly(day: 1, hour: 8, minute: 0)))
+  try await notify.schedule(notify.Notification(id: "trip", title: "Pack for the trip", trigger: .at(time.date(2026, 12, 20, hour: 7))))
+  try await notify.schedule(notify.Notification(id: "stretch", title: "Stretch", trigger: .every(1h)))
+}
+```
+
+| 触发条件 | 显示时间 |
+|---|---|
+| `.after(d)` | 从现在起 `d` 之后显示一次（至少一秒），与 `after` 相同 |
+| `.at(t)` | 在 `t` 显示一次（已经过去的时间则在一秒后显示） |
+| `.every(d)` | 每隔 `d`（至少一分钟），第一次在 `d` 之后 |
+| `.daily(hour:, minute:)` | 每天的这个时间 |
+| `.weekly(weekday:, hour:, minute:)` | 每周的这一天（一个 `time.Weekday`） |
+| `.monthly(day:, hour:, minute:)` | 每月的这一天（1 到 31；没有这一天的月份会跳过） |
+| `.yearly(month:, day:, hour:, minute:)` | 每年的这个日期（2 月 29 日：只在有这一天的年份） |
+
+如果时间不成立（超过 23 点、32 号），`schedule` 会抛出 `NotifyError.badTime`；`every` 的间隔不到一分钟时抛出 `NotifyError.shortInterval`。`trigger.next(after: t)` 按 `t` 所在时区的时钟，返回触发条件在 `t` 之后的下一次显示时间；`trigger.repeats()` 返回它是否会重复。
+
+**iOS** 和 **macOS** 用 UserNotifications 的日历触发器和时间间隔触发器来安排，无论应用关闭多久，系统都会保留它们；iOS 为每个应用最多保留 64 条等待中的通知（最近的那些）。**Android** 为每条通知设置一个闹钟，重复的通知则在闹钟响起时设置下一个。Asuka 会保存这些通知，并在闹钟被清除或打乱时重新设置：重启、应用更新、时钟或时区改变（调用了 `schedule` 的应用带有处理这些事件的广播接收器）。手机关机期间错过时间的一次性通知，会在手机重新启动时显示；重复的通知则不补发错过的那几次，而是在下一个时间显示。如果应用可以设置精确闹钟（`SCHEDULE_EXACT_ALARM` 权限，调用了 `schedule` 的应用会声明它），闹钟就是精确的：Android 12 和 13 会授予这个权限，但 Android 14 对刚安装的应用默认关闭，用户也可以在“设置”（闹钟和提醒）中关掉它。没有这个权限时，Android 会在设定时间之后的几分钟内显示通知（非精确闹钟，系统会把它和其他工作合并执行以节省电量）。`notify.exactAllowed()` 返回是否有这个权限，`notify.requestExact()` 会把用户带到应用的“闹钟和提醒”页面，并在用户返回时告诉你是否已允许（其他平台上两者都返回 `true`）；允许之后，已经安排好的通知也会变得精确。Google Play 允许使用 `USE_EXACT_ALARM` 的闹钟或日历应用不需要请求，直接声明那个权限即可。
+
+### 声音、打扰程度与进度
+
+- 通知的 `sound` 是应用 `assets` 中的一个文件。iOS 和 macOS 会用它代替系统的提示音（紧急通知以闹钟的音量播放）。Android 8 及以上播放的是渠道的声音，而不是通知的：创建通知所在的渠道时给它设置 `sound`（`notify.Channel(id: "alarms", name: "Alarms", sound: "sounds/bell.ogg")`）；Android 7 则播放通知自己的声音。Windows 和 Linux 播放系统自己的声音，Web 播放浏览器的声音。
+- `.timeSensitive` 通知可以穿过专注模式和定时摘要：用到它的应用会获得 Time Sensitive Notifications 功能（以及相应的权利），正式版构建的描述文件也必须包含它。Windows 会把它显示为重要通知（`scenario` 为 `urgent`），用户允许的话可以穿过勿扰模式。
+- `.critical` 紧急通知即使在静音开关打开、专注模式下也会发出声音，用于健康、安全和安保场景：Apple 只在申请通过后才授予 Critical Alerts 功能，所以用到 `.critical` 的应用会带上这项权利，描述文件中也必须有它才能签名。`notify.request(critical: true)` 还会向用户请求允许紧急通知。没有这项功能时，紧急通知会作为 `.active` 通知显示。
+- 带 `progress` 进度条的 `ongoing` 通知是 Android 展示进行中工作的方式：用同一个 `id` 再次显示它来推进进度条，工作完成后用 `cancel` 移除。Windows 也会在 toast 中画出进度条；iOS 上用实时活动（`platform/liveactivity`）来做这件事。
+
+### 测试
+
+在应用的测试中，`notify.fake(now:)` 代替设备：`request` 返回它的 `allowed`，`schedule` 保存安排好的通知（`pending`），它的 `advance(d)` 会拨动时钟，像设备一样显示到期的通知（重复的通知会一次又一次地显示），并返回显示了哪些。`tap(id, action:, reply:)` 向 `responses()` 发送一个响应，`specs` 则记录了交给平台的内容（通知的 `sound`、`interruption`、`progress`）。
+
+```asuka check
+import platform/notify
+import std/time
+
+test "the plants, each morning" {
+  let device = notify.fake(now: time.date(2026, 3, 7, hour: 15, zone: .utc))
+  try await notify.schedule(notify.Notification(id: "plants", title: "Water the plants", trigger: .daily(hour: 9, minute: 0)))
+  expect(try await notify.pending()[0].next == time.date(2026, 3, 8, hour: 9, zone: .utc))
+  expect(device.advance(48h).map(d => d.id) == ["plants", "plants"])
+}
+```
 
 ### 操作与回复
 
@@ -1055,6 +1116,12 @@ fn makeChannels() {
 | | iOS | Android | macOS | Windows | Linux | Web |
 |---|---|---|---|---|---|---|
 | 显示、定时、取消 | ✓ | ✓ | ✓ | ✓（toast） | ✓（定时：用 systemd 用户定时器，无论应用是否运行） | ✓（定时：仅在应用有页面打开时） |
+| 重复（每天、每周、每月、每年、按间隔） | ✓ | ✓（有权限时精确，否则在几分钟内） | ✓ | ✓（提前安排之后的 64 次，应用启动时再补上） | ✓（systemd 定时器；没有 systemd 时仅在应用运行时） | 仅在应用有页面打开时（错过的在下次打开页面时显示一次） |
+| `pending`、`cancelAll` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 重启后仍保留 | ✓ | ✓（设备启动时重新设置） | ✓ | ✓ | ✓（由 systemd 保留） | 不需要（保存在应用的存储中） |
+| 声音 | ✓ | 渠道的声音（Android 7：通知的声音） | ✓ | 系统的声音 | 系统的声音 | 浏览器的声音 |
+| 打扰程度、relevance | ✓（iOS 15） | `.passive`：无声 | ✓（macOS 12） | `.timeSensitive`、`.critical`：urgent | 忽略 | 忽略 |
+| ongoing、进度 | 忽略 | ✓ | 忽略 | 进度条 | 忽略 | 忽略 |
 | 操作、回复 | ✓ | ✓ | ✓ | ✓（最多五个按钮） | 支持操作（回复会打开应用） | 浏览器显示按钮时可用（Chrome、Edge：两个）；支持内联回复的浏览器可以回复 |
 | 后台操作 | ✓（约 25 秒） | ✓（约 9 秒） | ✓ | ✓（约 25 秒；会为此启动应用） | 仅在应用运行时 | 在应用的页面中运行（由 worker 打开一个页面） |
 | 会话分组 | ✓ | ✓（一个组及其摘要） | ✓ | 不分组；支持 `removeThread` | ✓ | 不分组；支持 `removeThread` |
@@ -1064,7 +1131,7 @@ fn makeChannels() {
 | 列出当前显示的通知、移除 | ✓ | ✓ | ✓ | ✓（通知中心中的） | 仅限应用本次运行中显示过的 | ✓（service worker 显示的） |
 | `present` | ✓ | ✓ | ✓ | ✓（定时通知除外） | ✓ | ✓ |
 
-**macOS** 需要应用的 bundle，而 `asuka dev` 和 `asuka build` 都是从 bundle 启动应用的：单独运行的可执行文件没有 bundle ID，这些调用会抛出说明原因的错误。**Windows** 显示 toast 通知，可以立即显示，也可以定时显示，支持图片，类别中的操作显示为按钮，回复显示为文本框。应用第一次使用通知时会注册自己：在开始菜单中创建一个快捷方式，带上应用的 AppUserModelID（即 asuka.toml 中的 `id`），并在用户的注册表中登记一个 COM 激活器（也就是应用的可执行文件）。这样，点按通知或按钮时才能把响应送到应用；如果应用没在运行，Windows 会替它启动。如果是后台操作，应用会保持不可见，并在响应处理完后退出。角标是画在应用任务栏按钮上的一个数字（打包应用则使用系统的角标）。无论 `present` 怎么决定，Windows 都会照常显示定时的 toast。**Linux** 上，如果应用有 desktop 文件（或运行在沙盒中），通知会以 GNotification 的形式发送，否则直接发给桌面的通知服务器（GNOME Shell 会拒绝没有 desktop 文件的应用）；应用运行期间，点按通知和按钮都能传到应用。定时通知是一个 systemd 用户定时器（`systemd-run --user`）：到时它会以无窗口的方式运行应用的可执行文件来显示通知，如果应用正在运行就交给应用处理，用户点按时则启动应用；没有 systemd 时（Flatpak、`asuka dev`），定时通知只在应用运行时显示。**浏览器**通过应用的 service worker 显示通知，`platform/push` 则通过 Web Push 实现：详见 [Web](web.md)。
+**macOS** 需要应用的 bundle，而 `asuka dev` 和 `asuka build` 都是从 bundle 启动应用的：单独运行的可执行文件没有 bundle ID，这些调用会抛出说明原因的错误。**Windows** 显示 toast 通知，可以立即显示，也可以定时显示，支持图片，类别中的操作显示为按钮，回复显示为文本框。应用第一次使用通知时会注册自己：在开始菜单中创建一个快捷方式，带上应用的 AppUserModelID（即 asuka.toml 中的 `id`），并在用户的注册表中登记一个 COM 激活器（也就是应用的可执行文件）。这样，点按通知或按钮时才能把响应送到应用；如果应用没在运行，Windows 会替它启动。如果是后台操作，应用会保持不可见，并在响应处理完后退出。角标是画在应用任务栏按钮上的一个数字（打包应用则使用系统的角标）。无论 `present` 怎么决定，Windows 都会照常显示定时的 toast。**Linux** 上，如果应用有 desktop 文件（或运行在沙盒中），通知会以 GNotification 的形式发送，否则直接发给桌面的通知服务器（GNOME Shell 会拒绝没有 desktop 文件的应用）；应用运行期间，点按通知和按钮都能传到应用。定时通知是一个 systemd 用户定时器（`systemd-run --user`）：到时它会以无窗口的方式运行应用的可执行文件来显示通知，如果应用正在运行就交给应用处理，用户点按时则启动应用；重复的通知是一个按计算机时钟（`OnCalendar`）或按固定间隔重复的定时器。没有 systemd 时（Flatpak、`asuka dev`），定时通知只在应用运行时显示，应用每次启动时都会重新设置（应用关闭期间错过时间的一次性通知会在那时显示）。**Windows** 没有会重复的 toast：重复通知之后的 64 次（一年以内）会提前安排好，应用每次启动时再重新安排。**浏览器**通过应用的 service worker 显示通知，`platform/push` 则通过 Web Push 实现：详见 [Web](web.md)。
 
 ## 播放声音：platform/audio
 

@@ -38,13 +38,23 @@
 // The timers are used when the app is unique (an app ID of its own, not a
 // asuka dev, test or automation run), outside a sandbox (a Flatpak can't
 // reach systemd), and the user's systemd runs; else a timer of the app's
-// shows it while it runs. A timer is one time (OnCalendar), gone once it
-// fires (RemainAfterElapse=no).
+// shows it while it runs. A one-time notification's timer is one time
+// (OnCalendar, in UTC), gone once it fires (RemainAfterElapse=no); a
+// repeating one's repeats on the computer's clock (OnCalendar's "*-*-*
+// 09:00:00", "Mon *-*-* 09:30:00", "*-*-15 ...", "*-12-25 ...": systemd
+// skips a month without the day), or every interval (OnActiveSec and
+// OnUnitActiveSec), its stored notification kept while it does.
+//
+// Without systemd's timers, a notification due later shows while the
+// app runs, from a timer of its own: kept in the app's data too, and set
+// again as the app starts (a one-time one whose time went by meanwhile
+// shown then). "pending" lists what's stored, either way.
 #include "host.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
@@ -629,13 +639,32 @@ typedef struct {
 	char *image;
 } later_t2;
 
+static void notify_later(spec_t *s, const char *image);
+static char *store_path(const char *id);
+
 static gboolean later_fire(gpointer data) {
 	later_t2 *l = data;
 	for (uint32_t i = 0; i < N.timers.len; i++)
 		if (!strcmp(N.timers.data[i].id, l->spec->id)) N.timers.data[i].source = 0;
 	spec_t *s = l->spec;
 	l->spec = NULL;
+	// A repeating one's next time, on this run's timer; a one-time one
+	// is forgotten as it shows.
+	const dsk_json *t = dsk_json_get(s->json, "trigger");
+	spec_t *again = NULL;
+	if (t && dsk_trigger_repeats(t)) {
+		int64_t now = now_ms(), next = dsk_trigger_next(t, now);
+		again = next ? spec_parse(s->raw, strlen(s->raw)) : NULL;
+		if (again) again->seconds = (double)(next - now) / 1000;
+	} else {
+		char *path = store_path(s->id);
+		remove(path);
+		free(path);
+	}
+	char *image = dupstr(l->image);
 	deliver(s, l->image);
+	if (again) notify_later(again, image);
+	free(image);
 	return 0;
 }
 
@@ -946,6 +975,8 @@ static void scheduled(void *ctx, bool ok, const char *out) {
 	free(s);
 }
 
+static void lx_on_calendar(const dsk_json *t, char *a, char *b, size_t cap);
+
 static void stopped_then_run(void *ctx, bool ok, const char *out) {
 	(void)ok;
 	(void)out;
@@ -955,24 +986,52 @@ static void stopped_then_run(void *ctx, bool ok, const char *out) {
 	time_t sec = (time_t)((due + 999) / 1000);  // OnCalendar is to the second: not early
 	struct tm tm;
 	gmtime_r(&sec, &tm);
-	char cal[96], unit_arg[600], env_id[600], env_data[2048];
+	char cal[96], cal2[96] = "", unit_arg[600], env_id[600], env_data[2048];
 	strftime(cal, sizeof cal, "--on-calendar=%Y-%m-%d %H:%M:%S UTC", &tm);
+	lx_on_calendar(dsk_json_get(s->spec->json, "trigger"), cal, cal2, sizeof cal);
 	snprintf(unit_arg, sizeof unit_arg, "--unit=%s", unit);
 	snprintf(env_id, sizeof env_id, "--setenv=ASUKA_NOTIFY=%s", s->spec->id);
 	snprintf(env_data, sizeof env_data, "--setenv=ASUKA_DATA=%s", lx_data_dir());
 	char *exe = dsk_exe_path();
-	const char *argv[] = {"systemd-run", "--user", "--quiet", "--collect", unit_arg, cal, "--timer-property=AccuracySec=1s", "--timer-property=RemainAfterElapse=no", env_id, env_data, S(exe), NULL};
+	const char *argv[16] = {"systemd-run", "--user", "--quiet", "--collect", unit_arg, cal};
+	int n = 6;
+	if (*cal2) argv[n++] = cal2;
+	const char *rest[] = {"--timer-property=AccuracySec=1s", "--timer-property=RemainAfterElapse=no", env_id, env_data, S(exe), NULL};
+	for (size_t i = 0; i < AK_LEN(rest); i++) argv[n++] = rest[i];
 	run(argv, scheduled, s);
 	free(exe);
 	free(unit);
 }
 
-// schedule_system stores a notification and makes its timer (taking s);
-// r is answered once the system took it (or the app's timer did).
-static void schedule_system(spec_t *s, const char *image, reply *r) {
-	int64_t due = now_ms() + (int64_t)(s->seconds * 1000);
-	due = (due + 999) / 1000 * 1000;
-	char *path = store_path(s->id);
+// lx_on_calendar is a trigger's systemd-run timer arguments (a, and b
+// when it takes two; each cap bytes): a repeating one's on the computer's
+// clock, or every interval; a one-time one's left as a is (its time, in
+// UTC).
+static void lx_on_calendar(const dsk_json *t, char *a, char *b, size_t cap) {
+	if (!t || !dsk_trigger_repeats(t)) return;
+	const char *kind = dsk_json_str(t, "kind", "");
+	int h = (int)dsk_json_num(t, "hour", 0), m = (int)dsk_json_num(t, "minute", 0);
+	static const char *days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+	if (!strcmp(kind, "every")) {
+		double sec = dsk_json_num(t, "seconds", 60);
+		long long n = (long long)(sec < 60 ? 60 : sec);
+		snprintf(a, cap, "--on-active=%llds", n);
+		snprintf(b, cap, "--on-unit-active=%llds", n);
+	} else if (!strcmp(kind, "daily")) {
+		snprintf(a, cap, "--on-calendar=*-*-* %02d:%02d:00", h, m);
+	} else if (!strcmp(kind, "weekly")) {
+		int wd = (int)dsk_json_num(t, "weekday", 1) - 1;
+		snprintf(a, cap, "--on-calendar=%s *-*-* %02d:%02d:00", days[wd < 0 || wd > 6 ? 0 : wd], h, m);
+	} else if (!strcmp(kind, "monthly")) {
+		snprintf(a, cap, "--on-calendar=*-*-%02d %02d:%02d:00", (int)dsk_json_num(t, "day", 1), h, m);
+	} else if (!strcmp(kind, "yearly")) {
+		snprintf(a, cap, "--on-calendar=*-%02d-%02d %02d:%02d:00", (int)dsk_json_num(t, "month", 1), (int)dsk_json_num(t, "day", 1), h, m);
+	}
+}
+
+// store writes a notification due (its spec, its image, when it's first
+// due, and whether a systemd timer shows it) to path.
+static bool store_due(const char *path, const spec_t *s, const char *image, int64_t due, bool system) {
 	dsk_jw w = {0};
 	dsk_jw_obj(&w);
 	dsk_jw_key(&w, "spec");
@@ -983,6 +1042,8 @@ static void schedule_system(spec_t *s, const char *image, reply *r) {
 	}
 	dsk_jw_key(&w, "due");
 	dsk_jw_int(&w, due);
+	dsk_jw_key(&w, "system");
+	dsk_jw_bool(&w, system);
 	dsk_jw_end(&w);
 	size_t n;
 	char *json = dsk_jw_take(&w, &n);
@@ -990,7 +1051,16 @@ static void schedule_system(spec_t *s, const char *image, reply *r) {
 	bool ok = dsk_mkdirs(dir) && dsk_write_file(path, json, n);
 	free(dir);
 	free(json);
-	if (!ok) {
+	return ok;
+}
+
+// schedule_system stores a notification and makes its timer (taking s);
+// r is answered once the system took it (or the app's timer did).
+static void schedule_system(spec_t *s, const char *image, reply *r) {
+	int64_t due = now_ms() + (int64_t)(s->seconds * 1000);
+	due = (due + 999) / 1000 * 1000;
+	char *path = store_path(s->id);
+	if (!store_due(path, s, image, due, true)) {
 		free(path);
 		notify_later(s, image);
 		reply_ok(r, NULL, 0);
@@ -1067,11 +1137,154 @@ static void add_scheduled(spec_t *s, const char *image, reply *r) {
 		return;
 	}
 	cancel_system(s->id);
-	if (s->seconds > 0)
+	if (s->seconds > 0) {
+		// Kept, for pending and the app's next run.
+		char *path = store_path(s->id);
+		store_due(path, s, image, now_ms() + (int64_t)(s->seconds * 1000), false);
+		free(path);
 		notify_later(s, image);
-	else
+	} else {
 		deliver(s, image);
+	}
 	reply_ok(r, NULL, 0);
+}
+
+// each_stored calls f with each notification due that's stored, by its
+// path (f may remove it).
+static void each_stored(void (*f)(const char *path, const dsk_json *stored, void *ctx), void *ctx) {
+	char *dir = dsk_join(lx_data_dir(), "notify");
+	DIR *d = opendir(dir);
+	if (!d) {
+		free(dir);
+		return;
+	}
+	struct dirent *de;
+	while ((de = readdir(d))) {
+		size_t len = strlen(de->d_name);
+		if (len < 6 || strcmp(de->d_name + len - 5, ".json")) continue;
+		char *path = dsk_join(dir, de->d_name);
+		size_t n;
+		char *text = dsk_read_file(path, &n);
+		dsk_json *j = text ? dsk_json_parse(text, n) : NULL;
+		if (j && j->type == DSK_JOBJ) f(path, j, ctx);
+		dsk_json_free(j);
+		free(text);
+		free(path);
+	}
+	closedir(d);
+	free(dir);
+}
+
+typedef struct {
+	dsk_jw *w;
+	int64_t now;
+} pending_ctx;
+
+static void pending_one(const char *path, const dsk_json *st, void *ctx) {
+	(void)path;
+	pending_ctx *c = ctx;
+	const dsk_json *spec = dsk_json_get(st, "spec");
+	const dsk_json *t = dsk_json_get(spec, "trigger");
+	int64_t due = (int64_t)dsk_json_num(st, "due", 0);
+	int64_t next = t ? dsk_trigger_after(t, due, c->now) : (due > c->now ? due : 0);
+	if (!next || !spec) return;
+	dsk_jw *w = c->w;
+	dsk_jw_obj(w);
+	const char *keys[] = {"id", "title", "subtitle", "body", "url", "category", "thread"};
+	for (size_t i = 0; i < AK_LEN(keys); i++) {
+		dsk_jw_key(w, keys[i]);
+		dsk_jw_str(w, dsk_json_str(spec, keys[i], ""));
+	}
+	dsk_jw_key(w, "data");
+	const dsk_json *data = dsk_json_get(spec, "data");
+	if (data && data->type == DSK_JOBJ) dsk_jw_value(w, data);
+	else dsk_jw_obj(w), dsk_jw_end(w);
+	dsk_jw_key(w, "trigger");
+	if (t) dsk_jw_value(w, t);
+	else dsk_jw_obj(w), dsk_jw_key(w, "kind"), dsk_jw_str(w, "after"), dsk_jw_end(w);
+	dsk_jw_key(w, "next");
+	dsk_jw_int(w, next);
+	dsk_jw_end(w);
+}
+
+// pending: what's stored and still due (sdk/notify's WireScheduled; the
+// package sorts them).
+static void m_pending(ak_span args, reply *r) {
+	(void)args;
+	dsk_jw w = {0};
+	dsk_jw_arr(&w);
+	pending_ctx c = {&w, now_ms()};
+	each_stored(pending_one, &c);
+	dsk_jw_aend(&w);
+	size_t n;
+	char *out = dsk_jw_take(&w, &n);
+	reply_ok(r, out, n);
+	free(out);
+}
+
+static void cancel_one(const char *path, const dsk_json *st, void *ctx) {
+	(void)path;
+	(void)ctx;
+	const char *id = dsk_json_str(dsk_json_get(st, "spec"), "id", "");
+	if (*id) {
+		forget_timer(id);
+		cancel_system(id);
+	}
+	remove(path);
+}
+
+// cancelAll: every notification due, its timer stopped.
+static void m_cancel_all(ak_span args, reply *r) {
+	(void)args;
+	each_stored(cancel_one, NULL);
+	while (N.timers.len) forget_timer(N.timers.data[0].id);
+	reply_ok(r, NULL, 0);
+}
+
+static void restore_one(const char *path, const dsk_json *st, void *ctx) {
+	(void)ctx;
+	if (dsk_json_bool(st, "system", false)) return;
+	const dsk_json *spec = dsk_json_get(st, "spec");
+	if (!spec || spec->type != DSK_JOBJ) return;
+	dsk_jw w = {0};
+	dsk_jw_value(&w, spec);
+	size_t n;
+	char *raw = dsk_jw_take(&w, &n);
+	spec_t *s = spec_parse(raw, n);
+	free(raw);
+	if (!s || !*s->id) {
+		spec_free(s);
+		return;
+	}
+	int64_t now = now_ms(), due = (int64_t)dsk_json_num(st, "due", 0);
+	const dsk_json *t = dsk_json_get(spec, "trigger");
+	int64_t next = t ? dsk_trigger_after(t, due, now) : (due > now ? due : 0);
+	const char *image = dsk_json_str(st, "image", "");
+	if (!next) {
+		// Its time went by while the app was closed: shown now.
+		remove(path);
+		s->seconds = 0;
+		deliver(s, image);
+		return;
+	}
+	s->seconds = (double)(next - now) / 1000;
+	notify_later(s, image);
+}
+
+void lx_notify_restore(void);
+
+// lx_notify_restore sets the timers of what's due again, as the app
+// starts, when systemd's timers don't show them.
+void lx_notify_restore(void) {
+	static bool done;
+	if (done || systemd_timers()) return;
+	done = true;
+	char *err = NULL;
+	if (!install(&err)) {
+		g_free(err);
+		return;
+	}
+	each_stored(restore_one, NULL);
 }
 
 static gboolean image_ready(gpointer data) {
@@ -1316,6 +1529,8 @@ static const method_t notify_methods[] = {
 	{"notify", "request", m_request},
 	{"notify", "schedule", m_schedule},
 	{"notify", "cancel", m_cancel},
+	{"notify", "cancelAll", m_cancel_all},
+	{"notify", "pending", m_pending},
 	{"notify", "categories", m_categories},
 	{"notify", "badge", m_badge},
 	{"notify", "showing", m_showing},
@@ -1486,7 +1701,12 @@ int lx_notify_headless(const char *id) {
 		free(path);
 		return 0;
 	}
-	remove(path);
+	// A one-time one is forgotten as it shows; a repeating one's timer
+	// goes on, and it with it.
+	dsk_json *st = dsk_json_parse(HL.stored, n);
+	const dsk_json *t = dsk_json_get(dsk_json_get(st, "spec"), "trigger");
+	if (!t || !dsk_trigger_repeats(t)) remove(path);
+	dsk_json_free(st);
 	free(path);
 	if (!lx_session_bus()) {
 		lx_log("platform/notify: no session bus");

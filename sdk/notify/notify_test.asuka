@@ -1,0 +1,158 @@
+import std/time
+
+// A Saturday, 2026-03-07 15:04 UTC.
+let sat = time.date(2026, 3, 7, hour: 15, minute: 4, zone: .utc)
+
+// Before any test installs the fake.
+test "no platform: pending is empty, exact alarms allowed" {
+  expect(try await pending() == [])
+  expect(await exactAllowed())
+}
+
+test "a daily trigger: today's time if it's ahead, else tomorrow's" {
+  let t: Trigger = .daily(hour: 16, minute: 30)
+  expect(t.next(after: sat) == time.date(2026, 3, 7, hour: 16, minute: 30, zone: .utc))
+  expect(Trigger.daily(hour: 9, minute: 0).next(after: sat) == time.date(2026, 3, 8, hour: 9, zone: .utc))
+  // Its own time is past: the next day's.
+  expect(Trigger.daily(hour: 15, minute: 4).next(after: sat) == time.date(2026, 3, 8, hour: 15, minute: 4, zone: .utc))
+  expect(t.repeats())
+}
+
+test "weekly, monthly and yearly triggers" {
+  expect(Trigger.weekly(weekday: .monday, hour: 9, minute: 30).next(after: sat) == time.date(2026, 3, 9, hour: 9, minute: 30, zone: .utc))
+  // Today, later; today, earlier: a week on.
+  expect(Trigger.weekly(weekday: .saturday, hour: 18, minute: 0).next(after: sat) == time.date(2026, 3, 7, hour: 18, zone: .utc))
+  expect(Trigger.weekly(weekday: .saturday, hour: 8, minute: 0).next(after: sat) == time.date(2026, 3, 14, hour: 8, zone: .utc))
+  expect(Trigger.monthly(day: 1, hour: 8, minute: 0).next(after: sat) == time.date(2026, 4, 1, hour: 8, zone: .utc))
+  // The 31st: April has none, May has.
+  expect(Trigger.monthly(day: 31, hour: 8, minute: 0).next(after: time.date(2026, 3, 31, hour: 9, zone: .utc)) == time.date(2026, 5, 31, hour: 8, zone: .utc))
+  expect(Trigger.yearly(month: 12, day: 25, hour: 7, minute: 0).next(after: sat) == time.date(2026, 12, 25, hour: 7, zone: .utc))
+  // February 29: 2028's.
+  expect(Trigger.yearly(month: 2, day: 29, hour: 0, minute: 0).next(after: sat) == time.date(2028, 2, 29, zone: .utc))
+  // Over a year's end.
+  expect(Trigger.monthly(day: 5, hour: 0, minute: 0).next(after: time.date(2026, 12, 20, zone: .utc)) == time.date(2027, 1, 5, zone: .utc))
+}
+
+test "one-time and interval triggers" {
+  let later = sat.add(2h)
+  expect(Trigger.at(later).next(after: sat) == later)
+  expect(Trigger.at(sat).next(after: later) == none)
+  expect(!Trigger.at(later).repeats() && !Trigger.after(5s).repeats())
+  expect(Trigger.after(10min).next(after: sat) == sat.add(10min))
+  expect(Trigger.every(15min).next(after: sat) == sat.add(15min))
+  expect(Trigger.every(15min).repeats())
+}
+
+test "schedule checks its trigger" {
+  let _ = fake(now: sat)
+  var said: [string] = []
+  for t in [Trigger.every(30s), .daily(hour: 24, minute: 0), .weekly(weekday: .monday, hour: 9, minute: 60), .monthly(day: 32, hour: 0, minute: 0), .yearly(month: 2, day: 30, hour: 0, minute: 0)] {
+    do {
+      try await schedule(Notification(id: "x", trigger: t))
+    } catch NotifyError.shortInterval {
+      said.push("short")
+    } catch NotifyError.badTime {
+      said.push("time")
+    }
+  }
+  expect(said == ["short", "time", "time", "time", "time"])
+  expect(try await pending() == [])
+}
+
+test "a repeating notification shows each day, a date's once" {
+  let device = fake(now: sat)
+  expect(try await request())
+  expect(device.asked)
+  try await schedule(Notification(id: "water", title: "Water the plants", trigger: .daily(hour: 9, minute: 0)))
+  try await schedule(Notification(id: "trip", title: "Pack", trigger: .at(time.date(2026, 3, 9, hour: 7, zone: .utc))))
+  try await schedule(Notification(id: "tea", title: "Tea", after: 4min))
+
+  let waiting = try await pending()
+  expect(waiting.map(s => s.id) == ["tea", "water", "trip"])
+  expect(waiting[1].next == time.date(2026, 3, 8, hour: 9, zone: .utc))
+  expect(waiting[1].trigger == .daily(hour: 9, minute: 0))
+  expect(waiting[2].title == "Pack")
+
+  // Five minutes: the tea.
+  expect(device.advance(5min).map(d => d.id) == ["tea"])
+  // Two days: the plants twice, the trip once between.
+  let shown = device.advance(2 * 24h)
+  expect(shown.map(d => d.id) == ["water", "trip", "water"])
+  expect(shown[1].time == time.date(2026, 3, 9, hour: 7, zone: .utc))
+  let left = try await pending()
+  expect(left.map(s => s.id) == ["water"])
+  expect(left[0].next == time.date(2026, 3, 10, hour: 9, zone: .utc))
+
+  // What shows: one of each ID, the newest first.
+  expect(try await showing().map(d => d.id) == ["water", "trip", "tea"])
+}
+
+test "cancel takes one away, its repeats too; cancelAll the rest" {
+  let device = fake(now: sat)
+  try await schedule(Notification(id: "a", trigger: .every(1h)))
+  try await schedule(Notification(id: "b", trigger: .weekly(weekday: .sunday, hour: 10, minute: 0)))
+  try await schedule(Notification(id: "c", after: 1min))
+  // One of the same ID replaces it.
+  try await schedule(Notification(id: "c", title: "again", after: 2min))
+  expect(try await pending().map(s => s.id) == ["c", "a", "b"])
+  expect(try await pending()[0].title == "again")
+  cancel("a")
+  expect(try await pending().map(s => s.id) == ["c", "b"])
+  expect(device.advance(3h).map(d => d.id) == ["c"])
+  cancelAll()
+  expect(try await pending() == [])
+  expect(device.advance(48h) == [])
+}
+
+test "a notification's sound, interruption, relevance and progress go to the host" {
+  let device = fake(now: sat)
+  try await show(Notification(id: "up", title: "Uploading", ongoing: true, progress: .of(0.25)))
+  try await show(Notification(id: "up", title: "Uploading", ongoing: true, progress: .of(1.5)))
+  try await show(Notification(id: "wait", progress: .indeterminate))
+  try await show(Notification(id: "door", title: "At the door", sound: "sounds/bell.caf", interruption: .timeSensitive, relevance: 0.8))
+  let up = device.specs["up"]!
+  expect(up.ongoing && up.progress == WireProgress(value: 1.0, indeterminate: false))
+  expect(device.specs["wait"]!.progress!.indeterminate)
+  let door = device.specs["door"]!
+  expect(door.sound == "sounds/bell.caf" && door.interruption == "timeSensitive" && door.relevance == 0.8)
+  // Updated by its ID: one shows.
+  expect(try await showing().map(d => d.id) == ["door", "wait", "up"])
+}
+
+test "the wire's triggers come back as they went" {
+  expect(triggerOf(wireTrigger(.at(sat), sat)) == .at(sat.local()))
+  for t in [Trigger.every(2h), .daily(hour: 7, minute: 15), .weekly(weekday: .saturday, hour: 1, minute: 2), .weekly(weekday: .sunday, hour: 0, minute: 0),
+    .monthly(day: 31, hour: 23, minute: 59), .yearly(month: 2, day: 29, hour: 6, minute: 0)] {
+    expect(triggerOf(wireTrigger(t, sat)) == t)
+  }
+  expect(wireTrigger(.weekly(weekday: .sunday, hour: 0, minute: 0), sat).weekday == 1)
+  expect(wireTrigger(.after(90s), sat) == WireTrigger(kind: "after", seconds: 90.0, at: sat.add(90s).unixMilli()))
+}
+
+test "taps and actions come to responses" {
+  let device = fake(now: sat)
+  setCategories([Category(id: "msg", actions: [Action(id: "read", title: "Mark as Read")])])
+  try await show(Notification(id: "m1", title: "Ana", category: "msg"))
+  device.tap("m1", action: "read")
+  for await r in responses() {
+    expect(r.action == "read" && r.notification.id == "m1" && r.notification.category == "msg")
+    break
+  }
+  expect(try await showing() == [])
+  expect(device.categories[0].id == "msg")
+}
+
+test "badge, exact alarms and what's hidden in front" {
+  let device = fake(now: sat)
+  setBadge(3)
+  expect(device.badge == 3)
+  device.exact = false
+  expect(!(await exactAllowed()))
+  expect(!(try await requestExact()))
+  present(n => if n.thread == "open" { .hide } else { .banner })
+  try await show(Notification(id: "1", thread: "open"))
+  try await show(Notification(id: "2", thread: "other", badge: 5))
+  stopPresenting()
+  expect(try await showing().map(d => d.id) == ["2"])
+  expect(device.badge == 5)
+}

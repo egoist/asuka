@@ -15,8 +15,17 @@
 // quits once the package is done (actionDone) or the time's up, unless it
 // came to the front meanwhile. The badge is the taskbar button's overlay
 // (dock.c). What Windows lacks: Android's channels (ignored), threads (a
-// thread's toasts aren't grouped; removeThread finds them), and a say in
-// how a scheduled toast shows while the app is in front.
+// thread's toasts aren't grouped; removeThread finds them), a say in how
+// a scheduled toast shows while the app is in front, and a custom sound
+// (an unpackaged app's toast plays Windows' own).
+//
+// A scheduled notification is a ScheduledToastNotification, which
+// Windows shows whether or not the app runs. Windows has no repeating
+// toast: a repeating one is scheduled ahead, its next SCHEDULE_AHEAD
+// times (within a year), and scheduled ahead again each time the app
+// starts. What's scheduled is kept (asuka-notify-scheduled.json: each
+// spec by its ID, with its first time, "asuka.due", and its image's
+// local copy) for "pending" and the top-up.
 #include "modules.h"
 
 #include <bcrypt.h>
@@ -26,6 +35,8 @@
 #define ACTION_SECONDS 25    // what a background action has, as on iOS
 #define TOAST_WAIT_MS 10000  // how long an app COM started waits for its click
 #define TOAST_GROUP "asuka"
+#define SCHEDULE_AHEAD 64                          // a repeating one's times scheduled at once
+#define SCHEDULE_HORIZON (400LL * 24 * 3600 * 1000)  // and no further ahead than this
 
 typedef HRESULT(STDMETHODCALLTYPE *get_fn)(void *, void **);
 typedef HRESULT(STDMETHODCALLTYPE *put_fn)(void *, void *);
@@ -315,8 +326,19 @@ void wh_take_toast_launch(int *argc, wchar_t **argv) {
 
 // wh_start_toasts readies the app for its toasts as it starts: its
 // activator, if it has shown toasts before (or COM started it for one).
+static void topup(void);
+
 void wh_start_toasts(void) {
-	if (H.launched_for_toast || activator_registered()) start_activator();
+	if (H.launched_for_toast || activator_registered()) {
+		start_activator();
+		// A repeating notification's next times, scheduled ahead again
+		// (once a launch).
+		static bool topped;
+		if (!topped) {
+			topped = true;
+			topup();
+		}
+	}
 }
 
 // ---- The notifier ----
@@ -628,6 +650,10 @@ static char *toast_xml(const dsk_json *spec, const char *id, int64_t at, const c
 			ak_buf_printf(&b, " useButtonStyle=\"true\"");
 			break;
 		}
+	// Time-sensitive and critical ones: Windows 11's important
+	// notifications, through Do Not Disturb when the user lets them.
+	const char *level = dsk_json_str(spec, "interruption", "");
+	if (!strcmp(level, "timeSensitive") || !strcmp(level, "critical")) ak_buf_printf(&b, " scenario=\"urgent\"");
 	ak_buf_printf(&b, "><visual><binding template=\"ToastGeneric\">");
 	const char *title = dsk_json_str(spec, "title", "");
 	const dsk_json *sender = dsk_json_get(spec, "sender");
@@ -647,6 +673,11 @@ static char *toast_xml(const dsk_json *spec, const char *id, int64_t at, const c
 		wh_xml_escape(&b, (const char *)u.data);
 		ak_buf_put(&b, "\"/>", 3);
 		ak_buf_free(&u);
+	}
+	const dsk_json *progress = dsk_json_get(spec, "progress");
+	if (progress && progress->type == DSK_JOBJ) {
+		if (dsk_json_bool(progress, "indeterminate", false)) ak_buf_printf(&b, "<progress value=\"indeterminate\" status=\"\"/>");
+		else ak_buf_printf(&b, "<progress value=\"%.3f\" status=\"\"/>", dsk_json_num(progress, "value", 0));
 	}
 	ak_buf_printf(&b, "</binding></visual>");
 	if (nacts) {
@@ -688,7 +719,7 @@ static char *toast_xml(const dsk_json *spec, const char *id, int64_t at, const c
 		ak_buf_printf(&b, "</actions>");
 	}
 	dsk_json_free(all);
-	if (dsk_json_bool(spec, "silent", false)) ak_buf_printf(&b, "<audio silent=\"true\"/>");
+	if (dsk_json_bool(spec, "silent", false) || !strcmp(level, "passive")) ak_buf_printf(&b, "<audio silent=\"true\"/>");
 	ak_buf_printf(&b, "</toast>");
 	char *out = wh_strndup((const char *)b.data, b.len);
 	ak_buf_free(&b);
@@ -944,9 +975,23 @@ static void show_toast(wh_reply *r, const char *spec_json, const char *id, const
 	p->timer = wh_set_timer(1000, false, present_timeout, p);
 }
 
+static void schedule_ahead(void *n, const dsk_json *spec, const char *id, const char *image, int64_t due, int64_t now);
+static void keep_scheduled(const char *id, const dsk_json *spec, const char *image, int64_t due);
+
 static void add_toast(wh_reply *r, const char *spec_json, const char *id, const char *image) {
 	dsk_json *spec = dsk_json_parse(spec_json, strlen(spec_json));
 	double secs = dsk_json_num(spec, "seconds", 0);
+	const dsk_json *trigger = dsk_json_get(spec, "trigger");
+	if (trigger && trigger->type == DSK_JOBJ) {
+		int64_t now = now_ms();
+		int64_t due = dsk_trigger_next(trigger, now);
+		if (!due) due = now + 1000;  // a time that's past: in a second
+		keep_scheduled(id, spec, image, due);
+		schedule_ahead(nt.notifier, spec, id, image, due, now);
+		dsk_json_free(spec);
+		wh_reply_nil(r);
+		return;
+	}
 	if (secs <= 0) {
 		dsk_json_free(spec);
 		show_toast(r, spec_json, id, image);
@@ -971,6 +1016,187 @@ static void image_done(void *ctx) {
 	add_toast(j->r, j->spec_json, j->id, j->image);  // without its image if it failed
 	free(j->spec_json), free(j->id), free(j->source), free(j->image), free(j->err);
 	free(j);
+}
+
+// ---- Scheduled ----
+
+static void *with(wh_reply *r);
+
+static char *scheduled_path(void) { return dsk_join(H.dirs.data, "asuka-notify-scheduled.json"); }
+
+// scheduled_read is what's kept: an object of specs by ID (an empty one
+// if none).
+static dsk_json *scheduled_read(void) {
+	char *p = scheduled_path();
+	size_t len = 0;
+	char *t = dsk_read_file(p, &len);
+	free(p);
+	dsk_json *j = t ? dsk_json_parse(t, len) : NULL;
+	free(t);
+	if (!j || j->type != DSK_JOBJ) {
+		dsk_json_free(j);
+		j = dsk_json_parse("{}", 2);
+	}
+	return j;
+}
+
+// scheduled_write keeps all's specs but drop's (NULL: none), and add
+// (JSON, NULL: none) as id's.
+static void scheduled_write(const dsk_json *all, const char *drop, const char *id, const char *add) {
+	dsk_jw w = {0};
+	dsk_jw_obj(&w);
+	for (size_t i = 0; all && i < all->n; i++) {
+		if ((drop && !strcmp(all->keys[i], drop)) || (id && !strcmp(all->keys[i], id))) continue;
+		dsk_jw_key(&w, all->keys[i]);
+		dsk_jw_value(&w, &all->kids[i]);
+	}
+	if (id && add) {
+		dsk_jw_key(&w, id);
+		dsk_jw_json(&w, add, strlen(add));
+	}
+	dsk_jw_end(&w);
+	size_t len = 0;
+	char *t = dsk_jw_take(&w, &len);
+	char *p = scheduled_path();
+	if (t) dsk_write_file(p, t, len);
+	free(p), free(t);
+}
+
+// keep_scheduled keeps spec as id's, its first time due and its image's
+// local copy beside it.
+static void keep_scheduled(const char *id, const dsk_json *spec, const char *image, int64_t due) {
+	dsk_jw w = {0};
+	dsk_jw_obj(&w);
+	for (size_t i = 0; i < spec->n; i++) {
+		if (!strcmp(spec->keys[i], "asuka.due") || !strcmp(spec->keys[i], "asuka.image") || !strcmp(spec->keys[i], "id")) continue;
+		dsk_jw_key(&w, spec->keys[i]);
+		dsk_jw_value(&w, &spec->kids[i]);
+	}
+	dsk_jw_key(&w, "id"), dsk_jw_str(&w, id);
+	dsk_jw_key(&w, "asuka.due"), dsk_jw_int(&w, due);
+	if (image) dsk_jw_key(&w, "asuka.image"), dsk_jw_str(&w, image);
+	dsk_jw_end(&w);
+	char *t = dsk_jw_take(&w, NULL);
+	dsk_json *all = scheduled_read();
+	scheduled_write(all, NULL, id, t);
+	dsk_json_free(all);
+	free(t);
+}
+
+static void forget_scheduled(const char *id) {
+	dsk_json *all = scheduled_read();
+	if (dsk_json_get(all, id)) scheduled_write(all, id, NULL, NULL);
+	dsk_json_free(all);
+}
+
+// schedule_ahead schedules id's toasts from due on (after now): once, or
+// a repeating one's next times, in place of those scheduled before.
+static void schedule_ahead(void *n, const dsk_json *spec, const char *id, const char *image, int64_t due, int64_t now) {
+	cancel(n, id);
+	const dsk_json *t = dsk_json_get(spec, "trigger");
+	int64_t at = dsk_trigger_after(t, due, now);
+	for (int i = 0; at && i < SCHEDULE_AHEAD && at - now < SCHEDULE_HORIZON; i++) {
+		char *xml = toast_xml(spec, id, at, image);
+		show(n, xml, id, at, false);
+		free(xml);
+		if (!dsk_trigger_repeats(t)) break;
+		int64_t next = dsk_trigger_next(t, at);
+		if (next <= at) break;
+		at = next;
+	}
+}
+
+// topup schedules the repeating ones ahead again, and forgets the
+// one-time ones that showed: as the app starts.
+static void topup(void) {
+	dsk_json *all = scheduled_read();
+	if (!all->n) {
+		dsk_json_free(all);
+		return;
+	}
+	char *err = NULL;
+	void *n = toasts(&err);
+	free(err);
+	int64_t now = now_ms();
+	for (size_t i = 0; n && i < all->n; i++) {
+		const dsk_json *spec = &all->kids[i];
+		const dsk_json *t = dsk_json_get(spec, "trigger");
+		int64_t due = (int64_t)dsk_json_num(spec, "asuka.due", 0);
+		if (!dsk_trigger_after(t, due, now)) {
+			forget_scheduled(all->keys[i]);
+			continue;
+		}
+		if (!dsk_trigger_repeats(t)) continue;  // scheduled already
+		const char *image = dsk_json_str(spec, "asuka.image", "");
+		schedule_ahead(n, spec, all->keys[i], *image ? image : NULL, due, now);
+	}
+	dsk_json_free(all);
+}
+
+// pending: what's kept and still due, the soonest first (sdk/notify's
+// WireScheduled).
+static void m_pending(wh_reply *r, const uint8_t *a, size_t n) {
+	(void)a, (void)n;
+	dsk_json *all = scheduled_read();
+	int64_t now = now_ms();
+	size_t count = 0;
+	struct item {
+		size_t i;
+		int64_t next;
+	} *items = wh_alloc((all->n ? all->n : 1) * sizeof *items);
+	for (size_t i = 0; i < all->n; i++) {
+		const dsk_json *spec = &all->kids[i];
+		int64_t next = dsk_trigger_after(dsk_json_get(spec, "trigger"), (int64_t)dsk_json_num(spec, "asuka.due", 0), now);
+		if (next) items[count++] = (struct item){i, next};
+	}
+	for (size_t i = 1; i < count; i++)
+		for (size_t j = i; j > 0 && items[j].next < items[j - 1].next; j--) {
+			struct item x = items[j];
+			items[j] = items[j - 1], items[j - 1] = x;
+		}
+	dsk_jw w = {0};
+	dsk_jw_arr(&w);
+	for (size_t k = 0; k < count; k++) {
+		const dsk_json *spec = &all->kids[items[k].i];
+		dsk_jw_obj(&w);
+		const char *keys[] = {"id", "title", "subtitle", "body", "url", "category", "thread"};
+		for (size_t q = 0; q < WH_LEN(keys); q++) dsk_jw_key(&w, keys[q]), dsk_jw_str(&w, dsk_json_str(spec, keys[q], ""));
+		dsk_jw_key(&w, "data");
+		const dsk_json *data = dsk_json_get(spec, "data");
+		if (data && data->type == DSK_JOBJ) dsk_jw_value(&w, data);
+		else dsk_jw_obj(&w), dsk_jw_end(&w);
+		const dsk_json *trig = dsk_json_get(spec, "trigger");
+		dsk_jw_key(&w, "trigger");
+		if (trig) dsk_jw_value(&w, trig);
+		else dsk_jw_obj(&w), dsk_jw_key(&w, "kind"), dsk_jw_str(&w, "after"), dsk_jw_end(&w);
+		dsk_jw_key(&w, "next"), dsk_jw_int(&w, items[k].next);
+		dsk_jw_end(&w);
+	}
+	dsk_jw_aend(&w);
+	free(items);
+	dsk_json_free(all);
+	wh_reply_json(r, &w);
+}
+
+// cancelAll: every scheduled toast of the app's, and what's kept.
+static void m_cancel_all(wh_reply *r, const uint8_t *a, size_t n) {
+	(void)a, (void)n;
+	void *t = with(r);
+	if (!t) return;
+	void *list = NULL;
+	if (SUCCEEDED(ASUKA_SLOT(t, 11, get_fn)(t, &list)) && list) {  // GetScheduledToastNotifications
+		UINT32 count = 0;
+		ASUKA_SLOT(list, 7, get_u32_fn)(list, &count);
+		for (UINT32 i = 0; i < count; i++) {
+			void *st = NULL;
+			if (FAILED(ASUKA_SLOT(list, 6, get_at_fn)(list, i, &st)) || !st) continue;
+			ASUKA_SLOT(t, 10, put_fn)(t, st);  // RemoveFromSchedule
+			asuka_com_release(st);
+		}
+		asuka_com_release(list);
+	}
+	scheduled_write(NULL, NULL, NULL, NULL);
+	wh_reply_nil(r);
 }
 
 // ---- The module ----
@@ -1029,6 +1255,7 @@ static void m_cancel(wh_reply *r, const uint8_t *a, size_t n) {
 	char *id = wh_strndup((const char *)a, n);
 	cancel(t, id);
 	remove_toast(id);
+	forget_scheduled(id);
 	free(id);
 	wh_reply_nil(r);
 }
@@ -1312,7 +1539,8 @@ static void ok_nil(wh_reply *r, const uint8_t *a, size_t n) {
 }
 
 static const wh_method_def notify_methods[] = {
-	{"request", m_request}, {"schedule", m_schedule}, {"cancel", m_cancel}, {"categories", m_categories}, {"badge", m_badge},
+	{"request", m_request}, {"schedule", m_schedule}, {"cancel", m_cancel}, {"cancelAll", m_cancel_all}, {"pending", m_pending},
+	{"categories", m_categories}, {"badge", m_badge},
 	{"showing", m_showing}, {"remove", m_remove}, {"removeThread", m_remove_thread}, {"removeAll", m_remove_all},
 	{"present", m_present}, {"nextPresent", m_next_present}, {"presented", m_presented}, {"nextAction", m_next_action},
 	{"actionDone", m_action_done}, {"stop", m_stop},

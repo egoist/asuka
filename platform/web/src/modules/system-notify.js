@@ -228,9 +228,13 @@ export function notifyModule(h, env = {}) {
       if (!allowed()) throw new Error("platform/notify: notifications aren't allowed: ask with notify.Request first");
       const s = JSON.parse(dec.decode(b));
       if (!s.id) s.id = core.newID();
-      if (s.seconds > 0) {
+      if (s.seconds > 0 || s.trigger) {
         await ready;
-        await core.schedule(st, app, s, Date.now() + Math.max(1, s.seconds) * 1000);
+        // Its trigger's first time (one that's past: in a second), else
+        // its seconds from now.
+        const now = Date.now();
+        const at = s.trigger ? core.nextAt(s.trigger, now) || now + 1000 : now + Math.max(1, s.seconds) * 1000;
+        await core.schedule(st, app, s, at);
         changed();
         await arm();
       } else {
@@ -238,6 +242,24 @@ export function notifyModule(h, env = {}) {
         await core.unschedule(st, app, [s.id]);
         await show(s);
       }
+    },
+    cancelAll: async () => {
+      await ready;
+      await core.unschedule(st, app, (await core.scheduled(st)).map((e) => e.s.id));
+      changed();
+      await arm();
+    },
+    // What's waiting (sdk/notify's WireScheduled): shown while a page of
+    // the app is open, or as the next opens.
+    pending: async () => {
+      await ready;
+      const now = Date.now();
+      const out = (await core.scheduled(st)).map((e) => ({
+        id: e.s.id, title: e.s.title || "", subtitle: e.s.subtitle || "", body: e.s.body || "", url: e.s.url || "",
+        data: e.s.data || {}, category: e.s.category || "", thread: e.s.thread || "",
+        trigger: e.s.trigger || { kind: "after", at: e.at }, next: core.afterDue(e.s.trigger, e.at, now) || e.at,
+      }));
+      return enc.encode(JSON.stringify(out));
     },
     cancel: async (b) => {
       const id = dec.decode(b);

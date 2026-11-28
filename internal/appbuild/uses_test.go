@@ -30,7 +30,8 @@ async fn clear() {
   let _ = try? await icloud.remove("k")
   let _ = try? await location.current()
   let n = notify.Notification(body: "hi").from(notify.Person(name: "Ann"), notify.Conversation())
-  let m = notify.Notification(sender: notify.Person(name: "Bo"))
+  let m = notify.Notification(sender: notify.Person(name: "Bo"), interruption: .critical)
+  let level = notify.Interruption.timeSensitive
   try? await notify.show(m)
   try? await notify.show(n)
 }
@@ -76,13 +77,14 @@ func TestUses(t *testing.T) {
 	for _, r := range [][2]string{{"platform/icloud", "remove"}, {"platform/location", "current"}, {"@test/sync", "name"},
 		{"platform/location", "requestAlways"}, {"platform/icloud", "readFile"}, {"", "Text"},
 		{"platform/notify", "Notification.from"}, {"platform/notify", "Person"}, {"platform/notify", "Notification.sender"},
-		{"platform/notify", "Notification.body"}, {"platform/notify", "Person.name"}} {
+		{"platform/notify", "Notification.body"}, {"platform/notify", "Person.name"},
+		{"platform/notify", "Interruption.critical"}, {"platform/notify", "Interruption.timeSensitive"}} {
 		if !u.Ref(r[0], r[1]) {
 			t.Errorf("no %s.%s in %v", r[0], r[1], u.Refs)
 		}
 	}
 	for _, r := range [][2]string{{"platform/icloud", "delete"}, {"platform/icloud", "documents"}, {"", "delete"}, {"", "clear"},
-		{"platform/notify", "Notification.title"}, {"platform/notify", "Person.bot"}} {
+		{"platform/notify", "Notification.title"}, {"platform/notify", "Person.bot"}, {"platform/notify", "Interruption.passive"}} {
 		if u.Ref(r[0], r[1]) {
 			t.Errorf("%s.%s in %v", r[0], r[1], u.Refs)
 		}

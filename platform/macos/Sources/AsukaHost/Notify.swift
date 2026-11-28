@@ -8,8 +8,11 @@
 // raises an exception for it).
 //
 // The module ("notify"):
-// - "request" (u8 allowed); "schedule" (a sdk/notify's Spec: seconds 0
-//   shows it now); "cancel" (the id).
+// - "request" (u8 critical: critical alerts too; answers u8 allowed);
+//   "schedule" (a sdk/notify's Spec: seconds 0 shows it now, else its
+//   trigger is the request's, kept in its userInfo for "pending");
+//   "cancel" (the id), "cancelAll" (those waiting); "pending" (JSON list:
+//   sdk/notify's WireScheduled, with each one's next date).
 // - "categories" (JSON), kept in the user defaults and set again at launch.
 // - "badge" (u32: the Dock tile's); "showing" (JSON list); "remove" (JSON
 //   ids), "removeThread" (the thread), "removeAll".
@@ -132,9 +135,11 @@ import AsukaOps
             { error in reply(error.map { .failure(AsukaModuleError($0.localizedDescription)) } ?? .success(Data())) }
         }
         return [
-            "request": { [unowned self] _, reply in
+            "request": { [unowned self] args, reply in
                 guard let c = self.center(reply) else { return }
-                c.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                var options: UNAuthorizationOptions = [.alert, .sound, .badge]
+                if args.first == 1 { options.insert(.criticalAlert) }
+                c.requestAuthorization(options: options) { granted, error in
                     if let error { reply(.failure(AsukaModuleError(error.localizedDescription))) } else { reply(.success(Data([granted ? 1 : 0]))) }
                 }
             },
@@ -150,9 +155,8 @@ import AsukaOps
                     f.dateFormat = "yyyyMMddHHmmss.SSSSSSSSS"
                     id = f.string(from: Date())
                 }
-                let after = (o["seconds"] as? NSNumber)?.doubleValue ?? 0
                 let add: ((URL, String)?) -> Void = { image in
-                    let trigger = after > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: max(1, after), repeats: false) : nil
+                    let trigger = Self.trigger(o)
                     let req = UNNotificationRequest(identifier: id, content: Self.content(o, image), trigger: trigger)
                     c.add(req, withCompletionHandler: done(reply))
                 }
@@ -165,6 +169,19 @@ import AsukaOps
                 c.removePendingNotificationRequests(withIdentifiers: [id])
                 c.removeDeliveredNotifications(withIdentifiers: [id])
                 reply(.success(Data()))
+            },
+            "cancelAll": { [unowned self] _, reply in
+                guard let c = self.center(reply) else { return }
+                c.removeAllPendingNotificationRequests()
+                reply(.success(Data()))
+            },
+            "pending": { [unowned self] _, reply in
+                guard let c = self.center(reply) else { return }
+                c.getPendingNotificationRequests { rs in
+                    let list = rs.map(Self.pending)
+                    let d = (try? JSONSerialization.data(withJSONObject: list)) ?? Data("[]".utf8)
+                    DispatchQueue.main.async { reply(.success(d)) }
+                }
             },
             "categories": { [unowned self] args, reply in
                 guard let c = self.center(reply) else { return }
@@ -315,9 +332,28 @@ import AsukaOps
         c.title = title
         c.subtitle = o["subtitle"] as? String ?? ""
         c.body = o["body"] as? String ?? ""
-        if o["silent"] as? Bool != true { c.sound = .default }
+        let level = o["interruption"] as? String ?? ""
+        if o["silent"] as? Bool != true {
+            let name = (o["sound"] as? String).flatMap { $0.isEmpty ? nil : soundName($0) }
+            if level == "critical" {
+                c.sound = name.map { .criticalSoundNamed($0) } ?? .defaultCritical
+            } else {
+                c.sound = name.map { UNNotificationSound(named: $0) } ?? .default
+            }
+        }
+        if #available(macOS 12.0, *) {
+            switch level {
+            case "passive": c.interruptionLevel = .passive
+            case "timeSensitive": c.interruptionLevel = .timeSensitive
+            case "critical": c.interruptionLevel = .critical
+            default: break
+            }
+            if let r = (o["relevance"] as? NSNumber)?.doubleValue, r > 0 { c.relevanceScore = min(1, r) }
+        }
         var info: [AnyHashable: Any] = ["asuka.data": o["data"] as? [String: String] ?? [:]]
         if let u = o["url"] as? String, !u.isEmpty { info["url"] = u }
+        // What "pending" says it was scheduled with.
+        if let t = o["trigger"] as? [String: Any] { info["asuka.trigger"] = t }
         c.userInfo = info
         c.categoryIdentifier = o["category"] as? String ?? ""
         c.threadIdentifier = o["thread"] as? String ?? ""
@@ -327,6 +363,105 @@ import AsukaOps
             c.attachments = [a]
         }
         return c
+    }
+
+    /// The request's trigger for a spec: its trigger (sdk/notify's
+    /// WireTrigger) as the center's, a calendar's on the computer's clock
+    /// (an "at"'s, at its instant), else its seconds from now; nil: now.
+    nonisolated static func trigger(_ o: [String: Any]) -> UNNotificationTrigger? {
+        let after = (o["seconds"] as? NSNumber)?.doubleValue ?? 0
+        guard let t = o["trigger"] as? [String: Any] else {
+            return after > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: max(1, after), repeats: false) : nil
+        }
+        func n(_ k: String) -> Int { (t[k] as? NSNumber)?.intValue ?? 0 }
+        var c = DateComponents()
+        c.hour = n("hour")
+        c.minute = n("minute")
+        switch t["kind"] as? String ?? "" {
+        case "every":
+            return UNTimeIntervalNotificationTrigger(timeInterval: max(60, (t["seconds"] as? NSNumber)?.doubleValue ?? 60), repeats: true)
+        case "at":
+            let at = Date(timeIntervalSince1970: Double(n("at")) / 1000)
+            guard at.timeIntervalSinceNow >= 1 else { return UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false) }
+            var utc = Calendar(identifier: .gregorian)
+            utc.timeZone = TimeZone(identifier: "UTC")!
+            var d = utc.dateComponents([.year, .month, .day, .hour, .minute, .second], from: at)
+            d.calendar = utc
+            d.timeZone = utc.timeZone
+            return UNCalendarNotificationTrigger(dateMatching: d, repeats: false)
+        case "daily":
+            return UNCalendarNotificationTrigger(dateMatching: c, repeats: true)
+        case "weekly":
+            c.weekday = n("weekday")
+            return UNCalendarNotificationTrigger(dateMatching: c, repeats: true)
+        case "monthly":
+            c.day = n("day")
+            return UNCalendarNotificationTrigger(dateMatching: c, repeats: true)
+        case "yearly":
+            c.month = n("month")
+            c.day = n("day")
+            return UNCalendarNotificationTrigger(dateMatching: c, repeats: true)
+        default:
+            return UNTimeIntervalNotificationTrigger(timeInterval: max(1, after), repeats: false)
+        }
+    }
+
+    /// A sound in the app's assets (or a file) as the center plays it:
+    /// copied into ~/Library/Sounds, where it looks for sounds by name
+    /// (the container's, sandboxed). nil if there's none.
+    nonisolated static func soundName(_ src: String) -> UNNotificationSoundName? {
+        let from: URL
+        if src.hasPrefix("file://"), let u = URL(string: src) {
+            from = u
+        } else if src.hasPrefix("/") {
+            from = URL(fileURLWithPath: src)
+        } else {
+            from = AsukaNative.assets.appendingPathComponent(src)
+        }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: from.path),
+              let lib = fm.urls(for: .libraryDirectory, in: .userDomainMask).first else { return nil }
+        let dir = lib.appendingPathComponent("Sounds", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let to = dir.appendingPathComponent(from.lastPathComponent)
+        if !fm.contentsEqual(atPath: from.path, andPath: to.path) {
+            try? fm.removeItem(at: to)
+            guard (try? fm.copyItem(at: from, to: to)) != nil else { return nil }
+        }
+        return UNNotificationSoundName(from.lastPathComponent)
+    }
+
+    /// What "pending" says of a request waiting (a sdk/notify's
+    /// WireScheduled): its trigger as it was scheduled, and when it
+    /// shows next.
+    nonisolated static func pending(_ r: UNNotificationRequest) -> [String: Any] {
+        let c = r.content
+        var t = c.userInfo["asuka.trigger"] as? [String: Any] ?? [:]
+        var next: Date?
+        switch r.trigger {
+        case let x as UNCalendarNotificationTrigger:
+            next = x.nextTriggerDate()
+        case let x as UNTimeIntervalNotificationTrigger:
+            if t.isEmpty { t = ["kind": x.repeats ? "every" : "after", "seconds": x.timeInterval] }
+            // An after's time is when it was scheduled for; the center
+            // counts an interval's from now.
+            if let at = (t["at"] as? NSNumber)?.doubleValue, at > 0, t["kind"] as? String == "after" {
+                next = Date(timeIntervalSince1970: at / 1000)
+            } else {
+                next = x.nextTriggerDate()
+            }
+        default:
+            break
+        }
+        if t.isEmpty { t = ["kind": "after"] }
+        var data: [String: String] = [:]
+        if let d = c.userInfo["asuka.data"] as? [String: Any] {
+            for (k, v) in d { data[k] = v as? String ?? "\(v)" }
+        }
+        return ["id": r.identifier, "title": c.title, "subtitle": c.subtitle, "body": c.body,
+                "url": c.userInfo["url"] as? String ?? "", "data": data,
+                "category": c.categoryIdentifier, "thread": c.threadIdentifier, "trigger": t,
+                "next": next.map { Int64($0.timeIntervalSince1970 * 1000) } ?? 0]
     }
 
     /// The local copy of an image source (as Image's: an http(s) URL, a

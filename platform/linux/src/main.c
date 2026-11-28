@@ -18,6 +18,7 @@ int lx_notify_headless(const char *id);
 void lx_update_start(void);
 void lx_install_notify_actions(void);
 void lx_notify_action_at_start(void);
+void lx_notify_restore(void);
 void lx_watch_desktop(void);
 
 static const char *login_arg = "--asuka-opened-at-login";
@@ -136,6 +137,7 @@ void lx_start(void) {
 	}
 	lx_show_main();
 	lx_notify_action_at_start();
+	lx_notify_restore();
 	lx_automation();
 }
 

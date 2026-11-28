@@ -35,8 +35,11 @@ import Intents
 
 /// platform/notify's module, and the notification center's delegate (asuka/
 /// push's notifications too):
-/// - "request" (u8 allowed); "schedule" (a sdk/notify's Spec: seconds 0
-///   shows it now); "cancel" (the id).
+/// - "request" (u8 critical: critical alerts too; answers u8 allowed);
+///   "schedule" (a sdk/notify's Spec: seconds 0 shows it now, else its
+///   trigger is the request's, kept in its userInfo for "pending");
+///   "cancel" (the id), "cancelAll" (those waiting); "pending" (JSON
+///   list: sdk/notify's WireScheduled, with each one's next date).
 /// - "categories" (JSON), kept in UserDefaults and set again at launch.
 /// - "badge" (u32); "showing" (JSON list); "remove" (JSON ids),
 ///   "removeThread" (the thread), "removeAll".
@@ -95,7 +98,12 @@ import Intents
                 let n = args.count >= 4 ? Int(args.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self).littleEndian }) : 0
                 center.setBadgeCount(n) { error in reply(error.map { .failure($0) } ?? .success(Data())) }
             },
+            "cancelAll": { _, reply in
+                center.removeAllPendingNotificationRequests()
+                reply(.success(Data()))
+            },
             "showing": { _, reply in reply(.success(Data("[]".utf8))) },
+            "pending": { _, reply in reply(.success(Data("[]".utf8))) },
             "categories": done, "remove": done, "removeThread": done, "removeAll": done, "present": done, "presented": done,
             "actionDone": done, "channels": done, "channelGroups": done,
             "nextPresent": { [unowned self] _, reply in self.presents.next(reply) },
@@ -114,8 +122,10 @@ import Intents
     func methods() -> [String: AsukaModuleMethod] {
         let center = UNUserNotificationCenter.current()
         return [
-            "request": { _, reply in
-                center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            "request": { args, reply in
+                var options: UNAuthorizationOptions = [.alert, .sound, .badge]
+                if args.first == 1 { options.insert(.criticalAlert) }
+                center.requestAuthorization(options: options) { granted, error in
                     if let error { reply(.failure(error)) } else { reply(.success(Data([granted ? 1 : 0]))) }
                 }
             },
@@ -124,8 +134,7 @@ import Intents
                     reply(.failure(AsukaModuleError("bad notification"))); return
                 }
                 let id = (o["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString
-                let after = o["seconds"] as? Double ?? 0
-                let trigger = after > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: max(1, after), repeats: false) : nil
+                let trigger = AsukaNotifyContent.trigger(o)
                 AsukaNotifyContent.make(o, into: nil) { content in
                     center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) { error in
                         guard error != nil, o["sender"] != nil else { reply(error.map { .failure($0) } ?? .success(Data())); return }
@@ -146,6 +155,16 @@ import Intents
                 center.removePendingNotificationRequests(withIdentifiers: [id])
                 center.removeDeliveredNotifications(withIdentifiers: [id])
                 reply(.success(Data()))
+            },
+            "cancelAll": { _, reply in
+                center.removeAllPendingNotificationRequests()
+                reply(.success(Data()))
+            },
+            "pending": { _, reply in
+                center.getPendingNotificationRequests { rs in
+                    let list = rs.map(AsukaNotifyContent.pending)
+                    reply(.success((try? JSONSerialization.data(withJSONObject: list)) ?? Data("[]".utf8)))
+                }
             },
             "categories": { [unowned self] args, reply in
                 UserDefaults.standard.set(args, forKey: self.categoriesKey)
@@ -337,7 +356,29 @@ enum AsukaNotifyContent {
         c.title = o["title"] as? String ?? ""
         c.subtitle = o["subtitle"] as? String ?? ""
         c.body = o["body"] as? String ?? ""
-        if o["silent"] as? Bool == true { c.sound = nil } else if base == nil { c.sound = .default }
+        let level = o["interruption"] as? String ?? ""
+        var custom: UNNotificationSound?
+        #if !os(watchOS) // a watch plays its own sounds
+        if let name = (o["sound"] as? String).flatMap({ $0.isEmpty ? nil : soundName($0) }) {
+            custom = level == "critical" ? .criticalSoundNamed(name) : UNNotificationSound(named: name)
+        }
+        #endif
+        if o["silent"] as? Bool == true {
+            c.sound = nil
+        } else if let custom {
+            c.sound = custom
+        } else if level == "critical" {
+            c.sound = .defaultCritical
+        } else if base == nil {
+            c.sound = .default
+        }
+        switch level {
+        case "passive": c.interruptionLevel = .passive
+        case "timeSensitive": c.interruptionLevel = .timeSensitive
+        case "critical": c.interruptionLevel = .critical
+        default: break
+        }
+        if let r = (o["relevance"] as? NSNumber)?.doubleValue, r > 0 { c.relevanceScore = min(1, r) }
         let data = o["data"] as? [String: String] ?? [:]
         let url = o["url"] as? String ?? ""
         if let base {
@@ -350,6 +391,8 @@ enum AsukaNotifyContent {
         } else {
             var info: [AnyHashable: Any] = ["asuka.data": data]
             if !url.isEmpty { info["url"] = url }
+            // What "pending" says it was scheduled with.
+            if let t = o["trigger"] as? [String: Any] { info["asuka.trigger"] = t }
             c.userInfo = info
         }
         c.categoryIdentifier = o["category"] as? String ?? ""
@@ -418,6 +461,101 @@ enum AsukaNotifyContent {
         #else
         done(c)
         #endif
+    }
+
+    /// The request's trigger for a spec: its trigger (sdk/notify's
+    /// WireTrigger) as the center's, a calendar's on the device's clock
+    /// (an "at"'s, at its instant), else its seconds from now; nil: now.
+    static func trigger(_ o: [String: Any]) -> UNNotificationTrigger? {
+        let after = (o["seconds"] as? NSNumber)?.doubleValue ?? 0
+        guard let t = o["trigger"] as? [String: Any] else {
+            return after > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: max(1, after), repeats: false) : nil
+        }
+        func n(_ k: String) -> Int { (t[k] as? NSNumber)?.intValue ?? 0 }
+        var c = DateComponents()
+        c.hour = n("hour")
+        c.minute = n("minute")
+        switch t["kind"] as? String ?? "" {
+        case "every":
+            return UNTimeIntervalNotificationTrigger(timeInterval: max(60, (t["seconds"] as? NSNumber)?.doubleValue ?? 60), repeats: true)
+        case "at":
+            let at = Date(timeIntervalSince1970: Double(n("at")) / 1000)
+            guard at.timeIntervalSinceNow >= 1 else { return UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false) }
+            var utc = Calendar(identifier: .gregorian)
+            utc.timeZone = TimeZone(identifier: "UTC")!
+            var d = utc.dateComponents([.year, .month, .day, .hour, .minute, .second], from: at)
+            d.calendar = utc
+            d.timeZone = utc.timeZone
+            return UNCalendarNotificationTrigger(dateMatching: d, repeats: false)
+        case "daily":
+            return UNCalendarNotificationTrigger(dateMatching: c, repeats: true)
+        case "weekly":
+            c.weekday = n("weekday")
+            return UNCalendarNotificationTrigger(dateMatching: c, repeats: true)
+        case "monthly":
+            c.day = n("day")
+            return UNCalendarNotificationTrigger(dateMatching: c, repeats: true)
+        case "yearly":
+            c.month = n("month")
+            c.day = n("day")
+            return UNCalendarNotificationTrigger(dateMatching: c, repeats: true)
+        default:
+            return UNTimeIntervalNotificationTrigger(timeInterval: max(1, after), repeats: false)
+        }
+    }
+
+    /// A sound in the app's assets (or a file) as the center plays it:
+    /// copied into Library/Sounds, where it looks for sounds by name. nil
+    /// if there's none.
+    #if !os(watchOS)
+    static func soundName(_ src: String) -> UNNotificationSoundName? {
+        let from: URL
+        if src.hasPrefix("file://"), let u = URL(string: src) {
+            from = u
+        } else if src.hasPrefix("/") {
+            from = URL(fileURLWithPath: src)
+        } else {
+            from = appBundle.appendingPathComponent("assets").appendingPathComponent(src)
+        }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: from.path),
+              let lib = fm.urls(for: .libraryDirectory, in: .userDomainMask).first else { return nil }
+        let dir = lib.appendingPathComponent("Sounds", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let to = dir.appendingPathComponent(from.lastPathComponent)
+        try? fm.removeItem(at: to)
+        guard (try? fm.copyItem(at: from, to: to)) != nil else { return nil }
+        return UNNotificationSoundName(from.lastPathComponent)
+    }
+    #endif
+
+    /// What "pending" says of a request waiting (a sdk/notify's
+    /// WireScheduled): its trigger as it was scheduled, and when it
+    /// shows next.
+    static func pending(_ r: UNNotificationRequest) -> [String: Any] {
+        let c = r.content
+        var t = c.userInfo["asuka.trigger"] as? [String: Any] ?? [:]
+        var next: Date?
+        switch r.trigger {
+        case let x as UNCalendarNotificationTrigger:
+            next = x.nextTriggerDate()
+        case let x as UNTimeIntervalNotificationTrigger:
+            if t.isEmpty { t = ["kind": x.repeats ? "every" : "after", "seconds": x.timeInterval] }
+            // An after's time is when it was scheduled for; the center
+            // counts an interval's from now.
+            if let at = (t["at"] as? NSNumber)?.doubleValue, at > 0, t["kind"] as? String == "after" {
+                next = Date(timeIntervalSince1970: at / 1000)
+            } else {
+                next = x.nextTriggerDate()
+            }
+        default:
+            break
+        }
+        if t.isEmpty { t = ["kind": "after"] }
+        return ["id": r.identifier, "title": c.title, "subtitle": c.subtitle, "body": c.body,
+                "url": c.userInfo["url"] as? String ?? "", "data": c.userInfo["asuka.data"] as? [String: String] ?? [:],
+                "category": c.categoryIdentifier, "thread": c.threadIdentifier, "trigger": t,
+                "next": next.map { Int64($0.timeIntervalSince1970 * 1000) } ?? 0]
     }
 
     /// The local file an image source names (as ui.Image's: an http(s) URL,

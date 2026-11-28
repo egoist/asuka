@@ -143,4 +143,42 @@ import UserNotifications
         XCTAssertEqual(c.badge, 4)
         XCTAssertNotNil(AsukaNotify.content(["title": "x"], nil).sound)
     }
+
+    /// A spec's trigger as the center's: calendars for the repeating
+    /// kinds, an interval for every, an "at"'s instant; and what pending
+    /// says of a request, its trigger as it was scheduled.
+    func testTriggers() throws {
+        func cal(_ t: [String: Any]) -> UNCalendarNotificationTrigger? {
+            AsukaNotify.trigger(["seconds": 60, "trigger": t]) as? UNCalendarNotificationTrigger
+        }
+        let daily = try XCTUnwrap(cal(["kind": "daily", "hour": 9, "minute": 30]))
+        XCTAssertTrue(daily.repeats)
+        XCTAssertEqual([daily.dateComponents.hour, daily.dateComponents.minute], [9, 30])
+        XCTAssertNil(daily.dateComponents.weekday)
+        XCTAssertEqual(cal(["kind": "weekly", "weekday": 2, "hour": 8])?.dateComponents.weekday, 2)
+        XCTAssertEqual(cal(["kind": "monthly", "day": 15])?.dateComponents.day, 15)
+        let yearly = try XCTUnwrap(cal(["kind": "yearly", "month": 12, "day": 25, "hour": 7]))
+        XCTAssertEqual([yearly.dateComponents.month, yearly.dateComponents.day, yearly.dateComponents.hour], [12, 25, 7])
+        let at = Date().addingTimeInterval(3600)
+        let once = try XCTUnwrap(cal(["kind": "at", "at": Int64(at.timeIntervalSince1970 * 1000)]))
+        XCTAssertFalse(once.repeats)
+        XCTAssertEqual(once.nextTriggerDate()?.timeIntervalSince1970 ?? 0, at.timeIntervalSince1970, accuracy: 1)
+        let every = try XCTUnwrap(AsukaNotify.trigger(["trigger": ["kind": "every", "seconds": 5]]) as? UNTimeIntervalNotificationTrigger)
+        XCTAssertTrue(every.repeats)
+        XCTAssertEqual(every.timeInterval, 60)  // at least a minute
+        XCTAssertNil(AsukaNotify.trigger(["seconds": 0]))
+        XCTAssertEqual((AsukaNotify.trigger(["seconds": 4]) as? UNTimeIntervalNotificationTrigger)?.timeInterval, 4)
+
+        let t: [String: Any] = ["kind": "daily", "hour": 9, "minute": 30]
+        let c = AsukaNotify.content(["id": "w", "title": "Water", "trigger": t, "interruption": "passive", "relevance": 0.5], nil)
+        let p = AsukaNotify.pending(UNNotificationRequest(identifier: "w", content: c, trigger: daily))
+        XCTAssertEqual(p["id"] as? String, "w")
+        XCTAssertEqual(p["title"] as? String, "Water")
+        XCTAssertEqual((p["trigger"] as? [String: Any])?["kind"] as? String, "daily")
+        XCTAssertEqual(p["next"] as? Int64, daily.nextTriggerDate().map { Int64($0.timeIntervalSince1970 * 1000) })
+        if #available(macOS 12.0, *) {
+            XCTAssertEqual(c.interruptionLevel, .passive)
+            XCTAssertEqual(c.relevanceScore, 0.5)
+        }
+    }
 }

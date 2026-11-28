@@ -591,8 +591,18 @@ func usesOf(prog *check.Program, u *Uses) {
 							}
 						}
 					}
+				case *syntax.ImplicitMember:
+					// An enum's case where its type is expected
+					// (interruption: .critical): that case.
+					if sel := info.Selections[n]; sel != nil && sel.Kind == check.SelCase && sel.Case != nil && sel.Case.Owner != nil {
+						ref(pkg, nil, sel.Case.Owner, sel.Case.Name)
+					}
 				case *syntax.MemberExpr:
 					if sel := info.Selections[n]; sel != nil {
+						if sel.Kind == check.SelCase && sel.Case != nil && sel.Case.Owner != nil {
+							ref(pkg, nil, sel.Case.Owner, sel.Case.Name)
+							break
+						}
 						switch sel.Kind {
 						case check.SelField, check.SelCase, check.SelIfaceField, check.SelMethod:
 							// A method's call has its receiver's type, no object.

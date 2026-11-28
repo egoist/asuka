@@ -22,3 +22,25 @@ plist = { NSUserActivityTypes = ["INSendMessageIntent"] }
 hostFlags = ["ASUKA_CONVERSATIONS"]
 entitlements = { "com.apple.developer.usernotifications.communication" = true }
 plist = { NSUserActivityTypes = ["INSendMessageIntent"] }
+
+# Notifications due later: Android's alarms, exact where the app may set
+# them (SCHEDULE_EXACT_ALARM: Android 12 and 13 grant it, 14 has it off
+# for an app just installed until the user turns it on: requestExact),
+# and the receiver that sets them again after what clears or moves them
+# (a reboot, the app updated, the clock or the time zone changed, exact
+# alarms allowed).
+[uses.schedule.android]
+permissions = ["android.permission.RECEIVE_BOOT_COMPLETED", "android.permission.SCHEDULE_EXACT_ALARM"]
+application = ['<receiver android:name="dev.asuka.AsukaNotifyBootReceiver" android:exported="false"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /><action android:name="android.intent.action.TIME_SET" /><action android:name="android.intent.action.TIMEZONE_CHANGED" /><action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" /></intent-filter></receiver>']
+
+[uses.requestExact.android]
+permissions = ["android.permission.SCHEDULE_EXACT_ALARM"]
+
+# iOS's interruption levels: time-sensitive notifications' capability;
+# critical alerts', which Apple grants on request (a profile without it
+# doesn't sign the app).
+[uses."Interruption.timeSensitive".ios]
+entitlements = { "com.apple.developer.usernotifications.time-sensitive" = true }
+
+[uses."Interruption.critical".ios]
+entitlements = { "com.apple.developer.usernotifications.critical-alerts" = true }

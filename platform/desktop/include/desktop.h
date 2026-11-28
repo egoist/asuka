@@ -94,6 +94,21 @@ void dsk_jw_value(dsk_jw *w, const dsk_json *v);
 char *dsk_jw_take(dsk_jw *w, size_t *len);
 void dsk_jw_free(dsk_jw *w);
 
+// ---- Scheduled notifications (trigger.c) ----
+
+// dsk_trigger_next is when a notification's trigger (sdk/notify's
+// WireTrigger: kind "at", "after", "every", "daily", "weekly",
+// "monthly", "yearly") shows next after after, milliseconds since 1970,
+// on the computer's clock; 0: once, and that's past.
+int64_t dsk_trigger_next(const dsk_json *t, int64_t after);
+// dsk_trigger_repeats reports whether it shows again and again.
+bool dsk_trigger_repeats(const dsk_json *t);
+// dsk_trigger_after is when a notification first due at due shows next
+// after now: due if it's ahead; a repeating one's next time (an
+// interval's counted on from due, keeping its pace, the times missed
+// skipped); 0 for a one-time one that's past.
+int64_t dsk_trigger_after(const dsk_json *t, int64_t due, int64_t now);
+
 // ---- Files ----
 
 // dsk_read_file reads a whole file (NUL-terminated past *len): NULL if it

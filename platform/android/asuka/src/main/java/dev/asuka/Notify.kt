@@ -1,7 +1,6 @@
 package dev.asuka
 
 import android.Manifest
-import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationChannelGroup
@@ -38,9 +37,12 @@ import java.util.concurrent.TimeUnit
 /**
  * platform/notify's module (and platform/push's notifications, which go through
  * the same builder):
- * - "request" (u8 allowed); "schedule" (a sdk/notify's Spec; seconds 0
- *   posts it now, else an inexact alarm does, allowed while idle: no
- *   exact-alarm permission); "cancel" (the id).
+ * - "request" (u8 allowed); "schedule" (a sdk/notify's Spec: seconds 0
+ *   and no trigger posts it now, else AsukaNotifySchedule keeps it and
+ *   sets its alarm); "cancel" (the id: waiting or showing), "cancelAll"
+ *   (those waiting); "pending" (JSON list: sdk/notify's WireScheduled);
+ *   "exact" (u8: exact alarms allowed), "requestExact" (the app's Alarms
+ *   & reminders page, then u8).
  * - "categories", "channels", "channelGroups" (JSON), kept: a push that
  *   comes with the app closed is built with them.
  * - "badge": Android has none of its own (launchers count notifications).
@@ -59,16 +61,13 @@ fun AsukaRuntime.notifyMethods(): Map<String, AsukaModuleMethod> = mapOf(
             val spec = JSONObject(String(args, Charsets.UTF_8))
             if (spec.optString("id").isEmpty()) spec.put("id", UUID.randomUUID().toString())
             val seconds = spec.optDouble("seconds", 0.0)
-            if (seconds <= 0) {
+            if (seconds <= 0 && spec.optJSONObject("trigger") == null) {
                 AsukaNotifications.worker.execute {
                     AsukaNotifications.show(app, spec, remote = false)
                     AsukaNotifications.main.post { reply(Result.success(ByteArray(0))) }
                 }
             } else {
-                val at = System.currentTimeMillis() + (maxOf(1.0, seconds) * 1000).toLong()
-                val i = Intent(app, AsukaNotifyReceiver::class.java).putExtra(AsukaNotifyReceiver.SPEC, spec.toString())
-                val alarms = app.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-                alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, AsukaNotifyReceiver.alarm(app, spec.getString("id"), i))
+                AsukaNotifySchedule.add(app, spec)
                 reply(Result.success(ByteArray(0)))
             }
         } catch (e: Exception) {
@@ -77,10 +76,38 @@ fun AsukaRuntime.notifyMethods(): Map<String, AsukaModuleMethod> = mapOf(
     },
     "cancel" to { args, reply ->
         val id = String(args, Charsets.UTF_8)
-        val alarms = app.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        alarms.cancel(AsukaNotifyReceiver.alarm(app, id, Intent(app, AsukaNotifyReceiver::class.java)))
+        AsukaNotifySchedule.cancel(app, id)
         AsukaNotifications.worker.execute { AsukaNotifications.remove(app, listOf(id)) }
         reply(Result.success(ByteArray(0)))
+    },
+    "cancelAll" to { _, reply ->
+        AsukaNotifySchedule.cancelAll(app)
+        reply(Result.success(ByteArray(0)))
+    },
+    "pending" to { _, reply -> reply(Result.success(AsukaNotifySchedule.pending(app).toString().toByteArray())) },
+    "exact" to { _, reply -> reply(Result.success(byteArrayOf(if (AsukaNotifySchedule.exact(app)) 1 else 0))) },
+    // Android 12 and later: the app's Alarms & reminders page, and the
+    // answer once the user is back (the alarms set exact again).
+    "requestExact" to { _, reply ->
+        val act = activity
+        if (AsukaNotifySchedule.exact(app) || Build.VERSION.SDK_INT < Build.VERSION_CODES.S || act == null) {
+            reply(Result.success(byteArrayOf(if (AsukaNotifySchedule.exact(app)) 1 else 0)))
+        } else {
+            var launcher: androidx.activity.result.ActivityResultLauncher<Intent>? = null
+            launcher = act.activityResultRegistry.register("asuka-exact-alarms-${UUID.randomUUID()}",
+                androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) {
+                launcher?.unregister()
+                val ok = AsukaNotifySchedule.exact(app)
+                if (ok) AsukaNotifications.worker.execute { AsukaNotifySchedule.restore(app) }
+                reply(Result.success(byteArrayOf(if (ok) 1 else 0)))
+            }
+            try {
+                launcher.launch(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${app.packageName}")))
+            } catch (e: Exception) {
+                launcher.unregister()
+                reply(Result.success(byteArrayOf(0)))
+            }
+        }
     },
     "categories" to { args, reply ->
         AsukaNotifications.prefs(app).edit().putString("categories", String(args, Charsets.UTF_8)).apply()
@@ -296,7 +323,14 @@ object AsukaNotifications {
             ids.add(id)
             val c = NotificationChannel(id, o.optString("name", id), importance(o.optInt("importance")))
             c.description = o.optString("description").ifEmpty { null }
-            if (o.optBoolean("silent")) c.setSound(null, null)
+            if (o.optBoolean("silent")) {
+                c.setSound(null, null)
+            } else {
+                o.optString("sound").takeIf { it.isNotEmpty() }?.let { sound(ctx, it) }?.let {
+                    c.setSound(it, android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                }
+            }
             c.enableVibration(!o.optBoolean("noVibration"))
             c.setShowBadge(!o.optBoolean("noBadge"))
             o.optString("group").takeIf { it.isNotEmpty() }?.let { c.group = it }
@@ -401,8 +435,20 @@ object AsukaNotifications {
             .setDeleteIntent(broadcast(ctx, AsukaNotifyReceiver.DELETED, id, "", spec, mutable = false))
         spec.optString("subtitle").takeIf { it.isNotEmpty() }?.let { b.setSubText(it) }
         spec.optInt("badge").takeIf { it > 0 }?.let { b.setNumber(it) }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) legacyChannel(ctx, b, channel, quiet || spec.optBoolean("silent"))
-        if (quiet || spec.optBoolean("silent")) b.setSilent(true)
+        // A passive one (iOS's interruption level) comes quietly.
+        val silent = quiet || spec.optBoolean("silent") || spec.optString("interruption") == "passive"
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            legacyChannel(ctx, b, channel, silent)
+            // Before channels, a notification's own sound.
+            if (!silent) spec.optString("sound").takeIf { it.isNotEmpty() }?.let { sound(ctx, it) }?.let { b.setSound(it) }
+        }
+        if (silent) b.setSilent(true)
+        // Ongoing: the user can't swipe it away; a progress bar, updated
+        // by posting it again, alerts once.
+        if (spec.optBoolean("ongoing")) b.setOngoing(true).setAutoCancel(false)
+        spec.optJSONObject("progress")?.let { p ->
+            b.setProgress(1000, (p.optDouble("value", 0.0).coerceIn(0.0, 1.0) * 1000).toInt(), p.optBoolean("indeterminate")).setOnlyAlertOnce(true)
+        }
         spec.optString("thread").takeIf { it.isNotEmpty() }?.let {
             b.setGroup(it).setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
         }
@@ -546,6 +592,31 @@ object AsukaNotifications {
             .putExtra(RESPONSE, shown(spec).toString())
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE
         return PendingIntent.getBroadcast(ctx, "$kind\u0000$id\u0000$action".hashCode(), i, flags)
+    }
+
+    /**
+     * A sound in the app's assets (or a file) as a URI the system can
+     * play: copied into the app's files (asuka-sounds/) and shared through
+     * its FileProvider, readable by the system's notification players.
+     * Null if there's none.
+     */
+    fun sound(ctx: Context, src: String): Uri? = try {
+        val name = src.substringAfterLast('/').ifEmpty { "sound" }
+        val dir = File(ctx.filesDir, "asuka-sounds").apply { mkdirs() }
+        val to = File(dir, name)
+        val from = when {
+            src.startsWith("file://") -> Uri.parse(src).path?.let { File(it) }
+            src.startsWith("/") -> File(src)
+            File(ctx.filesDir, "asuka/assets/$src").exists() -> File(ctx.filesDir, "asuka/assets/$src")
+            else -> null
+        }
+        if (from != null) from.inputStream().use { i -> to.outputStream().use { i.copyTo(it) } }
+        else ctx.assets.open(src).use { i -> to.outputStream().use { i.copyTo(it) } }
+        val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.asuka.files", to)
+        for (p in listOf("com.android.systemui", "android")) ctx.grantUriPermission(p, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        uri
+    } catch (_: Exception) {
+        null
     }
 
     /** The image a source names (as ui.Image's: an http(s) URL, a file, an asset), scaled to at most 1024 px. */
@@ -783,14 +854,15 @@ class AsukaNotifyReceiver : BroadcastReceiver() {
                 pending.finish()
             }
             else -> {
-                val spec = intent.getStringExtra(SPEC)?.let { try { JSONObject(it) } catch (_: Exception) { null } }
+                val carried = intent.getStringExtra(SPEC)?.let { try { JSONObject(it) } catch (_: Exception) { null } }
                     // Scheduled by an earlier version: its extras.
-                    ?: intent.getStringExtra("id")?.let { id ->
-                        JSONObject().put("id", id).put("title", intent.getStringExtra("title")).put("body", intent.getStringExtra("body")).put("url", intent.getStringExtra("url"))
+                    ?: intent.getStringExtra("title")?.let { _ ->
+                        JSONObject().put("id", intent.getStringExtra("id")).put("title", intent.getStringExtra("title")).put("body", intent.getStringExtra("body")).put("url", intent.getStringExtra("url"))
                     }
-                if (spec == null) return pending.finish()
+                val id = intent.getStringExtra("id") ?: carried?.optString("id")
                 AsukaNotifications.worker.execute {
-                    AsukaNotifications.show(ctx, spec, remote = false)
+                    // A repeating one's next alarm is set as this one posts.
+                    AsukaNotifySchedule.fired(ctx, id, carried)?.let { AsukaNotifications.show(ctx, it, remote = false) }
                     pending.finish()
                 }
             }

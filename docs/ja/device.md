@@ -12,7 +12,7 @@ Asuka のパッケージを使うと、ビューの外にあるデバイスの�
 | --- | --- | --- |
 | `platform/camera` | `CAMERA`、`RECORD_AUDIO` | `NSCameraUsageDescription`、`NSMicrophoneUsageDescription` |
 | `platform/location` | `ACCESS_COARSE_LOCATION`、`ACCESS_FINE_LOCATION`、`ACCESS_BACKGROUND_LOCATION`、`FOREGROUND_SERVICE_LOCATION`、`RECEIVE_BOOT_COMPLETED`。パッケージのフォアグラウンドサービスとそのレシーバー（バックグラウンドでの更新、リージョン） | `NSLocationWhenInUseUsageDescription`、`NSLocationAlwaysAndWhenInUseUsageDescription`、`location` バックグラウンドモード。`requestPrecise` を呼ぶアプリでは `NSLocationTemporaryUsageDescriptionDictionary` |
-| `platform/notify` | `POST_NOTIFICATIONS` | |
+| `platform/notify` | `POST_NOTIFICATIONS`。`schedule` を呼ぶアプリでは `RECEIVE_BOOT_COMPLETED`、`SCHEDULE_EXACT_ALARM` と、再起動後に通知を設定し直すレシーバー | `.timeSensitive` を使うアプリでは Time Sensitive Notifications のエンタイトルメント、`.critical` では Critical Alerts のエンタイトルメント |
 | `platform/network` | `ACCESS_NETWORK_STATE` | |
 | `platform/library` | `WRITE_EXTERNAL_STORAGE`（Android 9 以前） | `NSPhotoLibraryAddUsageDescription`。アプリの Documents を「ファイル」アプリに表示 |
 | `platform/background` | `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`POST_NOTIFICATIONS`、`WAKE_LOCK`。フォアグラウンドサービス | |
@@ -232,7 +232,7 @@ Linux では、Asuka はポータルがあればポータルを通じて、ほ�
 | `platform/nowplaying` | ウォッチの「再生中」と、Digital Crown での音量調整です |
 | `platform/purchase` | StoreKit 2 です。購入はウォッチ自身のシートで確定します。サブスクリプションの管理、返金、オファーコードのシートはないので、`manageSubscriptions`、`requestRefund`、`redeemCode` は unsupported を投げます |
 | `platform/appleauth` | ウォッチの Sign in with Apple のシートと、SwiftUI のボタンです（`.automatic` は、ウォッチの黒い背景に映える白になります） |
-| `platform/notify` | iPhone と同じように、アクション、返信、メッセージを含めて通知を表示します。ウォッチアプリにはバッジがないので、`setBadge` は何もしません |
+| `platform/notify` | iPhone と同じように、アクション、返信、メッセージを含めて通知を表示します。ウォッチアプリにはバッジがないので、`setBadge` は何もしません。音は通知の `sound` ではなく、ウォッチ自身のものが鳴ります |
 | `platform/push` | APNs です。ウォッチアプリ自身のトークンで、アラートとデータメッセージを受け取ります。`rewrite` はありません（ウォッチアプリには Notification Service Extension がありません） |
 | `platform/crash` | コアの致命的なエラーと、捕捉されなかった例外を扱います。MetricKit の診断情報はありません |
 | `platform/analytics` | ウォッチでは使えません（Firebase の Analytics には watchOS 用の SDK がありません）。`available()` は false で、何も送信されません |
@@ -898,7 +898,7 @@ test "a region, crossed" {
 
 ## 通知：platform/notify
 
-`platform/notify` はローカル通知を、すぐに、またはアプリが決めた時刻に表示します。その時刻にアプリが動いているかどうかは問いません。通知をタップすると、その URL でアプリが開きます。メッセージングアプリに必要な機能もそろっていて、`platform/push` の通知にも使えます。通知内で入力するアクションと返信、スレッド、Android のチャンネル、会話のメッセージ、バッジ、表示中の通知、アプリを開いているあいだにどの通知を表示するか、です。
+`platform/notify` はローカル通知を、すぐに、アプリが決めた時刻に、または繰り返し（毎日決まった時刻、毎週、毎月、毎年、数分ごと）表示します。その時刻にアプリが動いているかどうかは問いません。通知をタップすると、その URL でアプリが開きます。メッセージングアプリに必要な機能もそろっていて、`platform/push` の通知にも使えます。通知内で入力するアクションと返信、スレッド、Android のチャンネル、会話のメッセージ、バッジ、表示中の通知、アプリを開いているあいだにどの通知を表示するか、です。
 
 ```asuka
 import platform/notify
@@ -918,8 +918,9 @@ async fn remindToWater() throws {
 ```
 
 - `notify.request()` は、初回にユーザーへ通知の許可を求め、許可されているかどうかを返します。そのときのユーザーの答え、またはその後ユーザーが「設定」で変えた状態です。
-- `notify.schedule(n)` は、今から `n.after` 後（1 秒以上）に `n` を表示するよう予約します。`notify.show(n)` はすぐに表示します。待機中または表示中の通知と同じ `id` を持つ通知は、それを置き換えます。どちらも非同期です。
-- `notify.cancel(id)` は、待機中か表示済みかにかかわらず通知を取り消します。
+- `notify.schedule(n)` は、`n` の `trigger`（下記）が示すとき、または今から `n.after` 後（1 秒以上）に `n` を表示するよう予約します。`notify.show(n)` はすぐに表示します。待機中または表示中の通知と同じ `id` を持つ通知は、それを置き換えます。どちらも非同期です。
+- `notify.cancel(id)` は、待機中（繰り返す通知なら次回以降もすべて）か表示済みかにかかわらず通知を取り消します。`notify.cancelAll()` は待機中の通知をすべて取り消します。
+- `notify.pending()` は待機中の通知を、表示が近い順に返します。各 `Scheduled` には通知の `id`、`title`、`subtitle`、`body`、`url`、`data`、`category`、`thread` と、`trigger`、次に表示される時刻 `next`（`time.Time?`）があります。
 
 `Notification` の `url` には、アプリのスキーム（`asuka.toml` の `scheme`）の URL を指定してください。ユーザーが通知をタップすると、アプリの `openURL` がそれを受け取ります。ほかのフィールドは次のとおりです。
 
@@ -934,8 +935,68 @@ async fn remindToWater() throws {
 | `badge` | 通知が表示されたときのアプリアイコンの数字（iOS、macOS）。Android では通知の数 |
 | `silent` | 音を鳴らしません |
 | `image` | 画像。ソースは `Image` と同じ（アセット、ファイル、http(s) の URL）です。iOS では添付ファイル、Android では BigPicture になります |
+| `trigger` | `schedule` が表示するタイミング（下記）。指定しなければ `after` |
+| `sound` | システムの音の代わりに鳴らす、アプリのアセットのサウンド（iOS と macOS：30 秒以内の `.caf`、`.aiff`、`.wav`）。Android 8 以降は通知ではなくチャンネルの音（`Channel` の `sound`）を鳴らします |
+| `interruption` | どれだけ割り込むか（iOS 15、macOS 12）：`.active`（既定）、`.passive`（音を鳴らさず一覧にだけ入る。Android では音なし）、`.timeSensitive`（集中モードを通り抜ける）、`.critical`（下記） |
+| `relevance` | iOS の通知の要約での並び順。`0` から `1` で、大きいものが先です |
+| `ongoing` | Android：アプリが取り除く（`cancel`、`remove`）まで残り、ユーザーはスワイプで消せません |
+| `progress` | 進捗バー（Android、Windows）：`.of(0.4)` または `.indeterminate`。処理が進むたびに同じ `id` で表示し直すと、音を鳴らさずに更新されます |
 
-**iOS** は、`present` で別の指定をしない限り、アプリを開いているあいだも通知をバナーで表示します。**Android** は予約した通知を不正確なアラーム（exact alarm の権限は不要）で投稿するので、予定の時刻より少し遅れることがあります。
+**iOS** は、`present` で別の指定をしない限り、アプリを開いているあいだも通知をバナーで表示します。
+
+### 表示するタイミング
+
+通知の `trigger` は、`schedule` がその通知をいつ表示するかを指定します。一度だけ表示することも、取り消すまで繰り返し表示することもできます。時刻は端末の時計に従い、タイムゾーンが変わればそれに合わせて動きます。
+
+```asuka check
+import platform/notify
+import std/time
+
+async fn remind() throws {
+  try await notify.schedule(notify.Notification(id: "plants", title: "Water the plants", trigger: .daily(hour: 9, minute: 0)))
+  try await notify.schedule(notify.Notification(id: "standup", title: "Stand-up", trigger: .weekly(weekday: .monday, hour: 9, minute: 30)))
+  try await notify.schedule(notify.Notification(id: "rent", title: "Rent is due", trigger: .monthly(day: 1, hour: 8, minute: 0)))
+  try await notify.schedule(notify.Notification(id: "trip", title: "Pack for the trip", trigger: .at(time.date(2026, 12, 20, hour: 7))))
+  try await notify.schedule(notify.Notification(id: "stretch", title: "Stretch", trigger: .every(1h)))
+}
+```
+
+| トリガー | タイミング |
+|---|---|
+| `.after(d)` | 今から `d` 後に一度（1 秒以上）。`after` と同じです |
+| `.at(t)` | `t` に一度（過ぎた時刻なら 1 秒後） |
+| `.every(d)` | `d` ごと（1 分以上）。最初は今から `d` 後 |
+| `.daily(hour:, minute:)` | 毎日その時刻 |
+| `.weekly(weekday:, hour:, minute:)` | 毎週その曜日（`time.Weekday`） |
+| `.monthly(day:, hour:, minute:)` | 毎月その日（1〜31。その日がない月は飛ばします） |
+| `.yearly(month:, day:, hour:, minute:)` | 毎年その日付（2 月 29 日はその日がある年だけ） |
+
+`schedule` は、ありえない時刻（24 時以降、32 日など）には `NotifyError.badTime` を、1 分未満の `every` には `NotifyError.shortInterval` を投げます。`trigger.next(after: t)` は、`t` のタイムゾーンの時計でトリガーが `t` の次に表示される時刻を返し、`trigger.repeats()` は繰り返すかどうかを返します。
+
+**iOS** と **macOS** は UserNotifications のカレンダートリガーと時間間隔トリガーで予約します。アプリをどれだけ閉じていても、システムがこれを保持します。iOS が保持する待機中の通知は、アプリごとに 64 件（近いものから）です。**Android** は通知ごとにアラームを設定し、繰り返す通知はアラームが鳴るたびに次のアラームを設定します。Asuka はこれらを保存しておき、アラームが消えたりずれたりしたとき（再起動、アプリの更新、時計やタイムゾーンの変更）に設定し直します（`schedule` を呼ぶアプリには、そのためのレシーバーが入ります）。端末の電源が切れているあいだに時刻を過ぎた一回限りの通知は、端末が起動したときに表示します。繰り返す通知は、逃した分は表示せず、次の時刻に表示します。アラームは、アプリに正確なアラームが許可されていれば正確になります（`SCHEDULE_EXACT_ALARM` 権限。`schedule` を呼ぶアプリはこれを宣言します）。Android 12 と 13 ではこの権限が与えられますが、Android 14 ではインストールしたばかりのアプリでは無効で、ユーザーが「設定」（アラームとリマインダー）でオフにすることもできます。権限がないと、Android は通知を予定の時刻から数分以内に表示します（不正確なアラーム。電池を節約するため、ほかの処理とまとめて実行されます）。`notify.exactAllowed()` は権限があるかどうかを返し、`notify.requestExact()` はユーザーをアプリの「アラームとリマインダー」の画面に案内して、戻ってきたときに許可されたかどうかを返します（ほかのプラットフォームではどちらも `true`）。許可されると、予約済みの通知もそれ以降は正確に表示されます。Google Play で `USE_EXACT_ALARM` の使用を認められる目覚まし時計やカレンダーのアプリは、許可を求める代わりにその権限を宣言します。
+
+### 音、割り込みレベル、進捗
+
+- 通知の `sound` は、アプリの `assets` にあるファイルです。iOS と macOS はシステムの音の代わりにそれを鳴らします（重大な通知はアラームの音量で）。Android 8 以降は通知ではなくチャンネルの音を鳴らすので、通知が属するチャンネルを作るときに `sound` を指定してください（`notify.Channel(id: "alarms", name: "Alarms", sound: "sounds/bell.ogg")`）。Android 7 では通知の音を鳴らします。Windows と Linux はそれぞれのシステムの音を、Web はブラウザーの音を鳴らします。
+- `.timeSensitive` の通知は、集中モードや通知の要約を通り抜けて届きます。これを使うアプリには Time Sensitive Notifications のケイパビリティ（そのエンタイトルメント）が与えられ、リリースビルドのプロビジョニングプロファイルにもそれが必要です。Windows では重要な通知（`scenario` が `urgent`）として表示し、ユーザーが許可すれば応答不可モードでも届きます。
+- `.critical` のアラートは、着信スイッチがオフでも、集中モード中でも音を鳴らします。健康、安全、セキュリティのためのものです。Apple は Critical Alerts のケイパビリティを申請を受けてからしか与えないので、`.critical` を使うアプリにはそのエンタイトルメントが入り、署名するにはプロファイルにもそれが必要です。`notify.request(critical: true)` は、ユーザーに重大な通知の許可も求めます。ケイパビリティがない場合、重大な通知は `.active` の通知として表示されます。
+- `progress` バー付きの `ongoing` な通知は、進行中の処理を Android で示す方法です。同じ `id` で表示し直すとバーが進み、処理が終わったら `cancel` します。Windows もトーストにバーを描きます。iOS では Live Activities（`platform/liveactivity`）を使います。
+
+### テスト
+
+アプリのテストでは、`notify.fake(now:)` が端末の代わりになります。`request` はその `allowed` を返し、`schedule` は予約した通知を保持します（`pending`）。`advance(d)` は時計を進め、端末と同じように時刻が来た通知を表示し（繰り返す通知は何度も）、表示した通知を返します。`tap(id, action:, reply:)` は `responses()` に応答を送り、`specs` はプラットフォームに渡った内容（通知の `sound`、`interruption`、`progress`）を示します。
+
+```asuka check
+import platform/notify
+import std/time
+
+test "the plants, each morning" {
+  let device = notify.fake(now: time.date(2026, 3, 7, hour: 15, zone: .utc))
+  try await notify.schedule(notify.Notification(id: "plants", title: "Water the plants", trigger: .daily(hour: 9, minute: 0)))
+  expect(try await notify.pending()[0].next == time.date(2026, 3, 8, hour: 9, zone: .utc))
+  expect(device.advance(48h).map(d => d.id) == ["plants", "plants"])
+}
+```
 
 ### アクションと返信
 
@@ -1055,6 +1116,12 @@ fn makeChannels() {
 | | iOS | Android | macOS | Windows | Linux | Web |
 |---|---|---|---|---|---|---|
 | 表示、予約、取り消し | ✓ | ✓ | ✓ | ✓（トースト） | ✓（予約：systemd のユーザータイマー。アプリが動いているかどうかは問わない） | ✓（予約：アプリのページが開いているあいだ） |
+| 繰り返し（毎日、毎週、毎月、毎年、一定間隔） | ✓ | ✓（権限があれば正確、なければ数分以内） | ✓ | ✓（次の 64 回分を先に予約し、アプリの起動時に補充） | ✓（systemd のタイマー。systemd がなければアプリの実行中） | アプリのページが開いているあいだ（逃した分は次にページを開いたときに一度表示） |
+| `pending`、`cancelAll` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 再起動後も保持 | ✓ | ✓（端末の起動時に設定し直す） | ✓ | ✓ | ✓（systemd のもの） | 不要（アプリのストレージに保存） |
+| 音 | ✓ | チャンネルの音（Android 7 では通知の音） | ✓ | システムの音 | システムの音 | ブラウザーの音 |
+| 割り込みレベル、relevance | ✓（iOS 15） | `.passive`：音なし | ✓（macOS 12） | `.timeSensitive`、`.critical`：urgent | 無視 | 無視 |
+| ongoing、進捗 | 無視 | ✓ | 無視 | 進捗バー | 無視 | 無視 |
 | アクション、返信 | ✓ | ✓ | ✓ | ✓（ボタン 5 つ） | アクション（返信するとアプリが開く） | ブラウザーが表示する場合はボタン（Chrome、Edge：2 つ）。インライン返信がある場合は返信 |
 | バックグラウンドのアクション | ✓（約 25 秒） | ✓（約 9 秒） | ✓ | ✓（約 25 秒。そのためにアプリが起動される） | アプリの実行中 | アプリのページの中（Service Worker がページを開く） |
 | スレッド | ✓ | ✓（グループとサマリー） | ✓ | まとめない。`removeThread` は使える | ✓ | まとめない。`removeThread` は使える |
@@ -1064,7 +1131,7 @@ fn makeChannels() {
 | 表示中の通知の取得、削除 | ✓ | ✓ | ✓ | ✓（通知センターのもの） | 今回の実行でアプリが表示したもの | ✓（Service Worker のもの） |
 | `present` | ✓ | ✓ | ✓ | ✓（予約した通知を除く） | ✓ | ✓ |
 
-**macOS** ではアプリのバンドルが必要です。`asuka dev` と `asuka build` はバンドルからアプリを実行します。単体で実行した実行ファイルには bundle ID がないので、呼び出しはその旨を示すエラーを投げます。**Windows** はトーストを、すぐに、または予約して表示します。画像も表示でき、カテゴリーのアクションはボタン、返信はテキストボックスになります。アプリは初回に自分自身を登録します（AppUserModelID、つまり asuka.toml の `id` を持つ「スタート」メニューのショートカットと、COM のアクティベーター。どちらもユーザーのレジストリに、アプリの実行ファイルを指して登録します）。これにより、タップやボタンの操作がアプリに届き、アプリが動いていなければ Windows がアプリを起動します。バックグラウンドのアクションでは、アプリは見えないまま動き、応答を処理し終えると終了します。バッジは、アプリのタスクバーボタンに描かれる数字です（パッケージ化されたアプリでは、システムのバッジ）。Windows は、予約したトーストを `present` の答えにかかわらず表示します。**Linux** は、アプリにデスクトップファイルがある（またはサンドボックスで動いている）場合は GNotification として通知を送り、そうでなければデスクトップの通知サーバーに直接送ります（GNOME Shell は、デスクトップファイルのないアプリの通知を受け付けません）。タップやボタンの操作は、アプリの実行中にアプリに届きます。後で表示する通知は systemd のユーザータイマー（`systemd-run --user`）になります。タイマーはアプリの実行ファイルをウィンドウなしで起動して通知を表示し、アプリが動いていればアプリに処理を渡し、タップされればアプリを起動します。systemd がない場合（Flatpak、`asuka dev`）は、アプリの実行中にしか表示されません。**ブラウザー**は、アプリの Service Worker を通じて通知を表示し、`platform/push` には Web Push を使います。詳しくは [Web](web.md) を参照してください。
+**macOS** ではアプリのバンドルが必要です。`asuka dev` と `asuka build` はバンドルからアプリを実行します。単体で実行した実行ファイルには bundle ID がないので、呼び出しはその旨を示すエラーを投げます。**Windows** はトーストを、すぐに、または予約して表示します。画像も表示でき、カテゴリーのアクションはボタン、返信はテキストボックスになります。アプリは初回に自分自身を登録します（AppUserModelID、つまり asuka.toml の `id` を持つ「スタート」メニューのショートカットと、COM のアクティベーター。どちらもユーザーのレジストリに、アプリの実行ファイルを指して登録します）。これにより、タップやボタンの操作がアプリに届き、アプリが動いていなければ Windows がアプリを起動します。バックグラウンドのアクションでは、アプリは見えないまま動き、応答を処理し終えると終了します。バッジは、アプリのタスクバーボタンに描かれる数字です（パッケージ化されたアプリでは、システムのバッジ）。Windows は、予約したトーストを `present` の答えにかかわらず表示します。**Linux** は、アプリにデスクトップファイルがある（またはサンドボックスで動いている）場合は GNotification として通知を送り、そうでなければデスクトップの通知サーバーに直接送ります（GNOME Shell は、デスクトップファイルのないアプリの通知を受け付けません）。タップやボタンの操作は、アプリの実行中にアプリに届きます。後で表示する通知は systemd のユーザータイマー（`systemd-run --user`）になります。タイマーはアプリの実行ファイルをウィンドウなしで起動して通知を表示し、アプリが動いていればアプリに処理を渡し、タップされればアプリを起動します。繰り返す通知は、コンピューターの時計に従って（`OnCalendar`）、または一定間隔で繰り返すタイマーになります。systemd がない場合（Flatpak、`asuka dev`）は、アプリの実行中にしか表示されず、アプリが起動するたびに設定し直されます（閉じているあいだに時刻を過ぎた一回限りの通知は、そのときに表示されます）。**Windows** には繰り返すトーストがないので、繰り返す通知は次の 64 回分（1 年以内）を先に予約し、アプリが起動するたびに予約し直します。**ブラウザー**は、アプリの Service Worker を通じて通知を表示し、`platform/push` には Web Push を使います。詳しくは [Web](web.md) を参照してください。
 
 ## サウンド：platform/audio
 
