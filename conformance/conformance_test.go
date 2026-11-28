@@ -11,31 +11,38 @@ import (
 	"github.com/egoist/asuka/lang/compile"
 )
 
-// canvas is a synthetic capture: a sheet at (ox, oy) pixels, k pixels
-// per point, painted by f from each pixel's center in the sheet's points,
-// its swatches their colors in sRGB.
-func canvas(w, h int, ox, oy, k float64, f func(x, y float64) color.RGBA) *image.RGBA {
-	return canvasIn(w, h, ox, oy, k, f, func(c RGB) color.RGBA { return color.RGBA{uint8(c.R), uint8(c.G), uint8(c.B), 255} })
+// canvas is a synthetic capture: page p of the sheet at (ox, oy) pixels,
+// k pixels per point, painted by f from each pixel's center in the
+// sheet's points, its swatches their colors in sRGB.
+func canvas(p, w, h int, ox, oy, k float64, f func(x, y float64) color.RGBA) *image.RGBA {
+	return canvasIn(p, w, h, ox, oy, k, f, func(c RGB) color.RGBA { return color.RGBA{uint8(c.R), uint8(c.G), uint8(c.B), 255} })
 }
 
 // canvasIn is canvas with its swatches as space shows the cases' colors.
-func canvasIn(w, h int, ox, oy, k float64, f func(x, y float64) color.RGBA, space func(RGB) color.RGBA) *image.RGBA {
+func canvasIn(p, w, h int, ox, oy, k float64, f func(x, y float64) color.RGBA, space func(RGB) color.RGBA) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	sw, sh := SheetSize()
+	sw, sh := SheetSize(p)
 	for py := range h {
 		for px := range w {
 			x, y := (float64(px)+0.5-ox)/k, (float64(py)+0.5-oy)/k
 			c := color.RGBA{40, 40, 40, 255} // the screen around the sheet
 			if x >= 0 && y >= 0 && x < float64(sw) && y < float64(sh) {
 				c = color.RGBA{255, 255, 255, 255}
-				swatch := -1
+				swatch, mark := -1, false
 				for i := range swatches {
 					if sx := float64(swatchX(i)); y < marker && x >= sx && x < sx+marker {
 						swatch = i
 					}
 				}
+				for j := range p + 1 {
+					if mx := float64(pageMarkX(j)); y < marker && x >= mx && x < mx+marker {
+						mark = true
+					}
+				}
 				if (x < marker && y < marker) || (x >= float64(sw)-marker && y >= float64(sh)-marker) {
 					c = color.RGBA{255, 0, 255, 255}
+				} else if mark {
+					c = color.RGBA{0, 0, 0, 255}
 				} else if swatch >= 0 {
 					c = space(swatches[swatch].rgb)
 				} else if f != nil {
@@ -49,16 +56,31 @@ func canvasIn(w, h int, ox, oy, k float64, f func(x, y float64) color.RGBA, spac
 }
 
 func TestLocate(t *testing.T) {
-	for _, k := range []float64{1, 1.5, 2, 2.625, 3} {
-		ox, oy := 17.0, 61.0
-		sw, sh := SheetSize()
-		img := canvas(int(ox+float64(sw)*k)+20, int(oy+float64(sh)*k)+30, ox, oy, k, nil)
-		s, err := locate(img)
-		if err != nil {
-			t.Fatalf("at %g×: %v", k, err)
+	for p := range Pages() {
+		for _, k := range []float64{1, 1.5, 2, 2.625, 3} {
+			ox, oy := 17.0, 61.0
+			sw, sh := SheetSize(p)
+			img := canvas(p, int(ox+float64(sw)*k)+20, int(oy+float64(sh)*k)+30, ox, oy, k, nil)
+			s, err := locate(img)
+			if err != nil {
+				t.Fatalf("page %d at %g×: %v", p+1, k, err)
+			}
+			if s.page != p || s.ox != ox || s.oy != oy || math.Abs(s.sx-k) > 0.01 || math.Abs(s.sy-k) > 0.01 {
+				t.Errorf("page %d at %g×: found page %d at (%g,%g), %g×%g", p+1, k, s.page+1, s.ox, s.oy, s.sx, s.sy)
+			}
 		}
-		if s.ox != ox || s.oy != oy || math.Abs(s.sx-k) > 0.01 || math.Abs(s.sy-k) > 0.01 {
-			t.Errorf("at %g×: found the sheet at (%g,%g), %g×%g", k, s.ox, s.oy, s.sx, s.sy)
+	}
+	// A page's marks with another page's height: not the sheet.
+	if Pages() > 1 {
+		sw, sh := SheetSize(0)
+		img := canvas(0, int(sw)+10, int(sh)+10, 3, 5, 1, nil)
+		for y := range 8 {
+			for x := range 8 {
+				img.SetRGBA(3+int(pageMarkX(1))+x, 5+y, color.RGBA{0, 0, 0, 255})
+			}
+		}
+		if s, err := locate(img); err == nil {
+			t.Errorf("found page %d in page 1's sheet with page 2's marks", s.page+1)
 		}
 	}
 	if _, err := locate(image.NewRGBA(image.Rect(0, 0, 50, 50))); err == nil {
@@ -70,8 +92,8 @@ func TestLocate(t *testing.T) {
 // painted by f in the cell's points.
 func probeOn(t *testing.T, k float64, f func(x, y float64) color.RGBA) *Probe {
 	t.Helper()
-	sw, sh := SheetSize()
-	img := canvas(int(float64(sw)*k)+10, int(float64(sh)*k)+10, 3, 5, k, func(x, y float64) color.RGBA {
+	sw, sh := SheetSize(0)
+	img := canvas(0, int(float64(sw)*k)+10, int(float64(sh)*k)+10, 3, 5, k, func(x, y float64) color.RGBA {
 		return f(x-marker, y-marker)
 	})
 	s, err := locate(img)
@@ -110,9 +132,9 @@ func TestEdge(t *testing.T) {
 func TestMixInTheCapturesSpace(t *testing.T) {
 	p3Red := color.RGBA{234, 51, 35, 255}  // sRGB's red in Display P3
 	half := color.RGBA{245, 153, 145, 255} // half of it over white, blended there
-	sw, sh := SheetSize()
+	sw, sh := SheetSize(0)
 	k := 2.0
-	img := canvasIn(int(float64(sw)*k)+10, int(float64(sh)*k)+10, 3, 5, k, func(x, y float64) color.RGBA {
+	img := canvasIn(0, int(float64(sw)*k)+10, int(float64(sh)*k)+10, 3, 5, k, func(x, y float64) color.RGBA {
 		if y < marker {
 			return color.RGBA{255, 255, 255, 255} // the margin
 		}
@@ -161,10 +183,46 @@ func TestCasesFit(t *testing.T) {
 		}
 		seen[c.Name] = true
 	}
-	// The sheet fits a phone's screen in portrait, and the macOS host's
-	// default window.
-	if w, h := SheetSize(); w > 360 || h > 580 {
-		t.Errorf("the sheet is %gx%g points", w, h)
+	// Every case is on a page, once.
+	n := 0
+	for p := range Pages() {
+		if len(pageCases(p)) > PerPage {
+			t.Errorf("page %d has %d cases", p+1, len(pageCases(p)))
+		}
+		n += len(pageCases(p))
+		// Each page fits a phone's screen in portrait, and the macOS
+		// host's default window.
+		if w, h := SheetSize(p); w > 360 || h > 580 {
+			t.Errorf("page %d of the sheet is %gx%g points", p+1, w, h)
+		}
+		// Its marks are in the top margin, left of the top right corner.
+		if x := pageMarkX(p + 1); x+marker > 2*marker+Columns*Cell-marker {
+			t.Errorf("page %d's marks leave the top margin", p+1)
+		}
+	}
+	if n != len(Cases) {
+		t.Errorf("the pages show %d of the %d cases", n, len(Cases))
+	}
+}
+
+// Measure reads which page a capture shows and runs that page's cases,
+// each named, on it.
+func TestMeasurePages(t *testing.T) {
+	for p := range Pages() {
+		sw, sh := SheetSize(p)
+		img := canvas(p, int(sw)*2+10, int(sh)*2+10, 3, 5, 2, nil)
+		page, results, err := Measure(img, "")
+		if err != nil {
+			t.Fatalf("page %d: %v", p+1, err)
+		}
+		if page != p || len(results) != len(pageCases(p)) {
+			t.Fatalf("page %d: measured page %d, %d results", p+1, page+1, len(results))
+		}
+		for i, r := range results {
+			if r.Case != pageCases(p)[i].Name {
+				t.Errorf("page %d: result %d is %q, want %q", p+1, i, r.Case, pageCases(p)[i].Name)
+			}
+		}
 	}
 }
 

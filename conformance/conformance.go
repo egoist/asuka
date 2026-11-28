@@ -3,9 +3,11 @@
 // shadows, gradients and transforms. Tests elsewhere check the ops the
 // core sends and the views a host makes; these check the pixels.
 //
-// Sheet lays the cases out between two registration markers; a host's
-// runner shows it, captures the screen as an image, and Check finds the
-// sheet in the capture, measures each case and reports what's off. The
+// Sheet lays the cases out between two registration markers, a page of
+// them at a time (PerPage at most, so a page fits a phone's screen); a
+// host's runner shows each page, captures the screen as an image, and
+// Check finds the page in the capture, measures each of its cases and
+// reports what's off. The
 // cases assert measured quantities with tolerances (where an edge is to
 // the device pixel, a shadow's Gaussian σ, a color's mix), not pixels
 // against a reference, so one set of cases holds for every host at any
@@ -15,15 +17,17 @@
 //
 //	go test ./platform/macos/mactest -run Conformance   # macOS, on the Mac player
 //	go test -tags e2e ./e2e -run Conformance            # iOS, Android and the web (headless Chrome, at 1×, 1.5× and 2×)
-//	ASUKA_CONFORMANCE_OUT=/tmp/c go test ...             # also write each capture, as <host>.png
+//	ASUKA_CONFORMANCE_OUT=/tmp/c go test ...             # also write each capture, as <host>-<page>.png
 //
 // Its app (conformance/app, App's source, which go generate writes)
-// shows it on any platform:
+// shows it on any platform, a page at a time, a button for each
+// (PageButton: what a runner taps):
 //
 //	go run ./cmd/asuka dev --platform ios conformance/app
 package conformance
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/png"
@@ -32,6 +36,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 //go:generate go run ./gen
@@ -75,6 +80,10 @@ const (
 	Columns = 3
 	Cell    = 100 // a case's square
 	marker  = 8   // the registration squares' side
+	// PerPage is how many cases a page of the sheet shows at most: five
+	// rows, which fit a phone's screen in portrait and the macOS host's
+	// default window.
+	PerPage = 5 * Columns
 )
 
 // Magenta is the registration markers' color, which no case uses.
@@ -95,52 +104,91 @@ var swatches = []struct {
 // swatchX is swatch i's left, in the sheet's points.
 func swatchX(i int) float32 { return 2*marker + float32(i)*2*marker }
 
-// SheetSize is the sheet's size in points.
-func SheetSize() (w, h float32) {
-	rows := (len(Cases) + Columns - 1) / Columns
+// pageMarkX is the left of the page's mark j, in the sheet's points:
+// page p shows p+1 black squares in the top margin, right of the
+// swatches, at their cadence, so a capture says which page it shows.
+func pageMarkX(j int) float32 { return swatchX(len(swatches) + j) }
+
+// Pages is how many pages the sheet has.
+func Pages() int { return (len(Cases) + PerPage - 1) / PerPage }
+
+// pageCases are page p's cases.
+func pageCases(p int) []Case { return Cases[p*PerPage : min((p+1)*PerPage, len(Cases))] }
+
+// PageButton is the title of the app's button that shows page p: what a
+// runner taps (App).
+func PageButton(p int) string { return fmt.Sprintf("Page %d", p+1) }
+
+// SheetSize is page p's size in points: every page is as wide, as tall
+// as its rows.
+func SheetSize(p int) (w, h float32) {
+	rows := (len(pageCases(p)) + Columns - 1) / Columns
 	return 2*marker + Columns*Cell, 2*marker + float32(rows)*Cell
 }
 
-// cellOrigin is case i's top left in the sheet, in points.
+// cellOrigin is the top left of a page's case i in the page, in points.
 func cellOrigin(i int) (x, y float32) {
 	return marker + float32(i%Columns)*Cell, marker + float32(i/Columns)*Cell
 }
 
-// Sheet is the sheet as Asuka's ConformanceSheet component: every case
-// in its cell, on white, between a magenta square at the top left and
-// one at the bottom right. Show it anywhere on screen, at its own size:
-// Check finds it in the capture.
+// Sheet is the sheet as Asuka's ConformanceSheet component, which shows
+// one page, its page argument: each of the page's cases in its cell, on
+// white, between a magenta square at the top left and one at the bottom
+// right, and the swatches and the page's marks in the top margin. Show
+// it anywhere on screen, at its own size: Check finds it in the capture.
 func Sheet() string {
-	w, h := SheetSize()
 	var b strings.Builder
-	b.WriteString("// The conformance sheet (package conformance's cases).\n")
-	b.WriteString("component ConformanceSheet {\n")
-	fmt.Fprintf(&b, "  View {\n    width: %g; height: %g; background: #ffffff; alignSelf: .center\n", w, h)
-	fmt.Fprintf(&b, "    %s\n", box(0, 0, marker, marker, "background: "+Magenta))
-	fmt.Fprintf(&b, "    %s\n", box(w-marker, h-marker, marker, marker, "background: "+Magenta))
-	for i, s := range swatches {
-		fmt.Fprintf(&b, "    %s\n", box(swatchX(i), 0, marker, marker, "background: "+s.hex))
-	}
-	for i, c := range Cases {
-		x, y := cellOrigin(i)
-		// A View with only layout props makes no native view: the case's
-		// views go straight into the sheet, which its white shows under.
-		fmt.Fprintf(&b, "    // %s\n    %s\n", c.Name, box(x, y, Cell, Cell, "", c.Scene))
+	b.WriteString("// The conformance sheet (package conformance's cases), a page at a time.\n")
+	b.WriteString("component ConformanceSheet(page: int) {\n")
+	for p := range Pages() {
+		w, h := SheetSize(p)
+		if p == 0 {
+			fmt.Fprintf(&b, "  if page == %d {\n", p)
+		} else {
+			fmt.Fprintf(&b, "  } else if page == %d {\n", p)
+		}
+		fmt.Fprintf(&b, "    View {\n      width: %g; height: %g; background: #ffffff; alignSelf: .center\n", w, h)
+		fmt.Fprintf(&b, "      %s\n", box(0, 0, marker, marker, "background: "+Magenta))
+		fmt.Fprintf(&b, "      %s\n", box(w-marker, h-marker, marker, marker, "background: "+Magenta))
+		for i, s := range swatches {
+			fmt.Fprintf(&b, "      %s\n", box(swatchX(i), 0, marker, marker, "background: "+s.hex))
+		}
+		for j := range p + 1 {
+			fmt.Fprintf(&b, "      %s\n", box(pageMarkX(j), 0, marker, marker, "background: "+cBlack))
+		}
+		for i, c := range pageCases(p) {
+			x, y := cellOrigin(i)
+			// A View with only layout props makes no native view: the case's
+			// views go straight into the sheet, which its white shows under.
+			fmt.Fprintf(&b, "      // %s\n      %s\n", c.Name, box(x, y, Cell, Cell, "", c.Scene))
+		}
+		b.WriteString("    }\n")
 	}
 	b.WriteString("  }\n}\n")
 	return b.String()
 }
 
-// App is an Asuka app that shows the sheet: conformance/app's app.asuka.
+// App is an Asuka app that shows the sheet, page 1 first, and a button
+// for each page (PageButton) above it: conformance/app's app.asuka.
 func App() string {
+	var buttons strings.Builder
+	for p := range Pages() {
+		fmt.Fprintf(&buttons, "      Button(%q) { on press { page = %d } }\n", PageButton(p), p)
+	}
 	return Sheet() + `
-app {
+component Conformance {
+  state page = 0
+
   SafeArea {
-    justify: .center; align: .center
-    Text("Conformance")
-    ConformanceSheet()
+    justify: .center; align: .center; gap: 8
+    Row {
+      gap: 8
+` + buttons.String() + `    }
+    ConformanceSheet(page: page)
   }
 }
+
+app { Conformance() }
 `
 }
 
@@ -152,15 +200,16 @@ type Result struct {
 	Measured []string // what it measured, for the log
 }
 
-// Measure finds the sheet in img, a capture of a screen that shows it,
-// and runs every case on it.
-func Measure(img image.Image, host string) ([]Result, error) {
+// Measure finds a page of the sheet in img, a capture of a screen that
+// shows it, and runs each of the page's cases on it. It returns which
+// page that is.
+func Measure(img image.Image, host string) (page int, results []Result, err error) {
 	s, err := locate(img)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	var out []Result
-	for i, c := range Cases {
+	for i, c := range pageCases(s.page) {
 		r := Result{Case: c.Name}
 		if why := skipped(host, c); why != "" {
 			r.Skipped = why
@@ -173,22 +222,60 @@ func Measure(img image.Image, host string) ([]Result, error) {
 		r.Errors, r.Measured = p.errors, p.measured
 		out = append(out, r)
 	}
-	return out, nil
+	return s.page, out, nil
 }
 
-// Check runs Measure on img and reports each case as a subtest of t. It
-// writes img to $ASUKA_CONFORMANCE_OUT/<name>.png when that's set, so
-// the captures can be looked at side by side.
-func Check(t *testing.T, name string, img image.Image, host string) {
+// Capture captures the screen with shot (a PNG) until it shows page p
+// of the sheet, for at most d, and returns that capture. While another
+// page shows, it calls show (when not nil) now and then: what makes the
+// app show page p, tapping PageButton(p), again in case a tap was lost.
+func Capture(t *testing.T, p int, d time.Duration, show func(), shot func() ([]byte, error)) image.Image {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	var last error
+	shown := time.Time{}
+	for time.Now().Before(deadline) {
+		if show != nil && time.Since(shown) > 3*time.Second {
+			show()
+			shown = time.Now()
+		}
+		b, err := shot()
+		if err == nil {
+			var img image.Image
+			if img, err = png.Decode(bytes.NewReader(b)); err == nil {
+				var got int
+				if got, _, err = Measure(img, ""); err == nil {
+					if got == p {
+						return img
+					}
+					err = fmt.Errorf("page %d shows, not page %d", got+1, p+1)
+				}
+			}
+		}
+		last = err
+		time.Sleep(300 * time.Millisecond)
+	}
+	t.Fatalf("page %d of the sheet never showed: %v", p+1, last)
+	return nil
+}
+
+// Check runs Measure on img, a capture of page p, and reports each of
+// its cases as a subtest of t. It writes img to
+// $ASUKA_CONFORMANCE_OUT/<name>-<page>.png when that's set, so the
+// captures can be looked at side by side.
+func Check(t *testing.T, name string, img image.Image, host string, p int) {
 	t.Helper()
 	if dir := os.Getenv("ASUKA_CONFORMANCE_OUT"); dir != "" {
-		if err := writePNG(filepath.Join(dir, name+".png"), img); err != nil {
+		if err := writePNG(filepath.Join(dir, fmt.Sprintf("%s-%d.png", name, p+1)), img); err != nil {
 			t.Log(err)
 		}
 	}
-	results, err := Measure(img, host)
+	page, results, err := Measure(img, host)
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
+	}
+	if page != p {
+		t.Fatalf("%s: the capture shows page %d, not page %d", name, page+1, p+1)
 	}
 	for _, r := range results {
 		t.Run(r.Case, func(t *testing.T) {
@@ -217,10 +304,11 @@ func writePNG(path string, img image.Image) error {
 	return png.Encode(f, img)
 }
 
-// sheet is where the sheet is in a capture: its top left, in pixels,
-// and the pixels per point.
+// sheet is where a page of the sheet is in a capture: which page, its
+// top left, in pixels, and the pixels per point.
 type sheet struct {
 	img        image.Image
+	page       int
 	ox, oy     float64
 	sx, sy     float64
 	maxX, maxY int
@@ -284,13 +372,33 @@ func locate(img image.Image) (*sheet, error) {
 	if !found || last == first {
 		return nil, fmt.Errorf("one registration marker in the capture: is all of the sheet on screen?")
 	}
-	w, h := SheetSize()
+	// Every page is as wide: the scale across, then the page by its
+	// marks (read at that scale down too), then the scale down by the
+	// page's height.
+	w, _ := SheetSize(0)
 	s := &sheet{
 		img: img, maxX: b.Max.X - 1, maxY: b.Max.Y - 1,
 		ox: float64(first.Min.X), oy: float64(first.Min.Y),
 		sx: float64(last.Max.X-first.Min.X) / float64(w),
-		sy: float64(last.Max.Y-first.Min.Y) / float64(h),
 	}
+	s.sy = s.sx
+	mark := func(j int) bool {
+		c := s.at(float64(pageMarkX(j))+marker/2, marker/2)
+		return c.R < 96 && c.G < 96 && c.B < 96
+	}
+	marks := 0
+	for marks < Pages() && mark(marks) {
+		marks++
+	}
+	if marks == 0 {
+		return nil, fmt.Errorf("no page mark right of the swatches: is the sheet the cases' own?")
+	}
+	if mark(marks) {
+		return nil, fmt.Errorf("more page marks than the sheet's %d pages: is the sheet the cases' own?", Pages())
+	}
+	s.page = marks - 1
+	_, h := SheetSize(s.page)
+	s.sy = float64(last.Max.Y-first.Min.Y) / float64(h)
 	// Each marker is marker points square: the scales agree, or what was
 	// found isn't the sheet.
 	for _, k := range []float64{float64(first.Dx()) / marker, float64(first.Dy()) / marker, float64(last.Dx()) / marker, float64(last.Dy()) / marker} {

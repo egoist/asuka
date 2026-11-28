@@ -2296,11 +2296,13 @@ asuka/
   desktops and headless Chrome. Debug builds take automation commands
   (tap, type, submit, back, tab, rotate, dump: what the screen shows),
   so every platform runs the same test.
-- Rendering (`conformance`): each host draws one sheet of cases (a
+- Rendering (`conformance`): each host draws a sheet of cases (a
   background's edges, rounded corners, borders, opacity and group
-  opacity, clips, shadows, gradients, transforms), written in Asuka,
-  between two registration markers; its runner captures the screen, and
-  the cases measure the pixels: where an edge is to the device pixel, a
+  opacity, clips, shadows, gradients, transforms), written in Asuka, a
+  page at a time (fifteen cases at most, so a page fits a phone's
+  screen), each page between two registration markers and marked with
+  its number; its runner taps each page's button, captures the screen,
+  and the page's cases measure the pixels: where an edge is to the device pixel, a
   shadow's Gaussian σ, a color's mix, with tolerances, not against a
   reference, so one set holds for every host at any scale. A mix is
   measured between the colors as the capture shows them (the sheet's

@@ -3,62 +3,84 @@
 // The conformance sheet (package conformance), for its runners to
 // capture or to look at: asuka dev --platform ios conformance/app
 
-// The conformance sheet (package conformance's cases).
-component ConformanceSheet {
-  View {
-    width: 316; height: 716; background: #ffffff; alignSelf: .center
-    View { absolute: true; left: 0; top: 0; width: 8; height: 8; background: #ff00ff }
-    View { absolute: true; left: 308; top: 708; width: 8; height: 8; background: #ff00ff }
-    View { absolute: true; left: 16; top: 0; width: 8; height: 8; background: #ff0000 }
-    View { absolute: true; left: 32; top: 0; width: 8; height: 8; background: #0000ff }
-    View { absolute: true; left: 48; top: 0; width: 8; height: 8; background: #ffff00 }
-    // background
-    View { absolute: true; left: 8; top: 8; width: 100; height: 100; View { absolute: true; left: 20; top: 30; width: 60; height: 40; background: #ff0000 } }
-    // pixel_aligned
-    View { absolute: true; left: 108; top: 8; width: 100; height: 100; View { absolute: true; left: 20.3; top: 30.3; width: 59.4; height: 39.4; background: #ff0000 } }
-    // corner_radius
-    View { absolute: true; left: 208; top: 8; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; background: #ff0000; radius: 20 } }
-    // border
-    View { absolute: true; left: 8; top: 108; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; background: #ffff00; border: 6; borderColor: #0000ff } }
-    // opacity
-    View { absolute: true; left: 108; top: 108; width: 100; height: 100; View { absolute: true; left: 20; top: 20; width: 60; height: 60; background: #ff0000; opacity: 0.5 } }
-    // group_opacity
-    View { absolute: true; left: 208; top: 108; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; opacity: 0.5; View { absolute: true; left: 0; top: 0; width: 50; height: 50; background: #ff0000 }; View { absolute: true; left: 30; top: 30; width: 50; height: 50; background: #ff0000 } } }
-    // clip
-    View { absolute: true; left: 8; top: 208; width: 100; height: 100; View { absolute: true; left: 20; top: 20; width: 60; height: 60; clip: true; radius: 16; View { absolute: true; left: -20; top: -20; width: 100; height: 100; background: #ff0000 } } }
-    // shadow_blur
-    View { absolute: true; left: 108; top: 208; width: 100; height: 100; View { absolute: true; left: 20; top: 8; width: 60; height: 30; background: #ff0000; shadow: Shadow(color: #000000, radius: 8, y: 44) } }
-    // shadow_shape
-    View { absolute: true; left: 208; top: 208; width: 100; height: 100; View { absolute: true; left: 20; top: 10; width: 60; height: 40; shadow: Shadow(color: #000000, radius: 8); View { absolute: true; left: 0; top: 0; width: 20; height: 20; background: #ff0000 } } }
-    // clip_shadow
-    View { absolute: true; left: 8; top: 308; width: 100; height: 100; View { absolute: true; left: 20; top: 20; width: 60; height: 60; clip: true; radius: 12; shadow: Shadow(color: #000000, radius: 8); View { absolute: true; left: -20; top: -20; width: 100; height: 100; background: #ff0000 } } }
-    // gradient
-    View { absolute: true; left: 108; top: 308; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; gradient: Gradient(stops: [Stop(color: #ff0000, at: 0), Stop(color: #0000ff, at: 1)]) } }
-    // gradient_across
-    View { absolute: true; left: 208; top: 308; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; gradient: Gradient(stops: [Stop(color: #ff0000, at: 0), Stop(color: #0000ff, at: 1)], endX: 1, endY: 0) } }
-    // corner_radii
-    View { absolute: true; left: 8; top: 408; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; background: #ff0000; radius: [24, 24, 0, 0] } }
-    // border_side
-    View { absolute: true; left: 108; top: 408; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; background: #ffff00; border: Edges(bottom: 8); borderColor: #0000ff } }
-    // border_dashed
-    View { absolute: true; left: 208; top: 408; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; border: 4; borderStyle: .dashed; borderColor: #0000ff } }
-    // gradient_radial
-    View { absolute: true; left: 8; top: 508; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; gradient: Gradient(kind: .radial, stops: [Stop(color: #ff0000, at: 0), Stop(color: #0000ff, at: 1)]) } }
-    // gradient_conic
-    View { absolute: true; left: 108; top: 508; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; gradient: Gradient(kind: .conic, stops: [Stop(color: #ff0000, at: 0), Stop(color: #ff0000, at: 0.5), Stop(color: #0000ff, at: 0.5), Stop(color: #0000ff, at: 1)]) } }
-    // translate
-    View { absolute: true; left: 208; top: 508; width: 100; height: 100; View { absolute: true; left: 10; top: 30; width: 40; height: 40; background: #ff0000; transform: Transform(x: 30, y: 10) } }
-    // scale
-    View { absolute: true; left: 8; top: 608; width: 100; height: 100; View { absolute: true; left: 20; top: 20; width: 60; height: 60; background: #ff0000; transform: Transform(scale: 0.5) } }
-    // rotate
-    View { absolute: true; left: 108; top: 608; width: 100; height: 100; View { absolute: true; left: 25; top: 25; width: 50; height: 50; background: #ff0000; transform: Transform(rotation: 45) } }
+// The conformance sheet (package conformance's cases), a page at a time.
+component ConformanceSheet(page: int) {
+  if page == 0 {
+    View {
+      width: 316; height: 516; background: #ffffff; alignSelf: .center
+      View { absolute: true; left: 0; top: 0; width: 8; height: 8; background: #ff00ff }
+      View { absolute: true; left: 308; top: 508; width: 8; height: 8; background: #ff00ff }
+      View { absolute: true; left: 16; top: 0; width: 8; height: 8; background: #ff0000 }
+      View { absolute: true; left: 32; top: 0; width: 8; height: 8; background: #0000ff }
+      View { absolute: true; left: 48; top: 0; width: 8; height: 8; background: #ffff00 }
+      View { absolute: true; left: 64; top: 0; width: 8; height: 8; background: #000000 }
+      // background
+      View { absolute: true; left: 8; top: 8; width: 100; height: 100; View { absolute: true; left: 20; top: 30; width: 60; height: 40; background: #ff0000 } }
+      // pixel_aligned
+      View { absolute: true; left: 108; top: 8; width: 100; height: 100; View { absolute: true; left: 20.3; top: 30.3; width: 59.4; height: 39.4; background: #ff0000 } }
+      // corner_radius
+      View { absolute: true; left: 208; top: 8; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; background: #ff0000; radius: 20 } }
+      // border
+      View { absolute: true; left: 8; top: 108; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; background: #ffff00; border: 6; borderColor: #0000ff } }
+      // opacity
+      View { absolute: true; left: 108; top: 108; width: 100; height: 100; View { absolute: true; left: 20; top: 20; width: 60; height: 60; background: #ff0000; opacity: 0.5 } }
+      // group_opacity
+      View { absolute: true; left: 208; top: 108; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; opacity: 0.5; View { absolute: true; left: 0; top: 0; width: 50; height: 50; background: #ff0000 }; View { absolute: true; left: 30; top: 30; width: 50; height: 50; background: #ff0000 } } }
+      // clip
+      View { absolute: true; left: 8; top: 208; width: 100; height: 100; View { absolute: true; left: 20; top: 20; width: 60; height: 60; clip: true; radius: 16; View { absolute: true; left: -20; top: -20; width: 100; height: 100; background: #ff0000 } } }
+      // shadow_blur
+      View { absolute: true; left: 108; top: 208; width: 100; height: 100; View { absolute: true; left: 20; top: 8; width: 60; height: 30; background: #ff0000; shadow: Shadow(color: #000000, radius: 8, y: 44) } }
+      // shadow_shape
+      View { absolute: true; left: 208; top: 208; width: 100; height: 100; View { absolute: true; left: 20; top: 10; width: 60; height: 40; shadow: Shadow(color: #000000, radius: 8); View { absolute: true; left: 0; top: 0; width: 20; height: 20; background: #ff0000 } } }
+      // clip_shadow
+      View { absolute: true; left: 8; top: 308; width: 100; height: 100; View { absolute: true; left: 20; top: 20; width: 60; height: 60; clip: true; radius: 12; shadow: Shadow(color: #000000, radius: 8); View { absolute: true; left: -20; top: -20; width: 100; height: 100; background: #ff0000 } } }
+      // gradient
+      View { absolute: true; left: 108; top: 308; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; gradient: Gradient(stops: [Stop(color: #ff0000, at: 0), Stop(color: #0000ff, at: 1)]) } }
+      // gradient_across
+      View { absolute: true; left: 208; top: 308; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; gradient: Gradient(stops: [Stop(color: #ff0000, at: 0), Stop(color: #0000ff, at: 1)], endX: 1, endY: 0) } }
+      // corner_radii
+      View { absolute: true; left: 8; top: 408; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; background: #ff0000; radius: [24, 24, 0, 0] } }
+      // border_side
+      View { absolute: true; left: 108; top: 408; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; background: #ffff00; border: Edges(bottom: 8); borderColor: #0000ff } }
+      // border_dashed
+      View { absolute: true; left: 208; top: 408; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; border: 4; borderStyle: .dashed; borderColor: #0000ff } }
+    }
+  } else if page == 1 {
+    View {
+      width: 316; height: 216; background: #ffffff; alignSelf: .center
+      View { absolute: true; left: 0; top: 0; width: 8; height: 8; background: #ff00ff }
+      View { absolute: true; left: 308; top: 208; width: 8; height: 8; background: #ff00ff }
+      View { absolute: true; left: 16; top: 0; width: 8; height: 8; background: #ff0000 }
+      View { absolute: true; left: 32; top: 0; width: 8; height: 8; background: #0000ff }
+      View { absolute: true; left: 48; top: 0; width: 8; height: 8; background: #ffff00 }
+      View { absolute: true; left: 64; top: 0; width: 8; height: 8; background: #000000 }
+      View { absolute: true; left: 80; top: 0; width: 8; height: 8; background: #000000 }
+      // gradient_radial
+      View { absolute: true; left: 8; top: 8; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; gradient: Gradient(kind: .radial, stops: [Stop(color: #ff0000, at: 0), Stop(color: #0000ff, at: 1)]) } }
+      // gradient_conic
+      View { absolute: true; left: 108; top: 8; width: 100; height: 100; View { absolute: true; left: 10; top: 10; width: 80; height: 80; gradient: Gradient(kind: .conic, stops: [Stop(color: #ff0000, at: 0), Stop(color: #ff0000, at: 0.5), Stop(color: #0000ff, at: 0.5), Stop(color: #0000ff, at: 1)]) } }
+      // translate
+      View { absolute: true; left: 208; top: 8; width: 100; height: 100; View { absolute: true; left: 10; top: 30; width: 40; height: 40; background: #ff0000; transform: Transform(x: 30, y: 10) } }
+      // scale
+      View { absolute: true; left: 8; top: 108; width: 100; height: 100; View { absolute: true; left: 20; top: 20; width: 60; height: 60; background: #ff0000; transform: Transform(scale: 0.5) } }
+      // rotate
+      View { absolute: true; left: 108; top: 108; width: 100; height: 100; View { absolute: true; left: 25; top: 25; width: 50; height: 50; background: #ff0000; transform: Transform(rotation: 45) } }
+    }
   }
 }
 
-app {
+component Conformance {
+  state page = 0
+
   SafeArea {
-    justify: .center; align: .center
-    Text("Conformance")
-    ConformanceSheet()
+    justify: .center; align: .center; gap: 8
+    Row {
+      gap: 8
+      Button("Page 1") { on press { page = 0 } }
+      Button("Page 2") { on press { page = 1 } }
+    }
+    ConformanceSheet(page: page)
   }
 }
+
+app { Conformance() }
