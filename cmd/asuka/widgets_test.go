@@ -117,6 +117,14 @@ func TestAndroidWidgetsAndShortcuts(t *testing.T) {
 	if g := read("drawable/asuka_shortcut_new_note_glyph.xml"); !strings.Contains(g, `android:fillColor="#FF336699"`) || !strings.Contains(g, "pathData") {
 		t.Errorf("glyph:\n%s", g)
 	}
+	// The adaptive icon is Android 8's alone; Android 7 (minSdk 24) gets
+	// the glyph on a circle (aapt refuses an adaptive-icon in drawable/).
+	if x := read("drawable-anydpi-v26/asuka_shortcut_new_note.xml"); !strings.Contains(x, "<adaptive-icon") {
+		t.Errorf("Android 8's icon:\n%s", x)
+	}
+	if x := read("drawable/asuka_shortcut_new_note.xml"); strings.Contains(x, "adaptive-icon") || !strings.Contains(x, "<layer-list") {
+		t.Errorf("Android 7's icon:\n%s", x)
+	}
 }
 
 // An app with Live Activities has the widget extension with or without

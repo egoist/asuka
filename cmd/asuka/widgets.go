@@ -1197,13 +1197,26 @@ func (c *appConfig) androidShortcutRes(res string) error {
 			if err != nil {
 				return err
 			}
+			// An adaptive icon is Android 8's (API 26): in anydpi-v26, with
+			// the glyph on a white circle for Android 7 (minSdk 24),
+			// whose launcher shows a shortcut's icon as it is.
 			files := map[string]string{
 				"drawable/asuka_shortcut_" + rn + "_glyph.xml": glyph,
-				"drawable/asuka_shortcut_" + rn + ".xml": fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
+				"drawable-anydpi-v26/asuka_shortcut_" + rn + ".xml": fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@android:color/white" />
     <foreground android:drawable="@drawable/asuka_shortcut_%s_glyph" />
 </adaptive-icon>
+`, rn),
+				"drawable/asuka_shortcut_" + rn + ".xml": fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@android:color/white" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/asuka_shortcut_%s_glyph" />
+</layer-list>
 `, rn),
 			}
 			for name, text := range files {
