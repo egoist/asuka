@@ -280,7 +280,7 @@ void ak_field_text_reported(ak_view *e, ak_str *s);
 // ---- Shapes the runtime builds (types.asuka's) ----
 
 extern const ak_shape ak_ui_shape_gesture, ak_ui_shape_shared_item, ak_ui_shape_drag_item, ak_ui_shape_drop, ak_ui_shape_span,
-	ak_ui_shape_font, ak_ui_shape_text_formats, ak_ui_shape_web_state, ak_ui_shape_web_download, ak_ui_shape_animation,
+	ak_ui_shape_font, ak_ui_shape_text_formats, ak_ui_shape_web_state, ak_ui_shape_web_download, ak_ui_shape_video_track, ak_ui_shape_animation,
 	ak_ui_shape_region;
 
 // ---- Shared helpers ----

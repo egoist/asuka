@@ -851,8 +851,8 @@ browser, GDI+ on Windows and Cairo on Linux.
 `AVPlayerViewController` on iOS, Media3's ExoPlayer on Android,
 `AVPlayerView` on macOS, a `GtkVideo` (GStreamer) on Linux, a
 `<video>` in a browser. Win32 has no video view, so on Windows it's a
-`<video>` in WebView2, with Edge's controls. A `Ref`'s `play()`,
-`pause()` and `seek(seconds)` drive it.
+`<video>` in WebView2, with Edge's controls. A `Ref` drives it and
+reads where it is.
 
 ```asuka
 component Clip {
@@ -867,6 +867,7 @@ component Clip {
       loop: true
       radius: 12
     }
+    Text("{v.currentTime.fixed(0)} of {v.duration.fixed(0)} seconds")
     Button("Start over") {
       on press {
         v.seek(0)
@@ -883,12 +884,137 @@ component Clip {
 - `mode` is `.fit` (letterboxed, the default) or `.fill`.
 - `hideControls: true` hides the platform's controls: play, the timeline, full
   screen, and on iOS AirPlay and picture in picture.
+- `poster` is an image (a URL or an asset) shown until the video's first
+  frame.
 - `on end` runs each time it plays to its end; `on error(message)` if
   it can't play.
 
 It sizes itself as an `Image` does: empty until the video's size is
 known, unless its style gives it one, then keeping the video's aspect
 ratio. `seek` takes seconds from the start.
+
+### Where it is
+
+A `Ref` holding a Video reads `currentTime` and `duration` (seconds;
+`duration` is 0 until it's known, and infinite for a live stream) and
+`status`, a `VideoStatus`: `.idle`, `.loading`, `.ready` (loaded, not
+played yet), `.playing`, `.buffering`, `.paused`, `.ended` or `.failed`.
+They're tracked: a view that shows them follows them, the time every
+quarter of a second while it plays. The events say the same as they
+happen:
+
+- `on loaded(duration, width, height)` once its source has loaded:
+  its duration and its natural size (0 for sound alone).
+- `on status(status)` as its status changes.
+- `on timeUpdate(time)` every `timeInterval` seconds while it plays
+  (0.25 by default), and after a seek.
+
+The time is reported only once something asks for it: a `timeUpdate`
+handler, or a read of `currentTime`.
+
+### Speed, volume and where it starts
+
+`rate` is its speed (1 is normal, 2 twice as fast), `volume` its sound's
+level from 0 to 1 (`muted` silences it), and `startAt` the second each
+source starts at. Bind `rate` and the speed the user picks in the
+platform's controls comes back to the app:
+
+```asuka
+component Lecture(url: string) {
+  state speed = 1.0
+
+  Column {
+    Video(url) {
+      bind rate: speed
+      startAt: 90
+    }
+    Segmented(["1×", "1.5×", "2×"]) {
+      selected: if speed == 2 { 2 } else if speed == 1.5 { 1 } else { 0 }
+      on change(i) { speed = [1.0, 1.5, 2.0][i] }
+    }
+  }
+}
+```
+
+Linux's player has no speed: there a Video plays at 1×.
+
+### Subtitles and audio tracks
+
+`on tracks(subtitles, audio)` lists its tracks as they're known, each a
+`VideoTrack` with an `id`, a `label` (as the platform's menu shows it)
+and a `language`. `subtitle` chooses the subtitle track shown by its
+`id` (`""`: none) and `audioTrack` the audio track played; left unset,
+the platform chooses, by the user's settings. Bind them and the user's
+choice in the controls comes back too.
+
+`subtitleFiles` adds WebVTT files of the app's (an asset, a file, a
+URL) to the subtitle tracks, a `SubtitleFile(url:, language:, label:)`
+each; its track's `id` is its `url`:
+
+```asuka
+component Talk {
+  state subtitle = ""
+  state tracks: [VideoTrack] = []
+
+  Column {
+    Video("talk.mp4") {
+      subtitleFiles: [SubtitleFile(url: "talk.en.vtt", language: "en", label: "English")]
+      bind subtitle: subtitle
+      on tracks(subs, audio) { tracks = subs }
+    }
+    for t in tracks key t.id {
+      Button(t.label) { on press { subtitle = t.id } }
+    }
+  }
+}
+```
+
+A stream's own tracks (an HLS stream's subtitles and alternative audio)
+are listed everywhere but Linux, whose player has none to choose.
+WebVTT files are added on Android, Windows and the web; Apple's players
+take only a stream's own subtitles, and Linux's none.
+
+### Picture in picture and full screen
+
+`pictureInPicture: true` lets a Video play in picture in picture: the
+controls' button, and the `Ref`'s `enterPictureInPicture()` and
+`exitPictureInPicture()`. With `autoPictureInPicture: true` it goes
+into picture in picture as the user leaves the app while it plays (iOS,
+and Android 12 and later). The `Ref`'s `enterFullScreen()` and
+`exitFullScreen()` show it in the platform's full-screen player.
+`on pictureInPictureChange(active)` and `on fullScreenChange(active)`
+say when either begins and ends.
+
+- On iOS, picture in picture needs the app's audio background mode,
+  which the build adds to an app with a `pictureInPicture` Video; it
+  needs a device that has it (some simulators don't).
+- On Android it's the activity's picture in picture, the video filling
+  it; full screen hides the system bars and turns to landscape for a
+  wide video. Back leaves full screen.
+- On macOS both are `AVPlayerView`'s; in a browser, the `<video>`'s.
+- On Windows full screen fills the Video's view and picture in picture
+  isn't there; Linux has neither (GTK's player's own controls have no
+  picture in picture).
+
+On iOS a video playing shows in Now Playing, on the lock screen and in
+Control Center, as AVKit's player does. For more (artwork, your own
+commands), and on the other platforms, use `platform/nowplaying`.
+
+### Authenticated streams
+
+`headers` sends HTTP headers with the source's requests, for a stream
+behind a login:
+
+```asuka
+component Lesson(url: string, token: string) {
+  Video(url) { headers: ["Authorization": "Bearer {token}"] }
+}
+```
+
+They apply to the next source loaded. iOS, Android and macOS send them;
+a browser's `<video>` (on the web and on Windows) and Linux's player
+send none, so there sign the URL itself (a token in its query) or
+serve the video from the app's own origin.
 
 ## Lottie animations
 

@@ -314,6 +314,20 @@ void ak_fake_flip(ak_fake *f, ak_fake_view *v);  // a Toggle
 void ak_fake_pick_color(ak_fake *f, ak_fake_view *v, ak_color c);
 void ak_fake_slide(ak_fake *f, ak_fake_view *v, double value);
 void ak_fake_pick_date(ak_fake *f, ak_fake_view *v, int64_t ms);  // a DatePicker's, in Unix milliseconds
+// ak_fake_video_state reports a Video's playback as a player does
+// (VideoState, ops/video.go's): its flags (1 ready, 2 playing, 4
+// buffering, 8 ended, 16 picture in picture, 32 full screen), the time,
+// the duration (NaN: not known), the rate chosen, the natural size.
+void ak_fake_video_state(ak_fake *f, ak_fake_view *v, uint8_t flags, double time, double duration, float rate, float w, float h);
+// A Video's track, as ak_fake_video_tracks reports it: kind 0 a
+// subtitle's, 1 an audio track's.
+typedef struct {
+	uint8_t kind;
+	bool selected;
+	const char *id, *label, *language;
+} ak_fake_track;
+// ak_fake_video_tracks reports a Video's n tracks (VideoTracks).
+void ak_fake_video_tracks(ak_fake *f, ak_fake_view *v, const ak_fake_track *tracks, uint32_t n);
 // ak_fake_select selects a tab, a segment, a split's destination, a
 // page, a wheel's or a picker's item.
 void ak_fake_select(ak_fake *f, ak_fake_view *v, int64_t index);

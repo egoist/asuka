@@ -1346,6 +1346,37 @@ void ak_fake_pick_date(ak_fake *f, ak_fake_view *v, int64_t ms) {
 	if (listening(f, v, AK_EVENT_VALUE_CHANGED)) ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_VALUE_CHANGED, .f = (double)ms});
 }
 
+void ak_fake_video_state(ak_fake *f, ak_fake_view *v, uint8_t flags, double time, double duration, float rate, float w, float h) {
+	if (!listening(f, v, AK_EVENT_VIDEO_STATE)) return;
+	ak_buf b = {0};
+	ak_buf_u8(&b, flags);
+	ak_buf_f64(&b, time);
+	ak_buf_f64(&b, duration);
+	float fs[3] = {rate, w, h};
+	for (int i = 0; i < 3; i++) {
+		uint32_t u;
+		memcpy(&u, &fs[i], 4);
+		ak_buf_u32(&b, u);
+	}
+	ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_VIDEO_STATE, .s = {(const char *)b.data, b.len}});
+	ak_buf_free(&b);
+}
+
+void ak_fake_video_tracks(ak_fake *f, ak_fake_view *v, const ak_fake_track *tracks, uint32_t n) {
+	if (!listening(f, v, AK_EVENT_VIDEO_TRACKS)) return;
+	ak_buf b = {0};
+	ak_buf_u32(&b, n);
+	for (uint32_t i = 0; i < n; i++) {
+		const ak_fake_track *t = &tracks[i];
+		ak_buf_u8(&b, t->kind);
+		ak_buf_u8(&b, t->selected);
+		const char *ss[3] = {t->id, t->label, t->language};
+		for (int j = 0; j < 3; j++) ak_buf_str(&b, ss[j] ? ss[j] : "", ss[j] ? strlen(ss[j]) : 0);
+	}
+	ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_VIDEO_TRACKS, .s = {(const char *)b.data, b.len}});
+	ak_buf_free(&b);
+}
+
 void ak_fake_slide(ak_fake *f, ak_fake_view *v, double value) {
 	set_prop(v, AK_PROP_SLIDER_VALUE, &(ak_value){.type = AK_T_FLOAT, .f = value});
 	if (listening(f, v, AK_EVENT_VALUE_CHANGED)) ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_VALUE_CHANGED, .f = value});

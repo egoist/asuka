@@ -323,6 +323,17 @@ public enum AsukaProp {
         public static let autoPlay: UInt16 = 67
         public static let loop: UInt16 = 68
         public static let muted: UInt16 = 69
+        public static let rate: UInt16 = 70
+        public static let volume: UInt16 = 71
+        public static let headers: UInt16 = 72
+        public static let poster: UInt16 = 73
+        public static let startAt: UInt16 = 74
+        public static let timeInterval: UInt16 = 75
+        public static let subtitle: UInt16 = 76
+        public static let audioTrack: UInt16 = 77
+        public static let subtitleFiles: UInt16 = 78
+        public static let pictureInPicture: UInt16 = 79
+        public static let autoPictureInPicture: UInt16 = 80
     }
 
     public enum WebView {
@@ -474,6 +485,8 @@ public enum AsukaEventKind: UInt16 {
     case anchorFrame = 64
     case pressPoint = 65
     case devErrorAction = 66
+    case videoState = 67
+    case videoTracks = 68
 }
 
 public enum AsukaCommand: UInt16 {
@@ -520,6 +533,7 @@ public enum AsukaCommand: UInt16 {
     case devHighlightClear = 41
     case devPerf = 42
     case devFontScale = 43
+    case videoAction = 44
 }
 
 public enum AsukaRole: Int32 {
@@ -901,6 +915,13 @@ public enum AsukaDevErrorAction: Int32 {
     case reload = 1
 }
 
+public enum AsukaVideoAction: Int32 {
+    case enterPictureInPicture = 0
+    case exitPictureInPicture = 1
+    case enterFullScreen = 2
+    case exitFullScreen = 3
+}
+
 /// A prop value. Bytes are valid only during the handler call.
 public enum AsukaValue {
     case bool(Bool)
@@ -1263,5 +1284,11 @@ public enum AsukaEvents {
     }
     public static func devErrorAction(_ id: UInt32, _ v: Int64) -> [UInt8] {
         var w = AsukaWriter(); w.header(id, 66); w.u64(UInt64(bitPattern: v)); return w.bytes
+    }
+    public static func videoState(_ id: UInt32, _ v: [UInt8]) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 67); w.u32(UInt32(v.count)); w.bytes.append(contentsOf: v); return w.bytes
+    }
+    public static func videoTracks(_ id: UInt32, _ v: [UInt8]) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 68); w.u32(UInt32(v.count)); w.bytes.append(contentsOf: v); return w.bytes
     }
 }

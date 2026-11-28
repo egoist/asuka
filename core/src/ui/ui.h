@@ -533,6 +533,9 @@ ak_closure *ak_ui_on_frame(ak_closure *f);
 void ak_ui_video_play(ak_view *v);
 void ak_ui_video_pause(ak_view *v);
 void ak_ui_video_seek(ak_view *v, double seconds);
+void ak_ui_video_action(ak_view *v, int64_t action);  // VideoAction
+double ak_ui_video_time(ak_view *v, int64_t which);   // 0 the time, 1 the duration (tracked)
+int64_t ak_ui_video_status(ak_view *v);               // VideoStatus (tracked)
 void ak_ui_web_eval(ak_view *v, ak_str *script);
 void ak_ui_web_navigate(ak_view *v, int64_t to);  // 0 back, 1 forward, 2 reload, 3 stop
 void ak_ui_web_load(ak_view *v, ak_str *url);

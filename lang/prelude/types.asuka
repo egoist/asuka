@@ -496,6 +496,46 @@ struct WebDownload {
   size: int = -1
 }
 
+// ---- Video ----
+
+/// Where a Video's playback is.
+enum VideoStatus {
+  /// No source.
+  idle
+  /// Its source is loading.
+  loading
+  /// Loaded, and not played yet.
+  ready
+  playing
+  /// Waiting for data, to play on.
+  buffering
+  paused
+  /// At its end (not looping).
+  ended
+  /// It can't play (its error event says why).
+  failed
+}
+
+/// One of a Video's subtitle or audio tracks.
+struct VideoTrack {
+  /// The platform's: what subtitle and audioTrack choose it by.
+  id: string = ""
+  /// As the platform's menu shows it.
+  label: string = ""
+  /// BCP 47 ("en", "pt-BR"); "": not known.
+  language: string = ""
+}
+
+/// A WebVTT file a Video adds to its subtitle tracks (Android, Windows,
+/// the web); its track's id is its url.
+struct SubtitleFile {
+  /// An http(s) URL, a file or an asset.
+  url: string
+  /// BCP 47 ("en", "pt-BR").
+  language: string = ""
+  label: string = ""
+}
+
 // ---- Graphics ----
 
 /// How a Canvas strokes a path.

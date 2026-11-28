@@ -975,6 +975,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         if (n.kind == AsukaKind.WHEEL && setWheelProp(n, prop, v)) return
         if (n.kind == AsukaKind.PICKER && setPickerProp(n, prop, v)) return
         if (n.kind == AsukaKind.WEB_VIEW && prop == AsukaProp.WebView.BLOCK) { (n.view as AsukaWebView).setBlock(v); return }
+        if (n.kind == AsukaKind.VIDEO) { (n.view as AsukaVideo).setBytes(prop, v); return }
         if (n.kind == AsukaKind.TEXT_FIELD && prop == AsukaProp.TextField.SELECTION) { setFieldSelection(n, v); return }
         if (n.kind == AsukaKind.TEXT_FIELD && prop == AsukaProp.TextField.RICH) {
             val a = ByteArray(v.remaining())
@@ -1217,6 +1218,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             AsukaCommand.PLAY -> (n.view as? AsukaVideo)?.player?.play()
             AsukaCommand.PAUSE -> (n.view as? AsukaVideo)?.player?.pause()
             AsukaCommand.SEEK -> if (args.remaining() >= 8) (n.view as? AsukaVideo)?.player?.seek(args.double)
+            AsukaCommand.VIDEO_ACTION -> if (args.remaining() > 0) (n.view as? AsukaVideo)?.player?.act(args.get().toInt())
             AsukaCommand.WEB_NAVIGATE -> if (args.remaining() > 0) (n.view as? AsukaWebView)?.navigate(args.get().toInt())
             AsukaCommand.EVAL -> {
                 val b = ByteArray(args.remaining())

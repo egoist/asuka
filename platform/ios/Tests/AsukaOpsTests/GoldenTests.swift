@@ -147,3 +147,23 @@ final class AlertFieldsTests: XCTestCase {
         XCTAssertEqual(Data(AsukaAlertFields.changed(2, "Grüße")), changed)
     }
 }
+
+final class VideoReportTests: XCTestCase {
+    /// The Swift encoders of a Video's reports agree with Go's: they write
+    /// videostate.bin and videotracks.bin.
+    func testEncodesGoldenReports() throws {
+        let state = try Data(contentsOf: testdata.appendingPathComponent("videostate.bin"))
+        let s = AsukaVideoState(flags: [.ready, .playing, .pictureInPicture], time: 12.5, duration: 634.566, rate: 1.5, width: 1920, height: 1080)
+        XCTAssertEqual(Data(s.bytes), state)
+        XCTAssertTrue(s.sameBut(time: AsukaVideoState(flags: [.ready, .playing, .pictureInPicture], time: 3, duration: 634.566, rate: 1.5, width: 1920, height: 1080)))
+        XCTAssertTrue(AsukaVideoState().sameBut(time: AsukaVideoState(time: 1)))
+        XCTAssertFalse(s.sameBut(time: AsukaVideoState(flags: [.ready], time: 12.5, duration: 634.566, rate: 1.5, width: 1920, height: 1080)))
+        let tracks = try Data(contentsOf: testdata.appendingPathComponent("videotracks.bin"))
+        let ts = [
+            AsukaVideoTrack(subtitle: true, selected: false, id: "0", label: "English", language: "en"),
+            AsukaVideoTrack(subtitle: true, selected: true, id: "https://example.com/fr.vtt", label: "Français", language: "fr"),
+            AsukaVideoTrack(subtitle: false, selected: true, id: "a1", label: "日本語", language: "ja"),
+        ]
+        XCTAssertEqual(Data(AsukaVideoTrack.bytes(ts)), tracks)
+    }
+}

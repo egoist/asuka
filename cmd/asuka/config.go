@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/egoist/asuka/internal/appbuild"
 	"github.com/egoist/asuka/internal/pkgs"
 	"github.com/egoist/asuka/internal/toml"
 )
@@ -780,6 +781,22 @@ func (c *appConfig) bluetoothExtras() {
 // bluetoothLaunch is platform/bluetooth's launch class on iOS (its manifest's
 // launch, for an app that calls backgroundScan).
 const bluetoothLaunch = "AsukaBluetoothLaunch"
+
+// videoExtras gives an app whose Video may play in picture in picture
+// (its pictureInPicture prop set) the audio background mode iOS's
+// picture in picture needs (it plays on as the app goes to the
+// background); an app without one doesn't ask App Review for it.
+func (c *appConfig) videoExtras(u *appbuild.Uses) {
+	if u == nil || !u.Ref("", "Video.pictureInPicture") {
+		return
+	}
+	if c.plistArrays == nil {
+		c.plistArrays = map[string][]string{}
+	}
+	if !slices.Contains(c.plistArrays["UIBackgroundModes"], "audio") {
+		c.plistArrays["UIBackgroundModes"] = append(c.plistArrays["UIBackgroundModes"], "audio")
+	}
+}
 
 // androidFeatures adds the host's optional modules the app's elements
 // need (asuka-video, for a Video, as iOS's ASUKA_VIDEO), or (player:

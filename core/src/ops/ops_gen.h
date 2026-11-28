@@ -90,7 +90,7 @@ enum {
 	AK_KIND_PROGRESS = 24,
 	// a drawn outline (CAShapeLayer; a Path on Android's canvas), filled and/or stroked
 	AK_KIND_SHAPE = 25,
-	// a video (AVPlayerViewController, Media3's PlayerView). Loaded reports its natural size once known, Ended its end (each time, looping), Failed an error; the Play, Pause and Seek commands drive it
+	// a video (AVPlayerViewController, Media3's PlayerView). Loaded reports its natural size once known, VideoState its playback, VideoTracks its subtitle and audio tracks, Ended its end (each time, looping), Failed an error; the Play, Pause, Seek and VideoAction commands drive it
 	AK_KIND_VIDEO = 26,
 	// a web page (WKWebView, android.webkit.WebView). Navigated reports each page loaded (its URL), Failed a page that couldn't load, Message what the page posts with window.asuka.postMessage(text), WebState its URL, title, progress and history, Download a response the page can't show (a file to save), NewWindow a page it would open in a new window (window.open, target=_blank: without a listener, it loads in this view), Request each request (with Requests); the Eval command runs script in it, WebNavigate goes back, forward, reloads or stops
 	AK_KIND_WEB_VIEW = 27,
@@ -485,6 +485,28 @@ enum {
 	AK_PROP_VIDEO_AUTO_PLAY = 67,
 	AK_PROP_VIDEO_LOOP = 68,
 	AK_PROP_VIDEO_MUTED = 69,
+	// the playback speed (1: normal), kept while paused; the user's choice in the platform's controls is reported with VideoState
+	AK_PROP_VIDEO_RATE = 70,
+	// its sound's level, 0 to 1 (the system's volume scales it)
+	AK_PROP_VIDEO_VOLUME = 71,
+	// HTTP headers sent with the source's requests (an authenticated stream's): u32 count, then name and value in turn, u32-length strings (count is twice the headers'); sent before Source, applying to the next one
+	AK_PROP_VIDEO_HEADERS = 72,
+	// an image shown until the video's first frame: an http(s) URL, a file or an asset
+	AK_PROP_VIDEO_POSTER = 73,
+	// seconds into the video it starts at, as each Source loads; sent before Source
+	AK_PROP_VIDEO_START_AT = 74,
+	// while it plays, the host sends VideoState about this often (seconds) with the time; 0 (the default): only as its state changes
+	AK_PROP_VIDEO_TIME_INTERVAL = 75,
+	// the subtitle track shown, by the id VideoTracks gave it (or a SubtitleFiles file's URL), kept until the tracks arrive; empty: none. Not sent: the platform's choice
+	AK_PROP_VIDEO_SUBTITLE = 76,
+	// the audio track played, by the id VideoTracks gave it, kept until the tracks arrive. Not sent: the platform's choice
+	AK_PROP_VIDEO_AUDIO_TRACK = 77,
+	// WebVTT files added as subtitle tracks (Android, Windows, the web; Apple's players and GTK's take none): u32 count (three times the files), then per file a u32-length URL (an http(s) URL, a file or an asset), language (BCP 47) and label; sent before Source. A file's track's id is its URL
+	AK_PROP_VIDEO_SUBTITLE_FILES = 78,
+	// it may play in picture in picture: the controls' button, and the VideoAction command
+	AK_PROP_VIDEO_PICTURE_IN_PICTURE = 79,
+	// it goes into picture in picture as the app goes to the background while it plays (iOS, Android 12 and later; with PictureInPicture)
+	AK_PROP_VIDEO_AUTO_PICTURE_IN_PICTURE = 80,
 };
 
 // WebView props.
@@ -740,7 +762,11 @@ enum {
 	AK_EVENT_PRESS_POINT = 65,
 	// the user pressed a button of the overlay DevError shows: a DevErrorAction (Dismiss, Reload); to the root. The overlay stays until DevErrorClear
 	AK_EVENT_DEV_ERROR_ACTION = 66,
-	AK_EVENT_COUNT = 67,
+	// a Video's playback changed (ops.AppendVideoState): u8 VideoStateFlags bits (1 ready: its source loaded and can play; 2 playing: it plays, or would but for buffering; 4 buffering; 8 ended; 16 in picture in picture; 32 full screen), f64 the time (seconds from the start), f64 the duration (seconds; NaN: not known yet, +Inf: a live stream), f32 the rate chosen (1 normal; kept while paused: AVPlayer's defaultRate), f32 width, height (the natural size, 0 while not known or for sound alone). Sent as any of it changes but the time, which goes with the rest, after a seek, and with TimeInterval every so often while it plays
+	AK_EVENT_VIDEO_STATE = 67,
+	// a Video's subtitle and audio tracks (ops.AppendVideoTracks), as they're known and as they or the choice of them change: u32 count, then per track u8 kind (0 subtitle, 1 audio), u8 1 if it's the one chosen, u32-length id (the platform's, stable while the source is), u32-length label (as the platform's menu shows it), u32-length language (BCP 47; empty: not known)
+	AK_EVENT_VIDEO_TRACKS = 68,
+	AK_EVENT_COUNT = 69,
 };
 
 // Commands.
@@ -828,7 +854,9 @@ enum {
 	AK_CMD_DEV_PERF = 42,
 	// args: f32 the text size, as a multiple of the default (0: the user's again); sent to the root, only under asuka dev, as it shows a preview whose fontScale says one, and with 0 as it stops: the host shows the app's text as if the user's text size were it (iOS: the windows' preferred content size category nearest it; Android: the configuration's font scale; macOS, Windows, Linux and the web: their fonts scaled by it), and reports it as the Environment's FontScale, so the core measures the text again
 	AK_CMD_DEV_FONT_SCALE = 43,
-	AK_CMD_COUNT = 44,
+	// args: u8 VideoAction; sent to a Video: it goes into picture in picture (with PictureInPicture) or out, full screen (the platform's player's) or out; reported with VideoState
+	AK_CMD_VIDEO_ACTION = 44,
+	AK_CMD_COUNT = 45,
 };
 
 // Enums, by their index in ak_enums.
@@ -874,7 +902,8 @@ enum {
 	AK_ENUM_SNACKBAR_DURATION = 38,
 	AK_ENUM_LOCATION_ACTION = 39,
 	AK_ENUM_DEV_ERROR_ACTION = 40,
-	AK_ENUM_COUNT = 41,
+	AK_ENUM_VIDEO_ACTION = 41,
+	AK_ENUM_COUNT = 42,
 };
 
 // Role.
@@ -1336,6 +1365,15 @@ enum {
 	AK_DEV_ERROR_ACTION_DISMISS = 0,
 	AK_DEV_ERROR_ACTION_RELOAD = 1,
 	AK_DEV_ERROR_ACTION_COUNT = 2,
+};
+
+// VideoAction.
+enum {
+	AK_VIDEO_ACTION_ENTER_PICTURE_IN_PICTURE = 0,
+	AK_VIDEO_ACTION_EXIT_PICTURE_IN_PICTURE = 1,
+	AK_VIDEO_ACTION_ENTER_FULL_SCREEN = 2,
+	AK_VIDEO_ACTION_EXIT_FULL_SCREEN = 3,
+	AK_VIDEO_ACTION_COUNT = 4,
 };
 
 // A prop's name and wire type; enum is its enum's index (AK_ENUM_*) for

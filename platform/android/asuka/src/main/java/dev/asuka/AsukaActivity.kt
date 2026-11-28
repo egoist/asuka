@@ -293,6 +293,19 @@ open class AsukaActivity : AppCompatActivity() {
         AsukaDisplay.watch(this, true)
     }
 
+    // A Video in picture in picture: the activity's window is its.
+    override fun onPictureInPictureModeChanged(inPictureInPicture: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(inPictureInPicture, newConfig)
+        runtime.videos().forEach { it.pictureInPictureChanged(inPictureInPicture) }
+    }
+
+    // Leaving the app: a playing Video with autoPictureInPicture goes into
+    // picture in picture (Android 12 and later do it themselves).
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        runtime.videos().any { it.leaving() }
+    }
+
     override fun onPause() {
         super.onPause()
         runtime.paused()

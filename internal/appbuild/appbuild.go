@@ -574,6 +574,18 @@ func usesOf(prog *check.Program, u *Uses) {
 				case *syntax.CallExpr:
 					if e := info.Elements[n]; e != nil && e.Comp != nil {
 						object(pkg, e.Comp)
+						// A prelude element's props set (Video's
+						// pictureInPicture): "Video.pictureInPicture".
+						for _, p := range e.Props {
+							if p.Member != nil && !p.Style {
+								object(pkg, p.Member)
+							}
+						}
+						for _, b := range e.Binds {
+							if b.Prop != nil {
+								object(pkg, b.Prop)
+							}
+						}
 					}
 					// A method's call (n.from(…)): the method. A struct
 					// made with a field (Notification(sender: p)): that

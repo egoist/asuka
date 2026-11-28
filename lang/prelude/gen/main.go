@@ -140,7 +140,7 @@ func enums() []byte {
 // encodes (canvas ops, paths, window actions) or hears (the error
 // overlay's buttons), SemanticColor, whose cases are Color's, and
 // Haptic, platform/device's.
-var skipEnum = map[string]bool{"Haptic": true, "PathOp": true, "CanvasOp": true, "WindowAction": true, "LocationAction": true, "DevErrorAction": true, "SemanticColor": true}
+var skipEnum = map[string]bool{"Haptic": true, "PathOp": true, "CanvasOp": true, "WindowAction": true, "LocationAction": true, "DevErrorAction": true, "VideoAction": true, "SemanticColor": true}
 
 var renameEnum = map[string]string{"Placement": "PopoverPlacement", "A11yChecked": "Checked", "A11yExpanded": "Expanded"}
 

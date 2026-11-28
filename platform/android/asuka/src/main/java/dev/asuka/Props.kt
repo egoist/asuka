@@ -352,6 +352,8 @@ fun AsukaRuntime.propBool(id: Int, prop: Int, v: Boolean) {
                     AsukaProp.Video.AUTO_PLAY -> it.autoPlay = v
                     AsukaProp.Video.LOOP -> it.loop = v
                     AsukaProp.Video.MUTED -> it.muted = v
+                    AsukaProp.Video.PICTURE_IN_PICTURE -> it.setPictureInPicture(v)
+                    AsukaProp.Video.AUTO_PICTURE_IN_PICTURE -> it.setAutoPictureInPicture(v)
                 }
             }
             AsukaKind.TEXT_FIELD -> when (prop) {
@@ -444,6 +446,15 @@ fun AsukaRuntime.propFloat(id: Int, prop: Int, v: Double) {
             n.list?.let { it.setGrid(it.columns, v.toFloat()) }
         } else if (n.kind == AsukaKind.LIST && prop == AsukaProp.List.INSET) {
             n.list?.let { it.setAppearance(it.appearance, v.toFloat()) }
+        } else if (n.kind == AsukaKind.VIDEO) {
+            (n.view as AsukaVideo).player?.let {
+                when (prop) {
+                    AsukaProp.Video.RATE -> it.setRate(v)
+                    AsukaProp.Video.VOLUME -> it.setVolume(v)
+                    AsukaProp.Video.START_AT -> it.setStartAt(v)
+                    AsukaProp.Video.TIME_INTERVAL -> it.setInterval(v)
+                }
+            }
         } else if (n.kind == AsukaKind.PROGRESS && prop == AsukaProp.Progress.VALUE) {
             setProgress(n.view as com.google.android.material.progressindicator.LinearProgressIndicator, v)
         } else if (n.kind == AsukaKind.PROGRESS_RING && prop == AsukaProp.ProgressRing.VALUE) {
@@ -494,7 +505,12 @@ fun AsukaRuntime.propString(id: Int, prop: Int, v: String) {
                 AsukaProp.Button.TITLE -> { (view as TextView).text = v; (view as? MaterialButton)?.let { iconPadding(n, it) } }
                 AsukaProp.Button.ICON -> setButtonIcon(n, view as MaterialButton, v)
             }
-            AsukaKind.VIDEO -> if (prop == AsukaProp.Video.SOURCE) (view as AsukaVideo).load(v)
+            AsukaKind.VIDEO -> when (prop) {
+                AsukaProp.Video.SOURCE -> (view as AsukaVideo).load(v)
+                AsukaProp.Video.POSTER -> (view as AsukaVideo).player?.setPoster(v)
+                AsukaProp.Video.SUBTITLE -> (view as AsukaVideo).player?.setSubtitle(v)
+                AsukaProp.Video.AUDIO_TRACK -> (view as AsukaVideo).player?.setAudioTrack(v)
+            }
             AsukaKind.WEB_VIEW -> when (prop) {
                 AsukaProp.WebView.URL -> (view as AsukaWebView).load(v)
                 AsukaProp.WebView.HTML -> if (v.isNotEmpty()) (view as AsukaWebView).loadHTML(v)

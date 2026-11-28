@@ -126,7 +126,7 @@ export const KindProp = Object.freeze({
   ColorPicker: Object.freeze({ Value: 64, Alpha: 65, Title: 66 }),
   Progress: Object.freeze({ Value: 64, Indeterminate: 65 }),
   Shape: Object.freeze({ Path: 64, Fill: 65, Stroke: 66, LineWidth: 67, LineCap: 68, LineJoin: 69, TrimStart: 70, TrimEnd: 71, Dash: 72 }),
-  Video: Object.freeze({ Source: 64, Mode: 65, HideControls: 66, AutoPlay: 67, Loop: 68, Muted: 69 }),
+  Video: Object.freeze({ Source: 64, Mode: 65, HideControls: 66, AutoPlay: 67, Loop: 68, Muted: 69, Rate: 70, Volume: 71, Headers: 72, Poster: 73, StartAt: 74, TimeInterval: 75, Subtitle: 76, AudioTrack: 77, SubtitleFiles: 78, PictureInPicture: 79, AutoPictureInPicture: 80 }),
   WebView: Object.freeze({ URL: 64, HTML: 65, Preload: 66, UserAgent: 67, Block: 68, Requests: 69 }),
   DatePicker: Object.freeze({ Value: 64, Mode: 65, Min: 66, Max: 67, Inline: 68 }),
   PageControl: Object.freeze({ Count: 64, Page: 65 }),
@@ -210,6 +210,8 @@ export const Event = Object.freeze({
   AnchorFrame: 64,
   PressPoint: 65,
   DevErrorAction: 66,
+  VideoState: 67,
+  VideoTracks: 68,
 });
 
 /** Commands the core sends. */
@@ -257,6 +259,7 @@ export const Command = Object.freeze({
   DevHighlightClear: 41,
   DevPerf: 42,
   DevFontScale: 43,
+  VideoAction: 44,
 });
 
 export const Role = Object.freeze({ None: 0, Button: 1, Header: 2, Image: 3, Link: 4, Text: 5, Search: 6, Checkbox: 7, Radio: 8, RadioGroup: 9, Switch: 10, Tab: 11, TabList: 12, TabPanel: 13, Slider: 14, SpinButton: 15, ProgressBar: 16, Meter: 17, Menu: 18, MenuBar: 19, MenuItem: 20, MenuItemCheckbox: 21, MenuItemRadio: 22, Listbox: 23, Option: 24, ComboBox: 25, Dialog: 26, AlertDialog: 27, Tooltip: 28, Group: 29, Separator: 30, Toolbar: 31, Status: 32 });
@@ -300,6 +303,7 @@ export const TitleBar = Object.freeze({ Default: 0, Hidden: 1 });
 export const SnackbarDuration = Object.freeze({ Short: 0, Long: 1, Indefinite: 2 });
 export const LocationAction = Object.freeze({ Replace: 0, Push: 1, Back: 2, Forward: 3 });
 export const DevErrorAction = Object.freeze({ Dismiss: 0, Reload: 1 });
+export const VideoAction = Object.freeze({ EnterPictureInPicture: 0, ExitPictureInPicture: 1, EnterFullScreen: 2, ExitFullScreen: 3 });
 
 const utf8 = new TextDecoder();
 const utf8Out = new TextEncoder();
@@ -501,4 +505,6 @@ export const Events = Object.freeze({
   anchorFrame: (id, v) => new Writer().header(id, 64).bytes(v).done(),
   pressPoint: (id, x, y) => new Writer().header(id, 65).f64(x).f64(y).done(),
   devErrorAction: (id, v) => new Writer().header(id, 66).i64(v).done(),
+  videoState: (id, v) => new Writer().header(id, 67).bytes(v).done(),
+  videoTracks: (id, v) => new Writer().header(id, 68).bytes(v).done(),
 });

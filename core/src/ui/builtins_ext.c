@@ -33,6 +33,9 @@
 //	ui.frames               -                                              Stream<Duration>
 //	ui.play, ui.pause       v: View (a Video)                              -
 //	ui.seek                 v: View, seconds: float                        -
+//	ui.video_action         v: View, action: int (VideoAction)             -
+//	ui.video_time           v: View?, which: int (0 time, 1 duration)      float (tracked)
+//	ui.video_status         v: View?                                       VideoStatus (tracked)
 //	ui.web_eval             v: View (a WebView), script: string            -
 //	ui.web_navigate         v: View, to: int (0 back, 1 forward,
 //	                        2 reload, 3 stop)                              -
@@ -225,6 +228,15 @@ static ak_val b_seek(ak_val *a, uint32_t n) {
 	ak_ui_video_seek(view_arg(a, n, 0, "ui.seek"), a[1].f);
 	return none();
 }
+
+static ak_val b_video_action(ak_val *a, uint32_t n) {
+	ak_ui_video_action(view_arg(a, n, 0, "ui.video_action"), n > 1 ? a[1].i : -1);
+	return none();
+}
+
+static ak_val b_video_time(ak_val *a, uint32_t n) { return (ak_val){.f = ak_ui_video_time(view_or_none(a, n, 0), n > 1 ? a[1].i : 0)}; }
+
+static ak_val b_video_status(ak_val *a, uint32_t n) { return (ak_val){.i = ak_ui_video_status(view_or_none(a, n, 0))}; }
 
 static ak_val b_web_eval(ak_val *a, uint32_t n) {
 	ak_ui_web_eval(view_arg(a, n, 0, "ui.web_eval"), a[1].p);
@@ -548,7 +560,8 @@ void ak_ui_ext_builtins_init(void) {
 		{"ui.variant_declare", b_variant_declare}, {"ui.layer_variant", b_layer_variant}, {"ui.variant_read", b_variant_read},
 		{"ui.model", b_model}, {"ui.model_bound", b_model_bound}, {"ui.model_set", b_model_set},
 		{"ui.animate", b_animate}, {"ui.animate_wait", b_animate_wait}, {"ui.animating", b_animating}, {"ui.on_frame", b_on_frame}, {"ui.frames", b_frames}, {"ui.play", b_play},
-		{"ui.pause", b_pause}, {"ui.seek", b_seek}, {"ui.web_eval", b_web_eval}, {"ui.web_navigate", b_web_navigate}, {"ui.web_load", b_web_load},
+		{"ui.pause", b_pause}, {"ui.seek", b_seek}, {"ui.video_action", b_video_action}, {"ui.video_time", b_video_time},
+		{"ui.video_status", b_video_status}, {"ui.web_eval", b_web_eval}, {"ui.web_navigate", b_web_navigate}, {"ui.web_load", b_web_load},
 		{"ui.web_eval_result", b_web_eval_result}, {"webview.cookies", b_web_cookies}, {"ui.insert_text", b_insert_text},
 		{"ui.format", b_format}, {"ui.toggle_format", b_toggle_format}, {"ui.set_link", b_set_link}, {"ui.native", b_native},
 		{"ui.native_set", b_native_set}, {"ui.native_bind", b_native_bind}, {"ui.native_on", b_native_on}, {"ui.call", b_call},

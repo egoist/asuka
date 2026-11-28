@@ -6,7 +6,9 @@
 // until it and the view's controller exist, what the core asks for waits.
 //
 // A Video is a WebView showing the video in a <video> element, with Edge's
-// media controls: Win32 has no video view with controls.
+// media controls: Win32 has no video view with controls. Its page reports
+// its playback and tracks as the web host's does; full screen and picture
+// in picture are the page's (full screen fills the view, not the screen).
 //
 // WebView2 is reached through its COM interfaces' vtables, by slot (from
 // WebView2.h), in the runtime's own client library, which EdgeUpdate's
@@ -193,9 +195,13 @@ typedef struct {
 } web_op;
 
 typedef struct {
-	char *source;
+	char *source, *poster;
+	char *subtitle, *audio;  // the app's choices (NULL: the platform's)
+	char **files;            // SubtitleFiles: URL, language, label in turn
+	uint32_t nfiles;
 	int32_t mode;  // AK_IMAGE_MODE_*
-	bool hide_controls, auto_play, loop, muted;
+	double rate, volume, start_at, interval;
+	bool hide_controls, auto_play, loop, muted, pip;
 } video;
 
 struct wh_web {
@@ -233,7 +239,10 @@ static void web_unref(wh_web *w) {
 	free(w->html);
 	free(w->preload);
 	wh_free_cstrings(w->block, w->nblock);
-	if (w->video) free(w->video->source);
+	if (w->video) {
+		free(w->video->source), free(w->video->poster), free(w->video->subtitle), free(w->video->audio);
+		wh_free_cstrings(w->video->files, w->video->nfiles);
+	}
 	free(w->video);
 	free(w);
 }
@@ -641,7 +650,10 @@ void wh_make_web(node *n) {
 	w->refs = 2;  // the node's, and the wait's for the environment
 	w->n = n;
 	n->web = w;
-	if (n->kind == AK_KIND_VIDEO) w->video = wh_alloc(sizeof *w->video);
+	if (n->kind == AK_KIND_VIDEO) {
+		w->video = wh_alloc(sizeof *w->video);
+		w->video->rate = w->video->volume = 1;
+	}
 	wh_web_environment(with_environment, w);
 }
 
@@ -905,21 +917,109 @@ static void eval8(wh_web *w, const char *js) {
 
 // ---- Video ----
 
-// video_attrs is the script that sets the <video>'s attributes from the
-// props.
-static void video_attrs(wh_web *w) {
-	video *v = w->video;
+// The page's script: it keeps the <video> as the props say (set(c), c the
+// props as JSON), and posts what it does: loaded:<width>,<height>, ended,
+// failed:<message>, state:<flags>,<time>,<duration>,<rate>,<width>,
+// <height> (VideoState's, as the web host's video.js works it out: as it
+// changes, and every interval while it plays) and tracks:<JSON> (its text
+// tracks, its SubtitleFiles' <track>s among them, and its audio tracks).
+#define VIDEO_JS \
+	"var v=document.querySelector('video'),A={iv:0,tick:0,last:'',tk:'',start:0,c:{}};" \
+	"function P(m){chrome.webview.postMessage(m)}" \
+	"function S(force){var f=0,r=v.readyState>=1&&!!v.currentSrc;if(r)f|=1;if(!v.paused&&!v.ended){f|=2;if(A.wait||v.readyState<3)f|=4}" \
+	"if(v.ended&&!v.loop)f|=8;if(document.pictureInPictureElement===v)f|=16;if(document.fullscreenElement===v)f|=32;" \
+	"var d=r?v.duration:NaN,k=f+'|'+d+'|'+v.playbackRate+'|'+v.videoWidth+'x'+v.videoHeight;if(!force&&k===A.last)return;A.last=k;" \
+	"P('state:'+f+','+(v.currentTime||0)+','+d+','+(v.playbackRate||1)+','+v.videoWidth+','+v.videoHeight)}" \
+	"function I(t,i){return t.id||String(i)}" \
+	"function T(){var ts=[],i,t,a=v.audioTracks;for(i=0;i<v.textTracks.length;i++){t=v.textTracks[i];if(t.kind!=='subtitles'&&t.kind!=='captions')continue;" \
+	"ts.push({s:1,c:t.mode==='showing'?1:0,id:I(t,i),l:t.label,g:t.language})}" \
+	"for(i=0;a&&i<a.length;i++)ts.push({s:0,c:a[i].enabled?1:0,id:a[i].id||String(i),l:a[i].label,g:a[i].language});" \
+	"var k=JSON.stringify(ts);if(k===A.tk)return;A.tk=k;P('tracks:'+k)}" \
+	"function Ap(){var c=A.c,i,t,a=v.audioTracks;if(c.sub!=null)for(i=0;i<v.textTracks.length;i++){t=v.textTracks[i];" \
+	"if(t.kind!=='subtitles'&&t.kind!=='captions')continue;var m=I(t,i)===c.sub?'showing':'disabled';if(t.mode!==m)t.mode=m}" \
+	"if(c.aud!=null&&a){var f=0;for(i=0;i<a.length;i++)if((a[i].id||String(i))===c.aud)f=1;if(f)for(i=0;i<a.length;i++)a[i].enabled=(a[i].id||String(i))===c.aud}}" \
+	"function K(){clearInterval(A.tick);A.tick=0;if(A.iv>0&&!v.paused&&!v.ended)A.tick=setInterval(function(){S(1)},A.iv*1000)}" \
+	"function U(s){return /^[a-z]+:/i.test(s)?s:'https://asuka.assets/'+s.replace(/^[\\/\\\\]+/,'').replace(/\\\\/g,'/')}" \
+	"function set(c){var o=A.c;A.c=c;v.style.objectFit=c.fit;v.controls=c.controls;v.loop=c.loop;v.muted=c.muted;v.autoplay=c.autoplay;" \
+	"v.defaultPlaybackRate=v.playbackRate=c.rate;v.volume=c.volume;v.poster=c.poster?U(c.poster):'';v.disablePictureInPicture=!c.pip;A.iv=c.iv;K();" \
+	"if(JSON.stringify(o.files)!==JSON.stringify(c.files)){var x=v.querySelectorAll('track');for(var i=0;i<x.length;i++)x[i].remove();" \
+	"for(i=0;i+2<c.files.length;i+=3){var t=document.createElement('track');t.kind='subtitles';t.id=c.files[i];t.src=U(c.files[i]);" \
+	"if(c.files[i+1])t.srclang=c.files[i+1];t.label=c.files[i+2]||c.files[i+1]||'';v.appendChild(t)}}Ap();S(0)}" \
+	"function act(a){if(a===0&&!v.disablePictureInPicture&&document.pictureInPictureEnabled)v.requestPictureInPicture().catch(function(){});" \
+	"if(a===1&&document.pictureInPictureElement===v)document.exitPictureInPicture().catch(function(){});" \
+	"if(a===2&&v.requestFullscreen)v.requestFullscreen().catch(function(){});if(a===3&&document.fullscreenElement===v)document.exitFullscreen().catch(function(){})}" \
+	"window.asukaVideo={set:set,act:act};" \
+	"v.addEventListener('loadedmetadata',function(){P('loaded:'+v.videoWidth+','+v.videoHeight);if(A.c.start>0&&!A.started){A.started=1;v.currentTime=A.c.start}Ap();T();S(0)});" \
+	"v.addEventListener('ended',function(){P('ended');S(1)});" \
+	"v.addEventListener('error',function(){P('failed:'+(v.error&&v.error.message||'the video could not play'))});" \
+	"v.addEventListener('waiting',function(){A.wait=1;S(0)});v.addEventListener('playing',function(){A.wait=0;K();S(1)});" \
+	"['play','pause','canplay','durationchange','ratechange','enterpictureinpicture','leavepictureinpicture','resize','fullscreenchange'].forEach(function(e){" \
+	"v.addEventListener(e,function(){K();S(e==='pause')})});v.addEventListener('seeked',function(){S(1)});" \
+	"[v.textTracks,v.audioTracks].forEach(function(l){if(!l)return;l.addEventListener('addtrack',function(){Ap();T()});" \
+	"l.addEventListener('removetrack',T);l.addEventListener('change',T)});"
+
+// video_config is the props as the page's set() takes them: JSON, with
+// < escaped (it goes in a <script> too).
+static char *video_config(video *v, size_t *len) {
 	const char *fit = "contain";
 	switch (v->mode) {
 	case AK_IMAGE_MODE_FILL: fit = "cover"; break;
 	case AK_IMAGE_MODE_STRETCH: fit = "fill"; break;
 	case AK_IMAGE_MODE_CENTER: fit = "none"; break;
 	}
-	char js[512];
-	snprintf(js, sizeof js,
-		"(function(){var v=document.querySelector('video');if(!v)return;v.style.objectFit=\"%s\";v.controls=%s;v.loop=%s;v.muted=%s;v.autoplay=%s;})()", fit,
-		v->hide_controls ? "false" : "true", v->loop ? "true" : "false", v->muted ? "true" : "false", v->auto_play ? "true" : "false");
-	eval8(w, js);
+	dsk_jw w = {0};
+	dsk_jw_obj(&w);
+	dsk_jw_key(&w, "fit"), dsk_jw_str(&w, fit);
+	dsk_jw_key(&w, "controls"), dsk_jw_bool(&w, !v->hide_controls);
+	dsk_jw_key(&w, "loop"), dsk_jw_bool(&w, v->loop);
+	dsk_jw_key(&w, "muted"), dsk_jw_bool(&w, v->muted);
+	dsk_jw_key(&w, "autoplay"), dsk_jw_bool(&w, v->auto_play);
+	dsk_jw_key(&w, "rate"), dsk_jw_num(&w, v->rate > 0 ? v->rate : 1);
+	dsk_jw_key(&w, "volume"), dsk_jw_num(&w, v->volume);
+	dsk_jw_key(&w, "poster"), dsk_jw_str(&w, v->poster ? v->poster : "");
+	dsk_jw_key(&w, "start"), dsk_jw_num(&w, v->start_at);
+	dsk_jw_key(&w, "iv"), dsk_jw_num(&w, v->interval);
+	dsk_jw_key(&w, "pip"), dsk_jw_bool(&w, v->pip);
+	dsk_jw_key(&w, "sub");
+	if (v->subtitle) dsk_jw_str(&w, v->subtitle);
+	else dsk_jw_raw(&w, "null", 4);
+	dsk_jw_key(&w, "aud");
+	if (v->audio) dsk_jw_str(&w, v->audio);
+	else dsk_jw_raw(&w, "null", 4);
+	dsk_jw_key(&w, "files");
+	dsk_jw_arr(&w);
+	for (uint32_t i = 0; i < v->nfiles; i++) dsk_jw_str(&w, v->files[i]);
+	dsk_jw_aend(&w);
+	dsk_jw_end(&w);
+	size_t n;
+	char *s = dsk_jw_take(&w, &n);
+	if (!s) {
+		*len = 0;
+		return wh_strndup("{}", 2);
+	}
+	ak_buf b = {0};
+	for (size_t i = 0; i < n; i++) {
+		if (s[i] == '<') ak_buf_put(&b, "\\u003c", 6);
+		else ak_buf_u8(&b, (uint8_t)s[i]);
+	}
+	free(s);
+	ak_buf_u8(&b, 0);
+	char *out = wh_strndup((const char *)b.data, b.len - 1);
+	*len = b.len - 1;
+	ak_buf_free(&b);
+	return out;
+}
+
+// video_attrs has the page's <video> take the props.
+static void video_attrs(wh_web *w) {
+	size_t n;
+	char *c = video_config(w->video, &n);
+	ak_buf js = {0};
+	ak_buf_printf(&js, "window.asukaVideo&&asukaVideo.set(%s)", c);
+	ak_buf_u8(&js, 0);
+	eval8(w, (const char *)js.data);
+	ak_buf_free(&js);
+	free(c);
 }
 
 // html_escape appends s with HTML's specials escaped (as Go's
@@ -937,8 +1037,8 @@ static void html_escape(ak_buf *b, const char *s) {
 	}
 }
 
-// load_video shows the page of the video: a <video> filling it, which
-// posts its natural size once known, its end and its errors.
+// load_video shows the page of the video: a <video> filling it, with
+// the script that reports it (VIDEO_JS), set from the props.
 static void load_video(wh_web *w) {
 	video *v = w->video;
 	if (!v || !v->source || !*v->source || !w->view) return;
@@ -952,24 +1052,66 @@ static void load_video(wh_web *w) {
 		ak_buf_put(&src, v->source, strlen(v->source));
 	}
 	ak_buf_u8(&src, 0);
+	size_t cn;
+	char *c = video_config(v, &cn);
 	ak_buf page = {0};
 	ak_buf_printf(&page,
 		"<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;height:100%%;background:#000;overflow:hidden}"
-		"video{width:100%%;height:100%%;display:block}</style></head><body><video playsinline%s%s%s%s src=\"",
+		"video{width:100%%;height:100%%;display:block}</style></head><body><video playsinline preload=\"metadata\"%s%s%s%s src=\"",
 		v->hide_controls ? "" : " controls", v->loop ? " loop" : "", v->muted ? " muted" : "", v->auto_play ? " autoplay" : "");
 	html_escape(&page, (const char *)src.data);
-	ak_buf_printf(&page, "%s",
-		"\"></video><script>var v=document.querySelector('video');"
-		"v.addEventListener('loadedmetadata',function(){chrome.webview.postMessage('loaded:'+v.videoWidth+','+v.videoHeight)});"
-		"v.addEventListener('ended',function(){chrome.webview.postMessage('ended')});"
-		"v.addEventListener('error',function(){chrome.webview.postMessage('failed:'+(v.error&&v.error.message||'the video could not play'))});"
-		"</script></body></html>");
+	ak_buf_printf(&page, "%s", "\"></video><script>" VIDEO_JS "set(");
+	ak_buf_put(&page, c, cn);
+	ak_buf_printf(&page, "%s", ");</script></body></html>");
+	free(c);
 	wchar_t *html = wh_wide((const char *)page.data, (int)page.len);
 	CALL_P(w->view, WV_NAVIGATE_TO_STRING, html);
 	free(html);
 	ak_buf_free(&page);
 	ak_buf_free(&src);
-	video_attrs(w);
+}
+
+// video_tracks turns the page's tracks (JSON) into VideoTracks.
+static void video_tracks(node *n, const char *json, size_t len) {
+	dsk_json *a = dsk_json_parse(json, len);
+	if (!a || a->type != DSK_JARR) {
+		dsk_json_free(a);
+		return;
+	}
+	ak_buf b = {0};
+	ak_buf_u32(&b, (uint32_t)a->n);
+	for (size_t i = 0; i < a->n; i++) {
+		const dsk_json *t = &a->kids[i];
+		ak_buf_u8(&b, dsk_json_num(t, "s", 0) != 0 ? 0 : 1);
+		ak_buf_u8(&b, dsk_json_num(t, "c", 0) != 0);
+		const char *ss[3] = {dsk_json_str(t, "id", ""), dsk_json_str(t, "l", ""), dsk_json_str(t, "g", "")};
+		for (int k = 0; k < 3; k++) ak_buf_str(&b, ss[k], strlen(ss[k]));
+	}
+	wh_emit_bytes(n, AK_EVENT_VIDEO_TRACKS, b.data, b.len);
+	ak_buf_free(&b);
+	dsk_json_free(a);
+}
+
+// video_state turns the page's state:<flags>,<time>,<duration>,<rate>,
+// <width>,<height> into VideoState (strtod reads JavaScript's NaN and
+// Infinity).
+static void video_state(node *n, const char *s) {
+	double x[6] = {0, 0, NAN, 1, 0, 0};
+	char *end;
+	for (int i = 0; i < 6 && *s; i++) {
+		x[i] = strtod(s, &end);
+		if (end == s) break;
+		s = *end == ',' ? end + 1 : end;
+	}
+	ak_buf b = {0};
+	ak_buf_u8(&b, (uint8_t)x[0]);
+	ak_buf_f64(&b, x[1]);
+	ak_buf_f64(&b, x[2]);
+	ak_buf_f32(&b, (float)x[3]);
+	ak_buf_f32(&b, (float)x[4]);
+	ak_buf_f32(&b, (float)x[5]);
+	wh_emit_bytes(n, AK_EVENT_VIDEO_STATE, b.data, b.len);
+	ak_buf_free(&b);
 }
 
 static void video_message(wh_web *w, const char *msg, size_t len) {
@@ -984,15 +1126,23 @@ static void video_message(wh_web *w, const char *msg, size_t len) {
 		wh_emit_kind(n, AK_EVENT_ENDED);
 	} else if (len >= 7 && !strncmp(msg, "failed:", 7)) {
 		wh_emit_str(n, AK_EVENT_FAILED, msg + 7, len - 7);
+	} else if (len > 6 && !strncmp(msg, "state:", 6)) {
+		video_state(n, msg + 6);
+	} else if (len > 7 && !strncmp(msg, "tracks:", 7)) {
+		video_tracks(n, msg + 7, len - 7);
 	}
+}
+
+static void set_str(char **p, ak_span s) {
+	free(*p);
+	*p = wh_strndup(s.p, s.len);
 }
 
 static void set_video_prop(wh_web *w, uint16_t p, const ak_value *v) {
 	video *vd = w->video;
 	switch (p) {
 	case AK_PROP_VIDEO_SOURCE:
-		free(vd->source);
-		vd->source = wh_strndup(v->s.p, v->s.len);
+		set_str(&vd->source, v->s);
 		do_op(w, OP_VIDEO, NULL, 0);
 		return;
 	case AK_PROP_VIDEO_MODE: vd->mode = (int32_t)v->i; break;
@@ -1000,7 +1150,19 @@ static void set_video_prop(wh_web *w, uint16_t p, const ak_value *v) {
 	case AK_PROP_VIDEO_AUTO_PLAY: vd->auto_play = v->i != 0; break;
 	case AK_PROP_VIDEO_LOOP: vd->loop = v->i != 0; break;
 	case AK_PROP_VIDEO_MUTED: vd->muted = v->i != 0; break;
-	default: return;
+	case AK_PROP_VIDEO_RATE: vd->rate = v->f; break;
+	case AK_PROP_VIDEO_VOLUME: vd->volume = v->f < 0 ? 0 : v->f > 1 ? 1 : v->f; break;
+	case AK_PROP_VIDEO_POSTER: set_str(&vd->poster, v->s); break;
+	case AK_PROP_VIDEO_START_AT: vd->start_at = v->f; return;  // the next source's
+	case AK_PROP_VIDEO_TIME_INTERVAL: vd->interval = v->f; break;
+	case AK_PROP_VIDEO_SUBTITLE: set_str(&vd->subtitle, v->s); break;
+	case AK_PROP_VIDEO_AUDIO_TRACK: set_str(&vd->audio, v->s); break;
+	case AK_PROP_VIDEO_SUBTITLE_FILES:
+		wh_free_cstrings(vd->files, vd->nfiles);
+		vd->nfiles = wh_decode_cstrings(&vd->files, (const uint8_t *)v->s.p, v->s.len);
+		break;
+	case AK_PROP_VIDEO_PICTURE_IN_PICTURE: vd->pip = v->i != 0; break;
+	default: return;  // Headers: a <video> sends none of the app's; AutoPictureInPicture: phones'
 	}
 	video_attrs(w);
 }
@@ -1057,6 +1219,13 @@ void wh_web_command(node *n, uint16_t cmd, const uint8_t *args, size_t len) {
 		break;
 	case AK_CMD_PAUSE:
 		if (w->video) eval(w, L"document.querySelector('video').pause()");
+		break;
+	case AK_CMD_VIDEO_ACTION:
+		if (w->video && len >= 1) {
+			char js[64];
+			snprintf(js, sizeof js, "window.asukaVideo&&asukaVideo.act(%d)", args[0]);
+			eval8(w, js);
+		}
 		break;
 	case AK_CMD_SEEK:
 		if (w->video && len >= 8) {

@@ -282,48 +282,381 @@ const ak_el_class ak_class_image = {.name = "Image", .kind = AK_KIND_IMAGE, .ini
                                     .finalize = image_finalize, .event = image_event, .drop = free_impl};
 
 // ---- Video ----
+//
+// The host reports a Video's playback with VideoState (its flags, the
+// time, the duration, the rate chosen, the natural size) and its tracks
+// with VideoTracks; the core works out what the app hears from them: the
+// status (VideoStatus), loaded once per source, the time every
+// timeInterval while it plays (the host sends it about that often, with
+// TimeInterval, only once something listens to it or reads it), a choice
+// in the platform's controls (a speed, a subtitle, an audio track) only
+// when it's the user's, not the app's echoed back.
+
+// VideoStatus's cases (types.asuka).
+enum { VS_IDLE, VS_LOADING, VS_READY, VS_PLAYING, VS_BUFFERING, VS_PAUSED, VS_ENDED, VS_FAILED };
+
+// VideoState's flags (ops/video.go).
+enum { VF_READY = 1, VF_PLAYING = 2, VF_BUFFERING = 4, VF_ENDED = 8, VF_PIP = 16, VF_FULL = 32 };
+
+typedef struct {
+	ak_lsize natural;  // first: natural_measure reads it
+	ak_node time_sig, dur_sig, status_sig;
+	double time, duration;  // duration NaN: not known
+	double tick;            // the time timeUpdate was last called with (NaN: none since the source)
+	float rate;             // the host's, as last reported
+	uint8_t flags;          // the host's VideoState flags, as last reported
+	uint8_t status, told;  // the status, and as the handler was last told it
+	bool source;    // a source is set
+	bool loaded;    // loaded was called for the source
+	bool played;    // it played since the source loaded
+	bool failed;    // Failed since the source
+	bool ticking;   // TimeInterval was sent
+	bool rate_known, sub_known, audio_known, tracks_known;
+	ak_str *sub, *audio;  // the host's choices, as last reported
+	ak_buf tracks;        // the tracks last reported (their kinds, ids, labels and languages)
+} video_state;
+
+static video_state *video_of(ak_view *v) { return v && v->kind == AK_KIND_VIDEO && !v->dead && v->impl ? v->impl : NULL; }
 
 static void video_init(ak_view *e) {
-	e->impl = ak_alloc(sizeof(ak_lsize));
+	video_state *s = ak_alloc(sizeof(video_state));
+	memset(s, 0, sizeof *s);
+	ak_signal_init(&s->time_sig);
+	ak_signal_init(&s->dur_sig);
+	ak_signal_init(&s->status_sig);
+	s->duration = s->tick = NAN;
+	s->rate = 1;
+	e->impl = s;
 	ak_lnode_set_measure(e->box, natural_measure, e);
 	ak_view_listen(e, AK_EVENT_LOADED);
+	ak_view_listen(e, AK_EVENT_VIDEO_STATE);
+	ak_view_listen(e, AK_EVENT_VIDEO_TRACKS);
+}
+
+static void video_drop(ak_view *e) {
+	video_state *s = e->impl;
+	if (!s) return;
+	ak_signal_drop(&s->time_sig);
+	ak_signal_drop(&s->dur_sig);
+	ak_signal_drop(&s->status_sig);
+	ak_release(s->sub);
+	ak_release(s->audio);
+	ak_buf_free(&s->tracks);
+	ak_free(s);
+	e->impl = NULL;
+}
+
+static uint8_t video_derive(const video_state *s) {
+	if (!s->source) return VS_IDLE;
+	if (s->failed) return VS_FAILED;
+	if (!(s->flags & VF_READY)) return VS_LOADING;
+	if (s->flags & VF_ENDED) return VS_ENDED;
+	if (s->flags & VF_PLAYING) return s->flags & VF_BUFFERING ? VS_BUFFERING : VS_PLAYING;
+	return s->played ? VS_PAUSED : VS_READY;
+}
+
+// video_status works the status out again: a change is written, and
+// with tell (an event's, not a prop's: no handler runs as props apply)
+// told.
+static void video_status(ak_view *e, video_state *s, bool tell) {
+	uint8_t st = video_derive(s);
+	if (st != s->status) {
+		s->status = st;
+		ak_signal_write(&s->status_sig);
+	}
+	if (!tell || st == s->told) return;
+	s->told = st;
+	ak_val arg = {.i = st};
+	ak_view_call(e, AK_EV_VIDEO_STATUS, &arg, 1);
+}
+
+static double video_interval(const ak_view *e) {
+	const ak_val *v = key_val(e, AK_KEY_VIDEO_TIME_INTERVAL);
+	return v ? v->f : 0.25;
+}
+
+// video_tick has the host report the time while it plays, once
+// something hears it (timeUpdate) or reads it (currentTime).
+static void video_tick(ak_view *e, video_state *s) {
+	if (s->ticking) return;
+	s->ticking = true;
+	double t = video_interval(e);
+	ak_batch_set_float(ak_view_batch(e), e->id, AK_PROP_VIDEO_TIME_INTERVAL, t > 0 ? t : 0.25);
+}
+
+// A new source: nothing of the last one's playback holds (what the
+// handlers hear of it, at the host's first report).
+static void video_reset(ak_view *e, video_state *s, bool source) {
+	s->source = source;
+	s->loaded = s->played = s->failed = false;
+	s->tracks_known = s->sub_known = s->audio_known = false;
+	s->flags = 0;
+	s->tick = NAN;
+	if (s->time != 0) {
+		s->time = 0;
+		ak_signal_write(&s->time_sig);
+	}
+	if (!ak_isnan((float)s->duration)) {
+		s->duration = NAN;
+		ak_signal_write(&s->dur_sig);
+	}
+	video_status(e, s, false);
+}
+
+static void video_source(ak_view *e, ak_val v) {
+	const ak_str *src = v.p;
+	send_str(e, AK_PROP_VIDEO_SOURCE, v);
+	video_reset(e, e->impl, src && src->len);
+}
+
+// send_float sends a float prop that's not its default, or is again.
+static void send_float(ak_view *e, ak_prop p, double v, double def, const ak_val *prev) {
+	if (prev || v != def) ak_batch_set_float(ak_view_batch(e), e->id, p, v);
+}
+
+// video_choice sends a track's choice, unless it's what the host shows.
+static void video_choice(ak_view *e, ak_prop p, ak_val v, bool known, const ak_str *shown) {
+	const ak_str *s = v.p;
+	if (known && ak_span_eq(ak_span_str(s), ak_span_str(shown))) return;
+	send_str(e, p, v);
 }
 
 static void video_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 	ak_batch *b = ak_view_batch(e);
+	video_state *s = e->impl;
 	ak_prop flag = 0;
 	switch (key) {
-	case AK_KEY_VIDEO_SOURCE: send_str(e, AK_PROP_VIDEO_SOURCE, v); return;
+	// The source goes once what applies to it has: its headers, where it
+	// starts, its subtitle files.
+	case AK_KEY_VIDEO_SOURCE:
+		if (e->finalized) video_source(e, v);
+		return;
 	case AK_KEY_VIDEO_MODE:
 		if (prev || v.i) ak_batch_set_enum(b, e->id, AK_PROP_VIDEO_MODE, (int32_t)v.i);
 		return;
+	case AK_KEY_VIDEO_VOLUME: send_float(e, AK_PROP_VIDEO_VOLUME, v.f, 1, prev); return;
+	case AK_KEY_VIDEO_RATE:
+		if (s->rate_known && v.f == s->rate) return;  // the host's already (the user's choice, written back)
+		send_float(e, AK_PROP_VIDEO_RATE, v.f, 1, prev);
+		return;
+	case AK_KEY_VIDEO_START_AT: send_float(e, AK_PROP_VIDEO_START_AT, v.f, 0, prev); return;
+	case AK_KEY_VIDEO_POSTER:
+		if (prev || (v.p && ((ak_str *)v.p)->len)) send_str(e, AK_PROP_VIDEO_POSTER, v);
+		return;
+	case AK_KEY_VIDEO_TIME_INTERVAL:
+		if (s->ticking) ak_batch_set_float(b, e->id, AK_PROP_VIDEO_TIME_INTERVAL, v.f > 0 ? v.f : 0.25);
+		return;
+	case AK_KEY_VIDEO_HEADERS: {
+		const ak_map *m = v.p;
+		if (!prev && (!m || !m->live)) return;
+		ak_buf *w = ak_batch_set_bytes_begin(b, e->id, AK_PROP_VIDEO_HEADERS);
+		ak_arr *keys = m ? ak_map_keys(m) : NULL;
+		ak_buf_u32(w, keys ? keys->len * 2 : 0);
+		for (uint32_t i = 0; keys && i < keys->len; i++) {
+			ak_val k = ak_arr_vals(keys)[i], val = {0};
+			ak_map_get(m, k, &val);
+			ak_span ks = ak_span_str(k.p), vs = ak_span_str(val.p);
+			ak_buf_str(w, ks.p, ks.len);
+			ak_buf_str(w, vs.p, vs.len);
+		}
+		ak_release(keys);
+		ak_batch_set_bytes_end(b);
+		return;
+	}
+	case AK_KEY_VIDEO_SUBTITLE_FILES: {
+		const ak_arr *a = v.p;
+		if (!prev && (!a || !a->len)) return;
+		ak_buf *w = ak_batch_set_bytes_begin(b, e->id, AK_PROP_VIDEO_SUBTITLE_FILES);
+		ak_buf_u32(w, a ? a->len * 3 : 0);  // the strings: three a file
+		for (uint32_t i = 0; a && i < a->len; i++) {
+			const ak_struct *f = ak_arr_vals(a)[i].p;
+			for (int j = 0; j < 3; j++) {
+				ak_span x = ak_span_str(f ? f->f[j].p : NULL);
+				ak_buf_str(w, x.p, x.len);
+			}
+		}
+		ak_batch_set_bytes_end(b);
+		return;
+	}
+	case AK_KEY_VIDEO_SUBTITLE: video_choice(e, AK_PROP_VIDEO_SUBTITLE, v, s->sub_known, s->sub); return;
+	case AK_KEY_VIDEO_AUDIO_TRACK: video_choice(e, AK_PROP_VIDEO_AUDIO_TRACK, v, s->audio_known, s->audio); return;
 	case AK_KEY_VIDEO_HIDE_CONTROLS: flag = AK_PROP_VIDEO_HIDE_CONTROLS; break;
 	case AK_KEY_VIDEO_AUTO_PLAY: flag = AK_PROP_VIDEO_AUTO_PLAY; break;
 	case AK_KEY_VIDEO_LOOP: flag = AK_PROP_VIDEO_LOOP; break;
 	case AK_KEY_VIDEO_MUTED: flag = AK_PROP_VIDEO_MUTED; break;
+	case AK_KEY_VIDEO_PICTURE_IN_PICTURE: flag = AK_PROP_VIDEO_PICTURE_IN_PICTURE; break;
+	case AK_KEY_VIDEO_AUTO_PICTURE_IN_PICTURE: flag = AK_PROP_VIDEO_AUTO_PICTURE_IN_PICTURE; break;
 	}
 	if (flag && (prev || v.i)) ak_batch_set_bool(b, e->id, flag, v.i != 0);
 }
 
+static void video_finalize(ak_view *e) {
+	video_state *s = e->impl;
+	if (ak_view_handler(e, AK_EV_VIDEO_TIME_UPDATE)) video_tick(e, s);
+	const ak_val *src = key_val(e, AK_KEY_VIDEO_SOURCE);
+	if (src) video_source(e, *src);
+}
+
+// A little-endian reader of an event's bytes.
+static ak_str *read_str(ak_reader *r) { return ak_str_span(ak_read_str(r)); }
+
+static bool same_str(ak_span a, const ak_str *b) { return ak_span_eq(a, ak_span_str(b)); }
+
+// video_chosen takes the host's choice of a track (which): told when it's
+// the user's, not what the app chose (key) coming back.
+static void video_chosen(ak_view *e, ak_span id, ak_str **shown, bool *known, uint16_t key, uint16_t ev) {
+	bool changed = !*known || !same_str(id, *shown);
+	bool was_known = *known;
+	if (changed) {
+		ak_release(*shown);
+		*shown = ak_str_span(id);
+		*known = true;
+	}
+	if (!changed || !was_known) return;
+	const ak_val *app = key_val(e, key);
+	if (app && same_str(id, app->p)) return;
+	if (!ak_view_handler(e, ev)) return;
+	ak_val arg = {.p = ak_retain(*shown)};
+	ak_view_call(e, ev, &arg, 1);
+	ak_release(arg.p);
+}
+
+static void video_tracks(ak_view *e, video_state *s, ak_span payload) {
+	ak_reader r = {(const uint8_t *)payload.p, payload.len, 0, false};
+	uint32_t n = ak_read_u32(&r);
+	ak_span sub = {"", 0}, audio = {"", 0};
+	bool has_audio = false;
+	// What the tracks are, apart from which is chosen: told on a change.
+	ak_buf key = {0};
+	for (uint32_t i = 0; i < n && !r.err; i++) {
+		uint8_t kind = ak_read_u8(&r), sel = ak_read_u8(&r);
+		ak_span id = ak_read_str(&r), label = ak_read_str(&r), lang = ak_read_str(&r);
+		if (r.err) break;
+		ak_buf_u8(&key, kind);
+		ak_buf_str(&key, id.p, id.len);
+		ak_buf_str(&key, label.p, label.len);
+		ak_buf_str(&key, lang.p, lang.len);
+		if (sel && kind == 0) sub = id;
+		if (sel && kind == 1) audio = id, has_audio = true;
+	}
+	if (r.err) {
+		ak_buf_free(&key);
+		return;
+	}
+	bool changed = !s->tracks_known || key.len != s->tracks.len || (key.len && memcmp(key.data, s->tracks.data, key.len) != 0);
+	s->tracks_known = true;
+	if (changed) {
+		ak_buf_free(&s->tracks);
+		s->tracks = key;
+	} else {
+		ak_buf_free(&key);
+	}
+	if (changed && ak_view_handler(e, AK_EV_VIDEO_TRACKS)) {
+		ak_arr *subs = ak_arr_new(AK_K_REF, &ak_ui_shape_video_track, 0), *auds = ak_arr_new(AK_K_REF, &ak_ui_shape_video_track, 0);
+		r = (ak_reader){(const uint8_t *)payload.p, payload.len, 0, false};
+		n = ak_read_u32(&r);
+		for (uint32_t i = 0; i < n; i++) {
+			uint8_t kind = ak_read_u8(&r);
+			ak_read_u8(&r);
+			ak_struct *t = ak_struct_new(&ak_ui_shape_video_track);
+			t->f[0].p = read_str(&r);
+			t->f[1].p = read_str(&r);
+			t->f[2].p = read_str(&r);
+			ak_arr_push(kind == 1 ? &auds : &subs, (ak_val){.p = t});
+		}
+		ak_val args[2] = {{.p = subs}, {.p = auds}};
+		ak_view_call(e, AK_EV_VIDEO_TRACKS, args, 2);
+		ak_release(subs);
+		ak_release(auds);
+	}
+	video_chosen(e, sub, &s->sub, &s->sub_known, AK_KEY_VIDEO_SUBTITLE, AK_EV_VIDEO_SUBTITLE_CHANGE);
+	if (has_audio) video_chosen(e, audio, &s->audio, &s->audio_known, AK_KEY_VIDEO_AUDIO_TRACK, AK_EV_VIDEO_AUDIO_TRACK_CHANGE);
+}
+
+static void call_bool(ak_view *e, uint16_t ev, bool on) {
+	ak_val arg = {.i = on};
+	ak_view_call(e, ev, &arg, 1);
+}
+
+static void video_state_event(ak_view *e, video_state *s, ak_span payload) {
+	ak_reader r = {(const uint8_t *)payload.p, payload.len, 0, false};
+	uint8_t flags = ak_read_u8(&r);
+	double t = ak_read_f64(&r), dur = ak_read_f64(&r);
+	float rate = ak_read_f32(&r), w = ak_read_f32(&r), h = ak_read_f32(&r);
+	if (r.err || !s->source) return;
+	uint8_t was = s->flags;
+	s->flags = flags;
+	if ((flags & VF_READY) && (flags & VF_PLAYING)) s->played = true;
+	if (t != s->time) {
+		s->time = t;
+		ak_signal_write(&s->time_sig);
+	}
+	if (dur != s->duration && !(dur != dur && s->duration != s->duration)) {
+		s->duration = dur;
+		ak_signal_write(&s->dur_sig);
+	}
+	if (!s->loaded && (flags & VF_READY)) {
+		s->loaded = true;
+		ak_val args[3] = {{.f = dur == dur ? dur : 0}, {.f = w}, {.f = h}};
+		ak_view_call(e, AK_EV_VIDEO_LOADED, args, 3);
+	}
+	video_status(e, s, true);
+	if (!s->rate_known || rate != s->rate) {
+		bool user = s->rate_known;
+		s->rate = rate;
+		s->rate_known = true;
+		const ak_val *app = key_val(e, AK_KEY_VIDEO_RATE);
+		double want = app ? app->f : 1;
+		if (user && (float)want != rate) {
+			ak_val arg = {.f = rate};
+			ak_view_call(e, AK_EV_VIDEO_RATE_CHANGE, &arg, 1);
+		}
+	}
+	if ((flags ^ was) & VF_PIP) call_bool(e, AK_EV_VIDEO_PICTURE_IN_PICTURE_CHANGE, flags & VF_PIP);
+	if ((flags ^ was) & VF_FULL) call_bool(e, AK_EV_VIDEO_FULL_SCREEN_CHANGE, flags & VF_FULL);
+	// The time, at most every timeInterval (half of it, in the video's
+	// time, as a host's timer drifts) while it plays; any change while it
+	// doesn't (a seek), and as it starts.
+	if (!(flags & VF_READY) || t == s->tick || !ak_view_handler(e, AK_EV_VIDEO_TIME_UPDATE)) return;
+	bool playing = (flags & VF_PLAYING) && !(flags & VF_BUFFERING);
+	if (playing && (was & VF_PLAYING) && s->tick == s->tick) {
+		double d = t - s->tick, step = 0.5 * video_interval(e) * (rate > 0 ? rate : 1);
+		if (d >= 0 && d < step) return;
+	}
+	s->tick = t;
+	ak_val arg = {.f = t};
+	ak_view_call(e, AK_EV_VIDEO_TIME_UPDATE, &arg, 1);
+}
+
 static void video_event(ak_view *e, const ak_event *ev) {
+	video_state *s = e->impl;
 	switch (ev->kind) {
 	case AK_EVENT_LOADED: {
-		ak_lsize *n = e->impl, s = {(float)ev->x, (float)ev->y};
-		if (s.w != n->w || s.h != n->h) {
-			*n = s;
+		ak_lsize n = {(float)ev->x, (float)ev->y};
+		if (n.w != s->natural.w || n.h != s->natural.h) {
+			s->natural = n;
 			ak_view_remeasure(e);
 		}
 		break;
 	}
 	case AK_EVENT_ENDED: ak_view_call(e, AK_EV_VIDEO_END, NULL, 0); break;
-	case AK_EVENT_FAILED: call_str(e, AK_EV_VIDEO_ERROR, ev->s); break;
+	case AK_EVENT_FAILED:
+		if (s->source && !s->failed) {
+			s->failed = true;
+			video_status(e, s, true);
+		}
+		call_str(e, AK_EV_VIDEO_ERROR, ev->s);
+		break;
+	case AK_EVENT_VIDEO_STATE: video_state_event(e, s, ev->s); break;
+	case AK_EVENT_VIDEO_TRACKS: video_tracks(e, s, ev->s); break;
 	}
 }
 
-const ak_el_class ak_class_video = {.name = "Video", .kind = AK_KIND_VIDEO, .init = video_init, .set = video_set, .event = video_event, .drop = free_impl};
+const ak_el_class ak_class_video = {.name = "Video", .kind = AK_KIND_VIDEO, .init = video_init, .set = video_set, .finalize = video_finalize,
+                                    .event = video_event, .drop = video_drop};
 
 static void video_command(ak_view *v, ak_cmd c, const void *args, size_t n) {
-	if (v && v->kind == AK_KIND_VIDEO && !v->dead) ak_batch_command(ak_view_batch(v), v->id, c, args, n);
+	if (video_of(v)) ak_batch_command(ak_view_batch(v), v->id, c, args, n);
 }
 
 void ak_ui_video_play(ak_view *v) { video_command(v, AK_CMD_PLAY, NULL, 0); }
@@ -336,6 +669,36 @@ void ak_ui_video_seek(ak_view *v, double seconds) {
 	memcpy(&bits, &seconds, 8);
 	for (int i = 0; i < 8; i++) b[i] = (uint8_t)(bits >> (8 * i));
 	video_command(v, AK_CMD_SEEK, b, 8);
+}
+
+// ak_ui_video_action sends a VideoAction: picture in picture, full
+// screen, in or out.
+void ak_ui_video_action(ak_view *v, int64_t action) {
+	uint8_t b = (uint8_t)action;
+	if (action >= 0 && action < AK_VIDEO_ACTION_COUNT) video_command(v, AK_CMD_VIDEO_ACTION, &b, 1);
+}
+
+// ak_ui_video_time is a Video's time (which 0) or duration (1), in
+// seconds, tracked; 0 for none (or a duration not known yet). The first
+// read of the time has the host report it as it plays.
+double ak_ui_video_time(ak_view *v, int64_t which) {
+	video_state *s = video_of(v);
+	if (!s) return 0;
+	if (which == 1) {
+		ak_signal_read(&s->dur_sig);
+		return s->duration == s->duration ? s->duration : 0;
+	}
+	ak_signal_read(&s->time_sig);
+	video_tick(v, s);
+	return s->time;
+}
+
+// ak_ui_video_status is a Video's VideoStatus, tracked (idle for none).
+int64_t ak_ui_video_status(ak_view *v) {
+	video_state *s = video_of(v);
+	if (!s) return VS_IDLE;
+	ak_signal_read(&s->status_sig);
+	return s->status;
 }
 
 // ---- WebView ----
@@ -380,9 +743,6 @@ static void web_finalize(ak_view *e) {
 	if (html) send_str(e, AK_PROP_WEB_VIEW_HTML, *html);
 	if (url) send_str(e, AK_PROP_WEB_VIEW_URL, *url);
 }
-
-// A little-endian reader of an event's bytes.
-static ak_str *read_str(ak_reader *r) { return ak_str_span(ak_read_str(r)); }
 
 static void web_event(ak_view *e, const ak_event *ev) {
 	switch (ev->kind) {
@@ -716,6 +1076,9 @@ const ak_shape ak_ui_shape_web_state = {"WebState", 6, web_state_kinds, no_shape
 static const uint8_t download_kinds[] = {AK_K_REF, AK_K_REF, AK_K_REF, AK_K_INT};
 static const char *const download_names[] = {"url", "mime", "filename", "size"};
 const ak_shape ak_ui_shape_web_download = {"WebDownload", 4, download_kinds, no_shapes, download_names, 0, NULL, false, NULL};
+static const uint8_t video_track_kinds[] = {AK_K_REF, AK_K_REF, AK_K_REF};
+static const char *const video_track_names[] = {"id", "label", "language"};
+const ak_shape ak_ui_shape_video_track = {"VideoTrack", 3, video_track_kinds, no_shapes, video_track_names, 0, NULL, false, NULL};
 
 bool ak_ext_reduce_motion(ak_ui_root *r) { return r && r->env.reduce_motion; }
 

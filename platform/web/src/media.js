@@ -11,7 +11,7 @@
 //     frame.
 //   - Symbol: an SF Symbol name drawn as its Material Symbol (the Android
 //     host's, symbols.js), sized by the text props, colored by Color.
-//   - Video: a <video> with the browser's controls.
+//   - Video: a <video> with the browser's controls (video.js).
 //   - WebView: an <iframe> (webview.js). A page of the app's own site (its
 //     assets, HTML, its files) gets all of it; another site's page loads,
 //     and talks to the app only if it cooperates, as browsers keep sites
@@ -23,6 +23,8 @@ import { paths, labels } from "./symbols.js";
 import * as text from "./text.js";
 import * as fs from "./fs.js";
 import { webView } from "./webview.js";
+import { makeVideo } from "./video.js";
+import { decodeStrings } from "./webview-util.js";
 
 const svgNS = "http://www.w3.org/2000/svg";
 
@@ -359,46 +361,7 @@ const symbol = {
   },
 };
 
-const video = {
-  create(h, n) {
-    const el = own(n, document.createElement("div"));
-    el.className = "asuka-video";
-    const v = document.createElement("video");
-    v.playsInline = true;
-    v.controls = true;
-    v.preload = "metadata";
-    el.appendChild(v);
-    n.video = v;
-    v.addEventListener("loadedmetadata", () => {
-      n.natural = [v.videoWidth, v.videoHeight];
-      h.emit(n, Event.Loaded, (id) => Events.loaded(id, v.videoWidth, v.videoHeight));
-    });
-    v.addEventListener("ended", () => h.emit(n, Event.Ended, Events.ended));
-    v.addEventListener("error", () => h.emit(n, Event.Failed, (id) => Events.failed(id, v.error?.message || "the video couldn't play")));
-  },
-  prop(h, n, p, val) {
-    const v = n.video;
-    switch (p) {
-      case P.Video.Source: v.src = sourceURL(h, val); break;
-      case P.Video.Mode: v.style.objectFit = fits[val] || "contain"; break;
-      case P.Video.HideControls: v.controls = !val; break;
-      case P.Video.AutoPlay: v.autoplay = !!val; if (val) v.play().catch(() => {}); break;
-      case P.Video.Loop: v.loop = !!val; break;
-      case P.Video.Muted: v.muted = !!val; break;
-    }
-  },
-  command(h, n, cmd, args) {
-    const v = n.video;
-    switch (cmd) {
-      case Command.Play: v.play().catch(() => {}); return true;
-      case Command.Pause: v.pause(); return true;
-      case Command.Seek: v.currentTime = new Reader(args).f64(); return true;
-    }
-    return false;
-  },
-  destroy(h, n) { n.video.pause(); n.video.removeAttribute("src"); n.video.load(); return false; },
-  measure(h, n) { return n.natural || [0, 0]; },
-};
+const video = makeVideo(sourceURL, own, decodeStrings);
 
 export const mediaKinds = {
   [Kind.Image]: image,

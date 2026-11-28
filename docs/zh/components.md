@@ -628,7 +628,7 @@ component Done {
 
 ## 视频
 
-`Video` 用平台的播放器及其控件播放视频：iOS 上是 `AVPlayerViewController`，Android 上是 Media3 的 ExoPlayer，macOS 上是 `AVPlayerView`，Linux 上是 `GtkVideo`（GStreamer），浏览器中是 `<video>`。Win32 没有视频视图，所以在 Windows 上它是 WebView2 中的 `<video>`，使用 Edge 的播放控件。用 `Ref` 的 `play()`、`pause()` 和 `seek(seconds)` 控制它。
+`Video` 用平台的播放器及其控件播放视频：iOS 上是 `AVPlayerViewController`，Android 上是 Media3 的 ExoPlayer，macOS 上是 `AVPlayerView`，Linux 上是 `GtkVideo`（GStreamer），浏览器中是 `<video>`。Win32 没有视频视图，所以在 Windows 上它是 WebView2 中的 `<video>`，使用 Edge 的播放控件。用 `Ref` 控制它，并读取它播放到了哪里。
 
 ```asuka
 component Clip {
@@ -643,6 +643,7 @@ component Clip {
       loop: true
       radius: 12
     }
+    Text("{v.currentTime.fixed(0)} of {v.duration.fixed(0)} seconds")
     Button("Start over") {
       on press {
         v.seek(0)
@@ -657,9 +658,92 @@ component Clip {
 - 视频的来源是 http(s) URL（视频文件或 HLS 流），或者应用 assets 中的文件。
 - `mode` 为 `.fit`（默认，留出空边）或 `.fill`。
 - `hideControls: true` 隐藏平台的播放控件：播放按钮、进度条、全屏，以及 iOS 上的 AirPlay 和画中画。
+- `poster` 是在视频第一帧出现之前显示的图片（URL 或 asset）。
 - 每次播放到结尾都会运行 `on end`；无法播放时运行 `on error(message)`。
 
 它的尺寸规则和 `Image` 一样：在得知视频尺寸之前是空的（除非样式给了它尺寸），之后保持视频的宽高比。`seek` 的参数是从开头算起的秒数。
+
+### 播放到了哪里
+
+指向 Video 的 `Ref` 可以读取 `currentTime` 和 `duration`（单位是秒；时长未知时 `duration` 为 0，直播流则是无穷大），以及 `status`，一个 `VideoStatus`：`.idle`、`.loading`、`.ready`（已加载、还没播放过）、`.playing`、`.buffering`、`.paused`、`.ended` 或 `.failed`。这些读取会被追踪：显示它们的视图会跟着更新，播放时时间每四分之一秒更新一次。下面这些事件则在变化发生时通知你：
+
+- `on loaded(duration, width, height)`：来源加载完成时触发一次，带上时长和原始尺寸（纯音频时为 0）。
+- `on status(status)`：状态变化时触发。
+- `on timeUpdate(time)`：播放时每隔 `timeInterval` 秒触发一次（默认 0.25），跳转之后也会触发。
+
+只有在有人需要时间时，平台才会上报它：有 `timeUpdate` 处理器，或者读取了 `currentTime`。
+
+### 速度、音量和起始位置
+
+`rate` 是播放速度（1 为正常，2 为两倍速），`volume` 是音量，从 0 到 1（`muted` 让它静音），`startAt` 是每个来源开始播放的秒数。绑定 `rate` 后，用户在平台控件里选的速度也会写回应用：
+
+```asuka
+component Lecture(url: string) {
+  state speed = 1.0
+
+  Column {
+    Video(url) {
+      bind rate: speed
+      startAt: 90
+    }
+    Segmented(["1×", "1.5×", "2×"]) {
+      selected: if speed == 2 { 2 } else if speed == 1.5 { 1 } else { 0 }
+      on change(i) { speed = [1.0, 1.5, 2.0][i] }
+    }
+  }
+}
+```
+
+Linux 的播放器不支持变速：在那里 Video 总是以 1× 播放。
+
+### 字幕和音轨
+
+`on tracks(subtitles, audio)` 在得知轨道时列出它们，每条都是一个 `VideoTrack`，带有 `id`、`label`（与平台菜单中显示的一致）和 `language`。`subtitle` 按 `id` 选择显示的字幕轨（`""` 表示不显示），`audioTrack` 选择播放的音轨；不设置时由平台按用户的设置来选。绑定它们后，用户在控件里的选择也会写回应用。
+
+`subtitleFiles` 把应用自己的 WebVTT 文件（asset、文件或 URL）加入字幕轨，每个是一个 `SubtitleFile(url:, language:, label:)`；它对应轨道的 `id` 就是它的 `url`：
+
+```asuka
+component Talk {
+  state subtitle = ""
+  state tracks: [VideoTrack] = []
+
+  Column {
+    Video("talk.mp4") {
+      subtitleFiles: [SubtitleFile(url: "talk.en.vtt", language: "en", label: "English")]
+      bind subtitle: subtitle
+      on tracks(subs, audio) { tracks = subs }
+    }
+    for t in tracks key t.id {
+      Button(t.label) { on press { subtitle = t.id } }
+    }
+  }
+}
+```
+
+视频流自带的轨道（HLS 流的字幕和备选音轨）在除 Linux 外的所有平台上都会列出；Linux 的播放器没有可选的轨道。WebVTT 文件可以在 Android、Windows 和 Web 上加入；Apple 的播放器只接受视频流自带的字幕，Linux 则都不支持。
+
+### 画中画和全屏
+
+`pictureInPicture: true` 允许 Video 以画中画播放：通过控件上的按钮，以及 `Ref` 的 `enterPictureInPicture()` 和 `exitPictureInPicture()`。设置 `autoPictureInPicture: true` 后，播放中用户离开应用时会自动进入画中画（iOS，以及 Android 12 及更高版本）。`Ref` 的 `enterFullScreen()` 和 `exitFullScreen()` 会用平台的全屏播放器显示它。`on pictureInPictureChange(active)` 和 `on fullScreenChange(active)` 告诉你它们何时开始、何时结束。
+
+- 在 iOS 上，画中画需要应用的音频后台模式，构建时会为带有 `pictureInPicture` 的 Video 的应用自动加上；它还需要设备本身支持（有些模拟器不支持）。
+- 在 Android 上，它是 Activity 的画中画，视频铺满其中；全屏会隐藏系统栏，宽视频会转为横屏。按返回键退出全屏。
+- 在 macOS 上两者都由 `AVPlayerView` 提供；在浏览器中则是 `<video>` 自己的。
+- 在 Windows 上，全屏铺满 Video 自身的视图，没有画中画；Linux 两者都没有（GTK 播放器自带的控件没有画中画）。
+
+在 iOS 上，正在播放的视频会像 AVKit 播放器一样出现在锁屏和控制中心的“正在播放”里。需要更多（封面、自定义命令），或者在其他平台上，请使用 `platform/nowplaying`。
+
+### 需要登录的视频流
+
+`headers` 会随来源的请求发送 HTTP 头，用于需要登录的视频流：
+
+```asuka
+component Lesson(url: string, token: string) {
+  Video(url) { headers: ["Authorization": "Bearer {token}"] }
+}
+```
+
+它们对下一个加载的来源生效。iOS、Android 和 macOS 会发送这些头；浏览器的 `<video>`（Web 和 Windows 上）和 Linux 的播放器不会发送，所以在这些平台上请对 URL 本身签名（在查询参数里带上 token），或者从应用自己的源提供视频。
 
 ## Lottie 动画
 

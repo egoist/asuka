@@ -70,3 +70,20 @@ func TestElementFlags(t *testing.T) {
 		t.Errorf("flags %v", got)
 	}
 }
+
+// A Video that may play in picture in picture gives the app the audio
+// background mode iOS's picture in picture needs; a Video without it,
+// none.
+func TestVideoPictureInPictureMode(t *testing.T) {
+	c := &appConfig{}
+	c.videoExtras(testUses(map[string]bool{"Video": true, "Video.pictureInPicture": true}))
+	c.videoExtras(testUses(map[string]bool{"Video": true, "Video.pictureInPicture": true}))
+	if got := c.plistArrays["UIBackgroundModes"]; len(got) != 1 || got[0] != "audio" {
+		t.Errorf("modes %v", got)
+	}
+	none := &appConfig{}
+	none.videoExtras(testUses(map[string]bool{"Video": true, "Video.loop": true}))
+	if len(none.plistArrays["UIBackgroundModes"]) != 0 {
+		t.Errorf("modes %v", none.plistArrays["UIBackgroundModes"])
+	}
+}

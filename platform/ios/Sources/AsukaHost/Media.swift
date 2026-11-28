@@ -444,7 +444,7 @@ final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
         case (.video, AsukaProp.Video.source):
             (n.view as? AsukaVideoView)?.load(source: v.string)
         case (.video, AsukaProp.Video.mode):
-            (n.view as? AsukaVideoView)?.vc.videoGravity = AsukaImageMode(rawValue: v.enumValue) == .fill ? .resizeAspectFill : .resizeAspect
+            (n.view as? AsukaVideoView)?.setMode(AsukaImageMode(rawValue: v.enumValue) == .fill)
         case (.video, AsukaProp.Video.hideControls):
             (n.view as? AsukaVideoView)?.vc.showsPlaybackControls = !v.bool
         case (.video, AsukaProp.Video.autoPlay):
@@ -453,6 +453,28 @@ final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
             (n.view as? AsukaVideoView)?.loop = v.bool
         case (.video, AsukaProp.Video.muted):
             (n.view as? AsukaVideoView)?.player.isMuted = v.bool
+        case (.video, AsukaProp.Video.rate):
+            (n.view as? AsukaVideoView)?.setRate(v.float)
+        case (.video, AsukaProp.Video.volume):
+            (n.view as? AsukaVideoView)?.setVolume(v.float)
+        case (.video, AsukaProp.Video.headers):
+            if case .bytes(let b) = v { (n.view as? AsukaVideoView)?.setHeaders(b) }
+        case (.video, AsukaProp.Video.poster):
+            (n.view as? AsukaVideoView)?.setPoster(v.string)
+        case (.video, AsukaProp.Video.startAt):
+            (n.view as? AsukaVideoView)?.startAt = v.float
+        case (.video, AsukaProp.Video.timeInterval):
+            (n.view as? AsukaVideoView)?.setInterval(v.float)
+        case (.video, AsukaProp.Video.subtitle):
+            (n.view as? AsukaVideoView)?.setSubtitle(v.string)
+        case (.video, AsukaProp.Video.audioTrack):
+            (n.view as? AsukaVideoView)?.setAudioTrack(v.string)
+        case (.video, AsukaProp.Video.subtitleFiles):
+            break // AVFoundation adds no WebVTT file to a stream or a movie: the docs say so
+        case (.video, AsukaProp.Video.pictureInPicture):
+            (n.view as? AsukaVideoView)?.setPictureInPicture(v.bool)
+        case (.video, AsukaProp.Video.autoPictureInPicture):
+            (n.view as? AsukaVideoView)?.setAutoPictureInPicture(v.bool)
         #endif
         #if ASUKA_WEBVIEW
         case (.webView, AsukaProp.WebView.url):

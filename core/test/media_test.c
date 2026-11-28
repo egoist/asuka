@@ -296,6 +296,290 @@ TEST(video) {
 	done(a);
 }
 
+// ---- A Video's playback (TestVideoPlayback, TestVideoTracks) ----
+
+static void *video_rate;  // a cell: the rate the app binds
+
+static ak_val log_num(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	char s[64];
+	snprintf(s, sizeof s, "%s:%g", (const char *)c->fn, a[0].f);
+	logs(s);
+	return noval();
+}
+
+static ak_val log_int(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	char s[64];
+	snprintf(s, sizeof s, "%s:%lld", (const char *)c->fn, (long long)a[0].i);
+	logs(s);
+	return noval();
+}
+
+static ak_val log_loaded(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(n);
+	char s[64];
+	snprintf(s, sizeof s, "loaded:%g,%g,%g", a[0].f, a[1].f, a[2].f);
+	logs(s);
+	return noval();
+}
+
+static ak_val log_tracks(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(n);
+	char s[160] = "tracks:";
+	for (int k = 0; k < 2; k++) {
+		const ak_arr *ts = a[k].p;
+		for (uint32_t i = 0; ts && i < ts->len; i++) {
+			const ak_struct *t = ak_arr_vals(ts)[i].p;
+			size_t l = strlen(s);
+			snprintf(s + l, sizeof s - l, "%s%s(%s,%s)", i ? "," : "", ((ak_str *)t->f[0].p)->data, ((ak_str *)t->f[1].p)->data,
+			         ((ak_str *)t->f[2].p)->data);
+		}
+		if (!k) strncat(s, "/", sizeof s - strlen(s) - 1);
+	}
+	logs(s);
+	return noval();
+}
+
+static ak_val write_rate(ak_closure *c, ak_val *a, uint32_t n) {
+	ak_vm_cell_set(video_rate, a[0]);
+	return log_num(c, a, n);
+}
+
+static ak_val video_clock(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	char s[64];
+	snprintf(s, sizeof s, "%g / %g %lld", ak_ui_video_time(video, 0), ak_ui_video_time(video, 1), (long long)ak_ui_video_status(video));
+	return (ak_val){.p = ak_str_c(s)};
+}
+
+static const uint8_t subfile_kinds[] = {AK_K_REF, AK_K_REF, AK_K_REF};
+static const ak_shape subfile_shape = {"SubtitleFile", 3, subfile_kinds, no_shapes, NULL, 0, NULL, false, NULL};
+
+static ak_val video_play_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	ak_view *v = ak_ui_new(AK_EL_VIDEO);
+	set_str(v, AK_KEY_VIDEO_SOURCE, "https://example.com/a.m3u8");  // first: sent after what applies to it
+	ak_map *m = ak_map_new(AK_K_REF, true, AK_K_REF, NULL);
+	ak_map_set(&m, (ak_val){.p = ak_str_c("Authorization")}, (ak_val){.p = ak_str_c("Bearer x")});
+	set(v, AK_KEY_VIDEO_HEADERS, (ak_val){.p = m});
+	set_f(v, AK_KEY_VIDEO_START_AT, 30);
+	ak_arr *files = ak_arr_new(AK_K_REF, &subfile_shape, 1);
+	ak_struct *sf = ak_struct_new(&subfile_shape);
+	sf->f[0].p = ak_str_c("https://example.com/fr.vtt");
+	sf->f[1].p = ak_str_c("fr");
+	sf->f[2].p = ak_str_c("Français");
+	ak_arr_push(&files, (ak_val){.p = sf});
+	set(v, AK_KEY_VIDEO_SUBTITLE_FILES, (ak_val){.p = files});
+	set_str(v, AK_KEY_VIDEO_SUBTITLE, "en");
+	set_i(v, AK_KEY_VIDEO_PICTURE_IN_PICTURE, 1);
+	bind(v, AK_KEY_VIDEO_RATE, read_cell, video_rate);
+	on(v, AK_EV_VIDEO_RATE_CHANGE, write_rate, "rate");
+	on(v, AK_EV_VIDEO_STATUS, log_int, "status");
+	on(v, AK_EV_VIDEO_LOADED, log_loaded, NULL);
+	on(v, AK_EV_VIDEO_TIME_UPDATE, log_num, "time");
+	on(v, AK_EV_VIDEO_PICTURE_IN_PICTURE_CHANGE, log_int, "pip");
+	on(v, AK_EV_VIDEO_TRACKS, log_tracks, NULL);
+	on(v, AK_EV_VIDEO_SUBTITLE_CHANGE, log_str, "sub");
+	video = ak_ui_ref(v);
+	add(col, v);
+	ak_view *t = ak_ui_new(AK_EL_TEXT);
+	bind(t, AK_KEY_TEXT_TEXT, video_clock, NULL);
+	add(col, t);
+	return (ak_val){.p = col};
+}
+
+// op_index is where the first SetProp of p on view id is in the host's
+// ops, -1 if none.
+static int op_index(ak_fake *f, ak_id id, ak_prop p) {
+	for (uint32_t i = 0; i < ak_fake_op_count(f); i++) {
+		ak_op op = ak_fake_op_at(f, i);
+		if (op.code == AK_OP_SET_PROP && op.id == id && op.prop == p) return (int)i;
+	}
+	return -1;
+}
+
+enum { V_READY = 1, V_PLAYING = 2, V_BUFFERING = 4, V_ENDED = 8, V_PIP = 16 };
+
+// A Video's props go before its source, which they apply to; the host's
+// reports become its status, loaded once, the time at most every
+// timeInterval while it plays, and the user's choices in its controls
+// (not the app's, coming back).
+TEST(video_playback) {
+	log_buf[0] = 0;
+	video_rate = ak_vm_cell_new((ak_val){.f = 1}, AK_K_FLOAT, NULL).p;
+	ak_uitest *a = mount(video_play_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *v = nth(a, AK_KIND_VIDEO, 0), *t = nth(a, AK_KIND_TEXT, 0);
+	REQUIRE(v && t);
+	int src = op_index(f, v->id, AK_PROP_VIDEO_SOURCE);
+	CHECK(src > op_index(f, v->id, AK_PROP_VIDEO_HEADERS) && src > op_index(f, v->id, AK_PROP_VIDEO_START_AT) &&
+	      src > op_index(f, v->id, AK_PROP_VIDEO_SUBTITLE_FILES) && op_index(f, v->id, AK_PROP_VIDEO_HEADERS) >= 0);
+	CHECK(!has_prop(v, AK_PROP_VIDEO_RATE) && !has_prop(v, AK_PROP_VIDEO_VOLUME));  // their defaults
+	CHECK(ak_fake_float(v, AK_PROP_VIDEO_TIME_INTERVAL) == 0.25 && ak_fake_float(v, AK_PROP_VIDEO_START_AT) == 30);
+	CHECK(ak_span_eqc(ak_fake_string(v, AK_PROP_VIDEO_SUBTITLE), "en") && ak_fake_bool(v, AK_PROP_VIDEO_PICTURE_IN_PICTURE));
+	ak_str_vec hs = {0};
+	ak_fake_strings(v, AK_PROP_VIDEO_HEADERS, &hs);
+	REQUIRE(hs.len == 2);
+	CHECK(ak_span_eqc(hs.data[0], "Authorization") && ak_span_eqc(hs.data[1], "Bearer x"));
+	ak_vec_free(&hs);
+	ak_span sfb = ak_fake_string(v, AK_PROP_VIDEO_SUBTITLE_FILES);  // u32 count (3), then a URL, a language, a label
+	CHECK(sfb.len == 4 + 4 + 26 + 4 + 2 + 4 + 9 && sfb.p[0] == 3);
+	check_text(t, "0 / 0 1");  // loading
+
+	ak_fake_video_state(f, v, 0, 0, NAN, 1, 0, 0);  // loading: told as the host says so
+	ak_fake_video_state(f, v, V_READY, 30, 600, 1, 1920, 1080);
+	ak_fake_video_state(f, v, V_READY | V_PLAYING | V_BUFFERING, 30, 600, 1, 1920, 1080);
+	ak_fake_video_state(f, v, V_READY | V_PLAYING, 30, 600, 1, 1920, 1080);
+	CHECK_EQ_STR(log_buf, "status:1|loaded:600,1920,1080|status:2|time:30|status:4|status:3");
+	log_buf[0] = 0;
+	// Every quarter second while it plays: the reports between are dropped.
+	double ticks[] = {30.1, 30.25, 30.3, 30.5, 30.75};
+	for (size_t i = 0; i < AK_LEN(ticks); i++) ak_fake_video_state(f, v, V_READY | V_PLAYING, ticks[i], 600, 1, 1920, 1080);
+	CHECK_EQ_STR(log_buf, "time:30.25|time:30.5|time:30.75");
+	ak_ui_flush();
+	check_text(t, "30.75 / 600 3");
+	log_buf[0] = 0;
+	// The user picks twice the speed: written to the app's state, not sent back.
+	ak_fake_reset(f);
+	ak_fake_video_state(f, v, V_READY | V_PLAYING, 31, 600, 2, 1920, 1080);
+	ak_ui_flush();
+	CHECK(ak_vm_cell_get(video_rate, false).f == 2 && op_index(f, v->id, AK_PROP_VIDEO_RATE) < 0);
+	// Twice the speed, half as many: its quarter second is half a second of the video's.
+	ak_fake_video_state(f, v, V_READY | V_PLAYING, 31.2, 600, 2, 1920, 1080);
+	ak_fake_video_state(f, v, V_READY | V_PLAYING, 31.5, 600, 2, 1920, 1080);
+	CHECK_EQ_STR(log_buf, "rate:2|time:31|time:31.5");
+	log_buf[0] = 0;
+	// The app's own speed is sent, and not told back as the user's.
+	ak_vm_cell_set(video_rate, (ak_val){.f = 0.5});
+	ak_ui_flush();
+	CHECK(ak_fake_float(v, AK_PROP_VIDEO_RATE) == 0.5);
+	ak_fake_video_state(f, v, V_READY | V_PLAYING, 31.6, 600, 0.5f, 1920, 1080);
+	// Paused, any move is told (a seek); picture in picture in and out.
+	ak_fake_video_state(f, v, V_READY, 31.6, 600, 0.5f, 1920, 1080);
+	ak_fake_video_state(f, v, V_READY, 31.6, 600, 0.5f, 1920, 1080);
+	ak_fake_video_state(f, v, V_READY, 100, 600, 0.5f, 1920, 1080);
+	ak_fake_video_state(f, v, V_READY | V_PIP, 100, 600, 0.5f, 1920, 1080);
+	ak_fake_video_state(f, v, V_READY, 100, 600, 0.5f, 1920, 1080);
+	ak_fake_video_state(f, v, V_READY | V_ENDED, 600, 600, 0.5f, 1920, 1080);
+	CHECK_EQ_STR(log_buf, "time:31.6|status:5|time:100|pip:1|pip:0|status:6|time:600");
+	log_buf[0] = 0;
+	// Commands.
+	ak_fake_reset(f);
+	ak_ui_video_action(video, AK_VIDEO_ACTION_ENTER_PICTURE_IN_PICTURE);
+	ak_ui_video_action(video, 9);  // none such
+	ak_ui_flush();
+	ak_fake_index_vec cmds = {0};
+	ak_fake_commands(f, AK_CMD_VIDEO_ACTION, &cmds);
+	REQUIRE(cmds.len == 1);
+	CHECK(ak_fake_op_at(f, cmds.data[0]).value.s.len == 1 && ak_fake_op_at(f, cmds.data[0]).value.s.p[0] == AK_VIDEO_ACTION_ENTER_PICTURE_IN_PICTURE);
+	ak_vec_free(&cmds);
+	// A failure, then a new source: it loads again, and says so once the host does.
+	dispatch(a, (ak_event){.id = v->id, .kind = AK_EVENT_FAILED, .s = AK_STR("nope")});
+	set_str(video, AK_KEY_VIDEO_SOURCE, "https://example.com/b.mp4");
+	ak_ui_flush();
+	check_text(t, "0 / 0 1");
+	ak_fake_video_state(f, v, 0, 0, NAN, 0.5f, 0, 0);
+	ak_fake_video_state(f, v, V_READY, 0, INFINITY, 0.5f, 0, 0);  // a live stream, sound alone
+	CHECK_EQ_STR(log_buf, "status:7|status:1|loaded:inf,0,0|status:2|time:0");
+	ak_release(video);
+	done(a);
+	ak_release(video_rate);
+}
+
+static const ak_fake_track tracks1[] = {
+	{0, true, "en", "English", "en"},
+	{0, false, "https://example.com/fr.vtt", "Français", "fr"},
+	{1, true, "a1", "Main", "en"},
+};
+static const ak_fake_track tracks2[] = {
+	{0, false, "en", "English", "en"},
+	{0, true, "https://example.com/fr.vtt", "Français", "fr"},
+	{1, true, "a1", "Main", "en"},
+};
+
+// The tracks are told as they're known and as they change, not again for
+// a choice; a choice is told when it's the user's.
+TEST(video_tracks) {
+	log_buf[0] = 0;
+	video_rate = ak_vm_cell_new((ak_val){.f = 1}, AK_K_FLOAT, NULL).p;
+	ak_uitest *a = mount(video_play_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *v = nth(a, AK_KIND_VIDEO, 0);
+	REQUIRE(v);
+	ak_fake_video_tracks(f, v, tracks1, 0);  // none known yet, none chosen: the app's en waits
+	ak_fake_video_tracks(f, v, tracks1, 3);  // en, the app's, applied
+	ak_fake_video_tracks(f, v, tracks1, 3);
+	CHECK_EQ_STR(log_buf, "tracks:/|tracks:en(English,en),https://example.com/fr.vtt(Français,fr)/a1(Main,en)");
+	log_buf[0] = 0;
+	ak_fake_reset(f);
+	ak_fake_video_tracks(f, v, tracks2, 3);  // the user's French
+	ak_fake_video_tracks(f, v, tracks1, 1);  // no subtitles: a list of one
+	CHECK_EQ_STR(log_buf, "sub:https://example.com/fr.vtt|tracks:en(English,en)/");  // en again: the app's
+	ak_ui_flush();
+	CHECK(op_index(f, v->id, AK_PROP_VIDEO_SUBTITLE) < 0);
+	ak_release(video);
+	done(a);
+	ak_release(video_rate);
+}
+
+static ak_val count_tick(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(a), AK_UNUSED(n);
+	(*(int *)c->fn)++;
+	return noval();
+}
+
+static ak_val video_tick_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *v = ak_ui_new(AK_EL_VIDEO);
+	set_str(v, AK_KEY_VIDEO_SOURCE, "https://example.com/a.mp4");
+	set_f(v, AK_KEY_VIDEO_TIME_INTERVAL, 1);
+	on(v, AK_EV_VIDEO_TIME_UPDATE, count_tick, c->fn);
+	return (ak_val){.p = v};
+}
+
+// A Video's time, while it plays, allocates nothing: the host's reports,
+// timeUpdate's calls. Without a listener or a read, the host isn't asked
+// for it.
+TEST(video_ticks_allocate_nothing) {
+	int calls = 0;
+	ak_uitest *a = mount(video_tick_app, &calls);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *v = nth(a, AK_KIND_VIDEO, 0);
+	REQUIRE(v);
+	CHECK(ak_fake_float(v, AK_PROP_VIDEO_TIME_INTERVAL) == 1);
+	uint8_t p[29] = {V_READY | V_PLAYING};
+	float fs[3] = {1, 640, 360};
+	memcpy(p + 17, fs, 12);
+	ak_event ev = {.id = v->id, .kind = AK_EVENT_VIDEO_STATE, .s = {(const char *)p, sizeof p}};
+	for (int i = 0; i < 4; i++) {  // warm up
+		double t = i * 0.25;
+		memcpy(p + 1, &t, 8);
+		ak_fake_dispatch(f, &ev);
+	}
+	int warm = calls;
+	uint64_t before = ak_alloc_count;
+	for (int i = 4; i < 404; i++) {
+		double t = i * 0.25;  // a report each quarter second, of a second's interval: every other one told
+		memcpy(p + 1, &t, 8);
+		ak_fake_dispatch(f, &ev);
+	}
+	CHECK_EQ_INT(ak_alloc_count - before, 0);
+	CHECK_EQ_INT(calls - warm, 200);
+	done(a);
+
+	ak_uitest *b = mount(video_app, NULL);  // no timeUpdate, no read
+	ak_fake_view *w = nth(b, AK_KIND_VIDEO, 0);
+	REQUIRE(w);
+	CHECK(!has_prop(w, AK_PROP_VIDEO_TIME_INTERVAL) && ak_fake_listens(w, AK_EVENT_VIDEO_STATE));
+	ak_ui_video_time(video, 0);
+	ak_ui_flush();
+	CHECK(ak_fake_float(w, AK_PROP_VIDEO_TIME_INTERVAL) == 0.25);
+	ak_release(video);
+	done(b);
+}
+
 // ---- WebView (TestWebView, TestWebViewExtras) ----
 
 static ak_view *web;

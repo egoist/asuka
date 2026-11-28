@@ -1,0 +1,169 @@
+// Video: a stream in the platform's player, and the app's own controls
+// beside it: its time and duration as it plays, its speed, its subtitle
+// tracks (a stream's own, and a WebVTT file of the app's), picture in
+// picture and full screen.
+//
+//   asuka dev --platform ios examples/video
+//   asuka dev --platform android examples/video
+
+struct Clip {
+  title: string
+  url: string
+  poster: string = ""
+  subtitles: [SubtitleFile] = []
+}
+
+let clips = [
+  Clip(
+    title: "Stream",
+    url: "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8",
+  ),
+  Clip(
+    title: "File",
+    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    poster: "flower.jpg",
+    subtitles: [SubtitleFile(url: "flower.vtt", language: "en", label: "English (WebVTT)")],
+  ),
+]
+
+let speeds = [0.5, 1.0, 1.5, 2.0]
+
+app {
+  Stack { Player() }
+}
+
+fn describe(s: VideoStatus) -> string = match s {
+  .idle => "No video"
+  .loading => "Loading"
+  .ready => "Ready"
+  .playing => "Playing"
+  .buffering => "Buffering"
+  .paused => "Paused"
+  .ended => "Ended"
+  .failed => "Can't play"
+}
+
+/// m:ss of seconds.
+fn clock(seconds: float) -> string {
+  if seconds > 1e9 {
+    return "live"
+  }
+  let s = seconds.int()
+  let rest = s % 60
+  return "{s / 60}:{if rest < 10 { "0" } else { "" }}{rest}"
+}
+
+screen Player {
+  state clip = 0
+  state speed = 1.0
+  state subtitle = ""
+  state subtitles: [VideoTrack] = []
+  state pip = false
+  state ticks = 0
+  state problem = ""
+
+  let video = Ref()
+
+  title: "Video"
+
+  Scroll {
+    grow: 1
+    SafeArea {
+      padding: 16
+      gap: 12
+      Segmented(clips.map(c => c.title)) { bind selected: clip }
+      Video(clips[clip].url) {
+        ref: video
+        autoPlay: true
+        pictureInPicture: true
+        poster: clips[clip].poster
+        subtitleFiles: clips[clip].subtitles
+        bind rate: speed
+        bind subtitle: subtitle
+        aspectRatio: 16.0 / 9
+        radius: 12
+        background: .secondaryBackground
+        on timeUpdate(t) { ticks += 1 }
+        on tracks(subs, audio) { subtitles = subs }
+        on pictureInPictureChange(active) { pip = active }
+        on error(m) { problem = m }
+      }
+      Text("{clock(video.currentTime)} / {clock(video.duration)} · {describe(video.status)}") {
+        font: .headline
+        label: "Time"
+      }
+      if !problem.isEmpty() {
+        Text(problem) { color: .red }
+      }
+      Row {
+        gap: 8
+        Button(if video.status == .playing || video.status == .buffering { "Pause" } else { "Play" }) {
+          variant: .filled
+          on press {
+            if video.status == .playing || video.status == .buffering {
+              video.pause()
+            } else {
+              video.play()
+            }
+          }
+        }
+        Button("−10 s") { on press { video.seek(video.currentTime - 10) } }
+        Button("+10 s") { on press { video.seek(video.currentTime + 10) } }
+      }
+      Text("Speed") { font: .subheadline }
+      Row {
+        gap: 8
+        for (i, s) in speeds.enumerated() key i {
+          Button("{s}×") {
+            variant: if s == speed { .filled } else { .gray }
+            on press { speed = s }
+          }
+        }
+      }
+      Text("Subtitles") { font: .subheadline }
+      Row {
+        gap: 8
+        wrap: true
+        Button("Off") {
+          variant: if subtitle.isEmpty() { .filled } else { .gray }
+          on press { subtitle = "" }
+        }
+        for t in subtitles key t.id {
+          Button(if t.label.isEmpty() { t.language } else { t.label }) {
+            variant: if t.id == subtitle { .filled } else { .gray }
+            on press { subtitle = t.id }
+          }
+        }
+      }
+      Row {
+        gap: 8
+        Button(if pip { "Leave picture in picture" } else { "Picture in picture" }) {
+          variant: .tinted
+          on press {
+            if pip {
+              video.exitPictureInPicture()
+            } else {
+              video.enterPictureInPicture()
+            }
+          }
+        }
+        Button("Full screen") {
+          variant: .tinted
+          on press { video.enterFullScreen() }
+        }
+      }
+      Text("{ticks} time updates") {
+        font: .footnote
+        color: .secondaryLabel
+      }
+    }
+  }
+}
+
+test "plays, and shows its time" {
+  let app = mount(Player())
+  app.expect("0:00 / 0:00 · Loading", "Play", "Off")
+  app.tap("2×")
+  app.tap("File")
+  app.expect("0:00 / 0:00 · Loading")
+}

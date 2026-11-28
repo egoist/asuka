@@ -45,7 +45,7 @@ import AsukaOps
             let pb = NSPasteboard.general
             pb.clearContents()
             pb.setString(String(decoding: args, as: UTF8.self), forType: .string)
-        case .play, .pause, .seek:
+        case .play, .pause, .seek, .videoAction:
             videoCommand(n, c, Array(args))
         case .eval, .webNavigate:
             webCommand(n, c, Array(args))

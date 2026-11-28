@@ -628,7 +628,7 @@ iOS と macOS では Core Graphics、Android では `Canvas`、ブラウザー�
 
 ## 動画
 
-`Video` は、プラットフォームのプレイヤーとそのコントロールで動画を再生します。iOS では `AVPlayerViewController`、Android では Media3 の ExoPlayer、macOS では `AVPlayerView`、Linux では `GtkVideo`（GStreamer）、ブラウザーでは `<video>` です。Win32 には動画のビューがないため、Windows では WebView2 の中の `<video>` になり、Edge のコントロールが表示されます。再生は `Ref` の `play()`、`pause()`、`seek(seconds)` で操作します。
+`Video` は、プラットフォームのプレイヤーとそのコントロールで動画を再生します。iOS では `AVPlayerViewController`、Android では Media3 の ExoPlayer、macOS では `AVPlayerView`、Linux では `GtkVideo`（GStreamer）、ブラウザーでは `<video>` です。Win32 には動画のビューがないため、Windows では WebView2 の中の `<video>` になり、Edge のコントロールが表示されます。`Ref` で操作し、どこまで再生したかを読み取ります。
 
 ```asuka
 component Clip {
@@ -643,6 +643,7 @@ component Clip {
       loop: true
       radius: 12
     }
+    Text("{v.currentTime.fixed(0)} of {v.duration.fixed(0)} seconds")
     Button("Start over") {
       on press {
         v.seek(0)
@@ -657,9 +658,92 @@ component Clip {
 - 動画のソースは、http(s) の URL（ファイルや HLS ストリーム）か、アプリのアセット内のファイルです。
 - `mode` は `.fit`（余白を付けて全体を収める。デフォルト）か `.fill` です。
 - `hideControls: true` は、プラットフォームのコントロール（再生、タイムライン、フルスクリーン、iOS では AirPlay とピクチャ・イン・ピクチャ）を隠します。
+- `poster` は、動画の最初のフレームが出るまで表示する画像（URL かアセット）です。
 - `on end` は最後まで再生するたびに実行され、`on error(message)` は再生できないときに実行されます。
 
 サイズの決まり方は `Image` と同じです。スタイルでサイズを指定しない限り、動画のサイズがわかるまでは空で、その後は動画の縦横比を保ちます。`seek` には先頭からの秒数を渡します。
+
+### 再生位置と状態
+
+Video を持つ `Ref` からは、`currentTime` と `duration`（秒。長さがわかるまで `duration` は 0、ライブ配信では無限大）、そして `status` を読み取れます。`status` は `VideoStatus` で、`.idle`、`.loading`、`.ready`（読み込み済みで、まだ再生していない）、`.playing`、`.buffering`、`.paused`、`.ended`、`.failed` のいずれかです。これらの読み取りは追跡されるので、表示しているビューは自動で更新され、再生中の時刻は 0.25 秒ごとに進みます。同じことは、変化したときにイベントでも知らされます。
+
+- `on loaded(duration, width, height)`：ソースの読み込みが終わったときに一度だけ。長さと本来のサイズ（音声だけなら 0）が渡されます。
+- `on status(status)`：状態が変わるたびに。
+- `on timeUpdate(time)`：再生中は `timeInterval` 秒ごと（デフォルトは 0.25）、シークの後にも。
+
+時刻は、それを必要とするものがあるときだけ報告されます。`timeUpdate` のハンドラーがあるか、`currentTime` を読んだときです。
+
+### 速度、音量、開始位置
+
+`rate` は再生速度（1 が通常、2 で 2 倍速）、`volume` は 0 から 1 までの音量（`muted` で消音）、`startAt` はソースごとに再生を始める秒数です。`rate` をバインドすると、ユーザーがプラットフォームのコントロールで選んだ速度もアプリに書き戻されます。
+
+```asuka
+component Lecture(url: string) {
+  state speed = 1.0
+
+  Column {
+    Video(url) {
+      bind rate: speed
+      startAt: 90
+    }
+    Segmented(["1×", "1.5×", "2×"]) {
+      selected: if speed == 2 { 2 } else if speed == 1.5 { 1 } else { 0 }
+      on change(i) { speed = [1.0, 1.5, 2.0][i] }
+    }
+  }
+}
+```
+
+Linux のプレイヤーは速度を変えられないため、そこでは常に 1× で再生されます。
+
+### 字幕と音声トラック
+
+`on tracks(subtitles, audio)` は、わかった時点でトラックを一覧にして渡します。各トラックは `VideoTrack` で、`id`、`label`（プラットフォームのメニューに出る名前）、`language` を持ちます。`subtitle` は表示する字幕トラックを `id` で選び（`""` で字幕なし）、`audioTrack` は再生する音声トラックを選びます。指定しなければ、ユーザーの設定に従ってプラットフォームが選びます。バインドすれば、ユーザーがコントロールで選んだものも書き戻されます。
+
+`subtitleFiles` は、アプリが持つ WebVTT ファイル（アセット、ファイル、URL）を字幕トラックに加えます。それぞれ `SubtitleFile(url:, language:, label:)` で、そのトラックの `id` は `url` になります。
+
+```asuka
+component Talk {
+  state subtitle = ""
+  state tracks: [VideoTrack] = []
+
+  Column {
+    Video("talk.mp4") {
+      subtitleFiles: [SubtitleFile(url: "talk.en.vtt", language: "en", label: "English")]
+      bind subtitle: subtitle
+      on tracks(subs, audio) { tracks = subs }
+    }
+    for t in tracks key t.id {
+      Button(t.label) { on press { subtitle = t.id } }
+    }
+  }
+}
+```
+
+ストリーム自体が持つトラック（HLS の字幕や別の音声）は、Linux 以外のすべてのプラットフォームで一覧に出ます。Linux のプレイヤーには選べるトラックがありません。WebVTT ファイルを加えられるのは Android、Windows、Web です。Apple のプレイヤーはストリーム自体の字幕だけを扱い、Linux はどちらも扱いません。
+
+### ピクチャ・イン・ピクチャとフルスクリーン
+
+`pictureInPicture: true` にすると、Video をピクチャ・イン・ピクチャで再生できるようになります。コントロールのボタンのほか、`Ref` の `enterPictureInPicture()` と `exitPictureInPicture()` で操作します。`autoPictureInPicture: true` にすると、再生中にユーザーがアプリを離れたとき自動でピクチャ・イン・ピクチャになります（iOS と Android 12 以降）。`Ref` の `enterFullScreen()` と `exitFullScreen()` は、プラットフォームのフルスクリーンプレイヤーで表示します。どちらも、始まりと終わりは `on pictureInPictureChange(active)` と `on fullScreenChange(active)` で知らされます。
+
+- iOS のピクチャ・イン・ピクチャには、アプリのオーディオのバックグラウンドモードが必要です。`pictureInPicture` を指定した Video を持つアプリには、ビルドが自動で加えます。また、対応している端末が必要です（対応していないシミュレーターもあります）。
+- Android ではアクティビティのピクチャ・イン・ピクチャになり、動画がその全体に表示されます。フルスクリーンではシステムバーを隠し、横長の動画なら横向きになります。戻る操作でフルスクリーンを抜けます。
+- macOS ではどちらも `AVPlayerView` のもの、ブラウザーでは `<video>` のものです。
+- Windows ではフルスクリーンは Video 自身のビューいっぱいに広がるもので、ピクチャ・イン・ピクチャはありません。Linux にはどちらもありません（GTK のプレイヤーのコントロールにピクチャ・イン・ピクチャはありません）。
+
+iOS では、再生中の動画が AVKit のプレイヤーと同じように、ロック画面とコントロールセンターの「再生中」に表示されます。アートワークや独自のコマンドが必要な場合や、ほかのプラットフォームでは `platform/nowplaying` を使ってください。
+
+### 認証が必要なストリーム
+
+`headers` は、ソースへのリクエストに HTTP ヘッダーを付けます。ログインが必要なストリームに使います。
+
+```asuka
+component Lesson(url: string, token: string) {
+  Video(url) { headers: ["Authorization": "Bearer {token}"] }
+}
+```
+
+ヘッダーは次に読み込むソースから適用されます。iOS、Android、macOS は送りますが、ブラウザーの `<video>`（Web と Windows）と Linux のプレイヤーは送りません。そうしたプラットフォームでは URL 自体に署名する（クエリにトークンを入れる）か、アプリと同じオリジンから動画を配信してください。
 
 ## Lottie アニメーション
 

@@ -1478,6 +1478,8 @@ holds (see "Refs"):
 | Source | Lowered |
 |---|---|
 | `video.play()`, `.pause()`, `.seek(s)` | `ui.play(v)`, `ui.pause(v)`, `ui.seek(v, s)` |
+| `video.currentTime`, `.duration`, `.status` | `ui.video_time(v, 0)`, `ui.video_time(v, 1)`, `ui.video_status(v)`: tracked reads of what the host reported (VideoState); the first read of the time has the host report it every timeInterval while playing |
+| `video.enterPictureInPicture()`, `.exitPictureInPicture()`, `.enterFullScreen()`, `.exitFullScreen()` | `ui.video_action(v, 0..3)` (Method.Consts): the VideoAction command |
 | `web.run(js)`, `.goBack()`, `.goForward()`, `.reload()`, `.stopLoading()` | `ui.web_eval(v, js)`, `ui.web_navigate(v, 0..3)` (Method.Consts) |
 | `try await web.eval(js)` | `ui.web_eval_result(v, js)`: AWAIT on the future |
 | `field.insert(s)`, `.format(.bold, on)`, `.toggleFormat(.bold)`, `.setLink(url)` | `ui.insert_text`, `ui.format(v, f, on)`, `ui.toggle_format(v, f)`, `ui.set_link` |

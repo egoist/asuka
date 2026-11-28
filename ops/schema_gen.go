@@ -50,7 +50,7 @@ const (
 	KindProgress Kind = 24
 	// KindShape: a drawn outline (CAShapeLayer; a Path on Android's canvas), filled and/or stroked.
 	KindShape Kind = 25
-	// KindVideo: a video (AVPlayerViewController, Media3's PlayerView). Loaded reports its natural size once known, Ended its end (each time, looping), Failed an error; the Play, Pause and Seek commands drive it.
+	// KindVideo: a video (AVPlayerViewController, Media3's PlayerView). Loaded reports its natural size once known, VideoState its playback, VideoTracks its subtitle and audio tracks, Ended its end (each time, looping), Failed an error; the Play, Pause, Seek and VideoAction commands drive it.
 	KindVideo Kind = 26
 	// KindWebView: a web page (WKWebView, android.webkit.WebView). Navigated reports each page loaded (its URL), Failed a page that couldn't load, Message what the page posts with window.asuka.postMessage(text), WebState its URL, title, progress and history, Download a response the page can't show (a file to save), NewWindow a page it would open in a new window (window.open, target=_blank: without a listener, it loads in this view), Request each request (with Requests); the Eval command runs script in it, WebNavigate goes back, forward, reloads or stops.
 	KindWebView Kind = 27
@@ -451,6 +451,28 @@ const (
 	PropVideoAutoPlay     PropID = 67
 	PropVideoLoop         PropID = 68
 	PropVideoMuted        PropID = 69
+	// PropVideoRate: the playback speed (1: normal), kept while paused; the user's choice in the platform's controls is reported with VideoState.
+	PropVideoRate PropID = 70
+	// PropVideoVolume: its sound's level, 0 to 1 (the system's volume scales it).
+	PropVideoVolume PropID = 71
+	// PropVideoHeaders: HTTP headers sent with the source's requests (an authenticated stream's): u32 count, then name and value in turn, u32-length strings (count is twice the headers'); sent before Source, applying to the next one.
+	PropVideoHeaders PropID = 72
+	// PropVideoPoster: an image shown until the video's first frame: an http(s) URL, a file or an asset.
+	PropVideoPoster PropID = 73
+	// PropVideoStartAt: seconds into the video it starts at, as each Source loads; sent before Source.
+	PropVideoStartAt PropID = 74
+	// PropVideoTimeInterval: while it plays, the host sends VideoState about this often (seconds) with the time; 0 (the default): only as its state changes.
+	PropVideoTimeInterval PropID = 75
+	// PropVideoSubtitle: the subtitle track shown, by the id VideoTracks gave it (or a SubtitleFiles file's URL), kept until the tracks arrive; empty: none. Not sent: the platform's choice.
+	PropVideoSubtitle PropID = 76
+	// PropVideoAudioTrack: the audio track played, by the id VideoTracks gave it, kept until the tracks arrive. Not sent: the platform's choice.
+	PropVideoAudioTrack PropID = 77
+	// PropVideoSubtitleFiles: WebVTT files added as subtitle tracks (Android, Windows, the web; Apple's players and GTK's take none): u32 count (three times the files), then per file a u32-length URL (an http(s) URL, a file or an asset), language (BCP 47) and label; sent before Source. A file's track's id is its URL.
+	PropVideoSubtitleFiles PropID = 78
+	// PropVideoPictureInPicture: it may play in picture in picture: the controls' button, and the VideoAction command.
+	PropVideoPictureInPicture PropID = 79
+	// PropVideoAutoPictureInPicture: it goes into picture in picture as the app goes to the background while it plays (iOS, Android 12 and later; with PictureInPicture).
+	PropVideoAutoPictureInPicture PropID = 80
 )
 
 // WebView props.
@@ -586,7 +608,7 @@ const (
 
 var commonProps = [...]propInfo{{}, {"Background", TColor}, {"CornerRadius", TFloat}, {"BorderWidth", TFloat}, {"BorderColor", TColor}, {"Opacity", TFloat}, {"Hidden", TBool}, {"Clip", TBool}, {"A11yLabel", TString}, {"A11yHint", TString}, {"A11yRole", TEnum}, {"A11yActions", TBytes}, {"A11yAdjustable", TBool}, {"A11yHidden", TBool}, {"Color", TColor}, {"TextStyle", TEnum}, {"FontSize", TFloat}, {"FontWeight", TEnum}, {"TextAlign", TEnum}, {"LineLimit", TInt}, {"Disabled", TBool}, {"Menu", TBytes}, {"MenuTrigger", TEnum}, {"Transform", TBytes}, {"Shadow", TBytes}, {"Gradient", TBytes}, {"Transition", TBytes}, {"Material", TEnum}, {"FontFamily", TString}, {"SwipeActions", TBytes}, {"LayoutDirection", TEnum}, {"ContentInset", TEdges}, {"LeadingSwipeActions", TBytes}, {"Selected", TBool}, {"Match", TString}, {"InterceptBack", TBool}, {"Tooltip", TString}, {"Keys", TBytes}, {"Focusable", TBool}, {"NoFocusOnPress", TBool}, {"NoFocusRing", TBool}, {"FocusTrap", TBool}, {"A11yChecked", TEnum}, {"A11yExpanded", TEnum}, {"A11ySelected", TBool}, {"A11yValue", TString}, {"A11yRange", TBytes}, {"A11yModal", TBool}, {"A11yControls", TInt}, {"A11yLabelledBy", TInt}, {"A11yDescribedBy", TInt}}
 
-var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}, {"TakesClicks", TBool}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}, {"EdgeEffect", TEnum}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"EdgeEffect", TEnum}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TInt}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}, {{"Root", TInt}, {"Anchor", TInt}, {"Modal", TBool}}}
+var kindProps = [...][]propInfo{nil, {{"DropAccept", TBytes}, {"DragItems", TBytes}, {"TakesClicks", TBool}}, {{"Text", TString}}, {{"Title", TString}, {"Variant", TEnum}, {"Icon", TString}}, {{"Value", TString}, {"Placeholder", TString}, {"Keyboard", TEnum}, {"ReturnKey", TEnum}, {"Secure", TBool}, {"Autocapitalize", TEnum}, {"Autocorrect", TEnum}, {"ContentType", TString}, {"Multiline", TBool}, {"Plain", TBool}, {"Selection", TBytes}, {"Rich", TBytes}, {"PasteTypes", TBytes}, {"Accessory", TInt}}, {{"On", TBool}, {"Checkbox", TBool}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}}, {{"Horizontal", TBool}, {"Refreshable", TBool}, {"Refreshing", TBool}, {"Paging", TBool}, {"EdgeEffect", TEnum}}, {{"Refreshable", TBool}, {"Refreshing", TBool}, {"EdgeEffect", TEnum}, {"Columns", TInt}, {"Gap", TFloat}, {"Appearance", TEnum}, {"Inset", TFloat}, {"Anchor", TEnum}, {"Selecting", TBool}}, {{"Animating", TBool}}, {{"Routed", TBool}}, {{"Title", TString}, {"Actions", TBytes}, {"BackGesture", TBool}, {"Icon", TString}, {"Search", TString}, {"SearchText", TString}, {"SearchButton", TBool}, {"ZoomFrom", TString}, {"LargeTitle", TBool}, {"BarColor", TColor}, {"Toolbar", TBytes}, {"Primary", TBytes}, {"PrimaryExtended", TBool}, {"Badge", TString}}, {{"Selected", TInt}}, {{"Detents", TInt}, {"Grabber", TBool}, {"Window", TInt}, {"FullScreen", TBool}, {"Routed", TBool}}, {{"Title", TString}, {"Message", TString}, {"Buttons", TBytes}, {"Style", TEnum}, {"Window", TInt}, {"Fields", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"Placeholder", TString}, {"PlaceholderImage", TBytes}, {"PlaceholderMode", TEnum}, {"Transition", TFloat}, {"Paused", TBool}}, {{"Type", TString}, {"Prop", TBytes}}, {{"Content", TBytes}, {"Inlines", TBytes}}, {}, {{"Name", TString}}, {{"Segments", TBytes}, {"Selected", TInt}}, {{"Items", TBytes}, {"Selected", TInt}}, {{"Value", TFloat}, {"Min", TFloat}, {"Max", TFloat}, {"Step", TFloat}}, {{"Value", TColor}, {"Alpha", TBool}, {"Title", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Path", TBytes}, {"Fill", TColor}, {"Stroke", TColor}, {"LineWidth", TFloat}, {"LineCap", TEnum}, {"LineJoin", TEnum}, {"TrimStart", TFloat}, {"TrimEnd", TFloat}, {"Dash", TBytes}}, {{"Source", TString}, {"Mode", TEnum}, {"HideControls", TBool}, {"AutoPlay", TBool}, {"Loop", TBool}, {"Muted", TBool}, {"Rate", TFloat}, {"Volume", TFloat}, {"Headers", TBytes}, {"Poster", TString}, {"StartAt", TFloat}, {"TimeInterval", TFloat}, {"Subtitle", TString}, {"AudioTrack", TString}, {"SubtitleFiles", TBytes}, {"PictureInPicture", TBool}, {"AutoPictureInPicture", TBool}}, {{"URL", TString}, {"HTML", TString}, {"Preload", TString}, {"UserAgent", TString}, {"Block", TBytes}, {"Requests", TBool}}, {{"Value", TInt}, {"Mode", TEnum}, {"Min", TInt}, {"Max", TInt}, {"Inline", TBool}}, {{"Count", TInt}, {"Page", TInt}}, {{"Anchor", TInt}, {"Width", TFloat}, {"Height", TFloat}}, {{"Width", TFloat}, {"Height", TFloat}}, {{"Commands", TBytes}}, {{"Items", TBytes}, {"Selected", TInt}, {"Title", TString}}, {{"Code", TBytes}, {"Uniforms", TBytes}, {"Animated", TBool}}, {{"Title", TString}, {"Config", TBytes}, {"Flyout", TBytes}, {"Edited", TBool}, {"File", TString}}, {{"Items", TBytes}, {"Selected", TInt}, {"Label", TString}}, {{"Value", TFloat}, {"Indeterminate", TBool}}, {{"Message", TString}, {"Action", TString}, {"Duration", TEnum}, {"Window", TInt}}, {{"Root", TInt}, {"Anchor", TInt}, {"Modal", TBool}}}
 
 // Events.
 const (
@@ -710,11 +732,15 @@ const (
 	EventPressPoint EventKind = 65
 	// EventDevErrorAction: the user pressed a button of the overlay DevError shows: a DevErrorAction (Dismiss, Reload); to the root. The overlay stays until DevErrorClear.
 	EventDevErrorAction EventKind = 66
+	// EventVideoState: a Video's playback changed (ops.AppendVideoState): u8 VideoStateFlags bits (1 ready: its source loaded and can play; 2 playing: it plays, or would but for buffering; 4 buffering; 8 ended; 16 in picture in picture; 32 full screen), f64 the time (seconds from the start), f64 the duration (seconds; NaN: not known yet, +Inf: a live stream), f32 the rate chosen (1 normal; kept while paused: AVPlayer's defaultRate), f32 width, height (the natural size, 0 while not known or for sound alone). Sent as any of it changes but the time, which goes with the rest, after a seek, and with TimeInterval every so often while it plays.
+	EventVideoState EventKind = 67
+	// EventVideoTracks: a Video's subtitle and audio tracks (ops.AppendVideoTracks), as they're known and as they or the choice of them change: u32 count, then per track u8 kind (0 subtitle, 1 audio), u8 1 if it's the one chosen, u32-length id (the platform's, stable while the source is), u32-length label (as the platform's menu shows it), u32-length language (BCP 47; empty: not known).
+	EventVideoTracks EventKind = 68
 )
 
-var eventNames = [...]string{"", "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint", "DevErrorAction"}
+var eventNames = [...]string{"", "Press", "LongPress", "TextChanged", "Submit", "Focus", "Blur", "Toggled", "ValueChanged", "Scrolled", "Environment", "Lifecycle", "Popped", "Selected", "Action", "Dismissed", "Refresh", "Pan", "Pinch", "Rotate", "Swipe", "Loaded", "Failed", "Native", "Link", "A11yAction", "Adjust", "Ended", "Navigated", "Message", "IncomingURL", "FontLoaded", "Frame", "Result", "ColorChanged", "WebState", "Request", "Download", "NewWindow", "Shared", "Pressed", "Hover", "DragOver", "Drop", "SelectionChanged", "RichChanged", "Formats", "Pasted", "RowSelected", "RowSelectBegin", "RowInset", "Dragging", "Back", "Paged", "WindowState", "CloseRequest", "Key", "FieldChanged", "Location", "Animated", "SecondInstance", "FocusChange", "KeyText", "OutsidePress", "AnchorFrame", "PressPoint", "DevErrorAction", "VideoState", "VideoTracks"}
 
-var eventPayloads = [...]Payload{0, PNone, PNone, PString, PNone, PNone, PNone, PBool, PFloat, PPoint, PEnvironment, PInt, PInt, PInt, PInt, PNone, PNone, PGesture, PGesture, PGesture, PInt, PPoint, PString, PBytes, PString, PInt, PInt, PNone, PString, PString, PString, PString, PFloat, PBytes, PInt, PBytes, PString, PBytes, PString, PBytes, PBool, PBool, PGesture, PBytes, PBytes, PBytes, PBytes, PBytes, PBool, PNone, PPoint, PInt, PNone, PInt, PBytes, PNone, PInt, PBytes, PBytes, PNone, PBytes, PInt, PString, PPoint, PBytes, PPoint, PInt}
+var eventPayloads = [...]Payload{0, PNone, PNone, PString, PNone, PNone, PNone, PBool, PFloat, PPoint, PEnvironment, PInt, PInt, PInt, PInt, PNone, PNone, PGesture, PGesture, PGesture, PInt, PPoint, PString, PBytes, PString, PInt, PInt, PNone, PString, PString, PString, PString, PFloat, PBytes, PInt, PBytes, PString, PBytes, PString, PBytes, PBool, PBool, PGesture, PBytes, PBytes, PBytes, PBytes, PBytes, PBool, PNone, PPoint, PInt, PNone, PInt, PBytes, PNone, PInt, PBytes, PBytes, PNone, PBytes, PInt, PString, PPoint, PBytes, PPoint, PInt, PBytes, PBytes}
 
 func (e EventKind) String() string {
 	if int(e) < len(eventNames) && e > 0 {
@@ -816,9 +842,11 @@ const (
 	CmdDevPerf CommandID = 42
 	// CmdDevFontScale: args: f32 the text size, as a multiple of the default (0: the user's again); sent to the root, only under asuka dev, as it shows a preview whose fontScale says one, and with 0 as it stops: the host shows the app's text as if the user's text size were it (iOS: the windows' preferred content size category nearest it; Android: the configuration's font scale; macOS, Windows, Linux and the web: their fonts scaled by it), and reports it as the Environment's FontScale, so the core measures the text again.
 	CmdDevFontScale CommandID = 43
+	// CmdVideoAction: args: u8 VideoAction; sent to a Video: it goes into picture in picture (with PictureInPicture) or out, full screen (the platform's player's) or out; reported with VideoState.
+	CmdVideoAction CommandID = 44
 )
 
-var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear", "DevHighlight", "DevHighlightClear", "DevPerf", "DevFontScale"}
+var commandNames = [...]string{"", "Focus", "Blur", "ListUpdate", "Present", "Haptic", "AnimateBegin", "AnimateEnd", "OpenURL", "Call", "Copy", "Play", "Pause", "Seek", "Eval", "Frames", "Announce", "Share", "ScrollTo", "ScrollToOffset", "Accent", "WebNavigate", "MenuBar", "WindowOptions", "WindowTitle", "ColorScheme", "Locale", "SaveLocale", "Format", "SetLink", "InsertText", "ShareClose", "A11yFocus", "BackExit", "Replace", "WindowAction", "Location", "Quit", "DevError", "DevErrorClear", "DevHighlight", "DevHighlightClear", "DevPerf", "DevFontScale", "VideoAction"}
 
 func (c CommandID) String() string {
 	if int(c) < len(commandNames) && c > 0 {
@@ -1286,4 +1314,13 @@ type DevErrorAction int32
 const (
 	DevErrorActionDismiss DevErrorAction = iota
 	DevErrorActionReload
+)
+
+type VideoAction int32
+
+const (
+	VideoActionEnterPictureInPicture VideoAction = iota
+	VideoActionExitPictureInPicture
+	VideoActionEnterFullScreen
+	VideoActionExitFullScreen
 )

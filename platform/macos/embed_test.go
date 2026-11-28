@@ -20,6 +20,7 @@ func TestSwiftShared(t *testing.T) {
 		"Sources/AsukaOps/AlertFields.swift":         "Sources/AsukaOps/AlertFields.swift",
 		"Sources/AsukaOps/Keys.swift":                "Sources/AsukaOps/Keys.swift",
 		"Sources/AsukaOps/Sidebar.swift":             "Sources/AsukaOps/Sidebar.swift",
+		"Sources/AsukaOps/VideoReport.swift":         "Sources/AsukaOps/VideoReport.swift",
 	} {
 		a, err := os.ReadFile("../ios/" + ios)
 		if err != nil {

@@ -1006,13 +1006,16 @@ final class AsukaTextField: UITextField {
         case .play:
             (n.view as? AsukaVideoView)?.play()
         case .pause:
-            (n.view as? AsukaVideoView)?.player.pause()
+            (n.view as? AsukaVideoView)?.pause()
         case .seek:
             guard args.count >= 8, let v = n.view as? AsukaVideoView else { return }
             var r = AsukaReader(args)
             v.seek(r.f64())
+        case .videoAction:
+            guard let a = args.first else { return }
+            (n.view as? AsukaVideoView)?.act(AsukaVideoAction(rawValue: Int32(a)))
         #else
-        case .play, .pause, .seek: break
+        case .play, .pause, .seek, .videoAction: break
         #endif
         #if ASUKA_WEBVIEW
         case .eval:

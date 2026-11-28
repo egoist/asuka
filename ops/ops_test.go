@@ -272,6 +272,40 @@ func TestAlertFields(t *testing.T) {
 	}
 }
 
+// goldenVideoState and goldenVideoTracks are a Video's reports. The Swift,
+// Kotlin and JavaScript hosts' tests encode them with their own encoders
+// and must produce testdata/videostate.bin and testdata/videotracks.bin.
+var (
+	goldenVideoState  = VideoState{Flags: VideoReady | VideoPlaying | VideoPiP, Time: 12.5, Duration: 634.566, Rate: 1.5, Width: 1920, Height: 1080}
+	goldenVideoTracks = []VideoTrack{
+		{Kind: VideoTrackSubtitle, ID: "0", Label: "English", Language: "en"},
+		{Kind: VideoTrackSubtitle, Selected: true, ID: "https://example.com/fr.vtt", Label: "Français", Language: "fr"},
+		{Kind: VideoTrackAudio, Selected: true, ID: "a1", Label: "日本語", Language: "ja"},
+	}
+)
+
+func TestVideo(t *testing.T) {
+	s, ok := DecodeVideoState(AppendVideoState(nil, goldenVideoState))
+	if !ok || s != goldenVideoState {
+		t.Fatalf("VideoState decoded %+v %v", s, ok)
+	}
+	b := AppendVideoState(nil, VideoState{Duration: math.Inf(1)})
+	if s, ok := DecodeVideoState(b); !ok || !math.IsInf(s.Duration, 1) {
+		t.Fatalf("a live stream's duration decoded %v", s.Duration)
+	}
+	if _, ok := DecodeVideoState(b[:len(b)-1]); ok {
+		t.Fatal("a cut VideoState decoded")
+	}
+	b = AppendVideoTracks(nil, goldenVideoTracks)
+	ts, ok := DecodeVideoTracks(b)
+	if !ok || len(ts) != 3 || ts[1] != goldenVideoTracks[1] || ts[2] != goldenVideoTracks[2] {
+		t.Fatalf("VideoTracks decoded %+v %v", ts, ok)
+	}
+	if _, ok := DecodeVideoTracks(b[:len(b)-2]); ok {
+		t.Fatal("cut VideoTracks decoded")
+	}
+}
+
 func TestGolden(t *testing.T) {
 	b := goldenBatch()
 	bin := b.Encode()
@@ -282,7 +316,8 @@ func TestGolden(t *testing.T) {
 		"actions.bin": AppendActions(nil, acts), "actions.txt": []byte(dumpActions(DecodeActions(AppendActions(nil, acts)))),
 		"sidebar.bin": AppendSidebar(nil, goldenSidebar()), "sidebar.txt": []byte(dumpSidebar(goldenSidebar())),
 		"alertfields.bin": AppendAlertFields(nil, goldenAlertFields()), "alertfields.txt": []byte(dumpAlertFields(goldenAlertFields())),
-		"fieldchanged.bin": AppendFieldChanged(nil, 2, "Grüße")}
+		"fieldchanged.bin": AppendFieldChanged(nil, 2, "Grüße"),
+		"videostate.bin":   AppendVideoState(nil, goldenVideoState), "videotracks.bin": AppendVideoTracks(nil, goldenVideoTracks)}
 	for name, want := range files {
 		path := filepath.Join("testdata", name)
 		if *update {

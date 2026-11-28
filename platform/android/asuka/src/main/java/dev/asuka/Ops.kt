@@ -326,6 +326,17 @@ object AsukaProp {
         const val AUTO_PLAY = 67
         const val LOOP = 68
         const val MUTED = 69
+        const val RATE = 70
+        const val VOLUME = 71
+        const val HEADERS = 72
+        const val POSTER = 73
+        const val START_AT = 74
+        const val TIME_INTERVAL = 75
+        const val SUBTITLE = 76
+        const val AUDIO_TRACK = 77
+        const val SUBTITLE_FILES = 78
+        const val PICTURE_IN_PICTURE = 79
+        const val AUTO_PICTURE_IN_PICTURE = 80
     }
 
     object WebView {
@@ -477,6 +488,8 @@ object AsukaEventKind {
     const val ANCHOR_FRAME = 64
     const val PRESS_POINT = 65
     const val DEV_ERROR_ACTION = 66
+    const val VIDEO_STATE = 67
+    const val VIDEO_TRACKS = 68
 }
 
 object AsukaCommand {
@@ -523,6 +536,7 @@ object AsukaCommand {
     const val DEV_HIGHLIGHT_CLEAR = 41
     const val DEV_PERF = 42
     const val DEV_FONT_SCALE = 43
+    const val VIDEO_ACTION = 44
 }
 
 object AsukaRole {
@@ -904,6 +918,13 @@ object AsukaDevErrorAction {
     const val RELOAD = 1
 }
 
+object AsukaVideoAction {
+    const val ENTER_PICTURE_IN_PICTURE = 0
+    const val EXIT_PICTURE_IN_PICTURE = 1
+    const val ENTER_FULL_SCREEN = 2
+    const val EXIT_FULL_SCREEN = 3
+}
+
 /** Receives decoded ops, in order, on the main thread. */
 interface AsukaOpHandler {
     fun create(id: Int, kind: Int)
@@ -1129,4 +1150,6 @@ object AsukaEvents {
     fun anchorFrame(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 64); u32(v.size); raw(v) }.bytes()
     fun pressPoint(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 65); f64(x); f64(y) }.bytes()
     fun devErrorAction(id: Int, v: Long): ByteArray = AsukaWriter().apply { header(id, 66); u64(v) }.bytes()
+    fun videoState(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 67); u32(v.size); raw(v) }.bytes()
+    fun videoTracks(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 68); u32(v.size); raw(v) }.bytes()
 }

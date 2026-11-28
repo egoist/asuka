@@ -293,7 +293,18 @@ var Schema = SchemaDef{
 			{Name: "AutoPlay", Type: TBool},
 			{Name: "Loop", Type: TBool},
 			{Name: "Muted", Type: TBool},
-		}, Doc: "a video (AVPlayerViewController, Media3's PlayerView). Loaded reports its natural size once known, Ended its end (each time, looping), Failed an error; the Play, Pause and Seek commands drive it"},
+			{Name: "Rate", Type: TFloat, Doc: "the playback speed (1: normal), kept while paused; the user's choice in the platform's controls is reported with VideoState"},
+			{Name: "Volume", Type: TFloat, Doc: "its sound's level, 0 to 1 (the system's volume scales it)"},
+			{Name: "Headers", Type: TBytes, Doc: "HTTP headers sent with the source's requests (an authenticated stream's): u32 count, then name and value in turn, u32-length strings (count is twice the headers'); sent before Source, applying to the next one"},
+			{Name: "Poster", Type: TString, Doc: "an image shown until the video's first frame: an http(s) URL, a file or an asset"},
+			{Name: "StartAt", Type: TFloat, Doc: "seconds into the video it starts at, as each Source loads; sent before Source"},
+			{Name: "TimeInterval", Type: TFloat, Doc: "while it plays, the host sends VideoState about this often (seconds) with the time; 0 (the default): only as its state changes"},
+			{Name: "Subtitle", Type: TString, Doc: "the subtitle track shown, by the id VideoTracks gave it (or a SubtitleFiles file's URL), kept until the tracks arrive; empty: none. Not sent: the platform's choice"},
+			{Name: "AudioTrack", Type: TString, Doc: "the audio track played, by the id VideoTracks gave it, kept until the tracks arrive. Not sent: the platform's choice"},
+			{Name: "SubtitleFiles", Type: TBytes, Doc: "WebVTT files added as subtitle tracks (Android, Windows, the web; Apple's players and GTK's take none): u32 count (three times the files), then per file a u32-length URL (an http(s) URL, a file or an asset), language (BCP 47) and label; sent before Source. A file's track's id is its URL"},
+			{Name: "PictureInPicture", Type: TBool, Doc: "it may play in picture in picture: the controls' button, and the VideoAction command"},
+			{Name: "AutoPictureInPicture", Type: TBool, Doc: "it goes into picture in picture as the app goes to the background while it plays (iOS, Android 12 and later; with PictureInPicture)"},
+		}, Doc: "a video (AVPlayerViewController, Media3's PlayerView). Loaded reports its natural size once known, VideoState its playback, VideoTracks its subtitle and audio tracks, Ended its end (each time, looping), Failed an error; the Play, Pause, Seek and VideoAction commands drive it"},
 		{Name: "WebView", Props: []PropDef{
 			{Name: "URL", Type: TString, Doc: "the page: an http(s) URL, or a file in the app's assets"},
 			{Name: "HTML", Type: TString, Doc: "markup to show instead of URL"},
@@ -430,6 +441,8 @@ var Schema = SchemaDef{
 		{Name: "AnchorFrame", Payload: PBytes, Doc: "where an Overlay's Anchor is, in the Overlay's root's coordinates (ops.AppendAnchorFrame): f32 x, y, width, height, then u8 1 while any of it is visible (not scrolled or clipped out of view by a view around it, not hidden, in the window), 0 otherwise. To the Overlay: once it's made, and again each time it changes"},
 		{Name: "PressPoint", Payload: PPoint, Doc: "where a press began on the view, in points from its top left: sent just before Pressed (true), when listened for (a slider's track jumps to it)"},
 		{Name: "DevErrorAction", Payload: PInt, Doc: "the user pressed a button of the overlay DevError shows: a DevErrorAction (Dismiss, Reload); to the root. The overlay stays until DevErrorClear"},
+		{Name: "VideoState", Payload: PBytes, Doc: "a Video's playback changed (ops.AppendVideoState): u8 VideoStateFlags bits (1 ready: its source loaded and can play; 2 playing: it plays, or would but for buffering; 4 buffering; 8 ended; 16 in picture in picture; 32 full screen), f64 the time (seconds from the start), f64 the duration (seconds; NaN: not known yet, +Inf: a live stream), f32 the rate chosen (1 normal; kept while paused: AVPlayer's defaultRate), f32 width, height (the natural size, 0 while not known or for sound alone). Sent as any of it changes but the time, which goes with the rest, after a seek, and with TimeInterval every so often while it plays"},
+		{Name: "VideoTracks", Payload: PBytes, Doc: "a Video's subtitle and audio tracks (ops.AppendVideoTracks), as they're known and as they or the choice of them change: u32 count, then per track u8 kind (0 subtitle, 1 audio), u8 1 if it's the one chosen, u32-length id (the platform's, stable while the source is), u32-length label (as the platform's menu shows it), u32-length language (BCP 47; empty: not known)"},
 	},
 	Commands: []CommandDef{
 		{Name: "Focus"},
@@ -475,6 +488,7 @@ var Schema = SchemaDef{
 		{Name: "DevHighlightClear", Doc: "sent to the root: the host removes the highlight DevHighlight shows"},
 		{Name: "DevPerf", Doc: "args: the overlay's text, UTF-8 (lines separated by \\n; empty: none); sent to the root, only under asuka dev, while its performance overlay is on, as its numbers change (twice a second): the host shows the text in a small box of its own views over the top end corner of the main window's safe area (monospaced, light on a translucent dark background, in front of everything, its screens, sheets and alerts, not taking any touch or click, not read by a screen reader), replacing what it showed; empty, it removes the box"},
 		{Name: "DevFontScale", Doc: "args: f32 the text size, as a multiple of the default (0: the user's again); sent to the root, only under asuka dev, as it shows a preview whose fontScale says one, and with 0 as it stops: the host shows the app's text as if the user's text size were it (iOS: the windows' preferred content size category nearest it; Android: the configuration's font scale; macOS, Windows, Linux and the web: their fonts scaled by it), and reports it as the Environment's FontScale, so the core measures the text again"},
+		{Name: "VideoAction", Doc: "args: u8 VideoAction; sent to a Video: it goes into picture in picture (with PictureInPicture) or out, full screen (the platform's player's) or out; reported with VideoState"},
 	},
 	Enums: []EnumDef{
 		{Name: "Role", Values: []string{"None", "Button", "Header", "Image", "Link", "Text", "Search", "Checkbox", "Radio", "RadioGroup", "Switch", "Tab", "TabList", "TabPanel", "Slider", "SpinButton", "ProgressBar", "Meter", "Menu", "MenuBar", "MenuItem", "MenuItemCheckbox", "MenuItemRadio", "Listbox", "Option", "ComboBox", "Dialog", "AlertDialog", "Tooltip", "Group", "Separator", "Toolbar", "Status"}},
@@ -518,5 +532,6 @@ var Schema = SchemaDef{
 		{Name: "SnackbarDuration", Values: []string{"Short", "Long", "Indefinite"}},
 		{Name: "LocationAction", Values: []string{"Replace", "Push", "Back", "Forward"}},
 		{Name: "DevErrorAction", Values: []string{"Dismiss", "Reload"}},
+		{Name: "VideoAction", Values: []string{"EnterPictureInPicture", "ExitPictureInPicture", "EnterFullScreen", "ExitFullScreen"}},
 	},
 }

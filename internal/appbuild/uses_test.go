@@ -42,7 +42,12 @@ test "a test's calls aren't the app's" {
   let _ = try? await icloud.documents()
 }
 
-app { Text(delete(sync.name())) }
+app {
+  Column {
+    Text(delete(sync.name()))
+    Video("a.mp4") { pictureInPicture: true }
+  }
+}
 `)
 	write(filepath.Join(app, "asuka.toml"), "id = \"dev.asuka.journal\"\n\n[dependencies]\n\"@test/sync\" = \"file:../sync\"\n")
 	write(filepath.Join(sync, "sync.asuka"), `import platform/icloud
@@ -78,13 +83,13 @@ func TestUses(t *testing.T) {
 		{"platform/location", "requestAlways"}, {"platform/icloud", "readFile"}, {"", "Text"},
 		{"platform/notify", "Notification.from"}, {"platform/notify", "Person"}, {"platform/notify", "Notification.sender"},
 		{"platform/notify", "Notification.body"}, {"platform/notify", "Person.name"},
-		{"platform/notify", "Interruption.critical"}, {"platform/notify", "Interruption.timeSensitive"}} {
+		{"platform/notify", "Interruption.critical"}, {"platform/notify", "Interruption.timeSensitive"}, {"", "Video.pictureInPicture"}} {
 		if !u.Ref(r[0], r[1]) {
 			t.Errorf("no %s.%s in %v", r[0], r[1], u.Refs)
 		}
 	}
 	for _, r := range [][2]string{{"platform/icloud", "delete"}, {"platform/icloud", "documents"}, {"", "delete"}, {"", "clear"},
-		{"platform/notify", "Notification.title"}, {"platform/notify", "Person.bot"}, {"platform/notify", "Interruption.passive"}} {
+		{"platform/notify", "Notification.title"}, {"platform/notify", "Person.bot"}, {"platform/notify", "Interruption.passive"}, {"", "Video.loop"}} {
 		if u.Ref(r[0], r[1]) {
 			t.Errorf("%s.%s in %v", r[0], r[1], u.Refs)
 		}

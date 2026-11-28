@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A Video may play in picture in picture (its pictureInPicture prop):
+     the activity it shows in supports it. Merged into the app's activity. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <activity
+            android:name="dev.asuka.AsukaActivity"
+            android:supportsPictureInPicture="true"
+            tools:node="merge" />
+    </application>
+</manifest>

@@ -657,7 +657,7 @@ native component Shader(program: bytes) {
   prop animated: bool
 }
 
-/// a video in the platform's player; sized as an Image is. Drive it with play(), pause(), seek(seconds)
+/// a video in the platform's player; sized as an Image is. Drive it with play(), pause(), seek(seconds), enterPictureInPicture(), enterFullScreen(); read currentTime and duration
 native component Video(source: string) {
   /// .fit (letterboxed) or .fill (cropped)
   prop mode: ImageMode
@@ -665,9 +665,49 @@ native component Video(source: string) {
   prop autoPlay: bool
   prop loop: bool
   prop muted: bool
+  /// its sound's level, 0 to 1
+  prop volume: float = 1
+  /// the playback speed: 1 normal, 2 twice as fast; the user's choice in the platform's controls writes it
+  prop rate: float = 1
+  /// seconds into the video it starts at, as each source loads
+  prop startAt: float
+  /// an image shown until the video's first frame: an http(s) URL, a file or an asset
+  prop poster: string
+  /// HTTP headers sent with the source's requests (an authenticated stream's); not on the web or Windows, whose <video> sends none
+  prop headers: [string: string]
+  /// seconds between timeUpdates while it plays
+  prop timeInterval: float = 0.25
+  /// the subtitle track shown, by its VideoTrack's id ("": none); unset, the platform's choice. The user's choice in the controls writes it
+  prop subtitle: string
+  /// the audio track played, by its VideoTrack's id; unset, the platform's choice
+  prop audioTrack: string
+  /// WebVTT files added to its subtitle tracks (Android, Windows, the web)
+  prop subtitleFiles: [SubtitleFile]
+  /// it may play in picture in picture: the controls' button, and enterPictureInPicture()
+  prop pictureInPicture: bool
+  /// it goes into picture in picture as the app goes to the background while it plays (iOS, Android 12 and later)
+  prop autoPictureInPicture: bool
   /// played to its end (each time, looping)
   event end
   event error(message: string)
+  /// its source loaded, ready to play: its duration in seconds (inf: a live stream) and natural size (0 for sound alone)
+  event loaded(duration: float, width: float, height: float)
+  /// its playback's status changed
+  event status(status: VideoStatus)
+  /// every timeInterval while it plays, and after a seek: the time, in seconds from the start
+  event timeUpdate(time: float)
+  /// its subtitle and audio tracks, once known and as they change
+  event tracks(subtitles: [VideoTrack], audio: [VideoTrack])
+  /// it went into picture in picture (true) or out
+  event pictureInPictureChange(active: bool)
+  /// it went full screen (true) or out
+  event fullScreenChange(active: bool)
+  /// the user chose a speed in the platform's controls
+  event rateChange(rate: float)
+  /// the user chose a subtitle track in the platform's controls ("": none)
+  event subtitleChange(id: string)
+  /// the user chose an audio track in the platform's controls
+  event audioTrackChange(id: string)
 }
 
 /// a web page, in the platform's web view; with no height and no grow, it grows
