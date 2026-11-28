@@ -198,6 +198,9 @@ void wh_command(node *n, uint16_t cmd, const uint8_t *args, size_t len) {
 	case AK_CMD_SCROLL_TO_OFFSET:
 		if (len >= 9) wh_scroll_to_offset(n, wh_f32(args), wh_f32(args + 4));
 		break;
+	case AK_CMD_ZOOM_TO:
+		if (len >= 5) wh_zoom_to(n, wh_f32(args), args[4] != 0);
+		break;
 	case AK_CMD_ACCENT:
 		if (len >= 8) wh_set_accent(wh_u64(args));
 		break;

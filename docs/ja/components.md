@@ -1064,9 +1064,9 @@ component Person {
 
 `View`、`Row`、`Column`、`SafeArea` は次のものを受け取ります。
 
-- `on press` と `on longPress`。
-- プラットフォームのジェスチャー認識を使うジェスチャー：`on pan(g)`、`on pinch(g)`、`on rotate(g)`（それぞれ `Gesture` を受け取ります）と `on swipe(direction)`。[モーション](motion.md) を参照してください。
-- インタラクションの状態。ビュー自身のスタイルは、バリアント（`pressed { … }`、`hovered { … }`、`dragging { … }`、`dragOver { … }`）でこれに追従します。ほかのビューは、その `Ref`（`card.hovered`、`card.pressed`）で追従します。副作用は `on pressedChange` と `on hoverChange` に書きます。ドラッグ＆ドロップは `dragItems` と `dropTypes`、そして `on drop(d)` です。[モーション](motion.md#押下とホバーの状態) を参照してください。
+- `on press`、`on longPress`、`on doubleTap(x, y)`。
+- プラットフォームのジェスチャー認識を使うジェスチャー：`on pan(g)`、`on pinch(g)`、`on rotate(g)`（それぞれ `Gesture` を受け取ります）と `on swipe(direction)`。どのドラッグをパンにするかは `panAxis`、`panMinDistance`、`panWithScroll` で決まります。[モーション](motion.md#ジェスチャー) を参照してください。
+- インタラクションの状態。ビュー自身のスタイルは、バリアント（`pressed { … }`、`hovered { … }`、`dragging { … }`、`dragOver { … }`）でこれに追従します。ほかのビューは、その `Ref`（`card.hovered`、`card.pressed`）で追従します。副作用は `on pressedChange`、`on hoverChange`、`on hover(x, y)`（ポインターの位置）に書きます。ドラッグ＆ドロップは `dragItems` と `dropTypes`、そして `on drop(d)` です。[モーション](motion.md#押下とホバーの状態) を参照してください。
 - `on layout(frame)`。レイアウトが決まったときと、その後フレームが変わるたびに、ビューの `Frame` を受け取って実行されます。
 - `href`。押されたときに移動するルートです（リンクなので、`role: .link` も付けてください）。[ルート](navigation.md#ルート) を参照してください。
 - アクセシビリティ：`label`、`hint`、`role`、`a11yHidden`、`actions`、`on adjust(by)`。[アクセシビリティ](accessibility.md) を参照してください。
@@ -1153,6 +1153,36 @@ component Carousel {
 | `PageControl` | `UIPageControl` | テーマのプライマリーカラーのドット（Material にはない） | アクセントカラーのドット | ピップ（PipsPager と同じ） | libadwaita に倣って描画したドット。現在のページのものは大きく濃い | ドット。現在のページのものはラベルの色 |
 
 ページは、読む方向の始まりから数えます。右から左のレイアウトでは、最初のページは一番右です。画面の回転などでスクロールビューのサイズが変わっても、同じページにとどまります。スクリーンリーダーはドットを「3 ページ中 2 ページ目」のように読み上げ、ドットを調整してページを移動できます。
+
+**ズーム。** `maxZoom` が `minZoom` より大きい（どちらも指定しなければ 1）と、スクロールビューは写真ビューアーのように中身をズームします（`UIScrollView` のズーム、Flutter の `InteractiveViewer`）。2 本指でピンチすると拡大縮小し、ダブルタップするとその位置で `minZoom` の 2 倍まで拡大、もう一度で元に戻ります。拡大中は縦横どちらにもスクロールできます。中身は少なくともスクロールビューと同じ大きさにレイアウトされるので、中の画像はスクロールビューいっぱいに広がるか、`justify` と `align` で中央に置けます。`bind zoom` は表示中の倍率です。ユーザーのズームがこれを書き換え、これを書き換えるとその倍率にズームします。`Ref` の `zoomTo(scale, animated:)` でもズームできます。どちらも範囲内に収まります。
+
+```asuka
+component Viewer(src: string) {
+  state zoom = 1.0
+
+  let scroll = Ref()
+
+  Column {
+    grow: 1
+    Button("Fit") { on press { scroll.zoomTo(1) } }
+    Scroll {
+      ref: scroll
+      grow: 1
+      minZoom: 1
+      maxZoom: 4
+      bind zoom: zoom
+      justify: .center
+      Image(src) { width: 100%; aspectRatio: 1.5; label: "Photo" }
+    }
+    Text("{(zoom * 100).rounded()}%")
+  }
+}
+```
+
+| | iOS | Android | macOS | Windows | Linux | Web |
+|---|---|---|---|---|---|---|
+| ズーム | `UIScrollView` のピンチ | ピンチ（`ScaleGestureDetector`）、Asuka 独自のズームできるコンテナーで | トラックパッドのピンチ、⌘ とホイール（`NSScrollView` の拡大） | タッチパッドのピンチ、Ctrl とホイール | タッチパッドやタッチスクリーンのピンチ、Ctrl とホイール | ピンチ、Ctrl とホイール（トラックパッドのピンチ） |
+| ダブルタップ | 拡大、または元に戻す | 拡大、または元に戻す | ダブルクリック | ダブルクリック | ダブルクリック | ダブルクリック、または 2 回のタップ |
 
 **バーの下へのスクロール。** スクロールビュー（`Scroll`、`List`）の上端が、内容が透けて見えるバー（iOS のナビゲーションバーや、デスクトップのウインドウの隠したタイトルバー）の下にあるときは、内容はバーの下から始まり、スクロールするとバーの下へ入っていきます。`edgeEffect` は、内容がバーの下に入るときの見せ方です：`.automatic`（プラットフォームの既定）、`.soft`（ぼかして消える）、`.hard`（はっきりした境界）。iOS 26 と macOS 26 のスクロールエッジ効果です（Mac では、そのビューがある分割ビューの列に適用されます）。ほかのプラットフォームでは何もしません。
 
@@ -1415,6 +1445,42 @@ component Mailbox {
 | コントロール | UIKit の編集モードの円 | 行の末尾の Material のチェックボックス | 行のハイライト（アクセントカラーの選択色。Windows では WinUI のリストのピル） | 行の先頭にある、チェックマークで塗りつぶされる円。行には色が付く |
 | `on selectBegin` | 行の上での 2 本指のパン。そのまま、なぞった行を次々に選択する | 長押し（Gmail と同じ） | Mac では ⌘ クリック、Windows と Linux では Ctrl クリック（Finder やエクスプローラーと同じ） | ⌘ クリック（Apple 以外のシステムでは Ctrl クリック）。タッチスクリーンでは長押し |
 | スクリーンリーダー | 各行が選択可能 | 各行がチェックボックスで、行のテキストがラベル | — | 各行の選択状態（`aria-selected`） |
+
+### 行の並べ替え
+
+`on move(from, to)` を書くと、iOS のリマインダーや Flutter の `ReorderableListView` のように、ユーザーがリストの行を並べ替えられます。行を持ち上げて新しい位置までドラッグすると、ほかの行がよけて場所をあけ、リストの端に近づけるとリストがスクロールします。ハンドラーは、その行の元のインデックスと、いまあるインデックスを受け取ります。データも同じように動かしてください。`items.insert(items.removeAt(from), at: to)` で動かせます。
+
+```asuka
+struct Task {
+  id: int
+  title: string
+}
+
+component Tasks {
+  state tasks = [Task(id: 1, title: "Write"), Task(id: 2, title: "Review"), Task(id: 3, title: "Ship")]
+  state editing = true
+
+  List {
+    reorderable: editing
+    on move(from, to) { tasks.insert(tasks.removeAt(from), at: to) }
+    for t in tasks key t.id {
+      Text(t.title) { padding: [12, 20] }
+    }
+  }
+}
+```
+
+- この例のように、行には表示する内容に基づくキー（`key t.id`）を付けます。行は動いても自分のビューを保ち、中のものが作り直されることはありません。
+- データが付いてこなかった移動（ハンドラーが何も変えなかったとき）は、元の位置に戻ります。
+- `reorderable: false` の間は、編集モードの外のように行が動きません。指定しなければ true です。
+- スクリーンリーダーには、各行で「上へ移動」と「下へ移動」が、アプリの言語で示されます。
+- Android では、`on move` を持つリストを長押しすると、選択の開始（`on selectBegin`）ではなく行の持ち上げになります。
+- グリッド（`columns`）の項目は、iOS と Android ではドラッグで動かせますが、デスクトップと Web ではキーとスクリーンリーダーのアクションでのみ動きます。Apple Watch のリストでは、行は VoiceOver のアクションでのみ動きます。
+
+| | iOS | Android | macOS | Windows、Linux | Web |
+|---|---|---|---|---|---|
+| 行の持ち上げ | 長押し（`UICollectionView` のインタラクティブな移動） | 長押し（`ItemTouchHelper`） | ドラッグ | ドラッグ。タッチスクリーンでは長押し | ドラッグ。タッチスクリーンでは長押し |
+| スクリーンリーダー、キー | VoiceOver のアクション | TalkBack のアクション | VoiceOver のアクション | 行のメニューとスクリーンリーダーの「上へ移動」「下へ移動」、Alt+↑ と Alt+↓ | 行のメニューの「上へ移動」「下へ移動」、Alt+↑ と Alt+↓（新しい位置を読み上げ） |
 
 ### グリッド
 

@@ -7,12 +7,15 @@
 
 import { Event, Events, Writer, gesture, Reader } from "./ops.js";
 import * as fs from "./fs.js";
+import { isSecondTap, doubleTime, panDecision } from "./gestures.js";
 
 const slop = 10; // points a touch moves before it's a drag, not a tap
 const longPressMs = 500;
 const tapDelayMs = 150; // UIScrollView's delay before a touch in it shows pressed
 const pressedMinMs = 64; // a quick tap still shows its pressed look
 const menuClickMs = 500; // how long a menu waits for its release's click
+
+const controls = "button, input, textarea, select, a[href], [contenteditable=true], .asuka-control";
 
 const pressEvents = new Set([Event.Press, Event.LongPress, Event.Pressed]);
 const gestureEvents = new Set([Event.Pan, Event.Pinch, Event.Rotate, Event.Swipe]);
@@ -25,11 +28,14 @@ export class Interaction {
     this.gesture = null; // a pan, pinch or rotation under way
     this.wheel = null; // a trackpad's pinch (ctrl + wheel)
     this.dragSource = null;
+    this.tapping = null; // the primary pointer's tap under way, on a view that hears of double taps
+    this.lastTap = null; // the tap before it: { n, t, x, y, type, pending: its Press, waiting for a second tap }
     const c = h.container;
     c.addEventListener("pointerdown", (e) => this.down(e));
     c.addEventListener("pointermove", (e) => this.move(e));
     c.addEventListener("pointerup", (e) => this.up(e));
     c.addEventListener("pointercancel", (e) => this.cancel(e));
+    c.addEventListener("mousedown", (e) => this.mouseDown(e));
     c.addEventListener("contextmenu", (e) => this.context(e));
     c.addEventListener("keydown", (e) => this.key(e));
     c.addEventListener("wheel", (e) => this.wheelPinch(e), { passive: false });
@@ -46,11 +52,16 @@ export class Interaction {
   listen(n, e) {
     if (!n.el) return;
     if (pressEvents.has(e)) this.pressable(n);
-    else if (gestureEvents.has(e)) n.el.classList.add("asuka-gesture");
-    else if (e === Event.Hover) this.hoverable(n);
+    else if (gestureEvents.has(e)) {
+      n.el.classList.add("asuka-gesture");
+      this.panConfig(n);
+    } else if (e === Event.Hover) this.hoverable(n);
+    else if (e === Event.HoverMove) this.hoverMoves(n, true);
   }
 
   unlisten(n, e) {
+    if (e === Event.HoverMove) this.hoverMoves(n, false);
+    if (gestureEvents.has(e)) this.panConfig(n);
     if (e === Event.Hover && n.hover) {
       n.el.removeEventListener("pointerenter", n.hover.enter);
       n.el.removeEventListener("pointerleave", n.hover.leave);
@@ -83,11 +94,220 @@ export class Interaction {
     if (n.el.matches(":hover")) n.hover.enter({ pointerType: "mouse" });
   }
 
+  /** hoverMoves reports where the pointer is over n (HoverMove) as it moves, while the core listens; a touch doesn't hover. */
+  hoverMoves(n, on) {
+    if (!on) {
+      if (n.hoverMove) n.el.removeEventListener("pointermove", n.hoverMove);
+      n.hoverMove = null;
+      return;
+    }
+    if (n.hoverMove) return;
+    n.hoverMove = (e) => {
+      if (e.pointerType === "touch") return;
+      const r = n.el.getBoundingClientRect();
+      this.h.dispatch(Events.hoverMove(n.id, e.clientX - r.left, e.clientY - r.top));
+    };
+    n.el.addEventListener("pointermove", n.hoverMove);
+  }
+
+  /**
+   * panConfig follows a view's Pan props: along one axis (PanAxis), a
+   * touch's drag along the other is the browser's, a scroll (touch-action
+   * pan-y, pan-x); with the scroll (PanSimultaneous), the browser scrolls
+   * as the pan follows the touch, which then comes as touch events (the
+   * browser's scroll cancels the touch's pointer).
+   */
+  panConfig(n) {
+    if (!n.el) return;
+    const pans = n.listening(Event.Pan) || n.listening(Event.Swipe);
+    n.el.style.touchAction = !pans ? "" : n.panSimultaneous ? "pan-x pan-y" : n.panAxis === 1 ? "pan-y" : n.panAxis === 2 ? "pan-x" : "";
+    if (pans && n.panSimultaneous) this.touchPans(n);
+    else if (n.touchPan) {
+      for (const [t, f] of Object.entries(n.touchPan)) n.el.removeEventListener(t, f);
+      n.touchPan = null;
+    }
+  }
+
+  /** touchPans follows a simultaneous Pan's touches with touch events, which keep coming while the browser scrolls. */
+  touchPans(n) {
+    if (n.touchPan) return;
+    let g = null;
+    const find = (e) => {
+      for (const t of e.changedTouches) if (t.identifier === g.id) return t;
+      return null;
+    };
+    const end = (e, state) => {
+      if (!g) return;
+      const t = find(e);
+      if (!t && e.touches.length) return;
+      const was = g;
+      g = null;
+      if (was.began) {
+        this.pan(was, t || was.last, state);
+        if (state === 2) this.swipe(was, t || was.last);
+      }
+    };
+    n.touchPan = {
+      touchstart: (e) => {
+        if (e.touches.length !== 1) { end(e, 3); return; }
+        const t = e.changedTouches[0];
+        g = this.panGesture(n, t.identifier, t.clientX, t.clientY, e.timeStamp);
+        g.last = t;
+      },
+      touchmove: (e) => {
+        const t = g && find(e);
+        if (!t) return;
+        g.last = t;
+        if (!this.panStep(g, t, e.timeStamp)) g = null;
+      },
+      touchend: (e) => end(e, 2),
+      touchcancel: (e) => end(e, 3),
+    };
+    for (const [t, f] of Object.entries(n.touchPan)) n.el.addEventListener(t, f, { passive: true });
+  }
+
+  /** panGesture is a pan that may begin on n, its pointer (or touch) id down at x, y. */
+  panGesture(n, id, x, y, t) {
+    const min = n.panMinDistance > 0 ? n.panMinDistance : slop;
+    return { n, kind: "pan", x0: x, y0: y, t0: t, began: false, samples: [[t, x, y]], id, min };
+  }
+
+  /** panStep follows a pan's pointer to pt (clientX, clientY): it begins past its distance, along its axis; false when the drag isn't a pan. */
+  panStep(g, pt, t) {
+    g.samples.push([t, pt.clientX, pt.clientY]);
+    if (g.samples.length > 6) g.samples.shift();
+    if (g.began) {
+      this.pan(g, pt, 1);
+      return true;
+    }
+    const d = panDecision(pt.clientX - g.x0, pt.clientY - g.y0, g.n.panAxis | 0, g.min);
+    if (d < 0) return false;
+    if (d > 0) {
+      g.began = true;
+      if (!g.n.panSimultaneous && pt.pointerId != null) {
+        try { g.n.el.setPointerCapture(pt.pointerId); } catch {}
+      }
+      this.pan(g, pt, 0);
+    }
+    return true;
+  }
+
+  /** takeTouch: something of the host's own (a zoom's pinch, a row lifted) took the pointer: no press, no tap. */
+  takeTouch() {
+    this.endPress();
+    if (this.tapping?.second) this.resumePress();
+    this.tapping = null;
+    const g = this.gesture;
+    if (g?.kind === "pan") {
+      this.gesture = null;
+      if (g.began) this.pan(g, { clientX: g.x0, clientY: g.y0 }, 3);
+    }
+  }
+
+  // --- Double taps ---
+
+  /** doubleTarget is the innermost view at el that hears of double taps (or a zoomable Scroll, which zooms), or null where a control takes the press. */
+  doubleTarget(el) {
+    for (; el && el !== this.h.container; el = el.parentElement) {
+      if (el.matches(controls)) return null;
+      const n = el.asukaNode;
+      if (n && (n.listening(Event.DoubleTap) || n.zoom?.on)) return n;
+    }
+    return null;
+  }
+
+  tapDown(e) {
+    const n = this.doubleTarget(e.target);
+    const last = this.lastTap;
+    const second = !!(n && last && last.n === n && isSecondTap(last, { t: e.timeStamp, x: e.clientX, y: e.clientY }, e.pointerType));
+    // A second tap holds the first's Press until it's known to be a double tap.
+    if (second) clearTimeout(last.pending?.timer);
+    else this.lastTap = null;
+    this.tapping = n ? { n, id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: e.timeStamp, type: e.pointerType, second, moved: false } : null;
+  }
+
+  /** mouseDown: a mouse's click count is the system's (its double-click time and distance): the second click of a double is the one it says. */
+  mouseDown(e) {
+    const tp = this.tapping, last = this.lastTap;
+    if (!tp || tp.type !== "mouse" || e.button !== 0) return;
+    const second = !!(last && last.n === tp.n && e.detail >= 2);
+    if (second === tp.second) return;
+    tp.second = second;
+    if (second) clearTimeout(last.pending?.timer);
+    else {
+      this.resumePress();
+      this.lastTap = null;
+    }
+  }
+
+  /** tapUp ends the tap under way: what it was ({n, second}), or null when it wasn't a tap; a second tap is a double tap. */
+  tapUp(e) {
+    const tp = this.tapping;
+    if (!tp || tp.id !== e.pointerId) return null;
+    this.tapping = null;
+    if (tp.moved || e.timeStamp - tp.t0 > longPressMs) {
+      if (tp.second) this.resumePress();
+      this.lastTap = null;
+      return null;
+    }
+    if (tp.second) {
+      if (this.lastTap) this.lastTap.pending = null; // a double tap: no Press
+      this.lastTap = null;
+      this.doubleTapped(tp.n, tp.x0, tp.y0);
+      return { n: tp.n, second: true };
+    }
+    this.lastTap = { n: tp.n, t: e.timeStamp, x: e.clientX, y: e.clientY, type: tp.type, pending: null };
+    return { n: tp.n, second: false };
+  }
+
+  tapMoved(e) {
+    const tp = this.tapping;
+    if (tp && tp.id === e.pointerId && !tp.moved && Math.hypot(e.clientX - tp.x0, e.clientY - tp.y0) > slop) tp.moved = true;
+  }
+
+  /** resumePress sends the first tap's Press that waited for a second tap that didn't make a double tap. */
+  resumePress() {
+    const p = this.lastTap?.pending;
+    if (!p) return;
+    this.lastTap.pending = null;
+    clearTimeout(p.timer);
+    this.h.emit(p.n, Event.Press, Events.press);
+  }
+
+  doubleTapped(n, x, y) {
+    if (n.listening(Event.DoubleTap)) {
+      const r = n.el.getBoundingClientRect();
+      this.h.dispatch(Events.doubleTap(n.id, x - r.left, y - r.top));
+    } else if (n.zoom?.on) n.zoom.doubleTap(x, y);
+  }
+
+  /** firePress presses n, at once, or once a second tap can't come when n hears of double taps too (none for a double tap's taps). */
+  firePress(n, tap) {
+    const last = this.lastTap;
+    if (tap && tap.n === n && n.listening(Event.DoubleTap)) {
+      if (tap.second || !last) return;
+      const pending = { n, timer: 0 };
+      pending.timer = setTimeout(() => {
+        if (last.pending !== pending) return;
+        last.pending = null;
+        this.h.emit(n, Event.Press, Events.press);
+      }, doubleTime(last.type));
+      last.pending = pending;
+      return;
+    }
+    this.h.emit(n, Event.Press, Events.press);
+  }
+
   /** forget: a view is going; what it was in leaves, so what follows it doesn't stay stuck. */
   forget(n) {
     if (n === this.press?.n) this.endPress(false);
     if (n.hovered) { n.hovered = false; this.h.dispatch(Events.hover(n.id, false)); }
     if (this.gesture?.n === n) this.gesture = null;
+    if (this.tapping?.n === n) this.tapping = null;
+    if (this.lastTap?.n === n) {
+      clearTimeout(this.lastTap.pending?.timer);
+      this.lastTap = null;
+    }
   }
 
   // --- Finding the view a pointer is for ---
@@ -102,7 +322,7 @@ export class Interaction {
   /** pressTarget is the innermost pressable view at el, or null where a control (a button, a field) takes the press. */
   pressTarget(el) {
     for (; el && el !== this.h.container; el = el.parentElement) {
-      if (el.matches("button, input, textarea, select, a[href], [contenteditable=true], .asuka-control")) return null;
+      if (el.matches(controls)) return null;
       const n = el.asukaNode;
       if (n && (n.listening(Event.Press) || n.listening(Event.LongPress) || n.listening(Event.Pressed) || n.menu)) return n;
     }
@@ -131,9 +351,11 @@ export class Interaction {
     if (this.pointers.size === 2) this.twoFingers(e);
     if (!e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
     this.pressPoint(e);
+    this.tapDown(e);
     const n = this.pressTarget(e.target);
     const g = this.gestureTarget(e.target, [Event.Pan, Event.Swipe]);
-    this.gesture = g ? { n: g, kind: "pan", x0: e.clientX, y0: e.clientY, t0: e.timeStamp, began: false, samples: [[e.timeStamp, e.clientX, e.clientY]], id: e.pointerId } : this.gesture;
+    // A touch's pan with the scroll comes as touch events (touchPans).
+    if (g && !(g.panSimultaneous && e.pointerType === "touch")) this.gesture = this.panGesture(g, e.pointerId, e.clientX, e.clientY, e.timeStamp);
     if (!n) return;
     const p = { n, id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), shown: false, timer: 0, long: 0, inside: true, type: e.pointerType };
     this.press = p;
@@ -171,6 +393,7 @@ export class Interaction {
 
   move(e) {
     if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    this.tapMoved(e);
     const g = this.gesture;
     if (g && g.kind === "two") { this.twoMoved(e); return; }
     const p = this.press;
@@ -187,17 +410,7 @@ export class Interaction {
         if (p.n.listening(Event.Pressed) && !p.timer) this.showPressed(p, p.inside);
       }
     }
-    if (g && g.kind === "pan" && g.id === e.pointerId) {
-      g.samples.push([e.timeStamp, e.clientX, e.clientY]);
-      if (g.samples.length > 6) g.samples.shift();
-      if (!g.began && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) > slop) {
-        g.began = true;
-        try { g.n.el.setPointerCapture(e.pointerId); } catch {}
-        this.pan(g, e, 0);
-      } else if (g.began) {
-        this.pan(g, e, 1);
-      }
-    }
+    if (g && g.kind === "pan" && g.id === e.pointerId && !this.panStep(g, e, e.timeStamp)) this.gesture = null;
   }
 
   pan(g, e, state) {
@@ -211,6 +424,7 @@ export class Interaction {
 
   up(e) {
     this.pointers.delete(e.pointerId);
+    const tap = this.tapUp(e);
     const g = this.gesture;
     if (g && g.kind === "two") {
       if (this.pointers.size < 2) this.twoEnded(2);
@@ -256,7 +470,7 @@ export class Interaction {
       };
       const t = setTimeout(open, menuClickMs);
       addEventListener("click", open, true);
-    } else this.h.emit(p.n, Event.Press, Events.press);
+    } else this.firePress(p.n, tap);
   }
 
   swipe(g, e) {
@@ -271,6 +485,10 @@ export class Interaction {
 
   cancel(e) {
     this.pointers.delete(e.pointerId);
+    if (this.tapping?.id === e.pointerId) {
+      if (this.tapping.second) this.resumePress();
+      this.tapping = null;
+    }
     if (this.press?.id === e.pointerId) this.endPress(false);
     const g = this.gesture;
     if (g?.kind === "pan" && g.id === e.pointerId) {
@@ -282,12 +500,14 @@ export class Interaction {
 
   cancelAll() {
     if (this.press) this.endPress(false);
+    this.tapping = null;
     this.pointers.clear();
   }
 
   scrolled() {
     // A scroll takes the touch: the press doesn't fire.
     if (this.press && this.press.type !== "mouse") this.endPress(false);
+    if (this.tapping && this.tapping.type !== "mouse") this.tapping.moved = true;
   }
 
   endPress() {
@@ -339,8 +559,13 @@ export class Interaction {
   // --- Pinches and rotations ---
 
   twoFingers(e) {
+    if (this.tapping?.second) this.resumePress();
+    this.tapping = null;
     const n = this.gestureTarget(e.target, [Event.Pinch, Event.Rotate]);
     if (!n) return;
+    // A zoomable Scroll inside it pinches itself (zoom.js).
+    const z = e.target.closest?.(".asuka-zoomable");
+    if (z && z !== n.el && n.el.contains(z)) return;
     this.endPress();
     if (this.gesture?.kind === "pan" && this.gesture.began) this.pan(this.gesture, e, 3);
     const [a, b] = [...this.pointers.values()];

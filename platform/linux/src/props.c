@@ -627,6 +627,10 @@ void lx_set_own(node *n, ak_prop p, const ak_value *v) {
 	switch (n->kind) {
 	case AK_KIND_VIEW:
 		if (p == AK_PROP_VIEW_TAKES_CLICKS) lx_set_takes_clicks(n, v->i != 0);  // desk.c
+		if (p == AK_PROP_VIEW_PAN_AXIS || p == AK_PROP_VIEW_PAN_MIN_DISTANCE || p == AK_PROP_VIEW_PAN_SIMULTANEOUS) {
+			lx_set_pan_prop(n, p, v);  // events.c
+			return;
+		}
 		break;
 	case AK_KIND_TEXT:
 		if (p == AK_PROP_TEXT_TEXT) {

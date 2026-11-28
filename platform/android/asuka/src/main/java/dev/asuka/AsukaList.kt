@@ -4,8 +4,10 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
@@ -304,8 +306,15 @@ class AsukaList(val id: Int, val runtime: AsukaRuntime) {
      * bottom, it scrolls to show new rows there.
      */
     fun applyPending() {
+        if (pending == null) return
+        // A row lifted: dropped, its move reported first, if it's been
+        // let go; else the drag is called off, and the update shows the
+        // core's order.
+        lifted?.let { h -> if (released) drop(h) else if (!liftCancelled) cancelLift() }
         val next = pending ?: return
         pending = null
+        // An update after a move's animations: as without moves, at once.
+        if (!animateNext && lifted == null && recycler.itemAnimator === moveAnimator && !moveAnimator.isRunning) recycler.itemAnimator = null
         val old = entries
         val oldLast = ids.lastOrNull()
         val oldCount = ids.size
@@ -319,14 +328,9 @@ class AsukaList(val id: Int, val runtime: AsukaRuntime) {
         }
         val atTop = !recycler.canScrollVertically(-1)
         val now = entries
-        DiffUtil.calculateDiff(object : DiffUtil.Callback() {
-            override fun getOldListSize() = old.size
-            override fun getNewListSize() = now.size
-            override fun areItemsTheSame(o: Int, n: Int) = old[o] == now[n]
-            // The core updates bound rows itself.
-            override fun areContentsTheSame(o: Int, n: Int) = true
-        }, false).dispatchUpdatesTo(adapter)
+        diff(old, now)
         pinnedSection = -1 // its section's index may have changed
+        if (moveNames != null) refreshMoveActions()
         when {
             !bottom && atTop && now.isNotEmpty() -> recycler.scrollToPosition(0)
             bottom && stuck && ids.size > oldCount && ids.lastOrNull() != oldLast -> {
@@ -334,6 +338,17 @@ class AsukaList(val id: Int, val runtime: AsukaRuntime) {
                 if (recycler.isAttachedToWindow && recycler.isLaidOut) recycler.smoothScrollToPosition(last) else recycler.scrollToPosition(last)
             }
         }
+    }
+
+    /** Shows now in place of old: their changes as item ranges and moves. */
+    private fun diff(old: LongArray, now: LongArray) {
+        DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize() = old.size
+            override fun getNewListSize() = now.size
+            override fun areItemsTheSame(o: Int, n: Int) = old[o] == now[n]
+            // The core updates bound rows itself.
+            override fun areContentsTheSame(o: Int, n: Int) = true
+        }, false).dispatchUpdatesTo(adapter)
     }
 
     /** The entries: each section's header, then its rows. */
@@ -441,6 +456,230 @@ class AsukaList(val id: Int, val runtime: AsukaRuntime) {
         else c.setBackgroundColor(MaterialColors.getColor(runtime.themed, com.google.android.material.R.attr.colorSurface, 0))
     }
 
+    // Moving rows (Reorder)
+
+    /** The screen readers' actions' names (up, down); null: rows don't move. */
+    private var moveNames: Array<String>? = null
+    val reorders get() = moveNames != null
+    private var mover: ItemTouchHelper? = null
+    /** The row lifted, and its item's index then (the core's). */
+    private var lifted: Holder? = null
+    private var liftedFrom = -1
+    /** Let go: settling where it was dropped (Moved goes as it's there, clearView). */
+    private var released = false
+    /** An update came while it was held: it goes back with it, not reported. */
+    private var liftCancelled = false
+    /** The core's answer to a move (its order back, if the app didn't take it) animates too. */
+    private var animateNext = false
+    /** While rows move: the others make way, animated (the list has no animator otherwise). */
+    private val moveAnimator = DefaultItemAnimator().apply { supportsChangeAnimations = false }
+
+    /**
+     * Reorder: rows move (empty: they don't). ItemTouchHelper's long press
+     * lifts a row (it takes the place of RowSelectBegin's long press), the
+     * others make way as it's dragged, the list scrolls near its edges;
+     * the host's IDs are in the new order as it's dropped, and Moved
+     * reports it. Each row offers TalkBack the move up and down actions.
+     */
+    fun setReorder(v: java.nio.ByteBuffer) {
+        val names = decodeStrings(v)
+        moveNames = if (names.size >= 2) arrayOf(names[0], names[1]) else null
+        if (moveNames != null && mover == null) mover = ItemTouchHelper(MoveCallback()).also { it.attachToRecyclerView(recycler) }
+        else if (moveNames == null && mover != null) {
+            mover?.attachToRecyclerView(null)
+            mover = null
+            if (recycler.itemAnimator === moveAnimator) recycler.itemAnimator = null
+        }
+        refreshMoveActions()
+    }
+
+    private inner class MoveCallback : ItemTouchHelper.Callback() {
+        override fun isLongPressDragEnabled() = moveNames != null
+        override fun isItemViewSwipeEnabled() = false
+
+        override fun getMovementFlags(rv: RecyclerView, vh: RecyclerView.ViewHolder): Int {
+            val p = vh.bindingAdapterPosition
+            if (moveNames == null || p == RecyclerView.NO_POSITION || isHeader(p)) return 0
+            val dirs = if (columns > 1) ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.START or ItemTouchHelper.END
+                else ItemTouchHelper.UP or ItemTouchHelper.DOWN
+            return makeMovementFlags(dirs, 0)
+        }
+
+        // Not above the first section's header.
+        override fun canDropOver(rv: RecyclerView, current: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
+            val p = target.bindingAdapterPosition
+            return p != RecyclerView.NO_POSITION && !(hasSections && p == 0)
+        }
+
+        override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
+            val from = vh.bindingAdapterPosition
+            val to = target.bindingAdapterPosition
+            if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION || from == to || liftCancelled) return false
+            moveEntry(from, to)
+            adapter.notifyItemMoved(from, to)
+            return true
+        }
+
+        override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {}
+
+        override fun onSelectedChanged(vh: RecyclerView.ViewHolder?, actionState: Int) {
+            super.onSelectedChanged(vh, actionState)
+            if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && vh is Holder) lift(vh)
+            else if (actionState == ItemTouchHelper.ACTION_STATE_IDLE && lifted != null) released = true
+        }
+
+        override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
+            super.clearView(rv, vh)
+            if (vh === lifted) drop(vh as Holder)
+        }
+    }
+
+    private fun lift(h: Holder) {
+        val p = h.bindingAdapterPosition
+        if (p == RecyclerView.NO_POSITION) return
+        lifted = h
+        liftedFrom = entryIndex[p]
+        released = false
+        liftCancelled = false
+        recycler.itemAnimator = moveAnimator
+        h.row?.lift(true)
+        h.itemView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+    }
+
+    /** An update while a row's held: let go of it, its move not reported. */
+    private fun cancelLift() {
+        liftCancelled = true
+        val now = android.os.SystemClock.uptimeMillis()
+        val cancel = android.view.MotionEvent.obtain(now, now, android.view.MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+        recycler.dispatchTouchEvent(cancel)
+        cancel.recycle()
+    }
+
+    /**
+     * The row is where it was dropped: the IDs are the order shown, each
+     * item's index its place there (the core's, once it takes the move),
+     * and Moved reports it. A row moved only across a section's header
+     * (the same index) goes back: the core's sections are by index.
+     */
+    private fun drop(h: Holder) {
+        lifted = null
+        released = false
+        h.row?.lift(false)
+        val from = liftedFrom
+        liftedFrom = -1
+        if (liftCancelled) {
+            liftCancelled = false
+            return
+        }
+        val p = h.bindingAdapterPosition
+        var to = -1
+        if (p != RecyclerView.NO_POSITION) {
+            to = 0
+            for (i in 0 until p) if (entryIndex[i] >= 0) to++
+        }
+        val shown = entries
+        val headers = sectionIDs()
+        if (to < 0 || to == from) {
+            if (hasSections) {
+                build(headers) // its ids and starts are as they were
+                diff(shown, entries)
+            }
+        } else {
+            if (hasSections) {
+                val nids = LongArray(ids.size)
+                val nstarts = IntArray(starts.size)
+                var k = 0
+                var s = 0
+                for (i in shown.indices) {
+                    if (entryIndex[i] < 0) nstarts[s++] = k else nids[k++] = shown[i]
+                }
+                ids = nids
+                starts = nstarts
+            } else ids = shown.copyOf()
+            build(headers)
+            val f = from.toDouble()
+            val t = to.toDouble()
+            animateNext = true
+            runtime.emit(id, AsukaEventKind.MOVED) { AsukaEvents.moved(id, f, t) }
+            animateNext = false
+        }
+        segments()
+        refreshMoveActions()
+    }
+
+    /** The sections' IDs, in the order their headers show. */
+    private fun sectionIDs(): LongArray {
+        if (!hasSections) return LongArray(0)
+        val out = LongArray(starts.size)
+        var s = 0
+        for (i in entries.indices) if (entryIndex[i] < 0 && s < out.size) out[s++] = entries[i]
+        return out
+    }
+
+    /** Moves an entry shown from one place to another, its item's index (the core's) with it. */
+    private fun moveEntry(from: Int, to: Int) {
+        val e = entries[from]
+        val x = entryIndex[from]
+        if (from < to) {
+            System.arraycopy(entries, from + 1, entries, from, to - from)
+            System.arraycopy(entryIndex, from + 1, entryIndex, from, to - from)
+        } else {
+            System.arraycopy(entries, to, entries, to + 1, from - to)
+            System.arraycopy(entryIndex, to, entryIndex, to + 1, from - to)
+        }
+        entries[to] = e
+        entryIndex[to] = x
+        if (!hasSections) return
+        // A row past a header is in its section now.
+        var s = -1
+        for (i in entries.indices) {
+            if (entryIndex[i] < 0) { s++; headerPos[s] = i }
+            entrySection[i] = maxOf(s, 0)
+        }
+    }
+
+    /** A screen reader's move: the row one place up (-1) or down (1), animated, and reported. */
+    private fun moveBy(h: Holder, delta: Int): Boolean {
+        applyPending()
+        val p = h.bindingAdapterPosition
+        if (moveNames == null || lifted != null || p == RecyclerView.NO_POSITION || p !in entryIndex.indices) return false
+        val from = entryIndex[p]
+        val to = from + delta
+        if (from < 0 || to < 0 || to >= ids.size) return false
+        val old = entries
+        val headers = sectionIDs()
+        val next = ids.copyOf()
+        val moving = next[from]
+        if (from < to) System.arraycopy(next, from + 1, next, from, to - from) else System.arraycopy(next, to, next, to + 1, from - to)
+        next[to] = moving
+        ids = next
+        build(headers) // the sections start where they did
+        recycler.itemAnimator = moveAnimator
+        diff(old, entries)
+        val f = from.toDouble()
+        val t = to.toDouble()
+        animateNext = true
+        runtime.emit(id, AsukaEventKind.MOVED) { AsukaEvents.moved(id, f, t) }
+        animateNext = false
+        segments()
+        refreshMoveActions()
+        return true
+    }
+
+    /** The rows' move actions, as their places are now (none up from the first, down from the last). */
+    private fun refreshMoveActions() {
+        for (i in 0 until recycler.childCount) {
+            val row = recycler.getChildAt(i) as? AsukaSwipeRow ?: continue
+            moveActions(row, recycler.getChildAdapterPosition(row))
+        }
+    }
+
+    private fun moveActions(row: AsukaSwipeRow, p: Int) {
+        val names = moveNames
+        val i = if (names != null && p in entryIndex.indices) entryIndex[p] else -1
+        row.setMoveActions(if (i > 0) names!![0] else null, if (i >= 0 && i < ids.size - 1) names!![1] else null)
+    }
+
     // Selection
 
     /**
@@ -479,7 +718,9 @@ class AsukaList(val id: Int, val runtime: AsukaRuntime) {
             val row = AsukaSwipeRow(runtime, AsukaCell(runtime.themed))
             row.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             runtime.makeCell(row.cell, id)
-            return Holder(row, null)
+            val h = Holder(row, null)
+            row.onMove = { delta -> moveBy(h, delta) }
+            return h
         }
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
@@ -492,6 +733,7 @@ class AsukaList(val id: Int, val runtime: AsukaRuntime) {
             cell.binding = true
             runtime.enter { AsukaNative.listBind(id, entryIndex[position].toLong(), cell.asukaID) }
             cell.binding = false
+            holder.row?.let { if (moveNames != null || it.hasMoveActions) moveActions(it, position) }
         }
     }
 }

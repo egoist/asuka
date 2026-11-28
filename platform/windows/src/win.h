@@ -182,6 +182,7 @@ char *wh_dump(size_t *len);
 bool wh_on_screen(node *n);
 bool wh_write_png(const char *path, int w, int h, const uint8_t *bgra, int stride);
 void wh_hover_at(HWND top, POINT screen);
+void wh_hover_moves(HWND top, POINT screen);
 bool wh_accelerator(const char *key, uint8_t mods, ACCEL *out);
 bool wh_open_bar_menu(const wchar_t *title);
 bool wh_choose_menu_item(const wchar_t *title);

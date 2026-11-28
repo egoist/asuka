@@ -7,7 +7,8 @@
 //     views under the pointer by their rectangles, in the app's window
 //     under it (views that let the mouse through count), and
 //     TrackMouseEvent's WM_MOUSELEAVE, or a timer where it can't watch,
-//     clears them as the pointer leaves the app's windows.
+//     clears them as the pointer leaves the app's windows. HoverMove: each
+//     move, where the pointer is in each view under it that listens.
 //   - Drop targets: each top-level window of the app is an OLE drop target
 //     (an IDropTarget of the host's), which finds the innermost view under
 //     the drag that takes it.
@@ -30,7 +31,7 @@ static const GUID iid_drag_source_helper = {0xDE5BF786, 0x477A, 0x11D2, {0x83, 0
 
 // ---- Hover ----
 
-static int hover_views;           // views listening for Hover
+static int hover_views;           // views listening for Hover or HoverMove
 static node **hovered;            // those the pointer is over, innermost first
 static uint32_t nhovered;
 static HWND hover_win;            // where the pointer was last
@@ -150,6 +151,31 @@ void wh_hover_at(HWND top, POINT pt) {
 	hovering = false;
 }
 
+// wh_hover_moves reports where the pointer is (pt, on the screen, in top) to
+// the views under it that listen for HoverMove, innermost first; the
+// same place again (the timer's look) isn't a move.
+void wh_hover_moves(HWND top, POINT pt) {
+	static POINT last;
+	static bool had;
+	if (had && pt.x == last.x && pt.y == last.y) return;
+	last = pt, had = true;
+	if (!top || !IsWindow(top) || wh_key_window(top) != top) return;
+	views_at(top, pt);
+	// By ID: a report's flush may destroy views, and views_at's chain is
+	// the next call's.
+	uint32_t ids[32], n = 0;
+	for (uint32_t i = 0; i < nchain && n < WH_LEN(ids); i++)
+		if (node_listening(chain[i], AK_EVENT_HOVER_MOVE)) ids[n++] = chain[i]->id;
+	for (uint32_t i = 0; i < n; i++) {
+		node *v = wh_node(ids[i]);
+		if (!v || !v->hwnd) continue;
+		POINT c = pt;
+		ScreenToClient(v->hwnd, &c);
+		ak_event e = {.kind = AK_EVENT_HOVER_MOVE, .x = wh_pt(v, c.x), .y = wh_pt(v, c.y)};
+		wh_emit(v, &e);
+	}
+}
+
 // wh_pointer_moved follows the pointer at pt (on the screen; hwnd the
 // window of the app's the move was for) for Hover. With track, the window
 // under it is watched for the pointer leaving (TrackMouseEvent); where it
@@ -163,6 +189,7 @@ void wh_pointer_moved(HWND hwnd, POINT pt, bool track) {
 	}
 	HWND under = WindowFromPoint(pt);
 	wh_hover_at(wh_key_window(under), pt);
+	wh_hover_moves(wh_key_window(under), pt);
 	if (!nhovered) {
 		KillTimer(H.msg_win, TIMER_HOVER);
 		return;
@@ -1014,6 +1041,7 @@ void wh_window_destroyed(HWND hwnd) {
 // follows (the core reports leaving them itself).
 void wh_forget_interaction(node *n) {
 	if (node_listening(n, AK_EVENT_HOVER)) hover_views--;
+	if (node_listening(n, AK_EVENT_HOVER_MOVE)) hover_views--;
 	for (uint32_t i = 0; i < nhovered; i++)
 		if (hovered[i] == n) {
 			// hover_once reports from its own copies.

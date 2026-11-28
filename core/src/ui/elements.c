@@ -819,7 +819,22 @@ typedef struct {
 	int64_t shown;     // the page the host shows (-1: none yet)
 	float page_size, laid;
 	ak_ltrack_size track;
+	// A zoomable scroll's (maxZoom over minZoom): its bounds, the zoom its
+	// zoom key asks for, and the zoom the host shows (the user's, or the
+	// last ZoomTo).
+	float min_zoom, max_zoom, zoom, zoom_shown;
+	bool zoom_set;     // its zoom key is set: it zooms there
+	bool zoom_sent;    // MinZoom and MaxZoom were sent
 } scroll_state;
+
+static bool zoomable(const scroll_state *s) { return s->max_zoom > s->min_zoom; }
+
+static float zoom_clamp(const scroll_state *s, float z) {
+	if (!(z == z)) z = 1;  // NaN
+	if (z > s->max_zoom) z = s->max_zoom;
+	if (z < s->min_zoom) z = s->min_zoom;
+	return z;
+}
 
 static bool horizontal(const ak_view *e) {
 	const ak_val *v = ak_style_get(e, e->el == AK_EL_SCROLL ? AK_KEY_SCROLL_HORIZONTAL : 0);
@@ -873,6 +888,12 @@ static void content_adjust(ak_view *e, ak_lstyle *cs) {
 		cs->direction = AK_LDIR_RTL;
 		if (ak_llength_is_auto(cs->min_width)) cs->min_width = ak_lpct(100);  // short content hugs the right
 	}
+	if (s && s->el == AK_EL_SCROLL && zoomable(s->impl)) {
+		// Zoomable, its content is at least as big as it is, both ways: a
+		// picture in it fills it, or is centered in it (justify, align).
+		if (ak_llength_is_auto(cs->min_width)) cs->min_width = ak_lpct(100);
+		if (ak_llength_is_auto(cs->min_height)) cs->min_height = ak_lpct(100);
+	}
 }
 
 static const ak_el_class cls_content = {.name = "View", .kind = AK_KIND_VIEW, .flags = AK_ELF_CHILDREN, .adjust = content_adjust};
@@ -880,6 +901,7 @@ static const ak_el_class cls_content = {.name = "View", .kind = AK_KIND_VIEW, .f
 static void scroll_init(ak_view *e) {
 	scroll_state *s = ak_alloc(sizeof *s);
 	s->shown = -1;
+	s->min_zoom = s->max_zoom = s->zoom = s->zoom_shown = 1;
 	e->impl = s;
 	s->content = ak_view_new(e->r, &cls_content, 0, true);
 	ak_view_append(e, s->content);
@@ -965,9 +987,66 @@ bool ak_scroll_laid(ak_view *e) {
 	return true;
 }
 
+// zoom_send has the host show zoom z (within the bounds), unless it does.
+static void zoom_send(ak_view *e, float z, bool animated) {
+	scroll_state *s = e->impl;
+	z = zoom_clamp(s, z);
+	if (z == s->zoom_shown) return;
+	s->zoom_shown = z;
+	uint8_t args[5];
+	memcpy(args, &z, 4);
+	args[4] = animated ? 1 : 0;
+	ak_root_scroll(e, AK_CMD_ZOOM_TO, args, sizeof args);
+}
+
+// zoom_bounds follows a change of minZoom or maxZoom: the host's, and
+// the zoom within them (the host keeps its own within them, unreported).
+static void zoom_bounds(ak_view *e) {
+	scroll_state *s = e->impl;
+	bool on = zoomable(s);
+	if (on || s->zoom_sent) {
+		ak_batch_set_float(e->r->batch, e->id, AK_PROP_SCROLL_MIN_ZOOM, s->min_zoom);
+		ak_batch_set_float(e->r->batch, e->id, AK_PROP_SCROLL_MAX_ZOOM, s->max_zoom);
+		s->zoom_sent = true;
+	}
+	if (on) ak_view_listen(e, AK_EVENT_ZOOMED);
+	s->zoom_shown = zoom_clamp(s, s->zoom_shown);
+	if (s->zoom_set) zoom_send(e, s->zoom, false);
+	ak_style_relayout(s->content);  // at least as big as the scroll, zoomable
+}
+
+// ak_ui_zoom_to zooms a zoomable Scroll's content to scale (within its
+// minZoom and maxZoom), as the flush ends; its zoomChange hears it, as
+// the user's zooming.
+void ak_ui_zoom_to(ak_view *v, float scale, bool animated) {
+	if (!v || v->dead || v->el != AK_EL_SCROLL) return;
+	scroll_state *s = v->impl;
+	if (!zoomable(s)) return;
+	float z = zoom_clamp(s, scale);
+	if (z == s->zoom_shown) return;
+	zoom_send(v, z, animated);
+	if (s->zoom_set) s->zoom = z;
+	ak_val arg = {.f = z};
+	ak_view_call(v, AK_EV_SCROLL_ZOOM_CHANGE, &arg, 1);
+}
+
 static void scroll_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 	scroll_state *s = e->impl;
 	switch (key) {
+	case AK_KEY_SCROLL_MIN_ZOOM:
+	case AK_KEY_SCROLL_MAX_ZOOM: {
+		float z = v.f > 0 && v.f == v.f ? (float)v.f : 1;
+		if (key == AK_KEY_SCROLL_MIN_ZOOM) s->min_zoom = z;
+		else s->max_zoom = z;
+		zoom_bounds(e);
+		break;
+	}
+	case AK_KEY_SCROLL_ZOOM:
+		// Zoomed there, unless the host shows it (the user's zooming
+		// reported it).
+		s->zoom = (float)v.f, s->zoom_set = true;
+		zoom_send(e, s->zoom, false);
+		break;
 	case AK_KEY_SCROLL_HORIZONTAL:
 		if (prev || v.i) ak_batch_set_bool(e->r->batch, e->id, AK_PROP_SCROLL_HORIZONTAL, v.i != 0);
 		ak_style_relayout(e);
@@ -1011,6 +1090,12 @@ static void scroll_event(ak_view *e, const ak_event *ev) {
 		if (s->page_set) s->page = page;
 		ak_val arg = {.i = page};
 		ak_view_call(e, AK_EV_SCROLL_PAGE_CHANGE, &arg, 1);
+	} else if (ev->kind == AK_EVENT_ZOOMED && zoomable(s)) {
+		float z = zoom_clamp(s, (float)ev->f);
+		s->zoom_shown = z;
+		if (s->zoom_set) s->zoom = z;
+		ak_val arg = {.f = z};
+		ak_view_call(e, AK_EV_SCROLL_ZOOM_CHANGE, &arg, 1);
 	}
 }
 

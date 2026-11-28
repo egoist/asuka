@@ -1064,9 +1064,9 @@ component Person {
 
 `View`、`Row`、`Column` 和 `SafeArea` 接受：
 
-- `on press` 和 `on longPress`。
-- 手势，使用平台的手势识别器：`on pan(g)`、`on pinch(g)`、`on rotate(g)`（各自收到一个 `Gesture`）和 `on swipe(direction)`。参见[动效](motion.md)。
-- 交互状态。视图自己的样式通过样式变体（`pressed { … }`、`hovered { … }`、`dragging { … }`、`dragOver { … }`）响应这些状态；其他视图则通过它的 `Ref`（`card.hovered`、`card.pressed`）跟随。副作用放在 `on pressedChange` 和 `on hoverChange` 里。拖放：`dragItems` 和 `dropTypes`，以及 `on drop(d)`。参见[动效](motion.md#按下与悬停状态)。
+- `on press`、`on longPress` 和 `on doubleTap(x, y)`。
+- 手势，使用平台的手势识别器：`on pan(g)`、`on pinch(g)`、`on rotate(g)`（各自收到一个 `Gesture`）和 `on swipe(direction)`；`panAxis`、`panMinDistance` 和 `panWithScroll` 决定哪些拖动算拖动手势。参见[动效](motion.md#手势)。
+- 交互状态。视图自己的样式通过样式变体（`pressed { … }`、`hovered { … }`、`dragging { … }`、`dragOver { … }`）响应这些状态；其他视图则通过它的 `Ref`（`card.hovered`、`card.pressed`）跟随。副作用放在 `on pressedChange`、`on hoverChange` 和 `on hover(x, y)`（指针所在的位置）里。拖放：`dragItems` 和 `dropTypes`，以及 `on drop(d)`。参见[动效](motion.md#按下与悬停状态)。
 - `on layout(frame)`：视图布局完成后，以及之后每次位置或尺寸变化时，都会以视图的 `Frame` 运行它。
 - `href`：按下时前往的路由（这样它就是一个链接：再加上 `role: .link`）。参见[路由](navigation.md#路由)。
 - 无障碍：`label`、`hint`、`role`、`a11yHidden`、`actions` 和 `on adjust(by)`。参见[无障碍](accessibility.md)。
@@ -1153,6 +1153,36 @@ component Carousel {
 | `PageControl` | `UIPageControl` | 主题主色的圆点（Material 没有这种控件） | 强调色的圆点 | 圆点指示器（同 PipsPager） | 按 libadwaita 风格绘制的圆点，当前页的圆点更大、颜色更深 | 圆点，当前页使用标签颜色 |
 
 页码从阅读的起始方向开始计算：在从右到左的布局中，第一页在最右边。滚动视图的尺寸变化时（比如旋转屏幕），它会停留在当前页。屏幕阅读器会在圆点上读出“第 2 页，共 3 页”，并且可以调节它们。
+
+**缩放。** `maxZoom` 大于 `minZoom`（两者不设置时都是 1）时，滚动视图就能像看照片那样缩放它的内容（`UIScrollView` 的缩放、Flutter 的 `InteractiveViewer`）：双指捏合缩放，双击会在点到的地方放大到 `minZoom` 的两倍，再双击则缩回。放大之后可以朝两个方向滚动。内容的布局至少和滚动视图一样大，所以里面的图片会填满它，或者用 `justify` 和 `align` 放在正中。`bind zoom` 是当前显示的缩放比例：用户的缩放会写入它，写入它也会缩放到那里；`Ref` 的 `zoomTo(scale, animated:)` 同样可以缩放。两者都会被限制在范围之内。
+
+```asuka
+component Viewer(src: string) {
+  state zoom = 1.0
+
+  let scroll = Ref()
+
+  Column {
+    grow: 1
+    Button("Fit") { on press { scroll.zoomTo(1) } }
+    Scroll {
+      ref: scroll
+      grow: 1
+      minZoom: 1
+      maxZoom: 4
+      bind zoom: zoom
+      justify: .center
+      Image(src) { width: 100%; aspectRatio: 1.5; label: "Photo" }
+    }
+    Text("{(zoom * 100).rounded()}%")
+  }
+}
+```
+
+| | iOS | Android | macOS | Windows | Linux | Web |
+|---|---|---|---|---|---|---|
+| 缩放 | `UIScrollView` 的捏合 | 捏合（`ScaleGestureDetector`），在 Asuka 自己的可缩放容器里 | 触控板捏合，⌘ 加滚轮（`NSScrollView` 的放大） | 触摸板捏合，Ctrl 加滚轮 | 触摸板或触摸屏捏合，Ctrl 加滚轮 | 捏合，Ctrl 加滚轮（触控板捏合） |
+| 双击 | 放大，或缩回 | 放大，或缩回 | 双击鼠标 | 双击鼠标 | 双击鼠标 | 双击鼠标，或连点两下 |
 
 **在栏下面滚动。** 如果滚动视图（`Scroll`、`List`）的顶部位于一个能透出内容的栏下面，比如 iOS 的导航栏，或者桌面窗口隐藏后的标题栏，它的内容会从栏的下方开始，并在滚动时滑到栏下面。`edgeEffect` 决定内容滑到栏下时如何与栏区分开：`.automatic`（平台默认）、`.soft`（渐隐）或 `.hard`（清晰的边缘），即 iOS 26 和 macOS 26 的滚动边缘效果（在 Mac 上，作用于它所在的分栏视图那一栏）。在其他平台上不起作用。
 
@@ -1415,6 +1445,42 @@ component Mailbox {
 | 选择控件 | UIKit 编辑模式下的圆圈 | 行末尾的 Material 复选框 | 高亮整行（使用强调色对应的选中颜色；Windows 上是 WinUI 列表的胶囊形指示条） | 行起始边的圆圈，选中时填上对勾，整行着色 |
 | `on selectBegin` | 双指在行上拖动，并继续选中拖过的行 | 长按（同 Gmail） | Mac 上按住 ⌘ 点按，Windows 和 Linux 上按住 Ctrl 点按（同访达、资源管理器） | 按住 ⌘ 点按（非 Apple 系统上按住 Ctrl）；触摸屏上长按 |
 | 屏幕阅读器 | 每一行都可选择 | 每一行是一个复选框，以行的文字作为标签 | — | 每一行标明是否选中（`aria-selected`） |
+
+### 移动行
+
+`on move(from, to)` 让用户可以移动列表的行，就像 iOS 的“提醒事项”和 Flutter 的 `ReorderableListView` 那样。拿起一行拖到新位置时，其他行会让开；拖到列表边缘附近时，列表会自动滚动。处理函数会收到这一行原来的索引和它现在所在的索引：用同样的方式移动数据即可，`items.insert(items.removeAt(from), at: to)` 就能做到。
+
+```asuka
+struct Task {
+  id: int
+  title: string
+}
+
+component Tasks {
+  state tasks = [Task(id: 1, title: "Write"), Task(id: 2, title: "Review"), Task(id: 3, title: "Ship")]
+  state editing = true
+
+  List {
+    reorderable: editing
+    on move(from, to) { tasks.insert(tasks.removeAt(from), at: to) }
+    for t in tasks key t.id {
+      Text(t.title) { padding: [12, 20] }
+    }
+  }
+}
+```
+
+- 像这里一样，按行所显示的内容给行加 key（`key t.id`）：行在移动时保留自己的视图，里面的东西都不会重新创建。
+- 如果数据没有跟着变（处理函数什么都没改），这次移动会退回原位。
+- `reorderable: false` 期间，行保持不动，就像退出了编辑模式。不设置时它是 true。
+- 屏幕阅读器在每一行上提供“上移”和“下移”，使用应用的语言。
+- 在 Android 上，带 `on move` 的列表被长按时会拿起这一行，而不是开始选择（`on selectBegin`）。
+- 网格（`columns`）里的项目在 iOS 和 Android 上可以拖动；在桌面端和网页上只能用按键和屏幕阅读器的操作移动。Apple Watch 上的列表只能用 VoiceOver 的操作移动行。
+
+| | iOS | Android | macOS | Windows、Linux | Web |
+|---|---|---|---|---|---|
+| 拿起一行 | 长按（`UICollectionView` 的交互式移动） | 长按（`ItemTouchHelper`） | 拖动 | 拖动；触摸屏上长按 | 拖动；触摸屏上长按 |
+| 屏幕阅读器、按键 | VoiceOver 的操作 | TalkBack 的操作 | VoiceOver 的操作 | 行的菜单里和屏幕阅读器中的“上移”“下移”；Alt+上、Alt+下 | 行的菜单里的“上移”“下移”；Alt+上、Alt+下，并朗读新位置 |
 
 ### 网格
 

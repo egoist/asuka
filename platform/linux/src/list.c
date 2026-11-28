@@ -18,7 +18,8 @@
 // press on a touchscreen), leading then trailing, as on the other desktop
 // hosts. A selecting list's click selects or deselects a row
 // (RowSelected), highlighted. F5 refreshes a refreshable list on screen,
-// a spinner over its top meanwhile.
+// a spinner over its top meanwhile. With Reorder, its rows move (Moving
+// rows, below).
 #include "host.h"
 
 #include <math.h>
@@ -27,6 +28,7 @@
 
 bool lx_refresh_from(node *from);
 void lx_popup_at(node *n, GMenuModel *model, double x, double y);
+void lx_set_a11y_string(gpointer w, int prop, const char *s);
 
 typedef struct list_t list_t;
 
@@ -60,6 +62,7 @@ typedef struct {
 	float height;
 	action_vec swipe, leading;
 	bool header, selected, menu;
+	GSimpleAction *moves[2];  // its screen readers' Move up and Move down (Reorder)
 } cell;
 
 struct row_view {
@@ -69,7 +72,28 @@ struct row_view {
 	AK_VEC(cell *) cells;
 	int row;
 	bool pinned;
+	// Moving rows: how far below its place it shows (its transform), easing
+	// from shift_from to shift_to since shift_t0; lifted (dragged, or
+	// landing); snap: new to the view, it goes where it's to be at once.
+	float shift, shift_from, shift_to;
+	double shift_t0;
+	bool easing, lifted, snap;
 };
+
+// A row being dragged (Reorder): armed by a press on it, lifted past the
+// drag threshold (a long press on a touchscreen).
+typedef struct {
+	bool armed, lifted, touch;
+	int row;      // its row
+	int from, to;  // its item's index, and where it'd be dropped
+	int slot;     // its place among the other rows, there
+	float grab;   // the pointer below its top
+	float h;      // its height
+	double x0, y0, vy;  // the press, and the pointer now, in the list's view
+	double tick_t;
+	row_view *rv;
+	GtkGesture *gesture;
+} drag_t;
 
 typedef struct {
 	int tag;  // PART_CARD
@@ -115,6 +139,15 @@ struct list_t {
 	bool refreshable, refreshing;
 	GtkWidget *spinner;
 	GtkEventController *shortcut;
+	// Moving rows (Reorder).
+	bool reorder, reorder_wired;
+	bool moved;  // the host moved an item: a ListUpdate in its order is nothing to do
+	char *move_names[2];
+	GtkEventController *reorder_ctrls[3];
+	drag_t drag;
+	guint shift_tick, scroll_tick;
+	GtkEventController *escape;  // Escape, on the window, while a row's lifted
+	GtkWidget *escape_on;
 };
 
 // ---- Heights ----
@@ -371,6 +404,13 @@ static void on_cell_pressed(GtkGestureClick *g, int count, double x, double y, g
 	(void)x;
 	(void)y;
 	cell *c = data;
+	// A row that moves takes the focus, as a GTK list's row does (for
+	// Alt+Up and Alt+Down), unless it's in a view of the row's already.
+	if (c->l->reorder && !c->header && gtk_widget_get_focusable(c->n->widget)) {
+		GtkRoot *root = gtk_widget_get_root(c->n->widget);
+		GtkWidget *f = root ? gtk_window_get_focus((GtkWindow *)root) : NULL;
+		if (!f || (f != c->n->widget && !gtk_widget_is_ancestor(f, c->n->widget))) gtk_widget_grab_focus(c->n->widget);
+	}
 	if ((c->l->selecting && !c->header) || begins(c, gtk_event_controller_get_current_event_state((GtkEventController *)g)))
 		gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_CLAIMED);
 }
@@ -391,6 +431,11 @@ static void on_cell_released(GtkGestureClick *g, int count, double x, double y, 
 	}
 }
 
+static void wire_moves(cell *c);
+static void update_moves(cell *c);
+static void drag_layout(list_t *l);
+static void unshift(list_t *l, row_view *rv);
+
 static cell *new_cell(list_t *l, row_view *rv) {
 	node *n = host_node(rv->n);
 	cell *c = calloc(1, sizeof *c);
@@ -410,6 +455,7 @@ static cell *new_cell(list_t *l, row_view *rv) {
 	g_signal_connect(g, "pressed", G_CALLBACK(on_cell_pressed), c);
 	g_signal_connect(g, "released", G_CALLBACK(on_cell_released), c);
 	gtk_widget_add_controller(n->widget, (GtkEventController *)g);
+	if (l->reorder) wire_moves(c);
 	return c;
 }
 
@@ -417,6 +463,7 @@ static row_view *take(list_t *l) {
 	if (l->free_.len) {
 		row_view *rv = l->free_.data[--l->free_.len];
 		gtk_widget_set_visible(rv->n->widget, 1);
+		rv->snap = true;
 		return rv;
 	}
 	row_view *rv = calloc(1, sizeof *rv);
@@ -424,6 +471,7 @@ static row_view *take(list_t *l) {
 	rv->tag = PART_ROW;
 	rv->l = l;
 	rv->row = -1;
+	rv->snap = true;
 	rv->n = host_node(l->doc);
 	rv->n->ext = rv;
 	rv->n->ext_free = part_marker;
@@ -454,6 +502,7 @@ static void bind(list_t *l, row_view *rv, int r) {
 		asuka_list_bind(l->n->id, index, c->n->id);
 		lx_enter_end();
 		lx_queue_draw(c->n);
+		update_moves(c);
 	}
 	lx_queue_draw(rv->n);
 }
@@ -590,8 +639,9 @@ static void tile_keeping(list_t *l, int64_t key, float dy, bool ok, bool hold_en
 		// Rows gone from view go back to the pool.
 		for (uint32_t i = 0; i < l->shown.len;) {
 			row_view *rv = l->shown.data[i];
-			if ((rv->row < first || rv->row >= last) && rv->row != pin) {
+			if ((rv->row < first || rv->row >= last) && rv->row != pin && rv != l->drag.rv) {  // the lifted row stays
 				l->shown.data[i] = l->shown.data[--l->shown.len];
+				unshift(l, rv);
 				gtk_widget_set_visible(rv->n->widget, 0);
 				rv->row = -1;
 				ak_vec_push(&l->free_, rv);
@@ -627,6 +677,7 @@ static void tile_keeping(list_t *l, int64_t key, float dy, bool ok, bool hold_en
 	moved |= place_cards(l);
 	if (moved) gtk_widget_queue_allocate(l->doc->widget);
 	l->tiling = false;
+	if (l->drag.lifted) drag_layout(l);
 }
 
 static void tile(list_t *l) {
@@ -661,6 +712,8 @@ static void make_rows(list_t *l) {
 #undef ADD
 }
 
+static bool take_update(list_t *l);
+
 // flush applies an update waiting, if any, and tiles. Rows added or
 // removed above the ones in view keep those where they are, unless the
 // list is at the edge it's anchored to.
@@ -674,6 +727,12 @@ static void flush(list_t *l) {
 		return;
 	}
 	l->updated = false;
+	if (take_update(l)) {
+		// The order the host has, or its move undone, eased: nothing bound.
+		tile(l);
+		return;
+	}
+	l->rebind = true;
 	int64_t key = 0;
 	float dy = 0;
 	bool ok = anchor_row(l, &key, &dy);
@@ -847,6 +906,8 @@ static void set_selecting(list_t *l, bool on) {
 		for (uint32_t k = 0; k < l->shown.data[i]->cells.len; k++) lx_queue_draw(l->shown.data[i]->cells.data[k]->n);
 }
 
+static void set_reorder(list_t *l, ak_span b);
+
 static bool list_prop(node *n, ak_prop p, const ak_value *v) {
 	list_t *l = list_of(n);
 	if (!l) return false;
@@ -877,6 +938,9 @@ static bool list_prop(node *n, ak_prop p, const ak_value *v) {
 	case AK_PROP_LIST_SELECTING:
 		set_selecting(l, v->i != 0);
 		return true;
+	case AK_PROP_LIST_REORDER:
+		set_reorder(l, v->s);
+		return true;
 	default:
 		return false;
 	}
@@ -885,10 +949,13 @@ static bool list_prop(node *n, ak_prop p, const ak_value *v) {
 	return true;
 }
 
+static void cancel_drag(list_t *l);
+
 // update takes the core's new item IDs and sections: u32 count, i64 each,
 // then u32 sections, u32 start and i64 ID each. Rows bind again once the
-// core has returned.
+// core has returned (flush), unless the host's moves explain it.
 static void update(list_t *l, ak_span args) {
+	if (l->drag.armed) cancel_drag(l);  // its rows change
 	ak_reader r = {(const uint8_t *)args.p, args.len, 0, false};
 	uint32_t count = ak_read_u32(&r);
 	if (r.err) return;
@@ -905,7 +972,6 @@ static void update(list_t *l, ak_span args) {
 		}
 	}
 	l->updated = true;
-	l->rebind = true;
 	queue(l);
 }
 
@@ -1083,7 +1149,9 @@ static void on_row_secondary(GtkGestureClick *g, int count, double x, double y, 
 }
 
 static void on_row_long(GtkGestureLongPress *g, double x, double y, gpointer data) {
-	if (row_menu(data, x, y)) gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_CLAIMED);
+	cell *c = data;
+	if (c->l->reorder && !c->header) return;  // it lifts the row; let go where it was, the menu shows
+	if (row_menu(c, x, y)) gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_CLAIMED);
 }
 
 // listen_row_menu gives a cell its context menu: a secondary click, or a
@@ -1133,14 +1201,831 @@ static bool cell_listen(node *n, ak_event_kind e) {
 	return e == AK_EVENT_ROW_SELECTED || e == AK_EVENT_ROW_SELECT_BEGIN;  // the cell's selection click, and Ctrl's
 }
 
+// ---- Moving rows (Reorder) ----
+//
+// A drag of a row with the mouse (a touchpad's), past the desktop's drag
+// threshold, lifts it (a long press on a touchscreen): it follows the
+// pointer up and down on a card, raised over the others, which make way,
+// easing to where they'd be with it dropped there; near the list's top or
+// bottom edge the list scrolls. Dropping it moves the item in the host's
+// IDs and its row view with its cells (nothing is bound again: the core's
+// ListUpdate in that order changes nothing), the rows easing to their new
+// places, and sends Moved; Escape puts it back. A focused row moves with
+// Alt+Up and Alt+Down, and a screen reader has the two as its actions (its
+// "action" group, as a11y.c gives a view's), each a place.
+
+#define ESCAPE_KEY 0xff1b
+#define KEY_UP_ 0xff52
+#define KEY_DOWN_ 0xff54
+#define KEY_KP_UP_ 0xff97
+#define KEY_KP_DOWN_ 0xff99
+
+static int item_count(list_t *l) { return (int)l->ids.len; }
+
+static float row_top(list_t *l, int r) { return l->tops.data[r]; }
+
+static float row_h(list_t *l, int r) { return l->tops.data[r + 1] - l->tops.data[r]; }
+
+// cell_index is a cell's item's index (-1: a header's).
+static int cell_index(cell *c) {
+	row_view *rv = c->rv;
+	list_t *l = c->l;
+	if (c->header || !rv || rv->row < 0 || (uint32_t)rv->row >= l->rows.len) return -1;
+	for (uint32_t i = 0; i < rv->cells.len; i++)
+		if (rv->cells.data[i] == c) return l->rows.data[rv->row].first + (int)i;
+	return -1;
+}
+
+// update_moves enables a cell's move actions where they apply: no Move up
+// for the first item, no Move down for the last, neither for a header.
+static void update_moves(cell *c) {
+	if (!c->moves[0]) return;
+	int i = cell_index(c);
+	g_simple_action_set_enabled(c->moves[0], i > 0);
+	g_simple_action_set_enabled(c->moves[1], i >= 0 && i + 1 < item_count(c->l));
+}
+
+static void update_all_moves(list_t *l) {
+	for (uint32_t i = 0; i < l->shown.len; i++)
+		for (uint32_t k = 0; k < l->shown.data[i]->cells.len; k++) update_moves(l->shown.data[i]->cells.data[k]);
+}
+
+static void move_by_one(list_t *l, int from, int to);
+
+typedef struct {
+	ak_id cell;
+	int by;
+} move_act;
+
+static void on_move_action(GSimpleAction *a, GVariant *p, gpointer data) {
+	(void)a;
+	(void)p;
+	move_act *m = data;
+	node *n = node_get(m->cell);
+	if (!n || part_tag(n) != PART_CELL) return;
+	cell *c = n->ext;
+	int i = cell_index(c);
+	if (i < 0 || c->l->dead || !c->l->reorder) return;
+	move_by_one(c->l, i, i + m->by);
+}
+
+// wire_moves gives a cell the move actions (and makes it a Tab stop, for
+// Alt+Up and Alt+Down), or takes them away.
+static void wire_moves(cell *c) {
+	list_t *l = c->l;
+	GtkWidget *w = c->n->widget;
+	if (!l->reorder) {
+		if (c->moves[0]) {
+			gtk_widget_insert_action_group(w, "action", NULL);
+			c->moves[0] = c->moves[1] = NULL;
+			gtk_widget_set_focusable(w, 0);
+			gtk_accessible_reset_property((GtkAccessible *)w, (GtkAccessibleProperty)3);  // KEY_SHORTCUTS
+		}
+		return;
+	}
+	char names[2][128];
+	for (int i = 0; i < 2; i++) lx_action_name(l->move_names[i], (unsigned)i, names[i], sizeof names[i]);
+	if (!strcmp(names[0], names[1])) strcat(names[1], "-2");
+	GSimpleActionGroup *group = g_simple_action_group_new();
+	for (int i = 0; i < 2; i++) {
+		GSimpleAction *a = g_simple_action_new(names[i], NULL);
+		move_act *m = malloc(sizeof *m);
+		if (!m) abort();
+		m->cell = c->n->id;
+		m->by = i ? 1 : -1;
+		g_signal_connect_data(a, "activate", G_CALLBACK(on_move_action), m, (GClosureNotify)(void (*)(void))free, (GConnectFlags)0);
+		g_action_map_add_action((GActionMap *)group, (GAction *)a);
+		c->moves[i] = a;  // the group holds it
+		g_object_unref(a);
+	}
+	gtk_widget_insert_action_group(w, "action", (GActionGroup *)group);  // the cell holds it
+	g_object_unref(group);
+	gtk_widget_set_focusable(w, 1);
+	gtk_widget_set_focus_on_click(w, 0);
+	gtk_widget_add_css_class(w, "asuka-focus-ring");
+	lx_set_a11y_string(w, 3, "Alt+Up Alt+Down");  // KEY_SHORTCUTS
+	update_moves(c);
+}
+
+static void each_cell(list_t *l, void (*f)(cell *c)) {
+	for (uint32_t i = 0; i < l->shown.len; i++)
+		for (uint32_t k = 0; k < l->shown.data[i]->cells.len; k++) f(l->shown.data[i]->cells.data[k]);
+	for (uint32_t i = 0; i < l->free_.len; i++)
+		for (uint32_t k = 0; k < l->free_.data[i]->cells.len; k++) f(l->free_.data[i]->cells.data[k]);
+}
+
+// ---- Shifts: rows eased to where they go ----
+
+static void set_shift(list_t *l, row_view *rv, float dy) {
+	rv->shift = dy;
+	transform_t t = {.set = dy != 0, .ty = dy, .sx = 1, .sy = 1};
+	if (!memcmp(&t, &rv->n->transform, sizeof t)) return;
+	rv->n->transform = t;
+	gtk_widget_queue_allocate(l->doc->widget);
+}
+
+static gboolean shift_tick(GtkWidget *w, GdkFrameClock *clock, gpointer data);
+
+// ease_to eases a row from where it shows to dy below its place, over a
+// fifth of a second (at once with Reduce Motion).
+static void land(list_t *l, row_view *rv);
+
+static void ease_to(list_t *l, row_view *rv, float dy) {
+	if (rv->snap || H.env.reduce_motion || !gtk_widget_get_mapped(l->n->widget) || (rv->shift == dy && !rv->easing)) {
+		rv->snap = rv->easing = false;
+		rv->shift_from = rv->shift_to = dy;
+		set_shift(l, rv, dy);
+		if (dy == 0) land(l, rv);
+		return;
+	}
+	if (rv->easing && rv->shift_to == dy) return;
+	rv->shift_from = rv->shift;
+	rv->shift_to = dy;
+	rv->shift_t0 = lx_now();
+	rv->easing = true;
+	if (!l->shift_tick) l->shift_tick = gtk_widget_add_tick_callback(l->n->widget, shift_tick, l, NULL);
+}
+
+static void land(list_t *l, row_view *rv) {
+	if (rv->lifted && rv != l->drag.rv) {
+		rv->lifted = false;
+		lx_queue_draw(rv->n);
+	}
+	(void)l;
+}
+
+static gboolean shift_tick(GtkWidget *w, GdkFrameClock *clock, gpointer data) {
+	(void)w;
+	(void)clock;
+	list_t *l = data;
+	double now = lx_now();
+	bool more = false;
+	for (uint32_t i = 0; i < l->shown.len; i++) {
+		row_view *rv = l->shown.data[i];
+		if (!rv->easing) continue;
+		double t = fmin((now - rv->shift_t0) / 0.2, 1), e = 1 - pow(1 - t, 3);
+		set_shift(l, rv, (float)(rv->shift_from + (rv->shift_to - rv->shift_from) * e));
+		if (t >= 1) {
+			rv->easing = false;
+			if (rv->shift_to == 0) land(l, rv);
+		} else {
+			more = true;
+		}
+	}
+	if (!more) l->shift_tick = 0;
+	return more;
+}
+
+static void stop_shifts(list_t *l) {
+	if (l->shift_tick) gtk_widget_remove_tick_callback(l->n->widget, l->shift_tick);
+	l->shift_tick = 0;
+	for (uint32_t i = 0; i < l->shown.len; i++) {
+		row_view *rv = l->shown.data[i];
+		rv->easing = false;
+		rv->lifted = false;
+		set_shift(l, rv, 0);
+	}
+}
+
+// unshift takes a row view's shift off as it goes back to the pool.
+static void unshift(list_t *l, row_view *rv) {
+	rv->easing = rv->lifted = false;
+	rv->shift_from = rv->shift_to = 0;
+	set_shift(l, rv, 0);
+}
+
+// ---- Committing a move ----
+
+// new_index is where an item at i is once the item at from is at to.
+static int new_index(int i, int from, int to) {
+	if (i == from) return to;
+	if (from < to && i > from && i <= to) return i - 1;
+	if (to < from && i >= to && i < from) return i + 1;
+	return i;
+}
+
+static int section_of(list_t *l, int i) {
+	int s = 0;
+	for (uint32_t k = 0; k < l->sections.len; k++)
+		if ((int)l->sections.data[k].start <= i) s = (int)k;
+	return s;
+}
+
+// row_of_item is the row an item is in, in a list of one column.
+static int row_of_item(list_t *l, int i) { return l->sections.len ? i + section_of(l, i) + 1 : i; }
+
+typedef struct {
+	row_view *rv;
+	float y;  // where it showed: its place and shift
+	bool header;
+	int64_t key;
+	int index;  // its item's, or its section's
+} shown_row;
+
+static GtkWidget *focus_in(list_t *l) {
+	GtkRoot *root = gtk_widget_get_root(l->n->widget);
+	GtkWidget *f = root ? gtk_window_get_focus((GtkWindow *)root) : NULL;
+	return f && gtk_widget_is_ancestor(f, l->n->widget) ? f : NULL;
+}
+
+static void place_all(list_t *l);
+static void reassign_cells(list_t *l, int from, int to);
+
+// commit moves the item at from to to in the host's IDs (sections, if
+// any, given in starts: their new starts) and the row views with their
+// cells, unbound, which ease from where they showed to their new places.
+static void commit(list_t *l, int from, int to, const uint32_t *starts) {
+	GtkWidget *focus = focus_in(l);
+	AK_VEC(shown_row) was = {0};
+	for (uint32_t i = 0; i < l->shown.len; i++) {
+		row_view *rv = l->shown.data[i];
+		lrow *row = &l->rows.data[rv->row];
+		shown_row s = {rv, rv->n->frame[1] + rv->shift, row->header, 0, row->header ? row->section : row->first};
+		ak_vec_push(&was, s);
+	}
+	int64_t id = l->ids.data[from];
+	if (from < to)
+		memmove(l->ids.data + from, l->ids.data + from + 1, (size_t)(to - from) * sizeof *l->ids.data);
+	else
+		memmove(l->ids.data + to + 1, l->ids.data + to, (size_t)(from - to) * sizeof *l->ids.data);
+	l->ids.data[to] = id;
+	if (starts)
+		for (uint32_t s = 0; s < l->sections.len; s++) l->sections.data[s].start = starts[s];
+	make_rows(l);
+	measure_tops(l);
+	set_total(l, l->tops.data[l->tops.len - 1]);
+	if (l->columns <= 1) {
+		// Each row view goes to the row its item (or header) is in now.
+		for (uint32_t i = 0; i < was.len; i++) {
+			shown_row *s = &was.data[i];
+			int r = s->header ? (int)l->sections.data[s->index].start + s->index : row_of_item(l, new_index(s->index, from, to));
+			s->rv->row = r < (int)l->rows.len ? r : -1;
+		}
+		// One that's lost its row (none should) goes back to the pool.
+		for (uint32_t i = 0; i < l->shown.len;) {
+			row_view *rv = l->shown.data[i];
+			if (rv->row < 0) {
+				l->shown.data[i] = l->shown.data[--l->shown.len];
+				unshift(l, rv);
+				gtk_widget_set_visible(rv->n->widget, 0);
+				ak_vec_push(&l->free_, rv);
+				continue;
+			}
+			i++;
+		}
+	} else {
+		reassign_cells(l, from, to);
+	}
+	l->moved = true;
+	tile_keeping(l, 0, 0, false, false);
+	place_all(l);
+	// From where they showed, to their places.
+	for (uint32_t i = 0; i < was.len; i++) {
+		row_view *rv = was.data[i].rv;
+		if (rv->row < 0) continue;
+		bool kept = false;
+		for (uint32_t k = 0; k < l->shown.len && !kept; k++) kept = l->shown.data[k] == rv;
+		if (!kept) continue;
+		float d = was.data[i].y - rv->n->frame[1];
+		rv->snap = false;
+		rv->easing = false;
+		set_shift(l, rv, d);
+		ease_to(l, rv, 0);
+	}
+	ak_vec_free(&was);
+	update_all_moves(l);
+	if (focus && !focus_in(l) && gtk_widget_get_mapped(focus)) gtk_widget_grab_focus(focus);
+}
+
+static void place_all(list_t *l) {
+	bool moved = false;
+	for (uint32_t i = 0; i < l->shown.len; i++) moved |= place(l, l->shown.data[i], l->shown.data[i]->row);
+	moved |= place_cards(l);
+	if (moved) gtk_widget_queue_allocate(l->doc->widget);
+}
+
+// reassign_cells puts a grid's cells (its rows hold more than one) in the
+// rows their items are in now, keeping each item's cell; a slot whose item
+// had none shown binds one left over.
+static void reassign_cells(list_t *l, int from, int to) {
+	(void)from;
+	(void)to;
+	AK_VEC(cell *) pool = {0};
+	for (uint32_t i = 0; i < l->shown.len; i++) {
+		row_view *rv = l->shown.data[i];
+		for (uint32_t k = 0; k < rv->cells.len; k++)
+			if (gtk_widget_get_visible(rv->cells.data[k]->n->widget)) ak_vec_push(&pool, rv->cells.data[k]);
+	}
+	// Each shown row's slots take the cells of their items.
+	for (uint32_t i = 0; i < l->shown.len; i++) {
+		row_view *rv = l->shown.data[i];
+		if (rv->row < 0 || (uint32_t)rv->row >= l->rows.len) continue;
+		lrow *row = &l->rows.data[rv->row];
+		int k = row->header ? 1 : row->count;
+		for (int slot = 0; slot < k; slot++) {
+			bool header = row->header;
+			int64_t key = header ? l->sections.data[row->section].id : l->ids.data[row->first + slot];
+			cell *got = NULL;
+			for (uint32_t p = 0; p < pool.len; p++)
+				if (pool.data[p]->header == header && pool.data[p]->item == key) {
+					got = pool.data[p];
+					pool.data[p] = pool.data[--pool.len];
+					break;
+				}
+			if (!got) continue;
+			if (got->rv != rv) {
+				// Out of its row view's cells, into this one's.
+				row_view *o = got->rv;
+				for (uint32_t q = 0; q < o->cells.len; q++)
+					if (o->cells.data[q] == got) {
+						memmove(o->cells.data + q, o->cells.data + q + 1, (o->cells.len - q - 1) * sizeof *o->cells.data);
+						o->cells.len--;
+						break;
+					}
+				gtk_widget_unparent(got->n->widget);
+				gtk_widget_set_parent(got->n->widget, rv->n->widget);
+				got->n->parent = rv->n;
+				got->rv = rv;
+				ak_vec_push(&rv->cells, got);
+			}
+			// At its slot.
+			for (uint32_t q = 0; q < rv->cells.len; q++)
+				if (rv->cells.data[q] == got && (int)q != slot && (uint32_t)slot < rv->cells.len) {
+					cell *t = rv->cells.data[slot];
+					rv->cells.data[slot] = got;
+					rv->cells.data[q] = t;
+					break;
+				}
+		}
+	}
+	ak_vec_free(&pool);
+	// The slots left: a cell bound to their items.
+	for (uint32_t i = 0; i < l->shown.len; i++) {
+		row_view *rv = l->shown.data[i];
+		if (rv->row < 0 || (uint32_t)rv->row >= l->rows.len) continue;
+		lrow *row = &l->rows.data[rv->row];
+		int k = row->header ? 1 : row->count;
+		while ((int)rv->cells.len < k) ak_vec_push(&rv->cells, new_cell(l, rv));
+		for (int slot = 0; slot < k; slot++) {
+			cell *c = rv->cells.data[slot];
+			int64_t key = row->header ? l->sections.data[row->section].id : l->ids.data[row->first + slot];
+			gtk_widget_set_visible(c->n->widget, 1);
+			if (c->header == row->header && c->item == key) continue;
+			c->header = row->header;
+			c->item = key;
+			float *v = hget(l, key);
+			if (v) c->height = *v;
+			lx_enter_begin();
+			asuka_list_bind(l->n->id, row->header ? -1 - row->section : row->first + slot, c->n->id);
+			lx_enter_end();
+		}
+		for (uint32_t q = (uint32_t)k; q < rv->cells.len; q++) gtk_widget_set_visible(rv->cells.data[q]->n->widget, 0);
+		gtk_widget_queue_allocate(rv->n->widget);
+	}
+}
+
+// emit_moved reports a move the host made.
+static void emit_moved(list_t *l, int from, int to) { lx_emit(l->n, (ak_event){.kind = AK_EVENT_MOVED, .x = from, .y = to}); }
+
+// move_by_one moves an item a place (a key's, a screen reader's), showing
+// it.
+static void move_by_one(list_t *l, int from, int to) {
+	if (from < 0 || to < 0 || from >= item_count(l) || to >= item_count(l) || from == to || l->drag.lifted) return;
+	flush(l);
+	commit(l, from, to, NULL);
+	emit_moved(l, from, to);
+	if (!l->dead) scroll_to(l, to, true);
+}
+
+// ---- Dragging ----
+
+static void stop_autoscroll(list_t *l) {
+	if (l->scroll_tick) gtk_widget_remove_tick_callback(l->n->widget, l->scroll_tick);
+	l->scroll_tick = 0;
+}
+
+static void end_drag(list_t *l) {
+	stop_autoscroll(l);
+	if (l->escape) {
+		gtk_widget_remove_controller(l->escape_on, l->escape);
+		g_object_unref(l->escape_on);
+		l->escape = NULL;
+		l->escape_on = NULL;
+	}
+	gtk_widget_set_cursor_from_name(l->n->widget, NULL);
+	row_view *rv = l->drag.rv;
+	l->drag = (drag_t){0};
+	if (rv && !rv->easing && rv->shift == 0) land(l, rv);
+}
+
+// drag_top is where the lifted row's top is: under the pointer, as it was
+// when it was lifted, within the rows.
+static float drag_top(list_t *l) {
+	float y = (float)l->drag.vy - l->n->inset[0] + offset(l) - l->drag.grab;
+	float lo = l->tops.data[0], hi = l->tops.data[l->rows.len] - l->drag.h;
+	return fminf(fmaxf(y, lo), fmaxf(hi, lo));
+}
+
+// drag_slot is where the lifted row would go: the place among the other
+// rows (0: before the first) whose middle it's above; and the item index
+// that is (*to).
+static int drag_slot(list_t *l, float center, int *to) {
+	int r0 = l->drag.row, n = (int)l->rows.len;
+	float h0 = l->drag.h;
+	// The others' middles where they'd be without it, ascending; its own
+	// place between theirs.
+	int lo = 0, hi = n;
+	while (lo < hi) {
+		int mid = (lo + hi) / 2;
+		float key = mid == r0 ? row_top(l, r0) : row_top(l, mid) - (mid > r0 ? h0 : 0) + row_h(l, mid) / 2;
+		if (key < center)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	int p = lo - (lo > r0 ? 1 : 0);  // among the others
+	if (p < 1 && l->sections.len) p = 1;  // below the first header
+	if (p >= n - 1) {
+		*to = item_count(l) - 1;
+		return n - 1;
+	}
+	int rp = p < r0 ? p : p + 1;  // the row it'd be before
+	lrow *row = &l->rows.data[rp];
+	int before = row->header ? (int)fminf((float)l->sections.data[row->section].start, (float)item_count(l)) : row->first;
+	*to = before - (rp > r0 ? 1 : 0);
+	return p;
+}
+
+// drag_layout places the lifted row under the pointer and eases the
+// others to where they'd be with it dropped there.
+static void drag_layout(list_t *l) {
+	if (!l->drag.lifted || l->tops.len != l->rows.len + 1) return;
+	int r0 = l->drag.row;
+	float h0 = l->drag.h, top = drag_top(l);
+	int to = 0;
+	int p = drag_slot(l, top + h0 / 2, &to);
+	l->drag.slot = p;
+	l->drag.to = to;
+	for (uint32_t i = 0; i < l->shown.len; i++) {
+		row_view *rv = l->shown.data[i];
+		int r = rv->row;
+		if (rv == l->drag.rv) {
+			rv->easing = false;
+			rv->snap = false;
+			set_shift(l, rv, top - row_top(l, r0));
+			continue;
+		}
+		if (rv->pinned) {
+			ease_to(l, rv, 0);
+			continue;
+		}
+		int q = r < r0 ? r : r - 1;  // its place among the others
+		float y = row_top(l, r) - (r > r0 ? h0 : 0) + (q >= p ? h0 : 0);
+		ease_to(l, rv, y - row_top(l, r));
+	}
+}
+
+static gboolean autoscroll_tick(GtkWidget *w, GdkFrameClock *clock, gpointer data) {
+	(void)w;
+	(void)clock;
+	list_t *l = data;
+	double now = lx_now(), dt = fmin(now - l->drag.tick_t, 0.05);
+	l->drag.tick_t = now;
+	float y = (float)l->drag.vy - l->n->inset[0], vh = view_h(l), edge = fminf(48, vh / 4);
+	float speed = 0;
+	if (y < edge) speed = -(edge - y) / edge;
+	if (y > vh - edge) speed = (y - (vh - edge)) / edge;
+	speed = fminf(fmaxf(speed, -1), 1);
+	if (speed != 0) {
+		float to = fminf(fmaxf(offset(l) + speed * 1200 * (float)dt, 0), end_offset(l));
+		if (to != offset(l)) {
+			configure(l, to);  // tiles (on_scrolled)
+			drag_layout(l);
+		}
+	}
+	return 1;
+}
+
+static gboolean on_drag_key(GtkEventControllerKey *k, guint keyval, guint keycode, GdkModifierType state, gpointer data);
+
+static guint drag_threshold(void) {
+	int t = 8;
+	GtkSettings *s = gtk_settings_get_default();
+	if (s) g_object_get(s, "gtk-dnd-drag-threshold", &t, NULL);
+	return t > 0 ? (guint)t : 8;
+}
+
+// lift lifts the armed row: it's raised, on a card, and follows the
+// pointer; Escape puts it back.
+static void lift(list_t *l) {
+	row_view *rv = shown_at(l, l->drag.row);
+	if (!rv) {
+		l->drag.armed = false;
+		return;
+	}
+	l->drag.lifted = true;
+	l->drag.rv = rv;
+	l->drag.h = row_h(l, l->drag.row);
+	l->drag.from = l->rows.data[l->drag.row].first;
+	l->drag.to = l->drag.from;
+	rv->lifted = true;
+	gtk_widget_insert_before(rv->n->widget, l->doc->widget, NULL);  // over the others
+	lx_queue_draw(rv->n);
+	gtk_widget_set_cursor_from_name(l->n->widget, "grabbing");
+	GtkRoot *root = gtk_widget_get_root(l->n->widget);
+	if (root) {
+		GtkEventController *k = gtk_event_controller_key_new();
+		gtk_event_controller_set_propagation_phase(k, GTK_PHASE_CAPTURE);
+		g_signal_connect(k, "key-pressed", G_CALLBACK(on_drag_key), l);
+		gtk_widget_add_controller((GtkWidget *)root, k);
+		l->escape = k;
+		l->escape_on = g_object_ref((GtkWidget *)root);
+	}
+	l->drag.tick_t = lx_now();
+	l->scroll_tick = gtk_widget_add_tick_callback(l->n->widget, autoscroll_tick, l, NULL);
+	drag_layout(l);
+}
+
+// put_back eases every row back to its place (Escape, a drop where it
+// was).
+static void put_back(list_t *l) {
+	for (uint32_t i = 0; i < l->shown.len; i++) {
+		row_view *rv = l->shown.data[i];
+		rv->snap = false;
+		ease_to(l, rv, 0);
+	}
+	end_drag(l);
+}
+
+static void cancel_drag(list_t *l) {
+	if (!l->drag.armed) return;
+	if (l->drag.gesture) gtk_gesture_set_state(l->drag.gesture, GTK_EVENT_SEQUENCE_DENIED);
+	if (l->drag.lifted)
+		put_back(l);
+	else
+		end_drag(l);
+}
+
+static gboolean on_drag_key(GtkEventControllerKey *k, guint keyval, guint keycode, GdkModifierType state, gpointer data) {
+	(void)k;
+	(void)keycode;
+	(void)state;
+	list_t *l = data;
+	if (keyval != ESCAPE_KEY || !l->drag.lifted) return 0;
+	cancel_drag(l);
+	return 1;
+}
+
+// drop moves the lifted row's item where it was dropped.
+static void drop(list_t *l) {
+	int from = l->drag.from, to = l->drag.to, p = l->drag.slot, r0 = l->drag.row;
+	if (from == to || from < 0 || to < 0 || to >= item_count(l)) {
+		put_back(l);
+		return;
+	}
+	// With sections: their starts with it at its place among the rows.
+	uint32_t *starts = NULL;
+	if (l->sections.len) {
+		starts = calloc(l->sections.len, sizeof *starts);
+		if (!starts) abort();
+		int items = 0, n = (int)l->rows.len;
+		for (int q = 0, k = 0; q < n; q++) {
+			// The rows in their new order: the others, it at p.
+			int r;
+			if (q == p)
+				r = r0;
+			else {
+				r = k < r0 ? k : k + 1;
+				k++;
+			}
+			lrow *row = &l->rows.data[r];
+			if (row->header)
+				starts[row->section] = (uint32_t)items;
+			else
+				items++;
+		}
+	}
+	row_view *rv = l->drag.rv;
+	end_drag(l);
+	if (rv) rv->lifted = true;  // till it's landed
+	commit(l, from, to, starts);
+	free(starts);
+	emit_moved(l, from, to);
+}
+
+static void on_reorder_begin(GtkGestureDrag *g, double x, double y, gpointer data) {
+	list_t *l = data;
+	if (l->drag.armed || !l->reorder || l->selecting || l->columns > 1 || l->dead || l->tops.len != l->rows.len + 1) return;
+	float dy = (float)y - l->n->inset[0] + offset(l);
+	int r = search_rows(l, dy, true);
+	if (r >= (int)l->rows.len || row_top(l, r) > dy || l->rows.data[r].header || !shown_at(l, r)) return;
+	GdkDevice *dev = gtk_gesture_get_device((GtkGesture *)g);
+	l->drag = (drag_t){
+		.armed = true,
+		.row = r,
+		.grab = dy - row_top(l, r),
+		.x0 = x,
+		.y0 = y,
+		.vy = y,
+		.touch = dev && gdk_device_get_source(dev) == GDK_SOURCE_TOUCHSCREEN,
+		.gesture = (GtkGesture *)g,
+	};
+}
+
+static void on_reorder_update(GtkGestureDrag *g, double dx, double dy, gpointer data) {
+	list_t *l = data;
+	if (!l->drag.armed || l->drag.gesture != (GtkGesture *)g) return;
+	l->drag.vy = l->drag.y0 + dy;
+	if (!l->drag.lifted) {
+		if (hypot(dx, dy) < drag_threshold()) return;
+		if (l->drag.touch) {
+			// A touch that moves before it's held scrolls.
+			end_drag(l);
+			return;
+		}
+		gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_CLAIMED);
+		lift(l);
+		return;
+	}
+	drag_layout(l);
+}
+
+static bool row_menu(cell *c, double x, double y);
+
+static void on_reorder_end(GtkGestureDrag *g, double dx, double dy, gpointer data) {
+	(void)dx;
+	(void)dy;
+	list_t *l = data;
+	if (!l->drag.armed || l->drag.gesture != (GtkGesture *)g) return;
+	if (!l->drag.lifted) {
+		end_drag(l);
+		return;
+	}
+	bool held = l->drag.touch && hypot(dx, dy) < drag_threshold();
+	row_view *rv = l->drag.rv;
+	double x0 = l->drag.x0;
+	drop(l);
+	// A long press let go where it was: the row's menu (its swipe actions).
+	if (held && rv && rv->cells.len) row_menu(rv->cells.data[0], x0, rv->cells.data[0]->height / 2);
+}
+
+static void on_reorder_cancel(GtkGesture *g, gpointer seq, gpointer data) {
+	(void)seq;
+	list_t *l = data;
+	if (l->drag.armed && l->drag.gesture == g) cancel_drag(l);
+}
+
+// on_reorder_long lifts a touchscreen's held row.
+static void on_reorder_long(GtkGestureLongPress *g, double x, double y, gpointer data) {
+	(void)g;
+	(void)x;
+	(void)y;
+	list_t *l = data;
+	if (!l->drag.armed || l->drag.lifted || !l->drag.touch) return;
+	if (l->drag.gesture) gtk_gesture_set_state(l->drag.gesture, GTK_EVENT_SEQUENCE_CLAIMED);
+	lift(l);
+}
+
+// focused_cell is the cell the keyboard's focus is in.
+static cell *focused_cell(list_t *l) {
+	for (GtkWidget *w = focus_in(l); w && w != l->n->widget; w = gtk_widget_get_parent(w)) {
+		node *n = lx_view_node(w);
+		if (n && part_tag(n) == PART_CELL && ((cell *)n->ext)->l == l) return n->ext;
+	}
+	return NULL;
+}
+
+static gboolean on_reorder_key(GtkEventControllerKey *k, guint keyval, guint keycode, GdkModifierType state, gpointer data) {
+	(void)k;
+	(void)keycode;
+	list_t *l = data;
+	if (!l->reorder || !(state & GDK_ALT_MASK) || (state & (GDK_CONTROL_MASK | GDK_SHIFT_MASK | GDK_SUPER_MASK))) return 0;
+	int by = keyval == KEY_UP_ || keyval == KEY_KP_UP_ ? -1 : keyval == KEY_DOWN_ || keyval == KEY_KP_DOWN_ ? 1 : 0;
+	if (!by) return 0;
+	cell *c = focused_cell(l);
+	int i = c ? cell_index(c) : -1;
+	if (i < 0) return 0;
+	move_by_one(l, i, i + by);
+	return 1;
+}
+
+// set_reorder takes Reorder: u32 count (2), then the move actions' names
+// (empty: rows don't move).
+static void set_reorder(list_t *l, ak_span b) {
+	ak_str_vec ss = {0};
+	if (b.len) ak_decode_strings((const uint8_t *)b.p, b.len, &ss);
+	bool on = ss.len >= 2;
+	for (int i = 0; i < 2; i++) {
+		free(l->move_names[i]);
+		l->move_names[i] = on ? str_dup(ss.data[i]) : NULL;
+	}
+	ak_vec_free(&ss);
+	if (!on && l->drag.armed) cancel_drag(l);
+	l->reorder = on;
+	if (on && !l->reorder_wired) {
+		l->reorder_wired = true;
+		GtkGesture *g = gtk_gesture_drag_new();
+		gtk_gesture_single_set_button((GtkGestureSingle *)g, 1);
+		g_signal_connect(g, "drag-begin", G_CALLBACK(on_reorder_begin), l);
+		g_signal_connect(g, "drag-update", G_CALLBACK(on_reorder_update), l);
+		g_signal_connect(g, "drag-end", G_CALLBACK(on_reorder_end), l);
+		g_signal_connect(g, "cancel", G_CALLBACK(on_reorder_cancel), l);
+		gtk_widget_add_controller(l->n->widget, (GtkEventController *)g);
+		GtkGesture *lp = gtk_gesture_long_press_new();
+		gtk_gesture_single_set_touch_only((GtkGestureSingle *)lp, 1);
+		g_signal_connect(lp, "pressed", G_CALLBACK(on_reorder_long), l);
+		gtk_widget_add_controller(l->n->widget, (GtkEventController *)lp);
+		GtkEventController *k = gtk_event_controller_key_new();
+		g_signal_connect(k, "key-pressed", G_CALLBACK(on_reorder_key), l);
+		gtk_widget_add_controller(l->n->widget, k);
+		l->reorder_ctrls[0] = (GtkEventController *)g;
+		l->reorder_ctrls[1] = (GtkEventController *)lp;
+		l->reorder_ctrls[2] = k;
+	}
+	each_cell(l, wire_moves);
+}
+
+// one_move is whether b is a with one item moved (from, to).
+static bool one_move(const int64_t *a, const int64_t *b, uint32_t n, int *from, int *to) {
+	uint32_t lo = 0, hi = n;
+	while (lo < n && a[lo] == b[lo]) lo++;
+	if (lo == n) return false;
+	while (hi > lo && a[hi - 1] == b[hi - 1]) hi--;
+	uint32_t last = hi - 1;
+	// a[lo] went to last: b is a[lo+1..last], a[lo].
+	if (b[last] == a[lo] && !memcmp(b + lo, a + lo + 1, (last - lo) * sizeof *a)) {
+		*from = (int)lo;
+		*to = (int)last;
+		return true;
+	}
+	if (b[lo] == a[last] && !memcmp(b + lo + 1, a + lo, (last - lo) * sizeof *a)) {
+		*from = (int)last;
+		*to = (int)lo;
+		return true;
+	}
+	return false;
+}
+
+static bool same_sections(const lsec_vec *a, const lsec_vec *b) {
+	if (a->len != b->len) return false;
+	for (uint32_t i = 0; i < a->len; i++)
+		if (a->data[i].start != b->data[i].start || a->data[i].id != b->data[i].id) return false;
+	return true;
+}
+
+// take_update takes a ListUpdate the host's moves explain: the order it
+// has (after a move of the user's: nothing to do), or it with one item
+// moved (the app didn't take the move: it moves back, eased). False:
+// it's another update.
+static bool take_update(list_t *l) {
+	bool moved = l->moved;
+	l->moved = false;
+	if (!l->applied || l->pending.len != l->ids.len || !same_sections(&l->pending_s, &l->sections)) return false;
+	int from = 0, to = 0;
+	if (!memcmp(l->pending.data, l->ids.data, l->ids.len * sizeof *l->ids.data)) return moved;
+	if (!moved || l->columns > 1 || !one_move(l->ids.data, l->pending.data, l->ids.len, &from, &to)) return false;
+	if (l->drag.armed) cancel_drag(l);
+	commit(l, from, to, NULL);
+	l->moved = false;
+	return true;
+}
+
+static void free_reorder(list_t *l) {
+	if (l->drag.armed) end_drag(l);
+	stop_shifts(l);
+	for (int i = 0; i < 3; i++)
+		if (l->reorder_ctrls[i]) g_signal_handlers_disconnect_matched(l->reorder_ctrls[i], G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, l);
+	for (int i = 0; i < 2; i++) free(l->move_names[i]);
+}
+
 // ---- Drawing ----
 
 static GdkRGBA card_shade(void) { return H.dark ? (GdkRGBA){0, 0, 6.0f / 255, 0.36f} : (GdkRGBA){0, 0, 6.0f / 255, 0.07f}; }
+
+static GskRoundedRect rounded(graphene_rect_t r, float radius);
+
+// draw_lifted draws a lifted row on a card raised over the others (as
+// libadwaita's dragged rows): its rows' background, rounded, and a soft
+// shadow.
+static void draw_lifted(list_t *l, GtkSnapshot *snap, const graphene_rect_t *b) {
+	GskRoundedRect rr = rounded(*b, grouped(l) ? 12 : 6);
+	GdkRGBA sh[2] = {{0, 0, 6.0f / 255, H.dark ? 0.5f : 0.18f}, {0, 0, 6.0f / 255, H.dark ? 0.3f : 0.1f}};
+	gtk_snapshot_append_outset_shadow(snap, &rr, &sh[0], 0, 4, 0, 12);
+	gtk_snapshot_append_outset_shadow(snap, &rr, &sh[1], 0, 1, 1, 3);
+	GdkRGBA c = grouped(l) ? H.theme.card : l->appearance == AK_LIST_APPEARANCE_BARE ? H.theme.bg : H.theme.view;
+	gtk_snapshot_push_rounded_clip(snap, &rr);
+	gtk_snapshot_append_color(snap, &c, b);
+	gtk_snapshot_pop(snap);
+}
 
 static void draw_row(row_view *rv, GtkSnapshot *snap, const graphene_rect_t *b) {
 	list_t *l = rv->l;
 	int r = rv->row;
 	if (r < 0 || (uint32_t)r >= l->rows.len) return;
+	if (rv->lifted) {
+		draw_lifted(l, snap, b);
+		return;
+	}
 	if (rv->pinned) {
 		GdkRGBA c = l->appearance == AK_LIST_APPEARANCE_BARE ? H.theme.bg : H.theme.view;
 		gtk_snapshot_append_color(snap, &c, b);
@@ -1265,6 +2150,7 @@ static void free_list(node *n) {
 	list_t *l = list_of(n);
 	if (!l || l->dead) return;
 	l->dead = true;
+	free_reorder(l);
 	if (l->anim) adw_animation_skip(l->anim);
 	g_signal_handlers_disconnect_matched(l->vadj, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, l);
 	AK_VEC(row_view *) rows = {0};
@@ -1324,7 +2210,9 @@ static void list_dump(node *n, int depth, ak_buf *b) {
 		row_view *rv = rows[i];
 		float *f = rv->n->frame;
 		for (int k = 0; k <= depth; k++) ak_buf_put(b, "  ", 2);
-		ak_buf_printf(b, "row %d [%.0f,%.0f %.0fx%.0f]%s\n", rv->row, f[0], f[1], f[2], f[3], rv->pinned ? " pinned" : "");
+		ak_buf_printf(b, "row %d [%.0f,%.0f %.0fx%.0f]%s%s", rv->row, f[0], f[1], f[2], f[3], rv->pinned ? " pinned" : "", rv->lifted ? " lifted" : "");
+		if (rv->shift != 0) ak_buf_printf(b, " shifted %.0f", rv->shift);
+		ak_buf_u8(b, '\n');
 		for (uint32_t k = 0; k < rv->cells.len; k++)
 			if (gtk_widget_get_visible(rv->cells.data[k]->n->widget)) lx_dump_node(rv->cells.data[k]->n, depth + 2, b);
 	}

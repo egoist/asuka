@@ -158,6 +158,9 @@ object AsukaProp {
         const val DROP_ACCEPT = 64
         const val DRAG_ITEMS = 65
         const val TAKES_CLICKS = 66
+        const val PAN_AXIS = 67
+        const val PAN_MIN_DISTANCE = 68
+        const val PAN_SIMULTANEOUS = 69
     }
 
     object Text {
@@ -204,6 +207,8 @@ object AsukaProp {
         const val REFRESHING = 66
         const val PAGING = 67
         const val EDGE_EFFECT = 68
+        const val MIN_ZOOM = 69
+        const val MAX_ZOOM = 70
     }
 
     object List {
@@ -216,6 +221,7 @@ object AsukaProp {
         const val INSET = 70
         const val ANCHOR = 71
         const val SELECTING = 72
+        const val REORDER = 73
     }
 
     object Activity {
@@ -499,6 +505,10 @@ object AsukaEventKind {
     const val DEV_ERROR_ACTION = 66
     const val VIDEO_STATE = 67
     const val VIDEO_TRACKS = 68
+    const val DOUBLE_TAP = 69
+    const val HOVER_MOVE = 70
+    const val ZOOMED = 71
+    const val MOVED = 72
 }
 
 object AsukaCommand {
@@ -546,6 +556,7 @@ object AsukaCommand {
     const val DEV_PERF = 42
     const val DEV_FONT_SCALE = 43
     const val VIDEO_ACTION = 44
+    const val ZOOM_TO = 45
 }
 
 object AsukaRole {
@@ -953,6 +964,12 @@ object AsukaVideoAction {
     const val EXIT_FULL_SCREEN = 3
 }
 
+object AsukaPanAxis {
+    const val BOTH = 0
+    const val HORIZONTAL = 1
+    const val VERTICAL = 2
+}
+
 /** Receives decoded ops, in order, on the main thread. */
 interface AsukaOpHandler {
     fun create(id: Int, kind: Int)
@@ -1180,4 +1197,8 @@ object AsukaEvents {
     fun devErrorAction(id: Int, v: Long): ByteArray = AsukaWriter().apply { header(id, 66); u64(v) }.bytes()
     fun videoState(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 67); u32(v.size); raw(v) }.bytes()
     fun videoTracks(id: Int, v: ByteArray): ByteArray = AsukaWriter().apply { header(id, 68); u32(v.size); raw(v) }.bytes()
+    fun doubleTap(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 69); f64(x); f64(y) }.bytes()
+    fun hoverMove(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 70); f64(x); f64(y) }.bytes()
+    fun zoomed(id: Int, v: Double): ByteArray = AsukaWriter().apply { header(id, 71); f64(v) }.bytes()
+    fun moved(id: Int, x: Double, y: Double): ByteArray = AsukaWriter().apply { header(id, 72); f64(x); f64(y) }.bytes()
 }

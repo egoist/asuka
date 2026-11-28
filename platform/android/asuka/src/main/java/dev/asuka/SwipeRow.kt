@@ -165,9 +165,11 @@ class AsukaSwipeRow(private val rt: AsukaRuntime, val cell: AsukaCell) : FrameLa
             val lead = if (selecting) emptyList() else n?.leadingSwipeActions ?: emptyList()
             if (next != actions || reveal.childCount != next.size || lead != leading || leadingReveal.childCount != lead.size) setActions(next, lead)
         }
-        // A long press begins selecting, if the core asks to hear of it.
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) lastDown = ev.downTime
+        // A long press begins selecting, if the core asks to hear of it
+        // (in a list whose rows move, a long press lifts the row instead).
         when (ev.actionMasked) {
-            MotionEvent.ACTION_DOWN -> if (!selecting && rt.nodes[cell.asukaID]?.listens(AsukaEventKind.ROW_SELECT_BEGIN) == true) {
+            MotionEvent.ACTION_DOWN -> if (!selecting && rt.nodes[cell.asukaID]?.listens(AsukaEventKind.ROW_SELECT_BEGIN) == true && !inReorderingList()) {
                 pressing = true
                 downX = ev.x
                 downY = ev.y
@@ -185,6 +187,84 @@ class AsukaSwipeRow(private val rt: AsukaRuntime, val cell: AsukaCell) : FrameLa
         }
         if (!pressing && ev.actionMasked != MotionEvent.ACTION_DOWN && wasLongPressed(ev)) return true
         return super.dispatchTouchEvent(ev)
+    }
+
+    private fun inReorderingList(): Boolean {
+        val list = rt.nodes[cell.asukaID]?.cellOf ?: return false
+        return rt.nodes[list]?.list?.reorders == true
+    }
+
+    // The touch going on, by its down time.
+    private var lastDown = -1L
+
+    /** What's in the row gets no more of this touch (a long press or a drag took it): unpressed now, and no click as it lifts. */
+    private fun spendTouch() {
+        spentDown = lastDown
+        val now = android.os.SystemClock.uptimeMillis()
+        val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+        super.dispatchTouchEvent(cancel)
+        cancel.recycle()
+    }
+
+    private var liftedBackground: android.graphics.drawable.Drawable? = null
+
+    /**
+     * Lifted to be moved (Reorder): over the others, on an elevated
+     * surface (in a segmented list, its container's shape), its content
+     * no longer pressed.
+     */
+    fun lift(on: Boolean) {
+        val d = rt.density
+        if (on) {
+            spendTouch()
+            val shape = (content.background as? MaterialShapeDrawable)?.shapeAppearanceModel ?: ShapeAppearanceModel()
+            val bg = MaterialShapeDrawable.createWithElevationOverlay(context, 6 * d).apply { shapeAppearanceModel = shape }
+            liftedBackground = bg
+            background = bg
+            translationZ = 6 * d
+        } else {
+            if (background === liftedBackground) background = null
+            liftedBackground = null
+            translationZ = 0f
+        }
+    }
+
+    /** A move by one place for TalkBack (Reorder's): -1 up, 1 down; whether it moved. */
+    var onMove: ((Int) -> Boolean)? = null
+    private var moveTarget: View? = null
+    private val moveIDs = intArrayOf(-1, -1)
+    private var moveUp: String? = null
+    private var moveDown: String? = null
+    private var madeFocusable: View? = null
+    val hasMoveActions get() = moveTarget != null
+
+    /**
+     * Reorder's actions for TalkBack, on what it focuses in the row (its
+     * pressable content, else the row's content made focusable as one):
+     * up (none on the first row), down (none on the last); null: none.
+     */
+    fun setMoveActions(up: String?, down: String?) {
+        var v: View = cell
+        while (!v.isClickable && v is ViewGroup && v.childCount == 1) v = v.getChildAt(0)
+        val target = if (up == null && down == null) null else v
+        if (target === moveTarget && up == moveUp && down == moveDown) return
+        moveTarget?.let { t ->
+            for (i in moveIDs.indices) if (moveIDs[i] != -1) androidx.core.view.ViewCompat.removeAccessibilityAction(t, moveIDs[i])
+        }
+        moveIDs[0] = -1
+        moveIDs[1] = -1
+        madeFocusable?.let { if (it !== target) androidx.core.view.ViewCompat.setScreenReaderFocusable(it, false) }
+        madeFocusable = null
+        moveTarget = target
+        moveUp = up
+        moveDown = down
+        if (target == null) return
+        if (!target.isClickable && !target.isFocusable) {
+            androidx.core.view.ViewCompat.setScreenReaderFocusable(target, true)
+            madeFocusable = target
+        }
+        if (up != null) moveIDs[0] = androidx.core.view.ViewCompat.addAccessibilityAction(target, up) { _, _ -> onMove?.invoke(-1) == true }
+        if (down != null) moveIDs[1] = androidx.core.view.ViewCompat.addAccessibilityAction(target, down) { _, _ -> onMove?.invoke(1) == true }
     }
 
     // After a long press began selecting, the rest of that touch is spent.

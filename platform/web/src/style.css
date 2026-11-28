@@ -374,6 +374,10 @@ textarea.asuka-field { overflow-y: auto; display: block; }
 .asuka-snap { position: absolute; top: 0; left: 0; scroll-snap-align: start; scroll-snap-stop: always; pointer-events: none; }
 .asuka-refresher { position: absolute; left: calc(50% - 14px); top: 10px; width: 28px; height: 28px; color: var(--asuka-secondary-label); opacity: 0; pointer-events: none; z-index: 5; }
 .asuka-refresher.asuka-refreshing { opacity: 1; position: sticky; }
+/* A zoomable Scroll: its content scaled in a layer from its top left, the scroll extent the sizer's; the fingers are its own (zoom.js). */
+.asuka-scroller.asuka-zoomable { overflow: auto; touch-action: none; }
+.asuka-zoom-layer { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.asuka-zoom-sizer { position: absolute; left: 0; top: 0; width: 1px; height: 1px; visibility: hidden; pointer-events: none; }
 
 /* Lists */
 
@@ -393,6 +397,12 @@ textarea.asuka-field { overflow-y: auto; display: block; }
 .asuka-list.asuka-selecting .asuka-row:not(.asuka-header)::before { content: ""; position: absolute; left: 12px; top: calc(50% - 11px); width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--asuka-tertiary-label); z-index: 1; pointer-events: none; }
 .asuka-list.asuka-selecting .asuka-row.asuka-selected::before { background: var(--asuka-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 16px no-repeat; box-shadow: none; }
 .asuka-row.asuka-selected { background: color-mix(in srgb, var(--asuka-accent) 12%, transparent) !important; }
+/* A list whose rows move (Reorder): a lifted row follows the pointer above the others, which make way and settle. */
+.asuka-list.asuka-reordering .asuka-row:not(.asuka-lifted), .asuka-list.asuka-settling .asuka-row { transition: translate 0.2s ease; }
+.asuka-list .asuka-row.asuka-lifted { z-index: 3; background-color: var(--asuka-background); box-shadow: 0 8px 24px rgb(0 0 0 / 0.2), 0 1px 4px rgb(0 0 0 / 0.12); cursor: grabbing; }
+.asuka-list .asuka-row.asuka-dropping { z-index: 3; }
+.asuka-row:focus-visible { outline: 2px solid var(--asuka-accent); outline-offset: -2px; }
+.asuka-list.asuka-reordering, .asuka-list.asuka-reordering * { cursor: grabbing; }
 @media (hover: hover) {
   .asuka-list:not([data-appearance="bare"]) .asuka-row:not(.asuka-header):has(.asuka-pressable):hover { background-color: var(--asuka-fill); }
 }

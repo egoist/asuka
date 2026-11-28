@@ -237,6 +237,12 @@ enum {
 	AK_PROP_VIEW_DRAG_ITEMS = 65,
 	// in a click-through window (WindowFlags' click-through, WindowAction ClickThrough), the mouse over the view still goes to it, not to what's behind: the host hit-tests these views as the mouse moves (macOS, Windows) or makes them the window's input region (Linux), or gives them pointer events (the web); phones ignore it
 	AK_PROP_VIEW_TAKES_CLICKS = 66,
+	// the view's Pan recognizes a drag along this axis only (Both: any): one that moves first along the other axis isn't a pan, and goes to what's around it (a scroll view)
+	AK_PROP_VIEW_PAN_AXIS = 67,
+	// points a touch or the pointer moves before the view's Pan begins (0: the platform's touch slop)
+	AK_PROP_VIEW_PAN_MIN_DISTANCE = 68,
+	// the view's Pan and the scroll views around it both follow the same drag (UIKit's shouldRecognizeSimultaneouslyWith; Android leaves its parents' interception on): without it, once a pan begins it has the touch
+	AK_PROP_VIEW_PAN_SIMULTANEOUS = 69,
 };
 
 // Text props.
@@ -301,6 +307,10 @@ enum {
 	AK_PROP_SCROLL_PAGING = 67,
 	// how its content is set off from a bar it scrolls under: iOS 26's topEdgeEffect style; on macOS 26, the style of its column's (a split view's item's) scroll edge effect under the toolbar. Elsewhere nothing
 	AK_PROP_SCROLL_EDGE_EFFECT = 68,
+	// the smallest scale its content zooms to (unset: 1). Its content zooms when MaxZoom is more than MinZoom: a pinch (a trackpad's; ctrl, or ⌘ on a Mac, and the wheel), and a double tap, which zooms in to twice MinZoom (MaxZoom at most) around where it fell, or back out to MinZoom when it's zoomed in. Zoomed in, it scrolls both ways. Its zoom starts at 1 (within the two); Zoomed reports the user's, ZoomTo sets it
+	AK_PROP_SCROLL_MIN_ZOOM = 69,
+	// the largest scale its content zooms to (unset: 1)
+	AK_PROP_SCROLL_MAX_ZOOM = 70,
 };
 
 // List props.
@@ -321,6 +331,8 @@ enum {
 	AK_PROP_LIST_ANCHOR = 71,
 	// the list is selecting rows: each shows the platform's selection control (iOS's edit mode circles; a Material checkbox at the row's end on Android; a highlight on desktop), a tap selects or deselects the row instead of pressing it (RowSelected), and rows don't swipe. A host whose control takes room from the rows reports it with RowInset
 	AK_PROP_LIST_SELECTING = 72,
+	// the user can move its rows (empty: not): u32 count (2), then u32-length names: the screen readers' action that moves a row up one place, then the one that moves it down, in the app's language. iOS: a long press lifts a row, which the others make way for (UICollectionView's interactive movement); Android: ItemTouchHelper's long press drag; macOS, Windows, Linux, the web: a drag of the row with the pointer (a long press on a touch screen) lifts it. Dragged near the list's edge, it scrolls. Each row offers the two actions to screen readers (custom actions). A move reports Moved
+	AK_PROP_LIST_REORDER = 73,
 };
 
 // Activity props.
@@ -784,7 +796,15 @@ enum {
 	AK_EVENT_VIDEO_STATE = 67,
 	// a Video's subtitle and audio tracks (ops.AppendVideoTracks), as they're known and as they or the choice of them change: u32 count, then per track u8 kind (0 subtitle, 1 audio), u8 1 if it's the one chosen, u32-length id (the platform's, stable while the source is), u32-length label (as the platform's menu shows it), u32-length language (BCP 47; empty: not known)
 	AK_EVENT_VIDEO_TRACKS = 68,
-	AK_EVENT_COUNT = 69,
+	// two taps (or clicks) in quick succession on the view, within the system's double-tap time and distance: where the second fell, in points from its top left. With Press listened for too, a tap's Press waits until a second tap can't come (UIKit's require(toFail:), Android's onSingleTapConfirmed, the system's double-click time on desktops), and a double tap sends no Press
+	AK_EVENT_DOUBLE_TAP = 69,
+	// a pointer moved over the view or its children: where it is, in points from the view's top left; it comes after Hover (true), and none after Hover (false)
+	AK_EVENT_HOVER_MOVE = 70,
+	// a zoomable Scroll's zoom scale as the user changes it (a pinch, a double tap; ctrl or ⌘ and the wheel), as it goes, and where it settles (back within MinZoom and MaxZoom). ZoomTo's zoom isn't reported
+	AK_EVENT_ZOOMED = 71,
+	// the user moved a row of a List with Reorder (a drag dropped, or a screen reader's move action): X its item's index before, Y the index it's at now (among all the items, as ListUpdate's IDs). The host has moved it already, and keeps its IDs in the new order: a ListUpdate in that order changes nothing; the core sends one in the old order when the app doesn't take the move
+	AK_EVENT_MOVED = 72,
+	AK_EVENT_COUNT = 73,
 };
 
 // Commands.
@@ -874,7 +894,9 @@ enum {
 	AK_CMD_DEV_FONT_SCALE = 43,
 	// args: u8 VideoAction; sent to a Video: it goes into picture in picture (with PictureInPicture) or out, full screen (the platform's player's) or out; reported with VideoState
 	AK_CMD_VIDEO_ACTION = 44,
-	AK_CMD_COUNT = 45,
+	// args: f32 scale (within MinZoom and MaxZoom: the core clamps it), u8 animated; sent to a zoomable Scroll as the flush ends (as ScrollToOffset): it zooms its content to the scale around the middle of what it shows. Not reported with Zoomed
+	AK_CMD_ZOOM_TO = 45,
+	AK_CMD_COUNT = 46,
 };
 
 // Enums, by their index in ak_enums.
@@ -924,7 +946,8 @@ enum {
 	AK_ENUM_LOCATION_ACTION = 42,
 	AK_ENUM_DEV_ERROR_ACTION = 43,
 	AK_ENUM_VIDEO_ACTION = 44,
-	AK_ENUM_COUNT = 45,
+	AK_ENUM_PAN_AXIS = 45,
+	AK_ENUM_COUNT = 46,
 };
 
 // Role.
@@ -1420,6 +1443,14 @@ enum {
 	AK_VIDEO_ACTION_ENTER_FULL_SCREEN = 2,
 	AK_VIDEO_ACTION_EXIT_FULL_SCREEN = 3,
 	AK_VIDEO_ACTION_COUNT = 4,
+};
+
+// PanAxis.
+enum {
+	AK_PAN_AXIS_BOTH = 0,
+	AK_PAN_AXIS_HORIZONTAL = 1,
+	AK_PAN_AXIS_VERTICAL = 2,
+	AK_PAN_AXIS_COUNT = 3,
 };
 
 // A prop's name and wire type; enum is its enum's index (AK_ENUM_*) for

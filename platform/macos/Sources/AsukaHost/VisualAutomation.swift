@@ -146,11 +146,13 @@ final class AsukaTestDraggingInfo: NSObject, NSDraggingInfo {
                 guard p.count >= 4, let n = node(p[1]), let w = n.view?.window, let at = point(n, p[2], p[3]) else { return "want mouse <kind> <id> <x> <y> [t]" }
                 let types: [String: NSEvent.EventType] = ["down": .leftMouseDown, "up": .leftMouseUp, "dragged": .leftMouseDragged,
                                                           "rightdown": .rightMouseDown, "rightup": .rightMouseUp]
-                guard let type = types[p[0]] else { return "no mouse event \(p[0])" }
+                // down2, up2: a double click's second click.
+                let second = p[0].hasSuffix("2")
+                guard let type = types[second ? String(p[0].dropLast()) : p[0]] else { return "no mouse event \(p[0])" }
                 if !w.isVisible { w.orderFront(nil) } // a window off screen takes no clicks
                 let ts = base + (p.count > 4 ? Double(p[4]) ?? 0 : 0)
                 guard let e = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ts, windowNumber: w.windowNumber,
-                                                 context: nil, eventNumber: 0, clickCount: 1, pressure: 1) else { return "no event" }
+                                                 context: nil, eventNumber: 0, clickCount: second ? 2 : 1, pressure: 1) else { return "no event" }
                 // What the pointer's monitor sees of a press (Focus.swift):
                 // the window's sendEvent skips the application's monitors.
                 if type != .leftMouseDragged && pointerEvent(e) { continue }
@@ -178,6 +180,37 @@ final class AsukaTestDraggingInfo: NSObject, NSDraggingInfo {
         case "hover":
             guard a.count == 2, let n = node(a[1]), let v = n.view else { return "want hover enter|exit <id>" }
             if a[0] == "enter" { mouseEntered(v) } else { mouseExited(v) }
+        case "hovermove":
+            // The pointer's move over a view, at x, y from its top left (its
+            // tracking area's mouseMoved).
+            guard a.count == 3, let n = node(a[0]), let x = Double(a[1]), let y = Double(a[2]) else { return "want hovermove <id> <x> <y>" }
+            hoverMoved(n, CGPoint(x: x, y: y))
+        case "zoomwheel":
+            // ⌘ and a mouse's wheel over a Scroll, at x, y from its top
+            // left: lines (up: away from the user).
+            guard a.count == 4, let n = node(a[0]), let sv = n.view as? NSScrollView, let lines = Int32(a[1]), let x = Double(a[2]),
+                  let y = Double(a[3]) else { return "want zoomwheel <id> <lines> <x> <y>" }
+            guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0),
+                  let w = sv.window, let screen = NSScreen.screens.first else { return "no event" }
+            cg.flags = .maskCommand
+            // CGEvent's place is the global display's, from its top left.
+            let s = w.convertPoint(toScreen: sv.convert(CGPoint(x: x, y: y), to: nil))
+            cg.location = CGPoint(x: s.x, y: screen.frame.height - s.y)
+            guard let e = NSEvent(cgEvent: cg) else { return "no event" }
+            sv.scrollWheel(with: e)
+        case "magnify":
+            // A trackpad's pinch, settled at a scale (AppKit makes no
+            // gesture events for tests): as the scroll view's own.
+            guard a.count == 2, let sv = node(a[0])?.view as? NSScrollView, let m = Double(a[1]) else { return "want magnify <id> <scale>" }
+            let c = sv.contentView.bounds
+            sv.setMagnification(CGFloat(m), centeredAt: CGPoint(x: c.midX, y: c.midY))
+            userZoomed(sv, settled: true)
+        case "a11yaction":
+            // A screen reader's custom action on a view, by its name.
+            guard a.count >= 2, let v = node(a[0])?.view else { return "want a11yaction <id> <name>" }
+            let name = a[1...].joined(separator: " ")
+            guard let act = v.accessibilityCustomActions()?.first(where: { $0.name == name }) else { return "no action \(name)" }
+            if let h = act.handler { _ = h() } else { return "no handler" }
         case "hoverprobe":
             if a.first == "off" {
                 visual.hoverProbe = nil

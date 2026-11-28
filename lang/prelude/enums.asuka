@@ -300,3 +300,9 @@ enum SnackbarDuration {
   long
   indefinite
 }
+
+enum PanAxis {
+  both
+  horizontal
+  vertical
+}

@@ -438,6 +438,8 @@ frames: the rate differs between devices.
 A `View` takes gestures, recognized by the platform's recognizers:
 
 - `on press` and `on longPress`: a tap, and a touch held.
+- `on doubleTap(x, y)`: two taps in quick succession, and where the
+  second fell.
 - `on pan(g)`: a drag.
 - `on pinch(g)`: two fingers spreading or closing.
 - `on rotate(g)`: two fingers turning.
@@ -451,6 +453,7 @@ does for each:
 | --- | --- | --- | --- | --- |
 | `press` | a click | a click, or Enter or Space on a focused view | a click, or Enter or Space on a focused view | a click, or Enter or Space on a focused view |
 | `longPress` | a secondary click, or the button held | a right-click, or the button held | a secondary click, or the button held | a right-click, or the button or a touch held |
+| `doubleTap` | a double click | a double click | a double click | a double click, or two taps |
 | `pan` | a drag with the button down | a drag with the button down | a drag with the button down, a touch or the touchpad | a drag with the pointer down |
 | `swipe` | a drag that ends fast; a trackpad's two-finger flick; a three-finger swipe, where the system leaves it to apps | a drag that ends fast | a drag that ends fast; a touchscreen's flick | a drag that ends fast |
 | `pinch` | a trackpad's pinch | a touchpad's pinch, Ctrl and the wheel, or two fingers on a touch screen | a touchpad's or touch screen's pinch, or Ctrl and the wheel | a trackpad's pinch, Ctrl and the wheel, or two fingers on a touch screen |
@@ -542,6 +545,66 @@ gets no press, as a drag that starts on a button doesn't press it.
 A swipe or a pan can't be done with a screen reader on. Offer what it
 does as an [accessibility action](accessibility.md) too.
 
+### A tap and a double tap
+
+A view with both `on press` and `on doubleTap` tells them apart as the
+platform does (UIKit's `require(toFail:)`, Android's
+`onSingleTapConfirmed`): a tap's press waits until a second tap can't
+come, the system's double-tap time, and a double tap runs `on
+doubleTap` alone. A view with `on press` alone presses at once, with no
+wait.
+
+```asuka
+component Post {
+  state liked = false
+  state open = false
+
+  View {
+    height: 240
+    radius: 16
+    background: .secondaryBackground
+    justify: .center
+    align: .center
+    label: "Photo"
+    on press { open = true }
+    on doubleTap(x, y) { liked = true }
+    Symbol(if liked { "heart.fill" } else { "heart" }) { color: .red }
+  }
+}
+```
+
+### Which drags pan
+
+Three keys say how a pan is recognized, as React Native Gesture
+Handler's `activeOffsetX` and `simultaneousWithExternalGesture` do:
+
+- `panAxis: .horizontal` (or `.vertical`): only a drag along that axis
+  pans. One that moves first along the other axis goes to what's around
+  it, so a row that pans sideways still lets its list scroll.
+- `panMinDistance`: how far, in points, a drag goes before the pan
+  begins (unset, the platform's touch slop).
+- `panWithScroll: true`: the pan and the scroll views around it both
+  follow the drag, rather than the pan taking the touch (a sheet's
+  handle that scrolls its content too).
+
+```asuka
+component SwipeCard {
+  state dx = 0.0
+
+  View {
+    height: 96
+    radius: 16
+    background: .accent
+    panAxis: .horizontal
+    panMinDistance: 16
+    transform: Transform(x: dx)
+    on pan(g) {
+      dx = if g.state == .ended || g.state == .cancelled { 0 } else { g.translationX }
+    }
+  }
+}
+```
+
 ## Pressed and hover states
 
 A `View` reports its interaction states as they change, and a style
@@ -559,7 +622,9 @@ job:
    `Text`, an `if`. This is how a child follows its parent (a group's
    hover) and a sibling follows its neighbor (a peer's).
 3. **Handlers**, for what isn't a style, such as starting a recording:
-   `on pressedChange(on)` and `on hoverChange(on)`.
+   `on pressedChange(on)` and `on hoverChange(on)`. `on hover(x, y)`
+   runs as the pointer moves over the view, with where it is, in points
+   from the view's top left: a chart's crosshair, a magnifier.
 
 ```asuka
 component Card(title: string) {

@@ -149,6 +149,12 @@ native component View() {
   prop autofocus: bool
   /// in a click-through window (clickThrough), the mouse over it still goes to it: clicks, hover and the wheel, not to what's behind (a HUD's close button)
   prop takesClicks: bool
+  /// the axis its on pan follows: .horizontal or .vertical, and a drag that moves first along the other axis isn't a pan but goes to what's around it (a scroll view); .both (the default): any drag
+  prop panAxis: PanAxis
+  /// points a drag moves before its on pan begins (0, the default: the platform's touch slop)
+  prop panMinDistance: float
+  /// its on pan and the scroll views around it both follow the same drag (simultaneous recognition); false: once a pan begins, it has the touch
+  prop panWithScroll: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -185,6 +191,10 @@ native component View() {
   event keyText(text: string)
   /// a press began on it: where, in points from its top left (before pressedChange(true)): a slider's track jumps there
   event pressStart(x: float, y: float)
+  /// two taps (or clicks) in quick succession: where the second fell, in points from its top left. With on press too, a tap's press waits until a second can't come, and a double tap runs no press
+  event doubleTap(x: float, y: float)
+  /// a pointer moving over it or its children: where it is, in points from its top left (after hoverChange(true), none after hoverChange(false)); a touch screen alone never hovers
+  event hover(x: float, y: float)
 }
 
 /// a container whose children stack on a row
@@ -218,6 +228,12 @@ native component Row() {
   prop autofocus: bool
   /// in a click-through window (clickThrough), the mouse over it still goes to it: clicks, hover and the wheel, not to what's behind (a HUD's close button)
   prop takesClicks: bool
+  /// the axis its on pan follows: .horizontal or .vertical, and a drag that moves first along the other axis isn't a pan but goes to what's around it (a scroll view); .both (the default): any drag
+  prop panAxis: PanAxis
+  /// points a drag moves before its on pan begins (0, the default: the platform's touch slop)
+  prop panMinDistance: float
+  /// its on pan and the scroll views around it both follow the same drag (simultaneous recognition); false: once a pan begins, it has the touch
+  prop panWithScroll: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -254,6 +270,10 @@ native component Row() {
   event keyText(text: string)
   /// a press began on it: where, in points from its top left (before pressedChange(true)): a slider's track jumps there
   event pressStart(x: float, y: float)
+  /// two taps (or clicks) in quick succession: where the second fell, in points from its top left. With on press too, a tap's press waits until a second can't come, and a double tap runs no press
+  event doubleTap(x: float, y: float)
+  /// a pointer moving over it or its children: where it is, in points from its top left (after hoverChange(true), none after hoverChange(false)); a touch screen alone never hovers
+  event hover(x: float, y: float)
 }
 
 /// a container whose children stack on a column
@@ -287,6 +307,12 @@ native component Column() {
   prop autofocus: bool
   /// in a click-through window (clickThrough), the mouse over it still goes to it: clicks, hover and the wheel, not to what's behind (a HUD's close button)
   prop takesClicks: bool
+  /// the axis its on pan follows: .horizontal or .vertical, and a drag that moves first along the other axis isn't a pan but goes to what's around it (a scroll view); .both (the default): any drag
+  prop panAxis: PanAxis
+  /// points a drag moves before its on pan begins (0, the default: the platform's touch slop)
+  prop panMinDistance: float
+  /// its on pan and the scroll views around it both follow the same drag (simultaneous recognition); false: once a pan begins, it has the touch
+  prop panWithScroll: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -323,6 +349,10 @@ native component Column() {
   event keyText(text: string)
   /// a press began on it: where, in points from its top left (before pressedChange(true)): a slider's track jumps there
   event pressStart(x: float, y: float)
+  /// two taps (or clicks) in quick succession: where the second fell, in points from its top left. With on press too, a tap's press waits until a second can't come, and a double tap runs no press
+  event doubleTap(x: float, y: float)
+  /// a pointer moving over it or its children: where it is, in points from its top left (after hoverChange(true), none after hoverChange(false)); a touch screen alone never hovers
+  event hover(x: float, y: float)
 }
 
 /// a column that keeps its children out of the system's bars, notches and the keyboard: padded by the safe area's insets, over its own padding
@@ -356,6 +386,12 @@ native component SafeArea() {
   prop autofocus: bool
   /// in a click-through window (clickThrough), the mouse over it still goes to it: clicks, hover and the wheel, not to what's behind (a HUD's close button)
   prop takesClicks: bool
+  /// the axis its on pan follows: .horizontal or .vertical, and a drag that moves first along the other axis isn't a pan but goes to what's around it (a scroll view); .both (the default): any drag
+  prop panAxis: PanAxis
+  /// points a drag moves before its on pan begins (0, the default: the platform's touch slop)
+  prop panMinDistance: float
+  /// its on pan and the scroll views around it both follow the same drag (simultaneous recognition); false: once a pan begins, it has the touch
+  prop panWithScroll: bool
   /// a tap on it
   event press
   /// a press held on it
@@ -392,6 +428,10 @@ native component SafeArea() {
   event keyText(text: string)
   /// a press began on it: where, in points from its top left (before pressedChange(true)): a slider's track jumps there
   event pressStart(x: float, y: float)
+  /// two taps (or clicks) in quick succession: where the second fell, in points from its top left. With on press too, a tap's press waits until a second can't come, and a double tap runs no press
+  event doubleTap(x: float, y: float)
+  /// a pointer moving over it or its children: where it is, in points from its top left (after hoverChange(true), none after hoverChange(false)); a touch screen alone never hovers
+  event hover(x: float, y: float)
 }
 
 /// a text: it wraps, unless lines limits it
@@ -584,12 +624,20 @@ native component Scroll() {
   prop page: int
   /// how its content is set off from a bar it scrolls under (iOS 26's and macOS 26's scroll edge effect): .soft fades it, .hard cuts it off
   prop edgeEffect: EdgeEffect
+  /// the smallest scale its content zooms to (with maxZoom more than it): a pinch, a double tap, ctrl (⌘ on a Mac) and the wheel, or a trackpad's pinch zoom it, as a photo is
+  prop minZoom: float = 1
+  /// the largest scale its content zooms to; more than minZoom makes it zoomable
+  prop maxZoom: float = 1
+  /// its content's scale (within minZoom and maxZoom): the user's zooming writes it, and writing it zooms there
+  prop zoom: float = 1
   /// its content offset as it scrolls
   event scroll(x: float, y: float)
   /// pulled to refresh
   event refresh
   /// a paging swipe is settling on a page: its index from the content's start (its leading edge, right to left)
   event pageChange(page: int)
+  /// the user zoomed its content: its scale, as it goes and where it settles
+  event zoomChange(zoom: float)
 }
 
 /// a for in it is the platform's recycling list: rows exist only while they're on screen. It grows into its room unless it's sized
@@ -616,6 +664,8 @@ native component List() {
   prop selecting: bool
   /// whether row index is selected, followed as what it reads changes
   prop selected: fn(int) -> bool
+  /// with on move, whether the user can move rows now (false: as outside an edit mode)
+  prop reorderable: bool = true
   event scroll(x: float, y: float)
   /// pulled to refresh
   event refresh
@@ -627,6 +677,8 @@ native component List() {
   event select(index: int, selected: bool)
   /// the user started selecting at row index while the list isn't selecting (a two-finger pan on iOS, a long press on Android)
   event selectBegin(index: int)
+  /// the user moved row from to index to (where it is now, among the items: move the items the same way), by a drag (on a touch screen, a long press lifts the row) or a screen reader's Move up or Move down. It makes the rows movable; they keep their views as they move, and a move the items don't take goes back
+  event move(from: int, to: int)
   /// a swipe action of row index was chosen: its index among swipeActions, or -1 - its index among leadingSwipeActions (its run has run)
   event action(index: int, action: int)
 }

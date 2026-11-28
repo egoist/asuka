@@ -75,12 +75,6 @@ void wh_paint(node *n, HWND hwnd, HDC dc, RECT r) {
 
 // ---- Shadows ----
 
-typedef struct {
-	double spread, alpha;
-} shadow_step;
-
-enum { MAX_SHADOW_STEPS = 24 };
-
 // shadow_steps are the rounded rectangles that draw a shadow of alpha a
 // blurred by a Gaussian of σ sigma (pixels): at a distance d past the
 // shape's edge, a·½erfc(d/(σ√2)), from 3σ outside to 3σ inside, the
@@ -575,6 +569,7 @@ void wh_paint_own(node *n, HWND hwnd, HDC dc, RECT r) {
 		else g_fill_rect(g, rgba_argb(bg), 0, 0, w, ht);
 	}
 	paint_shadows(n, hwnd, g);  // its children's, under them
+	if (n->list) wh_paint_list(n, g);  // a lifted row's shadow
 	if (wh_pressable(n) && !n->disabled && (n->hot || n->pressed) && !wh_draws_states(n)) {
 		rgba c = H.theme.subtle_hot;
 		if (n->pressed) c = H.dark ? H.theme.subtle_pressed : (rgba){0, 0, 0, 0x0C};

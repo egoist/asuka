@@ -242,6 +242,16 @@ final class AsukaPressRecognizer: UIGestureRecognizer {
 /// presses: a draggable view's lifts it instead.
 final class AsukaLongPressRecognizer: UILongPressGestureRecognizer {}
 
+/// A View's double tap (DoubleTap): two taps within UIKit's time and
+/// distance. A press on the same view waits for it to fail, so a tap's
+/// Press comes once a second can't, and a double tap's never.
+final class AsukaDoubleTapRecognizer: UITapGestureRecognizer {
+    override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        numberOfTapsRequired = 2
+    }
+}
+
 /// Lets hover recognize with every other recognizer, so nested views
 /// that listen for Hover stay hovered together.
 final class AsukaHoverDelegate: NSObject, UIGestureRecognizerDelegate {
@@ -529,6 +539,9 @@ enum AsukaInteraction {
         g.onPoint = { [weak self] p in
             self?.emit(id, .pressPoint) { AsukaEvents.pressPoint(id, x: Double(p.x), y: Double(p.y)) }
         }
+        #if !os(tvOS)
+        for case let d as AsukaDoubleTapRecognizer in n.view.gestureRecognizers ?? [] { g.require(toFail: d) }
+        #endif
         n.view.addGestureRecognizer(g)
     }
 
@@ -542,6 +555,30 @@ enum AsukaInteraction {
         let g = AsukaLongPressRecognizer(target: self, action: #selector(longPressed(_:)))
         g.isEnabled = n.dragInteraction == nil // a draggable view's long press lifts it
         n.view.addGestureRecognizer(g)
+    }
+
+    /// DoubleTap: a double tap recognizer, which the view's press (one
+    /// made before or after) waits for. Not on a TV: its remote's Select
+    /// presses at once.
+    func installDoubleTap(_ n: AsukaNode) {
+        #if !os(tvOS)
+        if n.view.gestureRecognizers?.contains(where: { $0 is AsukaDoubleTapRecognizer }) == true { return }
+        let g = AsukaDoubleTapRecognizer(target: self, action: #selector(doubleTapped(_:)))
+        n.view.addGestureRecognizer(g)
+        for case let p as AsukaPressRecognizer in n.view.gestureRecognizers ?? [] { p.require(toFail: g) }
+        #endif
+    }
+
+    /// The app stopped listening: a press goes at once again (a
+    /// recognizer off its view takes no part in the touches its press does).
+    func removeDoubleTap(_ n: AsukaNode) {
+        for case let g as AsukaDoubleTapRecognizer in n.view.gestureRecognizers ?? [] { n.view.removeGestureRecognizer(g) }
+    }
+
+    @objc func doubleTapped(_ g: AsukaDoubleTapRecognizer) {
+        guard g.state == .ended, let v = g.view, let id = nodeID(of: v) else { return }
+        let p = g.location(in: v)
+        emit(id, .doubleTap) { AsukaEvents.doubleTap(id, x: Double(p.x), y: Double(p.y)) }
     }
 
     func installHover(_ n: AsukaNode) {
@@ -558,10 +595,20 @@ enum AsukaInteraction {
     @objc func hovered(_ g: UIHoverGestureRecognizer) {
         guard let id = nodeID(of: g.view) else { return }
         switch g.state {
-        case .began: emit(id, .hover) { AsukaEvents.hover(id, true) }
+        case .began:
+            emit(id, .hover) { AsukaEvents.hover(id, true) }
+            hoverMoved(id, g)
+        case .changed:
+            hoverMoved(id, g)
         case .ended, .cancelled, .failed: emit(id, .hover) { AsukaEvents.hover(id, false) }
         default: break
         }
+    }
+
+    /// HoverMove: where the pointer is over the view.
+    private func hoverMoved(_ id: UInt32, _ g: UIHoverGestureRecognizer) {
+        let p = g.location(in: g.view)
+        emit(id, .hoverMove) { AsukaEvents.hoverMove(id, x: Double(p.x), y: Double(p.y)) }
     }
     #endif
 

@@ -9,8 +9,18 @@
 // under the mouse is pressed: a control (a button, a field) takes its
 // clicks itself and never passes them on.
 //
+// A double click (NSEvent's clickCount) on a view listening for DoubleTap
+// reports it as the second click goes down, as AppKit's double clicks
+// act; a view listening for Press too presses only once the system's
+// double-click interval has passed without a second click. On a zoomable
+// Scroll's content, it zooms (Zoom.swift).
+//
+// A drag of a row of a List whose rows move lifts it (ListReorder.swift),
+// unless a draggable view in the row takes the drag.
+//
 // Hover is an NSTrackingArea per view, checked again as views appear, move
-// or show under a still pointer. Its areas work in the active app alone, so
+// or show under a still pointer; listening for HoverMove, its area also
+// sends the pointer's moves. Its areas work in the active app alone, so
 // leaving the app clears every hover and coming back checks them again
 // (appActive). Gestures are Gestures.swift's, drops and
 // drags DragDrop.swift's.
@@ -28,8 +38,17 @@ import AsukaOps
     var dropAccept: [String] = []
     /// DragItems: it's draggable.
     var dragItems: [AsukaItem] = []
-    /// Its NSPanGestureRecognizer (Pan, Swipe).
+    /// Its NSPanGestureRecognizer (Pan, Swipe), and how it begins: along
+    /// PanAxis only, past PanMinDistance, alongside other recognizers
+    /// (PanSimultaneous). live: the pan under way was reported as begun.
     var panGesture: NSPanGestureRecognizer?
+    var panAxis = AsukaPanAxis.both
+    var panMinDistance: CGFloat = 0
+    var panSimultaneous = false
+    var panLive = false
+    /// The last mouse move reported (HoverMove), by its time: the area's
+    /// owner and the first responder may both see it.
+    var movedAt: TimeInterval = -1
     /// Its other recognizers, by event (one of each).
     var gestures: Set<UInt16> = []
 }
@@ -45,6 +64,16 @@ struct AsukaMouseState {
     var source: AsukaNode?
     /// Where it went down, in window coordinates.
     var down = CGPoint.zero
+    /// The row of a List whose rows move it went down on, and whether
+    /// the drag lifted it.
+    var row: AsukaListCell?
+    var lifted = false
+}
+
+/// A press waiting to see whether a second click makes it a double click.
+struct AsukaPendingPress {
+    var node: AsukaNode?
+    var timer: Timer?
 }
 
 /// How far the mouse moves with the button down, in points, before a
@@ -64,7 +93,7 @@ let asukaDragDistance: CGFloat = 3
     /// Whether a click on n is n's: it presses, long presses, reports its
     /// pressed state or opens a menu.
     func pressable(_ n: AsukaNode) -> Bool {
-        n.listening(.press) || n.listening(.longPress) || n.listening(.pressed)
+        n.listening(.press) || n.listening(.longPress) || n.listening(.pressed) || n.listening(.doubleTap)
             || n.menu != nil && n.menuTrigger == AsukaMenuTrigger.tap.rawValue
     }
 
@@ -110,7 +139,7 @@ let asukaDragDistance: CGFloat = 3
             g.delegate = visual
             add(g)
             x.panGesture = g
-        case .hover:
+        case .hover, .hoverMove:
             listenHover(n)
         case .pinch:
             guard x.gestures.insert(e.rawValue).inserted else { return }
@@ -129,20 +158,44 @@ let asukaDragDistance: CGFloat = 3
     /// passed the click to); false: no view there takes it.
     func mouseDown(_ v: NSView, _ e: NSEvent) -> Bool {
         cancelPress()
+        endRowDrag(cancel: true)
         visual.mouse = AsukaMouseState()
         if e.modifierFlags.contains(.control) { return false } // a secondary click: the context menu
         pressFocus(v) // the Focusable view it's on takes the focus (Focus.swift)
         if visual.listSelectClick?(v) == true { return true } // a row of a selecting list: selected or deselected
-        var target: AsukaNode?, source: AsukaNode?
+        // The innermost pressable view, draggable view, view taking double
+        // clicks (or zoomable Scroll), and row whose list's rows move: a
+        // draggable view in the row drags, one around the list doesn't.
+        var target: AsukaNode?, source: AsukaNode?, double: AsukaNode?, zoom: AsukaNode?, row: AsukaListCell?
         var at: NSView? = v
-        while let x = at, target == nil || source == nil {
+        while let x = at {
             at = x.superview
             guard let n = node(of: x) else { continue }
             if target == nil && pressable(n) { target = n }
-            if source == nil, let d = n.interaction?.dragItems, !d.isEmpty { source = n }
+            if source == nil && row == nil, let d = n.interaction?.dragItems, !d.isEmpty { source = n }
+            if double == nil && zoom == nil {
+                if n.listening(.doubleTap) { double = n } else if zoomable(n) { zoom = n }
+            }
+            if row == nil, let c = n.cell, let l = c.list, l.reorders, !c.header { row = c }
         }
-        guard target != nil || source != nil else { return false }
-        visual.mouse = AsukaMouseState(active: true, target: target, inside: false, source: source, down: e.locationInWindow)
+        // A second click (of two, of four...): a double click.
+        let second = e.clickCount >= 2 && e.clickCount % 2 == 0
+        if !second || visual.pendingPress.node !== double { settlePress() } // a click elsewhere: the first one's press goes
+        if second, let d = double {
+            let waited = visual.pendingPress.node === d
+            cancelPendingPress()
+            if let dv = d.view {
+                let p = dv.convert(e.locationInWindow, from: nil)
+                emit(d, .doubleTap) { AsukaEvents.doubleTap($0, x: Double(p.x), y: Double(p.y)) }
+            }
+            // Its own press doesn't follow: it's the double click's.
+            if waited || target === d || target == nil { return true }
+        } else if second, let z = zoom {
+            doubleClickZoom(z, e)
+            if target == nil { return true }
+        }
+        guard target != nil || source != nil || row != nil else { return false }
+        visual.mouse = AsukaMouseState(active: true, target: target, inside: false, source: source, down: e.locationInWindow, row: row)
         if let t = target {
             visual.mouse.inside = true
             if t.listening(.pressPoint), let tv = t.view {
@@ -165,6 +218,20 @@ let asukaDragDistance: CGFloat = 3
             if live(s) { beginDrag(s, e) }
             return true
         }
+        if let c = m.row {
+            // A row of a list whose rows move: past the drag distance, it's
+            // lifted and follows the mouse (ListReorder.swift).
+            if m.lifted {
+                c.list?.dragRow(loc)
+                return true
+            }
+            if hypot(loc.x - m.down.x, loc.y - m.down.y) >= asukaDragDistance, let l = c.list, l.liftRow(c, m.down) {
+                cancelPress()
+                visual.mouse.lifted = true
+                l.dragRow(loc)
+                return true
+            }
+        }
         if let t = m.target {
             guard live(t) else {
                 visual.mouse.target = nil
@@ -183,6 +250,10 @@ let asukaDragDistance: CGFloat = 3
         let m = visual.mouse
         guard m.active else { return false }
         visual.mouse = AsukaMouseState()
+        if m.lifted {
+            m.row?.list?.dropRow()
+            return true
+        }
         guard let t = m.target, m.inside, live(t) else { return true }
         if mouseIn(t, e.locationInWindow) {
             if t.menu != nil && t.menuTrigger == AsukaMenuTrigger.tap.rawValue && !t.listening(.press) {
@@ -190,10 +261,48 @@ let asukaDragDistance: CGFloat = 3
                 popUp(t)
                 return true
             }
-            emit(t, .press) { AsukaEvents.press($0) }
+            if t.listening(.doubleTap) && t.listening(.press) {
+                // A second click may make it a double click: its press
+                // waits for the system's double-click interval.
+                deferPress(t)
+            } else {
+                emit(t, .press) { AsukaEvents.press($0) }
+            }
         }
         if live(t) { emit(t, .pressed) { AsukaEvents.pressed($0, false) } }
         return true
+    }
+
+    /// Holds n's press until a second click can't come.
+    func deferPress(_ n: AsukaNode) {
+        cancelPendingPress()
+        let t = Timer(timeInterval: NSEvent.doubleClickInterval, repeats: false) { _ in
+            MainActor.assumeIsolated { AsukaRuntime.shared.settlePress() }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        visual.pendingPress = AsukaPendingPress(node: n, timer: t)
+    }
+
+    /// Presses the view whose press waited, if one did.
+    func settlePress() {
+        guard let n = visual.pendingPress.node else { return }
+        cancelPendingPress()
+        if live(n) { emit(n, .press) { AsukaEvents.press($0) } }
+    }
+
+    /// Forgets the press that waited: a double click took it.
+    func cancelPendingPress() {
+        visual.pendingPress.timer?.invalidate()
+        visual.pendingPress = AsukaPendingPress()
+    }
+
+    /// Ends the row drag under way: dropped where it is, or put back.
+    func endRowDrag(cancel: Bool) {
+        let m = visual.mouse
+        guard m.lifted, let l = m.row?.list else { return }
+        visual.mouse.lifted = false
+        visual.mouse.row = nil
+        if cancel { l.cancelRowDrag() } else { l.dropRow() }
     }
 
     /// Whether a point in the window is on n's view.
@@ -221,13 +330,19 @@ let asukaDragDistance: CGFloat = 3
 
     // MARK: Hover
 
-    /// Gives n's view a tracking area: entered and exited, over its visible
-    /// rect, in the active app, during drags too.
+    /// Gives n's view a tracking area: entered and exited (and moved, for
+    /// HoverMove), over its visible rect, in the active app, during drags
+    /// too.
     func listenHover(_ n: AsukaNode) {
         let x = ix(n)
-        guard x.hoverArea == nil, let v = n.view else { return }
-        let a = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect, .enabledDuringMouseDrag],
-                               owner: v, userInfo: nil)
+        guard let v = n.view else { return }
+        var opts: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect, .enabledDuringMouseDrag]
+        if n.listening(.hoverMove) { opts.insert(.mouseMoved) }
+        if let old = x.hoverArea {
+            if old.options == opts { return }
+            v.removeTrackingArea(old)
+        }
+        let a = NSTrackingArea(rect: .zero, options: opts, owner: v, userInfo: nil)
         v.addTrackingArea(a)
         x.hoverArea = a
         checkHover(n)
@@ -241,9 +356,28 @@ let asukaDragDistance: CGFloat = 3
         if let n = node(of: v), n.interaction?.hoverArea != nil { setHover(n, false) }
     }
 
+    /// The pointer moved over v: false when v doesn't report it (its
+    /// superview's then).
+    func mouseMoved(_ v: NSView, _ e: NSEvent) -> Bool {
+        guard let n = node(of: v), let x = n.interaction, x.hoverArea != nil, n.listening(.hoverMove) else { return false }
+        if x.movedAt == e.timestamp { return true } // seen
+        x.movedAt = e.timestamp
+        hoverMoved(n, v.convert(e.locationInWindow, from: nil))
+        return true
+    }
+
+    /// Reports where the pointer is over n (from its top left), once it's
+    /// hovered: a move before its entered event hovers it.
+    func hoverMoved(_ n: AsukaNode, _ p: CGPoint) {
+        guard let x = n.interaction else { return }
+        if !x.hovered { setHover(n, true) }
+        guard x.hovered else { return }
+        emit(n, .hoverMove) { AsukaEvents.hoverMove($0, x: Double(p.x), y: Double(p.y)) }
+    }
+
     /// Reports n hovered, or not, if that changed.
     func setHover(_ n: AsukaNode, _ on: Bool) {
-        guard let x = n.interaction, x.hovered != on, n.listening(.hover) || x.hovered else { return }
+        guard let x = n.interaction, x.hovered != on, n.listening(.hover) || n.listening(.hoverMove) || x.hovered else { return }
         if on, let v = n.view, behindModal(v) { return } // a Modal overlay takes the pointer (Overlay.swift)
         x.hovered = on
         if live(n) { emit(n, .hover) { AsukaEvents.hover($0, on) } }
@@ -279,7 +413,7 @@ let asukaDragDistance: CGFloat = 3
         let q = visual.hoverCheck
         visual.hoverCheck = []
         for n in q {
-            guard let x = n.interaction, !x.hovered, live(n), n.listening(.hover), let v = n.view, !v.isHiddenOrHasHiddenAncestor,
+            guard let x = n.interaction, !x.hovered, live(n), n.listening(.hover) || n.listening(.hoverMove), let v = n.view, !v.isHiddenOrHasHiddenAncestor,
                   let w = v.window, let p = hoverProbe(w) else { continue }
             // A List's row's visibleRect is the list's whole shown area, not
             // clipped to the row: the bounds clip it.
@@ -302,6 +436,7 @@ let asukaDragDistance: CGFloat = 3
     func appActive(_ active: Bool) {
         if !active {
             cancelPress()
+            endRowDrag(cancel: true)
             visual.mouse = AsukaMouseState()
         }
         for n in nodes.values where n.interaction?.hoverArea != nil {
@@ -316,6 +451,7 @@ let asukaDragDistance: CGFloat = 3
             visual.mouse.inside = false
         }
         if visual.mouse.source === n { visual.mouse.source = nil }
+        if visual.pendingPress.node === n { cancelPendingPress() }
         if visual.over.target === n { visual.over.target = nil }
         visual.hoverCheck.removeAll { $0 === n }
         n.interaction?.hovered = false
@@ -326,6 +462,7 @@ let asukaDragDistance: CGFloat = 3
         guard let x = n.interaction, let v = n.view else { return }
         var j: [String: Any] = ["hovered": x.hovered, "dropAccept": x.dropAccept, "dragItems": x.dragItems.count,
                                 "pan": x.panGesture != nil, "registeredTypes": v.registeredDraggedTypes.count,
+                                "panAxis": Int(x.panAxis.rawValue), "panMinDistance": Double(x.panMinDistance), "panSimultaneous": x.panSimultaneous,
                                 "recognizers": v.gestureRecognizers.map { String(describing: type(of: $0)) }]
         if let a = x.hoverArea {
             j["hoverOptions"] = a.options.rawValue

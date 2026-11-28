@@ -73,6 +73,8 @@ import AsukaOps
             guard args.count >= 5 else { return }
             let b = Array(args)
             listScrollTo(n, Int(b.u32(0)), b[4] != 0)
+        case .zoomTo:
+            zoomTo(n, args) // Zoom.swift
         case .scrollToOffset:
             guard args.count >= 9 else { return }
             let b = Array(args)
@@ -145,6 +147,9 @@ import AsukaOps
         listFlush(n)
         let clip = sv.contentView
         let ds = doc.frame.size, cs = clip.bounds.size
+        // A zoomed Scroll's offsets are in the zoomed content's points; the
+        // clip view's bounds in the content's own.
+        let s = zoomScale(n), x = x / s, y = y / s
         let to = CGPoint(x: min(max(x, 0), max(ds.width - cs.width, 0)), y: min(max(y, 0), max(ds.height - cs.height, 0)))
         if animated { clip.animator().setBoundsOrigin(to) } else { clip.scroll(to: to) }
         sv.reflectScrolledClipView(clip)
@@ -155,8 +160,8 @@ import AsukaOps
         guard let clip = note.object as? NSClipView else { return }
         listScrolled(clip)
         guard let n = node(of: clip.superview) else { return }
-        let b = clip.bounds
-        emit(n, .scrolled) { AsukaEvents.scrolled($0, x: Double(b.origin.x), y: Double(b.origin.y)) }
+        let o = clip.bounds.origin, s = zoomScale(n)
+        emit(n, .scrolled) { AsukaEvents.scrolled($0, x: Double(o.x * s), y: Double(o.y * s)) }
     }
 
     /// What an event needs on the AppKit side: scroll observation, the

@@ -264,7 +264,22 @@ struct node {
 	// The mouse on a view of the host's own drawing.
 	bool hot, pressed, long_fired, panning, tracking, releasing, space_down, focused, placed, dying;
 	POINT press_at, pan_last;
+	POINT press_scr, drag_last;  // where the press began, where the drag was last (on the screen)
 	int64_t pan_time;  // QPC ticks
+	// Its pan's recognizing: PanAxis (AK_PAN_AXIS_*), PanMinDistance
+	// (points; 0: the system's drag distance), PanSimultaneous.
+	int32_t pan_axis;
+	float pan_min;
+	bool pan_simul;
+	bool press_waiting;     // a click's Press waiting for a double click's (TIMER_PRESS_WAIT)
+	uint32_t drag_scroll;   // the scroll view a drag of it scrolls (a pan refused, or with it): its ID
+	// A zoomable Scroll's (MinZoom, MaxZoom; 1 each unset): its zoom, and
+	// a zoom under way (TIMER_ZOOM): from, to, around where (points in the
+	// view), since when, reported.
+	float min_zoom, max_zoom, zoom_scale;
+	float zoom_from, zoom_to, zoom_ax, zoom_ay;
+	double zoom_t0;
+	bool zoom_user;
 	void *two_finger;  // a pinch or rotate under way (gesture.c)
 	node *search_of;   // the header whose search field it is (search.c)
 	node *alert_of;    // a field of an alert's dialog: the alert
@@ -319,6 +334,7 @@ struct node {
 	char *symbol;
 	wh_list *list;
 	wh_scrollbar *bar;   // a Scroll's or List's thumb
+	wh_scrollbar *bar2;  // a zoomable Scroll's, across its axis
 	wh_scrollbar *sbar;  // the thumb a KIND_SCROLL_BAR view is
 	wh_rowview *row;
 	wh_cell *cell;
@@ -537,6 +553,10 @@ enum {
 	TIMER_ROUTES = 10,
 	TIMER_SCRIPT = 11,
 	TIMER_CLICKS = 12,  // a click-through window's views that take clicks (clickregion.c)
+	TIMER_PRESS_WAIT = 13,   // a click's Press, waiting for a second click (DoubleTap)
+	TIMER_ZOOM = 14,         // a Scroll's zoom easing to a double click's, or ZoomTo's
+	TIMER_REORDER = 15,      // a list's rows making way for one moved, and its scrolling at an edge
+	TIMER_REORDER_HOLD = 16, // a touch's long press lifting a row
 };
 
 void wh_register_classes(void);

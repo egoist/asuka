@@ -1,0 +1,111 @@
+// Gestures on Windows (TestGestures): a List whose rows move (on move), a
+// double click and a press waiting for it (on doubleTap), the pointer's
+// place (on hover), a horizontal pan in a vertical Scroll (panAxis,
+// panMinDistance), and a zoomable Scroll (minZoom, maxZoom, zoom, zoomTo).
+
+struct Fruit {
+  id: int
+  name: string
+}
+
+app { Root() }
+
+component Root {
+  state fruits = [
+    Fruit(id: 1, name: "Apple"), Fruit(id: 2, name: "Banana"), Fruit(id: 3, name: "Cherry"),
+    Fruit(id: 4, name: "Date"), Fruit(id: 5, name: "Elderberry"), Fruit(id: 6, name: "Fig"),
+  ]
+  state last = "none"
+  state ignored = 0
+  state taps = 0
+  state likes = 0
+  state at = "none"
+  state pans = 0
+  state scrolled = 0.0
+  state zoom = 1.0
+  let scroll = Ref()
+
+  Row {
+    grow: 1
+    gap: 16
+    padding: 12
+    Column {
+      width: 240
+      gap: 4
+      Text("Order: {fruits.map((f) => f.name).joined(" ")}")
+      Text("Moved: {last}")
+      List {
+        height: 300
+        on move(from, to) {
+          fruits.insert(fruits.removeAt(from), at: to)
+          last = "{from} to {to}"
+        }
+        for f in fruits key f.id {
+          Row {
+            padding: [10, 16]
+            focusable: true
+            Text(f.name)
+          }
+        }
+      }
+      Text("Ignored: {ignored}")
+      List {
+        height: 130
+        // Not taken: the core sends the order back, and the rows go back.
+        on move(from, to) { ignored += 1 }
+        for n in ["One", "Two", "Three"] key n {
+          Row { padding: [10, 16]; Text(n) }
+        }
+      }
+    }
+    Column {
+      grow: 1
+      gap: 6
+      View {
+        height: 60
+        background: .secondaryBackground
+        justify: .center
+        align: .center
+        on press { taps += 1 }
+        on doubleTap(x, y) { likes += 1 }
+        on hover(x, y) { at = "{x.rounded()},{y.rounded()}" }
+        Text("Tap me")
+      }
+      Text("Taps: {taps} Likes: {likes}")
+      Text("At: {at}")
+      Scroll {
+        height: 90
+        on scroll(x, y) { scrolled = y }
+        Column {
+          View {
+            height: 40
+            background: .secondaryBackground
+            panAxis: .horizontal
+            panMinDistance: 16
+            on pan(g) { if g.state == .ended { pans += 1 } }
+            Text("Pan me")
+          }
+          for i in 0..20 key i { Text("Line {i}") }
+        }
+      }
+      Text("Pans: {pans} Scrolled: {scrolled.rounded()}")
+      Row {
+        gap: 8
+        Text("Zoom: {(zoom * 100).rounded()}")
+        Button("Zoom 3") { on press { scroll.zoomTo(3, animated: false) } }
+      }
+      Scroll {
+        ref: scroll
+        height: 120
+        minZoom: 1
+        maxZoom: 4
+        bind zoom: zoom
+        View {
+          height: 120
+          background: .secondaryBackground
+          Text("Zoom content")
+        }
+      }
+    }
+  }
+}

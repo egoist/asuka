@@ -7,7 +7,8 @@
 //     Alert, Popover, Snackbar, Window, toolbars, menus, transitions,
 //     matched views, window options and state, panels and flyouts, the
 //     views a click-through window still takes the mouse over)
-//   - list: lists, refresh, paging and page dots (List, PageControl)
+//   - list: lists, moving their rows, refresh, paging and page dots, and
+//     zoomable Scrolls (List, PageControl; ListReorder.swift, Zoom.swift)
 //   - text: rich text, rich and multiline fields, selection, keys
 //   - visual: images, symbols, shapes, canvases, shaders, progress rings,
 //     video, web views, native views, interaction (press, hover, drag and

@@ -11,9 +11,15 @@ import { Event, Events, Command, Reader, KindProp as P, Prop } from "./ops.js";
 import { own } from "./views.js";
 import { decodeActions } from "./host.js";
 import { apple } from "./keys.js";
+import { Zoom } from "./zoom.js";
+import { reorderTarget, shiftOf, moveRow, moveID, decodeReorder } from "./gestures.js";
 
-const longPressMs = 500; // a touch held this long on a row begins selecting (Android's)
+const longPressMs = 500; // a touch held this long on a row begins selecting (Android's), or lifts it (Reorder)
 const pressSlop = 10; // points a touch moves before it's a scroll, not a long press
+const dragSlop = 5; // points the pointer moves on a row before it lifts it (a desktop's drag threshold)
+const edgeZone = 48; // points from the list's top or bottom where a lifted row scrolls it
+const edgeSpeed = 14; // points a frame it scrolls at most
+const settleMs = 220; // how long rows take to settle after a move
 
 const KindRow = 0xfff0, KindCell = 0xfff1;
 const cardGap = 0; // an inset grouped list's rows touch, as one card
@@ -46,10 +52,23 @@ export const scrollKind = {
       case P.Scroll.Refreshing:
         refreshing(n, !!v);
         break;
+      case P.Scroll.MinZoom:
+      case P.Scroll.MaxZoom:
+        if (p === P.Scroll.MinZoom) n.minZoom = v; else n.maxZoom = v;
+        if (!n.zoom && (n.maxZoom ?? 1) <= (n.minZoom ?? 1)) break;
+        n.zoom ??= new Zoom(h, n);
+        n.zoom.bounds(n.minZoom ?? 1, n.maxZoom ?? 1);
+        break;
     }
   },
   insert(h, p, c, i) {
     h.placeChild(p, c, i);
+    return true;
+  },
+  childFrame(h, p, c, x, y, w, hh) {
+    // The content's frame is at zoom 1, inside the zoom's layer: the scroll extent follows it scaled.
+    h.place(c, x, y, w, hh);
+    if (p.zoom?.on) p.zoom.sized();
     return true;
   },
   frame(h, n, x, y, w, hh) {
@@ -62,6 +81,12 @@ export const scrollKind = {
       const r = new Reader(args);
       const x = r.f32(), y = r.f32(), animated = r.u8() !== 0;
       n.el.scrollTo({ left: x, top: y, behavior: animated ? "smooth" : "instant" });
+      return true;
+    }
+    if (cmd === Command.ZoomTo) {
+      const r = new Reader(args);
+      const z = r.f32(), animated = r.u8() !== 0;
+      n.zoom?.zoomTo(z, animated);
       return true;
     }
     return false;
@@ -225,6 +250,9 @@ class List {
     this.spacer = document.createElement("div");
     this.spacer.className = "asuka-list-spacer";
     n.el.appendChild(this.spacer);
+    this.reorder = null; // Reorder's action names ({up, down}): its rows move
+    this.drag = null; // a row's drag: before it lifts, and while it's lifted
+    this.settling = 0;
   }
 
   prop(p, v) {
@@ -244,6 +272,7 @@ class List {
         this.h.afterCore(() => this.h.dispatch(Events.rowInset(this.n.id, this.selecting ? 40 : 0, 0)));
         for (const rv of this.shown.values()) this.paintRow(rv);
         return;
+      case P.List.Reorder: this.setReorder(decodeReorder(v)); return;
       case P.List.Refreshable: refreshable(this.h, this.n, !!v); return;
       case P.List.Refreshing: refreshing(this.n, !!v); return;
     }
@@ -282,6 +311,7 @@ class List {
 
   flush() {
     if (!this.pending) { this.tile(); return; }
+    if (this.drag) this.endDrag(false); // the items changed under it
     const anchor = this.anchorRow();
     let keep = anchor;
     if ((this.bottom && this.stuck) || (!this.bottom && this.offset <= 0)) keep = null;
@@ -443,8 +473,9 @@ class List {
         const first = this.search((r) => this.tops[r + 1] > top);
         const last = this.search((r) => this.tops[r] >= bottom);
         const pin = this.pinnedRow();
+        const lifted = this.drag?.lifted ? this.drag.rv : null;
         for (const [r, rv] of this.shown) {
-          if ((r < first || r >= last) && r !== pin) {
+          if ((r < first || r >= last) && r !== pin && rv !== lifted) {
             this.shown.delete(r);
             rv.el.hidden = true;
             this.free.push(rv);
@@ -477,6 +508,7 @@ class List {
   placeRows() {
     const off = this.offset;
     const [x, w] = this.rowX();
+    const d = this.drag?.lifted ? this.drag : null;
     for (const [r, rv] of this.shown) {
       let y = this.tops[r];
       const height = this.rowHeight(r);
@@ -488,8 +520,15 @@ class List {
         }
         rv.pinned = true;
       }
+      // A lifted row follows the pointer; the others make way for it
+      // (translate, which eases: the place a row is bound at doesn't).
+      let shift = 0;
+      if (d && rv === d.rv) y = d.top;
+      else if (d && !rv.pinned) shift = shiftOf(r, d.from, d.to, d.size);
+      rv.y = y + shift;
       const s = rv.el.style;
       s.transform = `translateY(${y}px)`;
+      s.translate = shift ? `0 ${shift}px` : "";
       s.left = x + "px";
       s.width = w + "px";
       s.height = height + "px";
@@ -511,15 +550,18 @@ class List {
     el.className = "asuka-row";
     el.setAttribute("role", "listitem");
     this.n.el.appendChild(el);
-    const row = { el, cells: [], row: -1, pinned: false };
+    const row = { el, cells: [], row: -1, pinned: false, y: 0 };
     el.addEventListener("click", (e) => this.rowClicked(row, e));
     el.addEventListener("contextmenu", (e) => this.rowMenu(row, e));
-    // A touch held on a row begins selecting, as Android's long press.
+    el.addEventListener("keydown", (e) => this.rowKeyDown(row, e));
+    // A touch held on a row begins selecting, as Android's long press
+    // (where rows move, it lifts the row: see dragDown).
     let hold = null;
     const cancel = () => { clearTimeout(hold?.t); hold = null; };
     el.addEventListener("pointerdown", (e) => {
       cancel();
-      if (e.pointerType !== "touch" || this.selecting || row.header) return;
+      this.dragDown(row, e);
+      if (e.pointerType !== "touch" || this.selecting || row.header || this.movable()) return;
       hold = { x: e.clientX, y: e.clientY, t: setTimeout(() => {
         hold = null;
         const c = this.cellAt(row, e.target);
@@ -539,9 +581,7 @@ class List {
     rv.cells.forEach((c, i) => { c.n.el.hidden = i >= k; });
     rv.header = row.header;
     rv.el.classList.toggle("asuka-header", row.header);
-    rv.sep = this.columns <= 1 && this.appearance !== 2 && !row.header && r < this.rows.length - 1 && !this.rows[r + 1].header;
-    rv.first = !row.header && (r === 0 || this.rows[r - 1].header);
-    rv.last = !row.header && (r === this.rows.length - 1 || this.rows[r + 1].header);
+    this.edges(rv, r);
     for (let i = 0; i < k; i++) {
       const c = rv.cells[i];
       c.header = row.header;
@@ -551,6 +591,26 @@ class List {
       const known = this.heights.get(c.item);
       if (known != null) c.height = known;
       this.h.listBind(this.n.id, index, c.n.id);
+    }
+  }
+
+  /** edges are what a row shows of its place: a separator under it, a grouped card's first and last; where rows move, its place for screen readers, and the keyboard's focus. */
+  edges(rv, r) {
+    const row = this.rows[r];
+    rv.sep = this.columns <= 1 && this.appearance !== 2 && !row.header && r < this.rows.length - 1 && !this.rows[r + 1].header;
+    rv.first = !row.header && (r === 0 || this.rows[r - 1].header);
+    rv.last = !row.header && (r === this.rows.length - 1 || this.rows[r + 1].header);
+    const el = rv.el;
+    if (this.movable() && !row.header) {
+      el.tabIndex = 0;
+      el.setAttribute("aria-posinset", String(row.first + 1));
+      el.setAttribute("aria-setsize", String(this.ids.length));
+      el.setAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown");
+    } else if (el.hasAttribute("aria-posinset")) {
+      el.removeAttribute("tabindex");
+      el.removeAttribute("aria-posinset");
+      el.removeAttribute("aria-setsize");
+      el.removeAttribute("aria-keyshortcuts");
     }
   }
 
@@ -662,16 +722,278 @@ class List {
     return true;
   }
 
-  /** rowMenu: a row's swipe actions are its context menu on the web, as on the desktop hosts. */
+  /**
+   * rowMenu: a row's swipe actions are its context menu on the web, as
+   * on the desktop hosts, and so are its moves (Reorder's actions) where
+   * rows move: the web's screen readers have no custom actions.
+   */
   rowMenu(rv, e) {
+    if (this.drag && (this.drag.lifted || this.drag.type === "touch")) {
+      // A touch held on a row lifts it: not the browser's long press menu.
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const c = rv.cells.find((c) => c.n.el.contains(e.target));
-    if (!c || (!c.swipe.length && !c.leading.length)) return;
-    if (e.defaultPrevented) return;
+    if (!c || e.defaultPrevented) return;
+    const moves = this.moveItems(rv);
+    if (!c.swipe.length && !c.leading.length && !moves.length) return;
+    // A view in the row with a menu of its own, or a long press, has its own.
+    if (moves.length && !c.swipe.length && !c.leading.length) {
+      const own = this.h.interaction.pressTarget(e.target) || this.h.interaction.gestureTarget(e.target, [Event.LongPress]);
+      if (own && (own.menu || own.listening(Event.LongPress))) return;
+    }
     e.preventDefault();
     // Flat: a swipe's actions have no children, and none is disabled.
-    const items = [...c.leading.map((a, i) => ({ ...a, flags: 0, items: [], pick: () => this.h.dispatch(Events.action(c.n.id, -1 - i)) })),
+    const items = [...moves, ...c.leading.map((a, i) => ({ ...a, flags: 0, items: [], pick: () => this.h.dispatch(Events.action(c.n.id, -1 - i)) })),
       ...c.swipe.map((a, i) => ({ ...a, flags: 0, items: [], pick: () => this.h.dispatch(Events.action(c.n.id, i)) }))];
     this.h.menus.show(items, e.clientX, e.clientY);
+  }
+
+  // --- Moving rows (Reorder) ---
+
+  setReorder(names) {
+    if (!names && this.drag) this.endDrag(false);
+    const was = !!this.reorder;
+    this.reorder = names;
+    if (!!names !== was) {
+      // While a row is lifted, a touch's move is its, not a scroll.
+      if (names) this.n.el.addEventListener("touchmove", this.touchMove ??= (e) => { if (this.drag?.lifted) e.preventDefault(); }, { passive: false });
+      else if (this.touchMove) this.n.el.removeEventListener("touchmove", this.touchMove);
+      if (!this.dragListening) {
+        this.dragListening = true;
+        const el = this.n.el;
+        el.addEventListener("pointermove", (e) => this.dragMove(e));
+        el.addEventListener("pointerup", (e) => this.dragUp(e, true));
+        el.addEventListener("pointercancel", (e) => this.dragUp(e, false));
+      }
+    }
+    for (const [r, rv] of this.shown) this.edges(rv, r);
+  }
+
+  /** movable says its rows move: Reorder, in a list (a grid's cells don't). */
+  movable() { return !!this.reorder && this.columns <= 1; }
+
+  /** moveItems are a row's moves, as a menu's items: up one place, down one, where it can go. */
+  moveItems(rv) {
+    if (!this.movable() || rv.header || rv.row < 0) return [];
+    const i = this.rows[rv.row].first;
+    const out = [];
+    if (i > 0) out.push({ role: 0, title: this.reorder.up, icon: "arrow.up", flags: 0, items: [], pick: () => this.moveBy(rv, -1) });
+    if (i < this.ids.length - 1) out.push({ role: 0, title: this.reorder.down, icon: "arrow.down", flags: 0, items: [], pick: () => this.moveBy(rv, 1) });
+    return out;
+  }
+
+  /** rowKeyDown: Alt (⌥) and the up or down arrow moves the focused row one place. */
+  rowKeyDown(rv, e) {
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    if (!this.movable() || rv.header) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.moveBy(rv, e.key === "ArrowUp" ? -1 : 1);
+  }
+
+  /** moveBy moves a row one place up (-1) or down (1), as a screen reader's action or the keyboard's, and says where it is. */
+  moveBy(rv, by) {
+    if (this.drag || rv.header || rv.row < 0 || !this.shown.has(rv.row) || this.shown.get(rv.row) !== rv) return;
+    const from = this.rows[rv.row].first, to = from + by;
+    if (to < 0 || to >= this.ids.length) return;
+    this.reordered(moveID(this.ids, from, to), this.sections, this.positions());
+    this.h.dispatch(Events.moved(this.n.id, from, to));
+    this.scrollToItem(to, true);
+    const text = (rv.el.innerText || "").trim().split("\n")[0];
+    this.h.announce(`${text ? text + ", " : ""}${to + 1}/${this.ids.length}`);
+  }
+
+  /** dragDown: a pointer down on a row may lift it, as it moves past the drag threshold, or a touch held for a long press. */
+  dragDown(rv, e) {
+    if (!this.movable() || rv.header || this.drag || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+    // A field keeps its own drags (selecting text), a dragged view its drag and drop, a pan its pan.
+    if (e.target.closest?.("input, textarea, select, [contenteditable=true], [draggable=true]")) return;
+    const pan = this.h.interaction.gestureTarget(e.target, [Event.Pan]);
+    if (pan && rv.el.contains(pan.el)) return;
+    const d = { rv, id: e.pointerId, type: e.pointerType, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, lifted: false, moved: false, timer: 0, raf: 0, target: e.target };
+    this.drag = d;
+    if (d.type === "touch") d.timer = setTimeout(() => { if (this.drag === d) this.lift(); }, longPressMs);
+  }
+
+  dragMove(e) {
+    const d = this.drag;
+    if (!d || d.id !== e.pointerId) return;
+    d.x = e.clientX;
+    d.y = e.clientY;
+    const far = Math.hypot(d.x - d.x0, d.y - d.y0);
+    if (!d.lifted) {
+      if (d.type === "touch") {
+        if (far > pressSlop) { clearTimeout(d.timer); this.drag = null; } // a scroll
+        return;
+      }
+      if (far <= dragSlop) return;
+      this.lift();
+    }
+    if (far > pressSlop) d.moved = true;
+    this.dragTo();
+  }
+
+  /** lift lifts the row being dragged: it follows the pointer, above the others. */
+  lift() {
+    const d = this.drag;
+    if (!d || d.lifted || !this.shown.has(d.rv.row)) { this.drag = null; return; }
+    clearTimeout(d.timer);
+    d.lifted = true;
+    this.h.interaction.takeTouch();
+    try { d.rv.el.setPointerCapture(d.id); } catch {}
+    const r = d.rv.row;
+    d.from = d.to = r;
+    d.size = this.tops[r + 1] - this.tops[r];
+    const top = this.n.el.getBoundingClientRect().top;
+    d.grab = d.y0 - top + this.offset - this.tops[r];
+    d.top = this.tops[r];
+    clearTimeout(this.settling);
+    this.n.el.classList.remove("asuka-settling");
+    d.rv.el.classList.remove("asuka-dropping");
+    d.rv.el.classList.add("asuka-lifted");
+    this.n.el.classList.add("asuka-reordering");
+    d.key = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.endDrag(false); } };
+    addEventListener("keydown", d.key, true);
+    const edge = () => {
+      if (this.drag !== d) return;
+      this.edgeScroll(d);
+      d.raf = requestAnimationFrame(edge);
+    };
+    d.raf = requestAnimationFrame(edge);
+    this.dragTo();
+  }
+
+  /** dragTo places the lifted row under the pointer, and the others where it would go. */
+  dragTo() {
+    const d = this.drag;
+    if (!d?.lifted) return;
+    const top = this.n.el.getBoundingClientRect().top;
+    const total = this.tops[this.tops.length - 1];
+    d.top = Math.min(Math.max(d.y - top + this.offset - d.grab, 0), Math.max(total - d.size, 0));
+    const to = reorderTarget(this.tops, d.from, d.top + d.size / 2, this.sections.length ? 1 : 0);
+    if (to !== d.to) d.to = to;
+    this.placeRows();
+  }
+
+  /** edgeScroll scrolls the list while a lifted row is held near its top or bottom, the nearer the faster. */
+  edgeScroll(d) {
+    const el = this.n.el, r = el.getBoundingClientRect();
+    const zone = Math.min(edgeZone, r.height / 4);
+    let v = 0;
+    if (d.y < r.top + zone) v = -(r.top + zone - d.y) / zone;
+    else if (d.y > r.bottom - zone) v = (d.y - (r.bottom - zone)) / zone;
+    if (!v) return;
+    const was = el.scrollTop;
+    el.scrollTop = was + Math.max(-1.5, Math.min(1.5, v)) * edgeSpeed;
+    if (el.scrollTop !== was) this.dragTo();
+  }
+
+  dragUp(e, dropped) {
+    const d = this.drag;
+    if (!d || d.id !== e.pointerId) return;
+    if (!d.lifted) {
+      clearTimeout(d.timer);
+      this.drag = null;
+      return;
+    }
+    // The click a drag ends with presses nothing.
+    const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+    addEventListener("click", swallow, true);
+    setTimeout(() => removeEventListener("click", swallow, true), 0);
+    if (dropped && !d.moved && d.type === "touch" && !this.selecting) {
+      // Held and let go where it was: a long press, which begins selecting.
+      this.endDrag(false);
+      this.beginSelecting(this.cellAt(d.rv, d.target));
+      return;
+    }
+    this.endDrag(dropped);
+  }
+
+  /** endDrag lets the lifted row go: where it was dropped (reported with Moved), or back where it was. */
+  endDrag(dropped) {
+    const d = this.drag;
+    if (!d) return;
+    this.drag = null;
+    clearTimeout(d.timer);
+    cancelAnimationFrame(d.raf);
+    if (!d.lifted) return;
+    removeEventListener("keydown", d.key, true);
+    try { d.rv.el.releasePointerCapture(d.id); } catch {}
+    const before = this.positions();
+    d.rv.el.classList.remove("asuka-lifted");
+    d.rv.el.classList.add("asuka-dropping");
+    this.n.el.classList.remove("asuka-reordering");
+    const m = dropped && d.to !== d.from ? moveRow(this.rows, this.ids, this.sections, d.from, d.to) : null;
+    if (m) {
+      this.reordered(m.ids, this.sections.length ? m.sections : this.sections, before);
+      this.h.dispatch(Events.moved(this.n.id, m.from, m.to));
+    } else {
+      this.placeRows();
+      this.settle(before);
+    }
+  }
+
+  /** positions are where each row shows now. */
+  positions() {
+    const out = new Map();
+    for (const rv of this.shown.values()) out.set(rv, rv.y);
+    return out;
+  }
+
+  /**
+   * reordered takes the items in their new order, which the user made:
+   * each row view keeps its item (none is bound again), at its new place,
+   * and they settle there from where they were (before).
+   */
+  reordered(ids, sections, before) {
+    const shown = this.shown;
+    this.ids = ids;
+    this.sections = sections;
+    this.makeRows();
+    const items = new Map(), heads = new Map();
+    this.rows.forEach((row, r) => {
+      if (row.header) heads.set(this.sections[row.section].id, r);
+      else items.set(this.ids[row.first], r);
+    });
+    this.shown = new Map();
+    for (const rv of shown.values()) {
+      const c = rv.cells[0];
+      const r = c ? (rv.header ? heads.get(c.item) : items.get(c.item)) : undefined;
+      if (r == null) { rv.el.hidden = true; this.free.push(rv); continue; }
+      rv.row = r;
+      this.edges(rv, r);
+      this.shown.set(r, rv);
+    }
+    this.measureTops();
+    this.placeRows();
+    this.settle(before);
+    this.queue(); // rows come into view where others left
+  }
+
+  /** settle eases rows from where they showed (before) to where they are. */
+  settle(before) {
+    const el = this.n.el;
+    el.classList.remove("asuka-settling");
+    let any = false;
+    for (const [rv, y] of before) {
+      if (rv.el.hidden || y == null) continue;
+      const dy = y - rv.y;
+      if (Math.abs(dy) < 0.5) continue;
+      rv.el.style.translate = `0 ${dy}px`;
+      any = true;
+    }
+    clearTimeout(this.settling);
+    const done = () => {
+      el.classList.remove("asuka-settling");
+      for (const rv of before.keys()) rv.el.classList.remove("asuka-dropping");
+    };
+    if (!any) { done(); return; }
+    void el.offsetHeight; // from there, with no transition
+    el.classList.add("asuka-settling");
+    for (const rv of before.keys()) rv.el.style.translate = "";
+    this.settling = setTimeout(done, settleMs + 30);
   }
 
   resized() {

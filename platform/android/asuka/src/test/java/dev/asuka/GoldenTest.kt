@@ -68,6 +68,9 @@ class GoldenTest {
             AsukaEvents.environment(1, env),
             AsukaEvents.pan(11, AsukaGesture(AsukaGestureState.CHANGED, 10f, 20f, 5f, -3f, 100f, -50f, 1f, 0.5f)),
             AsukaEvents.native(12, byteArrayOf(1, 2, 3)),
+            AsukaEvents.doubleTap(13, 4.0, 5.5),
+            AsukaEvents.zoomed(14, 2.5),
+            AsukaEvents.moved(15, 1.0, 3.0),
         )
         val out = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN)
         for (e in events) { out.putInt(e.size); out.put(e) }

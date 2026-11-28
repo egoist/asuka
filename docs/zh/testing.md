@@ -83,11 +83,14 @@ app.tap("Add")                      // 按钮、行、标签页、开关、分�
 app.type("ada@example.com", into: "Email")  // 占位文字或标签为 Email 的输入框
 app.type("milk", into: "Search notes")      // 屏幕栏里的搜索框，按它的占位文字找
 app.tapLink("https://asuka.dev")     // RichText 中指向它的链接
+app.doubleTap("Photo")              // on doubleTap，或可缩放 Scroll 的缩放
+app.zoom("Photo", 2)                // 双指缩放显示它的那个可缩放 Scroll
+app.moveRow("Milk", to: 0)          // 拖动 List 的一行，on move 会收到
 app.share([SharedItem(kind: .link, text: "https://asuka.dev")])  // 另一个应用分享了它：onShare 会收到
 await app.idle()                    // 直到没有任何东西要运行：task、定时器、加载
 ```
 
-点按会落在手指会落下的地方。行里的文字会点按这一行，按钮里的文字会点按这个按钮。带菜单的视图会打开菜单，下一次 `tap` 就从菜单中选择。
+点按会落在手指会落下的地方。行里的文字会点按这一行，按钮里的文字会点按这个按钮。带菜单的视图会打开菜单，下一次 `tap` 就从菜单中选择。同时带 `on doubleTap` 的视图被点按时，会先等过双击的时限，所以它的 `on press` 照样会运行；`doubleTap` 则只运行 `on doubleTap`。
 
 ## 属性测试
 

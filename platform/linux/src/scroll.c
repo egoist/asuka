@@ -21,6 +21,15 @@
 // next one past a quick flick, else the nearest), one page a swipe; the
 // arrow keys, Page Up and Page Down move a page, Home and End to the
 // first and last. Each settling sends Paged.
+//
+// A zoomable Scroll (MaxZoom more than MinZoom) has its content in a
+// GtkFixed, scaled by its child transform, so the viewport scrolls the
+// scaled size, both ways: the core lays the content out at zoom 1, the
+// host scales it. A pinch (a touchscreen's, a touchpad's) zooms around
+// its fingers, Ctrl and the wheel around the pointer (10% a notch), a
+// double click in to twice MinZoom (MaxZoom at most) around it, or back
+// out to MinZoom; each sends Zoomed as it goes. ZoomTo zooms around the
+// middle of what shows, unreported. Its offsets are the scaled content's.
 #include "host.h"
 
 #include <math.h>
@@ -86,17 +95,26 @@ void lx_make_scroll(node *n, bool horizontal) {
 		lx_connect(n, s->vadj, "value-changed", G_CALLBACK(scrolled));
 	}
 	if (s->pager) return;  // paging keeps its policy
-	if (horizontal)
+	if (s->zoomer)
+		gtk_scrolled_window_set_policy((GtkScrolledWindow *)s->sw, GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);  // zoomed in: both ways
+	else if (horizontal)
 		gtk_scrolled_window_set_policy((GtkScrolledWindow *)s->sw, GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
 	else
 		gtk_scrolled_window_set_policy((GtkScrolledWindow *)s->sw, GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
 }
 
+static void zoom_content(node *n, node *old, node *c);
+
 // lx_scroll_set_content makes c's view the scrolled content (NULL: none).
 void lx_scroll_set_content(node *n, node *c) {
 	scroll_view *s = n->scroll;
 	if (s->content == c) return;
+	node *old = s->content;
 	s->content = c;
+	if (s->zoomer) {
+		zoom_content(n, old, c);
+		return;
+	}
 	if (!c) {
 		gtk_viewport_set_child((GtkViewport *)s->viewport, NULL);
 		return;
@@ -534,8 +552,295 @@ void lx_set_paging(node *n, bool on) {
 	gtk_widget_add_controller(s->sw, k);
 }
 
+// ---- Zooming ----
+
+typedef struct {
+	node *n;
+	GtkWidget *fixed;  // the viewport's child, the content's parent (referenced)
+	double min, max;   // MinZoom, MaxZoom
+	double z;          // the scale the content shows at
+	GtkGesture *pinch, *click;
+	GtkEventController *wheel, *motion;
+	double px, py;  // the pointer in the scrolled window
+	bool pointer;   // it's over it
+	// A pinch: the scale it began at, and the content's point under its
+	// fingers then (zoom 1's points).
+	double pinch_z, pcx, pcy;
+	bool pinching;
+	// An animation: from, to, its start, the content's point it keeps at
+	// a point of the view, and whether it's the user's (Zoomed).
+	guint tick;
+	double a_from, a_to, a_t0, a_cx, a_cy, a_vx, a_vy;
+	bool a_report;
+} zoomer;
+
+static zoomer *zoomer_of(node *n) { return n->scroll ? n->scroll->zoomer : NULL; }
+
+static bool zoomable(zoomer *zm) { return zm->max > zm->min; }
+
+static double clamp_zoom(zoomer *zm, double z) { return fmax(fmin(z, zm->max), zm->min); }  // MinZoom wins
+
+static void set_child_scale(zoomer *zm) {
+	node *c = zm->n->scroll->content;
+	if (!c || !c->widget || gtk_widget_get_parent(c->widget) != zm->fixed) return;
+	GskTransform *t = zm->z != 1 ? gsk_transform_scale(NULL, (float)zm->z, (float)zm->z) : NULL;
+	gtk_fixed_set_child_transform((GtkFixed *)zm->fixed, c->widget, t);  // it takes a reference
+	if (t) gsk_transform_unref(t);
+}
+
+// configure_axis sets an adjustment's range to the scaled content and its
+// value, clamped to it, before the viewport's next allocation (which
+// keeps it).
+static void configure_axis(GtkAdjustment *a, double v, double upper) {
+	double page = gtk_adjustment_get_page_size(a);
+	if (upper < page) upper = page;
+	v = fmin(fmax(v, 0), upper - page);
+	gtk_adjustment_configure(a, v, 0, upper, page * 0.1, page * 0.9, page);
+}
+
+// apply_zoom shows the content at scale z (clamped), its point cx, cy
+// (zoom 1's) at vx, vy of the view; report: the user's, sent as Zoomed.
+static void apply_zoom(zoomer *zm, double z, double cx, double cy, double vx, double vy, bool report) {
+	scroll_view *s = zm->n->scroll;
+	z = clamp_zoom(zm, z);
+	bool changed = z != zm->z;
+	zm->z = z;
+	set_child_scale(zm);
+	node *c = s->content;
+	if (c && c->placed) {
+		configure_axis(s->hadj, cx * z - vx, c->frame[2] * z);
+		configure_axis(s->vadj, cy * z - vy, c->frame[3] * z);
+		gtk_widget_queue_resize(c->widget);
+	}
+	if (changed && report) lx_emit(zm->n, (ak_event){.kind = AK_EVENT_ZOOMED, .f = z});
+}
+
+// content_at is the content's point (zoom 1's) at vx, vy of the view.
+static void content_at(zoomer *zm, double vx, double vy, double *cx, double *cy) {
+	scroll_view *s = zm->n->scroll;
+	*cx = (gtk_adjustment_get_value(s->hadj) + vx) / zm->z;
+	*cy = (gtk_adjustment_get_value(s->vadj) + vy) / zm->z;
+}
+
+// zoom_around zooms to z keeping what's at vx, vy there.
+static void zoom_around(zoomer *zm, double z, double vx, double vy, bool report) {
+	double cx, cy;
+	content_at(zm, vx, vy, &cx, &cy);
+	apply_zoom(zm, z, cx, cy, vx, vy, report);
+}
+
+static void middle(zoomer *zm, double *vx, double *vy) {
+	scroll_view *s = zm->n->scroll;
+	*vx = gtk_adjustment_get_page_size(s->hadj) / 2;
+	*vy = gtk_adjustment_get_page_size(s->vadj) / 2;
+}
+
+static void stop_zoom_animation(zoomer *zm) {
+	if (zm->tick) gtk_widget_remove_tick_callback(zm->n->scroll->sw, zm->tick);
+	zm->tick = 0;
+}
+
+static gboolean zoom_tick(GtkWidget *w, GdkFrameClock *clock, gpointer data) {
+	(void)w;
+	(void)clock;
+	zoomer *zm = data;
+	double t = fmin((lx_now() - zm->a_t0) / 0.25, 1);
+	double e = 1 - pow(1 - t, 3);
+	apply_zoom(zm, zm->a_from + (zm->a_to - zm->a_from) * e, zm->a_cx, zm->a_cy, zm->a_vx, zm->a_vy, zm->a_report);
+	if (t >= 1) {
+		zm->tick = 0;
+		return 0;
+	}
+	return 1;
+}
+
+// animate_zoom zooms to z around vx, vy over a quarter second, easing out
+// (at once with Reduce Motion, or off screen).
+static void animate_zoom(zoomer *zm, double z, double vx, double vy, bool animated, bool report) {
+	stop_zoom_animation(zm);
+	z = clamp_zoom(zm, z);
+	double cx, cy;
+	content_at(zm, vx, vy, &cx, &cy);
+	if (!animated || z == zm->z || H.env.reduce_motion || !gtk_widget_get_mapped(zm->n->scroll->sw)) {
+		apply_zoom(zm, z, cx, cy, vx, vy, report);
+		return;
+	}
+	zm->a_from = zm->z;
+	zm->a_to = z;
+	zm->a_t0 = lx_now();
+	zm->a_cx = cx;
+	zm->a_cy = cy;
+	zm->a_vx = vx;
+	zm->a_vy = vy;
+	zm->a_report = report;
+	zm->tick = gtk_widget_add_tick_callback(zm->n->scroll->sw, zoom_tick, zm, NULL);
+}
+
+static void on_pinch_begin(GtkGesture *g, gpointer seq, zoomer *zm) {
+	(void)seq;
+	if (!zoomable(zm)) return;
+	stop_zoom_animation(zm);
+	double vx = 0, vy = 0;
+	gtk_gesture_get_bounding_box_center(g, &vx, &vy);
+	zm->pinching = true;
+	zm->pinch_z = zm->z;
+	content_at(zm, vx, vy, &zm->pcx, &zm->pcy);
+	gtk_gesture_set_state(g, GTK_EVENT_SEQUENCE_CLAIMED);  // the fingers zoom: no scroll of them
+}
+
+// on_pinch zooms with the fingers: the content's point that was under
+// them stays under them, as they move apart and along.
+static void on_pinch(GtkGestureZoom *g, double scale, zoomer *zm) {
+	if (!zm->pinching) return;
+	double vx = 0, vy = 0;
+	gtk_gesture_get_bounding_box_center((GtkGesture *)g, &vx, &vy);
+	apply_zoom(zm, zm->pinch_z * scale, zm->pcx, zm->pcy, vx, vy, true);
+}
+
+static void on_pinch_end(GtkGesture *g, gpointer seq, zoomer *zm) {
+	(void)g;
+	(void)seq;
+	zm->pinching = false;
+}
+
+// on_zoom_wheel: Ctrl and the wheel zoom around the pointer, 10% a notch.
+static gboolean on_zoom_wheel(GtkEventControllerScroll *c, double dx, double dy, zoomer *zm) {
+	(void)dx;
+	if (!zoomable(zm) || !(gtk_event_controller_get_current_event_state((GtkEventController *)c) & GDK_CONTROL_MASK)) return 0;
+	if (dy == 0) return 1;
+	stop_zoom_animation(zm);
+	double vx, vy;
+	middle(zm, &vx, &vy);
+	if (zm->pointer) {
+		vx = zm->px;
+		vy = zm->py;
+	}
+	zoom_around(zm, zm->z * pow(1.1, -dy), vx, vy, true);
+	return 1;
+}
+
+// on_zoom_click: a double click zooms in to twice MinZoom around it, or
+// back out.
+static void on_zoom_click(GtkGestureClick *g, int count, double x, double y, zoomer *zm) {
+	(void)g;
+	if (count != 2 || !zoomable(zm)) return;
+	double to = zm->z > zm->min + 1e-3 ? zm->min : fmin(zm->min * 2, zm->max);
+	animate_zoom(zm, to, x, y, true, true);
+}
+
+static void on_zoom_motion(GtkEventControllerMotion *m, double x, double y, zoomer *zm) {
+	(void)m;
+	zm->px = x;
+	zm->py = y;
+	zm->pointer = true;
+}
+
+static void on_zoom_leave(GtkEventControllerMotion *m, zoomer *zm) {
+	(void)m;
+	zm->pointer = false;
+}
+
+// zoom_content moves the content from the viewport to the zoomer's
+// GtkFixed (and an old one out of it).
+static void zoom_content(node *n, node *old, node *c) {
+	zoomer *zm = zoomer_of(n);
+	if (old && old->widget && gtk_widget_get_parent(old->widget) == zm->fixed) gtk_fixed_remove((GtkFixed *)zm->fixed, old->widget);
+	if (!c || !c->widget) return;
+	lx_detach(c->widget);
+	gtk_fixed_put((GtkFixed *)zm->fixed, c->widget, 0, 0);
+	set_child_scale(zm);
+}
+
+static zoomer *make_zoomer(node *n) {
+	scroll_view *s = n->scroll;
+	if (s->zoomer) return s->zoomer;
+	zoomer *zm = calloc(1, sizeof *zm);
+	if (!zm) abort();
+	zm->n = n;
+	zm->min = zm->max = zm->z = 1;
+	s->zoomer = zm;
+	zm->fixed = g_object_ref_sink(gtk_fixed_new());
+	node *c = s->content;
+	if (c && c->widget) lx_detach(c->widget);
+	gtk_viewport_set_child((GtkViewport *)s->viewport, zm->fixed);
+	if (c && c->widget) gtk_fixed_put((GtkFixed *)zm->fixed, c->widget, 0, 0);
+	lx_make_scroll(n, s->horizontal);  // both ways
+	GtkGesture *pinch = gtk_gesture_zoom_new();
+	zm->pinch = pinch;
+	gtk_event_controller_set_propagation_phase((GtkEventController *)pinch, GTK_PHASE_CAPTURE);
+	g_signal_connect(pinch, "begin", G_CALLBACK(on_pinch_begin), zm);
+	g_signal_connect(pinch, "scale-changed", G_CALLBACK(on_pinch), zm);
+	g_signal_connect(pinch, "end", G_CALLBACK(on_pinch_end), zm);
+	gtk_widget_add_controller(s->sw, (GtkEventController *)pinch);
+	GtkEventController *wheel = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL | GTK_EVENT_CONTROLLER_SCROLL_DISCRETE);
+	zm->wheel = wheel;
+	gtk_event_controller_set_propagation_phase(wheel, GTK_PHASE_CAPTURE);  // before the scrolled window scrolls
+	g_signal_connect(wheel, "scroll", G_CALLBACK(on_zoom_wheel), zm);
+	gtk_widget_add_controller(s->sw, wheel);
+	GtkGesture *click = gtk_gesture_click_new();
+	zm->click = click;
+	gtk_gesture_single_set_button((GtkGestureSingle *)click, 1);
+	g_signal_connect(click, "pressed", G_CALLBACK(on_zoom_click), zm);
+	gtk_widget_add_controller(s->sw, (GtkEventController *)click);
+	GtkEventController *motion = gtk_event_controller_motion_new();
+	zm->motion = motion;
+	g_signal_connect(motion, "enter", G_CALLBACK(on_zoom_motion), zm);
+	g_signal_connect(motion, "motion", G_CALLBACK(on_zoom_motion), zm);
+	g_signal_connect(motion, "leave", G_CALLBACK(on_zoom_leave), zm);
+	gtk_widget_add_controller(s->sw, motion);
+	return zm;
+}
+
+// set_zoom_bound takes MinZoom or MaxZoom: the zoom shown is clamped to
+// them, silently.
+static void set_zoom_bound(node *n, bool max, double v) {
+	zoomer *zm = make_zoomer(n);
+	if (!(v > 0)) v = 1;
+	if (max)
+		zm->max = v;
+	else
+		zm->min = v;
+	double z = clamp_zoom(zm, zm->z);
+	if (zm->max < zm->min) z = zm->min;
+	if (z == zm->z) return;
+	stop_zoom_animation(zm);
+	double vx, vy;
+	middle(zm, &vx, &vy);
+	double cx, cy;
+	content_at(zm, vx, vy, &cx, &cy);
+	zm->z = z;
+	apply_zoom(zm, z, cx, cy, vx, vy, false);
+}
+
+static void free_zoomer(zoomer *zm) {
+	stop_zoom_animation(zm);
+	gpointer ctrls[] = {zm->pinch, zm->click, zm->wheel, zm->motion};
+	for (size_t i = 0; i < AK_LEN(ctrls); i++)
+		if (ctrls[i]) g_signal_handlers_disconnect_matched(ctrls[i], G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, zm);
+	g_object_unref(zm->fixed);
+	free(zm);
+}
+
+// zoom_command: ZoomTo, around the middle of what shows (not reported).
+static bool zoom_command(node *n, ak_cmd c, ak_span args) {
+	if (c != AK_CMD_ZOOM_TO || !n->scroll) return false;
+	zoomer *zm = zoomer_of(n);
+	if (!zm || args.len < 4) return true;
+	ak_reader r = {(const uint8_t *)args.p, args.len, 0, false};
+	double z = ak_read_f32(&r);
+	bool animated = args.len >= 5 && ak_read_u8(&r) != 0;
+	double vx, vy;
+	middle(zm, &vx, &vy);
+	animate_zoom(zm, z, vx, vy, animated, false);
+	return true;
+}
+
 bool lx_set_scroll_prop(node *n, ak_prop p, const ak_value *v) {
 	switch (p) {
+	case AK_PROP_SCROLL_MIN_ZOOM:
+	case AK_PROP_SCROLL_MAX_ZOOM:
+		set_zoom_bound(n, p == AK_PROP_SCROLL_MAX_ZOOM, v->f);
+		return true;
 	case AK_PROP_SCROLL_HORIZONTAL:
 		lx_make_scroll(n, v->i != 0);
 		if (n->scroll->pager) {
@@ -563,6 +868,7 @@ void lx_release_scroll(node *n) {
 		paging_stop(s->pager);
 		free(s->pager);
 	}
+	if (s->zoomer) free_zoomer(s->zoomer);
 	if (s->spinner_state) {
 		free(s->spinner_state);
 		for (uint32_t i = 0; i < refreshers.len; i++)
@@ -735,4 +1041,5 @@ const area lx_area_scroll = {
 	.draw = dots_draw,
 	.scrolled = scroll_scrolled,
 	.release = scroll_release,
+	.command = zoom_command,
 };

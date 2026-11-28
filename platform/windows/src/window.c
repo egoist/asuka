@@ -449,7 +449,9 @@ void wh_lifecycle(int state) {
 }
 
 // wh_key_message handles the app's keys before the dialog navigation
-// does: F5 refreshes, Escape dismisses a sheet, Alt+Left goes back.
+// does: F5 refreshes, Escape puts a lifted row back or dismisses a sheet,
+// Alt+Left goes back, Alt+Up and Alt+Down move the row the focus is in
+// (a List's whose rows move).
 bool wh_key_message(MSG *m) {
 	if (m->message != WM_KEYDOWN && m->message != WM_SYSKEYDOWN) return false;
 	switch (m->wParam) {
@@ -457,6 +459,7 @@ bool wh_key_message(MSG *m) {
 		if (m->message == WM_KEYDOWN && !wh_key_down(VK_CONTROL) && !wh_key_down(VK_SHIFT)) return wh_refresh_key(m);
 		break;
 	case VK_ESCAPE: {
+		if (wh_list_cancel_move()) return true;  // a row being moved, back where it was
 		if (wh_escape_dismisses(m)) return true;  // a panel, a flyout
 		HWND w = GetAncestor(m->hwnd, GA_ROOT);
 		if (w != H.window) {
@@ -467,6 +470,10 @@ bool wh_key_message(MSG *m) {
 		}
 		break;
 	}
+	case VK_UP:
+	case VK_DOWN:
+		if (m->message == WM_SYSKEYDOWN && wh_list_move_key(m->hwnd, m->wParam == VK_UP)) return true;
+		break;
 	case VK_LEFT:
 	case VK_RIGHT:
 		// Alt+Left, and Alt+Right right to left, where the back arrow points.

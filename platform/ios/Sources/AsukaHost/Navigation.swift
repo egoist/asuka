@@ -962,6 +962,8 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             n.list?.setAnchor(AsukaScrollAnchor(rawValue: v.enumValue) ?? .top)
         case (.list, AsukaProp.List.selecting):
             n.list?.setEditing(v.bool)
+        case (.list, AsukaProp.List.reorder):
+            if case .bytes(let b) = v { n.list?.setReorder(AsukaInteraction.decodeStrings(b)) }
         default:
             break
         }

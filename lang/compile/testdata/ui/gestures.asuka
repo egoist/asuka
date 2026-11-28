@@ -1,0 +1,96 @@
+// A List's on move, a view's on doubleTap and on hover, a pan's
+// recognition keys, and a zoomable Scroll's zoom binding and Ref.
+
+struct Todo {
+  id: int
+  title: string
+}
+
+component Todos {
+  state todos = [Todo(id: 1, title: "Milk"), Todo(id: 2, title: "Eggs"), Todo(id: 3, title: "Bread")]
+  state editing = true
+  state moves = 0
+
+  Column {
+    Text("{todos.map((t) => t.title).joined(", ")} ({moves})")
+    Button("Done") { on press { editing = false } }
+    List {
+      height: 300
+      reorderable: editing
+      on move(from, to) {
+        todos.insert(todos.removeAt(from), at: to)
+        moves += 1
+      }
+      for t in todos key t.id { Text(t.title) }
+    }
+  }
+}
+
+component Likes {
+  state likes = 0
+  state taps = 0
+  state at = ""
+
+  View {
+    padding: 16
+    panAxis: .horizontal
+    panMinDistance: 24
+    panWithScroll: true
+    on press { taps += 1 }
+    on doubleTap(x, y) { likes += 1 }
+    on hover(x, y) { at = "{x},{y}" }
+    on pan(g) { }
+    Text("{likes} likes, {taps} taps{at}")
+  }
+}
+
+component Photo {
+  state zoom = 1.0
+  let scroll = Ref()
+
+  Column {
+    Text("zoom {zoom}")
+    Button("Reset") { on press { scroll.zoomTo(0.5, animated: false) } }
+    Scroll {
+      ref: scroll
+      height: 300
+      minZoom: 1
+      maxZoom: 3
+      bind zoom: zoom
+      Text("Photo")
+    }
+  }
+}
+
+app { Todos() }
+
+test "a list's rows move" {
+  let app = mount(Todos())
+  app.expect("Milk, Eggs, Bread (0)")
+  app.moveRow("Milk", to: 2)
+  app.expect("Eggs, Bread, Milk (1)")
+  app.moveRow("Bread", to: 0)
+  app.expect("Bread, Eggs, Milk (2)")
+  app.tap("Done")
+  app.expect("Bread, Eggs, Milk (2)")
+}
+
+test "a double tap isn't a tap" {
+  let app = mount(Likes())
+  app.doubleTap("0 likes, 0 taps")
+  app.expect("1 likes, 0 taps")
+  app.tap("1 likes, 0 taps")
+  app.expect("1 likes, 1 taps")
+}
+
+test "a scroll zooms within its bounds" {
+  let app = mount(Photo())
+  app.zoom("Photo", 5)
+  app.expect("zoom 3")
+  app.doubleTap("Photo")
+  app.expect("zoom 1")
+  app.doubleTap("Photo")
+  app.expect("zoom 2")
+  app.tap("Reset")
+  app.expect("zoom 1")
+}

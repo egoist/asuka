@@ -10,6 +10,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 // A List's rows, bound as a collection view binds them: those that fit
 // the list's height from where it's scrolled (or back from its end, for a
@@ -1360,7 +1361,10 @@ static bool press(ak_uitest *a, ak_fake_view *v, ak_span text, bool long_press, 
 			// Where it began: the view's middle.
 			ak_fake_dispatch(a->f, &(ak_event){.id = p->id, .kind = AK_EVENT_PRESS_POINT, .x = p->frame[2] / 2, .y = p->frame[3] / 2});
 		}
-		if (ak_fake_listens(p, AK_EVENT_PRESS)) ak_fake_tap(a->f, p);
+		if (ak_fake_listens(p, AK_EVENT_PRESS)) {
+			ak_fake_tap(a->f, p);
+			ak_fake_tap_settle(a->f);  // a tap waits out the double-tap time
+		}
 	} else if (p->kind == AK_KIND_NATIVE) {
 		// A native package's view (a pay button): its Press event.
 		ak_fake_emit_native(a->f, p, "Press", NULL, 0);
@@ -1755,6 +1759,66 @@ bool ak_uitest_swipe(ak_uitest *a, ak_span text, ak_span action, ak_buf *err) {
 	return settled(a, err);
 }
 
+// ak_uitest_double_tap double-taps what shows text: the view (or the one
+// around it) that takes a double tap, or a zoomable Scroll, which zooms.
+bool ak_uitest_double_tap(ak_uitest *a, ak_span text, ak_buf *err) {
+	target t;
+	if (!one(a, text, by_view, &t, err)) return false;
+	ak_fake_view *p = t.v;
+	while (p && !ak_fake_listens(p, AK_EVENT_DOUBLE_TAP) && !(p->kind == AK_KIND_SCROLL && ak_fake_listens(p, AK_EVENT_ZOOMED))) p = p->parent;
+	if (!p) return failure(a, err, "nothing at \"%.*s\" takes a double tap", text);
+	if (disabled_view(p)) return failure(a, err, "\"%.*s\" is disabled", text);
+	ak_fake_double_tap(a->f, p);
+	return settled(a, err);
+}
+
+// ak_uitest_zoom pinches the zoomable Scroll showing text to scale.
+bool ak_uitest_zoom(ak_uitest *a, ak_span text, double scale, ak_buf *err) {
+	target t;
+	if (!one(a, text, by_view, &t, err)) return false;
+	ak_fake_view *p = t.v;
+	while (p && !(p->kind == AK_KIND_SCROLL && ak_fake_listens(p, AK_EVENT_ZOOMED))) p = p->parent;
+	if (!p) return failure(a, err, "\"%.*s\" isn't in a zoomable Scroll (minZoom, maxZoom)", text);
+	ak_fake_zoom(a->f, p, (float)scale);
+	return settled(a, err);
+}
+
+static int bound_cmp(const void *x, const void *y) {
+	int64_t a = ((const bound *)x)->index, b = ((const bound *)y)->index;
+	return a < b ? -1 : a > b;
+}
+
+// ak_uitest_move_row drags the list row showing text to index to, as the
+// user does: the list's cells move with it (a collection view moves its
+// cells, binding none), then Moved reports it.
+bool ak_uitest_move_row(ak_uitest *a, ak_span text, int64_t to, ak_buf *err) {
+	target t;
+	if (!one(a, text, by_view, &t, err)) return false;
+	ak_fake_view *list = NULL, *cell = cell_of(a, t.v, &list);
+	if (!cell || !list) return failure(a, err, "\"%.*s\" isn't in a list's row", text);
+	if (!ak_fake_string(list, AK_PROP_LIST_REORDER).len) return failure(a, err, "the list with \"%.*s\" doesn't move its rows (on move, reorderable)", text);
+	list_state *st = list_of(a, list->id);
+	int64_t from = -1;
+	for (uint32_t i = 0; st && i < st->cells.len; i++)
+		if (st->cells.data[i].cell == cell) from = st->cells.data[i].index;
+	if (from < 0) return failure(a, err, "\"%.*s\" isn't in a list's row", text);
+	if (to < 0 || to >= (int64_t)list->items.len) {
+		if (err) ak_buf_printf(err, "the list has %u rows: no row %lld to move to", list->items.len, (long long)to);
+		return false;
+	}
+	for (uint32_t i = 0; i < st->cells.len; i++) {
+		int64_t at = st->cells.data[i].index;
+		if (at == from) st->cells.data[i].index = to;
+		else if (from < to && at > from && at <= to) st->cells.data[i].index--;
+		else if (to < from && at >= to && at < from) st->cells.data[i].index++;
+	}
+	qsort(st->cells.data, st->cells.len, sizeof(bound), bound_cmp);
+	if (!ak_fake_move_row(a->f, list, from, to)) return check_fails(a, err);
+	st->items.len = 0;
+	for (uint32_t i = 0; i < list->items.len; i++) ak_vec_push(&st->items, list->items.data[i]);
+	return settled(a, err);
+}
+
 // ak_uitest_back goes back as the user's back gesture or button does
 // (Android's back, Escape): an open menu closes; else the top screen of
 // the deepest stack in reach pops; else the top sheet, alert or popover
@@ -1967,6 +2031,9 @@ bool ak_uitest_expect_no(ak_uitest *a, ak_span text, ak_buf *err) {
 //	test.press       app: App, text: string, down: bool            - (the pressed state of the
 //	                                                               view showing text, or around it)
 //	test.hover       app: App, text: string, over: bool            - (likewise, hovered)
+//	test.double_tap  app: App, text: string                        -
+//	test.zoom        app: App, text: string, scale: float          - (pinches a zoomable Scroll)
+//	test.move_row    app: App, text: string, to: int               - (drags a list's row)
 //	test.frame       app: App, time: Duration                      - (a frame the display draws)
 //	test.frame_of    app: App, text: string                        (x, y, width, height): the
 //	                                                               view showing text, in the window
@@ -2342,6 +2409,24 @@ static ak_val t_swipe(ak_val *a, uint32_t n) {
 	return done(ak_uitest_swipe(app, span_of(a[1]), n > 2 ? span_of(a[2]) : sp(""), &err), &err);
 }
 
+static ak_val t_double_tap(ak_val *a, uint32_t n) {
+	ak_uitest *app = app_arg(a, n, "test.double_tap");
+	ak_buf err = {0};
+	return done(ak_uitest_double_tap(app, span_of(a[1]), &err), &err);
+}
+
+static ak_val t_zoom(ak_val *a, uint32_t n) {
+	ak_uitest *app = app_arg(a, n, "test.zoom");
+	ak_buf err = {0};
+	return done(ak_uitest_zoom(app, span_of(a[1]), n > 2 ? a[2].f : 1, &err), &err);
+}
+
+static ak_val t_move_row(ak_val *a, uint32_t n) {
+	ak_uitest *app = app_arg(a, n, "test.move_row");
+	ak_buf err = {0};
+	return done(ak_uitest_move_row(app, span_of(a[1]), n > 2 ? a[2].i : 0, &err), &err);
+}
+
 static ak_val t_back(ak_val *a, uint32_t n) {
 	ak_uitest *app = app_arg(a, n, "test.back");
 	ak_buf err = {0};
@@ -2711,6 +2796,9 @@ void ak_uitest_builtins_init(void) {
 	ak_builtin_register("test.pick_color", t_pick_color);
 	ak_builtin_register("test.pick_date", t_pick_date);
 	ak_builtin_register("test.swipe", t_swipe);
+	ak_builtin_register("test.double_tap", t_double_tap);
+	ak_builtin_register("test.zoom", t_zoom);
+	ak_builtin_register("test.move_row", t_move_row);
 	ak_builtin_register("test.back", t_back);
 	ak_builtin_register("test.dismiss", t_dismiss);
 	ak_builtin_register("test.refresh", t_refresh);

@@ -155,6 +155,9 @@ public enum AsukaProp {
         public static let dropAccept: UInt16 = 64
         public static let dragItems: UInt16 = 65
         public static let takesClicks: UInt16 = 66
+        public static let panAxis: UInt16 = 67
+        public static let panMinDistance: UInt16 = 68
+        public static let panSimultaneous: UInt16 = 69
     }
 
     public enum Text {
@@ -201,6 +204,8 @@ public enum AsukaProp {
         public static let refreshing: UInt16 = 66
         public static let paging: UInt16 = 67
         public static let edgeEffect: UInt16 = 68
+        public static let minZoom: UInt16 = 69
+        public static let maxZoom: UInt16 = 70
     }
 
     public enum List {
@@ -213,6 +218,7 @@ public enum AsukaProp {
         public static let inset: UInt16 = 70
         public static let anchor: UInt16 = 71
         public static let selecting: UInt16 = 72
+        public static let reorder: UInt16 = 73
     }
 
     public enum Activity {
@@ -496,6 +502,10 @@ public enum AsukaEventKind: UInt16 {
     case devErrorAction = 66
     case videoState = 67
     case videoTracks = 68
+    case doubleTap = 69
+    case hoverMove = 70
+    case zoomed = 71
+    case moved = 72
 }
 
 public enum AsukaCommand: UInt16 {
@@ -543,6 +553,7 @@ public enum AsukaCommand: UInt16 {
     case devPerf = 42
     case devFontScale = 43
     case videoAction = 44
+    case zoomTo = 45
 }
 
 public enum AsukaRole: Int32 {
@@ -950,6 +961,12 @@ public enum AsukaVideoAction: Int32 {
     case exitFullScreen = 3
 }
 
+public enum AsukaPanAxis: Int32 {
+    case both = 0
+    case horizontal = 1
+    case vertical = 2
+}
+
 /// A prop value. Bytes are valid only during the handler call.
 public enum AsukaValue {
     case bool(Bool)
@@ -1318,5 +1335,17 @@ public enum AsukaEvents {
     }
     public static func videoTracks(_ id: UInt32, _ v: [UInt8]) -> [UInt8] {
         var w = AsukaWriter(); w.header(id, 68); w.u32(UInt32(v.count)); w.bytes.append(contentsOf: v); return w.bytes
+    }
+    public static func doubleTap(_ id: UInt32, x: Double, y: Double) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 69); w.f64(x); w.f64(y); return w.bytes
+    }
+    public static func hoverMove(_ id: UInt32, x: Double, y: Double) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 70); w.f64(x); w.f64(y); return w.bytes
+    }
+    public static func zoomed(_ id: UInt32, _ v: Double) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 71); w.f64(v); return w.bytes
+    }
+    public static func moved(_ id: UInt32, x: Double, y: Double) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 72); w.f64(x); w.f64(y); return w.bytes
     }
 }

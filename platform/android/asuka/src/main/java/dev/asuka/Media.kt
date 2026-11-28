@@ -550,6 +550,21 @@ class AsukaGestures(private val rt: AsukaRuntime, private val id: Int, context: 
     private var downX = 0f
     private var downY = 0f
     private var panning = false
+    /** PanAxis: the way a drag goes to be a pan (AsukaPanAxis). */
+    var axis = AsukaPanAxis.BOTH
+    /** PanMinDistance, in px (0: the touch slop). */
+    var minDistance = 0f
+    /** PanSimultaneous: the scroll views around it follow the drag too. */
+    var simultaneous = false
+    // This touch's way is decided: along the pan's axis (its parent kept
+    // from taking it), or not (left to what's around it).
+    private var decided = false
+    private var refused = false
+    // A parent scroll view took the touch while it pans with it: the rest
+    // comes from the window (spied), in the window's coordinates.
+    private var spying = false
+    private var spyView: View? = null
+    private val spyAt = IntArray(2)
     private var scaling = false
     private var scale = 1f
     private var velocity: VelocityTracker? = null
@@ -630,9 +645,9 @@ class AsukaGestures(private val rt: AsukaRuntime, private val id: Int, context: 
         rt.emit(id, AsukaEventKind.ROTATE) { AsukaEvents.rotate(id, g) }
     }
 
-    /** The touch is a gesture now, not a press, and the parent mustn't take it. */
-    private fun claim(v: View, e: MotionEvent) {
-        v.parent?.requestDisallowInterceptTouchEvent(true)
+    /** The touch is a gesture now, not a press, and the parent mustn't take it (but a simultaneous pan's may). */
+    private fun claim(v: View, e: MotionEvent, keepParent: Boolean = false) {
+        if (!keepParent) v.parent?.requestDisallowInterceptTouchEvent(true)
         val cancel = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }
         v.onTouchEvent(cancel)
         cancel.recycle()
@@ -680,40 +695,109 @@ class AsukaGestures(private val rt: AsukaRuntime, private val id: Int, context: 
         return panning || scaling || rotating
     }
 
+    /**
+     * A pan: a drag past the touch slop (or PanMinDistance). With PanAxis,
+     * the way it first goes past the slop decides: along the axis it's a
+     * pan, and the parent (a scroll view) is kept from taking it at once;
+     * across it, it's left to the parent, which scrolls. A simultaneous
+     * pan never keeps its parent from taking the touch: if a scroll view
+     * around it does, the pan follows the rest of the touch from the
+     * window (the activity's, spied), so both move with the finger.
+     */
     private fun trackPan(v: View, e: MotionEvent) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                stopSpying()
                 downX = e.rawX
                 downY = e.rawY
                 panning = false
+                decided = false
+                refused = false
                 velocity?.recycle()
                 velocity = VelocityTracker.obtain().also { it.addMovement(e) }
             }
-            MotionEvent.ACTION_MOVE -> {
-                velocity?.addMovement(e)
-                val tx = e.rawX - downX
-                val ty = e.rawY - downY
-                if (!panning && !scaling && e.pointerCount == 1 && maxOf(abs(tx), abs(ty)) > slop) {
-                    panning = true
-                    claim(v, e)
-                    send(AsukaEventKind.PAN, AsukaGestureState.BEGAN, e.x, e.y, tx, ty, 0f, 0f, 1f)
-                } else if (panning) {
-                    velocity?.computeCurrentVelocity(1000)
-                    send(AsukaEventKind.PAN, AsukaGestureState.CHANGED, e.x, e.y, tx, ty, velocity?.xVelocity ?: 0f, velocity?.yVelocity ?: 0f, 1f)
+            MotionEvent.ACTION_MOVE -> moved(v, e, e.x, e.y)
+            MotionEvent.ACTION_UP -> ended(e, e.x, e.y, AsukaGestureState.ENDED)
+            MotionEvent.ACTION_CANCEL -> {
+                // A scroll view around it took the touch: a simultaneous pan goes on.
+                if (simultaneous && !refused && velocity != null && rt.spyTouches(this)) {
+                    spying = true
+                    spyView = v
+                    return
                 }
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (panning) {
-                    velocity?.addMovement(e)
-                    velocity?.computeCurrentVelocity(1000)
-                    val state = if (e.actionMasked == MotionEvent.ACTION_UP) AsukaGestureState.ENDED else AsukaGestureState.CANCELLED
-                    send(AsukaEventKind.PAN, state, e.x, e.y, e.rawX - downX, e.rawY - downY, velocity?.xVelocity ?: 0f, velocity?.yVelocity ?: 0f, 1f)
-                }
-                panning = false
-                velocity?.recycle()
-                velocity = null
+                ended(e, e.x, e.y, AsukaGestureState.CANCELLED)
             }
         }
+    }
+
+    private fun moved(v: View, e: MotionEvent, x: Float, y: Float) {
+        velocity?.addMovement(e)
+        if (refused) return
+        val tx = e.rawX - downX
+        val ty = e.rawY - downY
+        if (!panning && !scaling && e.pointerCount == 1) {
+            val ax = abs(tx)
+            val ay = abs(ty)
+            val begin = if (minDistance > 0) minDistance else slop.toFloat()
+            if (!decided && maxOf(ax, ay) > minOf(slop.toFloat(), begin)) {
+                decided = true
+                val along = when (axis) {
+                    AsukaPanAxis.HORIZONTAL -> ax >= ay
+                    AsukaPanAxis.VERTICAL -> ay >= ax
+                    else -> true
+                }
+                if (!along) {
+                    refused = true // the parent's to scroll
+                    return
+                }
+                if (!simultaneous && !spying) v.parent?.requestDisallowInterceptTouchEvent(true)
+            }
+            val dist = when (axis) {
+                AsukaPanAxis.HORIZONTAL -> ax
+                AsukaPanAxis.VERTICAL -> ay
+                else -> maxOf(ax, ay)
+            }
+            if (decided && dist > begin) {
+                panning = true
+                if (!spying) claim(v, e, keepParent = simultaneous)
+                send(AsukaEventKind.PAN, AsukaGestureState.BEGAN, x, y, tx, ty, 0f, 0f, 1f)
+            }
+        } else if (panning) {
+            velocity?.computeCurrentVelocity(1000)
+            send(AsukaEventKind.PAN, AsukaGestureState.CHANGED, x, y, tx, ty, velocity?.xVelocity ?: 0f, velocity?.yVelocity ?: 0f, 1f)
+        }
+    }
+
+    private fun ended(e: MotionEvent, x: Float, y: Float, state: Int) {
+        if (panning) {
+            velocity?.addMovement(e)
+            velocity?.computeCurrentVelocity(1000)
+            send(AsukaEventKind.PAN, state, x, y, e.rawX - downX, e.rawY - downY, velocity?.xVelocity ?: 0f, velocity?.yVelocity ?: 0f, 1f)
+        }
+        panning = false
+        velocity?.recycle()
+        velocity = null
+        stopSpying()
+    }
+
+    /** The rest of a touch a scroll view took, from the window: its moves in the view's coordinates. */
+    fun spied(e: MotionEvent) {
+        val v = spyView ?: return
+        v.getLocationInWindow(spyAt)
+        val x = e.x - spyAt[0]
+        val y = e.y - spyAt[1]
+        when (e.actionMasked) {
+            MotionEvent.ACTION_MOVE -> moved(v, e, x, y)
+            MotionEvent.ACTION_UP -> ended(e, x, y, AsukaGestureState.ENDED)
+            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_DOWN -> ended(e, x, y, AsukaGestureState.CANCELLED)
+        }
+    }
+
+    private fun stopSpying() {
+        if (!spying) return
+        spying = false
+        spyView = null
+        rt.spyTouches(null)
     }
 }
 
@@ -723,12 +807,21 @@ fun AsukaRuntime.listenGesture(n: AsukaNode, event: Int) {
         n.view.setOnTouchListener(it)
         (n.view as? AsukaContainer)?.gestures = it
     }
+    panConfig(n)
     when (event) {
         AsukaEventKind.PAN -> g.pan = true
         AsukaEventKind.PINCH -> g.pinch = true
         AsukaEventKind.ROTATE -> g.rotate = true
         AsukaEventKind.SWIPE -> g.swipe = true
     }
+}
+
+/** PanAxis, PanMinDistance, PanSimultaneous: how the view's pan begins. */
+fun AsukaRuntime.panConfig(n: AsukaNode) {
+    val g = n.gestures ?: return
+    g.axis = (n.props[AsukaProp.View.PAN_AXIS] as? Int) ?: AsukaPanAxis.BOTH
+    g.minDistance = (((n.props[AsukaProp.View.PAN_MIN_DISTANCE] as? Double) ?: 0.0) * density).toFloat()
+    g.simultaneous = n.props[AsukaProp.View.PAN_SIMULTANEOUS] == true
 }
 
 // Animation: between AnimateBegin and AnimateEnd, frames, opacity and

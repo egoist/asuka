@@ -121,6 +121,7 @@ void wh_create(uint32_t id, uint16_t kind) {
 		break;
 	case AK_KIND_SCROLL:
 		n->hwnd = wh_make_view(0);
+		n->min_zoom = n->max_zoom = n->zoom_scale = 1;  // its content doesn't zoom till MaxZoom is more than MinZoom
 		break;
 	case AK_KIND_LIST:
 		wh_list_new(n);
@@ -237,6 +238,12 @@ void wh_set_own(node *n, uint16_t p, const ak_value *v) {
 			}
 		} else if (p == AK_PROP_VIEW_TAKES_CLICKS) {
 			wh_set_takes_clicks(n, v->i != 0);
+		} else if (p == AK_PROP_VIEW_PAN_AXIS) {
+			n->pan_axis = (int32_t)v->i;
+		} else if (p == AK_PROP_VIEW_PAN_MIN_DISTANCE) {
+			n->pan_min = v->f > 0 ? (float)v->f : 0;
+		} else if (p == AK_PROP_VIEW_PAN_SIMULTANEOUS) {
+			n->pan_simul = v->i != 0;
 		}
 		break;
 	case AK_KIND_TEXT:
@@ -293,6 +300,8 @@ void wh_set_own(node *n, uint16_t p, const ak_value *v) {
 			wh_set_refreshable(n, v->i != 0);
 		} else if (p == AK_PROP_SCROLL_REFRESHING) {
 			wh_set_refreshing(n, v->i != 0);
+		} else if (p == AK_PROP_SCROLL_MIN_ZOOM || p == AK_PROP_SCROLL_MAX_ZOOM) {
+			wh_set_zoom_bounds(n, p, (float)v->f);
 		}
 		break;
 	case AK_KIND_SPLIT:
@@ -886,7 +895,7 @@ bool wh_interactive(const node *n) {
 	if (n->kind == AK_KIND_OVERLAY) return wh_overlay_modal(n);  // presses go through it, but for its children's
 	if (wh_tracks_press(n) || wh_draggable(n) || node_listening(n, AK_EVENT_PAN) || node_listening(n, AK_EVENT_PINCH) ||
 		node_listening(n, AK_EVENT_ROTATE) || node_listening(n, AK_EVENT_SWIPE) || node_listening(n, AK_EVENT_PRESS_POINT) ||
-		(n->focusable && !n->ctl))
+		node_listening(n, AK_EVENT_DOUBLE_TAP) || (n->focusable && !n->ctl))
 		return true;
 	switch (n->kind) {
 	case AK_KIND_SCROLL: case AK_KIND_LIST: case AK_KIND_SEGMENTED: case AK_KIND_TEXT_FIELD: case KIND_HEADER:
@@ -952,17 +961,18 @@ static bool inside(HWND hwnd, POINT p) {
 	return p.x >= 0 && p.y >= 0 && p.x < r.right && p.y < r.bottom;
 }
 
-// pan reports a drag as a pan (points, from where it started; velocity
-// from the last move), and its end as a swipe when it was quick.
-static void pan(node *n, int state, POINT p) {
+// pan reports a drag as a pan (points, from where it started, on the
+// screen: the view may move with it; velocity from the last move), and
+// its end as a swipe when it was quick. p is in the view, s on the screen.
+static void pan(node *n, int state, POINT p, POINT s) {
 	int64_t now = wh_now_ns();
 	float dt = (float)(now - n->pan_time) / 1e9f;
 	ak_event e = {.kind = AK_EVENT_PAN};
 	e.g.state = (uint8_t)state;
 	e.g.x = wh_pt(n, p.x), e.g.y = wh_pt(n, p.y), e.g.scale = 1;
-	e.g.translation_x = wh_pt(n, p.x - n->press_at.x), e.g.translation_y = wh_pt(n, p.y - n->press_at.y);
-	if (dt > 0) e.g.velocity_x = wh_pt(n, p.x - n->pan_last.x) / dt, e.g.velocity_y = wh_pt(n, p.y - n->pan_last.y) / dt;
-	n->pan_last = p, n->pan_time = now;
+	e.g.translation_x = wh_pt(n, s.x - n->press_scr.x), e.g.translation_y = wh_pt(n, s.y - n->press_scr.y);
+	if (dt > 0) e.g.velocity_x = wh_pt(n, s.x - n->drag_last.x) / dt, e.g.velocity_y = wh_pt(n, s.y - n->drag_last.y) / dt;
+	n->drag_last = s, n->pan_time = now;
 	ak_gesture g = e.g;
 	wh_emit(n, &e);
 	if (state == AK_GESTURE_STATE_ENDED && node_listening(n, AK_EVENT_SWIPE)) {
@@ -977,6 +987,57 @@ static void pan(node *n, int state, POINT p) {
 	}
 }
 
+static bool pans(const node *n) { return node_listening(n, AK_EVENT_PAN) || node_listening(n, AK_EVENT_SWIPE); }
+
+// scroll_around is the scroll view n is in (a list's row's: the list).
+static node *scroll_around(node *n) {
+	for (node *p = n->parent; p; p = p->parent) {
+		if ((p->kind == AK_KIND_SCROLL && !p->paging) || p->list) return p;
+		if (p->cell) return wh_cell_list(p);
+	}
+	return NULL;
+}
+
+// drag_scroll_by moves the content of the scroll view a drag of n
+// scrolls with the pointer, from where it was last to s (on the screen).
+static void drag_scroll_by(node *n, POINT s) {
+	node *sc = n->drag_scroll ? wh_node(n->drag_scroll) : NULL;
+	if (!sc || !sc->hwnd) return;
+	float dx = wh_pt(sc, s.x - n->drag_last.x), dy = wh_pt(sc, s.y - n->drag_last.y);
+	if (sc->list) wh_list_scroll(sc, wh_list_offset(sc) - dy);
+	else wh_scroll_to_offset(sc, sc->scroll_x - dx, sc->scroll_y - dy);
+}
+
+// press_now fires a Press waiting for a double click's (another click,
+// not a double one, came).
+static void press_now(node *n, HWND hwnd) {
+	if (!n->press_waiting) return;
+	n->press_waiting = false;
+	KillTimer(hwnd, TIMER_PRESS_WAIT);
+	wh_press(n, hwnd);
+}
+
+// double_click takes a click's second (WM_LBUTTONDBLCLK: within the
+// system's double-click time and distance of the first): a view that
+// listens for DoubleTap reports it, and its first click's Press, waiting,
+// goes; on a zoomable Scroll (or a view in it that doesn't press), the
+// content zooms. False: it's a press like any.
+static bool double_click(node *n, HWND hwnd, LPARAM lp) {
+	if (n->disabled) return false;
+	if (node_listening(n, AK_EVENT_DOUBLE_TAP)) {
+		n->press_waiting = false;
+		KillTimer(hwnd, TIMER_PRESS_WAIT);
+		ak_event e = {.kind = AK_EVENT_DOUBLE_TAP, .x = wh_pt(n, GET_X_LPARAM(lp)), .y = wh_pt(n, GET_Y_LPARAM(lp))};
+		wh_emit(n, &e);
+		return true;
+	}
+	for (node *x = n; x && !x->cell; x = x->parent) {
+		if (wh_zoom_double_click(x, hwnd, lp)) return true;
+		if (wh_tracks_press(x) || node_listening(x, AK_EVENT_DOUBLE_TAP)) return false;
+	}
+	return false;
+}
+
 static void mouse_down(node *n, HWND hwnd, LPARAM lp) {
 	if (n->kind == AK_KIND_SEGMENTED) {
 		wh_select_segment(n, wh_segment_at(n, GET_X_LPARAM(lp)));
@@ -987,6 +1048,7 @@ static void mouse_down(node *n, HWND hwnd, LPARAM lp) {
 		wh_select_pip(n, wh_pip_at(n, GET_X_LPARAM(lp)));
 		return;
 	}
+	press_now(n, hwnd);  // a click, not a double one, after a click waiting
 	// A press focuses a view that takes the focus (a desktop's), unless
 	// NoFocusOnPress; it reports where it began first.
 	if (!n->disabled && !n->no_focus_on_press && wh_takes_focus(n) && !n->ctl && GetFocus() != hwnd) SetFocus(hwnd);
@@ -994,13 +1056,18 @@ static void mouse_down(node *n, HWND hwnd, LPARAM lp) {
 		ak_event e = {.kind = AK_EVENT_PRESS_POINT, .x = wh_pt(n, GET_X_LPARAM(lp)), .y = wh_pt(n, GET_Y_LPARAM(lp))};
 		wh_emit(n, &e);
 	}
-	if (!wh_tracks_press(n) && !wh_draggable(n) && !node_listening(n, AK_EVENT_PAN) && !node_listening(n, AK_EVENT_SWIPE)) return;
 	if (n->disabled) return;
+	bool armed = wh_list_arm(n, hwnd, lp);  // a row of a list whose rows move: a drag lifts it
+	bool hand = wh_zoom_hand(n);            // a zoomed Scroll: a drag moves its content
+	if (!wh_tracks_press(n) && !wh_draggable(n) && !pans(n) && !armed && !hand) return;
 	SetCapture(hwnd);
 	n->tracking = wh_tracks_press(n);
 	n->long_fired = n->panning = false;
 	n->press_at = (POINT){GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
-	n->pan_last = n->press_at, n->pan_time = wh_now_ns();
+	n->press_scr = n->press_at;
+	ClientToScreen(hwnd, &n->press_scr);
+	n->drag_last = n->press_scr, n->pan_time = wh_now_ns();
+	n->drag_scroll = hand ? n->id : 0;
 	if (node_listening(n, AK_EVENT_LONG_PRESS) || (n->menu.n && n->menu_trigger == AK_MENU_TRIGGER_LONG_PRESS)) SetTimer(hwnd, TIMER_LONG_PRESS, 500, NULL);
 	wh_set_pressed(n, n->tracking);
 }
@@ -1013,22 +1080,55 @@ static void mouse_move(node *n, HWND hwnd, WPARAM wp, LPARAM lp) {
 		if (!wh_draws_states(n)) wh_redraw(n);
 	}
 	if (GetCapture() != hwnd || !(wp & MK_LBUTTON)) return;
-	POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+	POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)}, s = p;
+	ClientToScreen(hwnd, &s);
+	if (wh_list_lifted(n)) {
+		wh_list_drag_to(n, s);  // a list's row, lifted: it follows the pointer
+		return;
+	}
 	if (n->panning) {
-		pan(n, AK_GESTURE_STATE_CHANGED, p);
+		if (n->drag_scroll) drag_scroll_by(n, s);  // PanSimultaneous: the scroll view around it follows too
+		pan(n, AK_GESTURE_STATE_CHANGED, p, s);
+		return;
+	}
+	if (n->drag_scroll) {
+		drag_scroll_by(n, s);
+		n->drag_last = s;
 		return;
 	}
 	int dpi = wh_dpi_of(n);
-	bool is_far = abs(p.x - n->press_at.x) > wh_system_metric(SM_CXDRAG, dpi) || abs(p.y - n->press_at.y) > wh_system_metric(SM_CYDRAG, dpi);
+	int dx = abs(s.x - n->press_scr.x), dy = abs(s.y - n->press_scr.y);
+	bool is_far = dx > wh_system_metric(SM_CXDRAG, dpi) || dy > wh_system_metric(SM_CYDRAG, dpi);
 	if (is_far && wh_draggable(n)) {
+		wh_list_disarm(n);
 		wh_start_drag(n, hwnd);
 		return;
 	}
-	if (is_far && (node_listening(n, AK_EVENT_PAN) || node_listening(n, AK_EVENT_SWIPE))) {
-		n->panning = true;
-		wh_cancel_press(n);
-		pan(n, AK_GESTURE_STATE_BEGAN, p);
-		return;
+	if (pans(n)) {
+		// It pans once the pointer is PanMinDistance away (else the
+		// system's drag distance), along PanAxis: moved first along the
+		// other axis, the drag is the scroll view's around it.
+		float min = n->pan_min * wh_scale_of(n);
+		bool begins = n->pan_min > 0 ? (float)hypot(dx, dy) >= min : is_far;
+		if (begins) {
+			wh_list_disarm(n);
+			wh_cancel_press(n);
+			bool along = n->pan_axis == AK_PAN_AXIS_HORIZONTAL ? dx >= dy : n->pan_axis == AK_PAN_AXIS_VERTICAL ? dy >= dx : true;
+			node *sc = scroll_around(n);
+			if (!along) {
+				n->drag_scroll = sc ? sc->id : 0;
+				drag_scroll_by(n, s);
+				n->drag_last = s;
+				return;
+			}
+			n->panning = true;
+			n->drag_scroll = n->pan_simul && sc ? sc->id : 0;
+			if (n->drag_scroll) drag_scroll_by(n, s);
+			pan(n, AK_GESTURE_STATE_BEGAN, p, s);
+			return;
+		}
+	} else if (is_far && wh_list_lift(n, s)) {
+		return;  // its row lifted: the list has the drag
 	}
 	if (n->tracking) {
 		bool in = inside(hwnd, p);
@@ -1038,20 +1138,32 @@ static void mouse_move(node *n, HWND hwnd, WPARAM wp, LPARAM lp) {
 }
 
 static void mouse_up(node *n, HWND hwnd, LPARAM lp) {
+	if (wh_list_mouse_up(n, hwnd)) return;  // a lifted row dropped
 	bool pressed = n->tracking && n->pressed, panning = n->panning;
 	n->tracking = n->panning = false;
+	n->drag_scroll = 0;
 	if (GetCapture() == hwnd) {
 		n->releasing = true;
 		ReleaseCapture();
 		n->releasing = false;
 	}
 	KillTimer(hwnd, TIMER_LONG_PRESS);
-	POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+	POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)}, s = p;
+	ClientToScreen(hwnd, &s);
 	if (panning) {
-		pan(n, AK_GESTURE_STATE_ENDED, p);
+		pan(n, AK_GESTURE_STATE_ENDED, p, s);
 		return;
 	}
-	wh_end_press(n, hwnd, pressed && !n->long_fired && wh_pressable(n) && inside(hwnd, p));
+	bool fire = pressed && !n->long_fired && wh_pressable(n) && inside(hwnd, p);
+	if (fire && node_listening(n, AK_EVENT_DOUBLE_TAP) && node_listening(n, AK_EVENT_PRESS)) {
+		// Its Press waits till a second click can't come (the system's
+		// double-click time): a double click is a DoubleTap alone.
+		wh_set_pressed(n, false);
+		n->press_waiting = true;
+		SetTimer(hwnd, TIMER_PRESS_WAIT, GetDoubleClickTime(), NULL);
+		return;
+	}
+	wh_end_press(n, hwnd, fire);
 }
 
 // wh_spin runs the timer of an activity ring, an indeterminate progress
@@ -1175,7 +1287,7 @@ LRESULT wh_view_message(node *n, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *
 	case WM_MOUSEWHEEL:
 	case WM_MOUSEHWHEEL: {
 		int delta = GET_WHEEL_DELTA_WPARAM(wp);
-		if (m == WM_MOUSEWHEEL && (GET_KEYSTATE_WPARAM(wp) & MK_CONTROL) && wh_wheel_pinch(n, hwnd, delta, lp)) return 0;
+		if (m == WM_MOUSEWHEEL && (GET_KEYSTATE_WPARAM(wp) & MK_CONTROL) && (wh_wheel_pinch(n, hwnd, delta, lp) || wh_zoom_wheel(n, delta, lp))) return 0;
 		if (n->kind == AK_KIND_SCROLL && n->paging) {
 			if (wh_page_wheel(n, m == WM_MOUSEHWHEEL, delta)) return 0;
 			break;
@@ -1193,6 +1305,7 @@ LRESULT wh_view_message(node *n, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *
 	case WM_LBUTTONDOWN:
 	case WM_LBUTTONDBLCLK:
 		if (wh_select_click(n)) return 0;  // a row of a selecting list
+		if (m == WM_LBUTTONDBLCLK && double_click(n, hwnd, lp)) return 0;
 		mouse_down(n, hwnd, lp);
 		return 0;
 	case WM_MOUSEMOVE:
@@ -1208,7 +1321,9 @@ LRESULT wh_view_message(node *n, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *
 		}
 		return 0;
 	case WM_CAPTURECHANGED:
+		if (wh_list_capture_lost(n, (HWND)lp)) return 0;  // a row lifted: put back
 		if (n->tracking && (HWND)lp != hwnd && !n->releasing) wh_cancel_press(n);
+		if ((HWND)lp != hwnd && !n->releasing) n->drag_scroll = 0;
 		return 0;
 	case WM_RBUTTONUP:
 		if (wh_pressable(n)) {
@@ -1253,6 +1368,21 @@ LRESULT wh_view_message(node *n, HWND hwnd, UINT m, WPARAM wp, LPARAM lp, bool *
 			break;
 		case TIMER_PINCH:
 			wh_end_wheel_pinch(n, hwnd);
+			break;
+		case TIMER_PRESS_WAIT:
+			// No second click came: the first one's Press.
+			KillTimer(hwnd, TIMER_PRESS_WAIT);
+			if (n->press_waiting) {
+				n->press_waiting = false;
+				wh_press(n, hwnd);
+			}
+			break;
+		case TIMER_ZOOM:
+			wh_zoom_step(n);
+			break;
+		case TIMER_REORDER:
+		case TIMER_REORDER_HOLD:
+			wh_list_timer(n, wp);
 			break;
 		}
 		return 0;

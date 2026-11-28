@@ -1025,6 +1025,7 @@ fun AsukaRuntime.setNavProp(n: AsukaNode, prop: Int, v: Any): Boolean {
         AsukaKind.SNACKBAR -> return (n.view as AsukaSnackbar).set(prop, v)
         AsukaKind.SCROLL -> when (prop) {
             AsukaProp.Scroll.HORIZONTAL -> setHorizontal(n, v as Boolean)
+            AsukaProp.Scroll.MIN_ZOOM, AsukaProp.Scroll.MAX_ZOOM -> setZoomable(n)
             AsukaProp.Scroll.PAGING -> AsukaPager.apply(this, n)
             AsukaProp.Scroll.REFRESHABLE -> setRefreshable(n, v as Boolean)
             AsukaProp.Scroll.REFRESHING -> (n.wrapper as? SwipeRefreshLayout)?.isRefreshing = v as Boolean
@@ -1228,13 +1229,24 @@ fun AsukaRuntime.wirePresses(n: AsukaNode) {
     val long = n.listens(AsukaEventKind.LONG_PRESS) || (n.actions.isNotEmpty() && n.menuTrigger == AsukaMenuTrigger.LONG_PRESS) || n.dragItems.isNotEmpty()
     val pressed = n.listens(AsukaEventKind.PRESSED)
     val hover = n.listens(AsukaEventKind.HOVER)
-    if (tap) v.setOnClickListener { clicked(id) }
+    val double = n.listens(AsukaEventKind.DOUBLE_TAP)
+    val c = v as? AsukaContainer
+    // With DoubleTap, a touch's Press is its taps' (it waits); the click
+    // presses only when no touch made it (TalkBack, a key).
+    if (tap) v.setOnClickListener { if (c?.taps?.touchClick() != true) clicked(id) }
     if (long) v.setOnLongClickListener { longClicked(id) }
-    if (pressed) v.isClickable = true
-    (v as? AsukaContainer)?.let { c ->
-        c.pressOnly = pressed && !tap
+    // Pressable for its own touches; a double tap alone isn't an action for TalkBack.
+    if (pressed || double) v.isClickable = true
+    if (c != null) {
+        c.pressOnly = (pressed || double) && !tap
         c.onPressedChange = if (pressed) ({ on -> emit(id, AsukaEventKind.PRESSED) { AsukaEvents.pressed(id, on) } }) else null
         c.onHoverChange = if (hover) ({ on -> emit(id, AsukaEventKind.HOVER) { AsukaEvents.hover(id, on) } }) else null
+        c.onHoverMove = if (n.listens(AsukaEventKind.HOVER_MOVE)) AsukaPointListener { x, y ->
+            // As it moves: nothing made but the event's bytes.
+            val d = density
+            if (nodes[id]?.listens(AsukaEventKind.HOVER_MOVE) == true) send(AsukaEvents.hoverMove(id, (x / d).toDouble(), (y / d).toDouble()))
+        } else null
+        c.taps = if (double) (c.taps ?: AsukaTaps(themed, this, id)).also { it.press = tap } else null
     }
     if (pressed || hover) {
         if (n.ripple != null && v.foreground === n.ripple) v.foreground = null

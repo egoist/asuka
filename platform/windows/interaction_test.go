@@ -141,3 +141,92 @@ component Root {
 		t.Fatalf("click region %v %v %v %v (%v): want one at x 30, 60×30, below the text:\n%s", x, y, cw, ch, err, dump)
 	}
 }
+
+// Gestures (testdata/gestures.asuka), driven as a user would:
+//
+//   - A List whose rows move: a row dragged past the system's distance
+//     lifts and drops where it's let go of (the core gets Moved, the
+//     rows keep their views); Escape puts one being dragged back; Alt+Up
+//     moves the row the focus is in.
+//   - A click's Press waits for a double click's time when the view
+//     listens for DoubleTap too, and a double click is a DoubleTap alone.
+//   - HoverMove: where the pointer is in the view.
+//   - A horizontal pan (panAxis, panMinDistance) in a vertical Scroll:
+//     a sideways drag pans, a vertical one scrolls the Scroll instead.
+//   - A zoomable Scroll: Ctrl and the wheel zoom it (reported), a double
+//     click zooms out to MinZoom and in to twice it, ZoomTo zooms.
+func TestGestures(t *testing.T) {
+	w := onWindows(t)
+	local, guest := w.job(t)
+	src, err := os.ReadFile(filepath.Join("testdata", "gestures.asuka"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buildApp(t, w, string(src), local)
+	d := script(t, w, local, guest, "app.exe",
+		"down:Banana", "move:Date", "moveby:0,10", "snap:lifted", "up", "wait:600ms", "snap:moved",
+		"down:One", "move:Three", "moveby:0,10", "up", "wait:600ms", "snap:ignored",
+		"down:Apple", "moveby:0,90", "key:escape", "up", "wait:600ms", "snap:cancelled",
+		"focus:Cherry", "key:alt+up", "wait:600ms", "snap:alt",
+		"tap:Tap me", "wait:900ms", "snap:tap",
+		"dblclick:Tap me", "wait:900ms", "snap:double",
+		"hover:Tap me", "snap:hover",
+		"down:Pan me", "moveby:80,0", "up", "snap:pan",
+		"down:Pan me", "moveby:0,-40", "up", "snap:scroll",
+		"pinch:Zoom content|3", "snap:zoomed",
+		"dblclick:Zoom content", "wait:600ms", "snap:zoomout",
+		"dblclick:Zoom content", "wait:600ms", "snap:zoomin",
+		"tap:Zoom 3", "snap:zoomto",
+	)
+	rows := func(dump string) string {
+		var names []string
+		for _, l := range strings.Split(dump, "\n") {
+			for _, f := range []string{"Apple", "Banana", "Cherry", "Date", "Elderberry", "Fig"} {
+				if strings.HasSuffix(l, fmt.Sprintf("%q", f)) {
+					names = append(names, f)
+				}
+			}
+		}
+		return strings.Join(names, " ")
+	}
+	for _, c := range []struct{ snap, where, order, moved string }{
+		{"moved", "a row dragged down two places", "Apple Cherry Date Banana Elderberry Fig", "1 to 3"},
+		{"cancelled", "a drag put back with Escape", "Apple Cherry Date Banana Elderberry Fig", "1 to 3"},
+		{"alt", "Alt+Up on a row", "Cherry Apple Date Banana Elderberry Fig", "1 to 0"},
+	} {
+		shows(t, d[c.snap], c.where, []string{"Order: " + c.order, "Moved: " + c.moved})
+		if got := rows(d[c.snap]); got != c.order {
+			t.Errorf("%s: the list's rows: %s, want %s", c.where, got, c.order)
+		}
+	}
+	shows(t, d["ignored"], "a move the app doesn't take", []string{"Ignored: 1"})
+	var ignored []string
+	for _, l := range strings.Split(d["ignored"], "\n") {
+		for _, s := range []string{"One", "Two", "Three"} {
+			if strings.HasSuffix(l, fmt.Sprintf("%q", s)) {
+				ignored = append(ignored, s)
+			}
+		}
+	}
+	if got := strings.Join(ignored, " "); got != "One Two Three" {
+		t.Errorf("a move the app doesn't take: the rows %s, want them back as One Two Three", got)
+	}
+	shows(t, d["tap"], "a click, its press after the double-click time", []string{"Taps: 1 Likes: 0"})
+	shows(t, d["double"], "a double click", []string{"Taps: 1 Likes: 1"})
+	if strings.Contains(d["hover"], `"At: none"`) {
+		t.Errorf("no HoverMove:\n%s", d["hover"])
+	}
+	shows(t, d["pan"], "a sideways drag", []string{"Pans: 1 Scrolled: 0"})
+	shows(t, d["scroll"], "a vertical drag of a horizontal pan", []string{"Pans: 1 Scrolled: 40"})
+	for _, c := range []struct{ snap, zoom string }{{"zoomed", "133"}, {"zoomout", "100"}, {"zoomin", "200"}, {"zoomto", "300"}} {
+		if !strings.Contains(d[c.snap], `"Zoom: `+c.zoom) {
+			t.Errorf("%s: want Zoom: %s:\n%s", c.snap, c.zoom, d[c.snap])
+		}
+	}
+	if !strings.Contains(d["zoomto"], "zoom=3.00") {
+		t.Errorf("ZoomTo 3: the Scroll's zoom:\n%s", d["zoomto"])
+	}
+	if os.Getenv("ASUKA_KEEP") != "" {
+		t.Logf("snapshots in %s", local)
+	}
+}

@@ -401,6 +401,7 @@ void ak_ui_blur(ak_view *v);
 void ak_ui_scroll_to(ak_view *v, float x, float y, bool animated);
 void ak_ui_scroll_to_end(ak_view *v, bool animated);
 void ak_ui_scroll_to_item(ak_view *v, int64_t i, bool animated);
+void ak_ui_zoom_to(ak_view *v, float scale, bool animated);
 // push builds the screen build() returns on the stack nearest the
 // current owner, under an owner of its own (a root under the stack's),
 // where push and pop find that stack, and OnBack the screen: a screen

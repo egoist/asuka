@@ -19,6 +19,8 @@ import AsukaOps
 
     /// The primary button's press, from its down to its up.
     var mouse = AsukaMouseState()
+    /// A press waiting for the double-click interval (DoubleTap).
+    var pendingPress = AsukaPendingPress()
     /// The drag over the app's drop targets.
     var over = AsukaDropState()
     /// The app's own drag under way.

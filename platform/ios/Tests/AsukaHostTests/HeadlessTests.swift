@@ -27,6 +27,10 @@ struct SentEvent {
         var r = Reader(payload)
         return CGPoint(x: r.f64(), y: r.f64())
     }
+    var f64: Double {
+        var r = Reader(payload)
+        return r.f64()
+    }
     var string: String {
         var r = Reader(payload)
         let n = Int(r.u32())
@@ -693,6 +697,141 @@ struct Reader {
         XCTAssertNotNil(rt.devError)
         rt.destroy(r)
         XCTAssertNil(rt.devError)
+    }
+
+    // MARK: Gestures and list moves
+
+    /// A double tap is its own recognizer, which a press made before or
+    /// after waits for; it reports where it fell, and goes with its
+    /// listening (a press no longer waits).
+    func testDoubleTap() {
+        let r = root()
+        let v = make(.view)
+        rt.insert(r, child: v, index: 0)
+        frame(v, CGRect(x: 0, y: 0, width: 100, height: 100))
+        rt.listen(v, event: AsukaEventKind.doubleTap.rawValue)
+        rt.listen(v, event: AsukaEventKind.press.rawValue)
+        rt.listen(v, event: AsukaEventKind.doubleTap.rawValue) // once
+        let taps = view(v).gestureRecognizers!.compactMap { $0 as? AsukaDoubleTapRecognizer }
+        XCTAssertEqual(taps.count, 1)
+        XCTAssertEqual(taps.first?.numberOfTapsRequired, 2)
+        _ = sent()
+        rt.doubleTapped(taps[0]) // not recognized: nothing
+        XCTAssertEqual(sent(.doubleTap).count, 0)
+        rt.unlisten(v, event: AsukaEventKind.doubleTap.rawValue)
+        XCTAssertFalse(view(v).gestureRecognizers!.contains { $0 is AsukaDoubleTapRecognizer })
+        XCTAssertTrue(view(v).gestureRecognizers!.contains { $0 is AsukaPressRecognizer })
+    }
+
+    /// Reorder's two strings, as the core sends them.
+    func reorder(_ up: String, _ down: String) -> [UInt8] {
+        var w = AsukaWriter()
+        w.u32(2)
+        w.string(up)
+        w.string(down)
+        return w.bytes
+    }
+
+    func listUpdate(_ ids: [Int64]) -> [UInt8] {
+        var w = AsukaWriter()
+        w.u32(UInt32(ids.count))
+        for id in ids { w.u64(UInt64(bitPattern: id)) }
+        return w.bytes
+    }
+
+    /// With Reorder, each row's cell offers VoiceOver's moves where they
+    /// apply; taking one moves the row a place, its cell kept, keeps the
+    /// IDs in the new order (the core's update in it changes nothing) and
+    /// reports Moved. Selecting, rows don't move.
+    func testListMoves() {
+        let r = root()
+        let list = make(.list)
+        rt.insert(r, child: list, index: 0)
+        frame(list, CGRect(x: 0, y: 0, width: 320, height: 600))
+        bytes(reorder("Up", "Down")) { set(list, AsukaProp.List.reorder, .bytes($0)) }
+        rt.listen(list, event: AsukaEventKind.moved.rawValue)
+        command(list, .listUpdate, listUpdate([1, 2, 3]))
+        let l = rt.nodes[list]!.list!
+        l.applyPending()
+        l.collection.layoutIfNeeded()
+        func cell(_ i: Int) -> AsukaListCell { l.collection.cellForItem(at: IndexPath(item: i, section: 0)) as! AsukaListCell }
+        func names(_ c: AsukaListCell) -> [String] { (c.accessibilityCustomActions ?? []).map(\.name) }
+        XCTAssertEqual(names(cell(0)), ["Down"])
+        XCTAssertEqual(names(cell(1)), ["Up", "Down"])
+        XCTAssertEqual(names(cell(2)), ["Up"])
+        let first = cell(0)
+        _ = sent()
+        let down = first.accessibilityCustomActions!.first { $0.name == "Down" }!
+        XCTAssertTrue(down.actionHandler!(down))
+        let moved = sent(.moved)
+        XCTAssertEqual(moved.count, 1)
+        XCTAssertEqual(moved.first?.id, list)
+        XCTAssertEqual(moved.first?.point, CGPoint(x: 0, y: 1))
+        XCTAssertEqual(l.source.snapshot().itemIdentifiers, [2, 1, 3])
+        l.collection.layoutIfNeeded()
+        XCTAssertTrue(cell(1) === first) // the row's cell, moved
+        XCTAssertEqual(names(first), ["Up", "Down"])
+        // The core takes the move: the same order, nothing changes.
+        command(list, .listUpdate, listUpdate([2, 1, 3]))
+        l.applyPending()
+        XCTAssertEqual(l.source.snapshot().itemIdentifiers, [2, 1, 3])
+        // It doesn't: back in the old order.
+        command(list, .listUpdate, listUpdate([1, 2, 3]))
+        l.applyPending()
+        XCTAssertEqual(l.source.snapshot().itemIdentifiers, [1, 2, 3])
+        // Selecting, or without Reorder: no moves.
+        set(list, AsukaProp.List.selecting, .bool(true))
+        XCTAssertEqual(names(cell(1)), [])
+        set(list, AsukaProp.List.selecting, .bool(false))
+        bytes([]) { set(list, AsukaProp.List.reorder, .bytes($0)) }
+        XCTAssertEqual(names(cell(1)), [])
+        // A drop: the one item moved, before and after.
+        XCTAssertEqual(AsukaList.move([1, 2, 3, 4], [2, 3, 1, 4]).map { [$0.0, $0.1] }, [0, 2])
+        XCTAssertEqual(AsukaList.move([1, 2, 3, 4], [3, 1, 2, 4]).map { [$0.0, $0.1] }, [2, 0])
+        XCTAssertNil(AsukaList.move([1, 2], [1, 2]))
+    }
+
+    /// A zoomable Scroll: UIKit's zoom between MinZoom and MaxZoom, its
+    /// content laid out at 1 and placed at the zoom (centered while it's
+    /// smaller); ZoomTo's zoom isn't reported, the user's is.
+    func testZoom() {
+        let r = root()
+        let s = make(.scroll)
+        rt.insert(r, child: s, index: 0)
+        frame(s, CGRect(x: 0, y: 0, width: 300, height: 400))
+        let c = make(.view)
+        rt.insert(s, child: c, index: 0)
+        frame(c, CGRect(x: 0, y: 0, width: 300, height: 400))
+        rt.listen(s, event: AsukaEventKind.zoomed.rawValue)
+        set(s, AsukaProp.Scroll.minZoom, .float(0.5))
+        set(s, AsukaProp.Scroll.maxZoom, .float(4))
+        let sv = view(s) as! AsukaScrollView
+        XCTAssertEqual(sv.minimumZoomScale, 0.5)
+        XCTAssertEqual(sv.maximumZoomScale, 4)
+        XCTAssertEqual(sv.zoomScale, 1)
+        _ = sent()
+        var w = AsukaWriter()
+        w.f32(2)
+        w.u8(0)
+        command(s, .zoomTo, w.bytes)
+        XCTAssertEqual(sv.zoomScale, 2, accuracy: 0.001)
+        XCTAssertEqual(sv.contentSize, CGSize(width: 600, height: 800))
+        XCTAssertEqual(sent(.zoomed).count, 0) // not the user's
+        // The core lays it out again: at the zoom still.
+        frame(c, CGRect(x: 0, y: 0, width: 300, height: 400))
+        sv.layoutIfNeeded()
+        XCTAssertEqual(view(c).frame, CGRect(x: 0, y: 0, width: 600, height: 800))
+        // The user's zoom is reported.
+        sv.setZoomScale(0.5, animated: false)
+        sv.layoutIfNeeded()
+        XCTAssertEqual(sent(.zoomed).last?.f64, 0.5)
+        XCTAssertEqual(view(c).frame, CGRect(x: 75, y: 100, width: 150, height: 200)) // centered
+        // No longer zoomable: back at 1, where the core put it.
+        set(s, AsukaProp.Scroll.maxZoom, .float(1))
+        set(s, AsukaProp.Scroll.minZoom, .float(1))
+        XCTAssertEqual(sv.zoomScale, 1)
+        XCTAssertEqual(view(c).frame, CGRect(x: 0, y: 0, width: 300, height: 400))
+        XCTAssertEqual(sv.contentSize, CGSize(width: 300, height: 400))
     }
 }
 

@@ -112,6 +112,9 @@ func goldenEvents() []Event {
 		}},
 		{ID: 11, Kind: EventPan, G: Gesture{State: GestureStateChanged, X: 10, Y: 20, TranslationX: 5, TranslationY: -3, VelocityX: 100, VelocityY: -50, Scale: 1, Rotation: 0.5}},
 		{ID: 12, Kind: EventNative, Bytes: []byte{1, 2, 3}},
+		{ID: 13, Kind: EventDoubleTap, X: 4, Y: 5.5},
+		{ID: 14, Kind: EventZoomed, Float: 2.5},
+		{ID: 15, Kind: EventMoved, X: 1, Y: 3},
 	}
 }
 

@@ -1,0 +1,109 @@
+// Gestures on the Linux host: a List whose rows move (on move), a view
+// with a press, a double tap and the pointer over it, a horizontal pan,
+// a zoomable Scroll.
+struct Fruit {
+  id: int
+  name: string
+}
+
+component Moves {
+  state fruits = [
+    Fruit(id: 1, name: "Apple"), Fruit(id: 2, name: "Banana"), Fruit(id: 3, name: "Cherry"),
+    Fruit(id: 4, name: "Date"), Fruit(id: 5, name: "Elderberry"), Fruit(id: 6, name: "Fig"),
+  ]
+  state last = "none"
+  Column {
+    height: 320
+    Text("Order: {fruits.map((f) => f.name).joined(" ")}")
+    Text("Last: {last}")
+    List {
+      grow: 1
+      on move(from, to) {
+        fruits.insert(fruits.removeAt(from), at: to)
+        last = "{from} to {to}"
+      }
+      for f in fruits key f.id {
+        Row {
+          padding: [10, 16]
+          Text(f.name) { grow: 1 }
+        }
+      }
+    }
+  }
+}
+
+component Taps {
+  state taps = 0
+  state likes = 0
+  state at = "none"
+  state over = "none"
+  state pans = 0
+  Row {
+    gap: 12
+    align: .center
+    View {
+      width: 160
+      height: 60
+      background: .secondaryBackground
+      justify: .center
+      align: .center
+      on press { taps += 1 }
+      on doubleTap(x, y) { likes += 1; at = "{x.rounded()},{y.rounded()}" }
+      on hover(x, y) { over = "{x.rounded()},{y.rounded()}" }
+      Text("Tap target")
+    }
+    Column {
+      Text("Taps {taps} likes {likes} at {at}")
+      Text("Over {over}")
+    }
+    View {
+      width: 120
+      height: 60
+      background: .secondaryBackground
+      justify: .center
+      align: .center
+      panAxis: .horizontal
+      panMinDistance: 30
+      on pan(g) { if g.state == .ended { pans += 1 } }
+      Text("Pan me")
+    }
+    Text("Pans {pans}")
+  }
+}
+
+component Zooms {
+  state zoom = 1.0
+  let scroll = Ref()
+  Column {
+    gap: 8
+    Row {
+      gap: 8
+      Text("Zoom {(zoom * 100).rounded()}")
+      Button("Zoom 3") { on press { scroll.zoomTo(3) } }
+    }
+    Scroll {
+      ref: scroll
+      height: 160
+      minZoom: 1
+      maxZoom: 4
+      bind zoom: zoom
+      View {
+        height: 160
+        background: .secondaryBackground
+        justify: .center
+        align: .center
+        Text("Zoom me")
+      }
+    }
+  }
+}
+
+app {
+  Column {
+    padding: 12
+    gap: 12
+    Moves()
+    Taps()
+    Zooms()
+  }
+}

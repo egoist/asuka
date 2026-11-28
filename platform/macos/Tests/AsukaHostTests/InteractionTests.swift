@@ -45,4 +45,48 @@ final class InteractionTests: XCTestCase {
         NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
         XCTAssertEqual(n.interaction?.hovered, true, "not hovered under the pointer once the app is back")
     }
+    // HoverMove: the view's tracking area sends mouseMoved too, and the
+    // pointer's move over the view (the real one: the automation stands in
+    // for it with hovermove) hovers it, once per event.
+    func testHoverMoveTracksTheMouse() throws {
+        let id: UInt32 = 5002
+        rt.create(id, kind: AsukaKind.view.rawValue)
+        rt.listen(id, event: AsukaEventKind.hoverMove.rawValue)
+        let n = try XCTUnwrap(rt.nodes[id])
+        let v = try XCTUnwrap(n.view)
+        v.frame = CGRect(x: 0, y: 0, width: 50, height: 50)
+        rt.main.content.addSubview(v)
+        defer { v.removeFromSuperview() }
+        let area = try XCTUnwrap(n.interaction?.hoverArea)
+        XCTAssertTrue(area.options.contains(.mouseMoved), "no mouseMoved in \(area.options)")
+        XCTAssertEqual(v.trackingAreas.count, 1)
+        let w = try XCTUnwrap(rt.main.window)
+        let e = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: v.convert(CGPoint(x: 10, y: 20), to: nil), modifierFlags: [],
+                                                 timestamp: 42, windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+        XCTAssertTrue(rt.mouseMoved(v, e))
+        XCTAssertEqual(n.interaction?.hovered, true)
+        XCTAssertEqual(n.interaction?.movedAt, 42)
+    }
+
+    // A pan along an axis: a drag that went the other way first isn't one.
+    func testPanAxis() {
+        XCTAssertTrue(asukaPanAlong(.horizontal, .zero))
+        XCTAssertTrue(asukaPanAlong(.horizontal, CGPoint(x: -10, y: 4)))
+        XCTAssertFalse(asukaPanAlong(.horizontal, CGPoint(x: 3, y: 9)))
+        XCTAssertTrue(asukaPanAlong(.vertical, CGPoint(x: 3, y: -9)))
+        XCTAssertFalse(asukaPanAlong(.vertical, CGPoint(x: 10, y: 4)))
+        XCTAssertTrue(asukaPanAlong(.both, CGPoint(x: 10, y: 4)))
+    }
+
+    // A dragged row's neighbours make way: those between where it was and
+    // where it would drop move by its height.
+    func testRowsMakeWay() {
+        let m = AsukaRowMove(AsukaRowView(), from: 2, height: 40, grab: 10, y: 80, loc: .zero)
+        m.to = 5
+        XCTAssertEqual((0..<8).map { m.shift($0) }, [0, 0, 0, -40, -40, -40, 0, 0])
+        m.to = 0
+        XCTAssertEqual((0..<8).map { m.shift($0) }, [40, 40, 0, 0, 0, 0, 0, 0])
+        m.to = 2
+        XCTAssertEqual((0..<8).map { m.shift($0) }, [0, 0, 0, 0, 0, 0, 0, 0])
+    }
 }

@@ -256,14 +256,14 @@ static void apply_op(const ak_op *op) {
 		break;
 	case AK_OP_LISTEN:
 		if ((n = wh_node(op->id)) && op->event < 128) {
-			if (op->event == AK_EVENT_HOVER && !node_listening(n, op->event)) wh_hover_views(1);
+			if ((op->event == AK_EVENT_HOVER || op->event == AK_EVENT_HOVER_MOVE) && !node_listening(n, op->event)) wh_hover_views(1);
 			n->listens[op->event / 64] |= (uint64_t)1 << (op->event % 64);
 			wh_listen(n, op->event);
 		}
 		break;
 	case AK_OP_UNLISTEN:
 		if ((n = wh_node(op->id)) && op->event < 128) {
-			if (op->event == AK_EVENT_HOVER && node_listening(n, op->event)) wh_hover_views(-1);
+			if ((op->event == AK_EVENT_HOVER || op->event == AK_EVENT_HOVER_MOVE) && node_listening(n, op->event)) wh_hover_views(-1);
 			n->listens[op->event / 64] &= ~((uint64_t)1 << (op->event % 64));
 		}
 		break;
@@ -460,6 +460,7 @@ void wh_insert(node *p, node *c, uint32_t index) {
 	uint32_t i = index < p->nkids ? index : p->nkids;
 	kids_insert(p, c, i);
 	c->parent = p;
+	if (p->kind == AK_KIND_SCROLL) wh_zoom_child(p, c, false);  // a zoomed Scroll's content: at its zoom
 	if (!c->hwnd || !p->hwnd) return;
 	SetParent(c->hwnd, p->hwnd);
 	wh_match_in(c);
@@ -488,6 +489,7 @@ void wh_remove(node *p, node *c) {
 			break;
 		}
 	c->parent = NULL;
+	if (p->kind == AK_KIND_SCROLL) wh_zoom_child(p, c, false);  // out of a zoomed Scroll: its own scale again
 	if (wh_remove_nav(p, c)) return;
 	if (c->hwnd) SetParent(c->hwnd, H.park);  // parked: it may be inserted again (a moved view)
 	if (p->kind == AK_KIND_OVERLAY) wh_overlays_dirty();  // its region
@@ -549,15 +551,24 @@ static bool has_xform(const node *n) {
 
 void wh_place_at(node *n, const float f[4]) {
 	float x = f[0], y = f[1];
+	float z = n->parent && n->parent->kind == AK_KIND_SCROLL ? wh_scroll_zoom(n->parent) : 1;
 	if (n->parent && n->parent->kind == AK_KIND_SCROLL) {
-		x -= n->parent->scroll_x;
-		y -= n->parent->scroll_y;
+		x -= n->parent->scroll_x / z;  // its position is the zoomed content's
+		y -= n->parent->scroll_y / z;
 	}
 	int x0 = wh_px(n, x), y0 = wh_px(n, y);
 	int w = wh_px(n, x + f[2]) - x0, ht = wh_px(n, y + f[3]) - y0;
+	if (z != 1) {
+		// A zoomed Scroll's content: its scale (its k) is the zoom's, its
+		// frame the zoomed content's, in the Scroll's pixels.
+		float k = wh_scale_of(n->parent);
+		x0 = (int)lroundf((f[0] * z - n->parent->scroll_x) * k), y0 = (int)lroundf((f[1] * z - n->parent->scroll_y) * k);
+		w = (int)lroundf((f[0] + f[2]) * z * k) - (int)lroundf(f[0] * z * k), ht = (int)lroundf((f[1] + f[3]) * z * k) - (int)lroundf(f[1] * z * k);
+	}
 	if (has_xform(n)) {
 		int x1, y1;
-		wh_transformed(n, x, y, f[2], f[3], &x0, &y0, &x1, &y1);
+		if (z != 1) wh_transformed(n, f[0] * z - n->parent->scroll_x, f[1] * z - n->parent->scroll_y, f[2] * z, f[3] * z, &x0, &y0, &x1, &y1);
+		else wh_transformed(n, x, y, f[2], f[3], &x0, &y0, &x1, &y1);
 		w = x1 - x0, ht = y1 - y0;
 	}
 	bool shadow = n->shadow_len > 0 || n->has_text_shadow;

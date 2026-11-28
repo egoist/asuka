@@ -7,6 +7,9 @@
 //     Ctrl held, as it does for apps that zoom with Ctrl and the wheel (a
 //     browser): so is a mouse's Ctrl and wheel, 10% a notch. A pinch
 //     begins with the first, and ends once none has come for a moment.
+//   - A zoomable Scroll (MinZoom, MaxZoom) that doesn't listen for
+//     pinches zooms its content with a touch screen's two fingers
+//     (scroll.c zooms it with Ctrl and the wheel).
 #include "nav.h"
 
 #define PINCH_REST 250  // ms without the wheel that end a wheel's pinch
@@ -83,9 +86,28 @@ bool wh_touch_gesture(node *n, HWND hwnd, LPARAM lp) {
 	e.g.x = wh_pt(n, at.x), e.g.y = wh_pt(n, at.y), e.g.scale = 1;
 	switch (gi.dwID) {
 	case GID_ZOOM: {
-		if (!node_listening(n, AK_EVENT_PINCH)) return false;
+		bool zooms = !node_listening(n, AK_EVENT_PINCH) && wh_zoomable(n);
+		if (!node_listening(n, AK_EVENT_PINCH) && !zooms) return false;
 		double dist = (double)(uint32_t)gi.ullArguments;
 		two_finger *f = n->two_finger;
+		if (zooms) {
+			// The content's zoom, from where it was as the fingers came down,
+			// around the point between them.
+			if (state == AK_GESTURE_STATE_BEGAN || !f) {
+				if (f && f->wheel) KillTimer(hwnd, TIMER_PINCH);
+				free(f);
+				f = n->two_finger = wh_alloc(sizeof *f);
+				f->start_dist = dist > 1 ? dist : 1;
+				f->scale = wh_scroll_zoom(n);
+				KillTimer(hwnd, TIMER_ZOOM);
+			}
+			wh_zoom_around(n, f->scale * (float)(dist / f->start_dist), wh_pt(n, at.x), wh_pt(n, at.y), true);
+			if (state == AK_GESTURE_STATE_ENDED && (f = n->two_finger)) {
+				free(f);
+				n->two_finger = NULL;
+			}
+			break;
+		}
 		if (state == AK_GESTURE_STATE_BEGAN || !f) {
 			if (f && f->wheel) KillTimer(hwnd, TIMER_PINCH);
 			free(f);
@@ -116,3 +138,7 @@ bool wh_touch_gesture(node *n, HWND hwnd, LPARAM lp) {
 	CloseGestureInfoHandle((HGESTUREINFO)lp);
 	return true;
 }
+
+// wh_from_touch reports whether the mouse message being handled came from
+// a touch screen or a pen (Windows's signature in its extra info).
+bool wh_from_touch(void) { return ((uint32_t)GetMessageExtraInfo() & 0xFFFFFF00u) == 0xFF515700u; }

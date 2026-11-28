@@ -492,6 +492,9 @@ static float zoom_of(xform t) {
 
 float wh_own_zoom(const node *n) { return n->zoom == 0 ? 1 : n->zoom; }
 
+// wh_xform_zoom is the scale n's transform gives what's in it.
+float wh_xform_zoom(const node *n) { return zoom_of(n->xf); }
+
 // wh_k_for is the k of a view whose own scale is z in a view of k base (0:
 // the main window's).
 float wh_k_for(float base, float z) {
@@ -511,6 +514,7 @@ static void apply_xform(node *n, xform t) {
 	if (xform_eq(t, n->xf)) return;
 	n->xf = t;
 	float z = zoom_of(t);
+	if (n->parent && n->parent->kind == AK_KIND_SCROLL) z *= wh_scroll_zoom(n->parent);  // a zoomable Scroll's content: its zoom too
 	if (z == 1) z = 0;
 	if ((z == 0) != (n->zoom == 0)) H.zoomed += z == 0 ? -1 : 1;
 	if (z != n->zoom && n->hwnd) {

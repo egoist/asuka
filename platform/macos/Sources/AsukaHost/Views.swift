@@ -91,6 +91,9 @@ class AsukaView: NSView, NSDraggingSource {
     // pointer of the computer it runs on isn't the test's.
     override func mouseEntered(with event: NSEvent) { if !AsukaAutomation.shared.active { rt.mouseEntered(self) } }
     override func mouseExited(with event: NSEvent) { if !AsukaAutomation.shared.active { rt.mouseExited(self) } }
+    override func mouseMoved(with event: NSEvent) {
+        if AsukaAutomation.shared.active || !rt.mouseMoved(self, event) { super.mouseMoved(with: event) }
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()

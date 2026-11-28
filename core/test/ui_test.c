@@ -1084,6 +1084,205 @@ TEST(list_scroll_follows_the_writes_before_it) {
 	ak_release(items);
 }
 
+// ---- Moving a List's rows (on move) ----
+
+static int64_t moves[2];
+static int nmoves;
+static bool take_moves;  // the handler moves the items
+
+static ak_val move_handler(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(n);
+	moves[0] = a[0].i, moves[1] = a[1].i;
+	nmoves++;
+	if (!take_moves) return (ak_val){0};
+	ak_arr *now = ak_vm_cell_get(items, false).p;
+	ak_arr *next = ak_arr_new(AK_K_REF, &todo_shape, now->len);
+	int64_t from = a[0].i, to = a[1].i;
+	for (uint32_t i = 0; i < now->len; i++)
+		if ((int64_t)i != from) ak_arr_push(&next, (ak_val){.p = ak_retain(ak_arr_vals(now)[i].p)});
+	ak_arr_insert(&next, (uint32_t)to, (ak_val){.p = ak_retain(ak_arr_vals(now)[from].p)});
+	write_p(items, next);
+	return (ak_val){0};
+}
+
+static void *movable;
+
+static ak_val movable_list_app(ak_closure *c, ak_val *a, uint32_t n) {
+	ak_val v = list_app(c, a, n);
+	on(v.p, AK_EV_LIST_MOVE, move_handler, NULL);
+	bind(v.p, AK_KEY_LIST_REORDERABLE, read_cell, movable);
+	return v;
+}
+
+static void check_ids(const ak_fake_view *list, const int64_t *want, uint32_t n) {
+	CHECK_EQ_INT(list->items.len, n);
+	for (uint32_t i = 0; i < n && i < list->items.len; i++) CHECK_EQ_INT(list->items.data[i], want[i]);
+}
+
+// A List with on move moves its rows: the host moves the row the user
+// drags (here, the test driver, as a collection view moves its cells),
+// the handler moves the items, and the rows keep their views: none is
+// made or destroyed, nothing is bound again, and no ListUpdate goes back
+// (the host has the order). A move the items don't take goes back.
+TEST(list_move_keeps_rows) {
+	items = cell_ref(todos(5));
+	movable = ak_vm_cell_new((ak_val){.i = 1}, AK_K_BOOL, NULL).p;
+	rows_made = nmoves = 0;
+	take_moves = true;
+	ak_uitest *a = mount(movable_list_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *list = nth(a, AK_KIND_LIST, 0);
+	REQUIRE(list);
+	CHECK(ak_fake_listens(list, AK_EVENT_MOVED));
+	ak_str_vec names = {0};
+	ak_fake_strings(list, AK_PROP_LIST_REORDER, &names);
+	REQUIRE(names.len == 2);
+	CHECK(ak_span_eq(names.data[0], ak_cstr("Move up")) && ak_span_eq(names.data[1], ak_cstr("Move down")));
+	ak_vec_free(&names);
+	int made = rows_made;
+	CHECK_EQ_INT(made, 5);
+	int64_t ids0[5];
+	for (int i = 0; i < 5; i++) ids0[i] = list->items.data[i];
+	ak_fake_view *moving = one(a, AK_KIND_TEXT, "item 1");
+	REQUIRE(moving);
+	ak_id moving_id = moving->id;
+	ak_fake_reset(f);
+	ak_buf err = {0};
+	CHECK(ak_uitest_move_row(a, ak_cstr("item 1"), 3, &err));
+	if (err.len) T_FAIL("%s", cstr(&err));
+	CHECK_EQ_INT(nmoves, 1);
+	CHECK(moves[0] == 1 && moves[1] == 3);
+	int64_t want[5] = {ids0[0], ids0[2], ids0[3], ids0[1], ids0[4]};
+	check_ids(list, want, 5);
+	CHECK_EQ_INT(rows_made, made);  // no row remounted
+	CHECK_EQ_INT(ak_fake_count(f, AK_OP_CREATE), 0);
+	CHECK_EQ_INT(ak_fake_count(f, AK_OP_DESTROY), 0);
+	CHECK_EQ_INT(last_command(f, AK_CMD_LIST_UPDATE), -1);  // the host has the order
+	moving = one(a, AK_KIND_TEXT, "item 1");
+	CHECK(moving && moving->id == moving_id);  // the same view, moved
+	// Up from the end.
+	CHECK(ak_uitest_move_row(a, ak_cstr("item 4"), 0, &err));
+	int64_t want2[5] = {ids0[4], ids0[0], ids0[2], ids0[3], ids0[1]};
+	check_ids(list, want2, 5);
+	CHECK_EQ_INT(rows_made, made);
+	// A move the items don't take goes back: the order they have.
+	take_moves = false;
+	ak_fake_reset(f);
+	CHECK(ak_uitest_move_row(a, ak_cstr("item 0"), 4, &err));
+	CHECK_EQ_INT(nmoves, 3);
+	CHECK(last_command(f, AK_CMD_LIST_UPDATE) >= 0);
+	check_ids(list, want2, 5);
+	CHECK_EQ_INT(rows_made, made);
+	// Not reorderable: the rows don't move (an edit mode's off).
+	ak_vm_cell_set(movable, (ak_val){.i = 0});
+	ak_ui_flush();
+	CHECK_EQ_INT(ak_fake_string(list, AK_PROP_LIST_REORDER).len, 0);
+	CHECK(!ak_uitest_move_row(a, ak_cstr("item 2"), 0, &err));
+	CHECK_EQ_INT(nmoves, 3);
+	ak_buf_free(&err);
+	done(a);
+	ak_release(items), ak_release(movable);
+}
+
+// ---- A zoomable Scroll (minZoom, maxZoom, zoom) ----
+
+static void *zoom_cell;
+static double zoom_heard;
+static int zooms;
+
+static ak_val zoom_change(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(n);
+	zoom_heard = a[0].f;
+	zooms++;
+	ak_vm_cell_set(zoom_cell, (ak_val){.f = a[0].f});  // as bind zoom: writes it
+	return (ak_val){0};
+}
+
+static ak_val zoom_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *s = ak_ui_new(AK_EL_SCROLL);
+	set_i(s, AK_KEY_HEIGHT, ak_length_pt(400));
+	set_f(s, AK_KEY_SCROLL_MIN_ZOOM, 1);
+	set_f(s, AK_KEY_SCROLL_MAX_ZOOM, 4);
+	bind(s, AK_KEY_SCROLL_ZOOM, read_cell, zoom_cell);
+	on(s, AK_EV_SCROLL_ZOOM_CHANGE, zoom_change, NULL);
+	add(s, text("photo"));
+	return (ak_val){.p = s};
+}
+
+// A Scroll whose maxZoom is over its minZoom zooms: the user's pinch and
+// double tap (within its bounds), its zoom key and its Ref's zoomTo, each
+// kept within them.
+TEST(scroll_zoom_bounds) {
+	zoom_cell = ak_vm_cell_new((ak_val){.f = 1}, AK_K_FLOAT, NULL).p;
+	zooms = 0;
+	ak_uitest *a = mount(zoom_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *s = nth(a, AK_KIND_SCROLL, 0);
+	REQUIRE(s);
+	CHECK_EQ_F(ak_fake_float(s, AK_PROP_SCROLL_MIN_ZOOM), 1);
+	CHECK_EQ_F(ak_fake_float(s, AK_PROP_SCROLL_MAX_ZOOM), 4);
+	CHECK(ak_fake_listens(s, AK_EVENT_ZOOMED));
+	CHECK_EQ_INT(last_command(f, AK_CMD_ZOOM_TO), -1);  // it starts at 1: nothing to send
+	// Its content is at least as big as it is, to zoom.
+	ak_fake_view *content = s->children.len ? s->children.data[0] : NULL;
+	REQUIRE(content);
+	CHECK_EQ_F(content->frame[3], 400);
+	// Written past its bounds: zoomed to the bound.
+	ak_vm_cell_set(zoom_cell, (ak_val){.f = 10});
+	ak_ui_flush();
+	CHECK(last_command(f, AK_CMD_ZOOM_TO) >= 0);
+	CHECK_EQ_F(ak_fake_zoom_of(s), 4);
+	// The user's pinch, past it: it settles within, reported.
+	ak_fake_reset(f);
+	ak_fake_zoom(f, s, 0.25f);
+	ak_ui_flush();
+	CHECK_EQ_F(zoom_heard, 1);
+	CHECK_EQ_INT(last_command(f, AK_CMD_ZOOM_TO), -1);  // the host shows it: not sent back
+	ak_fake_zoom(f, s, 2.5f);
+	ak_ui_flush();
+	CHECK_EQ_F(zoom_heard, 2.5);
+	CHECK_EQ_INT(last_command(f, AK_CMD_ZOOM_TO), -1);
+	// A double tap zoomed in goes back out to minZoom, then in to twice it.
+	ak_fake_double_tap(f, s);
+	ak_ui_flush();
+	CHECK_EQ_F(zoom_heard, 1);
+	ak_fake_double_tap(f, s);
+	ak_ui_flush();
+	CHECK_EQ_F(zoom_heard, 2);
+	// Its Ref's zoomTo: clamped, and heard as the user's zooming.
+	int before = zooms;
+	ak_ui_zoom_to(ak_view_of(s->id), 0.1f, true);
+	ak_ui_flush();
+	CHECK_EQ_INT(zooms, before + 1);
+	CHECK_EQ_F(zoom_heard, 1);
+	CHECK_EQ_F(ak_fake_zoom_of(s), 1);
+	CHECK_EQ_F(ak_vm_cell_get(zoom_cell, false).f, 1);
+	done(a);
+	ak_release(zoom_cell);
+}
+
+static ak_val plain_scroll_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *s = ak_ui_new(AK_EL_SCROLL);
+	bind(s, AK_KEY_SCROLL_ZOOM, read_cell, zoom_cell);
+	add(s, text("text"));
+	return (ak_val){.p = s};
+}
+
+// A Scroll that doesn't zoom (no maxZoom over minZoom) sends none of it.
+TEST(scroll_without_zoom) {
+	zoom_cell = ak_vm_cell_new((ak_val){.f = 3}, AK_K_FLOAT, NULL).p;
+	ak_uitest *a = mount(plain_scroll_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *s = nth(a, AK_KIND_SCROLL, 0);
+	REQUIRE(s);
+	CHECK(!ak_fake_prop_of(s, AK_PROP_SCROLL_MAX_ZOOM) && !ak_fake_listens(s, AK_EVENT_ZOOMED));
+	CHECK_EQ_INT(last_command(f, AK_CMD_ZOOM_TO), -1);
+	done(a);
+	ak_release(zoom_cell);
+}
+
 // ---- Steady state and memory (TestSteadyStateFlushAllocatesNothing, TestDisposeDestroysEverything) ----
 
 static ak_str *labels[2];

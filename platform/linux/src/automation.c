@@ -4,7 +4,11 @@
 // wait:<d>, waitfor:<file>, snap:<file>; on X11, real input through the X
 // server's XTest, as a user's: click:<text> (a press of the mouse's
 // button on the view showing text), clickat:<x>,<y> (in the main
-// window's root), press:<keys> (shift+tab, b, space)), then
+// window's root), press:<keys> (shift+tab, b, space), dclick:<text> (a
+// double click on it), drag:<text>,<dx>,<dy>[,hold] (the button held from
+// its middle, moved by dx, dy in steps, let go, or held until release),
+// wheel:<text>,<notches>[,ctrl]
+// (the wheel turned over it, up for notches above 0, Ctrl held)), then
 // ASUKA_SNAPSHOT=file.png
 // writes the window as a PNG (ASUKA_DUMP=1: its view tree beside it) and
 // quits. ASUKA_COMMANDS=dir drives the app from outside while it runs, as
@@ -323,6 +327,97 @@ static bool real_click(GtkWidget *w, double x, double y) {
 	return true;
 }
 
+// node_middle is where the middle of the node showing text is on the X
+// screen (its view's).
+static bool node_middle(const char *text, size_t n, int *sx, int *sy, GtkWidget **w, double *mx, double *my) {
+	char *t = strndup(text, n);
+	node *nd = find_text_node(t);
+	free(t);
+	if (!nd || !x_display()) return false;
+	float width, height;
+	lx_size(nd, nd->widget, &width, &height);
+	*w = nd->widget;
+	*mx = width / 2;
+	*my = height / 2;
+	return screen_point(nd->widget, width / 2, height / 2, sx, sy);
+}
+
+// real_dclick double clicks the mouse's primary button at x, y of w.
+static bool real_dclick(GtkWidget *w, double x, double y) {
+	void *dpy = x_display();
+	int sx, sy;
+	if (!dpy || !screen_point(w, x, y, &sx, &sy)) return false;
+	XTestFakeMotionEvent(dpy, -1, sx, sy, 0);
+	for (int i = 0; i < 2; i++) {
+		XTestFakeButtonEvent(dpy, 1, 1, 30);
+		XTestFakeButtonEvent(dpy, 1, 0, 30);
+	}
+	XFlush(dpy);
+	return true;
+}
+
+// real_drag holds the primary button at x, y of w, moves the pointer by
+// dx, dy in 20 steps, rests, and lets go (unless hold).
+static bool real_drag(GtkWidget *w, double x, double y, double dx, double dy, bool hold) {
+	void *dpy = x_display();
+	int sx, sy;
+	if (!dpy || !screen_point(w, x, y, &sx, &sy)) return false;
+	int scale = gdk_surface_get_scale_factor(gtk_native_get_surface(gtk_widget_get_native(w)));
+	XTestFakeMotionEvent(dpy, -1, sx, sy, 0);
+	XTestFakeButtonEvent(dpy, 1, 1, 30);
+	for (int i = 1; i <= 20; i++) XTestFakeMotionEvent(dpy, -1, sx + (int)(dx * scale * i / 20), sy + (int)(dy * scale * i / 20), 25);
+	if (!hold) XTestFakeButtonEvent(dpy, 1, 0, 150);
+	XFlush(dpy);
+	return true;
+}
+
+// real_release lets go of the primary button.
+static bool real_release(void) {
+	void *dpy = x_display();
+	if (!dpy) return false;
+	XTestFakeButtonEvent(dpy, 1, 0, 30);
+	XFlush(dpy);
+	return true;
+}
+
+// real_wheel turns the wheel notches (up above 0) at x, y of w, with Ctrl
+// held if ctrl.
+static bool real_wheel(GtkWidget *w, double x, double y, int notches, bool ctrl) {
+	void *dpy = x_display();
+	int sx, sy;
+	if (!dpy || !screen_point(w, x, y, &sx, &sy)) return false;
+	unsigned int code = ctrl ? XKeysymToKeycode(dpy, XStringToKeysym("Control_L")) : 0;
+	XTestFakeMotionEvent(dpy, -1, sx, sy, 0);
+	if (code) XTestFakeKeyEvent(dpy, code, 1, 20);
+	unsigned int button = notches > 0 ? 4 : 5;
+	for (int i = 0; i < abs(notches); i++) {
+		XTestFakeButtonEvent(dpy, button, 1, 40);
+		XTestFakeButtonEvent(dpy, button, 0, 10);
+	}
+	if (code) XTestFakeKeyEvent(dpy, code, 0, 40);
+	XFlush(dpy);
+	return true;
+}
+
+// split_tail splits "text,a,b": the text's length, and the n numbers
+// after its last n commas.
+static bool split_tail(const char *arg, int n, size_t *len, double *v) {
+	size_t end = strlen(arg);
+	for (int i = n - 1; i >= 0; i--) {
+		const char *c = NULL;
+		for (size_t k = end; k-- > 0;)
+			if (arg[k] == ',') {
+				c = arg + k;
+				break;
+			}
+		if (!c) return false;
+		v[i] = strtod(c + 1, NULL);
+		end = (size_t)(c - arg);
+	}
+	*len = end;
+	return true;
+}
+
 // real_keys types a key with its modifiers (shift+tab, ctrl+k, b) through
 // the X server, to the window the pointer is put over.
 static bool real_keys(const char *spec) {
@@ -395,6 +490,34 @@ static bool step(const char *s, char *err, size_t errn) {
 		sscanf(arg, "%lf,%lf", &x, &y);
 		if (H.main && H.main->root && H.main->root->widget && real_click(H.main->root->widget, x, y)) return true;
 		snprintf(err, errn, "no X11 XTest to click with");
+		return false;
+	}
+	if (!strcmp(verb, "dclick") || !strcmp(verb, "drag") || !strcmp(verb, "wheel")) {
+		double v[3] = {0};
+		size_t len = strlen(arg);
+		bool flag = false;  // a drag's hold, a wheel's ctrl
+		bool ok = true;
+		const char *suffix = !strcmp(verb, "drag") ? ",hold" : ",ctrl";
+		flag = len > 5 && !strcmp(arg + len - 5, suffix);
+		if (strcmp(verb, "dclick")) {
+			char *a = strndup(arg, flag ? len - 5 : len);
+			ok = split_tail(a, !strcmp(verb, "drag") ? 2 : 1, &len, v);
+			free(a);
+		}
+		int sx, sy;
+		GtkWidget *w = NULL;
+		double mx = 0, my = 0;
+		if (!ok || !node_middle(arg, len, &sx, &sy, &w, &mx, &my)) {
+			snprintf(err, errn, ok ? "nothing shows it, or no X11 XTest" : "a step needs its text and numbers");
+			return false;
+		}
+		if (!strcmp(verb, "dclick")) return real_dclick(w, mx, my);
+		if (!strcmp(verb, "drag")) return real_drag(w, mx, my, v[0], v[1], flag);
+		return real_wheel(w, mx, my, (int)v[0], flag);
+	}
+	if (!strcmp(verb, "release")) {
+		if (real_release()) return true;
+		snprintf(err, errn, "no X11 XTest to let go with");
 		return false;
 	}
 	if (!strcmp(verb, "press")) {

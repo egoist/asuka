@@ -351,6 +351,7 @@ fun AsukaRuntime.propBool(id: Int, prop: Int, v: Boolean) {
     if (n.kind == AsukaKind.WEB_VIEW && prop == AsukaProp.WebView.REQUESTS) { (n.view as AsukaWebView).reportRequests = v; return }
     if (n.kind == AsukaKind.COLOR_PICKER && setWheelProp(n, prop, v)) return
     n.props[prop] = v
+    if (n.kind == AsukaKind.VIEW && prop == AsukaProp.View.PAN_SIMULTANEOUS) { panConfig(n); return }
     val view = n.view
     when (prop) {
         AsukaProp.HIDDEN -> {
@@ -457,6 +458,7 @@ fun AsukaRuntime.propFloat(id: Int, prop: Int, v: Double) {
     if ((n.kind == AsukaKind.WHEEL || n.kind == AsukaKind.STEPPER) && setWheelProp(n, prop, v)) return
     n.props[prop] = v
     if (n.kind == AsukaKind.SHAPE && setShapeProp(n, prop, v)) return
+    if (n.kind == AsukaKind.VIEW && prop == AsukaProp.View.PAN_MIN_DISTANCE) { panConfig(n); return }
     when (prop) {
         AsukaProp.CORNER_RADIUS -> { n.cornerRadius = v.toFloat(); applyBackground(n) }
         AsukaProp.BORDER_WIDTH -> { n.borderWidth = v.toFloat(); applyBackground(n) }
@@ -587,6 +589,7 @@ fun AsukaRuntime.propEnum(id: Int, prop: Int, v: Int) {
     n.props[prop] = v
     if (n.kind == AsukaKind.SHAPE && setShapeProp(n, prop, v)) return
     if (prop == AsukaProp.MATERIAL) { n.material = v; applyBackground(n); return }
+    if (n.kind == AsukaKind.VIEW && prop == AsukaProp.View.PAN_AXIS) { panConfig(n); return }
     if (n.kind == AsukaKind.LIST && prop == AsukaProp.List.APPEARANCE) { n.list?.let { it.setAppearance(v, it.inset) }; return }
     if (n.kind == AsukaKind.LIST && prop == AsukaProp.List.ANCHOR) { n.list?.setAnchor(v); return }
     if (n.kind == AsukaKind.DATE_PICKER && prop == AsukaProp.DatePicker.MODE) { (n.view as AsukaDatePicker).mode = v; return }

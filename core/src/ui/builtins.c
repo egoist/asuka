@@ -53,6 +53,7 @@
 //	ui.scroll_to   v: View, x: float, y: float, animated: bool        -
 //	ui.scroll_to_end  v: View, animated: bool                          -
 //	ui.scroll_to_item v: View (a List), index: int, animated: bool     -
+//	ui.zoom_to     v: View (a Scroll), scale: float, animated: bool    -
 //	ui.environment -                                                  Environment
 //	ui.lazy        v: View, build: fn(params...) -> View? (its
 //	               LazyChildren: a Tab's page, a Route's screen)      -
@@ -322,6 +323,11 @@ static ak_val b_scroll_to_item(ak_val *a, uint32_t n) {
 	return none();
 }
 
+static ak_val b_zoom_to(ak_val *a, uint32_t n) {
+	ak_ui_zoom_to(view_arg(a, n, 0, "ui.zoom_to"), n > 1 ? (float)a[1].f : 1, n > 2 && a[2].i != 0);
+	return none();
+}
+
 static ak_val b_scroll_to(ak_val *a, uint32_t n) {
 	ak_ui_scroll_to(view_arg(a, n, 0, "ui.scroll_to"), (float)a[1].f, (float)a[2].f, a[3].i != 0);
 	return none();
@@ -565,6 +571,7 @@ void ak_ui_builtins_init(void) {
 		{"ui.scroll_to", b_scroll_to},
 		{"ui.scroll_to_end", b_scroll_to_end},
 		{"ui.scroll_to_item", b_scroll_to_item},
+		{"ui.zoom_to", b_zoom_to},
 		{"ui.environment", b_environment},
 		{"ui.screen_environment", b_screen_environment},
 		{"ui.push", b_push},

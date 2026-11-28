@@ -193,6 +193,9 @@ var containerKeys = []Key{
 	{Name: "restoreFocus", Type: "bool", Doc: "when it goes, the keyboard's focus goes back to the view that had it when it came, if that view still shows"},
 	{Name: "autofocus", Type: "bool", Doc: "once it's laid out, the keyboard's focus goes to it if it's focusable, else to the first focusable view inside it (a field, a pressable view)"},
 	{Name: "takesClicks", Type: "bool", Doc: "in a click-through window (clickThrough), the mouse over it still goes to it: clicks, hover and the wheel, not to what's behind (a HUD's close button)"},
+	{Name: "panAxis", Type: "PanAxis", Doc: "the axis its on pan follows: .horizontal or .vertical, and a drag that moves first along the other axis isn't a pan but goes to what's around it (a scroll view); .both (the default): any drag"},
+	{Name: "panMinDistance", Type: "float", Doc: "points a drag moves before its on pan begins (0, the default: the platform's touch slop)"},
+	{Name: "panWithScroll", Type: "bool", Doc: "its on pan and the scroll views around it both follow the same drag (simultaneous recognition); false: once a pan begins, it has the touch"},
 }
 
 // containerEvents are what View, Row, Column and SafeArea report: a
@@ -217,6 +220,8 @@ var containerEvents = []Event{
 	{Name: "focusChange", Params: []Param{{"focused", "bool"}}, Doc: "it took the keyboard's focus, or lost it (a focusable view's)"},
 	{Name: "keyText", Params: []Param{{"text", "string"}}, Doc: "text typed while it has the keyboard's focus that its keys (and its containers') didn't take: a listbox's typeahead"},
 	{Name: "pressStart", Params: []Param{{"x", "float"}, {"y", "float"}}, Doc: "a press began on it: where, in points from its top left (before pressedChange(true)): a slider's track jumps there"},
+	{Name: "doubleTap", Params: []Param{{"x", "float"}, {"y", "float"}}, Doc: "two taps (or clicks) in quick succession: where the second fell, in points from its top left. With on press too, a tap's press waits until a second can't come, and a double tap runs no press"},
+	{Name: "hover", Params: []Param{{"x", "float"}, {"y", "float"}}, Doc: "a pointer moving over it or its children: where it is, in points from its top left (after hoverChange(true), none after hoverChange(false)); a touch screen alone never hovers"},
 }
 
 // Elements are the built-in elements. core/src/ui implements each.
@@ -336,10 +341,14 @@ var Elements = []Element{
 		{Name: "paging", Type: "bool", Doc: "it stops only at multiples of its own size, a page each, and hides its scroll bars"},
 		{Name: "page", Type: "int", Bind: true, Event: "pageChange", Doc: "the page it shows (paging): a swipe that settles writes it, and writing it scrolls there"},
 		{Name: "edgeEffect", Type: "EdgeEffect", Doc: "how its content is set off from a bar it scrolls under (iOS 26's and macOS 26's scroll edge effect): .soft fades it, .hard cuts it off"},
+		{Name: "minZoom", Type: "float", Default: "1", Doc: "the smallest scale its content zooms to (with maxZoom more than it): a pinch, a double tap, ctrl (⌘ on a Mac) and the wheel, or a trackpad's pinch zoom it, as a photo is"},
+		{Name: "maxZoom", Type: "float", Default: "1", Doc: "the largest scale its content zooms to; more than minZoom makes it zoomable"},
+		{Name: "zoom", Type: "float", Default: "1", Bind: true, Event: "zoomChange", Doc: "its content's scale (within minZoom and maxZoom): the user's zooming writes it, and writing it zooms there"},
 	}, Events: []Event{
 		{Name: "scroll", Params: []Param{{"x", "float"}, {"y", "float"}}, Doc: "its content offset as it scrolls"},
 		{Name: "refresh", Doc: "pulled to refresh"},
 		{Name: "pageChange", Params: []Param{{"page", "int"}}, Doc: "a paging swipe is settling on a page: its index from the content's start (its leading edge, right to left)"},
+		{Name: "zoomChange", Params: []Param{{"zoom", "float"}}, Doc: "the user zoomed its content: its scale, as it goes and where it settles"},
 	}, Doc: "scrolls its children along one axis (horizontal: a row); its wrap, justify, align, gap and padding lay out its content. Give it a size (or grow) to scroll within"},
 	{Name: "List", Children: true, LazyFor: true, Keys: []Key{
 		{Name: "refreshing", Type: "bool", Doc: "shows the pull to refresh spinner while true (with on refresh)"},
@@ -353,6 +362,7 @@ var Elements = []Element{
 		{Name: "header", Type: "fn(string) -> View", Builder: true, Doc: "a section's header, given its key (an accessor: a recycled header follows its new section)"},
 		{Name: "selecting", Type: "bool", Doc: "selection mode (Mail's Edit): rows show the platform's selection control, a tap selects instead of pressing, and rows don't swipe"},
 		{Name: "selected", Type: "fn(int) -> bool", Doc: "whether row index is selected, followed as what it reads changes"},
+		{Name: "reorderable", Type: "bool", Default: "true", Doc: "with on move, whether the user can move rows now (false: as outside an edit mode)"},
 	}, Events: []Event{
 		{Name: "scroll", Params: []Param{{"x", "float"}, {"y", "float"}}},
 		{Name: "refresh", Doc: "pulled to refresh"},
@@ -360,6 +370,7 @@ var Elements = []Element{
 		{Name: "startReached", Doc: "the first rows are about to show: load earlier ones (once per first item)"},
 		{Name: "select", Params: []Param{{"index", "int"}, {"selected", "bool"}}, Doc: "the user selected or deselected row index; what selected doesn't take back goes back as it was"},
 		{Name: "selectBegin", Params: []Param{{"index", "int"}}, Doc: "the user started selecting at row index while the list isn't selecting (a two-finger pan on iOS, a long press on Android)"},
+		{Name: "move", Params: []Param{{"from", "int"}, {"to", "int"}}, Doc: "the user moved row from to index to (where it is now, among the items: move the items the same way), by a drag (on a touch screen, a long press lifts the row) or a screen reader's Move up or Move down. It makes the rows movable; they keep their views as they move, and a move the items don't take goes back"},
 		{Name: "action", Params: []Param{{"index", "int"}, {"action", "int"}}, Doc: "a swipe action of row index was chosen: its index among swipeActions, or -1 - its index among leadingSwipeActions (its run has run)"},
 	}, Doc: "a for in it is the platform's recycling list: rows exist only while they're on screen. It grows into its room unless it's sized"},
 	{Name: "RichText", Children: false, Keys: []Key{

@@ -206,6 +206,7 @@ static void walk(ak_buf *b, node *n, int depth) {
 		ak_buf_put(b, " title=", 7);
 		quote_w(b, &n->title);
 	}
+	if (wh_zoomable(n)) ak_buf_printf(b, " zoom=%.2f offset=%.0f,%.0f", (double)wh_scroll_zoom(n), (double)n->scroll_x, (double)n->scroll_y);
 	ak_buf_u8(b, '\n');
 	for (uint32_t i = 0; i < n->nkids; i++) walk(b, n->kids[i], depth + 1);
 	if (n->list) wh_list_dump(n, b, depth, walk);
@@ -476,6 +477,7 @@ typedef struct {
 static void hover_now(void *ctx) {
 	hover_job *j = ctx;
 	wh_hover_at(j->top, j->p);
+	wh_hover_moves(j->top, j->p);
 	free(j);
 }
 
@@ -484,6 +486,8 @@ static void hover_later(HWND top, POINT p) {
 	j->top = top, j->p = p;
 	wh_after_core(hover_now, j);
 }
+
+static bool mouse_step(const char *verb, const char *arg, const wchar_t *warg);
 
 static void step(const char *verb, const char *arg) {
 	wchar_t *warg = wh_wide(arg, (int)strlen(arg));
@@ -601,12 +605,101 @@ static void step(const char *verb, const char *arg) {
 	} else if (!strcmp(verb, "escape")) {
 		if (open_menu_window()) EndMenu();
 		else if (H.nsheets) wh_cancel_sheet(wh_node_of(wh_nav_window(H.sheets[H.nsheets - 1])));
+	} else if (mouse_step(verb, arg, warg)) {
 	} else if (wh_interaction_step(verb, warg)) {
 	} else if (!strcmp(verb, "snap")) {
 		wh_snapshot(arg);
 		if (getenv("ASUKA_DUMP")) write_dump(arg);
 	}
 	free(warg);
+}
+
+// ---- The mouse held down, moved and let go of ----
+
+static POINT pointer;  // where the scripted mouse is, on the screen
+static HWND pointer_on;  // the window it went down on
+
+static bool center_of(const char *arg, const wchar_t *warg, POINT *p) {
+	node *n = showing(warg);
+	if (!n) {
+		wh_log("automation: nothing shows \"%s\"", arg);
+		return false;
+	}
+	RECT r;
+	GetWindowRect(n->hwnd, &r);
+	*p = (POINT){(r.left + r.right) / 2, (r.top + r.bottom) / 2};
+	return true;
+}
+
+// mouse_to sends a mouse message at screen point p to the window that
+// has the mouse (the one it went down on), in its client's coordinates.
+static void mouse_to(UINT m, WPARAM keys, POINT p) {
+	HWND w = GetCapture();
+	if (!w || GetWindowThreadProcessId(w, NULL) != GetCurrentThreadId()) w = pointer_on;
+	if (!w || !IsWindow(w)) return;
+	POINT c = p;
+	ScreenToClient(w, &c);
+	SendMessageW(w, m, keys, MAKELPARAM(c.x, c.y));
+}
+
+// mouse_step runs the steps that hold the mouse down and move it:
+//
+//   - down:<text>: the button down at the middle of what shows text, on
+//     the window Windows hit-tests there.
+//   - move:<text>, moveby:<dx>,<dy> (points): the mouse moved with the
+//     button held, in ten moves, to what shows text, or by that much.
+//   - up: the button let go of where the mouse is.
+//   - dblclick:<text>: a double click there (its second press Windows's
+//     WM_LBUTTONDBLCLK).
+static bool mouse_step(const char *verb, const char *arg, const wchar_t *warg) {
+	if (!strcmp(verb, "down") || !strcmp(verb, "dblclick")) {
+		POINT p;
+		if (!center_of(arg, warg, &p)) return true;
+		node *n = showing(warg);
+		HWND w = wh_hit(GetAncestor(n->hwnd, GA_ROOT), p);
+		POINT c = p;
+		ScreenToClient(w, &c);
+		LPARAM lp = MAKELPARAM(c.x, c.y);
+		pointer = p, pointer_on = w;
+		if (!strcmp(verb, "down")) {
+			wh_overlay_pointer_down(w, p);
+			if (!IsWindow(w)) return true;
+			wh_pressing(true);
+			SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, lp);
+			wh_pressing(false);
+			return true;
+		}
+		click(w, lp);
+		if (!IsWindow(w)) return true;
+		wh_pressing(true);
+		SendMessageW(w, WM_LBUTTONDBLCLK, MK_LBUTTON, lp);
+		wh_pressing(false);
+		if (IsWindow(w)) SendMessageW(w, WM_LBUTTONUP, 0, lp);
+		return true;
+	}
+	if (!strcmp(verb, "move") || !strcmp(verb, "moveby")) {
+		POINT to = pointer;
+		if (!strcmp(verb, "move")) {
+			if (!center_of(arg, warg, &to)) return true;
+		} else {
+			float dx = 0, dy = 0;
+			sscanf(arg, "%f,%f", &dx, &dy);
+			to.x += wh_px(NULL, dx), to.y += wh_px(NULL, dy);
+		}
+		POINT from = pointer;
+		for (int i = 1; i <= 10; i++) {
+			POINT p = {from.x + (to.x - from.x) * i / 10, from.y + (to.y - from.y) * i / 10};
+			pointer = p;
+			mouse_to(WM_MOUSEMOVE, MK_LBUTTON, p);
+		}
+		return true;
+	}
+	if (!strcmp(verb, "up")) {
+		mouse_to(WM_LBUTTONUP, 0, pointer);
+		pointer_on = NULL;
+		return true;
+	}
+	return false;
 }
 
 // ---- The script, on a timer ----

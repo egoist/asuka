@@ -1507,15 +1507,17 @@ component Person {
 
 A `View`, `Row`, `Column` or `SafeArea` takes:
 
-- `on press` and `on longPress`.
+- `on press`, `on longPress` and `on doubleTap(x, y)`.
 - Gestures, with the platform's recognizers: `on pan(g)`, `on
   pinch(g)`, `on rotate(g)` (each given a `Gesture`) and `on
-  swipe(direction)`. See [Motion](motion.md).
+  swipe(direction)`; `panAxis`, `panMinDistance` and `panWithScroll`
+  say which drags pan. See [Motion](motion.md#gestures).
 - Interaction states. The view's own style follows them through its
   variants (`pressed { … }`, `hovered { … }`, `dragging { … }`,
   `dragOver { … }`). Other views follow them through its `Ref`
   (`card.hovered`, `card.pressed`). Side effects go in `on
-  pressedChange` and `on hoverChange`. Drag and drop: `dragItems` and
+  pressedChange`, `on hoverChange` and `on hover(x, y)` (where the
+  pointer is). Drag and drop: `dragItems` and
   `dropTypes`, with `on drop(d)`. See
   [Motion](motion.md#pressed-and-hover-states).
 - `on layout(frame)`, run with the view's `Frame` once it's laid out
@@ -1620,6 +1622,45 @@ component Carousel {
 Pages count from the reading start: right to left, the first is the
 rightmost. When the scroll view's size changes (a rotation), it stays on
 its page. Screen readers say "page 2 of 3" on the dots and adjust them.
+
+**Zooming.** A `maxZoom` more than its `minZoom` (both 1 unless set)
+makes a scroll view zoom its content, as a photo viewer does
+(`UIScrollView`'s zoom, Flutter's `InteractiveViewer`): two fingers
+pinch it, and a double tap zooms in to twice `minZoom` where it fell,
+or back out. Zoomed in, it scrolls both ways. Its content is laid out at
+least as big as the scroll view, so a picture in it fills it, or sits
+in its middle with `justify` and `align`. `bind zoom` is the scale it
+shows: the user's zooming writes it, and writing it zooms there; a
+`Ref`'s `zoomTo(scale, animated:)` zooms too. Both stay within the
+bounds.
+
+```asuka
+component Viewer(src: string) {
+  state zoom = 1.0
+
+  let scroll = Ref()
+
+  Column {
+    grow: 1
+    Button("Fit") { on press { scroll.zoomTo(1) } }
+    Scroll {
+      ref: scroll
+      grow: 1
+      minZoom: 1
+      maxZoom: 4
+      bind zoom: zoom
+      justify: .center
+      Image(src) { width: 100%; aspectRatio: 1.5; label: "Photo" }
+    }
+    Text("{(zoom * 100).rounded()}%")
+  }
+}
+```
+
+| | iOS | Android | macOS | Windows | Linux | Web |
+|---|---|---|---|---|---|---|
+| Zooming | `UIScrollView`'s pinch | a pinch (`ScaleGestureDetector`), in Asuka's zoomable container | a trackpad's pinch, ⌘ and the wheel (`NSScrollView`'s magnification) | a touchpad's pinch, Ctrl and the wheel | a touchpad's or touch screen's pinch, Ctrl and the wheel | a pinch, Ctrl and the wheel (a trackpad's pinch) |
+| Double tap | zooms in, or back out | zooms in, or back out | a double click | a double click | a double click | a double click, or two taps |
 
 **Under a bar.** A scroll view (a `Scroll`, a `List`) whose top is
 under a bar its content can show through, iOS's navigation bar or a
@@ -1974,6 +2015,54 @@ component Mailbox {
 | The control | UIKit's edit mode circles | a Material checkbox at the row's end | the row highlighted (the accent's selection color; a WinUI list's pill on Windows) | a circle at the row's leading edge that fills with a checkmark, the row tinted |
 | `on selectBegin` | a two-finger pan over rows, which goes on to select the rows it crosses | a long press (Gmail's) | a ⌘-click on the Mac, a Ctrl-click on Windows and Linux (Finder's, Explorer's) | a ⌘-click (Ctrl-click off Apple's systems); a long press on a touch screen |
 | Screen readers | each row selectable | each row a checkbox, its text the label | — | each row selected or not (`aria-selected`) |
+
+### Moving rows
+
+`on move(from, to)` lets the user move a list's rows, as iOS's
+Reminders and Flutter's `ReorderableListView` do. A row is lifted and
+dragged to its new place, the others making way, and the list scrolls
+when it's dragged near its edge. The handler hears the row's index
+before and the index it's at now: move the items the same way.
+`items.insert(items.removeAt(from), at: to)` does it.
+
+```asuka
+struct Task {
+  id: int
+  title: string
+}
+
+component Tasks {
+  state tasks = [Task(id: 1, title: "Write"), Task(id: 2, title: "Review"), Task(id: 3, title: "Ship")]
+  state editing = true
+
+  List {
+    reorderable: editing
+    on move(from, to) { tasks.insert(tasks.removeAt(from), at: to) }
+    for t in tasks key t.id {
+      Text(t.title) { padding: [12, 20] }
+    }
+  }
+}
+```
+
+- Key the rows by what they show (`key t.id`), as here: a row keeps
+  its views as it moves, and nothing in it is made again.
+- A move the items don't take, because the handler leaves them as they
+  were, goes back.
+- `reorderable: false` keeps the rows in place while it's false, as
+  outside an edit mode. It's true unless set.
+- Screen readers offer Move up and Move down on each row, in the app's
+  language.
+- On Android, a long press on a list with `on move` lifts the row
+  rather than starting a selection (`on selectBegin`).
+- A grid's (`columns`) items move by a drag on iOS and Android; on
+  the desktops and the web, by the keys and the screen readers' actions
+  only. Apple Watch's lists move rows by VoiceOver's actions alone.
+
+| | iOS | Android | macOS | Windows, Linux | Web |
+|---|---|---|---|---|---|
+| Lifting a row | a long press (`UICollectionView`'s interactive movement) | a long press (`ItemTouchHelper`) | a drag | a drag; a long press on a touch screen | a drag; a long press on a touch screen |
+| Screen readers, keys | VoiceOver's actions | TalkBack's actions | VoiceOver's actions | Move up and Move down in the row's menu and to screen readers; Alt+Up and Alt+Down | Move up and Move down in the row's menu; Alt+Up and Alt+Down, the new place announced |
 
 ### Grids
 

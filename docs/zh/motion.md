@@ -368,6 +368,7 @@ component Spinner {
 `View` 可以接收手势，识别工作交给平台自己的手势识别器：
 
 - `on press` 和 `on longPress`：轻点，以及按住不放。
+- `on doubleTap(x, y)`：快速连点两下，以及第二下落在哪里。
 - `on pan(g)`：拖动。
 - `on pinch(g)`：双指张开或捏合。
 - `on rotate(g)`：双指旋转。
@@ -379,6 +380,7 @@ component Spinner {
 | --- | --- | --- | --- | --- |
 | `on press` | 单击 | 单击；或在获得焦点的视图上按 Enter、空格 | 单击；或在获得焦点的视图上按 Enter、空格 | 单击；或在获得焦点的视图上按 Enter、空格 |
 | `on longPress` | 辅助点按，或按住鼠标键不放 | 右键单击，或按住鼠标键不放 | 辅助点击，或按住鼠标键不放 | 右键单击，或按住鼠标键、手指按住不放 |
+| `on doubleTap` | 双击 | 双击 | 双击 | 双击，或连点两下 |
 | `on pan(g)` | 按住鼠标键拖动 | 按住鼠标键拖动 | 按住鼠标键拖动、在触摸屏或触控板上拖动 | 按下指针拖动 |
 | `on swipe(direction)` | 结束时速度很快的拖动；触控板上的双指轻扫；系统留给应用处理时的三指轻扫 | 结束时速度很快的拖动 | 结束时速度很快的拖动；触摸屏上的轻扫 | 结束时速度很快的拖动 |
 | `on pinch(g)` | 触控板捏合 | 触控板捏合、Ctrl 加滚轮，或触摸屏上的双指操作 | 触控板或触摸屏捏合，或 Ctrl 加滚轮 | 触控板捏合、Ctrl 加滚轮，或触摸屏上的双指操作 |
@@ -457,13 +459,62 @@ component Turner {
 
 开着屏幕阅读器时，用户无法完成轻扫或拖动。所以请把它们的功能也作为[无障碍操作](accessibility.md)提供出来。
 
+### 单击与双击
+
+同时有 `on press` 和 `on doubleTap` 的视图，会像平台那样把两者区分开（UIKit 的 `require(toFail:)`、Android 的 `onSingleTapConfirmed`）：单击的 press 会等到不可能再有第二下，也就是过了系统的双击时限才运行；双击只运行 `on doubleTap`。只有 `on press` 的视图则立刻响应，不会等待。
+
+```asuka
+component Post {
+  state liked = false
+  state open = false
+
+  View {
+    height: 240
+    radius: 16
+    background: .secondaryBackground
+    justify: .center
+    align: .center
+    label: "Photo"
+    on press { open = true }
+    on doubleTap(x, y) { liked = true }
+    Symbol(if liked { "heart.fill" } else { "heart" }) { color: .red }
+  }
+}
+```
+
+### 哪些拖动算拖动手势
+
+有三个键决定拖动手势怎样被识别，作用类似 React Native Gesture Handler 的 `activeOffsetX` 和 `simultaneousWithExternalGesture`：
+
+- `panAxis: .horizontal`（或 `.vertical`）：只有沿这个方向的拖动才算。先沿另一个方向移动的拖动会交给外层，所以一行能横向拖动，所在的列表照样能上下滚动。
+- `panMinDistance`：拖动要移动多少点之后才开始（不设置时用平台的触摸阈值）。
+- `panWithScroll: true`：拖动手势和外层的滚动视图一起跟随这次拖动，而不是由拖动手势独占触摸（比如一个拖动时也滚动内容的面板把手）。
+
+```asuka
+component SwipeCard {
+  state dx = 0.0
+
+  View {
+    height: 96
+    radius: 16
+    background: .accent
+    panAxis: .horizontal
+    panMinDistance: 16
+    transform: Transform(x: dx)
+    on pan(g) {
+      dx = if g.state == .ended || g.state == .cancelled { 0 } else { g.translationX }
+    }
+  }
+}
+```
+
 ## 按下与悬停状态
 
 `View` 会在交互状态变化时报告出来，样式可以通过三种方式跟随这些状态。从第一种开始，能满足需求就用它：
 
 1. **变体（variant）**，用于视图自身的外观。`pressed { … }`、`hovered { … }`、`dragging { … }` 和 `dragOver { … }` 会在视图处于对应状态时叠加在其余样式之上。它们相当于 CSS 的 `:active` 和 `:hover`，或者 Tailwind 的 `active:` 和 `hover:`。
 2. **`Ref`**，用于其他视图，以及其他任何需要跟随状态的东西。给视图设置一个 `Ref`（`ref: card`），然后就可以在任何需要的地方读取 `card.pressed` 或 `card.hovered`，比如另一个视图的样式、`Text` 或 `if`。子视图跟随父视图（相当于 group 的 hover）、兄弟视图跟随相邻视图（相当于 peer 的 hover），都是这么实现的。
-3. **处理函数**，用于样式之外的事情，比如开始录音：`on pressedChange(on)` 和 `on hoverChange(on)`。
+3. **处理函数**，用于样式之外的事情，比如开始录音：`on pressedChange(on)` 和 `on hoverChange(on)`。指针在视图上移动时，`on hover(x, y)` 会带着它的位置（以视图左上角为原点的点数）运行，可以用来画图表的十字准线或放大镜。
 
 ```asuka
 component Card(title: string) {

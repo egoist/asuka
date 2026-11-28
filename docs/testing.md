@@ -123,13 +123,18 @@ app.tap("Add")                      // a button, a row, a tab, a toggle, a segme
 app.type("ada@example.com", into: "Email")  // the field with that placeholder or label
 app.type("milk", into: "Search notes")      // a screen's search field, by its placeholder
 app.tapLink("https://asuka.dev")     // the link in a RichText
+app.doubleTap("Photo")              // on doubleTap, or a zoomable Scroll's zoom
+app.zoom("Photo", 2)                // pinches the zoomable Scroll showing it
+app.moveRow("Milk", to: 0)          // drags a List's row, as on move hears it
 app.share([SharedItem(kind: .link, text: "https://asuka.dev")])  // another app shares it: onShare hears it
 await app.idle()                    // until nothing is left to run: tasks, timers, loads
 ```
 
 A tap goes where a finger would. A text in a row taps the row, and a
 text in a button taps the button. A view with a menu opens it, and the
-next `tap` chooses from it.
+next `tap` chooses from it. A tap on a view with `on doubleTap` too
+waits out the double-tap time, so its `on press` runs; `doubleTap`
+runs `on doubleTap` alone.
 
 ## Property tests
 

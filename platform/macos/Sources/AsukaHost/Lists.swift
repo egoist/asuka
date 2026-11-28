@@ -13,6 +13,10 @@
 // bound with index -1 - the section's); a plain or bare list's header stays
 // at the top of the list while its section's rows scroll under it, as
 // NSTableView's floating group rows do.
+//
+// An update keeps each row view shown on its item (or its section's
+// header) wherever that item's row is now, so rows that only move keep
+// their views; moving rows by hand (Reorder) is ListReorder.swift's.
 import AppKit
 #if canImport(AsukaOps)
 import AsukaOps
@@ -85,6 +89,14 @@ struct AsukaListRow {
 
     var selecting = false
 
+    /// Reorder's names (its rows move: ListReorder.swift), the row lifted
+    /// and dragged; rows placed with an animation (animatePlaces), and the
+    /// next update's (a move put back).
+    var reorder: [String] = []
+    var move: AsukaRowMove?
+    var animatePlaces = false
+    var animateNext = false
+
     var pending: [Int64] = []
     var pendingS: [AsukaListSection] = []
     /// pending waits for the core to return.
@@ -141,6 +153,9 @@ struct AsukaListRow {
             stuck = true
         case AsukaProp.List.selecting:
             setSelecting(v.bool || v.int != 0)
+            return
+        case AsukaProp.List.reorder:
+            setReorder(asukaStrings(v.data))
             return
         default:
             return
@@ -269,6 +284,8 @@ struct AsukaListRow {
     /// those still in it.
     private func take() {
         guard updated else { return }
+        cancelRowDrag() // the rows it was among changed
+        let keep = shownKeys()
         updated = false
         ids = pending
         sections = pendingS
@@ -282,6 +299,7 @@ struct AsukaListRow {
         for s in sections { if let v = heights[s.id] { live[s.id] = v } }
         heights = live
         makeRows()
+        rekey(keep)
     }
 
     /// Lays the items and the sections' headers out in rows.
@@ -412,8 +430,9 @@ struct AsukaListRow {
             let first = asukaSearch(count) { tops[$0 + 1] > top }
             let last = asukaSearch(count) { tops[$0] >= bot }
             let pin = pinnedRow(vb.minY)
-            // Rows gone from view go back to the pool.
-            for (r, rv) in shown where (r < first || r >= last) && r != pin {
+            // Rows gone from view go back to the pool (but a row being
+            // dragged).
+            for (r, rv) in shown where (r < first || r >= last) && r != pin && rv !== move?.rv {
                 shown.removeValue(forKey: r)
                 rv.view.isHidden = true
                 free.append(rv)
@@ -443,15 +462,14 @@ struct AsukaListRow {
             if !changed { break }
         }
         if tops.count != rows.count + 1 { measureTops() }
-        for (r, rv) in shown {
-            guard r < rows.count else {
-                shown.removeValue(forKey: r)
-                rv.view.isHidden = true
-                free.append(rv)
-                continue
-            }
-            place(rv, r)
+        for (r, rv) in shown where r >= rows.count {
+            shown.removeValue(forKey: r)
+            rv.view.isHidden = true
+            free.append(rv)
         }
+        // A move the core put back: the rows go back, animated.
+        placeShown(animated: animateNext)
+        animateNext = false
         placeGroup()
     }
 
@@ -614,6 +632,8 @@ struct AsukaListRow {
         }
         var y = tops[r]
         let row = rows[r]
+        // A row being dragged follows the mouse; the others make way.
+        if let m = move { y = rv === m.rv ? m.y : y + m.shift(r) }
         if row.header && sticky {
             let vb = visible
             if y < vb.minY {
@@ -626,10 +646,13 @@ struct AsukaListRow {
             // Over the rows that scroll under it.
             doc.addSubview(rv.view, positioned: .above, relativeTo: nil)
         }
-        rv.view.frame = CGRect(x: x, y: y, width: w, height: height)
+        let f = CGRect(x: x, y: y, width: w, height: height)
+        if animatePlaces && rv !== move?.rv { rv.view.animator().frame = f } else { rv.view.frame = f }
+        moveActions(rv, r)
         if columns <= 1 || row.header {
             for c in rv.cells { c.content.frame = CGRect(x: 0, y: 0, width: w, height: c.height) }
             separator(rv, r, w, height)
+            if rv === move?.rv { rv.sep?.isHidden = true }
             return
         }
         rv.sep?.isHidden = true
@@ -707,7 +730,12 @@ struct AsukaListRow {
     /// table's selected rows are.
     func setSelecting(_ on: Bool) {
         guard on != selecting else { return }
+        cancelRowDrag()
         selecting = on
+        if !reorder.isEmpty {
+            for c in allCells { c.moveActions = 0x80 } // no moves while selecting
+            queue()
+        }
         for rv in shown.values { for c in rv.cells { highlight(c) } }
     }
 
@@ -749,6 +777,9 @@ struct AsukaListRow {
     /// Its context menu: its swipe actions; the Action each item sends.
     var menu: NSMenu?
     var menuTags: [Int64] = []
+    /// The screen readers' move actions it offers (ListReorder.swift):
+    /// 1 up, 2 down, 4 its list's rows move.
+    var moveActions: UInt8 = 0
 
     init(_ list: AsukaList, _ rv: AsukaRowView) {
         self.list = list
@@ -965,6 +996,7 @@ func asukaSearch(_ count: Int, _ pred: (Int) -> Bool) -> Int {
             if ok { j["anchor"] = ["key": key, "dy": Double(dy)] }
             if let g = l.group, !g.isHidden { j["group"] = [Double(g.frame.minX), Double(g.frame.minY), Double(g.frame.width), Double(g.frame.height)] }
             j["groups"] = l.groups.filter { !$0.isHidden }.count
+            l.reorderJSON(&j)
             d["list"] = j
         }
         if let c = n.cell, let rv = c.rowView {
@@ -973,6 +1005,11 @@ func asukaSearch(_ count: Int, _ pred: (Int) -> Bool) -> Int {
                                     "header": c.header, "selected": c.selected, "item": c.item,
                                     "highlighted": c.content.layer?.backgroundColor != nil]
             if let s = rv.sep { j["separator"] = !s.isHidden }
+            if c.moveActions != 0 {
+                j["moveActions"] = c.content.accessibilityCustomActions()?.map { $0.name } ?? []
+                j["a11yElement"] = c.content.isAccessibilityElement()
+            }
+            if let l = rv.view.layer, l.shadowOpacity > 0 { j["lifted"] = true }
             if let bg = rv.view.layer?.backgroundColor { j["rowBackground"] = cgColorHex(bg) }
             if !c.swipe.isEmpty || !c.leading.isEmpty {
                 j["contextMenu"] = (cellMenu(c)?.items ?? []).map { it -> [String: Any] in

@@ -144,6 +144,7 @@ open class AsukaActivity : AppCompatActivity() {
     /** A press beginning: the overlays over the root hear of it first if it's outside them (Overlay.kt). */
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
         if (::runtime.isInitialized && runtime.activity === this) {
+            runtime.touchSpy?.spied(ev)
             val decor = window.decorView
             val modal = runtime.outsidePresses(ev) { it.rootView === decor }
             if (touchGate.holds(ev, modal)) return true

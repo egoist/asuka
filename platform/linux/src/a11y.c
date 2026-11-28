@@ -676,29 +676,34 @@ static bool actions_menu(node *n, double x, double y) {
 	return true;
 }
 
-// action_names are titles as GAction names (ASCII letters, digits, '-'
-// and '.'), each its own: a space or a dot is a hyphen, other characters
-// go; a title left with none its number.
+// lx_action_name is a title as a GAction name (ASCII letters, digits and
+// '-'), in name (cap bytes): a space or a dot is a hyphen, other
+// characters go; a title left with none its number (i + 1). action_names
+// are a view's, each its own.
+void lx_action_name(const char *title, unsigned i, char *name, size_t cap) {
+	const char *t = S(title);
+	while (*t == ' ') t++;
+	size_t k = 0;
+	bool hyphen = false;
+	for (; *t && k + 8 < cap; t++) {
+		unsigned char c = (unsigned char)*t;
+		if (c < 128 && isalnum(c)) {
+			name[k++] = (char)c;
+			hyphen = false;
+		} else if ((c == ' ' || c == '.' || c == '-' || c == '_' || c == '/') && k > 0 && !hyphen) {
+			name[k++] = '-';
+			hyphen = true;
+		}
+	}
+	while (k > 0 && name[k - 1] == '-') k--;
+	name[k] = 0;
+	if (!k) snprintf(name, cap, "%u", i + 1);
+}
+
 static void action_names(a11y_state *a) {
 	for (uint32_t i = 0; i < a->actions.len; i++) {
-		const char *t = a->actions.data[i];
-		while (*t == ' ') t++;
 		char name[128];
-		size_t k = 0;
-		bool hyphen = false;
-		for (; *t && k < sizeof name - 8; t++) {
-			unsigned char c = (unsigned char)*t;
-			if (c < 128 && isalnum(c)) {
-				name[k++] = (char)c;
-				hyphen = false;
-			} else if ((c == ' ' || c == '.' || c == '-' || c == '_' || c == '/') && k > 0 && !hyphen) {
-				name[k++] = '-';
-				hyphen = true;
-			}
-		}
-		while (k > 0 && name[k - 1] == '-') k--;
-		name[k] = 0;
-		if (!k) snprintf(name, sizeof name, "%u", i + 1);
+		lx_action_name(a->actions.data[i], i, name, sizeof name);
 		char unique[160];
 		snprintf(unique, sizeof unique, "%s", name);
 		for (int n = 2;; n++) {

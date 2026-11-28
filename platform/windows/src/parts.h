@@ -5,6 +5,15 @@
 
 #include "host.h"
 
+// ---- paint.c's shadows ----
+typedef struct {
+	double spread, alpha;
+} shadow_step;
+
+enum { MAX_SHADOW_STEPS = 24 };
+
+int wh_shadow_steps(double sigma, double a, shadow_step out[MAX_SHADOW_STEPS]);
+
 // ---- sys.c ----
 bool wh_reg_dword(HKEY root, const wchar_t *path, const wchar_t *name, DWORD *out);
 bool wh_reg_binary(HKEY root, const wchar_t *path, const wchar_t *name, void *out, DWORD *size);
@@ -144,6 +153,7 @@ void wh_allow_gestures(node *n);
 bool wh_touch_gesture(node *n, HWND hwnd, LPARAM lp);
 bool wh_wheel_pinch(node *n, HWND hwnd, int delta, LPARAM lp);
 void wh_end_wheel_pinch(node *n, HWND hwnd);
+bool wh_from_touch(void);
 
 // ---- a11y.c: screen readers (UI Automation) ----
 void wh_set_a11y(node *n, uint16_t p, const ak_value *v);
@@ -176,6 +186,17 @@ void wh_set_refreshing(node *n, bool on);
 bool wh_refresh_key(MSG *m);
 void wh_show_bars(node *n);
 void wh_mouse_over(HWND hwnd);
+// A zoomable Scroll's (MinZoom, MaxZoom; ZoomTo).
+bool wh_zoomable(const node *n);
+float wh_scroll_zoom(const node *n);
+void wh_zoom_child(node *scroll, node *c, bool rescale);
+void wh_set_zoom_bounds(node *n, uint16_t p, float v);
+bool wh_zoom_wheel(node *n, int delta, LPARAM lp);
+void wh_zoom_around(node *n, float z, float ax, float ay, bool user);
+bool wh_zoom_double_click(node *n, HWND hwnd, LPARAM lp);
+void wh_zoom_to(node *n, float z, bool animated);
+void wh_zoom_step(node *n);
+bool wh_zoom_hand(const node *n);
 
 // ---- list.c ----
 void wh_list_new(node *n);
@@ -194,6 +215,20 @@ void wh_cell_set_prop(node *n, uint16_t p, const ak_value *v);
 void wh_paint_row(node *n, gfx g, float w, float h);
 bool wh_select_click(node *n);
 bool wh_row_menu(node *n);
+node *wh_cell_list(node *cell);
+// Moving a list's rows (Reorder): a press on a row arms it, a drag past
+// the system's distance (a touch's long press) lifts it.
+bool wh_list_arm(node *n, HWND hwnd, LPARAM lp);
+bool wh_list_lifted(const node *n);
+bool wh_list_lift(node *n, POINT screen);
+void wh_list_drag_to(node *n, POINT screen);
+bool wh_list_mouse_up(node *n, HWND hwnd);
+bool wh_list_capture_lost(node *n, HWND to);
+void wh_list_disarm(node *n);
+void wh_list_timer(node *n, WPARAM id);
+bool wh_list_cancel_move(void);
+bool wh_list_move_key(HWND focus, bool up);
+void wh_paint_list(node *n, gfx g);
 
 // ---- nav.c: stacks, tabs, sheets, alerts, windows (and cmdbar.c,
 // search.c, split.c, popover.c, snackbar.c, alertdialog.c) ----
@@ -361,6 +396,7 @@ void wh_set_transform(node *n, const uint8_t *b, size_t len);
 void wh_transformed(node *n, float x, float y, float w, float h, int *x0, int *y0, int *x1, int *y1);
 float wh_k_for(float k, float zoom);
 float wh_own_zoom(const node *n);
+float wh_xform_zoom(const node *n);
 
 // ---- transition.c, match.c: views coming and going ----
 bool wh_enter_transition(node *n, const float f[4]);

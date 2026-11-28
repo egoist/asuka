@@ -78,6 +78,17 @@ const view = {
       case P.View.TakesClicks:
         n.el.classList.toggle("asuka-takes-clicks", !!v);
         break;
+      case P.View.PanAxis:
+        n.panAxis = v;
+        h.interaction.panConfig(n);
+        break;
+      case P.View.PanMinDistance:
+        n.panMinDistance = v;
+        break;
+      case P.View.PanSimultaneous:
+        n.panSimultaneous = !!v;
+        h.interaction.panConfig(n);
+        break;
     }
   },
   measure() { return [0, 0]; },

@@ -137,6 +137,7 @@ import AsukaOps
     var popover: AsukaPopover? // Popover.swift
     var split: AsukaSplit? // Split.swift
     var dots: AsukaPageDots? // Pager.swift
+    var zoom: AsukaZoom? // Zoom.swift: a zoomable Scroll's
     var rich: AsukaRich? // RichText.swift
     var richField: AsukaRichField? // RichField.swift
     var shape: AsukaShape? // Shape.swift

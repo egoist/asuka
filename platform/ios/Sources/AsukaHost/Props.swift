@@ -617,6 +617,16 @@ func uiWeight(_ v: Int32) -> UIFont.Weight? {
             s.isPagingEnabled = v.bool
             s.showsHorizontalScrollIndicator = !v.bool
             s.showsVerticalScrollIndicator = !v.bool
+        case (.scroll, AsukaProp.Scroll.minZoom):
+            (n.view as? AsukaScrollView)?.setZoom(min: CGFloat(v.float))
+        case (.scroll, AsukaProp.Scroll.maxZoom):
+            (n.view as? AsukaScrollView)?.setZoom(max: CGFloat(v.float))
+        case (.view, AsukaProp.View.panAxis):
+            n.panAxis = v.enumValue
+        case (.view, AsukaProp.View.panMinDistance):
+            n.panMinDistance = CGFloat(v.float)
+        case (.view, AsukaProp.View.panSimultaneous):
+            n.panSimultaneous = v.bool
         case (.scroll, AsukaProp.Scroll.edgeEffect):
             if let s = n.view as? UIScrollView { asukaEdgeEffect(s, v.enumValue) }
         case (.scroll, AsukaProp.Scroll.horizontal):

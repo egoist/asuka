@@ -212,8 +212,16 @@ open class AsukaContainer(context: Context) : ViewGroup(context) {
     var onHoverChange: ((Boolean) -> Unit)? = null
         set(f) {
             field = f
-            if (f == null) hovered = false
+            if (f == null && onHoverMove == null) hovered = false
         }
+    /** Reports where a pointer over it is, in px from its top left, as it moves (a View listening for HoverMove). */
+    var onHoverMove: AsukaPointListener? = null
+        set(f) {
+            field = f
+            if (f == null && onHoverChange == null) hovered = false
+        }
+    /** Its double taps (a View listening for DoubleTap), over the touches it handles itself. */
+    var taps: AsukaTaps? = null
     /** Pressable only to report Pressed: not an action for TalkBack. */
     var pressOnly = false
     private var reportedPressed = false
@@ -319,7 +327,11 @@ open class AsukaContainer(context: Context) : ViewGroup(context) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        val t = taps
+        t?.touch(e)
         val handled = super.onTouchEvent(e)
+        // After the click the release posted: a click no touch made (TalkBack's, a key's) presses at once.
+        if (t != null && (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL)) post(t.forget)
         if (onPressedChange == null || !isEnabled || !isClickable) return handled
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { tracking = true; movedOff = false }
@@ -342,7 +354,9 @@ open class AsukaContainer(context: Context) : ViewGroup(context) {
 
     override fun dispatchHoverEvent(e: MotionEvent): Boolean {
         val handled = super.dispatchHoverEvent(e)
-        val f = onHoverChange ?: return handled
+        val f = onHoverChange
+        val m = onHoverMove
+        if (f == null && m == null) return handled
         // A finger's are TalkBack exploring by touch, not a pointer.
         if (e.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) return handled
         val on = when (e.actionMasked) {
@@ -352,8 +366,9 @@ open class AsukaContainer(context: Context) : ViewGroup(context) {
         }
         if (on != hovered) {
             hovered = on
-            f(on)
+            f?.invoke(on)
         }
+        if (on) m?.point(e.x, e.y)
         // Handled: the parent keeps it as a hover target and sends it the
         // exit as the pointer leaves its bounds, over its children or not.
         return true
@@ -370,6 +385,7 @@ open class AsukaContainer(context: Context) : ViewGroup(context) {
             hovered = false
             onHoverChange?.invoke(false)
         }
+        taps?.reset()
     }
 
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
@@ -421,6 +437,61 @@ open class AsukaContainer(context: Context) : ViewGroup(context) {
     fun putBack(v: View, index: Int) {
         addViewInLayout(v, index, v.layoutParams ?: AsukaParams(), true)
         invalidate()
+    }
+}
+
+/** A place in a view, in px (no boxing: a hover's moves are many). */
+fun interface AsukaPointListener {
+    fun point(x: Float, y: Float)
+}
+
+/**
+ * A view's double taps (DoubleTap), from a GestureDetector over the
+ * touches it handles itself (not a pressable child's): reported as the
+ * second tap lifts, where it did. With Press listened for too, a tap's
+ * Press waits until a second can't come (onSingleTapConfirmed), and a
+ * double tap sends none; the view's click (TalkBack's activation, a
+ * key's) presses at once when no touch made it.
+ */
+class AsukaTaps(context: Context, private val rt: AsukaRuntime, private val id: Int) : android.view.GestureDetector.SimpleOnGestureListener() {
+    /** Press waits for the double tap that doesn't come. */
+    var press = false
+    private val detector = android.view.GestureDetector(context, this)
+    private var fromTouch = false
+    /** Forgets the touch, once its click (posted as it lifted) has run. */
+    val forget = Runnable { fromTouch = false }
+
+    fun touch(e: MotionEvent) {
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) fromTouch = true
+        detector.onTouchEvent(e)
+    }
+
+    /** Whether a click is a touch's, whose Press is the detector's. */
+    fun touchClick() = fromTouch
+
+    /** The view left the window: a tap waiting for its second is dropped. */
+    fun reset() {
+        fromTouch = false
+        val now = android.os.SystemClock.uptimeMillis()
+        val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+        detector.onTouchEvent(cancel)
+        cancel.recycle()
+    }
+
+    override fun onDown(e: MotionEvent) = true
+
+    override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+        if (press) rt.clicked(id)
+        return true
+    }
+
+    override fun onDoubleTapEvent(e: MotionEvent): Boolean {
+        if (e.actionMasked != MotionEvent.ACTION_UP) return true
+        val d = rt.density
+        val x = (e.x / d).toDouble()
+        val y = (e.y / d).toDouble()
+        rt.emit(id, AsukaEventKind.DOUBLE_TAP) { AsukaEvents.doubleTap(id, x, y) }
+        return true
     }
 }
 

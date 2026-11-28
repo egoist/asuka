@@ -112,6 +112,11 @@ let asukaAssets: URL? = {
     var dragItems: [AsukaDragSpec] = []
     var dropInteraction: UIDropInteraction?
     var dragInteraction: UIDragInteraction?
+    /// Its Pan's PanAxis (AsukaPanAxis), PanMinDistance (points; 0: UIKit's
+    /// slop) and PanSimultaneous (Media.swift).
+    var panAxis: Int32 = 0
+    var panMinDistance: CGFloat = 0
+    var panSimultaneous = false
     /// Style.TextAlign as set: what it means depends on the direction.
     var textAlign: Int32 = 0
     /// The LayoutDirection prop: inherit is the app's.
@@ -904,6 +909,17 @@ final class AsukaTextField: UITextField {
             r.setNeedsLayout()
             return
         }
+        if let z = scroll as? AsukaScrollView, z.zooms {
+            // A zoomable Scroll's content: the core's frame is at zoom 1,
+            // UIKit's zoom scales it (Scroll.swift).
+            animated(v) {
+                v.bounds = CGRect(origin: v.bounds.origin, size: f.size)
+                z.placeContent(v, f)
+            }
+            z.setNeedsLayout()
+            n.updateLayers()
+            return
+        }
         animated(v) {
             // Through bounds and center: a transformed view's frame isn't its
             // layout's (and a scroll view's bounds origin is its offset).
@@ -988,8 +1004,10 @@ final class AsukaTextField: UITextField {
             if let c = n.view as? AsukaContainerView { c.pressable = true } else { n.view.accessibilityTraits.insert(.button) }
         case .pressed:
             installPress(n) // no button for VoiceOver: a hold isn't one
-        case .hover:
+        case .hover, .hoverMove:
             installHover(n)
+        case .doubleTap:
+            installDoubleTap(n) // a press waits for it to fail (Interaction.swift)
         case .longPress:
             installLongPress(n)
         default:
@@ -998,7 +1016,9 @@ final class AsukaTextField: UITextField {
     }
 
     public func unlisten(_ id: UInt32, event: UInt16) {
-        nodes[id]?.listens.remove(event)
+        guard let n = nodes[id] else { return }
+        n.listens.remove(event)
+        if event == AsukaEventKind.doubleTap.rawValue { removeDoubleTap(n) } // a press no longer waits
     }
 
     @objc func longPressed(_ g: UILongPressGestureRecognizer) {
@@ -1055,6 +1075,11 @@ final class AsukaTextField: UITextField {
         #else
         case .play, .pause, .seek, .videoAction: break
         #endif
+        case .zoomTo:
+            guard args.count >= 5, let s = n.view as? AsukaScrollView else { return }
+            var r = AsukaReader(args)
+            let z = CGFloat(r.f32())
+            s.zoomCommand(z, animated: r.u8() != 0)
         #if ASUKA_WEBVIEW
         case .eval:
             (n.view as? AsukaWebView)?.evaluateJavaScript(String(decoding: args, as: UTF8.self))

@@ -57,6 +57,9 @@ test("encodes the golden events", () => {
     Events.environment(1, env),
     Events.pan(11, pan),
     Events.native(12, new Uint8Array([1, 2, 3])),
+    Events.doubleTap(13, 4, 5.5),
+    Events.zoomed(14, 2.5),
+    Events.moved(15, 1, 3),
   ];
   const w = new Writer();
   for (const e of events) w.u32(e.length).raw(e);

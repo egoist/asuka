@@ -691,6 +691,137 @@ TEST(gestures_and_actions) {
 	done(a);
 }
 
+// ---- Double taps, hover's place, a pan's recognition ----
+
+static ak_val log_point(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(n);
+	char s[64];
+	snprintf(s, sizeof s, "%s:%g,%g", (const char *)c->fn, a[0].f, a[1].f);
+	logf_(s);
+	return noval();
+}
+
+static ak_val taps_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	ak_view *both = ak_ui_new(AK_EL_VIEW);  // press and doubleTap: its press waits
+	set_i(both, AK_KEY_WIDTH, ak_length_pt(100));
+	set_i(both, AK_KEY_HEIGHT, ak_length_pt(40));
+	on(both, AK_EV_VIEW_PRESS, log_run, "press");
+	on(both, AK_EV_VIEW_DOUBLE_TAP, log_point, "double");
+	on(both, AK_EV_VIEW_HOVER, log_point, "hover");
+	add(col, both);
+	ak_view *only = ak_ui_new(AK_EL_VIEW);  // press alone: at once
+	set_i(only, AK_KEY_HEIGHT, ak_length_pt(40));
+	on(only, AK_EV_VIEW_PRESS, log_run, "tap");
+	add(col, only);
+	ak_view *dbl = ak_ui_new(AK_EL_VIEW);  // doubleTap alone: a tap does nothing
+	set_i(dbl, AK_KEY_HEIGHT, ak_length_pt(40));
+	on(dbl, AK_EV_VIEW_DOUBLE_TAP, log_point, "dbl");
+	add(col, dbl);
+	return (ak_val){.p = col};
+}
+
+// A view with on press and on doubleTap: a tap's press waits until a
+// second tap can't come (the double-tap time passing), and a double tap
+// runs doubleTap alone. A view with press alone presses at once.
+TEST(double_tap_and_press_order) {
+	log_buf[0] = 0;
+	ak_uitest *a = mount(taps_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *both = nth(a, AK_KIND_VIEW, 1), *only = nth(a, AK_KIND_VIEW, 2), *dbl = nth(a, AK_KIND_VIEW, 3);
+	REQUIRE(both && only && dbl);
+	CHECK(ak_fake_listens(both, AK_EVENT_PRESS) && ak_fake_listens(both, AK_EVENT_DOUBLE_TAP) && ak_fake_listens(both, AK_EVENT_HOVER_MOVE));
+	CHECK(!ak_fake_listens(only, AK_EVENT_DOUBLE_TAP) && !ak_fake_listens(dbl, AK_EVENT_PRESS));
+	// One tap: nothing yet, then its press as the double-tap time passes.
+	ak_fake_tap(f, both);
+	CHECK_EQ_STR(log_buf, "");
+	ak_fake_tap_settle(f);
+	CHECK_EQ_STR(log_buf, "press");
+	// Two: a double tap, and no press.
+	log_buf[0] = 0;
+	ak_fake_tap(f, both);
+	ak_fake_tap(f, both);
+	ak_fake_tap_settle(f);
+	CHECK_EQ_STR(log_buf, "double:50,20");
+	// A tap on another view ends the wait: the first press goes, then it.
+	log_buf[0] = 0;
+	ak_fake_tap(f, both);
+	ak_fake_tap(f, only);
+	CHECK_EQ_STR(log_buf, "press tap");
+	// doubleTap alone: one tap does nothing, two double-tap.
+	log_buf[0] = 0;
+	ak_fake_tap(f, dbl);
+	ak_fake_tap_settle(f);
+	CHECK_EQ_STR(log_buf, "");
+	ak_fake_double_tap(f, dbl);
+	CHECK(strncmp(log_buf, "dbl:", 4) == 0);
+	// The pointer's place over it.
+	log_buf[0] = 0;
+	ak_fake_hover_move(f, both, 12, 7.5f);
+	ak_fake_hover_move(f, both, 13, 8);
+	CHECK_EQ_STR(log_buf, "hover:12,7.5 hover:13,8");
+	done(a);
+}
+
+static ak_val pan_config_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *s = ak_ui_new(AK_EL_SCROLL);
+	set_i(s, AK_KEY_HEIGHT, ak_length_pt(300));
+	on(s, AK_EV_SCROLL_SCROLL, log_point, "scroll");
+	ak_view *h = ak_ui_new(AK_EL_VIEW);  // a horizontal pan in a vertical scroll
+	set_i(h, AK_KEY_HEIGHT, ak_length_pt(80));
+	set_i(h, AK_KEY_VIEW_PAN_AXIS, AK_PAN_AXIS_HORIZONTAL);
+	set_f(h, AK_KEY_VIEW_PAN_MIN_DISTANCE, 20);
+	on(h, AK_EV_VIEW_PAN, log_gesture, "h");
+	add(s, h);
+	ak_view *w = ak_ui_new(AK_EL_VIEW);  // a pan that scrolls too
+	set_i(w, AK_KEY_HEIGHT, ak_length_pt(80));
+	set_i(w, AK_KEY_VIEW_PAN_WITH_SCROLL, 1);
+	on(w, AK_EV_VIEW_PAN, log_gesture, "w");
+	add(s, w);
+	ak_view *plain = ak_ui_new(AK_EL_VIEW);  // the platform's: any axis, its slop, the touch its own
+	set_i(plain, AK_KEY_HEIGHT, ak_length_pt(80));
+	on(plain, AK_EV_VIEW_PAN, log_gesture, "p");
+	add(s, plain);
+	add(s, text("end"));
+	return (ak_val){.p = s};
+}
+
+// A pan's recognition: its axis (a drag along the other one goes to the
+// scroll view around it), its distance, and whether the scroll view
+// follows the drag too. Unset, nothing is sent: the platform's.
+TEST(pan_axis_distance_with_scroll) {
+	log_buf[0] = 0;
+	ak_uitest *a = mount(pan_config_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *h = nth(a, AK_KIND_VIEW, 2), *w = nth(a, AK_KIND_VIEW, 3), *plain = nth(a, AK_KIND_VIEW, 4);
+	REQUIRE(h && w && plain);
+	CHECK_EQ_INT(ak_fake_int(h, AK_PROP_VIEW_PAN_AXIS), AK_PAN_AXIS_HORIZONTAL);
+	CHECK_EQ_F(ak_fake_float(h, AK_PROP_VIEW_PAN_MIN_DISTANCE), 20);
+	CHECK(ak_fake_bool(w, AK_PROP_VIEW_PAN_SIMULTANEOUS));
+	CHECK(!ak_fake_prop_of(plain, AK_PROP_VIEW_PAN_AXIS) && !ak_fake_prop_of(plain, AK_PROP_VIEW_PAN_MIN_DISTANCE) && !ak_fake_prop_of(plain, AK_PROP_VIEW_PAN_SIMULTANEOUS));
+	// Across its axis: the scroll's.
+	ak_fake_drag(f, h, 5, -40);
+	CHECK_EQ_STR(log_buf, "scroll:0,40");
+	// Along it, but short of its distance: nothing.
+	log_buf[0] = 0;
+	ak_fake_drag(f, h, 15, 0);
+	CHECK_EQ_STR(log_buf, "");
+	// Along it, far enough: the pan's, the scroll still.
+	ak_fake_drag(f, h, 30, 4);
+	CHECK_EQ_STR(log_buf, "h:0:0:1 h:1:30:1 h:2:30:1");
+	// With the scroll: both follow the drag.
+	log_buf[0] = 0;
+	ak_fake_drag(f, w, 0, -10);
+	CHECK_EQ_STR(log_buf, "w:0:0:1 w:1:0:1 scroll:0,50 w:2:0:1");
+	// The platform's pan has the touch once it begins.
+	log_buf[0] = 0;
+	ak_fake_drag(f, plain, 0, -30);
+	CHECK_EQ_STR(log_buf, "p:0:0:1 p:1:0:1 p:2:0:1");
+	done(a);
+}
+
 // ---- Drags and drops ----
 
 static ak_struct *drag_item(int64_t kind, const char *text, const char *path, const char *mime, const char *value) {

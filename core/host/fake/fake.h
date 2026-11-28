@@ -87,6 +87,8 @@ struct ak_fake_view {
 	// visible.
 	float anchor_sent[5];
 	bool anchor_known;
+	float zoom;       // a zoomable Scroll's zoom (0: 1)
+	float offset[2];  // a Scroll's or List's content offset, as ak_fake_drag scrolled it
 };
 
 // Where the fake host sends what a host sends the core. Set event for
@@ -202,6 +204,7 @@ struct ak_fake {
 	// Whether the root asked for frames (Frames): what the display sends
 	// while it's on (ak_fake_display_frame).
 	bool frames;
+	ak_id tap_pending;  // a view with press and doubleTap tapped once: its press waits (ak_fake_tap_settle)
 };
 
 ak_fake *ak_fake_new(void);
@@ -460,5 +463,23 @@ void ak_fake_bind(ak_fake *f, ak_fake_view *list, int64_t index, ak_fake_view *c
 void ak_fake_unbind(ak_fake *f, ak_fake_view *list, ak_fake_view *cell);
 int64_t ak_fake_list_count(ak_fake *f, ak_fake_view *list);
 void ak_fake_select_row(ak_fake *f, ak_fake_view *cell, bool selected);
+
+// Gestures as a platform's recognizers make them. A tap on a view that
+// takes press and doubleTap waits (UIKit's require(toFail:)): a second
+// tap on it is a double tap, with no press; ak_fake_tap_settle (the
+// double-tap time passing) presses it. ak_fake_drag drags across v by dx,
+// dy: its pan (or its ancestors') by its PanAxis, PanMinDistance and
+// PanSimultaneous, else (and with PanSimultaneous, too) the scroll views
+// around it scroll. ak_fake_zoom pinches a zoomable Scroll to scale
+// (within its MinZoom and MaxZoom, as a scroll view bounces back);
+// ak_fake_move_row drags a reorderable list's row from one index to
+// another: its IDs move, and Moved reports it.
+void ak_fake_tap_settle(ak_fake *f);
+void ak_fake_double_tap(ak_fake *f, ak_fake_view *v);
+void ak_fake_hover_move(ak_fake *f, ak_fake_view *v, float x, float y);
+void ak_fake_drag(ak_fake *f, ak_fake_view *v, float dx, float dy);
+void ak_fake_zoom(ak_fake *f, ak_fake_view *scroll, float scale);
+float ak_fake_zoom_of(const ak_fake_view *scroll);
+bool ak_fake_move_row(ak_fake *f, ak_fake_view *list, int64_t from, int64_t to);
 
 #endif

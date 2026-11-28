@@ -232,6 +232,9 @@ import AsukaOps
                 n.horizontal = v.bool
                 s.hasHorizontalScroller = v.bool && !n.paging
                 s.hasVerticalScroller = !v.bool && !n.paging
+                if n.zoom != nil { applyZoom(n) } // zoomed in, it scrolls both ways
+            case AsukaProp.Scroll.minZoom, AsukaProp.Scroll.maxZoom:
+                setZoomProp(n, p, v) // Zoom.swift
             case AsukaProp.Scroll.paging:
                 setPaging(n, v.bool)
             case AsukaProp.Scroll.refreshable:
@@ -341,6 +344,9 @@ import AsukaOps
             case AsukaProp.View.dropAccept: setDropAccept(n, v.data)
             case AsukaProp.View.dragItems: setDragItems(n, v.data)
             case AsukaProp.View.takesClicks: setTakesClicks(n, v.bool)
+            case AsukaProp.View.panAxis: ix(n).panAxis = AsukaPanAxis(rawValue: v.enumValue) ?? .both
+            case AsukaProp.View.panMinDistance: ix(n).panMinDistance = max(CGFloat(v.float), 0)
+            case AsukaProp.View.panSimultaneous: ix(n).panSimultaneous = v.bool
             default: break
             }
         case .image, .symbol:
@@ -690,6 +696,8 @@ class AsukaScrollView: NSScrollView {
     /// saw begin, and the other must see it end); its moves and momentum
     /// to the one it's for.
     override func scrollWheel(with event: NSEvent) {
+        // ⌘ and the wheel zoom a zoomable Scroll (Zoom.swift).
+        if event.modifierFlags.contains(.command), MainActor.assumeIsolated({ AsukaRuntime.shared.wheelZoom(self, event) }) { return }
         let outer = superview?.enclosingScrollView
         let dx = abs(event.scrollingDeltaX), dy = abs(event.scrollingDeltaY)
         let wheel = event.phase == [] && event.momentumPhase == []  // a mouse's wheel: each notch on its own
@@ -716,6 +724,17 @@ class AsukaScrollView: NSScrollView {
     override func layout() {
         super.layout()
         followBar()
+    }
+
+    // A trackpad's pinch, as it goes (its end: Zoom.swift's observer),
+    // and its two-finger double tap: a zoomable Scroll's.
+    override func magnify(with event: NSEvent) {
+        super.magnify(with: event)
+        MainActor.assumeIsolated { AsukaRuntime.shared.userZoomed(self) }
+    }
+
+    override func smartMagnify(with event: NSEvent) {
+        if !MainActor.assumeIsolated({ AsukaRuntime.shared.smartZoom(self, event) }) { super.smartMagnify(with: event) }
     }
 }
 

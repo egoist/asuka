@@ -464,6 +464,8 @@ void lx_detach(GtkWidget *w) {
 		gtk_popover_set_child((GtkPopover *)p, NULL);
 	else if (AK_IS(p, gtk_box_get_type))
 		gtk_box_remove((GtkBox *)p, w);
+	else if (AK_IS(p, gtk_fixed_get_type))
+		gtk_fixed_remove((GtkFixed *)p, w);  // a zoomable Scroll's content (scroll.c)
 	else if (AK_IS(p, gtk_overlay_get_type) && gtk_overlay_get_child((GtkOverlay *)p) == w)
 		gtk_overlay_set_child((GtkOverlay *)p, NULL);
 	else if (AK_IS(p, gtk_overlay_get_type))

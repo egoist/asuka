@@ -83,11 +83,14 @@ app.tap("Add")                      // ボタン、行、タブ、トグル、�
 app.type("ada@example.com", into: "Email")  // そのプレースホルダーかラベルを持つフィールド
 app.type("milk", into: "Search notes")      // 画面のバーの検索フィールド（プレースホルダーで探す）
 app.tapLink("https://asuka.dev")     // RichText の中の、そこへのリンク
+app.doubleTap("Photo")              // on doubleTap、またはズームできる Scroll のズーム
+app.zoom("Photo", 2)                // それを表示しているズームできる Scroll をピンチする
+app.moveRow("Milk", to: 0)          // List の行をドラッグする（on move が受け取る）
 app.share([SharedItem(kind: .link, text: "https://asuka.dev")])  // ほかのアプリが共有：onShare が受け取る
 await app.idle()                    // 実行するものがなくなるまで：タスク、タイマー、読み込み
 ```
 
-タップは、指が触れる場所に届きます。行の中のテキストをタップすると行が、ボタンの中のテキストをタップするとボタンがタップされます。メニューを持つビューをタップするとメニューが開き、次の `tap` でその中から選びます。
+タップは、指が触れる場所に届きます。行の中のテキストをタップすると行が、ボタンの中のテキストをタップするとボタンがタップされます。メニューを持つビューをタップするとメニューが開き、次の `tap` でその中から選びます。`on doubleTap` も持つビューへのタップはダブルタップの待ち時間が過ぎるのを待つので、`on press` もちゃんと実行されます。`doubleTap` は `on doubleTap` だけを実行します。
 
 ## プロパティテスト
 

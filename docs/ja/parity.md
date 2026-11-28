@@ -16,10 +16,12 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | オーバーレイ、絶対配置 | `ZStack`、`.overlay` | `position: absolute` | ✓ `absolute` と `top`、`left`、`start`、`end`… |
 | ビューのグリッド | `Grid`、`LazyVGrid` | コミュニティ製 | ✓ `grid`（CSS グリッド：`Grid(columns:)`、`.fr`、`.repeat`、`.autoFill`。`gridColumn`、`gridRow`） |
 | スクロール | `ScrollView` | `ScrollView` | ✓ `Scroll`（縦、`horizontal` で横） |
+| スクロールビューのピンチズーム | `UIScrollView` の `zoomScale`（SwiftUI：`MagnifyGesture` を自分で書く） | `ScrollView` の `maximumZoomScale`（iOS のみ）、コミュニティ製 | ✓ `Scroll` の `minZoom`、`maxZoom`、`bind zoom`、`Ref` の `zoomTo`。ダブルタップで拡大、または元に戻す（Android では Asuka 独自のズームできるコンテナー、デスクトップと Web では ⌘ か Ctrl とホイール） |
 | 遅延リスト、セルの再利用 | `List`、`LazyVStack` | `FlatList` | ✓ `List`（プラットフォームのもの：`UICollectionView`、`RecyclerView`。Mac、Windows、Linux、Web では、プラットフォームのスクロールビューの中で、表示中の行を Asuka が再利用） |
 | 遅延グリッド | `LazyVGrid` | `FlatList numColumns` | ✓ `List` の `columns`、`gap` |
 | チャットのリスト：末尾から始め、古いものを上に読み込む | `defaultScrollAnchor(.bottom)`、`scrollPosition` | `FlatList inverted`、`maintainVisibleContentPosition` | ✓ `List` の `anchor: .bottom`、`on startReached`。どのリストでも、表示中の部分より上に行を追加しても表示位置は動かない |
 | セクション、固定ヘッダー | `List` の中の `Section` | `SectionList`、`stickySectionHeadersEnabled` | ✓ `List` の `section` と `header`（plain と bare のリストでは固定） |
+| 行の並べ替え | `.onMove` | コミュニティ製（`react-native-draggable-flatlist`） | ✓ `List` の `on move(from, to)`、`reorderable`（iOS と Android では長押しで行を持ち上げ、デスクトップと Web ではそのままドラッグ。端に近づけるとスクロールし、スクリーンリーダーには「上へ移動」「下へ移動」。行は自分のビューを保ったまま動く） |
 | 行の選択 | `List(selection:)`、`EditButton` | コミュニティ製 | ✓ `List` の `selecting`、行の `selected`、`on select`、`on selectBegin`（iOS の編集モードと 2 本指のパン、Android のチェックボックスと長押し。デスクトップでは行のハイライト、ブラウザーではチェックマーク） |
 | セーフエリア、キーボード | 自動 | `SafeAreaView`、`KeyboardAvoidingView` | ✓ `SafeArea`（キーボードの分もパディングする）、`environment()` の `safeTop`…と `keyboard` |
 | ビューのサイズ、ウィンドウのサイズの取得 | `GeometryReader`、サイズクラス | `onLayout`、`useWindowDimensions` | ✓ `on layout(frame)`。`environment()` の `width`、`height`、`widthClass`、`heightClass` |
@@ -87,9 +89,9 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | フレームごとのアニメーション | `TimelineView(.animation)` | `useFrameCallback` | ✓ `frames()`、`onFrame` |
 | 影、グラデーション、ぼかし | `.shadow`、`LinearGradient`、`RadialGradient`、`AngularGradient`、マテリアル | スタイル、expo-linear-gradient、expo-blur | ✓ `shadow`、`gradient`（`.linear`、`.radial`、`.conic`）、`material` |
 | 角と枠線 | `UnevenRoundedRectangle`、`StrokeStyle` の破線を使った `.strokeBorder` | `borderTopLeftRadius`…、`borderBottomWidth`…、`borderStyle` | ✓ `radius`（`[tl, tr, br, bl]`、`Corners(topStart:...)`）、`border`（`Edges(bottom: 1)`）、`borderStyle`（`.dashed`、`.dotted`） |
-| ジェスチャー | タップ、長押し、ドラッグ、拡大縮小、回転 | Gesture Handler | ✓ `on press`、`on longPress`、`on pan`、`on pinch`、`on rotate`、`on swipe` |
+| ジェスチャー | タップ、ダブルタップ（`count: 2`）、長押し、ドラッグ、拡大縮小、回転、`simultaneousGesture` | Gesture Handler（`numberOfTaps`、`activeOffsetX`、`minDistance`、`simultaneousWithExternalGesture`） | ✓ `on press`、`on doubleTap`（タップはこれを待つ）、`on longPress`、`on pan`、`on pinch`、`on rotate`、`on swipe`。`panAxis`、`panMinDistance`、`panWithScroll` |
 | ハードウェアキーボードのキー | `.onKeyPress`、`.keyboardShortcut` | `onKeyPress`（`TextInput` のもの。React Native for Windows and macOS では `onKeyDown`） | ✓ `keys`（フォーカスのあるビューから外側へ、コントロールやメニューより先に）、`useKeys`、`WindowKeys`（ウィンドウのもの） |
-| 押下とホバーの状態 | `ButtonStyle` の `isPressed`、`.onHover` | `Pressable` の `pressed`、`onHoverIn`/`onHoverOut` | ✓ `pressed { … }` と `hovered { … }` のバリアント。グループや隣のビューの状態は `Ref` の `pressed` と `hovered` で。`on pressedChange`、`on hoverChange` |
+| 押下とホバーの状態 | `ButtonStyle` の `isPressed`、`.onHover` | `Pressable` の `pressed`、`onHoverIn`/`onHoverOut` | ✓ `pressed { … }` と `hovered { … }` のバリアント。グループや隣のビューの状態は `Ref` の `pressed` と `hovered` で。`on pressedChange`、`on hoverChange`、`on hover(x, y)`（ポインターの位置） |
 | ドラッグ＆ドロップ | `.draggable`、`.dropDestination` | （組み込みなし） | ✓ `dragItems`、`dropTypes`、`on drop`（アプリ内ではアプリ自身の値、ほかのアプリとはテキスト、リンク、ファイル。`dragging { … }` と `dragOver { … }` のバリアント） |
 | 共有要素のトランジション | `matchedGeometryEffect`、`.navigationTransition(.zoom)` | shared transitions | ✓ `shared`（ほかのビューの位置とサイズからビューが広がる）、画面の `zoomFrom`（iOS 18 のズーム、Material のコンテナトランスフォーム） |
 | 触覚フィードバック | `sensoryFeedback` | `expo-haptics` | ✓ `device.haptic(…)`（Mac では感圧タッチトラックパッド、ブラウザーでは `navigator.vibrate`） |

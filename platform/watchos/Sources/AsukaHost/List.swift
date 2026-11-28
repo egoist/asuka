@@ -27,7 +27,32 @@ import AsukaOps
     var scrollTarget: (item: Int64, animated: Bool)?
     var scrollToTop = false
 
+    /// Reorder: the names of the screen readers' actions that move a row
+    /// up and down a place (nil: rows don't move). A watch has no drag to
+    /// reorder with: VoiceOver's actions move them.
+    var reorder: (up: String, down: String)?
+
     init(node: AsukaNode) { self.node = node }
+
+    /// Reorder's bytes: u32 count, then the names.
+    func setReorder(_ b: UnsafeRawBufferPointer) {
+        var r = AsukaReader(b)
+        guard b.count >= 4, r.u32() >= 2 else { reorder = nil; return }
+        let up = r.string(), down = r.string()
+        reorder = (up, down)
+    }
+
+    /// Moves the row at index a place up (-1) or down (1): the IDs are in
+    /// the new order (the core's update in it changes nothing), and the
+    /// core hears of it with Moved.
+    func move(_ index: Int, by d: Int) {
+        let to = index + d
+        guard reorder != nil, index >= 0, index < ids.count, to >= 0, to < ids.count else { return }
+        ids.insert(ids.remove(at: index), at: to)
+        let rt = AsukaRuntime.shared, id = node.id
+        rt.emit(id, .moved) { AsukaEvents.moved(id, x: Double(index), y: Double(to)) }
+        rt.touch(node)
+    }
 
     func update(_ ids: [Int64]) {
         self.ids = ids
@@ -105,6 +130,12 @@ struct AsukaListView: View {
                         if let list {
                             AsukaListRow(list: list, item: item, index: i)
                                 .background { if platter { RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(white: 0.13)) } }
+                                .accessibilityActions {
+                                    if let r = list.reorder {
+                                        if i > 0 { Button(r.up) { list.move(i, by: -1) } }
+                                        if i + 1 < ids.count { Button(r.down) { list.move(i, by: 1) } }
+                                    }
+                                }
                                 .id(item)
                         }
                     }

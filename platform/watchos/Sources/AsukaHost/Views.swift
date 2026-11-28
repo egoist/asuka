@@ -410,7 +410,9 @@ struct AsukaClip<S: Shape>: ViewModifier {
     }
 }
 
-/// OnPress and OnLongPress on a view that isn't a control.
+/// OnPress, OnDoubleTap and OnLongPress on a view that isn't a control.
+/// With a double tap, a tap's press waits until a second can't come (the
+/// double tap's gesture first); without, it presses at once.
 struct AsukaPress: ViewModifier {
     let node: AsukaNode
     let rt: AsukaRuntime
@@ -420,7 +422,16 @@ struct AsukaPress: ViewModifier {
         let n = node
         let press = n.kind != .button && n.listens(.press)
         let long = n.listens(.longPress)
-        if press || long {
+        if n.listens(.doubleTap) {
+            content
+                .contentShape(Rectangle())
+                .gesture(SpatialTapGesture(count: 2).onEnded { v in
+                    rt.emit(n.id, .doubleTap) { AsukaEvents.doubleTap(n.id, x: Double(v.location.x), y: Double(v.location.y)) }
+                })
+                .onTapGesture { if press { rt.emit(n.id, .press) { AsukaEvents.press(n.id) } } }
+                .onLongPressGesture { if long { rt.emit(n.id, .longPress) { AsukaEvents.longPress(n.id) } } }
+                .accessibilityAddTraits(press ? .isButton : [])
+        } else if press || long {
             content
                 .contentShape(Rectangle())
                 .onTapGesture { if press { rt.emit(n.id, .press) { AsukaEvents.press(n.id) } } }

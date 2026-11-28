@@ -83,6 +83,8 @@ ak_event_kind ak_ix_ev_ops(uint16_t ev) {
 	case AK_EV_VIEW_ADJUST: return AK_EVENT_ADJUST;
 	case AK_EV_VIEW_KEY_TEXT: return AK_EVENT_KEY_TEXT;
 	case AK_EV_VIEW_PRESS_START: return AK_EVENT_PRESS_POINT;
+	case AK_EV_VIEW_DOUBLE_TAP: return AK_EVENT_DOUBLE_TAP;
+	case AK_EV_VIEW_HOVER: return AK_EVENT_HOVER_MOVE;
 	// A drag's and a drop's come with dragItems and dropTypes; FocusChange
 	// comes without asking.
 	}
@@ -763,6 +765,17 @@ void ak_ix_container_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev)
 		if (!v.i && !prev) return;
 		if (v.i && !e->real) ak_view_make_real(e);
 		if (e->real) ak_batch_set_bool(ak_view_batch(e), e->id, AK_PROP_VIEW_TAKES_CLICKS, v.i != 0);
+	} else if (key == ak_ext_key(e, AK_KEY_VIEW_PAN_AXIS) || key == ak_ext_key(e, AK_KEY_VIEW_PAN_MIN_DISTANCE) || key == ak_ext_key(e, AK_KEY_VIEW_PAN_WITH_SCROLL)) {
+		// How its pan is recognized: its view's, sent once set (a container
+		// with on pan has a view already).
+		bool dist = key == ak_ext_key(e, AK_KEY_VIEW_PAN_MIN_DISTANCE);
+		if (!(dist ? v.f != 0 : v.i != 0) && !prev) return;
+		if (!e->real) ak_view_make_real(e);
+		if (!e->real) return;
+		ak_batch *b = ak_view_batch(e);
+		if (dist) ak_batch_set_float(b, e->id, AK_PROP_VIEW_PAN_MIN_DISTANCE, v.f > 0 ? v.f : 0);
+		else if (key == ak_ext_key(e, AK_KEY_VIEW_PAN_AXIS)) ak_batch_set_enum(b, e->id, AK_PROP_VIEW_PAN_AXIS, (int32_t)v.i);
+		else ak_batch_set_bool(b, e->id, AK_PROP_VIEW_PAN_SIMULTANEOUS, v.i != 0);
 	} else if (key == ak_ext_key(e, AK_KEY_VIEW_HREF) && v.p && ((ak_str *)v.p)->len) {
 		// A link: pressable, the router goes there (container_event).
 		if (!e->real) ak_view_make_real(e);
@@ -941,9 +954,14 @@ bool ak_ix_event(ak_view *e, const ak_event *ev) {
 		ak_release(s);
 		return true;
 	}
-	case AK_EVENT_PRESS_POINT: {
+	case AK_EVENT_PRESS_POINT:
+	case AK_EVENT_DOUBLE_TAP:
+	case AK_EVENT_HOVER_MOVE: {
+		// A point in the view: where a press began, a double tap fell, a
+		// pointer is.
+		uint16_t h = ev->kind == AK_EVENT_PRESS_POINT ? AK_EV_VIEW_PRESS_START : ev->kind == AK_EVENT_DOUBLE_TAP ? AK_EV_VIEW_DOUBLE_TAP : AK_EV_VIEW_HOVER;
 		ak_val args[2] = {{.f = ev->x}, {.f = ev->y}};
-		ak_view_call(e, ak_ext_ev(e, AK_EV_VIEW_PRESS_START), args, 2);
+		ak_view_call(e, ak_ext_ev(e, h), args, 2);
 		return true;
 	}
 	case AK_EVENT_KEY: return ak_keys_event(e, ev->i);

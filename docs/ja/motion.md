@@ -368,6 +368,7 @@ component Spinner {
 `View` は、プラットフォームのジェスチャー認識器が認識したジェスチャーを受け取ります。
 
 - `on press` と `on longPress`：タップと長押し。
+- `on doubleTap(x, y)`：すばやい 2 回のタップと、2 回目が触れた位置。
 - `on pan(g)`：ドラッグ。
 - `on pinch(g)`：2 本の指を広げる・狭める操作。
 - `on rotate(g)`：2 本の指をひねる操作。
@@ -379,6 +380,7 @@ component Spinner {
 | --- | --- | --- | --- | --- |
 | `on press` | クリック | クリック、またはフォーカスのあるビューでの Enter か Space | クリック、またはフォーカスのあるビューでの Enter か Space | クリック、またはフォーカスのあるビューでの Enter か Space |
 | `on longPress` | 副ボタンのクリック、またはボタンの押し続け | 右クリック、またはボタンの押し続け | 副ボタンのクリック、またはボタンの押し続け | 右クリック、またはボタンやタッチの押し続け |
+| `on doubleTap` | ダブルクリック | ダブルクリック | ダブルクリック | ダブルクリック、または 2 回のタップ |
 | `on pan(g)` | ボタンを押したままのドラッグ | ボタンを押したままのドラッグ | ボタンを押したままのドラッグ、タッチ、またはタッチパッド | ポインターを押したままのドラッグ |
 | `on swipe(direction)` | 最後にすばやく動かすドラッグ、トラックパッドの 2 本指で払う操作、システムがアプリに任せている場合は 3 本指のスワイプ | 最後にすばやく動かすドラッグ | 最後にすばやく動かすドラッグ、タッチスクリーンで払う操作 | 最後にすばやく動かすドラッグ |
 | `on pinch(g)` | トラックパッドのピンチ | タッチパッドのピンチ、Ctrl を押しながらのホイール、またはタッチスクリーン上の 2 本指 | タッチパッドかタッチスクリーンのピンチ、または Ctrl を押しながらのホイール | トラックパッドのピンチ、Ctrl を押しながらのホイール、またはタッチスクリーン上の 2 本指 |
@@ -457,13 +459,62 @@ component Turner {
 
 スワイプやパンは、スクリーンリーダーがオンの状態では行えません。同じことを[アクセシビリティアクション](accessibility.md)としても提供してください。
 
+### タップとダブルタップ
+
+`on press` と `on doubleTap` の両方を持つビューは、プラットフォームと同じやり方で 2 つを見分けます（UIKit の `require(toFail:)`、Android の `onSingleTapConfirmed`）。タップの press は 2 回目のタップが来ないとわかるまで、つまりシステムのダブルタップ時間が過ぎるまで待ち、ダブルタップでは `on doubleTap` だけが実行されます。`on press` だけのビューは待たずにすぐ押されます。
+
+```asuka
+component Post {
+  state liked = false
+  state open = false
+
+  View {
+    height: 240
+    radius: 16
+    background: .secondaryBackground
+    justify: .center
+    align: .center
+    label: "Photo"
+    on press { open = true }
+    on doubleTap(x, y) { liked = true }
+    Symbol(if liked { "heart.fill" } else { "heart" }) { color: .red }
+  }
+}
+```
+
+### どのドラッグをパンにするか
+
+3 つのキーで、パンをどう認識するかを決められます。React Native Gesture Handler の `activeOffsetX` や `simultaneousWithExternalGesture` にあたるものです。
+
+- `panAxis: .horizontal`（または `.vertical`）：その軸に沿ったドラッグだけがパンになります。先にもう一方の軸へ動いたドラッグは周りのビューに渡るので、横にパンできる行があってもリストはそのままスクロールできます。
+- `panMinDistance`：パンが始まるまでにドラッグが動く距離（ポイント）。指定しなければプラットフォームのタッチのしきい値です。
+- `panWithScroll: true`：パンがタッチを独占せず、パンと周りのスクロールビューの両方が同じドラッグに追従します（中身も一緒にスクロールするシートのハンドルなど）。
+
+```asuka
+component SwipeCard {
+  state dx = 0.0
+
+  View {
+    height: 96
+    radius: 16
+    background: .accent
+    panAxis: .horizontal
+    panMinDistance: 16
+    transform: Transform(x: dx)
+    on pan(g) {
+      dx = if g.state == .ended || g.state == .cancelled { 0 } else { g.translationX }
+    }
+  }
+}
+```
+
 ## 押下とホバーの状態
 
 `View` は操作の状態が変わるたびにそれを通知し、スタイルは 3 つの方法でその状態に追従できます。まずは目的を果たせる最初の方法から使ってください。
 
 1. **バリアント**：ビュー自身の見た目を変えるためのものです。`pressed { … }`、`hovered { … }`、`dragging { … }`、`dragOver { … }` は、ビューがその状態にある間、スタイルのほかの部分の上に重ねて適用されます。CSS の `:active` や `:hover`、Tailwind の `active:` や `hover:` にあたります。
 2. **`Ref`**：ほかのビューや、その状態に追従するあらゆるもののためのものです。ビューに `Ref` を渡し（`ref: card`）、必要な場所で `card.pressed` や `card.hovered` を読みます。たとえばほかのビューのスタイル、`Text`、`if` の中です。子が親に追従する（グループのホバー）のも、兄弟が隣のビューに追従する（ピアのホバー）のも、この方法で実現します。
-3. **ハンドラー**：録音の開始など、スタイル以外のことのためのものです。`on pressedChange(on)` と `on hoverChange(on)` を使います。
+3. **ハンドラー**：録音の開始など、スタイル以外のことのためのものです。`on pressedChange(on)` と `on hoverChange(on)` を使います。`on hover(x, y)` は、ポインターがビューの上を動くたびに、その位置（ビューの左上からのポイント）とともに実行されます。グラフの十字線や拡大鏡に使えます。
 
 ```asuka
 component Card(title: string) {

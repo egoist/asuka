@@ -559,10 +559,12 @@ void lx_update_a11y(node *n);
 void lx_set_a11y(node *n, ak_prop p, const ak_value *v);
 void lx_announce(ak_span text);
 void lx_set_a11y_actions(node *n, ak_span b);
+void lx_action_name(const char *title, unsigned i, char *name, size_t cap);
 void lx_set_adjustable(node *n, bool on);
 void lx_release_a11y(node *n);
 void lx_set_drag_items(node *n, ak_span b);
 void lx_set_drop_accept(node *n, ak_span b);
+void lx_set_pan_prop(node *n, ak_prop p, const ak_value *v);
 bool lx_draggable(node *n);
 void lx_set_selected_state(node *n, bool on);
 
@@ -619,6 +621,7 @@ struct scroll_view {
 	double reported[2];
 	void *spinner_state;  // a refreshable one's (scroll.c)
 	void *pager;          // a paging one's
+	void *zoomer;         // a zoomable one's (MinZoom, MaxZoom)
 };
 void lx_refresh_key(win *w);
 void lx_set_refreshing(node *n, bool on);

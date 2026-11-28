@@ -1506,6 +1506,12 @@ SYM(GTK, void, gtk_snapshot_append_conic_gradient, (GtkSnapshot *snapshot, const
 SYM(GTK, void, gsk_path_builder_add_rounded_rect, (GskPathBuilder *self, const GskRoundedRect *rect))
 SYM(GTK, void, gsk_path_builder_move_to, (GskPathBuilder *self, float x, float y))
 SYM(GTK, void, gsk_path_builder_line_to, (GskPathBuilder *self, float x, float y))
+// Gestures: a zoomable Scroll's content, scaled in a GtkFixed.
+SYM(GTK, GType, gtk_fixed_get_type, (void))
+SYM(GTK, GtkWidget *, gtk_fixed_new, (void))
+SYM(GTK, void, gtk_fixed_put, (GtkFixed *fixed, GtkWidget *widget, double x, double y))
+SYM(GTK, void, gtk_fixed_remove, (GtkFixed *fixed, GtkWidget *widget))
+SYM(GTK, void, gtk_fixed_set_child_transform, (GtkFixed *fixed, GtkWidget *widget, GskTransform *transform))
 
 // ---- libXtst: the automation's real pointer and keys (X11) ----
 SYM(XTST, int, XTestFakeMotionEvent, (void *display, int screen, int x, int y, unsigned long delay))

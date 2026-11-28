@@ -10,6 +10,14 @@
 //     goes on to the scroll views, which still scroll.
 //   - A three-finger swipe (swipe(with:)), where the system's settings
 //     leave it to apps.
+//
+// A pan is the mouse's drag (NSPanGestureRecognizer): it's reported as
+// begun once the mouse has gone PanMinDistance (AppKit's own distance
+// without it), along PanAxis; a drag that goes the other way first isn't a
+// pan, and the press it began goes on. The scroll views around scroll by
+// the wheel and the trackpad's scrolls, which a pan never takes: they
+// always follow those; PanSimultaneous lets the pan's recognizer go along
+// with the other recognizers around it too.
 import AppKit
 #if canImport(AsukaOps)
 import AsukaOps
@@ -50,10 +58,36 @@ extension AsukaVisual: NSGestureRecognizerDelegate {
     @objc func magnified(_ g: NSGestureRecognizer) { AsukaRuntime.shared.gesture(g, .pinch) }
     @objc func rotated(_ g: NSGestureRecognizer) { AsukaRuntime.shared.gesture(g, .rotate) }
 
-    /// A pan doesn't begin while the mouse went down on a draggable view:
-    /// moving it drags the view.
+    /// A pan doesn't begin while the mouse went down on a draggable view
+    /// (moving it drags the view) or lifted a list's row, nor along the
+    /// axis its PanAxis doesn't take.
     func gestureRecognizerShouldBegin(_ g: NSGestureRecognizer) -> Bool {
-        MainActor.assumeIsolated { mouse.source == nil && drag == nil }
+        MainActor.assumeIsolated {
+            guard mouse.source == nil && drag == nil && !mouse.lifted else { return false }
+            guard let p = g as? NSPanGestureRecognizer, let v = p.view, let x = AsukaRuntime.shared.node(of: v)?.interaction else { return true }
+            return asukaPanAlong(x.panAxis, p.translation(in: v))
+        }
+    }
+
+    /// PanSimultaneous: the pan goes along with the recognizers around it.
+    func gestureRecognizer(_ g: NSGestureRecognizer, shouldRecognizeSimultaneouslyWith other: NSGestureRecognizer) -> Bool {
+        MainActor.assumeIsolated {
+            let rt = AsukaRuntime.shared
+            for r in [g, other] where r is NSPanGestureRecognizer {
+                if let v = r.view, rt.node(of: v)?.interaction?.panSimultaneous == true { return true }
+            }
+            return false
+        }
+    }
+}
+
+/// Whether a drag that went t so far goes along axis (no move yet: it may).
+func asukaPanAlong(_ axis: AsukaPanAxis, _ t: CGPoint) -> Bool {
+    if t.x == 0 && t.y == 0 { return true }
+    switch axis {
+    case .horizontal: return abs(t.x) >= abs(t.y)
+    case .vertical: return abs(t.y) >= abs(t.x)
+    default: return true
     }
 }
 
@@ -62,8 +96,8 @@ extension AsukaVisual: NSGestureRecognizerDelegate {
     func gesture(_ g: NSGestureRecognizer, _ e: AsukaEventKind) {
         guard let view = g.view, let n = node(of: view) else { return }
         let state = g.state
-        if state == .began || state == .ended && e == .longPress {
-            cancelPress() // the gesture takes the mouse
+        if e != .pan && (state == .began || state == .ended && e == .longPress) {
+            cancelPress() // the gesture takes the mouse (a pan once it's live)
         }
         if e == .longPress {
             if state == .began || state == .ended && g is NSClickGestureRecognizer {
@@ -86,8 +120,25 @@ extension AsukaVisual: NSGestureRecognizerDelegate {
         gs.scale = 1
         switch e {
         case .pan:
-            guard let p = g as? NSPanGestureRecognizer else { return }
+            guard let p = g as? NSPanGestureRecognizer, let x = n.interaction else { return }
             let t = p.translation(in: view), vel = p.velocity(in: view)
+            if state == .began { x.panLive = false }
+            if !x.panLive {
+                // Not a pan till it has gone its distance along its axis.
+                guard state == .began || state == .changed else { return }
+                if hypot(t.x, t.y) < x.panMinDistance { return }
+                if !asukaPanAlong(x.panAxis, t) {
+                    // The other way: not a pan; the press goes on.
+                    p.isEnabled = false
+                    p.isEnabled = true
+                    return
+                }
+                x.panLive = true
+                cancelPress() // the pan takes the mouse
+                visual.mouse.row = nil // and the row it's in doesn't lift
+                gs.state = AsukaGestureState.began.rawValue
+            }
+            if gs.state == AsukaGestureState.ended.rawValue || gs.state == AsukaGestureState.cancelled.rawValue { x.panLive = false }
             gs.translationX = Float(t.x)
             gs.translationY = Float(t.y)
             gs.velocityX = Float(vel.x)

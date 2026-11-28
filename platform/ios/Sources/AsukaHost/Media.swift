@@ -369,9 +369,31 @@ final class AsukaPanRecognizer: UIPanGestureRecognizer {
     /// What UIKit's translation leaves out, from the moment it began.
     var slop = CGPoint.zero
 
+    /// PanMinDistance: how far the first touch moves before UIKit sees it
+    /// move (its own slop is the least).
+    private var minDistance: CGFloat = 0
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        if numberOfTouches == 0, let t = touches.first { down = t.location(in: nil) }
+        if numberOfTouches == 0, let t = touches.first {
+            down = t.location(in: nil)
+            minDistance = view.flatMap { AsukaRuntime.shared.nodeID(of: $0) }.flatMap { AsukaRuntime.shared.nodes[$0]?.panMinDistance } ?? 0
+        }
         super.touchesBegan(touches, with: event)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        // Not yet a pan: the moves short of the distance aren't one's.
+        if state == .possible, minDistance > 0, let t = touches.first {
+            let p = t.location(in: nil)
+            if hypot(p.x - down.x, p.y - down.y) < minDistance { return }
+        }
+        super.touchesMoved(touches, with: event)
+    }
+
+    /// How far the touch has moved from where it came down.
+    var moved: CGPoint {
+        let at = location(in: nil)
+        return CGPoint(x: at.x - down.x, y: at.y - down.y)
     }
 
     func began() {
@@ -380,9 +402,33 @@ final class AsukaPanRecognizer: UIPanGestureRecognizer {
     }
 }
 
+/// Also: a View's Pan along its PanAxis only, and with PanSimultaneous,
+/// together with the scroll views around it.
 final class AsukaGestureDelegate: NSObject, UIGestureRecognizerDelegate {
+    private func node(_ g: UIGestureRecognizer) -> AsukaNode? {
+        guard let v = g.view, let id = AsukaRuntime.shared.nodeID(of: v), let n = AsukaRuntime.shared.nodes[id], n.view === v else { return nil }
+        return n
+    }
+
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        g.view === other.view
+        if g.view === other.view { return true }
+        if g is AsukaPanRecognizer, let sv = other.view as? UIScrollView, other === sv.panGestureRecognizer,
+           g.view?.isDescendant(of: sv) == true, node(g)?.panSimultaneous == true {
+            return true
+        }
+        return false
+    }
+
+    /// A drag that moved first along the other axis isn't the pan: what's
+    /// around it (a scroll view) has it.
+    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+        guard let p = g as? AsukaPanRecognizer, let n = node(g) else { return true }
+        let m = p.moved
+        switch AsukaPanAxis(rawValue: n.panAxis) {
+        case .horizontal: return abs(m.x) > abs(m.y)
+        case .vertical: return abs(m.y) > abs(m.x)
+        default: return true
+        }
     }
 }
 

@@ -84,6 +84,7 @@ class AsukaPager(private val rt: AsukaRuntime, private val id: Int, private val 
         /** Makes a Scroll page, or not; its view is made again when it turns horizontal, and this again with it. */
         fun apply(rt: AsukaRuntime, n: AsukaNode) {
             val v = n.view as? FrameLayout ?: return
+            if (v is AsukaZoomScroll) return // its content zooms: it doesn't page
             val on = n.props[AsukaProp.Scroll.PAGING] == true
             v.setOnTouchListener(if (on) AsukaPager(rt, n.id, v) else null)
             v.isHorizontalScrollBarEnabled = !on

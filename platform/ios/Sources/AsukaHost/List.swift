@@ -19,6 +19,17 @@ final class AsukaListCell: UICollectionViewListCell {
     /// effect goes behind it (UIScrollEdgeElementContainerInteraction).
     var edgeInteraction: UIInteraction?
 
+    /// With Reorder, VoiceOver's actions that move its row up and down a
+    /// place (where it can go), after its own.
+    override var accessibilityCustomActions: [UIAccessibilityCustomAction]? {
+        get {
+            let own = super.accessibilityCustomActions
+            guard let moves = list?.moveActions(self), !moves.isEmpty else { return own }
+            return (own ?? []) + moves
+        }
+        set { super.accessibilityCustomActions = newValue }
+    }
+
     func setRowHeight(_ h: CGFloat) {
         guard h != rowHeight else { return }
         rowHeight = h
@@ -85,6 +96,9 @@ final class AsukaWeakList {
     // Selecting, and the room its control takes (leading, trailing).
     private(set) var editing = false
     private var rowInset = CGPoint.zero
+    /// Reorder: the names of VoiceOver's actions that move a row up and
+    /// down (nil: rows don't move).
+    private(set) var reorder: (up: String, down: String)?
 
     init(id: UInt32, runtime: AsukaRuntime) {
         self.id = id
@@ -144,6 +158,10 @@ final class AsukaWeakList {
         source.supplementaryViewProvider = { cv, kind, path in
             cv.dequeueConfiguredReusableSupplementary(using: headers, for: path)
         }
+        // Reorder: a row dragged to another place is moved by the data
+        // source, its cell kept (the collection view's drag and drop).
+        source.reorderingHandlers.canReorderItem = { [weak self] _ in self?.canReorder ?? false }
+        source.reorderingHandlers.didReorder = { [weak self] t in self?.reordered(t) }
     }
 
     private func bind(_ runtime: AsukaRuntime, _ index: Int, _ cell: AsukaListCell) {
@@ -510,6 +528,87 @@ final class AsukaWeakList {
         collection.collectionViewLayout.invalidateLayout()
     }
 
+    // MARK: Reordering
+
+    /// Rows move: with Reorder, while not selecting.
+    var canReorder: Bool { reorder != nil && !editing }
+
+    /// Reorder's names (u32 count, the strings): two, rows move; none,
+    /// they don't. A long press lifts a row, which the others make way
+    /// for as it's dragged (scrolling at the list's edges), and dropping
+    /// it moves it (UICollectionView's drag and drop, restricted to the
+    /// app, the data source's reordering).
+    func setReorder(_ names: [String]) {
+        reorder = names.count >= 2 ? (names[0], names[1]) : nil
+        #if !os(tvOS) // no drag and drop on a TV: VoiceOver's actions alone
+        let on = reorder != nil
+        collection.dragDelegate = on ? self : nil
+        collection.dropDelegate = on ? self : nil
+        collection.dragInteractionEnabled = on // on iPhone too
+        collection.reorderingCadence = .immediate
+        #endif
+    }
+
+    /// The user dropped a row in another place: the data source moved it
+    /// (the IDs are in the new order, so the core's update in that order
+    /// changes nothing), and the core hears of it with Moved.
+    private func reordered(_ t: NSDiffableDataSourceTransaction<Int64, Int64>) {
+        starts = Self.starts(t.finalSnapshot, hasSections)
+        guard let (from, to) = Self.move(t.initialSnapshot.itemIdentifiers, t.finalSnapshot.itemIdentifiers) else { return }
+        let id = self.id
+        runtime?.emit(id, .moved) { AsukaEvents.moved(id, x: Double(from), y: Double(to)) }
+    }
+
+    /// The first item's index of each of snap's sections.
+    private static func starts(_ snap: NSDiffableDataSourceSnapshot<Int64, Int64>, _ sections: Bool) -> [Int] {
+        guard sections else { return [0] }
+        var at = 0
+        return snap.sectionIdentifiers.map { s in
+            defer { at += snap.numberOfItems(inSection: s) }
+            return at
+        }
+    }
+
+    /// The one item moved from a to b: its index before and after.
+    static func move(_ a: [Int64], _ b: [Int64]) -> (Int, Int)? {
+        guard a.count == b.count, let i = a.indices.first(where: { a[$0] != b[$0] }),
+              let j = a.indices.last(where: { a[$0] != b[$0] }) else { return nil }
+        return a[i] == b[j] ? (i, j) : (j, i)
+    }
+
+    /// VoiceOver's actions for cell's row: up a place, unless it's first;
+    /// down, unless it's last.
+    func moveActions(_ cell: AsukaListCell) -> [UIAccessibilityCustomAction] {
+        guard canReorder, let names = reorder, let p = collection.indexPath(for: cell) else { return [] }
+        let i = index(of: p), count = collection.numberOfItemsTotal
+        var out: [UIAccessibilityCustomAction] = []
+        if i > 0 {
+            out.append(UIAccessibilityCustomAction(name: names.up) { [weak self, weak cell] _ in self?.move(cell, by: -1) ?? false })
+        }
+        if i + 1 < count {
+            out.append(UIAccessibilityCustomAction(name: names.down) { [weak self, weak cell] _ in self?.move(cell, by: 1) ?? false })
+        }
+        return out
+    }
+
+    /// Moves cell's row a place up (-1) or down (1), animated, its cell
+    /// kept, and tells the core with Moved.
+    private func move(_ cell: AsukaListCell?, by d: Int) -> Bool {
+        applyPending()
+        guard canReorder, let cell, let p = collection.indexPath(for: cell), let item = source.itemIdentifier(for: p) else { return false }
+        var snap = source.snapshot()
+        let ids = snap.itemIdentifiers
+        let from = index(of: p), to = from + d
+        guard to >= 0, to < ids.count else { return false }
+        if d < 0 { snap.moveItem(item, beforeItem: ids[to]) } else { snap.moveItem(item, afterItem: ids[to]) }
+        starts = Self.starts(snap, hasSections)
+        source.apply(snap, animatingDifferences: collection.window != nil)
+        let id = self.id
+        runtime?.emit(id, .moved) { AsukaEvents.moved(id, x: Double(from), y: Double(to)) }
+        UIAccessibility.post(notification: .layoutChanged, argument: cell) // VoiceOver stays on it
+        return true
+    }
+
     // MARK: Selection
 
     /// Selecting rows (UIKit's edit mode): each row shows its selection
@@ -622,6 +721,38 @@ final class AsukaWeakList {
     }
 }
 
+#if !os(tvOS)
+/// Reorder's drags: a row's, within the list, dropped between its rows;
+/// the data source moves it (reorderingHandlers).
+extension AsukaList: UICollectionViewDragDelegate, UICollectionViewDropDelegate {
+    func collectionView(_ cv: UICollectionView, itemsForBeginning session: UIDragSession, at p: IndexPath) -> [UIDragItem] {
+        guard canReorder, let item = source.itemIdentifier(for: p) else { return [] }
+        let d = UIDragItem(itemProvider: NSItemProvider())
+        d.localObject = item
+        return [d]
+    }
+
+    func collectionView(_ cv: UICollectionView, dragSessionIsRestrictedToDraggingApplication session: UIDragSession) -> Bool { true }
+
+    func collectionView(_ cv: UICollectionView, dragSessionWillBegin session: UIDragSession) {
+        AsukaPressRecognizer.cancelAll() // the lifted row isn't pressed
+    }
+
+    func collectionView(_ cv: UICollectionView, canHandle session: UIDropSession) -> Bool {
+        session.localDragSession != nil && cv.hasActiveDrag
+    }
+
+    func collectionView(_ cv: UICollectionView, dropSessionDidUpdate session: UIDropSession, withDestinationIndexPath p: IndexPath?) -> UICollectionViewDropProposal {
+        guard cv.hasActiveDrag, canReorder else { return UICollectionViewDropProposal(operation: .forbidden) }
+        return UICollectionViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+    }
+
+    /// A row dropped in the list is the data source's to move (UIKit
+    /// doesn't call this for its reordering): nothing else drops here.
+    func collectionView(_ cv: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {}
+}
+#endif
+
 extension UICollectionView {
     /// Its items, in all its sections.
     var numberOfItemsTotal: Int {
@@ -665,6 +796,25 @@ extension UICollectionView {
         let page = horizontal ? ((t.x + i.left) / s.bounds.width).rounded() : ((t.y + i.top) / s.bounds.height).rounded()
         let id = self.id
         runtime?.emit(id, .paged) { AsukaEvents.paged(id, Int64(page)) }
+    }
+
+    // A zoomable Scroll's zoom (Scroll.swift).
+
+    func viewForZooming(in s: UIScrollView) -> UIView? {
+        guard let z = s as? AsukaScrollView, z.zooms else { return nil }
+        return z.zoomView
+    }
+
+    func scrollViewWillBeginZooming(_ s: UIScrollView, with view: UIView?) {
+        (s as? AsukaScrollView)?.zoomBegan()
+    }
+
+    func scrollViewDidZoom(_ s: UIScrollView) {
+        (s as? AsukaScrollView)?.zoomChanged(ended: false)
+    }
+
+    func scrollViewDidEndZooming(_ s: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+        (s as? AsukaScrollView)?.zoomChanged(ended: true)
     }
 }
 #endif

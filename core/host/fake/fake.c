@@ -461,6 +461,9 @@ static const char *const type_names[] = {"?", "bool", "int", "float", "string", 
 // list_update keeps ListUpdate's args: u32 count, the item IDs (i64
 // each), then, if there are any, u32 count and the sections (u32 start,
 // i64 ID each).
+static bool zoomable(const ak_fake_view *v);
+static float zoom_within(const ak_fake_view *v, float z);
+
 static void list_update(ak_fake *f, ak_fake_view *v, ak_span args) {
 	ak_reader r = {(const uint8_t *)args.p, args.len, 0, false};
 	v->items.len = v->sections.len = 0;
@@ -655,6 +658,16 @@ static void apply_op(ak_fake *f, const ak_op *op) {
 		case AK_CMD_CALL: call(f, op->id, op->value.s); return;
 		case AK_CMD_LOCATION: location(f, v, op->value.s); return;
 		case AK_CMD_LIST_UPDATE: list_update(f, v, op->value.s); break;
+		case AK_CMD_ZOOM_TO: {
+			ak_reader r = {(const uint8_t *)op->value.s.p, op->value.s.len, 0, false};
+			float z = ak_read_f32(&r);
+			ak_read_u8(&r);
+			if (r.err) { fail(f, "ZoomTo on %u: args cut short", v->id); return; }
+			if (!zoomable(v)) { fail(f, "ZoomTo on %u, which doesn't zoom", v->id); return; }
+			if (zoom_within(v, z) != z) { fail(f, "ZoomTo %g on %u, outside its MinZoom and MaxZoom", (double)z, v->id); return; }
+			v->zoom = z;
+			break;
+		}
 		case AK_CMD_PRESENT:
 			if (v->kind != AK_KIND_SHEET && v->kind != AK_KIND_POPOVER && v->kind != AK_KIND_ALERT && v->kind != AK_KIND_WINDOW && v->kind != AK_KIND_SNACKBAR &&
 			    v->kind != AK_KIND_OVERLAY)
@@ -1332,7 +1345,141 @@ static void emit_int(ak_fake *f, ak_fake_view *v, ak_event_kind k, int64_t i) {
 	if (listening(f, v, k)) ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = k, .i = i});
 }
 
-void ak_fake_tap(ak_fake *f, ak_fake_view *v) { emit(f, v, AK_EVENT_PRESS); }
+void ak_fake_tap_settle(ak_fake *f) {
+	ak_fake_view *v = f->tap_pending ? ak_fake_view_of(f, f->tap_pending) : NULL;
+	f->tap_pending = 0;
+	if (v && ak_fake_listens(v, AK_EVENT_PRESS)) ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_PRESS});
+}
+
+static void double_tapped(ak_fake *f, ak_fake_view *v);
+
+void ak_fake_tap(ak_fake *f, ak_fake_view *v) {
+	if (f->tap_pending && f->tap_pending != v->id) ak_fake_tap_settle(f);  // a tap elsewhere: the first one's press goes
+	if (ak_fake_listens(v, AK_EVENT_DOUBLE_TAP)) {
+		// Its press waits for a second tap, which would be a double tap.
+		if (f->tap_pending == v->id) {
+			f->tap_pending = 0;
+			double_tapped(f, v);
+		} else {
+			f->tap_pending = v->id;
+		}
+		return;
+	}
+	emit(f, v, AK_EVENT_PRESS);
+}
+
+static bool zoomable(const ak_fake_view *v) {
+	if (v->kind != AK_KIND_SCROLL || !ak_fake_prop_of(v, AK_PROP_SCROLL_MAX_ZOOM)) return false;
+	return ak_fake_float(v, AK_PROP_SCROLL_MAX_ZOOM) > (ak_fake_prop_of(v, AK_PROP_SCROLL_MIN_ZOOM) ? ak_fake_float(v, AK_PROP_SCROLL_MIN_ZOOM) : 1);
+}
+
+float ak_fake_zoom_of(const ak_fake_view *v) { return v->zoom > 0 ? v->zoom : 1; }
+
+static float zoom_bound(const ak_fake_view *v, float z, bool hi) {
+	ak_prop p = hi ? AK_PROP_SCROLL_MAX_ZOOM : AK_PROP_SCROLL_MIN_ZOOM;
+	float b = ak_fake_prop_of(v, p) ? (float)ak_fake_float(v, p) : 1;
+	return hi ? (z > b ? b : z) : (z < b ? b : z);
+}
+
+static float zoom_within(const ak_fake_view *v, float z) { return zoom_bound(v, zoom_bound(v, z, true), false); }
+
+void ak_fake_zoom(ak_fake *f, ak_fake_view *v, float scale) {
+	if (!zoomable(v)) {
+		fail(f, "view %u isn't a zoomable Scroll", v->id);
+		return;
+	}
+	// Past its bounds it bounces back: it settles within them.
+	v->zoom = zoom_within(v, scale);
+	if (listening(f, v, AK_EVENT_ZOOMED)) ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_ZOOMED, .f = v->zoom});
+}
+
+static void double_tapped(ak_fake *f, ak_fake_view *v) {
+	if (zoomable(v)) {
+		// In to twice its least zoom, or back out to it.
+		float min = zoom_within(v, 0), z = ak_fake_zoom_of(v);
+		ak_fake_zoom(f, v, z > min ? min : min * 2);
+		return;
+	}
+	if (listening(f, v, AK_EVENT_DOUBLE_TAP)) ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_DOUBLE_TAP, .x = v->frame[2] / 2, .y = v->frame[3] / 2});
+}
+
+void ak_fake_double_tap(ak_fake *f, ak_fake_view *v) {
+	if (f->tap_pending && f->tap_pending != v->id) ak_fake_tap_settle(f);
+	f->tap_pending = 0;
+	double_tapped(f, v);
+}
+
+void ak_fake_hover_move(ak_fake *f, ak_fake_view *v, float x, float y) {
+	if (listening(f, v, AK_EVENT_HOVER_MOVE)) ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_HOVER_MOVE, .x = x, .y = y});
+}
+
+static void pan_event(ak_fake *f, ak_fake_view *v, uint8_t state, float dx, float dy) {
+	ak_gesture g = {.state = state, .x = v->frame[2] / 2 + dx, .y = v->frame[3] / 2 + dy, .translation_x = dx, .translation_y = dy, .scale = 1};
+	ak_fake_dispatch(f, &(ak_event){.id = v->id, .kind = AK_EVENT_PAN, .g = g});
+}
+
+// scroll_by scrolls the scroll views around v (and v) that scroll along
+// the drag: their content moves with it.
+static void scroll_by(ak_fake *f, ak_fake_view *v, float dx, float dy) {
+	for (ak_fake_view *s = v; s; s = s->parent) {
+		if (s->kind != AK_KIND_SCROLL && s->kind != AK_KIND_LIST) continue;
+		bool h = s->kind == AK_KIND_SCROLL && ak_fake_bool(s, AK_PROP_SCROLL_HORIZONTAL);
+		float d = h ? dx : dy;
+		if (zoomable(s) && ak_fake_zoom_of(s) > 1) h = false, d = dy;  // zoomed in, it scrolls both ways
+		if (d == 0 && !(zoomable(s) && ak_fake_zoom_of(s) > 1)) continue;
+		if (zoomable(s) && ak_fake_zoom_of(s) > 1) {
+			s->offset[0] -= dx, s->offset[1] -= dy;
+		} else {
+			s->offset[h ? 0 : 1] -= d;
+		}
+		for (int i = 0; i < 2; i++)
+			if (s->offset[i] < 0) s->offset[i] = 0;
+		if (ak_fake_listens(s, AK_EVENT_SCROLLED)) ak_fake_dispatch(f, &(ak_event){.id = s->id, .kind = AK_EVENT_SCROLLED, .x = s->offset[0], .y = s->offset[1]});
+		return;
+	}
+}
+
+void ak_fake_drag(ak_fake *f, ak_fake_view *v, float dx, float dy) {
+	ak_fake_view *p = v;
+	while (p && !ak_fake_listens(p, AK_EVENT_PAN)) p = p->parent;
+	float adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+	bool pan = p != NULL;
+	if (pan) {
+		int64_t axis = ak_fake_int(p, AK_PROP_VIEW_PAN_AXIS);
+		double min = ak_fake_float(p, AK_PROP_VIEW_PAN_MIN_DISTANCE);
+		if (min <= 0) min = 10;  // a platform's touch slop
+		if (adx * adx + ady * ady < min * min) pan = false;
+		else if (axis == AK_PAN_AXIS_HORIZONTAL && ady > adx) pan = false;
+		else if (axis == AK_PAN_AXIS_VERTICAL && adx > ady) pan = false;
+	}
+	if (pan) {
+		pan_event(f, p, AK_GESTURE_STATE_BEGAN, 0, 0);
+		pan_event(f, p, AK_GESTURE_STATE_CHANGED, dx, dy);
+		if (ak_fake_bool(p, AK_PROP_VIEW_PAN_SIMULTANEOUS)) scroll_by(f, p->parent, dx, dy);
+		pan_event(f, p, AK_GESTURE_STATE_ENDED, dx, dy);
+		return;
+	}
+	scroll_by(f, v, dx, dy);
+}
+
+bool ak_fake_move_row(ak_fake *f, ak_fake_view *list, int64_t from, int64_t to) {
+	if (list->kind != AK_KIND_LIST || ak_fake_string(list, AK_PROP_LIST_REORDER).len == 0) {
+		fail(f, "view %u isn't a List whose rows move", list->id);
+		return false;
+	}
+	int64_t n = list->items.len;
+	if (from < 0 || to < 0 || from >= n || to >= n) {
+		fail(f, "a move from %lld to %lld in a list of %lld", (long long)from, (long long)to, (long long)n);
+		return false;
+	}
+	if (from == to) return true;  // dropped where it was: no move
+	int64_t *ids = list->items.data, id = ids[from];
+	if (from < to) memmove(ids + from, ids + from + 1, (size_t)(to - from) * sizeof(int64_t));
+	else memmove(ids + to + 1, ids + to, (size_t)(from - to) * sizeof(int64_t));
+	ids[to] = id;
+	if (listening(f, list, AK_EVENT_MOVED)) ak_fake_dispatch(f, &(ak_event){.id = list->id, .kind = AK_EVENT_MOVED, .x = (double)from, .y = (double)to});
+	return true;
+}
 void ak_fake_long_press(ak_fake *f, ak_fake_view *v) { emit(f, v, AK_EVENT_LONG_PRESS); }
 
 void ak_fake_type(ak_fake *f, ak_fake_view *v, const char *s) {

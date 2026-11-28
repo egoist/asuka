@@ -1,9 +1,20 @@
 // events.c: a view's input is GTK's event controllers on its widget, added
 // as the core listens: a click (Press, Pressed; a secondary click as
-// LongPress), a long press, a drag (Pan, and a quick one a Swipe), a
-// swipe, zoom and rotate gestures (touchscreens, touchpads; Ctrl and the
-// wheel pinch too), motion (Hover), keys (Enter and Space press a focused
-// pressable view, which Tab reaches).
+// LongPress; a double click DoubleTap), a long press, a drag (Pan, and a
+// quick one a Swipe), a swipe, zoom and rotate gestures (touchscreens,
+// touchpads; Ctrl and the wheel pinch too), motion (Hover, HoverMove),
+// keys (Enter and Space press a focused pressable view, which Tab
+// reaches).
+//
+// A view that listens for DoubleTap and Press both presses once a second
+// click can't come: its click's Press waits the desktop's double-click
+// time (gtk-double-click-time), and a double click sends DoubleTap, no
+// Press. Press alone presses at once.
+//
+// A pan begins past PanMinDistance (else 8 points); with PanAxis, a drag
+// that moves first along the other axis isn't one: the gesture is denied,
+// so what's around it (a scrolled window) has it. PanSimultaneous: the
+// pan never claims the drag, so a scrolled window around it can too.
 #include "host.h"
 
 #include <math.h>
@@ -15,7 +26,7 @@
 #define KEY_MENU 0xff67
 
 typedef struct {
-	bool active;
+	bool active, denied;
 	double x0, y0;  // where it began, in the view
 	double last_dx, last_dy, last_t;
 	double vx, vy;
@@ -24,7 +35,12 @@ typedef struct {
 struct events {
 	GtkGesture *click, *lng, *drag, *swipe, *zoom, *rotate, *secondary;
 	GtkEventController *motion, *key, *wheel;
-	bool pressed_on, hovered;
+	bool pressed_on, hovered, moves;
+	bool doubled;          // this click is a double's: no Press
+	guint press_timer;     // a Press waiting for a double click that may come
+	int32_t pan_axis;      // PanAxis
+	float pan_min;         // PanMinDistance (0: 8 points)
+	bool pan_simultaneous;  // PanSimultaneous
 	pan_state pan;
 	bool zoom_began, rot_began;
 	double rot_start;
@@ -52,6 +68,7 @@ void lx_release_events(node *n) {
 	for (size_t i = 0; i < AK_LEN(ctrls); i++)
 		if (ctrls[i]) g_signal_handlers_disconnect_matched(ctrls[i], G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, n);
 	if (e->wheel_timer) g_source_remove(e->wheel_timer);
+	if (e->press_timer) g_source_remove(e->press_timer);
 	free(e);
 	n->events = NULL;
 }
@@ -76,11 +93,39 @@ void lx_press(node *n) {
 	lx_emit(n, (ak_event){.kind = AK_EVENT_PRESS});
 }
 
+// waits is whether a click's Press waits for a double click that may
+// come: the view listens for both.
+static bool waits(node *n) { return listening(n, AK_EVENT_DOUBLE_TAP) && listening(n, AK_EVENT_PRESS) && !(n->has_menu && n->menu_trigger == AK_MENU_TRIGGER_TAP); }
+
+static gboolean press_now(gpointer data) {
+	node *n = node_get((ak_id)(uintptr_t)data);
+	if (!n || !n->events) return 0;
+	n->events->press_timer = 0;
+	lx_press(n);
+	return 0;
+}
+
+// double_click_ms is the desktop's double-click time.
+static guint double_click_ms(void) {
+	int ms = 400;
+	GtkSettings *s = gtk_settings_get_default();
+	if (s) g_object_get(s, "gtk-double-click-time", &ms, NULL);
+	return ms > 0 ? (guint)ms : 400;
+}
+
 static void on_pressed(GtkGestureClick *g, int count, double x, double y, node *n) {
 	(void)g;
-	(void)count;
+	events *e = ev_of(n);
+	// Each second click of a run is a double click's (GTK counts clicks
+	// within the double-click time and distance).
+	e->doubled = count >= 2 && count % 2 == 0 && listening(n, AK_EVENT_DOUBLE_TAP);
+	if (e->doubled) {
+		if (e->press_timer) g_source_remove(e->press_timer);  // the first click's Press: none
+		e->press_timer = 0;
+		lx_emit(n, (ak_event){.kind = AK_EVENT_DOUBLE_TAP, .x = x, .y = y});
+	}
 	lx_emit(n, (ak_event){.kind = AK_EVENT_PRESS_POINT, .x = x, .y = y});  // where, first
-	ev_of(n)->pressed_on = true;
+	e->pressed_on = true;
 	lx_emit(n, (ak_event){.kind = AK_EVENT_PRESSED, .b = true});
 }
 
@@ -93,6 +138,13 @@ static void on_released(GtkGestureClick *g, int count, double x, double y, node 
 	float w, h;
 	lx_size(n, n->widget, &w, &h);
 	if (x < 0 || y < 0 || x > w || y > h) return;  // released off the view
+	if (e->doubled) return;  // a double click: DoubleTap, no Press
+	if (waits(n)) {
+		// Pressed once no second click comes.
+		if (e->press_timer) g_source_remove(e->press_timer);
+		e->press_timer = g_timeout_add(double_click_ms(), press_now, (gpointer)(uintptr_t)n->id);
+		return;
+	}
 	if (count == 1 || listening(n, AK_EVENT_PRESS)) lx_press(n);
 }
 
@@ -228,12 +280,22 @@ static void on_drag_begin(GtkGestureDrag *g, double x, double y, node *n) {
 }
 
 static void on_drag_update(GtkGestureDrag *g, double dx, double dy, node *n) {
-	pan_state *p = &ev_of(n)->pan;
+	events *e = ev_of(n);
+	pan_state *p = &e->pan;
 	double now = lx_now();
+	if (p->denied) return;
 	if (!p->active) {
-		if (hypot(dx, dy) < 8 || lx_draggable(n)) return;  // a click, so far; a drag and drop comes before a pan
+		float slop = e->pan_min > 0 ? e->pan_min : 8;
+		if (hypot(dx, dy) < slop || lx_draggable(n)) return;  // a click, so far; a drag and drop comes before a pan
+		// Along the other axis first: not a pan, but what's around it's.
+		bool across = (e->pan_axis == AK_PAN_AXIS_HORIZONTAL && fabs(dy) > fabs(dx)) || (e->pan_axis == AK_PAN_AXIS_VERTICAL && fabs(dx) > fabs(dy));
+		if (across) {
+			p->denied = true;
+			gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_DENIED);
+			return;
+		}
 		p->active = true;
-		gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_CLAIMED);
+		if (!e->pan_simultaneous) gtk_gesture_set_state((GtkGesture *)g, GTK_EVENT_SEQUENCE_CLAIMED);
 		end_press(n);
 		emit_pan(n, AK_GESTURE_STATE_BEGAN, dx, dy);
 	}
@@ -252,6 +314,7 @@ static void on_drag_update(GtkGestureDrag *g, double dx, double dy, node *n) {
 static void on_drag_end(GtkGestureDrag *g, double dx, double dy, node *n) {
 	(void)g;
 	pan_state *p = &ev_of(n)->pan;
+	p->denied = false;
 	if (!p->active) return;
 	p->active = false;
 	if (lx_now() - p->last_t > 0.08) p->vx = p->vy = 0;  // it rested before letting go
@@ -263,6 +326,7 @@ static void on_drag_cancel(GtkGesture *g, gpointer seq, node *n) {
 	(void)g;
 	(void)seq;
 	pan_state *p = &ev_of(n)->pan;
+	p->denied = false;
 	if (p->active) {
 		p->active = false;
 		emit_pan(n, AK_GESTURE_STATE_CANCELLED, p->last_dx, p->last_dy);
@@ -319,14 +383,46 @@ static void on_leave(GtkEventControllerMotion *m, node *n) {
 	set_hover(n, false);
 }
 
-static void listen_hover(node *n) {
+// on_motion sends HoverMove while the pointer is over the view (the
+// event's bytes the host's own, reused: nothing allocated).
+static void on_motion(GtkEventControllerMotion *m, double x, double y, node *n) {
+	(void)m;
 	events *e = ev_of(n);
-	if (e->motion) return;
-	GtkEventController *m = gtk_event_controller_motion_new();
-	e->motion = m;
-	lx_connect(n, m, "enter", G_CALLBACK(on_enter));
-	lx_connect(n, m, "leave", G_CALLBACK(on_leave));
-	gtk_widget_add_controller(n->widget, m);
+	if (!e->hovered) set_hover(n, true);
+	lx_emit(n, (ak_event){.kind = AK_EVENT_HOVER_MOVE, .x = x, .y = y});
+}
+
+static void listen_hover(node *n, bool moves) {
+	events *e = ev_of(n);
+	if (!e->motion) {
+		GtkEventController *m = gtk_event_controller_motion_new();
+		e->motion = m;
+		lx_connect(n, m, "enter", G_CALLBACK(on_enter));
+		lx_connect(n, m, "leave", G_CALLBACK(on_leave));
+		gtk_widget_add_controller(n->widget, m);
+	}
+	if (moves && !e->moves) {
+		// Motion's signal only while HoverMove is listened for: it's many.
+		e->moves = true;
+		lx_connect(n, e->motion, "motion", G_CALLBACK(on_motion));
+	}
+}
+
+// lx_set_pan_prop takes a view's PanAxis, PanMinDistance and
+// PanSimultaneous.
+void lx_set_pan_prop(node *n, ak_prop p, const ak_value *v) {
+	events *e = ev_of(n);
+	switch (p) {
+	case AK_PROP_VIEW_PAN_AXIS:
+		e->pan_axis = (int32_t)v->i;
+		break;
+	case AK_PROP_VIEW_PAN_MIN_DISTANCE:
+		e->pan_min = (float)v->f;
+		break;
+	case AK_PROP_VIEW_PAN_SIMULTANEOUS:
+		e->pan_simultaneous = v->i != 0;
+		break;
+	}
 }
 
 static void emit_two_finger(node *n, ak_event_kind kind, int state, float scale, float rotation) {
@@ -460,6 +556,7 @@ void lx_listen(node *n, ak_event_kind e) {
 		if (e == AK_EVENT_PRESS) lx_make_pressable(n);
 		return;
 	case AK_EVENT_PRESS_POINT:
+	case AK_EVENT_DOUBLE_TAP:
 		if (n->kind != AK_KIND_BUTTON) lx_listen_click(n);
 		return;
 	case AK_EVENT_KEY_TEXT:
@@ -474,7 +571,8 @@ void lx_listen(node *n, ak_event_kind e) {
 		if (e == AK_EVENT_SWIPE) listen_swipe(n);
 		return;
 	case AK_EVENT_HOVER:
-		listen_hover(n);
+	case AK_EVENT_HOVER_MOVE:
+		listen_hover(n, e == AK_EVENT_HOVER_MOVE);
 		return;
 	case AK_EVENT_PINCH:
 		listen_zoom(n);

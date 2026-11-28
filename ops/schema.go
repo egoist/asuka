@@ -148,6 +148,9 @@ var Schema = SchemaDef{
 			{Name: "DropAccept", Type: TBytes, Doc: "the view takes drops: u32 count, then u32-length MIME type patterns (text/plain, image/*, */*; an app's own types, for its drags within the app), case-insensitive. A drag with an item whose type matches one is reported with DragOver while it's over the view, and dropping it with Drop. Empty: no drops"},
 			{Name: "DragItems", Type: TBytes, Doc: "the view can be dragged (a long press, then a move, on touch screens; a move with the button down, past the system's drag distance, with a mouse), carrying these items: u32 count, per item u8 ShareKind, string text (a text, a link's URL), string path (a file), string name, string MIME type, u8 flags (1: it carries an app's value, which only the app's own drops get; other apps get its text, link or file, if it has one). Empty: not draggable. Dragging reports Dragging"},
 			{Name: "TakesClicks", Type: TBool, Doc: "in a click-through window (WindowFlags' click-through, WindowAction ClickThrough), the mouse over the view still goes to it, not to what's behind: the host hit-tests these views as the mouse moves (macOS, Windows) or makes them the window's input region (Linux), or gives them pointer events (the web); phones ignore it"},
+			{Name: "PanAxis", Type: TEnum, Enum: "PanAxis", Doc: "the view's Pan recognizes a drag along this axis only (Both: any): one that moves first along the other axis isn't a pan, and goes to what's around it (a scroll view)"},
+			{Name: "PanMinDistance", Type: TFloat, Doc: "points a touch or the pointer moves before the view's Pan begins (0: the platform's touch slop)"},
+			{Name: "PanSimultaneous", Type: TBool, Doc: "the view's Pan and the scroll views around it both follow the same drag (UIKit's shouldRecognizeSimultaneouslyWith; Android leaves its parents' interception on): without it, once a pan begins it has the touch"},
 		}, Doc: "a plain container"},
 		{Name: "Text", Props: []PropDef{
 			{Name: "Text", Type: TString},
@@ -188,6 +191,8 @@ var Schema = SchemaDef{
 			{Name: "Refreshing", Type: TBool},
 			{Name: "Paging", Type: TBool, Doc: "it stops only at multiples of its own size along its axis, a page each (iOS's isPagingEnabled; Android snaps each swipe to the next page, or back), and hides its scroll bars; a swipe that settles on a page sends Paged"},
 			{Name: "EdgeEffect", Type: TEnum, Enum: "EdgeEffect", Doc: "how its content is set off from a bar it scrolls under: iOS 26's topEdgeEffect style; on macOS 26, the style of its column's (a split view's item's) scroll edge effect under the toolbar. Elsewhere nothing"},
+			{Name: "MinZoom", Type: TFloat, Doc: "the smallest scale its content zooms to (unset: 1). Its content zooms when MaxZoom is more than MinZoom: a pinch (a trackpad's; ctrl, or ⌘ on a Mac, and the wheel), and a double tap, which zooms in to twice MinZoom (MaxZoom at most) around where it fell, or back out to MinZoom when it's zoomed in. Zoomed in, it scrolls both ways. Its zoom starts at 1 (within the two); Zoomed reports the user's, ZoomTo sets it"},
+			{Name: "MaxZoom", Type: TFloat, Doc: "the largest scale its content zooms to (unset: 1)"},
 		}, Doc: "its single child is the content; the content's frame is the content size"},
 		{Name: "List", Props: []PropDef{
 			{Name: "Refreshable", Type: TBool},
@@ -199,6 +204,7 @@ var Schema = SchemaDef{
 			{Name: "Inset", Type: TFloat, Doc: "an inset grouped list's rows' inset from each side, in points (the core's, from the platform's margins)"},
 			{Name: "Anchor", Type: TEnum, Enum: "ScrollAnchor", Doc: "where the list rests. Bottom (a chat's messages): it opens at its end, rows that don't fill it sit at its bottom, and while it's scrolled to its end it stays there, as rows are added at the end, as rows change height, and as the list gets shorter (the keyboard). Either way, rows added or removed before the ones on screen keep those where they are, unless the list is at its start (Top) or end (Bottom)"},
 			{Name: "Selecting", Type: TBool, Doc: "the list is selecting rows: each shows the platform's selection control (iOS's edit mode circles; a Material checkbox at the row's end on Android; a highlight on desktop), a tap selects or deselects the row instead of pressing it (RowSelected), and rows don't swipe. A host whose control takes room from the rows reports it with RowInset"},
+			{Name: "Reorder", Type: TBytes, Doc: "the user can move its rows (empty: not): u32 count (2), then u32-length names: the screen readers' action that moves a row up one place, then the one that moves it down, in the app's language. iOS: a long press lifts a row, which the others make way for (UICollectionView's interactive movement); Android: ItemTouchHelper's long press drag; macOS, Windows, Linux, the web: a drag of the row with the pointer (a long press on a touch screen) lifts it. Dragged near the list's edge, it scrolls. Each row offers the two actions to screen readers (custom actions). A move reports Moved"},
 		}, Doc: "rows live in host-made cells, bound through ListBind; with sections (ListUpdate), each section's header lives in a cell too, bound with ListBind's index -1 - the section's. A plain or bare list's headers stick to its top while their rows scroll under them (UITableView's plain style); an inset grouped list's scroll with them"},
 		{Name: "Activity", Props: []PropDef{
 			{Name: "Animating", Type: TBool},
@@ -452,6 +458,10 @@ var Schema = SchemaDef{
 		{Name: "DevErrorAction", Payload: PInt, Doc: "the user pressed a button of the overlay DevError shows: a DevErrorAction (Dismiss, Reload); to the root. The overlay stays until DevErrorClear"},
 		{Name: "VideoState", Payload: PBytes, Doc: "a Video's playback changed (ops.AppendVideoState): u8 VideoStateFlags bits (1 ready: its source loaded and can play; 2 playing: it plays, or would but for buffering; 4 buffering; 8 ended; 16 in picture in picture; 32 full screen), f64 the time (seconds from the start), f64 the duration (seconds; NaN: not known yet, +Inf: a live stream), f32 the rate chosen (1 normal; kept while paused: AVPlayer's defaultRate), f32 width, height (the natural size, 0 while not known or for sound alone). Sent as any of it changes but the time, which goes with the rest, after a seek, and with TimeInterval every so often while it plays"},
 		{Name: "VideoTracks", Payload: PBytes, Doc: "a Video's subtitle and audio tracks (ops.AppendVideoTracks), as they're known and as they or the choice of them change: u32 count, then per track u8 kind (0 subtitle, 1 audio), u8 1 if it's the one chosen, u32-length id (the platform's, stable while the source is), u32-length label (as the platform's menu shows it), u32-length language (BCP 47; empty: not known)"},
+		{Name: "DoubleTap", Payload: PPoint, Doc: "two taps (or clicks) in quick succession on the view, within the system's double-tap time and distance: where the second fell, in points from its top left. With Press listened for too, a tap's Press waits until a second tap can't come (UIKit's require(toFail:), Android's onSingleTapConfirmed, the system's double-click time on desktops), and a double tap sends no Press"},
+		{Name: "HoverMove", Payload: PPoint, Doc: "a pointer moved over the view or its children: where it is, in points from the view's top left; it comes after Hover (true), and none after Hover (false)"},
+		{Name: "Zoomed", Payload: PFloat, Doc: "a zoomable Scroll's zoom scale as the user changes it (a pinch, a double tap; ctrl or ⌘ and the wheel), as it goes, and where it settles (back within MinZoom and MaxZoom). ZoomTo's zoom isn't reported"},
+		{Name: "Moved", Payload: PPoint, Doc: "the user moved a row of a List with Reorder (a drag dropped, or a screen reader's move action): X its item's index before, Y the index it's at now (among all the items, as ListUpdate's IDs). The host has moved it already, and keeps its IDs in the new order: a ListUpdate in that order changes nothing; the core sends one in the old order when the app doesn't take the move"},
 	},
 	Commands: []CommandDef{
 		{Name: "Focus"},
@@ -498,6 +508,7 @@ var Schema = SchemaDef{
 		{Name: "DevPerf", Doc: "args: the overlay's text, UTF-8 (lines separated by \\n; empty: none); sent to the root, only under asuka dev, while its performance overlay is on, as its numbers change (twice a second): the host shows the text in a small box of its own views over the top end corner of the main window's safe area (monospaced, light on a translucent dark background, in front of everything, its screens, sheets and alerts, not taking any touch or click, not read by a screen reader), replacing what it showed; empty, it removes the box"},
 		{Name: "DevFontScale", Doc: "args: f32 the text size, as a multiple of the default (0: the user's again); sent to the root, only under asuka dev, as it shows a preview whose fontScale says one, and with 0 as it stops: the host shows the app's text as if the user's text size were it (iOS: the windows' preferred content size category nearest it; Android: the configuration's font scale; macOS, Windows, Linux and the web: their fonts scaled by it), and reports it as the Environment's FontScale, so the core measures the text again"},
 		{Name: "VideoAction", Doc: "args: u8 VideoAction; sent to a Video: it goes into picture in picture (with PictureInPicture) or out, full screen (the platform's player's) or out; reported with VideoState"},
+		{Name: "ZoomTo", Doc: "args: f32 scale (within MinZoom and MaxZoom: the core clamps it), u8 animated; sent to a zoomable Scroll as the flush ends (as ScrollToOffset): it zooms its content to the scale around the middle of what it shows. Not reported with Zoomed"},
 	},
 	Enums: []EnumDef{
 		{Name: "Role", Values: []string{"None", "Button", "Header", "Image", "Link", "Text", "Search", "Checkbox", "Radio", "RadioGroup", "Switch", "Tab", "TabList", "TabPanel", "Slider", "SpinButton", "ProgressBar", "Meter", "Menu", "MenuBar", "MenuItem", "MenuItemCheckbox", "MenuItemRadio", "Listbox", "Option", "ComboBox", "Dialog", "AlertDialog", "Tooltip", "Group", "Separator", "Toolbar", "Status"}},
@@ -545,5 +556,6 @@ var Schema = SchemaDef{
 		{Name: "LocationAction", Values: []string{"Replace", "Push", "Back", "Forward"}},
 		{Name: "DevErrorAction", Values: []string{"Dismiss", "Reload"}},
 		{Name: "VideoAction", Values: []string{"EnterPictureInPicture", "ExitPictureInPicture", "EnterFullScreen", "ExitFullScreen"}},
+		{Name: "PanAxis", Values: []string{"Both", "Horizontal", "Vertical"}},
 	},
 }

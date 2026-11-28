@@ -62,6 +62,7 @@ import AsukaOps
             }
         case .list:
             if prop == AsukaProp.List.appearance { n.mode = v.enumValue }
+            if prop == AsukaProp.List.reorder, case .bytes(let b) = v { n.list?.setReorder(b) }
         case .scroll:
             if prop == AsukaProp.Scroll.horizontal { n.horizontal = v.bool }
         case .screen:

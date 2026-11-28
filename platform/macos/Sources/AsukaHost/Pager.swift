@@ -153,6 +153,7 @@ final class AsukaPageDotsView: NSView {
         var j: [String: Any] = ["clip": asukaRect(sv.contentView.bounds), "horizontal": n.horizontal,
                                 "hasVerticalScroller": sv.hasVerticalScroller, "hasHorizontalScroller": sv.hasHorizontalScroller]
         if let doc = sv.documentView { j["doc"] = asukaRect(doc.frame) }
+        zoomJSON(n, &j)
         if let s = sv.verticalScroller {
             sv.tile()
             j["verticalScroller"] = asukaRect(s.frame)

@@ -111,14 +111,14 @@ export const Prop = Object.freeze({
 
 /** Each kind's own props, from 64. */
 export const KindProp = Object.freeze({
-  View: Object.freeze({ DropAccept: 64, DragItems: 65, TakesClicks: 66 }),
+  View: Object.freeze({ DropAccept: 64, DragItems: 65, TakesClicks: 66, PanAxis: 67, PanMinDistance: 68, PanSimultaneous: 69 }),
   Text: Object.freeze({ Text: 64 }),
   Button: Object.freeze({ Title: 64, Variant: 65, Icon: 66 }),
   TextField: Object.freeze({ Value: 64, Placeholder: 65, Keyboard: 66, ReturnKey: 67, Secure: 68, Autocapitalize: 69, Autocorrect: 70, ContentType: 71, Multiline: 72, Plain: 73, Selection: 74, Rich: 75, PasteTypes: 76, Accessory: 77 }),
   Toggle: Object.freeze({ On: 64, Checkbox: 65 }),
   Slider: Object.freeze({ Value: 64, Min: 65, Max: 66 }),
-  Scroll: Object.freeze({ Horizontal: 64, Refreshable: 65, Refreshing: 66, Paging: 67, EdgeEffect: 68 }),
-  List: Object.freeze({ Refreshable: 64, Refreshing: 65, EdgeEffect: 66, Columns: 67, Gap: 68, Appearance: 69, Inset: 70, Anchor: 71, Selecting: 72 }),
+  Scroll: Object.freeze({ Horizontal: 64, Refreshable: 65, Refreshing: 66, Paging: 67, EdgeEffect: 68, MinZoom: 69, MaxZoom: 70 }),
+  List: Object.freeze({ Refreshable: 64, Refreshing: 65, EdgeEffect: 66, Columns: 67, Gap: 68, Appearance: 69, Inset: 70, Anchor: 71, Selecting: 72, Reorder: 73 }),
   Activity: Object.freeze({ Animating: 64 }),
   Stack: Object.freeze({ Routed: 64 }),
   Screen: Object.freeze({ Title: 64, Actions: 65, BackGesture: 66, Icon: 67, Search: 68, SearchText: 69, SearchButton: 70, ZoomFrom: 71, LargeTitle: 72, BarColor: 73, Toolbar: 74, Primary: 75, PrimaryExtended: 76, Badge: 77 }),
@@ -221,6 +221,10 @@ export const Event = Object.freeze({
   DevErrorAction: 66,
   VideoState: 67,
   VideoTracks: 68,
+  DoubleTap: 69,
+  HoverMove: 70,
+  Zoomed: 71,
+  Moved: 72,
 });
 
 /** Commands the core sends. */
@@ -269,6 +273,7 @@ export const Command = Object.freeze({
   DevPerf: 42,
   DevFontScale: 43,
   VideoAction: 44,
+  ZoomTo: 45,
 });
 
 export const Role = Object.freeze({ None: 0, Button: 1, Header: 2, Image: 3, Link: 4, Text: 5, Search: 6, Checkbox: 7, Radio: 8, RadioGroup: 9, Switch: 10, Tab: 11, TabList: 12, TabPanel: 13, Slider: 14, SpinButton: 15, ProgressBar: 16, Meter: 17, Menu: 18, MenuBar: 19, MenuItem: 20, MenuItemCheckbox: 21, MenuItemRadio: 22, Listbox: 23, Option: 24, ComboBox: 25, Dialog: 26, AlertDialog: 27, Tooltip: 28, Group: 29, Separator: 30, Toolbar: 31, Status: 32 });
@@ -316,6 +321,7 @@ export const SnackbarDuration = Object.freeze({ Short: 0, Long: 1, Indefinite: 2
 export const LocationAction = Object.freeze({ Replace: 0, Push: 1, Back: 2, Forward: 3 });
 export const DevErrorAction = Object.freeze({ Dismiss: 0, Reload: 1 });
 export const VideoAction = Object.freeze({ EnterPictureInPicture: 0, ExitPictureInPicture: 1, EnterFullScreen: 2, ExitFullScreen: 3 });
+export const PanAxis = Object.freeze({ Both: 0, Horizontal: 1, Vertical: 2 });
 
 const utf8 = new TextDecoder();
 const utf8Out = new TextEncoder();
@@ -519,4 +525,8 @@ export const Events = Object.freeze({
   devErrorAction: (id, v) => new Writer().header(id, 66).i64(v).done(),
   videoState: (id, v) => new Writer().header(id, 67).bytes(v).done(),
   videoTracks: (id, v) => new Writer().header(id, 68).bytes(v).done(),
+  doubleTap: (id, x, y) => new Writer().header(id, 69).f64(x).f64(y).done(),
+  hoverMove: (id, x, y) => new Writer().header(id, 70).f64(x).f64(y).done(),
+  zoomed: (id, v) => new Writer().header(id, 71).f64(v).done(),
+  moved: (id, x, y) => new Writer().header(id, 72).f64(x).f64(y).done(),
 });

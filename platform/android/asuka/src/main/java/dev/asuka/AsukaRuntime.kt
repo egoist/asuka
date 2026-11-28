@@ -447,10 +447,12 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
         val h = sv.height
         if (w == 0 || h == 0) return
         val all = (app.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager).isTouchExplorationEnabled
-        val l = sv.scrollX - w
-        val t = sv.scrollY - h
-        val r = sv.scrollX + 2 * w
-        val b = sv.scrollY + 2 * h
+        // A zoomed content's: what it shows, in the content's own (unscaled) pixels.
+        val z = (sv as? AsukaZoomScroll)?.zoom ?: 1f
+        val l = ((sv.scrollX - w) / z).toInt()
+        val t = ((sv.scrollY - h) / z).toInt()
+        val r = ((sv.scrollX + 2 * w) / z).toInt()
+        val b = ((sv.scrollY + 2 * h) / z).toInt()
         var before = 0 // rows there before this one
         for (row in content.children) {
             val v = row.outer
@@ -459,6 +461,17 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             else if (!near && v.parent === c) c.takeOut(v)
             if (v.parent === c) before++
         }
+    }
+
+    /** A simultaneous pan whose touch a scroll view around it took: it follows the rest of the touch from the activity's window. */
+    var touchSpy: AsukaGestures? = null
+        private set
+
+    /** Spies the activity's touches for g (null: no more); false if there's no activity to spy on. */
+    fun spyTouches(g: AsukaGestures?): Boolean {
+        if (g != null && activity == null) return false
+        touchSpy = g
+        return true
     }
 
     fun emit(id: Int, event: Int, make: () -> ByteArray) {
@@ -842,11 +855,33 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
      * two views (HorizontalScrollView, NestedScrollView), so the view is
      * replaced, its content moved to the new one.
      */
-    fun setHorizontal(n: AsukaNode, horizontal: Boolean) {
+    fun setHorizontal(n: AsukaNode, horizontal: Boolean) = remakeScroll(n)
+
+    /** MinZoom, MaxZoom: a Scroll whose content zooms (MaxZoom over MinZoom) is a zoomable one (Zoom.kt), else a scroll view again. */
+    fun setZoomable(n: AsukaNode) {
+        remakeScroll(n)
+        (n.view as? AsukaZoomScroll)?.setRange(((n.props[AsukaProp.Scroll.MIN_ZOOM] as? Double) ?: 1.0).toFloat(),
+            ((n.props[AsukaProp.Scroll.MAX_ZOOM] as? Double) ?: 1.0).toFloat())
+    }
+
+    /**
+     * Makes a Scroll's view the one its props ask for: a zoomable one, a
+     * horizontal one or a vertical one (Android's are three views), its
+     * content moved to the new one.
+     */
+    private fun remakeScroll(n: AsukaNode) {
         val old = n.view as? android.widget.FrameLayout ?: return
-        if ((old is HorizontalScrollView) == horizontal) return
-        val v: android.widget.FrameLayout = if (horizontal) AsukaHorizontalScroll(themed).apply { isFillViewport = false }
-            else NestedScrollView(themed).apply { isFillViewport = false }
+        val horizontal = n.props[AsukaProp.Scroll.HORIZONTAL] == true
+        val lo = (n.props[AsukaProp.Scroll.MIN_ZOOM] as? Double) ?: 1.0
+        val hi = (n.props[AsukaProp.Scroll.MAX_ZOOM] as? Double) ?: 1.0
+        val zoomable = hi > lo
+        if (zoomable) { if (old is AsukaZoomScroll) return }
+        else if (old !is AsukaZoomScroll && (old is HorizontalScrollView) == horizontal) return
+        val v: android.widget.FrameLayout = when {
+            zoomable -> AsukaZoomScroll(this, n.id)
+            horizontal -> AsukaHorizontalScroll(themed).apply { isFillViewport = false }
+            else -> NestedScrollView(themed).apply { isFillViewport = false }
+        }
         v.layoutDirection = directionOf(n)
         carryViewProps(n, old, v)
         clipsToFrame(v)
@@ -855,6 +890,10 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             val c = old.getChildAt(0)
             val lp = c.layoutParams
             old.removeViewAt(0)
+            if (old is AsukaZoomScroll) { // drawn at its size again
+                c.scaleX = 1f; c.scaleY = 1f
+                c.translationX = 0f; c.translationY = 0f
+            }
             v.addView(c, lp)
         }
         val parent = old.parent as? ViewGroup
@@ -1011,6 +1050,10 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             wirePresses(n)
             return
         }
+        if (n.kind == AsukaKind.LIST && prop == AsukaProp.List.REORDER) {
+            n.list?.setReorder(v)
+            return
+        }
         if (n.kind == AsukaKind.VIEW && prop == AsukaProp.View.DROP_ACCEPT) {
             setDropAccept(n, v)
             return
@@ -1158,7 +1201,8 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     override fun listen(id: Int, event: Int) {
         val n = nodes[id] ?: return
         n.setListening(event, true)
-        if (event == AsukaEventKind.PRESS || event == AsukaEventKind.LONG_PRESS || event == AsukaEventKind.PRESSED || event == AsukaEventKind.HOVER) wirePresses(n)
+        if (event == AsukaEventKind.PRESS || event == AsukaEventKind.LONG_PRESS || event == AsukaEventKind.PRESSED || event == AsukaEventKind.HOVER ||
+            event == AsukaEventKind.DOUBLE_TAP || event == AsukaEventKind.HOVER_MOVE) wirePresses(n)
         if (n.kind == AsukaKind.VIEW && (event == AsukaEventKind.PAN || event == AsukaEventKind.PINCH || event == AsukaEventKind.SWIPE || event == AsukaEventKind.ROTATE)) listenGesture(n, event)
         if (event == AsukaEventKind.PRESS_POINT) wirePressPoint(n)
         if (event == AsukaEventKind.ANCHOR_FRAME) (n.view as? AsukaOverlay)?.let { o -> o.post { reportAnchor(n) } }
@@ -1167,7 +1211,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
     override fun unlisten(id: Int, event: Int) {
         val n = nodes[id] ?: return
         n.setListening(event, false)
-        if (event == AsukaEventKind.PRESSED || event == AsukaEventKind.HOVER) wirePresses(n)
+        if (event == AsukaEventKind.PRESSED || event == AsukaEventKind.HOVER || event == AsukaEventKind.DOUBLE_TAP || event == AsukaEventKind.HOVER_MOVE) wirePresses(n)
         if (event == AsukaEventKind.PRESS_POINT) wirePressPoint(n)
     }
 
@@ -1285,6 +1329,7 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
                 when (val v = n.view) {
                     is NestedScrollView -> if (animated) v.smoothScrollTo(x, y) else v.scrollTo(x, y)
                     is HorizontalScrollView -> if (animated) v.smoothScrollTo(x, y) else v.scrollTo(x, y)
+                    is AsukaZoomScroll -> v.scrollToOffset(x, y, animated)
                     else -> n.list?.let { l ->
                         val v = l.recycler
                         l.applyPending()
@@ -1295,6 +1340,10 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
                         l.scrolledTo()
                     }
                 }
+            }
+            AsukaCommand.ZOOM_TO -> if (args.remaining() >= 5) {
+                val scale = args.float
+                (n.view as? AsukaZoomScroll)?.zoomTo(scale, args.get().toInt() != 0)
             }
             AsukaCommand.OPEN_URL -> {
                 val b = ByteArray(args.remaining())

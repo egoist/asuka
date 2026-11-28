@@ -277,6 +277,9 @@ static uint32_t golden_events(ak_event *evs) {
 	evs[n++] = (ak_event){.id = 11, .kind = AK_EVENT_PAN, .g = {.state = AK_GESTURE_STATE_CHANGED, .x = 10, .y = 20,
 		.translation_x = 5, .translation_y = -3, .velocity_x = 100, .velocity_y = -50, .scale = 1, .rotation = 0.5f}};
 	evs[n++] = (ak_event){.id = 12, .kind = AK_EVENT_NATIVE, .s = AK_STR("\x01\x02\x03")};
+	evs[n++] = (ak_event){.id = 13, .kind = AK_EVENT_DOUBLE_TAP, .x = 4, .y = 5.5};
+	evs[n++] = (ak_event){.id = 14, .kind = AK_EVENT_ZOOMED, .f = 2.5};
+	evs[n++] = (ak_event){.id = 15, .kind = AK_EVENT_MOVED, .x = 1, .y = 3};
 	return n;
 }
 

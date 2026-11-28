@@ -16,10 +16,12 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 覆盖层、绝对定位 | `ZStack`、`.overlay` | `position: absolute` | ✓ `absolute`，配合 `top`、`left`、`start`、`end`…… |
 | 视图网格 | `Grid`、`LazyVGrid` | 社区方案 | ✓ `grid`（CSS grid：`Grid(columns:)`、`.fr`、`.repeat`、`.autoFill`；`gridColumn`、`gridRow`） |
 | 滚动 | `ScrollView` | `ScrollView` | ✓ `Scroll`（纵向，或用 `horizontal` 横向） |
+| 双指缩放滚动视图 | `UIScrollView` 的 `zoomScale`（SwiftUI：自己写 `MagnifyGesture`） | `ScrollView` 的 `maximumZoomScale`（仅 iOS）；社区方案 | ✓ `Scroll` 的 `minZoom`、`maxZoom`、`bind zoom`，`Ref` 的 `zoomTo`；双击放大或缩回（Android 上是 Asuka 自己的可缩放容器；桌面端和网页上用 ⌘ 或 Ctrl 加滚轮） |
 | 惰性列表、单元格复用 | `List`、`LazyVStack` | `FlatList` | ✓ `List`（用平台自己的：`UICollectionView`、`RecyclerView`；在 Mac、Windows、Linux 和 Web 上，由 Asuka 在平台的滚动视图里复用可见范围内的行） |
 | 惰性网格 | `LazyVGrid` | `FlatList numColumns` | ✓ `List` 的 `columns`、`gap` |
 | 聊天列表：从末尾开始显示，往上加载更早的消息 | `defaultScrollAnchor(.bottom)`、`scrollPosition` | `FlatList inverted`、`maintainVisibleContentPosition` | ✓ `List` 的 `anchor: .bottom`、`on startReached`；在可见内容上方插入行时，可见内容保持不动，所有列表都是如此 |
 | 分区、吸顶标题 | `List` 里的 `Section` | `SectionList`、`stickySectionHeadersEnabled` | ✓ `List` 的 `section` 和 `header`（在 plain 和 bare 列表里吸顶） |
+| 移动行 | `.onMove` | 社区方案（`react-native-draggable-flatlist`） | ✓ `List` 的 `on move(from, to)`、`reorderable`（iOS 和 Android 上长按拿起一行，桌面端和网页上直接拖；拖到边缘会滚动；读屏软件提供“上移”“下移”；行保留自己的视图） |
 | 选择行 | `List(selection:)`、`EditButton` | 社区方案 | ✓ `List` 的 `selecting`，行的 `selected`、`on select`、`on selectBegin`（iOS 的编辑模式和双指拖动；Android 的复选框和长按；桌面端高亮选中行，浏览器里显示勾选标记） |
 | 安全区域、键盘 | 自动处理 | `SafeAreaView`、`KeyboardAvoidingView` | ✓ `SafeArea`（也会为键盘留出空间）、`environment()` 的 `safeTop`……和 `keyboard` |
 | 读取视图尺寸、窗口尺寸 | `GeometryReader`、尺寸类别 | `onLayout`、`useWindowDimensions` | ✓ `on layout(frame)`；`environment()` 的 `width`、`height`、`widthClass`、`heightClass` |
@@ -87,9 +89,9 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 逐帧动画 | `TimelineView(.animation)` | `useFrameCallback` | ✓ `frames()`、`onFrame` |
 | 阴影、渐变、模糊 | `.shadow`、`LinearGradient`、`RadialGradient`、`AngularGradient`、材质 | style、expo-linear-gradient、expo-blur | ✓ `shadow`、`gradient`（`.linear`、`.radial`、`.conic`）、`material` |
 | 圆角与边框 | `UnevenRoundedRectangle`、带 `StrokeStyle` 虚线的 `.strokeBorder` | `borderTopLeftRadius`……、`borderBottomWidth`……、`borderStyle` | ✓ `radius`（`[tl, tr, br, bl]`、`Corners(topStart:...)`）、`border`（`Edges(bottom: 1)`）、`borderStyle`（`.dashed`、`.dotted`） |
-| 手势 | 点按、长按、拖动、缩放、旋转 | Gesture Handler | ✓ `on press`、`on longPress`、`on pan`、`on pinch`、`on rotate`、`on swipe` |
+| 手势 | 点按、双击（`count: 2`）、长按、拖动、缩放、旋转；`simultaneousGesture` | Gesture Handler（`numberOfTaps`、`activeOffsetX`、`minDistance`、`simultaneousWithExternalGesture`） | ✓ `on press`、`on doubleTap`（单击会等它）、`on longPress`、`on pan`、`on pinch`、`on rotate`、`on swipe`；`panAxis`、`panMinDistance`、`panWithScroll` |
 | 硬件键盘的按键 | `.onKeyPress`、`.keyboardShortcut` | `onKeyPress`（`TextInput` 的；React Native for Windows and macOS 上是 `onKeyDown`） | ✓ `keys`（从获得焦点的视图开始往外找，优先于控件和菜单）、`useKeys`、`WindowKeys`（整个窗口的） |
-| 按下和悬停状态 | `ButtonStyle` 的 `isPressed`、`.onHover` | `Pressable` 的 `pressed`、`onHoverIn`/`onHoverOut` | ✓ `pressed { … }` 和 `hovered { … }` 变体；用 `Ref` 的 `pressed` 和 `hovered` 跟随一组视图或相邻视图的状态；`on pressedChange`、`on hoverChange` |
+| 按下和悬停状态 | `ButtonStyle` 的 `isPressed`、`.onHover` | `Pressable` 的 `pressed`、`onHoverIn`/`onHoverOut` | ✓ `pressed { … }` 和 `hovered { … }` 变体；用 `Ref` 的 `pressed` 和 `hovered` 跟随一组视图或相邻视图的状态；`on pressedChange`、`on hoverChange`、`on hover(x, y)`（指针所在的位置） |
 | 拖放 | `.draggable`、`.dropDestination` | （没有内置） | ✓ `dragItems`、`dropTypes`、`on drop`（应用内拖放应用自己的值；与其他应用之间拖放文本、链接和文件；`dragging { … }` 和 `dragOver { … }` 变体） |
 | 共享元素过渡 | `matchedGeometryEffect`、`.navigationTransition(.zoom)` | shared transitions | ✓ `shared`（一个视图从另一个视图的位置和大小长出来）、页面的 `zoomFrom`（iOS 18 的缩放过渡；Material 的容器变换） |
 | 触感反馈 | `sensoryFeedback` | `expo-haptics` | ✓ `device.haptic(…)`（Mac 上用 Force Touch 触控板，浏览器里用 `navigator.vibrate`） |

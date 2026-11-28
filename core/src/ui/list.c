@@ -93,6 +93,10 @@ typedef struct list_t {
 	int64_t n;
 	ak_kind ik;
 	AK_VEC(ak_val) keys;
+	// Moving rows (on move): the Reorder prop as last sent.
+	ak_buf reorder_sent;
+	bool reorder_known;
+	bool has_sections;  // the last update's items had sections
 } list_t;
 
 // ---- The class ----
@@ -141,6 +145,7 @@ static void list_drop(ak_view *e) {
 	free_secids(&st->next_secids);
 	ak_vec_free(&st->secids);
 	ak_vec_free(&st->next_secids);
+	ak_buf_free(&st->reorder_sent);
 	ak_free(st);
 }
 
@@ -148,6 +153,93 @@ static int64_t key_int(const ak_view *e, uint16_t key, int64_t def) {
 	const ak_val *v = ak_style_get(e, key);
 	return v ? v->i : def;
 }
+
+// ---- Moving rows ----
+
+static void release_ctx(void *ctx);
+
+// The screen readers' actions that move a row, by language: what a
+// platform doesn't name for an app (UIKit's and Android's lists have no
+// such action of their own).
+static const struct {
+	const char *lang, *up, *down;
+} move_names[] = {
+	{"en", "Move up", "Move down"},
+	{"ar", "\u0646\u0642\u0644 \u0644\u0623\u0639\u0644\u0649", "\u0646\u0642\u0644 \u0644\u0623\u0633\u0641\u0644"},
+	{"da", "Flyt op", "Flyt ned"},
+	{"de", "Nach oben", "Nach unten"},
+	{"es", "Subir", "Bajar"},
+	{"fi", "Siirr\u00e4 yl\u00f6s", "Siirr\u00e4 alas"},
+	{"fr", "D\u00e9placer vers le haut", "D\u00e9placer vers le bas"},
+	{"he", "\u05d4\u05d6\u05d6 \u05dc\u05de\u05e2\u05dc\u05d4", "\u05d4\u05d6\u05d6 \u05dc\u05de\u05d8\u05d4"},
+	{"hi", "\u090a\u092a\u0930 \u0932\u0947 \u091c\u093e\u090f\u0901", "\u0928\u0940\u091a\u0947 \u0932\u0947 \u091c\u093e\u090f\u0901"},
+	{"id", "Pindahkan ke atas", "Pindahkan ke bawah"},
+	{"it", "Sposta su", "Sposta gi\u00f9"},
+	{"ja", "\u4e0a\u306b\u79fb\u52d5", "\u4e0b\u306b\u79fb\u52d5"},
+	{"ko", "\uc704\ub85c \uc774\ub3d9", "\uc544\ub798\ub85c \uc774\ub3d9"},
+	{"nb", "Flytt opp", "Flytt ned"},
+	{"nl", "Omhoog", "Omlaag"},
+	{"pl", "Przenie\u015b w g\u00f3r\u0119", "Przenie\u015b w d\u00f3\u0142"},
+	{"pt", "Mover para cima", "Mover para baixo"},
+	{"ru", "\u041f\u0435\u0440\u0435\u043c\u0435\u0441\u0442\u0438\u0442\u044c \u0432\u0432\u0435\u0440\u0445", "\u041f\u0435\u0440\u0435\u043c\u0435\u0441\u0442\u0438\u0442\u044c \u0432\u043d\u0438\u0437"},
+	{"sv", "Flytta upp", "Flytta ned"},
+	{"th", "\u0e22\u0e49\u0e32\u0e22\u0e02\u0e36\u0e49\u0e19", "\u0e22\u0e49\u0e32\u0e22\u0e25\u0e07"},
+	{"tr", "Yukar\u0131 ta\u015f\u0131", "A\u015fa\u011f\u0131 ta\u015f\u0131"},
+	{"uk", "\u041f\u0435\u0440\u0435\u043c\u0456\u0441\u0442\u0438\u0442\u0438 \u0432\u0433\u043e\u0440\u0443", "\u041f\u0435\u0440\u0435\u043c\u0456\u0441\u0442\u0438\u0442\u0438 \u0432\u043d\u0438\u0437"},
+	{"vi", "Di chuy\u1ec3n l\u00ean", "Di chuy\u1ec3n xu\u1ed1ng"},
+	{"zh", "\u4e0a\u79fb", "\u4e0b\u79fb"},
+};
+
+// move_names_of are the move actions' names in language tag's language
+// (its first subtag's), else English's.
+static uint32_t move_names_of(const ak_str *tag) {
+	uint32_t n = 0;
+	while (tag && n < tag->len && tag->data[n] != '-' && tag->data[n] != '_') n++;
+	for (uint32_t i = 0; i < AK_LEN(move_names); i++) {
+		const char *l = move_names[i].lang;
+		if (strlen(l) != n) continue;
+		bool same = true;
+		for (uint32_t j = 0; j < n && same; j++) same = (char)(tag->data[j] | 0x20) == l[j];
+		if (same) return i;
+	}
+	return 0;
+}
+
+static bool reorder_on(const ak_view *e) {
+	const ak_val *v = ak_style_get(e, AK_KEY_LIST_REORDERABLE);
+	return ak_view_handler((ak_view *)e, AK_EV_LIST_MOVE) && (!v || v->i);
+}
+
+// reorder_send sends whether the rows move, with the move actions' names
+// in the app's language (read tracked: a reorder effect follows it), if
+// that changed.
+static void reorder_send(ak_view *e) {
+	list_t *st = e->impl;
+	ak_buf b = {0};
+	if (reorder_on(e)) {
+		ak_str *tag = ak_ui_locale();
+		uint32_t i = move_names_of(tag);
+		ak_release(tag);
+		ak_buf_u32(&b, 2);
+		ak_buf_str(&b, move_names[i].up, strlen(move_names[i].up));
+		ak_buf_str(&b, move_names[i].down, strlen(move_names[i].down));
+	}
+	bool same = st->reorder_sent.len == b.len && (!b.len || memcmp(st->reorder_sent.data, b.data, b.len) == 0);
+	if (!(same && (st->reorder_known || !b.len))) {
+		ak_batch_set_bytes(e->r->batch, e->id, AK_PROP_LIST_REORDER, b.data, b.len);
+		st->reorder_sent.len = 0;
+		ak_buf_put(&st->reorder_sent, b.data, b.len);
+		st->reorder_known = true;
+	}
+	ak_buf_free(&b);
+}
+
+static void reorder_run(void *ctx) {
+	ak_view *e = ctx;
+	if (!e->dead) reorder_send(e);
+}
+
+static const ak_comp_info reorder_info = {.drop = release_ctx, .label = "List.move"};
 
 static void list_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 	list_t *st = e->impl;
@@ -164,6 +256,9 @@ static void list_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 		break;
 	case AK_KEY_LIST_EDGE_EFFECT:
 		if (prev || v.i) ak_batch_set_enum(b, e->id, AK_PROP_LIST_EDGE_EFFECT, (int32_t)v.i);
+		break;
+	case AK_KEY_LIST_REORDERABLE:
+		if (e->finalized) reorder_send(e);
 		break;
 	case AK_KEY_LIST_SELECTING:
 		if (prev || v.i) ak_batch_set_bool(b, e->id, AK_PROP_LIST_SELECTING, v.i != 0);
@@ -207,6 +302,34 @@ static void inset_run(void *ctx) {
 
 static void release_ctx(void *ctx) { ak_release(ctx); }
 
+static int64_t count(const list_t *st);
+static bool same_as_sent(list_t *st, bool sections);
+static void send_order(list_t *st, bool sections);
+
+// moved hears the user's move of a row, which the host made already: the
+// IDs it has are in the new order, and the app's handler moves the
+// items, whose update then sends nothing. If they don't follow (their
+// effect isn't to run), the host is sent the order they have back.
+static void moved(ak_view *e, int64_t from, int64_t to) {
+	list_t *st = e->impl;
+	int64_t n = count(st);
+	if (!reorder_on(e) || from < 0 || to < 0 || from >= n || to >= n || from == to) return;
+	if (st->sent && !st->sent_sections && st->sent_ids.len == (uint64_t)n) {
+		// What the host shows now: the ID at from, at to.
+		int64_t *ids = st->sent_ids.data, id = ids[from];
+		if (from < to) memmove(ids + from, ids + from + 1, (size_t)(to - from) * sizeof(int64_t));
+		else memmove(ids + to + 1, ids + to, (size_t)(from - to) * sizeof(int64_t));
+		ids[to] = id;
+	} else {
+		st->sent = false;  // its sections are the host's own now: sent whole
+	}
+	ak_retain(e);
+	ak_val args[2] = {{.i = from}, {.i = to}};
+	ak_view_call(e, AK_EV_LIST_MOVE, args, 2);
+	if (!e->dead && e->impl == st && st->eff && !ak_effect_stale(st->eff) && !same_as_sent(st, st->has_sections)) send_order(st, st->has_sections);
+	ak_release(e);
+}
+
 static const ak_comp_info inset_info = {.drop = release_ctx, .label = "List.inset"};
 
 static void list_finalize(ak_view *e) {
@@ -227,6 +350,10 @@ static void list_finalize(ak_view *e) {
 		ak_effect_new(inset_run, ak_retain(e), AK_EFFECT_RENDER, &inset_info);
 	}
 	if (ak_view_handler(e, AK_EV_LIST_REFRESH)) ak_batch_set_bool(b, e->id, AK_PROP_LIST_REFRESHABLE, true);
+	if (ak_view_handler(e, AK_EV_LIST_MOVE)) {
+		ak_view_listen(e, AK_EVENT_MOVED);
+		ak_effect_new(reorder_run, ak_retain(e), AK_EFFECT_RENDER, &reorder_info);
+	}
 }
 
 static void list_event(ak_view *e, const ak_event *ev) {
@@ -238,7 +365,11 @@ static void list_event(ak_view *e, const ak_event *ev) {
 		for (uint32_t i = 0; i < st->cells.len; i++) st->cells.data[i]->width = -1;
 		return;
 	}
-	if (ev->kind == AK_EVENT_SCROLLED) {
+	if (ev->kind == AK_EVENT_MOVED) {
+		// Indices, as doubles: what isn't one (a host's bad event) moves nothing.
+		bool ok = ev->x >= 0 && ev->y >= 0 && ev->x < 4294967296.0 && ev->y < 4294967296.0;
+		if (ok) moved(e, (int64_t)ev->x, (int64_t)ev->y);
+	} else if (ev->kind == AK_EVENT_SCROLLED) {
 		ak_val args[2] = {{.f = (float)ev->x}, {.f = (float)ev->y}};
 		ak_view_call(e, AK_EV_LIST_SCROLL, args, 2);
 	} else if (ev->kind == AK_EVENT_REFRESH) {
@@ -364,10 +495,27 @@ static bool same_as_sent(list_t *st, bool sections) {
 	return false;
 }
 
+// send_order sends ListUpdate: the items' IDs in st->order, and the
+// sections' starts and IDs.
+static void send_order(list_t *st, bool sections) {
+	ak_view *e = st->e;
+	uint32_t n = st->order.len;
+	ak_buf *b = ak_batch_command_begin(e->r->batch, e->id, AK_CMD_LIST_UPDATE);
+	ak_buf_u32(b, n);
+	for (uint32_t i = 0; i < n; i++) ak_buf_u64(b, (uint64_t)st->order.data[i]);
+	if (sections) {
+		ak_buf_u32(b, st->sections.len);
+		for (uint32_t i = 0; i < st->sections.len; i++) {
+			ak_buf_u32(b, st->sections.data[i].start);
+			ak_buf_u64(b, (uint64_t)st->sections.data[i].id);
+		}
+	}
+	ak_batch_command_end(e->r->batch);
+}
+
 // update sends the new item IDs (the host diffs them), unless they're
 // what it was sent last, and updates the rows that are bound.
 static void update(list_t *st, ak_arr *list) {
-	ak_view *e = st->e;
 	uint32_t n = list ? list->len : 0;
 	ak_kind ik = list ? ak_arr_kind(list) : AK_K_INT;
 	uint32_t need = 16;
@@ -417,19 +565,8 @@ static void update(list_t *st, ak_arr *list) {
 		st->list = list;  // section(i) may read it
 	}
 	bool sections = make_sections(st, n);
-	if (!same_as_sent(st, sections)) {
-		ak_buf *b = ak_batch_command_begin(e->r->batch, e->id, AK_CMD_LIST_UPDATE);
-		ak_buf_u32(b, n);
-		for (uint32_t i = 0; i < n; i++) ak_buf_u64(b, (uint64_t)st->order.data[i]);
-		if (sections) {
-			ak_buf_u32(b, st->sections.len);
-			for (uint32_t i = 0; i < st->sections.len; i++) {
-				ak_buf_u32(b, st->sections.data[i].start);
-				ak_buf_u64(b, (uint64_t)st->sections.data[i].id);
-			}
-		}
-		ak_batch_command_end(e->r->batch);
-	}
+	st->has_sections = sections;
+	if (!same_as_sent(st, sections)) send_order(st, sections);
 	free_ids(st->ids, st->ids_cap, st->key_kind);
 	lid *t = st->ids;
 	uint32_t c = st->ids_cap;

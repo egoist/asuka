@@ -70,6 +70,9 @@ final class GoldenTests: XCTestCase {
             AsukaEvents.environment(1, env),
             AsukaEvents.pan(11, pan),
             AsukaEvents.native(12, [1, 2, 3]),
+            AsukaEvents.doubleTap(13, x: 4, y: 5.5),
+            AsukaEvents.zoomed(14, 2.5),
+            AsukaEvents.moved(15, x: 1, y: 3),
         ]
         var w = AsukaWriter()
         for e in events { w.u32(UInt32(e.count)); w.bytes.append(contentsOf: e) }
