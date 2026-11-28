@@ -151,11 +151,12 @@ var carNavigationPermissions = []string{"androidx.car.app.NAVIGATION_TEMPLATES",
 // Objective-C name (sdk/car/swift/Car.swift).
 const carSceneDelegate = "AsukaCarSceneDelegate"
 
-// sceneManifest is Info.plist's UIApplicationSceneManifest: one window
-// scene (the host's AppDelegate configures it), and with [car] the
-// CarPlay scene, platform/car's.
+// sceneManifest is Info.plist's UIApplicationSceneManifest: the window
+// scenes (the host's AppDelegate configures them): one, or on an iPad one
+// per window for an app that opens windows of its own (windowExtras);
+// and with [car] the CarPlay scene, platform/car's.
 func (c *appConfig) sceneManifest() map[string]any {
-	m := map[string]any{"UIApplicationSupportsMultipleScenes": false}
+	m := map[string]any{"UIApplicationSupportsMultipleScenes": c != nil && c.windows}
 	if c != nil && c.carScene {
 		m["UISceneConfigurations"] = map[string]any{
 			"CPTemplateApplicationSceneSessionRoleApplication": []any{map[string]any{

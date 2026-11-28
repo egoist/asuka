@@ -44,6 +44,7 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 | Selecting rows | `List(selection:)`, `EditButton` | community | ✓ a `List`'s `selecting`, a row's `selected`, `on select`, `on selectBegin` (iOS's edit mode and two-finger pan; Android's checkboxes and long press; a highlighted row on the desktops, a checkmark in a browser) |
 | Safe area, keyboard | automatic | `SafeAreaView`, `KeyboardAvoidingView` | ✓ `SafeArea` (padded by the keyboard too), `environment()`'s `safeTop`... and `keyboard` |
 | Reading a view's size, the window's | `GeometryReader`, size classes | `onLayout`, `useWindowDimensions` | ✓ `on layout(frame)`; `environment()`'s `width`, `height`, `widthClass`, `heightClass` |
+| Foldables: the posture, the hinge | — | community (`react-native-foldable`-style libraries over Jetpack WindowManager) | ✓ `environment()`'s `posture` (`.flat`, `.tabletop`, `.book`) and `fold`, from Jetpack WindowManager on Android ([Tablets and foldables](layout.md#tablets-and-foldables)) |
 | Aspect ratio, min and max sizes | `.aspectRatio`, `.frame(min:max:)` | style | ✓ `aspectRatio`, `minWidth`, `maxWidth`, `minHeight`, `maxHeight` |
 
 ## Controls
@@ -85,6 +86,8 @@ draws its own UI, see [Asuka and MyGo](mygo.md).
 |---|---|---|---|
 | Stacks with native push, pop, back gestures | `NavigationStack` | Stack | ✓ `Stack`, `push`, `pop` |
 | Tabs | `TabView` | Tabs | ✓ `Tabs`, `Tab` |
+| Tabs that adapt to a tablet | `TabView` with `.sidebarAdaptable` | community (react-navigation's drawer or a custom rail) | ✓ `Tabs` on its own: a sidebar the user can show on an iPad (iOS 18 and later); Material's navigation rail on Android from 600dp |
+| Several windows on an iPad | `WindowGroup`, `openWindow`, `supportsMultipleWindows` | — (community) | ✓ `Window`, the desktop's: a scene of its own on an iPad, brought back as the app launches again (`stateKey`); `environment().multipleWindows`. Android: one window, which the system sizes ([Windows on an iPad](navigation.md#windows-on-an-ipad)) |
 | Sidebar, drawer | `NavigationSplitView` | Drawer | ✓ `Split`, `Destination`, `Sidebar` (a stack on iPhone, a drawer on Android; `UISplitViewController`, `NSSplitViewController`, WinUI's `NavigationView` pane drawn on Windows, libadwaita's split view on Linux) |
 | Badges on tabs and sidebar rows | `badge` | `tabBarBadge`, `drawerItem` counts | ✓ a `Tab`'s and a `Destination`'s `badge` (`badgeValue`, `BadgeDrawable`, a drawer counter; the source list's count on the Mac; Fluent's `InfoBadge`; a count on Linux and the web) |
 | Bar buttons, titles, search | `.toolbar`, `.searchable` | header options | ✓ a screen's `title`, `largeTitle`, `toolbar { … }`, `bind search` |

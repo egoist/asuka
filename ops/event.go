@@ -12,7 +12,9 @@ import (
 // Wire format: f32 width, height, safe top, right, bottom, left,
 // keyboard, scale, font scale; u8 flags (1 dark, 2 reduce motion, bits
 // 2-4 the Platform, 32 a screen reader, 64 a TV, 128 a watch); u8 size classes (bits 0-1 the width's, 2-3 the
-// height's); string locale; string time zone.
+// height's); string locale; string time zone; string languages; u8
+// first weekday; u8 hour cycle; u8 Posture; f32 the fold's x, y, width,
+// height; u8 1 if the app can open windows of its own there.
 type Environment struct {
 	Width, Height                            float32
 	SafeTop, SafeRight, SafeBottom, SafeLeft float32
@@ -42,6 +44,40 @@ type Environment struct {
 	// FirstWeekday is the day the user's weeks start on, 1 Sunday to 7
 	// Saturday, and HourCycle 12 or 24; 0 when the system doesn't say.
 	FirstWeekday, HourCycle uint8
+	// Posture is how a foldable is held (Android's FoldingFeature):
+	// flat, or half open as a laptop (tabletop) or a book.
+	Posture Posture
+	// FoldX, FoldY, FoldWidth and FoldHeight are where a foldable's fold
+	// or hinge crosses the window, in points from its top left (a hinge
+	// between two screens is as wide as the gap); all 0: none does.
+	FoldX, FoldY, FoldWidth, FoldHeight float32
+	// MultipleWindows: a Window opens a window of its own here (an
+	// iPad's scene; a desktop's window, a panel on the web). A host
+	// that doesn't say has it on a desktop and the web (the core fills
+	// it in for their platforms), not on a phone.
+	MultipleWindows bool
+}
+
+// Posture is how a foldable device is held, as Jetpack WindowManager
+// tells it: flat (any device without a fold, too), or half open with its
+// fold across the window (tabletop: the screen's top half stands up, as
+// a laptop's) or down it (book: two pages side by side).
+type Posture uint8
+
+const (
+	PostureFlat Posture = iota
+	PostureTabletop
+	PostureBook
+)
+
+func (p Posture) String() string {
+	switch p {
+	case PostureTabletop:
+		return "tabletop"
+	case PostureBook:
+		return "book"
+	}
+	return "flat"
 }
 
 // Platform is the system a host runs on.
@@ -205,7 +241,15 @@ func AppendEvent(buf []byte, e *Event) []byte {
 		buf = append(buf, v.TimeZone...)
 		buf = le.AppendUint32(buf, uint32(len(v.Languages)))
 		buf = append(buf, v.Languages...)
-		buf = append(buf, v.FirstWeekday, v.HourCycle)
+		buf = append(buf, v.FirstWeekday, v.HourCycle, byte(v.Posture))
+		for _, f := range [...]float32{v.FoldX, v.FoldY, v.FoldWidth, v.FoldHeight} {
+			buf = le.AppendUint32(buf, math.Float32bits(f))
+		}
+		mw := byte(0)
+		if v.MultipleWindows {
+			mw = 1
+		}
+		buf = append(buf, mw)
 	case PGesture:
 		g := &e.G
 		buf = append(buf, byte(g.State))
@@ -247,7 +291,11 @@ func DecodeEvent(data []byte) (Event, error) {
 		v.Locale = string(r.bytes())
 		v.TimeZone = string(r.bytes())
 		v.Languages = string(r.bytes())
-		v.FirstWeekday, v.HourCycle = r.u8(), r.u8()
+		v.FirstWeekday, v.HourCycle, v.Posture = r.u8(), r.u8(), Posture(r.u8())
+		for _, f := range [...]*float32{&v.FoldX, &v.FoldY, &v.FoldWidth, &v.FoldHeight} {
+			*f = r.f32()
+		}
+		v.MultipleWindows = r.u8() != 0
 	case PGesture:
 		g := &e.G
 		g.State = GestureState(r.u8())

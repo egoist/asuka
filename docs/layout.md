@@ -277,7 +277,7 @@ The window is 800 by 600 points unless the app says otherwise (see
 window, the environment's `width` and `height` change and layout runs
 again: there's nothing to handle. To change the layout at a size (a
 sidebar that shows when there's room), branch on the environment's
-`widthClass`, as on a tablet:
+`widthClass`, as on a tablet ([below](#tablets-and-foldables)):
 
 ```asuka
 if environment().widthClass == .expanded {
@@ -291,6 +291,63 @@ In a browser, an app that fills the page takes the device's safe area
 (`env(safe-area-inset-*)`, on a phone with a notch) and the on-screen
 keyboard's height from the visual viewport. An app embedded in a part of
 a page has neither.
+
+## Tablets and foldables
+
+On a tablet, a foldable or a desktop the window is wide, and the user
+changes its size: an iPad's Split View, Slide Over and Stage Manager,
+Android's split screen and desktop windows, a foldable opened or
+folded. The environment's `width` and `height` follow it, and its
+`widthClass` and `heightClass` say what the room is for:
+
+| | Compact | Medium | Expanded |
+|---|---|---|---|
+| Width | under 600 points: a phone, a narrow split | 600 to 840: a tablet in portrait, a foldable opened | 840 and over: a tablet in landscape, a desktop window |
+| Height | under 480: a phone in landscape | 480 to 900 | 900 and over |
+
+Android reports Material's window size classes, as above; iOS reports
+UIKit's, compact or regular (as `.expanded`), which an iPad's split
+views make compact in their narrow parts. Branch on the class, not on a
+width of your own:
+
+```asuka
+if environment().widthClass == .compact {
+  ItemList()
+} else {
+  Row { grow: 1; ItemList(); Detail() }
+}
+```
+
+Navigation adapts on its own: `Tabs` has a navigation rail on Android
+from medium, and a sidebar the user can show on an iPad; a `Split` stands
+its sidebar beside the content where there's room, and folds into a stack
+or a drawer where there isn't ([Navigation](navigation.md#split-views)).
+An iPad can show the app's `Window`s beside it
+([Navigation](navigation.md#windows-on-an-ipad)).
+
+A foldable says how it's held. `environment().posture` is `.flat` (as
+every other device is), `.tabletop` (half open, its fold across the
+window: the top half stands up, as a laptop's screen) or `.book` (half
+open, its fold down the window: two pages). `environment().fold` is
+where the fold or hinge crosses the window, in points from its top left
+(a `Frame`; zero when none does): put what's read above it and what's
+touched below it on a tabletop, a page each side of it on a book.
+
+```asuka
+let env = environment()
+if env.posture == .tabletop {
+  Column {
+    grow: 1
+    Column { height: env.fold.y; VideoPlayer() }
+    Column { grow: 1; Controls() }
+  }
+} else {
+  VideoPlayer()
+}
+```
+
+Android reports them from Jetpack WindowManager's folding feature, as
+they change; the other platforms are always flat.
 
 ## Scrolling
 

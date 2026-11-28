@@ -288,6 +288,8 @@ let landscape = environment().width > environment().height
 - `platform`：アプリが動いているシステム。`.iOS`、`.android`、`.macOS`、`.windows`、`.linux`、`.web` のいずれかです。
 - `tv`：アプリがテレビで動いているかどうか（Apple TV。このとき `platform` は `.iOS` です。それと Android TV）。タッチではなく、リモコンでフォーカスを動かして操作します。[テレビ](tv.md)を参照してください。
 - `watch`：アプリがウォッチで動いているかどうか（Apple Watch。このとき `platform` は `.iOS` です）。画面は小さく、ちらっと見るもので、Digital Crown があります。[Apple Watch](watch.md) を参照してください。
+- `posture`、`fold`：折りたたみ端末がどう持たれているか（`.flat`、`.tabletop`、`.book`）と、折り目がウィンドウを横切る位置。[タブレットと折りたたみ端末](layout.md#タブレットと折りたたみ端末)を参照してください。
+- `multipleWindows`：ここで `Window` が独立したウィンドウを開けるかどうか。デスクトップ、Web、iPad では開けます。[iPad のウィンドウ](navigation.md#ipad-のウィンドウ)を参照してください。
 
 セマンティックカラーとフォントは、ダークモードと文字サイズに自動で追従します。それらでまかなえない部分は、環境を読んで対応してください。
 

@@ -510,8 +510,16 @@ notifications").
 
 `Tabs` shows one page at a time, with a tab bar:
 
-- **iOS**: a `UITabBarController`.
-- **Android**: Material's bottom navigation bar.
+- **iOS**: a `UITabBarController`. On an iPad (iOS 18 and later) its
+  tab bar adapts to a sidebar, as Music's and TV's do: the tabs at the
+  top, and a button that turns them into a sidebar beside the content
+  and back; in a compact width (Slide Over, a narrow Split View), the
+  bar at the bottom, as on an iPhone.
+- **Android**: Material's bottom navigation bar in a compact window;
+  from 600dp wide (a tablet, a foldable opened, a desktop window),
+  Material's navigation rail at the start edge, as Material 3's adaptive
+  navigation has it. The window crossing 600dp swaps them, the tab shown
+  and the badges kept.
 - **macOS**: an `NSTabView`, its tabs on top.
 - **Windows**: a bar of tabs on top, as WinUI's top `NavigationView`: an
   icon and a title each, an accent pill under the selected one; the
@@ -1157,9 +1165,77 @@ component Notes {
 | Windows | a top-level window, with its own title and taskbar button |
 | Linux | an `AdwWindow`, with its own header bar |
 | The web | a panel in the page, which the user can move and resize |
+| iPad | a window scene of its own (`UIWindowScene`), beside the app's ([below](#windows-on-an-ipad)) |
 
-A phone has no windows: a `Window` there shows nothing. A component that
-offers one offers it from what only a desktop has, as the menu bar below.
+`environment().multipleWindows` is true where a `Window` opens a window:
+a desktop, the web and an iPad. An iPhone, an Apple TV and Android show
+the app in one window: a `Window` there shows nothing. A component that
+offers one offers it where it opens, or from what only a desktop has, as
+the menu bar below.
+
+### Windows on an iPad
+
+On an iPad a `Window` opens a window of its own, beside the app's: in
+Split View or Slide Over, as a window of iPadOS's windowed apps and
+Stage Manager, or full screen, as the user arranges them. The same code
+opens a second window on a Mac and on an iPad:
+
+```asuka check
+state notes = ["Milk"]
+state inspector = false
+
+app {
+  Stack { Notes() }
+}
+
+screen Notes {
+  title: "Notes"
+  Column {
+    for n in notes key n { Text(n) }
+    if environment().multipleWindows {
+      Button("Inspector") { on press { inspector = true } }
+    }
+  }
+  Window {
+    bind open: inspector
+    title: "Inspector"
+    stateKey: "inspector"
+    minWidth: 320
+    Stack { Inspector() }
+  }
+}
+
+screen Inspector {
+  title: "Inspector"
+  Text("{notes.count()} notes")
+}
+```
+
+- An app whose code opens a `Window` (one that isn't its app block's
+  main window) supports several windows: asuka says so in its
+  Info.plist, which gives it the system's Show All Windows too. An app
+  without one has the one window of a phone's app.
+- Its environment is the window's: its size and size classes follow
+  the user resizing it, apart from the app's other window.
+- The user closing it (its close button, a swipe up in the app
+  switcher) writes `open` false and raises `close`. iPadOS asks no app
+  before a window closes: its `closeRequest` and guards aren't asked.
+- A window with a `stateKey` comes back: iPadOS brings back the windows
+  the user left open as the app launches again, and the app's `Window`
+  with that key opens in its own (its `open` written true). One without
+  a key, or whose `Window` the app doesn't have then, closes.
+- `w.show()` and `w.focus()` bring it forward; the other actions are a
+  desktop's, and do nothing. `title` names it in the app switcher and
+  the system's window menus; `minWidth` and `minHeight` are the least
+  the user sizes it to. `w.visible`, `w.focused` and `w.size` follow it.
+- Sheets, alerts and snackbars open over the window they're declared in.
+- The app has one main window: the system's New Window brings it
+  forward.
+
+On Android the app is one activity, which the system sizes in split
+screen, in a desktop's window and on a foldable: its layout follows the
+size classes ([Layout](layout.md#tablets-and-foldables)), and a
+`Window` shows nothing.
 
 ### Options
 

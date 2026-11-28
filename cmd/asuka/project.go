@@ -135,6 +135,7 @@ func (a *asukaApp) refresh() {
 	}
 	a.cfg.permissionsFor(deps)
 	a.cfg.videoExtras(a.uses)
+	a.cfg.windowExtras(a.uses)
 	a.cfg.addDerived()
 	a.cfg.displayName = a.displayName()
 }

@@ -25,6 +25,7 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 | 行の選択 | `List(selection:)`、`EditButton` | コミュニティ製 | ✓ `List` の `selecting`、行の `selected`、`on select`、`on selectBegin`（iOS の編集モードと 2 本指のパン、Android のチェックボックスと長押し。デスクトップでは行のハイライト、ブラウザーではチェックマーク） |
 | セーフエリア、キーボード | 自動 | `SafeAreaView`、`KeyboardAvoidingView` | ✓ `SafeArea`（キーボードの分もパディングする）、`environment()` の `safeTop`…と `keyboard` |
 | ビューのサイズ、ウィンドウのサイズの取得 | `GeometryReader`、サイズクラス | `onLayout`、`useWindowDimensions` | ✓ `on layout(frame)`。`environment()` の `width`、`height`、`widthClass`、`heightClass` |
+| 折りたたみ端末：姿勢とヒンジ | — | コミュニティ（Jetpack WindowManager を使う折りたたみ端末向けライブラリ） | ✓ `environment()` の `posture`（`.flat`、`.tabletop`、`.book`）と `fold`。Android では Jetpack WindowManager から（[タブレットと折りたたみ端末](layout.md#タブレットと折りたたみ端末)） |
 | アスペクト比、最小・最大サイズ | `.aspectRatio`、`.frame(min:max:)` | スタイル | ✓ `aspectRatio`、`minWidth`、`maxWidth`、`minHeight`、`maxHeight` |
 
 ## コントロール
@@ -66,6 +67,8 @@ SwiftUI は Mac でも動きます。Expo は iOS、Android、Web で動きま�
 |---|---|---|---|
 | ネイティブのプッシュ、ポップ、戻るジェスチャーのあるスタック | `NavigationStack` | Stack | ✓ `Stack`、`push`、`pop` |
 | タブ | `TabView` | Tabs | ✓ `Tabs`、`Tab` |
+| タブレットに適応するタブ | `.sidebarAdaptable` の `TabView` | コミュニティ（react-navigation のドロワーや自作のレール） | ✓ `Tabs` が自動で適応：iPad ではユーザーが開けるサイドバー（iOS 18 以降）、Android では 600dp 以上で Material のナビゲーションレール |
+| iPad の複数ウィンドウ | `WindowGroup`、`openWindow`、`supportsMultipleWindows` | —（コミュニティ） | ✓ デスクトップと同じ `Window`：iPad では独立したシーンになり、アプリが再び起動すると復元されます（`stateKey`）。`environment().multipleWindows`。Android：システムがサイズを変えるウィンドウ 1 つ（[iPad のウィンドウ](navigation.md#ipad-のウィンドウ)） |
 | サイドバー、ドロワー | `NavigationSplitView` | Drawer | ✓ `Split`、`Destination`、`Sidebar`（iPhone ではスタック、Android ではドロワー。`UISplitViewController`、`NSSplitViewController`、Windows では WinUI の `NavigationView` のペインとして描画、Linux では libadwaita のスプリットビュー） |
 | タブとサイドバーの行のバッジ | `badge` | `tabBarBadge`、`drawerItem` の件数 | ✓ `Tab` と `Destination` の `badge`（`badgeValue`、`BadgeDrawable`、ドロワーのカウンター。Mac ではソースリストの件数。Fluent の `InfoBadge`。Linux と Web では件数） |
 | バーボタン、タイトル、検索 | `.toolbar`、`.searchable` | ヘッダーのオプション | ✓ 画面の `title`、`largeTitle`、`toolbar { … }`、`bind search` |

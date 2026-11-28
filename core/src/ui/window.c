@@ -238,10 +238,13 @@ static void set_state(ak_view *w, const ak_event *ev) {
 	if (w->el != AK_EL_WINDOW && was != now) main_visible(w->r, now);
 }
 
-// The main window's events, to the root view.
+static void restore(ak_ui_root *r, ak_span key);
+
+// The main window's events, to the root view, and RestoreWindow.
 void ak_window_event(ak_view *e, const ak_event *ev) {
 	if (ev->kind == AK_EVENT_CLOSE_REQUEST) close_requested(e);
 	else if (ev->kind == AK_EVENT_WINDOW_STATE) set_state(e, ev);
+	else if (ev->kind == AK_EVENT_RESTORE_WINDOW) restore(e->r, ev->s);
 }
 
 typedef struct {
@@ -674,11 +677,53 @@ void ak_ui_main_window(ak_view *w) {
 	((window_t *)w->impl)->main = true;
 }
 
+// ---- Restoring ----
+
+// registered adds a Window element to its root's (or, gone, removes it).
+static void registered(ak_view *w, bool add) {
+	ak_rext *x = ak_rext_of(w->r);
+	for (uint32_t i = 0; i < x->windows.len; i++) {
+		if (x->windows.data[i] != w) continue;
+		if (!add) {
+			memmove(x->windows.data + i, x->windows.data + i + 1, (x->windows.len - i - 1) * sizeof(ak_view *));
+			x->windows.len--;
+		}
+		return;
+	}
+	if (add) ak_vec_push(&x->windows, w);
+}
+
+// restore opens the app's closed Window whose state key is key, the
+// first made of those that have it: the system brought back a window the
+// user had left open (an iPad's scene, as the app launches again). Its
+// open is told true, as its show() does: the window opens if the app
+// binds it, and the host shows it in the window it brought back. One
+// already open, or none with the key, leaves the host's window empty,
+// which the host closes.
+static void restore(ak_ui_root *r, ak_span key) {
+	if (!key.len || !r->ext) return;
+	ak_rext *x = r->ext;
+	for (uint32_t i = 0; i < x->windows.len; i++) {
+		ak_view *w = x->windows.data[i];
+		window_t *wt = w->impl;
+		if (w->dead || !wt || wt->main) continue;
+		const ak_val *k = key_of(w, AK_KEY_WINDOW_STATE_KEY);
+		if (!k || !k->p || !ak_span_eq(ak_span_str(k->p), key)) continue;
+		if (wt->win) return;  // open: its window is the host's already
+		ak_retain(w);
+		ak_val t = {.i = 1};
+		ak_view_call(w, AK_EV_WINDOW_CHANGE, &t, 1);
+		ak_release(w);
+		return;
+	}
+}
+
 // ---- The element's class ----
 
 static void window_cleanup(void *ctx) {
 	ak_view *w = ctx;
 	window_t *wt = w->impl;
+	registered(w, false);
 	if (wt->main) {
 		handle_t *h = w->r->el ? w->r->el->impl : NULL;
 		if (h && h->main == w) h->main = NULL;
@@ -695,12 +740,14 @@ static void window_cleanup(void *ctx) {
 
 static void window_init(ak_view *e) {
 	e->impl = ak_alloc(sizeof(window_t));
+	registered(e, true);
 	ak_on_cleanup(window_cleanup, ak_retain(e));
 }
 
 static void window_drop(ak_view *e) {
 	window_t *wt = e->impl;
 	if (!wt) return;
+	if (e->r && e->r->ext) registered(e, false);
 	if (wt->owner) ak_owner_dispose(wt->owner);
 	if (wt->win) {
 		ak_view_destroy(wt->win);

@@ -1,6 +1,7 @@
 import UIKit
 
-// The app around the Asuka host: one window scene showing the core's root.
+// The app around the Asuka host: a window scene showing the core's root,
+// and on an iPad one for each Window the app opens (Windows.swift).
 
 // AsukaAppDelegate: the name an app with a share sheet's main starts it by
 // (its code is a framework, Frameworks/AsukaApp.framework).
@@ -82,13 +83,36 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
         AsukaRuntime.shared.lifecycle(.memoryWarning)
     }
+
+    /// The user closed windows: a Window's closes (an iPad's).
+    func application(_ application: UIApplication, didDiscardSceneSessions sessions: Set<UISceneSession>) {
+        AsukaRuntime.shared.discardSessions(sessions)
+        if let m = SceneDelegate.mainSession, sessions.contains(m) { SceneDelegate.mainSession = nil }
+    }
 }
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
+    /// The main window's scene's session: an iPad's app shows its root in
+    /// one, its Windows each in their own.
+    static var mainSession: UISceneSession?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let ws = scene as? UIWindowScene else { return }
+        // A Window's (an iPad's): its content, not the root (Windows.swift).
+        if AsukaRuntime.shared.connectScene(ws, session: session, options: options) { return }
+        // The system's New Window while the main window is open: the app
+        // has one, which comes forward.
+        if let m = SceneDelegate.mainSession, m !== session, m.scene != nil {
+            if #available(iOS 17.0, *) {
+                UIApplication.shared.activateSceneSession(for: UISceneSessionActivationRequest(session: m), errorHandler: nil)
+            } else {
+                UIApplication.shared.requestSceneSessionActivation(m, userActivity: nil, options: nil, errorHandler: nil)
+            }
+            UIApplication.shared.requestSceneSessionDestruction(session, options: nil, errorHandler: nil)
+            return
+        }
+        SceneDelegate.mainSession = session
         let w = UIWindow(windowScene: ws)
         w.rootViewController = AsukaViewController()
         w.makeKeyAndVisible()
@@ -110,11 +134,32 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
+    func sceneDidDisconnect(_ scene: UIScene) {
+        AsukaRuntime.shared.disconnectScene(scene)
+    }
+
+    func sceneDidBecomeActive(_ scene: UIScene) { AsukaRuntime.shared.scenesChanged() }
+    func sceneWillResignActive(_ scene: UIScene) { AsukaRuntime.shared.scenesChanged() }
+
+    /// Whether a scene other than scene is in front: the app is, whichever
+    /// of its windows comes or goes (an iPad's).
+    private func othersInFront(_ scene: UIScene) -> Bool {
+        UIApplication.shared.connectedScenes.contains {
+            $0 !== scene && $0 is UIWindowScene && ($0.activationState == .foregroundActive || $0.activationState == .foregroundInactive)
+        }
+    }
+
     func sceneWillEnterForeground(_ scene: UIScene) {
+        AsukaRuntime.shared.scenesChanged()
+        if othersInFront(scene) { return } // the app is in front already
         AsukaRuntime.shared.lifecycle(.foreground)
         #if ASUKA_WIDGET
         AsukaWidgetData.shared.drainIfStarted() // what the widgets' extension kept meanwhile
         #endif
     }
-    func sceneDidEnterBackground(_ scene: UIScene) { AsukaRuntime.shared.lifecycle(.background) }
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        AsukaRuntime.shared.scenesChanged()
+        if othersInFront(scene) { return } // another of its windows keeps the app in front
+        AsukaRuntime.shared.lifecycle(.background)
+    }
 }

@@ -25,6 +25,7 @@ import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.navigation.NavigationBarView
+import com.google.android.material.navigationrail.NavigationRailView
 import java.nio.ByteBuffer
 
 // Material 3 motion: emphasized easing, medium durations.
@@ -526,8 +527,18 @@ fun badgeNumber(s: String): Int? =
 private const val SEARCH_ITEM = 0x5eac
 
 /** Tabs: a Material navigation bar under its pages. */
+/**
+ * Tabs: Material's navigation bar at the bottom of a compact window, and
+ * its navigation rail at the start edge of a medium or expanded one (600dp
+ * and wider: a tablet, a foldable open, a desktop window), as Material 3's
+ * adaptive navigation has it. The window crossing 600dp swaps them, the
+ * selection, badges and pages kept.
+ */
 class AsukaTabs(context: Context, val nodeID: Int, private val rt: AsukaRuntime) : ViewGroup(context) {
-    var bar = makeBar(context)
+    /** Whether the bar is the rail. */
+    var rail = false
+        private set
+    var bar: NavigationBarView = makeBar(context)
         private set
     val pages = ArrayList<AsukaNode>()
     var selected = 0
@@ -539,9 +550,9 @@ class AsukaTabs(context: Context, val nodeID: Int, private val rt: AsukaRuntime)
         addView(bar)
     }
 
-    private fun makeBar(ctx: Context) = BottomNavigationView(ctx).apply {
+    private fun makeBar(ctx: Context): NavigationBarView = (if (rail) NavigationRailView(ctx) else BottomNavigationView(ctx)).apply {
         labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
-        // The bar's bottom padding is the system bar under it; see onMeasure.
+        // The bar's padding is the system bars beside it; see onMeasure.
         ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets -> insets }
         setOnItemSelectedListener { item ->
             if (!selecting) {
@@ -559,6 +570,24 @@ class AsukaTabs(context: Context, val nodeID: Int, private val rt: AsukaRuntime)
         addView(bar)
         refreshBar()
         requestLayout()
+    }
+
+    /**
+     * The window's width class: a rail from medium up (600dp), else the
+     * bar. Swapped in a layout pass (the window resized, a foldable
+     * opened), without asking for another.
+     */
+    private fun adapt() {
+        val d = resources.displayMetrics.density
+        val win = rt.activity?.window?.decorView?.width?.takeIf { it > 0 } ?: rootView.width
+        val want = win > 0 && widthClass(win / d) >= 2
+        if (want == rail) return
+        rail = want
+        removeViewInLayout(bar)
+        bar = makeBar(rt.themed)
+        addViewInLayout(bar, -1, generateDefaultLayoutParams())
+        refreshBar()
+        updateBarHidden()
     }
 
     fun select(i: Int) {
@@ -598,7 +627,8 @@ class AsukaTabs(context: Context, val nodeID: Int, private val rt: AsukaRuntime)
             if (v is AsukaTabs) return false
             return n.children.any { covers(it) }
         }
-        val hide = current?.let { covers(it) } ?: false
+        // A rail stands beside the bottom app bar; a bar can't.
+        val hide = !rail && (current?.let { covers(it) } ?: false)
         val vis = if (hide) GONE else VISIBLE
         if (bar.visibility != vis) {
             bar.visibility = vis
@@ -614,9 +644,9 @@ class AsukaTabs(context: Context, val nodeID: Int, private val rt: AsukaRuntime)
         refreshBar()
         show(selected)
         if (width > 0) {
-            val bh = bar.measuredHeight
-            n.view.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(maxOf(0, height - bh), MeasureSpec.EXACTLY))
-            n.view.layout(0, 0, width, height - bh)
+            val r = pageRect(width, height)
+            n.view.measure(MeasureSpec.makeMeasureSpec(r.width(), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(r.height(), MeasureSpec.EXACTLY))
+            n.view.layout(r.left, r.top, r.right, r.bottom)
         }
     }
 
@@ -671,27 +701,55 @@ class AsukaTabs(context: Context, val nodeID: Int, private val rt: AsukaRuntime)
         b.isVisible = true
     }
 
+    /** Whether the rail is at the right: the start edge, right to left. */
+    private val railRight get() = layoutDirection == View.LAYOUT_DIRECTION_RTL
+
+    /** The rail's width, 0 while it's hidden or a bar. */
+    private fun railWidth() = if (!rail || bar.visibility == GONE) 0 else bar.measuredWidth
+
+    /** Where the pages go in a w×h tabs: beside the rail, or above the bar. */
+    private fun pageRect(w: Int, h: Int): android.graphics.Rect {
+        if (!rail) return android.graphics.Rect(0, 0, w, maxOf(0, h - barHeight()))
+        val rw = railWidth()
+        return if (railRight) android.graphics.Rect(0, 0, maxOf(0, w - rw), h) else android.graphics.Rect(minOf(rw, w), 0, w, h)
+    }
+
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         val w = MeasureSpec.getSize(widthSpec)
         val h = MeasureSpec.getSize(heightSpec)
         setMeasuredDimension(w, h)
+        adapt()
         val ins = rt.insetsOver(this, w, h)
-        bar.setPadding(ins.left, 0, ins.right, ins.bottom)
-        bar.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.AT_MOST))
-        val ph = maxOf(0, h - barHeight())
+        if (rail) {
+            // The rail runs the window's height at the start edge: the
+            // status bar above it, the system bars and a cutout beside.
+            bar.setPadding(if (railRight) 0 else ins.left, ins.top, if (railRight) ins.right else 0, ins.bottom)
+            bar.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
+        } else {
+            bar.setPadding(ins.left, 0, ins.right, ins.bottom)
+            bar.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.AT_MOST))
+        }
+        val r = pageRect(w, h)
         for (i in 0 until childCount) {
             val c = getChildAt(i)
-            if (c !== bar) c.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ph, MeasureSpec.EXACTLY))
+            if (c !== bar) c.measure(MeasureSpec.makeMeasureSpec(r.width(), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(r.height(), MeasureSpec.EXACTLY))
         }
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        val bh = barHeight()
+        val w = r - l
         val h = b - t
-        bar.layout(0, h - bh, r - l, h)
+        if (rail) {
+            val rw = railWidth()
+            if (railRight) bar.layout(w - rw, 0, w, h) else bar.layout(0, 0, rw, h)
+        } else {
+            val bh = barHeight()
+            bar.layout(0, h - bh, w, h)
+        }
+        val p = pageRect(w, h)
         for (i in 0 until childCount) {
             val c = getChildAt(i)
-            if (c !== bar) c.layout(0, 0, r - l, h - bh)
+            if (c !== bar) c.layout(p.left, p.top, p.right, p.bottom)
         }
     }
 }
@@ -757,6 +815,10 @@ fun AsukaRuntime.environment(v: View, keyboardPx: Int? = null): AsukaEnvironment
         languages = region.languages,
         firstWeekday = region.firstWeekday,
         hourCycle = region.hourCycle,
+        // The app window's, as the size classes are.
+        posture = act?.fold?.posture ?: 0,
+        foldX = (act?.fold?.x ?: 0) / d, foldY = (act?.fold?.y ?: 0) / d,
+        foldWidth = (act?.fold?.width ?: 0) / d, foldHeight = (act?.fold?.height ?: 0) / d,
     )
 }
 

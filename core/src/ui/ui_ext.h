@@ -220,6 +220,10 @@ typedef struct ak_rext {
 	AK_VEC(ak_id) rels;
 	// The Overlays' layers (floating.c), oldest first, by ID.
 	AK_VEC(ak_id) overlays;
+	// The Window elements (window.c), in the order they were made (not
+	// retained: each leaves as it goes): a window the system restores
+	// finds its own by its state key.
+	ak_view_vec windows;
 } ak_rext;
 
 ak_rext *ak_rext_of(ak_ui_root *r);

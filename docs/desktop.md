@@ -1,7 +1,7 @@
 # The desktop
 
-What only a desktop has, beyond windows and the menu bar
-([Navigation](navigation.md#windows)): tray icons and the Dock menu,
+What only a desktop has, beyond windows (which an iPad opens too) and
+the menu bar ([Navigation](navigation.md#windows)): tray icons and the Dock menu,
 flyouts, apps that live in the background, global shortcuts, panels and
 launchers, finding the apps installed, click-through windows, file
 dialogs and the file manager, files the app opens, one instance,

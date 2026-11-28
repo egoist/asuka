@@ -288,6 +288,8 @@ let landscape = environment().width > environment().height
 - `platform`：应用所运行的系统：`.iOS`、`.android`、`.macOS`、`.windows`、`.linux` 或 `.web`。
 - `tv`：应用是否运行在电视上（Apple TV，此时 `platform` 是 `.iOS`；以及 Android TV），由遥控器移动焦点来操作，而不是触摸。见[电视](tv.md)。
 - `watch`：应用是否运行在手表上（Apple Watch，此时 `platform` 是 `.iOS`）：屏幕很小，只会被瞥上一眼，还有数码表冠。见 [Apple Watch](watch.md)。
+- `posture`、`fold`：折叠屏是怎么拿着的（`.flat`、`.tabletop`、`.book`），以及折痕穿过窗口的位置。见[平板与折叠屏](layout.md#平板与折叠屏)。
+- `multipleWindows`：`Window` 在这里能否打开独立的窗口：桌面端、Web 和 iPad 上可以。见 [iPad 上的窗口](navigation.md#ipad-上的窗口)。
 
 语义颜色和字体会自动跟随深色模式和文字大小变化；它们覆盖不到的部分，再去读取环境信息。
 

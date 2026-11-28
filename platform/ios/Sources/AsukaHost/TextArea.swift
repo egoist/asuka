@@ -37,7 +37,7 @@ final class AsukaTextView: UITextView {
     /// As AsukaTextField's: focus moving here from another field keeps
     /// the keyboard where it is while their accessories swap.
     override func becomeFirstResponder() -> Bool {
-        AsukaRuntime.shared.controller?.fieldFocus(self) { super.becomeFirstResponder() } ?? super.becomeFirstResponder()
+        AsukaRuntime.shared.viewController(of: self)?.fieldFocus(self) { super.becomeFirstResponder() } ?? super.becomeFirstResponder()
     }
 
     var placeholder: String? {

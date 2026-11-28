@@ -135,6 +135,7 @@ func (c *appConfig) dropTVExtensions() {
 		delete(c.entitlements, c.carEntitlement())
 		left = append(left, "CarPlay")
 	}
+	c.windows = false // a TV shows one window: a Window shows nothing there
 	if len(left) > 0 && !c.tvToldDropped {
 		c.tvToldDropped = true
 		fmt.Printf("asuka: tvOS has no %s: the Apple TV app goes without\n", strings.Join(left, ", "))

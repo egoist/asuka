@@ -11,6 +11,9 @@ public final class AsukaViewController: UIViewController {
     var keyboardEnd: CGRect?
     var lastEnv: AsukaEnvironment?
     weak var root: UIView?
+    /// A Window's scene's controller: the Window node it shows (0: the
+    /// main window's, the root's).
+    var windowNode: UInt32 = 0
     /// Follows the keyboard's top (UIKeyboardLayoutGuide), which moves
     /// with the finger as a list's interactive dismissal drags it down,
     /// when no notification says so.
@@ -73,7 +76,7 @@ public final class AsukaViewController: UIViewController {
         let rt = AsukaRuntime.shared
         rt.scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : UIScreen.main.scale
         sendEnvironment()
-        rt.start(self)
+        if windowNode == 0 { rt.start(self) } // a Window's shows its node (Windows.swift)
         observeTextEditing()
     }
 
@@ -144,8 +147,13 @@ public final class AsukaViewController: UIViewController {
     #endif
 
     func mount(_ v: UIView) {
-        root?.removeFromSuperview()
+        if root !== v { root?.removeFromSuperview() }
         root = v
+        if windowNode != 0 {
+            // A Window's content fills its scene, as the core lays it out.
+            v.frame = view.bounds
+            v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        }
         view.addSubview(v)
         AsukaRuntime.shared.raiseOverlays(in: view) // the overlays over it
     }
@@ -172,6 +180,7 @@ public final class AsukaViewController: UIViewController {
         updateKeyboard()
         sendEnvironment()
         if moved { AsukaRuntime.shared.reportScreens() }
+        if windowNode != 0 { AsukaRuntime.shared.reportWindowState(windowNode) }
     }
 
     /// The keyboard's top as the layout guide has it: during an
@@ -350,12 +359,13 @@ public final class AsukaViewController: UIViewController {
         e.widthClass = traitCollection.horizontalSizeClass.asuka
         e.heightClass = traitCollection.verticalSizeClass.asuka
         e.tv = traitCollection.userInterfaceIdiom == .tv
+        let rt = AsukaRuntime.shared
+        e.multipleWindows = rt.windowsSupported
         e.setLanguages()
         guard e != lastEnv, e.width > 0 else { return }
         lastEnv = e
-        let rt = AsukaRuntime.shared
         rt.scale = CGFloat(e.scale)
-        rt.send(AsukaEvents.environment(rt.rootID, e))
+        rt.send(AsukaEvents.environment(windowNode != 0 ? windowNode : rt.rootID, e))
     }
 }
 

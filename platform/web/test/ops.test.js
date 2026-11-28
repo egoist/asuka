@@ -45,6 +45,7 @@ test("encodes the golden events", () => {
     width: 402, height: 874, safeTop: 62, safeBottom: 34, keyboard: 336, scale: 3, fontScale: 1.25,
     dark: true, reduceMotion: true, screenReader: true, tv: true, watch: true, platform: 1, widthClass: 1, heightClass: 3,
     locale: "en_US", timeZone: "Asia/Shanghai", languages: "en-US,zh-Hans", firstWeekday: 2, hourCycle: 24,
+    posture: 2, foldX: 397, foldY: 0, foldWidth: 8, foldHeight: 874, multipleWindows: true,
   });
   const pan = Object.assign(gesture(), { state: GestureState.Changed, x: 10, y: 20, translationX: 5, translationY: -3, velocityX: 100, velocityY: -50, scale: 1, rotation: 0.5 });
   const events = [

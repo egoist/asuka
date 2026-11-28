@@ -150,7 +150,9 @@ static bool env_same(const ak_environment *a, const ak_environment *b) {
 	       a->font_scale == b->font_scale && a->dark == b->dark && a->reduce_motion == b->reduce_motion &&
 	       a->screen_reader == b->screen_reader && a->tv == b->tv && a->watch == b->watch && a->platform == b->platform && a->width_class == b->width_class &&
 	       a->height_class == b->height_class && ak_span_eq(a->locale, b->locale) && ak_span_eq(a->time_zone, b->time_zone) &&
-	       ak_span_eq(a->languages, b->languages) && a->first_weekday == b->first_weekday && a->hour_cycle == b->hour_cycle;
+	       ak_span_eq(a->languages, b->languages) && a->first_weekday == b->first_weekday && a->hour_cycle == b->hour_cycle &&
+	       a->posture == b->posture && a->fold_x == b->fold_x && a->fold_y == b->fold_y && a->fold_width == b->fold_width &&
+	       a->fold_height == b->fold_height && a->multiple_windows == b->multiple_windows;
 }
 
 // prov_take sets p's environment to env: what reads it follows, and it's
@@ -194,6 +196,7 @@ bool ak_prov_report(ak_id id, const ak_environment *in) {
 	ak_environment env = *in;
 	if (env.width_class == AK_SIZE_CLASS_UNSPECIFIED) env.width_class = ak_width_class_of(env.width);
 	if (env.height_class == AK_SIZE_CLASS_UNSPECIFIED) env.height_class = ak_height_class_of(env.height);
+	if (ak_fit_sheet_platform(env.platform)) env.multiple_windows = true;  // a desktop's, the web's
 	// A sheet asking to be as tall as its content is sized to it where the
 	// platform its first environment names sizes such a sheet, else rests
 	// at a detent of its content's height.

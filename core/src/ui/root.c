@@ -22,15 +22,16 @@ static bool mounting;
 static const uint8_t env_kinds[] = {
 	AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT, AK_K_FLOAT,
 	AK_K_BOOL, AK_K_BOOL, AK_K_BOOL, AK_K_INT, AK_K_INT, AK_K_INT, AK_K_REF, AK_K_REF, AK_K_REF, AK_K_INT, AK_K_INT,
-	AK_K_BOOL, AK_K_BOOL,
+	AK_K_BOOL, AK_K_BOOL, AK_K_INT, AK_K_REF, AK_K_BOOL,
 };
 static const char *const env_names[] = {
 	"width", "height", "safeTop", "safeRight", "safeBottom", "safeLeft", "keyboard", "scale", "fontScale",
 	"dark", "reduceMotion", "screenReader", "platform", "widthClass", "heightClass", "locale", "timeZone", "languages",
-	"firstWeekday", "hourCycle", "tv", "watch",
+	"firstWeekday", "hourCycle", "tv", "watch", "posture", "fold", "multipleWindows",
 };
-static const ak_shape *const no_shapes[22];
-const ak_shape ak_ui_shape_environment = {"Environment", 22, env_kinds, no_shapes, env_names, 0, NULL, false, NULL};
+static const ak_shape *const no_shapes[25];
+static const ak_shape *const env_shapes[25] = {[23] = &ak_ui_shape_frame};
+const ak_shape ak_ui_shape_environment = {"Environment", 25, env_kinds, env_shapes, env_names, 0, NULL, false, NULL};
 
 static const uint8_t range_kinds[] = {AK_K_INT, AK_K_INT};
 static const char *const range_names[] = {"start", "end"};
@@ -108,10 +109,12 @@ void ak_ui_env_strings(ak_environment *dst, ak_str **strs, const ak_environment 
 }
 
 // classify fills in the size classes a host left unspecified with
-// Material's, from the size.
+// Material's, from the size, and that a desktop's app (the web's, whose
+// Windows are panels in the page) opens windows of its own.
 static void classify(ak_environment *e) {
 	if (e->width_class == AK_SIZE_CLASS_UNSPECIFIED) e->width_class = ak_width_class_of(e->width);
 	if (e->height_class == AK_SIZE_CLASS_UNSPECIFIED) e->height_class = ak_height_class_of(e->height);
+	if (ak_fit_sheet_platform(e->platform)) e->multiple_windows = true;
 }
 
 static bool env_same(const ak_environment *a, const ak_environment *b) {
@@ -120,7 +123,9 @@ static bool env_same(const ak_environment *a, const ak_environment *b) {
 	       a->scale == b->scale && a->font_scale == b->font_scale && a->dark == b->dark && a->reduce_motion == b->reduce_motion &&
 	       a->screen_reader == b->screen_reader && a->tv == b->tv && a->watch == b->watch && a->platform == b->platform && a->width_class == b->width_class &&
 	       a->height_class == b->height_class && ak_span_eq(a->locale, b->locale) && ak_span_eq(a->time_zone, b->time_zone) &&
-	       ak_span_eq(a->languages, b->languages) && a->first_weekday == b->first_weekday && a->hour_cycle == b->hour_cycle;
+	       ak_span_eq(a->languages, b->languages) && a->first_weekday == b->first_weekday && a->hour_cycle == b->hour_cycle &&
+	       a->posture == b->posture && a->fold_x == b->fold_x && a->fold_y == b->fold_y && a->fold_width == b->fold_width &&
+	       a->fold_height == b->fold_height && a->multiple_windows == b->multiple_windows;
 }
 
 static void root_set_env(ak_ui_root *r, const ak_environment *in) {
@@ -187,6 +192,11 @@ static ak_val env_value(bool whole) {
 	s->f[18].i = e.first_weekday, s->f[19].i = e.hour_cycle;
 	s->f[20].i = e.tv;
 	s->f[21].i = e.watch;
+	s->f[22].i = e.posture;
+	ak_struct *fold = ak_struct_new(&ak_ui_shape_frame);
+	fold->f[0].f = e.fold_x, fold->f[1].f = e.fold_y, fold->f[2].f = e.fold_width, fold->f[3].f = e.fold_height;
+	s->f[23].p = fold;
+	s->f[24].i = e.multiple_windows;
 	return (ak_val){.p = s};
 }
 

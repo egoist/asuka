@@ -343,8 +343,8 @@ screen Mailbox(name: string) {
 
 `Tabs` は、タブバーを付けて一度に一つのページを表示します。
 
-- **iOS**：`UITabBarController`。
-- **Android**：Material のボトムナビゲーションバー。
+- **iOS**：`UITabBarController`。iPad（iOS 18 以降）では、「ミュージック」や「TV」と同じく、タブバーがサイドバーに切り替わります。タブは上部に並び、横のボタンでコンテンツの隣のサイドバーに広げたり、元に戻したりできます。コンパクトな幅（Slide Over や狭い Split View）では、iPhone と同じく下部のタブバーになります。
+- **Android**：コンパクトなウィンドウでは Material のボトムナビゲーションバー、幅が 600dp 以上（タブレット、開いた折りたたみ端末、デスクトップのウィンドウ）では、Material 3 のアダプティブナビゲーションのとおり、開始側の端に Material のナビゲーションレールを表示します。ウィンドウの幅が 600dp をまたぐと自動で切り替わり、表示中のタブとバッジはそのまま残ります。
 - **macOS**：上部にタブを並べた `NSTabView`。
 - **Windows**：WinUI の上部 `NavigationView` と同じ、上部に並ぶタブのバー。各タブにはアイコンとタイトルがあり、選択中のタブの下にはアクセントカラーのピルが付きます。矢印キーでタブ間を移動できます。
 - **Linux**：`AdwViewStack`。GNOME のアプリと同じく、幅の広いウィンドウではヘッダーバーにビュースイッチャーを置き、幅の狭いウィンドウ（550 ポイント未満）では下部のバーにします。
@@ -820,8 +820,54 @@ component Notes {
 | Windows | トップレベルウィンドウ。専用のタイトルとタスクバーボタンを持ちます |
 | Linux | `AdwWindow`。専用のヘッダーバーを持ちます |
 | Web | ページ内のパネル。ユーザーが移動したりサイズを変えたりできます |
+| iPad | 独立したウィンドウシーン（`UIWindowScene`）。アプリのウィンドウの隣に表示されます（[後述](#ipad-のウィンドウ)） |
 
-スマートフォンにはウィンドウがないので、そこでは `Window` は何も表示しません。ウィンドウを提供するコンポーネントは、後述のメニューバーのように、デスクトップにしかないものから提供してください。
+`Window` がウィンドウを開ける場所、つまりデスクトップ、Web、iPad では、`environment().multipleWindows` が true になります。iPhone、Apple TV、Android ではアプリのウィンドウは 1 つだけで、`Window` は何も表示しません。ウィンドウを提供するコンポーネントは、ウィンドウを開ける場所でだけ提供するか、後述のメニューバーのように、デスクトップにしかないものから提供してください。
+
+### iPad のウィンドウ
+
+iPad では、`Window` はアプリのウィンドウの隣に独立したウィンドウを開きます。Split View や Slide Over、iPadOS のウィンドウ表示やステージマネージャのウィンドウ、あるいはフルスクリーンなど、配置はユーザーが決めます。同じコードで、Mac でも iPad でも 2 つ目のウィンドウが開きます。
+
+```asuka check
+state notes = ["Milk"]
+state inspector = false
+
+app {
+  Stack { Notes() }
+}
+
+screen Notes {
+  title: "Notes"
+  Column {
+    for n in notes key n { Text(n) }
+    if environment().multipleWindows {
+      Button("Inspector") { on press { inspector = true } }
+    }
+  }
+  Window {
+    bind open: inspector
+    title: "Inspector"
+    stateKey: "inspector"
+    minWidth: 320
+    Stack { Inspector() }
+  }
+}
+
+screen Inspector {
+  title: "Inspector"
+  Text("{notes.count()} notes")
+}
+```
+
+- コードで `Window`（app ブロックのメインウィンドウ以外）を開くアプリは、複数のウィンドウに対応します。asuka がそのことを Info.plist に書くので、システムの「すべてのウィンドウを表示」も使えるようになります。そうした `Window` のないアプリは、スマートフォンのアプリと同じくウィンドウが 1 つです。
+- 中の環境はそのウィンドウのものです。ユーザーがサイズを変えると、アプリのもう一方のウィンドウとは別に、サイズとサイズクラスが変わります。
+- ユーザーがウィンドウを閉じる（閉じるボタン、App スイッチャーでの上スワイプ）と、`open` が false になり、`close` が発生します。iPadOS はウィンドウを閉じる前にアプリに問い合わせないので、`closeRequest` やガードは呼ばれません。
+- `stateKey` のあるウィンドウは復元されます。アプリが再び起動したとき、iPadOS はユーザーが開いたままにしていたウィンドウを戻し、そのキーを持つアプリの `Window` がそこに開きます（`open` が true になります）。キーのないウィンドウや、そのときアプリに対応する `Window` がないウィンドウは閉じられます。
+- `w.show()` と `w.focus()` はウィンドウを手前に出します。ほかの操作はデスクトップのもので、ここでは何もしません。`title` は App スイッチャーやシステムのウィンドウメニューでの名前になり、`minWidth` と `minHeight` はユーザーが縮められる最小サイズになります。`w.visible`、`w.focused`、`w.size` はウィンドウに追従します。
+- シート、アラート、スナックバーは、それを宣言したウィンドウの上に開きます。
+- アプリのメインウィンドウは 1 つです。システムの「新規ウィンドウ」は、それを手前に出します。
+
+Android では、アプリは 1 つのアクティビティで、システムが分割画面、デスクトップのウィンドウ、折りたたみ端末に合わせてサイズを変えます。レイアウトはサイズクラスに従い（[レイアウト](layout.md#タブレットと折りたたみ端末)）、`Window` は何も表示しません。
 
 ### オプション
 

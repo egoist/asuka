@@ -25,6 +25,7 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 | 选择行 | `List(selection:)`、`EditButton` | 社区方案 | ✓ `List` 的 `selecting`，行的 `selected`、`on select`、`on selectBegin`（iOS 的编辑模式和双指拖动；Android 的复选框和长按；桌面端高亮选中行，浏览器里显示勾选标记） |
 | 安全区域、键盘 | 自动处理 | `SafeAreaView`、`KeyboardAvoidingView` | ✓ `SafeArea`（也会为键盘留出空间）、`environment()` 的 `safeTop`……和 `keyboard` |
 | 读取视图尺寸、窗口尺寸 | `GeometryReader`、尺寸类别 | `onLayout`、`useWindowDimensions` | ✓ `on layout(frame)`；`environment()` 的 `width`、`height`、`widthClass`、`heightClass` |
+| 折叠屏：姿态与铰链 | — | 社区方案（基于 Jetpack WindowManager 的折叠屏库） | ✓ `environment()` 的 `posture`（`.flat`、`.tabletop`、`.book`）和 `fold`，在 Android 上来自 Jetpack WindowManager（见[平板与折叠屏](layout.md#平板与折叠屏)） |
 | 宽高比、最小和最大尺寸 | `.aspectRatio`、`.frame(min:max:)` | style | ✓ `aspectRatio`、`minWidth`、`maxWidth`、`minHeight`、`maxHeight` |
 
 ## 控件
@@ -66,6 +67,8 @@ SwiftUI 也能在 Mac 上运行。Expo 支持 iOS、Android 和 Web；React Nati
 |---|---|---|---|
 | 导航栈：原生的推入、弹出和返回手势 | `NavigationStack` | Stack | ✓ `Stack`、`push`、`pop` |
 | 标签页 | `TabView` | Tabs | ✓ `Tabs`、`Tab` |
+| 适应平板的标签页 | 带 `.sidebarAdaptable` 的 `TabView` | 社区方案（react-navigation 的抽屉或自制的导航栏） | ✓ `Tabs` 自动适应：iPad 上有用户可以展开的侧边栏（iOS 18 及以上）；Android 上从 600dp 起是 Material 的导航栏（rail） |
+| iPad 上的多个窗口 | `WindowGroup`、`openWindow`、`supportsMultipleWindows` | —（社区方案） | ✓ 桌面端的 `Window`：在 iPad 上是一个独立的场景，应用再次启动时会被恢复（`stateKey`）；`environment().multipleWindows`。Android：只有一个由系统调整大小的窗口（见 [iPad 上的窗口](navigation.md#ipad-上的窗口)） |
 | 侧边栏、抽屉 | `NavigationSplitView` | Drawer | ✓ `Split`、`Destination`、`Sidebar`（iPhone 上是导航栈，Android 上是抽屉；`UISplitViewController`、`NSSplitViewController`，Windows 上按 WinUI 的 `NavigationView` 窗格绘制，Linux 上是 libadwaita 的分栏视图） |
 | 标签页和侧边栏行上的徽标 | `badge` | `tabBarBadge`、`drawerItem` 的计数 | ✓ `Tab` 和 `Destination` 的 `badge`（`badgeValue`、`BadgeDrawable`、抽屉里的计数；Mac 上是来源列表的计数；Fluent 的 `InfoBadge`；Linux 和 Web 上显示一个计数） |
 | 栏按钮、标题、搜索 | `.toolbar`、`.searchable` | header 选项 | ✓ 页面的 `title`、`largeTitle`、`toolbar { … }`、`bind search` |

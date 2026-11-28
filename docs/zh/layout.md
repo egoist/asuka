@@ -203,7 +203,7 @@ SafeArea {
 
 在 macOS、Windows 和 Linux 上，根视图铺满窗口的内容区域，位于标题栏（Linux 上是 header bar）下方。桌面窗口没有安全区域，也没有会遮住窗口的屏幕键盘：边距和键盘高度都是 0，`SafeArea` 就是一个只带自身内边距的 `Column`。不过还是建议照样使用它，这样同一个页面也能直接适配手机。
 
-除非应用另行指定，窗口大小是 800×600 点（见[导航](navigation.md)）；手机上没有窗口。用户调整窗口大小时，环境里的 `width` 和 `height` 会随之变化，布局也会重新计算，你不需要做任何处理。如果想在特定尺寸下改变布局（比如空间足够时才显示侧边栏），可以像在平板上那样，根据环境的 `widthClass` 分支：
+除非应用另行指定，窗口大小是 800×600 点（见[导航](navigation.md)）；手机上没有窗口。用户调整窗口大小时，环境里的 `width` 和 `height` 会随之变化，布局也会重新计算，你不需要做任何处理。如果想在特定尺寸下改变布局（比如空间足够时才显示侧边栏），可以像在平板上那样，根据环境的 `widthClass` 分支（见[下文](#平板与折叠屏)）：
 
 ```asuka
 if environment().widthClass == .expanded {
@@ -214,6 +214,44 @@ if environment().widthClass == .expanded {
 ```
 
 在浏览器中，铺满整个页面的应用会从视觉视口（visual viewport）获取设备的安全区域（`env(safe-area-inset-*)`，适用于带刘海的手机）和屏幕键盘的高度。嵌在页面某个局部的应用则两者都没有。
+
+## 平板与折叠屏
+
+在平板、折叠屏和桌面上，窗口很宽，用户还会改变它的大小：iPad 的分屏、侧拉和台前调度，Android 的分屏和桌面窗口，折叠屏的展开与合上。环境里的 `width` 和 `height` 会跟着变化，`widthClass` 和 `heightClass` 则说明这块空间适合怎么用：
+
+| | 紧凑（compact） | 中等（medium） | 宽大（expanded） |
+|---|---|---|---|
+| 宽度 | 不到 600 点：手机、较窄的分屏 | 600 到 840：竖放的平板、展开的折叠屏 | 840 及以上：横放的平板、桌面窗口 |
+| 高度 | 不到 480：横放的手机 | 480 到 900 | 900 及以上 |
+
+Android 报告的是上表中 Material 的窗口尺寸类别；iOS 报告的是 UIKit 的尺寸类别，只有紧凑和常规（报告为 `.expanded`）两种，iPad 分屏中较窄的一侧是紧凑的。请根据尺寸类别分支，而不是自己定一个宽度：
+
+```asuka
+if environment().widthClass == .compact {
+  ItemList()
+} else {
+  Row { grow: 1; ItemList(); Detail() }
+}
+```
+
+导航会自己适应：`Tabs` 在 Android 上从中等宽度起换成导航栏（rail），在 iPad 上有用户可以展开的侧边栏；`Split` 在空间足够时把侧边栏立在内容旁边，空间不够时收成一个导航栈或抽屉（见[导航](navigation.md#分栏视图)）。iPad 还可以把应用的 `Window` 显示在旁边（见[导航](navigation.md#ipad-上的窗口)）。
+
+折叠屏会告诉应用它是怎么拿着的。`environment().posture` 可以是 `.flat`（其他设备都是这样）、`.tabletop`（半开，折痕横穿窗口：上半部分立起来，像笔记本电脑的屏幕）或 `.book`（半开，折痕竖穿窗口：像翻开的书的两页）。`environment().fold` 是折痕或铰链穿过窗口的位置，以窗口左上角为原点、单位为点（一个 `Frame`；没有折痕穿过时为零）：桌面模式下，把要看的内容放在它上方、要操作的放在下方；书本模式下，两侧各放一页。
+
+```asuka
+let env = environment()
+if env.posture == .tabletop {
+  Column {
+    grow: 1
+    Column { height: env.fold.y; VideoPlayer() }
+    Column { grow: 1; Controls() }
+  }
+} else {
+  VideoPlayer()
+}
+```
+
+Android 通过 Jetpack WindowManager 的折叠特性（folding feature）报告它们，并在变化时更新；其他平台上始终是 flat。
 
 ## 滚动
 

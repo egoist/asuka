@@ -423,6 +423,12 @@ public struct AsukaEnvironment: Equatable {
     public var languages = ""
     /// 1 Sunday to 7 Saturday, and 12 or 24; 0 when the system doesn't say.
     public var firstWeekday: UInt8 = 0, hourCycle: UInt8 = 0
+    /// ops.Posture: 0 flat, 1 tabletop, 2 book (a foldable's; iOS's are flat).
+    public var posture: UInt8 = 0
+    /// Where a fold crosses the window, in points; all 0: none does.
+    public var foldX: Float = 0, foldY: Float = 0, foldWidth: Float = 0, foldHeight: Float = 0
+    /// A Window opens a window of its own here: an iPad's scene.
+    public var multipleWindows = false
     public init() {}
 }
 
@@ -447,6 +453,9 @@ public struct AsukaWriter {
         string(e.languages)
         u8(e.firstWeekday)
         u8(e.hourCycle)
+        u8(e.posture)
+        for f in [e.foldX, e.foldY, e.foldWidth, e.foldHeight] { f32(f) }
+        u8(e.multipleWindows ? 1 : 0)
     }
     public mutating func gesture(_ g: AsukaGesture) {
         u8(UInt8(g.state))
@@ -666,6 +675,12 @@ data class AsukaEnvironment(
     val languages: String = "",
     /** 1 Sunday to 7 Saturday, and 12 or 24; 0 when the system doesn't say. */
     val firstWeekday: Int = 0, val hourCycle: Int = 0,
+    /** ops.Posture: 0 flat, 1 tabletop, 2 book (a foldable's, from Jetpack WindowManager). */
+    val posture: Int = 0,
+    /** Where a fold or hinge crosses the window, in dp; all 0: none does. */
+    val foldX: Float = 0f, val foldY: Float = 0f, val foldWidth: Float = 0f, val foldHeight: Float = 0f,
+    /** A Window opens a window of its own here (Android's are a phone's: none). */
+    val multipleWindows: Boolean = false,
 )
 
 /** Writes the little-endian wire format. */
@@ -696,6 +711,9 @@ class AsukaWriter {
         string(e.languages)
         u8(e.firstWeekday)
         u8(e.hourCycle)
+        u8(e.posture)
+        for (f in floatArrayOf(e.foldX, e.foldY, e.foldWidth, e.foldHeight)) f32(f)
+        u8(if (e.multipleWindows) 1 else 0)
     }
     fun gesture(g: AsukaGesture) {
         u8(g.state)

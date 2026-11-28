@@ -423,6 +423,10 @@ type appConfig struct {
 	// Android Auto category ("media": a media browser), "" none.
 	carScene   bool
 	carAndroid string
+	// windows: the app opens windows of its own (a Window that isn't
+	// its app block's main window): on an iPad, each its own scene
+	// (windowExtras).
+	windows bool
 	// Ads is what an app of platform/ads gives Google Mobile Ads: its
 	// AdMob app IDs, more ad networks' SKAdNetwork identifiers (ads.go).
 	Ads adsConfig `json:"ads"`
@@ -840,6 +844,15 @@ func (c *appConfig) bluetoothExtras() {
 // bluetoothLaunch is platform/bluetooth's launch class on iOS (its manifest's
 // launch, for an app that calls backgroundScan).
 const bluetoothLaunch = "AsukaBluetoothLaunch"
+
+// windowExtras notes whether the app opens windows of its own (a
+// Window that isn't its app block's main window): on an iPad each is a
+// scene of its own, so Info.plist says the app supports several (which
+// gives it the system's New Window and Show All Windows too); an app
+// without one keeps the single window of a phone's app.
+func (c *appConfig) windowExtras(u *appbuild.Uses) {
+	c.windows = u != nil && u.Ref("", appbuild.SecondaryWindow)
+}
 
 // videoExtras gives an app whose Video may play in picture in picture
 // (its pictureInPicture prop set) the audio background mode iOS's

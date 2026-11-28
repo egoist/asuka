@@ -33,6 +33,9 @@ open class AsukaActivity : AppCompatActivity() {
     /** The frame that holds the root's view (and the overlay snackbars show in). */
     val rootFrame: FrameLayout get() = frame
     private var last: AsukaEnvironment? = null
+    /** A foldable's posture and fold, as the window's layout last said (Fold.kt). */
+    var fold = AsukaFold()
+    private val folds by lazy { AsukaFoldTracker(this) }
     // The app's language and direction, where they aren't the Activity's
     // configuration's: what it makes (dialogs, Material's pickers) is in them.
     private var shownResources: Resources? = null
@@ -239,6 +242,8 @@ open class AsukaActivity : AppCompatActivity() {
             languages = runtime.region.languages,
             firstWeekday = runtime.region.firstWeekday,
             hourCycle = runtime.region.hourCycle,
+            posture = fold.posture,
+            foldX = fold.x / d, foldY = fold.y / d, foldWidth = fold.width / d, foldHeight = fold.height / d,
         )
         if (!force && e == last) return
         last = e
@@ -286,8 +291,15 @@ open class AsukaActivity : AppCompatActivity() {
         incoming(intent)
     }
 
+    /** The fold moved, or the device was opened or folded: the root and the screens report it. */
+    fun foldChanged() {
+        sendEnvironment()
+        if (runtime.activity === this) runtime.reportScreens()
+    }
+
     override fun onStart() {
         super.onStart()
+        folds.start()
         // Another instance had the views (one launched on top of this
         // one, then closed): take them back.
         if (runtime.activity != null && runtime.activity !== this) frame.post { runtime.attach(this) }
@@ -321,6 +333,7 @@ open class AsukaActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        folds.stop()
         AsukaDisplay.watch(this, false)
         runtime.lifecycle(AsukaLifecycle.BACKGROUND)
     }

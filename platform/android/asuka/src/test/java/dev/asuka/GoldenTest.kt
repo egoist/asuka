@@ -57,7 +57,8 @@ class GoldenTest {
     @Test fun encodesGoldenEvents() {
         val env = AsukaEnvironment(width = 402f, height = 874f, safeTop = 62f, safeBottom = 34f, keyboard = 336f,
             scale = 3f, fontScale = 1.25f, dark = true, reduceMotion = true, screenReader = true, tv = true, watch = true, platform = 1, widthClass = 1, heightClass = 3, locale = "en_US", timeZone = "Asia/Shanghai",
-            languages = "en-US,zh-Hans", firstWeekday = 2, hourCycle = 24)
+            languages = "en-US,zh-Hans", firstWeekday = 2, hourCycle = 24,
+            posture = 2, foldX = 397f, foldWidth = 8f, foldHeight = 874f, multipleWindows = true)
         val events = listOf(
             AsukaEvents.press(7),
             AsukaEvents.textChanged(7, "hé"),

@@ -404,6 +404,12 @@ Its fields:
 - `watch`: the app runs on a watch (Apple Watch, where `platform` is
   `.iOS`): a small screen, glanced at, the Digital Crown. See [Apple
   Watch](watch.md).
+- `posture`, `fold`: how a foldable is held (`.flat`, `.tabletop`,
+  `.book`) and where its fold crosses the window. See [Tablets and
+  foldables](layout.md#tablets-and-foldables).
+- `multipleWindows`: a `Window` opens a window of its own here: a
+  desktop, the web, an iPad. See [Windows on an
+  iPad](navigation.md#windows-on-an-ipad).
 
 Semantic colors and fonts follow dark mode and the text size on their
 own; read the environment for what they don't cover.

@@ -436,6 +436,11 @@ func (u *Uses) Embedded(path string) bool {
 	return false
 }
 
+// SecondaryWindow is the Ref, of the prelude's, of a Window that isn't
+// an app block's main window: a window of its own that the app opens (on
+// an iPad, a scene of its own).
+const SecondaryWindow = "Window#window"
+
 // Import reports whether the program imports pkg.
 func (u *Uses) Import(pkg string) bool { return u.Imports[pkg] }
 
@@ -566,6 +571,47 @@ func usesOf(prog *check.Program, u *Uses) {
 			}
 		}
 	}
+	// isWindow is whether a call makes the prelude's Window.
+	isWindow := func(c *syntax.CallExpr) bool {
+		e := info.Elements[c]
+		return e != nil && e.Comp != nil && e.Comp.Comp != nil && e.Comp.Comp.Native && e.Comp.Pkg != nil && e.Comp.Pkg.Prelude &&
+			e.Comp.Name() == "Window"
+	}
+	// mains are the app blocks' main windows: each block's first Window
+	// among its items (lang/ir's mainWindow).
+	mains := map[*syntax.CallExpr]bool{}
+	for _, pkg := range prog.Packages {
+		if pkg.Prelude {
+			continue
+		}
+		for _, f := range pkg.Files {
+			syntax.Inspect(f, func(n syntax.Node) bool {
+				a, ok := n.(*syntax.AppDecl)
+				if !ok || a.Body == nil {
+					return true
+				}
+				for _, it := range a.Body.Items {
+					s, ok := it.(*syntax.ExprStmt)
+					if !ok {
+						continue
+					}
+					x := s.X
+					for {
+						p, ok := x.(*syntax.ParenExpr)
+						if !ok {
+							break
+						}
+						x = p.X
+					}
+					if c, ok := x.(*syntax.CallExpr); ok && isWindow(c) {
+						mains[c] = true
+						break
+					}
+				}
+				return false
+			})
+		}
+	}
 	for _, pkg := range prog.Packages {
 		if pkg.Prelude {
 			continue
@@ -580,6 +626,9 @@ func usesOf(prog *check.Program, u *Uses) {
 						object(pkg, o)
 					}
 				case *syntax.CallExpr:
+					if isWindow(n) && !mains[n] {
+						u.Refs[SecondaryWindow] = true
+					}
 					if e := info.Elements[n]; e != nil && e.Comp != nil {
 						object(pkg, e.Comp)
 						// A prelude element's props set (Video's

@@ -318,6 +318,15 @@ enum SizeClass {
   expanded
 }
 
+/// How a foldable is held: flat (as every device without a fold is), or
+/// half open, its fold across the window (tabletop: the top half stands
+/// up, as a laptop's screen) or down it (book: two pages side by side).
+enum Posture {
+  flat
+  tabletop
+  book
+}
+
 /// What the platform says about where the app shows: its size, the safe
 /// area's insets, the keyboard, the display, the text size, the user's
 /// languages. environment() reads it, and a binding that does follows it
@@ -339,13 +348,16 @@ struct Environment {
   platform: Platform = .unknown
   widthClass: SizeClass = .unspecified
   heightClass: SizeClass = .unspecified
-  locale: string = ""    // the user's regional formats (BCP 47)
-  timeZone: string = ""  // IANA
-  languages: string = "" // BCP 47 tags, most preferred first, joined by commas
-  firstWeekday: int = 0  // 1 Sunday to 7 Saturday; 0 unknown
-  hourCycle: int = 0     // 12 or 24; 0 unknown
-  tv: bool = false       // a TV (Apple TV, Android TV), driven by a remote's focus
-  watch: bool = false    // a watch (Apple Watch): a small screen, the Digital Crown
+  locale: string = ""           // the user's regional formats (BCP 47)
+  timeZone: string = ""         // IANA
+  languages: string = ""        // BCP 47 tags, most preferred first, joined by commas
+  firstWeekday: int = 0         // 1 Sunday to 7 Saturday; 0 unknown
+  hourCycle: int = 0            // 12 or 24; 0 unknown
+  tv: bool = false              // a TV (Apple TV, Android TV), driven by a remote's focus
+  watch: bool = false           // a watch (Apple Watch): a small screen, the Digital Crown
+  posture: Posture = .flat      // a foldable's (Android)
+  fold: Frame = Frame()         // where a foldable's fold or hinge crosses the window; zero: none does
+  multipleWindows: bool = false // a Window opens a window of its own here (a desktop, an iPad)
 }
 
 // ---- Interaction ----

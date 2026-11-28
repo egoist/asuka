@@ -306,7 +306,7 @@ extension AsukaRuntime {
     /// Presents a sheet over the top controller (Present), once its
     /// content's height is known when a detent is that height.
     func presentSheet(_ s: AsukaSheetController) {
-        guard let n = nodes[s.nodeID], n.vc === s, !n.dying, s.presentingViewController == nil, let top = topController else { return }
+        guard let n = nodes[s.nodeID], n.vc === s, !n.dying, s.presentingViewController == nil, let top = topController(over: n) else { return }
         // The style before the presentation controller is first asked
         // for: it's made for the style it has then.
         s.modalPresentationStyle = s.fullScreen ? .fullScreen : .automatic

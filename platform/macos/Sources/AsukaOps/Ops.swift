@@ -539,6 +539,7 @@ public enum AsukaEventKind: UInt16 {
     case open = 77
     case expand = 78
     case undo = 79
+    case restoreWindow = 80
 }
 
 public enum AsukaCommand: UInt16 {
@@ -1163,6 +1164,12 @@ public struct AsukaEnvironment: Equatable {
     public var languages = ""
     /// 1 Sunday to 7 Saturday, and 12 or 24; 0 when the system doesn't say.
     public var firstWeekday: UInt8 = 0, hourCycle: UInt8 = 0
+    /// ops.Posture: 0 flat, 1 tabletop, 2 book (a foldable's; iOS's are flat).
+    public var posture: UInt8 = 0
+    /// Where a fold crosses the window, in points; all 0: none does.
+    public var foldX: Float = 0, foldY: Float = 0, foldWidth: Float = 0, foldHeight: Float = 0
+    /// A Window opens a window of its own here: an iPad's scene.
+    public var multipleWindows = false
     public init() {}
 }
 
@@ -1187,6 +1194,9 @@ public struct AsukaWriter {
         string(e.languages)
         u8(e.firstWeekday)
         u8(e.hourCycle)
+        u8(e.posture)
+        for f in [e.foldX, e.foldY, e.foldWidth, e.foldHeight] { f32(f) }
+        u8(e.multipleWindows ? 1 : 0)
     }
     public mutating func gesture(_ g: AsukaGesture) {
         u8(UInt8(g.state))
@@ -1443,5 +1453,8 @@ public enum AsukaEvents {
     }
     public static func undo(_ id: UInt32, _ v: Int64) -> [UInt8] {
         var w = AsukaWriter(); w.header(id, 79); w.u64(UInt64(bitPattern: v)); return w.bytes
+    }
+    public static func restoreWindow(_ id: UInt32, _ v: String) -> [UInt8] {
+        var w = AsukaWriter(); w.header(id, 80); w.string(v); return w.bytes
     }
 }

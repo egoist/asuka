@@ -611,6 +611,10 @@ void ak_event_append(ak_buf *b, const ak_event *e) {
 		ak_buf_wstr(b, v->languages);
 		ak_buf_u8(b, v->first_weekday);
 		ak_buf_u8(b, v->hour_cycle);
+		ak_buf_u8(b, v->posture);
+		const float fold[] = {v->fold_x, v->fold_y, v->fold_width, v->fold_height};
+		for (size_t i = 0; i < AK_LEN(fold); i++) ak_buf_f32(b, fold[i]);
+		ak_buf_u8(b, v->multiple_windows ? 1 : 0);
 		break;
 	}
 	case AK_P_GESTURE: {
@@ -659,6 +663,10 @@ int ak_event_decode(const uint8_t *data, size_t len, ak_event *e) {
 		v->languages = ak_read_str(&r);
 		v->first_weekday = ak_read_u8(&r);
 		v->hour_cycle = ak_read_u8(&r);
+		v->posture = ak_read_u8(&r);
+		float *fold[] = {&v->fold_x, &v->fold_y, &v->fold_width, &v->fold_height};
+		for (size_t i = 0; i < AK_LEN(fold); i++) *fold[i] = ak_read_f32(&r);
+		v->multiple_windows = ak_read_u8(&r) != 0;
 		break;
 	}
 	case AK_P_GESTURE: {

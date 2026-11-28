@@ -249,20 +249,104 @@ final class AsukaStackController: UINavigationController, UINavigationController
     }
 }
 
+/// Tabs: a UITabBarController. On an iPad (iOS 18 and later) its tabs are
+/// UITabs and it adapts to a sidebar (its tabSidebar mode, as Music's and
+/// TV's): the tab bar at the top, which the user turns into a sidebar
+/// beside the content, and back; in a compact width (Slide Over, a narrow
+/// Split View) the bar alone, as on an iPhone, which keeps its
+/// view controllers' tab bar.
 final class AsukaTabsController: UITabBarController, UITabBarControllerDelegate {
     let nodeID: UInt32
+    /// Its pages' tabs are UITabs (an iPad's).
+    let usesTabs: Bool
 
     init(nodeID: UInt32) {
         self.nodeID = nodeID
+        #if os(tvOS)
+        usesTabs = false
+        #else
+        if #available(iOS 18.0, *) { usesTabs = UIDevice.current.userInterfaceIdiom == .pad } else { usesTabs = false }
+        #endif
         super.init(nibName: nil, bundle: nil)
         delegate = self
+        #if !os(tvOS)
+        if #available(iOS 18.0, *), usesTabs { mode = .tabSidebar }
+        #endif
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    func tabBarController(_ t: UITabBarController, didSelect vc: UIViewController) {
-        let i = Int64(selectedIndex)
-        AsukaRuntime.shared.emit(nodeID, .selected) { AsukaEvents.selected(nodeID, i) }
+    /// Its pages, in order: their controllers, and the page nodes' IDs
+    /// (a UITab's identifier).
+    func setPages(_ pages: [AsukaNode]) {
+        let vcs = pages.compactMap { $0.vc }
+        #if !os(tvOS)
+        if #available(iOS 18.0, *), usesTabs {
+            var have: [String: UITab] = [:]
+            for t in tabs { have[t.identifier] = t }
+            let next: [UITab] = pages.compactMap { p in
+                guard let vc = p.vc else { return nil }
+                let id = String(p.id)
+                if let t = have[id], t.viewController === vc { return t }
+                let t = UITab(title: vc.title ?? vc.tabBarItem.title ?? "", image: vc.tabBarItem.image, identifier: id) { _ in vc }
+                t.badgeValue = vc.tabBarItem.badgeValue
+                return t
+            }
+            setTabs(next, animated: false)
+            return
+        }
+        #endif
+        setViewControllers(vcs, animated: false)
     }
+
+    /// Shows page i.
+    func select(_ i: Int) {
+        #if !os(tvOS)
+        if #available(iOS 18.0, *), usesTabs {
+            if i >= 0 && i < tabs.count { selectedTab = tabs[i] }
+            return
+        }
+        #endif
+        selectedIndex = i
+    }
+
+    /// Page vc's title, icon or badge changed: its UITab follows (a
+    /// view controller's tab bar item follows on its own).
+    func pageChanged(_ vc: UIViewController) {
+        #if !os(tvOS)
+        guard #available(iOS 18.0, *), usesTabs, let t = tabs.first(where: { $0.viewController === vc }) else { return }
+        t.title = vc.title ?? vc.tabBarItem.title ?? ""
+        t.image = vc.tabBarItem.image
+        t.badgeValue = vc.tabBarItem.badgeValue
+        #endif
+    }
+
+    /// The index of the tab with title, for automation.
+    func index(of title: String) -> Int? {
+        #if !os(tvOS)
+        if #available(iOS 18.0, *), usesTabs { return tabs.firstIndex { $0.title == title } }
+        #endif
+        return viewControllers?.firstIndex { $0.tabBarItem.title == title }
+    }
+
+    /// The user chose page i: the core hears it.
+    func chose(_ i: Int) {
+        let n = Int64(i)
+        let id = nodeID
+        AsukaRuntime.shared.emit(id, .selected) { AsukaEvents.selected(id, n) }
+    }
+
+    func tabBarController(_ t: UITabBarController, didSelect vc: UIViewController) {
+        if usesTabs { return } // didSelectTab's
+        chose(selectedIndex)
+    }
+
+    #if !os(tvOS)
+    @available(iOS 18.0, *)
+    func tabBarController(_ t: UITabBarController, didSelectTab tab: UITab, previousTab: UITab?) {
+        guard usesTabs, let i = tabs.firstIndex(where: { $0 === tab }) else { return }
+        chose(i)
+    }
+    #endif
 }
 
 /// An alert. Its title and message are attributed text, whose natural
@@ -389,7 +473,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         e.safeRight = Float(s.right)
         e.safeBottom = Float(s.bottom)
         e.safeLeft = Float(s.left)
-        if let end = controller?.keyboardEnd, let window = view.window {
+        if let end = viewController(of: view)?.keyboardEnd, let window = view.window {
             let f = view.convert(end, from: window.screen.coordinateSpace)
             e.keyboard = Float(max(0, b.maxY - f.minY))
         }
@@ -402,6 +486,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         e.widthClass = t.horizontalSizeClass.asuka
         e.heightClass = t.verticalSizeClass.asuka
         e.tv = t.userInterfaceIdiom == .tv
+        e.multipleWindows = windowsSupported
         e.setLanguages()
         return e
     }
@@ -420,6 +505,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         var p = node.parent
         while let n = p {
             if let vc = n.vc as? AsukaScreenController { return vc }
+            if n.kind == .window { return sceneWins[n.id]?.controller ?? controller } // a Window's scene's
             p = n.parent
         }
         return controller
@@ -511,8 +597,8 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             let i = min(index, p.children.count)
             p.children.insert(c, at: i)
             c.parent = p
-            tabs.setViewControllers(p.children.compactMap { $0.vc }, animated: false)
-            if let sel = p.selected { tabs.selectedIndex = sel }
+            tabs.setPages(p.children)
+            if let sel = p.selected { tabs.select(sel) }
             return true
         }
         if let child = c.vc, child is AsukaStackController || child is AsukaTabsController || child is AsukaSplitController {
@@ -552,7 +638,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
         }
         if let tabs = n.parent?.vc as? AsukaTabsController {
             n.parent?.children.removeAll { $0 === n }
-            tabs.setViewControllers(n.parent?.children.compactMap { $0.vc }, animated: false)
+            tabs.setPages(n.parent?.children ?? [])
             return true
         }
         if vc is AsukaSheetController || vc is AsukaPopoverController || vc is UIAlertController {
@@ -584,7 +670,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
     func present(_ n: AsukaNode, tries: Int = 40) {
         // A sheet or an alert in the app's first frame: UIKit won't present
         // from a controller that's not in a window yet, so it waits to be.
-        if let top = topController, top.viewIfLoaded?.window == nil, tries > 0 {
+        if let top = topController(over: n), top.viewIfLoaded?.window == nil, tries > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak n] in
                 if let n, self?.nodes[n.id] === n { self?.present(n, tries: tries - 1) }
             }
@@ -595,8 +681,10 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             guard let s = n.vc as? AsukaSheetController else { return }
             presentSheet(s) // Sheet.swift
         case .popover:
-            guard let p = n.vc as? AsukaPopoverController, let top = topController,
-                  let anchor = nodes[p.anchor]?.view, anchor.window != nil else { return }
+            // Over the window its anchor is in.
+            guard let p = n.vc as? AsukaPopoverController, let anchor = nodes[p.anchor]?.view, anchor.window != nil,
+                  var top = anchor.window?.rootViewController else { return }
+            while let q = top.presentedViewController, !q.isBeingDismissed { top = q }
             #if os(tvOS)
             p.modalPresentationStyle = .automatic
             p.presentationController?.delegate = p
@@ -611,7 +699,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             #endif
             top.present(p, animated: true)
         case .alert:
-            guard let top = topController else { return }
+            guard let top = topController(over: n) else { return }
             let a = AsukaAlertController(title: n.alertTitle, message: n.alertMessage,
                                         preferredStyle: n.alertStyle == AsukaAlertStyle.actionSheet.rawValue ? .actionSheet : .alert)
             let id = n.id
@@ -786,15 +874,18 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             n.vc?.navigationItem.title = v.string
             n.vc?.title = v.string
             n.vc?.tabBarItem.accessibilityLabel = v.string // it keeps the first title otherwise
+            if let vc = n.vc { (n.parent?.vc as? AsukaTabsController)?.pageChanged(vc) }
         case (.screen, AsukaProp.Screen.largeTitle):
             #if !os(tvOS)
             n.vc?.navigationItem.largeTitleDisplayMode = v.bool ? .always : .never
             #endif
         case (.screen, AsukaProp.Screen.icon):
             n.vc?.tabBarItem.image = UIImage(systemName: v.string)
+            if let vc = n.vc { (n.parent?.vc as? AsukaTabsController)?.pageChanged(vc) }
         case (.screen, AsukaProp.Screen.badge):
             // The system's badge, which VoiceOver reads with the tab.
             n.vc?.tabBarItem.badgeValue = v.string.isEmpty ? nil : v.string
+            if let vc = n.vc { (n.parent?.vc as? AsukaTabsController)?.pageChanged(vc) }
         case (.screen, AsukaProp.Screen.search):
             guard let vc = n.vc else { return }
             let s = n.search ?? AsukaSearch(id: n.id, runtime: self)
@@ -859,7 +950,7 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             break // Android's extended FAB: iOS's toolbar item is as it is
         case (.tabs, AsukaProp.Tabs.selected):
             n.selected = Int(v.int)
-            (n.vc as? AsukaTabsController)?.selectedIndex = Int(v.int)
+            (n.vc as? AsukaTabsController)?.select(Int(v.int))
         case (.popover, AsukaProp.Popover.anchor):
             (n.vc as? AsukaPopoverController)?.anchor = UInt32(truncatingIfNeeded: v.int)
         case (.popover, AsukaProp.Popover.width):
@@ -890,7 +981,11 @@ func decodeActions(_ b: UnsafeRawBufferPointer) -> [AsukaAction] { AsukaActions.
             guard case .bytes(let b) = v else { return }
             n.alertFields = AsukaAlertFields.decode(b)
         case (.sheet, AsukaProp.Sheet.window), (.alert, AsukaProp.Alert.window), (.snackbar, AsukaProp.Snackbar.window):
-            break // the window it's declared in: a phone has one
+            n.onWindow = UInt32(truncatingIfNeeded: v.int) // the window it's declared in: an iPad's Window's scene, or the main one
+        case (.window, AsukaProp.Window.config):
+            if case .bytes(let b) = v { setWindowConfig(n, Array(b)) } // Windows.swift
+        case (.window, AsukaProp.Window.title):
+            setWindowTitle(n, v.string)
         case (.snackbar, AsukaProp.Snackbar.message):
             (n.view as? AsukaSnackbarView)?.message = v.string
         case (.snackbar, AsukaProp.Snackbar.action):

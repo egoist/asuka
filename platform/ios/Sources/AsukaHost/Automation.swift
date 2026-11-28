@@ -79,10 +79,10 @@ import AsukaOps
     }
 
     static func tab(_ title: String) {
-        for case let t as UITabBarController in containers() {
-            guard let vcs = t.viewControllers, let i = vcs.firstIndex(where: { $0.tabBarItem.title == title }) else { continue }
-            t.selectedIndex = i
-            t.delegate?.tabBarController?(t, didSelect: vcs[i])
+        for case let t as AsukaTabsController in containers() {
+            guard let i = t.index(of: title) else { continue }
+            t.select(i)
+            t.chose(i)
             return
         }
     }

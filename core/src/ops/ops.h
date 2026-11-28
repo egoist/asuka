@@ -247,7 +247,8 @@ uint8_t ak_height_class_of(float h);
 // keyboard, scale, font scale; u8 flags (1 dark, 2 reduce motion, bits
 // 2-4 the platform, 32 a screen reader, 64 a TV, 128 a watch); u8 size classes (bits 0-1 the
 // width's, 2-3 the height's); string locale; string time zone; string
-// languages; u8 first weekday; u8 hour cycle.
+// languages; u8 first weekday; u8 hour cycle; u8 posture; f32 the fold's
+// x, y, width, height; u8 1 if the app can open windows of its own there.
 typedef struct {
 	float width, height;
 	float safe_top, safe_right, safe_bottom, safe_left;
@@ -264,7 +265,17 @@ typedef struct {
 	ak_span languages;  // BCP 47 tags, most preferred first, joined by commas
 	uint8_t first_weekday;  // 1 Sunday to 7 Saturday; 0 unknown
 	uint8_t hour_cycle;     // 12 or 24; 0 unknown
+	uint8_t posture;        // AK_POSTURE_*: how a foldable is held
+	// Where a foldable's fold or hinge crosses the window, in points from
+	// its top left; all 0: none does.
+	float fold_x, fold_y, fold_width, fold_height;
+	// A Window opens a window of its own here (an iPad's scene, a
+	// desktop's window); the core says so for the desktops and the web.
+	bool multiple_windows;
 } ak_environment;
+
+// Postures: how a foldable is held (Jetpack WindowManager's).
+enum { AK_POSTURE_FLAT, AK_POSTURE_TABLETOP, AK_POSTURE_BOOK };
 
 // A continuous gesture's state, in points relative to the view (velocity
 // in points per second).

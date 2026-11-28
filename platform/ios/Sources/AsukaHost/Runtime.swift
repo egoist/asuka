@@ -101,6 +101,9 @@ let asukaAssets: URL? = {
     var alertMessage: String?
     var alertStyle: Int32 = 0
     var alertFields: [AsukaAlertField] = [] // an alert's text fields
+    /// A sheet's, an alert's or a snackbar's Window prop: the window it's
+    /// declared in (the root, or a Window node, an iPad's scene).
+    var onWindow: UInt32 = 0
     var alertFieldDelegates: [AnyObject] = [] // its fields' delegates, while it shows
     var imageSource: String?
     var imageLoaded = false
@@ -380,7 +383,7 @@ final class AsukaTextField: UITextField {
     /// Focus moving here from another field keeps the keyboard where it
     /// is while their accessories swap (AsukaViewController.fieldFocus).
     override func becomeFirstResponder() -> Bool {
-        AsukaRuntime.shared.controller?.fieldFocus(self) { super.becomeFirstResponder() } ?? super.becomeFirstResponder()
+        AsukaRuntime.shared.viewController(of: self)?.fieldFocus(self) { super.becomeFirstResponder() } ?? super.becomeFirstResponder()
     }
 }
 
@@ -455,6 +458,10 @@ final class AsukaTextField: UITextField {
     /// Buttons with a glass variant (roundGlass).
     var glassButtons = Set<ObjectIdentifier>()
     weak var controller: AsukaViewController?
+    /// The Windows' scenes, by their nodes, and the scenes the system
+    /// brought back that wait for theirs (Windows.swift).
+    var sceneWins: [UInt32: AsukaSceneWin] = [:]
+    var waitingScenes: [AsukaWaitingScene] = []
     /// UndoState's: the app's undo stack, for UIKit's undo (Undo.swift).
     var undoState = AsukaUndoState()
     /// The share sheet this runtime is in (platform/sharesheet, in the share
@@ -519,8 +526,11 @@ final class AsukaTextField: UITextField {
     func start(_ controller: AsukaViewController) {
         self.controller = controller
         guard !started else {
-            // Started without a screen (platform/periodic's task): the root goes in it now.
-            if let n = nodes[rootID], n.view.superview == nil { controller.mount(n.view) }
+            // Started without a screen (platform/periodic's task, a
+            // Window's scene brought back first), or the main window's
+            // scene made again (the user closed it while a Window's
+            // stayed): the root goes in it now.
+            if let n = nodes[rootID], n.view.superview !== controller.view { controller.mount(n.view) }
             return
         }
         boot()
@@ -845,6 +855,10 @@ final class AsukaTextField: UITextField {
             view = r
         case .overlay:
             view = AsukaOverlayView()
+        case .window:
+            // A Window's content, in a scene of its own on an iPad
+            // (Windows.swift); an iPhone shows none.
+            view = AsukaContainerView()
         default:
             fatalError("asuka: the iOS host can't show \(kind.name) yet")
         }
@@ -872,6 +886,7 @@ final class AsukaTextField: UITextField {
             s.dismiss()
             return
         }
+        if n.kind == .window { destroyWindow(n) }
         if destroyController(n) { return }
         for c in n.children { c.parent = nil }
         if matchOut(n) { return }
@@ -999,6 +1014,7 @@ final class AsukaTextField: UITextField {
         n.listens.insert(event)
         if event == AsukaEventKind.anchorFrame.rawValue, n.overlay != nil { scheduleAnchors() }
         if event == AsukaEventKind.undo.rawValue, id == rootID { controller?.takeUndoResponder() }
+        if event == AsukaEventKind.windowState.rawValue, n.kind == .window { reportWindowState(id) }
         if event == AsukaEventKind.scrolled.rawValue || event == AsukaEventKind.paged.rawValue, let s = n.view as? UIScrollView, n.scrolls == nil {
             n.scrolls = AsukaScrollReporter(id, self)
             if n.list == nil { s.delegate = n.scrolls } // a list's own delegate forwards it
@@ -1054,7 +1070,7 @@ final class AsukaTextField: UITextField {
         case .blur:
             blur(n)
         case .present:
-            if n.kind == .overlay { presentOverlay(n) } else { present(n) }
+            if n.kind == .overlay { presentOverlay(n) } else if n.kind == .window { presentWindow(n) } else { present(n) }
         case .haptic:
             if args.count > 0 { haptic(Int32(args[0])) }
         case .animateBegin:
@@ -1170,8 +1186,12 @@ final class AsukaTextField: UITextField {
             #endif
         case .undoState:
             setUndoState(args)
-        case .menuBar, .windowOptions, .windowTitle, .windowAction, .quit:
-            break // desktop hosts' (a phone has no menu bar or windows, and its app doesn't quit itself)
+        case .windowAction:
+            windowAction(n, args) // an iPad's scenes come forward (Windows.swift)
+        case .windowTitle:
+            setMainTitle(String(decoding: args, as: UTF8.self))
+        case .menuBar, .windowOptions, .quit:
+            break // desktop hosts' (a phone has no menu bar, its windows no options, and its app doesn't quit itself)
         case .location:
             break // a Router's address: the web's and the desktops' (a phone has no address bar, and its windows don't come back where they were)
         case .locale:
@@ -1212,6 +1232,8 @@ final class AsukaTextField: UITextField {
         rootID = id
         controller?.mount(n.view)
         sheet?.deliver()
+        // The Windows' scenes the system brought back, once there's an app.
+        if !waitingScenes.isEmpty { DispatchQueue.main.async { AsukaRuntime.shared.restoreWaiting() } }
     }
 
     public func setProp(_ id: UInt32, prop: UInt16, value: AsukaValue) {

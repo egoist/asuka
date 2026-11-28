@@ -343,8 +343,8 @@ screen Mailbox(name: string) {
 
 `Tabs` 一次只显示一个页面，并带有一条标签栏：
 
-- **iOS**：`UITabBarController`。
-- **Android**：Material 的底部导航栏。
+- **iOS**：`UITabBarController`。在 iPad 上（iOS 18 及以上），它的标签栏可以变成侧边栏，和“音乐”“TV”应用一样：标签显示在顶部，旁边有个按钮，可以把它们展开成内容旁的侧边栏，也可以再收回去；在紧凑宽度下（Slide Over、较窄的分屏），标签栏在底部，和 iPhone 上一样。
+- **Android**：在紧凑窗口里是 Material 的底部导航栏；窗口宽度达到 600dp 以后（平板、展开的折叠屏、桌面窗口），按照 Material 3 的自适应导航，换成起始边上的导航栏（navigation rail）。窗口宽度跨过 600dp 时两者自动切换，当前显示的标签页和徽标都会保留。
 - **macOS**：`NSTabView`，标签在顶部。
 - **Windows**：顶部的一排标签，仿照 WinUI 顶部样式的 `NavigationView`：每个标签有一个图标和一个标题，选中的标签下方有强调色的胶囊指示条；可以用方向键在标签之间切换。
 - **Linux**：`AdwViewStack`，和 GNOME 应用一样，窗口较宽时视图切换器放在顶栏里，窗口较窄时（窄于 550 点）则变成底部的一条栏。
@@ -820,8 +820,54 @@ component Notes {
 | Windows | 一个顶层窗口，有自己的标题和任务栏按钮 |
 | Linux | 一个 `AdwWindow`，有自己的顶栏 |
 | Web | 页面里的一个面板，用户可以移动它、调整它的大小 |
+| iPad | 一个独立的窗口场景（`UIWindowScene`），显示在应用窗口旁边（见[下文](#ipad-上的窗口)） |
 
-手机没有窗口：`Window` 在手机上什么也不显示。提供窗口的组件应该只从桌面端才有的入口提供它，比如下面要讲的菜单栏。
+在 `Window` 能打开窗口的地方，`environment().multipleWindows` 为 true：桌面端、Web 和 iPad。iPhone、Apple TV 和 Android 上应用只有一个窗口，`Window` 在那里什么也不显示。提供窗口的组件，应该只在窗口能打开的地方提供它，或者从桌面端才有的入口提供，比如下面要讲的菜单栏。
+
+### iPad 上的窗口
+
+在 iPad 上，`Window` 会打开一个独立的窗口，显示在应用窗口旁边：可以是分屏（Split View）或侧拉（Slide Over），也可以是 iPadOS 窗口化应用和台前调度里的一个窗口，或者全屏，由用户自己安排。同一段代码在 Mac 和 iPad 上都会打开第二个窗口：
+
+```asuka check
+state notes = ["Milk"]
+state inspector = false
+
+app {
+  Stack { Notes() }
+}
+
+screen Notes {
+  title: "Notes"
+  Column {
+    for n in notes key n { Text(n) }
+    if environment().multipleWindows {
+      Button("Inspector") { on press { inspector = true } }
+    }
+  }
+  Window {
+    bind open: inspector
+    title: "Inspector"
+    stateKey: "inspector"
+    minWidth: 320
+    Stack { Inspector() }
+  }
+}
+
+screen Inspector {
+  title: "Inspector"
+  Text("{notes.count()} notes")
+}
+```
+
+- 代码里会打开 `Window`（不是 app 块的主窗口）的应用，就支持多个窗口：asuka 会在它的 Info.plist 里声明这一点，应用也因此有了系统的“显示所有窗口”。没有这种 `Window` 的应用，和手机应用一样只有一个窗口。
+- 窗口里的环境是这个窗口自己的：用户调整它的大小时，它的尺寸和尺寸类别随之变化，不受应用另一个窗口影响。
+- 用户关闭它（点关闭按钮，或在应用切换器里上滑）时，`open` 会被写成 false，并触发 `close`。iPadOS 关闭窗口前不会询问应用，所以它的 `closeRequest` 和守卫都不会被问到。
+- 设置了 `stateKey` 的窗口会被恢复：应用再次启动时，iPadOS 会把用户留着没关的窗口带回来，应用里带有这个键的 `Window` 会在其中打开（它的 `open` 被写成 true）。没有键的窗口，或者应用当时已经没有对应 `Window` 的窗口，会被关闭。
+- `w.show()` 和 `w.focus()` 会把它带到前面；其他操作是桌面端的，在这里什么也不做。`title` 是它在应用切换器和系统窗口菜单里的名字；`minWidth` 和 `minHeight` 是用户能把它缩到的最小尺寸。`w.visible`、`w.focused` 和 `w.size` 会跟着它变化。
+- 弹出面板、警告框和 Snackbar 会在声明它们的那个窗口上打开。
+- 应用只有一个主窗口：系统的“新建窗口”会把它带到前面。
+
+在 Android 上，应用只有一个 activity，系统会在分屏、桌面窗口和折叠屏上调整它的大小：它的布局跟着尺寸类别走（见[布局](layout.md#平板与折叠屏)），`Window` 什么也不显示。
 
 ### 窗口选项
 

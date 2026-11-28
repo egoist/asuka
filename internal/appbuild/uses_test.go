@@ -103,3 +103,50 @@ func TestUses(t *testing.T) {
 		t.Errorf("std %v", std)
 	}
 }
+
+// A Window that isn't an app block's main window is a window of the
+// app's own (SecondaryWindow): an app block's first Window is its main
+// window, which doesn't count; one a component opens does.
+func TestSecondaryWindow(t *testing.T) {
+	cases := []struct {
+		src  string
+		want bool
+	}{
+		{"app {\n  Window {\n    title: \"Notes\"\n    Text(\"hi\")\n  }\n}\n", false},
+		{"app {\n  Text(\"hi\")\n}\n", false},
+		{`state open = false
+
+app {
+  Window {
+    title: "Notes"
+    Inspector()
+  }
+}
+
+component Inspector {
+  Column {
+    Button("Inspector") { on press { open = true } }
+    Window {
+      bind open: open
+      stateKey: "inspector"
+      Text("hi")
+    }
+  }
+}
+`, true},
+	}
+	for i, c := range cases {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "app.asuka"), []byte(c.src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(dir, "asuka.toml"), []byte("id = \"dev.asuka.windows\"\n"), 0o644)
+		p, err := Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p.Uses("").Ref("", SecondaryWindow); got != c.want {
+			t.Errorf("%d: SecondaryWindow %v, want %v", i, got, c.want)
+		}
+	}
+}

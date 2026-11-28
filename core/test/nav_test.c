@@ -1868,6 +1868,124 @@ TEST(window) {
 	ak_release(open_cell);
 }
 
+// The system brings back a window the user had left open (an iPad's
+// scene, as the app launches again): RestoreWindow, with the state key
+// its Window had, opens that Window through its open, as show() does.
+// Once it's open, or for a key no Window has, nothing more opens.
+TEST(window_restore) {
+	open_cell = ak_vm_cell_new((ak_val){.i = 0}, AK_K_BOOL, NULL).p;
+	closes = 0;
+	ak_uitest *a = mount(window_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *r = root(a);
+	CHECK_EQ_INT(count_kind(a, AK_KIND_WINDOW), 0);
+	ak_fake_dispatch(f, &(ak_event){.id = r->id, .kind = AK_EVENT_RESTORE_WINDOW, .s = AK_STR("other")});
+	CHECK_EQ_INT(count_kind(a, AK_KIND_WINDOW), 0);
+	CHECK_EQ_INT(peek_i(open_cell), 0);
+	ak_fake_dispatch(f, &(ak_event){.id = r->id, .kind = AK_EVENT_RESTORE_WINDOW, .s = AK_STR("inspector")});
+	CHECK_EQ_INT(peek_i(open_cell), 1);
+	ak_fake_view *w = nth(a, AK_KIND_WINDOW, 0);
+	REQUIRE(w && w->presented);
+	ak_span cfg = ak_fake_string(w, AK_PROP_WINDOW_CONFIG);
+	ak_window_config wc = ak_decode_window_config((const uint8_t *)cfg.p, cfg.len);
+	CHECK(span_is(wc.state_key, "inspector"));
+	check_text(w, "in the window");
+	// Open already: the same window.
+	ak_fake_dispatch(f, &(ak_event){.id = r->id, .kind = AK_EVENT_RESTORE_WINDOW, .s = AK_STR("inspector")});
+	CHECK_EQ_INT(count_kind(a, AK_KIND_WINDOW), 1);
+	CHECK(nth(a, AK_KIND_WINDOW, 0) == w);
+	ak_fake_dismiss(f, w);
+	CHECK_EQ_INT(peek_i(open_cell), 0);
+	CHECK_EQ_INT(closes, 1);
+	ak_release(win_ref);
+	win_ref = NULL;
+	done(a);
+	ak_release(open_cell);
+}
+
+// Each window has its environment: the main window's (the root's) and a
+// Window's (an iPad's second scene beside it, a desktop's second window)
+// are their own sizes, size classes and folds, and a Window's content
+// follows its own as the user resizes it (Split View, Stage Manager)
+// without the main window's moving.
+static ak_val win_class_text(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_val e = ak_ui_environment_value();
+	const ak_struct *s = e.p;
+	const ak_struct *fold = s->f[23].p;
+	char b[96];
+	snprintf(b, sizeof b, "%g %s %s fold %g,%g %gx%g", s->f[0].f, ak_size_class_name((uint8_t)s->f[13].i),
+	         s->f[22].i == AK_POSTURE_BOOK ? "book" : s->f[22].i == AK_POSTURE_TABLETOP ? "tabletop" : "flat", fold->f[0].f,
+	         fold->f[1].f, fold->f[2].f, fold->f[3].f);
+	ak_release(e.p);
+	return (ak_val){.p = ak_str_c(b)};
+}
+
+static ak_val win_class_view(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *t = ak_ui_new(AK_EL_TEXT);
+	bind(t, AK_KEY_TEXT_TEXT, win_class_text, NULL);
+	return (ak_val){.p = t};
+}
+
+static ak_val win_classes_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	add(col, win_class_view(NULL, NULL, 0).p);
+	ak_view *w = ak_ui_new(AK_EL_WINDOW);
+	bind(w, AK_KEY_WINDOW_OPEN, read_cell, open_cell);
+	on(w, AK_EV_WINDOW_CHANGE, write_arg, open_cell);
+	set_str(w, AK_KEY_WINDOW_STATE_KEY, "note");
+	lazy(w, win_class_view, NULL);
+	add(col, w);
+	return (ak_val){.p = col};
+}
+
+TEST(windows_size_classes) {
+	open_cell = ak_vm_cell_new((ak_val){.i = 1}, AK_K_BOOL, NULL).p;
+	ak_uitest *a = mount(win_classes_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_environment env = f->env;
+	env.width = 1180, env.height = 820;  // an iPad Air in landscape
+	env.width_class = env.height_class = AK_SIZE_CLASS_UNSPECIFIED;
+	ak_fake_set_environment(f, &env);
+	ak_fake_view *w = nth(a, AK_KIND_WINDOW, 0);
+	REQUIRE(w);
+	// The Window's scene beside it, a third of the screen.
+	ak_environment we = env;
+	we.width = 375;
+	ak_fake_dispatch(f, &(ak_event){.id = w->id, .kind = AK_EVENT_ENVIRONMENT, .env = we});
+	CHECK(one(a, AK_KIND_TEXT, "1180 expanded flat fold 0,0 0x0") != NULL);
+	check_text(w, "375 compact flat fold 0,0 0x0");
+	// Resized to half: medium, the main window as it was.
+	we.width = 700;
+	ak_fake_dispatch(f, &(ak_event){.id = w->id, .kind = AK_EVENT_ENVIRONMENT, .env = we});
+	check_text(w, "700 medium flat fold 0,0 0x0");
+	CHECK(one(a, AK_KIND_TEXT, "1180 expanded flat fold 0,0 0x0") != NULL);
+	// A foldable opened half way as a book, its fold down the middle.
+	env.width = 841, env.posture = AK_POSTURE_BOOK;
+	env.fold_x = 420, env.fold_width = 1, env.fold_height = 820;
+	ak_fake_set_environment(f, &env);
+	CHECK(one(a, AK_KIND_TEXT, "841 expanded book fold 420,0 1x820") != NULL);
+	check_text(w, "700 medium flat fold 0,0 0x0");
+	ak_environment got;
+	ak_ui_environment(&got);
+	CHECK_EQ_INT(got.posture, AK_POSTURE_BOOK);
+	CHECK_EQ_F(got.fold_height, 820);
+	CHECK(!got.multiple_windows);  // a phone's host says nothing: none
+	// An iPad's says so; a desktop's needn't.
+	env.multiple_windows = true;
+	ak_fake_set_environment(f, &env);
+	ak_ui_environment(&got);
+	CHECK(got.multiple_windows);
+	env.multiple_windows = false, env.platform = AK_PLATFORM_MACOS;
+	ak_fake_set_environment(f, &env);
+	ak_ui_environment(&got);
+	CHECK(got.multiple_windows);
+	done(a);
+	ak_release(open_cell);
+}
+
 // An app without a main window (ui.main_kind none: its app block shows
 // nothing outside its Windows): WindowOptions say so, hidden too, and the
 // main window's commands send nothing; reloaded with a main window, its

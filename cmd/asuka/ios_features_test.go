@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/egoist/asuka/internal/appbuild"
 	iosHost "github.com/egoist/asuka/platform/ios"
 	"github.com/egoist/asuka/std"
 )
@@ -85,5 +86,32 @@ func TestVideoPictureInPictureMode(t *testing.T) {
 	none.videoExtras(testUses(map[string]bool{"Video": true, "Video.loop": true}))
 	if len(none.plistArrays["UIBackgroundModes"]) != 0 {
 		t.Errorf("modes %v", none.plistArrays["UIBackgroundModes"])
+	}
+}
+
+// An app that opens windows of its own says it supports several scenes,
+// which on an iPad are its windows; one with only its main window keeps
+// the one, and an Apple TV app never has more.
+func TestMultipleScenes(t *testing.T) {
+	scenes := func(c *appConfig) any {
+		return c.plistExtras()["UIApplicationSceneManifest"].(map[string]any)["UIApplicationSupportsMultipleScenes"]
+	}
+	c := &appConfig{}
+	c.windowExtras(testUses(map[string]bool{"Window": true, appbuild.SecondaryWindow: true}))
+	if got := scenes(c); got != true {
+		t.Errorf("with a Window of its own: %v", got)
+	}
+	if plist := plistKeys(c.plistExtras()); !strings.Contains(plist, "<key>UIApplicationSupportsMultipleScenes</key>\n\t<true/>") {
+		t.Errorf("Info.plist:\n%s", plist)
+	}
+	main := &appConfig{}
+	main.windowExtras(testUses(map[string]bool{"Window": true}))
+	if got := scenes(main); got != false {
+		t.Errorf("with its main window alone: %v", got)
+	}
+	c.tvToldDropped = true
+	c.dropTVExtensions()
+	if got := scenes(c); got != false {
+		t.Errorf("on tvOS: %v", got)
 	}
 }

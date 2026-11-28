@@ -273,6 +273,7 @@ static uint32_t golden_events(ak_event *evs) {
 		.scale = 3, .font_scale = 1.25f, .dark = true, .reduce_motion = true, .screen_reader = true, .tv = true, .watch = true, .platform = AK_PLATFORM_IOS,
 		.width_class = AK_SIZE_CLASS_COMPACT, .height_class = AK_SIZE_CLASS_EXPANDED, .locale = AK_STR("en_US"),
 		.time_zone = AK_STR("Asia/Shanghai"), .languages = AK_STR("en-US,zh-Hans"), .first_weekday = 2, .hour_cycle = 24,
+		.posture = AK_POSTURE_BOOK, .fold_x = 397, .fold_width = 8, .fold_height = 874, .multiple_windows = true,
 	}};
 	evs[n++] = (ak_event){.id = 11, .kind = AK_EVENT_PAN, .g = {.state = AK_GESTURE_STATE_CHANGED, .x = 10, .y = 20,
 		.translation_x = 5, .translation_y = -3, .velocity_x = 100, .velocity_y = -50, .scale = 1, .rotation = 0.5f}};
@@ -293,7 +294,8 @@ static bool event_eq(const ak_event *a, const ak_event *b) {
 	       x->screen_reader == y->screen_reader && x->tv == y->tv && x->watch == y->watch && x->platform == y->platform && x->width_class == y->width_class &&
 	       x->height_class == y->height_class && ak_span_eq(x->locale, y->locale) && ak_span_eq(x->time_zone, y->time_zone) &&
 	       ak_span_eq(x->languages, y->languages) && x->first_weekday == y->first_weekday && x->hour_cycle == y->hour_cycle &&
-	       memcmp(&a->g, &b->g, sizeof a->g) == 0;
+	       x->posture == y->posture && x->fold_x == y->fold_x && x->fold_y == y->fold_y && x->fold_width == y->fold_width &&
+	       x->fold_height == y->fold_height && x->multiple_windows == y->multiple_windows && memcmp(&a->g, &b->g, sizeof a->g) == 0;
 }
 
 TEST(events_bin) {

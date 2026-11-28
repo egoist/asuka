@@ -395,14 +395,17 @@ final class AsukaSnackbarView: UIView {
 @MainActor extension AsukaRuntime {
     /// The controller a snackbar goes on: the topmost presented one that
     /// shows content (not an alert, which it would sit inside).
-    var snackbarController: UIViewController? {
-        var vc: UIViewController? = controller
+    var snackbarController: UIViewController? { snackbarController(over: nil) }
+
+    /// The topmost content of the window n is shown on (its Window prop's).
+    func snackbarController(over n: AsukaNode?) -> UIViewController? {
+        var vc: UIViewController? = windowController(n?.onWindow ?? 0) ?? controller
         while let p = vc?.presentedViewController, !p.isBeingDismissed, !(p is UIAlertController) { vc = p }
         return vc
     }
 
     func presentSnackbar(_ n: AsukaNode) {
-        guard let s = n.view as? AsukaSnackbarView, let vc = snackbarController else { return }
+        guard let s = n.view as? AsukaSnackbarView, let vc = snackbarController(over: n) else { return }
         s.present(on: vc)
     }
 }

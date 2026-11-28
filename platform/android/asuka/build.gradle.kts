@@ -66,6 +66,9 @@ dependencies {
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.exifinterface:exifinterface:1.4.1") // an image's orientation
     implementation("androidx.webkit:webkit:1.14.0") // WebView's document-start scripts
+    // A foldable's fold and posture (Jetpack WindowManager's FoldingFeature).
+    implementation("androidx.window:window:1.4.0")
+    implementation("androidx.window:window-java:1.4.0")
     // What a std package does (the camera, biometrics, the in-app browser,
     // Play's libraries...) is its own Gradle module's
     // (std/<name>/android), with its libraries: only in the apps that

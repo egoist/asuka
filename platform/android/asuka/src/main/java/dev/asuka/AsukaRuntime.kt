@@ -772,6 +772,10 @@ class AsukaRuntime private constructor(val app: Application) : AsukaOpHandler {
             AsukaKind.RICH_TEXT -> AsukaRichText(this, id)
             AsukaKind.SELECTABLE -> AsukaSelectionArea(this)
             AsukaKind.OVERLAY -> AsukaOverlay(ctx, this, id)
+            // A Window: a desktop's or an iPad's window of its own. Android
+            // shows one activity, which the system sizes in split screen and
+            // a desktop's windows: the Window's content shows nothing.
+            AsukaKind.WINDOW -> AsukaContainer(ctx)
             else -> error("asuka: the Android host can't show ${AsukaKind.name(kind)} ($kind) yet")
         }.also { if (rtl) it.layoutDirection = View.LAYOUT_DIRECTION_RTL }
     }

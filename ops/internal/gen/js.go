@@ -203,7 +203,9 @@ export class Writer {
     this.u8((e.dark ? 1 : 0) | (e.reduceMotion ? 2 : 0) | (e.platform & 7) << 2 | (e.screenReader ? 32 : 0) | (e.tv ? 64 : 0) | (e.watch ? 128 : 0));
     this.u8((e.widthClass & 3) | (e.heightClass & 3) << 2);
     this.string(e.locale).string(e.timeZone).string(e.languages);
-    return this.u8(e.firstWeekday).u8(e.hourCycle);
+    this.u8(e.firstWeekday).u8(e.hourCycle).u8(e.posture);
+    for (const f of [e.foldX, e.foldY, e.foldWidth, e.foldHeight]) this.f32(f);
+    return this.u8(e.multipleWindows ? 1 : 0);
   }
   /** g: a Gesture (see below). */
   gesture(g) {
@@ -221,6 +223,8 @@ export function environment() {
     scale: 1, fontScale: 1, dark: false, reduceMotion: false, screenReader: false, tv: false, watch: false,
     platform: 5, // ops.PlatformWeb
     widthClass: 0, heightClass: 0, locale: "", timeZone: "", languages: "", firstWeekday: 0, hourCycle: 0,
+    posture: 0, foldX: 0, foldY: 0, foldWidth: 0, foldHeight: 0, // ops.Posture, the fold's frame
+    multipleWindows: true, // a Window is a panel in the page
   };
 }
 

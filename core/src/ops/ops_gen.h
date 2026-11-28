@@ -108,7 +108,7 @@ enum {
 	AK_KIND_SPLIT = 33,
 	// a box a GPU program draws, under its children: a Kage shader, as Metal on iOS and macOS (a CAMetalLayer), AGSL on Android (RuntimeShader), on the CPU on Windows (package interp)
 	AK_KIND_SHADER = 34,
-	// a desktop window of the app's (macOS, Windows, Linux; on the web a window in the page; mobile hosts can't show one), with one child, its content: Present opens it (shown, unless its Config says hidden), Destroy closes it; the user closing it is reported with Dismissed, or with CloseRequest while the core listens for that, and the window stays. Sized by the host (and the user), which reports its Environment, and its WindowState while the core listens; WindowAction commands control it
+	// a desktop window of the app's (macOS, Windows, Linux; on the web a window in the page; on an iPad a window scene of its own; a phone's host shows nothing of it), with one child, its content: Present opens it (shown, unless its Config says hidden), Destroy closes it; the user closing it is reported with Dismissed, or with CloseRequest while the core listens for that, and the window stays. Sized by the host (and the user), which reports its Environment, and its WindowState while the core listens; WindowAction commands control it
 	AK_KIND_WINDOW = 35,
 	// one of many options, showing the chosen one and choosing from a menu (SwiftUI's Picker in its menu style: a UIButton whose menu changes its selection, with the pop-up indicator; Material 3's exposed dropdown menu, a TextInputLayout over a MaterialAutoCompleteTextView; NSPopUpButton; a drop-down list combo box drawn as Fluent's on Windows; GtkDropDown; a <select> on the web); measured. The user's choice is reported with Selected
 	AK_KIND_PICKER = 36,
@@ -862,7 +862,9 @@ enum {
 	AK_EVENT_EXPAND = 78,
 	// sent to the root: the user asked to undo (0) or redo (1) the app's last change (Edit > Undo or Redo, ⌘Z, Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, a shake or three fingers on iOS), where no text field took it (a field being edited undoes its own typing)
 	AK_EVENT_UNDO = 79,
-	AK_EVENT_COUNT = 80,
+	// sent to the root: the system brought back a window the user had left open (an iPad's scene, restored as the app launches), which a Window with this state key showed (its Config's): the core opens the app's Window with that key, if one is closed, as its show() does (its open told true), and the host shows it in that window. A host that sees no Window with the key Present during the event closes the window it brought back
+	AK_EVENT_RESTORE_WINDOW = 80,
+	AK_EVENT_COUNT = 81,
 };
 
 // Commands.
