@@ -183,10 +183,19 @@ func webIndex(p webPage) string {
 	fmt.Fprintf(&b, `<link rel="stylesheet" href="%[1]s/style.css">
 <link rel="modulepreload" href="%[1]s/asuka.js">
 <link rel="preload" href="%[2]s" as="fetch" type="application/wasm" crossorigin>
-</head>
+`, p.Host, p.Core)
+	// The app's font files download beside the core, not once the first
+	// screen asks for them, so that screen is drawn in them from the start
+	// rather than in a fallback and then again.
+	if fonts, ok := opts["fonts"].([]string); ok {
+		for _, f := range fonts {
+			fmt.Fprintf(&b, "<link rel=\"preload\" href=\"%s\" as=\"font\" crossorigin>\n", html.EscapeString(fmt.Sprint(opts["assets"])+"/fonts/"+f))
+		}
+	}
+	b.WriteString(`</head>
 <body>
 <script type="module">
-`, p.Host, p.Core)
+`)
 	entry, _ := json.Marshal("./" + p.Host + "/asuka.js")
 	sw := ""
 	if p.Offline {
