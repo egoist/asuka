@@ -35,7 +35,7 @@ FAIL Remove empties the list (app.asuka:41)
 asuka: 1 of 2 tests failed
 ```
 
-只要能运行命令行工具的地方都能运行测试，CI 中也一样，不需要 iOS 模拟器或 Android 模拟器：`asuka test` 会把包连同其中的测试一起编译，然后在这台电脑上运行；第一次运行时会构建测试运行器，这需要一个 C 编译器。有测试失败时，它以状态码 1 退出。如果要使用各平台真实的视图，参见下文的[在各平台上测试](#在各平台上测试)。
+只要能运行命令行工具的地方都能运行测试，CI 中也一样，不需要 iOS 模拟器或 Android 模拟器：`asuka test` 会把包连同其中的测试一起编译，然后在这台电脑上运行；第一次运行时会构建测试运行器，这需要一个 C 编译器。有测试失败时，它以状态码 1 退出；`--junit results.xml` 会把每个测试的结果写成 JUnit XML，供 CI 服务展示。如果要使用各平台真实的视图，参见下文的[在各平台上测试](#在各平台上测试)。
 
 `asuka run file.asuka` 会编译单个文件并以同样的方式运行：先运行其中的测试（如果有的话），再运行它的应用，并打印屏幕上显示的内容。想试一个组件或函数时，不必为此创建一个应用。
 
@@ -344,6 +344,7 @@ tap Add a note
 type hello
 tap Save
 see Note: hello
+expect screenshot noted
 back
 notsee Note: hello
 ```
@@ -355,21 +356,86 @@ asuka test --gui --platform ios       # iOS 模拟器（用 --device 选择）
 asuka test --gui --platform android   # Android 模拟器或手机
 asuka test --gui --platform web       # 无头 Chrome
 asuka test --gui                      # 这台电脑
+asuka test --gui --junit flows.xml    # 同时把每个流程的结果写成 JUnit XML，供 CI 使用
 ```
+
+### 用户的操作
 
 | 步骤 | 作用 |
 |---|---|
-| `tap <text>` | 按下显示这段文字的东西：按钮、开关、可以按的视图（比如一行），或者文本框，之后输入的内容会进入这个文本框。 |
+| `tap <text>` | 按下显示这段文字的东西：按钮、开关、可以按的视图（比如一行），或者文本框，之后输入的内容会进入这个文本框。如果前一步 `swipe` 露出了某一行的操作按钮，就从中选一个。 |
+| `doubletap <text>` | 连点两下：触发视图的 `on doubleTap`，或者让可缩放的 `Scroll` 放大（再点一次缩回）。 |
+| `longpress <text>` | 按住不放：触发最近的 `on longPress`。 |
 | `type <text>` | 像用户打字那样，在最后点过的文本框里输入（没有的话就是第一个文本框）。 |
+| `type <text> into <field>` | 在占位文字、标签或内容是这段文字的文本框里输入。 |
 | `submit` | 在那个文本框里按回车。 |
+| `hidekeyboard` | 收起键盘：持有键盘的文本框失去焦点。 |
 | `back` | 像返回按钮那样，从最上面的页面返回。 |
 | `tab <title>` | 像在标签栏里点它那样，选中有这个标题的标签。 |
 | `scroll` | 把屏幕上的列表往下滚一页。 |
 | `scrollto <text>` | 把列表往下滚，直到有东西显示这段文字。 |
+| `swipe <direction> [on <text>]` | 手指朝 `left`、`right`、`up` 或 `down` 划过显示这段文字的东西（不写的话，就是屏幕上第一个列表或滚动视图）：列表的行露出滑动操作（下一步 `tap` 选其中一个），视图的 `on swipe` 或 `on pan` 收到它，分页的 `Scroll` 翻一页，列表或滚动视图滚动。 |
+| `drag <text> to <text>` | 把一个拖到另一个上：在行可以移动（有 `on move`）的列表里把一行拖到另一行，把带 `dragItems` 的视图拖到带 `dropTypes` 的视图上（触发它的 `on drop`），否则触发视图的 `on pan`。 |
+| `drag <text> to <x>,<y>` | 把它拖到窗口里的某一点，单位是点（pt）。 |
+| `drag <text> by <dx>,<dy>` | 把它拖动这么远。 |
+| `pinch <text> <scale>` | 两指张开（`2`：放大到两倍）或捏合（`0.5`）：可缩放的 `Scroll` 随之缩放，`on pinch` 收到它。 |
+
+### 屏幕上显示的内容
+
+| 步骤 | 检查什么 |
+|---|---|
 | `see <text>` | 屏幕上有东西显示这段文字。 |
 | `notsee <text>` | 屏幕上没有东西显示它。 |
-| `wait <time>` | 等待（`500ms`、`2s`）。 |
+| `assert visible <text>` | 同 `see`。 |
+| `assert hidden <text>` | 同 `notsee`。 |
+| `assert enabled <text>` | 显示这段文字的东西没有被 `disabled`（它外层的也没有）。 |
+| `assert disabled <text>` | 它被禁用了。 |
+| `assert selected <text>` | 它处于打开或选中状态：开关、分段、标签、列表的行，或设置了 `selected`、`a11ySelected` 的视图。 |
+| `assert unselected <text>` | 它没有被选中。 |
+| `assert value <field> = <text>` | 占位文字或标签是这段文字的文本框里，内容是这段文字（`*` 匹配任意字符；`=` 后面什么都不写表示为空）。也可以用旁边的文字找到滑块或步进器，检查它的值。 |
+| `waitfor <text> [time]` | 一直等到有东西显示这段文字，最多等这么久（`30s`；不写就是 `--timeout`）。 |
+| `wait <time>` | 等待（`500ms`、`2s`）。尽量用 `waitfor` 或 `see`，它们只等必要的时间。 |
 
 文字可以是视图显示的内容、它的标签（只有图标的按钮）或文本框的占位文字（`tap New note`），按整体匹配：`see Message 1` 不会匹配 `Message 19`。文字里的 `*` 可以匹配任意字符，用于会变化的文字：`see Count: *`。列表只为屏幕上的行创建视图，所以更靠下的行要先用 `scroll` 或 `scrollto` 滚到屏幕上才会出现。
 
 失败的步骤会一直重试，直到通过或超过 `--timeout`（10s），因为应用可能还在加载，或在等网络。超时后流程失败，并报告该步骤所在的行和屏幕上显示的内容。被最上面的页面挡住的页面、没有选中的标签都不算在显示。`--run text` 只运行名字里包含这段文字的流程。这些步骤经过 Asuka 自己的视图，就像平台的事件传来时那样，所以流程在每个平台上的运行方式都一样，而显示出来的是平台的控件。
+
+### 应用与系统
+
+| 步骤 | 作用 |
+|---|---|
+| `relaunch` | 结束应用的进程，再重新启动：状态从头开始，而它保存下来的东西（文件、数据库、`std/storage`）还在。 |
+| `background` | 应用进入后台，就像用户离开它时那样：应用的生命周期处理函数会收到。 |
+| `foreground` | 应用回到前台。 |
+| `openlink <url>` | 用一个链接打开应用，就像在别处点了这个链接（`on openURL`、路由）。在 Android 模拟器上，scheme 与 `asuka.toml` 中一致的链接会经过系统。 |
+| `permission <name> allow\|deny\|ask` | 在应用请求之前先设好权限，这样就不会弹出系统对话框：`allow` 相当于用户允许，`deny` 相当于用户拒绝，`ask` 恢复成会询问的状态。 |
+
+权限有 `camera`、`microphone`、`location`、`location-always`、`photos`、`media-library`、`contacts`、`calendar`、`reminders`、`notifications`、`motion` 和 `bluetooth`。它们要写在流程的最前面，在流程启动应用之前设置；手机系统会结束权限被改动的应用，所以在 iOS 和 Android 上，设置之后流程会重新启动应用。设好的权限对后面的流程也一直有效。平台无法预先设置的权限（iOS 模拟器没有摄像头，通知权限只能由应用自己请求；桌面端不需要权限，或者只有用户本人才能回答），这一步会说明原因，然后什么也不做。在 Android 上，预先拒绝的权限在应用请求之前读作“尚未询问”，应用一请求就会被拒绝，不弹出对话框：
+
+```
+# flows/nearby.flow
+permission location allow
+tap Nearby
+see 3 places near you
+```
+
+### 截图
+
+`screenshot <name>` 把屏幕上显示的内容存成 PNG，放在 `dist/flows/<platform>/` 里（用 `--artifacts dir` 可以换个位置）。
+
+`expect screenshot <name>` 把屏幕与基准图 `flows/__screenshots__/<platform>/<name>.png` 比较，基准图需要提交到仓库。在 CI 之外第一次运行时会自动记录基准图；改动是有意为之时，用 `asuka test --gui --update` 重新记录全部基准图。在 CI 中（设置了 `CI` 时），缺少基准图会让流程失败。
+
+比较方式贴近人眼：两个像素的颜色差得足够明显才算不同（按 pixelmatch 的度量，亮度比色相更重要），只因其中一张图的边缘画得更平滑（抗锯齿）而不同的像素不计入，不同的像素不超过 0.1% 就算一致。不一致时流程失败，并在截图旁写出当前屏幕（`<name>.actual.png`）和用红色标出差异的图（`<name>.diff.png`）。
+
+```
+expect screenshot inbox
+expect screenshot inbox mask Updated * mask *:*
+expect screenshot chart tolerance 1%
+```
+
+- `mask <text>` 在截图时把显示这段文字的东西隐藏起来，用于每次运行都会变的内容（时间、来自网络的数量）；每个 `mask` 隐藏一处。
+- `tolerance <n>%` 允许更多像素不同；`tolerance 0%` 表示一个都不能不同。
+
+为了让每次截图都一样：等屏幕不再变化（连续两张相同）才截图；iOS 模拟器的状态栏固定为 9:41、信号满格、电量满格；Android 设备的状态栏进入演示模式，并关闭动画；无头 Chrome 的光标和动画保持静止；模拟器和设备都切换为浅色外观（结束后都会恢复原样）。应用读到的时钟是设备的时钟：显示时间的地方请用 mask 隐藏。
+
+截图是平台自己绘制的，所以每个平台都有各自的基准图，每种设备也一样：iPhone 和 iPad 的截图不同，Mac 和 Linux 上的字体与抗锯齿也不同，因此请在 CI 运行的环境里记录基准图。不带 `--gui` 的 `asuka test` 没有像素可比：它的视图不会被绘制，它的[快照](#快照)以文字形式比较屏幕上显示的内容。

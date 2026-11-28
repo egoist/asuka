@@ -1,0 +1,16 @@
+# The Gestures screen: the card dragged and pinched, the bar swiped, held
+# and double-tapped, each said on the screen.
+tap Gestures
+see Drag the card, pinch it, let go
+drag Drag me by 60,40
+see Dragged 60, 40 at *
+pinch Drag me 1.5
+see Pinched ×1.50
+swipe left on Swipe, hold or double-tap the bar
+see Swiped *left
+longpress Swiped *
+see Held
+doubletap Held
+see Double-tapped
+back
+see Native view

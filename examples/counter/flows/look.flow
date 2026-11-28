@@ -1,0 +1,15 @@
+# What the counter looks like, compared with its goldens, and a count a
+# relaunch loses. The goldens (flows/__screenshots__/<platform>) were
+# recorded on an iPhone 18 Pro simulator, a Pixel emulator (portrait),
+# headless Chrome and a Mac, and on Linux in CI's image: on another device,
+# asuka test --gui --update records its own.
+expect screenshot start
+tap Add
+tap Add
+assert enabled Reset
+expect screenshot two mask Count: *
+background
+foreground
+see Count: 2
+relaunch
+see Count: 0

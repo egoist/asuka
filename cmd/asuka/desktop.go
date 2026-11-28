@@ -134,6 +134,8 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 	bins := filepath.Join(work, "bin")
 	var binsBuilt bool
 	var proc *desktopProcess
+	var startProc func(exe string) error // the player built started
+	var lastExe string
 	launch := func() error {
 		start := time.Now()
 		if !binsBuilt {
@@ -146,6 +148,24 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 		if err != nil {
 			return err
 		}
+		if err := startProc(exe); err != nil {
+			return err
+		}
+		fmt.Printf("asuka: the player built and started in %.1fs\n", time.Since(start).Seconds())
+		return nil
+	}
+	// asuka test --gui's: the window's screenshots through the host's
+	// automation's commands.
+	var commands string
+	if len(o.flows) > 0 {
+		commands = filepath.Join(work, "flow-commands")
+		os.RemoveAll(commands)
+		if err := os.MkdirAll(commands, 0o755); err != nil {
+			return err
+		}
+	}
+	startProc = func(exe string) error {
+		lastExe = exe
 		proc.stop()
 		env := append(append(os.Environ(), dirs...),
 			fmt.Sprintf("ASUKA_DEV=%s:%d", devHost, loop.port()),
@@ -159,6 +179,10 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 		if platform == platformWindows {
 			env = append(env, "ASUKA_STOP=stdin")
 		}
+		if commands != "" {
+			env = append(env, "ASUKA_COMMANDS="+commands)
+		}
+		var err error
 		p := &desktopProcess{done: make(chan struct{})}
 		if platform == platformMac {
 			// It answers for itself, as when it's opened from the Finder:
@@ -171,6 +195,9 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 				name, args = wrap[0], append(append(wrap[1:len(wrap):len(wrap)], "env", "ASUKA_DEV="+fmt.Sprintf("%s:%d", devHost, loop.port())), dirs...)
 				args = append(args, "ASUKA_ASSETS="+filepath.Join(app.dir, "assets"), "ASUKA_BIN_DIR="+bins,
 					"ASUKA_APP_CONFIG="+filepath.Join(filepath.Dir(exe), appconfig.File))
+				if commands != "" {
+					args = append(args, "ASUKA_COMMANDS="+commands)
+				}
 				args = append(args, exe)
 			}
 			c := exec.Command(name, args...)
@@ -198,11 +225,15 @@ func devDesktop(dir string, o *devOptions, stop <-chan os.Signal, platform strin
 			close(p.done)
 		}()
 		proc = p
-		fmt.Printf("asuka: the player built and started in %.1fs\n", time.Since(start).Seconds())
 		return nil
 	}
 	loop.flows = o.flows
+	var flows *flowDriver
+	if commands != "" {
+		flows = desktopFlows(commands, func() error { return startProc(lastExe) })
+	}
 	return loop.run(devPlayer{
+		flow:   flows,
 		launch: launch,
 		stop:   func() { proc.stop() },
 		done: func() <-chan struct{} {

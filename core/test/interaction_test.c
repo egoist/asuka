@@ -1073,4 +1073,92 @@ TEST(drop_after_the_source_went) {
 	ak_release(shown);
 }
 
+// ---- asuka test --gui's gestures (automate.c) ----
+
+static ak_view *labeled(const char *label) {
+	ak_view *v = ak_ui_new(AK_EL_VIEW);
+	set_str(v, AK_KEY_LABEL, label);
+	set_i(v, AK_KEY_WIDTH, ak_length_pt(100));
+	set_i(v, AK_KEY_HEIGHT, ak_length_pt(40));
+	return v;
+}
+
+static ak_val automated_gestures_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	ak_view *sw = labeled("Swiper");
+	on(sw, AK_EV_VIEW_SWIPE, log_int, "swipe");
+	add(col, sw);
+	ak_view *p = labeled("Panner");
+	on(p, AK_EV_VIEW_PAN, log_gesture, "pan");
+	add(col, p);
+	ak_view *z = labeled("Pincher");
+	on(z, AK_EV_VIEW_PINCH, log_gesture, "pinch");
+	add(col, z);
+	ak_view *d = labeled("Twice");
+	on(d, AK_EV_VIEW_DOUBLE_TAP, log_point, "double");
+	add(col, d);
+	ak_view *h = labeled("Hold");
+	on(h, AK_EV_VIEW_LONG_PRESS, log_run, "long");
+	add(col, h);
+	ak_view *src = labeled("Card");
+	bind(src, AK_KEY_VIEW_DRAG_ITEMS, card_items, NULL);
+	on(src, AK_EV_VIEW_DRAG_PHASE, log_int, "phase");
+	add(col, src);
+	ak_view *target = labeled("Done");
+	set(target, AK_KEY_VIEW_DROP_TYPES, (ak_val){.p = strs("application/x-card", NULL)});
+	on(target, AK_EV_VIEW_DROP, log_drop, NULL);
+	add(col, target);
+	ak_view *still = labeled("Still");
+	set_i(still, AK_KEY_DISABLED, 1);
+	add(col, still);
+	return (ak_val){.p = col};
+}
+
+static const char *run_automation(const char *cmds, ak_buf *out) {
+	ak_buf_reset(out);
+	ak_ui_automate(ak_cstr(cmds), out);
+	ak_buf_u8(out, 0);
+	return (const char *)out->data;
+}
+
+// Each gesture reaches its view as the platform's recognizer reports it:
+// a swipe's direction, a pan's translation, a pinch's scale, a double
+// tap's point, a long press, a drag's drop with the source's items.
+TEST(automated_gestures) {
+	log_buf[0] = 0;
+	card_title = cell_ref(ak_str_c("Write tests"));
+	ak_uitest *a = mount(automated_gestures_app, NULL);
+	ak_buf out = {0};
+	CHECK_EQ_STR(run_automation("swipe left Swiper\nswipe up Swiper\nswipe sideways Swiper", &out), "ok\nok\nerror: swipe sideways: which way? (left, right, up, down)\n");
+	CHECK_EQ_STR(log_buf, "swipe:1 swipe:2");
+	log_buf[0] = 0;
+	CHECK_EQ_STR(run_automation("drag Panner\t+30,-10\nswipe right Panner", &out), "ok\nok\n");
+	CHECK_EQ_STR(log_buf, "pan:0:0:1 pan:1:30:1 pan:2:30:1 pan:0:0:1 pan:1:60:1 pan:2:60:1");
+	log_buf[0] = 0;
+	CHECK_EQ_STR(run_automation("pinch Pincher\t2\npinch Pincher\tbig", &out), "ok\nerror: pinch <text>\\t<scale>\n");
+	CHECK_EQ_STR(log_buf, "pinch:0:0:1 pinch:1:0:2 pinch:2:0:2");
+	log_buf[0] = 0;
+	CHECK_EQ_STR(run_automation("doubletap Twice\nlongpress Hold\nlongpress Twice\ndoubletap Hold", &out),
+	             "ok\nok\nerror: \"Twice\" shows, but nothing around it takes a long press\nerror: \"Hold\" shows, but nothing around it takes a double tap\n");
+	CHECK_EQ_STR(log_buf, "double:50,20 long");
+	log_buf[0] = 0;
+	CHECK_EQ_STR(run_automation("drag Card\tDone", &out), "ok\n");
+	CHECK_EQ_STR(log_buf, "phase:0 drop:50,20:local:[0 Write tests   application/x-card -1 card-7] phase:1");
+	CHECK_EQ_STR(run_automation("check enabled Card\ncheck disabled Still\ncheck enabled Still\ncheck selected Card", &out),
+	             "ok\nok\nerror: \"Still\" is disabled\nerror: \"Card\" isn't something that's selected or not\n");
+	// A mask hides the view for a screenshot; unmask shows it as it was.
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *card = nth(a, AK_KIND_VIEW, 6);
+	REQUIRE(card);
+	CHECK_EQ_STR(run_automation("mask Card", &out), "ok\n");
+	CHECK(ak_fake_float(card, AK_PROP_OPACITY) == 0);
+	CHECK_EQ_STR(run_automation("unmask", &out), "ok\n");
+	CHECK(ak_fake_float(card, AK_PROP_OPACITY) == 1);
+	ak_buf_free(&out);
+	done(a);
+	ak_release(card_title);
+	AK_UNUSED(f);
+}
+
 T_MAIN()

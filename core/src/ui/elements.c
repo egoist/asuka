@@ -435,6 +435,16 @@ void ak_field_text_reported(ak_view *e, ak_str *s) {
 	f->known = true;
 }
 
+// ak_field_value is the text a TextField shows (NULL: unknown), and
+// ak_field_focused whether it has the keyboard, as the core knows them.
+const ak_str *ak_field_value(const ak_view *e) {
+	if (!e || e->el != AK_EL_TEXT_FIELD || !e->impl) return NULL;
+	const field_state *f = e->impl;
+	return f->known ? f->reported : NULL;
+}
+
+bool ak_field_focused(const ak_view *e) { return e && e->el == AK_EL_TEXT_FIELD && e->impl && ((const field_state *)e->impl)->focused; }
+
 static void field_finalize(ak_view *e) {
 	field_state *f = e->impl;
 	// The field reports its text when something follows it: a handler, a
@@ -825,6 +835,9 @@ typedef struct {
 	float min_zoom, max_zoom, zoom, zoom_shown;
 	bool zoom_set;     // its zoom key is set: it zooms there
 	bool zoom_sent;    // MinZoom and MaxZoom were sent
+	// Its content offset as last reported (Scrolled) or scrolled to by
+	// asuka test --gui's swipes (automate.c's).
+	float off[2];
 } scroll_state;
 
 static bool zoomable(const scroll_state *s) { return s->max_zoom > s->min_zoom; }
@@ -1030,6 +1043,63 @@ void ak_ui_zoom_to(ak_view *v, float scale, bool animated) {
 	ak_view_call(v, AK_EV_SCROLL_ZOOM_CHANGE, &arg, 1);
 }
 
+// ---- asuka test --gui's gestures on a Scroll (automate.c) ----
+
+bool ak_scroll_zoomable(const ak_view *v) { return v && !v->dead && v->el == AK_EL_SCROLL && zoomable(v->impl); }
+
+float ak_scroll_zoom(const ak_view *v) { return ak_scroll_zoomable(v) ? ((scroll_state *)v->impl)->zoom_shown : 1; }
+
+// ak_scroll_double_tap zooms a zoomable Scroll as a double tap does: in to
+// twice its least zoom, or back out to it.
+void ak_scroll_double_tap(ak_view *v) {
+	if (!ak_scroll_zoomable(v)) return;
+	scroll_state *s = v->impl;
+	float min = zoom_clamp(s, 0);
+	ak_ui_zoom_to(v, s->zoom_shown > min ? min : min * 2, true);
+}
+
+bool ak_scroll_horizontal(const ak_view *v) { return v && v->el == AK_EL_SCROLL && horizontal(v); }
+
+bool ak_scroll_paging(const ak_view *v) { return v && v->el == AK_EL_SCROLL && paging(v); }
+
+// ak_scroll_page_by shows a paging Scroll's page delta pages on (in
+// reading order) as a swipe does, its pageChange hearing it: false at its
+// first or last.
+bool ak_scroll_page_by(ak_view *v, int delta) {
+	if (!ak_scroll_paging(v) || v->dead) return false;
+	scroll_state *s = v->impl;
+	int64_t n = (int64_t)ak_lnode_child_count(s->content->box);
+	int64_t from = s->shown >= 0 ? s->shown : s->page_set ? s->page : 0, to = from + delta;
+	if (to < 0 || to >= n || s->page_size <= 0) return false;
+	s->shown = to;
+	if (s->page_set) s->page = to;
+	float off = (float)logical(v, to) * s->page_size;
+	bool h = horizontal(v);
+	ak_ui_scroll_to(v, h ? off : 0, h ? 0 : off, true);
+	ak_val arg = {.i = to};
+	ak_view_call(v, AK_EV_SCROLL_PAGE_CHANGE, &arg, 1);
+	return true;
+}
+
+// ak_scroll_by scrolls a Scroll's content by dx, dy points from where it
+// is, within its bounds, as a swipe does: false when it can't move.
+bool ak_scroll_by(ak_view *v, float dx, float dy) {
+	if (!v || v->dead || v->el != AK_EL_SCROLL) return false;
+	scroll_state *s = v->impl;
+	ak_lframe f = ak_lnode_frame(v->box), c = ak_lnode_frame(s->content->box);
+	float z = s->zoom_shown > 0 ? s->zoom_shown : 1;
+	float maxx = c.w * z - f.w, maxy = c.h * z - f.h;
+	float x = s->off[0] + dx, y = s->off[1] + dy;
+	x = x > maxx ? maxx : x, y = y > maxy ? maxy : y;
+	x = x < 0 ? 0 : x, y = y < 0 ? 0 : y;
+	if (x == s->off[0] && y == s->off[1]) return false;
+	s->off[0] = x, s->off[1] = y;
+	ak_ui_scroll_to(v, x, y, true);
+	ak_val args[2] = {{.f = x}, {.f = y}};
+	ak_view_call(v, AK_EV_SCROLL_SCROLL, args, 2);
+	return true;
+}
+
 static void scroll_set(ak_view *e, uint16_t key, ak_val v, const ak_val *prev) {
 	scroll_state *s = e->impl;
 	switch (key) {
@@ -1080,6 +1150,7 @@ static void scroll_finalize(ak_view *e) {
 static void scroll_event(ak_view *e, const ak_event *ev) {
 	scroll_state *s = e->impl;
 	if (ev->kind == AK_EVENT_SCROLLED) {
+		s->off[0] = (float)ev->x, s->off[1] = (float)ev->y;
 		ak_val args[2] = {{.f = (float)ev->x}, {.f = (float)ev->y}};
 		ak_view_call(e, AK_EV_SCROLL_SCROLL, args, 2);
 	} else if (ev->kind == AK_EVENT_REFRESH) {

@@ -40,7 +40,9 @@ asuka: 1 of 2 tests failed
 It runs anywhere the CLI does, in CI too, with no simulator or emulator:
 `asuka test` compiles the package with its tests and runs them on this
 computer; the first run builds the test runner, which needs a C
-compiler. It exits with 1 when a test fails. For the
+compiler. It exits with 1 when a test fails, and `--junit
+results.xml` writes each test's result as JUnit XML, which CI services
+show. For the
 platforms' real views, see [testing on the
 platforms](#testing-on-the-platforms) below.
 
@@ -469,6 +471,7 @@ tap Add a note
 type hello
 tap Save
 see Note: hello
+expect screenshot noted
 back
 notsee Note: hello
 ```
@@ -482,20 +485,45 @@ asuka test --gui --platform ios       # the simulator (--device picks one)
 asuka test --gui --platform android   # an emulator or a phone
 asuka test --gui --platform web       # headless Chrome
 asuka test --gui                      # this computer
+asuka test --gui --junit flows.xml    # and each flow's result as JUnit XML, for CI
 ```
+
+### What a user does
 
 | Step | What it does |
 |---|---|
-| `tap <text>` | Presses what shows the text: a button, a toggle, a view that takes presses (a row), or a text field, which then takes what's typed. |
+| `tap <text>` | Presses what shows the text: a button, a toggle, a view that takes presses (a row), or a text field, which then takes what's typed. After a `swipe` that showed a row's actions, it chooses one of them. |
+| `doubletap <text>` | Taps twice: a view's `on doubleTap`, or a zoomable `Scroll` zoomed in (or back out). |
+| `longpress <text>` | Presses and holds: the nearest `on longPress`. |
 | `type <text>` | Types into the text field tapped last (else the first one), as the user's typing does. |
+| `type <text> into <field>` | Types into the field with that placeholder, label or text. |
 | `submit` | Presses return in that field. |
+| `hidekeyboard` | Puts the keyboard away: the field with it lets it go. |
 | `back` | Goes back from the top screen, as its back button does. |
 | `tab <title>` | Chooses the tab with that title, as tapping it in the tab bar does. |
 | `scroll` | Scrolls the list on the screen down a page. |
 | `scrollto <text>` | Scrolls the list down until something shows the text. |
+| `swipe <direction> [on <text>]` | A finger moving `left`, `right`, `up` or `down`, across what shows the text (else the screen's first list or scroll view): a list row's swipe actions show (the next `tap` picks one), a view's `on swipe` or `on pan` hears it, a paging `Scroll` turns a page, a list or scroll view scrolls. |
+| `drag <text> to <text>` | Drags one onto the other: a list row onto another row of a list whose rows move (`on move`), a view with `dragItems` onto one with `dropTypes` (its `on drop`), else the view's `on pan`. |
+| `drag <text> to <x>,<y>` | Drags it to a point of the window, in points. |
+| `drag <text> by <dx>,<dy>` | Drags it that far. |
+| `pinch <text> <scale>` | Two fingers apart (`2`: twice as big) or together (`0.5`): a zoomable `Scroll` zooms, an `on pinch` hears it. |
+
+### What the screen shows
+
+| Step | What it checks |
+|---|---|
 | `see <text>` | Something on the screen shows the text. |
 | `notsee <text>` | Nothing on the screen shows it. |
-| `wait <time>` | Waits (`500ms`, `2s`). |
+| `assert visible <text>` | As `see`. |
+| `assert hidden <text>` | As `notsee`. |
+| `assert enabled <text>` | What shows the text isn't `disabled` (nor is anything around it). |
+| `assert disabled <text>` | It is. |
+| `assert selected <text>` | It's on or chosen: a toggle, a segment, a tab, a list row, a view with `selected` or `a11ySelected`. |
+| `assert unselected <text>` | It isn't. |
+| `assert value <field> = <text>` | The text field with that placeholder or label holds the text (`*` any characters; nothing after `=`: empty). A slider's or stepper's value, by the text beside it, too. |
+| `waitfor <text> [time]` | Waits until something shows the text, up to the time (`30s`; else `--timeout`). |
+| `wait <time>` | Waits (`500ms`, `2s`). Prefer `waitfor`, or a `see`, which wait only as long as they must. |
 
 A text is what a view shows, its label (a button with only an icon) or a
 field's placeholder (`tap New note`), matched as a whole: `see Message 1`
@@ -511,3 +539,77 @@ showing. `--run text` runs
 only the flows whose names contain the text. The steps go through
 Asuka's own views, as the platform's events would come, so a flow runs
 the same everywhere, and what it shows is the platform's widgets.
+
+### The app and the system
+
+| Step | What it does |
+|---|---|
+| `relaunch` | Ends the app's process and starts it again: its state starts over, and what it stored (files, databases, `std/storage`) is still there. |
+| `background` | The app goes to the background, as when the user leaves it: the app's lifecycle handlers hear it. |
+| `foreground` | It comes back. |
+| `openlink <url>` | The app is opened with a link, as a link elsewhere opens it (`on openURL`, the router). On an Android emulator, a link with the scheme in `asuka.toml` goes through the system. |
+| `permission <name> allow\|deny\|ask` | Sets a permission before the app asks for it, so its dialog doesn't show: `allow` as if the user allowed it, `deny` as if they refused it, `ask` back to asking. |
+
+The permissions are `camera`, `microphone`, `location`,
+`location-always`, `photos`, `media-library`, `contacts`, `calendar`,
+`reminders`, `notifications`, `motion` and `bluetooth`. They come first
+in a flow, set before it starts the app; a phone's system ends an app
+whose permissions change, so on iOS and Android the flow starts the app
+anew after them. They stay set for the flows after it. Where the
+platform can't set one ahead (the simulator has no camera, and only the
+app asks for notifications; a desktop asks for none, or only its user
+can answer), the step says so and does nothing. On Android, a permission
+denied ahead reads as not asked until the app asks for it, which is
+refused at once, with no dialog:
+
+```
+# flows/nearby.flow
+permission location allow
+tap Nearby
+see 3 places near you
+```
+
+### Screenshots
+
+`screenshot <name>` saves what the screen shows, as a PNG, in
+`dist/flows/<platform>/` (`--artifacts dir` puts them elsewhere).
+
+`expect screenshot <name>` compares the screen with a golden image,
+`flows/__screenshots__/<platform>/<name>.png`, which you commit. The
+first run outside CI records it; `asuka test --gui --update` records
+them all again after a change you meant. In CI (when `CI` is set), a
+golden that's missing fails the flow.
+
+The comparison is as people see it: two pixels differ when their colors
+are noticeably apart (as pixelmatch measures, in brightness more than
+hue), a pixel on an edge one image draws smoother than the other
+(anti-aliasing) doesn't count, and the screen matches when no more than
+0.1% of its pixels differ. When it doesn't, the flow fails, and the
+screen (`<name>.actual.png`) and the differences in red (`<name>.diff.png`)
+are written beside the screenshots.
+
+```
+expect screenshot inbox
+expect screenshot inbox mask Updated * mask *:*
+expect screenshot chart tolerance 1%
+```
+
+- `mask <text>` hides what shows the text while the screenshot is taken,
+  for what changes from run to run (a time, a count from the network);
+  each `mask` another.
+- `tolerance <n>%` lets more of the pixels differ; `tolerance 0%`, none.
+
+The captures are made to be the same each run: the screenshot is taken
+once the screen stops changing (two in a row the same), the iOS
+simulator's status bar shows 9:41, full bars and a full battery, an
+Android device's is in demo mode with its animations off, headless
+Chrome's caret and animations are still, and the simulator and the
+device are light, whatever they were (each is put back after). The
+clock the app reads is the device's: mask what shows it.
+
+A screenshot is the platform's own drawing, so each platform has its
+goldens, and so does each device: an iPhone's differs from an iPad's,
+and fonts and anti-aliasing differ between a Mac and Linux, so record
+the goldens where CI runs them. `asuka test` without `--gui` has no
+pixels to compare: its views aren't drawn, and its
+[snapshots](#snapshots) compare what the screen shows as text.

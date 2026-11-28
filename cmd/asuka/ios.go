@@ -708,8 +708,9 @@ func simulatorPlayer(app *asukaApp, tc *iosToolchain, work string, sim *simDevic
 		}
 		return app.bundleID
 	}
+	var start func() error // the player started, as built
 	launch := func() error {
-		start := time.Now()
+		began := time.Now()
 		bundle, err := tc.buildPlayer(app, work)
 		if err != nil {
 			return err
@@ -719,8 +720,11 @@ func simulatorPlayer(app *asukaApp, tc *iosToolchain, work string, sim *simDevic
 				return err
 			}
 			installed = sum
-			fmt.Printf("asuka: the player built and installed in %.1fs\n", time.Since(start).Seconds())
+			fmt.Printf("asuka: the player built and installed in %.1fs\n", time.Since(began).Seconds())
 		}
+		return start()
+	}
+	start = func() error {
 		// Its environment: SIMCTL_CHILD_ names are the app's.
 		env := append(app.cfg.storeKitLaunchEnv(tc.bundlePlatform()), fmt.Sprintf("SIMCTL_CHILD_ASUKA_DEV=127.0.0.1:%d", loop.port()))
 		return tc.run(work, env, "xcrun", "simctl", "launch", "--terminate-running-process", sim.UDID, id())
@@ -728,6 +732,58 @@ func simulatorPlayer(app *asukaApp, tc *iosToolchain, work string, sim *simDevic
 	return devPlayer{
 		launch: launch,
 		stop:   func() { exec.Command("xcrun", "simctl", "terminate", sim.UDID, id()).Run() },
+		flow:   simulatorFlows(app, sim.UDID, id, start),
+	}
+}
+
+// simulatorFlows is what asuka test --gui's flows do on the simulator
+// with simctl: its screen, the app's privacy settings, its links, a
+// status bar the same each run.
+func simulatorFlows(app *asukaApp, udid string, id func() string, start func() error) *flowDriver {
+	simctl := func(args ...string) error {
+		out, err := exec.Command("xcrun", append([]string{"simctl"}, args...)...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("simctl %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+	// simctl privacy's services, by the flows' names.
+	services := map[string]string{"location": "location", "location-always": "location-always", "photos": "photos", "contacts": "contacts",
+		"calendar": "calendar", "reminders": "reminders", "microphone": "microphone", "motion": "motion", "media-library": "media-library"}
+	return &flowDriver{
+		screenshot: func(path string) error { return simctl("io", udid, "screenshot", "--type=png", path) },
+		relaunch:   start,
+		relaunches: true, // a privacy change ends the app
+		permission: func(name, setting string) (string, error) {
+			s, ok := services[name]
+			if !ok {
+				return "the simulator can't set it ahead (it has no camera; notifications are the app's to ask)", nil
+			}
+			action := map[string]string{"allow": "grant", "deny": "revoke", "ask": "reset"}[setting]
+			return "", simctl("privacy", udid, action, s, id())
+		},
+		// No openURL: simctl openurl asks "Open in ...?" first, which only
+		// a person can answer; the core gives the app the link as the
+		// host reports one.
+		prepare: func() func() {
+			// Apple's screenshots' status bar: 9:41, full bars, a full battery.
+			simctl("status_bar", udid, "override", "--time", "9:41", "--dataNetwork", "wifi", "--wifiMode", "active", "--wifiBars", "3",
+				"--cellularMode", "active", "--cellularBars", "4", "--operatorName", "", "--batteryState", "charged", "--batteryLevel", "100")
+			// Light, whatever the simulator was in.
+			was := ""
+			if out, err := exec.Command("xcrun", "simctl", "ui", udid, "appearance").Output(); err == nil {
+				was = strings.TrimSpace(string(out))
+			}
+			if was == "dark" {
+				simctl("ui", udid, "appearance", "light")
+			}
+			return func() {
+				simctl("status_bar", udid, "clear")
+				if was == "dark" {
+					simctl("ui", udid, "appearance", "dark")
+				}
+			}
+		},
 	}
 }
 

@@ -17,7 +17,8 @@
 // type (the focused field, else the first), submit, back, escape, tab,
 // scroll, and dump, which writes what the screen shows (each text,
 // field's text, button's title or accessibility label, a line each, in
-// creation order; then asuka dev's error overlay's) to dir/asuka-dump.txt.
+// creation order; then asuka dev's error overlay's) to dir/asuka-dump.txt;
+// snap writes a snapshot. asuka-done.txt is written after each file's.
 //
 // The steps run on the main loop, between its turns: a step, then 400 ms
 // for animations to settle (and, while asuka dev's error overlay fades
@@ -865,6 +866,11 @@ static gboolean poll_commands(gpointer data) {
 		if (strcmp(verb, "dump") != 0) g_usleep(400000);
 	}
 	free(text);
+	// Done, as the macOS host says it (asuka test --gui's screenshots wait).
+	char *done = dsk_join(commands_dir, "asuka-done.txt");
+	FILE *f = fopen(done, "wb");
+	if (f) fclose(f);
+	free(done);
 	return 1;
 }
 

@@ -322,6 +322,67 @@ func TestCounter(t *testing.T) {
 	t.Logf("%s", dump)
 }
 
+// ASUKA_COMMANDS drives the app while it runs (asuka test --gui's
+// screenshots on Windows): commands written to its file run, the file
+// goes, and asuka-done.txt says they did.
+func TestCommands(t *testing.T) {
+	w := onWindows(t)
+	local, guest := w.job(t)
+	buildApp(t, w, counter, local)
+	type result struct {
+		out string
+		err error
+	}
+	ran := make(chan result, 1)
+	go func() {
+		out, err := w.run(t, guest, guest+`\app.exe`, map[string]string{
+			"ASUKA_COMMANDS": guest,
+			"ASUKA_SCRIPT":   `waitfor:` + guest + `\stop`,
+			"ASUKA_SNAPSHOT": guest + `\end.png`,
+			"ASUKA_DUMP":     "1",
+		})
+		ran <- result{out, err}
+	}()
+	done := filepath.Join(local, "asuka-done.txt")
+	cmds := filepath.Join(local, "asuka-commands.txt")
+	if err := os.WriteFile(cmds+".part", []byte("tap Add\nsnap "+guest+`\shot.png`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(cmds+".part", cmds); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(runTimeout)
+	for {
+		if _, err := os.Stat(done); err == nil {
+			break
+		}
+		select {
+		case r := <-ran:
+			t.Fatalf("the app ended before running the commands: %v\n%s", r.err, r.out)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the commands didn't run")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if _, err := os.Stat(cmds); err == nil {
+		t.Error("the commands' file is still there")
+	}
+	if _, err := os.Stat(filepath.Join(local, "shot.png")); err != nil {
+		t.Errorf("snap wrote no screenshot: %v", err)
+	}
+	os.WriteFile(filepath.Join(local, "stop"), nil, 0o644)
+	r := <-ran
+	dump, err := os.ReadFile(filepath.Join(local, "end.png.txt"))
+	if r.err != nil || err != nil {
+		t.Fatalf("%v %v\n%s", r.err, err, r.out)
+	}
+	if !strings.Contains(string(dump), `"Count: 1"`) {
+		t.Fatalf("after the commands' tap, the window shows:\n%s", dump)
+	}
+}
+
 // buildExample builds examples/<name> as asuka build does, into dir.
 func buildExample(t *testing.T, w *windows, name, dir string) string {
 	t.Helper()

@@ -1,0 +1,14 @@
+# A note typed into its field (found by its placeholder), the Add button
+# enabled once there's text, the keyboard put away, the note added and
+# swiped away.
+assert disabled Add
+type Water the plants into New note
+assert value New note = Water the plants
+assert enabled Add
+hidekeyboard
+tap Add
+see Water the plants
+assert value New note =
+swipe left on Water the plants
+tap Delete
+notsee Water the plants

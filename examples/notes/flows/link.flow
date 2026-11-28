@@ -1,0 +1,9 @@
+# A link the app is opened with (asuka.toml's scheme) adds a note, which
+# stays when the app starts again; a swipe on its row deletes it.
+openlink asukanotes://add?text=Pick%20up%20eggs
+waitfor Pick up eggs 20s
+relaunch
+see Pick up eggs
+swipe left on Pick up eggs
+tap Delete
+notsee Pick up eggs

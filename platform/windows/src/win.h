@@ -181,6 +181,7 @@ bool wh_snapshotting(void);
 bool wh_pre_translate(MSG *m);
 void wh_automation(void);
 void wh_automation_timer(void);
+void wh_commands_timer(void);
 void wh_snapshot(const char *path);
 char *wh_dump(size_t *len);
 bool wh_on_screen(node *n);

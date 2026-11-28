@@ -43,6 +43,9 @@ type testRun struct {
 	cover             bool
 	lcov, html        string
 	coverage          *coverage
+	// junit is --junit's file; suites its packages' results, as run.
+	junit  string
+	suites []junitSuite
 }
 
 // parseCount reads a time or a count, as Go's -benchtime: 2s, 500ms, or
@@ -136,6 +139,9 @@ func (tr *testRun) runPackage(m *bytecode.Module, cov *ir.Cover, p *appbuild.Pro
 		tr.coverage.add(cov, counts)
 	}
 	n, failed := len(s.Results), s.Failed()
+	if tr.junit != "" && !tr.bench && !tr.fuzz {
+		tr.suites = append(tr.suites, junitOf(relToCwd(p.Dir), start, time.Since(start), s.Results))
+	}
 	if tr.bench {
 		if failed > 0 {
 			if jsonOut {
@@ -1016,4 +1022,23 @@ pick.onchange = () => { document.querySelectorAll(".file").forEach((f, i) => f.c
 		}
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// junitOf is a package's tests' results as a JUnit suite (each test's
+// time unknown: the package's, on the suite).
+func junitOf(pkg string, start time.Time, took time.Duration, results []appbuild.TestResult) junitSuite {
+	s := newJUnitSuite(pkg, start)
+	s.Time = took.Seconds()
+	for _, r := range results {
+		c := junitCase{Name: r.Name, Classname: pkg}
+		if i := strings.LastIndex(r.Pos, ":"); i > 0 {
+			c.File = r.Pos[:i]
+			c.Line, _ = strconv.Atoi(r.Pos[i+1:])
+		}
+		if !r.OK {
+			c.Failure = &junitFailure{Message: firstLine(r.Message), Text: r.Message}
+		}
+		s.add(c)
+	}
+	return s
 }

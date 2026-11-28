@@ -1185,6 +1185,79 @@ TEST(list_move_keeps_rows) {
 	ak_release(items), ak_release(movable);
 }
 
+static const char *automate_cmds(const char *cmds, ak_buf *out) {
+	ak_buf_reset(out);
+	ak_ui_automate(ak_cstr(cmds), out);
+	ak_buf_u8(out, 0);
+	return (const char *)out->data;
+}
+
+// asuka test --gui's drag of a row onto another: its on move hears it,
+// and as the host didn't move the row itself, it gets the new order.
+TEST(automation_moves_a_row) {
+	items = cell_ref(todos(5));
+	movable = ak_vm_cell_new((ak_val){.i = 1}, AK_K_BOOL, NULL).p;
+	nmoves = 0;
+	take_moves = true;
+	ak_uitest *a = mount(movable_list_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *list = nth(a, AK_KIND_LIST, 0);
+	REQUIRE(list);
+	int64_t ids0[5];
+	for (int i = 0; i < 5; i++) ids0[i] = list->items.data[i];
+	ak_fake_reset(f);
+	ak_buf out = {0};
+	CHECK_EQ_STR(automate_cmds("drag item 1\titem 3", &out), "ok\n");
+	CHECK(nmoves == 1 && moves[0] == 1 && moves[1] == 3);
+	CHECK(last_command(f, AK_CMD_LIST_UPDATE) >= 0);
+	int64_t want[5] = {ids0[0], ids0[2], ids0[3], ids0[1], ids0[4]};
+	check_ids(list, want, 5);
+	// A row whose item went shows nothing, whether or not the host has
+	// let its cell go.
+	CHECK_EQ_STR(automate_cmds("see item 4", &out), "ok\n");
+	write_p(items, todos(1));
+	ak_ui_flush();
+	CHECK_EQ_STR(automate_cmds("see item 0\nnotsee item 4", &out), "ok\nok\n");
+	ak_buf_free(&out);
+	done(a);
+	ak_release(items), ak_release(movable);
+}
+
+// focus picks a field by its placeholder; value reads what it shows;
+// hidekeyboard lets the keyboard go.
+TEST(automation_fields) {
+	field_text = cell_ref(ak_str_c(""));
+	submitted = cell_ref(ak_str_c(""));
+	ak_uitest *a = mount(field_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_buf out = {0};
+	CHECK_EQ_STR(automate_cmds("focus New todo\ntype milk\nvalue New todo\tmilk\nvalue New todo\tm*\nvalue New todo\tbread\nfocus Nope", &out),
+	             "ok\nok\nok\nok\nerror: \"New todo\" has \"milk\"\nerror: no text field shows \"Nope\"\n");
+	ak_fake_reset(f);
+	CHECK_EQ_STR(automate_cmds("hidekeyboard", &out), "ok\n");
+	CHECK(last_command(f, AK_CMD_BLUR) >= 0);
+	ak_buf_free(&out);
+	done(a);
+	ak_release(field_text), ak_release(submitted);
+}
+
+static ak_val scroll_app(ak_closure *c, ak_val *a, uint32_t n);
+
+// A swipe up on a Scroll scrolls its content up, within its bounds.
+TEST(automation_swipes_a_scroll) {
+	ak_uitest *a = mount(scroll_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_buf out = {0};
+	ak_fake_reset(f);
+	CHECK_EQ_STR(automate_cmds("swipe up\nswipe down\nswipe down", &out), "ok\nok\nerror: the scroll view is at its end\n");
+	ak_fake_index_vec sent = {0};
+	ak_fake_commands(f, AK_CMD_SCROLL_TO_OFFSET, &sent);
+	CHECK_EQ_INT(sent.len, 2);
+	ak_vec_free(&sent);
+	ak_buf_free(&out);
+	done(a);
+}
+
 // ---- A zoomable Scroll (minZoom, maxZoom, zoom) ----
 
 static void *zoom_cell;

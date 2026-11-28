@@ -27,8 +27,8 @@ var jsonOut bool
 // host built for this computer).
 func cmdTest(args []string) error {
 	var pattern, platform, benchtime, compare, seed, fuzztime string
-	var release, gui bool
-	var device, timeout string
+	var release, guiTests bool
+	var device, timeout, artifacts string
 	tr := &testRun{}
 	jsonOut = false
 	fs := newFlagSet("test", "[dir]")
@@ -52,13 +52,15 @@ func cmdTest(args []string) error {
 	fs.Bool(&tr.fuzz, "fuzz", 0, "fuzz the property tests instead of running the tests: new inputs until --fuzztime, those that reach new code kept and changed; a failing one is shrunk and saved in testdata/fuzz, which every run then tries")
 	fs.String(&fuzztime, "fuzztime", 0, "10s", "how long to fuzz each property test (`time`), or how many inputs (10000x)")
 	fs.Bool(&appbuild.PreviewTests, "previews", 0, "run the package's previews (preview \"name\" { … }) as tests too: each is mounted and what it shows compared with its snapshot, in testdata/snapshots, as expectSnapshot's")
-	fs.Bool(&tr.update, "update", 'u', "write the snapshots that differ from what the tests show, and remove those no test takes")
+	fs.Bool(&tr.update, "update", 'u', "write the snapshots that differ from what the tests show, and remove those no test takes; with --gui, record the flows' screenshots (expect screenshot) anew")
+	fs.String(&tr.junit, "junit", 0, "", "write the tests' results (with --gui, the flows') to `file` as JUnit XML, for CI")
 	fs.Bool(&tr.cover, "cover", 0, "measure the lines and branches of the package's code the tests run: a summary per file")
 	fs.String(&tr.lcov, "cover-lcov", 0, "", "write the coverage to `file` in lcov's format, for editors and CI (--cover)")
 	fs.String(&tr.html, "cover-html", 0, "", "write the coverage to `file` as a page: the source, what ran and what didn't (--cover)")
-	fs.Bool(&gui, "gui", 0, "run the app's flows (flows/*.flow) on the --platform's player, as asuka dev runs it (default: this computer; ios: the simulator, android: an emulator, web: headless Chrome), instead of its test blocks")
+	fs.Bool(&guiTests, "gui", 0, "run the app's flows (flows/*.flow) on the --platform's player, as asuka dev runs it (default: this computer; ios: the simulator, android: an emulator, web: headless Chrome), instead of its test blocks")
 	fs.String(&device, "device", 'd', "", "--gui: the simulator, emulator or device to run on, as asuka dev's --device")
 	fs.String(&timeout, "timeout", 0, "10s", "--gui: how long a step is tried before its flow fails (`time`)")
+	fs.String(&artifacts, "artifacts", 0, "", "--gui: where the flows' screenshots, and a failed comparison's screen and diff, are written (`dir`; default: the app's dist/flows), a folder a platform")
 	variantFlags(fs)
 	if err := fs.parse(args); err != nil {
 		return err
@@ -66,7 +68,8 @@ func cmdTest(args []string) error {
 	if err := useVariant(); err != nil {
 		return err
 	}
-	if gui {
+	if guiTests {
+		guiFlags.update, guiFlags.junit, guiFlags.artifacts = tr.update, tr.junit, artifacts
 		return testGUI(fs.Arg(0), platform, device, pattern, timeout)
 	}
 	tr.pattern, tr.platform = pattern, platform
@@ -185,6 +188,11 @@ func cmdTest(args []string) error {
 	}
 	if tr.coverage != nil {
 		if err := tr.coverage.report(tr); err != nil && failed == nil {
+			failed = err
+		}
+	}
+	if tr.junit != "" && !tr.bench && !tr.fuzz {
+		if err := writeJUnit(tr.junit, "asuka test", tr.suites); err != nil && failed == nil {
 			failed = err
 		}
 	}

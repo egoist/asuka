@@ -556,6 +556,7 @@ enum {
 	TIMER_ZOOM = 14,         // a Scroll's zoom easing to a double click's, or ZoomTo's
 	TIMER_REORDER = 15,      // a list's rows making way for one moved, and its scrolling at an edge
 	TIMER_REORDER_HOLD = 16, // a touch's long press lifting a row
+	TIMER_COMMANDS = 17,     // ASUKA_COMMANDS' file, looked for (automation.c)
 };
 
 void wh_register_classes(void);

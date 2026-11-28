@@ -576,6 +576,9 @@ type devPlayer struct {
 	launch func() error
 	stop   func()
 	done   func() <-chan struct{}
+	// flow is what asuka test --gui's flows ask of the platform outside
+	// the app (nil: nothing): screenshots, relaunching it, permissions.
+	flow *flowDriver
 }
 
 // run launches the player and runs the loop until stop (or the player
@@ -612,7 +615,7 @@ func (d *devLoop) run(p devPlayer, stop <-chan os.Signal, once bool) error {
 		}()
 		select {
 		case <-d.firstLoad:
-			return d.runFlows(d.flows)
+			return d.runFlows(d.flows, p.flow)
 		case msg := <-d.playerErr:
 			return fmt.Errorf("the app didn't start: %s", msg)
 		case <-done:

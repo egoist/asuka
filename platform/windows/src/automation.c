@@ -2,7 +2,7 @@
 // ASUKA_SNAPSHOT (the window as a PNG once it has shown, ASUKA_DUMP the
 // view tree beside it) and quit. The steps run on the main thread, a timer
 // apart: 1.5 s before the first (images and fonts load), 0.4 s between
-// them.
+// them. ASUKA_COMMANDS runs them from a file while the app runs.
 #include "win.h"
 #include "nav.h"
 
@@ -805,8 +805,57 @@ void wh_automation_timer(void) {
 	next_step();
 }
 
+// ---- ASUKA_COMMANDS: the app driven from outside while it runs ----
+//
+// Commands written to dir/asuka-commands.txt, one a line ("snap
+// file.png", "tap Add": the script's steps, a space for its colon), are
+// run and the file removed; asuka-done.txt is written after them (asuka
+// test --gui's screenshots wait for it).
+
+static char *commands_dir;
+
+void wh_commands_timer(void) {
+	char *file = dsk_join(commands_dir, "asuka-commands.txt");
+	size_t n;
+	char *text = dsk_read_file(file, &n);
+	if (!text) {
+		free(file);
+		return;
+	}
+	DeleteFileA(file);
+	free(file);
+	for (char *line = text; line && *line;) {
+		char *end = strchr(line, '\n');
+		if (end) *end = 0;
+		char *p = line;
+		line = end ? end + 1 : NULL;
+		while (*p == ' ' || *p == '\t') p++;
+		size_t l = strlen(p);
+		while (l && (p[l - 1] == '\r' || p[l - 1] == ' ')) p[--l] = 0;
+		if (!*p) continue;
+		char *sp = strchr(p, ' ');
+		const char *arg = "";
+		if (sp) *sp = 0, arg = sp + 1;
+		wh_core_begin();
+		step(p, arg);
+		wh_core_end();
+	}
+	free(text);
+	char *done = dsk_join(commands_dir, "asuka-done.txt");
+	FILE *f = fopen(done, "wb");
+	if (f) fclose(f);
+	free(done);
+}
+
 // wh_automation starts the debug automation, if it's asked for.
 void wh_automation(void) {
+	char *dir = dsk_getenv("ASUKA_COMMANDS");
+	if (dir && *dir) {
+		commands_dir = dir;
+		SetTimer(H.msg_win, TIMER_COMMANDS, 50, NULL);
+	} else {
+		free(dir);
+	}
 	char *s = dsk_getenv("ASUKA_SCRIPT");
 	snap_path = dsk_getenv("ASUKA_SNAPSHOT");
 	if (!s && !snap_path) return;

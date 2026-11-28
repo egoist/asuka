@@ -421,6 +421,7 @@ func androidPlayer(app *asukaApp, tc *androidToolchain, work, serial string, loo
 	if err := tc.run(work, nil, tc.adb, "-s", serial, "reverse", "tcp:"+port, "tcp:"+port); err != nil {
 		return devPlayer{}, err
 	}
+	var startPlayer func() error // started, as installed
 	launch := func() error {
 		start := time.Now()
 		if err := generateNatives(app); err != nil {
@@ -459,14 +460,21 @@ func androidPlayer(app *asukaApp, tc *androidToolchain, work, serial string, loo
 		// a breakpoint of asuka dev's debugger, its main thread doesn't
 		// answer input, which the system then doesn't take for an app
 		// not responding (no ANR dialog, no kill).
-		tc.run(work, nil, tc.adb, "-s", serial, "shell", "am", "set-debug-app", pkg)
-		if err := tc.run(work, nil, tc.adb, "-s", serial, "shell", "am", "start", "-W", "-n", pkg+"/dev.asuka.AsukaActivity"); err != nil {
+		if err := startPlayer(); err != nil {
 			return err
 		}
 		fmt.Printf("asuka: the player built and started in %.1fs\n", time.Since(start).Seconds())
 		return nil
 	}
+	startPlayer = func() error {
+		tc.run(work, nil, tc.adb, "-s", serial, "shell", "am", "set-debug-app", pkg)
+		return tc.run(work, nil, tc.adb, "-s", serial, "shell", "am", "start", "-W", "-n", pkg+"/dev.asuka.AsukaActivity")
+	}
 	return devPlayer{
+		flow: androidFlows(app, tc, serial, pkg, func() error {
+			tc.run(work, nil, tc.adb, "-s", serial, "shell", "am", "force-stop", pkg)
+			return startPlayer()
+		}),
 		launch: launch,
 		stop: func() {
 			// Started from the launcher after, it runs what it has.

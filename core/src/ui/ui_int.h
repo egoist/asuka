@@ -606,6 +606,26 @@ void ak_list_unbind(ak_view *e, ak_id cell);
 void ak_list_layout(ak_view *e, ak_lpass *p);
 void ak_list_each_cell(ak_view *e, void (*f)(ak_view *c, void *ctx), void *ctx);
 int64_t ak_list_bound(ak_view *e, uint32_t *n);  // the last row bound (-1: none), and how many are
+// asuka test --gui's (automate.c): the row a view is in, its swipe
+// actions, whether it shows selected, and a row moved as a drag moves it.
+ak_view *ak_list_cell_around(ak_view *v, ak_view **list, int64_t *index);
+bool ak_list_cell_live(ak_view *cell);
+int64_t ak_list_cell_action(ak_view *cell, bool leading, ak_span title);  // INT64_MIN: none
+int ak_list_cell_selected(ak_view *cell);
+bool ak_list_reorders(ak_view *e);
+bool ak_list_move_row(ak_view *e, int64_t from, int64_t to);
+
+// elements.c's, for asuka test --gui's gestures (automate.c): a Scroll's
+// zoom, pages and offset, a TextField's text and focus.
+bool ak_scroll_zoomable(const ak_view *v);
+float ak_scroll_zoom(const ak_view *v);
+void ak_scroll_double_tap(ak_view *v);
+bool ak_scroll_horizontal(const ak_view *v);
+bool ak_scroll_paging(const ak_view *v);
+bool ak_scroll_page_by(ak_view *v, int delta);
+bool ak_scroll_by(ak_view *v, float dx, float dy);
+const ak_str *ak_field_value(const ak_view *e);
+bool ak_field_focused(const ak_view *e);
 
 // ---- path.c ----
 

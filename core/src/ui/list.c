@@ -1190,6 +1190,71 @@ int64_t ak_list_bound(ak_view *e, uint32_t *n) {
 	return last;
 }
 
+// ---- asuka test --gui's (automate.c) ----
+
+// ak_list_cell_around is the bound row v is in (its cell's view; NULL:
+// none, or a section's header), with its List and the row's index.
+ak_view *ak_list_cell_around(ak_view *v, ak_view **list, int64_t *index) {
+	for (ak_view *p = v; p; p = p->parent ? p->parent : p->cell ? NULL : p->up) {
+		if (p->cls != &ak_class_lcell) continue;
+		lcell *c = p->impl;
+		if (!c || c->header || p->dead) return NULL;
+		if (list) *list = c->st->e;
+		if (index) *index = cell_index(c, false);
+		return p;
+	}
+	return NULL;
+}
+
+// ak_list_cell_action is the index of a row's swipe action titled title
+// (leading: its leading actions'), as the host's Action event numbers it
+// (a leading one's -1 - its index); INT64_MIN: none. title empty: its
+// first.
+int64_t ak_list_cell_action(ak_view *cell, bool leading, ak_span title) {
+	lcell *c = cell && cell->cls == &ak_class_lcell ? cell->impl : NULL;
+	const ak_arr *as = c ? (leading ? c->leading : c->actions) : NULL;
+	for (uint32_t i = 0; as && i < as->len; i++) {
+		const ak_enum *a = ak_arr_vals(as)[i].p;
+		const ak_str *t = a ? a->f[0].p : NULL;
+		if (!title.len || (t && t->len == title.len && memcmp(t->data, title.p, title.len) == 0)) return leading ? -1 - (int64_t)i : (int64_t)i;
+	}
+	return INT64_MIN;
+}
+
+// ak_list_cell_selected is whether the host shows a row selected (-1:
+// unknown).
+int ak_list_cell_selected(ak_view *cell) {
+	lcell *c = cell && cell->cls == &ak_class_lcell ? cell->impl : NULL;
+	return c ? c->sel : -1;
+}
+
+// ak_list_cell_live is whether a bound row's item is still in the list:
+// one removed shows until the host binds its cell again or lets it go.
+bool ak_list_cell_live(ak_view *cell) {
+	lcell *c = cell && cell->cls == &ak_class_lcell ? cell->impl : NULL;
+	if (!c) return false;
+	if (c->header) return true;
+	list_t *st = c->st;
+	if (!st->ids || !st->ids_cap) return false;
+	return find_id(st->ids, st->ids_cap, c->row.key, c->row.hash, st->key_kind)->hash != 0;
+}
+
+// ak_list_reorders is whether a List's rows move (its on move).
+bool ak_list_reorders(ak_view *e) { return e && e->el == AK_EL_LIST && reorder_on(e); }
+
+// ak_list_move_row moves a row as the user's drag does, though the host
+// didn't: its on move hears it, and the host gets the order whole.
+bool ak_list_move_row(ak_view *e, int64_t from, int64_t to) {
+	if (!ak_list_reorders(e)) return false;
+	list_t *st = e->impl;
+	int64_t n = count(st);
+	if (from < 0 || to < 0 || from >= n || to >= n) return false;
+	if (from == to) return true;
+	st->sent = false;
+	moved(e, from, to);
+	return true;
+}
+
 void ak_list_each_cell(ak_view *e, void (*f)(ak_view *c, void *ctx), void *ctx) {
 	list_t *st = e->impl;
 	for (uint32_t i = 0; st && i < st->cells.len; i++) f(st->cells.data[i]->el, ctx);

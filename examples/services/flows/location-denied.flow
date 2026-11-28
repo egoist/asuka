@@ -1,0 +1,6 @@
+# Location denied ahead: asking for it is refused at once, with no
+# dialog. (On Android, the app reads it as not asked until it asks.)
+permission location deny
+tap In the background: tracking, regions
+tap Allow while in use
+see denied, precise *

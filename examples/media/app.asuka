@@ -63,13 +63,14 @@ screen Images {
   }
 }
 
-/// A card you drag around and pinch to resize; it springs back.
+/// A card you drag around and pinch to resize; it springs back. A bar
+/// that says how it was swiped, held or double-tapped.
 screen Gestures {
   state x = 0.0
   state y = 0.0
   state size = 120.0
   state start = (0.0, 0.0, 0.0) // where a gesture began: x, y and size
-  state swipe = "Swipe the bar below"
+  state swipe = "Swipe, hold or double-tap the bar"
   state last = ""
 
   title: "Gestures"
@@ -136,6 +137,8 @@ screen Gestures {
       justify: .center
       align: .center
       on swipe(direction) { swipe = "Swiped {direction}" }
+      on longPress { swipe = "Held" }
+      on doubleTap(x, y) { swipe = "Double-tapped" }
       Text(swipe)
     }
   }

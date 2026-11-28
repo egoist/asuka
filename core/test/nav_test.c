@@ -1272,7 +1272,7 @@ TEST(automation) {
 	             "error: no screen to go back from\n"
 	             "error: nothing shows \"Nope\"\n"
 	             "error: \"Open\" shows\n"
-	             "error: no command fly (tap, type, submit, back, tab, scroll, see, notsee, dump)\n") == 0);
+	             "error: no command fly (tap, doubletap, longpress, swipe, drag, pinch, type, focus, submit, hidekeyboard, back, tab, scroll, see, notsee, check, value, openlink, background, foreground, mask, unmask, dump)\n") == 0);
 	done(a);
 
 	// type: into the field, which shows it.
@@ -2113,6 +2113,33 @@ TEST(list_sections_swipe_selection) {
 	ak_ui_flush();
 	CHECK(!ak_fake_bool(rc, AK_PROP_SELECTED));
 	CHECK(!ak_fake_bool(bc, AK_PROP_SELECTED));
+	done(a);
+	ak_release(sel_mask);
+}
+
+// asuka test --gui's swipe on a row shows its swipe actions (left: the
+// trailing ones, right: the leading), and the next tap chooses one; any
+// other step puts the row back.
+TEST(automation_swipe_actions) {
+	deleted = saved = 0;
+	sel_mask = cell_int(0);
+	ak_uitest *a = mount(sections_app, NULL);
+	ak_fake *f = ak_uitest_host(a);
+	ak_fake_view *list = nth(a, AK_KIND_LIST, 0);
+	REQUIRE(list);
+	ak_fake_view *rc = ak_fake_new_cell(f);
+	ak_fake_bind(f, list, 0, rc);
+	ak_buf out = {0};
+	CHECK(strcmp(automate("swipe left Ada\ntap Delete Ada\nswipe right Ada\ntap Pin", &out), "ok\nok\nok\nok\n") == 0);
+	CHECK_EQ_INT(deleted, 1);
+	CHECK_EQ_INT(saved, 1);
+	CHECK(strcmp(automate("swipe left Ada\nsee Ada\ntap Delete Ada", &out), "ok\nok\nerror: nothing shows \"Delete Ada\"\n") == 0);
+	CHECK_EQ_INT(deleted, 1);
+	// The row's selection.
+	CHECK(strcmp(automate("check unselected Ada", &out), "ok\n") == 0);
+	ak_fake_select_row(f, rc, true);
+	CHECK(strcmp(automate("check selected Ada", &out), "ok\n") == 0);
+	ak_buf_free(&out);
 	done(a);
 	ak_release(sel_mask);
 }

@@ -369,7 +369,9 @@ func devWeb(dir string, o *devOptions, stop <-chan os.Signal) error {
 		host = ""
 	}
 	port := o.port
-	if port == 0 {
+	if port == 0 && len(o.flows) == 0 {
+		// asuka test --gui's flows run on a port of their own: a page left
+		// open on asuka dev's would join them (its events reconnect).
 		port = devWebPort
 	}
 	ln, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
@@ -403,6 +405,7 @@ func devWeb(dir string, o *devOptions, stop <-chan os.Signal) error {
 	}
 	opened := false
 	var stopChrome func()
+	drv := &flowDriver{} // asuka test --gui's, once Chrome runs
 	launch := func() error {
 		if opened {
 			// The app's settings, assets, scripts or C changed: the page
@@ -420,11 +423,12 @@ func devWeb(dir string, o *devOptions, stop <-chan os.Signal) error {
 		opened = true
 		if len(o.flows) > 0 {
 			// asuka test --gui: a headless Chrome of its own.
-			quit, err := headlessChrome(url)
+			quit, devtools, err := headlessChrome(url)
 			if err != nil {
 				return err
 			}
 			stopChrome = quit
+			*drv = *webFlowDriver(devtools, url, func() { s.send("reload", "") })
 			return nil
 		}
 		if !o.noOpen {
@@ -444,7 +448,7 @@ func devWeb(dir string, o *devOptions, stop <-chan os.Signal) error {
 		}
 	}()
 	loop.flows = o.flows
-	return loop.run(devPlayer{launch: launch, stop: func() {
+	return loop.run(devPlayer{flow: drv, launch: launch, stop: func() {
 		if stopChrome != nil {
 			stopChrome()
 		}

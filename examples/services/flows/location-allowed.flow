@@ -1,0 +1,5 @@
+# Location allowed ahead, as if the user had answered the system's
+# dialog: the screen says so, and no dialog shows.
+permission location allow
+tap In the background: tracking, regions
+see Allowed: whenInUse*
