@@ -68,8 +68,11 @@ function printFrame(load) {
         finish(new PrintError("unavailable"));
       }
     }, { once: true });
-    document.body.appendChild(f);
+    // What to print goes in before the frame is in the page: a frame put
+    // in without it loads an empty document first, and Chrome fires its
+    // load at once, so the listener would print that.
     load(f);
+    document.body.appendChild(f);
   });
 }
 
