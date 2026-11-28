@@ -339,6 +339,17 @@ void ak_lnode_set_context(ak_lnode *n, void *ctx);
 void ak_lnode_set_measure(ak_lnode *n, ak_lmeasure_fn fn, void *ctx);
 // ak_lnode_set_baseline sets how a measured leaf reports its baseline.
 void ak_lnode_set_baseline(ak_lnode *n, ak_lbaseline_fn fn, void *ctx);
+// ak_lnode_set_content_max says how large a measured leaf's content is
+// ever drawn, per axis (INFINITY: no limit): what its host reported as it
+// measured it (a watch's button is never wider than the screen less its
+// margins). Called from its measure function, it holds until its content
+// or style changes (ak_lnode_mark_content_dirty, ak_lnode_mark_dirty).
+// It doesn't size the leaf: layout gives it the box CSS does (a stretch,
+// a flex-grow, a width of its own), and its frame is that box narrowed
+// to the limit (and its padding and border), centered in it, as the
+// platform draws a control it can't make larger, so the frame is what's
+// drawn. Its siblings are where they were.
+void ak_lnode_set_content_max(ak_lnode *n, float w, float h);
 
 // ak_lnode_mark_dirty drops the cached layouts of n and its ancestors:
 // call it when n's style changed (or anything else about it).

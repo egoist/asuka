@@ -129,6 +129,10 @@ static void *default_measure_ctx;
 
 void ak_uitest_set_measure(ak_fake_measure_fn fn, void *ctx) { default_measure = fn, default_measure_ctx = ctx; }
 
+static float default_button_max;
+
+void ak_uitest_set_button_max(float w) { default_button_max = w; }
+
 ak_uitest *ak_uitest_mount(ak_closure *build, const ak_environment *env) { return ak_uitest_mount_at(build, env, -1, sp("")); }
 
 ak_uitest *ak_uitest_mount_at(ak_closure *build, const ak_environment *env, int platform, ak_span href) {
@@ -143,6 +147,7 @@ ak_uitest *ak_uitest_mount_at(ak_closure *build, const ak_environment *env, int 
 	f->fail_fn = fail_cb;
 	f->fail_ctx = &a->fails;
 	f->measure_fn = default_measure, f->measure_ctx = default_measure_ctx;
+	f->button_max = default_button_max;
 	active = a;
 	ak_zone_set_utc(true);  // dates are UTC's: the same on every computer
 	ak_locale_forget_choice();  // the user's languages, whatever a test before chose

@@ -179,6 +179,10 @@ struct ak_lnode {
 	bool detaching;  // ak_lnode_detach's mark
 	bool rtl;  // the resolved direction, the one cache was computed under
 	l_cache cache;
+	// The content box its host draws it at most (ak_lnode_set_content_max;
+	// INFINITY: no limit), and that as a border box, as its last final
+	// layout had its padding and border: where l_place narrows its frame.
+	ak_lsize content_max, box_max;
 	float reported[4];
 	float static_y;  // block layout's static position for absolute children
 };

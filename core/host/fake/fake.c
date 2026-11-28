@@ -988,6 +988,13 @@ void ak_fake_measure(ak_fake *f, ak_id id, float width, float height, float avai
 	case AK_KIND_BUTTON:
 		w = (float)runes(ak_fake_string(v, AK_PROP_BUTTON_TITLE)) * 8 + 24;
 		h = 44;
+		if (f->button_max > 0) {
+			// Its own width, or the width it's given (known, or the space
+			// it's wider than), never wider than its limit, as the watch's.
+			float want = width == width ? width : fin(avail_w) && w > avail_w ? avail_w : w;
+			w = ak_minf(want, f->button_max);
+			asuka_measure_max(f->button_max, AK_INF);
+		}
 		break;
 	case AK_KIND_TEXT_FIELD:
 		w = 200, h = 36;

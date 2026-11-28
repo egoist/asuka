@@ -30,7 +30,8 @@ typedef struct {
 	void (*apply)(const uint8_t *buf, size_t len);
 	// Measures view id: width/height are known sizes or NaN; avail* are
 	// the space available: a definite size, +inf (max-content) or -inf
-	// (min-content).
+	// (min-content). A view the platform never draws larger than some
+	// size, whatever its frame, says so from here (asuka_measure_max).
 	void (*measure)(uint32_t id, float width, float height, float availWidth, float availHeight, float *outWidth, float *outHeight);
 	// Asks for asuka_run_posted to be called soon on the main thread. Any
 	// thread.
@@ -119,6 +120,20 @@ ASUKA_API int64_t asuka_list_count(uint32_t list);
 ASUKA_API void asuka_list_bind(uint32_t list, int64_t index, uint32_t cell);
 ASUKA_API void asuka_list_unbind(uint32_t list, uint32_t cell);
 ASUKA_API void asuka_run_posted(void);
+// asuka_measure_max, called by the host from inside its measure callback,
+// says the view being measured is never drawn larger than maxWidth by
+// maxHeight (its content, as the measured size; +inf or NaN: no limit on
+// that axis), whatever frame it gets: watchOS draws no button wider than
+// the screen less its margins. When the core's layout gives the view a
+// larger box (stretched across a column, grown, a size of its own), its
+// frame is that limit, centered in the box, so the frame is what's drawn.
+// It's the view's, not the constraints': a host says it as it measures
+// the view, whatever it's asked; what it said holds until the view's
+// content or style changes, when the core measures it again. A view
+// whose size layout forces on both axes is never measured, and keeps its
+// box. Main thread; outside a
+// measure it does nothing. Hosts that don't call it are unchanged.
+ASUKA_API void asuka_measure_max(float maxWidth, float maxHeight);
 
 // asuka_quit_request asks the app whether it may quit (its on quit
 // handlers), on the desktop, as it's about to however the quit started

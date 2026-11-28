@@ -503,14 +503,43 @@ void ak_view_make_real(ak_view *e) {
 
 static float key_bits_f(float f) { return f; }
 
+void ak_ui_measure_max(float w, float h) {
+	if (!ak_ui.measuring) return;
+	ak_ui.measure_max[0] = w != w ? AK_INF : w;
+	ak_ui.measure_max[1] = h != h ? AK_INF : h;
+}
+
+// host_measure asks the host to measure e: its size, and the largest it
+// said it draws e at.
+static ak_measured host_measure(ak_view *e, ak_lconstraints c) {
+	ak_ui_root *r = e->r;
+	ak_measured m = {0, 0, AK_INF, AK_INF};
+	bool was = ak_ui.measuring;
+	float saved[2] = {ak_ui.measure_max[0], ak_ui.measure_max[1]};
+	ak_ui.measuring = true;
+	ak_ui.measure_max[0] = ak_ui.measure_max[1] = AK_INF;
+	r->host.measure(r->host.ctx, e->id, c.width, c.height, c.avail_w, c.avail_h, &m.w, &m.h);
+	m.max_w = ak_ui.measure_max[0], m.max_h = ak_ui.measure_max[1];
+	ak_ui.measuring = was;
+	ak_ui.measure_max[0] = saved[0], ak_ui.measure_max[1] = saved[1];
+	ak_ui.stats.measures++;
+	return m;
+}
+
+// measured gives layout what a measurement said: its size, and the
+// largest e is drawn at when the host said (what it didn't say leaves
+// what it said before, until e's content changes).
+static ak_lsize measured(ak_view *e, const ak_measured *m) {
+	if (m->max_w < AK_INF || m->max_h < AK_INF) ak_lnode_set_content_max(e->box, m->max_w, m->max_h);
+	return (ak_lsize){m->w, m->h};
+}
+
 static ak_lsize measure_cb(void *ctx, ak_lconstraints c) {
 	ak_view *e = ctx;
 	ak_ui_root *r = e->r;
-	float w = 0, h = 0;
 	if (!(e->cls->flags & AK_ELF_CACHE)) {
-		r->host.measure(r->host.ctx, e->id, c.width, c.height, c.avail_w, c.avail_h, &w, &h);
-		ak_ui.stats.measures++;
-		return (ak_lsize){w, h};
+		ak_measured m = host_measure(e, c);
+		return measured(e, &m);
 	}
 	ak_mkey k = {0};
 	k.kind = e->kind;
@@ -532,14 +561,14 @@ static ak_lsize measure_cb(void *ctx, ak_lconstraints c) {
 	float cs[4] = {key_bits_f(c.width), key_bits_f(c.height), key_bits_f(c.avail_w), key_bits_f(c.avail_h)};
 	memcpy(k.c, cs, sizeof cs);
 	uint32_t hash = ak_mkey_hash(&k);
-	if (ak_mcache_get(&r->measures, &k, hash, &w, &h)) {
+	ak_measured m;
+	if (ak_mcache_get(&r->measures, &k, hash, &m)) {
 		ak_ui.stats.measure_hits++;
-		return (ak_lsize){w, h};
+		return measured(e, &m);
 	}
-	r->host.measure(r->host.ctx, e->id, c.width, c.height, c.avail_w, c.avail_h, &w, &h);
-	ak_ui.stats.measures++;
-	ak_mcache_put(&r->measures, &k, hash, w, h);
-	return (ak_lsize){w, h};
+	m = host_measure(e, c);
+	ak_mcache_put(&r->measures, &k, hash, &m);
+	return measured(e, &m);
 }
 
 void ak_view_measure(ak_view *e) {

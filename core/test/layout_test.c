@@ -1364,4 +1364,115 @@ TEST(a_text_in_a_long_list_relays_out_its_row) {
 	ak_lpass_free(&p);
 }
 
+// ---- Leaves their host draws no larger than a size ----
+
+// A watch's button: its title's width (8pt a character, 24 of padding),
+// 44 tall; given a width, as wide as that up to cap, which it says as
+// it's measured (ak_lnode_set_content_max), as the watch host does.
+typedef struct {
+	int chars;
+	float cap;  // 0: none
+	ak_lnode *n;
+	int calls;
+} capped_ctx;
+
+static ak_lsize capped_measure(void *ctx, ak_lconstraints c) {
+	capped_ctx *b = ctx;
+	b->calls++;
+	float ideal = (float)(b->chars * 8 + 24);
+	float want = isdef(c.width) ? c.width : definite(c.avail_w) && ideal > c.avail_w ? c.avail_w : ideal;
+	float w = want;
+	if (b->cap > 0) {
+		w = w < b->cap ? w : b->cap;
+		ak_lnode_set_content_max(b->n, b->cap, AK_LMAX_CONTENT);
+	}
+	return (ak_lsize){w, 44};
+}
+
+static ak_lnode *capped(capped_ctx *b) {
+	b->n = ak_lnode_new();
+	ak_lnode_set_measure(b->n, capped_measure, b);
+	return b->n;
+}
+
+// Stretched across a column wider than it's drawn, its frame is what's
+// drawn, centered where it was stretched; what follows it is where it
+// was; laid out again, nothing is measured or moves.
+TEST(a_stretched_leaf_narrows_to_its_hosts_limit_centered) {
+	capped_ctx b = {2, 178, NULL, 0};
+	int chars = 5;
+	ak_lnode *btn = capped(&b), *t = label(&chars);
+	ak_lnode *root = col(btn, t);
+	ak_lpass p = {0};
+	screen(root, 300, 400, &p);
+	CHECK_EQ_STR(FRAMES(btn, t), "61,0 178x44 | 0,44 300x20");
+	ak_lpass_reset(&p);
+	int calls = b.calls;
+	screen(root, 300, 400, &p);
+	CHECK_EQ_INT(p.measures, 0);
+	CHECK_EQ_INT(p.nchanged, 0);
+	CHECK_EQ_INT(b.calls, calls);
+	// Its padding is drawn too: the limit is its content's.
+	ak_lnode_style(btn)->padding = ak_lrect_all(ak_lpt(10));
+	ak_lnode_mark_dirty(btn);
+	screen(root, 300, 400, &p);
+	CHECK_EQ_STR(FRAMES(btn, t), "51,0 198x64 | 0,64 300x20");
+	// In a column narrower than the limit it fills it, as before.
+	screen(root, 150, 400, &p);
+	CHECK_EQ_STR(FRAMES(btn, t), "0,0 150x64 | 0,64 150x20");
+	ak_lnode_free_tree(root);
+	ak_lpass_free(&p);
+}
+
+// Grown along a row, or given a width of its own, it's centered in the
+// room it was given; its siblings keep theirs. Its height has no limit:
+// stretched, it fills the row's.
+TEST(a_grown_leaf_narrows_to_its_hosts_limit) {
+	capped_ctx b = {2, 178, NULL, 0};
+	ak_lnode *btn = capped(&b), *icon = sized(50, 20);
+	ak_lnode_style(btn)->flex_grow = 1;
+	ak_lnode *root = row(btn, icon);
+	ak_lpass p = {0};
+	screen(root, 300, 400, &p);
+	CHECK_EQ_STR(FRAMES(btn, icon), "36,0 178x400 | 250,0 50x20");
+	ak_lnode_style(root)->align_items = AK_LALIGN_START;
+	ak_lnode_style(btn)->flex_grow = 0;
+	ak_lnode_style(btn)->width = ak_lpt(220);
+	ak_lnode_mark_dirty(btn);
+	screen(root, 300, 400, &p);
+	CHECK_EQ_STR(FRAMES(btn, icon), "21,0 178x44 | 220,0 50x20");
+	ak_lnode_free_tree(root);
+	ak_lpass_free(&p);
+}
+
+// What the host said holds until the leaf's content changes: then it's
+// measured again, and a leaf that's no longer limited fills its box,
+// though its size didn't change (its parent places it again).
+TEST(a_leafs_limit_goes_with_its_content) {
+	capped_ctx b = {2, 178, NULL, 0};
+	ak_lnode *btn = capped(&b);
+	ak_lnode *root = col(btn);
+	ak_lpass p = {0};
+	screen(root, 300, 400, &p);
+	CHECK_EQ_STR(FRAMES(btn), "61,0 178x44");
+	b.cap = 0;
+	ak_lnode_mark_content_dirty(btn);
+	ak_lpass_reset(&p);
+	screen(root, 300, 400, &p);
+	CHECK_EQ_STR(FRAMES(btn), "0,0 300x44");
+	CHECK(p.nchanged == 1 && p.changed[0] == btn);
+	b.cap = 100;
+	ak_lnode_mark_content_dirty(btn);
+	ak_lpass_reset(&p);
+	screen(root, 300, 400, &p);
+	CHECK_EQ_STR(FRAMES(btn), "100,0 100x44");
+	// The same limit again: nothing moves.
+	ak_lnode_mark_content_dirty(btn);
+	ak_lpass_reset(&p);
+	screen(root, 300, 400, &p);
+	CHECK_EQ_INT(p.nchanged, 0);
+	ak_lnode_free_tree(root);
+	ak_lpass_free(&p);
+}
+
 T_MAIN()

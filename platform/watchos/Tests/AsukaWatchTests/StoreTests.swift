@@ -239,6 +239,37 @@ struct Batch {
         XCTAssertLessThan(tl, 4, "a text sits at its frame's leading edge")
     }
 
+    /// A Button says the widest it's drawn (what the measure callback
+    /// tells the core, asuka_measure_max): what SwiftUI draws it at,
+    /// proposed more than any screen, measured once per look; it's never
+    /// measured wider. A text, and a plain button in a background of the
+    /// app's (which fills its frame), have none.
+    func testAButtonSaysTheWidestItsDrawn() throws {
+        let rt = AsukaRuntime.shared
+        var b = Batch()
+        b.create(411, .button)
+        b.text(411, AsukaProp.Button.title, "Go")
+        b.create(412, .button)
+        b.text(412, AsukaProp.Button.title, "Go")
+        b.create(413, .text)
+        b.text(413, AsukaProp.Text.text, "Go")
+        b.create(414, .button)
+        b.text(414, AsukaProp.Button.title, "Go")
+        apply(b)
+        rt.nodes[414]!.background = 0xFF0000FF
+        AsukaMeasure.widestButtons.removeAll()
+        let widest = try XCTUnwrap(rt.widest(411))
+        XCTAssertGreaterThan(widest, 0)
+        XCTAssertEqual(rt.widest(412), widest)
+        XCTAssertEqual(AsukaMeasure.widestButtons.count, 1, "one look, measured once")
+        XCTAssertNil(rt.widest(413))
+        XCTAssertNil(rt.widest(414))
+        XCTAssertLessThanOrEqual(rt.measure(411, .nan, .nan, 10_000, .infinity).width, widest)
+        // At a proposal wider than that it's drawn at it: what the core
+        // narrows a stretched button's frame to.
+        XCTAssertEqual(AsukaMeasure.control(rt.nodes[411]!, width: widest + 100).width, widest)
+    }
+
     func apply(_ b: Batch) {
         b.bytes.withUnsafeBytes { AsukaRuntime.shared.apply($0) }
     }

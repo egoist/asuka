@@ -152,6 +152,10 @@ struct ak_fake {
 	ak_fake_core core;
 	ak_fake_measure_fn measure_fn;
 	void *measure_ctx;
+	// The widest it draws a Button's content (0: no limit), as watchOS
+	// draws no button wider than the screen less its margins, which it
+	// says as it measures one (asuka_measure_max).
+	float button_max;
 	ak_fake_call_fn call_fn;
 	void *call_ctx;
 	ak_fake_fail_fn fail_fn;

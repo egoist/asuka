@@ -49,6 +49,8 @@ static void host_measure(void *ctx, uint32_t id, float w, float h, float aw, flo
 	host.measure(id, w, h, aw, ah, ow, oh);
 }
 
+void asuka_measure_max(float max_w, float max_h) { ak_ui_measure_max(max_w, max_h); }
+
 static void wake(void) {
 	if (host.post) host.post();
 }

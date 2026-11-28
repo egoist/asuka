@@ -45,3 +45,7 @@ WEAK size_t asuka_native_invoke(uint64_t id, const uint8_t *p, size_t len, uint8
 	*out = NULL;
 	return 0;
 }
+WEAK void asuka_measure_max(float maxWidth, float maxHeight) {
+	(void)maxWidth;
+	(void)maxHeight;
+}

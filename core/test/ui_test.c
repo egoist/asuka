@@ -1267,6 +1267,81 @@ TEST(identical_content_measures_once) {
 	if (a != b || a > 12) T_FAIL("50 rows: %d measures, 200 rows: %d", a, b);
 }
 
+// ---- A host's limit (asuka_measure_max) ----
+
+static void *go_title, *below_text;
+static int64_t go_align;
+
+static ak_val stretched_button_app(ak_closure *c, ak_val *a, uint32_t n) {
+	AK_UNUSED(c), AK_UNUSED(a), AK_UNUSED(n);
+	ak_view *col = ak_ui_new(AK_EL_COLUMN);
+	set_i(col, AK_KEY_WIDTH, ak_length_pt(300));
+	if (go_align) set_i(col, AK_KEY_ALIGN, go_align);
+	ak_view *b = ak_ui_new(AK_EL_BUTTON);
+	bind(b, AK_KEY_BUTTON_TITLE, read_cell, go_title);
+	add(col, b);
+	ak_view *t = ak_ui_new(AK_EL_TEXT);
+	bind(t, AK_KEY_TEXT_TEXT, read_cell, below_text);
+	add(col, t);
+	return (ak_val){.p = col};
+}
+
+static ak_uitest *mount_stretched(float max) {
+	go_title = cell_ref(ak_str_c("Go"));
+	below_text = cell_ref(ak_str_c("Hi"));
+	ak_uitest_set_button_max(max);
+	ak_uitest *a = mount(stretched_button_app, NULL);
+	ak_uitest_set_button_max(0);
+	return a;
+}
+
+static void done_stretched(ak_uitest *a) {
+	done(a);
+	ak_release(go_title);
+	ak_release(below_text);
+}
+
+// watchOS draws no button wider than the screen less its margins (the
+// fake host, told to: 178), which the host says as it measures one: a
+// Button stretched across a 300pt column is sent the frame it's drawn
+// at, centered where it was stretched, with no measure more than without
+// the limit. What follows it is where it was. A change beside it
+// measures nothing of it and moves nothing; a new title is measured, and
+// the limit holds.
+TEST(a_stretched_button_is_sent_the_width_its_host_draws) {
+	ak_uitest *a = mount_stretched(0);
+	int unlimited = ak_uitest_host(a)->measures;
+	check_frame(one(a, AK_KIND_BUTTON, "Go"), 0, 0, 300, 44);
+	done_stretched(a);
+	a = mount_stretched(178);
+	ak_fake *f = ak_uitest_host(a);
+	CHECK_EQ_INT(f->measures, unlimited);
+	check_frame(one(a, AK_KIND_BUTTON, "Go"), 61, 0, 178, 44);
+	check_frame(one(a, AK_KIND_TEXT, "Hi"), 0, 44, 300, 20);
+	ak_fake_reset(f);
+	write_p(below_text, ak_str_c("Ho"));
+	ak_ui_flush();
+	CHECK_EQ_INT(f->measures, 1);  // the text
+	CHECK_EQ_INT(ak_fake_count(f, AK_OP_SET_FRAME), 0);
+	ak_fake_reset(f);
+	write_p(go_title, ak_str_c("Continue"));
+	ak_ui_flush();
+	CHECK(f->measures >= 1);
+	check_frame(one(a, AK_KIND_BUTTON, "Continue"), 61, 0, 178, 44);
+	CHECK_EQ_INT(ak_fake_count(f, AK_OP_SET_FRAME), 0);
+	done_stretched(a);
+}
+
+// Not stretched, a button is its own width, within its limit: its frame
+// is what it was.
+TEST(a_button_at_its_own_width_keeps_it) {
+	go_align = 1;  // start
+	ak_uitest *a = mount_stretched(178);
+	go_align = 0;
+	check_frame(one(a, AK_KIND_BUTTON, "Go"), 0, 0, 40, 44);
+	done_stretched(a);
+}
+
 // ---- Applying (TestFlushWhileApplying) ----
 
 static ak_fake *hooked;

@@ -93,6 +93,7 @@ int64_t asuka_list_count(uint32_t list);
 void asuka_list_bind(uint32_t list, int64_t index, uint32_t cell);
 void asuka_list_unbind(uint32_t list, uint32_t cell);
 void asuka_run_posted(void);
+void asuka_measure_max(float maxWidth, float maxHeight); // from measure: drawn no larger than this
 ```
 
 ## The language and its compiler
@@ -1114,6 +1115,25 @@ and **grid** layout (in the spirit of Taffy, not a port of it or of Yoga), in po
   places its subtree. Leaves (text, controls) are measured by the host
   with the same inputs: `sizeThatFits:` on iOS, `View.measure` with
   `MeasureSpec`s on Android; min-content is the widest word.
+- **A host's limit.** Some native views are never drawn larger than a
+  size, whatever frame they get: watchOS draws no button wider than the
+  screen less its margins. The host says so from inside its measure
+  (`asuka_measure_max`, the content's width and height, +inf for none);
+  the leaf keeps it (`ak_lnode_set_content_max`, cached with the
+  measurement in the shared measure cache) until its content or style
+  changes. It isn't a max-width: layout sizes the box as CSS does (a
+  stretch, a flex-grow, a width of its own; its siblings where they
+  were), and the leaf's frame is that box narrowed to the limit (with
+  its padding and border), centered in it on each axis it can't fill:
+  CSS's `object-fit: none` at `object-position`'s center, SwiftUI's
+  frame around a view that can't grow. So the frame the core sends,
+  the automation tree and hit testing are what's drawn, and the screen
+  is what it was. It costs no measure: the limit comes with
+  measurements layout makes anyway, and a leaf whose size layout forces
+  on both axes, never measured, keeps its box (a host centers what it
+  draws in it). CSS's max-width, clamped and placed at the start, is
+  the app's to ask for; a platform's limit isn't the app's choice, and
+  the platforms' own stacks center a control that can't fill its row.
 - **Algorithms.** Flexbox per CSS Flexible Box §9 as browsers implement
   it (automatic minimum sizes, the freeze loop, intrinsic main sizes,
   wrap and wrap-reverse, baselines, auto margins, absolute children at
@@ -1648,13 +1668,19 @@ flush. What makes SwiftUI a target rather than a second reconciler:
   `ZStack(alignment: .topLeading)` of its children, each `.frame`d to
   its size and `.offset` to its origin in the container's coordinates;
   a text is drawn `fixedSize` vertically in its frame, so it never
-  truncates where the core measured it whole. A Button is centered in
-  its frame: watchOS draws no button style wider than the screen less
-  its margins (178pt on a 46mm watch, whatever it's proposed, the
-  label's frame, `buttonSizing` or `controlSize`), so one stretched
-  across a wider column is the watch's full-width button with the
-  platform's inset on both sides, as SwiftUI's own frame places it; its
-  measurement never reports it wider. Navigators are SwiftUI's
+  truncates where the core measured it whole. watchOS draws no button
+  style wider than the screen less its margins (178pt on a 46mm watch,
+  whatever it's proposed, the label's frame, `buttonSizing` or
+  `controlSize`): its measurement never reports one wider, and the host
+  says that width as it measures one (`asuka_measure_max`; what a
+  bordered button draws at a proposal wider than any screen, measured
+  once per look; a plain button in the app's background has none), so
+  the core narrows a button it stretched across a wider column to it,
+  centered (layout's "A host's limit"): the watch's full-width button
+  with the platform's inset on both sides, as SwiftUI's own frame places
+  it, and the frame the core has is what's drawn. A Button is centered
+  in its frame too, for one whose size the core forced on both axes,
+  never measured. Navigators are SwiftUI's
   (NavigationStack with the stack's screens as its path, a vertical page
   TabView, sheets, alerts), and screens and sheets are environment
   providers as on the other hosts: each reports the size SwiftUI gives

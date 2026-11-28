@@ -161,6 +161,7 @@ typedef struct {
 	ak_mkey k;
 	uint32_t hash;  // 0: empty
 	float w, h;
+	float max_w, max_h;  // what the host said it draws it at most (+inf: nothing)
 } ak_mentry;
 
 #define AK_MCACHE_MAX 1024
@@ -175,8 +176,14 @@ typedef struct {
 void ak_mcache_init(ak_mcache *m);
 void ak_mcache_clear(ak_mcache *m);
 void ak_mcache_free(ak_mcache *m);
-bool ak_mcache_get(ak_mcache *m, const ak_mkey *k, uint32_t hash, float *w, float *h);
-void ak_mcache_put(ak_mcache *m, const ak_mkey *k, uint32_t hash, float w, float h);
+// A measurement: its size, and the most the host said it's drawn at
+// (+inf: it said nothing).
+typedef struct {
+	float w, h, max_w, max_h;
+} ak_measured;
+
+bool ak_mcache_get(ak_mcache *m, const ak_mkey *k, uint32_t hash, ak_measured *out);
+void ak_mcache_put(ak_mcache *m, const ak_mkey *k, uint32_t hash, const ak_measured *v);
 uint32_t ak_mkey_hash(const ak_mkey *k);
 
 typedef AK_VEC(ak_view *) ak_view_vec;
@@ -251,6 +258,11 @@ typedef struct {
 	bool has_env;
 	ak_ui_stats stats;
 	int depth;  // dispatches and flushes in progress
+	// The largest content the host draws the view it's measuring at
+	// (ak_ui_measure_max), while it measures: measuring says whether it
+	// is, max what it said (+inf: nothing).
+	bool measuring;
+	float measure_max[2];
 } ak_ui_state;
 
 extern ak_ui_state ak_ui;

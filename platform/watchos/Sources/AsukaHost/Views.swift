@@ -31,10 +31,13 @@ struct AsukaNodeView: View {
 /// leading corner. A Button is centered: watchOS draws every button style
 /// (bordered, prominent, glass, with any label, `buttonSizing` or
 /// `controlSize`) at most as wide as the screen less its margins (178pt on
-/// a 46mm watch), whatever it's proposed, so a button stretched across a
-/// wider column is drawn at that width; centered in its frame it's where
-/// SwiftUI's own frame and VStack put it, the watch's full-width button,
-/// with the platform's inset on both sides.
+/// a 46mm watch), whatever it's proposed. The host tells the core so as it
+/// measures one (Measure.swift's `widest`), and the core narrows the frame
+/// of a button it stretched across a wider column to that, centered where
+/// it was stretched: the watch's full-width button, with the platform's
+/// inset on both sides, as SwiftUI's own frame and VStack place it. A
+/// button whose size the core forced on both axes isn't measured, and its
+/// frame stays wider: centered in it, it's drawn in the same place.
 func asukaPlacement(_ kind: AsukaKind?) -> Alignment {
     kind == .button ? .center : .topLeading
 }

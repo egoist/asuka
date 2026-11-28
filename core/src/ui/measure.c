@@ -96,24 +96,26 @@ static ak_mentry *find(ak_mentry *t, const ak_mkey *k, uint32_t hash) {
 	}
 }
 
-bool ak_mcache_get(ak_mcache *m, const ak_mkey *k, uint32_t hash, float *w, float *h) {
+static ak_measured entry_value(const ak_mentry *e) { return (ak_measured){e->w, e->h, e->max_w, e->max_h}; }
+
+bool ak_mcache_get(ak_mcache *m, const ak_mkey *k, uint32_t hash, ak_measured *out) {
 	ak_mentry *e = find(m->cur, k, hash);
 	if (e->hash) {
-		*w = e->w, *h = e->h;
+		*out = entry_value(e);
 		m->hits++;
 		return true;
 	}
 	e = find(m->old, k, hash);
 	if (e->hash) {
-		*w = e->w, *h = e->h;
+		*out = entry_value(e);
 		m->hits++;
-		ak_mcache_put(m, k, hash, e->w, e->h);
+		ak_mcache_put(m, k, hash, out);
 		return true;
 	}
 	return false;
 }
 
-void ak_mcache_put(ak_mcache *m, const ak_mkey *k, uint32_t hash, float w, float h) {
+void ak_mcache_put(ak_mcache *m, const ak_mkey *k, uint32_t hash, const ak_measured *v) {
 	if (m->ncur >= AK_MCACHE_MAX) {
 		// The current generation is full: it becomes the old one.
 		clear_table(m->old);
@@ -125,7 +127,7 @@ void ak_mcache_put(ak_mcache *m, const ak_mkey *k, uint32_t hash, float w, float
 	}
 	ak_mentry *e = find(m->cur, k, hash);
 	if (e->hash) {
-		e->w = w, e->h = h;
+		e->w = v->w, e->h = v->h, e->max_w = v->max_w, e->max_h = v->max_h;
 		return;
 	}
 	e->k = *k;
@@ -133,6 +135,6 @@ void ak_mcache_put(ak_mcache *m, const ak_mkey *k, uint32_t hash, float w, float
 	ak_retain(e->k.text2);
 	ak_retain(e->k.family);
 	e->hash = hash;
-	e->w = w, e->h = h;
+	e->w = v->w, e->h = v->h, e->max_w = v->max_w, e->max_h = v->max_h;
 	m->ncur++;
 }

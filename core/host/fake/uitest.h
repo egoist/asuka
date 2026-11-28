@@ -37,6 +37,10 @@ void ak_uitest_set_platform(uint8_t platform);
 // follow, instead of the fake's own rules (NULL: those again): a test
 // that needs a real host's answers.
 void ak_uitest_set_measure(ak_fake_measure_fn fn, void *ctx);
+// ak_uitest_set_button_max sets the widest the fake host of the mounts
+// that follow draws a Button's content (ak_fake's button_max; 0: no
+// limit, the default), as a watch's.
+void ak_uitest_set_button_max(float w);
 // ak_uitest_unmount unmounts the app and reports in err (if not NULL)
 // the native views that outlived it (an owner left undisposed). False
 // if any did.

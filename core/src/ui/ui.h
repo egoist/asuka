@@ -85,6 +85,13 @@ typedef struct ak_host {
 	void (*measure)(void *ctx, uint32_t id, float w, float h, float aw, float ah, float *ow, float *oh);
 } ak_host;
 
+// ak_ui_measure_max is what a host says from inside its measure (asuka.h's
+// asuka_measure_max): the view it measures is never drawn larger than w
+// by h (its content; +inf or NaN: no limit on that axis), whatever frame
+// it gets. Its frame is narrowed to that, centered in its box
+// (ak_lnode_set_content_max). Outside a measure it's ignored.
+void ak_ui_measure_max(float w, float h);
+
 // ak_ui_init sets the host roots are mounted on (and binds the signal
 // graph's flush to the runtime's). Again with another host: roots
 // mounted later go there.

@@ -128,9 +128,13 @@ struct AsukaDevError: Equatable {
             },
             measure: { id, w, h, aw, ah, ow, oh in
                 MainActor.assumeIsolated {
-                    let s = AsukaRuntime.shared.measure(id, w, h, aw, ah)
+                    let rt = AsukaRuntime.shared
+                    let s = rt.measure(id, w, h, aw, ah)
                     ow?.pointee = Float(s.width)
                     oh?.pointee = Float(s.height)
+                    // Drawn no wider than this, whatever its frame: the
+                    // core makes its frame what's drawn.
+                    if let widest = rt.widest(id) { asuka_measure_max(Float(widest), .infinity) }
                 }
             },
             post: {

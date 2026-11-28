@@ -153,6 +153,7 @@ ak_lnode *ak_lnode_new(void) {
 	ak_lnode *n = ak_alloc(sizeof *n);
 	n->style = ak_lstyle_default();
 	n->dirty = true;
+	n->content_max = n->box_max = (ak_lsize){LINF, LINF};
 	for (int i = 0; i < 4; i++) n->reported[i] = LNAN;
 	return n;
 }
@@ -197,12 +198,19 @@ void ak_lnode_set_measure(ak_lnode *n, ak_lmeasure_fn fn, void *ctx) {
 	ak_lnode_mark_content_dirty(n);
 }
 
+void ak_lnode_set_content_max(ak_lnode *n, float w, float h) {
+	n->content_max = (ak_lsize){l_isnan(w) ? LINF : w, l_isnan(h) ? LINF : h};
+}
+
 void ak_lnode_set_baseline(ak_lnode *n, ak_lbaseline_fn fn, void *ctx) {
 	n->baseline = fn;
 	n->baseline_ctx = ctx;
 }
 
 void ak_lnode_mark_dirty(ak_lnode *n) {
+	// What its host reported of its content is reported again as it's
+	// measured again.
+	n->content_max = (ak_lsize){LINF, LINF};
 	for (ak_lnode *p = n; p; p = p->parent) {
 		if (p->dirty && p != n) return;
 		p->dirty = true;
@@ -222,6 +230,7 @@ void ak_lnode_mark_subtree_dirty(ak_lnode *n) {
 }
 
 void ak_lnode_mark_content_dirty(ak_lnode *n) {
+	n->content_max = (ak_lsize){LINF, LINF};
 	if (n->dirty || n->stale) return;
 	if (!n->parent) {
 		ak_lnode_mark_dirty(n);
@@ -369,6 +378,9 @@ static bool revalidate(ak_lnode *n, ak_lpass *p) {
 	cache_clear(c);
 	n->dirty = true;
 	if (!ok) return false;
+	// Its frame narrows to what its host draws: a limit that changed
+	// moves it, though its answers are the same.
+	ak_lsize box_max = n->box_max;
 	for (uint32_t i = 1; i < ne; i++)
 		for (uint32_t j = i; j > 0 && es[j - 1].seq > es[j].seq; j--) {
 			l_cache_entry t = es[j];
@@ -381,7 +393,7 @@ static bool revalidate(ak_lnode *n, ak_lpass *p) {
 		l_output out = l_compute(n, in, p);
 		if (!same_output(&out, &e->out)) return false;
 	}
-	return true;
+	return same_f(box_max.w, n->box_max.w) && same_f(box_max.h, n->box_max.h);
 }
 
 // resolve settles the stale nodes at and below n, deepest first, before
@@ -441,6 +453,18 @@ ak_lsize ak_lnode_layout(ak_lnode *n, ak_lsize avail, ak_lpass *p) {
 }
 
 void l_place(ak_lpass *p, ak_lnode *n, float x, float y, ak_lsize s) {
+	// A leaf its host draws no larger than box_max: its frame is what's
+	// drawn, centered in the box it was given.
+	if (n->measure && n->nchildren == 0) {
+		if (s.w > n->box_max.w) {
+			x += (s.w - n->box_max.w) / 2;
+			s.w = n->box_max.w;
+		}
+		if (s.h > n->box_max.h) {
+			y += (s.h - n->box_max.h) / 2;
+			s.h = n->box_max.h;
+		}
+	}
 	n->x = x;
 	n->y = y;
 	n->w = s.w;
@@ -686,6 +710,11 @@ static l_output leaf(ak_lnode *n, const l_input *in, ak_lpass *p) {
 	if (ratio > 0) s.h = l_maxf(s.h, s.w / ratio);
 	s.w = l_maxf(s.w, pb.w);
 	s.h = l_maxf(s.h, pb.h);
+	if (in->mode == MODE_LAYOUT) {
+		// Where its parent narrows its frame (l_place): the content its
+		// host draws at most, with this layout's padding and border.
+		n->box_max = (ak_lsize){n->content_max.w + inset.w, n->content_max.h + inset.h};
+	}
 	l_output out = {.size = s, .baseline = LNAN};
 	if (n->baseline) out.baseline = n->baseline(n->baseline_ctx, s);
 	out.collapses_through = !blocks_collapse && s.h == 0 && measured.h == 0;
